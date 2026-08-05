@@ -11,11 +11,12 @@ def main():
     top = int(sys.argv[sys.argv.index("--top") + 1]) if "--top" in sys.argv else 15
     rows = [json.loads(l) for l in open(os.path.join(out, "results.jsonl"))]
 
-    skips = collections.Counter(r["suite"] for r in rows if r["status"] == "SKIP")
+    skips = collections.Counter(r["suite"] for r in rows
+                                if r["status"] in ("SKIP", "REFSKIP"))
     tally = collections.defaultdict(collections.Counter)
     byfile = collections.defaultdict(dict)
     for r in rows:
-        if r["status"] == "SKIP":
+        if r["status"] in ("SKIP", "REFSKIP"):
             continue
         tally[(r["suite"], r["opt"])][r["status"]] += 1
         byfile[r["file"]][r["opt"]] = r

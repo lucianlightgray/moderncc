@@ -5553,3 +5553,137 @@ signals; `run-tier`'s `arm64-win32` row is `mcc_skip_test` (no in-tree runner). 
 the wine-arm64-under-docker path into a real cell would give a cheap always-on gate for
 loader/format bugs (defects 1 and 3) -- it would NOT have caught defect 2, since wine's
 msvcrt exports `_getpid`.
+
+## Feature parity measured against the other compiler: 47 board failures closed
+
+The brief was "run the C tests in `~/Projects/gcc` and `~/Projects/llvm`, use clang as
+the oracle for the gcc suite and gcc as the oracle for the llvm suite, and make mcc
+behave the way the other compiler does." That framing is what makes the boards
+actionable, because it splits the failure column into work and noise:
+
+| status | meaning | in scope? |
+|---|---|---|
+| `FAIL` | mcc rejects, the oracle accepts | **yes** |
+| `XPASS` | mcc accepts, the oracle rejects (missing diagnostic) | **yes** |
+| `REFFAIL` | both reject -- the test wants the *other* compiler's extension | no |
+| `XPASS_REFOK` | both accept -- the test's `dg-error` is compiler-specific | no |
+| `REFSKIP` | the oracle could not be run at all (see below) | no |
+
+Measured at `dca5a85f` with `tools/xsuite.py --opt=-O0`, one run per suite so each gets
+its own `--ref`:
+
+```
+tools/xsuite.py --mcc cmake-release/mcc --out <d> --gcc  ~/Projects/gcc  --opt=-O0 --ref clang
+tools/xsuite.py --mcc cmake-release/mcc --out <d> --llvm ~/Projects/llvm --opt=-O0 --ref gcc
+```
+
+| board | before | after | delta |
+|---|---:|---:|---:|
+| gcc suite `FAIL` | 450 | 378 | **-72** (44 fixed, 28 reclassified) |
+| gcc suite `XPASS` | 282 | 259 | -23 (reclassified) |
+| gcc suite `PASS` | 17,188 | 17,229 | +41 |
+| llvm suite `FAIL` | 109 | 82 | **-27** (3 fixed, 24 reclassified) |
+| llvm suite `PASS` | 1,969 | 1,971 | +2 |
+
+`ctest` 8318/8318 with six new exec goldens, all six `diff3`-clean against gcc 15 and
+clang 22.
+
+### The harness was counting 79 tests the oracle could not judge
+
+`ref_verdict` already returned `"badflag"` when the reference compiler rejected the
+*flags* rather than the code -- and the caller then ignored it, leaving the row scored
+as an mcc failure. 79 rows were in that state: 52 in the gcc board, 27 in the llvm
+board. The largest family is clang's `_Accum`/`_Fract` fixed-point tests, which pass
+`-ffixed-point`; **gcc has no fixed-point support on x86_64 at all**, so those 17 rows
+were never a parity gap. They are now `REFSKIP` and are excluded from the denominator
+the same way a directive skip is. Any board that shows a big one-day drop in `FAIL`
+should be checked against this: 51 of the 99 rows this change moved were bookkeeping,
+not compiler work, and the table above keeps the two apart deliberately.
+
+### What was actually fixed
+
+Each of these is accepted by both gcc and clang and was rejected by mcc.
+
+1. **C23 digit separators** (`1'000`, `0x1'23`, `314'159e-0'5f`). The pp-number scanner
+   absorbs `'` between digits and diagnoses the three invalid placements the standard
+   names (`adjacent`, `after base indicator`, `outside digit sequence`). The subtle
+   part: a separator must stop `e`/`E` from starting an exponent, because the C23
+   grammar consumes the `e` in `0x0'e` via the *separator* production, not the
+   exponent one. So `0x0'e-0xe` is a subtraction while `0x1e-1` is still an invalid
+   number -- gcc and clang draw the line in exactly that place, and the first
+   implementation of this got it wrong in both directions.
+2. **C2Y `0o`/`0O` octal constants**, pedwarned below C2Y. Binary constants stopped
+   pedwarning at C23 and later, where they are standard; `cli/wpedantic_alias` used
+   `0b101` to test the `-Wpedantic` aliases and moved to `0o5`.
+3. **`[*]` in a non-outermost array declarator of a prototype** (`double x[3][*]`) is a
+   VLA of unspecified size, not an array of incomplete element type. `star_dim` also
+   suppresses the "need explicit inner array size in VLAs" error, which only applies to
+   real definitions.
+4. **File-scope tentative definition of an incomplete struct/union**. `struct s0 x;`
+   before `struct s0 { ... };` is legal when the tag is completed later in the TU. The
+   decision is deferred to end-of-TU next to the existing tentative-array pass
+   (`finalize_tentative_arrays`, flag `a.tentative_incomplete`), and still errors
+   `storage size of 'x' isn't known` when the tag never completes.
+5. **Flexible array member in a union** -- the GCC extension, pedwarned.
+6. **C23 tag redefinition** (`struct q { int x; };` twice in one scope). The
+   redefinition parses into a *fresh anonymous tag* and is then compared field by
+   field against the original; on success the original `Sym` is what the type keeps, so
+   no later member lookup can be handed the wrong one -- which is the failure mode the
+   earlier assessment of this feature warned about. Enum redefinitions compare
+   name/value pairs **order-insensitively** (C23 requires a one-to-one correspondence,
+   not the same order: `enum X { E = 1, F = 2 }` and `enum X { F = 2, E = 1 }` are
+   compatible and gcc accepts both). During the redefinition body the original tag is
+   marked in-progress (`c = -2`), which is what makes a *nested* redefinition
+   (`struct bar { struct bar { ... } *n; }`) still an error, as gcc requires.
+7. **Copying a struct that has a `const` member.** The read-only check lived in
+   `verify_assign_cast`, which every implicit conversion goes through, so passing such
+   a struct by value or returning one was rejected. It moved to the two places C
+   actually constrains -- the assignment operators (`expr_eq` after `test_lvalue`) and
+   `++`/`--` (`inc`) -- plus the atomic RMW/store lowering, which had depended on the
+   old placement. `__func__` had to become `const char[]` at the same time; it was
+   lowered as a plain string literal, and `__func__[0] = 'a'` is a constraint violation
+   that mcc had been catching only by accident.
+8. **Complex arithmetic no longer propagates operand qualifiers.** `gen_complex_op`
+   copied the whole `CType` of whichever operand was complex, so `a[0] = b[0] + b[1]`
+   with `b` a `static const double _Complex[]` reported the *destination* as read-only.
+9. **C23 array-qualifier rules.** An array type carries its element's qualifiers
+   (`type_quals_deep`), so `1 ? (const int(*)[1]) : (void*)` composes to `const void *`,
+   and `const int (*p)[3] = x;` from `int (*x)[3]` is a legal assignment rather than a
+   deep-qualifier violation. Gated on `cversion >= 202311`.
+10. **`= {}` on a VLA** (C23 empty initializer): allowed at any std with the existing
+    C23 pedwarn below C23, lowered as a `memset` of the runtime size right after the
+    `gen_vla_alloc`.
+
+### Two things found and deliberately not fixed
+
+**A tag declared in a parameter list is a different type inside the body.**
+`void g(struct bar { int c; } *B) { struct bar t = *B; }` gives
+`cannot convert 'struct bar' to 'struct bar'`. `move_ref_to_global` moves the tag `Sym`
+to the global stack for lifetime and `sym_copy`s it back into the local stack for name
+lookup, so the body's lookup and the parameter's type end up on two different `Sym`s,
+and `compare_types` compares struct types by `ref` identity. This is inherited from
+tcc's scoping model, it is not new, and it is the last thing standing between mcc and
+`gcc.dg/struct-alias-2.c`. Any fix has to preserve both properties the copy exists for:
+the tag must outlive the function, and its *name* must not leak past it.
+
+**gcc rejects a self-referential struct redefinition that clang accepts.**
+`struct self { void (*p)(const struct self *); };` twice: clang 22 and mcc accept,
+gcc 15 says `redefinition of struct or union 'struct self'`. `gcc.dg/pr124303.c` is
+gcc's own test for accepting it, so this is a gcc version skew, not a rule. The
+`c23_tag_redefinition` golden avoids the shape so the `diff3` consensus stays clean.
+
+### Where the remaining 460 are
+
+Top clusters across both boards after this work, by error text:
+
+| n | cluster | note |
+|---:|---|---|
+| 67 | `unresolved reference to 'link_error'`/`link_failure`/`foo` | the optimizer block already costed above |
+| 34 | `'__bf16' is not supported on this target` | 24 of them are the `x86_64/abi/bf16` ABI suite |
+| 24 | `';' expected (got '__m512'/'__m128h'/'__m256h')` | AVX-512 intrinsic headers |
+| 13 | `type defaults to 'int' in declaration` | mostly `__float128` and `__seg_fs` reaching the declarator as an unknown type |
+| 10 | `initializer element is not constant` | static-initializer folding (`&&label` differences, statement expressions) |
+| 10 | `invalid array size` | `ms_struct` layout and `(int)(-5.0/3.0)`-style constant folding |
+| 10 | `constant expression expected` | same family |
+| ~10 | `#pragma pack(show)`, `ms_struct`, mac68k alignment | pragma surface |
+| 6 | `identifier expected` | `_BitInt(N)` |

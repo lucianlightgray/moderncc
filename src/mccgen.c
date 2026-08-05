@@ -278,6 +278,7 @@ ST_DATA int nocode_wanted;
 #define NODATA_WANTED (nocode_wanted > 0)
 
 ST_DATA int asm_lvalue_cast;
+static int tag_redef_parse;
 #define DATA_ONLY_WANTED 0x80000000
 
 #define CODE_OFF_BIT 0x20000000
@@ -1352,7 +1353,8 @@ ST_FUNC Sym *sym_push(int v, CType *type, int r, int c) { MCC_TRACE("enter\n");
 	s->r = r;
 	if ((v & ~SYM_STRUCT) < SYM_FIRST_ANOM) { MCC_TRACE("br\n");
 		sym_link(s, 1);
-		if (s->prev_tok && sym_scope_ex(s->prev_tok) == local_scope)
+		if (s->prev_tok && sym_scope_ex(s->prev_tok) == local_scope &&
+				!tag_redef_parse)
 			{ MCC_TRACE("br\n"); mcc_error("redeclaration of '%s'", get_tok_str(s->v, NULL)); }
 	}
 	return s;
@@ -4120,6 +4122,15 @@ static int compare_types(CType *type1, CType *type2, int unqualified) { MCC_TRAC
 #define CMP_OP 'C'
 #define SHIFT_OP 'S'
 
+static int type_quals_deep(CType *type) { MCC_TRACE("enter\n");
+	int q = type->t & VT_QUALIFY;
+	while ((type->t & VT_BTYPE) == VT_PTR && (type->t & (VT_ARRAY | VT_VLA))) { MCC_TRACE("br\n");
+		type = &type->ref->type;
+		q |= type->t & VT_QUALIFY;
+	}
+	return q;
+}
+
 static int is_ordered_cmp(int op) { MCC_TRACE("enter\n");
 	return op == TOK_LT || op == TOK_GT || op == TOK_LE || op == TOK_GE ||
 				 op == TOK_ULT || op == TOK_UGT || op == TOK_ULE || op == TOK_UGE;
@@ -4176,7 +4187,7 @@ static int combine_types(CType *dest, SValue *op1, SValue *op2, int op) { MCC_TR
 			}
 			if (op == '?') { MCC_TRACE("br\n");
 				type = *((pbt1 == VT_VOID) ? type1 : type2);
-				newquals = ((pt1->t | pt2->t) & VT_QUALIFY);
+				newquals = type_quals_deep(pt1) | type_quals_deep(pt2);
 				if ((~pointed_type(&type)->t & VT_QUALIFY) & newquals) { MCC_TRACE("br\n");
 					type.ref = sym_push(SYM_FIELD, &type.ref->type,
 															0, type.ref->c);
@@ -5134,7 +5145,7 @@ static void incompatible_ptr_diag(void) { MCC_TRACE("enter\n");
 
 static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 	CType *st, *type1, *type2;
-	int dbt, sbt, qualwarn, lvl, deepqual;
+	int dbt, sbt, qualwarn, lvl, deepqual, arrlvl;
 
 	if (ir_cap_replaying)
 		{ MCC_TRACE("br\n"); return; }
@@ -5143,10 +5154,6 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 	st = &vtop->type;
 	dbt = dt->t & VT_BTYPE;
 	sbt = st->t & VT_BTYPE;
-	if (dt->t & VT_CONSTANT)
-		{ MCC_TRACE("br\n"); mcc_error("assignment of read-only location"); }
-	else if (dbt == VT_STRUCT && aggr_has_const_member(dt))
-		{ MCC_TRACE("br\n"); mcc_error("assignment of read-only location"); }
 	switch (dbt) { MCC_TRACE("br\n");
 	case VT_VOID:
 		if (sbt != dbt)
@@ -5169,16 +5176,18 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); goto error; }
 		if (is_compatible_types(type1, type2))
 			{ MCC_TRACE("br\n"); break; }
-		for (qualwarn = lvl = deepqual = 0;; ++lvl) { MCC_TRACE("br\n");
+		for (qualwarn = lvl = deepqual = 0, arrlvl = 0;; ++lvl) { MCC_TRACE("br\n");
 			if (((type2->t & VT_CONSTANT) && !(type1->t & VT_CONSTANT)) ||
 					((type2->t & VT_VOLATILE) && !(type1->t & VT_VOLATILE)))
 				{ MCC_TRACE("br\n"); qualwarn = 1; }
-			if (lvl > 0 && ((type1->t & ~type2->t) & (VT_CONSTANT | VT_VOLATILE)))
+			if (lvl > 0 && !arrlvl && ((type1->t & ~type2->t) & (VT_CONSTANT | VT_VOLATILE)))
 				{ MCC_TRACE("br\n"); deepqual = 1; }
 			dbt = type1->t & (VT_BTYPE | VT_LONG);
 			sbt = type2->t & (VT_BTYPE | VT_LONG);
 			if (dbt != VT_PTR || sbt != VT_PTR)
 				{ MCC_TRACE("br\n"); break; }
+			arrlvl = mcc_state->cversion >= 202311 &&
+					(type1->t & (VT_ARRAY | VT_VLA)) && (type2->t & (VT_ARRAY | VT_VLA));
 			type1 = pointed_type(type1);
 			type2 = pointed_type(type2);
 		}
@@ -5235,6 +5244,15 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 		mcc_error("internal error: assignment to unknown base type %d", dbt);
 		break;
 	}
+}
+
+static void verify_assign_readonly(CType *dt) { MCC_TRACE("enter\n");
+	if (ir_cap_replaying || ast_replaying)
+		{ MCC_TRACE("br\n"); return; }
+	if (dt->t & VT_CONSTANT)
+		{ MCC_TRACE("br\n"); mcc_error("assignment of read-only location"); }
+	if ((dt->t & VT_BTYPE) == VT_STRUCT && aggr_has_const_member(dt))
+		{ MCC_TRACE("br\n"); mcc_error("assignment of read-only location"); }
 }
 
 static void gen_assign_cast(CType *dt) { MCC_TRACE("enter\n");
@@ -5419,6 +5437,7 @@ ST_FUNC void inc(int post, int c) { MCC_TRACE("enter\n");
 	test_lvalue();
 	if (vtop->r & VT_NONLVAL)
 		{ MCC_TRACE("br\n"); expect("lvalue"); }
+	verify_assign_readonly(&vtop->type);
 	if (is_complex_type(&vtop->type) && mcc_state->cversion < 202400)
 		{ MCC_TRACE("br\n"); mcc_pedantic("ISO C before C2Y forbids '++'/'--' on a complex type"); }
 	if (vtop->type.t & VT_ATOMIC_BIT) { MCC_TRACE("br\n");
@@ -6250,10 +6269,51 @@ static int in_range(long long n, int t) { MCC_TRACE("enter\n");
 	return n >= -(long long)m - 1 && n <= (long long)m;
 }
 
+static int tags_compatible(Sym *a, Sym *b) { MCC_TRACE("enter\n");
+	Sym *fa, *fb;
+
+	if (a->c != b->c || a->r != b->r)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (IS_ENUM(a->type.t) || IS_ENUM(b->type.t)) { MCC_TRACE("br\n");
+		int na = 0, nb = 0;
+		if (a->type.t != b->type.t)
+			{ MCC_TRACE("br\n"); return 0; }
+		for (fa = a->next; fa; fa = fa->next) { MCC_TRACE("br\n");
+			na++;
+			for (fb = b->next; fb; fb = fb->next)
+				{ MCC_TRACE("br\n"); if (fa->v == fb->v && fa->enum_val == fb->enum_val)
+					{ MCC_TRACE("br\n"); break; } }
+			if (!fb)
+				{ MCC_TRACE("br\n"); return 0; }
+		}
+		for (fb = b->next; fb; fb = fb->next)
+			{ MCC_TRACE("br\n"); nb++; }
+		return na == nb;
+	}
+	if ((a->type.t & (VT_BTYPE | VT_STRUCT_MASK)) !=
+			(b->type.t & (VT_BTYPE | VT_STRUCT_MASK)))
+		{ MCC_TRACE("br\n"); return 0; }
+	for (fa = a->next, fb = b->next; fa && fb; fa = fa->next, fb = fb->next) { MCC_TRACE("br\n");
+		if ((fa->v & ~SYM_FIELD) != (fb->v & ~SYM_FIELD))
+			{ MCC_TRACE("br\n"); return 0; }
+		if (fa->c != fb->c)
+			{ MCC_TRACE("br\n"); return 0; }
+		if ((fa->type.t & VT_BITFIELD) != (fb->type.t & VT_BITFIELD))
+			{ MCC_TRACE("br\n"); return 0; }
+		if ((fa->type.t & VT_BITFIELD) &&
+				(fa->type.bs != fb->type.bs || fa->type.bp != fb->type.bp))
+			{ MCC_TRACE("br\n"); return 0; }
+		if (!is_compatible_types(&fa->type, &fb->type))
+			{ MCC_TRACE("br\n"); return 0; }
+	}
+	return !fa && !fb;
+}
+
 static void struct_decl(CType *type, int u, AttributeDef *ad_out) { MCC_TRACE("enter\n");
 	int v, c, size, align, flexible, saw_vla, no_field, late_bf;
 	int bit_size, bsize, bt, ut;
-	Sym *s, *ss, **ps;
+	Sym *s, *ss, **ps, *redef_prev = NULL;
+	int redef_saved_c = 0;
 	AttributeDef ad, ad1;
 	CType type1, btype;
 
@@ -6304,8 +6364,20 @@ do_decl:
 
 	if (tok == '{') { MCC_TRACE("br\n");
 		next();
-		if (s->c != -1 && !(u == VT_ENUM && s->c == 0))
-			{ MCC_TRACE("br\n"); mcc_error("struct/union/enum already defined"); }
+		if (s->c != -1 && !(u == VT_ENUM && s->c == 0)) { MCC_TRACE("br\n");
+			if (mcc_state->cversion < 202311 || s->c == -2)
+				{ MCC_TRACE("br\n"); mcc_error("struct/union/enum already defined"); }
+			redef_prev = s;
+			redef_saved_c = s->c;
+			s->c = -2;
+			type1.t = u | ut;
+			type1.ref = NULL;
+			s = sym_push(anon_sym++ | SYM_STRUCT, &type1, 0, bt ? 0 : -1);
+			s->r = 0;
+			type->t = s->type.t;
+			type->ref = s;
+			tag_redef_parse++;
+		}
 		s->c = -2;
 		ps = &s->next;
 		if (u == VT_ENUM) { MCC_TRACE("br\n");
@@ -6569,6 +6641,21 @@ do_decl:
 				{ MCC_TRACE("br\n"); struct_layout_vla(type, &ad); }
 			else
 				{ MCC_TRACE("br\n"); struct_layout(type, &ad); }
+		}
+		if (redef_prev) { MCC_TRACE("br\n");
+			tag_redef_parse--;
+			redef_prev->c = redef_saved_c;
+			if (!tags_compatible(redef_prev, s))
+				{ MCC_TRACE("br\n"); mcc_error("redefinition of '%s' is not compatible with "
+													"the earlier definition",
+													get_tok_str(redef_prev->v & ~SYM_STRUCT, NULL)); }
+			if (IS_ENUM(s->type.t)) { MCC_TRACE("br\n");
+				for (ss = s->next; ss; ss = ss->next)
+					{ MCC_TRACE("br\n"); ss->type.ref = redef_prev; }
+			}
+			s = redef_prev;
+			type->t = s->type.t;
+			type->ref = s;
 		}
 		if (debug_modes)
 			{ MCC_TRACE("br\n"); mcc_debug_fix_forw(mcc_state, type); }
@@ -7417,7 +7504,9 @@ static void gen_complex_op(int op) { MCC_TRACE("enter\n");
 	int amix, bmix, mix;
 
 	cplx = is_complex_type(&vtop[-1].type) ? vtop[-1].type : vtop[0].type;
+	cplx.t &= ~VT_QUALIFY;
 	base = cplx.ref->next->type;
+	base.t &= ~VT_QUALIFY;
 
 	amix = !is_complex_type(&vtop[-1].type);
 	bmix = !is_complex_type(&vtop[0].type);
@@ -8994,6 +9083,7 @@ static void parse_atomic(int atok) { MCC_TRACE("enter\n");
 			gen_assign_cast(atom_ptr);
 			break;
 		case 'v':
+			verify_assign_readonly(atom);
 			if (is_add_sub && (atom->t & VT_BTYPE) == VT_PTR) { MCC_TRACE("br\n");
 				int al;
 				vpush_type_size(pointed_type(atom), &al);
@@ -9004,6 +9094,7 @@ static void parse_atomic(int atok) { MCC_TRACE("enter\n");
 		case 'l':
 			if (use_generic)
 				{ MCC_TRACE("br\n"); break; }
+			verify_assign_readonly(atom);
 			indir();
 			gen_assign_cast(atom);
 			break;
@@ -11616,7 +11707,8 @@ tok_next:
 		cstr_cat(&tokcstr, funcname, 0);
 		tokc.str.size = tokcstr.size;
 		tokc.str.data = tokcstr.data;
-		goto case_TOK_STR;
+		t = char_type.t | VT_CONSTANT;
+		goto str_init;
 	case TOK_U16STR:
 		t = VT_SHORT | VT_UNSIGNED;
 		goto str_init;
@@ -13438,6 +13530,7 @@ static void expr_eq(void) { MCC_TRACE("enter\n");
 	if ((t = tok) == '=' || TOK_ASSIGN(t)) { MCC_TRACE("br\n");
 		was_assign = 1;
 		test_lvalue();
+		verify_assign_readonly(&vtop->type);
 		if (mcc_state->do_asan_shadow)
 			{ MCC_TRACE("br\n"); gen_asan_mark_write(); }
 		if (vtop->r & VT_NONLVAL)
@@ -15912,9 +16005,21 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 
 	if (type->t & VT_VLA) { MCC_TRACE("br\n");
 		int a;
+		int vla_empty_init = 0;
 
-		if (has_init)
-			{ MCC_TRACE("br\n"); mcc_error("variable length array cannot be initialized"); }
+		if (has_init) { MCC_TRACE("br\n");
+			if (tok == '{') { MCC_TRACE("br\n");
+				next();
+				if (tok == '}') { MCC_TRACE("br\n");
+					next();
+					vla_empty_init = 1;
+					if (mcc_state->cversion < 202311)
+						{ MCC_TRACE("br\n"); mcc_pedantic("empty initializer braces are a C23 feature"); }
+				}
+			}
+			if (!vla_empty_init)
+				{ MCC_TRACE("br\n"); mcc_error("variable length array cannot be initialized"); }
+		}
 
 		if (nb_vla_open < VLA_TRACK_MAX)
 			{ MCC_TRACE("br\n"); vla_open_birth[nb_vla_open++] = ++vla_seq; }
@@ -15949,6 +16054,19 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		cur_scope->vla.num++;
 		rir_hook_vla_alloc_end(type, addr, vla_new_save, cur_scope->vla.locorig, a,
 																	 vla_res_slot);
+		if (vla_empty_init) { MCC_TRACE("br\n");
+			int za;
+			vpush_helper_func(TOK_memset);
+			vset(&char_pointer_type, VT_LOCAL | VT_LVAL, addr);
+			vpushi(0);
+			vpush_type_size(type, &za);
+#if defined MCC_TARGET_ARM && defined MCC_ARM_EABI
+			vswap();
+#endif
+			rir_hook_call_begin();
+			gfunc_call(3);
+			rir_hook_call_effect_end();
+		}
 	} else if (is_vla_struct(type)) { MCC_TRACE("br\n");
 		int a;
 

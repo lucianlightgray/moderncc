@@ -434,6 +434,8 @@ class Runner:
                     rec["ref"] = v
                 if v == "ok":
                     rec["status"] = "XPASS_REFOK"
+                elif v == "badflag":
+                    rec["status"] = "REFSKIP"
             return self.emit(rec, base)
         if crc != 0:
             rec.update(status="ICE" if is_ice(crc, cerr) else "FAIL",
@@ -444,6 +446,8 @@ class Runner:
                 rec["ref"] = v
             if v == "reject":
                 rec["status"] = "REFFAIL"
+            elif v == "badflag":
+                rec["status"] = "REFSKIP"
             return self.emit(rec, base)
         if mode != "run":
             rec.update(status="PASS", stage="compile", rc=0)
