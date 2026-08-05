@@ -795,6 +795,53 @@ diagnosis; it is not `72fedcf1`.
 The small win32/osx deltas (0→2, 1→2, 0→3, 1→8) are the same `__builtin_expect` shape on
 other keys, plus that older 8-byte unit.
 
+### Fixed — and the fix costs a documented divergence from gcc/clang
+
+`nocode_wanted++` around the **discarded** operands, in `src/mccgen.c`: operand 2 of
+`__builtin_expect`, operands 2 and 3 of `__builtin_expect_with_probability`, and the
+optional operand 3 of `__builtin_assume_aligned`. Six lines. That is the idiom the file
+already uses two cases up, in `TOK_builtin_choose_expr`, for its discarded branch, and it
+works because `vcheck_cmp` (`mccgen.c:1444`) skips the `gv()` flush under
+`nocode_wanted`, while `save_reg_upstack` (`:1926`) returns early so operand 1 cannot be
+spilled either.
+
+**The obvious alternative does not work — do not re-try it.** Lifting operand 1 off the
+stack (`sv = *vtop; vtop--; … vpushv(&sv);`) crashes the compiler: `EXC_BAD_ACCESS` in
+`rir_decayed_array` (`src/mccrir.c:1194`) reading `sv->sym`, which for a `VT_CMP`
+`SValue` is the `cmp_op`/`cmp_r` union member and not a pointer. Re-pushing makes the RIR
+shadow stack refill the slot as a fresh leaf (`rir_reconcile_sv` → `rir_leaf_slot`), a
+path `VT_CMP` never reaches normally, and a raw `vtop--` is invisible to the capture
+journal so the replay stack desyncs.
+
+Measured, per file at native `-O1`: `arm64_extasm.c` **34 → 0**, `codeopt.c` **1 → 0**,
+`ternary_op.c` **2 → 1**. All 36 attributable units gone; `fn` unchanged everywhere, so
+nothing stopped compiling. Disassembly at every `-O` including `-O0` loses exactly the
+predicted twelve bytes:
+
+```
+head:  34: mov w1,#0 / 38: cmp w0,w1 / 3c: cset w0,ne / 40: cbnz w0
+fixed: 34: cbnz w0
+```
+
+`ast/rir-c2-{arm64-osx,arm64-win32,arm-win32,arm-wince}` now **pass** against the
+existing bank. Still red, all pre-existing and none of them `72fedcf1`: native
+`-O1`/`-O2`/`-O3` and `x86_64-osx`/`x86_64-win32` at gap 1 (the `x86_64` pair is
+`bytes=1`, a different failure kind from the `len` units this bug produced), and
+`i386-win32` at 7.
+
+**The divergence, stated plainly because an earlier note here had it backwards.** It is
+*not* true that gcc and clang require operand 2 to be a constant expression. Measured on
+this host with a side-effecting hint — `__builtin_expect(x != 0, f())`, `f` incrementing
+a counter — Apple clang and gcc-16 both accept it with **no diagnostic** and **do
+evaluate it**. mcc at `72fedcf1..HEAD` also evaluated it; with this fix it no longer
+does. Preserving those side effects is incompatible with keeping operand 1's `VT_CMP`
+unflushed — emitting operand 2's code while operand 1 is live is exactly what forces the
+flush — and the only way around that is the stack lift the RIR layer cannot represent.
+So the trade is: a redundant `cmp`+`cset` on every `assert()`, or dropping side effects
+on an operand GCC's own documentation calls a compile-time constant and that no corpus
+test exercises. The pessimization was judged the worse of the two. If a real program ever
+depends on that evaluation, this is the note to come back to.
+
 **The four glibc keys (`riscv64`, `arm`, `arm64`, `i386`) are not measurements at all
 on this host** and must never be banked from it: `vendor/` does not exist here, so
 `--sysroot=vendor/gentoo-stage3-<arch>-glibc` resolves to nothing, ~202 of 289 corpus
