@@ -6060,6 +6060,32 @@ linux/riscv64` fails with "exec format error". Clear the host entry
 Running the cells themselves does not need binfmt at all -- `run-tier.sh` invokes
 `qemu-<arch> -L <sysroot>` directly -- only *building* the sysroot does.
 
+### Two more one-predicate clusters closed
+
+**Null pointer constants (6 tests).** `is_null_pointer` accepted only `VT_INT` and
+`VT_LLONG` zeros, so `(char) 0`, `(short) 0`, `(long) 0` and `false` were rejected with
+`assignment makes pointer from integer without a cast`. C says *any* integer constant
+expression with value 0. One line: `is_integer_btype(...) && p->c.i == 0`, keeping the
+`VT_CONST` / `!VT_SYM` / `!VT_NONCONST` gate that is what makes it a *constant*
+expression. Closes `c11-null-pointer-constant-1`, `c23-null-pointer-constant-1`,
+`pr59717`, `pr67730-1`, `clang/test/Sema/c2x-bool`, `clang/test/CodeGen/nullptr`.
+
+**Attribute-declarations that appertain to nothing (10 XPASS).** `[[maybe_unused]];`
+was silently accepted: the empty-declaration pedwarn is suppressed by
+`adbase.had_attr`, and nothing took its place. C23 6.7 does have
+`attribute-declaration` in the grammar, so the fix is a diagnostic, not a rejection of
+the syntax.
+
+The severity is not uniform, and getting that wrong breaks a currently-passing test.
+A *standard* (unscoped) attribute in a position the standard does not allow is a
+constraint violation -- gcc errors under `-pedantic-errors`, which is what
+`c23-attr-{deprecated,maybe_unused,nodiscard,reproducible,unsequenced}-{2,4}` and
+`c23-attr-syntax-5` expect. A *scoped* vendor attribute (`[[gnu::const]];`) is merely
+ignored -- `c23-attr-syntax-2` carries `dg-warning` for exactly that and must still
+compile under `-pedantic-errors`. So `parse_c23_attribute_name` now reports whether the
+name was scoped, and the diagnostic is `mcc_pedantic` for unscoped, `mcc_warning` for
+scoped. A first pass that pedwarned both regressed `c23-attr-syntax-2`.
+
 ### C23 `u8` closed, and it exposed a signedness bug in `u`/`U` too
 
 `u8'a'` now lexes as its own token (`TOK_U8CHAR`) with type `unsigned char`, and

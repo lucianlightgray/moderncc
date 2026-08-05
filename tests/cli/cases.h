@@ -2076,6 +2076,14 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE \"unsupported option|WERROR_OK|WNO_OK|QUIET_OK\" | sort | uniq -c | sed 's/^ *//'",
 		 "1 QUIET_OK\n1 WERROR_OK\n1 WNO_OK\n2 unsupported option\n"},
 
+		{"attr_declaration_appertains_to_nothing", "",
+		 "printf '[[deprecated]];\\nint main(void){return 0;}\\n' > {W}/ad.c && "
+		 "printf '[[gnu::const]];\\nint main(void){return 0;}\\n' > {W}/av.c && "
+		 "{ {MCC} -B{B} -I{I} -std=c23 -pedantic-errors -c {W}/ad.c -o /dev/null 2>&1; "
+		 "{MCC} -B{B} -I{I} -std=c23 -pedantic-errors -c {W}/av.c -o /dev/null 2>&1 && echo VENDOR_OK; } | "
+		 "grep -oE \"attribute ignored|VENDOR_OK\" | sort | uniq -c | sed 's/^ *//'",
+		 "1 VENDOR_OK\n2 attribute ignored\n"},
+
 		{"fsyntax_only_no_output", "",
 		 "printf 'int main(void){return 0;}\\n' > {W}/so_ok.c && "
 		 "printf 'int main(void){ int 3x; }\\n' > {W}/so_bad.c && "

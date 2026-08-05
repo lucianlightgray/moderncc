@@ -3964,8 +3964,7 @@ static int pointed_size(CType *type) { MCC_TRACE("enter\n");
 static inline int is_null_pointer(SValue *p) { MCC_TRACE("enter\n");
 	if ((p->r & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) != VT_CONST)
 		{ MCC_TRACE("br\n"); return 0; }
-	return ((p->type.t & VT_BTYPE) == VT_INT && (uint32_t)p->c.i == 0) ||
-				 ((p->type.t & VT_BTYPE) == VT_LLONG && p->c.i == 0) ||
+	return (is_integer_btype(p->type.t & VT_BTYPE) && p->c.i == 0) ||
 				 ((p->type.t & VT_BTYPE) == VT_PTR &&
 					(MCC_PTR_SIZE == 4 ? (uint32_t)p->c.i == 0 : p->c.i == 0) &&
 					((pointed_type(&p->type)->t & VT_BTYPE) == VT_VOID) &&
@@ -5812,7 +5811,7 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 	}
 }
 
-static int parse_c23_attribute_name(void) { MCC_TRACE("enter\n");
+static int parse_c23_attribute_name(int *scoped) { MCC_TRACE("enter\n");
 	int t, n;
 
 	if (tok < TOK_IDENT)
@@ -5828,6 +5827,8 @@ static int parse_c23_attribute_name(void) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); expect("attribute name"); }
 			t = tok;
 			next();
+			if (scoped)
+				{ MCC_TRACE("br\n"); *scoped = 1; }
 		} else
 			{ MCC_TRACE("br\n"); unget_tok(n); }
 	}
@@ -5850,7 +5851,14 @@ redo:
 		next();
 		while (tok != ']') { MCC_TRACE("br\n");
 			if (tok == ',') { MCC_TRACE("br\n"); next(); continue; }
-			t = parse_c23_attribute_name();
+			{
+				int scoped = 0;
+				t = parse_c23_attribute_name(&scoped);
+				if (!ad->attr_tok) { MCC_TRACE("br\n");
+					ad->attr_tok = t;
+					ad->attr_scoped = scoped;
+				}
+			}
 			parse_one_attribute(ad, t);
 			if (tok != ',')
 				{ MCC_TRACE("br\n"); break; }
@@ -16711,8 +16719,19 @@ static int decl(int l) {
 			if (l == VT_JMP)
 				{ MCC_TRACE("br\n"); return 0; }
 			if (tok == ';' && l != VT_CMP) { MCC_TRACE("br\n");
-				if (l == VT_CONST && !adbase.had_attr)
-					{ MCC_TRACE("br\n"); mcc_pedantic("ISO C does not allow an empty declaration"); }
+				if (l == VT_CONST && !adbase.had_attr) { MCC_TRACE("br\n");
+					mcc_pedantic("ISO C does not allow an empty declaration");
+				} else if (adbase.had_attr && adbase.attr_tok) { MCC_TRACE("br\n");
+					if (adbase.attr_scoped)
+						{ MCC_TRACE("br\n"); mcc_warning("'%s' attribute ignored",
+																get_tok_str(adbase.attr_tok, NULL)); }
+					else { MCC_TRACE("br\n");
+						char abuf[128];
+						snprintf(abuf, sizeof abuf, "'%s' attribute ignored",
+										 get_tok_str(adbase.attr_tok, NULL));
+						mcc_pedantic(abuf);
+					}
+				}
 				next();
 				continue;
 			}
