@@ -5472,7 +5472,7 @@ guest of its own, so its slab only has to exist. Any new harness that `-run`s
 in program-created threads; wire `R_386_TLS_LE` to `run_tls_active`) — 14/14 both
 JIT tiers. arm, riscv64 and the PE triples still lack run-mode TLS.
 
-## OPEN (handoff): arm64-Windows dist self-host -- two PE bugs fixed, one import bug left
+## arm64-Windows dist self-host -- three defects fixed, pending final green (handoff)
 
 Nightly Dist (30986437707) went red on `windows-arm64-msvc` and `windows-arm64-mingw`,
 green on Aug 2 (30738246110, head `89a9103d`). stage1 (msvc/mingw-built) mcc is fine
@@ -5516,26 +5516,37 @@ them into the existing page block. Verified offline: 25 blocks, zero duplicate p
 four fields at `tlsdir+0/8/16/24` relocated; and an x86_64 build force-loaded via
 `LoadLibraryEx` relocates off its preferred base and still compiles.
 
-**OPEN -- defect 2, the import.** With the TLS fix the image now LOADS and initializes,
-then fails at static import resolution: **`0xC0000139` STATUS_ENTRYPOINT_NOT_FOUND** on
-`-c`, **`0xC0000135` STATUS_DLL_NOT_FOUND** on `-v`. Facts gathered:
-- The failing CI image imports only `msvcrt.dll` (91 syms) and `kernel32.dll` (63 syms),
-  and its import set is **byte-identical to a locally cross-built arm64 image that wine
-  runs** except the local one additionally imports msvcrt `_assert`. So it is not gross
-  IAT corruption -- some named import is not exported by the *real* arm64 `msvcrt.dll`
-  (wine's is a superset/stub), or an ordinal/name mcc emits is wrong for arm64.
-- Next step is already dispatched: run **31007294903** enables `FLG_SHOW_LDR_SNAPS` and
-  runs `mcc.exe` under cdb; its log should print the exact `LDR: ... not found` DLL +
-  entry point. Read it with `gh run view 31007294903 --log`. If the snaps step didn't
-  fire (no cdb on the image), set the same IFEO GlobalFlag and run bare -- the snaps go
-  to the debugger output, so a debugger must be attached, or use `ntsd`/gflags.
-- Likely suspects once named: an msvcrt symbol that exists on x64 but not arm64 msvcrt
-  (the arm64 CRT is leaner), or a name mcc's PE import path mangles. Compare the import
-  list against what a `cl`-built arm64 hello links from msvcrt. The emitter is
-  `pe_build_imports` in `src/objfmt/mccpe.c`; the runtime's declared imports are in
-  `runtime/win32`.
+**FIXED -- defect 2, the import (`f0eca60a`).** With the TLS fix the image LOADED and
+then failed at static import resolution: `0xC0000139` STATUS_ENTRYPOINT_NOT_FOUND on
+`-c`, `0xC0000135` on `-v`. The `FLG_SHOW_LDR_SNAPS` run (31007294903) named it exactly:
+`LdrpReportError: Locating export "_getpid" for DLL "...mcc.exe" failed`. **arm64
+`msvcrt.dll` does not export `_getpid`**; a static import of it makes the whole image
+unloadable (LdrpSnapModule raises before `main`). The only Win32 use was the JIT
+perf-map filename in `mccjit_perf_map_path` (`src/mccjit_embed.c`); switched to
+`GetCurrentProcessId` (a kernel32 export on every arch, already imported). The
+`mccstats.c` `getpid()` calls are `MCC_HOST_POSIX`-gated and never reach the PE.
+Verified the emitted arm64 image no longer imports `_getpid` and still loads under
+wine-arm64.
 
-Coverage note: the Dist nightly and this debug workflow are the only arm64-Windows
+**Status:** all three defects fixed on `main`; the last verification dist run on
+`windows-11-arm` (via `arm64-crash-debug.yml`) is what confirms stage2 compiles the
+runtime end to end. When that stage2 goes green: **(1)** delete
+`.github/workflows/arm64-crash-debug.yml`, and **(2)** the real `dist.yml`
+windows-arm64 legs should pass on their own -- no dist.yml change was needed (every fix
+is in mcc's own source). If a fresh-binary "Access is denied" flake recurs on that
+runner (it did once, transiently, 370ms after the link -- realtime scanner, not the
+image), add `Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE` to the dist windows
+job; it was not needed on the clean runs.
+
+General lesson for arm64-PE: the arm64 CRT is leaner than x64's. Any msvcrt import mcc
+emits must exist there; prefer a kernel32 equivalent (`GetCurrentProcessId`,
+`GetSystemTimeAsFileTime`, ...) over an msvcrt CRT helper on the Win32 path. The import
+emitter is `pe_build_imports` in `src/objfmt/mccpe.c`; runtime import decls live under
+`runtime/win32`. The `FLG_SHOW_LDR_SNAPS` + cdb recipe in `arm64-crash-debug.yml` names
+any future missing export directly.
+
+Coverage note: the Dist nightly and that debug workflow are the only arm64-Windows
 signals; `run-tier`'s `arm64-win32` row is `mcc_skip_test` (no in-tree runner). Wiring
-the wine-arm64 docker path above into a real cell would give a cheap always-on gate for
-defect-1-class loader bugs (not defect-2, which wine masks).
+the wine-arm64-under-docker path into a real cell would give a cheap always-on gate for
+loader/format bugs (defects 1 and 3) -- it would NOT have caught defect 2, since wine's
+msvcrt exports `_getpid`.
