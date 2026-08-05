@@ -4635,6 +4635,8 @@ static inline int *macro_twosharps(const int *ptr0) { MCC_TRACE("enter\n");
 			ptr += n;
 			while ((t2 = *++ptr) == ' ' || t2 == TOK_PPJOIN)
 				;
+			if (t2 == 0)
+				{ MCC_TRACE("br\n"); break; }
 			TOK_GET(&t2, &ptr, &cv2);
 			if (t2 == TOK_PLCHLDR)
 				{ MCC_TRACE("br\n"); continue; }
@@ -4663,9 +4665,9 @@ static inline int *macro_twosharps(const int *ptr0) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); break; }
 				tok_str_add(&macro_str1, ' ');
 				l = file->buf_ptr - file->buffer;
-				mcc_warning("pasting \"%.*s\" and \"%s\" does not give a valid"
-										" preprocessing token",
-										l - n, file->buffer + n, file->buf_ptr);
+				mcc_error_noabort("pasting \"%.*s\" and \"%s\" does not give a valid"
+													" preprocessing token",
+													l - n, file->buffer + n, file->buf_ptr);
 			}
 			mcc_close();
 			cstr_reset(&tokcstr);
