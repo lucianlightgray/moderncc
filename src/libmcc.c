@@ -2914,6 +2914,10 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			if (s->outfile) { MCC_TRACE("br\n");
 				mcc_warning("multiple -o option");
 			}
+#if MCC_HOST_WIN32
+			if (!strcmp(optarg, "/dev/null"))
+				optarg = "NUL";
+#endif
 			mcc_set_str(&s->outfile, optarg);
 			break;
 		case MCC_OPTION_r:
