@@ -3189,6 +3189,8 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 
 	if (*s == 'L' || *s == 'u' || *s == 'U' || *s == '8')
 		{ MCC_TRACE("br\n"); prefix = *s++, --len; }
+	if (prefix == 'u' && *s == '8')
+		{ MCC_TRACE("br\n"); prefix = '8', ++s, --len; }
 	is_long = (prefix == 'L' || prefix == 'u' || prefix == 'U');
 	sep = *s++;
 	len -= 2;
@@ -3238,7 +3240,7 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 				if (is_long)
 					{ MCC_TRACE("br\n"); c = ((nwchar_t *)tokcstr.data)[i]; }
 				else if (n == 1)
-					{ MCC_TRACE("br\n"); c = mcc_state->char_is_unsigned ? ((unsigned char *)tokcstr.data)[i] : ((char *)tokcstr.data)[i]; }
+					{ MCC_TRACE("br\n"); c = (mcc_state->char_is_unsigned || prefix == '8') ? ((unsigned char *)tokcstr.data)[i] : ((char *)tokcstr.data)[i]; }
 				else
 					{ MCC_TRACE("br\n"); c = (c << 8) | ((unsigned char *)tokcstr.data)[i]; }
 			}
@@ -4085,6 +4087,12 @@ redo_no_start:
 			str_prefix = '8';
 			goto str_const;
 		}
+		if (p[1] == '8' && p[2] == '\'' && mcc_state->cversion >= 202311) { MCC_TRACE("br\n");
+			p += 2;
+			c = *p;
+			str_prefix = '8';
+			goto str_const;
+		}
 		if (p[1] == '\'' || p[1] == '\"') { MCC_TRACE("br\n");
 			pp_c11_prefix_pedantic("the 'u' character/string prefix");
 			PEEKC(c, p);
@@ -4187,7 +4195,9 @@ redo_no_start:
 		str_prefix = 0;
 	str_const:
 		cstr_reset(&tokcstr);
-		if (str_prefix)
+		if (str_prefix == '8')
+			{ MCC_TRACE("br\n"); cstr_ccat(&tokcstr, 'u'), cstr_ccat(&tokcstr, '8'); }
+		else if (str_prefix)
 			{ MCC_TRACE("br\n"); cstr_ccat(&tokcstr, str_prefix); }
 		cstr_ccat(&tokcstr, c);
 		p = parse_pp_string(p, c, &tokcstr);

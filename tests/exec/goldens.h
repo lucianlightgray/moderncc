@@ -48,6 +48,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"digraphs", "run", "exec/lexical/digraphs.c", "20 1 4\n", "", "", ""},
 		{"trigraphs", "run", "exec/lexical/trigraphs.c", "OK\n", "-trigraphs", "", ""},
 		{"u8_string", "run", "exec/lexical/u8_string.c", "OK\n", "", "", ""},
+		{"u8_char", "run", "exec/lexical/u8_char.c", "OK\n", "-std=c23", "", ""},
 		{"string_concat_mixed", "run", "exec/lexical/string_concat_mixed.c", "OK\n", "", "", ""},
 		{"uU_char_constants", "run", "exec/lexical/uU_char_constants.c", "OK\n", "", "", ""},
 		{"ucn_identifiers", "run", "exec/lexical/ucn_identifiers.c", "OK\n", "", "", ""},
