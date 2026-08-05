@@ -881,6 +881,40 @@ failure shape the script's own sysroot guard was written for.
 Still to do: re-bank `tests/ast/o0-baseline/` at HEAD on an x86_64 Linux host —
 neither this Mac nor an emulated container should be the machine that banks it.
 
+## Unresolved: `selfhost-fixpoint-memmodel-{O3,Os}` SIGSEGV'd once under heavy load (2026-08-05)
+
+A `macos-cross` verification run at `03d2f67a` came back **8443/8445**, with
+`selfhost-fixpoint-memmodel-O3` and `-Os` failing. Recorded because it has not been
+explained, not because it is believed to be a live defect.
+
+Both died the same way: `tools/selfhost-fixpoint.py` **stage2** — `mcc1` compiling
+`src/mcc.c` — exited on **SIGSEGV**, at ~2.5 s against a normal ~5.5 s, i.e. mid-compile
+rather than at the byte comparison. `selfhost-fixpoint-memmodel-O2` and all five plain
+`selfhost-fixpoint*` variants passed in the same run, and the same three cells are green
+in the plain `macos` junit from the same afternoon (`tests=8284 failures=0`).
+
+**It does not reproduce.** 4/4, then `--repeat until-fail:10` over both cells (20/20),
+then a load-reproduction attempt at `-j8` alongside `fuzz/smoke` and both
+`selfhost-output-parity` jobs (14/14, 28 minutes). 38 clean re-runs, no recurrence. The
+script uses a fresh `TemporaryDirectory` per invocation and shares no state, so it is not
+filesystem interference between cells.
+
+Two candidate causes, neither confirmed:
+
+1. **Memory/CPU pressure.** The two crashed while `fuzz/smoke` (362 s) and both
+   `selfhost-output-parity` jobs (437 s each) were resident under `-j8`. An unchecked
+   allocation failure or a marginal stack depth in mcc fits the shape.
+2. **A mid-edit source tree.** The run was concurrent with other work, and `src/mccgen.c`
+   — which `src/mcc.c` amalgamates — was written at 15:10:56 while the suite ran to
+   15:21:28. `mcc1` compiling a half-written amalgamation would crash exactly here. The
+   re-runs above all recompile `src/mcc.c` from the tree and pass, which is consistent
+   with this and is what makes it the more likely of the two.
+
+**The orchestration hazard is the durable lesson**: giving parallel workers separate
+*build directories* is not enough, because `selfhost-*` and `mcctest` compile the live
+`src/` tree. Anything that edits sources must not overlap a self-host run. If this
+recurs on an idle machine with a clean tree, it is a real defect and wants a core dump.
+
 ## Closed — the Windows-host preset sweep completed 2026-08-05 at `740da411`
 
 The full presets-x-tests sweep on the Windows x86_64 host (VS 18 `cl.exe` 19.51 for
