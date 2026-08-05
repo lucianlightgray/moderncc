@@ -93,6 +93,7 @@ An absolute size quoted from a worktree cost one agent a false discrepancy hunt.
 
 `72fedcf1` four semantic gaps (board 471 → 449) · `7a31e90b` uninitialised `is_label`
 · `d50c480d` bitfield side-car · `7bded795` `VT_BTYPE` widened to 5 bits ·
+`2bcd21d9` width-64 bitfields are `VT_BITFIELD` ·
 `2217535a` riscv64 `-run` veneer, arm64 `svc`, arm asm register numbering ·
 `66df3c7e` the `run-tier` tier · plus the qemu-user bootstrap that made
 `run-parity-arm`/`-arm64`/`-riscv64` execute at all.
@@ -109,9 +110,15 @@ An absolute size quoted from a worktree cost one agent a false discrepancy hunt.
 2. **`__bf16`** — the type word is no longer the blocker. Slots 16-31 are free. What
    remains is the encode/decode helper and per-backend ABI. **Do not alias it onto
    `_Float16`**: they differ only in the helper, so an alias miscompiles silently.
-3. **Width-64 bitfields are never marked `VT_BITFIELD`** (`mccgen.c:6559`), the source
-   of all ten gcc/clang bitfield deviations. The six-bit ceiling that forced it is gone;
-   lifting it is now a layout change that needs its own differential.
+3. **`__attribute__((aligned(N)))` on a bitfield member rounds to the member's
+   *natural* alignment, not to `N`** — the only bitfield layout deviation left after
+   `2bcd21d9`, and it is now the whole residue: 139 failing structs out of 32,000
+   generated shapes, every one of them carrying that attribute. `struct { int a:3;
+   int b:4 __attribute__((aligned(2))); }` is 4 bytes under gcc and clang and 8 under
+   mcc. In `struct_layout` the member-level `a` only replaces `align` when
+   `a > align` (or the field is packed), so the `new_field` rounding at
+   `mccgen.c:5987` uses `align` = 4 where gcc uses 2. Reducing alignment below
+   natural is the case that diverges; raising it already agrees.
 4. **riscv64 aborts on every mixed int/float two-register struct return** —
    `arch_transfer_ret_regs` asserts `vtop->r == (VT_LOCAL | VT_LVAL)`, failing 7 of 37
    shapes. A hard abort, not a miscompile.
@@ -5369,7 +5376,10 @@ over a 1,205-struct corpus, **zero board movement across 47,715 tests**.
 3. **Width-64 bitfields are deliberately not marked `VT_BITFIELD`** (`mccgen.c:6559`)
    because six bits cannot hold 64. That single special case is the source of **all ten**
    pre-existing gcc/clang deviations. `unsigned char bs` removes the ceiling; lifting the
-   case is left to a change allowed to move layout.
+   case is left to a change allowed to move layout. **Lifted by `2bcd21d9` — see step 3
+   below.** The "all ten" reading was close but not exact: it was two arms rather than
+   one, and the `&s.x` deviation it was also blamed for is width-independent and remains
+   open.
 
 ### The copy-by-`t`-alone hazard was ~100 sites, not 21
 
@@ -5590,6 +5600,82 @@ clang 22 on the native target too.
    `load` matches. This is the same class as the bug that cost a cross-tier failure,
    one mask narrower. `SValue.r` is a different namespace from the type word and was
    not renumbered, so this is unrelated to step 2 — but it is still wrong.
+
+---
+
+## Width-64 bitfields are `VT_BITFIELD` — step 3, `2bcd21d9`, 2026-08-05
+
+The side-car's premise (3) is now paid off. `struct_decl` held **two** arms that
+dropped a width-64 declaration, not one: the full-width arm refused to set `late_bf`
+when `bit_size == 64`, and a dedicated `else if (bit_size == 64) ;` swallowed
+everything else. Both existed only because the old six-bit pos/size field could not
+represent 64. Deleting them is the whole layout fix; the member now takes the ordinary
+route.
+
+### What it actually cost, and what it did not
+
+The member came out as a plain `long long`, so it was **byte-aligned in every packed
+context** where gcc and clang bit-pack it. `struct __attribute__((packed)) { unsigned
+a:3; unsigned long long x:64; unsigned b:5; }` was **10 bytes with `x` at bit 24**;
+gcc and clang give **9 bytes with `x` at bit 3**. Same divergence under `#pragma pack`,
+a member-level `packed`, and a struct-level `packed` written *after* the body (the
+`late_bf` path).
+
+Nothing moved in the **unpacked** case — a full-width unpacked bitfield still routes
+through `late_bf` and stays a plain member, exactly as a width-32 one does. That is
+deliberate: `late_bf` exists so a struct-level `packed` appearing after the body can
+still promote it, and the unpacked layout must not move.
+
+**The `&s.x` deviation is not this bug and did not close.** mcc accepts
+`&a.x` on *any* full-width unpacked bitfield — `unsigned x:32` behaves identically —
+because such a member is not `VT_BITFIELD` at all. That is the `late_bf` design, it is
+width-independent, and closing it means giving `late_bf` members a marker that survives
+into `unary`. Separate task.
+
+### The one site that could not survive a 64
+
+`vstore`'s single-unit mask was `(1ULL << bit_size) - 1` — **undefined at 64**, and it
+is reached whenever the width-64 field's bit position *is* 64-aligned. Now `~0ULL` for
+that width. Everything else was already width-clean, verified by reading rather than
+by testing: `bp`/`bs` are `unsigned char` end to end (including `AstArena::type_bs`,
+the JIT intent blob's `(bs << 8)` pack, and `rir_xt_bs`), `bf_operand_bits`'s callers
+already tested `bs > 32` and `< 64`, `struct_layout`'s second pass sends a width-64
+field whose bit position is not 64-aligned down the byte-wise `VT_STRUCT` path, and
+`init_putv`'s static-initializer loop never shifts by more than 63.
+
+**`MCCJIT_INTENT_FORMAT` was deliberately not bumped.** The type-word *encoding* did
+not change — only which declarations produce a `VT_BITFIELD`. And the blob is baked
+into the user's `.data` by `--embed-jit` alongside the engine that reads it, from one
+compiler build, so there is no cross-version staleness for a format number to catch.
+
+### The gate: a generated differential, because the hand corpus cannot see this
+
+`tests/exec/structs_unions/bitfields.c` is green on the broken compiler — it has no
+width-64 field. The gate that found and bounded this was generated: 400 random struct
+shapes per seed over 80 seeds (types `int`/`unsigned`/`short`/`unsigned short`/`char`/
+`signed char`/`long long`/`unsigned long long`/`_Bool`, widths 0…64 including plain
+members, and `plain`/`packed`-before/`packed`-after/`#pragma pack(1|2|4)`/member-
+`packed`/`aligned(N)`), each struct compared for `sizeof`, `_Alignof`, the **whole byte
+image** after a distinct write per field, and a read-back of every field, against
+gcc 15 and clang 22 — with any seed where gcc and clang disagree with *each other*
+discarded rather than adjudicated.
+
+Failing structs **409 → 139 out of ~32,000, with zero newly failing structs**. All 139
+survivors carry `aligned(N)` on a bitfield member; that is open item 3 now. Re-measured
+identically under `-mms-bitfields`: unchanged, no regressions (that mode is already
+heavily divergent from gcc-on-Linux for unrelated reasons, so it is a regression check
+only, not a correctness one).
+
+The generator is at `scratchpad/gen.py` with `classify.sh`/`resid.sh`. **Keep the
+gcc-vs-clang discard** — without it the sweep reports about one spurious seed in six.
+
+The landed regression test is `exec/bitfield_width64` (a `run` golden printing `OK`,
+so the `diff3` cell holds it against gcc and clang too). It asserts `sizeof`/`_Alignof`
+and byte images for the packed shapes, and value round-trips including a signed
+`long long : 64`. It fails on the pre-fix compiler with six mismatches. Byte-image
+checks are guarded by a runtime little-endian probe and no `sizeof` of an unpacked
+`long long` container is asserted, so i386's 4-byte `long long` alignment does not
+break it.
 
 ---
 
