@@ -22,6 +22,12 @@ static int tok_line_num;
 static struct BufferedFile *tok_line_file;
 static int tok_va_opt;
 
+static int tok_has_attribute;
+static int tok_has_c_attribute;
+static int tok_has_builtin;
+static int tok_has_feature;
+static int tok_has_extension;
+
 static int tok_c23_bool;
 static int tok_c23_true;
 static int tok_c23_false;
@@ -1967,19 +1973,40 @@ static int pp_builtin_func(int v) { MCC_TRACE("enter\n");
 				 !strcmp(n, "__is_target_environment");
 }
 
-static int pp_has_builtin_arg(void) { MCC_TRACE("enter\n");
+static int pp_has_builtin_arg(int v) { MCC_TRACE("enter\n");
+	static const char * const untokenized[] = {
+		"__builtin_va_start", "__builtin_c23_va_start", "__builtin_va_arg",
+		"__builtin_va_end", "__builtin_va_copy", "__builtin_va_list"
+	};
 	const char *n;
-	if (tok < TOK_IDENT)
+	size_t i;
+
+	if (v < TOK_IDENT)
 		{ MCC_TRACE("br\n"); return 0; }
-	n = get_tok_str(tok, NULL);
+	n = get_tok_str(v, NULL);
 	if (strncmp(n, "__builtin_", 10))
 		{ MCC_TRACE("br\n"); return 0; }
-	if (tok > TOK_LAST && tok < TOK_PREDEF_END)
+	if (v > TOK_LAST && v < TOK_PREDEF_END)
 		{ MCC_TRACE("br\n"); return 1; }
-	return define_find(tok) != NULL;
+	for (i = 0; i < sizeof untokenized / sizeof untokenized[0]; i++) { MCC_TRACE("br\n");
+		if (!strcmp(n, untokenized[i]))
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return define_find(v) != NULL;
 }
 
-static int pp_has_attribute_arg(void) { MCC_TRACE("enter\n");
+static const char *pp_attr_canon(const char *n, char *buf, size_t bufsize) { MCC_TRACE("enter\n");
+	size_t l = strlen(n);
+	if (l > 4 && n[0] == '_' && n[1] == '_' && n[l - 1] == '_' && n[l - 2] == '_' &&
+			l - 4 < bufsize) { MCC_TRACE("br\n");
+		memcpy(buf, n + 2, l - 4);
+		buf[l - 4] = '\0';
+		return buf;
+	}
+	return n;
+}
+
+static int pp_attr_in_table(const char *n) { MCC_TRACE("enter\n");
 	static const char * const attrs[] = {
 		"alias", "aligned", "always_inline", "cdecl", "cleanup", "const",
 		"constructor", "deprecated", "destructor", "dllexport", "dllimport",
@@ -1989,25 +2016,125 @@ static int pp_has_attribute_arg(void) { MCC_TRACE("enter\n");
 		"thiscall", "transparent_union", "unsequenced", "unused", "used",
 		"vector_size", "visibility", "weak"
 	};
-	char buf[64];
-	const char *n;
-	size_t l, i;
-
-	if (tok < TOK_IDENT)
-		{ MCC_TRACE("br\n"); return 0; }
-	n = get_tok_str(tok, NULL);
-	l = strlen(n);
-	if (l > 4 && n[0] == '_' && n[1] == '_' && n[l - 1] == '_' && n[l - 2] == '_' &&
-			l - 4 < sizeof buf) { MCC_TRACE("br\n");
-		memcpy(buf, n + 2, l - 4);
-		buf[l - 4] = '\0';
-		n = buf;
-	}
+	size_t i;
 	for (i = 0; i < sizeof attrs / sizeof attrs[0]; i++) { MCC_TRACE("br\n");
 		if (!strcmp(n, attrs[i]))
 			{ MCC_TRACE("br\n"); return 1; }
 	}
 	return 0;
+}
+
+static int pp_attr_std_value(const char *n) { MCC_TRACE("enter\n");
+	static const char * const std[] = {
+		"deprecated", "fallthrough", "maybe_unused", "nodiscard", "noreturn",
+		"reproducible", "unsequenced"
+	};
+	size_t i;
+	if (!strcmp(n, "_Noreturn"))
+		{ MCC_TRACE("br\n"); return 202311; }
+	for (i = 0; i < sizeof std / sizeof std[0]; i++) { MCC_TRACE("br\n");
+		if (!strcmp(n, std[i]))
+			{ MCC_TRACE("br\n"); return 202311; }
+	}
+	return 0;
+}
+
+static int pp_has_attribute_arg(int v) { MCC_TRACE("enter\n");
+	char buf[64];
+
+	if (v < TOK_IDENT)
+		{ MCC_TRACE("br\n"); return 0; }
+	return pp_attr_in_table(pp_attr_canon(get_tok_str(v, NULL), buf, sizeof buf));
+}
+
+static int pp_has_feature_arg(int v, int strict) { MCC_TRACE("enter\n");
+	static const char * const always[] = {
+		"attribute_deprecated_with_message", "attribute_unavailable_with_message",
+		"enumerator_attributes", "tls"
+	};
+	static const char * const only_ext[] = {
+		"gnu_asm_goto_with_outputs", "gnu_asm_goto_with_outputs_full"
+	};
+	static const char * const c11[] = {
+		"c_alignas", "c_alignof", "c_atomic", "c_generic_selections",
+		"c_static_assert", "c_thread_local"
+	};
+	MCCState *s1 = mcc_state;
+	char buf[64];
+	const char *n;
+	size_t i;
+
+	if (v < TOK_IDENT)
+		{ MCC_TRACE("br\n"); return 0; }
+	n = pp_attr_canon(get_tok_str(v, NULL), buf, sizeof buf);
+	if (s1->pedantic_errors)
+		{ MCC_TRACE("br\n"); strict = 1; }
+	for (i = 0; i < sizeof always / sizeof always[0]; i++) { MCC_TRACE("br\n");
+		if (!strcmp(n, always[i]))
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	for (i = 0; i < sizeof only_ext / sizeof only_ext[0]; i++) { MCC_TRACE("br\n");
+		if (!strcmp(n, only_ext[i]))
+			{ MCC_TRACE("br\n"); return !strict; }
+	}
+	for (i = 0; i < sizeof c11 / sizeof c11[0]; i++) { MCC_TRACE("br\n");
+		if (!strcmp(n, c11[i]))
+			{ MCC_TRACE("br\n"); return !strict || s1->cversion >= 201112; }
+	}
+	if (!strcmp(n, "cxx_binary_literals"))
+		{ MCC_TRACE("br\n"); return !strict || s1->cversion >= 202311; }
+	if (!strcmp(n, "address_sanitizer"))
+		{ MCC_TRACE("br\n"); return !!s1->do_sanitize_address; }
+	if (!strcmp(n, "undefined_behavior_sanitizer"))
+		{ MCC_TRACE("br\n"); return !!s1->do_sanitize_undefined; }
+	return 0;
+}
+
+static int pp_builtin_macro(int v) { MCC_TRACE("enter\n");
+	return v == tok_has_attribute || v == tok_has_c_attribute ||
+				 v == tok_has_builtin || v == tok_has_feature ||
+				 v == tok_has_extension;
+}
+
+static int pp_builtin_value(int v, const int *args) { MCC_TRACE("enter\n");
+	char nbuf[64], sbuf[64];
+	CValue cv;
+	const char *n;
+	int t, scope = 0, name = 0, c;
+
+	for (;;) { MCC_TRACE("br\n");
+		TOK_GET(&t, &args, &cv);
+		if (t == 0 || t == TOK_EOF)
+			{ MCC_TRACE("br\n"); break; }
+		if (t == ' ')
+			{ MCC_TRACE("br\n"); continue; }
+		if (t == ':') { MCC_TRACE("br\n");
+			if (name)
+				{ MCC_TRACE("br\n"); scope = name, name = 0; }
+			continue;
+		}
+		if (t >= TOK_IDENT && !name)
+			{ MCC_TRACE("br\n"); name = t; }
+	}
+
+	if (v == tok_has_builtin)
+		{ MCC_TRACE("br\n"); return pp_has_builtin_arg(name); }
+	if (v == tok_has_feature)
+		{ MCC_TRACE("br\n"); return pp_has_feature_arg(name, 1); }
+	if (v == tok_has_extension)
+		{ MCC_TRACE("br\n"); return pp_has_feature_arg(name, 0); }
+	if (name < TOK_IDENT)
+		{ MCC_TRACE("br\n"); return 0; }
+	n = pp_attr_canon(get_tok_str(name, NULL), nbuf, sizeof nbuf);
+	if (scope >= TOK_IDENT) { MCC_TRACE("br\n");
+		if (strcmp(pp_attr_canon(get_tok_str(scope, NULL), sbuf, sizeof sbuf), "gnu"))
+			{ MCC_TRACE("br\n"); return 0; }
+		return pp_attr_in_table(n);
+	}
+	c = pp_attr_std_value(n);
+	if (c || v == tok_has_c_attribute)
+		{ MCC_TRACE("br\n"); return c; }
+	return pp_attr_in_table(n);
 }
 
 static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
@@ -2088,28 +2215,18 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 			goto c_number;
 		} else if (pp_builtin_func(tok)) { MCC_TRACE("br\n");
 			int depth = 1;
-			int want_builtin = !strcmp(get_tok_str(tok, NULL), "__has_builtin");
-			int want_attr = !strcmp(get_tok_str(tok, NULL), "__has_attribute");
-			int first = 1;
 			c = 0;
 			next();
 			if (tok != '(')
 				{ MCC_TRACE("br\n"); expect("'('"); }
 			while (depth) { MCC_TRACE("br\n");
-				if (want_builtin)
-					{ MCC_TRACE("br\n"); next_nomacro(); }
-				else
-					{ MCC_TRACE("br\n"); next(); }
+				next();
 				if (tok == TOK_EOF || tok == TOK_LINEFEED)
 					{ MCC_TRACE("br\n"); expect("')'"); }
 				if (tok == '(')
 					{ MCC_TRACE("br\n"); depth++; }
 				else if (tok == ')')
 					{ MCC_TRACE("br\n"); depth--; }
-				else if (first && (want_builtin || want_attr)) { MCC_TRACE("br\n");
-					c = want_builtin ? pp_has_builtin_arg() : pp_has_attribute_arg();
-					first = 0;
-				}
 			}
 			goto c_number;
 		} else { MCC_TRACE("br\n");
@@ -4749,6 +4866,68 @@ static int next_argstream(Sym **nested_list, TokenString *ws_str) { MCC_TRACE("e
 	}
 }
 
+static void pp_builtin_subst(
+		TokenString *tok_str,
+		Sym **nested_list,
+		int v) { MCC_TRACE("enter\n");
+	int saved_parse_flags = parse_flags;
+	TokenString ws, args;
+	CValue cval;
+	char buf[32];
+	int t, parlevel, i, c;
+
+	parse_flags |= PARSE_FLAG_SPACES | PARSE_FLAG_LINEFEED | PARSE_FLAG_ACCEPT_STRAYS;
+	tok_str_new(&ws);
+	t = next_argstream(nested_list, &ws);
+	if (t != '(') { MCC_TRACE("br\n");
+		parse_flags = saved_parse_flags;
+		tok_str_add2_spc(tok_str, v, 0);
+		if (parse_flags & PARSE_FLAG_SPACES)
+			{ MCC_TRACE("br\n"); for (i = 0; i < ws.len; i++)
+				{ MCC_TRACE("br\n"); tok_str_add(tok_str, ws.str[i]); } }
+		tok_str_free_str(ws.str);
+		return;
+	}
+	tok_str_free_str(ws.str);
+
+	tok_str_new(&args);
+	parlevel = 0;
+	i = 2;
+	do { MCC_TRACE("br\n");
+		t = next_argstream(nested_list, NULL);
+	} while (t == ' ' || --i);
+	while (parlevel > 0 || t != ')') { MCC_TRACE("br\n");
+		if (t == TOK_EOF)
+			{ MCC_TRACE("br\n"); mcc_error("EOF in invocation of macro '%s'",
+								get_tok_str(v, 0)); }
+		if (t == '(')
+			{ MCC_TRACE("br\n"); parlevel++; }
+		if (t == ')')
+			{ MCC_TRACE("br\n"); parlevel--; }
+		tok_str_add2_spc(&args, t, &tokc);
+		t = next_argstream(nested_list, NULL);
+	}
+	tok_str_add(&args, TOK_EOF);
+	parse_flags = saved_parse_flags;
+
+	if (v == tok_has_builtin) { MCC_TRACE("br\n");
+		c = pp_builtin_value(v, args.str);
+	} else { MCC_TRACE("br\n");
+		TokenString exp;
+		tok_str_new(&exp);
+		macro_subst(&exp, nested_list, args.str);
+		tok_str_add(&exp, TOK_EOF);
+		c = pp_builtin_value(v, exp.str);
+		tok_str_free_str(exp.str);
+	}
+	tok_str_free_str(args.str);
+
+	snprintf(buf, sizeof buf, "%d", c);
+	cval.str.size = strlen(buf) + 1;
+	cval.str.data = buf;
+	tok_str_add2_spc(tok_str, TOK_PPNUM, &cval);
+}
+
 static int macro_subst_tok(
 		TokenString *tok_str,
 		Sym **nested_list,
@@ -4757,6 +4936,10 @@ static int macro_subst_tok(
 	int v = s->v;
 
 	PP_PRINT(("#", v, s->d));
+	if (pp_builtin_macro(v)) { MCC_TRACE("br\n");
+		pp_builtin_subst(tok_str, nested_list, v);
+		return 0;
+	}
 	if (s->d) { MCC_TRACE("br\n");
 		int *mstr = s->d;
 		int *jstr;
@@ -5368,6 +5551,12 @@ ST_FUNC void mccpp_new(MCCState *s) { MCC_TRACE("enter\n");
 
 	tok_va_opt = tok_alloc_const("__VA_OPT__");
 
+	tok_has_attribute = tok_alloc_const("__has_attribute");
+	tok_has_c_attribute = tok_alloc_const("__has_c_attribute");
+	tok_has_builtin = tok_alloc_const("__has_builtin");
+	tok_has_feature = tok_alloc_const("__has_feature");
+	tok_has_extension = tok_alloc_const("__has_extension");
+
 	tok_c23_bool = tok_alloc_const("bool");
 	tok_c23_true = tok_alloc_const("true");
 	tok_c23_false = tok_alloc_const("false");
@@ -5382,6 +5571,11 @@ ST_FUNC void mccpp_new(MCCState *s) { MCC_TRACE("enter\n");
 	define_push(TOK___TIME__, MACRO_OBJ, NULL, NULL);
 	define_push(TOK___COUNTER__, MACRO_OBJ, NULL, NULL);
 	define_push(TOK___INCLUDE_LEVEL__, MACRO_OBJ, NULL, NULL);
+	define_push(tok_has_attribute, MACRO_FUNC, NULL, NULL);
+	define_push(tok_has_c_attribute, MACRO_FUNC, NULL, NULL);
+	define_push(tok_has_builtin, MACRO_FUNC, NULL, NULL);
+	define_push(tok_has_feature, MACRO_FUNC, NULL, NULL);
+	define_push(tok_has_extension, MACRO_FUNC, NULL, NULL);
 }
 
 ST_FUNC void mccpp_delete(MCCState *s) { MCC_TRACE("enter\n");

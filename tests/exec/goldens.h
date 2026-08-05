@@ -210,6 +210,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"macro_nesting", "run", "exec/preprocessor/macro_nesting.c", "42\n", "", "", ""},
 		{"macro_concat", "run", "exec/preprocessor/macro_concat.c", "jim: 21, bob: 42\njim: 63\n", "", "", ""},
 		{"paste_comma_swallow", "run", "exec/preprocessor/paste_comma_swallow.c", "OK\n", "", "", ""},
+		{"has_attribute_expr", "run", "exec/preprocessor/has_attribute_expr.c", "OK\n", "", "", ""},
 		{"floating_point_literals", "run", "exec/types/floating_point_literals.c", "0.123000\n122999996416.000000\n0.000000\n122999996416.000000\n\n123.123001\n123122997002240.000000\n0.000000\n123122997002240.000000\n\n123.000000\n123000003231744.000000\n0.000000\n123000003231744.000000\n\n123000003231744.000000\n0.000000\n123000003231744.000000\n\n\n428.000000\n0.000026\n428.000000\n4096.000000\n1099511627776.000000\n\n1756112.000000\n0.104672\n1756592.000000\n\n1753088.000000\n0.104492\n1753088.000000\n\n1753088.000000\n0.104492\n1753088.000000\n\n\n3424.000000\n0.000204\n3424.000000\n\n1756112.000000\n0.104672\n1756112.000000\n\n1753088.000000\n0.104492\n1753088.000000\n\n1753088.000000\n0.104492\n1753088.000000\n\n", "", "", ""},
 		{"macro_empty_arg", "run", "exec/preprocessor/macro_empty_arg.c", "17\n", "", "", ""},
 		{"long_long_constant", "run", "exec/types/long_long_constant.c", "long long constant test ok.\n", "", "", ""},
