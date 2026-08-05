@@ -5976,6 +5976,24 @@ linux/riscv64` fails with "exec format error". Clear the host entry
 Running the cells themselves does not need binfmt at all -- `run-tier.sh` invokes
 `qemu-<arch> -L <sysroot>` directly -- only *building* the sysroot does.
 
+### Newly surfaced by the qemu sysroots: `selfhost-qemu-{i386,arm}-O2`
+
+Building the qemu sysroots made two more cells runnable, and both fail -- **not a
+regression, a pre-existing capability gap** that simply had no runner before. Stage3
+dies compiling mcc's own `runtime/include/mccdefs.h:528`:
+
+```
+struct __uint128__ { char x[16]; } __attribute((__aligned__(16)));
+error: alignment of 16 is larger than implemented
+```
+
+`MCC_MAX_ALIGN` is **8** on exactly i386 (`i386-gen.h:41`) and arm (`arm-gen.h:96`), and
+16 on x86_64, arm64 and riscv64 -- precisely the set that fails versus passes. The
+declaration has been in `mccdefs.h` since `560371c4` (2026-06-28), so the gap predates
+this work. gcc supports `aligned(16)` on i386 by realigning the stack; mcc caps it.
+Lifting it is stack-realignment work in two backends, not a one-liner, and it is what
+blocks an i386/arm self-host at `-O2`.
+
 ## `-run` TLS on PE: the design, the traps, and why the first attempt was reverted
 
 **The two remaining red cells are `run-tier/{x86_64-win32,i386-win32}`**, `tls` and

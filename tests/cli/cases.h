@@ -2068,6 +2068,14 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE 'ignored|RUN_OK|QUIET_OK' | sort | uniq -c | sed 's/^ *//'",
 		 "1 QUIET_OK\n1 RUN_OK\n3 ignored\n"},
 
+		{"unknown_w_option_is_not_fatal", "",
+		 "printf 'int main(void){return 0;}\\n' > {W}/uw.c && "
+		 "{ {MCC} -B{B} -I{I} -Werror -Wno-error=made-up-warning -c {W}/uw.c -o /dev/null 2>&1 && echo WERROR_OK; "
+		 "{MCC} -B{B} -I{I} -Werror -Wno-made-up-warning -c {W}/uw.c -o /dev/null 2>&1 && echo WNO_OK; "
+		 "{MCC} -B{B} -I{I} -Wno-unsupported-option -Werror -c {W}/uw.c -o /dev/null 2>&1 && echo QUIET_OK; } | "
+		 "grep -oE \"unsupported option|WERROR_OK|WNO_OK|QUIET_OK\" | sort | uniq -c | sed 's/^ *//'",
+		 "1 QUIET_OK\n1 WERROR_OK\n1 WNO_OK\n2 unsupported option\n"},
+
 		{"fsyntax_only_no_output", "",
 		 "printf 'int main(void){return 0;}\\n' > {W}/so_ok.c && "
 		 "printf 'int main(void){ int 3x; }\\n' > {W}/so_bad.c && "

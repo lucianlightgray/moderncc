@@ -647,12 +647,18 @@ static void error1(int mode, const char *fmt, va_list ap) { MCC_TRACE("enter\n")
 	CString cs;
 	int line = 0;
 	int explicit_line = 0, bol_adj = 0;
+	int driver_note = 0;
 
 	mcc_exit_state(s1);
 
 	if (mode == ERROR_WARN) { MCC_TRACE("br\n");
 		int wopt = -1;
 		if (s1->warn_num) { MCC_TRACE("br\n");
+			driver_note =
+					s1->warn_num == (int)(offsetof(MCCState, warn_unsupported) -
+																offsetof(MCCState, warn_none)) ||
+					s1->warn_num == (int)(offsetof(MCCState, warn_unsupported_option) -
+																offsetof(MCCState, warn_none));
 			wopt = *(&s1->warn_none + s1->warn_num);
 			s1->warn_num = 0;
 		}
@@ -663,7 +669,7 @@ static void error1(int mode, const char *fmt, va_list ap) { MCC_TRACE("enter\n")
 			if (wf && wf->system_header)
 				{ MCC_TRACE("br\n"); return; }
 		}
-		if (s1->warn_error)
+		if (s1->warn_error && !driver_note)
 			{ MCC_TRACE("br\n"); mode = ERROR_ERROR; }
 		if (wopt >= 0) { MCC_TRACE("br\n");
 			if (0 == (wopt & WARN_ON))

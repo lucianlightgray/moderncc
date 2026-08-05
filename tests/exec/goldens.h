@@ -331,6 +331,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"c23_array_quals", "run", "exec/types/c23_array_quals.c", "OK\n", "-std=c23", "", ""},
 		{"attr_deprecated", "run", "exec/types/attr_deprecated.c", "OK\n", "-Wno-deprecated-declarations", "", ""},
 		{"struct_return_shapes", "run", "exec/functions_abi/struct_return_shapes.c", "OK\n", "", "", ""},
+		{"stdcountof_header", "run", "exec/types/stdcountof_header.c", "OK\n", "-std=c2y", "", "note:gcc 15 does not ship the C2y <stdcountof.h> yet, so the three-way consensus cannot include it; clang 22 and mcc both do"},
 };
 
 static const int mcc_goldens_count = (int)(sizeof mcc_goldens / sizeof mcc_goldens[0]);
