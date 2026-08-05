@@ -410,6 +410,16 @@ host-native self-host unmeasurable on this machine.
 | W7 | **The external suites cannot be run here at all** | `cmake-release` does not exist and no gcc/llvm test tree is vendored, so nothing under **External suites** or **Vector types** could be checked on this host. **Partly answered upstream**: `214ed40f` re-ran the whole tree and reports 82.6/82.4 over 20,513 tests — see **The eight-cluster sweep**. The gap that remains is that this host still cannot reproduce it. |
 | W8 | **`selfhost-jit` faults `0xC0000374` (STATUS_HEAP_CORRUPTION) on x86_64 Windows** | Live. `mcc --jit -O13 -run src/mcc.c` corrupts the heap during the in-memory recompile of its own source; basic JIT `-run` works and the same cell is green under `linux-gcc`/`linux-clang` in WSL, so this is Windows-PE-JIT-specific and in the same swapped-variant/KGC-stub residual family as the `0xC0000005` skip. `tools/selfhost-jit.py` now SKIPs `0xC0000374` alongside `0xC0000005`; the heap-corruption defect itself is still open and needs a `cdb`/PageHeap run to name the faulting allocation. |
 
+**Parity-sweep leak (host-independent):** `exec/star_vla_prototype` prints `OK` but
+leaks two 64-byte chunks (`src/mccpp.c:1144`, the `tokstr_alloc` backing store),
+caught only under `MCC_DIAG` so it surfaces in the `diagnostics` preset (23 cells)
+and nowhere else. The tokens are the saved `[n]` dimension expression: `parse_btype`
+stashes them on the VLA-ref sym as `sym->vla_array_str` (`src/mccgen.c:8649`), and
+`sym_free` (`src/mccgen.c:1275`) never releases it. A blind free there is unsafe --
+`vla_array_str` shares storage with other Sym fields and is only live when
+`type.t & VT_VLA` -- so the free belongs wherever a VLA-ref sym is retired with its
+type still in hand, not in the generic `sym_free`. Miscompile-free; low severity.
+
 **W4 and W5 above are live work on the Windows host — see the section below.** The
 preset sweep already closed the 8MB host-exe stack reserve and the `_WIN32_WINNT`
 0x0600 floor; `stage2` is listed there as not started, which is exactly W4. Do not
