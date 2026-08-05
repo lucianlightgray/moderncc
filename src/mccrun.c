@@ -58,6 +58,9 @@ static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff);
 static void st_link(MCCState *s1);
 static void st_unlink(MCCState *s1);
 static int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap);
+#if MCC_HOST_LINUX
+static void run_tls_seed_free(void);
+#endif
 
 #define PAGESIZE host_pagesize()
 #define PAGEALIGN(n) ((addr_t)n + (-(addr_t)n & (PAGESIZE - 1)))
@@ -101,6 +104,9 @@ ST_FUNC void mcc_run_free(MCCState *s1) { MCC_TRACE("enter\n");
 		if (ref->handle)
 			{ MCC_TRACE("br\n"); host_dlclose(ref->handle); }
 	}
+#if MCC_HOST_LINUX
+	run_tls_seed_free();
+#endif
 	ptr = s1->run_ptr;
 	if (NULL == ptr)
 		{ MCC_TRACE("br\n"); return; }
@@ -472,6 +478,15 @@ static void tls_setup_linux(MCCState *s1) { MCC_TRACE("enter\n");
    pthread_create to the wrapper below (see relocate_syms). */
 static unsigned char *mcc_run_tls_seed;
 static unsigned long mcc_run_tls_seed_len;
+
+/* The snapshot is module-level so mcc_run_thr_start can reach it, which means
+   nothing state-owned frees it; without this, every -run of a TLS-using
+   program reports it leaked under MCC_DIAG. */
+static void run_tls_seed_free(void) { MCC_TRACE("enter\n");
+	mcc_free(mcc_run_tls_seed);
+	mcc_run_tls_seed = NULL;
+	mcc_run_tls_seed_len = 0;
+}
 
 struct mcc_run_thr {
 	void *(*fn)(void *);
