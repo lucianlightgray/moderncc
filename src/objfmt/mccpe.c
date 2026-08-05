@@ -1136,52 +1136,6 @@ static void pe_build_exports(struct pe_info *pe) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); fclose(op); }
 }
 
-/* pe_set_tls writes four absolute VAs into the TLS directory
-   (StartAddressOfRawData, EndAddressOfRawData, AddressOfIndex,
-   AddressOfCallBacks) at header-write time, after every section's own
-   relocations have been walked -- so nothing below records them. Without
-   base relocations the loader of a rebased image reads preferred-base
-   addresses and LdrpInitializeTls faults before the first instruction of
-   the program, which is how the arm64-PE stage2 mcc died on an
-   always-ASLR host while x86_64 kept being granted its preferred base. */
-static void pe_build_tls_dir_reloc(struct pe_info *pe) { MCC_TRACE("enter\n");
-	DWORD offset = 0, block_ptr = 0, addr;
-	int i, count = 0;
-	struct pe_reloc_header *hdr;
-
-	if (!pe->has_tls)
-		{ MCC_TRACE("br\n"); return; }
-	for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
-		addr = (DWORD)(pe->tls_dir_sec->sh_addr + pe->tls_dir_offset) +
-					 i * sizeof(ADDR3264);
-		if (count == 0 || addr - offset >= (1 << 12)) { MCC_TRACE("br\n");
-			if (count) { MCC_TRACE("br\n");
-				if (count & 1)
-					{ MCC_TRACE("br\n"); section_ptr_add(pe->reloc, sizeof(WORD)), ++count; }
-				hdr = (struct pe_reloc_header *)(pe->reloc->data + block_ptr);
-				hdr->offset = offset - pe->imagebase;
-				hdr->size = count * sizeof(WORD) + sizeof(struct pe_reloc_header);
-				count = 0;
-			}
-			block_ptr = pe->reloc->data_offset;
-			section_ptr_add(pe->reloc, sizeof(struct pe_reloc_header));
-			offset = addr & 0xFFFFFFFF << 12;
-		}
-		{
-			WORD *wp = section_ptr_add(pe->reloc, sizeof(WORD));
-			*wp = (addr - offset) | PE_IMAGE_REL << 12;
-			++count;
-		}
-	}
-	if (!count)
-		{ MCC_TRACE("br\n"); return; }
-	if (count & 1)
-		{ MCC_TRACE("br\n"); section_ptr_add(pe->reloc, sizeof(WORD)), ++count; }
-	hdr = (struct pe_reloc_header *)(pe->reloc->data + block_ptr);
-	hdr->offset = offset - pe->imagebase;
-	hdr->size = count * sizeof(WORD) + sizeof(struct pe_reloc_header);
-}
-
 static void pe_build_reloc(struct pe_info *pe) { MCC_TRACE("enter\n");
 	DWORD offset, block_ptr, sh_addr, addr;
 	int count, i;
@@ -1241,7 +1195,6 @@ static void pe_build_reloc(struct pe_info *pe) { MCC_TRACE("enter\n");
 		hdr->size = count * sizeof(WORD) + sizeof(struct pe_reloc_header);
 		count = 0;
 	}
-	pe_build_tls_dir_reloc(pe);
 }
 
 static int pe_section_class(Section *s) { MCC_TRACE("enter\n");
@@ -2707,7 +2660,7 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { 
 
 static void pe_add_tls(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\n");
 	Section *ds = data_section;
-	int i, used = 0, dir_size;
+	int i, used = 0, dir_size, tls_sym;
 
 	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		Section *s = s1->sections[i];
@@ -2722,7 +2675,7 @@ static void pe_add_tls(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\n");
 	pe_align_section(ds, 4);
 	pe->tls_index_offset = ds->data_offset;
 	memset(section_ptr_add(ds, 4), 0, 4);
-	set_elf_sym(symtab_section, pe->tls_index_offset, 4,
+	tls_sym = set_elf_sym(symtab_section, pe->tls_index_offset, 4,
 							ELFW(ST_INFO)(STB_GLOBAL, STT_OBJECT), 0, ds->sh_num, "_tls_index");
 
 	pe_align_section(ds, sizeof(ADDR3264));
@@ -2734,6 +2687,22 @@ static void pe_add_tls(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\n");
 	pe->tls_dir_offset = ds->data_offset;
 	pe->tls_dir_size = dir_size;
 	memset(section_ptr_add(ds, dir_size), 0, dir_size);
+
+	/* The first four directory fields (Start/EndAddressOfRawData,
+	   AddressOfIndex, AddressOfCallBacks) are absolute VAs that pe_set_tls
+	   fills at header-write time; a rebased image needs a base relocation on
+	   each or LdrpAllocateTlsEntry faults before main. Register them as
+	   ordinary section relocations so pe_build_reloc MERGES them into the
+	   existing .data page block -- emitting a separate block for a page that
+	   already has one produces a duplicate page RVA, which the arm64 loader
+	   rejects with "not a valid Win32 application". The symbol value is
+	   irrelevant: pe_set_tls overwrites these slots after relocate_sections
+	   runs, so the reloc exists only to mark the eight bytes as absolute. */
+	for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
+		put_elf_reloc(symtab_section, ds,
+									pe->tls_dir_offset + i * sizeof(ADDR3264),
+									REL_TYPE_DIRECT, tls_sym);
+	}
 
 	pe->tls_dir_sec = ds;
 	pe->has_tls = 1;
