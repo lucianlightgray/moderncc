@@ -2645,10 +2645,13 @@ both keys, as everywhere else. `arm64-osx`'s forced `-O0` being identical to its
 it is trusted: `x86_64-osx` moves (8 → 11 `len`), so the equality is a property of
 the key, not of the harness.
 
-**Still not run on this host**: step 2 (`ctest` on a Mach-O host, which this file has
-never had a reading of — including the `selfhost-fixpoint-O3` W3 question) and step 4
-(`o0_ab.sh`). Those remain the larger deliverable; the differential above is the
-cheaper follow-up, taken first only because it was what was asked for.
+~~**Still not run on this host**: step 2 … and step 4 (`o0_ab.sh`)~~ — **both run
+2026-08-05 on a macOS 26.5.2 arm64 host.** Step 2: `ctest --test-dir bc2` is 8487 cells
+with every red accounted for, and `selfhost-fixpoint-O3` **passed**, closing the W3
+question. Step 4: `o0_ab.sh` reproduces — all five PE keys byte-identical to a Linux run
+at the same HEAD, the two `*-osx` keys measurable only here. See **The macOS host
+reading**, **`o0_ab.sh` on Darwin** and **The macOS CI red after `688aced2`** above. The
+larger deliverable is discharged; what is left of this section is the Windows half.
 
 **Windows x86_64.**
 
