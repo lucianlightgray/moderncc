@@ -464,10 +464,52 @@ static void tls_setup_linux(MCCState *s1) { MCC_TRACE("enter\n");
 	s1->run_tls_active = 1;
 }
 
+/* The -run TLS slab is a __thread array inside mcc, seeded below for the thread
+   that calls -run. A thread the program creates gets its own zeroed copy and
+   nothing seeds it, so every TLS variable with a non-zero initializer reads 0 in
+   the child -- which is exactly what tls_threads catches. Keep a copy of the
+   seed image and re-apply it on thread entry, by binding the program's
+   pthread_create to the wrapper below (see relocate_syms). */
+static unsigned char *mcc_run_tls_seed;
+static unsigned long mcc_run_tls_seed_len;
+
+struct mcc_run_thr {
+	void *(*fn)(void *);
+	void *arg;
+};
+
+static void *mcc_run_thr_start(void *p) { MCC_TRACE("enter\n");
+	struct mcc_run_thr t = *(struct mcc_run_thr *)p;
+	mcc_free(p);
+	if (mcc_run_tls_seed && mcc_run_tls_seed_len) { MCC_TRACE("br\n");
+		unsigned char *slab = host_run_tls_slab_base();
+		memset(slab, 0, host_run_tls_slab_size());
+		memcpy(slab, mcc_run_tls_seed, mcc_run_tls_seed_len);
+	}
+	return t.fn(t.arg);
+}
+
+ST_FUNC int mcc_run_pthread_create(void *th, const void *attr,
+																	 void *(*fn)(void *), void *arg) { MCC_TRACE("enter\n");
+	struct mcc_run_thr *t = mcc_malloc(sizeof *t);
+	int rc;
+	if (!t)
+		{ MCC_TRACE("br\n"); return pthread_create((pthread_t *)th, (const pthread_attr_t *)attr, fn, arg); }
+	t->fn = fn;
+	t->arg = arg;
+	rc = pthread_create((pthread_t *)th, (const pthread_attr_t *)attr,
+										mcc_run_thr_start, t);
+	if (rc != 0)
+		{ MCC_TRACE("br\n"); mcc_free(t); }
+	return rc;
+}
+
 static void tls_seed_linux(MCCState *s1) { MCC_TRACE("enter\n");
 	int i;
 	addr_t base = (addr_t)-1;
 	unsigned char *slab;
+
+	mcc_run_tls_seed_len = 0;
 
 	if (!s1->run_tls_active)
 		{ MCC_TRACE("br\n"); return; }
@@ -484,6 +526,19 @@ static void tls_seed_linux(MCCState *s1) { MCC_TRACE("enter\n");
 		if (!(s->sh_flags & SHF_TLS) || s->sh_type == SHT_NOBITS || !s->data)
 			{ MCC_TRACE("br\n"); continue; }
 		memcpy(slab + (s->sh_addr - base), s->data, s->data_offset);
+		if ((unsigned long)(s->sh_addr - base) + s->data_offset > mcc_run_tls_seed_len)
+			{ MCC_TRACE("br\n"); mcc_run_tls_seed_len =
+					(unsigned long)(s->sh_addr - base) + s->data_offset; }
+	}
+	/* Snapshot what a fresh thread has to start from. */
+	mcc_free(mcc_run_tls_seed);
+	mcc_run_tls_seed = NULL;
+	if (mcc_run_tls_seed_len) { MCC_TRACE("br\n");
+		mcc_run_tls_seed = mcc_malloc(mcc_run_tls_seed_len);
+		if (mcc_run_tls_seed)
+			{ MCC_TRACE("br\n"); memcpy(mcc_run_tls_seed, slab, mcc_run_tls_seed_len); }
+		else
+			{ MCC_TRACE("br\n"); mcc_run_tls_seed_len = 0; }
 	}
 }
 #endif

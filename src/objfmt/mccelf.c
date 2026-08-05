@@ -966,6 +966,15 @@ ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve) { MCC_
 #if defined MCC_TARGET_IS_HOST && !defined MCC_TARGET_PE
 				const char *name_ud = &name[s1->leading_underscore];
 				void *addr = NULL;
+#if MCC_HOST_LINUX
+				/* -run keeps its TLS in a __thread slab inside mcc, which glibc
+				   zeroes for every new thread. Bind the program's pthread_create to
+				   the wrapper that re-seeds it, or TLS with a non-zero initializer
+				   reads 0 in any thread the program starts. */
+				if (s1->run_tls_active && !strcmp(name_ud, "pthread_create"))
+					{ MCC_TRACE("br\n"); addr = (void *)mcc_run_pthread_create; }
+				if (addr == NULL)
+#endif
 				if (!s1->nostdlib || s1->output_type == MCC_OUTPUT_MEMORY)
 					{ MCC_TRACE("br\n"); addr = host_dlsym_process(name_ud); }
 				if (addr == NULL) { MCC_TRACE("br\n");

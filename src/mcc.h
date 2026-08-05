@@ -1739,6 +1739,11 @@ ST_FUNC void mcc_add_runtime(MCCState *s1);
 #ifdef MCC_EMBED_MCCRT
 ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1);
 #endif
+#if MCC_HOST_LINUX
+/* -run re-seeds its TLS slab in threads the program creates; see mccrun.c. */
+ST_FUNC int mcc_run_pthread_create(void *th, const void *attr,
+																	 void *(*fn)(void *), void *arg);
+#endif
 
 ST_FUNC int code_reloc(int reloc_type);
 ST_FUNC int gotplt_entry_type(int reloc_type);
