@@ -1282,6 +1282,10 @@ enum mcc_token {
 
 ST_DATA struct MCCState *mcc_state;
 ST_DATA int mccjit_error_quiet;
+/* nonzero once a compile error has been diagnosed in the current MCC_DIAG
+   leak-check window: the error path longjmps past cleanup, so leak reports
+   would be expected noise rather than findings */
+ST_DATA int mcc_leakcheck_quiet;
 
 #include "mcclog.h"
 

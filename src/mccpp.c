@@ -162,7 +162,7 @@ static void tal_delete(TinyAlloc **pal) { MCC_TRACE("enter\n");
 
 tail_call:
 #if MCC_DIAG
-	if (al->nb_allocs > 0) { MCC_TRACE("br\n");
+	if (al->nb_allocs > 0 && !mcc_leakcheck_quiet) { MCC_TRACE("br\n");
 		uint8_t *p;
 		fprintf(stderr, "mcc: tiny-alloc leak %d chunk(s)\n", al->nb_allocs);
 		p = al->buffer;

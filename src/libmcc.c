@@ -61,6 +61,7 @@
 
 ST_DATA struct MCCState *mcc_state;
 ST_DATA int mccjit_error_quiet;
+ST_DATA int mcc_leakcheck_quiet;
 HOST_SEM(mcc_compile_sem);
 ST_DATA void **stk_data;
 ST_DATA int nb_stk_data;
@@ -418,20 +419,24 @@ PUB_FUNC void mcc_memcheck(int d) { MCC_TRACE("enter\n");
 	HOST_SEM_WAIT(&mem_sem);
 	nb_states += d;
 	if (0 == nb_states && mem_cur_size) { MCC_TRACE("br\n");
-		mem_debug_header_t *header = mem_debug_chain;
-		fflush(stdout);
-		fprintf(stderr, "mcc: mem_leak= %d bytes, mem_max_size= %d bytes\n",
-						mem_cur_size, mem_max_size);
-		while (header) { MCC_TRACE("br\n");
-			fprintf(stderr, "%s:%u: error: %u bytes leaked\n",
-							header->file_name, header->line_num, header->size);
-			header = header->next;
+		if (!mcc_leakcheck_quiet) { MCC_TRACE("br\n");
+			mem_debug_header_t *header = mem_debug_chain;
+			fflush(stdout);
+			fprintf(stderr, "mcc: mem_leak= %d bytes, mem_max_size= %d bytes\n",
+							mem_cur_size, mem_max_size);
+			while (header) { MCC_TRACE("br\n");
+				fprintf(stderr, "%s:%u: error: %u bytes leaked\n",
+								header->file_name, header->line_num, header->size);
+				header = header->next;
+			}
+			fflush(stderr);
 		}
-		fflush(stderr);
 		mem_cur_size = 0;
 		mem_max_size = 0;
 		mem_debug_chain = NULL;
 	}
+	if (0 == nb_states)
+		{ MCC_TRACE("br\n"); mcc_leakcheck_quiet = 0; }
 	HOST_SEM_POST(&mem_sem);
 }
 
@@ -720,7 +725,7 @@ static void error1(int mode, const char *fmt, va_list ap) { MCC_TRACE("enter\n")
 	}
 	cstr_free(&cs);
 	if (mode != ERROR_WARN)
-		{ MCC_TRACE("br\n"); s1->nb_errors++; }
+		{ MCC_TRACE("br\n"); s1->nb_errors++; mcc_leakcheck_quiet = 1; }
 	if (mode == ERROR_NOABORT && s1->error_set_jmp_enabled && (s1->warn_fatal_errors || (s1->max_errors && s1->nb_errors >= s1->max_errors)))
 		{ MCC_TRACE("br\n"); mode = ERROR_ERROR; }
 	if (mode == ERROR_ERROR && s1->error_set_jmp_enabled) { MCC_TRACE("br\n");
