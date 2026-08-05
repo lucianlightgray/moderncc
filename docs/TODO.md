@@ -5472,29 +5472,70 @@ guest of its own, so its slab only has to exist. Any new harness that `-run`s
 in program-created threads; wire `R_386_TLS_LE` to `run_tls_active`) — 14/14 both
 JIT tiers. arm, riscv64 and the PE triples still lack run-mode TLS.
 
-## OPEN: the arm64-Windows dist self-host crashes at startup -- 0xC0000005
+## OPEN (handoff): arm64-Windows dist self-host -- two PE bugs fixed, one import bug left
 
-Nightly Dist (30986437707) went red on `windows-arm64-msvc` AND `windows-arm64-mingw`
-with the same shape, green on Aug 2 (30738246110, head `89a9103d`):
+Nightly Dist (30986437707) went red on `windows-arm64-msvc` and `windows-arm64-mingw`,
+green on Aug 2 (30738246110, head `89a9103d`). stage1 (msvc/mingw-built) mcc is fine
+and builds all of stage2 including `mcc.exe`; the **stage2 mcc -- mcc's own arm64-PE
+output -- failed on every invocation**, instantly and input-independently, so it is a
+startup/image defect, not a codegen-of-a-construct defect. The config refactor is what
+exposed it: it compiled the optimizer's `_Thread_local` gates into every build, giving
+the stage2 mcc a PE **TLS directory** for the first time (the green-era arm64 mcc had
+none, which is why it loaded).
 
-- stage1 (msvc-/mingw-built) mcc works: it compiled and linked all of stage2,
-  including `mcc.exe`, without complaint.
-- the **stage2 mcc -- mcc's own arm64-PE output -- crashes with 0xC0000005 on
-  every invocation**, immediately (all four first `mccrt -c` compiles die within
-  ~1ms of the link finishing: `builtin.o`, `alloca-bt.o`, `alloca.o`, `atomic.o`).
-  Instant + input-independent = startup path, not a particular construct.
+**How this was debugged from an x86_64 host** (reusable -- there IS arm64 coverage now):
+- `.github/workflows/arm64-crash-debug.yml` is a **dispatch-only** workflow on
+  `windows-11-arm`: it rebuilds the dist, lets stage2 fail, and captures diagnostics
+  (procdump `-e 1 -f` first-chance dump; cdb `.exr/.cxr/k`; `Get-WinEvent` on the
+  CodeIntegrity/AppLocker/Defender logs; `FLG_SHOW_LDR_SNAPS` loader snaps). It uploads
+  `cmake-stage2-release/mcc.exe` as artifact `arm64-crash-dump`. **Delete this workflow
+  once the cell is green.** `gh run download <id> -n arm64-crash-dump` then read the PE
+  offline with `llvm-readobj --coff-basereloc/--coff-tls-directory/--coff-imports`.
+- **wine-arm64 under emulated docker runs arm64-PE mcc** (`docker run --platform
+  linux/arm64 debian:bookworm-slim`, `apt-get install wine`): `mcc.exe -v` works, so it
+  is a live loader. BUT every wine leg is too permissive to reproduce these bugs -- it
+  ran all three broken images. Use it to confirm a *fix* loads, never to reproduce a
+  failure. (This corrects `run-tier.sh`'s "no Windows-on-ARM emulator" note; the wine
+  legs still fail there on the separate PE `-run` TLS defect.)
+- A cross `mcc-arm64-win32` builds on this x86_64 host: `cmake -B <d> -DMCC_TARGET_ARCH=arm64`
+  then compile `src/mcc.c` with `-DMCC_TARGET_ARM64=1 -DMCC_TARGET_PE=1 -DMCC_EMBED_JIT=1
+  -DMCC_JIT_DEFAULT=1` and the full `-I src/arch/*` set. That image is what to inspect.
 
-So this is an arm64-PE self-compile miscompile (or PE image/startup regression)
-introduced somewhere in the Aug 2 -> Aug 5 window -- which contains the VT_BTYPE
-widening, the bitfield side-car, `_Float16` on all backends and the config
-refactor, several hundred commits. The Dist nightly is the ONLY arm64-Windows
-coverage (`run-tier`'s `arm64-win32` row is `mcc_skip_test`: no runner anywhere),
-so the regression cannot be narrowed from this x86_64 host. Leads for whoever has
-the hardware (or wires arm64 wine/qemu):
+**FIXED -- defect 1, the crash (`55e3e561` + `fde63525`).** `pe_set_tls` writes four
+absolute VAs into `IMAGE_TLS_DIRECTORY` (Start/EndAddressOfRawData, AddressOfIndex,
+AddressOfCallBacks) at header-write time, and nothing base-relocated them. On an
+always-ASLR host `ntdll!LdrpAllocateTlsEntry` dereferenced preferred-base addresses and
+faulted before `main` -- the 0xC0000005 (cdb confirmed the faulting frame and that
+`x9` held the unrelocated `AddressOfIndex`). x86_64 Windows hid it by granting mcc its
+preferred base. First fix emitted a *separate* `.reloc` block for the directory; but it
+lives in a `.data` page that already had a block, and a **duplicate page RVA** makes the
+arm64 loader reject the image with `ERROR_BAD_EXE_FORMAT` ("%1 is not a valid Win32
+application" -- that was the second symptom). `fde63525` instead registers the four
+fields as ordinary `REL_TYPE_DIRECT` relocs in `pe_add_tls`, so `pe_build_reloc` merges
+them into the existing page block. Verified offline: 25 blocks, zero duplicate pages, all
+four fields at `tlsdir+0/8/16/24` relocated; and an x86_64 build force-loaded via
+`LoadLibraryEx` relocates off its preferred base and still compiles.
 
-- build the cross `mcc-arm64-win32` on any host, compile `src/mcc.c`, and diff the
-  PE headers/entry stub against one built from `89a9103d` -- a startup crash may be
-  visible statically (stack reserve, TLS directory, entry, relocs).
-- `d519ac4c` ("every PE target reserves an 8MB stack, as arm64 already did") and
-  `6bad581d` ("keep arm64 sibling calls as b; BRANCH26 is not always CALL26")
-  are older, but the window's codegen refactors may interact with either.
+**OPEN -- defect 2, the import.** With the TLS fix the image now LOADS and initializes,
+then fails at static import resolution: **`0xC0000139` STATUS_ENTRYPOINT_NOT_FOUND** on
+`-c`, **`0xC0000135` STATUS_DLL_NOT_FOUND** on `-v`. Facts gathered:
+- The failing CI image imports only `msvcrt.dll` (91 syms) and `kernel32.dll` (63 syms),
+  and its import set is **byte-identical to a locally cross-built arm64 image that wine
+  runs** except the local one additionally imports msvcrt `_assert`. So it is not gross
+  IAT corruption -- some named import is not exported by the *real* arm64 `msvcrt.dll`
+  (wine's is a superset/stub), or an ordinal/name mcc emits is wrong for arm64.
+- Next step is already dispatched: run **31007294903** enables `FLG_SHOW_LDR_SNAPS` and
+  runs `mcc.exe` under cdb; its log should print the exact `LDR: ... not found` DLL +
+  entry point. Read it with `gh run view 31007294903 --log`. If the snaps step didn't
+  fire (no cdb on the image), set the same IFEO GlobalFlag and run bare -- the snaps go
+  to the debugger output, so a debugger must be attached, or use `ntsd`/gflags.
+- Likely suspects once named: an msvcrt symbol that exists on x64 but not arm64 msvcrt
+  (the arm64 CRT is leaner), or a name mcc's PE import path mangles. Compare the import
+  list against what a `cl`-built arm64 hello links from msvcrt. The emitter is
+  `pe_build_imports` in `src/objfmt/mccpe.c`; the runtime's declared imports are in
+  `runtime/win32`.
+
+Coverage note: the Dist nightly and this debug workflow are the only arm64-Windows
+signals; `run-tier`'s `arm64-win32` row is `mcc_skip_test` (no in-tree runner). Wiring
+the wine-arm64 docker path above into a real cell would give a cheap always-on gate for
+defect-1-class loader bugs (not defect-2, which wine masks).
