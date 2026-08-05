@@ -5579,11 +5579,14 @@ tools/xsuite.py --mcc cmake-release/mcc --out <d> --llvm ~/Projects/llvm --opt=-
 
 | board | before | after | delta |
 |---|---:|---:|---:|
-| gcc suite `FAIL` | 450 | 378 | **-72** (44 fixed, 28 reclassified) |
+| gcc suite `FAIL` | 450 | 377 | **-73** (45 fixed, 28 reclassified) |
 | gcc suite `XPASS` | 282 | 259 | -23 (reclassified) |
-| gcc suite `PASS` | 17,188 | 17,229 | +41 |
-| llvm suite `FAIL` | 109 | 82 | **-27** (3 fixed, 24 reclassified) |
-| llvm suite `PASS` | 1,969 | 1,971 | +2 |
+| gcc suite `PASS` | 17,188 | 17,232 | +44 |
+| llvm suite `FAIL` | 109 | 78 | **-31** (7 fixed, 24 reclassified) |
+| llvm suite `PASS` | 1,969 | 1,974 | +5 |
+
+(Final numbers at `f80f306b`; the per-section deltas below were taken as each batch
+landed, so they add up to these rather than matching them individually.)
 
 `ctest` 8318/8318 with six new exec goldens, all six `diff3`-clean against gcc 15 and
 clang 22.
