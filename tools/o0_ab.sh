@@ -139,7 +139,13 @@ fi
 key_flags() {
 	SYSROOT=
 	case "$1" in
-	x86_64) MCC=$BUILD/mcc; FLAGS="" ;;
+	x86_64)
+		MCC=$BUILD/mcc; FLAGS=""
+		if ! "$MCC" -v 2>&1 | head -1 | grep -q '(x86_64 Linux)'; then
+			MCC=$BUILD/mcc-x86_64
+			SYSROOT=$S/vendor/gentoo-stage3-x86_64-glibc
+			FLAGS="-B $BUILD -I $S/runtime/include --sysroot=$SYSROOT -I$SYSROOT/usr/include"
+		fi ;;
 	*win32 | *wince)
 		MCC=$BUILD/mcc-$1
 		FLAGS="-B $S/runtime/win32 -B $S/runtime -I $S/runtime/include" ;;

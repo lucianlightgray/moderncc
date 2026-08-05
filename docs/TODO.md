@@ -593,6 +593,93 @@ this is a stage2 mcc-built-by-mcc tree, cross-built for all three win32 keys:
   native amd64 runner it runs natively and this does not arise. **Do not chase this as
   a codegen bug without a real amd64 host.**
 
+## The macOS CI red after `688aced2`: Apple deprecates `sprintf`, and the exec goldens read compile diagnostics (2026-08-05)
+
+`feat(attr): diagnose use of deprecated and unavailable declarations` turned **66
+cells red on macOS only** — `sprintf`, `random_stuff` and `bound_signal` across all
+22 `exec*` tiers. Linux stayed green throughout, so nothing but a Mac could see it.
+
+The mechanism, end to end:
+
+- Apple's `_stdio.h:278` marks `sprintf` (and `vsprintf`) `__deprecated_msg(...)`
+  whenever `_POSIX_C_SOURCE` is undefined. glibc does not, which is the whole of the
+  Linux/macOS split.
+- `tests/runner.c` **prepends the compile's stderr to the program's stdout** before
+  comparing against the golden (`out = malloc(strlen(cerr) + strlen(prog) + 1)`), so
+  any new diagnostic is a golden mismatch even though the program's own output is
+  byte-correct. That is deliberate — it catches unexpected diagnostics — and it is
+  why a warning reads as a wrong-code failure.
+
+**mcc's diagnostic is correct and was not changed.** The decisive check is `tmpnam`,
+which Apple deprecates in the same header and which fortify does not rewrite: clang
+warns, and mcc warns identically. Suppressing deprecations from system headers would
+have broken that parity, so it was rejected.
+
+**Why clang is silent on `sprintf` specifically**: `secure/_stdio.h` redefines
+`sprintf` to `__builtin___sprintf_chk(...)` under `_USE_FORTIFY_LEVEL > 0`, so a
+clang build never references the deprecated *function* at all. mcc does not implement
+fortify on Darwin (`_USE_FORTIFY_LEVEL` is undefined for it), so it sees the direct
+call and correctly warns. Homebrew gcc-16 is silent for a third reason again — its
+`__deprecated_msg` expands to nothing — so the two reference compilers dodge this by
+two different routes and neither is a semantic bar mcc is failing.
+
+**Fix**: `tests/runner.c` compiles the exec corpus with
+`-Wno-deprecated-declarations`. The exec tier measures codegen and semantics;
+diagnostics are covered by `tests/diagnostics` and by the `cli` case `688aced2` added,
+both of which keep the warning on. Zero codegen impact.
+
+**Found and deliberately not taken**: `__has_builtin` lies about the fourteen
+`__builtin___*_chk` builtins. `pp_has_builtin_arg` (`src/mccpp.c`) answers yes only
+for predefined builtin tokens or `#define`d macros, but `mccdefs.h` supplies the
+`_chk` family as `static __inline` *functions*, so `__has_builtin(__builtin___sprintf_chk)`
+is 0. Teaching it to say yes is a one-list change and was verified to work, but it is
+what gates Apple's (and glibc's) fortify blocks, so it would newly route every
+`str*`/`mem*`/`*printf` call through the `_chk` inlines on a fortifying libc. That is
+a codegen change across the whole corpus, not a CI fix, and it is unmeasured — do it
+on its own, with a full sweep behind it.
+
+## The C2 gap bank is stale, and only a `bc2` build can see it (2026-08-05)
+
+`ctest --test-dir bc2` (the recipe under **For the Windows and macOS hosts**) is
+**8487 cells, 82 red**: the 66 above, the 2 documented PE `-run` TLS reds, and
+**14 `ast/rir-c2-*`**. The 14 are a stale bank, not a defect — the `_c2bank_*` triples
+in `CMakeLists.txt` still carry the pre-c23 corpus, e.g. `arm64-osx "1;0;1225"` against
+a measured `fn=1280`, and `x86_64-osx "0;0;1143"` against `1235`. The corpus grew by
+ten files in `27f692d3..f73c80b3`.
+
+**This is invisible to CI**: `ast/rir-c2-*` self-skips (77) unless the build carries
+`-DCMAKE_C_FLAGS=-DMCC_REPLAY_IR_C2=1`, which no workflow sets. Only someone following
+the `bc2` recipe sees it. Re-bank the fourteen triples on a host that can measure all
+twelve keys, or the recipe stays red for the next reader.
+
+## `o0_ab.sh` on Darwin: it reproduces, and the `x86_64` row was measuring the wrong target (2026-08-05)
+
+W1's second open half. `C2_NO_EXTRA=1 O0_AB_CHECK=1 tools/o0_ab.sh bc2 all` reports
+drift against `tests/ast/o0-baseline/`, and **none of it is Darwin's**:
+
+- The bank is `files=277`; HEAD is `files=287` — the same ten new corpus files.
+- Re-measured on Linux at the identical HEAD (in the `ci-docker` image), all five PE
+  keys — `x86_64-win32`, `i386-win32`, `arm64-win32`, `arm-win32`, `arm-wince` — are
+  **byte-identical to the Darwin run**, `cmp`-clean on the whole `obj.txt`. Cross
+  output is host-independent, as designed, and Darwin reproduces exactly.
+- The two `*-osx` keys are the reverse: Linux manages 86 and 88 objects against
+  Darwin's 276 and 280, because it has no macOS SDK. **Darwin is the only host that
+  can measure them**, which is what W1 said, and both come back `bar=OK`,
+  `unfaithful=0`, `diverge=0`.
+- The four ELF cross keys correctly report `NOT MEASURED` — no Linux sysroot here.
+
+**Defect found and fixed**: `key_flags()` gave the `x86_64` key `MCC=$BUILD/mcc`, the
+build's *own* compiler. On x86_64 Linux that is right by accident; on this host
+`bc2/mcc` is `(AArch64 Darwin)`, so the row labelled `x86_64` was measuring arm64
+Mach-O — 276 objects and a plausible board for a key it never touched. It now checks
+the `mcc -v` target string and falls back to `mcc-x86_64` plus the usual sysroot
+requirement, which makes the row an honest `NOT MEASURED` off an x86_64 Linux host
+(and is a no-op on one). Same idiom the `run-tier` driver already uses, and the same
+failure shape the script's own sysroot guard was written for.
+
+Still to do: re-bank `tests/ast/o0-baseline/` at HEAD on an x86_64 Linux host —
+neither this Mac nor an emulated container should be the machine that banks it.
+
 ## Open — the Windows-host preset sweep, interrupted by a reboot (2026-08-03)
 
 A full presets-x-tests sweep on the Windows x86_64 host (scoop clang MSVC-ABI as default CC), four host-build defects fixed and pushed: the `_WIN32_WINNT` 0x0600 floor (SRWLocks), the 8MB host-exe stack reserve (mcc-ejboot 0xC00000FD), the diagnostics `mcc_p` skip under MSVC-ABI clang, and gcc discovery preferring vendored winlibs over CLion's bundle (whose clang-built libpthread.a references `__intrinsic_setjmpex` its GNU runtime never defines — probe-linked now, do not re-diagnose).
