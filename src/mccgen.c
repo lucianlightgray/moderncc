@@ -1735,12 +1735,13 @@ static void drop_gnu_inline_body(Sym *sym) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); mcc_state->inline_fns[i]->sym = NULL; } }
 }
 
-static void patch_type(Sym *sym, CType *type) { MCC_TRACE("enter\n");
+static void patch_type(Sym *sym, CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 	if (!(type->t & VT_EXTERN) || IS_ENUM_VAL(sym->type.t)) { MCC_TRACE("br\n");
 		if (!(sym->type.t & VT_EXTERN)) { MCC_TRACE("br\n");
-			if (sym->a.gnu_inline_body && !(type->t & (VT_EXTERN | VT_INLINE)) &&
+			if (sym->a.gnu_inline_body && !(type->t & VT_EXTERN) && !ad->a.gnu_inline_body &&
 					(sym->type.t & VT_BTYPE) == VT_FUNC && (type->t & VT_BTYPE) == VT_FUNC)
-				{ MCC_TRACE("br\n"); drop_gnu_inline_body(sym); }
+				{ MCC_TRACE("br\n"); drop_gnu_inline_body(sym);
+					sym->type.t |= type->t & (VT_STATIC | VT_INLINE); }
 			else
 				{ MCC_TRACE("br\n"); mcc_error("redefinition of '%s'", get_tok_str(sym->v, NULL)); }
 		}
@@ -1802,7 +1803,7 @@ static void patch_type(Sym *sym, CType *type) { MCC_TRACE("enter\n");
 
 static void patch_storage(Sym *sym, AttributeDef *ad, CType *type) { MCC_TRACE("enter\n");
 	if (type)
-		{ MCC_TRACE("br\n"); patch_type(sym, type); }
+		{ MCC_TRACE("br\n"); patch_type(sym, type, ad); }
 
 #ifdef MCC_TARGET_PE
 	if (sym->a.dllimport != ad->a.dllimport)
@@ -16808,11 +16809,11 @@ static int decl(int l) {
 					--local_scope;
 				}
 				if ((type.t & (VT_EXTERN | VT_INLINE)) == (VT_EXTERN | VT_INLINE)) { MCC_TRACE("br\n");
-					if (mcc_state->gnu89_inline || sym->f.func_alwinl || sym->f.func_gnuinl)
+					if (gnu89_inline_semantics(mcc_state) || sym->f.func_alwinl || sym->f.func_gnuinl)
 						{ MCC_TRACE("br\n"); type.t = (type.t & ~VT_EXTERN) | VT_STATIC; gnu_ei = 1; }
 					else
 						{ MCC_TRACE("br\n"); type.t &= ~VT_INLINE; }
-				} else if ((mcc_state->gnu89_inline || sym->f.func_gnuinl) &&
+				} else if ((gnu89_inline_semantics(mcc_state) || sym->f.func_gnuinl) &&
 									 (type.t & (VT_INLINE | VT_STATIC | VT_EXTERN)) == VT_INLINE) { MCC_TRACE("br\n");
 					type.t &= ~VT_INLINE;
 				} else if (mcc_state->c99_inline_body &&
@@ -16820,7 +16821,7 @@ static int decl(int l) {
 					type.t &= ~VT_INLINE;
 					ad.a.weak = 1;
 				}
-				if (ast_inline_static_env && !pp_in_system_header() &&
+				if (ast_inline_static_env && !gnu_ei && !pp_in_system_header() &&
 						(type.t & (VT_INLINE | VT_STATIC)) == (VT_INLINE | VT_STATIC))
 					{ MCC_TRACE("br\n"); type.t &= ~VT_INLINE; }
 			} else if (oldint) { MCC_TRACE("br\n");
@@ -16906,6 +16907,7 @@ static int decl(int l) {
 				if ((type.t & VT_INLINE) && !mcc_state->freestanding &&
 						v >= TOK_IDENT && !strcmp(get_tok_str(v, NULL), "main"))
 					{ MCC_TRACE("br\n"); mcc_warning("'main' is not allowed to be declared inline"); }
+				ad.a.gnu_inline_body = gnu_ei;
 				sym = external_sym(v, &type, 0, &ad);
 				if (gnu_ei)
 					{ MCC_TRACE("br\n"); sym->a.gnu_inline_body = 1; }

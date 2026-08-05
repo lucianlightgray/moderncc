@@ -1074,6 +1074,10 @@ static inline int stdc_fp_contract(MCCState *s1) {
 	return s1->stdc_fp_contract == STDC_ON;
 }
 
+static inline int gnu89_inline_semantics(MCCState *s1) {
+	return s1->gnu89_inline || s1->cversion < 199901;
+}
+
 struct filespec {
 	char type;
 	char name[1];

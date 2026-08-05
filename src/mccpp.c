@@ -5394,7 +5394,7 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 	cstr_printf(cs, "#define __GNUC__ 4\n");
 	cstr_printf(cs, "#define __GNUC_MINOR__ 2\n");
 	cstr_printf(cs, "#define __GNUC_PATCHLEVEL__ 1\n");
-	if (s1->gnu89_inline)
+	if (gnu89_inline_semantics(s1))
 		{ MCC_TRACE("br\n"); putdef(cs, "__GNUC_GNU_INLINE__"); }
 	else
 		{ MCC_TRACE("br\n"); putdef(cs, "__GNUC_STDC_INLINE__"); }

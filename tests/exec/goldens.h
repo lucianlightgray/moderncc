@@ -336,6 +336,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"struct_return_shapes", "run", "exec/functions_abi/struct_return_shapes.c", "OK\n", "", "", ""},
 		{"null_pointer_constant", "run", "exec/types/null_pointer_constant.c", "OK\n", "-w -std=c23", "", ""},
 		{"stdcountof_header", "run", "exec/types/stdcountof_header.c", "OK\n", "-std=c2y", "", "note:gcc 15 does not ship the C2y <stdcountof.h> yet, so the three-way consensus cannot include it; clang 22 and mcc both do"},
+		{"gnu89_extern_inline_redef", "run", "exec/functions_abi/gnu89_extern_inline_redef.c", "OK\n", "-std=gnu89", "", ""},
 };
 
 static const int mcc_goldens_count = (int)(sizeof mcc_goldens / sizeof mcc_goldens[0]);
