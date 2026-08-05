@@ -1202,14 +1202,13 @@ mcc_config_node(MCC_BENCH         TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build the mccbench tool and the `bench` target (compile-speed report). Off by default; CI enables it")
 mcc_config_node(MCC_CONFIG_TRACE TYPE BOOL DEFAULT OFF GROUP "Advanced" ADVANCED
     HELP "Compile in the MCC_TRACE() instrumentation macro (emitted at the [TRACE] verbosity bit); off = MCC_TRACE compiles to nothing. Separate from MCC_DIAG: ~12,600 call sites, one in nearly every basic block")
-mcc_config_node(MCC_DEV TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
+mcc_config_node(MCC_DEV TYPE BOOL DEFAULT OFF GROUP "Development" ADVANCED
     HELP "Compile in the AST side-car coherence oracle: recompute every fast-index answer the slow authoritative way and abort on divergence (def/use table, property memos, structural hash, VLat lattice). CI instrument -- it aborts rather than reports. Separate from MCC_DIAG, which instruments the running compiler and changes allocation layout")
 mcc_config_node(MCC_DIAG TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
     HELP "Everything-on self-scrutiny, one switch. Compiles in every internal instrument -- the MCC_TRACE() per-basic-block tracer, allocator and tiny-allocator leak tracking, one-allocation-per-Sym, the Replay_IR operation trace -- and builds with the verbose warning/debug-info flag set plus the mcc_s (sanitized) and mcc_c (coverage) targets. None of it can be a runtime flag: MCC_TRACE alone expands ~12,600 times, and the allocator/Sym instruments change struct layout. Runtime options are -f flags, see src/mccopt.h")
+
 if(MCC_DIAG)
-
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-
         if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
             message(STATUS "mcc diagnostics: skipping mcc_s (-fsanitize) with GNU gcc on "
                            "macOS (Homebrew gcc ships no linkable libasan/libubsan here)")
@@ -1217,9 +1216,6 @@ if(MCC_DIAG)
             mcc_profile_seed(MCC_BUILD_SANITIZE ON)
         endif()
         mcc_profile_seed(MCC_BUILD_COVERAGE ON)
-    else()
-        message(STATUS "mcc diagnostics: host CC '${CMAKE_C_COMPILER_ID}' is not GCC/Clang; "
-                       "skipping mcc_s/mcc_c (sanitize/coverage need GCC/Clang)")
     endif()
 endif()
 
@@ -1725,9 +1721,6 @@ if(MCC_CONFIG_CODESIGN)
     list(APPEND _mccdefs "MCC_CONFIG_CODESIGN=1")
 endif()
 
-# The runtime diagnostics are always compiled in; -b / -bt / -fsanitize=bounds
-# select them per compile. These stay set because other rules still ask whether
-# the backtrace and bounds runtimes exist -- they now always do.
 set(_mcc_diag_bt 1)
 set(_mcc_diag_bc 1)
 if(MCC_EMBED_JIT)
