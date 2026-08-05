@@ -442,17 +442,21 @@ ST_FUNC MAYBE_UNUSED int host_rename(const char *src, const char *dst) { MCC_TRA
 
 #ifndef _WIN32
 
+/* The buffer is handed to the caller through HostSpawnOpts.stdout_buf and
+   freed there with mcc_free, so it must come from the mcc allocator -- the
+   Windows reader (host_pipe_read_thread) already does; libc malloc here made
+   that mcc_free trip the MCC_DIAG header check on every -fmacro-eval. */
 static char *host_slurp_fd(int fd) { MCC_TRACE("enter\n");
 	size_t cap = 4096, len = 0;
-	char *buf = malloc(cap), *nb;
+	char *buf = mcc_malloc(cap), *nb;
 	ssize_t r;
 	if (!buf)
 		{ MCC_TRACE("br\n"); return NULL; }
 	for (;;) { MCC_TRACE("br\n");
 		if (len + 1 >= cap) { MCC_TRACE("br\n");
 			cap *= 2;
-			if (!(nb = realloc(buf, cap))) { MCC_TRACE("br\n");
-				free(buf);
+			if (!(nb = mcc_realloc(buf, cap))) { MCC_TRACE("br\n");
+				mcc_free(buf);
 				return NULL;
 			}
 			buf = nb;
@@ -461,7 +465,7 @@ static char *host_slurp_fd(int fd) { MCC_TRACE("enter\n");
 		if (r < 0) { MCC_TRACE("br\n");
 			if (errno == EINTR)
 				{ MCC_TRACE("br\n"); continue; }
-			free(buf);
+			mcc_free(buf);
 			return NULL;
 		}
 		if (r == 0)
