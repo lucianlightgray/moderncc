@@ -125,12 +125,15 @@ static int ir_cap_fcn, ir_cap_fccap;
 void ir_cap_teardown(void) { MCC_TRACE("enter\n");
 	mcc_free(ir_cap_ops);
 	mcc_free(ir_cap_vs);
+	mcc_free(ir_cap_raw);
 	mcc_free(ir_cap_fc);
 	ir_cap_ops = NULL;
 	ir_cap_vs = NULL;
+	ir_cap_raw = NULL;
 	ir_cap_fc = NULL;
 	ir_cap_n = ir_cap_cap = 0;
 	ir_cap_vsn = ir_cap_vscap = 0;
+	ir_cap_rawn = ir_cap_rawcap = 0;
 	ir_cap_fcn = ir_cap_fccap = 0;
 }
 static int ir_cap_fc_cur, ir_cap_fc_end;
