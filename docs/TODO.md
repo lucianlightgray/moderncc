@@ -5371,3 +5371,52 @@ of passing a cell it never tested.
   **never executed**. It mirrors the `tools/c2_equiv.sh:61-81` host gate and the Mach-O
   bootstrap shape; treat its first run on a Mac as unproven.
 - The `x86_64` cell uses the build directory's own `mcc` rather than re-bootstrapping one.
+
+## The stage2 red after the config refactor: five failures, four causes
+
+The a55c0a07/965a516e push turned every stage2 job red. All five failing tests trace to
+two consequences of the refactor plus two harness typos, fixed as follows.
+
+### Flags stranded in environment position (three harness sites)
+
+`MCC_AST_*=1 mcc` recipes were converted to `-f` flags mechanically, and three landed
+where the environment variable used to sit — *before* the executable — so `sh`/`env`
+tried to exec `-fopt-slice` as a program: `cli/slice_eligible_set`, `cli/per_fn_config`
+(`tests/cli/cases.h`), and `superopt/promote-floor` (`${pin:+-fpromote-locals}` before
+`"$MCC"`, which reported as "-O13 (pinned) build failed"). The flags moved onto mcc's
+argv. A retired env var fails silently, but a flag in env position fails loudly —
+grep any future conversion for `-f[a-z-]* [A-Z_]*=` and `\${[a-z]*:+-f` before pushing.
+
+### `MCC_DIAG` now reaches the main binary, so error-path leaks became test output
+
+The old `MCC_ALL_DIAGNOSTICS` put `MEM_DEBUG`/`SYM_DEBUG` only on `mcc_s`; `MCC_DIAG=1`
+goes into `_mccdefs` and instruments the `mcc` every test runs. 279 diagnostics-job
+tests failed, every one on the same shape: a test that *expects* compile errors got
+`mcc: mem_leak= N bytes` appended, because `mcc_error` longjmps past cleanup by design
+(`assoc_types` in `_Generic`, per-`Sym` allocations under `MCC_DIAG`'s individual
+`sym_malloc`, tal chunks, ...). **Policy, not fix**: `mcc_leakcheck_quiet` is set when
+any compile error is diagnosed and both leak reporters stay silent for that window
+(`libmcc.c` `mcc_memcheck`, `mccpp.c` `tal_delete`); clean compiles keep full leak
+checking, which is where a regression would matter. The suppressed error-path leaks
+are real but bounded (the longjmp path frees `stk_data` slots only); auditing them
+one by one is open, low priority.
+
+### Self-hosting under `-run` and the TLS slab arithmetic
+
+`selfhost-jit` died with `mccrun: TLS size 65976 exceeds -run slab`. The arithmetic:
+a `-run` guest's whole TLS must fit the host's 64K `mcc_jit_tls_slab`, and a guest
+*mcc* carries its own equally-sized slab **plus, now, the optimizer's ~440 bytes of
+per-worker `MCC_OPT_TLS` gates** — before the refactor the inner mcc was compiled
+without `MCC_CONFIG_OPTIMIZER`, so its TLS was the slab alone, 65536 exactly, and the
+`>` check passed on the knife's edge. No fixed slab size can host a same-sized guest
+with any extra TLS, so `MCC_JIT_TLS_MAX` is now `#ifndef`-overridable and the two
+self-host harnesses (`tools/selfhost-jit.py`, `tools/i386jit-selfhost-docker.sh`)
+compile the *inner* mcc with `-DMCC_JIT_TLS_MAX=4096` — the inner never hosts a `-run`
+guest of its own, so its slab only has to exist. Any new harness that `-run`s
+`src/mcc.c` needs the same define or it will fail the same way.
+
+### Not mine: `tls_threads` and the i386 run slab
+
+`run-tier/x86_64`'s last red program was fixed upstream in `26881521` (seed the slab
+in program-created threads; wire `R_386_TLS_LE` to `run_tls_active`) — 14/14 both
+JIT tiers. arm, riscv64 and the PE triples still lack run-mode TLS.
