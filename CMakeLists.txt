@@ -3962,6 +3962,7 @@ if(MCC_BUILD_TESTS)
 
         foreach(_rt x86_64 i386 arm arm64 riscv64
                     x86_64-win32 i386-win32 x86_64-osx arm64-osx)
+            set(_rtfixreq "MCC_BUILT;MCC_CROSS_BUILT")
             if(_rt MATCHES "(win32|wince)$")
                 set(_rtlabels LABELS "wine")
             elseif(_rt MATCHES "osx$")
@@ -3970,12 +3971,13 @@ if(MCC_BUILD_TESTS)
                 set(_rtlabels "")
             else()
                 set(_rtlabels LABELS "qemu")
+                set(_rtfixreq "${_rtfixreq};FX_qemu-${_rt}-glibc")
             endif()
             add_test(NAME run-tier/${_rt}
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/run-tier.sh"
                         "${_rt}" "${CMAKE_BINARY_DIR}" "${MCC_CROSS_DIR}")
             set_tests_properties(run-tier/${_rt} PROPERTIES
-                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                FIXTURES_REQUIRED "${_rtfixreq}" SKIP_RETURN_CODE 77
                 ${_rtlabels} TIMEOUT 1800)
         endforeach()
         foreach(_rt arm64-win32 arm-win32 arm-wince)
