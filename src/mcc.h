@@ -1267,8 +1267,9 @@ struct filespec {
 #define TOK_U32STR 0xd3
 #define TOK_U8STR 0xd4
 #define TOK_CFLOAT16 0xd5
+#define TOK_U8CHAR 0xd6
 
-#define TOK_HAS_VALUE(t) (t >= TOK_CCHAR && t <= TOK_CFLOAT16)
+#define TOK_HAS_VALUE(t) (t >= TOK_CCHAR && t <= TOK_U8CHAR)
 
 #define TOK_EOF (-1)
 #define TOK_LINEFEED 10

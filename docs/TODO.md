@@ -5976,6 +5976,28 @@ linux/riscv64` fails with "exec format error". Clear the host entry
 Running the cells themselves does not need binfmt at all -- `run-tier.sh` invokes
 `qemu-<arch> -L <sysroot>` directly -- only *building* the sysroot does.
 
+### C23 `u8` closed, and it exposed a signedness bug in `u`/`U` too
+
+`u8'a'` now lexes as its own token (`TOK_U8CHAR`) with type `unsigned char`, and
+`u8"..."` has type `unsigned char[]` at C23 and later (`char[]` before, unchanged).
+`atomic_char8_t` is in `stdatomic.h`. That closes `c23-utf8char-1`,
+`gnu23-utf8char-1`, `c23-utf8str-type`, `gnu23-utf8str-type`.
+
+The last assertion in the utf8char tests is *not* about `u8` at all:
+
+```c
+#if u8'\0' - 1 < 0
+#error "UTF-8 constants not unsigned in preprocessor"
+#endif
+```
+
+`#if` arithmetic converts a character constant to `intmax_t` or `uintmax_t` by the
+signedness of its *type*, so an unsigned-typed constant must not go negative. mcc gave
+every character constant the signed widening, and `u'\0' - 1 < 0` and `U'\0' - 1 < 0`
+were wrong the same way — a pre-existing bug in the C11 prefixes that no test in the
+tree covered. All three now widen to `VT_LLONG | VT_UNSIGNED` under `pp_expr`, and the
+`u8_char` golden asserts all three.
+
 ### Newly surfaced by the qemu sysroots: `selfhost-qemu-{i386,arm}-O2`
 
 Building the qemu sysroots made two more cells runnable, and both fail -- **not a

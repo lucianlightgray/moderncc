@@ -5,6 +5,20 @@
 
 atomic_char8_t g;
 
+_Static_assert(sizeof(u8'a') == 1, "u8 char is one byte");
+_Static_assert(_Generic(u8'a', unsigned char: 1, default: 0) == 1, "u8 char type");
+_Static_assert(_Generic(u8"text", unsigned char *: 1, default: 0) == 1, "u8 str type");
+
+#if u8'\0' - 1 < 0
+#error "u8 character constants must be unsigned in the preprocessor"
+#endif
+#if u'\0' - 1 < 0
+#error "u character constants must be unsigned in the preprocessor"
+#endif
+#if U'\0' - 1 < 0
+#error "U character constants must be unsigned in the preprocessor"
+#endif
+
 int main(void) {
 	unsigned char a = u8'a';
 	unsigned char b = u8'\xff';

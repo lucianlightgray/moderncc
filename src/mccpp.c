@@ -638,6 +638,10 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv) { MCC_TRACE("enter\n");
 	case TOK_CULLONG:
 		snprintf(p, cstr_buf.size_allocated, "%llu", (unsigned long long)cv->i);
 		break;
+	case TOK_U8CHAR:
+		cstr_ccat(&cstr_buf, 'u');
+		cstr_ccat(&cstr_buf, '8');
+		goto do_char_const;
 	case TOK_U16CHAR:
 		cstr_ccat(&cstr_buf, 'u');
 		goto do_char_const;
@@ -1203,6 +1207,7 @@ static void tok_str_add2(TokenString *s, int t, CValue *cv) { MCC_TRACE("enter\n
 	case TOK_CUINT:
 	case TOK_CCHAR:
 	case TOK_LCHAR:
+	case TOK_U8CHAR:
 	case TOK_U16CHAR:
 	case TOK_U32CHAR:
 	case TOK_CFLOAT:
@@ -1282,6 +1287,7 @@ static inline void tok_get(int *t, const int **pp, CValue *cv) { MCC_TRACE("ente
 	case TOK_CINT:
 	case TOK_CCHAR:
 	case TOK_LCHAR:
+	case TOK_U8CHAR:
 	case TOK_U16CHAR:
 	case TOK_U32CHAR:
 	case TOK_LINENUM:
@@ -3214,6 +3220,8 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); tok = TOK_U16CHAR; }
 		else if (prefix == 'U')
 			{ MCC_TRACE("br\n"); tok = TOK_U32CHAR; }
+		else if (prefix == '8')
+			{ MCC_TRACE("br\n"); tok = TOK_U8CHAR; }
 		n = tokcstr.size / char_size - 1;
 		if (n < 1)
 			{ MCC_TRACE("br\n"); mcc_error("empty character constant"); }

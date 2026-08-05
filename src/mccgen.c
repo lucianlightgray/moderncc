@@ -11651,11 +11651,14 @@ tok_next:
 		mcc_state->pedantic_errors = 0;
 		next();
 		goto tok_next;
+	case TOK_U8CHAR:
+		t = pp_expr ? (VT_LLONG | VT_UNSIGNED) : (VT_BYTE | VT_UNSIGNED | VT_DEFSIGN);
+		goto push_tokc;
 	case TOK_U16CHAR:
-		t = VT_SHORT | VT_UNSIGNED;
+		t = pp_expr ? (VT_LLONG | VT_UNSIGNED) : (VT_SHORT | VT_UNSIGNED);
 		goto push_tokc;
 	case TOK_U32CHAR:
-		t = VT_INT | VT_UNSIGNED;
+		t = pp_expr ? (VT_LLONG | VT_UNSIGNED) : (VT_INT | VT_UNSIGNED);
 		goto push_tokc;
 	case TOK_LCHAR:
 #ifdef MCC_TARGET_PE
@@ -11734,7 +11737,8 @@ tok_next:
 #endif
 		goto str_init;
 	case TOK_U8STR:
-		t = char_type.t;
+		t = mcc_state->cversion >= 202311 ? (VT_BYTE | VT_UNSIGNED | VT_DEFSIGN)
+																			: char_type.t;
 		goto str_init;
 	case TOK_STR:
 	case_TOK_STR:
