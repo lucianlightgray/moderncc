@@ -859,7 +859,8 @@ static int do_local_stage2(void) {
 			return 1;
 		}
 	}
-	snprintf(mccpath, sizeof mccpath, "%s/bin/mcc", stagedir);
+	snprintf(mccpath, sizeof mccpath, "%s/bin/mcc%s", stagedir,
+			MCC_HOST_WIN32 ? ".exe" : "");
 	for (f = 0; FEATURES[f].name; f++) {
 		char *a[3];
 		int na = 0, rc;

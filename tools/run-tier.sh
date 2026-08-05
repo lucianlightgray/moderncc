@@ -230,12 +230,18 @@ macho)
 	cp "$RTA" "$B/$triple-libmccrt.a"
 	cp "$RMO" "$B/runmain.o"
 	cp "$RMO" "$B/$triple-runmain.o"
+	# libSystem lives in the SDK, not on the filesystem root; without this the
+	# bootstrap dies with "library 'c' not found" and an unresolved-libc flood.
+	SDKL=""
+	sdk=$(xcrun --show-sdk-path 2>/dev/null || true)
+	[ -n "$sdk" ] && [ -d "$sdk/usr/lib" ] && SDKL="-L$sdk/usr/lib"
+	[ -n "$SDKL" ] || skip "no macOS SDK (xcrun --show-sdk-path)"
 	echo "[$triple] bootstrapping a $triple-hosted mcc with $CROSS (Mach-O)"
 	"$CROSS" -w $BUILDDEFS -O1 $INC \
-		"-B$root/runtime" "-I$root/runtime/include" \
+		"-B$root/runtime" "-I$root/runtime/include" $SDKL \
 		-o "$MCC" "$root/src/mcc.c"
 	[ -s "$MCC" ] || fail "$triple mcc did not build"
-	CORPUSFLAGS="-I$root/runtime/include"
+	CORPUSFLAGS="-I$root/runtime/include $SDKL"
 	;;
 esac
 
