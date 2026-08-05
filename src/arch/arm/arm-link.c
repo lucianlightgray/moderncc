@@ -433,17 +433,21 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 
 		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			Section *s = s1->sections[i];
-			if (s->sh_flags & SHF_TLS && s->sh_size) { MCC_TRACE("br\n");
+			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+			if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
 				if (!tls_start || s->sh_addr < tls_start)
 					{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
-				if (s->sh_addr + s->sh_size > tls_end)
-					{ MCC_TRACE("br\n"); tls_end = s->sh_addr + s->sh_size; }
+				if (s->sh_addr + ssz > tls_end)
+					{ MCC_TRACE("br\n"); tls_end = s->sh_addr + ssz; }
 				if (s->sh_addralign > tls_align)
 					{ MCC_TRACE("br\n"); tls_align = s->sh_addralign; }
 			}
 		}
 		if (tls_end > tls_start) { MCC_TRACE("br\n");
-			x = val - tls_start + 8;
+			if (s1->run_tls_active)
+				{ MCC_TRACE("br\n"); x = (int32_t)(s1->run_tls_slab_tpoff + (val - tls_start)); }
+			else
+				{ MCC_TRACE("br\n"); x = val - tls_start + 8; }
 		} else { MCC_TRACE("br\n");
 			x = val - sec->sh_addr - sec->data_offset + 8;
 		}

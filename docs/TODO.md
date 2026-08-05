@@ -5338,7 +5338,61 @@ value at every size that straddles the register/memory boundary, and mixed int/d
 varargs. arm passes `fp_double` and `fp_longdouble` too; the `fsum=0.000` soft-float
 symptom recorded above does **not** reproduce through a hardfloat-built arm mcc.
 
-### The TLS red, refined into two distinct defects
+### CLOSED for the five ELF triples: `-run` TLS on x86_64, i386, arm, arm64, riscv64
+
+`run-tier/{x86_64,i386,arm,arm64,riscv64}` are **green**, both corpus TLS programs, both
+JIT tiers. What was left after the x86_64 thread fix landed was three defects of the same
+shape, one per remaining ELF triple:
+
+1. **`host_run_tls_slab_tpoff()` read the thread pointer on x86_64 and aarch64 only**
+   (`src/mcchost.c`). i386, arm and riscv64 fell through with `tp = 0`, so the "offset"
+   handed to the relocation was the slab's absolute address. Added the three reads:
+   `%gs:0` (i386), `mrc p15, 0, r, c13, c0, 3` (arm TPIDRURO), `mv r, tp` (riscv64).
+   Verified directly under qemu: an arm `__thread int` sits at `tp + 8`, the variant-I
+   TCB size, so `slab - tp` is the right delta on both TLS variants.
+2. **arm and riscv64 sized the TLS sections by `sh_size` alone.** Under `-run` nothing
+   lays out an output file, so `sh_size` is still 0 and `data_offset` holds the size;
+   `tls_start` stayed 0 and the local-exec offset became an absolute address. i386 and
+   x86_64 already used `sh_size ? : data_offset`; arm and riscv64 now do too. **This was
+   the whole arm failure** -- the `run_tls_active` arm below never even ran, because
+   `tls_end > tls_start` was false.
+3. **Neither `R_ARM_TLS_LE32` nor `R_RISCV_TPREL_HI20`/`_LO12_I` knew about the run
+   slab.** Both now take `run_tls_slab_tpoff + (val - tls_start)` when `run_tls_active`,
+   the same arm x86_64 and i386 already had. Note arm's non-run path adds the 8-byte TCB
+   and the run path must not: `tpoff` is already the full delta from the thread pointer.
+
+**How this host got to run those cells at all**, since it has no vendored Gentoo
+stage3: `tools/run-tier.sh` only needs a directory at
+`vendor/gentoo-stage3-<triple>-glibc` holding a libc with headers and crt files. A
+Debian rootfs from docker is one:
+
+```
+docker run --name c --platform linux/386 debian:bookworm-slim     sh -c 'apt-get update -qq && apt-get install -y -qq libc6-dev'
+docker export c | tar -C vendor/gentoo-stage3-i386-glibc -xf -     --exclude=./dev --exclude=./proc --exclude=./sys
+cp -r usr/include/<multiarch>/. usr/include/     # flatten Debian multiarch
+ln -s <multiarch>/<f> usr/lib/<f>                 # for each file, so crt1.o is found
+```
+
+Two traps, both of which cost a cycle here. The tar excludes **must be anchored**
+(`--exclude=./sys`, not `--exclude=sys`) or the tar strips `/usr/include/sys` and every
+compile dies on an unexpanded `__BEGIN_DECLS`. And foreign-arch containers need binfmt
+entries registered with the `F` flag: a host qemu registration (`flags: OC`) names an
+interpreter path that does not exist *inside* the container, so `docker run --platform
+linux/riscv64` fails with "exec format error". Clear the host entry
+(`echo -1 > /proc/sys/fs/binfmt_misc/qemu-<arch>`) and install
+`tonistiigi/binfmt --install <arch>`, which registers its own static qemu with `F`.
+Running the cells themselves does not need binfmt at all -- `run-tier.sh` invokes
+`qemu-<arch> -L <sysroot>` directly -- only *building* the sysroot does.
+
+**Still red: `run-tier/{x86_64-win32,i386-win32}`**, `tls` and `tls_threads`, under wine.
+The PE side has no run TLS at all: the whole slab (`mcc_jit_tls_slab`,
+`host_run_tls_slab_{base,size,tpoff}`) is `#if defined(__linux__)`, and
+`tls_setup_linux`/`tls_seed_linux` are `#if MCC_HOST_LINUX`, so a PE-hosted mcc never
+seeds anything. The i386-link/x86_64-link TLS arms are `#ifdef MCC_TARGET_PE`'d away from
+the run path too. That is a port of the slab to `_Thread_local` plus the PE TLS access
+model, not a repair of the ELF one.
+
+### The TLS red, refined into two distinct defects (historical -- the ELF half is closed above)
 
 The corpus splits `-run` TLS into a single-threaded case and a threaded one, and they fail
 on different sets of targets — so they are two bugs, not one.

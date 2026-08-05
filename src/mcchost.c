@@ -1462,8 +1462,14 @@ ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_tpoff(void) { MCC_TRACE("en
 #if !defined(__MCC__) || defined(__MCC_ASM__)
 #if defined(__x86_64__)
 	__asm__ volatile("mov %%fs:0, %0" : "=r"(tp));
+#elif defined(__i386__)
+	__asm__ volatile("mov %%gs:0, %0" : "=r"(tp));
 #elif defined(__aarch64__)
 	__asm__ volatile("mrs %0, tpidr_el0" : "=r"(tp));
+#elif defined(__riscv) && __riscv_xlen == 64
+	__asm__ volatile("mv %0, tp" : "=r"(tp));
+#elif defined(__arm__)
+	__asm__ volatile("mrc p15, 0, %0, c13, c0, 3" : "=r"(tp));
 #endif
 #endif
 	return (unsigned long)mcc_jit_tls_slab - tp;

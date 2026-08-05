@@ -424,12 +424,15 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		}
 		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			Section *s = s1->sections[i];
-			if (s->sh_flags & SHF_TLS && s->sh_size) { MCC_TRACE("br\n");
+			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+			if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
 				if (!tls_start || s->sh_addr < tls_start)
 					{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
 			}
 		}
 		tp_offset = val - tls_start;
+		if (s1->run_tls_active)
+			{ MCC_TRACE("br\n"); tp_offset = (int64_t)s1->run_tls_slab_tpoff + (val - tls_start); }
 		if (type == R_RISCV_TPREL_HI20) { MCC_TRACE("br\n");
 			off64 = (int64_t)(tp_offset + 0x800) >> 12;
 			if ((off64 + ((uint64_t)1 << 20)) >> 21)
