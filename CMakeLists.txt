@@ -324,13 +324,6 @@ function(mcc_validate_config)
             "mcc config: MCC_CONFIG_SEMLOCK='${MCC_CONFIG_SEMLOCK}' must be a number")
     endif()
 
-    if(MCC_BUILD_PROFILE AND (NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang"
-                              OR CMAKE_C_SIMULATE_ID STREQUAL "MSVC"))
-        message(FATAL_ERROR
-            "mcc config: MCC_BUILD_PROFILE (mcc_p, -pg) needs a GNU-ABI GCC/Clang "
-            "host compiler (have '${CMAKE_C_COMPILER_ID}'); disable it or set "
-            "-DCMAKE_C_COMPILER to gcc/clang.")
-    endif()
     if(MCC_BUILD_SANITIZE
        AND NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|ModernCC|TinyCC"
        AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC")
@@ -338,11 +331,6 @@ function(mcc_validate_config)
             "mcc config: MCC_BUILD_SANITIZE needs a GCC/Clang, MSVC, or mcc host "
             "compiler (have '${CMAKE_C_COMPILER_ID}'); disable it with "
             "-DMCC_BUILD_SANITIZE=OFF.")
-    endif()
-    if(MCC_BUILD_PROFILE AND MCC_TARGETOS STREQUAL "Darwin")
-        message(FATAL_ERROR
-            "mcc config: MCC_BUILD_PROFILE (mcc_p, -static) is unsupported on Darwin "
-            "(no static crt0.o).")
     endif()
     if(CMAKE_CROSSCOMPILING AND "${MCC_EMULATOR}" STREQUAL "")
         if(MCC_CONFIG_AUTOCORRECT)
@@ -390,7 +378,7 @@ function(mcc_validate_config)
             "cannot resolve libmcc.so. Enable MCC_BUILD_STATIC_LIB, or keep "
             "MCC_SINGLE_SOURCE=ON so mcc-static is self-contained.")
     endif()
-    if(NOT MCC_CONFIG_ASM AND NOT MCC_MCCRT_USE_HOSTCC)
+    if(NOT MCC_MCCRT_USE_HOSTCC AND FALSE)
         mcc_autocorrect(MCC_MCCRT_USE_HOSTCC ON
             "asm disabled: mccrt .S sources must be built with the host CC")
     endif()
@@ -1178,7 +1166,7 @@ set(MCC_CROSS_DIR "${_mcc_cross_default}"
     CACHE PATH "cross-compiler build dir for the cross test cells")
 mcc_config_node(MCC_CROSS_OPTIMIZER TYPE BOOL DEFAULT ON GROUP "Build targets" ADVANCED
     VISIBLE_WHEN "MCC_ENABLE_CROSS"
-    HELP "Compile MCC_CONFIG_OPTIMIZER=1 into the cross compilers (mcc-<arch>). ON (default) makes the cross reemit/JIT parity axes (divmagic/select/promotion/replay-inline/embed-jit) real on every triple, matching native; also appends MCC_EMBED_JIT=1. OFF builds the cross compilers without the AST reemit optimizer (smaller/faster cross build, byte-identical to the pre-ungate cross output) but leaves those per-triple parity axes compiled out so they silently no-op.")
+    HELP "Build the cross compilers (mcc-<arch>) with the optimizer. ON (default) makes the cross reemit/JIT parity axes (divmagic/select/promotion/replay-inline/embed-jit) real on every triple, matching native; also appends MCC_EMBED_JIT=1. OFF builds the cross compilers without the AST reemit optimizer (smaller/faster cross build, byte-identical to the pre-ungate cross output) but leaves those per-triple parity axes compiled out so they silently no-op.")
 mcc_config_node(MCC_CROSS_TARGETS TYPE STRING DEFAULT "" GROUP "Build targets" ADVANCED
     EMPTY_OK VISIBLE_WHEN "MCC_ENABLE_CROSS"
     HELP "Subset of cross triples to build under MCC_ENABLE_CROSS, comma- or semicolon-separated (e.g. x86_64-osx,arm64-osx). Empty (default) builds every triple. Each entry must name one of: i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64 arm64-win32 arm-win32 arm-wince riscv64 arm64-osx. Narrowing it lets a CI cell build only the object-format compilers its validators need instead of all twelve.")
@@ -1212,19 +1200,13 @@ mcc_config_node(MCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build/enable the test suite (tests/Makefile)")
 mcc_config_node(MCC_BENCH         TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build the mccbench tool and the `bench` target (compile-speed report). Off by default; CI enables it")
-mcc_config_node(MCC_CONFIG_LSP TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
-    HELP "Enable --lsp capture (the side-recorded concrete syntax tree subsystem)")
-mcc_config_node(MCC_CONFIG_OPTIMIZER TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
-    HELP "Enable the optimizer (-O1+ AST replay driver); OFF degrades -O1+ to -O0-equivalent output")
-mcc_config_node(MCC_REPLAY_IR TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
-    HELP "Compile in the Replay_IR side-car (structured replay model unifying the AST recorder and the operation journal); runtime gate MCC_REPLAY_IR=1. Requires the journal hooks, so it self-disables on targets outside that gate")
-mcc_config_node(MCC_CONFIG_AST_SHADOW TYPE BOOL DEFAULT OFF GROUP "Advanced" ADVANCED
-    HELP "Cross-check the AST side-car substrate (def/use table, property memos, structural hash) against the legacy O(N) scanners at runtime; abort on divergence. Debug/CI only")
 mcc_config_node(MCC_CONFIG_TRACE TYPE BOOL DEFAULT OFF GROUP "Advanced" ADVANCED
-    HELP "Compile in the MCC_TRACE() instrumentation macro (emitted at the [TRACE] verbosity bit); off = MCC_TRACE compiles to nothing")
-mcc_config_node(MCC_ALL_DIAGNOSTICS TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
-    HELP "Everything-on diagnostics: verbose warnings + debug info + build mcc_s/mcc_p/mcc_c")
-if(MCC_ALL_DIAGNOSTICS)
+    HELP "Compile in the MCC_TRACE() instrumentation macro (emitted at the [TRACE] verbosity bit); off = MCC_TRACE compiles to nothing. Separate from MCC_DIAG: ~12,600 call sites, one in nearly every basic block")
+mcc_config_node(MCC_DEV TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
+    HELP "Compile in the AST side-car coherence oracle: recompute every fast-index answer the slow authoritative way and abort on divergence (def/use table, property memos, structural hash, VLat lattice). CI instrument -- it aborts rather than reports. Separate from MCC_DIAG, which instruments the running compiler and changes allocation layout")
+mcc_config_node(MCC_DIAG TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
+    HELP "Everything-on self-scrutiny, one switch. Compiles in every internal instrument -- the MCC_TRACE() per-basic-block tracer, allocator and tiny-allocator leak tracking, one-allocation-per-Sym, the Replay_IR operation trace -- and builds with the verbose warning/debug-info flag set plus the mcc_s (sanitized) and mcc_c (coverage) targets. None of it can be a runtime flag: MCC_TRACE alone expands ~12,600 times, and the allocator/Sym instruments change struct layout. Runtime options are -f flags, see src/mccopt.h")
+if(MCC_DIAG)
 
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 
@@ -1235,22 +1217,12 @@ if(MCC_ALL_DIAGNOSTICS)
             mcc_profile_seed(MCC_BUILD_SANITIZE ON)
         endif()
         mcc_profile_seed(MCC_BUILD_COVERAGE ON)
-
-        if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-            message(STATUS "mcc diagnostics: skipping mcc_p (-static profiling) on Darwin (no static crt0.o)")
-        elseif(CMAKE_C_SIMULATE_ID STREQUAL "MSVC")
-            message(STATUS "mcc diagnostics: skipping mcc_p (-pg -static) with an MSVC-ABI clang (no gprof runtime, no libm)")
-        else()
-            mcc_profile_seed(MCC_BUILD_PROFILE  ON)
-        endif()
     else()
         message(STATUS "mcc diagnostics: host CC '${CMAKE_C_COMPILER_ID}' is not GCC/Clang; "
-                       "skipping mcc_s/mcc_c/mcc_p (sanitize/coverage/profile need GCC/Clang)")
+                       "skipping mcc_s/mcc_c (sanitize/coverage need GCC/Clang)")
     endif()
 endif()
 
-mcc_config_node(MCC_BUILD_PROFILE  TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
-    HELP "Also build mcc_p (profiling: -pg -static)")
 mcc_config_node(MCC_BUILD_COVERAGE TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
     HELP "Also build mcc_c (coverage instrumentation)")
 mcc_config_node(MCC_BUILD_SANITIZE TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
@@ -1274,11 +1246,6 @@ set(_mcc_diag_default off)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(_mcc_diag_default bounds)
 endif()
-mcc_config_node(MCC_CONFIG_DIAG_RT TYPE STRING DEFAULT ${_mcc_diag_default} GROUP "mcc features"
-    CHOICES off backtrace bounds
-    HELP "Runtime diagnostics level: off | backtrace (-bt / -run traces) | bounds (adds the -b bounds checker); defaults to bounds for Debug builds")
-mcc_config_node(MCC_CONFIG_ASM      TYPE BOOL DEFAULT ON GROUP "mcc features"
-    HELP "Enable the integrated assembler (inline asm, global asm, .s files, asm labels)")
 mcc_config_node(MCC_CONFIG_PREDEFS  TYPE BOOL DEFAULT ON GROUP "mcc features"
     HELP "Compile mccdefs.h into the binary (c2str)")
 mcc_config_node(MCC_CONFIG_PIE      TYPE BOOL DEFAULT OFF GROUP "mcc features"
@@ -1596,7 +1563,7 @@ if(MCC_CC_NAME STREQUAL "gcc" AND MCC_GCC_MAJOR EQUAL 4
 endif()
 
 set(MCC_DIAG_FLAGS "")
-if(MCC_ALL_DIAGNOSTICS)
+if(MCC_DIAG)
     if(MSVC)
 
         foreach(_f /W4 /Zi)
@@ -1679,10 +1646,6 @@ if(MCC_CPU STREQUAL "arm")
     mcc_status_node(arm_abi "eabi=${MCC_ARM_EABI} vfp=${MCC_ARM_VFP} hardfloat=${MCC_ARM_HARDFLOAT} idiv=${MCC_ARM_IDIV} cpuver=${MCC_CPUVER}")
 endif()
 
-if(MCC_EMBED_JIT AND NOT MCC_CONFIG_OPTIMIZER)
-    mcc_autocorrect(MCC_EMBED_JIT OFF
-        "runtime-JIT embed reemits AST → requires MCC_CONFIG_OPTIMIZER")
-endif()
 if(MCC_CONFIG_JIT AND NOT MCC_EMBED_JIT)
     mcc_autocorrect(MCC_CONFIG_JIT OFF
         "MCC_JIT_DEFAULT is inert without MCC_EMBED_JIT")
@@ -1762,30 +1725,11 @@ if(MCC_CONFIG_CODESIGN)
     list(APPEND _mccdefs "MCC_CONFIG_CODESIGN=1")
 endif()
 
-if(NOT MCC_CONFIG_ASM)
-    list(APPEND _mccdefs "MCC_CONFIG_ASM=0")
-endif()
-set(_mcc_diag_level 0)
-set(_mcc_diag_bt 0)
-set(_mcc_diag_bc 0)
-if(MCC_CONFIG_DIAG_RT STREQUAL "backtrace")
-    set(_mcc_diag_level 1)
-    set(_mcc_diag_bt 1)
-elseif(MCC_CONFIG_DIAG_RT STREQUAL "bounds")
-    set(_mcc_diag_level 2)
-    set(_mcc_diag_bt 1)
-    set(_mcc_diag_bc 1)
-endif()
-list(APPEND _mccdefs "MCC_CONFIG_DIAG_RT=${_mcc_diag_level}")
-if(MCC_CONFIG_LSP)
-    list(APPEND _mccdefs "MCC_CONFIG_LSP=1")
-endif()
-if(MCC_CONFIG_OPTIMIZER)
-    list(APPEND _mccdefs "MCC_CONFIG_OPTIMIZER=1")
-endif()
-if(NOT MCC_REPLAY_IR)
-    list(APPEND _mccdefs "MCC_REPLAY_IR=0")
-endif()
+# The runtime diagnostics are always compiled in; -b / -bt / -fsanitize=bounds
+# select them per compile. These stay set because other rules still ask whether
+# the backtrace and bounds runtimes exist -- they now always do.
+set(_mcc_diag_bt 1)
+set(_mcc_diag_bc 1)
 if(MCC_EMBED_JIT)
     list(APPEND _mccdefs "MCC_EMBED_JIT=1")
 endif()
@@ -1794,8 +1738,11 @@ if(MCC_CONFIG_JIT)
 else()
     list(APPEND _mccdefs "MCC_JIT_DEFAULT=0")
 endif()
-if(MCC_CONFIG_AST_SHADOW)
-    list(APPEND _mccdefs "MCC_CONFIG_AST_SHADOW=1")
+if(MCC_DIAG)
+    list(APPEND _mccdefs "MCC_DIAG=1")
+endif()
+if(MCC_DEV)
+    list(APPEND _mccdefs "MCC_DEV=1")
 endif()
 if(MCC_CONFIG_TRACE)
     list(APPEND _mccdefs "MCC_CONFIG_TRACE=1")
@@ -1846,7 +1793,7 @@ foreach(_d IN LISTS _mccdefs)
 endforeach()
 
 message(STATUS "mcc build defines: CC_NAME=CC_${MCC_CC_NAME} predefs=${_mcc_predefs_value} "
-               "diag-rt=${MCC_CONFIG_DIAG_RT}")
+               "diag-rt=always")
 
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 include_directories(
@@ -2025,7 +1972,7 @@ function(mcc_add_libmcc tgt kind is_musl)
     if(_mcc_extra_libs)
         target_link_libraries(${tgt} PUBLIC ${_mcc_extra_libs})
     endif()
-    if(MCC_ALL_DIAGNOSTICS)
+    if(MCC_DIAG)
         target_compile_options(${tgt} PRIVATE ${MCC_DIAG_FLAGS})
     endif()
     if(ARGN)
@@ -2092,7 +2039,7 @@ if(MCC_EMBED_JIT)
         if(MCC_CC_NAME STREQUAL "clang" AND MCC_CPU STREQUAL "x86_64")
             set_target_properties(libmcc_jitengine PROPERTIES POSITION_INDEPENDENT_CODE ON)
         endif()
-        if(MCC_ALL_DIAGNOSTICS)
+        if(MCC_DIAG)
             target_compile_options(libmcc_jitengine PRIVATE ${MCC_DIAG_FLAGS})
         endif()
     endif()
@@ -2131,7 +2078,7 @@ endif()
 if(MCC_BUILD_STRIP AND NOT MCC_CC_NAME STREQUAL "msvc")
     target_link_options(mcc PRIVATE ${MCC_STRIP_LDFLAG})
 endif()
-if(MCC_ALL_DIAGNOSTICS)
+if(MCC_DIAG)
     target_compile_options(mcc PRIVATE ${MCC_DIAG_FLAGS})
 endif()
 
@@ -2167,7 +2114,7 @@ if(MCC_BUILD_STATIC_EXE)
     if(TARGET mcc_mccdefs)
         add_dependencies(mcc_static mcc_mccdefs)
     endif()
-    if(MCC_ALL_DIAGNOSTICS)
+    if(MCC_DIAG)
         target_compile_options(mcc_static PRIVATE ${MCC_DIAG_FLAGS})
     endif()
 endif()
@@ -2197,7 +2144,7 @@ if(MCC_BUILD_DYNAMIC_EXE)
     if(MCC_BUILD_STRIP AND NOT MCC_CC_NAME STREQUAL "msvc")
         target_link_options(mcc_dynamic PRIVATE ${MCC_STRIP_LDFLAG})
     endif()
-    if(MCC_ALL_DIAGNOSTICS)
+    if(MCC_DIAG)
         target_compile_options(mcc_dynamic PRIVATE ${MCC_DIAG_FLAGS})
     endif()
 endif()
@@ -2342,30 +2289,6 @@ if(MCC_BUILD_MUSL AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT APPLE)
     endif()
 endif()
 
-if(MCC_BUILD_PROFILE)
-    add_executable(mcc_p src/mcc.c)
-    set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
-    target_include_directories(mcc_p PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_compile_options(mcc_p PRIVATE -pg)
-    target_compile_definitions(mcc_p PRIVATE MCC_PROFILE)
-    if(NOT MCC_TARGETOS STREQUAL "WIN32")
-        target_compile_definitions(mcc_p PRIVATE MCC_CONFIG_STATIC)
-    endif()
-    target_link_options(mcc_p PRIVATE -pg -static)
-    target_link_libraries(mcc_p PRIVATE m)
-    find_package(Threads)
-    if(Threads_FOUND)
-        target_link_libraries(mcc_p PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
-    endif()
-    if(MCC_GITHASH)
-        target_compile_definitions(mcc_p PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
-    endif()
-    if(TARGET mcc_mccdefs)
-        add_dependencies(mcc_p mcc_mccdefs)
-    endif()
-endif()
-
 if(MCC_BUILD_SANITIZE)
     set(_san_cflags "")
     set(_san_lflags "")
@@ -2398,7 +2321,7 @@ if(MCC_BUILD_SANITIZE)
     set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
     target_include_directories(mcc_s PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_compile_definitions(mcc_s PRIVATE MCC_MEM_DEBUG=1 MCC_SYM_DEBUG=1)
+    target_compile_definitions(mcc_s PRIVATE MCC_DIAG=1)
     target_compile_options(mcc_s PRIVATE ${_san_cflags})
     if(_san_lflags)
         target_link_options(mcc_s PRIVATE ${_san_lflags})
@@ -2443,7 +2366,7 @@ if(MCC_BUILD_TSAN)
     endif()
 endif()
 
-foreach(_nt mcc mcc_static mcc_dynamic libmcc libmcc_shared libmcc_jitengine mcc_p mcc_s mcc_t)
+foreach(_nt mcc mcc_static mcc_dynamic libmcc libmcc_shared libmcc_jitengine mcc_s mcc_t)
     if(TARGET ${_nt})
         target_compile_definitions(${_nt} PRIVATE ${_mccdefs})
     endif()
@@ -2520,15 +2443,13 @@ function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir ou
                AND NOT os STREQUAL "WIN32" AND NOT os STREQUAL "Darwin"))
             list(APPEND _objs mccubsan)
         endif()
-        if(NOT MCC_CONFIG_DIAG_RT STREQUAL "off")
-            list(APPEND _objs bt-exe bt-log)
-            if(_win)
-                list(APPEND _objs bt-dll)
-            endif()
-            if(MCC_CONFIG_DIAG_RT STREQUAL "bounds")
-                list(APPEND _objs bcheck)
-            endif()
+        # Always: a compiler that accepts -b but cannot link it is a worse
+        # failure than a slightly larger runtime.
+        list(APPEND _objs bt-exe bt-log)
+        if(_win)
+            list(APPEND _objs bt-dll)
         endif()
+        list(APPEND _objs bcheck)
     elseif(san AND NOT _win AND NOT _osx)
         if(cpu STREQUAL "x86_64" OR cpu STREQUAL "arm64" OR cpu STREQUAL "riscv64" OR cpu STREQUAL "i386" OR cpu STREQUAL "arm")
             list(APPEND _objs mccasan)
@@ -2885,7 +2806,7 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
 endif()
 
 mcc_config_node(MCC_BUILD_JIT_SELFHOST TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED
-    VISIBLE_WHEN "MCC_EMBED_JIT AND MCC_CONFIG_OPTIMIZER"
+    VISIBLE_WHEN "MCC_EMBED_JIT"
     HELP "EXPERIMENTAL. Build mcc-jit: a stage-2 mcc self-compiled with --embed-jit (JITs its own hot functions at runtime). ELF + Apple Mach-O; PE bake path still gated off. The runtime hot-swap path can still SIGBUS on a complex JIT'd variant under heavier promotion — boots + self-compiles crash-free but is not yet proven crash-free under full runtime promotion.")
 
 function(mcc_add_jit_selfhost out_path stage0_mcc)
@@ -2917,7 +2838,7 @@ function(mcc_add_jit_selfhost out_path stage0_mcc)
         VERBATIM COMMAND_EXPAND_LISTS)
 endfunction()
 
-if(MCC_BUILD_JIT_SELFHOST AND MCC_EMBED_JIT AND MCC_CONFIG_OPTIMIZER AND TARGET libmcc_jitengine)
+if(MCC_BUILD_JIT_SELFHOST AND MCC_EMBED_JIT AND TARGET libmcc_jitengine)
     if(WIN32)
         set(_mccjit_out "${CMAKE_BINARY_DIR}/mcc-jit.exe")
     else()
@@ -2960,8 +2881,8 @@ add_custom_target(mcc-stats
     COMMAND ${CMAKE_COMMAND} -E rm -rf "${CMAKE_BINARY_DIR}/mcc-stats-cache"
     COMMAND ${CMAKE_COMMAND} -E env
             "XDG_CACHE_HOME=${CMAKE_BINARY_DIR}/mcc-stats-cache"
-            MCC_AST_SEARCH=1 MCC_SEARCH_WORKER=1
-            ${MCC_EMULATOR} "$<TARGET_FILE:mcc>" -O10 --stats
+            MCC_SEARCH_WORKER=1
+            ${MCC_EMULATOR} "$<TARGET_FILE:mcc>" -O13 -fopt-search --stats
             -c "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c"
             -o "${CMAKE_BINARY_DIR}/mcc-stats.o"
             "-I${CMAKE_BINARY_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}"
@@ -2975,9 +2896,9 @@ add_custom_target(mcc-stats
     DEPENDS mcc mccrt
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     VERBATIM USES_TERMINAL
-    COMMENT "mcc -O10 --stats: 10s live optimizer/JIT search stats panel over src/mcc.c")
+    COMMENT "mcc -O13 --stats: 14s live optimizer/JIT search stats panel over src/mcc.c")
 
-if(MCC_EMBED_JIT AND MCC_CONFIG_OPTIMIZER)
+if(MCC_EMBED_JIT)
     find_program(MCC_PYTHON3 NAMES python3 python)
     if(MCC_PYTHON3)
         add_custom_target(mcc-jit-selfcheck
@@ -2986,7 +2907,7 @@ if(MCC_EMBED_JIT AND MCC_CONFIG_OPTIMIZER)
             DEPENDS mcc mccrt
             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
             VERBATIM USES_TERMINAL
-            COMMENT "JIT self-host self-check: mcc --jit -O4 -run src/mcc.c, assert byte-identical to AOT")
+            COMMENT "JIT self-host self-check: mcc --jit -O13 -run src/mcc.c, assert byte-identical to AOT")
     endif()
 endif()
 
@@ -3019,7 +2940,7 @@ function(mcc_add_cross_mcc base_tgt base_out static_tgt static_out defs)
             endif()
             target_link_options(${_vt} PRIVATE -static)
         endif()
-        if(MCC_ALL_DIAGNOSTICS)
+        if(MCC_DIAG)
             target_compile_options(${_vt} PRIVATE ${MCC_DIAG_FLAGS})
         endif()
         if(MCC_GITHASH)
@@ -3124,7 +3045,6 @@ if(MCC_ENABLE_CROSS)
         set(_cross_defs ${_cdefs} ${_cpath_defs}
             "MCC_CONFIG_CROSSPREFIX=\"${_t}-\"")
         if(MCC_CROSS_OPTIMIZER)
-            list(APPEND _cross_defs "MCC_CONFIG_OPTIMIZER=1")
             if(MCC_EMBED_JIT)
                 list(APPEND _cross_defs "MCC_EMBED_JIT=1")
             endif()
@@ -3478,12 +3398,11 @@ if(MCC_BUILD_TESTS)
         endif()
     endif()
 
-    if(MCC_CONFIG_OPTIMIZER AND NOT CMAKE_CROSSCOMPILING)
+    if(NOT CMAKE_CROSSCOMPILING)
         add_executable(asttool tools/asttool.c)
         target_include_directories(asttool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_compile_definitions(asttool PRIVATE MCC_CONFIG_OPTIMIZER=1)
-        if(MCC_CONFIG_AST_SHADOW)
-            target_compile_definitions(asttool PRIVATE MCC_CONFIG_AST_SHADOW=1)
+        if(MCC_DEV)
+            target_compile_definitions(asttool PRIVATE MCC_DEV=1)
         endif()
         foreach(_an arena clone wide validate dump cfg template intention color forecast gatemap magic vlat combo_walk slice_ident slice_window slice_persist slice_graduate slice_splice slice_locate)
             add_test(NAME "ast/${_an}" COMMAND asttool "${_an}")
@@ -3639,10 +3558,9 @@ if(MCC_BUILD_TESTS)
         endif()
     endif()
 
-    if(MCC_CONFIG_LSP AND NOT CMAKE_CROSSCOMPILING)
+    if(NOT CMAKE_CROSSCOMPILING)
         add_executable(csttool tools/csttool.c)
         target_include_directories(csttool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_compile_definitions(csttool PRIVATE MCC_CONFIG_LSP=1)
         foreach(_cn store hash geom serial sym comment template)
             add_test(NAME "cst/${_cn}" COMMAND csttool "${_cn}")
             set_tests_properties("cst/${_cn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
@@ -3735,7 +3653,7 @@ if(MCC_BUILD_TESTS)
 
     add_executable(exec_runner tests/runner.c)
     target_include_directories(exec_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
-    set(_exec_env "MCC_TEST_EMU=${MCC_EMULATOR};MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=${_mcc_diag_bc};MCC_TEST_BACKTRACE=${_mcc_diag_bt}")
+    set(_exec_env "MCC_TEST_EMU=${MCC_EMULATOR};MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_BCHECK=${_mcc_diag_bc};MCC_TEST_BACKTRACE=${_mcc_diag_bt}")
 
     file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/goldens.h" _exec_glines
          REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"")
@@ -3750,7 +3668,6 @@ if(MCC_BUILD_TESTS)
             SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env}")
     endforeach()
 
-    if(MCC_CONFIG_OPTIMIZER)
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -3759,7 +3676,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-replay-${_gn}" --only "${_gn}")
             set_tests_properties("exec-replay/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O1;MCC_AST_TEMPLATES=0;MCC_AST_PROMOTE=0;MCC_AST_INLINE=0")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O1 -fno-reemit-templates -fno-promote-locals -fno-inline")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -3770,7 +3687,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-replay-tmpl-${_gn}" --only "${_gn}")
             set_tests_properties("exec-replay-tmpl/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O1;MCC_AST_TEMPLATES=1;MCC_AST_PROMOTE=0;MCC_AST_INLINE=0")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O1 -freemit-templates -fno-promote-locals -fno-inline")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -3781,7 +3698,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-replay-promote-${_gn}" --only "${_gn}")
             set_tests_properties("exec-replay-promote/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O1;MCC_AST_TEMPLATES=0;MCC_AST_PROMOTE=1;MCC_AST_INLINE=0")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O1 -fno-reemit-templates -fpromote-locals -fno-inline")
         endforeach()
 
         add_test(NAME ast/rir-position
@@ -4072,7 +3989,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-narrowfix-${_gn}" --only "${_gn}")
             set_tests_properties("exec-narrowfix/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_NARROW_FIX=1;MCC_AST_SETHI_LEAF=1;MCC_AST_SCCP_FIX=1;MCC_AST_LICM_TEMP=1;MCC_AST_IVSR=1;MCC_AST_PRE=1;MCC_AST_DSE_CALL=1;MCC_AST_TCO_PTR=1;MCC_AST_CSE_COMM=1;MCC_AST_RANGE=1;MCC_AST_DIVMAGIC=1;MCC_AST_ABS=1;MCC_AST_REASSOC=1;MCC_AST_CSE_WINDOW=256;MCC_AST_CPROP_WINDOW=512")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fnarrow-fix -fsethi-ullman-leaf -ftree-ccp-iterate -ftree-loop-im -fivopts -ftree-pre -ftree-dse -foptimize-sibling-calls -fgcse -ftree-vrp -fdivmagic -fif-conversion-abs -ftree-reassoc;MCC_AST_CSE_WINDOW=256;MCC_AST_CPROP_WINDOW=512")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4083,7 +4000,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-chainstore-${_gn}" --only "${_gn}")
             set_tests_properties("exec-chainstore/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_CHAINSTORE=1;MCC_AST_PROMO_INCDEC=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fchain-store -fpromote-incdec")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4094,7 +4011,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-ivsrptr-${_gn}" --only "${_gn}")
             set_tests_properties("exec-ivsrptr/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_IVSR_PTR=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fivopts-ptr")
         endforeach()
 
         if(MCC_TARGETOS STREQUAL "WIN32")
@@ -4106,7 +4023,7 @@ if(MCC_BUILD_TESTS)
                             "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                             "${CMAKE_BINARY_DIR}/exec-gatecombo-${_gn}" --only "${_gn}")
                 set_tests_properties("exec-gatecombo/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                    SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_CHAINSTORE=1;MCC_AST_PROMO_INCDEC=1;MCC_AST_IVSR_PTR=1")
+                    SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fchain-store -fpromote-incdec -fivopts-ptr")
             endforeach()
         endif()
 
@@ -4118,7 +4035,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-vlat-${_gn}" --only "${_gn}")
             set_tests_properties("exec-vlat/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_VLAT=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -floop-vlat")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4129,7 +4046,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-select-${_gn}" --only "${_gn}")
             set_tests_properties("exec-select/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_SELECT=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fif-conversion")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4140,7 +4057,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-zerobss-${_gn}" --only "${_gn}")
             set_tests_properties("exec-zerobss/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_ZERO_BSS=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fzero-initialized-in-bss")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4151,7 +4068,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-interchange-${_gn}" --only "${_gn}")
             set_tests_properties("exec-interchange/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_INTERCHANGE=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -floop-interchange")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4162,7 +4079,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-fusion-${_gn}" --only "${_gn}")
             set_tests_properties("exec-fusion/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_FUSION=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -floop-fusion")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4173,7 +4090,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-tile-${_gn}" --only "${_gn}")
             set_tests_properties("exec-tile/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_TILE=1;MCC_AST_TILE_SIZE=7")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -floop-block;MCC_AST_TILE_SIZE=7")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4184,7 +4101,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-mergestrings-${_gn}" --only "${_gn}")
             set_tests_properties("exec-mergestrings/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_MERGE_STRINGS=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fmerge-constants")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4195,7 +4112,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-search-${_gn}" --only "${_gn}")
             set_tests_properties("exec-search/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4;MCC_AST_SEARCH=1;MCC_SEARCH_WORKER=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O13 -fopt-search;MCC_SEARCH_WORKER=1")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4206,7 +4123,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-search-emitsize-${_gn}" --only "${_gn}")
             set_tests_properties("exec-search-emitsize/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4;MCC_AST_SEARCH=1;MCC_AST_SEARCH_EMITSIZE=1;MCC_SEARCH_WORKER=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O13 -fopt-search -fopt-search-emit-size;MCC_SEARCH_WORKER=1")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4217,7 +4134,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-search-emitiso-${_gn}" --only "${_gn}")
             set_tests_properties("exec-search-emitiso/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4;MCC_AST_SEARCH=1;MCC_AST_SEARCH_EMITSIZE=1;MCC_AST_SEARCH_EMITISO=1;MCC_SEARCH_WORKER=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O13 -fopt-search -fopt-search-emit-size -fopt-search-emit-iso;MCC_SEARCH_WORKER=1")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4228,7 +4145,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-search-threads-${_gn}" --only "${_gn}")
             set_tests_properties("exec-search-threads/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4;MCC_AST_SEARCH=1;MCC_AST_SEARCH_THREADS=1;MCC_SEARCH_WORKER=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O13 -fopt-search -fopt-search-threads;MCC_SEARCH_WORKER=1")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4239,7 +4156,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-gatesoff-${_gn}" --only "${_gn}")
             set_tests_properties("exec-gatesoff/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O3;MCC_AST_CHAINSTORE=0")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O3 -fno-chain-store")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4439,7 +4356,6 @@ if(MCC_BUILD_TESTS)
                 endforeach()
             endforeach()
         endif()
-    endif()
 
     if(MCC_EMULATOR)
         mcc_skip_test(cli-suite "structural readelf/nm suite runs on native host only")
@@ -4476,7 +4392,7 @@ if(MCC_BUILD_TESTS)
         else()
             add_executable(cli_runner tests/cli/runner.c)
             target_include_directories(cli_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
-            set(_cli_env "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_DWARF=${MCC_CONFIG_DWARF};MCC_TEST_BACKTRACE=${_mcc_diag_bt};MCC_TEST_BCHECK=${_mcc_diag_bc};MCC_TEST_OPTIMIZER=$<IF:$<BOOL:${MCC_CONFIG_OPTIMIZER}>,1,0>")
+            set(_cli_env "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_DWARF=${MCC_CONFIG_DWARF};MCC_TEST_BACKTRACE=${_mcc_diag_bt};MCC_TEST_BCHECK=${_mcc_diag_bc}")
             if(_cli_sh)
                 set(_cli_env "${_cli_env};MCC_TEST_SH=${_cli_sh}")
             endif()
@@ -4568,7 +4484,7 @@ if(MCC_BUILD_TESTS)
     if(NOT MCC_EMULATOR AND _diff3_nref GREATER_EQUAL 2 AND _diff3_sh_ok)
         add_executable(diff3_runner tests/diff3/runner.c)
         target_include_directories(diff3_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
-        set(_diff3_env "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>")
+        set(_diff3_env "MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS}")
         if(MCC_TEST_SH)
             set(_diff3_env "${_diff3_env};MCC_TEST_SH=${MCC_TEST_SH}")
         endif()
@@ -4632,7 +4548,7 @@ if(MCC_BUILD_TESTS)
 
     if(MCC_TARGETOS STREQUAL "WIN32")
         mcc_skip_test(parts-suite "native gcc/clang/mcc 3-way needs a shared C99 libc; the PE/msvcrt target has no msvcrt equivalent for the parts' complex/tgmath/libm surface (covered in aggregate by mcctest)")
-    elseif(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG AND MCC_CONFIG_ASM
+    elseif(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG
        AND TARGET mccharness)
         file(GLOB _parts_wraps RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/parts"
              "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/parts/run_*.c")
@@ -4767,8 +4683,15 @@ if(MCC_BUILD_TESTS)
             add_executable(jit_selftest_observability tests/embed/jit_selftest_observability.c)
             target_link_libraries(jit_selftest_observability PRIVATE libmcc)
             target_include_directories(jit_selftest_observability PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-            add_test(NAME jit/selftest-observability COMMAND jit_selftest_observability)
-            set_tests_properties(jit/selftest-observability PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            # Drives the JIT fault injectors (MCC_JIT_FORCE_INFEASIBLE /
+            # MCC_JIT_BENCH*), which compile out of libmcc unless MCC_DEV. Without
+            # it the injector is inert and the cell would pass vacuously.
+            if(MCC_DEV)
+                add_test(NAME jit/selftest-observability COMMAND jit_selftest_observability)
+                set_tests_properties(jit/selftest-observability PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            else()
+                mcc_skip_test(jit/selftest-observability "requires -DMCC_DEV=ON (JIT fault injection)")
+            endif()
 
             add_executable(jit_selftest_liverun tests/embed/jit_selftest_liverun.c)
             target_link_libraries(jit_selftest_liverun PRIVATE libmcc)
@@ -4787,8 +4710,13 @@ if(MCC_BUILD_TESTS)
             add_executable(jit_selftest_bench tests/embed/jit_selftest_bench.c)
             target_link_libraries(jit_selftest_bench PRIVATE libmcc)
             target_include_directories(jit_selftest_bench PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-            add_test(NAME jit/selftest-bench COMMAND jit_selftest_bench)
-            set_tests_properties(jit/selftest-bench PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            # Drives MCC_JIT_BENCH*, which compiles out of libmcc unless MCC_DEV.
+            if(MCC_DEV)
+                add_test(NAME jit/selftest-bench COMMAND jit_selftest_bench)
+                set_tests_properties(jit/selftest-bench PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            else()
+                mcc_skip_test(jit/selftest-bench "requires -DMCC_DEV=ON (JIT bench gate)")
+            endif()
 
             add_executable(jit_selftest_profile tests/embed/jit_selftest_profile.c)
             target_link_libraries(jit_selftest_profile PRIVATE libmcc)
@@ -4866,7 +4794,7 @@ if(MCC_BUILD_TESTS)
             target_include_directories(jit_selftest_search PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
             add_test(NAME jit/selftest-search COMMAND jit_selftest_search)
             set_tests_properties(jit/selftest-search PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-            add_test(NAME jit/selftest-search-live COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_THRESHOLD=2 $<TARGET_FILE:jit_selftest>)
+            add_test(NAME jit/selftest-search-live COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_CALLS=2 $<TARGET_FILE:jit_selftest>)
             set_tests_properties(jit/selftest-search-live PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
             if((MCC_CPU STREQUAL "x86_64" AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC") OR
@@ -4880,17 +4808,17 @@ if(MCC_BUILD_TESTS)
                 mcc_skip_test(regression/o4-aot-jit "runtime-JIT override path fires+correct on x86_64/arm64 non-MSVC non-Windows; MSVC/arm64-PE/i686 gated or tracked-broken")
                 mcc_skip_test(regression/jit-submit-aot-diff "runtime-JIT override path fires+correct on x86_64/arm64 non-MSVC non-Windows; MSVC/arm64-PE/i686 gated or tracked-broken")
             endif()
-            add_test(NAME jit/selftest-search-live-kgc COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_THRESHOLD=2 MCC_JIT_SEARCH_MS=25 $<TARGET_FILE:jit_selftest_kgc>)
+            add_test(NAME jit/selftest-search-live-kgc COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_CALLS=2 MCC_JIT_SEARCH_MS=25 $<TARGET_FILE:jit_selftest_kgc>)
             set_tests_properties(jit/selftest-search-live-kgc PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-            add_test(NAME jit/selftest-search-live-struct COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_THRESHOLD=2 MCC_JIT_SEARCH_MS=25 $<TARGET_FILE:jit_selftest_struct>)
+            add_test(NAME jit/selftest-search-live-struct COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_CALLS=2 MCC_JIT_SEARCH_MS=25 $<TARGET_FILE:jit_selftest_struct>)
             set_tests_properties(jit/selftest-search-live-struct PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-            add_test(NAME jit/selftest-search-live-ptrret COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_THRESHOLD=2 MCC_JIT_SEARCH_MS=25 $<TARGET_FILE:jit_selftest_ptrret>)
+            add_test(NAME jit/selftest-search-live-ptrret COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_CALLS=2 MCC_JIT_SEARCH_MS=25 $<TARGET_FILE:jit_selftest_ptrret>)
             set_tests_properties(jit/selftest-search-live-ptrret PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-            add_test(NAME jit/selftest-search-live-purity COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_THRESHOLD=2 MCC_JIT_SEARCH_MS=25 $<TARGET_FILE:jit_selftest_purity>)
+            add_test(NAME jit/selftest-search-live-purity COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_CALLS=2 MCC_JIT_SEARCH_MS=25 $<TARGET_FILE:jit_selftest_purity>)
             set_tests_properties(jit/selftest-search-live-purity PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-            add_test(NAME jit/selftest-search-live-pool COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_THRESHOLD=2 MCC_JIT_SEARCH_MS=25 $<TARGET_FILE:jit_selftest_pool>)
+            add_test(NAME jit/selftest-search-live-pool COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_CALLS=2 MCC_JIT_SEARCH_MS=25 $<TARGET_FILE:jit_selftest_pool>)
             set_tests_properties(jit/selftest-search-live-pool PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-            add_test(NAME jit/selftest-search-live-lazy COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_THRESHOLD=2 MCC_JIT_SEARCH_MS=25 $<TARGET_FILE:jit_selftest_lazy>)
+            add_test(NAME jit/selftest-search-live-lazy COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_CALLS=2 MCC_JIT_SEARCH_MS=25 $<TARGET_FILE:jit_selftest_lazy>)
             set_tests_properties(jit/selftest-search-live-lazy PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
             add_executable(jit_selftest_slicekernel tests/embed/jit_selftest_slicekernel.c)
@@ -4944,8 +4872,15 @@ if(MCC_BUILD_TESTS)
             add_executable(jit_selftest_benchwire tests/embed/jit_selftest_benchwire.c)
             target_link_libraries(jit_selftest_benchwire PRIVATE libmcc)
             target_include_directories(jit_selftest_benchwire PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-            add_test(NAME jit/selftest-benchwire COMMAND jit_selftest_benchwire)
-            set_tests_properties(jit/selftest-benchwire PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            # Drives the JIT fault injectors (MCC_JIT_FORCE_INFEASIBLE /
+            # MCC_JIT_BENCH*), which compile out of libmcc unless MCC_DEV. Without
+            # it the injector is inert and the cell would pass vacuously.
+            if(MCC_DEV)
+                add_test(NAME jit/selftest-benchwire COMMAND jit_selftest_benchwire)
+                set_tests_properties(jit/selftest-benchwire PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            else()
+                mcc_skip_test(jit/selftest-benchwire "requires -DMCC_DEV=ON (JIT fault injection)")
+            endif()
 
             if(MCC_BUILD_STATIC_LIB AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 add_test(NAME jit/standalone-static
@@ -4993,7 +4928,7 @@ if(MCC_BUILD_TESTS)
                     "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
         set_tests_properties(libtest-extra PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-        if(NOT MCC_CONFIG_DIAG_RT STREQUAL "off" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/api_threaded.c")
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/api_threaded.c")
             add_executable(libmcc_test_mt tests/embed/api_threaded.c)
             target_link_libraries(libmcc_test_mt PRIVATE libmcc)
             target_include_directories(libmcc_test_mt PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -5007,8 +4942,6 @@ if(MCC_BUILD_TESTS)
                         "-B${CMAKE_BINARY_DIR}"
                         "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
             set_tests_properties(libtest-mt PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-        else()
-            mcc_skip_test(libtest-mt "requires MCC_CONFIG_DIAG_RT!=off (multithread libmcc test)")
         endif()
     else()
         mcc_skip_test(libtest "mcc targets ${MCC_CPU} but runs on a ${CMAKE_SIZEOF_VOID_P}-byte host: the JIT run API (mcc_run/mcc_relocate) is compiled out")
@@ -5043,7 +4976,6 @@ if(MCC_BUILD_TESTS)
                 COMMAND mccharness hvcache --mcchv "$<TARGET_FILE:mcchv>" --bdir "${CMAKE_BINARY_DIR}")
             set_tests_properties(hypervisor-cache PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77)
-            if(MCC_CONFIG_OPTIMIZER)
                 add_test(NAME superopt-perfn-cache
                     COMMAND mccharness perfncache --mcc "${_mcc_exe}" --bdir "${CMAKE_BINARY_DIR}")
                 set_tests_properties(superopt-perfn-cache PROPERTIES
@@ -5052,13 +4984,10 @@ if(MCC_BUILD_TESTS)
                     COMMAND mccharness cpropjoin --mcc "${_mcc_exe}" --bdir "${CMAKE_BINARY_DIR}")
                 set_tests_properties(ast-cprop-join PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
-            endif()
         else()
             mcc_skip_test(hypervisor-cache "requires the host mccharness driver (native build)")
-            if(MCC_CONFIG_OPTIMIZER)
                 mcc_skip_test(superopt-perfn-cache "requires the host mccharness driver (native build)")
                 mcc_skip_test(ast-cprop-join "requires the host mccharness driver (native build)")
-            endif()
         endif()
     endif()
 
@@ -5263,7 +5192,7 @@ if(MCC_BUILD_TESTS)
     elseif(MCC_TARGETOS STREQUAL "WIN32" AND MCC_CPU STREQUAL "arm64")
         mcc_skip_test(mcctest "no arm64-Windows gcc reference matches the PE differential: the only reference is an emulated x86_64 mingw (UCRT printf + x86-only asm_test), which cannot be byte-identical to native arm64 mcc on legacy msvcrt (mcc arm64 codegen is covered by the exec/* goldens + pe-native-conformance; full_language differential runs on x86/x64 Windows)")
         mcc_skip_test(mcctest-bcheck "no arm64-Windows gcc reference matches the PE differential (emulated x86_64 mingw vs native arm64 mcc; see mcctest)")
-    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c" AND MCC_CONFIG_ASM)
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c")
         add_test(NAME mcctest COMMAND "$<TARGET_FILE:mccharness>" mcctest
             --cc ${_ref_cc} --mcc ${_mcc_exe}
             --src ${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c
@@ -5274,9 +5203,9 @@ if(MCC_BUILD_TESTS)
             --emu "${MCC_EMULATOR}")
         set_tests_properties(mcctest PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
-        if(MCC_CONFIG_DIAG_RT STREQUAL "bounds" AND MCC_TARGETOS STREQUAL "WIN32")
+        if(MCC_TARGETOS STREQUAL "WIN32")
             mcc_skip_test(mcctest-bcheck "mcc bounds-checking is unsupported on the PE/msvcrt target (faults in msvcrt callbacks/library calls)")
-        elseif(MCC_CONFIG_DIAG_RT STREQUAL "bounds")
+        else()
             file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bcheck")
             add_test(NAME mcctest-bcheck COMMAND "$<TARGET_FILE:mccharness>" mcctest
                 --cc ${_ref_cc} --mcc ${_mcc_exe}
@@ -5288,15 +5217,10 @@ if(MCC_BUILD_TESTS)
                 --mccargs -b --emu "${MCC_EMULATOR}")
             set_tests_properties(mcctest-bcheck PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77)
-        else()
-            mcc_skip_test(mcctest-bcheck "requires MCC_CONFIG_DIAG_RT=bounds (bounds-checked differential test)")
         endif()
-    else()
-        mcc_skip_test(mcctest "requires integrated assembler (MCC_CONFIG_ASM)")
-        mcc_skip_test(mcctest-bcheck "requires integrated assembler + MCC_CONFIG_DIAG_RT=bounds")
     endif()
 
-    if(MCC_CPU MATCHES "^(i386|x86_64)$" AND MCC_CONFIG_ASM
+    if(MCC_CPU MATCHES "^(i386|x86_64)$"
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/asm_c_connect/part1.c")
         add_test(NAME asm-c-connect-test COMMAND "$<TARGET_FILE:mccharness>" asmconnect
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
@@ -5308,7 +5232,7 @@ if(MCC_BUILD_TESTS)
             "requires x86 target with integrated assembler (host target: ${MCC_CPU})")
     endif()
 
-    if((MCC_CPU STREQUAL "x86_64" OR MCC_CPU STREQUAL "i386") AND MCC_CONFIG_ASM
+    if((MCC_CPU STREQUAL "x86_64" OR MCC_CPU STREQUAL "i386")
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/dash_s_roundtrip/prog.c")
         add_test(NAME dash-s-roundtrip COMMAND "$<TARGET_FILE:mccharness>" dashs
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
@@ -5363,10 +5287,10 @@ if(MCC_BUILD_TESTS)
             add_test(NAME selfhost-smoke-gates
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-smoke.py"
                         "${CMAKE_BINARY_DIR}"
-                        MCC_AST_PROMOTE=1 MCC_AST_COLOR=1 MCC_AST_LICM_TEMP=1
-                        MCC_AST_IVSR=1 MCC_AST_PRE=1 MCC_AST_REASSOC=1
-                        MCC_AST_SETHI_LEAF=1 MCC_AST_NARROW_ELIM=1 MCC_AST_ARGFWD=1
-                        MCC_AST_SPILL_SHARE=1 MCC_AST_VLAT=1 MCC_AST_DIVMAGIC=1)
+                        -fpromote-locals -freg-color -ftree-loop-im
+                        -fivopts -ftree-pre -ftree-reassoc
+                        -fsethi-ullman-leaf -fnarrow-elim -farg-forward
+                        -fspill-share -floop-vlat -fdivmagic)
             set_tests_properties(selfhost-smoke-gates PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
 
@@ -5420,10 +5344,10 @@ if(MCC_BUILD_TESTS)
             add_test(NAME selfhost-fixpoint-gates
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
                         "${CMAKE_BINARY_DIR}"
-                        MCC_AST_PROMOTE=1 MCC_AST_COLOR=1 MCC_AST_LICM_TEMP=1
-                        MCC_AST_IVSR=1 MCC_AST_PRE=1 MCC_AST_REASSOC=1
-                        MCC_AST_SETHI_LEAF=1 MCC_AST_NARROW_ELIM=1 MCC_AST_ARGFWD=1
-                        MCC_AST_SPILL_SHARE=1 MCC_AST_VLAT=1 MCC_AST_DIVMAGIC=1)
+                        -fpromote-locals -freg-color -ftree-loop-im
+                        -fivopts -ftree-pre -ftree-reassoc
+                        -fsethi-ullman-leaf -fnarrow-elim -farg-forward
+                        -fspill-share -floop-vlat -fdivmagic)
             set_tests_properties(selfhost-fixpoint-gates PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
 
@@ -5432,8 +5356,8 @@ if(MCC_BUILD_TESTS)
                     add_test(NAME "selfhost-fixpoint-memmodel${_shopt}"
                         COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
                                 "${CMAKE_BINARY_DIR}" "--opt=${_shopt}"
-                                MCC_AST_CHAINSTORE=1 MCC_AST_PROMO_INCDEC=1
-                                MCC_AST_IVSR_PTR=1)
+                                -fchain-store -fpromote-incdec
+                                -fivopts-ptr)
                     set_tests_properties("selfhost-fixpoint-memmodel${_shopt}"
                         PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
                 endforeach()
@@ -5441,8 +5365,8 @@ if(MCC_BUILD_TESTS)
                 add_test(NAME selfhost-smoke-memmodel
                     COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-smoke.py"
                             "${CMAKE_BINARY_DIR}"
-                            MCC_AST_CHAINSTORE=1 MCC_AST_PROMO_INCDEC=1
-                            MCC_AST_IVSR_PTR=1)
+                            -fchain-store -fpromote-incdec
+                            -fivopts-ptr)
                 set_tests_properties(selfhost-smoke-memmodel PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                     TIMEOUT 300)
             endif()
@@ -5517,8 +5441,8 @@ if(MCC_BUILD_TESTS)
                 --arm-hardfloat "${MCC_ARM_HARDFLOAT}" --arm-idiv "${MCC_ARM_IDIV}"
                 --run-mmap-exec "${MCC_RUN_MMAP_EXEC}" --pie "${MCC_CONFIG_PIE}" --pic "${MCC_CONFIG_PIC}"
                 --new-dtags "${MCC_CONFIG_NEW_DTAGS}" --codesign "${MCC_CONFIG_CODESIGN}"
-                --diag-rt "${MCC_CONFIG_DIAG_RT}" --asm "${MCC_CONFIG_ASM}"
-                --cst "${MCC_CONFIG_LSP}" --ast "${MCC_CONFIG_OPTIMIZER}" --ast-shadow "${MCC_CONFIG_AST_SHADOW}" --trace "${MCC_CONFIG_TRACE}"
+               
+                --diag "${MCC_DIAG}"
                 --embed-jit "${MCC_EMBED_JIT}" --config-jit "${MCC_CONFIG_JIT}"
                 --new-macho "${MCC_CONFIG_NEW_MACHO}" --dwarf "${MCC_CONFIG_DWARF}" --semlock "${MCC_CONFIG_SEMLOCK}"
                 --triplet "${MCC_TRIPLET}" --os-release "${MCC_OS_RELEASE}" --sysroot "${MCC_SYSROOT}"
@@ -5663,8 +5587,7 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(runtime-bench-check PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 TIMEOUT 900)
 
-        if(MCC_CONFIG_OPTIMIZER
-           AND NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING
+        if(NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING
            AND NOT MCC_TARGETOS STREQUAL "WIN32")
             add_test(NAME runtime-bench-gatewin
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime-bench.py"
@@ -5786,7 +5709,6 @@ if(MCC_BUILD_TESTS)
         DEPENDS mcc mccharness USES_TERMINAL
         COMMENT "gcctestsuite: gcc c-torture over mcc")
 
-    if(MCC_CONFIG_OPTIMIZER)
         foreach(_col replay promote inline)
             add_custom_target(gcctestsuite-ast-${_col}
                 COMMAND "$<TARGET_FILE:mccharness>" gcctestsuite --mcc $<TARGET_FILE:mcc>
@@ -5799,7 +5721,6 @@ if(MCC_BUILD_TESTS)
         add_custom_target(gcctestsuite-ast
             DEPENDS gcctestsuite-ast-replay gcctestsuite-ast-promote gcctestsuite-ast-inline
             COMMENT "gcctestsuite-ast: all AST columns of the gcc c-torture differential gate")
-    endif()
 
     if(TARGET mcc-arm)
         add_custom_target(arm-asm-testsuite
@@ -6255,7 +6176,7 @@ if(MCC_BUILD_TESTS)
                     set_tests_properties(${_tn}-exec PROPERTIES
                         FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu
                         SKIP_RETURN_CODE 77 TIMEOUT 1200
-                        ENVIRONMENT "MCC_TEST_EMU=;MCC_TEST_RUNEMU=${_QEMU_${_arch}} -L ${_root};MCC_TEST_SYSROOT=${_root};MCC_TEST_CPU=${_arch};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=0;MCC_TEST_BACKTRACE=${_mcc_diag_bt}")
+                        ENVIRONMENT "MCC_TEST_EMU=;MCC_TEST_RUNEMU=${_QEMU_${_arch}} -L ${_root};MCC_TEST_SYSROOT=${_root};MCC_TEST_CPU=${_arch};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_BCHECK=0;MCC_TEST_BACKTRACE=${_mcc_diag_bt}")
                 endif()
             endforeach()
         endforeach()

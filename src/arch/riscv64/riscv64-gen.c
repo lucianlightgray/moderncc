@@ -54,11 +54,9 @@ ST_DATA int reg_classes[MCC_NB_REGS] = {
 		0,
 		0};
 
-#if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
 #define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
-#endif
 
 static const int riscv64_saved_phys[MCC_NB_SAVED] = {
 		9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27};
@@ -484,7 +482,6 @@ static void gcall_or_jmp(int docall) { MCC_TRACE("enter\n");
 	}
 }
 
-#if MCC_CONFIG_DIAG_RT >= 2
 
 static void gen_bounds_call(int v) { MCC_TRACE("enter\n");
 	Sym *sym = external_helper_sym(v);
@@ -538,7 +535,6 @@ static void gen_bounds_epilog(void) { MCC_TRACE("enter\n");
 	o(0x65a26502);
 	o(0x61052542);
 }
-#endif
 
 static void reg_pass_rec(CType *type, int *rc, int *fieldofs, int ofs) { MCC_TRACE("enter\n");
 	if ((type->t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
@@ -603,11 +599,9 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	SValue *sv;
 	Sym *sa;
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	int bc_save = mcc_state->do_bounds_check;
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gbound_args(nb_args); }
-#endif
 
 	areg[0] = 0;
 	areg[1] = 8;
@@ -762,14 +756,10 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 				gaddrof();
 				vtop->type = char_pointer_type;
 				vpushi((int)(ii >> (12 + 5 + 5)));
-#if MCC_CONFIG_DIAG_RT >= 2
 				if ((origtype.t & VT_BTYPE) == VT_STRUCT)
 					{ MCC_TRACE("br\n"); mcc_state->do_bounds_check = 0; }
-#endif
 				gen_op('+');
-#if MCC_CONFIG_DIAG_RT >= 2
 				mcc_state->do_bounds_check = bc_save;
-#endif
 				indir();
 				vtop->type = origtype;
 				loadt = vtop->type.t & VT_BTYPE;
@@ -970,10 +960,8 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 			ES(0x23, 3, 8, 10 + areg[0], -8 + num_va_regs * 8);
 		}
 	}
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
-#endif
 	if (mcc_state->do_asan_shadow)
 		{ MCC_TRACE("br\n"); gen_asan_stack_prolog(); }
 	func_stack_chk_loc = 0;
@@ -1018,10 +1006,8 @@ ST_FUNC void arch_transfer_ret_regs(int aftercall) { MCC_TRACE("enter\n");
 ST_FUNC void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	int v, saved_ind, d, large_ofs_ind;
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
-#endif
 	if (mcc_state->do_asan_shadow)
 		{ MCC_TRACE("br\n"); gen_asan_stack_epilog(); }
 	if (func_stack_chk_loc)
@@ -1527,13 +1513,11 @@ ST_FUNC void gen_fabs(void) { MCC_TRACE("enter\n");
 	gv(MCC_RC_FLOAT);
 	r = freg(vtop->r);
 	d = r;
-#if MCC_CONFIG_OPTIMIZER
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
 		vtop->r = nr;
 		d = freg(nr);
 	}
-#endif
 	ER(0x53, 2, d, r, r, bt == VT_DOUBLE ? 0x11 : 0x10);
 }
 
@@ -1542,13 +1526,11 @@ ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
 	gv(MCC_RC_FLOAT);
 	r = freg(vtop->r);
 	d = r;
-#if MCC_CONFIG_OPTIMIZER
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
 		vtop->r = nr;
 		d = freg(nr);
 	}
-#endif
 	ER(0x53, 7, d, r, 0, bt == VT_DOUBLE ? 0x2d : 0x2c);
 }
 
@@ -1861,16 +1843,12 @@ ST_FUNC void gen_vla_sp_restore(int addr) { MCC_TRACE("enter\n");
 
 ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 	int rr;
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); vpushv(vtop); }
-#endif
 	rr = ireg(gv(MCC_RC_INT));
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); EI(0x13, 0, rr, rr, 15 + 1); }
 	else
-#endif
 		EI(0x13, 0, rr, rr, 15);
 	EI(0x13, 7, rr, rr, -16);
 	ER(0x33, 0, 2, 2, rr, 0x20);
@@ -1886,7 +1864,6 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 		}
 	}
 	vpop();
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check) { MCC_TRACE("br\n");
 		vpushi(0);
 		vtop->r = MCC_TREG_R(0);
@@ -1897,7 +1874,6 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 		gfunc_call(2);
 		func_bound_add_epilog = 1;
 	}
-#endif
 }
 
 ST_FUNC void gen_clear_cache(void) { MCC_TRACE("enter\n");

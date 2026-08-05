@@ -8,7 +8,7 @@ static const cli_case_t cli_cases[] = {
 		{"o4_search_does_not_repeat_diagnostics", "cpu=x86_64,os=linux",
 		 "printf '_Alignas(16) i3;\\nint main(void){return 0;}\\n' > {W}/od.c && "
 		 "XDG_CACHE_HOME={W}/c1 {MCC} -B{B} -I{I} -O1 -c {W}/od.c -o {W}/o1.o 2>{W}/e1.txt; "
-		 "XDG_CACHE_HOME={W}/c4 {MCC} -B{B} -I{I} -O4 -c {W}/od.c -o {W}/o4.o 2>{W}/e4.txt; "
+		 "XDG_CACHE_HOME={W}/c4 {MCC} -B{B} -I{I} -O13 -c {W}/od.c -o {W}/o4.o 2>{W}/e4.txt; "
 		 "printf 'O1=%s O4=%s\\n' "
 		 "$(grep -c 'type defaults to int' {W}/e1.txt) "
 		 "$(grep -c 'type defaults to int' {W}/e4.txt)",
@@ -183,8 +183,8 @@ static const cli_case_t cli_cases[] = {
 
 		{"superopt_search_O4", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int fib(int n){return n<2?n:fib(n-1)+fib(n-2);}int main(void){return fib(10);}\\n' > {W}/so.c && "
-		 "XDG_CACHE_HOME={W}/cache {MCC} -B{B} -I{I} -O4 -c {W}/so.c -o {W}/so.o && "
-		 "XDG_CACHE_HOME={W}/cache {MCC} -B{B} -I{I} -O4 -c {W}/so.c -o {W}/so_warm.o && "
+		 "XDG_CACHE_HOME={W}/cache {MCC} -B{B} -I{I} -O13 -c {W}/so.c -o {W}/so.o && "
+		 "XDG_CACHE_HOME={W}/cache {MCC} -B{B} -I{I} -O13 -c {W}/so.c -o {W}/so_warm.o && "
 		 "test $(wc -c < {W}/so_warm.o) -le $(wc -c < {W}/so.o) && echo WARMOK ; "
 		 "{MCC} -B{B} -I{I} {W}/so.o -o {W}/so && {W}/so ; echo rc=$? ; "
 		 "{MCC} -B{B} -I{I} --no-embed-jit -O0 -c {W}/so.c -o {W}/so2.o && echo FLAGOK",
@@ -192,14 +192,14 @@ static const cli_case_t cli_cases[] = {
 
 		{"embed_jit_manifest", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int main(void){return 0;}\\n' > {W}/mf.c && "
-		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O4 -v --embed-jit --jit-functions main,helper --jit-max-duration 120 -c {W}/mf.c -o {W}/mf.o 2>&1 | grep 'embed-jit manifest' ; "
-		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O4 -v --embed-jit --jit-functions=main,helper --jit-max-duration=120 -c {W}/mf.c -o {W}/mf.o 2>&1 | grep 'embed-jit manifest' ; "
-		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O4 -v --no-embed-jit -c {W}/mf.c -o {W}/mf2.o 2>&1 | grep -c 'embed-jit manifest'",
+		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O13 -v --embed-jit --jit-functions main,helper --jit-max-duration 120 -c {W}/mf.c -o {W}/mf.o 2>&1 | grep 'embed-jit manifest' ; "
+		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O13 -v --embed-jit --jit-functions=main,helper --jit-max-duration=120 -c {W}/mf.c -o {W}/mf.o 2>&1 | grep 'embed-jit manifest' ; "
+		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O13 -v --no-embed-jit -c {W}/mf.c -o {W}/mf2.o 2>&1 | grep -c 'embed-jit manifest'",
 		 "embed-jit manifest: functions=main,helper max-duration=120s\nembed-jit manifest: functions=main,helper max-duration=120s\n0\n"},
 
 		{"bitflag_detect", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int classify(int x){if(x==1)return 10;else if(x==3)return 30;else if(x==5)return 50;else if(x==7)return 70;return 0;}int two(int y){if(y==2)return 1;if(y==4)return 2;return 0;}int main(void){return classify(5)+two(4);}\\n' > {W}/bf.c && "
-		 "MCC_AST_BITFLAG_REPORT=1 {MCC} -B{B} -I{I} -O1 -c {W}/bf.c -o {W}/bf.o 2>&1 | grep bitflag ; "
+		 "{MCC} -fdump-bitflag -B{B} -I{I} -O1 -c {W}/bf.c -o {W}/bf.o 2>&1 | grep bitflag ; "
 		 "{MCC} -B{B} -I{I} -O1 {W}/bf.c -o {W}/bfx && {W}/bfx ; echo rc=$?",
 		 "bitflag-candidate: classify cluster=4\nrc=52\n"},
 
@@ -207,22 +207,22 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'int dse(int x){int a;a=5;a=7;a=x+1;return a;}\\nint sccp(int x){if(1)return x*2;else return -999;}\\nint bf(int f){int r=0;if(f&1)r+=1;if(f&2)r+=2;if(f&4)r+=4;return r;}\\nint main(void){int ok=dse(10)==11&&sccp(3)==6&&bf(5)==5;return ok?0:1;}\\n' > {W}/pz.c && "
 		 "{MCC} -B{B} -O1 {W}/pz.c -o {W}/pz && {W}/pz && echo o1ok && "
 		 "{MCC} -B{B} -O2 {W}/pz.c -o {W}/pz2 && {W}/pz2 && echo o2ok && "
-		 "MCC_AST_REPLAY_DUMP=1 {MCC} -B{B} -O1 -c {W}/pz.c -o {W}/pz.o 2>&1 | grep -oE 'ast-dse|ast-sccp|Poison' | sort -u | tr '\\n' ','",
+		 "{MCC} -fdump-replay -B{B} -O1 -c {W}/pz.c -o {W}/pz.o 2>&1 | grep -oE 'ast-dse|ast-sccp|Poison' | sort -u | tr '\\n' ','",
 		 "o1ok\no2ok\nPoison,ast-dse,ast-sccp,"},
 
 		{"bitflag_transform", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int g;int f(int x){if(x==1||x==3||x==5||x==7||x==9)return 1;return 0;}int c(int x){if(x==2)g=4;else if(x==4)g=4;else if(x==6)g=4;else if(x==8)g=4;else if(x==10)g=4;else g=7;return g;}int main(void){int k[10]={-1,0,1,2,3,64,65,7,9,10},s=0;for(int i=0;i<10;i++)s+=f(k[i])+c(k[i]);return s;}\\n' > {W}/bft.c && "
-		 "MCC_AST_REPLAY_DUMP=1 MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O1 -c {W}/bft.c -o {W}/bft.o 2>&1 | grep -c 'ast-bitflag' ; "
-		 "MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O1 {W}/bft.c -o {W}/bft && {W}/bft ; echo rc=$? ; "
-		 "MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O3 {W}/bft.c -o {W}/bft3 && {W}/bft3 ; echo rc=$? ; "
+		 "{MCC} -fdump-replay -ftree-switch-conversion -B{B} -I{I} -O1 -c {W}/bft.c -o {W}/bft.o 2>&1 | grep -c 'ast-bitflag' ; "
+		 "{MCC} -ftree-switch-conversion -B{B} -I{I} -O1 {W}/bft.c -o {W}/bft && {W}/bft ; echo rc=$? ; "
+		 "{MCC} -ftree-switch-conversion -B{B} -I{I} -O3 {W}/bft.c -o {W}/bft3 && {W}/bft3 ; echo rc=$? ; "
 		 "{MCC} -B{B} -I{I} -O1 {W}/bft.c -o {W}/bft0 && {W}/bft0 ; echo rc=$?",
 		 "2\nrc=68\nrc=68\nrc=68\n"},
 
 		{"bitflag_ifne", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int ni(int x){if(x!=1){if(x!=3){if(x!=5){if(x!=7){if(x!=9){return 1;}}}}}return 0;}int main(void){int k[10]={-1,0,1,2,3,64,65,7,9,10},s=0;for(int i=0;i<10;i++)s+=ni(k[i]);return s;}\\n' > {W}/bfn.c && "
-		 "MCC_AST_REPLAY_DUMP=1 MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O1 -c {W}/bfn.c -o {W}/bfn.o 2>&1 | grep -c 'ast-bitflag' ; "
-		 "MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O1 {W}/bfn.c -o {W}/bfn && {W}/bfn ; echo rc=$? ; "
-		 "MCC_AST_BITFLAG=1 {MCC} -B{B} -I{I} -O3 {W}/bfn.c -o {W}/bfn3 && {W}/bfn3 ; echo rc=$? ; "
+		 "{MCC} -fdump-replay -ftree-switch-conversion -B{B} -I{I} -O1 -c {W}/bfn.c -o {W}/bfn.o 2>&1 | grep -c 'ast-bitflag' ; "
+		 "{MCC} -ftree-switch-conversion -B{B} -I{I} -O1 {W}/bfn.c -o {W}/bfn && {W}/bfn ; echo rc=$? ; "
+		 "{MCC} -ftree-switch-conversion -B{B} -I{I} -O3 {W}/bfn.c -o {W}/bfn3 && {W}/bfn3 ; echo rc=$? ; "
 		 "{MCC} -B{B} -I{I} -O1 {W}/bfn.c -o {W}/bfn0 && {W}/bfn0 ; echo rc=$?",
 		 "1\nrc=6\nrc=6\nrc=6\n"},
 
@@ -237,8 +237,8 @@ static const cli_case_t cli_cases[] = {
 
 
 		 "rm -rf {W}/elc {W}/el.txt && mkdir -p {W}/elc && "
-		 "XDG_CACHE_HOME={W}/elc MCC_AST_SLICE=1 MCC_SLICE_DUMP={W}/el.txt "
-		 "MCC_AST_DIVMAGIC=0 MCC_AST_RANGE=0 {MCC} -B{B} -I{I} -O2 -c {W}/el.c -o {W}/el.o && "
+		 "XDG_CACHE_HOME={W}/elc -fopt-slice MCC_SLICE_DUMP={W}/el.txt "
+		 "{MCC} -fno-divmagic -fno-tree-vrp -B{B} -I{I} -O2 -c {W}/el.c -o {W}/el.o && "
 		 "awk 'NR==1{ gv=$2; ev=$3; sub(/^g=/,\"\",gv); sub(/^e=/,\"\",ev); "
 		 "           if (index($3,\"e=\")!=1) { print \"NO_ELIGIBLE\"; exit } "
 		 "           if (gv == ev) print \"SAME\"; else print \"WIDER\"; "
@@ -250,11 +250,11 @@ static const cli_case_t cli_cases[] = {
 
 
 		 "printf 'int f(int a,int b,int c){int x=0,y=0,r;if(c){x=a+b;}else{y=a+b;}r=a+b;return x+y+r;}int main(void){return f(3,4,1)+f(3,4,0);}\\n' > {W}/pre.c && "
-		 "MCC_AST_PRE=0 {MCC} -B{B} -I{I} -O2 -c {W}/pre.c -o {W}/pre.off.o && "
-		 "MCC_AST_PRE=1 {MCC} -B{B} -I{I} -O2 -c {W}/pre.c -o {W}/pre.on.o && "
+		 "{MCC} -fno-tree-pre -B{B} -I{I} -O2 -c {W}/pre.c -o {W}/pre.off.o && "
+		 "{MCC} -ftree-pre -B{B} -I{I} -O2 -c {W}/pre.c -o {W}/pre.on.o && "
 		 "( cmp -s {W}/pre.off.o {W}/pre.on.o && echo SAME || echo DIFFER ) ; "
-		 "MCC_AST_PRE=1 {MCC} -B{B} -I{I} -O2 {W}/pre.c -o {W}/pre2 && {W}/pre2 ; echo rc=$? ; "
-		 "MCC_AST_PRE=1 {MCC} -B{B} -I{I} -O3 {W}/pre.c -o {W}/pre3 && {W}/pre3 ; echo rc=$? ; "
+		 "{MCC} -ftree-pre -B{B} -I{I} -O2 {W}/pre.c -o {W}/pre2 && {W}/pre2 ; echo rc=$? ; "
+		 "{MCC} -ftree-pre -B{B} -I{I} -O3 {W}/pre.c -o {W}/pre3 && {W}/pre3 ; echo rc=$? ; "
 		 "{MCC} -B{B} -I{I} -O2 {W}/pre.c -o {W}/pre0 && {W}/pre0 ; echo rc=$?",
 		 "DIFFER\nrc=28\nrc=28\nrc=28\n"},
 
@@ -264,35 +264,35 @@ static const cli_case_t cli_cases[] = {
 
 
 		 "printf 'static int big(int x,int y){int s=0;for(int i=0;i<x;i++){s+=(i*y)^(i+x);s-=(i&y)|(x^i);s+=(i*i)-(y*y);}return s;}static int tiny(int x){return x+1;}int main(void){int s=0;s+=big(5,3)+big(7,2)+big(9,4)+big(3,6);s+=tiny(10)+tiny(20)+tiny(30);return s&0x7f;}\\n' > {W}/pfi.c && "
-		 "MCC_AST_INLINE_PASS=0 {MCC} -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.off.o && "
-		 "MCC_AST_INLINE_PASS=0 MCC_AST_PERFN_INPROC=1 {MCC} -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.on.o && "
+		 "{MCC} -fno-inline-functions -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.off.o && "
+		 "{MCC} -fno-inline-functions -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.on.o && "
 		 "( cmp -s {W}/pfi.off.o {W}/pfi.on.o && echo SAME || echo DIFFER ) ; "
-		 "MCC_AST_PERFN_INPROC=1 {MCC} -B{B} -I{I} -O3 {W}/pfi.c -o {W}/pfi.on && {W}/pfi.on ; echo rc=$? ; "
+		 "{MCC} -fopt-perfn-inproc -B{B} -I{I} -O3 {W}/pfi.c -o {W}/pfi.on && {W}/pfi.on ; echo rc=$? ; "
 		 "{MCC} -B{B} -I{I} -O0 {W}/pfi.c -o {W}/pfi.o0 && {W}/pfi.o0 ; echo rc=$?",
 		 "SAME\nrc=28\nrc=28\n"},
 
 		{"perfn_search", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static int sq(int x){return x*x;}static int cube(int x){return x*x*x;}int main(void){int s=0;for(int i=0;i<8;i++)s+=sq(i)+cube(i);return s;}\\n' > {W}/pfs.c && "
-		 "XDG_CACHE_HOME={W}/pfsc MCC_AST_PERFN=1 {MCC} -B{B} -I{I} -O4 -c {W}/pfs.c -o {W}/pfs.o && "
+		 "XDG_CACHE_HOME={W}/pfsc MCC_AST_PERFN=1 {MCC} -B{B} -I{I} -O13 -c {W}/pfs.c -o {W}/pfs.o && "
 		 "{MCC} -B{B} -I{I} {W}/pfs.o -o {W}/pfs && {W}/pfs ; echo rc=$?",
 		 "rc=156\n"},
 
 		{"per_fn_config", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static int sq(int x){return x*x;}int main(void){int s=0;for(int i=0;i<10;i++)s+=sq(i);return s;}\\n' > {W}/pf.c && "
-		 "MCC_AST_TEMPLATES=1 MCC_AST_FN_CONFIG='main=1;sq=1' {MCC} -B{B} -I{I} -O3 -c {W}/pf.c -o {W}/pf1.o && "
-		 "MCC_AST_TEMPLATES=1 MCC_AST_FN_CONFIG='main=7;sq=7' {MCC} -B{B} -I{I} -O3 -c {W}/pf.c -o {W}/pf7.o && "
+		 "-freemit-templates MCC_AST_FN_CONFIG='main=1;sq=1' {MCC} -B{B} -I{I} -O3 -c {W}/pf.c -o {W}/pf1.o && "
+		 "-freemit-templates MCC_AST_FN_CONFIG='main=7;sq=7' {MCC} -B{B} -I{I} -O3 -c {W}/pf.c -o {W}/pf7.o && "
 		 "( cmp -s {W}/pf1.o {W}/pf7.o && echo SAME || echo DIFFER ) ; "
 		 "{MCC} -B{B} -I{I} -O3 {W}/pf.c -o {W}/pf && {W}/pf ; echo rc=$?",
 		 "DIFFER\nrc=29\n"},
 
 		{"ast_cost_report", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static int inner(int x){int s=0;for(int i=0;i<x;i++)for(int j=0;j<x;j++)s+=i*j;return s;}\\nint main(void){return inner(5);}\\n' > {W}/cost.c && "
-		 "MCC_AST_COST=1 {MCC} -B{B} -I{I} -O1 -c {W}/cost.c -o {W}/cost.o 2>&1 | grep '^ast-cost' | awk '{print $2, $4}' | sort",
+		 "{MCC} -fdump-cost -B{B} -I{I} -O1 -c {W}/cost.c -o {W}/cost.o 2>&1 | grep '^ast-cost' | awk '{print $2, $4}' | sort",
 		 "inner loopdepth=2\nmain loopdepth=0\n"},
 
 		{"clear_cache_and_jit_flags", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int main(void){return 0;}\\n' > {W}/cc.c && "
-		 "XDG_CACHE_HOME={W}/cch {MCC} -B{B} -I{I} -O4 -c {W}/cc.c -o {W}/cc.o && "
+		 "XDG_CACHE_HOME={W}/cch {MCC} -B{B} -I{I} -O13 -c {W}/cc.c -o {W}/cc.o && "
 		 "ls {W}/cch/mcc | grep -c '[.]ck$' ; "
 		 "XDG_CACHE_HOME={W}/cch {MCC} --clear-cache >/dev/null && test ! -d {W}/cch/mcc && echo CLEARED ; "
 		 "{MCC} -B{B} -I{I} --jit-max-duration 30 --jit-functions main,foo -c {W}/cc.c -o {W}/cc2.o && echo JITFLAGS",

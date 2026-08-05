@@ -57,34 +57,45 @@ counter)
 	echo "PASS $NAME: $COUNTER=$got at $OLEVEL, output matches -O0"
 	;;
 differ)
-	ENVV=$7
+	GATE=$7
 	EXTRA=$8
-	[ -n "$ENVV" ] || { echo "FAIL $NAME: no gate env given"; exit 2; }
+	[ -n "$GATE" ] || { echo "FAIL $NAME: no gate flag given"; exit 2; }
 	[ "$EXTRA" = "-" ] && EXTRA=
-	env $EXTRA "$ENVV=0" "$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.off.o" >/dev/null 2>&1 ||
+	# EXTRA carries both compiler flags (leading -) and the few remaining
+	# environment knobs (NAME=VALUE). Gates are flags now, so they must reach
+	# the command line; anything still spelled NAME=VALUE stays in the env.
+	EFLAGS=; EENV=
+	for _x in $EXTRA; do
+		case "$_x" in
+		-*) EFLAGS="$EFLAGS $_x" ;;
+		*)  EENV="$EENV $_x" ;;
+		esac
+	done
+	env $EENV "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "-fno-$GATE" -c "$SRC" -o "$WORK/$NAME.off.o" >/dev/null 2>&1 ||
 		{ echo "FAIL $NAME: gate-off compile failed"; exit 1; }
-	env $EXTRA "$ENVV=1" "$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.on.o" >/dev/null 2>&1 ||
+	env $EENV "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "-f$GATE" -c "$SRC" -o "$WORK/$NAME.on.o" >/dev/null 2>&1 ||
 		{ echo "FAIL $NAME: gate-on compile failed"; exit 1; }
 	if cmp -s "$WORK/$NAME.off.o" "$WORK/$NAME.on.o"; then
-		echo "FAIL $NAME: pass DID NOT FIRE ($ENVV=0 and $ENVV=1 objects are byte-identical at $OLEVEL)"
+		echo "FAIL $NAME: pass DID NOT FIRE (-fno-$GATE and -f$GATE objects are byte-identical at $OLEVEL)"
 		exit 1
 	fi
 	if [ "$norun" = "1" ]; then
-		echo "PASS $NAME: objects differ with $ENVV toggled at $OLEVEL (norun: fired-only)"
+		echo "PASS $NAME: objects differ with -f/-fno-$GATE at $OLEVEL (norun: fired-only)"
 		exit 0
 	fi
 	for v in 0 1; do
-		env $EXTRA "$ENVV=$v" "$MCC" $MCCFLAGS "$OLEVEL" "$SRC" -o "$opt.$v" $LDF >/dev/null 2>&1 ||
-			{ echo "FAIL $NAME: $ENVV=$v build failed"; exit 1; }
-		out=$("$opt.$v" 2>&1) || { echo "FAIL $NAME: $ENVV=$v run failed"; exit 1; }
+		if [ "$v" = 1 ]; then gflag="-f$GATE"; else gflag="-fno-$GATE"; fi
+		env $EENV "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "$gflag" "$SRC" -o "$opt.$v" $LDF >/dev/null 2>&1 ||
+			{ echo "FAIL $NAME: $gflag build failed"; exit 1; }
+		out=$("$opt.$v" 2>&1) || { echo "FAIL $NAME: $gflag run failed"; exit 1; }
 		[ "$out" = "$refout" ] || {
-			echo "FAIL $NAME: $ENVV=$v output differs from -O0"
+			echo "FAIL $NAME: $gflag output differs from -O0"
 			echo "  -O0: $refout"
 			echo "  on : $out"
 			exit 1
 		}
 	done
-	echo "PASS $NAME: objects differ with $ENVV toggled at $OLEVEL, both outputs match -O0"
+	echo "PASS $NAME: objects differ with -f/-fno-$GATE at $OLEVEL, both outputs match -O0"
 	;;
 level)
 	COUNTER=$7
@@ -107,43 +118,44 @@ level)
 	;;
 cdelta)
 	COUNTER=$7
-	ENVV=$8
-	[ -n "$COUNTER" ] && [ -n "$ENVV" ] || { echo "FAIL $NAME: cdelta needs <counter> <env>"; exit 2; }
+	GATE=$8
+	[ -n "$COUNTER" ] && [ -n "$GATE" ] || { echo "FAIL $NAME: cdelta needs <counter> <flag>"; exit 2; }
+	gflag_for() { [ "$1" = 1 ] && echo "-f$GATE" || echo "-fno-$GATE"; }
 	cd_read() {
-		env "$ENVV=$1" "$MCC" $MCCFLAGS "$OLEVEL" --stats=4 -c "$SRC" -o "$WORK/$NAME.$1.o" 2>&1 |
+		"$MCC" $MCCFLAGS "$OLEVEL" "$(gflag_for $1)" --stats=4 -c "$SRC" -o "$WORK/$NAME.$1.o" 2>&1 |
 			strip_ansi | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1
 	}
 	c0=$(cd_read 0); c1=$(cd_read 1)
 	[ -n "$c0" ] || c0=0
 	[ -n "$c1" ] || c1=0
 	[ "$c0" -eq 0 ] 2>/dev/null || {
-		echo "FAIL $NAME: $COUNTER should be 0 with $ENVV=0, got $c0"
+		echo "FAIL $NAME: $COUNTER should be 0 with -fno-$GATE, got $c0"
 		exit 1
 	}
 	[ "$c1" -gt 0 ] 2>/dev/null || {
-		echo "FAIL $NAME: pass DID NOT FIRE ($COUNTER=$c1 with $ENVV=1) at $OLEVEL"
+		echo "FAIL $NAME: pass DID NOT FIRE ($COUNTER=$c1 with -f$GATE) at $OLEVEL"
 		exit 1
 	}
-	echo "PASS $NAME: $COUNTER 0 -> $c1 when $ENVV is enabled at $OLEVEL"
+	echo "PASS $NAME: $COUNTER 0 -> $c1 when -f$GATE is given at $OLEVEL"
 	;;
 defstate)
-	ENVV=$7
+	GATE=$7
 	WANT=$8
-	[ -n "$ENVV" ] && [ -n "$WANT" ] || { echo "FAIL $NAME: defstate needs <env> <on|off>"; exit 2; }
+	[ -n "$GATE" ] && [ -n "$WANT" ] || { echo "FAIL $NAME: defstate needs <flag> <on|off>"; exit 2; }
 	"$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.def.o" >/dev/null 2>&1 ||
-		{ echo "FAIL $NAME: default-env compile failed"; exit 1; }
-	env "$ENVV=0" "$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.zero.o" >/dev/null 2>&1 ||
-		{ echo "FAIL $NAME: ${ENVV}=0 compile failed"; exit 1; }
+		{ echo "FAIL $NAME: default compile failed"; exit 1; }
+	"$MCC" $MCCFLAGS "$OLEVEL" "-fno-$GATE" -c "$SRC" -o "$WORK/$NAME.zero.o" >/dev/null 2>&1 ||
+		{ echo "FAIL $NAME: -fno-$GATE compile failed"; exit 1; }
 	if cmp -s "$WORK/$NAME.def.o" "$WORK/$NAME.zero.o"; then
 		got=off
 	else
 		got=on
 	fi
 	[ "$got" = "$WANT" ] || {
-		echo "FAIL $NAME: $ENVV is default-$got at $OLEVEL, expected default-$WANT"
+		echo "FAIL $NAME: -f$GATE is default-$got at $OLEVEL, expected default-$WANT"
 		exit 1
 	}
-	echo "PASS $NAME: $ENVV is default-$got at $OLEVEL"
+	echo "PASS $NAME: -f$GATE is default-$got at $OLEVEL"
 	;;
 *)
 	echo "unknown mode: $mode" >&2

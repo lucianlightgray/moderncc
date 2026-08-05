@@ -57,11 +57,9 @@ ST_DATA int reg_classes[MCC_NB_REGS] = {
 		0,
 		0};
 
-#if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
 #define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
-#endif
 
 #ifndef MCC_TARGET_PE
 #define func_stack_chk_loc (mcc_state->cg_func_stack_chk_loc)
@@ -927,14 +925,11 @@ static void arm64_gen_bl_or_b(int b) { MCC_TRACE("enter\n");
 						b ? R_AARCH64_JUMP26 : R_AARCH64_CALL26, 0);
 		o(b ? ARM64_B : ARM64_BL);
 	} else { MCC_TRACE("br\n");
-#if MCC_CONFIG_DIAG_RT >= 2
 		vtop->r &= ~VT_MUSTBOUND;
-#endif
 		o((b ? ARM64_BR : ARM64_BLR) | intr(gv(MCC_RC_R30)) << 5);
 	}
 }
 
-#if MCC_CONFIG_DIAG_RT >= 2
 
 static void gen_bounds_call(int v) { MCC_TRACE("enter\n");
 	Sym *sym = external_helper_sym(v);
@@ -976,7 +971,6 @@ static void gen_bounds_epilog(void) { MCC_TRACE("enter\n");
 	o(0x3cc107e0);
 	o(0xa8c107e0);
 }
-#endif
 
 static int arm64_hfa_aux(CType *type, int *fsize, int num) { MCC_TRACE("enter\n");
 	if (is_float_abi(type->t)) { MCC_TRACE("br\n");
@@ -1253,10 +1247,8 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 
 	save_regs(nb_args + 1);
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gbound_args(nb_args); }
-#endif
 
 	return_type = &vtop[-nb_args].type.ref->type;
 	if ((return_type->t & VT_BTYPE) == VT_STRUCT)
@@ -1619,10 +1611,8 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); o(ARM64_NOP); }
 	loc = 0;
 	gen_asan_stack_prolog();
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
-#endif
 #ifndef MCC_TARGET_PE
 	func_stack_chk_loc = 0;
 	if (mcc_state->stack_protector)
@@ -1774,14 +1764,10 @@ ST_FUNC void gen_va_arg(CType *t) { MCC_TRACE("enter\n");
 		if (hfa == 1 || fsize == 16)
 			{ MCC_TRACE("br\n"); o(0x8b3ec000 | r1 | r1 << 5); }
 		else { MCC_TRACE("br\n");
-#if MCC_CONFIG_OPTIMIZER
 			if (!rir_hook_slot_replay()) { MCC_TRACE("br\n");
 				loc = (loc - size) & -(uint32_t)align;
 				rir_hook_slot_record();
 			}
-#else
-			loc = (loc - size) & -(uint32_t)align;
-#endif
 			o(0x8b3ec000 | 30 | r1 << 5);
 			arm64_movimm(r1, loc);
 			o(0x8b0003a0 | r1 | r1 << 16);
@@ -1848,10 +1834,8 @@ ST_FUNC void gfunc_return(CType *func_type) { MCC_TRACE("enter\n");
 
 ST_FUNC void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	gen_asan_stack_epilog();
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
-#endif
 #ifndef MCC_TARGET_PE
 	if (func_stack_chk_loc)
 		{ MCC_TRACE("br\n"); gen_stack_chk_epilog(); }
@@ -2418,13 +2402,11 @@ ST_FUNC void gen_fabs(void) { MCC_TRACE("enter\n");
 	dbl = (vtop->type.t & VT_BTYPE) == VT_DOUBLE;
 	a = fltr(vtop->r);
 	d = a;
-#if MCC_CONFIG_OPTIMIZER
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
 		vtop->r = nr;
 		d = fltr(nr);
 	}
-#endif
 	o(0x1e20c000u | dbl << 22 | d | a << 5);
 }
 
@@ -2434,13 +2416,11 @@ ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
 	dbl = (vtop->type.t & VT_BTYPE) == VT_DOUBLE;
 	a = fltr(vtop->r);
 	d = a;
-#if MCC_CONFIG_OPTIMIZER
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
 		vtop->r = nr;
 		d = fltr(nr);
 	}
-#endif
 	o(0x1e21c000u | dbl << 22 | d | a << 5);
 }
 
@@ -2456,13 +2436,11 @@ ST_FUNC void gen_round(int mode) { MCC_TRACE("enter\n");
 	dbl = (vtop->type.t & VT_BTYPE) == VT_DOUBLE;
 	a = fltr(vtop->r);
 	uint32_t d = a;
-#if MCC_CONFIG_OPTIMIZER
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
 		vtop->r = nr;
 		d = fltr(nr);
 	}
-#endif
 	o(base | dbl << 22 | d | a << 5);
 }
 
@@ -2474,13 +2452,9 @@ ST_FUNC void gen_copysign(void) { MCC_TRACE("enter\n");
 	fx = fltr(vtop[-1].r);
 	fy = fltr(vtop[0].r);
 	gyr = get_reg(MCC_RC_INT);
-#if MCC_CONFIG_OPTIMIZER
 	ast_pinned_regs |= (uint64_t)1 << gyr;
-#endif
 	gxr = get_reg(MCC_RC_INT);
-#if MCC_CONFIG_OPTIMIZER
 	ast_pinned_regs &= ~((uint64_t)1 << gyr);
-#endif
 	gx = intr(gxr);
 	gy = intr(gyr);
 	if (dbl) { MCC_TRACE("br\n");
@@ -2853,16 +2827,12 @@ ST_FUNC void gen_vla_sp_restore(int addr) { MCC_TRACE("enter\n");
 
 ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 	uint32_t r;
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); vpushv(vtop); }
-#endif
 	r = intr(gv(MCC_RC_INT));
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); o(0x91004000 | r | r << 5); }
 	else
-#endif
 		o(0x91003c00 | r | r << 5);
 	o(0x927cec00 | r | r << 5);
 	o(0xcb2063ff | r << 16);
@@ -2878,7 +2848,6 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 		}
 	}
 	vpop();
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check) { MCC_TRACE("br\n");
 		vpushi(0);
 		vtop->r = MCC_TREG_R(0);
@@ -2889,5 +2858,4 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 		gfunc_call(2);
 		func_bound_add_epilog = 1;
 	}
-#endif
 }

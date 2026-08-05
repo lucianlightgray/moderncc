@@ -6,6 +6,11 @@
 #define _GNU_SOURCE
 #define _DARWIN_C_SOURCE
 
+/* Early: MCC_DIAG is used further down this header, and mccrir.c and
+   mccircap.c are #included into another translation unit and inherit it. */
+#include "mccdiag.h"
+#include "mccdev.h"
+
 #ifndef MCC_VERSION
 #define MCC_VERSION 20260706135200
 #endif
@@ -76,9 +81,6 @@
 #endif
 #endif
 
-#ifndef MCC_CONFIG_DIAG_RT
-#define MCC_CONFIG_DIAG_RT 2
-#endif
 
 enum {
 	MCC_DIAG_RT_OFF,
@@ -86,7 +88,7 @@ enum {
 	MCC_DIAG_RT_BOUNDS
 };
 
-#if defined MCC_TARGET_IS_HOST && MCC_CONFIG_DIAG_RT >= 1
+#if defined MCC_TARGET_IS_HOST
 ST_FUNC void host_fault_install(host_fault_fn fn);
 ST_FUNC int host_fault_regs(void *osctx, HostFaultRegs *r);
 ST_FUNC void host_fault_unblock(unsigned detail);
@@ -118,12 +120,6 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 #include "dwarf.h"
 #include "mcccst.h"
 #include "mccast.h"
-
-#ifdef MCC_PROFILE
-#define static
-#undef inline
-#define inline
-#endif
 
 #ifdef MCC_TARGET_I386
 #include "i386-gen.h"
@@ -420,9 +416,7 @@ typedef struct BufferedFile {
 	struct BufferedFile *prev;
 	int line_num;
 	int line_ref;
-#if MCC_CONFIG_LSP
 	unsigned long cst_base;
-#endif
 	int ifndef_macro;
 	int ifndef_macro_saved;
 	int *ifdef_stack_ptr;
@@ -492,7 +486,6 @@ typedef struct MCCAssertion {
 	int nb_answers;
 } MCCAssertion;
 
-#if MCC_CONFIG_ASM
 typedef struct ExprValue {
 	uint64_t v;
 	Sym *sym;
@@ -515,7 +508,6 @@ typedef struct ASMOperand {
 	int is_rw;
 	int is_label;
 } ASMOperand;
-#endif
 
 struct sym_attr {
 	unsigned got_offset;
@@ -615,6 +607,12 @@ struct asm_cfi_state {
 #define MCC_SANR_ALL \
 	(MCC_SANR_OVERFLOW | MCC_SANR_DIVREM | MCC_SANR_SHIFT | MCC_SANR_NULLPTR)
 
+#include "mccopt.h"
+
+/* A knob the command line did not name. Distinct from 0 and 1 so ast_configure
+   can tell "-fno-x was asked for" from "nobody said". */
+#define MCC_OPT_UNSET 0xff
+
 struct MCCState {
 	unsigned char verbose;
 	unsigned char nostdinc;
@@ -627,7 +625,17 @@ struct MCCState {
 	unsigned char znodelete;
 	unsigned char filetype;
 	unsigned char optimize;
+	/* The raw -O number, uncapped: 0-3 are the settled levels, 4 and up walk
+	   the in-development optimizer ladder, and MCC_OPT_SEARCH_LEVEL and above
+	   hand over to the strategy search. `optimize` stays clamped to 0-3 so the
+	   thousands of `optimize >= 2` tests keep meaning what they always did. */
+	unsigned char optimize_level;
 	unsigned char optimize_size;
+	/* Every optimization and diagnostic knob, one byte each, indexed by the
+	   MCC_OPT_* ids in mccopt.h. The driver's -f table writes 0/1 here; a byte
+	   left at MCC_OPT_UNSET was not named on the command line, so ast_configure
+	   fills it from the row's default class. */
+	unsigned char optflag[MCC_OPT_COUNT];
 	unsigned char embed_jit;
 	signed char jit;
 	unsigned char clear_cache;
@@ -656,6 +664,9 @@ struct MCCState {
 	unsigned char unwind_tables;
 	unsigned char short_enums;
 	unsigned char nobuiltin;
+	/* -fno-asm: do not recognise the `asm` keyword, as in gcc. It does NOT stop
+	   mcc assembling .s files -- gcc assembles those regardless. */
+	unsigned char noasm;
 	unsigned char omit_frame_pointer;
 	unsigned char function_sections;
 	unsigned char data_sections;
@@ -729,9 +740,7 @@ struct MCCState {
 	unsigned char do_debug;
 	unsigned char dwarf;
 	unsigned char do_backtrace;
-#if MCC_CONFIG_DIAG_RT >= 2
 	unsigned char do_bounds_check;
-#endif
 	unsigned char test_coverage;
 
 	unsigned char gnu_ext;
@@ -853,10 +862,8 @@ struct MCCState {
 	Section *common_section;
 	Section *asan_lstack_section;
 	Section *cur_text_section;
-#if MCC_CONFIG_DIAG_RT >= 2
 	Section *bounds_section;
 	Section *lbounds_section;
-#endif
 	union {
 		Section *symtab_section, *symtab;
 	};
@@ -945,9 +952,7 @@ struct MCCState {
 	addr_t run_tls_slab_tpoff;
 	int run_tls_active;
 
-#if MCC_CONFIG_DIAG_RT >= 1
 	int rt_num_callers;
-#endif
 
 	int total_idents;
 	int total_lines;
@@ -1105,33 +1110,11 @@ struct filespec {
 #define MCC_HAVE_INT128 0
 #endif
 
-#ifndef MCC_IR_CAPTURE
-#if MCC_CONFIG_OPTIMIZER &&                                                    \
-		(defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
-		 defined(MCC_TARGET_I386) || defined(MCC_TARGET_RISCV64) ||                 \
-		 defined(MCC_TARGET_ARM))
-#define MCC_IR_CAPTURE 1
-#endif
-#endif
-#if defined(MCC_IR_CAPTURE) && !MCC_IR_CAPTURE
-#undef MCC_IR_CAPTURE
-#endif
 
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 #define MCC_IR_HAVE_REGADDI 1
 #endif
 
-#ifndef MCC_REPLAY_IR
-#ifdef MCC_IR_CAPTURE
-#define MCC_REPLAY_IR 1
-#else
-#define MCC_REPLAY_IR 0
-#endif
-#endif
-#if MCC_REPLAY_IR && !defined(MCC_IR_CAPTURE)
-#undef MCC_REPLAY_IR
-#define MCC_REPLAY_IR 0
-#endif
 
 #define VT_UNSIGNED 0x0020
 #define VT_DEFSIGN 0x0040
@@ -1335,7 +1318,7 @@ ST_FUNC void mcc_write_uleb128(Section *sec, unsigned long long value);
 ST_FUNC void mcc_write_sleb128(Section *sec, long long value);
 PUB_FUNC char *mcc_strdup(const char *str);
 
-#ifdef MCC_MEM_DEBUG
+#if MCC_DIAG
 #define mcc_free(ptr) mcc_free_debug(ptr)
 #define mcc_malloc(size) mcc_malloc_debug(size, __FILE__, __LINE__)
 #define mcc_mallocz(size) mcc_mallocz_debug(size, __FILE__, __LINE__)
@@ -1427,12 +1410,8 @@ ST_FUNC int mcc_add_dll(MCCState *s, const char *filename, int flags);
 ST_FUNC int mcc_support_arch_match(MCCState *s1, const char *filename);
 ST_FUNC int mcc_add_support(MCCState *s1, const char *filename);
 ST_FUNC int mcc_add_support_opt(MCCState *s1, const char *filename);
-#if MCC_CONFIG_DIAG_RT >= 2
 ST_FUNC void mcc_add_bcheck(MCCState *s1);
-#endif
-#if MCC_CONFIG_DIAG_RT >= 1
 ST_FUNC void mcc_add_btstub(MCCState *s1);
-#endif
 ST_FUNC void mcc_add_pragma_libs(MCCState *s1);
 PUB_FUNC int mcc_add_library_err(MCCState *s, const char *f);
 PUB_FUNC void mcc_print_stats(MCCState *s, unsigned total_time);
@@ -1642,20 +1621,16 @@ ST_FUNC void indir(void);
 ST_FUNC void unary(void);
 ST_FUNC void gexpr(void);
 ST_FUNC int expr_const(void);
-#if MCC_CONFIG_LSP
 ST_FUNC void cst_capture_begin(const char *filename);
 ST_FUNC CstArena *cst_capture_end(void);
-#endif
 ST_FUNC Sym *get_sym_ref(CType *type, Section *sec, unsigned long offset, unsigned long size);
 #if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE
 ST_FUNC int classify_x86_64_va_arg(CType *ty);
 #endif
-#if MCC_CONFIG_DIAG_RT >= 2
 ST_FUNC void gbound_args(int nb_args);
 ST_DATA int func_bound_add_epilog;
 ST_FUNC int gen_bounds_epilog_head(addr_t func_bound_offset,
 																	 Sym **psym_data, int *poffset_modified);
-#endif
 ST_FUNC int gen_asan_stack_epilog_head(addr_t off, Sym **psym);
 ST_FUNC Sym *gfunc_set_param(Sym *s, int c, int byref);
 
@@ -1963,20 +1938,13 @@ ST_FUNC void asm_instr(void);
 ST_FUNC void asm_global_instr(void);
 ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess);
 ST_FUNC void mcc_assemble_inline(MCCState *s1, const char *str, int len, int global);
-#if MCC_CONFIG_ASM
-#ifdef MCC_IR_CAPTURE
 void ir_cap_teardown(void);
-#if MCC_REPLAY_IR
 /* Declared here as well as in mccrir.h: libmcc.c does not include that header, so the
    call in mcc_delete only resolved in single-source builds. */
 void rir_teardown(void);
-#else
-#define rir_teardown() ((void)0)
-#endif
 void ir_cap_asm(const char *str, int len, int global);
 void ir_cap_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
 												 int is_output, uint8_t *clobber_regs, int out_reg);
-#endif
 ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands, const char *name, const char **pp);
 ST_FUNC const char *skip_constraint_modifiers(const char *p);
 ST_FUNC Sym *get_asm_sym(int name, Sym *csym);
@@ -1994,7 +1962,6 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier);
 ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs, int is_output, uint8_t *clobber_regs,
 													int out_reg);
 ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str);
-#endif
 
 #ifdef MCC_TARGET_PE
 ST_FUNC int pe_load_file(struct MCCState *s1, int fd, const char *filename);
@@ -2134,6 +2101,10 @@ dwarf_read_sleb128(unsigned char **ln, unsigned char *end) {
 
 #ifndef MCC_CONFIG_DWARF_VERSION
 #define MCC_CONFIG_DWARF_VERSION 0
+#endif
+
+#ifndef MCC_CONFIG_NEW_DTAGS
+#define MCC_CONFIG_NEW_DTAGS 0
 #endif
 
 #if defined MCC_TARGET_X86_64

@@ -68,7 +68,7 @@ static int mccjit_diag_fired;
 static int mccjit_diag_enabled(void) { MCC_TRACE("enter\n");
 	static int v = -1;
 	if (v < 0) { MCC_TRACE("br\n");
-		const char *e = getenv("MCC_JIT_CRASH_DIAG");
+		const char *e = MCC_DEV_ENV("MCC_JIT_CRASH_DIAG");
 		v = (e && e[0] && e[0] != '0') ? 1 : 0;
 	}
 	return v;
@@ -246,7 +246,7 @@ static LONG CALLBACK mccjit_diag_veh(EXCEPTION_POINTERS *ep) { MCC_TRACE("enter\
 
 static void mccjit_diag_install_(void) { MCC_TRACE("enter\n");
 	AddVectoredExceptionHandler(1u, (PVECTORED_EXCEPTION_HANDLER)&mccjit_diag_veh);
-	fprintf(stderr, "mccjit-diag: crash handler armed (MCC_JIT_CRASH_DIAG)\n");
+	fprintf(stderr, "mccjit-diag: crash handler armed (MCC_JIT_CRASH_DIAG, MCC_DEV build)\n");
 	fflush(stderr);
 }
 
@@ -296,9 +296,7 @@ static void mccjit_diag_note_boot(void *variant, void *baseline, void *entry,
 
 #if defined(MCCJIT_I386)
 static int mccjit_i386_stubs_enabled(void) { MCC_TRACE("enter\n");
-	const char *e = getenv("MCC_JIT_I386_STUBS");
-	if (!e || !e[0]) { MCC_TRACE("br\n"); return 1; }
-	return e[0] != '0';
+	return mcc_env_flag("MCC_JIT_I386_STUBS", 1);
 }
 
 static int mccjit_stub_tail_active(void) { MCC_TRACE("enter\n");
@@ -345,7 +343,29 @@ int ast_slice_enabled(void);
 
 MCCJIT_LOCAL unsigned char *mccjit_last_blob;
 MCCJIT_LOCAL size_t mccjit_last_len;
+/* The MCC_JIT_* runtime knobs.
+ *
+ * These stay environment variables on purpose, and it is not scaffolding: the
+ * embed JIT runs inside programs mcc COMPILED, not inside mcc. That program's
+ * argv belongs to the program, so a --jit-* compiler flag cannot reach the JIT
+ * once it is running. This is the same reason OMP_NUM_THREADS and
+ * MALLOC_ARENA_MAX are environment variables.
+ *
+ * Naming rules, so the set stays readable:
+ *   - Positive sense only. No MCC_JIT_NO_*: set the knob to 0 to disable it.
+ *     MCC_JIT_KGC=0, not MCC_JIT_NO_KGC=1.
+ *   - Units live in the name -- _MS, _ITERS, _CALLS -- not in a comment.
+ *   - Subsystems group by prefix: MCC_JIT_SEARCH, _SEARCH_MS, _SEARCH_PLATEAU,
+ *     _SEARCH_SLICE.
+ *   - mcc_env_on for default-off, mcc_env_flag(name, 1) for default-on,
+ *     mcc_env_num(name, dflt) for positive integers.
+ *
+ * Fault injection and selftest knobs are NOT here: they compile out entirely
+ * unless MCC_DEV, so a shipped compiler cannot be told to emit wrong code.
+ */
 MCCJIT_LOCAL MCCState *mccjit_last_state;
+
+
 MCCJIT_LOCAL int mccjit_last_purity;
 MCCJIT_LOCAL int mccjit_last_purity_ne;
 
@@ -687,14 +707,14 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	if (setjmp(js->error_jmp_buf) == 0) { MCC_TRACE("br\n");
 		if (sym) { MCC_TRACE("br\n");
 			ast_fconst_reuse_disable(1);
-			if (mcc_env_on("MCC_JIT_SELFTEST_FOLD_CONSTS"))
+			if (MCC_DEV_ENV_ON("MCC_JIT_SELFTEST_FOLD_CONSTS"))
 				{ MCC_TRACE("br\n"); ast_jit_fold_consts(it.arena); }
 			mccjit_slice_hotpatch(it.arena);
 			if (mccjit_recompile_use_gates)
 				{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, mccjit_recompile_gate_mask); }
 			else if (have_override && override_mask)
 				{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, override_mask); }
-			else if (mcc_env_on("MCC_JIT_SELFTEST_REEMIT_GATES"))
+			else if (MCC_DEV_ENV_ON("MCC_JIT_SELFTEST_REEMIT_GATES"))
 				{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, 0); }
 			else
 				{ MCC_TRACE("br\n"); ast_reemit_extern(sym, it.arena); }
@@ -929,8 +949,8 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 	int over = 0;
 	int skipped = 0;
 	int routed = 0;
-	int no_kgc = mcc_env_on("MCC_JIT_NO_KGC");
-	int spec_wrong = mcc_env_on("MCC_JIT_SPEC_WRONG");
+	int no_kgc = !mcc_env_flag("MCC_JIT_KGC", 1);
+	int spec_wrong = MCC_DEV_ENV_ON("MCC_JIT_SPEC_WRONG");
 	struct timespec cstart;
 	int ctimed = 0;
 	if (timed && max_duration && mccjit_elapsed(t0) > (double)max_duration) { MCC_TRACE("br\n");
@@ -992,7 +1012,7 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 		mcc_stats_jit_outcome(outcome);
 	}
 	if (mcc_env_on("MCC_JIT_VERBOSE")) { MCC_TRACE("br\n");
-		int probeable = mcc_env_on("MCC_JIT_PROBE") && variant &&
+		int probeable = MCC_DEV_ENV_ON("MCC_JIT_PROBE") && variant &&
 										mccjit_last_nparam == 1 &&
 										!mccjit_type_wide((int)mccjit_last_param_t[0]);
 		int probe = probeable ? ((int (*)(int))variant)(7) : -1;
@@ -1015,7 +1035,7 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 }
 
 static int mccjit_bench_enabled(void) { MCC_TRACE("enter\n");
-	const char *e = getenv("MCC_JIT_BENCH");
+	const char *e = MCC_DEV_ENV("MCC_JIT_BENCH");
 	return e && e[0] && e[0] != '0';
 }
 
@@ -1055,8 +1075,8 @@ static void mccjit_graduate_slices_blob(const void *blob, size_t len,
 static void *mccjit_lazy_build_masked(const void *blob, unsigned long len,
 																			uint64_t gate_mask, int use_gates,
 																			int *routed) { MCC_TRACE("enter\n");
-	int no_kgc = mcc_env_on("MCC_JIT_NO_KGC");
-	int spec_wrong = mcc_env_on("MCC_JIT_SPEC_WRONG");
+	int no_kgc = !mcc_env_flag("MCC_JIT_KGC", 1);
+	int spec_wrong = MCC_DEV_ENV_ON("MCC_JIT_SPEC_WRONG");
 	void *variant = spec_wrong
 											? mcc_jit_recompile_blob_spec(blob, (size_t)len, 0, 7)
 											: use_gates
@@ -1155,7 +1175,7 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 	int gs_bench_won = 0;
 	long best_cost = -1;
 	int stale = 0;
-	int stale_max = ast_env_int("MCC_JIT_SEARCH_PLATEAU", 3);
+	int stale_max = (int)mcc_env_num("MCC_JIT_SEARCH_PLATEAU", 3);
 	if (e && e[0])
 		{ MCC_TRACE("br\n"); budget_s = strtod(e, NULL) / 1000.0; }
 	else if (mccjit_search_budget_baked_s)
@@ -1677,15 +1697,9 @@ static void *mccjit_make_counter_stub(MccjitCounterState *st) { MCC_TRACE("enter
 
 static int mccjit_lazy_install(void **slot, const void *blob, unsigned long len) { MCC_TRACE("enter\n");
 	void *baseline = slot ? *slot : NULL;
-	long threshold = 1000;
-	const char *e = getenv("MCC_JIT_HOT_THRESHOLD");
+	long threshold = mcc_env_num("MCC_JIT_HOT_CALLS", 1000);
 	MccjitCounterState *st;
 	void *stub;
-	if (e && e[0]) { MCC_TRACE("br\n");
-		long v = strtol(e, NULL, 10);
-		if (v > 0)
-			{ MCC_TRACE("br\n"); threshold = v; }
-	}
 	st = mcc_mallocz(sizeof *st);
 	if (!st)
 		{ MCC_TRACE("br\n"); return -1; }
@@ -1711,8 +1725,7 @@ static int mccjit_lazy_install(void **slot, const void *blob, unsigned long len)
 }
 
 static int mccjit_lazy_enabled(void) { MCC_TRACE("enter\n");
-	const char *e = getenv("MCC_JIT_LAZY");
-	return e && e[0] && e[0] != '0';
+	return mcc_env_on("MCC_JIT_LAZY");
 }
 
 static int mccjit_probe_exec_mem(void) { MCC_TRACE("enter\n");
@@ -1766,7 +1779,7 @@ static void mccjit_feasible_probe(void) { MCC_TRACE("enter\n");
 }
 
 static int mccjit_feasible(void) { MCC_TRACE("enter\n");
-	if (mcc_env_on("MCC_JIT_FORCE_INFEASIBLE"))
+	if (MCC_DEV_ENV_ON("MCC_JIT_FORCE_INFEASIBLE"))
 		{ MCC_TRACE("br\n"); return 0; }
 	pthread_once(&mccjit_feasible_once, mccjit_feasible_probe);
 	return mccjit_feasible_flag;
@@ -1975,7 +1988,7 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 #if MCC_HOST_WIN32
 		mcc_add_symbol(s1, "getenv", (void *)getenv);
 #endif
-	} else if (mcc_env_on("MCC_JIT_EXPORT_INTERNALS")) { MCC_TRACE("br\n");
+	} else if (MCC_DEV_ENV_ON("MCC_JIT_EXPORT_INTERNALS")) { MCC_TRACE("br\n");
 		int i;
 		s1->rdynamic = 1;
 		for (i = 0; i < mccjit_export_n; i++)
@@ -2534,7 +2547,7 @@ typedef struct MccjitKgc {
 } MccjitKgc;
 
 static int mccjit_poison_min(void) { MCC_TRACE("enter\n");
-	const char *e = getenv("MCC_JIT_POISON_MIN");
+	const char *e = MCC_DEV_ENV("MCC_JIT_POISON_MIN");
 	if (e && e[0]) { MCC_TRACE("br\n");
 		long v = strtol(e, NULL, 10);
 		if (v > 0)
@@ -2544,7 +2557,7 @@ static int mccjit_poison_min(void) { MCC_TRACE("enter\n");
 }
 
 static int mccjit_poison_pct(void) { MCC_TRACE("enter\n");
-	const char *e = getenv("MCC_JIT_POISON_PCT");
+	const char *e = MCC_DEV_ENV("MCC_JIT_POISON_PCT");
 	if (e && e[0]) { MCC_TRACE("br\n");
 		long v = strtol(e, NULL, 10);
 		if (v > 0 && v <= 100)
@@ -2554,10 +2567,7 @@ static int mccjit_poison_pct(void) { MCC_TRACE("enter\n");
 }
 
 static int mccjit_nearmatch_on(void) { MCC_TRACE("enter\n");
-	const char *e = getenv("MCC_JIT_NEARMATCH");
-	if (e && e[0] && (e[0] == '0' || e[0] == 'n' || e[0] == 'N'))
-		{ MCC_TRACE("br\n"); return 0; }
-	return 1;
+	return mcc_env_flag("MCC_JIT_NEARMATCH", 1);
 }
 
 #define MCCJIT_NEARMATCH_CORR_MAX ((uint64_t)64)
@@ -2746,7 +2756,7 @@ static int64_t mccjit_kgc_decode_compressed(const unsigned char *buf, size_t len
 
 static void mccjit_kgc_flush_compressed(MccjitKgc *k) { MCC_TRACE("enter\n");
 	static unsigned long seq;
-	const char *dir = getenv("MCC_JIT_KGC_SAVE");
+	const char *dir = MCC_DEV_ENV("MCC_JIT_KGC_SAVE");
 	unsigned char *buf;
 	size_t n;
 	if (!k || !k->hdr || k->hdr->count == 0)
@@ -2755,7 +2765,7 @@ static void mccjit_kgc_flush_compressed(MccjitKgc *k) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	if (mccjit_kgc_encode_compressed(k, &buf, &n) != 0 || !buf)
 		{ MCC_TRACE("br\n"); return; }
-	if (mcc_env_on("MCC_JIT_KGC_SELFTEST")) { MCC_TRACE("br\n");
+	if (MCC_DEV_ENV_ON("MCC_JIT_KGC_SELFTEST")) { MCC_TRACE("br\n");
 		int64_t *chk = mcc_malloc((size_t)k->hdr->count * k->arity * sizeof(int64_t));
 		uint32_t da = 0;
 		int64_t dc = chk ? mccjit_kgc_decode_compressed(buf, n, chk, k->hdr->count, &da)
@@ -3217,7 +3227,7 @@ static double mccjit_invoke_fp(void *fn, const double *a, uint32_t n) { MCC_TRAC
 static volatile int64_t mccjit_bench_sink;
 
 static long mccjit_bench_iters(void) { MCC_TRACE("enter\n");
-	const char *e = getenv("MCC_JIT_BENCH_ITERS");
+	const char *e = MCC_DEV_ENV("MCC_JIT_BENCH_ITERS");
 	if (e && e[0]) { MCC_TRACE("br\n");
 		long v = strtol(e, NULL, 10);
 		if (v > 0)
@@ -3227,7 +3237,7 @@ static long mccjit_bench_iters(void) { MCC_TRACE("enter\n");
 }
 
 static int mccjit_bench_margin_pct(void) { MCC_TRACE("enter\n");
-	const char *e = getenv("MCC_JIT_BENCH_MARGIN_PCT");
+	const char *e = MCC_DEV_ENV("MCC_JIT_BENCH_MARGIN_PCT");
 	if (e && e[0]) { MCC_TRACE("br\n");
 		long v = strtol(e, NULL, 10);
 		if (v >= 0 && v <= 100)
@@ -3237,7 +3247,7 @@ static int mccjit_bench_margin_pct(void) { MCC_TRACE("enter\n");
 }
 
 static int mccjit_bench_rounds(void) { MCC_TRACE("enter\n");
-	const char *e = getenv("MCC_JIT_BENCH_ROUNDS");
+	const char *e = MCC_DEV_ENV("MCC_JIT_BENCH_ROUNDS");
 	if (e && e[0]) { MCC_TRACE("br\n");
 		long v = strtol(e, NULL, 10);
 		if (v >= 1 && v <= 1024)
@@ -3298,7 +3308,7 @@ static void mccjit_bench_run_pair(void *cand, void *incumbent,
 #define MCCJIT_BENCH_MAXCORES 16
 
 static int mccjit_bench_cores(void) { MCC_TRACE("enter\n");
-	const char *e = getenv("MCC_JIT_BENCH_CORES");
+	const char *e = MCC_DEV_ENV("MCC_JIT_BENCH_CORES");
 	long n = 0;
 	if (e && e[0]) { MCC_TRACE("br\n");
 		n = strtol(e, NULL, 10);
@@ -5627,7 +5637,7 @@ PUB_FUNC int mccjit_selftest_lazy(void) { MCC_TRACE("enter\n");
 	printf("mccjit-selftest-lazy: begin (threshold=%ld)\n", threshold);
 #if defined(MCCJIT_I386)
 	if (!mccjit_stub_tail_active()) { MCC_TRACE("br\n");
-		printf("mccjit-selftest-lazy: skipped — i386 stub tail gated off (set MCC_JIT_I386_STUBS)\n");
+		printf("mccjit-selftest-lazy: skipped — i386 stub tail gated off (drop --jit-no-i386-stubs)\n");
 		printf("mccjit-selftest-lazy: PASS (0 failures)\n");
 		return 0;
 	}
@@ -5796,7 +5806,7 @@ PUB_FUNC int mccjit_selftest_pool(void) { MCC_TRACE("enter\n");
 	printf("mccjit-selftest-pool: begin\n");
 #if defined(MCCJIT_I386)
 	if (!mccjit_stub_tail_active()) { MCC_TRACE("br\n");
-		printf("mccjit-selftest-pool: skipped — i386 stub tail gated off (set MCC_JIT_I386_STUBS)\n");
+		printf("mccjit-selftest-pool: skipped — i386 stub tail gated off (drop --jit-no-i386-stubs)\n");
 		printf("mccjit-selftest-pool: PASS (0 failures)\n");
 		return 0;
 	}
@@ -5958,7 +5968,7 @@ PUB_FUNC int mccjit_selftest_slicelive(void) { MCC_TRACE("enter\n");
 	printf("mccjit-selftest-slicelive: PASS (0 failures)\n");
 	return 0;
 #endif
-	setenv("MCC_JIT_SLICE_SEARCH", "1", 1);
+	setenv("MCC_JIT_SEARCH_SLICE", "1", 1);
 
 	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
 	if (!s1 || !blob) { MCC_TRACE("br\n");
@@ -6069,7 +6079,7 @@ PUB_FUNC int mccjit_selftest_eligibility(void) { MCC_TRACE("enter\n");
 	printf("mccjit-selftest-eligibility: begin (%d cases)\n", n);
 #if defined(MCCJIT_I386)
 	if (!mccjit_stub_tail_active()) { MCC_TRACE("br\n");
-		printf("mccjit-selftest-eligibility: skipped — i386 stub tail gated off (set MCC_JIT_I386_STUBS)\n");
+		printf("mccjit-selftest-eligibility: skipped — i386 stub tail gated off (drop --jit-no-i386-stubs)\n");
 		printf("mccjit-selftest-eligibility: PASS (0 failures)\n");
 		return 0;
 	}
@@ -6393,7 +6403,7 @@ PUB_FUNC int mccjit_selftest_liverun(const char *libpath, const char *incpath) {
 	printf("mccjit-selftest-liverun: begin\n");
 #if defined(MCCJIT_I386)
 	if (!mccjit_stub_tail_active()) { MCC_TRACE("br\n");
-		printf("mccjit-selftest-liverun: skipped — i386 stub tail gated off (set MCC_JIT_I386_STUBS)\n");
+		printf("mccjit-selftest-liverun: skipped — i386 stub tail gated off (drop --jit-no-i386-stubs)\n");
 		printf("mccjit-selftest-liverun: PASS (0 failures)\n");
 		return 0;
 	}
@@ -6833,13 +6843,7 @@ static const MccjitPatchStrategy mccjit_patch_reg[] = {
 #define MCCJIT_PATCH_NREG (int)(sizeof mccjit_patch_reg / sizeof mccjit_patch_reg[0])
 
 static long mccjit_patch_iters(void) { MCC_TRACE("enter\n");
-	const char *e = getenv("MCC_JIT_PATCH_ITERS");
-	if (e && e[0]) { MCC_TRACE("br\n");
-		long v = strtol(e, NULL, 10);
-		if (v > 0)
-			{ MCC_TRACE("br\n"); return v; }
-	}
-	return 500000;
+	return mcc_env_num("MCC_JIT_PATCH_ITERS", 500000);
 }
 
 static int mccjit_patch_benchmarkable(const MccjitPatchStrategy *s) { MCC_TRACE("enter\n");
@@ -7109,7 +7113,7 @@ PUB_FUNC int mccjit_selftest_fparg(const char *libpath, const char *incpath) { M
 	printf("mccjit-selftest-fparg: begin\n");
 #if defined(MCCJIT_I386)
 	if (!mccjit_stub_tail_active()) { MCC_TRACE("br\n");
-		printf("mccjit-selftest-fparg: skipped — i386 stub tail gated off (set MCC_JIT_I386_STUBS)\n");
+		printf("mccjit-selftest-fparg: skipped — i386 stub tail gated off (drop --jit-no-i386-stubs)\n");
 		printf("mccjit-selftest-fparg: PASS (0 failures)\n");
 		return 0;
 	}
@@ -7312,7 +7316,7 @@ PUB_FUNC int mccjit_selftest_mixed(const char *libpath, const char *incpath) { M
 		(void)libpath;
 		(void)incpath;
 		printf("mccjit-selftest-mixed: skipped — i386 mixed stub tail gated off "
-					 "(set MCC_JIT_I386_STUBS)\n");
+					 "(drop --jit-no-i386-stubs)\n");
 		return 0;
 	}
 #endif
@@ -8835,7 +8839,7 @@ static void *mccjit_slice_search(MccjitCounterState *st, int *routed, int async)
 }
 
 static void *mccjit_lazy_entry(MccjitCounterState *st, int *routed, int async) { MCC_TRACE("enter\n");
-	if (async && mcc_env_on("MCC_JIT_SLICE_SEARCH")) { MCC_TRACE("br\n");
+	if (async && mcc_env_on("MCC_JIT_SEARCH_SLICE")) { MCC_TRACE("br\n");
 		void *e = mccjit_slice_search(st, routed, async);
 		if (e)
 			{ MCC_TRACE("br\n"); return e; }

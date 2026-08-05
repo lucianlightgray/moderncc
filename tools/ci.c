@@ -545,7 +545,7 @@ static const struct {
 				"PIE/PIC codegen is ELF-only (Linux)", "", OS_LINUX, 0},
 		{"dwarf", "-DMCC_CONFIG_DWARF=5",
 				"DWARF-5 debug info is ELF-only (Linux)", "", OS_LINUX, 0},
-		{"diagnostics", "-DMCC_ALL_DIAGNOSTICS=ON", "", "",
+		{"diagnostics", "-DMCC_DIAG=ON", "", "",
 				OS_LINUX | OS_MAC | OS_WIN, 0},
 		{"macho", "-DMCC_CONFIG_NEW_MACHO=yes",
 				"no Mach-O validator on a Windows host (the seccomp image "
@@ -559,10 +559,10 @@ static const struct {
 				"-DMCC_ENABLE_CROSS=ON;"
 				"-DMCC_CROSS_TARGETS=i386-win32,x86_64-win32,arm64-win32",
 				OS_WIN | OS_LINUX, OS_LINUX},
-		{"asm-off", "-DMCC_CONFIG_ASM=OFF",
-				"asm-off self-host builds mccrt with CMAKE_C_COMPILER (the "
-				"stage1 mcc, asm-on) via MCC_MCCRT_USE_HOSTCC; the Windows/PE "
-				"path is not yet confirmed",
+		{"asm-off", "",
+				"asm axis: the assembler is always compiled in; -fno-asm "
+				"disables the `asm` keyword at runtime, as in gcc. .s files "
+				"still assemble, which is also gcc's behaviour",
 				"", OS_LINUX | OS_MAC, 0},
 		{"sanitize", "-DMCC_BUILD_SANITIZE=ON", "", "",
 				OS_LINUX | OS_MAC | OS_WIN, 0},
@@ -638,7 +638,7 @@ static const struct {
 		{"local-ci", "the local-CI orchestrator itself (MCC_LOCAL_CI_AS_TEST)"},
 		{"qemu", "umbrella; the per-arch qemu-* presets are the cells"},
 		{"debug", "alias: = linux-gcc with unpinned cc (interactive use)"},
-		{"cst", "feature-off axis: MCC_CONFIG_LSP=OFF (interactive use)"},
+		{"cst", "CST/LSP axis: always compiled in, entered with --lsp"},
 		{"sanitize", "alias: = linux-gcc-sanitize with unpinned cc"},
 		{"diagnostics", "alias: = linux-gcc-diagnostics with unpinned cc"},
 		{"cross", "alias: = linux-gcc-cross with unpinned cc"},

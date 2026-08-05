@@ -1,4 +1,4 @@
-# <name>|<olevel>|<gate env>|<extra env or ->
+# <name>|<olevel>|<gate flag>|<extra env or ->
 # Structural / pipeline-level gates (master gates, promotion, inlining, fixpoint).
 # CAVEAT for cross-arch enablement: regdisp is x86_64-ONLY by construction
 # (ast_regdisp_env compiles to 0 elsewhere), so it will report DID NOT FIRE on
@@ -6,11 +6,11 @@
 # inline_capture and perfn_inproc both require MCC_AST_INLINE_PASS=0: do_inline
 # in mccast.c is `&& !ast_inline_pass_env`, so the capture-time graft is dead
 # whenever the post-capture inliner is on.
-templates|-O2|MCC_AST_TEMPLATES|-
-promote|-O2|MCC_AST_PROMOTE|MCC_AST_PROMO_LEAF_CALLEE=1
-inline_capture|-O3|MCC_AST_INLINE|MCC_AST_INLINE_PASS=0
-inline_pass|-O2|MCC_AST_INLINE_PASS|-
-cycle|-O3|MCC_AST_CYCLE|-
-math_inline|-O2|MCC_AST_MATH_INLINE|-
-regdisp|-Os|MCC_AST_REGDISP|-
-perfn_inproc|-O3|MCC_AST_PERFN_INPROC|MCC_AST_INLINE_PASS=0
+templates|-O2|reemit-templates|-
+promote|-O2|promote-locals|-fpromote-leaf-callee
+inline_capture|-O3|inline|-fno-inline-functions
+inline_pass|-O2|inline-functions|-
+cycle|-O3|opt-cycle|-
+math_inline|-O2|builtin-math|-
+regdisp|-Os|reg-disp|-
+perfn_inproc|-O3|opt-perfn-inproc|-fno-inline-functions

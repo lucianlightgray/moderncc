@@ -68,8 +68,8 @@ EOF
 IDENT_OK=1
 if [ -x /w/mcc-rv64-pristine ]; then
   for f in a b; do
-    MCC_AST_PROMOTE=0 /w/mcc-rv64-opt      -O2 -I /b/runtime/include -c /w/corpus/$f.c -o /w/mod_$f.o
-    MCC_AST_PROMOTE=0 /w/mcc-rv64-pristine -O2 -I /p/runtime/include -c /w/corpus/$f.c -o /w/pri_$f.o
+    /w/mcc-rv64-opt -fno-promote-locals -O2 -I /b/runtime/include -c /w/corpus/$f.c -o /w/mod_$f.o
+    /w/mcc-rv64-pristine -fno-promote-locals -O2 -I /p/runtime/include -c /w/corpus/$f.c -o /w/pri_$f.o
     if cmp -s /w/mod_$f.o /w/pri_$f.o; then
       echo "   OFF byte-identical: corpus/$f.o (modified == pristine)"
     else
@@ -99,8 +99,8 @@ int leaf(int n) {
   return s ^ p;
 }
 EOF
-MCC_AST_PROMOTE=0 /w/mcc-rv64-opt -O2 -I /b/runtime/include -c /w/gate.c -o /w/gate_off.o
-MCC_AST_PROMOTE=1 /w/mcc-rv64-opt -O2 -I /b/runtime/include -c /w/gate.c -o /w/gate_on.o
+/w/mcc-rv64-opt -fno-promote-locals -O2 -I /b/runtime/include -c /w/gate.c -o /w/gate_off.o
+/w/mcc-rv64-opt -fpromote-locals -O2 -I /b/runtime/include -c /w/gate.c -o /w/gate_on.o
 echo "--- callful() OFF ---"; riscv64-linux-gnu-objdump -d /w/gate_off.o | sed -n "/<callful>:/,/ret/p"
 echo "--- callful() ON  ---"; riscv64-linux-gnu-objdump -d /w/gate_on.o  | sed -n "/<callful>:/,/ret/p"
 echo "--- leaf() OFF ---";    riscv64-linux-gnu-objdump -d /w/gate_off.o | sed -n "/<leaf>:/,/ret/p"
@@ -218,7 +218,7 @@ ll leafl(ll a,ll b){ll x=a*100003LL,y=b^0x5a5a5a5aLL,z=x+y;int i;for(i=0;i<6;i++
 EOF
 
 echo "-- compile tested.c with mcc promote ON --"
-MCC_AST_PROMOTE=1 /w/mcc-rv64-opt -O2 -I /b/runtime/include -c /w/tested.c -o /w/tested.o
+/w/mcc-rv64-opt -fpromote-locals -O2 -I /b/runtime/include -c /w/tested.c -o /w/tested.o
 echo "-- s-reg usage in tested.o --"
 riscv64-linux-gnu-objdump -d /w/tested.o | grep -Eoc "\b(s1|s2|s3|s4|s5|s6|s7|s8|s9|s10|s11)\b" || true
 echo "-- compile ref + main with gcc -O2 --"
@@ -231,7 +231,7 @@ qemu-riscv64-static /w/difftest || rc=$?
 echo "difftest exit=$rc"
 
 echo "== ALSO: control build - tested.c compiled with promote OFF, differential (sanity) =="
-MCC_AST_PROMOTE=0 /w/mcc-rv64-opt -O2 -I /b/runtime/include -c /w/tested.c -o /w/tested_off.o
+/w/mcc-rv64-opt -fno-promote-locals -O2 -I /b/runtime/include -c /w/tested.c -o /w/tested_off.o
 riscv64-linux-gnu-gcc -static /w/main.o /w/tested_off.o /w/refimpl.o -o /w/difftest_off
 rc2=0
 qemu-riscv64-static /w/difftest_off || rc2=$?

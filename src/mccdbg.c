@@ -409,12 +409,10 @@ ST_FUNC void mcc_debug_new(MCCState *s1) { MCC_TRACE("enter\n");
 	if (!s1->dState)
 		{ MCC_TRACE("br\n"); s1->dState = mcc_mallocz(sizeof *s1->dState); }
 
-#if MCC_CONFIG_DIAG_RT >= 1
 	if (s1->do_debug && s1->output_type == MCC_OUTPUT_MEMORY)
 		{ MCC_TRACE("br\n"); s1->do_backtrace = 1; }
 	if (s1->do_backtrace)
 		{ MCC_TRACE("br\n"); shf = SHF_ALLOC; }
-#endif
 
 	if (s1->dwarf) { MCC_TRACE("br\n");
 		static const char *const debug[] = {

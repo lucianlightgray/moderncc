@@ -49,19 +49,13 @@ static const char help[] =
 #ifdef MCC_TARGET_PE
 		"  -g.pdb              Generate a .pdb debug database\n"
 #endif
-#if MCC_CONFIG_DIAG_RT >= 2
 		"  -b                  Enable the built-in memory and bounds checker (implies -g)\n"
-#endif
-#if MCC_CONFIG_DIAG_RT >= 1
 		"  -bt[<n>]            Link with backtrace support (show up to <n> callers)\n"
-#endif
 #if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
 		"  -fsanitize=undefined  Trap on undefined behavior (signed overflow, out-of-range\n"
 		"                        shift, divide-by-zero) with an illegal instruction\n"
 #endif
-#if MCC_CONFIG_DIAG_RT >= 2
 		"  -fsanitize=address    Detect out-of-bounds/invalid memory access (via -b)\n"
-#endif
 		"Other options:\n"
 		"  -f[no-]<flag>       Enable (or disable) a compiler flag; see -hh\n"
 		"  -W[no-]<warn>       Enable (or disable) a warning; see -hh\n"
@@ -525,6 +519,22 @@ static SoEnvAxis so_axes[] = {
 		{"MCC_AST_CPROP_JOIN", NULL},		 {"MCC_AST_CSE_JOIN", NULL},
 		{"MCC_AST_PROMOTE_LIMIT", NULL}, {"MCC_AST_OPT_LIMIT", NULL}};
 
+/* The search drives its children by spawning them, and the boolean axes are
+   compiler flags rather than environment settings, so they have to reach the
+   child's argv. Numeric axes are still env and keep a NULL here. The order
+   matches so_axes exactly. A boolean axis with no flag would silently search a
+   space where nothing moves, which is what happened when these were env. */
+static const char *const so_axis_flag[] = {
+		"reemit-templates", "promote-locals",
+		"inline",						NULL, /* NO_CALLFUL: inverted, handled below */
+		NULL,								NULL,
+		NULL,								"bitflag",
+		"tree-copy-prop",		"gcse-join",
+		NULL,								NULL};
+
+/* Resolved -f spellings for the boolean axes, appended to every child argv. */
+static char so_axis_argv[sizeof so_axes / sizeof *so_axes][64];
+
 #define SO_NAXES ((int)(sizeof so_axes / sizeof *so_axes))
 
 static int so_axes_snapped;
@@ -551,6 +561,22 @@ static void so_setenv_axis(const char *name, const char *val) { MCC_TRACE("enter
 				{ MCC_TRACE("br\n"); val = so_axes[i].user; }
 			break;
 		} }
+	for (int i = 0; i < SO_NAXES; i++) { MCC_TRACE("br\n");
+		if (strcmp(so_axes[i].name, name))
+			{ MCC_TRACE("br\n"); continue; }
+		if (!strcmp(name, "MCC_AST_NO_CALLFUL")) { MCC_TRACE("br\n");
+			/* the axis is the negative of the flag */
+			snprintf(so_axis_argv[i], sizeof so_axis_argv[i], "-f%scallful",
+							 strcmp(val, "0") ? "no-" : "");
+			return;
+		}
+		if (so_axis_flag[i]) { MCC_TRACE("br\n");
+			snprintf(so_axis_argv[i], sizeof so_axis_argv[i], "-f%s%s",
+							 strcmp(val, "0") ? "" : "no-", so_axis_flag[i]);
+			return;
+		}
+		break;
+	}
 	host_setenv(name, val);
 }
 
@@ -563,6 +589,9 @@ static void so_unsetenv_axis(const char *name) { MCC_TRACE("enter\n");
 			}
 			break;
 		} }
+	for (int i = 0; i < SO_NAXES; i++)
+		{ MCC_TRACE("br\n"); if (!strcmp(so_axes[i].name, name))
+			{ MCC_TRACE("br\n"); so_axis_argv[i][0] = 0; break; } }
 	host_unsetenv(name);
 }
 
@@ -898,6 +927,9 @@ static void so_copy_args_drop_o(const char **cv, int *pn, int argc,
 			{ MCC_TRACE("br\n"); continue; }
 		cv[(*pn)++] = argv[i];
 	}
+	for (i = 0; i < SO_NAXES; i++)
+		{ MCC_TRACE("br\n"); if (so_axis_argv[i][0])
+			{ MCC_TRACE("br\n"); cv[(*pn)++] = so_axis_argv[i]; } }
 }
 
 static int so_spawn_timeout(const char **cv, unsigned timeout_ms) { MCC_TRACE("enter\n");
@@ -1122,7 +1154,8 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 	snprintf(cand, sizeof cand, "%s.mcc-pf", outfile);
 	snprintf(hashp, sizeof hashp, "%s.fnh", cand);
 	cfg = mcc_malloc(SO_MAXFN * 96);
-	cv = mcc_malloc((argc + 5) * sizeof *cv);
+	/* +SO_NAXES: so_copy_args_drop_o appends one -f per active boolean axis. */
+	cv = mcc_malloc((argc + 5 + SO_NAXES) * sizeof *cv);
 	argn = 0;
 	cv[argn++] = exe;
 	so_copy_args_drop_o(cv, &argn, argc, argv);
@@ -1284,7 +1317,8 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 		limit_cur = ck.limit_cursor;
 		round = ck.round;
 	}
-	cv = mcc_malloc((argc + 5) * sizeof *cv);
+	/* +SO_NAXES: so_copy_args_drop_o appends one -f per active boolean axis. */
+	cv = mcc_malloc((argc + 5 + SO_NAXES) * sizeof *cv);
 	argn = 0;
 	cv[argn++] = exe;
 	so_copy_args_drop_o(cv, &argn, argc, argv);
@@ -1296,7 +1330,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 
 	if (so_jitscore) { MCC_TRACE("br\n");
 		int rn = 0;
-		rv = mcc_malloc((argc + 5) * sizeof *rv);
+		rv = mcc_malloc((argc + 5 + SO_NAXES) * sizeof *rv);
 		rv[rn++] = exe;
 		for (i = 1; i < argc; i++) { MCC_TRACE("br\n");
 			if (!strcmp(argv[i], "-o")) { MCC_TRACE("br\n");
@@ -1308,6 +1342,11 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 				{ MCC_TRACE("br\n"); continue; }
 			rv[rn++] = argv[i];
 		}
+		/* same axes as the compile child; this one used to inherit them from the
+		   environment, so leaving them off would score a different compiler */
+		for (i = 0; i < SO_NAXES; i++)
+			{ MCC_TRACE("br\n"); if (so_axis_argv[i][0])
+				{ MCC_TRACE("br\n"); rv[rn++] = so_axis_argv[i]; } }
 		rv[rn++] = "-w";
 		rv[rn++] = "-run";
 		rv[rn++] = src;

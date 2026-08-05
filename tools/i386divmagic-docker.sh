@@ -156,7 +156,7 @@ dg_docker run --rm --platform linux/amd64 \
 	echo "-- generating soak --"
 	bash /w/gen.sh /w/soak.c
 	echo "-- compiling soak with divmagic (MCC_AST_DIVMAGIC=1, -O2) --"
-	MCC_AST_DIVMAGIC=1 /w/mcc-i386-opt -O2 -I /b/runtime/include -c /w/soak.c -o /w/soak.o
+	/w/mcc-i386-opt -fdivmagic -O2 -I /b/runtime/include -c /w/soak.c -o /w/soak.o
 	echo "-- confirm divmagic fired --"
 	nidiv=$(objdump -d /w/soak.o | grep -cw idiv || true)
 	nimul=$(objdump -d /w/soak.o | grep -cw imul || true)

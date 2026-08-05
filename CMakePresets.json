@@ -46,15 +46,14 @@
     },
     {
       "name": "diagnostics",
-      "displayName": "Everything-on diagnostics (warnings + debug + mcc_s/mcc_p/mcc_c)",
+      "displayName": "Everything-on diagnostics (warnings + debug + mcc_s/mcc_c)",
       "inherits": "debug",
-      "cacheVariables": { "MCC_ALL_DIAGNOSTICS": "ON" }
+      "cacheVariables": { "MCC_DIAG": "ON" }
     },
     {
       "name": "cst",
-      "displayName": "LSP feature off (no side-recorded concrete syntax tree)",
-      "inherits": "debug",
-      "cacheVariables": { "MCC_CONFIG_LSP": "OFF" }
+      "displayName": "CST/LSP exercised at runtime (--lsp), not compiled out",
+      "inherits": "debug"
     },
     {
       "name": "cross",
@@ -133,9 +132,8 @@
     },
     {
       "name": "linux-gcc-asm-off",
-      "displayName": "CI linux / gcc / integrated asm off (mccrt via host cc)",
-      "inherits": "linux-gcc",
-      "cacheVariables": { "MCC_CONFIG_ASM": "OFF" }
+      "displayName": "CI linux / gcc / asm axis (-fno-asm at runtime, as in gcc)",
+      "inherits": "linux-gcc"
     },
     {
       "name": "linux-gcc-predefs-off",
@@ -157,9 +155,9 @@
     },
     {
       "name": "linux-gcc-diagnostics",
-      "displayName": "CI linux / gcc / diagnostics (warnings + mcc_s/mcc_p/mcc_c)",
+      "displayName": "CI linux / gcc / diagnostics (warnings + mcc_s/mcc_c)",
       "inherits": "linux-gcc",
-      "cacheVariables": { "MCC_ALL_DIAGNOSTICS": "ON" }
+      "cacheVariables": { "MCC_DIAG": "ON" }
     },
     {
       "name": "linux-clang",

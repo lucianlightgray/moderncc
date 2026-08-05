@@ -1,7 +1,7 @@
 #ifndef MCCRIR_H
 #define MCCRIR_H
 
-#if MCC_REPLAY_IR && defined(MCC_INTERNAL)
+#if defined(MCC_INTERNAL)
 
 enum {
 	RIR_R_NONE = 0,

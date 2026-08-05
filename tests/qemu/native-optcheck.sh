@@ -5,7 +5,7 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 IMAGE="${IMAGE:-mcc-qemu}"
 PLATFORM_ARG=()
 [ -n "${PLATFORM:-}" ] && PLATFORM_ARG=(--platform "$PLATFORM")
-GATES="${MCC_GATES:-MCC_AST_PROMOTE=1}"
+GATES="${MCC_GATES:--fpromote-locals}"
 CTR="${CTEST_R:-^exec/}"
 
 if [ "$IMAGE" = "mcc-qemu" ] && ! docker image inspect ${PLATFORM_ARG[@]+"${PLATFORM_ARG[@]}"} "$IMAGE" >/dev/null 2>&1; then

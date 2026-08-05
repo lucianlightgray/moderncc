@@ -1,21 +1,21 @@
-# <name>|<olevel>|<gate env>|<on|off>   asserts the gate's DEFAULT state
+# <name>|<olevel>|<gate flag>|<on|off>   asserts the gate's DEFAULT state
 # Locks the "flipped default-on at -O2" claims in the ungate campaign, which
 # differ mode cannot check because it forces the gate on both sides.
-promote|-O2|MCC_AST_PROMOTE|on
-color|-O2|MCC_AST_COLOR|on
-ltemp|-O2|MCC_AST_LICM_TEMP|on
-ivsr|-O2|MCC_AST_IVSR|on
-pre|-O2|MCC_AST_PRE|on
-reassoc|-O2|MCC_AST_REASSOC|on
-sethi_leaf|-O2|MCC_AST_SETHI_LEAF|on
-narrow_elim|-O2|MCC_AST_NARROW_ELIM|on
-spill_share|-O2|MCC_AST_SPILL_SHARE|on
-vlat|-O2|MCC_AST_VLAT|on
-divmagic|-O2|MCC_AST_DIVMAGIC|on
+promote|-O2|promote-locals|on
+color|-O2|reg-color|on
+ltemp|-O2|tree-loop-im|on
+ivsr|-O2|ivopts|on
+pre|-O2|tree-pre|on
+reassoc|-O2|tree-reassoc|on
+sethi_leaf|-O2|sethi-ullman-leaf|on
+narrow_elim|-O2|narrow-elim|on
+spill_share|-O2|spill-share|on
+vlat|-O2|loop-vlat|on
+divmagic|-O2|divmagic|on
 # argfwd's GATE defaults on (o4 || optimize>=2) but the pass is INERT: it lives
 # in the replay-time graft path, disabled while MCC_AST_INLINE_PASS is on, which
 # it is from -O2. So toggling it changes nothing and this asserts "off" as a
 # TRIPWIRE -- if the graft-path guard is ever fixed this cell fails and should
 # be flipped to "on".
-argfwd|-O2|MCC_AST_ARGFWD|off
-indirect_call|-O2|MCC_AST_INDIRECT_CALL|on
+argfwd|-O2|arg-forward|off
+indirect_call|-O2|replay-indirect-call|on

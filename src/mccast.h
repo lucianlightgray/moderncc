@@ -132,7 +132,7 @@ int ast_jit_search_vocab(uint64_t *out, int max);
 }
 #endif
 
-#if MCC_CONFIG_OPTIMIZER && defined(MCC_INTERNAL)
+#if defined(MCC_INTERNAL)
 
 struct MCCState;
 struct Sym;

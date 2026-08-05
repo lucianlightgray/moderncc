@@ -195,21 +195,35 @@ static const char *fz_ref_flags(void) { return hc_envv("MCC_FUZZ_REF_FLAGS", "")
 static const char *fz_run_prefix(void) { return hc_envv("MCC_FUZZ_RUN_PREFIX", ""); }
 
 static runres build_run(const char *cc, const char *mcc, const char *bdir,
-						const char *idir, const char *env, const char *opt,
+						const char *idir, const char *gflags, const char *opt,
 						const char *work, const char *label, const char *src) {
 	runres res = {RES_INCONCLUSIVE, strdup(""), 0};
 	char exe[2048], cmd[8192], guarded[8448];
 	snprintf(exe, sizeof exe, "%s/%s%s", work, label, EXE_SFX);
 	remove(exe);
+	/* gflags carries compiler flags and, for the few knobs that are still
+	   numeric environment settings, NAME=VALUE tokens. Flags go on the command
+	   line; the pairs stay in front of it as an environment prefix. */
+	char gf[512] = "", ge[512] = "";
+	if (gflags) {
+		char buf[512];
+		snprintf(buf, sizeof buf, "%s", gflags);
+		for (char *t = strtok(buf, " "); t; t = strtok(NULL, " ")) {
+			char *dst = (t[0] == '-') ? gf : ge;
+			size_t cap = 512;
+			size_t n = strlen(dst);
+			snprintf(dst + n, cap - n, "%s%s", n ? " " : "", t);
+		}
+	}
 	if (cc)
 		snprintf(cmd, sizeof cmd,
 				 "\"%s\" -w %s %s \"%s\" -o \"%s\" -lm >/dev/null 2>&1",
 				 cc, opt, fz_ref_flags(), src, exe);
 	else
 		snprintf(cmd, sizeof cmd,
-				 "%s \"%s\" \"-B%s\" \"-I%s\" %s %s \"%s\" -o \"%s\" -lm "
+				 "%s \"%s\" \"-B%s\" \"-I%s\" %s %s %s \"%s\" -o \"%s\" -lm "
 				 ">/dev/null 2>&1",
-				 env ? env : "", mcc, bdir, idir, opt, fz_mcc_flags(), src, exe);
+				 ge, mcc, bdir, idir, opt, gf, fz_mcc_flags(), src, exe);
 	timeout_wrap(cmd, guarded, sizeof guarded);
 	int brc = RUN_SYSTEM(guarded);
 	if (timed_out(brc)) {
@@ -264,73 +278,76 @@ static int has_ub(const char *gcc, const char *work, const char *src) {
 
 
 
-static const char *const OPTS[] = {"-O0", "-O1", "-O2", "-O3", "-O4"};
+static const char *const OPTS[] = {"-O0", "-O1", "-O2", "-O3", "-O13"};
 #define NOPTS 4
 static int n_opts = NOPTS;
 
 typedef struct {
 	const char *name;
-	const char *env;
+	/* Compiler flags, appended to the command line. These were NAME=VALUE
+	   environment settings until the knobs moved to argv; a pair left here
+	   would be silently ignored rather than fail, so keep them flags. */
+	const char *flags;
 } gate_t;
 
 static const gate_t GATES[] = {
-	{"CPROP_JOIN", "MCC_AST_CPROP_JOIN=1"},
-	{"CSE_JOIN", "MCC_AST_CSE_JOIN=1"},
-	{"CALL_WINDOW", "MCC_AST_CALL_WINDOW=1"},
-	{"BITFLAG", "MCC_AST_BITFLAG=1"},
-	{"SETHI", "MCC_AST_SETHI=1"},
-	{"PROMOTE", "MCC_AST_PROMOTE=1"},
-	{"COLOR", "MCC_AST_COLOR=1"},
-	{"INLINE", "MCC_AST_INLINE=1"},
-	{"LICM_TEMP", "MCC_AST_LICM_TEMP=1"},
-	{"IVSR", "MCC_AST_IVSR=1"},
-	{"PRE", "MCC_AST_PRE=1"},
+	{"CPROP_JOIN", "-ftree-copy-prop"},
+	{"CSE_JOIN", "-fgcse-join"},
+	{"CALL_WINDOW", "-fcall-window"},
+	{"BITFLAG", "-ftree-switch-conversion"},
+	{"SETHI", "-fsethi-ullman"},
+	{"PROMOTE", "-fpromote-locals"},
+	{"COLOR", "-freg-color"},
+	{"INLINE", "-finline"},
+	{"LICM_TEMP", "-ftree-loop-im"},
+	{"IVSR", "-fivopts"},
+	{"PRE", "-ftree-pre"},
 
 
 
 
-	{"NARROW_FIX", "MCC_AST_NARROW_FIX=1"},
-	{"SETHI_LEAF", "MCC_AST_SETHI_LEAF=1"},
-	{"SCCP_FIX", "MCC_AST_SCCP_FIX=1"},
-	{"DSE_CALL", "MCC_AST_DSE_CALL=1"},
-	{"TCO_PTR", "MCC_AST_TCO_PTR=1"},
-	{"CSE_COMM", "MCC_AST_CSE_COMM=1"},
-	{"RANGE", "MCC_AST_RANGE=1"},
-	{"DIVMAGIC", "MCC_AST_DIVMAGIC=1"},
-	{"ABS", "MCC_AST_ABS=1"},
+	{"NARROW_FIX", "-fnarrow-fix"},
+	{"SETHI_LEAF", "-fsethi-ullman-leaf"},
+	{"SCCP_FIX", "-ftree-ccp-iterate"},
+	{"DSE_CALL", "-ftree-dse"},
+	{"TCO_PTR", "-foptimize-sibling-calls"},
+	{"CSE_COMM", "-fgcse"},
+	{"RANGE", "-ftree-vrp"},
+	{"DIVMAGIC", "-fdivmagic"},
+	{"ABS", "-fabs"},
 
 
 
 	{"ARM64_LOCAL_PCREL", "MCC_ARM64_LOCAL_PCREL=1"},
 
 
-	{"REGDISP", "MCC_AST_REGDISP=1"},
-	{"REASSOC", "MCC_AST_REASSOC=1"},
-	{"INTERCHANGE", "MCC_AST_INTERCHANGE=1"},
-	{"FUSION", "MCC_AST_FUSION=1"},
-	{"TILE", "MCC_AST_TILE=1"},
-	{"TILE7", "MCC_AST_TILE=1 MCC_AST_TILE_SIZE=7"},
+	{"REGDISP", "-freg-disp"},
+	{"REASSOC", "-ftree-reassoc"},
+	{"INTERCHANGE", "-floop-interchange"},
+	{"FUSION", "-floop-fusion"},
+	{"TILE", "-floop-block"},
+	{"TILE7", "-floop-block MCC_AST_TILE_SIZE=7"},
 	{"CSE_WINDOW", "MCC_AST_CSE_WINDOW=256"},
 	{"CPROP_WINDOW", "MCC_AST_CPROP_WINDOW=512"},
-	{"INLINE_DEEP", "MCC_AST_INLINE=1 MCC_AST_INLINE_DEPTH=16"},
+	{"INLINE_DEEP", "-finline MCC_AST_INLINE_DEPTH=16"},
 	{"TCO_MAXP", "MCC_AST_TCO_MAXP=32"},
-	{"STOREVAL_CONSTL", "MCC_AST_STOREVAL_CONSTL=1"},
-	{"STOREVAL_CALLSTORE", "MCC_AST_STOREVAL_CALLSTORE=1"},
-	{"CMP_MAT", "MCC_AST_CMP_MAT=1"},
-	{"CHAINSTORE_LIVE", "MCC_AST_CHAINSTORE_LIVE=1"},
-	{"CHAINSTORE_MEMBER", "MCC_AST_CHAINSTORE_MEMBER=1"},
-	{"WHILE_COMMA", "MCC_AST_WHILE_COMMA=1"},
+	{"STOREVAL_CONSTL", "-fstoreval-constl"},
+	{"STOREVAL_CALLSTORE", "-fstoreval-callstore"},
+	{"CMP_MAT", "-freplay-cmp-materialize"},
+	{"CHAINSTORE_LIVE", "-fchain-store-live"},
+	{"CHAINSTORE_MEMBER", "-fchain-store-member"},
+	{"WHILE_COMMA", "-freplay-while-comma"},
 
 
 
 
-	{"SLICE", "MCC_AST_SLICE=1"},
-	{"NO_CALLFUL", "MCC_AST_NO_CALLFUL=1"},
-	{"JIT_SPLICE", "MCC_AST_JIT_SPLICE=1"},
+	{"SLICE", "-fopt-slice"},
+	{"NO_CALLFUL", "-fno-promote-across-calls"},
+	{"JIT_SPLICE", "-fjit-splice"},
 	{"REPLAY_IR", "MCC_REPLAY_IR=1"},
 	{"RECORDER8",
-	 "MCC_AST_STOREVAL_CONSTL=1 MCC_AST_STOREVAL_CALLSTORE=1 MCC_AST_CMP_MAT=1 "
-	 "MCC_AST_CHAINSTORE_LIVE=1 MCC_AST_CHAINSTORE_MEMBER=1 MCC_AST_WHILE_COMMA=1"},
+	 "-fstoreval-constl -fstoreval-callstore -freplay-cmp-materialize "
+	 "-fchain-store-live -fchain-store-member -freplay-while-comma"},
 };
 #define NGATES ((int)(sizeof GATES / sizeof *GATES))
 
@@ -376,12 +393,12 @@ static int consensus(const Refs *refs, const char *bdir, const char *idir,
 
 static int mcc_diverges(const char *mcc, const char *bdir, const char *idir,
 						const char *work, const char *src, const runres *cons,
-						const char *env, const char *opt, int *buildfail) {
+						const char *gflags, const char *opt, int *buildfail) {
 	int nbuildfail = 0, nsaw = 0;
 	if (buildfail)
 		*buildfail = 0;
 	for (int attempt = 0; attempt < MCC_DIVERGE_ATTEMPTS; attempt++) {
-		runres m = build_run(NULL, mcc, bdir, idir, env, opt, work, "mcc", src);
+		runres m = build_run(NULL, mcc, bdir, idir, gflags, opt, work, "mcc", src);
 		int agree = m.kind == RES_OK && runres_eq(&m, cons);
 		nbuildfail += m.kind == RES_BUILDFAIL;
 		nsaw += m.kind != RES_INCONCLUSIVE;
@@ -428,7 +445,7 @@ static attribution triage(const char *mcc, const Refs *refs,
 	}
 	for (int g = 0; g < NGATES; g++) {
 		for (int i = 0; i < NOPTS; i++) {
-			if (mcc_diverges(mcc, bdir, idir, work, src, &cons, GATES[g].env,
+			if (mcc_diverges(mcc, bdir, idir, work, src, &cons, GATES[g].flags,
 							 OPTS[i], NULL)) {
 				a.found = 1;
 				snprintf(a.opt, sizeof a.opt, "%s", OPTS[i]);
@@ -499,7 +516,7 @@ static int interesting(const char *mcc, const Refs *refs,
 		div = mcc_diverges(mcc, bdir, idir, work, cand, &cons, NULL, OPTS[i], NULL);
 	for (int g = 0; g < NGATES && !div; g++)
 		for (int i = 0; i < NOPTS && !div; i++)
-			div = mcc_diverges(mcc, bdir, idir, work, cand, &cons, GATES[g].env,
+			div = mcc_diverges(mcc, bdir, idir, work, cand, &cons, GATES[g].flags,
 							   OPTS[i], NULL);
 	runres_free(&cons);
 	return div;
@@ -928,7 +945,7 @@ static void usage(const char *p) {
 			"  --replay        regression-lock: replay every .c in --corpus\n"
 			"  --gen SEED      emit one generated program to stdout and exit\n"
 			"  --reduce FILE   reduce FILE to a minimal repro (needs --corpus)\n"
-			"  --gates         also sweep MCC_AST_* gate flags per program\n"
+			"  --gates         also sweep the -f gate flags per program\n"
 			"  -v              verbose\n"
 			"cross mode (env, all empty by default):\n"
 			"  MCC_FUZZ_MCC_FLAGS   extra flags for mcc's compile line (sysroot, ABI)\n"
@@ -1056,9 +1073,9 @@ int main(int argc, char **argv) {
 			for (int g = 0; g < NGATES && !diverged; g++)
 				for (int oi = 0; oi < NOPTS && !diverged; oi++)
 					if (mcc_diverges(mcc, bdir, idir, work, src, &cons,
-									 GATES[g].env, OPTS[oi], NULL)) {
+									 GATES[g].flags, OPTS[oi], NULL)) {
 						diverged = 1;
-						snprintf(confenv, sizeof confenv, "%s", GATES[g].env);
+						snprintf(confenv, sizeof confenv, "%s", GATES[g].flags);
 						snprintf(confopt, sizeof confopt, "%s", OPTS[oi]);
 					}
 		runres_free(&cons);

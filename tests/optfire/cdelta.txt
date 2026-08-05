@@ -1,15 +1,15 @@
-# <name>|<olevel>|<--stats counter>|<gate env>
+# <name>|<olevel>|<--stats counter>|<gate flag>
 # Counter-DELTA mode: assert the counter is 0 with the gate forced off and
 # nonzero with it on. Stronger than differ mode and portable: it measures the
 # pass firing rather than the emitted bytes, so it works on targets where the
 # transform is real but object-invisible. The reassoc sub-knobs are exactly that
 # case -- they fire identically on x86_64 and i386 (8/3/3/4) while the object
 # diff only shows on x86_64.
-reassoc_assoc|-O2|reassoc|MCC_AST_REASSOC_ASSOC
-reassoc_shlshr|-O2|reassoc|MCC_AST_REASSOC_SHLSHR
-reassoc_shrshl|-O2|reassoc|MCC_AST_REASSOC_SHRSHL
-reassoc_muldist|-O2|reassoc|MCC_AST_REASSOC_MULDIST
-bfold_sqrt|-O2|bfold|MCC_AST_BFOLD_SQRT
-bfold_sign|-O2|bfold|MCC_AST_BFOLD_SIGN
-bfold_round|-O2|bfold|MCC_AST_BFOLD_ROUND
-bfold_minmax|-O2|bfold|MCC_AST_BFOLD_MINMAX
+reassoc_assoc|-O2|reassoc|reassoc-assoc
+reassoc_shlshr|-O2|reassoc|reassoc-shlshr
+reassoc_shrshl|-O2|reassoc|reassoc-shrshl
+reassoc_muldist|-O2|reassoc|reassoc-muldist
+bfold_sqrt|-O2|bfold|bfold-sqrt
+bfold_sign|-O2|bfold|bfold-sign
+bfold_round|-O2|bfold|bfold-round
+bfold_minmax|-O2|bfold|bfold-minmax

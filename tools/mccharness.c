@@ -1472,7 +1472,7 @@ static int perfn_run(const char *mcc, const char *bflag, const char *w,
 	ov[3] = 0;
 	A(&v, mcc);
 	A(&v, bflag);
-	A(&v, "-O4");
+	A(&v, "-O13");
 	A(&v, "-v");
 	A(&v, "-c");
 	A(&v, "-o");

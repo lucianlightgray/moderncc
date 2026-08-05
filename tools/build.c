@@ -549,24 +549,17 @@ static int cmd_emit_defines(int argc, char **argv) {
 		EMIT("MCC_CONFIG_NEW_DTAGS=1");
 	if (truthy(fopt(argc, argv, "--codesign", "")))
 		EMIT("MCC_CONFIG_CODESIGN=1");
-	if (truthy(fopt(argc, argv, "--cst", "")))
-		EMIT("MCC_CONFIG_LSP=1");
 	if (truthy(fopt(argc, argv, "--ast", "")))
 		EMIT("MCC_CONFIG_OPTIMIZER=1");
 	if (truthy(fopt(argc, argv, "--embed-jit", "")))
 		EMIT("MCC_EMBED_JIT=1");
 	EMIT("MCC_JIT_DEFAULT=%d", truthy(fopt(argc, argv, "--config-jit", "1")) ? 1 : 0);
-	if (truthy(fopt(argc, argv, "--ast-shadow", "")))
-		EMIT("MCC_CONFIG_AST_SHADOW=1");
+	if (truthy(fopt(argc, argv, "--diag", "")))
+		EMIT("MCC_DIAG=1");
+	if (truthy(fopt(argc, argv, "--dev", "")))
+		EMIT("MCC_DEV=1");
 	if (truthy(fopt(argc, argv, "--trace", "")))
 		EMIT("MCC_CONFIG_TRACE=1");
-	{
-		const char *dr = fopt(argc, argv, "--diag-rt", "bounds");
-		EMIT("MCC_CONFIG_DIAG_RT=%d",
-				 !strcmp(dr, "off") ? 0 : !strcmp(dr, "backtrace") ? 1 : 2);
-	}
-	if (!truthy(fopt(argc, argv, "--asm", "1")))
-		EMIT("MCC_CONFIG_ASM=0");
 	if (!strcmp(fopt(argc, argv, "--new-macho", ""), "no"))
 		EMIT("MCC_CONFIG_MACHO_CHAINED_FIXUPS=0");
 	{
@@ -788,7 +781,6 @@ int main(int argc, char **argv) {
 	printf("[1/3] cc mcc.c -> mcc\n");
 	snprintf(defs[0], sizeof defs[0], "-D%s=1", tdef);
 	snprintf(defs[1], sizeof defs[1], "-DMCC_CONFIG_PREDEFS=0");
-	snprintf(defs[2], sizeof defs[2], "-DMCC_CONFIG_DIAG_RT=2");
 	snprintf(defs[3], sizeof defs[3], "-DMCC_CONFIG_PREDEFS=0");
 	snprintf(defs[4], sizeof defs[4], "-DMCC_VERSION=20260706135200");
 	snprintf(defs[5], sizeof defs[5], "-DMCC_CONFIG_MCCDIR=\"%s\"", OUTDIR);

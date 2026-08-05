@@ -1,5 +1,4 @@
-#if MCC_CONFIG_OPTIMIZER && (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))
-#if MCC_REPLAY_IR
+#if (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))
 
 enum { RIR_T_OP = 0, RIR_T_RBEGIN, RIR_T_REND, RIR_T_MARK };
 
@@ -1422,13 +1421,13 @@ static AstLocal rir_ihold_bind(AstLocal n) {
 	return bb;
 }
 
-#if RIR_DBG_OPTRACE
+#if MCC_DIAG
 static int rir_dbg_ent;
 #endif
 static void rir_stmt(AstLocal n) {
 	if (n == AST_NONE || !rir_bbn)
 		return;
-#if RIR_DBG_OPTRACE
+#if MCC_DIAG
 	{
 		const char *e = getenv("RIRDBG");
 		if (e && funcname && !strcmp(e, funcname))
@@ -2365,7 +2364,7 @@ static void rir_op_effect(const RirOp *ro) {
 						((sv2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST ||
 						 !rir_const_subtree(cur, 0)))
 					continue;
-#if RIR_DBG_OPTRACE
+#if MCC_DIAG
 				{
 					const char *e = getenv("RIRDBG");
 					if (e && funcname && !strcmp(e, funcname))
@@ -2449,7 +2448,7 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_arena_mismatch++;
 			break;
 		}
-#if RIR_DBG_OPTRACE
+#if MCC_DIAG
 		{
 			const char *e = getenv("RIRDBG");
 			const SValue *ds = o->vs_n - rir_base_depth >= 2
@@ -2693,7 +2692,7 @@ static void rir_op_effect(const RirOp *ro) {
 						ast_kind(rir_arena, cur) == AST_Load &&
 						ai >= 0 && ai < RIR_ARGCAST_MAX && !rir_argcast_ch[ai])
 					continue;
-#if RIR_DBG_OPTRACE
+#if MCC_DIAG
 				{
 					const char *e = getenv("RIRDBG");
 					if (e && funcname && !strcmp(e, funcname))
@@ -2870,7 +2869,7 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case IR_OP_VPOP: {
 		AstLocal d = rir_pop();
-#if RIR_DBG_OPTRACE
+#if MCC_DIAG
 		if (rir_dbg_on())
 			fprintf(stderr, "[vpop] ent=%d d=%d kind=%s parent=%d shn=%d lorn=%d bbn=%d\n",
 							rir_dbg_ent, (int)d,
@@ -3015,7 +3014,6 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_push_typed(n);
 		break;
 	}
-#if MCC_CONFIG_ASM
 	case IR_OP_ASMGEN:
 	case IR_OP_ASM: {
 		AstLocal u = ast_node(rir_arena, AST_Unary);
@@ -3032,7 +3030,6 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_stmt(u);
 		break;
 	}
-#endif
 #ifdef MCC_IR_VA_START_VOID
 	case IR_OP_VA_START: {
 		AstLocal b = rir_pop(), a2 = rir_pop(), n;
@@ -3530,7 +3527,6 @@ static void rir_mark_apply(const RirOp *ro) {
 	case RIR_M_ADDRLATE:
 		rir_addr_late = 1;
 		break;
-#if MCC_CONFIG_ASM
 	case RIR_M_ASMOPS: {
 		/* asm_instr has parsed every operand and is about to save_regs(0); the
 		   top nb_operands shadow entries ARE those operands.  Taking them here,
@@ -3565,7 +3561,6 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_stmt(n);
 		break;
 	}
-#endif
 	default:
 		break;
 	}
@@ -4446,7 +4441,7 @@ static void rir_to_arena(void) {
 				continue;
 			}
 		}
-#if RIR_DBG_OPTRACE
+#if MCC_DIAG
 		rir_dbg_ent = i;
 		{
 			const char *e = getenv("RIRDBG");
@@ -5560,5 +5555,4 @@ void rir_configure(void) {
 		atexit(rir_prod_report);
 }
 
-#endif
 #endif

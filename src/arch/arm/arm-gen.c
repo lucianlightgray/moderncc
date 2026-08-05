@@ -40,11 +40,9 @@ ST_DATA int reg_classes[MCC_NB_REGS] = {
 #define last_itod_magic (mcc_state->cg_last_itod_magic)
 #define leaffunc (mcc_state->cg_leaffunc)
 
-#if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
 #define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
-#endif
 
 #if defined(MCC_ARM_EABI) && defined(MCC_ARM_VFP)
 #define float_type (mcc_state->cg_float_type)
@@ -696,9 +694,7 @@ static void gcall_or_jmp(int is_jmp) { MCC_TRACE("enter\n");
 			o(vtop->c.i);
 		}
 	} else { MCC_TRACE("br\n");
-#if MCC_CONFIG_DIAG_RT >= 2
 		vtop->r &= ~VT_MUSTBOUND;
-#endif
 		r = gv(MCC_RC_INT);
 		if (!is_jmp)
 			{ MCC_TRACE("br\n"); o(0xE1A0E00F); }
@@ -706,7 +702,6 @@ static void gcall_or_jmp(int is_jmp) { MCC_TRACE("enter\n");
 	}
 }
 
-#if MCC_CONFIG_DIAG_RT >= 2
 
 static void gen_bounds_call(int v) { MCC_TRACE("enter\n");
 	Sym *sym = external_helper_sym(v);
@@ -757,7 +752,6 @@ static void gen_bounds_epilog(void) { MCC_TRACE("enter\n");
 	o(0xecbd0b04);
 	o(0xe8bd0003);
 }
-#endif
 
 static int arm_hfa_members(CType *type, int *pbt) { MCC_TRACE("enter\n");
 	CType *ft = type;
@@ -1130,10 +1124,8 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	int variadic;
 #endif
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gbound_args(nb_args); }
-#endif
 
 	save_regs(nb_args + 1);
 
@@ -1380,10 +1372,8 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	last_itod_magic = 0;
 	leaffunc = 1;
 	loc = 0;
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
-#endif
 	if (mcc_state->do_asan_shadow)
 		{ MCC_TRACE("br\n"); gen_asan_stack_prolog(); }
 	func_stack_chk_loc = 0;
@@ -1395,10 +1385,8 @@ void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	uint32_t x;
 	int diff;
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
-#endif
 #if defined(MCC_ARM_EABI) && defined(MCC_ARM_VFP)
 	if ((cg_float_abi == ARM_SOFTFP_FLOAT || func_var) && is_float_abi(func_vt.t)) { MCC_TRACE("br\n");
 		if ((func_vt.t & VT_BTYPE) == VT_FLOAT)
@@ -1752,13 +1740,11 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 			}
 		}
 		fr = intr(gv(MCC_RC_INT));
-#if MCC_CONFIG_DIAG_RT >= 2
 		if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) { MCC_TRACE("br\n");
 			vswap();
 			c = intr(gv(MCC_RC_INT));
 			vswap();
 		}
-#endif
 		if ((opc & 0xfff00000) == 0xe1500000)
 			{ MCC_TRACE("br\n"); o(opc | (c << 16) | fr); }
 		else { MCC_TRACE("br\n");
@@ -1783,13 +1769,11 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 			o(opc | r | (c << 7) | (fr << 12));
 		} else { MCC_TRACE("br\n");
 			fr = intr(gv(MCC_RC_INT));
-#if MCC_CONFIG_DIAG_RT >= 2
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) { MCC_TRACE("br\n");
 				vswap();
 				r = intr(gv(MCC_RC_INT));
 				vswap();
 			}
-#endif
 			if (mcc_state->do_sanitize_undefined && !nocode_wanted) { MCC_TRACE("br\n");
 				o(0xE3500000 | (fr << 16) | 32);
 				arm_ubsan_guard(0x30000000, UBK_SHIFT);
@@ -1931,14 +1915,12 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 		r2 = gv(MCC_RC_FLOAT);
 		x |= vfpr(r2) << 16;
 		r |= regmask(r2);
-#if MCC_CONFIG_DIAG_RT >= 2
 		if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) { MCC_TRACE("br\n");
 			vswap();
 			r = gv(MCC_RC_FLOAT);
 			vswap();
 			x = (x & ~0xf) | vfpr(r);
 		}
-#endif
 	}
 	vtop->r = get_reg_ex(MCC_RC_FLOAT, r);
 	if (!fneg)
@@ -2013,13 +1995,11 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 			r2 = c2 & 0xf;
 		} else { MCC_TRACE("br\n");
 			r2 = fpr(gv(MCC_RC_FLOAT));
-#if MCC_CONFIG_DIAG_RT >= 2
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) { MCC_TRACE("br\n");
 				vswap();
 				r = fpr(gv(MCC_RC_FLOAT));
 				vswap();
 			}
-#endif
 		}
 		break;
 	case '-':
@@ -2041,13 +2021,11 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 			r = fpr(gv(MCC_RC_FLOAT));
 			vswap();
 			r2 = fpr(gv(MCC_RC_FLOAT));
-#if MCC_CONFIG_DIAG_RT >= 2
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) { MCC_TRACE("br\n");
 				vswap();
 				r = fpr(gv(MCC_RC_FLOAT));
 				vswap();
 			}
-#endif
 		}
 		break;
 	case '*':
@@ -2062,13 +2040,11 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); r2 = c2; }
 		else { MCC_TRACE("br\n");
 			r2 = fpr(gv(MCC_RC_FLOAT));
-#if MCC_CONFIG_DIAG_RT >= 2
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) { MCC_TRACE("br\n");
 				vswap();
 				r = fpr(gv(MCC_RC_FLOAT));
 				vswap();
 			}
-#endif
 		}
 		x |= 0x100000;
 		break;
@@ -2090,13 +2066,11 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 			r = fpr(gv(MCC_RC_FLOAT));
 			vswap();
 			r2 = fpr(gv(MCC_RC_FLOAT));
-#if MCC_CONFIG_DIAG_RT >= 2
 			if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) { MCC_TRACE("br\n");
 				vswap();
 				r = fpr(gv(MCC_RC_FLOAT));
 				vswap();
 			}
-#endif
 		}
 		break;
 	default:
@@ -2147,13 +2121,11 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 				r2 = c2 & 0xf;
 			} else { MCC_TRACE("br\n");
 				r2 = fpr(gv(MCC_RC_FLOAT));
-#if MCC_CONFIG_DIAG_RT >= 2
 				if ((vtop[-1].r & VT_VALMASK) >= VT_CONST) { MCC_TRACE("br\n");
 					vswap();
 					r = fpr(gv(MCC_RC_FLOAT));
 					vswap();
 				}
-#endif
 			}
 			--vtop;
 			vset_VT_CMP(op);
@@ -2364,15 +2336,11 @@ ST_FUNC void gen_vla_sp_restore(int addr) { MCC_TRACE("enter\n");
 
 ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 	int r;
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); vpushv(vtop); }
-#endif
 	r = intr(gv(MCC_RC_INT));
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); o(0xe2800001 | (r << 16) | (r << 12)); }
-#endif
 	o(0xE04D0000 | (r << 12) | r);
 #ifdef MCC_ARM_EABI
 	if (align < 8)
@@ -2385,7 +2353,6 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); mcc_error("alignment is not a power of 2: %i", align); }
 	o(stuff_const(0xE3C0D000 | (r << 16), align - 1));
 	vpop();
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check) { MCC_TRACE("br\n");
 		vpushi(0);
 		vtop->r = MCC_TREG_R0;
@@ -2396,5 +2363,4 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 		gfunc_call(2);
 		func_bound_add_epilog = 1;
 	}
-#endif
 }

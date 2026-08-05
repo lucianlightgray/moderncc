@@ -1,23 +1,23 @@
-# <name>|<olevel>|<gate env>|<extra env or ->
+# <name>|<olevel>|<gate flag>|<extra env or ->
 # The four reassoc sub-knobs moved to cdelta.txt: the pass fires identically on
 # x86_64 and i386 (8/3/3/4) but the object diff only shows on x86_64, so a
 # counter delta covers them portably where an object diff cannot.
 # Sub-knob gates: all default-ON, so the OFF side forces =0.
-ident_conv|-O2|MCC_AST_IDENT_CONV|-
-ident_shift|-O3|MCC_AST_IDENT_SHIFT|-
-ident_arith|-O2|MCC_AST_IDENT_ARITH|-
-ident_bit|-O2|MCC_AST_IDENT_BIT|-
-ident_rel|-O2|MCC_AST_IDENT_REL|-
-ident_urange|-O2|MCC_AST_IDENT_URANGE|-
-narrow_fix|-O2|MCC_AST_NARROW_FIX|-
-narrow_elim|-O2|MCC_AST_NARROW_ELIM|-
-narrow_class0|-O2|MCC_AST_NARROW_CLASS0|-
-narrow_class1|-O2|MCC_AST_NARROW_CLASS1|-
-narrow_class2|-O2|MCC_AST_NARROW_CLASS2|-
-narrow_class3|-O2|MCC_AST_NARROW_CLASS3|-
-sccp_fix|-O2|MCC_AST_SCCP_FIX|-
-cse_comm|-O2|MCC_AST_CSE_COMM|-
-dse_call|-O2|MCC_AST_DSE_CALL|-
-tco_ptr|-O2|MCC_AST_TCO_PTR|-
-sethi_leaf|-O2|MCC_AST_SETHI_LEAF|-
-sethi_nary|-O2|MCC_AST_SETHI_NARY|-
+ident_conv|-O2|ident-conv|-
+ident_shift|-O3|ident-shift|-
+ident_arith|-O2|ident-arith|-
+ident_bit|-O2|ident-bit|-
+ident_rel|-O2|ident-rel|-
+ident_urange|-O2|ident-urange|-
+narrow_fix|-O2|narrow-fix|-
+narrow_elim|-O2|narrow-elim|-
+narrow_class0|-O2|narrow-class0|-
+narrow_class1|-O2|narrow-class1|-
+narrow_class2|-O2|narrow-class2|-
+narrow_class3|-O2|narrow-class3|-
+sccp_fix|-O2|tree-ccp-iterate|-
+cse_comm|-O2|gcse|-
+dse_call|-O2|tree-dse|-
+tco_ptr|-O2|optimize-sibling-calls|-
+sethi_leaf|-O2|sethi-ullman-leaf|-
+sethi_nary|-O2|sethi-ullman-nary|-

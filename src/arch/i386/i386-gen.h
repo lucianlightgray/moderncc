@@ -3,9 +3,6 @@
 
 #define MCC_NB_REGS 5
 #define MCC_NB_ASM_REGS 8
-#ifndef MCC_CONFIG_ASM
-#define MCC_CONFIG_ASM 1
-#endif
 
 #define MCC_RC_INT 0x0001
 #define MCC_RC_FLOAT 0x0002

@@ -88,7 +88,7 @@ static int req_met(const char *req, char *reason, size_t rn) {
 			}
 		} else if (!strcmp(tok, "asm")) {
 			if (strcmp(hc_envv("MCC_TEST_ASM", "1"), "1")) {
-				snprintf(reason, rn, "requires integrated assembler (MCC_CONFIG_ASM)");
+				snprintf(reason, rn, "requires the integrated assembler");
 				return 0;
 			}
 		} else if (!strcmp(tok, "stabs")) {
@@ -107,10 +107,8 @@ static int req_met(const char *req, char *reason, size_t rn) {
 				return 0;
 			}
 		} else if (!strcmp(tok, "optimizer")) {
-			if (strcmp(hc_envv("MCC_TEST_OPTIMIZER", "1"), "1")) {
-				snprintf(reason, rn, "requires the optimizer (MCC_CONFIG_OPTIMIZER)");
-				return 0;
-			}
+			/* The optimizer is always compiled in, so this requirement is always
+			   met. The tag is kept so cases.h need not be re-tagged. */
 		}
 	}
 	return 1;

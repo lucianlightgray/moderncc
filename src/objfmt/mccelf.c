@@ -90,12 +90,10 @@ ST_FUNC void mccelf_new(MCCState *s) { MCC_TRACE("enter\n");
 	mcc_eh_frame_start(s);
 #endif
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (s->do_bounds_check) { MCC_TRACE("br\n");
 		bounds_section = new_section(s, ".bounds", SHT_PROGBITS, shf_RELRO);
 		lbounds_section = new_section(s, ".lbounds", SHT_PROGBITS, shf_RELRO);
 	}
-#endif
 
 #ifdef MCC_TARGET_PE
 	if (s->elf_entryname)
@@ -1041,10 +1039,8 @@ static void relocate_section(MCCState *s1, Section *s, Section *sr) { MCC_TRACE(
 			if (sizeof((Stab_Sym *)0)->n_value < MCC_PTR_SIZE && 0 == strcmp(s->name, ".stab"))
 				{ MCC_TRACE("br\n"); r = 0; }
 			sr->data_offset = sr->sh_size = r;
-#if MCC_CONFIG_PIE
 			if (r && (s->sh_flags & SHF_EXECINSTR))
 				{ MCC_TRACE("br\n"); mcc_warning("%d relocations to %s", (unsigned)(r / sizeof *qrel), s->name); }
-#endif
 		}
 	}
 #endif
@@ -1487,13 +1483,11 @@ ST_FUNC void add_array(MCCState *s1, const char *sec, int c) { MCC_TRACE("enter\
 	section_ptr_add(s, MCC_PTR_SIZE);
 }
 
-#if MCC_CONFIG_DIAG_RT >= 2
 ST_FUNC void mcc_add_bcheck(MCCState *s1) { MCC_TRACE("enter\n");
 	if (0 == s1->do_bounds_check)
 		{ MCC_TRACE("br\n"); return; }
 	section_ptr_add(bounds_section, sizeof(addr_t));
 }
-#endif
 
 static void set_local_sym(MCCState *s1, const char *name, Section *s, int offset) { MCC_TRACE("enter\n");
 	int c = find_elf_sym(s1->symtab, name);
@@ -1523,7 +1517,6 @@ static void mcc_compile_string_no_debug(MCCState *s, const char *str) { MCC_TRAC
 	s->test_coverage = save_test_coverage;
 }
 
-#if MCC_CONFIG_DIAG_RT >= 1
 static void put_ptr(MCCState *s1, Section *s, int offs) { MCC_TRACE("enter\n");
 	int c;
 	c = set_global_sym(s1, NULL, s, offs);
@@ -1567,12 +1560,10 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) { MCC_TRACE("enter\n");
 #endif
 	}
 	n = 3 * MCC_PTR_SIZE;
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (s1->do_bounds_check) { MCC_TRACE("br\n");
 		put_ptr(s1, bounds_section, 0);
 		n -= MCC_PTR_SIZE;
 	}
-#endif
 	section_ptr_add(s, n);
 	p = section_ptr_add(s, 2 * sizeof(int));
 	p[0] = s1->rt_num_callers;
@@ -1590,11 +1581,7 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) { MCC_TRACE("enter\n");
 							"__attribute__((constructor)) static void __bt_init_rt(){");
 #ifdef MCC_TARGET_PE
 	if (s1->output_type == MCC_OUTPUT_DLL)
-#if MCC_CONFIG_DIAG_RT >= 2
 		cstr_printf(&cstr, "__bt_init_dll(%d);", s1->do_bounds_check);
-#else
-		cstr_printf(&cstr, "__bt_init_dll(0);");
-#endif
 #endif
 	cstr_printf(&cstr, "__bt_init(__rt_info,%d);}",
 							s1->output_type != MCC_OUTPUT_DLL);
@@ -1605,7 +1592,6 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) { MCC_TRACE("enter\n");
 	cstr_free(&cstr);
 	set_local_sym(s1, __rt_info, s, o);
 }
-#endif
 
 static void mcc_tcov_add_file(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	CString cstr;
@@ -1712,15 +1698,12 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 #endif
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	mcc_add_bcheck(s1);
-#endif
 	mcc_add_pragma_libs(s1);
 
 	if (!s1->nostdlib) { MCC_TRACE("br\n");
 		int lpthread = s1->option_pthread || (s1->jit_threads > 0);
 
-#if MCC_CONFIG_DIAG_RT >= 2
 		if (s1->do_bounds_check && s1->output_type != MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
 			mcc_add_support(s1, "bcheck.o");
 #if !(MCC_TARGETOS_OpenBSD || MCC_TARGETOS_NetBSD)
@@ -1728,7 +1711,6 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) { MCC_TRACE("enter\n");
 #endif
 			lpthread = 1;
 		}
-#endif
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64 || defined MCC_TARGET_I386 || defined MCC_TARGET_ARM
 		if (s1->do_asan_shadow && s1->output_type != MCC_OUTPUT_DLL)
 			{ MCC_TRACE("br\n"); mcc_add_support(s1, "mccasan.o"); }
@@ -1737,7 +1719,6 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) { MCC_TRACE("enter\n");
 		if (s1->do_sanitize_recover && s1->output_type != MCC_OUTPUT_DLL)
 			{ MCC_TRACE("br\n"); mcc_add_support(s1, "mccubsan.o"); }
 #endif
-#if MCC_CONFIG_DIAG_RT >= 1
 		if (s1->do_backtrace) { MCC_TRACE("br\n");
 			if (s1->output_type & MCC_OUTPUT_EXE)
 				{ MCC_TRACE("br\n"); mcc_add_support(s1, "bt-exe.o"); }
@@ -1746,7 +1727,6 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) { MCC_TRACE("enter\n");
 			mcc_add_btstub(s1);
 			lpthread = 1;
 		}
-#endif
 		if (lpthread)
 			{ MCC_TRACE("br\n"); mcc_add_library(s1, "pthread"); }
 		mcc_add_library(s1, "c");

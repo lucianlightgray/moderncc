@@ -1,6 +1,5 @@
 #define USING_GLOBALS
 #include "mcc.h"
-#if MCC_CONFIG_ASM
 
 #define REG_X 0x01
 #define REG_W 0x02
@@ -2336,4 +2335,3 @@ ST_FUNC int asm_parse_regvar(int t) { MCC_TRACE("enter\n");
 	return arm64_parse_regvar(t);
 }
 
-#endif

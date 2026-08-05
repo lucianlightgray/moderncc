@@ -1,4 +1,3 @@
-#if MCC_CONFIG_LSP
 
 #include "mcccst.h"
 
@@ -1443,4 +1442,3 @@ void cst_hook_leaf(uint16_t tok_kind, uint32_t byte_off, uint32_t len) { MCC_TRA
 #pragma pop_macro("realloc")
 #pragma pop_macro("malloc")
 
-#endif

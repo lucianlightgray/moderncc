@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""JIT self-host gate: drive a built embed-JIT mcc as `--jit -O4 -run src/mcc.c`
+"""JIT self-host gate: drive a built embed-JIT mcc as `--jit -O13 -run src/mcc.c`
 so it compiles its OWN source into memory, the runtime JIT profile-recompiles its
 hot functions, and that in-memory mcc then compiles a workload. Assert it does NOT
 crash (the mccjit_embed_finalize path over search-graduated KGC entries) AND that
@@ -7,7 +7,7 @@ the in-memory (JIT-optimized) compiler emits an object byte-identical to a plain
 AOT `-c` compile by the same mcc — so a JIT miscompile of the compiler is caught,
 not just a crash.
 
-The -O4 search is what graduates functions into the embed registry that
+The -O13 search is what graduates functions into the embed registry that
 mcc_relocate -> pe_output_file -> mccjit_embed_finalize re-compiles; -O1 leaves it
 empty and exercises nothing. Fresh XDG_CACHE_HOME keeps the run deterministic.
 
@@ -80,7 +80,7 @@ def main():
 
     env = dict(os.environ)
     env.update(MCC_JIT="1", MCC_AST_SEARCH="1", MCC_SEARCH_WORKER="1",
-               MCC_JIT_HOT_THRESHOLD="50")
+               MCC_JIT_HOT_CALLS="50")
     if win:
         env["MCC_JIT_CRASH_DIAG"] = "1"
     for kv in [a for a in sys.argv[3:] if not a.startswith("-")]:
@@ -99,10 +99,10 @@ def main():
         mccsrc = os.path.join(src, "mcc.c")
         inner_inc = ["-I" + os.path.join(bdir, "include"),
                      "-I" + os.path.join(root, "runtime", "include")]
-        print(f"selfhost-jit: {mcc} --jit -O4 -run src/mcc.c -> inner -c workload  "
+        print(f"selfhost-jit: {mcc} --jit -O13 -run src/mcc.c -> inner -c workload  "
               f"knobs={sys.argv[3:] or '(none)'}")
         cap = win
-        r = subprocess.run([mcc, "--jit", "-O4", *incs, *brt,
+        r = subprocess.run([mcc, "--jit", "-O13", *incs, *brt,
                             "-run", mccsrc, *inner_inc, "-c", wl, "-o", out],
                            cwd=root, env=env,
                            capture_output=cap, text=cap)

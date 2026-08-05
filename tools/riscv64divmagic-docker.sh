@@ -144,7 +144,7 @@ dg_docker run --rm --platform "$HP_PLAT" \
 	echo "-- generating soak --"
 	bash /w/gen.sh /w/soak.c
 	echo "-- compiling soak with divmagic (MCC_AST_DIVMAGIC=1, -O2) --"
-	MCC_AST_DIVMAGIC=1 /w/mcc-riscv64-opt -O2 -I /b/runtime/include -c /w/soak.c -o /w/soak.o
+	/w/mcc-riscv64-opt -fdivmagic -O2 -I /b/runtime/include -c /w/soak.c -o /w/soak.o
 	echo "-- confirm divmagic fired (native riscv64 high-multiply) --"
 	nmulhi=$(riscv64-linux-gnu-objdump -d /w/soak.o | grep -Ec "mulh|mulhu|mulhsu" || true)
 	ndiv=$(riscv64-linux-gnu-objdump -d /w/soak.o | grep -Ecw "div|divu|divw|divuw|rem|remu|remw|remuw" || true)

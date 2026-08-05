@@ -2,7 +2,6 @@
 
 #ifdef MCC_TARGET_IS_HOST
 
-#if MCC_CONFIG_DIAG_RT >= 1
 typedef struct rt_context {
 	union {
 		struct
@@ -34,7 +33,6 @@ typedef struct rt_context {
 static rt_context *g_rc;
 static int signal_set;
 static void set_exception_handler(void);
-#endif
 
 typedef struct rt_frame {
 	addr_t ip, fp, sp;
@@ -59,9 +57,7 @@ static void rt_exit(rt_frame *f, int code);
 static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff);
 static void st_link(MCCState *s1);
 static void st_unlink(MCCState *s1);
-#if MCC_CONFIG_DIAG_RT >= 1
 static int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap);
-#endif
 
 #define PAGESIZE host_pagesize()
 #define PAGEALIGN(n) ((addr_t)n + (-(addr_t)n & (PAGESIZE - 1)))
@@ -82,10 +78,8 @@ LIBMCCAPI int mcc_relocate(MCCState *s1) { MCC_TRACE("enter\n");
 
 	if (s1->run_ptr)
 		{ MCC_TRACE("br\n"); exit(mcc_error_noabort("'mcc_relocate()' twice is no longer supported")); }
-#if MCC_CONFIG_DIAG_RT >= 1
 	if (s1->do_backtrace)
 		{ MCC_TRACE("br\n"); mcc_add_symbol(s1, "_mcc_backtrace", _mcc_backtrace); }
-#endif
 	size = mcc_relocate_ex(s1, NULL, 0);
 	if (size < 0)
 		{ MCC_TRACE("br\n"); return -1; }
@@ -642,7 +636,6 @@ redo:
 }
 
 static void bt_link(MCCState *s1) { MCC_TRACE("enter\n");
-#if MCC_CONFIG_DIAG_RT >= 1
 	rt_context *rc;
 	if (!s1->do_backtrace)
 		{ MCC_TRACE("br\n"); return; }
@@ -654,17 +647,14 @@ static void bt_link(MCCState *s1) { MCC_TRACE("enter\n");
 	rc->elf_str = (char *)symtab_section->link->data;
 	if (MCC_PTR_SIZE == 8 && !s1->dwarf)
 		{ MCC_TRACE("br\n"); rc->prog_base &= 0xffffffff00000000ULL; }
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (s1->do_bounds_check) { MCC_TRACE("br\n");
 		void *p;
 		if ((p = mcc_get_symbol(s1, "__bound_init")))
 			{ MCC_TRACE("br\n"); ((void (*)(void *, int))p)(rc->bounds_start, 1); }
 	}
-#endif
 	rc->next = g_rc, g_rc = rc, s1->rc = rc;
 	if (0 == signal_set)
 		{ MCC_TRACE("br\n"); set_exception_handler(), signal_set = 1; }
-#endif
 }
 
 static void st_link(MCCState *s1) { MCC_TRACE("enter\n");
@@ -687,9 +677,7 @@ static void ptr_unlink(void *list, void *e, unsigned next) { MCC_TRACE("enter\n"
 
 static void st_unlink(MCCState *s1) { MCC_TRACE("enter\n");
 	rt_wait_sem();
-#if MCC_CONFIG_DIAG_RT >= 1
 	ptr_unlink(&g_rc, s1->rc, offsetof(rt_context, next));
-#endif
 	ptr_unlink(&g_s1, s1, offsetof(MCCState, next));
 	rt_post_sem();
 }
@@ -697,10 +685,8 @@ static void st_unlink(MCCState *s1) { MCC_TRACE("enter\n");
 LIBMCCAPI void *_mcc_setjmp(MCCState *s1, void *p_jmp_buf, void *func, void *p_longjmp) { MCC_TRACE("enter\n");
 	s1->run_lj = p_longjmp;
 	s1->run_jb = p_jmp_buf;
-#if MCC_CONFIG_DIAG_RT >= 1
 	if (s1->rc)
 		{ MCC_TRACE("br\n"); s1->rc->top_func = func; }
-#endif
 	return p_jmp_buf;
 }
 
@@ -734,13 +720,11 @@ static void rt_exit(rt_frame *f, int code) { MCC_TRACE("enter\n");
 	s = rt_find_state(f);
 	rt_post_sem();
 	if (s && s->run_lj) { MCC_TRACE("br\n");
-#if MCC_CONFIG_DIAG_RT >= 2
 		if (f->fp) { MCC_TRACE("br\n");
 			void *p = mcc_get_symbol(s, "__bound_exit");
 			if (p)
 				{ MCC_TRACE("br\n"); ((void (*)(void))p)(); }
 		}
-#endif
 		if (code == 0)
 			{ MCC_TRACE("br\n"); code = RT_EXIT_ZERO; }
 		((void (*)(void *, int))s->run_lj)(s->run_jb, code);
@@ -753,7 +737,6 @@ static void rt_exit(rt_frame *f, int code) { MCC_TRACE("enter\n");
 	exit(code);
 }
 #endif
-#if MCC_CONFIG_DIAG_RT >= 1
 
 static int rt_vprintf(const char *fmt, va_list ap) { MCC_TRACE("enter\n");
 	int ret = vfprintf(stderr, fmt, ap);
@@ -1431,14 +1414,6 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) { MCC_TRACE(
 	return -1;
 }
 
-#endif
-#else
-static int rt_get_caller_pc(addr_t *paddr, rt_frame *f, int level) { MCC_TRACE("enter\n");
-	if (level)
-		{ MCC_TRACE("br\n"); return -1; }
-	*paddr = f->ip;
-	return 0;
-}
 #endif
 
 #elif defined MCC_EMBED_JIT

@@ -1,4 +1,4 @@
-#if MCC_CONFIG_OPTIMIZER && (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))
+#if (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))
 
 #include "mccast.h"
 #include "mccrir.h"
@@ -195,7 +195,7 @@ unsigned ast_wide_r2(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return a->wide_r2 ? a->wide_r2[n] : AST_R2_NONE;
 }
 
-#if defined(MCC_INTERNAL) && MCC_CONFIG_OPTIMIZER
+#if defined(MCC_INTERNAL)
 static void ast_du_invalidate(const AstArena *a);
 static void ast_memo_invalidate(const AstArena *a);
 static void ast_hash_invalidate(const AstArena *a);
@@ -223,7 +223,7 @@ void ast_teardown(void);
 void ast_arena_free(AstArena *a) { MCC_TRACE("enter\n");
 	if (!a)
 		{ MCC_TRACE("br\n"); return; }
-#if defined(MCC_INTERNAL) && MCC_CONFIG_OPTIMIZER
+#if defined(MCC_INTERNAL)
 	ast_du_invalidate(a);
 	ast_memo_invalidate(a);
 	ast_hash_invalidate(a);
@@ -1388,12 +1388,6 @@ static int ast_vlat_fits_bytes(const AstVLat *v, int width) { MCC_TRACE("enter\n
 #define gjmp_addr gjmp_addr_acs
 #define gjmp gjmp_acs
 
-static int ast_env_gate(const char *name, int dflt) { MCC_TRACE("enter\n");
-	const char *v = getenv(name);
-	if (!v)
-		{ MCC_TRACE("br\n"); return dflt; }
-	return strcmp(v, "0") != 0;
-}
 int ast_env_int(const char *name, int dflt) { MCC_TRACE("enter\n");
 	const char *v = getenv(name);
 	int n;
@@ -1852,7 +1846,6 @@ int ast_func_has_asm;
 int ast_func_has_labeladdr;
 
 int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
-#if MCC_REPLAY_IR
 	if (rir_c2_active) { MCC_TRACE("br\n");
 		int rl;
 		if (rir_loc_replay(&rl)) { MCC_TRACE("br\n");
@@ -1862,7 +1855,6 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 			return loc;
 		}
 	}
-#endif
 	if (ast_replaying && !ir_cap_replaying && ast_locrec_i < ast_locrec_n) { MCC_TRACE("br\n");
 		loc = ast_locrec[ast_locrec_i++];
 		if (loc < ast_loc_low)
@@ -1872,10 +1864,8 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 	loc = (loc - size) & -align;
 	if (loc < ast_loc_low)
 		{ MCC_TRACE("br\n"); ast_loc_low = loc; }
-#if MCC_REPLAY_IR
 	if (rir_active && !ast_replaying && !ir_cap_replaying)
 		{ MCC_TRACE("br\n"); rir_loc_record(loc); }
-#endif
 	if (ast_active && !ast_replaying) { MCC_TRACE("br\n");
 		if (ast_locrec_n == ast_locrec_cap) { MCC_TRACE("br\n");
 			ast_locrec_cap = ast_locrec_cap ? ast_locrec_cap * 2 : 16;
@@ -1998,7 +1988,7 @@ static Sym **ast_sym_deferred;
 static int ast_sym_deferred_n, ast_sym_deferred_cap;
 /* Syms deferred for a body whose arena was kept. The keep path cannot release them --
    the arena still refers to them -- but it used to drop the list on the floor, so
-   under MCC_SYM_DEBUG, where every Sym is its own allocation, they were never freed
+   under MCC_DIAG, where every Sym is its own allocation, they were never freed
    at all. Hold them here and release them in ast_teardown. */
 static Sym **ast_sym_retained;
 static int ast_sym_retained_n, ast_sym_retained_cap;
@@ -2019,6 +2009,47 @@ int ast_sym_defer(Sym *sym) { MCC_TRACE("enter\n");
 static int ast_reemit_n;
 static int ast_inline_n;
 
+/* Resolve every knob the command line did not name from its row's default
+   class. Runs once, before anything reads a flag, so the rest of ast_configure
+   sees a settled array and each SPECIAL row can simply overwrite its own byte.
+   A knob the driver did set is left exactly as given -- that is the whole
+   reason optflag[] starts at MCC_OPT_UNSET rather than at 0. */
+static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
+	int o4 = s1->optimize_search_seconds > 0;
+	int i, dflt[MCC_OPT_COUNT];
+	int n = 0;
+#define MCC_OPT_ROW(id, name, d) dflt[n++] = (d);
+	MCC_OPT_LIST(MCC_OPT_ROW)
+#undef MCC_OPT_ROW
+	for (i = 0; i < MCC_OPT_COUNT; i++) { MCC_TRACE("br\n");
+		int on;
+		if (s1->optflag[i] != MCC_OPT_UNSET)
+			{ MCC_TRACE("br\n"); continue; }
+		if (dflt[i] == MCC_OPTD_SPECIAL)
+			{ MCC_TRACE("br\n"); continue; } /* left UNSET for its owner below */
+		if (MCC_OPTD_IS_LEVEL(dflt[i])) { MCC_TRACE("br\n");
+			int want = MCC_OPTD_LEVEL_OF(dflt[i]);
+			if (want >= MCC_OPT_SEARCH_LEVEL)
+				{ MCC_TRACE("br\n"); mcc_error("mccopt.h: a knob sits at -O%d, at or past "
+																			 "MCC_OPT_SEARCH_LEVEL (%d); bump it",
+																			 want, MCC_OPT_SEARCH_LEVEL); }
+			/* The ladder is cumulative, and search mode implies every rung. */
+			on = o4 || s1->optimize_level >= want;
+		} else { MCC_TRACE("br\n");
+			on = (dflt[i] == MCC_OPTD_ALWAYS);
+		}
+		s1->optflag[i] = (unsigned char)on;
+	}
+}
+
+/* Read a knob. UNSET reads as off: every SPECIAL row is assigned below before
+   anything reads it, so a byte still UNSET here is a row whose owner never ran,
+   and off is the safe reading of that. */
+static int mcc_opt(MCCState *s1, int id) { MCC_TRACE("enter\n");
+	unsigned char v = s1->optflag[id];
+	return v != 0 && v != MCC_OPT_UNSET;
+}
+
 void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	int opt_promote = 0;
 	mcc_isa_init(s1);
@@ -2028,6 +2059,49 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 	opt_promote = s1->optimize >= 2;
 #endif
+	ast_opt_defaults(s1);
+	/* The ten SPECIAL rows: their default depends on -Os, on an ISA probe or on
+	   another flag, so the table cannot express it. Each writes its own byte and
+	   only when the command line left it alone. */
+#define MCC_OPT_SPECIAL(id, expr)                    \
+	do {                                               \
+		if (s1->optflag[id] == MCC_OPT_UNSET)            \
+			{ s1->optflag[id] = (unsigned char)!!(expr); } \
+	} while (0)
+	MCC_OPT_SPECIAL(MCC_OPT_OPT_SEARCH, o4);
+	MCC_OPT_SPECIAL(MCC_OPT_OPT_ROI, o4);
+	MCC_OPT_SPECIAL(MCC_OPT_PROMOTE_LOCALS, o4 || opt_promote);
+	MCC_OPT_SPECIAL(MCC_OPT_PROMOTE_ARROW,
+									o4 || s1->optimize_size || s1->optimize >= 2);
+	MCC_OPT_SPECIAL(MCC_OPT_PROMOTE_INCDEC,
+									o4 || s1->optimize_size || s1->optimize >= 2);
+	/* Four knobs whose DEFAULT is target-conditional. The default moves here so
+	   the assignment below is one line instead of an #if/#else pair with two
+	   identical arms; -f<name> still reaches the knob on every target, it just
+	   starts off where the target has no use for it. */
+#ifdef MCC_TARGET_X86_64
+	MCC_OPT_SPECIAL(MCC_OPT_REG_DISP,
+									o4 || s1->optimize_size || s1->optimize >= 1);
+	MCC_OPT_SPECIAL(MCC_OPT_BUILTIN_ROUND, mcc_isa_has(s1, MCC_ISA_SSE41));
+#else
+	MCC_OPT_SPECIAL(MCC_OPT_REG_DISP, 0);
+	MCC_OPT_SPECIAL(MCC_OPT_BUILTIN_ROUND, 0);
+#endif
+#ifdef MCC_TARGET_ARM64
+	MCC_OPT_SPECIAL(MCC_OPT_BUILTIN_MINMAX, o4 || s1->optimize >= 1);
+#else
+	MCC_OPT_SPECIAL(MCC_OPT_BUILTIN_MINMAX, o4);
+#endif
+#if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+	MCC_OPT_SPECIAL(MCC_OPT_BUILTIN_FMA, o4 || s1->optimize >= 1);
+#else
+	MCC_OPT_SPECIAL(MCC_OPT_BUILTIN_FMA, o4);
+#endif
+	MCC_OPT_SPECIAL(MCC_OPT_INLINE, s1->optimize >= 3 && !s1->optimize_size);
+	MCC_OPT_SPECIAL(MCC_OPT_BUILTIN_MATH_ERRNO, s1 && s1->no_math_errno);
+	MCC_OPT_SPECIAL(MCC_OPT_IVOPTS,
+									o4 || (s1->optimize >= 1 && !s1->optimize_size));
+#undef MCC_OPT_SPECIAL
 	ast_replay_env = s1->optimize >= 1 || s1->embed_jit ||
 									 ast_env_int("MCC_FORCE_REPLAY", 0) ||
 									 ast_env_int("MCC_RIR_FORCE", 0);
@@ -2043,30 +2117,30 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	   strong for deciding whether it is safe to ship. Set MCC_RIR_NOFB=0 to restore
 	   the old byte-gated fallback; that is the escape hatch if a body ever ships
 	   wrong, and it is also how to confirm a suspected arena defect is one. */
-	ast_rir_nofb_env = ast_env_gate("MCC_RIR_NOFB", 0);
+	ast_rir_nofb_env = !mcc_opt(s1, MCC_OPT_REPLAY_FALLBACK);
 	/* Diagnostic only: ignore AST_FB_LANDOR_MATERIAL and always take the
 	   gvtst_set path. Used to confirm that a short-circuit materialisation is
 	   what miscompiles a given body, since ast_dump does not print fbits. */
-	ast_rir_nomat_env = ast_env_gate("MCC_RIR_NOMAT", 0);
-	ast_rir_noinv_env = ast_env_gate("MCC_RIR_NOINV", 0);
-	ast_replay_dump = ast_env_gate("MCC_AST_REPLAY_DUMP", 0);
+	ast_rir_nomat_env = !mcc_opt(s1, MCC_OPT_REPLAY_MATERIALIZE);
+	ast_rir_noinv_env = !mcc_opt(s1, MCC_OPT_REPLAY_LANDOR_INVERT);
+	ast_replay_dump = mcc_opt(s1, MCC_OPT_DUMP_REPLAY);
 	ast_verify_diff = getenv("MCC_AST_VERIFY_DIFF");
-	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", o4 || s1->optimize >= 1);
-	ast_cload_env = ast_env_gate("MCC_AST_CLOAD", o4 || s1->optimize >= 1);
-	ast_search_env = ast_env_gate("MCC_AST_SEARCH", s1->optimize_search_seconds > 0);
-	ast_search_verbose_env = ast_env_gate("MCC_AST_SEARCH_VERBOSE", 0);
-	ast_slice_env = ast_env_gate("MCC_AST_SLICE", 0);
-	ast_search_emitsize_env = ast_env_gate("MCC_AST_SEARCH_EMITSIZE", 0);
-	ast_search_emitiso_env = ast_env_gate("MCC_AST_SEARCH_EMITISO", 0);
-	ast_search_inline_env = ast_env_gate("MCC_AST_SEARCH_INLINE", 0);
-	ast_search_threads_env = ast_env_gate("MCC_AST_SEARCH_THREADS", 0);
-	ast_search_pthreads_env = ast_env_gate("MCC_AST_SEARCH_PTHREADS", 0);
-	ast_search_ordered_env = ast_env_gate("MCC_AST_SEARCH_ORDERED", 0);
-	ast_search_order_env = ast_env_gate("MCC_AST_SEARCH_ORDER", 0);
-	ast_search_fullset_env = ast_env_gate("MCC_AST_SEARCH_FULLSET", 1);
-	ast_roi_env = ast_env_gate("MCC_AST_ROI", s1->optimize_search_seconds > 0);
-	ast_roi_dump = ast_env_gate("MCC_AST_ROI_DUMP", 0);
-	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", o4 || s1->optimize >= 3);
+	ast_templates_env = mcc_opt(s1, MCC_OPT_REEMIT_TEMPLATES);
+	ast_cload_env = mcc_opt(s1, MCC_OPT_TREE_CONST_LOAD);
+	ast_search_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH);
+	ast_search_verbose_env = mcc_opt(s1, MCC_OPT_DUMP_OPT_SEARCH);
+	ast_slice_env = mcc_opt(s1, MCC_OPT_OPT_SLICE);
+	ast_search_emitsize_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH_EMIT_SIZE);
+	ast_search_emitiso_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH_EMIT_ISO);
+	ast_search_inline_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH_INLINE);
+	ast_search_threads_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH_THREADS);
+	ast_search_pthreads_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH_PTHREADS);
+	ast_search_ordered_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH_ORDERED);
+	ast_search_order_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH_ORDER);
+	ast_search_fullset_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH_FULLSET);
+	ast_roi_env = mcc_opt(s1, MCC_OPT_OPT_ROI);
+	ast_roi_dump = mcc_opt(s1, MCC_OPT_DUMP_OPT_ROI);
+	ast_cycle_env = mcc_opt(s1, MCC_OPT_OPT_CYCLE);
 	ast_search_walk_env = ast_search_walk_from_env();
 	ast_strat_order_from_env();
 	if (ast_strat_order_forced) { MCC_TRACE("br\n");
@@ -2075,44 +2149,47 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 		MCC_TRACE("strat order forced n=%d seq=%s\n", ast_strat_order_n, sq);
 	}
 	ast_search_seconds = s1->optimize_search_seconds;
-	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", o4 || opt_promote);
-	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW",
-																		 o4 || s1->optimize_size || s1->optimize >= 2);
-	ast_promo_incdec_env = ast_env_gate("MCC_AST_PROMO_INCDEC",
-																			o4 || s1->optimize_size || s1->optimize >= 2);
-	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", o4 || s1->optimize >= 1);
-	ast_storeval_call_env = ast_env_gate("MCC_AST_STOREVAL_CALL", o4 || s1->optimize >= 1);
-	ast_storeval_constl_env = ast_env_gate("MCC_AST_STOREVAL_CONSTL", o4 || s1->optimize >= 1);
-	ast_storeval_callstore_env = ast_env_gate("MCC_AST_STOREVAL_CALLSTORE", o4 || s1->optimize >= 1);
-	ast_storeval_callup_env = ast_env_gate("MCC_AST_STOREVAL_CALLUP", o4 || s1->optimize >= 1);
-	ast_storeval_rot_env = ast_env_gate("MCC_AST_STOREVAL_ROT", o4 || s1->optimize >= 1);
+	ast_promote_env = mcc_opt(s1, MCC_OPT_PROMOTE_LOCALS);
+	ast_promo_arrow_env = mcc_opt(s1, MCC_OPT_PROMOTE_ARROW);
+	ast_promo_incdec_env = mcc_opt(s1, MCC_OPT_PROMOTE_INCDEC);
+	ast_chainstore_env = mcc_opt(s1, MCC_OPT_CHAIN_STORE);
+	ast_storeval_constl_env = mcc_opt(s1, MCC_OPT_STOREVAL_CONSTL);
+	ast_storeval_callstore_env = mcc_opt(s1, MCC_OPT_STOREVAL_CALLSTORE);
+	ast_storeval_rot_env = mcc_opt(s1, MCC_OPT_STOREVAL_ROT);
 	ast_storeval_calllast_env =
-			ast_env_gate("MCC_AST_STOREVAL_CALLLAST", o4 || s1->optimize >= 1);
-	ast_cmp_mat_env = ast_env_gate("MCC_AST_CMP_MAT", o4 || s1->optimize >= 1);
-	ast_chainstore_live_env = ast_env_gate("MCC_AST_CHAINSTORE_LIVE", o4 || s1->optimize >= 1);
-	ast_chainstore_member_env = ast_env_gate("MCC_AST_CHAINSTORE_MEMBER", o4 || s1->optimize >= 1);
-	ast_while_comma_env = ast_env_gate("MCC_AST_WHILE_COMMA", o4 || s1->optimize >= 1);
-	ast_loopcond_store_env = ast_env_gate("MCC_AST_LOOPCOND_STORE", o4 || s1->optimize >= 1);
-	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 1);
-	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", o4);
-	ast_cost_ops_env = ast_env_gate("MCC_AST_COST_OPS", 0);
-	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
-	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 1);
+			mcc_opt(s1, MCC_OPT_STOREVAL_CALLLAST);
+	ast_chainstore_live_env = mcc_opt(s1, MCC_OPT_CHAIN_STORE_LIVE);
+	ast_chainstore_member_env = mcc_opt(s1, MCC_OPT_CHAIN_STORE_MEMBER);
+	/* Replay FIDELITY, not optimization: these six reproduce a shape the parser
+	   emits at every level, so gating them on the optimization level made the
+	   replay wrong at -O0 rather than merely less optimized. Measured: forced
+	   -O0 with no fallback loses eleven exec goldens with them at the old
+	   `optimize >= 1` default and none with them on, and they are the minimal
+	   set that does it. They read only in the replay and StoreVal
+	   reconstruction paths, so a level that never adopts the arena is unmoved.
+	   The -fno- spellings survive for bisection. */
+	ast_storeval_call_env = mcc_opt(s1, MCC_OPT_STOREVAL_CALL);
+	ast_storeval_callup_env = mcc_opt(s1, MCC_OPT_STOREVAL_CALLUP);
+	ast_cmp_mat_env = mcc_opt(s1, MCC_OPT_REPLAY_CMP_MATERIALIZE);
+	ast_while_comma_env = mcc_opt(s1, MCC_OPT_REPLAY_WHILE_COMMA);
+	ast_loopcond_store_env = mcc_opt(s1, MCC_OPT_REPLAY_LOOPCOND_STORE);
+	ast_indirect_call_env = mcc_opt(s1, MCC_OPT_REPLAY_INDIRECT_CALL);
+	ast_promo_leaf_xmm_env = mcc_opt(s1, MCC_OPT_PROMOTE_LEAF_XMM);
+	ast_cost_ops_env = mcc_opt(s1, MCC_OPT_DUMP_COST_OPS);
+	ast_cost_spill_env = mcc_opt(s1, MCC_OPT_DUMP_COST_SPILL);
+	ast_reloc_equiv_env = mcc_opt(s1, MCC_OPT_RELOC_EQUIV);
 #ifdef MCC_TARGET_ARM64
-	ast_fmov_imm_env = ast_env_gate("MCC_AST_FMOV_IMM", o4);
+	ast_fmov_imm_env = mcc_opt(s1, MCC_OPT_FMOV_IMM);
 #else
 	ast_fmov_imm_env = 0;
 #endif
-#ifdef MCC_TARGET_X86_64
-	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP",
-																 o4 || s1->optimize_size || s1->optimize >= 1);
-#elif defined MCC_TARGET_ARM64
-	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP", 0);
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
+	ast_regdisp_env = mcc_opt(s1, MCC_OPT_REG_DISP);
 #else
 	ast_regdisp_env = 0;
 #endif
 #ifdef MCC_TARGET_X86_64
-	ast_xmm_hi_env = ast_env_gate("MCC_AST_XMM_HI", o4);
+	ast_xmm_hi_env = mcc_opt(s1, MCC_OPT_XMM_HI);
 	for (int hr = MCC_TREG_XMM8; hr <= MCC_TREG_XMM15; hr++) { MCC_TRACE("br\n");
 		if (ast_xmm_hi_env)
 			{ MCC_TRACE("br\n"); reg_classes[hr] |= MCC_RC_FLOAT; }
@@ -2120,10 +2197,9 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); reg_classes[hr] &= ~MCC_RC_FLOAT; }
 	}
 #endif
-	ast_promo_leaf_callee_env = ast_env_gate("MCC_AST_PROMO_LEAF_CALLEE", o4);
-	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
-	ast_inline_env = ast_env_gate("MCC_AST_INLINE",
-																s1->optimize >= 3 && !s1->optimize_size);
+	ast_promo_leaf_callee_env = mcc_opt(s1, MCC_OPT_PROMOTE_LEAF_CALLEE);
+	ast_no_callful_env = !mcc_opt(s1, MCC_OPT_PROMOTE_ACROSS_CALLS);
+	ast_inline_env = mcc_opt(s1, MCC_OPT_INLINE);
 	{
 		const char *lim = getenv("MCC_AST_INLINE_LIMIT");
 		ast_graft_limit = lim ? atoi(lim) : -1;
@@ -2141,85 +2217,71 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 	ast_inline_node_limit = ast_env_int("MCC_AST_INLINE_NODES", 64);
 	ast_graft_budget_max = ast_env_int("MCC_AST_GRAFT", 2048);
-	ast_cost_env = ast_env_gate("MCC_AST_COST", 0);
-	ast_sethi_env = ast_env_gate("MCC_AST_SETHI", o4 || s1->optimize >= 1);
-	ast_sethi_leaf_env = ast_env_gate("MCC_AST_SETHI_LEAF", o4 || s1->optimize >= 1);
-	ast_sethi_nary_env = ast_env_gate("MCC_AST_SETHI_NARY", o4 || s1->optimize >= 1);
-	ast_bitflag_env = ast_env_gate("MCC_AST_BITFLAG", o4 || s1->optimize >= 2);
-	ast_bitflag_report_env = ast_env_gate("MCC_AST_BITFLAG_REPORT", 0);
+	ast_cost_env = mcc_opt(s1, MCC_OPT_DUMP_COST);
+	ast_sethi_env = mcc_opt(s1, MCC_OPT_SETHI_ULLMAN);
+	ast_sethi_leaf_env = mcc_opt(s1, MCC_OPT_SETHI_ULLMAN_LEAF);
+	ast_sethi_nary_env = mcc_opt(s1, MCC_OPT_SETHI_ULLMAN_NARY);
+	ast_bitflag_env = mcc_opt(s1, MCC_OPT_TREE_SWITCH_CONVERSION);
+	ast_bitflag_report_env = mcc_opt(s1, MCC_OPT_DUMP_BITFLAG);
 	ast_bitflag_min = ast_env_int("MCC_AST_BITFLAG", 5);
 	if (ast_bitflag_min < 3)
 		{ MCC_TRACE("br\n"); ast_bitflag_min = 5; }
-	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", o4 || s1->optimize >= 2);
-	ast_narrow_env = ast_env_gate("MCC_AST_NARROW", o4 || s1->optimize >= 1);
-	ast_trunc32_env = ast_env_gate("MCC_AST_TRUNC32", o4 || s1->optimize >= 1);
-	ast_switch_expr_env = ast_env_gate("MCC_AST_SWITCH_EXPR", 1);
-	ast_inline_static_env = ast_env_gate("MCC_AST_INLINE_STATIC", 0);
-	ast_narrow_fix_env = ast_env_gate("MCC_AST_NARROW_FIX", o4 || s1->optimize >= 2);
-	ast_narrow_c0_env = ast_env_gate("MCC_AST_NARROW_CLASS0", 1);
-	ast_narrow_c1_env = ast_env_gate("MCC_AST_NARROW_CLASS1", 1);
-	ast_narrow_c2_env = ast_env_gate("MCC_AST_NARROW_CLASS2", 1);
-	ast_narrow_c3_env = ast_env_gate("MCC_AST_NARROW_CLASS3", 1);
-	ast_narrow_elim_env = ast_env_gate("MCC_AST_NARROW_ELIM", o4 || s1->optimize >= 1);
-	ast_sccp_fix_env = ast_env_gate("MCC_AST_SCCP_FIX", o4 || s1->optimize >= 2);
-	ast_ident_conv_env = ast_env_gate("MCC_AST_IDENT_CONV", o4 || 1);
-	ast_ident_shift_env = ast_env_gate("MCC_AST_IDENT_SHIFT", o4 || 1);
-	ast_ident_arith_env = ast_env_gate("MCC_AST_IDENT_ARITH", o4 || 1);
-	ast_ident_bit_env = ast_env_gate("MCC_AST_IDENT_BIT", o4 || 1);
-	ast_ident_rel_env = ast_env_gate("MCC_AST_IDENT_REL", o4 || 1);
-	ast_ident_urange_env = ast_env_gate("MCC_AST_IDENT_URANGE", o4 || 1);
-	ast_dse_call_env = ast_env_gate("MCC_AST_DSE_CALL", o4 || s1->optimize >= 2);
-	ast_tco_ptr_env = ast_env_gate("MCC_AST_TCO_PTR", o4 || s1->optimize >= 2);
-	ast_cse_comm_env = ast_env_gate("MCC_AST_CSE_COMM", o4 || s1->optimize >= 1);
-	ast_range_env = ast_env_gate("MCC_AST_RANGE", o4 || s1->optimize >= 1);
-	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", o4 || s1->optimize >= 2);
-	ast_abs_env = ast_env_gate("MCC_AST_ABS", o4 || s1->optimize >= 2);
-	ast_select_env = ast_env_gate("MCC_AST_SELECT", o4 || s1->optimize >= 2);
-	ast_reassoc_env = ast_env_gate("MCC_AST_REASSOC", o4 || s1->optimize >= 2);
-	ast_reassoc_assoc_env = ast_env_gate("MCC_AST_REASSOC_ASSOC", o4 || 1);
-	ast_reassoc_shlshr_env = ast_env_gate("MCC_AST_REASSOC_SHLSHR", o4 || 1);
-	ast_reassoc_shrshl_env = ast_env_gate("MCC_AST_REASSOC_SHRSHL", o4 || 1);
-	ast_reassoc_muldist_env = ast_env_gate("MCC_AST_REASSOC_MULDIST", o4 || 1);
-	ast_bfold_sqrt_env = ast_env_gate("MCC_AST_BFOLD_SQRT", o4 || 1);
-	ast_bfold_sign_env = ast_env_gate("MCC_AST_BFOLD_SIGN", o4 || 1);
-	ast_bfold_round_env = ast_env_gate("MCC_AST_BFOLD_ROUND", o4 || 1);
-	ast_bfold_minmax_env = ast_env_gate("MCC_AST_BFOLD_MINMAX", o4 || 1);
-	ast_math_inline_env = ast_env_gate("MCC_AST_MATH_INLINE", o4 || s1->optimize >= 1);
-	ast_math_inline_prepass_env = ast_env_gate("MCC_AST_MATH_INLINE_PREPASS", o4);
-#ifdef MCC_TARGET_X86_64
-	ast_round_inline_env =
-			ast_env_gate("MCC_AST_ROUND_INLINE", mcc_isa_has(s1, MCC_ISA_SSE41));
-#else
-	ast_round_inline_env = ast_env_gate("MCC_AST_ROUND_INLINE", 0);
-#endif
-	ast_copysign_env = ast_env_gate("MCC_AST_COPYSIGN_INLINE", o4 || s1->optimize >= 1);
-#ifdef MCC_TARGET_ARM64
-	ast_minmax_inline_env = ast_env_gate("MCC_AST_MINMAX_INLINE", o4 || s1->optimize >= 1);
-#else
-	ast_minmax_inline_env = ast_env_gate("MCC_AST_MINMAX_INLINE", o4);
-#endif
-#if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
-	ast_fma_env = ast_env_gate("MCC_AST_FMA_INLINE", o4 || s1->optimize >= 1);
-#else
-	ast_fma_env = ast_env_gate("MCC_AST_FMA_INLINE", o4);
-#endif
-	ast_no_math_errno = ast_env_gate("MCC_AST_NO_MATH_ERRNO",
-																	 s1 && s1->no_math_errno);
-	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", o4 || s1->optimize >= 2);
-	ast_interchange_env = ast_env_gate("MCC_AST_INTERCHANGE", o4 || s1->optimize >= 2);
-	ast_fusion_env = ast_env_gate("MCC_AST_FUSION", o4 || s1->optimize >= 2);
-	ast_tile_env = ast_env_gate("MCC_AST_TILE", o4 || s1->optimize >= 2);
+	ast_cprop_join_env = mcc_opt(s1, MCC_OPT_TREE_COPY_PROP);
+	ast_narrow_env = mcc_opt(s1, MCC_OPT_NARROW);
+	ast_trunc32_env = mcc_opt(s1, MCC_OPT_TRUNC32);
+	ast_switch_expr_env = mcc_opt(s1, MCC_OPT_SWITCH_EXPR);
+	ast_inline_static_env = mcc_opt(s1, MCC_OPT_INLINE_FUNCTIONS_CALLED_ONCE);
+	ast_narrow_fix_env = mcc_opt(s1, MCC_OPT_NARROW_FIX);
+	ast_narrow_c0_env = mcc_opt(s1, MCC_OPT_NARROW_CLASS0);
+	ast_narrow_c1_env = mcc_opt(s1, MCC_OPT_NARROW_CLASS1);
+	ast_narrow_c2_env = mcc_opt(s1, MCC_OPT_NARROW_CLASS2);
+	ast_narrow_c3_env = mcc_opt(s1, MCC_OPT_NARROW_CLASS3);
+	ast_narrow_elim_env = mcc_opt(s1, MCC_OPT_NARROW_ELIM);
+	ast_sccp_fix_env = mcc_opt(s1, MCC_OPT_TREE_CCP_ITERATE);
+	ast_ident_conv_env = mcc_opt(s1, MCC_OPT_IDENT_CONV);
+	ast_ident_shift_env = mcc_opt(s1, MCC_OPT_IDENT_SHIFT);
+	ast_ident_arith_env = mcc_opt(s1, MCC_OPT_IDENT_ARITH);
+	ast_ident_bit_env = mcc_opt(s1, MCC_OPT_IDENT_BIT);
+	ast_ident_rel_env = mcc_opt(s1, MCC_OPT_IDENT_REL);
+	ast_ident_urange_env = mcc_opt(s1, MCC_OPT_IDENT_URANGE);
+	ast_dse_call_env = mcc_opt(s1, MCC_OPT_TREE_DSE);
+	ast_tco_ptr_env = mcc_opt(s1, MCC_OPT_OPTIMIZE_SIBLING_CALLS);
+	ast_cse_comm_env = mcc_opt(s1, MCC_OPT_GCSE);
+	ast_range_env = mcc_opt(s1, MCC_OPT_TREE_VRP);
+	ast_divmagic_env = mcc_opt(s1, MCC_OPT_DIVMAGIC);
+	ast_abs_env = mcc_opt(s1, MCC_OPT_IF_CONVERSION_ABS);
+	ast_select_env = mcc_opt(s1, MCC_OPT_IF_CONVERSION);
+	ast_reassoc_env = mcc_opt(s1, MCC_OPT_TREE_REASSOC);
+	ast_reassoc_assoc_env = mcc_opt(s1, MCC_OPT_REASSOC_ASSOC);
+	ast_reassoc_shlshr_env = mcc_opt(s1, MCC_OPT_REASSOC_SHLSHR);
+	ast_reassoc_shrshl_env = mcc_opt(s1, MCC_OPT_REASSOC_SHRSHL);
+	ast_reassoc_muldist_env = mcc_opt(s1, MCC_OPT_REASSOC_MULDIST);
+	ast_bfold_sqrt_env = mcc_opt(s1, MCC_OPT_BFOLD_SQRT);
+	ast_bfold_sign_env = mcc_opt(s1, MCC_OPT_BFOLD_SIGN);
+	ast_bfold_round_env = mcc_opt(s1, MCC_OPT_BFOLD_ROUND);
+	ast_bfold_minmax_env = mcc_opt(s1, MCC_OPT_BFOLD_MINMAX);
+	ast_math_inline_env = mcc_opt(s1, MCC_OPT_BUILTIN_MATH);
+	ast_math_inline_prepass_env = mcc_opt(s1, MCC_OPT_BUILTIN_MATH_PREPASS);
+	ast_round_inline_env = mcc_opt(s1, MCC_OPT_BUILTIN_ROUND);
+	ast_copysign_env = mcc_opt(s1, MCC_OPT_BUILTIN_COPYSIGN);
+	ast_minmax_inline_env = mcc_opt(s1, MCC_OPT_BUILTIN_MINMAX);
+	ast_fma_env = mcc_opt(s1, MCC_OPT_BUILTIN_FMA);
+	ast_no_math_errno = mcc_opt(s1, MCC_OPT_BUILTIN_MATH_ERRNO);
+	ast_inline_pass_env = mcc_opt(s1, MCC_OPT_INLINE_FUNCTIONS);
+	ast_interchange_env = mcc_opt(s1, MCC_OPT_LOOP_INTERCHANGE);
+	ast_fusion_env = mcc_opt(s1, MCC_OPT_LOOP_FUSION);
+	ast_tile_env = mcc_opt(s1, MCC_OPT_LOOP_BLOCK);
 	ast_tile_size = ast_env_int("MCC_AST_TILE_SIZE", 32);
 	if (ast_tile_size < 2)
 		{ MCC_TRACE("br\n"); ast_tile_size = 32; }
-	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", o4 || s1->optimize >= 2);
+	ast_vlat_env = mcc_opt(s1, MCC_OPT_LOOP_VLAT);
 	ast_jit_env = s1 && !mccjit_recompiling &&
 			(s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY);
-	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
+	ast_jit_splice_env = mcc_opt(s1, MCC_OPT_JIT_SPLICE);
 	ast_jit_dispatch_env = ast_env_int("MCC_AST_JIT_DISPATCH",
 			(ast_jit_env || mcc_env_on("MCC_JIT_SUBMIT_AOT")) ? 6 : 0);
-	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", o4 || s1->optimize >= 2);
-	ast_merge_strings_env = ast_env_gate("MCC_MERGE_STRINGS", o4 || s1->optimize >= 2);
+	ast_zero_bss_env = mcc_opt(s1, MCC_OPT_ZERO_INITIALIZED_IN_BSS);
+	ast_merge_strings_env = mcc_opt(s1, MCC_OPT_MERGE_CONSTANTS);
 	ast_strpool_n = 0;
 	ast_cse_window = ast_env_int("MCC_AST_CSE_WINDOW", 64);
 	if (ast_cse_window < 1)
@@ -2241,18 +2303,18 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); ast_tco_maxp = 1; }
 	if (ast_tco_maxp > AST_TCO_MAXP)
 		{ MCC_TRACE("br\n"); ast_tco_maxp = AST_TCO_MAXP; }
-	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", o4 || s1->optimize >= 2);
-	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", o4 || s1->optimize >= 1);
-	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", o4 || s1->optimize >= 2);
-	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", o4 || (s1->optimize >= 1 && !s1->optimize_size));
-	ast_ivsr_ptr_env = ast_env_gate("MCC_AST_IVSR_PTR", o4);
-	ast_pre_env = ast_env_gate("MCC_AST_PRE", o4 || s1->optimize >= 1);
-	ast_loopnest_dump_env = ast_env_gate("MCC_AST_LOOPNEST_DUMP", 0);
-	ast_loopdep_dump_env = ast_env_gate("MCC_AST_LOOPDEP_DUMP", 0);
-	ast_perfn_inproc_env = ast_env_gate("MCC_AST_PERFN_INPROC", 0);
-	ast_argfwd_env = ast_env_gate("MCC_AST_ARGFWD", o4 || s1->optimize >= 2);
-	ast_color_env = ast_env_gate("MCC_AST_COLOR", o4 || s1->optimize >= 2);
-	ast_spill_share_env = ast_env_gate("MCC_AST_SPILL_SHARE", o4 || s1->optimize >= 2);
+	ast_cse_join_env = mcc_opt(s1, MCC_OPT_GCSE_JOIN);
+	ast_call_window_env = mcc_opt(s1, MCC_OPT_CALL_WINDOW);
+	ast_licm_temp_env = mcc_opt(s1, MCC_OPT_TREE_LOOP_IM);
+	ast_ivsr_env = mcc_opt(s1, MCC_OPT_IVOPTS);
+	ast_ivsr_ptr_env = mcc_opt(s1, MCC_OPT_IVOPTS_PTR);
+	ast_pre_env = mcc_opt(s1, MCC_OPT_TREE_PRE);
+	ast_loopnest_dump_env = mcc_opt(s1, MCC_OPT_DUMP_LOOPNEST);
+	ast_loopdep_dump_env = mcc_opt(s1, MCC_OPT_DUMP_LOOPDEP);
+	ast_perfn_inproc_env = mcc_opt(s1, MCC_OPT_OPT_PERFN_INPROC);
+	ast_argfwd_env = mcc_opt(s1, MCC_OPT_ARG_FORWARD);
+	ast_color_env = mcc_opt(s1, MCC_OPT_REG_COLOR);
+	ast_spill_share_env = mcc_opt(s1, MCC_OPT_SPILL_SHARE);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
 	ast_search_worker = mcc_env_on("MCC_SEARCH_WORKER");
@@ -2268,22 +2330,18 @@ static int ast_fconst_reuse_off;
 static int ir_cap_fconst_take(int *out);
 static void ir_cap_fconst_note(int c);
 static void ir_cap_reset(void);
-#ifdef MCC_IR_CAPTURE
 static int ir_cap_active;
 static void ir_cap_gap(void);
-#endif
 
 void ast_fconst_reuse_disable(int off) { MCC_TRACE("enter\n"); ast_fconst_reuse_off = off; }
 
 int ast_fconst_reuse(int cplx, const unsigned char *key) { MCC_TRACE("enter\n");
 	int jfc;
-#if MCC_REPLAY_IR
 	{
 		int rfc = rir_hook_fconst_reuse(cplx);
 		if (rfc >= 0)
 			{ MCC_TRACE("br\n"); return rfc; }
 	}
-#endif
 	if (ir_cap_fconst_take(&jfc))
 		{ MCC_TRACE("br\n"); return jfc; }
 	if (ast_replaying && !ast_fconst_reuse_off) { MCC_TRACE("br\n");
@@ -2303,9 +2361,7 @@ int ast_fconst_reuse(int cplx, const unsigned char *key) { MCC_TRACE("enter\n");
 }
 void ast_fconst_record(int c, int cplx, const unsigned char *key) { MCC_TRACE("enter\n");
 	ir_cap_fconst_note(c);
-#if MCC_REPLAY_IR
 	rir_hook_fconst_record(c, cplx);
-#endif
 	if (!ast_active || ast_replaying)
 		{ MCC_TRACE("br\n"); return; }
 	if (!c)
@@ -2469,7 +2525,7 @@ static AstLocal ast_cleanup_localref(AstArena *a, int off, int tt,
 	return r;
 }
 
-#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
+#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
 #define AST_PROMO_MAX 5
 #if defined(MCC_TARGET_RISCV64)
 #define AST_PROMO_CALLER_N 0
@@ -2519,11 +2575,8 @@ static int ast_promo_regpool_at(int i) { MCC_TRACE("enter\n");
 }
 #endif
 
-#if MCC_CONFIG_OPTIMIZER
-#if MCC_CONFIG_ASM
 static unsigned char *ir_cap_raw;
 static SValue *ir_cap_vs;
-#endif
 static void ast_replay_value(AstArena *a, AstLocal n);
 static void ast_replay_bb(AstArena *a, AstLocal bb);
 static int ast_local_is_readonly(AstArena *a, int off);
@@ -3284,7 +3337,7 @@ static unsigned ast_du_slot_flags(const AstArena *a, int off) { MCC_TRACE("enter
 	return f ? *f : 0u;
 }
 
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 static void ast_du_diverge(const char *q, int off, int tab, int scan) { MCC_TRACE("enter\n");
 	fprintf(stderr,
 					"mcc: AST side-car divergence: %s(off=%d) table=%d scan=%d\n", q,
@@ -3347,7 +3400,7 @@ static void ast_memo_invalidate(const AstArena *a) { MCC_TRACE("enter\n");
 	}
 }
 
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 static void ast_memo_diverge(const char *q, AstLocal n, int memo, int scan) { MCC_TRACE("enter\n");
 	fprintf(stderr,
 					"mcc: AST side-car divergence: %s(node=%u) memo=%d scan=%d\n", q,
@@ -3414,8 +3467,8 @@ static void ast_hash_sync(const AstArena *a) { MCC_TRACE("enter\n");
 void ast_teardown(void) { MCC_TRACE("enter\n");
 	int i;
 	mcc_free(ast_locrec);
-#ifdef MCC_SYM_DEBUG
-	/* With MCC_SYM_DEBUG every Sym is its own allocation rather than a slab slot, so
+#if MCC_DIAG
+	/* With MCC_DIAG every Sym is its own allocation rather than a slab slot, so
 	   the ones parked here are real heap blocks that nothing releases. Without the
 	   debug allocator they belong to the slab and must not be freed. */
 	for (i = 0; i < ast_sym_deferred_n; i++)
@@ -3510,14 +3563,13 @@ static int ast_local_is_readonly(AstArena *a, int off) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); r = ast_local_is_readonly_scan(a, off); }
 	else
 		{ MCC_TRACE("br\n"); r = (ast_du_slot_flags(a, off) & AST_DU_WRITTEN) ? 0 : 1; }
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 	int s = ast_local_is_readonly_scan(a, off);
 	if (r != s)
 		{ MCC_TRACE("br\n"); ast_du_diverge("readonly", off, r, s); }
 #endif
 	return r;
 }
-#endif
 
 static void ast_subtree_span(AstArena *a, AstLocal n, int *lo, int *hi) { MCC_TRACE("enter\n");
 	if (n == AST_NONE)
@@ -3530,7 +3582,7 @@ static void ast_subtree_span(AstArena *a, AstLocal n, int *lo, int *hi) { MCC_TR
 		{ MCC_TRACE("br\n"); ast_subtree_span(a, c, lo, hi); }
 }
 
-#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
+#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
 static int ast_promo_reg_of(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
 		{ MCC_TRACE("br\n"); return -1; }
@@ -4904,7 +4956,6 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		int rir_pre_sret = 0;
 		if (!live_arg && ast_inline_graft(a, n))
 			{ MCC_TRACE("br\n"); break; }
-#if MCC_REPLAY_IR
 		if (rir_c2_active && (ast_type_t(a, n) & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
 			CType prt, prtmp;
 			int prax, prsx;
@@ -4923,7 +4974,6 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 				rir_pre_sret = 1;
 			}
 		}
-#endif
 		for (uint32_t i = 0; i < nc; i++) { MCC_TRACE("br\n");
 			ast_replay_value(a, ast_child(a, n, i));
 			if (i == 0 && ast_indirect_call_env &&
@@ -5118,7 +5168,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				break;
 			}
 			if (ast_fbits(a, s) & AST_FB_STORE_CHAIN_REUSE) { MCC_TRACE("br\n");
-#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
+#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
 				int cr_preg = (ast_promo_n && !ast_in_graft)
 													? ast_promo_reg_of(a, ast_child(a, s, 0))
 													: -1;
@@ -5143,7 +5193,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				vpop();
 				break;
 			}
-#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
+#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
 			int preg = (ast_promo_n && !ast_in_graft)
 										 ? ast_promo_reg_of(a, ast_child(a, s, 0))
 										 : -1;
@@ -5161,7 +5211,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				break;
 			}
 #endif
-#if MCC_CONFIG_OPTIMIZER
 			if (ast_op(a, s) == AST_OP_OPASSIGN) { MCC_TRACE("br\n");
 				AstLocal c0 = ast_child(a, s, 0), c1 = ast_child(a, s, 1);
 				if (c1 != AST_NONE && ast_kind(a, c1) == AST_Binary &&
@@ -5179,7 +5228,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 					break;
 				}
 			}
-#endif
 			if (ast_fbits(a, s) & AST_FB_STORE_ADDR_LATE) { MCC_TRACE("br\n");
 				ast_replay_value(a, ast_child(a, s, 1));
 				ast_replay_value(a, ast_child(a, s, 0));
@@ -5249,7 +5297,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); vpop(); }
 			break;
 		case AST_Unary:
-#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
+#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
 			if ((ast_op(a, s) == TOK_INC || ast_op(a, s) == TOK_DEC) &&
 					ast_promo_incdec_env && ast_promo_n && !ast_in_graft) { MCC_TRACE("br\n");
 				AstLocal ic = ast_first_child(a, s);
@@ -5309,7 +5357,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				ggoto();
 				break;
 			}
-#if MCC_CONFIG_ASM
 			/* The asm operand expressions are evaluated by the parser BEFORE the
 			   two asm_gen_code calls, and the code that evaluation emits -- the
 			   pointer gv, the deref, then save_regs(0)'s spills -- is not part of
@@ -5377,7 +5424,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				tokc = sv_tokc;
 				break;
 			}
-#endif
 			ast_replay_value(a, s);
 			vpop();
 			break;
@@ -5894,7 +5940,7 @@ static void ast_finalize_chainstores(AstArena *a) { MCC_TRACE("enter\n");
 		if (!ast_expr_pure(a, ast_child(a, nx, 0), 16) ||
 				!ast_expr_pure(a, ast_child(a, n, 0), 16))
 			{ MCC_TRACE("br\n"); continue; }
-#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
+#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
 		if (ast_promo_n &&
 				(ast_promo_reg_of(a, ast_child(a, n, 0)) >= 0 ||
 				 ast_promo_reg_of(a, ast_child(a, nx, 0)) >= 0))
@@ -6938,7 +6984,7 @@ static int ast_ident_same(const AstArena *a, AstLocal x, AstLocal y) { MCC_TRACE
 	ast_hash_sync(a);
 	if (x < (AstLocal)ast_hash_cap && y < (AstLocal)ast_hash_cap &&
 			ast_hash_of(a, x) != ast_hash_of(a, y)) { MCC_TRACE("br\n");
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 		if (ast_ident_same_scan(a, x, y)) { MCC_TRACE("br\n");
 			fprintf(stderr,
 							"mcc: AST side-car divergence: ident_same(%u,%u) hash rejected "
@@ -7898,7 +7944,7 @@ static int ast_cprop_escapes(AstArena *a, int off) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); r = ast_cprop_escapes_scan(a, off); }
 	else
 		{ MCC_TRACE("br\n"); r = (ast_du_slot_flags(a, off) & AST_DU_ESCAPED) ? 1 : 0; }
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 	int s = ast_cprop_escapes_scan(a, off);
 	if (r != s)
 		{ MCC_TRACE("br\n"); ast_du_diverge("escapes", off, r, s); }
@@ -10043,7 +10089,7 @@ static AstVLat ast_vlat_element(AstArena *a, AstLocal u, int off, int kt) { MCC_
 	return el;
 }
 
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 static void ast_vlat_check_sound(const char *q, AstArena *a, int off,
 																 const AstVLat *cached);
 #endif
@@ -10081,7 +10127,7 @@ static int ast_vlat_build(AstArena *a) { MCC_TRACE("enter\n");
 	} while (changed && iters < bound && ast_vlat_state >= 0);
 	if (ast_vlat_env)
 		{ MCC_TRACE("br\n"); MCC_TRACE("vlat build slots=%d iters=%d\n", ast_vlat_n, iters); }
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 	for (int i = 0; i < ast_vlat_n; i++)
 		{ MCC_TRACE("br\n"); ast_vlat_check_sound("build", a, ast_vlat_off[i], &ast_vlat_slot[i]); }
 #endif
@@ -10103,7 +10149,7 @@ static void ast_vlat_invalidate(const AstArena *a) { MCC_TRACE("enter\n");
 	}
 }
 
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 static void ast_vlat_diverge(const char *q, int off, int64_t clo, int64_t chi) { MCC_TRACE("enter\n");
 	fprintf(stderr,
 					"mcc: AST side-car divergence: %s(off=%d) cached=[%lld,%lld]\n", q,
@@ -10147,7 +10193,7 @@ static int ast_vlat_narrowing(AstArena *a, int off, int width_tt) { MCC_TRACE("e
 	v = ast_vlat_find(off, 0);
 	if (!v)
 		{ MCC_TRACE("br\n"); return 0; }
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 	ast_vlat_check_sound("narrowing", a, off, v);
 #endif
 	return ast_vlat_fits_bytes(v, ast_ii_width(width_tt));
@@ -10163,7 +10209,7 @@ static int ast_vlat_context(AstArena *a, int off, AstVLat *out) { MCC_TRACE("ent
 	v = ast_vlat_find(off, 0);
 	if (!v || v->state != AST_VLAT_FACT)
 		{ MCC_TRACE("br\n"); return 0; }
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 	ast_vlat_check_sound("context", a, off, v);
 #endif
 	*out = *v;
@@ -10180,7 +10226,7 @@ static int ast_vlat_context_at(AstArena *a, AstLocal use, AstVLat *out) { MCC_TR
 	el = ast_vlat_element(a, use, off, kt);
 	if (el.state != AST_VLAT_FACT)
 		{ MCC_TRACE("br\n"); return 0; }
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 	ast_vlat_sync(a);
 	if (ast_vlat_state >= 0) { MCC_TRACE("br\n");
 		AstVLat *whole = ast_vlat_find(off, 0);
@@ -13818,14 +13864,10 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 	}
 	if (rir_try_active) { MCC_TRACE("br\n");
 		ir_cap_reset();
-#ifdef MCC_IR_CAPTURE
 		ir_cap_active = 1;
-#endif
-#if MCC_REPLAY_IR
 		rir_reset();
 		rir_active = 1;
 		rir_started = 1;
-#endif
 	}
 }
 
@@ -16047,10 +16089,7 @@ __attribute__((optimize("O0")))
 #endif
 void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 	MCC_TRACE("%s\n", funcname);
-#ifdef MCC_IR_CAPTURE
 	ir_cap_active = 0;
-#endif
-#if MCC_REPLAY_IR
 	AstArena *ast_rir_prod = NULL;
 	int ast_rir_used = 0;
 	if (rir_started) { MCC_TRACE("br\n");
@@ -16069,7 +16108,6 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		ast_arena_free(ast_rir_prod);
 		ast_rir_prod = NULL;
 	}
-#endif
 	if (rir_try_active) { MCC_TRACE("br\n");
 		Section *ast_rsec = cur_text_section->reloc;
 		addr_t ast_reloc1 = ast_rsec ? ast_rsec->data_offset : 0;
@@ -16077,7 +16115,6 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		ast_fn_faithful = 0;
 		ast_fn_tco = 0;
 		int ast_rir_arena = 0;
-#if MCC_REPLAY_IR
 		if (rir_prod_env) { MCC_TRACE("br\n");
 			ast_arena_free(ast_cur);
 			if (ast_rir_prod) { MCC_TRACE("br\n");
@@ -16090,7 +16127,6 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				ast_node(ast_cur, AST_BasicBlock);
 			}
 		}
-#endif
 		{ MCC_TRACE("br\n");
 			const char *pd0 = getenv("RIRPRODDUMP");
 			if (pd0 && funcname && !strcmp(pd0, funcname)) { MCC_TRACE("br\n");
@@ -16211,10 +16247,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				}
 				ast_promo_n = 0;
 				ast_pinned_regs = 0;
-#if MCC_REPLAY_IR
 				if (ast_rir_used)
 					{ MCC_TRACE("br\n"); rir_prod_replay_begin(); }
-#endif
 				{ MCC_TRACE("br\n");
 					const char *pd = getenv("RIRPRODDUMP");
 					if (pd && funcname && !strcmp(pd, funcname)) { MCC_TRACE("br\n");
@@ -16224,10 +16258,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					}
 				}
 				ast_replay_body(ast_cur);
-#if MCC_REPLAY_IR
 				if (ast_rir_used)
 					{ MCC_TRACE("br\n"); rir_prod_replay_end(); }
-#endif
 				ast_replaying = 0;
 
 				addr_t new_rel = rsec2 ? rsec2->data_offset : 0;
@@ -16241,13 +16273,11 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 										ast_reloc_range_equiv(rsec2->data + ast_reloc0_sv, orig_rel,
 																					(int)rel_len);
 				faithful = f_byte && f_rlen && f_rel;
-#if MCC_REPLAY_IR
 				rir_unfaithful_why = !f_len      ? "len"
 														 : !f_byte  ? "bytes"
 														 : !f_rlen  ? "rellen"
 														 : !f_rel   ? "relcontent"
 																				: "";
-#endif
 				ast_replay_completed = 1;
 				{ MCC_TRACE("br\n");
 					const char *pd3 = getenv("RIRPRODDUMP");
@@ -16322,7 +16352,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					(void)ast_vlat_narrowing(ast_cur, 0, VT_INT);
 					(void)ast_vlat_context(ast_cur, 0, &ast_vlat_ctx);
 					(void)ast_vlat_context_at(ast_cur, ast_root(ast_cur), &ast_vlat_ctx);
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 					{
 						AstLocal ast_vlat_nn = ast_count(ast_cur);
 						for (AstLocal ast_vlat_u = 0; ast_vlat_u < ast_vlat_nn; ast_vlat_u++)
@@ -16690,7 +16720,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						{
 							int forced = mcc_env_on("MCC_AST_EVAL_FORCE_UNSOUND");
 							int gate = mcc_env_on("MCC_AST_JIT_EVAL_GATE");
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 							int need = 1;
 #else
 							int need = gate || forced;
@@ -16702,7 +16732,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 																											poffs, pvals, plos, phis,
 																											npoff, AST_TCO_MAXP); }
 							if (!sound) { MCC_TRACE("br\n");
-#if MCC_CONFIG_AST_SHADOW
+#if MCC_DEV
 								if (!forced) { MCC_TRACE("br\n");
 									fprintf(stderr,
 													"mcc: AST side-car divergence: jit-spec-slice(mode=%d) return-value mismatch over guarded domain\n",
@@ -16843,10 +16873,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 #endif
 				}
 			} else { MCC_TRACE("br\n");
-#if MCC_REPLAY_IR
 				if (ast_rir_used)
 					{ MCC_TRACE("br\n"); rir_prod_replay_end(); }
-#endif
 				mcc_state->nb_errors = ast_saved_nberr;
 				vtop = vstack + ast_base_depth - 1;
 				ast_replaying = 0;
@@ -16907,10 +16935,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			   in free(). Take the deeper of the two whenever the body is kept. */
 			if (keep && saved_loc < loc)
 				loc = saved_loc;
-#if MCC_REPLAY_IR
 			if (ast_rir_used)
 				{ MCC_TRACE("br\n"); rir_prod_note(keep ? "used" : "fallback"); }
-#endif
 			if (!keep) { MCC_TRACE("br\n");
 				memcpy(cur_text_section->data + ast_body_ind_sv, orig, body_len);
 				if (rel_len)
@@ -16978,7 +17004,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		if (!(keep_inline || keep_reemit || keep_baseline)) { MCC_TRACE("br\n");
 			while (ast_sym_deferred_n) { MCC_TRACE("br\n");
 				Sym *s = ast_sym_deferred[--ast_sym_deferred_n];
-#ifndef MCC_SYM_DEBUG
+#if !MCC_DIAG
 				s->next = sym_free_first;
 				sym_free_first = s;
 #else

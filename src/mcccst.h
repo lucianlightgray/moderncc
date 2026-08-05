@@ -162,7 +162,6 @@ size_t cst_render_identity(const CstArena *tmpl, uint8_t *out, size_t cap);
 }
 #endif
 
-#if MCC_CONFIG_LSP
 
 void cst_hook_begin(const char *filename);
 CstArena *cst_hook_end(void);
@@ -186,14 +185,5 @@ void cst_hook_leaf(uint16_t tok_kind, uint32_t byte_off, uint32_t len);
 #define CST_CLOSE() cst_hook_close()
 #define CST_LEAF(tk, off, n) cst_hook_leaf((uint16_t)(tk), (uint32_t)(off), (uint32_t)(n))
 
-#else
-
-#define CST_OPEN(k) ((void)0)
-#define CST_OPEN_AT(k, m) ((void)0)
-#define CST_MARK() 0u
-#define CST_CLOSE() ((void)0)
-#define CST_LEAF(tk, off, n) ((void)0)
-
-#endif
 
 #endif

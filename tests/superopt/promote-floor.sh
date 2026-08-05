@@ -18,24 +18,24 @@ for src in "$@"; do
 		hd=$WORK/$n.$leg.home
 		rm -rf "$hd"; mkdir -p "$hd"
 		if [ "$leg" = pinned ]; then pin=1; else pin=; fi
-		if ! env HOME="$hd" ${pin:+MCC_AST_PROMOTE=1} \
-				"$MCC" -O4 "$src" -o "$WORK/$n.$leg" -lm >/dev/null 2>&1; then
-			echo "FAIL $n: -O4 ($leg) build failed"
+		if ! env HOME="$hd" ${pin:+-fpromote-locals} \
+				"$MCC" -O13 "$src" -o "$WORK/$n.$leg" -lm >/dev/null 2>&1; then
+			echo "FAIL $n: -O13 ($leg) build failed"
 			rc=1
 			continue 2
 		fi
 	done
 	if [ ! -s "$WORK/$n.free" ] || [ ! -s "$WORK/$n.pinned" ]; then
-		echo "FAIL $n: missing -O4 output"
+		echo "FAIL $n: missing -O13 output"
 		rc=1
 		continue
 	fi
 	objcopy -O binary --only-section=.text "$WORK/$n.free" "$WORK/$n.free.text"
 	objcopy -O binary --only-section=.text "$WORK/$n.pinned" "$WORK/$n.pinned.text"
 	if cmp -s "$WORK/$n.free.text" "$WORK/$n.pinned.text"; then
-		echo "PASS $n: -O4 keeps promotion ($(wc -c < "$WORK/$n.pinned.text") B .text)"
+		echo "PASS $n: -O13 keeps promotion ($(wc -c < "$WORK/$n.pinned.text") B .text)"
 	else
-		echo "FAIL $n: -O4 SUBTRACTED promotion -- free .text $(wc -c < "$WORK/$n.free.text") B vs pinned $(wc -c < "$WORK/$n.pinned.text") B"
+		echo "FAIL $n: -O13 SUBTRACTED promotion -- free .text $(wc -c < "$WORK/$n.free.text") B vs pinned $(wc -c < "$WORK/$n.pinned.text") B"
 		echo "  the size-scored search switched MCC_AST_PROMOTE off; see TODO 'Floor the search'"
 		rc=1
 	fi

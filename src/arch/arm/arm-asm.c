@@ -1,6 +1,5 @@
 #define USING_GLOBALS
 #include "mcc.h"
-#if MCC_CONFIG_ASM
 
 enum {
 	OPT_REG32,
@@ -2796,4 +2795,3 @@ ST_FUNC int asm_parse_regvar(int t) { MCC_TRACE("enter\n");
 	return t - TOK_ASM_sb + (TOK_ASM_r9 - TOK_ASM_r0);
 }
 
-#endif

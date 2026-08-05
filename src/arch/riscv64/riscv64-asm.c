@@ -1,6 +1,5 @@
 #define USING_GLOBALS
 #include "mcc.h"
-#if MCC_CONFIG_ASM
 
 enum {
 	OPT_REG,
@@ -2784,4 +2783,3 @@ static void asm_emit_css(int token, uint16_t opcode, const Operand *rs2, const O
 	}
 }
 
-#endif

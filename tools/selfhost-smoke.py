@@ -18,12 +18,16 @@ import json, os, re, shlex, subprocess, sys, tempfile
 
 def main():
     if len(sys.argv) < 2:
-        sys.exit("usage: selfhost-smoke.py <build-dir> [KNOB=VAL ...]")
+        sys.exit("usage: selfhost-smoke.py <build-dir> [-fknob ...]")
     bdir = sys.argv[1]
     env = dict(os.environ)
-    for kv in sys.argv[2:]:
-        k, _, v = kv.partition("=")
-        env[k] = v
+    # Knobs arrive as compiler flags and go on the command line. They used to be
+    # KNOB=VAL pairs stuffed into the environment; the compiler no longer reads
+    # any of those, so a pair here would be silently ignored rather than fail.
+    knobs = list(sys.argv[2:])
+    bad = [k for k in knobs if not k.startswith("-")]
+    if bad:
+        sys.exit("selfhost-smoke: knobs must be compiler flags, got: " + " ".join(bad))
     if os.name == "nt":
         try:
             import ctypes
@@ -71,9 +75,10 @@ def main():
     exe = ".exe" if pe else ""
 
     with tempfile.TemporaryDirectory() as work:
-        print(f"self-host: compiling src/mcc.c with {mcc}  knobs={sys.argv[2:] or '(none)'}")
+        print(f"self-host: compiling src/mcc.c with {mcc}  knobs={knobs or '(none)'}")
         obj = os.path.join(work, "mcc-sh.o")
-        subprocess.run([mcc, *flags, "-O2", "-c", os.path.join(root, "src/mcc.c"),
+        subprocess.run([mcc, *flags, "-O2", *knobs, "-c",
+                        os.path.join(root, "src/mcc.c"),
                         "-o", obj], cwd=root, env=env, check=True)
 
         print("self-host: linking (mcc as linker for the x87 long-double helpers)")

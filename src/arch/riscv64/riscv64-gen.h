@@ -2,9 +2,6 @@
 #define MCC_RISCV64_GEN_H
 
 #define MCC_NB_REGS 30
-#ifndef MCC_CONFIG_ASM
-#define MCC_CONFIG_ASM 1
-#endif
 
 #define MCC_TREG_R(x) (x)
 #define MCC_TREG_F(x) (x + 8)

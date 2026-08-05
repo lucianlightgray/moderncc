@@ -50,11 +50,9 @@ ST_DATA int reg_classes[MCC_NB_REGS] = {
 #define func_asan_offset (mcc_state->cg_func_asan_offset)
 #define func_asan_ind (mcc_state->cg_func_asan_ind)
 
-#if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
 #define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
-#endif
 
 #ifdef MCC_TARGET_PE
 #define func_scratch (mcc_state->cg_func_scratch)
@@ -101,7 +99,6 @@ static void sse_rex(int reg, int rm) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(rm) | (REX_BASE(reg) << 2)); }
 }
 
-#if MCC_CONFIG_OPTIMIZER
 static void sse_unpin_src(void) { MCC_TRACE("enter\n");
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
@@ -109,7 +106,6 @@ static void sse_unpin_src(void) { MCC_TRACE("enter\n");
 		vtop->r = nr;
 	}
 }
-#endif
 
 ST_FUNC void gsym_addr(int t, int a) { MCC_TRACE("enter\n");
 	while (t) { MCC_TRACE("br\n");
@@ -661,7 +657,6 @@ static void gcall_or_jmp(int is_jmp) { MCC_TRACE("enter\n");
 	}
 }
 
-#if MCC_CONFIG_DIAG_RT >= 2
 
 static void gen_bounds_call(int v) { MCC_TRACE("enter\n");
 	Sym *sym = external_helper_sym(v);
@@ -716,7 +711,6 @@ static void gen_bounds_epilog(void) { MCC_TRACE("enter\n");
 	o(0x20c48348);
 	o(0x585a);
 }
-#endif
 
 static void gen_asan_stack_call(const char *name) { MCC_TRACE("enter\n");
 	Sym *sym = external_helper_sym(tok_alloc_const(name));
@@ -872,10 +866,8 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	int size, r, args_size, d, bt, struct_size;
 	int arg;
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gbound_args(nb_args); }
-#endif
 
 	save_regs(nb_args);
 
@@ -980,10 +972,8 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	if ((vtop->r & VT_SYM) && vtop->sym->v == TOK_alloca) { MCC_TRACE("br\n");
 		o(0x48);
 		func_alloca = oad(0x05, func_alloca);
-#if MCC_CONFIG_DIAG_RT >= 2
 		if (mcc_state->do_bounds_check)
 			{ MCC_TRACE("br\n"); gen_bounds_call(TOK___bound_alloca_nr); }
-#endif
 	}
 	vtop--;
 }
@@ -1049,10 +1039,8 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		}
 		reg_param_index++;
 	}
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
-#endif
 	if (mcc_state->do_asan_shadow)
 		{ MCC_TRACE("br\n"); gen_asan_stack_prolog(); }
 }
@@ -1063,10 +1051,8 @@ void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	func_scratch = (func_scratch + 15) & -16;
 	loc = (loc & -16) - func_scratch;
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
-#endif
 	if (mcc_state->do_asan_shadow)
 		{ MCC_TRACE("br\n"); gen_asan_stack_epilog(); }
 
@@ -1649,10 +1635,8 @@ static int gen_alloca_inline(int nb_args) { MCC_TRACE("enter\n");
 
 	if (!alloca_inline_on() || nb_args != 1)
 		{ MCC_TRACE("br\n"); return 0; }
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); return 0; }
-#endif
 	if (!(vtop[-1].r & VT_SYM) || !vtop[-1].sym ||
 			(vtop[-1].sym->v != TOK_alloca && vtop[-1].sym->asm_label != TOK_alloca))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -1689,10 +1673,8 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	onstack = mcc_malloc((nb_args + 1) * sizeof(int));
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gbound_args(nb_args); }
-#endif
 
 	save_regs(nb_args);
 
@@ -2145,10 +2127,8 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		gfunc_set_param(sym, param_addr, 0);
 	}
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
-#endif
 #ifndef MCC_TARGET_PE
 	if (mcc_state->do_asan_shadow)
 		{ MCC_TRACE("br\n"); gen_asan_stack_prolog(); }
@@ -2161,10 +2141,8 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	int v, saved_ind;
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
-#endif
 #ifndef MCC_TARGET_PE
 	if (mcc_state->do_asan_shadow)
 		{ MCC_TRACE("br\n"); gen_asan_stack_epilog(); }
@@ -2685,13 +2663,11 @@ void gen_sqrt(void) { MCC_TRACE("enter\n");
 	gv(MCC_RC_FLOAT);
 	r = vtop->r & VT_VALMASK;
 	d = r;
-#if MCC_CONFIG_OPTIMIZER
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
 		vtop->r = nr;
 		d = nr;
 	}
-#endif
 	o(bt == VT_DOUBLE ? 0xf2 : 0xf3);
 	sse_rex(d, r);
 	o(0x0f);
@@ -2707,13 +2683,11 @@ void gen_round(int mode) { MCC_TRACE("enter\n");
 	gv(MCC_RC_FLOAT);
 	r = vtop->r & VT_VALMASK;
 	d = r;
-#if MCC_CONFIG_OPTIMIZER
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
 		vtop->r = nr;
 		d = nr;
 	}
-#endif
 	o(0x66);
 	sse_rex(d, r);
 	o(0x0f);
@@ -2954,7 +2928,6 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 				r = vtop->r;
 			}
 
-#if MCC_CONFIG_OPTIMIZER
 			{
 				int dr = vtop[-1].r & VT_VALMASK;
 				if (dr < VT_CONST && (ast_pinned_regs & ((uint64_t)1 << dr))) { MCC_TRACE("br\n");
@@ -2968,7 +2941,6 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 					r = vtop->r;
 				}
 			}
-#endif
 			if ((ft & VT_BTYPE) == VT_DOUBLE) { MCC_TRACE("br\n");
 				o(0xf2);
 			} else { MCC_TRACE("br\n");
@@ -3042,9 +3014,7 @@ void gen_cvt_ftof(int t) { MCC_TRACE("enter\n");
 		gv(MCC_RC_FLOAT);
 		if (tbt == VT_DOUBLE) { MCC_TRACE("br\n");
 			int v;
-#if MCC_CONFIG_OPTIMIZER
 			sse_unpin_src();
-#endif
 			v = vtop->r & VT_VALMASK;
 			sse_rex(v, v);
 			o(0x140f);
@@ -3066,9 +3036,7 @@ void gen_cvt_ftof(int t) { MCC_TRACE("enter\n");
 		gv(MCC_RC_FLOAT);
 		if (tbt == VT_FLOAT) { MCC_TRACE("br\n");
 			int v;
-#if MCC_CONFIG_OPTIMIZER
 			sse_unpin_src();
-#endif
 			v = vtop->r & VT_VALMASK;
 			o(0x66); sse_rex(v, v);
 			o(0x140f);
@@ -3201,9 +3169,7 @@ ST_FUNC void gen_vla_result(int addr) { MCC_TRACE("enter\n");
 ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 	int use_call = 0;
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	use_call = mcc_state->do_bounds_check;
-#endif
 #ifdef MCC_TARGET_PE
 	use_call = 1;
 #endif

@@ -1,6 +1,5 @@
-#if MCC_CONFIG_OPTIMIZER && (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))
+#if (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))
 
-#ifdef MCC_IR_CAPTURE
 #pragma push_macro("gjmp")
 #pragma push_macro("gjmp_addr")
 #undef gjmp
@@ -267,7 +266,7 @@ static void ir_cap_gap(void) { MCC_TRACE("enter\n");
 
 static void ir_cap_begin(int kind, const SValue *sv) { MCC_TRACE("enter\n");
 	IrCapOp *o;
-#if RIR_DBG_OPTRACE
+#if MCC_DIAG
 	if (rir_dbg_on())
 		fprintf(stderr, "[optrace] %s %s ind=%d vn=%d\n",
 						rir_c2_active ? "C2   " : (ir_cap_replaying ? "CAP  " : "PARSE"),
@@ -500,7 +499,6 @@ void ir_cap_gfunc_return(CType *func_type) { MCC_TRACE("enter\n");
 #ifdef MCC_IR_HAVE_VA_START
 IR_CAP_W0(gen_va_start, IR_OP_VA_START)
 #endif
-#if MCC_CONFIG_ASM
 void ir_cap_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
 											int is_output, uint8_t *clobber_regs, int out_reg) { MCC_TRACE("enter\n");
 	ir_cap_begin(IR_OP_ASMGEN, NULL);
@@ -532,7 +530,6 @@ void ir_cap_asm(const char *str, int len, int global) { MCC_TRACE("enter\n");
 	mcc_assemble_inline(mcc_state, str, len, global);
 	ir_cap_end();
 }
-#endif
 
 #ifdef MCC_IR_HAVE_VA_ARG
 void ir_cap_gen_va_arg(CType *t) { MCC_TRACE("enter\n");
@@ -760,7 +757,6 @@ static void ir_cap_issue(IrCapOp *o) { MCC_TRACE("enter\n");
 #ifdef MCC_IR_HAVE_VA_ARG
 	case IR_OP_VA_ARG: (gen_va_arg)(&o->ctype); break;
 #endif
-#if MCC_CONFIG_ASM
 	case IR_OP_ASMGEN: { MCC_TRACE("br\n");
 		ASMOperand ops[MAX_ASM_OPERANDS];
 		uint8_t cr[MCC_NB_ASM_REGS];
@@ -785,7 +781,6 @@ static void ir_cap_issue(IrCapOp *o) { MCC_TRACE("enter\n");
 		tokc = sv_tokc;
 		break;
 	}
-#endif
 	case IR_OP_GV: { MCC_TRACE("br\n");
 		uint64_t pin = ast_pinned_regs;
 		ast_pinned_regs = (uint64_t)o->d64;
@@ -811,18 +806,5 @@ static void ir_cap_reset(void) { MCC_TRACE("enter\n");
 
 #pragma pop_macro("gjmp")
 #pragma pop_macro("gjmp_addr")
-#else
-static int ir_cap_fconst_take(int *out) { MCC_TRACE("enter\n");
-	(void)out;
-	return 0;
-}
-
-static void ir_cap_fconst_note(int c) { MCC_TRACE("enter\n");
-	(void)c;
-}
-
-static void ir_cap_reset(void) { MCC_TRACE("enter\n");
-}
-#endif
 
 #endif

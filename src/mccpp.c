@@ -111,15 +111,14 @@ ST_FUNC void expect(const char *msg) { MCC_TRACE("enter\n");
 #define tal_new(a, b)
 #define tal_delete(a)
 #else
-#if !defined(MCC_MEM_DEBUG)
-#define tal_free(al, p) tal_free_impl(al, p)
-#define tal_realloc(al, p, size) tal_realloc_impl(al, p, size)
-#define MCC_TAL_DEBUG_PARAMS
-#else
-#define MCC_TAL_DEBUG MCC_MEM_DEBUG
+#if MCC_DIAG
 #define tal_free(al, p) tal_free_impl(al, p, __FILE__, __LINE__)
 #define tal_realloc(al, p, size) tal_realloc_impl(al, p, size, __FILE__, __LINE__)
 #define MCC_TAL_DEBUG_PARAMS , const char *sfile, int sline
+#else
+#define tal_free(al, p) tal_free_impl(al, p)
+#define tal_realloc(al, p, size) tal_realloc_impl(al, p, size)
+#define MCC_TAL_DEBUG_PARAMS
 #endif
 
 #define TOKSYM_TAL_SIZE (256 * 1024)
@@ -139,7 +138,7 @@ typedef struct TinyAlloc {
 
 typedef struct tal_header_t {
 	size_t size;
-#if MCC_TAL_DEBUG
+#if MCC_DIAG
 	int line_num;
 	char file_name[40];
 #endif
@@ -162,10 +161,10 @@ static void tal_delete(TinyAlloc **pal) { MCC_TRACE("enter\n");
 	TinyAlloc *al = *pal, *next;
 
 tail_call:
-#if MCC_TAL_DEBUG && MCC_TAL_DEBUG != 3
+#if MCC_DIAG
 	if (al->nb_allocs > 0) { MCC_TRACE("br\n");
 		uint8_t *p;
-		fprintf(stderr, "MCC_TAL_DEBUG: memory leak %d chunk(s)\n", al->nb_allocs);
+		fprintf(stderr, "mcc: tiny-alloc leak %d chunk(s)\n", al->nb_allocs);
 		p = al->buffer;
 		while (p < al->p) { MCC_TRACE("br\n");
 			tal_header_t *header = (tal_header_t *)p;
@@ -175,9 +174,6 @@ tail_call:
 			}
 			p += header->size + sizeof(tal_header_t);
 		}
-#if MCC_TAL_DEBUG == 2
-		exit(2);
-#endif
 	}
 #endif
 	next = al->next;
@@ -195,9 +191,9 @@ static void tal_free_impl(TinyAlloc **pal, void *p MCC_TAL_DEBUG_PARAMS) { MCC_T
 	if (!p)
 		{ MCC_TRACE("br\n"); return; }
 	header = (tal_header_t *)p - 1;
-#if MCC_TAL_DEBUG
+#if MCC_DIAG
 	if (header->line_num < 0) { MCC_TRACE("br\n");
-		fprintf(stderr, "%s:%d: MCC_TAL_DEBUG: double frees chunk from\n",
+		fprintf(stderr, "%s:%d: mcc: tiny-alloc double free of chunk from\n",
 						sfile, sline);
 		fprintf(stderr, "%s:%d: %d bytes\n",
 						header->file_name, (int)-header->line_num, (int)header->size);
@@ -239,7 +235,7 @@ static void *tal_realloc_impl(TinyAlloc **pal, void *p, unsigned size MCC_TAL_DE
 			return ret;
 		} else if (al->p != (uint8_t *)header) { MCC_TRACE("br\n");
 			memcpy((tal_header_t *)al->p + 1, p, header->size);
-#if MCC_TAL_DEBUG
+#if MCC_DIAG
 			header->line_num = -header->line_num;
 #endif
 		}
@@ -261,7 +257,7 @@ static void *tal_realloc_impl(TinyAlloc **pal, void *p, unsigned size MCC_TAL_DE
 	header->size = adj_size - sizeof(tal_header_t);
 	al->p += adj_size;
 	ret = header + 1;
-#if MCC_TAL_DEBUG
+#if MCC_DIAG
 	{
 		int ofs = strlen(sfile) + 1 - sizeof header->file_name;
 		strcpy(header->file_name, sfile + (ofs > 0 ? ofs : 0));
@@ -818,10 +814,8 @@ static int handle_eob(void) { MCC_TRACE("enter\n");
 			len = 0;
 		}
 		total_bytes += len;
-#if MCC_CONFIG_LSP
 		if (bf->fd >= 0)
 			{ MCC_TRACE("br\n"); bf->cst_base += (unsigned long)(bf->buf_end - bf->buffer); }
-#endif
 		bf->buf_ptr = bf->buffer;
 		bf->buf_end = bf->buffer + len;
 		*bf->buf_end = CH_EOB;
@@ -1426,9 +1420,7 @@ ST_FUNC void skip_to_eol(int warn) { MCC_TRACE("enter\n");
 static CachedInclude *
 search_cached_include(MCCState *s1, const char *filename, int add);
 
-#if MCC_CONFIG_LSP
 static BufferedFile *cst_main_bf;
-#endif
 
 static int parse_include(MCCState *s1, int do_next, int test, int is_import) { MCC_TRACE("enter\n");
 	int c, i;
@@ -1527,10 +1519,8 @@ static int parse_include(MCCState *s1, int do_next, int test, int is_import) { M
 			if ((s1->verbose | 1) == 3)
 				{ MCC_TRACE("br\n"); printf("=> %*s%s (cached)\n",
 							 (int)(s1->include_stack_ptr - s1->include_stack), "", buf); }
-#if MCC_CONFIG_LSP
 			if (!test)
 				{ MCC_TRACE("br\n"); cst_hook_include(buf, file == cst_main_bf); }
-#endif
 			return 1;
 		}
 		if (mcc_open(s1, buf) >= 0)
@@ -1561,11 +1551,9 @@ static int parse_include(MCCState *s1, int do_next, int test, int is_import) { M
 										 mcc_strdup(buf)); }
 		}
 		mcc_debug_bincl(s1);
-#if MCC_CONFIG_LSP
 		if (!(c == '<' && 0 == strcmp(name, "mccdefs.h") &&
 					0 == strcmp(file->prev->filename, "<command line>")))
 			{ MCC_TRACE("br\n"); cst_hook_include(buf, file->prev == cst_main_bf); }
-#endif
 	}
 	return 1;
 }
@@ -2573,7 +2561,6 @@ ST_FUNC void mccpp_putfile(const char *filename) { MCC_TRACE("enter\n");
 	mcc_debug_newfile(mcc_state);
 }
 
-#if MCC_CONFIG_LSP
 static uint16_t cst_pp_dir_kind(int t) { MCC_TRACE("enter\n");
 	switch (t) { MCC_TRACE("br\n");
 	case TOK_INCLUDE:
@@ -2592,27 +2579,22 @@ static uint16_t cst_pp_dir_kind(int t) { MCC_TRACE("enter\n");
 		return CST_PPDirective;
 	}
 }
-#endif
 
 ST_FUNC void preprocess(int is_bof) { MCC_TRACE("enter\n");
 	MCCState *s1 = mcc_state;
 	int c, n, saved_parse_flags;
 	char buf[1024], *q;
 	Sym *s;
-#if MCC_CONFIG_LSP
 	uint32_t cst_pp_first = 0;
 	uint16_t cst_pp_kind = 0;
-#endif
 
 	saved_parse_flags = parse_flags;
 	parse_flags = PARSE_FLAG_PREPROCESS | PARSE_FLAG_TOK_NUM | PARSE_FLAG_TOK_STR | PARSE_FLAG_LINEFEED | (parse_flags & PARSE_FLAG_ASM_FILE);
 
 	next_nomacro();
 redo:
-#if MCC_CONFIG_LSP
 	cst_pp_first = cst_leafcount() ? cst_leafcount() - 1 : 0;
 	cst_pp_kind = (file == cst_main_bf) ? cst_pp_dir_kind(tok) : 0;
-#endif
 	switch (tok) { MCC_TRACE("br\n");
 	case TOK_DEFINE:
 		pp_debug_tok = tok;
@@ -2754,10 +2736,8 @@ redo:
 			{ MCC_TRACE("br\n"); file->ifndef_macro = 0; }
 	test_skip:
 		if (!(c & 1)) { MCC_TRACE("br\n");
-#if MCC_CONFIG_LSP
 			if (cst_pp_kind && cst_leafcount() > cst_pp_first)
 				{ MCC_TRACE("br\n"); cst_hook_wrap(cst_pp_kind, cst_pp_first, cst_leafcount()); }
-#endif
 			skip_to_eol(1);
 			preprocess_skip();
 			is_bof = 0;
@@ -2864,10 +2844,8 @@ redo:
 	}
 	skip_to_eol(1);
 the_end:
-#if MCC_CONFIG_LSP
 	if (cst_pp_kind && cst_leafcount() > cst_pp_first)
 		{ MCC_TRACE("br\n"); cst_hook_wrap(cst_pp_kind, cst_pp_first, cst_leafcount()); }
-#endif
 	parse_flags = saved_parse_flags;
 }
 
@@ -3570,7 +3548,6 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 		}                              \
 		break;
 
-#if MCC_CONFIG_LSP
 static unsigned long cst_prev_end;
 
 ST_FUNC void cst_capture_begin(const char *filename) { MCC_TRACE("enter\n");
@@ -3703,7 +3680,6 @@ static void cst_capture_tok(void) { MCC_TRACE("enter\n");
 		cst_prev_end = end;
 	}
 }
-#endif
 
 static void next_nomacro(void) { MCC_TRACE("enter\n");
 	int t, c, str_prefix, len, uc;
@@ -4239,9 +4215,7 @@ redo_no_start:
 	tok_flags = 0;
 keep_tok_flags:
 	file->buf_ptr = p;
-#if MCC_CONFIG_LSP
 	cst_capture_tok();
-#endif
 	if (g_debug & MCC_DBG_TOK)
 		{ MCC_TRACE("br\n"); printf("token = %d %s\n", tok, get_tok_str(tok, &tokc)); }
 }
@@ -5047,14 +5021,11 @@ ST_FUNC void next(void) { MCC_TRACE("enter\n");
 		Sym *s = tok_ts->sym_define;
 		if (s) { MCC_TRACE("br\n");
 			Sym *nested_list = NULL;
-#if MCC_CONFIG_LSP
 			uint32_t cst_mfirst = cst_mark();
 			uint32_t cst_mbefore = cst_leafcount();
-#endif
 			macro_subst_tok(&tokstr_buf, &nested_list, s);
 			tok_str_add(&tokstr_buf, 0);
 			begin_macro(&tokstr_buf, 0);
-#if MCC_CONFIG_LSP
 			if (file == cst_main_bf) { MCC_TRACE("br\n");
 				uint32_t cst_mafter = cst_leafcount();
 				uint32_t cst_mlast = cst_mafter > cst_mbefore
@@ -5062,7 +5033,6 @@ ST_FUNC void next(void) { MCC_TRACE("enter\n");
 																 : cst_mbefore;
 				cst_hook_wrap(CST_MacroInvocation, cst_mfirst, cst_mlast);
 			}
-#endif
 			goto redo;
 		}
 		if (c23_keyword_subst(t))
@@ -5167,21 +5137,15 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 #endif
 	if (is_asm)
 		{ MCC_TRACE("br\n"); putdef(cs, "__ASSEMBLER__"); }
-#if MCC_CONFIG_ASM
 	putdef(cs, "__MCC_ASM__");
-#endif
 	if (s1->output_type == MCC_OUTPUT_PREPROCESS)
 		{ MCC_TRACE("br\n"); putdef(cs, "__MCC_PP__"); }
 	if (s1->output_type == MCC_OUTPUT_MEMORY)
 		{ MCC_TRACE("br\n"); putdef(cs, "__MCC_RUN__"); }
-#if MCC_CONFIG_DIAG_RT >= 1
 	if (s1->do_backtrace)
 		{ MCC_TRACE("br\n"); putdef(cs, "__MCC_BACKTRACE__"); }
-#endif
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (s1->do_bounds_check)
 		{ MCC_TRACE("br\n"); putdef(cs, "__MCC_BCHECK__"); }
-#endif
 	if (s1->do_sanitize_undefined)
 		{ MCC_TRACE("br\n"); putdef(cs, "__MCC_SANITIZE_UNDEFINED__"); }
 	if (s1->do_sanitize_address)

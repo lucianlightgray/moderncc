@@ -600,7 +600,7 @@ static void vs_ref(char *b, int n, const struct compiler *ccs, int nccs,
 	b[0] = 0;
 	if (strcmp(ccs[i].key, "mcc") || !cells[i].m.ok || !cells[i].nwall)
 		return;
-	if (ccs[i].opt && !strcmp(ccs[i].opt, "-O4")) {
+	if (ccs[i].opt && !strcmp(ccs[i].opt, "-O13")) {
 		snprintf(b, n, "n/a (superopt search, not a compile)");
 		return;
 	}
@@ -1094,7 +1094,6 @@ static int build_self_mcc(const char *stage1, const struct workload *wl,
 		ts_arg(&v, strdup(buf));
 	}
 	ts_arg(&v, "-DCC_NAME=CC_mcc");
-	ts_arg(&v, "-DMCC_CONFIG_OPTIMIZER=1");
 	if (opt)
 		ts_arg(&v, opt);
 	return host_spawn_wait(ts_argz(&v)) == 0;
@@ -1234,7 +1233,7 @@ int main(int argc, char **argv) {
 	{
 		struct compiler base[MAXCC];
 		static char selfpath[5][4096];
-		static const char *gccopts[] = {NULL, "-O1", "-O2", "-O3", "-O4"};
+		static const char *gccopts[] = {NULL, "-O1", "-O2", "-O3", "-O13"};
 		static const char *clopts[] = {NULL, "/O1", "/O2", NULL, NULL};
 		int nbase = nccs, k, o;
 		memcpy(base, ccs, sizeof(struct compiler) * nbase);
@@ -1246,7 +1245,7 @@ int main(int argc, char **argv) {
 			mc = &ccs[nccs++];
 			*mc = base[0];
 			mc->opt = gccopts[o];
-			mc->reps = (gccopts[o] && !strcmp(gccopts[o], "-O4")) ? 1 : 0;
+			mc->reps = (gccopts[o] && !strcmp(gccopts[o], "-O13")) ? 1 : 0;
 			printf("==> self-hosting mcc at %s\n",
 						 gccopts[o] ? gccopts[o] : "default");
 			if (build_self_mcc(mccpath, self_wl, builddir, gccopts[o],
@@ -1306,8 +1305,8 @@ int main(int argc, char **argv) {
 						 " xorshift RNG, distribution-free)\n"
 						 "  vs-ref: wall-time delta of each mcc row against the first"
 						 " reference compiler row in the same -O group and workload;"
-						 " n/a at -O4, where mcc runs the superopt search but gcc/clang"
-						 " treat -O4 as -O3, so the rows are not comparable work\n"
+						 " n/a at -O13, where mcc runs the superopt search but gcc/clang"
+						 " treat it as -O3, so the rows are not comparable work\n"
 						 "  * = significant, ns = not significant: Welch's t-test,"
 						 " two-tailed alpha=0.05, Welch-Satterthwaite df floored into"
 						 " a critical-value table\n"

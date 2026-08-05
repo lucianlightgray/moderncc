@@ -11,7 +11,7 @@ cd "$REPO"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-DEFS=(-DMCC_CONFIG_OPTIMIZER=1 -DMCC_CONFIG_AST_SHADOW=1)
+DEFS=(-DMCC_DEV=1)
 INCS=(-Isrc -Iinclude -Isrc/formats -Isrc/objfmt -Isrc/arch/i386)
 EXTRA=()
 case "$ARCH" in

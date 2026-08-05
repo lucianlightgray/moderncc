@@ -13,7 +13,7 @@ Usage:
 
 Example (once the threaded scorer lands):
   tools/opt-determinism.py cmake-build-tsan/mcc_t src/mccstats.c \
-      --runs 8 --env MCC_AST_SEARCH=1 --env MCC_AST_SEARCH_THREADS=1 -- -O4 -c
+      --runs 8 --flag -fopt-search --flag -fopt-search-threads -- -O4 -c
 """
 import sys, os, subprocess, tempfile, filecmp, argparse
 
@@ -33,7 +33,7 @@ def main():
     a = ap.parse_args(argv)
 
     if not extra:
-        extra = ["-O4", "-c"]
+        extra = ["-O13", "-c"]
 
     env = dict(os.environ)
     for kv in a.env:

@@ -18,13 +18,11 @@ ST_DATA int reg_classes[MCC_NB_REGS] = {
 #define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
 #define func_ret_sub (mcc_state->cg_func_ret_sub)
 #define func_stack_chk_loc (mcc_state->cg_func_stack_chk_loc)
-#if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
 #define func_bound_ind (mcc_state->cg_func_bound_ind)
 ST_DATA int func_bound_add_epilog;
 static void gen_bounds_prolog(void);
 static void gen_bounds_epilog(void);
-#endif
 #define func_asan_offset (mcc_state->cg_func_asan_offset)
 #define func_asan_ind (mcc_state->cg_func_asan_ind)
 
@@ -534,10 +532,8 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	const uint8_t *fastcall_regs_ptr;
 	Sym *func_sym;
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gbound_args(nb_args); }
-#endif
 
 	func_sym = vtop[-nb_args].type.ref;
 	func_call = func_sym->f.func_call;
@@ -804,10 +800,8 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); func_ret_sub = 4; }
 #endif
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
-#endif
 	if (mcc_state->do_asan_shadow)
 		{ MCC_TRACE("br\n"); gen_asan_stack_prolog(); }
 #ifndef MCC_TARGET_PE
@@ -820,10 +814,8 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 ST_FUNC void gfunc_epilog(void) {
 	addr_t v, saved_ind;
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
-#endif
 	if (mcc_state->do_asan_shadow)
 		{ MCC_TRACE("br\n"); gen_asan_stack_epilog(); }
 #ifndef MCC_TARGET_PE
@@ -1318,7 +1310,6 @@ ST_FUNC void ggoto(void) {
 	vtop--;
 }
 
-#if MCC_CONFIG_DIAG_RT >= 2
 
 static void gen_bound_call(int v) {
 	Sym *sym;
@@ -1394,7 +1385,6 @@ static void gen_bounds_epilog(void) {
 	gen_bound_call(TOK___bound_local_delete);
 	o(0x585a);
 }
-#endif
 
 ST_FUNC void gen_x87_pop(void) { MCC_TRACE("enter\n");
 	o(0xd8dd);
@@ -1485,9 +1475,7 @@ void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 ST_FUNC void gen_vla_alloc(CType *type, int align) {
 	int use_call = 0;
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	use_call = mcc_state->do_bounds_check;
-#endif
 #ifdef MCC_TARGET_PE
 	use_call = 1;
 #endif

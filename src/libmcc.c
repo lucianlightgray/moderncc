@@ -277,7 +277,7 @@ PUB_FUNC char *mcc_strdup(const char *str) { MCC_TRACE("enter\n");
 	return ptr;
 }
 
-#ifdef MCC_MEM_DEBUG
+#if MCC_DIAG
 
 #define MCC_MEM_DEBUG_MAGIC1 0xFEEDDEB1
 #define MCC_MEM_DEBUG_MAGIC2 0xFEEDDEB2
@@ -420,7 +420,7 @@ PUB_FUNC void mcc_memcheck(int d) { MCC_TRACE("enter\n");
 	if (0 == nb_states && mem_cur_size) { MCC_TRACE("br\n");
 		mem_debug_header_t *header = mem_debug_chain;
 		fflush(stdout);
-		fprintf(stderr, "MCC_MEM_DEBUG: mem_leak= %d bytes, mem_max_size= %d bytes\n",
+		fprintf(stderr, "mcc: mem_leak= %d bytes, mem_max_size= %d bytes\n",
 						mem_cur_size, mem_max_size);
 		while (header) { MCC_TRACE("br\n");
 			fprintf(stderr, "%s:%u: error: %u bytes leaked\n",
@@ -431,9 +431,6 @@ PUB_FUNC void mcc_memcheck(int d) { MCC_TRACE("enter\n");
 		mem_cur_size = 0;
 		mem_max_size = 0;
 		mem_debug_chain = NULL;
-#if MCC_MEM_DEBUG - 0 == 2
-		exit(2);
-#endif
 	}
 	HOST_SEM_POST(&mem_sem);
 }
@@ -863,13 +860,11 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) { MC
 			file->fd = fd;
 		}
 
-#if MCC_CONFIG_LSP
 		int cst_on = (s1->lsp && fd != -1 &&
 									s1->output_type != MCC_OUTPUT_PREPROCESS &&
 									!(filetype & (AFF_TYPE_ASM | AFF_TYPE_ASMPP)));
 		if (cst_on)
 			{ MCC_TRACE("br\n"); cst_capture_begin(str); }
-#endif
 
 		preprocess_start(s1, filetype);
 		mccgen_init(s1);
@@ -879,17 +874,11 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) { MC
 		} else { MCC_TRACE("br\n");
 			mccelf_begin_file(s1);
 			if (filetype & (AFF_TYPE_ASM | AFF_TYPE_ASMPP)) { MCC_TRACE("br\n");
-#if MCC_CONFIG_ASM
 				mcc_assemble(s1, !!(filetype & AFF_TYPE_ASMPP));
-#else
-				mcc_error_noabort("assembler source not supported (built without MCC_CONFIG_ASM)");
-#endif
 			} else { MCC_TRACE("br\n");
 				mccgen_compile(s1);
-#if MCC_CONFIG_LSP
 				if (cst_on)
 					{ MCC_TRACE("br\n"); cst_capture_end(); }
-#endif
 			}
 			mccelf_end_file(s1);
 		}
@@ -1178,9 +1167,13 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 	MCCState *s;
 
 	s = mcc_mallocz(sizeof(MCCState));
-#ifdef MCC_MEM_DEBUG
+#if MCC_DIAG
 	mcc_memcheck(1);
 #endif
+
+	/* No optimization knob has been named yet; ast_configure() reads UNSET as
+	   "take the row's default class" rather than as -fno-. */
+	memset(s->optflag, MCC_OPT_UNSET, sizeof s->optflag);
 
 #undef gnu_ext
 	s->gnu_ext = 1;
@@ -1224,9 +1217,9 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 #ifdef MCC_ARM_HARDFLOAT
 	s->float_abi = ARM_HARD_FLOAT;
 #endif
-#if MCC_CONFIG_NEW_DTAGS
-	s->enable_new_dtags = 1;
-#endif
+	/* Distribution default; -Wl,--enable-new-dtags / --disable-new-dtags
+	   override it per link. */
+	s->enable_new_dtags = MCC_CONFIG_NEW_DTAGS;
 	s->ppfp = stdout;
 	s->include_stack_ptr = s->include_stack;
 
@@ -1281,9 +1274,7 @@ LIBMCCAPI void mcc_delete(MCCState *s1) { MCC_TRACE("enter\n");
 	   for the life of the run; nothing freed them, and mcc_s reported roughly a
 	   megabyte leaked per invocation, which is what turned sanitize-selfcheck red. */
 	rir_teardown();
-#if MCC_CONFIG_OPTIMIZER
 	ast_teardown();
-#endif
 	mcc_free(s1->dState);
 #ifdef MCC_TARGET_IS_HOST
 	mcc_run_free(s1);
@@ -1293,7 +1284,7 @@ LIBMCCAPI void mcc_delete(MCCState *s1) { MCC_TRACE("enter\n");
 	dynarray_reset(&s1->pe_imp_alias, &s1->nb_pe_imp_alias);
 #endif
 	mcc_free(s1);
-#ifdef MCC_MEM_DEBUG
+#if MCC_DIAG
 	mcc_memcheck(-1);
 #endif
 }
@@ -2395,6 +2386,13 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_return_local_addr), 0, "return-local-addr"},
 		{0, 0, NULL}};
 
+/* FlagDef.offset is a uint16_t, so the far end of optflag[] has to stay inside
+   64K of the start of MCCState. If this ever fires, widen the field rather than
+   reordering the struct -- a silently wrapped offset writes into some unrelated
+   member and the flag appears to do nothing. */
+typedef char mcc_optflag_offsets_fit
+		[(offsetof(MCCState, optflag) + MCC_OPT_COUNT <= 0xffffu) ? 1 : -1];
+
 static const FlagDef options_f[] = {
 		{offsetof(MCCState, char_is_unsigned), 0, "unsigned-char"},
 		{offsetof(MCCState, char_is_unsigned), FD_INVERT, "signed-char"},
@@ -2411,6 +2409,7 @@ static const FlagDef options_f[] = {
 		{offsetof(MCCState, unwind_tables), 0, "asynchronous-unwind-tables"},
 		{offsetof(MCCState, short_enums), 0, "short-enums"},
 		{offsetof(MCCState, nobuiltin), FD_INVERT, "builtin"},
+		{offsetof(MCCState, noasm), FD_INVERT, "asm"},
 		{offsetof(MCCState, omit_frame_pointer), 0, "omit-frame-pointer"},
 		{offsetof(MCCState, function_sections), 0, "function-sections"},
 		{offsetof(MCCState, data_sections), 0, "data-sections"},
@@ -2425,6 +2424,13 @@ static const FlagDef options_f[] = {
 		{offsetof(MCCState, freestanding), FD_INVERT, "hosted"},
 		{offsetof(MCCState, syntax_only), 0, "syntax-only"},
 		{offsetof(MCCState, diag_no_caret), FD_INVERT, "diagnostics-show-caret"},
+/* The optimization and diagnostic knobs, generated from the one list in
+   mccopt.h so this table cannot drift from the ids or the defaults. A row with
+   a NULL name is reachable only through another flag and gets no spelling. */
+#define MCC_OPT_ROW(id, name, dflt) \
+	{(uint16_t)(offsetof(MCCState, optflag) + MCC_OPT_##id), 0, name},
+		MCC_OPT_LIST(MCC_OPT_ROW)
+#undef MCC_OPT_ROW
 		{0, 0, NULL}};
 
 static const FlagDef options_m[] = {
@@ -2705,12 +2711,8 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			s->do_strip = 1;
 			break;
 		case MCC_OPTION_lsp:
-#if MCC_CONFIG_LSP
 			s->lsp = 1;
 			break;
-#else
-			return mcc_error_noabort("the CST database (--lsp) was not built into this mcc");
-#endif
 		case MCC_OPTION_bt: {
 			const char *bp = optarg;
 			while (isnum(*bp))
@@ -2718,19 +2720,13 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			if (*bp)
 				{ MCC_TRACE("br\n"); goto unsupported_option; }
 		}
-#if MCC_CONFIG_DIAG_RT >= 1
 			s->rt_num_callers = atoi(optarg);
-#endif
 			goto enable_backtrace;
 		enable_backtrace:
-#if MCC_CONFIG_DIAG_RT >= 1
 			s->do_backtrace = 1;
 			if (0 == s->do_debug)
 				{ MCC_TRACE("br\n"); s->do_debug = 1; }
 			s->dwarf = MCC_CONFIG_DWARF_VERSION;
-#else
-			return mcc_error_noabort("backtrace (-bt) support was not built into this mcc");
-#endif
 			break;
 		case MCC_OPTION_embed_jit:
 			s->embed_jit = 1;
@@ -2776,12 +2772,8 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			mcc_stats_enable(s->stats);
 			break;
 		case MCC_OPTION_b:
-#if MCC_CONFIG_DIAG_RT >= 2
 			s->do_bounds_check = 1;
 			goto enable_backtrace;
-#else
-			return mcc_error_noabort("the bounds checker (-b) was not built into this mcc");
-#endif
 			break;
 		case MCC_OPTION_g:
 			s->do_debug = 2;
@@ -3065,19 +3057,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 #endif
 					} else if (san_tok_eq(tok, n, "address") ||
 										 san_tok_eq(tok, n, "bounds")) { MCC_TRACE("br\n");
-#if MCC_CONFIG_DIAG_RT >= 2
 						s->do_bounds_check = 1;
 						s->do_sanitize_address = 1;
 						s->do_backtrace = 1;
 						if (0 == s->do_debug)
 							{ MCC_TRACE("br\n"); s->do_debug = 1; }
 						s->dwarf = MCC_CONFIG_DWARF_VERSION;
-#else
-						return mcc_error_noabort(
-								"-fsanitize=%.*s needs the memory/bounds checker, which was not "
-								"built into this mcc",
-								n, tok);
-#endif
 					} else if (san_tok_eq(tok, n, "thread") ||
 										 san_tok_eq(tok, n, "memory")) { MCC_TRACE("br\n");
 						return mcc_error_noabort(
@@ -3260,25 +3245,31 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		case MCC_OPTION_O:
 			s->optimize_size = 0;
 			s->optimize_search_seconds = 0;
+			s->optimize_level = 0;
 			if (optarg[0] == '\0')
-				{ MCC_TRACE("br\n"); s->optimize = 1; }
+				{ MCC_TRACE("br\n"); s->optimize = 1, s->optimize_level = 1; }
 			else if (isnum(optarg[0])) { MCC_TRACE("br\n");
 				unsigned lvl = (unsigned)atoi(optarg);
-				if (lvl > 3) { MCC_TRACE("br\n");
-					s->optimize_search_seconds = lvl;
-					s->optimize = 3;
-				} else
-					{ MCC_TRACE("br\n"); s->optimize = (unsigned char)lvl; }
+				if (lvl > 255)
+					{ MCC_TRACE("br\n"); lvl = 255; }
+				s->optimize_level = (unsigned char)lvl;
+				s->optimize = (unsigned char)(lvl > 3 ? 3 : lvl);
+				/* At and past the last in-development optimizer the number stops
+				   naming a pass and becomes the search budget in seconds. */
+				if (lvl >= MCC_OPT_SEARCH_LEVEL)
+					{ MCC_TRACE("br\n"); s->optimize_search_seconds = lvl; }
 			} else if (!strcmp(optarg, "s") || !strcmp(optarg, "z")) { MCC_TRACE("br\n");
 				s->optimize = 2;
+				s->optimize_level = 2;
 				s->optimize_size = 1;
 			} else if (!strcmp(optarg, "g"))
-				{ MCC_TRACE("br\n"); s->optimize = 1; }
+				{ MCC_TRACE("br\n"); s->optimize = 1, s->optimize_level = 1; }
 			else if (!strcmp(optarg, "fast"))
-				{ MCC_TRACE("br\n"); s->optimize = 3; }
+				{ MCC_TRACE("br\n"); s->optimize = 3, s->optimize_level = 3; }
 			else { MCC_TRACE("br\n");
 				mcc_warning("unsupported optimization level '-O%s'", optarg);
 				s->optimize = 1;
+				s->optimize_level = 1;
 			}
 			break;
 #if defined MCC_TARGET_MACHO
@@ -3393,11 +3384,7 @@ LIBMCCAPI int mcc_cache_dir(char *buf, int len) { MCC_TRACE("enter\n");
 
 LIBMCCAPI unsigned long long mcc_intention_hash(MCCState *s) { MCC_TRACE("enter\n");
 	(void)s;
-#if MCC_CONFIG_OPTIMIZER
 	return ast_intention_value();
-#else
-	return 0;
-#endif
 }
 
 PUB_FUNC void mcc_print_stats(MCCState *s1, unsigned total_time) { MCC_TRACE("enter\n");
@@ -3414,7 +3401,7 @@ PUB_FUNC void mcc_print_stats(MCCState *s1, unsigned total_time) { MCC_TRACE("en
 					s1->total_output[1],
 					s1->total_output[2],
 					s1->total_output[3]);
-#ifdef MCC_MEM_DEBUG
+#if MCC_DIAG
 	fprintf(stderr, "# memory usage");
 #ifdef MCC_TARGET_IS_HOST
 	if (s1->run_size) { MCC_TRACE("br\n");

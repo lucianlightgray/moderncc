@@ -1595,7 +1595,7 @@ ST_FUNC void host_unwind_unregister(void *table) { MCC_TRACE("enter\n");
 
 #endif
 
-#if defined MCC_TARGET_IS_HOST && MCC_CONFIG_DIAG_RT >= 1
+#if defined MCC_TARGET_IS_HOST
 
 #ifndef _WIN32
 #include <signal.h>

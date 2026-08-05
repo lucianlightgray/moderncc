@@ -44,11 +44,11 @@ gcc -O1 -w $DEF $INC src/mcc.c -o /w/mcc-arm64-opt
 echo "   built /w/mcc-arm64-opt"
 
 RD="/b/runtime/include"
-INLENV="MCC_AST_REPLAY_DUMP=1 MCC_AST_TEMPLATES=0 MCC_AST_PROMOTE=0 MCC_AST_INLINE=1"
+INLFLAGS="-fdump-replay -fno-reemit-templates -fno-promote-locals -finline"
 
 echo "== fixture-parity graft evidence (tests/ast/replay/inline.c) =="
 cp /repo/tests/ast/replay/inline.c /w/fx.c
-env $INLENV /w/mcc-arm64-opt -O1 -I $RD -c /w/fx.c -o /w/fx.o 2>/w/fxdump.txt || true
+/w/mcc-arm64-opt $INLFLAGS -O1 -I $RD -c /w/fx.c -o /w/fx.o 2>/w/fxdump.txt || true
 echo "-- arm64 candidate classification (graftable vs retained-only) --"
 grep -E "\[ast-inline\] candidate (sumpt|addpt|sumbig|mkpair|add) " /w/fxdump.txt || true
 
@@ -70,9 +70,8 @@ int c_smallstruct(int x, int y){ struct Pair p; p.a = x; p.b = y; return sumpair
 long c_bigstruct(long a, long b, long c, long d){ struct Big s; s.a=a; s.b=b; s.c=c; s.d=d; return sumbigf(s) + a; }
 int c_pointer(const int *a, int n){ return derefsum(a, n) + derefsum(a, n); }
 EOF
-env MCC_AST_TEMPLATES=0 MCC_AST_PROMOTE=0 MCC_AST_INLINE=0 \
-  /w/mcc-arm64-opt -O1 -I $RD -c /w/gate.c -o /w/gate_off.o 2>/dev/null
-env $INLENV /w/mcc-arm64-opt -O1 -I $RD -c /w/gate.c -o /w/gate_on.o 2>/w/gatedump.txt
+/w/mcc-arm64-opt -fno-reemit-templates -fno-promote-locals -fno-inline -O1 -I $RD -c /w/gate.c -o /w/gate_off.o 2>/dev/null
+/w/mcc-arm64-opt $INLFLAGS -O1 -I $RD -c /w/gate.c -o /w/gate_on.o 2>/w/gatedump.txt
 
 OD=aarch64-linux-gnu-objdump
 echo "-- graft dump for gate callers --"
@@ -175,7 +174,7 @@ int main(void){
 EOF
 
 echo "-- compile tested.c with mcc graft ON --"
-env $INLENV /w/mcc-arm64-opt -O1 -I $RD -c /w/tested.c -o /w/tested.o >/dev/null 2>&1
+/w/mcc-arm64-opt $INLFLAGS -O1 -I $RD -c /w/tested.c -o /w/tested.o >/dev/null 2>&1
 echo "-- direct-call residue in tested.o (grafted callees should not appear) --"
 $OD -d /w/tested.o | grep -Eo "<(addf|scalef|areaf|sumpair|sumbigf|derefsum)>" | sort | uniq -c || echo "   (none: fully grafted)"
 echo "-- compile ref + main with gcc -O2 --"
@@ -188,8 +187,7 @@ qemu-aarch64-static /w/difftest || rc=$?
 echo "difftest(ON) exit=$rc"
 
 echo "== control: tested.c with graft OFF, same differential (sanity) =="
-env MCC_AST_TEMPLATES=0 MCC_AST_PROMOTE=0 MCC_AST_INLINE=0 \
-  /w/mcc-arm64-opt -O1 -I $RD -c /w/tested.c -o /w/tested_off.o >/dev/null 2>&1
+/w/mcc-arm64-opt -fno-reemit-templates -fno-promote-locals -fno-inline -O1 -I $RD -c /w/tested.c -o /w/tested_off.o >/dev/null 2>&1
 aarch64-linux-gnu-gcc -static /w/main.o /w/tested_off.o /w/refimpl.o -o /w/difftest_off
 rc2=0
 qemu-aarch64-static /w/difftest_off || rc2=$?

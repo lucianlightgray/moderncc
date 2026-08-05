@@ -83,11 +83,11 @@ else
 	rc=1
 fi
 
-"$MCC" -B"$BASE" -O4 -fno-math-errno -march=x86-64 -c "$WORK/r.c" -o "$WORK/r4.o" 2>/dev/null
+"$MCC" -B"$BASE" -O13 -fno-math-errno -march=x86-64 -c "$WORK/r.c" -o "$WORK/r4.o" 2>/dev/null
 if [ "$(objdump -d "$WORK/r4.o" | grep -cE 'roundsd|roundss' || true)" = "0" ]; then
-	echo "PASS: -O4 does not raise the ISA above the -march it was given"
+	echo "PASS: -O13 does not raise the ISA above the -march it was given"
 else
-	echo "FAIL: -O4 emitted roundsd at the baseline -march; optimization effort"
+	echo "FAIL: -O13 emitted roundsd at the baseline -march; optimization effort"
 	echo "  must not change which CPUs the output runs on"
 	rc=1
 fi

@@ -104,7 +104,7 @@ static int req_met(const char *req, char *reason, size_t rn) {
 			}
 		} else if (!strcmp(tok, "asm")) {
 			if (strcmp(hc_envv("MCC_TEST_ASM", "1"), "1")) {
-				snprintf(reason, rn, "requires integrated assembler (MCC_CONFIG_ASM)");
+				snprintf(reason, rn, "requires the integrated assembler");
 				return 0;
 			}
 		} else if (!strcmp(tok, "bcheck")) {

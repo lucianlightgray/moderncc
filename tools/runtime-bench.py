@@ -63,8 +63,11 @@ KERNELS = [
                    ["-fc99-inline-body"]),
 ]
 
+# The first field is the -f flag the ratchet toggles. It was an environment
+# gate name until the knobs moved to argv; env would now be ignored and the
+# "win" would silently read as zero, which is exactly how this cell failed.
 GATE_WINS = [
-    ("MCC_AST_CHAINSTORE", "spectral",
+    ("chain-store", "spectral",
      os.path.join(PLB, "spectral-norm", "3.c"), ["2000"],
      ["-fc99-inline-body"], 8.0),
 ]
@@ -286,9 +289,10 @@ def gate_win_insns(mcc, cc, backend):
             if rc != 0:
                 return None
             ins = {}
-            for label, env in (("on", None), ("off", {gate: "0"})):
+            for label, gflag in (("on", []), ("off", ["-fno-" + gate])):
                 exe = os.path.join(td, f"{name}.{label}")
-                ok, err = build(mcc, src, exe, env, mcc=True, flags=mflags, opt="-O3")
+                ok, err = build(mcc, src, exe, None, mcc=True,
+                                flags=mflags + gflag, opt="-O3")
                 if not ok:
                     failures.append(f"{gate}/{name}: mcc -O3 {label} build failed: "
                                     f"{err.strip()[:160]}")
@@ -370,9 +374,10 @@ def assert_gate_wins(mcc, cc, runs):
                 continue
 
             exes, bad = [], False
-            for label, env in (("on", None), ("off", {gate: "0"})):
+            for label, gflag in (("on", []), ("off", ["-fno-" + gate])):
                 exe = os.path.join(td, f"{name}.{label}")
-                ok, err = build(mcc, src, exe, env, mcc=True, flags=mflags, opt="-O3")
+                ok, err = build(mcc, src, exe, None, mcc=True,
+                                flags=mflags + gflag, opt="-O3")
                 if not ok:
                     failures.append(f"{gate}/{name}: mcc -O3 {label} build failed: "
                                     f"{err.strip()[:160]}")

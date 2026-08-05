@@ -2740,12 +2740,9 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\
 			{ MCC_TRACE("br\n"); ++start_symbol; }
 	}
 
-#if MCC_CONFIG_DIAG_RT >= 1
 	if (s1->do_backtrace) { MCC_TRACE("br\n");
-#if MCC_CONFIG_DIAG_RT >= 2
 		if (s1->do_bounds_check && s1->output_type != MCC_OUTPUT_DLL)
 			{ MCC_TRACE("br\n"); mcc_add_support(s1, "bcheck.o"); }
-#endif
 		if (s1->output_type == MCC_OUTPUT_EXE)
 			{ MCC_TRACE("br\n"); mcc_add_support(s1, "bt-exe.o"); }
 		if (s1->output_type == MCC_OUTPUT_DLL)
@@ -2754,7 +2751,6 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\
 			{ MCC_TRACE("br\n"); mcc_add_support(s1, "bt-log.o"); }
 		mcc_add_btstub(s1);
 	}
-#endif
 
 	if (s1->do_sanitize_recover)
 		{ MCC_TRACE("br\n"); mcc_add_support(s1, "mccubsan.o"); }
@@ -2887,9 +2883,7 @@ ST_FUNC int pe_output_file(MCCState *s1, const char *filename) { MCC_TRACE("ente
 	pe.s1 = s1;
 	s1->filetype = 0;
 
-#if MCC_CONFIG_DIAG_RT >= 2
 	mcc_add_bcheck(s1);
-#endif
 	mcc_add_pragma_libs(s1);
 	pe_add_runtime(s1, &pe);
 	pe_add_tls(s1, &pe);

@@ -3,7 +3,6 @@
 /* asm_instr calls rir_hook_asm_operands; in a multi-TU build this file is its
    own translation unit and does not get mccrir.h through mccgen.c. */
 #include "mccrir.h"
-#if MCC_CONFIG_ASM
 
 #define last_text_section (mcc_state->last_text_section)
 #define asmgoto_n (mcc_state->asmgoto_n)
@@ -1724,19 +1723,10 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	if (g_debug & MCC_DBG_ASM)
 		{ MCC_TRACE("br\n"); printf("subst_asm: \"%s\"\n", (char *)astr.data); }
 
-#ifdef MCC_IR_CAPTURE
 	ir_cap_asm_gen_code(operands, nb_operands, nb_outputs, 0, clobber_regs, out_reg);
-#else
-	asm_gen_code(operands, nb_operands, nb_outputs, 0,
-							 clobber_regs, out_reg);
-#endif
 
 	sec = cur_text_section;
-#ifdef MCC_IR_CAPTURE
 	ir_cap_asm(astr.data, astr.size - 1, 0);
-#else
-	mcc_assemble_inline(mcc_state, astr.data, astr.size - 1, 0);
-#endif
 	cstr_free_s(&astr);
 	if (sec != cur_text_section) { MCC_TRACE("br\n");
 		mcc_warning("inline asm tries to change current section");
@@ -1745,12 +1735,7 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 
 	next();
 
-#ifdef MCC_IR_CAPTURE
 	ir_cap_asm_gen_code(operands, nb_operands, nb_outputs, 1, clobber_regs, out_reg);
-#else
-	asm_gen_code(operands, nb_operands, nb_outputs, 1,
-							 clobber_regs, out_reg);
-#endif
 
 	for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 		vpop();
@@ -1782,16 +1767,3 @@ ST_FUNC void asm_global_instr(void) { MCC_TRACE("enter\n");
 	nocode_wanted = saved_nocode_wanted;
 }
 
-#else
-ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess) { MCC_TRACE("enter\n");
-	mcc_error("asm not supported");
-}
-
-ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
-	mcc_error("inline asm() not supported");
-}
-
-ST_FUNC void asm_global_instr(void) { MCC_TRACE("enter\n");
-	mcc_error("inline asm() not supported");
-}
-#endif

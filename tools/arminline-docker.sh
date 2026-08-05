@@ -43,11 +43,11 @@ gcc -O1 -w $DEF $INC src/mcc.c -o /w/mcc-arm-opt
 echo "   built /w/mcc-arm-opt"
 
 RD="/b/runtime/include"
-INLENV="MCC_AST_REPLAY_DUMP=1 MCC_AST_TEMPLATES=0 MCC_AST_PROMOTE=0 MCC_AST_INLINE=1"
+INLFLAGS="-fdump-replay -fno-reemit-templates -fno-promote-locals -finline"
 
 echo "== fixture-parity graft evidence (tests/ast/replay/inline.c) =="
 cp /repo/tests/ast/replay/inline.c /w/fx.c
-env $INLENV /w/mcc-arm-opt -O1 -I $RD -c /w/fx.c -o /w/fx.o 2>/w/fxdump.txt || true
+/w/mcc-arm-opt $INLFLAGS -O1 -I $RD -c /w/fx.c -o /w/fx.o 2>/w/fxdump.txt || true
 echo "-- arm candidate classification (graftable vs retained-only) --"
 grep -E "\[ast-inline\] candidate (sumpt|addpt|sumbig|mkpair|add) " /w/fxdump.txt || true
 
@@ -73,9 +73,8 @@ int c_smallstruct(int x, int y){ struct Pair p; p.a = x; p.b = y; return sumpair
 long long c_bigstruct(long long a, long long b, long long c, long long d){ struct Big s; s.a=a; s.b=b; s.c=c; s.d=d; return sumbigf(s) + a; }
 int c_pointer(const int *a, int n){ return derefsum(a, n) + derefsum(a, n); }
 EOF
-env MCC_AST_TEMPLATES=0 MCC_AST_PROMOTE=0 MCC_AST_INLINE=0 \
-  /w/mcc-arm-opt -O1 -I $RD -c /w/gate.c -o /w/gate_off.o 2>/dev/null
-env $INLENV /w/mcc-arm-opt -O1 -I $RD -c /w/gate.c -o /w/gate_on.o 2>/w/gatedump.txt
+/w/mcc-arm-opt -fno-reemit-templates -fno-promote-locals -fno-inline -O1 -I $RD -c /w/gate.c -o /w/gate_off.o 2>/dev/null
+/w/mcc-arm-opt $INLFLAGS -O1 -I $RD -c /w/gate.c -o /w/gate_on.o 2>/w/gatedump.txt
 
 OD=arm-linux-gnueabihf-objdump
 echo "-- graft dump for gate callers --"
@@ -182,7 +181,7 @@ int main(void){
 EOF
 
 echo "-- compile tested.c with mcc graft ON --"
-env $INLENV /w/mcc-arm-opt -O1 -I $RD -c /w/tested.c -o /w/tested.o >/dev/null 2>&1
+/w/mcc-arm-opt $INLFLAGS -O1 -I $RD -c /w/tested.c -o /w/tested.o >/dev/null 2>&1
 echo "-- compile ref + main with gcc -marm -O2 --"
 arm-linux-gnueabihf-gcc -marm -O2 -c /w/refimpl.c -o /w/refimpl.o
 arm-linux-gnueabihf-gcc -marm -O2 -c /w/main.c    -o /w/main.o
@@ -193,8 +192,7 @@ qemu-arm-static /w/difftest || rc=$?
 echo "difftest(ON) exit=$rc"
 
 echo "== control: tested.c with graft OFF, same differential (sanity) =="
-env MCC_AST_TEMPLATES=0 MCC_AST_PROMOTE=0 MCC_AST_INLINE=0 \
-  /w/mcc-arm-opt -O1 -I $RD -c /w/tested.c -o /w/tested_off.o >/dev/null 2>&1
+/w/mcc-arm-opt -fno-reemit-templates -fno-promote-locals -fno-inline -O1 -I $RD -c /w/tested.c -o /w/tested_off.o >/dev/null 2>&1
 arm-linux-gnueabihf-gcc -marm -static /w/main.o /w/tested_off.o /w/refimpl.o -o /w/difftest_off
 rc2=0
 qemu-arm-static /w/difftest_off || rc2=$?

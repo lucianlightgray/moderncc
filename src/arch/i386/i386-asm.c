@@ -1,6 +1,5 @@
 #define USING_GLOBALS
 #include "mcc.h"
-#if MCC_CONFIG_ASM
 
 #define MAX_OPERANDS 3
 
@@ -1671,4 +1670,3 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) { MCC_TRACE("en
 	clobber_regs[reg] = 1;
 }
 
-#endif

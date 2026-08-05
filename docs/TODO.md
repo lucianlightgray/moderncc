@@ -197,8 +197,10 @@ gates this file recorded as green and were not. **Two of the three closed in
    - **`o0_ab.sh:9` still cites `src/mccast.c:2035`** for that gate. The line-reference
      table below has the correct `:1923`; the script's header does not.
    - **The "38 gates" figure is stale in both scripts' comments.** The live
-     derivation yields **28**, as **Verified true** already records. Harmless — both
-     scripts print the live count and abort at zero — but the comment misleads.
+     derivation yields **22** — it read 28 until six of them were made unconditional
+     (see **CLOSED: six replay-fidelity gates**), and **Verified true** still records
+     the 28. Harmless — both scripts print the live count and abort at zero — but the
+     comment misleads, and any count written down here dates instantly.
    - **There is no `-O0` cell for `rir_c2.cmake`.** The twelve `ast/rir-parity-*-O0`
      cells enforce the replay bar at `-O0` and `rir_c2.cmake` banks the C2 gap at
      `-O1`/`-O2`/`-O3`, so the forced-`-O0` C2 gap is reachable *only* by hand
@@ -615,6 +617,102 @@ cells pass against the tightened floors.
 **The completion bar is `fallback == 0` with the goldens green.** Byte identity is not
 the obligation; semantic correctness is. This section is the measured route to that
 bar, and it replaces guessing at the C2 gap with a list of five named defects.
+
+### CLOSED: six replay-fidelity gates were gated on the optimization level, so `-O0` replayed wrong
+
+**The defect.** `MCC_AST_CMP_MAT`, `MCC_AST_INDIRECT_CALL`, `MCC_AST_LOOPCOND_STORE`,
+`MCC_AST_STOREVAL_CALL`, `MCC_AST_STOREVAL_CALLUP` and `MCC_AST_WHILE_COMMA` all
+defaulted to `o4 || s1->optimize >= 1`. None of the six is an optimization — each
+reproduces a shape the parser emits at *every* level, and `31d1cd52` says so of the
+first one in its subject line ("mirrors `vsetc`'s pending-comparison materialization
+in replay"). They carry the `optimize >= 1` default only because that is where the
+staged flip of `e9ca26c3` left them. The effect was that the replay was **wrong at
+`-O0`**, not merely less optimized.
+
+Now `ast_env_gate(..., 1)` for all six (`src/mccast.c:2032-2043`). The env names
+survive for bisection and `ast_env_gate` honours an explicit `0`.
+
+**Measured at `d4bf0d27` on the arm64 host, fresh `cmake-verify`, whole corpus**
+(`find tests -name '*.c'`, 569 of 662 files compile with `-I runtime/include`),
+`MCC_RIR_FORCE=1 MCC_RIR_PROD=2`, 2263 bodies:
+
+| level | `used` | `fallback` | `nomodel` |
+| --- | --- | --- | --- |
+| forced `-O0`, before | 2111 | **64** | 88 |
+| forced `-O0`, after | 2155 | **20** | 88 |
+| `-O1` (unmoved; the six were already on there) | 2168 | 7 | 88 |
+
+The `nomodel` 88 are identical at every level and are the pre-flight, not the byte
+gate: `asm` 41, `noops` 39, `regdangle` 4, `bail` 3, `invalid` 1.
+
+**The goldens, which is the semantic bar.** `ctest -R '^exec/'` is the `-O0` family
+(`MCC_TEST_OPT` default):
+
+| leg | before | after |
+| --- | --- | --- |
+| baseline | green | green |
+| `MCC_RIR_FORCE=1` (arena adopted, byte gate on) | green | green |
+| `MCC_RIR_FORCE=1 MCC_RIR_NOFB=1` | **11 of 318 fail** | **green, 319/319** |
+| `MCC_TEST_OPT=-O1 MCC_RIR_NOFB=1` | green | green |
+
+The eleven were `builtin_overflow`, `random_stuff`, `precedence`, `bool`, `func_name`,
+`signbit_inline`, `overflow_narrow`, `overflow_inline`, `floating_point`, `grep`,
+`weak_undef`.
+
+**The six are the minimal set, found by delta-debugging and not by reading names.**
+All 28 derived gates on is green; greedily dropping one at a time and re-running the
+last cells to fail leaves exactly these six, and the full 318 pass on the six alone.
+`CMP_MAT` alone takes 11 failures to 2; `INDIRECT_CALL` takes those 2 to 1; `grep`
+needs the remaining four together, which is why no single-gate sweep found it.
+
+**The shape, in five lines** — a comparison-valued argument that is not the last
+argument was overwritten by a later sibling:
+
+```c
+int a = 12, b = 34;
+printf("%d, %d\n", a == a, a == b);   /* parser: "1, 0"   arena was: "0, 0" */
+```
+
+Narrowed by probe at `-O0` under `MCC_RIR_NOFB=1`, parser → arena, before the fix:
+
+- `a == b, a + b` → `0 46` became `46 46`
+- `a == b, 7` → `0 7` became `7 7` — a *constant* second argument clobbers it, so it
+  was never register pressure
+- `!a, a + b` → same; comparison **last**, or routed through a variable first, was fine
+
+`ast_replay_value`'s `AST_Ref` push is a raw `vpushv`, and `vcheck_cmp()` in front of
+it was what the gate controlled. With it off, two `VT_CMP` entries sat on the vstack at
+once — a state the parser cannot reach, because `vsetc` flushes the pending comparison
+before every push. Both arguments then materialised from the same flags.
+`func_name`'s `strcmp(__func__, "main") == 0, __func__[0]` printed `match=109`, the
+second argument's `'m'`, and `bool.c`'s bitfield row was the same defect with the
+`bool` normalisation playing the part of the comparison.
+
+**Why no board caught it, and this is the part worth remembering.** The documented
+forced-`-O0` recipe is `C2_FORCE=1`, which forces `MCC_FORCE_REPLAY` **plus every
+`optimize >= 1` gate** — that is, it forces the six gates whose absence is the defect.
+So the recipe this file insists on ("Read no `-O0` differential that was taken without
+it") is precisely the recipe that hides this class. The defect is only visible with
+production forced and the gates left at their `-O0` defaults, which is the
+configuration a real `-O0` adoption would actually ship. Any future claim that a
+gate is "for optimization" needs to be checked against its use sites rather than its
+default: all six read only in the replay and StoreVal reconstruction paths
+(`src/mccast.c:4380`, `:4779`, `:4998`, `:5016`, `:5591-5640`).
+
+**No-regression evidence.** Objects from the pre-fix and post-fix compilers over the
+whole corpus, `SOURCE_DATE_EPOCH` pinned, at `-O0`/`-O1`/`-O2`/`-O3`: **569 identical,
+0 differ on every level, 2,276 objects in total.** Expected — at `-O1`+ the six were
+already on, and at `-O0` nothing adopts the arena unless forced.
+
+**One derivation moved.** The `ast_env_gate("MCC_AST_*", o4 || s1->optimize >= 1)`
+grep that `tools/c2_sweep.sh`, `tools/c2_equiv.sh` and `tools/o0_ab.sh` use to build
+their forced-`-O0` env now yields **22**, not 28. Forcing the six is a no-op from here,
+so no board moves; all three scripts derive the set dynamically and abort only at
+zero, so none needed editing.
+
+**What is left at forced `-O0`: 20 fallbacks against `-O1`'s 7.** That residue is the
+next measurement, and it is now a *smaller* problem than the `-O1` census was two
+sections ago rather than a different one.
 
 ### The remaining fallbacks are NOT benign: `ptr_unlink` segfaults under the arena
 
