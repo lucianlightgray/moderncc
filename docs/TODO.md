@@ -5446,3 +5446,30 @@ guest of its own, so its slab only has to exist. Any new harness that `-run`s
 `run-tier/x86_64`'s last red program was fixed upstream in `26881521` (seed the slab
 in program-created threads; wire `R_386_TLS_LE` to `run_tls_active`) — 14/14 both
 JIT tiers. arm, riscv64 and the PE triples still lack run-mode TLS.
+
+## OPEN: the arm64-Windows dist self-host crashes at startup -- 0xC0000005
+
+Nightly Dist (30986437707) went red on `windows-arm64-msvc` AND `windows-arm64-mingw`
+with the same shape, green on Aug 2 (30738246110, head `89a9103d`):
+
+- stage1 (msvc-/mingw-built) mcc works: it compiled and linked all of stage2,
+  including `mcc.exe`, without complaint.
+- the **stage2 mcc -- mcc's own arm64-PE output -- crashes with 0xC0000005 on
+  every invocation**, immediately (all four first `mccrt -c` compiles die within
+  ~1ms of the link finishing: `builtin.o`, `alloca-bt.o`, `alloca.o`, `atomic.o`).
+  Instant + input-independent = startup path, not a particular construct.
+
+So this is an arm64-PE self-compile miscompile (or PE image/startup regression)
+introduced somewhere in the Aug 2 -> Aug 5 window -- which contains the VT_BTYPE
+widening, the bitfield side-car, `_Float16` on all backends and the config
+refactor, several hundred commits. The Dist nightly is the ONLY arm64-Windows
+coverage (`run-tier`'s `arm64-win32` row is `mcc_skip_test`: no runner anywhere),
+so the regression cannot be narrowed from this x86_64 host. Leads for whoever has
+the hardware (or wires arm64 wine/qemu):
+
+- build the cross `mcc-arm64-win32` on any host, compile `src/mcc.c`, and diff the
+  PE headers/entry stub against one built from `89a9103d` -- a startup crash may be
+  visible statically (stack reserve, TLS directory, entry, relocs).
+- `d519ac4c` ("every PE target reserves an 8MB stack, as arm64 already did") and
+  `6bad581d` ("keep arm64 sibling calls as b; BRANCH26 is not always CALL26")
+  are older, but the window's codegen refactors may interact with either.
