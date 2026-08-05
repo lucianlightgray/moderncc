@@ -31,7 +31,10 @@ jobs:
         working-directory: cmake-stage2-release
         run: |
           mkdir ..\dumps
-          procdump -accepteula -ma -e -x ..\dumps mcc.exe -c ..\runtime\lib\alloca.c -o alloca-dbg.o -B..\runtime\win32 -I..\runtime\include
+          rem the x64 procdump observes the arm64 child's exception but cannot
+          rem write its dump ("Dump count not reached"); use the ARM64 build.
+          where procdump64a && set PD=procdump64a || set PD=procdump
+          %PD% -accepteula -ma -e -x ..\dumps mcc.exe -c ..\runtime\lib\alloca.c -o alloca-dbg.o -B..\runtime\win32 -I..\runtime\include
       - name: print the faulting stack with cdb, if the image has one
         if: always()
         continue-on-error: true
