@@ -5540,7 +5540,11 @@ shape, one per remaining ELF triple:
    and the run path must not: `tpoff` is already the full delta from the thread pointer.
 
 **How this host got to run those cells at all**, since it has no vendored Gentoo
-stage3: `tools/run-tier.sh` only needs a directory at
+stage3. The canonical route is the `qemu-conformance-<arch>-glibc-fetch` fixture
+(`mccharness qemufetch`, `CMakeLists.txt`), which downloads a real stage3 into the same
+path; `c634e137` made `run-tier/<arch>` require it. The recipe below is the offline
+fallback that was used here, and it is what the numbers above were measured on:
+`tools/run-tier.sh` only needs a directory at
 `vendor/gentoo-stage3-<triple>-glibc` holding a libc with headers and crt files. A
 Debian rootfs from docker is one:
 
@@ -5562,13 +5566,90 @@ linux/riscv64` fails with "exec format error". Clear the host entry
 Running the cells themselves does not need binfmt at all -- `run-tier.sh` invokes
 `qemu-<arch> -L <sysroot>` directly -- only *building* the sysroot does.
 
-**Still red: `run-tier/{x86_64-win32,i386-win32}`**, `tls` and `tls_threads`, under wine.
-The PE side has no run TLS at all: the whole slab (`mcc_jit_tls_slab`,
-`host_run_tls_slab_{base,size,tpoff}`) is `#if defined(__linux__)`, and
-`tls_setup_linux`/`tls_seed_linux` are `#if MCC_HOST_LINUX`, so a PE-hosted mcc never
-seeds anything. The i386-link/x86_64-link TLS arms are `#ifdef MCC_TARGET_PE`'d away from
-the run path too. That is a port of the slab to `_Thread_local` plus the PE TLS access
-model, not a repair of the ELF one.
+## `-run` TLS on PE: the design, the traps, and why the first attempt was reverted
+
+**The two remaining red cells are `run-tier/{x86_64-win32,i386-win32}`**, `tls` and
+`tls_threads`, reproducible on this host under wine (`ctest -R run-tier/x86_64-win32`).
+Everything below was established by building a PE-hosted mcc and iterating under wine;
+the code was **reverted** rather than landed, because it is a behaviour change on the
+Windows host that CI would be the first to feel and it does not work yet. Start here
+rather than from scratch.
+
+### Why the ELF fix does not carry over
+
+The whole run slab is Linux-only: `mcc_jit_tls_slab` and
+`host_run_tls_slab_{base,size,tpoff}` are `#if defined(__linux__)` in `src/mcchost.c`,
+and `tls_setup_linux`/`tls_seed_linux` are `#if MCC_HOST_LINUX` in `src/mccrun.c`. A
+PE-hosted mcc therefore never sets `run_tls_active` and never seeds anything.
+
+**PE has no thread-pointer-relative TLS.** An access is not `tp + disp`; it is
+
+```
+mov dst, gs:[0x58]          ; TEB->ThreadLocalStoragePointer   (fs:0x2c on i386)
+mov scratch, [rip + _tls_index]
+mov dst, [dst + scratch*8]  ; this module's TLS block for this thread
+                            ; + disp, which is what the relocation writes
+```
+
+(`gen_pe_tls_base`, `src/arch/x86_64/x86_64-gen.c:238`; i386 at `i386-gen.c:175`,
+arm64 at `arm64-gen.c:542`.)
+
+**The good news is that this still reduces to one displacement.** A `-run` guest's
+reference to `_tls_index` resolves to *this image's* `_tls_index`, so the guest reads
+the host mcc's own TLS block base. So the analogue of `tpoff` is **the slab's
+displacement inside mcc's own TLS block**, and the relocation arms need no new shape at
+all -- `x86_64-link.c` and `i386-link.c` already test `run_tls_active` *before* their
+`#ifdef MCC_TARGET_PE` branch. Computing it:
+
+```c
+extern int _tls_index;                 /* see the type trap below */
+unsigned char **slots;
+__asm__ volatile("mov %gs:0x58, %0" : "=r"(slots));      /* fs:0x2c on i386 */
+return (unsigned long)(mcc_jit_tls_slab - slots[_tls_index]);
+```
+
+`_tls_index` is real in an mcc-built PE: `pe_add_tls` (`src/objfmt/mccpe.c:2660`)
+defines it as a 4-byte `.data` global and points the TLS directory's `AddressOfIndex`
+at it, so the loader fills it in.
+
+### Three traps, all of which cost a cycle here
+
+1. **`extern unsigned long _tls_index;` does not compile.** `error: incompatible types
+   for redefinition of '_tls_index'`. mcc itself registers that symbol while compiling
+   the very file that declares it: the `_Thread_local` slab makes the backend call
+   `pe_tls_index_sym()` (`mccpe.c:241`), which does
+   `external_global_sym("_tls_index", VT_INT)`. Declare it `extern int`.
+2. **The slab must be `_Thread_local`, not `__thread`,** on the Windows host.
+3. **The pthread wrapper is Linux-only.** `mcc_run_thr_start` /
+   `mcc_run_pthread_create` and their `#include <pthread.h>` sit inside the block being
+   widened; guard them `#if MCC_HOST_LINUX` or a Windows host build stops at the
+   include. `tls_threads` will separately need a `CreateThread` analogue, since a fresh
+   Windows thread gets a zeroed TLS block and nothing re-seeds it -- the same defect the
+   Linux side fixed with the `pthread_create` wrapper.
+
+### Where the attempt got to, and the one thing left to diagnose
+
+With the slab, the PE `tpoff`, and the `MCC_HOST_LINUX || MCC_HOST_WIN32` widening of
+setup/seed in place, `run-tier/x86_64-win32` **stops crashing and becomes
+self-consistent** -- `w1..w4`, `auxset`, `auxdirect` and every zero-initialised variable
+are correct -- but every `.tdata` initialiser still reads 0 (`init=0` wanting 42,
+`static=0` wanting 9, `aux=0` wanting 7, `auxpriv=1` wanting 4). That symptom is exactly
+what you get when the accesses land at a consistent but *wrong* base, i.e. when
+`run_tls_slab_tpoff` came back 0 -- which is what the code returns when
+`slots[_tls_index]` is NULL. So the next step is to print `slots`, `_tls_index` and
+`slots[_tls_index]` from inside the PE-hosted mcc under wine and find out which of the
+three is wrong; the likely candidates are the guest's `_tls_index` not resolving to the
+host's copy, and wine populating `ThreadLocalStoragePointer` lazily.
+
+**Bootstrap for iterating**, which is faster than the ctest cell:
+
+```
+tools/run-tier.sh x86_64-win32 cmake-cross cmake-cross     # full cell, ~4s
+```
+
+and it needs `-I$root/src -I$root/include -I$root/src/formats -I$root/src/objfmt` plus
+`-I$root/src/arch/<each>` and `-I$root/runtime/win32/include`; a bare
+`mcc-x86_64-win32 src/mcc.c` dies on `windows.h` without the win32 include dir.
 
 ### The TLS red, refined into two distinct defects (historical -- the ELF half is closed above)
 
