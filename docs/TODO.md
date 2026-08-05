@@ -99,11 +99,13 @@ An absolute size quoted from a worktree cost one agent a false discrepancy hunt.
 
 ### Open, roughly by value
 
-1. **`-run` TLS, two defects** — the seven red cells. `tls_threads` fails on *every*
-   runnable triple including x86_64: a `pthread_create`d thread reads 0 from every
-   initialised `__thread` variable. `tls` additionally fails on `i386`, `arm`,
-   `riscv64` and both PE targets, losing `.tdata` initialisers in the main thread.
-   Neither is a JIT-tier bug; AOT is correct everywhere. Details below.
+1. **`-run` TLS** — **now the two PE cells only.** `b29ffa2f` fixed i386, arm and
+   riscv64 (five of seven red cells green), and the macOS host measured `tls` and
+   `tls_threads` **passing** on both Mach-O keys. The earlier reading that
+   `tls_threads` fails on *every* runnable triple was a Linux-host artefact and is
+   retired: what survives is `x86_64-win32` and `i386-win32`, both losing `.tdata`
+   initialisers / reading 0 from a `pthread_create`d thread. Not a JIT-tier bug; AOT is
+   correct everywhere. Details below.
 2. **`__bf16`** — the type word is no longer the blocker. Slots 16-31 are free. What
    remains is the encode/decode helper and per-backend ABI. **Do not alias it onto
    `_Float16`**: they differ only in the helper, so an alias miscompiles silently.
@@ -121,10 +123,11 @@ An absolute size quoted from a worktree cost one agent a false discrepancy hunt.
    reject · `const`-qualified *parameter* assignment accepted (not complex-specific) ·
    `_Atomic _Complex ++` unsupported · one-argument `va_start` on i386, arm and
    x86_64-PE · the seven costed cluster root causes in the table further down.
-8. **Unproven rather than open**: the Darwin branch of `run-tier.sh` has never
-   executed — treat its first run on a Mac as untested. And `arm-win32`,
-   `arm64-win32` and `arm-wince` have no runner on any host available here (wine
-   emulates x86 PE only; qemu-user cannot load PE), so their `-run` paths are
+8. **Unproven rather than open**: ~~the Darwin branch of `run-tier.sh` has never
+   executed~~ — **executed 2026-08-05**, `run-tier/arm64-osx` and `run-tier/x86_64-osx`
+   both 14/14 under both JIT tiers; see the macOS host reading below. Still true:
+   `arm-win32`, `arm64-win32` and `arm-wince` have no runner on any host available here
+   (wine emulates x86 PE only; qemu-user cannot load PE), so their `-run` paths are
    untested by anything and will stay that way without Windows-on-ARM hardware.
 
 ## `_Float16` landed on all five backends; `__bf16` is refused, and cannot be added without a type-word change
@@ -401,9 +404,9 @@ host-native self-host unmeasurable on this machine.
 
 | # | what | why it needs the other host |
 | --- | --- | --- |
-| W1 | **`arm64-osx` and `x86_64-osx` runtime A/B and self-host** — **the A/B half is done** | Mach-O will not execute here at all. **Closed on 2026-08-03 for the differential**: the macOS arm64 host ran `tools/c2_equiv.sh` on both keys at forced `-O0`/`-O1`/`-O2`/`-O3`, eight cells, all `differential: NONE`, and the whole byte gap on both keys measures `[rir-prod] fallback` per body — see the macOS item under **For the Windows and macOS hosts**. **Still open on that host: the full `ctest` suite and `o0_ab.sh`,** which are the larger half and which this file has still never had a Mach-O reading of. |
+| W1 | **`arm64-osx` and `x86_64-osx` runtime A/B and self-host** — **the A/B half is done** | Mach-O will not execute here at all. **Closed on 2026-08-03 for the differential**: the macOS arm64 host ran `tools/c2_equiv.sh` on both keys at forced `-O0`/`-O1`/`-O2`/`-O3`, eight cells, all `differential: NONE`, and the whole byte gap on both keys measures `[rir-prod] fallback` per body — see the macOS item under **For the Windows and macOS hosts**. ~~**Still open on that host: the full `ctest` suite and `o0_ab.sh`**~~ — **both closed 2026-08-05**: four full preset runs (`macos`/`macos-cross` x clang/gcc-16), all 100%, and `o0_ab.sh` run and cross-checked against a Linux run at the same HEAD. See **The macOS host reading** below. **W1 is closed.** |
 | W2 | **`arm64-win32`, `arm-win32`, `arm-wince` execution** | wine on an x86_64 host runs x86 PE only; ARM and ARM64 PE do not load. Three keys, 47 divergences between them, never executed. |
-| W3 | **`selfhost-fixpoint-O3` on macOS** | Recorded as *"green again by side effect, and the defect underneath it was never found… treat this as latent, not fixed."* It is green here. The failure was macOS-only, so this host cannot tell whether it is fixed or dormant. Re-run with the `MCC_AST_INLINE_LIMIT` bisect against a fresh probe, per the recipe already in this file. |
+| W3 | **`selfhost-fixpoint-O3` on macOS** | Recorded as *"green again by side effect, and the defect underneath it was never found… treat this as latent, not fixed."* **Closed 2026-08-05**: `selfhost-fixpoint-O3` passes on the macOS arm64 host in both preset configurations, as do the `-O1`/`-Os`/`-gates`/`-memmodel-O2`/`-memmodel-O3` siblings. It is fixed, not dormant. One caveat carried forward: that was a plain preset run, not the 3-way-concurrent stress that reproduced the default-`-O` bimodality, so the stress re-run is still worth doing. |
 | W4 | **Windows host stage2 (`pe`, `sanitize`, `dynamic`)** | The three reds at the P5 merge were closed by raising `SizeOfStackReserve` to 8MB, which is present at `src/objfmt/mccpe.c:738` and verified by reading. The *stack-overflow behaviour it fixes* needs a real 1MB-default PE process to confirm; wine's stack handling is not the same test. |
 | W5 | **mcc cannot self-host on Windows arm64** | Still open, still unreachable. Stage1 mcc takes an access violation (`0xC0000005`) on `lib/atomic.c`, `lib/alloca.S`, `lib/alloca-bt.S`, `lib/builtin.c`. Host ABI — varargs, `alloca`, stack probe — and it needs a Windows arm64 machine. |
 | W6 | **Re-bank `verify-baseline` — now moot, record the closure** | The prediction that `x86_64-darwin.txt` and `x86_64-win32.txt` needed re-banking on their own hosts is **dead**: P5 deleted all four files and `tests/ast/verify-baseline/` no longer exists. Nothing to do; do not carry it forward. |
@@ -638,19 +641,55 @@ what gates Apple's (and glibc's) fortify blocks, so it would newly route every
 a codegen change across the whole corpus, not a CI fix, and it is unmeasured — do it
 on its own, with a full sweep behind it.
 
-## The C2 gap bank is stale, and only a `bc2` build can see it (2026-08-05)
+## The 14 `ast/rir-c2-*` reds are a C2 gap REGRESSION, not a stale bank — do not re-bank (2026-08-05)
 
 `ctest --test-dir bc2` (the recipe under **For the Windows and macOS hosts**) is
 **8487 cells, 82 red**: the 66 above, the 2 documented PE `-run` TLS reds, and
-**14 `ast/rir-c2-*`**. The 14 are a stale bank, not a defect — the `_c2bank_*` triples
-in `CMakeLists.txt` still carry the pre-c23 corpus, e.g. `arm64-osx "1;0;1225"` against
-a measured `fn=1280`, and `x86_64-osx "0;0;1143"` against `1235`. The corpus grew by
-ten files in `27f692d3..f73c80b3`.
+**14 `ast/rir-c2-*`**.
+
+**An earlier revision of this section called the 14 a stale bank against the ten new
+c23 corpus files. That was wrong, and the correction is the point of the section.**
+`tests/ast/rir_c2.cmake:93-127` is a **ratchet, not an equality**:
+
+| var | comparison | fails when |
+|---|---|---|
+| `BANKFN` | floor — `if(_fn LESS BANKFN)` | population **shrank** |
+| `BANKGAP` | ceiling — `if(_gap GREATER BANKGAP)` | gap **grew** |
+| `BANKSKIP` | ceiling | skip **grew** |
+
+A grown corpus raises `fn`, and `fn` is a floor, so corpus growth **cannot** redden
+these cells. Every one of the ten measurable cells fails on **`gap`**:
+
+| key | banked `gap;skip;fn` | measured | fails on |
+|---|---|---|---|
+| `-O1`/`-O2`/`-O3` | `0;0;1150` | `37;0;1318` | gap |
+| `arm64-osx` | `1;0;1225` | `37;0;1318` | gap |
+| `x86_64-osx` | `0;0;1143` | `3;0;1273` | gap |
+| `i386-win32` | `1;0;1258` | `8;0;1341` | gap |
+| `x86_64-win32` | `0;0;1238` | `2;0;1321` | gap |
+| `arm64-win32` / `arm-win32` / `arm-wince` | `1;0;12xx` | `2;0;13xx` | gap |
+
+**Attribution, per file at native `-O1`:** the whole gap of 37 is three files, all
+**pre-existing** — `tests/exec/arch/arm64_extasm.c` (**34** bodies),
+`tests/exec/statements/ternary_op.c` (2), `tests/exec/codegen/codeopt.c` (1). All three
+were in the corpus at **gap 0** when the bank was set on 2026-08-02 (`3395f5f2`), and
+none of the recently added files contributes any gap. Between `3395f5f2..HEAD` the
+compiler moved a long way — `src/mccrir.c` +1581, `src/mccircap.c` new (+813),
+`src/mccast.c` heavily rewritten. The 34-body `arm64_extasm.c` cluster points at a **C2
+re-emit regression on extended-asm bodies**. Re-banking `0 → 37` would pin the defect
+in as the new floor. **Diagnose the extended-asm cluster first.** The small win32/osx
+deltas (0→2, 1→2, 0→3, 1→8) are a separate, milder story and may be genuine drift.
+
+**The four glibc keys (`riscv64`, `arm`, `arm64`, `i386`) are not measurements at all
+on this host** and must never be banked from it: `vendor/` does not exist here, so
+`--sysroot=vendor/gentoo-stage3-<arch>-glibc` resolves to nothing, ~202 of 289 corpus
+files die with `include file 'stdio.h' not found`, and only 86–89 compile. The `fn`
+floor caught exactly that (*"549 body(ies) against a banked 1157 — 608 fewer"*), which
+is the ratchet working as designed.
 
 **This is invisible to CI**: `ast/rir-c2-*` self-skips (77) unless the build carries
 `-DCMAKE_C_FLAGS=-DMCC_REPLAY_IR_C2=1`, which no workflow sets. Only someone following
-the `bc2` recipe sees it. Re-bank the fourteen triples on a host that can measure all
-twelve keys, or the recipe stays red for the next reader.
+the `bc2` recipe sees it — which is why a re-emit regression sat here unreported.
 
 ## `o0_ab.sh` on Darwin: it reproduces, and the `x86_64` row was measuring the wrong target (2026-08-05)
 
@@ -2246,10 +2285,10 @@ anything. The reason is that the goldens have never executed there.
 **macOS (both hosts, or one Apple-silicon machine for both keys).**
 
 1. `cmake -S . -B bc2 -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMCC_ENABLE_CROSS=ON -DCMAKE_C_FLAGS=-DMCC_REPLAY_IR_C2=1 && ninja -C bc2`
-2. `ctest --test-dir bc2 -j 8` — a full suite on a Mach-O host, which this file has
-   never had a clean reading of. Expect `selfhost-fixpoint-O3` to need attention: W3
-   records it as *"green again by side effect, and the defect underneath it was never
-   found"*, and macOS is the only host that can tell whether it is fixed or dormant.
+2. `ctest --test-dir bc2 -j 8` — a full suite on a Mach-O host. **Run 2026-08-05: 8487
+   cells, 82 red**, and every red is accounted for — 66 from Apple's deprecated
+   `sprintf` (fixed), 14 `ast/rir-c2-*` (a C2 gap regression, see its own section), 2
+   documented PE `-run` TLS reds. `selfhost-fixpoint-O3` **passed**, closing W3.
 3. ~~`tools/c2_equiv.sh bc2 all -O1` and again at `-O2`/`-O3`. **The script needs a
    Mach-O arm first.**~~ — **done and measured, 2026-08-03 on the macOS 26.5.2
    arm64 host** (`cmake-c2all`: Debug, `-DMCC_ENABLE_CROSS=ON`,
@@ -2284,7 +2323,10 @@ anything. The reason is that the goldens have never executed there.
    - **The `-O0` row here is NOT the vacuous control the Windows `-O0` row was**,
      because `tools/c2_equiv.sh` now has a `C2_FORCE=1` arm — see below.
 4. `C2_NO_EXTRA=1 O0_AB_CHECK=1 tools/o0_ab.sh bc2 all` — the `-O0` object bank was
-   taken on Linux; confirm it reproduces. **Not run yet.**
+   taken on Linux; confirm it reproduces. **Run 2026-08-05 — it reproduces.** All five
+   PE keys are byte-identical to a Linux run at the same HEAD; the two `*-osx` keys are
+   measurable only on Darwin. See **`o0_ab.sh` on Darwin** below. What remains is
+   re-banking `tests/ast/o0-baseline/` at HEAD, which needs an x86_64 Linux host.
 
 **`C2_FORCE=1` makes the `-O0` differential real, and it is a different thing from
 `C2_FORCE` in `tools/c2_sweep.sh`.** The differential turns on *production*, and
@@ -5821,9 +5863,12 @@ of passing a cell it never tested.
 
 ### Open
 
-- `x86_64-osx` / `arm64-osx` skip on Linux and the Darwin branch of `run-tier.sh` has
-  **never executed**. It mirrors the `tools/c2_equiv.sh:61-81` host gate and the Mach-O
-  bootstrap shape; treat its first run on a Mac as unproven.
+- ~~`x86_64-osx` / `arm64-osx` … the Darwin branch of `run-tier.sh` has **never
+  executed**~~ — **executed 2026-08-05 on a macOS arm64 host**: `run-tier/arm64-osx`
+  and `run-tier/x86_64-osx` each bootstrap a Mach-O-hosted mcc and pass 14/14 under
+  both JIT tiers (`x86_64-osx` via Rosetta 2). Both `tls` and `tls_threads` pass there,
+  unlike the PE keys. They are reached with `ctest -L macho`, not by any test preset —
+  those filter `label=native`.
 - The `x86_64` cell uses the build directory's own `mcc` rather than re-bootstrapping one.
 
 ## The stage2 red after the config refactor: five failures, four causes
