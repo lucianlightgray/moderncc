@@ -2655,10 +2655,15 @@ larger deliverable is discharged; what is left of this section is the Windows ha
 
 **Windows x86_64.**
 
-1. Same two builds, then `ctest`. The preset sweep at the top of this file lists
-   `matrix`, `diagnostics`, `msvc`, `sanitize-msvc`, `mingw`, `stage2`, `dist-mingw`
-   and `dist-msvc` as unrun — `stage2` is W4 and is the one that needs a real 1MB-default
-   PE process to confirm the 8MB `SizeOfStackReserve` fix at `src/objfmt/mccpe.c:738`.
+1. Same two builds, then `ctest`. ~~The preset sweep lists `matrix`, `diagnostics`,
+   `msvc`, `sanitize-msvc`, `mingw`, `stage2`, `dist-mingw` and `dist-msvc` as unrun.~~
+   **Done 2026-08-05 — see "Closed — the Windows-host preset sweep completed" near the
+   top of this file.** All eight ran green (matrix's four sub-builds 100%, mingw/stage2
+   100% of 8458, sanitize-msvc 1 `-j` flake, diagnostics green modulo the now-fixed
+   `star_vla_prototype` leak, dist-mingw/dist-msvc install+smoke clean). `stage2` = W4,
+   now **closed**: the 8MB `SizeOfStackReserve` (`src/objfmt/mccpe.c:738`) is confirmed
+   on a real 1MB-default PE process. The one open Windows defect surfaced is **W8**, now
+   root-caused to a `Sym` use-after-free in the forward-inline re-emit path (see W8).
 2. ~~`tools/c2_equiv.sh bc2 all` once it has a **PE arm**~~ — **done and measured,
    2026-08-03 at `ad0dc1e0`, on the Windows x86_64 host** (`cmake-c2`: Debug,
    `-DMCC_ENABLE_CROSS=ON`, `-DCMAKE_C_FLAGS=-DMCC_REPLAY_IR_C2=1 -DRIR_DBG_OPTRACE=1`,
