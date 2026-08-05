@@ -310,7 +310,10 @@ static void mccjit_perf_map_path(char *buf, size_t n) { MCC_TRACE("enter\n");
 	DWORD r = GetTempPathA((DWORD)sizeof dir, dir);
 	if (r == 0 || r >= sizeof dir)
 		{ MCC_TRACE("br\n"); dir[0] = '.'; dir[1] = '\\'; dir[2] = '\0'; }
-	snprintf(buf, n, "%sperf-%d.map", dir, (int)_getpid());
+	/* GetCurrentProcessId, not _getpid: arm64 msvcrt.dll does not export the
+	   latter, and a static import of it makes the whole mcc.exe unloadable
+	   (ntdll LdrpSnapModule -> STATUS_ENTRYPOINT_NOT_FOUND before main). */
+	snprintf(buf, n, "%sperf-%lu.map", dir, (unsigned long)GetCurrentProcessId());
 #else
 	snprintf(buf, n, "/tmp/perf-%d.map", (int)getpid());
 #endif
