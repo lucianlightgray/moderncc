@@ -16069,8 +16069,12 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 																	 vla_res_slot);
 		if (vla_empty_init) { MCC_TRACE("br\n");
 			int za;
+			int vla_data = addr;
+#if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
+			vla_data = vla_res_slot;
+#endif
 			vpush_helper_func(TOK_memset);
-			vset(&char_pointer_type, VT_LOCAL | VT_LVAL, addr);
+			vset(&char_pointer_type, VT_LOCAL | VT_LVAL, vla_data);
 			vpushi(0);
 			vpush_type_size(type, &za);
 #if defined MCC_TARGET_ARM && defined MCC_ARM_EABI
