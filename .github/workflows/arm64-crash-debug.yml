@@ -1,0 +1,46 @@
+# temporary instrument: capture a WER minidump of the stage2 arm64-PE mcc
+# that crashes instantly on windows-11-arm (see TODO.md "the arm64-Windows
+# dist self-host crashes at startup"). Dispatch by hand; delete when closed.
+name: arm64-crash-debug
+on: workflow_dispatch
+jobs:
+  debug:
+    name: capture the stage2 arm64 crash dump
+    runs-on: windows-11-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - name: set up MSVC dev shell
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: arm64
+      - name: install ninja
+        run: choco install ninja -y
+      - uses: ./.github/actions/ci
+      - name: enable WER local dumps
+        shell: pwsh
+        run: |
+          $k = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps"
+          New-Item -Path $k -Force | Out-Null
+          Set-ItemProperty -Path $k -Name DumpFolder -Value "$env:GITHUB_WORKSPACE\dumps"
+          Set-ItemProperty -Path $k -Name DumpType -Value 2
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\dumps" | Out-Null
+      - name: dist msvc arm64 (crashes at the stage2 self-host)
+        continue-on-error: true
+        run: mcc-ci dist --preset dist-msvc --plat windows-arm64-msvc --version dbg --no-bench
+      - name: rerun the crashing compile for a clean dump
+        continue-on-error: true
+        shell: cmd
+        working-directory: cmake-stage2-release
+        run: mcc.exe -c ..\runtime\lib\alloca.c -o alloca-dbg.o -B..\runtime\win32 -I..\runtime\include
+      - name: list dumps
+        if: always()
+        shell: pwsh
+        run: Get-ChildItem -Recurse dumps -ErrorAction SilentlyContinue | Out-String | Write-Host
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: arm64-crash-dump
+          path: |
+            dumps/*.dmp
+            cmake-stage2-release/mcc.exe
