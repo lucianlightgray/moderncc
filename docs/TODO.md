@@ -673,16 +673,63 @@ these cells. Every one of the ten measurable cells fails on **`gap`**:
 | `x86_64-win32` | `0;0;1238` | `2;0;1321` | gap |
 | `arm64-win32` / `arm-win32` / `arm-wince` | `1;0;12xx` | `2;0;13xx` | gap |
 
-**Attribution, per file at native `-O1`:** the whole gap of 37 is three files, all
-**pre-existing** — `tests/exec/arch/arm64_extasm.c` (**34** bodies),
-`tests/exec/statements/ternary_op.c` (2), `tests/exec/codegen/codeopt.c` (1). All three
-were in the corpus at **gap 0** when the bank was set on 2026-08-02 (`3395f5f2`), and
-none of the recently added files contributes any gap. Between `3395f5f2..HEAD` the
-compiler moved a long way — `src/mccrir.c` +1581, `src/mccircap.c` new (+813),
-`src/mccast.c` heavily rewritten. The 34-body `arm64_extasm.c` cluster points at a **C2
-re-emit regression on extended-asm bodies**. Re-banking `0 → 37` would pin the defect
-in as the new floor. **Diagnose the extended-asm cluster first.** The small win32/osx
-deltas (0→2, 1→2, 0→3, 1→8) are a separate, milder story and may be genuine drift.
+### Bisected: `72fedcf1`, and it is a parser codegen pessimization, not a C2 bug
+
+**The extended-asm reading was wrong — refuted, not merely unproven.** `arm64_extasm.c`
+compiled with `-DNDEBUG` gives `c2try=37 c2ok=37 c2len=0`. Every one of the 34 bodies is
+caused by **`assert()`**, whose macOS `assert.h` expands to
+`__builtin_expect(!(e), 0) ? __assert_rtn(...) : (void)0`. `codeopt.c:extend_brk` uses
+`__builtin_expect` literally; `ternary_op.c:main` is assert-driven. The common factor is
+`__builtin_expect`, not `asm`.
+
+`git bisect run` over `3395f5f2..HEAD` lands on **`72fedcf1`** *(feat(sema):
+register-pointee address-of, C23 one-arg va_start, complex ++/--)*, confirmed by hand
+against `72fedcf1~1`:
+
+| file | `72fedcf1~1` | `72fedcf1` |
+|---|---|---|
+| `tests/exec/arch/arm64_extasm.c` | `c2len=0` | `c2len=34` |
+| `tests/exec/statements/ternary_op.c` | `c2len=1` | `c2len=2` |
+| `tests/exec/codegen/codeopt.c` | `c2len=0` | `c2len=1` |
+
+**Mechanism.** That commit changed the probability operand of `__builtin_expect` (and
+`__builtin_expect_with_probability`, `__builtin_assume_aligned`) from `expr_const64();`
+to `expr_eq(); vpop();`, so a non-constant second argument no longer ICEs.
+`expr_const64()` consumed the constant without ever touching the value stack.
+`expr_eq()` **pushes**, and pushing while `vtop` still carries a pending `VT_CMP` forces
+the code generator to flush that comparison into a register (`cmp`/`cset`); the
+following `if` must then re-test the materialized 0/1, so the parser emits `cmp`+`cset`
+**twice** — 12 wasted bytes per `__builtin_expect`-guarded branch on arm64, multiplying
+with multi-condition asserts (`test_multiple_io` 32 bytes, `test_bitwise_ops` 48).
+
+**So the C2 leg is the correct one.** The arena is byte-identical across the commit
+(`arenanodes=9` both sides; only the journal grows, `ops=12` → `ops=14`), and Replay_IR
+re-emits the canonical single-compare form. The gap is `len` and never `bytes` precisely
+because C2 is right and the parser regressed. Sites at HEAD: `src/mccgen.c:11971-11978`
+and `:12135-12145`.
+
+**Reproducer** — `c2len=12` at HEAD, `c2ok` at `72fedcf1~1`:
+
+```c
+void ext3(void);
+void m1(int x) { if (__builtin_expect(x != 0, 0)) ext3(); }
+```
+```
+SOURCE_DATE_EPOCH=1000000000 MCC_REPLAY_IR=5 ./bc2/mcc -w -O1 -c -o /tmp/x.o min2.c \
+  2>&1 | grep c2len
+```
+Disassembly shows a redundant `mov w1,#0 / cmp w0,w1 / cset w0,ne` inserted at `0x34`
+between the real compare and the `cbnz`.
+
+**36 of the 37 units are this commit. The 37th is a separate, older bug**:
+`ternary_op.c:tst_yarpgen` (`want=460 got=452`, 8 bytes) already diverges in a compiler
+built from `3395f5f2` itself, and the corpus file is untouched in the range. The bank
+also carried `BANKFN=1150` against today's `fn=1318`, so the likeliest reading is that
+`ternary_op.c` was NOTOK in the banked build and simply went uncounted. It needs its own
+diagnosis; it is not `72fedcf1`.
+
+The small win32/osx deltas (0→2, 1→2, 0→3, 1→8) are the same `__builtin_expect` shape on
+other keys, plus that older 8-byte unit.
 
 **The four glibc keys (`riscv64`, `arm`, `arm64`, `i386`) are not measurements at all
 on this host** and must never be banked from it: `vendor/` does not exist here, so
