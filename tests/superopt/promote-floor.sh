@@ -18,8 +18,8 @@ for src in "$@"; do
 		hd=$WORK/$n.$leg.home
 		rm -rf "$hd"; mkdir -p "$hd"
 		if [ "$leg" = pinned ]; then pin=1; else pin=; fi
-		if ! env HOME="$hd" ${pin:+-fpromote-locals} \
-				"$MCC" -O13 "$src" -o "$WORK/$n.$leg" -lm >/dev/null 2>&1; then
+		if ! env HOME="$hd" \
+				"$MCC" ${pin:+-fpromote-locals} -O13 "$src" -o "$WORK/$n.$leg" -lm >/dev/null 2>&1; then
 			echo "FAIL $n: -O13 ($leg) build failed"
 			rc=1
 			continue 2

@@ -237,8 +237,8 @@ static const cli_case_t cli_cases[] = {
 
 
 		 "rm -rf {W}/elc {W}/el.txt && mkdir -p {W}/elc && "
-		 "XDG_CACHE_HOME={W}/elc -fopt-slice MCC_SLICE_DUMP={W}/el.txt "
-		 "{MCC} -fno-divmagic -fno-tree-vrp -B{B} -I{I} -O2 -c {W}/el.c -o {W}/el.o && "
+		 "XDG_CACHE_HOME={W}/elc MCC_SLICE_DUMP={W}/el.txt "
+		 "{MCC} -fopt-slice -fno-divmagic -fno-tree-vrp -B{B} -I{I} -O2 -c {W}/el.c -o {W}/el.o && "
 		 "awk 'NR==1{ gv=$2; ev=$3; sub(/^g=/,\"\",gv); sub(/^e=/,\"\",ev); "
 		 "           if (index($3,\"e=\")!=1) { print \"NO_ELIGIBLE\"; exit } "
 		 "           if (gv == ev) print \"SAME\"; else print \"WIDER\"; "
@@ -279,8 +279,8 @@ static const cli_case_t cli_cases[] = {
 
 		{"per_fn_config", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static int sq(int x){return x*x;}int main(void){int s=0;for(int i=0;i<10;i++)s+=sq(i);return s;}\\n' > {W}/pf.c && "
-		 "-freemit-templates MCC_AST_FN_CONFIG='main=1;sq=1' {MCC} -B{B} -I{I} -O3 -c {W}/pf.c -o {W}/pf1.o && "
-		 "-freemit-templates MCC_AST_FN_CONFIG='main=7;sq=7' {MCC} -B{B} -I{I} -O3 -c {W}/pf.c -o {W}/pf7.o && "
+		 "MCC_AST_FN_CONFIG='main=1;sq=1' {MCC} -freemit-templates -B{B} -I{I} -O3 -c {W}/pf.c -o {W}/pf1.o && "
+		 "MCC_AST_FN_CONFIG='main=7;sq=7' {MCC} -freemit-templates -B{B} -I{I} -O3 -c {W}/pf.c -o {W}/pf7.o && "
 		 "( cmp -s {W}/pf1.o {W}/pf7.o && echo SAME || echo DIFFER ) ; "
 		 "{MCC} -B{B} -I{I} -O3 {W}/pf.c -o {W}/pf && {W}/pf ; echo rc=$?",
 		 "DIFFER\nrc=29\n"},
