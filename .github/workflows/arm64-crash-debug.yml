@@ -25,16 +25,27 @@ jobs:
       - name: dist msvc arm64 (crashes at the stage2 self-host)
         continue-on-error: true
         run: mcc-ci dist --preset dist-msvc --plat windows-arm64-msvc --version dbg --no-bench
-      - name: rerun the crashing compile under procdump
+      - name: is it the embedded JIT? (MCC_JIT=0 vs MCC_JIT=1)
+        continue-on-error: true
+        shell: cmd
+        working-directory: cmake-stage2-release
+        run: |
+          set MCC_JIT=0
+          mcc.exe -c ..\runtime\lib\alloca.c -o alloca-jit0.o -B..\runtime\win32 -I..\runtime\include
+          echo MCC_JIT=0 rc=%ERRORLEVEL%
+          set MCC_JIT=1
+          mcc.exe -c ..\runtime\lib\alloca.c -o alloca-jit1.o -B..\runtime\win32 -I..\runtime\include
+          echo MCC_JIT=1 rc=%ERRORLEVEL%
+      - name: rerun the crashing compile under procdump (first-chance)
         continue-on-error: true
         shell: cmd
         working-directory: cmake-stage2-release
         run: |
           mkdir ..\dumps
-          rem the x64 procdump observes the arm64 child's exception but cannot
-          rem write its dump ("Dump count not reached"); use the ARM64 build.
+          rem the process eats its own second chance (exits 0xc0000005 with no
+          rem unhandled pass), so dump on the FIRST-chance access violation.
           where procdump64a && set PD=procdump64a || set PD=procdump
-          %PD% -accepteula -ma -e -x ..\dumps mcc.exe -c ..\runtime\lib\alloca.c -o alloca-dbg.o -B..\runtime\win32 -I..\runtime\include
+          %PD% -accepteula -ma -e 1 -f C0000005 -x ..\dumps mcc.exe -c ..\runtime\lib\alloca.c -o alloca-dbg.o -B..\runtime\win32 -I..\runtime\include
       - name: print the faulting stack with cdb, if the image has one
         if: always()
         continue-on-error: true
