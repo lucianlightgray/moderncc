@@ -5472,7 +5472,13 @@ guest of its own, so its slab only has to exist. Any new harness that `-run`s
 in program-created threads; wire `R_386_TLS_LE` to `run_tls_active`) — 14/14 both
 JIT tiers. arm, riscv64 and the PE triples still lack run-mode TLS.
 
-## arm64-Windows dist self-host -- three defects fixed, pending final green (handoff)
+## CLOSED: arm64-Windows dist self-host -- three chained PE/import defects
+
+Verified green on `windows-11-arm` (run 31007869579): stage2 build rc=0, full
+self-hosted toolchain installed, and the CI-produced `mcc.exe` imports no `_getpid`
+with all four TLS-directory fields relocated. The dispatch-only `arm64-crash-debug.yml`
+has been deleted; no `dist.yml` change was needed (every fix is in mcc's own source, and
+the transient "Access is denied" scanner flake did not recur on the clean runs).
 
 Nightly Dist (30986437707) went red on `windows-arm64-msvc` and `windows-arm64-mingw`,
 green on Aug 2 (30738246110, head `89a9103d`). stage1 (msvc/mingw-built) mcc is fine
@@ -5528,15 +5534,11 @@ perf-map filename in `mccjit_perf_map_path` (`src/mccjit_embed.c`); switched to
 Verified the emitted arm64 image no longer imports `_getpid` and still loads under
 wine-arm64.
 
-**Status:** all three defects fixed on `main`; the last verification dist run on
-`windows-11-arm` (via `arm64-crash-debug.yml`) is what confirms stage2 compiles the
-runtime end to end. When that stage2 goes green: **(1)** delete
-`.github/workflows/arm64-crash-debug.yml`, and **(2)** the real `dist.yml`
-windows-arm64 legs should pass on their own -- no dist.yml change was needed (every fix
-is in mcc's own source). If a fresh-binary "Access is denied" flake recurs on that
-runner (it did once, transiently, 370ms after the link -- realtime scanner, not the
-image), add `Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE` to the dist windows
-job; it was not needed on the clean runs.
+**Status:** all three fixed and confirmed green on real hardware (run 31007869579,
+stage2 rc=0). The debug workflow is deleted. If a fresh-binary "Access is denied" flake
+recurs on that runner (it did once, transiently, 370ms after the link -- realtime
+scanner, not the image), add `Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE` to
+the `dist.yml` windows job; it was not needed on any clean run.
 
 General lesson for arm64-PE: the arm64 CRT is leaner than x64's. Any msvcrt import mcc
 emits must exist there; prefer a kernel32 equivalent (`GetCurrentProcessId`,
