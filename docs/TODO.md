@@ -5450,7 +5450,17 @@ clang 22 on the native target too.
    **Identical at `ff517a43`**, so it predates the renumber. The other 30 shapes are
    byte-identical. Worth its own task: this is the `prc[1] != prc[2]` return path,
    and an assert means every such struct return is a hard abort, not a miscompile.
-2. **`arm64` `store()` still does not strip `VT_MUSTCAST`.** `load()`
+2. **CLOSED: `arm64` `store()` now strips `VT_MUSTCAST`,** so its mask matches
+   `load()`'s. Worth stating what the divergence actually was, because it is not a
+   miscompile: `store()`'s tail is `printf(...); assert(0);`, and `VT_MUSTCAST` is
+   `0x0C00`, above `VT_CONST`. So an SValue carrying it matched none of the
+   `svr == ...` arms, fell past the `svr < VT_CONST` register-move arm, and hit the
+   assert -- a hard abort. `load()` stripped it and matched. No other backend
+   references `VT_MUSTCAST` at all; arm64 was alone in masking it on one side only.
+   Verified on the arm64 cross tier under qemu (`run-tier/arm64`, every `arm64`-labelled
+   cell) plus a bitfield read/modify/write program checked against gcc.
+
+   *Historical description:* `load()`
    (`arm64-gen.c:580`) masks `~(VT_BOUNDED|VT_NONCONST|VT_NONLVAL|VT_MUSTCAST|VT_REGDISP)`
    before its `svr ==` comparisons; `store()` (`:782`) masks the same set **minus
    `VT_MUSTCAST`**, so a value carrying it takes the fallback path in `store` while

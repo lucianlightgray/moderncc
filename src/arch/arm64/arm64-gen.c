@@ -777,7 +777,8 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 	mcc_stackref_note(sv->r);
 	int svtt = sv->type.t;
-	int svr = sv->r & ~(VT_BOUNDED | VT_NONCONST | VT_NONLVAL | VT_REGDISP);
+	int svr = sv->r & ~(VT_BOUNDED | VT_NONCONST | VT_NONLVAL | VT_MUSTCAST |
+											VT_REGDISP);
 	uint64_t regdisp = (sv->r & VT_REGDISP)
 												 ? (uint64_t)(int64_t)(int32_t)sv->c.i
 												 : 0;
