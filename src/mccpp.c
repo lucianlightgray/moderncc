@@ -2511,8 +2511,11 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); val = 0; }
 		else if (!strcmp(am, "packed"))
 			{ MCC_TRACE("br\n"); val = 1; }
-		else if (!strcmp(am, "mac68k"))
-			{ MCC_TRACE("br\n"); mcc_error("mac68k alignment pragma is not supported"); }
+		else if (!strcmp(am, "mac68k")) { MCC_TRACE("br\n");
+			mcc_warning_c(warn_unknown_pragmas)(
+					"mac68k alignment pragma is not supported, ignored");
+			goto pragma_align_eol;
+		}
 		else if (strcmp(am, "reset")) { MCC_TRACE("br\n");
 			mcc_warning("invalid alignment option in '#pragma options align'");
 			goto pragma_align_eol;
@@ -2545,7 +2548,10 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 	next();
 	return 1;
 pragma_err:
-	mcc_error("malformed #pragma directive");
+	mcc_warning_c(warn_unknown_pragmas)("malformed #pragma directive, ignored");
+	while (tok != TOK_LINEFEED && tok != TOK_EOF)
+		{ MCC_TRACE("br\n"); next_nomacro(); }
+	return 1;
 }
 
 ST_FUNC void mccpp_putfile(const char *filename) { MCC_TRACE("enter\n");

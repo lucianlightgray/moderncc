@@ -2059,6 +2059,15 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE \"is deprecated|is unavailable|OFF_OK\" | sort | uniq -c | sed 's/^ *//'",
 		 "1 OFF_OK\n2 is deprecated\n1 is unavailable\n"},
 
+		{"malformed_pragma_is_not_fatal", "",
+		 "printf '#pragma pack(show)\\n#pragma pack(3)\\n#pragma options align=mac68k\\n"
+		 "struct s { char a; int b; };\\n"
+		 "int main(void){ return sizeof(struct s) == 8 ? 0 : 1; }\\n' > {W}/pg.c && "
+		 "{ {MCC} -B{B} -I{I} -Wall -o {W}/pg {W}/pg.c 2>&1 && {W}/pg && echo RUN_OK; "
+		 "{MCC} -B{B} -I{I} -Wno-unknown-pragmas -Werror -c {W}/pg.c -o /dev/null 2>&1 && echo QUIET_OK; } | "
+		 "grep -oE 'ignored|RUN_OK|QUIET_OK' | sort | uniq -c | sed 's/^ *//'",
+		 "1 QUIET_OK\n1 RUN_OK\n3 ignored\n"},
+
 		{"fsyntax_only_no_output", "",
 		 "printf 'int main(void){return 0;}\\n' > {W}/so_ok.c && "
 		 "printf 'int main(void){ int 3x; }\\n' > {W}/so_bad.c && "

@@ -5709,6 +5709,18 @@ every cheap way to fake that (a global set at the call, cleared "when consumed")
 mis-fires on `f(get())` and `get() + 1`. It is two `XPASS` rows; it is not worth a
 heuristic that warns on correct code.
 
+### A malformed `#pragma` is a warning now, not an error
+
+`pragma_err` was `mcc_error("malformed #pragma directive")`, and
+`#pragma options align=mac68k` was a hard error of its own. Neither gcc nor clang
+ever fails a translation unit over a pragma -- they warn and skip to end of line --
+and three `clang/test` rows (`Sema/pragma-pack.c`, `Sema/pragma-pack-apple.c`,
+`Parser/pragma-options.c`) were failing on nothing but that. Both sites now warn
+under `-Wunknown-pragmas` and resynchronise at the newline. The forms mcc still does
+not *implement* -- `pack(show)`, `pack(push, ident, n)`, `pack(pop, ident)`, and
+non-power-of-two `pack(3)` -- are therefore ignored rather than fatal, which is
+exactly what gcc does with them.
+
 ### One attempt reverted: unevaluated VM type names at file scope
 
 `int b = sizeof (int (*)[a]);` is accepted by gcc and clang (the size is not
