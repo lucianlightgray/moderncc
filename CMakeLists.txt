@@ -862,9 +862,29 @@ find_program(_APT apt-get)
 find_program(_DNF dnf)
 find_program(_PACMAN pacman)
 find_program(_ZYPPER zypper)
+# scoop's PATH entry is an extensionless shell shim that Windows cannot exec;
+# name the .cmd explicitly or execute_process() fails with "not an application".
+find_program(_SCOOP NAMES scoop.cmd scoop.exe)
+find_program(_CHOCO NAMES choco.exe)
 
 set(_cmd "")
-if(_BREW)
+if(WIN32)
+
+    if(TOOL STREQUAL "wine")
+        message(STATUS
+            "toolchain-setup(wine): not applicable on a Windows host -- mcc's PE "
+            "output executes natively, which is what pe-native-conformance covers. "
+            "wine is only needed as a PE runner on Linux/macOS hosts.")
+        return()
+    endif()
+    # scoop's `mingw` ships gcc.exe *and* the x86_64-w64-mingw32-* cross names,
+    # so it satisfies both the GNU gcc reference and the mingw PE reference.
+    if(_SCOOP)
+        set(_cmd "${_SCOOP}" install mingw)
+    elseif(_CHOCO)
+        set(_cmd "${_CHOCO}" install -y mingw)
+    endif()
+elseif(_BREW)
     if(TOOL STREQUAL "gcc")
         set(_cmd "${_BREW}" install gcc)
     elseif(TOOL STREQUAL "wine")
@@ -923,7 +943,8 @@ endif()
 if(NOT _cmd)
     message(FATAL_ERROR
         "toolchain-setup(${TOOL}): no supported package manager found "
-        "(looked for brew/apt-get/dnf/pacman/zypper). Install '${TOOL}' manually.")
+        "(looked for scoop/choco on Windows, brew/apt-get/dnf/pacman/zypper "
+        "elsewhere). Install '${TOOL}' manually.")
 endif()
 
 string(REPLACE ";" " " _pretty "${_cmd}")

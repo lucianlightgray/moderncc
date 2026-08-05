@@ -526,6 +526,21 @@ static const struct {
 				"windows-latest", "x64", OS_WIN, 2},
 		{0, 0, 0, 0, 0, 0, 0, 0, 0}};
 
+/* stage3-emulate otherwise takes exactly one gate host per OS, which left the
+   `linux-clang-cross` preset deferring to a gcc-host cell -- the cross axis is
+   driven by the host compiler that built stage1, so clang needs its own cell
+   for that exemption to be true. List hosts here that are NOT already their
+   OS's gate pick; a host that is would be emitted twice. */
+static const char *EMU_EXTRA[] = {"linux-x86_64-clang", 0};
+
+static int emu_extra(const char *name) {
+	int i;
+	for (i = 0; EMU_EXTRA[i]; i++)
+		if (!strcmp(name, EMU_EXTRA[i]))
+			return 1;
+	return 0;
+}
+
 static const struct {
 	const char *name, *dflags, *blocker, *xdflags;
 	unsigned self_os, xdflags_os;
@@ -1503,6 +1518,50 @@ static const char *par_exempt(const char *nm) {
 	return NULL;
 }
 
+/* "stage2 feature: X" / "stage2 feature: X (host note)" -> X. An exemption that
+   defers to a feature cell is only as good as that cell still running, so the
+   board re-checks the name it names against FEAT_CI_SKIP instead of trusting
+   the prose. Returns 0 for exemptions that do not defer to a feature. */
+static int par_exempt_feature(const char *why, char *out, size_t n) {
+	static const char pfx[] = "stage2 feature: ";
+	const char *p;
+	size_t i = 0;
+	if (!why || strncmp(why, pfx, sizeof pfx - 1))
+		return 0;
+	p = why + sizeof pfx - 1;
+	while (*p && *p != ' ' && *p != '(' && i + 1 < n)
+		out[i++] = *p++;
+	out[i] = 0;
+	return i != 0;
+}
+
+/* An "alias: = <preset>" exemption inherits whatever coverage its target has,
+   so follow the hops (bounded) and report the CI-skip reason of the stage2
+   feature the chain finally defers to. Without this the head of a chain still
+   reads clean while its tail is skipped. */
+static const char *par_exempt_uncovered(const char *nm, char *feat, size_t n) {
+	static const char apfx[] = "alias: = ";
+	char target[64];
+	int hop;
+	for (hop = 0; hop < 4; hop++) {
+		const char *why = par_exempt(nm), *p;
+		size_t i = 0;
+		if (!why)
+			return NULL;
+		if (par_exempt_feature(why, feat, n))
+			return feature_ci_skip(feat);
+		if (strncmp(why, apfx, sizeof apfx - 1))
+			return NULL;
+		for (p = why + sizeof apfx - 1; *p && *p != ' ' && i + 1 < sizeof target;)
+			target[i++] = *p++;
+		target[i] = 0;
+		if (!i)
+			return NULL;
+		nm = target;
+	}
+	return NULL;
+}
+
 static void par_local_set(StrSet *loc) {
 	static const char **T[] = {
 			PS_LINUX_GCC, PS_LINUX_CLANG, PS_DEV, PS_SUPER,
@@ -1763,9 +1822,11 @@ static int do_plan(int argc, char **argv) {
 	} else if (!strcmp(job, "stage3-emulate")) {
 		unsigned emu_os = 0;
 		for (i = 0; HOSTS[i].name; i++) {
-			if (HOSTS[i].gate != 1 || (emu_os & HOSTS[i].osbit))
-				continue;
-			emu_os |= HOSTS[i].osbit;
+			if (!emu_extra(HOSTS[i].name)) {
+				if (HOSTS[i].gate != 1 || (emu_os & HOSTS[i].osbit))
+					continue;
+				emu_os |= HOSTS[i].osbit;
+			}
 			plan_cell(&first,
 								"\"host\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\","
 								"\"msvcarch\":\"%s\",\"artifact\":\"stage1-%s\"",
@@ -1801,7 +1862,7 @@ static int do_parity(int argc, char **argv) {
 	const char *root = ".";
 	char *text, *wf_vals[8] = {0};
 	StrSet all, loc, wfplan;
-	int i, miss = 0, checked = 0, list_only = 0;
+	int i, miss = 0, checked = 0, list_only = 0, uncovered = 0;
 
 	for (i = 0; i < argc; i++) {
 		if (!strcmp(argv[i], "--srcroot") && i + 1 < argc)
@@ -1854,7 +1915,15 @@ static int do_parity(int argc, char **argv) {
 		const char *why = par_exempt(nm);
 		int in_ci, in_loc, w;
 		if (why) {
-			printf("  %-28s exempt - %s\n", nm, why);
+			char feat[64];
+			const char *fskip = par_exempt_uncovered(nm, feat, sizeof feat);
+			if (fskip) {
+				printf("  %-28s exempt - %s  [UNCOVERED: feature `%s` is skipped "
+							 "in CI]\n", nm, why, feat);
+				uncovered++;
+			} else {
+				printf("  %-28s exempt - %s\n", nm, why);
+			}
 			continue;
 		}
 		in_ci = set_has(&wfplan, nm);
@@ -1880,6 +1949,10 @@ static int do_parity(int argc, char **argv) {
 			miss++;
 		}
 	printf("========================================================\n");
+	if (uncovered)
+		printf("preset parity: %d exempt preset(s) defer to a stage2 feature that CI "
+					 "skips -- not counted as a gap, but nothing exercises them in CI.\n",
+					 uncovered);
 	for (i = 0; WF[i]; i++)
 		free(wf_vals[i]);
 	if (miss) {
