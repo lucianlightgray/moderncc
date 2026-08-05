@@ -383,15 +383,19 @@ gates this file recorded as green and were not. **Two of the three closed in
    is OS-agnostic (any malloc recycles) — re-run that cell on the macOS host
    at this fix before carrying it forward as a separate defect.
 
-8. **`mcctest`/`mcctest-bcheck` fail against Apple clang 21 as the reference.**
-   `tests/diff/parts/legacy_numeric.h:7:23` is `static double nan2 = 0.0 / 0.0;`
-   and the *reference* leg rejects it: `error: cannot compile this constant
-   l-value expression yet`. Verified pre-existing by running the pristine
-   `HEAD:tools/mccharness.c` — identical failure, so it is not fallout from the
-   parts-suite fix. CI does not see it (its macOS images carry an older clang),
-   so this is a local-toolchain gap, not a tree red. `suite_mcctest` still
-   hardcodes `-std=gnu23` at `tools/mccharness.c:467`; if this needs closing,
-   the capability probe added for the parts suite is the obvious lever.
+8. ~~**`mcctest`/`mcctest-bcheck` fail against Apple clang 21 as the reference.**~~
+   **CLOSED 2026-08-05 — both cells pass** on the macOS arm64 host against Apple
+   clang 21 (`ctest -R '^mcctest'`: 3/3). The lever this item predicted is the one
+   that landed: `suite_mcctest` no longer hardcodes the level, it calls
+   `resolve_pair_std_from(cc, mcc, work, 2)`, and the `skip` of 2 steps past
+   `-std=gnu23`/`-std=gnu2x` to `-std=gnu17`. The `tools/mccharness.c:467` reference
+   in this item is stale — that line is unrelated code now.
+
+   The underlying Apple clang limitation is real and worth keeping, because it will
+   bite anything that does force gnu23: `static double nan2 = 0.0 / 0.0;` compiles
+   clean under `-std=gnu17` but under `-std=gnu23` Apple clang 21 reports
+   *"error: cannot compile this static initializer yet"*. It is a C23-mode constant
+   evaluator gap in clang, not a language rule — mcc accepts it at every level.
 
 ### New urgent items — Windows and macOS, which this host cannot reach
 
