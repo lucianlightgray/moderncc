@@ -1136,6 +1136,52 @@ static void pe_build_exports(struct pe_info *pe) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); fclose(op); }
 }
 
+/* pe_set_tls writes four absolute VAs into the TLS directory
+   (StartAddressOfRawData, EndAddressOfRawData, AddressOfIndex,
+   AddressOfCallBacks) at header-write time, after every section's own
+   relocations have been walked -- so nothing below records them. Without
+   base relocations the loader of a rebased image reads preferred-base
+   addresses and LdrpInitializeTls faults before the first instruction of
+   the program, which is how the arm64-PE stage2 mcc died on an
+   always-ASLR host while x86_64 kept being granted its preferred base. */
+static void pe_build_tls_dir_reloc(struct pe_info *pe) { MCC_TRACE("enter\n");
+	DWORD offset = 0, block_ptr = 0, addr;
+	int i, count = 0;
+	struct pe_reloc_header *hdr;
+
+	if (!pe->has_tls)
+		{ MCC_TRACE("br\n"); return; }
+	for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
+		addr = (DWORD)(pe->tls_dir_sec->sh_addr + pe->tls_dir_offset) +
+					 i * sizeof(ADDR3264);
+		if (count == 0 || addr - offset >= (1 << 12)) { MCC_TRACE("br\n");
+			if (count) { MCC_TRACE("br\n");
+				if (count & 1)
+					{ MCC_TRACE("br\n"); section_ptr_add(pe->reloc, sizeof(WORD)), ++count; }
+				hdr = (struct pe_reloc_header *)(pe->reloc->data + block_ptr);
+				hdr->offset = offset - pe->imagebase;
+				hdr->size = count * sizeof(WORD) + sizeof(struct pe_reloc_header);
+				count = 0;
+			}
+			block_ptr = pe->reloc->data_offset;
+			section_ptr_add(pe->reloc, sizeof(struct pe_reloc_header));
+			offset = addr & 0xFFFFFFFF << 12;
+		}
+		{
+			WORD *wp = section_ptr_add(pe->reloc, sizeof(WORD));
+			*wp = (addr - offset) | PE_IMAGE_REL << 12;
+			++count;
+		}
+	}
+	if (!count)
+		{ MCC_TRACE("br\n"); return; }
+	if (count & 1)
+		{ MCC_TRACE("br\n"); section_ptr_add(pe->reloc, sizeof(WORD)), ++count; }
+	hdr = (struct pe_reloc_header *)(pe->reloc->data + block_ptr);
+	hdr->offset = offset - pe->imagebase;
+	hdr->size = count * sizeof(WORD) + sizeof(struct pe_reloc_header);
+}
+
 static void pe_build_reloc(struct pe_info *pe) { MCC_TRACE("enter\n");
 	DWORD offset, block_ptr, sh_addr, addr;
 	int count, i;
@@ -1195,6 +1241,7 @@ static void pe_build_reloc(struct pe_info *pe) { MCC_TRACE("enter\n");
 		hdr->size = count * sizeof(WORD) + sizeof(struct pe_reloc_header);
 		count = 0;
 	}
+	pe_build_tls_dir_reloc(pe);
 }
 
 static int pe_section_class(Section *s) { MCC_TRACE("enter\n");
