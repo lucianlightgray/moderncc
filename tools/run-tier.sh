@@ -18,6 +18,9 @@ host_cpu=$(uname -m 2>/dev/null || echo unknown)
 KIND=elf
 QEMU=""
 WINE=""
+DOCKERPLAT=""
+USEDOCKER=""
+DOCKERIMG=${MCC_RUNTIER_IMAGE:-debian:stable-slim}
 SR=""
 BUILDDEFS=""
 BUILDEXTRA=""
@@ -25,27 +28,33 @@ CORPUSFLAGS=""
 
 case "$triple" in
 x86_64)
-	KIND=native
+	if [ "$host_os" = Linux ] && [ "$host_cpu" = x86_64 ]; then
+		KIND=native
+	else
+		KIND=elf
+		BUILDDEFS="-DMCC_TARGET_X86_64"
+		DOCKERPLAT=linux/amd64
+	fi
 	IDENT="(x86_64 Linux)"
 	;;
 i386)
-	KIND=elf; QEMU=qemu-i386
+	KIND=elf; QEMU=qemu-i386; DOCKERPLAT=linux/386
 	BUILDDEFS="-DMCC_TARGET_I386"
 	IDENT="(i386 Linux)"
 	;;
 arm)
-	KIND=elf; QEMU=qemu-arm
+	KIND=elf; QEMU=qemu-arm; DOCKERPLAT=linux/arm/v7
 	BUILDDEFS="-DMCC_TARGET_ARM -DMCC_ARM_VFP -DMCC_ARM_EABI -DMCC_ARM_HARDFLOAT"
 	BUILDEXTRA="-mfloat-abi hard"
 	IDENT="(ARM eabihf Linux)"
 	;;
 arm64)
-	KIND=elf; QEMU=qemu-aarch64
+	KIND=elf; QEMU=qemu-aarch64; DOCKERPLAT=linux/arm64
 	BUILDDEFS="-DMCC_TARGET_ARM64"
 	IDENT="(AArch64 Linux)"
 	;;
 riscv64)
-	KIND=elf; QEMU=qemu-riscv64
+	KIND=elf; QEMU=qemu-riscv64; DOCKERPLAT=linux/riscv64
 	BUILDDEFS="-DMCC_TARGET_RISCV64"
 	IDENT="(riscv64 Linux)"
 	;;
@@ -85,7 +94,11 @@ for a in i386 x86_64 arm arm64 riscv64; do
 	INC="$INC -I$root/src/arch/$a"
 done
 
-work=$(mktemp -d)
+if [ -n "$DOCKERPLAT" ]; then
+	work=$(mktemp -d "$bdir/run-tier.XXXXXX")
+else
+	work=$(mktemp -d)
+fi
 trap 'rm -rf "$work"' EXIT
 B="$work/B"
 mkdir -p "$B/lib"
@@ -101,13 +114,43 @@ native)
 	CORPUSFLAGS="-I$root/runtime/include"
 	;;
 elf)
-	command -v "$QEMU" >/dev/null 2>&1 || skip "$QEMU not available for $triple"
+	if ! command -v "$QEMU" >/dev/null 2>&1; then
+		# No qemu-user here. If this triple names a docker platform and a daemon
+		# is up, run there instead: same binary, real execution.
+		# A daemon being up is not enough: it also needs a binfmt handler for this
+		# platform, or the container dies with "exec format error". Probe it.
+		if [ -n "${DOCKERPLAT:-}" ] && command -v docker >/dev/null 2>&1 &&
+			 docker info >/dev/null 2>&1 &&
+			 docker run --rm --platform "$DOCKERPLAT" "$DOCKERIMG" true >/dev/null 2>&1; then
+			QEMU=""
+			USEDOCKER=1
+		else
+			skip "$QEMU not available for $triple${DOCKERPLAT:+, and no docker for $DOCKERPLAT}"
+		fi
+	fi
 	SR="$root/vendor/gentoo-stage3-$triple-glibc"
 	[ -d "$SR" ] || skip "no vendored sysroot at $SR"
 	LIBS=""
+	CRTB=""
 	for d in usr/lib64 lib64 usr/lib lib; do
 		[ -d "$SR/$d" ] && LIBS="$LIBS -L$SR/$d"
 	done
+	# The x86_64 stage3 carries a 32-bit crt1.o in lib/ and the 64-bit one in
+	# usr/lib64/. The sysroot's default crt search finds lib/ first and the link
+	# dies on "invalid object file", so point -B at the directory whose crt1.o
+	# actually matches the triple.
+	CRTDIR=""
+	for d in usr/lib64 lib64 usr/lib lib; do
+		[ -f "$SR/$d/crt1.o" ] || continue
+		CRTDIR="$SR/$d"
+		CRTB="-B$CRTDIR"
+		break
+	done
+	# --sysroot pins the crt search to $SR/lib and -B cannot override it, so when
+	# the matching crt lives elsewhere the sysroot flag has to go; the explicit
+	# -B/-L/-I below already cover what it was providing.
+	SYSF="--sysroot=$SR"
+	[ -n "$CRTDIR" ] && [ "$CRTDIR" != "$SR/lib" ] && SYSF=""
 	RTA="$xdir/$triple-libmccrt.a"
 	RMO="$xdir/$triple-runmain.o"
 	[ -f "$RTA" ] || skip "no $RTA (build the $triple runtime)"
@@ -117,12 +160,24 @@ elf)
 	cp "$RMO" "$B/runmain.o"
 	cp "$RMO" "$B/$triple-runmain.o"
 	echo "[$triple] bootstrapping a $triple-hosted mcc with $CROSS against $SR"
-	"$CROSS" -w $BUILDDEFS -DMCC_CONFIG_OPTIMIZER=1 $BUILDEXTRA -O1 \
-		$INC --sysroot="$SR" "-I$SR/usr/include" $LIBS \
+	"$CROSS" -w $BUILDDEFS $BUILDEXTRA -O1 \
+		$INC $SYSF "-I$SR/usr/include" $CRTB $LIBS \
 		-o "$MCC" "$root/src/mcc.c" -lm
 	[ -s "$MCC" ] || fail "$triple mcc did not build"
-	RUN="$QEMU -L $SR"
-	CORPUSFLAGS="--sysroot=$SR -I$SR/usr/include $LIBS -I$root/runtime/include"
+	if [ -n "${USEDOCKER:-}" ]; then
+		# The sysroot's libc.so is a GNU ld script naming /lib64 and /usr/lib64 by
+		# absolute path. --sysroot would resolve those, but it also pins the crt
+		# search to $SR/lib, which holds a 32-bit crt1.o here. Mounting the
+		# sysroot at the paths the script already names satisfies both.
+		RUN="docker run --rm --platform $DOCKERPLAT -v $root:$root"
+		for d in lib64 usr/lib64 lib usr/lib; do
+			[ -d "$SR/$d" ] && RUN="$RUN -v $SR/$d:/$d:ro"
+		done
+		RUN="$RUN -w $PWD $DOCKERIMG"
+	else
+		RUN="$QEMU -L $SR"
+	fi
+	CORPUSFLAGS="$SYSF -I$SR/usr/include $CRTB $LIBS -I$root/runtime/include"
 	;;
 pe)
 	case "$triple" in
@@ -149,7 +204,7 @@ pe)
 	cp "$RMO" "$B/$triple-runmain.o"
 	MCC="$work/mcc.exe"
 	echo "[$triple] bootstrapping a $triple-hosted mcc with $CROSS (PE, run under $WINE)"
-	"$CROSS" -w "-B$B" $BUILDDEFS -DMCC_CONFIG_OPTIMIZER=1 -O1 \
+	"$CROSS" -w "-B$B" $BUILDDEFS -O1 \
 		"-I$root/runtime/win32/include" "-I$root/runtime/win32/include/winapi" \
 		"-I$root/runtime/include" $INC \
 		-o "$MCC" "$root/src/mcc.c"
@@ -176,7 +231,7 @@ macho)
 	cp "$RMO" "$B/runmain.o"
 	cp "$RMO" "$B/$triple-runmain.o"
 	echo "[$triple] bootstrapping a $triple-hosted mcc with $CROSS (Mach-O)"
-	"$CROSS" -w $BUILDDEFS -DMCC_CONFIG_OPTIMIZER=1 -O1 $INC \
+	"$CROSS" -w $BUILDDEFS -O1 $INC \
 		"-B$root/runtime" "-I$root/runtime/include" \
 		-o "$MCC" "$root/src/mcc.c"
 	[ -s "$MCC" ] || fail "$triple mcc did not build"
@@ -189,6 +244,12 @@ RUNARGS="-w -B$B -L$B $CORPUSFLAGS"
 echo "[$triple] $RUN $MCC $RUNARGS"
 if ! env $ENVPFX $RUN "$MCC" -v >"$work/ver" 2>&1; then
 	sed -e "s/^/[$triple] /" "$work/ver"
+	# Under docker the sysroot has to be mounted at the paths its ld scripts name,
+	# which replaces the container's own /lib. An emulated container tolerates
+	# that; a native-arch one does not -- its loader is the thing being replaced.
+	# That is a property of this host, not of mcc, so it is a skip.
+	[ -n "${USEDOCKER:-}" ] &&
+		skip "$triple cannot be hosted under docker $DOCKERPLAT here: mounting the sysroot over the container runtime stops it executing"
 	fail "the $triple-hosted mcc does not start under its runner"
 fi
 sed -e "s/^/[$triple] /" "$work/ver"

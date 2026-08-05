@@ -1,5 +1,74 @@
 # TODO
 
+## The configuration surface moved: read this before running any recipe below
+
+**Every `MCC_AST_*` and `MCC_RIR_*` gate is now a `-f` flag.** 113 of them, generated
+from one list in `src/mccopt.h`, which also generates the driver's option table so the
+two cannot drift. `-fno-<name>` turns a knob off, `-f<name>` on.
+
+This matters for reading the rest of this file, because **a retired variable in the
+environment is ignored silently** — no warning, no error, exit 0. A recipe that still
+spells one will run, print a plausible board, and measure nothing. That failure mode
+cost three separate defects during the conversion: the superopt search explored a
+space where nothing changed and passed; `runtime-bench`'s ratchet read its win as
++0.0% instead of erroring; `optfire`'s extra-gate column stopped firing. The runnable
+recipes in this file were repointed; prose that merely *names* a retired variable was
+left as history.
+
+Translation for the ones this file uses most:
+
+| was | now |
+| --- | --- |
+| `MCC_RIR_NOFB=1` | `-fno-replay-fallback` |
+| `MCC_AST_PROMOTE=0` | `-fno-promote-locals` |
+| `MCC_AST_TEMPLATES=0` | `-fno-reemit-templates` |
+| `MCC_AST_INLINE=0` | `-fno-inline` |
+| `MCC_AST_SEARCH=1` | `-fopt-search` |
+| `MCC_AST_NARROW_FIX=1` | `-fnarrow-fix` |
+| `MCC_AST_BITFLAG=1` | `-ftree-switch-conversion` |
+
+**Still environment variables, deliberately.** The numeric tuning knobs
+(`MCC_AST_CSE_WINDOW`, `MCC_AST_TILE_SIZE`, `MCC_AST_INLINE_DEPTH`, …) and the RIR
+measurement handles this file's censuses are built on — `MCC_REPLAY_IR`,
+`MCC_RIR_PROD`, `MCC_RIR_FORCE`, `MCC_FORCE_REPLAY` — are unchanged, so every
+`[rir-prod]` / `[rir-total]` recipe still works verbatim. So are the `MCC_JIT_*`
+knobs: the embed JIT runs inside programs mcc *compiled*, where a compiler flag
+cannot reach it, which is the same reason `OMP_NUM_THREADS` is an environment
+variable.
+
+**`-O` is a ladder now, not a dial.** 1–3 are the settled levels; **4–12 are one
+in-development optimizer each**, cumulative; **13 and up run the strategy search with
+the level as its budget in seconds**. Anything in this file that says `-O4` meaning
+"search for 4s" now means "`-O3` plus one x86-only pass" — the search entry is
+`-O13`. `MCC_OPT_SEARCH_LEVEL` in `mccopt.h` is the single definition, and
+`ast_opt_defaults` refuses to build if a knob is ever placed at or past it.
+
+A pass that is merely unfinished belongs on the ladder; one that is **known to
+miscompile does not**. `-fjit-splice` was off-by-default, exercised by nothing, and
+segfaults a threads program; putting it on rung 12 made every level above it emit
+wrong code, and the suite caught it. It is back to opt-in.
+
+**Compile-time is down to four switches** outside target/host: `MCC_DIAG`
+(instruments mcc as it runs — allocator/Sym/optrace, plus the warning set and
+`mcc_s`/`mcc_c`), `MCC_DEV` (differential self-checking that aborts on divergence —
+the AST side-car coherence oracle, and the JIT fault injectors, which therefore
+cannot be switched on in a shipped compiler), `MCC_CONFIG_TRACE` (`MCC_TRACE` alone,
+~12,600 call sites), and `MCC_EMBED_JIT`. Deleted outright, now always compiled in:
+`MCC_CONFIG_OPTIMIZER`, `MCC_CONFIG_DIAG_RT`, `MCC_CONFIG_LSP`, `MCC_CONFIG_ASM`,
+`MCC_REPLAY_IR` (the compile-time half), `MCC_IR_CAPTURE`, `MCC_PROFILE` with
+`mcc_p`. Their capabilities are reachable at runtime instead: `-O0`, `-b`/`-bt`/
+`-fsanitize=bounds`, `--lsp`, `-fasm`/`-fno-asm`.
+
+**Coverage owed.** `tests/optfire/flagsweep.sh` checks that every flag in the table
+accepts both spellings (113/113) and that turning each on and off still computes the
+reference answer on twelve exec goldens. The exec half is **not yet wired as ctest
+cells** — that is the next job, and it matters: 43 of these flags are referenced
+nowhere in `tests/`, `tools/` or `CMakeLists.txt`, which is exactly the population
+`-fjit-splice` came from. The first version of that harness used two synthetic
+programs and *passed* `-fjit-splice`; it now uses real goldens covering threads and
+atomics, and fails it. A sweep that misses the bug you already have is worse than no
+sweep, because it reads as coverage.
+
 ## Where things stand — 2026-08-04, `66df3c7e`
 
 | Gate | State |
@@ -196,11 +265,13 @@ gates this file recorded as green and were not. **Two of the three closed in
      two spellings.
    - **`o0_ab.sh:9` still cites `src/mccast.c:2035`** for that gate. The line-reference
      table below has the correct `:1923`; the script's header does not.
-   - **The "38 gates" figure is stale in both scripts' comments.** The live
-     derivation yields **22** — it read 28 until six of them were made unconditional
-     (see **CLOSED: six replay-fidelity gates**), and **Verified true** still records
-     the 28. Harmless — both scripts print the live count and abort at zero — but the
-     comment misleads, and any count written down here dates instantly.
+   - **The "38 gates" figure is stale in both scripts' comments, and the whole
+     derivation is now vacuous.** It greps for
+     `ast_env_gate("MCC_AST_*", o4 || s1->optimize >= 1)`, and `ast_env_gate` no
+     longer exists — the gates are `-f` flags resolved from `mccopt.h`. The scripts
+     abort at zero derived gates, so `C2_FORCE=1` will fail loudly rather than
+     measure the wrong thing; they need repointing at the flag table before the
+     next forced-`-O0` board.
    - **There is no `-O0` cell for `rir_c2.cmake`.** The twelve `ast/rir-parity-*-O0`
      cells enforce the replay bar at `-O0` and `rir_c2.cmake` banks the C2 gap at
      `-O1`/`-O2`/`-O3`, so the forced-`-O0` C2 gap is reachable *only* by hand
@@ -629,8 +700,10 @@ in replay"). They carry the `optimize >= 1` default only because that is where t
 staged flip of `e9ca26c3` left them. The effect was that the replay was **wrong at
 `-O0`**, not merely less optimized.
 
-Now `ast_env_gate(..., 1)` for all six (`src/mccast.c:2032-2043`). The env names
-survive for bisection and `ast_env_gate` honours an explicit `0`.
+All six are unconditional now. They kept `-fno-` spellings for bisection —
+`-fno-replay-cmp-materialize`, `-fno-replay-indirect-call`,
+`-fno-replay-loopcond-store`, `-fno-replay-while-comma`, `-fno-storeval-call`,
+`-fno-storeval-callup` — which is how the defect was proved in the first place.
 
 **Measured at `d4bf0d27` on the arm64 host, fresh `cmake-verify`, whole corpus**
 (`find tests -name '*.c'`, 569 of 662 files compile with `-I runtime/include`),
@@ -652,8 +725,8 @@ gate: `asm` 41, `noops` 39, `regdangle` 4, `bail` 3, `invalid` 1.
 | --- | --- | --- |
 | baseline | green | green |
 | `MCC_RIR_FORCE=1` (arena adopted, byte gate on) | green | green |
-| `MCC_RIR_FORCE=1 MCC_RIR_NOFB=1` | **11 of 318 fail** | **green, 319/319** |
-| `MCC_TEST_OPT=-O1 MCC_RIR_NOFB=1` | green | green |
+| `MCC_RIR_FORCE=1 -fno-replay-fallback` | **11 of 318 fail** | **green, 319/319** |
+| `MCC_TEST_OPT=-O1 -fno-replay-fallback` | green | green |
 
 The eleven were `builtin_overflow`, `random_stuff`, `precedence`, `bool`, `func_name`,
 `signbit_inline`, `overflow_narrow`, `overflow_inline`, `floating_point`, `grep`,
@@ -673,7 +746,7 @@ int a = 12, b = 34;
 printf("%d, %d\n", a == a, a == b);   /* parser: "1, 0"   arena was: "0, 0" */
 ```
 
-Narrowed by probe at `-O0` under `MCC_RIR_NOFB=1`, parser → arena, before the fix:
+Narrowed by probe at `-O0` under `-fno-replay-fallback`, parser → arena, before the fix:
 
 - `a == b, a + b` → `0 46` became `46 46`
 - `a == b, 7` → `0 7` became `7 7` — a *constant* second argument clobbers it, so it
@@ -704,11 +777,14 @@ whole corpus, `SOURCE_DATE_EPOCH` pinned, at `-O0`/`-O1`/`-O2`/`-O3`: **569 iden
 0 differ on every level, 2,276 objects in total.** Expected — at `-O1`+ the six were
 already on, and at `-O0` nothing adopts the arena unless forced.
 
-**One derivation moved.** The `ast_env_gate("MCC_AST_*", o4 || s1->optimize >= 1)`
-grep that `tools/c2_sweep.sh`, `tools/c2_equiv.sh` and `tools/o0_ab.sh` use to build
-their forced-`-O0` env now yields **22**, not 28. Forcing the six is a no-op from here,
-so no board moves; all three scripts derive the set dynamically and abort only at
-zero, so none needed editing.
+**One derivation died with it, and three scripts still depend on it.**
+`tools/c2_sweep.sh`, `tools/c2_equiv.sh` and `tools/o0_ab.sh` build their
+forced-`-O0` env by grepping for
+`ast_env_gate("MCC_AST_*", o4 || s1->optimize >= 1)`. That function no longer
+exists, so the grep yields zero and all three abort — loudly, which is the one
+mercy here. **They must be repointed at `src/mccopt.h`** (every row whose class is
+`MCC_OPTD_LEVEL(n)` with `n <= 3`, spelled `-f<name>`) before the next forced-`-O0`
+board is taken. Until then there is no C2 byte board.
 
 **What is left at forced `-O0`: 20 fallbacks against `-O1`'s 7.** That residue is the
 next measurement, and it is now a *smaller* problem than the `-O1` census was two
@@ -728,7 +804,7 @@ static void ptr_unlink(void *list, void *e, unsigned next) {
 }
 ```
 
-Parser: prints the right answer. `MCC_RIR_NOFB=1`: **SIGSEGV**. This is the shape that
+Parser: prints the right answer. `-fno-replay-fallback`: **SIGSEGV**. This is the shape that
 takes down the JIT self-host, and it is a real miscompile rather than a byte
 difference — which settles the question of whether the six/thirty-nine byte-divergent
 bodies are safe to ship. **They are not.**
@@ -846,7 +922,7 @@ what remains.
 
 ### `fallback == 0` is NOT one flag away — several bodies genuinely miscompile
 
-`MCC_RIR_NOFB=1` zeroes the census and passes all 317 exec goldens at `-O1`, `-O2` and
+`-fno-replay-fallback` zeroes the census and passes all 317 exec goldens at `-O1`, `-O2` and
 `-O3`. It nonetheless breaks `selfhost-jit`, `selfhost-arm64-native`,
 `selfhost-riscv64-docker`, `cross/no-compiler-abort-x86_64-win32` and two `exec-search`
 cells. `selfhost-jit` dies as **`mcc: memory full`** with peak RSS **1,235 MB against a
@@ -871,7 +947,7 @@ sufficient validation for a codegen-affecting change. They passed at every `-O` 
 self-hosting broke. Run the full suite, and prefer `mcc.c` over `tests/` when measuring
 the census.
 
-**`MCC_RIR_NOFB=1` drives the `-O1` census to `used 2175, fallback 0`** and the exec
+**`-fno-replay-fallback` drives the `-O1` census to `used 2175, fallback 0`** and the exec
 goldens are clean under it at `-O1`, `-O2` **and** `-O3` — zero regressions at every
 level, after the five fixes below. So the remaining six byte-divergent bodies are
 safe to ship; the byte gate is the only thing still refusing them.
@@ -881,7 +957,7 @@ default flipped, `ctest` loses `selfhost-jit`, `selfhost-arm64-native`,
 `selfhost-riscv64-docker`, `cross/no-compiler-abort-x86_64-win32` and two
 `exec-search` cells. `selfhost-jit` fails as **`mcc: memory full`** — a `realloc`
 returning NULL in `mcc_realloc` (`src/libmcc.c:172`), i.e. genuine exhaustion, not a
-miscompile. Neither `MCC_AST_INLINE=0` nor `MCC_AST_TEMPLATES=0` changes it, so it is
+miscompile. Neither `-fno-inline` nor `-fno-reemit-templates` changes it, so it is
 not the inline-retention path that first suggests itself.
 
 **The methodological lesson, which cost a wrong turn:** the 317 exec goldens are *not*
@@ -897,7 +973,7 @@ fallback path, and the JIT's inner compile is where that first bites.
 ### OPEN: `void_expr` is a PROMOTION defect, not an arena one
 
 `tests/exec/statements/void_expr.c::main` falls back at `-O2`/`-O3` (not `-O1`) and
-miscompiles when forced through. **`MCC_AST_PROMOTE=0` fixes it outright** — that is
+miscompiles when forced through. **`-fno-promote-locals` fixes it outright** — that is
 the whole diagnosis, and it clears the arena, the replay and the landor flags
 (`MCC_RIR_NOMAT` and `MCC_RIR_NOINV` both leave it unmoved).
 
@@ -968,7 +1044,7 @@ result type is the promoted *left* operand's, not the common one.
 | `used` | 2158 | **2168** |
 | `fallback` | 17 | **7** |
 | failing terms | `len 13, bytes 3, relcontent 1` | `len 5, bytes 1, relcontent 1` |
-| golden regressions under `MCC_RIR_NOFB=1` | 5 | **1** (`c11_complex_convert`) |
+| golden regressions under `-fno-replay-fallback` | 5 | **1** (`c11_complex_convert`) |
 
 One type bug accounted for **ten of the seventeen fallbacks and four of the five
 miscompilations**. Note what had been protecting the tree: the fold was already
@@ -1005,7 +1081,7 @@ against the parser's bytes, and `rir_prod_note(faithful ? "used" : "fallback")`
 `ast_run_strat_seq` opens `if (faithful && ast_strategies[si].gate())`
 (`src/mccast.c:13044`) — so an unfaithful body is neither trusted nor optimized.
 
-`MCC_RIR_NOFB=1` (`ast_rir_nofb_env`, off by default) accepts a byte-divergent replay
+`-fno-replay-fallback` (`ast_rir_nofb_env`, off by default) accepts a byte-divergent replay
 into production so the bar can be measured rather than argued about. **With it on,
 `fallback` goes 17 → 0 and `used` 2158 → 2175.**
 
@@ -1033,7 +1109,7 @@ passes run.
 | | passed | failed |
 | --- | --- | --- |
 | baseline | 297 | 8 |
-| `MCC_RIR_NOFB=1` | 293 | 13 |
+| `-fno-replay-fallback` | 293 | 13 |
 
 Identical at `-O1`, `-O2` and `-O3`. The eight baseline failures are the known
 batch-invocation artifacts that pass under ctest isolation; the delta is **four
@@ -1079,7 +1155,7 @@ extern int printf(const char *, ...);
 int main(void) {
 	long long a;
 	int c1 = (!__builtin_add_overflow(9223372036854775807LL, 1LL, &a) || a != -9223372036854775807LL - 1);
-	printf("c1=%d\n", c1);   /* want 0; MCC_RIR_NOFB=1 prints 1 */
+	printf("c1=%d\n", c1);   /* want 0; -fno-replay-fallback prints 1 */
 	return 0;
 }
 ```
@@ -1103,9 +1179,9 @@ then converge on one constant, which is exactly the observed behaviour.
 
 **REFUTED — the materialisation arm is not the culprit.** The confirmation this
 paragraph originally demanded was run instead of assumed, and it killed the
-hypothesis. `MCC_RIR_NOMAT=1` (`ast_rir_nomat_env`, diagnostic, off by default) makes
+hypothesis. `-fno-replay-materialize` (`ast_rir_nomat_env`, diagnostic, off by default) makes
 `ast_replay_value` ignore `AST_FB_LANDOR_MATERIAL` and always take the `gvtst_set`
-path. With `MCC_RIR_NOFB=1 MCC_RIR_NOMAT=1` the reproducer **still prints `c1=1`**. So
+path. With `-fno-replay-fallback -fno-replay-materialize` the reproducer **still prints `c1=1`**. So
 the constant does not come from that arm, and everything above about `rval & 1`,
 `ival`, and `expr_landor`'s `cc || f` condition is a plausible story that measurement
 does not support. **Do not act on it.**
@@ -1124,9 +1200,9 @@ path and its `AST_FB_LANDOR_INVERT` handling (`src/mccast.c:4170-4176`), the
 builtin's result feeding a short-circuit is a shape `[arg]`/`[gop]` have not been
 pointed at yet.
 
-**`AST_FB_LANDOR_INVERT` is refuted as well.** `MCC_RIR_NOINV=1` gates the `INVERT`
+**`AST_FB_LANDOR_INVERT` is refuted as well.** `-fno-replay-landor-invert` gates the `INVERT`
 swap at `src/mccast.c:4180`; the reproducer is unmoved with it on, alone or together
-with `MCC_RIR_NOMAT=1`. So `docs/TODO.md:491`'s long-standing suspicion — *"the same
+with `-fno-replay-materialize`. So `docs/TODO.md:491`'s long-standing suspicion — *"the same
 shape as the `!cmp` defect and still live"* — is **not** what miscompiles this body,
 whatever else may be true of it.
 
@@ -1453,7 +1529,7 @@ are provably fine. **Split the 17 by which term fails before treating any of the
 arena defects** — the census currently conflates "the arena emitted different code" with
 "the relocations did not line up", and at least one body is the second kind.
 
-That also relocates the wrong code. `MCC_RIR_NOFB=1` does two things, not one: it keeps
+That also relocates the wrong code. `-fno-replay-fallback` does two things, not one: it keeps
 the replayed body *and* it makes `faithful` true, which is what
 `ast_run_strat_seq` gates the **optimizer** on (`src/mccast.c:13044`). So forcing this
 body through runs passes over it for the first time. The miscompilation below may
@@ -1521,7 +1597,7 @@ explicit form is no safer than the `!`.
 **The route to the bar, in order:**
 
 1. Fix the five above. Reproduce each with
-   `MCC_RIR_NOFB=1 MCC_TEST_OPT=-O1 <builddir>/exec_runner … --only <name>`, and
+   `-fno-replay-fallback MCC_TEST_OPT=-O1 <builddir>/exec_runner … --only <name>`, and
    diff its output against the baseline run. These are real wrong-code defects and
    the goldens name them precisely — no oracle, no byte board, no bisect needed.
 2. Then `noops` 39 — confirm an empty arena is legitimate for a body with no captured
@@ -2112,7 +2188,7 @@ Instruments, in the order they pay: `RIRDUMP=1` for ops either side of the blame
 
 ### The class that only Replay_IR can reach
 
-**A body the recorder declines is a body whose shared-replay defects have never been executed.** `flt_eval_method.c::main` was `[ast-verify] unfaithful` on the tree, so the parser's bytes were restored and `AST_PF_EMIT` never ran — the `ast_fconst[]` desync was there the whole time and cost nothing. Replay_IR is `rfaithful` on the same body, so promotion runs, the arena is re-emitted, and the latent bug becomes wrong code. Expect more of these as Replay_IR's faithful population widens past the recorder's: the tell is that the failing gate is a *pass* gate (`MCC_AST_PROMOTE=1` here) and that the same body reads `unfaithful`/`desync` in `tests/ast/verify-baseline/`. Check that file before blaming the arena. Two consequences worth acting on: the C2 byte compare can never see this class, and the fix belongs in the shared replay where it pays twice.
+**A body the recorder declines is a body whose shared-replay defects have never been executed.** `flt_eval_method.c::main` was `[ast-verify] unfaithful` on the tree, so the parser's bytes were restored and `AST_PF_EMIT` never ran — the `ast_fconst[]` desync was there the whole time and cost nothing. Replay_IR is `rfaithful` on the same body, so promotion runs, the arena is re-emitted, and the latent bug becomes wrong code. Expect more of these as Replay_IR's faithful population widens past the recorder's: the tell is that the failing gate is a *pass* gate (`-fpromote-locals` here) and that the same body reads `unfaithful`/`desync` in `tests/ast/verify-baseline/`. Check that file before blaming the arena. Two consequences worth acting on: the C2 byte compare can never see this class, and the fix belongs in the shared replay where it pays twice.
 
 **Two verify baselines carry an unmeasured prediction.** `tests/ast/verify-baseline/x86_64-darwin.txt` and `x86_64-win32.txt` both list `features_c99_c11/flt_eval_method.c main unfaithful`, the same verdict `x86_64-linux.txt` carried. The `c == 0` skip is target- and host-independent, so both should now read faithful and both need re-banking on their own hosts — they are left alone here because a cross build's gap set does not reproduce a host-native one (measured: `mcc-x86_64-win32` against the mingw-hosted `x86_64-win32.txt` drifts on dozens of unrelated bodies, because the header resolution differs). `arm64-darwin.txt` lists the body as `desync`, a different verdict, and is expected to be unmoved.
 
@@ -2268,7 +2344,7 @@ What is left of the TLS commits is *refactor* — "remove stupid copy&paste code
 - The `all` corpus compiles 519–571 of 657 files per key. The rest are `dg-error` cases, host-specific `darwin/`, arch-specific `arch/` and files that need a driver; they are excluded by the `rc` check, not by a list, so a file that starts compiling joins the census automatically. `full_language.c` needs `-I <repo root> -DCC_NAME=CC_gcc` and enters only on the 7 keys where the C2 probe's own error does not abort the compile — `extra=` on the row says whether it did.
 - Keep the C2 harness mirroring the tree's replay prologue exactly across `vstack`/`vtop`, `loc`, `anon_sym`, `ast_pinned_regs`, `ast_rp_bsym`, `ast_rp_csym`, `ast_rp_switch`, `ast_temp_frontier`, `ast_rp_nlabel`, `ast_fconst_i`, `ast_locrec_i`, `sym_free_first`, `ast_rp_asmops`. Leftover allocator state reads as a codegen difference; one omission, a dirty vstack, costs 194 bodies.
 - Keep the `-O0` cells honest. `ast_replay_env` needs `optimize >= 1`, so `-O0` without `FORCE` journals nothing and the cell exits 1 on "0 bodies journalled" rather than 77. **`FORCE` is now two explicit env vars, `MCC_RIR_FORCE=1 MCC_AST_INT128=1`**, the first read at `src/mccast.c:2035`, and `SRCDIR` is gone from `rir_parity.cmake` and from all twelve callers; the old form derived the 38 `o4 || optimize >= 1` gate names by regex over `${SRCDIR}/*.c` and would hard-fail the moment one of those gates was deleted. Forced `-O0` legitimately reads 3 bodies fewer than `-O1` on x86_64, arm, arm64, arm64-osx, i386 and riscv64, 2 fewer on x86_64-osx, and 0 fewer on the five PE keys — `grep.c::tolower`, `c11_threads.c::thrd_equal`, `arm64.c::putchar`, all `static inline` shims whose out-of-line copy `-O1` emits and `-O0` does not. That is an emit difference, not a census loss. `tools/c2_sweep.sh`'s own `C2_FORCE=1` still derives the 38 gate names by regex over `src/*.c` and refuses to run if it finds none; that is now the only derivation left in the tree, and it should follow `rir_parity.cmake` to `MCC_RIR_FORCE` rather than be the last thing coupled to gate spellings the recorder's deletion will change.
-- **`MCC_AST_INT128=1` is in that env for a measured reason: without it forced `-O0` loses 2 bodies, on x86_64 and x86_64-osx only.** Measured either side of the cut on the whole twelve-key matrix: x86_64 `1146 → 1144` against an `-O1` of 1149, x86_64-osx `1140 → 1138` against 1142, and every other key identical either way (arm64 1186 both ways; the five PE keys unmoved at their `-O1` figure). Both bodies are `tests/exec/types/int128.c`, whose two out-of-line `__int128` bodies exist at `-O0` only when that gate is on — the derived list forced it and `MCC_RIR_FORCE` alone does not. Bisected to that one gate of the 38: `MCC_AST_INT128=1` alone takes that file from `fn=4` to `fn=6`, `MCC_AST_TEMPLATES=1` moves nothing. Forced `-O0` is the coverage baseline every deletion phase is diffed against, and its worth is that it covers the population `-O1` covers minus only the three shims above; narrowing it by 2 on the two keys where C2 already reads 100% would remove coverage exactly where a P1/P4 regression would be most legible. The gate name is a coupling, but a cheap and self-healing one — when the gate dies with the recorder those bodies are captured unconditionally and the env entry becomes a no-op, so **delete the line then, and do not re-derive a gate list either way**.
+- **`MCC_AST_INT128=1` is in that env for a measured reason: without it forced `-O0` loses 2 bodies, on x86_64 and x86_64-osx only.** Measured either side of the cut on the whole twelve-key matrix: x86_64 `1146 → 1144` against an `-O1` of 1149, x86_64-osx `1140 → 1138` against 1142, and every other key identical either way (arm64 1186 both ways; the five PE keys unmoved at their `-O1` figure). Both bodies are `tests/exec/types/int128.c`, whose two out-of-line `__int128` bodies exist at `-O0` only when that gate is on — the derived list forced it and `MCC_RIR_FORCE` alone does not. Bisected to that one gate of the 38: `MCC_AST_INT128=1` alone takes that file from `fn=4` to `fn=6`, `-freemit-templates` moves nothing. Forced `-O0` is the coverage baseline every deletion phase is diffed against, and its worth is that it covers the population `-O1` covers minus only the three shims above; narrowing it by 2 on the two keys where C2 already reads 100% would remove coverage exactly where a P1/P4 regression would be most legible. The gate name is a coupling, but a cheap and self-healing one — when the gate dies with the recorder those bodies are captured unconditionally and the env entry becomes a no-op, so **delete the line then, and do not re-derive a gate list either way**.
 - The C2 gap is ratcheted per key by `tests/ast/rir_c2.cmake` (`ast/rir-c2-{O1,O2,O3}` and eleven `ast/rir-c2-<triple>`), a banked gap and not a 100% bar. Each cell banks `BANKGAP` (`c2try - c2ok`), `BANKSKIP` and `BANKFN`; the `BANKFN` floor is the honesty half, since a gap ratchet over an unpinned population passes by measuring fewer bodies — with `vendor/` absent the ELF keys read `ok=77 fn=476` and a gap of 1, which is the header-resolution trap above wearing a green tick. The cell SKIPs unless the probe reports `c2try>0`, so a stock build without `-DMCC_REPLAY_IR_C2=1` cannot pass it vacuously, and it counts only files that exited 0. **The cells ratchet the `exec` corpus, not `all`** — deliberately, because a ctest cell has to be seconds and one twelve-key `all` sweep is twelve minutes. `all` is the bar and the sweep measures it; `exec` is the regression tripwire and ctest measures it. Do not conflate the two numbers. Banks as re-measured by rerunning each cell after the lost-intermediate class closed: x86_64 `0/1149`, x86_64-osx `0/1142`, x86_64-win32 `0/1237`, i386 `0/1152`, arm64 `1/1199`, arm64-osx `1/1224`, arm64-win32 `1/1297`, i386-win32 `1/1257`, arm `1/1130`, arm-win32 and arm-wince `1/1235`, riscv64 `3/1156` plus 2 `c2skip` — ten over the twelve keys, down from sixteen. Rebank by rerunning the cell, never by editing the number to match a memory. A gap *below* the bank only prints a STATUS line, so a closed body sits unratcheted until someone rebanks; treat that line as a to-do, not as noise.
 - **A new hook call compiles on the host and still breaks every stage2 CI job.** The amalgamated, optimizer-on build hides two whole classes of missing declaration. `mccast.h` declares its hooks behind `MCC_CONFIG_OPTIMIZER && defined(MCC_INTERNAL)`, which is why every `ast_hook_*` call in `mccgen.c` sits inside `#if MCC_CONFIG_OPTIMIZER` — the moment mcc compiles mcc without `-DMCC_CONFIG_OPTIMIZER=1` (selfhost-jit, cross-factory, o4-aot-jit) an unguarded call is an implicit declaration, which mcc treats as a hard error. And with `MCC_SINGLE_SOURCE=OFF` each `src/*.c` is its own translation unit, so a file that only saw `mccrir.h` through `mccgen.c` no longer does. Before pushing a new hook call, build all four: `-DMCC_SINGLE_SOURCE=OFF`, `-DMCC_CONFIG_OPTIMIZER=OFF`, `-DMCC_REPLAY_IR=OFF`, `-DMCC_CONFIG_ASM=OFF`. Each takes about a minute and all four together would have caught both defects. **P3 moved 813 lines into a new translation unit (`src/mccircap.c`) and all four were verified green on it, in isolation** — a shared build directory silently carries each `-D` into the next configure, so use a distinct one per configuration or the matrix tests the union rather than the cases.
 - Do not run the twelve-key sweep and `ctest -j8` at the same time. Seven `selfhost-fixpoint` cells fail under that contention and pass individually — a false red that costs a bisect.
@@ -2306,7 +2382,7 @@ Two further findings from it, neither a complex defect, both filed here so they 
   What the failure was, all measured, in case it returns:
   - **The probe.** `void be32(unsigned char *p, unsigned v) { p[0]=v>>24, p[1]=v>>16, p[2]=v>>8, p[3]=v; }` at `-O3`. `ldrb w1, [x29, …]` is the agreeing answer; the miscompiled compiler emitted `ldr`. Semantically a no-op — the following `strb` discards the difference — which is why only the fixpoint gate could see it.
   - **One TU.** A per-file `-O2`/`-O3` mix over the 22 multi-TU sources, delta-debugged to **`mccgen.c` alone at `-O3`**. It `#include`s `mccast.c` at line 15054, so that TU holds the narrow pass; the result is self-consistent.
-  - **Two gates of fourteen.** With `mccgen.c` at `-O3`, `MCC_AST_INLINE=0` **or** `MCC_AST_PROMOTE=0` made it agree; `CYCLE`, `TEMPLATES`, `COLOR`, `PRE`, `IVSR`, `LICM_TEMP`, `NARROW`, `CSE_JOIN`, `CPROP_JOIN`, `SETHI`, `REASSOC`, `DIVMAGIC`, `RANGE` and `SCCP_FIX` did not. Inliner **crossed with** register promotion, and `INLINE` is `optimize >= 3` — which is the whole of the `-O3`-ness.
+  - **Two gates of fourteen.** With `mccgen.c` at `-O3`, `-fno-inline` **or** `-fno-promote-locals` made it agree; `CYCLE`, `TEMPLATES`, `COLOR`, `PRE`, `IVSR`, `LICM_TEMP`, `NARROW`, `CSE_JOIN`, `CPROP_JOIN`, `SETHI`, `REASSOC`, `DIVMAGIC`, `RANGE` and `SCCP_FIX` did not. Inliner **crossed with** register promotion, and `INLINE` is `optimize >= 3` — which is the whole of the `-O3`-ness.
   - **One graft.** `MCC_AST_INLINE_LIMIT` binary-searched to **#55** (54 agreed, 55 diverged): `ast_vlat_context_at` grafted into `ast_narrow_elim_srcrange`, at its first `return ast_vlat_context_at(a, c, out);`.
   - **The symptom.** Printing the decision from `ast_narrow_elim_fits`: the limit-54 compiler read `srcrange=1 ctx={lo=0 hi=4294967295 tt=51 st=1}`, the limit-55 one read `srcrange=0`. **The grafted call returned 0 where it had to return 1**, so `ctx` was never written and the caller read an uninitialised `AstVLat` — which is exactly why a clang-built and an mcc-built compiler disagreed at all, and why the value it settled on was build-dependent.
 
@@ -2547,7 +2623,7 @@ The census read **36 failures of 8255** and named five distinct compiler defects
 | `bitfields_ms` | 11 | refusing a parented register-lvalue `Ref` in `rir_prod_take` — a **refusal**, not a model fix |
 | `chainstore` | 2 | the arena honouring `ast_chainstore_env` |
 | `selfhost-output-parity-O2/O3` | 2 | the do-while comma condition — the sixth defect |
-**Deleting the JIT seam's carve-out widened the population.** The four `exec-search*` suites set `MCC_AST_SEARCH=1` and were excluded from the arena swap outright, so closing defect 3 exposed the same bodies there too — +12 cells at the time, every one of them a body already named, none new. Coverage arriving, not regression; they close with their bodies.
+**Deleting the JIT seam's carve-out widened the population.** The four `exec-search*` suites set `-fopt-search` and were excluded from the arena swap outright, so closing defect 3 exposed the same bodies there too — +12 cells at the time, every one of them a body already named, none new. Coverage arriving, not regression; they close with their bodies.
 
 
 **Three defects, all invisible to C2 and all found by the runtime A/B.**
@@ -2557,7 +2633,7 @@ The census read **36 failures of 8255** and named five distinct compiler defects
 - **The do-while comma condition.** `while (c = (unsigned char)*p, c != '\0')` reached the arena as `If op=4 nc=2`, with the condition buried as the last statement of the held-store BasicBlock. The tree has `nc=3` — body, condition, prologue — and `ast_replay_bb`'s `op == 4` arm reads slot 1 as the condition and slot 2 as the prologue. `rir_if_safe`'s case 4 did not catch it because both slots were BasicBlocks and it only checks slot 0. It re-emitted the parser's bytes exactly and mispromoted by **one instruction** (`mov %ecx,%r15d` for `mov %eax,%r15d`). The body is `libmcc.c::dynarray_split`, and `#pragma comment(option, "-mms-bitfields")` in `bitfields.c` is the only test in the tree that reaches it — which is why the stage-1 mcc failed on exactly `bitfields.c` and `bitfields_ms.c` and nothing else. `rir_cf_cond` now parks the held stores in `rir_cfpfx`, which the `RIR_R_DO` rend already appends as child 2.
 **A prediction was right for the wrong reason.** The census expected the seven `selfhost-*` cells to clear with the five bodies. They did — but `output-parity-O2/O3` were a **sixth** defect with no row, a stable self-compile miscompile that only that cell can see, because `fixpoint` compares stage2 against stage3 and a stable miscompile survives it. Treat `selfhost-output-parity` as its own row in any future census.
 
-The instrument for this list is the runtime A/B, not the byte compare: compile and run every `tests/exec` file at `-O1` with and without the switch and diff stdout and exit code. C2 calls every one of these bodies clean, because it validates un-optimized emission. **Run it under the failing cell's own gates** — the three modelled bodies all read SAME at a plain `-O1`; `ptr_longlong_arith32` needs `-O2`, `array_2d_iv` needs `-O2 MCC_AST_OPASSIGN=1 MCC_AST_IVSR_PTR=1`, and `flt_eval_method` needs `-O1 MCC_AST_TEMPLATES=0 MCC_AST_PROMOTE=1` (neither gate alone reproduces it). The gate sets are on the suite's `set_tests_properties` line in `CMakeLists.txt`.
+The instrument for this list is the runtime A/B, not the byte compare: compile and run every `tests/exec` file at `-O1` with and without the switch and diff stdout and exit code. C2 calls every one of these bodies clean, because it validates un-optimized emission. **Run it under the failing cell's own gates** — the three modelled bodies all read SAME at a plain `-O1`; `ptr_longlong_arith32` needs `-O2`, `array_2d_iv` needs `-O2 MCC_AST_OPASSIGN=1 MCC_AST_IVSR_PTR=1`, and `flt_eval_method` needs `-O1 -fno-reemit-templates -fpromote-locals` (neither gate alone reproduces it). The gate sets are on the suite's `set_tests_properties` line in `CMakeLists.txt`.
 
 **P5 readiness, measured rather than assumed.** The 44 `ast/replay-*` cells — the fixture suite the plan says survives the recorder and becomes Replay_IR's regression suite — pass **100% with `MCC_RIR_PROD=1` as well as with it off**. They assert `[ast-replay]`/`[ast-promote]`/`[ast-inline]` markers, which are producer-agnostic, so that inheritance is confirmed and not merely hoped for. Whatever else P5 has to do, it does not have to rewrite those 44 cells. (**44 confirmed by `ctest -N` at `da3a461b`**; this line read 45 and the P5 inventory read 44 — the inventory was right.)
 
@@ -2608,7 +2684,7 @@ There is a second consumer, and it turns out to be free: when the pre-flight ref
 
 **Done — `dead_code.c::main`, and it was never a Replay_IR defect at all.** The 19 `exec*/dead_code` cells were reading a **pass** bug that the recorder's own decline verdict had been hiding since the pass was written. `ast_sccp_scan` folds `if (const)` by keeping the taken arm and discarding the dead one, guarded by `ast_sccp_has_label(dead)` — and `ast_sccp_has_label_compute` counts only `AST_Jump` with `op == 4`, a *label* definition. `op == 2` is a **case** marker and `op == 3` is **default**, and a `case` inside a dead arm is exactly the thing that turns `nocode_wanted` back off (`gind()` clears it), so the code after it is live. `switch (i) { if (0) { ... case 41: printf("caseok"); } }` therefore lost its arm, its case entry and its body.
 
-Two things it teaches. **The producer was irrelevant**: a 25-line reduction of the two switches reproduces identically under `MCC_RIR_PROD=0`, i.e. with the recorder's own tree as the arena. `dead_code.c::main` escaped only because the recorder declines *that* body, which is the "class that only Replay_IR can reach" one more time — a latent shared defect that costs nothing until the population widens. And **the earlier reading that "the first replay is faithful and the re-emit is not" was right about the symptom and wrong about the cause**: the re-emit is not idempotent *because the arena it re-emits is not the arena the first replay saw*, the pass having deleted the case markers in between. `MCC_AST_SCCP=0` did not name it because there is no such gate — SCCP is a strategy in `ast_run_strat_cycle`, and the only `MCC_AST_*` that turns it off is `MCC_AST_TEMPLATES=0`, which turns everything off. Confirm a pass with `MCC_AST_REPLAY_DUMP=1` and read the `[ast-*]` counters; do not trust a gate name that produces no change in them.
+Two things it teaches. **The producer was irrelevant**: a 25-line reduction of the two switches reproduces identically under `MCC_RIR_PROD=0`, i.e. with the recorder's own tree as the arena. `dead_code.c::main` escaped only because the recorder declines *that* body, which is the "class that only Replay_IR can reach" one more time — a latent shared defect that costs nothing until the population widens. And **the earlier reading that "the first replay is faithful and the re-emit is not" was right about the symptom and wrong about the cause**: the re-emit is not idempotent *because the arena it re-emits is not the arena the first replay saw*, the pass having deleted the case markers in between. `MCC_AST_SCCP=0` did not name it because there is no such gate — SCCP is a strategy in `ast_run_strat_cycle`, and the only `MCC_AST_*` that turns it off is `-fno-reemit-templates`, which turns everything off. Confirm a pass with `MCC_AST_REPLAY_DUMP=1` and read the `[ast-*]` counters; do not trust a gate name that produces no change in them.
 
 The fix is a second memoized predicate, `ast_sccp_has_case`, consulted beside `ast_sccp_has_label` at the one site that *deletes* a subtree. **It must not widen `ast_sccp_has_label` itself**: five of that predicate's six call sites are loop- and switch-shaped conservatism guards, and one of them (`ast_cprop_switch_meet`) is handed the switch node itself, whose body always holds case markers — widening there disables switch cprop outright. `ast_sccp_has_case` also stops at a nested `AST_If op=6`, because an inner switch's cases are internal to it and deleting the pair together is sound. Cost with the switch unset: **zero objects** over 19,425, so no body in the corpus but this one has the shape.
 
@@ -3941,10 +4017,10 @@ this file.
 
 ---
 
-## Always-keep (`MCC_RIR_NOFB=1`): 31 failing cells → 10
+## Always-keep (`-fno-replay-fallback`): 31 failing cells → 10
 
 Driving toward "-O1 never falls back" the useful measurement is not the census but
-`MCC_RIR_NOFB=1 ctest`, which keeps the replay unconditionally and so *executes*
+`-fno-replay-fallback ctest`, which keeps the replay unconditionally and so *executes*
 every body the fallback would have hidden. The default path is 8230/8230 throughout
 everything below; these numbers are the always-keep run only.
 
@@ -3957,7 +4033,7 @@ them were one golden replicated across every exec variant.
   read32le(p = ...)))` came out at `-O4` with five variables promoted to registers
   and wrong control flow. Found by bisecting `mcc.c`'s `-O4` fallbacks with
   `MCC_RIR_NOFB_SKIP`: skipping only `gjmp_append` made `selfhost-jit` pass, and
-  `MCC_AST_PROMOTE=0` made it pass with nothing skipped — which named the *pass*,
+  `-fno-promote-locals` made it pass with nothing skipped — which named the *pass*,
   not the arena. `ast_plan_promotion` now declines a body when an `AST_If` with a
   loop op has a `Store`/`StoreVal` anywhere in its condition, alongside the existing
   landor decline. `selfhost-jit` had previously died as "memory full" (that was
@@ -3989,7 +4065,7 @@ unambiguous — two `Invoke` nodes:
       Store  Ref a   Invoke f(v)      <-- duplicate
       Return Binary + (Ref a) (Ref b)
 
-`MCC_AST_PROMOTE=0` does **not** change it, so this is the arena, not a pass. This
+`-fno-promote-locals` does **not** change it, so this is the arena, not a pass. This
 is a wrong-code defect that fallback has been masking: at default settings the body
 simply fails `faithful` and ships parser bytes.
 
@@ -4026,7 +4102,7 @@ The census and the always-keep suite answer different questions and the census i
 the weaker one. `mcc.c -O1` sat at 34 before and after the `revargs` fix because a
 refusal is a *skip*, not a fallback; meanwhile 21 executing cells went from wrong to
 right. When the goal is "the replay is correct", count failing cells under
-`MCC_RIR_NOFB=1`. When the goal is "the replay is byte-faithful", count the census.
+`-fno-replay-fallback`. When the goal is "the replay is byte-faithful", count the census.
 Do not report one as though it were the other.
 
 ---

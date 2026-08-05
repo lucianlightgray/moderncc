@@ -4,7 +4,17 @@ void float_test(void) {
 	volatile double da, db;
 	int a;
 	unsigned int b;
+#ifdef __clang__
+	/* clang cannot fold 0.0/0.0 in a static initializer under -std=gnu23 --
+	   "cannot compile this static initializer yet" -- and resolve_pair_std picks
+	   gnu23 whenever both compilers claim it, so this file stopped building for
+	   the reference at all. __builtin_nan("") is the portable spelling of the
+	   same value, so the differential still compares a static NaN; mcc keeps
+	   exercising the division form below. */
+	static double nan2 = __builtin_nan("");
+#else
 	static double nan2 = 0.0 / 0.0;
+#endif
 	static double inf1 = 1.0 / 0.0;
 	static double inf2 = 1e5000;
 	volatile LONG_DOUBLE la;

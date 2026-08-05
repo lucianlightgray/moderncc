@@ -296,8 +296,14 @@ static const char *resolve_parts_std(const char *gcc, const char *clang,
 /* Same principle as resolve_parts_std, for the 2-way mcctest differential:
    the reference and mcc must compile the same language, not merely accept the
    same flag spelling. */
-static const char *resolve_pair_std(const char *cc, const char *mcc,
-																		const char *work) {
+/* `skip` drops that many of the newest candidates before agreeing. mcctest
+   passes 2, because tests/diff/full_language.c is a LEGACY differential: it
+   contains five K&R function definitions (legacy_args.h, legacy_aggregates.h,
+   legacy_preproc.h), and C23 removed old-style definitions outright. Agreement
+   is not enough when neither compiler can compile the corpus at the agreed
+   level -- gcc and clang both claim gnu23, then both reject the file. */
+static const char *resolve_pair_std_from(const char *cc, const char *mcc,
+																				 const char *work, size_t skip) {
 	static const char *const cands[] = {"-std=gnu23", "-std=gnu2x", "-std=gnu17",
 																			"-std=gnu11"};
 	char src[4096], out[4096];
@@ -305,17 +311,24 @@ static const char *resolve_pair_std(const char *cc, const char *mcc,
 	size_t i;
 	ts_path(src, sizeof src, work, "pairstd.c");
 	ts_path(out, sizeof out, work, "pairstd.out");
+	if (skip >= sizeof cands / sizeof *cands)
+		skip = sizeof cands / sizeof *cands - 1;
 	f = fopen(src, "w");
 	if (!f)
-		return cands[0];
+		return cands[skip];
 	fclose(f);
-	for (i = 0; i < sizeof cands / sizeof *cands; i++) {
+	for (i = skip; i < sizeof cands / sizeof *cands; i++) {
 		long r = probe_stdc_version(cc, cands[i], src, out);
 		long m = probe_stdc_version(mcc, cands[i], src, out);
 		if (r > 0 && r == m)
 			return cands[i];
 	}
-	return cands[0];
+	return cands[skip];
+}
+
+static const char *resolve_pair_std(const char *cc, const char *mcc,
+																		const char *work) {
+	return resolve_pair_std_from(cc, mcc, work, 0);
 }
 
 static int suite_parts(int argc, char **argv) {
@@ -530,6 +543,7 @@ static int suite_mcctest(int argc, char **argv) {
 	const char *const *emu = make_launcher(opt(argc, argv, "--emu", NULL));
 	char Iinc[4096], Isrc[4096], Ibld[4096], Bflag[4096];
 	char refexe[4096], refout[4096], mccexe[4096], mccout[4096];
+	const char *pair_std;
 	char *err = NULL;
 
 	if (!cc || !mcc || !src || !bdir || !idir || !srcdir || !work) {
@@ -538,6 +552,11 @@ static int suite_mcctest(int argc, char **argv) {
 		return 2;
 	}
 	host_mkdirs(work);
+	/* Resolved once and given to BOTH compilers. Handing it only to the
+	   reference makes them disagree on __STDC_VERSION__, which the differential
+	   then reports as a mismatch -- previously masked because the agreed level
+	   happened to equal mcc's own default. */
+	pair_std = resolve_pair_std_from(cc, mcc, work, 2);
 	snprintf(Iinc, sizeof Iinc, "-I%s", idir);
 	snprintf(Isrc, sizeof Isrc, "-I%s", srcdir);
 	snprintf(Ibld, sizeof Ibld, "-I%s", bdir);
@@ -559,7 +578,7 @@ static int suite_mcctest(int argc, char **argv) {
 		split_append(&v, testdefs);
 		A(&v, "-w");
 		A(&v, "-O0");
-		A(&v, resolve_pair_std(cc, mcc, work));
+		A(&v, pair_std);
 		A(&v, "-fno-omit-frame-pointer");
 		split_append(&v, refflags);
 		A(&v, "-lm");
@@ -587,6 +606,7 @@ static int suite_mcctest(int argc, char **argv) {
 		A(&v, Iinc);
 		A(&v, Isrc);
 		A(&v, Ibld);
+		A(&v, pair_std);
 		split_append(&v, testdefs);
 		split_append(&v, mccargs);
 		A(&v, src);
