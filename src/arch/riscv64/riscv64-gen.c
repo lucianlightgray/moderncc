@@ -979,7 +979,9 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret,
 		{ MCC_TRACE("br\n"); return 0; }
 	reg_pass(vt, prc, fieldofs, 1);
 	nregs = prc[0];
-	if (nregs == 2 && prc[1] != prc[2])
+	if (nregs == 2 && (prc[1] != prc[2] ||
+										 (prc[1] == MCC_RC_FLOAT &&
+											(fieldofs[1] & VT_BTYPE) != (fieldofs[2] & VT_BTYPE))))
 		{ MCC_TRACE("br\n"); return -1; }
 	if (prc[1] == MCC_RC_FLOAT) { MCC_TRACE("br\n");
 		*regsize = size / nregs;
@@ -992,14 +994,20 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret,
 ST_FUNC void arch_transfer_ret_regs(int aftercall) { MCC_TRACE("enter\n");
 	int prc[3], fieldofs[3];
 	reg_pass(&vtop->type, prc, fieldofs, 1);
-	assert(prc[0] == 2 && prc[1] != prc[2] && !(fieldofs[1] >> 5));
+	assert(prc[0] == 2 && !(fieldofs[1] >> 5));
+	assert(prc[1] != prc[2] ||
+				 (prc[1] == MCC_RC_FLOAT &&
+					(fieldofs[1] & VT_BTYPE) != (fieldofs[2] & VT_BTYPE)));
 	assert(vtop->r == (VT_LOCAL | VT_LVAL));
 	vpushv(vtop);
 	vtop->type.t = fieldofs[1] & VT_BTYPE;
 	(aftercall ? store : load)(prc[1] == MCC_RC_INT ? REG_IRET : REG_FRET, vtop);
 	vtop->c.i += fieldofs[2] >> 5;
 	vtop->type.t = fieldofs[2] & VT_BTYPE;
-	(aftercall ? store : load)(prc[2] == MCC_RC_INT ? REG_IRET : REG_FRET, vtop);
+	(aftercall ? store : load)(prc[2] == MCC_RC_INT
+																 ? REG_IRET
+																 : REG_FRET + (prc[1] == prc[2]),
+														 vtop);
 	vtop--;
 }
 

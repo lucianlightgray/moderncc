@@ -5280,9 +5280,37 @@ The object comparison is only worth what it exercises: introducing a deliberate
 one-bit error in the riscv64 decoder changes **10** corpus files, so the
 byte-identical result is a real result and not a vacuous one.
 
-### Two pre-existing bugs found, neither touched
+### CLOSED, and it was not the abort: riscv64 returned `{float,double}` wrong
 
-1. **`riscv64` aborts on every mixed int/float two-register struct.**
+Re-measured against a generated sweep of **all 37 two-field shapes** (every pair from
+`{char,short,int,long,float,double}` plus a nested `{int}{double}`), at `-O0`, `-O1`,
+`-O2` and `-O3`, running under `qemu-riscv64`. The abort described below **does not
+reproduce** -- every mixed int/float shape compiles and returns correctly, so the
+`arch_transfer_ret_regs` assert was fixed at some point after that note was written.
+
+What the sweep did find is a **silent wrong-value defect one shape over**: a struct of
+two *floating* members of **different widths**, `struct { float a; double b; }`, lost the
+second field (`b` read 0.0, at every optimization level). `gfunc_sret` sends a pair to
+the generic register path whenever the two members share a register class, and that path
+carries a single uniform `*regsize` for both -- which cannot describe fa0 holding 4 bytes
+and fa1 holding 8. The escape hatch for pairs the generic path cannot express is already
+there (`return -1` -> `arch_transfer_ret_regs`, which works from each field's own type
+and offset); it was simply gated on `prc[1] != prc[2]`, so a same-class heterogeneous
+pair never reached it. It now also takes that route when the two FP members have
+different base types, and `arch_transfer_ret_regs` loads/stores the second one from
+`REG_FRET + 1` rather than `REG_FRET` when both are FP.
+
+**Verified against real riscv64 gcc, both directions**, not just self-consistently:
+mcc's `.o` linked against a gcc-compiled caller, and a gcc `.o` against an mcc-compiled
+caller, both run under `docker --platform linux/riscv64` with `debian:sid-slim`'s gcc.
+`{float,double}`, `{int,double}` and `{double,float}` all agree. The sweep is now
+`exec/functions_abi/struct_return_shapes` -- 37 shapes, `diff3`-clean against gcc 15 and
+clang 22 on the native target too.
+
+### One pre-existing bug found, not touched
+
+1. **`riscv64` aborts on every mixed int/float two-register struct** -- *stale, see
+   above: this no longer reproduces.*
    `arch_transfer_ret_regs` asserts `vtop->r == (VT_LOCAL | VT_LVAL)` and it fails
    for `{int,float}`, `{float,int}`, `{double,int}`, `{int,double}`, `{long,float}`,
    `{float,long}` and nested `{int}{double}` — 7 of 37 shapes, at `-O0` and `-O2`.

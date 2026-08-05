@@ -329,6 +329,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"vla_empty_init", "run", "exec/vla/vla_empty_init.c", "OK\n", "-std=c23", "", ""},
 		{"c23_array_quals", "run", "exec/types/c23_array_quals.c", "OK\n", "-std=c23", "", ""},
 		{"attr_deprecated", "run", "exec/types/attr_deprecated.c", "OK\n", "-Wno-deprecated-declarations", "", ""},
+		{"struct_return_shapes", "run", "exec/functions_abi/struct_return_shapes.c", "OK\n", "", "", ""},
 };
 
 static const int mcc_goldens_count = (int)(sizeof mcc_goldens / sizeof mcc_goldens[0]);
