@@ -119,6 +119,16 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   recurs on an idle machine with a clean tree it is real and wants a core dump.
 
 ### Closed 2026-08-05
+- **`__builtin_expect` discarded its second operand's side effects.** Both it and
+  `__builtin_expect_with_probability` parsed the operand under `nocode_wanted++`, so
+  `__builtin_expect(c, z++)` emitted no increment: `gcc.c-torture/execute/pr85156.c`
+  returned 10 where 11 is required. Silent wrong code with no diagnostic — the second
+  operand is an ordinary argument that gcc and clang both evaluate, and only the
+  *probability* operand of the `_with_probability` form has to be a constant, so that
+  one keeps its `nocode_wanted` guard. Found by the three-compiler board below.
+  Full suite after the change: **8576 cells, the 4 documented reds, nothing new** —
+  `run-tier/{x86_64,i386}-win32` (`tls`, `tls_threads`) and
+  `selfhost-qemu-{arm,i386}-O2` (`MCC_MAX_ALIGN`), all four with their recorded causes.
 - **`__has_builtin` lied about the fourteen `__builtin___*_chk` builtins.**
   `pp_has_builtin_arg` answered true only for predefined builtin tokens or `#define`d
   macros, but `runtime/include/mccdefs.h` supplies the `_chk` family as `static __inline`
@@ -237,9 +247,9 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   link against gcc's, so a mismatch is *silent* wrong codegen.
 - Declined upstream `7f7845cd` (VT_VOID); i386 `R_386_TLS_GOTIE` gap.
 - Raise arena fidelity / finish the capture path (Phase F).
-- **`__builtin_expect` drops its second operand's side effects** — silent wrong code, no
-  diagnostic. That and four more hand-reproduced wrong-answer defects are written up
-  under "External suites" below, where the board that found them is.
+- Four hand-reproduced wrong-answer defects from the three-compiler board are written up
+  under "External suites" below, where the board that found them is. (A fifth,
+  `__builtin_expect` dropping side effects, is fixed and closed above.)
 
 ### Intermittent / to-confirm
 - `selfhost-fixpoint-memmodel-{O3,Os}` SIGSEGV'd once under heavy parallel load and
@@ -311,10 +321,8 @@ front end — so this is not an `-O2` pipeline gap. Recurring shapes: `fabs(x) <
 `__builtin_constant_p` chains, and signed-overflow reasoning.
 
 #### Newly-confirmed wrong-answer defects, each reproduced by hand at `-O2`
-- **`__builtin_expect` discards side effects in its second operand.** `pr85156.c`:
-  `__builtin_expect(c, z++)` must still increment `z`; mcc never evaluates it, so the
-  function returns 10 where 11 is required. Silent wrong code with no diagnostic — the
-  most serious item on this list.
+- ~~`__builtin_expect` discards side effects in its second operand.~~ **Fixed** — see
+  the closed list above.
 - **`-fno-wrapv` does not enable signed-overflow simplification.** `fwrapv-2.c`:
   `(2*x)/2` must fold to `x`; mcc computes the wrapped value and the test aborts.
 - **Builtin math folding loses to a local definition.** `20021127-1.c` defines an
