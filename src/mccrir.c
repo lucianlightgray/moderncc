@@ -94,19 +94,21 @@ static int rir_fcrec[RIR_LOCREC_MAX];
 static int rir_fcrec_pos[RIR_LOCREC_MAX];
 static int rir_fcrec_nc[RIR_LOCREC_MAX];
 static unsigned char rir_fcrec_cplx[RIR_LOCREC_MAX];
+static unsigned char rir_fcrec_key[RIR_LOCREC_MAX][AST_FCONST_KEY];
 static int rir_fcrec_n, rir_fcrec_i;
 
-void rir_hook_fconst_record(int c, int cplx) {
+void rir_hook_fconst_record(int c, int cplx, const unsigned char *key) {
 	if (rir_fcrec_n < RIR_LOCREC_MAX)
 		rir_fcrec_cplx[rir_fcrec_n] = (unsigned char)cplx;
 	if (!rir_capture_live() || rir_fcrec_n >= RIR_LOCREC_MAX)
 		return;
 	rir_fcrec_pos[rir_fcrec_n] = ind;
 	rir_fcrec_nc[rir_fcrec_n] = nocode_wanted;
+	memcpy(rir_fcrec_key[rir_fcrec_n], key, AST_FCONST_KEY);
 	rir_fcrec[rir_fcrec_n++] = c;
 }
 
-int rir_hook_fconst_reuse(int cplx) {
+int rir_hook_fconst_reuse(int cplx, const unsigned char *key) {
 	if (!rir_c2_active)
 		return -1;
 	while (rir_fcrec_i + 1 < rir_fcrec_n && rir_fcrec_pos[rir_fcrec_i + 1] <= ind &&
@@ -125,6 +127,8 @@ int rir_hook_fconst_reuse(int cplx) {
 	       rir_fcrec_cplx[rir_fcrec_i] != (unsigned char)cplx)
 		rir_fcrec_i++;
 	if (rir_fcrec_i >= rir_fcrec_n)
+		return 0;
+	if (memcmp(rir_fcrec_key[rir_fcrec_i], key, AST_FCONST_KEY))
 		return 0;
 	return rir_fcrec[rir_fcrec_i++];
 }
