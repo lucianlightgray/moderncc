@@ -129,6 +129,25 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   Full suite after the change: **8576 cells, the 4 documented reds, nothing new** —
   `run-tier/{x86_64,i386}-win32` (`tls`, `tls_threads`) and
   `selfhost-qemu-{arm,i386}-O2` (`MCC_MAX_ALIGN`), all four with their recorded causes.
+- **`stage2 / macos / macos-arm64-clang / pe` was red in CI**, and would have been on any
+  host with wine. `stage3 --consume test` runs `ctest` with **no label filter**, so the
+  `wine`-labelled `run-tier/x86_64-win32` and `run-tier/i386-win32` cells run — and both
+  are documented deliberate reds (`tls` and `tls_threads`, the open `-run` TLS defect).
+  `tools/run-tier.sh` had no expected-failure mechanism: any bad program failed the whole
+  cell, so a known-red cell could only ever be a red CI job. Adding the macOS `pe` gate
+  cell is what surfaced it.
+
+  Fixed with a `KNOWN_RED` list in `tools/run-tier.sh` — `<triple>:<program>` pairs, at
+  present the four `{x86_64-win32, i386-win32} × {tls, tls_threads}`. A listed program
+  that fails reports `XFAIL` and does not fail the cell; **anything unlisted still fails
+  exactly as before**, which is this file's own rule that any further failure is a
+  regression. The list is self-cleaning: a listed program that starts *passing* fails the
+  cell with *"N KNOWN_RED program(s) now pass — drop them from KNOWN_RED"*, so it cannot
+  rot into silent coverage loss. Verified both directions. The PE cells now read
+  `12/14 OK under both JIT tiers, 2 known-red`.
+
+  **Delete the four entries when the `-run` TLS defect is fixed** — the cell will tell
+  you to.
 - **`__has_builtin` lied about the fourteen `__builtin___*_chk` builtins.**
   `pp_has_builtin_arg` answered true only for predefined builtin tokens or `#define`d
   macros, but `runtime/include/mccdefs.h` supplies the `_chk` family as `static __inline`

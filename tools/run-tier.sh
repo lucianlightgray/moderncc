@@ -12,6 +12,15 @@ corpus="$root/tests/run"
 skip() { echo "SKIP: $*"; exit 77; }
 fail() { echo "FAIL: [$triple] $*"; exit 1; }
 
+KNOWN_RED="x86_64-win32:tls x86_64-win32:tls_threads i386-win32:tls i386-win32:tls_threads"
+
+is_known_red() {
+	for kr in $KNOWN_RED; do
+		[ "$kr" = "$triple:$1" ] && return 0
+	done
+	return 1
+}
+
 host_os=$(uname -s 2>/dev/null || echo unknown)
 host_cpu=$(uname -m 2>/dev/null || echo unknown)
 
@@ -264,6 +273,8 @@ grep -F "$IDENT" "$work/ver" >/dev/null ||
 
 pass=0
 bad=0
+xfail=0
+stale=0
 for src in "$corpus"/*.c; do
 	case "$src" in *.aux.c) continue ;; esac
 	name=$(basename "$src" .c)
@@ -291,24 +302,44 @@ for src in "$corpus"/*.c; do
 
 	want=$(cat "$exp")
 	if [ "$rc0" != 0 ]; then
+		if is_known_red "$name"; then
+			xfail=$((xfail + 1))
+			echo "XFAIL: [$triple] $name MCC_JIT=0 exited $rc0 (known -run TLS defect)"
+			continue
+		fi
 		tail -20 "$work/e0" | sed -e "s/^/[$triple] $name JIT=0 stderr: /"
 		bad=$((bad + 1))
 		echo "FAIL: [$triple] $name MCC_JIT=0 exited $rc0"
 		continue
 	fi
 	if [ "$rc1" != 0 ]; then
+		if is_known_red "$name"; then
+			xfail=$((xfail + 1))
+			echo "XFAIL: [$triple] $name MCC_JIT=1 exited $rc1 (known -run TLS defect)"
+			continue
+		fi
 		tail -20 "$work/e1" | sed -e "s/^/[$triple] $name JIT=1 stderr: /"
 		bad=$((bad + 1))
 		echo "FAIL: [$triple] $name MCC_JIT=1 exited $rc1"
 		continue
 	fi
 	if [ "$o0" != "$want" ]; then
+		if is_known_red "$name"; then
+			xfail=$((xfail + 1))
+			echo "XFAIL: [$triple] $name MCC_JIT=0 output mismatch (known -run TLS defect)"
+			continue
+		fi
 		bad=$((bad + 1))
 		echo "FAIL: [$triple] $name MCC_JIT=0 output mismatch"
 		printf '%s\n' "--- want ---" "$want" "--- got ---" "$o0" "------"
 		continue
 	fi
 	if [ "$o1" != "$want" ]; then
+		if is_known_red "$name"; then
+			xfail=$((xfail + 1))
+			echo "XFAIL: [$triple] $name MCC_JIT=1 output mismatch (known -run TLS defect)"
+			continue
+		fi
 		bad=$((bad + 1))
 		echo "FAIL: [$triple] $name MCC_JIT=1 output mismatch"
 		printf '%s\n' "--- want ---" "$want" "--- got ---" "$o1" "------"
@@ -319,10 +350,21 @@ for src in "$corpus"/*.c; do
 		echo "FAIL: [$triple] $name JIT parity broken"
 		continue
 	fi
+	if is_known_red "$name"; then
+		stale=$((stale + 1))
+		echo "[$triple] $name: PASSES but is listed in KNOWN_RED"
+	fi
 	pass=$((pass + 1))
 	echo "[$triple] $name: OK (MCC_JIT=0 == MCC_JIT=1 == expected)"
 done
 
-[ "$bad" = 0 ] || fail "$bad of $((pass + bad)) corpus programs failed"
+[ "$bad" = 0 ] || fail "$bad of $((pass + bad + xfail)) corpus programs failed"
+[ "$stale" = 0 ] ||
+	fail "$stale KNOWN_RED program(s) now pass -- drop them from KNOWN_RED in $0"
 [ "$pass" -gt 0 ] || fail "corpus is empty"
-echo "[$triple] -run tier: $pass/$pass programs OK under both JIT tiers"
+if [ "$xfail" = 0 ]; then
+	echo "[$triple] -run tier: $pass/$pass programs OK under both JIT tiers"
+else
+	echo "[$triple] -run tier: $pass/$((pass + xfail)) OK under both JIT tiers," \
+		"$xfail known-red (see KNOWN_RED in $0)"
+fi
