@@ -109,15 +109,27 @@ sets over all 281 runnable `tests/exec` programs at `-O1/-O2/-O3/-Os`:
 
 | minimal set | subjects | ships today? |
 |---|---|---|
-| `-fno-replay-fallback` + `inline=1, inline-functions=0` | `transparent_union`, `union_byval` | no — masked by the gate |
-| `-fno-replay-fallback -fno-chain-store-live` | `chained_assign` | no — masked by the gate |
+| `-fno-replay-fallback` + `inline=1, inline-functions=0` | `transparent_union`, `union_byval` | masked by the gate — **fixed** |
+| `-fno-replay-fallback -fno-chain-store-live` | `chained_assign` | masked by the gate — **fixed** |
 | `-fbuiltin-math-errno` | `libm_builtin_fold` | **shipped — fixed** |
 | `-fno-reg-disp` + `inline=1, inline-functions=0` | `const_member_copy` | **shipped — fixed** |
 
-The two masked ones are the same class as `union_cast`: real replay defects the byte
-compare hides. **They are what still blocks flipping the default**, and they are why
-`flagsweep-cover` rows 17, 26, 28, 41 and 42 are red under `-DMCC_FLAGSWEEP_FULL=ON`.
-Plain `-O0`…`-O3`/`-Os`, with and without `-fno-replay-fallback`, are clean on all 281.
+All four are closed. The two masked ones were the same class as `union_cast` — real replay
+defects the byte compare hid — and they were the last known blockers on flipping the
+default. `flagsweep-cover` rows 17, 26, 28, 41 and 42 are **green** now; the earlier claim
+that they are red described the tree before `a4d28f03`. Plain `-O0`…`-O3`/`-Os`, with and
+without `-fno-replay-fallback`, are clean on all 281 subjects.
+
+**Before the default is flipped, one backstop is still owed.** `ast_func_end` computes
+`keep = faithful || (ast_rir_nofb_env && ast_replay_completed)`, and `ast_replay_completed`
+is set after the *first* replay and never cleared by the `posterr` arm that catches a
+longjmp out of the optimizer emit. That is exactly how the `transparent_union` defect
+shipped a body truncated at 52 of 92 bytes instead of falling back, and the comment above
+the line already states the intent it violates: a body that longjmp'd out must never be
+kept. It was deliberately left open while that defect was live, because adding it would
+have hidden the defect rather than fixed it. With the defect closed, the reason to leave it
+is gone and the reason to add it is not: with the gate off, any future longjmp after a
+completed first replay ships a truncated function silently.
 
 `inline=1, inline-functions=0` is worth naming as a state rather than a flag: `inline`
 defaults off at `-O1` and on at `-O3`, `inline-functions` off at `-O1` and on at `-O2`, so
@@ -248,11 +260,21 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
 - ~~Unpin `replay-fallback` from `tests/optfire/cover3.py`.~~ **Closed** — the array
   varies it and the five bisection-only knobs are pinned in its place. Delete the
   `jit-splice` pin and the one `KNOWN_RED` entry when that pass is fixed.
-- **Root-cause the two masked-by-the-gate replay defects** in the table above:
-  `-fno-replay-fallback` with `inline=1, inline-functions=0` (`transparent_union`,
-  `union_byval`) and with `-fno-chain-store-live` (`chained_assign`). These are the
-  remaining blockers for turning the byte gate off by default; everything else the
-  unpinned array found either ships and is fixed or is a pinned handle.
+- ~~Root-cause the two masked-by-the-gate replay defects.~~ **Closed in `a4d28f03`.**
+  `transparent_union`/`union_byval`: `ast_inline_graft` bound by-value parameters with a
+  plain `vstore()`, whose assignment conversion does not exist for a `transparent_union`
+  parameter — the parser never performs it either, since `gfunc_param_typed` consults
+  `transparent_union_member` and casts to the *member* type. The graft raised
+  `cannot convert 'struct A *' to 'union <anonymous>'` and longjmp'd out of the
+  post-optimization emit. Fixing the cast then exposed a frame overlap underneath it,
+  unreachable while the error aborted the graft first: the graft takes its frame base from
+  `loc`, but during replay `ast_alloc_loc` *assigns* `loc` from the recorded list rather
+  than decrementing, so `loc` can come back shallower than the caller's own locals. Hence
+  `ast_graft_base`, set once per emit to the parser's frame bottom. `ast_loc_low` is not a
+  usable floor — it drifts down per graft and broke `exec/struct_packed_indirect`.
+  `chained_assign`: `rir_hook_fconst_reuse` matched only on the complex/scalar kind and
+  never on the value, unlike its ast-side twin `ast_fconst_reuse`, so a drifted cursor
+  handed the `0.5` multiply the label belonging to `1.0f`.
 - **The per-flag cells cannot see a two-flag bug and the array cannot see a four-flag
   one.** `flagsweep-exec/inline` was green on the `const_member_copy` miscompile because
   that one needs `-fno-reg-disp` too; only `flagsweep-cover` found it. When a fix lands
