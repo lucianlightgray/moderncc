@@ -229,6 +229,61 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   which `tls_setup_linux` (src/mccrun.c:451) only sets on the interpreter relocate
   path. `--no-jit` does not suppress it — `MCC_JIT=1` still wins.
 
+#### The refusal census bottoms out at 359, and 338 of those are `{ }` (2026-08-06)
+
+`MCC_RIR_PROD=2` + `MCC_RIR_PROD_OUT` over a full `ctest -j32` at ambient
+`MCC_TEST_OPT`, `\r` stripped. Before this day's work the classes were
+`noops`=338, `mismatch`=42, `revargs`=21. After: `noops`=338, `revargs`=21,
+**`mismatch`=0**. Gate: `ctest -j32` green and the whole suite green under
+`MCC_TEST_OPT="-O2 -fno-replay-fallback"`.
+
+- **`mismatch` was two sites, both only reachable from the self-hosting cells.**
+  A previous instrumentation pass over `src/` + `tests/` at `-O1`/`-O2`/`-O3`
+  found nothing because the trigger is `src/mcc.c` compiled *amalgamated* by a
+  built mcc, which is what `tools/selfhost-smoke.py` does and no other cell does.
+  Reproduce by hand: take the `-D`/`-I` flags out of
+  `cmake-release/compile_commands.json` for `mcc.c` and run
+  `mcc <flags> -O2 -c src/mcc.c`. Both sites are fixed; see the two commits.
+  One was a fixed `AstLocal args[32]` in the arena's `IR_OP_CALL` (mcc's own
+  `rir_report` calls `fprintf` with 33 arguments); the other was region marks
+  recorded under `DATA_ONLY_WANTED` — a function-scope
+  `static const … off[] = { offsetof(…), … }` — surviving into the arena when
+  the ops from the same window are already dropped by `rir_op_effect`.
+- **All 338 `noops` are provably empty.** Instrumented `rir_prod_take`'s `!nops`
+  arm to log `ind - rir_body_ind_sv`, `rir_n` and `ir_cap_n` over a full suite:
+  338 rows, every one `len=0 rirn=0 capn=0`. 37 distinct names, all `{ }` bodies
+  (`void_foo` in `exec/features_c99_c11/generic.c`, `func_ull_ull` in
+  `exec/bounds/stack_safe.c`, the whole `inline`/`inline2` linkage matrix, …).
+  There is no arena to build and no bytes to lose, so counting them in the
+  coverage gap overstates it by 94% of the gap. `rir_prod_report` now also prints
+  a **derived** `[rir-prod-cov] nonempty= modelled= refused= empty=` line;
+  `used`/`fallback`/`skip` and every `[rir-prod-why]` count are untouched, so
+  every board above stays comparable. Today's suite reads
+  `nonempty=98727 modelled=98706 refused=21 empty=338` against
+  `used=95971 fallback=2735 skip=359`. Note the body **total** moves a little
+  between runs at fixed HEAD — two consecutive censuses gave `used`=95823 and
+  95971 — while `fallback`, `skip` and every `[rir-prod-why]` count were
+  identical. Compare the class counts across runs, not the totals.
+- **`revargs` (21) is one body, and it is not worth closing.** Measured by
+  lifting the refusal behind an env probe: under `-O2 -fno-replay-fallback` the
+  *only* thing the whole suite notices is `exec/errors_and_warnings` printing
+  `122333` where the golden says `333221` — and the ` 1 2 3` beside it is already
+  right, so the Invoke's children, types and values all survive; the gap is
+  purely evaluation order. The bit is cheap (`fbits` is a `uint64_t`, bit 22 is
+  the highest one taken, and the arena is never serialized — there is **no**
+  schema to revise, contrary to the older note). The emitter is not: `AST_Invoke`
+  already carries the sret pre-alloc, the storeval-arg rotation, the
+  indirect-call type fixup and the noreturn `CODE_OFF`, and a reverse child order
+  multiplies the states each of those must be right in, while every pass that
+  reads an Invoke's children as evaluation order (inline grafting, the call
+  window, the argument analyses) becomes conditionally correct. Against that: one
+  distinct body in the entire corpus (the 21 rows are that one `main` recompiled
+  by 21 cells), a refusal that is safe by construction, a flag that is off by
+  default, and a single golden line as the only coverage the new path would get.
+  If it is ever picked up, the cheap half is narrowing the refusal from
+  whole-translation-unit to bodies that actually contain a call — it does not
+  help this corpus, where the one body does contain calls.
+
 #### The fallback census was unreadable until 2026-08-06 — six defects
 
 All six are fixed; every fallback board taken before this date is suspect, and the

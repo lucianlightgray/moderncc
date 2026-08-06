@@ -4962,6 +4962,16 @@ static void rir_prod_report(void) {
 	}
 	fprintf(f, "[rir-prod-total] used=%ld fallback=%ld skip=%ld\n",
 					rir_tot_prod_used, rir_tot_prod_fb, rir_tot_prod_skip);
+	{
+		long empty = 0, mdl, ref;
+		for (i = 0; i < RIR_PROD_NWHY; i++)
+			if (!strcmp(rir_prod_why_name[i], "noops"))
+				empty = rir_prod_why_n[i];
+		mdl = rir_tot_prod_used + rir_tot_prod_fb;
+		ref = rir_tot_prod_skip - empty;
+		fprintf(f, "[rir-prod-cov] nonempty=%ld modelled=%ld refused=%ld empty=%ld\n",
+						mdl + ref, mdl, ref, empty);
+	}
 	for (i = 0; i < RIR_PROD_NWHY; i++)
 		if (rir_prod_why_n[i])
 			fprintf(f, "[rir-prod-why] %s=%ld\n", rir_prod_why_name[i],
