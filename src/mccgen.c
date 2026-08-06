@@ -13060,6 +13060,9 @@ tok_next:
 			} else { MCC_TRACE("br\n");
 				gexpr();
 				gen_op('+');
+				if ((vtop->type.t & VT_BTYPE) == VT_PTR &&
+						(pointed_type(&vtop->type)->t & VT_BTYPE) == VT_FUNC)
+					{ MCC_TRACE("br\n"); mcc_error("subscripted value is pointer to function"); }
 				indir();
 			}
 			skip(']');

@@ -119,6 +119,20 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   recurs on an idle machine with a clean tree it is real and wants a core dump.
 
 ### Closed 2026-08-05
+- **Subscripting a pointer to function was accepted silently.** `f[0]` and `0[f]` are a
+  constraint violation at every pedantry level; mcc emitted nothing at all, so
+  `gcc.dg/pointer-arith-{1,2,3}.c` all compiled clean where gcc and clang reject. The
+  check goes in the subscript path after `gen_op('+')` — which is where `f[0]` and
+  `0[f]` converge — and not in `indir()`, because dereferencing a function pointer is
+  legal (`(*f)()` is just `f()`) and `indir()` returning early on `VT_FUNC` is correct.
+  An array *of* function pointers is unaffected: `a[0]` yields `VT_PTR`, not `VT_FUNC`.
+  Regression cell `diag.dg-error.function_pointer_subscript` covers both the rejection
+  and the legal neighbours. This closes 3 of the 288 missing-diagnostic files; the
+  `void *` arithmetic *warnings* those same tests also expect are still not emitted.
+- **`__builtin_powi` / `powif` / `powil` did not exist.** Inline definitions in
+  `mccdefs.h`, since the generic `__builtin_` → libm alias path cannot express them:
+  it types every argument alike and forwards to the same-named libm symbol, but powi
+  takes an `int` exponent and libm has no `powi` — gcc lowers to libgcc `__powidf2`.
 - **`__builtin_expect` discarded its second operand's side effects.** Both it and
   `__builtin_expect_with_probability` parsed the operand under `nocode_wanted++`, so
   `__builtin_expect(c, z++)` emitted no increment: `gcc.c-torture/execute/pr85156.c`
