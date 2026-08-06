@@ -1392,6 +1392,19 @@ redo:
 				put_got_entry(s1, R_AARCH64_TLS_TPREL64, sym_index);
 				continue;
 			}
+			if (type == R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21 ||
+					type == R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC) { MCC_TRACE("br\n");
+				if (!(s1->output_type & MCC_OUTPUT_DYN))
+					{ MCC_TRACE("br\n"); continue; }
+				if (pass != 1)
+					{ MCC_TRACE("br\n"); continue; }
+				if (!s1->got)
+					{ MCC_TRACE("br\n"); got_sym = build_got(s1); }
+				if (gotplt_entry == BUILD_GOT_ONLY)
+					{ MCC_TRACE("br\n"); continue; }
+				put_got_entry(s1, R_AARCH64_TLS_TPREL64, sym_index);
+				continue;
+			}
 #endif
 			reloc_type = code_reloc(type);
 			if (reloc_type == -1) { MCC_TRACE("br\n");
@@ -1954,7 +1967,25 @@ ST_FUNC void fill_got(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 }
 
-#if defined MCC_TARGET_X86_64
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64
+#if defined MCC_TARGET_ARM64
+#define IFUNC_IRELATIVE R_AARCH64_IRELATIVE
+#define IFUNC_STUB_SIZE 12
+#define IFUNC_STUB_ALIGN 4
+#else
+#define IFUNC_IRELATIVE R_X86_64_IRELATIVE
+#define IFUNC_STUB_SIZE 6
+#define IFUNC_STUB_ALIGN 1
+#endif
+
+static int mcc_ifunc_call_reloc(int type) { MCC_TRACE("enter\n");
+#if defined MCC_TARGET_ARM64
+	return type == R_AARCH64_CALL26 || type == R_AARCH64_JUMP26;
+#else
+	return type == R_X86_64_PLT32 || type == R_X86_64_PC32;
+#endif
+}
+
 static void mcc_prepare_static_ifunc(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *iplt = NULL, *relaplt = NULL;
 	int nb = s1->nb_sections;
@@ -1976,13 +2007,13 @@ static void mcc_prepare_static_ifunc(MCCState *s1) { MCC_TRACE("enter\n");
 			if (ELFW(ST_TYPE)(sym->st_info) != STT_GNU_IFUNC ||
 					sym->st_shndx == SHN_UNDEF)
 				{ MCC_TRACE("br\n"); continue; }
-			if (type != R_X86_64_PLT32 && type != R_X86_64_PC32)
+			if (!mcc_ifunc_call_reloc(type))
 				{ MCC_TRACE("br\n"); continue; }
 
 			if (!iplt) { MCC_TRACE("br\n");
 				iplt = new_section(s1, ".iplt", SHT_PROGBITS,
 													 SHF_ALLOC | SHF_EXECINSTR);
-				iplt->sh_addralign = 1;
+				iplt->sh_addralign = IFUNC_STUB_ALIGN;
 				relaplt = new_section(s1, ".rela.plt", SHT_RELX, SHF_ALLOC);
 				relaplt->sh_entsize = sizeof(ElfW_Rel);
 				relaplt->sh_addralign = MCC_PTR_SIZE;
@@ -1995,15 +2026,25 @@ static void mcc_prepare_static_ifunc(MCCState *s1) { MCC_TRACE("enter\n");
 				const char *sname =
 						(char *)symtab_section->link->data + sym->st_name;
 				unsigned stub = iplt->data_offset;
-				uint8_t *p = section_ptr_add(iplt, 6);
+				uint8_t *p = section_ptr_add(iplt, IFUNC_STUB_SIZE);
 				ElfW_Rel *ir;
 				char name[256];
 
+#if defined MCC_TARGET_ARM64
+				write32le(p, 0x90000010);
+				write32le(p + 4, 0xf9400211);
+				write32le(p + 8, 0xd61f0220);
+				put_elf_reloca(symtab_section, iplt, stub,
+											 R_AARCH64_ADR_GOT_PAGE, sym_index, 0);
+				put_elf_reloca(symtab_section, iplt, stub + 4,
+											 R_AARCH64_LD64_GOT_LO12_NC, sym_index, 0);
+#else
 				p[0] = 0xff;
 				p[1] = 0x25;
 				write32le(p + 2, 0);
 				put_elf_reloca(symtab_section, iplt, stub + 2,
 											 R_X86_64_GOTPCREL, sym_index, -4);
+#endif
 				snprintf(name, sizeof name, "%s@iplt", sname);
 				attr->plt_sym =
 						put_elf_sym(symtab_section, stub, 0,
@@ -2011,7 +2052,7 @@ static void mcc_prepare_static_ifunc(MCCState *s1) { MCC_TRACE("enter\n");
 												iplt->sh_num, name);
 				ir = section_ptr_add(relaplt, sizeof(ElfW_Rel));
 				ir->r_offset = 0;
-				ir->r_info = ELFW(R_INFO)(sym_index, R_X86_64_IRELATIVE);
+				ir->r_info = ELFW(R_INFO)(sym_index, IFUNC_IRELATIVE);
 				ir->r_addend = 0;
 			}
 			rel->r_info = ELFW(R_INFO)(attr->plt_sym, type);
@@ -2039,7 +2080,7 @@ static void mcc_fill_static_ifunc(MCCState *s1) { MCC_TRACE("enter\n");
 		ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 		rel->r_offset = s1->got->sh_addr + attr->got_offset;
 		rel->r_addend = sym->st_value;
-		rel->r_info = ELFW(R_INFO)(0, R_X86_64_IRELATIVE);
+		rel->r_info = ELFW(R_INFO)(0, IFUNC_IRELATIVE);
 	}
 }
 #endif
@@ -3155,7 +3196,7 @@ static int elf_output_file(MCCState *s1, const char *filename) { MCC_TRACE("ente
 #endif
 		dyninf.gnu_hash = create_gnu_hash(s1);
 	} else { MCC_TRACE("br\n");
-#if defined MCC_TARGET_X86_64
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64
 		mcc_prepare_static_ifunc(s1);
 #endif
 		build_got_entries(s1, 0);
@@ -3225,7 +3266,7 @@ static int elf_output_file(MCCState *s1, const char *filename) { MCC_TRACE("ente
 	}
 	if (file_type == MCC_OUTPUT_EXE && s1->static_link) { MCC_TRACE("br\n");
 		fill_got(s1);
-#if defined MCC_TARGET_X86_64
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64
 		mcc_fill_static_ifunc(s1);
 #endif
 	} else if (s1->got)

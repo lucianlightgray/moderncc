@@ -2,6 +2,22 @@
 
 #define AARCH64_TLS_TCB_SIZE 16
 
+static addr_t arm64_tls_layout(MCCState *s1, addr_t *tcb_offset) { MCC_TRACE("enter\n");
+	addr_t tls_start = 0, align = 1;
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+		Section *s = s1->sections[i];
+		addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+		if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
+			if (!tls_start || s->sh_addr < tls_start)
+				{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
+			if (s->sh_addralign > align)
+				{ MCC_TRACE("br\n"); align = s->sh_addralign; }
+		}
+	}
+	*tcb_offset = ((AARCH64_TLS_TCB_SIZE + align - 1) / align) * align;
+	return tls_start;
+}
+
 ST_FUNC int code_reloc(int reloc_type) { MCC_TRACE("enter\n");
 	switch (reloc_type) { MCC_TRACE("br\n");
 	case R_AARCH64_ABS32:
@@ -36,6 +52,8 @@ ST_FUNC int code_reloc(int reloc_type) { MCC_TRACE("enter\n");
 	case R_AARCH64_TLSDESC_LD64_LO12:
 	case R_AARCH64_TLSDESC_ADD_LO12:
 	case R_AARCH64_TLSDESC_CALL:
+	case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
+	case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC:
 	case R_AARCH64_GLOB_DAT:
 	case R_AARCH64_COPY:
 		return 0;
@@ -95,6 +113,8 @@ ST_FUNC int gotplt_entry_type(int reloc_type) { MCC_TRACE("enter\n");
 	case R_AARCH64_LD64_GOT_LO12_NC:
 	case R_AARCH64_TLSDESC_ADR_PAGE21:
 	case R_AARCH64_TLSDESC_LD64_LO12:
+	case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
+	case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC:
 		return ALWAYS_GOTPLT_ENTRY;
 	}
 	return -1;
@@ -424,27 +444,20 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_AARCH64_TLSLE_LDST32_TPREL_LO12_NC:
 	case R_AARCH64_TLSLE_LDST64_TPREL_LO12:
 	case R_AARCH64_TLSLE_LDST64_TPREL_LO12_NC: {
-		addr_t tls_start = 0;
+		addr_t tcb_offset;
+		addr_t tls_start;
 		if (s1->output_type & MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
 			mcc_error_noabort("local-exec TLS in a shared object is not valid; "
 												"dynamic TLS is not implemented for arm64");
 			return;
 		}
-		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
-			Section *s = s1->sections[i];
-
-			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
-			if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
-				if (!tls_start || s->sh_addr < tls_start)
-					{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
-			}
-		}
+		tls_start = arm64_tls_layout(s1, &tcb_offset);
 #ifdef MCC_TARGET_PE
 
 		int64_t tp_offset = val - tls_start;
 #else
 
-		int64_t tp_offset = val - tls_start + AARCH64_TLS_TCB_SIZE;
+		int64_t tp_offset = val - tls_start + tcb_offset;
 #endif
 		if (s1->run_tls_active)
 			{ MCC_TRACE("br\n"); tp_offset = s1->run_tls_slab_tpoff + (val - tls_start); }
@@ -462,6 +475,45 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			imm = ((uint64_t)tp_offset & 0xfff) >> scale;
 		}
 		write32le(ptr, ((read32le(ptr) & 0xffc003ff) | (imm << 10)));
+		return;
+	}
+	case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
+	case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC: {
+#ifndef MCC_TARGET_PE
+		if (s1->output_type & MCC_OUTPUT_DYN) { MCC_TRACE("br\n");
+			addr_t slot = s1->got->sh_addr +
+										get_sym_attr(s1, sym_index, 0)->got_offset;
+			if (type == R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21) { MCC_TRACE("br\n");
+				uint64_t off = (slot >> 12) - (addr >> 12);
+				if ((off + ((uint64_t)1 << 20)) >> 21)
+					{ MCC_TRACE("br\n"); mcc_error_noabort("R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21 relocation failed"); }
+				write32le(ptr, ((read32le(ptr) & 0x9f00001f) |
+												(off & 0x1ffffc) << 3 | (off & 3) << 29));
+			} else { MCC_TRACE("br\n");
+				write32le(ptr, ((read32le(ptr) & 0xfff803ff) |
+												(slot & 0xff8) << 7));
+			}
+			return;
+		}
+#endif
+		addr_t tcb_offset;
+		addr_t tls_start = arm64_tls_layout(s1, &tcb_offset);
+#ifdef MCC_TARGET_PE
+		int64_t tp_offset = val - tls_start;
+#else
+		int64_t tp_offset = val - tls_start + tcb_offset;
+#endif
+		if (s1->run_tls_active)
+			{ MCC_TRACE("br\n"); tp_offset = s1->run_tls_slab_tpoff + (val - tls_start); }
+		if (tp_offset < 0 || (uint64_t)tp_offset >> 32)
+			{ MCC_TRACE("br\n"); mcc_error_noabort("R_AARCH64_TLSIE relocation failed: "
+												"thread-pointer offset 0x%lx is out of range",
+												(long)tp_offset); }
+		uint32_t rd = read32le(ptr) & 0x1f;
+		if (type == R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21)
+			{ MCC_TRACE("br\n"); write32le(ptr, 0xd2a00000 | ((uint32_t)(tp_offset >> 16 & 0xffff) << 5) | rd); }
+		else
+			{ MCC_TRACE("br\n"); write32le(ptr, 0xf2800000 | ((uint32_t)(tp_offset & 0xffff) << 5) | rd); }
 		return;
 	}
 	case R_AARCH64_TLSDESC_ADR_PAGE21:
@@ -487,19 +539,12 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			return;
 		}
 #endif
-		addr_t tls_start = 0;
-		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
-			Section *s = s1->sections[i];
-			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
-			if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
-				if (!tls_start || s->sh_addr < tls_start)
-					{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
-			}
-		}
+		addr_t tcb_offset;
+		addr_t tls_start = arm64_tls_layout(s1, &tcb_offset);
 #ifdef MCC_TARGET_PE
 		int64_t tp_offset = val - tls_start;
 #else
-		int64_t tp_offset = val - tls_start + AARCH64_TLS_TCB_SIZE;
+		int64_t tp_offset = val - tls_start + tcb_offset;
 #endif
 		if (s1->run_tls_active)
 			{ MCC_TRACE("br\n"); tp_offset = s1->run_tls_slab_tpoff + (val - tls_start); }
