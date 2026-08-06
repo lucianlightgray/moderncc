@@ -65,15 +65,45 @@ cannot be switched on in a shipped compiler), `MCC_CONFIG_TRACE` (`MCC_TRACE` al
 `mcc_p`. Their capabilities are reachable at runtime instead: `-O0`, `-b`/`-bt`/
 `-fsanitize=bounds`, `--lsp`, `-fasm`/`-fno-asm`.
 
-**Coverage owed.** `tests/optfire/flagsweep.sh` checks that every flag in the table
-accepts both spellings (113/113) and that turning each on and off still computes the
-reference answer on twelve exec goldens. The exec half is **not yet wired as ctest
-cells** — that is the next job, and it matters: 43 of these flags are referenced
-nowhere in `tests/`, `tools/` or `CMakeLists.txt`, which is exactly the population
-`-fjit-splice` came from. The first version of that harness used two synthetic
-programs and *passed* `-fjit-splice`; it now uses real goldens covering threads and
-atomics, and fails it. A sweep that misses the bug you already have is worse than no
-sweep, because it reads as coverage.
+**Coverage, as wired.** `tests/optfire/flagsweep.sh` is three ctest surfaces, all under
+the `flagsweep` label. `flagsweep/accept` checks every flag in the table accepts both
+spellings (113/113). `flagsweep-exec/<flag>` — **113 cells, one per `MCC_OPT_ROW`** —
+turns the flag on and off at `-O2` and checks twelve exec goldens still compute the
+`-O0` answer. `flagsweep-cover/<row>` runs the same corpus under a **3-way covering
+array**, opt-in behind `-DMCC_FLAGSWEEP_FULL=ON` and the `flagsweep-full` label.
+Together they cost **4.2s wall at `-j32`** and the covering array another 6.6s.
+
+The table has **113 rows**, not 115: `grep -c 'MCC_OPT_ROW('` counts the doc comment at
+`mccopt.h:63` and the `#define` at `:181`. **34** flags were referenced nowhere in
+`tests/`/`tools/`/`CMakeLists.txt` before this, counting a reference as the name on a
+token boundary anywhere — `-f<name>`, `-fno-<name>`, or a bare `|`-field in the optfire
+data files. Reading it strictly as "something passes this spelling" (`-f`/`-fno-` only)
+the figure is **58**. The recorded 43 does not reproduce under either rule. Every one of
+them owns a cell now — this is the population `-fjit-splice` came from. The first version of that harness used two synthetic programs and
+*passed* `-fjit-splice`; it uses real goldens now and fails it. A sweep that misses the
+bug you already have is worse than no sweep, because it reads as coverage.
+
+**The covering array is a 3-wise guarantee, not enumeration.** Exhaustive three-deep is
+C(113,3) × 2³ = 1,872,568 configurations. `tests/optfire/cover3.txt` is **76 rows** such
+that every one of the 1,774,520 three-flag settings appears in at least one row — the
+identical guarantee for any bug needing three flags or fewer, and no guarantee at all for
+one needing four. It is built by deterministic IPOG (`cover3.py gen`, no RNG, byte-identical
+on any host) and **`flagsweep/cover3-verify` re-proves the property on every ctest run**
+rather than trusting the generator: it re-derives the flag list from `mccopt.h`, so a new
+`MCC_OPT_ROW` that nobody regenerated for fails the cell.
+
+**Two flags are pinned out of the array**, each a debt, not a decision:
+- `jit-splice` at 0 — the known miscompile. It is also the one `KNOWN_RED` entry in
+  `flagsweep.sh` (`jit-splice:on:random_stuff`), so `flagsweep-exec/jit-splice` is XFAIL
+  rather than red, and self-cleaning: if it starts passing the cell fails and says so.
+- `replay-fallback` at 1 — **`-fno-replay-fallback -fno-replay-cmp-materialize` at `-O2`
+  inverts comparison results.** Delta-debugged from the all-off row down to exactly those
+  two flags; each alone is green, which is why 113 one-at-a-time cells never saw it.
+  Five goldens: `types/builtin_inf_nan` `1 1 1`→`0 0 1`, `expressions/precedence`
+  `1, 0`→`0, 0`, `types/bool` bitfields `1 0 1`→`1 1 1`, `types/floating_point`
+  comparison rows inverted, `codegen/overflow_inline` aborts (rc=20). This is the C2-gap
+  fallback debt below wearing a second face — unpin it when the byte-faithful step is
+  green.
 
 ## Present-tense open items — validated 2026-08-05 at `9b83dc05`
 
@@ -192,9 +222,18 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   question is untouched and stays open for a libc that gates only on `__has_builtin`.
 
 ### Flag-sweep coverage
-- Wire `tests/optfire/flagsweep.sh`'s exec half as ctest cells (see the config note
-  above). 43 of the 113 `-f` flags are referenced nowhere in `tests/`/`tools/`/
-  `CMakeLists.txt` — the population `-fjit-splice` came from.
+- ~~Wire `tests/optfire/flagsweep.sh`'s exec half as ctest cells.~~ **Closed** — 113
+  `flagsweep-exec/<flag>` cells, one per `MCC_OPT_ROW`, plus a 76-row 3-way covering
+  array behind `-DMCC_FLAGSWEEP_FULL=ON`. See "Coverage, as wired" above.
+- **Unpin `replay-fallback` from `tests/optfire/cover3.py`** once the byte-faithful step
+  lands, and delete the `jit-splice` pin and the one `KNOWN_RED` entry when that pass is
+  fixed. Both are recorded there with their reason; regenerate with `cover3.py gen`.
+- The corpus has a hole worth closing: an injected `x + 1 → x` fold in the ident-arith
+  pass was invisible to all twelve goldens when gated on a `LEVEL(4)` flag until it was
+  moved from `-` to `+`. `x - 1` in a returned expression is not exercised.
+- The array pins two flags, so it is a 3-wise guarantee over **111** of the 113, and a
+  bug needing four specific flags is out of reach by construction. Raising strength to 4
+  is ~4× the rows; it has not been measured.
 
 ### C2 gap — remaining Replay_IR fidelity work
 - Close the open per-body byte divergences (the "largest first" list in the archive).

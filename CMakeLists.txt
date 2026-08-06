@@ -4371,6 +4371,80 @@ if(MCC_BUILD_TESTS)
                     endif()
                 endforeach()
             endforeach()
+
+            set(_fs_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/flagsweep.sh")
+            set(_fs_py "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/cover3.py")
+            set(_fs_tbl "${CMAKE_CURRENT_SOURCE_DIR}/src/mccopt.h")
+            set(_fs_cov "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/cover3.txt")
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                "${_fs_tbl}" "${_fs_cov}")
+
+            add_test(NAME "flagsweep/accept"
+                COMMAND "${_fs_sh}" accept "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_BINARY_DIR}/flagsweep/accept")
+            set_tests_properties("flagsweep/accept" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS flagsweep)
+
+            file(READ "${_fs_tbl}" _fs_txt)
+            string(REGEX MATCHALL "MCC_OPT_ROW\\([A-Z0-9_]+, *\"[a-z0-9-]+\"" _fs_rows "${_fs_txt}")
+            unset(_fs_txt)
+            set(_fs_flags "")
+            foreach(_fr IN LISTS _fs_rows)
+                string(REGEX MATCH "\"([a-z0-9-]+)\"" _ignore "${_fr}")
+                list(APPEND _fs_flags "${CMAKE_MATCH_1}")
+            endforeach()
+            list(LENGTH _fs_flags _fs_nflag)
+            foreach(_ff IN LISTS _fs_flags)
+                add_test(NAME "flagsweep-exec/${_ff}"
+                    COMMAND "${_fs_sh}" exec "${_mcc_exe}" "${_bdir}" "${_idir}"
+                            "${CMAKE_BINARY_DIR}/flagsweep/exec-${_ff}" "${_ff}")
+                set_tests_properties("flagsweep-exec/${_ff}" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                    LABELS flagsweep TIMEOUT 300)
+            endforeach()
+            message(STATUS "flagsweep: ${_fs_nflag} -f flags from src/mccopt.h")
+
+            option(MCC_FLAGSWEEP_FULL
+                "Run the whole 3-way covering array over the -f surface as ctest cells (label flagsweep-full)." OFF)
+            find_program(MCC_PYTHON3 NAMES python3 python)
+            if(NOT MCC_PYTHON3)
+                mcc_skip_test(flagsweep/cover3-verify "python3 not found"
+                    LABELS flagsweep)
+            elseif(NOT EXISTS "${_fs_cov}")
+                mcc_skip_test(flagsweep/cover3-verify "no cover3.txt; run tests/optfire/cover3.py gen"
+                    LABELS flagsweep)
+            else()
+                add_test(NAME "flagsweep/cover3-verify"
+                    COMMAND "${MCC_PYTHON3}" "${_fs_py}" verify "${_fs_cov}")
+                set_tests_properties("flagsweep/cover3-verify" PROPERTIES
+                    LABELS flagsweep TIMEOUT 300)
+            endif()
+
+            set(_fs_nrow 0)
+            if(EXISTS "${_fs_cov}")
+                file(STRINGS "${_fs_cov}" _fs_rowline REGEX "^rows ")
+                if(_fs_rowline)
+                    list(GET _fs_rowline 0 _fs_rowline)
+                    string(REGEX MATCH "^rows ([0-9]+)" _ignore "${_fs_rowline}")
+                    set(_fs_nrow "${CMAKE_MATCH_1}")
+                endif()
+            endif()
+            if(MCC_FLAGSWEEP_FULL AND _fs_nrow GREATER 0)
+                math(EXPR _fs_last "${_fs_nrow} - 1")
+                foreach(_fn RANGE 0 ${_fs_last})
+                    add_test(NAME "flagsweep-cover/${_fn}"
+                        COMMAND "${_fs_sh}" cover "${_mcc_exe}" "${_bdir}" "${_idir}"
+                                "${CMAKE_BINARY_DIR}/flagsweep/cover-${_fn}" "${_fn}")
+                    set_tests_properties("flagsweep-cover/${_fn}" PROPERTIES
+                        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                        LABELS "flagsweep;flagsweep-full" TIMEOUT 600)
+                endforeach()
+                message(STATUS "flagsweep: ${_fs_nrow} covering-array rows as flagsweep-cover/* cells")
+            else()
+                mcc_skip_test(flagsweep-cover
+                    "${_fs_nrow} covering-array rows are opt-in: cmake -DMCC_FLAGSWEEP_FULL=ON, then ctest -L flagsweep-full"
+                    LABELS flagsweep)
+            endif()
         endif()
 
     if(MCC_EMULATOR)
