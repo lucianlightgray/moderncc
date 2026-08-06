@@ -1441,7 +1441,7 @@ static void rir_stmt(AstLocal n) {
 #endif
 	if (rir_hold_inline(n))
 		return;
-	if (rir_iholdn && rir_shn <= 0)
+	if (rir_iholdn && (rir_shn <= 0 || rir_shn < rir_iholdd[rir_iholdn - 1]))
 		rir_ihold_flush();
 	if (rir_pending_ret != AST_NONE && n != rir_pending_ret &&
 			ast_kind(rir_arena, n) == AST_Jump) {

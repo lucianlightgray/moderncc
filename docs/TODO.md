@@ -206,6 +206,28 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   load-bearing — ≥4 of the fallback bodies are genuinely wrong, not benign.
 - `-fno-replay-fallback` + selfhost-jit-with-mcc blows RSS ~6.7×; bisect via
   `MCC_RIR_NOFB_SKIP`. Measure on the full suite, not the 317 exec goldens.
+- **`exec/union_cast` is closed** — it was the sole consistent native failure under
+  `-fno-replay-fallback` at every `-O` level, and the whole remaining correctness
+  justification for the byte gate. `rir_stmt` appended a statement straight into the
+  basic block whenever `rir_hold_inline` declined to hold it, even with an inline-held
+  `Invoke` still queued from earlier in the op stream, so the held call was re-emitted
+  behind it by the next `rir_ihold_bind`. `take((union U) 13)` is the two-line
+  reproducer: `gen_union_cast` lays the temp down as `memset(tmp,0,n)` then
+  `tmp.i = 13`, the `memset` is held because `printf`'s callee is already on the
+  shadow stack, and the store lands at a shallower shadow depth than the hold, so the
+  arena read `tmp.i = 13; memset(tmp,0,n)` and the callee saw 0. Whole suite under
+  `MCC_TEST_OPT="-O2 -fno-replay-fallback"`: zero replay failures. The body is now
+  byte-faithful too, so it stops falling back and reaches the 22 optimizer passes.
+- `run-tier/x86_64` fails `tls_threads` whenever `MCC_JIT=1` meets an active AST
+  replay (`MCC_FORCE_REPLAY=1` at `-O0`, or plain `-O1`/`-O2`); `MCC_JIT=0` is green
+  at every level and `MCC_RIR_PROD=0` does not help, so this is **not** an arena
+  defect and not a `-fno-replay-fallback` one. The child thread reads every
+  non-zero-initialised `__thread` as 0: the `-run` TLS slab is a `__thread` array
+  inside mcc (`mcc_jit_tls_slab`, src/mcchost.c:1450) that glibc zeroes per thread,
+  and the re-seeding wrapper is installed by binding the program's `pthread_create`
+  to `mcc_run_pthread_create` (src/objfmt/mccelf.c:974) under `s1->run_tls_active`,
+  which `tls_setup_linux` (src/mccrun.c:451) only sets on the interpreter relocate
+  path. `--no-jit` does not suppress it — `MCC_JIT=1` still wins.
 
 #### The fallback census was unreadable until 2026-08-06 — six defects
 
