@@ -3986,6 +3986,18 @@ if(MCC_BUILD_TESTS)
                 LABELS "wine" TIMEOUT 1800)
         endforeach()
 
+        # run-tier drives tests/run with no -O flag, so the -run corpus only ever
+        # ran at -O0 -- where the AST replay path is off entirely. Every arena
+        # consumer reached only by -run was therefore untested at -O1 and above,
+        # and a segfault compiling an operand-carrying inline asm with -O2 -run
+        # survived two full 8600-cell ctest runs because of it. This sweeps the
+        # same corpus over every -O level and both JIT settings on the host mcc.
+        add_test(NAME run-opt/native
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/run-opt.sh"
+                    "${_mcc_exe}" "${CMAKE_BINARY_DIR}")
+        set_tests_properties(run-opt/native PROPERTIES
+            FIXTURES_REQUIRED "MCC_BUILT" SKIP_RETURN_CODE 77 TIMEOUT 900)
+
         find_program(MCC_OBJCOPY objcopy)
         if(UNIX AND MCC_OBJCOPY)
             add_test(NAME superopt/promote-floor
