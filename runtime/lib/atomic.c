@@ -1929,6 +1929,2056 @@ __asm__(
 #endif
 #endif
 
+#if defined __aarch64__ && !defined __APPLE__ && !defined _WIN32
+__asm__(
+		"        .text\n");
+
+__asm__(
+		"        .global " STR(_(__aarch64_cas1_relax)) "\n" TYPE(STR(_(__aarch64_cas1_relax))) "" STR(_(__aarch64_cas1_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085f7c40\n"
+		"        .int 0x6b10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0x08117c41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_cas1_relax_loop" ":\n"
+		"        ldxrb    w0, [x2]\n"
+		"        cmp     w0, w16\n"
+		"        bne " LP "__aarch64_cas1_relax_end" "\n"
+		"        stxrb    w17, w1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas1_relax_loop" "\n"
+		"" LP "__aarch64_cas1_relax_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas1_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas2_relax)) "\n" TYPE(STR(_(__aarch64_cas2_relax))) "" STR(_(__aarch64_cas2_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485f7c40\n"
+		"        .int 0x6b10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0x48117c41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_cas2_relax_loop" ":\n"
+		"        ldxrh    w0, [x2]\n"
+		"        cmp     w0, w16\n"
+		"        bne " LP "__aarch64_cas2_relax_end" "\n"
+		"        stxrh    w17, w1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas2_relax_loop" "\n"
+		"" LP "__aarch64_cas2_relax_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas2_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas4_relax)) "\n" TYPE(STR(_(__aarch64_cas4_relax))) "" STR(_(__aarch64_cas4_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885f7c40\n"
+		"        .int 0x6b10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0x88117c41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_cas4_relax_loop" ":\n"
+		"        ldxr    w0, [x2]\n"
+		"        cmp     w0, w16\n"
+		"        bne " LP "__aarch64_cas4_relax_end" "\n"
+		"        stxr    w17, w1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas4_relax_loop" "\n"
+		"" LP "__aarch64_cas4_relax_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas4_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas8_relax)) "\n" TYPE(STR(_(__aarch64_cas8_relax))) "" STR(_(__aarch64_cas8_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85f7c40\n"
+		"        .int 0xeb10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0xc8117c41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_cas8_relax_loop" ":\n"
+		"        ldxr    x0, [x2]\n"
+		"        cmp     x0, x16\n"
+		"        bne " LP "__aarch64_cas8_relax_end" "\n"
+		"        stxr    w17, x1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas8_relax_loop" "\n"
+		"" LP "__aarch64_cas8_relax_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas8_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas16_relax)) "\n" TYPE(STR(_(__aarch64_cas16_relax))) "" STR(_(__aarch64_cas16_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xaa0103f1\n"
+		"        .int 0xc87f0480\n"
+		"        .int 0xeb10001f\n"
+		"        .int 0xfa510020\n"
+		"        .int 0x54000061\n"
+		"        .int 0xc82f0c82\n"
+		"        .int 0x35ffff6f\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"        mov     x17, x1\n"
+		"" LP "__aarch64_cas16_relax_loop" ":\n"
+		"        ldxp    x0, x1, [x4]\n"
+		"        cmp     x0, x16\n"
+		"        ccmp    x1, x17, #0, eq\n"
+		"        bne " LP "__aarch64_cas16_relax_end" "\n"
+		"        stxp    w15, x2, x3, [x4]\n"
+		"        cbnz    w15, " LP "__aarch64_cas16_relax_loop" "\n"
+		"" LP "__aarch64_cas16_relax_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas16_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas1_acq)) "\n" TYPE(STR(_(__aarch64_cas1_acq))) "" STR(_(__aarch64_cas1_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085ffc40\n"
+		"        .int 0x6b10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0x08117c41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_cas1_acq_loop" ":\n"
+		"        ldaxrb    w0, [x2]\n"
+		"        cmp     w0, w16\n"
+		"        bne " LP "__aarch64_cas1_acq_end" "\n"
+		"        stxrb    w17, w1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas1_acq_loop" "\n"
+		"" LP "__aarch64_cas1_acq_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas1_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas2_acq)) "\n" TYPE(STR(_(__aarch64_cas2_acq))) "" STR(_(__aarch64_cas2_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485ffc40\n"
+		"        .int 0x6b10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0x48117c41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_cas2_acq_loop" ":\n"
+		"        ldaxrh    w0, [x2]\n"
+		"        cmp     w0, w16\n"
+		"        bne " LP "__aarch64_cas2_acq_end" "\n"
+		"        stxrh    w17, w1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas2_acq_loop" "\n"
+		"" LP "__aarch64_cas2_acq_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas2_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas4_acq)) "\n" TYPE(STR(_(__aarch64_cas4_acq))) "" STR(_(__aarch64_cas4_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885ffc40\n"
+		"        .int 0x6b10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0x88117c41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_cas4_acq_loop" ":\n"
+		"        ldaxr    w0, [x2]\n"
+		"        cmp     w0, w16\n"
+		"        bne " LP "__aarch64_cas4_acq_end" "\n"
+		"        stxr    w17, w1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas4_acq_loop" "\n"
+		"" LP "__aarch64_cas4_acq_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas4_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas8_acq)) "\n" TYPE(STR(_(__aarch64_cas8_acq))) "" STR(_(__aarch64_cas8_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85ffc40\n"
+		"        .int 0xeb10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0xc8117c41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_cas8_acq_loop" ":\n"
+		"        ldaxr    x0, [x2]\n"
+		"        cmp     x0, x16\n"
+		"        bne " LP "__aarch64_cas8_acq_end" "\n"
+		"        stxr    w17, x1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas8_acq_loop" "\n"
+		"" LP "__aarch64_cas8_acq_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas8_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas16_acq)) "\n" TYPE(STR(_(__aarch64_cas16_acq))) "" STR(_(__aarch64_cas16_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xaa0103f1\n"
+		"        .int 0xc87f8480\n"
+		"        .int 0xeb10001f\n"
+		"        .int 0xfa510020\n"
+		"        .int 0x54000061\n"
+		"        .int 0xc82f0c82\n"
+		"        .int 0x35ffff6f\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"        mov     x17, x1\n"
+		"" LP "__aarch64_cas16_acq_loop" ":\n"
+		"        ldaxp    x0, x1, [x4]\n"
+		"        cmp     x0, x16\n"
+		"        ccmp    x1, x17, #0, eq\n"
+		"        bne " LP "__aarch64_cas16_acq_end" "\n"
+		"        stxp    w15, x2, x3, [x4]\n"
+		"        cbnz    w15, " LP "__aarch64_cas16_acq_loop" "\n"
+		"" LP "__aarch64_cas16_acq_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas16_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas1_rel)) "\n" TYPE(STR(_(__aarch64_cas1_rel))) "" STR(_(__aarch64_cas1_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085f7c40\n"
+		"        .int 0x6b10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0x0811fc41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_cas1_rel_loop" ":\n"
+		"        ldxrb    w0, [x2]\n"
+		"        cmp     w0, w16\n"
+		"        bne " LP "__aarch64_cas1_rel_end" "\n"
+		"        stlxrb    w17, w1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas1_rel_loop" "\n"
+		"" LP "__aarch64_cas1_rel_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas1_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas2_rel)) "\n" TYPE(STR(_(__aarch64_cas2_rel))) "" STR(_(__aarch64_cas2_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485f7c40\n"
+		"        .int 0x6b10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0x4811fc41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_cas2_rel_loop" ":\n"
+		"        ldxrh    w0, [x2]\n"
+		"        cmp     w0, w16\n"
+		"        bne " LP "__aarch64_cas2_rel_end" "\n"
+		"        stlxrh    w17, w1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas2_rel_loop" "\n"
+		"" LP "__aarch64_cas2_rel_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas2_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas4_rel)) "\n" TYPE(STR(_(__aarch64_cas4_rel))) "" STR(_(__aarch64_cas4_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885f7c40\n"
+		"        .int 0x6b10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0x8811fc41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_cas4_rel_loop" ":\n"
+		"        ldxr    w0, [x2]\n"
+		"        cmp     w0, w16\n"
+		"        bne " LP "__aarch64_cas4_rel_end" "\n"
+		"        stlxr    w17, w1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas4_rel_loop" "\n"
+		"" LP "__aarch64_cas4_rel_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas4_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas8_rel)) "\n" TYPE(STR(_(__aarch64_cas8_rel))) "" STR(_(__aarch64_cas8_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85f7c40\n"
+		"        .int 0xeb10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0xc811fc41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_cas8_rel_loop" ":\n"
+		"        ldxr    x0, [x2]\n"
+		"        cmp     x0, x16\n"
+		"        bne " LP "__aarch64_cas8_rel_end" "\n"
+		"        stlxr    w17, x1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas8_rel_loop" "\n"
+		"" LP "__aarch64_cas8_rel_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas8_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas16_rel)) "\n" TYPE(STR(_(__aarch64_cas16_rel))) "" STR(_(__aarch64_cas16_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xaa0103f1\n"
+		"        .int 0xc87f0480\n"
+		"        .int 0xeb10001f\n"
+		"        .int 0xfa510020\n"
+		"        .int 0x54000061\n"
+		"        .int 0xc82f8c82\n"
+		"        .int 0x35ffff6f\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"        mov     x17, x1\n"
+		"" LP "__aarch64_cas16_rel_loop" ":\n"
+		"        ldxp    x0, x1, [x4]\n"
+		"        cmp     x0, x16\n"
+		"        ccmp    x1, x17, #0, eq\n"
+		"        bne " LP "__aarch64_cas16_rel_end" "\n"
+		"        stlxp    w15, x2, x3, [x4]\n"
+		"        cbnz    w15, " LP "__aarch64_cas16_rel_loop" "\n"
+		"" LP "__aarch64_cas16_rel_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas16_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas1_acq_rel)) "\n" TYPE(STR(_(__aarch64_cas1_acq_rel))) "" STR(_(__aarch64_cas1_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085ffc40\n"
+		"        .int 0x6b10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0x0811fc41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_cas1_acq_rel_loop" ":\n"
+		"        ldaxrb    w0, [x2]\n"
+		"        cmp     w0, w16\n"
+		"        bne " LP "__aarch64_cas1_acq_rel_end" "\n"
+		"        stlxrb    w17, w1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas1_acq_rel_loop" "\n"
+		"" LP "__aarch64_cas1_acq_rel_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas1_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas2_acq_rel)) "\n" TYPE(STR(_(__aarch64_cas2_acq_rel))) "" STR(_(__aarch64_cas2_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485ffc40\n"
+		"        .int 0x6b10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0x4811fc41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_cas2_acq_rel_loop" ":\n"
+		"        ldaxrh    w0, [x2]\n"
+		"        cmp     w0, w16\n"
+		"        bne " LP "__aarch64_cas2_acq_rel_end" "\n"
+		"        stlxrh    w17, w1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas2_acq_rel_loop" "\n"
+		"" LP "__aarch64_cas2_acq_rel_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas2_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas4_acq_rel)) "\n" TYPE(STR(_(__aarch64_cas4_acq_rel))) "" STR(_(__aarch64_cas4_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885ffc40\n"
+		"        .int 0x6b10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0x8811fc41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_cas4_acq_rel_loop" ":\n"
+		"        ldaxr    w0, [x2]\n"
+		"        cmp     w0, w16\n"
+		"        bne " LP "__aarch64_cas4_acq_rel_end" "\n"
+		"        stlxr    w17, w1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas4_acq_rel_loop" "\n"
+		"" LP "__aarch64_cas4_acq_rel_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas4_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas8_acq_rel)) "\n" TYPE(STR(_(__aarch64_cas8_acq_rel))) "" STR(_(__aarch64_cas8_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85ffc40\n"
+		"        .int 0xeb10001f\n"
+		"        .int 0x54000061\n"
+		"        .int 0xc811fc41\n"
+		"        .int 0x35ffff91\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_cas8_acq_rel_loop" ":\n"
+		"        ldaxr    x0, [x2]\n"
+		"        cmp     x0, x16\n"
+		"        bne " LP "__aarch64_cas8_acq_rel_end" "\n"
+		"        stlxr    w17, x1, [x2]\n"
+		"        cbnz    w17, " LP "__aarch64_cas8_acq_rel_loop" "\n"
+		"" LP "__aarch64_cas8_acq_rel_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas8_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_cas16_acq_rel)) "\n" TYPE(STR(_(__aarch64_cas16_acq_rel))) "" STR(_(__aarch64_cas16_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xaa0103f1\n"
+		"        .int 0xc87f8480\n"
+		"        .int 0xeb10001f\n"
+		"        .int 0xfa510020\n"
+		"        .int 0x54000061\n"
+		"        .int 0xc82f8c82\n"
+		"        .int 0x35ffff6f\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"        mov     x17, x1\n"
+		"" LP "__aarch64_cas16_acq_rel_loop" ":\n"
+		"        ldaxp    x0, x1, [x4]\n"
+		"        cmp     x0, x16\n"
+		"        ccmp    x1, x17, #0, eq\n"
+		"        bne " LP "__aarch64_cas16_acq_rel_end" "\n"
+		"        stlxp    w15, x2, x3, [x4]\n"
+		"        cbnz    w15, " LP "__aarch64_cas16_acq_rel_loop" "\n"
+		"" LP "__aarch64_cas16_acq_rel_end" ":\n"
+		"        ret\n" SIZE(STR(_(__aarch64_cas16_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp1_relax)) "\n" TYPE(STR(_(__aarch64_swp1_relax))) "" STR(_(__aarch64_swp1_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085f7c20\n"
+		"        .int 0x08117c30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_swp1_relax_loop" ":\n"
+		"        ldxrb    w0, [x1]\n"
+		"        stxrb    w17, w16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp1_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp1_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp2_relax)) "\n" TYPE(STR(_(__aarch64_swp2_relax))) "" STR(_(__aarch64_swp2_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485f7c20\n"
+		"        .int 0x48117c30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_swp2_relax_loop" ":\n"
+		"        ldxrh    w0, [x1]\n"
+		"        stxrh    w17, w16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp2_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp2_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp4_relax)) "\n" TYPE(STR(_(__aarch64_swp4_relax))) "" STR(_(__aarch64_swp4_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885f7c20\n"
+		"        .int 0x88117c30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_swp4_relax_loop" ":\n"
+		"        ldxr    w0, [x1]\n"
+		"        stxr    w17, w16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp4_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp4_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp8_relax)) "\n" TYPE(STR(_(__aarch64_swp8_relax))) "" STR(_(__aarch64_swp8_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85f7c20\n"
+		"        .int 0xc8117c30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_swp8_relax_loop" ":\n"
+		"        ldxr    x0, [x1]\n"
+		"        stxr    w17, x16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp8_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp8_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp1_acq)) "\n" TYPE(STR(_(__aarch64_swp1_acq))) "" STR(_(__aarch64_swp1_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085ffc20\n"
+		"        .int 0x08117c30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_swp1_acq_loop" ":\n"
+		"        ldaxrb    w0, [x1]\n"
+		"        stxrb    w17, w16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp1_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp1_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp2_acq)) "\n" TYPE(STR(_(__aarch64_swp2_acq))) "" STR(_(__aarch64_swp2_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485ffc20\n"
+		"        .int 0x48117c30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_swp2_acq_loop" ":\n"
+		"        ldaxrh    w0, [x1]\n"
+		"        stxrh    w17, w16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp2_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp2_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp4_acq)) "\n" TYPE(STR(_(__aarch64_swp4_acq))) "" STR(_(__aarch64_swp4_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885ffc20\n"
+		"        .int 0x88117c30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_swp4_acq_loop" ":\n"
+		"        ldaxr    w0, [x1]\n"
+		"        stxr    w17, w16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp4_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp4_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp8_acq)) "\n" TYPE(STR(_(__aarch64_swp8_acq))) "" STR(_(__aarch64_swp8_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85ffc20\n"
+		"        .int 0xc8117c30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_swp8_acq_loop" ":\n"
+		"        ldaxr    x0, [x1]\n"
+		"        stxr    w17, x16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp8_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp8_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp1_rel)) "\n" TYPE(STR(_(__aarch64_swp1_rel))) "" STR(_(__aarch64_swp1_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085f7c20\n"
+		"        .int 0x0811fc30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_swp1_rel_loop" ":\n"
+		"        ldxrb    w0, [x1]\n"
+		"        stlxrb    w17, w16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp1_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp1_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp2_rel)) "\n" TYPE(STR(_(__aarch64_swp2_rel))) "" STR(_(__aarch64_swp2_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485f7c20\n"
+		"        .int 0x4811fc30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_swp2_rel_loop" ":\n"
+		"        ldxrh    w0, [x1]\n"
+		"        stlxrh    w17, w16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp2_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp2_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp4_rel)) "\n" TYPE(STR(_(__aarch64_swp4_rel))) "" STR(_(__aarch64_swp4_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885f7c20\n"
+		"        .int 0x8811fc30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_swp4_rel_loop" ":\n"
+		"        ldxr    w0, [x1]\n"
+		"        stlxr    w17, w16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp4_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp4_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp8_rel)) "\n" TYPE(STR(_(__aarch64_swp8_rel))) "" STR(_(__aarch64_swp8_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85f7c20\n"
+		"        .int 0xc811fc30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_swp8_rel_loop" ":\n"
+		"        ldxr    x0, [x1]\n"
+		"        stlxr    w17, x16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp8_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp8_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp1_acq_rel)) "\n" TYPE(STR(_(__aarch64_swp1_acq_rel))) "" STR(_(__aarch64_swp1_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085ffc20\n"
+		"        .int 0x0811fc30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_swp1_acq_rel_loop" ":\n"
+		"        ldaxrb    w0, [x1]\n"
+		"        stlxrb    w17, w16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp1_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp1_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp2_acq_rel)) "\n" TYPE(STR(_(__aarch64_swp2_acq_rel))) "" STR(_(__aarch64_swp2_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485ffc20\n"
+		"        .int 0x4811fc30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_swp2_acq_rel_loop" ":\n"
+		"        ldaxrh    w0, [x1]\n"
+		"        stlxrh    w17, w16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp2_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp2_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp4_acq_rel)) "\n" TYPE(STR(_(__aarch64_swp4_acq_rel))) "" STR(_(__aarch64_swp4_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885ffc20\n"
+		"        .int 0x8811fc30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_swp4_acq_rel_loop" ":\n"
+		"        ldaxr    w0, [x1]\n"
+		"        stlxr    w17, w16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp4_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp4_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_swp8_acq_rel)) "\n" TYPE(STR(_(__aarch64_swp8_acq_rel))) "" STR(_(__aarch64_swp8_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85ffc20\n"
+		"        .int 0xc811fc30\n"
+		"        .int 0x35ffffd1\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_swp8_acq_rel_loop" ":\n"
+		"        ldaxr    x0, [x1]\n"
+		"        stlxr    w17, x16, [x1]\n"
+		"        cbnz    w17, " LP "__aarch64_swp8_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_swp8_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd1_relax)) "\n" TYPE(STR(_(__aarch64_ldadd1_relax))) "" STR(_(__aarch64_ldadd1_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085f7c20\n"
+		"        .int 0x0b100011\n"
+		"        .int 0x080f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldadd1_relax_loop" ":\n"
+		"        ldxrb    w0, [x1]\n"
+		"        add     w17, w0, w16\n"
+		"        stxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd1_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd1_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd2_relax)) "\n" TYPE(STR(_(__aarch64_ldadd2_relax))) "" STR(_(__aarch64_ldadd2_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485f7c20\n"
+		"        .int 0x0b100011\n"
+		"        .int 0x480f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldadd2_relax_loop" ":\n"
+		"        ldxrh    w0, [x1]\n"
+		"        add     w17, w0, w16\n"
+		"        stxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd2_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd2_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd4_relax)) "\n" TYPE(STR(_(__aarch64_ldadd4_relax))) "" STR(_(__aarch64_ldadd4_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885f7c20\n"
+		"        .int 0x0b100011\n"
+		"        .int 0x880f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldadd4_relax_loop" ":\n"
+		"        ldxr    w0, [x1]\n"
+		"        add     w17, w0, w16\n"
+		"        stxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd4_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd4_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd8_relax)) "\n" TYPE(STR(_(__aarch64_ldadd8_relax))) "" STR(_(__aarch64_ldadd8_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85f7c20\n"
+		"        .int 0x8b100011\n"
+		"        .int 0xc80f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldadd8_relax_loop" ":\n"
+		"        ldxr    x0, [x1]\n"
+		"        add     x17, x0, x16\n"
+		"        stxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd8_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd8_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd1_acq)) "\n" TYPE(STR(_(__aarch64_ldadd1_acq))) "" STR(_(__aarch64_ldadd1_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085ffc20\n"
+		"        .int 0x0b100011\n"
+		"        .int 0x080f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldadd1_acq_loop" ":\n"
+		"        ldaxrb    w0, [x1]\n"
+		"        add     w17, w0, w16\n"
+		"        stxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd1_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd1_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd2_acq)) "\n" TYPE(STR(_(__aarch64_ldadd2_acq))) "" STR(_(__aarch64_ldadd2_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485ffc20\n"
+		"        .int 0x0b100011\n"
+		"        .int 0x480f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldadd2_acq_loop" ":\n"
+		"        ldaxrh    w0, [x1]\n"
+		"        add     w17, w0, w16\n"
+		"        stxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd2_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd2_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd4_acq)) "\n" TYPE(STR(_(__aarch64_ldadd4_acq))) "" STR(_(__aarch64_ldadd4_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885ffc20\n"
+		"        .int 0x0b100011\n"
+		"        .int 0x880f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldadd4_acq_loop" ":\n"
+		"        ldaxr    w0, [x1]\n"
+		"        add     w17, w0, w16\n"
+		"        stxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd4_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd4_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd8_acq)) "\n" TYPE(STR(_(__aarch64_ldadd8_acq))) "" STR(_(__aarch64_ldadd8_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85ffc20\n"
+		"        .int 0x8b100011\n"
+		"        .int 0xc80f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldadd8_acq_loop" ":\n"
+		"        ldaxr    x0, [x1]\n"
+		"        add     x17, x0, x16\n"
+		"        stxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd8_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd8_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd1_rel)) "\n" TYPE(STR(_(__aarch64_ldadd1_rel))) "" STR(_(__aarch64_ldadd1_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085f7c20\n"
+		"        .int 0x0b100011\n"
+		"        .int 0x080ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldadd1_rel_loop" ":\n"
+		"        ldxrb    w0, [x1]\n"
+		"        add     w17, w0, w16\n"
+		"        stlxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd1_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd1_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd2_rel)) "\n" TYPE(STR(_(__aarch64_ldadd2_rel))) "" STR(_(__aarch64_ldadd2_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485f7c20\n"
+		"        .int 0x0b100011\n"
+		"        .int 0x480ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldadd2_rel_loop" ":\n"
+		"        ldxrh    w0, [x1]\n"
+		"        add     w17, w0, w16\n"
+		"        stlxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd2_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd2_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd4_rel)) "\n" TYPE(STR(_(__aarch64_ldadd4_rel))) "" STR(_(__aarch64_ldadd4_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885f7c20\n"
+		"        .int 0x0b100011\n"
+		"        .int 0x880ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldadd4_rel_loop" ":\n"
+		"        ldxr    w0, [x1]\n"
+		"        add     w17, w0, w16\n"
+		"        stlxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd4_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd4_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd8_rel)) "\n" TYPE(STR(_(__aarch64_ldadd8_rel))) "" STR(_(__aarch64_ldadd8_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85f7c20\n"
+		"        .int 0x8b100011\n"
+		"        .int 0xc80ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldadd8_rel_loop" ":\n"
+		"        ldxr    x0, [x1]\n"
+		"        add     x17, x0, x16\n"
+		"        stlxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd8_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd8_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd1_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldadd1_acq_rel))) "" STR(_(__aarch64_ldadd1_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085ffc20\n"
+		"        .int 0x0b100011\n"
+		"        .int 0x080ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldadd1_acq_rel_loop" ":\n"
+		"        ldaxrb    w0, [x1]\n"
+		"        add     w17, w0, w16\n"
+		"        stlxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd1_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd1_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd2_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldadd2_acq_rel))) "" STR(_(__aarch64_ldadd2_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485ffc20\n"
+		"        .int 0x0b100011\n"
+		"        .int 0x480ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldadd2_acq_rel_loop" ":\n"
+		"        ldaxrh    w0, [x1]\n"
+		"        add     w17, w0, w16\n"
+		"        stlxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd2_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd2_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd4_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldadd4_acq_rel))) "" STR(_(__aarch64_ldadd4_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885ffc20\n"
+		"        .int 0x0b100011\n"
+		"        .int 0x880ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldadd4_acq_rel_loop" ":\n"
+		"        ldaxr    w0, [x1]\n"
+		"        add     w17, w0, w16\n"
+		"        stlxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd4_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd4_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldadd8_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldadd8_acq_rel))) "" STR(_(__aarch64_ldadd8_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85ffc20\n"
+		"        .int 0x8b100011\n"
+		"        .int 0xc80ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldadd8_acq_rel_loop" ":\n"
+		"        ldaxr    x0, [x1]\n"
+		"        add     x17, x0, x16\n"
+		"        stlxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldadd8_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldadd8_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr1_relax)) "\n" TYPE(STR(_(__aarch64_ldclr1_relax))) "" STR(_(__aarch64_ldclr1_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085f7c20\n"
+		"        .int 0x0a300011\n"
+		"        .int 0x080f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldclr1_relax_loop" ":\n"
+		"        ldxrb    w0, [x1]\n"
+		"        bic     w17, w0, w16\n"
+		"        stxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr1_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr1_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr2_relax)) "\n" TYPE(STR(_(__aarch64_ldclr2_relax))) "" STR(_(__aarch64_ldclr2_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485f7c20\n"
+		"        .int 0x0a300011\n"
+		"        .int 0x480f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldclr2_relax_loop" ":\n"
+		"        ldxrh    w0, [x1]\n"
+		"        bic     w17, w0, w16\n"
+		"        stxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr2_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr2_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr4_relax)) "\n" TYPE(STR(_(__aarch64_ldclr4_relax))) "" STR(_(__aarch64_ldclr4_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885f7c20\n"
+		"        .int 0x0a300011\n"
+		"        .int 0x880f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldclr4_relax_loop" ":\n"
+		"        ldxr    w0, [x1]\n"
+		"        bic     w17, w0, w16\n"
+		"        stxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr4_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr4_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr8_relax)) "\n" TYPE(STR(_(__aarch64_ldclr8_relax))) "" STR(_(__aarch64_ldclr8_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85f7c20\n"
+		"        .int 0x8a300011\n"
+		"        .int 0xc80f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldclr8_relax_loop" ":\n"
+		"        ldxr    x0, [x1]\n"
+		"        bic     x17, x0, x16\n"
+		"        stxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr8_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr8_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr1_acq)) "\n" TYPE(STR(_(__aarch64_ldclr1_acq))) "" STR(_(__aarch64_ldclr1_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085ffc20\n"
+		"        .int 0x0a300011\n"
+		"        .int 0x080f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldclr1_acq_loop" ":\n"
+		"        ldaxrb    w0, [x1]\n"
+		"        bic     w17, w0, w16\n"
+		"        stxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr1_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr1_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr2_acq)) "\n" TYPE(STR(_(__aarch64_ldclr2_acq))) "" STR(_(__aarch64_ldclr2_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485ffc20\n"
+		"        .int 0x0a300011\n"
+		"        .int 0x480f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldclr2_acq_loop" ":\n"
+		"        ldaxrh    w0, [x1]\n"
+		"        bic     w17, w0, w16\n"
+		"        stxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr2_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr2_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr4_acq)) "\n" TYPE(STR(_(__aarch64_ldclr4_acq))) "" STR(_(__aarch64_ldclr4_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885ffc20\n"
+		"        .int 0x0a300011\n"
+		"        .int 0x880f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldclr4_acq_loop" ":\n"
+		"        ldaxr    w0, [x1]\n"
+		"        bic     w17, w0, w16\n"
+		"        stxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr4_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr4_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr8_acq)) "\n" TYPE(STR(_(__aarch64_ldclr8_acq))) "" STR(_(__aarch64_ldclr8_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85ffc20\n"
+		"        .int 0x8a300011\n"
+		"        .int 0xc80f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldclr8_acq_loop" ":\n"
+		"        ldaxr    x0, [x1]\n"
+		"        bic     x17, x0, x16\n"
+		"        stxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr8_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr8_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr1_rel)) "\n" TYPE(STR(_(__aarch64_ldclr1_rel))) "" STR(_(__aarch64_ldclr1_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085f7c20\n"
+		"        .int 0x0a300011\n"
+		"        .int 0x080ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldclr1_rel_loop" ":\n"
+		"        ldxrb    w0, [x1]\n"
+		"        bic     w17, w0, w16\n"
+		"        stlxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr1_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr1_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr2_rel)) "\n" TYPE(STR(_(__aarch64_ldclr2_rel))) "" STR(_(__aarch64_ldclr2_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485f7c20\n"
+		"        .int 0x0a300011\n"
+		"        .int 0x480ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldclr2_rel_loop" ":\n"
+		"        ldxrh    w0, [x1]\n"
+		"        bic     w17, w0, w16\n"
+		"        stlxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr2_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr2_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr4_rel)) "\n" TYPE(STR(_(__aarch64_ldclr4_rel))) "" STR(_(__aarch64_ldclr4_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885f7c20\n"
+		"        .int 0x0a300011\n"
+		"        .int 0x880ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldclr4_rel_loop" ":\n"
+		"        ldxr    w0, [x1]\n"
+		"        bic     w17, w0, w16\n"
+		"        stlxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr4_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr4_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr8_rel)) "\n" TYPE(STR(_(__aarch64_ldclr8_rel))) "" STR(_(__aarch64_ldclr8_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85f7c20\n"
+		"        .int 0x8a300011\n"
+		"        .int 0xc80ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldclr8_rel_loop" ":\n"
+		"        ldxr    x0, [x1]\n"
+		"        bic     x17, x0, x16\n"
+		"        stlxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr8_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr8_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr1_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldclr1_acq_rel))) "" STR(_(__aarch64_ldclr1_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085ffc20\n"
+		"        .int 0x0a300011\n"
+		"        .int 0x080ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldclr1_acq_rel_loop" ":\n"
+		"        ldaxrb    w0, [x1]\n"
+		"        bic     w17, w0, w16\n"
+		"        stlxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr1_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr1_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr2_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldclr2_acq_rel))) "" STR(_(__aarch64_ldclr2_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485ffc20\n"
+		"        .int 0x0a300011\n"
+		"        .int 0x480ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldclr2_acq_rel_loop" ":\n"
+		"        ldaxrh    w0, [x1]\n"
+		"        bic     w17, w0, w16\n"
+		"        stlxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr2_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr2_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr4_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldclr4_acq_rel))) "" STR(_(__aarch64_ldclr4_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885ffc20\n"
+		"        .int 0x0a300011\n"
+		"        .int 0x880ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldclr4_acq_rel_loop" ":\n"
+		"        ldaxr    w0, [x1]\n"
+		"        bic     w17, w0, w16\n"
+		"        stlxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr4_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr4_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldclr8_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldclr8_acq_rel))) "" STR(_(__aarch64_ldclr8_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85ffc20\n"
+		"        .int 0x8a300011\n"
+		"        .int 0xc80ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldclr8_acq_rel_loop" ":\n"
+		"        ldaxr    x0, [x1]\n"
+		"        bic     x17, x0, x16\n"
+		"        stlxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldclr8_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldclr8_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor1_relax)) "\n" TYPE(STR(_(__aarch64_ldeor1_relax))) "" STR(_(__aarch64_ldeor1_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085f7c20\n"
+		"        .int 0x4a100011\n"
+		"        .int 0x080f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldeor1_relax_loop" ":\n"
+		"        ldxrb    w0, [x1]\n"
+		"        eor     w17, w0, w16\n"
+		"        stxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor1_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor1_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor2_relax)) "\n" TYPE(STR(_(__aarch64_ldeor2_relax))) "" STR(_(__aarch64_ldeor2_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485f7c20\n"
+		"        .int 0x4a100011\n"
+		"        .int 0x480f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldeor2_relax_loop" ":\n"
+		"        ldxrh    w0, [x1]\n"
+		"        eor     w17, w0, w16\n"
+		"        stxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor2_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor2_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor4_relax)) "\n" TYPE(STR(_(__aarch64_ldeor4_relax))) "" STR(_(__aarch64_ldeor4_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885f7c20\n"
+		"        .int 0x4a100011\n"
+		"        .int 0x880f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldeor4_relax_loop" ":\n"
+		"        ldxr    w0, [x1]\n"
+		"        eor     w17, w0, w16\n"
+		"        stxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor4_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor4_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor8_relax)) "\n" TYPE(STR(_(__aarch64_ldeor8_relax))) "" STR(_(__aarch64_ldeor8_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85f7c20\n"
+		"        .int 0xca100011\n"
+		"        .int 0xc80f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldeor8_relax_loop" ":\n"
+		"        ldxr    x0, [x1]\n"
+		"        eor     x17, x0, x16\n"
+		"        stxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor8_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor8_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor1_acq)) "\n" TYPE(STR(_(__aarch64_ldeor1_acq))) "" STR(_(__aarch64_ldeor1_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085ffc20\n"
+		"        .int 0x4a100011\n"
+		"        .int 0x080f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldeor1_acq_loop" ":\n"
+		"        ldaxrb    w0, [x1]\n"
+		"        eor     w17, w0, w16\n"
+		"        stxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor1_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor1_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor2_acq)) "\n" TYPE(STR(_(__aarch64_ldeor2_acq))) "" STR(_(__aarch64_ldeor2_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485ffc20\n"
+		"        .int 0x4a100011\n"
+		"        .int 0x480f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldeor2_acq_loop" ":\n"
+		"        ldaxrh    w0, [x1]\n"
+		"        eor     w17, w0, w16\n"
+		"        stxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor2_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor2_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor4_acq)) "\n" TYPE(STR(_(__aarch64_ldeor4_acq))) "" STR(_(__aarch64_ldeor4_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885ffc20\n"
+		"        .int 0x4a100011\n"
+		"        .int 0x880f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldeor4_acq_loop" ":\n"
+		"        ldaxr    w0, [x1]\n"
+		"        eor     w17, w0, w16\n"
+		"        stxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor4_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor4_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor8_acq)) "\n" TYPE(STR(_(__aarch64_ldeor8_acq))) "" STR(_(__aarch64_ldeor8_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85ffc20\n"
+		"        .int 0xca100011\n"
+		"        .int 0xc80f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldeor8_acq_loop" ":\n"
+		"        ldaxr    x0, [x1]\n"
+		"        eor     x17, x0, x16\n"
+		"        stxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor8_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor8_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor1_rel)) "\n" TYPE(STR(_(__aarch64_ldeor1_rel))) "" STR(_(__aarch64_ldeor1_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085f7c20\n"
+		"        .int 0x4a100011\n"
+		"        .int 0x080ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldeor1_rel_loop" ":\n"
+		"        ldxrb    w0, [x1]\n"
+		"        eor     w17, w0, w16\n"
+		"        stlxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor1_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor1_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor2_rel)) "\n" TYPE(STR(_(__aarch64_ldeor2_rel))) "" STR(_(__aarch64_ldeor2_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485f7c20\n"
+		"        .int 0x4a100011\n"
+		"        .int 0x480ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldeor2_rel_loop" ":\n"
+		"        ldxrh    w0, [x1]\n"
+		"        eor     w17, w0, w16\n"
+		"        stlxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor2_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor2_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor4_rel)) "\n" TYPE(STR(_(__aarch64_ldeor4_rel))) "" STR(_(__aarch64_ldeor4_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885f7c20\n"
+		"        .int 0x4a100011\n"
+		"        .int 0x880ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldeor4_rel_loop" ":\n"
+		"        ldxr    w0, [x1]\n"
+		"        eor     w17, w0, w16\n"
+		"        stlxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor4_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor4_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor8_rel)) "\n" TYPE(STR(_(__aarch64_ldeor8_rel))) "" STR(_(__aarch64_ldeor8_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85f7c20\n"
+		"        .int 0xca100011\n"
+		"        .int 0xc80ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldeor8_rel_loop" ":\n"
+		"        ldxr    x0, [x1]\n"
+		"        eor     x17, x0, x16\n"
+		"        stlxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor8_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor8_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor1_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldeor1_acq_rel))) "" STR(_(__aarch64_ldeor1_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085ffc20\n"
+		"        .int 0x4a100011\n"
+		"        .int 0x080ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldeor1_acq_rel_loop" ":\n"
+		"        ldaxrb    w0, [x1]\n"
+		"        eor     w17, w0, w16\n"
+		"        stlxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor1_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor1_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor2_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldeor2_acq_rel))) "" STR(_(__aarch64_ldeor2_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485ffc20\n"
+		"        .int 0x4a100011\n"
+		"        .int 0x480ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldeor2_acq_rel_loop" ":\n"
+		"        ldaxrh    w0, [x1]\n"
+		"        eor     w17, w0, w16\n"
+		"        stlxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor2_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor2_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor4_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldeor4_acq_rel))) "" STR(_(__aarch64_ldeor4_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885ffc20\n"
+		"        .int 0x4a100011\n"
+		"        .int 0x880ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldeor4_acq_rel_loop" ":\n"
+		"        ldaxr    w0, [x1]\n"
+		"        eor     w17, w0, w16\n"
+		"        stlxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor4_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor4_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldeor8_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldeor8_acq_rel))) "" STR(_(__aarch64_ldeor8_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85ffc20\n"
+		"        .int 0xca100011\n"
+		"        .int 0xc80ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldeor8_acq_rel_loop" ":\n"
+		"        ldaxr    x0, [x1]\n"
+		"        eor     x17, x0, x16\n"
+		"        stlxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldeor8_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldeor8_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset1_relax)) "\n" TYPE(STR(_(__aarch64_ldset1_relax))) "" STR(_(__aarch64_ldset1_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085f7c20\n"
+		"        .int 0x2a100011\n"
+		"        .int 0x080f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldset1_relax_loop" ":\n"
+		"        ldxrb    w0, [x1]\n"
+		"        orr     w17, w0, w16\n"
+		"        stxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset1_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset1_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset2_relax)) "\n" TYPE(STR(_(__aarch64_ldset2_relax))) "" STR(_(__aarch64_ldset2_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485f7c20\n"
+		"        .int 0x2a100011\n"
+		"        .int 0x480f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldset2_relax_loop" ":\n"
+		"        ldxrh    w0, [x1]\n"
+		"        orr     w17, w0, w16\n"
+		"        stxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset2_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset2_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset4_relax)) "\n" TYPE(STR(_(__aarch64_ldset4_relax))) "" STR(_(__aarch64_ldset4_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885f7c20\n"
+		"        .int 0x2a100011\n"
+		"        .int 0x880f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldset4_relax_loop" ":\n"
+		"        ldxr    w0, [x1]\n"
+		"        orr     w17, w0, w16\n"
+		"        stxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset4_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset4_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset8_relax)) "\n" TYPE(STR(_(__aarch64_ldset8_relax))) "" STR(_(__aarch64_ldset8_relax)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85f7c20\n"
+		"        .int 0xaa100011\n"
+		"        .int 0xc80f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldset8_relax_loop" ":\n"
+		"        ldxr    x0, [x1]\n"
+		"        orr     x17, x0, x16\n"
+		"        stxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset8_relax_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset8_relax))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset1_acq)) "\n" TYPE(STR(_(__aarch64_ldset1_acq))) "" STR(_(__aarch64_ldset1_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085ffc20\n"
+		"        .int 0x2a100011\n"
+		"        .int 0x080f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldset1_acq_loop" ":\n"
+		"        ldaxrb    w0, [x1]\n"
+		"        orr     w17, w0, w16\n"
+		"        stxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset1_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset1_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset2_acq)) "\n" TYPE(STR(_(__aarch64_ldset2_acq))) "" STR(_(__aarch64_ldset2_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485ffc20\n"
+		"        .int 0x2a100011\n"
+		"        .int 0x480f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldset2_acq_loop" ":\n"
+		"        ldaxrh    w0, [x1]\n"
+		"        orr     w17, w0, w16\n"
+		"        stxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset2_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset2_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset4_acq)) "\n" TYPE(STR(_(__aarch64_ldset4_acq))) "" STR(_(__aarch64_ldset4_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885ffc20\n"
+		"        .int 0x2a100011\n"
+		"        .int 0x880f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldset4_acq_loop" ":\n"
+		"        ldaxr    w0, [x1]\n"
+		"        orr     w17, w0, w16\n"
+		"        stxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset4_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset4_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset8_acq)) "\n" TYPE(STR(_(__aarch64_ldset8_acq))) "" STR(_(__aarch64_ldset8_acq)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85ffc20\n"
+		"        .int 0xaa100011\n"
+		"        .int 0xc80f7c31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldset8_acq_loop" ":\n"
+		"        ldaxr    x0, [x1]\n"
+		"        orr     x17, x0, x16\n"
+		"        stxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset8_acq_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset8_acq))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset1_rel)) "\n" TYPE(STR(_(__aarch64_ldset1_rel))) "" STR(_(__aarch64_ldset1_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085f7c20\n"
+		"        .int 0x2a100011\n"
+		"        .int 0x080ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldset1_rel_loop" ":\n"
+		"        ldxrb    w0, [x1]\n"
+		"        orr     w17, w0, w16\n"
+		"        stlxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset1_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset1_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset2_rel)) "\n" TYPE(STR(_(__aarch64_ldset2_rel))) "" STR(_(__aarch64_ldset2_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485f7c20\n"
+		"        .int 0x2a100011\n"
+		"        .int 0x480ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldset2_rel_loop" ":\n"
+		"        ldxrh    w0, [x1]\n"
+		"        orr     w17, w0, w16\n"
+		"        stlxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset2_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset2_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset4_rel)) "\n" TYPE(STR(_(__aarch64_ldset4_rel))) "" STR(_(__aarch64_ldset4_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885f7c20\n"
+		"        .int 0x2a100011\n"
+		"        .int 0x880ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldset4_rel_loop" ":\n"
+		"        ldxr    w0, [x1]\n"
+		"        orr     w17, w0, w16\n"
+		"        stlxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset4_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset4_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset8_rel)) "\n" TYPE(STR(_(__aarch64_ldset8_rel))) "" STR(_(__aarch64_ldset8_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85f7c20\n"
+		"        .int 0xaa100011\n"
+		"        .int 0xc80ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldset8_rel_loop" ":\n"
+		"        ldxr    x0, [x1]\n"
+		"        orr     x17, x0, x16\n"
+		"        stlxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset8_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset8_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset1_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldset1_acq_rel))) "" STR(_(__aarch64_ldset1_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x085ffc20\n"
+		"        .int 0x2a100011\n"
+		"        .int 0x080ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldset1_acq_rel_loop" ":\n"
+		"        ldaxrb    w0, [x1]\n"
+		"        orr     w17, w0, w16\n"
+		"        stlxrb    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset1_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset1_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset2_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldset2_acq_rel))) "" STR(_(__aarch64_ldset2_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x485ffc20\n"
+		"        .int 0x2a100011\n"
+		"        .int 0x480ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldset2_acq_rel_loop" ":\n"
+		"        ldaxrh    w0, [x1]\n"
+		"        orr     w17, w0, w16\n"
+		"        stlxrh    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset2_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset2_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset4_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldset4_acq_rel))) "" STR(_(__aarch64_ldset4_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0x2a0003f0\n"
+		"        .int 0x885ffc20\n"
+		"        .int 0x2a100011\n"
+		"        .int 0x880ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     w16, w0\n"
+		"" LP "__aarch64_ldset4_acq_rel_loop" ":\n"
+		"        ldaxr    w0, [x1]\n"
+		"        orr     w17, w0, w16\n"
+		"        stlxr    w15, w17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset4_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset4_acq_rel))));
+#endif
+__asm__(
+		"        .global " STR(_(__aarch64_ldset8_acq_rel)) "\n" TYPE(STR(_(__aarch64_ldset8_acq_rel))) "" STR(_(__aarch64_ldset8_acq_rel)) ":\n");
+#ifdef __MCC__
+__asm__(
+		"        .int 0xaa0003f0\n"
+		"        .int 0xc85ffc20\n"
+		"        .int 0xaa100011\n"
+		"        .int 0xc80ffc31\n"
+		"        .int 0x35ffffaf\n"
+		"        .int 0xd65f03c0\n");
+#else
+__asm__(
+		"        mov     x16, x0\n"
+		"" LP "__aarch64_ldset8_acq_rel_loop" ":\n"
+		"        ldaxr    x0, [x1]\n"
+		"        orr     x17, x0, x16\n"
+		"        stlxr    w15, x17, [x1]\n"
+		"        cbnz    w15, " LP "__aarch64_ldset8_acq_rel_loop" "\n"
+		"        ret\n" SIZE(STR(_(__aarch64_ldset8_acq_rel))));
+#endif
+#endif
+
 #if defined __riscv
 __asm__(
 		"        .text\n");
