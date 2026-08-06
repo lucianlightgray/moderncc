@@ -152,6 +152,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"region_store", "run", "exec/optimizer/region_store.c", "and0 r=0 v=0 calls=0\nand1 r=1 v=7 calls=1\nor1 r=1 v=0 calls=0\nor0 r=1 v=9 calls=1\ntern1 r=1 v=1 calls=1\ntern0 r=2 v=2 calls=1\nchain10 r=0 v=0 calls=0\nchain11 r=1 v=3 calls=1\n", "", "", ""},
 		{"logical_not_shortcircuit", "run", "exec/optimizer/logical_not_shortcircuit.c", "s=1639 calls=1\n", "", "", ""},
 		{"indirect_call_shapes", "run", "exec/functions_abi/indirect_call_shapes.c", "s=75\n", "", "", ""},
+		{"wide_call_static_init", "run", "exec/functions_abi/wide_call_static_init.c", "wide: 561\noffsets: 39\nsizes: 8 16\n", "", "", ""},
 		{"func_pointers", "run", "exec/functions_abi/func_pointers.c", "calls: 5 5 5\nsame: 1\napply: 14 6\ntable: 40\nrebind: 5\n", "", "", ""},
 		{"variadic_promotions", "run", "exec/functions_abi/variadic_promotions.c", "ints: 1105\ndoubles: 16\nmix: 10\n", "", "", ""},
 		{"compound_stmt_scope", "run", "exec/statements/compound_stmt_scope.c", "outer: 1\ninner: 2\ninner2: 3\nback2: 2\nback1: 1\nloopscope: sum=6 i=99\nfresh: 33\nmixed: 42\n", "", "", ""},

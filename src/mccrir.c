@@ -3,6 +3,7 @@
 enum { RIR_T_OP = 0, RIR_T_RBEGIN, RIR_T_REND, RIR_T_MARK };
 
 #define RIR_NOEVAL_MASK 0x0000FFFF
+#define RIR_DATA_ONLY_MASK 0x80000000
 
 #define RIR_PT_NONE (-1)
 #define RIR_PT_HERE (-2)
@@ -4462,7 +4463,8 @@ static void rir_to_arena(void) {
 								rir_shn, rir_lorn, rir_ternn, rir_cond_depth);
 		}
 #endif
-		if (ro->tag != RIR_T_OP && (ro->rnocode & RIR_NOEVAL_MASK))
+		if (ro->tag != RIR_T_OP &&
+				(ro->rnocode & (RIR_NOEVAL_MASK | RIR_DATA_ONLY_MASK)))
 			continue;
 		if ((ro->tag == RIR_T_RBEGIN || ro->tag == RIR_T_REND) &&
 				ro->rkind == RIR_R_CPLXB) {
