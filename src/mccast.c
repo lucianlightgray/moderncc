@@ -17218,6 +17218,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				loc = saved_loc;
 				anon_sym = saved_anon;
 				faithful = 0;
+				ast_replay_completed = 0;
 				ast_unf_why = "posterr";
 			}
 			memcpy(mcc_state->error_jmp_buf, ast_outer_jmp, sizeof(jmp_buf));
