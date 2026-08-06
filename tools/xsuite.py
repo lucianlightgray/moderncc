@@ -301,15 +301,18 @@ def lit_plan(path, text):
     return mode, expect, flags, None
 
 
+FSIZE_MAX = 64 << 20
+
+
 def limits_compile():
     resource.setrlimit(resource.RLIMIT_AS, (8 << 30, 8 << 30))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (1 << 30, 1 << 30))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (FSIZE_MAX, FSIZE_MAX))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
 
 def limits_run():
     resource.setrlimit(resource.RLIMIT_AS, (4 << 30, 4 << 30))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (1 << 30, 1 << 30))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (FSIZE_MAX, FSIZE_MAX))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
 
@@ -362,7 +365,7 @@ class Runner:
         self.jobs = jobs
 
     def emit(self, rec, base=None):
-        for ext in (".o", ".x") if base else ():
+        for ext in (".o", ".x", ".err") if base else ():
             try:
                 os.unlink(base + ext)
             except OSError:
@@ -419,12 +422,14 @@ class Runner:
         else:
             cmd += [src, "-o", base + ".x", "-lm"]
         try:
-            outsink = subprocess.DEVNULL if mode == "preprocess" else subprocess.PIPE
-            p = subprocess.run(cmd, stdout=outsink, stderr=subprocess.PIPE,
-                               text=True, errors="replace",
-                               timeout=self.ctimeout, preexec_fn=limits_compile,
-                               cwd=work)
-            crc, cerr = p.returncode, ((p.stderr or "") + (p.stdout or ""))[:CAP]
+            with open(base + ".err", "w+b") as eh:
+                outsink = subprocess.DEVNULL if mode == "preprocess" else eh
+                p = subprocess.run(cmd, stdout=outsink, stderr=eh,
+                                   timeout=self.ctimeout, preexec_fn=limits_compile,
+                                   cwd=work)
+                eh.seek(0)
+                cerr = eh.read(CAP).decode("utf-8", "replace")
+            crc = p.returncode
         except subprocess.TimeoutExpired:
             rec.update(status="TIMEOUT", stage="compile")
             return self.emit(rec, base)
@@ -457,17 +462,19 @@ class Runner:
             rec.update(status="PASS", stage="compile", rc=0)
             return self.emit(rec, base)
         try:
-            q = subprocess.run([base + ".x"], stdout=subprocess.DEVNULL,
-                               stderr=subprocess.PIPE, text=True,
-                               errors="replace", timeout=self.rtimeout,
-                               preexec_fn=limits_run, cwd=work)
+            with open(base + ".err", "w+b") as eh:
+                q = subprocess.run([base + ".x"], stdout=subprocess.DEVNULL,
+                                   stderr=eh, timeout=self.rtimeout,
+                                   preexec_fn=limits_run, cwd=work)
+                eh.seek(0)
+                qerr = eh.read(CAP).decode("utf-8", "replace")
         except subprocess.TimeoutExpired:
             rec.update(status="TIMEOUT", stage="run")
             return self.emit(rec, base)
         want_fail = expect == "runfail"
         if (q.returncode != 0) != want_fail:
             rec.update(status="FAILEXE", stage="run", rc=q.returncode,
-                       err=err_key(q.stderr))
+                       err=err_key(qerr))
         else:
             rec.update(status="PASS", stage="run", rc=q.returncode)
         return self.emit(rec, base)

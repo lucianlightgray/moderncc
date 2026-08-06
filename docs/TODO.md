@@ -390,6 +390,42 @@ pedwarn batch and `#pragma GCC system_header` are inside the 400-cell long tail,
 own top signatures are `initializer element is not constant` (20), `invalid array size`
 (18), `constant expression expected` (16) and `string constant expected` (14).
 
+#### Optimizer ladder board, `-O1`/`-O2`/`-O3`, same method
+
+Re-run with the ladder instead of `-O0`/`-O2`, agnosticism decided **per level** so a
+test is judged against oracles running the same optimizer level. 64,977 common cells,
+56,808 agnostic.
+
+| suite | cells | agnostic | `-O1` | `-O2` | `-O3` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| gcc:c-c++-common | 3162 | 83.9% | 833/884 | 833/884 | 833/884 |
+| gcc:c-torture/compile | 5514 | 93.6% | 1711/1721 | 1711/1721 | 1711/1721 |
+| gcc:c-torture/execute | 5127 | 93.8% | 1585/1603 | 1584/1602 | 1584/1602 |
+| gcc:gcc.dg | 34818 | 88.0% | 9826/10217 | 9823/10213 | 9821/10211 |
+| gcc:gcc.misc-tests | 96 | 78.1% | 24/25 | 24/25 | 24/25 |
+| gcc:gcc.target | 8166 | 92.1% | 2362/2508 | 2362/2508 | 2362/2508 |
+| llvm:clang | 8046 | 73.6% | 1856/1975 | 1856/1975 | 1856/1975 |
+| llvm:compiler-rt | 45 | 46.7% | 7/7 | 7/7 | 7/7 |
+| **TOTAL** | | | **96.1%** | **96.1%** | **96.1%** |
+
+**The optimizer introduces no failures.** Of 18,928 files agnostic at all three levels,
+**exactly one** has an mcc verdict that changes with `-O`, and it moves the *good* way:
+`gcc.dg/torture/20240517-1.c` is FAILEXE at `-O1` and passes at `-O2`/`-O3`. Nothing
+regresses from `-O1` to `-O3`. That is the single most useful line on this board — it
+says the remaining 736 misses per level are front-end and diagnostic work, not
+optimizer bugs, and it is why the buckets above carry no `-O`-specific column.
+
+This board also cross-validates the first one: the XPASS count fell by exactly the 3
+files the function-pointer-subscript fix closed, and FAIL by the 3 the powi commit
+closed, with everything else unmoved.
+
+- **String literals are not merged until `-O2`.** The one level-dependent cell.
+  `20240517-1.c` needs `"Hello"` and `"Hello" + 1` to denote the same object; gcc and
+  clang merge identical string literals from `-O1` (`-fmerge-constants`), mcc only from
+  `-O2`, so the test aborts at `-O0` and `-O1`. The test's own
+  `-fmerge-all-constants` is dropped by `KEEP_OPT_RE`, so this is mcc's *default*
+  behaviour at `-O1` being measured, which is the thing that differs.
+
 #### Harness defect found and fixed while taking this board
 `tools/xsuite.py` buffered the child's stdout in the parent for *every* mode, including
 `-E`, where it is never read. One gcc.dg preprocessor test drove clang to emit multi-GB
@@ -397,6 +433,23 @@ of expansion; the parent held 7.4 GB resident, one worker went uninterruptible i
 page-fault and the GIL starved the other nine. Throughput collapsed from ~240 results/s
 to 8/s and the clang board could not finish. Preprocess stdout now goes to `DEVNULL`,
 run-mode stdout likewise (nothing reads it — `dg-output` is ignored), and captured
-stderr is capped at 1 MiB. Unfixed and still latent: `subprocess.run`'s timeout kills the
-driver but not the `-cc1` grandchild, so orphaned compilers accumulate and keep burning
-CPU; `preexec_fn` is also documented-unsafe under threads.
+stderr is capped at 1 MiB.
+
+That fix was **incomplete and the ladder board hit the other half**: capping the string
+after `capture_output` still buffers the whole stream first. `gcc.dg/builtin-stdc-bit-1.c`
+is a *stderr* bomb under clang (it does not know `__builtin_stdc_bit_*`), and the parent
+reached 12.7 GB with the same D-state/GIL-starvation collapse. Child output now goes to
+a file that `RLIMIT_FSIZE` actually binds — lowered from 1 GiB to 64 MiB, which is ample
+for these `.o`s — and only the first 1 MiB is read back. That test now records a clean
+TIMEOUT, and the resumed board ran at 12,000 results/45 s with the parent at 3.7 MB.
+
+**Two traps this cost a run each, worth knowing before quoting a board.** A compiler
+copied out of the build tree cannot find its own freestanding headers: an `mcc` pinned
+to `/tmp` failed 2,321 cells on `stddef.h not found` and scored 84.4% instead of 96.1%.
+A smoke test using only `__builtin_*` will not catch it — include something. And do not
+relink `mcc` while a board is running against it; pin by leaving the binary in place and
+not building, not by copying it elsewhere.
+
+Unfixed and still latent: `subprocess.run`'s timeout kills the driver but not the
+`-cc1` grandchild, so orphaned compilers accumulate and keep burning CPU; `preexec_fn`
+is also documented-unsafe under threads.
