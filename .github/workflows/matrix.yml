@@ -104,10 +104,15 @@ jobs:
       - name: install wine (linux pe cell drives pe-wine-conformance)
         if: ${{ startsWith(matrix.runner, 'ubuntu') && matrix.feature == 'pe' && !matrix.skip }}
         run: |
-          sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends wine64 wine32 || \
-            sudo apt-get install -y --no-install-recommends wine
+          if [ "$(dpkg --print-architecture)" = amd64 ]; then
+            sudo dpkg --add-architecture i386
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends wine64 wine32 || \
+              sudo apt-get install -y --no-install-recommends wine
+          else
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends wine || true
+          fi
           wine64 --version || wine --version || true
       - name: install deps (macos)
         if: startsWith(matrix.runner, 'macos')
