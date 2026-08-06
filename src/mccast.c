@@ -2760,11 +2760,28 @@ int ast_arena_has_asm(const AstArena *a) { MCC_TRACE("enter\n");
 	return 0;
 }
 
+/* A childless Ref whose r is `<machine register>|VT_LVAL` says "dereference
+   whatever is in that register". Nothing in the tree produces it: the register
+   was filled by a sibling's emission -- the op-assign vdup of `*f() += 7` or of
+   a bitfield `s->a += 6` -- and that edge is invisible to every pass. It is the
+   same kind of object as an asm: a barrier the tree cannot see through. */
+static int ast_ref_reg_dangle(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	int r;
+	if (ast_kind(a, n) != AST_Ref || ast_nchild(a, n) != 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	r = ast_op(a, n);
+	if (!(r & VT_LVAL) || (r & VT_VALMASK) >= VT_CONST)
+		{ MCC_TRACE("br\n"); return 0; }
+	return ast_parent(a, n) != AST_NONE;
+}
+
 static int ast_arena_has_hole(const AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		int op = ast_op(a, n);
 		if (op == AST_OP_ASM || op == AST_OP_ASMGEN || op == AST_OP_ASMOPS)
+			{ MCC_TRACE("br\n"); return 1; }
+		if (ast_ref_reg_dangle(a, n))
 			{ MCC_TRACE("br\n"); return 1; }
 	}
 	return 0;
@@ -16990,7 +17007,15 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			   loose on a body whose replay was never validated -- forcing `faithful`
 			   itself would do both at once, and the four golden regressions banked in
 			   docs/TODO.md are what that looks like. */
-			int keep = faithful || (ast_rir_nofb_env && ast_replay_completed);
+			/* A hole names machine state the tree does not contain: an asm's pinned
+			   registers and frame offsets, a dangling Ref's `<reg>|VT_LVAL`. Those
+			   names are resolved against the register allocation the PARSER made,
+			   so they are only meaningful in a replay that reproduced it -- and the
+			   byte compare is exactly that proof. Divergence is not a weaker form
+			   of agreement here, it is evidence that the register the Ref names now
+			   holds something else, so the no-fallback path does not apply. */
+			int keep = faithful ||
+								 (ast_rir_nofb_env && ast_replay_completed && !ast_fn_hole);
 			/* Bisection handle: MCC_RIR_NOFB_SKIP is a comma-separated list of
 			   function names that keep falling back even with the no-fallback path
 			   on. Turning fallback off wholesale breaks the JIT self-host with

@@ -4747,16 +4747,6 @@ static int rir_c2_equiv_proven(void) {
 	return 0;
 }
 
-static int rir_prod_reg_dangle(AstLocal n) {
-	int r;
-	if (ast_kind(rir_arena, n) != AST_Ref || ast_nchild(rir_arena, n) != 0)
-		return 0;
-	r = ast_op(rir_arena, n);
-	if (!(r & VT_LVAL) || (r & VT_VALMASK) >= VT_CONST)
-		return 0;
-	return ast_parent(rir_arena, n) != AST_NONE;
-}
-
 /* Why the pre-flight last refused a body. Every `return NULL` below sets this,
    so a fallback can be attributed to the condition that caused it instead of
    being counted as an undifferentiated total -- which is what the fallback
@@ -4863,15 +4853,6 @@ struct AstArena *rir_prod_take(void) {
 	if (!rir_emit_safe()) {
 		rir_prod_why = "unsafe";
 		return NULL;
-	}
-	{
-		AstLocal n;
-		for (n = 0; n < ast_count(rir_arena); n++) {
-			if (rir_prod_reg_dangle(n)) {
-				rir_prod_why = "regdangle";
-				return NULL;
-			}
-		}
 	}
 	/* The only window onto the arena PRODUCTION actually ships. [rir-dump] is
 	   gated at rir_env >= 6, and any rir_env >= 1 turns production off, so that
