@@ -1015,6 +1015,14 @@ static void pe_build_imports(struct pe_info *pe) { MCC_TRACE("enter\n");
 							{ MCC_TRACE("br\n"); dllref->handle = host_dlopen(dllref->name); }
 						v = (ADDR3264)host_dlsym(dllref->handle, ordinal ? (char *)0 + ordinal : name);
 					}
+#if MCC_HOST_WIN32
+					/* Guest threads keep their TLS in mcc's slab, which the loader
+					   re-zeroes per thread; route their _beginthreadex through the
+					   wrapper that reseeds it before the guest's start routine runs. */
+					if (v && s1->run_tls_active && name &&
+							(!strcmp(name, "_beginthreadex") || !strcmp(name, "beginthreadex")))
+						{ MCC_TRACE("br\n"); v = (ADDR3264)(uintptr_t)&mcc_run_beginthreadex; }
+#endif
 					if (!v)
 						{ MCC_TRACE("br\n"); mcc_error_noabort("could not resolve symbol '%s'", name); }
 				} else

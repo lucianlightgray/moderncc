@@ -300,6 +300,13 @@ ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_size(void);
 ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_tpoff(void);
 #endif
 
+#if defined(_WIN32) && defined(MCC_TARGET_PE)
+ST_FUNC MAYBE_UNUSED unsigned char *host_run_tls_slab_base(void);
+ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_size(void);
+ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_tpoff(void);
+ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_index(void);
+#endif
+
 ST_FUNC MAYBE_UNUSED void *host_unwind_register(void *table, unsigned size_bytes, size_t base);
 ST_FUNC MAYBE_UNUSED void host_unwind_unregister(void *table);
 

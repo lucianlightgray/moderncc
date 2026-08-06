@@ -161,7 +161,20 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   `12/14 OK under both JIT tiers, 2 known-red`.
 
   **Delete the four entries when the `-run` TLS defect is fixed** — the cell will tell
-  you to.
+  you to. **Done:** the defect is fixed (next item) and `KNOWN_RED` is now empty; both
+  PE cells read `14/14 programs OK under both JIT tiers`.
+- **The PE `-run` TLS defect is fixed** — `{x86_64-win32, i386-win32} × {tls, tls_threads}`
+  all pass under both JIT tiers. Windows has no loader step during `-run` to lay out a
+  guest's implicit TLS, so the guest read whatever `gs:[0x58][_tls_index]` happened to
+  hold and every `__thread` with a non-zero initializer came back 0. It now borrows mcc's
+  own implicit-TLS block, mirroring the Linux slab model: `tls_setup_pe` (mccrun.c) flags
+  the run and records the slab's bias inside mcc's block via `host_run_tls_slab_tpoff`
+  (mcchost.c reads it off the live TEB), the x86 `TPOFF32` relocations fold every guest
+  TLS offset into `mcc_jit_tls_slab`, and `tls_seed_pe` fills the slab from the guest
+  template and repoints the guest's `_tls_index` at mcc's own. Threads the guest starts
+  get a fresh zeroed block, so their `_beginthreadex` import is bound to a wrapper
+  (`mcc_run_beginthreadex`) that reseeds the slab on entry. All Windows-only, no macros
+  gating it behind the POSIX paths. Native x86_64 Linux `-run` tier still `14/14`.
 - **`__has_builtin` lied about the fourteen `__builtin___*_chk` builtins.**
   `pp_has_builtin_arg` answered true only for predefined builtin tokens or `#define`d
   macros, but `runtime/include/mccdefs.h` supplies the `_chk` family as `static __inline`
@@ -445,10 +458,12 @@ per level, `MCC_FORCE_REPLAY=1` on the `-O0` row. Every row reconciles.
   a running `ctest` yields phantom regressions; give parallel agents isolated
   worktrees). See the archive's parallel-agents note.
 - ~~Reconcile the deliberate-red count.~~ **Settled 2026-08-05 by running them.** It was
-  7; it is now **2**, both PE (`run-tier/{x86_64-win32,i386-win32}`, `tls` and
-  `tls_threads` each). x86_64 was fixed earlier; i386, arm and riscv64 were closed by the
-  three `-run` TLS fixes in the archive. Any *third* failure is a regression. Two
-  *further* cells became red only because the qemu sysroots now exist:
+  7; then **2**, both PE (`run-tier/{x86_64-win32,i386-win32}`, `tls` and `tls_threads`
+  each); it is now **0** — the PE `-run` TLS defect is fixed (see the fix write-up above),
+  so all four cells pass and `KNOWN_RED` is empty. x86_64-native, i386, arm and riscv64
+  were closed earlier by the archive's `-run` TLS fixes. Any deliberate-red `-run` TLS
+  cell reappearing is a regression. Two *further* cells became red only because the qemu
+  sysroots now exist:
   `selfhost-qemu-{i386,arm}-O2`, which die on `MCC_MAX_ALIGN` — see below.
 
 ### External suites — three-compiler board taken 2026-08-05 at `030fb4aa`

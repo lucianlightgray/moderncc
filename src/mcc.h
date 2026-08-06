@@ -1765,6 +1765,13 @@ ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1);
 ST_FUNC int mcc_run_pthread_create(void *th, const void *attr,
 																	 void *(*fn)(void *), void *arg);
 #endif
+#if defined(MCC_TARGET_PE) && MCC_HOST_WIN32
+/* -run reseeds its TLS slab on every thread the guest spawns; guest threads go
+   through msvcrt _beginthreadex, so pe_build_imports binds that import here. */
+ST_FUNC uintptr_t mcc_run_beginthreadex(void *security, unsigned stack_size,
+																				unsigned(__stdcall *start)(void *), void *arg,
+																				unsigned flags, unsigned *thrdaddr);
+#endif
 
 ST_FUNC int code_reloc(int reloc_type);
 ST_FUNC int gotplt_entry_type(int reloc_type);

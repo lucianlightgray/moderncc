@@ -1476,6 +1476,59 @@ ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_tpoff(void) { MCC_TRACE("en
 }
 #endif
 
+#if defined(_WIN32) && defined(MCC_TARGET_PE)
+/* Windows -run has no loader to lay out a guest's implicit TLS, so it borrows
+   mcc's own: the guest's _tls_index is pointed at mcc's (host_run_tls_index)
+   and every guest TLS offset is biased so the access lands inside this slab,
+   which lives in mcc's own TLS block. The bias is the slab's position within
+   that block -- read live off the TEB below, and identical on every thread the
+   guest starts, so a child's access resolves against that thread's own slab. */
+#ifdef _MSC_VER
+#include <intrin.h> /* __readgsqword / __readfsdword */
+#endif
+#ifndef MCC_JIT_TLS_MAX
+#define MCC_JIT_TLS_MAX 65536
+#endif
+static ALIGNED(64) MCC_THREAD_LOCAL unsigned char mcc_jit_tls_slab[MCC_JIT_TLS_MAX];
+
+/* The index the loader assigned mcc's own implicit TLS; the guest is redirected
+   to it so gs:[0x58][index] yields mcc's block on whichever thread runs. */
+extern unsigned long _tls_index;
+
+ST_FUNC MAYBE_UNUSED unsigned char *host_run_tls_slab_base(void) { MCC_TRACE("enter\n");
+	return mcc_jit_tls_slab;
+}
+
+ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_size(void) { MCC_TRACE("enter\n");
+	return MCC_JIT_TLS_MAX;
+}
+
+ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_index(void) { MCC_TRACE("enter\n");
+	return _tls_index;
+}
+
+/* TEB->ThreadLocalStoragePointer: the per-thread array of module TLS blocks,
+   indexed by _tls_index. gs:[0x58] on x64, fs:[0x2c] on x86. mcc's headers only
+   inline __readgsqword, so the x86 read is spelled out. */
+static unsigned char **host_tls_array(void) { MCC_TRACE("enter\n");
+#if defined(_WIN64)
+	return (unsigned char **)(uintptr_t)__readgsqword(0x58);
+#elif defined(_MSC_VER)
+	return (unsigned char **)(uintptr_t)__readfsdword(0x2c);
+#else
+	unsigned char **arr;
+	__asm__ volatile("movl %%fs:0x2c, %0" : "=r"(arr));
+	return arr;
+#endif
+}
+
+ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_tpoff(void) { MCC_TRACE("enter\n");
+	unsigned char **arr = host_tls_array();
+	unsigned char *block = arr ? arr[_tls_index] : NULL;
+	return (unsigned long)(mcc_jit_tls_slab - block);
+}
+#endif
+
 ST_FUNC int host_runmem_dual(void) { MCC_TRACE("enter\n");
 #ifdef _WIN32
 	return 0;

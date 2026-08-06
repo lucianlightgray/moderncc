@@ -12,7 +12,11 @@ corpus="$root/tests/run"
 skip() { echo "SKIP: $*"; exit 77; }
 fail() { echo "FAIL: [$triple] $*"; exit 1; }
 
-KNOWN_RED="x86_64-win32:tls x86_64-win32:tls_threads i386-win32:tls i386-win32:tls_threads"
+# <triple>:<program> pairs whose -run failure is a documented defect, XFAILed
+# instead of failing the cell. Empty: the PE -run TLS defect that kept the four
+# {x86_64-win32,i386-win32} x {tls,tls_threads} cells red is fixed. A listed
+# program that starts passing fails the cell so this cannot rot into lost coverage.
+KNOWN_RED=""
 
 is_known_red() {
 	for kr in $KNOWN_RED; do

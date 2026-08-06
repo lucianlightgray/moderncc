@@ -61,6 +61,9 @@ static int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap);
 #if MCC_HOST_LINUX
 static void run_tls_seed_free(void);
 #endif
+#if defined(MCC_TARGET_PE) && MCC_HOST_WIN32
+static void run_tls_seed_free_pe(void);
+#endif
 
 #define PAGESIZE host_pagesize()
 #define PAGEALIGN(n) ((addr_t)n + (-(addr_t)n & (PAGESIZE - 1)))
@@ -106,6 +109,9 @@ ST_FUNC void mcc_run_free(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 #if MCC_HOST_LINUX
 	run_tls_seed_free();
+#endif
+#if defined(MCC_TARGET_PE) && MCC_HOST_WIN32
+	run_tls_seed_free_pe();
 #endif
 	ptr = s1->run_ptr;
 	if (NULL == ptr)
@@ -558,6 +564,126 @@ static void tls_seed_linux(MCCState *s1) { MCC_TRACE("enter\n");
 }
 #endif
 
+#if defined(MCC_TARGET_PE) && MCC_HOST_WIN32
+#include <process.h>
+
+/* Windows PE -run: no loader lays out the guest's implicit TLS, so it is folded
+   into mcc's own block. tls_setup_pe flags the run and captures the slab's bias
+   inside that block; the x86 TPOFF32 relocations then resolve every guest TLS
+   offset into mcc_jit_tls_slab. tls_seed_pe fills the slab from the guest's TLS
+   template and repoints the guest's _tls_index at mcc's, so gs:[0x58][index]
+   yields mcc's block on whatever thread runs. */
+static void tls_setup_pe(MCCState *s1) { MCC_TRACE("enter\n");
+	int i;
+	int have_tls = 0;
+	unsigned long total = 0;
+
+	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+		Section *s = s1->sections[i];
+		if (!(s->sh_flags & SHF_TLS))
+			{ MCC_TRACE("br\n"); continue; }
+		have_tls = 1;
+		total += s->data_offset;
+	}
+	if (!have_tls)
+		{ MCC_TRACE("br\n"); return; }
+	if (total > host_run_tls_slab_size()) { MCC_TRACE("br\n");
+		mcc_error_noabort("mccrun: TLS size %lu exceeds -run slab", total);
+		return;
+	}
+	s1->run_tls_slab_tpoff = host_run_tls_slab_tpoff();
+	s1->run_tls_active = 1;
+}
+
+/* Every thread the guest starts gets its own zeroed slab (mcc's TLS block is
+   copied fresh per thread), so the template is snapshotted here and re-applied
+   on thread entry -- guest threads reach us through the _beginthreadex wrapper
+   below, which pe_build_imports binds in place of the msvcrt import. */
+static unsigned char *mcc_run_pe_tls_seed;
+static unsigned long mcc_run_pe_tls_seed_len;
+
+static void run_tls_seed_free_pe(void) { MCC_TRACE("enter\n");
+	mcc_free(mcc_run_pe_tls_seed);
+	mcc_run_pe_tls_seed = NULL;
+	mcc_run_pe_tls_seed_len = 0;
+}
+
+static void tls_seed_pe(MCCState *s1) { MCC_TRACE("enter\n");
+	int i;
+	addr_t base = (addr_t)-1;
+	unsigned char *slab;
+	void *idx;
+
+	mcc_run_pe_tls_seed_len = 0;
+
+	if (!s1->run_tls_active)
+		{ MCC_TRACE("br\n"); return; }
+	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+		Section *s = s1->sections[i];
+		addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+		if ((s->sh_flags & SHF_TLS) && ssz && s->sh_addr < base)
+			{ MCC_TRACE("br\n"); base = s->sh_addr; }
+	}
+	slab = host_run_tls_slab_base();
+	memset(slab, 0, host_run_tls_slab_size());
+	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+		Section *s = s1->sections[i];
+		if (!(s->sh_flags & SHF_TLS) || s->sh_type == SHT_NOBITS || !s->data)
+			{ MCC_TRACE("br\n"); continue; }
+		memcpy(slab + (s->sh_addr - base), s->data, s->data_offset);
+		if ((unsigned long)(s->sh_addr - base) + s->data_offset > mcc_run_pe_tls_seed_len)
+			{ MCC_TRACE("br\n"); mcc_run_pe_tls_seed_len =
+					(unsigned long)(s->sh_addr - base) + s->data_offset; }
+	}
+	/* Redirect the guest's _tls_index to mcc's own; the slab -- and thus the
+	   guest's biased offsets -- live inside the block that index selects. */
+	idx = mcc_get_symbol(s1, "_tls_index");
+	if (idx)
+		{ MCC_TRACE("br\n"); write32le(idx, (uint32_t)host_run_tls_index()); }
+	/* Snapshot what a fresh thread has to start from. */
+	mcc_free(mcc_run_pe_tls_seed);
+	mcc_run_pe_tls_seed = NULL;
+	if (mcc_run_pe_tls_seed_len) { MCC_TRACE("br\n");
+		mcc_run_pe_tls_seed = mcc_malloc(mcc_run_pe_tls_seed_len);
+		if (mcc_run_pe_tls_seed)
+			{ MCC_TRACE("br\n"); memcpy(mcc_run_pe_tls_seed, slab, mcc_run_pe_tls_seed_len); }
+		else
+			{ MCC_TRACE("br\n"); mcc_run_pe_tls_seed_len = 0; }
+	}
+}
+
+struct mcc_run_win_thr {
+	unsigned(__stdcall *fn)(void *);
+	void *arg;
+};
+
+static unsigned __stdcall mcc_run_win_start(void *p) { MCC_TRACE("enter\n");
+	struct mcc_run_win_thr t = *(struct mcc_run_win_thr *)p;
+	mcc_free(p);
+	if (mcc_run_pe_tls_seed && mcc_run_pe_tls_seed_len) { MCC_TRACE("br\n");
+		unsigned char *slab = host_run_tls_slab_base();
+		memset(slab, 0, host_run_tls_slab_size());
+		memcpy(slab, mcc_run_pe_tls_seed, mcc_run_pe_tls_seed_len);
+	}
+	return t.fn(t.arg);
+}
+
+ST_FUNC uintptr_t mcc_run_beginthreadex(void *security, unsigned stack_size,
+																				unsigned(__stdcall *start)(void *), void *arg,
+																				unsigned flags, unsigned *thrdaddr) { MCC_TRACE("enter\n");
+	struct mcc_run_win_thr *t = mcc_malloc(sizeof *t);
+	uintptr_t h;
+	if (!t)
+		{ MCC_TRACE("br\n"); return _beginthreadex(security, stack_size, start, arg, flags, thrdaddr); }
+	t->fn = start;
+	t->arg = arg;
+	h = _beginthreadex(security, stack_size, mcc_run_win_start, t, flags, thrdaddr);
+	if (!h)
+		{ MCC_TRACE("br\n"); mcc_free(t); }
+	return h;
+}
+#endif
+
 static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) { MCC_TRACE("enter\n");
 	Section *s;
 	unsigned offset, length, align, i, k, f;
@@ -567,6 +693,11 @@ static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) { MCC_TRA
 	if (NULL == ptr) { MCC_TRACE("br\n");
 		s1->nb_errors = 0;
 #ifdef MCC_TARGET_PE
+#if MCC_HOST_WIN32
+		/* Before pe_output_file: it runs pe_build_imports, which needs
+		   run_tls_active set to route the guest's _beginthreadex to the wrapper. */
+		tls_setup_pe(s1);
+#endif
 		pe_output_file(s1, NULL);
 #else
 		mcc_add_runtime(s1);
@@ -701,6 +832,9 @@ redo:
 	tls_finalize_macho(s1);
 #elif MCC_HOST_LINUX
 	tls_seed_linux(s1);
+#endif
+#if defined(MCC_TARGET_PE) && MCC_HOST_WIN32
+	tls_seed_pe(s1);
 #endif
 	goto redo;
 }
