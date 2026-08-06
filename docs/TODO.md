@@ -118,6 +118,23 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   isolation, because `selfhost-*` and `mcctest` compile the live `src/` tree.** If it
   recurs on an idle machine with a clean tree it is real and wants a core dump.
 
+### Closed 2026-08-05
+- **`__has_builtin` lied about the fourteen `__builtin___*_chk` builtins.**
+  `pp_has_builtin_arg` answered true only for predefined builtin tokens or `#define`d
+  macros, but `runtime/include/mccdefs.h` supplies the `_chk` family as `static __inline`
+  *functions*, so `__has_builtin(__builtin___sprintf_chk)` reported **0**. They are now
+  in that function's `untokenized[]` list, beside the `va_*` entries already there for
+  the same reason.
+
+  This was deferred once because `__has_builtin(__builtin___*_chk)` is what gates the
+  FORTIFY blocks in libc headers, so answering true could reroute every
+  `str*`/`mem*`/`*printf` call through the `_chk` inlines. **Measured, that does not
+  happen on Darwin**: Apple additionally gates those blocks on `_USE_FORTIFY_LEVEL > 0`,
+  which mcc does not satisfy, so no call site is rewritten and the objects are
+  **byte-identical** before and after on a `sprintf`+`memcpy`+`strcpy` program. Full
+  suite after the change: **8498/8498, exit 0.** The correctness fix lands; the fortify
+  question is untouched and stays open for a libc that gates only on `__has_builtin`.
+
 ### Flag-sweep coverage
 - Wire `tests/optfire/flagsweep.sh`'s exec half as ctest cells (see the config note
   above). 43 of the 113 `-f` flags are referenced nowhere in `tests/`/`tools/`/

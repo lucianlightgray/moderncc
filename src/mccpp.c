@@ -1982,7 +1982,14 @@ static int pp_builtin_func(int v) { MCC_TRACE("enter\n");
 static int pp_has_builtin_arg(int v) { MCC_TRACE("enter\n");
 	static const char * const untokenized[] = {
 		"__builtin_va_start", "__builtin_c23_va_start", "__builtin_va_arg",
-		"__builtin_va_end", "__builtin_va_copy", "__builtin_va_list"
+		"__builtin_va_end", "__builtin_va_copy", "__builtin_va_list",
+		"__builtin___memcpy_chk", "__builtin___memmove_chk",
+		"__builtin___mempcpy_chk", "__builtin___memset_chk",
+		"__builtin___snprintf_chk", "__builtin___sprintf_chk",
+		"__builtin___stpcpy_chk", "__builtin___stpncpy_chk",
+		"__builtin___strcat_chk", "__builtin___strcpy_chk",
+		"__builtin___strncat_chk", "__builtin___strncpy_chk",
+		"__builtin___vsnprintf_chk", "__builtin___vsprintf_chk"
 	};
 	const char *n;
 	size_t i;
