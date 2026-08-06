@@ -150,7 +150,15 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   load-bearing — ≥4 of the fallback bodies are genuinely wrong, not benign.
 - `-fno-replay-fallback` + selfhost-jit-with-mcc blows RSS ~6.7×; bisect via
   `MCC_RIR_NOFB_SKIP`. Measure on the full suite, not the 317 exec goldens.
-- Re-bank `o0-baseline` at HEAD on an x86_64 Linux host. (Verified 2026-08-05 that the
+- Re-bank `o0-baseline` at HEAD on an x86_64 Linux host. **Not a macOS item — a Mac
+  cannot do this, by construction.** The five ELF glibc keys need the Gentoo stage3
+  sysroots under `vendor/`, and the `<arch>-fetch` cells that download them are gated on
+  `if(NOT _QEMU_${arch}) continue()` — i.e. on a qemu-user binary being present, which is
+  Linux-only. So on a Mac those cells never register and the sysroots cannot be fetched
+  through the supported path at all. The narrower true constraint is *a host with the
+  sysroots*, not x86_64 specifically: cross output is host-independent (proven below),
+  so an arm64 Linux host with the sysroots would bank the cross keys identically. What
+  genuinely wants x86_64 Linux is the `x86_64` key itself. (Verified 2026-08-05 that the
   Darwin side *reproduces*: all five PE keys are byte-identical to a Linux run at the
   same HEAD, and the two `*-osx` keys are measurable only on Darwin. Also fixed there:
   `o0_ab.sh`'s `x86_64` key used `$BUILD/mcc`, the build's own compiler, so on a
