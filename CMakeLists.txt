@@ -1221,6 +1221,8 @@ mcc_config_node(MCC_BUILD_TESTS   TYPE BOOL DEFAULT ON  GROUP "Build targets"
     HELP "Build/enable the test suite (tests/Makefile)")
 mcc_config_node(MCC_BENCH         TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build the mccbench tool and the `bench` target (compile-speed report). Off by default; CI enables it")
+mcc_config_node(MCC_STRATSWEEP_FULL TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED
+    HELP "Register the exhaustive optimizer strategy sweep: all 22 rows of ast_strategies[] run in isolation over the whole tests/exec corpus (stratsweep/isofull-*), and all 22*21*20 = 9240 ordered triples over the threads/atomics/float/bitfield/VLA/optimizer-golden subject set, bare and again with rows 0..3 in front (stratsweep/perm3-exhaustive-*, ...-based-*). 86 ctest cells, 6440 sec*proc (1.8 CPU-hours, 7min at -j16). The default gate keeps the same 22 rows and the same triple generator but over the 31-program subject list and a 1/1024 shard of the triples, which is 29 cells and 55-145 sec*proc depending on how loaded the machine is. Filter with `ctest -L stratsweep-full`")
 mcc_config_node(MCC_CONFIG_TRACE TYPE BOOL DEFAULT OFF GROUP "Advanced" ADVANCED
     HELP "Compile in the MCC_TRACE() instrumentation macro (emitted at the [TRACE] verbosity bit); off = MCC_TRACE compiles to nothing. Separate from MCC_DIAG: ~12,600 call sites, one in nearly every basic block")
 mcc_config_node(MCC_DEV TYPE BOOL DEFAULT OFF GROUP "Development" ADVANCED
@@ -4456,6 +4458,106 @@ if(MCC_BUILD_TESTS)
                 mcc_skip_test(flagsweep-cover
                     "${_fs_nrow} covering-array rows are opt-in: cmake -DMCC_FLAGSWEEP_FULL=ON, then ctest -L flagsweep-full"
                     LABELS flagsweep)
+            endif()
+
+            # Strategy-registry sweeps. The registry (src/mccast.c,
+            # ast_strategies[]) is driven as an ordered sequence, so the two
+            # things nothing else checks are: does a row hold up run ALONE, and
+            # do two rows commute. MCC_AST_STRAT_ORDER makes both askable.
+            #
+            # Every one of the 22 rows is covered on both axes. The split
+            # between the two tiers is by corpus and by how much of the
+            # 22*21*20 = 9240 triple space is walked, not by which rows are
+            # looked at:
+            #
+            #   default    all 22 rows in isolation and six permutation shards,
+            #              over the 31-program subject list. 29 cells, 55
+            #              sec*proc on an idle machine and 145 under a loaded
+            #              one, no cell over ~20s either way.
+            #   opt-in     the same 22 rows in isolation over the whole exec
+            #              corpus (282 admitted of 300), and all 9240 triples
+            #              bare plus all 9240 with rows 0..3 in front. 86
+            #              cells, 6440 sec*proc, 7min at -j16. All green
+            #              2026-08-06. -DMCC_STRATSWEEP_FULL=ON, label
+            #              stratsweep-full.
+            #
+            # The full-corpus isolation cells cannot be in the default gate:
+            # admission alone builds 282 programs twice, so no such cell
+            # finishes under a minute and eighteen of them cost more wall than
+            # the rest of the suite put together.
+            #
+            # CTest's CONFIGURATIONS property is not usable for the opt-in: a
+            # ctest run with no -C matches every configuration, so the cells
+            # would land in the default gate anyway.
+            set(_ss_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/stratsweep.sh")
+            set(_ss_rows bfold ident narrow cprop cse ltemp ivsr pre licm dse
+                         sccp jt bf range divmagic abs select reassoc sethi tco
+                         inline cload)
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                "${_ss_sh}")
+            add_test(NAME "stratsweep/check" COMMAND "${_ss_sh}" check)
+            set_tests_properties("stratsweep/check" PROPERTIES
+                SKIP_RETURN_CODE 77 LABELS "native;stratsweep")
+            foreach(_ss_row IN LISTS _ss_rows)
+                add_test(NAME "stratsweep/iso-${_ss_row}"
+                    COMMAND "${_ss_sh}" iso "${_mcc_exe}" "${_bdir}"
+                            "${_idir}" "${CMAKE_BINARY_DIR}/stratsweep-iso-${_ss_row}"
+                            "${_ss_row}" subjects)
+                set_tests_properties("stratsweep/iso-${_ss_row}" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                    LABELS "native;stratsweep" TIMEOUT 600)
+            endforeach()
+            # Four shards of 1024 = 40 of the 9240 ordered triples, bare; two
+            # more run their shard with rows 0..3 in front, which is the
+            # composition the real pipeline performs. A sample, not a proof --
+            # the proof is the opt-in tier below. The shard divisor is what
+            # holds these to 4s idle and 19s loaded: at 1/512 they were 31s
+            # apiece, and when ctest schedules them last they are the tail of
+            # the whole run and set its wall time.
+            foreach(_ss_shard RANGE 0 3)
+                add_test(NAME "stratsweep/perm3-${_ss_shard}"
+                    COMMAND "${_ss_sh}" perm3 "${_mcc_exe}" "${_bdir}"
+                            "${_idir}" "${CMAKE_BINARY_DIR}/stratsweep-perm3-${_ss_shard}"
+                            "${_ss_shard}" 1024 subjects -)
+                set_tests_properties("stratsweep/perm3-${_ss_shard}" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                    LABELS "native;stratsweep" TIMEOUT 600)
+            endforeach()
+            foreach(_ss_shard RANGE 0 1)
+                add_test(NAME "stratsweep/perm3-based-${_ss_shard}"
+                    COMMAND "${_ss_sh}" perm3 "${_mcc_exe}" "${_bdir}"
+                            "${_idir}" "${CMAKE_BINARY_DIR}/stratsweep-perm3b-${_ss_shard}"
+                            "${_ss_shard}" 1024 subjects 0,1,2,3)
+                set_tests_properties("stratsweep/perm3-based-${_ss_shard}" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                    LABELS "native;stratsweep" TIMEOUT 600)
+            endforeach()
+            if(MCC_STRATSWEEP_FULL)
+                foreach(_ss_row IN LISTS _ss_rows)
+                    add_test(NAME "stratsweep/isofull-${_ss_row}"
+                        COMMAND "${_ss_sh}" iso "${_mcc_exe}" "${_bdir}"
+                                "${_idir}" "${CMAKE_BINARY_DIR}/stratsweep-isofull-${_ss_row}"
+                                "${_ss_row}" full)
+                    set_tests_properties("stratsweep/isofull-${_ss_row}" PROPERTIES
+                        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                        LABELS "native;stratsweep;stratsweep-full" TIMEOUT 3600)
+                endforeach()
+                foreach(_ss_shard RANGE 0 31)
+                    add_test(NAME "stratsweep/perm3-exhaustive-${_ss_shard}"
+                        COMMAND "${_ss_sh}" perm3 "${_mcc_exe}" "${_bdir}"
+                                "${_idir}" "${CMAKE_BINARY_DIR}/stratsweep-full-${_ss_shard}"
+                                "${_ss_shard}" 32 subjects -)
+                    set_tests_properties("stratsweep/perm3-exhaustive-${_ss_shard}" PROPERTIES
+                        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                        LABELS "native;stratsweep;stratsweep-full" TIMEOUT 3600)
+                    add_test(NAME "stratsweep/perm3-exhaustive-based-${_ss_shard}"
+                        COMMAND "${_ss_sh}" perm3 "${_mcc_exe}" "${_bdir}"
+                                "${_idir}" "${CMAKE_BINARY_DIR}/stratsweep-fullb-${_ss_shard}"
+                                "${_ss_shard}" 32 subjects 0,1,2,3)
+                    set_tests_properties("stratsweep/perm3-exhaustive-based-${_ss_shard}" PROPERTIES
+                        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                        LABELS "native;stratsweep;stratsweep-full" TIMEOUT 3600)
+                endforeach()
             endif()
         endif()
 

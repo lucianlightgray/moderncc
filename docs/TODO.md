@@ -171,11 +171,12 @@ load-bearing against the code as it sits on `main`: removing the early suffix si
 `invalid number` on `9iu`, and disabling the `CONST_WANTED` fold gives `initializer element
 is not constant` on a file-scope `1.0i`.
 
-Three commits from this session's research are genuinely unlanded and are being landed
-separately: `ea67df7d` (byte-level RIR coverage census and ratchet), `d2e4c162` (the
-strategy-registry sweep over all 4,896 ordered triples), and `934b692e` (the region
-granularity research that closed F3). They are unreachable but intact in the object store
-until `gc` prunes them.
+The three commits from this session's research that were genuinely unlanded are now all in:
+`ea67df7d` (byte-level RIR coverage census and ratchet), `d2e4c162` (the strategy-registry
+sweep) and `934b692e` (the region-granularity research that closed F3). **Neither of the
+last two was a straight cherry-pick** — re-measurement contradicted several of their own
+claims, so budget that rather than a replay for anything else recovered this way. See
+"Strategy-registry sweep" below for what changed.
 
 ### Open: long-double complex static initializer
 
@@ -374,6 +375,71 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
 - The array pins two flags, so it is a 3-wise guarantee over **111** of the 113, and a
   bug needing four specific flags is out of reach by construction. Raising strength to 4
   is ~4× the rows; it has not been measured.
+
+### Strategy-registry sweep — `tests/optfire/stratsweep.sh`
+
+The `-f` surface above is one axis; the *order* of `ast_strategies[]` is another, and
+`MCC_AST_STRAT_ORDER` is what makes it testable from outside the compiler. The sweep asks
+the two questions nothing else does: does a row hold up when it is the only row that runs,
+and do two rows commute. Both green on this tree at every depth measured.
+
+- The registry has **22** rows and all 22 are covered. An earlier cut of this sweep tested
+  rows 4..21 only, on the theory that `bfold`/`ident`/`narrow`/`cprop` are always-on
+  folders not worth isolating; they isolate fine — each is green alone over the whole
+  admitted corpus — so "always on" was never a reason to leave a quarter of the table
+  unmeasured. The triple space is therefore 22·21·20 = **9240**, not 18·17·16 = 4896.
+- `stratsweep/check` is the thing that keeps the sweep honest: `STRAT_NAMES` must equal
+  `ast_strategies[]` name for name and in order, and `STRAT_NONE` must still be an empty
+  slot below `AST_STRAT_COUNT_MAX`. A row added to the registry and not to the sweep is a
+  row the sweep silently skips while still printing PASS, so both are hard failures.
+- **Admission is the load-bearing part.** A `tests/exec` program is used only if its `-O0`
+  build runs, two `-O0` runs agree, *and* `-O2` with the whole registry disabled
+  (`MCC_AST_STRAT_ORDER=23`) still agrees with `-O0`. Without the third condition every
+  `-O2` defect outside the registry, and every program that prints a stack address, lands
+  on whichever strategy happens to be under test. 282 of 300 admitted; the 18 drops are
+  all at the `-O0` build step (they want `-trigraphs`, a `-std=` gate, an arm64 target, or
+  a second TU). `-O2` minus the whole registry matching `-O0` on all 282 is itself a
+  result.
+- **Two tiers, split by corpus and by how much of the triple space is walked — not by
+  which rows are looked at.** Default: all 22 rows in isolation plus six 1/1024
+  permutation shards over the 31-program subject list, 29 cells, 49–145 sec\*proc
+  depending on machine load, no cell over 20s. Opt-in (`-DMCC_STRATSWEEP_FULL=ON`, label `stratsweep-full`): the
+  same 22 rows over the whole admitted corpus plus all 9240 triples bare and all 9240
+  with rows 0..3 in front — 86 cells, 6440 sec\*proc, 7 min at `-j16`, **all green
+  2026-08-06**, and the shards partition the space exactly (24 of 289 + 8 of 288 = 9240).
+  A full-corpus isolation cell cannot be in the default gate —
+  admission alone builds 282 programs twice, so none of them finishes under a minute.
+  The shard divisor is the knob that holds the default tier down: these cells are
+  registered last and are the tail of the whole `ctest` run, so the slowest one sets the
+  suite's wall time. At 1/512 they were 31s each.
+- **Subjects run with cwd inside the cell's own workdir.** `tests/exec/programs/stdio.c`
+  writes and re-reads `fred.txt` in the current directory, so any two cells running it
+  from a shared cwd race. Measured: of four full-corpus isolation runs started together
+  from one directory, one dropped `programs/stdio` as nondeterministic and three admitted
+  it; with per-cell cwd, four of four admit all 282. This is the likeliest explanation
+  for the one unreproducible red an earlier cut of this harness produced, which landed on
+  `iso-bf` for no reason connected to the bitflag pass. `tests/runner.c` already does the
+  same thing — any new harness that runs `tests/exec` programs must too.
+- The subject list is the flagsweep twelve **plus the strategy-named optimizer goldens**,
+  and the second block is not decoration. A planted `ast_cse_kill` bug (deleting the
+  read-invalidation half, so CSE reuses a cached expression across a store to one of its
+  operands) is completely invisible to the twelve; it is caught by `optimizer/cse` and
+  `types/int_conversion`. Same lesson as `flagsweep.sh`'s `-fjit-splice` subject, arriving
+  a second time. Re-run 2026-08-06 against the shipped harness: `iso-cse` and all four
+  `perm3-*` go red naming exactly those two subjects, while the other 21 isolation cells
+  stay green — the signal is specific, not blanket.
+- **Prefixing rows 0..3 masks bugs, so the bare mode is the sensitive one.** Under the
+  planted bug both `perm3-based-*` stay green while all four `perm3-*` go red. Both modes
+  are registered because they are not the same test. Keep it that way.
+- Subject binaries run pinned to one CPU. `atomic_counter` is 16 threads on one cache
+  line: 2.0s unpinned, 0.05s pinned, and unpinned it alone was most of a pass. Every
+  atomic instruction still executes and `tests/exec` still runs these goldens unpinned;
+  what is given up is true simultaneity.
+- A mismatch is re-run four times before it is called a failure, and a non-recurring one
+  is printed on stderr and counted in the PASS line rather than swallowed. That is for
+  fork/exec losing under load, not for miscompiles — any recurrence is a hard failure.
+- Not covered: one host triple (x86_64 Linux), `-O2` only, and triples — not 4-deep, and
+  not the full 22-row order.
 
 ### C2 gap — remaining Replay_IR fidelity work
 
