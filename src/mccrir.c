@@ -4745,8 +4745,19 @@ void rir_prod_replay_begin(void) {
 	loc = rir_body_loc_sv;
 }
 
+static int rir_span_first = -1, rir_span_end = -1;
+static int rir_span_blen = -1, rir_span_nlen = -1;
+
+void rir_prod_span(int first, int end, int body_len, int new_len) {
+	rir_span_first = first;
+	rir_span_end = end;
+	rir_span_blen = body_len;
+	rir_span_nlen = new_len;
+}
+
 void rir_prod_note(const char *verdict) {
 	const char *f, *unf;
+	char sb[96];
 	int i;
 	int is_fb = !strcmp(verdict, "fallback");
 	long nb = rir_prod_body_bytes;
@@ -4793,17 +4804,21 @@ void rir_prod_note(const char *verdict) {
 					: (mcc_state && mcc_state->current_filename
 								 ? mcc_state->current_filename
 								 : "?");
+	sb[0] = '\0';
+	if (is_fb && rir_span_blen >= 0)
+		snprintf(sb, sizeof sb, "\tfirst=%d\tend=%d\tblen=%d\tnlen=%d",
+						 rir_span_first, rir_span_end, rir_span_blen, rir_span_nlen);
 	if (rir_prod_out) {
 		FILE *o = fopen(rir_prod_out, "a");
 		if (o) {
-			fprintf(o, "%s\t%s\t%s\t%s\t%s\t%ld\t%d\n", verdict, f,
-							funcname ? funcname : "?", rir_prod_why, unf, nb, rir_prod_nraw);
+			fprintf(o, "%s\t%s\t%s\t%s\t%s\t%ld\t%d%s\n", verdict, f,
+							funcname ? funcname : "?", rir_prod_why, unf, nb, rir_prod_nraw, sb);
 			fclose(o);
 		}
 		return;
 	}
-	fprintf(stderr, "[rir-prod] %s\t%s\t%s\t%s\t%s\t%ld\t%d\n", verdict, f,
-					funcname ? funcname : "?", rir_prod_why, unf, nb, rir_prod_nraw);
+	fprintf(stderr, "[rir-prod] %s\t%s\t%s\t%s\t%s\t%ld\t%d%s\n", verdict, f,
+					funcname ? funcname : "?", rir_prod_why, unf, nb, rir_prod_nraw, sb);
 }
 
 void rir_prod_body_set(long bytes) { rir_prod_body_bytes = bytes; }

@@ -880,6 +880,80 @@ per level, `MCC_FORCE_REPLAY=1` on the `-O0` row. Every row reconciles.
 - `ptr_unlink` for-condition-store segfault: root-caused, fix open (the `rir_cf_cond` /
   `rir_docond` machinery; a 5-fix / 34-break discriminator).
 
+#### Per-region keep/restore — measured, and refused (2026-08-06)
+
+Keep/restore in `ast_func_end` is whole-body: one divergent byte discards the entire
+replay. At ~50 regions per body the obvious idea is to make the unit a region instead.
+It was measured at suite scale and it does not work. Two independent full `ctest` runs
+(98930 bodies, 2669 fallbacks) agree to the row. **Do not build this**, and do not
+re-open it without first reading the last bullet.
+
+- **The regions are not a cover of the function body.** `RIR_R_BODY` is a *loop* body
+  (`rir_hook_do_body_begin` / `for_body_begin` / `while`), not the function's. Nothing
+  wraps a whole function, so straight-line top-level statement code sits inside zero
+  regions. Measured consequence: for **1340 of 2566** fallbacks with a byte span (52.2%)
+  there is no enclosing region at all, so there is no region to swap. Deduped to the 147
+  distinct fallback signatures it is still 35.4%.
+- **The byte disagreement is positionally local but structurally not containable.**
+  Median divergent span is 6.7% of the body and touches 4 of ~36 regions; but the median
+  *smallest enclosing region* is 100% of the body. Split by reason, the 584 `bytes`
+  (same-length) fallbacks are genuinely tight — median span 2.1% of the body, 84.6%
+  within 10% — while the 1964 `len` fallbacks are not, because a length change at offset
+  X invalidates every PC-relative displacement crossing X. `len` is 76.5% of the
+  population, which is the same thing the boards above say from the other direction.
+- **Boundary state, over 129861 regions of one self-compile.** Only **4.0%** of regions
+  (5256) have an empty value stack at *both* boundaries, no open return chain, and no
+  break/continue/goto/label crossing them. 53.4% have a live hard register at a
+  boundary, 29.2% carry a `VT_CMP`/`VT_JMP`/`VT_JMPI` (pending flags, or another jump
+  chain embedded in the value stack), 48.0% have `rsym != 0`. The clean ones are exactly
+  the statement-shaped kinds — `then` 32%, `else` 38%, `incr` 49%, `body` 29%, `for`
+  24%, `do` 76%, `synth` 2% — and zero of `if`/`while`/`switch`/`ternary`/`landor`/
+  `call`/`cond`/`inc`/`member`/`tarm`/`lsup`/`lopnd`/`vstore`/`cvt` qualify.
+  Cross-referenced against where divergences land, only 22.9% of fallbacks are even
+  enclosed by a *kind* that can qualify, before the ~30% per-instance filter.
+- **What is region-local: the value stack, and only at statement boundaries.
+  Everything else in the save/restore set is body-global.** `rsym` is the head of a
+  linked list threaded through the text itself — `gjmp` stores the predecessor's text
+  offset in the jump's own disp32 and `gsym_addr` walks it — and it is resolved by
+  `gsym(rsym)` in `gen_function` *after* `ast_func_end` returns, so at the decision
+  point the chain is live and physically interleaved with the code of every region.
+  Break/continue are the same construction (`*cur_scope->bsym = gjmp(*cur_scope->bsym)`),
+  as is the alloca chain in `mcc_state->cg_func_alloca`. `loc`, `anon_sym`,
+  `nb_temp_local_vars` and `arr_temp_local_vars` are monotonic per-body accumulators —
+  `get_temp_local_var` reuses slots by scanning the live value stack, so the table at a
+  region's entry is a function of every preceding region. The relocation section is an
+  append-only cursor.
+- **The decisive obstacle: the replay is not a pure function of the arena.** It consumes
+  four record/replay side channels — `rir_locrec`, `rir_slotrec`, `rir_tvrec`,
+  `rir_fcrec` — each a single body-global array with one monotonic cursor advanced by
+  comparing recorded positions against the *current* `ind`. Replaying one region in
+  isolation would have to seek four cursors, and the keying is by absolute code offset,
+  which any splice changes. This is not a per-region-kind soundness question; it is that
+  **`ast_replay_body` has no entry point below the body at all.** Anything that revisits
+  this has to make those four cursors seekable first, and that is the whole cost before
+  any of the coverage arithmetic above starts to matter.
+- `ast_baseline_splice` is what the splice primitive would have to look like, and shows
+  the cost from the other end: memcpy, re-issue every relocation rebased off
+  `src_base`, then walk the saved chain head and re-link every node into the current
+  `rsym`. It handles exactly one chain and is only ever used for a whole body emitted at
+  a fresh `ind`, with all other chains already resolved.
+- **Arithmetic of the verdict.** Sound for at most 7 of 21 region kinds
+  (`then`/`else`/`incr`/`body`/`for`/`do`/`synth`), covering 4.0% of regions, reaching
+  maybe 7% of divergences, and only for the 23.5% of same-length fallbacks that are
+  region-enclosed at all. The salvage argument is also weaker than it looks: the oracle
+  that matters is the goldens, not the memcmp, and a divergent region is usually correct
+  code that merely encodes differently. **If the byte compare is ever replaced by the
+  goldens as the gate, this direction loses its remaining motivation entirely** — there
+  is nothing left to restore.
+- What survives in the tree: `rir_prod_span` appends `first`/`end`/`blen`/`nlen` to the
+  `fallback` rows of an `MCC_RIR_PROD_OUT` census — where in the body the replay first
+  disagrees and how far the disagreement runs. That is kept because the standing "close
+  the open per-body byte divergences, fix at the USE site" item needs it, not because of
+  this question. The region-pairing columns (`rall`/`rhit`/`rmin`/`rminkind`/`rdepth`)
+  and the `MCC_RIR_BND=1` per-kind boundary table produced the numbers above and are
+  **not** in the tree; they answered a closed question. Recover them from `934b692e` if
+  the numbers ever need retaking.
+
 ### RIR cut — remaining cleanup
 - Deletion residue, keep-or-delete each: `ast_verify_diff` (+ `_match` / `_dump_diff`),
   `ast_treechk` / `MCC_AST_TREECHK`, `ast_jit_guard_env` (declared, never assigned),

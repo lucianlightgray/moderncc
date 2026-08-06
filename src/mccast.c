@@ -16264,6 +16264,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			memcpy(ast_outer_jmp, mcc_state->error_jmp_buf, sizeof(jmp_buf));
 			mcc_state->error_func = ast_error_sink;
 			stk_data_floor = nb_stk_data;
+			rir_prod_span(-1, -1, -1, -1);
 			if (setjmp(mcc_state->error_jmp_buf) == 0) { MCC_TRACE("br\n");
 				mcc_state->error_set_jmp_enabled = 1;
 				{ MCC_TRACE("br\n");
@@ -16311,6 +16312,17 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 											: !f_rel   ? "relcontent"
 																 : "";
 				rir_unfaithful_why = ast_unf_why;
+				if (!f_byte) { MCC_TRACE("br\n");
+					const unsigned char *nb = cur_text_section->data + ast_body_ind_sv;
+					int lim = new_len < body_len ? new_len : body_len;
+					int sp_first = 0, sp_suf = 0;
+					while (sp_first < lim && nb[sp_first] == orig[sp_first])
+						{ MCC_TRACE("br\n"); sp_first++; }
+					while (sp_suf < lim - sp_first &&
+								 nb[new_len - 1 - sp_suf] == orig[body_len - 1 - sp_suf])
+						{ MCC_TRACE("br\n"); sp_suf++; }
+					rir_prod_span(sp_first, body_len - sp_suf, body_len, new_len);
+				}
 				ast_replay_completed = 1;
 				{ MCC_TRACE("br\n");
 					const char *pd3 = getenv("RIRPRODDUMP");
