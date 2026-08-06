@@ -2845,6 +2845,15 @@ static int ast_asm_eff_is_fence(const AstAsmEff *e) { MCC_TRACE("enter\n");
 	return e->unknown || (e->eff & (MCC_ASM_EFF_MEM | MCC_ASM_EFF_GOTO));
 }
 
+static int ast_node_is_asm(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	return ast_op_is_asm(ast_op(a, n));
+}
+
+/* Set for the body ast_func_end is holding, so the predicates below can skip
+   their asm walk entirely in the overwhelming majority of bodies that have
+   none. ast_licm_written is called once per tracked copy per statement. */
+static int ast_fn_asm_live;
+
 /* A childless Ref whose r is `<machine register>|VT_LVAL` says "dereference
    whatever is in that register". Nothing in the tree produces it: the register
    was filled by a sibling's emission -- the op-assign vdup of `*f() += 7` or of
@@ -2869,6 +2878,14 @@ static int ast_arena_has_hole(const AstArena *a) { MCC_TRACE("enter\n");
 		if (ast_ref_reg_dangle(a, n))
 			{ MCC_TRACE("br\n"); return 1; }
 	}
+	return 0;
+}
+
+static int ast_arena_has_dangle(const AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++)
+		{ MCC_TRACE("br\n"); if (ast_ref_reg_dangle(a, n))
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -8320,6 +8337,8 @@ static int ast_cprop_opaque(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_kind(a, n) == AST_Jump)
 		{ MCC_TRACE("br\n"); return 1; }
+	if (ast_node_is_asm(a, n))
+		{ MCC_TRACE("br\n"); return 1; }
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
 		{ MCC_TRACE("br\n"); if (ast_cprop_opaque(a, c))
 			{ MCC_TRACE("br\n"); return 1; } }
@@ -8665,11 +8684,23 @@ static int ast_dse_run(AstArena *a) { MCC_TRACE("enter\n");
 
 static int ast_sccp_folds;
 
+/* An `asm goto` branches to a C label that no AST_Jump records: the edge is a
+   LG.n relocation inside the block's text. Every caller of this predicate uses
+   a 0 to mean "nothing here is a branch target, the block may be deleted or
+   threaded", which for an asm goto is the wrong answer in the dangerous
+   direction. */
 static int ast_sccp_has_label_compute(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (n == AST_NONE)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_kind(a, n) == AST_Jump && ast_op(a, n) == 4)
 		{ MCC_TRACE("br\n"); return 1; }
+	if (ast_op(a, n) == AST_OP_ASMGEN) { MCC_TRACE("br\n");
+		AstAsmEff e;
+		memset(&e, 0, sizeof e);
+		ast_asm_eff_node(a, n, &e);
+		if (e.unknown || (e.eff & MCC_ASM_EFF_GOTO))
+			{ MCC_TRACE("br\n"); return 1; }
+	}
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
 		{ MCC_TRACE("br\n"); if (ast_sccp_has_label(a, c))
 			{ MCC_TRACE("br\n"); return 1; } }
@@ -9276,10 +9307,47 @@ static void ast_cse_kill(AstArena *a, int off) { MCC_TRACE("enter\n");
 
 static MCC_OPT_TLS int ast_licm_folds;
 
+/* An asm output operand writes a local, and no node in the arena records that
+   write: asm_gen_code performs it inside the ASMGEN emission, so the tree holds
+   only the operand's lvalue as an ASMOPS child. ast_licm_written looks for a
+   Store or an lval Unary, finds neither, and answers "the loop does not write
+   this" -- which is how a copy survives across an asm that overwrote it, and
+   how a load gets hoisted out of a loop whose asm rewrote its source.
+
+   Which ASMOPS children are outputs is in the sibling ASMGEN's nb_outputs, but
+   the tree does not link the two, so every operand counts as written. A memory
+   clobber writes anything whose address escaped. */
+static int ast_asm_writes_off(AstArena *a, AstLocal n, int off) { MCC_TRACE("enter\n");
+	int op;
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	op = ast_op(a, n);
+	if (op == AST_OP_ASMOPS) { MCC_TRACE("br\n");
+		for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+			{ MCC_TRACE("br\n"); if (ast_tco_reads_off(a, c, off))
+				{ MCC_TRACE("br\n"); return 1; } }
+		return 0;
+	}
+	if (op == AST_OP_ASMGEN) { MCC_TRACE("br\n");
+		AstAsmEff e;
+		memset(&e, 0, sizeof e);
+		ast_asm_eff_node(a, n, &e);
+		if ((e.unknown || (e.eff & MCC_ASM_EFF_MEM)) && ast_cprop_escapes(a, off))
+			{ MCC_TRACE("br\n"); return 1; }
+		return 0;
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); if (ast_asm_writes_off(a, c, off))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
 static int ast_licm_written(AstArena *a, AstLocal n, int off) { MCC_TRACE("enter\n");
 	if (n == AST_NONE)
 		{ MCC_TRACE("br\n"); return 0; }
 	uint16_t k = ast_kind(a, n);
+	if (ast_fn_asm_live && ast_asm_writes_off(a, n, off))
+		{ MCC_TRACE("br\n"); return 1; }
 	if (k == AST_Store && ast_ref_is_local_off(a, ast_child(a, n, 0), off))
 		{ MCC_TRACE("br\n"); return 1; }
 	if (k == AST_Unary && ast_ref_is_local_off(a, ast_first_child(a, n), off))
@@ -9608,6 +9676,8 @@ static int ast_inline_node_allowed(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 
 static int ast_inline_expr_pure(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_node_is_asm(a, n))
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_inline_type_ok(a, n) || !ast_inline_node_allowed(a, n))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -14391,6 +14461,14 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 	{"cload", sg_templates, ast_strat_cload},
 };
 
+/* Which strategies this body may run. All of them unless the body carries a
+   hole, in which case ast_func_end narrows it to the ones the hole's effect set
+   proves harmless. Kept out of the AstStrategy row because it is a property of
+   the body, not of the strategy. */
+static uint32_t ast_strat_admit = 0xffffffffu;
+
+#define AST_STRAT_BIT(x) ((uint32_t)1 << (x))
+
 static long ast_run_strat_seq(AstArena *a, Sym *sym, int faithful,
 															const int *seq, int k, int *sf) { MCC_TRACE("enter\n");
 	long hits = 0;
@@ -14398,6 +14476,8 @@ static long ast_run_strat_seq(AstArena *a, Sym *sym, int faithful,
 	for (oi = 0; oi < k; oi++) { MCC_TRACE("br\n");
 		int si = seq[oi];
 		if (si < 0 || si >= AST_STRAT_COUNT)
+			{ MCC_TRACE("br\n"); continue; }
+		if (!((ast_strat_admit >> si) & 1))
 			{ MCC_TRACE("br\n"); continue; }
 		if (faithful && ast_strategies[si].gate()) { MCC_TRACE("br\n");
 			int h = ast_strategies[si].apply(a, sym);
@@ -16392,10 +16472,11 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			const int ast_fn_hole = ast_arena_has_hole(ast_cur);
 			AstAsmEff ast_fn_asm;
 			const int ast_fn_has_asm = ast_body_asm_eff(ast_cur, &ast_fn_asm);
+			ast_fn_asm_live = ast_fn_has_asm;
 			if (ast_fn_has_asm && ast_env_int("MCC_ASM_EFF", 0)) { MCC_TRACE("br\n");
 				fprintf(stderr,
 								"[asm-eff] %s reads=%llx writes=%llx clob=%llx vol=%d goto=%d "
-								"mem=%d cc=%d x87=%d ccout=%d labels=%d unknown=%d\n",
+								"mem=%d cc=%d x87=%d ccout=%d labels=%d unknown=%d admit=%d\n",
 								funcname ? funcname : "?",
 								(unsigned long long)ast_fn_asm.reads,
 								(unsigned long long)ast_fn_asm.writes,
@@ -16406,7 +16487,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 								!!(ast_fn_asm.eff & MCC_ASM_EFF_CC),
 								!!(ast_fn_asm.eff & MCC_ASM_EFF_X87),
 								!!(ast_fn_asm.eff & MCC_ASM_EFF_CCOUT),
-								ast_fn_asm.nlabels, ast_fn_asm.unknown);
+								ast_fn_asm.nlabels, ast_fn_asm.unknown,
+								!ast_fn_asm.unknown && !ast_arena_has_dangle(ast_cur));
 			}
 			int promoted = 0;
 			ast_search_axis_ran = 0;
@@ -16554,6 +16636,37 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
 				const int ast_opt_ok = faithful && !ast_fn_hole;
+				/* First strategies re-admitted to a body carrying an asm. Each one
+				   rewrites an expression in place: it does not move a statement past
+				   the asm, does not delete or duplicate it, does not name a register,
+				   and does not move a frame slot. cprop and dse qualify for a second
+				   reason -- ast_cprop_stmt and ast_dse_block both drop their whole
+				   tracked set at any statement that is not a Store or an Invoke, and
+				   an asm statement is neither, so nothing survives across it. cprop
+				   also depends on the ast_licm_written fix above: without it a copy
+				   tracked across a loop whose asm overwrites the local survives.
+
+				   Withheld, and why. narrow, ltemp, sethi, reg-color and the
+				   promotion pass move a local or rename a register, and
+				   subst_asm_operands baked the parser's answer for both into the
+				   text at parse time -- the block is a pin, not a barrier. inline
+				   and tco graft the body into another frame, which carries the
+				   callee's pinned names with it. cse, pre and ivsr introduce a
+				   value that outlives a statement, and nothing yet proves the asm
+				   does not clobber where it lands. sccp, jt and select reshape
+				   control flow, and an asm goto's out-edges are LG.n relocations
+				   inside the text. licm rewrites only what cse already hoisted, so
+				   admitting it alone would be a no-op. */
+				const int ast_asm_only_hole =
+						ast_fn_hole && ast_fn_has_asm && !ast_fn_asm.unknown &&
+						!ast_arena_has_dangle(ast_cur);
+				const int ast_asm_strat_ok = faithful && ast_asm_only_hole;
+				const uint32_t ast_asm_strat_admit =
+						AST_STRAT_BIT(AST_STRAT_BFOLD) | AST_STRAT_BIT(AST_STRAT_IDENT) |
+						AST_STRAT_BIT(AST_STRAT_RANGE) |
+						AST_STRAT_BIT(AST_STRAT_DIVMAGIC) |
+						AST_STRAT_BIT(AST_STRAT_ABS) | AST_STRAT_BIT(AST_STRAT_REASSOC) |
+						AST_STRAT_BIT(AST_STRAT_CPROP) | AST_STRAT_BIT(AST_STRAT_DSE);
 				if (ast_vlat_env && faithful) { MCC_TRACE("br\n");
 					AstVLat ast_vlat_ctx;
 					ast_vlat_sync(ast_cur);
@@ -16599,8 +16712,10 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					int sf[AST_STRAT_COUNT];
 					for (int si = 0; si < AST_STRAT_COUNT; si++)
 						{ MCC_TRACE("br\n"); sf[si] = 0; }
-					ast_run_strat_cycle(ast_cur, sym, ast_opt_ok, ast_strat_order,
-															ast_strat_order_n, sf);
+					ast_strat_admit = ast_opt_ok ? 0xffffffffu : ast_asm_strat_admit;
+					ast_run_strat_cycle(ast_cur, sym, ast_opt_ok || ast_asm_strat_ok,
+															ast_strat_order, ast_strat_order_n, sf);
+					ast_strat_admit = 0xffffffffu;
 					if (mcc_stats_mask)
 						{ MCC_TRACE("br\n"); mcc_stats_strat_hits(sf, AST_STRAT_COUNT); }
 					bfolds = sf[AST_STRAT_BFOLD];
