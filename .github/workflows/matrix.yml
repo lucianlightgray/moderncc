@@ -201,7 +201,9 @@ jobs:
         run: tar xf ${{ matrix.artifact }}.tar
       - name: stage2 (cross) + stage3 emulate (qemu / wine-PE / docker / rosetta validators)
         run: |
-          mcc-ci stage2 dynamic --cross --mcc "$PWD/${{ matrix.host }}/bin/mcc"
+          mccexe="$PWD/${{ matrix.host }}/bin/mcc"
+          [ -x "$mccexe.exe" ] && mccexe="$mccexe.exe"
+          mcc-ci stage2 dynamic --cross --mcc "$mccexe"
           mcc-ci stage3 --consume emulate --build cmake-stage2-dynamic
       - name: emulate summary
         if: always()
