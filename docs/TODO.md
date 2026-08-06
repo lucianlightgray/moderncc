@@ -515,11 +515,34 @@ level. 8577 cells, 403 skipped, ~225 s per level. Identical at all four levels:
 `-fif-conversion` defect recorded under "Open codegen / front-end defects". Nothing else
 is red, and no cell is level-dependent.
 
-- **`run-tier/{x86_64,i386}-win32` are flaky under load, not level-dependent.** They came
-  up red in the `-O2` sweep and green at the other three; re-run in isolation they pass
-  6/6 at both `-O2` and `-O3`. It is the 32-way-parallel wine cells losing a race, not a
-  codegen difference — do not chase it as an optimizer bug, and do not read a single
-  full-suite run of these two as signal.
+- **`run-tier/{x86_64,i386}-win32` were flaky under load, not level-dependent. Fixed.**
+  They came up red in the `-O2` sweep and green at the other three; re-run in isolation
+  they passed 6/6 at both `-O2` and `-O3`. It was never codegen and never wine emulation:
+  the corpus always passed and the cell died in its own teardown. A red run says
+
+      [i386-win32] -run tier: 15/15 programs OK under both JIT tiers
+      rm: cannot remove '/tmp/tmp.W5WwhnLAbB/.wineprefix': Directory not empty
+
+  The wineserver outlives its last client and flushes `user.reg` and `userdef.reg` back
+  into `WINEPREFIX` as it exits. `trap 'rm -rf "$work"' EXIT` fired the instant the
+  corpus loop ended, emptied `.wineprefix`, the departing server recreated a registry
+  file inside it, and the closing `rmdir` failed with `ENOTEMPTY`. That `rm` was the last
+  command the shell ran, so under `set -e` its status became the cell's status. Load
+  stretches the server's shutdown, which is why only a full parallel suite tripped it.
+  `tools/run-tier.sh` now shuts the prefix's own wineserver down and waits for it before
+  removing anything, and routes teardown through a `cleanup()` that restores the body's
+  status and cannot fail. Measured with both cells run concurrently under a 30-way CPU
+  burn, 20 iterations each: 7 of 40 red before, 0 of 40 after, and 0 red across seven
+  consecutive full `ctest` sweeps. Every abandoned `/tmp/tmp.*/.wineprefix` on a host is
+  one lost race, so `ls -d /tmp/tmp.*/.wineprefix` dates the recurrences directly.
+
+- **A shared build dir is not a place to measure a flake.** Several concurrent
+  `ctest` runs in one binary dir overwrite each other's `Testing/Temporary/LastTest.log`
+  and `LastTestsFailed.log`, so a cell can appear in `LastTestsFailed.log` for a run that
+  exited 0 — the entry belongs to somebody else's run. Read a cell's own stdout, not the
+  summary files, and give each concurrent sweep its own build dir. The `-run` PE cells
+  are unaffected by the sibling hazard in `work=$(mktemp -d "$bdir/run-tier.XXXXXX")`:
+  that branch is taken only when `DOCKERPLAT` is set, which the `win32` triples never do.
 
 #### A stage-2 build dir does not rebuild when a header changes
 
