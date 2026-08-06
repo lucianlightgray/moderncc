@@ -4950,16 +4950,24 @@ void rir_prod_note(const char *verdict) {
 
 static void rir_prod_report(void) {
 	int i;
-	fprintf(stderr, "[rir-prod-total] used=%ld fallback=%ld skip=%ld\n",
+	FILE *f = stderr;
+	if (rir_prod_out && rir_prod_out[0]) {
+		f = fopen(rir_prod_out, "a");
+		if (!f)
+			f = stderr;
+	}
+	fprintf(f, "[rir-prod-total] used=%ld fallback=%ld skip=%ld\n",
 					rir_tot_prod_used, rir_tot_prod_fb, rir_tot_prod_skip);
 	for (i = 0; i < RIR_PROD_NWHY; i++)
 		if (rir_prod_why_n[i])
-			fprintf(stderr, "[rir-prod-why] %s=%ld\n", rir_prod_why_name[i],
+			fprintf(f, "[rir-prod-why] %s=%ld\n", rir_prod_why_name[i],
 							rir_prod_why_n[i]);
 	for (i = 0; i < RIR_PROD_NUNF; i++)
 		if (rir_unfaithful_n[i])
-			fprintf(stderr, "[rir-prod-unfaithful] %s=%ld\n",
+			fprintf(f, "[rir-prod-unfaithful] %s=%ld\n",
 							rir_unfaithful_name[i], rir_unfaithful_n[i]);
+	if (f != stderr)
+		fclose(f);
 }
 
 void rir_prod_replay_end(void) {
