@@ -2707,9 +2707,21 @@ static void ast_inline_capture(Sym *fnsym) { MCC_TRACE("enter\n");
 	ast_inline_cap_ok = 1;
 }
 
+static int ast_arena_has_hole(const AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		int op = ast_op(a, n);
+		if (op == AST_OP_ASM || op == AST_OP_ASMGEN || op == AST_OP_ASMOPS)
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
+
 static int ast_inline_graftable(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal root = ast_root(a);
 	if (ast_kind(a, root) != AST_BasicBlock)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_arena_has_hole(a))
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal nn = ast_count(a);
 	int totret = 0;
@@ -2988,7 +3000,7 @@ static int ast_has_graftable_call(AstArena *a) { MCC_TRACE("enter\n");
 
 static int ast_inline_retain(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 	if (!ast_fn_inlinable(a, sym) || ast_inline_n >= AST_INLINE_MAX ||
-			ast_inline_lookup(sym))
+			ast_inline_lookup(sym) || ast_arena_has_hole(a))
 		{ MCC_TRACE("br\n"); return 0; }
 	struct AstInlineFn *e = &ast_inline_pool[ast_inline_n++];
 	e->sym = sym;
@@ -3013,7 +3025,7 @@ static int ast_inline_retain(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 
 static int ast_reemit_retain(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 	if (!ast_inline_env || ast_reemit_poison ||
-			ast_reemit_n >= AST_INLINE_MAX)
+			ast_reemit_n >= AST_INLINE_MAX || ast_arena_has_hole(a))
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal nn = ast_count(a);
 	int has_static_call = 0;
@@ -3050,7 +3062,7 @@ static int ast_baseline_n;
 
 static int ast_baseline_retain(Sym *sym, AstArena *a, int src_base, addr_t reloc0,
 															 int chain_head) { MCC_TRACE("enter\n");
-	if (!ast_jit_env || ast_baseline_n >= AST_INLINE_MAX)
+	if (!ast_jit_env || ast_baseline_n >= AST_INLINE_MAX || ast_arena_has_hole(a))
 		{ MCC_TRACE("br\n"); return 0; }
 	Section *ts = cur_text_section;
 	Section *rs = ts->reloc;
@@ -6887,6 +6899,8 @@ static int ast_ident_pure_compute(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 int ast_fn_purity(const AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n;
 	int has_load = 0;
+	if (ast_arena_has_hole(a))
+		{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		if (ast_type_t(a, n) & VT_VOLATILE)
 			{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
@@ -6933,6 +6947,8 @@ void ast_fn_slice_profile(const AstArena *a, AstSliceProfile *out) { MCC_TRACE("
 int ast_fn_purity_noescape(const AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n;
 	int has_load = 0;
+	if (ast_arena_has_hole(a))
+		{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		if (ast_type_t(a, n) & VT_VOLATILE)
 			{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
@@ -16205,6 +16221,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			   compare, and a body that longjmp'd out must never be kept. */
 			volatile int ast_replay_completed = 0;
 			const char *volatile ast_unf_why = "abort";
+			const int ast_fn_hole = ast_arena_has_hole(ast_cur);
 			int promoted = 0;
 			ast_search_axis_ran = 0;
 			int bfolds = 0;
@@ -16350,6 +16367,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
+				const int ast_opt_ok = faithful && !ast_fn_hole;
 				if (ast_vlat_env && faithful) { MCC_TRACE("br\n");
 					AstVLat ast_vlat_ctx;
 					ast_vlat_sync(ast_cur);
@@ -16364,7 +16382,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					}
 #endif
 				}
-				if (faithful && (ast_opt_limit < 0 || ast_opt_total < ast_opt_limit)) { MCC_TRACE("br\n");
+				if (ast_opt_ok && (ast_opt_limit < 0 || ast_opt_total < ast_opt_limit)) { MCC_TRACE("br\n");
 					if (ast_math_inline_prepass_env)
 						{ MCC_TRACE("br\n"); math_inlined = ast_math_inline_run(ast_cur); }
 					if (ast_interchange_env)
@@ -16377,17 +16395,17 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				AstGateMask ast_search_sv_gates = ast_search_gates_now();
 				if (!ast_strat_order_forced)
 					{ MCC_TRACE("br\n"); ast_strat_order_reset(); }
-				if (faithful && ast_search_env && ast_search_seconds > 0) { MCC_TRACE("br\n");
-					ast_search_select(sym, faithful, saved_loc, saved_anon);
-					ast_search_axis_pick(sym, faithful, saved_loc, saved_anon);
+				if (ast_opt_ok && ast_search_env && ast_search_seconds > 0) { MCC_TRACE("br\n");
+					ast_search_select(sym, ast_opt_ok, saved_loc, saved_anon);
+					ast_search_axis_pick(sym, ast_opt_ok, saved_loc, saved_anon);
 				}
-				if (faithful && ast_roi_env) { MCC_TRACE("br\n");
+				if (ast_opt_ok && ast_roi_env) { MCC_TRACE("br\n");
 					AstArena *roi_pr = ast_arena_clone(ast_cur);
 					if (roi_pr)
-						{ MCC_TRACE("br\n"); ast_search_roi_order(sym, faithful, saved_loc,
+						{ MCC_TRACE("br\n"); ast_search_roi_order(sym, ast_opt_ok, saved_loc,
 																								saved_anon, roi_pr); }
 				}
-				if (faithful && ast_slice_env) { MCC_TRACE("br\n");
+				if (ast_opt_ok && ast_slice_env) { MCC_TRACE("br\n");
 					ast_slice_consume();
 					(void)ast_slice_window_scan(ast_cur, (uint64_t)ast_search_gates_now());
 				}
@@ -16395,7 +16413,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					int sf[AST_STRAT_COUNT];
 					for (int si = 0; si < AST_STRAT_COUNT; si++)
 						{ MCC_TRACE("br\n"); sf[si] = 0; }
-					ast_run_strat_cycle(ast_cur, sym, faithful, ast_strat_order,
+					ast_run_strat_cycle(ast_cur, sym, ast_opt_ok, ast_strat_order,
 															ast_strat_order_n, sf);
 					if (mcc_stats_mask)
 						{ MCC_TRACE("br\n"); mcc_stats_strat_hits(sf, AST_STRAT_COUNT); }
@@ -16431,12 +16449,12 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				int do_sethi = sethis > 0;
 				int do_tco = tcos > 0;
 				int do_select = selects > 0;
-				int do_inline = faithful && !do_tco && !ast_inline_pass_env &&
+				int do_inline = ast_opt_ok && !do_tco && !ast_inline_pass_env &&
 												ast_has_graftable_call(ast_cur);
 				if (ast_search_axis_ran && !ast_search_pick_inline)
 					{ MCC_TRACE("br\n"); do_inline = 0; }
 				ast_no_callful_promo = do_inline;
-				int do_promote = faithful && !do_tco &&
+				int do_promote = ast_opt_ok && !do_tco &&
 												 ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
 				MCC_TRACE("branch %s faithful=%d inline=%d promote=%d tco=%d\n",
@@ -16466,7 +16484,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						!do_bf && !do_sethi && !do_tco && !do_narrow && !do_divmagic && !do_select &&
 						!do_cload && !interchanged && !fused && !tiled && !math_inlined)
 					{ MCC_TRACE("br\n"); loc = saved_loc; }
-				if (ast_jit_splice_env && faithful) { MCC_TRACE("br\n");
+				if (ast_jit_splice_env && ast_opt_ok) { MCC_TRACE("br\n");
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
@@ -16540,7 +16558,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					promoted = ast_promo_n;
 #undef AST_PF_EMIT
 				}
-				if (ast_jit_dispatch_env && faithful && !ast_jit_splice_env &&
+				if (ast_jit_dispatch_env && ast_opt_ok && !ast_jit_splice_env &&
 						ast_jit_want(funcname, sym) &&
 #if defined(MCC_TARGET_ARM64)
 						ast_jit_dispatch_env == 6 && mcc_state &&
