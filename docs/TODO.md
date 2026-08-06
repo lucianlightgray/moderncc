@@ -137,6 +137,35 @@ that state is reached by `-finline` at `-O1` and by `-fno-inline-functions` at `
 **no single flip at `-O2`**. A sweep at one `-O` level calls two of those three green,
 which is why `flagsweep.sh` now runs `-O1 -O2 -O3` rather than `-O2` alone.
 
+## Branches deleted 2026-08-06 — recoverable by SHA
+
+All non-`main` branches and every agent worktree were removed. Most held work already
+cherry-picked onto `main` under a different SHA. **Seven held commits that are not on
+`main` in any form.** The commits still exist in the object store; `git checkout <sha>` or
+`git cherry-pick <sha>` recovers them until the next `git gc` prunes unreachable objects,
+so recover anything wanted here sooner rather than later.
+
+Not from this session, and unreviewed by it:
+
+| sha | subject |
+| --- | --- |
+| `a3c51e8d` | `fix(front-end)`: accept the imaginary suffix in either order and fold it — **this is the `fix-imaginary` branch the "RIR cut" section below still asks to land** |
+| `a4217c24` | `fix(inline)`: gnu89 extern-inline redefinition, in every gnu89 mode |
+| `c3ed8b2a` | `fix(gen)`: give the saved VLA parameter dimension tokens a single owner |
+| `2bcd21d9` `b06dcf9d` | `fix(bitfields)`: width-64 bitfields marked `VT_BITFIELD` in packed contexts, plus its TODO update |
+| `1e10dd1a` `22575f40` `6a6fe8f2` | `feat(lex)`/`feat(pp)`: C23 `u8` character constants, `__has_attribute` as a builtin macro, invalid `##` paste is an error |
+
+From this session, researched but never landed:
+
+| sha | subject |
+| --- | --- |
+| `ea67df7d` | byte-level RIR coverage census, gap enumeration and a coverage ratchet, with per-class reproducers under `tests/rir/gap/` |
+| `d2e4c162` | strategy-registry TDD: all 18 rows in isolation and all 4,896 ordered triples, with a harness proven to catch a planted `ast_cse_kill` bug |
+| `934b692e` | the region-granularity research that closed F3 as not viable, and its boundary-state inventory |
+
+The first two are finished, gated work — they add ctest coverage that does not exist on
+`main` today. Landing them is a cherry-pick plus a gate run, not a rewrite.
+
 ## Invariants the code no longer states — all comments were removed 2026-08-06
 
 Every `/* */` and `//` was stripped from `src/`, `include/`, `runtime/`, `tools/` and
