@@ -1976,8 +1976,21 @@ void ir_cap_teardown(void);
    call in mcc_delete only resolved in single-source builds. */
 void rir_teardown(void);
 void ir_cap_asm(const char *str, int len, int global);
+/* Effect bits an inline asm carries that neither the operand array nor
+   clobber_regs records: asm_clobber returns without a trace for "memory",
+   "cc" and "flags", and asm_instr consumed the volatile and goto qualifiers
+   with a bare next(). Without them a pass cannot tell a fence from a pure
+   register shuffle. */
+#define MCC_ASM_EFF_VOLATILE 0x01
+#define MCC_ASM_EFF_GOTO 0x02
+#define MCC_ASM_EFF_MEM 0x04
+#define MCC_ASM_EFF_CC 0x08
+#define MCC_ASM_EFF_X87 0x10
+#define MCC_ASM_EFF_CCOUT 0x20
+
 void ir_cap_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
-												 int is_output, uint8_t *clobber_regs, int out_reg);
+												 int nb_labels, int eff, int is_output,
+												 uint8_t *clobber_regs, int out_reg);
 ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands, const char *name, const char **pp);
 ST_FUNC const char *skip_constraint_modifiers(const char *p);
 ST_FUNC Sym *get_asm_sym(int name, Sym *csym);

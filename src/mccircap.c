@@ -502,14 +502,24 @@ void ir_cap_gfunc_return(CType *func_type) { MCC_TRACE("enter\n");
 #ifdef MCC_IR_HAVE_VA_START
 IR_CAP_W0(gen_va_start, IR_OP_VA_START)
 #endif
+/* The label operands of an `asm goto` live at operands[nb_operands ..
+   nb_operands + nb_labels), past the end of what asm_gen_code is given. This
+   used to copy nb_operands entries and stop, so the block's control-flow edges
+   survived only as the LG.n relocations subst_asm_operands had already baked
+   into the text -- invisible to anything reading the arena. Record the tail,
+   the label count and the effect bits. */
 void ir_cap_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
-											int is_output, uint8_t *clobber_regs, int out_reg) { MCC_TRACE("enter\n");
+											int nb_labels, int eff, int is_output,
+											uint8_t *clobber_regs, int out_reg) { MCC_TRACE("enter\n");
 	ir_cap_begin(IR_OP_ASMGEN, NULL);
 	if (IR_CAP_REC) { MCC_TRACE("br\n");
-		int hdr[2];
-		int opbytes = (int)((size_t)nb_operands * sizeof *operands);
+		int hdr[4];
+		int nall = nb_operands + (nb_labels > 0 ? nb_labels : 0);
+		int opbytes = (int)((size_t)nall * sizeof *operands);
 		hdr[0] = nb_operands;
 		hdr[1] = nb_outputs;
+		hdr[2] = nb_labels > 0 ? nb_labels : 0;
+		hdr[3] = eff;
 		ir_cap_pending->raw_off =
 				ir_cap_raw_add((const unsigned char *)hdr, (int)sizeof hdr);
 		ir_cap_raw_add((const unsigned char *)operands, opbytes);
@@ -764,15 +774,15 @@ static void ir_cap_issue(IrCapOp *o) { MCC_TRACE("enter\n");
 		ASMOperand ops[MAX_ASM_OPERANDS];
 		uint8_t cr[MCC_NB_ASM_REGS];
 		const unsigned char *p = ir_cap_raw + o->raw_off;
-		int nb_operands, nb_outputs;
-		memcpy(&nb_operands, p, sizeof nb_operands);
-		memcpy(&nb_outputs, p + sizeof(int), sizeof nb_outputs);
-		p += 2 * sizeof(int);
-		if (nb_operands > 0)
-			{ MCC_TRACE("br\n"); memcpy(ops, p, (size_t)nb_operands * sizeof *ops); }
-		p += (size_t)nb_operands * sizeof *ops;
+		int hdr[4], nall;
+		memcpy(hdr, p, sizeof hdr);
+		p += sizeof hdr;
+		nall = hdr[0] + hdr[2];
+		if (nall > 0)
+			{ MCC_TRACE("br\n"); memcpy(ops, p, (size_t)nall * sizeof *ops); }
+		p += (size_t)nall * sizeof *ops;
 		memcpy(cr, p, sizeof cr);
-		asm_gen_code(ops, nb_operands, nb_outputs, o->a0, cr, o->a1);
+		asm_gen_code(ops, hdr[0], hdr[1], o->a0, cr, o->a1);
 		break;
 	}
 	case IR_OP_ASM: { MCC_TRACE("br\n");

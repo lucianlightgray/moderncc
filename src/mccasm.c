@@ -1599,6 +1599,7 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 
 	ASMOperand operands[MAX_ASM_OPERANDS];
 	int nb_outputs, nb_operands, must_subst, out_reg, nb_labels;
+	int asm_eff = 0;
 	uint64_t asm_gvmask;
 	uint8_t clobber_regs[MCC_NB_ASM_REGS];
 	Section *sec;
@@ -1609,6 +1610,10 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 #endif
 
 	while (tok == TOK_VOLATILE1 || tok == TOK_VOLATILE2 || tok == TOK_VOLATILE3 || tok == TOK_GOTO) { MCC_TRACE("br\n");
+		if (tok == TOK_GOTO)
+			{ MCC_TRACE("br\n"); asm_eff |= MCC_ASM_EFF_GOTO; }
+		else
+			{ MCC_TRACE("br\n"); asm_eff |= MCC_ASM_EFF_VOLATILE; }
 		next();
 	}
 
@@ -1648,9 +1653,17 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 						if (asm_x87_clobber_name(tokc.str.data)) { MCC_TRACE("br\n");
 							x87_clobber = 1;
+							asm_eff |= MCC_ASM_EFF_X87;
 						} else
 #endif
-							{ MCC_TRACE("br\n"); asm_clobber(clobber_regs, tokc.str.data); }
+							{ MCC_TRACE("br\n");
+								const char *cname = (const char *)tokc.str.data;
+								if (!strcmp(cname, "memory"))
+									{ MCC_TRACE("br\n"); asm_eff |= MCC_ASM_EFF_MEM; }
+								else if (!strcmp(cname, "cc") || !strcmp(cname, "flags"))
+									{ MCC_TRACE("br\n"); asm_eff |= MCC_ASM_EFF_CC; }
+								asm_clobber(clobber_regs, cname);
+							}
 						next();
 						if (tok == ',') { MCC_TRACE("br\n");
 							next();
@@ -1700,6 +1713,13 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	if (tok != ';')
 		{ MCC_TRACE("br\n"); expect("';'"); }
 
+	/* GCC's rule, and the one every pass has to honour: an asm with no output
+	   operands is volatile whether or not it was written that way. Without this
+	   a `asm("mfence" ::: "memory")` reads as a pure expression with no result,
+	   which is exactly the shape DSE and CSE delete. */
+	if (nb_outputs == 0)
+		{ MCC_TRACE("br\n"); asm_eff |= MCC_ASM_EFF_VOLATILE; }
+
 	rir_hook_asm_operands(nb_operands, asm_gvmask);
 	save_regs(0);
 
@@ -1716,14 +1736,17 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	}
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 	asm_x87_wrap(operands, nb_operands, nb_outputs, x87_clobber, &astr);
-	if (nb_flag)
-		{ MCC_TRACE("br\n"); asm_flag_wrap(operands, flag_idx, flag_cc, nb_flag, &astr); }
+	if (nb_flag) { MCC_TRACE("br\n");
+		asm_flag_wrap(operands, flag_idx, flag_cc, nb_flag, &astr);
+		asm_eff |= MCC_ASM_EFF_CCOUT | MCC_ASM_EFF_CC;
+	}
 #endif
 
 	if (g_debug & MCC_DBG_ASM)
 		{ MCC_TRACE("br\n"); printf("subst_asm: \"%s\"\n", (char *)astr.data); }
 
-	ir_cap_asm_gen_code(operands, nb_operands, nb_outputs, 0, clobber_regs, out_reg);
+	ir_cap_asm_gen_code(operands, nb_operands, nb_outputs, nb_labels, asm_eff, 0,
+											 clobber_regs, out_reg);
 
 	sec = cur_text_section;
 	ir_cap_asm(astr.data, astr.size - 1, 0);
@@ -1735,7 +1758,8 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 
 	next();
 
-	ir_cap_asm_gen_code(operands, nb_operands, nb_outputs, 1, clobber_regs, out_reg);
+	ir_cap_asm_gen_code(operands, nb_operands, nb_outputs, nb_labels, asm_eff, 1,
+											 clobber_regs, out_reg);
 
 	for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 		vpop();

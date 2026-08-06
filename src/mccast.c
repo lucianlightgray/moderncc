@@ -2760,6 +2760,91 @@ int ast_arena_has_asm(const AstArena *a) { MCC_TRACE("enter\n");
 	return 0;
 }
 
+/* What an inline asm actually does, decoded from the blob ir_cap_asm_gen_code
+   already stores. `barrier` is the wrong word for it in both directions.
+   Too weak: subst_asm_operands baked concrete register names into the text at
+   parse time, so the block is a PIN -- ltemp, promote-locals, sethi, reg-color
+   and narrow break it without moving anything across it. Too strong: a block
+   with no `mem` and no `volatile` has no business stopping DSE, LICM or PRE on
+   memory it cannot name.
+
+   `unknown` is the answer for an asm whose blob could not be read. It reads as
+   "everything", so a caller that forgets to check it is conservative rather
+   than wrong. */
+typedef struct AstAsmEff {
+	uint64_t reads;
+	uint64_t writes;
+	uint64_t clobbers;
+	int eff;
+	int nlabels;
+	int unknown;
+} AstAsmEff;
+
+static int ast_asm_eff_node(const AstArena *a, AstLocal n, AstAsmEff *e) { MCC_TRACE("enter\n");
+	const unsigned char *p;
+	int hdr[4], nall, i, out_reg;
+	if (ast_op(a, n) != AST_OP_ASMGEN)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ir_cap_raw)
+		{ MCC_TRACE("br\n"); e->unknown = 1; return 1; }
+	p = ir_cap_raw + (int)(ast_ival(a, n) & 0xffffffffu);
+	memcpy(hdr, p, sizeof hdr);
+	p += sizeof hdr;
+	if (hdr[0] < 0 || hdr[2] < 0 || hdr[0] + hdr[2] > MAX_ASM_OPERANDS ||
+			hdr[1] < 0 || hdr[1] > hdr[0])
+		{ MCC_TRACE("br\n"); e->unknown = 1; return 1; }
+	nall = hdr[0] + hdr[2];
+	for (i = 0; i < hdr[0]; i++) { MCC_TRACE("br\n");
+		ASMOperand op;
+		memcpy(&op, p + (size_t)i * sizeof op, sizeof op);
+		if (op.is_memory)
+			{ MCC_TRACE("br\n"); e->eff |= MCC_ASM_EFF_MEM; }
+		if (op.reg >= 0 && op.reg < 64) { MCC_TRACE("br\n");
+			if (i < hdr[1]) { MCC_TRACE("br\n");
+				e->writes |= (uint64_t)1 << op.reg;
+				if (op.is_rw)
+					{ MCC_TRACE("br\n"); e->reads |= (uint64_t)1 << op.reg; }
+			} else { MCC_TRACE("br\n");
+				e->reads |= (uint64_t)1 << op.reg;
+			}
+		}
+	}
+	p += (size_t)nall * sizeof(ASMOperand);
+	for (i = 0; i < MCC_NB_ASM_REGS && i < 64; i++)
+		{ MCC_TRACE("br\n"); if (p[i]) { MCC_TRACE("br\n"); e->clobbers |= (uint64_t)1 << i; } }
+	out_reg = (int)(uint32_t)(ast_sym(a, n) >> 32);
+	if (out_reg >= 0 && out_reg < 64)
+		{ MCC_TRACE("br\n"); e->clobbers |= (uint64_t)1 << out_reg; }
+	e->eff |= hdr[3];
+	if (hdr[2] > e->nlabels)
+		{ MCC_TRACE("br\n"); e->nlabels = hdr[2]; }
+	return 1;
+}
+
+/* The union over every asm in the body. Both ASMGEN halves of one asm decode
+   the same blob, so unioning them is idempotent. An AST_OP_ASM with no ASMGEN
+   beside it cannot happen from asm_instr, which brackets every ir_cap_asm with
+   the pair -- but if one ever appears, it answers `unknown`. */
+static int ast_body_asm_eff(const AstArena *a, AstAsmEff *e) { MCC_TRACE("enter\n");
+	AstLocal nn = ast_count(a), n;
+	int any = 0, texts = 0, gens = 0;
+	memset(e, 0, sizeof *e);
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		int op = ast_op(a, n);
+		if (op == AST_OP_ASM)
+			{ MCC_TRACE("br\n"); texts++; }
+		if (ast_asm_eff_node(a, n, e))
+			{ MCC_TRACE("br\n"); any = 1; gens++; }
+	}
+	if (texts && !gens)
+		{ MCC_TRACE("br\n"); e->unknown = 1; any = 1; }
+	return any;
+}
+
+static int ast_asm_eff_is_fence(const AstAsmEff *e) { MCC_TRACE("enter\n");
+	return e->unknown || (e->eff & (MCC_ASM_EFF_MEM | MCC_ASM_EFF_GOTO));
+}
+
 /* A childless Ref whose r is `<machine register>|VT_LVAL` says "dereference
    whatever is in that register". Nothing in the tree produces it: the register
    was filled by a sibling's emission -- the op-assign vdup of `*f() += 7` or of
@@ -5482,12 +5567,15 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 					memcpy(vstack, ir_cap_vs + vs_off, (size_t)vs_n * sizeof(SValue));
 					vtop = vstack + vs_n - 1;
 				}
-				memcpy(&nb_operands, p, sizeof nb_operands);
-				memcpy(&nb_outputs, p + sizeof(int), sizeof nb_outputs);
-				p += 2 * sizeof(int);
-				if (nb_operands > 0)
-					{ MCC_TRACE("br\n"); memcpy(ops, p, (size_t)nb_operands * sizeof *ops); }
-				p += (size_t)nb_operands * sizeof *ops;
+				int hdr[4], nall;
+				memcpy(hdr, p, sizeof hdr);
+				p += sizeof hdr;
+				nb_operands = hdr[0];
+				nb_outputs = hdr[1];
+				nall = hdr[0] + hdr[2];
+				if (nall > 0)
+					{ MCC_TRACE("br\n"); memcpy(ops, p, (size_t)nall * sizeof *ops); }
+				p += (size_t)nall * sizeof *ops;
 				memcpy(cr, p, sizeof cr);
 				asm_gen_code(ops, nb_operands, nb_outputs,
 										 (int)(ast_sym(a, s) & 0xffffffff), cr,
@@ -16302,6 +16390,24 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			volatile int ast_replay_completed = 0;
 			const char *volatile ast_unf_why = "abort";
 			const int ast_fn_hole = ast_arena_has_hole(ast_cur);
+			AstAsmEff ast_fn_asm;
+			const int ast_fn_has_asm = ast_body_asm_eff(ast_cur, &ast_fn_asm);
+			if (ast_fn_has_asm && ast_env_int("MCC_ASM_EFF", 0)) { MCC_TRACE("br\n");
+				fprintf(stderr,
+								"[asm-eff] %s reads=%llx writes=%llx clob=%llx vol=%d goto=%d "
+								"mem=%d cc=%d x87=%d ccout=%d labels=%d unknown=%d\n",
+								funcname ? funcname : "?",
+								(unsigned long long)ast_fn_asm.reads,
+								(unsigned long long)ast_fn_asm.writes,
+								(unsigned long long)ast_fn_asm.clobbers,
+								!!(ast_fn_asm.eff & MCC_ASM_EFF_VOLATILE),
+								!!(ast_fn_asm.eff & MCC_ASM_EFF_GOTO),
+								!!(ast_fn_asm.eff & MCC_ASM_EFF_MEM),
+								!!(ast_fn_asm.eff & MCC_ASM_EFF_CC),
+								!!(ast_fn_asm.eff & MCC_ASM_EFF_X87),
+								!!(ast_fn_asm.eff & MCC_ASM_EFF_CCOUT),
+								ast_fn_asm.nlabels, ast_fn_asm.unknown);
+			}
 			int promoted = 0;
 			ast_search_axis_ran = 0;
 			int bfolds = 0;
