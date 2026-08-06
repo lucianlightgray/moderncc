@@ -1878,6 +1878,16 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 	return loc;
 }
 
+/* Drop one entry from the recorded offset stream without moving `loc`. The
+   stream is positional -- the Nth ast_alloc_loc of the replay takes the Nth
+   offset the parser handed out -- so a replay that legitimately skips one of the
+   parser's allocations has to say so, or every offset after it is off by one and
+   a later request silently lands on a slot sized for an earlier one. */
+static void ast_locrec_skip(void) { MCC_TRACE("enter\n");
+	if (ast_replaying && !ir_cap_replaying && ast_locrec_i < ast_locrec_n)
+		{ MCC_TRACE("br\n"); ast_locrec_i++; }
+}
+
 int ast_ltemp_overlaps(int lo, int sz) { MCC_TRACE("enter\n");
 	for (int t = 0; t < ast_ltemp_n; t++) { MCC_TRACE("br\n");
 		int a = ast_ltemp_off[t];
@@ -2942,6 +2952,16 @@ static int ast_inline_graft(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int ral, rsz = type_size(&ast_graft_rt, &ral);
 	if (rsz < 1)
 		{ MCC_TRACE("br\n"); rsz = 8; }
+	/* The call this graft replaced would have landed its struct return in a slot
+	   from ast_alloc_loc -- see the VT_STRUCT arm of AST_Call, which allocates
+	   exactly once, after the arguments and whether the ABI returns in registers
+	   or in memory. The graft carves its own slot out of the private region below
+	   `bias` instead, so that recorded offset goes unclaimed. Retire it here or it
+	   is handed to whatever allocates next: types/const_member_copy gave a
+	   16-byte _Complex the 8-byte slot recorded for make()'s return and wrote four
+	   bytes past %rbp. Only struct returns; void and scalar ones never recorded. */
+	if ((ast_type_t(a, n) & VT_BTYPE) == VT_STRUCT)
+		{ MCC_TRACE("br\n"); ast_locrec_skip(); }
 	loc = (loc - rsz) & -(ral > 0 ? ral : 1);
 	ast_inline_bias = bias;
 	ast_in_graft = 1;
