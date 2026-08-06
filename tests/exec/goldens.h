@@ -143,6 +143,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"signbit_inline", "run", "exec/codegen/signbit_inline.c", "OK\n", "", "", ""},
 		{"overflow_narrow", "run", "exec/codegen/overflow_narrow.c", "OK\n", "", "", ""},
 		{"overflow_inline", "run", "exec/codegen/overflow_inline.c", "OK\n", "", "", ""},
+		{"select_two_word", "run", "exec/codegen/select_two_word.c", "PASS\n", "", "", ""},
 		{"alloca_inline", "run", "exec/codegen/alloca_inline.c", "14 160 81 42 4096\n", "", "", ""},
 		{"popcount_inline", "run", "exec/codegen/popcount_inline.c", "pop 0 32 64\npar 1 0\nOK\n", "", "", ""},
 		{"atomic_fetch_inline", "run", "exec/codegen/atomic_fetch_inline.c", "counter=28 lcounter=400000 cas=240000 lock=0\n", "", "", ""},

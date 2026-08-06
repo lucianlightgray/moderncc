@@ -11110,6 +11110,8 @@ static int ast_sel_safe(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 }
 
 static int ast_sel_gpr(int tt) { MCC_TRACE("enter\n");
+	if (USING_TWO_WORDS(tt))
+		{ MCC_TRACE("br\n"); return 0; }
 	return ast_ident_intt(tt) || (tt & VT_BTYPE) == VT_PTR;
 }
 

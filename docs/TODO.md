@@ -400,27 +400,31 @@ per level, `MCC_FORCE_REPLAY=1` on the `-O0` row. Every row reconciles.
 - ~~`expr_type()`'s unconditional `nocode_wanted++`.~~ Already fixed: `expr_type_vm`
   re-parses and evaluates a variably-modified operand. Of the 8 tests once attributed to
   it only `vla-14`, `vla-24` and `vla-stexp-1` still fail, each for a different reason.
-- **`selfhost-qemu-{i386,arm}-O2`: the `MCC_MAX_ALIGN` diagnosis was wrong.** The
-  `alignment of 16 is larger than implemented` error at `mccdefs.h:528` is a *symptom*,
-  not the defect, and `MCC_MAX_ALIGN` is not on the path at all — `parse_one_attribute`
-  never compares against it, it errors when `n != 1 << (ad->a.aligned - 1)`, i.e. when
-  the `aligned : 5` bitfield fails to round-trip. Disproof of the old reading: the cross
-  compilers `mcc-arm` and `mcc-i386` accept `__attribute((__aligned__(16)))` at `-O0`
-  through `-O3`, and stage1 → stage2 succeeds; only stage3 fails. Root cause is
-  **`-fif-conversion` miscompiling `mcc.c` for arm and i386 at `-O2`**: the stage-2
-  compiler emits a bitfield store that writes 0 whenever the RHS is a call, so
-  `ad->a.aligned = exact_log2p1(n)` lands as 0 and `1 << -1` never equals `n`.
-  Bisected against all 22 `MCC_OPTD_LEVEL(2)` rows — `-fno-if-conversion` is the only
-  one that clears it; the other 21 leave all 6 probe cases mismatched. Repro (~30 s):
-  build stage1 by hand with `cmake-cross/mcc-arm -O2 -mfloat-abi hard` per
-  `tools/qemu-selfhost.sh`, then have that stage1 compile a file containing
-  `struct A { unsigned aligned : 5; } a; a.aligned = f();` and run it under `qemu-arm` —
-  the field reads back 0. The bug is in the emitted code, not in `exact_log2p1`, which
-  returns the right value in the same run. **Being fixed on the macOS machine as of
-  2026-08-06** — do not duplicate the work; the note here is the root cause and repro.
+- ~~`selfhost-qemu-{i386,arm}-O2`~~ **Fixed 2026-08-06.** Both targets now reach a
+  byte-identical `s2 == s3` fixpoint at `-O1` and `-O2`. Two things are worth keeping:
+  - **The `MCC_MAX_ALIGN` diagnosis was wrong.** The `alignment of 16 is larger than
+    implemented` error at `mccdefs.h:528` was a *symptom*; `MCC_MAX_ALIGN` is not on
+    that path at all. `parse_one_attribute` errors when `n != 1 << (ad->a.aligned - 1)`,
+    i.e. when the `aligned : 5` bitfield fails to round-trip — and it failed because
+    **every** bitfield store in the stage-2 compiler was writing 0.
+  - **Root cause: `-fif-conversion` marked ternaries whose arms are two-word types.**
+    `ast_sel_gpr` accepted `VT_LLONG`, which is a register *pair* on a 32-bit target —
+    which is exactly why only the two 32-bit ELF targets failed. The marked body in
+    `mcc.c` was `vstore`'s bitfield mask, `bits >= 64 ? ~0ULL : (1ULL << bits) - 1`. The
+    replay path materialises the condition into a GPR *before* evaluating both arms;
+    the arms need `r0:r1` and call `__aeabi_llsl`, so the condition is spilled and then
+    reloaded into `r0` — on top of the mask's low word. The mask came out 0, so every
+    bitfield store wrote 0. `gen_select` already refuses two-word types and falls back
+    to `gen_select_branch`, so marking them bought nothing and only took the riskier
+    both-arms-first path; the fix is one guard in `ast_sel_gpr` and is a no-op on
+    64-bit, where `long long` is a single word.
+  - Regression test: `tests/exec/codegen/select_two_word.c`. Verified to fail (`mask 62`
+    and `mask 63` come back with a corrupted low word) on both arm and i386 at `-O2`
+    with the guard disabled, and to pass at `-O0`..`-O3` on x86_64, arm and i386 with it.
+    It only bites at `-O2`+, so keep it in a corpus the optfire/exec-search cells run.
 - 32-byte vectors are laid at 16-byte alignment (`MCC_MAX_ALIGN` cap on i386/arm is 8,
-  16 elsewhere) — open ABI decision, and a real constraint, but **not** the cause of the
-  self-host failure above.
+  16 elsewhere) — open ABI decision, and a real constraint, but it was **not** the cause
+  of the self-host failure above.
 - Register-array decay; const-parameter assignment; `_Atomic` complex.
 - Varargs pr92904 (32-byte-aligned param when caller align == 16); `__int128` old
   signedness coercion.
