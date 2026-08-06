@@ -313,6 +313,8 @@ def limits_run():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
 
+CAP = 1 << 20
+
 ICE_RE = re.compile(r"internal compiler error", re.I)
 ECHO_RE = re.compile(r"^\s*(?:\d+\s*)?\|")
 
@@ -417,10 +419,12 @@ class Runner:
         else:
             cmd += [src, "-o", base + ".x", "-lm"]
         try:
-            p = subprocess.run(cmd, capture_output=True, text=True, errors="replace",
+            outsink = subprocess.DEVNULL if mode == "preprocess" else subprocess.PIPE
+            p = subprocess.run(cmd, stdout=outsink, stderr=subprocess.PIPE,
+                               text=True, errors="replace",
                                timeout=self.ctimeout, preexec_fn=limits_compile,
                                cwd=work)
-            crc, cerr = p.returncode, (p.stderr or "") + (p.stdout or "" if mode != "preprocess" else "")
+            crc, cerr = p.returncode, ((p.stderr or "") + (p.stdout or ""))[:CAP]
         except subprocess.TimeoutExpired:
             rec.update(status="TIMEOUT", stage="compile")
             return self.emit(rec, base)
@@ -453,7 +457,8 @@ class Runner:
             rec.update(status="PASS", stage="compile", rc=0)
             return self.emit(rec, base)
         try:
-            q = subprocess.run([base + ".x"], capture_output=True, text=True,
+            q = subprocess.run([base + ".x"], stdout=subprocess.DEVNULL,
+                               stderr=subprocess.PIPE, text=True,
                                errors="replace", timeout=self.rtimeout,
                                preexec_fn=limits_run, cwd=work)
         except subprocess.TimeoutExpired:

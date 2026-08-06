@@ -237,6 +237,9 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   link against gcc's, so a mismatch is *silent* wrong codegen.
 - Declined upstream `7f7845cd` (VT_VOID); i386 `R_386_TLS_GOTIE` gap.
 - Raise arena fidelity / finish the capture path (Phase F).
+- **`__builtin_expect` drops its second operand's side effects** — silent wrong code, no
+  diagnostic. That and four more hand-reproduced wrong-answer defects are written up
+  under "External suites" below, where the board that found them is.
 
 ### Intermittent / to-confirm
 - `selfhost-fixpoint-memmodel-{O3,Os}` SIGSEGV'd once under heavy parallel load and
@@ -250,18 +253,109 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   *further* cells became red only because the qemu sysroots now exist:
   `selfhost-qemu-{i386,arm}-O2`, which die on `MCC_MAX_ALIGN` — see below.
 
-### External suites
-- The harness (`tools/xsuite.py`, `xsuite-report.py`, `selfhost-o3.py`,
-  `selfhost-fixpoint.py`) exists. It *understates* mcc — `KEEP_OPT_RE` drops `-Werror` /
-  `-idirafter` / `${srcdir}`; fix that before a board is quoted again.
-- **Run each suite against the *other* compiler as oracle** — clang for the gcc tree,
-  gcc for the llvm tree. That is what makes the failure column actionable: it separates
-  "mcc rejects what the other compiler accepts" from "this test wants the other
-  compiler's extension". Boards at `b8f1a80b`: gcc suite 377 FAIL / 259 XPASS, llvm 78 /
-  54, after ~100 rows closed today. A `badflag` ref verdict now scores `REFSKIP` rather
-  than counting against mcc.
-- Next clusters, already diagnosed and ranked in the archive: `__seg_fs`/`__seg_gs` named
-  address spaces (8, needs segment-prefix codegen), `alias("x")` resolved by C identifier
-  instead of asm name (5), compound literal as an initializer without braces (5), the
-  std-gated pedwarn batch (9 one-line `cversion` guards), `#pragma GCC system_header` (2,
-  the plumbing already exists for `-isystem`).
+### External suites — three-compiler board taken 2026-08-05 at `030fb4aa`
+
+The cross-oracle run the old entry here asked for is **done**, and it replaces the
+`b8f1a80b` numbers that used to be quoted in this slot. Method: render the harness plan
+once, then run it three times — clang, gcc, mcc — over both trees, and keep only the
+cells where **clang and gcc both PASS**. That set is *agnostic*: portable C two
+independent compilers agree on, under a plan the harness demonstrably renders correctly.
+mcc's misses on it are gaps. Its misses anywhere else are somebody's extension and are
+deliberately not counted.
+
+21,638 runnable tests × {`-O0`,`-O2`} = **43,318 cells** common to all three boards.
+**37,885 (87.5%) are agnostic; mcc passes 36,430 of them — 96.2%.** The 1,455 misses:
+
+| cells | files | bucket |
+| ---: | ---: | --- |
+| 574 | 288 | mcc **accepts** what both reject — missing diagnostics |
+| 400 | 203 | long tail, one to six cells each |
+| 135 | 76 | dead call survives to link — a fold mcc does not do |
+| 66 | 33 | `__bf16` unsupported (already open above) |
+| 66 | 33 | missing `__builtin_*` |
+| 61 | 32 | wrong or missing runtime answer |
+| 52 | 26 | `__m512` / `__m256h` / `__m128h` |
+| 47 | 25 | other unresolved reference |
+| 28 | 14 | `__float128` / `_Float128` |
+| 9 | 5 | `_Complex _Float16` |
+| 8 | 4 | compound-literal initializer (already open above) |
+| 4 | 2 | `_BitInt` |
+| 4 | 2 | `__seg_fs` / `__seg_gs` (already open above) |
+| 1 | 1 | ICE |
+
+Reproduce with `tools/xsuite.py --mcc <cc> --out <dir> --gcc <gcctree> --llvm <llvmtree>
+--opt=-O0 --opt=-O2`, once per compiler, then intersect on `(file, opt)`.
+
+**Caveats that must travel with this board.** Samples were re-verified by replaying the
+exact per-test command line against all three compilers: 12/12 confirmed for the XPASS
+bucket, 11/12 for FAIL — budget ~8% replay noise on run-mode cells. `ET_FALSE` hides
+whole feature families (`__int128`, vectors, LTO, profiling) from *all three* boards
+equally, so "87.5% agnostic" describes the tests the harness admits, not the trees:
+26,281 of 47,919 files are skipped by directives before anything runs. `KEEP_OPT_RE` does
+still drop `-idirafter` and `${srcdir}` — but it does **not** drop `-Werror`, contrary to
+the note this entry replaces.
+
+#### Missing diagnostics — 574 cells / 288 files, the largest single bucket
+mcc compiles these clean; gcc and clang both reject. No dominant cause — the top
+families by file count are attribute-argument validation (`access`, `assume`,
+`counted_by`, `malloc`, `format`, ~20 files), universal-character-name validation
+(out-of-UCS-codespace and malformed `\u`), `void *` and function-pointer arithmetic
+pedwarns, C++ raw strings not rejected in C, C90 non-lvalue-array rules, and asm operand
+addressability. Each is a handful of files; there is no one fix.
+
+#### Folds mcc does not do, surfacing as link failures — 135 cells / 76 files
+The gcc torture suite guards `extern void link_error(void)` behind a condition the
+optimizer must prove false; when the fold happens the symbol is never referenced and the
+link succeeds. **58 of these fail at `-O0`**, where gcc and clang still fold them in the
+front end — so this is not an `-O2` pipeline gap. Recurring shapes: `fabs(x) < 0.0`,
+`__builtin_constant_p` chains, and signed-overflow reasoning.
+
+#### Newly-confirmed wrong-answer defects, each reproduced by hand at `-O2`
+- **`__builtin_expect` discards side effects in its second operand.** `pr85156.c`:
+  `__builtin_expect(c, z++)` must still increment `z`; mcc never evaluates it, so the
+  function returns 10 where 11 is required. Silent wrong code with no diagnostic — the
+  most serious item on this list.
+- **`-fno-wrapv` does not enable signed-overflow simplification.** `fwrapv-2.c`:
+  `(2*x)/2` must fold to `x`; mcc computes the wrapped value and the test aborts.
+- **Builtin math folding loses to a local definition.** `20021127-1.c` defines an
+  aborting `llabs` and requires the compiler to fold `llabs(-1)` to 1 regardless.
+- **GNU range designators in nested initializers produce wrong data.** `gnu99-init-1.c`
+  mixes `[2 ... 4][0 ... 1][2 ... 3] = 1` with later overriding designators. Adjacent to
+  the nested-member-designator item above, but a distinct bug.
+- **C90 `if`-controlling-expression scope.** `c90-scope-1.c`: under `-std=iso9899:1990` a
+  struct declared in an `if` condition belongs to the enclosing scope, not to the `if`.
+  mcc applies C99 scoping in both modes.
+
+Do **not** refile the rest of that bucket: the `builtin-object-size` /
+`builtin-dynamic-object-size` cells are the deliberately-declined item above, and
+`vla-14` / `vla-24` are already open.
+
+#### Types the front end cannot parse
+`__m512` / `__m256h` / `__m128h` (52 cells), `__float128` / `_Float128` (28),
+`_Complex _Float16` (9), `_BitInt` (4). `_BitInt` is C23-mandatory; the rest gate the
+x86 ABI tests, which is why `gcc.target` sits ~2pp below the other suites.
+
+#### Missing `__builtin_*` — 66 cells / 33 files
+`__builtin_cpu_supports` and `__builtin_cpu_init`, `__builtin_setjmp` and
+`__builtin_longjmp`, `__builtin_addc` and the `subc` family, `__builtin_powi` /
+`__builtin_powif`, `__atomic_thread_fence`, `__builtin_eh_return_data_regno`,
+`__builtin___fprintf_chk`, `__builtin_vprintf`.
+
+#### Confirmations for the clusters the archive had ranked
+Still open, now measured on the agnostic set: `__seg_fs`/`__seg_gs` (4 cells),
+`alias("x")` resolved by C identifier instead of asm name (10), compound literal as an
+initializer without braces (8, all `gnu89-init-*` and `pedwarn-init`). The std-gated
+pedwarn batch and `#pragma GCC system_header` are inside the 400-cell long tail, whose
+own top signatures are `initializer element is not constant` (20), `invalid array size`
+(18), `constant expression expected` (16) and `string constant expected` (14).
+
+#### Harness defect found and fixed while taking this board
+`tools/xsuite.py` buffered the child's stdout in the parent for *every* mode, including
+`-E`, where it is never read. One gcc.dg preprocessor test drove clang to emit multi-GB
+of expansion; the parent held 7.4 GB resident, one worker went uninterruptible in
+page-fault and the GIL starved the other nine. Throughput collapsed from ~240 results/s
+to 8/s and the clang board could not finish. Preprocess stdout now goes to `DEVNULL`,
+run-mode stdout likewise (nothing reads it — `dg-output` is ignored), and captured
+stderr is capped at 1 MiB. Unfixed and still latent: `subprocess.run`'s timeout kills the
+driver but not the `-cc1` grandchild, so orphaned compilers accumulate and keep burning
+CPU; `preexec_fn` is also documented-unsafe under threads.
