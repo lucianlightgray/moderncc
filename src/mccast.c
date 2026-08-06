@@ -16202,6 +16202,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			   clears `faithful` for a reason that has nothing to do with the byte
 			   compare, and a body that longjmp'd out must never be kept. */
 			volatile int ast_replay_completed = 0;
+			const char *volatile ast_unf_why = "abort";
 			int promoted = 0;
 			ast_search_axis_ran = 0;
 			int bfolds = 0;
@@ -16273,11 +16274,12 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 										ast_reloc_range_equiv(rsec2->data + ast_reloc0_sv, orig_rel,
 																					(int)rel_len);
 				faithful = f_byte && f_rlen && f_rel;
-				rir_unfaithful_why = !f_len      ? "len"
-														 : !f_byte  ? "bytes"
-														 : !f_rlen  ? "rellen"
-														 : !f_rel   ? "relcontent"
-																				: "";
+				ast_unf_why = !f_len     ? "len"
+											: !f_byte  ? "bytes"
+											: !f_rlen  ? "rellen"
+											: !f_rel   ? "relcontent"
+																 : "";
+				rir_unfaithful_why = ast_unf_why;
 				ast_replay_completed = 1;
 				{ MCC_TRACE("br\n");
 					const char *pd3 = getenv("RIRPRODDUMP");
@@ -16885,6 +16887,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				loc = saved_loc;
 				anon_sym = saved_anon;
 				faithful = 0;
+				ast_unf_why = "posterr";
 			}
 			memcpy(mcc_state->error_jmp_buf, ast_outer_jmp, sizeof(jmp_buf));
 			mcc_state->error_set_jmp_enabled = ast_outer_en;
@@ -16935,8 +16938,10 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			   in free(). Take the deeper of the two whenever the body is kept. */
 			if (keep && saved_loc < loc)
 				loc = saved_loc;
-			if (ast_rir_used)
-				{ MCC_TRACE("br\n"); rir_prod_note(keep ? "used" : "fallback"); }
+			if (ast_rir_used) { MCC_TRACE("br\n");
+				rir_unfaithful_why = ast_replay_completed ? ast_unf_why : "abort";
+				rir_prod_note(keep ? "used" : "fallback");
+			}
 			if (!keep) { MCC_TRACE("br\n");
 				memcpy(cur_text_section->data + ast_body_ind_sv, orig, body_len);
 				if (rel_len)

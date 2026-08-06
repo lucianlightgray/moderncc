@@ -193,6 +193,117 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   load-bearing — ≥4 of the fallback bodies are genuinely wrong, not benign.
 - `-fno-replay-fallback` + selfhost-jit-with-mcc blows RSS ~6.7×; bisect via
   `MCC_RIR_NOFB_SKIP`. Measure on the full suite, not the 317 exec goldens.
+
+#### The fallback census was unreadable until 2026-08-06 — six defects
+
+All six are fixed; every fallback board taken before this date is suspect, and the
+`[rir-prod-why]` column of one is worthless by construction. The board below is the
+first that **reconciles** — `sum([rir-prod-unfaithful]) == fallback` at all four levels.
+Keep that identity as the check on any future census: it was 48-vs-49 at `-O2` before
+the last two fixes, and that one missing body turned out to be a real defect class.
+
+- **`[rir-prod-why]` could never print a line.** `rir_prod_why_n[]` was incremented
+  only on the `fallback` verdict, but `rir_prod_take()` sets `rir_prod_why = ""` on
+  entry and every path that reaches a `used`/`fallback` verdict returned non-NULL — so
+  the histogram was fed exclusively with the empty string and `rir_prod_report` printed
+  nothing, every run. The codes it names (`asm`, `regdangle`, `mismatch`, …) only ever
+  live on the `nomodel` → `skip` path, which was not counted. This is the mechanical
+  reason behind the archive's "`rir_prod_why` is empty in every fallback observed" —
+  that was an artefact of where the counter sat, not a fact about the bodies. Now the
+  skip path feeds the why-histogram and fallbacks feed a new
+  `[rir-prod-unfaithful]` one.
+- **`rir_unfaithful_why` was never reset per body.** It is assigned in exactly one
+  place, at the `faithful` compare in `ast_func_end`. A body whose replay longjmp'd out
+  before reaching that compare inherited the *previous* body's reason, so an aborted
+  replay was silently attributed to `len` or `bytes`.
+- **A global could not carry the reason at all — `ast_func_end` nests.** Resetting the
+  global per body is not enough: nested bodies run their own compare and overwrite it,
+  and at `-O2`/`-O3` the JIT-dispatch path runs *between* the outer body's compare and
+  its census note. The reason is now a per-body `volatile` local (`ast_unf_why`) that is
+  published to the global only in the statement before `rir_prod_note`, so nothing
+  between the two can clobber it. It is `volatile` for the same reason `faithful` is —
+  it is written inside a `setjmp` region.
+- **A byte-faithful replay could still fall back, with no bucket for it.** The last
+  unreconciled body at `-O2`/`-O3` (`host_runmem_alloc`) completes its replay *and
+  passes the byte compare*, then a later stage inside the same protected region raises
+  an error; the `else` arm clears `faithful` and the body is restored. `abort` is the
+  wrong name for it — the replay was fine, the **post-replay** work failed — so it now
+  has its own bucket, `posterr`. Distinguishing the two matters: `abort` is a
+  replay-fidelity defect, `posterr` is not, and lumping them hides both.
+- **`MCC_RIR_PROD_OUT` dropped the reason column.** The file sink wrote four fields
+  ending in `rir_prod_why`; only the stderr sink wrote `rir_unfaithful_why`. Since
+  `rir_prod_why` is always empty for a fallback (above), every fallback in a
+  `MCC_RIR_PROD_OUT` census carried *no* attribution at all — and that file is the only
+  sink that survives a full-suite run. Both sinks now emit the same five columns.
+- **The stderr line glued the two reasons together** (`"%s%s"`), so a non-empty pair
+  printed as `bailbytes`. They are separate tab-delimited columns now.
+
+#### Full-suite board with the stage-2 compiler (2026-08-06)
+
+`ctest -j32` in a `MCC_TOOLCHAIN_PROFILE=mcc` build dir, ambient `MCC_TEST_OPT` set per
+level. 8577 cells, 403 skipped, ~225 s per level. Identical at all four levels:
+**8172 pass, 2 fail** — `selfhost-qemu-arm-O2` and `selfhost-qemu-i386-O2`, the
+`-fif-conversion` defect recorded under "Open codegen / front-end defects". Nothing else
+is red, and no cell is level-dependent.
+
+- **`run-tier/{x86_64,i386}-win32` are flaky under load, not level-dependent.** They came
+  up red in the `-O2` sweep and green at the other three; re-run in isolation they pass
+  6/6 at both `-O2` and `-O3`. It is the 32-way-parallel wine cells losing a race, not a
+  codegen difference — do not chase it as an optimizer bug, and do not read a single
+  full-suite run of these two as signal.
+
+#### A stage-2 build dir does not rebuild when a header changes
+
+`MCC_TOOLCHAIN_PROFILE=mcc` build dirs do not track the amalgamated headers: after
+editing `src/mccast.c` and `src/mccrir.c`, `cmake --build cmake-selfhost` reported
+`ninja: no work to do` while `CMakeFiles/mcc.dir/src/mcc.c.o` was eight minutes older
+than both sources. Under `MCC_SINGLE_SOURCE` only `src/mcc.c` is a ninja input and every
+other `.c` arrives through it, so the header dependency has to come from a compiler
+depfile — which the gcc-built dir gets and the mcc-built dir does not. The stale binary
+is silent and plausible: it runs, it self-hosts, it passes. **Any measurement taken from
+a stage-2 dir without first forcing the object out is suspect.** Workaround is
+`rm cmake-<dir>/CMakeFiles/mcc.dir/src/mcc.c.o` before building; the fix is to make mcc
+emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
+
+#### Self-host fallback board at HEAD (2026-08-06, x86_64 Linux, mcc-built mcc)
+
+`mcc.c` compiled by the stage-2 compiler; `-O0` needs `MCC_FORCE_REPLAY=1` because
+`ast_replay_env` is `optimize >= 1 || embed_jit || forced`, so the census is otherwise
+empty there. Bodies: 2538.
+
+| level | used | fallback | skip | `len` | `bytes` | `abort` | `posterr` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `-O0` (forced) | 2426 | 120 | 12 | 97 | 18 | 5 | 0 |
+| `-O1` | 2500 | 48 | 12 | 23 | 20 | 5 | 0 |
+| `-O2` | 2499 | 49 | 12 | 23 | 20 | 5 | 1 |
+| `-O3` | 2499 | 49 | 12 | 23 | 20 | 5 | 1 |
+
+- **The `-O0` fallback set is a strict superset of the `-O1` set**, and the extra is
+  one single failure mode. 120 ⊃ 48; exactly 0 bodies fall back at `-O1` that do not
+  also fall back at forced `-O0`; and all **72** of the `-O0`-only bodies are `len` —
+  not "mostly", all of them. So the `-O1` ladder does not introduce replay divergence,
+  it *removes* 72 length divergences that the `-O0` emit path has on its own. That is
+  the opposite of the intuition the census was built on, and it relocates the defect:
+  the residual divergence is not the optimizer, it is the replay's length accounting on
+  the unoptimized emit path, which some `-O1`-gated pass happens to paper over.
+- **Next step on the census, and it is a cheap one:** find which `-O1` gate erases the
+  72. Re-run the forced-`-O0` census adding one `MCC_OPTD_LEVEL(1)` row at a time
+  (`MCC_FORCE_REPLAY=1 MCC_RIR_FORCE=1 … -f<name>`) and watch `len` fall from 97. Since
+  the 72 are a clean set difference with a single reason code, whichever gate collapses
+  them is pointing straight at the length mismatch's cause — and unlike the `bytes`
+  bodies, this one does not need a per-body byte diff to make progress on.
+- `-O2` and `-O3` differ from `-O1` by exactly one body, `host_runmem_alloc`, and are
+  identical to each other — and that one body is the `posterr` above, i.e. **not** a
+  replay divergence. On the fidelity axis the ladder above `-O1` is completely flat: the
+  same 48 bodies, in the same three buckets, at all three levels. Any future claim that
+  an `-O2`/`-O3` pass improved or regressed replay fidelity has to beat that flatness
+  first.
+- The 12 `skip`s are constant at every level: `regdangle`=8, `asm`=2, `mismatch`=2.
+- `keep = faithful || (nofb && replay_completed)` reduces to `keep = faithful` in every
+  default build: `MCC_OPT_REPLAY_FALLBACK` is `MCC_OPTD_ALWAYS` in `mccopt.h`, so
+  `ast_rir_nofb_env` is always 0 unless `-fno-replay-fallback` is passed. The comment
+  above that line in `mccast.c` claims the no-fallback path is the default — it is not,
+  and the TODO entry above (do not turn it on) is the accurate one.
 - Re-bank `o0-baseline` at HEAD on an x86_64 Linux host. **Not a macOS item — a Mac
   cannot do this, by construction.** The five ELF glibc keys need the Gentoo stage3
   sysroots under `vendor/`, and the `<arch>-fetch` cells that download them are gated on
@@ -263,13 +374,27 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
 - ~~`expr_type()`'s unconditional `nocode_wanted++`.~~ Already fixed: `expr_type_vm`
   re-parses and evaluates a variably-modified operand. Of the 8 tests once attributed to
   it only `vla-14`, `vla-24` and `vla-stexp-1` still fail, each for a different reason.
-- **`MCC_MAX_ALIGN` is 8 on i386 and arm**, 16 elsewhere, and mcc's own
-  `runtime/include/mccdefs.h:528` declares `__attribute((__aligned__(16)))`. So mcc
-  cannot compile itself on those two targets: `selfhost-qemu-{i386,arm}-O2` fail with
-  `alignment of 16 is larger than implemented`. Pre-existing (the declaration dates to
-  `560371c4`, 2026-06-28) and invisible until the qemu sysroots existed. gcc supports it
-  on i386 by realigning the stack; lifting the cap is stack-realignment work in two
-  backends.
+- **`selfhost-qemu-{i386,arm}-O2`: the `MCC_MAX_ALIGN` diagnosis was wrong.** The
+  `alignment of 16 is larger than implemented` error at `mccdefs.h:528` is a *symptom*,
+  not the defect, and `MCC_MAX_ALIGN` is not on the path at all — `parse_one_attribute`
+  never compares against it, it errors when `n != 1 << (ad->a.aligned - 1)`, i.e. when
+  the `aligned : 5` bitfield fails to round-trip. Disproof of the old reading: the cross
+  compilers `mcc-arm` and `mcc-i386` accept `__attribute((__aligned__(16)))` at `-O0`
+  through `-O3`, and stage1 → stage2 succeeds; only stage3 fails. Root cause is
+  **`-fif-conversion` miscompiling `mcc.c` for arm and i386 at `-O2`**: the stage-2
+  compiler emits a bitfield store that writes 0 whenever the RHS is a call, so
+  `ad->a.aligned = exact_log2p1(n)` lands as 0 and `1 << -1` never equals `n`.
+  Bisected against all 22 `MCC_OPTD_LEVEL(2)` rows — `-fno-if-conversion` is the only
+  one that clears it; the other 21 leave all 6 probe cases mismatched. Repro (~30 s):
+  build stage1 by hand with `cmake-cross/mcc-arm -O2 -mfloat-abi hard` per
+  `tools/qemu-selfhost.sh`, then have that stage1 compile a file containing
+  `struct A { unsigned aligned : 5; } a; a.aligned = f();` and run it under `qemu-arm` —
+  the field reads back 0. The bug is in the emitted code, not in `exact_log2p1`, which
+  returns the right value in the same run. **Being fixed on the macOS machine as of
+  2026-08-06** — do not duplicate the work; the note here is the root cause and repro.
+- 32-byte vectors are laid at 16-byte alignment (`MCC_MAX_ALIGN` cap on i386/arm is 8,
+  16 elsewhere) — open ABI decision, and a real constraint, but **not** the cause of the
+  self-host failure above.
 - Register-array decay; const-parameter assignment; `_Atomic` complex.
 - Varargs pr92904 (32-byte-aligned param when caller align == 16); `__int128` old
   signedness coercion.

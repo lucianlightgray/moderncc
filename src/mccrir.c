@@ -1103,6 +1103,10 @@ static const char *const rir_prod_why_name[RIR_PROD_NWHY] = {
 		"bail",     "noops",   "capbad", "unbal",     "ovf",   "mismatch",
 		"invalid",  "unsafe",  "asm",    "regdangle", "revargs"};
 static long rir_prod_why_n[RIR_PROD_NWHY];
+#define RIR_PROD_NUNF 6
+static const char *const rir_unfaithful_name[RIR_PROD_NUNF] = {
+		"len", "bytes", "rellen", "relcontent", "abort", "posterr"};
+static long rir_unfaithful_n[RIR_PROD_NUNF];
 static long rir_tot_c3_try, rir_tot_c3_ran, rir_tot_c3_folds, rir_tot_c3_broke;
 static long rir_tot_c3_pair, rir_tot_c3_same_folds, rir_tot_c3_same_hash;
 static long rir_tot_c3_pair_fired;
@@ -4906,19 +4910,27 @@ void rir_prod_replay_begin(void) {
 }
 
 void rir_prod_note(const char *verdict) {
-	const char *f;
+	const char *f, *unf;
+	int i;
+	int is_fb = !strcmp(verdict, "fallback");
+	unf = is_fb ? rir_unfaithful_why : "";
 	if (!strcmp(verdict, "used"))
 		rir_tot_prod_used++;
-	else if (!strcmp(verdict, "fallback")) {
-		int i;
+	else if (is_fb) {
 		rir_tot_prod_fb++;
+		for (i = 0; i < RIR_PROD_NUNF; i++)
+			if (!strcmp(rir_unfaithful_name[i], unf)) {
+				rir_unfaithful_n[i]++;
+				break;
+			}
+	} else {
+		rir_tot_prod_skip++;
 		for (i = 0; i < RIR_PROD_NWHY; i++)
 			if (!strcmp(rir_prod_why_name[i], rir_prod_why)) {
 				rir_prod_why_n[i]++;
 				break;
 			}
-	} else
-		rir_tot_prod_skip++;
+	}
 	if (rir_prod_gate < 2)
 		return;
 	f = mcc_state && mcc_state->current_filename ? mcc_state->current_filename
@@ -4926,15 +4938,14 @@ void rir_prod_note(const char *verdict) {
 	if (rir_prod_out) {
 		FILE *o = fopen(rir_prod_out, "a");
 		if (o) {
-			fprintf(o, "%s\t%s\t%s\t%s\n", verdict, f, funcname ? funcname : "?",
-							rir_prod_why);
+			fprintf(o, "%s\t%s\t%s\t%s\t%s\n", verdict, f,
+							funcname ? funcname : "?", rir_prod_why, unf);
 			fclose(o);
 		}
 		return;
 	}
-	fprintf(stderr, "[rir-prod] %s\t%s\t%s\t%s%s\n", verdict, f,
-					funcname ? funcname : "?", rir_prod_why,
-					rir_unfaithful_why);
+	fprintf(stderr, "[rir-prod] %s\t%s\t%s\t%s\t%s\n", verdict, f,
+					funcname ? funcname : "?", rir_prod_why, unf);
 }
 
 static void rir_prod_report(void) {
@@ -4945,6 +4956,10 @@ static void rir_prod_report(void) {
 		if (rir_prod_why_n[i])
 			fprintf(stderr, "[rir-prod-why] %s=%ld\n", rir_prod_why_name[i],
 							rir_prod_why_n[i]);
+	for (i = 0; i < RIR_PROD_NUNF; i++)
+		if (rir_unfaithful_n[i])
+			fprintf(stderr, "[rir-prod-unfaithful] %s=%ld\n",
+							rir_unfaithful_name[i], rir_unfaithful_n[i]);
 }
 
 void rir_prod_replay_end(void) {
