@@ -6469,7 +6469,7 @@ do_decl:
 				if (bt && !in_range(ll, t.t))
 					{ MCC_TRACE("br\n"); mcc_error("enumerator '%s' out of range of its type",
 										get_tok_str(v, NULL)); }
-				if (!bt && ll != (int64_t)(int)ll)
+				if (!bt && ll != (int64_t)(int)ll && mcc_state->cversion < 202311)
 					{ MCC_TRACE("br\n"); mcc_pedantic("ISO C restricts enumerator values "
 											 "to the range of 'int'"); }
 				ss = sym_push(v, &t, VT_CONST, 0);
@@ -8275,11 +8275,13 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			continue;
 		}
 		case TOK_TYPEOF1:
-			if (mcc_state->std_strict_ansi && mcc_state->cversion < 202311)
-				{ MCC_TRACE("br\n"); mcc_pedantic("'typeof' is a GNU extension"); }
+		case TOK_TYPEOF_UNQUAL:
+			if ((mcc_state->std_strict_ansi && mcc_state->cversion < 202311) ||
+					mcc_state->noasm)
+				{ MCC_TRACE("br\n"); goto the_end; }
+			FALLTHROUGH;
 		case TOK_TYPEOF2:
 		case TOK_TYPEOF3:
-		case TOK_TYPEOF_UNQUAL:
 			u = tok;
 			next();
 			parse_expr_type(&type1);
@@ -12019,7 +12021,8 @@ tok_next:
 			vpush_type_size(&type, &align);
 			gen_cast_s(VT_SIZE_T);
 		} else { MCC_TRACE("br\n");
-			if (type_size(&type, &align) < 0)
+			if (type_size(&type, &align) < 0 &&
+					!((type.t & (VT_ARRAY | VT_VLA)) && mcc_state->cversion >= 202400))
 				{ MCC_TRACE("br\n"); mcc_error("'_Alignof' applied to an incomplete type"); }
 			s = NULL;
 			if (vtop[1].r & VT_SYM)
@@ -12913,9 +12916,16 @@ tok_next:
 		vpush_nullptr();
 		break;
 
+	case TOK_TYPEOF1:
+	case TOK_TYPEOF_UNQUAL:
+		if (!((mcc_state->std_strict_ansi && mcc_state->cversion < 202311) ||
+					mcc_state->noasm))
+			{ MCC_TRACE("br\n"); mcc_error("expression expected before '%s'",
+												get_tok_str(tok, &tokc)); }
+		FALLTHROUGH;
 	default:
 	tok_identifier:
-		if (tok < TOK_UIDENT)
+		if (tok < TOK_UIDENT && tok != TOK_TYPEOF1 && tok != TOK_TYPEOF_UNQUAL)
 			{ MCC_TRACE("br\n"); mcc_error("expression expected before '%s'", get_tok_str(tok, &tokc)); }
 		t = tok;
 		cst_hook_use(t, cst_cur_tok_off());
@@ -14714,7 +14724,8 @@ again:
 			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids a case label that is not an integer "
 									 "constant expression"); }
 		if (tok == TOK_DOTS && gnu_ext) { MCC_TRACE("br\n");
-			mcc_pedantic("case ranges are a GNU extension");
+			if (mcc_state->cversion < 202400)
+				{ MCC_TRACE("br\n"); mcc_pedantic("case ranges are a GNU extension"); }
 			next();
 			cr->v2 = (int64_t)expr_case_const(t, &cr->v2hi);
 			if (case_cmp((uint64_t)cr->v2, cr->v2hi, (uint64_t)cr->v1, cr->v1hi) < 0)

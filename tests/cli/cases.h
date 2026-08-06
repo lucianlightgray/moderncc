@@ -416,9 +416,11 @@ static const cli_case_t cli_cases[] = {
 
 		{"strict_ansi_gnu_keyword_gate", "",
 		 "printf 'int x;\\ntypeof(x) y;\\n' > {W}/gk1.c && "
-		 "{MCC} -B{B} -std=c89 -c {W}/gk1.c -o {W}/gk1.o 2>&1 >/dev/null && echo TYPEOF_BARE_NOPEDANTIC_OK; "
-		 "{MCC} -B{B} -std=c89 -pedantic-errors -c {W}/gk1.c -o {W}/gk1.o 2>&1 | "
-		 "grep -oE \"'typeof' is a GNU extension\"; "
+		 "printf 'int typeof = 1;\\nlong typeof_unqual = 2;\\n' > {W}/gk5.c && "
+		 "{MCC} -B{B} -std=c89 -c {W}/gk5.c -o {W}/gk5.o 2>&1 >/dev/null && echo TYPEOF_IDENT_C89_OK; "
+		 "{MCC} -B{B} -std=c11 -pedantic-errors -c {W}/gk5.c -o {W}/gk5.o 2>&1 >/dev/null && echo TYPEOF_IDENT_C11_OK; "
+		 "{MCC} -B{B} -std=gnu11 -fno-asm -c {W}/gk5.c -o {W}/gk5.o 2>&1 >/dev/null && echo TYPEOF_IDENT_NOASM_OK; "
+		 "{MCC} -B{B} -std=c23 -c {W}/gk5.c -o {W}/gk5.o >/dev/null 2>&1 || echo TYPEOF_KEYWORD_C23_OK; "
 		 "printf 'int x;\\n__typeof__(x) y;\\nint main(void){return 0;}\\n' > {W}/gk2.c && "
 		 "{MCC} -B{B} -std=c89 -c {W}/gk2.c -o {W}/gk2.o 2>&1 && echo TYPEOF_RSVD_OK; "
 		 "{MCC} -B{B} -std=gnu89 -c {W}/gk1.c -o {W}/gk1.o 2>&1 >/dev/null && echo TYPEOF_GNU_OK; "
@@ -428,7 +430,7 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'int main(void){ __asm__(\\042\\042); return 0; }\\n' > {W}/gk4.c && "
 		 "{MCC} -B{B} -std=c89 -c {W}/gk4.c -o {W}/gk4.o 2>&1 | "
 		 "grep -oE \"'__asm__' is a GNU extension\"; echo ASM_RSVD_OK; echo END",
-		 "TYPEOF_BARE_NOPEDANTIC_OK\n'typeof' is a GNU extension\nTYPEOF_RSVD_OK\nTYPEOF_GNU_OK\n'asm' is a GNU extension\nASM_RSVD_OK\nEND\n"},
+		 "TYPEOF_IDENT_C89_OK\nTYPEOF_IDENT_C11_OK\nTYPEOF_IDENT_NOASM_OK\nTYPEOF_KEYWORD_C23_OK\nTYPEOF_RSVD_OK\nTYPEOF_GNU_OK\n'asm' is a GNU extension\nASM_RSVD_OK\nEND\n"},
 
 		{"strict_ansi_asm_keyword_compiles", "asm",
 		 "printf 'int main(void){ asm(\\042\\042); return 0; }\\n' > {W}/gk5.c && "
@@ -2083,6 +2085,15 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -std=c23 -pedantic-errors -c {W}/av.c -o /dev/null 2>&1 && echo VENDOR_OK; } | "
 		 "grep -oE \"attribute ignored|VENDOR_OK\" | sort | uniq -c | sed 's/^ *//'",
 		 "1 VENDOR_OK\n2 attribute ignored\n"},
+
+		{"typeof_is_not_a_keyword_when_std_says_so", "",
+		 "printf 'int typeof = 1;\\nlong typeof_unqual = 2;\\nint main(void){return typeof + (int)typeof_unqual - 3;}\\n' > {W}/tq.c && "
+		 "{ {MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/tq.c -o /dev/null 2>&1 && echo C11_OK; "
+		 "{MCC} -B{B} -I{I} -std=gnu11 -fno-asm -c {W}/tq.c -o /dev/null 2>&1 && echo NOASM_OK; "
+		 "{MCC} -B{B} -I{I} -std=gnu11 -c {W}/tq.c -o /dev/null 2>&1 || echo GNU_KEYWORD; "
+		 "{MCC} -B{B} -I{I} -std=c23 -c {W}/tq.c -o /dev/null 2>&1 || echo C23_KEYWORD; } | "
+		 "grep -oE 'C11_OK|NOASM_OK|GNU_KEYWORD|C23_KEYWORD' | sort | uniq -c | sed 's/^ *//'",
+		 "1 C11_OK\n1 C23_KEYWORD\n1 GNU_KEYWORD\n1 NOASM_OK\n"},
 
 		{"fsyntax_only_no_output", "",
 		 "printf 'int main(void){return 0;}\\n' > {W}/so_ok.c && "

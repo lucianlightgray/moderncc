@@ -6114,6 +6114,40 @@ compile under `-pedantic-errors`. So `parse_c23_attribute_name` now reports whet
 name was scoped, and the diagnostic is `mcc_pedantic` for unscoped, `mcc_warning` for
 scoped. A first pass that pedwarned both regressed `c23-attr-syntax-2`.
 
+### Std-gated diagnostics, and `typeof` is not a keyword in strict ISO
+
+Four gates that fired in standards where the construct is *standard*:
+
+- **case ranges** (`case 1 ... 4:`) are C2Y, so the GNU-extension pedwarn is gated on
+  `cversion < 202400` — `c2y-switch-3`.
+- **enumerator values outside `int`** are C23, gated on `cversion < 202311` —
+  `c23-enum-1` gets past the pedwarn but still fails on a later assertion: mcc picks the
+  wrong underlying type for such an enum, which is a separate defect, not a gate.
+- **`alignof` on an incomplete array type** is C2Y — `c2y-align-1`,
+  `clang/test/C/C2y/n3273`.
+- **`typeof` / `typeof_unqual` are not keywords** in strict ISO before C23, nor under
+  `-fno-asm` in any mode. mcc pedwarned and parsed them as keywords anyway, so
+  `int typeof = 1;` did not compile.
+
+That last one **changed a deliberate cli case**, `strict_ansi_gnu_keyword_gate`, which
+asserted that plain `-std=c89` accepts `typeof(x) y;` and that `-pedantic-errors` merely
+pedwarns it. gcc disagrees at every pedantry level: under `-std=c89` it parses
+`typeof(x) y;` as a function declaration *named* `typeof` (it says "In function
+'typeof'"), and `int typeof = 1;` compiles under both `-std=c89` and `-std=c11`. So the
+old expectation encoded mcc's behaviour rather than the standard's, and the case now
+asserts the identifier behaviour in c89 / c11 / `-fno-asm`, that C23 makes it a keyword
+again, and that `__typeof__` is unaffected. The `asm` half is untouched.
+
+Two spots were needed, not one: `parse_btype` (so the declaration parses) and `unary`'s
+`tok_identifier` guard, which rejects any token below `TOK_UIDENT` — a keyword token id
+— so using the name in an *expression* failed even after the declaration worked.
+
+**Not fixed: `Wvla-5`** (`-pedantic-errors -std=c89 -Wno-vla`). `-Wno-vla` should
+suppress the C90 VLA pedwarn, but `warn_vla` defaults to 0 and mcc's flag machinery
+cannot distinguish "never mentioned" from "explicitly disabled", so gating the pedwarn
+on it would silence the diagnostic for everyone. It needs a tri-state warning value,
+which is more than this one test is worth.
+
 ### Cast to union, and gnu89 `extern inline` in every gnu89 mode (12 tests)
 
 **Cast to union** (`(union U) x`, the GNU extension) was rejected by
