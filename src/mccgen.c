@@ -453,6 +453,7 @@ static void parse_expr_type(CType *type);
 static void init_putv(init_params *p, CType *type, unsigned long c);
 static void decl_initializer(init_params *p, CType *type, unsigned long c, int flags);
 static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r, int has_init, int v, int scope);
+#define INIT_CAST_ELEM 3
 static int decl(int l);
 static void expr_eq(void);
 static void vpush_type_size(CType *type, int *a);
@@ -5120,6 +5121,46 @@ static int is_compatible_unqualified_types(CType *type1, CType *type2) { MCC_TRA
 
 static void cast_error(CType *st, CType *dt) { MCC_TRACE("enter\n");
 	type_incompatibility_error(st, dt, "cannot convert '%s' to '%s'");
+}
+
+static Sym *union_cast_member(CType *type, CType *st) { MCC_TRACE("enter\n");
+	Sym *f;
+	CType sd;
+	if ((type->t & VT_BTYPE) != VT_STRUCT || type->ref->type.t != VT_UNION)
+		{ MCC_TRACE("br\n"); return NULL; }
+	sd = *st;
+	if (sd.t & VT_ARRAY)
+		{ MCC_TRACE("br\n"); sd.t &= ~(VT_ARRAY | VT_VLA); }
+	for (f = type->ref->next; f; f = f->next) { MCC_TRACE("br\n");
+		if (is_compatible_unqualified_types(&f->type, &sd))
+			{ MCC_TRACE("br\n"); return f; }
+	}
+	return NULL;
+}
+
+static void gen_union_cast(CType *type) { MCC_TRACE("enter\n");
+	AttributeDef ad;
+	int r;
+
+	if (!union_cast_member(type, &vtop->type)) { MCC_TRACE("br\n");
+		char buf[256];
+		CType st = vtop->type;
+		st.t &= ~VT_STORAGE;
+		if (st.t & VT_ARRAY)
+			{ MCC_TRACE("br\n"); st.t &= ~(VT_ARRAY | VT_VLA); }
+		type_to_str(buf, sizeof(buf), &st, NULL);
+		mcc_error("cast to union type from type '%s' not present in union", buf);
+	}
+	mcc_pedantic("ISO C forbids casts to union type");
+	if (global_expr) { MCC_TRACE("br\n");
+		if (local_scope)
+			{ MCC_TRACE("br\n"); mcc_error("initializer element is not constant"); }
+		r = VT_CONST;
+	} else
+		{ MCC_TRACE("br\n"); r = VT_LOCAL; }
+	r |= VT_LVAL;
+	memset(&ad, 0, sizeof(AttributeDef));
+	decl_initializer_alloc(type, &ad, r, INIT_CAST_ELEM, 0, 0);
 }
 
 static int aggr_has_const_member_rec(CType *type, int depth) { MCC_TRACE("enter\n");
@@ -11807,11 +11848,16 @@ tok_next:
 					gen_vector_cast(&type);
 					break;
 				}
-				if ((type.t & VT_BTYPE) == VT_STRUCT && type.ref->type.t != VT_UNION && !is_complex_type(&type)) { MCC_TRACE("br\n");
-					if (!is_compatible_unqualified_types(&type, &vtop->type))
+				if ((type.t & VT_BTYPE) == VT_STRUCT && !is_complex_type(&type)) { MCC_TRACE("br\n");
+					if (is_compatible_unqualified_types(&type, &vtop->type)) { MCC_TRACE("br\n");
+						mcc_pedantic("ISO C forbids casting nonscalar to the same type");
+					} else if (type.ref->type.t == VT_UNION) { MCC_TRACE("br\n");
+						gen_union_cast(&type);
+						CST_OPEN_AT(CST_Cast, cst_um);
+						CST_CLOSE();
+						break;
+					} else
 						{ MCC_TRACE("br\n"); mcc_error("conversion to non-scalar type requested"); }
-					else
-						{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids casting nonscalar to the same type"); }
 				}
 				gen_cast(&type);
 				if ((type.t & VT_BTYPE) == VT_VOID)
@@ -14937,6 +14983,7 @@ static void init_putz(init_params *p, unsigned long c, int size) { MCC_TRACE("en
 #define DIF_CLEAR 8
 #define DIF_OVERWRITE 16
 #define DIF_ROUTED 32
+#define DIF_UNION_CAST 64
 
 #if defined MCC_TARGET_X86_64
 #define STACK_OVERALIGN_MAX 16
@@ -15582,6 +15629,17 @@ static void decl_initializer_1(init_params *p, CType *type, unsigned long c, int
 	} else if ((flags & DIF_HAVE_ELEM) && (is_compatible_unqualified_types(type, &vtop->type) || (is_complex_type(type) &&
 																																																(is_complex_type(&vtop->type) || is_integer_btype(vtop->type.t & VT_BTYPE) || is_float(vtop->type.t))))) { MCC_TRACE("br\n");
 		goto one_elem;
+	} else if ((flags & (DIF_HAVE_ELEM | DIF_UNION_CAST)) == (DIF_HAVE_ELEM | DIF_UNION_CAST) &&
+						 (f = union_cast_member(type, &vtop->type)) != NULL) { MCC_TRACE("br\n");
+		if (flags & DIF_SIZE_ONLY) { MCC_TRACE("br\n");
+			vpop();
+		} else { MCC_TRACE("br\n");
+			int usz, ual;
+			usz = type_size(type, &ual);
+			if (!(flags & DIF_CLEAR))
+				{ MCC_TRACE("br\n"); init_putz(p, c, usz); }
+			init_putv(p, &f->type, c + f->c);
+		}
 	} else if ((type->t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
 		no_oblock = 1;
 		if ((flags & DIF_FIRST) || tok == '{') { MCC_TRACE("br\n");
@@ -16168,7 +16226,11 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		unsigned long zbss_rel0 = data_section->reloc ? data_section->reloc->data_offset : 0;
 		unsigned long ztls_rel0 =
 				tdata_section && tdata_section->reloc ? tdata_section->reloc->data_offset : 0;
-		decl_initializer(&p, type, addr, DIF_FIRST);
+		if (has_init == INIT_CAST_ELEM) { MCC_TRACE("br\n");
+			vswap();
+			decl_initializer(&p, type, addr, DIF_FIRST | DIF_HAVE_ELEM | DIF_UNION_CAST);
+		} else
+			{ MCC_TRACE("br\n"); decl_initializer(&p, type, addr, DIF_FIRST); }
 		seqp_check();
 		if (flexible_array)
 			{ MCC_TRACE("br\n"); flexible_array->type.ref->c = -1; }

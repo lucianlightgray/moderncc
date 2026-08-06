@@ -6114,6 +6114,29 @@ compile under `-pedantic-errors`. So `parse_c23_attribute_name` now reports whet
 name was scoped, and the diagnostic is `mcc_pedantic` for unscoped, `mcc_warning` for
 scoped. A first pass that pedwarned both regressed `c23-attr-syntax-2`.
 
+### Cast to union, and gnu89 `extern inline` in every gnu89 mode (12 tests)
+
+**Cast to union** (`(union U) x`, the GNU extension) was rejected by
+`type_incompatibility_error` because the cast path never special-cased a union
+destination against its member types. The result must be an addressable object rather
+than an rvalue -- `((union vx) vec).f[5] = 1` is legal -- so it routes through
+`decl_initializer_alloc` as a one-member initializer (`INIT_CAST_ELEM` /
+`DIF_UNION_CAST`) instead of getting its own codegen. A cast whose operand matches no
+member is an error naming the operand type; the extension itself is pedwarned. Closes
+`union-cast-1`, `stmt-expr-4`, `tree-ssa/coalesce-1`, `c-torture/compile/pr42708-1`,
+`clang/test/CIR/CodeGen/cast`, `clang/test/CodeGen/2008-03-24-BitField-And-Alloca`.
+
+**gnu89 `extern inline` redefinition** had two independent causes, which is why the
+reproducers disagreed with each other. `-std=gnu89` / `-std=c89` / `-ansi` never turned
+gnu89 inline semantics on -- only an explicit `-fgnu89-inline` did -- so an `extern
+inline` body under `-std=gnu89` was compiled with C99 rules and the later ordinary
+definition collided with it. Separately, the `patch_type` guard rejected any
+redefinition that itself carried `inline` or `static`, which gnu89 allows. Closes
+`gcc.dg/inline2`, `c-torture/compile/20021120-1` and the four
+`clang/test/CodeGen/{extern-inline,redef-ext-inline,2003-06-29-MultipleFunctionDefinition,2004-01-08-ExternInlineRedefine}`
+rows -- each only with its own `-std=gnu89` / `-fgnu89-inline` flag, which is what the
+harness passes and what a bare `mcc -c` does not.
+
 ### C23 `u8` closed, and it exposed a signedness bug in `u`/`U` too
 
 `u8'a'` now lexes as its own token (`TOK_U8CHAR`) with type `unsigned char`, and

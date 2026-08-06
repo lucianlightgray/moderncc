@@ -192,8 +192,16 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
 - 32-byte vectors are laid at 16-byte alignment (`MCC_MAX_ALIGN` cap) — open ABI
   decision; cross-TU to gcc is currently incompatible (struct-ABI, not SysV vector).
 - `aligned(N)` bitfields: ~139 survivors.
-- `expr_type()`'s unconditional `nocode_wanted++` evaluates VLA `sizeof`/`typeof`
-  operands — violates C99 6.5.3.4p2.
+- ~~`expr_type()`'s unconditional `nocode_wanted++`.~~ Already fixed: `expr_type_vm`
+  re-parses and evaluates a variably-modified operand. Of the 8 tests once attributed to
+  it only `vla-14`, `vla-24` and `vla-stexp-1` still fail, each for a different reason.
+- **`MCC_MAX_ALIGN` is 8 on i386 and arm**, 16 elsewhere, and mcc's own
+  `runtime/include/mccdefs.h:528` declares `__attribute((__aligned__(16)))`. So mcc
+  cannot compile itself on those two targets: `selfhost-qemu-{i386,arm}-O2` fail with
+  `alignment of 16 is larger than implemented`. Pre-existing (the declaration dates to
+  `560371c4`, 2026-06-28) and invisible until the qemu sysroots existed. gcc supports it
+  on i386 by realigning the stack; lifting the cap is stack-realignment work in two
+  backends.
 - Register-array decay; const-parameter assignment; `_Atomic` complex.
 - Varargs pr92904 (32-byte-aligned param when caller align == 16); `__int128` old
   signedness coercion.
@@ -210,13 +218,25 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   never reproduced. Unresolved — may be the orchestration hazard (relinking `mcc` under
   a running `ctest` yields phantom regressions; give parallel agents isolated
   worktrees). See the archive's parallel-agents note.
-- Reconcile the deliberate-red count: an older status snapshot says 7 `run-tier` TLS
-  reds; the 2026-08-05 notes say only the 2 PE reds remain. **Do not "fix" the
-  deliberate reds or weaken the corpus** — validate the true count against the tree; any
-  *extra* failure is a regression.
+- ~~Reconcile the deliberate-red count.~~ **Settled 2026-08-05 by running them.** It was
+  7; it is now **2**, both PE (`run-tier/{x86_64-win32,i386-win32}`, `tls` and
+  `tls_threads` each). x86_64 was fixed earlier; i386, arm and riscv64 were closed by the
+  three `-run` TLS fixes in the archive. Any *third* failure is a regression. Two
+  *further* cells became red only because the qemu sysroots now exist:
+  `selfhost-qemu-{i386,arm}-O2`, which die on `MCC_MAX_ALIGN` — see below.
 
 ### External suites
 - The harness (`tools/xsuite.py`, `xsuite-report.py`, `selfhost-o3.py`,
-  `selfhost-fixpoint.py`) exists; the boards need re-quoting at HEAD. It *understates*
-  mcc — `KEEP_OPT_RE` drops `-Werror` / `-idirafter` / `${srcdir}`; fix that before a
-  board is quoted again.
+  `selfhost-fixpoint.py`) exists. It *understates* mcc — `KEEP_OPT_RE` drops `-Werror` /
+  `-idirafter` / `${srcdir}`; fix that before a board is quoted again.
+- **Run each suite against the *other* compiler as oracle** — clang for the gcc tree,
+  gcc for the llvm tree. That is what makes the failure column actionable: it separates
+  "mcc rejects what the other compiler accepts" from "this test wants the other
+  compiler's extension". Boards at `b8f1a80b`: gcc suite 377 FAIL / 259 XPASS, llvm 78 /
+  54, after ~100 rows closed today. A `badflag` ref verdict now scores `REFSKIP` rather
+  than counting against mcc.
+- Next clusters, already diagnosed and ranked in the archive: `__seg_fs`/`__seg_gs` named
+  address spaces (8, needs segment-prefix codegen), `alias("x")` resolved by C identifier
+  instead of asm name (5), compound literal as an initializer without braces (5), the
+  std-gated pedwarn batch (9 one-line `cversion` guards), `#pragma GCC system_header` (2,
+  the plumbing already exists for `-isystem`).
