@@ -4961,7 +4961,7 @@ static int macro_subst_tok(
 	int v = s->v;
 
 	PP_PRINT(("#", v, s->d));
-	if (pp_builtin_macro(v)) { MCC_TRACE("br\n");
+	if (pp_builtin_macro(v) && !s->d) { MCC_TRACE("br\n");
 		pp_builtin_subst(tok_str, nested_list, v);
 		return 0;
 	}

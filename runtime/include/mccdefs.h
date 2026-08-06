@@ -334,7 +334,6 @@
 #endif
 
 	#define  __PRETTY_FUNCTION__ __FUNCTION__
-	#define __has_feature(x) 0
 	#define _Nonnull
 	#define _Nullable
 	#define _Nullable_result
