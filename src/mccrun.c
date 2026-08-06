@@ -970,7 +970,7 @@ static char *rt_elfsym(rt_context *rc, addr_t wanted_pc, addr_t *func_addr) { MC
 }
 
 typedef struct bt_info {
-	char file[100];
+	char file[512];
 	int line;
 	char func[100];
 	addr_t func_pc;
@@ -1386,7 +1386,8 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 found:
 	if (filename) { MCC_TRACE("br\n");
 		if (file_dir && file_dir < DIR_TABLE_SIZE &&
-				file_dir < dir_size + (version < 5) && filename[0] != '/')
+				file_dir < dir_size + (version < 5) && filename[0] != '/' &&
+				strlen(dirs[file_dir]) + 1 + strlen(filename) < sizeof bi->file)
 			{ MCC_TRACE("br\n"); snprintf(bi->file, sizeof bi->file, "%s/%s",
 							 dirs[file_dir], filename); }
 		else
