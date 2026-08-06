@@ -107,12 +107,35 @@ for a in i386 x86_64 arm arm64 riscv64; do
 	INC="$INC -I$root/src/arch/$a"
 done
 
+WSRV=""
+
+# The wineserver outlives its last client by a moment and flushes user.reg and
+# userdef.reg back into the prefix as it goes. Tearing the work tree down on top
+# of that writeback loses the race often enough to matter: rm empties
+# .wineprefix, the server recreates a registry file in it, and the final rmdir
+# fails with ENOTEMPTY. Under set -e that rm was the last command the shell ran,
+# so its status became the cell's status and ctest called the cell red even
+# though the corpus had already reported every program OK. Shut the server down
+# and wait for it before removing anything, and never let the teardown decide
+# the exit status.
+cleanup() {
+	rc=$?
+	trap - EXIT
+	if [ -n "$WSRV" ]; then
+		env WINEDEBUG=-all WINEPREFIX="$work/.wineprefix" "$WSRV" -k >/dev/null 2>&1 || :
+		env WINEDEBUG=-all WINEPREFIX="$work/.wineprefix" "$WSRV" -w >/dev/null 2>&1 || :
+	fi
+	rm -rf "$work" >/dev/null 2>&1 ||
+		{ sleep 1; rm -rf "$work" >/dev/null 2>&1; } || :
+	exit $rc
+}
+
 if [ -n "$DOCKERPLAT" ]; then
 	work=$(mktemp -d "$bdir/run-tier.XXXXXX")
 else
 	work=$(mktemp -d)
 fi
-trap 'rm -rf "$work"' EXIT
+trap cleanup EXIT
 B="$work/B"
 mkdir -p "$B/lib"
 MCC="$work/mcc"
@@ -202,6 +225,18 @@ pe)
 		done ;;
 	esac
 	[ -n "$WINE" ] || skip "no wine for $triple"
+	# The wineserver that goes with the wine picked above, so cleanup() can shut
+	# down this prefix's server without touching any other one: a suffixed build
+	# (wine64-proton-10.0.4) carries the same suffix on its server.
+	case "$WINE" in
+	wine64-* | wine32-*) WSRV="wineserver-${WINE#wine??-}" ;;
+	wine-*) WSRV="wineserver-${WINE#wine-}" ;;
+	*) WSRV=wineserver ;;
+	esac
+	if ! command -v "$WSRV" >/dev/null 2>&1; then
+		WSRV=""
+		if command -v wineserver >/dev/null 2>&1; then WSRV=wineserver; fi
+	fi
 	OBJDIR="$xdir/lib-$triple"
 	RTA="$xdir/$triple-libmccrt.a"
 	RMO="$xdir/$triple-runmain.o"
