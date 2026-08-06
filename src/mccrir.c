@@ -1092,6 +1092,7 @@ static int rir_vsup_nest;
 static int rir_acas_val;
 static int rir_after_ret;
 static long rir_tot_arena_fn, rir_tot_arena_nodes;
+static long rir_tot_raw_ops, rir_tot_raw_bytes, rir_tot_raw_fn;
 static long rir_tot_c2_skip;
 static long rir_tot_leaf, rir_tot_refill;
 static long rir_tot_c2_try, rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len,
@@ -4866,10 +4867,6 @@ struct AstArena *rir_prod_take(void) {
 	{
 		AstLocal n;
 		for (n = 0; n < ast_count(rir_arena); n++) {
-			if (ast_op(rir_arena, n) == AST_OP_ASM) {
-				rir_prod_why = "asm";
-				return NULL;
-			}
 			if (rir_prod_reg_dangle(n)) {
 				rir_prod_why = "regdangle";
 				return NULL;
@@ -5030,6 +5027,18 @@ void rir_verify(void) {
 	rir_shift_diff = -1;
 	rir_open_chains = 0;
 	rir_build();
+	{
+		int rawn = 0, rawb = 0;
+		for (i = 0; i < ir_cap_n; i++)
+			if (ir_cap_ops[i].kind == IR_OP_RAW) {
+				rawn++;
+				rawb += ir_cap_ops[i].raw_len;
+			}
+		rir_tot_raw_ops += rawn;
+		rir_tot_raw_bytes += rawb;
+		if (rawn)
+			rir_tot_raw_fn++;
+	}
 	if (rir_env >= 4) {
 		rir_to_arena();
 		rir_tot_arena_fn++;
@@ -5563,6 +5572,8 @@ static void rir_report(void) {
 						rir_tot_c3_try, rir_tot_c3_ran, rir_tot_c3_folds,
 						rir_tot_c3_broke, rir_tot_c3_pair, rir_tot_c3_same_folds,
 						rir_tot_c3_same_hash, rir_tot_c3_pair_fired);
+	fprintf(f, "[rir-raw] fn=%ld ops=%ld bytes=%ld\n", rir_tot_raw_fn,
+					rir_tot_raw_ops, rir_tot_raw_bytes);
 	fprintf(f, "[rir-kind]");
 	for (k = 0; k < AST_KIND_COUNT; k++)
 		if (rir_kindhist[k])

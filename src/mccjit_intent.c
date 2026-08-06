@@ -357,6 +357,17 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 	uint32_t ret_ref_id = 0;
 	if (!a || !buf)
 		{ MCC_TRACE("br\n"); return -1; }
+	/* The chokepoint. Both node loops below read ast_sym for EVERY node and hand
+	   it to mccjit_handles_intern, which dereferences whatever it is given -- and
+	   an asm node's sym is a packed (is_output, out_reg), so out_reg == -1 lands
+	   as 0xffffffff00000000. Refusing here rather than at the three call sites is
+	   what covers mcc_jit_submit_ast, which is externally declared, takes an
+	   arbitrary arena and validates nothing. Refusing is also the honest answer
+	   on its own terms: an asm node's ival indexes ir_cap_raw, which ir_cap_reset
+	   zeroes per function, so a serialized asm body could not be replayed even if
+	   the walk survived it. */
+	if (ast_arena_has_asm(a))
+		{ MCC_TRACE("br\n"); return -1; }
 	count = ast_count(a);
 	mccjit_handles_init(&handles);
 

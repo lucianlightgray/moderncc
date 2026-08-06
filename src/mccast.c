@@ -908,6 +908,18 @@ static void ast_slice_memo_put(uint64_t ident, uint64_t gates, int64_t size) { M
 	ast_slice_memo_n++;
 }
 
+/* The three ops whose nodes overload sym, ival and fbits with packed integers
+   instead of the Sym pointers and values every other node carries. Declared
+   here rather than beside their siblings because the first predicate that has
+   to exclude them appears this early in the file. */
+#define AST_OP_ASMGEN 0x4001a
+#define AST_OP_ASM 0x4001b
+#define AST_OP_ASMOPS 0x40025
+
+static int ast_op_is_asm(int op) { MCC_TRACE("enter\n");
+	return op == AST_OP_ASM || op == AST_OP_ASMGEN || op == AST_OP_ASMOPS;
+}
+
 static int ast_slice_win_nodes(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int k = 1;
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
@@ -915,10 +927,13 @@ static int ast_slice_win_nodes(const AstArena *a, AstLocal n) { MCC_TRACE("enter
 	return k;
 }
 
+/* AST_OP_ASMOPS is an AST_Unary WITH children, so it answered yes here and
+   could be picked as a slice window root -- splicing over it would drop the
+   asm's operand evaluation without dropping the asm itself. */
 static int ast_slice_win_root_ok(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	uint16_t k = ast_kind(a, n);
 	return (k == AST_Binary || k == AST_Unary || k == AST_Convert || k == AST_Load) &&
-				 ast_first_child(a, n) != AST_NONE;
+				 ast_first_child(a, n) != AST_NONE && !ast_op_is_asm(ast_op(a, n));
 }
 
 typedef void (*AstSliceVisitFn)(uint64_t ident, int size, uint64_t gates, void *ctx);
@@ -1959,8 +1974,6 @@ static int ast_jit_body_has_vla(void) { MCC_TRACE("enter\n");
 	}
 	return 0;
 }
-#define AST_OP_ASMGEN 0x4001a
-#define AST_OP_ASM 0x4001b
 #define AST_OP_MULHU 0x40006
 #define AST_OP_MULHS 0x40007
 #define AST_OP_FABS 0x40008
@@ -1990,7 +2003,6 @@ static int ast_jit_body_has_vla(void) { MCC_TRACE("enter\n");
 #define AST_OP_CPLXBUILD 0x40022
 #define AST_OP_VAARG 0x40023
 #define AST_OP_VASTART 0x40024
-#define AST_OP_ASMOPS 0x40025
 static int ast_bad_type(int tt);
 static uint64_t ast_sv_hi(const SValue *sv);
 
@@ -2678,7 +2690,12 @@ static int ast_fn_inlinable(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); return 0; }
 		if (k == AST_Invoke) { MCC_TRACE("br\n");
 			AstLocal ce = ast_first_child(a, n);
-			void *cs = ce != AST_NONE ? (void *)(uintptr_t)ast_sym(a, ce) : NULL;
+			/* Alone among the four callee-name lookups in this file, this one had
+			   no kind check on the callee before dereferencing its sym. Only an
+			   AST_Ref carries a Sym there. */
+			void *cs = (ce != AST_NONE && ast_kind(a, ce) == AST_Ref)
+										 ? (void *)(uintptr_t)ast_sym(a, ce)
+										 : NULL;
 			if (cs) { MCC_TRACE("br\n");
 				const char *cn = get_tok_str(((Sym *)cs)->v, NULL);
 				if (cn && strstr(cn, "setjmp"))
@@ -2735,9 +2752,29 @@ static void ast_inline_capture(Sym *fnsym) { MCC_TRACE("enter\n");
 	ast_inline_cap_ok = 1;
 }
 
+int ast_arena_has_asm(const AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++)
+		{ MCC_TRACE("br\n"); if (ast_op_is_asm(ast_op(a, n)))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
+static int ast_arena_has_hole(const AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		int op = ast_op(a, n);
+		if (op == AST_OP_ASM || op == AST_OP_ASMGEN || op == AST_OP_ASMOPS)
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
+
 static int ast_inline_graftable(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal root = ast_root(a);
 	if (ast_kind(a, root) != AST_BasicBlock)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_arena_has_hole(a))
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal nn = ast_count(a);
 	int totret = 0;
@@ -3026,7 +3063,7 @@ static int ast_has_graftable_call(AstArena *a) { MCC_TRACE("enter\n");
 
 static int ast_inline_retain(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 	if (!ast_fn_inlinable(a, sym) || ast_inline_n >= AST_INLINE_MAX ||
-			ast_inline_lookup(sym))
+			ast_inline_lookup(sym) || ast_arena_has_hole(a))
 		{ MCC_TRACE("br\n"); return 0; }
 	struct AstInlineFn *e = &ast_inline_pool[ast_inline_n++];
 	e->sym = sym;
@@ -3051,7 +3088,7 @@ static int ast_inline_retain(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 
 static int ast_reemit_retain(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 	if (!ast_inline_env || ast_reemit_poison ||
-			ast_reemit_n >= AST_INLINE_MAX)
+			ast_reemit_n >= AST_INLINE_MAX || ast_arena_has_hole(a))
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal nn = ast_count(a);
 	int has_static_call = 0;
@@ -3088,7 +3125,7 @@ static int ast_baseline_n;
 
 static int ast_baseline_retain(Sym *sym, AstArena *a, int src_base, addr_t reloc0,
 															 int chain_head) { MCC_TRACE("enter\n");
-	if (!ast_jit_env || ast_baseline_n >= AST_INLINE_MAX)
+	if (!ast_jit_env || ast_baseline_n >= AST_INLINE_MAX || ast_arena_has_hole(a))
 		{ MCC_TRACE("br\n"); return 0; }
 	Section *ts = cur_text_section;
 	Section *rs = ts->reloc;
@@ -6925,6 +6962,8 @@ static int ast_ident_pure_compute(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 int ast_fn_purity(const AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n;
 	int has_load = 0;
+	if (ast_arena_has_hole(a))
+		{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		if (ast_type_t(a, n) & VT_VOLATILE)
 			{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
@@ -6971,6 +7010,8 @@ void ast_fn_slice_profile(const AstArena *a, AstSliceProfile *out) { MCC_TRACE("
 int ast_fn_purity_noescape(const AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n;
 	int has_load = 0;
+	if (ast_arena_has_hole(a))
+		{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		if (ast_type_t(a, n) & VT_VOLATILE)
 			{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
@@ -16243,6 +16284,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			   compare, and a body that longjmp'd out must never be kept. */
 			volatile int ast_replay_completed = 0;
 			const char *volatile ast_unf_why = "abort";
+			const int ast_fn_hole = ast_arena_has_hole(ast_cur);
 			int promoted = 0;
 			ast_search_axis_ran = 0;
 			int bfolds = 0;
@@ -16388,6 +16430,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
+				const int ast_opt_ok = faithful && !ast_fn_hole;
 				if (ast_vlat_env && faithful) { MCC_TRACE("br\n");
 					AstVLat ast_vlat_ctx;
 					ast_vlat_sync(ast_cur);
@@ -16402,7 +16445,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					}
 #endif
 				}
-				if (faithful && (ast_opt_limit < 0 || ast_opt_total < ast_opt_limit)) { MCC_TRACE("br\n");
+				if (ast_opt_ok && (ast_opt_limit < 0 || ast_opt_total < ast_opt_limit)) { MCC_TRACE("br\n");
 					if (ast_math_inline_prepass_env)
 						{ MCC_TRACE("br\n"); math_inlined = ast_math_inline_run(ast_cur); }
 					if (ast_interchange_env)
@@ -16415,17 +16458,17 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				AstGateMask ast_search_sv_gates = ast_search_gates_now();
 				if (!ast_strat_order_forced)
 					{ MCC_TRACE("br\n"); ast_strat_order_reset(); }
-				if (faithful && ast_search_env && ast_search_seconds > 0) { MCC_TRACE("br\n");
-					ast_search_select(sym, faithful, saved_loc, saved_anon);
-					ast_search_axis_pick(sym, faithful, saved_loc, saved_anon);
+				if (ast_opt_ok && ast_search_env && ast_search_seconds > 0) { MCC_TRACE("br\n");
+					ast_search_select(sym, ast_opt_ok, saved_loc, saved_anon);
+					ast_search_axis_pick(sym, ast_opt_ok, saved_loc, saved_anon);
 				}
-				if (faithful && ast_roi_env) { MCC_TRACE("br\n");
+				if (ast_opt_ok && ast_roi_env) { MCC_TRACE("br\n");
 					AstArena *roi_pr = ast_arena_clone(ast_cur);
 					if (roi_pr)
-						{ MCC_TRACE("br\n"); ast_search_roi_order(sym, faithful, saved_loc,
+						{ MCC_TRACE("br\n"); ast_search_roi_order(sym, ast_opt_ok, saved_loc,
 																								saved_anon, roi_pr); }
 				}
-				if (faithful && ast_slice_env) { MCC_TRACE("br\n");
+				if (ast_opt_ok && ast_slice_env) { MCC_TRACE("br\n");
 					ast_slice_consume();
 					(void)ast_slice_window_scan(ast_cur, (uint64_t)ast_search_gates_now());
 				}
@@ -16433,7 +16476,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					int sf[AST_STRAT_COUNT];
 					for (int si = 0; si < AST_STRAT_COUNT; si++)
 						{ MCC_TRACE("br\n"); sf[si] = 0; }
-					ast_run_strat_cycle(ast_cur, sym, faithful, ast_strat_order,
+					ast_run_strat_cycle(ast_cur, sym, ast_opt_ok, ast_strat_order,
 															ast_strat_order_n, sf);
 					if (mcc_stats_mask)
 						{ MCC_TRACE("br\n"); mcc_stats_strat_hits(sf, AST_STRAT_COUNT); }
@@ -16469,12 +16512,12 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				int do_sethi = sethis > 0;
 				int do_tco = tcos > 0;
 				int do_select = selects > 0;
-				int do_inline = faithful && !do_tco && !ast_inline_pass_env &&
+				int do_inline = ast_opt_ok && !do_tco && !ast_inline_pass_env &&
 												ast_has_graftable_call(ast_cur);
 				if (ast_search_axis_ran && !ast_search_pick_inline)
 					{ MCC_TRACE("br\n"); do_inline = 0; }
 				ast_no_callful_promo = do_inline;
-				int do_promote = faithful && !do_tco &&
+				int do_promote = ast_opt_ok && !do_tco &&
 												 ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
 				MCC_TRACE("branch %s faithful=%d inline=%d promote=%d tco=%d\n",
@@ -16504,7 +16547,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						!do_bf && !do_sethi && !do_tco && !do_narrow && !do_divmagic && !do_select &&
 						!do_cload && !interchanged && !fused && !tiled && !math_inlined)
 					{ MCC_TRACE("br\n"); loc = saved_loc; }
-				if (ast_jit_splice_env && faithful) { MCC_TRACE("br\n");
+				if (ast_jit_splice_env && ast_opt_ok) { MCC_TRACE("br\n");
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
@@ -16578,7 +16621,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					promoted = ast_promo_n;
 #undef AST_PF_EMIT
 				}
-				if (ast_jit_dispatch_env && faithful && !ast_jit_splice_env &&
+				if (ast_jit_dispatch_env && ast_opt_ok && !ast_jit_splice_env &&
 						ast_jit_want(funcname, sym) &&
 #if defined(MCC_TARGET_ARM64)
 						ast_jit_dispatch_env == 6 && mcc_state &&
@@ -17036,8 +17079,16 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			mcc_free(orig_rel);
 		}
 #ifdef MCC_EMBED_JIT
+		/* The fourth path that keeps an arena past ast_func_end, and the one the
+		   three retain guards above missed. mccjit_intent_serialize walks every
+		   node and interns ast_sym as a Sym handle; an asm node's sym is not a Sym
+		   at all but a packed (is_output, out_reg), so out_reg == -1 arrives as
+		   0xffffffff00000000 and the intern dereferences it. Independently of
+		   that, a stashed arena has the same lifetime defect as a retained one:
+		   raw_off and vs_off index ir_cap_raw and ir_cap_vs, which ir_cap_reset
+		   zeroes for every function. */
 		if ((ast_jit_dispatch_env || ast_jit_fns_n > 0) && ast_fn_faithful &&
-				ast_cur && ast_jit_want(funcname, sym))
+				ast_cur && ast_jit_want(funcname, sym) && !ast_arena_has_hole(ast_cur))
 			{ MCC_TRACE("br\n"); mccjit_embed_stash_leaf(ast_cur, sym); }
 #endif
 		int keep_inline = ast_fn_faithful && ast_inline_retain(ast_cur, sym);
