@@ -2296,6 +2296,8 @@ static int rir_addr_late;
 static int rir_ternn;
 static int rir_lorn;
 
+static AstLocal rir_callargs[VSTACK_SIZE];
+
 static void rir_op_effect(const RirOp *ro) {
 	const IrCapOp *o = &ro->p;
 	int k;
@@ -2649,9 +2651,9 @@ static void rir_op_effect(const RirOp *ro) {
 	case IR_OP_CALL: {
 		AstLocal n;
 		int na = o->a0;
-		AstLocal args[32];
+		AstLocal *args = rir_callargs;
 		int nfixed = -1;
-		if (na < 0 || na > 32) {
+		if (na < 0 || na > (int)(sizeof rir_callargs / sizeof rir_callargs[0])) {
 			rir_arena_mismatch++;
 			na = 0;
 		}
