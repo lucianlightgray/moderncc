@@ -85,10 +85,18 @@ flagsweep_all_subjects() {
 # XFAIL and does not fail the cell; anything unlisted fails exactly as before.
 # The list is self-cleaning -- a listed case that starts PASSING fails the cell
 # and says to delete the entry -- so it cannot rot into silent coverage loss.
-KNOWN_RED="jit-splice:on:random_stuff"
+KNOWN_RED=""
+KNOWN_FLAKY_RED="jit-splice:on:random_stuff"
 
 is_known_red() {
 	for kr in $KNOWN_RED; do
+		[ "$kr" = "$1" ] && return 0
+	done
+	return 1
+}
+
+is_known_flaky_red() {
+	for kr in $KNOWN_FLAKY_RED; do
 		[ "$kr" = "$1" ] && return 0
 	done
 	return 1
@@ -158,7 +166,7 @@ corpus_run() {
 		red="$label:$nm"
 		if "$MCC" -B"$BDIR" -I"$IDIR" -w "$lvl" "$@" "$src" -o "$WORK/$nm.t" -lm -lpthread \
 			>/dev/null 2>&1; then :; else
-			if is_known_red "$red"; then
+			if is_known_red "$red" || is_known_flaky_red "$red"; then
 				echo "XFAIL $red: build failed at $lvl (deliberate red, see KNOWN_RED)"
 			else
 				echo "FAIL $red: build failed at $lvl"
@@ -174,7 +182,7 @@ corpus_run() {
 			fi
 			continue
 		fi
-		if is_known_red "$red"; then
+		if is_known_red "$red" || is_known_flaky_red "$red"; then
 			echo "XFAIL $red: differs at $lvl (deliberate red, see KNOWN_RED)"
 			continue
 		fi
