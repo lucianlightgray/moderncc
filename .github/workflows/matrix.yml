@@ -104,15 +104,16 @@ jobs:
       - name: install wine (linux pe cell drives pe-wine-conformance)
         if: ${{ startsWith(matrix.runner, 'ubuntu') && matrix.feature == 'pe' && !matrix.skip }}
         run: |
-          if [ "$(dpkg --print-architecture)" = amd64 ]; then
-            sudo dpkg --add-architecture i386
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends wine64 wine32 || \
-              sudo apt-get install -y --no-install-recommends wine
-          else
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends wine || true
+          arch=$(dpkg --print-architecture)
+          if [ "$arch" != amd64 ]; then
+            echo "no wine on $arch: the PE validators are x86-only, so the"
+            echo "wine-gated tests skip (77) rather than run under an arm64 wine"
+            exit 0
           fi
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wine64 wine32 || \
+            sudo apt-get install -y --no-install-recommends wine
           wine64 --version || wine --version || true
       - name: install deps (macos)
         if: startsWith(matrix.runner, 'macos')
