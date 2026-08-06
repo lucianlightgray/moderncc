@@ -32,6 +32,59 @@ Bytes outside any body (prologue/epilogue, inter-function padding) belong to
 neither layer and are reported separately so the accounting reconciles against
 the object's real .text size.
 
+Beside modelled/gap there is a third, orthogonal census: LOWERABLE. Byte
+coverage only proves the arena can regenerate the SAME target's code.
+Retargeting a slice to a GPU compute shader is strictly stronger, so the
+lowerable census asks a different question of the same arena: what share of it
+is a candidate for shader lowering at all? The predicate is one function,
+ast_low_node() in src/mccast.c, and it is deliberately conservative -- a node
+counts as lowerable only when we are sure. Every node gets exactly one class:
+
+  ok      nothing below applies
+  asm     an inline-asm node (AST_OP_ASM / ASMGEN / ASMOPS)
+  reg     a Ref whose r names host machine state: a hardware register
+          (valmask < VT_CONST) or VT_CMP / VT_JMP / VT_JMPI
+  opaque  AST_Poison, or an op with no portable meaning: VLA, VLA_RESTORE,
+          VAARG, VASTART, GGOTO, the atomics (AXADD, AXCHG, ACMPXCHG,
+          ACASRMW, BITB) and the complex builders (CPLXBUILD, IMAG)
+  call    AST_Invoke.  Slices are the code BETWEEN anonymous invokes, so an
+          invoke inside a region ends it by definition
+  type    not type-complete: ast_bad_type() (struct, bitfield, long double,
+          __int128, _Float128), a Convert with no operand, or a dereference
+          (Load / Store / MEMBER / MEMBER_ARROW) whose address operand does
+          not derive from any node with a recorded pointer/array/struct type.
+          That last clause is what catches the known defect where a cast
+          emitting no machine code leaves no trace in the arena, so the
+          replay's -> sees an integer: tests/rir/gap/abort.c scores `type`.
+  frame   the value's meaning is a host frame offset: AST_OP_ADDR, a VT_LLOCAL
+          Ref, or a VT_LOCAL Ref (see the locals level below)
+  global  a Ref carrying VT_SYM -- a host link-time address
+
+A node is CLEAN when its whole subtree is ok, i.e. it roots a maximal
+lowerable region.  A body is lowerable when every node in its arena is ok.
+
+The VT_LOCAL rule is the one genuinely open question (a local's `ival` is the
+parser's own frame offset), so it is a level, and all three are measured in a
+single walk:
+
+  0 strict   every VT_LOCAL Ref is frame-dependent.
+  1 default  a VT_LOCAL Ref is frame-INdependent iff no node anywhere in the
+             same arena takes the address of a local (no AST_OP_ADDR, no
+             VT_LLOCAL Ref) and the Ref's own type is a scalar the arena
+             models.  Rationale: with no address-of-local in the body no
+             local's address is observable, so every slot is a pure value
+             cell and its offset is only a name.
+  2 loose    a VT_LOCAL Ref never disqualifies.
+
+Pointer VALUES are allowed at every level: a pointer that reaches the region
+is a buffer binding to be resolved at the region boundary, not a frame
+dependency.
+
+Compiler side: MCC_RIR_PROD=2 (or MCC_RIR_LOW=1) emits `[rir-low]` and
+`[rir-low-why]` aggregates.  MCC_RIR_LOW_DUMP=<func> prints the per-node
+classification of one body.  Only percentages are banked, never totals: the
+census body total is not stable run to run at fixed HEAD.
+
 The compiler side is `MCC_RIR_PROD=2` (see src/mccrir.c rir_prod_note): one
 tab-separated row per body
 
@@ -44,8 +97,9 @@ stderr instead). Both are parsed here.
 Usage:
   tools/rir-coverage.py <build-dir> [--levels O0,O1,O2,O3]
                         [--corpus self|wide|exec] [--layers both|arena|capture]
-                        [--bank FILE] [--update-bank] [--top N] [--json FILE]
-                        [--classify] [--check-gap-dir] [--nofb-probe]
+                        [--bank FILE] [--update-bank] [--update-bank-low]
+                        [--top N] [--json FILE] [--classify] [--check-gap-dir]
+                        [--check-low-dir] [--nofb-probe]
 
 Exit status is 0 when every level is at or above its banked coverage and the
 byte accounting reconciles against the objects' real .text size.
@@ -58,6 +112,20 @@ DEFAULT_BANK = os.path.join(ROOT, "tests", "rir", "coverage-bank.json")
 UNF = ["len", "bytes", "rellen", "relcontent", "abort", "posterr"]
 WHY = ["bail", "noops", "capbad", "unbal", "ovf", "mismatch", "invalid",
        "unsafe", "asm", "regdangle", "revargs", "replayok"]
+
+LOWCLS = ["asm", "reg", "opaque", "call", "type", "frame", "global"]
+LOWKEYS = (["bodies", "bytes", "nodes"] +
+           ["clean%d" % i for i in range(3)] +
+           ["ok%d" % i for i in range(3)] +
+           ["okbytes%d" % i for i in range(3)] +
+           ["regions%d" % i for i in range(3)] +
+           ["nmin%d" % i for i in range(3)] +
+           ["nbig%d" % i for i in range(3)])
+LOWLVL = ["strict", "default", "loose"]
+LOW_MIN, LOW_BIG = 3, 16
+LOW_BANKED = ["bodies_pct", "bytes_pct", "nodes_pct",
+              "nodes_pct_strict", "nodes_pct_loose",
+              "region_nodes_pct", "big_region_nodes_pct"]
 
 
 def find_mcc(bdir):
@@ -144,7 +212,9 @@ def parse_report(stderr):
          "cap_b_faith": 0, "cap_b_unfaith": 0, "cap_b_err": 0, "cap_n_err": 0,
          "cap_raw_fn": 0, "cap_raw_b": 0,
          "reemit": 0, "b_reemit": 0,
-         "unf": {}, "why": {}}
+         "unf": {}, "why": {}, "low": {}}
+    for k in LOWKEYS:
+        r["low_" + k] = 0
     for line in stderr.splitlines():
         f = line.replace("\r", "").split()
         if not f:
@@ -192,6 +262,16 @@ def parse_report(stderr):
             r["b_nonbody"] += int(m["nonbody"])
             r["reemit"] += int(m.get("reemit", 0))
             r["b_reemit"] += int(m.get("reemitbytes", 0))
+        elif f[0] in ("[rir-low]", "[rir-low-region]"):
+            m = dict(kv.split("=") for kv in f[1:] if "=" in kv)
+            for k in LOWKEYS:
+                r["low_" + k] += int(m.get(k, 0))
+        elif f[0] == "[rir-low-why]":
+            m = dict(kv.split("=") for kv in f[1:] if "=" in kv)
+            name = f[1].split("=")[0]
+            cur = r["low"].setdefault(name, [0, 0, 0, 0, 0])
+            for i, k in enumerate((name, "bytes", "nodes", "sole", "solebytes")):
+                cur[i] += int(m.get(k, 0))
         elif f[0] in ("[rir-prod-unfaithful]", "[rir-prod-why]"):
             key = "unf" if f[0] == "[rir-prod-unfaithful]" else "why"
             name, n = f[1].split("=")
@@ -206,9 +286,9 @@ def merge(a, b):
     for k, v in b.items():
         if isinstance(v, dict):
             for name, pair in v.items():
-                cur = a[k].setdefault(name, [0, 0])
-                cur[0] += pair[0]
-                cur[1] += pair[1]
+                cur = a[k].setdefault(name, [0] * len(pair))
+                for i in range(len(pair)):
+                    cur[i] += pair[i]
         else:
             a[k] += v
     return a
@@ -289,6 +369,73 @@ def pct(a, b):
 
 
 DISCARD = ("len", "bytes", "rellen", "relcontent", "posterr")
+
+
+def lowerable(c):
+    """Lowerable census -> percentages only (see the module docstring)."""
+    nb, nn = c["low_bodies"], c["low_nodes"]
+    bb = c["low_bytes"]
+    out = {"bodies": nb, "nodes": nn,
+           "bodies_pct": round(pct(c["low_ok1"], nb), 4),
+           "bytes_pct": round(pct(c["low_okbytes1"], bb), 4),
+           "nodes_pct": round(pct(c["low_clean1"], nn), 4),
+           "nodes_pct_strict": round(pct(c["low_clean0"], nn), 4),
+           "nodes_pct_loose": round(pct(c["low_clean2"], nn), 4),
+           "bodies_pct_strict": round(pct(c["low_ok0"], nb), 4),
+           "bodies_pct_loose": round(pct(c["low_ok2"], nb), 4),
+           "bytes_pct_strict": round(pct(c["low_okbytes0"], bb), 4),
+           "bytes_pct_loose": round(pct(c["low_okbytes2"], bb), 4),
+           "region_nodes_pct": round(pct(c["low_nmin1"], nn), 4),
+           "big_region_nodes_pct": round(pct(c["low_nbig1"], nn), 4),
+           "region_nodes_pct_strict": round(pct(c["low_nmin0"], nn), 4),
+           "big_region_nodes_pct_strict": round(pct(c["low_nbig0"], nn), 4),
+           "region_nodes_pct_loose": round(pct(c["low_nmin2"], nn), 4),
+           "big_region_nodes_pct_loose": round(pct(c["low_nbig2"], nn), 4),
+           "regions": c["low_regions1"],
+           "blockers": {}}
+    for name in LOWCLS:
+        n, b, nd, sn, sb = c["low"].get(name, [0, 0, 0, 0, 0])
+        out["blockers"][name] = {
+            "bodies_pct": round(pct(n, nb), 4),
+            "bytes_pct": round(pct(b, bb), 4),
+            "nodes_pct": round(pct(nd, nn), 4),
+            "sole_bodies_pct": round(pct(sn, nb), 4),
+            "sole_bytes_pct": round(pct(sb, bb), 4)}
+    return out
+
+
+def print_lowerable(low):
+    print("   LOWERABLE census (provisional predicate; locals level 1 = default)")
+    print("     denominator: %d arena-modelled bodies, %d arena nodes"
+          % (low["bodies"], low["nodes"]))
+    print("     WHOLE BODIES lowerable  %.3f%% of bodies  %.3f%% of modelled "
+          "body bytes" % (low["bodies_pct"], low["bytes_pct"]))
+    print("     REGIONS (nodes in a maximal lowerable subtree)  "
+          "strict %.3f%%  default %.3f%%  loose %.3f%%"
+          % (low["nodes_pct_strict"], low["nodes_pct"], low["nodes_pct_loose"]))
+    print("     whole bodies by locals level: strict %.3f%%  default %.3f%%  "
+          "loose %.3f%%  (of body bytes)"
+          % (low["bytes_pct_strict"], low["bytes_pct"], low["bytes_pct_loose"]))
+    print("     nodes in maximal regions >=%d nodes  strict %.3f%%  "
+          "default %.3f%%  loose %.3f%%"
+          % (LOW_MIN, low["region_nodes_pct_strict"], low["region_nodes_pct"],
+             low["region_nodes_pct_loose"]))
+    print("     nodes in maximal regions >=%d nodes  strict %.3f%%  "
+          "default %.3f%%  loose %.3f%%   (%d maximal regions)"
+          % (LOW_BIG, low["big_region_nodes_pct_strict"],
+             low["big_region_nodes_pct"], low["big_region_nodes_pct_loose"],
+             low["regions"]))
+    print("     blockers (level 1), sorted by the bytes they alone reject:")
+    bl = low["blockers"]
+    for name in sorted(bl, key=lambda k: (-bl[k]["sole_bytes_pct"],
+                                          -bl[k]["bytes_pct"])):
+        e = bl[name]
+        if not e["bytes_pct"] and not e["nodes_pct"]:
+            continue
+        print("       %-8s blocks %7.3f%% of body bytes  (%7.3f%% of bodies), "
+              "SOLE blocker of %7.3f%%,  %6.3f%% of nodes"
+              % (name, e["bytes_pct"], e["bodies_pct"], e["sole_bytes_pct"],
+                 e["nodes_pct"]))
 
 
 def nofb_probe(mcc, sources, opt, verbose=True):
@@ -372,6 +519,8 @@ def main():
                     choices=["both", "arena", "capture"])
     ap.add_argument("--bank", default=DEFAULT_BANK)
     ap.add_argument("--update-bank", action="store_true")
+    ap.add_argument("--update-bank-low", action="store_true")
+    ap.add_argument("--check-low-dir", action="store_true")
     ap.add_argument("--no-check", action="store_true")
     ap.add_argument("--top", type=int, default=0)
     ap.add_argument("--tol", type=float, default=0.05)
@@ -451,6 +600,35 @@ def main():
                     if not ok:
                         bad.append("%s -%s: class %s no longer reproduces (got %s)"
                                    % (fn, opt, want, ",".join(sorted(got))))
+        for m in bad:
+            print("FAIL " + m)
+        return 1 if bad else 0
+    if a.check_low_dir:
+        ldir = os.path.join(ROOT, "tests", "rir", "low")
+        for fn in sorted(os.listdir(ldir)):
+            if not fn.endswith(".c"):
+                continue
+            want = fn[:-2]
+            for opt in a.levels.split(","):
+                c = census(mcc, [], [os.path.join(ldir, fn)], opt,
+                           keep_rows=False)
+                if c["failed"]:
+                    bad.append("%s -%s: compile failed" % (fn, opt))
+                    continue
+                got = sorted(k for k, v in c["low"].items() if v[0])
+                if want == "ok":
+                    ok = c["low_bodies"] and c["low_ok1"] == c["low_bodies"]
+                    print("%-12s -%-3s %-8s %s (ok1=%d/%d)"
+                          % (fn, opt, want, "ok" if ok else "REGRESSED",
+                             c["low_ok1"], c["low_bodies"]))
+                else:
+                    ok = want in got
+                    print("%-12s -%-3s %-8s %s   [blockers %s]"
+                          % (fn, opt, want, "ok" if ok else "MISSING",
+                             ",".join(got) or "-"))
+                if not ok:
+                    bad.append("%s -%s: lowerable class %s no longer "
+                               "reproduces" % (fn, opt, want))
         for m in bad:
             print("FAIL " + m)
         return 1 if bad else 0
@@ -575,6 +753,8 @@ def main():
             "classes": classify(c["rows"]) if c["rows"] else {},
             "failed": len(c["failed"]),
         }
+        low = lowerable(c)
+        result[opt]["lowerable"] = low
         print("== -%s  ARENA layer (production, MCC_RIR_PROD=2)  corpus=%s files=%d"
               % (opt, a.corpus, len(sources)))
         print("   bodies %d = used %d + fallback %d + skip %d"
@@ -618,6 +798,7 @@ def main():
         print("   IR_OP_RAW bodies: used %d/%dB  fallback %d/%dB  skip %d/%dB"
               % (c["raw_used"], c["b_raw_used"], c["raw_fallback"],
                  c["b_raw_fallback"], c["raw_skip"], c["b_raw_skip"]))
+        print_lowerable(low)
         lost = c["b_fallback"] + c["b_skip"]
         rawlost = c["b_raw_fallback"] + c["b_raw_skip"]
         print("   of the %d lost bytes, %d (%.2f%%) are in bodies that used "
@@ -650,15 +831,44 @@ def main():
                            % (opt, resid, b.get("residual", 0)))
         elif not b and not a.update_bank and not a.no_check:
             bad.append("-%s: no banked coverage for corpus %s" % (opt, a.corpus))
+        lb = banked.get(opt, {}).get("lowerable")
+        if lb and not a.no_check:
+            for k in LOW_BANKED:
+                if low[k] + a.tol < lb.get(k, 0.0):
+                    bad.append("-%s lowerable: %s regressed: %.4f%% < banked "
+                               "%.4f%%" % (opt, k, low[k], lb[k]))
+        elif (not lb and not a.update_bank and not a.update_bank_low
+              and not a.no_check and low["bodies"]):
+            bad.append("-%s: no banked lowerable census for corpus %s"
+                       % (opt, a.corpus))
 
     if a.json:
         json.dump(result, open(a.json, "w"), indent=1, sort_keys=True)
 
+    if a.update_bank_low:
+        prev = bank.get(a.corpus, {})
+        for opt, layers in result.items():
+            if "lowerable" not in layers:
+                continue
+            v = layers["lowerable"]
+            e = {k: v[k] for k in LOW_BANKED}
+            e["blockers"] = {n: v["blockers"][n]["sole_bytes_pct"]
+                             for n in LOWCLS}
+            prev.setdefault(opt, {})["lowerable"] = e
+        bank[a.corpus] = prev
+        os.makedirs(os.path.dirname(a.bank), exist_ok=True)
+        json.dump(bank, open(a.bank, "w"), indent=1, sort_keys=True)
+        print("banked lowerable/%s -> %s" % (a.corpus, a.bank))
     if a.update_bank:
         out = {}
         for opt, layers in result.items():
             out[opt] = {}
             for lname, v in layers.items():
+                if lname == "lowerable":
+                    out[opt][lname] = {k: v[k] for k in LOW_BANKED}
+                    out[opt][lname]["blockers"] = {
+                        n: v["blockers"][n]["sole_bytes_pct"] for n in LOWCLS}
+                    continue
                 out[opt][lname] = {"coverage": v["coverage"],
                                    "residual": v["residual"],
                                    "text": v["text"]}

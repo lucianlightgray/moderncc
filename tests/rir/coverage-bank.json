@@ -27,6 +27,24 @@
     "faithful_bytes": 1330277,
     "residual": 0,
     "text": 1384413
+   },
+   "lowerable": {
+    "big_region_nodes_pct": 4.9661,
+    "blockers": {
+     "asm": 0.0058,
+     "call": 0.0097,
+     "frame": 0.2593,
+     "global": 1.2059,
+     "opaque": 0.0,
+     "reg": 0.391,
+     "type": 0.3811
+    },
+    "bodies_pct": 9.1506,
+    "bytes_pct": 2.2474,
+    "nodes_pct": 41.6105,
+    "nodes_pct_loose": 66.1032,
+    "nodes_pct_strict": 26.2744,
+    "region_nodes_pct": 16.7135
    }
   },
   "O1": {
@@ -50,6 +68,24 @@
     "faithful_bytes": 1323544,
     "residual": 0,
     "text": 1377714
+   },
+   "lowerable": {
+    "big_region_nodes_pct": 4.9698,
+    "blockers": {
+     "asm": 0.0059,
+     "call": 0.01,
+     "frame": 0.2596,
+     "global": 1.2063,
+     "opaque": 0.0,
+     "reg": 0.3744,
+     "type": 0.4212
+    },
+    "bodies_pct": 9.1821,
+    "bytes_pct": 2.2708,
+    "nodes_pct": 41.6065,
+    "nodes_pct_loose": 66.1176,
+    "nodes_pct_strict": 26.258,
+    "region_nodes_pct": 16.7258
    }
   },
   "O2": {
@@ -73,6 +109,24 @@
     "faithful_bytes": 1323544,
     "residual": 0,
     "text": 1377714
+   },
+   "lowerable": {
+    "big_region_nodes_pct": 4.9698,
+    "blockers": {
+     "asm": 0.0059,
+     "call": 0.0117,
+     "frame": 0.2514,
+     "global": 1.2186,
+     "opaque": 0.0,
+     "reg": 0.3786,
+     "type": 0.3749
+    },
+    "bodies_pct": 9.1821,
+    "bytes_pct": 2.1684,
+    "nodes_pct": 41.6065,
+    "nodes_pct_loose": 66.1176,
+    "nodes_pct_strict": 26.258,
+    "region_nodes_pct": 16.7258
    }
   },
   "O3": {
@@ -96,6 +150,24 @@
     "faithful_bytes": 1323544,
     "residual": 0,
     "text": 1377714
+   },
+   "lowerable": {
+    "big_region_nodes_pct": 4.9698,
+    "blockers": {
+     "asm": 0.0059,
+     "call": 0.0117,
+     "frame": 0.2514,
+     "global": 1.2186,
+     "opaque": 0.0,
+     "reg": 0.3786,
+     "type": 0.3749
+    },
+    "bodies_pct": 9.1821,
+    "bytes_pct": 2.1684,
+    "nodes_pct": 41.6065,
+    "nodes_pct_loose": 66.1176,
+    "nodes_pct_strict": 26.258,
+    "region_nodes_pct": 16.7258
    }
   }
  },
@@ -121,6 +193,24 @@
     "faithful_bytes": 3405164,
     "residual": -119,
     "text": 3483510
+   },
+   "lowerable": {
+    "big_region_nodes_pct": 2.9151,
+    "blockers": {
+     "asm": 0.0055,
+     "call": 0.0087,
+     "frame": 0.154,
+     "global": 0.6961,
+     "opaque": 0.0,
+     "reg": 1.085,
+     "type": 0.2936
+    },
+    "bodies_pct": 15.6172,
+    "bytes_pct": 1.2232,
+    "nodes_pct": 34.889,
+    "nodes_pct_loose": 64.2469,
+    "nodes_pct_strict": 27.1428,
+    "region_nodes_pct": 9.7417
    }
   },
   "O1": {
@@ -144,6 +234,24 @@
     "faithful_bytes": 3404283,
     "residual": -119,
     "text": 3482756
+   },
+   "lowerable": {
+    "big_region_nodes_pct": 2.915,
+    "blockers": {
+     "asm": 0.0055,
+     "call": 0.0088,
+     "frame": 0.1551,
+     "global": 0.6916,
+     "opaque": 0.0,
+     "reg": 1.0804,
+     "type": 0.3222
+    },
+    "bodies_pct": 15.632,
+    "bytes_pct": 1.1884,
+    "nodes_pct": 34.8895,
+    "nodes_pct_loose": 64.2462,
+    "nodes_pct_strict": 27.1227,
+    "region_nodes_pct": 9.7534
    }
   },
   "O2": {
@@ -167,6 +275,24 @@
     "faithful_bytes": 3404283,
     "residual": -119,
     "text": 3482756
+   },
+   "lowerable": {
+    "big_region_nodes_pct": 2.915,
+    "blockers": {
+     "asm": 0.0055,
+     "call": 0.0118,
+     "frame": 0.1504,
+     "global": 0.701,
+     "opaque": 0.0,
+     "reg": 1.0233,
+     "type": 0.2677
+    },
+    "bodies_pct": 15.632,
+    "bytes_pct": 1.1861,
+    "nodes_pct": 34.8895,
+    "nodes_pct_loose": 64.2462,
+    "nodes_pct_strict": 27.1227,
+    "region_nodes_pct": 9.7534
    }
   },
   "O3": {
@@ -190,6 +316,24 @@
     "faithful_bytes": 3404283,
     "residual": -119,
     "text": 3482756
+   },
+   "lowerable": {
+    "big_region_nodes_pct": 2.915,
+    "blockers": {
+     "asm": 0.0055,
+     "call": 0.0118,
+     "frame": 0.1504,
+     "global": 0.7,
+     "opaque": 0.0,
+     "reg": 1.0233,
+     "type": 0.2677
+    },
+    "bodies_pct": 15.632,
+    "bytes_pct": 1.1853,
+    "nodes_pct": 34.8895,
+    "nodes_pct_loose": 64.2462,
+    "nodes_pct_strict": 27.1227,
+    "region_nodes_pct": 9.7534
    }
   }
  }

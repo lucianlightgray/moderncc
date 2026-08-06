@@ -54,6 +54,22 @@ typedef struct RirMark {
 
 int rir_env;
 int rir_prod_env;
+int rir_prod_low_env;
+static long rir_low_p_nodes, rir_low_p_clean[RIR_LOW_NLEVEL];
+static long rir_low_p_why[RIR_LOW_NCLASS];
+static long rir_low_p_reg[RIR_LOW_NLEVEL], rir_low_p_big[RIR_LOW_NLEVEL];
+static long rir_low_p_huge[RIR_LOW_NLEVEL];
+static int rir_low_p_have;
+static long rir_tot_low_bodies, rir_tot_low_bytes, rir_tot_low_nodes;
+static long rir_tot_low_clean[RIR_LOW_NLEVEL];
+static long rir_tot_low_ok[RIR_LOW_NLEVEL], rir_tot_low_okb[RIR_LOW_NLEVEL];
+static long rir_low_block_n[RIR_LOW_NCLASS], rir_low_block_b[RIR_LOW_NCLASS];
+static long rir_low_sole_n[RIR_LOW_NCLASS], rir_low_sole_b[RIR_LOW_NCLASS];
+static long rir_low_why_nodes[RIR_LOW_NCLASS];
+static long rir_tot_low_reg[RIR_LOW_NLEVEL], rir_tot_low_big[RIR_LOW_NLEVEL];
+static long rir_tot_low_huge[RIR_LOW_NLEVEL];
+static const char *const rir_low_class_name[RIR_LOW_NCLASS] = {
+		"ok", "asm", "reg", "opaque", "call", "type", "frame", "global"};
 static int rir_prod_gate;
 static const char *rir_prod_out;
 static long rir_tot_prod_used, rir_tot_prod_fb, rir_tot_prod_skip;
@@ -4755,6 +4771,62 @@ void rir_prod_span(int first, int end, int body_len, int new_len) {
 	rir_span_nlen = new_len;
 }
 
+void rir_low_set(long nodes, const long *clean, const long *why, int nwhy) {
+	int i;
+	rir_low_p_nodes = nodes;
+	for (i = 0; i < RIR_LOW_NLEVEL; i++) {
+		rir_low_p_clean[i] = clean[i];
+		rir_low_p_reg[i] = rir_low_p_big[i] = rir_low_p_huge[i] = 0;
+	}
+	for (i = 0; i < RIR_LOW_NCLASS; i++)
+		rir_low_p_why[i] = i < nwhy ? why[i] : 0;
+	rir_low_p_have = 1;
+}
+
+void rir_low_regions(const long *regions, const long *big, const long *huge) {
+	int i;
+	for (i = 0; i < RIR_LOW_NLEVEL; i++) {
+		rir_low_p_reg[i] = regions[i];
+		rir_low_p_big[i] = big[i];
+		rir_low_p_huge[i] = huge[i];
+	}
+}
+
+static void rir_low_take(long nb) {
+	int i, nblk = 0, only = -1;
+	if (!rir_low_p_have)
+		return;
+	rir_low_p_have = 0;
+	if (rir_low_p_nodes <= 0)
+		return;
+	rir_tot_low_bodies++;
+	rir_tot_low_bytes += nb;
+	rir_tot_low_nodes += rir_low_p_nodes;
+	for (i = 0; i < RIR_LOW_NLEVEL; i++) {
+		rir_tot_low_clean[i] += rir_low_p_clean[i];
+		rir_tot_low_reg[i] += rir_low_p_reg[i];
+		rir_tot_low_big[i] += rir_low_p_big[i];
+		rir_tot_low_huge[i] += rir_low_p_huge[i];
+		if (rir_low_p_clean[i] == rir_low_p_nodes) {
+			rir_tot_low_ok[i]++;
+			rir_tot_low_okb[i] += nb;
+		}
+	}
+	for (i = 1; i < RIR_LOW_NCLASS; i++) {
+		rir_low_why_nodes[i] += rir_low_p_why[i];
+		if (rir_low_p_why[i]) {
+			nblk++;
+			only = i;
+			rir_low_block_n[i]++;
+			rir_low_block_b[i] += nb;
+		}
+	}
+	if (nblk == 1) {
+		rir_low_sole_n[only]++;
+		rir_low_sole_b[only] += nb;
+	}
+}
+
 void rir_prod_note(const char *verdict) {
 	const char *f, *unf;
 	char sb[96];
@@ -4762,6 +4834,7 @@ void rir_prod_note(const char *verdict) {
 	int is_fb = !strcmp(verdict, "fallback");
 	long nb = rir_prod_body_bytes;
 	unf = is_fb ? rir_unfaithful_why : "";
+	rir_low_take(nb);
 	rir_prod_fn_notes++;
 	if (!strcmp(verdict, "used")) {
 		rir_tot_prod_used++;
@@ -4830,7 +4903,10 @@ void rir_prod_reemit(long bytes) {
 	rir_tot_reemit_bytes += bytes;
 }
 
-void rir_prod_fn_begin(void) { rir_prod_fn_notes = 0; }
+void rir_prod_fn_begin(void) {
+	rir_prod_fn_notes = 0;
+	rir_low_p_have = 0;
+}
 
 void rir_prod_fn_end(long bytes) {
 	rir_tot_fn_n++;
@@ -4885,6 +4961,31 @@ static void rir_prod_report(void) {
 					"fallbackbytes=%ld skip=%ld skipbytes=%ld\n",
 					rir_tot_raw_used, rir_tot_rawb_used, rir_tot_raw_fb,
 					rir_tot_rawb_fb, rir_tot_raw_skip, rir_tot_rawb_skip);
+	if (rir_prod_low_env) {
+		fprintf(f,
+						"[rir-low] bodies=%ld bytes=%ld nodes=%ld clean0=%ld clean1=%ld "
+						"clean2=%ld ok0=%ld ok1=%ld ok2=%ld okbytes0=%ld okbytes1=%ld "
+						"okbytes2=%ld\n",
+						rir_tot_low_bodies, rir_tot_low_bytes, rir_tot_low_nodes,
+						rir_tot_low_clean[0], rir_tot_low_clean[1], rir_tot_low_clean[2],
+						rir_tot_low_ok[0], rir_tot_low_ok[1], rir_tot_low_ok[2],
+						rir_tot_low_okb[0], rir_tot_low_okb[1], rir_tot_low_okb[2]);
+		fprintf(f,
+						"[rir-low-region] min=%d big=%d regions0=%ld regions1=%ld "
+						"regions2=%ld nmin0=%ld nmin1=%ld nmin2=%ld nbig0=%ld nbig1=%ld "
+						"nbig2=%ld\n",
+						AST_LOW_MIN_REGION, AST_LOW_BIG_REGION, rir_tot_low_reg[0],
+						rir_tot_low_reg[1], rir_tot_low_reg[2], rir_tot_low_big[0],
+						rir_tot_low_big[1], rir_tot_low_big[2], rir_tot_low_huge[0],
+						rir_tot_low_huge[1], rir_tot_low_huge[2]);
+		for (i = 1; i < RIR_LOW_NCLASS; i++)
+			if (rir_low_block_n[i] || rir_low_why_nodes[i])
+				fprintf(f,
+								"[rir-low-why] %s=%ld bytes=%ld nodes=%ld sole=%ld "
+								"solebytes=%ld\n",
+								rir_low_class_name[i], rir_low_block_n[i], rir_low_block_b[i],
+								rir_low_why_nodes[i], rir_low_sole_n[i], rir_low_sole_b[i]);
+	}
 	if (f != stderr)
 		fclose(f);
 }
@@ -5522,11 +5623,12 @@ void rir_configure(void) {
 	done = 1;
 	rir_env = ast_env_int("MCC_REPLAY_IR", 0);
 	rir_prod_gate = ast_env_int("MCC_RIR_PROD", 0);
+	rir_prod_low_env = rir_prod_gate >= 2 || ast_env_int("MCC_RIR_LOW", 0);
 	rir_prod_out = getenv("MCC_RIR_PROD_OUT");
 	rir_out = getenv("MCC_REPLAY_IR_OUT");
 	if (rir_env)
 		atexit(rir_report);
-	if (rir_prod_gate >= 2)
+	if (rir_prod_gate >= 2 || rir_prod_low_env)
 		atexit(rir_prod_report);
 }
 

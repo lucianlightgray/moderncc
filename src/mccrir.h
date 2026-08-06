@@ -40,6 +40,14 @@ extern int rir_c2_active;
 extern int rir_body_loc_sv;
 extern int rir_started;
 extern int rir_prod_env;
+extern int rir_prod_low_env;
+
+#define RIR_LOW_NCLASS 8
+#define RIR_LOW_NLEVEL 3
+#define AST_LOW_MIN_REGION 3
+#define AST_LOW_BIG_REGION 16
+void rir_low_set(long nodes, const long *clean, const long *why, int nwhy);
+void rir_low_regions(const long *regions, const long *big, const long *huge);
 
 struct AstArena;
 struct AstArena *rir_prod_take(void);
@@ -262,6 +270,13 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_try_active 0
 #define rir_c2_active 0
 #define rir_prod_env 0
+#define rir_prod_low_env 0
+#define RIR_LOW_NCLASS 8
+#define RIR_LOW_NLEVEL 3
+#define AST_LOW_MIN_REGION 3
+#define AST_LOW_BIG_REGION 16
+#define rir_low_set(n, c, w, k) ((void)0)
+#define rir_low_regions(r, b, h) ((void)0)
 #define rir_prod_take() NULL
 #define rir_teardown() ((void)0)
 #define rir_prod_replay_begin() ((void)0)

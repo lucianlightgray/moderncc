@@ -127,6 +127,85 @@ modelled emit no record, so `fn_n` is the modelled population, not everything co
 (at `-O0` the arena is off entirely unless `MCC_FORCE_REPLAY=1`, which the tool sets). A
 statement list wider than 512 statements is flushed in chunks and flagged `ovf=1`; that
 never fires on either corpus.
+## Byte coverage is a proxy. The real metric is the lowerable census — 2026-08-06
+
+Byte coverage only proves the arena can regenerate **the same target's** code. The goal is
+retargeting slices between anonymous `invoke` nodes to GPU compute shaders, which is
+strictly stronger. The **lowerable census** measures that directly and lives beside
+`modelled`/`gap`, not instead of it — byte coverage is still the single-target regression
+detector and is untouched.
+
+The predicate is **one function**, `ast_low_node()` in `src/mccast.c`. Tightening or
+loosening it is a one-place change. Every arena node gets exactly one class:
+
+| class | meaning |
+| --- | --- |
+| `ok` | none of the below |
+| `asm` | an inline-asm node (`AST_OP_ASM`/`ASMGEN`/`ASMOPS`) |
+| `reg` | a `Ref` naming host machine state: a hardware register (`valmask < VT_CONST`), or `VT_CMP`/`VT_JMP`/`VT_JMPI` |
+| `opaque` | `AST_Poison`, or an op with no portable meaning: VLA, VLA_RESTORE, VAARG, VASTART, GGOTO, the atomics, the complex builders |
+| `call` | `AST_Invoke` — a slice is the code *between* anonymous invokes, so an interior invoke ends the region by definition |
+| `type` | not type-complete: `ast_bad_type()`, a `Convert` with no operand, or a dereference (`Load`/`Store`/MEMBER/MEMBER_ARROW) whose address operand derives from no node carrying a pointer/array/struct type |
+| `frame` | the value's meaning is a host frame offset: `AST_OP_ADDR`, a `VT_LLOCAL` `Ref`, or a `VT_LOCAL` `Ref` (see levels) |
+| `global` | a `Ref` carrying `VT_SYM` — a host link-time address |
+
+A node is **clean** when its whole subtree is `ok`, i.e. it roots a maximal lowerable
+region. A body is lowerable when every node in its arena is `ok`.
+
+The `type` clause independently rediscovers the known defect: a cast that changes the
+static type but emits no machine code leaves no trace, so `tests/rir/gap/abort.c` scores
+`type` on its `->` — the census names the defect from the arena alone, with no replay.
+
+**The `VT_LOCAL` rule is the one genuinely open question** (a local's `ival` is the
+parser's own frame offset), so it is a level and all three are measured in one walk:
+
+- **0 strict** — every `VT_LOCAL` `Ref` is frame-dependent.
+- **1 default** — a `VT_LOCAL` `Ref` is frame-*in*dependent iff no node anywhere in the same
+  arena takes the address of a local (no `AST_OP_ADDR`, no `VT_LLOCAL` `Ref`) **and** the
+  `Ref`'s own type is a scalar the arena models. With no address-of-local in the body no
+  slot's address is observable, so every slot is a pure value cell and its offset is only a
+  name.
+- **2 loose** — a `VT_LOCAL` `Ref` never disqualifies.
+
+Pointer *values* are allowed at every level: a pointer reaching a region is a buffer
+binding to resolve at the region boundary, not a frame dependency.
+
+Numbers at `2aeb2989`, identical across `-O0..-O3` to within 0.1pp and byte-identical
+across six consecutive runs:
+
+| | self | wide |
+| --- | --- | --- |
+| whole bodies lowerable | 9.15–9.18% of bodies, 2.17–2.27% of body bytes | 15.62–15.63% of bodies, 1.19–1.22% of body bytes |
+| nodes inside a maximal lowerable region (strict / default / loose) | 26.26 / 41.61 / 66.12% | 27.12 / 34.89 / 64.25% |
+| nodes in regions ≥3 nodes (default) | 16.71–16.73% | 9.74–9.75% |
+| nodes in regions ≥16 nodes (default) | 4.97% | 2.92% |
+
+**What dominates.** By nodes rejected, `frame` is far and away the largest disqualifier —
+13.7% of self nodes and **25.1% of wide nodes**, roughly triple the next class. `global`
+(9.1% self / 10.9% wide) and `call` (5.1% / 8.7%) follow; `type` is only 1.5% / 0.9% of
+nodes but blocks 62% / 80% of body *bytes* because it lands in the big bodies. `asm` and
+`opaque` are noise (<0.02%). So the single most valuable thing to settle is whether the
+arena needs a value layer above `AST_Ref`'s frame offsets: moving `frame` from level 0 to
+level 2 alone lifts region coverage from 26% to 66% on self and 27% to 64% on wide.
+
+Provisional, in order of how much they would move the number:
+
+1. The **region boundary** is "maximal clean subtree". The real definition is maximal
+   call-free slices between anonymous invokes; when that lands, only the maximality test in
+   `ast_low_census()` changes.
+2. The **locals verdict** is level 1 by assertion, not by an alias audit. An audit that
+   distinguishes address-taken from genuinely-value `Ref`s replaces the whole-body `pinned`
+   flag with a per-slot one.
+3. `global` is rejected outright. A `Ref` to a read-only global array is exactly a shader
+   buffer binding, so some of that 9–11% is recoverable, not a real blocker.
+4. Region size thresholds are 3 and 16 nodes (`AST_LOW_MIN_REGION`/`AST_LOW_BIG_REGION` in
+   `src/mccrir.h`), picked to match the existing slice window and a plausible kernel.
+
+Run it with `ctest -R rir-coverage` (self, gated) or `ctest -L census` (wide). The predicate
+itself is pinned per class by `ctest -R rir-lowerable-classes` against `tests/rir/low/*.c`,
+one file per class — that cell is what catches a predicate that silently stops firing.
+`MCC_RIR_LOW_DUMP=<func>` prints the per-node classification of one body.
+**Only percentages are banked, never totals.**
 
 ## The configuration surface moved: read this before running any recipe below
 

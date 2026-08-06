@@ -5553,6 +5553,12 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(rir-gap-classes PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
 
+            add_test(NAME rir-lowerable-classes
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
+                        "${CMAKE_BINARY_DIR}" --check-low-dir --levels O0,O1,O2,O3)
+            set_tests_properties(rir-lowerable-classes PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
+
             add_test(NAME rir-coverage-census
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
                         "${CMAKE_BINARY_DIR}" --corpus wide --levels O0,O1,O2,O3
