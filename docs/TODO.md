@@ -6,6 +6,44 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Where RIR replay accuracy stands — 2026-08-06
+
+RIR is **two layers**, and conflating them is what made the older boards unreadable. The
+op-stream capture is the ground truth; the arena is a second derivation built from it, and
+only the arena has ever had a gap.
+
+| layer | coverage, by emitted body bytes |
+| --- | --- |
+| capture (`rir_verify`, `MCC_REPLAY_IR=3`) | **100.000%**, `fallback=0`, on both corpora |
+| arena (production, `MCC_RIR_PROD`) | **99.59%** self / **99.84%** wide, residual 0 |
+
+Measure it with `ctest -R rir-coverage`; the numbers are banked in
+`tests/rir/coverage-bank.json` and ratcheted. **The ratchet gates percentages and the
+residual, never body totals** — the census body total is not stable run-to-run at fixed
+HEAD (two consecutive full-suite runs gave `used=95823` and `used=95971` while every class
+count was byte-identical), so compare class counts, never totals.
+
+Refusal classes closed on 2026-08-06: `asm`, `regdangle`, `bail`, `mismatch` — all report
+`used` now. `noops` is 338 provably empty bodies (`len=0 rirn=0 capn=0`), which is not a
+gap; `revargs` is one body, assessed and deliberately left.
+
+**The entire remaining gap is one class: `abort`**, and it is identical on the self and
+wide corpora — so all of it lives in `src/`. `MCC_RIR_ABORTWHY=1` names it: the replay
+re-runs semantic checks the arena lacks the type information for (4 of 5 are
+`pointer expected`, e.g. `((Sym *)(uintptr_t)x)->v`). That is the single tractable target
+for anyone continuing this work.
+
+Fallback rows in the census now carry `first`/`end`/`blen`/`nlen`, which localises a
+divergence to a byte span within the body — the standing "fix at the USE site" item needs
+exactly that. Example row: a 479-byte `host_runmem_alloc` diverging only at bytes 428–457.
+
+**Assembly is modelled, not opaque.** `asm goto` labels, `volatile`, and the
+`"memory"`/`"cc"`/`"flags"` clobbers were all being discarded and are now captured; the
+effect set (`reads`/`writes`/`clobbers`/`mem`/`pins`) is decoded onto the node and eight
+strategies are re-admitted to asm-bearing bodies. The right mental model is a **pin**, not
+a barrier: `subst_asm_operands` bakes concrete registers in at parse time, so `narrow`,
+`ltemp`, `sethi`, `reg-color` and promotion break an asm without moving anything across it.
+
 ## The configuration surface moved: read this before running any recipe below
 
 **Every `MCC_AST_*` and `MCC_RIR_*` gate is now a `-f` flag.** 113 of them, generated
@@ -120,16 +158,47 @@ default. `flagsweep-cover` rows 17, 26, 28, 41 and 42 are **green** now; the ear
 that they are red described the tree before `a4d28f03`. Plain `-O0`…`-O3`/`-Os`, with and
 without `-fno-replay-fallback`, are clean on all 281 subjects.
 
-**Before the default is flipped, one backstop is still owed.** `ast_func_end` computes
-`keep = faithful || (ast_rir_nofb_env && ast_replay_completed)`, and `ast_replay_completed`
-is set after the *first* replay and never cleared by the `posterr` arm that catches a
-longjmp out of the optimizer emit. That is exactly how the `transparent_union` defect
-shipped a body truncated at 52 of 92 bytes instead of falling back, and the comment above
-the line already states the intent it violates: a body that longjmp'd out must never be
-kept. It was deliberately left open while that defect was live, because adding it would
-have hidden the defect rather than fixed it. With the defect closed, the reason to leave it
-is gone and the reason to add it is not: with the gate off, any future longjmp after a
-completed first replay ships a truncated function silently.
+~~Before the default is flipped, one backstop is still owed.~~ **Landed in `705f0b0f`.**
+`ast_func_end` computes `keep = faithful || (ast_rir_nofb_env && ast_replay_completed)`,
+and `ast_replay_completed` was set after the *first* replay and never cleared by the
+`posterr` arm that catches a longjmp out of the optimizer emit — so with the fallback off,
+a body that aborted mid-emit was kept anyway. That is exactly how the `transparent_union`
+defect shipped a body truncated at 52 of 92 bytes instead of falling back. It was
+deliberately left open while that defect was live, because adding it then would have turned
+the defect green by hiding it. No effect on a default build: with the fallback on, the same
+arm already clears `faithful` and `keep` is `faithful` alone.
+
+### Flipping `MCC_OPT_REPLAY_FALLBACK` off by default — the decision, not a task
+
+**No known defect blocks it.** Everything below is measured on `main`, not argued:
+
+- The whole suite is green under `MCC_TEST_OPT="-O2 -fno-replay-fallback"`, and under
+  `-O1 … -finline` and `-O3 … -fno-inline-functions`, the two states that reach
+  `inline=1, inline-functions=0` and that no single flip reaches at `-O2`.
+- The per-body benignity probe (`rir-nofb-probe`, opt-in `-L census`) keeps one divergent
+  body at a time and diffs the program: **zero miscompiles** at any level. The banked
+  `nofb_miscompiles` list is empty for O0/O1/O2/O3. It used to hold `union_cast::main`.
+- The 3-way covering array varies `replay-fallback` across 74 rows over 107 flags and
+  finds nothing.
+
+**What the gate costs while it stays on.** `ast_run_strat_seq` gates every one of the 22
+strategies on `faithful`, so a byte-divergent body receives *no* optimization at all. At
+`-O1` that is 2.0% of bodies but **10.2% of body bytes**, because a discarded body averages
+2585 bytes against 470 for a kept one — the gate is withholding the optimizer from the
+largest functions in the program. That is a capability cost, not a correctness one.
+
+**What it still buys.** It converts a replay defect into a missed optimization rather than
+a wrong program, and it is nearly free (the `orig` buffer is already copied for the restore
+path). It cannot be kept *and* the bytes optimized for the same body — those are mutually
+exclusive by construction.
+
+The residual risk is not a known bug but the shape of the evidence: a 3-way array cannot
+see a 4-flag interaction, and the suite is the only oracle. Recommendation is to keep
+computing `faithful` permanently regardless, and — whichever way the default goes — make
+the divergence **visible**, which it is not today: `rir_prod_note` only reports at
+`MCC_RIR_PROD>=2`, so in a default build a fallback is silent. `union_cast` was wrong for
+as long as it existed and nobody knew, because the gate suppressed the symptom. That is
+worth fixing under either decision.
 
 `inline=1, inline-functions=0` is worth naming as a state rather than a flag: `inline`
 defaults off at `-O1` and on at `-O3`, `inline-functions` off at `-O1` and on at `-O2`, so
@@ -1013,18 +1082,48 @@ re-open it without first reading the last bullet.
   `__builtin_expect` dropping side effects, is fixed and closed above.)
 
 ### Intermittent / to-confirm
+
+**The orchestration hazard is confirmed, not a suspicion — and it manufactured three
+separate false results on 2026-08-06.** Parallel agents were each given the *same absolute
+path* to the main checkout's build dir. Consequences, all observed:
+- Concurrent `ctest` runs race on `Testing/Temporary/LastTest.log` and
+  `LastTestsFailed.log`, so one agent read another agent's failure as its own.
+- A rebuild swaps `mcc` out mid-run, so a census can silently mix two trees into one board.
+- `tests/exec/programs/stdio.c` writes `fred.txt` into the **current directory**; 18
+  full-corpus cells sharing one cwd made `programs/stdio` look nondeterministic, which is
+  what the "`iso-bf` flake" actually was. Each sweep cell gets its own cwd now.
+
+Give every parallel agent its own worktree **and its own build directory**, and never a
+path into the shared checkout. Related, and the same root cause in miniature: `cd` persists
+between shell invocations, so a build launched from the wrong directory fails while
+`grep -c "error:"` on its log prints 0 — check the build's exit status, not a grep.
+
+- `superopt/promote-floor` failed once in eleven full-gate runs and passes in isolation.
+  Not chased. May be the hazard above rather than a real intermittent, since those runs
+  were concurrent with other agents.
 - `selfhost-fixpoint-memmodel-{O3,Os}` SIGSEGV'd once under heavy parallel load and
-  never reproduced. Unresolved — may be the orchestration hazard (relinking `mcc` under
-  a running `ctest` yields phantom regressions; give parallel agents isolated
-  worktrees). See the archive's parallel-agents note.
+  never reproduced. Same suspicion, now much better founded.
+- ~~The two win32 `-run` cells are an intermittent wine flake.~~ **Not wine, and not a
+  flake in the tree — fixed in `36e20b30`.** `tools/run-tier.sh` tore its work tree down
+  with `trap 'rm -rf "$work"' EXIT`. The wineserver outlives its last client and flushes
+  `user.reg`/`userdef.reg` back into the prefix as it exits, so `rm` emptied
+  `.wineprefix`, the departing server recreated a registry file in it, and the closing
+  `rmdir` failed `ENOTEMPTY`. That `rm` was the last command the shell ran, so under
+  `set -e` **its status became the cell's status** — the cells passed 15/15 programs and
+  then died in their own cleanup. ~17% per cell run under load, 7 red in 40 before, 0 in
+  40 after, and 0 red across 11 full sweeps. Every lost race abandoned a
+  `/tmp/tmp.*/.wineprefix`; 47 had accumulated at one or two per hour, matching "red in
+  nearly every gate all day", and post-fix sweeps create none. Teardown now shuts down
+  that prefix's own wineserver and can no longer decide the cell's exit status.
 - ~~Reconcile the deliberate-red count.~~ **Settled 2026-08-05 by running them.** It was
   7; then **2**, both PE (`run-tier/{x86_64-win32,i386-win32}`, `tls` and `tls_threads`
   each); it is now **0** — the PE `-run` TLS defect is fixed (see the fix write-up above),
   so all four cells pass and `KNOWN_RED` is empty. x86_64-native, i386, arm and riscv64
   were closed earlier by the archive's `-run` TLS fixes. Any deliberate-red `-run` TLS
   cell reappearing is a regression. Two *further* cells became red only because the qemu
-  sysroots now exist:
-  `selfhost-qemu-{i386,arm}-O2`, which die on `MCC_MAX_ALIGN` — see below.
+  sysroots now exist, `selfhost-qemu-{i386,arm}-O2` — **both fixed 2026-08-06**; the
+  `MCC_MAX_ALIGN` attribution was wrong and the cause was `-fif-conversion` selecting
+  two-word arms on 32-bit targets. See "Open codegen / front-end defects".
 
 ### External suites — three-compiler board taken 2026-08-05 at `030fb4aa`
 
