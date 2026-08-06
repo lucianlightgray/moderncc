@@ -784,6 +784,37 @@
 	#undef __MAYBE_REDIR
 	#undef __RENAME
 
+	static __inline double __builtin_powi(double __x, int __m) {
+	unsigned int __n = __m < 0 ? -(unsigned int)__m : (unsigned int)__m;
+	double __y = (__n & 1) ? __x : 1.0;
+	while (__n >>= 1) {
+	__x = __x * __x;
+	if (__n & 1)
+	__y = __y * __x;
+	}
+	return __m < 0 ? 1.0 / __y : __y;
+	}
+	static __inline float __builtin_powif(float __x, int __m) {
+	unsigned int __n = __m < 0 ? -(unsigned int)__m : (unsigned int)__m;
+	float __y = (__n & 1) ? __x : 1.0f;
+	while (__n >>= 1) {
+	__x = __x * __x;
+	if (__n & 1)
+	__y = __y * __x;
+	}
+	return __m < 0 ? 1.0f / __y : __y;
+	}
+	static __inline long double __builtin_powil(long double __x, int __m) {
+	unsigned int __n = __m < 0 ? -(unsigned int)__m : (unsigned int)__m;
+	long double __y = (__n & 1) ? __x : 1.0L;
+	while (__n >>= 1) {
+	__x = __x * __x;
+	if (__n & 1)
+	__y = __y * __x;
+	}
+	return __m < 0 ? 1.0L / __y : __y;
+	}
+
 	extern void __chk_fail(void) __attribute__((noreturn));
 
 	static __inline void *__builtin___memcpy_chk(void *dst, const void *src, __mcc_size_t len, __mcc_size_t dstlen) {
