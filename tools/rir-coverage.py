@@ -1,0 +1,692 @@
+#!/usr/bin/env python3
+"""Byte-level Replay_IR (RIR) coverage census and ratchet gate.
+
+Body counts overweight tiny functions, so this measures the honest denominator:
+bytes of emitted .text. RIR has two layers and only the second one has a gap:
+
+  capture  the op stream, replayed and byte-checked by rir_verify() under
+           MCC_REPLAY_IR=3.
+  arena    rir_to_arena() -> rir_prod_take() -> ast_replay_body(), what
+           production actually ships, censused by MCC_RIR_PROD=2.
+
+For the arena layer the split that matters is semantic, not byte-exact:
+
+  kept       modelled, replayed, byte-identical to the parser: shipped.
+  discarded  modelled, replay ran to completion, a memcmp against the
+             parser's second derivation disagreed (len/bytes/rellen/
+             relcontent/posterr) so the parser's bytes were restored.
+             Coverage exists here; the byte gate threw it away. Byte
+             divergence is not by itself evidence of a defect, so this is
+             NOT counted as a gap -- but it is not proof of correctness
+             either: --nofb-probe keeps one such body at a time and diffs
+             the program, and banks the set that miscompiles (empty today;
+             structs_unions/union_cast.c::main used to be in it). It also
+             costs optimization: ast_run_strat_seq gates every strategy on
+             `faithful`.
+  gap        never modelled at all (skip: asm, regdangle, mismatch, invalid,
+             unsafe, noops, unbal, ovf, bail, revargs, replayok) or modelled
+             but the replay did not run to completion (abort). This is the
+             only true coverage gap and the only thing the ratchet banks.
+
+Bytes outside any body (prologue/epilogue, inter-function padding) belong to
+neither layer and are reported separately so the accounting reconciles against
+the object's real .text size.
+
+The compiler side is `MCC_RIR_PROD=2` (see src/mccrir.c rir_prod_note): one
+tab-separated row per body
+
+    verdict  file  func  why  unfaithful  bytes  nrawops
+
+plus, at exit, the aggregate `[rir-prod-*]` lines, appended to that same file
+when MCC_RIR_PROD_OUT is set (the capture layer's `[rir-capbytes]` goes to
+stderr instead). Both are parsed here.
+
+Usage:
+  tools/rir-coverage.py <build-dir> [--levels O0,O1,O2,O3]
+                        [--corpus self|wide|exec] [--layers both|arena|capture]
+                        [--bank FILE] [--update-bank] [--top N] [--json FILE]
+                        [--classify] [--check-gap-dir] [--nofb-probe]
+
+Exit status is 0 when every level is at or above its banked coverage and the
+byte accounting reconciles against the objects' real .text size.
+"""
+import argparse, json, os, shlex, struct, subprocess, sys, tempfile
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_BANK = os.path.join(ROOT, "tests", "rir", "coverage-bank.json")
+
+UNF = ["len", "bytes", "rellen", "relcontent", "abort", "posterr"]
+WHY = ["bail", "noops", "capbad", "unbal", "ovf", "mismatch", "invalid",
+       "unsafe", "asm", "regdangle", "revargs", "replayok"]
+
+
+def find_mcc(bdir):
+    mcc = os.path.join(bdir, "mcc")
+    if not os.access(mcc, os.X_OK) and os.access(mcc + ".exe", os.X_OK):
+        mcc += ".exe"
+    if not os.access(mcc, os.X_OK):
+        sys.exit("rir-coverage: no mcc at " + mcc)
+    return mcc
+
+
+def self_flags(bdir):
+    cdb = os.path.join(bdir, "compile_commands.json")
+    if not os.path.exists(cdb):
+        return []
+    cc = json.load(open(cdb))
+    rec = [x for x in cc if x["file"].endswith("/mcc.c")]
+    if not rec:
+        return []
+    return [a for a in shlex.split(rec[0]["command"])[1:]
+            if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
+
+
+def text_size(path):
+    """.text byte count of an ELF/PE/Mach-O object, or None if unparsed."""
+    try:
+        d = open(path, "rb").read()
+    except OSError:
+        return None
+    if d[:4] == b"\x7fELF":
+        is64 = d[4] == 2
+        le = "<" if d[5] == 1 else ">"
+        if is64:
+            e_shoff, = struct.unpack_from(le + "Q", d, 0x28)
+            e_shentsize, e_shnum, e_shstrndx = struct.unpack_from(le + "HHH", d, 0x3a)
+        else:
+            e_shoff, = struct.unpack_from(le + "I", d, 0x20)
+            e_shentsize, e_shnum, e_shstrndx = struct.unpack_from(le + "HHH", d, 0x2e)
+        def sh(i):
+            o = e_shoff + i * e_shentsize
+            if is64:
+                name, typ = struct.unpack_from(le + "II", d, o)
+                size, = struct.unpack_from(le + "Q", d, o + 0x20)
+                off, = struct.unpack_from(le + "Q", d, o + 0x18)
+            else:
+                name, typ = struct.unpack_from(le + "II", d, o)
+                off, size = struct.unpack_from(le + "II", d, o + 0x10)
+            return name, typ, off, size
+        _, _, stroff, _ = sh(e_shstrndx)
+        tot = 0
+        for i in range(e_shnum):
+            name, typ, off, size = sh(i)
+            end = d.index(b"\0", stroff + name)
+            nm = d[stroff + name:end].decode()
+            if nm == ".text" or nm.startswith(".text."):
+                tot += size
+        return tot
+    if d[:2] == b"MZ" or d[:4] in (b"\x64\x86\x00\x00",):
+        pass
+    return None
+
+
+def run_one(mcc, flags, src, opt, out_o, tsv, env0, layer):
+    env = dict(env0)
+    if layer == "capture":
+        env["MCC_REPLAY_IR"] = "3"
+    else:
+        env["MCC_RIR_PROD"] = "2"
+        env["MCC_RIR_PROD_OUT"] = tsv
+        if opt == "O0":
+            env["MCC_FORCE_REPLAY"] = "1"
+    cmd = [mcc] + flags + ["-" + opt, "-c", src, "-o", out_o]
+    p = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, env=env)
+    return p
+
+
+def parse_report(stderr):
+    r = {"used": 0, "fallback": 0, "skip": 0,
+         "b_used": 0, "b_fallback": 0, "b_skip": 0, "b_body": 0,
+         "fn_n": 0, "fn_bytes": 0, "unnoted": 0, "b_unnoted": 0, "b_nonbody": 0,
+         "raw_used": 0, "raw_fallback": 0, "raw_skip": 0,
+         "b_raw_used": 0, "b_raw_fallback": 0, "b_raw_skip": 0,
+         "cap_fn": 0, "cap_faithful": 0,
+         "cap_b_faith": 0, "cap_b_unfaith": 0, "cap_b_err": 0, "cap_n_err": 0,
+         "cap_raw_fn": 0, "cap_raw_b": 0,
+         "reemit": 0, "b_reemit": 0,
+         "unf": {}, "why": {}}
+    for line in stderr.splitlines():
+        f = line.replace("\r", "").split()
+        if not f:
+            continue
+        if f[0] == "[rir-total]":
+            m = dict(kv.split("=") for kv in f[1:] if "=" in kv)
+            r["cap_fn"] += int(m.get("fn", 0))
+            r["cap_faithful"] += int(m.get("faithful", 0))
+        elif f[0] == "[rir-capbytes]":
+            m = dict(kv.split("=") for kv in f[1:] if "=" in kv)
+            r["cap_b_faith"] += int(m["faithful"])
+            r["cap_b_unfaith"] += int(m["unfaithful"])
+            r["cap_b_err"] += int(m["rerror"])
+            r["cap_n_err"] += int(m["rerrorfn"])
+            r["cap_raw_fn"] += int(m["rawfn"])
+            r["cap_raw_b"] += int(m["rawbytes"])
+            r["fn_n"] += int(m["fn"])
+            r["fn_bytes"] += int(m["fnbytes"])
+            r["unnoted"] += int(m["unnoted"])
+            r["b_unnoted"] += int(m["unnotedbytes"])
+            r["reemit"] += int(m.get("reemit", 0))
+            r["b_reemit"] += int(m.get("reemitbytes", 0))
+        elif f[0] == "[rir-prod-raw]":
+            m = dict(kv.split("=") for kv in f[1:])
+            r["raw_used"] += int(m["used"])
+            r["raw_fallback"] += int(m["fallback"])
+            r["raw_skip"] += int(m["skip"])
+            r["b_raw_used"] += int(m["usedbytes"])
+            r["b_raw_fallback"] += int(m["fallbackbytes"])
+            r["b_raw_skip"] += int(m["skipbytes"])
+        elif f[0] == "[rir-prod-total]":
+            for kv in f[1:]:
+                k, v = kv.split("=")
+                r[k] += int(v)
+        elif f[0] == "[rir-prod-bytes]":
+            for kv in f[1:]:
+                k, v = kv.split("=")
+                r["b_" + k] += int(v)
+        elif f[0] == "[rir-prod-fn]":
+            m = dict(kv.split("=") for kv in f[1:])
+            r["fn_n"] += int(m["n"])
+            r["fn_bytes"] += int(m["bytes"])
+            r["unnoted"] += int(m["unnoted"])
+            r["b_unnoted"] += int(m["unnotedbytes"])
+            r["b_nonbody"] += int(m["nonbody"])
+            r["reemit"] += int(m.get("reemit", 0))
+            r["b_reemit"] += int(m.get("reemitbytes", 0))
+        elif f[0] in ("[rir-prod-unfaithful]", "[rir-prod-why]"):
+            key = "unf" if f[0] == "[rir-prod-unfaithful]" else "why"
+            name, n = f[1].split("=")
+            b = int(f[2].split("=")[1])
+            cur = r[key].setdefault(name, [0, 0])
+            cur[0] += int(n)
+            cur[1] += b
+    return r
+
+
+def merge(a, b):
+    for k, v in b.items():
+        if isinstance(v, dict):
+            for name, pair in v.items():
+                cur = a[k].setdefault(name, [0, 0])
+                cur[0] += pair[0]
+                cur[1] += pair[1]
+        else:
+            a[k] += v
+    return a
+
+
+def read_rows(tsv):
+    rows = []
+    if not os.path.exists(tsv):
+        return rows
+    for line in open(tsv, errors="replace"):
+        f = line.replace("\r", "").rstrip("\n").split("\t")
+        if len(f) != 7:
+            continue
+        try:
+            f[5] = int(f[5])
+            f[6] = int(f[6])
+        except ValueError:
+            continue
+        rows.append(f)
+    return rows
+
+
+def census(mcc, flags, sources, opt, layer="arena", keep_rows=True):
+    env0 = dict(os.environ)
+    for k in ("MCC_RIR_PROD", "MCC_RIR_PROD_OUT", "MCC_FORCE_REPLAY",
+              "MCC_REPLAY_IR", "MCC_REPLAY_IR_OUT", "MCC_RIR_FORCE",
+              "MCC_TEST_OPT"):
+        env0.pop(k, None)
+    agg = parse_report("")
+    rows = []
+    text = 0
+    fails = []
+    with tempfile.TemporaryDirectory() as td:
+        tsv = os.path.join(td, "prod.tsv")
+        for i, src in enumerate(sources):
+            out_o = os.path.join(td, "o%d.o" % i)
+            fl = flags if src.endswith("/mcc.c") else []
+            if os.path.exists(tsv):
+                os.remove(tsv)
+            p = run_one(mcc, fl, src, opt, out_o, tsv, env0, layer)
+            if p.returncode != 0:
+                fails.append((src, p.stderr.strip().splitlines()[-1:] or [""]))
+                continue
+            merge(agg, parse_report(p.stderr))
+            if layer != "capture" and os.path.exists(tsv):
+                merge(agg, parse_report(open(tsv, errors="replace").read()))
+                if keep_rows:
+                    rows.extend(read_rows(tsv))
+            t = text_size(out_o)
+            if t is not None:
+                text += t
+    agg["text"] = text
+    agg["rows"] = rows
+    agg["failed"] = fails
+    return agg
+
+
+def classify(rows):
+    """rows -> {class: [count, bytes, (biggest file, func, bytes), rawn, rawb]}"""
+    out = {}
+    for verdict, f, fn, why, unf, nb, nraw in rows:
+        if verdict == "used":
+            continue
+        cls = unf if verdict == "fallback" else ("skip:" + (why or "?"))
+        e = out.setdefault(cls, [0, 0, None, 0, 0])
+        e[0] += 1
+        e[1] += nb
+        if e[2] is None or nb > e[2][2]:
+            e[2] = (f, fn, nb)
+        if nraw:
+            e[3] += 1
+            e[4] += nb
+    return out
+
+
+def pct(a, b):
+    return 100.0 * a / b if b else 0.0
+
+
+DISCARD = ("len", "bytes", "rellen", "relcontent", "posterr")
+
+
+def nofb_probe(mcc, sources, opt, verbose=True):
+    """Per-body benignity split of category 2 (modelled, byte-divergent).
+
+    For every body the byte compare discarded, keep THAT body's replay output
+    (-fno-replay-fallback, with every other divergent body in the same TU still
+    falling back via MCC_RIR_NOFB_SKIP) and compare the program's behaviour to
+    the shipped compiler's. Same behaviour => that body's divergence is benign
+    on this program; different => a real miscompile, e.g. union_cast::main.
+    """
+    env0 = dict(os.environ)
+    for k in ("MCC_RIR_PROD", "MCC_RIR_PROD_OUT", "MCC_FORCE_REPLAY",
+              "MCC_REPLAY_IR", "MCC_REPLAY_IR_OUT", "MCC_RIR_NOFB_SKIP",
+              "MCC_TEST_OPT"):
+        env0.pop(k, None)
+    benign, bad, unrunnable, nbodies = [], [], [], 0
+    with tempfile.TemporaryDirectory() as td:
+        for src in sources:
+            tsv = os.path.join(td, "p.tsv")
+            if os.path.exists(tsv):
+                os.remove(tsv)
+            p = run_one(mcc, [], src, opt, os.path.join(td, "p.o"), tsv, env0,
+                        "arena")
+            if p.returncode != 0:
+                continue
+            rows = [r for r in read_rows(tsv)
+                    if r[0] == "fallback" and r[4] in DISCARD]
+            if not rows:
+                continue
+            names = [r[2] for r in rows]
+            nbodies += len(names)
+            base = subprocess.run([mcc, "-" + opt, "-run", src],
+                                  capture_output=True, text=True, cwd=ROOT,
+                                  env=env0, timeout=60)
+            if base.returncode != 0:
+                unrunnable.append((src, names))
+                continue
+            for nm in names:
+                env = dict(env0)
+                env["MCC_FORCE_REPLAY"] = "1"
+                skip = [x for x in names if x != nm]
+                if skip:
+                    env["MCC_RIR_NOFB_SKIP"] = ",".join(skip)
+                try:
+                    q = subprocess.run(
+                        [mcc, "-" + opt, "-fno-replay-fallback", "-run", src],
+                        capture_output=True, text=True, cwd=ROOT, env=env,
+                        timeout=60)
+                except subprocess.TimeoutExpired:
+                    bad.append((src, nm, "timeout"))
+                    continue
+                if q.returncode == base.returncode and q.stdout == base.stdout:
+                    benign.append((src, nm))
+                else:
+                    bad.append((src, nm, "rc %d vs %d" % (q.returncode,
+                                                          base.returncode)))
+    if verbose:
+        print("== -%s  category-2 benignity probe (-fno-replay-fallback, "
+              "per body)" % opt)
+        print("   %d divergent bodies in %d runnable programs: %d benign, "
+              "%d MISCOMPILE, %d in programs that do not run standalone"
+              % (nbodies, len(set(s for s, _ in benign)) +
+                 len(set(s for s, _, _ in bad)), len(benign), len(bad),
+                 sum(len(n) for _, n in unrunnable)))
+        for src, nm, why in bad:
+            print("   MISCOMPILE %s::%s (%s)" % (os.path.relpath(src, ROOT), nm,
+                                                 why))
+    return {"benign": len(benign), "miscompile": len(bad),
+            "unrunnable": sum(len(n) for _, n in unrunnable),
+            "bodies": nbodies,
+            "miscompiles": [(os.path.relpath(s, ROOT), n) for s, n, _ in bad]}
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("build_dir")
+    ap.add_argument("--levels", default="O0,O1,O2,O3")
+    ap.add_argument("--corpus", default="self")
+    ap.add_argument("--layers", default="both",
+                    choices=["both", "arena", "capture"])
+    ap.add_argument("--bank", default=DEFAULT_BANK)
+    ap.add_argument("--update-bank", action="store_true")
+    ap.add_argument("--no-check", action="store_true")
+    ap.add_argument("--top", type=int, default=0)
+    ap.add_argument("--tol", type=float, default=0.05)
+    ap.add_argument("--json", default=None)
+    ap.add_argument("--sources", nargs="*", default=None)
+    ap.add_argument("--nofb-probe", action="store_true")
+    ap.add_argument("--classify", action="store_true")
+    ap.add_argument("--check-gap-dir", action="store_true")
+    ap.add_argument("--opt-in", action="store_true")
+    a = ap.parse_args()
+
+    if a.opt_in and not os.environ.get("MCC_RIR_CENSUS"):
+        print("rir-coverage: set MCC_RIR_CENSUS=1 to run this census "
+              "(ctest -L census)")
+        return 77
+
+    bdir = a.build_dir if os.path.isabs(a.build_dir) else os.path.join(ROOT, a.build_dir)
+    mcc = find_mcc(bdir)
+    flags = self_flags(bdir)
+
+    if a.sources:
+        sources = a.sources
+    elif a.corpus == "self":
+        sources = [os.path.join(ROOT, "src", "mcc.c")]
+    elif a.corpus in ("wide", "exec"):
+        sources = [] if a.corpus == "exec" else [os.path.join(ROOT, "src", "mcc.c")]
+        for d in (("tests/exec",) if a.corpus == "exec" else
+                  ("tests/exec", "tests/behavior", "tests/ast", "tests/asm",
+                   "tests/runtime", "tests/static", "examples")):
+            p = os.path.join(ROOT, d)
+            if not os.path.isdir(p):
+                continue
+            for dp, _, fns in os.walk(p):
+                for fn in sorted(fns):
+                    if fn.endswith(".c"):
+                        sources.append(os.path.join(dp, fn))
+    else:
+        sys.exit("rir-coverage: unknown corpus " + a.corpus)
+
+    bank = {}
+    if os.path.exists(a.bank):
+        bank = json.load(open(a.bank))
+    banked = bank.get(a.corpus, {})
+
+    result = {}
+    bad = []
+    if a.check_gap_dir:
+        env0 = dict(os.environ)
+        for k in ("MCC_RIR_PROD", "MCC_RIR_PROD_OUT", "MCC_FORCE_REPLAY",
+                  "MCC_REPLAY_IR", "MCC_TEST_OPT"):
+            env0.pop(k, None)
+        gdir = os.path.join(ROOT, "tests", "rir", "gap")
+        with tempfile.TemporaryDirectory() as td:
+            for fn in sorted(os.listdir(gdir)):
+                if not fn.endswith(".c"):
+                    continue
+                want = fn[:-2]
+                if want not in UNF:
+                    want = "skip:" + want
+                for opt in a.levels.split(","):
+                    tsv = os.path.join(td, "g.tsv")
+                    if os.path.exists(tsv):
+                        os.remove(tsv)
+                    p = run_one(mcc, [], os.path.join(gdir, fn), opt,
+                                os.path.join(td, "g.o"), tsv, env0, "arena")
+                    if p.returncode != 0:
+                        bad.append("%s -%s: compile failed" % (fn, opt))
+                        continue
+                    got = set()
+                    for r in read_rows(tsv):
+                        got.add("used" if r[0] == "used" else
+                                r[4] if r[0] == "fallback" else "skip:" + r[3])
+                    ok = want in got
+                    print("%-14s -%-3s %-16s %s"
+                          % (fn, opt, want, "ok" if ok else
+                             "MISSING, got " + ",".join(sorted(got))))
+                    if not ok:
+                        bad.append("%s -%s: class %s no longer reproduces (got %s)"
+                                   % (fn, opt, want, ",".join(sorted(got))))
+        for m in bad:
+            print("FAIL " + m)
+        return 1 if bad else 0
+    if a.classify:
+        env0 = dict(os.environ)
+        for k in ("MCC_RIR_PROD", "MCC_RIR_PROD_OUT", "MCC_FORCE_REPLAY",
+                  "MCC_REPLAY_IR", "MCC_TEST_OPT"):
+            env0.pop(k, None)
+        with tempfile.TemporaryDirectory() as td:
+            for opt in a.levels.split(","):
+                for src in sources:
+                    tsv = os.path.join(td, "c.tsv")
+                    if os.path.exists(tsv):
+                        os.remove(tsv)
+                    p = run_one(mcc, [], src, opt, os.path.join(td, "c.o"), tsv,
+                                env0, "arena")
+                    if p.returncode != 0:
+                        print("-%s %-40s COMPILE FAILED" % (opt, os.path.basename(src)))
+                        continue
+                    for r in read_rows(tsv):
+                        cls = ("used" if r[0] == "used" else
+                               r[4] if r[0] == "fallback" else "skip:" + r[3])
+                        print("-%s %-28s %-24s %-14s %6d B raw=%d"
+                              % (opt, os.path.basename(src), r[2], cls, r[5], r[6]))
+        return 0
+    if a.nofb_probe:
+        known = bank.get("nofb_miscompiles", {})
+        for opt in a.levels.split(","):
+            r = nofb_probe(mcc, [s for s in sources if not s.endswith("/mcc.c")],
+                           opt)
+            result.setdefault(opt, {})["nofb_probe"] = r
+            got = sorted("%s::%s" % (f, n) for f, n in r["miscompiles"])
+            was = sorted(known.get(opt, []))
+            if a.update_bank:
+                known[opt] = got
+            elif not a.no_check:
+                for m in got:
+                    if m not in was:
+                        bad.append("-%s: new byte-divergent body miscompiles "
+                                   "under -fno-replay-fallback: %s" % (opt, m))
+        if a.update_bank:
+            bank["nofb_miscompiles"] = known
+            json.dump(bank, open(a.bank, "w"), indent=1, sort_keys=True)
+            print("banked nofb_miscompiles -> %s" % a.bank)
+        if a.json:
+            json.dump(result, open(a.json, "w"), indent=1, sort_keys=True)
+        for m in bad:
+            print("FAIL " + m)
+        return 1 if bad else 0
+    for opt in a.levels.split(","):
+        if a.layers != "arena":
+            cc2 = census(mcc, flags, sources, opt, layer="capture",
+                         keep_rows=False)
+            ctext = cc2["text"]
+            cfaith = cc2["cap_b_faith"]
+            cfn = cc2["fn_bytes"] + cc2["b_reemit"]
+            cbody = cfaith + cc2["cap_b_unfaith"] + cc2["cap_b_err"]
+            ccov = pct(cfaith, cbody)
+            result.setdefault(opt, {})["capture"] = {
+                "fn": cc2["cap_fn"], "faithful_bodies": cc2["cap_faithful"],
+                "text": ctext, "fn_bytes": cfn, "body_bytes": cbody,
+                "faithful_bytes": cfaith, "unfaithful_bytes": cc2["cap_b_unfaith"],
+                "rerror_bytes": cc2["cap_b_err"], "rerror_bodies": cc2["cap_n_err"],
+                "raw_fn": cc2["cap_raw_fn"], "raw_bytes": cc2["cap_raw_b"],
+                "unnoted": cc2["unnoted"], "unnoted_bytes": cc2["b_unnoted"],
+                "residual": ctext - cfn, "coverage": round(ccov, 4),
+            }
+            print("== -%s  CAPTURE layer (op stream, MCC_REPLAY_IR=3)  files=%d"
+                  % (opt, len(sources)))
+            print("   bodies %d, rfaithful %d, rerror %d, unnoted fns %d"
+                  % (cc2["cap_fn"], cc2["cap_faithful"], cc2["cap_n_err"],
+                     cc2["unnoted"]))
+            print("   .text %d = fn %d (incl reemit %d) + residual %d;  "
+                  "body %d + pro/epilogue %d"
+                  % (ctext, cfn, cc2["b_reemit"], ctext - cfn, cbody,
+                     cfn - cbody - cc2["b_reemit"]))
+            print("   BYTE COVERAGE %.3f%% of body bytes  (%.3f%% of .text); "
+                  "unfaithful %d B, rerror %d B"
+                  % (ccov, pct(cfaith, ctext), cc2["cap_b_unfaith"],
+                     cc2["cap_b_err"]))
+            print("   IR_OP_RAW escape hatch used by %d bodies / %d bytes "
+                  "(%.3f%% of .text)"
+                  % (cc2["cap_raw_fn"], cc2["cap_raw_b"],
+                     pct(cc2["cap_raw_b"], ctext)))
+            if cc2["failed"]:
+                print("   %d source(s) failed to compile" % len(cc2["failed"]))
+            b = banked.get(opt, {}).get("capture")
+            if b and not a.no_check and ccov + a.tol < b["coverage"]:
+                bad.append("-%s capture: byte coverage regressed: %.4f%% < "
+                           "banked %.4f%%" % (opt, ccov, b["coverage"]))
+        if a.layers == "capture":
+            continue
+        c = census(mcc, flags, sources, opt)
+        text = c["text"]
+        body = c["b_body"]
+        used = c["b_used"]
+        cov = pct(used, text)
+        resid = text - c["fn_bytes"] - c["b_reemit"]
+        recon_bodies = c["b_used"] + c["b_fallback"] + c["b_skip"]
+        unf_sum = sum(v[0] for v in c["unf"].values())
+        why_sum = sum(v[0] for v in c["why"].values())
+        abort_n, abort_b = c["unf"].get("abort", [0, 0])
+        disc_b = c["b_fallback"] - abort_b
+        disc_n = c["fallback"] - abort_n
+        gap_b = c["b_skip"] + abort_b
+        gap_n = c["skip"] + abort_n
+        modelled = used + disc_b
+        result.setdefault(opt, {})["arena"] = {
+            "bodies": c["used"] + c["fallback"] + c["skip"],
+            "used": c["used"], "fallback": c["fallback"], "skip": c["skip"],
+            "text": text, "fn_bytes": c["fn_bytes"], "body_bytes": body,
+            "used_bytes": used, "fallback_bytes": c["b_fallback"],
+            "skip_bytes": c["b_skip"], "nonbody_bytes": c["b_nonbody"],
+            "unnoted": c["unnoted"], "unnoted_bytes": c["b_unnoted"],
+            "residual": resid, "coverage": round(cov, 4),
+            "discarded_bodies": disc_n, "discarded_bytes": disc_b,
+            "gap_bodies": gap_n, "gap_bytes": gap_b,
+            "modelled_bytes": modelled,
+            "modelled_coverage": round(pct(modelled, body), 4),
+            "kept_coverage": round(pct(used, body), 4),
+            "unf": c["unf"], "why": c["why"],
+            "classes": classify(c["rows"]) if c["rows"] else {},
+            "failed": len(c["failed"]),
+        }
+        print("== -%s  ARENA layer (production, MCC_RIR_PROD=2)  corpus=%s files=%d"
+              % (opt, a.corpus, len(sources)))
+        print("   bodies %d = used %d + fallback %d + skip %d"
+              % (result[opt]["arena"]["bodies"], c["used"], c["fallback"],
+                 c["skip"]))
+        print("   .text %d = fn %d + reemit %d (%d fns) + residual %d"
+              % (text, c["fn_bytes"], c["b_reemit"], c["reemit"], resid))
+        print("   fn    %d = body %d + prologue/epilogue %d"
+              % (c["fn_bytes"], body, c["b_nonbody"]))
+        print("   body  %d = used %d + fallback %d + skip %d  (delta %d)"
+              % (body, used, c["b_fallback"], c["b_skip"], body - recon_bodies))
+        print("   MODELLED %.3f%% of body bytes  (kept %.3f%% + discarded by "
+              "byte compare %.3f%%)"
+              % (pct(modelled, body), pct(used, body), pct(disc_b, body)))
+        print("   GAP      %.3f%% of body bytes = %d B  "
+              "(never modelled %d B + replay aborted %d B, %d bodies)"
+              % (pct(gap_b, body), gap_b, c["b_skip"], abort_b, gap_n))
+        print("   as %% of .text: modelled %.3f%%  kept %.3f%%  gap %.3f%%  "
+              "prologue/epilogue %.3f%%"
+              % (pct(modelled, text), cov, pct(gap_b, text),
+                 pct(c["b_nonbody"], text)))
+        print("   unnoted %d bodies/%d bytes" % (c["unnoted"], c["b_unnoted"]))
+        for name in UNF:
+            if name in c["unf"]:
+                n, b = c["unf"][name]
+                tag = "GAP " if name == "abort" else "disc"
+                print("     %s fallback/%-11s %5d bodies %9d bytes  %6.3f%% of body"
+                      % (tag, name, n, b, pct(b, body)))
+        for name in WHY:
+            if name in c["why"]:
+                n, b = c["why"][name]
+                print("     GAP  skip/%-15s %5d bodies %9d bytes  %6.3f%% of body"
+                      % (name, n, b, pct(b, body)))
+        if unf_sum != c["fallback"] or why_sum != c["skip"]:
+            bad.append("-%s: census does not reconcile: unfaithful sum %d vs "
+                       "fallback %d, why sum %d vs skip %d"
+                       % (opt, unf_sum, c["fallback"], why_sum, c["skip"]))
+        if body != recon_bodies:
+            bad.append("-%s: body bytes %d != used+fallback+skip %d"
+                       % (opt, body, recon_bodies))
+        print("   IR_OP_RAW bodies: used %d/%dB  fallback %d/%dB  skip %d/%dB"
+              % (c["raw_used"], c["b_raw_used"], c["raw_fallback"],
+                 c["b_raw_fallback"], c["raw_skip"], c["b_raw_skip"]))
+        lost = c["b_fallback"] + c["b_skip"]
+        rawlost = c["b_raw_fallback"] + c["b_raw_skip"]
+        print("   of the %d lost bytes, %d (%.2f%%) are in bodies that used "
+              "IR_OP_RAW" % (lost, rawlost, pct(rawlost, lost)))
+        if c["failed"]:
+            print("   %d source(s) failed to compile" % len(c["failed"]))
+        if a.top:
+            cls = result[opt]["arena"]["classes"]
+            for cname in sorted(cls, key=lambda k: -cls[k][1]):
+                n, b, big, rawn, rawb = cls[cname]
+                print("   class %-18s %5d bodies %9d bytes  raw %d/%dB  "
+                      "biggest %s:%s (%d)"
+                      % (cname, n, b, rawn, rawb, os.path.basename(big[0]),
+                         big[1], big[2]))
+                rr = [r for r in c["rows"]
+                      if (r[4] if r[0] == "fallback" else "skip:" + r[3]) == cname]
+                rr.sort(key=lambda r: -r[5])
+                for r in rr[:a.top]:
+                    print("       %8d raw=%d %s:%s"
+                          % (r[5], r[6], os.path.basename(r[1]), r[2]))
+        b = banked.get(opt, {}).get("arena")
+        if b and not a.no_check:
+            mc = pct(modelled, body)
+            if mc + a.tol < b["modelled_coverage"]:
+                bad.append("-%s: modelled coverage regressed: %.4f%% < banked "
+                           "%.4f%% (the gap grew)"
+                           % (opt, mc, b["modelled_coverage"]))
+            if abs(resid) > abs(b.get("residual", 0)):
+                bad.append("-%s: unattributed .text grew: residual %d, banked %d"
+                           % (opt, resid, b.get("residual", 0)))
+        elif not b and not a.update_bank and not a.no_check:
+            bad.append("-%s: no banked coverage for corpus %s" % (opt, a.corpus))
+
+    if a.json:
+        json.dump(result, open(a.json, "w"), indent=1, sort_keys=True)
+
+    if a.update_bank:
+        out = {}
+        for opt, layers in result.items():
+            out[opt] = {}
+            for lname, v in layers.items():
+                out[opt][lname] = {"coverage": v["coverage"],
+                                   "residual": v["residual"],
+                                   "text": v["text"]}
+                if lname == "arena":
+                    out[opt][lname].update(
+                        {"bodies": v["bodies"], "used_bytes": v["used_bytes"],
+                         "body_bytes": v["body_bytes"],
+                         "modelled_coverage": v["modelled_coverage"],
+                         "kept_coverage": v["kept_coverage"],
+                         "modelled_bytes": v["modelled_bytes"],
+                         "gap_bytes": v["gap_bytes"],
+                         "gap_bodies": v["gap_bodies"],
+                         "discarded_bytes": v["discarded_bytes"]})
+                else:
+                    out[opt][lname].update(
+                        {"bodies": v["fn"], "faithful_bytes": v["faithful_bytes"]})
+        prev = bank.get(a.corpus, {})
+        for opt, layers in out.items():
+            prev.setdefault(opt, {}).update(layers)
+        bank[a.corpus] = prev
+        os.makedirs(os.path.dirname(a.bank), exist_ok=True)
+        json.dump(bank, open(a.bank, "w"), indent=1, sort_keys=True)
+        print("banked %s -> %s" % (a.corpus, a.bank))
+
+    for m in bad:
+        print("FAIL " + m)
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

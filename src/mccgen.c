@@ -16460,6 +16460,7 @@ static void gen_function(Sym *sym) {
 	mcc_debug_prolog_epilog(mcc_state, 0);
 	func_vla_arg(sym);
 	rir_hook_body_begin();
+	rir_prod_fn_begin();
 	ast_func_begin(sym);
 	block(0);
 	ast_func_end(sym);
@@ -16482,6 +16483,7 @@ static void gen_function(Sym *sym) {
 
 	mcc_debug_funcend(mcc_state, ind - func_ind);
 
+	rir_prod_fn_end((long)(ind - func_ind));
 	elfsym(sym)->st_size = ind - func_ind;
 	cur_text_section->data_offset = ind;
 

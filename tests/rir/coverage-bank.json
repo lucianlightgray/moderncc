@@ -1,0 +1,196 @@
+{
+ "nofb_miscompiles": {
+  "O0": [],
+  "O1": [],
+  "O2": [],
+  "O3": []
+ },
+ "self": {
+  "O0": {
+   "arena": {
+    "bodies": 2579,
+    "body_bytes": 1330277,
+    "coverage": 74.0975,
+    "discarded_bytes": 299050,
+    "gap_bodies": 7,
+    "gap_bytes": 5411,
+    "kept_coverage": 77.113,
+    "modelled_bytes": 1324866,
+    "modelled_coverage": 99.5932,
+    "residual": 0,
+    "text": 1384413,
+    "used_bytes": 1025816
+   },
+   "capture": {
+    "bodies": 2579,
+    "coverage": 100.0,
+    "faithful_bytes": 1330277,
+    "residual": 0,
+    "text": 1384413
+   }
+  },
+  "O1": {
+   "arena": {
+    "bodies": 2581,
+    "body_bytes": 1321686,
+    "coverage": 86.2935,
+    "discarded_bytes": 129045,
+    "gap_bodies": 7,
+    "gap_bytes": 5367,
+    "kept_coverage": 89.8303,
+    "modelled_bytes": 1316319,
+    "modelled_coverage": 99.5939,
+    "residual": 0,
+    "text": 1375856,
+    "used_bytes": 1187274
+   },
+   "capture": {
+    "bodies": 2581,
+    "coverage": 100.0,
+    "faithful_bytes": 1323544,
+    "residual": 0,
+    "text": 1377714
+   }
+  },
+  "O2": {
+   "arena": {
+    "bodies": 2581,
+    "body_bytes": 1325168,
+    "coverage": 84.6256,
+    "discarded_bytes": 129045,
+    "gap_bodies": 8,
+    "gap_bytes": 5834,
+    "kept_coverage": 89.8217,
+    "modelled_bytes": 1319334,
+    "modelled_coverage": 99.5598,
+    "residual": 0,
+    "text": 1406535,
+    "used_bytes": 1190289
+   },
+   "capture": {
+    "bodies": 2581,
+    "coverage": 100.0,
+    "faithful_bytes": 1323544,
+    "residual": 0,
+    "text": 1377714
+   }
+  },
+  "O3": {
+   "arena": {
+    "bodies": 2581,
+    "body_bytes": 1325177,
+    "coverage": 81.6074,
+    "discarded_bytes": 129045,
+    "gap_bodies": 8,
+    "gap_bytes": 5834,
+    "kept_coverage": 89.8218,
+    "modelled_bytes": 1319343,
+    "modelled_coverage": 99.5598,
+    "residual": 0,
+    "text": 1458566,
+    "used_bytes": 1190298
+   },
+   "capture": {
+    "bodies": 2581,
+    "coverage": 100.0,
+    "faithful_bytes": 1323544,
+    "residual": 0,
+    "text": 1377714
+   }
+  }
+ },
+ "wide": {
+  "O0": {
+   "arena": {
+    "bodies": 4021,
+    "body_bytes": 3405164,
+    "coverage": 88.9556,
+    "discarded_bytes": 300976,
+    "gap_bodies": 44,
+    "gap_bytes": 5411,
+    "kept_coverage": 91.0023,
+    "modelled_bytes": 3399753,
+    "modelled_coverage": 99.8411,
+    "residual": -119,
+    "text": 3483510,
+    "used_bytes": 3098777
+   },
+   "capture": {
+    "bodies": 4021,
+    "coverage": 100.0,
+    "faithful_bytes": 3405164,
+    "residual": -119,
+    "text": 3483510
+   }
+  },
+  "O1": {
+   "arena": {
+    "bodies": 4030,
+    "body_bytes": 3396365,
+    "coverage": 93.8422,
+    "discarded_bytes": 130134,
+    "gap_bodies": 44,
+    "gap_bytes": 5367,
+    "kept_coverage": 96.0104,
+    "modelled_bytes": 3390998,
+    "modelled_coverage": 99.842,
+    "residual": -119,
+    "text": 3474838,
+    "used_bytes": 3260864
+   },
+   "capture": {
+    "bodies": 4030,
+    "coverage": 100.0,
+    "faithful_bytes": 3404283,
+    "residual": -119,
+    "text": 3482756
+   }
+  },
+  "O2": {
+   "arena": {
+    "bodies": 4030,
+    "body_bytes": 3400302,
+    "coverage": 93.0085,
+    "discarded_bytes": 130134,
+    "gap_bodies": 45,
+    "gap_bytes": 5834,
+    "kept_coverage": 96.0013,
+    "modelled_bytes": 3394468,
+    "modelled_coverage": 99.8284,
+    "residual": -119,
+    "text": 3509714,
+    "used_bytes": 3264334
+   },
+   "capture": {
+    "bodies": 4030,
+    "coverage": 100.0,
+    "faithful_bytes": 3404283,
+    "residual": -119,
+    "text": 3482756
+   }
+  },
+  "O3": {
+   "arena": {
+    "bodies": 4030,
+    "body_bytes": 3400273,
+    "coverage": 91.6321,
+    "discarded_bytes": 130134,
+    "gap_bodies": 45,
+    "gap_bytes": 5834,
+    "kept_coverage": 96.0013,
+    "modelled_bytes": 3394439,
+    "modelled_coverage": 99.8284,
+    "residual": -119,
+    "text": 3562404,
+    "used_bytes": 3264305
+   },
+   "capture": {
+    "bodies": 4030,
+    "coverage": 100.0,
+    "faithful_bytes": 3404283,
+    "residual": -119,
+    "text": 3482756
+   }
+  }
+ }
+}

@@ -57,6 +57,17 @@ int rir_prod_env;
 static int rir_prod_gate;
 static const char *rir_prod_out;
 static long rir_tot_prod_used, rir_tot_prod_fb, rir_tot_prod_skip;
+static long rir_tot_bytes_used, rir_tot_bytes_fb, rir_tot_bytes_skip;
+static long rir_tot_fn_n, rir_tot_fn_bytes;
+static long rir_tot_fn_unnoted, rir_tot_fn_unnoted_bytes;
+static long rir_tot_reemit_n, rir_tot_reemit_bytes;
+static int rir_prod_fn_notes;
+static long rir_prod_body_bytes;
+static int rir_prod_nraw;
+static long rir_tot_raw_used, rir_tot_raw_fb, rir_tot_raw_skip;
+static long rir_tot_rawb_used, rir_tot_rawb_fb, rir_tot_rawb_skip;
+static long rir_cap_b_faith, rir_cap_b_unfaith, rir_cap_b_err;
+static long rir_cap_n_err, rir_cap_raw_fn, rir_cap_raw_b;
 int rir_try_active;
 int rir_active;
 #define RIR_LOCREC_MAX 512
@@ -1081,15 +1092,17 @@ static long rir_tot_c2_try, rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len,
 static char rir_c2_msg[256];
 static long rir_tot_c2_invalid;
 static long rir_tot_c2_equiv, rir_tot_c2_unproven;
-#define RIR_PROD_NWHY 11
+#define RIR_PROD_NWHY 12
 static const char *const rir_prod_why_name[RIR_PROD_NWHY] = {
-		"bail",     "noops",   "capbad", "unbal",     "ovf",   "mismatch",
-		"invalid",  "unsafe",  "asm",    "regdangle", "revargs"};
+		"bail",     "noops",   "capbad", "unbal",     "ovf",     "mismatch",
+		"invalid",  "unsafe",  "asm",    "regdangle", "revargs", "replayok"};
 static long rir_prod_why_n[RIR_PROD_NWHY];
+static long rir_prod_why_b[RIR_PROD_NWHY];
 #define RIR_PROD_NUNF 6
 static const char *const rir_unfaithful_name[RIR_PROD_NUNF] = {
 		"len", "bytes", "rellen", "relcontent", "abort", "posterr"};
 static long rir_unfaithful_n[RIR_PROD_NUNF];
+static long rir_unfaithful_b[RIR_PROD_NUNF];
 static long rir_tot_c3_try, rir_tot_c3_ran, rir_tot_c3_folds, rir_tot_c3_broke;
 static long rir_tot_c3_pair, rir_tot_c3_same_folds, rir_tot_c3_same_hash;
 static long rir_tot_c3_pair_fired;
@@ -4654,6 +4667,7 @@ struct AstArena *rir_prod_take(void) {
 	AstArena *a;
 	int i, nops = 0;
 	rir_prod_why = "";
+	rir_prod_nraw = 0;
 	if (!rir_prod_env || rir_env || rir_prod_bail) {
 		rir_prod_why = "bail";
 		return NULL;
@@ -4662,6 +4676,9 @@ struct AstArena *rir_prod_take(void) {
 		rir_prod_why = "revargs";
 		return NULL;
 	}
+	for (i = 0; i < ir_cap_n; i++)
+		if (ir_cap_ops[i].kind == IR_OP_RAW)
+			rir_prod_nraw++;
 	rir_build();
 	for (i = 0; i < rir_n; i++)
 		if (rir_ops[i].tag == RIR_T_OP)
@@ -4732,43 +4749,87 @@ void rir_prod_note(const char *verdict) {
 	const char *f, *unf;
 	int i;
 	int is_fb = !strcmp(verdict, "fallback");
+	long nb = rir_prod_body_bytes;
 	unf = is_fb ? rir_unfaithful_why : "";
-	if (!strcmp(verdict, "used"))
+	rir_prod_fn_notes++;
+	if (!strcmp(verdict, "used")) {
 		rir_tot_prod_used++;
-	else if (is_fb) {
+		rir_tot_bytes_used += nb;
+		if (rir_prod_nraw) {
+			rir_tot_raw_used++;
+			rir_tot_rawb_used += nb;
+		}
+	} else if (is_fb) {
 		rir_tot_prod_fb++;
+		rir_tot_bytes_fb += nb;
+		if (rir_prod_nraw) {
+			rir_tot_raw_fb++;
+			rir_tot_rawb_fb += nb;
+		}
 		for (i = 0; i < RIR_PROD_NUNF; i++)
 			if (!strcmp(rir_unfaithful_name[i], unf)) {
 				rir_unfaithful_n[i]++;
+				rir_unfaithful_b[i] += nb;
 				break;
 			}
 	} else {
 		rir_tot_prod_skip++;
+		rir_tot_bytes_skip += nb;
+		if (rir_prod_nraw) {
+			rir_tot_raw_skip++;
+			rir_tot_rawb_skip += nb;
+		}
 		for (i = 0; i < RIR_PROD_NWHY; i++)
 			if (!strcmp(rir_prod_why_name[i], rir_prod_why)) {
 				rir_prod_why_n[i]++;
+				rir_prod_why_b[i] += nb;
 				break;
 			}
 	}
 	if (rir_prod_gate < 2)
 		return;
-	f = mcc_state && mcc_state->current_filename ? mcc_state->current_filename
-																							 : "?";
+	f = file && file->filename[0]
+					? file->filename
+					: (mcc_state && mcc_state->current_filename
+								 ? mcc_state->current_filename
+								 : "?");
 	if (rir_prod_out) {
 		FILE *o = fopen(rir_prod_out, "a");
 		if (o) {
-			fprintf(o, "%s\t%s\t%s\t%s\t%s\n", verdict, f,
-							funcname ? funcname : "?", rir_prod_why, unf);
+			fprintf(o, "%s\t%s\t%s\t%s\t%s\t%ld\t%d\n", verdict, f,
+							funcname ? funcname : "?", rir_prod_why, unf, nb, rir_prod_nraw);
 			fclose(o);
 		}
 		return;
 	}
-	fprintf(stderr, "[rir-prod] %s\t%s\t%s\t%s\t%s\n", verdict, f,
-					funcname ? funcname : "?", rir_prod_why, unf);
+	fprintf(stderr, "[rir-prod] %s\t%s\t%s\t%s\t%s\t%ld\t%d\n", verdict, f,
+					funcname ? funcname : "?", rir_prod_why, unf, nb, rir_prod_nraw);
+}
+
+void rir_prod_body_set(long bytes) { rir_prod_body_bytes = bytes; }
+
+void rir_prod_why_set(const char *why) { rir_prod_why = why; }
+
+void rir_prod_reemit(long bytes) {
+	rir_tot_reemit_n++;
+	rir_tot_reemit_bytes += bytes;
+}
+
+void rir_prod_fn_begin(void) { rir_prod_fn_notes = 0; }
+
+void rir_prod_fn_end(long bytes) {
+	rir_tot_fn_n++;
+	rir_tot_fn_bytes += bytes;
+	if (!rir_prod_fn_notes) {
+		rir_tot_fn_unnoted++;
+		rir_tot_fn_unnoted_bytes += bytes;
+	}
+	rir_prod_fn_notes = 0;
 }
 
 static void rir_prod_report(void) {
 	int i;
+	long body = rir_tot_bytes_used + rir_tot_bytes_fb + rir_tot_bytes_skip;
 	FILE *f = stderr;
 	if (rir_prod_out && rir_prod_out[0]) {
 		f = fopen(rir_prod_out, "a");
@@ -4789,12 +4850,26 @@ static void rir_prod_report(void) {
 	}
 	for (i = 0; i < RIR_PROD_NWHY; i++)
 		if (rir_prod_why_n[i])
-			fprintf(f, "[rir-prod-why] %s=%ld\n", rir_prod_why_name[i],
-							rir_prod_why_n[i]);
+			fprintf(f, "[rir-prod-why] %s=%ld bytes=%ld\n", rir_prod_why_name[i],
+							rir_prod_why_n[i], rir_prod_why_b[i]);
 	for (i = 0; i < RIR_PROD_NUNF; i++)
 		if (rir_unfaithful_n[i])
-			fprintf(f, "[rir-prod-unfaithful] %s=%ld\n",
-							rir_unfaithful_name[i], rir_unfaithful_n[i]);
+			fprintf(f, "[rir-prod-unfaithful] %s=%ld bytes=%ld\n",
+							rir_unfaithful_name[i], rir_unfaithful_n[i],
+							rir_unfaithful_b[i]);
+	fprintf(f, "[rir-prod-bytes] used=%ld fallback=%ld skip=%ld body=%ld\n",
+					rir_tot_bytes_used, rir_tot_bytes_fb, rir_tot_bytes_skip, body);
+	fprintf(f,
+					"[rir-prod-fn] n=%ld bytes=%ld unnoted=%ld unnotedbytes=%ld "
+					"nonbody=%ld reemit=%ld reemitbytes=%ld\n",
+					rir_tot_fn_n, rir_tot_fn_bytes, rir_tot_fn_unnoted,
+					rir_tot_fn_unnoted_bytes, rir_tot_fn_bytes - body,
+					rir_tot_reemit_n, rir_tot_reemit_bytes);
+	fprintf(f,
+					"[rir-prod-raw] used=%ld usedbytes=%ld fallback=%ld "
+					"fallbackbytes=%ld skip=%ld skipbytes=%ld\n",
+					rir_tot_raw_used, rir_tot_rawb_used, rir_tot_raw_fb,
+					rir_tot_rawb_fb, rir_tot_raw_skip, rir_tot_rawb_skip);
 	if (f != stderr)
 		fclose(f);
 }
@@ -5317,6 +5392,24 @@ void rir_verify(void) {
 	vtop = vstack + saved_vn - 1;
 	mcc_free(vsave);
 
+	rir_prod_fn_notes++;
+	{
+		int nraw2 = 0;
+		for (i = 0; i < ir_cap_n; i++)
+			if (ir_cap_ops[i].kind == IR_OP_RAW)
+				nraw2++;
+		if (nraw2) {
+			rir_cap_raw_fn++;
+			rir_cap_raw_b += body_len;
+		}
+	}
+	if (errored) {
+		rir_cap_b_err += body_len;
+		rir_cap_n_err++;
+	} else if (rir_fail_op < 0 && faithful)
+		rir_cap_b_faith += body_len;
+	else
+		rir_cap_b_unfaith += body_len;
 	if (errored) {
 		verdict = "rerror";
 	} else if (rir_fail_op >= 0) {
@@ -5383,6 +5476,16 @@ static void rir_report(void) {
 						rir_tot_c3_same_hash, rir_tot_c3_pair_fired);
 	fprintf(f, "[rir-raw] fn=%ld ops=%ld bytes=%ld\n", rir_tot_raw_fn,
 					rir_tot_raw_ops, rir_tot_raw_bytes);
+	fprintf(f,
+					"[rir-capbytes] faithful=%ld unfaithful=%ld rerror=%ld rerrorfn=%ld "
+					"rawfn=%ld rawbytes=%ld fn=%ld fnbytes=%ld unnoted=%ld "
+					"unnotedbytes=%ld nonbody=%ld reemit=%ld reemitbytes=%ld\n",
+					rir_cap_b_faith, rir_cap_b_unfaith, rir_cap_b_err, rir_cap_n_err,
+					rir_cap_raw_fn, rir_cap_raw_b, rir_tot_fn_n, rir_tot_fn_bytes,
+					rir_tot_fn_unnoted, rir_tot_fn_unnoted_bytes,
+					rir_tot_fn_bytes - (rir_cap_b_faith + rir_cap_b_unfaith +
+															rir_cap_b_err),
+					rir_tot_reemit_n, rir_tot_reemit_bytes);
 	fprintf(f, "[rir-kind]");
 	for (k = 0; k < AST_KIND_COUNT; k++)
 		if (rir_kindhist[k])

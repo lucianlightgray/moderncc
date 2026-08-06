@@ -376,6 +376,148 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   is ~4× the rows; it has not been measured.
 
 ### C2 gap — remaining Replay_IR fidelity work
+
+#### Byte-level coverage board, both RIR layers (2026-08-06, x86_64 Linux, gcc-built mcc)
+
+Body counts overweight tiny functions: at `-O1` on `src/mcc.c` the arena falls back on
+**2.0% of bodies** (52 of 2581) but **10.2% of body bytes**, because the average
+fallback body is 2585 B and the average kept body is 470 B — 5.5x. Bytes are the honest
+denominator and the census counts them: `tools/rir-coverage.py`, gated by
+`ctest -R rir-coverage`.
+
+**RIR is two layers and only the second has a gap.** The op-stream capture
+(`rir_verify` under `MCC_REPLAY_IR=3`) is the 100% baseline; the arena
+(`rir_to_arena` → `rir_prod_take` → `ast_replay_body`) is what production ships and
+what loses bodies. Everything below is the arena unless it says capture.
+
+The split that matters is semantic, not byte-exact:
+
+| bucket | meaning |
+| --- | --- |
+| **kept** | modelled, replayed, byte-identical to the parser — shipped from the arena |
+| **discarded** | modelled, replay ran to completion, the memcmp against the parser's second derivation disagreed (`len`/`bytes`/`rellen`/`relcontent`/`posterr`) so the parser's bytes were restored. Coverage exists; the byte gate threw it away |
+| **gap** | never modelled (`skip:*`) or modelled but the replay did not complete (`abort`). The only true coverage gap |
+
+`src/mcc.c` compiled by the built `mcc`, `-O0` forced with `MCC_FORCE_REPLAY=1`,
+percentages of **body bytes** (`.text` minus prologue/epilogue):
+
+| level | capture | arena modelled | of which kept | discarded | **gap** |
+| --- | --- | --- | --- | --- | --- |
+| `-O0` (forced) | **100.000%** | 99.593% | 77.113% | 22.480% | **0.407%** (5411 B, 7 bodies) |
+| `-O1` | **100.000%** | 99.594% | 89.830% | 9.764% | **0.406%** (5367 B, 7 bodies) |
+| `-O2` | **100.000%** | 99.560% | 89.822% | 9.738% | **0.440%** (5834 B, 8 bodies) |
+| `-O3` | **100.000%** | 99.560% | 89.822% | 9.738% | **0.440%** (5834 B, 8 bodies) |
+
+As a fraction of the whole `.text` section, `-O1`: modelled 95.67%, kept 86.29%, gap
+0.39%, prologue/epilogue 3.94% — **prologues and epilogues are modelled by neither
+layer, by construction**, and are now by far the largest non-covered slice, an order of
+magnitude bigger than the gap.
+
+The wide corpus (`src/mcc.c` + every `tests/{exec,behavior,ast,asm,runtime,static}/**.c`
++ `examples`, 361 files, 9 of which are negative tests that do not compile) agrees:
+modelled 99.841% / 99.842% / 99.828% / 99.828% at `-O0`/`-O1`/`-O2`/`-O3`, gap 5411 B
+at `-O0`/`-O1` and 5834 B at `-O2`/`-O3` — **the same bytes as the self corpus**, so
+the entire remaining gap lives in `src/`.
+
+#### The gap, enumerated — three classes, each with a minimal reproducer
+
+`tests/rir/gap/<class>.c` is one file per class and `ctest -R rir-gap-classes` compiles
+each at all four levels and fails if a class stops reproducing.
+
+| class | what RIR cannot model | reproducer | bytes in the gap |
+| --- | --- | --- | --- |
+| `abort` | the replay **re-runs semantic checks** and the arena does not carry enough type information to satisfy them. `MCC_RIR_ABORTWHY=1` prints the message `ast_error_sink` swallows: `pointer expected`, from member access through a pointer cast from an integer (`((struct S *)(unsigned long)p[i])->v`) | `abort.c` | **all of it** — 5411 B / 5 bodies at `-O0`,`-O1`; 5834 B / 6 bodies at `-O2`,`-O3` |
+| `skip:noops` | a body with no ops at all (an empty function) | `noops.c` | 0 B by definition |
+| `skip:replayok` | the arena was built and taken, but `ast_replay_ok()` refuses it at `ast_func_end` — previously invisible, it fell out of the census entirely until `rir_prod_why_set("replayok")` was added | `replayok.c` | 0 B on both corpora |
+
+`capbad`, `unbal`, `ovf`, `invalid`, `unsafe` and `revargs` are **never hit** on either
+corpus (`revargs` needs `-freverse-funcargs`, off by default). `asm`, `regdangle`,
+`bail` and `mismatch` were live classes with reproducers when this board was first
+drafted; **all four have since been closed** — their reproducers now report `used` at
+every level and the files are gone.
+
+**So the arena gap is now one defect class, ~5.5 KB, all of it `abort`.** Closing it
+means either not re-running semantic checks during replay, or carrying enough type
+information in the arena to satisfy them.
+
+#### Do not read `discarded` as either a defect or as covered
+
+`ast_run_strat_seq` gates **every** optimizer strategy on `faithful`
+(`if (faithful && ast_strategies[si].gate())`), so a discarded body receives zero
+optimization — the discarded bucket is a *capability* cost, not just bookkeeping. To
+tell whether it is also a correctness cost, `tools/rir-coverage.py --nofb-probe` keeps
+one divergent body at a time (`-fno-replay-fallback` plus `MCC_RIR_NOFB_SKIP` for its
+siblings) and diffs the program against the shipped compiler's output. On `tests/exec`:
+9 divergent bodies at `-O0` and 2 at `-O1`/`-O2`/`-O3`, **all benign, no miscompiles**.
+The bank therefore holds an *empty* miscompile set per level and the cell fails on the
+first new one. (`structs_unions/union_cast.c::main` was a real miscompile when this was
+first measured; it no longer reproduces.)
+
+#### The capture layer measures 100.000% on both corpora
+
+`MCC_REPLAY_IR=3` over `src/mcc.c` and over the wide corpus: `fallback` 0, `rerror` 0,
+**100.000% of body bytes faithful at all four levels**. So the claim "RIR covers all
+machine code generation" is *true of the op stream* and false only of the arena.
+
+- **The `IR_OP_RAW` escape hatch does not explain the arena's gap.** RAW is the
+  capture's memcpy-the-bytes fallback and the arena has no equivalent, so it was the
+  obvious suspect. Measured: **0 bodies** use it in `src/mcc.c` or anywhere in the wide
+  corpus, and **0.00% of the arena's lost bytes** are in a body that used it.
+- **RIR does not run at all under `-g` or on `extern inline` bodies**
+  (`rir_started = (rir_env || rir_prod_env) && !debug_modes && !cur_func_inline_extern`).
+  On the wide corpus that is 43 functions no layer ever sees. Reported as `unnoted` and
+  never counted as covered.
+
+#### What reconciles
+
+The harness checks its own arithmetic: `.text == Σ per-function bytes + Σ re-emitted
+bytes + residual`, and `Σ body bytes == used + fallback + skip`. Both hold exactly
+(residual **0**, delta **0**) at all four levels on the self corpus, and the census's
+own invariant `Σ[rir-prod-unfaithful] == fallback` holds on every row.
+
+On the wide corpus the residual is **−119 bytes over 3.5 MB (0.003%)** in both layers,
+and every byte of it is named, per file: `+1/+6/+14/+14` in `asm_outside_function.c`,
+`al_ax_extend.c` and `asm_c_connect/part{1,2}.c` — file-scope `asm` emits into `.text`
+outside any function, so no body owns those bytes; `−78/−38/−38` in `inline.c` and
+`c99inline_{a,b}.c` — `extern inline` bodies are generated (and counted by the
+per-function hook) and then not placed in `.text` at all. Reported, not hidden.
+
+**It only reconciles because `-O3` re-emission is accounted for, and that uncovered a
+real defect.** At `-O3` — and only at `-O3`, because `MCC_OPT_INLINE` is
+`optimize >= 3` — `ast_reemit_forward_inlines()` re-emits 27 functions / 52,022 B at the
+end of `src/mcc.c` so they can inline a callee defined later. The *first* emission is
+left in `.text` with no symbol pointing at it. Not a correctness bug — nothing branches
+there — but `-O3` ships ~3.6% more `.text` than it needs to, and any per-body byte
+accounting that does not know about re-emission silently attributes the pre-inline copy.
+
+#### The ratchet
+
+`tests/rir/coverage-bank.json` banks, per level and per layer, the **modelled**
+percentage — kept + discarded, i.e. everything that is *not* the gap. `ctest -R
+rir-coverage` fails if it regresses by more than 0.05 pp, or if the *magnitude* of the
+byte-accounting residual grows — a residual that moves toward 0 is better accounting
+and must not fail the gate. **Deliberately not banked: byte faithfulness.** A ratchet on `kept`
+would lock in the wrong invariant and fight every future improvement that makes the
+optimizer *change* bytes. Banked at HEAD on the self corpus: modelled **99.59%** at
+`-O0`/`-O1` and **99.56%** at `-O2`/`-O3`, capture **100.00%** at every level,
+residual **0**.
+
+`ctest -R rir-gap-classes` is the other half: it fails when a gap class stops
+reproducing, so closing one is a deliberate act with a bank update rather than a silent
+no-op. Four classes were closed that way between the first draft of this board and
+this one.
+
+**Bank classes and percentages, never totals.** The body *total* of a census taken over
+a whole `ctest` run is not stable at fixed HEAD (two consecutive runs gave `used=95823`
+and `used=95971` with every class count byte-identical), so nothing derived from a
+varying denominator is banked. The fixed-file-list censuses used here *are*
+deterministic — two consecutive wide runs were byte-identical.
+
+Default cost is `rir-coverage` 4.8 s + `rir-gap-classes` 0.05 s on an idle box. The
+wide-corpus census and the per-body benignity probe are opt-in:
+`MCC_RIR_CENSUS=1 ctest -L census` (`rir-coverage-census` 17 s, `rir-nofb-probe` 3.6 s);
+they skip with 77 otherwise so the default suite stays fast.
+
 - Close the open per-body byte divergences (the "largest first" list in the archive).
   **Fix at the USE site, never the CAPTURE site.**
 - `full_language.c` still diverges at `-O0` on x86_64/i386 — an `AST_OP_ASM` replay

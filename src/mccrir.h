@@ -47,6 +47,11 @@ void rir_teardown(void);
 void rir_prod_replay_begin(void);
 void rir_prod_replay_end(void);
 void rir_prod_note(const char *verdict);
+void rir_prod_body_set(long bytes);
+void rir_prod_why_set(const char *why);
+void rir_prod_fn_begin(void);
+void rir_prod_fn_end(long bytes);
+void rir_prod_reemit(long bytes);
 extern const char *rir_unfaithful_why;
 
 void rir_snap_types(SValue *sv, int n);
@@ -261,6 +266,11 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_prod_replay_begin() ((void)0)
 #define rir_prod_replay_end() ((void)0)
 #define rir_prod_note(v) ((void)0)
+#define rir_prod_body_set(n) ((void)0)
+#define rir_prod_why_set(w) ((void)0)
+#define rir_prod_fn_begin() ((void)0)
+#define rir_prod_fn_end(n) ((void)0)
+#define rir_prod_reemit(n) ((void)0)
 #define rir_snap_types(sv, n) ((void)0)
 #define rir_loc_record(l) ((void)0)
 #define rir_loc_replay(p) 0

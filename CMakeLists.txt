@@ -5439,6 +5439,32 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 1800)
             endforeach()
 
+            add_test(NAME rir-coverage
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
+                        "${CMAKE_BINARY_DIR}" --corpus self --levels O0,O1,O2,O3)
+            set_tests_properties(rir-coverage PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                TIMEOUT 900)
+
+            add_test(NAME rir-gap-classes
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
+                        "${CMAKE_BINARY_DIR}" --check-gap-dir --levels O0,O1,O2,O3)
+            set_tests_properties(rir-gap-classes PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                TIMEOUT 300)
+
+            add_test(NAME rir-coverage-census
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
+                        "${CMAKE_BINARY_DIR}" --corpus wide --levels O0,O1,O2,O3
+                        --top 3 --opt-in)
+            set_tests_properties(rir-coverage-census PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600)
+
+            add_test(NAME rir-nofb-probe
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
+                        "${CMAKE_BINARY_DIR}" --corpus exec --levels O0,O1,O2,O3
+                        --nofb-probe --opt-in)
+            set_tests_properties(rir-nofb-probe PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600)
+
             add_test(NAME selfhost-fixpoint
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
                         "${CMAKE_BINARY_DIR}")
