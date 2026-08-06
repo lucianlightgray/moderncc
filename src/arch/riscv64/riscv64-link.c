@@ -409,13 +409,6 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_RISCV_TPREL_LO12_I: {
 		addr_t tls_start = 0;
 		int64_t tp_offset;
-		/* A PIE carries BOTH bits: mcc_set_output_type ORs MCC_OUTPUT_DYN (==
-		   MCC_OUTPUT_DLL) into an EXE when -pie is on. Local-exec TLS is valid in a
-		   PIE -- its TLS block sits at a fixed offset from the thread pointer, and
-		   gcc uses local-exec there too -- so testing the DLL bit alone rejected
-		   `-fPIC -pie`, which is exactly what the qemu conformance tls and tls_aggr
-		   cases build. Refuse only a real shared library, which is the same condition
-		   load_symofs uses to decide it may emit local-exec in the first place. */
 		if ((s1->output_type & MCC_OUTPUT_DLL) &&
 				!(s1->output_type & MCC_OUTPUT_EXE)) { MCC_TRACE("br\n");
 			mcc_error_noabort("local-exec TLS in a shared object is not valid; "

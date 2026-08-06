@@ -6,8 +6,6 @@
 #define _GNU_SOURCE
 #define _DARWIN_C_SOURCE
 
-/* Early: MCC_DIAG is used further down this header, and mccrir.c and
-   mccircap.c are #included into another translation unit and inherit it. */
 #include "mccdiag.h"
 #include "mccdev.h"
 
@@ -614,8 +612,6 @@ struct asm_cfi_state {
 
 #include "mccopt.h"
 
-/* A knob the command line did not name. Distinct from 0 and 1 so ast_configure
-   can tell "-fno-x was asked for" from "nobody said". */
 #define MCC_OPT_UNSET 0xff
 
 struct MCCState {
@@ -630,16 +626,8 @@ struct MCCState {
 	unsigned char znodelete;
 	unsigned char filetype;
 	unsigned char optimize;
-	/* The raw -O number, uncapped: 0-3 are the settled levels, 4 and up walk
-	   the in-development optimizer ladder, and MCC_OPT_SEARCH_LEVEL and above
-	   hand over to the strategy search. `optimize` stays clamped to 0-3 so the
-	   thousands of `optimize >= 2` tests keep meaning what they always did. */
 	unsigned char optimize_level;
 	unsigned char optimize_size;
-	/* Every optimization and diagnostic knob, one byte each, indexed by the
-	   MCC_OPT_* ids in mccopt.h. The driver's -f table writes 0/1 here; a byte
-	   left at MCC_OPT_UNSET was not named on the command line, so ast_configure
-	   fills it from the row's default class. */
 	unsigned char optflag[MCC_OPT_COUNT];
 	unsigned char embed_jit;
 	signed char jit;
@@ -669,8 +657,6 @@ struct MCCState {
 	unsigned char unwind_tables;
 	unsigned char short_enums;
 	unsigned char nobuiltin;
-	/* -fno-asm: do not recognise the `asm` keyword, as in gcc. It does NOT stop
-	   mcc assembling .s files -- gcc assembles those regardless. */
 	unsigned char noasm;
 	unsigned char omit_frame_pointer;
 	unsigned char function_sections;
@@ -1295,13 +1281,6 @@ enum mcc_token {
 
 ST_DATA struct MCCState *mcc_state;
 ST_DATA int mccjit_error_quiet;
-/* nonzero once a compile error has been diagnosed (or an embed-JIT recompile
-   has run) in this process: the error path longjmps past cleanup and the
-   arena's deferred Syms are orphaned across windows, so every later MCC_DIAG
-   leak report in the process would be noise, not findings. Deliberately
-   never reset -- a window after the first error also inherits stale
-   accounting (its frees of earlier windows' blocks print a negative
-   mem_leak=), so per-window resetting cannot be made honest. */
 ST_DATA int mcc_leakcheck_quiet;
 
 #include "mcclog.h"
@@ -1761,13 +1740,10 @@ ST_FUNC void mcc_add_runtime(MCCState *s1);
 ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1);
 #endif
 #if MCC_HOST_LINUX
-/* -run re-seeds its TLS slab in threads the program creates; see mccrun.c. */
 ST_FUNC int mcc_run_pthread_create(void *th, const void *attr,
 																	 void *(*fn)(void *), void *arg);
 #endif
 #if defined(MCC_TARGET_PE) && MCC_HOST_WIN32
-/* -run reseeds its TLS slab on every thread the guest spawns; guest threads go
-   through msvcrt _beginthreadex, so pe_build_imports binds that import here. */
 ST_FUNC uintptr_t mcc_run_beginthreadex(void *security, unsigned stack_size,
 																				unsigned(__stdcall *start)(void *), void *arg,
 																				unsigned flags, unsigned *thrdaddr);
@@ -1972,15 +1948,8 @@ ST_FUNC void asm_global_instr(void);
 ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess);
 ST_FUNC void mcc_assemble_inline(MCCState *s1, const char *str, int len, int global);
 void ir_cap_teardown(void);
-/* Declared here as well as in mccrir.h: libmcc.c does not include that header, so the
-   call in mcc_delete only resolved in single-source builds. */
 void rir_teardown(void);
 void ir_cap_asm(const char *str, int len, int global);
-/* Effect bits an inline asm carries that neither the operand array nor
-   clobber_regs records: asm_clobber returns without a trace for "memory",
-   "cc" and "flags", and asm_instr consumed the volatile and goto qualifiers
-   with a bare next(). Without them a pass cannot tell a fence from a pure
-   register shuffle. */
 #define MCC_ASM_EFF_VOLATILE 0x01
 #define MCC_ASM_EFF_GOTO 0x02
 #define MCC_ASM_EFF_MEM 0x04

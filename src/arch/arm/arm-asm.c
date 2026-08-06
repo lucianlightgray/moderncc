@@ -2462,10 +2462,6 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) { MCC
 	}
 }
 
-/* asm operands are numbered in machine encoding (r0..r15), but load() and
-   store() take codegen tregs, of which arm only has r0-r3, r12, sp and lr.
-   Registers with no treg -- r4..r11, which is where an explicit `register long
-   x __asm__("r7")` lands -- are reached by moving through a scratch treg. */
 static int arm_asm_treg(int reg) { MCC_TRACE("enter\n");
 	if (reg >= 0 && reg <= 3)
 		{ MCC_TRACE("br\n"); return MCC_TREG_R0 + reg; }
@@ -2737,8 +2733,6 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		op = &operands[i];
 		if (op->reg >= 0 &&
 				(op->vt->r & VT_VALMASK) == VT_LLOCAL && !op->is_memory) { MCC_TRACE("br\n");
-			/* the reload register is used as an address base, so it has to be
-			   one of the registers that maps onto a codegen treg */
 			static const uint8_t reload_cand[] = {0, 1, 2, 3, 12};
 			for (int c = 0; c < sizeof(reload_cand) / sizeof(reload_cand[0]); c++) { MCC_TRACE("br\n");
 				reg = reload_cand[c];

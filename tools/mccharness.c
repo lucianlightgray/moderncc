@@ -226,8 +226,6 @@ static int cmp_str(const void *a, const void *b) {
 	return strcmp(*(const char *const *)a, *(const char *const *)b);
 }
 
-/* __STDC_VERSION__ as <cc> reports it under <stdflag>, or -1 if the probe
-   fails. Preprocess-only, so this costs a fraction of a real compile. */
 static long probe_stdc_version(const char *cc, const char *stdflag,
 															 const char *src, const char *out) {
 	const char *argv[] = {cc, stdflag, "-E", "-dM", src, 0};
@@ -238,7 +236,6 @@ static long probe_stdc_version(const char *cc, const char *stdflag,
 	text = ts_read_file(out, NULL);
 	if (!text)
 		return -1;
-	/* Anchored on the #define so it cannot match C23's __STDC_VERSION_*_H__. */
 	p = strstr(text, "#define __STDC_VERSION__");
 	if (p) {
 		p += sizeof "#define __STDC_VERSION__" - 1;
@@ -250,19 +247,7 @@ static long probe_stdc_version(const char *cc, const char *stdflag,
 	return v;
 }
 
-/* The parts suite is a 3-way stdout identity: gcc, clang and mcc must be asked
-   the *same* language question, and a -std name is not that question. gcc 13
-   accepts -std=gnu23 but reports __STDC_VERSION__ 202000L, where clang and mcc
-   report 202311L -- so a hardcoded gnu23 silently compared three compilers
-   against two different language versions. Resolve the newest candidate all
-   three agree on instead, which keeps C23 coverage wherever the reference
-   toolchain implements it and steps down where it does not.
 
-   Agreement, not acceptance: whether a compiler *parses* -std=gnu23 says
-   nothing about which language it then compiles, and it is the mismatch that
-   breaks a 3-way identity. gnu2x is in the list because gcc 12 and earlier
-   reject the gnu23 spelling outright and want that one instead; a rejected
-   probe reports -1 and simply loses the round. */
 static const char *resolve_parts_std(const char *gcc, const char *clang,
 																		 const char *mcc, const char *work) {
 	static const char *const cands[] = {"-std=gnu23", "-std=gnu2x", "-std=gnu17",
@@ -293,15 +278,6 @@ static const char *resolve_parts_std(const char *gcc, const char *clang,
 	return cands[0];
 }
 
-/* Same principle as resolve_parts_std, for the 2-way mcctest differential:
-   the reference and mcc must compile the same language, not merely accept the
-   same flag spelling. */
-/* `skip` drops that many of the newest candidates before agreeing. mcctest
-   passes 2, because tests/diff/full_language.c is a LEGACY differential: it
-   contains five K&R function definitions (legacy_args.h, legacy_aggregates.h,
-   legacy_preproc.h), and C23 removed old-style definitions outright. Agreement
-   is not enough when neither compiler can compile the corpus at the agreed
-   level -- gcc and clang both claim gnu23, then both reject the file. */
 static const char *resolve_pair_std_from(const char *cc, const char *mcc,
 																				 const char *work, size_t skip) {
 	static const char *const cands[] = {"-std=gnu23", "-std=gnu2x", "-std=gnu17",
@@ -552,10 +528,6 @@ static int suite_mcctest(int argc, char **argv) {
 		return 2;
 	}
 	host_mkdirs(work);
-	/* Resolved once and given to BOTH compilers. Handing it only to the
-	   reference makes them disagree on __STDC_VERSION__, which the differential
-	   then reports as a mismatch -- previously masked because the agreed level
-	   happened to equal mcc's own default. */
 	pair_std = resolve_pair_std_from(cc, mcc, work, 2);
 	snprintf(Iinc, sizeof Iinc, "-I%s", idir);
 	snprintf(Isrc, sizeof Isrc, "-I%s", srcdir);

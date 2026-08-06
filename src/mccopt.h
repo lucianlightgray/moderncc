@@ -1,67 +1,15 @@
-/* mccopt.h -- the compiler's optimization and diagnostic flag surface.
- *
- * ONE list. It generates the MCC_OPT_* ids, the -f<name>/-fno-<name> spellings
- * the driver parses, and the per--O defaults ast_configure() applies. Adding a
- * knob means adding a row here and nothing else; there is no second table to
- * keep in step and no environment variable to read.
- *
- * Every knob is reachable from argv alone. The MCC_AST_ and MCC_RIR_ environment
- * gates this replaces were scaffolding from the Replay_IR cut: they were
- * invisible to -v, could not be spelled in a Makefile, and -- measured, not
- * supposed -- left six replay-fidelity paths off at -O0 because their defaults
- * were written against the optimization level. See docs/TODO.md, "CLOSED: six
- * replay-fidelity gates".
- *
- * Every row gets a spelling. The lookup in libmcc.c terminates on a NULL name,
- * so a row without one would truncate the table rather than hide a knob.
- *
- * Names follow gcc/clang wherever the knob IS that feature, so a build system
- * that already passes -ftree-pre or -fno-inline-functions keeps working:
- *   -finline / -finline-functions / -finline-functions-called-once
- *   -ftree-pre / -ftree-vrp / -ftree-dse / -ftree-reassoc / -ftree-copy-prop
- *   -ftree-copy-prop / -ftree-loop-im / -fgcse / -fivopts / -fif-conversion
- *   -foptimize-sibling-calls / -floop-interchange / -floop-block
- *   -fmerge-constants / -fzero-initialized-in-bss / -fbuiltin-<fn>
- * Knobs with no gcc/clang counterpart take a descriptive mcc name rather than
- * borrowing an unrelated one. Read the pass before naming the flag: what is now
- * -fif-conversion-abs was briefly -fabs, which suggested the abs() builtin --
- * the pass never looks at a call, it if-converts x<0?-x:x. And
- * -ftree-ccp-iterate was -ftree-ccp-fix, which read as a bug fix when it is a
- * cost tradeoff: run copy-prop and CCP to a fixpoint instead of once.
- *
- * DEFAULTS. The class is the whole default rule:
- *   ALWAYS  on at every level. A replay-fidelity path or a fold that is always
- *           right; -fno- exists for bisection only.
- *   OFF     off until asked. Instruments (-fdump-*) and search tuning.
- *   LEVEL(n)  on from -On up. 1-3 are settled; 4 and beyond are one
- *           in-development optimizer each, in sequence.
- *   SPECIAL computed in ast_configure -- it depends on -Os, on an ISA probe or
- *           on another flag. Listed here so the -f spelling still exists.
- */
 #ifndef MCC_OPT_H
 #define MCC_OPT_H
 
 #define MCC_OPTD_OFF 0
 #define MCC_OPTD_ALWAYS 1
 #define MCC_OPTD_SPECIAL 2
-/* On from -O<n> upward. The -O number is a ladder, not a coarse 0-3 dial: 1-3
-   are the settled levels, and every in-development optimizer owns the next
-   number in sequence, so -O7 means "everything through the seventh". A pass
-   that is merely unfinished belongs here; one that is known to miscompile does
-   NOT -- it goes to OFF and stays opt-in, or every level above it ships wrong
-   code. -fjit-splice is OFF for exactly that reason. */
 #define MCC_OPTD_LEVEL(n) (0x100 | (n))
 #define MCC_OPTD_IS_LEVEL(d) (((d) & 0x100) != 0)
 #define MCC_OPTD_LEVEL_OF(d) ((d) & 0xff)
 
-/* One past the last in-development optimizer: the level at which the strategy
-   SEARCH takes over, and also its time budget in seconds (-O13 searches for
-   13s, -O20 for 20s). Adding a dev optimizer means giving it the next level
-   and bumping this; ast_opt_defaults asserts nothing sits at or above it. */
 #define MCC_OPT_SEARCH_LEVEL 13
 
-/* MCC_OPT_ROW(id, "flag-name", default-class) -- consumers paste the
-   MCC_OPT_ prefix onto id, so the rows below carry the bare name. */
 #define MCC_OPT_LIST(MCC_OPT_ROW) \
 	MCC_OPT_ROW(REPLAY_FALLBACK,               "replay-fallback",              MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(REPLAY_MATERIALIZE,            "replay-materialize",           MCC_OPTD_ALWAYS) \
@@ -184,4 +132,4 @@ enum {
 	MCC_OPT_COUNT
 };
 
-#endif /* MCC_OPT_H */
+#endif

@@ -310,9 +310,6 @@ static void mccjit_perf_map_path(char *buf, size_t n) { MCC_TRACE("enter\n");
 	DWORD r = GetTempPathA((DWORD)sizeof dir, dir);
 	if (r == 0 || r >= sizeof dir)
 		{ MCC_TRACE("br\n"); dir[0] = '.'; dir[1] = '\\'; dir[2] = '\0'; }
-	/* GetCurrentProcessId, not _getpid: arm64 msvcrt.dll does not export the
-	   latter, and a static import of it makes the whole mcc.exe unloadable
-	   (ntdll LdrpSnapModule -> STATUS_ENTRYPOINT_NOT_FOUND before main). */
 	snprintf(buf, n, "%sperf-%lu.map", dir, (unsigned long)GetCurrentProcessId());
 #else
 	snprintf(buf, n, "/tmp/perf-%d.map", (int)getpid());
@@ -346,26 +343,6 @@ int ast_slice_enabled(void);
 
 MCCJIT_LOCAL unsigned char *mccjit_last_blob;
 MCCJIT_LOCAL size_t mccjit_last_len;
-/* The MCC_JIT_* runtime knobs.
- *
- * These stay environment variables on purpose, and it is not scaffolding: the
- * embed JIT runs inside programs mcc COMPILED, not inside mcc. That program's
- * argv belongs to the program, so a --jit-* compiler flag cannot reach the JIT
- * once it is running. This is the same reason OMP_NUM_THREADS and
- * MALLOC_ARENA_MAX are environment variables.
- *
- * Naming rules, so the set stays readable:
- *   - Positive sense only. No MCC_JIT_NO_*: set the knob to 0 to disable it.
- *     MCC_JIT_KGC=0, not MCC_JIT_NO_KGC=1.
- *   - Units live in the name -- _MS, _ITERS, _CALLS -- not in a comment.
- *   - Subsystems group by prefix: MCC_JIT_SEARCH, _SEARCH_MS, _SEARCH_PLATEAU,
- *     _SEARCH_SLICE.
- *   - mcc_env_on for default-off, mcc_env_flag(name, 1) for default-on,
- *     mcc_env_num(name, dflt) for positive integers.
- *
- * Fault injection and selftest knobs are NOT here: they compile out entirely
- * unless MCC_DEV, so a shipped compiler cannot be told to emit wrong code.
- */
 MCCJIT_LOCAL MCCState *mccjit_last_state;
 
 
@@ -607,10 +584,6 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	if (!js)
 		{ MCC_TRACE("br\n"); return NULL; }
 	mccjit_recompiling++;
-	/* Recompile states nest inside whatever state is running, and the intent /
-	   KGC registries they fill are retained for the life of the process, so any
-	   MCC_DIAG leak window that closes after this point measures live caches
-	   and cross-thread frees, not leaks. */
 	mcc_leakcheck_quiet = 1;
 	js->optimize = 0;
 	js->nostdlib = 1;

@@ -13,12 +13,6 @@ enum { RIR_T_OP = 0, RIR_T_RBEGIN, RIR_T_REND, RIR_T_MARK };
 #define MCC_REPLAY_IR_C2 0
 #endif
 
-/* mccgen.c wraps these two MCCState fields in object-like macros, so in the
-   amalgamated build the token nb_seqp already expands to (mcc_state->nb_seqp)
-   and spelling the member out would expand inside the arrow. With
-   MCC_SINGLE_SOURCE=OFF this file is its own translation unit and mccgen.c's
-   macros are not visible, so define them the same way rather than reaching for
-   the member directly -- that is the spelling that compiles in both builds. */
 #ifndef nb_seqp
 #define nb_seqp (mcc_state->nb_seqp)
 #endif
@@ -115,14 +109,6 @@ int rir_hook_fconst_reuse(int cplx, const unsigned char *key) {
 	       ((rir_fcrec_nc[rir_fcrec_i] & RIR_NOEVAL_MASK) ||
 	        rir_fcrec_pos[rir_fcrec_i + 1] > rir_fcrec_pos[rir_fcrec_i]))
 		rir_fcrec_i++;
-	/* The position resync alone cannot separate two constants materialized at the
-	   same `ind`, which is exactly what gen_complex_cast's const path produces: the
-	   16-byte complex and the scalar after it are both emitted into rodata before
-	   any code moves `ind`, so pos[i+1] == pos[i], the advance above does not fire,
-	   and a scalar request consumes the complex entry -- one label off for every
-	   reuse after it. Record order is emission order, so a kind mismatch at the head
-	   belongs to a consumer that already passed or will never ask. Same reasoning as
-	   the ast-side list in ast_fconst_reuse; the two have to agree. */
 	while (rir_fcrec_i < rir_fcrec_n &&
 	       rir_fcrec_cplx[rir_fcrec_i] != (unsigned char)cplx)
 		rir_fcrec_i++;
@@ -377,10 +363,6 @@ void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig,
 	RirMark *m;
 	if (!rir_active)
 		return;
-	/* Pack two 32-bit words per slot. Shift in unsigned width: a negative `result` or
-	   `locorig` widens to a value near 2^32, and shifting that left by 32 as a signed
-	   long long is undefined -- UBSan reports "left shift of 4294967272 by 32 places
-	   cannot be represented in type 'long long int'" on every VLA mark. */
 	rir_mark_v2(RIR_T_MARK, RIR_M_VLA, (new_save ? 1 : 0) | (align << 1),
 							(long long)((unsigned long long)(unsigned)t |
 													((unsigned long long)(unsigned)result << 32)),
@@ -464,11 +446,6 @@ void rir_hook_label(int v) { rir_mark_val(RIR_M_LABEL, v); }
 
 void rir_hook_goto(int v) { rir_mark_val(RIR_M_GOTO, v); }
 
-/* nc_pre is nocode_wanted as it stood BEFORE the gjmp, which is the only way
-   to tell a live break from a dead one: gjmp_acs sets CODE_OFF_BIT on the way
-   out, so by the time this hook runs every break looks unreachable. A break in
-   statically dead code emits no jump, and an arena Jump for it would make
-   replay write one the parser never did. */
 void rir_hook_break_continue(int is_continue, int nc_pre) {
 	if (nc_pre)
 		return;
@@ -1285,12 +1262,6 @@ static int rir_effectful(AstLocal n) {
 	k = ast_kind(rir_arena, n);
 	if (k == AST_Store || k == AST_Invoke)
 		return 1;
-	/* A block groups statements, so it is exactly as effectful as what it holds.
-	   Without this, dropping the shadow top discards the whole group: the last
-	   statement of coherency_test -- a printf whose argument indexes a compound
-	   literal -- reached IR_OP_VPOP wrapped in a BasicBlock rather than bare, was
-	   judged side-effect-free, and vanished from the arena. The call itself is in
-	   the captured stream; only the drop lost it. */
 	if (k == AST_BasicBlock) {
 		AstLocal c;
 		for (c = ast_first_child(rir_arena, n); c != AST_NONE;
@@ -1483,13 +1454,6 @@ static void rir_drop(AstLocal d) {
 		rir_lheld[rir_lheldn++] = d;
 		return;
 	}
-	/* Only plain stores were held here, so a loop condition whose side effect is
-	   not a store -- `while (++p, --f)`, `do {} while (f(), c)` -- fell through to
-	   rir_stmt and landed in the enclosing block AFTER the If. cleanup_sections
-	   came out with `++p` below the conditional branch, skipped on every iteration
-	   that loops; a four-element walk summed a[0] twice and printed 20 for 30.
-	   Anything reaching here is already rir_effectful, so hold the increment and
-	   call forms too and let rir_cf_cond park them in the condition's prefix. */
 	if (rir_docond && rir_dheldn < RIR_DHELD_MAX &&
 			((ast_kind(rir_arena, d) == AST_Store && ast_nchild(rir_arena, d) == 2 &&
 				ast_fbits(rir_arena, d) == 0 && ast_op(rir_arena, d) == 0) ||
@@ -1819,11 +1783,6 @@ static int rir_const_eval(AstLocal n, long long *out, int depth) {
 	return 1;
 }
 
-/* The parser folds a constant through its cast CHAIN and keeps only the answer;
-   the arena keeps the arithmetic and whichever Convert left an op. Evaluating
-   the subtree as if no conversion happened and comparing against the recorded
-   constant is exactly the test for "a conversion in that chain changed the
-   value", which is when the parser's own folded constant has to be used. */
 static int rir_const_val_differs(AstLocal n, long long want) {
 	long long v;
 	return rir_const_eval(n, &v, 0) && v != want;
@@ -1985,12 +1944,6 @@ static void rir_stamp_flt_fold(const SValue *base, int n) {
 	}
 }
 
-/* gen_cast narrows an lvalue for free: ALLOW_SUBTYPE_ACCESS retypes vtop and emits
-   nothing, so `(unsigned)sv->c.i` reaches the later gv() as a 4-byte load off an
-   8-byte member. Nothing is captured for that retype, so the arena keeps the member's
-   declared type and the replay loads 8 bytes -- a different value whenever the high
-   half is set. Only these node shapes are still lvalues at that point, so only they
-   can take the same free path back in the replay. */
 static int rir_subtype_bt(int t) {
 	int bt = t & VT_BTYPE;
 	return bt == VT_BYTE || bt == VT_SHORT || bt == VT_INT || bt == VT_LLONG;
@@ -2522,20 +2475,7 @@ static void rir_op_effect(const RirOp *ro) {
 				if (src < ast_count(rir_arena) &&
 						ast_kind(rir_arena, src) == AST_Store &&
 						ast_nchild(rir_arena, src) == 2) {
-					/* a = b = f(v). The inner store was already statemented and this
-					   copied its value subtree, so f ran twice -- assign_value_effects
-					   counts two calls where the parser makes one. The parser keeps the
-					   stored value live across both stores, so the faithful shape is the
-					   nested one: detach the inner store from the block and hand it to the
-					   outer store as a value, exactly as the landor/ternary arms already
-					   do. Falls back to the copy when the inner store is not the block's
-					   last statement, where detaching would reorder it. */
 					AstLocal iv = ast_child(rir_arena, src, 1);
-					/* Only nest when the copy would duplicate a side effect and the inner
-					   store does not convert. `a = b = expr` yields b's type, so handing
-					   the outer store the unconverted inner value changes the result --
-					   chained_assign's mixed case printed 165.018532 for 162.000000. When
-					   the types agree there is nothing to convert and nesting is exact. */
 					if (rir_effectful(iv) && rir_bbn &&
 							ast_detach_last_child(rir_arena, rir_bb[rir_bbn - 1], src))
 						v = src;
@@ -2811,11 +2751,6 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		if (slot < 0 || slot >= rir_shn)
 			break;
-		/* The bottom of the shadow stack during an assignment is the TARGET, and
-		   the emitter's own save_regs spills it at the branch. Modelling that
-		   spill puts a Store at the head of the block and a Load in the target's
-		   place, so the trial spills and reloads before the condition where the
-		   parser spills after the compare. */
 		if (slot == 0 && rir_shn >= 2 && lv && !ast_func_has_asm &&
 				rir_sh[slot] != AST_NONE &&
 				ast_kind(rir_arena, rir_sh[slot]) == AST_Load)
@@ -2836,12 +2771,6 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_shtype[slot] = 0;
 			break;
 		}
-		/* save_reg_upstack builds its spill target as a stack SValue and never
-		 * sets type.ref, so the snapshot's pointee is indeterminate -- reading
-		 * it back at the Load below dereferences whatever the stack held.  The
-		 * slot takes the ADDRESS of the spilled lvalue, so the pointee is that
-		 * entry's own type; intern it in Replay_IR's own pointer pool rather
-		 * than trusting the capture. */
 		pt.t = spv->type.t;
 		pt.ref = spv->type.ref;
 		ps = rir_ptr_sym(&pt);
@@ -2942,13 +2871,6 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case IR_OP_GV: {
 		AstLocal top;
-		/* A gv on a sub-int integer lvalue IS the promotion: it emits the
-		   sign- or zero-extending load right here. Inside a ternary arm that
-		   placement is the whole answer -- the arm's value has to be in a
-		   register before the merge, and an arena that only carries the char
-		   Load leaves replay to materialise it after the merge point, moving
-		   the movsx past the arm's jump. The tree records this as a Convert
-		   over the Load; record the same. */
 		if (rir_shn >= 1 && o->vs_n > 0) {
 			const SValue *tv = &ir_cap_vs[o->vs_off + o->vs_n - 1];
 			int bt = tv->type.t & VT_BTYPE;
@@ -2960,10 +2882,6 @@ static void rir_op_effect(const RirOp *ro) {
 					ast_parent(rir_arena, t2) == AST_NONE) {
 				int nt = (int)ast_type_t(rir_arena, t2);
 				int want = -1;
-				/* The snapshot is what the emitter is about to widen FROM, and a
-				   cast that only flipped signedness leaves no op behind -- the
-				   node still says char where the parser has unsigned char, and
-				   replay writes movsx for the parser's movzx. */
 				if (!nt && ((tv->type.t & VT_UNSIGNED) || bt == VT_INT))
 					want = tv->type.t;
 				else if (rir_ternn)
@@ -3156,16 +3074,6 @@ static AstLocal rir_retexpr = AST_NONE;
 static int rir_retexpr_depth;
 static int rir_retexpr_pending;
 
-/* A call whose value is discarded becomes a statement only when the shadow
-   stack drops it, and inside a statement expression the parser's vpop for it
-   lands AFTER the following goto's and label's marks -- so the arena reads
-   Jump, Jump, Invoke where the parser emitted the call first. A goto or a
-   label is a point no value crosses in the emitted stream, so an unparented
-   effectful top here has already been emitted and belongs before the jump.
-   The entry is blanked rather than left in place: rir_drop re-stmts any
-   effectful node it pops without checking whether it already has a parent,
-   and a node added to one BasicBlock twice reads as "nchild disagrees with
-   sibling chain". Blanking keeps the depth and drops the second add. */
 static void rir_flush_effect_top(void) {
 	AstLocal t;
 	if (rir_shn <= 0 || rir_call_depth || rir_cond_depth || rir_lorn ||
@@ -3246,12 +3154,6 @@ static void rir_mark_apply(const RirOp *ro) {
 												ast_fbits(rir_arena, top) ^ AST_FB_LANDOR_INVERT);
 				else {
 
-					/* The operator always moves to the inverted one: a pass that
-					   reads it -- ast_ident_node folds `a > a` to a constant --
-					   has no other way to know the source wrote `!(a > a)`. The
-					   flag says only that replay must re-run the comparison the
-					   other way round and swap the flags, which is a different
-					   instruction pair on arm64. */
 					ast_set_op(rir_arena, top, bop ^ 1);
 					if (inflags || ast_cmp_invert_late(rir_arena, top, bop))
 						ast_set_fbits(rir_arena, top,
@@ -3540,21 +3442,10 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_addr_late = 1;
 		break;
 	case RIR_M_ASMOPS: {
-		/* asm_instr has parsed every operand and is about to save_regs(0); the
-		   top nb_operands shadow entries ARE those operands.  Taking them here,
-		   before the spills, both gives replay something to emit for them and
-		   stops the spill model below from consuming them one at a time -- the
-		   ASMOPS replay calls save_regs itself. */
 		int nb = (int)ro->rv1, q;
-		/* The shadow stack is only synced at ops that carry a vstack snapshot,
-		   and the last operand's push may still be outstanding here -- reconcile
-		   against the mark's own snapshot before counting. */
 		rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 		if (nb <= 0 || nb > rir_shn)
 			break;
-		/* An operand the shadow stack could not reconstruct leaves the body no
-		   worse off under the old spill model than it would be under a partial
-		   ASMOPS, so decline rather than mismatch the whole body. */
 		for (q = rir_shn - nb; q < rir_shn; q++) {
 			a = rir_sh[q];
 			if (a == AST_NONE || ast_parent(rir_arena, a) != AST_NONE)
@@ -3565,11 +3456,6 @@ static void rir_mark_apply(const RirOp *ro) {
 		ast_set_ival(rir_arena, n, (uint64_t)ro->rv2);
 		for (q = rir_shn - nb; q < rir_shn; q++)
 			ast_add_child(rir_arena, n, rir_sh[q]);
-		/* Leave the entries in place: the parser's vstack still holds them
-		   through save_regs and both asm_gen_code halves, and a shorter shadow
-		   stack reads as a depth mismatch at the next op.  Parenting them is
-		   what takes them out of play -- every consumer declines a node that
-		   already has a parent, the spill model included. */
 		rir_stmt(n);
 		break;
 	}
@@ -3600,13 +3486,6 @@ static void rir_cf_cond(void) {
 	cond = rir_shn ? rir_pop() : AST_NONE;
 	if (cond == AST_NONE)
 		return;
-	/* A store in a loop condition -- `for (; !!(p = *pp); )`, `while (c = f(), c)` --
-	   is held by rir_drop while rir_docond is set, and whatever flushes it later
-	   lands it in the enclosing block AFTER the loop. ptr_unlink then ran its body
-	   with `p` never assigned and segfaulted. Park it in the condition's own prefix,
-	   which both replay arms already know how to run before the condition: the
-	   while/do arm reads it as child 2 and the for arm as child 3. This was
-	   RIR_R_DO-only, which is why only the do-while comma case was ever fixed. */
 	if (rir_dheldn && rir_docond &&
 			(rir_cfkind[rir_cfn - 1] == RIR_R_DO ||
 			 rir_cfkind[rir_cfn - 1] == RIR_R_WHILE ||
@@ -3839,9 +3718,6 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_THEN:
 		case RIR_R_ELSE: {
 			AstLocal bb;
-			/* The condition-store hold is armed at the RIR_R_FOR rbegin and must not
-			   survive into the increment or the body: a store there is a statement,
-			   not a value the condition consumes. */
 			rir_docond = 0;
 			bb = ast_node(rir_arena, AST_BasicBlock);
 			if (rir_cfn)
@@ -4094,21 +3970,11 @@ static void rir_region(const RirOp *ro) {
 		rir_dheld_flush();
 		if (rir_cfn) {
 			rir_cfn--;
-			/* The parser advanced ind by nothing across this whole construct, so
-			   it was statically dead. Its ops are already dropped by
-			   rir_op_effect's nocode test, but the construct's own branch -- a
-			   switch's dispatch jump, a loop's back edge -- comes from replaying
-			   the node, not from an op. Being dead at the RBEGIN alone does not
-			   say this: a case label inside turns code back on, and gjmp_acs
-			   leaves CODE_OFF set after every break. Zero bytes emitted does. */
 			if (ro->rind == rir_cfind[rir_cfn])
 				ast_set_fbits(rir_arena, rir_cf[rir_cfn],
 											ast_fbits(rir_arena, rir_cf[rir_cfn]) | AST_FB_NOCODE);
 			if (rir_cfkind[rir_cfn] == RIR_R_FOR && !rir_cfcond[rir_cfn])
 				ast_set_op(rir_arena, rir_cf[rir_cfn], 8);
-			/* while/do carry (cond, body) so the prefix is child 2; a for carries
-			   (cond, incr, body) so it is child 3. The replay arms read exactly
-			   those slots. */
 			if (rir_cfpfx[rir_cfn] != AST_NONE &&
 					(ast_nchild(rir_arena, rir_cf[rir_cfn]) == 2 ||
 					 (rir_cfkind[rir_cfn] == RIR_R_FOR &&
@@ -4239,7 +4105,6 @@ static int rir_emit_safe(void) {
 					 ast_op(rir_arena, n) == AST_OP_ASM) &&
 					nc == 0)
 				break;
-			/* ASMOPS carries one child per asm operand, however many that is. */
 			if (ast_op(rir_arena, n) == AST_OP_ASMOPS)
 				break;
 			if (nc != 1)
@@ -4725,14 +4590,6 @@ static int rir_blame(int diff_off) {
 	return -1;
 }
 
-/* A byte divergence is not by itself a semantic divergence, but nothing here
-   can decide that from the bytes. Proving two instruction streams equivalent
-   needs a read/write set per instruction; mcc_disasm_insn yields text and
-   boundaries only, so a permutation check over encodings would call a pair of
-   reordered memory operations equivalent when they are not. The verdict is
-   therefore taken from outside the compiler: RIREQUIV is a comma-separated list
-   of function names an external run has shown to behave identically. Unset --
-   the default -- proves nothing, and every divergence counts as unproven. */
 static int rir_c2_equiv_proven(void) {
 	const char *e = getenv("RIREQUIV");
 	const char *p;
@@ -4751,17 +4608,9 @@ static int rir_c2_equiv_proven(void) {
 	return 0;
 }
 
-/* Why the pre-flight last refused a body. Every `return NULL` below sets this,
-   so a fallback can be attributed to the condition that caused it instead of
-   being counted as an undifferentiated total -- which is what the fallback
-   census needs to be driven to zero. */
 const char *rir_prod_why = "";
 const char *rir_unfaithful_why = "";
 
-/* Free the Replay_IR caches. Like the capture buffers these are module-level and grow
-   for the life of the run, so nothing released them: mcc_s reported the operation
-   journal alone at ~600KB, and sanitize-selfcheck -- green when this file was last
-   green -- went red on the accumulated total. */
 void rir_teardown(void) {
 	mcc_free(rir_ops);
 	mcc_free(rir_marks);
@@ -4797,8 +4646,6 @@ void rir_teardown(void) {
 	rir_vscap = 0;
 	rir_lblcap = 0;
 	rir_ptn = rir_ptcap = 0;
-	/* Deliberately not freeing rir_arena: rir_prod_take hands it to the AST side,
-	   which owns and frees it, and releasing it here double-frees. */
 	ir_cap_teardown();
 }
 
@@ -4811,15 +4658,6 @@ struct AstArena *rir_prod_take(void) {
 		rir_prod_why = "bail";
 		return NULL;
 	}
-	/* -freverse-funcargs evaluates a call's arguments right to left, which the
-	   parser implements by saving each argument's tokens and replaying them
-	   backwards before vrev()ing the value stack. What lands in the arena is the
-	   post-vrev source order, so a replay walking the Invoke's children in order
-	   evaluates left to right and the side effects come out reversed --
-	   errors_and_warnings' test_reverse_funcargs prints 122333 instead of 333221.
-	   Recording the evaluation order would need a flag on the Invoke node and a
-	   schema revision; the option is off by default and absent from the census,
-	   so refuse the body rather than model it wrong. */
 	if (mcc_state->reverse_funcargs) {
 		rir_prod_why = "revargs";
 		return NULL;
@@ -4858,11 +4696,6 @@ struct AstArena *rir_prod_take(void) {
 		rir_prod_why = "unsafe";
 		return NULL;
 	}
-	/* The only window onto the arena PRODUCTION actually ships. [rir-dump] is
-	   gated at rir_env >= 6, and any rir_env >= 1 turns production off, so that
-	   dump can never show this object -- it shows the arena built in a run where
-	   rir_verify() replayed the op stream first. Those are not always the same
-	   arena. RIRPRODDUMP=<funcname> prints this one, at rir_env == 0. */
 	{
 		const char *e = getenv("RIRPRODDUMP");
 		if (e && funcname && !strcmp(e, funcname)) {
@@ -5140,15 +4973,6 @@ void rir_verify(void) {
 	sym_free_first = NULL;
 	sv_ast_active = ast_active;
 	sv_ast_replaying = ast_replaying;
-	/* The sequence-point recorder is parse-time diagnostic state, and replay
-	   re-runs the same stores. warn_none above silences a warning raised DURING
-	   the replay, but the events outlive it: seqp_check runs at the next
-	   statement boundary in the parser, with warnings back on, and counts the
-	   parser's write plus the replay's as two writes to one object. That is a
-	   spurious "operation on 'x' may be undefined" attributed to whatever line
-	   the parser has reached by then. Same class as every other leftover the
-	   prologue resets -- see "Keep the C2 harness mirroring the tree's replay
-	   prologue" in docs/TODO.md. */
 	sv_nb_seqp = nb_seqp;
 	sv_seqp_overflow = seqp_overflow;
 	ast_active = 0;

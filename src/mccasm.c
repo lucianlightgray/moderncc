@@ -1,7 +1,5 @@
 #define USING_GLOBALS
 #include "mcc.h"
-/* asm_instr calls rir_hook_asm_operands; in a multi-TU build this file is its
-   own translation unit and does not get mccrir.h through mccgen.c. */
 #include "mccrir.h"
 
 #define last_text_section (mcc_state->last_text_section)
@@ -1576,8 +1574,6 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
 #endif
 				) { MCC_TRACE("br\n");
 					gv(MCC_RC_INT);
-					/* Replay cannot infer this rvalue load: the operand node is an
-					   lvalue either way and only the constraint decides. */
 					if (gvmask && nb_operands - 1 < 64)
 						*gvmask |= (uint64_t)1 << (nb_operands - 1);
 				}
@@ -1713,10 +1709,6 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	if (tok != ';')
 		{ MCC_TRACE("br\n"); expect("';'"); }
 
-	/* GCC's rule, and the one every pass has to honour: an asm with no output
-	   operands is volatile whether or not it was written that way. Without this
-	   a `asm("mfence" ::: "memory")` reads as a pure expression with no result,
-	   which is exactly the shape DSE and CSE delete. */
 	if (nb_outputs == 0)
 		{ MCC_TRACE("br\n"); asm_eff |= MCC_ASM_EFF_VOLATILE; }
 

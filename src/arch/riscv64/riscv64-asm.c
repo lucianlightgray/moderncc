@@ -2435,8 +2435,6 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) { MCC_TRACE("en
 	clobber_regs[reg] = 1;
 }
 
-/* Machine register NUMBER: 0..31 integer, 32..63 float, as the instruction
-   encoders and the MCC_NB_ASM_REGS-wide clobber map want it. */
 static int rv_asm_regenc(int t) { MCC_TRACE("enter\n");
 	if (t >= TOK_ASM_pc || t < TOK_ASM_x0)
 		{ MCC_TRACE("br\n"); return -1; }
@@ -2453,12 +2451,6 @@ static int rv_asm_regenc(int t) { MCC_TRACE("enter\n");
 	return t - TOK_ASM_ft0 + 32;
 }
 
-/* Codegen register INDEX, which is what a `register x asm("...")` binding
-   stuffs into VT_VALMASK -- a different numbering from the encoding above and
-   a much smaller set: only a0..a7 and fa0..fa7 are allocatable here. Returning
-   the encoding instead made `register long x asm("x8")` come out as index 8,
-   which is fa0, and the first freg() on it tripped its own assert. Anything
-   outside the allocatable set reads as "no register asked for". */
 ST_FUNC int asm_parse_regvar(int t) { MCC_TRACE("enter\n");
 	int e = rv_asm_regenc(t);
 	if (e < 0)

@@ -408,9 +408,6 @@ static inline int mcc_env_on(const char *name) {
 	return e && e[0] && e[0] != '0';
 }
 
-/* Same, for a knob whose feature is on unless someone turns it off. Keeping
-   these positive is why there is no MCC_JIT_NO_* left: NO_X=0 is a double
-   negative, and it reads as the opposite of what it does. */
 static inline int mcc_env_flag(const char *name, int dflt) {
 	const char *e = getenv(name);
 	if (!e || !e[0])
@@ -418,8 +415,6 @@ static inline int mcc_env_flag(const char *name, int dflt) {
 	return e[0] != '0';
 }
 
-/* Positive integer knob; anything unset, unparseable or <= 0 means the
-   default. Units belong in the NAME (_MS, _ITERS, _CALLS), not in a comment. */
 static inline long mcc_env_num(const char *name, long dflt) {
 	const char *e = getenv(name);
 	long v;

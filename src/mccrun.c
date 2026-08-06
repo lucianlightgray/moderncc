@@ -476,18 +476,9 @@ static void tls_setup_linux(MCCState *s1) { MCC_TRACE("enter\n");
 	s1->run_tls_active = 1;
 }
 
-/* The -run TLS slab is a __thread array inside mcc, seeded below for the thread
-   that calls -run. A thread the program creates gets its own zeroed copy and
-   nothing seeds it, so every TLS variable with a non-zero initializer reads 0 in
-   the child -- which is exactly what tls_threads catches. Keep a copy of the
-   seed image and re-apply it on thread entry, by binding the program's
-   pthread_create to the wrapper below (see relocate_syms). */
 static unsigned char *mcc_run_tls_seed;
 static unsigned long mcc_run_tls_seed_len;
 
-/* The snapshot is module-level so mcc_run_thr_start can reach it, which means
-   nothing state-owned frees it; without this, every -run of a TLS-using
-   program reports it leaked under MCC_DIAG. */
 static void run_tls_seed_free(void) { MCC_TRACE("enter\n");
 	mcc_free(mcc_run_tls_seed);
 	mcc_run_tls_seed = NULL;
@@ -551,7 +542,6 @@ static void tls_seed_linux(MCCState *s1) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); mcc_run_tls_seed_len =
 					(unsigned long)(s->sh_addr - base) + s->data_offset; }
 	}
-	/* Snapshot what a fresh thread has to start from. */
 	mcc_free(mcc_run_tls_seed);
 	mcc_run_tls_seed = NULL;
 	if (mcc_run_tls_seed_len) { MCC_TRACE("br\n");
@@ -567,12 +557,6 @@ static void tls_seed_linux(MCCState *s1) { MCC_TRACE("enter\n");
 #if defined(MCC_TARGET_PE) && MCC_HOST_WIN32
 #include <process.h>
 
-/* Windows PE -run: no loader lays out the guest's implicit TLS, so it is folded
-   into mcc's own block. tls_setup_pe flags the run and captures the slab's bias
-   inside that block; the x86 TPOFF32 relocations then resolve every guest TLS
-   offset into mcc_jit_tls_slab. tls_seed_pe fills the slab from the guest's TLS
-   template and repoints the guest's _tls_index at mcc's, so gs:[0x58][index]
-   yields mcc's block on whatever thread runs. */
 static void tls_setup_pe(MCCState *s1) { MCC_TRACE("enter\n");
 	int i;
 	int have_tls = 0;
@@ -595,10 +579,6 @@ static void tls_setup_pe(MCCState *s1) { MCC_TRACE("enter\n");
 	s1->run_tls_active = 1;
 }
 
-/* Every thread the guest starts gets its own zeroed slab (mcc's TLS block is
-   copied fresh per thread), so the template is snapshotted here and re-applied
-   on thread entry -- guest threads reach us through the _beginthreadex wrapper
-   below, which pe_build_imports binds in place of the msvcrt import. */
 static unsigned char *mcc_run_pe_tls_seed;
 static unsigned long mcc_run_pe_tls_seed_len;
 
@@ -635,12 +615,9 @@ static void tls_seed_pe(MCCState *s1) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); mcc_run_pe_tls_seed_len =
 					(unsigned long)(s->sh_addr - base) + s->data_offset; }
 	}
-	/* Redirect the guest's _tls_index to mcc's own; the slab -- and thus the
-	   guest's biased offsets -- live inside the block that index selects. */
 	idx = mcc_get_symbol(s1, "_tls_index");
 	if (idx)
 		{ MCC_TRACE("br\n"); write32le(idx, (uint32_t)host_run_tls_index()); }
-	/* Snapshot what a fresh thread has to start from. */
 	mcc_free(mcc_run_pe_tls_seed);
 	mcc_run_pe_tls_seed = NULL;
 	if (mcc_run_pe_tls_seed_len) { MCC_TRACE("br\n");
@@ -694,8 +671,6 @@ static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) { MCC_TRA
 		s1->nb_errors = 0;
 #ifdef MCC_TARGET_PE
 #if MCC_HOST_WIN32
-		/* Before pe_output_file: it runs pe_build_imports, which needs
-		   run_tls_active set to route the guest's _beginthreadex to the wrapper. */
 		tls_setup_pe(s1);
 #endif
 		pe_output_file(s1, NULL);

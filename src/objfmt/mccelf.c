@@ -967,10 +967,6 @@ ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve) { MCC_
 				const char *name_ud = &name[s1->leading_underscore];
 				void *addr = NULL;
 #if MCC_HOST_LINUX
-				/* -run keeps its TLS in a __thread slab inside mcc, which glibc
-				   zeroes for every new thread. Bind the program's pthread_create to
-				   the wrapper that re-seeds it, or TLS with a non-zero initializer
-				   reads 0 in any thread the program starts. */
 				if (s1->run_tls_active && !strcmp(name_ud, "pthread_create"))
 					{ MCC_TRACE("br\n"); addr = (void *)mcc_run_pthread_create; }
 				if (addr == NULL)
@@ -1786,7 +1782,6 @@ static int set_linker_sym(MCCState *s1, const char *name, Section *sec,
 	int sym_index = find_elf_sym(symtab_section, name);
 	ElfW(Sym) *sym =
 			sym_index ? &((ElfW(Sym) *)symtab_section->data)[sym_index] : NULL;
-	/* Mirror the set_elf_sym cases where the new definition wins. */
 	int is_linker_sym = !sym || sym->st_shndx == SHN_UNDEF ||
 											ELFW(ST_BIND)(sym->st_info) == STB_WEAK ||
 											(sec && sec != bss_section &&
@@ -1842,8 +1837,6 @@ static void finalize_linker_symbols(MCCState *s1, int *sec_order) { MCC_TRACE("e
 	Section *s;
 	int i;
 
-	/* Follow the final loadable-section order rather than assuming that
-		 .text, .data and .bss are the last sections of their regions. */
 	for (i = 1; i < s1->nb_sections; ++i) { MCC_TRACE("br\n");
 		s = s1->sections[sec_order[i]];
 		if (!(s->sh_flags & SHF_ALLOC))
@@ -1869,7 +1862,6 @@ static void mcc_add_linker_symbols(MCCState *s1) { MCC_TRACE("enter\n");
 	set_linker_sym(s1, "_etext", text_section, -1);
 	set_linker_sym(s1, "_edata", data_section, -1);
 	set_linker_sym(s1, "_end", bss_section, -1);
-	/* These conventional ELF symbols have PROVIDE semantics. */
 	provide_linker_sym(s1, "etext", text_section, -1);
 	provide_linker_sym(s1, "edata", data_section, -1);
 	provide_linker_sym(s1, "end", bss_section, -1);
@@ -2485,10 +2477,6 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) { MC
 			}
 		}
 
-		/* A thread-local's address is its offset from the block base, and the
-		   loader aligns only the base. Unless the block starts at the strictest
-		   alignment any member asks for, an _Alignas(64) object placed at a
-		   64-aligned *link* address still lands misaligned at run time. */
 		if (tls_first) { MCC_TRACE("br\n");
 			if (tls_first->sh_addralign < tls_align)
 				{ MCC_TRACE("br\n"); tls_first->sh_addralign = tls_align; }

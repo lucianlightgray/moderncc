@@ -1,8 +1,5 @@
 #define USING_GLOBALS
 #include "mcc.h"
-/* gen_va_arg calls rir_hook_slot_replay/rir_hook_slot_record; in a multi-TU
-   build this file is its own translation unit and does not get mccrir.h
-   through mccgen.c. */
 #include "mccrir.h"
 #include <assert.h>
 
@@ -763,10 +760,6 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 		return;
 	}
 
-	/* Walking a statically dead arm reaches here with an operand the parser
-	   const-folded under nocode_wanted -- a store target that collapsed to a
-	   bare VT_CONST, say. Every o() above this point is already a no-op, so
-	   there is nothing to diagnose and nothing to emit. */
 	if (nocode_wanted)
 		{ MCC_TRACE("br\n"); return; }
 

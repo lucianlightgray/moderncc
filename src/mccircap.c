@@ -119,9 +119,6 @@ static IrCapOp *ir_cap_pending;
 static int *ir_cap_fc;
 static int ir_cap_fcn, ir_cap_fccap;
 
-/* Free the capture caches. These are module-level growable buffers that live for the
-   whole run, so nothing ever released them and mcc_s reported a few hundred kilobytes
-   leaked per invocation -- enough to turn sanitize-selfcheck red. */
 void ir_cap_teardown(void) { MCC_TRACE("enter\n");
 	mcc_free(ir_cap_ops);
 	mcc_free(ir_cap_vs);
@@ -502,12 +499,6 @@ void ir_cap_gfunc_return(CType *func_type) { MCC_TRACE("enter\n");
 #ifdef MCC_IR_HAVE_VA_START
 IR_CAP_W0(gen_va_start, IR_OP_VA_START)
 #endif
-/* The label operands of an `asm goto` live at operands[nb_operands ..
-   nb_operands + nb_labels), past the end of what asm_gen_code is given. This
-   used to copy nb_operands entries and stop, so the block's control-flow edges
-   survived only as the LG.n relocations subst_asm_operands had already baked
-   into the text -- invisible to anything reading the arena. Record the tail,
-   the label count and the effect bits. */
 void ir_cap_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
 											int nb_labels, int eff, int is_output,
 											uint8_t *clobber_regs, int out_reg) { MCC_TRACE("enter\n");

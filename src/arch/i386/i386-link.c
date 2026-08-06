@@ -270,11 +270,6 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			(void)aligned_size;
 			x = val - tls_start;
 #else
-			/* -run puts the program's TLS in mcc's own __thread slab rather than a
-			   loader-allocated block, so the offset is measured from the slab, not
-			   from the end of the module's TLS. Without this, every TLS read in a
-			   -run program lands outside the slab and returns zero -- the shape the
-			   tls cell catches. x86_64 and arm64 already do this. */
 			if (s1->run_tls_active) { MCC_TRACE("br\n");
 				(void)aligned_size;
 				x = (int32_t)(s1->run_tls_slab_tpoff + (val - tls_start));

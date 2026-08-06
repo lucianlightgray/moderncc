@@ -519,20 +519,14 @@ static SoEnvAxis so_axes[] = {
 		{"MCC_AST_CPROP_JOIN", NULL},		 {"MCC_AST_CSE_JOIN", NULL},
 		{"MCC_AST_PROMOTE_LIMIT", NULL}, {"MCC_AST_OPT_LIMIT", NULL}};
 
-/* The search drives its children by spawning them, and the boolean axes are
-   compiler flags rather than environment settings, so they have to reach the
-   child's argv. Numeric axes are still env and keep a NULL here. The order
-   matches so_axes exactly. A boolean axis with no flag would silently search a
-   space where nothing moves, which is what happened when these were env. */
 static const char *const so_axis_flag[] = {
 		"reemit-templates", "promote-locals",
-		"inline",						NULL, /* NO_CALLFUL: inverted, handled below */
+		"inline",						NULL,
 		NULL,								NULL,
 		NULL,								"bitflag",
 		"tree-copy-prop",		"gcse-join",
 		NULL,								NULL};
 
-/* Resolved -f spellings for the boolean axes, appended to every child argv. */
 static char so_axis_argv[sizeof so_axes / sizeof *so_axes][64];
 
 #define SO_NAXES ((int)(sizeof so_axes / sizeof *so_axes))
@@ -565,7 +559,6 @@ static void so_setenv_axis(const char *name, const char *val) { MCC_TRACE("enter
 		if (strcmp(so_axes[i].name, name))
 			{ MCC_TRACE("br\n"); continue; }
 		if (!strcmp(name, "MCC_AST_NO_CALLFUL")) { MCC_TRACE("br\n");
-			/* the axis is the negative of the flag */
 			snprintf(so_axis_argv[i], sizeof so_axis_argv[i], "-f%scallful",
 							 strcmp(val, "0") ? "no-" : "");
 			return;
@@ -1154,7 +1147,6 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 	snprintf(cand, sizeof cand, "%s.mcc-pf", outfile);
 	snprintf(hashp, sizeof hashp, "%s.fnh", cand);
 	cfg = mcc_malloc(SO_MAXFN * 96);
-	/* +SO_NAXES: so_copy_args_drop_o appends one -f per active boolean axis. */
 	cv = mcc_malloc((argc + 5 + SO_NAXES) * sizeof *cv);
 	argn = 0;
 	cv[argn++] = exe;
@@ -1317,7 +1309,6 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 		limit_cur = ck.limit_cursor;
 		round = ck.round;
 	}
-	/* +SO_NAXES: so_copy_args_drop_o appends one -f per active boolean axis. */
 	cv = mcc_malloc((argc + 5 + SO_NAXES) * sizeof *cv);
 	argn = 0;
 	cv[argn++] = exe;
@@ -1342,8 +1333,6 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 				{ MCC_TRACE("br\n"); continue; }
 			rv[rn++] = argv[i];
 		}
-		/* same axes as the compile child; this one used to inherit them from the
-		   environment, so leaving them off would score a different compiler */
 		for (i = 0; i < SO_NAXES; i++)
 			{ MCC_TRACE("br\n"); if (so_axis_argv[i][0])
 				{ MCC_TRACE("br\n"); rv[rn++] = so_axis_argv[i]; } }

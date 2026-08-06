@@ -1180,8 +1180,6 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 	mcc_memcheck(1);
 #endif
 
-	/* No optimization knob has been named yet; ast_configure() reads UNSET as
-	   "take the row's default class" rather than as -fno-. */
 	memset(s->optflag, MCC_OPT_UNSET, sizeof s->optflag);
 
 #undef gnu_ext
@@ -1227,8 +1225,6 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 #ifdef MCC_ARM_HARDFLOAT
 	s->float_abi = ARM_HARD_FLOAT;
 #endif
-	/* Distribution default; -Wl,--enable-new-dtags / --disable-new-dtags
-	   override it per link. */
 	s->enable_new_dtags = MCC_CONFIG_NEW_DTAGS;
 	s->ppfp = stdout;
 	s->include_stack_ptr = s->include_stack;
@@ -1280,9 +1276,6 @@ LIBMCCAPI void mcc_delete(MCCState *s1) { MCC_TRACE("enter\n");
 	cstr_free(&s1->cmdline_incl);
 	mcc_free(s1->asm_cfi_st.buf);
 	dynarray_reset(&s1->alias_fixups, &s1->nb_alias_fixups);
-	/* The Replay_IR journal and the capture buffers are module-level caches that grow
-	   for the life of the run; nothing freed them, and mcc_s reported roughly a
-	   megabyte leaked per invocation, which is what turned sanitize-selfcheck red. */
 	rir_teardown();
 	ast_teardown();
 	mcc_free(s1->dState);
@@ -2397,10 +2390,6 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_deprecated_declarations), WD_ALL, "deprecated-declarations"},
 		{0, 0, NULL}};
 
-/* FlagDef.offset is a uint16_t, so the far end of optflag[] has to stay inside
-   64K of the start of MCCState. If this ever fires, widen the field rather than
-   reordering the struct -- a silently wrapped offset writes into some unrelated
-   member and the flag appears to do nothing. */
 typedef char mcc_optflag_offsets_fit
 		[(offsetof(MCCState, optflag) + MCC_OPT_COUNT <= 0xffffu) ? 1 : -1];
 
@@ -2435,9 +2424,6 @@ static const FlagDef options_f[] = {
 		{offsetof(MCCState, freestanding), FD_INVERT, "hosted"},
 		{offsetof(MCCState, syntax_only), 0, "syntax-only"},
 		{offsetof(MCCState, diag_no_caret), FD_INVERT, "diagnostics-show-caret"},
-/* The optimization and diagnostic knobs, generated from the one list in
-   mccopt.h so this table cannot drift from the ids or the defaults. A row with
-   a NULL name is reachable only through another flag and gets no spelling. */
 #define MCC_OPT_ROW(id, name, dflt) \
 	{(uint16_t)(offsetof(MCCState, optflag) + MCC_OPT_##id), 0, name},
 		MCC_OPT_LIST(MCC_OPT_ROW)
@@ -3269,8 +3255,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 					{ MCC_TRACE("br\n"); lvl = 255; }
 				s->optimize_level = (unsigned char)lvl;
 				s->optimize = (unsigned char)(lvl > 3 ? 3 : lvl);
-				/* At and past the last in-development optimizer the number stops
-				   naming a pass and becomes the search budget in seconds. */
 				if (lvl >= MCC_OPT_SEARCH_LEVEL)
 					{ MCC_TRACE("br\n"); s->optimize_search_seconds = lvl; }
 			} else if (!strcmp(optarg, "s") || !strcmp(optarg, "z")) { MCC_TRACE("br\n");

@@ -82,11 +82,6 @@ AstLocal ast_child(const AstArena *a, AstLocal n, uint32_t i);
 AstLocal ast_count(const AstArena *a);
 AstLocal ast_root(const AstArena *a);
 
-/* True when the arena holds an AST_OP_ASM/ASMGEN/ASMOPS node. Those overload
-   `sym` with a packed (is_output, out_reg) and `ival` with an offset into the
-   per-function ir_cap_raw pool, so an arena carrying one can neither be walked
-   as if every `sym` were a Sym pointer nor outlive the function that built it.
-   Exported because mccjit_intent_serialize is a separate translation unit. */
 int ast_arena_has_asm(const AstArena *a);
 
 const char *ast_kind_name(uint16_t kind);

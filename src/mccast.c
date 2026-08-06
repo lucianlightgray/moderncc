@@ -87,14 +87,7 @@ typedef char ast_vt_bitfield_check[VT_BITFIELD == 0x0100 ? 1 : -1];
 #define AST_FB_CONVERT_FCS 524288u
 
 #define AST_FB_BINARY_RHS_GV 1048576u
-/* The parser had CODE_OFF set across this whole statement, so it emitted
-   nothing for it. Replaying it would write code the parser never did. */
 #define AST_FB_NOCODE 2097152u
-/* The parser's vtop was positively observed NOT to be an lvalue when it emitted this
-   LOAD mark. Recorded at capture because the replay cannot infer it: `tbl[i].n` and
-   `*(int *)u.pv` reach the arena as the same tree, Load(Convert(MEMBER)), and only the
-   parser knows which one needed the dereference.
- */
 #define AST_FB_LOAD_LVAL 4194304u
 
 struct AstArena {
@@ -214,10 +207,6 @@ void ast_arena_reset(AstArena *a) { MCC_TRACE("enter\n");
 	a->epoch++;
 }
 
-/* Free the AST-side module caches. Like the Replay_IR journal these grow for the life
-   of the run and nothing released them, so mcc_s counted them all as leaked and
-   sanitize-selfcheck -- green when this area was last green -- went red. Declared
-   after the caches it frees, so it lives near ast_arena_free rather than with them. */
 void ast_teardown(void);
 
 void ast_arena_free(AstArena *a) { MCC_TRACE("enter\n");
@@ -424,9 +413,6 @@ void ast_set_kind(AstArena *a, AstLocal n, uint16_t kind) { MCC_TRACE("enter\n")
 	a->epoch++;
 	a->kind[n] = kind;
 }
-/* Unhook `child` from `parent` when it is the last one, so a statement that turns
-   out to be a value can be re-parented instead of copied. Returns 0 and changes
-   nothing if it is not the last child, which keeps the caller honest about ordering. */
 int ast_detach_last_child(AstArena *a, AstLocal parent, AstLocal child) { MCC_TRACE("enter\n");
 	AstLocal c, prev = AST_NONE;
 	if (parent == AST_NONE || child == AST_NONE)
@@ -908,10 +894,6 @@ static void ast_slice_memo_put(uint64_t ident, uint64_t gates, int64_t size) { M
 	ast_slice_memo_n++;
 }
 
-/* The three ops whose nodes overload sym, ival and fbits with packed integers
-   instead of the Sym pointers and values every other node carries. Declared
-   here rather than beside their siblings because the first predicate that has
-   to exclude them appears this early in the file. */
 #define AST_OP_ASMGEN 0x4001a
 #define AST_OP_ASM 0x4001b
 #define AST_OP_ASMOPS 0x40025
@@ -927,9 +909,6 @@ static int ast_slice_win_nodes(const AstArena *a, AstLocal n) { MCC_TRACE("enter
 	return k;
 }
 
-/* AST_OP_ASMOPS is an AST_Unary WITH children, so it answered yes here and
-   could be picked as a slice window root -- splicing over it would drop the
-   asm's operand evaluation without dropping the asm itself. */
 static int ast_slice_win_root_ok(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	uint16_t k = ast_kind(a, n);
 	return (k == AST_Binary || k == AST_Unary || k == AST_Convert || k == AST_Load) &&
@@ -1894,11 +1873,6 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 	return loc;
 }
 
-/* Drop one entry from the recorded offset stream without moving `loc`. The
-   stream is positional -- the Nth ast_alloc_loc of the replay takes the Nth
-   offset the parser handed out -- so a replay that legitimately skips one of the
-   parser's allocations has to say so, or every offset after it is off by one and
-   a later request silently lands on a slot sized for an earlier one. */
 static void ast_locrec_skip(void) { MCC_TRACE("enter\n");
 	if (ast_replaying && !ir_cap_replaying && ast_locrec_i < ast_locrec_n)
 		{ MCC_TRACE("br\n"); ast_locrec_i++; }
@@ -1940,8 +1914,6 @@ struct ast_rp_label {
 static struct ast_rp_label *ast_rp_labels;
 static int ast_rp_nlabel, ast_rp_caplabel;
 static int ast_rp_label_floor;
-/* How many asm operands AST_OP_ASMOPS left live for the ASMGEN pair to pop.
-   Non-zero only between the two, and asm statements do not nest. */
 static int ast_rp_asmops;
 
 static AstLocal ast_dead_value(void) { MCC_TRACE("enter\n");
@@ -2009,10 +1981,6 @@ static uint64_t ast_sv_hi(const SValue *sv);
 
 static Sym **ast_sym_deferred;
 static int ast_sym_deferred_n, ast_sym_deferred_cap;
-/* Syms deferred for a body whose arena was kept. The keep path cannot release them --
-   the arena still refers to them -- but it used to drop the list on the floor, so
-   under MCC_DIAG, where every Sym is its own allocation, they were never freed
-   at all. Hold them here and release them in ast_teardown. */
 static Sym **ast_sym_retained;
 static int ast_sym_retained_n, ast_sym_retained_cap;
 static int ast_sym_defer_on;
@@ -2032,11 +2000,6 @@ int ast_sym_defer(Sym *sym) { MCC_TRACE("enter\n");
 static int ast_reemit_n;
 static int ast_inline_n;
 
-/* Resolve every knob the command line did not name from its row's default
-   class. Runs once, before anything reads a flag, so the rest of ast_configure
-   sees a settled array and each SPECIAL row can simply overwrite its own byte.
-   A knob the driver did set is left exactly as given -- that is the whole
-   reason optflag[] starts at MCC_OPT_UNSET rather than at 0. */
 static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
 	int o4 = s1->optimize_search_seconds > 0;
 	int i, dflt[MCC_OPT_COUNT];
@@ -2049,14 +2012,13 @@ static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
 		if (s1->optflag[i] != MCC_OPT_UNSET)
 			{ MCC_TRACE("br\n"); continue; }
 		if (dflt[i] == MCC_OPTD_SPECIAL)
-			{ MCC_TRACE("br\n"); continue; } /* left UNSET for its owner below */
+			{ MCC_TRACE("br\n"); continue; }
 		if (MCC_OPTD_IS_LEVEL(dflt[i])) { MCC_TRACE("br\n");
 			int want = MCC_OPTD_LEVEL_OF(dflt[i]);
 			if (want >= MCC_OPT_SEARCH_LEVEL)
 				{ MCC_TRACE("br\n"); mcc_error("mccopt.h: a knob sits at -O%d, at or past "
 																			 "MCC_OPT_SEARCH_LEVEL (%d); bump it",
 																			 want, MCC_OPT_SEARCH_LEVEL); }
-			/* The ladder is cumulative, and search mode implies every rung. */
 			on = o4 || s1->optimize_level >= want;
 		} else { MCC_TRACE("br\n");
 			on = (dflt[i] == MCC_OPTD_ALWAYS);
@@ -2065,22 +2027,11 @@ static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 }
 
-/* Read a knob. UNSET reads as off: every SPECIAL row is assigned below before
-   anything reads it, so a byte still UNSET here is a row whose owner never ran,
-   and off is the safe reading of that. */
 static int mcc_opt(MCCState *s1, int id) { MCC_TRACE("enter\n");
 	unsigned char v = s1->optflag[id];
 	return v != 0 && v != MCC_OPT_UNSET;
 }
 
-/* Whether a math builtin may be folded to an instruction that leaves errno
-   alone. The preprocessor has to answer this too -- glibc's math_errhandling
-   reports MATH_ERRNO unless __NO_MATH_ERRNO__ is predefined, so a program that
-   asks the standard question gets the wrong answer if the macro and the folding
-   disagree -- and predefines are emitted from preprocess_start, before
-   ast_configure has resolved the SPECIAL row. Resolving it here instead of at
-   two call sites keeps the answer single-sourced: an explicit -f[no-]builtin-
-   math-errno wins, and -fno-math-errno is the default when the row is UNSET. */
 ST_FUNC int ast_math_errno_folds(MCCState *s1) { MCC_TRACE("enter\n");
 	unsigned char v;
 	if (!s1)
@@ -2101,9 +2052,6 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	opt_promote = s1->optimize >= 2;
 #endif
 	ast_opt_defaults(s1);
-	/* The ten SPECIAL rows: their default depends on -Os, on an ISA probe or on
-	   another flag, so the table cannot express it. Each writes its own byte and
-	   only when the command line left it alone. */
 #define MCC_OPT_SPECIAL(id, expr)                    \
 	do {                                               \
 		if (s1->optflag[id] == MCC_OPT_UNSET)            \
@@ -2116,10 +2064,6 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 									o4 || s1->optimize_size || s1->optimize >= 2);
 	MCC_OPT_SPECIAL(MCC_OPT_PROMOTE_INCDEC,
 									o4 || s1->optimize_size || s1->optimize >= 2);
-	/* Four knobs whose DEFAULT is target-conditional. The default moves here so
-	   the assignment below is one line instead of an #if/#else pair with two
-	   identical arms; -f<name> still reaches the knob on every target, it just
-	   starts off where the target has no use for it. */
 #ifdef MCC_TARGET_X86_64
 	MCC_OPT_SPECIAL(MCC_OPT_REG_DISP,
 									o4 || s1->optimize_size || s1->optimize >= 1);
@@ -2146,22 +2090,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_replay_env = s1->optimize >= 1 || s1->embed_jit ||
 									 ast_env_int("MCC_FORCE_REPLAY", 0) ||
 									 ast_env_int("MCC_RIR_FORCE", 0);
-	/* Production trusts a body only when its replay reproduces the parser's bytes
-	   exactly (the `faithful` compare in ast_func_end), and falls back otherwise.
-	   That is a byte bar on a path whose real obligation is semantic. Setting this
-	   accepts a byte-divergent replay into production so the fallback census can be
-	   driven to zero and the result judged by the goldens instead. Off by default;
-	   turning it on is only meaningful alongside a full test run. */
-	/* Default ON: a completed replay is kept even when its bytes differ from the
-	   parser's. The byte compare answers "did this reproduce the parser exactly",
-	   which is the right question for trusting a body to the optimizer and far too
-	   strong for deciding whether it is safe to ship. Set MCC_RIR_NOFB=0 to restore
-	   the old byte-gated fallback; that is the escape hatch if a body ever ships
-	   wrong, and it is also how to confirm a suspected arena defect is one. */
 	ast_rir_nofb_env = !mcc_opt(s1, MCC_OPT_REPLAY_FALLBACK);
-	/* Diagnostic only: ignore AST_FB_LANDOR_MATERIAL and always take the
-	   gvtst_set path. Used to confirm that a short-circuit materialisation is
-	   what miscompiles a given body, since ast_dump does not print fbits. */
 	ast_rir_nomat_env = !mcc_opt(s1, MCC_OPT_REPLAY_MATERIALIZE);
 	ast_rir_noinv_env = !mcc_opt(s1, MCC_OPT_REPLAY_LANDOR_INVERT);
 	ast_replay_dump = mcc_opt(s1, MCC_OPT_DUMP_REPLAY);
@@ -2201,14 +2130,6 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 			mcc_opt(s1, MCC_OPT_STOREVAL_CALLLAST);
 	ast_chainstore_live_env = mcc_opt(s1, MCC_OPT_CHAIN_STORE_LIVE);
 	ast_chainstore_member_env = mcc_opt(s1, MCC_OPT_CHAIN_STORE_MEMBER);
-	/* Replay FIDELITY, not optimization: these six reproduce a shape the parser
-	   emits at every level, so gating them on the optimization level made the
-	   replay wrong at -O0 rather than merely less optimized. Measured: forced
-	   -O0 with no fallback loses eleven exec goldens with them at the old
-	   `optimize >= 1` default and none with them on, and they are the minimal
-	   set that does it. They read only in the replay and StoreVal
-	   reconstruction paths, so a level that never adopts the arena is unmoved.
-	   The -fno- spellings survive for bisection. */
 	ast_storeval_call_env = mcc_opt(s1, MCC_OPT_STOREVAL_CALL);
 	ast_storeval_callup_env = mcc_opt(s1, MCC_OPT_STOREVAL_CALLUP);
 	ast_cmp_mat_env = mcc_opt(s1, MCC_OPT_REPLAY_CMP_MATERIALIZE);
@@ -2386,11 +2307,6 @@ int ast_fconst_reuse(int cplx, const unsigned char *key) { MCC_TRACE("enter\n");
 	if (ir_cap_fconst_take(&jfc))
 		{ MCC_TRACE("br\n"); return jfc; }
 	if (ast_replaying && !ast_fconst_reuse_off) { MCC_TRACE("br\n");
-		/* A recorded constant whose arena node is a materialized ref replays
-		   without re-asking (the complex-cast constants), so the head of the
-		   list can hold an entry this consumer must not take. Record order is
-		   emission order, so a kind mismatch at the head is an entry whose
-		   consumer already passed or will never ask -- skip it. */
 		while (ast_fconst_i < ast_fconst_n &&
 					 ast_fconst_cplx[ast_fconst_i] != (unsigned char)cplx)
 			{ MCC_TRACE("br\n"); ast_fconst_i++; }
@@ -2519,13 +2435,6 @@ static AstLocal ast_while_savebb = AST_NONE;
 
 static AstLocal ast_for_prefix_pending = AST_NONE;
 
-/* A label's identity in the arena cannot be its token. Two `__label__ l1`
-   declarations in different statement-expression scopes are the same token,
-   and ast_rp_label_get keys on it, so the arena's labels alias where the
-   parser's label_find scoping keeps them apart -- ast_rp_label_floor scopes
-   only the inline-graft path. The Sym is unique while it lives, so hand out a
-   monotonic id per Sym and forget it when label_pop frees the Sym; a bare
-   pointer would alias again as soon as the allocator recycled the address. */
 #define AST_LBLMAP_MAX 512
 static void *ast_lblmap_sym[AST_LBLMAP_MAX];
 static int ast_lblmap_id[AST_LBLMAP_MAX];
@@ -2691,9 +2600,6 @@ static int ast_fn_inlinable(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); return 0; }
 		if (k == AST_Invoke) { MCC_TRACE("br\n");
 			AstLocal ce = ast_first_child(a, n);
-			/* Alone among the four callee-name lookups in this file, this one had
-			   no kind check on the callee before dereferencing its sym. Only an
-			   AST_Ref carries a Sym there. */
 			void *cs = (ce != AST_NONE && ast_kind(a, ce) == AST_Ref)
 										 ? (void *)(uintptr_t)ast_sym(a, ce)
 										 : NULL;
@@ -2761,17 +2667,6 @@ int ast_arena_has_asm(const AstArena *a) { MCC_TRACE("enter\n");
 	return 0;
 }
 
-/* What an inline asm actually does, decoded from the blob ir_cap_asm_gen_code
-   already stores. `barrier` is the wrong word for it in both directions.
-   Too weak: subst_asm_operands baked concrete register names into the text at
-   parse time, so the block is a PIN -- ltemp, promote-locals, sethi, reg-color
-   and narrow break it without moving anything across it. Too strong: a block
-   with no `mem` and no `volatile` has no business stopping DSE, LICM or PRE on
-   memory it cannot name.
-
-   `unknown` is the answer for an asm whose blob could not be read. It reads as
-   "everything", so a caller that forgets to check it is conservative rather
-   than wrong. */
 typedef struct AstAsmEff {
 	uint64_t reads;
 	uint64_t writes;
@@ -2822,10 +2717,6 @@ static int ast_asm_eff_node(const AstArena *a, AstLocal n, AstAsmEff *e) { MCC_T
 	return 1;
 }
 
-/* The union over every asm in the body. Both ASMGEN halves of one asm decode
-   the same blob, so unioning them is idempotent. An AST_OP_ASM with no ASMGEN
-   beside it cannot happen from asm_instr, which brackets every ir_cap_asm with
-   the pair -- but if one ever appears, it answers `unknown`. */
 static int ast_body_asm_eff(const AstArena *a, AstAsmEff *e) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n;
 	int any = 0, texts = 0, gens = 0;
@@ -2850,16 +2741,8 @@ static int ast_node_is_asm(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n")
 	return ast_op_is_asm(ast_op(a, n));
 }
 
-/* Set for the body ast_func_end is holding, so the predicates below can skip
-   their asm walk entirely in the overwhelming majority of bodies that have
-   none. ast_licm_written is called once per tracked copy per statement. */
 static int ast_fn_asm_live;
 
-/* A childless Ref whose r is `<machine register>|VT_LVAL` says "dereference
-   whatever is in that register". Nothing in the tree produces it: the register
-   was filled by a sibling's emission -- the op-assign vdup of `*f() += 7` or of
-   a bitfield `s->a += 6` -- and that edge is invisible to every pass. It is the
-   same kind of object as an asm: a barrier the tree cannot see through. */
 static int ast_ref_reg_dangle(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int r;
 	if (ast_kind(a, n) != AST_Ref || ast_nchild(a, n) != 0)
@@ -3116,14 +2999,6 @@ static int ast_inline_graft(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int ral, rsz = type_size(&ast_graft_rt, &ral);
 	if (rsz < 1)
 		{ MCC_TRACE("br\n"); rsz = 8; }
-	/* The call this graft replaced would have landed its struct return in a slot
-	   from ast_alloc_loc -- see the VT_STRUCT arm of AST_Call, which allocates
-	   exactly once, after the arguments and whether the ABI returns in registers
-	   or in memory. The graft carves its own slot out of the private region below
-	   `bias` instead, so that recorded offset goes unclaimed. Retire it here or it
-	   is handed to whatever allocates next: types/const_member_copy gave a
-	   16-byte _Complex the 8-byte slot recorded for make()'s return and wrote four
-	   bytes past %rbp. Only struct returns; void and scalar ones never recorded. */
 	if ((ast_type_t(a, n) & VT_BTYPE) == VT_STRUCT)
 		{ MCC_TRACE("br\n"); ast_locrec_skip(); }
 	loc = (loc - rsz) & -(ral > 0 ? ral : 1);
@@ -3670,9 +3545,6 @@ void ast_teardown(void) { MCC_TRACE("enter\n");
 	int i;
 	mcc_free(ast_locrec);
 #if MCC_DIAG
-	/* With MCC_DIAG every Sym is its own allocation rather than a slab slot, so
-	   the ones parked here are real heap blocks that nothing releases. Without the
-	   debug allocator they belong to the slab and must not be freed. */
 	for (i = 0; i < ast_sym_deferred_n; i++)
 		{ MCC_TRACE("br\n"); mcc_free(ast_sym_deferred[i]); }
 	for (i = 0; i < ast_sym_retained_n; i++)
@@ -3897,11 +3769,6 @@ static int ast_node_libcall(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				 lbt == VT_QFLOAT) &&
 				(op == '*' || op == '/' || op == '+' || op == '-'))
 			{ MCC_TRACE("br\n"); return 1; }
-		/* _Float16 is soft-float on every backend: gen_op extends both
-		   operands through __mcc_extendhfsf2 and truncates the result through
-		   __mcc_truncsfhf2, so arithmetic AND comparisons are calls. The
-		   result type of a comparison is int, so the operand type is the one
-		   that must be tested. */
 		if (bt == VT_FLOAT16 || lbt == VT_FLOAT16)
 			{ MCC_TRACE("br\n"); return 1; }
 		return 0;
@@ -3924,8 +3791,6 @@ static int ast_node_libcall(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); return 1; }
 		if ((d & VT_BTYPE) == VT_LDOUBLE && !is_float(st))
 			{ MCC_TRACE("br\n"); return 1; }
-		/* Any conversion with _Float16 on exactly one side goes through the
-		   soft-float helpers (gen_cvt_f16). */
 		if (((s & VT_BTYPE) == VT_FLOAT16) != ((d & VT_BTYPE) == VT_FLOAT16))
 			{ MCC_TRACE("br\n"); return 1; }
 		return 0;
@@ -3946,10 +3811,6 @@ static int ast_node_libcall(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return 0;
 }
 
-/* Does this subtree assign to anything? A loop condition that does is the shape the
-   promoter mismodels: gjmp_append's `while ((n2 = read32le(p = ...)))` came out with
-   five promoted registers and wrong control flow, and it is the last body standing
-   between the JIT self-host and a fallback-free build. */
 static int ast_cond_has_store(AstArena *a, AstLocal n, int depth) {
 	MCC_TRACE("enter\n");
 	if (n == AST_NONE || depth > 32)
@@ -4019,14 +3880,6 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 				if (ast_kind(a, s) == AST_If &&
 						(so == 2 || so == 3 || so == 4 || so == 5))
 					{ MCC_TRACE("br\n"); has_loop = 1; }
-				/* A short-circuit in statement position branches, but it is an
-				   AST_Binary rather than an AST_If, so the classification above
-				   never sees it and the body is planned as if it were
-				   straight-line. void_expr.c's
-				   `for (; i < 3; ++i) { ...; (void)(i || (f(i), ++count)); }`
-				   then came out with its loop exit pointing at the next
-				   instruction, the increment block unreachable and no back-edge.
-				   Treat it as the branch it is. */
 				if (ast_kind(a, s) == AST_Binary &&
 						(so == TOK_LAND || so == TOK_LOR))
 					{ MCC_TRACE("br\n"); has_landor = 1; }
@@ -4564,8 +4417,6 @@ static void ast_error_sink(void *opaque, const char *msg) { MCC_TRACE("enter\n")
 	(void)msg;
 }
 
-/* ast_subtree_has_call is gated to the promotion targets; the StoreVal arm below
-   needs the same question answered on every target. */
 static int ast_val_has_call(AstArena *a, AstLocal n, int depth) {
 	MCC_TRACE("enter\n");
 	if (n == AST_NONE || depth > 32)
@@ -4579,9 +4430,6 @@ static int ast_val_has_call(AstArena *a, AstLocal n, int depth) {
 	return 0;
 }
 
-/* Is this Load sitting directly on a member access, possibly through casts? Only that
-   shape suffers the double materialisation, so restricting to it keeps the -O4 census
-   from moving: an unrestricted skip cost 64 -> 100 fallbacks there. */
 static int ast_load_over_member(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal c = ast_nchild(a, n) == 1 ? ast_child(a, n, 0) : AST_NONE;
 	while (c != AST_NONE && ast_kind(a, c) == AST_Convert && ast_nchild(a, c) == 1)
@@ -4592,16 +4440,7 @@ static int ast_load_over_member(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 
 static void ast_replay_value_inner(AstArena *a, AstLocal n);
 
-/* RVATTR=<fn> attributes emitted bytes to the arena node that produced them: one line
-   per node whose replay advanced `ind`, with the byte range. This is how to find a
-   node that emits an instruction the parser does not, instead of guessing from the
-   tree shape. It answered format_func_spec's doubled load in a single run, after
-   several attempts that reasoned from the tree had failed:
 
-     n=33 Binary +  +17   address
-     n=35 MEMBER    +0    lvalue, no code
-     n=37 Load      +3    indir() materialises the pointer
-     n=39 Invoke    +38   15 bytes of marshalling and a second load  */
 static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	const char *e = getenv("RVATTR");
 	int before;
@@ -4681,22 +4520,7 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 				}
 				break;
 			}
-			/* Without AST_FB_STORE_VALUE_LIVE the value is re-derived by replaying
-			   the store's own value expression, which is only sound when that
-			   expression is pure. bounds_stress.c's test16 is
-			   `strcpy(q = alloca(strlen(demo) + 1), demo)`: re-deriving re-runs
-			   strlen AND performs a second alloca, so `q` names the first buffer
-			   while strcpy writes the second. Read the stored location instead
-			   whenever the value could have side effects. */
 			if (ast_nchild(a, st) == 2) { MCC_TRACE("br\n");
-				/* An unparented Store is not placed as a statement anywhere, so
-				   nothing else will ever perform it -- this StoreVal is its only
-				   chance. Re-deriving just the value here loses the assignment:
-				   `for (pp = list; !!(p = *pp); pp = nn)` reached the arena with the
-				   `p = *pp` Store absent from the tree, so the condition tested the
-				   right value while `p` itself stayed uninitialised and the body
-				   dereferenced garbage. Perform the store and leave its value, which
-				   is what the parser's vstore does. */
 				if (ast_parent(a, st) == AST_NONE)
 					{ MCC_TRACE("br\n"); ast_replay_value(a, st); }
 				else if (ast_val_has_call(a, ast_child(a, st, 1), 0))
@@ -4893,10 +4717,6 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 															? MCC_RC_RET(vtop->type.t)
 															: MCC_RC_TYPE(vtop->type.t)); }
 
-		/* The node's operator is the one the source asked for. The parser got
-		   there by running the opposite comparison and swapping the flags, and
-		   on arm64 that is a different instruction pair than the operator taken
-		   straight, so reproduce the act rather than the result. */
 		gen_op((ast_fbits(a, n) & AST_FB_CMP_INVERT_LATE) ? bop ^ 1 : bop);
 		if (ast_fbits(a, n) & AST_FB_CMP_INVERT_LATE) { MCC_TRACE("br\n");
 			if (vtop->r == VT_CMP) { MCC_TRACE("br\n");
@@ -4905,9 +4725,6 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 				vtop->jtrue = j;
 				vtop->cmp_op ^= 1;
 			} else if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) { MCC_TRACE("br\n");
-				/* Both operands folded, so there are no flags left to swap and
-				   the opposite comparison above stands as the answer. Negate it
-				   to get back to the operator the source asked for. */
 				vtop->c.i = !vtop->c.i;
 			} else { MCC_TRACE("br\n");
 				mcc_error("ast-replay: late comparison inversion lost");
@@ -5056,14 +4873,6 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 	}
 	case AST_Load:
 		ast_replay_value(a, ast_child(a, n, 0));
-		/* AST_OP_MEMBER leaves VT_LVAL set, and indir() on an lvalue calls gv() to
-		   materialise the pointer before re-flagging it, so the use loads a second
-		   time. ast_bfold_run's `strcmp(nm, ast_bfold_tab[bi].name)` came out with
-		   `mov rcx,[rcx]` twice and handed strcmp the first eight bytes of the string
-		   as a pointer; a compiler built that way segfaults compiling mcc.c. Skip the
-		   indir only where the parser itself was not on an lvalue here -- the capture
-		   records that, because the tree alone cannot distinguish this from a real
-		   dereference like `*(int *)u.pv`. */
 		if ((ast_fbits(a, n) & AST_FB_LOAD_LVAL) || !(vtop->r & VT_LVAL) ||
 				!ast_load_over_member(a, n))
 			{ MCC_TRACE("br\n"); indir(); }
@@ -5349,8 +5158,6 @@ static int ast_has_atomic(AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter
 static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE;
 			 s = ast_next_sib(a, s)) { MCC_TRACE("br\n");
-		/* Only AST_If carries this flag; other kinds pack raw values into fbits
-		   (ASMGEN its vstack window, MEMBER its VT_NONLVAL) and would alias it. */
 		if (ast_kind(a, s) == AST_If && (ast_fbits(a, s) & AST_FB_NOCODE))
 			{ MCC_TRACE("br\n"); continue; }
 		switch (ast_kind(a, s)) { MCC_TRACE("br\n");
@@ -5559,13 +5366,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				ggoto();
 				break;
 			}
-			/* The asm operand expressions are evaluated by the parser BEFORE the
-			   two asm_gen_code calls, and the code that evaluation emits -- the
-			   pointer gv, the deref, then save_regs(0)'s spills -- is not part of
-			   any ASMGEN window.  ASMGEN replays off the parser's own vstack
-			   snapshot, so its bytes come out right whatever the vstack holds;
-			   these do not.  Replay the operands, spill exactly as the parser
-			   did, and leave them live for the ASMGEN pair to consume. */
 			if (ast_op(a, s) == AST_OP_ASMOPS) { MCC_TRACE("br\n");
 				uint32_t k, nc = ast_nchild(a, s);
 				uint64_t gvmask = ast_ival(a, s);
@@ -5607,8 +5407,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 										 (int)(ast_sym(a, s) >> 32));
 				memcpy(vstack, sv_stack, sizeof sv_stack);
 				vtop = sv_top;
-				/* asm_instr pops every operand after the output half; do the same,
-				   but only for the ones AST_OP_ASMOPS actually pushed. */
 				if ((int)(ast_sym(a, s) & 0xffffffff) && ast_rp_asmops > 0) {
 					MCC_TRACE("br\n");
 					while (ast_rp_asmops-- > 0)
@@ -6228,14 +6026,6 @@ static void ast_fold_rec(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
 	if (ast_kind(a, x) != AST_Literal || ast_kind(a, y) != AST_Literal)
 		{ MCC_TRACE("br\n"); return; }
-	/* The fold has to run at the type the operands convert to, not at the left
-	   operand's. tcc lowers unary minus as `vpushi(0); gen_op('-')`, so the left
-	   operand of a negated 64-bit constant is an `int` zero, and folding at its
-	   width truncates: `0 - 9223372036854775807LL` came out 1, and
-	   `-9223372036854775807LL - 1` came out 0, both being the low 32 bits of the
-	   right answer. Shifts are excluded because their result type is the promoted
-	   LEFT operand's, not the common one. Floats are rejected below, so this is
-	   the integer half of the usual arithmetic conversions. */
 	int tt = ast_type_t(a, x);
 	{
 		int ty2 = ast_type_t(a, y);
@@ -8692,11 +8482,6 @@ static int ast_dse_run(AstArena *a) { MCC_TRACE("enter\n");
 
 static int ast_sccp_folds;
 
-/* An `asm goto` branches to a C label that no AST_Jump records: the edge is a
-   LG.n relocation inside the block's text. Every caller of this predicate uses
-   a 0 to mean "nothing here is a branch target, the block may be deleted or
-   threaded", which for an asm goto is the wrong answer in the dangerous
-   direction. */
 static int ast_sccp_has_label_compute(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (n == AST_NONE)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -9315,16 +9100,6 @@ static void ast_cse_kill(AstArena *a, int off) { MCC_TRACE("enter\n");
 
 static MCC_OPT_TLS int ast_licm_folds;
 
-/* An asm output operand writes a local, and no node in the arena records that
-   write: asm_gen_code performs it inside the ASMGEN emission, so the tree holds
-   only the operand's lvalue as an ASMOPS child. ast_licm_written looks for a
-   Store or an lval Unary, finds neither, and answers "the loop does not write
-   this" -- which is how a copy survives across an asm that overwrote it, and
-   how a load gets hoisted out of a loop whose asm rewrote its source.
-
-   Which ASMOPS children are outputs is in the sibling ASMGEN's nb_outputs, but
-   the tree does not link the two, so every operand counts as written. A memory
-   clobber writes anything whose address escaped. */
 static int ast_asm_writes_off(AstArena *a, AstLocal n, int off) { MCC_TRACE("enter\n");
 	int op;
 	if (n == AST_NONE)
@@ -10661,9 +10436,6 @@ static MCC_OPT_TLS int ast_divmagic_folds;
 static MCC_OPT_TLS const AstArena *ast_divmagic_base_arena;
 static MCC_OPT_TLS AstLocal ast_divmagic_base;
 
-/* the base watermark is keyed on the arena's address; a freed arena's address
-   can be recycled for a later body, so free must drop the memo or that body
-   inherits a stale base and ast_divmagic_lowered misreads its nodes */
 static void ast_divmagic_invalidate(const AstArena *a) { MCC_TRACE("enter\n");
 	if (ast_divmagic_base_arena == a) { MCC_TRACE("br\n");
 		ast_divmagic_base_arena = NULL;
@@ -14141,30 +13913,9 @@ typedef struct AstStrategy {
 	int (*apply)(AstArena *a, Sym *sym);
 } AstStrategy;
 
-/* Reading a `static const` object at a link-time-constant address.
 
-   gen.c already knows how to do this -- `const_lval_bytes` (the SHT_NOBITS test,
-   the bounds test and the relocation-overlap scan) and `fold_const_lval_at` (the
-   sign/zero extension) -- but `fold_const_lval` gates them on
-   `global_expr && CONST_WANTED`, so nothing folds these loads inside a function
-   body. What is missing is not the byte reader, it is a way to get from an arena
-   subtree back to `sym + byte offset`. That is `ast_cload_addr`/`ast_cload_lval`
-   below.
 
-   The index operand of `AST_Binary '+'` is in ELEMENT units, not bytes: the IR
-   capture suppresses nesting, so `gen_op`'s own `vpush_type_size(); gen_op('*')`
-   for pointer arithmetic never reaches the arena. The stride is therefore implied
-   entirely by the pointee type carried alongside the address, which is why these
-   two functions thread a `CType` and not just an offset. `AST_Load` carries no
-   type of its own, so the loaded type is the pointee its child resolved to.
 
-   Two guards are stricter than gen.c's. `const_lval_bytes` waives its SHF_WRITE
-   check for anonymous symbols, which is sound where it is used -- a constant
-   expression is evaluated before any store can have run -- and is not sound in a
-   function body, where a file-scope compound literal in .data may already have
-   been written; so a non-writable section is required outright. And the fold only
-   fires where the parent consumes the node as a plain rvalue, because AST_OP_ADDR,
-   AST_OP_MEMBER and the inc/dec path all need the lvalue itself. */
 static int ast_cload_addr(AstArena *a, AstLocal n, Sym **sym, int64_t *off,
 													CType *pt, int depth);
 
@@ -14254,8 +14005,6 @@ static int ast_cload_addr(AstArena *a, AstLocal n, Sym **sym, int64_t *off,
 		*off += (neg ? -idx : idx) * esz;
 		return 1;
 	}
-	/* An array that has already decayed is a bare VT_CONST|VT_SYM value with no
-	   VT_LVAL -- gaddrof cleared it -- so it never reaches ast_cload_lval. */
 	if (k == AST_Ref && !ast_nchild(a, n)) { MCC_TRACE("br\n");
 		int r = ast_op(a, n);
 		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) != (VT_CONST | VT_SYM) ||
@@ -14268,8 +14017,6 @@ static int ast_cload_addr(AstArena *a, AstLocal n, Sym **sym, int64_t *off,
 	}
 	if (!ast_cload_lval(a, n, sym, off, &desig, depth))
 		{ MCC_TRACE("br\n"); return 0; }
-	/* Only an array lvalue decays to its own address; anything else would have to
-	   be loaded first, and its contents are not this address. */
 	if ((desig.t & (VT_BTYPE | VT_ARRAY)) != (VT_PTR | VT_ARRAY) || !desig.ref)
 		{ MCC_TRACE("br\n"); return 0; }
 	*pt = desig.ref->type;
@@ -14322,15 +14069,7 @@ static int ast_cload_run(AstArena *a) { MCC_TRACE("enter\n");
 		SValue v;
 		int64_t off = 0;
 		int bt, sv_ice, k = ast_kind(a, n);
-		/* Three shapes read the same object: a dereference (`t[i]`), the symbol's
-		   own lvalue (`k` for a scalar `static const int k`), and a member of one
-		   (`t[i].f`). Folding only the first would leave `cars[1].tire_pressure[2]`
-		   constant while `cars[1].speed` stayed a load, which is a worse place to
-		   stop than either end. */
 		if (k == AST_Load && ast_nchild(a, n) == 1) { MCC_TRACE("br\n");
-			/* This Load may be standing in for the lvalue rather than dereferencing
-			   it; the replay skips indir() for exactly that shape, so folding it
-			   would drop a member address on the floor. */
 			if (!(ast_fbits(a, n) & AST_FB_LOAD_LVAL) && ast_load_over_member(a, n))
 				{ MCC_TRACE("br\n"); continue; }
 			if (!ast_cload_rvalue_use(a, n))
@@ -14469,10 +14208,6 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 	{"cload", sg_templates, ast_strat_cload},
 };
 
-/* Which strategies this body may run. All of them unless the body carries a
-   hole, in which case ast_func_end narrows it to the ones the hole's effect set
-   proves harmless. Kept out of the AstStrategy row because it is a property of
-   the body, not of the strategy. */
 static uint32_t ast_strat_admit = 0xffffffffu;
 
 #define AST_STRAT_BIT(x) ((uint32_t)1 << (x))
@@ -16473,9 +16208,6 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			int saved_loc = loc, saved_anon = anon_sym;
 			Section *rsec2 = cur_text_section->reloc;
 			volatile int faithful = 0;
-			/* Set only where the replay ran to completion. The error path below
-			   clears `faithful` for a reason that has nothing to do with the byte
-			   compare, and a body that longjmp'd out must never be kept. */
 			volatile int ast_replay_completed = 0;
 			const char *volatile ast_unf_why = "abort";
 			const int ast_fn_hole = ast_arena_has_hole(ast_cur);
@@ -16645,27 +16377,6 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
 				const int ast_opt_ok = faithful && !ast_fn_hole;
-				/* First strategies re-admitted to a body carrying an asm. Each one
-				   rewrites an expression in place: it does not move a statement past
-				   the asm, does not delete or duplicate it, does not name a register,
-				   and does not move a frame slot. cprop and dse qualify for a second
-				   reason -- ast_cprop_stmt and ast_dse_block both drop their whole
-				   tracked set at any statement that is not a Store or an Invoke, and
-				   an asm statement is neither, so nothing survives across it. cprop
-				   also depends on the ast_licm_written fix above: without it a copy
-				   tracked across a loop whose asm overwrites the local survives.
-
-				   Withheld, and why. narrow, ltemp, sethi, reg-color and the
-				   promotion pass move a local or rename a register, and
-				   subst_asm_operands baked the parser's answer for both into the
-				   text at parse time -- the block is a pin, not a barrier. inline
-				   and tco graft the body into another frame, which carries the
-				   callee's pinned names with it. cse, pre and ivsr introduce a
-				   value that outlives a statement, and nothing yet proves the asm
-				   does not clobber where it lands. sccp, jt and select reshape
-				   control flow, and an asm goto's out-edges are LG.n relocations
-				   inside the text. licm rewrites only what cse already hoisted, so
-				   admitting it alone would be a no-op. */
 				const int ast_asm_only_hole =
 						ast_fn_hole && ast_fn_has_asm && !ast_fn_asm.unknown &&
 						!ast_arena_has_dangle(ast_cur);
@@ -17231,28 +16942,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			sym_free_first = ast_saved_free;
 			mcc_state->warn_none = ast_sv_warn;
 			seqp_reset();
-			/* `faithful` answers "did the replay reproduce the parser byte for byte,
-			   relocations included", and that is what gates the optimizer above. It
-			   is a much stronger question than "is this body safe to ship", which is
-			   all the keep/restore decision needs. MCC_RIR_NOFB separates the two so
-			   the fallback census can be driven to zero without also turning passes
-			   loose on a body whose replay was never validated -- forcing `faithful`
-			   itself would do both at once, and the four golden regressions banked in
-			   docs/TODO.md are what that looks like. */
-			/* A hole names machine state the tree does not contain: an asm's pinned
-			   registers and frame offsets, a dangling Ref's `<reg>|VT_LVAL`. Those
-			   names are resolved against the register allocation the PARSER made,
-			   so they are only meaningful in a replay that reproduced it -- and the
-			   byte compare is exactly that proof. Divergence is not a weaker form
-			   of agreement here, it is evidence that the register the Ref names now
-			   holds something else, so the no-fallback path does not apply. */
 			int keep = faithful ||
 								 (ast_rir_nofb_env && ast_replay_completed && !ast_fn_hole);
-			/* Bisection handle: MCC_RIR_NOFB_SKIP is a comma-separated list of
-			   function names that keep falling back even with the no-fallback path
-			   on. Turning fallback off wholesale breaks the JIT self-host with
-			   "memory full"; this is how to find which body is responsible without
-			   rebuilding between attempts. */
 			if (keep && !faithful && funcname) { MCC_TRACE("br\n");
 				const char *sk = getenv("MCC_RIR_NOFB_SKIP");
 				if (sk && *sk) { MCC_TRACE("br\n");
@@ -17268,14 +16959,6 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					}
 				}
 			}
-			/* The frame has to cover every offset the kept body actually references.
-			   Those offsets come from the arena's Refs, which carry the parser's own
-			   local offsets, so the parser's depth is the floor -- and `loc` after a
-			   replay is not it. The prologue is emitted outside [ast_body_ind_sv,
-			   body_len), so a short frame does NOT fail the byte compare: smoke.c's
-			   main replayed byte-for-byte with loc=0 against the parser's -20 and got
-			   `sub $0x0,%rsp`, which put its locals on top of the caller and aborted
-			   in free(). Take the deeper of the two whenever the body is kept. */
 			if (keep && saved_loc < loc)
 				loc = saved_loc;
 			if (ast_rir_used) { MCC_TRACE("br\n");
@@ -17336,14 +17019,6 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			mcc_free(orig_rel);
 		}
 #ifdef MCC_EMBED_JIT
-		/* The fourth path that keeps an arena past ast_func_end, and the one the
-		   three retain guards above missed. mccjit_intent_serialize walks every
-		   node and interns ast_sym as a Sym handle; an asm node's sym is not a Sym
-		   at all but a packed (is_output, out_reg), so out_reg == -1 arrives as
-		   0xffffffff00000000 and the intern dereferences it. Independently of
-		   that, a stashed arena has the same lifetime defect as a retained one:
-		   raw_off and vs_off index ir_cap_raw and ir_cap_vs, which ir_cap_reset
-		   zeroes for every function. */
 		if ((ast_jit_dispatch_env || ast_jit_fns_n > 0) && ast_fn_faithful &&
 				ast_cur && ast_jit_want(funcname, sym) && !ast_arena_has_hole(ast_cur))
 			{ MCC_TRACE("br\n"); mccjit_embed_stash_leaf(ast_cur, sym); }

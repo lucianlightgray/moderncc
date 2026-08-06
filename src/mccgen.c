@@ -14766,8 +14766,6 @@ again:
 				{ MCC_TRACE("br\n"); s = label_push(&global_label_stack, tok, LABEL_FORWARD); }
 			else if (s->r == LABEL_DECLARED)
 				{ MCC_TRACE("br\n"); s->r = LABEL_FORWARD; }
-			/* The cleanup arm below reassigns s to a per-goto thunk Sym, so the
-			   label's own identity has to be taken before it. */
 			lsym = s;
 
 			if (s->r & LABEL_FORWARD) { MCC_TRACE("br\n");
@@ -14796,8 +14794,6 @@ again:
 	} else if (t == TOK_ASM1 || t == TOK_ASM2 || t == TOK_ASM3) { MCC_TRACE("br\n");
 		if (t == TOK_ASM1 && mcc_state->std_strict_ansi)
 			{ MCC_TRACE("br\n"); mcc_pedantic("'asm' is a GNU extension"); }
-		/* gcc's -fno-asm removes only the plain `asm` spelling so the word can be
-		   used as an identifier; __asm and __asm__ keep working. */
 		if (t == TOK_ASM1 && mcc_state->noasm)
 			{ MCC_TRACE("br\n"); mcc_error("'asm' is not a keyword under -fno-asm "
 																		 "(use __asm__)"); }
@@ -15052,13 +15048,6 @@ static int decl_design_excess(init_params *p, int flags, int al) { MCC_TRACE("en
 	return al;
 }
 
-/* A range designator replicates its element by pushing an anonymous VT_STRUCT
-   of elem_size bytes and vdup()ing it. type_size reads only `c` and `r` from
-   that Sym, so one Sym per distinct elem_size serves every such push, and a
-   process-lifetime cache gives it an address the arena can keep. The Sym this
-   replaces was a local of this frame: the replay in ast_func_end runs long
-   after decl_designator returned, so its `type.ref` pointed at dead stack, and
-   rir_hook_bail refused the whole enclosing body rather than record it. */
 #define DECL_DESIGN_BLOB_MAX 64
 static Sym decl_design_blob_pool[DECL_DESIGN_BLOB_MAX];
 static int decl_design_blob_n;
@@ -16018,10 +16007,6 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			if (v) { MCC_TRACE("br\n");
 				if (ad->asm_label) { MCC_TRACE("br\n");
 					int reg = asm_parse_regvar(ad->asm_label);
-					/* This index goes straight into VT_VALMASK, so it has to be
-					   a codegen register, not a machine encoding. Out of range
-					   reads as no binding rather than an allocator index that
-					   names nothing. */
 					if (reg >= 0 && reg < MCC_NB_REGS)
 						{ MCC_TRACE("br\n"); r = (r & ~VT_VALMASK) | reg; }
 				}

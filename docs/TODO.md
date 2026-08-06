@@ -137,6 +137,42 @@ that state is reached by `-finline` at `-O1` and by `-fno-inline-functions` at `
 **no single flip at `-O2`**. A sweep at one `-O` level calls two of those three green,
 which is why `flagsweep.sh` now runs `-O1 -O2 -O3` rather than `-O2` alone.
 
+## Invariants the code no longer states — all comments were removed 2026-08-06
+
+Every `/* */` and `//` was stripped from `src/`, `include/`, `runtime/`, `tools/` and
+`tests/` on 2026-08-06. There were **no** `TODO`/`FIXME`/`XXX` markers among them — the
+only such hits were references pointing here — so no open work was lost. What was lost is
+a set of prohibitions, and violating four of them caused real bugs during that day's work.
+They are recorded here because nothing else records them.
+
+- **An asm node's `sym` is not a `Sym`.** `rir_to_arena` packs `(is_output, out_reg)` into
+  it, so `out_reg == -1` reads as `0xffffffff00000000`, and `ival` is an offset into the
+  per-function `ir_cap_raw` pool. So an arena carrying `AST_OP_ASM`/`ASMGEN`/`ASMOPS` can
+  neither be walked as if every `sym` were a `Sym` pointer, nor outlive the function that
+  built it. `mccjit_intent_serialize` walks every node and interns `ast_sym`; that is the
+  fourth path by which an arena escapes `ast_func_end`, beside the three retain paths, and
+  missing it segfaulted the compiler under `-run` at `-O1`+.
+- **`ast_loc_low` is not a usable frame floor for the inline graft.** It drifts down as
+  each graft runs and never covers the graft return slot. Use `ast_graft_base`, set once
+  per emit to the parser's frame bottom. Using `ast_loc_low` broke sibling reuse and put
+  graft #2's parameter on graft #1's result (`exec/struct_packed_indirect`).
+- **During replay `ast_alloc_loc` *assigns* `loc` from the recorded list rather than
+  decrementing it**, so `loc` can come back shallower than the caller's own declared
+  locals. The parser's frame bottom is `saved_loc`, not the last replayed temp.
+- **A record/replay side channel must be skipped, not consumed, on a key mismatch.** There
+  are four (`rir_locrec`, `rir_slotrec`, `rir_tvrec`, `rir_fcrec`), each a body-global
+  array with one monotonic cursor keyed by absolute code offset. A consumer that takes an
+  entry another will ask for desynchronizes every later lookup. `rir_hook_fconst_reuse`
+  matched only on kind and not on value, and handed a `0.5` multiply the label belonging
+  to `1.0f`.
+- **A body that longjmp'd out of the emit must never be kept** — see the `posterr` item
+  under the C2 gap section.
+- **Syms allocated under the debug allocator belong to the slab and must not be freed.**
+- **`-fno-asm` stops the `asm` keyword being recognised, as in gcc. It does not stop
+  inline assembly reaching the backend by other spellings.**
+- **Building an inner mcc for the JIT self-host wants a small `-DMCC_JIT_TLS_MAX`** — the
+  inner compiler never hosts the slab.
+
 ## Present-tense open items — validated 2026-08-05 at `9b83dc05`
 
 Only open, actionable work is listed. Directly-relevant "do not" caveats are kept with

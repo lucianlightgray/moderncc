@@ -7,11 +7,6 @@
 #define MCC_SYSROOTED_NATIVE 1
 #endif
 
-/* Distribution defaults, not feature gates: these pick the initial value of
-   s->pie / s->pic, which -fpie/-fPIE/-fno-pie and -fpic/-fPIC/-fno-pic
-   override per compile. Same role as gcc's --enable-default-pie. Defined
-   unconditionally so the table below can carry the value instead of branching
-   on it. */
 #ifndef MCC_CONFIG_PIE
 #define MCC_CONFIG_PIE 0
 #endif

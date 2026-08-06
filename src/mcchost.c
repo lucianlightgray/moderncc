@@ -442,10 +442,6 @@ ST_FUNC MAYBE_UNUSED int host_rename(const char *src, const char *dst) { MCC_TRA
 
 #ifndef _WIN32
 
-/* The buffer is handed to the caller through HostSpawnOpts.stdout_buf and
-   freed there with mcc_free, so it must come from the mcc allocator -- the
-   Windows reader (host_pipe_read_thread) already does; libc malloc here made
-   that mcc_free trip the MCC_DIAG header check on every -fmacro-eval. */
 static char *host_slurp_fd(int fd) { MCC_TRACE("enter\n");
 	size_t cap = 4096, len = 0;
 	char *buf = mcc_malloc(cap), *nb;
@@ -1439,11 +1435,6 @@ ST_FUNC size_t host_pagesize(void) { MCC_TRACE("enter\n");
 }
 
 #if defined(__linux__)
-/* Overridable because a self-hosted mcc cannot fit otherwise: a -run guest's
-   TLS must fit this slab, and a guest mcc carries its own equally-sized slab
-   plus the optimizer's per-worker TLS on top. Harnesses that -run src/mcc.c
-   compile the inner mcc with a small -DMCC_JIT_TLS_MAX; the inner never hosts
-   a -run guest of its own, so its slab only has to exist, not to be large. */
 #ifndef MCC_JIT_TLS_MAX
 #define MCC_JIT_TLS_MAX 65536
 #endif
@@ -1477,22 +1468,14 @@ ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_tpoff(void) { MCC_TRACE("en
 #endif
 
 #if defined(_WIN32) && defined(MCC_TARGET_PE)
-/* Windows -run has no loader to lay out a guest's implicit TLS, so it borrows
-   mcc's own: the guest's _tls_index is pointed at mcc's (host_run_tls_index)
-   and every guest TLS offset is biased so the access lands inside this slab,
-   which lives in mcc's own TLS block. The bias is the slab's position within
-   that block -- read live off the TEB below, and identical on every thread the
-   guest starts, so a child's access resolves against that thread's own slab. */
 #ifdef _MSC_VER
-#include <intrin.h> /* __readgsqword / __readfsdword */
+#include <intrin.h>
 #endif
 #ifndef MCC_JIT_TLS_MAX
 #define MCC_JIT_TLS_MAX 65536
 #endif
 static ALIGNED(64) MCC_THREAD_LOCAL unsigned char mcc_jit_tls_slab[MCC_JIT_TLS_MAX];
 
-/* The index the loader assigned mcc's own implicit TLS; the guest is redirected
-   to it so gs:[0x58][index] yields mcc's block on whichever thread runs. */
 extern unsigned long _tls_index;
 
 ST_FUNC MAYBE_UNUSED unsigned char *host_run_tls_slab_base(void) { MCC_TRACE("enter\n");
@@ -1507,9 +1490,6 @@ ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_index(void) { MCC_TRACE("enter\n
 	return _tls_index;
 }
 
-/* TEB->ThreadLocalStoragePointer: the per-thread array of module TLS blocks,
-   indexed by _tls_index. gs:[0x58] on x64, fs:[0x2c] on x86. mcc's headers only
-   inline __readgsqword, so the x86 read is spelled out. */
 static unsigned char **host_tls_array(void) { MCC_TRACE("enter\n");
 #if defined(_WIN64)
 	return (unsigned char **)(uintptr_t)__readgsqword(0x58);

@@ -615,11 +615,6 @@ static const struct {
 				"windows-latest", "x64", OS_WIN, 2},
 		{0, 0, 0, 0, 0, 0, 0, 0, 0}};
 
-/* stage3-emulate otherwise takes exactly one gate host per OS, which left the
-   `linux-clang-cross` preset deferring to a gcc-host cell -- the cross axis is
-   driven by the host compiler that built stage1, so clang needs its own cell
-   for that exemption to be true. List hosts here that are NOT already their
-   OS's gate pick; a host that is would be emitted twice. */
 static const char *EMU_EXTRA[] = {"linux-x86_64-clang", 0};
 
 static int emu_extra(const char *name) {
@@ -1666,10 +1661,6 @@ static const char *par_exempt(const char *nm) {
 	return NULL;
 }
 
-/* "stage2 feature: X" / "stage2 feature: X (host note)" -> X. An exemption that
-   defers to a feature cell is only as good as that cell still running, so the
-   board re-checks the name it names against FEAT_CI_SKIP instead of trusting
-   the prose. Returns 0 for exemptions that do not defer to a feature. */
 static int par_exempt_feature(const char *why, char *out, size_t n) {
 	static const char pfx[] = "stage2 feature: ";
 	const char *p;
@@ -1683,10 +1674,6 @@ static int par_exempt_feature(const char *why, char *out, size_t n) {
 	return i != 0;
 }
 
-/* An "alias: = <preset>" exemption inherits whatever coverage its target has,
-   so follow the hops (bounded) and report the CI-skip reason of the stage2
-   feature the chain finally defers to. Without this the head of a chain still
-   reads clean while its tail is skipped. */
 static const char *par_exempt_uncovered(const char *nm, char *feat, size_t n) {
 	static const char apfx[] = "alias: = ";
 	char target[64];

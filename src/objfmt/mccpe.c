@@ -1016,9 +1016,6 @@ static void pe_build_imports(struct pe_info *pe) { MCC_TRACE("enter\n");
 						v = (ADDR3264)host_dlsym(dllref->handle, ordinal ? (char *)0 + ordinal : name);
 					}
 #if MCC_HOST_WIN32
-					/* Guest threads keep their TLS in mcc's slab, which the loader
-					   re-zeroes per thread; route their _beginthreadex through the
-					   wrapper that reseeds it before the guest's start routine runs. */
 					if (v && s1->run_tls_active && name &&
 							(!strcmp(name, "_beginthreadex") || !strcmp(name, "beginthreadex")))
 						{ MCC_TRACE("br\n"); v = (ADDR3264)(uintptr_t)&mcc_run_beginthreadex; }
@@ -1798,7 +1795,6 @@ static char *get_token(char **s, char *f) { MCC_TRACE("enter\n");
 	return p;
 }
 
-/* Read a LIBRARY argument whose quotes may protect whitespace. */
 static char *get_libname(char **s, char *f) { MCC_TRACE("enter\n");
 	char *p = trimfront(*s), *e;
 	if (*p != '"')
@@ -2696,16 +2692,6 @@ static void pe_add_tls(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\n");
 	pe->tls_dir_size = dir_size;
 	memset(section_ptr_add(ds, dir_size), 0, dir_size);
 
-	/* The first four directory fields (Start/EndAddressOfRawData,
-	   AddressOfIndex, AddressOfCallBacks) are absolute VAs that pe_set_tls
-	   fills at header-write time; a rebased image needs a base relocation on
-	   each or LdrpAllocateTlsEntry faults before main. Register them as
-	   ordinary section relocations so pe_build_reloc MERGES them into the
-	   existing .data page block -- emitting a separate block for a page that
-	   already has one produces a duplicate page RVA, which the arm64 loader
-	   rejects with "not a valid Win32 application". The symbol value is
-	   irrelevant: pe_set_tls overwrites these slots after relocate_sections
-	   runs, so the reloc exists only to mark the eight bytes as absolute. */
 	for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
 		put_elf_reloc(symtab_section, ds,
 									pe->tls_dir_offset + i * sizeof(ADDR3264),
