@@ -299,6 +299,32 @@ empty there. Bodies: 2538.
   an `-O2`/`-O3` pass improved or regressed replay fidelity has to beat that flatness
   first.
 - The 12 `skip`s are constant at every level: `regdangle`=8, `asm`=2, `mismatch`=2.
+
+#### Whole-suite fallback board (same day, same compiler, all 8577 ctest cells)
+
+`MCC_RIR_PROD=2` + `MCC_RIR_PROD_OUT` over a full `ctest -j32`, ambient `MCC_TEST_OPT`
+per level, `MCC_FORCE_REPLAY=1` on the `-O0` row. Every row reconciles.
+
+| level | bodies | used | fallback | rate | skip | `len` | `bytes` | `relcontent` | `abort` | `posterr` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `-O0` (forced) | 254430 | 242724 | 5909 | 2.32% | 5797 | 4020 | 1614 | 15 | 235 | 25 |
+| `-O1` | 223195 | 213371 | 4586 | 2.05% | 5238 | 2897 | 1447 | 15 | 202 | 25 |
+| `-O2` | 223077 | 213301 | 4538 | 2.03% | 5238 | 2898 | 1398 | 15 | 202 | 25 |
+| `-O3` | 222733 | 213035 | 4460 | 2.00% | 5238 | 2820 | 1398 | 15 | 202 | 25 |
+
+- The self-compile board's shape holds at suite scale: `len` is the **majority bucket at
+  every level** (68% of `-O0` fallbacks, 63% at `-O1`+), and forced `-O0` carries ~1100
+  more `len` bodies than any optimized level. Whatever the length defect is, it is one
+  population, it is the biggest one, and it is worst on the unoptimized emit path.
+- The skip census is *byte-identical* across `-O1`/`-O2`/`-O3` (5238, and every
+  sub-code equal). `relcontent` (15) and `posterr` (25) are constant on all four rows.
+  The ladder moves `len`/`bytes` only, and only slightly.
+- `-O0` skips 5797 vs 5238 — the extra is mostly `noops` (1729 vs 1470) and `asm`
+  (908 vs 721), i.e. bodies the pre-flight declines to model at all.
+- Reading the raw `MCC_RIR_PROD_OUT` file: the wine `mcc.exe` cells write CRLF, so 16
+  `-O0` fallback rows arrive as `len\r`. Strip `\r` before tallying or the biggest
+  bucket splits in two. The file is otherwise intact under 32-way concurrent append —
+  0 malformed rows in 254430.
 - `keep = faithful || (nofb && replay_completed)` reduces to `keep = faithful` in every
   default build: `MCC_OPT_REPLAY_FALLBACK` is `MCC_OPTD_ALWAYS` in `mccopt.h`, so
   `ast_rir_nofb_env` is always 0 unless `-fno-replay-fallback` is passed. The comment
