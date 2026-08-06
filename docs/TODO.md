@@ -137,51 +137,55 @@ that state is reached by `-finline` at `-O1` and by `-fno-inline-functions` at `
 **no single flip at `-O2`**. A sweep at one `-O` level calls two of those three green,
 which is why `flagsweep.sh` now runs `-O1 -O2 -O3` rather than `-O2` alone.
 
-## Branches deleted 2026-08-06 — recoverable by SHA
+## Branches deleted 2026-08-06 — all seven were already landed
 
-All non-`main` branches and every agent worktree were removed. The commits still exist in
-the object store; `git checkout <sha>` or `git cherry-pick <sha>` recovers them until the
-next `git gc` prunes unreachable objects, so recover anything wanted here sooner rather
-than later.
+All non-`main` branches and every agent worktree were removed. An earlier version of this
+section listed seven commits as "not on `main` in any form". **That was wrong, and the
+method is the lesson:** it used `git rev-list --count main..<branch>`, which counts by SHA
+reachability, and a cherry-pick lands the same change under a new SHA. Every one of the
+seven has a payload-identical twin already on `main`, confirmed by comparing added and
+removed lines with context stripped:
 
-**Re-audited 2026-08-06 — the "seven commits not on `main` in any form" reading was wrong
-for the table below.** Every row but `a3c51e8d` had already been cherry-picked onto `main`
-under a different SHA before the branches were deleted. Compared with context lines
-stripped, the added/removed lines of each orphan and its twin are identical, so there is
-nothing to land from them. The orphan SHAs are kept here only so a future reader who finds
-one referenced elsewhere can resolve it.
-
-| orphan sha | already on `main` as | subject |
-| --- | --- | --- |
-| `a3c51e8d` | **nothing — genuinely unlanded** | `fix(front-end)`: accept the imaginary suffix in either order and fold it — **this is the `fix-imaginary` branch the "RIR cut" section below still asks to land** |
-| `a4217c24` | `5d52753d` | `fix(inline)`: gnu89 extern-inline redefinition, in every gnu89 mode |
-| `c3ed8b2a` | `6cbbbc65` | `fix(gen)`: give the saved VLA parameter dimension tokens a single owner |
-| `2bcd21d9` `b06dcf9d` | `1b78d132` `5a2f8970` | `fix(bitfields)`: width-64 bitfields marked `VT_BITFIELD` in packed contexts, plus its TODO update |
-| `1e10dd1a` `22575f40` `6a6fe8f2` | `a170a134` `1df8f3b8` `97164575` | `feat(lex)`/`feat(pp)`: C23 `u8` character constants, `__has_attribute` as a builtin macro, invalid `##` paste is an error |
-
-`b06dcf9d`'s content survived the TODO/ARCHIVED split rather than being lost: `2bcd21d9`
-is named in `ARCHIVED.md`'s "Landed today" line, the `aligned(N)`-on-a-bitfield-member
-residue it identified is archived open item 3, and its one-line form is the
-"`aligned(N)` bitfields: ~139 survivors" entry under open codegen defects below. It does
-not need re-applying.
-
-Both fixes were re-verified live in the tree on 2026-08-06 rather than trusted from the
-commit messages: the width-64 bitfield layout matches gcc 15 and clang 22 at `-O0..-O3`
-for `-run` and compile+link, on x86_64, and on i386 and arm under qemu where it also
-matches clang's `-fdump-record-layouts` for the arm triple; the gnu89 extern-inline
-redefinition matches gcc across all fifteen `-std=`/`-f` modes at four opt levels. With
-each fix reverted, both suite goldens fail.
-
-From this session, researched but never landed — these have no twin on `main`:
-
-| sha | subject |
+| orphan | already on `main` as |
 | --- | --- |
-| `ea67df7d` | byte-level RIR coverage census, gap enumeration and a coverage ratchet, with per-class reproducers under `tests/rir/gap/` |
-| `d2e4c162` | strategy-registry TDD: all 18 rows in isolation and all 4,896 ordered triples, with a harness proven to catch a planted `ast_cse_kill` bug |
-| `934b692e` | the region-granularity research that closed F3 as not viable, and its boundary-state inventory |
+| `a4217c24` gnu89 extern-inline redefinition | `5d52753d` |
+| `2bcd21d9` width-64 bitfields in packed contexts | `1b78d132` |
+| `b06dcf9d` its TODO update | `5a2f8970` |
+| `c3ed8b2a` VLA parameter dimension token ownership | `6cbbbc65` |
+| `1e10dd1a` C23 `u8` character constants | `a170a134` |
+| `22575f40` `__has_attribute` as a builtin macro | `1df8f3b8` |
+| `6a6fe8f2` invalid `##` paste is an error | `97164575` |
 
-The first two are finished, gated work — they add ctest coverage that does not exist on
-`main` today. Landing them is a cherry-pick plus a gate run, not a rewrite.
+`a3c51e8d`, the held `fix-imaginary` branch, is the one case where no single twin exists —
+and it is still redundant. `main` carries all three of its hunks across `1d3f2719` (float
+`iF`/`iL` order) and `38508d54` (the three early suffix sites, needed for the integer cases
+`9iu`/`11il`, plus the `CONST_WANTED` rodata fold). **Applying it now would regress:** its
+fold has no `CONST_WANTED` guard and no `gen_cast` on either part, so an integer imaginary
+literal would push raw integer bits through a `VT_DOUBLE` `init_putv`, and its third hunk
+is a workaround for a cache-aliasing bug `38508d54` deleted outright. The branch is
+therefore closed, not pending.
+
+`38508d54` did ship with **zero tests**, and no fixture in the tree used a reversed-order
+imaginary suffix, so `a3c51e8d`'s test was salvaged and landed on its own. It is
+load-bearing against the code as it sits on `main`: removing the early suffix sites gives
+`invalid number` on `9iu`, and disabling the `CONST_WANTED` fold gives `initializer element
+is not constant` on a file-scope `1.0i`.
+
+Three commits from this session's research are genuinely unlanded and are being landed
+separately: `ea67df7d` (byte-level RIR coverage census and ratchet), `d2e4c162` (the
+strategy-registry sweep over all 4,896 ordered triples), and `934b692e` (the region
+granularity research that closed F3). They are unreachable but intact in the object store
+until `gc` prunes them.
+
+### Open: long-double complex static initializer
+
+`double _Complex z = 1.0iL;` at file scope dies with `internal error: static initializer
+for unknown base type 7`. So do `0x1p4iL`, `1.0Li`, `float _Complex` targets, and the
+underlying `double _Complex z = __builtin_complex(0.0L, 1.0L);`. The imaginary suffix is
+incidental — the `CONST_WANTED` fold emits a `VT_LDOUBLE`-based rodata complex and the
+static-init path has no complex-to-complex narrowing for it. `double`-to-`float` narrowing
+works, so it is long-double-specific; function scope is fine at every spelling; gcc accepts
+all of them.
 
 ## Invariants the code no longer states — all comments were removed 2026-08-06
 
@@ -653,8 +657,7 @@ per level, `MCC_FORCE_REPLAY=1` on the `-O0` row. Every row reconciles.
 - **P6** — split the monolithic `src/mccast.c` (~17k lines) and rename `ast_*` → `ir_*`.
   Precondition still false: the `ir_` namespace already collides (~850 occurrences) and
   `targetgate` still whitelists `mccast.c`.
-- Land the held `fix-imaginary` branch (its old blockers — `verify-baseline/`,
-  `verify_ratchet.cmake` — are confirmed gone from the tree).
+- ~~Land the held `fix-imaginary` branch.~~ **Closed** — redundant with `38508d54`; see the branch section above.
 
 ### Open codegen / front-end defects
 - `__bf16`: finish encode/decode + ABI now that `VT_BTYPE` is 5 bits. **Do not alias
