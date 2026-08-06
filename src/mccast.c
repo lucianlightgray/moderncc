@@ -2050,6 +2050,24 @@ static int mcc_opt(MCCState *s1, int id) { MCC_TRACE("enter\n");
 	return v != 0 && v != MCC_OPT_UNSET;
 }
 
+/* Whether a math builtin may be folded to an instruction that leaves errno
+   alone. The preprocessor has to answer this too -- glibc's math_errhandling
+   reports MATH_ERRNO unless __NO_MATH_ERRNO__ is predefined, so a program that
+   asks the standard question gets the wrong answer if the macro and the folding
+   disagree -- and predefines are emitted from preprocess_start, before
+   ast_configure has resolved the SPECIAL row. Resolving it here instead of at
+   two call sites keeps the answer single-sourced: an explicit -f[no-]builtin-
+   math-errno wins, and -fno-math-errno is the default when the row is UNSET. */
+ST_FUNC int ast_math_errno_folds(MCCState *s1) { MCC_TRACE("enter\n");
+	unsigned char v;
+	if (!s1)
+		{ MCC_TRACE("br\n"); return 0; }
+	v = s1->optflag[MCC_OPT_BUILTIN_MATH_ERRNO];
+	if (v != MCC_OPT_UNSET)
+		{ MCC_TRACE("br\n"); return v != 0; }
+	return s1->no_math_errno != 0;
+}
+
 void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	int opt_promote = 0;
 	mcc_isa_init(s1);
@@ -2098,7 +2116,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	MCC_OPT_SPECIAL(MCC_OPT_BUILTIN_FMA, o4);
 #endif
 	MCC_OPT_SPECIAL(MCC_OPT_INLINE, s1->optimize >= 3 && !s1->optimize_size);
-	MCC_OPT_SPECIAL(MCC_OPT_BUILTIN_MATH_ERRNO, s1 && s1->no_math_errno);
+	MCC_OPT_SPECIAL(MCC_OPT_BUILTIN_MATH_ERRNO, ast_math_errno_folds(s1));
 	MCC_OPT_SPECIAL(MCC_OPT_IVOPTS,
 									o4 || (s1->optimize >= 1 && !s1->optimize_size));
 #undef MCC_OPT_SPECIAL

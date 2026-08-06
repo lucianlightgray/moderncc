@@ -149,6 +149,7 @@ extern int ast_trunc32_env;
 extern int ast_inline_static_env;
 
 void ast_configure(struct MCCState *s1);
+ST_FUNC int ast_math_errno_folds(struct MCCState *s1);
 uint64_t ast_intention_value(void);
 
 void ast_func_begin(struct Sym *sym);
