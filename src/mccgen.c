@@ -15052,6 +15052,30 @@ static int decl_design_excess(init_params *p, int flags, int al) { MCC_TRACE("en
 	return al;
 }
 
+/* A range designator replicates its element by pushing an anonymous VT_STRUCT
+   of elem_size bytes and vdup()ing it. type_size reads only `c` and `r` from
+   that Sym, so one Sym per distinct elem_size serves every such push, and a
+   process-lifetime cache gives it an address the arena can keep. The Sym this
+   replaces was a local of this frame: the replay in ast_func_end runs long
+   after decl_designator returned, so its `type.ref` pointed at dead stack, and
+   rir_hook_bail refused the whole enclosing body rather than record it. */
+#define DECL_DESIGN_BLOB_MAX 64
+static Sym decl_design_blob_pool[DECL_DESIGN_BLOB_MAX];
+static int decl_design_blob_n;
+
+static Sym *decl_design_blob(int elem_size) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 0; i < decl_design_blob_n; i++)
+		{ MCC_TRACE("br\n"); if (decl_design_blob_pool[i].c == elem_size)
+			{ MCC_TRACE("br\n"); return &decl_design_blob_pool[i]; } }
+	if (decl_design_blob_n >= DECL_DESIGN_BLOB_MAX)
+		{ MCC_TRACE("br\n"); return NULL; }
+	i = decl_design_blob_n++;
+	memset(&decl_design_blob_pool[i], 0, sizeof decl_design_blob_pool[i]);
+	decl_design_blob_pool[i].c = elem_size;
+	return &decl_design_blob_pool[i];
+}
+
 static int decl_designator(init_params *p, CType *type, unsigned long c,
 													 Sym **cur_field, int flags, int al) { MCC_TRACE("enter\n");
 	Sym *s, *f;
@@ -15171,10 +15195,15 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 		Sym aref = {0};
 		CType t1;
 		if (p->sec || (type->t & VT_ARRAY)) { MCC_TRACE("br\n");
-			aref.c = elem_size;
-			t1.t = VT_STRUCT, t1.ref = &aref;
+			Sym *blob = decl_design_blob(elem_size);
+			if (blob) { MCC_TRACE("br\n");
+				t1.t = VT_STRUCT, t1.ref = blob;
+			} else { MCC_TRACE("br\n");
+				aref.c = elem_size;
+				t1.t = VT_STRUCT, t1.ref = &aref;
+				rir_hook_bail();
+			}
 			type = &t1;
-			rir_hook_bail();
 		}
 		if (p->sec)
 			{ MCC_TRACE("br\n"); vpush_ref(type, p->sec, c, elem_size); }
