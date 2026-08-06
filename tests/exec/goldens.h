@@ -329,6 +329,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"loop_interchange", "run", "exec/optimizer/loop_interchange.c", "6727813338129931117 -7361308579892106783\n", "", "", ""},
 		{"loop_fusion", "run", "exec/optimizer/loop_fusion.c", "876625318051309021\n", "", "", ""},
 		{"loop_tile", "run", "exec/optimizer/loop_tile.c", "11124253871231167314\n", "", "", ""},
+		{"slice_shapes", "run", "exec/optimizer/slice_shapes.c", "nest=13680\ncalls_in_loop=432\nbetween_calls=610\nindirect=444\nleaf=28\n", "", "", ""},
 		{"digit_separators", "run", "exec/lexical/digit_separators.c", "OK\n", "-std=c23", "", ""},
 		{"tentative_incomplete", "run", "exec/types/tentative_incomplete.c", "OK\n", "", "", ""},
 		{"star_vla_prototype", "run", "exec/pointers_arrays/star_vla_prototype.c", "OK\n", "", "", ""},

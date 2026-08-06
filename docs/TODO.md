@@ -44,6 +44,90 @@ strategies are re-admitted to asm-bearing bodies. The right mental model is a **
 a barrier: `subst_asm_operands` bakes concrete registers in at parse time, so `narrow`,
 `ltemp`, `sethi`, `reg-color` and promotion break an asm without moving anything across it.
 
+## Slices between anonymous invokes — the A1 census, 2026-08-06
+
+The GPU-offload question is "what is the largest chunk of a body that runs without ever
+calling out". `MCC_SLICE_CENSUS=<path|->` makes the compiler answer it, one line per
+slice and one per body, and `tools/slice-census.py` aggregates it.
+`ctest -R slice-enum` verifies the enumerator (0.1 s); `ctest -L census -R slice-census`
+runs the full sweep.
+
+**The boundary.** A slice is a *maximal run of consecutive statements inside one statement
+list whose subtrees contain no opaque `AST_Invoke`*. Maximal in both directions: the
+neighbouring statement has a call, and the parent statement has a call. A call-free loop
+is not split out — it is an ordinary statement, so a call-free loop nest comes through as
+one slice. **Statement-granular, not expression-granular**: the call-free half of
+`a[i] + h(s,i)` is not a slice. That case is exactly what the pre-existing machinery in
+`src/mccast.c` already does — `ast_slice_win_root_ok` roots an expression *window* at a
+Binary/Unary/Convert/Load, `ast_slice_ident_hash` gives it an alpha-equivalent identity,
+and `-fopt-slice` (rung 10) memoises those windows to a disk cache for JIT specialisation.
+Windows are 3..65536 nodes of pure integer arithmetic and are a different object from a
+slice; nothing here duplicates them.
+
+**Anonymity is measured, not assumed.** An `AST_Invoke` carries the callee as child 0.
+Four classes, counted per body: `indirect` (child 0 is not a `Ref` to a `VT_FUNC` `Sym`),
+`opaque-direct` (a `Sym` with no body retained in this TU), `retained` (in the graft pool,
+not graftable) and `graftable`. The first two are the truly anonymous ones. Two partitions
+are reported side by side: `t=0` treats every invoke as a boundary, `t=1` lets graftable
+invokes be transparent, because from `-O2` the reemit path really does graft them (checked:
+`-O2` and `-O3` both emit zero `call` for a static callee in the pool). `t=1 - t=0` is the
+inlining effect and nothing else.
+
+**Byte extents are measured, not modelled.** `ast_replay_bb` brackets each statement's
+replay with the code index `ind`, so a slice's byte extent is the sum of what its
+statements actually emitted. It reconciles to 99.995% of body bytes on `src/mcc.c` at
+`-O1..-O3` and 100.053% at `-O0`; the drift is peepholes that rewind `ind` and so
+double-count a retracted byte. The gate allows `max(32, bytes/50)` of slack per body.
+The measured replay is the faithfulness replay, where `ast_inline_active` is 0, so both
+partitions are attributed against the *un-grafted* emission: `t=1` says how many of the
+caller's own bytes stop being cut by a boundary, not what the post-inline body would
+measure.
+
+**Headline, `src/mcc.c` amalgamated, x86_64.** 2589 modelled bodies, 1,323,733 body bytes.
+
+| | `-O0` | `-O1` | `-O2` | `-O3` |
+| --- | --- | --- | --- | --- |
+| anonymous invokes | 100.0% | 100.0% | 84.6% | 84.6% |
+| slices (`t=0`) | 11847 | 11847 | 11847 | 11847 |
+| body bytes in a slice (`t=0`) | 41.42% | 41.44% | 41.44% | 41.44% |
+| body bytes in a slice (`t=1`) | 41.42% | 41.44% | **44.68%** | **44.68%** |
+| slices (`t=1`) | 11847 | 11847 | 11628 | 11628 |
+
+**`-O` barely moves this.** The production arena handed to `ast_func_end` is the same at
+`-O1`, `-O2` and `-O3` — the strategy passes run after it — so the `t=0` partition is
+identical at all three. The only thing `-O` changes is graftability, and grafting every
+graftable callee buys **3.2 points of body bytes** (548,599 → 591,386 B) while *reducing*
+the slice count by 219. That is the whole inlining effect, and it is small because 84.6%
+of invokes remain anonymous after it: mcc calls out to libc and to non-static helpers far
+more than it calls static leaves.
+
+**The shape is the result, and it is discouraging.** Of 11847 slices at `-O2`: 46% are
+≤4 nodes and carry 9.6% of slice bytes; 65% are ≤8 nodes. The tail is thin — 292 slices
+(2.5%) are ≥65 nodes, and they carry 26.0% of slice bytes. Only **512 slices (4.3%)
+contain a loop at all**, and those hold **9.58% of body bytes**. Slices at loop depth ≥1
+are 3728 of 11847. The largest are real but few: `cplx_const_int_div` (956 nodes, 8 loops),
+`ast_opt_defaults` (803), `gen_opq_fold` (560), `ast_eval_binop` (495). 19.2% of bodies are
+wholly call-free but they are small — 5.47% of body bytes.
+
+`--corpus exec` (301 files, 1249 bodies) is *worse* and should not be read as a second
+opinion: 96.7% of its slices are 3–4 nodes, because the corpus is assert-and-`printf`
+straight-line code. Its one big slice, `classify` at 5128 nodes / 27,339 B, is a generated
+table.
+
+**Read this as a negative result with a narrow positive.** Straight-line call-free code is
+plentiful (41% of bytes) but atomised into fragments too small for a kernel launch. The
+prospects for a shader live entirely in the ~500 loop-bearing slices holding ~9.6% of body
+bytes, and the next question for anyone continuing is whether those 500 are
+*data-parallel*, not merely call-free — `ast_loop_analyzable` / `ast_loopdep_dump` already
+answer that per loop and were not consulted here.
+
+**Known limits of the enumerator.** A loop's *condition* is not a statement list, so a
+call-free condition inside a call-containing loop is never a slice. Bodies the arena never
+modelled emit no record, so `fn_n` is the modelled population, not everything compiled
+(at `-O0` the arena is off entirely unless `MCC_FORCE_REPLAY=1`, which the tool sets). A
+statement list wider than 512 statements is flushed in chunks and flagged `ovf=1`; that
+never fires on either corpus.
+
 ## The configuration surface moved: read this before running any recipe below
 
 **Every `MCC_AST_*` and `MCC_RIR_*` gate is now a `-f` flag.** 113 of them, generated

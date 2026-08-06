@@ -5560,6 +5560,32 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(rir-coverage-census PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600)
 
+            add_test(NAME slice-enum
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/slice-census.py"
+                        "${CMAKE_BINARY_DIR}" --levels O0,O1,O2,O3 --verify --quiet
+                        --min-slices 100 --jobs 8 --sources
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/optimizer/licm.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/optimizer/loop_interchange.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/optimizer/loop_fusion.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/optimizer/cse.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/functions_abi/indirect_call_shapes.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/functions_abi/inline.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/functions_abi/recursion.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/statements/for.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/statements/switch.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/programs/quicksort.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/programs/math_library.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/programs/grep.c")
+            set_tests_properties(slice-enum PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                TIMEOUT 300)
+
+            add_test(NAME slice-census
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/slice-census.py"
+                        "${CMAKE_BINARY_DIR}" --corpus wide --levels O0,O1,O2,O3
+                        --verify --top 20 --jobs 8 --opt-in)
+            set_tests_properties(slice-census PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600)
+
             add_test(NAME rir-nofb-probe
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
                         "${CMAKE_BINARY_DIR}" --corpus exec --levels O0,O1,O2,O3
