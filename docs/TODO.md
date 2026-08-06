@@ -139,23 +139,40 @@ which is why `flagsweep.sh` now runs `-O1 -O2 -O3` rather than `-O2` alone.
 
 ## Branches deleted 2026-08-06 — recoverable by SHA
 
-All non-`main` branches and every agent worktree were removed. Most held work already
-cherry-picked onto `main` under a different SHA. **Seven held commits that are not on
-`main` in any form.** The commits still exist in the object store; `git checkout <sha>` or
-`git cherry-pick <sha>` recovers them until the next `git gc` prunes unreachable objects,
-so recover anything wanted here sooner rather than later.
+All non-`main` branches and every agent worktree were removed. The commits still exist in
+the object store; `git checkout <sha>` or `git cherry-pick <sha>` recovers them until the
+next `git gc` prunes unreachable objects, so recover anything wanted here sooner rather
+than later.
 
-Not from this session, and unreviewed by it:
+**Re-audited 2026-08-06 — the "seven commits not on `main` in any form" reading was wrong
+for the table below.** Every row but `a3c51e8d` had already been cherry-picked onto `main`
+under a different SHA before the branches were deleted. Compared with context lines
+stripped, the added/removed lines of each orphan and its twin are identical, so there is
+nothing to land from them. The orphan SHAs are kept here only so a future reader who finds
+one referenced elsewhere can resolve it.
 
-| sha | subject |
-| --- | --- |
-| `a3c51e8d` | `fix(front-end)`: accept the imaginary suffix in either order and fold it — **this is the `fix-imaginary` branch the "RIR cut" section below still asks to land** |
-| `a4217c24` | `fix(inline)`: gnu89 extern-inline redefinition, in every gnu89 mode |
-| `c3ed8b2a` | `fix(gen)`: give the saved VLA parameter dimension tokens a single owner |
-| `2bcd21d9` `b06dcf9d` | `fix(bitfields)`: width-64 bitfields marked `VT_BITFIELD` in packed contexts, plus its TODO update |
-| `1e10dd1a` `22575f40` `6a6fe8f2` | `feat(lex)`/`feat(pp)`: C23 `u8` character constants, `__has_attribute` as a builtin macro, invalid `##` paste is an error |
+| orphan sha | already on `main` as | subject |
+| --- | --- | --- |
+| `a3c51e8d` | **nothing — genuinely unlanded** | `fix(front-end)`: accept the imaginary suffix in either order and fold it — **this is the `fix-imaginary` branch the "RIR cut" section below still asks to land** |
+| `a4217c24` | `5d52753d` | `fix(inline)`: gnu89 extern-inline redefinition, in every gnu89 mode |
+| `c3ed8b2a` | `6cbbbc65` | `fix(gen)`: give the saved VLA parameter dimension tokens a single owner |
+| `2bcd21d9` `b06dcf9d` | `1b78d132` `5a2f8970` | `fix(bitfields)`: width-64 bitfields marked `VT_BITFIELD` in packed contexts, plus its TODO update |
+| `1e10dd1a` `22575f40` `6a6fe8f2` | `a170a134` `1df8f3b8` `97164575` | `feat(lex)`/`feat(pp)`: C23 `u8` character constants, `__has_attribute` as a builtin macro, invalid `##` paste is an error |
 
-From this session, researched but never landed:
+`b06dcf9d`'s content survived the TODO/ARCHIVED split rather than being lost: `2bcd21d9`
+is named in `ARCHIVED.md`'s "Landed today" line, the `aligned(N)`-on-a-bitfield-member
+residue it identified is archived open item 3, and its one-line form is the
+"`aligned(N)` bitfields: ~139 survivors" entry under open codegen defects below. It does
+not need re-applying.
+
+Both fixes were re-verified live in the tree on 2026-08-06 rather than trusted from the
+commit messages: the width-64 bitfield layout matches gcc 15 and clang 22 at `-O0..-O3`
+for `-run` and compile+link, on x86_64, and on i386 and arm under qemu where it also
+matches clang's `-fdump-record-layouts` for the arm triple; the gnu89 extern-inline
+redefinition matches gcc across all fifteen `-std=`/`-f` modes at four opt levels. With
+each fix reverted, both suite goldens fail.
+
+From this session, researched but never landed — these have no twin on `main`:
 
 | sha | subject |
 | --- | --- |
