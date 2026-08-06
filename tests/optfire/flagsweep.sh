@@ -37,6 +37,16 @@ mkdir -p "$WORK"
 # spans threads and atomics, floats and NaN/Inf, bool and bitfields, VLA and
 # compound literals, chained assignment, short-circuit with calls, and the
 # argument-marshalling shapes that the replay defects lived in.
+#
+# The second block is earned rather than guessed: each of these is a subject a
+# full-corpus sweep of all 280 runnable tests/exec programs caught a real defect
+# on that the first twelve missed. Keeping them is what makes this list a
+# regression net instead of a sample -- const_member_copy and libm_builtin_fold
+# are the two ships-today miscompiles, the complex ones and transparent_union /
+# union_byval are the replay defects the byte gate is masking, and int128 and
+# weak_undef are the widest-blast-radius members of the cmp-materialize family.
+# Set MCC_FLAGSWEEP_CORPUS=all to sweep every tests/exec program instead; that
+# is ~25x the subjects and is how this list was derived, not a default.
 FLAGSWEEP_SUBJECTS="
 features_c99_c11/c11_threads
 features_c99_c11/atomic_counter
@@ -50,7 +60,26 @@ optimizer/assign_value_effects
 expressions/precedence
 functions_abi/func_name
 codegen/overflow_inline
+types/const_member_copy
+types/int128
+features_c99_c11/libm_builtin_fold
+features_c99_c11/c11_complex_convert
+features_c99_c11/complex_annexg
+features_c99_c11/builtin_overflow
+features_c99_c11/weak_undef
+structs_unions/transparent_union
+structs_unions/union_byval
+structs_unions/inline_sret_locrec
+codegen/overflow_narrow
+expressions/relational_equality
+optimizer/logical_not_shortcircuit
 "
+
+# Every tests/exec program, for MCC_FLAGSWEEP_CORPUS=all. Subjects that do not
+# build or run standalone at -O0 drop out on their own in corpus_run.
+flagsweep_all_subjects() {
+	find "$S/tests/exec" -name '*.c' | sed "s|^$S/tests/exec/||; s|\.c$||" | sort
+}
 
 # Deliberate reds, as <flag>:<on|off>:<subject>. A listed case that fails is
 # XFAIL and does not fail the cell; anything unlisted fails exactly as before.
@@ -88,56 +117,68 @@ if command -v taskset >/dev/null 2>&1; then
 	fi
 fi
 
-# corpus_run <label> <flagword>... -- build every subject at -O2 with the given
-# -f words, run it, and diff against the same subject built at -O0 with the flag
-# surface untouched. Sets `ran`, `rc` and `stale` in the caller.
+# corpus_run <level> <label> <flagword>... -- build every subject at <level> with
+# the given -f words, run it, and diff against the same subject built at -O0 with
+# the flag surface untouched. Sets `ran`, `rc` and `stale` in the caller.
+#
+# The oracle is the exit status AND the output, not the output alone. An earlier
+# version compared only stdout and, worse, dropped any subject whose reference
+# run exited nonzero -- `ref=$(...) || continue`. That silently removed every
+# program whose whole contract is its exit code from every cell that ever ran:
+# codegen/overflow_inline aborts with rc=20 when the miscompile fires and was
+# invisible, and types/int128 goes from rc=0 to a SIGSEGV that produces no output
+# at all, so both sides compared equal as the empty string. The status is
+# appended inside the same command substitution rather than read from $? after
+# it, because `set -e` treats a failing substitution in an assignment as a
+# failing command -- which is what the `|| continue` was really there for. The
+# `set +e` is load-bearing for the same reason one level in: errexit applies
+# inside the substitution's subshell too, so without it a subject that exits
+# nonzero kills the subshell before the printf and the whole cell exits with the
+# subject's status, silently, having checked nothing after it.
 ran=0
 rc=0
 stale=0
 corpus_run() {
-	label=$1
-	shift
-	for sub in $FLAGSWEEP_SUBJECTS; do
+	lvl=$1
+	label=$2
+	shift 2
+	if [ "${MCC_FLAGSWEEP_CORPUS:-}" = all ]; then
+		subjects=$(flagsweep_all_subjects)
+	else
+		subjects=$FLAGSWEEP_SUBJECTS
+	fi
+	for sub in $subjects; do
 		src="$S/tests/exec/$sub.c"
 		[ -f "$src" ] || continue
 		nm=$(basename "$sub")
 		"$MCC" -B"$BDIR" -I"$IDIR" -w -O0 "$src" -o "$WORK/$nm.ref" -lm -lpthread \
 			>/dev/null 2>&1 || continue
-		ref=$($PIN "$WORK/$nm.ref" 2>&1) || continue
+		ref=$(set +e; $PIN "$WORK/$nm.ref" 2>&1; printf '[rc=%s]' "$?")
 		ran=$((ran + 1))
 		red="$label:$nm"
-		if "$MCC" -B"$BDIR" -I"$IDIR" -w -O2 "$@" "$src" -o "$WORK/$nm.t" -lm -lpthread \
+		if "$MCC" -B"$BDIR" -I"$IDIR" -w "$lvl" "$@" "$src" -o "$WORK/$nm.t" -lm -lpthread \
 			>/dev/null 2>&1; then :; else
 			if is_known_red "$red"; then
-				echo "XFAIL $red: build failed (deliberate red, see KNOWN_RED)"
+				echo "XFAIL $red: build failed at $lvl (deliberate red, see KNOWN_RED)"
 			else
-				echo "FAIL $red: build failed"
+				echo "FAIL $red: build failed at $lvl"
 				rc=1
 			fi
 			continue
 		fi
-		if got=$($PIN "$WORK/$nm.t" 2>&1); then :; else
-			crc=$?
-			if is_known_red "$red"; then
-				echo "XFAIL $red: run crashed (deliberate red, see KNOWN_RED)"
-			else
-				echo "FAIL $red: run crashed (rc=$crc)"
-				rc=1
-			fi
-			continue
-		fi
+		got=$(set +e; $PIN "$WORK/$nm.t" 2>&1; printf '[rc=%s]' "$?")
 		if [ "$got" = "$ref" ]; then
 			if is_known_red "$red"; then
 				stale=$((stale + 1))
-				echo "$red: PASSES but is listed in KNOWN_RED"
+				echo "$red: PASSES at $lvl but is listed in KNOWN_RED"
 			fi
 			continue
 		fi
 		if is_known_red "$red"; then
-			echo "XFAIL $red: output differs (deliberate red, see KNOWN_RED)"
+			echo "XFAIL $red: differs at $lvl (deliberate red, see KNOWN_RED)"
 			continue
 		fi
-		echo "FAIL $red: output differs"
+		echo "FAIL $red: differs at $lvl"
 		echo "  want: $ref"
 		echo "  got : $got"
 		rc=1
@@ -163,13 +204,21 @@ accept)
 	;;
 exec)
 	[ -n "$ARG" ] || { echo "FAIL flagsweep-exec: no flag given"; exit 2; }
-	corpus_run "$ARG:on" "-f$ARG"
-	corpus_run "$ARG:off" "-fno-$ARG"
+	# All three levels, because a flag's effect is relative to the level's own
+	# default and one level cannot see the others. inline defaults off at -O1 and
+	# on at -O3, inline-functions off at -O1 and on at -O2: the state (inline=1,
+	# inline-functions=0) that miscompiles structs_unions/union_byval is reached
+	# by -finline at -O1 and by -fno-inline-functions at -O3, and by no single
+	# flip at -O2. A sweep at one level calls two of those three green.
+	for lvl in -O1 -O2 -O3; do
+		corpus_run "$lvl" "$ARG:on" "-f$ARG"
+		corpus_run "$lvl" "$ARG:off" "-fno-$ARG"
+	done
 	[ "$ran" -gt 0 ] || { echo "SKIP flagsweep-exec $ARG: no subject built"; exit 77; }
 	[ "$stale" -eq 0 ] ||
 		{ echo "FAIL flagsweep-exec $ARG: $stale KNOWN_RED case(s) now pass -- drop them from KNOWN_RED in $0"; exit 1; }
 	[ "$rc" -eq 0 ] || exit 1
-	echo "PASS flagsweep-exec $ARG: $ran subject runs match the reference with -f and -fno-"
+	echo "PASS flagsweep-exec $ARG: $ran subject runs match the reference with -f and -fno- at -O1 -O2 -O3"
 	;;
 cover)
 	[ -n "$ARG" ] || { echo "FAIL flagsweep-cover: no row given"; exit 2; }
@@ -187,14 +236,16 @@ cover)
 		rest=${rest#?}
 		if [ "$b" = 1 ]; then set -- "$@" "-f$f"; else set -- "$@" "-fno-$f"; fi
 	done
-	corpus_run "row$ARG" "$@"
+	for lvl in -O1 -O2 -O3; do
+		corpus_run "$lvl" "row$ARG" "$@"
+	done
 	[ "$ran" -gt 0 ] || { echo "SKIP flagsweep-cover $ARG: no subject built"; exit 77; }
 	if [ "$rc" -ne 0 ]; then
 		echo "FAIL flagsweep-cover row $ARG: the configuration is"
 		echo "  $*"
 		exit 1
 	fi
-	echo "PASS flagsweep-cover row $ARG: $ran subjects match the reference under $nflag forced flags"
+	echo "PASS flagsweep-cover row $ARG: $ran subject runs match the reference under $nflag forced flags at -O1 -O2 -O3"
 	;;
 *) echo "usage: flagsweep.sh accept|exec|cover <mcc> <bdir> <idir> <work> [flag|row]"; exit 2 ;;
 esac

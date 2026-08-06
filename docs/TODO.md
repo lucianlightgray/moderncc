@@ -84,26 +84,46 @@ them owns a cell now — this is the population `-fjit-splice` came from. The fi
 bug you already have is worse than no sweep, because it reads as coverage.
 
 **The covering array is a 3-wise guarantee, not enumeration.** Exhaustive three-deep is
-C(113,3) × 2³ = 1,872,568 configurations. `tests/optfire/cover3.txt` is **76 rows** such
-that every one of the 1,774,520 three-flag settings appears in at least one row — the
-identical guarantee for any bug needing three flags or fewer, and no guarantee at all for
-one needing four. It is built by deterministic IPOG (`cover3.py gen`, no RNG, byte-identical
+C(113,3) × 2³ = 1,872,568 configurations. `tests/optfire/cover3.txt` is **74 rows** such
+that every one of the 1,587,880 three-flag settings of the 107 varying flags appears in at
+least one row — the identical guarantee for any bug needing three flags or fewer, and no
+guarantee at all for one needing four. **107, not 113: six flags are pinned, so a bug that
+needs one of them at its non-default setting is outside the guarantee by construction.** It is built by deterministic IPOG (`cover3.py gen`, no RNG, byte-identical
 on any host) and **`flagsweep/cover3-verify` re-proves the property on every ctest run**
 rather than trusting the generator: it re-derives the flag list from `mccopt.h`, so a new
 `MCC_OPT_ROW` that nobody regenerated for fails the cell.
 
-**Two flags are pinned out of the array**, each a debt, not a decision:
+**Six flags are pinned out of the array**, each a debt, not a decision:
 - `jit-splice` at 0 — the known miscompile. It is also the one `KNOWN_RED` entry in
   `flagsweep.sh` (`jit-splice:on:random_stuff`), so `flagsweep-exec/jit-splice` is XFAIL
   rather than red, and self-cleaning: if it starts passing the cell fails and says so.
-- `replay-fallback` at 1 — **`-fno-replay-fallback -fno-replay-cmp-materialize` at `-O2`
-  inverts comparison results.** Delta-debugged from the all-off row down to exactly those
-  two flags; each alone is green, which is why 113 one-at-a-time cells never saw it.
-  Five goldens: `types/builtin_inf_nan` `1 1 1`→`0 0 1`, `expressions/precedence`
-  `1, 0`→`0, 0`, `types/bool` bitfields `1 0 1`→`1 1 1`, `types/floating_point`
-  comparison rows inverted, `codegen/overflow_inline` aborts (rc=20). This is the C2-gap
-  fallback debt below wearing a second face — unpin it when the byte-faithful step is
-  green.
+- `replay-cmp-materialize`, `replay-landor-invert`, `storeval-call`, `replay-while-comma`
+  and `replay-loopcond-store`, all at their `MCC_OPTD_ALWAYS` default of 1. These are
+  bisection handles and replay-fidelity knobs, not alternative lowerings: their off-state
+  is a deliberately incomplete path kept so a suspected arena defect can be confirmed.
+  Sweeping them off measures the handle, not the compiler.
+
+**`replay-fallback` is no longer pinned.** The array now varies it, which is what the
+byte-gate removal needs evidence about. What that exposed, delta-debugged to minimal flag
+sets over all 281 runnable `tests/exec` programs at `-O1/-O2/-O3/-Os`:
+
+| minimal set | subjects | ships today? |
+|---|---|---|
+| `-fno-replay-fallback` + `inline=1, inline-functions=0` | `transparent_union`, `union_byval` | no — masked by the gate |
+| `-fno-replay-fallback -fno-chain-store-live` | `chained_assign` | no — masked by the gate |
+| `-fbuiltin-math-errno` | `libm_builtin_fold` | **shipped — fixed** |
+| `-fno-reg-disp` + `inline=1, inline-functions=0` | `const_member_copy` | **shipped — fixed** |
+
+The two masked ones are the same class as `union_cast`: real replay defects the byte
+compare hides. **They are what still blocks flipping the default**, and they are why
+`flagsweep-cover` rows 17, 26, 28, 41 and 42 are red under `-DMCC_FLAGSWEEP_FULL=ON`.
+Plain `-O0`…`-O3`/`-Os`, with and without `-fno-replay-fallback`, are clean on all 281.
+
+`inline=1, inline-functions=0` is worth naming as a state rather than a flag: `inline`
+defaults off at `-O1` and on at `-O3`, `inline-functions` off at `-O1` and on at `-O2`, so
+that state is reached by `-finline` at `-O1` and by `-fno-inline-functions` at `-O3` and by
+**no single flip at `-O2`**. A sweep at one `-O` level calls two of those three green,
+which is why `flagsweep.sh` now runs `-O1 -O2 -O3` rather than `-O2` alone.
 
 ## Present-tense open items — validated 2026-08-05 at `9b83dc05`
 
@@ -223,11 +243,23 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
 
 ### Flag-sweep coverage
 - ~~Wire `tests/optfire/flagsweep.sh`'s exec half as ctest cells.~~ **Closed** — 113
-  `flagsweep-exec/<flag>` cells, one per `MCC_OPT_ROW`, plus a 76-row 3-way covering
+  `flagsweep-exec/<flag>` cells, one per `MCC_OPT_ROW`, plus a 74-row 3-way covering
   array behind `-DMCC_FLAGSWEEP_FULL=ON`. See "Coverage, as wired" above.
-- **Unpin `replay-fallback` from `tests/optfire/cover3.py`** once the byte-faithful step
-  lands, and delete the `jit-splice` pin and the one `KNOWN_RED` entry when that pass is
-  fixed. Both are recorded there with their reason; regenerate with `cover3.py gen`.
+- ~~Unpin `replay-fallback` from `tests/optfire/cover3.py`.~~ **Closed** — the array
+  varies it and the five bisection-only knobs are pinned in its place. Delete the
+  `jit-splice` pin and the one `KNOWN_RED` entry when that pass is fixed.
+- **Root-cause the two masked-by-the-gate replay defects** in the table above:
+  `-fno-replay-fallback` with `inline=1, inline-functions=0` (`transparent_union`,
+  `union_byval`) and with `-fno-chain-store-live` (`chained_assign`). These are the
+  remaining blockers for turning the byte gate off by default; everything else the
+  unpinned array found either ships and is fixed or is a pinned handle.
+- **The per-flag cells cannot see a two-flag bug and the array cannot see a four-flag
+  one.** `flagsweep-exec/inline` was green on the `const_member_copy` miscompile because
+  that one needs `-fno-reg-disp` too; only `flagsweep-cover` found it. When a fix lands
+  for a multi-flag defect, add a subject that makes *one* of its flags sufficient —
+  `structs_unions/inline_sret_locrec` is that subject for the `ast_locrec` desync, and it
+  is red under `flagsweep-exec/inline` at `-O1` and `flagsweep-exec/inline-functions` at
+  `-O3` if the fix is reverted.
 - The corpus has a hole worth closing: an injected `x + 1 → x` fold in the ident-arith
   pass was invisible to all twelve goldens when gated on a `LEVEL(4)` flag until it was
   moved from `-` to `+`. `x - 1` in a returned expression is not exercised.

@@ -43,9 +43,19 @@ STRENGTH = 3
 PINS = {
     "jit-splice": (
         0, "miscompiles-programs/random_stuff-at-O2; OFF in mccopt.h for that reason"),
-    "replay-fallback": (
-        1, "-fno-replay-fallback+-fno-replay-cmp-materialize-inverts-comparisons;"
-           "see-docs/TODO.md-C2-gap"),
+    "replay-cmp-materialize": (
+        1, "MCC_OPTD_ALWAYS-bisection-handle; off-state-drops-the-vcheck_cmp-the-replay"
+           "-owes-at-mccast.c:4548-and-two-VT_CMPs-claim-one-flags-register"),
+    "replay-landor-invert": (
+        1, "MCC_OPTD_ALWAYS-bisection-handle; off-state-is-a-diagnostic-detour-round-the"
+           "-short-circuit-materialisation,-not-an-alternative-lowering"),
+    "storeval-call": (
+        1, "MCC_OPTD_ALWAYS-replay-fidelity-knob; reproduces-a-shape-the-parser-emits-at"
+           "-every-level,-see-the-six-knob-note-at-mccast.c:2160"),
+    "replay-while-comma": (
+        1, "MCC_OPTD_ALWAYS-replay-fidelity-knob; same-note-as-storeval-call"),
+    "replay-loopcond-store": (
+        1, "MCC_OPTD_ALWAYS-replay-fidelity-knob; same-note-as-storeval-call"),
 }
 
 
