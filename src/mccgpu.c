@@ -1095,11 +1095,20 @@ static int mcc_fe_bind(void) {
 	return 0;
 }
 
+/* Darwin has no Vulkan driver; MoltenVK implements the API over Metal and is
+ * what MCC_GPU_BACKEND=vulkan runs on there.  The Vulkan SDK installs a
+ * libvulkan.dylib loader, but Homebrew's molten-vk ships only
+ * libMoltenVK.dylib, which exports the same entry points -- so try both, and
+ * the two Homebrew prefixes by absolute path because dlopen does not search
+ * them.  MCC_VULKAN_LIB overrides all of it. */
 static const char *const mcc_vk_sonames[] = {
 #if MCC_HOST_WIN32
 		"vulkan-1.dll",
+#elif MCC_HOST_DARWIN
+		"libvulkan.dylib", "libvulkan.1.dylib", "libMoltenVK.dylib",
+		"/opt/homebrew/lib/libMoltenVK.dylib", "/usr/local/lib/libMoltenVK.dylib",
 #else
-		"libvulkan.so.1", "libvulkan.so", "libvulkan.dylib",
+		"libvulkan.so.1", "libvulkan.so",
 #endif
 		NULL};
 

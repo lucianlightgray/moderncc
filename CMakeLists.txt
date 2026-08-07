@@ -486,8 +486,40 @@ foreach(_tc IN LISTS MCC_TOOLCHAIN_PROFILE)
     endif()
 endforeach()
 
+mcc_config_node(MCC_GPU_BACKEND TYPE STRING DEFAULT auto GROUP "Diagnostics" ADVANCED
+    HELP "Which compute backend the width-ladder GPU oracle is compiled against: metal (Metal + MSL) or vulkan (Vulkan + SPIR-V). auto picks metal on Darwin and vulkan everywhere else. Only Darwin can build both -- Vulkan there runs over MoltenVK, which the loader dlopens as libvulkan.dylib like any other ICD, so nothing is linked either way and the choice is purely which source arm compiles"
+    CHOICES auto metal vulkan)
+
+if(MCC_GPU_BACKEND STREQUAL "auto")
+    if(APPLE)
+        set(_mcc_gpu_backend metal)
+    else()
+        set(_mcc_gpu_backend vulkan)
+    endif()
+elseif(MCC_GPU_BACKEND STREQUAL "metal" AND NOT APPLE)
+    message(FATAL_ERROR
+        "mcc config: MCC_GPU_BACKEND=metal needs a Darwin host (Metal.framework and "
+        "the ObjC runtime); this host would build a backend it can never load")
+else()
+    set(_mcc_gpu_backend "${MCC_GPU_BACKEND}")
+endif()
+
+if(_mcc_gpu_backend STREQUAL "metal")
+    set(MCC_GPU_LANG_MSL_VALUE 1)
+else()
+    set(MCC_GPU_LANG_MSL_VALUE 0)
+endif()
+# Directory scope, not _mccdefs: the config-defines cell reconstructs that list
+# from the target triple with mccbuild --emit-defines, so a define it cannot
+# derive would fail the comparison. Every target in this directory picks this up,
+# including the single-source mcc_s/mcc_t/mcc_dynamic that compile mccgpu.c
+# without going through libmcc.
+add_compile_definitions(MCC_GPU_LANG_MSL=${MCC_GPU_LANG_MSL_VALUE})
+message(STATUS "mcc compute backend: ${_mcc_gpu_backend} "
+               "(MCC_GPU_LANG_MSL=${MCC_GPU_LANG_MSL_VALUE})")
+
 set(MCC_COMPUTE_BACKEND_LIBS "")
-if(APPLE)
+if(APPLE AND _mcc_gpu_backend STREQUAL "metal")
     set(MCC_COMPUTE_BACKEND_LIBS objc)
 endif()
 set(MCC_COMPUTE_BACKEND_LDFLAGS "")
