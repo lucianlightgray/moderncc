@@ -235,10 +235,50 @@ Three defects the differential caught, none of which a passing test would show:
 - signed `%` is synthesised as `a - b*(a/b)`, mirroring `ast_eval_binop`, rather
   than trusting `OpSRem` at `1 % -1` and `-8 % 3`.
 
-**`gpu/spv-slice-known-positive` is the cell that matters.** It runs `--mutate`
-(every `OpIAdd` → `OpISub`) and requires FAIL: 192,194 mismatches over 6 of 11
-cases. A differential that cannot go red is indistinguishable from one that never
-ran. It also rejects exit 77 — a skipped known-positive is not a pass.
+**Real slices, not hand-built ones.** `MCC_ARENA_DUMP=<path>` serialises every
+modelled body's production arena at the same hook `MCC_SLICE_CENSUS` uses;
+`spvgate --arenas` rebuilds them and walks top-down for maximal subtrees the
+emitter accepts with ≤4 live-ins. The hook is inert when unset — 0 per-test
+verdict changes over 4907 cross-oracle cases.
+
+| corpus | slices | compared | clean | mutated |
+| --- | --- | --- | --- | --- |
+| gcc c-torture, **all 1693 files** | 25,877 (12,157/16,208 bodies) | **1,695,607,075** | 0 | — |
+| gcc c-torture, 300 files | 858 (460/1910 bodies) | 53,678,914 | 0 | **all** |
+| compiler-rt builtins, 96 | 401 (73/192 bodies) | 23,174,609 | 0 | **all** |
+| synthetic, 13 cases | — | 855,556 | 0 | **all** |
+
+The full sweep is 127,355 GPU dispatches over 1,699,304,114 lanes, 0 mismatches
+and 0 rejected modules. **75% of modelled bodies (12,157 of 16,208) contain at
+least one slice the emitter lowers** — far above the 24% the first 300-file
+sample suggested, so the alphabetical head of that suite is not representative.
+
+**`TOK_SHL` is `'<'` (60) and `TOK_SAR` is `'>'` (62); comparisons are
+`TOK_LT`=156, `TOK_GT`=159.** Real slices produced 131,627 mismatches on first
+run, all one shape: `TOK_LT`/`TOK_GT` returned signed comparisons unconditionally
+while `TOK_LE`/`TOK_GE` respected `uns`. `ast_eval_binop` compares *after*
+`ast_eval_narrow`, which zero-extends unsigned types, so an unsigned `TOK_LT`
+carries unsigned semantics. **The synthetic `cmp` case never caught this because
+it was written with `'<'` and had therefore been exercising a shift, not a
+comparison.** That is the argument for real corpora in one sentence.
+
+**`gpu/spv-slice-known-positive` and `gpu/spv-slice-real` are the cells that
+matter.** They require the mutated build to FAIL, reject exit 77 (a skipped
+known-positive is not a pass), and `-real` additionally fails when *zero* slices
+lowered — a differential over an empty set is green for the same reason a blind
+one is.
+
+**The first known-positive was worse than useless and cost two defects to
+discover.** Rewriting every `OpIAdd`→`OpISub` also rewrote `spv_load_live`'s
+addressing, so indices went negative, the shader read far out of bounds, the
+device faulted, and every later allocation returned
+`VK_ERROR_OUT_OF_DEVICE_MEMORY`. It was testing error handling, not detection —
+and found `gpu_run` leaking buffers/memory/descriptor pools on both early-return
+paths, and a rejected module being a silent `continue`, so a mutation producing
+invalid SPIR-V would have been reported OK. Rejects now count as failures, every
+path frees, and the mutation is `OpBitwiseXor val, 1` on the result before the
+store: touches no addressing, cannot fault, perturbs every point. Detection went
+from 6 of 11 cases to total.
 
 **The trap for anyone extending this.** `mccast.c`'s fallback `ast_eval_slice`
 stub returns 1 *without writing `*out`*, so the obvious build compares
@@ -246,12 +286,24 @@ uninitialised memory and passes everything. `spvgate` hard-errors unless
 `AST_EVAL_SLICE_PROVIDED` is set. Two TUs are needed because `mccast.c` compiles
 standalone only *without* `mcc.h` while the evaluator needs it for `VT_*`.
 
-**Not done, and not claimed.** The JIT dispatches none of this at runtime; the
-arenas are hand-built to mirror slice shapes rather than extracted from real
-bodies; `ast_bad_type` is duplicated in the gate because it is static inside
-`mccast.c`'s `MCC_INTERNAL` half. Extracting real slices needs the RIR path,
-which only exists inside the full compiler build — that is the next obstacle,
-and it is a build-topology problem, not a lowering problem.
+**Not done, and not claimed. The JIT dispatches none of this at runtime.**
+Everything above runs offline through `spvgate`. "The JIT runs RIR replays in the
+GPU" is therefore *not* established; what is established is that the lowering is
+correct and that real gcc/clang suite bodies contain slices it accepts.
+
+**The clean integration point is `ast_eval_ladder_rung()`.** It is an
+embarrassingly-parallel loop over `space` codes, each replaying both arenas at
+one point, and the JIT already invokes it through
+`mccjit_kernel_search_from_blob`. That loop *is* bulk RIR replay, and moving it
+to the GPU would make the claim literally true while doing work the JIT already
+wants done — unlike general offload, where the census shows the payoff is thin
+(1.91% loop-bearing slices in this corpus). The obstacle is that it puts Vulkan
+in the compiler's link, so it wants a `dlopen` loader and a gate, not `-lvulkan`.
+
+Two smaller debts: `ast_bad_type` and `is_float` are duplicated in the gate
+because they are static/inline inside `mccast.c`'s `MCC_INTERNAL` half, and the
+gate needs two TUs because `mccast.c` compiles standalone only *without*
+`mcc.h`.
 
 ## Each suite is now scored by the other vendor's compiler — 2026-08-06
 
