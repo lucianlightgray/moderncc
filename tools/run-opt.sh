@@ -25,7 +25,17 @@ trap 'rm -rf "$work"' EXIT
 # the JIT path once replay is on. Verified identical on the parent commit, so it
 # is not this work. A listed cell that starts passing fails the run, so this
 # cannot rot into lost coverage.
+#
+# The defect is in tls_setup_linux/mcc_run_thr_start, which reseeds one fixed
+# TLS slab per thread. Darwin -run does not use that path at all: it goes
+# through mcc_tlv_get_addr, which calloc's a fresh block per thread and memcpy's
+# the initialiser in, so all three cells are green there. Listing them on Darwin
+# is what the stale check is meant to catch, so scope the list to the host that
+# actually carries the defect.
 KNOWN_RED="tls_threads:-O1:1 tls_threads:-O2:1 tls_threads:-O3:1"
+case $(uname -s) in
+Darwin) KNOWN_RED="" ;;
+esac
 
 is_known_red() {
 	for kr in $KNOWN_RED; do

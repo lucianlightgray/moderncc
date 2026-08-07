@@ -139,7 +139,7 @@ strat_index() {
 
 if [ "$MODE" = check ]; then
 	have=$(sed -n '/^static const AstStrategy ast_strategies\[/,/^};/p' "$S/src/mccast.c" |
-		sed -n 's/^[ \t]*{"\([a-z0-9]*\)".*/\1/p' | tr '\n' ' ')
+		sed -n 's/^[[:space:]]*{"\([a-z0-9]*\)".*/\1/p' | tr '\n' ' ')
 	want="$(echo $STRAT_NAMES) "
 	[ "$have" = "$want" ] || {
 		echo "FAIL stratsweep-check: ast_strategies[] and STRAT_NAMES disagree"
