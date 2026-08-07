@@ -487,6 +487,15 @@ foreach(_tc IN LISTS MCC_TOOLCHAIN_PROFILE)
 endforeach()
 
 option(MCC_GPU "Compile the Vulkan compute backend into mcc, so the width-ladder equivalence oracle can replay slices on the GPU (MCC_AST_EVAL_LADDER_GPU=1 at runtime). OFF by default: it adds a hard Vulkan dependency to the compiler's link." OFF)
+set(MCC_GPU_DEFS "")
+set(MCC_GPU_LIBS "")
+set(MCC_GPU_INCLUDE_DIRS "")
+if(MCC_GPU)
+    find_package(Vulkan REQUIRED)
+    set(MCC_GPU_DEFS MCC_GPU=1)
+    set(MCC_GPU_LIBS ${Vulkan_LIBRARIES})
+    set(MCC_GPU_INCLUDE_DIRS ${Vulkan_INCLUDE_DIRS})
+endif()
 option(MCC_SUPERBUILD_TEST "Run ctest after each matrix sub-build" ON)
 option(MCC_SUPERBUILD_SEQUENTIAL "Build toolchain stages in order (targets within a stage stay parallel)" ON)
 option(MCC_SUPERBUILD_CHILD "Internal: set on matrix child cells to suppress superbuild recursion" OFF)
@@ -1794,6 +1803,22 @@ set(MCC_RESOLVED_MCCDIR "${_mccdir}")
 string(REPLACE ";" "\n" _mccdefs_text "${_mccdefs}")
 file(WRITE "${CMAKE_BINARY_DIR}/config-defines.txt" "${_mccdefs_text}\n")
 
+set(_selfhost_libs "")
+if(NOT MCC_TARGETOS STREQUAL "WIN32")
+    list(APPEND _selfhost_libs m ${CMAKE_DL_LIBS})
+endif()
+list(APPEND _selfhost_libs ${MCC_GPU_LIBS})
+set(MCC_SELFHOST_LINK_LIBS "")
+foreach(_shl IN LISTS _selfhost_libs)
+    if(_shl MATCHES "^-" OR EXISTS "${_shl}")
+        list(APPEND MCC_SELFHOST_LINK_LIBS "${_shl}")
+    else()
+        list(APPEND MCC_SELFHOST_LINK_LIBS "-l${_shl}")
+    endif()
+endforeach()
+string(REPLACE ";" "\n" _selfhost_libs_text "${MCC_SELFHOST_LINK_LIBS}")
+file(WRITE "${CMAKE_BINARY_DIR}/selfhost-link-libs.txt" "${_selfhost_libs_text}\n")
+
 set(_mccdefs_common
     "MCC_VERSION=${MCC_VERSION}"
     "CC_NAME=CC_${MCC_CC_NAME}"
@@ -1977,10 +2002,9 @@ function(mcc_add_libmcc tgt kind is_musl)
         add_dependencies(${tgt} mcc_mccdefs)
     endif()
     if(MCC_GPU)
-        find_package(Vulkan REQUIRED)
-        target_compile_definitions(${tgt} PRIVATE MCC_GPU=1)
-        target_link_libraries(${tgt} PUBLIC ${Vulkan_LIBRARIES})
-        target_include_directories(${tgt} PRIVATE ${Vulkan_INCLUDE_DIRS})
+        target_compile_definitions(${tgt} PRIVATE ${MCC_GPU_DEFS})
+        target_link_libraries(${tgt} PUBLIC ${MCC_GPU_LIBS})
+        target_include_directories(${tgt} PRIVATE ${MCC_GPU_INCLUDE_DIRS})
     endif()
     target_include_directories(${tgt} PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -2089,20 +2113,19 @@ if(NOT "${MCC_EXTRA_LIBS}" STREQUAL "")
 endif()
 if(MCC_GITHASH)
     target_compile_definitions(mcc PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
-    if(MCC_GPU)
-        find_package(Vulkan REQUIRED)
-        target_compile_definitions(mcc PRIVATE MCC_GPU=1)
-        target_link_libraries(mcc PRIVATE ${Vulkan_LIBRARIES})
-        target_include_directories(mcc PRIVATE ${Vulkan_INCLUDE_DIRS})
-        add_test(NAME "gpu/ladder-gpu-parity"
-            COMMAND "${CMAKE_COMMAND}"
-                    -DMCC=$<TARGET_FILE:mcc>
-                    -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
-                    -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
-                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ladder_gpu_parity.cmake")
-        set_tests_properties("gpu/ladder-gpu-parity" PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT)
-    endif()
+endif()
+if(MCC_GPU)
+    target_compile_definitions(mcc PRIVATE ${MCC_GPU_DEFS})
+    target_link_libraries(mcc PRIVATE ${MCC_GPU_LIBS})
+    target_include_directories(mcc PRIVATE ${MCC_GPU_INCLUDE_DIRS})
+    add_test(NAME "gpu/ladder-gpu-parity"
+        COMMAND "${CMAKE_COMMAND}"
+                -DMCC=$<TARGET_FILE:mcc>
+                -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ladder_gpu_parity.cmake")
+    set_tests_properties("gpu/ladder-gpu-parity" PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT)
 endif()
 if(TARGET mcc_mccdefs)
     add_dependencies(mcc mcc_mccdefs)

@@ -211,8 +211,34 @@ static int derive_defs(const char *json_path, Vec *defs, char *root, int rootsz)
 	return 0;
 }
 
+static void derive_link_libs(const char *builddir, Vec *libs) {
+	char path[4096];
+	char *text, *p;
+	snprintf(path, sizeof path, "%s/selfhost-link-libs.txt", builddir);
+	text = ts_read_file(path, NULL);
+	if (!text)
+		return;
+	for (p = text; *p;) {
+		char *nl = strchr(p, '\n');
+		size_t l;
+		if (nl)
+			*nl = 0;
+		while (*p == ' ' || *p == '\t')
+			++p;
+		l = strlen(p);
+		while (l && (p[l - 1] == ' ' || p[l - 1] == '\t' || p[l - 1] == '\r'))
+			p[--l] = 0;
+		if (l)
+			vec_add(libs, strdup(p));
+		if (!nl)
+			break;
+		p = nl + 1;
+	}
+	free(text);
+}
+
 static int compile_stage(const char *mcc, const char *builddir, const char *root,
-												 const char *out, Vec *defs) {
+												 const char *out, Vec *defs, Vec *libs) {
 	Argv v;
 	char barg[4096], iarg[11][4096], src_c[4096];
 	static const char *inc_sub[] = {
@@ -239,6 +265,8 @@ static int compile_stage(const char *mcc, const char *builddir, const char *root
 	}
 	for (i = 0; i < defs->n; ++i)
 		ts_arg(&v, defs->v[i]);
+	for (i = 0; i < libs->n; ++i)
+		ts_arg(&v, libs->v[i]);
 	rc = host_spawn_wait(ts_argz(&v));
 	return rc;
 }
@@ -247,12 +275,13 @@ int main(int argc, char **argv) {
 	const char *builddir = argc > 1 ? argv[1] : "cmake-debug";
 	char json[4096], mcc[4096], root[4096];
 	char stage2[4096], stage3[4096], stage4[4096], fixed[4096];
-	Vec defs = {0};
+	Vec defs = {0}, libs = {0};
 	int rc;
 
 	snprintf(json, sizeof json, "%s/compile_commands.json", builddir);
 	if (derive_defs(json, &defs, root, sizeof root))
 		return 2;
+	derive_link_libs(builddir, &libs);
 
 	snprintf(mcc, sizeof mcc, "%s/mcc", builddir);
 	snprintf(stage2, sizeof stage2, "%s/fixpoint-stage2", builddir);
@@ -260,15 +289,15 @@ int main(int argc, char **argv) {
 	snprintf(stage4, sizeof stage4, "%s/fixpoint-stage4", builddir);
 	snprintf(fixed, sizeof fixed, "%s/fixpoint-out", builddir);
 
-	rc = compile_stage(mcc, builddir, root, fixed, &defs);
+	rc = compile_stage(mcc, builddir, root, fixed, &defs, &libs);
 	if (!rc && rename(fixed, stage2))
 		rc = -1;
 	if (!rc)
-		rc = compile_stage(stage2, builddir, root, fixed, &defs);
+		rc = compile_stage(stage2, builddir, root, fixed, &defs, &libs);
 	if (!rc && rename(fixed, stage3))
 		rc = -1;
 	if (!rc)
-		rc = compile_stage(stage3, builddir, root, fixed, &defs);
+		rc = compile_stage(stage3, builddir, root, fixed, &defs, &libs);
 	if (!rc && rename(fixed, stage4))
 		rc = -1;
 	if (rc) {

@@ -14,6 +14,27 @@ compilers PRODUCE, which is where a stable -O2/-O3-only miscompile shows.
 """
 
 
+def selfhost_link_libs(bdir, pe=False):
+    """The libraries a self-hosted mcc must link, as CMake resolved them.
+
+    A self-hosted mcc is the same program as the mcc target, so it needs the same
+    libraries; hardcoding a list here means the two drift the moment an option
+    adds one. MCC_GPU=ON is exactly that case: it puts a hard Vulkan dependency
+    in the compiler's link (and libm, for the fenv save/restore in src/mccgpu.h),
+    and every self-host recipe failed on the vk* symbols until CMake told it.
+
+    CMake writes <build-dir>/selfhost-link-libs.txt from the same variables it
+    passes to target_link_libraries, under the same MCC_TARGETOS condition, so
+    there is one source of truth. The fallback is what this recipe hardcoded
+    before the file existed, for a build tree configured by an older CMake.
+    """
+    p = os.path.join(bdir, "selfhost-link-libs.txt")
+    if not os.path.exists(p):
+        return [] if pe else ["-lm", "-ldl"]
+    with open(p) as f:
+        return [ln.strip() for ln in f if ln.strip()]
+
+
 def flags_for(root, bdir):
     cc = json.load(open(os.path.join(root, bdir, "compile_commands.json")))
     rec = [x for x in cc if x["file"].endswith("/mcc.c")][0]
@@ -44,7 +65,8 @@ def build_stage1(root, bdir, mcc, opt, work):
     subprocess.run([mcc, *flags, opt, "-c", os.path.join(root, "src/mcc.c"),
                     "-o", obj], cwd=root, check=True)
     s1 = os.path.join(work, "mcc-s1")
-    subprocess.run([mcc, *link_flags, obj, *link_objs, "-o", s1, "-lm", "-ldl"],
+    link_libs = selfhost_link_libs(os.path.join(root, bdir))
+    subprocess.run([mcc, *link_flags, obj, *link_objs, "-o", s1, *link_libs],
                    cwd=root, check=True)
     return s1, link_flags
 

@@ -1,4 +1,7 @@
 {
+ "corpus_config": {
+  "MCC_GPU": "0"
+ },
  "nofb_miscompiles": {
   "O0": [],
   "O1": [],

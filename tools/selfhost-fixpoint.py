@@ -15,6 +15,26 @@ Usage: tools/selfhost-fixpoint.py <build-dir> [KNOB=VAL ...]
 """
 import json, os, re, shlex, subprocess, sys, tempfile
 
+def selfhost_link_libs(bdir, pe=False):
+    """The libraries a self-hosted mcc must link, as CMake resolved them.
+
+    A self-hosted mcc is the same program as the mcc target, so it needs the same
+    libraries; hardcoding a list here means the two drift the moment an option
+    adds one. MCC_GPU=ON is exactly that case: it puts a hard Vulkan dependency
+    in the compiler's link (and libm, for the fenv save/restore in src/mccgpu.h),
+    and every self-host recipe failed on the vk* symbols until CMake told it.
+
+    CMake writes <build-dir>/selfhost-link-libs.txt from the same variables it
+    passes to target_link_libraries, under the same MCC_TARGETOS condition, so
+    there is one source of truth. The fallback is what this recipe hardcoded
+    before the file existed, for a build tree configured by an older CMake.
+    """
+    p = os.path.join(bdir, "selfhost-link-libs.txt")
+    if not os.path.exists(p):
+        return [] if pe else ["-lm", "-ldl"]
+    with open(p) as f:
+        return [ln.strip() for ln in f if ln.strip()]
+
 def main():
     if len(sys.argv) < 2:
         sys.exit("usage: selfhost-fixpoint.py <build-dir> [--opt=-ON] [KNOB=VAL ...]")
@@ -75,7 +95,7 @@ def main():
     src = os.path.join(root, "src/mcc.c")
     inc = os.path.join(root, "runtime/include")
     win32_pre = ["-B", os.path.join(root, "runtime/win32")] if pe else []
-    link_libs = [] if pe else ["-lm", "-ldl"]
+    link_libs = selfhost_link_libs(os.path.join(root, bdir), pe)
 
     def compile_mcc(cc_bin, obj, extra_inc):
         args = [cc_bin, *flags]

@@ -112,7 +112,15 @@ Usage:
                         [--corpus self|wide|exec] [--layers both|arena|capture]
                         [--bank FILE] [--update-bank] [--update-bank-low]
                         [--top N] [--json FILE] [--classify] [--check-gap-dir]
-                        [--check-low-dir] [--nofb-probe]
+                        [--check-low-dir] [--nofb-probe] [--rebank-config]
+
+The `self` and `wide` corpora are the compiler's own source, so the banked
+percentages are only comparable across builds that compile the same source into
+src/mcc.c.  The bank records that configuration under "corpus_config" (see
+corpus_config() below); a build that differs -- MCC_GPU=ON adds the Vulkan
+backend to the corpus -- exits 77 (skip) rather than reporting the dilution as a
+regression.  --rebank-config, with --update-bank[-low], is the deliberate way to
+move the recorded configuration; do not use it to bank a non-default build.
 
 Exit status is 0 when every level is at or above its banked coverage and the
 byte accounting reconciles against the objects' real .text size.
@@ -167,6 +175,40 @@ def self_flags(bdir):
         argv = shlex.split(cmd)[1:]
     return [a for a in argv
             if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
+
+
+CORPUS_DEFS = ["MCC_GPU"]
+
+
+def corpus_config(flags):
+    """The build options that change WHICH source src/mcc.c amalgamates.
+
+    Every banked percentage on the `self` and `wide` corpora is a ratio taken
+    over the compiler's own source, so a build option that compiles extra source
+    into src/mcc.c moves every one of them without anything having regressed.
+    MCC_GPU=ON is exactly that: it adds the Vulkan compute backend to the corpus
+    and dilutes each lowerable percentage by about 0.1pp at every -O level.
+
+    The bank records the configuration it was taken on under "corpus_config";
+    a build whose configuration differs is not comparable to it and skips
+    instead of failing.  A source-shaping option missing from this list makes
+    the ratchet FAIL rather than skip, which is the safe direction: it demands
+    an explanation instead of quietly accepting a moved number.
+    """
+    cfg = {}
+    for name in CORPUS_DEFS:
+        val = "0"
+        for f in flags:
+            if f == "-D" + name:
+                val = "1"
+            elif f.startswith("-D" + name + "="):
+                val = f.split("=", 1)[1]
+        cfg[name] = val
+    return cfg
+
+
+def fmt_config(cfg):
+    return ",".join("%s=%s" % kv for kv in sorted(cfg.items())) or "(none)"
 
 
 def gap_levels(path):
@@ -566,6 +608,7 @@ def main():
     ap.add_argument("--classify", action="store_true")
     ap.add_argument("--check-gap-dir", action="store_true")
     ap.add_argument("--opt-in", action="store_true")
+    ap.add_argument("--rebank-config", action="store_true")
     a = ap.parse_args()
 
     if a.opt_in and not os.environ.get("MCC_RIR_CENSUS"):
@@ -718,6 +761,25 @@ def main():
         for m in bad:
             print("FAIL " + m)
         return 1 if bad else 0
+    self_corpus = any(s.replace("\\", "/").endswith("src/mcc.c") for s in sources)
+    want_cfg = bank.get("corpus_config")
+    have_cfg = corpus_config(flags)
+    if self_corpus and want_cfg is not None and have_cfg != want_cfg:
+        if a.rebank_config and (a.update_bank or a.update_bank_low):
+            bank["corpus_config"] = have_cfg
+        else:
+            print("rir-coverage: SKIP: the %s corpus is the compiler's own source "
+                  "and this build is not the configuration the bank was taken on "
+                  "(bank %s, this build %s)." % (a.corpus, fmt_config(want_cfg),
+                                                 fmt_config(have_cfg)))
+            print("rir-coverage: every banked percentage is a ratio over src/, so "
+                  "a configuration that compiles extra source into src/mcc.c "
+                  "dilutes all of them; the movement is configuration, not "
+                  "regression. Run the ratchet on a default build, and do NOT "
+                  "re-bank here -- see docs/TODO.md, 'The lowerable ratchet is "
+                  "self-referential'.")
+            return 77
+
     for opt in a.levels.split(","):
         if a.layers != "arena":
             cc2 = census(mcc, flags, sources, opt, layer="capture",
@@ -901,6 +963,7 @@ def main():
                              for n in LOWCLS}
             prev.setdefault(opt, {})["lowerable"] = e
         bank[a.corpus] = prev
+        bank.setdefault("corpus_config", have_cfg)
         os.makedirs(os.path.dirname(a.bank), exist_ok=True)
         json.dump(bank, open(a.bank, "w"), indent=1, sort_keys=True)
         print("banked lowerable/%s -> %s" % (a.corpus, a.bank))
@@ -934,6 +997,7 @@ def main():
         for opt, layers in out.items():
             prev.setdefault(opt, {}).update(layers)
         bank[a.corpus] = prev
+        bank.setdefault("corpus_config", have_cfg)
         os.makedirs(os.path.dirname(a.bank), exist_ok=True)
         json.dump(bank, open(a.bank, "w"), indent=1, sort_keys=True)
         print("banked %s -> %s" % (a.corpus, a.bank))
