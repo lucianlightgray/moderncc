@@ -117,9 +117,10 @@ Usage:
 The `self` and `wide` corpora are the compiler's own source, so the banked
 percentages are only comparable across builds that compile the same source into
 src/mcc.c.  The bank records that configuration under "corpus_config" (see
-corpus_config() below); a build that differs -- MCC_GPU=ON adds the Vulkan
-backend to the corpus -- exits 77 (skip) rather than reporting the dilution as a
-regression.  --rebank-config, with --update-bank[-low], is the deliberate way to
+corpus_config() below); a build that differs exits 77 (skip) rather than
+reporting the dilution as a regression.  No build option shapes the corpus
+today, so the recorded configuration is empty and every build compiles the same
+source.  --rebank-config, with --update-bank[-low], is the deliberate way to
 move the recorded configuration; do not use it to bank a non-default build.
 
 Exit status is 0 when every level is at or above its banked coverage and the
@@ -177,7 +178,7 @@ def self_flags(bdir):
             if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
 
 
-CORPUS_DEFS = ["MCC_GPU", "MCC_DIAG"]
+CORPUS_DEFS = ["MCC_DIAG"]
 
 
 def corpus_config(flags):
@@ -186,8 +187,9 @@ def corpus_config(flags):
     Every banked percentage on the `self` and `wide` corpora is a ratio taken
     over the compiler's own source, so a build option that compiles extra source
     into src/mcc.c moves every one of them without anything having regressed.
-    MCC_GPU=ON is exactly that: it adds the Vulkan compute backend to the corpus
-    and dilutes each lowerable percentage by about 0.1pp at every -O level.
+    MCC_GPU used to be exactly that; the GPU compute backend is unconditional
+    now, so it is in every corpus and no longer a variable.  The list is empty
+    until some other option starts shaping the source again.
 
     The bank records the configuration it was taken on under "corpus_config";
     a build whose configuration differs is not comparable to it and skips

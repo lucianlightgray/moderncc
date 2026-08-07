@@ -1,5 +1,5 @@
-#ifndef MCC_GPU_PROVIDED
-#define MCC_GPU_PROVIDED 1
+#ifndef MCC_COMPUTE_BACKEND_PROVIDED
+#define MCC_COMPUTE_BACKEND_PROVIDED 1
 
 #include <fenv.h>
 #include <objc/message.h>

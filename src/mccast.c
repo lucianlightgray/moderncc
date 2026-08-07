@@ -2130,9 +2130,7 @@ static int ast_reemit_n;
 static int ast_inline_n;
 
 static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
-#if MCC_GPU
 	ast_ladder_gpu_setup();
-#endif
 	int o4 = s1->optimize_search_seconds > 0;
 	int i, dflt[MCC_OPT_COUNT];
 	int n = 0;
@@ -15674,7 +15672,6 @@ static int ast_eval_slice(AstArena *a, AstLocal n, const int32_t *o, const int64
 }
 #endif
 
-#if MCC_GPU
 #define SPV_MALLOC mcc_malloc
 #define SPV_REALLOC mcc_realloc
 #define SPV_FREE mcc_free
@@ -15844,7 +15841,6 @@ void ast_ladder_gpu_report(void) { MCC_TRACE("enter\n");
 					mcc_gpu.tried, mcc_gpu.ok, mcc_gpu.ok ? mcc_gpu.name : "(none)",
 					ast_ladder_gpu_rungs, mcc_gpu.dispatches, mcc_gpu.lanes);
 }
-#endif
 
 #if MCC_EMBED_JIT
 int ast_slice_certifiable(AstArena *a, AstLocal root) { MCC_TRACE("enter\n");
@@ -15931,9 +15927,7 @@ int ast_jit_fold_consts(AstArena *a) { MCC_TRACE("enter\n");
 
 int ast_slice_equiv(AstArena *a, AstLocal aroot, AstArena *b,
 										AstLocal broot) { MCC_TRACE("enter\n");
-#if MCC_GPU
 	ast_ladder_gpu_setup();
-#endif
 #ifdef AST_EVAL_SLICE_PROVIDED
 	return ast_eval_slice_equiv(a, aroot, b, broot);
 #else
@@ -16246,9 +16240,7 @@ void ast_slice_ladder_observed_source(int (*fn)(const int32_t *, int, int64_t *,
 int ast_slice_ladder_explain(AstArena *a, AstLocal aroot, AstArena *b,
 														 AstLocal broot, char *buf, size_t cap) { MCC_TRACE("enter\n");
 	AstEvalLadderRes r;
-#if MCC_GPU
 	ast_ladder_gpu_setup();
-#endif
 	char rb[16];
 	ast_eval_slice_ladder(a, aroot, b, broot, &r);
 	if (buf && cap) { MCC_TRACE("br\n");

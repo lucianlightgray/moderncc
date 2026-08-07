@@ -109,6 +109,9 @@ int ast_slice_promote_static(int64_t baseline_cost, int64_t candidate_cost);
 int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k,
 										int *color);
 
+void ast_ladder_gpu_setup(void);
+void ast_ladder_gpu_report(void);
+
 #if MCC_EMBED_JIT
 typedef enum AstPurity {
 	AST_PURITY_IMPURE = 0,
@@ -136,10 +139,6 @@ int ast_slice_search(AstArena *a, AstLocal root, int budget, AstLocal *out, int 
 
 void ast_slice_ladder_set(int on);
 int ast_slice_ladder_on(void);
-#if MCC_GPU
-void ast_ladder_gpu_setup(void);
-void ast_ladder_gpu_report(void);
-#endif
 void ast_slice_ladder_observed_source(int (*fn)(const int32_t *, int, int64_t *,
 																								int, void *),
 																			void *user);

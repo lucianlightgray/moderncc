@@ -1,14 +1,12 @@
-#ifndef MCC_GPU_PROVIDED
-#define MCC_GPU_PROVIDED 1
+#ifndef MCC_COMPUTE_BACKEND_PROVIDED
+#define MCC_COMPUTE_BACKEND_PROVIDED 1
 
 #include "mcchost.h"
+#include "mccvk.h"
 
 #include <fenv.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-#define VK_NO_PROTOTYPES 1
-#include <vulkan/vulkan.h>
 
 #define MCC_VK_FNS(X)                                                          \
 	X(vkCreateInstance)                                                          \
@@ -65,21 +63,17 @@ typedef int (*MccFeSetFn)(const fenv_t *);
 static MccFeGetFn mcc_fe_get;
 static MccFeSetFn mcc_fe_set;
 
-#if !MCC_HOST_WIN32
 static const char *const mcc_fe_sonames[] = {
-#if MCC_HOST_DARWIN
+#if MCC_HOST_WIN32
+		"ucrtbase.dll", "msvcrt.dll",
+#elif MCC_HOST_DARWIN
 		"libSystem.B.dylib",
 #else
 		"libm.so.6", "libm.so",
 #endif
 		NULL};
-#endif
 
 static int mcc_fe_bind(void) {
-#if MCC_HOST_WIN32
-	mcc_fe_get = fegetenv;
-	mcc_fe_set = fesetenv;
-#else
 	int i;
 	mcc_fe_get = (MccFeGetFn)host_dlsym_process("fegetenv");
 	mcc_fe_set = (MccFeSetFn)host_dlsym_process("fesetenv");
@@ -90,7 +84,6 @@ static int mcc_fe_bind(void) {
 		mcc_fe_get = (MccFeGetFn)host_dlsym(h, "fegetenv");
 		mcc_fe_set = (MccFeSetFn)host_dlsym(h, "fesetenv");
 	}
-#endif
 	if (mcc_fe_get && mcc_fe_set)
 		return 1;
 	if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
