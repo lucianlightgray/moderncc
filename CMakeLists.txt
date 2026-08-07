@@ -1976,6 +1976,12 @@ function(mcc_add_libmcc tgt kind is_musl)
     if(TARGET mcc_mccdefs)
         add_dependencies(${tgt} mcc_mccdefs)
     endif()
+    if(MCC_GPU)
+        find_package(Vulkan REQUIRED)
+        target_compile_definitions(${tgt} PRIVATE MCC_GPU=1)
+        target_link_libraries(${tgt} PUBLIC ${Vulkan_LIBRARIES})
+        target_include_directories(${tgt} PRIVATE ${Vulkan_INCLUDE_DIRS})
+    endif()
     target_include_directories(${tgt} PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)

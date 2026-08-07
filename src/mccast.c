@@ -15720,6 +15720,7 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 	int32_t off[AST_EVAL_LADDER_MAXIN];
 	uint32_t *ca = NULL, *cb = NULL;
 	int na = 0, nb = 0, i, verdict = 1;
+	int rta, rtb;
 	int32_t *tin = NULL, *oa = NULL, *ob = NULL;
 	uint64_t code;
 	int ntuple = (int)space;
@@ -15730,6 +15731,10 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 		return -1;
 	for (i = 0; i < n; i++)
 		off[i] = in[i].off;
+	rta = ast_eval_slice_wtype(a, ar);
+	rtb = ast_eval_slice_wtype(b, br);
+	if (!rta || !rtb)
+		return -1;
 	if (!ast_ladder_gpu_emit(a, ar, off, n, &ca, &na))
 		return -1;
 	if (!ast_ladder_gpu_emit(b, br, off, n, &cb, &nb)) {
@@ -15775,7 +15780,7 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 		if (!bdef) {
 			for (i = 0; i < n && i < AST_EVAL_LADDER_MAXIN; i++)
 				res->diff_in[i] = tin[code * n + i];
-			res->diff_a = oa[code * 2];
+			res->diff_a = ast_eval_slice_fit((int64_t)oa[code * 2], rta);
 			res->diff_b = 0;
 			res->diff_b_undef = 1;
 			verdict = 0;
@@ -15785,8 +15790,8 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 		if (oa[code * 2] != ob[code * 2]) {
 			for (i = 0; i < n && i < AST_EVAL_LADDER_MAXIN; i++)
 				res->diff_in[i] = tin[code * n + i];
-			res->diff_a = oa[code * 2];
-			res->diff_b = ob[code * 2];
+			res->diff_a = ast_eval_slice_fit((int64_t)oa[code * 2], rta);
+			res->diff_b = ast_eval_slice_fit((int64_t)ob[code * 2], rtb);
 			res->diff_b_undef = 0;
 			verdict = 0;
 			goto out;
