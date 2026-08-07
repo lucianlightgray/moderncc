@@ -3509,7 +3509,8 @@ if(MCC_BUILD_TESTS)
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/formats"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms"
-                "${CMAKE_CURRENT_SOURCE_DIR}/include")
+                "${CMAKE_CURRENT_SOURCE_DIR}/include"
+                ${Vulkan_INCLUDE_DIRS})
             target_link_libraries(spvgate ${Vulkan_LIBRARIES})
             add_test(NAME "gpu/spv-slice-differential" COMMAND spvgate)
             set_tests_properties("gpu/spv-slice-differential" PROPERTIES
