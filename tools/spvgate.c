@@ -172,10 +172,10 @@ static int gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 
 	int cap = ((ntuple + SPV_LOCAL_SIZE - 1) / SPV_LOCAL_SIZE) * SPV_LOCAL_SIZE;
 	make_buffer((VkDeviceSize)cap * nlive * 4, &bin, &min_, &pin);
-	make_buffer((VkDeviceSize)cap * 4, &bout, &mout, &pout);
+	make_buffer((VkDeviceSize)cap * 2 * 4, &bout, &mout, &pout);
 	memset(pin, 0, (size_t)cap * nlive * 4);
 	memcpy(pin, in, (size_t)ntuple * nlive * 4);
-	memset(pout, 0, (size_t)cap * 4);
+	memset(pout, 0, (size_t)cap * 2 * 4);
 
 	memset(dslb, 0, sizeof dslb);
 	for (i = 0; i < 2; i++) {
@@ -296,7 +296,7 @@ static int gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 	si.pCommandBuffers = &cb;
 	VK(vkQueueSubmit(g_q, 1, &si, fence));
 	VK(vkWaitForFences(g_dev, 1, &fence, VK_TRUE, 10ULL * 1000000000ULL));
-	memcpy(out, pout, (size_t)ntuple * 4);
+	memcpy(out, pout, (size_t)ntuple * 2 * 4);
 	g_dispatches++;
 	g_lanes += ntuple;
 
@@ -460,7 +460,39 @@ static AstLocal b_srem(AstArena *a, const int *o) {
 								VT_INT);
 }
 
+static AstLocal b_divraw(AstArena *a, const int *o) {
+	return mk_bin(a, '/', mk_ref(a, o[0], VT_INT), mk_ref(a, o[1], VT_INT),
+								VT_INT);
+}
+
+static AstLocal b_remraw(AstArena *a, const int *o) {
+	return mk_bin(a, '%', mk_ref(a, o[0], VT_INT), mk_ref(a, o[1], VT_INT),
+								VT_INT);
+}
+
+static AstLocal b_shiftraw(AstArena *a, const int *o) {
+	return mk_bin(a, TOK_SHL, mk_ref(a, o[0], VT_INT), mk_ref(a, o[1], VT_INT),
+								VT_INT);
+}
+
+static AstLocal b_ovf(AstArena *a, const int *o) {
+	return mk_bin(a, '*', mk_ref(a, o[0], VT_INT), mk_ref(a, o[1], VT_INT),
+								VT_INT);
+}
+
+static AstLocal b_ovfadd(AstArena *a, const int *o) {
+	return mk_bin(a, '+',
+								mk_bin(a, '*', mk_ref(a, o[0], VT_INT),
+											 mk_lit(a, 65536, VT_INT), VT_INT),
+								mk_bin(a, '*', mk_ref(a, o[1], VT_INT),
+											 mk_lit(a, 65536, VT_INT), VT_INT),
+								VT_INT);
+}
+
 static const Case CASES[] = {
+		{"divraw", 2, b_divraw},   {"remraw", 2, b_remraw},
+		{"shiftraw", 2, b_shiftraw}, {"ovf", 2, b_ovf},
+		{"ovfadd", 2, b_ovfadd},
 		{"sdiv", 2, b_sdiv},       {"srem", 2, b_srem},
 		{"addmul", 2, b_addmul},   {"shifts", 2, b_shifts},
 		{"divmod", 2, b_divmod},   {"udivmod", 2, b_udivmod},
@@ -614,15 +646,23 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 			continue;
 		}
 		for (t = 0; t < ntuple; t++) {
+			int gdef = g_gout[2 * t + 1] != 0;
+			if ((int)g_def[t] != gdef) {
+				if (!bad && !quiet)
+					printf("  DEFINEDNESS %s w=%d in0=%d cpu=%d gpu=%d\n", label, w,
+								 g_in[(long)t * nlive], (int)g_def[t], gdef);
+				bad++;
+				continue;
+			}
 			if (!g_def[t]) {
 				vac++;
 				continue;
 			}
 			cmp++;
-			if ((int32_t)g_cout[t] != g_gout[t]) {
+			if ((int32_t)g_cout[t] != g_gout[2 * t]) {
 				if (!bad && !quiet)
 					printf("  MISMATCH %s w=%d in0=%d cpu=%d gpu=%d\n", label, w,
-								 g_in[(long)t * nlive], (int)g_cout[t], g_gout[t]);
+								 g_in[(long)t * nlive], (int)g_cout[t], g_gout[2 * t]);
 				bad++;
 			}
 		}
@@ -740,7 +780,7 @@ int main(int argc, char **argv) {
 	int minnodes = 3, quiet = 0;
 	long limit = 0;
 	int32_t *in = malloc(sizeof(int32_t) * MAX_TUPLES * MAX_LIVE);
-	int32_t *gout = malloc(sizeof(int32_t) * MAX_TUPLES);
+	int32_t *gout = malloc(sizeof(int32_t) * MAX_TUPLES * 2);
 	int64_t *cout = malloc(sizeof(int64_t) * MAX_TUPLES);
 	unsigned char *defined = malloc(MAX_TUPLES);
 	g_in = in;
@@ -860,16 +900,27 @@ int main(int argc, char **argv) {
 
 			long bad = 0, cmp = 0, vac = 0;
 			for (t = 0; t < ntuple; t++) {
+				int gdef = gout[2 * t + 1] != 0;
+				if ((int)defined[t] != gdef) {
+					if (bad == 0 && mismatch < 8)
+						printf("  %-8s w=%-2d DEFINEDNESS t=%d in=[%d,%d] cpu=%d gpu=%d "
+									 "raw0=%d raw1=%d ntuple=%d\n",
+									 c->name, w, t, in[(long)t * c->nlive],
+									 in[(long)t * c->nlive + 1], (int)defined[t], gdef,
+									 gout[2 * t], gout[2 * t + 1], ntuple);
+					bad++;
+					continue;
+				}
 				if (!defined[t]) {
 					vac++;
 					continue;
 				}
 				cmp++;
-				if ((int32_t)cout[t] != gout[t]) {
+				if ((int32_t)cout[t] != gout[2 * t]) {
 					if (bad == 0 && mismatch < 8)
 						printf("  %-8s w=%-2d MISMATCH in=[%d,%d] cpu=%d gpu=%d\n", c->name,
 									 w, in[(long)t * c->nlive], in[(long)t * c->nlive + 1],
-									 (int)cout[t], gout[t]);
+									 (int)cout[t], gout[2 * t]);
 					bad++;
 				}
 			}

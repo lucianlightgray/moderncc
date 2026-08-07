@@ -26,6 +26,7 @@ enum {
 	SpvOpShiftRightArithmetic = 195, SpvOpShiftLeftLogical = 196,
 	SpvOpBitwiseOr = 197, SpvOpBitwiseXor = 198, SpvOpBitwiseAnd = 199,
 	SpvOpBitcast = 124,
+	SpvOpLogicalOr = 166, SpvOpLogicalAnd = 167, SpvOpLogicalNot = 168,
 	SpvOpNot = 200, SpvOpPhi = 245, SpvOpSelectionMerge = 247, SpvOpLabel = 248,
 	SpvOpBranch = 249, SpvOpBranchConditional = 250, SpvOpReturn = 253
 };
@@ -56,6 +57,7 @@ typedef struct SpvMod {
 	uint32_t id_rt, id_buf, id_ptr_buf, id_ptr_sb_int;
 	uint32_t id_in, id_out, id_main, id_nlive;
 	uint32_t cur_label;
+	uint32_t def;
 	int32_t cval[SPV_MAX_CONST];
 	uint32_t cid[SPV_MAX_CONST];
 	int ncached;
@@ -152,6 +154,35 @@ static void spv_label_at(SpvMod *m, uint32_t id) {
 	spvw_op(&m->body, SpvOpLabel, 2);
 	spvw_put(&m->body, id);
 	m->cur_label = id;
+}
+
+static uint32_t spv_emit4(SpvMod *m, int opcode, uint32_t rtype, uint32_t a,
+													uint32_t b, uint32_t c) {
+	uint32_t id = spv_id(m);
+	spvw_op(&m->body, opcode, 6);
+	spvw_put(&m->body, rtype);
+	spvw_put(&m->body, id);
+	spvw_put(&m->body, a);
+	spvw_put(&m->body, b);
+	spvw_put(&m->body, c);
+	return id;
+}
+
+static uint32_t spv_true(SpvMod *m) {
+	return spv_emit3(m, SpvOpIEqual, m->id_bool, spv_const(m, 0),
+									 spv_const(m, 0));
+}
+
+static void spv_def_and(SpvMod *m, uint32_t *def, uint32_t ok) {
+	*def = spv_emit3(m, SpvOpLogicalAnd, m->id_bool, *def, ok);
+}
+
+static uint32_t spv_not(SpvMod *m, uint32_t b) {
+	return spv_emit2(m, SpvOpLogicalNot, m->id_bool, b);
+}
+
+static uint32_t spv_or(SpvMod *m, uint32_t a, uint32_t b) {
+	return spv_emit3(m, SpvOpLogicalOr, m->id_bool, a, b);
 }
 
 static uint32_t spv_bool_of(SpvMod *m, uint32_t v) {
@@ -354,20 +385,28 @@ static uint32_t spv_main_begin(SpvMod *m, int nlive) {
 	spvw_put(&m->body, gi);
 	spvw_put(&m->body, gx);
 	spvw_put(&m->body, spv_const(m, 0));
+	m->def = spv_true(m);
 	return spv_emit3(m, SpvOpIMul, m->id_int, gi, spv_const(m, nlive));
 }
 
-static void spv_main_end(SpvMod *m, uint32_t lane, uint32_t val) {
+static void spv_store_at(SpvMod *m, uint32_t idx, uint32_t val) {
 	uint32_t p = spv_id(m);
 	spvw_op(&m->body, SpvOpAccessChain, 6);
 	spvw_put(&m->body, m->id_ptr_sb_int);
 	spvw_put(&m->body, p);
 	spvw_put(&m->body, m->id_out);
 	spvw_put(&m->body, spv_const(m, 0));
-	spvw_put(&m->body, lane);
+	spvw_put(&m->body, idx);
 	spvw_op(&m->body, SpvOpStore, 3);
 	spvw_put(&m->body, p);
 	spvw_put(&m->body, val);
+}
+
+static void spv_main_end(SpvMod *m, uint32_t lane, uint32_t val) {
+	uint32_t two = spv_emit3(m, SpvOpIMul, m->id_int, lane, spv_const(m, 2));
+	uint32_t one = spv_emit3(m, SpvOpIAdd, m->id_int, two, spv_const(m, 1));
+	spv_store_at(m, two, val);
+	spv_store_at(m, one, spv_int_of_bool(m, m->def));
 	spvw_op(&m->body, SpvOpReturn, 1);
 	spvw_op(&m->body, SpvOpFunctionEnd, 1);
 }
@@ -378,6 +417,52 @@ static uint32_t spv_unsigned_binop(SpvMod *m, int opcode, uint32_t a,
 	uint32_t ub = spv_emit2(m, SpvOpBitcast, m->id_uint, b);
 	uint32_t r = spv_emit3(m, opcode, m->id_uint, ua, ub);
 	return spv_emit2(m, SpvOpBitcast, m->id_int, r);
+}
+
+static void spv_def_addsub(SpvMod *m, uint32_t *def, int is_sub, uint32_t a,
+													 uint32_t b, uint32_t r) {
+	uint32_t x = spv_emit3(m, SpvOpBitwiseXor, m->id_int, a, r);
+	uint32_t y = is_sub ? spv_emit3(m, SpvOpBitwiseXor, m->id_int, a, b)
+											: spv_emit3(m, SpvOpBitwiseXor, m->id_int, b, r);
+	uint32_t t = is_sub ? spv_emit3(m, SpvOpBitwiseAnd, m->id_int, y, x)
+											: spv_emit3(m, SpvOpBitwiseAnd, m->id_int, x, y);
+	spv_def_and(m, def,
+							spv_emit3(m, SpvOpSGreaterThanEqual, m->id_bool, t,
+												spv_const(m, 0)));
+}
+
+static void spv_def_mul(SpvMod *m, uint32_t *def, uint32_t a, uint32_t b,
+												uint32_t r) {
+	uint32_t azero = spv_emit3(m, SpvOpIEqual, m->id_bool, a, spv_const(m, 0));
+	uint32_t denom =
+			spv_emit4(m, SpvOpSelect, m->id_int, azero, spv_const(m, 1), a);
+	uint32_t q = spv_emit3(m, SpvOpSDiv, m->id_int, r, denom);
+	uint32_t good = spv_emit3(m, SpvOpIEqual, m->id_bool, q, b);
+	spv_def_and(m, def, spv_or(m, azero, good));
+}
+
+static uint32_t spv_guard_div(SpvMod *m, uint32_t *def, int uns, uint32_t a,
+															uint32_t b) {
+	uint32_t bad = spv_emit3(m, SpvOpIEqual, m->id_bool, b, spv_const(m, 0));
+	if (!uns) {
+		uint32_t amin = spv_emit3(m, SpvOpIEqual, m->id_bool, a,
+															spv_const(m, (int32_t)0x80000000));
+		uint32_t bneg =
+				spv_emit3(m, SpvOpIEqual, m->id_bool, b, spv_const(m, -1));
+		bad = spv_or(m, bad,
+								 spv_emit3(m, SpvOpLogicalAnd, m->id_bool, amin, bneg));
+	}
+	spv_def_and(m, def, spv_not(m, bad));
+	return spv_emit4(m, SpvOpSelect, m->id_int, bad, spv_const(m, 1), b);
+}
+
+static uint32_t spv_guard_shift(SpvMod *m, uint32_t *def, uint32_t b) {
+	uint32_t lo = spv_emit3(m, SpvOpSLessThan, m->id_bool, b, spv_const(m, 0));
+	uint32_t hi =
+			spv_emit3(m, SpvOpSGreaterThanEqual, m->id_bool, b, spv_const(m, 32));
+	uint32_t bad = spv_or(m, lo, hi);
+	spv_def_and(m, def, spv_not(m, bad));
+	return spv_emit4(m, SpvOpSelect, m->id_int, bad, spv_const(m, 0), b);
 }
 
 static uint32_t spv_signed_rem(SpvMod *m, uint32_t a, uint32_t b) {
@@ -451,18 +536,23 @@ static int spv_branch_pair(SpvMod *m, AstArena *a, AstLocal cn, AstLocal tn,
 	spvw_put(&m->body, l_then);
 	spvw_put(&m->body, l_else);
 
+	uint32_t def_in = m->def;
 	spv_label_at(m, l_then);
+	m->def = def_in;
 	uint32_t tv;
 	if (!spv_expr(m, a, tn, off, nenv, base, &tv))
 		return 0;
+	uint32_t def_then = m->def;
 	uint32_t from_then = m->cur_label;
 	spvw_op(&m->body, SpvOpBranch, 2);
 	spvw_put(&m->body, l_merge);
 
 	spv_label_at(m, l_else);
+	m->def = def_in;
 	uint32_t ev;
 	if (!spv_expr(m, a, en, off, nenv, base, &ev))
 		return 0;
+	uint32_t def_else = m->def;
 	uint32_t from_else = m->cur_label;
 	spvw_op(&m->body, SpvOpBranch, 2);
 	spvw_put(&m->body, l_merge);
@@ -476,6 +566,15 @@ static int spv_branch_pair(SpvMod *m, AstArena *a, AstLocal cn, AstLocal tn,
 	spvw_put(&m->body, from_then);
 	spvw_put(&m->body, ev);
 	spvw_put(&m->body, from_else);
+	uint32_t dphi = spv_id(m);
+	spvw_op(&m->body, SpvOpPhi, 7);
+	spvw_put(&m->body, m->id_bool);
+	spvw_put(&m->body, dphi);
+	spvw_put(&m->body, def_then);
+	spvw_put(&m->body, from_then);
+	spvw_put(&m->body, def_else);
+	spvw_put(&m->body, from_else);
+	m->def = dphi;
 	*out = phi;
 	return 1;
 }
@@ -501,16 +600,21 @@ static int spv_logical(SpvMod *m, AstArena *a, AstLocal n, int want,
 	spvw_put(&m->body, want ? l_cont : l_stop);
 	spvw_put(&m->body, want ? l_stop : l_cont);
 
+	uint32_t ldef_in = m->def;
 	spv_label_at(m, l_cont);
+	m->def = ldef_in;
 	uint32_t rest;
 	if (!spv_logical(m, a, n, want, off, nenv, base, &rest, k + 1))
 		return 0;
+	uint32_t def_cont = m->def;
 	uint32_t from_cont = m->cur_label;
 	spvw_op(&m->body, SpvOpBranch, 2);
 	spvw_put(&m->body, l_merge);
 
 	spv_label_at(m, l_stop);
+	m->def = ldef_in;
 	uint32_t stopv = spv_const(m, want ? 0 : 1);
+	uint32_t def_stop = m->def;
 	uint32_t from_stop = m->cur_label;
 	spvw_op(&m->body, SpvOpBranch, 2);
 	spvw_put(&m->body, l_merge);
@@ -524,6 +628,15 @@ static int spv_logical(SpvMod *m, AstArena *a, AstLocal n, int want,
 	spvw_put(&m->body, from_cont);
 	spvw_put(&m->body, stopv);
 	spvw_put(&m->body, from_stop);
+	uint32_t ldphi = spv_id(m);
+	spvw_op(&m->body, SpvOpPhi, 7);
+	spvw_put(&m->body, m->id_bool);
+	spvw_put(&m->body, ldphi);
+	spvw_put(&m->body, def_cont);
+	spvw_put(&m->body, from_cont);
+	spvw_put(&m->body, def_stop);
+	spvw_put(&m->body, from_stop);
+	m->def = ldphi;
 	*out = phi;
 	return 1;
 }
@@ -615,7 +728,13 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			*out = spv_fit(m, spv_emit2(m, SpvOpNot, m->id_int, v), t);
 			return 1;
 		}
-		*out = spv_emit2(m, SpvOpSNegate, m->id_int, v);
+		{
+			uint32_t z = spv_const(m, 0);
+			uint32_t r = spv_emit3(m, SpvOpISub, m->id_int, z, v);
+			if (!((t & VT_UNSIGNED) != 0))
+				spv_def_addsub(m, &m->def, 1, z, v, r);
+			*out = r;
+		}
 		return 1;
 	}
 	case AST_Binary: {
@@ -645,14 +764,33 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			return 1;
 		}
 		if (code == SpvOpUDiv || code == SpvOpUMod) {
-			*out = spv_unsigned_binop(m, code, lv, rv);
+			uint32_t d = spv_guard_div(m, &m->def, 1, lv, rv);
+			*out = spv_unsigned_binop(m, code, lv, d);
 			return 1;
 		}
 		if (code == SpvOpSRem) {
-			*out = spv_signed_rem(m, lv, rv);
+			uint32_t d = spv_guard_div(m, &m->def, 0, lv, rv);
+			*out = spv_signed_rem(m, lv, d);
+			return 1;
+		}
+		if (code == SpvOpSDiv) {
+			uint32_t d = spv_guard_div(m, &m->def, 0, lv, rv);
+			*out = spv_emit3(m, code, m->id_int, lv, d);
+			return 1;
+		}
+		if (code == SpvOpShiftLeftLogical || code == SpvOpShiftRightLogical ||
+				code == SpvOpShiftRightArithmetic) {
+			uint32_t sh = spv_guard_shift(m, &m->def, rv);
+			*out = spv_emit3(m, code, m->id_int, lv, sh);
 			return 1;
 		}
 		*out = spv_emit3(m, code, m->id_int, lv, rv);
+		if (!uns && code == SpvOpIAdd)
+			spv_def_addsub(m, &m->def, 0, lv, rv, *out);
+		else if (!uns && code == SpvOpISub)
+			spv_def_addsub(m, &m->def, 1, lv, rv, *out);
+		else if (!uns && code == SpvOpIMul)
+			spv_def_mul(m, &m->def, lv, rv, *out);
 		return 1;
 	}
 	case AST_If: {
