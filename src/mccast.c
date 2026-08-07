@@ -16141,10 +16141,18 @@ static int ast_ladder_widx(int w) { MCC_TRACE("enter\n");
 }
 
 static double ast_ladder_now(void) { MCC_TRACE("enter\n");
+#ifdef _WIN32
+	LARGE_INTEGER freq, cnt;
+	if (!QueryPerformanceFrequency(&freq) || freq.QuadPart == 0)
+		{ MCC_TRACE("br\n"); return 0.0; }
+	QueryPerformanceCounter(&cnt);
+	return (double)cnt.QuadPart / (double)freq.QuadPart;
+#else
 	struct timespec ts;
 	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
 		{ MCC_TRACE("br\n"); return 0.0; }
 	return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+#endif
 }
 
 static void ast_ladder_tally(AstLadderStat *st, const AstEvalLadderRes *r,
