@@ -109,6 +109,11 @@ struct AstArena {
 
 	uint64_t *wide_hi;
 	uint16_t *wide_r2;
+	uint8_t *st_have;
+	int32_t *st_t;
+	uint64_t *st_ref;
+	uint8_t *st_bp;
+	uint8_t *st_bs;
 
 	AstLocal count;
 	AstLocal cap;
@@ -145,6 +150,20 @@ static void ast_grow(AstArena *a, AstLocal need) { MCC_TRACE("enter\n");
 		for (AstLocal i = ocap; i < ncap; i++) { MCC_TRACE("br\n");
 			a->wide_hi[i] = 0;
 			a->wide_r2[i] = AST_R2_NONE;
+		}
+	}
+	if (a->st_have) { MCC_TRACE("br\n");
+		a->st_have = realloc(a->st_have, ncap * sizeof *a->st_have);
+		a->st_t = realloc(a->st_t, ncap * sizeof *a->st_t);
+		a->st_ref = realloc(a->st_ref, ncap * sizeof *a->st_ref);
+		a->st_bp = realloc(a->st_bp, ncap * sizeof *a->st_bp);
+		a->st_bs = realloc(a->st_bs, ncap * sizeof *a->st_bs);
+		for (AstLocal i = ocap; i < ncap; i++) { MCC_TRACE("br\n");
+			a->st_have[i] = 0;
+			a->st_t[i] = 0;
+			a->st_ref[i] = 0;
+			a->st_bp[i] = 0;
+			a->st_bs[i] = 0;
 		}
 	}
 	a->cap = ncap;
@@ -236,6 +255,11 @@ void ast_arena_free(AstArena *a) { MCC_TRACE("enter\n");
 	free(a->sym);
 	free(a->wide_hi);
 	free(a->wide_r2);
+	free(a->st_have);
+	free(a->st_t);
+	free(a->st_ref);
+	free(a->st_bp);
+	free(a->st_bs);
 	free(a);
 }
 
@@ -268,6 +292,13 @@ AstArena *ast_arena_clone(const AstArena *src) { MCC_TRACE("enter\n");
 	if (src->wide_hi) { MCC_TRACE("br\n");
 		AST_DUP(wide_hi);
 		AST_DUP(wide_r2);
+	}
+	if (src->st_have) { MCC_TRACE("br\n");
+		AST_DUP(st_have);
+		AST_DUP(st_t);
+		AST_DUP(st_ref);
+		AST_DUP(st_bp);
+		AST_DUP(st_bs);
 	}
 #undef AST_DUP
 	return a;
@@ -327,6 +358,13 @@ AstArena *ast_slice_extract(const AstArena *src, AstLocal root) { MCC_TRACE("ent
 		AST_SLICE_ALLOC(wide_hi);
 		AST_SLICE_ALLOC(wide_r2);
 	}
+	if (src->st_have) { MCC_TRACE("br\n");
+		AST_SLICE_ALLOC(st_have);
+		AST_SLICE_ALLOC(st_t);
+		AST_SLICE_ALLOC(st_ref);
+		AST_SLICE_ALLOC(st_bp);
+		AST_SLICE_ALLOC(st_bs);
+	}
 #undef AST_SLICE_ALLOC
 	if (!a->kind || !a->parent || !a->first_child || !a->last_child ||
 			!a->next_sib || !a->nchild || !a->op || !a->type_t || !a->type_bp ||
@@ -359,6 +397,13 @@ AstArena *ast_slice_extract(const AstArena *src, AstLocal root) { MCC_TRACE("ent
 			a->wide_hi[i] = src->wide_hi[s];
 			a->wide_r2[i] = src->wide_r2[s];
 		}
+		if (src->st_have && a->st_have) { MCC_TRACE("br\n");
+			a->st_have[i] = src->st_have[s];
+			a->st_t[i] = src->st_t[s];
+			a->st_ref[i] = src->st_ref[s];
+			a->st_bp[i] = src->st_bp[s];
+			a->st_bs[i] = src->st_bs[s];
+		}
 	}
 #undef AST_SLICE_LINK
 	free(map);
@@ -387,6 +432,13 @@ AstLocal ast_node(AstArena *a, uint16_t kind) { MCC_TRACE("enter\n");
 	if (a->wide_hi) { MCC_TRACE("br\n");
 		a->wide_hi[n] = 0;
 		a->wide_r2[n] = AST_R2_NONE;
+	}
+	if (a->st_have) { MCC_TRACE("br\n");
+		a->st_have[n] = 0;
+		a->st_t[n] = 0;
+		a->st_ref[n] = 0;
+		a->st_bp[n] = 0;
+		a->st_bs[n] = 0;
 	}
 	a->epoch++;
 	return n;
@@ -468,6 +520,9 @@ void ast_copy_type(AstArena *a, AstLocal n, const AstArena *src, AstLocal m) { M
 	a->type_bp[n] = src->type_bp[m];
 	a->type_bs[n] = src->type_bs[m];
 	a->type_ref[n] = src->type_ref[m];
+	if (src->st_have && src->st_have[m])
+		{ MCC_TRACE("br\n"); ast_set_stype(a, n, src->st_t[m], src->st_ref[m],
+																				src->st_bp[m], src->st_bs[m]); }
 }
 void ast_set_ival(AstArena *a, AstLocal n, uint64_t v) { MCC_TRACE("enter\n");
 	a->epoch++;
@@ -489,6 +544,47 @@ int ast_op(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 }
 int ast_type_t(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return a->type_t[n];
+}
+int ast_stype_known(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	return a->type_t[n] != 0 || (a->st_have && a->st_have[n]);
+}
+int ast_stype_t(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	if (a->type_t[n])
+		{ MCC_TRACE("br\n"); return a->type_t[n]; }
+	return a->st_have ? a->st_t[n] : 0;
+}
+uint64_t ast_stype_ref(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	if (a->type_t[n])
+		{ MCC_TRACE("br\n"); return a->type_ref[n]; }
+	return a->st_have ? a->st_ref[n] : 0;
+}
+unsigned ast_stype_bp(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	if (a->type_t[n])
+		{ MCC_TRACE("br\n"); return a->type_bp[n]; }
+	return a->st_have ? a->st_bp[n] : 0;
+}
+unsigned ast_stype_bs(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	if (a->type_t[n])
+		{ MCC_TRACE("br\n"); return a->type_bs[n]; }
+	return a->st_have ? a->st_bs[n] : 0;
+}
+void ast_set_stype(AstArena *a, AstLocal n, int t, uint64_t ref, unsigned bp,
+									 unsigned bs) { MCC_TRACE("enter\n");
+	if (!a->st_have) { MCC_TRACE("br\n");
+		AstLocal cap = a->cap ? a->cap : 1;
+		a->st_have = calloc(cap, sizeof *a->st_have);
+		a->st_t = calloc(cap, sizeof *a->st_t);
+		a->st_ref = calloc(cap, sizeof *a->st_ref);
+		a->st_bp = calloc(cap, sizeof *a->st_bp);
+		a->st_bs = calloc(cap, sizeof *a->st_bs);
+		if (!a->st_have || !a->st_t || !a->st_ref || !a->st_bp || !a->st_bs)
+			{ MCC_TRACE("br\n"); return; }
+	}
+	a->st_have[n] = 1;
+	a->st_t[n] = t;
+	a->st_ref[n] = ref;
+	a->st_bp[n] = (uint8_t)((t & VT_BITFIELD) ? bp : 0);
+	a->st_bs[n] = (uint8_t)((t & VT_BITFIELD) ? bs : 0);
 }
 uint64_t ast_type_ref(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return a->type_ref[n];
@@ -2865,7 +2961,7 @@ static int ast_low_base_ptr(const AstArena *a, AstLocal n, int depth) { MCC_TRAC
 	int t;
 	if (n == AST_NONE || depth > 8)
 		{ MCC_TRACE("br\n"); return 0; }
-	t = ast_type_t(a, n);
+	t = ast_stype_t(a, n);
 	if (t)
 		{ MCC_TRACE("br\n"); return ast_low_ptrish(t) || (t & VT_BTYPE) == VT_STRUCT; }
 	k = ast_kind(a, n);
@@ -2898,7 +2994,7 @@ static int ast_low_op_opaque(int op) { MCC_TRACE("enter\n");
 }
 
 static int ast_low_node(const AstArena *a, AstLocal n, int pinned, int lvl) { MCC_TRACE("enter\n");
-	int op = ast_op(a, n), t = ast_type_t(a, n);
+	int op = ast_op(a, n), t = ast_stype_t(a, n);
 	uint16_t k = ast_kind(a, n);
 	AstLocal c;
 	if (ast_op_is_asm(op))
@@ -2943,6 +3039,14 @@ static int ast_low_node(const AstArena *a, AstLocal n, int pinned, int lvl) { MC
 
 static const char *ast_low_dump_fn;
 
+static long ast_low_kn[AST_KIND_COUNT];
+static long ast_low_ku[AST_KIND_COUNT];
+static long ast_low_kv[AST_KIND_COUNT];
+
+const long *ast_low_kind_n(void) { MCC_TRACE("enter\n"); return ast_low_kn; }
+const long *ast_low_kind_untyped(void) { MCC_TRACE("enter\n"); return ast_low_ku; }
+const long *ast_low_kind_void(void) { MCC_TRACE("enter\n"); return ast_low_kv; }
+
 static int ast_low_walk(const AstArena *a, AstLocal n, int pinned, int depth,
 												long *nodes, long *clean, long *why,
 												unsigned char *cl, uint32_t *sz) { MCC_TRACE("enter\n");
@@ -2950,6 +3054,18 @@ static int ast_low_walk(const AstArena *a, AstLocal n, int pinned, int depth,
 	uint32_t size = 1;
 	AstLocal c;
 	(*nodes)++;
+	{ MCC_TRACE("br\n");
+		uint16_t kk = ast_kind(a, n);
+		if (kk < AST_KIND_COUNT) { MCC_TRACE("br\n");
+			ast_low_kn[kk]++;
+			if (!ast_stype_t(a, n)) { MCC_TRACE("br\n");
+				if (ast_stype_known(a, n))
+					{ MCC_TRACE("br\n"); ast_low_kv[kk]++; }
+				else
+					{ MCC_TRACE("br\n"); ast_low_ku[kk]++; }
+			}
+		}
+	}
 	for (i = 0; i < RIR_LOW_NLEVEL; i++) { MCC_TRACE("br\n");
 		int r = ast_low_node(a, n, pinned, i);
 		ok[i] = r == AST_LOW_OK;
@@ -2959,7 +3075,7 @@ static int ast_low_walk(const AstArena *a, AstLocal n, int pinned, int depth,
 	if (ast_low_dump_fn) { MCC_TRACE("br\n");
 		fprintf(stderr, "[rir-low-node] %*s%-11s op=%#x t=%#x -> %s\n", depth * 2, "",
 						ast_kind_name(ast_kind(a, n)), (unsigned)ast_op(a, n),
-						(unsigned)ast_type_t(a, n), ast_low_class_name[me]);
+						(unsigned)ast_stype_t(a, n), ast_low_class_name[me]);
 	}
 	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c)) { MCC_TRACE("br\n");
 		int sub = ast_low_walk(a, c, pinned, depth + 1, nodes, clean, why, cl, sz);
@@ -3008,7 +3124,7 @@ static void ast_low_census(const AstArena *a) { MCC_TRACE("enter\n");
 	}
 	dm = getenv("MCC_RIR_LOW_DUMP");
 	ast_low_dump_fn =
-			(dm && funcname && !strcmp(dm, funcname)) ? funcname : NULL;
+			(dm && funcname && (!strcmp(dm, "*") || !strcmp(dm, funcname))) ? funcname : NULL;
 	if (ast_low_dump_fn)
 		{ MCC_TRACE("br\n"); fprintf(stderr, "[rir-low-dump] %s pinned=%d\n", funcname, pinned); }
 	for (n = 0; n < nn; n++)

@@ -66,6 +66,13 @@ unsigned ast_wide_r2(const AstArena *a, AstLocal n);
 uint16_t ast_kind(const AstArena *a, AstLocal n);
 int ast_op(const AstArena *a, AstLocal n);
 int ast_type_t(const AstArena *a, AstLocal n);
+int ast_stype_known(const AstArena *a, AstLocal n);
+int ast_stype_t(const AstArena *a, AstLocal n);
+uint64_t ast_stype_ref(const AstArena *a, AstLocal n);
+unsigned ast_stype_bp(const AstArena *a, AstLocal n);
+unsigned ast_stype_bs(const AstArena *a, AstLocal n);
+void ast_set_stype(AstArena *a, AstLocal n, int t, uint64_t ref, unsigned bp,
+									 unsigned bs);
 uint64_t ast_type_ref(const AstArena *a, AstLocal n);
 unsigned ast_type_bp(const AstArena *a, AstLocal n);
 unsigned ast_type_bs(const AstArena *a, AstLocal n);
@@ -85,6 +92,9 @@ AstLocal ast_root(const AstArena *a);
 int ast_arena_has_asm(const AstArena *a);
 
 const char *ast_kind_name(uint16_t kind);
+const long *ast_low_kind_n(void);
+const long *ast_low_kind_untyped(void);
+const long *ast_low_kind_void(void);
 size_t ast_dump(const AstArena *a, AstLocal root, char *out, size_t cap);
 int ast_validate(const AstArena *a, char *msg, size_t msgcap);
 uint64_t ast_intention_hash(const AstArena *a, AstLocal root);

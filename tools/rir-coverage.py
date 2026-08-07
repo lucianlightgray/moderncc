@@ -49,7 +49,9 @@ counts as lowerable only when we are sure. Every node gets exactly one class:
           ACASRMW, BITB) and the complex builders (CPLXBUILD, IMAG)
   call    AST_Invoke.  Slices are the code BETWEEN anonymous invokes, so an
           invoke inside a region ends it by definition
-  type    not type-complete: ast_bad_type() (struct, bitfield, long double,
+  type    not type-complete (see MCC_RIR_STAMP below: the class is computed
+          over ast_stype_t, the static type, not over the emitter's type_t):
+          ast_bad_type() (struct, bitfield, long double,
           __int128, _Float128), a Convert with no operand, or a dereference
           (Load / Store / MEMBER / MEMBER_ARROW) whose address operand does
           not derive from any node with a recorded pointer/array/struct type.
@@ -83,9 +85,18 @@ is a buffer binding to be resolved at the region boundary, not a frame
 dependency.
 
 Compiler side: MCC_RIR_PROD=2 (or MCC_RIR_LOW=1) emits `[rir-low]` and
-`[rir-low-why]` aggregates.  MCC_RIR_LOW_DUMP=<func> prints the per-node
-classification of one body.  Only percentages are banked, never totals: the
-census body total is not stable run to run at fixed HEAD.
+`[rir-low-why]` aggregates, plus `[rir-untyped]` / `[rir-untyped-kind]`: how
+many arena nodes carry no static type at all, split into genuinely unknown and
+explicitly void, per node kind.  MCC_RIR_LOW_DUMP=<func> prints the per-node
+classification of one body, or of every body when it is `*`.  Only percentages
+are banked, never totals: the census body total is not stable run to run at
+fixed HEAD.
+
+MCC_RIR_STAMP=1 makes rir_to_arena record, for every node, the static CType of
+the value that node produces, in a shadow view the emitter never reads
+(ast_stype_*); MCC_RIR_STAMP=2 additionally derives the types the vstack never
+witnessed.  Default off.  The census reads the shadow view, so the toggle moves
+the lowerable numbers without moving a single emitted byte.
 
 The compiler side is `MCC_RIR_PROD=2` (see src/mccrir.c rir_prod_note): one
 tab-separated row per body

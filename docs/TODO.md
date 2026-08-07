@@ -177,14 +177,110 @@ at `-O2` (temporarily relabelling them, then reverting):
 
 The deref clause barely moved even though **every** `abort` in the corpus was fixed,
 because the lost cast was never what dominated it. The real cause is that the arena is
-**type-sparse**: gate `ast_low_node()` on `ast_type_t(a, n) != 0` alone and **36.151% of
+**type-sparse**: gate `ast_low_node()` on the node's static type alone and **35.6% of
 arena nodes carry no static type at all**, in 100% of bodies. `ast_low_base_ptr()` is a
-depth-8 search *around* that hole. So type-completeness in the strong sense — the sense a
-shader generator needs, where every value's width and signedness is known exactly — is not
-a cast-node property. It needs every arena node to carry a `CType`, which is a schema
-change to `AstArena` (`type_t`/`type_ref`/`type_bp`/`type_bs` are already there and simply
-unset on most nodes) plus a stamping discipline in `rir_to_arena` for `Binary`, `Unary`,
-`Load` and `Store`. **That is the next tractable target**, and it is bigger than a hook.
+depth-8 search *around* that hole.
+
+### Closing the hole — `MCC_RIR_STAMP`, 2026-08-06
+
+`rir_to_arena` now stamps every node with the static `CType` of the value it produces.
+Untyped share on the self corpus, `-O0`/`-O1`/`-O2`/`-O3`, 407,913 nodes:
+
+| | unknown | explicitly void |
+| --- | --- | --- |
+| `MCC_RIR_STAMP=0` (default) | 35.570% / 35.598% | 0 |
+| `MCC_RIR_STAMP=1` observed only | 17.618% | 3.574% |
+| `MCC_RIR_STAMP=2` observed + derived | **0.010%** (42 nodes) | 14.95% |
+
+`=1` alone leaves every value-producing node typed but nothing else: what remains at that
+level is `Store` 21,044, `BasicBlock` 19,127, `If` 12,625, `Invoke` 8,809, `Jump` 5,392,
+`Return` 4,707 — statements and void calls, all of which `=2` resolves structurally.
+Value nodes are already done at `=1`: `Binary` 88, `Load` 67, `Unary` 8, `Ref`/`Literal`/
+`Convert`/`StoreVal` 0.
+
+Three channels, all in `src/mccrir.c`:
+
+1. **Observed** — `rir_stamp_deep()` runs at the head of `rir_stamp_sv()` and, for every
+   shadow-stack slot holding a still-untyped node, defers `(node, kind, CType)` from the
+   parser's own `SValue`. `rir_stamp_flush()` replays the log at the end of
+   `rir_to_arena()`, first observation wins. This is the parser's answer, not a re-derivation.
+2. **Leaves** — `rir_leaf_slot()` stamps at creation, which is the only way to reach the
+   14,485 dead unparented `VT_CONST` `Literal`s (3.6% of the whole arena!) that the vstack
+   refill in `rir_reconcile_sv()` creates at slot 0 and nothing ever consumes.
+3. **Derived** (`=2` only) — `rir_stamp_derive()`: pointer arithmetic (`Binary +`/`-` with a
+   pointer operand), dereference (`Load` of a `VT_PTR`), `Store`/`StoreVal`/`Return` from
+   their operand, `Invoke` from the callee `Sym`'s return type, and control nodes
+   (`BasicBlock`, `If`, `Jump`) as explicitly void.
+
+**`VT_VOID` is `0`, so "void" and "unset" are the same bit pattern** in `type_t`. A shader
+generator must tell "this node yields nothing" from "we do not know what this node yields",
+so the stamp carries its own `st_have` bit. 14.95% of the arena is genuinely void:
+19,127 `BasicBlock` + 12,626 `If` + 5,392 `Jump` + 14,485 dead literals + 8,732 `void`
+calls + 562 `void` returns.
+
+**What is still unknown is 42 nodes**: 34 `Binary` whose result the vstack never witnessed
+(folded address arithmetic retained as a child) and 8 `Unary` inline-asm ops, which have no
+C type by construction.
+
+The wide corpus agrees and is a wider sample of C: 1,052,863 nodes at `-O2`, **29.442% →
+0.014%** unknown (151 nodes — 107 inline-asm `Unary`, 44 `Binary`), 12.890% explicitly void.
+
+**The stamp does NOT live in `type_t`, and that is the load-bearing finding.** The first
+implementation wrote the observed types straight into `type_t`/`type_ref`/`type_bp`/`type_bs`
+— the columns that were "already there and simply unset". With the toggle on that
+**miscompiled**: `exec/cast_operator`, `exec/complex`, `exec/integer_promotion`,
+`exec/lex_extras`, `fuzz/smoke` and both `selfhost-output-parity` cells failed, `__va_arg_inline`
+started aborting the replay with `invalid operand types for binary operation`, and `kept`
+fell 96.0% → 93.0%. `type_t` is not a *description* of the node, it is the **emitter's own
+input**: `ast_replay_*` and every AST strategy pass read it, and they were all written
+against an arena where `t == 0` means "leave this alone". Adding true facts to that column
+changes what the compiler emits.
+
+So the static type is a **second, parallel view**: `st_have`/`st_t`/`st_ref`/`st_bp`/`st_bs`,
+lazily allocated exactly like `wide_hi`/`wide_r2`, read through `ast_stype_t()` /
+`ast_stype_ref()` / `ast_stype_bp()` / `ast_stype_bs()` / `ast_stype_known()`, which fall
+back to `type_t` when it is set. Nothing in the emitter reads them. `ast_low_node()` and
+`ast_low_base_ptr()` do. Result: **`src/mcc.c` objects are byte-identical with the toggle
+on and off at all four levels**, and the whole 8845-cell suite is green with
+`MCC_RIR_STAMP=2` except the two census ratchets, which move by design.
+
+### What type-completeness costs the lowerable census — it is worse, and that is the point
+
+Same binary, same corpus (2631 bodies, 407,913 nodes), level-1 (default) locals:
+
+| | `-O0` | `-O1` | `-O2`/`-O3` |
+| --- | --- | --- | --- |
+| whole bodies lowerable | 9.205% → **7.684%** | 9.236% → **7.678%** | 9.236% → **7.678%** |
+| of modelled body bytes | 2.257% → **1.572%** | 2.278% → **1.559%** | 2.186% → **1.528%** |
+| nodes in a maximal region | 41.755% → 41.432% | 41.747% → 41.424% | 41.747% → 41.424% |
+| nodes in regions ≥16 | 5.014% → 4.075% | 5.018% → 4.078% | 5.018% → 4.078% |
+| `type` nodes_pct | 1.518% → **2.313%** | 1.519% → **2.315%** | 1.519% → **2.315%** |
+| `type` sole_bytes_pct | 0.377% → **1.062%** | 0.416% → **1.135%** | 0.367% → **1.025%** |
+| `type` bytes blocked | 62.234% → 74.537% | 62.178% → 74.538% | 61.297% → 73.717% |
+| `frame` sole_bytes_pct | 0.256% → 0.025% | 0.257% → 0.025% | 0.249% → 0.026% |
+| `global` sole_bytes_pct | 1.224% → 0.799% | 1.226% → 0.801% | 1.242% → 0.805% |
+
+**The census was flattered by the hole.** `ast_bad_type(0)` is false, so an untyped node
+scored `ok` — the predicate said "lowerable" about values whose width and signedness it did
+not know. With the hole closed, 0.80% of all arena nodes turn out to carry a type no shader
+can represent (struct, bitfield, `long double`, `__int128`), `type` overtakes `frame` and
+`global` as a sole blocker, and 1.56 points of "lowerable bodies" evaporate. The equivalence
+oracle could never have run on the 9.2% figure; 7.68% is the number that was always true.
+
+Byte coverage is unmoved by the toggle at every level (100.000% / 100.000% / 99.965% /
+99.965%, gap 0 / 0 / 467 B / 467 B), which is the proof that the two views are independent.
+
+**Cost.** Compile time for `src/mcc.c`, best of 3, two independent runs: `-O0` −1.8%..−1.0%,
+`-O1` +1.7%..+2.6%, `-O2` +2.0%, `-O3` +0.4%..+1.8% — at the noise floor. Peak RSS: `-O0`
++0.6%/−0.2%, `-O2` +2.0%/+1.6% at `=1`/`=2`. The five shadow columns are 15 B/node and are
+`calloc`ed only on the first `ast_set_stype()`, so with the toggle off they cost one NULL
+test per query and nothing else.
+
+**Next.** The `type` class is now dominated by `ast_bad_type()` — aggregates and the
+non-portable scalars — not by missing information. Splitting a struct-typed value into its
+scalar fields, or admitting fixed-layout aggregates into the shader ABI, is what moves it
+now. `ast_low_base_ptr()`'s depth-8 search is dead weight under `MCC_RIR_STAMP=2` and can be
+deleted once the toggle becomes the default.
 
 **The `VT_LOCAL` rule is the one genuinely open question** (a local's `ival` is the
 parser's own frame offset), so it is a level and all three are measured in one walk:

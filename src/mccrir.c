@@ -212,6 +212,7 @@ static int rir_stackn;
 static int rir_unbal;
 static int rir_ovf;
 static int rir_prod_bail;
+static int rir_stamp_env;
 static int rir_fail_op, rir_fail_kind;
 static int *rir_jlbl, *rir_jlbl2, *rir_jpt;
 static int rir_jcap;
@@ -1234,6 +1235,9 @@ static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
 	int is_const = (sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	AstLocal n = ast_node(rir_arena, is_const ? AST_Literal : AST_Ref);
 	int prov = rir_prov_ok(slot, sv);
+	if (rir_stamp_env)
+		ast_set_stype(rir_arena, n, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref,
+									sv->type.bp, sv->type.bs);
 	ast_set_op(rir_arena, n, sv->r);
 	if (rir_decayed_array(sv))
 		ast_set_type_bf(rir_arena, n, sv->type.t | VT_ARRAY,
@@ -2006,11 +2010,178 @@ static int rir_lval_shape(AstLocal n) {
 	return 0;
 }
 
+typedef struct RirStamp {
+	AstLocal n;
+	uint16_t kind;
+	int t;
+	uint64_t ref;
+	unsigned char bp, bs;
+} RirStamp;
+
+static RirStamp *rir_stampv;
+static int rir_stampn, rir_stampcap;
+
+static void rir_stamp_defer(AstLocal n, const CType *ct) {
+	RirStamp *s;
+	if (n == AST_NONE)
+		return;
+	if (ast_stype_known(rir_arena, n))
+		return;
+	if (rir_stampn >= rir_stampcap) {
+		rir_stampcap = rir_stampcap ? rir_stampcap * 2 : 256;
+		rir_stampv =
+				mcc_realloc(rir_stampv, (size_t)rir_stampcap * sizeof *rir_stampv);
+	}
+	s = &rir_stampv[rir_stampn++];
+	s->n = n;
+	s->kind = ast_kind(rir_arena, n);
+	s->t = ct->t;
+	s->ref = (uint64_t)(uintptr_t)ct->ref;
+	s->bp = (unsigned char)ct->bp;
+	s->bs = (unsigned char)ct->bs;
+}
+
+static void rir_stamp_deep(const SValue *base, int n) {
+	int k, want;
+	if (n < 0)
+		return;
+	want = n - rir_base_depth;
+	for (k = 0; k < rir_shn && k < want; k++) {
+		AstLocal cur = rir_sh[k];
+		if (cur == AST_NONE || rir_shtype[k])
+			continue;
+		rir_stamp_defer(cur, &base[rir_base_depth + k].type);
+	}
+}
+
+static void rir_stamp_ptr_arith(AstLocal n) {
+	AstLocal c;
+	int op = ast_op(rir_arena, n);
+	if (op != '+' && op != '-')
+		return;
+	for (c = ast_first_child(rir_arena, n); c != AST_NONE;
+			 c = ast_next_sib(rir_arena, c)) {
+		int ct = ast_stype_t(rir_arena, c);
+		if ((ct & VT_BTYPE) != VT_PTR)
+			continue;
+		if (ct & VT_VLA)
+			continue;
+		ast_set_stype(rir_arena, n, ct & ~(int)VT_ARRAY,
+									ast_stype_ref(rir_arena, c), 0, 0);
+		return;
+	}
+}
+
+static void rir_stamp_deref(AstLocal n) {
+	AstLocal c = ast_first_child(rir_arena, n);
+	const Sym *ps;
+	int ct;
+	if (c == AST_NONE)
+		return;
+	ct = ast_stype_t(rir_arena, c);
+	if ((ct & (VT_BTYPE | VT_ARRAY | VT_VLA)) != VT_PTR)
+		return;
+	ps = (const Sym *)(uintptr_t)ast_stype_ref(rir_arena, c);
+	if (!ps || !ps->type.t)
+		return;
+	ast_set_stype(rir_arena, n, ps->type.t, (uint64_t)(uintptr_t)ps->type.ref,
+								ps->type.bp, ps->type.bs);
+}
+
+static void rir_stamp_derive(void) {
+	AstLocal nn = ast_count(rir_arena), n;
+	int pass;
+	for (pass = 0; pass < 4; pass++) {
+		for (n = 0; n < nn; n++) {
+			uint16_t k = ast_kind(rir_arena, n);
+			AstLocal c;
+			if (ast_stype_known(rir_arena, n))
+				continue;
+			if (k == AST_Binary) {
+				rir_stamp_ptr_arith(n);
+				continue;
+			}
+			if (k == AST_Load) {
+				rir_stamp_deref(n);
+				continue;
+			}
+			if (k != AST_Store && k != AST_StoreVal && k != AST_Return)
+				continue;
+			c = ast_first_child(rir_arena, n);
+			if (c == AST_NONE && k == AST_StoreVal) {
+				AstLocal src = (AstLocal)ast_ival(rir_arena, n);
+				if (src < nn && ast_kind(rir_arena, src) == AST_Store)
+					c = src;
+			}
+			if (c == AST_NONE)
+				continue;
+			if (!ast_stype_t(rir_arena, c) && k == AST_Store)
+				c = ast_next_sib(rir_arena, c);
+			if (c == AST_NONE || !ast_stype_known(rir_arena, c))
+				continue;
+			ast_set_stype(rir_arena, n, ast_stype_t(rir_arena, c),
+										ast_stype_ref(rir_arena, c), ast_stype_bp(rir_arena, c),
+										ast_stype_bs(rir_arena, c));
+		}
+	}
+	for (n = 0; n < nn; n++) {
+		AstLocal c;
+		const Sym *fs;
+		int ct;
+		if (ast_kind(rir_arena, n) != AST_Invoke || ast_stype_known(rir_arena, n))
+			continue;
+		c = ast_first_child(rir_arena, n);
+		if (c == AST_NONE)
+			continue;
+		ct = ast_stype_t(rir_arena, c);
+		fs = (const Sym *)(uintptr_t)ast_stype_ref(rir_arena, c);
+		while (fs && (ct & VT_BTYPE) == VT_PTR) {
+			ct = fs->type.t;
+			fs = fs->type.ref;
+		}
+		if (!fs || (ct & VT_BTYPE) != VT_FUNC)
+			continue;
+		ast_set_stype(rir_arena, n, fs->type.t, (uint64_t)(uintptr_t)fs->type.ref,
+									fs->type.bp, fs->type.bs);
+	}
+	for (n = 0; n < nn; n++) {
+		uint16_t k = ast_kind(rir_arena, n);
+		if (ast_stype_known(rir_arena, n))
+			continue;
+		if (k == AST_BasicBlock || k == AST_Jump || k == AST_If ||
+				k == AST_Return || k == AST_Store || k == AST_StoreVal)
+			ast_set_stype(rir_arena, n, 0, 0, 0, 0);
+	}
+}
+
+static void rir_stamp_flush(void) {
+	int i;
+	AstLocal nn;
+	if (!rir_stamp_env || !rir_arena) {
+		rir_stampn = 0;
+		return;
+	}
+	nn = ast_count(rir_arena);
+	for (i = 0; i < rir_stampn; i++) {
+		const RirStamp *s = &rir_stampv[i];
+		if (s->n >= nn || ast_kind(rir_arena, s->n) != s->kind)
+			continue;
+		if (ast_stype_known(rir_arena, s->n))
+			continue;
+		ast_set_stype(rir_arena, s->n, s->t, s->ref, s->bp, s->bs);
+	}
+	rir_stampn = 0;
+	if (rir_stamp_env >= 2)
+		rir_stamp_derive();
+}
+
 static void rir_stamp_sv(const SValue *base, int n) {
 	int k, want;
 	if (n < 0)
 		return;
 	want = n - rir_base_depth;
+	if (rir_stamp_env)
+		rir_stamp_deep(base, n);
 	for (k = 0; k < rir_shn && k < want; k++) {
 		const SValue *v;
 		AstLocal sk;
@@ -4344,6 +4515,7 @@ static void rir_to_arena(void) {
 	rir_clg_n = 0;
 	rir_clg_pending = NULL;
 	rir_clg_syn = 0;
+	rir_stampn = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
 	for (i = 0; i < rir_n; i++) {
 		RirOp *ro = &rir_ops[i];
@@ -4505,6 +4677,7 @@ static void rir_to_arena(void) {
 			rir_stmt(d);
 	}
 	rir_ihold_flush();
+	rir_stamp_flush();
 }
 
 static int rir_pt_addr(const RirOp *o, int fallback) {
@@ -4707,6 +4880,10 @@ void rir_teardown(void) {
 	mcc_free(rir_vscapt);
 	mcc_free(rir_lblhead);
 	mcc_free(rir_ptaddr);
+	mcc_free(rir_stampv);
+	rir_stampv = NULL;
+	rir_stampcap = 0;
+	rir_stampn = 0;
 	rir_ops = NULL;
 	rir_marks = NULL;
 	rir_mvs = NULL;
@@ -5031,6 +5208,22 @@ static void rir_prod_report(void) {
 						rir_tot_low_reg[1], rir_tot_low_reg[2], rir_tot_low_big[0],
 						rir_tot_low_big[1], rir_tot_low_big[2], rir_tot_low_huge[0],
 						rir_tot_low_huge[1], rir_tot_low_huge[2]);
+		{
+			const long *kn = ast_low_kind_n();
+			const long *ku = ast_low_kind_untyped();
+			const long *kv = ast_low_kind_void();
+			long tn = 0, tu = 0, tv = 0;
+			for (i = 0; i < AST_KIND_COUNT; i++) {
+				tn += kn[i];
+				tu += ku[i];
+				tv += kv[i];
+			}
+			fprintf(f, "[rir-untyped] nodes=%ld untyped=%ld void=%ld\n", tn, tu, tv);
+			for (i = 0; i < AST_KIND_COUNT; i++)
+				if (kn[i])
+					fprintf(f, "[rir-untyped-kind] %s n=%ld untyped=%ld void=%ld\n",
+									ast_kind_name((uint16_t)i), kn[i], ku[i], kv[i]);
+		}
 		for (i = 1; i < RIR_LOW_NCLASS; i++)
 			if (rir_low_block_n[i] || rir_low_why_nodes[i])
 				fprintf(f,
@@ -5677,6 +5870,7 @@ void rir_configure(void) {
 	rir_env = ast_env_int("MCC_REPLAY_IR", 0);
 	rir_prod_gate = ast_env_int("MCC_RIR_PROD", 0);
 	rir_prod_low_env = rir_prod_gate >= 2 || ast_env_int("MCC_RIR_LOW", 0);
+	rir_stamp_env = ast_env_int("MCC_RIR_STAMP", 0);
 	rir_prod_out = getenv("MCC_RIR_PROD_OUT");
 	rir_out = getenv("MCC_REPLAY_IR_OUT");
 	if (rir_env)
