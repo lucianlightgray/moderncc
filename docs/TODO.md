@@ -803,7 +803,7 @@ and similarly at every level. The bank records `corpus_config`, so before
 re-banking the ratchet simply *skipped* on a default build, which is worse than a
 slightly lower number: it stops gating. Re-banked with `--rebank-config
 --update-bank --update-bank-low` on the new default configuration, and
-`tests/rir/coverage-bank.json` now reads `MCC_GPU=1`. Anyone comparing to the
+`tests/rir/coverage-bank.json` recorded `MCC_GPU=1`. Anyone comparing to the
 older figures should compare against the pre-change bank, not read this as a
 regression — nothing about lowering changed.
 
@@ -847,6 +847,180 @@ Provenance moved with the code: `src/mccvk.LICENSE` is `src/mccgpu.LICENSE`.
 **The Darwin half is still unexecuted.** It was reasoned, not run, before this
 change and it is reasoned, not run, after it; consolidation does not make it
 tested. A real macOS host is still what that path wants.
+**`MCC_GPU` has since left `CORPUS_DEFS` entirely**, because the backend is always
+compiled and is therefore no longer a configuration the corpus can vary by; the
+banked percentages stand unchanged, having already been measured with it in.
+`MCC_DIAG` took its place, and it is the live example of why the mechanism exists:
+`MCC_DIAG` compiles allocator/Sym/optrace instrumentation into `src/mcc.c`, which
+diluted every lowerable percentage ~0.06pp and turned the diagnostics CI cell red
+on a non-regression. `corpus_config` now reads `{"MCC_DIAG": "0"}`. **Any future
+build option that changes which source `src/mcc.c` amalgamates has to join
+`CORPUS_DEFS` in the same commit that adds the option** — otherwise it either
+fails the ratchet on a non-regression or, worse, makes it skip and silently stop
+gating.
+
+### `MCC_GPU` is gone entirely — the backend is always compiled, 2026-08-07
+
+The option no longer exists. The vendored Vulkan ABI slice the backend binds — 40
+entry points, their handle and flag types, 30 structs — landed as `src/mccvk.h`
+under Apache-2.0 with provenance in `src/mccvk.LICENSE`, so
+`#include <vulkan/vulkan.h>` is gone from `src/` and there is nothing left for a
+guard to protect. **That file has since been folded into `src/mccgpu.c`** by the
+header consolidation described above; the vendoring and its licence note are
+unchanged, only the file it lives in. All seven
+`#if MCC_GPU` sites are deleted; `grep -rn '^#\s*\(if\|ifdef\|elif\).*MCC_GPU' src/`
+returns nothing. `find_package(Vulkan)` and the three per-target
+`MCC_GPU_DEFS/LIBS/INCLUDE_DIRS` blocks went with it; the surviving Darwin `objc`
+link is a plain `if(APPLE)`, which is platform divergence rather than a feature
+toggle. `MCC_GPU_PROVIDED` was kept verbatim and renamed
+`MCC_COMPUTE_BACKEND_PROVIDED` — it is the Metal-over-Vulkan stand-in mechanism,
+not a feature gate, and the rename only exists so the final grep returns nothing.
+
+**The layout was verified rather than assumed**: a sizeof/alignof/offsetof/constant
+census compiled against both the vendored and the system headers agrees on **242
+facts on x86_64 and on i386** — i386 matters because non-dispatchable handles
+change representation there. The no-headers case was proven by bind-mounting an
+empty directory over `/usr/include/vulkan`, confirming gcc could no longer find
+the header, and building from scratch: `mcc` built and still reached the device.
+
+**One real bug fell out of compiling the backend unconditionally.** `mcc_fe_bind()`
+took `fegetenv`/`fesetenv` addresses directly on Windows while dlsym-ing them
+everywhere else, and mcc's own PE runtime does not provide them, so
+`run-tier/x86_64-win32` and `run-tier/i386-win32` failed on `unresolved reference
+to 'fegetenv'`. They are resolved from `ucrtbase.dll`/`msvcrt.dll` at first use
+like every other host now, which removed the backend's last link-time reference on
+any target.
+
+**A trap for the next person, and it cost a red suite here.** The declarations of
+`ast_ladder_gpu_setup`/`ast_ladder_gpu_report` must be visible in *every*
+configuration, because `ast_opt_defaults` now calls setup unconditionally. They
+were first moved into `mccast.h` inside the `#if MCC_EMBED_JIT` block, which is
+invisible to the cross compilers — 24 cross/qemu/wine cells failed on an implicit
+declaration while native stayed green. They live outside that block now. The
+amalgamated build cannot observe either mistake: it concatenates every TU, so a
+missing header declaration and a wrongly-guarded one both compile. Only
+`multisource` and the cross tiers can see them.
+
+`tools/spvgate.c` still includes the system header and links the loader, so its
+three `gpu/spv-*` cells stay conditional on `find_package(Vulkan)`. It is a
+developer differential harness rather than part of `mcc`, and it needs the actual
+loader library, not just declarations.
+
+## The `-O` ladder was re-derived on the clock — 2026-08-07
+
+**34 of 47 level-assignable rows came off `-O1`/`-O2`/`-O3`.** The ladder is now
+`L1 7 · L2 6 · L3 0`, with rungs 4–9 keeping one in-development optimizer each and
+three new grouped rungs: **10 = pessimization, 11 = compile cost with no payoff,
+12 = no effect and no cost**. Cumulative semantics hold, so `-O4` is still a
+superset of `-O3`. The old "rungs 4–12 are one optimizer each" convention did not
+survive 34 demotions and is retired.
+
+Measured head-to-head against the previous ladder, self-compiling `src/mcc.c`,
+CPU time, 10 interleaved repetitions each:
+
+| level | old | new | delta | object |
+| --- | ---: | ---: | ---: | ---: |
+| `-O1` | 0.218 s | 0.214 s | **+1.91%** | −0.02% |
+| `-O2` | 0.278 s | 0.252 s | **+9.34%** | +0.09% |
+| `-O3` | 0.322 s | 0.256 s | **+20.53%** | **−2.19%** |
+
+Every level compiles faster and emits a faster compiler.
+
+**The measurement finding matters more than the ranking.** CPU time barely works
+at flag granularity, and it took two controls to establish that. Fifteen rows
+produce a stage-1 object **byte-identical** to the base — true effect exactly
+zero — yet their measured stage-2 times span +0.063% to −0.435%; that spread *is*
+the floor. And linking a padding TU ahead of an otherwise unchanged kernel, where
+no emitted instruction differs and only addresses move, shifts CPU time by interp
+34.3%, sieve 32.2%, loopnest 8.5%, divmod 5.6%. **Code layout is worth roughly 30×
+any individual flag.** So a time delta is credited only when a layout-immune
+counter agrees in sign; that rule dissolved a bogus +2.2–2.8% "win" cluster
+including `storeval-rot`, which changes 0.0000% of emitted instructions, and
+`chain-store`'s apparent +26% on sieve, which sat entirely inside sieve's own 32%
+floor.
+
+**Removing all the candidates at once is what caught the one real mistake.** With
+all 35 off, `-O2` came out 0.52% slower. `reg-color` alone explained it: per-flag
+it measured −0.12%, inside the floor and therefore invisible, but restoring it
+gives 0.560 s against 0.578 s reduced and 0.575 s before — 3.1% faster than the
+reduced ladder and 2.6% faster than the one it replaced. It went back;
+`spill-share` layered on top made it worse again and stayed off. **Any future
+demotion campaign should run the same all-off experiment**, because a flag that
+only pays in combination is invisible to per-flag measurement by construction.
+
+Two instruction/CPU-time inversions are now on record and neither is a rounding
+error. `divmagic` retires **2.24× more** instructions and runs **13.3% faster**
+(IPC 4.00 vs 1.53) — ranked on instructions it is the worst row in the table, so
+it keeps its level on cpu-time merit. `builtin-math` inverts the other way and is
+covered below.
+
+The artifacts are re-runnable, not prose: `tools/selfhost-optbench.py` (stage-1 /
+stage-2 self-host ladder; `--check` re-derives the assignment and fails if
+`src/mccopt.h` disagrees), `tools/optlevel-bench.py`, `tools/opt-cache-determinism.py`,
+and the banked tables `tests/optfire/{levelbench,selfhost-levelbench,levelbench-cycles,leveltime}.tsv`
+plus `levelpins.txt`, which records every override with the measurement behind it.
+Both benchmarks are ctest cells behind `MCC_OPT_LADDER_BENCH`, default OFF, label
+`optbench`.
+
+### What the JIT can and cannot recover from a demotion
+
+The demotions split across a boundary that is not obvious from `mccopt.h`, and it
+decides whether a demotion is reversible at runtime.
+
+Per body, AST-rewriting passes mutate `ast_cur` **in place** (`ast_math_inline_run`,
+`ast_interchange_run`, `ast_fusion_run`, `ast_tile_run`), *then* the gate mask is
+snapshotted by `ast_search_gates_now()`, and the replay-time strategies are applied
+during `ast_replay_body` from that mask. `mccjit_embed_note` serializes the arena
+verbatim alongside the mask, and at runtime `mccjit_lazy_build_masked` rebuilds the
+warm variant and searches other masks.
+
+So **gate-mask rows stay searchable** — `narrow`, `sethi-ullman`, `tree-vrp`,
+`if-conversion`, `tree-reassoc`, `tree-pre`, `tree-loop-im`,
+`tree-switch-conversion`, `tree-ccp-iterate`, `narrow-fix`, `tree-dse`,
+`optimize-sibling-calls` are `AST_SG_*` bits, and demoting one only moves the JIT's
+starting variant. **Arena-mutating rows are irrecoverable**: `builtin-math`,
+`builtin-math-prepass`, `loop-interchange`, `loop-fusion`, `loop-block` and
+`loop-vlat` have no `AST_SG_*` bit, so the serialized AST simply never contains
+those rewrites and no runtime search can rediscover them. A knock-on:
+`ast_search_floor` is captured from the current defaults, so a demotion also lowers
+the floor the search may never turn back off.
+
+**The GPU is not a codegen path and never was.** `ast_ladder_gpu_run` takes *two*
+arenas and roots, lowers both, and brute-forces them over an input tuple space to
+compare outputs — it is the equivalence checker for the evaluation ladder,
+accelerating optimization *validation*. Nothing about it emits code for user
+programs, which is why "should it get CPU-optimized input first" is not a question
+that applies to it.
+
+## Four Linux CI cells were red, and only one was cosmetic — 2026-08-07
+
+All twelve Linux stage2 cells were reproduced locally with `ci stage1` / `ci stage2
+<feature>` / `ci stage3` rather than read from a log. Four were red; the useful
+part is that **three of the four are invisible to the default build by
+construction**.
+
+- **`multisource`** — build failure, 8825/8854 failing. `ast_ladder_gpu_setup` was
+  declared inside `mccast.c`'s body. The amalgamated build concatenates every TU so
+  it compiled; a real multi-TU build has no declaration. **The default build cannot
+  observe a missing header declaration**, so every such omission ships green until
+  this cell runs.
+- **`diagnostics`** — 23 cells. A genuine leak, not a test artifact:
+  `free_inline_functions` frees `fn->func_str` only when `fn->sym` is set, which is
+  right for the emission path (`begin_macro(str, 1)` takes ownership and *then*
+  nulls sym) and wrong for `drop_gnu_inline_body`, which nulls sym and hands the
+  token string to nobody. Every gnu89 extern-inline redefinition leaked it, and
+  `gen_inline_functions` skips `!sym` entries so it was unreachable garbage. The
+  program's own output was already `OK` — **only `MCC_DIAG`'s allocator tracking
+  could see it**.
+- **`sanitize`** — `sanitize-selfcheck`, fixed by the same leak fix.
+- **`macho`** — `cli/perfn_inproc` asserted that `-fopt-perfn-inproc` is observable
+  at `-O3` by *relying on* `opt-slice` being on there, so it tracked where a flag
+  happened to live rather than the dependency it meant to test. It passes
+  `-fopt-slice` explicitly now and survives any future ladder move.
+
+The lesson worth carrying: a cell that encodes a *default* rather than its own
+premise breaks whenever the default moves, and the amalgamation hides an entire
+class of cross-TU mistakes.
 
 ## Each suite is now scored by the other vendor's compiler — 2026-08-06
 
