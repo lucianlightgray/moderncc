@@ -1732,8 +1732,11 @@ static void drop_gnu_inline_body(Sym *sym) { MCC_TRACE("enter\n");
 	sym->a.gnu_inline_body = 0;
 	sym->type.t &= ~(VT_STATIC | VT_INLINE);
 	for (i = 0; i < mcc_state->nb_inline_fns; ++i)
-		{ MCC_TRACE("br\n"); if (mcc_state->inline_fns[i]->sym == sym)
-			{ MCC_TRACE("br\n"); mcc_state->inline_fns[i]->sym = NULL; } }
+		{ MCC_TRACE("br\n"); if (mcc_state->inline_fns[i]->sym == sym) { MCC_TRACE("br\n");
+			if (mcc_state->inline_fns[i]->func_str) { MCC_TRACE("br\n");
+				tok_str_free(mcc_state->inline_fns[i]->func_str);
+				mcc_state->inline_fns[i]->func_str = NULL; }
+			mcc_state->inline_fns[i]->sym = NULL; } }
 }
 
 static void patch_type(Sym *sym, CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");

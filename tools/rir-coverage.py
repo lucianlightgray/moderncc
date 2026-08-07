@@ -177,7 +177,7 @@ def self_flags(bdir):
             if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
 
 
-CORPUS_DEFS = ["MCC_GPU"]
+CORPUS_DEFS = ["MCC_GPU", "MCC_DIAG"]
 
 
 def corpus_config(flags):
