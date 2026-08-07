@@ -206,6 +206,81 @@ modelled emit no record, so `fn_n` is the modelled population, not everything co
 (at `-O0` the arena is off entirely unless `MCC_FORCE_REPLAY=1`, which the tool sets). A
 statement list wider than 512 statements is flushed in chunks and flagged `ovf=1`; that
 never fires on either corpus.
+## A slice actually ran on the GPU — 2026-08-06
+
+`src/mccspv.h` emits a SPIR-V 1.3 compute module from an arena subtree plus its
+live-in slot offsets; `tools/spvgate.c` dispatches it and compares against the
+real `ast_eval_slice`. The node set is exactly `ast_eval_slice_rec`'s — Literal,
+Ref, Load, Convert, Unary, Binary, If — and integer widths ≤32, which is what the
+width ladder certifies. `ast_eval_slice_is64` types are refused, not approximated.
+
+RTX 5070 Ti, 11 cases, 44 modules, 723,932 lanes: **666,450 compared points,
+0 mismatches**, 44/44 pass `spirv-val`. Sweeps are exhaustive per ladder rung
+(1/2/4/8/16 bits). Points where `ast_eval_binop` reports the source undefined
+(signed overflow, `/0`, `INT_MIN/-1`, out-of-range shift) are *vacuous* and
+excluded — 57,482 of them — so the comparison covers only what C defines.
+
+**Short-circuit is control flow, not `OpSelect`.** `a ? b/c : d` and n-ary
+`&&`/`||` emit `OpSelectionMerge`/`OpBranchConditional`/`OpPhi`, phi predecessors
+taken from the *last* block of each arm. Relying on an untaken arm's division
+being discarded is not the same as not computing it.
+
+Three defects the differential caught, none of which a passing test would show:
+
+- the entry point listed its StorageBuffer variables, legal only from SPIR-V 1.4;
+  at 1.3 the module is invalid and the driver may do anything — this produced the
+  first wrong answers;
+- `OpUDiv`/`OpUMod` require an unsigned result type, and emitting them with `%int`
+  **still returned correct answers** — only `spirv-val` caught it;
+- signed `%` is synthesised as `a - b*(a/b)`, mirroring `ast_eval_binop`, rather
+  than trusting `OpSRem` at `1 % -1` and `-8 % 3`.
+
+**`gpu/spv-slice-known-positive` is the cell that matters.** It runs `--mutate`
+(every `OpIAdd` → `OpISub`) and requires FAIL: 192,194 mismatches over 6 of 11
+cases. A differential that cannot go red is indistinguishable from one that never
+ran. It also rejects exit 77 — a skipped known-positive is not a pass.
+
+**The trap for anyone extending this.** `mccast.c`'s fallback `ast_eval_slice`
+stub returns 1 *without writing `*out`*, so the obvious build compares
+uninitialised memory and passes everything. `spvgate` hard-errors unless
+`AST_EVAL_SLICE_PROVIDED` is set. Two TUs are needed because `mccast.c` compiles
+standalone only *without* `mcc.h` while the evaluator needs it for `VT_*`.
+
+**Not done, and not claimed.** The JIT dispatches none of this at runtime; the
+arenas are hand-built to mirror slice shapes rather than extracted from real
+bodies; `ast_bad_type` is duplicated in the gate because it is static inside
+`mccast.c`'s `MCC_INTERNAL` half. Extracting real slices needs the RIR path,
+which only exists inside the full compiler build — that is the next obstacle,
+and it is a build-topology problem, not a lowering problem.
+
+## Each suite is now scored by the other vendor's compiler — 2026-08-06
+
+`tools/xoracle.py` judges gcc's tests with clang and clang's with gcc, on exit
+status and stdout bytes, never on a suite's own directives. `qualify` builds each
+run-mode test with the oracle at `-O0` *and* `-O2`, runs both, and runs the `-O0`
+binary twice; a test joins the oracle set only if all three agree, which is what
+keeps UB-sensitive and nondeterministic programs from later surfacing as phantom
+miscompiles (23 of 5352 excluded on exactly that basis). `check` replays the
+cached set against one mcc configuration, so configurations diff test-by-test.
+
+**The llvm direction needed rescuing.** clang's suite is compile-and-FileCheck:
+of 10861 C files just 14 are execution tests. The real execution corpus is
+`compiler-rt/test/builtins/Unit`, which `xsuite.py` skips wholesale as
+`runtime-lib-suite`. Pairing `X_test.c` with `lib/builtins/X.c` and compiling both
+with the compiler under test lifts that direction 7 → 139 cases.
+
+`LINK_POLICY` is kept distinct from `MCC_NOBUILD`: mcc embeds `libmccrt.a`, which
+already defines `__udivmodti4`, so linking compiler-rt's copy collides where
+gcc's lazily-resolved libgcc does not. Folding that into a failure count would
+overstate the defect rate.
+
+4907 qualified cases: **-O0 96.70%, -O2 96.56%**, 72 behavioural divergences at
+both levels with identical membership — so front-end/semantic, not optimizer. The
+12 on the builtins side are all `tf`/`ti` (`__float128`, `long double`,
+`__int128`), which `ast_bad_type()` already rejects. Re-run after the CType
+stamping, width ladder and SPIR-V commits: **0 per-test verdict changes** at
+either level.
+
 ## Byte coverage is a proxy. The real metric is the lowerable census — 2026-08-06
 
 Byte coverage only proves the arena can regenerate **the same target's** code. The goal is
