@@ -445,6 +445,17 @@ it makes the crash *deterministic* (40/40 vs 4/40) under both `RTLD_LOCAL` and
 `RTLD_GLOBAL`. The deterministic `dlopen` build is therefore the reproducer to
 debug with; it is far easier to work with than the 10% linked case.
 
+**It is not mcc's code generation.** The obvious suspicion -- that mcc-produced
+executables are somehow malformed in a way the driver trips over -- is wrong. A
+small program compiled *by mcc* that loads the exact crashing module and calls
+`vkCreateShaderModule` on it 50 times completes cleanly, as does the same
+program built by gcc. So the executable is fine and the module is fine; what
+differs in the failing case is that **the JIT has been running in the process**.
+That points the remaining investigation at what the JIT does to process state --
+`host_runmem_alloc` and the `mprotect` of code pages, the hot-patch, the fork
+handlers -- and away from codegen and from the shader, which is where the first
+several rounds of this were wasted.
+
 **Measure with 40 runs, not 5.** Two separate times a stale embedded engine blob
 made an intermittent crash look deterministic, and once made a broken build look
 clean; `cmake --build` does not reliably regenerate the blob after a CMake-level
