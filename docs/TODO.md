@@ -619,30 +619,56 @@ honest figure is not "1 in 600 fires" but **zero device work beyond the warm-up
 in 600 programs**, and the binding constraint is the emitter's 32-bit ceiling,
 not the promotion threshold.
 
-### `c23-tag-alias-1.c` segfaults when the warm-up finds a real device
+### `c23-tag-alias-1.c` segfaults — and the GPU has nothing to do with it
 
-Found by the sample, reproduced 40/40. A program built `--embed-jit --jit-threads
-2 -lvulkan` from `gcc.dg/c23-tag-alias-1.c` dies on a JIT worker with
-`MCC_AST_EVAL_LADDER_GPU=1`, and the discriminators are sharp:
+Found by the sample and fixed the same day. The defect is in the JIT intent
+deserializer and predates every line of GPU code; **the device only ever supplied
+wall-clock time.** Keeping the wrong first reading here on purpose, because the
+correlation was strong enough to publish and still wrong.
 
-| configuration | crashes |
-| --- | ---: |
-| `MCC_AST_EVAL_LADDER_GPU=1` | 40/40 |
-| unset | 0/40 |
-| `MCC_JIT=0` | 0/10 |
-| `MCC_JIT_LAZY=1` | 0/10 |
-| device forced away (`VK_ICD_FILENAMES=/nonexistent.json`) | 0/10 |
+What the sample saw: a program built `--embed-jit --jit-threads 2 -lvulkan` from
+`gcc.dg/c23-tag-alias-1.c` died on a JIT worker 40/40 with
+`MCC_AST_EVAL_LADDER_GPU=1`, 0/40 with it unset, 0/10 under `MCC_JIT=0` or
+`MCC_JIT_LAZY=1`, and 0/10 with the device forced away by
+`VK_ICD_FILENAMES=/nonexistent.json` while the warm-up still built and emitted its
+module. That last row read as proof that the dispatch reaching a real driver was
+the trigger. **It is not.** An `LD_PRELOAD` that calls the real `vkCreateInstance`
+and then reports failure — no device, no shader module, no dispatch — still
+crashes 40/40, while one that merely *sleeps 400 ms* in place of a stubbed
+`vkCreateInstance` is 0/40. The eager pool's workers are `pthread_detach`ed and
+nothing joins them, so a program that returns from `main()` in microseconds exits
+before the worker reaches the replay. Vulkan initialisation is simply the slowest
+thing that had ever been put in front of it. Adding a busy loop to `main()` with
+every GPU variable unset, on a default non-GPU build with no `-lvulkan`,
+reproduces the identical fault 40/40.
 
-The last row is the useful one: the warm-up still builds and emits its module
-(`warmup rc=0`, `available=0`), so **it is the dispatch reaching a real driver
-that breaks the program, not the setup work around it.** The faulting frame is in
-the baked engine's own front end, not in the driver — the instruction is a
-three-deep pointer load and the enclosing block ends in the `cast to incomplete
-type` diagnostic, so a `CType *` is null or clobbered while a worker re-parses the
-stashed blob. This is the eager `mccjit_boot_swap_async` path; the lazy path is
-clean, which is why the 600-program run with the slice-search knobs on did *not*
-show it and the default-knob run did. Same family as the lazy-driver-init crash
-fixed above, and not fixed by that fix.
+**The mechanism.** `mccjit_role_for_base()` keys the serialized `Sym` type graph
+on `t & VT_BTYPE`. An enum's base type is `VT_INT`, so every enum tag interns as
+`MCCJIT_ROLE_PLAIN`, for which `mccjit_emit_type_record` writes no payload and
+`mccjit_build_rec` has no case — it rebuilds as `NULL`. The deserializer already
+knew this: `mccjit_strip_enum()` exists and is applied to arena node types and to
+the rebuilt function's return and parameter types for exactly this reason. It was
+never applied *inside* `mccjit_build_rec`, so types stored in the reconstructed
+record graph kept their `VT_ENUM` bit with a null ref. `enum bar *a` came back as
+a pointer to `{VT_ENUM|VT_UNSIGNED|VT_INT, NULL}`, `indir()` lifted it onto the
+vstack during `ast_replay_bb` → `vstore`, and `gen_cast`'s
+`IS_ENUM(type->t) && type->ref->c < 0` dereferenced the null. Fixed at the four
+sites that store a type in a record; `tests/jit/parity/enum_ptr.c` pins it and
+fails on the pre-fix engine.
+
+**Two lessons worth more than the fix.** A discriminator that removes a
+*capability* does not isolate a *mechanism* if it also changes timing — forcing
+the ICD away removed ~400 ms as surely as it removed the device, and only the
+sleeping stub separated the two. And the 600-program run with the slice-search
+knobs on did not show this crash while the default-knob run did, which looked like
+evidence about promotion paths and was evidence about how long each configuration
+kept the process alive.
+
+**Still open, and it is what made this look GPU-specific for a month.** The eager
+pool's detached workers have no exit quiesce: the `[ladder-gpu]` atexit report
+printed *before* the worker's fault, so compiler code was running on a worker
+while `exit()` was already draining atexit handlers. Fixing that means a
+join/shutdown path in `mccjit_pool_start`, which is a separate design change.
 
 ## Each suite is now scored by the other vendor's compiler — 2026-08-06
 
