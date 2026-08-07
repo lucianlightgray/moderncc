@@ -373,7 +373,7 @@ static uint64_t so_fnv(uint64_t h, const void *p, size_t n) { MCC_TRACE("enter\n
 
 static uint64_t so_key(MCCState *s) { MCC_TRACE("enter\n");
 	uint64_t h = 0xcbf29ce484222325u;
-	if (s->nb_files >= 1 && s->files[0]->name) { MCC_TRACE("br\n");
+	if (s->nb_files >= 1 && s->files[0]->name[0]) { MCC_TRACE("br\n");
 		FILE *f = host_fopen(s->files[0]->name, "rb");
 		if (f) { MCC_TRACE("br\n");
 			char buf[65536];
@@ -1590,7 +1590,7 @@ redo:
 	if (0 == ret && s->optimize_search_seconds && n == 0 &&
 			!mcc_env_on("MCC_SEARCH_WORKER") &&
 			(s->output_type == MCC_OUTPUT_OBJ || s->output_type == MCC_OUTPUT_EXE) &&
-			s->nb_files >= 1 && s->files[0]->name && !(s->files[0]->type & AFF_TYPE_LIB)) { MCC_TRACE("br\n");
+			s->nb_files >= 1 && s->files[0]->name[0] && !(s->files[0]->type & AFF_TYPE_LIB)) { MCC_TRACE("br\n");
 		int (*so)(int, char **, MCCState *, const char *) =
 				mcc_env_on("MCC_AST_PERFN") ? mcc_superopt_perfn : mcc_superopt_search;
 #ifdef MCC_EMBED_JIT
