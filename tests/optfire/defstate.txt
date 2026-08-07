@@ -24,10 +24,13 @@ indirect_call|-O2|replay-indirect-call|on
 # firing there, and the mccopt.h row is the only thing that decides it.
 promo_leaf_callee|-O2|promote-leaf-callee|on
 math_prepass|-O2|builtin-math-prepass|on
-optslice|-O3|opt-slice|on
-# optslice_below is the same source one level down: opt-slice sits at 3, not 2,
-# and this is what says so. Without it the row above passes at any level <= 3.
-optslice_below|-O2|opt-slice|off
+# opt-slice is NOT here: it went back to the ladder (rung 9). Its only effect on
+# emitted code is ast_slice_consume() warm-starting the search gates from
+# ~/.cache/mcc/sl-*.ck, and that function returns immediately on an empty memo.
+# So the pass is inert on any clean machine and observable on a warm one, which
+# is the same thing as saying -O3 output depends on the user's cache directory.
+# Re-promoting it needs that dependency removed first, not a cell that passes
+# only where the cache happens to be populated.
 # fmov-imm lowers a float constant to an FMOV immediate instead of a literal
 # pool load; ast_fmov_imm_env is compiled to 0 off arm64, so the gate cannot
 # fire anywhere else and the case is registered on arm64 only.

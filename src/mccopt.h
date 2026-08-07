@@ -19,7 +19,7 @@
 	MCC_OPT_ROW(TREE_CONST_LOAD,               "tree-const-load",              MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(OPT_SEARCH,                    "opt-search",                   MCC_OPTD_SPECIAL) \
 	MCC_OPT_ROW(DUMP_OPT_SEARCH,               "dump-opt-search",              MCC_OPTD_OFF) \
-	MCC_OPT_ROW(OPT_SLICE,                     "opt-slice",                    MCC_OPTD_LEVEL(3)) \
+	MCC_OPT_ROW(OPT_SLICE,                     "opt-slice",                    MCC_OPTD_LEVEL(9)) \
 	MCC_OPT_ROW(OPT_SEARCH_EMIT_SIZE,          "opt-search-emit-size",         MCC_OPTD_OFF) \
 	MCC_OPT_ROW(OPT_SEARCH_EMIT_ISO,           "opt-search-emit-iso",          MCC_OPTD_OFF) \
 	MCC_OPT_ROW(OPT_SEARCH_INLINE,             "opt-search-inline",            MCC_OPTD_OFF) \
