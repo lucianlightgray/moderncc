@@ -456,6 +456,20 @@ That points the remaining investigation at what the JIT does to process state --
 handlers -- and away from codegen and from the shader, which is where the first
 several rounds of this were wasted.
 
+**Tooling limits, so nobody wastes time on them.** glibc's heap checkers
+(`MALLOC_CHECK_=3`, `MALLOC_PERTURB_`) report nothing and the crash is unchanged,
+so this is not heap-metadata corruption. **Valgrind cannot run mcc-produced
+executables at all** -- it dies with SIGILL in `_dl_start` before `main`, so the
+obvious instrumentation is unavailable here and that is worth knowing before
+reaching for it.
+
+At the crash point the JIT has done: lazy stub install (an RWX mmap with
+hand-assembled machine code), counter ticks, blob deserialize and arena build,
+then the ladder. It has *not* yet reemitted a kernel -- `ast_slice_ladder_explain`
+runs inside `mccjit_kernel_search_from_blob`, before `mccjit_slice_search`
+reemits. So the suspect set is small: the stub's RWX mapping, `host_runmem_alloc`,
+and the arena work.
+
 **Measure with 40 runs, not 5.** Two separate times a stale embedded engine blob
 made an intermittent crash look deterministic, and once made a broken build look
 clean; `cmake --build` does not reliably regenerate the blob after a CMake-level
