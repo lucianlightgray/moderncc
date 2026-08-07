@@ -477,6 +477,15 @@ runs inside `mccjit_kernel_search_from_blob`, before `mccjit_slice_search`
 reemits. So the suspect set is small: the stub's RWX mapping, `host_runmem_alloc`,
 and the arena work.
 
+**The stub's RWX mapping is not it either.** A probe that mmaps a 4096-byte
+`PROT_READ|WRITE|EXEC` page, writes to it, and then compiles the crashing module
+50 times in a spawned thread runs clean under both mcc and gcc. So the suspect
+set is down to `host_runmem_alloc` -- which may not even have run at the crash
+point -- and the embedded front-end itself: `mccjit_kernel_search_from_blob`
+calls `mcc_new()`, `mccpp_new()`, `mccgen_init()` and `mcc_enter_state()`, so a
+whole compiler instance is initialising in that worker thread with mcc's global
+state and allocator, alongside the driver. That is where to look next.
+
 **Measure with 40 runs, not 5.** Two separate times a stale embedded engine blob
 made an intermittent crash look deterministic, and once made a broken build look
 clean; `cmake --build` does not reliably regenerate the blob after a CMake-level
