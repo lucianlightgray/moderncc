@@ -445,6 +445,13 @@ it makes the crash *deterministic* (40/40 vs 4/40) under both `RTLD_LOCAL` and
 `RTLD_GLOBAL`. The deterministic `dlopen` build is therefore the reproducer to
 debug with; it is far easier to work with than the 10% linked case.
 
+**Nor is it threading.** The same mcc-built probe, moved into a spawned pthread
+so it matches the failing context, still makes 50 clean `vkCreateShaderModule`
+calls on the crashing module -- as does the gcc build. Combined with the result
+below, the isolation is complete: not the module, not the executable, not the
+thread. The only thing left that differs is that **the JIT is running in the
+process**, and it crashes before it has reemitted anything.
+
 **It is not mcc's code generation.** The obvious suspicion -- that mcc-produced
 executables are somehow malformed in a way the driver trips over -- is wrong. A
 small program compiled *by mcc* that loads the exact crashing module and calls
