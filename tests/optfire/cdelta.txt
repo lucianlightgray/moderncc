@@ -5,10 +5,17 @@
 # transform is real but object-invisible. The reassoc sub-knobs are exactly that
 # case -- they fire identically on x86_64 and i386 (8/3/3/4) while the object
 # diff only shows on x86_64.
-reassoc_assoc|-O2|reassoc|reassoc-assoc
-reassoc_shlshr|-O2|reassoc|reassoc-shlshr
-reassoc_shrshl|-O2|reassoc|reassoc-shrshl
-reassoc_muldist|-O2|reassoc|reassoc-muldist
+# A fifth field carries extra compiler flags. The four reassoc sub-knobs are
+# MCC_OPTD_ALWAYS, but the strategy they feed is gated by tree-reassoc, which
+# came off the shipped ladder to rung 10, so the counter is 0 at every shipped
+# level and the delta has nothing to measure. Naming the parent here keeps the
+# cell at -O2 and states the dependency, which -O10 would not: that rung turns
+# on nine other demoted rows, and they add reassoc folds of their own that the
+# off side would then also see (8 instead of 0).
+reassoc_assoc|-O2|reassoc|reassoc-assoc|-ftree-reassoc
+reassoc_shlshr|-O2|reassoc|reassoc-shlshr|-ftree-reassoc
+reassoc_shrshl|-O2|reassoc|reassoc-shrshl|-ftree-reassoc
+reassoc_muldist|-O2|reassoc|reassoc-muldist|-ftree-reassoc
 bfold_sqrt|-O2|bfold|bfold-sqrt
 bfold_sign|-O2|bfold|bfold-sign
 bfold_round|-O2|bfold|bfold-round

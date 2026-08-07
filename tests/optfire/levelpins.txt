@@ -2,84 +2,164 @@
 #
 # tools/selfhost-optbench.py derives a level for every level-assignable row in
 # src/mccopt.h from its own measurements, and --check fails if mccopt.h
-# disagrees. These rows are the places where the derivation is knowingly
-# overridden, each with the measurement or the constraint that overrides it.
-# A pin is a debt: it is a row whose level one workload's instruction count
-# could not settle on its own.
+# disagrees. Those measurements are INSTRUCTIONS RETIRED. The ladder is no
+# longer decided on instructions: it is decided on CPU TIME, measured in
+# tests/optfire/leveltime.tsv, and every row below is the CPU-time verdict
+# overriding the instruction-derived one. A pin is no longer a debt, it is the
+# metric of record; the derivation is kept because it is a second opinion and
+# --check is what stops the two drifting apart silently.
 #
-# --- adjudicated on CPU TIME, because instructions retired invert the verdict
+# The rule the time measurements are read against:
 #
-# divmagic replaces one idiv with a multiply-shift sequence, so tests/runtime/
-# divmod retires 7.72G instructions with it against 3.44G without -- 2.24x MORE
-# -- and runs 13.3% FASTER in cpu time (IPC 4.00 vs 1.53). Ranking it on
-# instructions alone would demote the most valuable integer transform in the
-# table. It stays where it is.
-divmagic|2|cpu-time +13.3% on divmod against -124% of instructions; the counter that ranks the rest inverts this one
+#   A row keeps a shipped level only if it makes stage-1 self-compile, stage-2,
+#   or a kernel measurably FASTER without making another measurably SLOWER.
+#   "Measurably" means outside that measurement's own empirical floor:
+#     stage-1 CPU time   +-0.55%  (4 identical configs, 40 interleaved reps)
+#     stage-2 CPU time   +-0.43%  (15 configs whose stage-1 object is BYTE
+#                                  IDENTICAL to the base, so their true effect
+#                                  is exactly zero and the spread is the floor)
+#     kernel CPU time    per kernel, measured by linking a padding TU ahead of
+#                        the unchanged kernel: interp 34.3%, sieve 32.2%,
+#                        loopnest 8.5%, poly 6.3%, divmod 5.6%, strproc 5.1%,
+#                        structops 3.3%, branchy 1.8%, nbody 0.8%, mathfun 0.5%
 #
-# builtin-math goes the other way, and this is the finding this campaign paid
-# for. mcc lowers fabs(x) by spilling the double to the stack, clearing the
-# sign bit with a BYTE store into the middle of it, and reloading the whole 8
-# bytes -- a store-to-load-forwarding stall on every call:
-#     movq %xmm0,-0x10(%rbp) ; andb $0x7f,-0x9(%rbp) ; movq -0x10(%rbp),%xmm0
-# A fabs loop is 2.37x slower with the fold on (34.5ms vs 14.6ms) while
-# retiring FEWER instructions, and tests/runtime/mathfun is 79% slower in cpu
-# time. Per-builtin micro-benchmarks put the whole loss on fabs: sqrt, floor,
-# ceil, fmin, fmax and copysign are all within 2% either way.
+# Code layout is why the floors are so wide and why instructions retired are
+# still read beside the clock: shifting a kernel's code by a few bytes of
+# unrelated padding moves its CPU time by up to a third, so a time delta is
+# credited to a flag only when the layout-immune counter agrees with its sign.
 #
-# It STAYS AT 1 regardless, and the reason is worth stating. Demoting the
-# family would (a) punish five correct lowerings for one broken one and (b)
-# break the -ffast-math contract, which cli/fast_math_implies_no_math_errno
-# pins: -O2 -ffast-math must inline sqrt, and it cannot if the fold is gated
-# above 2. The level is not the defect here; the lowering is, and the fix is
-# andpd against a sign mask held in a register. Moving the row would only hide
-# it.
-builtin-math|1|fabs lowering is a store-forwarding stall (mathfun -79% cpu time) but the defect is the lowering, not the level: -ffast-math must reach the fold at -O2
-# builtin-math-prepass rides with builtin-math and earns -O1 on its own ratio:
-# gain 0.30% of emitted instructions at 0.099% of compile cost (efficiency
-# 3.04), nbody +4.98% of instructions and +9.63% of cycles.
-builtin-math-prepass|1|efficiency 3.04 on the kernel workload; masked by builtin-math, which is at 1
+# --- kept on the shipped ladder, on merit, in CPU time
 #
-# --- masked: the flag cannot fire at the level its own ratio asked for
+# divmagic is no longer a pin against its own measurement. On the time metric
+# it simply passes: divmod runs 28.2% faster with it (n=21 interleaved, divmod
+# layout floor 5.6%), which is the largest single effect in the table. It costs
+# 0.44% of stage-1 and loses 6.4% on structops and 1.7% on mathfun, which is a
+# missing cost model, not a reason to move the row.
+divmagic|2|divmod +28.2% cpu time against a 5.6% layout floor; the row now passes on merit, not by exception
+# reemit-templates is the one row kept against its own numbers. It is 12.99% of
+# stage-1 CPU time -- the single most expensive item in the compiler -- for no
+# stage-2 payoff the clock can see. It stays because it is not an optimizer: it
+# gates bfold, ident, cprop, cse, dse, sccp, jt and tco, and at level 2 the
+# whole -O1 strategy set stops firing (tests/optfire/levels.txt catches it).
+# Its measured "gain" is everything downstream of it. The 12.99% is a finding
+# about that pipeline, and it is where the next compile-speed work should go.
+reemit-templates|1|infrastructure, not an optimizer: gates 8 strategies, and 12.99% of stage-1 cpu time is a finding about the pipeline rather than a level
+# reg-color is the row the premise test put BACK. Demoted with the rest, -O2
+# stage-2 read 0.52% slower and retired 0.25% more instructions; restoring it
+# alone made -O2 stage-2 0.560s against 0.578s reduced and 0.575s before -- 3.1%
+# faster than the reduced ladder and 2.6% faster than the ladder it replaces --
+# on 0.151% fewer instructions. It was invisible per-flag (-0.12% stage-2, inside
+# the 0.43% floor) and unmistakable at level granularity.
+reg-color|2|-O2 stage-2 is 3.1% slower without it; the per-flag reading was inside the floor and the level-granularity one is not
+# trunc32 is the only row that pays on both workloads at once: divmod +23.2%
+# cpu (floor 5.6%, counter +5.39%), structops +3.3%, stage-2 +2.46% cpu on
+# +0.125% fewer instructions, and it makes stage-1 0.20% FASTER.
+trunc32|1|pays on both workloads and costs nothing: divmod +23.2% cpu, stage-2 +2.46%, stage-1 0.20% faster
+# builtin-copysign is inert on the self-host -- its stage-1 object is byte
+# identical to the base -- and worth 3.73% of mathfun's cpu time against that
+# kernel's 0.51% layout floor, with the counter agreeing (+1.00%). Free and
+# positive, so it stays.
+builtin-copysign|1|mathfun +3.73% cpu against a 0.51% layout floor, counter agrees, and zero stage-1 cost
+# if-conversion-abs earns -O2 on branchy: +2.13% cpu against branchy's 1.76%
+# layout floor with the counter agreeing (+3.18%). Thin, and it is the one
+# shipped row whose margin is close enough to its floor to be worth re-reading
+# if branchy changes.
+if-conversion-abs|2|branchy +2.13% cpu against a 1.76% layout floor; the thinnest margin left on the ladder
 #
-# reemit-templates reads as an ordinary 0.36%-gain row, but it gates the
-# strategy pipeline: moved to 2, the bfold, ident, cprop, cse, dse, sccp, jt
-# and tco counters all go to zero at -O1 (tests/optfire/levels.txt catches it).
-# It is infrastructure with a gain attached, not a level-assignable optimizer,
-# and its measured "gain" is everything downstream of it.
-reemit-templates|1|gates 8 strategies; at level 2 the whole -O1 strategy set stops firing
+# --- kept because the row is not a performance decision
 #
-#
-# if-conversion-abs measured 3.18% of instructions and 2.14% of cycles on
-# tests/runtime/branchy, which is a -O1 ratio, but it was measured at -O3 with
-# if-conversion on beside it. if-conversion is a measured loss and went to 3;
-# abs stays at 2 rather than being promoted on a number taken in a
-# configuration it will no longer ship in.
-if-conversion-abs|2|gain measured with if-conversion on beside it, and that one moved to 3
-#
-# spill-share's self-host gain (+0.023% +- 0.008) is real but it is the spill
-# half of the register colourer, and reg-color sits at 2. Promoting the spill
-# policy below the allocator it serves measures nothing.
-spill-share|2|masked by reg-color at -O1
-#
-# merge-constants shows 5.8% of stage-1 cost and no measurable gain on either
-# workload, which is a demotion to 3 by the rule. It cannot go: it is not only
-# an optimization. Moved to 3 it changed two xoracle verdicts in OPPOSITE
-# directions against check-cpu-O2.jsonl --
-#   gcc.dg/c99-func-3.c        PASS -> DIFF_EXIT (wants abort, got 0)
+# merge-constants shows 4.55% of stage-1 CPU time and no payoff, which is a
+# demotion by the rule. It cannot go: whether identical string and __func__
+# constants share storage is observable to a conforming program. Moved off, it
+# changed two xoracle verdicts in OPPOSITE directions --
+#   gcc.dg/c99-func-3.c         PASS -> DIFF_EXIT (wants abort, got 0)
 #   gcc.dg/torture/20240517-1.c PASS -> DIFF_EXIT (wants 0, got abort)
-# -- because whether identical string and __func__ constants share storage is
-# observable to a conforming program. The rule ranks compile cost against run
-# speed and has nothing to say about semantics; this row is decided by the
-# oracle set, not by the ratio.
-merge-constants|2|two xoracle cases change verdict without it; constant sharing is observable, not an optimization
-#
-# --- constrained by a correctness gate, not by a ratio
-#
-# inline-functions retires 1.88% MORE stage-2 instructions than it saves and
-# would otherwise be demoted. It cannot move above 3: MCC_OPT_INLINE is SPECIAL
-# and turns on at optimize>=3, and the pair -finline with -fno-inline-functions
-# is an internal compiler error --
+# -- so this row is decided by the oracle set, not by a clock.
+merge-constants|2|two xoracle cases change verdict without it; constant sharing is observable semantics, not an optimization
+# inline-functions cannot be measured at all: the pair -finline with
+# -fno-inline-functions is an internal compiler error --
 #   mcc -O2 -finline -fno-inline-functions -c src/mcc.c
 #   src/mccast.c:18479: internal compiler error: vstack leak (4)
-# so a level above 3 would make every -O3 compile ICE. It stays at 2.
-inline-functions|2|-finline with -fno-inline-functions is an ICE; a level above 3 would break every -O3 compile
+# -- so every configuration that turns it off fails to build. MCC_OPT_INLINE is
+# SPECIAL and turns on at optimize>=3, so a level above 3 would make every -O3
+# compile ICE. A failed measurement is not evidence and the row does not move.
+inline-functions|2|-finline with -fno-inline-functions is an ICE, so the flag cannot be measured and a level above 3 would break every -O3 compile
+# fmov-imm cannot be measured on this host: ast_fmov_imm_env is compiled to 0
+# off arm64, so the gate cannot fire and "no effect" here says nothing about
+# where it belongs. Not measured is not the same as measured-no-effect.
+fmov-imm|1|ast_fmov_imm_env is compiled out off arm64, so this host cannot measure it either way
+# The storeval family's off-state is a deliberately incomplete replay-fidelity
+# path kept so a suspected arena defect can be confirmed, not an alternative
+# lowering (docs/TODO.md, the bisection-handle note). Sweeping one off measures
+# the handle. storeval-callstore is the case in point: alone of the 48 at -O3 it
+# ICEs with mccircap.c:797 vstack leak (1). Their stage-2 time readings
+# (-1.08%, -1.17%) disagree in sign with the counter and are layout.
+storeval-constl|1|replay-fidelity bisection handle; its off-state is an incomplete path, not a lowering
+storeval-rot|1|replay-fidelity bisection handle; its off-state is an incomplete path, not a lowering
+storeval-calllast|1|replay-fidelity bisection handle; inert here, stage-1 object byte identical to the base
+storeval-callstore|2|replay-fidelity bisection handle; alone of the 48 it ICEs at -O3 (mccircap.c:797 vstack leak)
+#
+# --- rung 10: measured a PESSIMIZATION
+#
+# builtin-math is one knob over two lowerings, one excellent and one broken.
+# fabs is spilled to the stack, sign-cleared with a BYTE store into the middle
+# of it and reloaded whole -- a store-to-load-forwarding stall on every call:
+#     movq %xmm0,-0x10(%rbp) ; andb $0x7f,-0x9(%rbp) ; movq -0x10(%rbp),%xmm0
+# mathfun is 83.5% SLOWER with the fold on against a 0.51% layout floor, and
+# branchy 45.5% slower against 1.76%. The sqrt inline on the same knob is worth
+# +11.2% on nbody against a 0.82% floor, and demoting costs that. The fix is
+# two things: andpd against a sign mask held in a register, and splitting the
+# fabs lowering off this row so the sqrt half can ship without it.
+# The -ffast-math contract is NOT the blocker it was: it is separable and now
+# separated. -ffast-math sets optflag[BUILTIN_MATH] directly (src/libmcc.c), so
+# cli/fast_math_implies_no_math_errno still reads plain=1 fast=0 off=1 with the
+# default level at 10.
+builtin-math|10|mathfun -83.5% and branchy -45.5% cpu against 0.51% and 1.76% layout floors; the fabs lowering is a store-forwarding stall
+builtin-math-prepass|10|masked by builtin-math -- ast_math_inline_run returns 0 without it -- so it cannot fire below the rung that one sits on
+if-conversion|10|strproc -21.1% cpu against a 5.08% layout floor, counter agrees (-8.20%); stage-2 -0.48% and 0.69% of stage-1
+tree-vrp|10|strproc -11.9% cpu against a 5.08% layout floor, counter agrees (-2.59%); stage-2 -0.77% and 0.75% of stage-1
+sethi-ullman-leaf|10|stage-2 -1.71% cpu against a 0.43% floor, counter agrees; no kernel clears its own layout floor
+sethi-ullman|10|stage-2 -1.05% cpu, counter agrees (-0.036%), and 1.23% of stage-1 on top
+narrow|10|stage-2 -0.60% cpu, counter agrees (-0.016%), and 1.91% of stage-1 on top
+promote-leaf-callee|10|stage-2 -0.68% cpu, counter agrees (-0.074%); poly and regpress read -4% but inside their layout floors
+chain-store-live|10|stage-2 -0.66% cpu, counter agrees (-0.038%)
+tree-reassoc|10|stage-2 -0.53% cpu, counter agrees (-0.012%), and 0.64% of stage-1; poly +2.16% is inside poly's 6.3% floor
+#
+# --- rung 11: real compile-time cost above the 0.55% stage-1 floor, no payoff
+#
+# Every row here was read the same way: stage-1 CPU time is measurably worse
+# with it on, and neither stage-2 nor any kernel is measurably better. Where a
+# row's stage-2 TIME looked positive it is recorded, because in each case the
+# layout-immune counter contradicts it -- opt-cycle reads +2.83% of stage-2
+# time on 0.0015% MORE instructions, which is a code-layout accident, not a
+# transform.
+opt-cycle|11|8.04% of stage-1 cpu time; the +2.83% stage-2 reading is layout, the counter says -0.0015%
+chain-store|11|6.24% of stage-1 cpu time; +2.42% stage-2 is layout (counter -0.504%), and sieve +26% is inside sieve's 32% layout floor
+chain-store-member|11|1.78% of stage-1 cpu time; +2.25% stage-2 is layout (counter -0.368%), sieve likewise inside its floor
+tree-switch-conversion|11|1.68% of stage-1 cpu time, stage-2 unmoved
+tree-copy-prop|11|1.53% of stage-1 cpu time, stage-2 unmoved
+tree-loop-im|11|1.14% of stage-1 cpu time; +1.59% stage-2 is layout (counter -0.054%), loopnest inside its 8.5% floor
+tree-ccp-iterate|11|1.09% of stage-1 cpu time, stage-2 unmoved
+tree-const-load|11|0.96% of stage-1 cpu time; +2.46% stage-2 is layout (counter -0.019%)
+sethi-ullman-nary|11|0.81% of stage-1 cpu time, stage-2 unmoved
+loop-vlat|11|0.81% of stage-1 cpu time for a BYTE IDENTICAL stage-1 object -- it runs and changes nothing
+narrow-fix|11|0.80% of stage-1 cpu time for a BYTE IDENTICAL stage-1 object -- it runs and changes nothing
+gcse-join|11|0.72% of stage-1 cpu time for a BYTE IDENTICAL stage-1 object -- it runs and changes nothing
+#
+# --- rung 12: measured, no effect on anything, at no measurable cost
+#
+# These are the honest nothing. Each was measured on both workloads and moved
+# neither, and none of them costs enough stage-1 time to clear the floor either.
+# Eight of them do not change a single byte of the stage-1 object.
+tree-pre|12|no measured effect on either workload; stage-1 object byte identical to the base
+tree-dse|12|no measured effect on either workload; stage-1 object byte identical to the base
+narrow-elim|12|no measured effect on either workload; stage-1 object byte identical to the base
+gcse|12|no measured effect on either workload; stage-1 object byte identical to the base
+loop-fusion|12|no measured effect on either workload; stage-1 object byte identical to the base
+loop-interchange|12|no measured effect on either workload; stage-1 object byte identical to the base
+loop-block|12|no measured effect on either workload; stage-1 object byte identical to the base
+call-window|12|no measured effect on either workload; -0.475% of stage-1, inside the 0.55% floor
+zero-initialized-in-bss|12|no measured effect and no size effect either: the on and off objects are the same bytes on a zero-array probe
+arg-forward|12|no measured effect; the pass is inert in the graft path from -O2, which tests/optfire/defstate.txt pins as a tripwire
+optimize-sibling-calls|12|no measured effect; +2.80% stage-2 is layout, the counter says -0.054%
+spill-share|12|no measured effect alone, and ON TOP OF reg-color at -O2 it costs 0.9% of stage-2 time and 0.06% of instructions

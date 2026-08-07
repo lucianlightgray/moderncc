@@ -2,54 +2,58 @@
 # Locks the "flipped default-on at -O2" claims in the ungate campaign, which
 # differ mode cannot check because it forces the gate on both sides.
 promote|-O2|promote-locals|on
-color|-O2|reg-color|on
-ltemp|-O2|tree-loop-im|on
 ivsr|-O2|ivopts|on
-pre|-O2|tree-pre|on
-reassoc|-O2|tree-reassoc|on
-sethi_leaf|-O2|sethi-ullman-leaf|on
-narrow_elim|-O2|narrow-elim|on
-spill_share|-O2|spill-share|on
-vlat|-O2|loop-vlat|on
+color|-O2|reg-color|on
 divmagic|-O2|divmagic|on
+indirect_call|-O2|replay-indirect-call|on
 # argfwd's GATE defaults on (o4 || optimize>=2) but the pass is INERT: it lives
 # in the replay-time graft path, disabled while MCC_AST_INLINE_PASS is on, which
 # it is from -O2. So toggling it changes nothing and this asserts "off" as a
 # TRIPWIRE -- if the graft-path guard is ever fixed this cell fails and should
-# be flipped to "on".
-argfwd|-O2|arg-forward|off
-indirect_call|-O2|replay-indirect-call|on
+# be flipped to "on". arg-forward is now at rung 12, so -O2 would read "off"
+# for the boring reason that the row is not on the ladder; the cell reads at
+# -O12, where the gate IS on by default and the pass is still inert.
+argfwd|-O12|arg-forward|off
 # The four rungs that came off the in-development ladder onto a settled level.
-# Each row pins the level the rung landed on: the cell fails if the pass stops
-# firing there, and the mccopt.h row is the only thing that decides it.
-# promote-leaf-callee was measured a pessimization on the kernel corpus (-0.34%
-# of emitted instructions overall, poly -2.3% and regpress -5.6%) and moved from
-# 2 to 3, so -O2 must now see it off and -O3 on. Both rows, because either one
-# alone passes at the wrong level.
-promo_leaf_callee_below|-O2|promote-leaf-callee|off
-promo_leaf_callee|-O3|promote-leaf-callee|on
-# opt-slice came OFF the shipped ladder to level 9. It cost 96% of the stage-1
-# self-compile for no measurable gain on either workload, and it is what made
-# -O3 codegen depend on the contents of ~/.cache/mcc (tools/opt-cache-
-# determinism.py). Both rows say it is off at the top of the shipped ladder.
 optslice|-O3|opt-slice|off
 optslice_below|-O2|opt-slice|off
 # fmov-imm lowers a float constant to an FMOV immediate instead of a literal
 # pool load; ast_fmov_imm_env is compiled to 0 off arm64, so the gate cannot
 # fire anywhere else and the case is registered on arm64 only.
 fmov_imm|-O1|fmov-imm|on
-# The rows the -O ladder measurement moved. Each pins BOTH sides of its new
-# boundary, because a single row passes at any level at or below the one it
-# names. tests/optfire/levelbench.tsv and selfhost-levelbench.tsv carry the
-# numbers each move was made on.
-chainstore|-O3|chain-store|on
-chainstore_below|-O2|chain-store|off
-select|-O3|if-conversion|on
-select_below|-O2|if-conversion|off
-range|-O3|tree-vrp|on
-range_below|-O2|tree-vrp|off
-# builtin-math-prepass earned -O1 (efficiency 3.04) and is MASKED BY
-# builtin-math, which stays at 1, so it can fire there. Both rows: the -O1 one
-# is the promotion, the -O0 one is what stops it passing at any level at all.
-math_prepass_o1|-O1|builtin-math-prepass|on
-math_prepass|-O2|builtin-math-prepass|on
+#
+# --- the rows the CPU-TIME re-derivation moved off the shipped ladder
+#
+# Each pins BOTH sides of its new boundary, because a single row passes at any
+# level at or below the one it names: the -O3 row says the pass is gone from
+# the top of the shipped ladder, and the rung row says it is still there and
+# has not been silently deleted. tests/optfire/leveltime.tsv carries the
+# measurement each move was made on.
+#
+# Five rows carry only the "off at -O3" half. Their gate IS default-on at the
+# rung, but the object stops moving there: a rung turns on every row parked on
+# it at once, and one of the others already produces the same lowering on that
+# source, so -fno-<gate> emits the same bytes. The "still fires where parked"
+# half is carried for those by the counter cells in levels.txt, which read the
+# pass firing rather than the emitted bytes and are not masked -- ltemp, pre,
+# reassoc and range each assert ON at their rung there. sethi-ullman-leaf has
+# no counter of its own and is covered by tests/optfire/differs_sub.txt.
+ltemp_below|-O3|tree-loop-im|off
+pre_below|-O3|tree-pre|off
+reassoc_below|-O3|tree-reassoc|off
+sethi_leaf_below|-O3|sethi-ullman-leaf|off
+narrow_elim|-O12|narrow-elim|on
+narrow_elim_below|-O3|narrow-elim|off
+spill_share|-O12|spill-share|on
+spill_share_below|-O3|spill-share|off
+vlat|-O11|loop-vlat|on
+vlat_below|-O3|loop-vlat|off
+promo_leaf_callee|-O10|promote-leaf-callee|on
+promo_leaf_callee_below|-O3|promote-leaf-callee|off
+chainstore|-O11|chain-store|on
+chainstore_below|-O3|chain-store|off
+select|-O10|if-conversion|on
+select_below|-O3|if-conversion|off
+range_below|-O3|tree-vrp|off
+math_prepass|-O10|builtin-math-prepass|on
+math_prepass_below|-O3|builtin-math-prepass|off

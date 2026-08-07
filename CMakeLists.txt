@@ -4361,8 +4361,12 @@ if(MCC_BUILD_TESTS)
                             list(GET _of 3 _ofextra)
                         endif()
                         set(_ofcell "${_ofname}")
+                        set(_ofx_tail "-")
                         if(_ofxmode STREQUAL "cdelta")
                             set(_ofcell "cdelta-${_ofname}")
+                            if(_oflen GREATER 4)
+                                list(GET _of 4 _ofx_tail)
+                            endif()
                         endif()
                         set(_ofsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofname}.c")
                         set(_ofskip 0)
@@ -4383,7 +4387,7 @@ if(MCC_BUILD_TESTS)
                                 COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh"
                                         "${_ofxmode}" "$<TARGET_FILE:mcc-${_ofx_cpu}>" "${_ofsrc}"
                                         "${CMAKE_BINARY_DIR}/optfire-${_ofx_cpu}" "${_ofcell}"
-                                        "${_ofopt}" "${_ofarg}" "${_ofextra}" "-")
+                                        "${_ofopt}" "${_ofarg}" "${_ofextra}" "${_ofx_tail}")
                             set_tests_properties("optfire-${_ofx_cpu}/${_ofcell}" PROPERTIES
                                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
                                 ENVIRONMENT "OPTFIRE_NORUN=1;OPTFIRE_MCCFLAGS=-B${CMAKE_BINARY_DIR}")
@@ -4422,6 +4426,10 @@ if(MCC_BUILD_TESTS)
                         if(_oflen GREATER 3)
                             list(GET _of 3 _ofextra)
                         endif()
+                        set(_ofextra2 "-")
+                        if(_oflen GREATER 4)
+                            list(GET _of 4 _ofextra2)
+                        endif()
                         set(_ofsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofname}.c")
                         set(_ofcell "${_ofname}")
                         if(_ofmode STREQUAL "level")
@@ -4457,7 +4465,8 @@ if(MCC_BUILD_TESTS)
                                 add_test(NAME "optfire/${_ofcell}"
                                     COMMAND "${_of_sh}" cdelta "${_mcc_exe}" "${_ofsrc}"
                                             "${CMAKE_BINARY_DIR}/optfire" "${_ofcell}"
-                                            "${_ofopt}" "${_ofarg}" "${_ofextra}")
+                                            "${_ofopt}" "${_ofarg}" "${_ofextra}"
+                                            "${_ofextra2}")
                             elseif(_ofmode STREQUAL "defstate")
                                 add_test(NAME "optfire/${_ofcell}"
                                     COMMAND "${_of_sh}" defstate "${_mcc_exe}" "${_ofsrc}"

@@ -3,21 +3,28 @@
 # x86_64 and i386 (8/3/3/4) but the object diff only shows on x86_64, so a
 # counter delta covers them portably where an object diff cannot.
 # Sub-knob gates: all default-ON, so the OFF side forces =0.
+#
+# Where the extra field names a -f flag, that flag is the PARENT the sub-knob
+# needs: the parent came off the shipped ladder when the -O levels were
+# re-derived on CPU time, so forcing the sub-knob on at -O2 no longer makes the
+# object move on its own. Naming the parent keeps the cell at the level it
+# tested before and records which row it now depends on. Two rows name a rung
+# instead, because no single parent was enough to make them fire.
 ident_conv|-O2|ident-conv|-
-ident_shift|-O3|ident-shift|-
+ident_shift|-O12|ident-shift|-
 ident_arith|-O2|ident-arith|-
 ident_bit|-O2|ident-bit|-
 ident_rel|-O2|ident-rel|-
 ident_urange|-O2|ident-urange|-
-narrow_fix|-O2|narrow-fix|-
-narrow_elim|-O2|narrow-elim|-
-narrow_class0|-O2|narrow-class0|-
-narrow_class1|-O2|narrow-class1|-
-narrow_class2|-O2|narrow-class2|-
-narrow_class3|-O2|narrow-class3|-
-sccp_fix|-O2|tree-ccp-iterate|-
+narrow_fix|-O2|narrow-fix|-fnarrow
+narrow_elim|-O11|narrow-elim|-
+narrow_class0|-O2|narrow-class0|-fnarrow
+narrow_class1|-O2|narrow-class1|-fnarrow
+narrow_class2|-O2|narrow-class2|-fnarrow
+narrow_class3|-O2|narrow-class3|-fnarrow
+sccp_fix|-O2|tree-ccp-iterate|-ftree-copy-prop
 cse_comm|-O2|gcse|-
 dse_call|-O2|tree-dse|-
 tco_ptr|-O2|optimize-sibling-calls|-
-sethi_leaf|-O2|sethi-ullman-leaf|-
-sethi_nary|-O2|sethi-ullman-nary|-
+sethi_leaf|-O2|sethi-ullman-leaf|-fsethi-ullman
+sethi_nary|-O2|sethi-ullman-nary|-fsethi-ullman

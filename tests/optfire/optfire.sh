@@ -119,10 +119,12 @@ level)
 cdelta)
 	COUNTER=$7
 	GATE=$8
+	EXTRA=$9
+	[ "$EXTRA" = "-" ] && EXTRA=
 	[ -n "$COUNTER" ] && [ -n "$GATE" ] || { echo "FAIL $NAME: cdelta needs <counter> <flag>"; exit 2; }
 	gflag_for() { [ "$1" = 1 ] && echo "-f$GATE" || echo "-fno-$GATE"; }
 	cd_read() {
-		"$MCC" $MCCFLAGS "$OLEVEL" "$(gflag_for $1)" --stats=4 -c "$SRC" -o "$WORK/$NAME.$1.o" 2>&1 |
+		"$MCC" $MCCFLAGS "$OLEVEL" $EXTRA "$(gflag_for $1)" --stats=4 -c "$SRC" -o "$WORK/$NAME.$1.o" 2>&1 |
 			strip_ansi | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1
 	}
 	c0=$(cd_read 0); c1=$(cd_read 1)

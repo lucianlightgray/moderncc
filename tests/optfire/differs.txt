@@ -2,9 +2,12 @@
 interchange|-O2|loop-interchange|-
 fusion|-O2|loop-fusion|-
 tile|-O2|loop-block|MCC_AST_TILE_SIZE=7
-vlat|-O2|loop-vlat|-
+vlat|-O2|loop-vlat|-fnarrow
 ivsr_ptr|-O2|ivopts-ptr|-
-chainstore|-O2|chain-store|-
+# chain-store needs chain-store-live beside it on x86_64/arm64 and a
+# combination of rung-10 rows on i386/riscv64 that no single flag
+# reproduces, so this one reads at the rung rather than naming a parent.
+chainstore|-O10|chain-store|-
 promo_arrow|-O2|promote-arrow|-
 promo_incdec|-O2|promote-incdec|-
 spill_share|-O2|spill-share|-
@@ -12,6 +15,6 @@ color|-O2|reg-color|-
 argfwd|-O3|arg-forward|-fno-inline-functions
 zero_bss|-O2|zero-initialized-in-bss|-
 merge_strings|-O2|merge-constants|-
-call_window|-O2|call-window|-
+call_window|-O2|call-window|-ftree-copy-prop
 cse_join|-O2|gcse-join|-
 cprop_join|-O2|tree-copy-prop|-

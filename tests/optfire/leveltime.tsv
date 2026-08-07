@@ -1,0 +1,203 @@
+# leveltime: the -O ladder decided on CPU TIME. Instructions retired are a
+# diagnostic and a tiebreak here, not the ranking basis.
+#
+# cost_pct  stage-1 self-compile of src/mcc.c, flag OFF against the shipped
+#           set. NEGATIVE means the flag COSTS compile time.
+# gain_pct  stage-2 -- the compiler that comes out of stage-1, compiling
+#           src/mcc.c at -O2. POSITIVE means the flag PAYS.
+# gain_insn stage-2 instructions retired, same sign convention. Immune to
+#           code layout, so it says whether a time delta is a transform.
+# Both are medians of 40 interleaved reps, CPU time (user+sys) from wait4.
+#
+# EMPIRICAL FLOORS, measured rather than assumed:
+#   stage-1 0.544%  -- 4 IDENTICAL configs, 40 reps each, median to median
+#   stage-2 0.435%  -- the 15 configs whose stage-1 object is BYTE IDENTICAL
+#                    to the base. Their true effect is exactly zero, so the
+#                    spread of what they measured IS the floor. It is wider
+#                    than the identical-config floor because changing the
+#                    flag set changes code layout.
+#   kernels, by linking a padding TU ahead of an UNCHANGED kernel -- not one
+#   emitted instruction of the kernel differs, only its addresses:
+#     interp      34.28%  (12 layouts x 15 reps)
+#     sieve       32.18%  (12 layouts x 15 reps)
+#     loopnest     8.47%  (12 layouts x 15 reps)
+#     poly         6.30%  (12 layouts x 15 reps)
+#     divmod       5.58%  (12 layouts x 15 reps)
+#     strproc      5.08%  (12 layouts x 15 reps)
+#     structops    3.29%  (12 layouts x 15 reps)
+#     branchy      1.76%  (12 layouts x 15 reps)
+#     nbody        0.82%  (12 layouts x 15 reps)
+#     mathfun      0.51%  (12 layouts x 15 reps)
+#   That is the headline caveat of this whole table: on interp and sieve,
+#   layout alone is worth a third of the runtime, which is 30x any flag.
+#
+# base stage-1 0.3254s  stage-2 0.6448s  stage-2 9125780377 instructions
+#
+flag	level_old	level_new	cost_pct	gain_pct	gain_insn_pct	stage1_obj	best_kernel	best_kernel_pct	kernel_floor_pct	verdict
+builtin-copysign	1	1	0.115	-0.040	0.0000	identical	mathfun	3.73	0.51	SHIPS
+fmov-imm	1	1	-0.085	0.041	0.0008	identical	-	-	-	SHIPS
+reemit-templates	1	1	-12.988	-0.588	0.0449	differs	loopnest	-8.56	8.47	SHIPS
+storeval-calllast	1	1	0.001	-0.111	0.0001	identical	-	-	-	SHIPS
+storeval-constl	1	1	-0.080	-1.082	0.0093	differs	-	-	-	SHIPS
+storeval-rot	1	1	-0.211	2.241	-0.0245	differs	-	-	-	SHIPS
+trunc32	1	1	0.197	2.456	0.1247	differs	divmod	23.22	5.58	SHIPS
+divmagic	2	2	-0.444	2.153	-0.0265	differs	divmod	28.23	5.58	SHIPS
+if-conversion-abs	2	2	-0.202	1.444	-0.0185	differs	branchy	2.13	1.76	SHIPS
+inline-functions	2	2	-	-	-	-	-	-	-	not measured: stage-1 ICE
+merge-constants	2	2	-4.546	-0.325	-0.0500	differs	-	-	-	SHIPS
+reg-color	2	2	-1.190	-0.120	0.5486	differs	sieve	13.38	32.18	SHIPS
+storeval-callstore	2	2	-0.090	-1.167	0.0123	differs	-	-	-	SHIPS
+builtin-math	1	10	-0.362	-0.049	0.0005	identical	mathfun	-83.48	0.51	rung 10: pessimization
+builtin-math-prepass	1	10	-0.313	-0.350	0.0002	identical	nbody	10.99	0.82	rung 10: masked by builtin-math
+chain-store-live	2	10	-0.533	-0.664	-0.0375	differs	-	-	-	rung 10: pessimization
+if-conversion	3	10	-0.689	-0.477	-0.0500	differs	strproc	-21.07	5.08	rung 10: pessimization
+narrow	2	10	-1.906	-0.596	-0.0161	differs	-	-	-	rung 10: pessimization
+promote-leaf-callee	3	10	0.156	-0.682	-0.0735	differs	interp	-5.04	34.28	rung 10: pessimization
+sethi-ullman	1	10	-1.228	-1.054	-0.0357	differs	divmod	6.16	5.58	rung 10: pessimization
+sethi-ullman-leaf	1	10	-0.088	-1.707	-0.0034	differs	divmod	2.08	5.58	rung 10: pessimization
+tree-reassoc	2	10	-0.639	-0.531	-0.0123	differs	poly	2.16	6.30	rung 10: pessimization
+tree-vrp	3	10	-0.745	-0.765	-0.0120	differs	strproc	-11.86	5.08	rung 10: pessimization
+chain-store	3	11	-6.243	2.415	-0.5040	differs	sieve	26.19	32.18	rung 11: compile cost, no payoff
+chain-store-member	3	11	-1.778	2.245	-0.3684	differs	sieve	25.70	32.18	rung 11: compile cost, no payoff
+gcse-join	2	11	-0.716	-0.435	0.0000	identical	-	-	-	rung 11: compile cost, no payoff
+loop-vlat	2	11	-0.811	-0.378	0.0002	identical	-	-	-	rung 11: compile cost, no payoff
+narrow-fix	2	11	-0.803	-0.007	0.0002	identical	-	-	-	rung 11: compile cost, no payoff
+opt-cycle	3	11	-8.042	2.828	-0.0015	differs	-	-	-	rung 11: compile cost, no payoff
+sethi-ullman-nary	1	11	-0.812	-0.147	0.0009	differs	-	-	-	rung 11: compile cost, no payoff
+tree-ccp-iterate	2	11	-1.091	-0.106	0.0009	differs	-	-	-	rung 11: compile cost, no payoff
+tree-const-load	2	11	-0.961	2.459	-0.0190	differs	-	-	-	rung 11: compile cost, no payoff
+tree-copy-prop	2	11	-1.532	-0.226	0.0010	differs	-	-	-	rung 11: compile cost, no payoff
+tree-loop-im	2	11	-1.135	1.592	-0.0543	differs	loopnest	-8.43	8.47	rung 11: compile cost, no payoff
+tree-switch-conversion	2	11	-1.677	-0.901	0.0134	differs	-	-	-	rung 11: compile cost, no payoff
+arg-forward	2	12	0.046	-0.309	-0.0521	differs	-	-	-	rung 12: no effect, no cost
+call-window	1	12	-0.475	-0.247	0.0000	differs	-	-	-	rung 12: no effect, no cost
+gcse	1	12	0.040	-0.259	0.0001	identical	-	-	-	rung 12: no effect, no cost
+loop-block	2	12	-0.225	-0.049	0.0000	identical	loopnest	-0.17	8.47	rung 12: no effect, no cost
+loop-fusion	2	12	-0.135	-0.071	0.0000	identical	loopnest	-8.32	8.47	rung 12: no effect, no cost
+loop-interchange	2	12	-0.184	0.032	0.0002	identical	loopnest	1.28	8.47	rung 12: no effect, no cost
+narrow-elim	1	12	-0.030	0.063	0.0002	identical	-	-	-	rung 12: no effect, no cost
+optimize-sibling-calls	2	12	-0.291	2.800	-0.0542	differs	-	-	-	rung 12: no effect, no cost
+spill-share	2	12	0.044	-0.504	0.0745	differs	poly	-0.18	6.30	rung 12: no effect, no cost
+tree-dse	2	12	-0.193	-0.112	0.0004	identical	-	-	-	rung 12: no effect, no cost
+tree-pre	1	12	-0.369	-0.151	0.0000	identical	-	-	-	rung 12: no effect, no cost
+zero-initialized-in-bss	2	12	-0.162	-0.203	-0.0002	differs	-	-	-	rung 12: no effect, no cost
+#
+# THE PREMISE TEST -- the whole ladder, before and after, 40 interleaved reps
+# `before` is the shipped level with every moved row put back, restricted to
+# the rows whose OLD level was at or below it, so each pair differs by
+# exactly what that level lost. + means AFTER is better.
+#
+# level	stage1_cpu%	stage2_cpu%	stage2_insn%	stage1_text%	kernels_cpu%
+# -O1	+1.06	+3.75	-0.050	+0.00	+4.48 (mean of 17), -0.05 (median)
+# -O2	+8.34	+2.60	-0.098	-0.18	+3.13 (mean of 17), +0.04 (median)
+# -O3	+20.27	+2.89	+0.402	+2.44	+2.82 (mean of 17), +0.15 (median)
+#
+# THE SUBSET THE PREMISE TEST PUT BACK. Demoted with the rest, -O2 stage-2
+# went 0.52% slower on 0.25% more instructions. reg-color alone accounts for
+# it, and restoring it beats BOTH the reduced ladder and the one it replaces:
+#   after-O2                   stage-1 0.2568s  stage-2 0.5782s  stage-2 insns 8290064939
+#   after-O2+ccp+copyprop      stage-1 0.2604s  stage-2 0.5784s  stage-2 insns 8280367654
+#   after-O2+regcolor          stage-1 0.2602s  stage-2 0.5601s  stage-2 insns 8277513857
+#   after-O2+regcolor+spill    stage-1 0.2600s  stage-2 0.5769s  stage-2 insns 8282508580
+#   before-O2                  stage-1 0.2844s  stage-2 0.5747s  stage-2 insns 8269362267
+#
+# PER-KERNEL CPU TIME for every (flag, kernel) pair whose binary changed,
+# 21 interleaved reps, beside the layout-immune counter and that kernel's
+# own layout floor. A pair is only evidence when it clears its own floor.
+#
+# flag	kernel	cpu_pct	insn_pct	layout_floor_pct	verdict
+# builtin-copysign	mathfun	+3.726	+0.9976	0.51	REAL, counter agrees
+# builtin-math	mathfun	-83.475	+10.7866	0.51	clears floor but counter disagrees
+# builtin-math	branchy	-45.458	+2.1456	1.76	clears floor but counter disagrees
+# builtin-math	nbody	+11.151	+4.9766	0.82	REAL, counter agrees
+# builtin-math-prepass	nbody	+10.986	+4.9766	0.82	REAL, counter agrees
+# chain-store	sieve	+26.190	+1.9658	32.18	inside layout floor
+# chain-store-member	sieve	+25.695	+1.9658	32.18	inside layout floor
+# divmagic	divmod	+28.232	-124.4110	5.58	clears floor but counter disagrees
+# divmagic	loopnest	-8.531	-0.0329	8.47	REAL, counter agrees
+# divmagic	structops	-6.396	-24.4805	3.29	REAL, counter agrees
+# divmagic	mathfun	-1.684	-19.2193	0.51	REAL, counter agrees
+# divmagic	branchy	+1.646	-0.0402	1.76	inside layout floor
+# divmagic	strproc	-0.743	-0.0749	5.08	inside layout floor
+# divmagic	matmul	-0.430	-0.1044	-	no layout floor measured for this kernel
+# divmagic	hashmap	-0.060	-3.3499	-	no layout floor measured for this kernel
+# divmagic	interp	-0.048	-0.0000	34.28	inside layout floor
+# divmagic	nbody	+0.022	-0.0000	0.82	inside layout floor
+# if-conversion	strproc	-21.074	-8.2019	5.08	REAL, counter agrees
+# if-conversion	branchy	-0.082	-3.4009	1.76	inside layout floor
+# if-conversion-abs	branchy	+2.131	+3.1843	1.76	REAL, counter agrees
+# loop-block	loopnest	-0.169	-0.0044	8.47	inside layout floor
+# loop-fusion	loopnest	-8.317	+0.0003	8.47	inside layout floor
+# loop-interchange	loopnest	+1.276	+0.0000	8.47	inside layout floor
+# promote-leaf-callee	interp	-5.040	+1.9263	34.28	inside layout floor
+# promote-leaf-callee	poly	-4.230	-2.2726	6.30	inside layout floor
+# promote-leaf-callee	regpress	-3.918	-5.5700	-	no layout floor measured for this kernel
+# promote-leaf-callee	vlaloop	+1.319	-0.0000	-	no layout floor measured for this kernel
+# promote-leaf-callee	calls	+0.156	+0.0000	-	no layout floor measured for this kernel
+# reemit-templates	loopnest	-8.556	+0.0000	8.47	clears floor but counter disagrees
+# reemit-templates	mathfun	+3.820	+0.9976	0.51	REAL, counter agrees
+# reemit-templates	poly	+2.113	+4.5934	6.30	inside layout floor
+# reemit-templates	branchy	+1.759	+0.0000	1.76	inside layout floor
+# reemit-templates	hashmap	-0.828	-0.0000	-	no layout floor measured for this kernel
+# reemit-templates	calls	-0.607	+0.3194	-	no layout floor measured for this kernel
+# reemit-templates	strproc	-0.584	+0.0000	5.08	inside layout floor
+# reemit-templates	vlaloop	+0.489	+0.0000	-	no layout floor measured for this kernel
+# reemit-templates	matmul	-0.274	+0.0000	-	no layout floor measured for this kernel
+# reemit-templates	interp	-0.178	-0.0000	34.28	inside layout floor
+# reemit-templates	narrowops	+0.085	+0.0000	-	no layout floor measured for this kernel
+# reemit-templates	regpress	+0.012	+0.0000	-	no layout floor measured for this kernel
+# reg-color	sieve	+13.383	+0.0000	32.18	inside layout floor
+# reg-color	loopnest	-8.206	-0.0000	8.47	inside layout floor
+# reg-color	vlaloop	+5.727	-0.0000	-	no layout floor measured for this kernel
+# reg-color	regpress	+4.030	+0.0000	-	no layout floor measured for this kernel
+# reg-color	interp	+2.895	+1.9263	34.28	inside layout floor
+# reg-color	hashmap	-2.475	-0.0000	-	no layout floor measured for this kernel
+# reg-color	calls	+1.652	+0.0000	-	no layout floor measured for this kernel
+# reg-color	branchy	+1.373	-0.0000	1.76	inside layout floor
+# reg-color	divmod	+0.904	+0.0000	5.58	inside layout floor
+# reg-color	narrowops	-0.792	+0.0000	-	no layout floor measured for this kernel
+# reg-color	strproc	-0.463	+0.0000	5.08	inside layout floor
+# reg-color	matmul	-0.142	-0.0000	-	no layout floor measured for this kernel
+# reg-color	mandelbrot	-0.104	-0.0000	-	no layout floor measured for this kernel
+# reg-color	nbody	+0.079	-0.0000	0.82	inside layout floor
+# reg-color	mathfun	-0.035	+0.0000	0.51	inside layout floor
+# reg-color	poly	-0.032	+1.0988	6.30	inside layout floor
+# reg-color	structops	-0.023	+0.0000	3.29	inside layout floor
+# sethi-ullman	divmod	+6.160	+0.0000	5.58	REAL, counter agrees
+# sethi-ullman	regpress	-1.574	-0.0000	-	no layout floor measured for this kernel
+# sethi-ullman	strproc	+0.240	+0.0000	5.08	inside layout floor
+# sethi-ullman	poly	+0.051	+0.0000	6.30	inside layout floor
+# sethi-ullman	narrowops	-0.050	-0.0000	-	no layout floor measured for this kernel
+# sethi-ullman	branchy	-0.026	+0.0000	1.76	inside layout floor
+# sethi-ullman	nbody	-0.005	+0.0000	0.82	inside layout floor
+# sethi-ullman-leaf	divmod	+2.082	+0.0000	5.58	inside layout floor
+# sethi-ullman-leaf	branchy	+1.812	+0.0000	1.76	REAL, counter agrees
+# sethi-ullman-leaf	calls	+0.441	+1.7437	-	no layout floor measured for this kernel
+# sethi-ullman-leaf	vlaloop	+0.226	+0.0000	-	no layout floor measured for this kernel
+# sethi-ullman-leaf	nbody	+0.113	+0.0000	0.82	inside layout floor
+# sethi-ullman-leaf	hashmap	+0.026	+0.0000	-	no layout floor measured for this kernel
+# spill-share	poly	-0.177	+0.0000	6.30	inside layout floor
+# spill-share	regpress	-0.055	+0.0000	-	no layout floor measured for this kernel
+# tree-loop-im	loopnest	-8.430	-0.0000	8.47	inside layout floor
+# tree-loop-im	matmul	-0.222	-0.0000	-	no layout floor measured for this kernel
+# tree-reassoc	poly	+2.163	+1.0988	6.30	inside layout floor
+# tree-reassoc	nbody	+0.193	+0.0000	0.82	inside layout floor
+# tree-vrp	strproc	-11.861	-2.5882	5.08	REAL, counter agrees
+# tree-vrp	interp	+2.132	+0.0000	34.28	inside layout floor
+# trunc32	divmod	+23.221	+5.3920	5.58	REAL, counter agrees
+# trunc32	loopnest	-8.327	+0.0030	8.47	inside layout floor
+# trunc32	structops	+3.318	+1.8603	3.29	REAL, counter agrees
+# trunc32	branchy	+1.798	+0.0037	1.76	REAL, counter agrees
+# trunc32	hashmap	+0.877	+0.5373	-	no layout floor measured for this kernel
+# trunc32	strproc	-0.396	+0.2012	5.08	inside layout floor
+# trunc32	mathfun	+0.331	+1.9753	0.51	inside layout floor
+# trunc32	vlaloop	-0.190	+0.0000	-	no layout floor measured for this kernel
+# trunc32	sieve	-0.160	+0.0000	32.18	inside layout floor
+# trunc32	nbody	-0.109	+0.0000	0.82	inside layout floor
+# trunc32	interp	+0.056	+0.0000	34.28	inside layout floor
+# trunc32	narrowops	+0.042	+0.0000	-	no layout floor measured for this kernel
+# trunc32	regpress	+0.037	+0.0000	-	no layout floor measured for this kernel
+# trunc32	calls	-0.037	+0.0000	-	no layout floor measured for this kernel
+# trunc32	poly	+0.034	+0.0000	6.30	inside layout floor
+# trunc32	mandelbrot	+0.009	-0.0000	-	no layout floor measured for this kernel
+# trunc32	matmul	-0.008	+0.0095	-	no layout floor measured for this kernel

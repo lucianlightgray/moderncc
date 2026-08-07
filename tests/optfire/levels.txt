@@ -1,22 +1,27 @@
 # <name>|<--stats counter>|<-Olevel>:<on|off>,...   locks the -O curation
+# Nine passes read OFF at every shipped level and ON at the rung they were
+# parked on. That is the curation this file exists to lock: the -O ladder was
+# re-derived on CPU time (tests/optfire/leveltime.tsv) and a pass that never
+# made anything measurably faster does not ship. Each row still names the rung
+# where the pass fires, so "demoted" cannot silently become "deleted".
 bfold|bfold|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 ident|ident|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
-narrow|narrow|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
+narrow|narrow|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O10:on
 cprop|cprop|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 cse|cse|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
-ltemp|ltemp|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
+ltemp|ltemp|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O10:on
 ivsr|ivsr|-O0:off,-O1:on,-O2:on,-O3:on,-Os:off
-pre|pre|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
-licm|licm|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
+pre|pre|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O10:on
+licm|licm|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O10:on
 dse|dse|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 sccp|sccp|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 jt|jt|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
-bf|bf|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
-range|range|-O0:off,-O1:off,-O2:off,-O3:on,-Os:off
+bf|bf|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O11:on
+range|range|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O10:on
 divmagic|divmagic|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
 abs|abs|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
-select|select|-O0:off,-O1:off,-O2:off,-O3:on,-Os:off
-reassoc|reassoc|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
-sethi|sethi|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
+select|select|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O10:on
+reassoc|reassoc|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O10:on
+sethi|sethi|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O10:on
 tco|tco|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 inline|inline|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
