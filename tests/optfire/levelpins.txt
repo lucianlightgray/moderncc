@@ -109,23 +109,57 @@ storeval-rot|1|replay-fidelity bisection handle; its off-state is an incomplete 
 storeval-calllast|1|replay-fidelity bisection handle; inert here, stage-1 object byte identical to the base
 storeval-callstore|2|replay-fidelity bisection handle; the -O3 ICE is fixed and both states now build, so the row is measurable and the level simply awaits a re-measurement
 #
-# --- rung 10: measured a PESSIMIZATION
+# --- rung 1: the math rows, promoted back after the lowering was fixed
 #
-# builtin-math is one knob over two lowerings, one excellent and one broken.
-# fabs is spilled to the stack, sign-cleared with a BYTE store into the middle
-# of it and reloaded whole -- a store-to-load-forwarding stall on every call:
-#     movq %xmm0,-0x10(%rbp) ; andb $0x7f,-0x9(%rbp) ; movq -0x10(%rbp),%xmm0
-# mathfun is 83.5% SLOWER with the fold on against a 0.51% layout floor, and
-# branchy 45.5% slower against 1.76%. The sqrt inline on the same knob is worth
-# +11.2% on nbody against a 0.82% floor, and demoting costs that. The fix is
-# two things: andpd against a sign mask held in a register, and splitting the
-# fabs lowering off this row so the sqrt half can ship without it.
-# The -ffast-math contract is NOT the blocker it was: it is separable and now
-# separated. -ffast-math sets optflag[BUILTIN_MATH] directly (src/libmcc.c), so
-# cli/fast_math_implies_no_math_errno still reads plain=1 fast=0 off=1 with the
-# default level at 10.
-builtin-math|10|mathfun -83.5% and branchy -45.5% cpu against 0.51% and 1.76% layout floors; the fabs lowering is a store-forwarding stall
-builtin-math-prepass|10|masked by builtin-math -- ast_math_inline_run returns 0 without it -- so it cannot fire below the rung that one sits on
+# builtin-math sat at rung 10 because one knob carried two lowerings and one of
+# them was broken: fabs was spilled to the stack, sign-cleared with a BYTE store
+# into the middle of it and reloaded whole -- a store-to-load-forwarding stall
+# on every call. The demotion was correct about the pessimization and expensive
+# about the sqrt inline riding the same knob.
+#
+# Both halves of that are now fixed. gen_fabs on x86_64 builds the mask in a
+# register and clears the sign bit in one instruction, with no memory traffic
+# and no branch:
+#     pcmpeqd %xmm1,%xmm1 ; psrlq $1,%xmm1 ; andpd %xmm1,%xmm0
+# and the fabs lowering is split onto builtin-math-fabs so it is credited and
+# demoted on its own reading rather than the sqrt inline's.
+#
+# Re-measured with the fixed lowering, N=9 interleaved pairs, layout floors
+# taken the same way (padding TU linked ahead of the unchanged kernel, 6
+# paddings): mathfun 0.67%, branchy 0.53%, nbody 1.18%.
+#
+#   builtin-math-fabs   mathfun -27.3% cpu (152.5ms -> 110.4ms) and branchy
+#                       -0.85%, counters agreeing at -10.79% and -2.22%. On the
+#                       broken lowering the same fold read +85.7% on mathfun and
+#                       +47.0% on branchy while retiring FEWER instructions --
+#                       the store-forwarding signature, and the reason the row
+#                       was demoted.
+#   builtin-math        nbody -10.5% cpu (334.9ms -> 299.8ms), counter -4.98%.
+#   builtin-math-prepass  carries all of nbody's win: with the prepass off and
+#                       builtin-math on, nbody reads +0.15%, inside its floor.
+#
+# The three rows together cost 0.19% of stage-1 self-compile instructions and
+# nothing the clock can see (stage-1 floor 0.55%). No other kernel's object
+# changes: of the 17, only nbody, branchy and mathfun move an instruction, so
+# every other time delta at -O2 is layout.
+#
+# The rung is 1 rather than 2 on the rule that a lowering which introduces
+# neither a loop nor a nested call does not need its own -O1 measurement to
+# earn -O1. Both of these REMOVE a call and leave three straight-line SSE
+# instructions in its place, so the numbers above -- taken at -O2 -- are the
+# evidence for the transform and the rung is a policy call on top of them.
+#
+# The -ffast-math contract is unchanged. -ffast-math sets optflag[BUILTIN_MATH]
+# and optflag[BUILTIN_MATH_FABS] directly (src/libmcc.c), and
+# cli/fast_math_implies_no_math_errno still reads plain=1 fast=0 off=1: at -O2
+# without -ffast-math the sqrt inline still needs a provably non-negative
+# argument, which a bare parameter is not.
+builtin-math|1|nbody -10.5% cpu at -O2 against a 1.18% layout floor, counter agrees (-4.98%), for 0.19% of stage-1 instructions
+builtin-math-fabs|1|mathfun -27.3% and branchy -0.85% cpu at -O2 against 0.67% and 0.53% layout floors, counters agree (-10.79%, -2.22%)
+builtin-math-prepass|1|nbody's entire -10.5% is carried by the prepass: with it off and builtin-math on, nbody reads +0.15%, inside its floor
+#
+# --- rung 10
+#
 if-conversion|10|strproc -21.1% cpu against a 5.08% layout floor, counter agrees (-8.20%); stage-2 -0.48% and 0.69% of stage-1
 tree-vrp|10|strproc -11.9% cpu against a 5.08% layout floor, counter agrees (-2.59%); stage-2 -0.77% and 0.75% of stage-1
 sethi-ullman-leaf|10|stage-2 -1.71% cpu against a 0.43% floor, counter agrees; no kernel clears its own layout floor

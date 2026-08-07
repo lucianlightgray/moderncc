@@ -55,5 +55,16 @@ chainstore_below|-O3|chain-store|off
 select|-O10|if-conversion|on
 select_below|-O3|if-conversion|off
 range_below|-O3|tree-vrp|off
-math_prepass|-O10|builtin-math-prepass|on
-math_prepass_below|-O3|builtin-math-prepass|off
+#
+# --- the three math rows, back on the shipped ladder at -O1
+#
+# builtin-math was demoted to rung 10 because one knob carried two lowerings
+# and one of them was a pessimization. The fabs lowering is fixed (andpd
+# against a register-held mask, x86_64-gen.c) and split onto its own row.
+# Neither lowering emits a loop or a call -- each REMOVES a call and leaves
+# three straight-line SSE instructions -- so they sit at -O1, and there is no
+# shipped level below that to assert the off-half against: at -O0 the AST
+# optimizer does not run at all, so -fno-<gate> is vacuously identical there.
+math_fabs|-O1|builtin-math-fabs|on
+math_sqrt|-O1|builtin-math|on
+math_prepass|-O1|builtin-math-prepass|on

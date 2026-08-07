@@ -2757,6 +2757,23 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_push_typed(n);
 		break;
 	}
+#endif
+#ifdef MCC_IR_HAVE_FABS_SQRT
+	case IR_OP_FABS: {
+		AstLocal v = rir_shn ? rir_pop() : AST_NONE;
+		AstLocal n;
+		if (v == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		n = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, n, AST_OP_FABS);
+		ast_add_child(rir_arena, n, v);
+		rir_push_typed(n);
+		break;
+	}
+#endif
+#ifdef MCC_IR_HAVE_X86_PRIMS
 	case IR_OP_ATOMIC_XADD:
 	case IR_OP_ATOMIC_XCHG:
 	case IR_OP_ATOMIC_CMPXCHG: {

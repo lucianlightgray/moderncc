@@ -12401,6 +12401,41 @@ tok_next:
 			PUT_R_RET(vtop, VT_INT);
 		}
 	} break;
+#ifdef MCC_IR_HAVE_FABS_SQRT
+	case TOK_builtin_fabs:
+	case TOK_builtin_fabsf: {
+		int btok = tok;
+		CType ft;
+		parse_builtin_params(0, "e");
+		if (!is_float(vtop->type.t) &&
+				((vtop->type.t & VT_BTYPE) == VT_PTR ||
+				 (vtop->type.t & VT_BTYPE) == VT_STRUCT ||
+				 (vtop->type.t & VT_BTYPE) == VT_VOID))
+			{ MCC_TRACE("br\n"); mcc_error("non-floating-point argument in call to function '%s'",
+								get_tok_str(btok, NULL)); }
+		ft.t = btok == TOK_builtin_fabsf ? VT_FLOAT : VT_DOUBLE;
+		ft.bp = 0;
+		ft.bs = 0;
+		ft.ref = NULL;
+		gen_cast(&ft);
+		if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) { MCC_TRACE("br\n");
+			if (ft.t == VT_FLOAT) { MCC_TRACE("br\n");
+				uint32_t u;
+				memcpy(&u, &vtop->c.f, 4);
+				u &= 0x7fffffffu;
+				memcpy(&vtop->c.f, &u, 4);
+			} else { MCC_TRACE("br\n");
+				uint64_t u;
+				memcpy(&u, &vtop->c.d, 8);
+				u &= 0x7fffffffffffffffULL;
+				memcpy(&vtop->c.d, &u, 8);
+			}
+		} else { MCC_TRACE("br\n");
+			gen_fabs();
+			vtop->type = ft;
+		}
+	} break;
+#endif
 	case TOK_builtin_ffs:
 	case TOK_builtin_ffsl:
 	case TOK_builtin_ffsll:

@@ -479,10 +479,12 @@
 	#define __builtin_isless(a, b) (!__builtin_isunordered(a, b) && (a) < (b))
 	#define __builtin_islessequal(a, b) (!__builtin_isunordered(a, b) && (a) <= (b))
 	#define __builtin_islessgreater(a, b) (!__builtin_isunordered(a, b) && ((a) < (b) || (a) > (b)))
+	#if !defined __x86_64__ && !defined __i386__ && !defined __aarch64__ && !defined __riscv
 	#define __builtin_fabsf(x) ((__mcc_float_t)(__builtin_signbitf((__mcc_float_t)(x)) \
 	? -(__mcc_float_t)(x) : (__mcc_float_t)(x)))
 	#define __builtin_fabs(x)  ((__mcc_double_t)(__builtin_signbit((__mcc_double_t)(x)) \
 	? -(__mcc_double_t)(x) : (__mcc_double_t)(x)))
+	#endif
 	#define __builtin_fabsl(x) ((__mcc_ldouble_t)(__builtin_signbitl((__mcc_ldouble_t)(x)) \
 	? -(__mcc_ldouble_t)(x) : (__mcc_ldouble_t)(x)))
 	#define __builtin_abs(x)   ((__mcc_int_t)((x) < 0 ? -(x) : (x)))

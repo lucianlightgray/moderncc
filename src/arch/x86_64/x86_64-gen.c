@@ -2524,17 +2524,29 @@ void gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
 
 void gen_fabs(void) { MCC_TRACE("enter\n");
 	int bt = vtop->type.t & VT_BTYPE;
+	int dbl = bt == VT_DOUBLE;
+	int r, mreg, m, pinned;
 	if (bt == VT_LDOUBLE) { MCC_TRACE("br\n");
 		gv(MCC_RC_ST0);
 		o(0xe1d9);
 		return;
 	}
 	gv(MCC_RC_FLOAT);
-	save_reg(vtop->r);
-	o(0x80);
-	gen_modrm(4, vtop->r, NULL, vtop->c.i + (bt == VT_DOUBLE ? 7 : 3));
-	o(0x7f);
-	gv(MCC_RC_FLOAT);
+	r = vtop->r & VT_VALMASK;
+	pinned = (ast_pinned_regs & ((uint64_t)1 << r)) != 0;
+	mreg = get_reg(MCC_RC_FLOAT);
+	m = REG_VALUE(mreg);
+	o(0x66); sse_rex(mreg, mreg); o(0x760f); o(0xc0 | (m << 3) | m);
+	o(0x66); sse_rex(0, mreg);
+	o(dbl ? 0x730f : 0x720f); o(0xd0 | m); o(1);
+	if (dbl)
+		{ MCC_TRACE("br\n"); o(0x66); }
+	if (pinned) { MCC_TRACE("br\n");
+		sse_rex(mreg, r); o(0x540f); o(0xc0 | (m << 3) | REG_VALUE(r));
+		vtop->r = mreg;
+	} else { MCC_TRACE("br\n");
+		sse_rex(r, mreg); o(0x540f); o(0xc0 | (REG_VALUE(r) << 3) | m);
+	}
 }
 
 void gen_atomic_cmpxchg(int size) { MCC_TRACE("enter\n");

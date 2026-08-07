@@ -28,6 +28,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"c11_imaginary_suffix", "run", "exec/features_c99_c11/c11_imaginary_suffix.c", "OK\n", "", "", ""},
 		{"atomic_aggregate", "run", "exec/features_c99_c11/atomic_aggregate.c", "OK\n", "", "", ""},
 		{"fp_builtins", "run", "exec/features_c99_c11/fp_builtins.c", "OK\n", "", "", ""},
+		{"fabs_edge", "run", "exec/features_c99_c11/fabs_edge.c", "OK\n", "-lm", "", ""},
 		{"libm_builtin_fold", "run", "exec/features_c99_c11/libm_builtin_fold.c", "2.5 6.25 2 3\n2 3 2.5 7.5\n2.5 6.25 2 3\n2 3 2.5 7.5\nOK\n", "-lm", "", ""},
 		{"builtin_libm_alias", "run", "exec/features_c99_c11/builtin_libm_alias.c", "1.58114 7 7.5 6.25\nOK\n", "-lm", "", ""},
 		{"complex_annexg", "run", "exec/features_c99_c11/complex_annexg.c", "OK\n", "", "", ""},

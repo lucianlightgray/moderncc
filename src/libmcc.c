@@ -3098,6 +3098,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				s->fold_math = on;
 				s->cx_limited_range = on;
 				s->optflag[MCC_OPT_BUILTIN_MATH] = on ? 1 : MCC_OPT_UNSET;
+				s->optflag[MCC_OPT_BUILTIN_MATH_FABS] = on ? 1 : MCC_OPT_UNSET;
 			} else if (set_flag(s, options_f, optarg) < 0)
 				{ MCC_TRACE("br\n"); goto unsupported_option; }
 		} break;

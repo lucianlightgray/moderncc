@@ -97,8 +97,9 @@
 	MCC_OPT_ROW(BFOLD_SIGN,                    "bfold-sign",                   MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(BFOLD_ROUND,                   "bfold-round",                  MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(BFOLD_MINMAX,                  "bfold-minmax",                 MCC_OPTD_ALWAYS) \
-	MCC_OPT_ROW(BUILTIN_MATH,                  "builtin-math",                 MCC_OPTD_LEVEL(10)) \
-	MCC_OPT_ROW(BUILTIN_MATH_PREPASS,          "builtin-math-prepass",         MCC_OPTD_LEVEL(10)) \
+	MCC_OPT_ROW(BUILTIN_MATH,                  "builtin-math",                 MCC_OPTD_LEVEL(1)) \
+	MCC_OPT_ROW(BUILTIN_MATH_FABS,             "builtin-math-fabs",            MCC_OPTD_LEVEL(1)) \
+	MCC_OPT_ROW(BUILTIN_MATH_PREPASS,          "builtin-math-prepass",         MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(BUILTIN_ROUND,                 "builtin-round",                MCC_OPTD_SPECIAL) \
 	MCC_OPT_ROW(BUILTIN_COPYSIGN,              "builtin-copysign",             MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(BUILTIN_MINMAX,                "builtin-minmax",               MCC_OPTD_SPECIAL) \

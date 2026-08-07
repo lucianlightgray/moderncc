@@ -1561,6 +1561,7 @@ static MCC_OPT_TLS int ast_bfold_sign_env;
 static MCC_OPT_TLS int ast_bfold_round_env;
 static MCC_OPT_TLS int ast_bfold_minmax_env;
 static MCC_OPT_TLS int ast_math_inline_env;
+static MCC_OPT_TLS int ast_fabs_inline_env;
 static MCC_OPT_TLS int ast_math_inline_prepass_env;
 static MCC_OPT_TLS int ast_round_inline_env;
 static MCC_OPT_TLS int ast_copysign_env;
@@ -2367,6 +2368,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_bfold_round_env = mcc_opt(s1, MCC_OPT_BFOLD_ROUND);
 	ast_bfold_minmax_env = mcc_opt(s1, MCC_OPT_BFOLD_MINMAX);
 	ast_math_inline_env = mcc_opt(s1, MCC_OPT_BUILTIN_MATH);
+	ast_fabs_inline_env = mcc_opt(s1, MCC_OPT_BUILTIN_MATH_FABS);
 	ast_math_inline_prepass_env = mcc_opt(s1, MCC_OPT_BUILTIN_MATH_PREPASS);
 	ast_round_inline_env = mcc_opt(s1, MCC_OPT_BUILTIN_ROUND);
 	ast_copysign_env = mcc_opt(s1, MCC_OPT_BUILTIN_COPYSIGN);
@@ -6971,7 +6973,8 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 		}
 		if (i < nargs) { MCC_TRACE("br\n");
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
-			if (bid == 1 && nargs == 1 && ast_math_inline_env) { MCC_TRACE("br\n");
+			if (bid == 1 && nargs == 1 && ast_math_inline_env &&
+					ast_fabs_inline_env) { MCC_TRACE("br\n");
 				AstLocal arg = ast_child(a, n, 1);
 				ast_clear_children(a, n);
 				ast_set_kind(a, n, AST_Unary);
@@ -7145,7 +7148,7 @@ static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 		if (bid != 0 && bid != 1 && !is_round)
 			{ MCC_TRACE("br\n"); continue; }
 		int bgate = bid == 0 ? ast_bfold_sqrt_env
-							: bid == 1 ? ast_bfold_sign_env
+							: bid == 1 ? (ast_bfold_sign_env && ast_fabs_inline_env)
 												 : ast_bfold_round_env;
 		if (!bgate)
 			{ MCC_TRACE("br\n"); continue; }

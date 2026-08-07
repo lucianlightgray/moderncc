@@ -33,6 +33,21 @@
 #
 # base stage-1 0.3254s  stage-2 0.6448s  stage-2 9125780377 instructions
 #
+# The four builtin-math* rows were RE-MEASURED after the fabs lowering was
+# fixed (x86_64 gen_fabs now clears the sign bit with pcmpeqd/psrlq/andpd
+# instead of spilling and doing a byte store) and after the fabs half was split
+# onto its own row. Their kernel readings below are from that re-measurement:
+# N=9 interleaved pairs, layout floors re-taken the same way with 6 paddings --
+# mathfun 0.67%, branchy 0.53%, nbody 1.18%. Their stage-1 objects are BYTE
+# IDENTICAL to the base, so their stage-2 effect is exactly zero rather than
+# measured-as-zero, and their cost_pct readings are all inside the 0.544%
+# stage-1 floor (0.19% of stage-1 instructions for all three together).
+# branchy also clears its floor for builtin-math-fabs at 0.85% with the counter
+# agreeing at 2.22%; the best_kernel column carries mathfun because it is the
+# larger of the two. The kernel readings are taken at -O2; the rows sit at rung
+# 1 because neither lowering introduces a loop or a nested call -- each removes
+# a call -- so no separate -O1 reading was required to place them.
+#
 flag	level_old	level_new	cost_pct	gain_pct	gain_insn_pct	stage1_obj	best_kernel	best_kernel_pct	kernel_floor_pct	verdict
 builtin-copysign	1	1	0.115	-0.040	0.0000	identical	mathfun	3.73	0.51	SHIPS
 fmov-imm	1	1	-0.085	0.041	0.0008	identical	-	-	-	SHIPS
@@ -47,8 +62,9 @@ inline-functions	2	2	-	-	-	-	-	-	-	not measured: stage-1 ICE
 merge-constants	2	2	-4.546	-0.325	-0.0500	differs	-	-	-	SHIPS
 reg-color	2	2	-1.190	-0.120	0.5486	differs	sieve	13.38	32.18	SHIPS
 storeval-callstore	2	2	-0.090	-1.167	0.0123	differs	-	-	-	SHIPS
-builtin-math	1	10	-0.362	-0.049	0.0005	identical	mathfun	-83.48	0.51	rung 10: pessimization
-builtin-math-prepass	1	10	-0.313	-0.350	0.0002	identical	nbody	10.99	0.82	rung 10: masked by builtin-math
+builtin-math	10	1	0.388	0.000	0.0000	identical	nbody	10.48	1.18	re-measured after the fabs fix: SHIPS
+builtin-math-fabs	-	1	0.527	0.000	0.0000	identical	mathfun	27.30	0.67	new row, split off builtin-math: SHIPS
+builtin-math-prepass	10	1	-0.270	0.000	0.0000	identical	nbody	10.48	1.18	re-measured after the fabs fix: SHIPS
 chain-store-live	2	10	-0.533	-0.664	-0.0375	differs	-	-	-	rung 10: pessimization
 if-conversion	3	10	-0.689	-0.477	-0.0500	differs	strproc	-21.07	5.08	rung 10: pessimization
 narrow	2	10	-1.906	-0.596	-0.0161	differs	-	-	-	rung 10: pessimization
