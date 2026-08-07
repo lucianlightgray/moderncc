@@ -15683,33 +15683,18 @@ static int ast_eval_slice(AstArena *a, AstLocal n, const int32_t *o, const int64
 #define SPV_MALLOC mcc_malloc
 #define SPV_REALLOC mcc_realloc
 #define SPV_FREE mcc_free
+#define MSL_MALLOC mcc_malloc
+#define MSL_REALLOC mcc_realloc
+#define MSL_FREE mcc_free
+#if MCC_HOST_DARWIN
+#include "mccmsl.h"
+#include "mccmtl.h"
+#else
 #include "mccspv.h"
 #include "mccgpu.h"
+#endif
 
 #define AST_LADDER_GPU_MAX (1u << 20)
-#define AST_LADDER_GPU_MAX_WORDS 8192
-
-static int ast_ladder_gpu_emit(AstArena *a, AstLocal root, const int32_t *off,
-															 int n, uint32_t **code, int *nwords) { MCC_TRACE("enter\n");
-	SpvMod m;
-	uint32_t base, val, lane;
-	spv_module_begin(&m, n);
-	base = spv_main_begin(&m, n);
-	if (!spv_expr(&m, a, root, off, n, base, &val) || m.failed) { MCC_TRACE("br\n");
-		spv_module_free(&m);
-		return 0;
-	}
-	lane = spv_emit3(&m, SpvOpSDiv, m.id_int, base, spv_const(&m, n));
-	spv_main_end(&m, lane, val);
-	*code = spv_module_finish(&m, nwords);
-	spv_module_free(&m);
-	if (*nwords > AST_LADDER_GPU_MAX_WORDS) { MCC_TRACE("br\n");
-		mcc_free(*code);
-		*code = NULL;
-		return 0;
-	}
-	return 1;
-}
 
 static long ast_ladder_gpu_budget;
 static long ast_ladder_gpu_rungs;
@@ -15719,8 +15704,8 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 															const int *sh, int total, uint64_t space,
 															AstEvalLadderRes *res) { MCC_TRACE("enter\n");
 	int32_t off[AST_EVAL_LADDER_MAXIN];
-	uint32_t *ca = NULL, *cb = NULL;
-	int na = 0, nb = 0, i, verdict = 1;
+	MccGpuCode ca = {NULL, 0}, cb = {NULL, 0};
+	int i, verdict = 1;
 	int rta, rtb;
 	int32_t *tin = NULL, *oa = NULL, *ob = NULL;
 	uint64_t code;
@@ -15742,10 +15727,10 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 	if (!rta || !rtb || is_float(rta) || is_float(rtb) ||
 			ast_eval_slice_is64(rta) || ast_eval_slice_is64(rtb))
 		return -1;
-	if (!ast_ladder_gpu_emit(a, ar, off, n, &ca, &na))
+	if (!mcc_gpu_emit(a, ar, off, n, &ca))
 		return -1;
-	if (!ast_ladder_gpu_emit(b, br, off, n, &cb, &nb)) { MCC_TRACE("br\n");
-		mcc_free(ca);
+	if (!mcc_gpu_emit(b, br, off, n, &cb)) { MCC_TRACE("br\n");
+		mcc_gpu_code_free(&ca);
 		return -1;
 	}
 	tin = mcc_malloc((size_t)ntuple * n * 4);
@@ -15762,23 +15747,21 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 		if (dd) { MCC_TRACE("br\n");
 			static int seq;
 			char pth[512];
-			FILE *fp;
-			snprintf(pth, sizeof pth, "%s/lad%04d_a.spv", dd, seq);
-			fp = fopen(pth, "wb");
-			if (fp) { MCC_TRACE("br\n"); fwrite(ca, 4, (size_t)na, fp); fclose(fp); }
-			snprintf(pth, sizeof pth, "%s/lad%04d_b.spv", dd, seq);
-			fp = fopen(pth, "wb");
-			if (fp) { MCC_TRACE("br\n"); fwrite(cb, 4, (size_t)nb, fp); fclose(fp); }
+			snprintf(pth, sizeof pth, "%s/lad%04d_a." MCC_GPU_CODE_SUFFIX, dd, seq);
+			mcc_gpu_code_dump(&ca, pth);
+			snprintf(pth, sizeof pth, "%s/lad%04d_b." MCC_GPU_CODE_SUFFIX, dd, seq);
+			mcc_gpu_code_dump(&cb, pth);
 			seq++;
 		}
 	}
-	if (!mcc_gpu_run(ca, na, tin, ntuple, n, oa))
+	if (!mcc_gpu_run(&ca, tin, ntuple, n, oa))
 		goto bail;
-	if (!mcc_gpu_run(cb, nb, tin, ntuple, n, ob))
+	if (!mcc_gpu_run(&cb, tin, ntuple, n, ob))
 		goto bail;
 
 	for (code = 0; code < space; code++) { MCC_TRACE("br\n");
 		int adef = oa[code * 2 + 1] != 0, bdef = ob[code * 2 + 1] != 0;
+		int64_t fa, fb;
 		res->points++;
 		if (!adef) { MCC_TRACE("br\n");
 			res->vacuous++;
@@ -15794,27 +15777,29 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 			goto out;
 		}
 		res->informative++;
-		if (oa[code * 2] != ob[code * 2]) { MCC_TRACE("br\n");
+		fa = ast_eval_slice_fit((int64_t)oa[code * 2], rta);
+		fb = ast_eval_slice_fit((int64_t)ob[code * 2], rtb);
+		if (fa != fb) { MCC_TRACE("br\n");
 			for (i = 0; i < n && i < AST_EVAL_LADDER_MAXIN; i++)
 				res->diff_in[i] = tin[code * n + i];
-			res->diff_a = ast_eval_slice_fit((int64_t)oa[code * 2], rta);
-			res->diff_b = ast_eval_slice_fit((int64_t)ob[code * 2], rtb);
+			res->diff_a = fa;
+			res->diff_b = fb;
 			res->diff_b_undef = 0;
 			verdict = 0;
 			goto out;
 		}
 	}
 out:
-	mcc_free(ca);
-	mcc_free(cb);
+	mcc_gpu_code_free(&ca);
+	mcc_gpu_code_free(&cb);
 	mcc_free(tin);
 	mcc_free(oa);
 	mcc_free(ob);
 	return verdict;
 
 bail:
-	mcc_free(ca);
-	mcc_free(cb);
+	mcc_gpu_code_free(&ca);
+	mcc_gpu_code_free(&cb);
 	mcc_free(tin);
 	mcc_free(oa);
 	mcc_free(ob);
@@ -15835,21 +15820,20 @@ void ast_ladder_gpu_setup(void) { MCC_TRACE("enter\n");
 		AstArena *pa = ast_arena_new();
 		AstLocal r = ast_node(pa, AST_Literal);
 		int32_t poff[1];
-		uint32_t *pcode = NULL;
-		int pn = 0;
+		MccGpuCode pcode = {NULL, 0};
 		ast_set_op(pa, r, VT_CONST);
 		ast_set_type(pa, r, VT_INT, 0);
 		ast_set_ival(pa, r, 7);
 		poff[0] = -8;
-		if (ast_ladder_gpu_emit(pa, r, poff, 1, &pcode, &pn)) { MCC_TRACE("br\n");
+		if (mcc_gpu_emit(pa, r, poff, 1, &pcode)) { MCC_TRACE("br\n");
 			int32_t pin[64], pout[128];
 			memset(pin, 0, sizeof pin);
-			int wrc = mcc_gpu_run(pcode, pn, pin, 64, 1, pout);
+			int wrc = mcc_gpu_run(&pcode, pin, 64, 1, pout);
 			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG")) { MCC_TRACE("br\n");
-				fprintf(stderr, "[ladder-gpu] warmup rc=%d (%d words)\n", wrc, pn);
+				fprintf(stderr, "[ladder-gpu] warmup rc=%d (%d units)\n", wrc, pcode.n);
 				fflush(stderr);
 			}
-			mcc_free(pcode);
+			mcc_gpu_code_free(&pcode);
 		}
 		ast_arena_free(pa);
 	}

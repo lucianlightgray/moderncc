@@ -25,7 +25,7 @@ foreach(_f IN LISTS _srcs)
                             "${MCC}" -w -O2 -c "${_f}" -o "${BINDIR}/ladpar.o"
                     OUTPUT_VARIABLE _b ERROR_VARIABLE _b TIMEOUT 120)
     if(_b MATCHES "available=0")
-        message("ladder-gpu-parity: no usable Vulkan device, skipping")
+        message("ladder-gpu-parity: no usable GPU device, skipping")
         return()
     endif()
     if(_b MATCHES "dispatches=([0-9]+)")

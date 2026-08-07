@@ -18,6 +18,9 @@ static pthread_mutex_t mcc_gpu_lock = PTHREAD_MUTEX_INITIALIZER;
 #define MCC_GPU_UNLOCK() ((void)0)
 #endif
 
+#define MCC_GPU_CODE_MAX 8192
+#define MCC_GPU_CODE_SUFFIX "spv"
+
 typedef struct MccGpu {
 	int tried;
 	int ok;
@@ -172,28 +175,28 @@ static int mcc_gpu_buffer(VkDeviceSize size, VkBuffer *buf, VkDeviceMemory *mem,
 	return 1;
 }
 
-static int mcc_gpu_run_locked(const uint32_t *code, int nwords,
-															const int32_t *in, int ntuple, int nlive,
-															int32_t *out);
+static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
+																	 const int32_t *in, int ntuple, int nlive,
+																	 int32_t *out);
 
-static int mcc_gpu_run(const uint32_t *code, int nwords, const int32_t *in,
-											 int ntuple, int nlive, int32_t *out) {
+static int mcc_gpu_dispatch(const uint32_t *code, int nwords, const int32_t *in,
+														int ntuple, int nlive, int32_t *out) {
 	int rc;
 	fenv_t mcc_gpu_fe;
 	int mcc_gpu_fe_ok = (fegetenv(&mcc_gpu_fe) == 0);
 	MCC_GPU_LOCK();
 	rc = mcc_gpu_closing
 					 ? 0
-					 : mcc_gpu_run_locked(code, nwords, in, ntuple, nlive, out);
+					 : mcc_gpu_dispatch_locked(code, nwords, in, ntuple, nlive, out);
 	MCC_GPU_UNLOCK();
 	if (mcc_gpu_fe_ok)
 		fesetenv(&mcc_gpu_fe);
 	return rc;
 }
 
-static int mcc_gpu_run_locked(const uint32_t *code, int nwords,
-															const int32_t *in, int ntuple, int nlive,
-															int32_t *out) {
+static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
+																	 const int32_t *in, int ntuple, int nlive,
+																	 int32_t *out) {
 	VkBuffer bin, bout;
 	VkDeviceMemory min_, mout;
 	void *pin, *pout;
@@ -369,6 +372,55 @@ done:
 	vkDestroyBuffer(mcc_gpu.dev, bin, 0);
 	vkDestroyBuffer(mcc_gpu.dev, bout, 0);
 	return rc;
+}
+
+typedef struct MccGpuCode {
+	void *p;
+	int n;
+} MccGpuCode;
+
+static int mcc_gpu_emit(AstArena *a, AstLocal root, const int32_t *off, int n,
+												MccGpuCode *c) {
+	SpvMod m;
+	uint32_t base, val, lane;
+	uint32_t *code;
+	int nwords = 0;
+	spv_module_begin(&m, n);
+	base = spv_main_begin(&m, n);
+	if (!spv_expr(&m, a, root, off, n, base, &val) || m.failed) {
+		spv_module_free(&m);
+		return 0;
+	}
+	lane = spv_emit3(&m, SpvOpSDiv, m.id_int, base, spv_const(&m, n));
+	spv_main_end(&m, lane, val);
+	code = spv_module_finish(&m, &nwords);
+	spv_module_free(&m);
+	if (nwords > MCC_GPU_CODE_MAX) {
+		SPV_FREE(code);
+		return 0;
+	}
+	c->p = code;
+	c->n = nwords;
+	return 1;
+}
+
+static void mcc_gpu_code_free(MccGpuCode *c) {
+	SPV_FREE(c->p);
+	c->p = NULL;
+	c->n = 0;
+}
+
+static void mcc_gpu_code_dump(const MccGpuCode *c, const char *path) {
+	FILE *fp = fopen(path, "wb");
+	if (fp) {
+		fwrite(c->p, 4, (size_t)c->n, fp);
+		fclose(fp);
+	}
+}
+
+static int mcc_gpu_run(const MccGpuCode *c, const int32_t *in, int ntuple,
+											 int nlive, int32_t *out) {
+	return mcc_gpu_dispatch((const uint32_t *)c->p, c->n, in, ntuple, nlive, out);
 }
 
 #endif
