@@ -1006,6 +1006,12 @@ static int ast_eval_ladder_point(AstArena *a, AstLocal ar, AstArena *b,
 	return 1;
 }
 
+static int (*ast_ladder_gpu_hook)(AstArena *a, AstLocal ar, AstArena *b,
+																	AstLocal br, const AstEvalLadderIn *in,
+																	int n, const int *e, const int *sh,
+																	int total, uint64_t space,
+																	AstEvalLadderRes *res);
+
 static int ast_eval_ladder_rung(AstArena *a, AstLocal ar, AstArena *b,
 																AstLocal br, const AstEvalLadderIn *in, int n,
 																int w, unsigned long budget, int *exact,
@@ -1029,6 +1035,11 @@ static int ast_eval_ladder_rung(AstArena *a, AstLocal ar, AstArena *b,
 	if (space > (uint64_t)budget)
 		return -1;
 	*exact = full;
+	if (ast_ladder_gpu_hook) {
+		int hr = ast_ladder_gpu_hook(a, ar, b, br, in, n, e, sh, total, space, res);
+		if (hr >= 0)
+			return hr;
+	}
 	for (code = 0; code < space; code++) {
 		for (i = 0; i < n; i++)
 			val[i] = ast_eval_slice_fit(

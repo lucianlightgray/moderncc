@@ -5,6 +5,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef SPV_REALLOC
+#define SPV_REALLOC realloc
+#endif
+#ifndef SPV_MALLOC
+#define SPV_MALLOC malloc
+#endif
+#ifndef SPV_FREE
+#define SPV_FREE free
+#endif
+
 #define SPV_MAGIC 0x07230203u
 #define SPV_VERSION 0x00010300u
 
@@ -67,7 +77,7 @@ typedef struct SpvMod {
 static void spvw_put(SpvWords *b, uint32_t v) {
 	if (b->n == b->cap) {
 		b->cap = b->cap ? b->cap * 2 : 256;
-		b->w = (uint32_t *)realloc(b->w, (size_t)b->cap * sizeof *b->w);
+		b->w = (uint32_t *)SPV_REALLOC(b->w, (size_t)b->cap * sizeof *b->w);
 	}
 	b->w[b->n++] = v;
 }
@@ -806,7 +816,7 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 
 static uint32_t *spv_module_finish(SpvMod *m, int *nwords) {
 	int total = 5 + m->pre.n + m->types.n + m->body.n;
-	uint32_t *w = (uint32_t *)malloc((size_t)total * sizeof *w);
+	uint32_t *w = (uint32_t *)SPV_MALLOC((size_t)total * sizeof *w);
 	int i = 0;
 	w[i++] = SPV_MAGIC;
 	w[i++] = SPV_VERSION;
@@ -824,9 +834,9 @@ static uint32_t *spv_module_finish(SpvMod *m, int *nwords) {
 }
 
 static void spv_module_free(SpvMod *m) {
-	free(m->pre.w);
-	free(m->types.w);
-	free(m->body.w);
+	SPV_FREE(m->pre.w);
+	SPV_FREE(m->types.w);
+	SPV_FREE(m->body.w);
 }
 
 #endif

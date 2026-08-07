@@ -486,6 +486,7 @@ foreach(_tc IN LISTS MCC_TOOLCHAIN_PROFILE)
     endif()
 endforeach()
 
+option(MCC_GPU "Compile the Vulkan compute backend into mcc, so the width-ladder equivalence oracle can replay slices on the GPU (MCC_AST_EVAL_LADDER_GPU=1 at runtime). OFF by default: it adds a hard Vulkan dependency to the compiler's link." OFF)
 option(MCC_SUPERBUILD_TEST "Run ctest after each matrix sub-build" ON)
 option(MCC_SUPERBUILD_SEQUENTIAL "Build toolchain stages in order (targets within a stage stay parallel)" ON)
 option(MCC_SUPERBUILD_CHILD "Internal: set on matrix child cells to suppress superbuild recursion" OFF)
@@ -2082,6 +2083,20 @@ if(NOT "${MCC_EXTRA_LIBS}" STREQUAL "")
 endif()
 if(MCC_GITHASH)
     target_compile_definitions(mcc PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
+    if(MCC_GPU)
+        find_package(Vulkan REQUIRED)
+        target_compile_definitions(mcc PRIVATE MCC_GPU=1)
+        target_link_libraries(mcc PRIVATE ${Vulkan_LIBRARIES})
+        target_include_directories(mcc PRIVATE ${Vulkan_INCLUDE_DIRS})
+        add_test(NAME "gpu/ladder-gpu-parity"
+            COMMAND "${CMAKE_COMMAND}"
+                    -DMCC=$<TARGET_FILE:mcc>
+                    -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                    -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ladder_gpu_parity.cmake")
+        set_tests_properties("gpu/ladder-gpu-parity" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+    endif()
 endif()
 if(TARGET mcc_mccdefs)
     add_dependencies(mcc mcc_mccdefs)

@@ -2129,7 +2129,15 @@ int ast_sym_defer(Sym *sym) { MCC_TRACE("enter\n");
 static int ast_reemit_n;
 static int ast_inline_n;
 
-static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
+#if MCC_GPU
+void ast_ladder_gpu_setup(void);
+void ast_ladder_gpu_report(void);
+#endif
+
+static void ast_opt_defaults(MCCState *s1) {
+#if MCC_GPU
+	ast_ladder_gpu_setup();
+#endif MCC_TRACE("enter\n");
 	int o4 = s1->optimize_search_seconds > 0;
 	int i, dflt[MCC_OPT_COUNT];
 	int n = 0;
@@ -15668,6 +15676,132 @@ static int ast_eval_slice(AstArena *a, AstLocal n, const int32_t *o, const int64
 	(void)c;
 	(void)out;
 	return 1;
+}
+#endif
+
+#if MCC_GPU
+#define SPV_MALLOC mcc_malloc
+#define SPV_REALLOC mcc_realloc
+#define SPV_FREE mcc_free
+#include "mccspv.h"
+#include "mccgpu.h"
+
+#define AST_LADDER_GPU_MAX (1u << 20)
+
+static int ast_ladder_gpu_emit(AstArena *a, AstLocal root, const int32_t *off,
+															 int n, uint32_t **code, int *nwords) {
+	SpvMod m;
+	uint32_t base, val, lane;
+	spv_module_begin(&m, n);
+	base = spv_main_begin(&m, n);
+	if (!spv_expr(&m, a, root, off, n, base, &val) || m.failed) {
+		spv_module_free(&m);
+		return 0;
+	}
+	lane = spv_emit3(&m, SpvOpSDiv, m.id_int, base, spv_const(&m, n));
+	spv_main_end(&m, lane, val);
+	*code = spv_module_finish(&m, nwords);
+	spv_module_free(&m);
+	return 1;
+}
+
+static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br,
+															const AstEvalLadderIn *in, int n, const int *e,
+															const int *sh, int total, uint64_t space,
+															AstEvalLadderRes *res) {
+	int32_t off[AST_EVAL_LADDER_MAXIN];
+	uint32_t *ca = NULL, *cb = NULL;
+	int na = 0, nb = 0, i, verdict = 1;
+	int32_t *tin = NULL, *oa = NULL, *ob = NULL;
+	uint64_t code;
+	int ntuple = (int)space;
+
+	if (n < 1 || n > AST_EVAL_LADDER_MAXIN || space > AST_LADDER_GPU_MAX)
+		return -1;
+	for (i = 0; i < n; i++)
+		off[i] = in[i].off;
+	if (!ast_ladder_gpu_emit(a, ar, off, n, &ca, &na))
+		return -1;
+	if (!ast_ladder_gpu_emit(b, br, off, n, &cb, &nb)) {
+		mcc_free(ca);
+		return -1;
+	}
+	tin = mcc_malloc((size_t)ntuple * n * 4);
+	oa = mcc_malloc((size_t)ntuple * 2 * 4);
+	ob = mcc_malloc((size_t)ntuple * 2 * 4);
+	if (!tin || !oa || !ob)
+		goto bail;
+	for (code = 0; code < space; code++)
+		for (i = 0; i < n; i++)
+			tin[code * n + i] = (int32_t)ast_eval_slice_fit(
+					ast_eval_ladder_sx(code >> sh[i], e[i]), in[i].type);
+	if (!mcc_gpu_run(ca, na, tin, ntuple, n, oa))
+		goto bail;
+	if (!mcc_gpu_run(cb, nb, tin, ntuple, n, ob))
+		goto bail;
+
+	for (code = 0; code < space; code++) {
+		int adef = oa[code * 2 + 1] != 0, bdef = ob[code * 2 + 1] != 0;
+		res->points++;
+		if (!adef) {
+			res->vacuous++;
+			continue;
+		}
+		if (!bdef) {
+			for (i = 0; i < n && i < AST_EVAL_LADDER_MAXIN; i++)
+				res->diff_in[i] = tin[code * n + i];
+			res->diff_a = oa[code * 2];
+			res->diff_b = 0;
+			res->diff_b_undef = 1;
+			verdict = 0;
+			goto out;
+		}
+		res->informative++;
+		if (oa[code * 2] != ob[code * 2]) {
+			for (i = 0; i < n && i < AST_EVAL_LADDER_MAXIN; i++)
+				res->diff_in[i] = tin[code * n + i];
+			res->diff_a = oa[code * 2];
+			res->diff_b = ob[code * 2];
+			res->diff_b_undef = 0;
+			verdict = 0;
+			goto out;
+		}
+	}
+out:
+	mcc_free(ca);
+	mcc_free(cb);
+	mcc_free(tin);
+	mcc_free(oa);
+	mcc_free(ob);
+	return verdict;
+
+bail:
+	mcc_free(ca);
+	mcc_free(cb);
+	mcc_free(tin);
+	mcc_free(oa);
+	mcc_free(ob);
+	return -1;
+}
+
+void ast_ladder_gpu_setup(void) { MCC_TRACE("enter\n");
+	static int done;
+	if (done)
+		{ MCC_TRACE("br\n"); return; }
+	done = 1;
+	if (!mcc_env_on("MCC_AST_EVAL_LADDER_GPU"))
+		{ MCC_TRACE("br\n"); return; }
+	ast_ladder_gpu_hook = ast_ladder_gpu_run;
+	atexit(ast_ladder_gpu_report);
+}
+
+void ast_ladder_gpu_report(void) { MCC_TRACE("enter\n");
+	if (!ast_ladder_gpu_hook)
+		{ MCC_TRACE("br\n"); return; }
+	int avail = mcc_gpu_init();
+	fprintf(stderr, "[ladder-gpu] available=%d device=%s dispatches=%ld lanes=%ld\n",
+					avail, avail ? mcc_gpu.name : "(none)", mcc_gpu.dispatches,
+					mcc_gpu.lanes);
 }
 #endif
 
