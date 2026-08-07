@@ -807,6 +807,47 @@ slightly lower number: it stops gating. Re-banked with `--rebank-config
 older figures should compare against the pre-change bank, not read this as a
 regression — nothing about lowering changed.
 
+## The GPU oracle is two files now, and one of them is a real TU — 2026-08-07
+
+`mccmsl.h`, `mccmtl.h`, `mccspv.h`, `mccvk.h` and the old `mccgpu.h` were five
+header-only blobs textually included into `mccast.c`, two of which existed only
+because the other three could not be. They are `src/mccgpu.{c,h}`, and the split
+between them is *what depends on the AST*, not *which vendor*:
+
+  - `mccgpu.h` holds the shader emitters — SPIR-V, or MSL when
+    `MCC_GPU_LANG_MSL` — and stays header-only, because they need the AST
+    accessors and the `ast_eval_slice` width helpers in the includer's scope.
+  - `mccgpu.c` holds the device layer: the vendored Vulkan ABI, both `dlopen`
+    loaders, and dispatch. `code` reaches it as bytes, so it touches no AST and
+    compiles standalone. It is a real translation unit in a
+    `MCC_SINGLE_SOURCE=OFF` build and an `#include` in `libmcc.c` otherwise.
+
+Nothing about what runs on the device changed: every emitter and dispatch line
+moved verbatim. What changed is the seam. `mcc_gpu_dispatch` is one extern taking
+`const void *` instead of two statics taking `const uint32_t *`/`const char *`;
+the per-backend `MccGpu` is behind `mcc_gpu_stats()` rather than reached into by
+name from `ast_ladder_gpu_report`; `SPV_*`/`MSL_*` allocator macros are one
+`MCC_GPU_*` set; and the emitter and oracle halves carry their own include
+guards rather than riding on `MCC_GPU_H`, because in an amalgamated build
+`mccgpu.c` and `mccast.c` include the header wanting different halves of it.
+
+**`stdio.h` must precede `mcchost.h`**, which the old arrangement never had to
+discover: `mcchost.h` declares `host_fopen` in terms of `FILE` and on MSVC
+macro-defines `vsnprintf`, which `<stdio.h>` rejects if it arrives second. A
+header-only file included halfway down `mccast.c` is always past that; a real TU
+is not. `mccgpu.h` now includes `<stdio.h>` itself so it is self-contained.
+
+`tools/spvgate.c` takes `#define MCC_GPU_EMITTER 1` and gets the SPIR-V emitter
+with none of the device layer, which is what keeps its own `vulkan/vulkan.h`
+from colliding with the vendored declarations. It also pins `MCC_GPU_LANG_MSL 0`
+— it is a SPIR-V gate on every host, including one with MoltenVK.
+
+Provenance moved with the code: `src/mccvk.LICENSE` is `src/mccgpu.LICENSE`.
+
+**The Darwin half is still unexecuted.** It was reasoned, not run, before this
+change and it is reasoned, not run, after it; consolidation does not make it
+tested. A real macOS host is still what that path wants.
+
 ## Each suite is now scored by the other vendor's compiler — 2026-08-06
 
 `tools/xoracle.py` judges gcc's tests with clang and clang's with gcc, on exit

@@ -15672,19 +15672,11 @@ static int ast_eval_slice(AstArena *a, AstLocal n, const int32_t *o, const int64
 }
 #endif
 
-#define SPV_MALLOC mcc_malloc
-#define SPV_REALLOC mcc_realloc
-#define SPV_FREE mcc_free
-#define MSL_MALLOC mcc_malloc
-#define MSL_REALLOC mcc_realloc
-#define MSL_FREE mcc_free
-#if MCC_HOST_DARWIN
-#include "mccmsl.h"
-#include "mccmtl.h"
-#else
-#include "mccspv.h"
+#define MCC_GPU_MALLOC mcc_malloc
+#define MCC_GPU_REALLOC mcc_realloc
+#define MCC_GPU_FREE mcc_free
+#define MCC_GPU_ORACLE 1
 #include "mccgpu.h"
-#endif
 
 #define AST_LADDER_GPU_MAX (1u << 20)
 
@@ -15697,6 +15689,7 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 															AstEvalLadderRes *res) { MCC_TRACE("enter\n");
 	int32_t off[AST_EVAL_LADDER_MAXIN];
 	MccGpuCode ca = {NULL, 0}, cb = {NULL, 0};
+	MccGpuStats gs;
 	int i, verdict = 1;
 	int rta, rtb;
 	int32_t *tin = NULL, *oa = NULL, *ob = NULL;
@@ -15706,7 +15699,8 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 	ast_ladder_gpu_rungs++;
 	if (n < 1 || n > AST_EVAL_LADDER_MAXIN || space > AST_LADDER_GPU_MAX)
 		return -1;
-	if (ast_ladder_gpu_budget && mcc_gpu.dispatches >= ast_ladder_gpu_budget)
+	mcc_gpu_stats(&gs);
+	if (ast_ladder_gpu_budget && gs.dispatches >= ast_ladder_gpu_budget)
 		return -1;
 	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		if (is_float(in[i].type) || !ast_eval_slice_intt(in[i].type) ||
@@ -15832,14 +15826,16 @@ void ast_ladder_gpu_setup(void) { MCC_TRACE("enter\n");
 }
 
 void ast_ladder_gpu_report(void) { MCC_TRACE("enter\n");
+	MccGpuStats gs;
 	if (!ast_ladder_gpu_hook)
 		{ MCC_TRACE("br\n"); return; }
 	mcc_gpu_quiesce();
+	mcc_gpu_stats(&gs);
 	fprintf(stderr,
 					"[ladder-gpu] tried=%d available=%d device=%s rungs=%ld dispatches=%ld "
 					"lanes=%ld\n",
-					mcc_gpu.tried, mcc_gpu.ok, mcc_gpu.ok ? mcc_gpu.name : "(none)",
-					ast_ladder_gpu_rungs, mcc_gpu.dispatches, mcc_gpu.lanes);
+					gs.tried, gs.ok, gs.name, ast_ladder_gpu_rungs, gs.dispatches,
+					gs.lanes);
 }
 
 #if MCC_EMBED_JIT

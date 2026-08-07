@@ -1,10 +1,11 @@
-src/mccvk.h -- provenance and license
+src/mccgpu.c -- provenance and license of its Vulkan declarations
 
-src/mccvk.h declares the subset of the Vulkan ABI that src/mccgpu.h binds: the
-~40 core entry points the width-ladder oracle calls, the handle and flag types
-they take, and the structures those calls read and write. The declarations are
-transcribed from the Khronos Vulkan-Headers project (vulkan/vulkan_core.h and
-vulkan/vk_platform.h), which is distributed under the Apache License 2.0:
+The Vulkan block in src/mccgpu.c declares the subset of the Vulkan ABI that the
+file's device layer binds: the ~40 core entry points the width-ladder oracle
+calls, the handle and flag types they take, and the structures those calls read
+and write. The declarations are transcribed from the Khronos Vulkan-Headers
+project (vulkan/vulkan_core.h and vulkan/vk_platform.h), which is distributed
+under the Apache License 2.0:
 
     https://github.com/KhronosGroup/Vulkan-Headers
     Copyright 2015-2025 The Khronos Group Inc.

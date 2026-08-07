@@ -20,7 +20,12 @@ static int ast_bad_type(int tt) {
 #undef free
 #undef strdup
 
-#include "mccspv.h"
+/* The SPIR-V emitter only: this gate brings its own vulkan/vulkan.h and its own
+ * device plumbing, so it must not pull in mccgpu.c's vendored Vulkan ABI, and
+ * it is a SPIR-V gate on every host including Darwin. */
+#define MCC_GPU_LANG_MSL 0
+#define MCC_GPU_EMITTER 1
+#include "mccgpu.h"
 
 #ifndef AST_EVAL_SLICE_PROVIDED
 #error "spvgate needs the real ast_eval_slice; the mccast.c fallback stub returns 1 without writing *out, so every comparison would read uninitialised memory and pass."
