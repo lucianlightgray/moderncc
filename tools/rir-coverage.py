@@ -267,32 +267,33 @@ def text_size(path):
 
 
 def host_objfmt(mcc):
-    """Object format mcc emits for the native host: 'elf', 'pe', 'macho', None.
+    """Object format of the host mcc was built for: 'elf', 'pe', 'macho', None.
 
-    The self/wide banks are ratios over src/ compiled for the host, so their
-    numbers are specific to that object format: it selects which #ifdef branches
-    amalgamate into the corpus and how the backend sizes each body.  A build that
-    emits a different format is not comparable to an ELF-taken bank and belongs in
-    the corpus_config skip, not a regression.
+    The self/wide banks are ratios over src/ compiled for the host, and it is the
+    host -- not the emitted object -- that decides them: MCC_HOST_* selects which
+    #ifdef branches amalgamate into the corpus.  src/mccrun.c contributes a
+    120-byte raw-asm TLS thunk (mcc_tlv_thunk, MCC_RUN_TLS_MACHO) on Darwin and
+    nothing on Linux; it lands in .text with no C body behind it, so it moves the
+    unattributed residual from 0 to 120 on its own.  A bank taken on a different
+    host is not comparable and belongs in the corpus_config skip, not a
+    regression.
+
+    Probe the mcc binary itself rather than an object it emits.  mcc -c
+    cross-emits ELF on every host, so the emitted format is 'elf' on macOS too
+    and says nothing about which branches were compiled -- keying on it left this
+    skip permanently disarmed off Linux.
     """
     fmt = None
     try:
-        with tempfile.TemporaryDirectory() as td:
-            c = os.path.join(td, "p.c")
-            o = os.path.join(td, "p.o")
-            with open(c, "w") as f:
-                f.write("int p(void){return 0;}\n")
-            p = subprocess.run([mcc, "-c", c, "-o", o], cwd=ROOT,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if p.returncode == 0 and os.path.exists(o):
-                d = open(o, "rb").read(4)
-                if d[:4] == b"\x7fELF":
-                    fmt = "elf"
-                elif d[:2] in (b"MZ", b"\x64\x86", b"\x64\xaa", b"\x4c\x01"):
-                    fmt = "pe"
-                elif d[:4] in (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",
-                               b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"):
-                    fmt = "macho"
+        with open(mcc, "rb") as f:
+            d = f.read(4)
+        if d[:4] == b"\x7fELF":
+            fmt = "elf"
+        elif d[:2] == b"MZ":
+            fmt = "pe"
+        elif d[:4] in (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",
+                       b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"):
+            fmt = "macho"
     except OSError:
         fmt = None
     if fmt is None:
