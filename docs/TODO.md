@@ -402,6 +402,43 @@ two real emitter bugs behind a magic number.
 **Still not claimed.** Everything in the section above runs through `spvgate`
 offline; the ladder path is the only thing the compiler itself dispatches.
 
+### The runtime JIT cannot carry the backend yet — 2026-08-07
+
+Wiring `MCC_GPU` into `libmcc_jitengine` does make a compiled program's runtime
+JIT replay on the device, and it works: `--embed-jit --jit-threads 2` on a
+`noinline` hot pure function gives 5 rungs / 10 dispatches / 131,628 lanes with
+the answer matching gcc, clang and the JIT-off build. **It is off anyway,
+because it corrupts memory.** `pr50729.c` segfaults **4 of 40 runs** with the
+backend present and **0 of 40** without; `pr100499-1.c` did too until the mutex
+and exit-quiesce landed, and is now 0/40.
+
+The fault, caught under gdb: `cmp 0x10(%r8),%rdi` inside `libnvidia-gpucomp.so`
+with `si_addr = 0x0` — the driver dereferences a **NULL context pointer**, which
+is per-thread/per-instance driver state being absent rather than anything wrong
+with the shader or our own allocations.
+
+Eliminated, each with a decisive test, so nobody repeats them:
+
+| hypothesis | test | result |
+| --- | --- | --- |
+| invalid shader | `spirv-val` + standalone dispatch of all 10 modules | all valid, all `rc=0` |
+| data race | mutex + exit quiesce | fixed `pr100499-1`, not `pr50729` |
+| stack exhaustion | 64MB worker stack | no change |
+| Vulkan-in-thread under mcc | threaded probe, gcc vs mcc | both clean |
+| lazy init inside worker | eager main-thread init | no change |
+| static TLS surplus | `GLIBC_TUNABLES` | no change |
+| dispatch count / module order | cap sweep | independent |
+| JIT-worker environment | dedicated GPU dispatch thread | 6/40, no change |
+
+**Measure with 40 runs, not 5.** Two separate times a stale embedded engine blob
+made an intermittent crash look deterministic, and once made a broken build look
+clean; `cmake --build` does not reliably regenerate the blob after a CMake-level
+change to the engine target. Rebuild the whole project and re-measure before
+believing any result in this area.
+
+Second, independent reason it is off: linking Vulkan into the engine makes
+**every** `--embed-jit` program need `-lvulkan` to link at all.
+
 **The clean integration point is `ast_eval_ladder_rung()`, and its prerequisite
 is now met.** That function is an embarrassingly-parallel loop over `space`
 codes, each replaying both arenas at one point, and the JIT already invokes it
