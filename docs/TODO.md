@@ -303,10 +303,51 @@ uninitialised memory and passes everything. `spvgate` hard-errors unless
 `AST_EVAL_SLICE_PROVIDED` is set. Two TUs are needed because `mccast.c` compiles
 standalone only *without* `mcc.h` while the evaluator needs it for `VT_*`.
 
-**Not done, and not claimed. The JIT dispatches none of this at runtime.**
-Everything above runs offline through `spvgate`. "The JIT runs RIR replays in the
-GPU" is therefore *not* established; what is established is that the lowering is
-correct and that real gcc/clang suite bodies contain slices it accepts.
+## The ladder oracle replays on the GPU — 2026-08-07
+
+`ast_eval_ladder_rung()` delegates its replay to the device when `MCC_GPU` is
+compiled in (CMake option, **OFF** by default — it puts Vulkan in the compiler's
+link) and `MCC_AST_EVAL_LADDER_GPU=1` is set. Both arenas are lowered and
+dispatched over the rung's whole tuple space; the verdict is rebuilt on the host
+from the returned `(value, defined)` pairs. **Only the replay moves — the verdict
+logic is not reimplemented on the device.** The rung falls back to the scalar
+loop whenever either arena will not lower, the live-in count is out of range, or
+the space exceeds 2^20, so the GPU path is an accelerator, never a coverage
+change. `gpu/ladder-gpu-parity` pins it: verdicts identical GPU-vs-CPU, 1404
+dispatches, 0 differing files, and **zero dispatches is a hard failure** because
+identical verdicts prove nothing if the GPU never ran.
+
+**Cross-oracle with the GPU live during every compilation.** 4907 cases, gcc
+judged by clang and clang by gcc, census mode on so the GPU actually replays:
+**0 behavioural changes** against the CPU baseline, `DIFF_EXIT` 53 and
+`DIFF_STDOUT` 19 identical. The only 5 transitions are `PASS -> MCC_NOBUILD`,
+all compile `timeout` on the huge generated `memclr`/`memcpy-a*` bodies, which
+census makes slow. Nothing miscompiled.
+
+**The caveat that matters: the ladder does not run during ordinary `-O2`, or
+even under `-fopt-slice` — zero dispatches.** It fires only under
+`MCC_AST_EVAL_LADDER_CENSUS=1`. So the GPU is exercised by a diagnostic path,
+not the production one, and a suite run without census would leave the device
+idle and the green board meaningless. Wiring the production slice-specialisation
+path to the ladder is the next step if this is to matter outside diagnostics.
+
+**Two emitter defects surfaced only here, and `spirv-val` accepted both.** They
+crashed NVIDIA's SPIR-V compiler (`libnvidia-glvkspirv`) with SIGILL:
+`OpBitwiseOr %int` fed a `%uint` operand to convert the invocation id (legal,
+but `OpBitcast` is the idiom), and the signed multiply-overflow check emitted
+`r / select(a == 0, 1, a)`, which becomes a wholly constant-foldable division
+when `a` is a literal — `9 * x`, a shape the synthetic cases never produced
+because they all put the constant second. It is now `OpSMulExtended` with a
+high-word test and emits no division at all.
+
+**A dispatch cap was added as a "mitigation" and then reverted, and that is the
+lesson.** The crash correlated with dispatch count on the first file, so a cap
+looked principled; `MCC_AST_EVAL_LADDER_GPU_MAX=1` still crashed on
+`vla-stexp-9.c`, refuting it in one command. Shipping the cap would have buried
+two real emitter bugs behind a magic number.
+
+**Still not claimed.** Everything in the section above runs through `spvgate`
+offline; the ladder path is the only thing the compiler itself dispatches.
 
 **The clean integration point is `ast_eval_ladder_rung()`, and its prerequisite
 is now met.** That function is an embarrassingly-parallel loop over `space`
