@@ -1108,6 +1108,101 @@ is untouched so no row moves, and the gain side of every ratio is unchanged beca
 objects are byte-identical — but the cost side moved down, so the greedy level
 boundaries are not provably unshifted.
 
+## `fabs` was broken in two places, one of which no flag could reach — 2026-08-07
+
+The `builtin-math` demotion was caused by a lowering defect, and fixing it turned
+up that there were **two** defective paths, not one.
+
+`__builtin_fabs` was a **macro** in `runtime/include/mccdefs.h` —
+`__builtin_signbit(x) ? -x : x` — so it never reached `gen_fabs` at all. That is
+the `movmskpd`/`cmp`/`je` version, present at **every `-O` level including `-O0`**
+and reachable by no flag, which is why it never showed up as a flag's cost.
+`fabs()` calls went through `gen_fabs`, which was the `andb $0x7f` store-forwarding
+version recorded in `levelpins.txt`. Both are now one sequence:
+
+    pcmpeqd %xmm1,%xmm1 ; psrlq $0x1,%xmm1 ; andpd %xmm1,%xmm0
+
+no memory round-trip, no branch (`andps`/`psrld` for float). Verified bit-exact
+against gcc on `-0.0`, `+0.0`, `-inf`, NaN sign and quietness, and the float path.
+arm64 `fabs d0,d0`, riscv64 `fabs.d`, i386 x87 `fabs` and both win32 targets are
+unregressed, and `__builtin_fabs` now reaches those too instead of the branchy
+macro; 32-bit arm keeps the macro because it has no `gen_fabs`.
+
+**Measured, CPU time, N=9 interleaved, floors re-taken with padding TUs** (mathfun
+0.67%, branchy 0.53%, nbody 1.18%):
+
+| | CPU |
+| --- | ---: |
+| mathfun, fabs row on vs off | 152.5 → **110.4 ms (−27.3%)** |
+| mathfun, the *old* fold | 151.9 → **283.6 ms (+85.7%)** on fewer instructions |
+| branchy, the *old* fold | **+47.0%** |
+| nbody, `builtin-math` | 334.9 → **299.8 ms (−10.5%)** |
+
+The old fold was not merely failing to pay — it was **actively costing 85.7% on
+mathfun while retiring fewer instructions**, which is the sharpest illustration in
+this file of why instructions retired cannot adjudicate a lowering.
+
+**The split.** A new `builtin-math-fabs` row carries the fabs lowering and
+`builtin-math` keeps sqrt, subordinate the same way `builtin-math-prepass` is;
+`-ffast-math` sets both optflags and `cli/fast_math_implies_no_math_errno` still
+reads `plain=1 fast=0 off=1`. All three rows moved **10 → 1**. Note nbody's entire
+win is carried by the *prepass*, not by `builtin-math` alone. The `-O1` placement
+rests on reasoning plus an xoracle behaviour check at `-O1` (identical verdicts on
+all 4907 programs), not on an `-O1` benchmark — neither lowering introduces a loop
+or a nested call and both *remove* a call.
+
+**A much larger bug found on the way: `mccrir.c` had no `IR_OP_FABS` case.** A
+parse-time `gen_fabs` produced an IR op the AST builder silently dropped, replay
+emitted different bytes, the body came back unfaithful — and **every AST
+optimization was then skipped for that entire function**. So a single unhandled IR
+opcode silently disabled the optimizer for any body containing it. `math_prepass.c`
+now inlines 4 of 4 sqrt calls at `-O1` where the old compiler managed 3 of 4 at
+`-O10`. **Worth auditing the rest of the `IR_OP_*` set for the same gap**; the
+failure mode is silent and costs everything downstream of it.
+
+Second, smaller: with `__builtin_fabs` a macro, `ast_expr_nonneg` could never prove
+`sqrt(fabs(x)+1)` non-negative. It can now.
+
+**`AST_SG_BFOLD_SQRT` does not cover the same win** — checked rather than assumed.
+It gates *entry* to the sqrt row in `ast_bfold_run`, a superset: `-fno-bfold-sqrt`
+loses both the `sqrt(4.0)` constant fold and the inline, while `-fno-builtin-math`
+loses only the inline. The inline additionally needs `ast_math_inline_env`, which
+has **no `AST_SG_*` bit**, so the replay gate mask still cannot reach it. The JIT
+gets the win back only because the row now defaults on from `-O1`; **the gate-mask
+gap is still open**, and it is the same arena-mutating-vs-gate-mask boundary
+described above.
+
+## Open, in the order the measurements rank them — 2026-08-07
+
+Everything here is measured or reproduced, not speculative.
+
+1. **Audit `IR_OP_*` for missing `mccrir.c` cases.** `IR_OP_FABS` had none, and the
+   consequence was not a wrong answer but a silently unfaithful body, which skips
+   *every* AST optimization for that function. One opcode disabled the optimizer
+   wherever it appeared. Nothing says it is the only one.
+2. **The gate-mask gap.** `ast_math_inline_env`, `ast_interchange`, `ast_fusion`,
+   `ast_tile` and `loop-vlat` mutate the arena before the JIT's mask snapshot and
+   have no `AST_SG_*` bit, so the JIT can never search them — a demotion of any of
+   them is permanent, and a promotion only reaches the JIT via the default level.
+3. **The 34 demoted rows on rungs 10/11/12**, in that order: 10 is measured
+   pessimization, 11 is compile cost with no payoff, 12 is no effect and no cost —
+   the last group being deletion candidates rather than repair candidates.
+4. **The detached JIT workers have no exit quiesce.** The `[ladder-gpu]` atexit
+   report printed *before* a worker's fault, i.e. compiler code runs on a worker
+   while `exit()` is draining atexit handlers. Needs a join/shutdown path in
+   `mccjit_pool_start`.
+5. **`storeval-callstore`'s level is now unjustified in both directions** — the ICE
+   that made its off-state unmeasurable is fixed, so it can finally be ranked.
+6. **`selfhost-optbench --check` has not been re-run** since the reemit-templates
+   cost fell; no row moved, but the greedy boundaries are not provably unshifted.
+7. **`tests/ast/o0-baseline/` is stale at HEAD** — 277 banked files against 303 in
+   the tree. Pre-existing, left alone deliberately.
+8. **`if-conversion-abs`** ships on a +2.13% margin against a 1.76% floor, the
+   thinnest thing on the ladder.
+
+Known flake, not a defect: `run-tier/i386-win32` can fail at `-j32` with `wine
+client error: recvmsg: Connection reset by peer`, and passes on rerun or at `-j24`.
+
 ## Each suite is now scored by the other vendor's compiler — 2026-08-06
 
 `tools/xoracle.py` judges gcc's tests with clang and clang's with gcc, on exit
