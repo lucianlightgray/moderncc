@@ -124,9 +124,16 @@ jobs:
           fi
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends wine64 wine32 || \
+          sudo apt-get install -y --no-install-recommends wine wine64 wine32 || \
             sudo apt-get install -y --no-install-recommends wine
-          wine64 --version || wine --version || true
+          if ! command -v wine >/dev/null 2>&1 && command -v wine-stable >/dev/null 2>&1; then
+            sudo ln -sf "$(command -v wine-stable)" /usr/local/bin/wine
+          fi
+          if ! command -v wine64 >/dev/null 2>&1 && command -v wine >/dev/null 2>&1; then
+            sudo ln -sf "$(command -v wine)" /usr/local/bin/wine64
+          fi
+          command -v wine64 wine >/dev/null || { echo "wine launcher missing after install" >&2; exit 1; }
+          wine64 --version || wine --version
       - uses: ./.github/actions/ci
       - uses: actions/download-artifact@v7
         with:
