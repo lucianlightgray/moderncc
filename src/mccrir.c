@@ -4960,7 +4960,11 @@ struct AstArena *rir_prod_take(void) {
 		return NULL;
 	}
 	{
-		const char *e = getenv("RIRPRODDUMP");
+		static const char *dump_cached = (const char *)-1;
+		const char *e;
+		if (dump_cached == (const char *)-1)
+			dump_cached = getenv("RIRPRODDUMP");
+		e = dump_cached;
 		if (e && funcname && !strcmp(e, funcname)) {
 			static char pdb[8192];
 			ast_dump(rir_arena, ast_root(rir_arena), pdb, sizeof pdb);
