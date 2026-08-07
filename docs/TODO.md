@@ -486,6 +486,20 @@ calls `mcc_new()`, `mccpp_new()`, `mccgen_init()` and `mcc_enter_state()`, so a
 whole compiler instance is initialising in that worker thread with mcc's global
 state and allocator, alongside the driver. That is where to look next.
 
+**The front-end in a worker thread is not it either.** A probe linking `libmcc`
+that creates and destroys four `MCCState` compiler instances *in a spawned
+thread* and then compiles the crashing module 50 times in that same thread runs
+clean. So mcc's global state and allocator being live in the thread the driver
+compiles on is not sufficient to trigger it.
+
+Seventeen things are now excluded and none of them is the cause, which is worth
+saying plainly: the remaining difference between the clean probes and the
+failing program is the *whole* JIT promotion flow running -- counter stub,
+counter ticks with argument capture, blob deserialize, `ast_slice_search`,
+purity/certifiability analysis, the ladder, and `host_runmem_alloc` -- and no
+single piece reproduced alone. The next step is bisecting the flow itself by
+disabling stages, not by guessing at mechanisms.
+
 **Measure with 40 runs, not 5.** Two separate times a stale embedded engine blob
 made an intermittent crash look deterministic, and once made a broken build look
 clean; `cmake --build` does not reliably regenerate the blob after a CMake-level
