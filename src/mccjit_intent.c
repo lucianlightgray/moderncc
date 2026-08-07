@@ -551,7 +551,7 @@ MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it) { MCC_TRACE("enter\n")
 
 static int mccjit_strip_enum(int t) { MCC_TRACE("enter\n");
 	if (IS_ENUM(t) || IS_ENUM_VAL(t))
-		{ MCC_TRACE("br\n"); return t & ~VT_STRUCT_MASK; }
+		{ MCC_TRACE("br\n"); return (t & ~VT_STRUCT_MASK) | (t & VT_BITFIELD); }
 	return t;
 }
 
@@ -572,7 +572,7 @@ static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) { MCC_TRACE("enter\
 	switch (r->role) { MCC_TRACE("br\n");
 	case MCCJIT_ROLE_PTR: {
 		CType pc;
-		pc.t = (int)r->a;
+		pc.t = mccjit_strip_enum((int)r->a);
 		pc.bp = (unsigned char)(r->abf & 0xff);
 		pc.bs = (unsigned char)((r->abf >> 8) & 0xff);
 		pc.ref = mccjit_build_rec(it, r->b);
@@ -583,7 +583,7 @@ static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) { MCC_TRACE("enter\
 		Sym *sr = sym_push2(&global_stack, SYM_FIELD, 0, 0);
 		Sym *first = NULL, **plast = &first, *p;
 		uint32_t k;
-		sr->type.t = (int)r->a;
+		sr->type.t = mccjit_strip_enum((int)r->a);
 		sr->type.bp = (unsigned char)(r->abf & 0xff);
 		sr->type.bs = (unsigned char)((r->abf >> 8) & 0xff);
 		sr->type.ref = mccjit_build_rec(it, r->b);
@@ -591,7 +591,7 @@ static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) { MCC_TRACE("enter\
 		sr->f.func_type = r->c ? (int)r->c : FUNC_NEW;
 		sr->f.func_args = r->nparam;
 		for (k = 0; k < r->nparam; k++) { MCC_TRACE("br\n");
-			p = sym_push2(&global_stack, SYM_FIELD, (int)r->pt[k], 0);
+			p = sym_push2(&global_stack, SYM_FIELD, mccjit_strip_enum((int)r->pt[k]), 0);
 			p->type.bp = (unsigned char)(r->ptbf[k] & 0xff);
 			p->type.bs = (unsigned char)((r->ptbf[k] >> 8) & 0xff);
 			p->type.ref = mccjit_build_rec(it, r->pr[k]);
@@ -617,7 +617,8 @@ static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) { MCC_TRACE("enter\
 			const char *fn = it->recs[i].fnm ? it->recs[i].fnm[k] : NULL;
 			int ftok = (fn && fn[0]) ? (tok_alloc(fn, (int)strlen(fn))->tok | SYM_FIELD)
 															 : (anon_sym++ | SYM_FIELD);
-			p = sym_push2(&global_stack, ftok, (int)r->pt[k], (int)r->foff[k]);
+			p = sym_push2(&global_stack, ftok, mccjit_strip_enum((int)r->pt[k]),
+										(int)r->foff[k]);
 			p->type.bp = (unsigned char)(r->ptbf[k] & 0xff);
 			p->type.bs = (unsigned char)((r->ptbf[k] >> 8) & 0xff);
 			p->type.ref = mccjit_build_rec(it, r->pr[k]);
@@ -631,7 +632,7 @@ static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) { MCC_TRACE("enter\
 		CType ct;
 		const char *nm = it->handle_name ? it->handle_name[i] : NULL;
 		if (nm && nm[0]) { MCC_TRACE("br\n");
-			ct.t = (int)r->a;
+			ct.t = mccjit_strip_enum((int)r->a);
 			ct.bp = (unsigned char)(r->abf & 0xff);
 			ct.bs = (unsigned char)((r->abf >> 8) & 0xff);
 			ct.ref = mccjit_build_rec(it, r->b);
