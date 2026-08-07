@@ -48,7 +48,7 @@ for src in "$corpus"/*.c; do
 	[ -f "$corpus/$name.aux.c" ] && aux="$corpus/$name.aux.c"
 	args=""
 	[ -f "$corpus/$name.args" ] && args=$(cat "$corpus/$name.args")
-	want=$(cat "$exp")
+	want=$(tr -d '\r' <"$exp")
 
 	for opt in -O0 -O1 -O2 -O3; do
 		for jit in 0 1; do
