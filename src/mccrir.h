@@ -101,6 +101,7 @@ enum {
 	RIR_M_CLJMP,
 	RIR_M_ADDRLATE,
 	RIR_M_ASMOPS,
+	RIR_M_CASTT,
 	RIR_M_COUNT
 };
 
@@ -159,6 +160,7 @@ void rir_hook_synth_end(void);
 void rir_hook_castsynth_end(struct CType *type, int ds, int ss);
 void rir_hook_castlower_begin(struct CType *type);
 void rir_hook_castlower_end(void);
+void rir_hook_cast_type(struct CType *type, int src_t);
 void rir_hook_member_begin(int is_arrow);
 void rir_hook_member_end(int cumofs, int nonlval);
 void rir_hook_builtin_complex_lower(void);
@@ -256,6 +258,7 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define RIR_M_CLJMP 0
 #define RIR_M_ADDRLATE 0
 #define RIR_M_ASMOPS 0
+#define RIR_M_CASTT 0
 #define rir_rbegin(k) ((void)0)
 #define rir_rbegin_val(k, v) ((void)0)
 #define rir_rend_to(k) ((void)0)
@@ -338,6 +341,7 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_hook_synth_end() ((void)0)
 #define rir_hook_castlower_begin(t) ((void)0)
 #define rir_hook_castlower_end() ((void)0)
+#define rir_hook_cast_type(t, s) ((void)0)
 #define rir_hook_member_begin(a) ((void)0)
 #define rir_hook_member_end(c, n) ((void)0)
 #define rir_hook_builtin_complex_lower() ((void)0)

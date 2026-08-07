@@ -524,6 +524,18 @@ void rir_hook_castlower_begin(struct CType *type) {
 
 void rir_hook_castlower_end(void) { rir_rend_to(RIR_R_CVT); }
 
+void rir_hook_cast_type(struct CType *type, int src_t) {
+	if (!rir_active)
+		return;
+	rir_mark_v2(RIR_T_MARK, RIR_M_CASTT,
+							(type->t & VT_BITFIELD)
+									? ((int)type->bp | ((int)type->bs << 8))
+									: 0,
+							(long long)((uint64_t)(unsigned)type->t |
+													((uint64_t)(unsigned)src_t << 32)),
+							(long long)(uint64_t)(uintptr_t)type->ref);
+}
+
 static int rir_member_arrow;
 static int rir_bcplx_low;
 
@@ -3117,6 +3129,13 @@ static void rir_flush_effect_top(void) {
 	rir_shtype[rir_shn - 1] = 0;
 }
 
+static int rir_castt_opaque(int t) {
+	int bt = t & VT_BTYPE;
+	return (t & (VT_ARRAY | VT_VLA | VT_BITFIELD)) != 0 || bt == VT_VOID ||
+				 bt == VT_STRUCT || bt == VT_FUNC || bt == VT_LDOUBLE ||
+				 bt == VT_QLONG || bt == VT_QFLOAT || bt == VT_INT128;
+}
+
 static void rir_mark_apply(const RirOp *ro) {
 	AstLocal a, n;
 	switch (ro->rkind) {
@@ -3405,6 +3424,39 @@ static void rir_mark_apply(const RirOp *ro) {
 			rir_argcast_ch[rir_argcast_n] = ro->rval ? 1 : 0;
 		rir_argcast_n++;
 		break;
+	case RIR_M_CASTT: {
+		AstLocal top, cv;
+		int ct = (int)(unsigned)(uint64_t)ro->rv1;
+		int st = (int)(unsigned)((uint64_t)ro->rv1 >> 32);
+		uint64_t cref = (uint64_t)ro->rv2;
+		if (rir_shn <= 0 || rir_castgv_pend)
+			break;
+		if (ro->mvs_n - rir_base_depth != rir_shn)
+			break;
+		if (rir_castt_opaque(ct) || rir_castt_opaque(st))
+			break;
+		top = rir_sh[rir_shn - 1];
+		if (top == AST_NONE || rir_shtype[rir_shn - 1])
+			break;
+		if (ast_parent(rir_arena, top) != AST_NONE)
+			break;
+		if (ast_type_t(rir_arena, top) &&
+				rir_castt_opaque(ast_type_t(rir_arena, top)))
+			break;
+		if (ast_type_t(rir_arena, top) == ct &&
+				ast_type_ref(rir_arena, top) == cref)
+			break;
+		cv = ast_node(rir_arena, AST_Convert);
+		ast_set_type_bf(rir_arena, cv, ct, cref, (unsigned)(ro->rval & 0xff),
+										(unsigned)((ro->rval >> 8) & 0xff));
+		ast_add_child(rir_arena, cv, top);
+		rir_sh[rir_shn - 1] = cv;
+		if (rir_retexpr == top)
+			rir_retexpr = cv;
+		if (rir_pending_call == top)
+			rir_pending_call = cv;
+		break;
+	}
 	case RIR_M_CASTGV:
 		if (rir_shn > 0) {
 			AstLocal top = rir_sh[rir_shn - 1];
@@ -4397,7 +4449,8 @@ static void rir_to_arena(void) {
 		}
 		if (rir_cplxb_depth && rir_cplxb_on)
 			continue;
-		if (ro->tag != RIR_T_MARK || ro->rkind != RIR_M_CASTGV)
+		if (ro->tag != RIR_T_MARK ||
+				(ro->rkind != RIR_M_CASTGV && ro->rkind != RIR_M_CASTT))
 			rir_castgv_apply();
 		if (ro->tag == RIR_T_MARK) {
 			int bound = rir_retexpr_pending && ro->rkind == RIR_M_RETURN && ro->rval;

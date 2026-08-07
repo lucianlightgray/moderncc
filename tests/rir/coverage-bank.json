@@ -8,332 +8,332 @@
  "self": {
   "O0": {
    "arena": {
-    "bodies": 2579,
-    "body_bytes": 1330277,
-    "coverage": 74.0975,
-    "discarded_bytes": 299050,
-    "gap_bodies": 7,
-    "gap_bytes": 5411,
-    "kept_coverage": 77.113,
-    "modelled_bytes": 1324866,
-    "modelled_coverage": 99.5932,
+    "bodies": 2606,
+    "body_bytes": 1342839,
+    "coverage": 78.4751,
+    "discarded_bytes": 246069,
+    "gap_bodies": 2,
+    "gap_bytes": 0,
+    "kept_coverage": 81.6755,
+    "modelled_bytes": 1342839,
+    "modelled_coverage": 100.0,
     "residual": 0,
-    "text": 1384413,
-    "used_bytes": 1025816
+    "text": 1397602,
+    "used_bytes": 1096770
    },
    "capture": {
-    "bodies": 2579,
+    "bodies": 2606,
     "coverage": 100.0,
-    "faithful_bytes": 1330277,
+    "faithful_bytes": 1342839,
     "residual": 0,
-    "text": 1384413
+    "text": 1397602
    },
    "lowerable": {
-    "big_region_nodes_pct": 4.9667,
+    "big_region_nodes_pct": 4.9836,
     "blockers": {
      "asm": 0.0058,
      "call": 0.0097,
-     "frame": 0.2576,
-     "global": 1.2303,
+     "frame": 0.2581,
+     "global": 1.2119,
      "opaque": 0.0,
-     "reg": 0.3885,
-     "type": 0.3787
+     "reg": 0.3892,
+     "type": 0.3794
     },
-    "bodies_pct": 9.0735,
-    "bytes_pct": 2.2332,
-    "nodes_pct": 41.676,
-    "nodes_pct_loose": 66.084,
-    "nodes_pct_strict": 26.2716,
-    "region_nodes_pct": 16.7343
+    "bodies_pct": 9.1328,
+    "bytes_pct": 2.2466,
+    "nodes_pct": 41.6543,
+    "nodes_pct_loose": 66.1109,
+    "nodes_pct_strict": 26.2639,
+    "region_nodes_pct": 16.7579
    }
   },
   "O1": {
    "arena": {
-    "bodies": 2581,
-    "body_bytes": 1321686,
-    "coverage": 86.2935,
-    "discarded_bytes": 129045,
-    "gap_bodies": 7,
-    "gap_bytes": 5367,
-    "kept_coverage": 89.8303,
-    "modelled_bytes": 1316319,
-    "modelled_coverage": 99.5939,
+    "bodies": 2608,
+    "body_bytes": 1334097,
+    "coverage": 92.1945,
+    "discarded_bytes": 53613,
+    "gap_bodies": 2,
+    "gap_bytes": 0,
+    "kept_coverage": 95.9813,
+    "modelled_bytes": 1334097,
+    "modelled_coverage": 100.0,
     "residual": 0,
-    "text": 1375856,
-    "used_bytes": 1187274
+    "text": 1388894,
+    "used_bytes": 1280484
    },
    "capture": {
-    "bodies": 2581,
+    "bodies": 2608,
     "coverage": 100.0,
-    "faithful_bytes": 1323544,
+    "faithful_bytes": 1336085,
     "residual": 0,
-    "text": 1377714
+    "text": 1390882
    },
    "lowerable": {
-    "big_region_nodes_pct": 4.9703,
+    "big_region_nodes_pct": 4.9873,
     "blockers": {
      "asm": 0.0058,
-     "call": 0.0099,
-     "frame": 0.2579,
-     "global": 1.2309,
+     "call": 0.01,
+     "frame": 0.2585,
+     "global": 1.2125,
      "opaque": 0.0,
-     "reg": 0.372,
-     "type": 0.4185
+     "reg": 0.3728,
+     "type": 0.4193
     },
-    "bodies_pct": 9.1048,
-    "bytes_pct": 2.2564,
-    "nodes_pct": 41.6721,
-    "nodes_pct_loose": 66.0983,
-    "nodes_pct_strict": 26.2554,
-    "region_nodes_pct": 16.7466
+    "bodies_pct": 9.1641,
+    "bytes_pct": 2.2701,
+    "nodes_pct": 41.6502,
+    "nodes_pct_loose": 66.1253,
+    "nodes_pct_strict": 26.2476,
+    "region_nodes_pct": 16.7701
    }
   },
   "O2": {
    "arena": {
-    "bodies": 2581,
-    "body_bytes": 1325168,
-    "coverage": 84.6256,
-    "discarded_bytes": 129045,
-    "gap_bodies": 8,
-    "gap_bytes": 5834,
-    "kept_coverage": 89.8217,
-    "modelled_bytes": 1319334,
-    "modelled_coverage": 99.5598,
+    "bodies": 2608,
+    "body_bytes": 1335686,
+    "coverage": 90.3452,
+    "discarded_bytes": 53613,
+    "gap_bodies": 3,
+    "gap_bytes": 467,
+    "kept_coverage": 95.9511,
+    "modelled_bytes": 1335219,
+    "modelled_coverage": 99.965,
     "residual": 0,
-    "text": 1406535,
-    "used_bytes": 1190289
+    "text": 1418566,
+    "used_bytes": 1281606
    },
    "capture": {
-    "bodies": 2581,
+    "bodies": 2608,
     "coverage": 100.0,
-    "faithful_bytes": 1323544,
+    "faithful_bytes": 1336085,
     "residual": 0,
-    "text": 1377714
+    "text": 1390882
    },
    "lowerable": {
-    "big_region_nodes_pct": 4.9703,
+    "big_region_nodes_pct": 4.9873,
     "blockers": {
      "asm": 0.0058,
-     "call": 0.0116,
-     "frame": 0.2498,
-     "global": 1.2453,
+     "call": 0.0117,
+     "frame": 0.2507,
+     "global": 1.2278,
      "opaque": 0.0,
-     "reg": 0.3761,
-     "type": 0.3725
+     "reg": 0.3775,
+     "type": 0.3695
     },
-    "bodies_pct": 9.1048,
-    "bytes_pct": 2.1544,
-    "nodes_pct": 41.6721,
-    "nodes_pct_loose": 66.0983,
-    "nodes_pct_strict": 26.2554,
-    "region_nodes_pct": 16.7466
+    "bodies_pct": 9.1641,
+    "bytes_pct": 2.1758,
+    "nodes_pct": 41.6502,
+    "nodes_pct_loose": 66.1253,
+    "nodes_pct_strict": 26.2476,
+    "region_nodes_pct": 16.7701
    }
   },
   "O3": {
    "arena": {
-    "bodies": 2581,
-    "body_bytes": 1325177,
-    "coverage": 81.6074,
-    "discarded_bytes": 129045,
-    "gap_bodies": 8,
-    "gap_bytes": 5834,
-    "kept_coverage": 89.8218,
-    "modelled_bytes": 1319343,
-    "modelled_coverage": 99.5598,
+    "bodies": 2608,
+    "body_bytes": 1335695,
+    "coverage": 85.8629,
+    "discarded_bytes": 53613,
+    "gap_bodies": 3,
+    "gap_bytes": 467,
+    "kept_coverage": 95.9512,
+    "modelled_bytes": 1335228,
+    "modelled_coverage": 99.965,
     "residual": 0,
-    "text": 1458566,
-    "used_bytes": 1190298
+    "text": 1492629,
+    "used_bytes": 1281615
    },
    "capture": {
-    "bodies": 2581,
+    "bodies": 2608,
     "coverage": 100.0,
-    "faithful_bytes": 1323544,
+    "faithful_bytes": 1336085,
     "residual": 0,
-    "text": 1377714
+    "text": 1390882
    },
    "lowerable": {
-    "big_region_nodes_pct": 4.9703,
+    "big_region_nodes_pct": 4.9873,
     "blockers": {
      "asm": 0.0058,
-     "call": 0.0116,
-     "frame": 0.2498,
-     "global": 1.2452,
+     "call": 0.0117,
+     "frame": 0.2507,
+     "global": 1.2278,
      "opaque": 0.0,
-     "reg": 0.3761,
-     "type": 0.3725
+     "reg": 0.3775,
+     "type": 0.3695
     },
-    "bodies_pct": 9.1048,
-    "bytes_pct": 2.1544,
-    "nodes_pct": 41.6721,
-    "nodes_pct_loose": 66.0983,
-    "nodes_pct_strict": 26.2554,
-    "region_nodes_pct": 16.7466
+    "bodies_pct": 9.1641,
+    "bytes_pct": 2.1758,
+    "nodes_pct": 41.6502,
+    "nodes_pct_loose": 66.1253,
+    "nodes_pct_strict": 26.2476,
+    "region_nodes_pct": 16.7701
    }
   }
  },
  "wide": {
   "O0": {
    "arena": {
-    "bodies": 4021,
-    "body_bytes": 3405164,
-    "coverage": 88.9556,
-    "discarded_bytes": 300976,
-    "gap_bodies": 44,
-    "gap_bytes": 5411,
-    "kept_coverage": 91.0023,
-    "modelled_bytes": 3399753,
-    "modelled_coverage": 99.8411,
+    "bodies": 4060,
+    "body_bytes": 3420962,
+    "coverage": 90.6517,
+    "discarded_bytes": 247995,
+    "gap_bodies": 39,
+    "gap_bytes": 0,
+    "kept_coverage": 92.7507,
+    "modelled_bytes": 3420962,
+    "modelled_coverage": 100.0,
     "residual": -119,
-    "text": 3483510,
-    "used_bytes": 3098777
+    "text": 3500172,
+    "used_bytes": 3172967
    },
    "capture": {
-    "bodies": 4021,
+    "bodies": 4060,
     "coverage": 100.0,
-    "faithful_bytes": 3405164,
+    "faithful_bytes": 3420962,
     "residual": -119,
-    "text": 3483510
+    "text": 3500172
    },
    "lowerable": {
-    "big_region_nodes_pct": 2.9151,
+    "big_region_nodes_pct": 2.9405,
     "blockers": {
      "asm": 0.0055,
      "call": 0.0087,
-     "frame": 0.154,
-     "global": 0.6961,
+     "frame": 0.1537,
+     "global": 0.6992,
      "opaque": 0.0,
-     "reg": 1.085,
-     "type": 0.2936
+     "reg": 1.0828,
+     "type": 0.293
     },
-    "bodies_pct": 15.6172,
-    "bytes_pct": 1.2232,
-    "nodes_pct": 34.889,
-    "nodes_pct_loose": 64.2469,
-    "nodes_pct_strict": 27.1428,
-    "region_nodes_pct": 9.7417
+    "bodies_pct": 15.6273,
+    "bytes_pct": 1.2294,
+    "nodes_pct": 34.9502,
+    "nodes_pct_loose": 64.268,
+    "nodes_pct_strict": 27.1528,
+    "region_nodes_pct": 9.8163
    }
   },
   "O1": {
    "arena": {
-    "bodies": 4030,
-    "body_bytes": 3396365,
-    "coverage": 93.8422,
-    "discarded_bytes": 130134,
-    "gap_bodies": 44,
-    "gap_bytes": 5367,
-    "kept_coverage": 96.0104,
-    "modelled_bytes": 3390998,
-    "modelled_coverage": 99.842,
+    "bodies": 4069,
+    "body_bytes": 3411952,
+    "coverage": 96.1608,
+    "discarded_bytes": 54702,
+    "gap_bodies": 39,
+    "gap_bytes": 0,
+    "kept_coverage": 98.3968,
+    "modelled_bytes": 3411952,
+    "modelled_coverage": 100.0,
     "residual": -119,
-    "text": 3474838,
-    "used_bytes": 3260864
+    "text": 3491289,
+    "used_bytes": 3357250
    },
    "capture": {
-    "bodies": 4030,
+    "bodies": 4069,
     "coverage": 100.0,
-    "faithful_bytes": 3404283,
+    "faithful_bytes": 3420060,
     "residual": -119,
-    "text": 3482756
+    "text": 3499397
    },
    "lowerable": {
-    "big_region_nodes_pct": 2.915,
+    "big_region_nodes_pct": 2.9404,
     "blockers": {
      "asm": 0.0055,
      "call": 0.0088,
-     "frame": 0.1551,
-     "global": 0.6916,
+     "frame": 0.1548,
+     "global": 0.6947,
      "opaque": 0.0,
-     "reg": 1.0804,
-     "type": 0.3222
+     "reg": 1.0782,
+     "type": 0.3216
     },
-    "bodies_pct": 15.632,
-    "bytes_pct": 1.1884,
-    "nodes_pct": 34.8895,
-    "nodes_pct_loose": 64.2462,
-    "nodes_pct_strict": 27.1227,
-    "region_nodes_pct": 9.7534
+    "bodies_pct": 15.642,
+    "bytes_pct": 1.1947,
+    "nodes_pct": 34.951,
+    "nodes_pct_loose": 64.2675,
+    "nodes_pct_strict": 27.1327,
+    "region_nodes_pct": 9.8283
    }
   },
   "O2": {
    "arena": {
-    "bodies": 4030,
-    "body_bytes": 3400302,
-    "coverage": 93.0085,
-    "discarded_bytes": 130134,
-    "gap_bodies": 45,
-    "gap_bytes": 5834,
-    "kept_coverage": 96.0013,
-    "modelled_bytes": 3394468,
-    "modelled_coverage": 99.8284,
+    "bodies": 4069,
+    "body_bytes": 3414054,
+    "coverage": 95.2807,
+    "discarded_bytes": 54702,
+    "gap_bodies": 40,
+    "gap_bytes": 467,
+    "kept_coverage": 98.3841,
+    "modelled_bytes": 3413587,
+    "modelled_coverage": 99.9863,
     "residual": -119,
-    "text": 3509714,
-    "used_bytes": 3264334
+    "text": 3525252,
+    "used_bytes": 3358885
    },
    "capture": {
-    "bodies": 4030,
+    "bodies": 4069,
     "coverage": 100.0,
-    "faithful_bytes": 3404283,
+    "faithful_bytes": 3420060,
     "residual": -119,
-    "text": 3482756
+    "text": 3499397
    },
    "lowerable": {
-    "big_region_nodes_pct": 2.915,
+    "big_region_nodes_pct": 2.9404,
     "blockers": {
      "asm": 0.0055,
      "call": 0.0118,
-     "frame": 0.1504,
-     "global": 0.701,
+     "frame": 0.1501,
+     "global": 0.705,
      "opaque": 0.0,
-     "reg": 1.0233,
-     "type": 0.2677
+     "reg": 1.0218,
+     "type": 0.2656
     },
-    "bodies_pct": 15.632,
-    "bytes_pct": 1.1861,
-    "nodes_pct": 34.8895,
-    "nodes_pct_loose": 64.2462,
-    "nodes_pct_strict": 27.1227,
-    "region_nodes_pct": 9.7534
+    "bodies_pct": 15.642,
+    "bytes_pct": 1.1951,
+    "nodes_pct": 34.951,
+    "nodes_pct_loose": 64.2675,
+    "nodes_pct_strict": 27.1327,
+    "region_nodes_pct": 9.8283
    }
   },
   "O3": {
    "arena": {
-    "bodies": 4030,
-    "body_bytes": 3400273,
-    "coverage": 91.6321,
-    "discarded_bytes": 130134,
-    "gap_bodies": 45,
-    "gap_bytes": 5834,
-    "kept_coverage": 96.0013,
-    "modelled_bytes": 3394439,
-    "modelled_coverage": 99.8284,
+    "bodies": 4069,
+    "body_bytes": 3414025,
+    "coverage": 93.3022,
+    "discarded_bytes": 54702,
+    "gap_bodies": 40,
+    "gap_bytes": 467,
+    "kept_coverage": 98.384,
+    "modelled_bytes": 3413558,
+    "modelled_coverage": 99.9863,
     "residual": -119,
-    "text": 3562404,
-    "used_bytes": 3264305
+    "text": 3599974,
+    "used_bytes": 3358856
    },
    "capture": {
-    "bodies": 4030,
+    "bodies": 4069,
     "coverage": 100.0,
-    "faithful_bytes": 3404283,
+    "faithful_bytes": 3420060,
     "residual": -119,
-    "text": 3482756
+    "text": 3499397
    },
    "lowerable": {
-    "big_region_nodes_pct": 2.915,
+    "big_region_nodes_pct": 2.9404,
     "blockers": {
      "asm": 0.0055,
      "call": 0.0118,
-     "frame": 0.1504,
-     "global": 0.7,
+     "frame": 0.1501,
+     "global": 0.704,
      "opaque": 0.0,
-     "reg": 1.0233,
-     "type": 0.2677
+     "reg": 1.0218,
+     "type": 0.2656
     },
-    "bodies_pct": 15.632,
-    "bytes_pct": 1.1853,
-    "nodes_pct": 34.8895,
-    "nodes_pct_loose": 64.2462,
-    "nodes_pct_strict": 27.1227,
-    "region_nodes_pct": 9.7534
+    "bodies_pct": 15.642,
+    "bytes_pct": 1.1944,
+    "nodes_pct": 34.951,
+    "nodes_pct_loose": 64.2675,
+    "nodes_pct_strict": 27.1327,
+    "region_nodes_pct": 9.8283
    }
   }
  }

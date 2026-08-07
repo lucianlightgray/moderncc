@@ -53,9 +53,11 @@ counts as lowerable only when we are sure. Every node gets exactly one class:
           __int128, _Float128), a Convert with no operand, or a dereference
           (Load / Store / MEMBER / MEMBER_ARROW) whose address operand does
           not derive from any node with a recorded pointer/array/struct type.
-          That last clause is what catches the known defect where a cast
-          emitting no machine code leaves no trace in the arena, so the
-          replay's -> sees an integer: tests/rir/gap/abort.c scores `type`.
+          That last clause used to catch a cast emitting no machine code and
+          so leaving no trace in the arena, which made the replay's -> see an
+          integer.  Fixed 2026-08-06: rir_hook_cast_type() records the
+          post-cast CType, so what remains here is genuine -- a value whose
+          static type has no portable scalar meaning.
   frame   the value's meaning is a host frame offset: AST_OP_ADDR, a VT_LLOCAL
           Ref, or a VT_LOCAL Ref (see the locals level below)
   global  a Ref carrying VT_SYM -- a host link-time address
@@ -147,6 +149,22 @@ def self_flags(bdir):
         return []
     return [a for a in shlex.split(rec[0]["command"])[1:]
             if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
+
+
+def gap_levels(path):
+    """Levels a tests/rir/gap fixture must reproduce its class at.
+
+    A fixture whose class is only reachable under an optimization that does not
+    run at every level says so with a `rir-gap-levels: O2,O3` comment; without
+    one every level in --levels is required.
+    """
+    tag = "rir-gap-levels:"
+    with open(path) as f:
+        head = f.read(4096)
+    if tag not in head:
+        return None
+    rest = head.split(tag, 1)[1].split("*/", 1)[0].split("\n", 1)[0]
+    return [x.strip() for x in rest.split(",") if x.strip()]
 
 
 def text_size(path):
@@ -580,7 +598,10 @@ def main():
                 want = fn[:-2]
                 if want not in UNF:
                     want = "skip:" + want
+                only = gap_levels(os.path.join(gdir, fn))
                 for opt in a.levels.split(","):
+                    if only and opt not in only:
+                        continue
                     tsv = os.path.join(td, "g.tsv")
                     if os.path.exists(tsv):
                         os.remove(tsv)

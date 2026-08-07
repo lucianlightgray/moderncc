@@ -15,7 +15,7 @@ only the arena has ever had a gap.
 | layer | coverage, by emitted body bytes |
 | --- | --- |
 | capture (`rir_verify`, `MCC_REPLAY_IR=3`) | **100.000%**, `fallback=0`, on both corpora |
-| arena (production, `MCC_RIR_PROD`) | **99.59%** self / **99.84%** wide, residual 0 |
+| arena (production, `MCC_RIR_PROD`) | **100.000%** self at `-O0`/`-O1`, **99.965%** at `-O2`/`-O3`, residual 0 |
 
 Measure it with `ctest -R rir-coverage`; the numbers are banked in
 `tests/rir/coverage-bank.json` and ratcheted. **The ratchet gates percentages and the
@@ -27,11 +27,22 @@ Refusal classes closed on 2026-08-06: `asm`, `regdangle`, `bail`, `mismatch` —
 `used` now. `noops` is 338 provably empty bodies (`len=0 rirn=0 capn=0`), which is not a
 gap; `revargs` is one body, assessed and deliberately left.
 
-**The entire remaining gap is one class: `abort`**, and it is identical on the self and
-wide corpora — so all of it lives in `src/`. `MCC_RIR_ABORTWHY=1` names it: the replay
-re-runs semantic checks the arena lacks the type information for (4 of 5 are
-`pointer expected`, e.g. `((Sym *)(uintptr_t)x)->v`). That is the single tractable target
-for anyone continuing this work.
+**The `abort` class is closed for the lost-cast family — 2026-08-06.** A cast that changed
+the static type but emitted no machine code left no trace in the arena, so a chain like
+`((Sym *)(uintptr_t)x)->v` handed the replay's `->` an integer and it died with
+`pointer expected`. `rir_hook_cast_type()` now records the post-cast `CType` (`t`, `ref`,
+`bp`/`bs`) as a `RIR_M_CASTT` mark at every explicit cast, and `rir_to_arena` turns it into
+an `AST_Convert` carrying the *final* static type of the chain, not the type of the last
+code-emitting cast. Self corpus: gap 5411 B / 5 bodies → **0 B at `-O0`/`-O1`**, 5834 B / 6
+bodies → **467 B / 1 body at `-O2`/`-O3`**, and `kept` rose 89.8% → 96.0% because the
+restored pointer type also makes the replay pick the same code paths.
+
+**What is left is one body, 467 B, and it is not a type.** `host_runmem_alloc` in
+`src/mcchost.c` aborts with `ast-replay: storeval-arg stack underflow`: `ast_storeval_*`
+marks its `AST_Invoke` `AST_FB_CALL_STOREVAL_ARG`, and at replay the vstack holds fewer
+live entries than the `vrotb(3)`/`vswap()` rotation needs. That AST pass only runs from
+`-O2`, which is why the class vanishes at `-O0`/`-O1` and why `tests/rir/gap/abort.c`
+carries a `rir-gap-levels: O2,O3` marker. Reduced reproducer: `p = f(n += g());`.
 
 Fallback rows in the census now carry `first`/`end`/`blen`/`nlen`, which localises a
 divergence to a byte span within the body — the standing "fix at the USE site" item needs
@@ -152,9 +163,28 @@ loosening it is a one-place change. Every arena node gets exactly one class:
 A node is **clean** when its whole subtree is `ok`, i.e. it roots a maximal lowerable
 region. A body is lowerable when every node in its arena is `ok`.
 
-The `type` clause independently rediscovers the known defect: a cast that changes the
-static type but emits no machine code leaves no trace, so `tests/rir/gap/abort.c` scores
-`type` on its `->` — the census names the defect from the arena alone, with no replay.
+The `type` clause independently rediscovered the lost-cast defect from the arena alone,
+with no replay, and `rir_hook_cast_type()` closed it on 2026-08-06. What that bought the
+lowerable census was almost nothing, and **that null result is the most useful thing this
+census has said so far**. Splitting `type` into its three sub-clauses over the self corpus
+at `-O2` (temporarily relabelling them, then reverting):
+
+| sub-clause | share of nodes | blocks | SOLE blocker of | after the cast fix |
+| --- | --- | --- | --- | --- |
+| `ast_bad_type()` — struct, bitfield, `long double`, `__int128` | 0.823% | 42.597% of body bytes | 0.127% | 0.822% / 42.576% / 0.127% |
+| deref whose address operand derives from no typed node | 0.706% | 50.959% of body bytes | 0.237% | 0.705% / 50.840% / 0.233% |
+| `Convert` with no operand | ~0 | ~0 | ~0 | unchanged |
+
+The deref clause barely moved even though **every** `abort` in the corpus was fixed,
+because the lost cast was never what dominated it. The real cause is that the arena is
+**type-sparse**: gate `ast_low_node()` on `ast_type_t(a, n) != 0` alone and **36.151% of
+arena nodes carry no static type at all**, in 100% of bodies. `ast_low_base_ptr()` is a
+depth-8 search *around* that hole. So type-completeness in the strong sense — the sense a
+shader generator needs, where every value's width and signedness is known exactly — is not
+a cast-node property. It needs every arena node to carry a `CType`, which is a schema
+change to `AstArena` (`type_t`/`type_ref`/`type_bp`/`type_bs` are already there and simply
+unset on most nodes) plus a stamping discipline in `rir_to_arena` for `Binary`, `Unary`,
+`Load` and `Store`. **That is the next tractable target**, and it is bigger than a hook.
 
 **The `VT_LOCAL` rule is the one genuinely open question** (a local's `ival` is the
 parser's own frame offset), so it is a level and all three are measured in one walk:
@@ -802,30 +832,31 @@ percentages of **body bytes** (`.text` minus prologue/epilogue):
 
 | level | capture | arena modelled | of which kept | discarded | **gap** |
 | --- | --- | --- | --- | --- | --- |
-| `-O0` (forced) | **100.000%** | 99.593% | 77.113% | 22.480% | **0.407%** (5411 B, 7 bodies) |
-| `-O1` | **100.000%** | 99.594% | 89.830% | 9.764% | **0.406%** (5367 B, 7 bodies) |
-| `-O2` | **100.000%** | 99.560% | 89.822% | 9.738% | **0.440%** (5834 B, 8 bodies) |
-| `-O3` | **100.000%** | 99.560% | 89.822% | 9.738% | **0.440%** (5834 B, 8 bodies) |
+| `-O0` (forced) | **100.000%** | **100.000%** | 81.676% | 18.324% | **0.000%** (0 B, 0 bodies) |
+| `-O1` | **100.000%** | **100.000%** | 95.981% | 4.019% | **0.000%** (0 B, 0 bodies) |
+| `-O2` | **100.000%** | 99.965% | 95.951% | 4.014% | **0.035%** (467 B, 1 body) |
+| `-O3` | **100.000%** | 99.965% | 95.951% | 4.014% | **0.035%** (467 B, 1 body) |
 
-As a fraction of the whole `.text` section, `-O1`: modelled 95.67%, kept 86.29%, gap
-0.39%, prologue/epilogue 3.94% — **prologues and epilogues are modelled by neither
-layer, by construction**, and are now by far the largest non-covered slice, an order of
-magnitude bigger than the gap.
+Prologues and epilogues are modelled by neither layer, by construction, and are now by far
+the largest non-covered slice of `.text` — 5.5%, two orders of magnitude bigger than
+the gap.
 
 The wide corpus (`src/mcc.c` + every `tests/{exec,behavior,ast,asm,runtime,static}/**.c`
-+ `examples`, 361 files, 9 of which are negative tests that do not compile) agrees:
-modelled 99.841% / 99.842% / 99.828% / 99.828% at `-O0`/`-O1`/`-O2`/`-O3`, gap 5411 B
-at `-O0`/`-O1` and 5834 B at `-O2`/`-O3` — **the same bytes as the self corpus**, so
-the entire remaining gap lives in `src/`.
++ `examples`, 363 files, 9 of which are negative tests that do not compile) agrees:
+modelled 100.000% / 100.000% / 99.986% / 99.986%, gap 0 B at `-O0`/`-O1` and the same
+467 B at `-O2`/`-O3` — **the same body as the self corpus**, so what remains lives in
+`src/`.
 
 #### The gap, enumerated — three classes, each with a minimal reproducer
 
 `tests/rir/gap/<class>.c` is one file per class and `ctest -R rir-gap-classes` compiles
-each at all four levels and fails if a class stops reproducing.
+each at all four levels and fails if a class stops reproducing. A fixture whose class is
+only reachable under an optimization that does not run at every level declares that with a
+`/* rir-gap-levels: O2,O3 */` comment on the first line.
 
 | class | what RIR cannot model | reproducer | bytes in the gap |
 | --- | --- | --- | --- |
-| `abort` | the replay **re-runs semantic checks** and the arena does not carry enough type information to satisfy them. `MCC_RIR_ABORTWHY=1` prints the message `ast_error_sink` swallows: `pointer expected`, from member access through a pointer cast from an integer (`((struct S *)(unsigned long)p[i])->v`) | `abort.c` | **all of it** — 5411 B / 5 bodies at `-O0`,`-O1`; 5834 B / 6 bodies at `-O2`,`-O3` |
+| `abort` | the replay **re-runs the emitter's own invariants** and the arena does not carry enough to satisfy them. `MCC_RIR_ABORTWHY=1` prints the message `ast_error_sink` swallows. One body left, `host_runmem_alloc`: `ast-replay: storeval-arg stack underflow`, an `AST_FB_CALL_STOREVAL_ARG` invoke whose vstack rotation finds fewer live entries than it needs | `abort.c` (`-O2`,`-O3` only) | 467 B / 1 body at `-O2`,`-O3`; **0 B** at `-O0`,`-O1` |
 | `skip:noops` | a body with no ops at all (an empty function) | `noops.c` | 0 B by definition |
 | `skip:replayok` | the arena was built and taken, but `ast_replay_ok()` refuses it at `ast_func_end` — previously invisible, it fell out of the census entirely until `rir_prod_why_set("replayok")` was added | `replayok.c` | 0 B on both corpora |
 
@@ -835,9 +866,9 @@ corpus (`revargs` needs `-freverse-funcargs`, off by default). `asm`, `regdangle
 drafted; **all four have since been closed** — their reproducers now report `used` at
 every level and the files are gone.
 
-**So the arena gap is now one defect class, ~5.5 KB, all of it `abort`.** Closing it
-means either not re-running semantic checks during replay, or carrying enough type
-information in the arena to satisfy them.
+**So the arena gap is now one body, 467 B, and only from `-O2`.** Closing it means
+recording how many vstack entries the store-value rotation expects, the same shape of fix
+as `RIR_M_CASTT`: a missing fact at the capture site, not a divergence at the use site.
 
 #### Do not read `discarded` as either a defect or as covered
 
@@ -1110,6 +1141,10 @@ empty there. Bodies: 2538.
 | `-O1` | 2500 | 48 | 12 | 23 | 20 | 5 | 0 |
 | `-O2` | 2499 | 49 | 12 | 23 | 20 | 5 | 1 |
 | `-O3` | 2499 | 49 | 12 | 23 | 20 | 5 | 1 |
+
+The `abort` column here and in the whole-suite board below is stale: `RIR_M_CASTT` took
+this one to 0 / 0 / 1 / 1 later the same day. The rest of both boards still holds and the
+reasoning below them is unaffected.
 
 - **The `-O0` fallback set is a strict superset of the `-O1` set**, and the extra is
   one single failure mode. 120 ⊃ 48; exactly 0 bodies fall back at `-O1` that do not

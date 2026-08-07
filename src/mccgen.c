@@ -11861,7 +11861,9 @@ tok_next:
 					} else
 						{ MCC_TRACE("br\n"); mcc_error("conversion to non-scalar type requested"); }
 				}
+				int cast_src_t = vtop->type.t;
 				gen_cast(&type);
+				rir_hook_cast_type(&vtop->type, cast_src_t);
 				if ((type.t & VT_BTYPE) == VT_VOID)
 					{ MCC_TRACE("br\n"); expr_has_effect = 1; }
 				if (gv_cast_rvalue())
