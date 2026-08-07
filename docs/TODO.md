@@ -402,7 +402,39 @@ two real emitter bugs behind a magic number.
 **Still not claimed.** Everything in the section above runs through `spvgate`
 offline; the ladder path is the only thing the compiler itself dispatches.
 
-### The runtime JIT cannot carry the backend yet — 2026-08-07
+### The runtime JIT does carry the backend — 2026-08-07, superseding the below
+
+The crash was root-caused and fixed; the section that follows is kept for the
+eliminations it records, but its conclusion is obsolete.
+
+**Cause: the NVIDIA driver initialises its shader-compiler state lazily, and if
+that first touch happens on a JIT worker thread it comes up broken** — the NULL
+context at `cmp 0x10(%r8)` in libnvidia-gpucomp. Seventeen isolated probes all
+came back clean because every one of them did its first dispatch on the main
+thread. `ast_ladder_gpu_setup()` now dispatches one trivial module at JIT boot
+from `mccjit_boot_swap_async`, on the main thread before the worker pool starts.
+`pr50729` goes 4/40 (40/40 under dlopen) to **0/40**.
+
+Two further defects, both found by the cross-oracle rather than by inspection:
+the warm-up raised `FE_INEXACT` and broke `builtin-fp-int-inexact`, which checks
+FP exception flags — `mcc_gpu_run` now saves and restores `fenv_t`; and
+`mccjit_slice_search` gated on `mccjit_last_nparam`, a global set by a *previous*
+build, so the production slice-search path was dead code on a first promotion.
+
+**Result.** Cross-oracle over 4907 cases with `--embed-jit --jit-threads 2` and
+the GPU live in compiled programs: **0 behavioural regressions**, `DIFF_EXIT` 53
+and `DIFF_STDOUT` 19 matching the CPU baseline exactly.
+
+**How much GPU work the suites actually do, measured rather than assumed.** Over
+a 575-program random sample, **3 programs fire ladder rungs** (6 rungs); the rest
+of the 312 dispatches are the one-per-process warm-up. `pr50729` fires in
+**20/20** runs (81 rungs) and passes 20/20. So the suites do exercise GPU replay,
+but in well under 1% of programs — most gcc tests have no function meeting the
+slice-search criteria, and lowering `MCC_JIT_HOT_CALLS` to 2 does not change
+that. Quote the 3-in-575 figure, not the dispatch count, which is dominated by
+warm-ups.
+
+### The runtime JIT cannot carry the backend yet — 2026-08-07 (superseded)
 
 Wiring `MCC_GPU` into `libmcc_jitengine` does make a compiled program's runtime
 JIT replay on the device, and it works: `--embed-jit --jit-threads 2` on a
