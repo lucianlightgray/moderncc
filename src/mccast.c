@@ -17916,6 +17916,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						!do_cload && !interchanged && !fused && !tiled && !math_inlined)
 					{ MCC_TRACE("br\n"); loc = saved_loc; }
 				if (ast_jit_splice_env && ast_opt_ok) { MCC_TRACE("br\n");
+					ast_promo_n = 0;
+					ast_promo_callful = 0;
 					ind = ast_body_ind_sv;
 					rsym = 0;
 					if (ast_rsec)
