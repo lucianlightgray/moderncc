@@ -6,7 +6,139 @@
 #include <fenv.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#define VK_NO_PROTOTYPES 1
 #include <vulkan/vulkan.h>
+
+#define MCC_VK_FNS(X)                                                          \
+	X(vkCreateInstance)                                                          \
+	X(vkEnumeratePhysicalDevices)                                                \
+	X(vkGetPhysicalDeviceProperties)                                             \
+	X(vkGetPhysicalDeviceQueueFamilyProperties)                                  \
+	X(vkGetPhysicalDeviceMemoryProperties)                                       \
+	X(vkCreateDevice)                                                            \
+	X(vkGetDeviceQueue)                                                          \
+	X(vkDeviceWaitIdle)                                                          \
+	X(vkCreateBuffer)                                                            \
+	X(vkDestroyBuffer)                                                           \
+	X(vkGetBufferMemoryRequirements)                                             \
+	X(vkAllocateMemory)                                                          \
+	X(vkFreeMemory)                                                              \
+	X(vkBindBufferMemory)                                                        \
+	X(vkMapMemory)                                                               \
+	X(vkUnmapMemory)                                                             \
+	X(vkCreateDescriptorSetLayout)                                               \
+	X(vkDestroyDescriptorSetLayout)                                              \
+	X(vkCreateDescriptorPool)                                                    \
+	X(vkDestroyDescriptorPool)                                                   \
+	X(vkAllocateDescriptorSets)                                                  \
+	X(vkUpdateDescriptorSets)                                                    \
+	X(vkCreateShaderModule)                                                      \
+	X(vkDestroyShaderModule)                                                     \
+	X(vkCreatePipelineLayout)                                                    \
+	X(vkDestroyPipelineLayout)                                                   \
+	X(vkCreateComputePipelines)                                                  \
+	X(vkDestroyPipeline)                                                         \
+	X(vkCreateCommandPool)                                                       \
+	X(vkDestroyCommandPool)                                                      \
+	X(vkAllocateCommandBuffers)                                                  \
+	X(vkBeginCommandBuffer)                                                      \
+	X(vkEndCommandBuffer)                                                        \
+	X(vkCmdBindPipeline)                                                         \
+	X(vkCmdBindDescriptorSets)                                                   \
+	X(vkCmdDispatch)                                                             \
+	X(vkQueueSubmit)                                                             \
+	X(vkCreateFence)                                                             \
+	X(vkDestroyFence)                                                            \
+	X(vkWaitForFences)
+
+#define MCC_VK_DECL(n) static PFN_##n n;
+MCC_VK_FNS(MCC_VK_DECL)
+#undef MCC_VK_DECL
+
+static int mcc_vk_tried;
+static int mcc_vk_ok;
+
+typedef int (*MccFeGetFn)(fenv_t *);
+typedef int (*MccFeSetFn)(const fenv_t *);
+
+static MccFeGetFn mcc_fe_get;
+static MccFeSetFn mcc_fe_set;
+
+#if !MCC_HOST_WIN32
+static const char *const mcc_fe_sonames[] = {
+#if MCC_HOST_DARWIN
+		"libSystem.B.dylib",
+#else
+		"libm.so.6", "libm.so",
+#endif
+		NULL};
+#endif
+
+static int mcc_fe_bind(void) {
+#if MCC_HOST_WIN32
+	mcc_fe_get = fegetenv;
+	mcc_fe_set = fesetenv;
+#else
+	int i;
+	mcc_fe_get = (MccFeGetFn)host_dlsym_process("fegetenv");
+	mcc_fe_set = (MccFeSetFn)host_dlsym_process("fesetenv");
+	for (i = 0; (!mcc_fe_get || !mcc_fe_set) && mcc_fe_sonames[i]; i++) {
+		void *h = host_dlopen(mcc_fe_sonames[i]);
+		if (!h)
+			continue;
+		mcc_fe_get = (MccFeGetFn)host_dlsym(h, "fegetenv");
+		mcc_fe_set = (MccFeSetFn)host_dlsym(h, "fesetenv");
+	}
+#endif
+	if (mcc_fe_get && mcc_fe_set)
+		return 1;
+	if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
+		fprintf(stderr, "[ladder-gpu] no fegetenv/fesetenv in the process\n");
+	return 0;
+}
+
+static const char *const mcc_vk_sonames[] = {
+#if MCC_HOST_WIN32
+		"vulkan-1.dll",
+#else
+		"libvulkan.so.1", "libvulkan.so", "libvulkan.dylib",
+#endif
+		NULL};
+
+static int mcc_vk_load(void) {
+	void *h = NULL;
+	const char *over;
+	int i;
+
+	if (mcc_vk_tried)
+		return mcc_vk_ok;
+	mcc_vk_tried = 1;
+	over = getenv("MCC_VULKAN_LIB");
+	if (over && *over)
+		h = host_dlopen(over);
+	else
+		for (i = 0; !h && mcc_vk_sonames[i]; i++)
+			h = host_dlopen(mcc_vk_sonames[i]);
+	if (!h) {
+		if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
+			fprintf(stderr, "[ladder-gpu] no vulkan loader (%s)\n", host_dlerror());
+		return 0;
+	}
+#define MCC_VK_BIND(n)                                                         \
+	n = (PFN_##n)host_dlsym(h, #n);                                              \
+	if (!n) {                                                                    \
+		if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))                                \
+			fprintf(stderr, "[ladder-gpu] missing symbol %s\n", #n);                 \
+		return 0;                                                                  \
+	}
+	MCC_VK_FNS(MCC_VK_BIND)
+#undef MCC_VK_BIND
+	if (!mcc_fe_bind())
+		return 0;
+	mcc_vk_ok = 1;
+	return 1;
+}
 
 #if MCC_HOST_POSIX
 #include <pthread.h>
@@ -53,6 +185,8 @@ static int mcc_gpu_init(void) {
 	if (mcc_gpu.tried)
 		return mcc_gpu.ok;
 	mcc_gpu.tried = 1;
+	if (!mcc_vk_load())
+		return 0;
 	memset(&ai, 0, sizeof ai);
 	ai.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	ai.pApplicationName = "mcc";
@@ -181,16 +315,22 @@ static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
 
 static int mcc_gpu_dispatch(const uint32_t *code, int nwords, const int32_t *in,
 														int ntuple, int nlive, int32_t *out) {
-	int rc;
+	int rc, ready;
 	fenv_t mcc_gpu_fe;
-	int mcc_gpu_fe_ok = (fegetenv(&mcc_gpu_fe) == 0);
+	int mcc_gpu_fe_ok;
+	MCC_GPU_LOCK();
+	ready = mcc_vk_load();
+	MCC_GPU_UNLOCK();
+	if (!ready)
+		return 0;
+	mcc_gpu_fe_ok = (mcc_fe_get(&mcc_gpu_fe) == 0);
 	MCC_GPU_LOCK();
 	rc = mcc_gpu_closing
 					 ? 0
 					 : mcc_gpu_dispatch_locked(code, nwords, in, ntuple, nlive, out);
 	MCC_GPU_UNLOCK();
 	if (mcc_gpu_fe_ok)
-		fesetenv(&mcc_gpu_fe);
+		mcc_fe_set(&mcc_gpu_fe);
 	return rc;
 }
 

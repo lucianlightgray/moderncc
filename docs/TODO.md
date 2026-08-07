@@ -306,8 +306,8 @@ standalone only *without* `mcc.h` while the evaluator needs it for `VT_*`.
 ## The ladder oracle replays on the GPU — 2026-08-07
 
 `ast_eval_ladder_rung()` delegates its replay to the device when `MCC_GPU` is
-compiled in (CMake option, **OFF** by default — it puts Vulkan in the compiler's
-link) and `MCC_AST_EVAL_LADDER_GPU=1` is set. Both arenas are lowered and
+compiled in (CMake option, **ON** by default since the driver is `dlopen`ed —
+see "`MCC_GPU` is ON by default" below) and `MCC_AST_EVAL_LADDER_GPU=1` is set. Both arenas are lowered and
 dispatched over the rung's whole tuple space; the verdict is rebuilt on the host
 from the returned `(value, defined)` pairs. **Only the replay moves — the verdict
 logic is not reimplemented on the device.** The rung falls back to the scalar
@@ -575,6 +575,10 @@ and `rir-coverage` fails its ratchet because `MCC_GPU=ON` adds GPU source to the
 self corpus and dilutes every lowerable percentage by ~0.1pp. **The ratchet is
 config-sensitive; bank and check it on a default build only.**
 
+> Every link failure in this paragraph is gone: the backend is `dlopen`ed and
+> `MCC_GPU` is the default. See "`MCC_GPU` is ON by default" below. The ratchet
+> sentence still holds — the default it refers to is now `MCC_GPU=ON`.
+
 `trace-gate` is pointing at a real defect, not a style rule. `ast_opt_defaults`
 opens with `#endif MCC_TRACE("enter\n");` — the instrumentation landed on the
 `#endif` line of the `MCC_GPU` guard above it, so it is preprocessor trailing
@@ -669,6 +673,139 @@ pool's detached workers have no exit quiesce: the `[ladder-gpu]` atexit report
 printed *before* the worker's fault, so compiler code was running on a worker
 while `exit()` was already draining atexit handlers. Fixing that means a
 join/shutdown path in `mccjit_pool_start`, which is a separate design change.
+
+## `MCC_GPU` is ON by default, and the loader is what makes that safe — 2026-08-07
+
+`option(MCC_GPU ... ON)`, on every triple. The backend itself did not change;
+what changed is that it is no longer in anybody's link.
+
+### The `dlopen` loader works on current main
+
+It was tried and rejected once, because it made the driver fault *deterministic*
+— 40/40 rather than 4/40. That fault was root-caused at `588a43c7` (the JIT
+intent deserializer rebuilding enum types with a null ref) and `dlopen` was never
+implicated in it: being slower, it simply let a detached JIT worker reach the
+faulting replay every time instead of one time in ten. Re-tested at this HEAD.
+`src/mccgpu.h` now compiles with `VK_NO_PROTOTYPES` and binds forty core entry
+points through `host_dlopen`/`host_dlsym` at first use; `ldd mcc` shows no
+`libvulkan`, and the device still comes up (`available=1 device=NVIDIA GeForce
+RTX 5070 Ti Laptop GPU`). Full `ctest`, 8850 cells: green.
+
+### Both mechanisms, because they answer different questions
+
+`dlopen` removes the *library* from every link. It does nothing about the
+*headers* — `mccgpu.h` still needs `vulkan/vulkan.h` for the structs and enums,
+and a host with no Vulkan SDK has no such header. So `MCC_GPU=ON` also probes for
+the header and turns itself off with a status message when it is missing.
+`find_package(Vulkan REQUIRED)` is gone; nothing in a default configure can fail
+for want of a GPU stack.
+
+| host | configure | link | runtime |
+| --- | --- | --- | --- |
+| headers + loader + driver | GPU on | no `-lvulkan` | device used |
+| headers, no loader or driver | GPU on | no `-lvulkan` | `mcc_vk_load` fails, CPU oracle |
+| no headers | GPU off, status message | no GPU source at all | CPU oracle |
+
+Row 2 is `VK_ICD_FILENAMES=/nonexistent.json ctest`: **2 failures out of 8850,
+both in `spvgate`, both fixed here** — `spvgate` reported a driverless host as
+`vulkan call failed rc=-9` and exited 1 instead of 77, so `gpu/spv-slice-real`
+called it a CPU/GPU disagreement. Instance creation, device enumeration and
+device creation now exit 77 (`VK_HOST`), which is a host fact rather than a
+defect, and `spvgate_mutate.cmake` skips on 77 instead of calling the
+known-positive vacuous. Row 3 is a configure with `-DCMAKE_IGNORE_PATH=/usr/include;...`,
+the only way to hide the headers on this host: 8846 cells (the three `gpu/spv-*`
+cells do not exist without `spvgate`), green.
+
+**`MCC_VULKAN_LIB` / `MCC_METAL_LIB` override the soname search and do not fall
+back**, which is how you simulate "no Vulkan installed at all" without touching
+`/usr`. Setting either to a nonexistent path leaves the compiler on the CPU
+oracle and everything still correct.
+
+### `--embed-jit` programs link nothing extra now
+
+With the hard link, `mcc --embed-jit prog.c` died on **42** unresolved references:
+the forty `vk*` symbols and `fegetenv`/`fesetenv`. The forty go away with
+`dlopen`. The two `fenv` ones do not — they live in libm, which the baked engine
+has no business dragging into a plain C program — so they are resolved with
+`host_dlsym_process` and, failing that, an explicit `dlopen` of `libm.so.6`, and
+**the GPU refuses to initialise if neither resolves**, so the `FE_INEXACT`
+save/restore that `builtin-fp-int-inexact` depends on can never be silently
+skipped. An `--embed-jit` program now links exactly what a `MCC_GPU=OFF` build's
+does — `libc` and nothing else — and still reaches the device: 4 rungs, 7
+dispatches, 616 lanes under `--jit-threads 2`.
+
+### `mccjit_boot_swap` never set the backend up at all
+
+`ast_ladder_gpu_setup()` was called from `mccjit_boot_swap_async` only. A program
+built *without* `--jit-threads` — the default — takes the **sync** boot path, so
+`ast_ladder_gpu_hook` was never installed and `MCC_AST_EVAL_LADDER_GPU=1` did
+nothing whatsoever in it. Every runtime measurement in the sections above used
+`--jit-threads 2` and so could not see this. Both boot paths warm up now, on the
+main thread, which is also what the NVIDIA lazy-init fix requires.
+
+### The cross compilers had no backend either
+
+`mcc_add_cross_mcc` never applied `MCC_GPU_DEFS`, so all twelve `mcc-<arch>`
+binaries were built without the oracle's device path no matter how the option was
+set. They get it now — `mcc-arm64` and `mcc-x86_64-win32` both report
+`available=1` on this host — and because it is `dlopen`, the `-static` variants
+build as well: `host_dlopen` returns NULL under `MCC_CONFIG_STATIC` and the
+oracle stays on the CPU, where a static `-lvulkan` would have failed the link
+outright.
+
+### Darwin is reasoned, not run
+
+`MTLCreateSystemDefaultDevice` was the only symbol `mccmtl.h` needed from
+`-framework Metal`; everything else already went through `objc_msgSend`. It is
+`dlopen`ed from `/System/Library/Frameworks/Metal.framework/Metal`, with
+Foundation opened first so `objc_getClass("NSString")` and `NSAutoreleasePool`
+resolve, and `fegetenv`/`fesetenv` come from `libSystem`. `MCC_GPU_LIBS` on
+Darwin is `objc` alone — `libobjc.A.dylib`, present on every macOS and not a GPU
+dependency. **None of the Darwin path has been executed**; this host is Linux.
+It is the one part of this change that wants a real machine before it is trusted.
+
+### What "enabled" means at runtime — leave all four gates off
+
+`MCC_GPU=ON` compiles the backend in. It does not switch it on. Four environment
+gates stand between the option and a dispatch, and every one of them should stay
+off by default:
+
+| gate | recommendation | evidence |
+| --- | --- | --- |
+| `MCC_AST_EVAL_LADDER_GPU` | **off** | 135 ms of device init per compiler process, measured; buys zero device work |
+| `MCC_AST_EVAL_LADDER` | **off** | free at compile time, but pointless without a consumer |
+| `MCC_JIT_LAZY` | **off** | changes promotion policy; nothing here measured it |
+| `MCC_JIT_SEARCH_SLICE` | **off** | same |
+
+The measurement that settles the first row: compiling a trivial translation unit
+30 times is **1.2 ms/run** plain, **1.4 ms/run** with `MCC_AST_EVAL_LADDER=1`,
+and **136.5 ms/run** with `MCC_AST_EVAL_LADDER_GPU=1` as well — **135 ms of
+Vulkan instance/device creation per process**, a 97× penalty on short compiles.
+Against that, the 600-program census above says the rung histogram with the
+shipped defaults is `{0: 600}`, and with all the JIT knobs on it is `{0: 326, 5:
+1}` whose five rungs all fall back to the CPU. So defaulting the GPU gate on
+would cost 135 ms in every one of the ~8850 suite processes and return no device
+work at all. **The option belongs on; the runtime gate does not, and it should
+not move until `spv_expr` handles 64-bit types** — that ceiling, not the
+promotion threshold, is what the census found binding.
+
+`MCC_AST_EVAL_LADDER` alone is free (1.55 → 1.57 ms/run on
+`tests/exec/optimizer/licm.c`) because ordinary compilation never calls
+`ast_slice_equiv`; it costs only where the JIT consults the oracle. It is still
+not worth defaulting on, because with the GPU gate off it only adds CPU oracle
+work to the JIT's promotion path, which is the thing nothing has benchmarked.
+
+### The lowerable ratchet was re-banked, deliberately
+
+`MCC_GPU=ON` adds the GPU source to the `self` corpus and dilutes every lowerable
+percentage — `-O1` `nodes_pct` 41.885% → 41.583%, `bodies_pct` 9.149% → 9.041%,
+and similarly at every level. The bank records `corpus_config`, so before
+re-banking the ratchet simply *skipped* on a default build, which is worse than a
+slightly lower number: it stops gating. Re-banked with `--rebank-config
+--update-bank --update-bank-low` on the new default configuration, and
+`tests/rir/coverage-bank.json` now reads `MCC_GPU=1`. Anyone comparing to the
+older figures should compare against the pre-change bank, not read this as a
+regression — nothing about lowering changed.
 
 ## Each suite is now scored by the other vendor's compiler — 2026-08-06
 

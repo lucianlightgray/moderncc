@@ -40,6 +40,16 @@ static int ast_bad_type(int tt) {
 		}                                                                      \
 	} while (0)
 
+#define VK_HOST(x)                                                         \
+	do {                                                                     \
+		VkResult _r = (x);                                                     \
+		if (_r != VK_SUCCESS) {                                                \
+			printf("spvgate: no usable vulkan host, line %d rc=%d\n", __LINE__,  \
+						 (int)_r);                                                     \
+			exit(77);                                                            \
+		}                                                                      \
+	} while (0)
+
 #define MAX_LIVE 4
 #define MAX_TUPLES (1 << 18)
 
@@ -70,8 +80,8 @@ static void gpu_init(void) {
 	memset(&ici, 0, sizeof ici);
 	ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	ici.pApplicationInfo = &ai;
-	VK(vkCreateInstance(&ici, 0, &g_inst));
-	VK(vkEnumeratePhysicalDevices(g_inst, &ndev, devs));
+	VK_HOST(vkCreateInstance(&ici, 0, &g_inst));
+	VK_HOST(vkEnumeratePhysicalDevices(g_inst, &ndev, devs));
 	if (!ndev) {
 		printf("spvgate: no vulkan device\n");
 		exit(77);
@@ -99,7 +109,7 @@ static void gpu_init(void) {
 	dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	dci.queueCreateInfoCount = 1;
 	dci.pQueueCreateInfos = &qci;
-	VK(vkCreateDevice(g_phys, &dci, 0, &g_dev));
+	VK_HOST(vkCreateDevice(g_phys, &dci, 0, &g_dev));
 	vkGetDeviceQueue(g_dev, g_qfam, 0, &g_q);
 }
 

@@ -24,7 +24,25 @@ static pthread_mutex_t mcc_gpu_lock = PTHREAD_MUTEX_INITIALIZER;
 #define MCC_MTL_UTF8 4
 #define MCC_MTL_CACHE_MAX 64
 
-extern id MTLCreateSystemDefaultDevice(void);
+typedef id (*MccMtlCreateDeviceFn)(void);
+
+static MccMtlCreateDeviceFn mcc_mtl_create_device;
+static int mcc_mtl_tried;
+static int mcc_mtl_ok;
+
+typedef int (*MccFeGetFn)(fenv_t *);
+typedef int (*MccFeSetFn)(const fenv_t *);
+
+static MccFeGetFn mcc_fe_get;
+static MccFeSetFn mcc_fe_set;
+
+static const char *const mcc_mtl_foundation[] = {
+		"/System/Library/Frameworks/Foundation.framework/Foundation",
+		"Foundation.framework/Foundation", NULL};
+
+static const char *const mcc_mtl_metal[] = {
+		"/System/Library/Frameworks/Metal.framework/Metal",
+		"Metal.framework/Metal", NULL};
 
 typedef struct MtlSize {
 	unsigned long w, h, d;
@@ -83,6 +101,54 @@ static const char *mtl_utf8(id s) {
 
 static int mtl_diag(void) { return getenv("MCC_AST_EVAL_LADDER_GPU_DIAG") != 0; }
 
+static void *mtl_dlopen_any(const char *const *names) {
+	void *h = NULL;
+	int i;
+	for (i = 0; !h && names[i]; i++)
+		h = host_dlopen(names[i]);
+	return h;
+}
+
+static int mcc_mtl_load(void) {
+	void *h;
+	const char *over;
+
+	if (mcc_mtl_tried)
+		return mcc_mtl_ok;
+	mcc_mtl_tried = 1;
+	mtl_dlopen_any(mcc_mtl_foundation);
+	over = getenv("MCC_METAL_LIB");
+	h = (over && *over) ? host_dlopen(over) : mtl_dlopen_any(mcc_mtl_metal);
+	if (!h) {
+		if (mtl_diag())
+			fprintf(stderr, "[ladder-gpu] no Metal framework (%s)\n", host_dlerror());
+		return 0;
+	}
+	mcc_mtl_create_device =
+			(MccMtlCreateDeviceFn)host_dlsym(h, "MTLCreateSystemDefaultDevice");
+	if (!mcc_mtl_create_device) {
+		if (mtl_diag())
+			fprintf(stderr, "[ladder-gpu] missing symbol MTLCreateSystemDefaultDevice\n");
+		return 0;
+	}
+	mcc_fe_get = (MccFeGetFn)host_dlsym_process("fegetenv");
+	mcc_fe_set = (MccFeSetFn)host_dlsym_process("fesetenv");
+	if (!mcc_fe_get || !mcc_fe_set) {
+		void *lm = host_dlopen("libSystem.B.dylib");
+		if (lm) {
+			mcc_fe_get = (MccFeGetFn)host_dlsym(lm, "fegetenv");
+			mcc_fe_set = (MccFeSetFn)host_dlsym(lm, "fesetenv");
+		}
+	}
+	if (!mcc_fe_get || !mcc_fe_set) {
+		if (mtl_diag())
+			fprintf(stderr, "[ladder-gpu] no fegetenv/fesetenv in the process\n");
+		return 0;
+	}
+	mcc_mtl_ok = 1;
+	return 1;
+}
+
 static void mtl_report_err(const char *what, id err) {
 	if (!mtl_diag())
 		return;
@@ -98,9 +164,11 @@ static int mcc_gpu_init(void) {
 	if (mcc_gpu.tried)
 		return mcc_gpu.ok;
 	mcc_gpu.tried = 1;
+	if (!mcc_mtl_load())
+		return 0;
 	pool = mtl_send(mtl_send((id)objc_getClass("NSAutoreleasePool"), "alloc"),
 									"init");
-	mcc_gpu.dev = MTLCreateSystemDefaultDevice();
+	mcc_gpu.dev = mcc_mtl_create_device();
 	if (!mcc_gpu.dev) {
 		if (mtl_diag())
 			fprintf(stderr, "[ladder-gpu] MTLCreateSystemDefaultDevice returned nil\n");
@@ -279,16 +347,22 @@ done:
 
 static int mcc_gpu_dispatch(const char *src, int len, const int32_t *in,
 														int ntuple, int nlive, int32_t *out) {
-	int rc;
+	int rc, ready;
 	fenv_t mcc_gpu_fe;
-	int mcc_gpu_fe_ok = (fegetenv(&mcc_gpu_fe) == 0);
+	int mcc_gpu_fe_ok;
+	MCC_GPU_LOCK();
+	ready = mcc_mtl_load();
+	MCC_GPU_UNLOCK();
+	if (!ready)
+		return 0;
+	mcc_gpu_fe_ok = (mcc_fe_get(&mcc_gpu_fe) == 0);
 	MCC_GPU_LOCK();
 	rc = mcc_gpu_closing
 					 ? 0
 					 : mcc_gpu_dispatch_locked(src, len, in, ntuple, nlive, out);
 	MCC_GPU_UNLOCK();
 	if (mcc_gpu_fe_ok)
-		fesetenv(&mcc_gpu_fe);
+		mcc_fe_set(&mcc_gpu_fe);
 	return rc;
 }
 

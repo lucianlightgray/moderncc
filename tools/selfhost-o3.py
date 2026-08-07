@@ -12,9 +12,10 @@ def selfhost_link_libs(bdir, pe=False):
 
     A self-hosted mcc is the same program as the mcc target, so it needs the same
     libraries; hardcoding a list here means the two drift the moment an option
-    adds one. MCC_GPU=ON is exactly that case: it puts a hard Vulkan dependency
-    in the compiler's link (and libm, for the fenv save/restore in src/mccgpu.h),
-    and every self-host recipe failed on the vk* symbols until CMake told it.
+    adds one. MCC_GPU used to be exactly that case: it put a hard Vulkan
+    dependency in the compiler's link, and every self-host recipe failed on the
+    vk* symbols until CMake told it. The backend is dlopened now, so MCC_GPU
+    contributes nothing here; the file stays the single source of truth.
 
     CMake writes <build-dir>/selfhost-link-libs.txt from the same variables it
     passes to target_link_libraries, under the same MCC_TARGETOS condition, so
