@@ -206,6 +206,83 @@ itself is pinned per class by `ctest -R rir-lowerable-classes` against `tests/ri
 one file per class — that cell is what catches a predicate that silently stops firing.
 `MCC_RIR_LOW_DUMP=<func>` prints the per-node classification of one body.
 **Only percentages are banked, never totals.**
+## How frame-bound is the arena? — measured 2026-08-06
+
+> **Framing correction, same day.** This section was written to test whether frame-bound
+> Refs obstruct lowering slices to GPU compute shaders. **They do not, and the question is
+> retired.** An address is a 64-bit integer and a shader computes it exactly: `tests/gpu/
+> rev64.comp` already takes a base address as `base_lo`/`base_hi` push constants and does
+> `add64`/`mul64` over `uvec2` with `umulExtended`, on hardware with no native 64-bit int.
+> A frame offset is an operand, not an obstacle; the memory it reaches is a buffer
+> binding. The `frame`, `global` and `laddr` classes that the lowerable census counts as
+> disqualifiers are all just integers, and counting them as blockers understates the
+> lowerable fraction badly. What genuinely cannot lower is what is not computation over
+> buffers: an opaque `invoke`, host machine code (`asm`, <0.02% of nodes), and — the real
+> one — **a lost static type**, because exact arithmetic requires knowing the width and
+> signedness of what is being computed. The measurements below stand as measurements; the
+> conclusion drawn from them does not.
+
+
+A local is not named in the arena. `rir_leaf_slot` writes the parser's `sv->c.i` into the
+node's `ival` and that integer **is** the variable's identity: `ast_du_build` hashes slots
+by `int off`, `ast_cprop_escapes`/`ast_local_is_readonly`/`ast_promo_off`/`ast_argsub_off`
+and `ast_eval_slice_livein` all key on it, and `gfunc_epilog` derives the frame size from
+`loc` alone — nothing in the arena states it, which is why `ast_reemit_with_gates` has to
+rescan every Ref for the minimum offset before replaying.
+
+Two diagnostics, both off by default, quantify this.
+
+`MCC_AST_REFCENSUS=<path>` dumps one line per `AST_Ref` at `ast_func_end`: class, offset,
+`op`, `type_t`, the size of the maximal call-free subtree containing it, and a slice id.
+Over amalgamated `src/mcc.c` (2307 functions, 356941 nodes, 101011 Refs) and `tests/exec`
+(1285 functions, 25238 Refs, excluding the `translation_limits.c` outlier):
+
+| class | mcc.c | tests/exec | share of Refs in call-free slices >= 32 nodes |
+| --- | --- | --- | --- |
+| `lval` scalar, non-escaping — SSA-renamable | 46.85% | 41.19% | 70.30% / 85.77% |
+| `laddr` address-taken slot | 17.70% | 9.56% | 16.06% / 8.54% |
+| `lagg` struct/array/VLA | 3.64% | 7.27% | 4.48% / 1.85% |
+| `sym` symbol-relative — already frame-free | 31.77% | 40.87% | 9.00% / 3.39% |
+
+66.5% of all Refs are frame-resident, but only 286 of 214889 sit above the frame pointer.
+The bigger a call-free slice gets, the purer it gets: 53% of slices of >= 8 nodes and
+47% of >= 32 nodes are *Ref-closed* (every Ref is `lval`/`sym`/`reg`). The blocker in the
+rest is `laddr` first (2115 slices), `lagg` second (848). Slot reuse is rare and bounded:
+in `src/mcc.c` only 6.90% of distinct offsets ever carry two different `VT_BTYPE`s, and
+the median function has none.
+
+`MCC_AST_FRAMEPERT=<base>[:<scale>[:<pad>]]` re-lays-out the frame at replay time: every
+own-frame Ref offset below the post-prolog watermark `rir_body_loc_sv` maps to
+`floor + base + (off - floor) * scale`, `ast_alloc_loc`'s recorded slots are reallocated
+(with `pad` extra bytes) and bound into a per-function map, and `loc` is re-derived. Under
+`-O2 -fno-replay-fallback`, over 8819 ctest cells:
+
+| perturbation | cells failed | pass |
+| --- | --- | --- |
+| none | 0 | 100% |
+| `-64:1` rigid 64-byte shift | 156 | 98.2% |
+| `-256:1` rigid 256-byte shift | 159 | 98.2% |
+| `0:2` every gap doubled | 201 | 97.7% |
+| `-64:4` shifted and gaps x4 | 186 | 97.9% |
+
+**The count is flat in the magnitude and the kind of the perturbation.** Dilating the
+whole layout 4x costs 30 more cells than nudging it 64 bytes. So the arena is not a script
+for one layout — it is layout-agnostic except for a fixed set of constructs that stash a
+frame offset in a *second* channel the Refs do not own. 140 cells fail under all four:
+111 of them assert an implementation outcome (`ast/replay-*` demands byte-faithful replay,
+`optfire/*` demands a specific pass fires) and must fail under any perturbation. The 26
+behavioural ones name the second channels exactly: aggregate ABI slots (`struct_byval`,
+`struct_return`, `union_byval`, `return_struct_in_reg`, `aggregate_perm`, `alignas_over`),
+`r2` pair slots (`complex`, `complex_annexg`, `c11_imaginary_suffix`, `float16`), VLA
+bookkeeping (`vla/basic`, `vla_empty_init`), `__attribute__((cleanup))`, atomics — and the
+entire JIT slice path (9 `jit/selftest-*`, `run-opt/native`, `jit-submit-aot-diff`).
+
+That last cluster is the one that matters for GPU lowering. `ast_slice_ident_hash` already
+canonicalises offsets to dense indices via `ast_sid_off`, so a slice's *identity* is
+frame-free — but `ast_slice_splice` copies `ast_ival` verbatim and `ast_slice_live_ins`
+hands back raw `int32_t *offs`, so a kernel can only be installed into a site whose frame
+happens to match. Making Refs frame-independent is the smaller job; it is the four
+side-channels and the slice ABI that need the work.
 
 ## The configuration surface moved: read this before running any recipe below
 

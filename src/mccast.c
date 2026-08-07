@@ -1508,6 +1508,8 @@ static MCC_OPT_TLS uint32_t ast_isa_key_term;
 
 static uint64_t ast_intention_acc;
 static const char *ast_hash_out;
+static const char *ast_refcensus_path;
+static void ast_refcensus(AstArena *a, const char *fn);
 
 void ast_hash_out_emit(const char *tag, const char *fn, uint64_t h) { MCC_TRACE("enter\n");
 	FILE *f;
@@ -1830,6 +1832,31 @@ int ast_replaying;
 
 static int *ast_locrec;
 static int ast_locrec_n, ast_locrec_cap, ast_locrec_i;
+static int ast_fpert_on, ast_fpert_base, ast_fpert_scale, ast_fpert_pad;
+static int ast_fpert_dbg;
+static int ast_fpert_floor, ast_fpert_live;
+#define AST_FPERT_MAX 4096
+static int ast_fpert_from[AST_FPERT_MAX], ast_fpert_to[AST_FPERT_MAX];
+static int ast_fpert_n;
+
+static void ast_fpert_bind(int from, int to) { MCC_TRACE("enter\n");
+	if (ast_fpert_n >= AST_FPERT_MAX)
+		{ MCC_TRACE("br\n"); return; }
+	ast_fpert_from[ast_fpert_n] = from;
+	ast_fpert_to[ast_fpert_n++] = to;
+}
+
+static int ast_fpert_map(int off) { MCC_TRACE("enter\n");
+	if (!ast_fpert_live)
+		{ MCC_TRACE("br\n"); return off; }
+	for (int i = ast_fpert_n - 1; i >= 0; i--)
+		{ MCC_TRACE("br\n"); if (ast_fpert_from[i] == off)
+			{ MCC_TRACE("br\n"); return ast_fpert_to[i]; } }
+	if (off >= ast_fpert_floor)
+		{ MCC_TRACE("br\n"); return off; }
+	return ast_fpert_floor + ast_fpert_base +
+				 (off - ast_fpert_floor) * ast_fpert_scale;
+}
 static int ast_loc_low;
 static int ast_graft_base;
 static int ast_locrec_min;
@@ -1851,7 +1878,13 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 		}
 	}
 	if (ast_replaying && !ir_cap_replaying && ast_locrec_i < ast_locrec_n) { MCC_TRACE("br\n");
-		loc = ast_locrec[ast_locrec_i++];
+		int orig = ast_locrec[ast_locrec_i++];
+		if (ast_fpert_on) { MCC_TRACE("br\n");
+			loc = (loc - size - ast_fpert_pad) & -align;
+			ast_fpert_bind(orig, loc);
+		} else { MCC_TRACE("br\n");
+			loc = orig;
+		}
 		if (loc < ast_loc_low)
 			{ MCC_TRACE("br\n"); ast_loc_low = loc; }
 		return loc;
@@ -2279,6 +2312,28 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_spill_share_env = mcc_opt(s1, MCC_OPT_SPILL_SHARE);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
+	ast_refcensus_path = getenv("MCC_AST_REFCENSUS");
+	{
+		const char *fp = getenv("MCC_AST_FRAMEPERT");
+		ast_fpert_on = 0;
+		ast_fpert_base = 0;
+		ast_fpert_pad = 0;
+		ast_fpert_scale = 1;
+		if (fp && fp[0]) { MCC_TRACE("br\n");
+			const char *c = strchr(fp, ':');
+			ast_fpert_base = atoi(fp);
+			if (c) { MCC_TRACE("br\n");
+				const char *c2 = strchr(c + 1, ':');
+				int sc = atoi(c + 1);
+				if (sc > 0)
+					{ MCC_TRACE("br\n"); ast_fpert_scale = sc; }
+				if (c2)
+					{ MCC_TRACE("br\n"); ast_fpert_pad = atoi(c2 + 1); }
+			}
+			ast_fpert_on = 1;
+		}
+		ast_fpert_dbg = getenv("MCC_AST_FRAMEPERT_DBG") != NULL;
+	}
 	ast_search_worker = mcc_env_on("MCC_SEARCH_WORKER");
 	ast_search_floor_env = mcc_env_on("MCC_AST_SEARCH_FLOOR");
 	ast_search_floor = ast_search_floor_env ? ast_search_gates_now() : 0;
@@ -4768,6 +4823,9 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		sv.c.i = ast_ival(a, n);
 		sv.c.q.hi = ast_wide_hi(a, n);
 		sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
+		if (ast_fpert_on && !ast_in_graft && !(sv.r & VT_SYM) &&
+				((sv.r & VT_VALMASK) == VT_LOCAL || (sv.r & VT_VALMASK) == VT_LLOCAL))
+			{ MCC_TRACE("br\n"); sv.c.i = (uint64_t)(int64_t)ast_fpert_map((int)(int64_t)sv.c.i); }
 		if ((sv.r & VT_VALMASK) == VT_LOCAL && !(sv.r & VT_SYM) &&
 				(ast_inline_bias || ast_argsub_n)) { MCC_TRACE("br\n");
 			int off = (int)sv.c.i, subst = 0;
@@ -6197,6 +6255,52 @@ static void ast_finalize_chainstores(AstArena *a) { MCC_TRACE("enter\n");
 }
 
 static void ast_replay_body(AstArena *a) { MCC_TRACE("enter\n");
+	if (ast_fpert_on && !ast_in_graft) { MCC_TRACE("br\n");
+		AstLocal nn = ast_count(a);
+		int lo = 0;
+		ast_fpert_n = 0;
+		ast_fpert_floor =
+				(rir_body_loc_sv <= 0 && rir_body_loc_sv >= loc) ? rir_body_loc_sv : loc;
+		ast_fpert_live = 1;
+		for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+			int r;
+			if (ast_kind(a, n) != AST_Ref && ast_kind(a, n) != AST_Literal)
+				{ MCC_TRACE("br\n"); continue; }
+			r = ast_op(a, n);
+			if ((r & VT_SYM) ||
+					((r & VT_VALMASK) != VT_LOCAL && (r & VT_VALMASK) != VT_LLOCAL))
+				{ MCC_TRACE("br\n"); continue; }
+			{
+				int o = ast_fpert_map((int)(int64_t)ast_ival(a, n));
+				if (o < lo)
+					{ MCC_TRACE("br\n"); lo = o; }
+			}
+		}
+		loc = ast_fpert_floor + ast_fpert_base;
+		if (lo < loc)
+			{ MCC_TRACE("br\n"); loc = lo; }
+		loc &= -16;
+		if (ast_fpert_dbg) { MCC_TRACE("br\n");
+			int nm = 0;
+			for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+				int r;
+				if (ast_kind(a, n) != AST_Ref && ast_kind(a, n) != AST_Literal)
+					{ MCC_TRACE("br\n"); continue; }
+				r = ast_op(a, n);
+				if ((r & VT_SYM) ||
+						((r & VT_VALMASK) != VT_LOCAL && (r & VT_VALMASK) != VT_LLOCAL))
+					{ MCC_TRACE("br\n"); continue; }
+				if ((int)(int64_t)ast_ival(a, n) < ast_fpert_floor)
+					{ MCC_TRACE("br\n"); nm++; }
+			}
+			fprintf(stderr, "[fpert] %s floor=%d bodysv=%d loc=%d lo=%d remapped=%d\n",
+							funcname ? funcname : "?", ast_fpert_floor, rir_body_loc_sv, loc, lo,
+							nm);
+		}
+		if (loc < ast_loc_low)
+			{ MCC_TRACE("br\n"); ast_loc_low = loc; }
+		ast_graft_base = loc;
+	}
 	ast_sv_live_depth = 0;
 	ast_finalize_storevals(a);
 	ast_finalize_chainstores(a);
@@ -16637,6 +16741,105 @@ static void ast_jit_submit_aot(Sym *sym) { MCC_TRACE("enter\n");
 }
 #endif
 
+static FILE *ast_refcensus_fp;
+static int ast_refcensus_slice;
+
+static FILE *ast_refcensus_out(void) { MCC_TRACE("enter\n");
+	if (ast_refcensus_fp)
+		{ MCC_TRACE("br\n"); return ast_refcensus_fp; }
+	if (!ast_refcensus_path[0] || !strcmp(ast_refcensus_path, "1") ||
+			!strcmp(ast_refcensus_path, "-"))
+		{ MCC_TRACE("br\n"); ast_refcensus_fp = stderr; }
+	else
+		{ MCC_TRACE("br\n"); ast_refcensus_fp = fopen(ast_refcensus_path, "a"); }
+	if (!ast_refcensus_fp)
+		{ MCC_TRACE("br\n"); ast_refcensus_fp = stderr; }
+	return ast_refcensus_fp;
+}
+
+static int ast_refcensus_size(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	int k = 1;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); k += ast_refcensus_size(a, c); }
+	return k;
+}
+
+static int ast_refcensus_hascall(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, n) == AST_Invoke)
+		{ MCC_TRACE("br\n"); return 1; }
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); if (ast_refcensus_hascall(a, c))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
+static const char *ast_refcensus_class(AstArena *a, AstLocal n, int *off) { MCC_TRACE("enter\n");
+	int r = ast_op(a, n), t = ast_type_t(a, n), vm = r & VT_VALMASK;
+	*off = 0;
+	if (r & VT_SYM)
+		{ MCC_TRACE("br\n"); return "sym"; }
+	if (vm == VT_CONST)
+		{ MCC_TRACE("br\n"); return "const"; }
+	if (vm == VT_LLOCAL)
+		{ MCC_TRACE("br\n"); *off = (int)(int64_t)ast_ival(a, n); return "llocal"; }
+	if (vm != VT_LOCAL)
+		{ MCC_TRACE("br\n"); return "reg"; }
+	*off = (int)(int64_t)ast_ival(a, n);
+	if (t & VT_VOLATILE)
+		{ MCC_TRACE("br\n"); return "lvol"; }
+	if ((t & (VT_ARRAY | VT_VLA)) || (t & VT_BTYPE) == VT_STRUCT ||
+			(t & VT_BTYPE) == VT_FUNC)
+		{ MCC_TRACE("br\n"); return "lagg"; }
+	if (t & VT_BITFIELD)
+		{ MCC_TRACE("br\n"); return "lbf"; }
+	if (ast_cprop_escapes(a, *off))
+		{ MCC_TRACE("br\n"); return "laddr"; }
+	return "lval";
+}
+
+static void ast_refcensus_walk(AstArena *a, AstLocal n, int cfdepth, int sid,
+															 const char *fn, FILE *f) { MCC_TRACE("enter\n");
+	AstLocal c;
+	int cf = cfdepth;
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return; }
+	if (!cf && !ast_refcensus_hascall(a, n)) { MCC_TRACE("br\n");
+		cf = ast_refcensus_size(a, n);
+		sid = ++ast_refcensus_slice;
+	}
+	if (ast_kind(a, n) == AST_Ref) { MCC_TRACE("br\n");
+		int off = 0;
+		const char *cl = ast_refcensus_class(a, n, &off);
+		AstLocal p = ast_parent(a, n);
+		int pk = p == AST_NONE ? -1 : (int)ast_kind(a, p);
+		int isdef = p != AST_NONE && ast_kind(a, p) == AST_Store &&
+								ast_first_child(a, p) == n;
+		fprintf(f, "R\t%s\t%s\t%d\t%#x\t%#x\t%d\t%d\t%d\t%d\n", fn, cl, off,
+						(unsigned)ast_op(a, n), (unsigned)ast_type_t(a, n), cf, isdef, pk,
+						sid);
+	}
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); ast_refcensus_walk(a, c, cf, sid, fn, f); }
+}
+
+static void ast_refcensus(AstArena *a, const char *fn) { MCC_TRACE("enter\n");
+	FILE *f = ast_refcensus_out();
+	AstLocal nn = ast_count(a);
+	int refs = 0, inv = 0;
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		if (ast_kind(a, n) == AST_Ref)
+			{ MCC_TRACE("br\n"); refs++; }
+		else if (ast_kind(a, n) == AST_Invoke)
+			{ MCC_TRACE("br\n"); inv++; }
+	}
+	fprintf(f, "F\t%s\t%u\t%d\t%d\t%d\n", fn ? fn : "?", (unsigned)nn, refs, inv,
+					loc);
+	ast_refcensus_walk(a, ast_root(a), 0, 0, fn ? fn : "?", f);
+	fflush(f);
+}
+
 #if MCC_HOST_WIN32 && defined(__GNUC__) && !defined(__clang__)
 __attribute__((optimize("O0")))
 #endif
@@ -16702,6 +16905,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); ast_loopnest_dump(ast_cur, funcname); }
 		if (ast_loopdep_dump_env)
 			{ MCC_TRACE("br\n"); ast_loopdep_dump(ast_cur, funcname); }
+		if (ast_refcensus_path)
+			{ MCC_TRACE("br\n"); ast_refcensus(ast_cur, funcname); }
 		int ast_sv_tmpl = ast_templates_env, ast_sv_promo = ast_promote_env,
 				ast_sv_inl = ast_inline_env;
 		if (ast_fncfg_n) { MCC_TRACE("br\n");
