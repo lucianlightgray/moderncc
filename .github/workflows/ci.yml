@@ -112,7 +112,7 @@ jobs:
       - name: install build + test deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cmake ninja-build gcc python3
+          sudo apt-get install -y --no-install-recommends cmake ninja-build gcc python3 libvulkan-dev
       - name: install wine (pe cell drives pe-wine-conformance)
         if: ${{ matrix.feature == 'pe' && !matrix.skip }}
         run: |
@@ -147,7 +147,7 @@ jobs:
             exit 0
           fi
           test "$(uname -m)" = "$(echo ${{ matrix.arch }} | sed s/arm64/aarch64/)" || echo "note: uname $(uname -m) vs arch ${{ matrix.arch }}"
-          mcc-ci stage2 ${{ matrix.feature }} --mcc "$PWD/${{ matrix.host }}/bin/mcc"
+          mcc-ci stage2 ${{ matrix.feature }} --mcc "$PWD/${{ matrix.host }}/bin/mcc" -- -DVulkan_INCLUDE_DIR=/usr/include
           mcc-ci stage3 --consume test --build cmake-stage2-${{ matrix.feature }}
       - name: test summary
         if: ${{ always() && !matrix.skip }}
@@ -215,6 +215,11 @@ jobs:
           arch: ${{ matrix.msvcarch }}
       - name: install ninja
         run: choco install ninja -y
+      - name: install vulkan headers (MCC_GPU=1 so rir-coverage matches the bank)
+        run: |
+          vcpkg install vulkan-headers:x64-windows
+          inc="${VCPKG_INSTALLATION_ROOT}/installed/x64-windows/include"
+          echo "VULKAN_INC=${inc//\\//}" >> "$GITHUB_ENV"
       - uses: ./.github/actions/ci
       - uses: actions/download-artifact@v7
         with:
@@ -225,7 +230,7 @@ jobs:
         run: |
           mccexe="$PWD/${{ matrix.host }}/bin/mcc"
           [ -x "$mccexe.exe" ] && mccexe="$mccexe.exe"
-          mcc-ci stage2 ${{ matrix.feature }} --mcc "$mccexe"
+          mcc-ci stage2 ${{ matrix.feature }} --mcc "$mccexe" -- -DVulkan_INCLUDE_DIR="$VULKAN_INC"
           mcc-ci stage3 --consume test --build cmake-stage2-${{ matrix.feature }}
       - name: test summary
         if: always()
