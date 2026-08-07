@@ -1172,6 +1172,71 @@ gets the win back only because the row now defaults on from `-O1`; **the gate-ma
 gap is still open**, and it is the same arena-mutating-vs-gate-mask boundary
 described above.
 
+## Two coverage gaps, audited — `mccrir.c` opcodes and the shader emitter, 2026-08-07
+
+These compound: an arena that never recorded an operation cannot be lowered to the
+device either, so the first gap silently caps the second.
+
+### `mccrir.c` drops 25 of the 67 IR opcodes, silently
+
+`IR_OP_FABS` was not a one-off. The opcode list is an X-macro in `src/mccircap.c`
+(**67** entries); `src/mccrir.c` has a `case` for **42**. The switch that builds the
+arena ends in
+
+    default:
+      break;
+
+so an opcode with no case is **silently skipped** — no `rir_arena_mismatch++`, no
+diagnostic, nothing. The arena then describes a body the compiler never emitted,
+replay produces different bytes, the body comes back unfaithful, and **every AST
+optimization is skipped for that entire function**. It is safe — the AOT body is
+kept, so no wrong code — but it is invisible, and it costs the optimizer wholesale
+wherever it happens.
+
+The 25 with no case, all of them reachable from the capture dispatch:
+
+    ASAN_MARK_WRITE  ASAN_SHADOW  CMOV      COPYSIGN   FILLNOPS
+    LOAD             MKPTR        MULH      MULWIDEN   RAW
+    REGADDI          RETVAL       ROUND     SQRT       STRUCTCOPY
+    TCOV             TRAP         UBSAN_NULLPTR  VLA_ALLOC  VLA_RESULT
+    VLA_SPREST       VLA_SPSAVE   VPUSHSYM  X87POP     XFERRET
+
+Spot-checked `SQRT`, `COPYSIGN`, `ROUND`, `CMOV`, `MULH`, `STRUCTCOPY`,
+`VLA_ALLOC`, `RETVAL` and `LOAD`: each has exactly one emitter in `mccircap.c` and
+zero handlers in `mccrir.c`. `SQRT` and `COPYSIGN` sitting in that list next to the
+`FABS` that was just fixed is the obvious place to start. `RAW` is the documented
+escape hatch and is expected here; the rest are not.
+
+**The cheapest possible first move is a diagnostic, not a feature.** The `FABS`
+case already does `rir_arena_mismatch++` when its operand is missing, and 30 sites
+in the file use that counter — the `default:` arm simply does not. Making it count
+turns all 25 silent gaps into visible ones in one line, and tells you which of them
+actually occur in real code before anyone writes 25 handlers.
+
+### The shader emitter is 32-bit, integer-only, and seven node kinds wide
+
+This is the binding constraint on GPU coverage, and it is why the census found
+**zero device work beyond the one-per-process warm-up across 600 programs**: rungs
+fire, then fall back.
+
+Both emitters — SPIR-V and the MSL one beside it — handle exactly `AST_Literal`,
+`AST_Ref`, `AST_Load`, `AST_Convert`, `AST_Unary`, `AST_Binary`, `AST_If`. Within
+those:
+
+  - **64-bit is refused at eight separate sites** (`ast_eval_slice_is64`). The one
+    program in 600 that reached the ladder was `930921-1.c`, whose hot function is
+    an `unsigned long long` multiply-shift — it fell back for exactly this reason.
+  - **Floating point is refused outright** in `AST_Binary` (`is_float` on either
+    operand) and in the width checks elsewhere.
+  - **`AST_Unary` accepts four operators**: `-`, `TOK_NEG`, `~`, `!`.
+
+So the equivalence ladder can only validate 32-bit integer expression slices over
+seven node kinds. Widening this is what turns the GPU from a warm-up into a working
+oracle, and the order that buys the most coverage per unit of work is **64-bit
+integers first** (one refusal predicate, eight sites, and it unblocks the only
+program known to have reached the ladder), then **float/double**, then the
+remaining unary and binary operators.
+
 ## Open, in the order the measurements rank them — 2026-08-07
 
 Everything here is measured or reproduced, not speculative.
