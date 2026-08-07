@@ -560,6 +560,90 @@ because they are static/inline inside `mccast.c`'s `MCC_INTERNAL` half, and the
 gate needs two TUs because `mccast.c` compiles standalone only *without*
 `mcc.h`.
 
+## A full suite run with `MCC_GPU=ON`, and what it puts on the device — 2026-08-07
+
+Nobody had run `ctest` against a GPU-enabled build; no build directory had the
+option on. Configured one (`cmake-gpu`, Release, `MCC_GPU=ON`, embed-JIT on) and
+ran all 8850 cells: **13 fail, and none of them is codegen.** Two are red at HEAD
+in `cmake-release` as well and have nothing to do with the option
+(`host-gate-invariant` on `mccgpu.h`'s raw `__unix__`, `trace-gate-invariant` on
+13 uninstrumented bodies). The other eleven are the option's own build wiring:
+`mcc` compiling `mcc` gets no `-lvulkan`, so `fixpoint-invariant`,
+`selfhost-smoke`, both `selfhost-output-parity` cells and the five
+`selfhost-fixpoint` cells die on `unresolved reference to 'vkCreateInstance'`,
+and `rir-coverage` fails its ratchet because `MCC_GPU=ON` adds GPU source to the
+self corpus and dilutes every lowerable percentage by ~0.1pp. **The ratchet is
+config-sensitive; bank and check it on a default build only.**
+
+`trace-gate` is pointing at a real defect, not a style rule. `ast_opt_defaults`
+opens with `#endif MCC_TRACE("enter\n");` — the instrumentation landed on the
+`#endif` line of the `MCC_GPU` guard above it, so it is preprocessor trailing
+tokens in *both* configurations and that function has silently had no trace hook
+since. mcc itself warns about it when self-compiling; gcc does not.
+
+**What the suite actually dispatches.** The four `gpu/*` cells are the only ones
+that reach the device on their own, and they do real work: `ladder-gpu-parity`
+1413 dispatches with 0 differing files, `spv-slice-differential` 72 dispatches /
+1,184,616 lanes / 0 mismatches, `spv-slice-known-positive` catching the mutation
+at all 1,126,578 compared points, `spv-slice-real` 1659 dispatches / 23,117,154
+lanes over 355 slices from 88 bodies, 0 mismatches and 0 rejected modules. That
+is ~3200 dispatches per suite run, all of it compiler-side or offline.
+
+**The JIT selftest cells reach the device too, but only if asked.** They run
+CPU-only under `ctest` because nothing sets the environment. With
+`MCC_AST_EVAL_LADDER=1 MCC_AST_EVAL_LADDER_GPU=1`, `jit/selftest-sliceladder` is
+15 rungs / 31 dispatches / 263,376 lanes and `jit/selftest-slicekernel` is 12
+rungs / 25 dispatches / 271,652 lanes, both **byte-identical** to their CPU runs.
+`jit/selftest-slicereemit` never asks the ladder anything.
+
+### Re-measuring what compiled programs do — 600 programs, and the answer is one
+
+Same method as the 3-in-575 note above, re-run at this HEAD on a fresh sample of
+600 qualified oracle cases built `-O2 --embed-jit --jit-threads 2 -lvulkan`.
+**327 programs boot the backend and 262 never do** (no function qualifies, so the
+JIT never boots and neither does Vulkan); 11 more fail to build for ordinary
+front-end reasons — intrinsics, `link_error` probes — none of them GPU-related.
+Every one of the 327 dispatches **exactly once**, and that once is the warm-up:
+the dispatch histogram is `{1: 327}` in both configurations measured. Behaviour
+is unchanged apart from one crash, below: the two exit mismatches with the ladder
+on are both already `DIFF_EXIT` in the CPU baseline.
+
+Rungs fire only with the ladder *and* the lazy slice-search path switched on
+(`MCC_AST_EVAL_LADDER=1 MCC_JIT_LAZY=1 MCC_JIT_SEARCH_SLICE=1`); with the shipped
+defaults the rung histogram is `{0: 600}`. With all three on it is `{0: 326, 5:
+1}` — **one program in 600 reaches the ladder at runtime, and its five rungs all
+fall back to the CPU before dispatching.** The program is
+`gcc.c-torture/execute/930921-1.c`, whose hot function is a `unsigned long long`
+multiply-shift divide-by-3, and `spv_expr` returns 0 for any 64-bit type. So the
+honest figure is not "1 in 600 fires" but **zero device work beyond the warm-up
+in 600 programs**, and the binding constraint is the emitter's 32-bit ceiling,
+not the promotion threshold.
+
+### `c23-tag-alias-1.c` segfaults when the warm-up finds a real device
+
+Found by the sample, reproduced 40/40. A program built `--embed-jit --jit-threads
+2 -lvulkan` from `gcc.dg/c23-tag-alias-1.c` dies on a JIT worker with
+`MCC_AST_EVAL_LADDER_GPU=1`, and the discriminators are sharp:
+
+| configuration | crashes |
+| --- | ---: |
+| `MCC_AST_EVAL_LADDER_GPU=1` | 40/40 |
+| unset | 0/40 |
+| `MCC_JIT=0` | 0/10 |
+| `MCC_JIT_LAZY=1` | 0/10 |
+| device forced away (`VK_ICD_FILENAMES=/nonexistent.json`) | 0/10 |
+
+The last row is the useful one: the warm-up still builds and emits its module
+(`warmup rc=0`, `available=0`), so **it is the dispatch reaching a real driver
+that breaks the program, not the setup work around it.** The faulting frame is in
+the baked engine's own front end, not in the driver — the instruction is a
+three-deep pointer load and the enclosing block ends in the `cast to incomplete
+type` diagnostic, so a `CType *` is null or clobbered while a worker re-parses the
+stashed blob. This is the eager `mccjit_boot_swap_async` path; the lazy path is
+clean, which is why the 600-program run with the slice-search knobs on did *not*
+show it and the default-knob run did. Same family as the lazy-driver-init crash
+fixed above, and not fixed by that fix.
+
 ## Each suite is now scored by the other vendor's compiler — 2026-08-06
 
 `tools/xoracle.py` judges gcc's tests with clang and clang's with gcc, on exit
