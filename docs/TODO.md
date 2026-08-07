@@ -340,13 +340,49 @@ human reads when the oracle refutes something. Both are now fitted through
 `ast_eval_slice_fit` with the root's own width type, and the rung refuses the GPU
 path when either root has no static type rather than guessing one.
 
-**The caveat that remains: the ladder does not run during ordinary `-O2`, or
-even under `-fopt-slice` — zero dispatches.** It fires from the JIT's
-equivalence checking and under `MCC_AST_EVAL_LADDER_CENSUS=1`. So a suite run
-without census leaves the device idle and its green board means nothing, which
-is why the cross-oracle run above uses census. Wiring routine slice
-specialisation to the ladder is what would make this matter during ordinary
-optimisation.
+## The runtime JIT never consults the oracle — measured, 2026-08-07
+
+**`mcc` cannot currently be shown to run RIR replays on the GPU during ordinary
+compilation or ordinary JIT execution, and the reason is structural rather than
+configurational.** This was chased all the way down; the negative result is worth
+more than the knobs tried.
+
+`ast_slice_equiv()` — the only entry to the ladder, hence the only route to the
+GPU — is reachable in production from exactly one place: `mccjit_slice_search()`
+→ `mccjit_kernel_search_from_blob()`. Everything else calling it is a selftest.
+And `mccjit_slice_search` opens with
+
+    if (!async || mccjit_last_allfp || mccjit_last_ret_wide || np < 1 || np > 3
+        || st->nsample <= 0 || !st->blob) return NULL;
+
+where `np` is `mccjit_last_nparam`, a **global set by a previous build**. On a
+slot's first promotion nothing has populated it, so the guard rejects before
+`mccjit_kernel_search_from_blob` is ever called. The runtime swap path instead
+verifies with the KGC scalar/purity check, which never asks the ladder anything.
+
+Confirmed end to end on a program built `--embed-jit --jit-threads 2 -lvulkan`,
+with a `noinline` hot pure scalar function so calls actually reach the slot:
+pool starts (`live=2`), stub installs, threshold trips, `promote-async` fires,
+the variant is promoted `route=kgc` and the answer is correct — and
+`[ladder-gpu]` prints **zero** times. The same binary prints 30 dispatches when
+the oracle *is* called, so the backend is live and the absence is real, not a
+misconfiguration. Knobs tried without effect: `MCC_JIT_LAZY`,
+`MCC_JIT_SEARCH_SLICE`, `MCC_JIT_SEARCH_MS`, `MCC_JIT_HOT_CALLS`,
+`--jit-threads`.
+
+Two consequences, and neither is a measurement problem:
+
+1. **The cross-oracle run needs `MCC_AST_EVAL_LADDER_CENSUS=1` for the device to
+   do any work at all.** Without it the same green board appears with the GPU
+   idle, so census is what makes that run mean anything — and census is a
+   diagnostic, not production.
+2. **Making the claim true is a JIT design change**, not further instrumentation:
+   the promotion path would have to verify candidates through the ladder instead
+   of, or in addition to, the KGC check. That is a behavioural change to how the
+   JIT admits variants and is deliberately not attempted here.
+
+`-O2` and `-fopt-slice` dispatch nothing either, for the same reason: neither
+consults the equivalence oracle.
 
 **Two emitter defects surfaced only here, and `spirv-val` accepted both.** They
 crashed NVIDIA's SPIR-V compiler (`libnvidia-glvkspirv`) with SIGILL:
