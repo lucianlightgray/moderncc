@@ -3425,6 +3425,30 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("ast/${_an}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
 
+        find_package(Vulkan QUIET)
+        if(Vulkan_FOUND)
+            add_executable(spvgate tools/spvgate.c tools/spvgate_arena.c)
+            target_include_directories(spvgate PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/src"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/arch"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/x86_64"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/i386"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/formats"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms"
+                "${CMAKE_CURRENT_SOURCE_DIR}/include")
+            target_link_libraries(spvgate ${Vulkan_LIBRARIES})
+            add_test(NAME "gpu/spv-slice-differential" COMMAND spvgate)
+            set_tests_properties("gpu/spv-slice-differential" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            add_test(NAME "gpu/spv-slice-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DCMD=$<TARGET_FILE:spvgate>
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_mutate.cmake")
+            set_tests_properties("gpu/spv-slice-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
+        endif()
+
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
             foreach(_case "ret42;42" "ret0;0" "retexpr;14" "mainempty;0" "argc_expr;42"
                           "local_ret;42" "local_two;42" "neg_fallback;42" "global_ref;42"
