@@ -136,6 +136,10 @@ int ast_slice_search(AstArena *a, AstLocal root, int budget, AstLocal *out, int 
 
 void ast_slice_ladder_set(int on);
 int ast_slice_ladder_on(void);
+#if MCC_GPU
+void ast_ladder_gpu_setup(void);
+void ast_ladder_gpu_report(void);
+#endif
 void ast_slice_ladder_observed_source(int (*fn)(const int32_t *, int, int64_t *,
 																								int, void *),
 																			void *user);

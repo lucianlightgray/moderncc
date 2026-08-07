@@ -2129,11 +2129,6 @@ int ast_sym_defer(Sym *sym) { MCC_TRACE("enter\n");
 static int ast_reemit_n;
 static int ast_inline_n;
 
-#if MCC_GPU
-void ast_ladder_gpu_setup(void);
-void ast_ladder_gpu_report(void);
-#endif
-
 static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
 #if MCC_GPU
 	ast_ladder_gpu_setup();
