@@ -264,8 +264,8 @@ static const cli_case_t cli_cases[] = {
 
 
 		 "printf 'static int big(int x,int y){int s=0;for(int i=0;i<x;i++){s+=(i*y)^(i+x);s-=(i&y)|(x^i);s+=(i*i)-(y*y);}return s;}static int tiny(int x){return x+1;}int main(void){int s=0;s+=big(5,3)+big(7,2)+big(9,4)+big(3,6);s+=tiny(10)+tiny(20)+tiny(30);return s&0x7f;}\\n' > {W}/pfi.c && "
-		 "{MCC} -fno-inline-functions -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.off.o && "
-		 "{MCC} -fno-inline-functions -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.on.o && "
+		 "{MCC} -fno-inline-functions -fopt-slice -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.off.o && "
+		 "{MCC} -fno-inline-functions -fopt-slice -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.on.o && "
 		 "( cmp -s {W}/pfi.off.o {W}/pfi.on.o && echo SAME || echo DIFFER ) ; "
 		 "{MCC} -fno-inline-functions -fno-opt-slice -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.ns.off.o && "
 		 "{MCC} -fno-inline-functions -fno-opt-slice -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.ns.on.o && "
