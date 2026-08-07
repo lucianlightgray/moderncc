@@ -4981,6 +4981,12 @@ if(MCC_BUILD_TESTS)
             add_test(NAME jit/selftest-sliceoracle COMMAND jit_selftest_sliceoracle)
             set_tests_properties(jit/selftest-sliceoracle PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            add_executable(jit_selftest_sliceladder tests/embed/jit_selftest_sliceladder.c)
+            target_link_libraries(jit_selftest_sliceladder PRIVATE libmcc)
+            target_include_directories(jit_selftest_sliceladder PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-sliceladder COMMAND jit_selftest_sliceladder)
+            set_tests_properties(jit/selftest-sliceladder PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             add_executable(jit_selftest_consteval tests/embed/jit_selftest_consteval.c)
             target_link_libraries(jit_selftest_consteval PRIVATE libmcc)
             target_include_directories(jit_selftest_consteval PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

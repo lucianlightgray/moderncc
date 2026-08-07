@@ -55,6 +55,74 @@ strategies are re-admitted to asm-bearing bodies. The right mental model is a **
 a barrier: `subst_asm_operands` bakes concrete registers in at parse time, so `narrow`,
 `ltemp`, `sethi`, `reg-color` and promotion break an asm without moving anything across it.
 
+## The slice equivalence oracle is an exhaustive width ladder — 2026-08-06
+
+`ast_eval_slice_equiv` in `src/ast_eval_slice.h` used to sample eight arbitrary points
+(`{0, 1, -1, 2, 7, -3, 100, 12345}`, rotated across the live-ins) and return
+`evaluated > 0` — it certified equivalence off **one** successful evaluation while the
+other seven may have bailed. Behind `MCC_AST_EVAL_LADDER=1` (default OFF) it is now an
+exhaustive ladder. The old sampler is still there as `ast_eval_slice_equiv_seed` and is
+what runs with the toggle off; `src/mcc.c` objects are byte-identical to the unpatched
+compiler at `-O0`/`-O1`/`-O2`/`-O3` with the toggle off, proven with `cmp`.
+
+**The ladder.** Live-ins are collected with their declared type. Rungs, climbed in order:
+
+| rung | domain | certifies? |
+| --- | --- | --- |
+| `const` | all live-ins zero, 1 evaluation | only when there are no live-ins |
+| `w1`..`w32` | every tuple of `e_i = min(w, typewidth_i)`-bit patterns | yes, if the rung completes |
+| `corners` | `{0, 1, -1, TYPE_MIN, TYPE_MAX, TYPE_MAX-1}` per live-in | no — falsifier only |
+| `observed` | real argument tuples recorded by the JIT | yes, but never `exact` |
+
+A `w`-bit pattern is **sign-extended then fitted to the live-in's type**, so an unsigned
+live-in gets both the zero neighbourhood and the `2^n - 1` neighbourhood at every rung —
+the carry boundaries `seed[8]` never reached. The rungs nest, so the first rung that
+disagrees is the *smallest* width at which the two forms differ, and that is what the
+oracle reports. When `e_i == typewidth_i` for every live-in the rung is exhaustive over
+the true input space and the verdict is marked `exact`; the ladder then stops early.
+
+**A rung completes or nothing is certified.** A point where the *source* form is
+undefined (signed overflow, division by zero, out-of-range shift) is vacuous — undefined
+behaviour constrains nothing — but a point where the source is defined and the
+replacement is not counts as a difference. A rung with zero non-vacuous points refuses
+(`all-undefined`). A rung that does not fit the budget is not partially run.
+
+**Budget.** `MCC_AST_EVAL_LADDER_BUDGET` (default `1<<20` points) caps a rung. The
+2^32 rung is a GPU rung: on this CPU a single `n=1`, `w=32` sweep of `int x*2+1` against
+`x+x+1` is 4,295,033,110 evaluations in **6m03s** (~85 ns/point, two tree walks each).
+At the default budget an `n=1` slice therefore stops at `w16` and an `n=2` slice at `w8`.
+Nothing above the budget is guessed: the fallback is `ast_slice_ladder_observed_source()`,
+wired in `mccjit_kernel_search_from_blob` to `MccjitIntent.param_off[]` +
+`MccjitCounterState.sample[]`/`argmin`/`argmax` — the JIT's own recorded argument tuples.
+With no source registered the verdict is `refused over-budget`, never a certification.
+
+**Measured over a full `src/mcc.c` self-compile** (`MCC_AST_EVAL_LADDER_CENSUS=1`, `-O2`,
+default budget; 19,206 slice-vs-copy pairs and 81,361 cross pairs between distinct slices
+of the same body):
+
+- certifiable, self pairs: seed **19,193 / 19,206 (99.93%)**, ladder **18,940 (98.62%)**.
+  Decided at `const` 2,442, `w2` 1, `w4` 259, `w8` 2,723, `w16` 13,515, `w32` 0 — the
+  13,515 at `w16` stop there only because 2^32 exceeds the CPU budget. 2,616 are `exact`.
+- **the old oracle was certifying non-equivalent forms.** Of the 16,122 cross pairs
+  `seed[8]` called equivalent, the ladder refutes **1,449 (9.0%)** with a counterexample:
+  smallest differing width `w1` 203, `w2` 6, `w4` 273, `w8` 674, `w16` 230, corners 63.
+  The 3 is the tell — `seed[8]` contains no 3, so `x == 3` versus `0` certifies clean and
+  the ladder refutes it at `w4`. That case is `jit/selftest-sliceladder`.
+- refused for want of a type: **252 self pairs (1.31%)** and 1,794 cross pairs (2.20%)
+  have a leaf — live-in, literal or convert — with no static type. Under
+  `MCC_AST_EVAL_LADDER_STRICT_TYPE=1`, which also rejects an interior node whose
+  arithmetic width had to be inferred from a child, that becomes **896 (4.67%)** and
+  6,263 (7.70%). Those are the numbers the arena `CType` stamping should drive to zero.
+  Today the width is inferred for 2,088 interior nodes across 896 self pairs.
+- cost: at the default budget the oracle is **1.5 ms per self pair / 199 us per cross
+  pair**, 45.3 s of oracle time on a self-compile whose baseline is 0.37 s. At
+  `MCC_AST_EVAL_LADDER_BUDGET=4096` it is **13.2 us / 1.7 us** and adds 0.43 s to the
+  whole self-compile for 100,564 pairs.
+
+**No GPU path is wired.** `tests/gpu/` has a fixed-shader Vulkan harness, not a general
+AST interpreter; emitting a compute shader per slice at compile time is the open work.
+Everything above runs on the CPU and the default suite is green with no GPU present.
+
 ## Slices between anonymous invokes — the A1 census, 2026-08-06
 
 The GPU-offload question is "what is the largest chunk of a body that runs without ever
@@ -1017,6 +1085,16 @@ there — but `-O3` ships ~3.6% more `.text` than it needs to, and any per-body 
 accounting that does not know about re-emission silently attributes the pre-inline copy.
 
 #### The ratchet
+
+**Re-banked 2026-08-06 for the width-ladder oracle.** `src/ast_eval_slice.h` and the
+census block in `src/mccast.c` add ~700 lines of new compiler source, so every `lowerable`
+percentage is measured over a different denominator. `bodies_pct` fell 9.1328% -> 9.0189%
+(`-O0`) because the added bodies are `fprintf`/`snprintf` reporting code, which `call` and
+`global` block; in the same move `nodes_pct` rose 41.6543% -> 41.8098% and
+`region_nodes_pct` 16.7579% -> 16.8908%, because the ladder's arithmetic *is* lowerable at
+region granularity. Re-banked with `tools/rir-coverage.py <bdir> --update-bank-low`. No
+lowering capability regressed; only the mix of the compiler's own source changed.
+
 
 `tests/rir/coverage-bank.json` banks, per level and per layer, the **modelled**
 percentage — kept + discarded, i.e. everything that is *not* the gap. `ctest -R

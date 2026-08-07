@@ -134,6 +134,15 @@ int ast_slice_live_ins(AstArena *a, AstLocal root, int32_t *offs, int max);
 AstArena *ast_slice_wrap_kernel(const AstArena *a, AstLocal root);
 int ast_slice_search(AstArena *a, AstLocal root, int budget, AstLocal *out, int max);
 
+void ast_slice_ladder_set(int on);
+int ast_slice_ladder_on(void);
+void ast_slice_ladder_observed_source(int (*fn)(const int32_t *, int, int64_t *,
+																								int, void *),
+																			void *user);
+int ast_slice_ladder_explain(AstArena *a, AstLocal aroot, AstArena *b,
+														 AstLocal broot, char *buf, size_t cap);
+void ast_slice_ladder_stats_dump(void);
+
 int ast_jit_eval_refused_count(void);
 int ast_jit_const_fn(AstArena *a, int64_t *out);
 int ast_jit_fold_consts(AstArena *a);

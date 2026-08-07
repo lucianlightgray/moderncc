@@ -666,8 +666,8 @@ static int ast_eval_slice_livein(AstArena *a, AstLocal n, int32_t *offs, int *cn
 	return 1;
 }
 
-static int ast_eval_slice_equiv(AstArena *a, AstLocal aroot, AstArena *b,
-																AstLocal broot) {
+static int ast_eval_slice_equiv_seed(AstArena *a, AstLocal aroot, AstArena *b,
+																		 AstLocal broot) {
 	static const int64_t seed[8] = {0, 1, -1, 2, 7, -3, 100, 12345};
 	int32_t offs[AST_EVAL_SLICE_MAXRET];
 	int64_t val[AST_EVAL_SLICE_MAXRET];
@@ -692,6 +692,547 @@ static int ast_eval_slice_equiv(AstArena *a, AstLocal aroot, AstArena *b,
 		evaluated++;
 	}
 	return evaluated > 0;
+}
+
+#define AST_EVAL_LADDER_MAXIN 32
+#define AST_EVAL_LADDER_NRUNG 6
+#define AST_EVAL_LADDER_CORNERS 6
+#define AST_EVAL_LADDER_OBSMAX 12
+#define AST_EVAL_LADDER_DEFAULT_BUDGET 1048576UL
+
+enum {
+	AST_LADDER_RUNG_NONE = -4,
+	AST_LADDER_RUNG_OBSERVED = -2,
+	AST_LADDER_RUNG_CORNERS = -1,
+	AST_LADDER_RUNG_CONST = 0
+};
+
+enum {
+	AST_LADDER_R_NONE = 0,
+	AST_LADDER_R_STRUCT,
+	AST_LADDER_R_OP,
+	AST_LADDER_R_TYPE,
+	AST_LADDER_R_ARITY,
+	AST_LADDER_R_BUDGET,
+	AST_LADDER_R_VACUOUS,
+	AST_LADDER_R_OBS
+};
+
+typedef struct AstEvalLadderIn {
+	int32_t off;
+	int type;
+	int bits;
+	int uns;
+} AstEvalLadderIn;
+
+typedef struct AstEvalLadderRes {
+	int verdict;
+	int reason;
+	int rung;
+	int diff_width;
+	int type_complete;
+	int nin;
+	unsigned long inferred;
+	unsigned long points;
+	unsigned long informative;
+	unsigned long vacuous;
+	int64_t diff_in[AST_EVAL_LADDER_MAXIN];
+	int64_t diff_a;
+	int64_t diff_b;
+	int diff_b_undef;
+} AstEvalLadderRes;
+
+typedef int (*AstEvalLadderObsFn)(const int32_t *offs, int n, int64_t *tuples,
+																	int maxtuples, void *user);
+
+static AstEvalLadderObsFn ast_eval_ladder_obs_fn;
+static void *ast_eval_ladder_obs_user;
+
+static int ast_eval_ladder_enabled = -1;
+static int ast_eval_ladder_strict_v;
+static unsigned long ast_eval_ladder_budget_v;
+
+static void ast_eval_ladder_config(void) {
+	if (ast_eval_ladder_enabled >= 0)
+		return;
+	ast_eval_ladder_enabled = mcc_env_on("MCC_AST_EVAL_LADDER");
+	ast_eval_ladder_strict_v = mcc_env_on("MCC_AST_EVAL_LADDER_STRICT_TYPE");
+	ast_eval_ladder_budget_v =
+			(unsigned long)mcc_env_num("MCC_AST_EVAL_LADDER_BUDGET",
+																 (long)AST_EVAL_LADDER_DEFAULT_BUDGET);
+}
+
+static int ast_eval_ladder_strict(void) {
+	ast_eval_ladder_config();
+	return ast_eval_ladder_strict_v;
+}
+
+static void ast_eval_ladder_set(int on) {
+	ast_eval_ladder_enabled = on ? 1 : 0;
+	if (!ast_eval_ladder_budget_v)
+		ast_eval_ladder_budget_v =
+				(unsigned long)mcc_env_num("MCC_AST_EVAL_LADDER_BUDGET",
+																	 (long)AST_EVAL_LADDER_DEFAULT_BUDGET);
+}
+
+static int ast_eval_ladder_on(void) {
+	ast_eval_ladder_config();
+	return ast_eval_ladder_enabled;
+}
+
+static unsigned long ast_eval_ladder_budget(void) {
+	ast_eval_ladder_config();
+	return ast_eval_ladder_budget_v;
+}
+
+static int ast_eval_ladder_binop_ok(int op) {
+	switch (op) {
+	case '+':
+	case '-':
+	case '*':
+	case '/':
+	case '%':
+	case TOK_PDIV:
+	case TOK_UDIV:
+	case TOK_UMOD:
+	case TOK_SHL:
+	case TOK_SHR:
+	case TOK_SAR:
+	case '&':
+	case '|':
+	case '^':
+	case TOK_EQ:
+	case TOK_NE:
+	case TOK_LT:
+	case TOK_GE:
+	case TOK_LE:
+	case TOK_GT:
+	case TOK_ULT:
+	case TOK_UGE:
+	case TOK_ULE:
+	case TOK_UGT:
+	case TOK_LAND:
+	case TOK_LOR:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static int ast_eval_ladder_ops_ok(AstArena *a, AstLocal n) {
+	AstLocal c;
+	if (n == AST_NONE)
+		return 1;
+	if (ast_kind(a, n) == AST_Binary && !ast_eval_ladder_binop_ok(ast_op(a, n)))
+		return 0;
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (!ast_eval_ladder_ops_ok(a, c))
+			return 0;
+	return 1;
+}
+
+static int ast_eval_ladder_tbits(int t) {
+	switch (t & VT_BTYPE) {
+	case VT_BOOL:
+		return 1;
+	case VT_BYTE:
+		return 8;
+	case VT_SHORT:
+		return 16;
+	case VT_INT:
+		return 32;
+	case VT_LLONG:
+		return 64;
+	case VT_PTR:
+		return MCC_PTR_SIZE * 8;
+	default:
+		return 0;
+	}
+}
+
+static int ast_eval_ladder_typed(int t) {
+	return !ast_bad_type(t) && !is_float(t) && ast_eval_slice_intt(t) &&
+				 ast_eval_ladder_tbits(t) > 0;
+}
+
+static int ast_eval_ladder_shape(int t) {
+	return (ast_eval_slice_is64(t) << 1) | ((t & VT_UNSIGNED) != 0);
+}
+
+static int ast_eval_ladder_scan(AstArena *a, AstLocal n, AstEvalLadderIn *in,
+																int *cnt, int max, int *reason,
+																unsigned long *inferred, int strict) {
+	AstLocal c;
+	int t, i;
+	if (n == AST_NONE)
+		return 1;
+	t = ast_type_t(a, n);
+	switch (ast_kind(a, n)) {
+	case AST_Literal:
+	case AST_Convert:
+		if (!ast_eval_ladder_typed(t)) {
+			*reason = AST_LADDER_R_TYPE;
+			return 0;
+		}
+		break;
+	case AST_Ref: {
+		int r = ast_op(a, n);
+		if (!ast_eval_ladder_typed(t)) {
+			*reason = AST_LADDER_R_TYPE;
+			return 0;
+		}
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+			int32_t o = (int32_t)(int64_t)ast_ival(a, n);
+			int bits = ast_eval_ladder_tbits(t);
+			int uns = (t & VT_UNSIGNED) != 0;
+			for (i = 0; i < *cnt; i++)
+				if (in[i].off == o) {
+					if (in[i].bits != bits || in[i].uns != uns) {
+						*reason = AST_LADDER_R_TYPE;
+						return 0;
+					}
+					return 1;
+				}
+			if (*cnt >= max) {
+				*reason = AST_LADDER_R_ARITY;
+				return 0;
+			}
+			in[*cnt].off = o;
+			in[*cnt].type = t;
+			in[*cnt].bits = bits;
+			in[*cnt].uns = uns;
+			(*cnt)++;
+		}
+		return 1;
+	}
+	case AST_Binary: {
+		int bop = ast_op(a, n);
+		AstLocal x, y;
+		int xt, yt;
+		if (bop == TOK_LAND || bop == TOK_LOR)
+			break;
+		if (ast_nchild(a, n) != 2) {
+			*reason = AST_LADDER_R_STRUCT;
+			return 0;
+		}
+		x = ast_child(a, n, 0);
+		y = ast_child(a, n, 1);
+		xt = ast_eval_slice_wtype(a, x);
+		yt = ast_eval_slice_wtype(a, y);
+		if (!ast_eval_ladder_typed(xt)) {
+			*reason = AST_LADDER_R_TYPE;
+			return 0;
+		}
+		if (!ast_eval_ladder_typed(ast_type_t(a, x))) {
+			(*inferred)++;
+			if (strict) {
+				*reason = AST_LADDER_R_TYPE;
+				return 0;
+			}
+			if (bop != TOK_SHL && bop != TOK_SHR && bop != TOK_SAR && yt &&
+					ast_eval_ladder_shape(yt) != ast_eval_ladder_shape(xt)) {
+				*reason = AST_LADDER_R_TYPE;
+				return 0;
+			}
+		}
+		break;
+	}
+	case AST_Unary: {
+		int uop = ast_op(a, n);
+		int wt;
+		if (uop == '!')
+			break;
+		wt = ast_eval_slice_wtype(a, n);
+		if (!ast_eval_ladder_typed(wt)) {
+			*reason = AST_LADDER_R_TYPE;
+			return 0;
+		}
+		if (!ast_eval_ladder_typed(t)) {
+			(*inferred)++;
+			if (strict) {
+				*reason = AST_LADDER_R_TYPE;
+				return 0;
+			}
+		}
+		break;
+	}
+	default:
+		break;
+	}
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (!ast_eval_ladder_scan(a, c, in, cnt, max, reason, inferred, strict))
+			return 0;
+	return 1;
+}
+
+static int64_t ast_eval_ladder_sx(uint64_t u, int e) {
+	uint64_t m;
+	if (e >= 64)
+		return (int64_t)u;
+	m = (uint64_t)1 << (e - 1);
+	u &= ((uint64_t)1 << e) - 1;
+	return (int64_t)((u ^ m) - m);
+}
+
+static int ast_eval_ladder_point(AstArena *a, AstLocal ar, AstArena *b,
+																 AstLocal br, const int32_t *off,
+																 const int64_t *val, int n,
+																 AstEvalLadderRes *res) {
+	int64_t av, bv;
+	res->points++;
+	if (!ast_eval_slice(a, ar, off, val, n, &av)) {
+		res->vacuous++;
+		return 1;
+	}
+	if (!ast_eval_slice(b, br, off, val, n, &bv)) {
+		int i;
+		for (i = 0; i < n && i < AST_EVAL_LADDER_MAXIN; i++)
+			res->diff_in[i] = val[i];
+		res->diff_a = av;
+		res->diff_b = 0;
+		res->diff_b_undef = 1;
+		return 0;
+	}
+	res->informative++;
+	if (av != bv) {
+		int i;
+		for (i = 0; i < n && i < AST_EVAL_LADDER_MAXIN; i++)
+			res->diff_in[i] = val[i];
+		res->diff_a = av;
+		res->diff_b = bv;
+		res->diff_b_undef = 0;
+		return 0;
+	}
+	return 1;
+}
+
+static int ast_eval_ladder_rung(AstArena *a, AstLocal ar, AstArena *b,
+																AstLocal br, const AstEvalLadderIn *in, int n,
+																int w, unsigned long budget, int *exact,
+																AstEvalLadderRes *res) {
+	int32_t off[AST_EVAL_LADDER_MAXIN];
+	int64_t val[AST_EVAL_LADDER_MAXIN];
+	int e[AST_EVAL_LADDER_MAXIN], sh[AST_EVAL_LADDER_MAXIN];
+	int i, total = 0, full = 1;
+	uint64_t code, space;
+	for (i = 0; i < n; i++) {
+		e[i] = w < in[i].bits ? w : in[i].bits;
+		if (e[i] != in[i].bits)
+			full = 0;
+		sh[i] = total;
+		total += e[i];
+		off[i] = in[i].off;
+	}
+	if (total > 40)
+		return -1;
+	space = (uint64_t)1 << total;
+	if (space > (uint64_t)budget)
+		return -1;
+	*exact = full;
+	for (code = 0; code < space; code++) {
+		for (i = 0; i < n; i++)
+			val[i] = ast_eval_slice_fit(
+					ast_eval_ladder_sx(code >> sh[i], e[i]), in[i].type);
+		if (!ast_eval_ladder_point(a, ar, b, br, off, val, n, res))
+			return 0;
+	}
+	return 1;
+}
+
+static int ast_eval_ladder_cornerset(const AstEvalLadderIn *in, int64_t *out) {
+	int64_t cand[AST_EVAL_LADDER_CORNERS];
+	int bits = in->bits, k = 0, i, j;
+	int64_t mn, mx;
+	if (in->uns) {
+		mn = 0;
+		mx = bits >= 64 ? (int64_t)~(uint64_t)0
+										: (int64_t)(((uint64_t)1 << bits) - 1);
+	} else {
+		mn = bits >= 64 ? INT64_MIN : -((int64_t)1 << (bits - 1));
+		mx = bits >= 64 ? INT64_MAX : (((int64_t)1 << (bits - 1)) - 1);
+	}
+	cand[0] = 0;
+	cand[1] = 1;
+	cand[2] = -1;
+	cand[3] = mn;
+	cand[4] = mx;
+	cand[5] = mx - 1;
+	for (i = 0; i < AST_EVAL_LADDER_CORNERS; i++) {
+		int64_t v = ast_eval_slice_fit(cand[i], in->type);
+		for (j = 0; j < k; j++)
+			if (out[j] == v)
+				break;
+		if (j == k)
+			out[k++] = v;
+	}
+	return k;
+}
+
+static int ast_eval_ladder_corner_sweep(AstArena *a, AstLocal ar, AstArena *b,
+																				AstLocal br, const AstEvalLadderIn *in,
+																				int n, unsigned long budget,
+																				AstEvalLadderRes *res) {
+	int32_t off[AST_EVAL_LADDER_MAXIN];
+	int64_t val[AST_EVAL_LADDER_MAXIN];
+	int64_t set[AST_EVAL_LADDER_MAXIN][AST_EVAL_LADDER_CORNERS];
+	int k[AST_EVAL_LADDER_MAXIN];
+	unsigned long total = 1, s;
+	int i;
+	for (i = 0; i < n; i++) {
+		k[i] = ast_eval_ladder_cornerset(&in[i], set[i]);
+		off[i] = in[i].off;
+		if (total > budget / (unsigned long)k[i])
+			return -1;
+		total *= (unsigned long)k[i];
+	}
+	for (s = 0; s < total; s++) {
+		unsigned long rem = s;
+		for (i = 0; i < n; i++) {
+			val[i] = set[i][rem % (unsigned long)k[i]];
+			rem /= (unsigned long)k[i];
+		}
+		if (!ast_eval_ladder_point(a, ar, b, br, off, val, n, res))
+			return 0;
+	}
+	return 1;
+}
+
+static int ast_eval_ladder_observed(AstArena *a, AstLocal ar, AstArena *b,
+																		AstLocal br, const AstEvalLadderIn *in,
+																		int n, AstEvalLadderRes *res) {
+	int32_t off[AST_EVAL_LADDER_MAXIN];
+	int64_t tuples[AST_EVAL_LADDER_OBSMAX * AST_EVAL_LADDER_MAXIN];
+	int i, nt, t;
+	if (!ast_eval_ladder_obs_fn)
+		return -1;
+	for (i = 0; i < n; i++)
+		off[i] = in[i].off;
+	nt = ast_eval_ladder_obs_fn(off, n, tuples, AST_EVAL_LADDER_OBSMAX,
+															ast_eval_ladder_obs_user);
+	if (nt <= 0)
+		return -1;
+	for (t = 0; t < nt; t++) {
+		int64_t val[AST_EVAL_LADDER_MAXIN];
+		for (i = 0; i < n; i++)
+			val[i] = ast_eval_slice_fit(tuples[t * n + i], in[i].type);
+		if (!ast_eval_ladder_point(a, ar, b, br, off, val, n, res))
+			return 0;
+	}
+	return 1;
+}
+
+static void ast_eval_slice_ladder(AstArena *a, AstLocal aroot, AstArena *b,
+																	AstLocal broot, AstEvalLadderRes *res) {
+	static const int wid[AST_EVAL_LADDER_NRUNG] = {1, 2, 4, 8, 16, 32};
+	AstEvalLadderIn in[AST_EVAL_LADDER_MAXIN];
+	unsigned long budget = ast_eval_ladder_budget();
+	int n = 0, i, best = AST_LADDER_RUNG_NONE, exact = 0, r;
+	memset(res, 0, sizeof *res);
+	res->verdict = -1;
+	res->rung = AST_LADDER_RUNG_NONE;
+	res->diff_width = -1;
+	if (!ast_eval_slice_kind_ok(a, aroot, 0) ||
+			!ast_eval_slice_kind_ok(b, broot, 0)) {
+		res->reason = AST_LADDER_R_STRUCT;
+		return;
+	}
+	if (!ast_eval_ladder_ops_ok(a, aroot) || !ast_eval_ladder_ops_ok(b, broot)) {
+		res->reason = AST_LADDER_R_OP;
+		return;
+	}
+	res->reason = AST_LADDER_R_NONE;
+	if (!ast_eval_ladder_scan(a, aroot, in, &n, AST_EVAL_LADDER_MAXIN,
+														&res->reason, &res->inferred,
+														ast_eval_ladder_strict()) ||
+			!ast_eval_ladder_scan(b, broot, in, &n, AST_EVAL_LADDER_MAXIN,
+														&res->reason, &res->inferred,
+														ast_eval_ladder_strict()))
+		return;
+	res->nin = n;
+	if (n == 0) {
+		int32_t off[1];
+		int64_t val[1];
+		if (!ast_eval_ladder_point(a, aroot, b, broot, off, val, 0, res)) {
+			res->verdict = 0;
+			res->rung = AST_LADDER_RUNG_CONST;
+			res->diff_width = 0;
+			return;
+		}
+		if (res->informative == 0) {
+			res->reason = AST_LADDER_R_VACUOUS;
+			return;
+		}
+		res->verdict = 1;
+		res->rung = AST_LADDER_RUNG_CONST;
+		res->type_complete = 1;
+		return;
+	}
+	for (i = 0; i < AST_EVAL_LADDER_NRUNG; i++) {
+		int full = 0;
+		r = ast_eval_ladder_rung(a, aroot, b, broot, in, n, wid[i], budget, &full,
+														 res);
+		if (r < 0)
+			break;
+		if (r == 0) {
+			res->verdict = 0;
+			res->rung = wid[i];
+			res->diff_width = wid[i];
+			return;
+		}
+		best = wid[i];
+		exact = full;
+		if (full)
+			break;
+	}
+	if (best == AST_LADDER_RUNG_NONE) {
+		r = ast_eval_ladder_observed(a, aroot, b, broot, in, n, res);
+		if (r < 0) {
+			res->reason =
+					ast_eval_ladder_obs_fn ? AST_LADDER_R_OBS : AST_LADDER_R_BUDGET;
+			return;
+		}
+		if (r == 0) {
+			res->verdict = 0;
+			res->rung = AST_LADDER_RUNG_OBSERVED;
+			return;
+		}
+		if (res->informative == 0) {
+			res->reason = AST_LADDER_R_VACUOUS;
+			return;
+		}
+		res->verdict = 1;
+		res->rung = AST_LADDER_RUNG_OBSERVED;
+		return;
+	}
+	if (res->informative == 0) {
+		res->reason = AST_LADDER_R_VACUOUS;
+		return;
+	}
+	if (!exact) {
+		r = ast_eval_ladder_corner_sweep(a, aroot, b, broot, in, n, budget, res);
+		if (r == 0) {
+			res->verdict = 0;
+			res->rung = AST_LADDER_RUNG_CORNERS;
+			return;
+		}
+	}
+	res->verdict = 1;
+	res->rung = best;
+	res->type_complete = exact;
+}
+
+static int ast_eval_slice_ladder_equiv(AstArena *a, AstLocal aroot, AstArena *b,
+																			 AstLocal broot) {
+	AstEvalLadderRes res;
+	ast_eval_slice_ladder(a, aroot, b, broot, &res);
+	return res.verdict == 1;
+}
+
+static int ast_eval_slice_equiv(AstArena *a, AstLocal aroot, AstArena *b,
+																AstLocal broot) {
+	if (ast_eval_ladder_on())
+		return ast_eval_slice_ladder_equiv(a, aroot, b, broot);
+	return ast_eval_slice_equiv_seed(a, aroot, b, broot);
 }
 
 #endif

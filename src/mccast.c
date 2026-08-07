@@ -15853,6 +15853,302 @@ int ast_slice_search(AstArena *a, AstLocal root, int budget, AstLocal *out,
 }
 #endif
 
+#if defined(AST_EVAL_SLICE_PROVIDED) && MCC_EMBED_JIT
+
+#define AST_LADDER_CENSUS_ROOTS 32
+#define AST_LADDER_CENSUS_PAIRS 128
+
+typedef struct AstLadderStat {
+	unsigned long pairs;
+	unsigned long certified;
+	unsigned long differ;
+	unsigned long refused;
+	unsigned long r_struct;
+	unsigned long r_op;
+	unsigned long r_type;
+	unsigned long r_arity;
+	unsigned long r_obs;
+	unsigned long r_budget;
+	unsigned long r_vacuous;
+	unsigned long rung_const;
+	unsigned long rung_obs;
+	unsigned long rung_w[6];
+	unsigned long exact;
+	unsigned long diff_corners;
+	unsigned long diff_w[6];
+	unsigned long diff_const;
+	unsigned long diff_obs;
+	unsigned long points;
+	unsigned long inferred;
+	unsigned long inferred_pairs;
+	unsigned long seed_yes;
+	unsigned long seed_yes_ladder_no;
+	unsigned long seed_yes_differ;
+	unsigned long seed_yes_refused;
+	unsigned long seed_yes_diff_w[6];
+	unsigned long seed_yes_diff_other;
+	unsigned long seed_no_ladder_yes;
+	double secs;
+} AstLadderStat;
+
+static AstLadderStat ast_ladder_self;
+static AstLadderStat ast_ladder_cross;
+static int ast_ladder_census_env = -1;
+
+static int ast_ladder_widx(int w) { MCC_TRACE("enter\n");
+	switch (w) { MCC_TRACE("br\n");
+	case 1: return 0;
+	case 2: return 1;
+	case 4: return 2;
+	case 8: return 3;
+	case 16: return 4;
+	case 32: return 5;
+	default: return -1;
+	}
+}
+
+static double ast_ladder_now(void) { MCC_TRACE("enter\n");
+	struct timespec ts;
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+		{ MCC_TRACE("br\n"); return 0.0; }
+	return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
+
+static void ast_ladder_tally(AstLadderStat *st, const AstEvalLadderRes *r,
+														 int seed_ok, double dt) { MCC_TRACE("enter\n");
+	int wi;
+	st->pairs++;
+	st->points += r->points;
+	st->inferred += r->inferred;
+	if (r->inferred)
+		{ MCC_TRACE("br\n"); st->inferred_pairs++; }
+	st->secs += dt;
+	if (seed_ok)
+		{ MCC_TRACE("br\n"); st->seed_yes++; }
+	if (r->verdict == 1) { MCC_TRACE("br\n");
+		st->certified++;
+		if (r->type_complete)
+			{ MCC_TRACE("br\n"); st->exact++; }
+		if (r->rung == AST_LADDER_RUNG_CONST)
+			{ MCC_TRACE("br\n"); st->rung_const++; }
+		else if (r->rung == AST_LADDER_RUNG_OBSERVED)
+			{ MCC_TRACE("br\n"); st->rung_obs++; }
+		else { MCC_TRACE("br\n");
+			wi = ast_ladder_widx(r->rung);
+			if (wi >= 0)
+				{ MCC_TRACE("br\n"); st->rung_w[wi]++; }
+		}
+		if (!seed_ok)
+			{ MCC_TRACE("br\n"); st->seed_no_ladder_yes++; }
+		return;
+	}
+	if (r->verdict == 0) { MCC_TRACE("br\n");
+		st->differ++;
+		if (seed_ok) { MCC_TRACE("br\n");
+			st->seed_yes_differ++;
+			wi = ast_ladder_widx(r->rung);
+			if (wi >= 0)
+				{ MCC_TRACE("br\n"); st->seed_yes_diff_w[wi]++; }
+			else
+				{ MCC_TRACE("br\n"); st->seed_yes_diff_other++; }
+		}
+		if (r->rung == AST_LADDER_RUNG_CORNERS)
+			{ MCC_TRACE("br\n"); st->diff_corners++; }
+		else if (r->rung == AST_LADDER_RUNG_CONST)
+			{ MCC_TRACE("br\n"); st->diff_const++; }
+		else if (r->rung == AST_LADDER_RUNG_OBSERVED)
+			{ MCC_TRACE("br\n"); st->diff_obs++; }
+		else { MCC_TRACE("br\n");
+			wi = ast_ladder_widx(r->rung);
+			if (wi >= 0)
+				{ MCC_TRACE("br\n"); st->diff_w[wi]++; }
+		}
+	} else { MCC_TRACE("br\n");
+		st->refused++;
+		if (seed_ok)
+			{ MCC_TRACE("br\n"); st->seed_yes_refused++; }
+		switch (r->reason) { MCC_TRACE("br\n");
+		case AST_LADDER_R_STRUCT: st->r_struct++; break;
+		case AST_LADDER_R_OP: st->r_op++; break;
+		case AST_LADDER_R_TYPE: st->r_type++; break;
+		case AST_LADDER_R_ARITY: st->r_arity++; break;
+		case AST_LADDER_R_OBS: st->r_obs++; break;
+		case AST_LADDER_R_BUDGET: st->r_budget++; break;
+		case AST_LADDER_R_VACUOUS: st->r_vacuous++; break;
+		default: break;
+		}
+	}
+	if (seed_ok)
+		{ MCC_TRACE("br\n"); st->seed_yes_ladder_no++; }
+}
+
+static const char *ast_ladder_rung_name(int rung, char *buf, size_t cap) { MCC_TRACE("enter\n");
+	if (rung == AST_LADDER_RUNG_CONST)
+		{ MCC_TRACE("br\n"); return "const"; }
+	if (rung == AST_LADDER_RUNG_CORNERS)
+		{ MCC_TRACE("br\n"); return "corners"; }
+	if (rung == AST_LADDER_RUNG_OBSERVED)
+		{ MCC_TRACE("br\n"); return "observed"; }
+	if (rung == AST_LADDER_RUNG_NONE)
+		{ MCC_TRACE("br\n"); return "none"; }
+	snprintf(buf, cap, "w%d", rung);
+	return buf;
+}
+
+static const char *ast_ladder_reason_name(int reason) { MCC_TRACE("enter\n");
+	switch (reason) { MCC_TRACE("br\n");
+	case AST_LADDER_R_STRUCT: return "unsupported-node";
+	case AST_LADDER_R_OP: return "unsupported-op";
+	case AST_LADDER_R_TYPE: return "no-static-type";
+	case AST_LADDER_R_ARITY: return "too-many-live-ins";
+	case AST_LADDER_R_BUDGET: return "over-budget";
+	case AST_LADDER_R_VACUOUS: return "all-points-undefined";
+	case AST_LADDER_R_OBS: return "no-observed-tuples";
+	default: return "none";
+	}
+}
+
+void ast_slice_ladder_set(int on) { MCC_TRACE("enter\n");
+	ast_eval_ladder_set(on);
+}
+
+int ast_slice_ladder_on(void) { MCC_TRACE("enter\n");
+	return ast_eval_ladder_on();
+}
+
+void ast_slice_ladder_observed_source(int (*fn)(const int32_t *, int, int64_t *,
+																								int, void *),
+																			void *user) { MCC_TRACE("enter\n");
+	ast_eval_ladder_obs_fn = fn;
+	ast_eval_ladder_obs_user = user;
+}
+
+int ast_slice_ladder_explain(AstArena *a, AstLocal aroot, AstArena *b,
+														 AstLocal broot, char *buf, size_t cap) { MCC_TRACE("enter\n");
+	AstEvalLadderRes r;
+	char rb[16];
+	ast_eval_slice_ladder(a, aroot, b, broot, &r);
+	if (buf && cap) { MCC_TRACE("br\n");
+		if (r.verdict == 1)
+			{ MCC_TRACE("br\n"); snprintf(buf, cap,
+											 "equiv rung=%s n=%d exact=%d inferred=%lu points=%lu",
+											 ast_ladder_rung_name(r.rung, rb, sizeof rb), r.nin,
+											 r.type_complete, r.inferred, r.points); }
+		else if (r.verdict == 0)
+			{ MCC_TRACE("br\n"); snprintf(buf, cap,
+											 "differ rung=%s smallest-width=%d n=%d a=%lld b=%s%lld",
+											 ast_ladder_rung_name(r.rung, rb, sizeof rb),
+											 r.diff_width, r.nin, (long long)r.diff_a,
+											 r.diff_b_undef ? "undef:" : "", (long long)r.diff_b); }
+		else
+			{ MCC_TRACE("br\n"); snprintf(buf, cap, "refused %s n=%d",
+											 ast_ladder_reason_name(r.reason), r.nin); }
+	}
+	return r.verdict;
+}
+
+static void ast_ladder_dump_one(const char *tag, const AstLadderStat *st) { MCC_TRACE("enter\n");
+	if (st->pairs == 0)
+		{ MCC_TRACE("br\n"); return; }
+	fprintf(stderr,
+					"[ladder-%s] pairs=%lu certified=%lu differ=%lu refused=%lu "
+					"exact=%lu\n",
+					tag, st->pairs, st->certified, st->differ, st->refused, st->exact);
+	fprintf(stderr,
+					"[ladder-%s] rung const=%lu w1=%lu w2=%lu w4=%lu w8=%lu w16=%lu "
+					"w32=%lu observed=%lu\n",
+					tag, st->rung_const, st->rung_w[0], st->rung_w[1], st->rung_w[2],
+					st->rung_w[3], st->rung_w[4], st->rung_w[5], st->rung_obs);
+	fprintf(stderr,
+					"[ladder-%s] diff const=%lu w1=%lu w2=%lu w4=%lu w8=%lu w16=%lu "
+					"w32=%lu corners=%lu observed=%lu\n",
+					tag, st->diff_const, st->diff_w[0], st->diff_w[1], st->diff_w[2],
+					st->diff_w[3], st->diff_w[4], st->diff_w[5], st->diff_corners,
+					st->diff_obs);
+	fprintf(stderr,
+					"[ladder-%s] refuse no-static-type=%lu unsupported-node=%lu "
+					"unsupported-op=%lu too-many-live-ins=%lu no-observed=%lu "
+					"over-budget=%lu all-undefined=%lu\n",
+					tag, st->r_type, st->r_struct, st->r_op, st->r_arity, st->r_obs,
+					st->r_budget, st->r_vacuous);
+	fprintf(stderr,
+					"[ladder-%s] seed-certified=%lu seed-yes-ladder-no=%lu "
+					"seed-no-ladder-yes=%lu\n",
+					tag, st->seed_yes, st->seed_yes_ladder_no, st->seed_no_ladder_yes);
+	fprintf(stderr,
+					"[ladder-%s] seed-yes-refuted=%lu (w1=%lu w2=%lu w4=%lu w8=%lu "
+					"w16=%lu w32=%lu other=%lu) seed-yes-refused=%lu\n",
+					tag, st->seed_yes_differ, st->seed_yes_diff_w[0],
+					st->seed_yes_diff_w[1], st->seed_yes_diff_w[2],
+					st->seed_yes_diff_w[3], st->seed_yes_diff_w[4],
+					st->seed_yes_diff_w[5], st->seed_yes_diff_other,
+					st->seed_yes_refused);
+	fprintf(stderr,
+					"[ladder-%s] inferred-width-nodes=%lu pairs-with-inferred-width=%lu\n",
+					tag, st->inferred, st->inferred_pairs);
+	fprintf(stderr, "[ladder-%s] points=%lu secs=%.4f us-per-pair=%.2f\n", tag,
+					st->points, st->secs,
+					st->pairs ? st->secs * 1e6 / (double)st->pairs : 0.0);
+}
+
+void ast_slice_ladder_stats_dump(void) { MCC_TRACE("enter\n");
+	ast_ladder_dump_one("self", &ast_ladder_self);
+	ast_ladder_dump_one("cross", &ast_ladder_cross);
+}
+
+static void ast_ladder_census_rec(AstArena *a, AstLocal n, AstLocal *roots,
+																	int *cnt, int max) { MCC_TRACE("enter\n");
+	AstLocal c;
+	if (n == AST_NONE || *cnt >= max)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_eval_slice_kind_ok(a, n, 0) && ast_nchild(a, n) > 0) { MCC_TRACE("br\n");
+		roots[(*cnt)++] = n;
+		return;
+	}
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); ast_ladder_census_rec(a, c, roots, cnt, max); }
+}
+
+static void ast_ladder_census(AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal roots[AST_LADDER_CENSUS_ROOTS];
+	int cnt = 0, i, j, pairs = 0;
+	if (ast_ladder_census_env < 0) { MCC_TRACE("br\n");
+		ast_ladder_census_env = mcc_env_on("MCC_AST_EVAL_LADDER_CENSUS");
+		if (ast_ladder_census_env)
+			{ MCC_TRACE("br\n"); atexit(ast_slice_ladder_stats_dump); }
+	}
+	if (!ast_ladder_census_env || !a)
+		{ MCC_TRACE("br\n"); return; }
+	ast_ladder_census_rec(a, ast_root(a), roots, &cnt, AST_LADDER_CENSUS_ROOTS);
+	for (i = 0; i < cnt; i++) { MCC_TRACE("br\n");
+		AstArena *cp = ast_slice_extract(a, roots[i]);
+		AstEvalLadderRes r;
+		double t0, t1;
+		int seed_ok;
+		if (!cp)
+			{ MCC_TRACE("br\n"); continue; }
+		seed_ok = ast_eval_slice_equiv_seed(a, roots[i], cp, ast_root(cp));
+		t0 = ast_ladder_now();
+		ast_eval_slice_ladder(a, roots[i], cp, ast_root(cp), &r);
+		t1 = ast_ladder_now();
+		ast_ladder_tally(&ast_ladder_self, &r, seed_ok, t1 - t0);
+		ast_arena_free(cp);
+	}
+	for (i = 0; i < cnt && pairs < AST_LADDER_CENSUS_PAIRS; i++)
+		for (j = i + 1; j < cnt && pairs < AST_LADDER_CENSUS_PAIRS; j++) { MCC_TRACE("br\n");
+			AstEvalLadderRes r;
+			double t0, t1;
+			int seed_ok = ast_eval_slice_equiv_seed(a, roots[i], a, roots[j]);
+			t0 = ast_ladder_now();
+			ast_eval_slice_ladder(a, roots[i], a, roots[j], &r);
+			t1 = ast_ladder_now();
+			ast_ladder_tally(&ast_ladder_cross, &r, seed_ok, t1 - t0);
+			pairs++;
+		}
+}
+
+#endif
+
 static unsigned long ast_search_gates_now(void) { MCC_TRACE("enter\n");
 	return (ast_templates_env ? AST_SG_TEMPLATES : 0) |
 				 (ast_narrow_env ? AST_SG_NARROW : 0) |
@@ -17908,6 +18204,10 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			rir_prod_body_set((long)(ind - ast_body_ind_sv));
 			rir_prod_note("nomodel");
 		}
+#if defined(AST_EVAL_SLICE_PROVIDED) && MCC_EMBED_JIT
+		if (ast_cur)
+			{ MCC_TRACE("br\n"); ast_ladder_census(ast_cur); }
+#endif
 #ifdef MCC_EMBED_JIT
 		if ((ast_jit_dispatch_env || ast_jit_fns_n > 0) && ast_fn_faithful &&
 				ast_cur && ast_jit_want(funcname, sym) && !ast_arena_has_hole(ast_cur))

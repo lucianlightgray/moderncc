@@ -8491,6 +8491,72 @@ PUB_FUNC int mccjit_selftest_search(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
+static int mccjit_ladder_pair(const char *s1, const char *f1, const char *s2,
+															const char *f2, int want_eq, int want_seed,
+															int want_diffw) { MCC_TRACE("enter\n");
+	AstArena *a = mccjit_extract_ret_slice(s1, f1);
+	AstArena *b = mccjit_extract_ret_slice(s2, f2);
+	char why[192];
+	int eq, seed, ok;
+	if (!a || !b) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-sliceladder: %s/%s extract failed FAIL\n", f1, f2);
+		ast_arena_free(a);
+		ast_arena_free(b);
+		return 1;
+	}
+	ast_slice_ladder_set(0);
+	seed = ast_slice_equiv(a, ast_root(a), b, ast_root(b));
+	ast_slice_ladder_set(1);
+	why[0] = 0;
+	eq = ast_slice_ladder_explain(a, ast_root(a), b, ast_root(b), why, sizeof why);
+	ast_slice_ladder_set(0);
+	ok = (eq == want_eq) && (seed == want_seed);
+	if (ok && want_diffw >= 0)
+		{ MCC_TRACE("br\n"); ok = strstr(why, "smallest-width=") != NULL; }
+	printf("mccjit-selftest-sliceladder: %s vs %s seed=%d(want %d) "
+				 "ladder=%d(want %d) [%s] %s\n",
+				 f1, f2, seed, want_seed, eq, want_eq, why, ok ? "OK" : "FAIL");
+	if (ok && want_diffw >= 0) { MCC_TRACE("br\n");
+		char pat[32];
+		snprintf(pat, sizeof pat, "smallest-width=%d ", want_diffw);
+		if (!strstr(why, pat)) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-sliceladder: %s vs %s wanted %s FAIL\n", f1,
+						 f2, pat);
+			ok = 0;
+		}
+	}
+	ast_arena_free(a);
+	ast_arena_free(b);
+	return ok ? 0 : 1;
+}
+
+PUB_FUNC int mccjit_selftest_sliceladder(void) { MCC_TRACE("enter\n");
+	int fails = 0;
+
+	printf("mccjit-selftest-sliceladder: begin (exhaustive width ladder 1..32)\n");
+
+	fails += mccjit_ladder_pair("int l1(int x){return 41;}", "l1",
+															"int l2(int x){return 40+1;}", "l2", 1, 1, -1);
+	fails += mccjit_ladder_pair("int m1(int x){return 41;}", "m1",
+															"int m2(int x){return 42;}", "m2", 0, 0, 0);
+	fails += mccjit_ladder_pair("int n1(int x){return x*2+1;}", "n1",
+															"int n2(int x){return x+x+1;}", "n2", 1, 1, -1);
+	fails += mccjit_ladder_pair("int p1(int x){return x==3;}", "p1",
+															"int p2(int x){return 0;}", "p2", 0, 1, 4);
+	fails += mccjit_ladder_pair("int q1(int x){return x/2;}", "q1",
+															"int q2(int x){return x>>1;}", "q2", 0, 0, 1);
+	fails += mccjit_ladder_pair("int r1(unsigned x){return x>>31;}", "r1",
+															"int r2(unsigned x){return 0;}", "r2", 0, 0, 1);
+	fails += mccjit_ladder_pair("int s1(int a,int b){return a*b;}", "s1",
+															"int s2(int a,int b){return b*a;}", "s2", 1, 1, -1);
+	fails += mccjit_ladder_pair("int t1(int a,int b){return a-b;}", "t1",
+															"int t2(int a,int b){return b-a;}", "t2", 0, 0, 1);
+
+	printf("mccjit-selftest-sliceladder: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
 PUB_FUNC int mccjit_selftest_sliceoracle(void) { MCC_TRACE("enter\n");
 	int fails = 0;
 	AstArena *sc1, *sc2, *sc3;
@@ -8737,7 +8803,51 @@ static AstArena *mccjit_kernel_from_blob(const void *buf, size_t len) { MCC_TRAC
 	return k;
 }
 
-static AstArena *mccjit_kernel_search_from_blob(const void *buf, size_t len) { MCC_TRACE("enter\n");
+typedef struct MccjitObsCtx {
+	const int64_t *param_off;
+	uint32_t nparam;
+	const MccjitCounterState *st;
+} MccjitObsCtx;
+
+static int mccjit_obs_tuples(const int32_t *offs, int n, int64_t *out, int maxt,
+														 void *user) { MCC_TRACE("enter\n");
+	MccjitObsCtx *c = (MccjitObsCtx *)user;
+	int idx[MCCJIT_KGC_MAXARG];
+	int i, j, t, ns, nt = 0;
+	if (!c || !c->st || !c->param_off || n <= 0 || n > MCCJIT_KGC_MAXARG)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		int found = -1;
+		for (j = 0; j < (int)c->nparam && j < MCCJIT_KGC_MAXARG; j++)
+			if ((int32_t)c->param_off[j] == offs[i])
+				{ MCC_TRACE("br\n"); found = j; break; }
+		if (found < 0)
+			{ MCC_TRACE("br\n"); return 0; }
+		idx[i] = found;
+	}
+	ns = c->st->nsample;
+	if (ns > MCCJIT_PROFILE_SAMPLES)
+		{ MCC_TRACE("br\n"); ns = MCCJIT_PROFILE_SAMPLES; }
+	for (t = 0; t < ns && nt < maxt; t++) { MCC_TRACE("br\n");
+		for (i = 0; i < n; i++)
+			{ MCC_TRACE("br\n"); out[nt * n + i] = c->st->sample[t][idx[i]]; }
+		nt++;
+	}
+	if (c->st->argseen > 0 && nt < maxt) { MCC_TRACE("br\n");
+		for (i = 0; i < n; i++)
+			{ MCC_TRACE("br\n"); out[nt * n + i] = c->st->argmin[idx[i]]; }
+		nt++;
+	}
+	if (c->st->argseen > 0 && nt < maxt) { MCC_TRACE("br\n");
+		for (i = 0; i < n; i++)
+			{ MCC_TRACE("br\n"); out[nt * n + i] = c->st->argmax[idx[i]]; }
+		nt++;
+	}
+	return nt;
+}
+
+static AstArena *mccjit_kernel_search_from_blob(const void *buf, size_t len,
+																								const MccjitCounterState *cst) { MCC_TRACE("enter\n");
 	MccjitIntent it;
 	MCCState *js;
 	AstArena *k = NULL;
@@ -8756,10 +8866,32 @@ static AstArena *mccjit_kernel_search_from_blob(const void *buf, size_t len) { M
 	if (mccjit_intent_deserialize(buf, len, &it) == 0) { MCC_TRACE("br\n");
 		AstLocal ret = mccjit_ret_expr(it.arena);
 		AstLocal roots[16];
+		MccjitObsCtx obs;
 		int n = (ret != AST_NONE) ? ast_slice_search(it.arena, ret, 2, roots, 16) : 0;
+		obs.param_off = it.param_off;
+		obs.nparam = it.nparam;
+		obs.st = cst;
+		if (cst)
+			{ MCC_TRACE("br\n"); ast_slice_ladder_observed_source(mccjit_obs_tuples, &obs); }
 		if (n >= 1 && ast_fn_purity(it.arena) == AST_PURITY_TIER0
 				&& ast_slice_certifiable(it.arena, ret))
 			{ MCC_TRACE("br\n"); k = ast_slice_wrap_kernel(it.arena, ret); }
+		if (k && ast_slice_ladder_on()) { MCC_TRACE("br\n");
+			AstLocal kbb = ast_root(k);
+			AstLocal kret = (kbb != AST_NONE) ? ast_first_child(k, kbb) : AST_NONE;
+			AstLocal kexpr = (kret != AST_NONE) ? ast_first_child(k, kret) : AST_NONE;
+			char why[192];
+			int ok = (kexpr != AST_NONE) &&
+							 ast_slice_ladder_explain(it.arena, ret, k, kexpr, why, sizeof why) == 1;
+			if (!ok) { MCC_TRACE("br\n");
+				if (mcc_env_on("MCC_JIT_VERBOSE"))
+					{ MCC_TRACE("br\n"); fprintf(stderr, "mccjit-slice[ladder]: %s -- kernel not certified: %s\n",
+									it.fn_name ? it.fn_name : "?", why); }
+				ast_arena_free(k);
+				k = NULL;
+			}
+		}
+		ast_slice_ladder_observed_source(NULL, NULL);
 		mccjit_intent_release(&it);
 	}
 	mcc_exit_state(js);
@@ -8778,7 +8910,7 @@ static void *mccjit_slice_search(MccjitCounterState *st, int *routed, int async)
 	if (!async || mccjit_last_allfp || mccjit_last_ret_wide || np < 1 || np > 3
 			|| st->nsample <= 0 || !st->blob)
 		{ MCC_TRACE("br\n"); return NULL; }
-	k = mccjit_kernel_search_from_blob(st->blob, st->len);
+	k = mccjit_kernel_search_from_blob(st->blob, st->len, st);
 	if (!k)
 		{ MCC_TRACE("br\n"); return NULL; }
 	faithful = mccjit_reemit_arena_blob(st->blob, st->len, NULL, &keepf);
