@@ -1,6 +1,8 @@
 #ifndef MCC_GPU_PROVIDED
 #define MCC_GPU_PROVIDED 1
 
+#include "mcchost.h"
+
 #include <fenv.h>
 #include <stdio.h>
 #include <stdlib.h>
