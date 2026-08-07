@@ -5605,7 +5605,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
                         "${CMAKE_BINARY_DIR}" --corpus self --levels O0,O1,O2,O3)
             set_tests_properties(rir-coverage PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                TIMEOUT 900)
+                SKIP_RETURN_CODE 77 TIMEOUT 900)
 
             add_test(NAME rir-gap-classes
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"

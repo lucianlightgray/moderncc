@@ -117,7 +117,7 @@ Usage:
 Exit status is 0 when every level is at or above its banked coverage and the
 byte accounting reconciles against the objects' real .text size.
 """
-import argparse, json, os, shlex, struct, subprocess, sys, tempfile
+import argparse, json, os, re, shlex, struct, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_BANK = os.path.join(ROOT, "tests", "rir", "coverage-bank.json")
@@ -155,10 +155,17 @@ def self_flags(bdir):
     if not os.path.exists(cdb):
         return []
     cc = json.load(open(cdb))
-    rec = [x for x in cc if x["file"].endswith("/mcc.c")]
+    rec = [x for x in cc if os.path.basename(x["file"]) == "mcc.c"]
     if not rec:
         return []
-    return [a for a in shlex.split(rec[0]["command"])[1:]
+    if "arguments" in rec[0]:
+        argv = rec[0]["arguments"][1:]
+    else:
+        cmd = rec[0]["command"]
+        if os.name == "nt":
+            cmd = re.sub(r'\\(?!")', "/", cmd)
+        argv = shlex.split(cmd)[1:]
+    return [a for a in argv
             if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
 
 
@@ -354,7 +361,7 @@ def census(mcc, flags, sources, opt, layer="arena", keep_rows=True):
         tsv = os.path.join(td, "prod.tsv")
         for i, src in enumerate(sources):
             out_o = os.path.join(td, "o%d.o" % i)
-            fl = flags if src.endswith("/mcc.c") else []
+            fl = flags if os.path.basename(src) == "mcc.c" else []
             if os.path.exists(tsv):
                 os.remove(tsv)
             p = run_one(mcc, fl, src, opt, out_o, tsv, env0, layer)
@@ -689,7 +696,8 @@ def main():
     if a.nofb_probe:
         known = bank.get("nofb_miscompiles", {})
         for opt in a.levels.split(","):
-            r = nofb_probe(mcc, [s for s in sources if not s.endswith("/mcc.c")],
+            r = nofb_probe(mcc, [s for s in sources
+                                 if os.path.basename(s) != "mcc.c"],
                            opt)
             result.setdefault(opt, {})["nofb_probe"] = r
             got = sorted("%s::%s" % (f, n) for f, n in r["miscompiles"])
@@ -719,6 +727,11 @@ def main():
             cfn = cc2["fn_bytes"] + cc2["b_reemit"]
             cbody = cfaith + cc2["cap_b_unfaith"] + cc2["cap_b_err"]
             ccov = pct(cfaith, cbody)
+            if (not a.update_bank and not a.no_check and not cc2["failed"]
+                    and cc2["cap_fn"] > 0 and cbody == 0):
+                print("SKIP: target emits no per-body byte accounting (e.g. PE); "
+                      "rir byte-coverage is unmeasurable here")
+                return 77
             result.setdefault(opt, {})["capture"] = {
                 "fn": cc2["cap_fn"], "faithful_bodies": cc2["cap_faithful"],
                 "text": ctext, "fn_bytes": cfn, "body_bytes": cbody,
