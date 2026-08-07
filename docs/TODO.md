@@ -324,12 +324,29 @@ judged by clang and clang by gcc, census mode on so the GPU actually replays:
 all compile `timeout` on the huge generated `memclr`/`memcpy-a*` bodies, which
 census makes slow. Nothing miscompiled.
 
-**The caveat that matters: the ladder does not run during ordinary `-O2`, or
-even under `-fopt-slice` — zero dispatches.** It fires only under
-`MCC_AST_EVAL_LADDER_CENSUS=1`. So the GPU is exercised by a diagnostic path,
-not the production one, and a suite run without census would leave the device
-idle and the green board meaningless. Wiring the production slice-specialisation
-path to the ladder is the next step if this is to matter outside diagnostics.
+**The JIT's own path reaches the device, not just the census.** Every production
+caller of `ast_slice_equiv` is in `mccjit_embed.c`, which links `libmcc`, so
+`MCC_GPU` applies there too. `jit/selftest-sliceladder` — a JIT code path, not a
+diagnostic — replays on the GPU: 30 dispatches, 263,312 lanes, and its output is
+**byte-identical** to the CPU run.
+
+That byte-for-byte diff caught what the cell could not, because the cell pins
+verdicts and not values. The GPU path stored the raw `int32` into
+`res->diff_a`/`diff_b` where the CPU stores the value fitted to the source type;
+for an unsigned root that is a zero-extension, so one counterexample printed
+`a=4294967295` on the CPU and `a=-1` on the GPU. **The verdict was right and the
+diagnostic was wrong**, which is the worse way round — a counterexample is what a
+human reads when the oracle refutes something. Both are now fitted through
+`ast_eval_slice_fit` with the root's own width type, and the rung refuses the GPU
+path when either root has no static type rather than guessing one.
+
+**The caveat that remains: the ladder does not run during ordinary `-O2`, or
+even under `-fopt-slice` — zero dispatches.** It fires from the JIT's
+equivalence checking and under `MCC_AST_EVAL_LADDER_CENSUS=1`. So a suite run
+without census leaves the device idle and its green board means nothing, which
+is why the cross-oracle run above uses census. Wiring routine slice
+specialisation to the ladder is what would make this matter during ordinary
+optimisation.
 
 **Two emitter defects surfaced only here, and `spirv-val` accepted both.** They
 crashed NVIDIA's SPIR-V compiler (`libnvidia-glvkspirv`) with SIGILL:
