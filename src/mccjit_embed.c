@@ -1902,6 +1902,9 @@ void mccjit_boot_swap_async(void **slot, const void *blob, unsigned long len,
 	mcc_stats_env_init();
 	if (!mccjit_feasible())
 		{ MCC_TRACE("br\n"); return; }
+#if MCC_GPU
+	ast_ladder_gpu_setup();
+#endif
 	nw = mccjit_pool_start(workers);
 	if (mccjit_lazy_enabled() && mccjit_lazy_install(slot, blob, len) == 0)
 		{ MCC_TRACE("br\n"); return; }

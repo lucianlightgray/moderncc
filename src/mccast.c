@@ -15731,11 +15731,16 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 		return -1;
 	if (ast_ladder_gpu_budget && mcc_gpu.dispatches >= ast_ladder_gpu_budget)
 		return -1;
-	for (i = 0; i < n; i++)
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		if (is_float(in[i].type) || !ast_eval_slice_intt(in[i].type) ||
+				ast_eval_slice_is64(in[i].type) || in[i].bits > 32)
+			{ MCC_TRACE("br\n"); return -1; }
 		off[i] = in[i].off;
+	}
 	rta = ast_eval_slice_wtype(a, ar);
 	rtb = ast_eval_slice_wtype(b, br);
-	if (!rta || !rtb)
+	if (!rta || !rtb || is_float(rta) || is_float(rtb) ||
+			ast_eval_slice_is64(rta) || ast_eval_slice_is64(rtb))
 		return -1;
 	if (!ast_ladder_gpu_emit(a, ar, off, n, &ca, &na))
 		return -1;
@@ -15826,6 +15831,28 @@ void ast_ladder_gpu_setup(void) { MCC_TRACE("enter\n");
 	ast_ladder_gpu_budget = mcc_env_num("MCC_AST_EVAL_LADDER_GPU_MAX", 0);
 	ast_ladder_gpu_hook = ast_ladder_gpu_run;
 	atexit(ast_ladder_gpu_report);
+	{ MCC_TRACE("br\n");
+		AstArena *pa = ast_arena_new();
+		AstLocal r = ast_node(pa, AST_Literal);
+		int32_t poff[1];
+		uint32_t *pcode = NULL;
+		int pn = 0;
+		ast_set_op(pa, r, VT_CONST);
+		ast_set_type(pa, r, VT_INT, 0);
+		ast_set_ival(pa, r, 7);
+		poff[0] = -8;
+		if (ast_ladder_gpu_emit(pa, r, poff, 1, &pcode, &pn)) { MCC_TRACE("br\n");
+			int32_t pin[64], pout[128];
+			memset(pin, 0, sizeof pin);
+			int wrc = mcc_gpu_run(pcode, pn, pin, 64, 1, pout);
+			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG")) { MCC_TRACE("br\n");
+				fprintf(stderr, "[ladder-gpu] warmup rc=%d (%d words)\n", wrc, pn);
+				fflush(stderr);
+			}
+			mcc_free(pcode);
+		}
+		ast_arena_free(pa);
+	}
 }
 
 void ast_ladder_gpu_report(void) { MCC_TRACE("enter\n");

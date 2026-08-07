@@ -1,6 +1,7 @@
 #ifndef MCC_GPU_PROVIDED
 #define MCC_GPU_PROVIDED 1
 
+#include <fenv.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <vulkan/vulkan.h>
@@ -176,11 +177,15 @@ static int mcc_gpu_run_locked(const uint32_t *code, int nwords,
 static int mcc_gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 											 int ntuple, int nlive, int32_t *out) {
 	int rc;
+	fenv_t mcc_gpu_fe;
+	int mcc_gpu_fe_ok = (fegetenv(&mcc_gpu_fe) == 0);
 	MCC_GPU_LOCK();
 	rc = mcc_gpu_closing
 					 ? 0
 					 : mcc_gpu_run_locked(code, nwords, in, ntuple, nlive, out);
 	MCC_GPU_UNLOCK();
+	if (mcc_gpu_fe_ok)
+		fesetenv(&mcc_gpu_fe);
 	return rc;
 }
 
