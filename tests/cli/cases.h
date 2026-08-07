@@ -267,9 +267,12 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -fno-inline-functions -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.off.o && "
 		 "{MCC} -fno-inline-functions -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.on.o && "
 		 "( cmp -s {W}/pfi.off.o {W}/pfi.on.o && echo SAME || echo DIFFER ) ; "
+		 "{MCC} -fno-inline-functions -fno-opt-slice -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.ns.off.o && "
+		 "{MCC} -fno-inline-functions -fno-opt-slice -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.ns.on.o && "
+		 "( cmp -s {W}/pfi.ns.off.o {W}/pfi.ns.on.o && echo SAME || echo DIFFER ) ; "
 		 "{MCC} -fopt-perfn-inproc -B{B} -I{I} -O3 {W}/pfi.c -o {W}/pfi.on && {W}/pfi.on ; echo rc=$? ; "
 		 "{MCC} -B{B} -I{I} -O0 {W}/pfi.c -o {W}/pfi.o0 && {W}/pfi.o0 ; echo rc=$?",
-		 "SAME\nrc=28\nrc=28\n"},
+		 "DIFFER\nSAME\nrc=28\nrc=28\n"},
 
 		{"perfn_search", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static int sq(int x){return x*x;}static int cube(int x){return x*x*x;}int main(void){int s=0;for(int i=0;i<8;i++)s+=sq(i)+cube(i);return s;}\\n' > {W}/pfs.c && "

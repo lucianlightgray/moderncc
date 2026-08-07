@@ -20,3 +20,6 @@ color|x86_64,arm64
 # correct and structural, not a bug. So the CASE cannot show the gate working off
 # x86_64.
 indirect_call|x86_64
+# fmov_imm: ast_fmov_imm_env is assigned 0 outside #ifdef MCC_TARGET_ARM64, so
+# the gate is unreachable on every other CPU by construction.
+fmov_imm|arm64

@@ -19,7 +19,7 @@
 	MCC_OPT_ROW(TREE_CONST_LOAD,               "tree-const-load",              MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(OPT_SEARCH,                    "opt-search",                   MCC_OPTD_SPECIAL) \
 	MCC_OPT_ROW(DUMP_OPT_SEARCH,               "dump-opt-search",              MCC_OPTD_OFF) \
-	MCC_OPT_ROW(OPT_SLICE,                     "opt-slice",                    MCC_OPTD_LEVEL(10)) \
+	MCC_OPT_ROW(OPT_SLICE,                     "opt-slice",                    MCC_OPTD_LEVEL(3)) \
 	MCC_OPT_ROW(OPT_SEARCH_EMIT_SIZE,          "opt-search-emit-size",         MCC_OPTD_OFF) \
 	MCC_OPT_ROW(OPT_SEARCH_EMIT_ISO,           "opt-search-emit-iso",          MCC_OPTD_OFF) \
 	MCC_OPT_ROW(OPT_SEARCH_INLINE,             "opt-search-inline",            MCC_OPTD_OFF) \
@@ -51,10 +51,10 @@
 	MCC_OPT_ROW(DUMP_COST_OPS,                 "dump-cost-ops",                MCC_OPTD_OFF) \
 	MCC_OPT_ROW(DUMP_COST_SPILL,               "dump-cost-spill",              MCC_OPTD_OFF) \
 	MCC_OPT_ROW(RELOC_EQUIV,                   "reloc-equiv",                  MCC_OPTD_ALWAYS) \
-	MCC_OPT_ROW(FMOV_IMM,                      "fmov-imm",                     MCC_OPTD_LEVEL(5)) \
+	MCC_OPT_ROW(FMOV_IMM,                      "fmov-imm",                     MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(REG_DISP,                      "reg-disp",                     MCC_OPTD_SPECIAL) \
-	MCC_OPT_ROW(XMM_HI,                        "xmm-hi",                       MCC_OPTD_LEVEL(6)) \
-	MCC_OPT_ROW(PROMOTE_LEAF_CALLEE,           "promote-leaf-callee",          MCC_OPTD_LEVEL(7)) \
+	MCC_OPT_ROW(XMM_HI,                        "xmm-hi",                       MCC_OPTD_LEVEL(5)) \
+	MCC_OPT_ROW(PROMOTE_LEAF_CALLEE,           "promote-leaf-callee",          MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(PROMOTE_ACROSS_CALLS,          "promote-across-calls",         MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(INLINE,                        "inline",                       MCC_OPTD_SPECIAL) \
 	MCC_OPT_ROW(DUMP_COST,                     "dump-cost",                    MCC_OPTD_OFF) \
@@ -67,7 +67,7 @@
 	MCC_OPT_ROW(NARROW,                        "narrow",                       MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(TRUNC32,                       "trunc32",                      MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(SWITCH_EXPR,                   "switch-expr",                  MCC_OPTD_ALWAYS) \
-	MCC_OPT_ROW(INLINE_FUNCTIONS_CALLED_ONCE,  "inline-functions-called-once", MCC_OPTD_LEVEL(11)) \
+	MCC_OPT_ROW(INLINE_FUNCTIONS_CALLED_ONCE,  "inline-functions-called-once", MCC_OPTD_LEVEL(7)) \
 	MCC_OPT_ROW(NARROW_FIX,                    "narrow-fix",                   MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(NARROW_CLASS0,                 "narrow-class0",                MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(NARROW_CLASS1,                 "narrow-class1",                MCC_OPTD_ALWAYS) \
@@ -98,7 +98,7 @@
 	MCC_OPT_ROW(BFOLD_ROUND,                   "bfold-round",                  MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(BFOLD_MINMAX,                  "bfold-minmax",                 MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(BUILTIN_MATH,                  "builtin-math",                 MCC_OPTD_LEVEL(1)) \
-	MCC_OPT_ROW(BUILTIN_MATH_PREPASS,          "builtin-math-prepass",         MCC_OPTD_LEVEL(8)) \
+	MCC_OPT_ROW(BUILTIN_MATH_PREPASS,          "builtin-math-prepass",         MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(BUILTIN_ROUND,                 "builtin-round",                MCC_OPTD_SPECIAL) \
 	MCC_OPT_ROW(BUILTIN_COPYSIGN,              "builtin-copysign",             MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(BUILTIN_MINMAX,                "builtin-minmax",               MCC_OPTD_SPECIAL) \
@@ -116,11 +116,11 @@
 	MCC_OPT_ROW(CALL_WINDOW,                   "call-window",                  MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(TREE_LOOP_IM,                  "tree-loop-im",                 MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(IVOPTS,                        "ivopts",                       MCC_OPTD_SPECIAL) \
-	MCC_OPT_ROW(IVOPTS_PTR,                    "ivopts-ptr",                   MCC_OPTD_LEVEL(9)) \
+	MCC_OPT_ROW(IVOPTS_PTR,                    "ivopts-ptr",                   MCC_OPTD_LEVEL(6)) \
 	MCC_OPT_ROW(TREE_PRE,                      "tree-pre",                     MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(DUMP_LOOPNEST,                 "dump-loopnest",                MCC_OPTD_OFF) \
 	MCC_OPT_ROW(DUMP_LOOPDEP,                  "dump-loopdep",                 MCC_OPTD_OFF) \
-	MCC_OPT_ROW(OPT_PERFN_INPROC,              "opt-perfn-inproc",             MCC_OPTD_LEVEL(12)) \
+	MCC_OPT_ROW(OPT_PERFN_INPROC,              "opt-perfn-inproc",             MCC_OPTD_LEVEL(8)) \
 	MCC_OPT_ROW(ARG_FORWARD,                   "arg-forward",                  MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(REG_COLOR,                     "reg-color",                    MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(SPILL_SHARE,                   "spill-share",                  MCC_OPTD_LEVEL(2))
