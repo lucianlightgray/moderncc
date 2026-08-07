@@ -1,0 +1,85 @@
+# <flag>|<level>|<reason>   documented overrides of the derived -O ladder
+#
+# tools/selfhost-optbench.py derives a level for every level-assignable row in
+# src/mccopt.h from its own measurements, and --check fails if mccopt.h
+# disagrees. These rows are the places where the derivation is knowingly
+# overridden, each with the measurement or the constraint that overrides it.
+# A pin is a debt: it is a row whose level one workload's instruction count
+# could not settle on its own.
+#
+# --- adjudicated on CPU TIME, because instructions retired invert the verdict
+#
+# divmagic replaces one idiv with a multiply-shift sequence, so tests/runtime/
+# divmod retires 7.72G instructions with it against 3.44G without -- 2.24x MORE
+# -- and runs 13.3% FASTER in cpu time (IPC 4.00 vs 1.53). Ranking it on
+# instructions alone would demote the most valuable integer transform in the
+# table. It stays where it is.
+divmagic|2|cpu-time +13.3% on divmod against -124% of instructions; the counter that ranks the rest inverts this one
+#
+# builtin-math goes the other way, and this is the finding this campaign paid
+# for. mcc lowers fabs(x) by spilling the double to the stack, clearing the
+# sign bit with a BYTE store into the middle of it, and reloading the whole 8
+# bytes -- a store-to-load-forwarding stall on every call:
+#     movq %xmm0,-0x10(%rbp) ; andb $0x7f,-0x9(%rbp) ; movq -0x10(%rbp),%xmm0
+# A fabs loop is 2.37x slower with the fold on (34.5ms vs 14.6ms) while
+# retiring FEWER instructions, and tests/runtime/mathfun is 79% slower in cpu
+# time. Per-builtin micro-benchmarks put the whole loss on fabs: sqrt, floor,
+# ceil, fmin, fmax and copysign are all within 2% either way.
+#
+# It STAYS AT 1 regardless, and the reason is worth stating. Demoting the
+# family would (a) punish five correct lowerings for one broken one and (b)
+# break the -ffast-math contract, which cli/fast_math_implies_no_math_errno
+# pins: -O2 -ffast-math must inline sqrt, and it cannot if the fold is gated
+# above 2. The level is not the defect here; the lowering is, and the fix is
+# andpd against a sign mask held in a register. Moving the row would only hide
+# it.
+builtin-math|1|fabs lowering is a store-forwarding stall (mathfun -79% cpu time) but the defect is the lowering, not the level: -ffast-math must reach the fold at -O2
+# builtin-math-prepass rides with builtin-math and earns -O1 on its own ratio:
+# gain 0.30% of emitted instructions at 0.099% of compile cost (efficiency
+# 3.04), nbody +4.98% of instructions and +9.63% of cycles.
+builtin-math-prepass|1|efficiency 3.04 on the kernel workload; masked by builtin-math, which is at 1
+#
+# --- masked: the flag cannot fire at the level its own ratio asked for
+#
+# reemit-templates reads as an ordinary 0.36%-gain row, but it gates the
+# strategy pipeline: moved to 2, the bfold, ident, cprop, cse, dse, sccp, jt
+# and tco counters all go to zero at -O1 (tests/optfire/levels.txt catches it).
+# It is infrastructure with a gain attached, not a level-assignable optimizer,
+# and its measured "gain" is everything downstream of it.
+reemit-templates|1|gates 8 strategies; at level 2 the whole -O1 strategy set stops firing
+#
+#
+# if-conversion-abs measured 3.18% of instructions and 2.14% of cycles on
+# tests/runtime/branchy, which is a -O1 ratio, but it was measured at -O3 with
+# if-conversion on beside it. if-conversion is a measured loss and went to 3;
+# abs stays at 2 rather than being promoted on a number taken in a
+# configuration it will no longer ship in.
+if-conversion-abs|2|gain measured with if-conversion on beside it, and that one moved to 3
+#
+# spill-share's self-host gain (+0.023% +- 0.008) is real but it is the spill
+# half of the register colourer, and reg-color sits at 2. Promoting the spill
+# policy below the allocator it serves measures nothing.
+spill-share|2|masked by reg-color at -O1
+#
+# merge-constants shows 5.8% of stage-1 cost and no measurable gain on either
+# workload, which is a demotion to 3 by the rule. It cannot go: it is not only
+# an optimization. Moved to 3 it changed two xoracle verdicts in OPPOSITE
+# directions against check-cpu-O2.jsonl --
+#   gcc.dg/c99-func-3.c        PASS -> DIFF_EXIT (wants abort, got 0)
+#   gcc.dg/torture/20240517-1.c PASS -> DIFF_EXIT (wants 0, got abort)
+# -- because whether identical string and __func__ constants share storage is
+# observable to a conforming program. The rule ranks compile cost against run
+# speed and has nothing to say about semantics; this row is decided by the
+# oracle set, not by the ratio.
+merge-constants|2|two xoracle cases change verdict without it; constant sharing is observable, not an optimization
+#
+# --- constrained by a correctness gate, not by a ratio
+#
+# inline-functions retires 1.88% MORE stage-2 instructions than it saves and
+# would otherwise be demoted. It cannot move above 3: MCC_OPT_INLINE is SPECIAL
+# and turns on at optimize>=3, and the pair -finline with -fno-inline-functions
+# is an internal compiler error --
+#   mcc -O2 -finline -fno-inline-functions -c src/mcc.c
+#   src/mccast.c:18479: internal compiler error: vstack leak (4)
+# so a level above 3 would make every -O3 compile ICE. It stays at 2.
+inline-functions|2|-finline with -fno-inline-functions is an ICE; a level above 3 would break every -O3 compile

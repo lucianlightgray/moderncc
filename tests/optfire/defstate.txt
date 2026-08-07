@@ -22,16 +22,34 @@ indirect_call|-O2|replay-indirect-call|on
 # The four rungs that came off the in-development ladder onto a settled level.
 # Each row pins the level the rung landed on: the cell fails if the pass stops
 # firing there, and the mccopt.h row is the only thing that decides it.
-promo_leaf_callee|-O2|promote-leaf-callee|on
-math_prepass|-O2|builtin-math-prepass|on
-# opt-slice is NOT here: it went back to the ladder (rung 9). Its only effect on
-# emitted code is ast_slice_consume() warm-starting the search gates from
-# ~/.cache/mcc/sl-*.ck, and that function returns immediately on an empty memo.
-# So the pass is inert on any clean machine and observable on a warm one, which
-# is the same thing as saying -O3 output depends on the user's cache directory.
-# Re-promoting it needs that dependency removed first, not a cell that passes
-# only where the cache happens to be populated.
+# promote-leaf-callee was measured a pessimization on the kernel corpus (-0.34%
+# of emitted instructions overall, poly -2.3% and regpress -5.6%) and moved from
+# 2 to 3, so -O2 must now see it off and -O3 on. Both rows, because either one
+# alone passes at the wrong level.
+promo_leaf_callee_below|-O2|promote-leaf-callee|off
+promo_leaf_callee|-O3|promote-leaf-callee|on
+# opt-slice came OFF the shipped ladder to level 9. It cost 96% of the stage-1
+# self-compile for no measurable gain on either workload, and it is what made
+# -O3 codegen depend on the contents of ~/.cache/mcc (tools/opt-cache-
+# determinism.py). Both rows say it is off at the top of the shipped ladder.
+optslice|-O3|opt-slice|off
+optslice_below|-O2|opt-slice|off
 # fmov-imm lowers a float constant to an FMOV immediate instead of a literal
 # pool load; ast_fmov_imm_env is compiled to 0 off arm64, so the gate cannot
 # fire anywhere else and the case is registered on arm64 only.
 fmov_imm|-O1|fmov-imm|on
+# The rows the -O ladder measurement moved. Each pins BOTH sides of its new
+# boundary, because a single row passes at any level at or below the one it
+# names. tests/optfire/levelbench.tsv and selfhost-levelbench.tsv carry the
+# numbers each move was made on.
+chainstore|-O3|chain-store|on
+chainstore_below|-O2|chain-store|off
+select|-O3|if-conversion|on
+select_below|-O2|if-conversion|off
+range|-O3|tree-vrp|on
+range_below|-O2|tree-vrp|off
+# builtin-math-prepass earned -O1 (efficiency 3.04) and is MASKED BY
+# builtin-math, which stays at 1, so it can fire there. Both rows: the -O1 one
+# is the promotion, the -O0 one is what stops it passing at any level at all.
+math_prepass_o1|-O1|builtin-math-prepass|on
+math_prepass|-O2|builtin-math-prepass|on

@@ -55,12 +55,35 @@ PLB = os.path.join(ROOT, "vendor", "plb", "bench", "algorithm")
 RT = os.path.join(ROOT, "tests", "runtime")
 
 KERNELS = [
-    ("nbody",      os.path.join(PLB, "nbody", "2.c"),   ["10000000"], []),
+    ("nbody-plb",  os.path.join(PLB, "nbody", "2.c"),   ["10000000"], []),
     ("nsieve",     os.path.join(PLB, "nsieve", "1.c"),  ["12"],       []),
     ("mandelbrot", os.path.join(RT, "mandelbrot.c"),    ["3000"],     []),
     ("matmul",     os.path.join(RT, "matmul.c"),        ["600", "8"], []),
     ("spectral",   os.path.join(PLB, "spectral-norm", "3.c"), ["3000"],
                    ["-fc99-inline-body"]),
+
+    # Added for the -O ladder re-assignment. Five kernels could not exercise 48
+    # flags: nothing above measured an integer divide, a switch dispatch, a
+    # struct copy, a call-heavy leaf, a narrowing conversion or string work, so
+    # most of the table read as "does not move" for want of a subject rather
+    # than for want of an effect. Each of these is here because a specific
+    # family of rows had no other way to show itself, and the two vendor/plb
+    # kernels the list leans on are not present in every checkout at all.
+    ("sieve",      os.path.join(RT, "sieve.c"),      ["1000000", "20"], []),
+    ("nbody",      os.path.join(RT, "nbody.c"),      ["120000"],        []),
+    ("interp",     os.path.join(RT, "interp.c"),     ["1000000"],       []),
+    ("structops",  os.path.join(RT, "structops.c"),  ["600"],           []),
+    ("calls",      os.path.join(RT, "calls.c"),      ["2000000"],       []),
+    ("divmod",     os.path.join(RT, "divmod.c"),     ["8000000"],       []),
+    ("branchy",    os.path.join(RT, "branchy.c"),    ["120"],           []),
+    ("hashmap",    os.path.join(RT, "hashmap.c"),    ["1000000"],       []),
+    ("loopnest",   os.path.join(RT, "loopnest.c"),   ["3"],             []),
+    ("vlaloop",    os.path.join(RT, "vlaloop.c"),    ["60000"],         []),
+    ("regpress",   os.path.join(RT, "regpress.c"),   ["60000"],         []),
+    ("poly",       os.path.join(RT, "poly.c"),       ["3000000"],       []),
+    ("narrowops",  os.path.join(RT, "narrowops.c"),  ["260"],           []),
+    ("mathfun",    os.path.join(RT, "mathfun.c"),    ["1600000"],       []),
+    ("strproc",    os.path.join(RT, "strproc.c"),    ["140"],           []),
 ]
 
 # The first field is the -f flag the ratchet toggles. It was an environment

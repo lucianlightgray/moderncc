@@ -1,7 +1,7 @@
 # <name>|<--stats counter>|<-Olevel>:<on|off>,...   locks the -O curation
 bfold|bfold|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 ident|ident|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
-narrow|narrow|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
+narrow|narrow|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
 cprop|cprop|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 cse|cse|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 ltemp|ltemp|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
@@ -12,10 +12,10 @@ dse|dse|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 sccp|sccp|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 jt|jt|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 bf|bf|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
-range|range|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
+range|range|-O0:off,-O1:off,-O2:off,-O3:on,-Os:off
 divmagic|divmagic|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
 abs|abs|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
-select|select|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
+select|select|-O0:off,-O1:off,-O2:off,-O3:on,-Os:off
 reassoc|reassoc|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
 sethi|sethi|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 tco|tco|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on

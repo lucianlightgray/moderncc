@@ -1,0 +1,92 @@
+# optlevel-bench --cycles: the rows whose two counters disagree, adjudicated.
+#
+# Instructions retired rank the other 36 rows because they reproduce to 0.001%
+# here. These eleven are the ones where that counter is the wrong question. Each
+# line is one kernel the flag actually changes, built with the flag on and off,
+# measured serially at 9 reads and reported as the minimum.
+#
+# cyc% and insn% are both "positive = better with the flag on". Where they
+# disagree in sign, cpu time was taken as the tiebreak and the verdict is
+# recorded in tests/optfire/levelpins.txt:
+#
+#   divmagic / divmod        insn -124.4%, cyc +30.0%, cpu +13.3% (IPC 4.00 vs
+#                            1.53). One idiv becomes a multiply-shift sequence:
+#                            2.24x the instructions, 13% less time. Stays at 2.
+#   builtin-math / mathfun   insn +10.8%, cyc -88.8%, cpu -79.4%. fabs is
+#                            lowered through a store-forwarding stall. The row
+#                            stays at 1 because -ffast-math must reach the fold
+#                            at -O2; the LOWERING is the defect, not the level.
+#
+# A cycle delta on a memory-bound kernel whose instruction count did not move
+# (loopnest, matmul) is code layout, not the flag: loopnest reads -8.6% for
+# reg-color, -8.7% for trunc32 and -8.8% for divmagic with all three at
+# insn 0.000%, which is one alignment artifact wearing three names. Those rows
+# are printed and not used.
+#
+# cycles adjudication (9 reads, serial, minimum)
+flag                     kernel       cycles_on cycles_off     cyc%    insn%
+divmagic                 branchy      1.634e+09  1.663e+09   +1.721   -0.040
+divmagic                 divmod       1.569e+09  2.241e+09  +29.956 -124.411
+divmagic                 hashmap      1.415e+09  1.418e+09   +0.231   -3.350
+divmagic                 interp       7.379e+08  7.376e+08   -0.043   -0.000
+divmagic                 loopnest     1.653e+09  1.519e+09   -8.831   -0.033
+divmagic                 mathfun        1.5e+09  1.472e+09   -1.854  -19.219
+divmagic                 matmul       1.172e+09   1.17e+09   -0.236   -0.104
+divmagic                 nbody         1.54e+09  1.543e+09   +0.227   -0.000
+divmagic                 strproc      1.455e+09  1.449e+09   -0.436   -0.075
+divmagic                 structops    1.473e+09  1.369e+09   -7.569  -24.481
+builtin-math             branchy      1.635e+09    1.1e+09  -48.658   +2.146
+builtin-math             mathfun      1.499e+09  7.937e+08  -88.847  +10.787
+builtin-math             nbody        1.545e+09  1.734e+09  +10.913   +4.977
+if-conversion            branchy      1.634e+09  1.635e+09   +0.071   -3.401
+if-conversion            strproc      1.454e+09  1.194e+09  -21.763   -8.202
+tree-vrp                 interp       7.396e+08  7.535e+08   +1.848   -0.000
+tree-vrp                 strproc      1.456e+09  1.293e+09  -12.590   -2.588
+promote-leaf-callee      calls        1.426e+09  1.425e+09   -0.090   -0.000
+promote-leaf-callee      interp       7.382e+08  7.033e+08   -4.954   +1.926
+promote-leaf-callee      poly         7.054e+08  6.756e+08   -4.407   -2.273
+promote-leaf-callee      regpress     1.408e+09  1.353e+09   -4.078   -5.570
+promote-leaf-callee      vlaloop      1.387e+09  1.401e+09   +1.059   -0.000
+chain-store              sieve        1.317e+09  1.762e+09  +25.261   +1.966
+trunc32                  branchy      1.634e+09  1.664e+09   +1.808   +0.004
+trunc32                  calls        1.424e+09  1.424e+09   -0.001   -0.000
+trunc32                  divmod        1.56e+09  2.061e+09  +24.299   +5.392
+trunc32                  hashmap       1.41e+09  1.415e+09   +0.318   +0.537
+trunc32                  interp       7.381e+08  7.384e+08   +0.042   +0.000
+trunc32                  loopnest     1.651e+09  1.519e+09   -8.688   +0.003
+trunc32                  mandelbrot   1.235e+09  1.235e+09   +0.018   +0.000
+trunc32                  mathfun      1.499e+09  1.506e+09   +0.468   +1.975
+trunc32                  matmul       1.171e+09   1.17e+09   -0.030   +0.009
+trunc32                  narrowops    1.476e+09  1.475e+09   -0.078   +0.000
+trunc32                  nbody        1.542e+09  1.543e+09   +0.072   +0.000
+trunc32                  poly         7.061e+08  7.053e+08   -0.117   +0.000
+trunc32                  regpress     1.409e+09  1.407e+09   -0.136   +0.000
+trunc32                  sieve        1.319e+09  1.316e+09   -0.209   +0.000
+trunc32                  strproc      1.454e+09  1.453e+09   -0.069   +0.201
+trunc32                  structops    1.467e+09  1.507e+09   +2.649   +1.860
+trunc32                  vlaloop      1.387e+09  1.384e+09   -0.173   -0.000
+reg-color                branchy      1.634e+09  1.659e+09   +1.460   +0.000
+reg-color                calls        1.425e+09  1.448e+09   +1.589   +0.000
+reg-color                divmod       1.572e+09  1.585e+09   +0.818   +0.000
+reg-color                hashmap      1.412e+09   1.37e+09   -3.037   -0.000
+reg-color                interp       7.392e+08  7.634e+08   +3.175   +1.926
+reg-color                loopnest     1.651e+09   1.52e+09   -8.640   -0.000
+reg-color                mandelbrot   1.235e+09  1.234e+09   -0.041   -0.000
+reg-color                mathfun      1.501e+09    1.5e+09   -0.014   -0.000
+reg-color                matmul        1.17e+09  1.173e+09   +0.229   -0.000
+reg-color                narrowops    1.475e+09  1.466e+09   -0.609   -0.000
+reg-color                nbody         1.54e+09  1.539e+09   -0.058   +0.000
+reg-color                poly         7.053e+08  7.054e+08   +0.003   +1.099
+reg-color                regpress     1.408e+09  1.469e+09   +4.130   +0.000
+reg-color                sieve        1.316e+09  1.527e+09  +13.834   +0.000
+reg-color                strproc      1.455e+09   1.45e+09   -0.310   -0.000
+reg-color                structops    1.455e+09  1.454e+09   -0.122   -0.000
+reg-color                vlaloop      1.386e+09  1.471e+09   +5.759   -0.000
+sethi-ullman-leaf        branchy      1.634e+09  1.662e+09   +1.686   +0.000
+sethi-ullman-leaf        calls        1.424e+09   1.43e+09   +0.398   +1.744
+sethi-ullman-leaf        divmod       1.573e+09   1.61e+09   +2.342   +0.000
+sethi-ullman-leaf        hashmap      1.417e+09  1.423e+09   +0.425   -0.000
+sethi-ullman-leaf        nbody        1.545e+09  1.541e+09   -0.267   -0.000
+sethi-ullman-leaf        vlaloop      1.395e+09  1.388e+09   -0.532   +0.000
+if-conversion-abs        branchy      1.635e+09  1.671e+09   +2.190   +3.184
+builtin-math-prepass     nbody        1.543e+09  1.737e+09  +11.202   +4.977

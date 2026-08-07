@@ -1237,6 +1237,8 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "MinSizeRel"
 endif()
 mcc_config_node(MCC_BUILD_STRIP      TYPE BOOL DEFAULT ${_mcc_strip_default} GROUP "Build targets"
     HELP "Strip symbols from the mcc executable(s) at link (-s); defaults ON for Release/MinSizeRel builds")
+mcc_config_node(MCC_OPT_LADDER_BENCH TYPE BOOL DEFAULT OFF GROUP "Build targets"
+    HELP "Register the -O ladder benchmarks (optlevel-bench, selfhost-optbench) as ctest cells; they take tens of minutes and want a quiet box, so they are opt-in and carry the label optbench")
 mcc_config_node(MCC_ENABLE_RPATH TYPE BOOL DEFAULT ON GROUP "Build targets"
     HELP "Bake -rpath into binaries linking libmcc.so so they find the shared lib at runtime"
     VISIBLE_WHEN "NOT MCC_BUILD_STATIC_LIB")
@@ -5995,6 +5997,44 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         else()
             mcc_skip_test(runtime-bench-gatewin
                 "gate-win assertion runs on a native optimizer build only (emulated/cross timing and counters are meaningless)")
+        endif()
+
+        if(UNIX AND NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING)
+            add_test(NAME opt-cache-determinism
+                COMMAND "${MCC_PYTHON3}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/opt-cache-determinism.py"
+                    "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c"
+                    --opt=-O3 --from-build "${CMAKE_BINARY_DIR}")
+            set_tests_properties(opt-cache-determinism PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 1800
+                LABELS native)
+
+            if(MCC_OPT_LADDER_BENCH)
+                add_test(NAME optlevel-bench
+                    COMMAND "${MCC_PYTHON3}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tools/optlevel-bench.py"
+                        --mcc "$<TARGET_FILE:mcc>" --builddir "${CMAKE_BINARY_DIR}"
+                        --out "${CMAKE_BINARY_DIR}/levelbench.tsv"
+                        --json "${CMAKE_BINARY_DIR}/levelbench.json")
+                set_tests_properties(optlevel-bench PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 RUN_SERIAL TRUE
+                    TIMEOUT 7200 LABELS "optbench")
+
+                add_test(NAME selfhost-optbench
+                    COMMAND "${MCC_PYTHON3}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-optbench.py"
+                        "${CMAKE_BINARY_DIR}" --check --cycles
+                        --out "${CMAKE_BINARY_DIR}/selfhost-levelbench.tsv"
+                        --json "${CMAKE_BINARY_DIR}/selfhost-levelbench.json")
+                set_tests_properties(selfhost-optbench PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 RUN_SERIAL TRUE
+                    TIMEOUT 10800 LABELS "optbench")
+            endif()
+        else()
+            mcc_skip_test(optlevel-bench
+                "the -O ladder benchmarks count instructions retired on the host they run on; an emulated or cross build has no such counter")
+            mcc_skip_test(selfhost-optbench
+                "the -O ladder benchmarks count instructions retired on the host they run on; an emulated or cross build has no such counter")
         endif()
     endif()
 

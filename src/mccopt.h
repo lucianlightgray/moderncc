@@ -16,7 +16,7 @@
 	MCC_OPT_ROW(REPLAY_LANDOR_INVERT,          "replay-landor-invert",         MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(DUMP_REPLAY,                   "dump-replay",                  MCC_OPTD_OFF) \
 	MCC_OPT_ROW(REEMIT_TEMPLATES,              "reemit-templates",             MCC_OPTD_LEVEL(1)) \
-	MCC_OPT_ROW(TREE_CONST_LOAD,               "tree-const-load",              MCC_OPTD_LEVEL(1)) \
+	MCC_OPT_ROW(TREE_CONST_LOAD,               "tree-const-load",              MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(OPT_SEARCH,                    "opt-search",                   MCC_OPTD_SPECIAL) \
 	MCC_OPT_ROW(DUMP_OPT_SEARCH,               "dump-opt-search",              MCC_OPTD_OFF) \
 	MCC_OPT_ROW(OPT_SLICE,                     "opt-slice",                    MCC_OPTD_LEVEL(9)) \
@@ -34,13 +34,13 @@
 	MCC_OPT_ROW(PROMOTE_LOCALS,                "promote-locals",               MCC_OPTD_SPECIAL) \
 	MCC_OPT_ROW(PROMOTE_ARROW,                 "promote-arrow",                MCC_OPTD_SPECIAL) \
 	MCC_OPT_ROW(PROMOTE_INCDEC,                "promote-incdec",               MCC_OPTD_SPECIAL) \
-	MCC_OPT_ROW(CHAIN_STORE,                   "chain-store",                  MCC_OPTD_LEVEL(1)) \
+	MCC_OPT_ROW(CHAIN_STORE,                   "chain-store",                  MCC_OPTD_LEVEL(3)) \
 	MCC_OPT_ROW(STOREVAL_CONSTL,               "storeval-constl",              MCC_OPTD_LEVEL(1)) \
-	MCC_OPT_ROW(STOREVAL_CALLSTORE,            "storeval-callstore",           MCC_OPTD_LEVEL(1)) \
+	MCC_OPT_ROW(STOREVAL_CALLSTORE,            "storeval-callstore",           MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(STOREVAL_ROT,                  "storeval-rot",                 MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(STOREVAL_CALLLAST,             "storeval-calllast",            MCC_OPTD_LEVEL(1)) \
-	MCC_OPT_ROW(CHAIN_STORE_LIVE,              "chain-store-live",             MCC_OPTD_LEVEL(1)) \
-	MCC_OPT_ROW(CHAIN_STORE_MEMBER,            "chain-store-member",           MCC_OPTD_LEVEL(1)) \
+	MCC_OPT_ROW(CHAIN_STORE_LIVE,              "chain-store-live",             MCC_OPTD_LEVEL(2)) \
+	MCC_OPT_ROW(CHAIN_STORE_MEMBER,            "chain-store-member",           MCC_OPTD_LEVEL(3)) \
 	MCC_OPT_ROW(STOREVAL_CALL,                 "storeval-call",                MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(STOREVAL_CALLUP,               "storeval-callup",              MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(REPLAY_CMP_MATERIALIZE,        "replay-cmp-materialize",       MCC_OPTD_ALWAYS) \
@@ -54,7 +54,7 @@
 	MCC_OPT_ROW(FMOV_IMM,                      "fmov-imm",                     MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(REG_DISP,                      "reg-disp",                     MCC_OPTD_SPECIAL) \
 	MCC_OPT_ROW(XMM_HI,                        "xmm-hi",                       MCC_OPTD_LEVEL(5)) \
-	MCC_OPT_ROW(PROMOTE_LEAF_CALLEE,           "promote-leaf-callee",          MCC_OPTD_LEVEL(2)) \
+	MCC_OPT_ROW(PROMOTE_LEAF_CALLEE,           "promote-leaf-callee",          MCC_OPTD_LEVEL(3)) \
 	MCC_OPT_ROW(PROMOTE_ACROSS_CALLS,          "promote-across-calls",         MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(INLINE,                        "inline",                       MCC_OPTD_SPECIAL) \
 	MCC_OPT_ROW(DUMP_COST,                     "dump-cost",                    MCC_OPTD_OFF) \
@@ -64,7 +64,7 @@
 	MCC_OPT_ROW(TREE_SWITCH_CONVERSION,        "tree-switch-conversion",       MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(DUMP_BITFLAG,                  "dump-bitflag",                 MCC_OPTD_OFF) \
 	MCC_OPT_ROW(TREE_COPY_PROP,                "tree-copy-prop",               MCC_OPTD_LEVEL(2)) \
-	MCC_OPT_ROW(NARROW,                        "narrow",                       MCC_OPTD_LEVEL(1)) \
+	MCC_OPT_ROW(NARROW,                        "narrow",                       MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(TRUNC32,                       "trunc32",                      MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(SWITCH_EXPR,                   "switch-expr",                  MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(INLINE_FUNCTIONS_CALLED_ONCE,  "inline-functions-called-once", MCC_OPTD_LEVEL(7)) \
@@ -84,10 +84,10 @@
 	MCC_OPT_ROW(TREE_DSE,                      "tree-dse",                     MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(OPTIMIZE_SIBLING_CALLS,        "optimize-sibling-calls",       MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(GCSE,                          "gcse",                         MCC_OPTD_LEVEL(1)) \
-	MCC_OPT_ROW(TREE_VRP,                      "tree-vrp",                     MCC_OPTD_LEVEL(1)) \
+	MCC_OPT_ROW(TREE_VRP,                      "tree-vrp",                     MCC_OPTD_LEVEL(3)) \
 	MCC_OPT_ROW(DIVMAGIC,                      "divmagic",                     MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(IF_CONVERSION_ABS,             "if-conversion-abs",            MCC_OPTD_LEVEL(2)) \
-	MCC_OPT_ROW(IF_CONVERSION,                 "if-conversion",                MCC_OPTD_LEVEL(2)) \
+	MCC_OPT_ROW(IF_CONVERSION,                 "if-conversion",                MCC_OPTD_LEVEL(3)) \
 	MCC_OPT_ROW(TREE_REASSOC,                  "tree-reassoc",                 MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(REASSOC_ASSOC,                 "reassoc-assoc",                MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(REASSOC_SHLSHR,                "reassoc-shlshr",               MCC_OPTD_ALWAYS) \
@@ -98,7 +98,7 @@
 	MCC_OPT_ROW(BFOLD_ROUND,                   "bfold-round",                  MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(BFOLD_MINMAX,                  "bfold-minmax",                 MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(BUILTIN_MATH,                  "builtin-math",                 MCC_OPTD_LEVEL(1)) \
-	MCC_OPT_ROW(BUILTIN_MATH_PREPASS,          "builtin-math-prepass",         MCC_OPTD_LEVEL(2)) \
+	MCC_OPT_ROW(BUILTIN_MATH_PREPASS,          "builtin-math-prepass",         MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(BUILTIN_ROUND,                 "builtin-round",                MCC_OPTD_SPECIAL) \
 	MCC_OPT_ROW(BUILTIN_COPYSIGN,              "builtin-copysign",             MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(BUILTIN_MINMAX,                "builtin-minmax",               MCC_OPTD_SPECIAL) \

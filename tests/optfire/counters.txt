@@ -12,10 +12,10 @@ dse|-O2|dse
 sccp|-O2|sccp
 jt|-O2|jt
 bf|-O2|bf
-range|-O2|range
+range|-O3|range
 divmagic|-O2|divmagic
 abs|-O2|abs
-select|-O2|select
+select|-O3|select
 reassoc|-O2|reassoc
 sethi|-O2|sethi
 tco|-O2|tco
