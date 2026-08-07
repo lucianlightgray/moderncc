@@ -225,6 +225,23 @@ excluded — 57,482 of them — so the comparison covers only what C defines.
 taken from the *last* block of each arm. Relying on an untaken arm's division
 being discarded is not the same as not computing it.
 
+**Undefinedness is modelled, not taken on the CPU's word.** The shader mirrors
+`ast_eval_binop`: signed overflow on `+`/`-` via `((a^r) & (b^r)) < 0`, on `*`
+via `r/a != b` guarded at `a == 0`, `/0`, `INT_MIN/-1`, and shift counts outside
+`[0,32)`. The flag rides in `SpvMod.def`, is phi'd through both arms of every
+`If` and `&&`/`||` link, and lands in `out[2*lane+1]` beside the value. The gate
+requires it to agree with `ast_eval_slice`'s verdict, so the 3.7M vacuous points
+are *verified* rather than skipped.
+
+**A flag computed beside a poisoned invocation is worthless.** The first version
+computed the flag correctly and still performed the undefined division in the
+same invocation; SPIR-V leaves that undefined, and the driver returned
+`defined=1` for `0/0` while the disassembly plainly showed `defined=0`. Divisors
+and shift counts are now guarded through `OpSelect` so the kernel never executes
+UB at all. `divraw`/`remraw`/`shiftraw`/`ovf`/`ovfadd` exist to exercise this;
+the older synthetic set had *no* undefined points once `cmp` stopped being a
+shift (vacuous 57482 → 0), so it could not have caught any of it.
+
 Three defects the differential caught, none of which a passing test would show:
 
 - the entry point listed its StorageBuffer variables, legal only from SPIR-V 1.4;
@@ -291,14 +308,19 @@ Everything above runs offline through `spvgate`. "The JIT runs RIR replays in th
 GPU" is therefore *not* established; what is established is that the lowering is
 correct and that real gcc/clang suite bodies contain slices it accepts.
 
-**The clean integration point is `ast_eval_ladder_rung()`.** It is an
-embarrassingly-parallel loop over `space` codes, each replaying both arenas at
-one point, and the JIT already invokes it through
-`mccjit_kernel_search_from_blob`. That loop *is* bulk RIR replay, and moving it
-to the GPU would make the claim literally true while doing work the JIT already
-wants done — unlike general offload, where the census shows the payoff is thin
-(1.91% loop-bearing slices in this corpus). The obstacle is that it puts Vulkan
-in the compiler's link, so it wants a `dlopen` loader and a gate, not `-lvulkan`.
+**The clean integration point is `ast_eval_ladder_rung()`, and its prerequisite
+is now met.** That function is an embarrassingly-parallel loop over `space`
+codes, each replaying both arenas at one point, and the JIT already invokes it
+through `mccjit_kernel_search_from_blob`. It *is* bulk RIR replay, so moving it
+to the GPU makes the claim literally true while doing work the JIT already wants
+done — unlike speculative offload, where the census says the payoff is thin
+(1.91% loop-bearing slices). It could not have been attempted before the
+definedness model landed: a rung must decide vacuity itself, and until the
+shader modelled UB the CPU had to visit every point anyway, which is the whole
+cost the GPU was meant to remove. What remains is plumbing, not semantics —
+emit both arenas, compare on device, and reduce. The obstacle is that it puts
+Vulkan in the compiler's link, so it wants a `dlopen` loader behind a build gate
+rather than `-lvulkan`.
 
 Two smaller debts: `ast_bad_type` and `is_float` are duplicated in the gate
 because they are static/inline inside `mccast.c`'s `MCC_INTERNAL` half, and the
