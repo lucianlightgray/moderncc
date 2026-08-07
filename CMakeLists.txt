@@ -5823,7 +5823,9 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
 
         if(UNIX)
             add_test(NAME target-link-gate
-                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ci/target-link-gate.sh")
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ci/target-link-gate.sh"
+                        "-DMCC_GPU_LANG_MSL=${MCC_GPU_LANG_MSL_VALUE}"
+                        ${MCC_COMPUTE_BACKEND_LDFLAGS})
             set_tests_properties(target-link-gate PROPERTIES SKIP_RETURN_CODE 77
                 TIMEOUT 900)
         endif()

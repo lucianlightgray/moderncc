@@ -665,6 +665,12 @@ static const struct {
 				"", OS_LINUX | OS_MAC, 0},
 		{"sanitize", "-DMCC_BUILD_SANITIZE=ON", "", "",
 				OS_LINUX | OS_MAC | OS_WIN, 0},
+		{"gpu-vulkan", "-DMCC_GPU_BACKEND=vulkan",
+				"Vulkan is already the default backend off Darwin, so this cell "
+				"would only re-run what every other cell on this host runs; "
+				"Darwin is the one host that can build both and so the only "
+				"place the choice is worth spending a cell on",
+				"", OS_MAC, 0},
 		{0, 0, 0, 0, 0, 0}};
 
 static const char *feature_dflags(int f) {
@@ -687,6 +693,7 @@ static const struct {
 		{"macos-arm64-clang", "sanitize"},
 		{"macos-arm64-clang", "macho"},
 		{"macos-arm64-clang", "pe"},
+		{"macos-arm64-clang", "gpu-vulkan"},
 		{"macos-arm64-gcc", "dynamic"},
 		{"macos-arm64-gcc", "sanitize"},
 		{"windows-x86_64-msvc", "dynamic"},

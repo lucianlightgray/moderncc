@@ -1,4 +1,9 @@
 #!/bin/sh
+# Extra arguments are appended to every link line. CMake passes the compute
+# backend the build is configured for -- the -DMCC_GPU_LANG_MSL= that selects
+# the mccgpu.c arm and the library that arm needs -- because src/mcc.c compiles
+# the GPU backend unconditionally now, and this gate builds it outside the
+# CMake target that would otherwise carry both.
 set -e
 root=$(cd "$(dirname "$0")/../.." && pwd)
 cc=${CC:-cc}
@@ -22,7 +27,7 @@ for t in \
   "-DMCC_TARGET_RISCV64=1" \
   "-DMCC_TARGET_ARM=1"
 do
-  if $cc -w -O0 -DMCC_CONFIG_OPTIMIZER=1 $t $inc -o "$work/m" "$root/src/mcc.c" -lm -ldl 2>"$work/err"; then
+  if $cc -w -O0 -DMCC_CONFIG_OPTIMIZER=1 $t $inc -o "$work/m" "$root/src/mcc.c" -lm -ldl "$@" 2>"$work/err"; then
     echo "ok   $t"
   else
     echo "FAIL $t"

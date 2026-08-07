@@ -179,6 +179,11 @@ jobs:
           sudo softwareupdate --install-rosetta --agree-to-license
           HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask wine-stable || true
           wine --version || true
+      - name: install MoltenVK (gpu-vulkan cell drives Vulkan over Metal)
+        if: ${{ matrix.feature == 'gpu-vulkan' }}
+        run: |
+          brew install molten-vk
+          ls -l "$(brew --prefix)/lib/libMoltenVK.dylib"
       - uses: ./.github/actions/ci
       - uses: actions/download-artifact@v7
         with:
