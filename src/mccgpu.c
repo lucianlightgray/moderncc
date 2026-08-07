@@ -1,4 +1,4 @@
-/* Device layer for the width ladder's GPU oracle.
+﻿/* Device layer for the width ladder's GPU oracle.
  *
  * Vulkan + SPIR-V on every host but Darwin, Metal + MSL there.  Both loaders
  * are dlopened at first use, so nothing here is on any link line: a host with
@@ -1170,7 +1170,7 @@ static int mcc_gpu_init(void) {
 	VkDeviceQueueCreateInfo qci;
 	VkDeviceCreateInfo dci;
 	float prio = 1.0f;
-	unsigned ndev = 8, nq = 32, i;
+	unsigned ndev = 0, nq = 32, i;
 
 	if (mcc_gpu_closing)
 		return 0;
@@ -1195,8 +1195,26 @@ static int mcc_gpu_init(void) {
 		}
 	}
 	{
-		VkResult _r = vkEnumeratePhysicalDevices(mcc_gpu.inst, &ndev, devs);
+		/* Count first, then fill.  The count query must succeed outright; a loader
+		 * that answers VK_INCOMPLETE to it is not telling us anything usable, and
+		 * the handles such a loader writes are not valid (AMD's
+		 * VK_LAYER_AMD_switchable_graphics does exactly this).  VK_INCOMPLETE from
+		 * the *fill* is expected and fine: it only means there are more devices
+		 * than devs[] holds, ndev is the number actually written, and we use
+		 * devs[0]. */
+		unsigned cap = (unsigned)(sizeof devs / sizeof devs[0]);
+		VkResult _r = vkEnumeratePhysicalDevices(mcc_gpu.inst, &ndev, 0);
 		if (_r != VK_SUCCESS || !ndev) {
+			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
+				fprintf(stderr,
+								"[ladder-gpu] vkEnumeratePhysicalDevices(count) rc=%d ndev=%u\n",
+								(int)_r, ndev);
+			return 0;
+		}
+		if (ndev > cap)
+			ndev = cap;
+		_r = vkEnumeratePhysicalDevices(mcc_gpu.inst, &ndev, devs);
+		if ((_r != VK_SUCCESS && _r != VK_INCOMPLETE) || !ndev) {
 			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
 				fprintf(stderr, "[ladder-gpu] vkEnumeratePhysicalDevices rc=%d ndev=%u\n",
 								(int)_r, ndev);
