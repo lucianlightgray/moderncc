@@ -430,6 +430,21 @@ Eliminated, each with a decisive test, so nobody repeats them:
 | dispatch count / module order | cap sweep | independent |
 | JIT-worker environment | dedicated GPU dispatch thread | 6/40, no change |
 
+**Narrowed to one call.** Instrumenting every step of the dispatch puts the
+fault exactly at `vkCreateShaderModule` -- the driver compiling the SPIR-V,
+which is what the `libnvidia-gpucomp` backtrace already said. The bytes are
+*verified intact at that call site*: magic `07230203`, 223 words, hash printed
+immediately before the call. The identical module compiles and dispatches fine
+from a standalone gcc-built process (`spvgate --spv`). So the driver faults
+compiling a valid module, and only inside an mcc-produced executable.
+
+Two further eliminations from that round: the SPIR-V buffer is **not** corrupted
+by using the compiler's allocator off-thread -- switching the GPU path to plain
+`malloc` changes nothing (40/40) -- and `dlopen`ing libvulkan instead of linking
+it makes the crash *deterministic* (40/40 vs 4/40) under both `RTLD_LOCAL` and
+`RTLD_GLOBAL`. The deterministic `dlopen` build is therefore the reproducer to
+debug with; it is far easier to work with than the 10% linked case.
+
 **Measure with 40 runs, not 5.** Two separate times a stale embedded engine blob
 made an intermittent crash look deterministic, and once made a broken build look
 clean; `cmake --build` does not reliably regenerate the blob after a CMake-level
