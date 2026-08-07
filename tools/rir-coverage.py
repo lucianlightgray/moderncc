@@ -302,6 +302,20 @@ def host_objfmt(mcc):
     return fmt
 
 
+def low_floor(entry, fmt):
+    """The lowerable floor for host format `fmt` in a bank's per-opt entry.
+
+    Floors are recorded per host format because MCC_HOST_* decides which source
+    amalgamates into the corpus, so PE and ELF do not share numbers.  A legacy
+    bank stored one flat set taken on ELF; treat that as the elf floor.
+    """
+    if not isinstance(entry, dict):
+        return None
+    if "bodies_pct" in entry:
+        return entry if fmt == "elf" else None
+    return entry.get(fmt)
+
+
 def run_one(mcc, flags, src, opt, out_o, tsv, env0, layer):
     env = dict(env0)
     if layer == "capture":
@@ -800,8 +814,6 @@ def main():
     self_corpus = any(s.replace("\\", "/").endswith("src/mcc.c") for s in sources)
     want_cfg = bank.get("corpus_config")
     have_cfg = corpus_config(flags)
-    if self_corpus and want_cfg is not None and "objfmt" in want_cfg:
-        have_cfg["objfmt"] = host_objfmt(mcc)
     if self_corpus and want_cfg is not None and have_cfg != want_cfg:
         if a.rebank_config and (a.update_bank or a.update_bank_low):
             bank["corpus_config"] = have_cfg
@@ -816,6 +828,21 @@ def main():
                   "regression. Run the ratchet on a default build, and do NOT "
                   "re-bank here -- see docs/TODO.md, 'The lowerable ratchet is "
                   "self-referential'.")
+            return 77
+
+    fmt = host_objfmt(mcc) if self_corpus else None
+    if (self_corpus and fmt and not a.update_bank and not a.update_bank_low
+            and not a.no_check):
+        levels = a.levels.split(",")
+        anylow = any(banked.get(o, {}).get("lowerable") for o in levels)
+        havefmt = any(low_floor(banked.get(o, {}).get("lowerable"), fmt)
+                      for o in levels)
+        if anylow and not havefmt:
+            print("rir-coverage: SKIP: the %s corpus has no banked lowerable "
+                  "floors for the %s host.  MCC_HOST_* decides which source "
+                  "amalgamates, so the floors are host-specific; bank this host "
+                  "with --update-bank-low, or run on a banked host (elf, pe)."
+                  % (a.corpus, fmt))
             return 77
 
     for opt in a.levels.split(","):
@@ -976,16 +1003,16 @@ def main():
                            % (opt, resid, b.get("residual", 0)))
         elif not b and not a.update_bank and not a.no_check:
             bad.append("-%s: no banked coverage for corpus %s" % (opt, a.corpus))
-        lb = banked.get(opt, {}).get("lowerable")
+        lb = low_floor(banked.get(opt, {}).get("lowerable"), fmt)
         if lb and not a.no_check:
             for k in LOW_BANKED:
                 if low[k] + a.tol < lb.get(k, 0.0):
-                    bad.append("-%s lowerable: %s regressed: %.4f%% < banked "
-                               "%.4f%%" % (opt, k, low[k], lb[k]))
+                    bad.append("-%s lowerable[%s]: %s regressed: %.4f%% < banked "
+                               "%.4f%%" % (opt, fmt, k, low[k], lb[k]))
         elif (not lb and not a.update_bank and not a.update_bank_low
               and not a.no_check and low["bodies"]):
-            bad.append("-%s: no banked lowerable census for corpus %s"
-                       % (opt, a.corpus))
+            bad.append("-%s: no banked lowerable census for corpus %s (%s host)"
+                       % (opt, a.corpus, fmt))
 
     if a.json:
         json.dump(result, open(a.json, "w"), indent=1, sort_keys=True)
@@ -999,7 +1026,11 @@ def main():
             e = {k: v[k] for k in LOW_BANKED}
             e["blockers"] = {n: v["blockers"][n]["sole_bytes_pct"]
                              for n in LOWCLS}
-            prev.setdefault(opt, {})["lowerable"] = e
+            slot = prev.setdefault(opt, {}).get("lowerable")
+            if slot is None or "bodies_pct" in slot:
+                slot = {"elf": slot} if slot else {}
+                prev[opt]["lowerable"] = slot
+            slot[fmt] = e
         bank[a.corpus] = prev
         bank.setdefault("corpus_config", have_cfg)
         os.makedirs(os.path.dirname(a.bank), exist_ok=True)
@@ -1011,9 +1042,10 @@ def main():
             out[opt] = {}
             for lname, v in layers.items():
                 if lname == "lowerable":
-                    out[opt][lname] = {k: v[k] for k in LOW_BANKED}
-                    out[opt][lname]["blockers"] = {
+                    e = {k: v[k] for k in LOW_BANKED}
+                    e["blockers"] = {
                         n: v["blockers"][n]["sole_bytes_pct"] for n in LOWCLS}
+                    out[opt][lname] = {fmt: e}
                     continue
                 out[opt][lname] = {"coverage": v["coverage"],
                                    "residual": v["residual"],
@@ -1033,7 +1065,16 @@ def main():
                         {"bodies": v["fn"], "faithful_bytes": v["faithful_bytes"]})
         prev = bank.get(a.corpus, {})
         for opt, layers in out.items():
-            prev.setdefault(opt, {}).update(layers)
+            dst = prev.setdefault(opt, {})
+            for lname, v in layers.items():
+                if lname == "lowerable":
+                    cur = dst.get("lowerable")
+                    if not isinstance(cur, dict) or "bodies_pct" in cur:
+                        cur = {"elf": cur} if cur else {}
+                    cur.update(v)
+                    dst["lowerable"] = cur
+                else:
+                    dst[lname] = v
         bank[a.corpus] = prev
         bank.setdefault("corpus_config", have_cfg)
         os.makedirs(os.path.dirname(a.bank), exist_ok=True)
