@@ -1,7 +1,19 @@
 #ifndef MCC_GPU_PROVIDED
 #define MCC_GPU_PROVIDED 1
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <vulkan/vulkan.h>
+
+#if defined(__unix__) || defined(__APPLE__)
+#include <pthread.h>
+static pthread_mutex_t mcc_gpu_lock = PTHREAD_MUTEX_INITIALIZER;
+#define MCC_GPU_LOCK() pthread_mutex_lock(&mcc_gpu_lock)
+#define MCC_GPU_UNLOCK() pthread_mutex_unlock(&mcc_gpu_lock)
+#else
+#define MCC_GPU_LOCK() ((void)0)
+#define MCC_GPU_UNLOCK() ((void)0)
+#endif
 
 typedef struct MccGpu {
 	int tried;
@@ -17,6 +29,7 @@ typedef struct MccGpu {
 } MccGpu;
 
 static MccGpu mcc_gpu;
+static int mcc_gpu_closing;
 
 static int mcc_gpu_init(void) {
 	VkApplicationInfo ai;
@@ -29,6 +42,8 @@ static int mcc_gpu_init(void) {
 	float prio = 1.0f;
 	unsigned ndev = 8, nq = 32, i;
 
+	if (mcc_gpu_closing)
+		return 0;
 	if (mcc_gpu.tried)
 		return mcc_gpu.ok;
 	mcc_gpu.tried = 1;
@@ -39,10 +54,23 @@ static int mcc_gpu_init(void) {
 	memset(&ici, 0, sizeof ici);
 	ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	ici.pApplicationInfo = &ai;
-	if (vkCreateInstance(&ici, 0, &mcc_gpu.inst) != VK_SUCCESS)
-		return 0;
-	if (vkEnumeratePhysicalDevices(mcc_gpu.inst, &ndev, devs) != VK_SUCCESS || !ndev)
-		return 0;
+	{
+		VkResult _r = vkCreateInstance(&ici, 0, &mcc_gpu.inst);
+		if (_r != VK_SUCCESS) {
+			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
+				fprintf(stderr, "[ladder-gpu] vkCreateInstance rc=%d\n", (int)_r);
+			return 0;
+		}
+	}
+	{
+		VkResult _r = vkEnumeratePhysicalDevices(mcc_gpu.inst, &ndev, devs);
+		if (_r != VK_SUCCESS || !ndev) {
+			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
+				fprintf(stderr, "[ladder-gpu] vkEnumeratePhysicalDevices rc=%d ndev=%u\n",
+								(int)_r, ndev);
+			return 0;
+		}
+	}
 	mcc_gpu.phys = devs[0];
 	vkGetPhysicalDeviceProperties(mcc_gpu.phys, &props);
 	snprintf(mcc_gpu.name, sizeof mcc_gpu.name, "%s", props.deviceName);
@@ -53,8 +81,14 @@ static int mcc_gpu_init(void) {
 			mcc_gpu.qfam = i;
 			break;
 		}
-	if (mcc_gpu.qfam == 0xFFFFFFFFu)
+	if (mcc_gpu.qfam == 0xFFFFFFFFu) {
+		if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
+			fprintf(stderr, "[ladder-gpu] no compute queue (nq=%u)\n", nq);
 		return 0;
+	}
+	if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
+		fprintf(stderr, "[ladder-gpu] init ok dev=%s qfam=%u\n", mcc_gpu.name,
+						mcc_gpu.qfam);
 	memset(&qci, 0, sizeof qci);
 	qci.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 	qci.queueFamilyIndex = mcc_gpu.qfam;
@@ -64,11 +98,25 @@ static int mcc_gpu_init(void) {
 	dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	dci.queueCreateInfoCount = 1;
 	dci.pQueueCreateInfos = &qci;
-	if (vkCreateDevice(mcc_gpu.phys, &dci, 0, &mcc_gpu.dev) != VK_SUCCESS)
-		return 0;
+	{
+		VkResult _r = vkCreateDevice(mcc_gpu.phys, &dci, 0, &mcc_gpu.dev);
+		if (_r != VK_SUCCESS) {
+			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
+				fprintf(stderr, "[ladder-gpu] vkCreateDevice rc=%d\n", (int)_r);
+			return 0;
+		}
+	}
 	vkGetDeviceQueue(mcc_gpu.dev, mcc_gpu.qfam, 0, &mcc_gpu.q);
 	mcc_gpu.ok = 1;
 	return 1;
+}
+
+static void mcc_gpu_quiesce(void) {
+	MCC_GPU_LOCK();
+	mcc_gpu_closing = 1;
+	if (mcc_gpu.ok && mcc_gpu.dev)
+		vkDeviceWaitIdle(mcc_gpu.dev);
+	MCC_GPU_UNLOCK();
 }
 
 static int mcc_gpu_mem_index(VkMemoryRequirements mr, uint32_t *out) {
@@ -121,8 +169,24 @@ static int mcc_gpu_buffer(VkDeviceSize size, VkBuffer *buf, VkDeviceMemory *mem,
 	return 1;
 }
 
+static int mcc_gpu_run_locked(const uint32_t *code, int nwords,
+															const int32_t *in, int ntuple, int nlive,
+															int32_t *out);
+
 static int mcc_gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 											 int ntuple, int nlive, int32_t *out) {
+	int rc;
+	MCC_GPU_LOCK();
+	rc = mcc_gpu_closing
+					 ? 0
+					 : mcc_gpu_run_locked(code, nwords, in, ntuple, nlive, out);
+	MCC_GPU_UNLOCK();
+	return rc;
+}
+
+static int mcc_gpu_run_locked(const uint32_t *code, int nwords,
+															const int32_t *in, int ntuple, int nlive,
+															int32_t *out) {
 	VkBuffer bin, bout;
 	VkDeviceMemory min_, mout;
 	void *pin, *pout;

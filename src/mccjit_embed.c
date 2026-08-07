@@ -8847,7 +8847,8 @@ static int mccjit_obs_tuples(const int32_t *offs, int n, int64_t *out, int maxt,
 }
 
 static AstArena *mccjit_kernel_search_from_blob(const void *buf, size_t len,
-																								const MccjitCounterState *cst) { MCC_TRACE("enter\n");
+																								const MccjitCounterState *cst,
+																								uint32_t *out_np) { MCC_TRACE("enter\n");
 	MccjitIntent it;
 	MCCState *js;
 	AstArena *k = NULL;
@@ -8867,6 +8868,8 @@ static AstArena *mccjit_kernel_search_from_blob(const void *buf, size_t len,
 		AstLocal ret = mccjit_ret_expr(it.arena);
 		AstLocal roots[16];
 		MccjitObsCtx obs;
+		if (out_np)
+			{ MCC_TRACE("br\n"); *out_np = it.nparam; }
 		int n = (ret != AST_NONE) ? ast_slice_search(it.arena, ret, 2, roots, 16) : 0;
 		obs.param_off = it.param_off;
 		obs.nparam = it.nparam;
@@ -8907,12 +8910,21 @@ static void *mccjit_slice_search(MccjitCounterState *st, int *routed, int async)
 	int i, mism = 0;
 	if (routed)
 		{ MCC_TRACE("br\n"); *routed = 0; }
-	if (!async || mccjit_last_allfp || mccjit_last_ret_wide || np < 1 || np > 3
-			|| st->nsample <= 0 || !st->blob)
+	if (!async || mccjit_last_allfp || mccjit_last_ret_wide || st->nsample <= 0
+			|| !st->blob)
 		{ MCC_TRACE("br\n"); return NULL; }
-	k = mccjit_kernel_search_from_blob(st->blob, st->len, st);
+	np = 0;
+	k = mccjit_kernel_search_from_blob(st->blob, st->len, st, &np);
+	if (mcc_env_on("MCC_JIT_VERBOSE"))
+		{ MCC_TRACE("br\n"); fprintf(stderr,
+						"mccjit-slice[gate]: kernel=%p np=%u nsample=%d\n", (void *)k, np,
+						st->nsample); }
 	if (!k)
 		{ MCC_TRACE("br\n"); return NULL; }
+	if (np < 1 || np > 3) { MCC_TRACE("br\n");
+		ast_arena_free(k);
+		return NULL;
+	}
 	faithful = mccjit_reemit_arena_blob(st->blob, st->len, NULL, &keepf);
 	kern = faithful ? mccjit_reemit_arena_blob(st->blob, st->len, k, &keepk) : NULL;
 	ast_arena_free(k);

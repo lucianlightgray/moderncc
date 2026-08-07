@@ -15712,6 +15712,7 @@ static int ast_ladder_gpu_emit(AstArena *a, AstLocal root, const int32_t *off,
 }
 
 static long ast_ladder_gpu_budget;
+static long ast_ladder_gpu_rungs;
 
 static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br,
 															const AstEvalLadderIn *in, int n, const int *e,
@@ -15725,6 +15726,7 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 	uint64_t code;
 	int ntuple = (int)space;
 
+	ast_ladder_gpu_rungs++;
 	if (n < 1 || n > AST_EVAL_LADDER_MAXIN || space > AST_LADDER_GPU_MAX)
 		return -1;
 	if (ast_ladder_gpu_budget && mcc_gpu.dispatches >= ast_ladder_gpu_budget)
@@ -15829,11 +15831,12 @@ void ast_ladder_gpu_setup(void) { MCC_TRACE("enter\n");
 void ast_ladder_gpu_report(void) { MCC_TRACE("enter\n");
 	if (!ast_ladder_gpu_hook)
 		{ MCC_TRACE("br\n"); return; }
-	int avail = mcc_gpu_init();
+	mcc_gpu_quiesce();
 	fprintf(stderr,
-					"[ladder-gpu] available=%d device=%s dispatches=%ld lanes=%ld budget=%ld\n",
-					avail, avail ? mcc_gpu.name : "(none)", mcc_gpu.dispatches,
-					mcc_gpu.lanes, ast_ladder_gpu_budget);
+					"[ladder-gpu] tried=%d available=%d device=%s rungs=%ld dispatches=%ld "
+					"lanes=%ld\n",
+					mcc_gpu.tried, mcc_gpu.ok, mcc_gpu.ok ? mcc_gpu.name : "(none)",
+					ast_ladder_gpu_rungs, mcc_gpu.dispatches, mcc_gpu.lanes);
 }
 #endif
 
@@ -16229,6 +16232,9 @@ void ast_slice_ladder_observed_source(int (*fn)(const int32_t *, int, int64_t *,
 int ast_slice_ladder_explain(AstArena *a, AstLocal aroot, AstArena *b,
 														 AstLocal broot, char *buf, size_t cap) { MCC_TRACE("enter\n");
 	AstEvalLadderRes r;
+#if MCC_GPU
+	ast_ladder_gpu_setup();
+#endif
 	char rb[16];
 	ast_eval_slice_ladder(a, aroot, b, broot, &r);
 	if (buf && cap) { MCC_TRACE("br\n");
