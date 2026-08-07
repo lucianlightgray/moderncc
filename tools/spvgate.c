@@ -1,4 +1,4 @@
-#include "mcc.h"
+﻿#include "mcc.h"
 #include "mccast.h"
 
 ST_INLN int is_float(int t) {
@@ -55,6 +55,23 @@ static int ast_bad_type(int tt) {
 		}                                                                      \
 	} while (0)
 
+/* Same, but VK_INCOMPLETE is a success. It is only ever used on the *fill* half
+ * of a count-then-fill pair, where it means the array was too small to list
+ * every device -- ndev is still the number written and this gate uses devs[0].
+ * The count query keeps plain VK_HOST: a loader that answers VK_INCOMPLETE to a
+ * NULL-array query is out of spec and the handles it goes on to write are not
+ * valid (AMD's VK_LAYER_AMD_switchable_graphics does this, and using devs[0]
+ * from it faults in vkGetPhysicalDeviceProperties). Skipping is right there. */
+#define VK_HOST_PARTIAL(x)                                                 \
+	do {                                                                     \
+		VkResult _r = (x);                                                     \
+		if (_r != VK_SUCCESS && _r != VK_INCOMPLETE) {                         \
+			printf("spvgate: no usable vulkan host, line %d rc=%d\n", __LINE__,  \
+						 (int)_r);                                                     \
+			exit(77);                                                            \
+		}                                                                      \
+	} while (0)
+
 #define MAX_LIVE 4
 #define MAX_TUPLES (1 << 18)
 
@@ -76,7 +93,7 @@ static void gpu_init(void) {
 	VkDeviceQueueCreateInfo qci;
 	VkDeviceCreateInfo dci;
 	float prio = 1.0f;
-	unsigned ndev = 8, nq = 32, i;
+	unsigned ndev = 0, nq = 32, i;
 
 	memset(&ai, 0, sizeof ai);
 	ai.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -86,7 +103,16 @@ static void gpu_init(void) {
 	ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	ici.pApplicationInfo = &ai;
 	VK_HOST(vkCreateInstance(&ici, 0, &g_inst));
-	VK_HOST(vkEnumeratePhysicalDevices(g_inst, &ndev, devs));
+	/* Count, then fill. The count query has to succeed outright; VK_INCOMPLETE
+	 * from the fill just means there are more devices than devs[] holds. */
+	VK_HOST(vkEnumeratePhysicalDevices(g_inst, &ndev, NULL));
+	if (!ndev) {
+		printf("spvgate: no vulkan device\n");
+		exit(77);
+	}
+	if (ndev > (unsigned)(sizeof devs / sizeof devs[0]))
+		ndev = (unsigned)(sizeof devs / sizeof devs[0]);
+	VK_HOST_PARTIAL(vkEnumeratePhysicalDevices(g_inst, &ndev, devs));
 	if (!ndev) {
 		printf("spvgate: no vulkan device\n");
 		exit(77);
@@ -612,13 +638,15 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 	int r;
 	for (r = 0; r < (int)(sizeof RUNGS / sizeof RUNGS[0]); r++) {
 		int w = RUNGS[r], t, k, ntuple, nwords;
-		long span = 1;
+		/* 64-bit, not long: long is 32 bits on LLP64, and the widest rung is
+		 * 2^(16*nlive), which overflows a 32-bit span to 0 for nlive >= 2. */
+		int64_t span = 1;
 		SpvMod m;
 		uint32_t *code, base, val, lane;
 		long bad = 0, cmp = 0, vac = 0;
 
 		for (k = 0; k < nlive; k++) {
-			span *= (1L << w);
+			span *= ((int64_t)1 << w);
 			if (span > MAX_TUPLES)
 				break;
 		}
@@ -864,13 +892,21 @@ int main(int argc, char **argv) {
 			SpvMod m;
 			uint32_t *code, base;
 			int nwords, k, t, ntuple;
-			long span = 1;
+			/* Same span arithmetic, same guards, as the sweep above -- 64-bit so
+			 * the widest rung does not wrap to 0 on LLP64, and the <= 0 test so a
+			 * wrap can never reach gpu_run as an empty dispatch. A zero-tuple
+			 * dispatch asks vkAllocateMemory for 0 bytes, which is invalid and
+			 * which NVIDIA reports as VK_ERROR_OUT_OF_DEVICE_MEMORY. */
+			int64_t span = 1;
 
 			for (k = 0; k < c->nlive; k++)
 				off[k] = -8 * (k + 1);
-			for (k = 0; k < c->nlive; k++)
-				span *= (1L << w);
-			if (span > MAX_TUPLES)
+			for (k = 0; k < c->nlive; k++) {
+				span *= ((int64_t)1 << w);
+				if (span > MAX_TUPLES)
+					break;
+			}
+			if (span > MAX_TUPLES || span <= 0)
 				continue;
 			ntuple = (int)span;
 
