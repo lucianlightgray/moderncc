@@ -15922,6 +15922,9 @@ int ast_jit_fold_consts(AstArena *a) { MCC_TRACE("enter\n");
 
 int ast_slice_equiv(AstArena *a, AstLocal aroot, AstArena *b,
 										AstLocal broot) { MCC_TRACE("enter\n");
+#if MCC_GPU
+	ast_ladder_gpu_setup();
+#endif
 #ifdef AST_EVAL_SLICE_PROVIDED
 	return ast_eval_slice_equiv(a, aroot, b, broot);
 #else
