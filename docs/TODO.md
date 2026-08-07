@@ -206,6 +206,30 @@ itself is pinned per class by `ctest -R rir-lowerable-classes` against `tests/ri
 one file per class — that cell is what catches a predicate that silently stops firing.
 `MCC_RIR_LOW_DUMP=<func>` prints the per-node classification of one body.
 **Only percentages are banked, never totals.**
+## The lowerable ratchet is self-referential — read before re-banking
+
+`tools/rir-coverage.py`'s `lowerable` floors are measured over `src/mcc.c`, which
+amalgamates the compiler's own source. **Any code added to `src/` moves the number**, and
+diagnostic code moves it the wrong way: the `MCC_AST_REFCENSUS`/`MCC_AST_FRAMEPERT`
+instrumentation added 207 lines of env parsing, file I/O and classification to
+`src/mccast.c`, all of it inherently non-lowerable, and `bodies_pct` fell 9.1821% ->
+9.1048% on the self corpus at every level. The ratchet fired correctly; nothing regressed
+in capability. Instrumenting for lowerability made lowerability measure worse.
+
+Consequences, in order:
+- **A `lowerable` regression is not evidence of a defect until you have checked whether
+  `src/` grew.** Diff the corpus first, then investigate.
+- Re-bank with `python3 tools/rir-coverage.py <build-dir> --update-bank-low`. It prints
+  the pre-bank check's FAIL lines and then banks, which reads alarmingly; the banked value
+  afterwards is what counts.
+- The metric needs one of: a tolerance band, exclusion of diagnostic-only code from the
+  corpus, or a corpus that is not the compiler itself. Until then this will recur on every
+  substantial `src/` change, and the temptation each time is to re-bank without checking
+  which of the two causes applies.
+
+The byte-coverage floors do not have this problem to the same degree — they are a ratio of
+modelled to emitted bytes, so new code lands on both sides.
+
 ## How frame-bound is the arena? — measured 2026-08-06
 
 > **Framing correction, same day.** This section was written to test whether frame-bound
