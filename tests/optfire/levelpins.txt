@@ -76,14 +76,18 @@ if-conversion-abs|2|branchy +2.13% cpu against a 1.76% layout floor; the thinnes
 #   gcc.dg/torture/20240517-1.c PASS -> DIFF_EXIT (wants 0, got abort)
 # -- so this row is decided by the oracle set, not by a clock.
 merge-constants|2|two xoracle cases change verdict without it; constant sharing is observable semantics, not an optimization
-# inline-functions cannot be measured at all: the pair -finline with
-# -fno-inline-functions is an internal compiler error --
+# inline-functions was unmeasurable: the pair -finline with -fno-inline-functions
+# was an internal compiler error --
 #   mcc -O2 -finline -fno-inline-functions -c src/mcc.c
-#   src/mccast.c:18479: internal compiler error: vstack leak (4)
-# -- so every configuration that turns it off fails to build. MCC_OPT_INLINE is
-# SPECIAL and turns on at optimize>=3, so a level above 3 would make every -O3
-# compile ICE. A failed measurement is not evidence and the row does not move.
-inline-functions|2|-finline with -fno-inline-functions is an ICE, so the flag cannot be measured and a level above 3 would break every -O3 compile
+#   src/mccircap.c:797: internal compiler error: vstack leak (1)
+# -- so every configuration that turned it off failed to build. The defect was
+# ast_inline_graft pushing a result for an Invoke node typed VT_VOID, which the
+# direct-call replay leaves unpushed and the statement level therefore does not
+# pop; -fno-inline-functions is the only route to that graft, do_inline being
+# `&& !ast_inline_pass_env`. Both configurations build clean now and the row is
+# measurable, but it has not been re-measured, so the level does not move yet.
+# The measurement, not this pin, is what should decide it next.
+inline-functions|2|the -finline -fno-inline-functions ICE is fixed and the row is now measurable; the level is unchanged because it has not yet been re-measured, not because it cannot be
 # fmov-imm cannot be measured on this host: ast_fmov_imm_env is compiled to 0
 # off arm64, so the gate cannot fire and "no effect" here says nothing about
 # where it belongs. Not measured is not the same as measured-no-effect.
@@ -91,13 +95,19 @@ fmov-imm|1|ast_fmov_imm_env is compiled out off arm64, so this host cannot measu
 # The storeval family's off-state is a deliberately incomplete replay-fidelity
 # path kept so a suspected arena defect can be confirmed, not an alternative
 # lowering (docs/TODO.md, the bisection-handle note). Sweeping one off measures
-# the handle. storeval-callstore is the case in point: alone of the 48 at -O3 it
-# ICEs with mccircap.c:797 vstack leak (1). Their stage-2 time readings
-# (-1.08%, -1.17%) disagree in sign with the counter and are layout.
+# the handle. Their stage-2 time readings (-1.08%, -1.17%) disagree in sign with
+# the counter and are layout.
+# storeval-callstore used to ICE alone of the ladder rows at -O3 with
+# mccircap.c:797 vstack leak (1). That was never about storeval: the row's
+# on-state produces the AST shape that reaches the capture-time graft, and the
+# graft pushed a result for a (void)-discarded call. Same defect as
+# inline-functions, same fix, and tests/optfire/src/storeval_callstore.c now
+# holds both shapes. Both states of the row build clean; it is measurable and
+# has not been re-measured, so the level stands where the last sweep left it.
 storeval-constl|1|replay-fidelity bisection handle; its off-state is an incomplete path, not a lowering
 storeval-rot|1|replay-fidelity bisection handle; its off-state is an incomplete path, not a lowering
 storeval-calllast|1|replay-fidelity bisection handle; inert here, stage-1 object byte identical to the base
-storeval-callstore|2|replay-fidelity bisection handle; alone of the 48 it ICEs at -O3 (mccircap.c:797 vstack leak)
+storeval-callstore|2|replay-fidelity bisection handle; the -O3 ICE is fixed and both states now build, so the row is measurable and the level simply awaits a re-measurement
 #
 # --- rung 10: measured a PESSIMIZATION
 #

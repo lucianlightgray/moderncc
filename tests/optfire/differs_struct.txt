@@ -14,3 +14,11 @@ cycle|-O3|opt-cycle|-
 math_inline|-O2|builtin-math|-
 regdisp|-Os|reg-disp|-
 perfn_inproc|-O3|opt-perfn-inproc|-fno-inline-functions
+# inline_void_discard is the regression cell for the graft/void asymmetry: a
+# call whose result is thrown away with (void) records an Invoke node typed
+# VT_VOID, the direct-call replay pushes nothing for it and the statement level
+# skips the pop to match, but ast_inline_graft always pushed its result slot.
+# The whole -finline -fno-inline-functions surface -- which is the only way to
+# reach the capture-time graft, do_inline being `&& !ast_inline_pass_env` --
+# was an internal compiler error until that push was balanced.
+inline_void_discard|-O3|inline|-fno-inline-functions

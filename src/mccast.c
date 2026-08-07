@@ -5362,8 +5362,11 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		uint32_t nc = ast_nchild(a, n);
 		int live_arg = (ast_fbits(a, n) & AST_FB_CALL_STOREVAL_ARG) != 0;
 		int rir_pre_sret = 0;
-		if (!live_arg && ast_inline_graft(a, n))
-			{ MCC_TRACE("br\n"); break; }
+		if (!live_arg && ast_inline_graft(a, n)) { MCC_TRACE("br\n");
+			if (ast_type_t(a, n) == VT_VOID)
+				{ MCC_TRACE("br\n"); vpop(); }
+			break;
+		}
 		if (rir_c2_active && (ast_type_t(a, n) & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
 			CType prt, prtmp;
 			int prax, prsx;

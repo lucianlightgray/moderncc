@@ -18,3 +18,9 @@ merge_strings|-O2|merge-constants|-
 call_window|-O2|call-window|-ftree-copy-prop
 cse_join|-O2|gcse-join|-
 cprop_join|-O2|tree-copy-prop|-
+# storeval_callstore is the first cell the storeval family has ever had. It
+# carries the shape the flag names -- dst = call(tmp = v, k) with both sides
+# simple lvalues -- beside a (void)-discarded call to a graftable static, which
+# is the configuration that made -O3 with this row the only one of the ladder
+# rows enabled an internal compiler error. The row can now be measured off.
+storeval_callstore|-O3|storeval-callstore|-fno-inline-functions
