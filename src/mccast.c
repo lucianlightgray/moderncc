@@ -13501,6 +13501,40 @@ void ast_loopdep_dump(AstArena *a, const char *fname) { MCC_TRACE("enter\n");
 #define AST_SLC_K_ASM (1u << 19)
 #define AST_SLC_K_FLOAT (1u << 20)
 
+static FILE *ast_adump_fp;
+static int ast_adump_on;
+
+static void ast_adump_open(void) { MCC_TRACE("enter\n");
+	const char *p = getenv("MCC_ARENA_DUMP");
+	if (ast_adump_on)
+		{ MCC_TRACE("br\n"); return; }
+	if (!p || !p[0])
+		{ MCC_TRACE("br\n"); return; }
+	ast_adump_fp = (p[0] == '-' && !p[1]) ? stderr : fopen(p, "a");
+	if (!ast_adump_fp)
+		{ MCC_TRACE("br\n"); return; }
+	setvbuf(ast_adump_fp, NULL, _IOLBF, 0);
+	ast_adump_on = 1;
+}
+
+static void ast_adump_body(AstArena *a, const char *fname) { MCC_TRACE("enter\n");
+	AstLocal nn, n;
+	ast_adump_open();
+	if (!ast_adump_on || !a)
+		{ MCC_TRACE("br\n"); return; }
+	nn = ast_count(a);
+	if (!nn)
+		{ MCC_TRACE("br\n"); return; }
+	fprintf(ast_adump_fp, "[arena] fn=%s n=%ld root=%ld\n", fname ? fname : "?",
+					(long)nn, (long)ast_root(a));
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		fprintf(ast_adump_fp, "%ld %d %d %d %lld %ld %ld\n", (long)n,
+						(int)ast_kind(a, n), ast_op(a, n), ast_type_t(a, n),
+						(long long)ast_ival(a, n), (long)ast_first_child(a, n),
+						(long)ast_next_sib(a, n));
+	}
+}
+
 static FILE *ast_slc_fp;
 static int ast_slc_on;
 static int ast_slc_id;
@@ -17499,6 +17533,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				if (ast_slc_on)
 					{ MCC_TRACE("br\n"); ast_slc_dump(ast_cur, funcname, (long)body_len,
 																					 faithful); }
+				ast_adump_body(ast_cur, funcname);
 				if (!faithful && mcc_log_enabled(MCC_LOG_TRACE)) { MCC_TRACE("br\n");
 					int ast_bd = -1, ast_i;
 					int ast_lim = new_len < body_len ? new_len : body_len;

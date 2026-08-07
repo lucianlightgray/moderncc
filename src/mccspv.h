@@ -412,12 +412,10 @@ static int spv_binop_code(int op, int uns, int *is_cmp) {
 	case TOK_UGE: return SpvOpUGreaterThanEqual;
 	case TOK_ULE: return SpvOpULessThanEqual;
 	case TOK_UGT: return SpvOpUGreaterThan;
-	case '<': return uns ? SpvOpULessThan : SpvOpSLessThan;
-	case '>': return uns ? SpvOpUGreaterThan : SpvOpSGreaterThan;
 	case TOK_LE: return uns ? SpvOpULessThanEqual : SpvOpSLessThanEqual;
 	case TOK_GE: return uns ? SpvOpUGreaterThanEqual : SpvOpSGreaterThanEqual;
-	case TOK_LT: return SpvOpSLessThan;
-	case TOK_GT: return SpvOpSGreaterThan;
+	case TOK_LT: return uns ? SpvOpULessThan : SpvOpSLessThan;
+	case TOK_GT: return uns ? SpvOpUGreaterThan : SpvOpSGreaterThan;
 	default: break;
 	}
 	*is_cmp = -1;

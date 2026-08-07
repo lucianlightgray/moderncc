@@ -227,8 +227,17 @@ static int gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 	smci.codeSize = (size_t)nwords * 4;
 	smci.pCode = code;
 	rc = vkCreateShaderModule(g_dev, &smci, 0, &sm);
-	if (rc != VK_SUCCESS)
+	if (rc != VK_SUCCESS) {
+		vkDestroyDescriptorPool(g_dev, dpool, 0);
+		vkDestroyDescriptorSetLayout(g_dev, dsl, 0);
+		vkUnmapMemory(g_dev, min_);
+		vkUnmapMemory(g_dev, mout);
+		vkFreeMemory(g_dev, min_, 0);
+		vkFreeMemory(g_dev, mout, 0);
+		vkDestroyBuffer(g_dev, bin, 0);
+		vkDestroyBuffer(g_dev, bout, 0);
 		return -1;
+	}
 
 	memset(&plci, 0, sizeof plci);
 	plci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -243,8 +252,19 @@ static int gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 	cpci.stage.pName = "main";
 	cpci.layout = play;
 	rc = vkCreateComputePipelines(g_dev, VK_NULL_HANDLE, 1, &cpci, 0, &pipe);
-	if (rc != VK_SUCCESS)
+	if (rc != VK_SUCCESS) {
+		vkDestroyPipelineLayout(g_dev, play, 0);
+		vkDestroyShaderModule(g_dev, sm, 0);
+		vkDestroyDescriptorPool(g_dev, dpool, 0);
+		vkDestroyDescriptorSetLayout(g_dev, dsl, 0);
+		vkUnmapMemory(g_dev, min_);
+		vkUnmapMemory(g_dev, mout);
+		vkFreeMemory(g_dev, min_, 0);
+		vkFreeMemory(g_dev, mout, 0);
+		vkDestroyBuffer(g_dev, bin, 0);
+		vkDestroyBuffer(g_dev, bout, 0);
 		return -1;
+	}
 
 	memset(&cpoolci, 0, sizeof cpoolci);
 	cpoolci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -373,9 +393,26 @@ static AstLocal b_udivmod(AstArena *a, const int *o) {
 
 static AstLocal b_cmp(AstArena *a, const int *o) {
 	return mk_bin(a, '+',
-								mk_bin(a, '<', mk_ref(a, o[0], VT_INT), mk_ref(a, o[1], VT_INT),
-											 VT_INT),
+								mk_bin(a, TOK_LT, mk_ref(a, o[0], VT_INT),
+											 mk_ref(a, o[1], VT_INT), VT_INT),
 								mk_bin(a, TOK_EQ, mk_ref(a, o[0], VT_INT),
+											 mk_ref(a, o[1], VT_INT), VT_INT),
+								VT_INT);
+}
+
+static AstLocal b_cmpu(AstArena *a, const int *o) {
+	int u = VT_INT | VT_UNSIGNED;
+	return mk_bin(a, '+',
+								mk_bin(a, TOK_LT, mk_ref(a, o[0], u), mk_ref(a, o[1], u), u),
+								mk_bin(a, TOK_GT, mk_ref(a, o[0], u), mk_ref(a, o[1], u), u),
+								u);
+}
+
+static AstLocal b_cmpx(AstArena *a, const int *o) {
+	return mk_bin(a, '+',
+								mk_bin(a, TOK_ULT, mk_ref(a, o[0], VT_INT),
+											 mk_ref(a, o[1], VT_INT), VT_INT),
+								mk_bin(a, TOK_GE, mk_ref(a, o[0], VT_INT),
 											 mk_ref(a, o[1], VT_INT), VT_INT),
 								VT_INT);
 }
@@ -427,12 +464,262 @@ static const Case CASES[] = {
 		{"sdiv", 2, b_sdiv},       {"srem", 2, b_srem},
 		{"addmul", 2, b_addmul},   {"shifts", 2, b_shifts},
 		{"divmod", 2, b_divmod},   {"udivmod", 2, b_udivmod},
-		{"cmp", 2, b_cmp},         {"narrow", 2, b_narrow},
+		{"cmp", 2, b_cmp},         {"cmpu", 2, b_cmpu},
+		{"cmpx", 2, b_cmpx},       {"narrow", 2, b_narrow},
 		{"ternary", 2, b_ternary}, {"land", 2, b_land},
 		{"notneg", 2, b_notneg},
 };
 
+#define AST_NONE_U 0xFFFFFFFFu
+
+typedef struct RawNode {
+	int kind, op, type_t;
+	long long ival;
+	unsigned first_child, next_sib;
+} RawNode;
+
+static AstArena *rebuild_arena(const RawNode *raw, int n, AstLocal *root_out,
+															 long root_in) {
+	AstArena *a = ast_arena_new();
+	int i;
+	for (i = 0; i < n; i++) {
+		AstLocal id = ast_node(a, (uint16_t)raw[i].kind);
+		if ((long)id != i) {
+			ast_arena_free(a);
+			return NULL;
+		}
+		ast_set_op(a, id, raw[i].op);
+		ast_set_type(a, id, raw[i].type_t, 0);
+		ast_set_ival(a, id, (uint64_t)raw[i].ival);
+	}
+	for (i = 0; i < n; i++) {
+		unsigned c = raw[i].first_child;
+		while (c != AST_NONE_U && (int)c < n) {
+			ast_add_child(a, (AstLocal)i, (AstLocal)c);
+			c = raw[c].next_sib;
+		}
+	}
+	*root_out = (AstLocal)root_in;
+	return a;
+}
+
+static int collect_lives(AstArena *a, AstLocal n, int32_t *off, int *non,
+												 int max) {
+	AstLocal c;
+	if (n == AST_NONE)
+		return 1;
+	if (ast_kind(a, n) == AST_Ref) {
+		int r = ast_op(a, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+			int32_t v = (int32_t)(int64_t)ast_ival(a, n), k;
+			for (k = 0; k < *non; k++)
+				if (off[k] == v)
+					return 1;
+			if (*non == max)
+				return 0;
+			off[(*non)++] = v;
+			return 1;
+		}
+	}
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (!collect_lives(a, c, off, non, max))
+			return 0;
+	return 1;
+}
+
+static long subtree_nodes(AstArena *a, AstLocal n) {
+	AstLocal c;
+	long k = 1;
+	if (n == AST_NONE)
+		return 0;
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		k += subtree_nodes(a, c);
+	return k;
+}
+
+static int trial_lower(AstArena *a, AstLocal n, const int32_t *off, int nlive) {
+	SpvMod m;
+	uint32_t base, val;
+	int ok;
+	spv_module_begin(&m, nlive);
+	base = spv_main_begin(&m, nlive);
+	ok = spv_expr(&m, a, n, off, nlive, base, &val) && !m.failed;
+	spv_module_free(&m);
+	return ok;
+}
+
 static const int RUNGS[] = {1, 2, 4, 8, 16};
+
+static int32_t *g_in, *g_gout;
+static int64_t *g_cout;
+static unsigned char *g_def;
+static long tot_pts, tot_cmp, tot_vac, tot_bad, tot_reject;
+
+static int mutate;
+
+static int64_t fit_rung_v(int64_t pat, int w);
+
+static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
+													int nlive, const char *label, int quiet) {
+	long bad_all = 0;
+	int r;
+	for (r = 0; r < (int)(sizeof RUNGS / sizeof RUNGS[0]); r++) {
+		int w = RUNGS[r], t, k, ntuple, nwords;
+		long span = 1;
+		SpvMod m;
+		uint32_t *code, base, val, lane;
+		long bad = 0, cmp = 0, vac = 0;
+
+		for (k = 0; k < nlive; k++) {
+			span *= (1L << w);
+			if (span > MAX_TUPLES)
+				break;
+		}
+		if (span > MAX_TUPLES || span <= 0)
+			continue;
+		ntuple = (int)span;
+
+		for (t = 0; t < ntuple; t++) {
+			long v = t;
+			for (k = 0; k < nlive; k++) {
+				g_in[(long)t * nlive + k] = (int32_t)fit_rung_v(v & ((1L << w) - 1), w);
+				v >>= w;
+			}
+		}
+
+		spv_module_begin(&m, nlive);
+		base = spv_main_begin(&m, nlive);
+		if (!spv_expr(&m, a, root, off, nlive, base, &val) || m.failed) {
+			spv_module_free(&m);
+			continue;
+		}
+		if (mutate)
+			val = spv_emit3(&m, SpvOpBitwiseXor, m.id_int, val, spv_const(&m, 1));
+		lane = spv_emit3(&m, SpvOpSDiv, m.id_int, base, spv_const(&m, nlive));
+		spv_main_end(&m, lane, val);
+		code = spv_module_finish(&m, &nwords);
+
+		for (t = 0; t < ntuple; t++) {
+			int64_t vals[MAX_LIVE], o;
+			for (k = 0; k < nlive; k++)
+				vals[k] = g_in[(long)t * nlive + k];
+			g_def[t] = (unsigned char)ast_eval_slice(a, root, off, vals, nlive, &o);
+			g_cout[t] = g_def[t] ? o : 0;
+		}
+
+		if (gpu_run(code, nwords, g_in, ntuple, nlive, g_gout) != 0) {
+			tot_reject++;
+			free(code);
+			spv_module_free(&m);
+			continue;
+		}
+		for (t = 0; t < ntuple; t++) {
+			if (!g_def[t]) {
+				vac++;
+				continue;
+			}
+			cmp++;
+			if ((int32_t)g_cout[t] != g_gout[t]) {
+				if (!bad && !quiet)
+					printf("  MISMATCH %s w=%d in0=%d cpu=%d gpu=%d\n", label, w,
+								 g_in[(long)t * nlive], (int)g_cout[t], g_gout[t]);
+				bad++;
+			}
+		}
+		tot_pts += ntuple;
+		tot_cmp += cmp;
+		tot_vac += vac;
+		tot_bad += bad;
+		bad_all += bad;
+		free(code);
+		spv_module_free(&m);
+	}
+	return bad_all;
+}
+
+static long g_slices, g_bodies, g_lowerable_bodies;
+
+static void scan_subtree(AstArena *a, AstLocal n, const char *fn, int minnodes,
+												 int quiet, long limit) {
+	AstLocal c;
+	int32_t off[MAX_LIVE];
+	int non = 0;
+	if (n == AST_NONE || (limit && g_slices >= limit))
+		return;
+	if (subtree_nodes(a, n) >= minnodes && collect_lives(a, n, off, &non, MAX_LIVE) &&
+			non >= 1 && trial_lower(a, n, off, non)) {
+		char label[160];
+		snprintf(label, sizeof label, "%s#%ld/%dlive", fn, (long)n, non);
+		g_slices++;
+		run_one_slice(a, n, off, non, label, quiet);
+		return;
+	}
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		scan_subtree(a, c, fn, minnodes, quiet, limit);
+}
+
+static int arena_mode(const char *path, int minnodes, long limit, int quiet) {
+	FILE *f = fopen(path, "r");
+	char line[512];
+	RawNode *raw = NULL;
+	int cap = 0;
+	if (!f) {
+		printf("spvgate: cannot open %s\n", path);
+		return 1;
+	}
+	while (fgets(line, sizeof line, f)) {
+		char fn[128];
+		long n, root;
+		int i;
+		if (sscanf(line, "[arena] fn=%127s n=%ld root=%ld", fn, &n, &root) != 3)
+			continue;
+		if (n <= 0 || n > (1 << 22))
+			continue;
+		if (n > cap) {
+			cap = (int)n;
+			raw = realloc(raw, (size_t)cap * sizeof *raw);
+		}
+		for (i = 0; i < n; i++) {
+			long id, fc, ns;
+			if (!fgets(line, sizeof line, f))
+				break;
+			if (sscanf(line, "%ld %d %d %d %lld %ld %ld", &id, &raw[i].kind,
+								 &raw[i].op, &raw[i].type_t, &raw[i].ival, &fc, &ns) != 7)
+				break;
+			raw[i].first_child = (unsigned)fc;
+			raw[i].next_sib = (unsigned)ns;
+		}
+		if (i != n)
+			continue;
+		{
+			AstLocal rt;
+			AstArena *a = rebuild_arena(raw, (int)n, &rt, root);
+			long before = g_slices;
+			if (!a)
+				continue;
+			g_bodies++;
+			scan_subtree(a, rt, fn, minnodes, quiet, limit);
+			if (g_slices > before)
+				g_lowerable_bodies++;
+			ast_arena_free(a);
+		}
+		if (limit && g_slices >= limit)
+			break;
+	}
+	fclose(f);
+	free(raw);
+	printf("spvgate: arenas=%ld bodies-with-lowerable-slice=%ld slices=%ld\n",
+				 g_bodies, g_lowerable_bodies, g_slices);
+	printf("spvgate: dispatches=%ld lanes=%ld points=%ld compared=%ld vacuous=%ld "
+				 "mismatches=%ld rejected-modules=%ld\n",
+				 g_dispatches, g_lanes, tot_pts, tot_cmp, tot_vac, tot_bad, tot_reject);
+	if (!g_dispatches) {
+		printf("spvgate: FAIL (no GPU dispatch happened)\n");
+		return 1;
+	}
+	printf("spvgate: %s\n", (tot_bad || tot_reject) ? "FAIL" : "OK");
+	return (tot_bad || tot_reject) ? 1 : 0;
+}
 
 static int64_t fit_rung(int64_t pat, int w) {
 	if (w >= 64)
@@ -441,43 +728,49 @@ static int64_t fit_rung(int64_t pat, int w) {
 	return (pat ^ m) - m;
 }
 
-static int corrupt_at = -1;
-static int mutate = 0;
+static int64_t fit_rung_v(int64_t pat, int w) { return fit_rung(pat, w); }
 
-static int spv_mutate_module(uint32_t *w, int nwords) {
-	int i = 5, hits = 0;
-	while (i < nwords) {
-		int wc = (int)(w[i] >> 16);
-		int op = (int)(w[i] & 0xFFFFu);
-		if (wc <= 0)
-			break;
-		if (op == SpvOpIAdd) {
-			w[i] = ((uint32_t)wc << 16) | (uint32_t)SpvOpISub;
-			hits++;
-		}
-		i += wc;
-	}
-	return hits;
-}
+static int corrupt_at = -1;
+
 
 int main(int argc, char **argv) {
 	int only = -1, i, r, ci;
 	long total_pts = 0, total_cmp = 0, total_vac = 0, mismatch = 0;
+	const char *arenas = NULL;
+	int minnodes = 3, quiet = 0;
+	long limit = 0;
 	int32_t *in = malloc(sizeof(int32_t) * MAX_TUPLES * MAX_LIVE);
 	int32_t *gout = malloc(sizeof(int32_t) * MAX_TUPLES);
 	int64_t *cout = malloc(sizeof(int64_t) * MAX_TUPLES);
 	unsigned char *defined = malloc(MAX_TUPLES);
+	g_in = in;
+	g_gout = gout;
+	g_cout = cout;
+	g_def = defined;
 
 	for (i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--corrupt") && i + 1 < argc)
 			corrupt_at = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "--mutate"))
 			mutate = 1;
+		else if (!strcmp(argv[i], "--arenas") && i + 1 < argc)
+			arenas = argv[++i];
+		else if (!strcmp(argv[i], "--min-nodes") && i + 1 < argc)
+			minnodes = atoi(argv[++i]);
+		else if (!strcmp(argv[i], "--limit") && i + 1 < argc)
+			limit = atol(argv[++i]);
+		else if (!strcmp(argv[i], "--quiet"))
+			quiet = 1;
 		else
 			only = atoi(argv[i]);
 	}
 
 	gpu_init();
+	if (arenas) {
+		printf("spvgate: device %s\n", g_devname);
+		printf("spvgate: real slices from %s (min-nodes=%d)\n", arenas, minnodes);
+		return arena_mode(arenas, minnodes, limit, quiet);
+	}
 	printf("spvgate: device %s\n", g_devname);
 	printf("spvgate: %d cases, rungs 1/2/4/8/16 bits, exhaustive per rung\n",
 				 (int)(sizeof CASES / sizeof CASES[0]));
@@ -524,14 +817,14 @@ int main(int argc, char **argv) {
 				ast_arena_free(a);
 				continue;
 			}
+			if (mutate)
+				val = spv_emit3(&m, SpvOpBitwiseXor, m.id_int, val, spv_const(&m, 1));
 			uint32_t lane =
 					spv_emit3(&m, SpvOpSDiv, m.id_int, base, spv_const(&m, c->nlive));
 			spv_main_end(&m, lane, val);
 			code = spv_module_finish(&m, &nwords);
 			if (corrupt_at >= 0 && corrupt_at < nwords)
 				code[corrupt_at] ^= 1u;
-			if (mutate)
-				spv_mutate_module(code, nwords);
 			{
 				const char *dp = getenv("SPVGATE_DUMP");
 				if (dp) {
