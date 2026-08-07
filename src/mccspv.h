@@ -35,7 +35,7 @@ enum {
 	SpvOpSLessThanEqual = 179, SpvOpShiftRightLogical = 194,
 	SpvOpShiftRightArithmetic = 195, SpvOpShiftLeftLogical = 196,
 	SpvOpBitwiseOr = 197, SpvOpBitwiseXor = 198, SpvOpBitwiseAnd = 199,
-	SpvOpBitcast = 124,
+	SpvOpBitcast = 124, SpvOpSMulExtended = 152,
 	SpvOpLogicalOr = 166, SpvOpLogicalAnd = 167, SpvOpLogicalNot = 168,
 	SpvOpNot = 200, SpvOpPhi = 245, SpvOpSelectionMerge = 247, SpvOpLabel = 248,
 	SpvOpBranch = 249, SpvOpBranchConditional = 250, SpvOpReturn = 253
@@ -64,7 +64,7 @@ typedef struct SpvMod {
 	uint32_t next_id;
 	uint32_t id_void, id_fnvoid, id_bool, id_int, id_uint, id_v3uint;
 	uint32_t id_ptr_in_v3uint, id_gid;
-	uint32_t id_rt, id_buf, id_ptr_buf, id_ptr_sb_int;
+	uint32_t id_rt, id_buf, id_ptr_buf, id_ptr_sb_int, id_pair;
 	uint32_t id_in, id_out, id_main, id_nlive;
 	uint32_t cur_label;
 	uint32_t def;
@@ -225,6 +225,7 @@ static void spv_module_begin(SpvMod *m, int nlive) {
 	m->id_buf = spv_id(m);
 	m->id_ptr_buf = spv_id(m);
 	m->id_ptr_sb_int = spv_id(m);
+	m->id_pair = spv_id(m);
 	m->id_in = spv_id(m);
 	m->id_out = spv_id(m);
 	m->id_main = spv_id(m);
@@ -329,6 +330,10 @@ static void spv_module_begin(SpvMod *m, int nlive) {
 	spvw_put(&m->types, m->id_ptr_sb_int);
 	spvw_put(&m->types, SpvStorageStorageBuffer);
 	spvw_put(&m->types, m->id_int);
+	spvw_op(&m->types, SpvOpTypeStruct, 4);
+	spvw_put(&m->types, m->id_pair);
+	spvw_put(&m->types, m->id_int);
+	spvw_put(&m->types, m->id_int);
 }
 
 static uint32_t spv_load_live(SpvMod *m, uint32_t base, int k) {
@@ -389,12 +394,7 @@ static uint32_t spv_main_begin(SpvMod *m, int nlive) {
 	spvw_put(&m->body, gx);
 	spvw_put(&m->body, g);
 	spvw_put(&m->body, 0);
-	uint32_t gi = spv_id(m);
-	spvw_op(&m->body, SpvOpBitwiseOr, 5);
-	spvw_put(&m->body, m->id_int);
-	spvw_put(&m->body, gi);
-	spvw_put(&m->body, gx);
-	spvw_put(&m->body, spv_const(m, 0));
+	uint32_t gi = spv_emit2(m, SpvOpBitcast, m->id_int, gx);
 	m->def = spv_true(m);
 	return spv_emit3(m, SpvOpIMul, m->id_int, gi, spv_const(m, nlive));
 }
@@ -443,12 +443,22 @@ static void spv_def_addsub(SpvMod *m, uint32_t *def, int is_sub, uint32_t a,
 
 static void spv_def_mul(SpvMod *m, uint32_t *def, uint32_t a, uint32_t b,
 												uint32_t r) {
-	uint32_t azero = spv_emit3(m, SpvOpIEqual, m->id_bool, a, spv_const(m, 0));
-	uint32_t denom =
-			spv_emit4(m, SpvOpSelect, m->id_int, azero, spv_const(m, 1), a);
-	uint32_t q = spv_emit3(m, SpvOpSDiv, m->id_int, r, denom);
-	uint32_t good = spv_emit3(m, SpvOpIEqual, m->id_bool, q, b);
-	spv_def_and(m, def, spv_or(m, azero, good));
+	uint32_t wide = spv_emit3(m, SpvOpSMulExtended, m->id_pair, a, b);
+	uint32_t lo = spv_id(m), hi = spv_id(m), sign;
+	spvw_op(&m->body, SpvOpCompositeExtract, 5);
+	spvw_put(&m->body, m->id_int);
+	spvw_put(&m->body, lo);
+	spvw_put(&m->body, wide);
+	spvw_put(&m->body, 0);
+	spvw_op(&m->body, SpvOpCompositeExtract, 5);
+	spvw_put(&m->body, m->id_int);
+	spvw_put(&m->body, hi);
+	spvw_put(&m->body, wide);
+	spvw_put(&m->body, 1);
+	sign = spv_emit3(m, SpvOpShiftRightArithmetic, m->id_int, lo,
+									 spv_uconst(m, 31));
+	spv_def_and(m, def, spv_emit3(m, SpvOpIEqual, m->id_bool, hi, sign));
+	(void)r;
 }
 
 static uint32_t spv_guard_div(SpvMod *m, uint32_t *def, int uns, uint32_t a,

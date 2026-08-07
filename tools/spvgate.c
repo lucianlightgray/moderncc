@@ -806,6 +806,27 @@ int main(int argc, char **argv) {
 	}
 
 	gpu_init();
+	{
+		int k;
+		for (k = 1; k < argc; k++)
+			if (!strcmp(argv[k], "--spv") && k + 1 < argc) {
+				FILE *fp = fopen(argv[k + 1], "rb");
+				uint32_t *buf;
+				long sz;
+				int rc2;
+				if (!fp) { printf("spvgate: cannot open %s\n", argv[k + 1]); return 1; }
+				fseek(fp, 0, SEEK_END); sz = ftell(fp); fseek(fp, 0, SEEK_SET);
+				buf = malloc((size_t)sz);
+				if (fread(buf, 1, (size_t)sz, fp) != (size_t)sz) { printf("short read\n"); return 1; }
+				fclose(fp);
+				memset(in, 0, sizeof(int32_t) * 64);
+				printf("spvgate: dispatching %s (%ld bytes) on %s\n", argv[k + 1], sz,
+							 g_devname);
+				rc2 = gpu_run(buf, (int)(sz / 4), in, 64, 1, gout);
+				printf("spvgate: rc=%d out0=%d def0=%d\n", rc2, gout[0], gout[1]);
+				return rc2 == 0 ? 0 : 1;
+			}
+	}
 	if (arenas) {
 		printf("spvgate: device %s\n", g_devname);
 		printf("spvgate: real slices from %s (min-nodes=%d)\n", arenas, minnodes);
