@@ -266,6 +266,41 @@ def text_size(path):
     return None
 
 
+def host_objfmt(mcc):
+    """Object format mcc emits for the native host: 'elf', 'pe', 'macho', None.
+
+    The self/wide banks are ratios over src/ compiled for the host, so their
+    numbers are specific to that object format: it selects which #ifdef branches
+    amalgamate into the corpus and how the backend sizes each body.  A build that
+    emits a different format is not comparable to an ELF-taken bank and belongs in
+    the corpus_config skip, not a regression.
+    """
+    fmt = None
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            c = os.path.join(td, "p.c")
+            o = os.path.join(td, "p.o")
+            with open(c, "w") as f:
+                f.write("int p(void){return 0;}\n")
+            p = subprocess.run([mcc, "-c", c, "-o", o], cwd=ROOT,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if p.returncode == 0 and os.path.exists(o):
+                d = open(o, "rb").read(4)
+                if d[:4] == b"\x7fELF":
+                    fmt = "elf"
+                elif d[:2] in (b"MZ", b"\x64\x86", b"\x64\xaa", b"\x4c\x01"):
+                    fmt = "pe"
+                elif d[:4] in (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",
+                               b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"):
+                    fmt = "macho"
+    except OSError:
+        fmt = None
+    if fmt is None:
+        fmt = {"linux": "elf", "win32": "pe", "darwin": "macho",
+               "cygwin": "pe", "msys": "pe"}.get(sys.platform)
+    return fmt
+
+
 def run_one(mcc, flags, src, opt, out_o, tsv, env0, layer):
     env = dict(env0)
     if layer == "capture":
@@ -764,6 +799,8 @@ def main():
     self_corpus = any(s.replace("\\", "/").endswith("src/mcc.c") for s in sources)
     want_cfg = bank.get("corpus_config")
     have_cfg = corpus_config(flags)
+    if self_corpus and want_cfg is not None and "objfmt" in want_cfg:
+        have_cfg["objfmt"] = host_objfmt(mcc)
     if self_corpus and want_cfg is not None and have_cfg != want_cfg:
         if a.rebank_config and (a.update_bank or a.update_bank_low):
             bank["corpus_config"] = have_cfg
