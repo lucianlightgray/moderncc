@@ -3447,6 +3447,15 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_mutate.cmake")
             set_tests_properties("gpu/spv-slice-known-positive" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
+            add_test(NAME "gpu/spv-slice-real"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DGATE=$<TARGET_FILE:spvgate>
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_real.cmake")
+            set_tests_properties("gpu/spv-slice-real" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
