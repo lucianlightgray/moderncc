@@ -1022,6 +1022,92 @@ The lesson worth carrying: a cell that encodes a *default* rather than its own
 premise breaks whenever the default moves, and the amalgamation hides an entire
 class of cross-TU mistakes.
 
+## An entire inliner ships unreachable, and it does not earn a level — 2026-08-07
+
+Two ICEs turned out to be one bug, and finding it exposed something larger.
+
+**The bug.** When a call's result is discarded with `(void)`, RIR records the
+`AST_Invoke` node as `VT_VOID`. The direct-call replay honours that — after
+`gfunc_call` it pushes nothing, and the statement level pops nothing.
+`ast_inline_graft`, which replaces the same Invoke with the callee's body,
+unconditionally pushed its return slot. One value in, none out, once per discarded
+call, which is why the leak count read 1, 2 or 4 depending on how many the function
+had. The graft path now pops when the node it replaced was `VT_VOID` — the contract
+the direct call already obeyed. Reproducer is two lines:
+
+    static int f(void) { return 1; }
+    void g(void) { (void)f(); }
+
+`mcc -O1 -finline -fno-inline-functions -c`. Clean without the `(void)`, clean with
+a non-static callee. Emitted `src/mcc.c` is **byte-identical at `-O0`/`-O1`/`-O2`/
+`-O3`/`-Os`**, so the fix costs nothing.
+
+**`storeval-callstore` was never the culprit in the second ICE.** Its ON state
+merely produces the AST shape whose Invoke reaches the graft, so it looked like the
+cause when it was the doorway. Its level had been justified only by "cannot be
+measured with it off"; that excuse is gone.
+
+**The structural finding.** `do_inline` requires `MCC_OPT_INLINE` on *and*
+`MCC_OPT_INLINE_FUNCTIONS` off (`ast_has_graftable_call` needs `ast_inline_env`;
+`do_inline` needs `!ast_inline_pass_env`). No shipped level produces that
+combination — `INLINE` is `MCC_OPTD_SPECIAL` at `optimize>=3` and `INLINE_FUNCTIONS`
+is on from `-O2`. **The capture-time graft inliner therefore never runs at any `-O`
+level as shipped**, only under an explicit `-finline -fno-inline-functions`. That is
+why a crash this simple survived: nothing reachable exercised the code.
+
+**Validated on the clock, and it does not pay.** Comparing `-O2` default against
+`-O2 -finline -fno-inline-functions` on the self-compile, CPU time, interleaved:
+
+| | compile time | emitted object | stage-2 runtime |
+| --- | ---: | ---: | ---: |
+| graft vs default | +0.80% (N=12) | **+7.88%**, +256 KB | **−0.40%** (N=14) |
+
+Both time figures sit inside the noise floor; the size increase does not. It emits
+**7.9% more code for no measurable speed in either direction**, so under the rule
+that only speed decides a level, it does not earn one and was not promoted. It
+stays reachable only by explicit flag.
+
+**What would change that verdict.** The graft is an alternative inlining strategy,
+not an increment on the ordinary one — the two are mutually exclusive by
+construction, so the honest comparison is always A-or-B, never A-plus-B. Anyone
+revisiting it should either make the two composable, or find the corpus where
+grafting beats `inline-functions` outright; measuring it against nothing will keep
+producing the answer above.
+
+## `reemit-templates`: the cost was not where the name pointed — 2026-08-07
+
+It was the most expensive single item in the compiler and survived only because it
+gates a strategy family. Profiling rather than guessing moved it **−13.05% of
+stage-1 CPU** (21× the 0.607% floor), with instructions retired agreeing in sign at
+**2,861.7M → 2,280.4M (−20.31%)**, and **emitted code byte-identical** across all
+1465 objects `tests/exec` compiles at five levels — so stage-2 is unchanged by
+construction. Independently re-measured here at **+10.36% on a self-compile with a
+0-byte object delta**, under load, which is the same result.
+
+**`sg_templates` gates ten rows of `ast_strategies[]`, eight of them shipped**, and
+outside that table the flag does only three things. The flag *is* the strategy
+family — there was nothing incidental to peel away, which is why "make it
+unnecessary" was never an option and "make it cheap" was the only route.
+
+**Where the time actually went, and it was not the strategies.** An `LD_PRELOAD`
+counter found **923,403 `getenv()` calls per self-compile** — 524,491 `RVATTR` from
+`ast_replay_value` (once per replayed AST node) and 377,110 `MCC_REPARENT_DBG` from
+`ast_add_child` (once per edge) — worth 6.6% of stage-1 cycles, inside the reemit
+pipeline and **gated by nothing**. Reading them once in `ast_configure` takes it to
+50 calls. **Check for this pattern before profiling anything else in this compiler:
+a diagnostic env var read on a per-node or per-edge path is invisible to every
+existing measurement and costs more than the passes being measured.**
+
+The other half is that **seven of the eight shipped strategies fire on zero bodies**
+of an `-O2` self-compile (bfold, cse, tco, cload at 0; cprop 3, dse 3, jt 7, sccp 14;
+only ident at 1600 of 2626). They walked every body to find nothing, and now return
+early when their candidate set is empty.
+
+**Caveat carried forward**: `selfhost-optbench --check` was not re-run. `src/mccopt.h`
+is untouched so no row moves, and the gain side of every ratio is unchanged because
+objects are byte-identical — but the cost side moved down, so the greedy level
+boundaries are not provably unshifted.
+
 ## Each suite is now scored by the other vendor's compiler — 2026-08-06
 
 `tools/xoracle.py` judges gcc's tests with clang and clang's with gcc, on exit
