@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <vulkan/vulkan.h>
 
-#if defined(__unix__) || defined(__APPLE__)
+#if MCC_HOST_POSIX
 #include <pthread.h>
 static pthread_mutex_t mcc_gpu_lock = PTHREAD_MUTEX_INITIALIZER;
 #define MCC_GPU_LOCK() pthread_mutex_lock(&mcc_gpu_lock)

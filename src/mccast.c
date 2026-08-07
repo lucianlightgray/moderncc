@@ -2134,10 +2134,10 @@ void ast_ladder_gpu_setup(void);
 void ast_ladder_gpu_report(void);
 #endif
 
-static void ast_opt_defaults(MCCState *s1) {
+static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
 #if MCC_GPU
 	ast_ladder_gpu_setup();
-#endif MCC_TRACE("enter\n");
+#endif
 	int o4 = s1->optimize_search_seconds > 0;
 	int i, dflt[MCC_OPT_COUNT];
 	int n = 0;
@@ -15690,12 +15690,12 @@ static int ast_eval_slice(AstArena *a, AstLocal n, const int32_t *o, const int64
 #define AST_LADDER_GPU_MAX_WORDS 8192
 
 static int ast_ladder_gpu_emit(AstArena *a, AstLocal root, const int32_t *off,
-															 int n, uint32_t **code, int *nwords) {
+															 int n, uint32_t **code, int *nwords) { MCC_TRACE("enter\n");
 	SpvMod m;
 	uint32_t base, val, lane;
 	spv_module_begin(&m, n);
 	base = spv_main_begin(&m, n);
-	if (!spv_expr(&m, a, root, off, n, base, &val) || m.failed) {
+	if (!spv_expr(&m, a, root, off, n, base, &val) || m.failed) { MCC_TRACE("br\n");
 		spv_module_free(&m);
 		return 0;
 	}
@@ -15703,7 +15703,7 @@ static int ast_ladder_gpu_emit(AstArena *a, AstLocal root, const int32_t *off,
 	spv_main_end(&m, lane, val);
 	*code = spv_module_finish(&m, nwords);
 	spv_module_free(&m);
-	if (*nwords > AST_LADDER_GPU_MAX_WORDS) {
+	if (*nwords > AST_LADDER_GPU_MAX_WORDS) { MCC_TRACE("br\n");
 		mcc_free(*code);
 		*code = NULL;
 		return 0;
@@ -15717,7 +15717,7 @@ static long ast_ladder_gpu_rungs;
 static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br,
 															const AstEvalLadderIn *in, int n, const int *e,
 															const int *sh, int total, uint64_t space,
-															AstEvalLadderRes *res) {
+															AstEvalLadderRes *res) { MCC_TRACE("enter\n");
 	int32_t off[AST_EVAL_LADDER_MAXIN];
 	uint32_t *ca = NULL, *cb = NULL;
 	int na = 0, nb = 0, i, verdict = 1;
@@ -15744,7 +15744,7 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 		return -1;
 	if (!ast_ladder_gpu_emit(a, ar, off, n, &ca, &na))
 		return -1;
-	if (!ast_ladder_gpu_emit(b, br, off, n, &cb, &nb)) {
+	if (!ast_ladder_gpu_emit(b, br, off, n, &cb, &nb)) { MCC_TRACE("br\n");
 		mcc_free(ca);
 		return -1;
 	}
@@ -15759,16 +15759,16 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 					ast_eval_ladder_sx(code >> sh[i], e[i]), in[i].type);
 	{
 		const char *dd = getenv("MCC_LADDER_GPU_DUMP");
-		if (dd) {
+		if (dd) { MCC_TRACE("br\n");
 			static int seq;
 			char pth[512];
 			FILE *fp;
 			snprintf(pth, sizeof pth, "%s/lad%04d_a.spv", dd, seq);
 			fp = fopen(pth, "wb");
-			if (fp) { fwrite(ca, 4, (size_t)na, fp); fclose(fp); }
+			if (fp) { MCC_TRACE("br\n"); fwrite(ca, 4, (size_t)na, fp); fclose(fp); }
 			snprintf(pth, sizeof pth, "%s/lad%04d_b.spv", dd, seq);
 			fp = fopen(pth, "wb");
-			if (fp) { fwrite(cb, 4, (size_t)nb, fp); fclose(fp); }
+			if (fp) { MCC_TRACE("br\n"); fwrite(cb, 4, (size_t)nb, fp); fclose(fp); }
 			seq++;
 		}
 	}
@@ -15777,14 +15777,14 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 	if (!mcc_gpu_run(cb, nb, tin, ntuple, n, ob))
 		goto bail;
 
-	for (code = 0; code < space; code++) {
+	for (code = 0; code < space; code++) { MCC_TRACE("br\n");
 		int adef = oa[code * 2 + 1] != 0, bdef = ob[code * 2 + 1] != 0;
 		res->points++;
-		if (!adef) {
+		if (!adef) { MCC_TRACE("br\n");
 			res->vacuous++;
 			continue;
 		}
-		if (!bdef) {
+		if (!bdef) { MCC_TRACE("br\n");
 			for (i = 0; i < n && i < AST_EVAL_LADDER_MAXIN; i++)
 				res->diff_in[i] = tin[code * n + i];
 			res->diff_a = ast_eval_slice_fit((int64_t)oa[code * 2], rta);
@@ -15794,7 +15794,7 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 			goto out;
 		}
 		res->informative++;
-		if (oa[code * 2] != ob[code * 2]) {
+		if (oa[code * 2] != ob[code * 2]) { MCC_TRACE("br\n");
 			for (i = 0; i < n && i < AST_EVAL_LADDER_MAXIN; i++)
 				res->diff_in[i] = tin[code * n + i];
 			res->diff_a = ast_eval_slice_fit((int64_t)oa[code * 2], rta);
@@ -16141,7 +16141,7 @@ static int ast_ladder_widx(int w) { MCC_TRACE("enter\n");
 }
 
 static double ast_ladder_now(void) { MCC_TRACE("enter\n");
-#ifdef _WIN32
+#if MCC_HOST_WIN32
 	LARGE_INTEGER freq, cnt;
 	if (!QueryPerformanceFrequency(&freq) || freq.QuadPart == 0)
 		{ MCC_TRACE("br\n"); return 0.0; }
