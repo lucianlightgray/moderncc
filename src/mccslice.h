@@ -76,6 +76,18 @@ static double mcc_slice_now(void) {
 	return (double)clock() * (1e9 / (double)CLOCKS_PER_SEC);
 }
 
+static int mcc_slice_lohi_native(void) {
+	static const uint32_t probe = 0x01020304u;
+	static int cached = -1;
+	if (cached < 0) {
+		const char *off = getenv("MCC_SLICE_NO_LOHI");
+		cached = !(off && off[0]) && sizeof(int64_t) == 2 * sizeof(int32_t) &&
+						 MCC_GPU_IN_SLOTS == 2 &&
+						 *(const unsigned char *)&probe == 0x04;
+	}
+	return cached;
+}
+
 static double mcc_slice_cpu_time(void) { return mcc_slice_cpu_ns; }
 static double mcc_slice_gpu_time(void) { return mcc_slice_gpu_ns; }
 static void mcc_slice_time_reset(void) {
@@ -751,9 +763,10 @@ static void mcc_slice_kernel_free(MccSliceKernel *k) {
 /* The device executor. A dispatch is atomic, so a budget bounds how many tuples
  * one tick submits, not how far into a dispatch it may stop. */
 static int mcc_slice_run_gpu(MccSliceWork *w, MccSliceKernel *k, int budget) {
-	int32_t *in32, *out32;
+	const int32_t *in32;
+	int32_t *out32;
 	double gpu_t0;
-	int n, t, j, rc;
+	int n, t, j, rc, is64, uns;
 	size_t need_in, need_out;
 	if (!w || !k || !k->code.p || !w->in || !w->out || !w->def)
 		return MCC_TASK_FAILED;
@@ -775,27 +788,36 @@ static int mcc_slice_run_gpu(MccSliceWork *w, MccSliceKernel *k, int budget) {
 	gpu_t0 = mcc_slice_now();
 	need_in = (size_t)n * w->nlive * MCC_GPU_IN_SLOTS * sizeof(int32_t);
 	need_out = (size_t)n * MCC_GPU_OUT_SLOTS * sizeof(int32_t);
-	if (need_in > mcc_slice_scratch_in_sz) {
-		free(mcc_slice_scratch_in);
-		mcc_slice_scratch_in = (int32_t *)malloc(need_in);
-		mcc_slice_scratch_in_sz = mcc_slice_scratch_in ? need_in : 0;
-	}
 	if (need_out > mcc_slice_scratch_out_sz) {
 		free(mcc_slice_scratch_out);
 		mcc_slice_scratch_out = (int32_t *)malloc(need_out);
 		mcc_slice_scratch_out_sz = mcc_slice_scratch_out ? need_out : 0;
 	}
-	in32 = mcc_slice_scratch_in;
 	out32 = mcc_slice_scratch_out;
-	if (!in32 || !out32)
+	if (!out32)
 		return MCC_TASK_FAILED;
-	for (t = 0; t < n; t++) {
-		for (j = 0; j < w->nlive; j++) {
-			int64_t v = w->in[(long)(w->done + t) * w->nlive + j];
-			long s = ((long)t * w->nlive + j) * MCC_GPU_IN_SLOTS;
-			in32[s] = (int32_t)(uint32_t)(uint64_t)v;
-			in32[s + 1] = (int32_t)(uint32_t)((uint64_t)v >> 32);
+	if (mcc_slice_lohi_native()) {
+		in32 = (const int32_t *)(const void *)(w->in +
+																					 (long)w->done * w->nlive);
+	} else {
+		int32_t *pk;
+		if (need_in > mcc_slice_scratch_in_sz) {
+			free(mcc_slice_scratch_in);
+			mcc_slice_scratch_in = (int32_t *)malloc(need_in);
+			mcc_slice_scratch_in_sz = mcc_slice_scratch_in ? need_in : 0;
 		}
+		pk = mcc_slice_scratch_in;
+		if (!pk)
+			return MCC_TASK_FAILED;
+		for (t = 0; t < n; t++) {
+			for (j = 0; j < w->nlive; j++) {
+				int64_t v = w->in[(long)(w->done + t) * w->nlive + j];
+				long s = ((long)t * w->nlive + j) * MCC_GPU_IN_SLOTS;
+				pk[s] = (int32_t)(uint32_t)(uint64_t)v;
+				pk[s + 1] = (int32_t)(uint32_t)((uint64_t)v >> 32);
+			}
+		}
+		in32 = pk;
 	}
 
 	{
@@ -817,17 +839,19 @@ static int mcc_slice_run_gpu(MccSliceWork *w, MccSliceKernel *k, int budget) {
 	 * over-narrows: an unsigned-char-typed add of 255 + 1 evaluates to 256 under
 	 * C's integer promotions and under ast_eval_binop, and fitting that result
 	 * back to unsigned char turns it into 0. */
-	for (t = 0; t < n; t++) {
-		long s = (long)t * MCC_GPU_OUT_SLOTS;
-		int d = out32[s + 2] != 0;
-		uint64_t lo = (uint32_t)out32[s];
-		uint64_t hi = (uint32_t)out32[s + 1];
-		w->def[w->done + t] = (unsigned char)(d ? 1 : 0);
-		w->out[w->done + t] =
-				d ? ast_eval_narrow((int64_t)(lo | (hi << 32)),
-														ast_eval_slice_is64(k->wtype),
-														(k->wtype & VT_UNSIGNED) != 0)
-					: 0;
+	is64 = ast_eval_slice_is64(k->wtype);
+	uns = (k->wtype & VT_UNSIGNED) != 0;
+	{
+		const int32_t *o = out32;
+		int64_t *wo = w->out + w->done;
+		unsigned char *wd = w->def + w->done;
+		for (t = 0; t < n; t++, o += MCC_GPU_OUT_SLOTS) {
+			int d = o[2] != 0;
+			uint64_t lo = (uint32_t)o[0];
+			uint64_t hi = (uint32_t)o[1];
+			wd[t] = (unsigned char)(d ? 1 : 0);
+			wo[t] = d ? ast_eval_narrow((int64_t)(lo | (hi << 32)), is64, uns) : 0;
+		}
 	}
 	w->done += n;
 	mcc_slice_gpu_ns += mcc_slice_now() - gpu_t0;
@@ -1176,34 +1200,44 @@ static int mcc_slice_run_frame_gpu(MccSliceFrame *f, MccSliceKernel *k,
 																	 int64_t *frames, int ntuple,
 																	 int64_t *retval, unsigned char *retdef) {
 	int32_t *buf, *ob = NULL;
-	int t, j, rc;
+	int t, j, rc, native, is64, uns;
 	if (!f || !k || !k->code.p || !frames || ntuple < 1)
 		return MCC_TASK_FAILED;
+	native = mcc_slice_lohi_native();
 	if (retval || retdef) {
 		ob = (int32_t *)malloc((size_t)ntuple * MCC_GPU_OUT_SLOTS * sizeof *ob);
 		if (!ob)
 			return MCC_TASK_FAILED;
 	}
-	buf = (int32_t *)malloc((size_t)ntuple * f->nslot * MCC_GPU_IN_SLOTS *
-													sizeof *buf);
-	if (!buf)
-		return MCC_TASK_FAILED;
-	for (t = 0; t < ntuple; t++)
-		for (j = 0; j < f->nslot; j++) {
-			int64_t v = frames[(long)t * f->nslot + j];
-			long sp = ((long)t * f->nslot + j) * MCC_GPU_IN_SLOTS;
-			buf[sp] = (int32_t)(uint32_t)(uint64_t)v;
-			buf[sp + 1] = (int32_t)(uint32_t)((uint64_t)v >> 32);
+	if (native) {
+		buf = (int32_t *)(void *)frames;
+	} else {
+		buf = (int32_t *)malloc((size_t)ntuple * f->nslot * MCC_GPU_IN_SLOTS *
+														sizeof *buf);
+		if (!buf) {
+			free(ob);
+			return MCC_TASK_FAILED;
 		}
+		for (t = 0; t < ntuple; t++)
+			for (j = 0; j < f->nslot; j++) {
+				int64_t v = frames[(long)t * f->nslot + j];
+				long sp = ((long)t * f->nslot + j) * MCC_GPU_IN_SLOTS;
+				buf[sp] = (int32_t)(uint32_t)(uint64_t)v;
+				buf[sp + 1] = (int32_t)(uint32_t)((uint64_t)v >> 32);
+			}
+	}
 	rc = mcc_gpu_dispatch_rw2(k->code.p, k->code.n, buf, ntuple, f->nslot, ob);
 	if (rc)
 		mcc_slice_dispatch_count++;
 	if (!rc) {
-		free(buf);
+		if (!native)
+			free(buf);
 		free(ob);
 		return MCC_TASK_FAILED;
 	}
 	if (ob) {
+		is64 = ast_eval_slice_is64(f->rettype);
+		uns = (f->rettype & VT_UNSIGNED) != 0;
 		for (t = 0; t < ntuple; t++) {
 			long sp = (long)t * MCC_GPU_OUT_SLOTS;
 			int d = ob[sp + 2] != 0;
@@ -1211,20 +1245,20 @@ static int mcc_slice_run_frame_gpu(MccSliceFrame *f, MccSliceKernel *k,
 			if (retdef)
 				retdef[t] = (unsigned char)(d ? 1 : 0);
 			if (retval)
-				retval[t] = d ? ast_eval_narrow((int64_t)(lo | (hi << 32)),
-																				ast_eval_slice_is64(f->rettype),
-																				(f->rettype & VT_UNSIGNED) != 0)
-											: 0;
+				retval[t] =
+						d ? ast_eval_narrow((int64_t)(lo | (hi << 32)), is64, uns) : 0;
 		}
 	}
-	for (t = 0; t < ntuple; t++)
-		for (j = 0; j < f->nslot; j++) {
-			long sp = ((long)t * f->nslot + j) * MCC_GPU_IN_SLOTS;
-			uint64_t lo = (uint32_t)buf[sp];
-			uint64_t hi = (uint32_t)buf[sp + 1];
-			frames[(long)t * f->nslot + j] = (int64_t)(lo | (hi << 32));
-		}
-	free(buf);
+	if (!native) {
+		for (t = 0; t < ntuple; t++)
+			for (j = 0; j < f->nslot; j++) {
+				long sp = ((long)t * f->nslot + j) * MCC_GPU_IN_SLOTS;
+				uint64_t lo = (uint32_t)buf[sp];
+				uint64_t hi = (uint32_t)buf[sp + 1];
+				frames[(long)t * f->nslot + j] = (int64_t)(lo | (hi << 32));
+			}
+		free(buf);
+	}
 	free(ob);
 	return MCC_TASK_DONE;
 }
