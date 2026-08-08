@@ -1406,7 +1406,20 @@ named, tested, tunable element rather than an implementation detail.
    licence to rewrite incorrectly; it just had not been cashed in. **Note the
    synthetic suite showed 0 mismatches either way — only real arenas discriminate.**
 
-2b. **OPEN: the MSL emitter has no per-value differential in-tree.** SPIR-V has
+2b. ~~**OPEN: the MSL emitter has no per-value differential in-tree.**~~ **DONE —
+   `f716cf8d`.** `tools/spvgate.c` is dual-backend from one source (`SPVGATE_MSL`),
+   registering `gpu/msl-slice-{differential,known-positive,real}`. Both arms report
+   identical counters (38 cases / 2,500,856 points / 0 mismatches; 646 real slices /
+   42.2M points / 0 mismatches) and both fail under `--mutate`. `gpu/` is now 8 cells.
+   Two details worth keeping: the Metal arm drives `msl_*` directly rather than
+   `mcc_gpu_emit`, because `--mutate` must splice between `msl_expr` and
+   `msl_main_end` and `mcc_gpu_emit` has no such hook — an earlier scratch harness
+   built on it **accepted `--mutate` and silently did nothing**, i.e. a gate that could
+   not fail. And the cells are guarded on `APPLE AND MCC_GPU_LANG_MSL_VALUE`, not bare
+   `APPLE`, because `mccgpu.c` compiles one device layer per `MCC_GPU_BACKEND` and a
+   Darwin vulkan tree has no Metal layer to dispatch through.
+
+2c. **OPEN, superseded framing: the old 2b text.** SPIR-V has
    `spvgate` (38 cases, bit-exact per point); Metal has only `gpu/ladder-gpu-parity`,
    which compares *verdicts*. The int64 MSL half was verified with a scratch harness
    that is not checked in, so today Metal's arithmetic is gated only by "the two
