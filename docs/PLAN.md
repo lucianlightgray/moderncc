@@ -397,11 +397,28 @@ So D1b is buildable, but only with a **compiler-mandated ≥32 KB cache-thrashin
   reconstructed their effect. `IR_OP_LOAD` is provably not unblockable.
 - **I1 gained teeth and reach.** `MCC_GPU_REQUIRED` is on for the CI `gpu-vulkan` cell,
   and a MoltenVK fallback in `CMakeLists.txt` means Darwin now registers all four
-  `gpu/*` cells instead of one.
-- **Still open, and now the clearest gap in the ladder's evidence:** Metal has no
-  per-value differential. `spvgate` gates SPIR-V bit-exactly; `gpu/ladder-gpu-parity`
-  gates Metal only at verdict level. Make `tools/spvgate.c` dual-backend rather than
-  forking it — only ~117 of its 1244 lines are Vulkan-specific.
+  `gpu/*` cells instead of one. **Corrected 2026-08-08 on the M1 Pro: it is seven, not
+  four** — `ladder-gpu-parity` plus an `spv` and an `msl` trio, the count "four" having
+  predated `f716cf8d`. A `vulkan`-backend build on the same host registers four, because
+  `MCC_GPU_LANG_MSL` is derived from the backend and `-DMCC_GPU_LANG_MSL=1` is silently
+  discarded there. With `-DMCC_GPU_REQUIRED=ON` all seven still pass, which converts no
+  skip into a failure and so proves only that nothing was skipping.
+- **CLOSED 2026-08-08 — Metal now has a per-value differential, and it is clean.** The
+  dual-backend `tools/spvgate.c` from `f716cf8d` ran on a real `Apple M1 Pro`.
+  Bit-exact per-value replay against the CPU oracle over harvested arenas:
+  **153,158,012 points, 151,870,645 compared, 1,287,367 vacuous, 0 mismatches, 0
+  rejected modules** across 1,325 arenas / 2,359 slices / 11,129 dispatches from all 304
+  `tests/exec` files. Definedness agreed on all 153.2 M points, not only on the compared
+  ones. `--mutate` reports every compared point as a mismatch, so the gate is not blind.
+  **`spvgate` over the identical dump returns every counter identical**, giving the
+  project its first direct Metal-vs-MoltenVK comparison with **no divergence to report**;
+  `ladder-gpu-parity` agrees at 1767 dispatches on both arms. `nm -u` confirms the arms
+  are disjoint code — 0 Vulkan symbols in `mslgate`, 39 in `spvgate`.
+- **New, and free:** `spirv-val` and `glslc` (v2026.3) are installed on that host, yet
+  neither appears anywhere in `CMakeLists.txt`, `cmake/` or `tools/spvgate.c`, so **no
+  cell validates SPIR-V on any host**. Run by hand over the 152 modules dumped with
+  `SPVGATE_DUMP`: **152/152 valid at `--target-env vulkan1.1`.** Wiring that into the
+  `spv` cells is a one-line `find_program` and is not done.
 
 ### Findings — types, ops, and the opcode gap
 
@@ -726,10 +743,37 @@ and a list of bugs.
 
 | | question | why it cannot be closed from here |
 | --- | --- | --- |
-| **M5 / D1e** | does a speculative pre-enqueued self-skipping resume chain reach ~30 µs? | the projection is arithmetic over the measured 19.5 µs/CB pipelined throughput. **It decides the entire D1 row.** ~~Can only be run on a Metal box~~ — **amended 2026-08-08: pre-enqueued command buffers are not Metal-specific**, and this host has a discrete NVIDIA device with validation layers, so the Vulkan half is runnable here today. What it is actually blocked on is **cluster L**: there is no resident command pool or command-buffer ring to pre-enqueue into. Still Metal-only: whether the ~64-CB `MTLSharedEvent` deadlock applies to non-blocking chains |
-| **E6** | software `double` for the Metal arm | new rung, no design; MSL has no `double` at all |
 | **N13** | the must-run manifest | 138 `SKIP_RETURN_CODE 77` sites and nothing asserts any of them must fire |
 | **N14** | per-lane writable globals | 5.82 MiB × 64 lanes = **373 MiB, 4× the floor before a single stack frame exists** |
+
+**M5 / D1e and E6 were both closed on 2026-08-08**, measured on an Apple M1 Pro; the
+full numbers are in [`docs/TODO.md`](TODO.md).
+
+- **M5 / D1e — YES, and better than projected. D1e is the recommendation.** Measured
+  **12.4 µs median / 19.1 µs mean**, against the ~30 µs projection and D1b's 24 µs. The
+  projection was one CB period pessimistic: the measured mean *is* one pipelined CB
+  period. Note this was run **without** cluster L — the harness stands up its own chain,
+  so the row's "blocked on a resident command-buffer ring" amendment was true of the
+  compiler and not of the experiment. The load-bearing visibility claim holds with **no
+  sweep**: ~800,000 host→device posts, 0 stale reads, per-crossing stale rate bounded at
+  **< 4 × 10⁻⁶**. A 32 KB sweep costs 6.5× and buys nothing, so **D1e does not collapse
+  into D1b and N5's sweep constant is obsolete**. The **~64-CB deadlock is not an event
+  bug** — it is `MTLCommandQueue`'s default `maxCommandBufferCount`, removable with one
+  argument, and it does not apply to non-blocking chains, which are flat from depth 16 to
+  1024. D1b additionally shows **silent wrong answers** below its sweep threshold, not
+  merely the documented hang. D1b's one surviving advantage is the tail above ~p85.
+  Carried forward: **lane-parallelism — D1b's actual justification — is untouched by this
+  result**, the MoltenVK and Vulkan arms were not exercised, and the "by spec" half of the
+  claim is evidenced at 4 × 10⁻⁶ on one device and OS build, not proven.
+- **E6 — REFUSE permanently; `is_float` escapes to the CPU.** 0 of 7,971 ladder
+  type-rejections are float, and **0 slices are blocked solely by float** across 104,237
+  slices from 189 files; on a deliberately 27.5% float-carrying corpus the payoff is 2
+  slices, both sign-bit negation. Float is not rare (1.67% of arena nodes touch it, 2.95%
+  of `Binary`) and that makes it worse — every float slice is co-blocked by
+  `STORE`/`RETURN`/`BB`/`INVOKE`/loops, so **the blocker is E4, not E6**. The cheap
+  native `float` rung does not exist either: Apple Silicon flushes subnormals
+  unconditionally in every math mode, so E3's bit-exactness would need soft-float32, not
+  native MSL `float`. Revisit only when E4 lands.
 
 ## Rows no letter owns
 
@@ -739,7 +783,7 @@ and a list of bugs.
 | **N2** | `MCC_GPU_CODE_MAX` must be raised before an interpreter can exist | resolved above. Enforcement moved to `src/mccgpu.h:2574` (MSL, **bytes**) and `:2601` (SPIR-V, words) |
 | **N3** | `MCC_GPU_BACKEND` is build-time, not runtime | resolved above |
 | **N4** | dispatch status checking | Metal half **landed** (`c6814625`); **Vulkan `VK_TIMEOUT` use-after-free is live** |
-| **N5** | the ≥32 KB doorbell sweep constant | **may be obsolete** — pending M5. If D1b survives: a `#error` floor carrying the measurement in its text, a per-device qualification table with D1a fallback on unknown devices, a **bounded poll loop exiting with `HOSTCALL_TIMEOUT`** (this is what converts the documented silent hang into a loud error), a 285,100-round soak, and a known-positive cell that fails if a 4 KB sweep still works |
+| **N5** | the ≥32 KB doorbell sweep constant | **OBSOLETE, 2026-08-08.** M5 ran and D1b did not survive it: D1e is 1.47× better on the mean with **no sweep at all**, and adding a 32 KB sweep to the resume chain costs 6.5× for nothing. None of the mitigations this row specified is needed — no `#error` floor, no per-device qualification table, no bounded poll loop, no soak, no 4 KB known-positive. Kept as a record of what the doorbell would have cost. Measuring it also found that D1b's sub-threshold failure mode is worse than documented: at 8 KB it **serves with a correct flag and a stale payload** (3 token mismatches at 8 KB, 13 at 4 KB), so below threshold the doorbell produces silent wrong answers, not only the recorded silent hang |
 | **N6** | ~~`MCC_AST_EVAL_LADDER_GPU=1` overflows two stack buffers~~ | **FIXED at `b740ae46`** — the buffers are heap-allocated and slot-sized (`src/mccast.c:15794-15798`) and freed on both the `out:` and `bail:` paths (`:15859-15861`, `:15866-15868`). Retained for the record; the warm-up *dispatch* it lived in is what L1b deletes. **Was:** `src/mccast.c:15892` declared `int32_t pin[64], pout[128]` — sized for the pre-`989e4b3b` ABI — while the device layer reads `ntuple*nlive*MCC_GPU_IN_SLOTS*4` = **512 B from a 256 B buffer** and writes `ntuple*MCC_GPU_OUT_SLOTS*4` = **768 B into a 512 B buffer**. Hard SIGABRT under glibc's stack protector, so the Vulkan arm dispatches nothing on Linux; a silent 256 B stack overwrite on Darwin. **CI cannot see it** — the Linux cell installs `libvulkan-dev` (loader and headers, no ICD), so the cell green-skips. One-line fix |
 | **N7** | **arena dump reproducibility regression** | `354e96f6`'s raw `Sym*` columns are ASLR-varying; invalidates H4′'s banked evidence |
 | **N8** | **`ast_replay_bb`'s frame is 93% one array** | `SValue sv_stack[VSTACK_SIZE + 1]` (`src/mccast.c:5823`) is 32,832 of the 35,424 B frame, declared unconditionally in a recursive prologue for an inline-asm arm. Hoisting it: frame **35,424 → 2,592 B**, self-compile peak stack **1024 → 112 KiB**, objects **byte-identical** at `-O0`…`-O3`. The shipping form must not be `static` (it has to survive `mcc_error`'s `longjmp`) — an arena save-area or a `noinline` helper |
@@ -904,16 +948,40 @@ cannot run here; Docker's binfmt emulation covers the same targets instead.
 
 - **Windows TDR** (~2 s default) — still untested, still the one real portability risk
   in C3. macOS was measured and does *not* kill long compute kernels on duration.
-- **The M5 / D1e latency** — a self-skipping pre-enqueued resume chain has never been
-  timed; the ~30 µs is arithmetic over the measured 19.5 µs/CB pipelined throughput.
-  **This is the highest-value single experiment left, and it decides the D1 row.**
-  Related: whether the ~64-CB `MTLSharedEvent` deadlock applies to non-blocking chains.
-- **The real device step rate**, which is what turns C3's `T_round` rule into a node
-  count. The 20–100 ns/step bracket is structural reasoning, not measurement.
-- **Driver-side compile time for a 15–25k-word module** — the `glslc` front-end half is
-  measured (~5 ms/1000 words) and is a non-issue; the NVIDIA and MoltenVK back-end halves
-  are not, and MoltenVK's is plausibly seconds because it runs SPIRV-Cross → MSL → Metal.
 - **Register pressure in the interpreter kernel** — no `nvdisasm` here, AIR is opaque.
+  Weak negative evidence added 2026-08-08: `maxTotalThreadsPerThreadgroup` stayed at 1024
+  for every generated module up to 99,373 words on the M1 Pro, which is consistent with
+  no register-pressure cliff and is nothing more than that.
+- **Driver-side compile time on NVIDIA/AMD/Intel.** The MoltenVK and native-Metal halves
+  are now measured (below); no such device exists on the Darwin host, so that half stands.
+- **A real interpreter's per-step cost.** The step rate below was measured with arms of 3
+  ALU ops or one load-plus-store; a real AST arm also does operand decode, stack traffic,
+  type dispatch, gas accounting and bounds checks. **Every measured ns/step is a lower
+  bound**, and the `1<<16` budget recommendation errs generous accordingly.
+- **Realistic multi-lane divergence.** Only the two extremes were run — all lanes
+  converged and all lanes at distinct pcs, which differ by ~10×. Real behaviour is between.
+
+**Measured on 2026-08-08 and removed from this list** (Apple M1 Pro, under contention;
+full numbers in [`docs/TODO.md`](TODO.md)):
+
+- **M5 / D1e latency — RUN. 12.4 µs median / 19.1 µs mean, no sweep**, beating both the
+  ~30 µs projection and D1b. The ~64-CB deadlock is `maxCommandBufferCount`, not an event
+  bug, and does not apply to non-blocking chains. See the closed row above.
+- **The real device step rate — RUN, and C3's bracket does not survive it.** ~1 µs/step
+  single-lane at an interpreter-width switch (120 ns absolute floor with no device memory
+  at all), so **the 20–100 ns/step bracket is optimistic by 7–50× and its lower bound is
+  unreachable on this hardware in any constructible configuration**. Per-lane latency is
+  flat across a 16,384× occupancy change, so all the device's power is width: 64
+  *converged* lanes cost one lane's wall clock. **C3's `1<<20` budget is 16× too large;
+  `1<<16` is the only power of two meeting both bounds at every switch width.** Switch
+  width is the dominant controllable cost at ~2.5 ns per arm per step.
+- **MoltenVK back-end compile time — RUN, and the SPIRV-Cross hypothesis is refuted.**
+  MoltenVK is 1.93× native Metal at 1649 words falling to **1.05× at 99k**: translation is
+  5–20% and shrinking, and the seconds are in the Metal back end, which native Metal pays
+  too. Cost is linear (~14 µs/word) below ~25k words and quadratic above ~50k, so A4's
+  density estimate is load-bearing. A persisted `VkPipelineCache` collapses every size to
+  1.6–3.1 ms. **This prices A1a out on compile time alone** — ~15,100 regions inside a
+  0.093 s compile demands ~162,000 regions/s against a driver supply of ~52/s.
 
 **Retired from this list on 2026-08-08**, because the current host can measure them:
 discrete-GPU Vulkan behaviour and the uncached-host-read concern (B4c); `spirv-val`

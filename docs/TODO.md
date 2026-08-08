@@ -6,6 +6,106 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## D1e is measured, and it wins — 2026-08-08, Apple M1 Pro
+
+The experiment `docs/PLAN.md` called "the highest-value single experiment left, and it
+decides the D1 row" has been run. **A speculative pre-enqueued self-skipping resume
+chain reaches 12.4 µs median / 19.1 µs mean, beating the ~30 µs projection by 2.4× and
+the doorbell's 24 µs by 1.47× on the mean.** D1e is the recommendation and the N5 sweep
+constant is obsolete.
+
+Harness: one `StorageModeShared` buffer with the post block, result block, 64-word state
+vector and progress counters on **four separate pages**, so no host and GPU write ever
+share a line. A refill thread keeps *depth* command buffers committed-but-uncompleted;
+each dispatch loads `post_seq`/`result_seq`, **returns immediately if equal**, else sums
+all 64 state words and writes the result. The returned token is checked against
+`tok ^ 0x5a5a5a5a ^ Σstate`, so a stale doorbell, a stale state vector *or* a stale token
+all abort the run — the state term is what makes this a payload test and not a flag test.
+Every variant ran in ≥7 separate processes, N=3000–20000 after 300–1000 warm-up, on AC.
+
+| variant | median | p90 | p99 | mean |
+| --- | ---: | ---: | ---: | ---: |
+| D1a, `waitUntilCompleted` | 175–192 | 203–229 | 245–638 | 177–181 |
+| D1a, spin-poll shared memory | 67–70 | 90–95 | 130–151 | — |
+| pipelined submit, never waiting | **19.6–20.3 µs/CB** throughput | | | |
+| **D1e, depth 128, no sweep** | **12.2–12.8** | 44.7–46.1 | 58.3–62.1 | **19.0–19.3** |
+| D1e with a 32 KB sweep added | 80.5–81.7 | 88.4–95.5 | 92.1–98.6 | — |
+| **D1b, doorbell, 32 KB sweep** | **23.9** | 31.8–31.9 | 32.0–43.8 | 27.5–28.5 |
+
+**The banked table reproduces**, which is what licenses comparing the new row to it: D1a
+175–192 against 144–180, pipelined 19.6–20.3 against 19.5, doorbell 23.9 against 24. The
+doorbell's cost is confirmed 100% sweep with a zero intercept — 8 KB → 8.0, 16 KB → 15.8,
+32 KB → 23.9 µs, ~0.99 µs/KB.
+
+**The projection was one CB period pessimistic.** The measured mean, 19.1 µs, *is* one
+pipelined CB period, not one and a half.
+
+**Cache visibility — the load-bearing claim — holds with no sweep.** Across every
+no-sweep run, depths 1 to 1024 including two 200,000-iteration soaks, **~800,000
+host→device posts produced 0 stale reads, 0 token mismatches and 0 first-read retries.**
+Rule of three bounds the per-crossing stale rate at **< 4 × 10⁻⁶** — under 0.011 expected
+failures across a self-compile's 2,851 residual crossings, against D1b's banked ~2.9. And
+it was tested genuinely speculatively, not as a saturated pipeline: at 1000 µs host
+think-time the chain ran **1,032,267 CB starts to serve 20,500 requests — 49 skips per
+serve — with the median still 12.08 µs and zero aborts.** Adding a 32 KB sweep costs
+80.7 µs against 12.4 and buys nothing. **D1e does not collapse into D1b.**
+
+**D1b is worse than its banked note says.** At 8 KB the doorbell **served with a correct
+flag and a stale payload** — 3 token mismatches at 8 KB, 13 at 4 KB. The sub-threshold
+failure mode on this host is not only the documented silent hang but **silent wrong
+answers**: the doorbell word arrives and the state vector does not. That is an argument
+against D1b independent of latency.
+
+**The "~64-CB `MTLSharedEvent` deadlock" is not an event bug.** It is
+`MTLCommandQueue`'s default `maxCommandBufferCount` of 64: committing the 65th blocks the
+caller, and if all 64 wait on an event only that thread can signal, the process
+self-deadlocks. Bisected exactly — depth 64 runs, 65 and everything above deadlock at the
+first signal with `cbstart=0`. `newCommandQueueWithMaxCommandBufferCount:2048` makes the
+same blocking chain run to depth 1024 (107 µs at 128, 137 at 1024, reproducing the banked
+125 µs). **It does not apply to non-blocking chains at all**: with the default queue D1e
+simply runs at effective depth 64, because `commit` back-pressures until a CB retires.
+
+Depth sweep at `maxCommandBufferCount=2048`, 30,000 iterations per depth in separate
+processes — flat from 16 to 1024, zero aborts across 180,000 iterations:
+
+| depth | 16 | 64 | 128 | 256 | 512 | 1024 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| median | 12.50 | 12.38 | 12.38 | 12.46 | 12.54 | 12.62 |
+| p99 | 97.62 | 62.25 | 60.29 | 60.92 | 84.62 | 62.38 |
+
+Depth matters only below 16: depth 4 is 30–35 µs and **depth 1 is 137–208 µs, i.e. D1a** —
+the control proving the win comes from pre-enqueueing, not from the kernel shape.
+
+**Contention behaves oppositely for the two designs.** In reps where the pipelined probe
+degraded 20 → 226–329 µs/CB and D1a's median went 180 → 7986 µs, **D1e held at
+12.2–15.0 µs**: short CBs interleave with other clients. D1b is robust for an
+unacceptable reason — the persistent kernel monopolises the GPU, and when it could not it
+was descheduled in visible 16 ms quanta. D1e's *tail* does suffer (one rep carried a
+111 ms outlier pulling its mean to 229 µs); D1b's does not.
+
+**Where D1b still wins: the tail above ~p85.** D1b is tightly quantised to its poll
+period (p99 = 32.0 µs) while D1e is p90 ≈ 45, p99 ≈ 60. If a hard tail bound ever matters
+more than throughput that is D1b's only remaining advantage, and it is bought with a
+hardware-specific sweep constant, a silent-corruption failure mode below threshold, and
+GPU monopolisation.
+
+Boundary-cost table re-run at D1e's 19.1 µs mean against the 0.093 s baseline: 944,327
+crossings → 18.0 s = 194×; +D2b (210,089) → 4.01 s = 43×; +B3b (9,671) → 0.185 s =
+**2.0×**; +B6c (2,851) → 0.0545 s = **0.59×**. The plan's ordering claim survives — all
+four reductions are still wanted — but softens: D1e reaches 2.0× on three of four where
+D1b reaches 2.9×.
+
+**Not measured.** No device-side interpreter work between resumes — the state vector is
+64 words and each CB is otherwise empty, so this is boundary cost alone and says nothing
+about a real suspend/resume against a 64 MiB B1 buffer or a larger per-CB working set.
+Single-lane throughout; **lane parallelism is D1b's actual justification and is untouched
+by this result.** The refill thread burns a full core spinning and its cost inside a real
+compiler was not modelled. The MoltenVK arm was not exercised, so nothing here says the
+visibility holds through MoltenVK or on Linux/NVIDIA. `maxCommandBufferCount` was raised
+to 2048 with no memory or driver cost measured. And the **"by spec" half of the plan's
+claim was not verified** — what holds is an empirical bound of 4 × 10⁻⁶ on this device and
+this OS build, which is evidence, not a guarantee.
+
 ## The Darwin path was executed — 2026-08-08, Apple M1 Pro, macOS 26.5.2
 
 Everything below is measured on an M1 Pro, on AC power, **under heavy contention**
@@ -161,6 +261,196 @@ pressure and AIR quality (no AGX disassembler — `maxTotalThreadsPerThreadgroup
 1024 up to 99,373 words, which is weak evidence of no cliff and nothing more); a real
 interpreter arm; realistic partial divergence (only the two extremes were run);
 `MTLBinaryArchive`; gas surcharging for D2b primitives.
+
+## The Metal per-value differential, and N6 on Darwin — 2026-08-08, Apple M1 Pro
+
+A second pass on the same host as the section above, on a disjoint subject: the MSL
+gate that `f716cf8d` made dual-backend, the N6 stack overflow, and the suite. macOS
+26.5.2, `MTLCreateSystemDefaultDevice` returns **`Apple M1 Pro`**, MoltenVK 1.4.2 at
+`/opt/homebrew/Cellar/molten-vk/1.4.2/lib/libMoltenVK.dylib`. **The run was cut short
+by a scheduled reboot**; what did not finish is named at the end rather than guessed at.
+
+`cmake-mtl` (Release, `MCC_GPU_BACKEND=metal`) built with **no Darwin breakage and no
+source change**. Nothing in `CMakeLists.txt`, `cmake/` or `tests/` needed editing.
+
+### The loader claim, executed
+
+`otool -L cmake-mtl/mcc` is **`libSystem.B.dylib` and `libobjc.A.dylib`, nothing else**.
+Under `DYLD_PRINT_LIBRARIES` the same process loads
+`/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation` and
+`/System/Library/Frameworks/Metal.framework/Versions/A/Metal` at runtime. Every bail-out
+in `mcc_mtl_load` has a `MCC_AST_EVAL_LADDER_GPU_DIAG` message and **none fired**, so
+Metal, `objc_getClass`, `sel_registerName`, `objc_msgSend` and `fegetenv`/`fesetenv` all
+resolved; `NSAutoreleasePool` and `NSString` are exercised by the device-name path that
+printed `Apple M1 Pro`. A warm-up dispatch completes: `dispatches=1 lanes=64`.
+
+The vulkan arm on the same host links **only `libSystem`** and `dlopen`s MoltenVK — so
+neither arm links its driver, which was the whole claim.
+
+### The Metal per-value differential — 151.9 M points, zero mismatches
+
+This is the row PLAN listed as *"the clearest gap in the ladder's evidence"*. It is
+closed. `mslgate` drives `msl_expr`/`msl_module_finish` and dispatches through
+`mccgpu.c`; `nm -u` shows **0 Vulkan symbols in `mslgate` and 39 in `spvgate`**, so the
+two arms are genuinely separate code, not one path wearing two names.
+
+Arenas harvested with `MCC_ARENA_DUMP`, then replayed per value against the CPU oracle:
+
+| corpus | arenas | bodies | slices | dispatches | points | compared | vacuous | mismatches |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| synthetic, 38 cases | — | — | — | 152 | 2,500,856 | 2,359,788 | 141,068 | **0** |
+| `spvgate_real` cell corpus, 40 files | 163 | 116 | 646 | 3,025 | 42,207,184 | 41,586,207 | 620,977 | **0** |
+| all of `tests/exec`, 304 files | 1,325 | 616 | 2,359 | 11,129 | 153,158,012 | 151,870,645 | 1,287,367 | **0** |
+
+`compared` is the count of points where CPU and GPU **agreed the slice is defined** and
+the 64-bit value was then compared bit-exactly; `vacuous` is where both agreed it is
+undefined. A definedness disagreement counts as a mismatch, so **0 mismatches over the
+wide corpus also means the definedness predicate matched on all 153,158,012 points**,
+not merely on the 151.9 M that carried a value.
+
+The gate is not blind: `--mutate` over the 40-file corpus reports
+**mismatches=41,586,207**, i.e. every compared point, and the synthetic mutate reports
+2,359,788. Both exit non-zero as the cell requires.
+
+### Metal and MoltenVK, compared directly on one corpus
+
+The only host in the project that can run both arms. Same arena dump, same run:
+
+| | arenas | slices | dispatches | points | compared | vacuous | mismatches | rejected |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `mslgate` (native Metal) | 1,325 | 2,359 | 11,129 | 153,158,012 | 151,870,645 | 1,287,367 | 0 | 0 |
+| `spvgate` (SPIR-V/MoltenVK) | 1,325 | 2,359 | 11,129 | 153,158,012 | 151,870,645 | 1,287,367 | 0 | 0 |
+
+**Every counter is identical and there is no divergence to report.** The two emitters
+select the same slices, lower the same count, and agree with the CPU on every point.
+`gpu/ladder-gpu-parity` likewise reports **1767 dispatches, 0 differing files on both
+arms** — the same 1767 the Linux/Vulkan host banked.
+
+Wall clock, back-to-back but **under contention, so indicative only and not bankable**:
+13.3 s for the Metal arm against 81.8 s for MoltenVK on the wide corpus.
+
+### `spirv-val` and `glslc` are installed here, and nothing in the build uses them
+
+Contrary to the briefing, both are present (SPIRV-Tools / shaderc **v2026.3**). But
+`spirv-val`, `SPIRV_VAL`, `glslc` and `GLSLC` appear **nowhere** in `CMakeLists.txt`,
+`cmake/*.cmake` or `tools/spvgate.c`, so no cell validates SPIR-V on any host. Run by
+hand over the 152 modules dumped with `SPVGATE_DUMP`: **152 of 152 valid at
+`--target-env vulkan1.1`, 0 invalid.** Wiring this into the `spv` cells is free evidence
+and is not done.
+
+### N6 on Darwin — it survived, and stack layout is the reason, not luck
+
+`docs/TODO.md` predicted "a silent 256-byte stack overwrite that happens to survive"
+where Linux took a hard `SIGABRT`. **Confirmed, and the mechanism is now known.** Three
+builds of the pre-fix source (`int32_t pin[64], pout[128]`), Apple clang, arm64:
+
+| build | result |
+| --- | --- |
+| Release, as shipped | **rc=0, 3/3 runs**, correct output |
+| Release `-fstack-protector-strong` | **rc=0**, canary never fires |
+| Release `-fsanitize=address` | **hard abort**, `stack-buffer-overflow`, `READ of size 512` |
+
+The plain Release build already carries `___stack_chk_guard` — Apple clang emits it by
+default here — so the "add a stack protector" experiment was already running, and it
+still does not fire. The disassembly says why. Pre-fix frame is `sub sp, sp, #0x340`
+(832 B) and clang lays it out **`pout` low, `pin` high**:
+
+| object | extent | size |
+| --- | --- | ---: |
+| `pout` | `[sp+0x30, sp+0x230)` | 512 B |
+| `pin` | `[sp+0x230, sp+0x330)` | 256 B |
+| canary | `[sp+0x338, sp+0x340)` | 8 B |
+| saved `x29`/`x30`, `x19`–`x24` | `[sp+0x340, sp+0x380)` | 64 B |
+
+`mcc_gpu_dispatch(code, n, in, ntuple, nlive, out)` is called with `in = sp+0x230` and
+`out = sp+0x30`, `ntuple = 64`. So the 768-byte write to `out` covers
+`[sp+0x30, sp+0x330)` — **exactly `pout` ∪ `pin`**. The 256-byte overrun lands entirely
+inside `pin`, which is dead after the call, and stops **8 bytes short of the canary**.
+It cannot reach the return address. The 512-byte read from `in` runs to `sp+0x430`, 256 B
+past `pin`, over the canary, the saved registers and the caller's frame — read-only, and
+it only feeds garbage into a warm-up buffer whose result is discarded.
+
+So the survival is a property of clang's layout choice on this target, not of the bug
+being harmless. ASan reverses the order (`pin` at `[48,304)`, `pout` at `[368,880)`) and
+therefore catches it immediately, on the **read**, before the write is ever attempted.
+Post-fix the frame is `sub sp, sp, #0x540`, exactly 512 B larger, as the slot counts
+predict.
+
+The pre-fix binary is also **behaviourally identical**: over 120 files from `tests/exec`
+compiled `-O2 -c` with both ladder gates on, **111 objects byte-identical, 0 differing**;
+the 9 remaining are x86/Windows-specific sources that fail to compile identically under
+both. N6 was real, and on this target it was latent.
+
+### The `gpu/*` cells — seven, not four, and `MCC_GPU_REQUIRED` exposes nothing
+
+PLAN's "Darwin now registers all four `gpu/*` cells" is **stale**. Measured:
+
+| build | cells | which |
+| --- | ---: | --- |
+| `cmake-mtl` (metal) | **7** | `ladder-gpu-parity`, `spv-slice-{differential,known-positive,real}`, `msl-slice-{differential,known-positive,real}` |
+| `cmake-mvk` (vulkan) | **4** | the same minus the `msl` trio |
+
+It is seven and not eight because `ladder-gpu-parity` is one cell shared by both arms.
+The vulkan arm gets four because **`MCC_GPU_LANG_MSL` is derived from the backend, not a
+cache option** — `-DMCC_GPU_LANG_MSL=1` on a `MCC_GPU_BACKEND=vulkan` configure is
+silently discarded with an `unused-cli` warning and the MSL emitter stays off. Worth
+knowing before someone tries to get both gates out of one build dir.
+
+All 7 pass in `cmake-mtl`. Re-run in a separate `cmake-mtl-req` configured with
+**`-DMCC_GPU_REQUIRED=ON`**: **all 7 pass again.** The option's only reach is the
+`-DMCC_GPU_REQUIRED=` it forwards to four `cmake -P` cells, and on a host with a real
+device it turns no skip into a failure because **nothing was skipping**. Its value here
+is the negative result: it proves the cells exercised the device rather than quietly
+returning early.
+
+### The suite — partial, one real failure, and 70 budget timeouts
+
+The full `ctest` on `cmake-mtl` was killed by the reboot at **7,986 of 8,906**:
+**7,487 passed, 429 skipped, 70 timeouts, 0 failures**. A resumed pass over the
+non-`flagsweep` remainder (`-I 7967,8906 -LE flagsweep`) reached 792 of 824 before it too
+was stopped, and found **exactly one failure**.
+
+**`runtime-bench-check` — a real arm64 Darwin divergence, and not a GPU one.**
+
+```
+FAIL branchy [defaults]: output mismatch
+    want: branchy 487419720 122294685.000000
+    got:  branchy -7621192680 -921869400.000000
+```
+
+`tools/runtime-bench.py` takes `expect` from running the **reference compiler's** binary,
+so this is mcc disagreeing with the host `cc` on `tests/runtime/branchy.c`, in both the
+`long` accumulator and the `double`. The gate set is `[defaults]`, i.e. **every GPU env
+gate off**, and `ast_ladder_gpu_setup` returns before its first statement in that
+configuration, so the N6 line cannot be implicated. **Classified as a genuine codegen
+defect, unrelated to the GPU work.** It was *not* reproduced against a non-GPU build, so
+"pre-existing" is an inference from the gate state, not a measurement.
+
+**70 × `flagsweep-exec/*` `***Timeout` at 300 s — a budget artifact, not a defect.**
+Zero timeouts occurred anywhere outside `flagsweep-exec`, and **0 of the 114 cells
+passed**, which is the shape of a budget problem rather than a flaky one. The cells carry
+a hard `TIMEOUT 300`. Each does 6 `corpus_run`s at `-O1/-O2/-O3` × on/off, and each
+`corpus_run` builds, links and runs every subject **twice** (an `-O0` reference and the
+flagged build) — 12 such halves. One half measured **32.7 s for 24 buildable subjects**,
+putting the intrinsic cost at **~392 s against a 300 s budget** before any contention.
+`PIN` is also empty on Darwin by design, since there is no `taskset`, so the Linux
+one-core pinning that the budget was presumably calibrated against does not apply.
+**The decisive measurement — one cell, standalone, on an idle machine — was not taken**,
+so "the budget is too small on this host" remains the leading explanation and not a
+proven one.
+
+### Not measured in this pass
+
+The full suite never completed on either build dir: **920 tests of `cmake-mtl` were never
+run**, and the resumed pass left 32 of its 824. **The `cmake-mvk` suite was never run at
+all** — that build was configured and built, and only `ladder-gpu-parity` was executed
+against it, so the Metal-vs-MoltenVK comparison above rests on the two gate binaries and
+that one cell, not on a suite-wide diff. The remaining 44 `flagsweep-exec` cells did not
+run. GPU init cost per process was attempted but every sample was taken under contention
+severe enough that the *baseline* varied 4× (31.5 vs 7.5 ms/run for the same no-GPU
+workload), so **no init-cost number from this pass is bankable** and the Linux 135 ms
+figure still has no Darwin counterpart. `runtime-bench-check` was not bisected and not
+run against a non-GPU build.
 
 ## Where RIR replay accuracy stands — 2026-08-06
 
