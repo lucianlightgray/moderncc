@@ -8,6 +8,7 @@ IMAGE_386="${MCC_I386_DOCKER_IMAGE:-i386/debian:bookworm-slim}"
 
 dg_need_docker
 dg_need_platform linux/386 "$IMAGE_386"
+dg_need_mount "$HP"
 
 dg_docker run --rm --platform linux/386 -v "$HP":/src:ro "$IMAGE_386" sh -c '
 set -e

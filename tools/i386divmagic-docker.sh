@@ -20,6 +20,7 @@ REPO=$(cd "$SCRIPT_DIR/.." && pwd)
 HP="$(cd "$REPO" && (pwd -W 2>/dev/null || pwd))"
 
 rm -rf "$WORK"; mkdir -p "$WORK"
+dg_need_mount "$WORK"
 WORK_ABS=$(cd "$WORK" && pwd)
 WP="$(cd "$WORK_ABS" && (pwd -W 2>/dev/null || pwd))"
 cp "$RT" "$WORK_ABS/i386-libmccrt.a"

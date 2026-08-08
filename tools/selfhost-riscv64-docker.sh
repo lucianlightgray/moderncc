@@ -15,6 +15,7 @@ fi
 . "$(dirname "$0")/dockergate.sh"
 dg_need_docker
 dg_need_platform "" "$img"
+dg_need_mount "$root"
 
 cleanup() { docker rm -f "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT

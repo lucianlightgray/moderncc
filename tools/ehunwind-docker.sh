@@ -7,6 +7,7 @@ HP="$(cd "$REPO" && (pwd -W 2>/dev/null || pwd))"
 ARCH="${1:-arm64}"
 WORK="${2:-./w-ehunwind-$ARCH}"
 rm -rf "$WORK"; mkdir -p "$WORK"
+dg_need_mount "$WORK"
 WORK_ABS="$(cd "$WORK" && pwd)"
 WP="$(cd "$WORK_ABS" && (pwd -W 2>/dev/null || pwd))"
 

@@ -14,6 +14,7 @@ dg_need_docker
 dg_need_platform linux/386 "$IMAGE"
 
 rm -rf "$WORK"; mkdir -p "$WORK"
+dg_need_mount "$WORK"
 WORK_ABS=$(cd "$WORK" && pwd)
 cp "$RT" "$WORK_ABS/librt.a"
 

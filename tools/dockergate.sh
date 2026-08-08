@@ -33,6 +33,18 @@ dg_need_platform() {
 	fi
 }
 
+dg_need_mount() {
+	dg_probe_dir=$(cd "$1" && pwd) || dg_skip "work dir '$1' does not exist"
+	: > "$dg_probe_dir/.dgmount" 2>/dev/null \
+		|| dg_skip "work dir '$dg_probe_dir' is not writable"
+	if ! dg_docker run --rm -v "$dg_probe_dir":/dgw alpine:3 \
+			test -f /dgw/.dgmount >/dev/null 2>&1; then
+		rm -f "$dg_probe_dir/.dgmount"
+		dg_skip "docker cannot see '$dg_probe_dir' -- the bind mount is empty inside the container, so the host files this test writes would be invisible. On macOS add the path under Docker Desktop > Settings > Resources > File sharing, or use a build directory under a shared prefix such as \$HOME."
+	fi
+	rm -f "$dg_probe_dir/.dgmount"
+}
+
 dg_reset_work() {
 	if [ -e "$1" ] && ! rm -rf "$1" 2>/dev/null; then
 		dg_docker run --rm -v "$(cd "$(dirname "$1")" && pwd)":/p \

@@ -13,6 +13,7 @@ dg_need_platform linux/386 "$IMAGE"
 
 rm -rf "$WORK"
 mkdir -p "$WORK"
+dg_need_mount "$WORK"
 WORK_ABS=$(cd "$WORK" && pwd)
 
 cat > "$WORK_ABS/tls.c" <<'EOF'
