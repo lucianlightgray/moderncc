@@ -1315,6 +1315,125 @@ for the host, and macho has none for either corpus — so `rir-coverage` and
 `rir-coverage-census` both skip locally, and the new gate (like the old ones) is
 exercised only on elf/pe hosts. Banking macho floors is a separate decision.
 
+## The device becomes a JIT-lifetime resource — plan amended 2026-08-08
+
+[`docs/PLAN.md`](PLAN.md) gained **cluster L**: Metal and Vulkan are initialized once,
+with the JIT, in the emitted `.init_array` constructor; stay warm and resident for the
+process; are dispatched by the JIT's own pool; are routed to per function through the
+JIT's own hot-patch slots; and are torn down once, with the JIT. Rows **N1** and **N6**
+are superseded by it. The items below are in dependency order — **each one blocks the
+next**, and the first three are prerequisites, not the feature.
+
+**The shape of the problem, verified at `b740ae46`.** The way *in* already exists:
+`mccjit_boot_swap` calls `ast_ladder_gpu_setup()` at `src/mccjit_embed.c:1893` and
+`mccjit_boot_swap_async` at `:1906`. The way *out* does not exist at all — the JIT's
+only exit hook is `atexit(mccjit_kgc_flush_all)` (`:2810`), its pool workers are
+`pthread_detach`ed (`:1375`) into an infinite cond-wait loop (`:1341`) and are never
+signalled or joined, and `mcc_gpu_quiesce`'s single caller is registered only under
+`MCC_AST_EVAL_LADDER_GPU` (`src/mccast.c:15881`). So **"torn down once with the JIT" is
+a construction, not a move.**
+
+1. **Give the JIT a shutdown. Nothing else in cluster L can land first.**
+   `mccjit_pool` (`src/mccjit_embed.c:1302-1309`) needs a quit flag, a
+   `pthread_cond_broadcast`, and either a join or a counted in-flight barrier; the
+   workers are detached today so there is nothing to join. Then a single
+   `mccjit_shutdown()` registered `atexit` once, ordered **ahead of**
+   `mcc_stats_finish`'s hook (`src/mccstats.c:541-546`), which drains the pool, then
+   quiesces the device, then flushes KGC. Note this also closes an existing hole the
+   board already records: the atexit stats report can race a live detached worker.
+
+2. **Clear `mcc_gpu.ok` on `VK_ERROR_DEVICE_LOST` before step 1 ships.**
+   `mcc_gpu_quiesce` does an unbounded `vkDeviceWaitIdle` (`src/mccgpu.c:1303`). Today
+   that is unreachable in a normal build because nothing registers the hook. Step 1
+   makes it run on **every** exit, which converts a latent deadlock into a live one.
+   Ordering matters: this lands with or before the shutdown, never after.
+
+3. **Make Vulkan quiesce actually tear down.** `src/mccgpu.c:1299-1305` sets
+   `mcc_gpu_closing` and waits — no `vkDestroyDevice`, no `vkDestroyInstance` — and the
+   `dlopen` handle is never closed anywhere in the file. Metal's quiesce (`:241-249`)
+   releases the PSO cache but not `dev`/`queue`. A JIT-lifetime device that leaks its
+   device and instance to process exit buys nothing over the current behaviour.
+
+4. **Move bring-up into the constructor and make it a bring-up.**
+   `ast_ladder_gpu_setup` currently emits a literal-7 kernel and **dispatches** it
+   (`src/mccast.c:15891-15900`) — a warm-up, not an init — and it is called *once per
+   baked function* from `mccjit_boot_swap`. Replace with a `mcc_gpu_boot()` called once
+   from `__mccjit_boot_all` (`src/mccjit_embed.c:2013-2031`), under a real
+   `pthread_once` rather than `mcc_gpu.tried`, which is set *before* the work succeeds
+   (`src/mccgpu.c:209-211`, `:1212-1214`) and therefore makes a failed init sticky.
+   Keep the self-test dispatch as opt-in. Payoff: the **130 ms** one-time init moves out
+   of whichever dispatch happens to be first and into `.init_array`, concurrent with the
+   JIT's own boot, and "is there a device" becomes answerable *before* the first offload
+   decision.
+
+5. **Make the resident set resident — and note where the win actually is.**
+   Vulkan creates its compute pipeline with `VK_NULL_HANDLE` for the pipeline cache
+   (`src/mccgpu.c:1471`) and destroys the shader module, pipeline layout and descriptor
+   set layout alongside it every dispatch (`:1456`, `:1462`, `:1417` → `:1525`, `:1523`,
+   `:1529`). Under an interpreter kernel there is **one** module for the life of the
+   process, so this converts a per-dispatch driver compile into a single boot-time one.
+   **That, not buffer reuse, is the win** — the held-buffer A/B was within noise at
+   every size from 64 to 262,144 tuples and was reverted, and that result stands.
+   Buffer residency is still required, but as a *correctness* precondition for the B1
+   address space, not as a latency item.
+
+6. **Route offload through the hot-patch slot, not a new mechanism.**
+   Every JIT-targeted function already begins with an indirect jump through
+   `__mccjit_slot_<fn>` — `ff 25 disp32` on x86-64 (`src/mccast.c:18106-18111`),
+   `adrp/add/ldr/br x16` on arm64 (`:18194-18199`) — with the AOT body spliced six (or
+   sixteen) bytes behind it, and takeover is one release store via `mcc_jit_publish`
+   (`src/mccjit_embed.c:9414-9421`). A GPU-resident variant publishes the same way.
+   Consequence worth stating: a device fault becomes a **slot re-publish back to the AOT
+   body**, so `PLAN.md`'s J3a′ whole-run abandon-and-restart is needed only when the
+   fault happened past the side-effect watermark.
+
+7. **`ast_gpu_want` must be its own predicate. Do not inherit `ast_jit_eligible`.**
+   `ast_jit_want` (`src/mccast.c:1776`) requires `ast_jit_eligible` (`:1753`): no
+   varargs, no `switch` in the body, ≤6 params, **≥1 param**, and every parameter and
+   return in the scalar GP/double set, plus no VLA (`:1779`). Those are **host-ABI
+   trampoline constraints, not device constraints.** A GPU path that inherits them
+   cannot reach the 99.4% ceiling — it cannot even reach the front end, which is full of
+   `switch`. Share the slot machinery and the `-jit-functions` selection
+   (`ast_jit_selected`, `:1720`, where an empty list already means every function);
+   carry device constraints (no `long double`, no inline `asm`, no computed goto)
+   separately.
+
+8. **Three hazards this coupling creates, none of which bites today.**
+   (i) `pthread_atfork` (`src/mccjit_embed.c:1336`) resets the pool in the child
+   (`:1324`); Vulkan and Metal handles are **not** valid across `fork`, so the child
+   handler must mark the device dead rather than inherit it. (ii) `MCC_GPU_LOCK` and
+   `MCC_GPU_UNLOCK` are `((void)0)` on non-POSIX (`src/mccgpu.c:28-29`) — with a pool
+   dispatching that is a live race on `mcc_gpu.dispatches`/`lanes`, on the Metal PSO
+   cache and on the resident buffer. (iii) `mcc_gpu_stats` (`:1545`) reads the counters
+   outside the lock. All three are currently benign only because exactly one thread ever
+   dispatches, and it dispatches almost never.
+
+9. **Hard constraint on the pool: never hold `mccjit_swap_lock` across device work.**
+   That lock (`src/mccjit_embed.c:1300`) serializes every JIT compile process-wide — the
+   pool may have N workers but only one `job->run(job)` executes at a time (`:1353-1355`).
+   A 15–25k-word module build is plausibly seconds on MoltenVK (SPIRV-Cross → MSL →
+   Metal); holding that lock would stall all JIT compilation behind one shader.
+
+10. **`--embed-jit`: dlopen, never link.** The precedent is already in the tree and was
+    established for this exact reason — `objc_getClass`/`sel_registerName`/`objc_msgSend`
+    are resolved through `host_dlsym_process` at Metal-load time rather than linked,
+    because *"an `--embed-jit` program has no business linking libm"*
+    (`src/mccgpu.c:32-33`). `MCC_JIT=0` must leave a baked program with no device
+    bring-up at all, and a missing ICD must be a clean refusal at boot.
+
+**Two corrections this amendment forced, both already applied to `PLAN.md`.**
+`mcc_relocate_ex`'s `mem = 0` pass does **not** yield image offsets —
+`src/mccrun.c:750` reads `s->sh_addr = mem ? addr + offset : 0`, so a null pass zeroes
+every `sh_addr` and only the total padded size survives; Phase 1 needs either a one-line
+change there or a separate layout pass. And **N6 is fixed** at `b740ae46`: the warm-up's
+`pin`/`pout` are heap-allocated and slot-sized (`src/mccast.c:15794-15798`) and freed on
+both exits — the row below is retained for the record only.
+
+**One item this unblocks.** M5/D1e was recorded as runnable only on a Metal box. That is
+wrong: pre-enqueued command buffers are not Metal-specific and this host has a discrete
+NVIDIA device with validation layers. What D1e is actually blocked on is cluster L —
+there is no resident command pool or command-buffer ring to pre-enqueue *into*.
+
 ## Blocking — bugs and free wins from the decision investigation, 2026-08-08
 
 Eight parallel investigations closed the fourteen open rows in

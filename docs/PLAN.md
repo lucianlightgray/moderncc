@@ -8,6 +8,15 @@
 > When the chosen rows are adopted they become the top of [`docs/TODO.md`](TODO.md) and
 > this file becomes the standing design reference.
 >
+> **Amended 2026-08-08 — cluster L added.** The device is no longer a per-dispatch
+> resource. It is brought up **once, with the JIT**, in the emitted `.init_array`
+> constructor; stays warm and resident for the process; is dispatched by the JIT's own
+> pool; is routed to per function through the JIT's own hot-patch slots; and is torn
+> down **once, with the JIT**. That last clause is a construction rather than a move —
+> the JIT has no teardown today — so L2′ is a prerequisite for the rest of Phase 1.
+> Rows N1 and N6 are superseded by it, and the Phase-1 `mcc_relocate_ex` claim is
+> corrected there.
+>
 > **Reading note on hosts.** Everything dated 2026-08-07 was measured on an Apple M1
 > Pro through MoltenVK. Everything dated 2026-08-08 was measured on a Linux x86_64 host
 > with a **discrete NVIDIA RTX 5070 Ti**, validation layers, `spirv-val` and `glslc`.
@@ -74,7 +83,7 @@ shading languages, a working device layer, and a differential test harness. We h
 **no** state, **no** control flow, **no** widths beyond 32 bits, and **no** call
 boundary. Those four are the plan.
 
-## The four things that must be built
+## The five things that must be built
 
 1. **A device address space.** One buffer that holds the program's globals, heap and
    stacks. Pointers become offsets into it. `AST_Load`/`AST_Store` become indexed
@@ -86,6 +95,12 @@ boundary. Those four are the plan.
 4. **Totality.** A path by which *every* node kind and *every* type width executes on
    the device, so the residual CPU set really is "link-time invokes" and not
    "link-time invokes plus everything we did not get to".
+5. **A device lifetime.** The backend is brought up **once**, with the JIT, before
+   `main`; stays warm and resident for the process; is dispatched by the JIT's own
+   pool; is routed to per function through the JIT's own hot-patch slots; and is torn
+   down **once**, with the JIT. Today it is a per-dispatch resource with a lazy sticky
+   init and a teardown reachable only under one env var — and the JIT has no teardown
+   at all. See [cluster L](#l-device-lifetime--residency--the-device-is-a-jit-lifetime-resource).
 
 ---
 
@@ -599,6 +614,85 @@ whole address space and the Vulkan floor for that limit is 128 MiB, which will b
 all of `tests/exec` under both stages and compares stdout — **that is the one that
 catches stable miscompiles**; `jit/selftest-stage2` covers call-bearing JIT recompile.
 
+## L. DEVICE LIFETIME & RESIDENCY — the device is a JIT-lifetime resource
+
+**The decision, stated once.** The device stops being a per-dispatch resource and
+becomes a **process-lifetime resource owned by the JIT**: brought up once by the same
+`.init_array` constructor that boots the JIT, held warm and resident for the life of
+the process, dispatched by the JIT's own worker pool, routed to per function through
+the JIT's own indirect-jump slots, and torn down exactly once by a JIT shutdown path
+**that does not exist today and is created by this cluster**.
+
+Grounding, verified at `b740ae46`:
+
+| thing | state |
+| --- | --- |
+| JIT boot | an emitted ELF constructor `__mccjit_boot_all` (`src/mccjit_embed.c:2013-2031`), `.init_array`, **before `main`**, iterating `__mccjit_registry[]` (`:2000-2006`) and calling `mccjit_boot_swap` (`:1889`) or `mccjit_boot_swap_async` (`:1899`) per baked function. Kill switch `MCC_JIT=0` |
+| **the GPU seam already exists, in the wrong shape** | `mccjit_boot_swap` calls `ast_ladder_gpu_setup()` at `src/mccjit_embed.c:1893` and `_async` at `:1906` — but **once per registry entry**, and what it does is emit a literal-7 kernel and *dispatch* it (`src/mccast.c:15891-15900`). That is a warm-up, not a bring-up |
+| GPU init | lazy on first dispatch, `static` per backend (`src/mccgpu.c:204` Metal, `:1199` Vulkan), reached only from `mcc_gpu_dispatch_locked` (`:336`, `:1390`). The guard is `mcc_gpu.tried`, set **before** the work (`:209-211`, `:1212-1214`), so a failed init is sticky and never retried |
+| GPU teardown | `mcc_gpu_quiesce` (`:241` Metal, `:1299` Vulkan) has **exactly one caller**: `ast_ladder_gpu_report` (`src/mccast.c:15909`), registered `atexit` at `src/mccast.c:15881` **only when `MCC_AST_EVAL_LADDER_GPU` is set**. In a normal build nothing ever quiesces |
+| **JIT teardown** | **there is none.** The engine's only exit hook is `atexit(mccjit_kgc_flush_all)` (`src/mccjit_embed.c:2810`) plus `mcc_stats_set_flush_hook` (`:2811`). Pool workers are `pthread_detach`ed (`:1375`) into an infinite `cond`-wait loop (`:1341`) and are never signalled, joined or drained — a process can exit with a build in flight |
+| what is resident today | Metal: `dev`, `queue`, and a 64-entry PSO cache (`src/mccgpu.c:98`, `MCC_MTL_CACHE_MAX 64` at `:59`). Vulkan: `inst`, `phys`, `dev`, `q` — **and nothing else**. `vkCreateComputePipelines` is called with `VK_NULL_HANDLE` for the pipeline cache (`:1471`), so even the shader compile is repeated every dispatch |
+| the per-dispatch teardown | Vulkan destroys ten object classes every dispatch (`:1515-1535`); Metal releases both buffers and drains an autorelease pool (`:392-396`) |
+| the lock | `mcc_gpu_lock`, a real `pthread_mutex_t` on POSIX (`src/mccgpu.c:24`) and **`((void)0)` on Win32** (`:28-29`). `mcc_gpu_stats` (`:1545`) reads the counters without it |
+| the hot-patch slot | every JIT-targeted function begins with an indirect jump through `__mccjit_slot_<fn>`: `ff 25 disp32` on x86-64 (`src/mccast.c:18106-18111`), `adrp/add/ldr/br x16` on arm64 (`:18194-18199`), with the AOT body spliced immediately behind it (`ast_baseline_splice`, `src/mccast.c:3552`). Takeover is a single release store, `mcc_jit_publish` (`src/mccjit_embed.c:9414-9421`) |
+| what the current shape costs | **130 ms one-time init against 117 µs per dispatch** on the Linux/NVIDIA host, with 24 ioctl / 3.9 openat / 2.3 mmap / 2.1 munmap **per dispatch** |
+
+| | question | options |
+| --- | --- | --- |
+| **L1** | When is the device brought up? | **a.** lazy on first dispatch (today) — the 130 ms lands inside whichever dispatch happens to be first, and "is there a device" is unanswerable until after the first offload decision has already been made<br>**b.** ★ **once from `__mccjit_boot_all`**, beside `mccjit_feasible()` (`src/mccjit_embed.c:1891`), under a real `pthread_once` rather than a pre-set `tried` flag. Replace `ast_ladder_gpu_setup`'s literal-7 *dispatch* with a `mcc_gpu_boot()` that creates instance/device/queue/pipeline-cache/resident buffer and returns a verdict; keep the dispatch only as an opt-in self-test. **Move the call out of `mccjit_boot_swap` and into the constructor**, so it fires once rather than once per baked function<br>**c.** explicitly from `mcc_new()` — wrong altitude: the compiler creates many states per process and the device outlives all of them |
+| **L2** | What owns teardown? | **a.** today's env-gated `atexit(ast_ladder_gpu_report)` — in a normal build, nothing<br>**b.** ★ **a new `mccjit_shutdown()`**, registered `atexit` exactly once, which **drains the pool, then quiesces and destroys the device, then flushes KGC**, ordered ahead of `mcc_stats_finish`'s hook (`src/mccstats.c:541-546`). **This row is a construction, not a move** — see the three preconditions below<br>**c.** leave it to process exit — forfeits the leak-clean exit an `--embed-jit` program needs and leaves a live command buffer racing process teardown |
+| **L2′** | preconditions L2b must fix first | **(i)** pool workers are detached and un-drainable (`src/mccjit_embed.c:1375`, `:1341`); a quit flag + `pthread_cond_broadcast` + join, or a counted in-flight barrier, has to exist before "drain" means anything. **(ii)** `mcc_gpu.ok` is never cleared after `VK_ERROR_DEVICE_LOST`, so the unbounded `vkDeviceWaitIdle` in `mcc_gpu_quiesce` (`src/mccgpu.c:1303`) **deadlocks the process from `atexit`** after a hang — today that is unreachable because nothing registers the hook; L2b makes it reachable on every run. **(iii)** Vulkan quiesce destroys **nothing** (`:1299-1305`): no `vkDestroyDevice`, no `vkDestroyInstance`, and the `dlopen` handle is never closed anywhere in `src/mccgpu.c`. A JIT-lifetime device must tear those down or the coupling buys nothing over process exit |
+| **L3** | What becomes resident? | ★ the entire non-per-dispatch object set: instance / physical device / device / queue, **a real `VkPipelineCache`** (currently `VK_NULL_HANDLE`, `:1471`), the descriptor set layout, the pipeline layout, the interpreter pipeline, one command pool, a ring of command buffers, the fences, and **the B1 address-space buffer**. Metal: device, queue, the existing PSO cache extended to hold the interpreter PSO, and the resident buffers.<br>**Note what this row is and is not.** The held-buffer experiment was implemented, A/B'd and reverted on a refuted rationale — fresh vs held was within noise at every size from 64 to 262,144 tuples. That measurement stands and is **not** an argument against L3: residency here is a **correctness precondition for B1** (the address space must survive a dispatch, and a resized buffer is a different `VkBuffer` whose binding is recorded at encode time), and the object that actually costs something is the **pipeline**, which Vulkan rebuilds every dispatch with no cache at all |
+| **L4** | Who dispatches? | **a.** the calling thread under one global mutex (today)<br>**b.** ★ **the JIT's existing pool** — `mccjit_pool` (`src/mccjit_embed.c:1302-1309`), same queue, same condvar, same `pthread_atfork` discipline — plus one **device thread** that owns queue submission, so command-buffer ordering is single-writer and D1e's pre-enqueued resume chain has an owner<br>**c.** a separate GPU-only pool — a second lifetime to shut down, for no gain<br>**Hard constraint on b:** a device dispatch or pipeline build must **never** hold `mccjit_swap_lock` (`:1300`), which serializes every JIT compile process-wide. A 15–25k-word module build is plausibly seconds on MoltenVK (SPIRV-Cross → MSL → Metal); holding that lock would stall all JIT compilation behind one shader |
+| **L5** | How does a function get routed to the device? | **a.** a dispatch decision inside the interpreter<br>**b.** ★ **the existing publish.** A GPU-resident variant is stored into `__mccjit_slot_<fn>` by `mcc_jit_publish` exactly as a JIT variant is — release store plus `host_icache_flush`. The slot is already the process's single switch point per function, the AOT body already sits behind it as a permanent fallback, and the whole-function offload unit F1c demands is precisely the unit the slot addresses. **Consequence for J3a′:** a device fault becomes a **slot re-publish back to the AOT body** for the per-function case, and whole-run abandon-and-restart is needed only when the fault happened past the side-effect watermark<br>**c.** patch call sites — rejected; the indirect slot exists so nothing has to |
+| **L6** | Which functions are eligible? | **This is where the coupling costs something and it must be decided explicitly.** `ast_jit_want` (`src/mccast.c:1776`) requires `ast_jit_eligible` (`:1753`): no varargs, no `switch` in the body, ≤6 params, **≥1 param**, every parameter and the return in the scalar GP/double set — plus no VLA in the body (`:1779`). Those are **host-ABI trampoline constraints, not device constraints**, and they are far narrower than the 99.4% ceiling.<br>**a.** reuse `ast_jit_eligible` unchanged — cheapest, and forfeits the headline<br>**b.** ★ **a second predicate `ast_gpu_want`** that shares the slot machinery and the `-jit-functions` selection (`ast_jit_selected`, `:1720`, where an empty list already means *every* function) but carries **device** constraints: no `long double`, no inline `asm`, no computed goto. Eligibility must not be inherited from a trampoline's register budget<br>**c.** widen `ast_jit_eligible` itself — couples two unrelated things and puts the JIT's own admission at risk |
+| **L7** | fork, threads, Windows | ★ three hazards this coupling **creates**, none of which bites today because exactly one thread ever dispatches and it dispatches almost never:<br>**(i) `fork`.** `pthread_atfork` (`src/mccjit_embed.c:1336`) resets the pool in the child (`:1324`). Vulkan and Metal handles are **not** valid across `fork`; the child handler must mark the device dead (`ok = 0`, `closing = 1`) rather than inherit it.<br>**(ii) Windows.** `MCC_GPU_LOCK`/`UNLOCK` are `((void)0)` on non-POSIX (`src/mccgpu.c:28-29`). With a pool dispatching, that is a live data race on `mcc_gpu.dispatches`/`lanes`, on the Metal PSO cache and on the resident buffer. Needs a real critical section before L4b lands.<br>**(iii) unlocked stats.** `mcc_gpu_stats` (`:1545`) reads the counters outside the lock — harmless today, torn once the pool dispatches |
+| **L8** | `--embed-jit` | ★ **the device is `dlopen`ed at boot, never linked.** The precedent is in the tree and was established for exactly this reason: `objc_getClass`/`sel_registerName`/`objc_msgSend` are resolved through `host_dlsym_process` at Metal-load time rather than linked, because *"an `--embed-jit` program has no business linking libm"* (`src/mccgpu.c:32-33`). Same rule here. `MCC_JIT=0` must leave the program with **no device bring-up at all**, and a missing ICD must be a clean refusal at boot, not a boot failure |
+
+### Findings — lifetime, verified 2026-08-08 at `b740ae46`
+
+- **The seam is already wired, which makes L1 small and L2 large.** `mccjit_boot_swap`
+  already calls `ast_ladder_gpu_setup()` (`src/mccjit_embed.c:1893`, `:1906`), so
+  "the GPU comes up with the JIT" is a two-line relocation into the constructor plus a
+  change of what the callee *does*. There is no matching seam on the way out: the JIT
+  has no shutdown function, no drain, and no ordered exit beyond one `atexit` KGC
+  flush. **"Torn down once, with the JIT" therefore means building the JIT's teardown
+  as a prerequisite**, and that is the larger half of this cluster.
+- **The 130 ms is currently paid in the worst possible place.** Init is lazy and its
+  guard is set before the work succeeds, so the first dispatch on a machine with a real
+  ICD absorbs a 130 ms stall and a machine without one absorbs it as a sticky failure
+  that is never retried. Under L1b the cost lands in `.init_array`, concurrent with the
+  JIT's own boot, and the verdict is available *before* the first offload decision.
+- **Vulkan rebuilds the shader every dispatch.** `VK_NULL_HANDLE` at
+  `src/mccgpu.c:1471` means no pipeline cache exists at all, and the shader module,
+  pipeline layout and descriptor set layout are created and destroyed alongside it
+  (`:1456`, `:1462`, `:1417` → `:1525`, `:1523`, `:1529`). Metal is better only by
+  accident — it has a 64-entry PSO cache keyed on an FNV-1a of the MSL text
+  (`:98`, `:251`, `:266-268`). Under an interpreter kernel there is **one** module for
+  the life of the process, so this row converts a per-dispatch driver compile into a
+  single boot-time one. That, not buffer reuse, is where the residency win is.
+- **L5 makes the offload decision use machinery that is already load-bearing.** The
+  slot is not a convenience: it is how the JIT already achieves atomic, lock-free,
+  per-function takeover with a permanent fallback body sitting six (or sixteen) bytes
+  behind the entry. Reusing it means the GPU path inherits `mcc_jit_publish`'s release
+  store and icache flush, the AOT baseline, and `-jit-functions` selection, and it means
+  device-vs-host is decided at exactly the granularity F1c argues for.
+- **But L6 is a real narrowing and the plan must not paper over it.** `ast_jit_eligible`
+  refuses varargs, `switch`, >6 params, zero params, and any non-scalar parameter or
+  return. A GPU path that inherits that predicate cannot reach 99.4% of nodes — it
+  cannot even reach the front end, since the parse path is full of `switch`. `ast_gpu_want`
+  has to be its own predicate from the start.
+- **Correction to N6.** The `int32_t pin[64], pout[128]` stack overflow at the warm-up
+  site is **fixed at `b740ae46`**: the buffers are heap-allocated and slot-sized at
+  `src/mccast.c:15794-15798`, with frees on both the `out:` and `bail:` paths
+  (`:15859-15861`, `:15866-15868`). The row below is retained for the record only. The
+  warm-up *dispatch* it lived in is what L1b deletes.
+- **Correction to the phase-1 buffer note.** The claim that a persistent address space
+  is blocked by per-dispatch buffer lifetime is right; the claim that fixing it is also
+  free performance is not — the held-buffer A/B found no win at any size and was
+  reverted. L3's justification is correctness and the pipeline cache, not latency.
+
 ---
 
 # Decisions resolved — 2026-08-08
@@ -624,7 +718,7 @@ and a list of bugs.
 | **I2** | ~120 lines at init; the list is in the I2 row | `VkPhysicalDeviceFeatures` has no body and its getter is not in the loader table |
 | **J3** | delete region fallback; J3a′ whole-run abandon-and-restart | "uncommitted" is false by default on a coherent buffer |
 | **K1** | never add the CMake option | 24–127 KB against a 184 KB trigger; the exclusion mechanism already exists |
-| **N1** | buffer cache now, ctx struct before Phase 1 | no API change, so K3 is free |
+| **N1** | ~~buffer cache now, ctx struct before Phase 1~~ — **SUPERSEDED by cluster L.** The device is a JIT-lifetime resource: up once with the JIT, resident, torn down once with the JIT | the buffer-cache half was A/B'd and reverted (no win at any size); the real lifetime question is ownership, and the JIT already owns an equivalent one |
 | **N2** | raise **both** caps to `1<<20` words / 4 MB + an incremental budget | the MSL cap must move too; the 512-constant ceiling is irrelevant to a hand-written interpreter |
 | **N3** | stay build-time; add a Linux ICD cell | a runtime selector is impossible on Linux — the Metal arm needs `<objc/message.h>` |
 
@@ -632,7 +726,7 @@ and a list of bugs.
 
 | | question | why it cannot be closed from here |
 | --- | --- | --- |
-| **M5 / D1e** | does a speculative pre-enqueued self-skipping resume chain reach ~30 µs? | the projection is arithmetic over the measured 19.5 µs/CB pipelined throughput. **It decides the entire D1 row** and can only be run on a Metal box. Also unresolved: whether the ~64-CB `MTLSharedEvent` deadlock applies to non-blocking chains |
+| **M5 / D1e** | does a speculative pre-enqueued self-skipping resume chain reach ~30 µs? | the projection is arithmetic over the measured 19.5 µs/CB pipelined throughput. **It decides the entire D1 row.** ~~Can only be run on a Metal box~~ — **amended 2026-08-08: pre-enqueued command buffers are not Metal-specific**, and this host has a discrete NVIDIA device with validation layers, so the Vulkan half is runnable here today. What it is actually blocked on is **cluster L**: there is no resident command pool or command-buffer ring to pre-enqueue into. Still Metal-only: whether the ~64-CB `MTLSharedEvent` deadlock applies to non-blocking chains |
 | **E6** | software `double` for the Metal arm | new rung, no design; MSL has no `double` at all |
 | **N13** | the must-run manifest | 138 `SKIP_RETURN_CODE 77` sites and nothing asserts any of them must fire |
 | **N14** | per-lane writable globals | 5.82 MiB × 64 lanes = **373 MiB, 4× the floor before a single stack frame exists** |
@@ -641,12 +735,12 @@ and a list of bugs.
 
 | | item | status |
 | --- | --- | --- |
-| **N1** | device-layer lifetime redesign — buffers created *and destroyed* per dispatch | resolved above. Measured on Linux/NVIDIA: **130 ms one-time init, 117 µs per dispatch, 72 ns per lane**, with 24 ioctl / 3.9 openat / 2.3 mmap / 2.1 munmap **per dispatch** |
+| **N1** | device-layer lifetime redesign — buffers created *and destroyed* per dispatch | **now owned by [cluster L](#l-device-lifetime--residency--the-device-is-a-jit-lifetime-resource).** Measured on Linux/NVIDIA: **130 ms one-time init, 117 µs per dispatch, 72 ns per lane**, with 24 ioctl / 3.9 openat / 2.3 mmap / 2.1 munmap **per dispatch**. The lifetime is tied to the JIT's, and the JIT's teardown has to be built first |
 | **N2** | `MCC_GPU_CODE_MAX` must be raised before an interpreter can exist | resolved above. Enforcement moved to `src/mccgpu.h:2574` (MSL, **bytes**) and `:2601` (SPIR-V, words) |
 | **N3** | `MCC_GPU_BACKEND` is build-time, not runtime | resolved above |
 | **N4** | dispatch status checking | Metal half **landed** (`c6814625`); **Vulkan `VK_TIMEOUT` use-after-free is live** |
 | **N5** | the ≥32 KB doorbell sweep constant | **may be obsolete** — pending M5. If D1b survives: a `#error` floor carrying the measurement in its text, a per-device qualification table with D1a fallback on unknown devices, a **bounded poll loop exiting with `HOSTCALL_TIMEOUT`** (this is what converts the documented silent hang into a loud error), a 285,100-round soak, and a known-positive cell that fails if a 4 KB sweep still works |
-| **N6** | **`MCC_AST_EVAL_LADDER_GPU=1` overflows two stack buffers** | **LIVE BUG.** `src/mccast.c:15892` declares `int32_t pin[64], pout[128]` — sized for the pre-`989e4b3b` ABI — while the device layer reads `ntuple*nlive*MCC_GPU_IN_SLOTS*4` = **512 B from a 256 B buffer** and writes `ntuple*MCC_GPU_OUT_SLOTS*4` = **768 B into a 512 B buffer**. Hard SIGABRT under glibc's stack protector, so the Vulkan arm dispatches nothing on Linux; a silent 256 B stack overwrite on Darwin. **CI cannot see it** — the Linux cell installs `libvulkan-dev` (loader and headers, no ICD), so the cell green-skips. One-line fix |
+| **N6** | ~~`MCC_AST_EVAL_LADDER_GPU=1` overflows two stack buffers~~ | **FIXED at `b740ae46`** — the buffers are heap-allocated and slot-sized (`src/mccast.c:15794-15798`) and freed on both the `out:` and `bail:` paths (`:15859-15861`, `:15866-15868`). Retained for the record; the warm-up *dispatch* it lived in is what L1b deletes. **Was:** `src/mccast.c:15892` declared `int32_t pin[64], pout[128]` — sized for the pre-`989e4b3b` ABI — while the device layer reads `ntuple*nlive*MCC_GPU_IN_SLOTS*4` = **512 B from a 256 B buffer** and writes `ntuple*MCC_GPU_OUT_SLOTS*4` = **768 B into a 512 B buffer**. Hard SIGABRT under glibc's stack protector, so the Vulkan arm dispatches nothing on Linux; a silent 256 B stack overwrite on Darwin. **CI cannot see it** — the Linux cell installs `libvulkan-dev` (loader and headers, no ICD), so the cell green-skips. One-line fix |
 | **N7** | **arena dump reproducibility regression** | `354e96f6`'s raw `Sym*` columns are ASLR-varying; invalidates H4′'s banked evidence |
 | **N8** | **`ast_replay_bb`'s frame is 93% one array** | `SValue sv_stack[VSTACK_SIZE + 1]` (`src/mccast.c:5823`) is 32,832 of the 35,424 B frame, declared unconditionally in a recursive prologue for an inline-asm arm. Hoisting it: frame **35,424 → 2,592 B**, self-compile peak stack **1024 → 112 KiB**, objects **byte-identical** at `-O0`…`-O3`. The shipping form must not be `static` (it has to survive `mcc_error`'s `longjmp`) — an arena save-area or a `noinline` helper |
 | **N9** | **six binary opcodes with zero coverage** | `TOK_UDIV`, `TOK_UMOD`, `TOK_PDIV`, `TOK_UGE`, `TOK_ULE`, `TOK_UGT` each have an MSL arm, a SPIR-V arm and a CPU-reference arm at 32 **and** 64 bits, and are exercised by nothing. **Structurally unreachable from harvested arenas** — `gen_op` rewrites `TOK_GE`→`TOK_UGE` at `src/mccgen.c:4455` *after* the arena records the token, the same mechanism behind `ee1fa9e0`. Measured 0 occurrences across 24,562 harvested nodes. Findable by enumeration alone |
@@ -730,9 +824,25 @@ wholesale. Breadth-first across **all 14 kinds at int32** (G3c), day one being t
 not a proxy, since `ast_hash_of` *is* the identity relation the compiler uses for CSE.
 Prove it runs `tests/exec` identically to native codegen (that is G2c). *No GPU yet.*
 
-**Phase 1 — the device address space.** B1b/B2b/B4b, plus the device-layer lifetime
-redesign so a buffer can outlive a dispatch. Reuse `mcc_relocate_ex`'s `mem = 0`
-layout pass; replace absolute relocation with an in-blob import table. `Load`/`Store`/
+**Phase 1 — the device lifetime, then the device address space.** Cluster L comes
+first and its two halves are not symmetric. **L2′ before L2:** give the JIT a real
+shutdown — a quit flag, a `pthread_cond_broadcast`, and a join or in-flight barrier
+over the detached pool workers (`src/mccjit_embed.c:1341`, `:1375`) — then clear
+`mcc_gpu.ok` on `VK_ERROR_DEVICE_LOST` so `vkDeviceWaitIdle` cannot deadlock from
+`atexit`, then make Vulkan quiesce actually destroy the device and instance. Only then
+L1b (bring-up in `__mccjit_boot_all`, once, not once per registry entry) and L3
+(residency, including the `VkPipelineCache` that does not exist today). L7's three
+hazards land with L4b, not after it.
+
+Then the address space: B1b/B2b/B4b. **Correction to the draft:** `mcc_relocate_ex`'s
+`mem = 0` pass does **not** yield image offsets — `src/mccrun.c:750` reads
+`s->sh_addr = mem ? addr + offset : 0`, so a null pass sets every `sh_addr` to zero and
+only the total padded size survives. Either patch that line to assign unconditionally
+(`addr` is already 0 on that pass, `:748`) or write a separate layout pass; the
+monotonic single-cursor property the plan wanted is real (`:708-751`), the offsets are
+not. Replace absolute relocation with an in-blob import table — `relocate_syms` bakes
+live host VAs (`src/objfmt/mccelf.c:1007`) and `cleanup_sections` (`src/mccrun.c:198`)
+then frees the reloc sections, so nothing can be re-based afterwards. `Load`/`Store`/
 `StoreVal` against the buffer. Still CPU-executed.
 
 **Phase 2 — the interpreter on the device.** A1b hand-written twice (A4a), int32 only,
@@ -754,7 +864,11 @@ aggregates/bitfields.
 **Phase 5 — the boundary mechanism, no longer "the doorbell".** Ship **D1e** (speculative
 pre-enqueued self-skipping resume chain) if the M5 experiment confirms ~30 µs: it reuses
 C3b's state vector, gets its cache visibility from the command-buffer boundary by spec,
-and carries no hardware constant and no hang mode. **D1b is demoted to Phase 7+** — its
+and carries no hardware constant and no hang mode. **Cluster L is what makes D1e
+buildable at all** — a pre-enqueued chain needs a resident command pool, a resident
+command-buffer ring and a single owning submitter, which is exactly L3 plus L4b's
+device thread. Under the old per-dispatch lifetime there is nothing to pre-enqueue
+*into*. **D1b is demoted to Phase 7+** — its
 24 µs is 100% sweep, any safety margin erases the win, 3000 clean rounds bound the hang
 rate only at ~2.9 per self-compile, and its genuine advantage (other lanes keep running
 through one lane's host call) is worth nothing under J4a's single-lane rule. Either way
@@ -853,10 +967,25 @@ must state the dead-node fraction or the number cannot be interpreted.
   this target and five are `#ifdef`-ed out on arm64. The earlier framing of this as
   "the real ceiling" was wrong: 95.6% of bodies containing a dropped opcode still
   replay byte-identically.
-- **The device layer has no persistent state.** Buffers are created *and destroyed per
-  dispatch* (`src/mccgpu.c:315,318` → `357,358`), so a persistent address space is a
-  lifetime redesign, not a parameter change. **Measured cost of the current scheme:
-  +56 µs per dispatch, 39% of D1a's latency** — so this is also free performance.
+- **The device layer has no persistent state, and no owner for one.** Vulkan destroys
+  ten object classes every dispatch (`src/mccgpu.c:1515-1535`) and creates its compute
+  pipeline with `VK_NULL_HANDLE` for the cache (`:1471`), so the shader is recompiled
+  every time; Metal releases both buffers per dispatch (`:392-393`) and caches only
+  PSOs. A persistent address space is therefore a lifetime redesign, not a parameter
+  change — that is cluster L. **The `+56 µs, 39% of latency` figure this bullet used to
+  carry is withdrawn**: held-vs-fresh buffers were A/B'd in one binary and were within
+  noise at every size from 64 to 262,144 tuples. Residency is justified by correctness
+  (B1's address space must survive a dispatch) and by the missing pipeline cache, not
+  by buffer allocation.
+- **The JIT has no teardown to hang the device's off.** Its only exit hook is
+  `atexit(mccjit_kgc_flush_all)` (`src/mccjit_embed.c:2810`); pool workers are detached
+  into an infinite loop and are never signalled or joined (`:1341`, `:1375`), and
+  `mcc_gpu_quiesce`'s single caller is registered only under
+  `MCC_AST_EVAL_LADDER_GPU` (`src/mccast.c:15881`). "Torn down once, with the JIT"
+  requires **building the JIT's shutdown first** (L2′), and doing so makes an existing
+  latent deadlock reachable: `mcc_gpu.ok` is never cleared after
+  `VK_ERROR_DEVICE_LOST`, so an unbounded `vkDeviceWaitIdle` would run from `atexit`
+  on every exit rather than never.
 - **`MCC_GPU_CODE_MAX` must be raised before an interpreter can exist** — a realistic
   interpreter kernel is 15–25k words against a cap of 8192, and the cap is enforced on
   the interpreter by the very same check it was supposed to sidestep.
