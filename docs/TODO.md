@@ -1315,6 +1315,143 @@ for the host, and macho has none for either corpus — so `rir-coverage` and
 `rir-coverage-census` both skip locally, and the new gate (like the old ones) is
 exercised only on elf/pe hosts. Banking macho floors is a separate decision.
 
+## Blocking — bugs and free wins from the decision investigation, 2026-08-08
+
+Eight parallel investigations closed the fourteen open rows in
+[`docs/PLAN.md`](PLAN.md)'s decision table (recorded there under *Decisions resolved*).
+They also turned up nine defects and free wins that have **nothing to do with whether
+that plan is adopted**. Ordered by severity; the first is a memory-safety bug.
+
+**Read the host note first.** The 2026-08-07 study was measured on an Apple M1 Pro
+through MoltenVK. This machine is Linux x86_64 with a **discrete NVIDIA RTX 5070 Ti**,
+validation layers, `spirv-val` and `glslc`. Numbers below are from this host unless
+stated, and they do not always match the M1's — the re-measured allocation census is
+**2.45×** the M1 figure.
+
+1. **`MCC_AST_EVAL_LADDER_GPU=1` smashes the stack. One-line fix.**
+   `src/mccast.c:15892` declares `int32_t pin[64], pout[128]` — 256 B and 512 B, sized
+   for the pre-`989e4b3b` ABI of 1 in-slot / 2 out-slots. `MCC_GPU_IN_SLOTS` is now 2
+   and `MCC_GPU_OUT_SLOTS` is 3, so the warm-up dispatch **reads 512 B from the 256 B
+   buffer** (`src/mccgpu.c:1403`, Metal `:352`) and **writes 768 B into the 512 B one**
+   (`:1510`, Metal `:388`). Under glibc's stack protector that is a hard SIGABRT, so
+   **zero dispatches happen on any Linux host with a real ICD**; on Darwin it is a silent
+   256-byte stack overwrite that happens to survive. `gpu/ladder-gpu-parity` fails
+   correctly here via its `_disp EQUAL 0` `FATAL_ERROR`. **CI cannot see it**: the Linux
+   cell installs `libvulkan-dev` — loader and headers, no ICD — so the cell green-skips.
+   Fix: `int32_t pin[64 * MCC_GPU_IN_SLOTS], pout[64 * MCC_GPU_OUT_SLOTS];`
+
+2. **The Vulkan dispatch frees resources under a live command buffer.**
+   `src/mccgpu.c:1507-1509` waits 30 s; on any non-`VK_SUCCESS` it falls to `done:` at
+   `:1515-1535` and destroys the fence, command pool, pipeline, pipeline layout, shader
+   module, descriptor pool, descriptor set layout, mappings, memory and buffers. On
+   `VK_TIMEOUT` the command buffer is still **pending**. Because buffers are created
+   fresh per dispatch, the driver recycles the freed allocation into the next dispatch's
+   `bin`/`bout` while a zombie kernel writes into it — **a timeout in dispatch N silently
+   corrupts dispatch N+1**. Alongside: all ~13 Vulkan failure exits are diagnostically
+   mute, and `mcc_gpu.ok` is never cleared after `VK_ERROR_DEVICE_LOST`, so
+   `mcc_gpu_quiesce`'s unbounded `vkDeviceWaitIdle` from `atexit` deadlocks after a hang.
+   The restructure needs a `submitted` flag and a second label that **destroys nothing**
+   — leaking one dispatch's resources at a terminal error is strictly safer than a UAF
+   against the GPU, and it is bounded because no further dispatch can occur.
+   **Note the Metal half of this is already fixed** (`c6814625`); `docs/PLAN.md`'s old
+   "`src/mccgpu.c:352-356`" paragraph was stale and has been corrected.
+   **Neither bug is reachable by any existing test** — `src/mccgpu.c`'s Vulkan path has
+   zero direct coverage, since `gpu/spv-slice-*` use `spvgate`'s own duplicated Vulkan
+   code. Cheapest regression test: make the hardcoded 30 s fence a named tunable and run
+   one cell at 1 ns with validation layers on. Works here and on lavapipe, needs no fault.
+
+3. **`ast_replay_bb`'s 35 KB frame is 93% one array. One declaration, 9.1× less stack.**
+   `SValue sv_stack[VSTACK_SIZE + 1]` (`src/mccast.c:5823`) is 32,832 B — `VSTACK_SIZE`
+   is 512 and `sizeof(SValue)` is 64 because `CValue` carries a `long double` — declared
+   unconditionally in the prologue of a recursive function, for an `AST_OP_ASMGEN` arm
+   that only fires on inline asm. Measured by building two control trees in scratchpad:
+   frame **35,424 → 2,592 B**, self-compile peak stack **1024 KiB → 112 KiB**, and the
+   output objects are **byte-identical at `-O0`…`-O3`**. The shipping form must not be
+   `static` — it has to survive the `longjmp` in `mcc_error` — so use an explicit
+   save-area or move the ASMGEN arm into a `noinline` helper. ~10 lines.
+   Two related findings: the 930 KiB/992 KiB peak **only exists at `-O1`+**, because
+   `ast_replay_env` requires `optimize >= 1` (`-O0` peaks at 20,672 B, 49× less); and
+   `MCC_MAX_UNARY_DEPTH 2048` is mis-sized at a measured **1.15 KiB of host stack per
+   unary level** — 2,040 nested parens SIGSEGV at a 2 MiB stack and need 2,560 KiB. It
+   survives only because the default host stack is 8 MiB.
+
+4. **Six binary opcodes have zero test coverage of any kind.**
+   `TOK_UDIV`, `TOK_UMOD`, `TOK_PDIV`, `TOK_UGE`, `TOK_ULE`, `TOK_UGT` each have an MSL
+   arm (`src/mccgpu.h`), a SPIR-V arm and a CPU-reference arm in `ast_eval_binop`, at 32
+   **and** 64 bits, and nothing exercises them. (`TOK_SHR` and `TOK_ULT` have exactly one
+   synthetic case each.) They are **structurally unreachable from harvested arenas**:
+   `gen_op` rewrites `TOK_GE`→`TOK_UGE` at `src/mccgen.c:4455` *after* the arena records
+   the token — the same mechanism behind `ee1fa9e0`. Measured 0 occurrences across
+   24,562 harvested nodes. This is 23% of the binary-op axis, findable by **enumeration
+   alone**, no fuzzing needed.
+
+5. **`spvgate` reports `OK` for a case that lowered nothing.**
+   `tools/spvgate.c:1250-1254` prints `SKIP (not lowerable)` and `continue`s; `:1335`
+   then prints `OK` because `case_bad` is still 0. That is the
+   `cmake/ladder_gpu_parity.cmake` "zero dispatches, so identical verdicts prove nothing"
+   failure mode, un-closed one level down. It matters beyond hygiene: it means the claim
+   *"the synthetic suite showed 0 mismatches either way — only real arenas discriminate"*
+   **cannot currently be distinguished from "the synthetic cases compared 0 points"**,
+   and `b_ll_cmpu` does build the discriminating shape. ~10 lines: print per-case
+   `compared=` and fail a case at 0. Do this before trusting any generator's yield.
+
+6. **`354e96f6` is half-landed, and it broke dump reproducibility.**
+   The dump emits 12 fields plus `[inv]` callee lines (`src/mccast.c:13580`), but
+   `rebuild_arena` still does `sscanf(...) != 7` (`tools/spvgate.c:1083`) — the five new
+   fields have **no consumer**. Worse, two of them are raw `(uintptr_t)Sym*`, so two
+   identical self-compiles now differ under ASLR (identical under `setarch -R`; the
+   7-field prefix is still identical). **That invalidates the H4′ evidence** in
+   `docs/PLAN.md` — "three `MCC_ARENA_DUMP` self-compiles byte-identical across all
+   374,310 node records" was measured before this commit. Any bank keyed on the dump is
+   unbankable until the pointers are interned.
+
+7. **The untyped-readback diagnosis was wrong, and the fix is free.**
+   The claim that types are missing because they live in the `st_*` side table is half
+   right; the mechanism is worse. `st_*` is written only from `src/mccrir.c` and only
+   when `rir_stamp_env` is set — `MCC_RIR_STAMP`, **off by default** (`:5949`). In
+   production the type is not in a side table, it is **absent**. And the artifact is far
+   broader than `Load`: **39,640 of 39,643 `Binary` nodes read back untyped** (9.2% of
+   the arena, the most important kind for the emitters) against 7,195 `Load` at 1.7%.
+   Typed-node coverage goes **65.8% → 100.0%** at `MCC_RIR_STAMP=2`, and `=0`/`=1`/`=2`
+   produce **byte-identical objects** — verified `cmp`-clean at 3,302,415 bytes.
+
+8. **Two dead memsets and a duplicated upload in the dispatch path.**
+   `memset(pout, …)` (`src/mccgpu.c:1404`, Metal `:353`) is **100% dead** — every lane
+   `< cap` writes all three out slots unconditionally and `out` is read only for
+   `t < ntuple`. `memset(pin, …)` is needed only for the `[ntuple, cap)` tail, whose
+   outputs are discarded and whose divisions are already guarded. And
+   `ast_ladder_gpu_run` emits modules *a* and *b* and calls `mcc_gpu_run` twice with the
+   **identical** `tin`, re-allocating and re-copying each time. Per lane per dispatch:
+   56 B moved, **28 B dead**, 32 B duplicated. The existing cells are **lane-bound**
+   (`gpu/spv-slice-real` is 1,659 dispatches / 23.1M lanes), so this is a bigger lever
+   than the per-dispatch fixed cost. Measured on this host: **130 ms one-time Vulkan
+   init, 117 µs per dispatch, 72 ns per lane**, with 24 ioctl / 3.9 openat / 2.3 mmap /
+   2.1 munmap **per dispatch** — buffers are created *and destroyed* every time.
+
+9. **`mcc_gpu_mem_index` picks the worst memory type on this machine.**
+   `src/mccgpu.c:1307-1320` takes the **first** type matching
+   `HOST_VISIBLE|HOST_COHERENT`. Here that is `memoryTypes[2]`, on the 46.5 GiB
+   **system-RAM** heap and **not** `HOST_CACHED`. `memoryTypes[3]` adds `HOST_CACHED`;
+   `memoryTypes[4]` is `DEVICE_LOCAL|HOST_VISIBLE|HOST_COHERENT` on the 11.94 GiB ReBAR
+   heap. Under a B1-style address space every interpreted load and store would be a PCIe
+   transaction. The measured ~0.4 GB/s effective bandwidth is consistent with an uncached
+   write-combined mapping. Also `devs[0]` (`:1259`) is still chosen with no scoring, and
+   `VkPhysicalDeviceLimits` is fully transcribed at `:604-711` while **only `deviceName`
+   is ever read**.
+
+10. **Nothing asserts that any skippable cell must run.**
+    There are **138 `SKIP_RETURN_CODE 77` registrations**. The GPU cells *lie* —
+    `cmake/ladder_gpu_parity.cmake` and `cmake/spvgate_real.cmake` `return()` with exit 0
+    after zero work and ctest prints **PASS**. `rir-coverage` is honest — it exits 77 and
+    names the reason — but *nothing anywhere says it must not skip on a given host*.
+    Related, and currently unnoticed: `wide`'s `lowerable` in
+    `tests/rir/coverage-bank.json` is still the **legacy flat form**, so
+    `rir-coverage-census` silently 77-skips on **PE** as well as macho; and the
+    `kept_coverage` gate added by `78d4856f` **has never been run against a clean HEAD
+    build** — the bank is 29 commits stale. The general fix is a checked-in
+    `test-name: hosts-where-SKIP-is-a-failure` manifest consumed by one post-ctest cell;
+    `tools/ci.c`'s `FEATURES[]`/`GATE_CELLS[]` is the same idea one altitude too high.
+
 ## Top priority — the decisive wins from the GPU-execution study, 2026-08-07
 
 Curated from [`docs/PLAN.md`](PLAN.md), which proposes moving AST/RIR execution onto the

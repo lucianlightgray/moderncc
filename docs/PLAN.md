@@ -1,8 +1,17 @@
 # PLAN — move the AST/RIR machine onto the GPU
 
-> Status: **proposal, choices not yet finalized.** Nothing here has landed. When the
-> decision table at the bottom is settled, the chosen rows become the top of
-> [`docs/TODO.md`](TODO.md) and this file becomes the standing design reference.
+> Status: **proposal, decision table resolved 2026-08-08, adoption not yet taken.**
+> Every lettered row now carries a recommendation resting on a measurement. Fourteen
+> rows that read as open design questions were investigated on 2026-08-08 and closed —
+> see [Decisions resolved](#decisions-resolved--2026-08-08) at the bottom, which also
+> records the four that remain genuinely open and the bugs the investigation found.
+> When the chosen rows are adopted they become the top of [`docs/TODO.md`](TODO.md) and
+> this file becomes the standing design reference.
+>
+> **Reading note on hosts.** Everything dated 2026-08-07 was measured on an Apple M1
+> Pro through MoltenVK. Everything dated 2026-08-08 was measured on a Linux x86_64 host
+> with a **discrete NVIDIA RTX 5070 Ti**, validation layers, `spirv-val` and `glslc`.
+> Where the two disagree, both numbers are kept and the host is named.
 
 ## The goal, stated precisely
 
@@ -54,8 +63,9 @@ Grounding facts, so the plan is measured against the code and not against ambiti
 | backends | Metal (MSL text, 65536-byte cap) and Vulkan (SPIR-V, 8192-word cap), `dlopen`ed, selected by `MCC_GPU_BACKEND` — a **build-time** CMake option (`CMakeLists.txt:489-517`) setting `MCC_GPU_LANG_MSL`, not a runtime selector |
 | the cap that actually binds first | not size — **`SPV_MAX_CONST`/`MSL_MAX_CONST` = 512 distinct constants** (`src/mccgpu.h:764`, `:105`); overflow sets `m->failed`. A 2049-node arithmetic chain fails on the constant cache, not on module size |
 | lanes | one lane per **input tuple** of a sweep — data-parallel over the oracle's search space, not over the program |
-| tests | **one** locally: `gpu/ladder-gpu-parity`. The three `gpu/spv-slice-*` cells are inside `if(Vulkan_FOUND)` and `find_package(Vulkan)` fails on this host, so **`spvgate` is not even built**; `tests/gpu/run.sh` is *not registered with ctest at all* and needs `glslc`+`vulkaninfo`. Total tree: 8849 ctest cells from 286 `add_test` sites |
-| local device reality | **MoltenVK 1.4.2 is installed** (`/opt/homebrew/lib/libMoltenVK.dylib`; `dlopen` list at `src/mccgpu.c:1108-1110`) and `cmake-stage2-gpu-vulkan/mcc` really dispatches emitted SPIR-V to "Apple M1 Pro" — verified, `dispatches=1 lanes=64`. **SPIR-V is locally verifiable at runtime**; only the CMake-time `find_package(Vulkan)` (headers/SDK) is missing |
+| tests | **8 `gpu/*` cells** after `f716cf8d` made `spvgate` dual-backend. Total tree: **8,892 ctest cells from 290 `add_test` sites**, and **138 `SKIP_RETURN_CODE 77` registrations with nothing anywhere asserting that any of them must fire** (see N13) |
+| local device reality — 2026-08-07, M1 | **MoltenVK 1.4.2** (`/opt/homebrew/lib/libMoltenVK.dylib`) and `cmake-stage2-gpu-vulkan/mcc` really dispatches emitted SPIR-V to "Apple M1 Pro" — `dispatches=1 lanes=64`; only the CMake-time `find_package(Vulkan)` SDK was missing |
+| local device reality — **2026-08-08, Linux** | **A discrete `NVIDIA GeForce RTX 5070 Ti Laptop GPU`**, driver 595.84, Vulkan 1.4.329, plus `VK_LAYER_KHRONOS_validation`, `spirv-val` and `glslc` in `$PATH`. `maxStorageBufferRange = 4294967295` (32× the Vulkan floor), `shaderInt64` and `shaderFloat64` both true. **Three of the four "genuinely unmeasured" items are measurable here.** But see N6: `MCC_AST_EVAL_LADDER_GPU=1` **aborts `mcc`** at HEAD, so the Vulkan arm currently dispatches nothing on this host |
 | measured device work | **zero beyond a one-per-process warm-up across 600 programs** (TODO.md audit, 2026-08-07). Rungs fire and fall back |
 | RIR opcode coverage | `src/mccircap.c` lists **67** opcodes; `src/mccrir.c` has a `case` for **42**. The remaining 25 hit a bare `default: break;` and are **silently skipped** — no `rir_arena_mismatch++`, no diagnostic |
 
@@ -89,9 +99,9 @@ boundary. Those four are the plan.
 | | question | options |
 | --- | --- | --- |
 | **A1** | What form does device-side code take? | **a.** translate each region to a shader (extends today's `msl_expr`/`spv_expr`)<br>**b.** upload the **arena itself** as data and run an interpreter kernel over it<br>**c.** ★ **both, entered via b** — interpreter is the universal floor and the emitter's oracle; emitter specializes hot regions later |
-| **A2** | If interpreting, what is the node encoding? | **a.** the live `AstArena` layout, uploaded verbatim — viable, it is already pure SoA<br>**b.** ★ a flat, pointer-free **device node array**, a **superset of today's 7-field `MCC_ARENA_DUMP` record** (~10–12 fields)<br>**c.** a bytecode/stack machine — a third IR to keep faithful, against an arena whose RIR opcode gap already shows that cost |
+| **A2** | If interpreting, what is the node encoding? | **a.** the live `AstArena` layout, uploaded verbatim — **89 B/node across 21 descriptor bindings, and still not pointer-free**; the 21 bindings, not the size, are the disqualifier<br>**b.** ★ **RESOLVED 2026-08-08 — two layers, and the host layer already exists.** Layer 1 is `mccjit_intent` (`src/mccjit_intent.c`, 972 lines, `MCCJIT_INTENT_MAGIC`/`FORMAT`) bumped to format 14: versioned, pointer-free, round-trip-tested, and its `ROLE_FUNC` arm **is** D3's typed argument descriptor while its `ROLE_STRUCT` arm **is** E4's aggregate layout, both already written. Layer 2 is a **32 B/node fixed-stride device projection** with sparse `FBITS`/`WIDE`/`IVAL64` overlays<br>**c.** a bytecode/stack machine — a third IR to keep faithful; note that designing a twelfth field set from scratch would be the same objection |
 | **A3** | Do we start with A1a or A1b? | **a.** emitter first, interpreter later as fallback<br>**b.** ★ **interpreter first** — for **totality and to be the emitter's differential oracle**. *Not* for the size cap; that argument was wrong (see findings) |
-| **A4** | Where does the interpreter's source live? | **a.** ★ **hand-written twice**, MSL and SPIR-V — ~1500–2500 lines each, at the 1.3:1 ratio the existing emitters already run at<br>**b.** ~~one C-subset source lowered by mcc's own emitters~~ — **a genuine bootstrap paradox, rejected as a mechanism**; restated below as the Phase-6 *acceptance criterion*<br>**c.** GLSL + SPIRV-Cross — physically present inside MoltenVK, but adds a build dependency `mccgpu.c` deliberately has none of, and a `glslc` requirement |
+| **A4** | Where does the interpreter's source live? | **a.** ★ **hand-written twice**, MSL and SPIR-V — ~1500–2500 lines each, at the 1.45:1 ratio the existing emitters run at (976 MSL lines vs 1417 SPIR-V). **"Twice" never doubles any single binary**: `src/mccgpu.h:155`/`:1131`/`:2548` already `#if`-wrap each arm entirely and exactly one compiles, which is the whole of K1's answer<br>**b.** ~~one C-subset source lowered by mcc's own emitters~~ — **a genuine bootstrap paradox, rejected as a mechanism**; restated below as the Phase-6 *acceptance criterion*<br>**c.** GLSL + SPIRV-Cross — adds a build dependency `mccgpu.c` deliberately has none of. Measured cost of the `glslc` half on the 2026-08-08 host: **~5 ms per 1000 words** (320 switch arms → 32,815 words in 0.181 s), i.e. front-end compile is a non-issue; it is the *dependency* that disqualifies it |
 
 ### Findings — measured 2026-08-07
 
@@ -128,10 +138,10 @@ Fixed floor ≈ 200 SPIR-V words / ≈ 1.5 KB MSL, so **8192 words ≈ 400–700
 | | question | options |
 | --- | --- | --- |
 | **B1** | What is a pointer? | **a.** a host virtual address, translated per access<br>**b.** ★ a **byte offset into one device buffer**; the whole program address space is that buffer<br>**c.** a tagged (region, offset) pair — safer, but every pointer arithmetic node pays for the tag against 77.8% str/mem traffic |
-| **B2** | How is that buffer allocated? | **a.** fixed size at startup<br>**b.** ★ fixed reservation, **bump/arena sub-allocator on device**, growable by a host round-trip on exhaustion<br>**c.** paged, faulted in on demand — unjustified, nothing here needs it |
-| **B3** | Where do `malloc`/`free` run? | **a.** proxied to the host like any other invoke — every allocation is a round-trip<br>**b.** ★ **emulated on device** against B2's arena; install it at the one `mcc_set_realloc` hook, plus real `realloc` grow-in-place for the two raw-libc SoA arenas |
+| **B2** | How is that buffer allocated? | **a.** fixed size at startup<br>**b.** ★ **RESOLVED 2026-08-08 — 64 MiB fixed reservation, device bump + 8-class free list, and NO growth protocol in v1.** Growth **cannot be serviced mid-kernel**, for a reason beyond coherency: a larger buffer is a *different* `VkBuffer`/`MTLBuffer` and the descriptor binding is recorded into the command buffer at encode time. Exhaustion writes a record and aborts loudly. 64 MiB is 1.5× the measured 42 MB peak live and exactly half the 128 MiB Vulkan floor<br>**c.** paged, faulted in on demand — unjustified, nothing here needs it |
+| **B3** | Where do `malloc`/`free` run? | **a.** proxied to the host like any other invoke — every allocation is a round-trip<br>**b.** ★ **emulated on device** against B2's arena, installed at the one `mcc_set_realloc` hook. **AMENDED 2026-08-08: real `realloc` grow-in-place is NOT semantically required.** All 93 raw-libc sites assign the result back and none holds an interior pointer across a grow, so copy-on-grow is correct everywhere; in-place is a *space* optimization (83.3 MB → 53.0 MB), and glibc only achieves it 4.5% of the time today. The actual work is **fusing the 14 SoA arrays** and **routing through a hook** — see the B3 findings |
 | **B4** | Host/device coherence | **a.** explicit upload/download per boundary<br>**b.** ★ **host-visible coherent** memory — already in effect on both backends, **but only at command-buffer granularity.** Mid-kernel it is **one-directional: GPU→host works, host→GPU does not** (see the D findings). Anything in B, C or D that assumed two-way mid-kernel coherency is unfounded<br>**c.** dirty-range tracking for discrete GPUs — **deferred, unverifiable in this project's CI** |
-| **B5** | The C stack | **a.** one stack per lane, in the same buffer<br>**b.** ★ **one logical stack** while single-lane; widen to per-lane later<br>**c.** ~~registerize frames~~ — **impossible as a strategy**, demoted to an optimization (see findings) |
+| **B5** | The C stack | **a.** one stack per lane, in the same buffer<br>**b.** ★ **RESOLVED 2026-08-08 — variable frames with a real device stack pointer, 256 KiB per lane**, single-lane until the globals are privatized. **Fixed frame slots are not merely wasteful (499–1366× against a 72 B median frame) — they cannot express the `alloca`/VLA that `decl`, `ast_func_end` and 25 other functions use on the parse path.** Cost of variable frames over fixed: one extra word of resume state<br>**c.** ~~registerize frames~~ — **impossible as a strategy**, demoted to an optimization (see findings) |
 | **B6** | Seeding: files, argv, env | **a.** every `read()` is a host round-trip<br>**b.** ★ pre-stage whole files at open, serve `read`/`lseek`/`fstat` on device<br>**c.** ★ **b, amended and mandatory**: also pre-stage the *resolved include set and its path-search table*, because 71% of file syscalls are failed `open` probes, not reads |
 
 ### Findings — measured 2026-08-07, Apple M1 Pro, `cmake-release/mcc` compiling `src/mcc.c`
@@ -236,8 +246,8 @@ boundary cost drops below the current compile time. None is an optimization.
 | --- | --- | --- |
 | **C1** | Interpreter control flow | **a.** ★ a **dispatch loop over a node/block index** — **CONFIRMED ON DEVICE.** A hand-assembled 352-word SPIR-V module (1 `OpLoopMerge` + 1 `OpSelectionMerge`/`OpSwitch`, pc in a `Function` var) runs on the M1 Pro through MoltenVK, all 64 lanes bit-correct |
 | **C2** | Emitter control flow | **a.** ★ **structurize the reducible, refuse the rest** — far stronger than the draft implied: **mcc is 99.92% reducible (2360/2362 functions); exactly 2 are irreducible** (`decl_designator`, `gen_cast`, both `src/mccgen.c`). C2a as the Phase-6 fast path escapes on **0.08%** of functions<br>**b.** ★ **"relooper" only in its loop-with-switch form — which *is* C1a**, so it is the universal floor, not an independent option. A classical structurizer emitting `break label`/`continue label` does **not** map cleanly: SPIR-V's construct-exit rules are written around the innermost construct<br>**c.** full unrolling with trip caps — unnecessary |
-| **C3** | Unbounded loops and watchdogs | **a.** trust the program<br>**b.** ★ **MANDATORY, and demonstrated.** A resumable SPIR-V dispatch loop that writes `(pc, acc, n)` on budget exhaustion and returns "resume me" cost **4 extra words**; budgets 4/16/64/unbounded → 48/12/3/2 rounds with **zero mismatches across all 64 lanes at every budget**. Needed not for *duration* but for occupancy, Windows/Linux TDR, and as the only safe answer to a device error that is currently invisible |
-| **C4** | Recursion | **a.** device call stack in B1's buffer<br>**b.** ★ same **with a depth cap** — and the case for it is worse than "SPIR-V forbids recursion". **MSL *compiles* recursion and then hangs the GPU**: `fib(n)=fib(n-1)+fib(n-2)` with runtime `n` compiles cleanly and hangs the device at `n=5` (`kIOGPUCommandBufferCallbackErrorHang`), while linear/accumulator recursion is silently linearized and runs to depth 65536. Silent acceptance → device hang → sibling command buffers killed as innocent victims. **The device call stack must never be left to the MSL compiler** |
+| **C3** | Unbounded loops and watchdogs | **a.** trust the program<br>**b.** ★ **MANDATORY, demonstrated, and SIZED 2026-08-08.** A resumable SPIR-V dispatch loop that writes `(pc, acc, n)` on budget exhaustion cost **4 extra words**; budgets 4/16/64/unbounded → 48/12/3/2 rounds with **zero mismatches across all 64 lanes at every budget** — which is a proof that the state vector fully determines continuation. **Unit: dispatch-loop steps, gas-surcharged for the variable-cost D2b primitives. Suspension only at the top of the loop. Budget `1<<20`, matching `AST_EVAL_LADDER_DEFAULT_BUDGET`.** What is banked is the *rule* — median round ≥100× dispatch latency and ≤2 s/20 — not the number; the window between those bounds is **33× wide**, so this row was never tight. Needed for occupancy, Windows TDR, device errors that are currently invisible, and — newly — because it shrinks J3's fault space to two external classes |
+| **C4** | Recursion | **a.** device call stack in B1's buffer<br>**b.** ★ same **with a depth cap**, and the case is worse than "SPIR-V forbids recursion". **MSL *compiles* recursion and then hangs the GPU**: `fib(n)=fib(n-1)+fib(n-2)` with runtime `n` compiles cleanly and hangs at `n=5` (`…ErrorHang`), while accumulator recursion is silently linearized to depth 65536. **The device call stack must never be left to the MSL compiler.**<br>**AMENDED 2026-08-08 — this row is the same object as D4b's missing statement guard.** The cap is a **byte budget** checked at function entry (`sp + frame_size > limit`), with a 128-level equivalent for the diagnostic wording: 3.7× the measured depth and above C99's 127-level compound-statement floor. **The identical cap must be added to the CPU front end first** (`block`, `decl`, `decl_initializer`↔`decl_designator`) and the same N reused on device — a cap that fires only on device *is* a J1 divergence, and J3a cannot rescue it because a mid-region overflow has already mutated the B1 buffer |
 
 ### Findings — control flow, measured on the M1 Pro through MoltenVK 1.4.2
 
@@ -260,15 +270,44 @@ Hand-assembled SPIR-V dispatched through `src/mccgpu.c` built standalone with `-
 - **The interpreter/shader asymmetry is real and is an argument the plan was not making.** The resumable module's entire live state is three integers plus a budget. A *compiled* region has no such handle — its state is SSA values with no addressable names, so a mid-region checkpoint means materializing every live value at every suspension point, i.e. re-inventing the interpreter's state vector, worse. **This is an independent argument for interpreter-first.**
 - **mcc's own CFG shapes** (dominator + retreating-edge analysis over the full `src/mcc.c` TU at `-O0`, 2362 functions): **99.92% reducible**, 2 irreducible; 823 contain loops, 1539 are acyclic and structurize trivially; **`indirectbr` count is 0** — mcc's own source contains **zero computed goto**, so `ast_func_has_labeladdr` (set only at `src/mccgen.c:12815`) can never fire on mcc itself. 739 `goto`s, 314 backward, overwhelmingly `goto again:` at a block head.
 
-### A real bug this exposed — `src/mccgpu.c:352-356`
+### Two real bugs this exposed — one fixed, one live
 
-The Metal path calls `waitUntilCompleted`, then **unconditionally** `memcpy`s the output and sets `rc = 1`. It never reads `[cb status]` or `[cb error]`. **A watchdog kill, page fault, or hang is reported today as a successful dispatch with garbage output** — exactly the catastrophic case J3b names. The Vulkan path (`:1470`) is better (30 s fence, non-`VK_SUCCESS` → `rc = 0`) but on `VK_TIMEOUT` it destroys the fence, buffers and pipeline **while the command buffer is still executing**.
+**Metal — FIXED by `c6814625`.** The path used to call `waitUntilCompleted` and then
+**unconditionally** `memcpy` the output and set `rc = 1`, never reading `[cb status]` or
+`[cb error]`, so a watchdog kill, page fault or hang was reported as a successful
+dispatch with garbage output. `src/mccgpu.c:381-387` now checks the status and reports
+through `mtl_report_err`. **Residual defect:** `mtl_report_err` prints only under
+`MCC_AST_EVAL_LADDER_GPU_DIAG`, so the *reason* for a kill is invisible by default —
+the exec path must classify unconditionally into H3, not print conditionally. To
+distinguish "we faulted" from `…ErrorInnocentVictim` programmatically the command buffer
+must be created with `MTLCommandBufferDescriptor.errorOptions =
+MTLCommandBufferErrorOptionEncoderExecutionStatus`; untested, no Darwin host available.
+
+**Vulkan — LIVE, and worse than first described.** `src/mccgpu.c:1507-1509` waits 30 s
+and on any non-`VK_SUCCESS` falls to `done:` at `:1515-1535`, destroying fence, command
+pool, pipeline, pipeline layout, shader module, descriptor pool, descriptor set layout,
+mappings, memory and buffers — **while the command buffer may still be executing.** On
+`VK_TIMEOUT` the CB is still *pending*, and because buffers are created fresh per
+dispatch the driver recycles the freed allocation into the next dispatch's `bin`/`bout`
+while a zombie kernel writes into it. **A timeout in dispatch N silently corrupts
+dispatch N+1.** Two further defects found alongside: every one of the ~13 Vulkan failure
+exits is **diagnostically mute** (unlike the Metal path), and **`mcc_gpu.ok` is never
+cleared** after `VK_ERROR_DEVICE_LOST`, so `mcc_gpu_quiesce`'s unbounded
+`vkDeviceWaitIdle` from `atexit` deadlocks the process after a hang.
+
+**Neither is reachable by any existing test.** `src/mccgpu.c`'s Vulkan dispatch path has
+**zero direct coverage** — the `gpu/spv-slice-*` cells use `spvgate`'s own duplicated
+Vulkan implementation, not the library's. The cheapest regression test is to make the
+hardcoded 30 s fence a named tunable and run one cell at 1 ns with validation layers on;
+that works on this host and on lavapipe and needs no fault. A fault-injection shim
+(`MCC_GPU_FAULT_INJECT=timeout|lost|error|partial`) is the only fault test that runs on a
+device-less host, and it tests the *policy* — which is what J3a′ needs gated.
 
 ## D. THE CPU BOUNDARY — the INVOKE protocol
 
 | | question | options |
 | --- | --- | --- |
-| **D1** | Boundary mechanism | **a.** ★ **dispatch-per-region** as the TDD bootstrap only — **measured 144–180 µs median**, so it is 1523× at full census and still 16× fully reduced. It can never be the shipping mechanism<br>**b.** ★ **persistent kernel + doorbell — measured 24 µs**, a 6.25× win. But the mailbox is **not** device-visible (see findings); it requires a ≥32 KB cache-eviction sweep per poll<br>**c.** ★ graduate a→b<br>**d.** ★ **NEW — asymmetric posting.** GPU→host is free and immediate; host→GPU mid-kernel is impossible. Exploit that: calls whose result is unused need **no doorbell and no stall** — the GPU posts to a ring and continues, the host drains asynchronously. From the census that is `free` (96,168), `write`/`fwrite` and `close` — **~10.3% of all crossings become nearly free**, independent of a-vs-b |
+| **D1** | Boundary mechanism | **a.** ★ **dispatch-per-region** as the TDD bootstrap only — **measured 144–180 µs median** on M1, **117 µs fixed + 72 ns/lane** on the 2026-08-08 Linux/NVIDIA host<br>**b.** **DEMOTED 2026-08-08 to Phase 7+.** The doorbell's 24 µs is **100% cache sweep**: the four cost points fit **0.78 µs/KB with a zero intercept**, so there is no fixed doorbell cost and *any* safety margin destroys the win (2× → 3.0×, 4× → 1.5×, 8× → worse than D1a). And 3000/3000 clean rounds bounds the per-round hang rate only at 1e-3, which against 2,851 residual crossings predicts **~2.9 silent hangs per self-compile**. Its real justification is **lane-parallelism, not latency**, which places it after Phase 7<br>**c.** graduate a→b — superseded by e<br>**d.** ★ **asymmetric posting.** GPU→host is free and immediate; host→GPU mid-kernel is impossible. Calls whose result is unused need **no doorbell and no stall** — the GPU posts to a ring and continues. That is `free` (96,168), `write`/`fwrite` and `close`, **~10.3% of crossings**, independent of the other options. **Couples to J3a′:** the ring must carry no externally visible effect, or the restart precondition breaks<br>**e.** ★ **NEW — speculative pre-enqueued resume chain.** A resume **is** a command-buffer boundary, and a CB boundary is exactly what invalidates the GPU L1 — so resumption buys the doorbell's visibility *by spec*, with no sweep, no per-device constant and no hang mode. Each CB loads the state vector, checks for a host reply, and exits immediately if absent, so the chain is safe to enqueue speculatively. Projected **~30 µs** from the measured 19.5 µs/CB pipelined throughput. **This projection is arithmetic, not measurement, and it is the deciding experiment for the whole D1 row** |
 | **D2** | Which externals are proxied vs emulated | **a.** proxy everything<br>**b.** ★ **emulate the hot pure ones on device — the highest-value row in the cluster.** The top **four** functions are 733,627 calls = **77.7% of all crossings**, and `memcmp`/`memcpy`/`strcmp`/`strlen` are each ~10-line device loops. **The monsters are not on the hot path at all**: `qsort` is **0 calls** (6 static sites, all cold), `vsnprintf` 44, `printf`/`vfprintf` ~0, and ctype is already inlined by clang and never crosses |
 | **D3** | Call record format | **a.** a fixed struct with N slots<br>**b.** ★ a **typed argument descriptor** from the `AST_Invoke` node's type info — but at 2,851 residual crossings the encode/decode cost is invisible next to a 24 µs boundary, so this row is cheap either way. Dependency: `MCC_ARENA_DUMP` drops `type_ref` and `sym`, which is exactly what the descriptor needs |
 | **D4** | Internal calls | **a.** proxy them — **impossible**, not merely slow: at 150 µs each the compile would take hours<br>**b.** ★ **stay on device. A precondition, not a lever.** Concrete requirement: **~130 mutually-recursive functions in one SCC** (68 in `mccgen.c`, 29 in `mccpp.c`) — **there is no partial port, the whole front end goes at once.** Statement nesting (`block`/`decl`/`decl_initializer`↔`decl_designator`) has **no depth guard at all**, so C4's cap is load-bearing for *safety*, not just sizing |
@@ -322,6 +361,7 @@ So D1b is buildable, but only with a **compiler-mandated ≥32 KB cache-thrashin
 | **E3** | Floating point | **a.** ★ pinned rounding, no fast-math, bit-exact; `long double` escapes — **and that escape costs ~0%** (see findings)<br>**b.** fast-math — rejected, but **for J1, not for `selfhost-fixpoint`**: that parenthetical in the draft was unsupported and is probably false |
 | **E4** | Aggregates, bitfields, unions, volatile | **a.** ★ all become **byte operations on the B1 buffer** — the bitfield `bp`/`bs` already on the node drive shift/mask; `volatile` forces a coherent access and disables caching |
 | **E5** | Inline `asm` | **a.** ★ always escapes and is counted honestly — **and it is free: the measured asm floor on the benchmark is 0%** (see findings). Say so, because the census names the blockers that *are* real |
+| **E6** | **NEW 2026-08-08, OPEN — `double` on Metal** | mcc's `CValue` (`src/mcc.h:218-227`) carries `double d`, and constant folding, `ast_fc_*` forecasting and `gen_op` all operate on it. **MSL has no `double` type at all**, so the Metal arm can never be bit-exact for `double` natively and needs a **software f64 exactly as E2b did for int64**. Vulkan's `shaderFloat64` is optional but present on both the NVIDIA host and lavapipe. **This is an E-track rung, not an I2 refusal**, and no row owned it. Mitigating: FP is 0.02% of mcc's op stream, so it sits behind int64 and aggregates in the E1 order |
 
 ### Landed 2026-08-08
 
@@ -392,7 +432,7 @@ So D1b is buildable, but only with a **compiler-mandated ≥32 KB cache-thrashin
 | **F1′** | the break-even that decides it | Latency at which crossings × latency = the 0.093 s baseline:<br>**D4a (every invoke)** ~241 M crossings → **0.39 ns**<br>**D4b (external only)** 944,327 measured → **98 ns**<br>**D4b + D2b** (device `str*`/`mem*`) 210,018 → **443 ns**<br>**D4b + D2b + B3b** (syscalls only) 9,600 → **9.7 µs**<br>**Only the last row is inside any plausible dispatch latency.** At an optimistic 1 µs, D4b alone is 10.2× baseline and D4a is 2,589×. The D-track measurement decides *how far* the last row clears — it cannot rescue the rows above it |
 | **F2** | When is the decision made? | **a.** ★ **compile time**, recorded on the node — **but in a NEW SoA array, not the 41 spare `fbits` bits.** `fbits` is mixed into the node hash (`src/mccast.c:4030`) and compared in `ast_ident_same_scan` (`:7479`), so a verdict stored there would perturb CSE/dedup and put K3 byte-identity at risk. Cost of a new array: +1 byte/node, and arenas are per-body and freed (`:18485-18486`), so peak is the largest body (7019 nodes → 8 KB). Touch points: the `AST_REGROW` block (`:122-145`), `ast_arena_new`/`_free`, and **`ast_slice_graft_rec` (`:1244-1252`), which copies fields one by one and would silently drop the verdict on clone/splice** |
 | **F3** | Cost model | **a.** ★ **always offload, in census/conformance mode** — every refusal lowers the headline, so F3b as drafted **conflicts with H5**<br>**b.** ~~offload unless provably tiny and invoke-adjacent~~ — keep as a separate *performance* mode only. Near-worthless anyway: **500 bodies account for 99.8% of dynamic weight**, so there is almost nothing to prune |
-| **F4** | RIR's role | **a.** ★ the production RIR arena (`MCC_RIR_PROD`) is the source of truth — **but quote `kept_coverage`, not the `modelled` 100.000%/99.965%**, which by construction counts bodies that replayed to *different bytes*. The real floor is **96–98% on the self corpus** (banked 96.156%/96.127%, measured 97.784% here at `-O1`); `src/mcc.c` alone reads 81.4–81.7% and is an outlier |
+| **F4** | RIR's role | **a.** ★ the production RIR arena (`MCC_RIR_PROD`) is the source of truth — **but quote `kept_coverage`, not the `modelled` 100.000%/99.965%**, which by construction counts bodies that replayed to *different bytes*.<br>**RESOLVED 2026-08-08 — do NOT bank macho lowerable floors; narrow the skip instead.** `arena.residual` is **not** per-format in the schema while `lowerable` is, and on Darwin `residual` is legitimately **120** (`mcc_tlv_thunk` is raw asm with no C body), so `--update-bank-low` on a Darwin host would convert an honest 77 into a **hard failure on a correct number**. The right fix is to split `tools/rir-coverage.py`'s whole-run `return 77` so a missing *lowerable* floor skips only the lowerable comparison — `kept_coverage` and `capture` are target-derived, not host-format-derived, and there is no reason they are unreachable on Darwin. Two live bugs found alongside: **`wide`'s `lowerable` is still the legacy flat form, so `rir-coverage-census` silently 77-skips on PE as well as macho**; and the `kept_coverage` gate added by `78d4856f` **has never been run against a clean HEAD build** — the bank is 29 commits stale |
 | **F5** | close the opcode gap how? | **a.** ★ **amended: a per-opcode histogram excluding the five CFG opcodes**, then handlers for the **four opcodes that actually fire** — `RETVAL`, `MKPTR`, `VPUSHSYM` — plus unblocking `LOAD` from the `src/mccrir.c:4678` `continue`<br>**b.** ~~write all 25 handlers~~ — 21 of them fire zero times, 5 are `#ifdef`-ed out on arm64<br>**c.** ~~bare `rir_arena_mismatch++` in `default:`~~ — **would break the compiler**: 68% of its hits are benign CFG opcodes handled in other switches, and wiring it to the mismatch counter would refuse ~74% of all bodies |
 
 ## G. CONFORMANCE & TDD — how each node kind gets proven
@@ -402,7 +442,7 @@ So D1b is buildable, but only with a **compiler-mandated ≥32 KB cache-thrashin
 | **G1** | The unit of test | **a.** ★ one directed test per `AstKind` × permutation, **amended: table-driven and machine-generated**, one ctest per row, with a per-kind hit bitmap asserted `== (1<<AST_KIND_COUNT)-1`. ~2,180 leaf cases makes hand-writing impossible |
 | **G2** | The oracle | **a.** golden output files — rejected, brittle<br>**b.** differential against a CPU reference interpreter over the **same** lowered array — catches **device** bugs<br>**c.** differential against native codegen — catches **lowering** bugs<br>**d.** ★ **b and c as two tiers.** They are not substitutes (see findings) |
 | **G3** | Order of work | **a.** breadth: all 14 kinds at `int32` before any widening<br>**b.** ~~depth-first per kind~~ — **WRONG as stated**: you cannot finish `AST_Binary` on three backends before `AST_BasicBlock`/`AST_Return` exist, since there is no way to get a value out<br>**c.** ★ **hybrid — breadth-first across all 14 kinds on the reference interpreter at int32 (= Phase 0), then depth-first per kind across the three backends** |
-| **G4** | Fuzzing | **a.** ★ **staged.** Stage 1, free today: harvest real arenas via `MCC_ARENA_DUMP` from the *existing text fuzzer* — `cmake/spvgate_real.cmake` already does exactly this. Stage 2, Phase 2: a new AST generator (lift splitmix64 from `tests/fuzz/gen.h`) + a new AST shrinker (~150 lines). Stage 2 is **not optional**: harvested arenas will never produce `Poison` or computed goto |
+| **G4** | Fuzzing | **a.** ★ **staged — REORDERED 2026-08-08, and G1 now comes first.** Stage 1, free today: harvest real arenas via `MCC_ARENA_DUMP`; `cmake/spvgate_real.cmake` already does this. **But the plan's argument against synthesis does not survive tracing.** Of four historically discovered defects, three were *hand-authoring errors in a 13–38 case set* — the `TOK_LT` case was written with `'<'` (`TOK_SHL` is 60, `TOK_LT` is 0x9c); the `9 * x` crash was "they all put the constant second", which is literally G1's operand-const axis; and the int64 case *does* build the discriminating shape, so "0 mismatches" is indistinguishable from "0 points compared" because `spvgate` prints `OK` for a case that lowered nothing. **The real axis is enumerated vs hand-written, not synthetic vs real.** So: G1's table first (it closes three of the four classes by enumeration), then a **hybrid mutator over harvested arenas** (~40 lines on `arena_mode`: retag ops, types and kinds, which reaches `Poison` and `GGOTO` while keeping real tree shapes), then a free-standing AST generator **last or never** — real corpora already contain `Binary` with 1 and 3 children, `Return` with 0, `BasicBlock` with 93. Stage 1's ceiling is measured: **13/14 kinds, 6/20 `Ref` forms, 18/26 binary ops, 0 `Poison`, 0 computed goto** |
 | **G5** | Reuse of existing corpora | **a.** ★ **`tests/exec` is the vehicle** — 343 golden rows / 294 executable, and CMake already regex-scrapes `goldens.h` into 4 test loops (`CMakeLists.txt:3781-3822`). A 5th `exec-gpu/` loop with `MCC_GPU_EXEC=2` is **~6 lines of CMake** for 343 byte-exact whole-program comparisons. Use `tests/run` (15 programs: setjmp, TLS, varargs, long double, inline asm) as the **escape-census** corpus, not conformance. Skip `tests/behavior` (4 cells) |
 | **G6** | The `spvgate` gate | **a.** ★ extend `tools/spvgate.c` to **whole-region differentials** — content correct, ~~rationale deleted~~ (it does *not* work without a device)<br>**b.** ★ **prerequisite: make the SPIR-V gate live locally.** CI already does this with `brew install molten-vk` (`.github/workflows/ci.yml:182-185`); the runtime dylib is present but `find_package(Vulkan)` needs the SDK headers. One install turns 3 dead ctest names live |
 
@@ -426,7 +466,7 @@ So D1b is buildable, but only with a **compiler-mandated ≥32 KB cache-thrashin
 
 - **G2's two oracles catch disjoint bug classes, and the draft blurred them.** G2b (CPU vs GPU over the *same* lowered array) catches device bugs — MSL/SPIR-V op mismatch, sign-extension, definedness. It **structurally cannot** catch a lowering bug: a wrong arena→node-array lowering is wrong *identically on both sides* and passes green. G2c (vs native codegen) catches lowering bugs. The draft's own Phase 0 already says "prove it runs `tests/exec` identically to native codegen" — that *is* G2c, so the table and the phasing contradicted each other. Hence G2d.
 - **`ast_eval_binop` (`src/ast_eval_slice.h:70-230`) is the crown jewel and is directly reusable — ~230 lines.** UB is modelled as *refusal* (`return 0`), not as a value: division by zero, `INT_MIN/-1`, shift `<0 || >=width`, and signed `+ - *` overflow are each checked separately at 32 **and** 64 bits. `is64` is already threaded through every arm — so **the E1 int64 rung is deleting refusal predicates, not writing new semantics.** `ast_eval_slice_fit` (`:255`) is likewise reusable, and its value+definedness pair already matches the device ABI's `out[2*t+1]` defined flag.
-- **A2b is ~70% specified already.** `MCC_ARENA_DUMP` (`src/mccast.c:13568-13584`) emits exactly a flat pointer-free record — `id kind op type_t ival first_child next_sib` — and `rebuild_arena()` (`tools/spvgate.c:554`) round-trips it; `gpu/spv-slice-real` runs on it today. **The gap is precise:** the dump drops `type_ref`, `bp`, `bs`, `sym`, `fbits`, `wide hi/r2` — which is exactly what E4 (bitfields) and D3 (call descriptors) need. Evidence it matters: all 6137 `Load` nodes read back with btype 0 because the type lives in the `st_*` side table, so the measured "28.6% lowerable" figure is a **lower bound with a known artifact**.
+- **A2b is ~70% specified already** — and **this bullet is now stale in three ways** (superseded 2026-08-08, kept for the record). (1) `354e96f6` widened `MCC_ARENA_DUMP` from 7 fields to **12** — `id kind op type_t ival first_child next_sib type_ref bp bs sym fbits` — plus an `[inv] <node> <callee>` line per `AST_Invoke`, so only `wide hi/r2` is still genuinely absent. (2) **The consumer was not widened**: `rebuild_arena` still does `sscanf(...) != 7` (`tools/spvgate.c:1083`) and the five new fields have **zero consumers**, so the commit is half-landed. (3) The untyped-readback diagnosis was wrong: the type is not in a side table, it is **absent**, because `st_*` is written only from `src/mccrir.c` and only when `rir_stamp_env` is set — `MCC_RIR_STAMP`, **off by default** (`src/mccrir.c:5949`). And the artifact is far broader than `Load`: **39,640 of 39,643 `Binary` nodes (9.2% of the arena, the most important kind for the emitters) read back untyped**, against 7,195 `Load` nodes at 1.7%. Turning the recovery on is free — `MCC_RIR_STAMP=0`, `=1` and `=2` produce **byte-identical objects**, and `=2` takes typed-node coverage from **65.8% to 100.0%**.
 - **There is no AST generator anywhere in the tree.** `tests/fuzz/gen.h` generates C *source text* (seeded splitmix64, reproducible) and `runner.c` has a real line-granular ddmin shrinker — but zero RNG exists in `src/`, `ast_slice_search` (`src/mccast.c:16079`) is a *subset selector* over existing subtrees, and `ast_jit_search_vocab` enumerates optimization-gate bitmasks. The text shrinker does not transfer to ASTs.
 - **The no-device idiom is mature and has both halves.** `SKIP_RETURN_CODE 77` on 60+ tests, `VK_HOST` exiting 77 — *and* the inverse guard against silent no-op passes: `cmake/ladder_gpu_parity.cmake` `FATAL_ERROR`s on `_disp EQUAL 0` ("zero GPU dispatches, so identical verdicts prove nothing"), `spvgate_real.cmake` on `slices=0`. **The conformance suite must inherit both halves**, and the reference-interpreter tier must be *non-skippable* — it has no device dependency, so it runs unconditionally everywhere; only the Metal and SPIR-V tiers carry 77.
 
@@ -460,7 +500,7 @@ It is red today in the strongest possible way: **`ast_node_exec` does not exist,
 | **H2** | How is it collected? | **a.** ★ a **device-side per-node-kind counter array** in the B1 buffer, plus a host-side counter for escaped nodes; dumped at exit like `ast_ladder_gpu_report` |
 | **H3** | The escape census | **a.** ★ every CPU-executed node **classified by reason** (`link-invoke`, `asm`, `longdouble`, `indirect-miss`, `unsupported-kind`, `budget`, `alloc-fail`), plus an **`unmatched-body`** class. **Measured prior:** of 2,290 non-internal invokes, **2,248 (98.2%) are `link-invoke`**, 42 are indirect, and **`asm` is 0**. So the census will be dominated by one class, which is the good case — it means the escape set is a single well-understood thing |
 | **H4** | Ratchet | **a.** ★ a **`tests/gpu/exec-bank.json`** modelled on `tests/rir/coverage-bank.json` — good model, **with three fixes**: (i) gate the **escape-class map**, which `coverage-bank` records but never gates (only 11 of 304 leaves are gated); (ii) pair it with I1b's dispatch-count teeth, or it inherits the original's **three silent-pass paths**; (iii) **drop "never totals"** — over-general, see below<br>**b.** ★ **bank the number that means what it says.** `rir-coverage.py:924` defines `modelled = used + (fallback − abort)`, counting bodies that replayed to *different bytes*; `kept_coverage` sits at `:925`. That metric was banked but **never ratcheted** until this study added a gate for it |
-| **H4′** | may the bank gate absolute totals? | **Yes, for a fixed input list.** The `docs/TODO.md` warning that census totals are unstable at fixed HEAD is real but **scoped to censuses that accumulate across a whole ctest run**, where the invocation set varies with parallel scheduling and skips (`docs/TODO.md:2373-2378` already says this). Verified: three `MCC_RIR_PROD=2` runs on fixed input gave byte-identical `prod.tsv` and `.o`; a fixed 120-file census run twice was byte-identical; and **three `MCC_ARENA_DUMP` self-compiles were byte-identical across all 374,310 node records** — which is precisely the census `exec-bank` would use |
+| **H4′** | may the bank gate absolute totals? | **Yes, for a fixed input list** — but **the arena-dump half of the evidence is now FALSE.** The `MCC_RIR_PROD=2` results stand: three runs on fixed input gave byte-identical `prod.tsv` and `.o`, and a fixed 120-file census run twice was byte-identical. **The `MCC_ARENA_DUMP` byte-identity no longer holds**: `354e96f6` added `sym` and `type_ref` as raw `(uintptr_t)Sym*` columns, so two identical self-compiles now differ under ASLR (identical under `setarch -R`; the 7-field prefix is still identical). **Any bank keyed on the dump is unbankable until A2's interning lands** — which is the strongest single argument that the encoding must intern pointers rather than emit them |
 | **H5** | The final experiment | **a.** ★ `mcc` recompiling `src/mcc.c` with GPU execution on, reporting the H1c pair, the H3 class breakdown, and wall-clock against the CPU baseline. Success criterion to be set once the first honest number exists — not guessed now |
 
 ## I. PORTABILITY & BACKENDS
@@ -468,7 +508,7 @@ It is red today in the strongest possible way: **`ast_node_exec` does not exist,
 | | question | options |
 | --- | --- | --- |
 | **I1** | Backend parity | **a.** three implementations must agree — right in substance, **but "CI already has a cell" does not mean CI has a device**<br>**b.** ★ **a, plus teeth**: every exec parity test emits a dispatch count and its cell `FATAL_ERROR`s at zero (the `ladder_gpu_parity.cmake:47-50` pattern), and the "no usable device" early-return becomes a *loud* skip a cell can be configured to reject<br>**c.** ★ **plus a Linux exec cell with `mesa-vulkan-drivers` (lavapipe)** — one apt package, and it makes the Vulkan arm tested on the only OS where Vulkan is the default backend |
-| **I2** | Device feature floor | **a.** ★ declare a minimum feature set and refuse cleanly below it — **but the draft understated the work**: today nothing is checked at all, `pEnabledFeatures` is `NULL`, and the floor must also add **device selection** (`devs[0]` unscored) and a **`maxStorageBufferRange`** check, since the B1 buffer is the whole address space and the Vulkan floor for that limit is 128 MiB |
+| **I2** | Device feature floor | **a.** ★ declare a minimum feature set and refuse cleanly below it. **RESOLVED 2026-08-08 — ~120 lines, all at init, all zero runtime cost**, of which ~60 is transcribing `VkPhysicalDeviceFeatures`, which today is a **forward `typedef` with no body** while `vkGetPhysicalDeviceFeatures` **is not in the loader table at all**. The list: **(A)** scored device *selection* by `deviceType` with tie-break on limits, never `devs[0]`, plus `MCC_GPU_DEVICE` override and `MCC_GPU_ALLOW_CPU` so lavapipe can be opted into for I1c; **(B)** limits — `maxStorageBufferRange ≥ computed requirement` (not a constant), the four compute-workgroup limits, and **`minStorageBufferOffsetAlignment` honoured at `max(256, reported)`** because this host reports 16 and the spec permits 256, so a hardcoded layout works here and breaks on a conformant-minimum device; **(C)** features — `shaderFloat64 = TRUE` (see E6), `shaderInt64 = FALSE` (E2b emulates), zero extensions, and 32-bit `StorageBuffer` atomics need no bit; **(D) memory-type preference, the highest value per line in the row** — `mcc_gpu_mem_index` takes the *first* `HOST_VISIBLE\|HOST_COHERENT` type, which on the NVIDIA host is system RAM while a ReBAR `DEVICE_LOCAL\|HOST_VISIBLE\|HOST_COHERENT` type and a `HOST_CACHED` type both exist; under B1 that makes every interpreted load and store a PCIe transaction; **(E)** Metal — query `maxBufferLength`, and use `MTLCopyAllDevices` rather than `MTLCreateSystemDefaultDevice`, which is exactly the iGPU-first case this row names.<br>**Do not declare a `maxComputeSharedMemorySize` floor** — B5's conclusion is that mcc uses no shared memory at all, so a floor there re-imports the 512 B/lane trap into the refusal logic for nothing |
 | **I3** | Third backend | **a.** ★ not now — reworded to "no third **device** backend"; the CPU reference interpreter is de facto a third implementation and I1 already names it |
 
 ## J. FAILURE, DETERMINISM & UB
@@ -477,14 +517,14 @@ It is red today in the strongest possible way: **`ast_node_exec` does not exist,
 | --- | --- | --- |
 | **J1** | Equivalence standard | **a.** ★ bit-exact with CPU execution for defined behaviour — **but the enforcement clause was aspirational**: `selfhost-fixpoint`/output-parity test the *compiler's output*, not GPU execution, and only enforce J1 once run with the switch on (that is G5's job) |
 | **J2** | UB | **a.** ~~points where the source form is undefined are **vacuous**~~ — **UNSOUND for an execution engine, rejected** (see findings)<br>**b.** ★ **UB must be made deterministic and identical, not vacuous**: every UB-capable operation (signed overflow, shift ≥ width, div by zero and `INT_MIN/-1`, out-of-range float→int, unaligned/OOB access) is pinned on device to bit-match the CPU reference, that behaviour becomes part of the spec, and it is fuzz-tested like anything else. The ladder's vacuity rule stays in the *oracle* and does not move |
-| **J3** | Device fault handling | **a.** ★ fault → CPU fallback for that region, counted in H3 — **with an explicit precondition the draft hid**: regions are the unit of fallback and a region's device writes must be **recoverable-or-uncommitted** at fault time<br>**b.** ★ where that cannot be guaranteed (lost device mid-region), **fail loudly** — silent fallback from an incoherent state is the catastrophic case, and `spvgate`'s exit-77 and `ladder_gpu_parity`'s `FATAL_ERROR` are the precedent for the loud arm |
+| **J3** | Device fault handling | **a.** ~~fault → CPU fallback **for that region**~~ — **DELETED 2026-08-08.** Its hidden precondition ("a region's device writes must be recoverable-or-uncommitted at fault time") is **false by default against B1b+B4b, not merely unproven**: the buffer *is* the address space, it is host-coherent, and `src/mccgpu.c` contains no copy or sync primitive, so every device store is already committed. Nine partial-commitment modes were enumerated; the host can detect *that* a fault occurred in all of them and *what was written* in none. Mode 2 is decisive — E2b makes every `int64` two stores and E4 makes aggregates N byte-ops, so a fault leaves values **no correct execution ever produces**. Region-granularity fallback would then run the CPU correctly on corrupt inputs and emit a plausible wrong object: J3b's own "catastrophic case" wearing a reassuring name<br>**a′.** ★ **NEW — whole-run abandon-and-restart.** On any device fault, discard the B1 buffer **unread**, re-run the compilation from argv with the device off, count one `device-fault` escape in H3. mcc is a deterministic batch compiler, so the whole-run pre-state is free and permanent. Zero device-store cost, zero buffer-byte cost. **Precondition, checkable and written down: no externally visible side effect yet committed** — which couples this row to D1d, the only design element that would violate it<br>**b.** ★ **fail loudly** for: a second fault in the restarted run, a fault past the side-effect watermark, any `PageFault` (that is our own bug), and any unclassifiable fault. `spvgate`'s exit-77 and `ladder_gpu_parity`'s `FATAL_ERROR` are the precedent.<br>**Mechanisms evaluated and rejected, recorded so the question is not reopened:** an **undo log** is a durability technique on a substrate with neither durability nor ordering — the log lives in the same buffer that just became untrustworthy, and a GPU reset need not flush L1/L2; **COW/shadow write sets** cost a probe on every load as well as every store and are unbounded under F1c; **whole-buffer snapshots** are ~80 MB per region ≈ 4 ms, 26× D1a's latency |
 | **J4** | Reproducibility | **a.** ★ single-lane until D-parallelism; seeded deterministic fuzzer replay. Add: **strip timing from any compared output**, as `cmake/ladder_gpu_parity.cmake:36-37` already does with `secs=` |
 
 ## K. DELIVERY & GATING
 
 | | question | options |
 | --- | --- | --- |
-| **K1** | User-facing switch | **a.** `MCC_GPU_EXEC=0/1/2` **plus a CMake option** — a CMake option changes what is compiled, so K3 becomes a real proof obligation with a `_mccdefs`/config-defines/link-gate blast radius<br>**b.** ★ **env var only, for as long as possible** — it makes K3 *structurally* trivial (the object cannot change). Add the CMake option only when the interpreter's source must be excluded from the build for size<br>**c.** ★ **plus the standing rule that every phase lands with ≥1 ctest cell setting `MCC_GPU_EXEC=1`** — see the bit-rot evidence below |
+| **K1** | User-facing switch | **a.** `MCC_GPU_EXEC=0/1/2` **plus a CMake option** — **CLOSED as never, 2026-08-08.** Trigger, stated as a number: add the option when the interpreter's measured delta to *one configured binary* exceeds **256 KB, or 10% of the compiler-proper footprint (1,841,954 B → 184 KB today), whichever is smaller.** Estimated actual, from measured densities (16.13 B of `.text` per line of C; 42.9 B/line for MSL-as-embedded-text): **24–127 KB — 1.4× to 7.7× below the trigger**, in a 4,942,064 B binary whose `mccjit_blob.c.o` alone is **2,970,706 B (60.1%)**. And the exclusion mechanism K1a would provide **already exists**: `MCC_GPU_LANG_MSL` `#if`s out an entire emitter arm, so A4a's "hand-written twice" never doubles one binary. Corroboration: `989e4b3b` added +1,319/−235 lines to `src/mccgpu.h` — a half-interpreter-sized change in the exact file — with no size discussion and no option<br>**b.** ★ **env var only, permanently.** K3 stays structurally trivial: the object cannot change. Read via `mcc_env_num`, **never `mcc_env_on`**, which collapses 1 and 2. Freeze the tri-state at `{0 off, 1 on/fallback, 2 on/required}` and give every orthogonal axis its own variable (`MCC_GPU_EXEC_UNIT`, `MCC_GPU_EXEC_CENSUS`), the way the RIR board already splits `MCC_RIR_PROD`/`MCC_RIR_LOW`/`MCC_RIR_STAMP`<br>**c.** ★ **plus the standing rule that every phase lands with ≥1 ctest cell setting `MCC_GPU_EXEC=1`** — and the cell must emit an exec count that `FATAL`s at zero, or the rule buys a green cell that proves nothing. Measured bit-rot ratio: **68 `rir` cells against exactly 1** that forces `MCC_AST_EVAL_LADDER`. "≥1 per phase" is a floor against zero, not a target |
 | **K2** | Landing shape | **a.** one big branch<br>**b.** ★ **incremental on `main`, gated off** — the RIR board did exactly this and is the healthiest subsystem in the tree |
 | **K3** | Risk to existing behaviour | **a.** ~~proven with `cmp`, "the way the ladder toggle was"~~ — **the cited precedent is not an enforcement mechanism**: it was a one-time manual check<br>**b.** ★ **an automated ctest**, `gpu-exec-byte-identity`, compiling `src/mcc.c` at `-O0/-O1/-O2/-O3` with the switch unset vs set-to-0 and `cmp`ing the objects. Model it on `tests/ci/target-link-gate.sh`, which already compiles `src/mcc.c` standalone across eight configurations |
 
@@ -561,6 +601,97 @@ catches stable miscompiles**; `jit/selftest-stage2` covers call-bearing JIT reco
 
 ---
 
+# Decisions resolved — 2026-08-08
+
+Eight parallel investigations, one per coupled group of open rows, each grounded in the
+code and measuring where it could. The first pass over this document classified 52 micro
+rows as 4 landed / 33 ratify-only / **14 genuinely open** / 2 deferred. All fourteen now
+carry a recommendation. **The shape inverted: most of them turned out to have answers
+already sitting in the tree** — the serializer, the emitter-arm exclusion, the frame
+hoist, the stype recovery. What remains is one experiment, one unowned sizing problem,
+and a list of bugs.
+
+| row | resolution | the reason it turned |
+| --- | --- | --- |
+| **A2** | `mccjit_intent` format 14 as host wire format + a 32 B/node device projection | the serializer exists — `ROLE_FUNC` *is* D3's descriptor, `ROLE_STRUCT` *is* E4's layout |
+| **B2** | 64 MiB fixed, no growth protocol in v1 | growth cannot be serviced mid-kernel: a larger buffer is a *different* `VkBuffer`, bindings are recorded at encode time |
+| **B3** | fuse the SoA, funnel through the hook, 8-class free list | grow-in-place is not semantically required anywhere; `free` reclaims 63–73%, so a pure bump is unaffordable |
+| **B5** | variable frames, one device `sp`, 256 KiB/lane | fixed slots cannot express the `alloca`/VLA that `decl` uses on the parse path |
+| **C3** | step budget `1<<20`, suspend at loop top, bank the rule | overhead depends only on round *duration*; total work cancels; the window is 33× wide |
+| **C4** | dynamic byte cap, 128-level equivalent, merged with D4b's guard, CPU first | a cap firing only on device *is* a J1 divergence |
+| **F4** | narrow the skip; do **not** bank macho floors | `arena.residual` is not per-format and is legitimately 120 on Darwin |
+| **G4** | G1's table first, hybrid mutator second, generator last or never | 3 of 4 historical misses were hand-authoring errors, not synthesis limits |
+| **I2** | ~120 lines at init; the list is in the I2 row | `VkPhysicalDeviceFeatures` has no body and its getter is not in the loader table |
+| **J3** | delete region fallback; J3a′ whole-run abandon-and-restart | "uncommitted" is false by default on a coherent buffer |
+| **K1** | never add the CMake option | 24–127 KB against a 184 KB trigger; the exclusion mechanism already exists |
+| **N1** | buffer cache now, ctx struct before Phase 1 | no API change, so K3 is free |
+| **N2** | raise **both** caps to `1<<20` words / 4 MB + an incremental budget | the MSL cap must move too; the 512-constant ceiling is irrelevant to a hand-written interpreter |
+| **N3** | stay build-time; add a Linux ICD cell | a runtime selector is impossible on Linux — the Metal arm needs `<objc/message.h>` |
+
+## Still genuinely open
+
+| | question | why it cannot be closed from here |
+| --- | --- | --- |
+| **M5 / D1e** | does a speculative pre-enqueued self-skipping resume chain reach ~30 µs? | the projection is arithmetic over the measured 19.5 µs/CB pipelined throughput. **It decides the entire D1 row** and can only be run on a Metal box. Also unresolved: whether the ~64-CB `MTLSharedEvent` deadlock applies to non-blocking chains |
+| **E6** | software `double` for the Metal arm | new rung, no design; MSL has no `double` at all |
+| **N13** | the must-run manifest | 138 `SKIP_RETURN_CODE 77` sites and nothing asserts any of them must fire |
+| **N14** | per-lane writable globals | 5.82 MiB × 64 lanes = **373 MiB, 4× the floor before a single stack frame exists** |
+
+## Rows no letter owns
+
+| | item | status |
+| --- | --- | --- |
+| **N1** | device-layer lifetime redesign — buffers created *and destroyed* per dispatch | resolved above. Measured on Linux/NVIDIA: **130 ms one-time init, 117 µs per dispatch, 72 ns per lane**, with 24 ioctl / 3.9 openat / 2.3 mmap / 2.1 munmap **per dispatch** |
+| **N2** | `MCC_GPU_CODE_MAX` must be raised before an interpreter can exist | resolved above. Enforcement moved to `src/mccgpu.h:2574` (MSL, **bytes**) and `:2601` (SPIR-V, words) |
+| **N3** | `MCC_GPU_BACKEND` is build-time, not runtime | resolved above |
+| **N4** | dispatch status checking | Metal half **landed** (`c6814625`); **Vulkan `VK_TIMEOUT` use-after-free is live** |
+| **N5** | the ≥32 KB doorbell sweep constant | **may be obsolete** — pending M5. If D1b survives: a `#error` floor carrying the measurement in its text, a per-device qualification table with D1a fallback on unknown devices, a **bounded poll loop exiting with `HOSTCALL_TIMEOUT`** (this is what converts the documented silent hang into a loud error), a 285,100-round soak, and a known-positive cell that fails if a 4 KB sweep still works |
+| **N6** | **`MCC_AST_EVAL_LADDER_GPU=1` overflows two stack buffers** | **LIVE BUG.** `src/mccast.c:15892` declares `int32_t pin[64], pout[128]` — sized for the pre-`989e4b3b` ABI — while the device layer reads `ntuple*nlive*MCC_GPU_IN_SLOTS*4` = **512 B from a 256 B buffer** and writes `ntuple*MCC_GPU_OUT_SLOTS*4` = **768 B into a 512 B buffer**. Hard SIGABRT under glibc's stack protector, so the Vulkan arm dispatches nothing on Linux; a silent 256 B stack overwrite on Darwin. **CI cannot see it** — the Linux cell installs `libvulkan-dev` (loader and headers, no ICD), so the cell green-skips. One-line fix |
+| **N7** | **arena dump reproducibility regression** | `354e96f6`'s raw `Sym*` columns are ASLR-varying; invalidates H4′'s banked evidence |
+| **N8** | **`ast_replay_bb`'s frame is 93% one array** | `SValue sv_stack[VSTACK_SIZE + 1]` (`src/mccast.c:5823`) is 32,832 of the 35,424 B frame, declared unconditionally in a recursive prologue for an inline-asm arm. Hoisting it: frame **35,424 → 2,592 B**, self-compile peak stack **1024 → 112 KiB**, objects **byte-identical** at `-O0`…`-O3`. The shipping form must not be `static` (it has to survive `mcc_error`'s `longjmp`) — an arena save-area or a `noinline` helper |
+| **N9** | **six binary opcodes with zero coverage** | `TOK_UDIV`, `TOK_UMOD`, `TOK_PDIV`, `TOK_UGE`, `TOK_ULE`, `TOK_UGT` each have an MSL arm, a SPIR-V arm and a CPU-reference arm at 32 **and** 64 bits, and are exercised by nothing. **Structurally unreachable from harvested arenas** — `gen_op` rewrites `TOK_GE`→`TOK_UGE` at `src/mccgen.c:4455` *after* the arena records the token, the same mechanism behind `ee1fa9e0`. Measured 0 occurrences across 24,562 harvested nodes. Findable by enumeration alone |
+| **N10** | **memory-type selection picks the worst type** | see I2(D) |
+| **N11** | **two dead memsets and a duplicated upload** | `memset(pout, …)` is 100% dead (every lane writes all out slots unconditionally; out is read only for `t < ntuple`); `memset(pin, …)` is needed only for the discarded tail; and `ast_ladder_gpu_run` uploads the **identical** input twice per rung. 28 of 56 B/lane is dead. The existing cells are **lane-bound** (23.1M lanes for `spv-slice-real`), so this is a bigger lever than N1's fixed cost |
+| **N12** | **`rebuild_arena` reads 7 of 12 fields** | `354e96f6` half-landed; ~30 lines to finish, and it raises the "28.6% lowerable" lower bound for free |
+| **N13** | **the must-run manifest** | the GPU cells *lie* (exit 0 after zero work, ctest prints PASS); `rir-coverage` *tells the truth to a listener who is not there* (exit 77, reason named). Per-cell teeth is the special case; the general fix is a checked-in table of `test-name: hosts-where-SKIP-is-a-failure`, consumed by one post-ctest cell. `tools/ci.c`'s `FEATURES[]`/`GATE_CELLS[]` is the same idea one altitude too high |
+| **N14** | **per-lane writable globals cap lanes at 15, not 64** | `image_ro` 1.62 MiB is shared, but `globals_rw` = `.data`+`.bss`+`.tbss` = **5.82 MiB is per lane**. Max legal lanes under the 128 MiB floor is 15 with variable frames — **for any depth cap, including zero**. The plan attributed the 64-lane collision to C4's cap; the binding term is globals. The lever is the **4.25 MiB of read-mostly `.bss` caches** (`rir_xt` 1.31 MiB, `ast_memo_try`/`ast_memo_pk` 448 KiB each, six 320 KiB tables) — 73% of `globals_rw`; sharing or shrinking them raises the ceiling to **51 lanes** |
+
+## Corrections the investigation forced
+
+1. **The measurement host changed, and three "unmeasurable" items are now measurable.**
+   See the reading note at the top. The `docs/PLAN.md:650-651` claim that no discrete
+   device exists on this host or in CI is false as of 2026-08-08.
+2. **The census is 2.45× the plan's on this host.** `-O3`: **255,209 reallocs**
+   (vs 104,037), 230,050 frees, **112.6 MB ever requested**, 47.6 MB peak RSS,
+   **992 KiB peak stack** (`ulimit -s` bisection: fails 896, OK 1024 — replicating the
+   arm64 bracket).
+3. **Every B/C/D figure is an `-O1`+ figure.** At `-O0`: 30.8 MB total-ever, 63,499
+   reallocs, and **20,672 B of stack — 49× less**, because `ast_replay_bb` never runs
+   there (`ast_replay_env` requires `optimize >= 1`). Not previously recorded.
+4. **The raw-libc sites are not "the residual".** They are **46% of realloc calls and
+   74% of bytes** — `AST_REGROW` alone is 8,308 grows × 14 arrays = 116,312 calls and
+   83.3 MB. And essentially all of it is `MCC_EMBED_JIT` intent capture
+   (`mccjit_intent_deserialize`), not the core compiler: 5,532 arenas averaging 67.2
+   nodes, 861 concurrently live, **859 never freed**.
+5. **The 14 SoA arrays sum to exactly 64 B/node with zero padding** — one cache line.
+   Fusing them takes raw reallocs 116,312 → 8,308 and frees ~98,000 → 4,673, makes each
+   arena **one contiguous device offset**, and makes grow-in-place physically possible
+   (one block can top a bump allocator; fourteen cannot). Separately, `ast_grow`'s
+   initial cap of 64 against a 67.2-node average costs **22.66 of 52.99 MB**; dropping
+   it to 16 saves ~17 MB for one token.
+6. **B1b makes buffer growth free of relocation.** Pointers are offsets, so growth is
+   `memcpy` with no fixup. This is the largest concrete payoff of B1b over B1a and it
+   was not written down.
+7. **`spvgate` has the `dispatches == 0` tooth at run granularity but not per case.**
+   `tools/spvgate.c:1250-1254` prints `SKIP (not lowerable)` and continues, then `:1335`
+   prints `OK` because `case_bad` is still 0 — **a case that lowered nothing at every
+   rung reports OK**. This is the `ladder_gpu_parity.cmake` failure mode un-closed one
+   level down, and it is why "the synthetic suite showed 0 mismatches" cannot currently
+   be distinguished from "0 points compared". ~10 lines to fix, and it must be fixed
+   before any generator's yield number is trusted.
+8. **`spirv-val` conformance, discrete-GPU Vulkan behaviour and a Linux Vulkan cell are
+   all now testable**, which retires three of the four items under *Measurement status*.
+
 # Proposed phasing (if the ★ column is taken)
 
 **Phase −1 — close the four real opcode gaps and widen the oracle.** The measurement
@@ -584,14 +715,20 @@ interpreter: `mcc -ftest-coverage` + a self-compile gives execution weights toda
 split, and the dead-node fraction **before** any device work, so every later claim has
 a fixed reference. This is one afternoon and it makes H5 interpretable.
 
-**Phase 0 — the reference interpreter.** Extend the `MCC_ARENA_DUMP` record
-(`src/mccast.c:13568-13584`) from 7 fields to the ~10–12 that E4 and D3 need — it is
-already flat and pointer-free, and `rebuild_arena()` (`tools/spvgate.c:554`) already
-round-trips it. Write the CPU reference interpreter over that array, reusing
-`ast_eval_binop` wholesale. Breadth-first across **all 14 kinds at int32** (G3c), day
-one being the `ast/noderun` test above. Prove it runs `tests/exec` identically to
-native codegen (that is G2c). *No GPU yet* — this phase makes the census possible and
-is every later phase's oracle.
+**Phase 0 — the reference interpreter.** **Restated 2026-08-08**, because the record
+question resolved differently than drafted. Do *not* widen the text dump further —
+revert it to its 7-field reproducible form (N7) and add a **binary sidecar emitting
+`mccjit_intent` format 14** (A2 layer 1), which is already versioned, pointer-free and
+round-trip-tested. Finish the half-landed consumer: teach `rebuild_arena`
+(`tools/spvgate.c:1083`) to read it (N12). Make the stamped type view unconditional on
+the dump path so `Binary` stops reading back untyped, gated by a `cmp` test — the
+objects are already known byte-identical across `MCC_RIR_STAMP` settings. Then write the
+CPU reference interpreter over the 32 B/node projection, reusing `ast_eval_binop`
+wholesale. Breadth-first across **all 14 kinds at int32** (G3c), day one being the
+`ast/noderun` test above. The codec's total correctness check is
+`ast_hash_of(rebuilt) == ast_hash_of(original)` over every body of a self-compile —
+not a proxy, since `ast_hash_of` *is* the identity relation the compiler uses for CSE.
+Prove it runs `tests/exec` identically to native codegen (that is G2c). *No GPU yet.*
 
 **Phase 1 — the device address space.** B1b/B2b/B4b, plus the device-layer lifetime
 redesign so a buffer can outlive a dispatch. Reuse `mcc_relocate_ex`'s `mem = 0`
@@ -614,11 +751,15 @@ all four does the break-even reach 9.7 µs and the design become viable at all.
 **Phase 4 — widths.** E1's ladder: int64 as a `uint2` pair (E2b), then FP, then
 aggregates/bitfields.
 
-**Phase 5 — the doorbell.** D1b persistent kernel, **measured at 24 µs against D1a's
-150 µs**. It stays *after* Phase 3 deliberately: crossing reduction is a ~100× lever
-and D1b is a 6× lever, so it cannot rescue an unreduced census. Its cost is a
-mandatory ≥32 KB cache-eviction sweep per poll, which must be named and tested — the
-failure mode below that threshold is a silent hang, not an error.
+**Phase 5 — the boundary mechanism, no longer "the doorbell".** Ship **D1e** (speculative
+pre-enqueued self-skipping resume chain) if the M5 experiment confirms ~30 µs: it reuses
+C3b's state vector, gets its cache visibility from the command-buffer boundary by spec,
+and carries no hardware constant and no hang mode. **D1b is demoted to Phase 7+** — its
+24 µs is 100% sweep, any safety margin erases the win, 3000 clean rounds bound the hang
+rate only at ~2.9 per self-compile, and its genuine advantage (other lanes keep running
+through one lane's host call) is worth nothing under J4a's single-lane rule. Either way
+this phase stays *after* Phase 3: crossing reduction is a ~100× lever and the boundary
+mechanism is a 6× lever.
 
 **Phase 6 — the emitter path.** A1c: specialize hot regions, interpreter as oracle.
 Acceptance criterion: the emitters can recompile the interpreter's own C source and
@@ -629,7 +770,9 @@ breakdown, wall-clock, ratchet banked.
 
 # Measurement status
 
-**All eight research tracks are complete.** Three died on a session limit and were
+**All eight research tracks are complete, and a second round of eight decision
+investigations completed 2026-08-08** (see [Decisions resolved](#decisions-resolved--2026-08-08)).
+Three of the first round died on a session limit and were
 re-run; every row in the tables above now rests on a measurement or a cited line of
 code, not on reasoning. The corrections the measurements forced are recorded inline
 rather than quietly folded in, because several of them reversed a ★.
@@ -643,15 +786,26 @@ linux/riscv64 — `i386-fastcall-abi`, `i386-tls`, `i386-codegen-diff`,
 available on this host** (only `qemu-system-x86_64`), so the `selfhost-qemu-*` cells
 cannot run here; Docker's binfmt emulation covers the same targets instead.
 
-**What remains genuinely unmeasured**, and should be treated as open:
+**What remains genuinely unmeasured** — revised 2026-08-08, since the dev host changed:
 
-- **Windows TDR** (~2 s default) — untested here, and the one real portability risk
-  left in C3. macOS was measured and does *not* kill long compute kernels.
-- **Discrete-GPU Vulkan behaviour** — no discrete device exists on this host or in
-  CI, so B4c and the uncached-host-read concern are unverifiable here.
-- **`spirv-val` conformance** — no validator on this host, so MoltenVK's acceptance of
-  multi-level break is not evidence of portability.
-- **Whether the ≥32 KB doorbell sweep transfers** to other GPUs and to Vulkan/lavapipe.
+- **Windows TDR** (~2 s default) — still untested, still the one real portability risk
+  in C3. macOS was measured and does *not* kill long compute kernels on duration.
+- **The M5 / D1e latency** — a self-skipping pre-enqueued resume chain has never been
+  timed; the ~30 µs is arithmetic over the measured 19.5 µs/CB pipelined throughput.
+  **This is the highest-value single experiment left, and it decides the D1 row.**
+  Related: whether the ~64-CB `MTLSharedEvent` deadlock applies to non-blocking chains.
+- **The real device step rate**, which is what turns C3's `T_round` rule into a node
+  count. The 20–100 ns/step bracket is structural reasoning, not measurement.
+- **Driver-side compile time for a 15–25k-word module** — the `glslc` front-end half is
+  measured (~5 ms/1000 words) and is a non-issue; the NVIDIA and MoltenVK back-end halves
+  are not, and MoltenVK's is plausibly seconds because it runs SPIRV-Cross → MSL → Metal.
+- **Register pressure in the interpreter kernel** — no `nvdisasm` here, AIR is opaque.
+
+**Retired from this list on 2026-08-08**, because the current host can measure them:
+discrete-GPU Vulkan behaviour and the uncached-host-read concern (B4c); `spirv-val`
+conformance of the multi-level-break module MoltenVK accepted; a Linux Vulkan device
+cell; and whether the ≥32 KB doorbell sweep transfers off Apple silicon. **None of the
+four has actually been run yet** — they moved from *unmeasurable* to *unmeasured*.
 
 # The ceiling — measured, and it is high
 
@@ -707,14 +861,25 @@ must state the dead-node fraction or the number cannot be interpreted.
   interpreter kernel is 15–25k words against a cap of 8192, and the cap is enforced on
   the interpreter by the very same check it was supposed to sidestep.
 - **The C stack cannot live in device-private memory.** 32,768 B of threadgroup memory
-  ÷ 64 lanes = 512 B/lane against a measured **930 KiB** requirement — **1860× short**.
-  It must be an array in the B1 buffer. Forced, not chosen. At 64 lanes that is 58 MiB,
-  which collides with I2's 128 MiB `maxStorageBufferRange` floor.
+  ÷ 64 lanes = 512 B/lane against a measured **930 KiB** (M1) / **992 KiB** (Linux)
+  requirement — **~1900× short**. It must be an array in the B1 buffer. Forced, not
+  chosen. **Amended 2026-08-08 on two counts:** the requirement is 9.1× smaller after
+  N8's one-line frame hoist (992 → 112 KiB), and **the 64-lane collision is not the
+  stack** — see N14. Per-lane writable globals are 5.82 MiB against a per-lane stack of
+  256 KiB, so lanes cap at 15 under the Vulkan floor regardless of the depth cap.
 - **Host→device coherency does not exist mid-kernel.** GPU→host writes are visible
   immediately; **host→GPU writes are invisible by every available qualifier.** Any
-  design that assumes a two-way mailbox is unfounded. The doorbell works only because a
-  ≥32 KB cache-eviction sweep forces the L1 to reload — a spec-unsanctioned constant
-  whose sub-threshold failure mode is a **silent hang**, not an error.
+  design that assumes a two-way mailbox is unfounded. **Amended 2026-08-08:** the
+  doorbell's ≥32 KB sweep is a hardware-specific emulation of the cache invalidation a
+  **command-buffer boundary provides by spec** — so a resumable dispatch (C3b) obtains
+  the same visibility with no constant and no hang mode, which is what D1e proposes and
+  what demotes D1b.
+- **A device fault leaves no trustworthy byte.** Under B1b + B4b the buffer *is* the
+  address space and is host-coherent, so every device store is already committed; a
+  faulted kernel can leave torn `uint2` int64 pairs and half-written aggregates that no
+  correct execution ever produces, and a GPU reset need not flush L1/L2 even for stores
+  the kernel retired. **There is no in-buffer mechanism that survives this** — an undo
+  log has neither durability nor ordering to rely on. Hence J3a′: abandon the whole run.
 - **Dispatch latency dominates everything** until crossings are reduced. Measured
   **150 µs** for D1a, not the 20 µs first assumed — 1523× the baseline at full census.
   D1b's 24 µs is a 6× lever; crossing reduction is a 100× lever. **Reduction first.**
