@@ -6,6 +6,119 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Landed — `spvgate` was measuring a type-stripped arena, 2026-08-08
+
+### What it was blind to
+
+`MCC_ARENA_DUMP` writes 14 columns per node. `tools/slicerun.c` reads all 14.
+`tools/spvgate.c` read **7**, its `RawNode` carried 6 fields plus the id, and
+`rebuild_arena` passed a hard-coded `0` for `type_ref`. Columns 8–14 had zero consumers
+and `ast_eval_slice_obj_fn` was never installed, so `ast_eval_slice_dynidx` returned 0 at
+its first line on every node. `gpu/spv-slice-real` therefore ran the emitters over an
+arena that **structurally could not exhibit a runtime-index shape** — the whole B1
+feature — and any conclusion drawn from `spvgate --arenas` about typed shapes was drawn
+from an arena with the types removed. The previous section's closing note, "`spvgate` is
+unaffected (its `sscanf` reads 7 fields)", was the bug, stated as a reassurance.
+
+Measured on the corpus `gpu/spv-slice-real` uses (`tests/exec/{expressions,codegen}/*.c`
+at `-O2`, all 32 files, 161 bodies, 25,398 dump lines): **14** `Binary('+')` nodes over a
+`VT_LOCAL|VT_ARRAY` base, and **14 of 14** carry a non-zero extent *and* element type in
+columns 13/14. The information was in the file the whole time.
+
+### The reader was only half of it, and the second half was louder
+
+Widening the `sscanf` and installing the hook, changing nothing else, took the corpus from
+0 mismatches to **374,986**. That is not an emitter divergence — it is `spvgate`'s own
+`collect_lives`, a homegrown live-in collector that walks `AST_Ref` nodes only. An indexed
+object needs one live-in slot **per element**, laid out consecutively, because the device
+resolves an element as `slot_of(base) + index` at run time; `ast_eval_slice_livein_obj`
+exists to do exactly that and `collect_lives` did not know about it. So the CPU reference
+refused (no env entry for `base + elem*esize`) while the device happily read a neighbouring
+live-in's slot. Replacing `collect_lives` with the shared `ast_eval_slice_livein` fixes it
+and makes the two tools agree by construction: `spvgate` now accepts **572** slices, the
+same 572 `slicerun` accepts on the identical dump.
+
+### `ast_eval_slice()` drops the poison flag it sets
+
+With `MAX_LIVE` raised from 4 to 8 (`MCC_SLICE_MAXLIVE` is 8; a 4-element array plus its
+index is 5 slots, so 4 admits only constant-index shapes) the corpus showed 4 definedness
+divergences, all `cpu=1 gpu=0`, 1,056 lanes. The device was right. An out-of-range index
+sets `ast_eval_slice_undef`, but the `ast_eval_slice()` wrapper neither resets nor returns
+it — only `mcc_slice_frame_exec_cpu2` reads that flag. Every other caller is safe today
+only because `ast_eval_slice_kind_ok(..., allow_load=0)` refuses all Loads on the
+expression path, so no production caller can reach a `dynidx`; `spvgate` lowers through
+`spv_expr` with no such gate and is the first caller that can. Handled in `spvgate` the
+way the frame runner handles it. **The gap in `ast_eval_slice()` itself is still there and
+is a live trap for the next caller that admits Loads** — it is inert in the compiler only
+because `ast_eval_slice_obj_fn` is NULL there.
+
+### Before and after, on the real corpus
+
+| | before | after |
+| --- | ---: | ---: |
+| arenas | 161 | 161 |
+| bodies-with-lowerable-slice | 114 | 114 |
+| slices | 576 | **572** |
+| slices carrying a resolved runtime index | **0** (by construction) | **8** |
+| dispatches | 2,675 | 2,645 |
+| points | 37,600,204 | 43,363,136 |
+| compared | 36,979,227 | **41,168,239** (+11.3%) |
+| vacuous | 620,977 | 2,194,897 |
+| mismatches | 0 | 0 |
+
+Slices *fell* by 4 because object expansion lets a larger subtree lower at a higher node,
+and `scan_subtree` stops at the first node that lowers — 4 fewer, larger slices. Of the
+new comparisons, **920,192 lanes** are value-compared on runtime-index shapes and
+**1,573,920** are lanes where both executors independently agreed the index left its
+object. Neither number could be non-zero before.
+
+So the blindness was real **and** it had a measurable cost: this is not one of the
+zero-payoff results. The corpus was never exercising B1 through `spvgate` at all.
+
+### Proving the new path is not itself blind
+
+`compared` rising is necessary but not sufficient — both executors can make the same
+mistake and agree. Mutating the emitter directly, one edit at a time:
+
+| emitter mutation | corpus mismatches | verdict |
+| --- | ---: | --- |
+| `spv_dyn_elem` masked element `u` → `u ^ 1` | **370,624** | caught |
+| `spv_dyn_elem` bound `u < nelem` → `u < nelem + 1` | **0** at `MAX_TUPLES` 2^18 | **not caught** |
+| same, at `MAX_TUPLES` 2^20 | **131,072** | caught |
+
+The bound's upper edge was a cell that could not fail. A 5-live slice only fits rungs
+w=1 and w=2 under a 2^18 tuple cap, so its index only ever took the values {0, 1, −2, −1}
+— `u == nelem` was never sampled and an off-by-one in the bound was invisible while the
+masking half of the same three-instruction sequence was fully checked. Raising
+`MAX_TUPLES` to 2^20 admits the w=4 rung for 5-live slices (index range [−8, 7]), which
+straddles every element count in the corpus (3, 4, 5, 6). Cost measured on this box:
+full corpus 14.1s → 15.5s, `gpu/spv-slice-real` 25.1s → 34.2s. The built-in `CASES` suite
+is unchanged by the cap — its widest reachable span is 2^16.
+
+`--mutate` still fails on both the suite (rc=1) and the corpus (rc=1), including on a
+corpus filtered to only the 7 arenas containing an indexed object (rc=1). `--corrupt`
+is byte-for-byte unchanged against baseline: words 1/2/5 rc=0, word 3 rc=134, word 12
+rc=136 — words 1/2/5 flipping bits the driver tolerates is pre-existing and not a
+regression.
+
+### `type_ref` restoration was possible
+
+Restored, using the interned dense ids exactly as `slicerun.c` does, alongside `sym`,
+`fbits`, and the `bp`/`bs` bitfield pair via `ast_set_type_bf`. These are interned ids
+installed into pointer-shaped slots, which is safe here for the same reason it is safe in
+`slicerun`: nothing on this path dereferences them (zero uses of
+`ast_sym`/`ast_type_ref`/`ast_fbits`/`ast_type_bp`/`ast_type_bs` in `ast_eval_slice.h`,
+`mccgpu.h`, `mccslice.h`). It changes no measured number on this corpus — it is there so
+the two readers agree rather than because anything reads it yet.
+
+### Unverified
+
+The `mslgate` arm (`SPVGATE_MSL=1`) is APPLE-only and **was not executed**. It was
+verified to compile: `cc -DSPVGATE_MSL=1 -fsyntax-only` is clean and the object links 51
+`msl_*` references. `msl_expr` has no `dynidx` arm at all, so on that arm runtime-index
+shapes are refused at `trial_lower` and `runtime-idx` will read 0 — no crash and no false
+agreement, just no coverage.
+
 ## Landed — B1 runtime addressing, and a per-width region layer, 2026-08-08
 
 ### The payoff is 19 blocks, not 41, and the difference is not effort

@@ -109,8 +109,8 @@ typedef uint32_t GateUnit;
 	} while (0)
 #endif
 
-#define MAX_LIVE 4
-#define MAX_TUPLES (1 << 18)
+#define MAX_LIVE 8
+#define MAX_TUPLES (1 << 20)
 
 static void put_in(int32_t *p, long i, int64_t v) {
 	p[i * MCC_GPU_IN_SLOTS] = (int32_t)(uint32_t)(uint64_t)v;
@@ -829,7 +829,34 @@ typedef struct RawNode {
 	int kind, op, type_t;
 	long long ival;
 	unsigned first_child, next_sib;
+	unsigned long long type_ref, sym, fbits;
+	unsigned bp, bs;
+	int size;
+	int etype;
 } RawNode;
+
+static int32_t *g_obj_ext;
+static int *g_obj_ety;
+static long g_obj_n;
+
+static int spvgate_obj(AstArena *a, AstLocal n, int32_t *extent, int *etype) {
+	(void)a;
+	if (!g_obj_ext || (long)n >= g_obj_n)
+		return 0;
+	if (g_obj_ext[n] <= 0 || !g_obj_ety[n])
+		return 0;
+	*extent = g_obj_ext[n];
+	*etype = g_obj_ety[n];
+	return 1;
+}
+
+static void spvgate_obj_reset(long n) {
+	free(g_obj_ext);
+	free(g_obj_ety);
+	g_obj_ext = n > 0 ? (int32_t *)calloc((size_t)n, sizeof *g_obj_ext) : NULL;
+	g_obj_ety = n > 0 ? (int *)calloc((size_t)n, sizeof *g_obj_ety) : NULL;
+	g_obj_n = (g_obj_ext && g_obj_ety) ? n : 0;
+}
 
 static AstArena *rebuild_arena(const RawNode *raw, int n, AstLocal *root_out,
 															 long root_in) {
@@ -842,8 +869,15 @@ static AstArena *rebuild_arena(const RawNode *raw, int n, AstLocal *root_out,
 			return NULL;
 		}
 		ast_set_op(a, id, raw[i].op);
-		ast_set_type(a, id, raw[i].type_t, 0);
+		ast_set_type(a, id, raw[i].type_t, (uint64_t)raw[i].type_ref);
+		if (raw[i].bp || raw[i].bs)
+			ast_set_type_bf(a, id, raw[i].type_t, (uint64_t)raw[i].type_ref,
+											(int)raw[i].bp, (int)raw[i].bs);
 		ast_set_ival(a, id, (uint64_t)raw[i].ival);
+		if (raw[i].sym)
+			ast_set_sym(a, id, (uint64_t)raw[i].sym);
+		if (raw[i].fbits)
+			ast_set_fbits(a, id, (uint64_t)raw[i].fbits);
 	}
 	for (i = 0; i < n; i++) {
 		unsigned c = raw[i].first_child;
@@ -854,30 +888,6 @@ static AstArena *rebuild_arena(const RawNode *raw, int n, AstLocal *root_out,
 	}
 	*root_out = (AstLocal)root_in;
 	return a;
-}
-
-static int collect_lives(AstArena *a, AstLocal n, int32_t *off, int *non,
-												 int max) {
-	AstLocal c;
-	if (n == AST_NONE)
-		return 1;
-	if (ast_kind(a, n) == AST_Ref) {
-		int r = ast_op(a, n);
-		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
-			int32_t v = (int32_t)(int64_t)ast_ival(a, n), k;
-			for (k = 0; k < *non; k++)
-				if (off[k] == v)
-					return 1;
-			if (*non == max)
-				return 0;
-			off[(*non)++] = v;
-			return 1;
-		}
-	}
-	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (!collect_lives(a, c, off, non, max))
-			return 0;
-	return 1;
 }
 
 static int live_type(AstArena *a, AstLocal n, int32_t want, int *out) {
@@ -935,6 +945,8 @@ static int32_t *g_in, *g_gout;
 static int64_t *g_cout;
 static unsigned char *g_def;
 static long tot_pts, tot_cmp, tot_vac, tot_bad, tot_reject;
+static long tot_idx_cmp, tot_idx_vac;
+static int in_idx_slice;
 
 static int mutate;
 
@@ -991,7 +1003,9 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 			int64_t vals[MAX_LIVE], o;
 			for (k = 0; k < nlive; k++)
 				vals[k] = get_in(g_in, (long)t * nlive + k);
-			g_def[t] = (unsigned char)ast_eval_slice(a, root, off, vals, nlive, &o);
+			ast_eval_slice_undef = 0;
+			g_def[t] = (unsigned char)(ast_eval_slice(a, root, off, vals, nlive, &o) &&
+																 !ast_eval_slice_undef);
 			g_cout[t] = g_def[t] ? o : 0;
 		}
 
@@ -1027,6 +1041,10 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 		tot_cmp += cmp;
 		tot_vac += vac;
 		tot_bad += bad;
+		if (in_idx_slice) {
+			tot_idx_cmp += cmp;
+			tot_idx_vac += vac;
+		}
 		bad_all += bad;
 		free(code);
 		gate_module_free(&m);
@@ -1034,7 +1052,21 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 	return bad_all;
 }
 
-static long g_slices, g_bodies, g_lowerable_bodies;
+static long g_slices, g_bodies, g_lowerable_bodies, g_idx_slices;
+
+static int subtree_has_dynidx(AstArena *a, AstLocal n) {
+	AstLocal c;
+	AstEvalSliceIdx ix;
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Load &&
+			ast_eval_slice_dynidx(a, ast_first_child(a, n), &ix))
+		return 1;
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (subtree_has_dynidx(a, c))
+			return 1;
+	return 0;
+}
 
 static void scan_subtree(AstArena *a, AstLocal n, const char *fn, int minnodes,
 												 int quiet, long limit) {
@@ -1043,12 +1075,16 @@ static void scan_subtree(AstArena *a, AstLocal n, const char *fn, int minnodes,
 	int non = 0;
 	if (n == AST_NONE || (limit && g_slices >= limit))
 		return;
-	if (subtree_nodes(a, n) >= minnodes && collect_lives(a, n, off, &non, MAX_LIVE) &&
+	if (subtree_nodes(a, n) >= minnodes &&
+			ast_eval_slice_livein(a, n, off, &non, MAX_LIVE) &&
 			non >= 1 && trial_lower(a, n, off, non)) {
 		char label[160];
 		snprintf(label, sizeof label, "%s#%ld/%dlive", fn, (long)n, non);
 		g_slices++;
+		in_idx_slice = subtree_has_dynidx(a, n);
+		g_idx_slices += in_idx_slice;
 		run_one_slice(a, n, off, non, label, quiet);
+		in_idx_slice = 0;
 		return;
 	}
 	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
@@ -1080,9 +1116,23 @@ static int arena_mode(const char *path, int minnodes, long limit, int quiet) {
 			long id, fc, ns;
 			if (!fgets(line, sizeof line, f))
 				break;
-			if (sscanf(line, "%ld %d %d %d %lld %ld %ld", &id, &raw[i].kind,
-								 &raw[i].op, &raw[i].type_t, &raw[i].ival, &fc, &ns) != 7)
+			int nf = sscanf(line,
+											"%ld %d %d %d %lld %ld %ld %llu %u %u %llu %llu %d %d",
+											&id, &raw[i].kind, &raw[i].op, &raw[i].type_t,
+											&raw[i].ival, &fc, &ns, &raw[i].type_ref, &raw[i].bp,
+											&raw[i].bs, &raw[i].sym, &raw[i].fbits, &raw[i].size,
+											&raw[i].etype);
+			if (nf < 7)
 				break;
+			if (nf < 12) {
+				raw[i].type_ref = 0;
+				raw[i].bp = raw[i].bs = 0;
+				raw[i].sym = raw[i].fbits = 0;
+			}
+			if (nf < 13)
+				raw[i].size = 0;
+			if (nf < 14)
+				raw[i].etype = 0;
 			raw[i].first_child = (unsigned)fc;
 			raw[i].next_sib = (unsigned)ns;
 		}
@@ -1095,7 +1145,13 @@ static int arena_mode(const char *path, int minnodes, long limit, int quiet) {
 			if (!a)
 				continue;
 			g_bodies++;
+			spvgate_obj_reset(n);
+			for (i = 0; i < n && i < g_obj_n; i++) {
+				g_obj_ext[i] = (int32_t)raw[i].size;
+				g_obj_ety[i] = raw[i].etype;
+			}
 			scan_subtree(a, rt, fn, minnodes, quiet, limit);
+			spvgate_obj_reset(0);
 			if (g_slices > before)
 				g_lowerable_bodies++;
 			ast_arena_free(a);
@@ -1105,8 +1161,11 @@ static int arena_mode(const char *path, int minnodes, long limit, int quiet) {
 	}
 	fclose(f);
 	free(raw);
-	printf(GATE_NAME ": arenas=%ld bodies-with-lowerable-slice=%ld slices=%ld\n",
-				 g_bodies, g_lowerable_bodies, g_slices);
+	printf(GATE_NAME ": arenas=%ld bodies-with-lowerable-slice=%ld slices=%ld "
+									 "runtime-idx=%ld runtime-idx-compared=%ld "
+									 "runtime-idx-poisoned=%ld\n",
+				 g_bodies, g_lowerable_bodies, g_slices, g_idx_slices, tot_idx_cmp,
+				 tot_idx_vac);
 	printf(GATE_NAME ": dispatches=%ld lanes=%ld points=%ld compared=%ld vacuous=%ld "
 				 "mismatches=%ld rejected-modules=%ld\n",
 				 g_dispatches, g_lanes, tot_pts, tot_cmp, tot_vac, tot_bad, tot_reject);
@@ -1145,6 +1204,7 @@ int main(int argc, char **argv) {
 	g_gout = gout;
 	g_cout = cout;
 	g_def = defined;
+	ast_eval_slice_obj_fn = spvgate_obj;
 
 	for (i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--corrupt") && i + 1 < argc)
@@ -1280,8 +1340,10 @@ int main(int argc, char **argv) {
 				int64_t o;
 				for (k = 0; k < c->nlive; k++)
 					vals[k] = get_in(in, (long)t * c->nlive + k);
-				defined[t] = (unsigned char)ast_eval_slice(a, root, off, vals,
-																									c->nlive, &o);
+				ast_eval_slice_undef = 0;
+				defined[t] = (unsigned char)(ast_eval_slice(a, root, off, vals,
+																									 c->nlive, &o) &&
+																		 !ast_eval_slice_undef);
 				cout[t] = defined[t] ? o : 0;
 			}
 
