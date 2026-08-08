@@ -122,6 +122,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"line_directive", "run", "exec/preprocessor/line_directive.c", "set100: 100 101\nreset: 1\nwithfile: line=44 file_match=1\nnext: 46\n", "", "", ""},
 		{"div_mod_shift", "run", "exec/expressions/div_mod_shift.c", "7/2=3 7%2=1 ident=1\n-7/2=-3 -7%2=-1 ident=1\n7/-2=-3 7%-2=1 ident=1\n-7/-2=3 -7%-2=-1 ident=1\n1/3=0 1%3=1 ident=1\n-1/3=0 -1%3=-1 ident=1\nwrap: 0\nshl: 16\nshr: 15\nsshr: 32\nwide: 1099511627776\n", "", "", ""},
 		{"recursion", "run", "exec/functions_abi/recursion.c", "1\n2\n6\n24\n120\n720\n5040\n40320\n362880\n3628800\n", "", "", ""},
+		{"recursion_tree", "run", "exec/functions_abi/recursion_tree.c", "fib 0\nfib 1\nfib 1\nfib 2\nfib 3\nfib 5\nfib 8\nfib 13\nfib 21\nfib 34\nfib 55\nfib 89\nfib 144\nparity 1 0\nparity 0 1\nparity 1 0\nparity 0 1\nack 9\ntreesum 716\n", "", "", ""},
 		{"comma_operator", "run", "exec/statements/comma_operator.c", "value: 3\nseq: a=5 b=6\ncount: n=3 order=123\nforsum: 50\nnested: 22\n", "", "", ""},
 		{"sizeof_semantics", "run", "exec/types/sizeof_semantics.c", "char1: 1\nnoeval: counter=0 nonzero_size=1\norder: 1\nstrlit: 6\narr: 40 elems=10\nexpr: 1\nmatch: 1\n", "", "", ""},
 		{"conversions_semantics", "run", "exec/types/conversions_semantics.c", "s2u: 4294967295\nnarrow: 52\nuac: 1\npromote: -1\nftrunc: 3 -3\nrt: 1\nwiden: -12345\nbool: 1 0\n", "", "", ""},
