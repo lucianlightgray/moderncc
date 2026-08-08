@@ -615,7 +615,20 @@ pending-command-buffer use-after-free, the worst-memory-type selection, two dead
 
 ### Next, in order
 
-1. **Extend frame storage past the v1 subset.** The device now has a frame and Store/Load
+0. **The sub-word atomicity decision, before the allocator exists.** A shared-region
+   sub-word store is a read-modify-write and two lanes writing different bytes of one word
+   race. Choosing "the allocator never co-locates two lanes' sub-word objects" costs
+   nothing today and cannot be retrofitted cheaply. Decide it first.
+
+1. **Pointer deref (`*p`) against binding 2.** This is what `memcmp`/`strcmp`/`strncmp`
+   need, and it is the difference between musl's arithmetic halves lowering and musl
+   lowering. The region layer is already parameterised for it, so no new emitter concept
+   is required — only a second `SpvRegion` and the address resolution.
+
+2. **`snprintf` via the `(tag, value)` array.** +168 blocks, and the varargs objection is
+   gone. Only the `%` engine remains.
+
+3. **Extend frame storage past the v1 subset.** The device now has a frame and Store/Load
    lower (see above), but v1 only takes `AST_Store` with a local `Ref` destination
    sequenced by `AST_BasicBlock`. The next increments, in measured order of payoff:
    `AST_StoreVal` (3.0% of nodes -- needs the `AST_Store` it references, not a store of
@@ -645,6 +658,122 @@ pending-command-buffer use-after-free, the worst-memory-type selection, two dead
 
 Runtime JIT threads and build parallelism are both held at 16 for now; the scheduler
 added here is single-threaded, so it introduces no new threads at all.
+
+## Landed — the shared address space, real musl on the device, and three of my own bugs
+
+### musl is the device libc — it compiles and lowers today
+
+`vendor/musl-src` is in the tree with full source and `vendor/musl-sysroot` carries the
+generated headers, so **a device libc is the existing lowering pointed at musl's own C**,
+not something to write in SPIR-V and re-verify against the standard.
+
+| | |
+| --- | ---: |
+| `musl/src/string` TUs mcc compiles | **65 of 74** |
+| expression slices lowered / mismatches | **475 / 0** |
+| frame runs accepted / built / **compared** | 120 / 94 / **94** |
+| frame mismatches | **0**, and 3800+40 under `--mutate` |
+
+Per function: `memcpy` 6 verified frame runs (86 expression slices), `memset` 7 (44),
+`strlen` 1 (3). **`memcmp`, `strcmp`, `strncmp`, `memchr` lower zero frame runs** — they
+walk memory through a pointer, which needs binding 2. That zero is the measure of the
+remaining work, not a failure of the approach. The 9 rejected TUs are internal-dependency
+cases (`strchr.c` wants `__strchrnul`), an ordinary cross-TU call.
+
+`slice/musl` ratchets it: a 20-TU compile floor so a near-empty corpus cannot pass
+vacuously, a required nonzero `frame-compared`, and a mutation arm. Verified red when the
+floor is raised.
+
+### The shared CPU<->GPU address space (binding 2)
+
+One host-mapped storage region every lane sees — globals image, heap, printf ring — where
+a pointer is a byte offset. **Offset 0 is reserved as NULL**, decided before any allocator
+exists because a bump allocator handing out 0 returns a pointer equal to NULL and
+`malloc`'s result is null-checked at 66/66 measured sites. Shared across lanes, not
+per-lane: a heap each lane sees separately is not a heap.
+
+Host and device see the same bytes at command-buffer granularity, which is all that
+exists — mid-kernel host→device writes are invisible by every qualifier. So the host seeds
+before submit and drains after completion, never during, and that is why the printf ring
+is device-writes-only. `slice/mem` covers mappability, the NULL reservation, region
+identity across calls, and host-write persistence.
+
+### B1 runtime addressing, and a region layer that is not frame-specific
+
+`arr[i]` load and store, plus a **region-parameterised** per-width access layer —
+`SpvRegion{var, base, nbyte}` and `(region, byteoff, type)` — so binding 2 needs a
+different region and no new emitter code. Corpus 300 → **319 accepted, 244 verified**.
+
+Two honest corrections from that work. The payoff is **+19 blocks, not the 35 estimated**:
+of 143 non-plain store destinations only 20 are `arr[i]`, the rest being globals and `*p`.
+And the **13th dump column was not the prerequisite** — `arr[i]` replays through `gen_op`
+on an array base so the index is in *elements*, and the `Load`/`Binary` above it carry
+type 0 in 143 of 143 real arenas. A 14th column (pointee type) was needed as well.
+
+Bounds use a **select-to-0, not the planned power-of-two mask**: masking an unpadded
+48-byte region reaches byte 63, i.e. into the *next lane*. Corrupting a neighbour is worse
+than corrupting yourself, and 0 is always in range.
+
+### Three bugs in code I wrote this session
+
+**1. I was overstating verified coverage by 2.4×.** `frame-slices` counted what the
+predicate *accepted*, incrementing before `mcc_slice_frame_kernel_build` could refuse it.
+174 of 300 runs were never built, never dispatched, never compared — and the gap was
+almost entirely `return expr;`-only runs, so **the feature that bought the most headline
+coverage bought the least verification**. That is the "cell that cannot fail" pattern
+appearing in the coverage metric itself. Now three counters — accepted / built /
+**compared** — and `slice/real` asserts on the last. Most of the gap was not inherent: a
+run with no stores but a Return still computes a value, and letting it build took verified
+runs 126 → 225.
+
+**2. A latent out-of-bounds read in the mismatch diagnostic.** It read
+`MccSliceFrame.stmt[]`, a field my own `top[]` refactor orphaned and never writes. It
+therefore described arena node 0, and `ast_child(a, 0, 1)` returns `AST_NONE`, which
+`ast_kind` uses as an array index. **Reachable exactly when the differential first catches
+a real bug.** Field deleted, diagnostic rewritten.
+
+**3. The constant-offset fold was wrong for pointer bases.** `ast_eval_slice_frame_off`
+folded `base + K` as *bytes*; for a pointer or array base the index is in *elements*. It
+gained zero blocks, so the count never caught it, and the differential could not — both
+executors used the same wrong key. Now refused. **Fourth shared-mistake divergence this
+session, third in my own code.**
+
+### Varargs is not the obstacle it looked like
+
+A variadic call at the AST level is just children with static types:
+`snprintf(buf, 64, "%d %ld %s", a, b, s)` is an `AST_Invoke` with 7 children whose
+`type_t` are `0x5`, `0x3`, `0x1004`, `0x5`. `va_list`, `gp_offset` and the register save
+area are **host codegen below the AST** and never appear at the call site. The device owns
+its calling convention, so varargs lowers to a `(tag, value)` array built at emit time,
+tags free.
+
+That moves `snprintf` from last to early in the sequencing: **+168 blocks, #2 by marginal
+gain**, and the only remaining work is the `%` engine, since 64-bit division already
+exists and is verified at full width by `slice/wide64`.
+
+### Open hazard, routed and not yet resolved
+
+**A sub-word store is read-modify-write of the containing word, and in the *shared* region
+that is not atomic** — two lanes writing different bytes of one word race. In a private
+frame it is fine. Three ways out: byte atomics, `StorageBuffer8BitAccess`, or an allocator
+that never co-locates two lanes' sub-word objects. **The allocator route is free if taken
+before the allocator is written**, which is the current position.
+
+### Corrections to numbers previously recorded here
+
+- The **392 / 148 / 48** eligibility partition is not reproducible against the shipped
+  predicate. A model that reproduces `slicerun`'s output bit-for-bit (300 slices, 182
+  statements) gets **300 / 647 / 364 / 283**. The shape holds — Invoke dominates, B1 is
+  the largest non-Invoke item — but the specific figures were from a model that diverged
+  from the code and should be re-derived before being planned against.
+- The arena dump drops `ast_stype_t`, the RIR shadow type: **293 `Load` nodes carry
+  `type_t == 0`** and are refused for that alone. Every corpus percentage quoted in
+  `src/mccslice.h`'s comments was computed against a replica missing a channel the real
+  arena has. Same class as the `size` column, and it wants the same fix.
+- A full device libc is worth **4.4–4.7% of Invoke-blocked blocks**, against **78.0%** for
+  D4b. See [`docs/DEVICE-LIBC.md`](DEVICE-LIBC.md). D2b is a *latency* lever (77.8% of
+  dynamic crossings), not a coverage lever; both numbers are true and measure different
+  things.
 
 ## Landed — HOST_CACHED memory, and device frame storage, 2026-08-08
 
