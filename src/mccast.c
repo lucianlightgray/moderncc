@@ -13577,10 +13577,25 @@ static void ast_adump_body(AstArena *a, const char *fname) { MCC_TRACE("enter\n"
 	fprintf(ast_adump_fp, "[arena] fn=%s n=%ld root=%ld\n", fname ? fname : "?",
 					(long)nn, (long)ast_root(a));
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
-		fprintf(ast_adump_fp, "%ld %d %d %d %lld %ld %ld\n", (long)n,
-						(int)ast_kind(a, n), ast_op(a, n), ast_type_t(a, n),
+		fprintf(ast_adump_fp, "%ld %d %d %d %lld %ld %ld %llu %u %u %llu %llu\n",
+						(long)n, (int)ast_kind(a, n), ast_op(a, n), ast_type_t(a, n),
 						(long long)ast_ival(a, n), (long)ast_first_child(a, n),
-						(long)ast_next_sib(a, n));
+						(long)ast_next_sib(a, n),
+						(unsigned long long)ast_type_ref(a, n), ast_type_bp(a, n),
+						ast_type_bs(a, n), (unsigned long long)ast_sym(a, n),
+						(unsigned long long)ast_fbits(a, n));
+	}
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		AstLocal cref;
+		Sym *cs;
+		if (ast_kind(a, n) != AST_Invoke)
+			continue;
+		cref = ast_child(a, n, 0);
+		cs = (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
+						 ? NULL
+						 : (Sym *)(uintptr_t)ast_sym(a, cref);
+		fprintf(ast_adump_fp, "[inv] %ld %s\n", (long)n,
+						cs ? get_tok_str(cs->v, NULL) : "?");
 	}
 }
 
