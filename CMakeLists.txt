@@ -3588,6 +3588,75 @@ if(MCC_BUILD_TESTS)
                 FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
+        # slicerun: the scheduler cells. Unlike spvgate it brings no Vulkan of
+        # its own -- it dispatches through src/mccgpu.c, which dlopens the ICD --
+        # so it needs no SDK, builds on every host, and is the only cell that
+        # covers the production device layer's dispatch path directly.
+        if(NOT CMAKE_CROSSCOMPILING)
+            add_executable(slicerun tools/slicerun.c tools/slicerun_arena.c src/mccgpu.c)
+            target_include_directories(slicerun PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/src"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/arch"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/x86_64"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/i386"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/formats"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms"
+                "${CMAKE_CURRENT_SOURCE_DIR}/include")
+            if(MCC_COMPUTE_BACKEND_LIBS)
+                target_link_libraries(slicerun ${MCC_COMPUTE_BACKEND_LIBS})
+            endif()
+            if(NOT WIN32)
+                target_link_libraries(slicerun ${CMAKE_DL_LIBS})
+            endif()
+            foreach(_sr task work cpu sched frame)
+                add_test(NAME "slice/${_sr}" COMMAND slicerun "${_sr}")
+                set_tests_properties("slice/${_sr}" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT)
+            endforeach()
+            foreach(_sg gpu wide64 ops)
+                add_test(NAME "slice/${_sg}" COMMAND slicerun "${_sg}"
+                         $<$<BOOL:${MCC_GPU_REQUIRED}>:--require-device>)
+                set_tests_properties("slice/${_sg}" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            endforeach()
+            # The 64-bit differential must be able to fail, or "0 mismatches"
+            # is indistinguishable from "0 tuples compared".
+            foreach(_sk wide64 ops frame)
+                add_test(NAME "slice/${_sk}-known-positive"
+                    COMMAND "${CMAKE_COMMAND}"
+                            -DRUNNER=$<TARGET_FILE:slicerun>
+                            -DSUITE=${_sk}
+                            -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_mutate.cmake")
+                set_tests_properties("slice/${_sk}-known-positive" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT)
+            endforeach()
+            # Runs alone: a stranded dispatch disables the device for the rest
+            # of the process, which is the behaviour under test.
+            add_test(NAME "slice/fault" COMMAND slicerun fault
+                     $<$<BOOL:${MCC_GPU_REQUIRED}>:--require-device>)
+            set_tests_properties("slice/fault" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            # H6, Phase 0a: the cost table. Informational, but it must produce
+            # rows and at least one slice size at which the device wins, or the
+            # measurement silently stopped measuring.
+            add_test(NAME "slice/cost" COMMAND slicerun --cost-synth)
+            set_tests_properties("slice/cost" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                PASS_REGULAR_EXPRESSION "win-within-[0-9]+-lanes=[1-9]")
+            add_test(NAME "slice/real"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DRUNNER=$<TARGET_FILE:slicerun>
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_real.cmake")
+            set_tests_properties("slice/real" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
+        endif()
+
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
             foreach(_case "ret42;42" "ret0;0" "retexpr;14" "mainempty;0" "argc_expr;42"
                           "local_ret;42" "local_two;42" "neg_fallback;42" "global_ref;42"
@@ -5719,6 +5788,24 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 1800)
             endforeach()
 
+            # N13: the must-run manifest. Asserts that cells the suite is not
+            # allowed to lose silently are actually registered. The skip half
+            # needs a results file and runs from CI (tools/must-run.py --results).
+            add_test(NAME "ci/must-run-registered"
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/must-run.py"
+                        --manifest "${CMAKE_CURRENT_SOURCE_DIR}/tests/must-run.txt"
+                        --build "${CMAKE_BINARY_DIR}")
+            set_tests_properties("ci/must-run-registered" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
+            # Phase -1: the drop histogram exists; this gives it teeth.
+            add_test(NAME "rir/drop-ratchet"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/rir_drop_ratchet.cmake")
+            set_tests_properties("rir/drop-ratchet" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
             add_test(NAME rir-coverage
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
                         "${CMAKE_BINARY_DIR}" --corpus self --levels O0,O1,O2,O3)

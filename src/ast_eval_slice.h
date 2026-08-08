@@ -114,8 +114,8 @@ static int ast_eval_binop(int op, int64_t a, int64_t b, int is64,
 		if (is64) {
 			if (a != 0 && b != 0) {
 				r = (int64_t)(ua * ub);
-				if (r / a != b || (a == INT64_MIN && b == -1) ||
-						(b == INT64_MIN && a == -1))
+				if ((a == INT64_MIN && b == -1) || (b == INT64_MIN && a == -1) ||
+						r / a != b)
 					return 0;
 			} else {
 				r = 0;
@@ -303,6 +303,70 @@ static int ast_eval_slice_wtype(AstArena *a, AstLocal n) {
 	}
 }
 
+/* A frame address that is a constant offset from a local: the local itself, or
+ * a chain of `.field` / `&` over one. Measured over 344 real bodies, this
+ * resolves 244 of 275 AST_OP_MEMBER nodes (88.7%) and 222 of 312 AST_OP_ADDR
+ * (71.2%). AST_OP_MEMBER_ARROW resolves 0 of 59 and never can -- its replay
+ * does indir() first (src/mccast.c:5177), i.e. it loads a pointer, and no
+ * amount of constant folding crosses that.
+ *
+ * The point of doing it this way is that the resolved offset is just another
+ * frame-slot key, so the existing (off[], val[]) environment carries it with no
+ * ABI change and the device sees the same constant OpAccessChain it already
+ * emits for a plain local. This only ever turns a refusal into an acceptance --
+ * every shape it admits is one the predicates below reject today. */
+#define AST_EVAL_OP_ADDR 0x40000
+#define AST_EVAL_OP_MEMBER 0x40001
+
+static int ast_eval_slice_frame_off(AstArena *a, AstLocal n, int32_t *off,
+																		int depth) {
+	int r;
+	if (n == AST_NONE || depth > 6)
+		return 0;
+	if (ast_kind(a, n) == AST_Ref) {
+		r = ast_op(a, n);
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+			return 0;
+		*off = (int32_t)(int64_t)ast_ival(a, n);
+		return 1;
+	}
+	if (ast_kind(a, n) == AST_Unary &&
+			(ast_op(a, n) == AST_EVAL_OP_MEMBER || ast_op(a, n) == AST_EVAL_OP_ADDR)) {
+		int32_t base = 0;
+		if (!ast_eval_slice_frame_off(a, ast_first_child(a, n), &base, depth + 1))
+			return 0;
+		*off = base + (ast_op(a, n) == AST_EVAL_OP_MEMBER
+											 ? (int32_t)(int64_t)ast_ival(a, n)
+											 : 0);
+		return 1;
+	}
+	/* `base + K` with a literal K: a constant index into a frame object, which
+	 * folds to a constant offset exactly as `.field` does. Deliberately literal
+	 * only -- a *runtime* index needs the object's extent to bound it, and the
+	 * arena dump carries no size column, so there is nothing sound to mask
+	 * against. Measured over the corpus: 21 address expressions are this shape,
+	 * 40 need a runtime extent. */
+	if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == '+' &&
+			ast_nchild(a, n) == 2) {
+		AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
+		int32_t base = 0;
+		AstLocal k = AST_NONE;
+		if (ast_eval_slice_frame_off(a, x, &base, depth + 1))
+			k = y;
+		else if (ast_eval_slice_frame_off(a, y, &base, depth + 1))
+			k = x;
+		else
+			return 0;
+		if (ast_kind(a, k) != AST_Literal)
+			return 0;
+		if ((ast_op(a, k) & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
+			return 0;
+		*off = base + (int32_t)(int64_t)ast_ival(a, k);
+		return 1;
+	}
+	return 0;
+}
+
 static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 															const int64_t *val, int nenv, int64_t *out) {
 	if (n == AST_NONE)
@@ -327,7 +391,16 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 				return 0;
 			if (!ast_eval_slice_intt(t) || is_float(t))
 				return 0;
-			*out = v;
+			/* Reading a live-in through a typed Ref yields a value *of that type*,
+			 * which is what the Literal arm below already does and what the device
+			 * does (spv_load_live_v is handed the ref's own type). Returning the raw
+			 * environment word instead diverged for any narrow or unsigned live-in:
+			 * a u32 ref holding -12345 read as -12345 here and as 4294954951 on the
+			 * device, and both then widened correctly from different starting
+			 * points. The ladder never saw it because ast_ladder_gpu_run pre-fits
+			 * every input to its live-in's type, so fit here is idempotent for that
+			 * caller -- but the precondition was unstated and nothing enforced it. */
+			*out = ast_eval_slice_fit(v, t);
 			return 1;
 		}
 		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
@@ -340,19 +413,21 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 	}
 	case AST_Load: {
 		AstLocal c = ast_first_child(a, n);
-		if (c == AST_NONE || ast_kind(a, c) != AST_Ref)
-			return 0;
-		int r = ast_op(a, c);
 		int t = ast_type_t(a, n);
-		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+		int32_t fo;
+		int64_t v;
+		if (c == AST_NONE)
 			return 0;
 		if (!ast_eval_slice_intt(t) || is_float(t))
 			return 0;
-		int64_t v;
-		if (!ast_eval_slice_env(off, val, nenv,
-														(int32_t)(int64_t)ast_ival(a, c), &v))
+		/* A local, or a constant offset from one via `.field`/`&`. Both are just
+		 * frame-slot keys in the same numbering, so the environment carries them
+		 * unchanged. */
+		if (!ast_eval_slice_frame_off(a, c, &fo, 0))
 			return 0;
-		*out = v;
+		if (!ast_eval_slice_env(off, val, nenv, fo, &v))
+			return 0;
+		*out = ast_eval_slice_fit(v, t);
 		return 1;
 	}
 	case AST_Convert: {
@@ -566,13 +641,14 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 	}
 	case AST_Load: {
 		AstLocal c = ast_first_child(a, n);
-		int r, t = ast_type_t(a, n);
-		if (!allow_load || c == AST_NONE || ast_kind(a, c) != AST_Ref)
+		int t = ast_type_t(a, n);
+		int32_t fo;
+		if (!allow_load)
 			return 0;
-		r = ast_op(a, c);
-		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+		if (c == AST_NONE || ast_bad_type(t) || is_float(t) ||
+				!ast_eval_slice_intt(t))
 			return 0;
-		return ast_eval_slice_intt(t) && !is_float(t);
+		return ast_eval_slice_frame_off(a, c, &fo, 0);
 	}
 	case AST_Convert: {
 		int t = ast_type_t(a, n);
@@ -646,6 +722,16 @@ static int ast_eval_slice_livein(AstArena *a, AstLocal n, int32_t *offs, int *cn
 	}
 	if (ast_kind(a, n) == AST_Load) {
 		c = ast_first_child(a, n);
+		if (c != AST_NONE && ast_kind(a, c) == AST_Unary &&
+				ast_eval_slice_frame_off(a, c, &o, 0)) {
+			for (i = 0; i < *cnt; i++)
+				if (offs[i] == o)
+					return 1;
+			if (*cnt >= max)
+				return 0;
+			offs[(*cnt)++] = o;
+			return 1;
+		}
 		if (c != AST_NONE && ast_kind(a, c) == AST_Ref) {
 			r = ast_op(a, c);
 			if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {

@@ -152,6 +152,8 @@ jobs:
       - name: test summary
         if: ${{ always() && !matrix.skip }}
         run: |
+          python3 tools/must-run.py \
+            --results "cmake-stage2-${{ matrix.feature }}/ctest-junit.xml"
           mcc-ci junit-summary "cmake-stage2-${{ matrix.feature }}/ctest-junit.xml" \
             "${{ matrix.feature }} / ${{ matrix.host }}" >> "$GITHUB_STEP_SUMMARY" || true
 
@@ -197,6 +199,8 @@ jobs:
       - name: test summary
         if: always()
         run: |
+          python3 tools/must-run.py \
+            --results "cmake-stage2-${{ matrix.feature }}/ctest-junit.xml"
           mcc-ci junit-summary "cmake-stage2-${{ matrix.feature }}/ctest-junit.xml" \
             "${{ matrix.feature }} / ${{ matrix.host }}" >> "$GITHUB_STEP_SUMMARY" || true
 
@@ -240,5 +244,7 @@ jobs:
       - name: test summary
         if: always()
         run: |
+          python3 tools/must-run.py \
+            --results "cmake-stage2-${{ matrix.feature }}/ctest-junit.xml"
           mcc-ci junit-summary "cmake-stage2-${{ matrix.feature }}/ctest-junit.xml" \
             "${{ matrix.feature }} / ${{ matrix.host }}" >> "$GITHUB_STEP_SUMMARY" || true

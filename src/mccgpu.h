@@ -67,6 +67,19 @@ typedef struct MccGpuStats {
 int mcc_gpu_dispatch(const void *code, int n, const int32_t *in, int ntuple,
 										 int nlive, int32_t *out);
 void mcc_gpu_quiesce(void);
+/* Frame dispatch: `inout` is both seeded into and read back out of the device
+ * frame, so a kernel that stores to local slots can hand its results back. */
+int mcc_gpu_dispatch_rw(const void *code, int n, int32_t *inout, int ntuple,
+												int nslot);
+/* As above, plus the per-lane value/defined slots for a run ending in Return. */
+int mcc_gpu_dispatch_rw2(const void *code, int n, int32_t *inout, int ntuple,
+												 int nslot, int32_t *out);
+/* Nonzero while the device may still be dispatched to. Cleared when a dispatch
+ * is stranded, i.e. abandoned with its command buffer still pending. */
+int mcc_gpu_alive(void);
+/* How many dispatches have been abandoned with resources deliberately leaked
+ * rather than freed under a live command buffer. */
+long mcc_gpu_stranded(void);
 void mcc_gpu_stats(MccGpuStats *out);
 
 #endif /* MCC_GPU_H */
@@ -775,8 +788,11 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 				return 0;
 			if (!msl_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, n), &k))
 				return 0;
-			*out = msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
-														 (t & VT_UNSIGNED) != 0);
+			/* Narrow to the ref's own type; msl_load_live_v carries only a width
+			 * flag and cannot deliver VT_BOOL/BYTE/SHORT on its own. */
+			*out = msl_fit_v(m, msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
+																					(t & VT_UNSIGNED) != 0),
+											 t);
 			return 1;
 		}
 		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
@@ -788,19 +804,20 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	}
 	case AST_Load: {
 		AstLocal c = ast_first_child(a, n);
-		int r, t, k;
-		if (c == AST_NONE || ast_kind(a, c) != AST_Ref)
+		int t, k;
+		int32_t fo;
+		if (c == AST_NONE)
 			return 0;
-		r = ast_op(a, c);
 		t = ast_type_t(a, n);
-		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
-			return 0;
 		if (!ast_eval_slice_intt(t) || is_float(t))
 			return 0;
-		if (!msl_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, c), &k))
+		if (!ast_eval_slice_frame_off(a, c, &fo, 0))
 			return 0;
-		*out = msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
-													 (t & VT_UNSIGNED) != 0);
+		if (!msl_env_index(off, nenv, fo, &k))
+			return 0;
+		*out = msl_fit_v(m, msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
+																				(t & VT_UNSIGNED) != 0),
+										 t);
 		return 1;
 	}
 	case AST_Convert: {
@@ -1683,6 +1700,27 @@ static uint32_t spv_load_live(SpvMod *m, uint32_t base, int k) {
 	return spv_emit2(m, SpvOpLoad, m->id_int, p);
 }
 
+/* The store counterpart of spv_load_live. The input buffer is a plain
+ * StorageBuffer with no NonWritable decoration, so it is already writable --
+ * this makes it the device frame, which is what lets a run of statements lower
+ * as one kernel instead of one kernel per expression. */
+static void spv_store_live(SpvMod *m, uint32_t base, int k, uint32_t val) {
+	uint32_t idx = base;
+	uint32_t p;
+	if (k)
+		idx = spv_emit3(m, SpvOpIAdd, m->id_int, base, spv_const(m, k));
+	p = spv_id(m);
+	spvw_op(&m->body, SpvOpAccessChain, 5 + 1);
+	spvw_put(&m->body, m->id_ptr_sb_int);
+	spvw_put(&m->body, p);
+	spvw_put(&m->body, m->id_in);
+	spvw_put(&m->body, spv_const(m, 0));
+	spvw_put(&m->body, idx);
+	spvw_op(&m->body, SpvOpStore, 3);
+	spvw_put(&m->body, p);
+	spvw_put(&m->body, val);
+}
+
 static SpvV spv_mk(uint32_t id, int w64, int uns) {
 	SpvV v;
 	v.id = id;
@@ -1946,6 +1984,25 @@ static SpvV spv_load_live_v(SpvMod *m, uint32_t base, int k, int w64, int uns) {
 														spv_load_live(m, base, 2 * k + 1));
 		return spv_mk(spv_u2(m, lo, hi), 1, uns);
 	}
+}
+
+static void spv_store_live_v(SpvMod *m, uint32_t base, int k, SpvV v) {
+	if (!v.w64) {
+		/* The high word follows the value's own signedness, exactly as spv_widen
+		 * does: an unsigned 32-bit value zero-extends and a signed one
+		 * sign-extends. Sign-extending unconditionally stored -2 into an
+		 * `unsigned int` slot as -2 where the CPU has 4294967294. */
+		spv_store_live(m, base, 2 * k, v.id);
+		spv_store_live(m, base, 2 * k + 1,
+									 v.uns ? spv_const(m, 0)
+												 : spv_emit3(m, SpvOpShiftRightArithmetic, m->id_int,
+																		 v.id, spv_const(m, 31)));
+		return;
+	}
+	spv_store_live(m, base, 2 * k,
+								 spv_emit2(m, SpvOpBitcast, m->id_int, spv_lo(m, v.id)));
+	spv_store_live(m, base, 2 * k + 1,
+								 spv_emit2(m, SpvOpBitcast, m->id_int, spv_hi(m, v.id)));
 }
 
 static uint32_t spv_fit(SpvMod *m, uint32_t v, int t) {
@@ -2315,8 +2372,12 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 				return 0;
 			if (!spv_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, n), &k))
 				return 0;
-			*out = spv_load_live_v(m, base, k, ast_eval_slice_is64(t),
-														 (t & VT_UNSIGNED) != 0);
+			/* Narrow to the ref's own type. spv_load_live_v takes only a width
+			 * flag, so it can deliver 32 or 64 bits but never VT_BOOL/BYTE/SHORT,
+			 * and a byte live-in holding 1000 arrived as 1000 rather than -24. */
+			*out = spv_fit_v(m, spv_load_live_v(m, base, k, ast_eval_slice_is64(t),
+																					(t & VT_UNSIGNED) != 0),
+											 t);
 			return 1;
 		}
 		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
@@ -2328,19 +2389,22 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	}
 	case AST_Load: {
 		AstLocal c = ast_first_child(a, n);
-		if (c == AST_NONE || ast_kind(a, c) != AST_Ref)
-			return 0;
-		int r = ast_op(a, c);
 		int t = ast_type_t(a, n);
-		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+		int32_t fo;
+		int k;
+		if (c == AST_NONE)
 			return 0;
 		if (!ast_eval_slice_intt(t) || is_float(t))
 			return 0;
-		int k;
-		if (!spv_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, c), &k))
+		/* A local, or a constant offset from one via `.field`/`&`. Resolved
+		 * host-side, so the device still sees a constant OpAccessChain. */
+		if (!ast_eval_slice_frame_off(a, c, &fo, 0))
 			return 0;
-		*out = spv_load_live_v(m, base, k, ast_eval_slice_is64(t),
-													 (t & VT_UNSIGNED) != 0);
+		if (!spv_env_index(off, nenv, fo, &k))
+			return 0;
+		*out = spv_fit_v(m, spv_load_live_v(m, base, k, ast_eval_slice_is64(t),
+																				(t & VT_UNSIGNED) != 0),
+										 t);
 		return 1;
 	}
 	case AST_Convert: {

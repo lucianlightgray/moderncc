@@ -23,12 +23,30 @@ cdelta)  LDF= ;;
 esac
 [ "$LDF" = "-" ] && LDF=
 refout=""
+# A failing cell has to explain itself in one run. optfire.sh used to send every
+# compiler stderr to /dev/null, so a build-failure mode reported only that a
+# build failed -- which on a nightly-only target costs another whole cycle to
+# learn why. Echo what was captured, and on DID NOT FIRE echo the sizes too,
+# since "byte-identical" and "both empty" look the same from a distance.
+ofdiag() {
+	if [ -s "$1" ]; then
+		echo "  --- compiler output ---"
+		sed -e 's/^/  /' "$1" | head -40
+	else
+		echo "  (compiler produced no output)"
+	fi
+}
+ofsize() {
+	echo "  objects: $(wc -c <"$1") B off, $(wc -c <"$2") B on"
+}
+
 [ "$mode" = "level" ] && norun=1
 [ "$mode" = "defstate" ] && norun=1
 [ "$mode" = "cdelta" ] && norun=1
 if [ "$norun" != "1" ]; then
-	"$MCC" $MCCFLAGS -O0 "$SRC" -o "$ref" $LDF >/dev/null 2>&1 || { echo "FAIL $NAME: -O0 reference build failed"; exit 1; }
-	refout=$("$ref" 2>&1) || { echo "FAIL $NAME: -O0 reference run failed"; exit 1; }
+	"$MCC" $MCCFLAGS -O0 "$SRC" -o "$ref" $LDF >"$WORK/$NAME.ref.err" 2>&1 ||
+		{ echo "FAIL $NAME: -O0 reference build failed"; ofdiag "$WORK/$NAME.ref.err"; exit 1; }
+	refout=$("$ref" 2>&1) || { echo "FAIL $NAME: -O0 reference run failed"; echo "  output: $refout"; exit 1; }
 fi
 
 case $mode in
@@ -71,12 +89,13 @@ differ)
 		*)  EENV="$EENV $_x" ;;
 		esac
 	done
-	env $EENV "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "-fno-$GATE" -c "$SRC" -o "$WORK/$NAME.off.o" >/dev/null 2>&1 ||
-		{ echo "FAIL $NAME: gate-off compile failed"; exit 1; }
-	env $EENV "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "-f$GATE" -c "$SRC" -o "$WORK/$NAME.on.o" >/dev/null 2>&1 ||
-		{ echo "FAIL $NAME: gate-on compile failed"; exit 1; }
+	env $EENV "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "-fno-$GATE" -c "$SRC" -o "$WORK/$NAME.off.o" >"$WORK/$NAME.off.err" 2>&1 ||
+		{ echo "FAIL $NAME: gate-off compile failed"; ofdiag "$WORK/$NAME.off.err"; exit 1; }
+	env $EENV "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "-f$GATE" -c "$SRC" -o "$WORK/$NAME.on.o" >"$WORK/$NAME.on.err" 2>&1 ||
+		{ echo "FAIL $NAME: gate-on compile failed"; ofdiag "$WORK/$NAME.on.err"; exit 1; }
 	if cmp -s "$WORK/$NAME.off.o" "$WORK/$NAME.on.o"; then
 		echo "FAIL $NAME: pass DID NOT FIRE (-fno-$GATE and -f$GATE objects are byte-identical at $OLEVEL)"
+		ofsize "$WORK/$NAME.off.o" "$WORK/$NAME.on.o"
 		exit 1
 	fi
 	if [ "$norun" = "1" ]; then

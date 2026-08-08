@@ -26,13 +26,29 @@ set(_base "MCC_AST_EVAL_LADDER=1;MCC_AST_EVAL_LADDER_CENSUS=1")
 set(_ndiff 0)
 set(_disp 0)
 foreach(_f IN LISTS _srcs)
+    # Both exit statuses are checked. Without RESULT_VARIABLE this cell greps
+    # stdout only, so the compiler could dump core on every file and the cell
+    # would still report PASS -- the two arms' census lines would simply both be
+    # absent and compare equal. Every other GPU driver script in cmake/ already
+    # captures the status; this one did not.
     execute_process(COMMAND "${CMAKE_COMMAND}" -E env ${_base}
                             "${MCC}" -w -O2 -c "${_f}" -o "${BINDIR}/ladpar.o"
-                    OUTPUT_VARIABLE _a ERROR_VARIABLE _a TIMEOUT 120)
+                    OUTPUT_VARIABLE _a ERROR_VARIABLE _a RESULT_VARIABLE _rca
+                    TIMEOUT 120)
+    if(NOT _rca EQUAL 0)
+        message(FATAL_ERROR "ladder-gpu-parity: the CPU arm failed on ${_f} "
+                            "(rc=${_rca}); a crash here made this cell pass "
+                            "vacuously before the status was checked\n${_a}")
+    endif()
     execute_process(COMMAND "${CMAKE_COMMAND}" -E env ${_base}
                             "MCC_AST_EVAL_LADDER_GPU=1"
                             "${MCC}" -w -O2 -c "${_f}" -o "${BINDIR}/ladpar.o"
-                    OUTPUT_VARIABLE _b ERROR_VARIABLE _b TIMEOUT 120)
+                    OUTPUT_VARIABLE _b ERROR_VARIABLE _b RESULT_VARIABLE _rcb
+                    TIMEOUT 120)
+    if(NOT _rcb EQUAL 0)
+        message(FATAL_ERROR "ladder-gpu-parity: the GPU arm failed on ${_f} "
+                            "(rc=${_rcb})\n${_b}")
+    endif()
     if(_b MATCHES "available=0")
         if(MCC_GPU_REQUIRED)
             message(FATAL_ERROR "ladder-gpu-parity: no usable GPU device, but "

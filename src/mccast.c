@@ -5591,6 +5591,54 @@ static void ast_sattr_note(const AstArena *a, AstLocal s, int bytes) { MCC_TRACE
 	ast_sattr[s] += bytes;
 }
 
+/* Hoisted out of ast_replay_bb, which is recursive: SValue
+ * sv_stack[VSTACK_SIZE + 1] is 32,832 of that function's 35,424-byte frame,
+ * and C allocates the whole frame at entry even though this arm is the only
+ * user, so every level of the recursion paid for the inline-asm path. A
+ * separate noinline callee pays it once, and only when ASMGEN actually
+ * fires. It must not be a file-scope buffer: mcc_error longjmps straight
+ * out of here, and a shared buffer would then be clobbered for whatever
+ * outer frame catches it. */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
+static void ast_replay_asmgen(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
+	ASMOperand ops[MAX_ASM_OPERANDS];
+	uint8_t cr[MCC_NB_ASM_REGS];
+	const unsigned char *p = ir_cap_raw + (int)(ast_ival(a, s) & 0xffffffff);
+	int nb_operands, nb_outputs;
+	SValue sv_stack[VSTACK_SIZE + 1];
+	SValue *sv_top = vtop;
+	int vs_off = (int)(ast_fbits(a, s) & 0xffffffff);
+	int vs_n = (int)(ast_fbits(a, s) >> 32);
+	memcpy(sv_stack, vstack, sizeof sv_stack);
+	if (vs_n > 0 && vs_n <= VSTACK_SIZE) { MCC_TRACE("br\n");
+		memcpy(vstack, ir_cap_vs + vs_off, (size_t)vs_n * sizeof(SValue));
+		vtop = vstack + vs_n - 1;
+	}
+	int hdr[4], nall;
+	memcpy(hdr, p, sizeof hdr);
+	p += sizeof hdr;
+	nb_operands = hdr[0];
+	nb_outputs = hdr[1];
+	nall = hdr[0] + hdr[2];
+	if (nall > 0)
+		{ MCC_TRACE("br\n"); memcpy(ops, p, (size_t)nall * sizeof *ops); }
+	p += (size_t)nall * sizeof *ops;
+	memcpy(cr, p, sizeof cr);
+	asm_gen_code(ops, nb_operands, nb_outputs,
+							 (int)(ast_sym(a, s) & 0xffffffff), cr,
+							 (int)(ast_sym(a, s) >> 32));
+	memcpy(vstack, sv_stack, sizeof sv_stack);
+	vtop = sv_top;
+	if ((int)(ast_sym(a, s) & 0xffffffff) && ast_rp_asmops > 0) {
+		MCC_TRACE("br\n");
+		while (ast_rp_asmops-- > 0)
+			{ MCC_TRACE("br\n"); vpop(); }
+		ast_rp_asmops = 0;
+	}
+}
+
 static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE;
 			 s = ast_next_sib(a, s)) { MCC_TRACE("br\n");
@@ -5816,40 +5864,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				break;
 			}
 			if (ast_op(a, s) == AST_OP_ASMGEN) { MCC_TRACE("br\n");
-				ASMOperand ops[MAX_ASM_OPERANDS];
-				uint8_t cr[MCC_NB_ASM_REGS];
-				const unsigned char *p = ir_cap_raw + (int)(ast_ival(a, s) & 0xffffffff);
-				int nb_operands, nb_outputs;
-				SValue sv_stack[VSTACK_SIZE + 1];
-				SValue *sv_top = vtop;
-				int vs_off = (int)(ast_fbits(a, s) & 0xffffffff);
-				int vs_n = (int)(ast_fbits(a, s) >> 32);
-				memcpy(sv_stack, vstack, sizeof sv_stack);
-				if (vs_n > 0 && vs_n <= VSTACK_SIZE) { MCC_TRACE("br\n");
-					memcpy(vstack, ir_cap_vs + vs_off, (size_t)vs_n * sizeof(SValue));
-					vtop = vstack + vs_n - 1;
-				}
-				int hdr[4], nall;
-				memcpy(hdr, p, sizeof hdr);
-				p += sizeof hdr;
-				nb_operands = hdr[0];
-				nb_outputs = hdr[1];
-				nall = hdr[0] + hdr[2];
-				if (nall > 0)
-					{ MCC_TRACE("br\n"); memcpy(ops, p, (size_t)nall * sizeof *ops); }
-				p += (size_t)nall * sizeof *ops;
-				memcpy(cr, p, sizeof cr);
-				asm_gen_code(ops, nb_operands, nb_outputs,
-										 (int)(ast_sym(a, s) & 0xffffffff), cr,
-										 (int)(ast_sym(a, s) >> 32));
-				memcpy(vstack, sv_stack, sizeof sv_stack);
-				vtop = sv_top;
-				if ((int)(ast_sym(a, s) & 0xffffffff) && ast_rp_asmops > 0) {
-					MCC_TRACE("br\n");
-					while (ast_rp_asmops-- > 0)
-						{ MCC_TRACE("br\n"); vpop(); }
-					ast_rp_asmops = 0;
-				}
+				ast_replay_asmgen(a, s);
 				break;
 			}
 			if (ast_op(a, s) == AST_OP_ASM) { MCC_TRACE("br\n");
@@ -13566,6 +13581,61 @@ static void ast_adump_open(void) { MCC_TRACE("enter\n");
 	ast_adump_on = 1;
 }
 
+/* `sym` and `type_ref` hold Sym and CType pointers. Emitting them raw made
+ * the dump vary run to run under ASLR, which is N7: it broke the byte-identity
+ * the H4' bank rested on, and it made the two columns useless to any
+ * consumer,
+ * because an address is not an identity anyone downstream can match on.
+ * Interning by first-encounter order fixes both -- the order is deterministic
+ * for a deterministic compile, so the ids are stable across runs, and they are
+ * dense small integers a rebuilt arena can actually use. */
+#define AST_ADUMP_ICAP 8192
+static uintptr_t ast_adump_ikey[AST_ADUMP_ICAP];
+static unsigned ast_adump_ival_[AST_ADUMP_ICAP];
+static unsigned ast_adump_in;
+
+static unsigned ast_adump_intern(uintptr_t p) { MCC_TRACE("enter\n");
+	unsigned h, i;
+	if (!p)
+		{ MCC_TRACE("br\n"); return 0; }
+	h = (unsigned)((p * 0x9e3779b1u) >> 13) & (AST_ADUMP_ICAP - 1);
+	for (i = 0; i < AST_ADUMP_ICAP; i++) { MCC_TRACE("br\n");
+		unsigned k = (h + i) & (AST_ADUMP_ICAP - 1);
+		if (ast_adump_ikey[k] == p)
+			{ MCC_TRACE("br\n"); return ast_adump_ival_[k]; }
+		if (!ast_adump_ikey[k]) { MCC_TRACE("br\n");
+			if (ast_adump_in >= AST_ADUMP_ICAP / 2)
+				{ MCC_TRACE("br\n"); return 0; }
+			ast_adump_ikey[k] = p;
+			ast_adump_ival_[k] = ++ast_adump_in;
+			return ast_adump_ival_[k];
+		}
+	}
+	return 0;
+}
+
+/* Byte size of the object a node denotes, or 0 when it is not known. A device
+ * address space needs this and nothing else in the dump carries it: to bound a
+ * runtime index you must know the extent of the object being indexed, and
+ * without it the only choices are masking against the whole lane region (a
+ * legitimate arr[3] then silently reads the wrong word) or poisoning every
+ * index that is not provably in range (which poisons the legitimate ones too).
+ * Computed from the real CType before it is interned, because the dumped
+ * type_ref column is a dense id, not a pointer. */
+static int ast_adump_size(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	CType ct;
+	int align = 0, sz;
+	uint64_t ref = ast_type_ref(a, n);
+	int t = ast_type_t(a, n);
+	if (!t || (t & VT_BTYPE) == VT_FUNC)
+		{ MCC_TRACE("br\n"); return 0; }
+	memset(&ct, 0, sizeof ct);
+	ct.t = t;
+	ct.ref = (Sym *)(uintptr_t)ref;
+	sz = type_size(&ct, &align);
+	return sz > 0 ? sz : 0;
+}
+
 static void ast_adump_body(AstArena *a, const char *fname) { MCC_TRACE("enter\n");
 	AstLocal nn, n;
 	ast_adump_open();
@@ -13577,13 +13647,15 @@ static void ast_adump_body(AstArena *a, const char *fname) { MCC_TRACE("enter\n"
 	fprintf(ast_adump_fp, "[arena] fn=%s n=%ld root=%ld\n", fname ? fname : "?",
 					(long)nn, (long)ast_root(a));
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
-		fprintf(ast_adump_fp, "%ld %d %d %d %lld %ld %ld %llu %u %u %llu %llu\n",
+		fprintf(ast_adump_fp, "%ld %d %d %d %lld %ld %ld %llu %u %u %llu %llu %d\n",
 						(long)n, (int)ast_kind(a, n), ast_op(a, n), ast_type_t(a, n),
 						(long long)ast_ival(a, n), (long)ast_first_child(a, n),
 						(long)ast_next_sib(a, n),
-						(unsigned long long)ast_type_ref(a, n), ast_type_bp(a, n),
-						ast_type_bs(a, n), (unsigned long long)ast_sym(a, n),
-						(unsigned long long)ast_fbits(a, n));
+						(unsigned long long)ast_adump_intern(
+								(uintptr_t)ast_type_ref(a, n)),
+						ast_type_bp(a, n), ast_type_bs(a, n),
+						(unsigned long long)ast_adump_intern((uintptr_t)ast_sym(a, n)),
+						(unsigned long long)ast_fbits(a, n), ast_adump_size(a, n));
 	}
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		AstLocal cref;
