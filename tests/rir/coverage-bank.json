@@ -278,22 +278,24 @@
     "text": 3500172
    },
    "lowerable": {
-    "big_region_nodes_pct": 2.9405,
-    "blockers": {
-     "asm": 0.0055,
-     "call": 0.0087,
-     "frame": 0.1537,
-     "global": 0.6992,
-     "opaque": 0.0,
-     "reg": 1.0828,
-     "type": 0.293
-    },
-    "bodies_pct": 15.6273,
-    "bytes_pct": 1.2294,
-    "nodes_pct": 34.9502,
-    "nodes_pct_loose": 64.268,
-    "nodes_pct_strict": 27.1528,
-    "region_nodes_pct": 9.8163
+    "elf": {
+     "big_region_nodes_pct": 2.9405,
+     "blockers": {
+      "asm": 0.0055,
+      "call": 0.0087,
+      "frame": 0.1537,
+      "global": 0.6992,
+      "opaque": 0.0,
+      "reg": 1.0828,
+      "type": 0.293
+     },
+     "bodies_pct": 15.6273,
+     "bytes_pct": 1.2294,
+     "nodes_pct": 34.9502,
+     "nodes_pct_loose": 64.268,
+     "nodes_pct_strict": 27.1528,
+     "region_nodes_pct": 9.8163
+    }
    }
   },
   "O1": {
@@ -319,22 +321,24 @@
     "text": 3499397
    },
    "lowerable": {
-    "big_region_nodes_pct": 2.9404,
-    "blockers": {
-     "asm": 0.0055,
-     "call": 0.0088,
-     "frame": 0.1548,
-     "global": 0.6947,
-     "opaque": 0.0,
-     "reg": 1.0782,
-     "type": 0.3216
-    },
-    "bodies_pct": 15.642,
-    "bytes_pct": 1.1947,
-    "nodes_pct": 34.951,
-    "nodes_pct_loose": 64.2675,
-    "nodes_pct_strict": 27.1327,
-    "region_nodes_pct": 9.8283
+    "elf": {
+     "big_region_nodes_pct": 2.9404,
+     "blockers": {
+      "asm": 0.0055,
+      "call": 0.0088,
+      "frame": 0.1548,
+      "global": 0.6947,
+      "opaque": 0.0,
+      "reg": 1.0782,
+      "type": 0.3216
+     },
+     "bodies_pct": 15.642,
+     "bytes_pct": 1.1947,
+     "nodes_pct": 34.951,
+     "nodes_pct_loose": 64.2675,
+     "nodes_pct_strict": 27.1327,
+     "region_nodes_pct": 9.8283
+    }
    }
   },
   "O2": {
@@ -360,22 +364,24 @@
     "text": 3499397
    },
    "lowerable": {
-    "big_region_nodes_pct": 2.9404,
-    "blockers": {
-     "asm": 0.0055,
-     "call": 0.0118,
-     "frame": 0.1501,
-     "global": 0.705,
-     "opaque": 0.0,
-     "reg": 1.0218,
-     "type": 0.2656
-    },
-    "bodies_pct": 15.642,
-    "bytes_pct": 1.1951,
-    "nodes_pct": 34.951,
-    "nodes_pct_loose": 64.2675,
-    "nodes_pct_strict": 27.1327,
-    "region_nodes_pct": 9.8283
+    "elf": {
+     "big_region_nodes_pct": 2.9404,
+     "blockers": {
+      "asm": 0.0055,
+      "call": 0.0118,
+      "frame": 0.1501,
+      "global": 0.705,
+      "opaque": 0.0,
+      "reg": 1.0218,
+      "type": 0.2656
+     },
+     "bodies_pct": 15.642,
+     "bytes_pct": 1.1951,
+     "nodes_pct": 34.951,
+     "nodes_pct_loose": 64.2675,
+     "nodes_pct_strict": 27.1327,
+     "region_nodes_pct": 9.8283
+    }
    }
   },
   "O3": {
@@ -401,22 +407,24 @@
     "text": 3499397
    },
    "lowerable": {
-    "big_region_nodes_pct": 2.9404,
-    "blockers": {
-     "asm": 0.0055,
-     "call": 0.0118,
-     "frame": 0.1501,
-     "global": 0.704,
-     "opaque": 0.0,
-     "reg": 1.0218,
-     "type": 0.2656
-    },
-    "bodies_pct": 15.642,
-    "bytes_pct": 1.1944,
-    "nodes_pct": 34.951,
-    "nodes_pct_loose": 64.2675,
-    "nodes_pct_strict": 27.1327,
-    "region_nodes_pct": 9.8283
+    "elf": {
+     "big_region_nodes_pct": 2.9404,
+     "blockers": {
+      "asm": 0.0055,
+      "call": 0.0118,
+      "frame": 0.1501,
+      "global": 0.704,
+      "opaque": 0.0,
+      "reg": 1.0218,
+      "type": 0.2656
+     },
+     "bodies_pct": 15.642,
+     "bytes_pct": 1.1944,
+     "nodes_pct": 34.951,
+     "nodes_pct_loose": 64.2675,
+     "nodes_pct_strict": 27.1327,
+     "region_nodes_pct": 9.8283
+    }
    }
   }
  }

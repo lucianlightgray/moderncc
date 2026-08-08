@@ -125,6 +125,28 @@ move the recorded configuration; do not use it to bank a non-default build.
 
 Exit status is 0 when every level is at or above its banked coverage and the
 byte accounting reconciles against the objects' real .text size.
+
+A host the bank was not taken on does NOT skip the whole run.  Three banked
+quantities are host-sensitive and only those three are dropped:
+
+  lowerable   per-format by schema (see low_floor); MCC_HOST_* decides which
+              source amalgamates into the corpus.
+  residual    unattributed .text.  Darwin's mcc_tlv_thunk is 120 bytes of raw
+              asm with no C body, so 120 here is correct against an ELF 0.
+  kept_coverage  measured host-sensitive: at the fixed commit that wrote this
+              bank, -O1 kept is 96.156% on elf/x86-64 and 83.219% on
+              darwin/aarch64, because mcc emits for the host's own arch and
+              byte-identity of a replayed body is a property of that target.
+
+capture coverage, modelled coverage and the census self-reconciliation still
+run everywhere, and that is measured, not assumed: on darwin/aarch64 the wide
+corpus reports capture 100.000% and modelled 100.000% at -O1, the same values
+the bank carries from elf/x86-64.  Both are near-saturated ratios that do carry
+across hosts, so keeping them armed off Linux costs nothing and is worth a
+great deal -- it is what catches an arena that stopped modelling something.
+
+The run reports 0 when anything was gated and 77 only when a skip is genuinely
+all that is left; every skip names what it dropped and why.
 """
 import argparse, json, os, re, shlex, struct, subprocess, sys, tempfile
 
@@ -833,20 +855,44 @@ def main():
             return 77
 
     fmt = host_objfmt(mcc) if self_corpus else None
+    unbanked_host = False
     if (self_corpus and fmt and not a.update_bank and not a.update_bank_low
             and not a.no_check):
         levels = a.levels.split(",")
         anylow = any(banked.get(o, {}).get("lowerable") for o in levels)
         havefmt = any(low_floor(banked.get(o, {}).get("lowerable"), fmt)
                       for o in levels)
-        if anylow and not havefmt:
-            print("rir-coverage: SKIP: the %s corpus has no banked lowerable "
-                  "floors for the %s host.  MCC_HOST_* decides which source "
-                  "amalgamates, so the floors are host-specific; bank this host "
-                  "with --update-bank-low, or run on a banked host (elf, pe)."
-                  % (a.corpus, fmt))
-            return 77
+        unbanked_host = bool(anylow and not havefmt)
+    if unbanked_host:
+        print("rir-coverage: PARTIAL SKIP: the %s corpus has no banked lowerable "
+              "floors for the %s host, which is this tool's only marker that the "
+              "bank was taken somewhere else.  The host-sensitive comparisons "
+              "are therefore not made.  Skipped, and why:" % (a.corpus, fmt))
+        print("  lowerable ratchet -- MCC_HOST_* decides which source "
+              "amalgamates into the corpus, so the elf/pe floors are ratios over "
+              "different source than this host compiles.")
+        print("  arena .text residual -- host-specific and NOT per-format in the "
+              "schema: src/mccrun.c's mcc_tlv_thunk is 120 bytes of raw asm with "
+              "no C body, so Darwin's residual is legitimately 120 against an "
+              "ELF-banked 0.  Comparing it would fail a correct number.")
+        print("  arena kept_coverage -- host-specific for the same reason, and "
+              "measured: at a FIXED commit (db7c6829, the commit that wrote this "
+              "bank) -O1 kept is 96.156% on the elf/x86-64 bank host and "
+              "83.219% on darwin/aarch64.  mcc emits for the host arch, so the "
+              "byte-identity ratio is a property of the target the host builds "
+              "for, not of the compiler's replay fidelity.  Comparing it across "
+              "hosts fails a correct number too.")
+        print("  Still enforced here: capture byte coverage, arena modelled "
+              "coverage, and the census self-reconciliation.  Those are "
+              "near-saturated ratios that do carry across hosts -- measured: "
+              "the wide corpus reports capture 100.000% and modelled 100.000% "
+              "on darwin/aarch64, the same values banked from elf/x86-64.")
+        print("  To gate the rest on this host, its floors have to be banked for "
+              "it (--update-bank-low for lowerable; residual and kept_coverage "
+              "need a per-format schema first); or run the whole ratchet on a "
+              "banked host (elf, pe).")
 
+    checked, skipped = [], []
     for opt in a.levels.split(","):
         if a.layers != "arena":
             cc2 = census(mcc, flags, sources, opt, layer="capture",
@@ -890,9 +936,11 @@ def main():
             if cc2["failed"]:
                 print("   %d source(s) failed to compile" % len(cc2["failed"]))
             b = banked.get(opt, {}).get("capture")
-            if b and not a.no_check and ccov + a.tol < b["coverage"]:
-                bad.append("-%s capture: byte coverage regressed: %.4f%% < "
-                           "banked %.4f%%" % (opt, ccov, b["coverage"]))
+            if b and not a.no_check:
+                checked.append("-%s capture coverage" % opt)
+                if ccov + a.tol < b["coverage"]:
+                    bad.append("-%s capture: byte coverage regressed: %.4f%% < "
+                               "banked %.4f%%" % (opt, ccov, b["coverage"]))
         if a.layers == "capture":
             continue
         c = census(mcc, flags, sources, opt)
@@ -996,26 +1044,42 @@ def main():
         b = banked.get(opt, {}).get("arena")
         if b and not a.no_check:
             mc = pct(modelled, body)
+            checked.append("-%s modelled_coverage" % opt)
             if mc + a.tol < b["modelled_coverage"]:
                 bad.append("-%s: modelled coverage regressed: %.4f%% < banked "
                            "%.4f%% (the gap grew)"
                            % (opt, mc, b["modelled_coverage"]))
             kc = pct(used, body)
-            if kc + a.tol < b.get("kept_coverage", 0.0):
-                bad.append("-%s: kept coverage regressed: %.4f%% < banked "
-                           "%.4f%% (fewer body bytes ship optimized)"
-                           % (opt, kc, b["kept_coverage"]))
-            if abs(resid) > abs(b.get("residual", 0)):
-                bad.append("-%s: unattributed .text grew: residual %d, banked %d"
-                           % (opt, resid, b.get("residual", 0)))
+            if unbanked_host:
+                skipped.append("-%s arena kept_coverage (this host %.4f%%, "
+                               "banked %.4f%% on another host format)"
+                               % (opt, kc, b.get("kept_coverage", 0.0)))
+            else:
+                checked.append("-%s kept_coverage" % opt)
+                if kc + a.tol < b.get("kept_coverage", 0.0):
+                    bad.append("-%s: kept coverage regressed: %.4f%% < banked "
+                               "%.4f%% (fewer body bytes ship optimized)"
+                               % (opt, kc, b["kept_coverage"]))
+            if unbanked_host:
+                skipped.append("-%s arena residual (this host %d, banked %d on "
+                               "another host format)"
+                               % (opt, resid, b.get("residual", 0)))
+            else:
+                checked.append("-%s residual" % opt)
+                if abs(resid) > abs(b.get("residual", 0)):
+                    bad.append("-%s: unattributed .text grew: residual %d, "
+                               "banked %d" % (opt, resid, b.get("residual", 0)))
         elif not b and not a.update_bank and not a.no_check:
             bad.append("-%s: no banked coverage for corpus %s" % (opt, a.corpus))
         lb = low_floor(banked.get(opt, {}).get("lowerable"), fmt)
         if lb and not a.no_check:
+            checked.append("-%s lowerable[%s]" % (opt, fmt))
             for k in LOW_BANKED:
                 if low[k] + a.tol < lb.get(k, 0.0):
                     bad.append("-%s lowerable[%s]: %s regressed: %.4f%% < banked "
                                "%.4f%%" % (opt, fmt, k, low[k], lb[k]))
+        elif unbanked_host:
+            skipped.append("-%s lowerable (no %s floor banked)" % (opt, fmt))
         elif (not lb and not a.update_bank and not a.update_bank_low
               and not a.no_check and low["bodies"]):
             bad.append("-%s: no banked lowerable census for corpus %s (%s host)"
@@ -1090,7 +1154,24 @@ def main():
 
     for m in bad:
         print("FAIL " + m)
-    return 1 if bad else 0
+    if skipped:
+        print("rir-coverage: %d comparison(s) skipped on this %s host:"
+              % (len(skipped), fmt))
+        for m in skipped:
+            print("  SKIP " + m)
+    if bad:
+        return 1
+    if skipped and not checked:
+        print("rir-coverage: SKIP: every comparison this run could make is "
+              "host-format-derived and unbanked for %s; nothing was gated."
+              % fmt)
+        return 77
+    if checked:
+        print("rir-coverage: PASS: %d comparison(s) enforced%s."
+              % (len(checked),
+                 ", %d skipped as host-specific" % len(skipped) if skipped
+                 else ""))
+    return 0
 
 
 if __name__ == "__main__":
