@@ -6,6 +6,57 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Open now — caveats left by the CI matrix replication, 2026-08-08
+
+Six items, each with the decision or measurement that closes it. Detail and evidence are
+in *The Linux stage2 matrix, replicated locally* and *`rir-coverage` and `node-census`
+re-banked* below; this list exists so none of them is only findable inside a write-up.
+
+1. **`cli/perfn_inproc` is red on purpose. Do not bank `SAME` to make it green.**
+   `-fopt-perfn-inproc` changes no byte at `-O3/-O8/-O10/-O12`, with or without
+   `-freemit-templates`, with the inliner on or off, toggled on *or* off from its
+   default, and on a fat callee inlined at eight sites. It is **not a recent
+   regression** — `SAME` at `879bf988`, `c2838c61`, `109d407a`, `6c46618e`, `1ad3f1aa`
+   — and `6c46618e`, whose sole purpose was fixing this cell, never did.
+   **Decide which of two things is true:** the case needs an input that discriminates,
+   or the pass is inert and earns no level. Banking `SAME` asserts the second without
+   establishing it.
+
+2. **`optfire/ident_shift` on arm64 is unreproduced, and the failure line would settle
+   it.** It passes here under gcc, under stage2 self-host, with and without Vulkan, at
+   load average 23 (40/40), its objects differ under all five target compilers, and the
+   arm64 binaries print `178` under `qemu-aarch64`. `optfire.sh` prints exactly one of
+   six distinct `FAIL ident_shift:` lines and separates "pass DID NOT FIRE" from
+   "output differs from `-O0`" from "build/run failed" — three different fixes.
+   **Needs: the `FAIL ident_shift:` line from the arm64 nightly job.**
+
+3. **`matrix.yml` silently drops three GPU gate cells on every Linux cell.**
+   `ci.yml` installs `libvulkan-dev` (`:115`) and passes `-DVulkan_INCLUDE_DIR=/usr/include`
+   (`:150`); `matrix.yml` does **neither** (`:151`). Without headers `spvgate` does not
+   build, so `gpu/spv-slice-{differential,known-positive,real}` are never registered —
+   8913 tests instead of 8916 — and nothing reports the loss. This is exactly the N13
+   must-run-manifest hole, and it is also what made identifying the failing cell an
+   exercise in index arithmetic. **One line to fix; the manifest is the real fix.**
+
+4. **`kept_coverage` is host-sensitive and the bank must come from the stage2 tree.**
+   The gcc-hosted and stage2 self-hosted compilers disagree: `fallback 98 / kept 82.7770`
+   against `100 / 82.7139` at `-O0`. That 0.06pp spread is **outside the tool's
+   `--tol` of 0.05pp**, so banking from a gcc host re-breaks CI, which tests the stage2
+   tree. The floors are currently the lower of the two.
+   **Decide: raise `--tol`, or make the metric host-stable, or write the "bank from
+   stage2" rule into `rir-coverage.py` so it cannot be got wrong silently.**
+
+5. **`node-census`'s `all_invokes_on_cpu` may not be worth gating.** It is a ratio over
+   the compiler's own source, so it moves whenever call density changes — it fell
+   94.9385% → 94.8004% purely because `src/mcc.c` amalgamated ~2700 new lines. It is not
+   a regression signal in either direction. The **external-only** ceiling is the number
+   the plan's headline rests on and it held at 99.2540%. **Decide whether the
+   all-invokes leaf should be gated at all, or reported only.**
+
+6. **`8fd8c54e` moved the `wide` corpus, not `self`.** Re-measured on the merged tree:
+   `self` `-O1` kept is **82.777%**, unchanged, so the re-bank in `e2b8bdc4` is still
+   the right floor. Recorded because the two changes look like they collide and do not.
+
 ## D1e is measured, and it wins — 2026-08-08, Apple M1 Pro
 
 The experiment `docs/PLAN.md` called "the highest-value single experiment left, and it
