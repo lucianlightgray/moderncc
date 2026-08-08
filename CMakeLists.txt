@@ -5675,6 +5675,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(rir-coverage PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 TIMEOUT 900)
 
+            add_test(NAME node-census
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/node-census.py"
+                        "${CMAKE_BINARY_DIR}"
+                        --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
+                        --bank "${CMAKE_CURRENT_SOURCE_DIR}/tests/rir/node-bank.json")
+            set_tests_properties(node-census PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 TIMEOUT 600)
+
             add_test(NAME rir-gap-classes
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
                         "${CMAKE_BINARY_DIR}" --check-gap-dir --levels O0,O1,O2,O3)

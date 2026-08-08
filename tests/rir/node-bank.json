@@ -1,0 +1,30 @@
+{
+ "src/mcc.c:O2": {
+  "bodies": 2747,
+  "ceilings": {
+   "all_invokes_on_cpu": 94.9385,
+   "external_invokes_on_cpu": 99.231
+  },
+  "invoke_external": 3135,
+  "invoke_internal": 18035,
+  "invoke_sites": 21266,
+  "invoke_unknown": 96,
+  "kinds": {
+   "BasicBlock": 19364,
+   "Binary": 40889,
+   "Convert": 44798,
+   "If": 14540,
+   "Invoke": 21266,
+   "Jump": 5407,
+   "Literal": 67602,
+   "Load": 6870,
+   "Poison": 0,
+   "Ref": 124350,
+   "Return": 5201,
+   "Store": 21409,
+   "StoreVal": 21362,
+   "Unary": 27094
+  },
+  "nodes": 420152
+ }
+}
