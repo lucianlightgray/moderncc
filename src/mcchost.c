@@ -1491,7 +1491,22 @@ ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_index(void) { MCC_TRACE("enter\n
 }
 
 static unsigned char **host_tls_array(void) { MCC_TRACE("enter\n");
-#if defined(_WIN64)
+	/* ThreadLocalStoragePointer sits at TEB+0x58 on every 64-bit Windows, but
+	   only x86_64 reaches the TEB through a segment register. aarch64 keeps the
+	   TEB in x18, the reserved platform register, so that case has to be tested
+	   first: _WIN64 is defined on arm64 too, and the gs read below assembles
+	   nowhere but x86. */
+#if defined(_M_ARM64) || defined(_M_ARM64EC) || defined(__aarch64__) || defined(__arm64__)
+#if defined(_MSC_VER) && !defined(__clang__)
+	return (unsigned char **)(uintptr_t)__readx18qword(0x58);
+#elif !defined(__MCC__) || defined(__MCC_ASM__)
+	unsigned char *teb;
+	__asm__ volatile("mov %0, x18" : "=r"(teb));
+	return *(unsigned char ***)(teb + 0x58);
+#else
+	return NULL;
+#endif
+#elif defined(_WIN64)
 	return (unsigned char **)(uintptr_t)__readgsqword(0x58);
 #elif defined(_MSC_VER)
 	return (unsigned char **)(uintptr_t)__readfsdword(0x2c);
