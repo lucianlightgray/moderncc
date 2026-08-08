@@ -6,6 +6,46 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Merged — five parallel branches, and the ratchet re-banked for the fourth time, 2026-08-08
+
+The five sections below landed on separate branches and were merged in one pass:
+`wt/spvcols`, `wt/frameops`, `wt/marshal`, `wt/harness`, `wt/deref`. Textual auto-merges
+in `src/mccslice.h`, `src/mccgpu.h`, `tools/slicerun.c` and `CMakeLists.txt` were checked
+by symbol afterwards rather than trusted: the `for`-loop child reorder survives in all
+three statement switches, `spv_region_shared` and the `shared`-flag refusal coexist with
+the binding-2 `id_mem` work, and the known-positive list is the union
+`wide64 ops frame gpu sched bytes deref`.
+
+`slice/*` + `gpu/*` + `must-run`: **30 of 30**. Full suite: **8940 pass, 2 fail**, both
+pre-existing and both reproduced on a detached build of `22accb27`:
+`cli/perfn_inproc` (expects `DIFFER`, gets `SAME` — the row already documented as red on
+purpose) and `rir-coverage`, treated below.
+
+### `rir-coverage` failed by one ten-thousandth of a point, and it is dilution again
+
+`nodes_pct_strict` at `-O0` came in at **25.8706%** against a banked floor of **25.9207%**
+with `--tol 0.05` — over by **0.0001 points**. Bisected against a detached `22accb27`
+build before touching the bank, because the standing warning says a ratio over the
+compiler's own source is not a regression signal in either direction:
+
+| | `22accb27` | merged |
+| --- | ---: | ---: |
+| arena nodes (denominator) | 434,204 | 434,401 (**+197**) |
+| `nodes_pct_strict` | 25.8724% | 25.8706% |
+| absolute lowerable nodes | ~112,339 | **~112,385 (+46)** |
+| margin against the floor | +0.0017 inside | −0.0001 outside |
+
+**Absolute lowerable nodes rose while the ratio fell** — the same signature as the three
+previous re-bankings, and the same cause: `src/mcc.c` amalgamates `src/mccgpu.c`,
+`src/mccgpu.h` and `src/ast_eval_slice.h`, so adding device-layer code enlarges the census
+subject. The baseline was already sitting **0.0017 points inside the tolerance band**, so
+this was one edit away from failing regardless of what the edit was. Re-banked with
+`--update-bank-low` for `self` at `O0,O1,O2,O3`; `rir-coverage`, `node-census`,
+`rir-gap-classes` and `rir-lowerable-classes` all green after.
+
+Worth saying plainly: a floor whose baseline margin is 0.0017 points is not measuring
+anything. It fires on the next commit to touch the device layer whatever that commit does.
+
 ## Landed — `spvgate` was measuring a type-stripped arena, 2026-08-08
 
 ### What it was blind to
