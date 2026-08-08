@@ -1000,6 +1000,11 @@ def main():
                 bad.append("-%s: modelled coverage regressed: %.4f%% < banked "
                            "%.4f%% (the gap grew)"
                            % (opt, mc, b["modelled_coverage"]))
+            kc = pct(used, body)
+            if kc + a.tol < b.get("kept_coverage", 0.0):
+                bad.append("-%s: kept coverage regressed: %.4f%% < banked "
+                           "%.4f%% (fewer body bytes ship optimized)"
+                           % (opt, kc, b["kept_coverage"]))
             if abs(resid) > abs(b.get("residual", 0)):
                 bad.append("-%s: unattributed .text grew: residual %d, banked %d"
                            % (opt, resid, b.get("residual", 0)))
