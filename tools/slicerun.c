@@ -1216,6 +1216,42 @@ static void suite_frame(void) {
  * recycled that memory into the next dispatch's bin/bout underneath a zombie
  * kernel. The observable consequence was dispatch N+1 returning corrupt values,
  * which is strictly worse than returning nothing. */
+/* The shared address space exists and the host can see it. This is the
+ * foundation for pointers, malloc and the printf ring: one region, mapped on
+ * both sides, where a pointer is a byte offset and offset 0 is NULL. */
+static void suite_mem(void) {
+	void *base = NULL;
+	unsigned long size = 0;
+	unsigned char *p;
+
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr, "FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+	CHECK(mcc_gpu_mem(&base, &size) == 1, "the shared address space is mappable");
+	CHECK(base != NULL, "and the host has a pointer to it");
+	CHECK(size >= (1u << 20), "and it is at least the default extent");
+
+	p = (unsigned char *)base;
+	CHECK(p[0] == 0 && p[1] == 0 && p[2] == 0 && p[3] == 0,
+				"offset 0 is zeroed, so it can be reserved as NULL");
+
+	/* Host writes must survive to the next call, since seeding happens between
+	 * dispatches and the region is persistent for the process. */
+	p[64] = 0xA5;
+	p[65] = 0x5A;
+	base = NULL;
+	CHECK(mcc_gpu_mem(&base, &size) == 1, "the region is re-mappable");
+	CHECK(base == (void *)p, "and it is the same region, not a fresh one");
+	CHECK(((unsigned char *)base)[64] == 0xA5 &&
+					((unsigned char *)base)[65] == 0x5A,
+				"host writes persist across the call, so it can be seeded");
+	p[64] = p[65] = 0;
+}
+
 static void suite_fault(void) {
 	AstArena *a;
 	AstLocal root;
@@ -1864,6 +1900,8 @@ int main(int argc, char **argv) {
 		suite_ops();
 	if (!only || !strcmp(only, "frame"))
 		suite_frame();
+	if (!only || !strcmp(only, "mem"))
+		suite_mem();
 	if (only && !strcmp(only, "fault"))
 		suite_fault();
 	if (!only || !strcmp(only, "sched"))
@@ -1879,7 +1917,8 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	if (only && (!strcmp(only, "gpu") || !strcmp(only, "wide64") ||
-							 !strcmp(only, "ops") || !strcmp(only, "fault")) &&
+							 !strcmp(only, "ops") || !strcmp(only, "fault") ||
+			 !strcmp(only, "mem")) &&
 			!g_have_device)
 		return 77;
 	return g_failures ? 1 : 0;

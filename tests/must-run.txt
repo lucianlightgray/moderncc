@@ -37,6 +37,7 @@ slice/ops                    | registered | the op matrix, including N9's six ot
 slice/ops-known-positive     | registered | proves the op matrix is not blind
 slice/frame                  | must-run   | device frame storage: Store/Load lowered to GPU memory, CPU half needs no device
 slice/frame-known-positive   | registered | proves the frame differential is not blind
+slice/mem                    | registered | the shared CPU<->GPU address space: pointers, heap, printf ring
 slice/fault                  | registered | the pending-command-buffer strand path
 slice/cost                   | registered | H6; the break-even table the plan's go/no-go rests on
 slice/real                   | registered | both runners over real recorded arenas

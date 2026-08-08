@@ -1764,10 +1764,10 @@ static struct {
 	VkCommandBuffer cb;
 	VkFence fence;
 	VkPipelineCache pcache;
-	VkBuffer bin, bout;
-	VkDeviceMemory min_, mout;
-	void *pin, *pout;
-	VkDeviceSize binsz, boutsz;
+	VkBuffer bin, bout, bmem;
+	VkDeviceMemory min_, mout, mmem;
+	void *pin, *pout, *pmem;
+	VkDeviceSize binsz, boutsz, bmemsz;
 	MccVkPipe cache[MCC_VK_CACHE_MAX];
 	int ncache, next;
 } mcc_vkr;
@@ -1784,7 +1784,7 @@ static uint64_t mcc_vk_key(const uint32_t *code, int nwords, int nlive) {
 }
 
 static int mcc_vk_resident(void) {
-	VkDescriptorSetLayoutBinding dslb[2];
+	VkDescriptorSetLayoutBinding dslb[3];
 	VkDescriptorSetLayoutCreateInfo dslci;
 	VkDescriptorPoolSize dps;
 	VkDescriptorPoolCreateInfo dpci;
@@ -1798,7 +1798,7 @@ static int mcc_vk_resident(void) {
 	if (mcc_vkr.ready)
 		return 1;
 	memset(dslb, 0, sizeof dslb);
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < 3; i++) {
 		dslb[i].binding = (unsigned)i;
 		dslb[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		dslb[i].descriptorCount = 1;
@@ -1806,14 +1806,14 @@ static int mcc_vk_resident(void) {
 	}
 	memset(&dslci, 0, sizeof dslci);
 	dslci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	dslci.bindingCount = 2;
+	dslci.bindingCount = 3;
 	dslci.pBindings = dslb;
 	if (vkCreateDescriptorSetLayout(mcc_gpu.dev, &dslci, 0, &mcc_vkr.dsl) !=
 			VK_SUCCESS)
 		return 0;
 	memset(&dps, 0, sizeof dps);
 	dps.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	dps.descriptorCount = 2;
+	dps.descriptorCount = 3;
 	memset(&dpci, 0, sizeof dpci);
 	dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	dpci.maxSets = 1;
@@ -1856,9 +1856,37 @@ static int mcc_vk_resident(void) {
 	return 1;
 }
 
+/* The shared address space: one host-mapped region every lane sees, holding the
+ * globals image, the heap, and the printf ring. A pointer is a byte offset into
+ * it, so offset 0 is reserved as NULL -- a bump allocator that handed out 0
+ * would return a pointer equal to NULL, and malloc's result is null-checked at
+ * every measured site.
+ *
+ * Host and device see the same bytes at command-buffer granularity, which is
+ * all that is available: mid-kernel host->device writes are invisible by every
+ * qualifier, so the host seeds this before the dispatch and drains it after,
+ * never during. That is why the printf ring is device-writes-only. */
+#define MCC_VK_MEM_DEFAULT (1u << 20)
+
+static int mcc_vk_bind_mem(VkDeviceSize want) {
+	if (want <= mcc_vkr.bmemsz)
+		return 1;
+	if (mcc_vkr.bmem) {
+		vkUnmapMemory(mcc_gpu.dev, mcc_vkr.mmem);
+		vkFreeMemory(mcc_gpu.dev, mcc_vkr.mmem, 0);
+		vkDestroyBuffer(mcc_gpu.dev, mcc_vkr.bmem, 0);
+		mcc_vkr.bmem = 0;
+	}
+	if (!mcc_gpu_buffer(want, &mcc_vkr.bmem, &mcc_vkr.mmem, &mcc_vkr.pmem))
+		return 0;
+	mcc_vkr.bmemsz = want;
+	memset(mcc_vkr.pmem, 0, (size_t)want);
+	return 1;
+}
+
 static int mcc_vk_bind_buffers(VkDeviceSize insz, VkDeviceSize outsz) {
-	VkDescriptorBufferInfo dbi[2];
-	VkWriteDescriptorSet wds[2];
+	VkDescriptorBufferInfo dbi[3];
+	VkWriteDescriptorSet wds[3];
 	int i, grew = 0;
 
 	if (insz > mcc_vkr.binsz) {
@@ -1885,6 +1913,11 @@ static int mcc_vk_bind_buffers(VkDeviceSize insz, VkDeviceSize outsz) {
 		mcc_vkr.boutsz = outsz;
 		grew = 1;
 	}
+	if (!mcc_vkr.bmem) {
+		if (!mcc_vk_bind_mem(MCC_VK_MEM_DEFAULT))
+			return 0;
+		grew = 1;
+	}
 	if (!grew)
 		return 1;
 	memset(dbi, 0, sizeof dbi);
@@ -1892,8 +1925,10 @@ static int mcc_vk_bind_buffers(VkDeviceSize insz, VkDeviceSize outsz) {
 	dbi[0].range = VK_WHOLE_SIZE;
 	dbi[1].buffer = mcc_vkr.bout;
 	dbi[1].range = VK_WHOLE_SIZE;
+	dbi[2].buffer = mcc_vkr.bmem;
+	dbi[2].range = VK_WHOLE_SIZE;
 	memset(wds, 0, sizeof wds);
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < 3; i++) {
 		wds[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		wds[i].dstSet = mcc_vkr.dset;
 		wds[i].dstBinding = (unsigned)i;
@@ -1901,7 +1936,7 @@ static int mcc_vk_bind_buffers(VkDeviceSize insz, VkDeviceSize outsz) {
 		wds[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		wds[i].pBufferInfo = &dbi[i];
 	}
-	vkUpdateDescriptorSets(mcc_gpu.dev, 2, wds, 0, 0);
+	vkUpdateDescriptorSets(mcc_gpu.dev, 3, wds, 0, 0);
 	return 1;
 }
 
@@ -1988,6 +2023,11 @@ static void mcc_vk_release(void) {
 		vkUnmapMemory(mcc_gpu.dev, mcc_vkr.mout);
 		vkFreeMemory(mcc_gpu.dev, mcc_vkr.mout, 0);
 		vkDestroyBuffer(mcc_gpu.dev, mcc_vkr.bout, 0);
+	}
+	if (mcc_vkr.bmem) {
+		vkUnmapMemory(mcc_gpu.dev, mcc_vkr.mmem);
+		vkFreeMemory(mcc_gpu.dev, mcc_vkr.mmem, 0);
+		vkDestroyBuffer(mcc_gpu.dev, mcc_vkr.bmem, 0);
 	}
 	memset(&mcc_vkr, 0, sizeof mcc_vkr);
 }
@@ -2113,6 +2153,27 @@ int mcc_gpu_dispatch_rw2(const void *code, int n, int32_t *inout, int ntuple,
 int mcc_gpu_dispatch_rw(const void *code, int n, int32_t *inout, int ntuple,
 												int nslot) {
 	return mcc_gpu_dispatch_rw2(code, n, inout, ntuple, nslot, NULL);
+}
+
+/* The host's view of the shared address space. Valid between dispatches only:
+ * the device sees these bytes at command-buffer granularity, so seeding must
+ * happen before submit and draining after completion, never during. */
+int mcc_gpu_mem(void **base, unsigned long *size) {
+	int rc = 0;
+	MCC_GPU_LOCK();
+	if (!mcc_gpu_backend_load()) {
+		MCC_GPU_UNLOCK();
+		return 0;
+	}
+	if (mcc_gpu_init() && mcc_vk_resident() && mcc_vk_bind_mem(MCC_VK_MEM_DEFAULT)) {
+		if (base)
+			*base = mcc_vkr.pmem;
+		if (size)
+			*size = (unsigned long)mcc_vkr.bmemsz;
+		rc = 1;
+	}
+	MCC_GPU_UNLOCK();
+	return rc;
 }
 
 int mcc_gpu_alive(void) { return mcc_gpu.ok; }

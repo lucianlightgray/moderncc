@@ -77,6 +77,10 @@ int mcc_gpu_dispatch_rw2(const void *code, int n, int32_t *inout, int ntuple,
 /* Nonzero while the device may still be dispatched to. Cleared when a dispatch
  * is stranded, i.e. abandoned with its command buffer still pending. */
 int mcc_gpu_alive(void);
+/* Host view of the shared device address space (binding 2): globals image,
+ * heap, and the printf ring. Offset 0 is reserved as NULL. Valid between
+ * dispatches only. */
+int mcc_gpu_mem(void **base, unsigned long *size);
 /* How many dispatches have been abandoned with resources deliberately leaked
  * rather than freed under a live command buffer. */
 long mcc_gpu_stranded(void);
