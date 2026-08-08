@@ -133,10 +133,20 @@ quantities are host-sensitive and only those three are dropped:
               source amalgamates into the corpus.
   residual    unattributed .text.  Darwin's mcc_tlv_thunk is 120 bytes of raw
               asm with no C body, so 120 here is correct against an ELF 0.
-  kept_coverage  measured host-sensitive: at the fixed commit that wrote this
-              bank, -O1 kept is 96.156% on elf/x86-64 and 83.219% on
-              darwin/aarch64, because mcc emits for the host's own arch and
-              byte-identity of a replayed body is a property of that target.
+  kept_coverage  host-sensitive, but by far less than first reported, and the
+              size differs by corpus.  The original 96.156-vs-83.219 figure was
+              an artifact: 96.156 was banked at 879bf988, before 1ad3f1aa moved
+              eleven passes across the -O ladder and took elf/x86-64 kept to
+              82.520.  Comparing a post-ladder darwin number against a
+              pre-ladder bank attributed ~12.2 points of bank staleness to the
+              host.  Against the refreshed bank the real spread is: self
+              84.1-84.5 on darwin/aarch64 against 82.7-82.9 banked, i.e. darwin
+              is 1.4-1.6 points ABOVE the floor and would pass; wide is 93.4 on
+              darwin against 98.4 banked at -O1+, i.e. 5 points BELOW.  So self
+              is gateable here and wide is not, and whether wide's 5 points is
+              a host axis or a residual darwin modelling gap is UNMEASURED.
+              Both stay skipped until that is settled and a per-format schema
+              exists; do not read the self margin as licence to arm it.
 
 capture coverage, modelled coverage and the census self-reconciliation still
 run everywhere, and that is measured, not assumed: on darwin/aarch64 the wide
@@ -875,13 +885,18 @@ def main():
               "schema: src/mccrun.c's mcc_tlv_thunk is 120 bytes of raw asm with "
               "no C body, so Darwin's residual is legitimately 120 against an "
               "ELF-banked 0.  Comparing it would fail a correct number.")
-        print("  arena kept_coverage -- host-specific for the same reason, and "
-              "measured: at a FIXED commit (db7c6829, the commit that wrote this "
-              "bank) -O1 kept is 96.156% on the elf/x86-64 bank host and "
-              "83.219% on darwin/aarch64.  mcc emits for the host arch, so the "
-              "byte-identity ratio is a property of the target the host builds "
-              "for, not of the compiler's replay fidelity.  Comparing it across "
-              "hosts fails a correct number too.")
+        print("  arena kept_coverage -- host-sensitive, but by much less than "
+              "this tool once claimed, and the size differs by corpus.  The old "
+              "96.156-vs-83.219 figure was an artifact: 96.156 was banked at "
+              "879bf988, BEFORE 1ad3f1aa moved eleven passes across the -O "
+              "ladder and took elf/x86-64 kept to 82.520, so ~12.2 points of "
+              "bank staleness were being attributed to the host.  Against the "
+              "refreshed bank, self kept is 84.1-84.5 here against 82.7-82.9 "
+              "banked (darwin is ABOVE the floor and would pass) while wide is "
+              "93.4 here against 98.4 banked at -O1+ (5 points BELOW).  Whether "
+              "wide's 5 points is a host axis or a residual darwin modelling "
+              "gap is UNMEASURED, so both stay skipped pending a per-format "
+              "schema; the self margin is not licence to arm it.")
         print("  Still enforced here: capture byte coverage, arena modelled "
               "coverage, and the census self-reconciliation.  Those are "
               "near-saturated ratios that do carry across hosts -- measured: "

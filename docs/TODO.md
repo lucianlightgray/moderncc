@@ -57,6 +57,51 @@ re-banked* below; this list exists so none of them is only findable inside a wri
    `self` `-O1` kept is **82.777%**, unchanged, so the re-bank in `e2b8bdc4` is still
    the right floor. Recorded because the two changes look like they collide and do not.
 
+## `kept_coverage` is host-sensitive by ~1 point, not ~13 — correcting `55d83d53`
+
+**The 12.9-point host gap that commit reported does not exist, and the error is
+instructive: it compared a post-change measurement against a pre-change bank.**
+
+`55d83d53` justified skipping `kept_coverage` on Darwin by building `db7c6829` — the
+commit that wrote the bank — and measuring 83.219% at `-O1` against the banked 96.156%,
+concluding the difference was the host axis. But `e2b8bdc4`'s bisect (Linux, one Debug
+build per commit) shows elf/x86-64 kept was 96.162% only up to `6c46618e` and **82.520%
+from `1ad3f1aa` onward** — "opt(ladder): the -O levels, measured", which moved eleven
+passes across the ladder. And `db7c6829` is a **descendant** of `1ad3f1aa`
+(`git merge-base --is-ancestor` confirms). So the elf host at `db7c6829` was already at
+~82.5%, not 96.156%; the bank was simply stale, because the `kept_coverage` gate did not
+land until `78d4856f`, four commits later. **~12.2 of the 12.9 points were bank
+staleness and ~0.7 was the host.**
+
+Measured at HEAD on darwin/aarch64 against the refreshed bank:
+
+| corpus | level | this host | banked (elf/x86-64) | verdict as a floor |
+| --- | --- | ---: | ---: | --- |
+| self | -O0 | 84.1121 | 82.7139 | **+1.40, passes** |
+| self | -O1 | 84.2229 | 82.7723 | **+1.45, passes** |
+| self | -O2/-O3 | 84.4751 | 82.8846 | **+1.59, passes** |
+| wide | -O0 | 93.355 | 92.7507 | +0.60, passes |
+| wide | -O1 | 93.420 | 98.3968 | **−4.98, fails** |
+| wide | -O2 | 93.465 | 98.3841 | **−4.92, fails** |
+
+So the two corpora disagree about the size of the effect, which is the part worth
+keeping. **`self` is gateable on Darwin today** — it clears the refreshed floor at every
+level. **`wide` is not**, and the 5 points at `-O1`+ are genuinely unexplained: they may
+be a host axis, or a residual Darwin-specific modelling gap that `8fd8c54e` narrowed
+(44% → 93.4%) without closing. `e2b8bdc4` explicitly did not re-bank wide, so the 98.4%
+floor is also of unverified vintage. **Nothing is armed on the strength of the self
+margin**, and the tool's stale 96.156-vs-83.219 justification string has been replaced
+with the numbers above.
+
+Two durable lessons. A ratchet whose gate lands *after* its bank is written has a
+window in which the bank silently rots, and `78d4856f` sat four commits behind
+`1ad3f1aa`. And **"fixed commit" is not the same as "fixed bank"** — pinning the commit
+made the comparison look controlled while the bank it was compared against came from
+somewhere else entirely.
+
+**Still open:** whether wide's 5 points is host or gap; and a per-format schema for
+`residual` and `kept_coverage`, without which neither can be armed off elf.
+
 ## D1e is measured, and it wins — 2026-08-08, Apple M1 Pro
 
 The experiment `docs/PLAN.md` called "the highest-value single experiment left, and it
