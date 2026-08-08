@@ -1727,6 +1727,293 @@ static void suite_bytes(void) {
 	}
 }
 
+
+#define DEREF_NSLOT 1
+#define DEREF_LANE_WORD 16
+#define DEREF_LANE_BYTE (DEREF_LANE_WORD * 4)
+#define DEREF_ARENA_WORD 1024
+#define DEREF_LANES MCC_GPU_LOCAL_SIZE
+
+static int deref_kernel(int t, MccGpuCode *out) {
+	SpvMod m;
+	SpvRegion r;
+	SpvV v;
+	uint32_t base, mbase, olo, ohi;
+	uint32_t *code;
+	int nw = 0;
+	spv_module_begin(&m, DEREF_NSLOT);
+	base = spv_main_begin(&m, DEREF_NSLOT);
+	mbase = spv_emit3(&m, SpvOpIAdd, m.id_int, spv_const(&m, DEREF_ARENA_WORD),
+										spv_emit3(&m, SpvOpIMul, m.id_int, m.lane,
+															spv_const(&m, DEREF_LANE_WORD)));
+	r = spv_region(m.id_mem, mbase, spv_uintc(&m, DEREF_LANE_BYTE));
+	olo = spv_load_at(&m, base);
+	ohi = spv_load_at(&m,
+										spv_emit3(&m, SpvOpIAdd, m.id_int, base, spv_const(&m, 1)));
+	v = spv_load_region(&m, &r, olo, t);
+	if (mcc_slice_mutate) {
+		uint32_t p = spv_pair(&m, v);
+		v = spv_mk(
+				spv_u2(&m, spv_uop(&m, SpvOpBitwiseXor, spv_lo(&m, p), spv_uintc(&m, 1)),
+							 spv_hi(&m, p)),
+				1, 0);
+	}
+	spv_store_region(&m, &r, ohi, v, t);
+	spv_main_end(&m, m.lane, v);
+	code = spv_module_finish(&m, &nw);
+	spv_module_free(&m);
+	if (!code || nw <= 0) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nw;
+	return 1;
+}
+
+static uint32_t *deref_arena(void) {
+	void *mem = NULL;
+	unsigned long msz = 0;
+	if (!mcc_gpu_mem(&mem, &msz) || !mem)
+		return NULL;
+	if (msz <
+			(unsigned long)(DEREF_ARENA_WORD + DEREF_LANES * DEREF_LANE_WORD) * 4)
+		return NULL;
+	return (uint32_t *)mem + DEREF_ARENA_WORD;
+}
+
+static uint32_t deref_word(uint32_t seed0, int j) {
+	return seed0 + (uint32_t)j * 0x04040404u;
+}
+
+static void deref_seed(uint32_t *arena, uint32_t seed0) {
+	int i, j;
+	for (i = 0; i < DEREF_LANES; i++)
+		for (j = 0; j < DEREF_LANE_WORD; j++)
+			arena[(long)i * DEREF_LANE_WORD + j] = deref_word(seed0, j);
+}
+
+typedef struct DerefWant {
+	int32_t loff, soff;
+	int def;
+	int64_t val;
+	int wword[2];
+	uint32_t wval[2];
+} DerefWant;
+
+static void deref_directed(int t, uint32_t seed0, const DerefWant *w, int n,
+													 const char *what) {
+	MccGpuCode code;
+	uint32_t *arena = deref_arena();
+	int32_t *in, *ob;
+	int i, j, k, badv = 0, badd = 0, badm = 0;
+	if (!arena) {
+		CHECK(0, "the shared address space is mappable for the directed cases");
+		return;
+	}
+	if (!deref_kernel(t, &code)) {
+		CHECK(0, "the binding-2 region kernel emits for the directed cases");
+		return;
+	}
+	in = (int32_t *)calloc((size_t)n * DEREF_NSLOT * MCC_GPU_IN_SLOTS, sizeof *in);
+	ob = (int32_t *)calloc((size_t)n * MCC_GPU_OUT_SLOTS, sizeof *ob);
+	if (!in || !ob) {
+		free(in);
+		free(ob);
+		free(code.p);
+		return;
+	}
+	deref_seed(arena, seed0);
+	for (i = 0; i < n; i++) {
+		in[(long)i * MCC_GPU_IN_SLOTS] = w[i].loff;
+		in[(long)i * MCC_GPU_IN_SLOTS + 1] = w[i].soff;
+	}
+	if (!mcc_gpu_dispatch_rw2(code.p, code.n, in, n, DEREF_NSLOT, ob)) {
+		CHECK(0, "the binding-2 region kernel dispatches");
+		free(in);
+		free(ob);
+		free(code.p);
+		return;
+	}
+	for (i = 0; i < n; i++) {
+		uint64_t lo = (uint32_t)ob[(long)i * MCC_GPU_OUT_SLOTS];
+		uint64_t hi = (uint32_t)ob[(long)i * MCC_GPU_OUT_SLOTS + 1];
+		int gd = ob[(long)i * MCC_GPU_OUT_SLOTS + 2] != 0;
+		int64_t gv = (int64_t)(lo | (hi << 32));
+		if (gd != w[i].def) {
+			fprintf(stderr, "  DEREF %s lane %d def want=%d got=%d\n", what, i,
+							w[i].def, gd);
+			badd++;
+		}
+		if (gv != w[i].val) {
+			fprintf(stderr, "  DEREF %s lane %d value want=%lld got=%lld\n", what, i,
+							(long long)w[i].val, (long long)gv);
+			badv++;
+		}
+		for (j = 0; j < DEREF_LANE_WORD; j++) {
+			uint32_t want = deref_word(seed0, j);
+			uint32_t got = arena[(long)i * DEREF_LANE_WORD + j];
+			for (k = 0; k < 2; k++)
+				if (w[i].wword[k] == j)
+					want = w[i].wval[k];
+			if (want == got)
+				continue;
+			fprintf(stderr, "  DEREF %s lane %d word %d want=%08x got=%08x\n", what, i,
+							j, want, got);
+			badm++;
+		}
+	}
+	CHECK(badv == 0, "the device returns the hand-computed value at every width");
+	CHECK(badd == 0, "and reaches the hand-computed range verdict");
+	CHECK(badm == 0, "and writes exactly the hand-computed bytes and no others");
+	free(in);
+	free(ob);
+	free(code.p);
+}
+
+static void suite_deref(void) {
+	static const int32_t OFF[] = {0,  1,  2,  4,  7,  8,   16, 32,
+																56, 60, 61, 62, 64, 128, -1, -4};
+	static const int TY[] = {VT_BYTE,  VT_BYTE | VT_UNSIGNED,
+													 VT_SHORT, VT_SHORT | VT_UNSIGNED,
+													 VT_INT,   VT_INT | VT_UNSIGNED,
+													 VT_LLONG, VT_LLONG | VT_UNSIGNED};
+	static const DerefWant WINT[] = {
+			{4, 8, 1, 0x07060504, {2, -1}, {0x07060504u, 0}},
+			{60, 0, 1, 0x3F3E3D3C, {0, -1}, {0x3F3E3D3Cu, 0}},
+			{61, 8, 0, 0x03020100, {2, -1}, {0x03020100u, 0}},
+			{8, 62, 0, 0x0B0A0908, {0, -1}, {0x0B0A0908u, 0}},
+			{2, 64, 0, 0x03020100, {-1, -1}, {0, 0}}};
+	static const DerefWant WI8[] = {
+			{0, 4, 1, -128, {1, -1}, {0x87868580u, 0}},
+			{3, 6, 1, -125, {1, -1}, {0x87838584u, 0}},
+			{4, 64, 0, -124, {0, -1}, {0x83828184u, 0}}};
+	static const DerefWant WU8[] = {
+			{0, 4, 1, 128, {1, -1}, {0x87868580u, 0}},
+			{3, 6, 1, 131, {1, -1}, {0x87838584u, 0}}};
+	static const DerefWant WI16[] = {
+			{0, 4, 1, -32384, {1, -1}, {0x87868180u, 0}},
+			{2, 8, 1, -31870, {2, -1}, {0x8B8A8382u, 0}}};
+	static const DerefWant WU16[] = {
+			{0, 4, 1, 33152, {1, -1}, {0x87868180u, 0}},
+			{2, 8, 1, 33666, {2, -1}, {0x8B8A8382u, 0}}};
+	static const DerefWant W64[] = {
+			{0, 8, 1, (int64_t)(uint64_t)0x8786858483828180ull,
+			 {2, 3},
+			 {0x83828180u, 0x87868584u}},
+			{56, 0, 1, (int64_t)(uint64_t)0xBFBEBDBCBBBAB9B8ull,
+			 {0, 1},
+			 {0xBBBAB9B8u, 0xBFBEBDBCu}},
+			{4, 8, 0, (int64_t)(uint64_t)0x8786858483828180ull,
+			 {2, 3},
+			 {0x83828180u, 0x87868584u}}};
+	int noff = (int)(sizeof OFF / sizeof *OFF);
+	int nty = (int)(sizeof TY / sizeof *TY);
+	int ti;
+	uint32_t *arena;
+
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr,
+							"FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+	arena = deref_arena();
+	CHECK(arena != NULL, "the shared address space holds the per-lane arena");
+	if (!arena)
+		return;
+
+	deref_directed(VT_INT, 0x03020100u, WINT, (int)(sizeof WINT / sizeof *WINT),
+								 "int");
+	deref_directed(VT_BYTE, 0x83828180u, WI8, (int)(sizeof WI8 / sizeof *WI8),
+								 "schar");
+	deref_directed(VT_BYTE | VT_UNSIGNED, 0x83828180u, WU8,
+								 (int)(sizeof WU8 / sizeof *WU8), "uchar");
+	deref_directed(VT_SHORT, 0x83828180u, WI16, (int)(sizeof WI16 / sizeof *WI16),
+								 "short");
+	deref_directed(VT_SHORT | VT_UNSIGNED, 0x83828180u, WU16,
+								 (int)(sizeof WU16 / sizeof *WU16), "ushort");
+	deref_directed(VT_LLONG, 0x83828180u, W64, (int)(sizeof W64 / sizeof *W64),
+								 "llong");
+
+	for (ti = 0; ti < nty; ti++) {
+		MccGpuCode code;
+		uint32_t *ref;
+		int32_t *in, *ob;
+		int *cdef;
+		int64_t *cval;
+		int t = TY[ti], i, j, bad = 0, defbad = 0, valbad = 0;
+		if (!deref_kernel(t, &code)) {
+			CHECK(0, "the binding-2 region kernel emits for every width");
+			continue;
+		}
+		ref = (uint32_t *)malloc((size_t)noff * DEREF_LANE_WORD * sizeof *ref);
+		in = (int32_t *)calloc((size_t)noff * MCC_GPU_IN_SLOTS, sizeof *in);
+		ob = (int32_t *)calloc((size_t)noff * MCC_GPU_OUT_SLOTS, sizeof *ob);
+		cdef = (int *)malloc((size_t)noff * sizeof *cdef);
+		cval = (int64_t *)malloc((size_t)noff * sizeof *cval);
+		if (!ref || !in || !ob || !cdef || !cval) {
+			free(ref);
+			free(in);
+			free(ob);
+			free(cdef);
+			free(cval);
+			free(code.p);
+			continue;
+		}
+		deref_seed(arena, 0xA5000000u);
+		for (i = 0; i < noff; i++) {
+			uint32_t *w = ref + (long)i * DEREF_LANE_WORD;
+			int lok = 0, sok = 0;
+			for (j = 0; j < DEREF_LANE_WORD; j++)
+				w[j] = deref_word(0xA5000000u, j);
+			in[(long)i * MCC_GPU_IN_SLOTS] = OFF[i];
+			in[(long)i * MCC_GPU_IN_SLOTS + 1] = OFF[(i + 5) % noff];
+			cval[i] = ast_eval_slice_bytes_load(w, DEREF_LANE_BYTE, OFF[i], t, &lok);
+			ast_eval_slice_bytes_store(w, DEREF_LANE_BYTE, OFF[(i + 5) % noff], t,
+																 cval[i], &sok);
+			cdef[i] = lok && sok;
+		}
+		if (mcc_gpu_dispatch_rw2(code.p, code.n, in, noff, DEREF_NSLOT, ob)) {
+			for (i = 0; i < noff; i++) {
+				uint64_t lo = (uint32_t)ob[(long)i * MCC_GPU_OUT_SLOTS];
+				uint64_t hi = (uint32_t)ob[(long)i * MCC_GPU_OUT_SLOTS + 1];
+				for (j = 0; j < DEREF_LANE_WORD; j++) {
+					uint32_t want = ref[(long)i * DEREF_LANE_WORD + j];
+					uint32_t got = arena[(long)i * DEREF_LANE_WORD + j];
+					if (want == got)
+						continue;
+					if (!bad)
+						fprintf(stderr,
+										"  DEREF t=%#x load=%d store=%d word %d want=%08x "
+										"got=%08x\n",
+										t, OFF[i], OFF[(i + 5) % noff], j, want, got);
+					bad++;
+				}
+				if ((ob[(long)i * MCC_GPU_OUT_SLOTS + 2] != 0) != cdef[i])
+					defbad++;
+				if ((int64_t)(lo | (hi << 32)) != cval[i])
+					valbad++;
+			}
+			CHECK(bad == 0,
+						"every word of every lane's sub-region matches the reference");
+			CHECK(defbad == 0,
+						"and the device's verdict on range and alignment matches too");
+			CHECK(valbad == 0, "and the value loaded through binding 2 matches");
+		} else {
+			CHECK(0, "the binding-2 region kernel dispatches");
+		}
+		free(ref);
+		free(in);
+		free(ob);
+		free(cdef);
+		free(cval);
+		free(code.p);
+	}
+}
+
 /* ------------------------------------------ the pending-command-buffer UAF -- */
 
 /* Runs last and in its own process: a stranded dispatch disables the device for
@@ -2560,6 +2847,8 @@ int main(int argc, char **argv) {
 		suite_frame();
 	if (!only || !strcmp(only, "mem"))
 		suite_mem();
+	if (!only || !strcmp(only, "deref"))
+		suite_deref();
 	if (only && !strcmp(only, "fault"))
 		suite_fault();
 	if (!only || !strcmp(only, "sched"))
@@ -2576,7 +2865,7 @@ int main(int argc, char **argv) {
 	}
 	if (only && (!strcmp(only, "gpu") || !strcmp(only, "wide64") ||
 							 !strcmp(only, "ops") || !strcmp(only, "fault") ||
-			 !strcmp(only, "mem")) &&
+			 !strcmp(only, "mem") || !strcmp(only, "deref")) &&
 			!g_have_device)
 		return 77;
 	return g_failures ? 1 : 0;
