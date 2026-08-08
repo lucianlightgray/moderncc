@@ -15750,6 +15750,12 @@ static int ast_eval_slice(AstArena *a, AstLocal n, const int32_t *o, const int64
 static long ast_ladder_gpu_budget;
 static long ast_ladder_gpu_rungs;
 
+static int64_t ast_ladder_gpu_word(const int32_t *p, uint64_t i) { MCC_TRACE("enter\n");
+	uint64_t lo = (uint32_t)p[i];
+	uint64_t hi = (uint32_t)p[i + 1];
+	return (int64_t)(lo | (hi << 32));
+}
+
 static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br,
 															const AstEvalLadderIn *in, int n, const int *e,
 															const int *sh, int total, uint64_t space,
@@ -15771,14 +15777,13 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 		return -1;
 	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		if (is_float(in[i].type) || !ast_eval_slice_intt(in[i].type) ||
-				ast_eval_slice_is64(in[i].type) || in[i].bits > 32)
+				in[i].bits > 64)
 			{ MCC_TRACE("br\n"); return -1; }
 		off[i] = in[i].off;
 	}
 	rta = ast_eval_slice_wtype(a, ar);
 	rtb = ast_eval_slice_wtype(b, br);
-	if (!rta || !rtb || is_float(rta) || is_float(rtb) ||
-			ast_eval_slice_is64(rta) || ast_eval_slice_is64(rtb))
+	if (!rta || !rtb || is_float(rta) || is_float(rtb))
 		return -1;
 	if (!mcc_gpu_emit(a, ar, off, n, &ca))
 		return -1;
@@ -15786,15 +15791,19 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 		mcc_gpu_code_free(&ca);
 		return -1;
 	}
-	tin = mcc_malloc((size_t)ntuple * n * 4);
-	oa = mcc_malloc((size_t)ntuple * 2 * 4);
-	ob = mcc_malloc((size_t)ntuple * 2 * 4);
+	tin = mcc_malloc((size_t)ntuple * n * MCC_GPU_IN_SLOTS * 4);
+	oa = mcc_malloc((size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
+	ob = mcc_malloc((size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
 	if (!tin || !oa || !ob)
 		goto bail;
 	for (code = 0; code < space; code++)
-		for (i = 0; i < n; i++)
-			tin[code * n + i] = (int32_t)ast_eval_slice_fit(
+		for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+			int64_t tv = ast_eval_slice_fit(
 					ast_eval_ladder_sx(code >> sh[i], e[i]), in[i].type);
+			tin[(code * n + i) * MCC_GPU_IN_SLOTS] = (int32_t)(uint32_t)(uint64_t)tv;
+			tin[(code * n + i) * MCC_GPU_IN_SLOTS + 1] =
+					(int32_t)(uint32_t)((uint64_t)tv >> 32);
+		}
 	{
 		const char *dd = getenv("MCC_LADDER_GPU_DUMP");
 		if (dd) { MCC_TRACE("br\n");
@@ -15813,7 +15822,8 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 		goto bail;
 
 	for (code = 0; code < space; code++) { MCC_TRACE("br\n");
-		int adef = oa[code * 2 + 1] != 0, bdef = ob[code * 2 + 1] != 0;
+		int adef = oa[code * MCC_GPU_OUT_SLOTS + 2] != 0;
+		int bdef = ob[code * MCC_GPU_OUT_SLOTS + 2] != 0;
 		int64_t fa, fb;
 		res->points++;
 		if (!adef) { MCC_TRACE("br\n");
@@ -15822,19 +15832,19 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 		}
 		if (!bdef) { MCC_TRACE("br\n");
 			for (i = 0; i < n && i < AST_EVAL_LADDER_MAXIN; i++)
-				res->diff_in[i] = tin[code * n + i];
-			res->diff_a = ast_eval_slice_fit((int64_t)oa[code * 2], rta);
+				res->diff_in[i] = ast_ladder_gpu_word(tin, (code * n + i) * MCC_GPU_IN_SLOTS);
+			res->diff_a = ast_eval_slice_fit(ast_ladder_gpu_word(oa, code * MCC_GPU_OUT_SLOTS), rta);
 			res->diff_b = 0;
 			res->diff_b_undef = 1;
 			verdict = 0;
 			goto out;
 		}
 		res->informative++;
-		fa = ast_eval_slice_fit((int64_t)oa[code * 2], rta);
-		fb = ast_eval_slice_fit((int64_t)ob[code * 2], rtb);
+		fa = ast_eval_slice_fit(ast_ladder_gpu_word(oa, code * MCC_GPU_OUT_SLOTS), rta);
+		fb = ast_eval_slice_fit(ast_ladder_gpu_word(ob, code * MCC_GPU_OUT_SLOTS), rtb);
 		if (fa != fb) { MCC_TRACE("br\n");
 			for (i = 0; i < n && i < AST_EVAL_LADDER_MAXIN; i++)
-				res->diff_in[i] = tin[code * n + i];
+				res->diff_in[i] = ast_ladder_gpu_word(tin, (code * n + i) * MCC_GPU_IN_SLOTS);
 			res->diff_a = fa;
 			res->diff_b = fb;
 			res->diff_b_undef = 0;

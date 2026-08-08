@@ -75,6 +75,27 @@ static int ast_bad_type(int tt) {
 #define MAX_LIVE 4
 #define MAX_TUPLES (1 << 18)
 
+static void put_in(int32_t *p, long i, int64_t v) {
+	p[i * MCC_GPU_IN_SLOTS] = (int32_t)(uint32_t)(uint64_t)v;
+	p[i * MCC_GPU_IN_SLOTS + 1] = (int32_t)(uint32_t)((uint64_t)v >> 32);
+}
+
+static int64_t get_in(const int32_t *p, long i) {
+	uint64_t lo = (uint32_t)p[i * MCC_GPU_IN_SLOTS];
+	uint64_t hi = (uint32_t)p[i * MCC_GPU_IN_SLOTS + 1];
+	return (int64_t)(lo | (hi << 32));
+}
+
+static int64_t get_out(const int32_t *p, long t) {
+	uint64_t lo = (uint32_t)p[t * MCC_GPU_OUT_SLOTS];
+	uint64_t hi = (uint32_t)p[t * MCC_GPU_OUT_SLOTS + 1];
+	return (int64_t)(lo | (hi << 32));
+}
+
+static int get_def(const int32_t *p, long t) {
+	return p[t * MCC_GPU_OUT_SLOTS + 2] != 0;
+}
+
 static VkInstance g_inst;
 static VkPhysicalDevice g_phys;
 static VkDevice g_dev;
@@ -212,11 +233,12 @@ static int gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 	int i;
 
 	int cap = ((ntuple + SPV_LOCAL_SIZE - 1) / SPV_LOCAL_SIZE) * SPV_LOCAL_SIZE;
-	make_buffer((VkDeviceSize)cap * nlive * 4, &bin, &min_, &pin);
-	make_buffer((VkDeviceSize)cap * 2 * 4, &bout, &mout, &pout);
-	memset(pin, 0, (size_t)cap * nlive * 4);
-	memcpy(pin, in, (size_t)ntuple * nlive * 4);
-	memset(pout, 0, (size_t)cap * 2 * 4);
+	make_buffer((VkDeviceSize)cap * nlive * MCC_GPU_IN_SLOTS * 4, &bin, &min_,
+							&pin);
+	make_buffer((VkDeviceSize)cap * MCC_GPU_OUT_SLOTS * 4, &bout, &mout, &pout);
+	memset(pin, 0, (size_t)cap * nlive * MCC_GPU_IN_SLOTS * 4);
+	memcpy(pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
+	memset(pout, 0, (size_t)cap * MCC_GPU_OUT_SLOTS * 4);
 
 	memset(dslb, 0, sizeof dslb);
 	for (i = 0; i < 2; i++) {
@@ -337,7 +359,7 @@ static int gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 	si.pCommandBuffers = &cb;
 	VK(vkQueueSubmit(g_q, 1, &si, fence));
 	VK(vkWaitForFences(g_dev, 1, &fence, VK_TRUE, 10ULL * 1000000000ULL));
-	memcpy(out, pout, (size_t)ntuple * 2 * 4);
+	memcpy(out, pout, (size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
 	g_dispatches++;
 	g_lanes += ntuple;
 
@@ -530,6 +552,154 @@ static AstLocal b_ovfadd(AstArena *a, const int *o) {
 								VT_INT);
 }
 
+static SpvV spv_mutate(SpvMod *m, SpvV v) {
+	uint32_t p = spv_pair(m, v);
+	uint32_t lo = spv_uop(m, SpvOpBitwiseXor, spv_lo(m, p), spv_uintc(m, 1));
+	return spv_mk(spv_u2(m, lo, spv_hi(m, p)), 1, 0);
+}
+
+#define VT_LL VT_LLONG
+#define VT_ULL (VT_LLONG | VT_UNSIGNED)
+
+static AstLocal mk_cvt(AstArena *a, AstLocal x, int t) {
+	AstLocal n = mk(a, AST_Convert, t);
+	ast_add_child(a, n, x);
+	return n;
+}
+
+static AstLocal mk_up(AstArena *a, int off, int t, int sh) {
+	return mk_bin(a, TOK_SHL, mk_ref(a, off, t), mk_lit(a, sh, VT_INT), t);
+}
+
+static AstLocal b_ll_addsub(AstArena *a, const int *o) {
+	return mk_bin(a, '-', mk_up(a, o[0], VT_LL, 40), mk_up(a, o[1], VT_LL, 33),
+								VT_LL);
+}
+
+static AstLocal b_ll_add(AstArena *a, const int *o) {
+	return mk_bin(a, '+', mk_up(a, o[0], VT_LL, 47), mk_up(a, o[1], VT_LL, 47),
+								VT_LL);
+}
+
+static AstLocal b_ll_mul(AstArena *a, const int *o) {
+	return mk_bin(a, '*', mk_up(a, o[0], VT_LL, 31), mk_up(a, o[1], VT_LL, 17),
+								VT_LL);
+}
+
+static AstLocal b_ll_umul(AstArena *a, const int *o) {
+	return mk_bin(a, '*', mk_up(a, o[0], VT_ULL, 31), mk_up(a, o[1], VT_ULL, 17),
+								VT_ULL);
+}
+
+static AstLocal b_ll_divraw(AstArena *a, const int *o) {
+	return mk_bin(a, '/', mk_up(a, o[0], VT_LL, 63), mk_ref(a, o[1], VT_LL),
+								VT_LL);
+}
+
+static AstLocal b_ll_remraw(AstArena *a, const int *o) {
+	return mk_bin(a, '%', mk_up(a, o[0], VT_LL, 63), mk_ref(a, o[1], VT_LL),
+								VT_LL);
+}
+
+static AstLocal b_ll_divmod(AstArena *a, const int *o) {
+	AstLocal d = mk_bin(a, '|', mk_ref(a, o[1], VT_LL), mk_lit(a, 1, VT_LL),
+											VT_LL);
+	return mk_bin(a, '+',
+								mk_bin(a, '/', mk_up(a, o[0], VT_LL, 40), d, VT_LL),
+								mk_bin(a, '%', mk_up(a, o[0], VT_LL, 37), d, VT_LL), VT_LL);
+}
+
+static AstLocal b_ll_udivmod(AstArena *a, const int *o) {
+	AstLocal d = mk_bin(a, '|', mk_ref(a, o[1], VT_ULL), mk_lit(a, 1, VT_ULL),
+											VT_ULL);
+	return mk_bin(a, '+',
+								mk_bin(a, '/', mk_up(a, o[0], VT_ULL, 40), d, VT_ULL),
+								mk_bin(a, '%', mk_up(a, o[0], VT_ULL, 37), d, VT_ULL), VT_ULL);
+}
+
+static AstLocal b_ll_shiftraw(AstArena *a, const int *o) {
+	return mk_bin(a, TOK_SHL, mk_up(a, o[0], VT_LL, 40), mk_ref(a, o[1], VT_LL),
+								VT_LL);
+}
+
+static AstLocal b_ll_shifts(AstArena *a, const int *o) {
+	AstLocal sh = mk_bin(a, '&', mk_ref(a, o[1], VT_LL), mk_lit(a, 63, VT_LL),
+											 VT_LL);
+	AstLocal x = mk_up(a, o[0], VT_LL, 40);
+	return mk_bin(a, '^', mk_bin(a, TOK_SHL, x, sh, VT_LL),
+								mk_bin(a, TOK_SAR, x, sh, VT_LL), VT_LL);
+}
+
+static AstLocal b_ll_ushifts(AstArena *a, const int *o) {
+	AstLocal sh = mk_bin(a, '&', mk_ref(a, o[1], VT_ULL), mk_lit(a, 63, VT_ULL),
+											 VT_ULL);
+	AstLocal x = mk_up(a, o[0], VT_ULL, 40);
+	return mk_bin(a, '^', mk_bin(a, TOK_SHL, x, sh, VT_ULL),
+								mk_bin(a, TOK_SHR, x, sh, VT_ULL), VT_ULL);
+}
+
+static AstLocal b_ll_cmp(AstArena *a, const int *o) {
+	AstLocal x = mk_up(a, o[0], VT_LL, 40), y = mk_up(a, o[1], VT_LL, 40);
+	return mk_bin(a, '+', mk_bin(a, TOK_LT, x, y, VT_LL),
+								mk_bin(a, TOK_EQ, x, y, VT_LL), VT_LL);
+}
+
+static AstLocal b_ll_cmpu(AstArena *a, const int *o) {
+	AstLocal x = mk_up(a, o[0], VT_ULL, 40), y = mk_up(a, o[1], VT_ULL, 40);
+	return mk_bin(a, '+', mk_bin(a, TOK_LT, x, y, VT_ULL),
+								mk_bin(a, TOK_GE, x, y, VT_ULL), VT_ULL);
+}
+
+static AstLocal b_ll_bits(AstArena *a, const int *o) {
+	AstLocal x = mk_up(a, o[0], VT_LL, 40), y = mk_up(a, o[1], VT_LL, 21);
+	return mk_bin(a, '^', mk_bin(a, '&', x, y, VT_LL),
+								mk_bin(a, '|', x, y, VT_LL), VT_LL);
+}
+
+static AstLocal b_ll_notneg(AstArena *a, const int *o) {
+	return mk_bin(a, '^', mk_un(a, '~', mk_up(a, o[0], VT_LL, 40), VT_LL),
+								mk_un(a, '-', mk_up(a, o[1], VT_LL, 63), VT_LL), VT_LL);
+}
+
+static AstLocal b_ll_narrow(AstArena *a, const int *o) {
+	AstLocal x = mk_cvt(a, mk_up(a, o[0], VT_LL, 33), VT_INT);
+	AstLocal y = mk_cvt(a, mk_ref(a, o[1], VT_INT), VT_LL);
+	return mk_bin(a, '*', mk_cvt(a, x, VT_LL), y, VT_LL);
+}
+
+static AstLocal b_ll_mix(AstArena *a, const int *o) {
+	AstLocal x = mk_cvt(a, mk_ref(a, o[0], VT_INT), VT_LL);
+	return mk_bin(a, '+', mk_bin(a, TOK_SHL, x, mk_lit(a, 40, VT_INT), VT_LL),
+								mk_ref(a, o[1], VT_LL), VT_LL);
+}
+
+static AstLocal b_ll_ternary(AstArena *a, const int *o) {
+	AstLocal n = mk(a, AST_If, VT_LL);
+	AstLocal d = mk_ref(a, o[1], VT_LL);
+	ast_add_child(a, n, d);
+	ast_add_child(a, n, mk_bin(a, '/', mk_up(a, o[0], VT_LL, 40), d, VT_LL));
+	ast_add_child(a, n, mk_lit(a, -1, VT_LL));
+	return n;
+}
+
+static AstLocal b_ll_land(AstArena *a, const int *o) {
+	AstLocal n = mk(a, AST_Binary, VT_INT);
+	ast_set_op(a, n, TOK_LAND);
+	ast_add_child(a, n, mk_ref(a, o[1], VT_LL));
+	ast_add_child(a, n,
+								mk_bin(a, '>',
+											 mk_bin(a, '/', mk_up(a, o[0], VT_LL, 40),
+															mk_ref(a, o[1], VT_LL), VT_LL),
+											 mk_lit(a, 2, VT_LL), VT_LL));
+	return n;
+}
+
+static AstLocal b_ll_bool(AstArena *a, const int *o) {
+	AstLocal x = mk_cvt(a, mk_up(a, o[0], VT_LL, 40), VT_BOOL);
+	AstLocal y = mk_un(a, '!', mk_up(a, o[1], VT_LL, 40), VT_INT);
+	return mk_bin(a, '+', x, y, VT_INT);
+}
+
 static const Case CASES[] = {
 		{"divraw", 2, b_divraw},   {"remraw", 2, b_remraw},
 		{"shiftraw", 2, b_shiftraw}, {"ovf", 2, b_ovf},
@@ -541,6 +711,16 @@ static const Case CASES[] = {
 		{"cmpx", 2, b_cmpx},       {"narrow", 2, b_narrow},
 		{"ternary", 2, b_ternary}, {"land", 2, b_land},
 		{"notneg", 2, b_notneg},
+		{"ll-add", 2, b_ll_add},         {"ll-addsub", 2, b_ll_addsub},
+		{"ll-mul", 2, b_ll_mul},         {"ll-umul", 2, b_ll_umul},
+		{"ll-divraw", 2, b_ll_divraw},   {"ll-remraw", 2, b_ll_remraw},
+		{"ll-divmod", 2, b_ll_divmod},   {"ll-udivmod", 2, b_ll_udivmod},
+		{"ll-shiftraw", 2, b_ll_shiftraw}, {"ll-shifts", 2, b_ll_shifts},
+		{"ll-ushifts", 2, b_ll_ushifts}, {"ll-cmp", 2, b_ll_cmp},
+		{"ll-cmpu", 2, b_ll_cmpu},       {"ll-bits", 2, b_ll_bits},
+		{"ll-notneg", 2, b_ll_notneg},   {"ll-narrow", 2, b_ll_narrow},
+		{"ll-mix", 2, b_ll_mix},         {"ll-ternary", 2, b_ll_ternary},
+		{"ll-land", 2, b_ll_land},       {"ll-bool", 2, b_ll_bool},
 };
 
 #define AST_NONE_U 0xFFFFFFFFu
@@ -600,6 +780,33 @@ static int collect_lives(AstArena *a, AstLocal n, int32_t *off, int *non,
 	return 1;
 }
 
+static int live_type(AstArena *a, AstLocal n, int32_t want, int *out) {
+	AstLocal c;
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Ref) {
+		int r = ast_op(a, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM) &&
+				(int32_t)(int64_t)ast_ival(a, n) == want) {
+			*out = ast_type_t(a, n);
+			return 1;
+		}
+	}
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (live_type(a, c, want, out))
+			return 1;
+	return 0;
+}
+
+static void live_types(AstArena *a, AstLocal root, const int32_t *off, int n,
+											 int *ty) {
+	int k;
+	for (k = 0; k < n; k++) {
+		ty[k] = VT_INT;
+		live_type(a, root, off[k], &ty[k]);
+	}
+}
+
 static long subtree_nodes(AstArena *a, AstLocal n) {
 	AstLocal c;
 	long k = 1;
@@ -612,7 +819,8 @@ static long subtree_nodes(AstArena *a, AstLocal n) {
 
 static int trial_lower(AstArena *a, AstLocal n, const int32_t *off, int nlive) {
 	SpvMod m;
-	uint32_t base, val;
+	uint32_t base;
+	SpvV val;
 	int ok;
 	spv_module_begin(&m, nlive);
 	base = spv_main_begin(&m, nlive);
@@ -642,7 +850,9 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 		 * 2^(16*nlive), which overflows a 32-bit span to 0 for nlive >= 2. */
 		int64_t span = 1;
 		SpvMod m;
-		uint32_t *code, base, val, lane;
+		uint32_t *code, base;
+		SpvV val;
+		int ltype[MAX_LIVE];
 		long bad = 0, cmp = 0, vac = 0;
 
 		for (k = 0; k < nlive; k++) {
@@ -654,10 +864,13 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 			continue;
 		ntuple = (int)span;
 
+		live_types(a, root, off, nlive, ltype);
 		for (t = 0; t < ntuple; t++) {
 			long v = t;
 			for (k = 0; k < nlive; k++) {
-				g_in[(long)t * nlive + k] = (int32_t)fit_rung_v(v & ((1L << w) - 1), w);
+				put_in(g_in, (long)t * nlive + k,
+							 ast_eval_slice_fit(fit_rung_v(v & ((1L << w) - 1), w),
+																	ltype[k]));
 				v >>= w;
 			}
 		}
@@ -669,15 +882,14 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 			continue;
 		}
 		if (mutate)
-			val = spv_emit3(&m, SpvOpBitwiseXor, m.id_int, val, spv_const(&m, 1));
-		lane = spv_emit3(&m, SpvOpSDiv, m.id_int, base, spv_const(&m, nlive));
-		spv_main_end(&m, lane, val);
+			val = spv_mutate(&m, val);
+		spv_main_end(&m, m.lane, val);
 		code = spv_module_finish(&m, &nwords);
 
 		for (t = 0; t < ntuple; t++) {
 			int64_t vals[MAX_LIVE], o;
 			for (k = 0; k < nlive; k++)
-				vals[k] = g_in[(long)t * nlive + k];
+				vals[k] = get_in(g_in, (long)t * nlive + k);
 			g_def[t] = (unsigned char)ast_eval_slice(a, root, off, vals, nlive, &o);
 			g_cout[t] = g_def[t] ? o : 0;
 		}
@@ -689,11 +901,11 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 			continue;
 		}
 		for (t = 0; t < ntuple; t++) {
-			int gdef = g_gout[2 * t + 1] != 0;
+			int gdef = get_def(g_gout, t);
 			if ((int)g_def[t] != gdef) {
 				if (!bad && !quiet)
-					printf("  DEFINEDNESS %s w=%d in0=%d cpu=%d gpu=%d\n", label, w,
-								 g_in[(long)t * nlive], (int)g_def[t], gdef);
+					printf("  DEFINEDNESS %s w=%d in0=%lld cpu=%d gpu=%d\n", label, w,
+								 (long long)get_in(g_in, (long)t * nlive), (int)g_def[t], gdef);
 				bad++;
 				continue;
 			}
@@ -702,10 +914,11 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 				continue;
 			}
 			cmp++;
-			if ((int32_t)g_cout[t] != g_gout[2 * t]) {
+			if (g_cout[t] != get_out(g_gout, t)) {
 				if (!bad && !quiet)
-					printf("  MISMATCH %s w=%d in0=%d cpu=%d gpu=%d\n", label, w,
-								 g_in[(long)t * nlive], (int)g_cout[t], g_gout[2 * t]);
+					printf("  MISMATCH %s w=%d in0=%lld cpu=%lld gpu=%lld\n", label, w,
+								 (long long)get_in(g_in, (long)t * nlive),
+								 (long long)g_cout[t], (long long)get_out(g_gout, t));
 				bad++;
 			}
 		}
@@ -822,8 +1035,9 @@ int main(int argc, char **argv) {
 	const char *arenas = NULL;
 	int minnodes = 3, quiet = 0;
 	long limit = 0;
-	int32_t *in = malloc(sizeof(int32_t) * MAX_TUPLES * MAX_LIVE);
-	int32_t *gout = malloc(sizeof(int32_t) * MAX_TUPLES * 2);
+	int32_t *in =
+			malloc(sizeof(int32_t) * MAX_TUPLES * MAX_LIVE * MCC_GPU_IN_SLOTS);
+	int32_t *gout = malloc(sizeof(int32_t) * MAX_TUPLES * MCC_GPU_OUT_SLOTS);
 	int64_t *cout = malloc(sizeof(int64_t) * MAX_TUPLES);
 	unsigned char *defined = malloc(MAX_TUPLES);
 	g_in = in;
@@ -866,7 +1080,8 @@ int main(int argc, char **argv) {
 				printf("spvgate: dispatching %s (%ld bytes) on %s\n", argv[k + 1], sz,
 							 g_devname);
 				rc2 = gpu_run(buf, (int)(sz / 4), in, 64, 1, gout);
-				printf("spvgate: rc=%d out0=%d def0=%d\n", rc2, gout[0], gout[1]);
+				printf("spvgate: rc=%d out0=%lld def0=%d\n", rc2,
+							 (long long)get_out(gout, 0), get_def(gout, 0));
 				return rc2 == 0 ? 0 : 1;
 			}
 	}
@@ -891,6 +1106,7 @@ int main(int argc, char **argv) {
 			AstLocal root;
 			SpvMod m;
 			uint32_t *code, base;
+			SpvV val;
 			int nwords, k, t, ntuple;
 			/* Same span arithmetic, same guards, as the sweep above -- 64-bit so
 			 * the widest rung does not wrap to 0 on LLP64, and the <= 0 test so a
@@ -898,6 +1114,7 @@ int main(int argc, char **argv) {
 			 * dispatch asks vkAllocateMemory for 0 bytes, which is invalid and
 			 * which NVIDIA reports as VK_ERROR_OUT_OF_DEVICE_MEMORY. */
 			int64_t span = 1;
+			int ltype[MAX_LIVE];
 
 			for (k = 0; k < c->nlive; k++)
 				off[k] = -8 * (k + 1);
@@ -910,30 +1127,33 @@ int main(int argc, char **argv) {
 				continue;
 			ntuple = (int)span;
 
+			a = ast_arena_new();
+			root = c->build(a, off);
+			for (k = 0; k < c->nlive; k++) {
+				ltype[k] = VT_INT;
+				live_type(a, root, (int32_t)off[k], &ltype[k]);
+			}
 			for (t = 0; t < ntuple; t++) {
 				long v = t;
 				for (k = 0; k < c->nlive; k++) {
-					in[(long)t * c->nlive + k] = (int32_t)fit_rung(v & ((1L << w) - 1), w);
+					put_in(in, (long)t * c->nlive + k,
+								 ast_eval_slice_fit(fit_rung(v & ((1L << w) - 1), w),
+																		ltype[k]));
 					v >>= w;
 				}
 			}
 
-			a = ast_arena_new();
-			root = c->build(a, off);
 			spv_module_begin(&m, c->nlive);
 			base = spv_main_begin(&m, c->nlive);
-			uint32_t val;
 			if (!spv_expr(&m, a, root, off, c->nlive, base, &val)) {
-				printf("  %-8s w=%-2d SKIP (not lowerable)\n", c->name, w);
+				printf("  %-10s w=%-2d SKIP (not lowerable)\n", c->name, w);
 				spv_module_free(&m);
 				ast_arena_free(a);
 				continue;
 			}
 			if (mutate)
-				val = spv_emit3(&m, SpvOpBitwiseXor, m.id_int, val, spv_const(&m, 1));
-			uint32_t lane =
-					spv_emit3(&m, SpvOpSDiv, m.id_int, base, spv_const(&m, c->nlive));
-			spv_main_end(&m, lane, val);
+				val = spv_mutate(&m, val);
+			spv_main_end(&m, m.lane, val);
 			code = spv_module_finish(&m, &nwords);
 			if (corrupt_at >= 0 && corrupt_at < nwords)
 				code[corrupt_at] ^= 1u;
@@ -955,14 +1175,14 @@ int main(int argc, char **argv) {
 				int64_t vals[MAX_LIVE];
 				int64_t o;
 				for (k = 0; k < c->nlive; k++)
-					vals[k] = in[(long)t * c->nlive + k];
+					vals[k] = get_in(in, (long)t * c->nlive + k);
 				defined[t] = (unsigned char)ast_eval_slice(a, root, off, vals,
 																									c->nlive, &o);
 				cout[t] = defined[t] ? o : 0;
 			}
 
 			if (gpu_run(code, nwords, in, ntuple, c->nlive, gout) != 0) {
-				printf("  %-8s w=%-2d GPU REJECTED MODULE\n", c->name, w);
+				printf("  %-10s w=%-2d GPU REJECTED MODULE\n", c->name, w);
 				case_bad = 1;
 				free(code);
 				spv_module_free(&m);
@@ -972,14 +1192,15 @@ int main(int argc, char **argv) {
 
 			long bad = 0, cmp = 0, vac = 0;
 			for (t = 0; t < ntuple; t++) {
-				int gdef = gout[2 * t + 1] != 0;
+				int gdef = get_def(gout, t);
 				if ((int)defined[t] != gdef) {
 					if (bad == 0 && mismatch < 8)
-						printf("  %-8s w=%-2d DEFINEDNESS t=%d in=[%d,%d] cpu=%d gpu=%d "
-									 "raw0=%d raw1=%d ntuple=%d\n",
-									 c->name, w, t, in[(long)t * c->nlive],
-									 in[(long)t * c->nlive + 1], (int)defined[t], gdef,
-									 gout[2 * t], gout[2 * t + 1], ntuple);
+						printf("  %-10s w=%-2d DEFINEDNESS t=%d in=[%lld,%lld] cpu=%d "
+									 "gpu=%d ntuple=%d\n",
+									 c->name, w, t,
+									 (long long)get_in(in, (long)t * c->nlive),
+									 (long long)get_in(in, (long)t * c->nlive + 1),
+									 (int)defined[t], gdef, ntuple);
 					bad++;
 					continue;
 				}
@@ -988,11 +1209,13 @@ int main(int argc, char **argv) {
 					continue;
 				}
 				cmp++;
-				if ((int32_t)cout[t] != gout[2 * t]) {
+				if (cout[t] != get_out(gout, t)) {
 					if (bad == 0 && mismatch < 8)
-						printf("  %-8s w=%-2d MISMATCH in=[%d,%d] cpu=%d gpu=%d\n", c->name,
-									 w, in[(long)t * c->nlive], in[(long)t * c->nlive + 1],
-									 (int)cout[t], gout[2 * t]);
+						printf("  %-10s w=%-2d MISMATCH in=[%lld,%lld] cpu=%lld "
+									 "gpu=%lld\n",
+									 c->name, w, (long long)get_in(in, (long)t * c->nlive),
+									 (long long)get_in(in, (long)t * c->nlive + 1),
+									 (long long)cout[t], (long long)get_out(gout, t));
 					bad++;
 				}
 			}
@@ -1006,7 +1229,7 @@ int main(int argc, char **argv) {
 			spv_module_free(&m);
 			ast_arena_free(a);
 		}
-		printf("  %-8s %s\n", c->name, case_bad ? "FAIL" : "OK");
+		printf("  %-10s %s\n", c->name, case_bad ? "FAIL" : "OK");
 	}
 
 	printf("spvgate: dispatches=%ld lanes=%ld points=%ld compared=%ld vacuous=%ld "

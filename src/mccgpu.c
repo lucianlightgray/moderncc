@@ -340,17 +340,17 @@ static int mcc_gpu_dispatch_locked(const char *src, int len, const int32_t *in,
 	pso = mtl_pipeline(src, len);
 	if (!pso)
 		goto done;
-	bin = mtl_buffer((unsigned long)cap * nlive * 4, &pin);
+	bin = mtl_buffer((unsigned long)cap * nlive * MCC_GPU_IN_SLOTS * 4, &pin);
 	if (!bin)
 		goto done;
-	bout = mtl_buffer((unsigned long)cap * 2 * 4, &pout);
+	bout = mtl_buffer((unsigned long)cap * MCC_GPU_OUT_SLOTS * 4, &pout);
 	if (!bout) {
 		mtl_release(bin);
 		goto done;
 	}
-	memset(pin, 0, (size_t)cap * nlive * 4);
-	memcpy(pin, in, (size_t)ntuple * nlive * 4);
-	memset(pout, 0, (size_t)cap * 2 * 4);
+	memset(pin, 0, (size_t)cap * nlive * MCC_GPU_IN_SLOTS * 4);
+	memcpy(pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
+	memset(pout, 0, (size_t)cap * MCC_GPU_OUT_SLOTS * 4);
 
 	cb = mtl_send(mcc_gpu.queue, "commandBuffer");
 	enc = cb ? mtl_send(cb, "computeCommandEncoder") : 0;
@@ -385,7 +385,7 @@ static int mcc_gpu_dispatch_locked(const char *src, int len, const int32_t *in,
 		mtl_release(bout);
 		goto done;
 	}
-	memcpy(out, pout, (size_t)ntuple * 2 * 4);
+	memcpy(out, pout, (size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
 	mcc_gpu.dispatches++;
 	mcc_gpu.lanes += ntuple;
 	rc = 1;
@@ -1389,17 +1389,19 @@ static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
 
 	if (!mcc_gpu_init())
 		return 0;
-	if (!mcc_gpu_buffer((VkDeviceSize)cap * nlive * 4, &bin, &min_, &pin))
+	if (!mcc_gpu_buffer((VkDeviceSize)cap * nlive * MCC_GPU_IN_SLOTS * 4, &bin,
+											&min_, &pin))
 		return 0;
-	if (!mcc_gpu_buffer((VkDeviceSize)cap * 2 * 4, &bout, &mout, &pout)) {
+	if (!mcc_gpu_buffer((VkDeviceSize)cap * MCC_GPU_OUT_SLOTS * 4, &bout, &mout,
+											&pout)) {
 		vkUnmapMemory(mcc_gpu.dev, min_);
 		vkFreeMemory(mcc_gpu.dev, min_, 0);
 		vkDestroyBuffer(mcc_gpu.dev, bin, 0);
 		return 0;
 	}
-	memset(pin, 0, (size_t)cap * nlive * 4);
-	memcpy(pin, in, (size_t)ntuple * nlive * 4);
-	memset(pout, 0, (size_t)cap * 2 * 4);
+	memset(pin, 0, (size_t)cap * nlive * MCC_GPU_IN_SLOTS * 4);
+	memcpy(pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
+	memset(pout, 0, (size_t)cap * MCC_GPU_OUT_SLOTS * 4);
 
 	memset(dslb, 0, sizeof dslb);
 	for (i = 0; i < 2; i++) {
@@ -1505,7 +1507,7 @@ static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
 	if (vkWaitForFences(mcc_gpu.dev, 1, &fence, VK_TRUE,
 											30ULL * 1000000000ULL) != VK_SUCCESS)
 		goto done;
-	memcpy(out, pout, (size_t)ntuple * 2 * 4);
+	memcpy(out, pout, (size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
 	mcc_gpu.dispatches++;
 	mcc_gpu.lanes += ntuple;
 	rc = 1;

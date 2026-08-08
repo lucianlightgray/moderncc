@@ -37,12 +37,15 @@
 
 #define MCC_GPU_LOCAL_SIZE 64
 
+#define MCC_GPU_IN_SLOTS 2
+#define MCC_GPU_OUT_SLOTS 3
+
 #if MCC_GPU_LANG_MSL
 #define MCC_GPU_CODE_MAX 65536
 #define MCC_GPU_CODE_SUFFIX "metal"
 #define MCC_GPU_CODE_UNIT 1
 #else
-#define MCC_GPU_CODE_MAX 8192
+#define MCC_GPU_CODE_MAX 16384
 #define MCC_GPU_CODE_SUFFIX "spv"
 #define MCC_GPU_CODE_UNIT 4
 #endif
@@ -92,6 +95,63 @@ void mcc_gpu_stats(MccGpuStats *out);
 #define MCC_GPU_FREE free
 #endif
 
+static int mcc_gpu_op_is_cmp(int op) {
+	switch (op) {
+	case TOK_EQ: case TOK_NE: case TOK_ULT: case TOK_UGE: case TOK_ULE:
+	case TOK_UGT: case TOK_LE: case TOK_GE: case TOK_LT: case TOK_GT:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static void mcc_gpu_vw(AstArena *a, AstLocal n, int *w64, int *uns) {
+	int t = 0;
+	*w64 = 0;
+	*uns = 0;
+	if (n == AST_NONE)
+		return;
+	switch (ast_kind(a, n)) {
+	case AST_Literal:
+	case AST_Ref:
+	case AST_Load:
+	case AST_Convert:
+		t = ast_type_t(a, n);
+		break;
+	case AST_Unary:
+		if (ast_op(a, n) == '!')
+			return;
+		t = ast_eval_slice_wtype(a, n);
+		break;
+	case AST_Binary: {
+		int bop = ast_op(a, n);
+		if (bop == TOK_LAND || bop == TOK_LOR || mcc_gpu_op_is_cmp(bop))
+			return;
+		if (ast_nchild(a, n) != 2)
+			return;
+		t = ast_eval_slice_wtype(a, ast_child(a, n, 0));
+		break;
+	}
+	case AST_If: {
+		int w1, u1, w2, u2;
+		if (ast_nchild(a, n) != 3)
+			return;
+		mcc_gpu_vw(a, ast_child(a, n, 1), &w1, &u1);
+		mcc_gpu_vw(a, ast_child(a, n, 2), &w2, &u2);
+		if (w1 || w2 || u1 != u2) {
+			*w64 = 1;
+			return;
+		}
+		*uns = u1;
+		return;
+	}
+	default:
+		return;
+	}
+	*w64 = ast_eval_slice_is64(t);
+	*uns = (t & VT_UNSIGNED) != 0;
+}
+
 #if MCC_GPU_LANG_MSL
 
 #include <stdarg.h>
@@ -117,10 +177,17 @@ typedef struct MslBuf {
 	int n, cap;
 } MslBuf;
 
+typedef struct MslV {
+	uint32_t id;
+	int w64;
+	int uns;
+} MslV;
+
 typedef struct MslMod {
 	MslBuf decls, body;
 	uint32_t next_id;
 	uint32_t def;
+	uint32_t lane;
 	int32_t cval[MSL_MAX_CONST];
 	uint32_t cid[MSL_MAX_CONST];
 	int ncached;
@@ -193,6 +260,20 @@ static uint32_t msl_bv(MslMod *m, const char *fmt, ...) {
 	return id;
 }
 
+static uint32_t msl_pv(MslMod *m, const char *fmt, ...) {
+	uint32_t id = msl_id(m);
+	char tmp[MSL_LINE_MAX], out[MSL_LINE_MAX];
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(tmp, sizeof tmp, fmt, ap);
+	va_end(ap);
+	snprintf(out, sizeof out, "int2 p%u = %s;", id, tmp);
+	msl_indent(m);
+	mslb_puts(&m->body, out);
+	mslb_puts(&m->body, "\n");
+	return id;
+}
+
 static uint32_t msl_const(MslMod *m, int32_t v) {
 	char tmp[MSL_LINE_MAX];
 	uint32_t id;
@@ -238,10 +319,55 @@ static uint32_t msl_int_of_bool(MslMod *m, uint32_t b) {
 	return msl_iv(m, "b%u ? 1 : 0", b);
 }
 
+static MslV msl_mk(uint32_t id, int w64, int uns) {
+	MslV v;
+	v.id = id;
+	v.w64 = w64;
+	v.uns = uns;
+	return v;
+}
+
+static void msl_widen(MslMod *m, MslV *v) {
+	if (v->w64)
+		return;
+	v->id = v->uns ? msl_pv(m, "int2(v%u, 0)", v->id)
+								 : msl_pv(m, "int2(v%u, mcc_sar(v%u, 31))", v->id, v->id);
+	v->w64 = 1;
+}
+
+static uint32_t msl_lo(MslMod *m, MslV v) {
+	return v.w64 ? msl_iv(m, "p%u.x", v.id) : v.id;
+}
+
+static uint32_t msl_pair(MslMod *m, MslV v) {
+	msl_widen(m, &v);
+	return v.id;
+}
+
+static MslV msl_const64(MslMod *m, int64_t x) {
+	uint32_t lo = msl_const(m, (int32_t)(uint32_t)(uint64_t)x);
+	uint32_t hi = msl_const(m, (int32_t)(uint32_t)((uint64_t)x >> 32));
+	return msl_mk(msl_pv(m, "int2(v%u, v%u)", lo, hi), 1, 0);
+}
+
+static uint32_t msl_bool_of_v(MslMod *m, MslV v) {
+	if (!v.w64)
+		return msl_bool_of(m, v.id);
+	return msl_bv(m, "mcc64_nz(p%u)", v.id);
+}
+
 static uint32_t msl_load_live(MslMod *m, uint32_t base, int k) {
 	if (k)
-		return msl_iv(m, "inb[v%u + %d]", base, k);
+		return msl_iv(m, "inb[v%u + %d]", base, 2 * k);
 	return msl_iv(m, "inb[v%u]", base);
+}
+
+static MslV msl_load_live_v(MslMod *m, uint32_t base, int k, int w64, int uns) {
+	if (!w64)
+		return msl_mk(msl_load_live(m, base, k), 0, uns);
+	return msl_mk(msl_pv(m, "int2(inb[v%u + %d], inb[v%u + %d])", base, 2 * k,
+											 base, 2 * k + 1),
+								1, uns);
 }
 
 static uint32_t msl_fit(MslMod *m, uint32_t v, int t) {
@@ -265,24 +391,24 @@ static uint32_t msl_fit(MslMod *m, uint32_t v, int t) {
 
 static uint32_t msl_main_begin(MslMod *m, int nlive) {
 	uint32_t gi = msl_iv(m, "as_type<int>(gid)");
-	uint32_t nl = msl_const(m, nlive);
+	uint32_t nl = msl_const(m, nlive * MCC_GPU_IN_SLOTS);
 	m->def = msl_true(m);
+	m->lane = gi;
 	return msl_iv(m, "mcc_mul(v%u, v%u)", gi, nl);
 }
 
-static uint32_t msl_lane(MslMod *m, uint32_t base, int nlive) {
-	uint32_t nl = msl_const(m, nlive);
-	return msl_iv(m, "mcc_sdiv(v%u, v%u)", base, nl);
-}
-
-static void msl_main_end(MslMod *m, uint32_t lane, uint32_t val) {
-	uint32_t c2 = msl_const(m, 2);
+static void msl_main_end(MslMod *m, uint32_t lane, MslV val) {
+	uint32_t cn = msl_const(m, MCC_GPU_OUT_SLOTS);
 	uint32_t c1 = msl_const(m, 1);
-	uint32_t two = msl_iv(m, "mcc_mul(v%u, v%u)", lane, c2);
-	uint32_t one = msl_iv(m, "mcc_add(v%u, v%u)", two, c1);
+	uint32_t c2 = msl_const(m, 2);
+	uint32_t o0 = msl_iv(m, "mcc_mul(v%u, v%u)", lane, cn);
+	uint32_t o1 = msl_iv(m, "mcc_add(v%u, v%u)", o0, c1);
+	uint32_t o2 = msl_iv(m, "mcc_add(v%u, v%u)", o0, c2);
+	uint32_t p = msl_pair(m, val);
 	uint32_t d = msl_int_of_bool(m, m->def);
-	msl_line(m, "outb[v%u] = v%u;", two, val);
-	msl_line(m, "outb[v%u] = v%u;", one, d);
+	msl_line(m, "outb[v%u] = p%u.x;", o0, p);
+	msl_line(m, "outb[v%u] = p%u.y;", o1, p);
+	msl_line(m, "outb[v%u] = v%u;", o2, d);
 }
 
 static void msl_def_addsub(MslMod *m, uint32_t *def, int is_sub, uint32_t a,
@@ -329,6 +455,118 @@ static uint32_t msl_signed_rem(MslMod *m, uint32_t a, uint32_t b) {
 	uint32_t q = msl_iv(m, "mcc_sdiv(v%u, v%u)", a, b);
 	uint32_t p = msl_iv(m, "mcc_mul(v%u, v%u)", b, q);
 	return msl_iv(m, "mcc_sub(v%u, v%u)", a, p);
+}
+
+static MslV msl_fit_v(MslMod *m, MslV v, int t) {
+	int uns = (t & VT_UNSIGNED) != 0;
+	if (ast_eval_slice_is64(t)) {
+		msl_widen(m, &v);
+		v.uns = uns;
+		return v;
+	}
+	if ((t & VT_BTYPE) == VT_BOOL)
+		return msl_mk(msl_int_of_bool(m, msl_bool_of_v(m, v)), 0, uns);
+	return msl_mk(msl_fit(m, msl_lo(m, v), t), 0, uns);
+}
+
+static void msl_def_addsub64(MslMod *m, uint32_t *def, int is_sub, MslV a,
+														 MslV b, MslV r) {
+	if (is_sub)
+		msl_def_and(m, def,
+								msl_bv(m, "mcc64_subok(p%u, p%u, p%u)", a.id, b.id, r.id));
+	else
+		msl_def_and(m, def,
+								msl_bv(m, "mcc64_addok(p%u, p%u, p%u)", a.id, b.id, r.id));
+}
+
+static uint32_t msl_guard_div64(MslMod *m, uint32_t *def, int uns, MslV a,
+																MslV b) {
+	uint32_t bad = msl_bv(m, "!mcc64_nz(p%u)", b.id);
+	if (!uns) {
+		MslV mn = msl_const64(m, (int64_t)((uint64_t)1 << 63));
+		MslV n1 = msl_const64(m, -1);
+		uint32_t amin = msl_bv(m, "mcc64_eq(p%u, p%u)", a.id, mn.id);
+		uint32_t bneg = msl_bv(m, "mcc64_eq(p%u, p%u)", b.id, n1.id);
+		bad = msl_or(m, bad, msl_bv(m, "b%u && b%u", amin, bneg));
+	}
+	msl_def_and(m, def, msl_not(m, bad));
+	return msl_pv(m, "b%u ? int2(1, 0) : p%u", bad, b.id);
+}
+
+static uint32_t msl_guard_shift64(MslMod *m, uint32_t *def, MslV b) {
+	uint32_t bad =
+			msl_bv(m, "p%u.y != 0 || as_type<uint>(p%u.x) >= 64u", b.id, b.id);
+	msl_def_and(m, def, msl_not(m, bad));
+	return msl_iv(m, "b%u ? 0 : (p%u.x & 63)", bad, b.id);
+}
+
+static MslV msl_sdiv64(MslMod *m, MslV a, MslV b) {
+	uint32_t sa = msl_bv(m, "p%u.y < 0", a.id);
+	uint32_t sb = msl_bv(m, "p%u.y < 0", b.id);
+	uint32_t na = msl_pv(m, "b%u ? mcc64_neg(p%u) : p%u", sa, a.id, a.id);
+	uint32_t nb = msl_pv(m, "b%u ? mcc64_neg(p%u) : p%u", sb, b.id, b.id);
+	uint32_t q = msl_pv(m, "mcc64_udiv(p%u, p%u)", na, nb);
+	uint32_t s = msl_bv(m, "b%u != b%u", sa, sb);
+	return msl_mk(msl_pv(m, "b%u ? mcc64_neg(p%u) : p%u", s, q, q), 1, 0);
+}
+
+static void msl_def_mul64(MslMod *m, uint32_t *def, MslV a, MslV b, MslV r) {
+	MslV mn = msl_const64(m, (int64_t)((uint64_t)1 << 63));
+	MslV n1 = msl_const64(m, -1);
+	uint32_t az = msl_bv(m, "!mcc64_nz(p%u)", a.id);
+	uint32_t bz = msl_bv(m, "!mcc64_nz(p%u)", b.id);
+	uint32_t ag = msl_pv(m, "b%u ? int2(1, 0) : p%u", az, a.id);
+	MslV q = msl_sdiv64(m, r, msl_mk(ag, 1, 0));
+	uint32_t ne = msl_bv(m, "!mcc64_eq(p%u, p%u)", q.id, b.id);
+	uint32_t k1 = msl_bv(m, "mcc64_eq(p%u, p%u) && mcc64_eq(p%u, p%u)", a.id,
+											 mn.id, b.id, n1.id);
+	uint32_t k2 = msl_bv(m, "mcc64_eq(p%u, p%u) && mcc64_eq(p%u, p%u)", b.id,
+											 mn.id, a.id, n1.id);
+	uint32_t bad = msl_bv(m, "!b%u && !b%u && (b%u || b%u || b%u)", az, bz, ne,
+												k1, k2);
+	msl_def_and(m, def, msl_not(m, bad));
+}
+
+static MslV msl_arith64(MslMod *m, int code, MslV a, MslV b, uint32_t sh,
+												int uns) {
+	switch (code) {
+	case MslOpAdd:
+		return msl_mk(msl_pv(m, "mcc64_add(p%u, p%u)", a.id, b.id), 1, uns);
+	case MslOpSub:
+		return msl_mk(msl_pv(m, "mcc64_sub(p%u, p%u)", a.id, b.id), 1, uns);
+	case MslOpMul:
+		return msl_mk(msl_pv(m, "mcc64_mul(p%u, p%u)", a.id, b.id), 1, uns);
+	case MslOpShl:
+		return msl_mk(msl_pv(m, "mcc64_shl(p%u, as_type<uint>(v%u))", a.id, sh), 1,
+									uns);
+	case MslOpShr:
+		return msl_mk(msl_pv(m, "mcc64_shr(p%u, as_type<uint>(v%u))", a.id, sh), 1,
+									uns);
+	case MslOpSar:
+		return msl_mk(msl_pv(m, "mcc64_sar(p%u, as_type<uint>(v%u))", a.id, sh), 1,
+									uns);
+	case MslOpAnd:
+		return msl_mk(msl_pv(m, "p%u & p%u", a.id, b.id), 1, uns);
+	case MslOpOr:
+		return msl_mk(msl_pv(m, "p%u | p%u", a.id, b.id), 1, uns);
+	default:
+		return msl_mk(msl_pv(m, "p%u ^ p%u", a.id, b.id), 1, uns);
+	}
+}
+
+static uint32_t msl_cmp64(MslMod *m, int code, MslV a, MslV b) {
+	switch (code) {
+	case MslOpEq: return msl_bv(m, "mcc64_eq(p%u, p%u)", a.id, b.id);
+	case MslOpNe: return msl_bv(m, "!mcc64_eq(p%u, p%u)", a.id, b.id);
+	case MslOpULt: return msl_bv(m, "mcc64_ult(p%u, p%u)", a.id, b.id);
+	case MslOpUGe: return msl_bv(m, "!mcc64_ult(p%u, p%u)", a.id, b.id);
+	case MslOpULe: return msl_bv(m, "!mcc64_ult(p%u, p%u)", b.id, a.id);
+	case MslOpUGt: return msl_bv(m, "mcc64_ult(p%u, p%u)", b.id, a.id);
+	case MslOpSLt: return msl_bv(m, "mcc64_slt(p%u, p%u)", a.id, b.id);
+	case MslOpSGe: return msl_bv(m, "!mcc64_slt(p%u, p%u)", a.id, b.id);
+	case MslOpSLe: return msl_bv(m, "!mcc64_slt(p%u, p%u)", b.id, a.id);
+	default: return msl_bv(m, "mcc64_slt(p%u, p%u)", b.id, a.id);
+	}
 }
 
 static uint32_t msl_arith(MslMod *m, int code, uint32_t a, uint32_t b) {
@@ -414,26 +652,37 @@ static int msl_env_index(const int32_t *off, int nenv, int32_t want, int *out) {
 }
 
 static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
-										int nenv, uint32_t base, uint32_t *out);
+										int nenv, uint32_t base, MslV *out);
 
-static int msl_branch_pair(MslMod *m, AstArena *a, AstLocal cn, AstLocal tn,
-													 AstLocal en, const int32_t *off, int nenv,
-													 uint32_t base, uint32_t *out) {
-	uint32_t cv, cb, res, dres, def_in, tv, ev;
+static int msl_branch_pair(MslMod *m, AstArena *a, AstLocal n,
+													 const int32_t *off, int nenv, uint32_t base,
+													 MslV *out) {
+	AstLocal cn = ast_child(a, n, 0), tn = ast_child(a, n, 1);
+	AstLocal en = ast_child(a, n, 2);
+	MslV cv, tv, ev;
+	uint32_t cb, res, dres, def_in;
+	int w64, uns;
+	mcc_gpu_vw(a, n, &w64, &uns);
 	if (!msl_expr(m, a, cn, off, nenv, base, &cv))
 		return 0;
-	cb = msl_bool_of(m, cv);
+	cb = msl_bool_of_v(m, cv);
 	def_in = m->def;
 	res = msl_id(m);
 	dres = msl_id(m);
-	msl_line(m, "int v%u;", res);
+	if (w64)
+		msl_line(m, "int2 p%u;", res);
+	else
+		msl_line(m, "int v%u;", res);
 	msl_line(m, "bool b%u;", dres);
 	msl_line(m, "if (b%u) {", cb);
 	m->indent++;
 	m->def = def_in;
 	if (!msl_expr(m, a, tn, off, nenv, base, &tv))
 		return 0;
-	msl_line(m, "v%u = v%u;", res, tv);
+	if (w64)
+		msl_line(m, "p%u = p%u;", res, msl_pair(m, tv));
+	else
+		msl_line(m, "v%u = v%u;", res, tv.id);
 	msl_line(m, "b%u = b%u;", dres, m->def);
 	m->indent--;
 	msl_line(m, "} else {");
@@ -441,27 +690,31 @@ static int msl_branch_pair(MslMod *m, AstArena *a, AstLocal cn, AstLocal tn,
 	m->def = def_in;
 	if (!msl_expr(m, a, en, off, nenv, base, &ev))
 		return 0;
-	msl_line(m, "v%u = v%u;", res, ev);
+	if (w64)
+		msl_line(m, "p%u = p%u;", res, msl_pair(m, ev));
+	else
+		msl_line(m, "v%u = v%u;", res, ev.id);
 	msl_line(m, "b%u = b%u;", dres, m->def);
 	m->indent--;
 	msl_line(m, "}");
 	m->def = dres;
-	*out = res;
+	*out = msl_mk(res, w64, uns);
 	return 1;
 }
 
 static int msl_logical(MslMod *m, AstArena *a, AstLocal n, int want,
 											 const int32_t *off, int nenv, uint32_t base,
-											 uint32_t *out, uint32_t k) {
+											 MslV *out, uint32_t k) {
 	uint32_t nc = ast_nchild(a, n);
-	uint32_t cv, cb, res, dres, def_in, rest, stopv;
+	uint32_t cb, res, dres, def_in, stopv;
+	MslV cv, rest;
 	if (k == nc) {
-		*out = msl_const(m, want ? 1 : 0);
+		*out = msl_mk(msl_const(m, want ? 1 : 0), 0, 0);
 		return 1;
 	}
 	if (!msl_expr(m, a, ast_child(a, n, k), off, nenv, base, &cv))
 		return 0;
-	cb = msl_bool_of(m, cv);
+	cb = msl_bool_of_v(m, cv);
 	def_in = m->def;
 	res = msl_id(m);
 	dres = msl_id(m);
@@ -472,7 +725,7 @@ static int msl_logical(MslMod *m, AstArena *a, AstLocal n, int want,
 	m->def = def_in;
 	if (!msl_logical(m, a, n, want, off, nenv, base, &rest, k + 1))
 		return 0;
-	msl_line(m, "v%u = v%u;", res, rest);
+	msl_line(m, "v%u = v%u;", res, rest.id);
 	msl_line(m, "b%u = b%u;", dres, m->def);
 	m->indent--;
 	msl_line(m, "} else {");
@@ -484,12 +737,24 @@ static int msl_logical(MslMod *m, AstArena *a, AstLocal n, int want,
 	m->indent--;
 	msl_line(m, "}");
 	m->def = dres;
-	*out = res;
+	*out = msl_mk(res, 0, 0);
+	return 1;
+}
+
+static int msl_konst(MslMod *m, AstArena *a, AstLocal n, int t, MslV *out) {
+	int64_t x = ast_eval_slice_fit((int64_t)ast_ival(a, n), t);
+	int uns = (t & VT_UNSIGNED) != 0;
+	if (ast_eval_slice_is64(t)) {
+		*out = msl_const64(m, x);
+		out->uns = uns;
+		return 1;
+	}
+	*out = msl_mk(msl_const(m, (int32_t)x), 0, uns);
 	return 1;
 }
 
 static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
-										int nenv, uint32_t base, uint32_t *out) {
+										int nenv, uint32_t base, MslV *out) {
 	if (n == AST_NONE || m->failed)
 		return 0;
 	switch (ast_kind(a, n)) {
@@ -497,33 +762,27 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		int t = ast_type_t(a, n);
 		if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
 			return 0;
-		if (ast_eval_slice_is64(t))
-			return 0;
 		if ((ast_op(a, n) & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
 			return 0;
-		*out = msl_const(m, (int32_t)ast_eval_slice_fit((int64_t)ast_ival(a, n), t));
-		return 1;
+		return msl_konst(m, a, n, t, out);
 	}
 	case AST_Ref: {
 		int r = ast_op(a, n);
 		int t = ast_type_t(a, n);
 		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
 			int k;
-			if (!ast_eval_slice_intt(t) || is_float(t) || ast_eval_slice_is64(t))
+			if (!ast_eval_slice_intt(t) || is_float(t))
 				return 0;
 			if (!msl_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, n), &k))
 				return 0;
-			*out = msl_load_live(m, base, k);
+			*out = msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
+														 (t & VT_UNSIGNED) != 0);
 			return 1;
 		}
 		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
 			if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
 				return 0;
-			if (ast_eval_slice_is64(t))
-				return 0;
-			*out =
-					msl_const(m, (int32_t)ast_eval_slice_fit((int64_t)ast_ival(a, n), t));
-			return 1;
+			return msl_konst(m, a, n, t, out);
 		}
 		return 0;
 	}
@@ -536,59 +795,78 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		t = ast_type_t(a, n);
 		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
 			return 0;
-		if (!ast_eval_slice_intt(t) || is_float(t) || ast_eval_slice_is64(t))
+		if (!ast_eval_slice_intt(t) || is_float(t))
 			return 0;
 		if (!msl_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, c), &k))
 			return 0;
-		*out = msl_load_live(m, base, k);
+		*out = msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
+													 (t & VT_UNSIGNED) != 0);
 		return 1;
 	}
 	case AST_Convert: {
 		int t = ast_type_t(a, n);
 		AstLocal c = ast_first_child(a, n);
-		uint32_t v;
+		MslV v;
 		if (c == AST_NONE || is_float(t) || is_float(ast_type_t(a, c)))
 			return 0;
-		if (ast_bad_type(t) || !ast_eval_slice_intt(t) || ast_eval_slice_is64(t))
+		if (ast_bad_type(t) || !ast_eval_slice_intt(t))
 			return 0;
 		if (!msl_expr(m, a, c, off, nenv, base, &v))
 			return 0;
-		*out = msl_fit(m, v, t);
+		*out = msl_fit_v(m, v, t);
 		return 1;
 	}
 	case AST_Unary: {
 		int uop = ast_op(a, n);
 		int t = ast_eval_slice_wtype(a, n);
 		AstLocal c = ast_first_child(a, n);
-		uint32_t v;
-		if (c == AST_NONE || !t || ast_eval_slice_is64(t))
+		MslV v;
+		int is64, uns;
+		if (c == AST_NONE || !t)
 			return 0;
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
 		if (!msl_expr(m, a, c, off, nenv, base, &v))
 			return 0;
+		is64 = ast_eval_slice_is64(t);
+		uns = (t & VT_UNSIGNED) != 0;
 		if (uop == '!') {
-			*out = msl_int_of_bool(m, msl_bv(m, "v%u == 0", v));
+			uint32_t z = v.w64 ? msl_bv(m, "!mcc64_nz(p%u)", v.id)
+												 : msl_bv(m, "v%u == 0", v.id);
+			*out = msl_mk(msl_int_of_bool(m, z), 0, 0);
 			return 1;
 		}
 		if (uop == '~') {
-			*out = msl_fit(m, msl_iv(m, "~v%u", v), t);
+			if (is64) {
+				msl_widen(m, &v);
+				*out = msl_mk(msl_pv(m, "~p%u", v.id), 1, uns);
+			} else {
+				*out = msl_mk(msl_fit(m, msl_iv(m, "~v%u", msl_lo(m, v)), t), 0, uns);
+			}
 			return 1;
 		}
-		{
-			uint32_t z = msl_const(m, 0);
-			uint32_t r = msl_iv(m, "mcc_sub(v%u, v%u)", z, v);
-			if (!((t & VT_UNSIGNED) != 0))
-				msl_def_addsub(m, &m->def, 1, z, v, r);
+		if (is64) {
+			MslV z = msl_const64(m, 0), r;
+			msl_widen(m, &v);
+			r = msl_arith64(m, MslOpSub, z, v, 0, uns);
+			if (!uns)
+				msl_def_addsub64(m, &m->def, 1, z, v, r);
 			*out = r;
+		} else {
+			uint32_t z = msl_const(m, 0);
+			uint32_t lo = msl_lo(m, v);
+			uint32_t r = msl_iv(m, "mcc_sub(v%u, v%u)", z, lo);
+			if (!uns)
+				msl_def_addsub(m, &m->def, 1, z, lo, r);
+			*out = msl_mk(r, 0, uns);
 		}
 		return 1;
 	}
 	case AST_Binary: {
 		int bop = ast_op(a, n);
 		AstLocal x, y;
-		int xt, uns, is_cmp, code;
-		uint32_t lv, rv;
+		int xt, uns, is_cmp, code, is64;
+		MslV lv, rv;
 		if (bop == TOK_LAND || bop == TOK_LOR)
 			return msl_logical(m, a, n, bop == TOK_LAND, off, nenv, base, out, 0);
 		if (ast_nchild(a, n) != 2)
@@ -598,54 +876,100 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		xt = ast_eval_slice_wtype(a, x);
 		if (!xt || is_float(ast_type_t(a, x)) || is_float(ast_type_t(a, y)))
 			return 0;
-		if (ast_eval_slice_is64(xt))
-			return 0;
 		if (!msl_expr(m, a, x, off, nenv, base, &lv))
 			return 0;
 		if (!msl_expr(m, a, y, off, nenv, base, &rv))
 			return 0;
 		uns = (xt & VT_UNSIGNED) != 0;
+		is64 = ast_eval_slice_is64(xt);
 		code = msl_binop_code(bop, uns, &is_cmp);
 		if (is_cmp < 0)
 			return 0;
+		if (is_cmp && is64)
+			code = msl_binop_code(bop, 0, &is_cmp);
+		if (!is64) {
+			uint32_t l = msl_lo(m, lv), r = msl_lo(m, rv), res;
+			if (is_cmp) {
+				*out = msl_mk(msl_int_of_bool(m, msl_cmp(m, code, l, r)), 0, 0);
+				return 1;
+			}
+			if (code == MslOpUDiv || code == MslOpUMod) {
+				uint32_t d = msl_guard_div(m, &m->def, 1, l, r);
+				*out = msl_mk(msl_arith(m, code, l, d), 0, uns);
+				return 1;
+			}
+			if (code == MslOpSRem) {
+				uint32_t d = msl_guard_div(m, &m->def, 0, l, r);
+				*out = msl_mk(msl_signed_rem(m, l, d), 0, uns);
+				return 1;
+			}
+			if (code == MslOpSDiv) {
+				uint32_t d = msl_guard_div(m, &m->def, 0, l, r);
+				*out = msl_mk(msl_arith(m, code, l, d), 0, uns);
+				return 1;
+			}
+			if (code == MslOpShl || code == MslOpShr || code == MslOpSar) {
+				uint32_t sh = msl_guard_shift(m, &m->def, r);
+				*out = msl_mk(msl_arith(m, code, l, sh), 0, uns);
+				return 1;
+			}
+			res = msl_arith(m, code, l, r);
+			if (!uns && code == MslOpAdd)
+				msl_def_addsub(m, &m->def, 0, l, r, res);
+			else if (!uns && code == MslOpSub)
+				msl_def_addsub(m, &m->def, 1, l, r, res);
+			else if (!uns && code == MslOpMul)
+				msl_def_mul(m, &m->def, l, r, res);
+			*out = msl_mk(res, 0, uns);
+			return 1;
+		}
+		msl_widen(m, &lv);
+		msl_widen(m, &rv);
 		if (is_cmp) {
-			*out = msl_int_of_bool(m, msl_cmp(m, code, lv, rv));
+			*out = msl_mk(msl_int_of_bool(m, msl_cmp64(m, code, lv, rv)), 0, 0);
 			return 1;
 		}
 		if (code == MslOpUDiv || code == MslOpUMod) {
-			uint32_t d = msl_guard_div(m, &m->def, 1, lv, rv);
-			*out = msl_arith(m, code, lv, d);
+			MslV d = msl_mk(msl_guard_div64(m, &m->def, 1, lv, rv), 1, 1);
+			MslV q = msl_mk(msl_pv(m, "mcc64_udiv(p%u, p%u)", lv.id, d.id), 1, uns);
+			if (code == MslOpUMod) {
+				uint32_t pr = msl_pv(m, "mcc64_mul(p%u, p%u)", d.id, q.id);
+				*out = msl_mk(msl_pv(m, "mcc64_sub(p%u, p%u)", lv.id, pr), 1, uns);
+			} else {
+				*out = q;
+			}
 			return 1;
 		}
-		if (code == MslOpSRem) {
-			uint32_t d = msl_guard_div(m, &m->def, 0, lv, rv);
-			*out = msl_signed_rem(m, lv, d);
-			return 1;
-		}
-		if (code == MslOpSDiv) {
-			uint32_t d = msl_guard_div(m, &m->def, 0, lv, rv);
-			*out = msl_arith(m, code, lv, d);
+		if (code == MslOpSDiv || code == MslOpSRem) {
+			MslV d = msl_mk(msl_guard_div64(m, &m->def, 0, lv, rv), 1, 0);
+			MslV q = msl_sdiv64(m, lv, d);
+			if (code == MslOpSRem) {
+				uint32_t pr = msl_pv(m, "mcc64_mul(p%u, p%u)", d.id, q.id);
+				*out = msl_mk(msl_pv(m, "mcc64_sub(p%u, p%u)", lv.id, pr), 1, uns);
+			} else {
+				q.uns = uns;
+				*out = q;
+			}
 			return 1;
 		}
 		if (code == MslOpShl || code == MslOpShr || code == MslOpSar) {
-			uint32_t sh = msl_guard_shift(m, &m->def, rv);
-			*out = msl_arith(m, code, lv, sh);
+			uint32_t sh = msl_guard_shift64(m, &m->def, rv);
+			*out = msl_arith64(m, code, lv, rv, sh, uns);
 			return 1;
 		}
-		*out = msl_arith(m, code, lv, rv);
+		*out = msl_arith64(m, code, lv, rv, 0, uns);
 		if (!uns && code == MslOpAdd)
-			msl_def_addsub(m, &m->def, 0, lv, rv, *out);
+			msl_def_addsub64(m, &m->def, 0, lv, rv, *out);
 		else if (!uns && code == MslOpSub)
-			msl_def_addsub(m, &m->def, 1, lv, rv, *out);
+			msl_def_addsub64(m, &m->def, 1, lv, rv, *out);
 		else if (!uns && code == MslOpMul)
-			msl_def_mul(m, &m->def, lv, rv, *out);
+			msl_def_mul64(m, &m->def, lv, rv, *out);
 		return 1;
 	}
 	case AST_If: {
 		if (ast_nchild(a, n) != 3)
 			return 0;
-		return msl_branch_pair(m, a, ast_child(a, n, 0), ast_child(a, n, 1),
-													 ast_child(a, n, 2), off, nenv, base, out);
+		return msl_branch_pair(m, a, n, off, nenv, base, out);
 	}
 	default:
 		return 0;
@@ -678,6 +1002,94 @@ static const char msl_prelude[] =
 		"}\n"
 		"static inline int mcc_umod(int a, int b) {\n"
 		"\treturn as_type<int>(as_type<uint>(a) % as_type<uint>(b));\n"
+		"}\n"
+		"static inline int2 mcc64_add(int2 a, int2 b) {\n"
+		"\tuint al = as_type<uint>(a.x), bl = as_type<uint>(b.x);\n"
+		"\tuint lo = al + bl;\n"
+		"\tuint hi = as_type<uint>(a.y) + as_type<uint>(b.y) + (lo < al ? 1u : 0u);\n"
+		"\treturn int2(as_type<int>(lo), as_type<int>(hi));\n"
+		"}\n"
+		"static inline int2 mcc64_sub(int2 a, int2 b) {\n"
+		"\tuint al = as_type<uint>(a.x), bl = as_type<uint>(b.x);\n"
+		"\tuint lo = al - bl;\n"
+		"\tuint hi = as_type<uint>(a.y) - as_type<uint>(b.y) - (al < bl ? 1u : 0u);\n"
+		"\treturn int2(as_type<int>(lo), as_type<int>(hi));\n"
+		"}\n"
+		"static inline int2 mcc64_neg(int2 a) {\n"
+		"\treturn mcc64_sub(int2(0, 0), a);\n"
+		"}\n"
+		"static inline int2 mcc64_mul(int2 a, int2 b) {\n"
+		"\tuint al = as_type<uint>(a.x), ah = as_type<uint>(a.y);\n"
+		"\tuint bl = as_type<uint>(b.x), bh = as_type<uint>(b.y);\n"
+		"\tuint lo = al * bl;\n"
+		"\tuint hi = mulhi(al, bl) + al * bh + ah * bl;\n"
+		"\treturn int2(as_type<int>(lo), as_type<int>(hi));\n"
+		"}\n"
+		"static inline int2 mcc64_shl(int2 a, uint s) {\n"
+		"\tuint al = as_type<uint>(a.x), ah = as_type<uint>(a.y);\n"
+		"\tuint s1 = s & 31u, n1 = 31u - s1;\n"
+		"\tbool big = (s & 32u) != 0u;\n"
+		"\tuint lo = big ? 0u : (al << s1);\n"
+		"\tuint hi = big ? (al << s1) : ((ah << s1) | ((al >> 1) >> n1));\n"
+		"\treturn int2(as_type<int>(lo), as_type<int>(hi));\n"
+		"}\n"
+		"static inline int2 mcc64_shr(int2 a, uint s) {\n"
+		"\tuint al = as_type<uint>(a.x), ah = as_type<uint>(a.y);\n"
+		"\tuint s1 = s & 31u, n1 = 31u - s1;\n"
+		"\tbool big = (s & 32u) != 0u;\n"
+		"\tuint lo = big ? (ah >> s1) : ((al >> s1) | ((ah << 1) << n1));\n"
+		"\tuint hi = big ? 0u : (ah >> s1);\n"
+		"\treturn int2(as_type<int>(lo), as_type<int>(hi));\n"
+		"}\n"
+		"static inline int2 mcc64_sar(int2 a, uint s) {\n"
+		"\tuint al = as_type<uint>(a.x), ah = as_type<uint>(a.y);\n"
+		"\tint ih = a.y;\n"
+		"\tuint s1 = s & 31u, n1 = 31u - s1;\n"
+		"\tbool big = (s & 32u) != 0u;\n"
+		"\tuint sh = as_type<uint>(ih >> int(s1));\n"
+		"\tuint lo = big ? sh : ((al >> s1) | ((ah << 1) << n1));\n"
+		"\tuint hi = big ? as_type<uint>(ih >> 31) : sh;\n"
+		"\treturn int2(as_type<int>(lo), as_type<int>(hi));\n"
+		"}\n"
+		"static inline bool mcc64_nz(int2 a) { return (a.x | a.y) != 0; }\n"
+		"static inline bool mcc64_eq(int2 a, int2 b) {\n"
+		"\treturn a.x == b.x && a.y == b.y;\n"
+		"}\n"
+		"static inline bool mcc64_ult(int2 a, int2 b) {\n"
+		"\tuint ah = as_type<uint>(a.y), bh = as_type<uint>(b.y);\n"
+		"\treturn ah < bh ||\n"
+		"\t\t\t (ah == bh && as_type<uint>(a.x) < as_type<uint>(b.x));\n"
+		"}\n"
+		"static inline bool mcc64_slt(int2 a, int2 b) {\n"
+		"\treturn a.y < b.y ||\n"
+		"\t\t\t (a.y == b.y && as_type<uint>(a.x) < as_type<uint>(b.x));\n"
+		"}\n"
+		"static inline bool mcc64_addok(int2 a, int2 b, int2 r) {\n"
+		"\treturn ((a.y ^ r.y) & (b.y ^ r.y)) >= 0;\n"
+		"}\n"
+		"static inline bool mcc64_subok(int2 a, int2 b, int2 r) {\n"
+		"\treturn ((a.y ^ b.y) & (a.y ^ r.y)) >= 0;\n"
+		"}\n"
+		"static inline int2 mcc64_udiv(int2 a, int2 b) {\n"
+		"\tuint al = as_type<uint>(a.x), ah = as_type<uint>(a.y);\n"
+		"\tuint bl = as_type<uint>(b.x), bh = as_type<uint>(b.y);\n"
+		"\tuint rl = 0u, rh = 0u, ql = 0u, qh = 0u;\n"
+		"\tfor (uint i = 0u; i < 64u; i++) {\n"
+		"\t\tuint msb = ah >> 31;\n"
+		"\t\tuint nal = al << 1, nah = (ah << 1) | (al >> 31);\n"
+		"\t\tuint nrl = (rl << 1) | msb, nrh = (rh << 1) | (rl >> 31);\n"
+		"\t\tbool ge = nrh > bh || (nrh == bh && nrl >= bl);\n"
+		"\t\tuint brw = nrl < bl ? 1u : 0u;\n"
+		"\t\tuint dl = nrl - bl, dh = nrh - bh - brw;\n"
+		"\t\tuint nql = (ql << 1) | (ge ? 1u : 0u), nqh = (qh << 1) | (ql >> 31);\n"
+		"\t\trl = ge ? dl : nrl;\n"
+		"\t\trh = ge ? dh : nrh;\n"
+		"\t\tql = nql;\n"
+		"\t\tqh = nqh;\n"
+		"\t\tal = nal;\n"
+		"\t\tah = nah;\n"
+		"\t}\n"
+		"\treturn int2(as_type<int>(ql), as_type<int>(qh));\n"
 		"}\n"
 		"\n"
 		"kernel void mcc_main(device const int *inb [[buffer(0)]],\n"
@@ -744,7 +1156,11 @@ enum {
 	SpvOpSLessThanEqual = 179, SpvOpShiftRightLogical = 194,
 	SpvOpShiftRightArithmetic = 195, SpvOpShiftLeftLogical = 196,
 	SpvOpBitwiseOr = 197, SpvOpBitwiseXor = 198, SpvOpBitwiseAnd = 199,
-	SpvOpBitcast = 124, SpvOpSMulExtended = 152,
+	SpvOpBitcast = 124, SpvOpSMulExtended = 152, SpvOpUMulExtended = 151,
+	SpvOpFunctionParameter = 55, SpvOpFunctionCall = 57,
+	SpvOpCompositeConstruct = 80, SpvOpCopyObject = 83,
+	SpvOpLoopMerge = 246, SpvOpReturnValue = 254,
+	SpvOpLogicalNotEqual = 165,
 	SpvOpLogicalOr = 166, SpvOpLogicalAnd = 167, SpvOpLogicalNot = 168,
 	SpvOpNot = 200, SpvOpPhi = 245, SpvOpSelectionMerge = 247, SpvOpLabel = 248,
 	SpvOpBranch = 249, SpvOpBranchConditional = 250, SpvOpReturn = 253
@@ -768,18 +1184,29 @@ typedef struct SpvWords {
 	int n, cap;
 } SpvWords;
 
+typedef struct SpvV {
+	uint32_t id;
+	int w64;
+	int uns;
+} SpvV;
+
 typedef struct SpvMod {
 	SpvWords pre, types, body;
 	uint32_t next_id;
 	uint32_t id_void, id_fnvoid, id_bool, id_int, id_uint, id_v3uint;
 	uint32_t id_ptr_in_v3uint, id_gid;
 	uint32_t id_rt, id_buf, id_ptr_buf, id_ptr_sb_int, id_pair;
+	uint32_t id_u2, id_upair, id_fn_u2, id_udiv;
 	uint32_t id_in, id_out, id_main, id_nlive;
 	uint32_t cur_label;
 	uint32_t def;
+	uint32_t lane;
 	int32_t cval[SPV_MAX_CONST];
 	uint32_t cid[SPV_MAX_CONST];
 	int ncached;
+	uint32_t ucval[SPV_MAX_CONST];
+	uint32_t ucid[SPV_MAX_CONST];
+	int nucached;
 	int failed;
 } SpvMod;
 
@@ -839,6 +1266,27 @@ static uint32_t spv_const(SpvMod *m, int32_t v) {
 
 static uint32_t spv_uconst(SpvMod *m, uint32_t v) {
 	return spv_const(m, (int32_t)v);
+}
+
+static uint32_t spv_uintc(SpvMod *m, uint32_t v) {
+	int i;
+	uint32_t id;
+	for (i = 0; i < m->nucached; i++)
+		if (m->ucval[i] == v)
+			return m->ucid[i];
+	if (m->nucached == SPV_MAX_CONST) {
+		m->failed = 1;
+		return m->ucid[0];
+	}
+	id = spv_id(m);
+	spvw_op(&m->types, SpvOpConstant, 4);
+	spvw_put(&m->types, m->id_uint);
+	spvw_put(&m->types, id);
+	spvw_put(&m->types, v);
+	m->ucval[m->nucached] = v;
+	m->ucid[m->nucached] = id;
+	m->nucached++;
+	return id;
 }
 
 static uint32_t spv_emit2(SpvMod *m, int opcode, uint32_t rtype, uint32_t a) {
@@ -919,6 +1367,165 @@ static uint32_t spv_int_of_bool(SpvMod *m, uint32_t b) {
 	return id;
 }
 
+static uint32_t spv_ex(SpvMod *m, uint32_t rtype, uint32_t comp, uint32_t idx) {
+	uint32_t id = spv_id(m);
+	spvw_op(&m->body, SpvOpCompositeExtract, 5);
+	spvw_put(&m->body, rtype);
+	spvw_put(&m->body, id);
+	spvw_put(&m->body, comp);
+	spvw_put(&m->body, idx);
+	return id;
+}
+
+static uint32_t spv_u2(SpvMod *m, uint32_t lo, uint32_t hi) {
+	uint32_t id = spv_id(m);
+	spvw_op(&m->body, SpvOpCompositeConstruct, 5);
+	spvw_put(&m->body, m->id_u2);
+	spvw_put(&m->body, id);
+	spvw_put(&m->body, lo);
+	spvw_put(&m->body, hi);
+	return id;
+}
+
+static uint32_t spv_lo(SpvMod *m, uint32_t p) {
+	return spv_ex(m, m->id_uint, p, 0);
+}
+
+static uint32_t spv_hi(SpvMod *m, uint32_t p) {
+	return spv_ex(m, m->id_uint, p, 1);
+}
+
+static uint32_t spv_uop(SpvMod *m, int op, uint32_t a, uint32_t b) {
+	return spv_emit3(m, op, m->id_uint, a, b);
+}
+
+static uint32_t spv_ucmp(SpvMod *m, int op, uint32_t a, uint32_t b) {
+	return spv_emit3(m, op, m->id_bool, a, b);
+}
+
+static uint32_t spv_usel(SpvMod *m, uint32_t c, uint32_t x, uint32_t y) {
+	return spv_emit4(m, SpvOpSelect, m->id_uint, c, x, y);
+}
+
+static uint32_t spv_and(SpvMod *m, uint32_t a, uint32_t b) {
+	return spv_emit3(m, SpvOpLogicalAnd, m->id_bool, a, b);
+}
+
+static void spv_emit_udiv64(SpvMod *m) {
+	uint32_t pa = spv_id(m), pb = spv_id(m);
+	uint32_t l_head = spv_id(m), l_body = spv_id(m), l_cont = spv_id(m);
+	uint32_t l_merge = spv_id(m);
+	uint32_t ph[7], nx[7], iv[7], res[7];
+	uint32_t al, ah, bl, bh, z, c1, c31, entry, cond;
+	int i;
+	spvw_op(&m->body, SpvOpFunction, 5);
+	spvw_put(&m->body, m->id_u2);
+	spvw_put(&m->body, m->id_udiv);
+	spvw_put(&m->body, 0);
+	spvw_put(&m->body, m->id_fn_u2);
+	spvw_op(&m->body, SpvOpFunctionParameter, 3);
+	spvw_put(&m->body, m->id_u2);
+	spvw_put(&m->body, pa);
+	spvw_op(&m->body, SpvOpFunctionParameter, 3);
+	spvw_put(&m->body, m->id_u2);
+	spvw_put(&m->body, pb);
+	entry = spv_label(m);
+	al = spv_lo(m, pa);
+	ah = spv_hi(m, pa);
+	bl = spv_lo(m, pb);
+	bh = spv_hi(m, pb);
+	z = spv_uintc(m, 0);
+	c1 = spv_uintc(m, 1);
+	c31 = spv_uintc(m, 31);
+	iv[0] = al;
+	iv[1] = ah;
+	for (i = 2; i < 7; i++)
+		iv[i] = z;
+	for (i = 0; i < 7; i++) {
+		ph[i] = spv_id(m);
+		nx[i] = spv_id(m);
+	}
+	spvw_op(&m->body, SpvOpBranch, 2);
+	spvw_put(&m->body, l_head);
+
+	spv_label_at(m, l_head);
+	for (i = 0; i < 7; i++) {
+		spvw_op(&m->body, SpvOpPhi, 7);
+		spvw_put(&m->body, m->id_uint);
+		spvw_put(&m->body, ph[i]);
+		spvw_put(&m->body, iv[i]);
+		spvw_put(&m->body, entry);
+		spvw_put(&m->body, nx[i]);
+		spvw_put(&m->body, l_cont);
+	}
+	cond = spv_ucmp(m, SpvOpULessThan, ph[6], spv_uintc(m, 64));
+	spvw_op(&m->body, SpvOpLoopMerge, 4);
+	spvw_put(&m->body, l_merge);
+	spvw_put(&m->body, l_cont);
+	spvw_put(&m->body, 0);
+	spvw_op(&m->body, SpvOpBranchConditional, 4);
+	spvw_put(&m->body, cond);
+	spvw_put(&m->body, l_body);
+	spvw_put(&m->body, l_merge);
+
+	spv_label_at(m, l_body);
+	{
+		uint32_t msb = spv_uop(m, SpvOpShiftRightLogical, ph[1], c31);
+		uint32_t nal = spv_uop(m, SpvOpShiftLeftLogical, ph[0], c1);
+		uint32_t nah =
+				spv_uop(m, SpvOpBitwiseOr,
+								spv_uop(m, SpvOpShiftLeftLogical, ph[1], c1),
+								spv_uop(m, SpvOpShiftRightLogical, ph[0], c31));
+		uint32_t nrl = spv_uop(m, SpvOpBitwiseOr,
+													 spv_uop(m, SpvOpShiftLeftLogical, ph[2], c1), msb);
+		uint32_t nrh =
+				spv_uop(m, SpvOpBitwiseOr,
+								spv_uop(m, SpvOpShiftLeftLogical, ph[3], c1),
+								spv_uop(m, SpvOpShiftRightLogical, ph[2], c31));
+		uint32_t gt = spv_ucmp(m, SpvOpUGreaterThan, nrh, bh);
+		uint32_t eqh = spv_ucmp(m, SpvOpIEqual, nrh, bh);
+		uint32_t gel = spv_ucmp(m, SpvOpUGreaterThanEqual, nrl, bl);
+		uint32_t ge = spv_or(m, gt, spv_and(m, eqh, gel));
+		uint32_t brw =
+				spv_usel(m, spv_ucmp(m, SpvOpULessThan, nrl, bl), c1, z);
+		uint32_t dl = spv_uop(m, SpvOpISub, nrl, bl);
+		uint32_t dh =
+				spv_uop(m, SpvOpISub, spv_uop(m, SpvOpISub, nrh, bh), brw);
+		uint32_t nql = spv_uop(m, SpvOpBitwiseOr,
+													 spv_uop(m, SpvOpShiftLeftLogical, ph[4], c1),
+													 spv_usel(m, ge, c1, z));
+		uint32_t nqh =
+				spv_uop(m, SpvOpBitwiseOr,
+								spv_uop(m, SpvOpShiftLeftLogical, ph[5], c1),
+								spv_uop(m, SpvOpShiftRightLogical, ph[4], c31));
+		res[0] = nal;
+		res[1] = nah;
+		res[2] = spv_usel(m, ge, dl, nrl);
+		res[3] = spv_usel(m, ge, dh, nrh);
+		res[4] = nql;
+		res[5] = nqh;
+		res[6] = spv_uop(m, SpvOpIAdd, ph[6], c1);
+		for (i = 0; i < 7; i++) {
+			spvw_op(&m->body, SpvOpCopyObject, 4);
+			spvw_put(&m->body, m->id_uint);
+			spvw_put(&m->body, nx[i]);
+			spvw_put(&m->body, res[i]);
+		}
+	}
+	spvw_op(&m->body, SpvOpBranch, 2);
+	spvw_put(&m->body, l_cont);
+	spv_label_at(m, l_cont);
+	spvw_op(&m->body, SpvOpBranch, 2);
+	spvw_put(&m->body, l_head);
+	spv_label_at(m, l_merge);
+	{
+		uint32_t q = spv_u2(m, ph[4], ph[5]);
+		spvw_op(&m->body, SpvOpReturnValue, 2);
+		spvw_put(&m->body, q);
+	}
+	spvw_op(&m->body, SpvOpFunctionEnd, 1);
+}
+
 static void spv_module_begin(SpvMod *m, int nlive) {
 	memset(m, 0, sizeof *m);
 	m->next_id = 1;
@@ -935,6 +1542,10 @@ static void spv_module_begin(SpvMod *m, int nlive) {
 	m->id_ptr_buf = spv_id(m);
 	m->id_ptr_sb_int = spv_id(m);
 	m->id_pair = spv_id(m);
+	m->id_u2 = spv_id(m);
+	m->id_upair = spv_id(m);
+	m->id_fn_u2 = spv_id(m);
+	m->id_udiv = spv_id(m);
 	m->id_in = spv_id(m);
 	m->id_out = spv_id(m);
 	m->id_main = spv_id(m);
@@ -1043,6 +1654,20 @@ static void spv_module_begin(SpvMod *m, int nlive) {
 	spvw_put(&m->types, m->id_pair);
 	spvw_put(&m->types, m->id_int);
 	spvw_put(&m->types, m->id_int);
+	spvw_op(&m->types, SpvOpTypeVector, 4);
+	spvw_put(&m->types, m->id_u2);
+	spvw_put(&m->types, m->id_uint);
+	spvw_put(&m->types, 2);
+	spvw_op(&m->types, SpvOpTypeStruct, 4);
+	spvw_put(&m->types, m->id_upair);
+	spvw_put(&m->types, m->id_uint);
+	spvw_put(&m->types, m->id_uint);
+	spvw_op(&m->types, SpvOpTypeFunction, 5);
+	spvw_put(&m->types, m->id_fn_u2);
+	spvw_put(&m->types, m->id_u2);
+	spvw_put(&m->types, m->id_u2);
+	spvw_put(&m->types, m->id_u2);
+	spv_emit_udiv64(m);
 }
 
 static uint32_t spv_load_live(SpvMod *m, uint32_t base, int k) {
@@ -1058,6 +1683,271 @@ static uint32_t spv_load_live(SpvMod *m, uint32_t base, int k) {
 	spvw_put(&m->body, spv_const(m, 0));
 	spvw_put(&m->body, idx);
 	return spv_emit2(m, SpvOpLoad, m->id_int, p);
+}
+
+static SpvV spv_mk(uint32_t id, int w64, int uns) {
+	SpvV v;
+	v.id = id;
+	v.w64 = w64;
+	v.uns = uns;
+	return v;
+}
+
+static void spv_widen(SpvMod *m, SpvV *v) {
+	uint32_t lo, hi;
+	if (v->w64)
+		return;
+	lo = spv_emit2(m, SpvOpBitcast, m->id_uint, v->id);
+	hi = v->uns ? spv_uintc(m, 0)
+							: spv_emit2(m, SpvOpBitcast, m->id_uint,
+													spv_emit3(m, SpvOpShiftRightArithmetic, m->id_int,
+																		v->id, spv_uconst(m, 31)));
+	v->id = spv_u2(m, lo, hi);
+	v->w64 = 1;
+}
+
+static uint32_t spv_val_lo(SpvMod *m, SpvV v) {
+	return v.w64 ? spv_emit2(m, SpvOpBitcast, m->id_int, spv_lo(m, v.id)) : v.id;
+}
+
+static uint32_t spv_pair(SpvMod *m, SpvV v) {
+	spv_widen(m, &v);
+	return v.id;
+}
+
+static SpvV spv_const64(SpvMod *m, int64_t x) {
+	uint32_t lo = spv_uintc(m, (uint32_t)(uint64_t)x);
+	uint32_t hi = spv_uintc(m, (uint32_t)((uint64_t)x >> 32));
+	return spv_mk(spv_u2(m, lo, hi), 1, 0);
+}
+
+static uint32_t spv_bool_of_v(SpvMod *m, SpvV v) {
+	uint32_t o;
+	if (!v.w64)
+		return spv_bool_of(m, v.id);
+	o = spv_uop(m, SpvOpBitwiseOr, spv_lo(m, v.id), spv_hi(m, v.id));
+	return spv_ucmp(m, SpvOpINotEqual, o, spv_uintc(m, 0));
+}
+
+static SpvV spv_add64(SpvMod *m, SpvV a, SpvV b, int uns) {
+	uint32_t al = spv_lo(m, a.id), ah = spv_hi(m, a.id);
+	uint32_t bl = spv_lo(m, b.id), bh = spv_hi(m, b.id);
+	uint32_t rl = spv_uop(m, SpvOpIAdd, al, bl);
+	uint32_t c = spv_usel(m, spv_ucmp(m, SpvOpULessThan, rl, al),
+												spv_uintc(m, 1), spv_uintc(m, 0));
+	uint32_t rh = spv_uop(m, SpvOpIAdd, spv_uop(m, SpvOpIAdd, ah, bh), c);
+	return spv_mk(spv_u2(m, rl, rh), 1, uns);
+}
+
+static SpvV spv_sub64(SpvMod *m, SpvV a, SpvV b, int uns) {
+	uint32_t al = spv_lo(m, a.id), ah = spv_hi(m, a.id);
+	uint32_t bl = spv_lo(m, b.id), bh = spv_hi(m, b.id);
+	uint32_t rl = spv_uop(m, SpvOpISub, al, bl);
+	uint32_t w = spv_usel(m, spv_ucmp(m, SpvOpULessThan, al, bl),
+												spv_uintc(m, 1), spv_uintc(m, 0));
+	uint32_t rh = spv_uop(m, SpvOpISub, spv_uop(m, SpvOpISub, ah, bh), w);
+	return spv_mk(spv_u2(m, rl, rh), 1, uns);
+}
+
+static SpvV spv_mul64(SpvMod *m, SpvV a, SpvV b, int uns) {
+	uint32_t al = spv_lo(m, a.id), ah = spv_hi(m, a.id);
+	uint32_t bl = spv_lo(m, b.id), bh = spv_hi(m, b.id);
+	uint32_t wide = spv_emit3(m, SpvOpUMulExtended, m->id_upair, al, bl);
+	uint32_t rl = spv_ex(m, m->id_uint, wide, 0);
+	uint32_t rh = spv_uop(m, SpvOpIAdd,
+												spv_uop(m, SpvOpIAdd, spv_ex(m, m->id_uint, wide, 1),
+																spv_uop(m, SpvOpIMul, al, bh)),
+												spv_uop(m, SpvOpIMul, ah, bl));
+	return spv_mk(spv_u2(m, rl, rh), 1, uns);
+}
+
+static SpvV spv_shift64(SpvMod *m, int kind, SpvV a, uint32_t s, int uns) {
+	uint32_t al = spv_lo(m, a.id), ah = spv_hi(m, a.id);
+	uint32_t c0 = spv_uintc(m, 0), c1 = spv_uintc(m, 1);
+	uint32_t c31 = spv_uintc(m, 31), c32 = spv_uintc(m, 32);
+	uint32_t s1 = spv_uop(m, SpvOpBitwiseAnd, s, c31);
+	uint32_t n1 = spv_uop(m, SpvOpISub, c31, s1);
+	uint32_t big = spv_ucmp(m, SpvOpINotEqual,
+													spv_uop(m, SpvOpBitwiseAnd, s, c32), c0);
+	uint32_t lo, hi;
+	if (kind == SpvOpShiftLeftLogical) {
+		uint32_t l1 = spv_uop(m, SpvOpShiftLeftLogical, al, s1);
+		uint32_t h1 = spv_uop(
+				m, SpvOpBitwiseOr, spv_uop(m, SpvOpShiftLeftLogical, ah, s1),
+				spv_uop(m, SpvOpShiftRightLogical,
+								spv_uop(m, SpvOpShiftRightLogical, al, c1), n1));
+		lo = spv_usel(m, big, c0, l1);
+		hi = spv_usel(m, big, l1, h1);
+	} else if (kind == SpvOpShiftRightLogical) {
+		uint32_t l1 = spv_uop(
+				m, SpvOpBitwiseOr, spv_uop(m, SpvOpShiftRightLogical, al, s1),
+				spv_uop(m, SpvOpShiftLeftLogical,
+								spv_uop(m, SpvOpShiftLeftLogical, ah, c1), n1));
+		uint32_t h1 = spv_uop(m, SpvOpShiftRightLogical, ah, s1);
+		lo = spv_usel(m, big, h1, l1);
+		hi = spv_usel(m, big, c0, h1);
+	} else {
+		uint32_t ih = spv_emit2(m, SpvOpBitcast, m->id_int, ah);
+		uint32_t sh = spv_emit2(
+				m, SpvOpBitcast, m->id_uint,
+				spv_emit3(m, SpvOpShiftRightArithmetic, m->id_int, ih, s1));
+		uint32_t sg = spv_emit2(
+				m, SpvOpBitcast, m->id_uint,
+				spv_emit3(m, SpvOpShiftRightArithmetic, m->id_int, ih, c31));
+		uint32_t l1 = spv_uop(
+				m, SpvOpBitwiseOr, spv_uop(m, SpvOpShiftRightLogical, al, s1),
+				spv_uop(m, SpvOpShiftLeftLogical,
+								spv_uop(m, SpvOpShiftLeftLogical, ah, c1), n1));
+		lo = spv_usel(m, big, sh, l1);
+		hi = spv_usel(m, big, sg, sh);
+	}
+	return spv_mk(spv_u2(m, lo, hi), 1, uns);
+}
+
+static SpvV spv_bit64(SpvMod *m, int op, SpvV a, SpvV b, int uns) {
+	uint32_t lo = spv_uop(m, op, spv_lo(m, a.id), spv_lo(m, b.id));
+	uint32_t hi = spv_uop(m, op, spv_hi(m, a.id), spv_hi(m, b.id));
+	return spv_mk(spv_u2(m, lo, hi), 1, uns);
+}
+
+static uint32_t spv_eq64(SpvMod *m, SpvV a, SpvV b) {
+	return spv_and(m, spv_ucmp(m, SpvOpIEqual, spv_lo(m, a.id), spv_lo(m, b.id)),
+								 spv_ucmp(m, SpvOpIEqual, spv_hi(m, a.id), spv_hi(m, b.id)));
+}
+
+static uint32_t spv_lt64(SpvMod *m, SpvV a, SpvV b, int sgn) {
+	uint32_t ah = spv_hi(m, a.id), bh = spv_hi(m, b.id);
+	uint32_t hlt = sgn ? spv_emit3(m, SpvOpSLessThan, m->id_bool,
+																 spv_emit2(m, SpvOpBitcast, m->id_int, ah),
+																 spv_emit2(m, SpvOpBitcast, m->id_int, bh))
+										 : spv_ucmp(m, SpvOpULessThan, ah, bh);
+	uint32_t heq = spv_ucmp(m, SpvOpIEqual, ah, bh);
+	uint32_t llt =
+			spv_ucmp(m, SpvOpULessThan, spv_lo(m, a.id), spv_lo(m, b.id));
+	return spv_or(m, hlt, spv_and(m, heq, llt));
+}
+
+static uint32_t spv_cmp64(SpvMod *m, int code, SpvV a, SpvV b) {
+	switch (code) {
+	case SpvOpIEqual: return spv_eq64(m, a, b);
+	case SpvOpINotEqual: return spv_not(m, spv_eq64(m, a, b));
+	case SpvOpULessThan: return spv_lt64(m, a, b, 0);
+	case SpvOpUGreaterThanEqual: return spv_not(m, spv_lt64(m, a, b, 0));
+	case SpvOpULessThanEqual: return spv_not(m, spv_lt64(m, b, a, 0));
+	case SpvOpUGreaterThan: return spv_lt64(m, b, a, 0);
+	case SpvOpSLessThan: return spv_lt64(m, a, b, 1);
+	case SpvOpSGreaterThanEqual: return spv_not(m, spv_lt64(m, a, b, 1));
+	case SpvOpSLessThanEqual: return spv_not(m, spv_lt64(m, b, a, 1));
+	default: return spv_lt64(m, b, a, 1);
+	}
+}
+
+static SpvV spv_sel64(SpvMod *m, uint32_t c, SpvV x, SpvV y) {
+	uint32_t lo = spv_usel(m, c, spv_lo(m, x.id), spv_lo(m, y.id));
+	uint32_t hi = spv_usel(m, c, spv_hi(m, x.id), spv_hi(m, y.id));
+	return spv_mk(spv_u2(m, lo, hi), 1, 0);
+}
+
+static SpvV spv_neg64(SpvMod *m, SpvV a) {
+	return spv_sub64(m, spv_const64(m, 0), a, 0);
+}
+
+static uint32_t spv_sign64(SpvMod *m, SpvV a) {
+	return spv_emit3(m, SpvOpSLessThan, m->id_bool,
+									 spv_emit2(m, SpvOpBitcast, m->id_int, spv_hi(m, a.id)),
+									 spv_const(m, 0));
+}
+
+static SpvV spv_udiv64(SpvMod *m, SpvV a, SpvV b, int uns) {
+	uint32_t id = spv_id(m);
+	spvw_op(&m->body, SpvOpFunctionCall, 6);
+	spvw_put(&m->body, m->id_u2);
+	spvw_put(&m->body, id);
+	spvw_put(&m->body, m->id_udiv);
+	spvw_put(&m->body, a.id);
+	spvw_put(&m->body, b.id);
+	return spv_mk(id, 1, uns);
+}
+
+static SpvV spv_sdiv64(SpvMod *m, SpvV a, SpvV b, int uns) {
+	uint32_t sa = spv_sign64(m, a), sb = spv_sign64(m, b);
+	SpvV na = spv_sel64(m, sa, spv_neg64(m, a), a);
+	SpvV nb = spv_sel64(m, sb, spv_neg64(m, b), b);
+	SpvV q = spv_udiv64(m, na, nb, 0);
+	uint32_t s = spv_emit3(m, SpvOpLogicalNotEqual, m->id_bool, sa, sb);
+	SpvV r = spv_sel64(m, s, spv_neg64(m, q), q);
+	r.uns = uns;
+	return r;
+}
+
+static SpvV spv_rem64(SpvMod *m, SpvV a, SpvV b, SpvV q, int uns) {
+	return spv_sub64(m, a, spv_mul64(m, b, q, uns), uns);
+}
+
+static void spv_def_addsub64(SpvMod *m, uint32_t *def, int is_sub, SpvV a,
+														 SpvV b, SpvV r) {
+	uint32_t ah = spv_hi(m, a.id), bh = spv_hi(m, b.id), rh = spv_hi(m, r.id);
+	uint32_t x = spv_uop(m, SpvOpBitwiseXor, ah, rh);
+	uint32_t y = is_sub ? spv_uop(m, SpvOpBitwiseXor, ah, bh)
+											: spv_uop(m, SpvOpBitwiseXor, bh, rh);
+	uint32_t t = is_sub ? spv_uop(m, SpvOpBitwiseAnd, y, x)
+											: spv_uop(m, SpvOpBitwiseAnd, x, y);
+	spv_def_and(m, def,
+							spv_emit3(m, SpvOpSGreaterThanEqual, m->id_bool,
+												spv_emit2(m, SpvOpBitcast, m->id_int, t),
+												spv_const(m, 0)));
+}
+
+static void spv_def_mul64(SpvMod *m, uint32_t *def, SpvV a, SpvV b, SpvV r) {
+	SpvV mn = spv_const64(m, (int64_t)((uint64_t)1 << 63));
+	SpvV n1 = spv_const64(m, -1);
+	SpvV one = spv_const64(m, 1);
+	uint32_t az = spv_not(m, spv_bool_of_v(m, a));
+	uint32_t bz = spv_not(m, spv_bool_of_v(m, b));
+	SpvV ag = spv_sel64(m, az, one, a);
+	SpvV q = spv_sdiv64(m, r, ag, 0);
+	uint32_t ne = spv_not(m, spv_eq64(m, q, b));
+	uint32_t k1 = spv_and(m, spv_eq64(m, a, mn), spv_eq64(m, b, n1));
+	uint32_t k2 = spv_and(m, spv_eq64(m, b, mn), spv_eq64(m, a, n1));
+	uint32_t any = spv_or(m, ne, spv_or(m, k1, k2));
+	uint32_t bad = spv_and(m, spv_and(m, spv_not(m, az), spv_not(m, bz)), any);
+	spv_def_and(m, def, spv_not(m, bad));
+}
+
+static SpvV spv_guard_div64(SpvMod *m, uint32_t *def, int uns, SpvV a, SpvV b) {
+	uint32_t bad = spv_not(m, spv_bool_of_v(m, b));
+	uint32_t lo, hi;
+	if (!uns) {
+		SpvV mn = spv_const64(m, (int64_t)((uint64_t)1 << 63));
+		SpvV n1 = spv_const64(m, -1);
+		bad = spv_or(m, bad, spv_and(m, spv_eq64(m, a, mn), spv_eq64(m, b, n1)));
+	}
+	spv_def_and(m, def, spv_not(m, bad));
+	lo = spv_usel(m, bad, spv_uintc(m, 1), spv_lo(m, b.id));
+	hi = spv_usel(m, bad, spv_uintc(m, 0), spv_hi(m, b.id));
+	return spv_mk(spv_u2(m, lo, hi), 1, uns);
+}
+
+static uint32_t spv_guard_shift64(SpvMod *m, uint32_t *def, SpvV b) {
+	uint32_t lo = spv_lo(m, b.id), hi = spv_hi(m, b.id);
+	uint32_t bad =
+			spv_or(m, spv_ucmp(m, SpvOpINotEqual, hi, spv_uintc(m, 0)),
+						 spv_ucmp(m, SpvOpUGreaterThanEqual, lo, spv_uintc(m, 64)));
+	spv_def_and(m, def, spv_not(m, bad));
+	return spv_usel(m, bad, spv_uintc(m, 0),
+									spv_uop(m, SpvOpBitwiseAnd, lo, spv_uintc(m, 63)));
+}
+
+static SpvV spv_load_live_v(SpvMod *m, uint32_t base, int k, int w64, int uns) {
+	if (!w64)
+		return spv_mk(spv_load_live(m, base, 2 * k), 0, uns);
+	{
+		uint32_t lo = spv_emit2(m, SpvOpBitcast, m->id_uint,
+														spv_load_live(m, base, 2 * k));
+		uint32_t hi = spv_emit2(m, SpvOpBitcast, m->id_uint,
+														spv_load_live(m, base, 2 * k + 1));
+		return spv_mk(spv_u2(m, lo, hi), 1, uns);
+	}
 }
 
 static uint32_t spv_fit(SpvMod *m, uint32_t v, int t) {
@@ -1089,6 +1979,18 @@ static uint32_t spv_fit(SpvMod *m, uint32_t v, int t) {
 	}
 }
 
+static SpvV spv_fit_v(SpvMod *m, SpvV v, int t) {
+	int uns = (t & VT_UNSIGNED) != 0;
+	if (ast_eval_slice_is64(t)) {
+		spv_widen(m, &v);
+		v.uns = uns;
+		return v;
+	}
+	if ((t & VT_BTYPE) == VT_BOOL)
+		return spv_mk(spv_int_of_bool(m, spv_bool_of_v(m, v)), 0, uns);
+	return spv_mk(spv_fit(m, spv_val_lo(m, v), t), 0, uns);
+}
+
 static uint32_t spv_main_begin(SpvMod *m, int nlive) {
 	spvw_op(&m->body, SpvOpFunction, 5);
 	spvw_put(&m->body, m->id_void);
@@ -1105,7 +2007,9 @@ static uint32_t spv_main_begin(SpvMod *m, int nlive) {
 	spvw_put(&m->body, 0);
 	uint32_t gi = spv_emit2(m, SpvOpBitcast, m->id_int, gx);
 	m->def = spv_true(m);
-	return spv_emit3(m, SpvOpIMul, m->id_int, gi, spv_const(m, nlive));
+	m->lane = gi;
+	return spv_emit3(m, SpvOpIMul, m->id_int, gi,
+									 spv_const(m, nlive * MCC_GPU_IN_SLOTS));
 }
 
 static void spv_store_at(SpvMod *m, uint32_t idx, uint32_t val) {
@@ -1121,11 +2025,17 @@ static void spv_store_at(SpvMod *m, uint32_t idx, uint32_t val) {
 	spvw_put(&m->body, val);
 }
 
-static void spv_main_end(SpvMod *m, uint32_t lane, uint32_t val) {
-	uint32_t two = spv_emit3(m, SpvOpIMul, m->id_int, lane, spv_const(m, 2));
-	uint32_t one = spv_emit3(m, SpvOpIAdd, m->id_int, two, spv_const(m, 1));
-	spv_store_at(m, two, val);
-	spv_store_at(m, one, spv_int_of_bool(m, m->def));
+static void spv_main_end(SpvMod *m, uint32_t lane, SpvV val) {
+	uint32_t o0 = spv_emit3(m, SpvOpIMul, m->id_int, lane,
+													spv_const(m, MCC_GPU_OUT_SLOTS));
+	uint32_t o1 = spv_emit3(m, SpvOpIAdd, m->id_int, o0, spv_const(m, 1));
+	uint32_t o2 = spv_emit3(m, SpvOpIAdd, m->id_int, o0, spv_const(m, 2));
+	uint32_t p = spv_pair(m, val);
+	spv_store_at(m, o0,
+							 spv_emit2(m, SpvOpBitcast, m->id_int, spv_lo(m, p)));
+	spv_store_at(m, o1,
+							 spv_emit2(m, SpvOpBitcast, m->id_int, spv_hi(m, p)));
+	spv_store_at(m, o2, spv_int_of_bool(m, m->def));
 	spvw_op(&m->body, SpvOpReturn, 1);
 	spvw_op(&m->body, SpvOpFunctionEnd, 1);
 }
@@ -1247,15 +2157,19 @@ static int spv_env_index(const int32_t *off, int nenv, int32_t want, int *out) {
 }
 
 static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
-										int nenv, uint32_t base, uint32_t *out);
+										int nenv, uint32_t base, SpvV *out);
 
-static int spv_branch_pair(SpvMod *m, AstArena *a, AstLocal cn, AstLocal tn,
-													 AstLocal en, const int32_t *off, int nenv,
-													 uint32_t base, uint32_t *out) {
-	uint32_t cv;
+static int spv_branch_pair(SpvMod *m, AstArena *a, AstLocal n,
+													 const int32_t *off, int nenv, uint32_t base,
+													 SpvV *out) {
+	AstLocal cn = ast_child(a, n, 0), tn = ast_child(a, n, 1);
+	AstLocal en = ast_child(a, n, 2);
+	SpvV cv, tv, ev;
+	int w64, uns;
+	mcc_gpu_vw(a, n, &w64, &uns);
 	if (!spv_expr(m, a, cn, off, nenv, base, &cv))
 		return 0;
-	uint32_t cb = spv_bool_of(m, cv);
+	uint32_t cb = spv_bool_of_v(m, cv);
 	uint32_t l_then = spv_id(m), l_else = spv_id(m), l_merge = spv_id(m);
 	spvw_op(&m->body, SpvOpSelectionMerge, 3);
 	spvw_put(&m->body, l_merge);
@@ -1268,9 +2182,9 @@ static int spv_branch_pair(SpvMod *m, AstArena *a, AstLocal cn, AstLocal tn,
 	uint32_t def_in = m->def;
 	spv_label_at(m, l_then);
 	m->def = def_in;
-	uint32_t tv;
 	if (!spv_expr(m, a, tn, off, nenv, base, &tv))
 		return 0;
+	uint32_t tid = w64 ? spv_pair(m, tv) : tv.id;
 	uint32_t def_then = m->def;
 	uint32_t from_then = m->cur_label;
 	spvw_op(&m->body, SpvOpBranch, 2);
@@ -1278,9 +2192,9 @@ static int spv_branch_pair(SpvMod *m, AstArena *a, AstLocal cn, AstLocal tn,
 
 	spv_label_at(m, l_else);
 	m->def = def_in;
-	uint32_t ev;
 	if (!spv_expr(m, a, en, off, nenv, base, &ev))
 		return 0;
+	uint32_t eid = w64 ? spv_pair(m, ev) : ev.id;
 	uint32_t def_else = m->def;
 	uint32_t from_else = m->cur_label;
 	spvw_op(&m->body, SpvOpBranch, 2);
@@ -1289,11 +2203,11 @@ static int spv_branch_pair(SpvMod *m, AstArena *a, AstLocal cn, AstLocal tn,
 	spv_label_at(m, l_merge);
 	uint32_t phi = spv_id(m);
 	spvw_op(&m->body, SpvOpPhi, 7);
-	spvw_put(&m->body, m->id_int);
+	spvw_put(&m->body, w64 ? m->id_u2 : m->id_int);
 	spvw_put(&m->body, phi);
-	spvw_put(&m->body, tv);
+	spvw_put(&m->body, tid);
 	spvw_put(&m->body, from_then);
-	spvw_put(&m->body, ev);
+	spvw_put(&m->body, eid);
 	spvw_put(&m->body, from_else);
 	uint32_t dphi = spv_id(m);
 	spvw_op(&m->body, SpvOpPhi, 7);
@@ -1304,22 +2218,22 @@ static int spv_branch_pair(SpvMod *m, AstArena *a, AstLocal cn, AstLocal tn,
 	spvw_put(&m->body, def_else);
 	spvw_put(&m->body, from_else);
 	m->def = dphi;
-	*out = phi;
+	*out = spv_mk(phi, w64, uns);
 	return 1;
 }
 
 static int spv_logical(SpvMod *m, AstArena *a, AstLocal n, int want,
 											 const int32_t *off, int nenv, uint32_t base,
-											 uint32_t *out, uint32_t k) {
+											 SpvV *out, uint32_t k) {
 	uint32_t nc = ast_nchild(a, n);
+	SpvV cv, rest;
 	if (k == nc) {
-		*out = spv_const(m, want ? 1 : 0);
+		*out = spv_mk(spv_const(m, want ? 1 : 0), 0, 0);
 		return 1;
 	}
-	uint32_t cv;
 	if (!spv_expr(m, a, ast_child(a, n, k), off, nenv, base, &cv))
 		return 0;
-	uint32_t cb = spv_bool_of(m, cv);
+	uint32_t cb = spv_bool_of_v(m, cv);
 	uint32_t l_cont = spv_id(m), l_stop = spv_id(m), l_merge = spv_id(m);
 	spvw_op(&m->body, SpvOpSelectionMerge, 3);
 	spvw_put(&m->body, l_merge);
@@ -1332,7 +2246,6 @@ static int spv_logical(SpvMod *m, AstArena *a, AstLocal n, int want,
 	uint32_t ldef_in = m->def;
 	spv_label_at(m, l_cont);
 	m->def = ldef_in;
-	uint32_t rest;
 	if (!spv_logical(m, a, n, want, off, nenv, base, &rest, k + 1))
 		return 0;
 	uint32_t def_cont = m->def;
@@ -1353,7 +2266,7 @@ static int spv_logical(SpvMod *m, AstArena *a, AstLocal n, int want,
 	spvw_op(&m->body, SpvOpPhi, 7);
 	spvw_put(&m->body, m->id_int);
 	spvw_put(&m->body, phi);
-	spvw_put(&m->body, rest);
+	spvw_put(&m->body, rest.id);
 	spvw_put(&m->body, from_cont);
 	spvw_put(&m->body, stopv);
 	spvw_put(&m->body, from_stop);
@@ -1366,12 +2279,24 @@ static int spv_logical(SpvMod *m, AstArena *a, AstLocal n, int want,
 	spvw_put(&m->body, def_stop);
 	spvw_put(&m->body, from_stop);
 	m->def = ldphi;
-	*out = phi;
+	*out = spv_mk(phi, 0, 0);
+	return 1;
+}
+
+static int spv_konst(SpvMod *m, AstArena *a, AstLocal n, int t, SpvV *out) {
+	int64_t x = ast_eval_slice_fit((int64_t)ast_ival(a, n), t);
+	int uns = (t & VT_UNSIGNED) != 0;
+	if (ast_eval_slice_is64(t)) {
+		*out = spv_const64(m, x);
+		out->uns = uns;
+		return 1;
+	}
+	*out = spv_mk(spv_const(m, (int32_t)x), 0, uns);
 	return 1;
 }
 
 static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
-										int nenv, uint32_t base, uint32_t *out) {
+										int nenv, uint32_t base, SpvV *out) {
 	if (n == AST_NONE || m->failed)
 		return 0;
 	switch (ast_kind(a, n)) {
@@ -1379,32 +2304,27 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		int t = ast_type_t(a, n);
 		if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
 			return 0;
-		if (ast_eval_slice_is64(t))
-			return 0;
 		if ((ast_op(a, n) & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
 			return 0;
-		*out = spv_const(m, (int32_t)ast_eval_slice_fit((int64_t)ast_ival(a, n), t));
-		return 1;
+		return spv_konst(m, a, n, t, out);
 	}
 	case AST_Ref: {
 		int r = ast_op(a, n);
 		int t = ast_type_t(a, n);
 		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
 			int k;
-			if (!ast_eval_slice_intt(t) || is_float(t) || ast_eval_slice_is64(t))
+			if (!ast_eval_slice_intt(t) || is_float(t))
 				return 0;
 			if (!spv_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, n), &k))
 				return 0;
-			*out = spv_load_live(m, base, k);
+			*out = spv_load_live_v(m, base, k, ast_eval_slice_is64(t),
+														 (t & VT_UNSIGNED) != 0);
 			return 1;
 		}
 		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
 			if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
 				return 0;
-			if (ast_eval_slice_is64(t))
-				return 0;
-			*out = spv_const(m, (int32_t)ast_eval_slice_fit((int64_t)ast_ival(a, n), t));
-			return 1;
+			return spv_konst(m, a, n, t, out);
 		}
 		return 0;
 	}
@@ -1416,12 +2336,13 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		int t = ast_type_t(a, n);
 		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
 			return 0;
-		if (!ast_eval_slice_intt(t) || is_float(t) || ast_eval_slice_is64(t))
+		if (!ast_eval_slice_intt(t) || is_float(t))
 			return 0;
 		int k;
 		if (!spv_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, c), &k))
 			return 0;
-		*out = spv_load_live(m, base, k);
+		*out = spv_load_live_v(m, base, k, ast_eval_slice_is64(t),
+													 (t & VT_UNSIGNED) != 0);
 		return 1;
 	}
 	case AST_Convert: {
@@ -1429,40 +2350,60 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		AstLocal c = ast_first_child(a, n);
 		if (c == AST_NONE || is_float(t) || is_float(ast_type_t(a, c)))
 			return 0;
-		if (ast_bad_type(t) || !ast_eval_slice_intt(t) || ast_eval_slice_is64(t))
+		if (ast_bad_type(t) || !ast_eval_slice_intt(t))
 			return 0;
-		uint32_t v;
+		SpvV v;
 		if (!spv_expr(m, a, c, off, nenv, base, &v))
 			return 0;
-		*out = spv_fit(m, v, t);
+		*out = spv_fit_v(m, v, t);
 		return 1;
 	}
 	case AST_Unary: {
 		int uop = ast_op(a, n);
 		int t = ast_eval_slice_wtype(a, n);
 		AstLocal c = ast_first_child(a, n);
-		if (c == AST_NONE || !t || ast_eval_slice_is64(t))
+		if (c == AST_NONE || !t)
 			return 0;
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
-		uint32_t v;
+		SpvV v;
 		if (!spv_expr(m, a, c, off, nenv, base, &v))
 			return 0;
+		int is64 = ast_eval_slice_is64(t);
+		int uns = (t & VT_UNSIGNED) != 0;
 		if (uop == '!') {
-			uint32_t z = spv_emit3(m, SpvOpIEqual, m->id_bool, v, spv_const(m, 0));
-			*out = spv_int_of_bool(m, z);
+			*out = spv_mk(spv_int_of_bool(m, spv_not(m, spv_bool_of_v(m, v))), 0, 0);
 			return 1;
 		}
 		if (uop == '~') {
-			*out = spv_fit(m, spv_emit2(m, SpvOpNot, m->id_int, v), t);
+			if (is64) {
+				spv_widen(m, &v);
+				*out = spv_mk(spv_u2(m, spv_emit2(m, SpvOpNot, m->id_uint,
+																					spv_lo(m, v.id)),
+														 spv_emit2(m, SpvOpNot, m->id_uint,
+																			 spv_hi(m, v.id))),
+											1, uns);
+			} else {
+				*out = spv_mk(
+						spv_fit(m, spv_emit2(m, SpvOpNot, m->id_int, spv_val_lo(m, v)), t),
+						0, uns);
+			}
 			return 1;
 		}
-		{
-			uint32_t z = spv_const(m, 0);
-			uint32_t r = spv_emit3(m, SpvOpISub, m->id_int, z, v);
-			if (!((t & VT_UNSIGNED) != 0))
-				spv_def_addsub(m, &m->def, 1, z, v, r);
+		if (is64) {
+			SpvV z = spv_const64(m, 0), r;
+			spv_widen(m, &v);
+			r = spv_sub64(m, z, v, uns);
+			if (!uns)
+				spv_def_addsub64(m, &m->def, 1, z, v, r);
 			*out = r;
+		} else {
+			uint32_t z = spv_const(m, 0);
+			uint32_t lo = spv_val_lo(m, v);
+			uint32_t r = spv_emit3(m, SpvOpISub, m->id_int, z, lo);
+			if (!uns)
+				spv_def_addsub(m, &m->def, 1, z, lo, r);
+			*out = spv_mk(r, 0, uns);
 		}
 		return 1;
 	}
@@ -1476,57 +2417,107 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		int xt = ast_eval_slice_wtype(a, x);
 		if (!xt || is_float(ast_type_t(a, x)) || is_float(ast_type_t(a, y)))
 			return 0;
-		if (ast_eval_slice_is64(xt))
-			return 0;
-		uint32_t lv, rv;
+		SpvV lv, rv;
 		if (!spv_expr(m, a, x, off, nenv, base, &lv))
 			return 0;
 		if (!spv_expr(m, a, y, off, nenv, base, &rv))
 			return 0;
 		int uns = (xt & VT_UNSIGNED) != 0;
+		int is64 = ast_eval_slice_is64(xt);
 		int is_cmp;
 		int code = spv_binop_code(bop, uns, &is_cmp);
 		if (is_cmp < 0)
 			return 0;
+		if (is_cmp && is64)
+			code = spv_binop_code(bop, 0, &is_cmp);
+		if (!is64) {
+			uint32_t l = spv_val_lo(m, lv), r = spv_val_lo(m, rv), res;
+			if (is_cmp) {
+				*out = spv_mk(spv_int_of_bool(m, spv_emit3(m, code, m->id_bool, l, r)),
+											0, 0);
+				return 1;
+			}
+			if (code == SpvOpUDiv || code == SpvOpUMod) {
+				uint32_t d = spv_guard_div(m, &m->def, 1, l, r);
+				*out = spv_mk(spv_unsigned_binop(m, code, l, d), 0, uns);
+				return 1;
+			}
+			if (code == SpvOpSRem) {
+				uint32_t d = spv_guard_div(m, &m->def, 0, l, r);
+				*out = spv_mk(spv_signed_rem(m, l, d), 0, uns);
+				return 1;
+			}
+			if (code == SpvOpSDiv) {
+				uint32_t d = spv_guard_div(m, &m->def, 0, l, r);
+				*out = spv_mk(spv_emit3(m, code, m->id_int, l, d), 0, uns);
+				return 1;
+			}
+			if (code == SpvOpShiftLeftLogical || code == SpvOpShiftRightLogical ||
+					code == SpvOpShiftRightArithmetic) {
+				uint32_t sh = spv_guard_shift(m, &m->def, r);
+				*out = spv_mk(spv_emit3(m, code, m->id_int, l, sh), 0, uns);
+				return 1;
+			}
+			res = spv_emit3(m, code, m->id_int, l, r);
+			if (!uns && code == SpvOpIAdd)
+				spv_def_addsub(m, &m->def, 0, l, r, res);
+			else if (!uns && code == SpvOpISub)
+				spv_def_addsub(m, &m->def, 1, l, r, res);
+			else if (!uns && code == SpvOpIMul)
+				spv_def_mul(m, &m->def, l, r, res);
+			*out = spv_mk(res, 0, uns);
+			return 1;
+		}
+		spv_widen(m, &lv);
+		spv_widen(m, &rv);
 		if (is_cmp) {
-			*out = spv_int_of_bool(m, spv_emit3(m, code, m->id_bool, lv, rv));
+			*out = spv_mk(spv_int_of_bool(m, spv_cmp64(m, code, lv, rv)), 0, 0);
 			return 1;
 		}
 		if (code == SpvOpUDiv || code == SpvOpUMod) {
-			uint32_t d = spv_guard_div(m, &m->def, 1, lv, rv);
-			*out = spv_unsigned_binop(m, code, lv, d);
+			SpvV d = spv_guard_div64(m, &m->def, 1, lv, rv);
+			SpvV q = spv_udiv64(m, lv, d, uns);
+			*out = code == SpvOpUMod ? spv_rem64(m, lv, d, q, uns) : q;
 			return 1;
 		}
-		if (code == SpvOpSRem) {
-			uint32_t d = spv_guard_div(m, &m->def, 0, lv, rv);
-			*out = spv_signed_rem(m, lv, d);
-			return 1;
-		}
-		if (code == SpvOpSDiv) {
-			uint32_t d = spv_guard_div(m, &m->def, 0, lv, rv);
-			*out = spv_emit3(m, code, m->id_int, lv, d);
+		if (code == SpvOpSDiv || code == SpvOpSRem) {
+			SpvV d = spv_guard_div64(m, &m->def, 0, lv, rv);
+			SpvV q = spv_sdiv64(m, lv, d, uns);
+			*out = code == SpvOpSRem ? spv_rem64(m, lv, d, q, uns) : q;
 			return 1;
 		}
 		if (code == SpvOpShiftLeftLogical || code == SpvOpShiftRightLogical ||
 				code == SpvOpShiftRightArithmetic) {
-			uint32_t sh = spv_guard_shift(m, &m->def, rv);
-			*out = spv_emit3(m, code, m->id_int, lv, sh);
+			uint32_t sh = spv_guard_shift64(m, &m->def, rv);
+			*out = spv_shift64(m, code, lv, sh, uns);
 			return 1;
 		}
-		*out = spv_emit3(m, code, m->id_int, lv, rv);
-		if (!uns && code == SpvOpIAdd)
-			spv_def_addsub(m, &m->def, 0, lv, rv, *out);
-		else if (!uns && code == SpvOpISub)
-			spv_def_addsub(m, &m->def, 1, lv, rv, *out);
-		else if (!uns && code == SpvOpIMul)
-			spv_def_mul(m, &m->def, lv, rv, *out);
+		if (code == SpvOpBitwiseAnd || code == SpvOpBitwiseOr ||
+				code == SpvOpBitwiseXor) {
+			*out = spv_bit64(m, code, lv, rv, uns);
+			return 1;
+		}
+		if (code == SpvOpIAdd) {
+			*out = spv_add64(m, lv, rv, uns);
+			if (!uns)
+				spv_def_addsub64(m, &m->def, 0, lv, rv, *out);
+			return 1;
+		}
+		if (code == SpvOpISub) {
+			*out = spv_sub64(m, lv, rv, uns);
+			if (!uns)
+				spv_def_addsub64(m, &m->def, 1, lv, rv, *out);
+			return 1;
+		}
+		*out = spv_mul64(m, lv, rv, uns);
+		if (!uns)
+			spv_def_mul64(m, &m->def, lv, rv, *out);
 		return 1;
 	}
 	case AST_If: {
 		if (ast_nchild(a, n) != 3)
 			return 0;
-		return spv_branch_pair(m, a, ast_child(a, n, 0), ast_child(a, n, 1),
-													 ast_child(a, n, 2), off, nenv, base, out);
+		return spv_branch_pair(m, a, n, off, nenv, base, out);
 	}
 	default:
 		return 0;
@@ -1571,7 +2562,8 @@ static void spv_module_free(SpvMod *m) {
 static int mcc_gpu_emit(AstArena *a, AstLocal root, const int32_t *off, int n,
 												MccGpuCode *c) {
 	MslMod m;
-	uint32_t base, val, lane;
+	uint32_t base;
+	MslV val;
 	char *src;
 	int nb = 0;
 	msl_module_begin(&m, n);
@@ -1580,8 +2572,7 @@ static int mcc_gpu_emit(AstArena *a, AstLocal root, const int32_t *off, int n,
 		msl_module_free(&m);
 		return 0;
 	}
-	lane = msl_lane(&m, base, n);
-	msl_main_end(&m, lane, val);
+	msl_main_end(&m, m.lane, val);
 	src = msl_module_finish(&m, &nb);
 	msl_module_free(&m);
 	if (nb > MCC_GPU_CODE_MAX) {
@@ -1598,7 +2589,8 @@ static int mcc_gpu_emit(AstArena *a, AstLocal root, const int32_t *off, int n,
 static int mcc_gpu_emit(AstArena *a, AstLocal root, const int32_t *off, int n,
 												MccGpuCode *c) {
 	SpvMod m;
-	uint32_t base, val, lane;
+	uint32_t base;
+	SpvV val;
 	uint32_t *code;
 	int nwords = 0;
 	spv_module_begin(&m, n);
@@ -1607,8 +2599,7 @@ static int mcc_gpu_emit(AstArena *a, AstLocal root, const int32_t *off, int n,
 		spv_module_free(&m);
 		return 0;
 	}
-	lane = spv_emit3(&m, SpvOpSDiv, m.id_int, base, spv_const(&m, n));
-	spv_main_end(&m, lane, val);
+	spv_main_end(&m, m.lane, val);
 	code = spv_module_finish(&m, &nwords);
 	spv_module_free(&m);
 	if (nwords > MCC_GPU_CODE_MAX) {

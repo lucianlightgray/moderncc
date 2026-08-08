@@ -3,7 +3,16 @@ file(WRITE "${BINDIR}/ladder_gpu_probe.c"
 "int g(int a, int b) { return (a * 3 + b) + (a & b); }\n"
 "int h(int a, int b) { return a / (b | 1) + a % (b | 1); }\n"
 "int k(int a, int b) { return (a < b) + (a == b) + (a > b); }\n"
-"int main(void) { return f(1,2) + g(3,4) + h(5,6) + k(7,8); }\n")
+"unsigned long long u(unsigned long long a, unsigned long long b)\n"
+"{ return (a * 0xAAAAAAAAAAAAAAABULL >> 1) + (b | 1) + (a < b); }\n"
+"long long s(long long a, long long b)\n"
+"{ long long d = b | 1; return ((a << 40) / d) + ((a << 37) % d) - (a * b); }\n"
+"long long c(long long a, long long b)\n"
+"{ long long x = a << 40, y = b << 33; return (x < y) + (x == y) + (x ^ y) + ~x + -y; }\n"
+"long long v(long long a, long long b)\n"
+"{ return (a << (b & 63)) ^ (a >> (b & 63)) ^ (b ? a / b : (int)a); }\n"
+"int main(void) { return f(1,2) + g(3,4) + h(5,6) + k(7,8) +\n"
+"                        (int)u(9,10) + (int)s(11,12) + (int)c(13,14) + (int)v(15,16); }\n")
 set(_srcs "${BINDIR}/ladder_gpu_probe.c")
 file(GLOB _more "${SRCDIR}/tests/exec/expressions/*.c")
 list(SORT _more)
