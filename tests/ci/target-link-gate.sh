@@ -16,6 +16,15 @@ inc="-I$root/src -I$root/include -I$root/src/formats -I$root/src/objfmt \
 
 command -v "$cc" >/dev/null 2>&1 || { echo "no cc"; exit 77; }
 
+objcgate=0
+if [ "$(uname -s)" = Darwin ] && command -v nm >/dev/null 2>&1; then
+  objcgate=1
+else
+  echo "skip objc-undef gate (not Darwin, or no nm)"
+fi
+
+objcpat='objc_|sel_registerName'
+
 fail=0
 for t in \
   "-DMCC_TARGET_X86_64=1" \
@@ -28,7 +37,13 @@ for t in \
   "-DMCC_TARGET_ARM=1"
 do
   if $cc -w -O0 -DMCC_CONFIG_OPTIMIZER=1 $t $inc -o "$work/m" "$root/src/mcc.c" -lm -ldl "$@" 2>"$work/err"; then
-    echo "ok   $t"
+    if [ "$objcgate" = 1 ] && nm -u "$work/m" 2>/dev/null | grep -Eq "$objcpat"; then
+      echo "FAIL $t  undefined Objective-C runtime symbols; src/mcc.c must not need -lobjc"
+      nm -u "$work/m" | grep -E "$objcpat" | sed 's/^/       /'
+      fail=1
+    else
+      echo "ok   $t"
+    fi
   else
     echo "FAIL $t"
     head -5 "$work/err"
