@@ -318,10 +318,35 @@ So D1b is buildable, but only with a **compiler-mandated ≥32 KB cache-thrashin
 | | question | options |
 | --- | --- | --- |
 | **E1** | Width order | **a.** ★ `int32` → `int64` → `float`/`double` → aggregates/bitfields → `long double`. Corroborated: FP is **0.02%** of mcc's op stream, so int64 is where the benchmark lives. **But the cost was understated** — 16 refusal sites, not 8, plus a SPIR-V type/ABI change |
-| **E2** | `int64` on the device | **a.** native only<br>**b.** ★ **emulated `uint2` pair everywhere for the first rung** — no capability query, no `I2` plumbing, works on both backends today unmodified, and matches the 32-bit buffer the ABI already has<br>**c.** ~~native-when-advertised + emulated fallback~~ — **premature**: four code paths (2 emitters × 2 strategies) to keep differentially green. Graduate to c only if H5 shows int64 arithmetic is hot |
+| **E2** | `int64` on the device — **IMPLEMENTED `989e4b3b`, E2b as planned** | **a.** native only<br>**b.** ★ **emulated `uint2` pair everywhere for the first rung** — no capability query, no `I2` plumbing, works on both backends today unmodified, and matches the 32-bit buffer the ABI already has<br>**c.** ~~native-when-advertised + emulated fallback~~ — **premature**: four code paths (2 emitters × 2 strategies) to keep differentially green. Graduate to c only if H5 shows int64 arithmetic is hot |
 | **E3** | Floating point | **a.** ★ pinned rounding, no fast-math, bit-exact; `long double` escapes — **and that escape costs ~0%** (see findings)<br>**b.** fast-math — rejected, but **for J1, not for `selfhost-fixpoint`**: that parenthetical in the draft was unsupported and is probably false |
 | **E4** | Aggregates, bitfields, unions, volatile | **a.** ★ all become **byte operations on the B1 buffer** — the bitfield `bp`/`bs` already on the node drive shift/mask; `volatile` forces a coherent access and disables caching |
 | **E5** | Inline `asm` | **a.** ★ always escapes and is counted honestly — **and it is free: the measured asm floor on the benchmark is 0%** (see findings). Say so, because the census names the blockers that *are* real |
+
+### Landed 2026-08-08
+
+- **E1 rung 2 (`int64`) is done, both backends, emulated pair.** ABI widened to 2 in /
+  3 out slots. `spvgate` 38 cases / 2.5M points / 0 mismatches; 889 real slices at
+  58.2M points; ladder parity 1767 dispatches on Metal *and* Vulkan. `MCC_GPU_CODE_MAX`
+  raised 8192 → 16384 words for SPIR-V (the udiv64 helper is a real `OpFunction` with a
+  structured `OpLoopMerge` loop, ~500 words, emitted unconditionally).
+- **J1 gained a real defect and lost it again.** The CPU reference evaluator compared
+  `TOK_LT/LE/GT/GE` signed regardless of signedness — sound at 32 bits, wrong at 64,
+  and reachable because the arena records the pre-`gen_op` token. 1,382,356 mismatching
+  points over the `gpu/spv-slice-real` corpus; 0 after `ee1fa9e0`. Emitted code is
+  unchanged, so it was latent. **The lesson for G2: the synthetic suite could not see
+  this — only real arenas discriminated.** A hand-written matrix is necessary and not
+  sufficient; G4's harvested-arena stage is what caught it.
+- **F5 is closed and its payoff was zero.** All three dropped opcodes are now modelled
+  and the emitted object is byte-identical. The reconcile/stamp machinery already
+  reconstructed their effect. `IR_OP_LOAD` is provably not unblockable.
+- **I1 gained teeth and reach.** `MCC_GPU_REQUIRED` is on for the CI `gpu-vulkan` cell,
+  and a MoltenVK fallback in `CMakeLists.txt` means Darwin now registers all four
+  `gpu/*` cells instead of one.
+- **Still open, and now the clearest gap in the ladder's evidence:** Metal has no
+  per-value differential. `spvgate` gates SPIR-V bit-exactly; `gpu/ladder-gpu-parity`
+  gates Metal only at verdict level. Make `tools/spvgate.c` dual-backend rather than
+  forking it — only ~117 of its 1244 lines are Vulkan-specific.
 
 ### Findings — types, ops, and the opcode gap
 

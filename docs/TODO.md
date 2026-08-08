@@ -1385,7 +1385,38 @@ named, tested, tunable element rather than an implementation detail.
    — 27% of static nodes — carry **97% of dynamic weight**. Any static-only percentage
    is half-vacuous without this.
 
-2. **int64 in the emitters, as a `uint2` pair.** 16 refusal sites (7 MSL, 7 SPIR-V, 2 in
+2. ~~**int64 in the emitters, as a `uint2` pair.**~~ **DONE — `989e4b3b`.** Both
+   emitters handle 64-bit as an emulated pair; ABI widened to `MCC_GPU_IN_SLOTS 2` /
+   `MCC_GPU_OUT_SLOTS 3`. `spvgate` went 18 cases / 1.18M points → **38 cases /
+   2,500,856 points**, plus 889 real slices at 58.2M points, ladder parity at 1767
+   dispatches on both backends, and the `930921-1.c` shape from 0 dispatches to 11.
+   `MCC_GPU_CODE_MAX` 8192 → 16384 words (SPIR-V only) for the ~500-word udiv64
+   helper. No refusal was added anywhere.
+
+   **It also exposed a latent bug in the reference evaluator, fixed in `ee1fa9e0`.**
+   `ast_eval_binop` compared `TOK_LT/LE/GT/GE` as signed regardless of operand
+   signedness. Invisible at 32 bits (narrowing makes signed and unsigned agree),
+   divergent at 64. Reachable because `gen_op` rewrites `TOK_GE`→`TOK_UGE` at
+   `src/mccgen.c:4455` but **the arena records the pre-rewrite token** — `unsigned
+   long long a >= b` and `long long a >= b` both come back as op `0x9d`. Measured with
+   the emitters unsigned-aware and the evaluator left signed: **1,382,356 mismatches
+   over 42.2M points**; 0 with both fixed. Latent, not an active miscompile —
+   compilers with and without the fix emit byte-identical objects for `src/mcc.c` at
+   `-O0`/`-O2`/`-O3`. The oracle certifies slice equivalence, so a wrong verdict is a
+   licence to rewrite incorrectly; it just had not been cashed in. **Note the
+   synthetic suite showed 0 mismatches either way — only real arenas discriminate.**
+
+2b. **OPEN: the MSL emitter has no per-value differential in-tree.** SPIR-V has
+   `spvgate` (38 cases, bit-exact per point); Metal has only `gpu/ladder-gpu-parity`,
+   which compares *verdicts*. The int64 MSL half was verified with a scratch harness
+   that is not checked in, so today Metal's arithmetic is gated only by "the two
+   oracles reached the same conclusion", not "every lane produced the same bits".
+   The fix is **not** to check in the 879-line near-duplicate: make `tools/spvgate.c`
+   itself dual-backend (only ~117 of its 1244 lines are Vulkan-specific) and add a
+   second CMake target from the same source, mirroring how `src/mccgpu.h` already
+   selects emitters from one file.
+
+2c. ~~int64 site list~~ — superseded by the above. 16 refusal sites (7 MSL, 7 SPIR-V, 2 in
    the ladder hook), *not* the eight previously recorded. The CPU evaluator already
    handles int64, so this is emitter-and-ABI work only: the SPIR-V module declares just
    `SpvCapShader` and the storage buffer is a runtime array of 32-bit ints with
@@ -1406,7 +1437,26 @@ named, tested, tunable element rather than an implementation detail.
    and is guarded by five green cells. It should land as its own series with the
    differential harness extended first, not folded into an unrelated batch.
 
-3. **The four RIR opcodes that actually fire.** Add a **per-opcode histogram** at
+3. ~~**The four RIR opcodes that actually fire.**~~ **DONE — `5cffb874` (histogram)
+   and `8da21c5e` (handlers).** The histogram is now empty. Output is bit-for-bit
+   unchanged: the `src/mcc.c` object is byte-identical across 3,685,254 bytes.
+
+   **The honest result is that the payoff is zero, not small.** These opcodes are
+   information-free with respect to the arena — the reconcile/stamp machinery already
+   reconstructs their effect from the captured vstack, which is exactly what the 95.6%
+   figure in the audit corrections was measuring. What it bought: a clean histogram so
+   any *future* dropped opcode is visible, **3607 corrected stale pointer types**
+   (`rir_stamp_sv`'s retype loop bails on `VT_PTR`), a closed provenance hazard, and
+   two checked invariants. If the board expected coverage here, it will not come from
+   here — the 254,424 lost bytes are 88 bodies failing on replay *length*.
+
+   **`IR_OP_LOAD` cannot be unblocked, established two ways.** It wraps the backend
+   `load(r, sv)` (register materialization); the AST-level dereference is already
+   modelled by the `RIR_M_LOAD` mark. And the `continue` at `src/mccrir.c:4678` is not
+   LOAD-specific — removing it runs `rir_reconcile` mid-region and truncates the
+   shadow stack: **used 2657 → 1833, 882 bodies mismatching, kept 84.3% → 34.2%.**
+
+3b. ~~original item 3 text~~ — superseded. Add a **per-opcode histogram** at
    `src/mccrir.c:3264`, excluding `JMP`/`JMPCOND`/`JMPADDR`/`JMPAPPEND`/`GSYMADDR`
    (which are handled in other switches and are 68% of that arm's traffic). Then handle
    `RETVAL`, `MKPTR`, `VPUSHSYM`, and unblock `LOAD` from the `continue` at
