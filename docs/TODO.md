@@ -6,6 +6,136 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## The board — next big wins, ranked by measured payoff, 2026-08-08
+
+Supersedes the "Next, in order" list further down this file, which is stale in three ways:
+its item 0 is decided, its item 1 is now measured and is *not* one item, and its item 3
+names statement-`If` and loops as future work when both shipped on 2026-08-08.
+
+**Read this first.** Two different "block" units are in play and the older sections mix
+them freely:
+
+| corpus | unit | size | which claims use it |
+| --- | --- | ---: | --- |
+| `tests/exec`, 60 files @ `-O1` | non-empty `AST_BasicBlock` | **947** | +19 (`arr[i]`), 319 eligible, the 143-destination census, 987 stores |
+| the compiler's own 15 sources | `AST_Invoke`-blocked block | **16,537** | +168 (`snprintf`), 734 libc ceiling, 12,901 (D4b) |
+
+`docs/DEVICE-LIBC.md` is explicit that `tests/exec` must not be used for the libc phase —
+`printf` alone is 35% of its Invoke nodes, its libc ceiling is 3 blocks against the
+compiler's 734, **and the two disagree by 47×**. So **+168 and +19 are not comparable**,
+and any ranking that puts them in one column is wrong. Fixing this is a prerequisite for
+trusting rows 2 and 3 below, not an afterthought.
+
+### 1. `*p` and pointer `++`/`--` — one item, not two
+
+Binding 2 now reaches the device, the region layer is parameterised, and sub-word
+atomicity is decided, so the emitter side is ready. What is not ready is the meaning of a
+pointer *value*: a frame slot holds a host address, and binding 2 addresses are byte
+offsets. Measured on the 440-block musl/string corpus:
+
+| | count |
+| --- | ---: |
+| `*p` loads refused (`Load(Ref[LOCAL\|LVAL])`, all with Load type 0) | 159 |
+| `*p = v` stores refused | 21 |
+| pointer `++`/`--` refused | 169 |
+| blocks containing a `*p` | 63 of 440 |
+| **of those, blocks that also contain a pointer `++`/`--`** | **41** |
+| **upper bound on what `*p` alone can add** | **22 blocks** |
+| `memcmp`/`strcmp`/`strncmp`/`memchr` frame runs it would unblock | **0** |
+
+Doing `*p` without pointer arithmetic buys 22 blocks and none of the named functions.
+**The decision to take first is the pointer-value question**, and there are two candidates:
+mirror host allocations into binding 2 so a host address has a stable offset, or lower
+only pointers that originate in binding 2 and refuse the rest. Seeding frame slots with
+synthetic values and calling them offsets is not a third option — both executors would
+agree while nothing runnable lowers, which moves `frame-compared` without moving work.
+
+### 2. `snprintf` via the `(tag, value)` array — +168 blocks, compiler corpus
+
+Ranked #2 by marginal gain on the corpus that matters. The varargs objection is retired
+(a variadic call in the arena is children with static types; `va_list` and the register
+save area are host codegen below the AST) and 64-bit division already exists and is
+verified at full width by `slice/wide64`. **The `%` engine is the only remaining work**,
+and it is self-contained and testable on its own. Note the split that makes this worth
+more than its 0.7% Invoke share suggests: `printf`'s return is discarded at 80/80 compiler
+and 452/452 `tests/exec` sites, so the formatting half is device work and only byte
+emission is a host post.
+
+### 3. D4b — internal calls on the device — 12,901 blocks, 78.01%
+
+Numerically this dominates every other row on the board and it is not on the old list at
+all. It needs the call boundary rather than an emitter change. **Hard precondition:** the
+CPU reference has **no `AST_Invoke` case at all** — confirmed zero occurrences in
+`ast_eval_slice.h` and `mccslice.h` — so a differential over any invoke-bearing arena is
+*vacuous, not merely weak*. The reference must land in the same commit as the first
+emitter, or the first green run will prove nothing.
+
+### 4. S5′ — the iteration distribution, still unmeasured
+
+`docs/PLAN.md` calls this "the single measurement that decides whether the project has a
+subject", and it still has not been taken. It must be **dynamic**: no function in this
+tree computes a static trip count, and `ast_loopdep` has no `ast_loop_parallel_legal`
+(~30 lines from the existing direction-vector machinery). Wanted: a per-loop trip
+histogram over a self-compile, in the manner of `MCC_SLICE_CENSUS`. The bar it must clear,
+after the marshalling work below:
+
+| nodes | 3 | 7 | 15 | 31 | 63 | 127 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| break-even lanes | **322** | **108** | **48** | 24 | 23 | 8 |
+
+Only **4.3%** of census slices contain a loop at all, which is why this is the binding
+half rather than eligibility.
+
+### 5. The fence wait is the remaining device-side cost
+
+Host marshalling is now 5.73 ns/lane debug, 3.03 release, out of a 33.7 ns/lane total —
+it is no longer where the time is. `vkWaitForFences` is, and it is memory-type sensitive:
+**all-VRAM 1.0–20.2 ns/lane against all-sysmem 16–110**. `DEVICE_LOCAL` buffers plus a
+staging buffer and `vkCmdCopyBuffer` would get both halves. **Not measured, no payoff
+estimated** — no staging path exists and it collides with `mcc_gpu_rw_back`'s read-back.
+
+### Deprioritised, each with the measurement that says so
+
+- **`AST_StoreVal`** — 971 nodes (3.0%) but it is a vstack-ordering marker referencing its
+  `AST_Store` by `ival`, so it is subsumed by whatever handles that store. ~0 standalone.
+- **`AST_If` op 8 / op 9 / `.field`-`&` store destinations** — all three measured at **+0**
+  against the real predicate, not a model. Zero-payoff results 6, 7 and 8.
+- **`switch` (op 6)** — 7 nodes in 8 already-blocked blocks, a 0.84% ceiling.
+- **N14 per-lane globals** — re-scoped: it applies to running mcc itself on the device
+  (cluster B), and the emitter path carries no C globals. Not on the critical path.
+- **The allocator** — +50 blocks, 0.30%. "The worst value-per-risk item in the census."
+
+### Debts that will corrupt the next measurement if left
+
+1. **`--mutate` is blind to `memcpy`.** It perturbs the returned value, and `memcpy`
+   discards its return at 462/462 sites, `memset` at 343/343. The operator must move to
+   the written memory, and the harness needs a frame-buffer comparison mode. This is
+   larger than the emitter work it guards.
+2. **`ast_eval_slice()` sets `ast_eval_slice_undef` but neither resets nor returns it.**
+   Only `mcc_slice_frame_exec_cpu2` reads it. Every other caller is safe today purely
+   because `kind_ok` refuses all Loads on the expression path — so the next caller to
+   relax that inherits a silent wrong answer. Found by `spvgate`, handled there, not in
+   the shared header.
+3. **`mcc_vk_bind_mem` recreates `bmem` on growth without rewriting the descriptor set**,
+   and `mcc_vk_bind_buffers` only writes descriptors when `grew`. Unreachable today, and
+   growing binding 2 is the first thing a heap needs.
+4. **The Metal arm diverges further with every landing.** `mcc_slice_frame_kernel_build`
+   returns 0, there is no region layer, and `msl_expr` has no `dynidx` arm. Declared, not
+   silent — but the gap is now most of the feature set.
+5. **`MCC_GPU_REQUIRED` appears nowhere under `.github/`.** Every Linux and Windows ctest
+   job runs with it `OFF`, so all device cells go green-via-skip without an ICD, and
+   `must-run.py --results` cannot catch it because every device cell is `registered`
+   rather than `must-run`. One flag on a runner with a guaranteed ICD.
+6. **The lowerable ratchet is measuring noise.** It failed by 0.0001 points on a baseline
+   margin of 0.0017. It will fire on the next commit to touch the device layer whatever
+   that commit does, because `src/mcc.c` amalgamates the device layer and is the census
+   subject. Either widen the tolerance deliberately or measure something else.
+7. **A full ctest run under the `debug` preset skips 464 cells** — 147 arm64, 39 riscv,
+   29 win32, 19 cross, 18 i386, 8 qemu — because the arch cells look for a `cmake-cross`
+   build dir. `qemu-aarch64`/`qemu-riscv64`/`qemu-arm`/`wine`/`docker` are all present on
+   this host, and `cmake-cross` is now built, so only the `macho`/Darwin cells should
+   legitimately skip here. **"0 failed" under `debug` alone is not a clean run.**
+
 ## Landed — `cli/perfn_inproc` is green, and the pass was never inert, 2026-08-08
 
 The cell asserted `DIFFER` and got `SAME` across at least six probed commits. Two readings
@@ -1410,7 +1540,11 @@ Ref's type, both emitters not narrowing live-ins below 32 bits, the Vulkan
 pending-command-buffer use-after-free, the worst-memory-type selection, two dead memsets,
 `spvgate` reporting OK for a case that lowered nothing, and an ASLR-varying arena dump.
 
-### Next, in order
+### Next, in order — SUPERSEDED 2026-08-08, see "The board" at the top of this file
+
+Kept for the record. Item 0 is decided; item 1 is measured and turns out to be two
+co-requisite items, not one; item 3 names statement-`If` and loops as future work when
+both shipped the same day this was written.
 
 0. ~~**The sub-word atomicity decision, before the allocator exists.**~~ **Decided**
    2026-08-08 — the allocator never co-locates two lanes' sub-word objects in one word.
