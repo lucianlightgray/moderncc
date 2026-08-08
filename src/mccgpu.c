@@ -58,10 +58,37 @@ static void *mcc_objc_msgSend;
 #define MCC_MTL_UTF8 4
 #define MCC_MTL_CACHE_MAX 64
 #define MCC_MTL_CB_COMPLETED 4
+#define MCC_MTL_ERR_ENCODER_STATUS 1
+#define MCC_MTL_ENC_FAULTED 4
+#define MCC_MTL_MIN_BUFFER (64UL * 1024 * 1024)
+#define MCC_MTL_MATH_SAFE 0
+
+enum {
+	MCC_MTL_FAULT_NONE,
+	MCC_MTL_FAULT_WATCHDOG,
+	MCC_MTL_FAULT_HANG,
+	MCC_MTL_FAULT_PAGEFAULT,
+	MCC_MTL_FAULT_INNOCENT,
+	MCC_MTL_FAULT_TIMEOUT,
+	MCC_MTL_FAULT_OOM,
+	MCC_MTL_FAULT_DEVICE_LOST,
+	MCC_MTL_FAULT_OVER_LIMIT,
+	MCC_MTL_FAULT_ENCODE,
+	MCC_MTL_FAULT_UNCLASSIFIED,
+	MCC_MTL_FAULT_N
+};
+
+static const char *const mcc_mtl_fault_names[MCC_MTL_FAULT_N] = {
+		"none",					 "watchdog",			"hang",					"page-fault",
+		"innocent-victim", "timeout",				"out-of-memory", "device-lost",
+		"over-limit",			 "encode-failed", "unclassified"};
 
 typedef id (*MccMtlCreateDeviceFn)(void);
+typedef id (*MccMtlCopyDevicesFn)(void);
 
 static MccMtlCreateDeviceFn mcc_mtl_create_device;
+static MccMtlCopyDevicesFn mcc_mtl_copy_devices;
+static id *mcc_mtl_encinfo_key;
 static int mcc_mtl_tried;
 static int mcc_mtl_ok;
 
@@ -82,9 +109,17 @@ typedef struct MccGpu {
 	int ok;
 	id dev;
 	id queue;
+	id cbdesc;
+	id copts;
 	char name[256];
+	unsigned long maxbuf;
+	unsigned long maxthreads;
 	long dispatches;
 	long lanes;
+	int fault;
+	int fault_encoder;
+	long fault_code;
+	long faults[MCC_MTL_FAULT_N];
 } MccGpu;
 
 typedef struct MtlPipe {
@@ -130,6 +165,24 @@ static const char *mtl_utf8(id s) {
 
 static int mtl_diag(void) { return getenv("MCC_AST_EVAL_LADDER_GPU_DIAG") != 0; }
 
+static int mtl_responds(id r, const char *sel) {
+	return ((signed char (*)(id, SEL, SEL))objc_msgSend)(
+						 r, sel_registerName("respondsToSelector:"), sel_registerName(sel)) !=
+				 0;
+}
+
+static unsigned long mtl_ulong(id r, const char *sel, unsigned long dflt) {
+	if (!r || !mtl_responds(r, sel))
+		return dflt;
+	return ((unsigned long (*)(id, SEL))objc_msgSend)(r, sel_registerName(sel));
+}
+
+static int mtl_bool(id r, const char *sel, int dflt) {
+	if (!r || !mtl_responds(r, sel))
+		return dflt;
+	return ((signed char (*)(id, SEL))objc_msgSend)(r, sel_registerName(sel)) != 0;
+}
+
 static void *mtl_dlopen_any(const char *const *names) {
 	void *h = NULL;
 	int i;
@@ -160,6 +213,9 @@ static int mcc_mtl_load(void) {
 			fprintf(stderr, "[ladder-gpu] missing symbol MTLCreateSystemDefaultDevice\n");
 		return 0;
 	}
+	mcc_mtl_copy_devices = (MccMtlCopyDevicesFn)host_dlsym(h, "MTLCopyAllDevices");
+	mcc_mtl_encinfo_key =
+			(id *)host_dlsym(h, "MTLCommandBufferEncoderInfoErrorKey");
 	mcc_objc_getClass = (MccObjcGetClassFn)host_dlsym_process("objc_getClass");
 	mcc_sel_registerName = (MccObjcSelFn)host_dlsym_process("sel_registerName");
 	mcc_objc_msgSend = host_dlsym_process("objc_msgSend");
@@ -201,8 +257,160 @@ static void mtl_report_err(const char *what, id err) {
 					err ? mtl_utf8(mtl_send(err, "localizedDescription")) : "(no error)");
 }
 
+static int mtl_classify(const char *d, long code) {
+	if (d) {
+		if (strstr(d, "InnocentVictim"))
+			return MCC_MTL_FAULT_INNOCENT;
+		if (strstr(d, "PageFault"))
+			return MCC_MTL_FAULT_PAGEFAULT;
+		if (strstr(d, "ImpactingInteractivity"))
+			return MCC_MTL_FAULT_WATCHDOG;
+		if (strstr(d, "Hang"))
+			return MCC_MTL_FAULT_HANG;
+		if (strstr(d, "Timeout"))
+			return MCC_MTL_FAULT_TIMEOUT;
+		if (strstr(d, "OutOfMemory"))
+			return MCC_MTL_FAULT_OOM;
+	}
+	switch (code) {
+	case 2:
+		return MCC_MTL_FAULT_TIMEOUT;
+	case 3:
+		return MCC_MTL_FAULT_PAGEFAULT;
+	case 4:
+	case 11:
+		return MCC_MTL_FAULT_DEVICE_LOST;
+	case 8:
+		return MCC_MTL_FAULT_OOM;
+	}
+	return MCC_MTL_FAULT_UNCLASSIFIED;
+}
+
+static int mtl_encoder_state(id err) {
+	id ui, arr, e;
+	unsigned long n, i;
+	int worst = 0;
+
+	if (!err || !mcc_mtl_encinfo_key || !*mcc_mtl_encinfo_key)
+		return 0;
+	ui = mtl_send(err, "userInfo");
+	if (!ui)
+		return 0;
+	arr = ((id (*)(id, SEL, id))objc_msgSend)(ui, sel_registerName("objectForKey:"),
+																						*mcc_mtl_encinfo_key);
+	if (!arr)
+		return 0;
+	n = ((unsigned long (*)(id, SEL))objc_msgSend)(arr, sel_registerName("count"));
+	for (i = 0; i < n; i++) {
+		int st;
+		e = ((id (*)(id, SEL, unsigned long))objc_msgSend)(
+				arr, sel_registerName("objectAtIndex:"), i);
+		st = (int)((long (*)(id, SEL))objc_msgSend)(e, sel_registerName("errorState"));
+		if (st > worst)
+			worst = st;
+	}
+	return worst;
+}
+
+static void mtl_fault(int cls, const char *what, id err) {
+	const char *d = err ? mtl_utf8(mtl_send(err, "localizedDescription")) : NULL;
+	long code =
+			err ? ((long (*)(id, SEL))objc_msgSend)(err, sel_registerName("code")) : 0;
+
+	if (cls < 0)
+		cls = mtl_classify(d, code);
+	mcc_gpu.fault = cls;
+	mcc_gpu.fault_code = code;
+	mcc_gpu.fault_encoder = mtl_encoder_state(err);
+	mcc_gpu.faults[cls]++;
+	fprintf(stderr,
+					"[ladder-gpu] device-fault class=%s at=%s code=%ld encoder-state=%d "
+					"ours=%d count=%ld\n",
+					mcc_mtl_fault_names[cls], what, code, mcc_gpu.fault_encoder,
+					mcc_gpu.fault_encoder == MCC_MTL_ENC_FAULTED, mcc_gpu.faults[cls]);
+	if (mtl_diag())
+		fprintf(stderr, "[ladder-gpu] %s failed: %s\n", what, d ? d : "(no error)");
+}
+
+int mcc_gpu_fault(const char **name, int *encoder_state, long *code) {
+	if (name)
+		*name = mcc_mtl_fault_names[mcc_gpu.fault];
+	if (encoder_state)
+		*encoder_state = mcc_gpu.fault_encoder;
+	if (code)
+		*code = mcc_gpu.fault_code;
+	return mcc_gpu.fault;
+}
+
+long mcc_gpu_fault_count(int cls) {
+	return (cls >= 0 && cls < MCC_MTL_FAULT_N) ? mcc_gpu.faults[cls] : 0;
+}
+
+static long mtl_score(id d) {
+	long s = 0;
+	if (mtl_bool(d, "hasUnifiedMemory", 0))
+		s += 8;
+	if (!mtl_bool(d, "isLowPower", 0))
+		s += 4;
+	if (mtl_bool(d, "isHeadless", 0))
+		s += 2;
+	if (!mtl_bool(d, "isRemovable", 0))
+		s += 1;
+	return s;
+}
+
+static id mtl_pick_device(void) {
+	long want = mcc_env_num("MCC_GPU_DEVICE", 0), bestsc = -1;
+	unsigned long n, i, bestbuf = 0;
+	id arr, best = 0;
+
+	arr = mcc_mtl_copy_devices ? mcc_mtl_copy_devices() : 0;
+	if (!arr) {
+		if (want)
+			fprintf(stderr, "[ladder-gpu] MCC_GPU_DEVICE=%ld but MTLCopyAllDevices is "
+											"unavailable\n",
+							want);
+		return want ? 0 : mcc_mtl_create_device();
+	}
+	n = ((unsigned long (*)(id, SEL))objc_msgSend)(arr, sel_registerName("count"));
+	if (!n && !want) {
+		mtl_release(arr);
+		return mcc_mtl_create_device();
+	}
+	for (i = 0; i < n; i++) {
+		id d = ((id (*)(id, SEL, unsigned long))objc_msgSend)(
+				arr, sel_registerName("objectAtIndex:"), i);
+		unsigned long mb = mtl_ulong(d, "maxBufferLength", 0);
+		long sc = mtl_score(d);
+		if (mtl_diag())
+			fprintf(stderr,
+							"[ladder-gpu] device %lu/%lu %s maxBufferLength=%lu score=%ld\n",
+							i + 1, n, mtl_utf8(mtl_send(d, "name")), mb, sc);
+		if (want) {
+			if ((unsigned long)want == i + 1)
+				best = d;
+			continue;
+		}
+		if (sc > bestsc || (sc == bestsc && mb > bestbuf)) {
+			best = d;
+			bestsc = sc;
+			bestbuf = mb;
+		}
+	}
+	if (want && !best)
+		fprintf(stderr,
+						"[ladder-gpu] MCC_GPU_DEVICE=%ld out of range, %lu device(s) "
+						"present (1-based)\n",
+						want, n);
+	if (best)
+		mtl_send(best, "retain");
+	mtl_release(arr);
+	return best;
+}
+
 static int mcc_gpu_init(void) {
-	id pool, nm;
+	id pool, cls;
+	MtlSize mt;
 
 	if (mcc_gpu_closing)
 		return 0;
@@ -213,10 +421,30 @@ static int mcc_gpu_init(void) {
 		return 0;
 	pool = mtl_send(mtl_send((id)objc_getClass("NSAutoreleasePool"), "alloc"),
 									"init");
-	mcc_gpu.dev = mcc_mtl_create_device();
+	mcc_gpu.dev = mtl_pick_device();
 	if (!mcc_gpu.dev) {
 		if (mtl_diag())
-			fprintf(stderr, "[ladder-gpu] MTLCreateSystemDefaultDevice returned nil\n");
+			fprintf(stderr, "[ladder-gpu] no Metal device selected\n");
+		mtl_send_v(pool, "drain");
+		return 0;
+	}
+	snprintf(mcc_gpu.name, sizeof mcc_gpu.name, "%s",
+					 mtl_utf8(mtl_send(mcc_gpu.dev, "name")));
+	mcc_gpu.maxbuf = mtl_ulong(mcc_gpu.dev, "maxBufferLength", 0);
+	mt.w = 0;
+	if (mtl_responds(mcc_gpu.dev, "maxThreadsPerThreadgroup"))
+		mt = ((MtlSize(*)(id, SEL))objc_msgSend)(
+				mcc_gpu.dev, sel_registerName("maxThreadsPerThreadgroup"));
+	mcc_gpu.maxthreads = mt.w;
+	if (mcc_gpu.maxbuf < MCC_MTL_MIN_BUFFER ||
+			mcc_gpu.maxthreads < MCC_GPU_LOCAL_SIZE) {
+		fprintf(stderr,
+						"[ladder-gpu] refusing device %s: maxBufferLength=%lu (need %lu) "
+						"maxThreadsPerThreadgroup=%lu (need %d)\n",
+						mcc_gpu.name, mcc_gpu.maxbuf, MCC_MTL_MIN_BUFFER, mcc_gpu.maxthreads,
+						MCC_GPU_LOCAL_SIZE);
+		mtl_release(mcc_gpu.dev);
+		mcc_gpu.dev = 0;
 		mtl_send_v(pool, "drain");
 		return 0;
 	}
@@ -229,10 +457,42 @@ static int mcc_gpu_init(void) {
 		mtl_send_v(pool, "drain");
 		return 0;
 	}
-	nm = mtl_send(mcc_gpu.dev, "name");
-	snprintf(mcc_gpu.name, sizeof mcc_gpu.name, "%s", mtl_utf8(nm));
+	cls = (id)objc_getClass("MTLCommandBufferDescriptor");
+	if (cls)
+		mcc_gpu.cbdesc = mtl_send(mtl_send(cls, "alloc"), "init");
+	if (mcc_gpu.cbdesc)
+		((void (*)(id, SEL, unsigned long))objc_msgSend)(
+				mcc_gpu.cbdesc, sel_registerName("setErrorOptions:"),
+				MCC_MTL_ERR_ENCODER_STATUS);
+	cls = (id)objc_getClass("MTLCompileOptions");
+	if (cls)
+		mcc_gpu.copts = mtl_send(mtl_send(cls, "alloc"), "init");
+	if (mcc_gpu.copts) {
+		if (mtl_responds(mcc_gpu.copts, "setMathMode:"))
+			((void (*)(id, SEL, long))objc_msgSend)(
+					mcc_gpu.copts, sel_registerName("setMathMode:"), MCC_MTL_MATH_SAFE);
+		else if (mtl_responds(mcc_gpu.copts, "setFastMathEnabled:"))
+			((void (*)(id, SEL, signed char))objc_msgSend)(
+					mcc_gpu.copts, sel_registerName("setFastMathEnabled:"), 0);
+		else {
+			mtl_release(mcc_gpu.copts);
+			mcc_gpu.copts = 0;
+		}
+	}
+	if (!mcc_gpu.copts) {
+		fprintf(stderr, "[ladder-gpu] refusing device %s: cannot disable fast math\n",
+						mcc_gpu.name);
+		mtl_release(mcc_gpu.dev);
+		mcc_gpu.dev = 0;
+		mtl_send_v(pool, "drain");
+		return 0;
+	}
 	if (mtl_diag())
-		fprintf(stderr, "[ladder-gpu] init ok dev=%s\n", mcc_gpu.name);
+		fprintf(stderr,
+						"[ladder-gpu] init ok dev=%s maxBufferLength=%lu "
+						"maxThreadsPerThreadgroup=%lu encoder-status=%d\n",
+						mcc_gpu.name, mcc_gpu.maxbuf, mcc_gpu.maxthreads,
+						mcc_gpu.cbdesc != 0);
 	mtl_send_v(pool, "drain");
 	mcc_gpu.ok = 1;
 	return 1;
@@ -272,7 +532,7 @@ static id mtl_pipeline(const char *src, int len) {
 		return 0;
 	lib = ((id (*)(id, SEL, id, id, id *))objc_msgSend)(
 			mcc_gpu.dev, sel_registerName("newLibraryWithSource:options:error:"), str,
-			(id)0, &err);
+			mcc_gpu.copts, &err);
 	mtl_release(str);
 	if (!lib) {
 		mtl_report_err("newLibraryWithSource", err);
@@ -295,6 +555,16 @@ static id mtl_pipeline(const char *src, int len) {
 	mtl_release(lib);
 	if (!pso) {
 		mtl_report_err("newComputePipelineStateWithFunction", err);
+		return 0;
+	}
+	if (mtl_ulong(pso, "maxTotalThreadsPerThreadgroup", MCC_GPU_LOCAL_SIZE) <
+			MCC_GPU_LOCAL_SIZE) {
+		fprintf(stderr,
+						"[ladder-gpu] refusing pipeline: maxTotalThreadsPerThreadgroup=%lu "
+						"below the %d this layer dispatches\n",
+						mtl_ulong(pso, "maxTotalThreadsPerThreadgroup", 0),
+						MCC_GPU_LOCAL_SIZE);
+		mtl_release(pso);
 		return 0;
 	}
 	if (mcc_mtl_cache_n < MCC_MTL_CACHE_MAX) {
@@ -331,31 +601,41 @@ static int mcc_gpu_dispatch_locked(const char *src, int len, const int32_t *in,
 	void *pin, *pout;
 	MtlSize grid, tg;
 	int cap = ((ntuple + MCC_GPU_LOCAL_SIZE - 1) / MCC_GPU_LOCAL_SIZE) * MCC_GPU_LOCAL_SIZE;
+	unsigned long inlen = (unsigned long)cap * nlive * MCC_GPU_IN_SLOTS * 4;
+	unsigned long outlen = (unsigned long)cap * MCC_GPU_OUT_SLOTS * 4;
 	int rc = 0;
 
 	if (!mcc_gpu_init())
 		return 0;
+	if (inlen > mcc_gpu.maxbuf || outlen > mcc_gpu.maxbuf) {
+		mtl_fault(MCC_MTL_FAULT_OVER_LIMIT, "newBufferWithLength", 0);
+		return 0;
+	}
 	pool = mtl_send(mtl_send((id)objc_getClass("NSAutoreleasePool"), "alloc"),
 									"init");
 	pso = mtl_pipeline(src, len);
 	if (!pso)
 		goto done;
-	bin = mtl_buffer((unsigned long)cap * nlive * MCC_GPU_IN_SLOTS * 4, &pin);
+	bin = mtl_buffer(inlen, &pin);
 	if (!bin)
 		goto done;
-	bout = mtl_buffer((unsigned long)cap * MCC_GPU_OUT_SLOTS * 4, &pout);
+	bout = mtl_buffer(outlen, &pout);
 	if (!bout) {
 		mtl_release(bin);
 		goto done;
 	}
-	memset(pin, 0, (size_t)cap * nlive * MCC_GPU_IN_SLOTS * 4);
+	memset(pin, 0, (size_t)inlen);
 	memcpy(pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
-	memset(pout, 0, (size_t)cap * MCC_GPU_OUT_SLOTS * 4);
+	memset(pout, 0, (size_t)outlen);
 
-	cb = mtl_send(mcc_gpu.queue, "commandBuffer");
+	cb = mcc_gpu.cbdesc
+					 ? ((id (*)(id, SEL, id))objc_msgSend)(
+								 mcc_gpu.queue, sel_registerName("commandBufferWithDescriptor:"),
+								 mcc_gpu.cbdesc)
+					 : mtl_send(mcc_gpu.queue, "commandBuffer");
 	enc = cb ? mtl_send(cb, "computeCommandEncoder") : 0;
 	if (!enc) {
-		mtl_report_err("computeCommandEncoder", 0);
+		mtl_fault(MCC_MTL_FAULT_ENCODE, "computeCommandEncoder", 0);
 		mtl_release(bin);
 		mtl_release(bout);
 		goto done;
@@ -380,11 +660,12 @@ static int mcc_gpu_dispatch_locked(const char *src, int len, const int32_t *in,
 	mtl_send_v(cb, "waitUntilCompleted");
 	if (((unsigned long (*)(id, SEL))objc_msgSend)(
 					cb, sel_registerName("status")) != MCC_MTL_CB_COMPLETED) {
-		mtl_report_err("command buffer", mtl_send(cb, "error"));
+		mtl_fault(-1, "command buffer", mtl_send(cb, "error"));
 		mtl_release(bin);
 		mtl_release(bout);
 		goto done;
 	}
+	mcc_gpu.fault = MCC_MTL_FAULT_NONE;
 	memcpy(out, pout, (size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
 	mcc_gpu.dispatches++;
 	mcc_gpu.lanes += ntuple;
