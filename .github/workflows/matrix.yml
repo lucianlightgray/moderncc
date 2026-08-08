@@ -51,7 +51,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build build-essential gcc clang lld git rsync mingw-w64 python3
+            cmake ninja-build build-essential gcc clang lld git rsync mingw-w64 python3 \
+            libvulkan-dev
       - name: install toolchain (macos)
         if: runner.os == 'macOS'
         run: |
@@ -148,7 +149,13 @@ jobs:
           fi
           mccexe="$PWD/${{ matrix.host }}/bin/mcc"
           [ -x "$mccexe.exe" ] && mccexe="$mccexe.exe"
-          mcc-ci stage2 ${{ matrix.feature }} --mcc "$mccexe"
+          # Without the Vulkan headers spvgate does not build, so
+          # gpu/spv-slice-{differential,known-positive,real} are never
+          # registered -- 8913 cells instead of 8916 -- and nothing reports the
+          # loss. ci.yml already passes this; matrix.yml did not.
+          vkinc=""
+          [ -d /usr/include/vulkan ] && vkinc="-DVulkan_INCLUDE_DIR=/usr/include"
+          mcc-ci stage2 ${{ matrix.feature }} --mcc "$mccexe" ${vkinc:+-- $vkinc}
           mcc-ci stage3 --consume test --build cmake-stage2-${{ matrix.feature }}
       - name: test summary
         if: ${{ always() && !matrix.skip }}

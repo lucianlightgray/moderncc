@@ -6,6 +6,1378 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Landed — B1 runtime addressing, and a per-width region layer, 2026-08-08
+
+### The payoff is 19 blocks, not 41, and the difference is not effort
+
+Measured before building, the same way the last three items were, and then measured
+again after: frame slices **300 → 319 (+19, +6.3%)**, statements **182 → 201 (+10.4%)**,
+0 mismatches. The model that produced the prediction reproduced today's numbers exactly
+(947 blocks, 300 eligible, 182 statements) before it was trusted for tomorrow's, which is
+the only reason to believe it.
+
+The 41-block estimate counted address expressions, not blocks that only those expressions
+block. Classifying all 143 non-plain store destinations in the corpus:
+
+| destination | nodes | frame-addressable? |
+| --- | ---: | --- |
+| `Ref[SYM\|LVAL]` — a global | 46 | no: a host address, and per-lane globals is N14 |
+| `Load(Ref[LOCAL\|LVAL])` — `*p` | 45 | no: the local *holds* a host pointer |
+| **`Load(Binary('+')(Ref[LOCAL\|ARRAY], i))` — `arr[i]`** | **20** | **yes — this is the whole payoff** |
+| `Unary(ARROW)(...)` — `p->f` | 8 | no, and never can (replay does `indir()` first) |
+| `Load(Convert(...ptr...))` — `*(p+K)` | 13 | no |
+| other | 11 | no |
+
+Split by where the index appears: `arr[i]` in **store** position is +18 blocks, in **load**
+position +1, both +19. Constant-index `arr[K]` is **+0**, and folding a store destination
+through `.field`/`&` is **+0** — the fourth and fifth zero-payoff results in a row, both
+recorded rather than quietly dropped.
+
+### The 13th column was not the prerequisite. The 14th is
+
+The brief said the extent column had unblocked this. It had not, and the reason is worth
+writing down because it was only visible by dumping a directed case:
+
+- `arr[i]` replays as `gen_op('+')` on a `VT_PTR|VT_ARRAY` base, which scales `i` by the
+  **element** size. Verified: `int arr[4]` at −24 with `arr[2]` emits `Lit(2)`, not
+  `Lit(8)`.
+- The `Load` and the `Binary` above it carry **type 0 in every real arena** — 5 of 5 in a
+  directed case, all 143 in the corpus. So the tree records neither the access width nor
+  anything to derive it from.
+
+The extent therefore gives no element count to bound `i` against and no width to narrow a
+stored value to. A consumer holding only the extent must guess both, and a guessed width
+is a wrong answer that *both* executors would agree on — precisely what a differential
+cannot see. So `ast_adump_etype` adds a 14th column: the pointee type word, computed from
+the real `CType` before interning, exactly as the extent is. Verified `int arr[4]` → 3
+(`VT_INT`), `char buf[10]` → 1 (`VT_BYTE`), `long big[3]` → 0x1004 (`VT_LLONG|VT_LONG`).
+Older dumps read it as 0 = unknown and refuse. `spvgate` is unaffected (its `sscanf`
+reads 7 fields).
+
+### And the const-offset fold that "was worth zero blocks" was also wrong
+
+`ast_eval_slice_frame_off` folded `base + K` as a **byte** offset. For a pointer or array
+base that is the wrong address by a factor of the element size. It gained zero blocks and
+so was never caught by the block count; it could not be caught by the differential either,
+because both executors used the same wrong key and therefore agreed. It now refuses a
+pointer/array base outright and leaves that shape to the code that knows the element size.
+Corpus is unchanged at 783 expression slices / 0 mismatches, confirming nothing depended
+on it.
+
+### One slot per element, not a byte-addressed frame — and why that was the better trade
+
+The plan called for a byte-addressed frame, which forces per-width store/load because a
+32-bit local at −12 and one at −8 are adjacent words and `spv_store_live_v`'s two-word
+store clobbers the neighbour. Instead each admitted array gets a **contiguous run of
+ordinary 8-byte slots, one per element**, addressed as `slot_of(base) + index`. Slots stay
+disjoint, so the proven two-word store is reused verbatim: no per-width work is needed on
+this path at all, and the 300 previously-clean slices cannot regress. Contiguity is
+enforced rather than assumed — a run that would interleave with an already-mapped offset
+is refused.
+
+Raising `MCC_SLICE_MAXSLOT` from 16 to 32 or 64 was measured and changes nothing
+(319 either way), so slot capacity is not what binds.
+
+### Bounds safety, by construction, on both executors
+
+`ok = idx <u nelem` ; `def &= ok` ; `idx &= (nspan − 1)`, where `nspan` is the element
+count rounded up to a power of two and the object owns that many slots. The mask is
+relative to **the object's own run**, not the lane's region, so the worst an out-of-range
+access can do is touch another element of the same array — and the run is discarded
+anyway because the same comparison cleared `def`.
+
+The CPU reference does not refuse. It reaches the identical verdict *and writes the
+identical masked element*, because the device cannot refuse mid-kernel and a reference
+that bailed would disagree with it on every frame slot as well as on the flag. `def` is
+therefore compared for runs that carry a runtime index even when they have no `Return`,
+which is new: for those runs the out-slot flag is a real verdict rather than the dummy
+the comment used to call it.
+
+### The region layer — per-width, and parameterised rather than frame-local
+
+Added because a shared heap has adjacent objects of different widths **by construction**,
+so the two-word hazard is the normal case there rather than an edge case. `SpvRegion` is
+`(variable, base word, byte extent)` and `spv_load_region`/`spv_store_region` take
+`(region, byte offset, type)`. Nothing in them knows whether the region is one lane's
+frame or a buffer shared with the host; that is entirely which base is passed, so a second
+binding needs a different `SpvRegion` and no new emitter code.
+
+- 1 and 2-byte accesses are shift/mask, and a sub-word **store** is a read-modify-write of
+  the containing word, because SPIR-V has no 8-bit storage without
+  `StorageBuffer8BitAccess`. **Within one lane's region that is a narrow store; in a
+  region shared between lanes it is not atomic**, and two lanes writing different bytes of
+  one word would race. That is a property of who hands out shared addresses, and it is
+  unresolved.
+- Bounds use a **select, not the planned power-of-two mask**: `ok = off <=u nbyte − width
+  && aligned && nbyte >=u width`, then `off = ok ? off : 0`. The mask needs the region
+  padded to a power of two, and an unpadded 48-byte region would let a masked offset reach
+  byte 63 — into whatever follows. Corrupting a neighbour is strictly worse than
+  corrupting yourself; 0 is in range for every region that can hold the access at all, so
+  the select cannot leave the region and has no padding precondition.
+
+`slice/bytes` is a direct differential over 8 type/signedness combinations × 14 offsets
+(aligned, last legal, one past, misaligned, wild, negative), comparing every word of every
+lane's region and the verdict flag — 27 checks. **It was proved able to fail**: adding
+back the two-word store for a 4-byte type made it red immediately with
+`load=0 store=7 word 1 want=00000007 got=00000000`, i.e. exactly the neighbour clobber the
+layer exists to prevent.
+
+### Numbers
+
+| | before | after |
+| --- | ---: | ---: |
+| corpus frame slices | 300 | **319** |
+| corpus frame statements | 182 | **201** |
+| corpus frame mismatches | 0 | **0** |
+| corpus expression slices / mismatches | 783 / 0 | 783 / 0 |
+| `--mutate` frame mismatches (known-positive) | 40+ | **63** |
+| `--mutate` slice mismatches | — | 6149 |
+| `slice/frame` checks | 122 | **157** |
+| `slice/bytes` checks | — | **27** |
+| ctest | 8932, 1 red | **8933, 1 red** (`cli/perfn_inproc`, red on purpose) |
+| `VUID`/validation errors, `frame` and `bytes` | 0 | **0** |
+
+`rir-coverage` needed no re-banking: `nodes_pct` at `-O1` is **41.420%** against a banked
+floor of 41.4175%, and the absolute count rose too — 433,646 arena nodes at 41.420% is
+~179,616 lowerable against ~178,419 before.
+
+### Open after this
+
+1. **A sub-word store to a region shared between lanes is not atomic.** Read-modify-write
+   of the containing word is correct for a private region and racy for a shared one. Needs
+   either byte-granular atomics, `StorageBuffer8BitAccess` where available, or an
+   allocator that never puts two lanes' sub-word objects in one word.
+2. **`*p`, `p->f` and globals are still refused** — 99 of the 143 non-local store
+   destinations. They are host addresses, and they are exactly what the mapped-buffer
+   address space is for; they are not frame work and no widening of the frame reaches
+   them.
+3. **The Metal arm returns 0 for every frame kernel and for the region layer.** Declared,
+   not silently divergent, but the divergence is now larger than it was.
+4. **A 64-bit index is refused rather than approximated** — every index in the corpus is a
+   plain `int`, and a wide one would have to agree bit for bit between a host `int64` and
+   a device lo/hi pair before the mask applies.
+
+## Landed — the three runners exist and are proven by test, 2026-08-08
+
+The JIT/GPU/coroutine runners are now the top of the board, and the first rung is
+built. Two new header-only libraries and one new test tool, seven new ctest cells,
+all green, and the device path is covered by a known-positive so it cannot pass
+vacuously.
+
+| file | what it is |
+| --- | --- |
+| `src/mcctask.h` | the tick task and its single-threaded scheduler — `MccTask`, `MccSched`, `mcc_sched_step/run/quit/pending`. No threads, no `ucontext`, no stack per task |
+| `src/mccslice.h` | the work item and both executors — `MccSliceWork`, `mcc_slice_work_from_ast`, `mcc_slice_run_cpu`, `MccSliceKernel`, `mcc_slice_kernel_build/run_gpu/free`, and `mcc_slice_task_cpu/gpu` which wrap either executor as a schedulable tick |
+| `tools/slicerun.c` | the suites, plus an `--arenas` mode that turns real recorded bodies into work items |
+| `cmake/slicerun_real.cmake` | the real-corpus cell, with four teeth |
+| `cmake/slicerun_mutate.cmake` | the 64-bit known-positive |
+
+**Cells:** `slice/task` (15 checks), `slice/work` (11), `slice/cpu` (29), `slice/gpu`
+(32), `slice/sched` (15), `slice/wide64` (143), `slice/wide64-known-positive`,
+`slice/real`. **245 checks, 0 failures.** `slice/gpu` and `slice/wide64` carry
+`SKIP_RETURN_CODE 77`.
+`slicerun` dispatches through `src/mccgpu.c` rather than bringing its own Vulkan the
+way `spvgate` does, so it needs no SDK, builds on every host, and is **the first cell
+that covers the production device layer's dispatch path directly** — `docs/PLAN.md`
+records that path as having zero direct coverage.
+
+**What the tests prove, in the order they prove it.**
+
+1. **A tick is a real suspension point.** A task yielding three times is ticked exactly
+   four times; two tasks interleave `1,2,1,2,1,2` rather than draining one first; a
+   two-round budget leaves both pending with exact partial state; `mcc_sched_quit` is
+   observed *between* ticks, so a stopped scheduler runs nothing and resuming drains
+   the queue to the same final values. **That is L2′ in miniature** — the quit flag the
+   JIT pool cannot have while a worker holds `mccjit_swap_lock` across an opaque
+   `job->run(job)`.
+2. **The AST can hand out work.** `mcc_slice_work_from_ast` turns a subtree into
+   `(root, live-in offsets, node count, result width)`, with the offsets in
+   first-encounter order because that ordering *is* the kernel ABI. Slices containing a
+   store, containing a float, or carrying more live-ins than the ABI holds are refused.
+3. **The CPU runner returns the expected values, and the answer does not depend on how
+   the work was carved up.** A five-tuple batch of `3*x0 + x1` gives `5, 22, -5, 0, 299`
+   in one tick and the identical five values one tuple per tick. Division by zero comes
+   back defined=0 rather than trapping, so an undefined lane is distinguishable from a
+   lane that legitimately produced zero.
+4. **The device runner agrees, lane for lane.** Same work item, same tuples, compared
+   against the CPU runner on both value and definedness, with `dispatches > 0` asserted
+   so "no device" cannot masquerade as "all green". A second run of a built kernel does
+   not re-emit — S6's amortization, asserted rather than assumed.
+5. **Both runners schedule together.** A CPU task at a budget of two and a device task
+   in one `MccSched`, drained by the same loop, producing identical output; the CPU task
+   takes exactly three ticks for five tuples at a budget of two.
+6. **Real bodies, not synthetic ones.** `slice/real` compiles 60 files of `tests/exec`
+   under `MCC_ARENA_DUMP`, rebuilds every recorded arena, and runs every lowerable
+   subtree through both executors: **344 bodies → 177 work items → 1416 tuples → 0
+   mismatches**, 172 of the 177 also lowering to the device. The mutated build produces
+   1370 mismatches, so the differential is not blind.
+
+### The one real bug the real corpus found: inferred result widths are not schedulable
+
+The first real-corpus run was **43 mismatches in 3200 tuples**, all of the same shape —
+the device's low word correct and its high word carrying a carry bit where the sign
+should be (`cpu=-4` against `gpu=8589934588` = `0x1_FFFFFFFC`).
+
+It is not a device bug and not an emitter bug. `ast_eval_slice_wtype` falls back to a
+*child's* type when a node is itself untyped, and the two executors then disagree about
+what the fallback meant: the CPU evaluator widens the whole expression to the inferred
+width, while the emitter widens each node by its own declared type. A 32-bit add whose
+result is inferred 64-bit therefore comes back with the carry in the high word.
+
+The ladder already knows about this hazard — it is what `MCC_AST_EVAL_LADDER_STRICT_TYPE`
+and the `res->inferred` counter exist for. **But an oracle and a runner want opposite
+defaults.** An oracle comparing two expressions can tolerate a shared approximation,
+because both sides get it equally wrong. A runner cannot: the two sides are different
+implementations, and an inferred width is precisely where they diverge.
+
+**Rule, now enforced in `mcc_slice_work_from_ast`: a slice whose result width has to be
+guessed is not schedulable work.** The root's own declared type must be a usable integer
+type. With that rule the same corpus gives 0 mismatches. Two consequences worth carrying
+into the plan:
+
+- **It costs eligibility, and the cost is not yet measured.** Strict typing rejects
+  slices the emitter would happily lower. How many is a number the H6 table should
+  carry, alongside the `MCC_RIR_STAMP=2` question — the stamped type view is documented
+  to take typed-node coverage from 65.8% to 100.0% for byte-identical objects, so most
+  of this loss may be recoverable rather than inherent. **Setting `MCC_RIR_STAMP=2` on
+  the dump did not change the mismatch count**, so the stamping that fixes the *ladder's*
+  readback is not the same thing as the declared type this rule needs; that gap is
+  unresolved and is the first thing to measure.
+- **A second finding, smaller but sharp: the device out-slot ABI is not
+  self-describing.** `mcc_gpu_dispatch` returns a raw `{lo, hi, defined}` triple, and
+  the high word is meaningful only for a 64-bit result — otherwise it is whatever the
+  emitter left there. The caller must narrow to the slice's own result type, which is
+  why `MccSliceKernel` carries `wtype`. Skipping that fit reads a correct 32-bit answer
+  back as a wrong 64-bit one, and it was the first of the two bugs in this run.
+
+### 64-bit fidelity, verified at full width — and the SIGFPE it found
+
+`slice/wide64` (143 checks) and `slice/wide64-known-positive`. **143 checks, 0 failures,
+31 dispatches** — one per conversion case plus one per binary op, so every case really
+ran rather than being skipped. The mutated build produces 63 failures.
+
+**Why this needed doing at all.** The emitters have supported 64-bit since `989e4b3b`,
+as a `uint2` lo/hi pair with no `Int64` capability declared, and `spvgate` covers it with
+20 `ll-` cases. But every 64-bit value those cases ever see is built by `mk_up` — a
+1..16-bit rung value shifted up by a constant — so **the high word only ever holds the
+patterns that one construction happens to produce.** Full-width values had never been fed
+to the 64-bit path. The values that matter for pair emulation are exactly the ones that
+construction cannot make: the 2^32 carry boundary in both directions, a low word of all
+ones against a clear high word, `INT64_MIN`, `INT64_MAX`, and patterns whose halves have
+nothing to do with each other.
+
+**What is now covered.** A 16-value hard corpus crossed with itself, 256 tuples per op,
+device against CPU on both value and definedness, with each case asserting it compared at
+least one *defined* tuple so an all-undefined case cannot report clean:
+
+- **Identity round trip** — a bare 64-bit live-in straight back out, expected value = the
+  input, all 64 bits. This needs no oracle and isolates the lo/hi packing from arithmetic.
+- **Widening** — `int32 → int64` sign-extends (`-1` arrives as `-1`, not `4294967295`).
+- **Narrowing** — `int64 → int32` keeps the low word and re-signs it.
+- **Signed**: `+ - * / % & | ^`, `< <= > >= == !=`.
+- **Unsigned**: `+ - * / %`, `TOK_ULT/UGE/ULE/UGT`.
+- **Shifts**: `SHL`/`SAR` signed and `SHL`/`SHR` unsigned at counts `{0, 1, 31, 32, 33,
+  63}` — 32 is where a naive pair shift breaks, and a hard value used as a shift count is
+  almost always out of range, so the counts are a separate list rather than the corpus.
+
+**The bug: `ast_eval_slice.h:117` aborts the compiler on `-1 * INT64_MIN`, on x86 only.**
+
+```c
+r = (int64_t)(ua * ub);
+if (r / a != b || (a == INT64_MIN && b == -1) || (b == INT64_MIN && a == -1))
+```
+
+The two guards are correct and they are in the wrong place. `||` short-circuits left to
+right, so `r / a` is evaluated *first*; with `a == -1` and `b == INT64_MIN` the product
+wraps back to `INT64_MIN` and `INT64_MIN / -1` traps. **SIGFPE, in shipped compiler code**
+— `ast_eval_slice.h` is compiled into `mcc` and this is the evaluator the width ladder
+runs, so any slice multiplying `-1` by `INT64_MIN` aborts the process.
+
+**It is also a J1 host divergence, which is the more interesting half.** arm64's `sdiv`
+does not trap on `INT64_MIN / -1`; it yields `INT64_MIN`, the first clause reads
+`INT64_MIN != INT64_MIN` = false, and the third guard then correctly returns 0. So the
+same slice **refuses cleanly on arm64 and kills the compiler on x86** — a divergence that
+no existing cell could see, because nothing had ever fed the evaluator a full-width
+`INT64_MIN`.
+
+Fix is a reorder: hoist the two guards ahead of the division. Verified byte-neutral —
+**114 objects across `tests/exec` are identical before and after**, which is expected,
+since the only reachable change is crash → refusal. Nothing that previously returned a
+value returns a different one.
+
+### H6 is measured, L3 residency landed, and S5's break-even estimate was 2 orders out
+
+**Phase 0a is done.** Both executors are timed — the device figure spans pack, dispatch,
+readback and unpack, because that is what a caller pays. `slicerun --cost` emits the
+table over real arenas; `slicerun --cost-synth` sweeps synthetic slices, and that sweep
+is the `slice/cost` cell, ratcheted on `win-within-N-lanes` being nonzero so the
+measurement cannot silently stop measuring.
+
+**First table said "never" for every row — and it was measuring an artifact.** Fixed cost
+came out at **~640 µs/dispatch**, five times the plan's 117 µs figure, because every
+dispatch still rebuilt all ten Vulkan object classes with `VK_NULL_HANDLE` for the
+pipeline cache. So cluster **L3 landed here**, in `src/mccgpu.c`: a resident descriptor
+set layout, descriptor pool, descriptor set, command pool, command buffer and fence; a
+real `VkPipelineCache`; a 64-entry `(code, nlive) → (module, layout, pipeline)` cache; and
+persistent input/output buffers that grow and rebind rather than being allocated, mapped,
+unmapped and freed every call. Nothing on the dispatch path is destroyed any more.
+
+| | before | after |
+| --- | ---: | ---: |
+| fixed cost per dispatch | ~640,000 ns | **~20,000 ns** (32×) |
+| per-lane cost | ~176 ns | **~107 ns** |
+
+The remaining per-lane figure is almost entirely host-side marshalling — the
+int64→two-int32 pack, the copy into the write-combined mapping, the copy out and the
+unpack-and-fit. It is flat in slice size, which is what makes the next table readable.
+
+**The synthetic sweep, and the result that matters:**
+
+| slice nodes | cpu ns/tuple | gpu fixed ns | gpu ns/lane | break-even lanes |
+| ---: | ---: | ---: | ---: | ---: |
+| 3 | 68 | 18,894 | 208 | never |
+| 7 | 189 | 16,465 | 207 | never |
+| 15 | 404 | 20,448 | 208 | **104** |
+| 31 | 783 | 18,391 | 205 | **32** |
+| 63 | 1,465 | 29,621 | 207 | **24** |
+| 127 | 2,664 | 29,023 | 217 | **12** |
+| 255 | 4,549 | 21,614 | 229 | **5** |
+| 1023 | 14,998 | 73,259 | 302 | **5** |
+| 2047 | 28,756 | 55,571 | 292 | **2** |
+
+CPU cost is linear in node count at ~14 ns/node; device per-lane cost is flat. So the
+device crosses over as soon as a slice costs more than ~207 ns/tuple on the CPU, which is
+**about 15 nodes**, and from ~30 nodes it needs only tens of lanes.
+
+**This refutes S5's estimate.** The plan projected break-even at **~1,177 lanes** from a
+100 ns CPU slice against a 117 µs fixed cost, and concluded a scalar bid could never win
+and only large data-parallel loops mattered. Both inputs were wrong in the same
+direction: residency takes the fixed cost to 20 µs, and real slices worth offloading are
+much more than 100 ns of CPU work. **Break-even is 5–104 lanes over the range that
+matters, not four figures.** S5c's "bid only on loops" is still the right v1 policy, but
+the loop no longer has to be enormous — a 30-node slice inside a 32-iteration loop is
+already at break-even, and `ast_loopdep` certainly supplies those.
+
+**And the real blocker is now visible, and it is not the device.** Every slice in the real
+corpus is **3–4 nodes** — squarely in the "never" band. Two causes, both in the harness
+rather than the hardware: `scan_subtree` is greedy top-down and takes the *first*
+qualifying node, and the strict-width rule rejects the large untyped `Binary` roots that
+would otherwise be the big slices. So the question the plan should now be asking is not
+"can the device win?" — measured, yes, from 15 nodes — but **"why are our slices 4 nodes
+when the device needs 15?"** That is S1's unit-of-work question, and it is where the next
+effort belongs.
+
+### The strict-width rule is gone, and removing it took three real bug fixes
+
+The earlier workaround — "a slice whose result width has to be guessed is not schedulable
+work" — was measured and it cost **99.2% of all candidates**: 3157 of 3181 lowerable
+subtrees in the corpus are untyped at the root, and **every subtree of 15 nodes or more,
+the band where the device starts to win, was among them.** Max typed subtree: 7 nodes.
+Max untyped: 22. So the rule was not a conservative default, it was the whole blocker.
+
+`MCC_RIR_STAMP=2` does not help — measured at `=0`, `=1`, `=2` and with `MCC_RIR_PROD`
+1 and 2, Binary typed coverage in the dump stays at **1.2%**. The stamping that fixes the
+ladder's readback is a different thing from the declared type on the production arena.
+
+So instead of avoiding the divergence, it was chased down. Three separate bugs, found by
+running the real-corpus differential with the rule off and dumping the first divergent
+tree each time. Mismatches went **60 → 55 → 2 → 0**.
+
+**1. The CPU evaluator did not narrow a live-in to the type of the Ref reading it.**
+`ast_eval_slice.h`, both the `AST_Ref` local arm and the `AST_Load` arm, did `*out = v;`
+with the raw environment word — while the `AST_Literal` arm three lines below already
+called `ast_eval_slice_fit`. The device narrows per Ref, because `spv_load_live_v` is
+handed the ref's own type. A `unsigned int` live-in holding `-12345` therefore read as
+`-12345` on the CPU and `4294954951` on the device, and both then widened *correctly*
+from different starting points. **The device was right and the compiler's own evaluator
+was wrong.** The ladder never saw it because `ast_ladder_gpu_run` pre-fits every input to
+its live-in's type before handing it to either side — a real precondition that was
+nowhere stated and nothing enforced.
+
+**2. Both emitters did not narrow a live-in below 32 bits.** `spv_load_live_v` and
+`msl_load_live_v` take a width *flag*, not a type, so they can deliver 32 or 64 bits and
+never `VT_BOOL`/`VT_BYTE`/`VT_SHORT`. With bug 1 fixed the mirror image appeared: a
+`signed char` live-in holding 1000 read as `-24` on the CPU, correctly, and as `1000` on
+the device. Fixed in both arms by passing the load through `spv_fit_v`/`msl_fit_v`.
+
+**3. The runner over-narrowed the device result.** Fitting the returned value to the
+slice's declared type is wrong whenever that type is finer than 32 bits: under C's
+integer promotions — and under `ast_eval_binop`, which only distinguishes 32 from 64 —
+an `unsigned char`-typed `255 + 1` evaluates to **256**, and fitting that back to
+`unsigned char` gives 0. The correct final step is `ast_eval_narrow(v, is64, uns)`,
+which is exactly what the CPU applies.
+
+**What it bought:** the strict-width rule is deleted. Real corpus goes from **177 slices
+to 783** at 0 mismatches, and in cost mode **75 of 400 slices now have a finite
+break-even where previously none did**.
+
+### Two device-layer bugs fixed, both with regression cells
+
+**The Vulkan pending-command-buffer use-after-free (blocking item 2) is fixed and now
+tested.** `vkWaitForFences` failing fell through to `done:`, which destroyed the fence,
+command pool, pipeline, layout, shader module, descriptor pool, descriptor set layout,
+both mappings, both allocations and both buffers — while the command buffer was still
+pending. The driver recycled that memory into the next dispatch underneath a zombie
+kernel. Now a failed wait strands: nothing is destroyed, `mcc_gpu.ok` is cleared, a
+`stranded` counter is bumped, and the failure is reported under the existing diag var.
+Leaking one process's objects is bounded, because no further dispatch can occur.
+
+Testable at last because the hardcoded 30 s fence timeout is now `MCC_GPU_FENCE_NS`. The
+`slice/fault` cell sets it to 1 ns, which times out with a genuinely pending command
+buffer on a real device — no fault injection, no hang. **Verified as a known-positive:**
+with the strand logic reverted the cell fails 4 checks and reports `dispatches=3`, i.e.
+the post-timeout dispatch *succeeded* on recycled memory. That is the bug, reproduced.
+
+**`mcc_gpu_mem_index` picked the worst memory type (blocking item 9).** It took the first
+`HOST_VISIBLE|HOST_COHERENT` type, which here is `memoryTypes[2]` — plain system RAM, not
+even `HOST_CACHED`. It now scores, preferring `DEVICE_LOCAL` then `HOST_CACHED` with
+first-match order as the tie-break, so a device with one qualifying type behaves exactly
+as before. On this host it now selects `memoryTypes[4]`, `flags=0x7`, the ReBAR heap.
+
+**Blocking item 8 done:** `memset(pout, …)` was 100% dead and is gone; `memset(pin, …)`
+now clears only the `[ntuple, cap)` padding tail instead of the whole buffer, which the
+`memcpy` immediately overwrote. The mapping is write-combined, so these were not free.
+
+### N9 is closed — the six uncovered opcodes now have device coverage
+
+`TOK_UDIV`, `TOK_UMOD`, `TOK_PDIV`, `TOK_UGE`, `TOK_ULE`, `TOK_UGT` each had an MSL arm, a
+SPIR-V arm and a CPU arm and were exercised by nothing, because `gen_op` substitutes them
+*after* the arena records the token, so no harvested corpus can contain one. Enumeration
+was the only route. `slice/ops` is a 52-row op matrix — 32-bit signed, 32-bit unsigned and
+64-bit, each over a full cross product of hard values — **162 checks, 12,249 defined
+tuples compared, 53 dispatches, 0 failures**, with `slice/ops-known-positive` proving it
+can fail. The six are asserted individually by a coverage bitmap, so a row that stops
+lowering is a failed assertion rather than a quietly narrower matrix.
+
+### `rir-coverage` lowerable floors re-banked — dilution, and the evidence for saying so
+
+Adding L3 residency to `src/mccgpu.c` moved `nodes_pct_loose` from 65.9111% to 65.8457%
+at `-O1` and failed the ratchet. **That is not a lowerability regression.** `src/mcc.c`
+amalgamates `src/mccgpu.c` (`src/libmcc.c:12`) and `rir-coverage --corpus self` measures
+the compiler's own source, so editing the device layer edits the census subject. The
+tool's docstring already says the `self` percentages "are only comparable across builds
+that compile the same source into `src/mcc.c`", but `corpus_config` tracks build options
+only and cannot see a source edit.
+
+Measured both ways rather than assumed:
+
+| | clean HEAD | with L3 residency |
+| --- | ---: | ---: |
+| arena-modelled bodies | 2767 | 2776 |
+| arena nodes | 429,240 | 430,087 |
+| loose lowerable | 65.909% | 65.846% |
+| **absolute lowerable nodes** | **282,904** | **283,204** |
+
+Lowerable nodes went **up by ~300**. The 847 added nodes are Vulkan object management —
+calls, globals, struct writes — and only about 35% of them are lowerable against a 65.9%
+average, so the ratio dilutes while the absolute count rises. Re-banked with
+`--update-bank-low`, which touches `lowerable` only and not `kept_coverage` or
+`residual`; the host is Linux/elf, so F4's "do not bank macho floors" does not apply.
+
+Bisected before re-banking: reverting `src/ast_eval_slice.h` alone moved the figure by
+0.0006pp, so the live-in fit is not the cause; reverting everything restored the banked
+value. This is the same class as open item 5 (`node-census`'s `all_invokes_on_cpu` moving
+because `src/mcc.c` grew), and it is an argument for that item's conclusion: **a ratio
+over the compiler's own source is not a regression signal in either direction.**
+
+### Four more board items closed — N7, N8, blocking item 5, open item 3
+
+**N7 — the arena dump is reproducible again.** `354e96f6` added `sym` and `type_ref` as
+raw `(uintptr_t)` columns, so two identical compiles differed under ASLR and the H4′ bank
+built on dump byte-identity was invalid. Both columns are now **interned by
+first-encounter order** — deterministic for a deterministic compile, so the ids are
+stable across runs, and they are dense small integers rather than addresses, which is
+also what makes them usable by a consumer at all. An address was never an identity
+anything downstream could match on. Verified: 20-file dump is byte-identical across two
+runs **and** identical between `setarch -R` and a normal ASLR run.
+
+**N8 — `ast_replay_bb`'s frame is 87× smaller, and the stack ceiling drops 16×.**
+`SValue sv_stack[VSTACK_SIZE + 1]` is 32,832 bytes declared inside the `AST_OP_ASMGEN`
+arm, but C allocates the whole frame at entry and `ast_replay_bb` is recursive, so every
+level paid for the inline-asm path. The arm is now a `noinline` callee, which pays it
+once and only when ASMGEN fires. Deliberately *not* a file-scope buffer: `mcc_error`
+longjmps straight out of that code, and a shared buffer would be clobbered for whichever
+outer frame catches it — which is the trap the plan flagged.
+
+| | before | after |
+| --- | ---: | ---: |
+| `ast_replay_bb` frame | `sub $0x1000` (4096 B; the 32 KB array is spilled beyond) | **`sub $0x198` (408 B)** |
+| self-compile peak stack | 1024 KiB (segfaults at 512) | **≤64 KiB** |
+
+The plan predicted 9.1× and 112 KiB; measured is **16× and ≤64 KiB**. Byte-neutrality was
+checked the only way that means anything — *the same input compiled by both compilers*,
+not the compiler compiling its own changed source, which is the confound that made the
+first attempt look like a regression: **132 objects across `-O0..-O3`, byte-identical.**
+
+**Blocking item 5 — `spvgate` no longer reports OK for a case that lowered nothing.** A
+case whose rungs all skipped, or that compared only vacuous points, printed `OK` because
+`case_bad` was still 0, so "0 mismatches" could not be distinguished from "0 points
+compared". Each case now tracks its own compared count, prints it, and **fails** at zero.
+All 38 cases currently report real point counts; mutation is still detected.
+
+**Open item 3 — `matrix.yml` no longer drops three GPU cells.** It now installs
+`libvulkan-dev` and passes `-DVulkan_INCLUDE_DIR=/usr/include` when the headers are
+present, which `ci.yml` already did. Without them `spvgate` does not build and
+`gpu/spv-slice-{differential,known-positive,real}` are never registered — 8913 cells
+instead of 8916, with nothing reporting the loss. The manifest (N13) is still the real
+fix; this closes the specific hole.
+
+### Phase −1 is complete — and it was mostly already done
+
+Measured rather than assumed. The per-opcode histogram the phase asks for **already
+exists**: `rir_drop_note()` records every opcode that reaches `src/mccrir.c`'s bare
+`default:`, excluding exactly the five CFG opcodes the plan names
+(`JMP`/`JMPCOND`/`JMPADDR`/`JMPAPPEND`/`GSYMADDR`), and reports them as `[rir-drop-op]`.
+And of the four opcodes the phase says still need handlers, **three have them**
+(`RETVAL`, `MKPTR`, `VPUSHSYM`) and `LOAD` no longer drops at all.
+
+Self-compile of `src/mcc.c` at `-O1` under `MCC_RIR_PROD=2`: **one** opcode still reaches
+the default arm, `regaddi`, **4 times**. Not the four the plan lists.
+
+What was genuinely missing is the half that makes it stick. Nothing asserted the
+histogram — the drop set was diagnosable but not gated, which is how it stayed invisible
+long enough to be written up as four gaps that were already three-quarters closed. New
+cell **`rir/drop-ratchet`**: compiles `src/mcc.c`, parses `[rir-drop-op]`, and fails if
+any opcode outside the allowlist drops or any allowlisted one drops more often.
+
+**The first version of that cell was vacuous and I nearly shipped it.** It read
+`MCC_REPLAY_IR_OUT`; the drop lines go to `MCC_RIR_PROD_OUT`. It found zero drop lines,
+so its loop had nothing to check, and it passed every deliberately-broken bank thrown at
+it — a lowered count, and an allowlist naming an opcode that does not exist. The fix that
+matters is not the filename: it is the added requirement that **every allowlisted opcode
+must actually appear in the report**, so "no output" and "no drops" stop being the same
+observation. Both regression modes are now verified to fail:
+
+```
+rir/drop-ratchet: silently dropped opcodes regressed: regaddi=4 > banked 3
+rir/drop-ratchet: 'nothing' is banked as dropping but does not appear in the report
+```
+
+This is the third time in this session that a cell passed while measuring nothing — after
+`spvgate` printing OK for a case that lowered nothing, and the GPU cells that needed a
+mutation switch before their differentials meant anything. **N13's must-run manifest is
+not a nicety; it is the general form of a bug this board keeps rediscovering.**
+
+### N13 — the must-run manifest exists
+
+`tests/must-run.txt` (18 rows) + `tools/must-run.py` + the `ci/must-run-registered` cell.
+Two checks, separated because they fail for different reasons:
+
+- **`registered`** — the cell must appear in the build's test list. This is the
+  matrix.yml class of bug: a missing dependency removes cells and the suite still reports
+  success. Runs on every build, everywhere, as a normal ctest cell.
+- **`must-run`** — additionally, it must not report Skipped. Needs a *full-suite* results
+  file (a `-R` subset legitimately lacks most rows), so it is opt-in and wired into
+  `ci.yml`'s three summary steps.
+
+Exit codes are 0/1/2 and deliberately **never 77**: a manifest that cannot be checked is
+a failure, not a skip — that is the entire point of the file. Both halves verified
+against deliberately broken inputs: an absent cell reports `NOT REGISTERED`, and a
+results file missing a `must-run` row reports `NOT RUN`.
+
+The manifest is where the "is this cell real?" question gets a durable answer. The
+session found three separate cells that passed while measuring nothing; this is the
+general form of that check, and `tools/ci.c`'s `GATE_CELLS[]` is the same idea one
+altitude too high — it gates host×feature jobs, not test names.
+
+### N12 — done, and its stated payoff does not exist
+
+`rebuild_arena` now consumes all 12 dumped fields instead of 7 (`type_ref`, `bp`, `bs`,
+`sym`, `fbits`), which N7 made possible: those columns are interned ids now, not
+addresses. They are still installed into pointer-shaped slots, which is safe here only
+because **nothing on this path dereferences them** — verified as zero uses of `ast_sym`,
+`ast_type_ref`, `ast_fbits`, `ast_type_bp` and `ast_type_bs` across `ast_eval_slice.h`
+and `mccgpu.h`. A consumer that needs the real `Sym` needs a side table, not this.
+
+**But the row's claim that it "raises the 28.6% lowerable lower bound for free" is
+false**, and the same grep is why: if no field is read by the lowerability predicate or
+by either emitter, no field can change lowerability. Measured to be sure rather than
+argued — same corpus, before and after: **783 slices, 6264 tuples, 0 mismatches, byte for
+byte identical.** The change is still right, because a faithful rebuild is worth having
+and the fields are now correct rather than dropped; it just buys no coverage. Recorded so
+the row is not reopened expecting a number.
+
+### Final state of this session's work
+
+Full suite: **8929 of 8930 pass.** The one failure is `cli/perfn_inproc`, which open
+item 1 documents as red on purpose. `tools/must-run.py --results` is satisfied against
+that full-suite JUnit file: 18 of 18 rows.
+
+New cells, all green and all with teeth: `slice/{task,work,cpu,sched,gpu,wide64,ops,
+fault,cost,real}`, `slice/{wide64,ops}-known-positive`, `rir/drop-ratchet`,
+`ci/must-run-registered`.
+
+Bugs fixed in shipped code, each with a regression cell and each verified to fail before
+the fix: the `-1 * INT64_MIN` SIGFPE, the CPU evaluator not narrowing live-ins to the
+Ref's type, both emitters not narrowing live-ins below 32 bits, the Vulkan
+pending-command-buffer use-after-free, the worst-memory-type selection, two dead memsets,
+`spvgate` reporting OK for a case that lowered nothing, and an ASLR-varying arena dump.
+
+### Next, in order
+
+0. **The sub-word atomicity decision, before the allocator exists.** A shared-region
+   sub-word store is a read-modify-write and two lanes writing different bytes of one word
+   race. Choosing "the allocator never co-locates two lanes' sub-word objects" costs
+   nothing today and cannot be retrofitted cheaply. Decide it first.
+
+1. **Pointer deref (`*p`) against binding 2.** This is what `memcmp`/`strcmp`/`strncmp`
+   need, and it is the difference between musl's arithmetic halves lowering and musl
+   lowering. The region layer is already parameterised for it, so no new emitter concept
+   is required — only a second `SpvRegion` and the address resolution.
+
+2. **`snprintf` via the `(tag, value)` array.** +168 blocks, and the varargs objection is
+   gone. Only the `%` engine remains.
+
+3. **Extend frame storage past the v1 subset.** The device now has a frame and Store/Load
+   lower (see above), but v1 only takes `AST_Store` with a local `Ref` destination
+   sequenced by `AST_BasicBlock`. The next increments, in measured order of payoff:
+   `AST_StoreVal` (3.0% of nodes -- needs the `AST_Store` it references, not a store of
+   its own), statement-`If`/loops (the control-flow machine, cluster C), and stores whose
+   destination is not a local (153 of 987, 15.5%). Wire the frame runner into
+   `scan_subtree` so the real-corpus differential covers it, and re-measure slice sizes:
+   the 3-4 node mode was an artifact of the expression-only unit.
+2. **S5' -- the iteration distribution, and it must be dynamic.** Static trip count does
+   not exist in this tree: no function computes one, `ast_loop_bounds` gives a constant
+   *IV bound* and only when the init is a literal in the preceding statements, and
+   `ast_loopdep` has no `ast_loop_parallel_legal` (though one is ~30 lines from the
+   existing direction-vector machinery). The measurement wanted is a per-loop trip
+   histogram over a self-compile, in the manner of `MCC_SLICE_CENSUS`. Less urgent than
+   it was -- the bar is now **451 lanes at 3 nodes and 27 at 31 nodes**, not ~1,177 --
+   but still the binding half, because only 4.3% of census slices contain a loop at all.
+4. **Then the JIT seam** (S2/S4/S8): narrow `mccjit_swap_lock`, graduate the bench out
+   of `MCC_DEV_ENV` and flip it fail-closed for device candidates, and add the fourth
+   branch to `mccjit_lazy_entry`.
+5. **Remaining board items not yet touched:** N12 (`rebuild_arena` reads 7 of 12 fields
+   -- now worth revisiting, since N7 made `sym`/`type_ref` interned ids rather than
+   addresses, so they are finally consumable), N14 (per-lane writable globals cap lanes
+   at 15), Phase -1b (bank the baseline census), and open items 1, 2, 4 and 5, which are
+   decisions rather than code.
+
+   **Closed this session:** N7, N8, N9, N4 (the Vulkan UAF), blocking items 5, 8 and 9,
+   open item 3, N13, cluster L3 residency, H6/Phase 0a, and Phase -1.
+
+Runtime JIT threads and build parallelism are both held at 16 for now; the scheduler
+added here is single-threaded, so it introduces no new threads at all.
+
+## Landed — the shared address space, real musl on the device, and three of my own bugs
+
+### musl is the device libc — it compiles and lowers today
+
+`vendor/musl-src` is in the tree with full source and `vendor/musl-sysroot` carries the
+generated headers, so **a device libc is the existing lowering pointed at musl's own C**,
+not something to write in SPIR-V and re-verify against the standard.
+
+| | |
+| --- | ---: |
+| `musl/src/string` TUs mcc compiles | **65 of 74** |
+| expression slices lowered / mismatches | **475 / 0** |
+| frame runs accepted / built / **compared** | 120 / 94 / **94** |
+| frame mismatches | **0**, and 3800+40 under `--mutate` |
+
+Per function: `memcpy` 6 verified frame runs (86 expression slices), `memset` 7 (44),
+`strlen` 1 (3). **`memcmp`, `strcmp`, `strncmp`, `memchr` lower zero frame runs** — they
+walk memory through a pointer, which needs binding 2. That zero is the measure of the
+remaining work, not a failure of the approach. The 9 rejected TUs are internal-dependency
+cases (`strchr.c` wants `__strchrnul`), an ordinary cross-TU call.
+
+`slice/musl` ratchets it: a 20-TU compile floor so a near-empty corpus cannot pass
+vacuously, a required nonzero `frame-compared`, and a mutation arm. Verified red when the
+floor is raised.
+
+### The shared CPU<->GPU address space (binding 2)
+
+One host-mapped storage region every lane sees — globals image, heap, printf ring — where
+a pointer is a byte offset. **Offset 0 is reserved as NULL**, decided before any allocator
+exists because a bump allocator handing out 0 returns a pointer equal to NULL and
+`malloc`'s result is null-checked at 66/66 measured sites. Shared across lanes, not
+per-lane: a heap each lane sees separately is not a heap.
+
+Host and device see the same bytes at command-buffer granularity, which is all that
+exists — mid-kernel host→device writes are invisible by every qualifier. So the host seeds
+before submit and drains after completion, never during, and that is why the printf ring
+is device-writes-only. `slice/mem` covers mappability, the NULL reservation, region
+identity across calls, and host-write persistence.
+
+### B1 runtime addressing, and a region layer that is not frame-specific
+
+`arr[i]` load and store, plus a **region-parameterised** per-width access layer —
+`SpvRegion{var, base, nbyte}` and `(region, byteoff, type)` — so binding 2 needs a
+different region and no new emitter code. Corpus 300 → **319 accepted, 244 verified**.
+
+Two honest corrections from that work. The payoff is **+19 blocks, not the 35 estimated**:
+of 143 non-plain store destinations only 20 are `arr[i]`, the rest being globals and `*p`.
+And the **13th dump column was not the prerequisite** — `arr[i]` replays through `gen_op`
+on an array base so the index is in *elements*, and the `Load`/`Binary` above it carry
+type 0 in 143 of 143 real arenas. A 14th column (pointee type) was needed as well.
+
+Bounds use a **select-to-0, not the planned power-of-two mask**: masking an unpadded
+48-byte region reaches byte 63, i.e. into the *next lane*. Corrupting a neighbour is worse
+than corrupting yourself, and 0 is always in range.
+
+### Three bugs in code I wrote this session
+
+**1. I was overstating verified coverage by 2.4×.** `frame-slices` counted what the
+predicate *accepted*, incrementing before `mcc_slice_frame_kernel_build` could refuse it.
+174 of 300 runs were never built, never dispatched, never compared — and the gap was
+almost entirely `return expr;`-only runs, so **the feature that bought the most headline
+coverage bought the least verification**. That is the "cell that cannot fail" pattern
+appearing in the coverage metric itself. Now three counters — accepted / built /
+**compared** — and `slice/real` asserts on the last. Most of the gap was not inherent: a
+run with no stores but a Return still computes a value, and letting it build took verified
+runs 126 → 225.
+
+**2. A latent out-of-bounds read in the mismatch diagnostic.** It read
+`MccSliceFrame.stmt[]`, a field my own `top[]` refactor orphaned and never writes. It
+therefore described arena node 0, and `ast_child(a, 0, 1)` returns `AST_NONE`, which
+`ast_kind` uses as an array index. **Reachable exactly when the differential first catches
+a real bug.** Field deleted, diagnostic rewritten.
+
+**3. The constant-offset fold was wrong for pointer bases.** `ast_eval_slice_frame_off`
+folded `base + K` as *bytes*; for a pointer or array base the index is in *elements*. It
+gained zero blocks, so the count never caught it, and the differential could not — both
+executors used the same wrong key. Now refused. **Fourth shared-mistake divergence this
+session, third in my own code.**
+
+### Varargs is not the obstacle it looked like
+
+A variadic call at the AST level is just children with static types:
+`snprintf(buf, 64, "%d %ld %s", a, b, s)` is an `AST_Invoke` with 7 children whose
+`type_t` are `0x5`, `0x3`, `0x1004`, `0x5`. `va_list`, `gp_offset` and the register save
+area are **host codegen below the AST** and never appear at the call site. The device owns
+its calling convention, so varargs lowers to a `(tag, value)` array built at emit time,
+tags free.
+
+That moves `snprintf` from last to early in the sequencing: **+168 blocks, #2 by marginal
+gain**, and the only remaining work is the `%` engine, since 64-bit division already
+exists and is verified at full width by `slice/wide64`.
+
+### Open hazard, routed and not yet resolved
+
+**A sub-word store is read-modify-write of the containing word, and in the *shared* region
+that is not atomic** — two lanes writing different bytes of one word race. In a private
+frame it is fine. Three ways out: byte atomics, `StorageBuffer8BitAccess`, or an allocator
+that never co-locates two lanes' sub-word objects. **The allocator route is free if taken
+before the allocator is written**, which is the current position.
+
+### Corrections to numbers previously recorded here
+
+- The **392 / 148 / 48** eligibility partition is not reproducible against the shipped
+  predicate. A model that reproduces `slicerun`'s output bit-for-bit (300 slices, 182
+  statements) gets **300 / 647 / 364 / 283**. The shape holds — Invoke dominates, B1 is
+  the largest non-Invoke item — but the specific figures were from a model that diverged
+  from the code and should be re-derived before being planned against.
+- The arena dump drops `ast_stype_t`, the RIR shadow type: **293 `Load` nodes carry
+  `type_t == 0`** and are refused for that alone. Every corpus percentage quoted in
+  `src/mccslice.h`'s comments was computed against a replica missing a channel the real
+  arena has. Same class as the `size` column, and it wants the same fix.
+- A full device libc is worth **4.4–4.7% of Invoke-blocked blocks**, against **78.0%** for
+  D4b. See [`docs/DEVICE-LIBC.md`](DEVICE-LIBC.md). D2b is a *latency* lever (77.8% of
+  dynamic crossings), not a coverage lever; both numbers are true and measure different
+  things.
+
+## Landed — HOST_CACHED memory, and device frame storage, 2026-08-08
+
+### The memory type was the whole per-lane cost, and my earlier fix picked the worst one
+
+Blocking item 9 said `mcc_gpu_mem_index` takes the first `HOST_VISIBLE|HOST_COHERENT`
+type and should prefer `DEVICE_LOCAL` (ReBAR). I implemented that. **Measured, it is the
+worst of the three available types by 16.8×.**
+
+| type | flags | ns/lane, 63-node slice | ns/lane, 511-node slice |
+| --- | --- | ---: | ---: |
+| 2 — HOST_VISIBLE\|COHERENT (system RAM) | 0x6 | 132.8 | 54.2 |
+| **3 — + HOST_CACHED** | **0xe** | **99.7** | **13.4** |
+| 4 — DEVICE_LOCAL\|HOST_VISIBLE\|COHERENT (ReBAR) | 0x7 | 215.8 | 224.9 |
+
+The reason is which side of the bus does the traffic. On the **emitter** path the kernel
+touches each live-in once and writes one result, while the host packs, uploads, downloads
+and unpacks every lane — so an uncached readback across PCIe is essentially the entire
+per-lane cost. I2(D)'s argument for `DEVICE_LOCAL` is about the **B1 interpreter**, where
+the kernel does the memory traffic instead. Scoring now puts `HOST_CACHED` first and keeps
+device-local as the tie-break, with `MCC_GPU_MEMTYPE` to force an index, because the right
+answer is device-specific and had to be measurable to be found.
+
+**This changes the H6 verdict completely.** Every synthetic slice now breaks even:
+
+| nodes | 3 | 7 | 15 | 31 | 63 | 127 | 255 | 511 | 1023 | 2047 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| break-even lanes, before | never | never | 104 | 32 | 24 | 12 | 5 | 5 | 5 | 2 |
+| **after** | **451** | **146** | **66** | **27** | **16** | **8** | **6** | **4** | **3** | **2** |
+
+`win-within-65536-lanes` went from 0/10 to **10/10**. A 3-node slice — the corpus mode —
+is now offloadable at 451 lanes, where before no batch size could win. The plan's S5
+estimate of ~1,177 lanes has now been wrong twice in the same direction, both times
+because a cost that looked like hardware was software.
+
+### Device frame storage — Store and Load now lower
+
+The measured reason lowerable subtrees end is **statement boundaries**: over 32,373 corpus
+nodes, `Invoke` 4.0% + `Store` 3.0% + `BasicBlock` 3.0% + `StoreVal` 3.0% + `Return` 1.2%
+terminate subtrees, against a census that is 80% expression nodes (Literal 31.4%, Ref
+23.7%, Convert 14.5%, Binary 10.4%). Expressions are not scarce — C statements are short,
+and `Store`/`StoreVal` alone are 1958 nodes, one per assignment.
+
+So the device now has a **frame**: storage it can load from and store to.
+
+- **No new binding and no ABI bump.** The input buffer was never decorated `NonWritable`,
+  so it is already a read-write storage buffer. Slots are dense indices over the distinct
+  local offsets a run touches; the host seeds every slot, the kernel reads and writes them
+  in place, and `mcc_gpu_dispatch_rw` reads the whole frame back.
+- **`spv_store_live` / `spv_store_live_v`** are the store counterparts of the existing
+  `spv_load_live`, handling the 32- and 64-bit halves of the lo/hi pair.
+- **`MccSliceFrame`** carries the slot map and the statement list;
+  `mcc_slice_frame_exec_cpu` is the CPU reference and `mcc_slice_frame_kernel_build` emits
+  the kernel — statements in order, each storing its narrowed result to its destination
+  slot, so **a later statement reads what an earlier one wrote, on the device.**
+- **v1 scope, deliberately narrow:** `AST_Store` with a local `Ref` destination — 834 of
+  987 stores in the corpus, **84.5%** — sequenced by `AST_BasicBlock`. `AST_StoreVal` is
+  excluded because it is not a store: it is a vstack-ordering marker for the replay
+  machinery that references its `AST_Store` by `ival`.
+
+**Extended past v1 the same day, because the v1 subset was measurably too narrow.** Over
+947 non-empty `AST_BasicBlock`s in the corpus, v1 covered **46 (4.9%)**. The blockers, by
+blocks affected: `Return` 353, `Invoke` 294, `If` 238, `Unary` 119, non-local dest 58,
+`Jump` 25, `Binary` 21. `Return` is both the largest and the cheapest — a run ending in
+`Return(expr)` puts its value in the **out slots that already exist**, so it needs no ABI
+change at all. Adding it takes eligibility from 44 to **255 of 947 (26.9%), 5.5×**.
+
+The `Unary` statements are `TOK_INC`/`TOK_DEC` (107 and 11 occurrences) — side-effecting,
+so correctly excluded rather than skippable.
+
+**Wired into the real-corpus differential, which immediately found two bugs.** Running
+frame slices over recorded arenas: **202 frame slices, 51 statements**, and 35 mismatches
+on the first run.
+
+1. **Harness bug (34 of them).** A run with no `Return` still has its out slots written by
+   `spv_main_end`, so the flag there is a dummy rather than a verdict; the CPU reported
+   undefined and the device reported defined-0. Only compare a returned value when the run
+   actually returns one.
+2. **A real emitter bug (the last one).** `spv_store_live_v` sign-extended the high word
+   unconditionally, so storing `-2` into an `unsigned int` slot left `-2` where the CPU
+   has `4294967294`. The high word has to follow the value's own signedness — which is
+   exactly what `spv_widen` already does, and what the store failed to mirror. Same class
+   as the three width divergences fixed earlier, and found the same way.
+
+**Statement-`if` landed too**, and the reason it was tractable is the frame itself: the
+two arms communicate through memory, so the device needs `OpSelectionMerge`, two blocks
+of stores and a merge label — but **no `OpPhi` for the value**. Only the definedness flag
+needs a phi, so an undefined condition or operand in one arm is not laundered by the
+other arm being clean. Without a frame this is the ternary machinery again, with value
+merging; with one it is a branch and two store lists.
+
+`AST_If` with `op == 0` and 2 or 3 children, recursive to depth 8, nested blocks allowed.
+Corpus: **208 frame slices, 73 statements, 0 mismatches; 40 under mutation.** The gain
+over Return-only is modest (202 → 208, 51 → 73 statements) because most `If`-containing
+blocks carry a second blocker as well — usually `Invoke`.
+
+Real corpus now: **208 frame slices, 73 statements, 0 mismatches; 40 under mutation.**
+
+`slice/frame`, 53 checks: slot map ordering, single-statement value, **two-statement
+sequencing where statement 2 consumes statement 1's store**, an 8-frame CPU/device
+differential over every slot, the `Return` path on both executors including its
+definedness, and refusals for a store to a global and for a block containing a call.
+`slice/frame-known-positive` proves it can fail. The Metal arm returns 0 for frame kernels
+for now — declared, not silently divergent.
+
+**Loops landed too — the emitter now has `OpLoopMerge`, where it had zero.** `while`
+(op 2, `{cond, body}`), `for` (op 3, `{cond, body, incr}`) and `do` (op 4, `{body, cond}`)
+— shapes taken from the corpus, not from the grammar. Same reason as statement-`if`: the
+loop-carried values live in the **frame**, so the header carries phis only for the trip
+counter and the definedness flag, never for a value. Without a frame every loop-carried
+variable needs its own header phi and this is a different project.
+
+**The trip cap is load-bearing, not a safety blanket.** An unbounded device loop is
+exactly the occupancy watchdog hazard cluster C is about, and this tree has no static trip
+count to bound one with — `ast_loop_bounds` gives a constant *IV bound* and only when the
+init is a literal in the preceding statements. So every loop gets `MCC_SLICE_TRIP_MAX`
+(1<<16, C3's value), and exceeding it marks the run **undefined rather than truncated**,
+so the host falls back to the CPU instead of trusting a partial answer. The CPU reference
+applies the identical cap, or the two executors would disagree precisely at the boundary.
+At the merge, `def = d_phi AND (i < TRIP_MAX)`; `i_phi` dominates the merge, so the
+over-budget test needs no extra phi.
+
+Test: `sum(0..n-1)` over five different trip counts, CPU and device agreeing on every
+slot. `op 7` is **not** a loop despite appearing in the loop op range — its children are
+`{Ref|Cvt, Lit, Cvt}`, an expression shape, so it is excluded rather than guessed at.
+
+**`x++` / `x--` as statements — the largest single eligibility jump, and it needed no
+address space.** The `Unary` row read 0% coverage against real code because the emitter
+handles `- ~ ! TOK_NEG` and real arenas contain `AST_OP_ADDR` (312), `AST_OP_MEMBER`
+(275), `TOK_INC` (113) and `TOK_DEC` (18). ADDR and MEMBER do need B1. **INC and DEC do
+not** — as a *statement* the value is discarded, so pre and post are the same thing, and
+on an integer local the whole operation is `frame[slot] +/- 1`. Pointers are excluded
+because they scale by element size, which is the part that genuinely needs an address
+space.
+
+Measured effect on the corpus: frame slices **209 → 300 (+44%)**, statements
+**76 → 182 (+139%)**, 0 mismatches. Eligible blocks 254 → 350 of 947 (26.8% → 37.0%).
+
+### Constant-offset `.field` / `&` resolved — correct, and worth zero blocks
+
+The B1 research said 72% of address-shaped `Unary` nodes resolve to a constant offset from
+a local, so they need no address space at all: the resolved offset is just another
+frame-slot key, carried by the existing `(off[], val[])` environment with no ABI change,
+and the device still sees a constant `OpAccessChain`. Verified independently before
+building: **`AST_OP_MEMBER` 244/275 (88.7%), `AST_OP_ADDR` 222/312 (71.2%)**;
+`AST_OP_MEMBER_ARROW` resolves 0 of 59 and never can, because its replay does `indir()`
+first (`src/mccast.c:5177`) — it loads a pointer, and no constant folding crosses that.
+
+Implemented in `ast_eval_slice_frame_off` and threaded through the CPU evaluator's `Load`
+arm, `kind_ok`, `livein`, and **both** emitters' `Load` arms. The safety property that
+made it low-risk: it only ever turns a **refusal into an acceptance**, so no slice that
+lowered before can change.
+
+**And it gains zero blocks.** Eligible blocks: 358 with it, 358 without. Struct-field
+access is essentially never the *only* thing blocking a block — those blocks carry an
+`Invoke` or a non-local store as well. This is the third such negative result this
+session, after `allow_load` (0.9% of nodes, no change) and N12 (all 12 dump fields, no
+change). Recorded because the reasoning was sound and only the measurement settles it: it
+raises node-level `Unary` coverage from 0% to ~56%, and moves nothing that matters.
+
+### `rir-coverage` re-banked again, same cause
+
+`nodes_pct` 41.5127% → 41.4175% at `-O1`. Same dilution: `ast_eval_slice.h` and
+`mccgpu.h` are both amalgamated into `src/mcc.c`, so editing them edits the census
+subject. Nodes 429,240 → 430,787; **absolute lowerable nodes went up** — default level
+178,306 → 178,419 (+113), loose 282,908 → 283,600 (+692). Third occurrence, and the
+strongest evidence yet for open item 5's conclusion that a ratio over the compiler's own
+source is not a regression signal in either direction.
+
+### B1 minimal — measured payoff FIRST this time: 41 blocks
+
+After three sound-but-zero-payoff changes in a row (`allow_load`, N12, constant-offset
+`.field`), the payoff was measured **before** building this one. Modelling a
+byte-addressable frame — runtime-indexed loads/stores through a base that resolves to a
+local, plus address-taken locals — over the same 947 blocks:
+
+| | blocks |
+| --- | ---: |
+| eligible today | 358 |
+| eligible with B1 | **399** |
+| **gained** | **41 (+11.5%)** |
+
+So this one is worth building, and it is the first remaining item that is.
+
+**Design, and the one thing that makes it non-trivial.** The frame is currently
+`nslot` × 8 bytes, and `spv_store_live_v` writes **two words per store** (lo, then
+sign/zero-extended hi). That is sound today only because dense slots are disjoint. Under
+byte addressing a 32-bit local at frame offset −12 and another at −8 are adjacent words,
+and the two-word store clobbers the neighbour. **Byte addressing therefore forces
+per-width store/load** — 1 word for ≤32-bit, 2 for 64-bit, and shift/mask for sub-word
+since SPIR-V has no 8-bit storage without `StorageBuffer8BitAccess`. That, not the
+layout, is the actual cost.
+
+**Sizing is not a constraint.** Measured per-block span of touched locals: median 12 B,
+p90 88 B, p99 428 B, max 1560 B. A 256 B/lane region covers 95.6% of blocks. N14's
+per-lane-globals ceiling does not bind — it binds on *globals*, which is the 46
+global-`Ref` stores and 47 `ADDR(global)` nodes that a frame-scoped space refuses anyway.
+
+**Bounds safety, and it must be by construction.** J3b says any `PageFault` is our own
+bug and must fail loudly, so an out-of-range device store has to be impossible rather
+than merely detected. Cheapest sound form, three instructions and no branch, only on
+dynamic indices: `ok = idx <u extent`, `def = def AND ok`, `idx = idx AND (extent_pow2−1)`.
+The mask must be relative to **this lane's own region**, so the worst an out-of-range
+store can do is corrupt this lane's frame — which is then discarded because `def` is
+false. That closure argument is what keeps "no PageFault is reachable" true.
+
+**B1 splits cleanly in two, and only one half is buildable today.** Classifying every
+address expression in the corpus:
+
+| shape | count | needs |
+| --- | ---: | --- |
+| `base + CONSTANT` | **21** | nothing — folds to a constant offset |
+| `base + RUNTIME index` | **40** | the object's **extent**, to bound the index |
+| base is not a frame offset | 24 | a host pointer; out of scope for a frame |
+| other shapes | 54 | — |
+
+**The constant half is landed** — `ast_eval_slice_frame_off` now folds `base + K` for a
+literal K, exactly as it already folds `.field`, in the CPU evaluator and both emitters.
+
+**The extent column is landed.** `ast_adump_size` computes the byte extent from the real
+`CType` *before* interning (the dumped `type_ref` is a dense id, not a pointer) and emits
+it as a 13th dump column; `rebuild_arena` reads it, treating a missing column as 0 =
+unknown, so an older dump refuses rather than guesses. Verified on a directed case:
+`int arr[4]` → 16, `char buf[7]` → 7, `long big[3]` → 24, `int i` → 4 — **full array
+extents, not element sizes**, which is what a bounds check actually needs. Populated for
+**1079 of 1080 local `Ref`s (99.9%)**. Dump stays byte-identical across runs and between
+`setarch -R` and normal ASLR, and `spvgate` is unaffected because its `sscanf` reads the
+first 7 fields.
+
+So the runtime-index half is no longer blocked on missing information. What remains for
+it is the emitter work: per-width store/load (the current two-word store would clobber a
+neighbouring local under byte addressing) and the three-instruction masked index with
+`def` poisoning.
+
+**The prerequisite as originally diagnosed:** To mask a
+dynamic index into the object it indexes, you need the object's size, and
+`MCC_ARENA_DUMP` emits 12 fields and **none of them is a size**. Without it there are only
+bad options: mask against the whole lane region and a legitimate `arr[3]` silently reads
+the wrong word; or poison `def` whenever the index is not provably in range, which
+poisons every legitimate access too and yields correct-but-useless runs. Neither is
+shippable. **The prerequisite is a 13th dump column carrying the referenced object's byte
+size for local `Ref`s**, plus the matching `rebuild_arena` read — after which the mask has
+something sound to mask against and the J3b "no PageFault reachable by construction"
+argument closes.
+
+That is why B1's 41 blocks are not 41 blocks of available work: 21 address expressions
+are done, and the rest is gated on a dump change, not on emitter effort.
+
+**Recommended sequencing:** additive, not a rewrite. Keep the proven slot path for runs
+that need no address, and select the byte path only for runs that do. The 300 currently
+clean frame slices then cannot regress, at the cost of two frame implementations until
+the byte path is proven.
+
+### `gpu/ladder-gpu-parity` could not fail on a crash — fixed
+
+`cmake/ladder_gpu_parity.cmake` called `execute_process` twice with **no
+`RESULT_VARIABLE`**, so it never looked at either arm's exit status and only grepped
+stdout. A compiler that dumped core on every file would produce two arms whose census
+lines were both absent, compare equal, and the cell would report PASS. Every other GPU
+driver script in `cmake/` already captured the status — `spvgate_real` 3, `spvgate_mutate`
+1, `slicerun_real` 3, `slicerun_mutate` 2, `rir_drop_ratchet` 1 — this one had zero.
+
+Both statuses are now checked and reported with the failing file and the captured output.
+Verified against a compiler stub that raises SIGSEGV: it now fails with
+`the CPU arm failed on ... (rc=1); a crash here made this cell pass vacuously before the
+status was checked`, where before it passed.
+
+**Fourth instance of the same class this session**, after `spvgate` printing OK for a case
+that lowered nothing, the GPU differentials before a mutation switch existed, and my own
+first `rir/drop-ratchet` reading the wrong report file. The pattern is consistent enough
+to be worth stating as a rule: **a cell that consumes a subprocess must assert on its exit
+status, and a cell that compares two things must assert that it compared something.**
+
+### OPEN — is a non-LVAL local `Ref` an address or a value?
+
+Found while modelling B1, tried as a fix, and **reverted** because the evidence does not
+yet settle it. Recording it rather than acting on it.
+
+**The evidence for "address".** In store-destination position the two forms separate
+cleanly: `arr[i] = v` has an array base of `Ref[VT_LOCAL]` with `VT_LVAL` **clear**
+(op `0x32`, 24 occurrences), while `*p = v` has `Ref[VT_LOCAL|VT_LVAL]` (op `0x132`, 45).
+That is the classic distinction — a decayed array name is its address and is not an
+lvalue; a pointer variable is an lvalue whose value is a pointer.
+
+**`ast_eval_slice.h` checks neither**, in `ast_eval_slice_rec`'s `Ref` arm, in `kind_ok`,
+and in `livein` — all three test `(op & VT_VALMASK) == VT_LOCAL && !(op & VT_SYM)` and
+then look the offset up in the environment. If the "address" reading is right, an address
+is being evaluated as a value in **93 of 3994 accepted maximal slices (2.3%)**, and the
+differential is structurally blind to it because *both* executors make the identical
+mistake.
+
+**The evidence against.** This tree's own test tools — `tools/spvgate.c:493` and
+`tools/slicerun.c`'s `mk_ref` — both write plain `VT_LOCAL` with no `VT_LVAL` for what is
+unambiguously a value reference, and spvgate's 38 cases pass against real device
+execution at every rung. So within the evaluator's own convention, `VT_LOCAL` alone
+means "the value at this frame offset", and `VT_LVAL` may simply not be part of the
+arena's contract at that position.
+
+**Why it matters and why it was not guessed at.** For the *ladder* the question is moot:
+it compares two expressions over one environment, so a shared convention cancels. For a
+*runner* executing real frame values, one of the two readings produces wrong answers.
+Refusing non-LVAL local Refs was implemented and reverted when it rejected the entire
+existing test corpus — which is itself the strongest argument that the convention is
+deliberate. What would settle it: build a slice over a real `int arr[4]` and a real
+`int *p`, run it through `ast_eval_slice` with a known frame, and compare against what
+the compiled program computes. That is one directed test, not an inference.
+
+**What remains, and why each is genuinely large rather than deferred by choice:**
+`Invoke` (294 blocks) is D4b — it needs the call boundary, not an emitter change. Stores whose
+destination is not a local (58 blocks) need a real address space, cluster B1, not a
+frame. `AST_StoreVal` (971 nodes) is not a store at all — it is a vstack-ordering marker
+referencing its `AST_Store` by `ival`, so it is subsumed by whatever handles the store it
+points at.
+
+## Open now — research findings on the open items, 2026-08-08
+
+Four investigations. Two of them overturned the item's own premise, and two hypotheses
+that read well from the code were falsified by measurement.
+
+### Open item 1 — `cli/perfn_inproc`: **neither (a) nor (b). The pass cannot fire at any tier.**
+
+The item asks whether the test needs a discriminating input or the pass is inert.
+**The pass is not inert — it is one of the largest single-flag size wins in the tree**, and
+the discriminating input already exists and is already green in a sibling harness.
+
+| configuration | `-fno-opt-perfn-inproc` | `-fopt-perfn-inproc` |
+| --- | ---: | ---: |
+| `-O12 -fno-inline-functions` (what `optfire/perfn_inproc` runs) | **3686 B** | **2230 B** (−39.5%) |
+| `-O12`, default inliner on | 2262 B | **2262 B — SAME** |
+| `-O0` / `-O1` / `-O2` / `-O3` / `-O8`, flag added to the default | — | **SAME at every one** |
+
+The mechanism: `do_inline` requires `!ast_inline_pass_env` (`src/mccast.c:17993`).
+`INLINE_FUNCTIONS` is `MCC_OPTD_LEVEL(2)` and `OPT_PERFN_INPROC` is `MCC_OPTD_LEVEL(8)`
+(`src/mccopt.h:108`, `:124`) — so the flag's own level is **six rungs above the level that
+disables it**, and at -O0/-O1 the other half of the gate (`ast_has_graftable_call` needing
+`ast_inline_env`) is off instead. There is no tier at which adding the flag changes a byte.
+
+**So "does not earn its level" is true, but for a gate-ordering reason, not inertness.**
+Banking `SAME` would record the right verdict from the wrong evidence and bury a working
+pass. Note also the cell's `-fopt-slice` premise is unsound independently: `ast_slice_consume`
+loads `~/.cache/mcc/sl-*.ck` whose salt excludes the `-f` flags, and the case does not
+isolate `XDG_CACHE_HOME` the way `cli/perfn_search` does.
+
+**On promoting it to a real tier — tried, measured, and the answer is no.** The standing
+rule is to promote a strategy when cost/benefit proves it belongs, so the gate was
+actually fixed and the corpus measured rather than reasoned about.
+
+The gate fix is one clause: let the trial run when `ast_perfn_inproc_env` is set, since
+`-fopt-perfn-inproc` does not *choose* to graft — it emits both ways and keeps the
+smaller, so the suppression is what makes it unreachable rather than what makes it safe.
+With that in, the flag stops being inert at `-O3` (2230 → 2198 on the optfire case, −32 B).
+`-O1`/`-O2` stay at zero because `ast_inline_env` is `-O3`-and-above, so there are no
+graft candidates below it.
+
+Then the corpus, at `-O3` over `tests/exec`:
+
+| | objects | total bytes |
+| --- | ---: | ---: |
+| `-fno-opt-perfn-inproc` | 143 | 3,969,259 |
+| `-fopt-perfn-inproc` | 143 | **3,982,475** |
+| delta | 26 changed | **+13,216 B, +0.333%** |
+
+**It makes real code bigger.** The 39.5% win is real but is a property of a hand-shaped
+case, not of the corpus. So the change was reverted and the flag stays at level 8.
+
+**The diagnosis this leaves is more useful than the level question.** The trial selects on
+`ind - ast_body_ind_sv` — the emitted length of *that function's body* — and that local
+metric does not predict object size: grafting can keep a callee alive that would otherwise
+be dropped, and it moves reloc and section content the body length never sees. So the
+correct item is not "which tier" but **"the selection metric measures the wrong thing"**,
+and the out-of-process variant already demonstrates the fix — `mcc_superopt_perfn`
+(`src/mcc.c:1133`) scores on `so_fn_sizes`, the real emitted per-symbol size. Until the
+in-process trial scores on something that predicts the object, no tier is justified.
+Recorded so the next attempt starts from the metric, not from `levelpins.txt`.
+
+### Open items 4 and 5 — ratios over the compiler's own source
+
+Confirmed and sharpened: the same `src/mccgpu.c` edit moved `nodes_pct_loose` **down**
+0.065pp while moving `bodies_pct` and `bytes_pct` **up** — one source edit moved two
+banked ratios of the same census in opposite directions. Neither direction is a signal.
+
+Two findings the items did not contain:
+
+- **`corpus_config` has a hole.** `CORPUS_DEFS = ["MCC_DIAG"]` (`tools/rir-coverage.py:203`)
+  is one entry, but `MCC_EMBED_JIT` (a user-visible CMake option, default ON) gates two
+  whole translation units into `src/mcc.c` (`src/libmcc.c:20-23`). The guard that exists
+  to catch corpus-shape changes cannot see the largest one.
+- **Item 4 is probably a real bug, not host sensitivity.** The documented host-sensitive
+  case is elf/x86-64 vs darwin/aarch64 — *different arch*. gcc-hosted vs stage2 is the
+  **same** host, arch, and object format, and `host_objfmt()` returns `elf` for both, so
+  `unbanked_host` is false and both are fully gated. Time-budgeted search and disk memos
+  are both ruled out (level 13 and level 9; the bank is O0–O3). Two of 2765 bodies
+  replaying byte-identically under one build and not another is a divergence between two
+  builds of the same program — and `selfhost-fixpoint` is structurally blind to it,
+  because an unfaithful replay restores the parser's bytes, so both objects are identical
+  either way. **Do not raise `--tol` until `--classify` has named the two bodies.**
+
+`--corpus exec` would structurally fix item 5 (it is the only corpus excluding
+`src/mcc.c`), but needs a bank, a fix to the per-format floor schema, and a pinned file
+list; and it does not touch item 4 at all.
+
+### S5′ / grow-the-slice — two plausible fixes measured and rejected
+
+**Rejected 1: `allow_load = 1`.** Every call site passes `allow_load = 0`, both emitters
+already implement `AST_Load(Ref local)`, and the CPU evaluator resolves it through the
+same environment — so relaxing it looked like the cheapest possible lever. **Measured: it
+changes nothing.** Same 783 slices, same 0 mismatches. The corpus has **293 Load nodes in
+32,373 (0.9%)**, of which only 97 are `Load(local Ref)`. Locals are read through bare
+`Ref`, not `Load`.
+
+**Rejected 2: "make `scan_subtree` pick the largest subtree, not the first."**
+`ast_eval_slice_kind_ok` is downward-closed — a node is accepted only if every descendant
+is — so the highest accepted node on a path already *is* the maximal lowerable subtree.
+The greedy scan was never losing anything.
+
+**The measured answer.** Terminators, as a share of all 32,373 corpus nodes:
+
+| terminator | nodes | % |
+| --- | ---: | ---: |
+| `Invoke` | 1288 | 4.0% |
+| `Store` | 987 | 3.0% |
+| `BasicBlock` | 971 | 3.0% |
+| `StoreVal` | 971 | 3.0% |
+| `Return` | 383 | 1.2% |
+| statement-`If` (not the ternary) | 295 | 0.9% |
+| `Load` | 293 | 0.9% |
+
+Against a node census that is **80% expression** (Literal 31.4%, Ref 23.7%, Convert 14.5%,
+Binary 10.4%). The expression nodes are there; they are chopped into 3–4 node pieces by
+**statement boundaries** — `Store`/`StoreVal` alone are 1958 nodes, one per assignment.
+
+**This is S1b, confirmed by measurement rather than by argument: C expression trees are
+small because C statements are small, and no relaxation of the expression predicate can
+change that.** The unit has to be the statement run, and the ABI blocker is exactly the
+thing that terminates the subtrees — multiple outputs, one per store.
+
+And a second number that constrains it: at 1 lane the device costs ~20,207 ns against
+~14 ns/node on the CPU, so **break-even at one lane is ~1,443 nodes** — larger than the
+biggest invoke-free region in the tree (1,114). Only **4.3% of census slices contain a
+loop at all**. So growing the unit is necessary and *not sufficient*; S5′ is the binding
+half, and it needs a **dynamic** trip-count histogram, because static trip count does not
+exist in this tree (no function computes one; `ast_loop_bounds` gives a constant IV bound,
+not a count, and only when the init is a literal in the preceding statements).
+
+**The lever nobody costed:** the ~207 ns/lane is host-side marshalling — pack, copy into
+the write-combined mapping, copy out, unpack. 207 ns to move 20 bytes is ~100 MB/s. If
+that drops to 20 ns/lane, a **3-node** slice breaks even at 417 lanes and a 15-node slice
+at 52, and the corpus we already have becomes eligible without growing a single slice.
+
+### N14 and S3′
+
+**N14's numbers do not reproduce and its framing is wrong.** Re-measured: `globals_rw` is
+**6,209,784 B (5.92 MiB)**, not 5.82; `.tbss` is 99% one JIT slab; `image_ro` is 4.75 MiB,
+not 1.62. The lane ceiling comes out ~21, not 15 — 15 and 51 are only consistent with an
+unstated ~36 MiB reservation. And the row calls 4 MiB of tables "read-mostly" when
+**only 320 KiB actually is**: `rir_xt`/`rir_pt` are pointer-keyed append caches reset per
+TU (not shareable at all), `ast_memo_pk`/`try`/`io_raw`/`merged`/`grad` are 1.72 MiB of
+pure scratch (lazily allocatable, which is a bigger and cheaper win than sharing), and
+1.56 MiB is dead unless `-fopt-slice` is on.
+
+**But the decisive point is scoping:** N14's per-lane globals apply to running *mcc
+itself* on the device (cluster B's interpreter). The emitter path measured in S5 carries
+no C globals whatsoever. Since A3 was reversed to enter via the emitter, **N14 is not on
+the critical path for anything currently planned** and should be re-scoped as an
+interpreter precondition.
+
+**S3′ is worse than the row states.** When 15 siblings block on `MCC_GPU_LOCK`, the one
+holding it runs its *CPU* arm against an idle machine — so the device is penalised ~16×
+*and* the CPU is simultaneously credited a contention discount. The bias is multiplicative
+in both directions. And the majority vote is itself invalid: 16 siblings measuring one
+serialized queue are 16 correlated samples, not 16 independent ones.
+
+`MCC_GPU_LOCK` is now *more* necessary, not less: L3's residency is a singleton, and every
+field in it (`cb`, `fence`, `dset`, the shared `bin`/`bout` and their mappings, the
+pipeline cache array) is externally-synchronized-per-spec or outright shared data. The
+90% fix is to replicate the resident state per context and then narrow the lock to
+`vkQueueSubmit`, leaving `vkWaitForFences` — where the 20 µs lives — outside it. Ordering
+is forced: replicate first, narrow second.
+
+### Open item 2 — `optfire/ident_shift` on arm64
+
+The pass is arch-neutral: `ast_ident_adopt` (`src/mccast.c:7637`) has no arch conditionals,
+the gate is `MCC_OPTD_ALWAYS`, and `arch.txt` has no `ident_shift` row. `-O12` is one rung
+below `MCC_OPT_SEARCH_LEVEL`, so it is not a search-nondeterminism cell either. The likely
+reading is an unrelated arm64 `-O12` codegen bug for which this cell is only the messenger
+— which the failure line would settle, because the run loop tries `-fno-ident-shift`
+**first**.
+
+Three things the item did not know:
+
+1. **There are eight message sites, not six** — `optfire.sh:30` and `:31` also print
+   `FAIL ident_shift:` before the differ arm is reached.
+2. **The log probably already exists.** `mcc-ci stage3 --consume test` passes
+   `--output-on-failure`, so the raw job log has the line verbatim; only the *step
+   summary* (which is what was read) omits it, because `junit-summary` emits test names
+   only.
+3. **`optfire.sh` discards compiler stderr** at `:30`, `:49`, `:74`, `:76`, `:88`. If the
+   mode turns out to be a build failure, the nightly log will *still* not say why, and a
+   second cycle is burned. Echoing captured stderr and the counter value on the failure
+   paths fixes the class for all 123 optfire cells, not just this one.
+
+The local cross loop already runs this cell for arm64 but forces `OPTFIRE_NORUN=1`
+(`CMakeLists.txt:4526`), so it covers exactly one of the eight modes and none of the
+run-side ones — which is precisely why "objects differ under all five target compilers"
+did not settle it.
+
+## Open now — the coroutine task, 2026-08-08
+
+> Context: [`docs/PLAN.md`](PLAN.md) was reframed on 2026-08-08. The GPU is no longer a
+> replacement execution engine; it is a **second executor behind the JIT's existing
+> scheduler**, and a slice runs on the device only when `mccjit_bench_pair` measures it
+> faster *including upload, dispatch, download and readback*. That is cluster S. This
+> task is **S7b**, and it is the one item in cluster S that is worth doing on its own
+> merits whether or not the GPU plan is adopted at all.
+
+### Replace the C11 threading implementation with a single-threaded coroutine that ticks
+
+**The claim.** Four separate open problems in this tree are the same object wearing four
+names, and one task representation closes all of them:
+
+1. **The JIT pool has no shutdown** (L2′, `docs/PLAN.md` cluster L). Workers sit in an
+   unbounded `pthread_cond_wait` (`src/mccjit_embed.c:1347`) and are `pthread_detach`ed
+   at `:1375`, so no `pthread_t` is retained and joining is structurally impossible. A
+   quit flag checked *between ticks* is a few lines. A quit flag against an opaque
+   `job->run(job)` that holds the process-global `mccjit_swap_lock` across an entire
+   compile (`:1353-1355`) is a redesign.
+2. **D1e is already a coroutine, on the device side.** The measured-and-winning boundary
+   mechanism is a pre-enqueued self-skipping resume chain: each command buffer loads the
+   state vector, checks for a host reply, and exits immediately if absent. That is a
+   tick. 12.4 µs median, measured 2026-08-08 (section below).
+3. **C3b's step budget is a tick a third time** — suspend at loop top, `1<<16` steps,
+   resume.
+4. **mcc ships a C11 `<threads.h>` and barely uses it.** `runtime/include/threads.h` is
+   217 lines of C11-over-pthreads, `#include_next`-passthrough when the host libc has
+   one. Its only in-tree consumer is `tools/mcchv.c`. Its `mtx_timedlock` (`:144`) is a
+   **1 ms `nanosleep` polling spin**, not a real timed lock.
+
+**What exists today, so the scope is honest.** A census over `src/`, `runtime/`,
+`tools/`, `include/` (excluding `vendor/`) found:
+
+- **No coroutine, fiber, `ucontext`, `makecontext`/`swapcontext`, generator,
+  continuation, scheduler, event-loop or ticking-task abstraction. Zero hits, all
+  spellings.** The only task-like construct is `MccjitSwapJob`
+  (`src/mccjit_embed.c:1288-1298`): a `void (*run)(job)` on an intrusive FIFO, run to
+  completion, no resume state.
+- `setjmp`/`longjmp` exists but is **only** error unwinding (`mcc.h:32`, `libmcc.c:863`)
+  and the public entry for running JIT'd `main` (`include/libmcc.h:73`). Every `longjmp`
+  unwinds outward and discards; none is a continuation.
+- Threading in the compiler proper is **pthreads only, no `<threads.h>`**: 139 tokens in
+  `mccjit_embed.c`, 17 in `mccrun.c`, 6 in `mccast.c` (`ast_search_pool_pthreads`), 4 in
+  `mccgpu.c`. Windows is a pthread-shaped shim (`src/mccjit_win32.h:272-372`, SRWLOCK /
+  CONDITION_VARIABLE / INIT_ONCE / `_beginthreadex`).
+- Atomics are GCC `__atomic_*` builtins with explicit ordering, not `<stdatomic.h>`. The
+  ordering that matters is QSBR epoch publication (`:1813-1854`) and the three
+  release-stores that publish freshly emitted code (`:5841`, `:6724`, `:9420`).
+
+**The suspension points a conversion has to name.** These are the blocking calls inside
+worker threads today:
+
+| worker | site | what blocks |
+| --- | --- | --- |
+| `mccjit_pool_worker` | `src/mccjit_embed.c:1341` | unbounded `pthread_cond_wait` (`:1347`), then `mccjit_swap_lock` held across the whole job |
+| `ast_search_thread_fn` | `src/mccast.c:16877` | full AST re-optimization per candidate; can reach `flock(LOCK_EX)` at `:15546` and file I/O |
+| `mccjit_qsbr_thread` | `:6976` | `nanosleep` 1 ms via `mccjit_pool_nap` (`:5731`) |
+| `hv_optimizer` | `tools/mcchv.c:252` | `thrd_sleep` 5 ms (`:281`), `thrd_yield` (`:279`), `flock` (`:487`), `fsync` (`:503`) |
+| `mccjit_bench_sibling_thread` | `:3338` | pure CPU, joined at `:3384` — the only joined threads in the file |
+
+**Recommended shape.**
+
+- A `MccTask` with an explicit resume state and a `tick()` returning
+  `{done, yielded, blocked-on}` — a state machine, not `ucontext`. Rationale: `ucontext`
+  is absent on Windows, deprecated on Darwin, and needs a stack per task, which collides
+  directly with N8's stack findings (peak 992 KiB before the frame hoist, 112 KiB after).
+  The project already writes hand-rolled machine-code stubs; a switch-on-resume-state
+  task is well within its idiom and is the only form that ports to the device, where
+  there is no stack to swap.
+- `MccjitSwapJob.run` becomes `tick`, and `mccjit_pool_worker`'s `for(;;)` becomes a
+  loop over `tick` with the quit flag checked between ticks. **That single change is
+  L2′.** Narrow `mccjit_swap_lock` to the codegen inside the tick rather than holding it
+  across the tick — the lock exists because the compile path runs on process-global
+  state (`mccjit_last_*`, `cur_text_section`, `funcname`), which is a smaller region than
+  the job.
+- `runtime/include/threads.h` gains a **single-threaded backend**: `thrd_create` enqueues
+  a task, `mtx_lock`/`cnd_wait` become yields, `thrd_join` runs the scheduler until the
+  target completes. Selected at build time. The C11 API stays exactly as it is — the
+  point is to remove the *dependency on OS threads*, not the interface, and
+  `tests/exec/features_c99_c11/c11_threads.c` (4 threads × 50,000 steps, exercising
+  `thrd`/`mtx`/`cnd`/`tss`/`call_once`) is the acceptance test that already exists.
+- **Convert `tools/mcchv.c` first.** It is the only real C11-threads consumer in the
+  tree, it is self-contained, and its optimizer thread already has explicit
+  `thrd_yield`/`thrd_sleep` suspension points to convert. It is the cheapest possible
+  proof that the representation is adequate.
+
+**What this does not do, stated so it is not discovered later.** A single-threaded
+coroutine backend removes concurrency, not just threads. `mccjit_bench_pair`'s sibling
+threads (`:3346-3384`) exist to measure throughput under contention and **must stay real
+threads** — a coroutine cannot measure 16-way contention. Likewise `ast_search_pool_pthreads`
+is there for wall-clock search throughput. The correct end state is *both*: tasks as the
+scheduling unit, OS threads as an optional execution substrate underneath them, which is
+also what lets the same task type be ticked by the GPU pool.
+
+**Order.** After Phase 0a instrumentation, alongside Phase 1's L2′. It is a prerequisite
+for the tick-based framing of D1e (Phase 5) and C3b, and it is the mechanism L2′ needs.
+
 ## Open now — caveats left by the CI matrix replication, 2026-08-08
 
 Six items, each with the decision or measurement that closes it. Detail and evidence are

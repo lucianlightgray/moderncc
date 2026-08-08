@@ -116,6 +116,7 @@ typedef struct MccGpu {
 	unsigned long maxthreads;
 	long dispatches;
 	long lanes;
+	long stranded;
 	int fault;
 	int fault_encoder;
 	long fault_code;
@@ -717,6 +718,7 @@ MCC_VK_HANDLE(VkFence)
 MCC_VK_HANDLE(VkImageView)
 MCC_VK_HANDLE(VkPipeline)
 MCC_VK_HANDLE(VkPipelineCache)
+MCC_VK_HANDLE(VkPipelineCache)
 MCC_VK_HANDLE(VkPipelineLayout)
 MCC_VK_HANDLE(VkSampler)
 MCC_VK_HANDLE(VkSemaphore)
@@ -780,6 +782,7 @@ typedef enum VkStructureType {
 	VK_STRUCTURE_TYPE_SUBMIT_INFO = 4,
 	VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO = 5,
 	VK_STRUCTURE_TYPE_FENCE_CREATE_INFO = 8,
+	VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO = 17,
 	VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO = 12,
 	VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO = 16,
 	VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO = 18,
@@ -843,8 +846,11 @@ typedef enum VkShaderStageFlagBits {
 #define VK_API_VERSION_1_1 VK_MAKE_API_VERSION(0, 1, 1, 0)
 
 #define VK_QUEUE_COMPUTE_BIT 0x00000002
+#define VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT 0x00000002
+#define VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT 0x00000001
 #define VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT 0x00000002
 #define VK_MEMORY_PROPERTY_HOST_COHERENT_BIT 0x00000004
+#define VK_MEMORY_PROPERTY_HOST_CACHED_BIT 0x00000008
 #define VK_BUFFER_USAGE_STORAGE_BUFFER_BIT 0x00000020
 #define VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT 0x00000001
 
@@ -1328,6 +1334,25 @@ typedef VkResult(VKAPI_PTR *PFN_vkCreateFence)(
 		const VkAllocationCallbacks *pAllocator, VkFence *pFence);
 typedef void(VKAPI_PTR *PFN_vkDestroyFence)(
 		VkDevice device, VkFence fence, const VkAllocationCallbacks *pAllocator);
+typedef struct VkPipelineCacheCreateInfo {
+	VkStructureType sType;
+	const void *pNext;
+	VkFlags flags;
+	size_t initialDataSize;
+	const void *pInitialData;
+} VkPipelineCacheCreateInfo;
+
+typedef VkResult(VKAPI_PTR *PFN_vkCreatePipelineCache)(
+		VkDevice device, const VkPipelineCacheCreateInfo *pCreateInfo,
+		const VkAllocationCallbacks *pAllocator, VkPipelineCache *pPipelineCache);
+typedef void(VKAPI_PTR *PFN_vkDestroyPipelineCache)(
+		VkDevice device, VkPipelineCache pipelineCache,
+		const VkAllocationCallbacks *pAllocator);
+typedef VkResult(VKAPI_PTR *PFN_vkResetFences)(VkDevice device,
+																							 uint32_t fenceCount,
+																							 const VkFence *pFences);
+typedef VkResult(VKAPI_PTR *PFN_vkResetCommandBuffer)(
+		VkCommandBuffer commandBuffer, VkFlags flags);
 typedef VkResult(VKAPI_PTR *PFN_vkWaitForFences)(VkDevice device,
 																								 uint32_t fenceCount,
 																								 const VkFence *pFences,
@@ -1374,7 +1399,11 @@ typedef VkResult(VKAPI_PTR *PFN_vkWaitForFences)(VkDevice device,
 	X(vkQueueSubmit)                                                             \
 	X(vkCreateFence)                                                             \
 	X(vkDestroyFence)                                                            \
-	X(vkWaitForFences)
+	X(vkWaitForFences)                                                           \
+	X(vkCreatePipelineCache)                                                     \
+	X(vkDestroyPipelineCache)                                                    \
+	X(vkResetFences)                                                             \
+	X(vkResetCommandBuffer)
 
 #define MCC_VK_DECL(n) static PFN_##n n;
 MCC_VK_FNS(MCC_VK_DECL)
@@ -1473,9 +1502,28 @@ typedef struct MccGpu {
 	char name[256];
 	long dispatches;
 	long lanes;
+	long stranded;
 } MccGpu;
 
 static MccGpu mcc_gpu;
+
+static int mcc_vk_diag(void) {
+	return getenv("MCC_AST_EVAL_LADDER_GPU_DIAG") != 0;
+}
+
+/* The fence timeout was a hardcoded 30 s, which made the pending-command-buffer
+ * path unreachable by any test. As a named tunable one cell can force a timeout
+ * on a real device with no fault injection and no hang. */
+static uint64_t mcc_vk_fence_ns(void) {
+	const char *e = getenv("MCC_GPU_FENCE_NS");
+	if (e && e[0]) {
+		char *end = 0;
+		unsigned long long v = strtoull(e, &end, 10);
+		if (end != e && v > 0)
+			return (uint64_t)v;
+	}
+	return 30ULL * 1000000000ULL;
+}
 
 static int mcc_gpu_init(void) {
 	VkApplicationInfo ai;
@@ -1585,19 +1633,71 @@ void mcc_gpu_quiesce(void) {
 	MCC_GPU_UNLOCK();
 }
 
+/* Taking the *first* HOST_VISIBLE|HOST_COHERENT type is what the spec permits
+ * and what the hardware punishes: on this host that is memoryTypes[2], plain
+ * system RAM and not even HOST_CACHED, while memoryTypes[4] is
+ * DEVICE_LOCAL|HOST_VISIBLE|HOST_COHERENT on the ReBAR heap. Under a B1-style
+ * address space every interpreted load and store would be a PCIe transaction.
+ * Score instead, preferring device-local (the kernel reads this far more often
+ * than the host does) and then host-cached (so the readback is not an uncached
+ * read), and keep first-match order as the tie-break so a device with one
+ * qualifying type behaves exactly as before. */
 static int mcc_gpu_mem_index(VkMemoryRequirements mr, uint32_t *out) {
 	VkPhysicalDeviceMemoryProperties mp;
 	unsigned i;
+	int best = -1, best_score = -1;
+	const char *force = getenv("MCC_GPU_MEMTYPE");
 	unsigned want = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 									VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	vkGetPhysicalDeviceMemoryProperties(mcc_gpu.phys, &mp);
-	for (i = 0; i < mp.memoryTypeCount; i++)
-		if ((mr.memoryTypeBits & (1u << i)) &&
-				(mp.memoryTypes[i].propertyFlags & want) == want) {
-			*out = i;
+	/* Overridable because the right answer is not obvious and is device-specific:
+	 * DEVICE_LOCAL|HOST_VISIBLE (ReBAR) is fastest for the kernel and slowest for
+	 * the host readback, which is an uncached read across PCIe. Which side
+	 * dominates depends on lanes-per-dispatch, so it has to be measurable. */
+	if (force && force[0]) {
+		unsigned idx = (unsigned)strtoul(force, 0, 10);
+		if (idx < mp.memoryTypeCount && (mr.memoryTypeBits & (1u << idx)) &&
+				(mp.memoryTypes[idx].propertyFlags & want) == want) {
+			if (mcc_vk_diag())
+				fprintf(stderr, "[gpu-vk] memory type %u forced flags=0x%x\n", idx,
+								(unsigned)mp.memoryTypes[idx].propertyFlags);
+			*out = idx;
 			return 1;
 		}
-	return 0;
+	}
+	for (i = 0; i < mp.memoryTypeCount; i++) {
+		unsigned f = mp.memoryTypes[i].propertyFlags;
+		int score;
+		if (!(mr.memoryTypeBits & (1u << i)) || (f & want) != want)
+			continue;
+		/* HOST_CACHED dominates, and by a lot. Measured on this host at 256-node
+		 * slices: type 3 (HOST_VISIBLE|COHERENT|CACHED) 13.4 ns/lane, type 2
+		 * (HOST_VISIBLE|COHERENT) 54.2, type 4 (DEVICE_LOCAL|HOST_VISIBLE|
+		 * COHERENT, i.e. ReBAR) 224.9 -- a 16.8x spread, and the ReBAR type that
+		 * looks best on paper is the worst by far. The reason is which side of the
+		 * bus does the most traffic: on the emitter path the kernel touches each
+		 * live-in once and writes one result, while the host packs, uploads,
+		 * downloads and unpacks every lane, so an uncached readback across PCIe is
+		 * the whole cost. I2(D)'s argument for DEVICE_LOCAL is about the B1
+		 * interpreter, where the kernel does the memory traffic instead -- so keep
+		 * device-local as the tie-break, and revisit when that path exists. */
+		score = 0;
+		if (f & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+			score += 2;
+		if (f & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+			score += 1;
+		if (score > best_score) {
+			best_score = score;
+			best = (int)i;
+		}
+	}
+	if (best < 0)
+		return 0;
+	if (mcc_vk_diag())
+		fprintf(stderr, "[gpu-vk] memory type %d flags=0x%x score=%d\n", best,
+						(unsigned)mp.memoryTypes[best].propertyFlags, best_score);
+	*out = (uint32_t)best;
+	return 1;
 }
 
 static int mcc_gpu_buffer(VkDeviceSize size, VkBuffer *buf, VkDeviceMemory *mem,
@@ -1635,57 +1735,70 @@ static int mcc_gpu_buffer(VkDeviceSize size, VkBuffer *buf, VkDeviceMemory *mem,
 	return 1;
 }
 
-static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
-																	 const int32_t *in, int ntuple, int nlive,
-																	 int32_t *out) {
-	VkBuffer bin, bout;
-	VkDeviceMemory min_, mout;
-	void *pin, *pout;
-	VkDescriptorSetLayoutBinding dslb[2];
+/* --- L3 residency ------------------------------------------------------- *
+ * Everything below except the command recording and the submit is a pure
+ * function of (code, nlive) or of nothing at all, and all of it used to be
+ * created and destroyed on every single dispatch -- ten object classes, with
+ * VK_NULL_HANDLE for the pipeline cache, so the driver recompiled the SPIR-V
+ * every call. Measured cost of that on this host: ~640 us of fixed overhead per
+ * dispatch, which is larger than any per-lane advantage the device has and is
+ * why the first H6 table said no slice can ever break even.
+ *
+ * Nothing here is freed on the dispatch path. The only teardown is quiesce. */
+
+#define MCC_VK_CACHE_MAX 64
+
+typedef struct MccVkPipe {
+	uint64_t key;
+	VkShaderModule sm;
+	VkPipelineLayout play;
+	VkPipeline pipe;
+} MccVkPipe;
+
+static struct {
+	int ready;
+	VkDescriptorSetLayout dsl;
+	VkDescriptorPool dpool;
+	VkDescriptorSet dset;
+	VkCommandPool cpool;
+	VkCommandBuffer cb;
+	VkFence fence;
+	VkPipelineCache pcache;
+	VkBuffer bin, bout, bmem;
+	VkDeviceMemory min_, mout, mmem;
+	void *pin, *pout, *pmem;
+	VkDeviceSize binsz, boutsz, bmemsz;
+	MccVkPipe cache[MCC_VK_CACHE_MAX];
+	int ncache, next;
+} mcc_vkr;
+
+static uint64_t mcc_vk_key(const uint32_t *code, int nwords, int nlive) {
+	uint64_t h = 1469598103934665603ull;
+	int i;
+	for (i = 0; i < nwords; i++) {
+		h ^= code[i];
+		h *= 1099511628211ull;
+	}
+	h ^= (uint64_t)nwords * 31 + (uint64_t)nlive;
+	return h ? h : 1;
+}
+
+static int mcc_vk_resident(void) {
+	VkDescriptorSetLayoutBinding dslb[3];
 	VkDescriptorSetLayoutCreateInfo dslci;
-	VkDescriptorSetLayout dsl = 0;
 	VkDescriptorPoolSize dps;
 	VkDescriptorPoolCreateInfo dpci;
-	VkDescriptorPool dpool = 0;
 	VkDescriptorSetAllocateInfo dsai;
-	VkDescriptorSet dset;
-	VkDescriptorBufferInfo dbi[2];
-	VkWriteDescriptorSet wds[2];
-	VkShaderModuleCreateInfo smci;
-	VkShaderModule sm = 0;
-	VkPipelineLayoutCreateInfo plci;
-	VkPipelineLayout play = 0;
-	VkComputePipelineCreateInfo cpci;
-	VkPipeline pipe = 0;
 	VkCommandPoolCreateInfo cpoolci;
-	VkCommandPool cpool = 0;
 	VkCommandBufferAllocateInfo cbai;
-	VkCommandBuffer cb;
-	VkCommandBufferBeginInfo bi;
-	VkSubmitInfo si;
 	VkFenceCreateInfo fci;
-	VkFence fence = 0;
-	int i, rc = 0;
-	int cap = ((ntuple + MCC_GPU_LOCAL_SIZE - 1) / MCC_GPU_LOCAL_SIZE) * MCC_GPU_LOCAL_SIZE;
+	VkPipelineCacheCreateInfo pcci;
+	int i;
 
-	if (!mcc_gpu_init())
-		return 0;
-	if (!mcc_gpu_buffer((VkDeviceSize)cap * nlive * MCC_GPU_IN_SLOTS * 4, &bin,
-											&min_, &pin))
-		return 0;
-	if (!mcc_gpu_buffer((VkDeviceSize)cap * MCC_GPU_OUT_SLOTS * 4, &bout, &mout,
-											&pout)) {
-		vkUnmapMemory(mcc_gpu.dev, min_);
-		vkFreeMemory(mcc_gpu.dev, min_, 0);
-		vkDestroyBuffer(mcc_gpu.dev, bin, 0);
-		return 0;
-	}
-	memset(pin, 0, (size_t)cap * nlive * MCC_GPU_IN_SLOTS * 4);
-	memcpy(pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
-	memset(pout, 0, (size_t)cap * MCC_GPU_OUT_SLOTS * 4);
-
+	if (mcc_vkr.ready)
+		return 1;
 	memset(dslb, 0, sizeof dslb);
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < 3; i++) {
 		dslb[i].binding = (unsigned)i;
 		dslb[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		dslb[i].descriptorCount = 1;
@@ -1693,135 +1806,379 @@ static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
 	}
 	memset(&dslci, 0, sizeof dslci);
 	dslci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	dslci.bindingCount = 2;
+	dslci.bindingCount = 3;
 	dslci.pBindings = dslb;
-	if (vkCreateDescriptorSetLayout(mcc_gpu.dev, &dslci, 0, &dsl) != VK_SUCCESS)
-		goto done;
+	if (vkCreateDescriptorSetLayout(mcc_gpu.dev, &dslci, 0, &mcc_vkr.dsl) !=
+			VK_SUCCESS)
+		return 0;
 	memset(&dps, 0, sizeof dps);
 	dps.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	dps.descriptorCount = 2;
+	dps.descriptorCount = 3;
 	memset(&dpci, 0, sizeof dpci);
 	dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	dpci.maxSets = 1;
 	dpci.poolSizeCount = 1;
 	dpci.pPoolSizes = &dps;
-	if (vkCreateDescriptorPool(mcc_gpu.dev, &dpci, 0, &dpool) != VK_SUCCESS)
-		goto done;
+	if (vkCreateDescriptorPool(mcc_gpu.dev, &dpci, 0, &mcc_vkr.dpool) !=
+			VK_SUCCESS)
+		return 0;
 	memset(&dsai, 0, sizeof dsai);
 	dsai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	dsai.descriptorPool = dpool;
+	dsai.descriptorPool = mcc_vkr.dpool;
 	dsai.descriptorSetCount = 1;
-	dsai.pSetLayouts = &dsl;
-	if (vkAllocateDescriptorSets(mcc_gpu.dev, &dsai, &dset) != VK_SUCCESS)
-		goto done;
+	dsai.pSetLayouts = &mcc_vkr.dsl;
+	if (vkAllocateDescriptorSets(mcc_gpu.dev, &dsai, &mcc_vkr.dset) != VK_SUCCESS)
+		return 0;
+	memset(&cpoolci, 0, sizeof cpoolci);
+	cpoolci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	cpoolci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	cpoolci.queueFamilyIndex = mcc_gpu.qfam;
+	if (vkCreateCommandPool(mcc_gpu.dev, &cpoolci, 0, &mcc_vkr.cpool) !=
+			VK_SUCCESS)
+		return 0;
+	memset(&cbai, 0, sizeof cbai);
+	cbai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	cbai.commandPool = mcc_vkr.cpool;
+	cbai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	cbai.commandBufferCount = 1;
+	if (vkAllocateCommandBuffers(mcc_gpu.dev, &cbai, &mcc_vkr.cb) != VK_SUCCESS)
+		return 0;
+	memset(&fci, 0, sizeof fci);
+	fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	if (vkCreateFence(mcc_gpu.dev, &fci, 0, &mcc_vkr.fence) != VK_SUCCESS)
+		return 0;
+	memset(&pcci, 0, sizeof pcci);
+	pcci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+	if (vkCreatePipelineCache(mcc_gpu.dev, &pcci, 0, &mcc_vkr.pcache) !=
+			VK_SUCCESS)
+		mcc_vkr.pcache = VK_NULL_HANDLE;
+	mcc_vkr.ready = 1;
+	return 1;
+}
+
+/* The shared address space: one host-mapped region every lane sees, holding the
+ * globals image, the heap, and the printf ring. A pointer is a byte offset into
+ * it, so offset 0 is reserved as NULL -- a bump allocator that handed out 0
+ * would return a pointer equal to NULL, and malloc's result is null-checked at
+ * every measured site.
+ *
+ * Host and device see the same bytes at command-buffer granularity, which is
+ * all that is available: mid-kernel host->device writes are invisible by every
+ * qualifier, so the host seeds this before the dispatch and drains it after,
+ * never during. That is why the printf ring is device-writes-only. */
+#define MCC_VK_MEM_DEFAULT (1u << 20)
+
+static int mcc_vk_bind_mem(VkDeviceSize want) {
+	if (want <= mcc_vkr.bmemsz)
+		return 1;
+	if (mcc_vkr.bmem) {
+		vkUnmapMemory(mcc_gpu.dev, mcc_vkr.mmem);
+		vkFreeMemory(mcc_gpu.dev, mcc_vkr.mmem, 0);
+		vkDestroyBuffer(mcc_gpu.dev, mcc_vkr.bmem, 0);
+		mcc_vkr.bmem = 0;
+	}
+	if (!mcc_gpu_buffer(want, &mcc_vkr.bmem, &mcc_vkr.mmem, &mcc_vkr.pmem))
+		return 0;
+	mcc_vkr.bmemsz = want;
+	memset(mcc_vkr.pmem, 0, (size_t)want);
+	return 1;
+}
+
+static int mcc_vk_bind_buffers(VkDeviceSize insz, VkDeviceSize outsz) {
+	VkDescriptorBufferInfo dbi[3];
+	VkWriteDescriptorSet wds[3];
+	int i, grew = 0;
+
+	if (insz > mcc_vkr.binsz) {
+		if (mcc_vkr.bin) {
+			vkUnmapMemory(mcc_gpu.dev, mcc_vkr.min_);
+			vkFreeMemory(mcc_gpu.dev, mcc_vkr.min_, 0);
+			vkDestroyBuffer(mcc_gpu.dev, mcc_vkr.bin, 0);
+			mcc_vkr.bin = 0;
+		}
+		if (!mcc_gpu_buffer(insz, &mcc_vkr.bin, &mcc_vkr.min_, &mcc_vkr.pin))
+			return 0;
+		mcc_vkr.binsz = insz;
+		grew = 1;
+	}
+	if (outsz > mcc_vkr.boutsz) {
+		if (mcc_vkr.bout) {
+			vkUnmapMemory(mcc_gpu.dev, mcc_vkr.mout);
+			vkFreeMemory(mcc_gpu.dev, mcc_vkr.mout, 0);
+			vkDestroyBuffer(mcc_gpu.dev, mcc_vkr.bout, 0);
+			mcc_vkr.bout = 0;
+		}
+		if (!mcc_gpu_buffer(outsz, &mcc_vkr.bout, &mcc_vkr.mout, &mcc_vkr.pout))
+			return 0;
+		mcc_vkr.boutsz = outsz;
+		grew = 1;
+	}
+	if (!mcc_vkr.bmem) {
+		if (!mcc_vk_bind_mem(MCC_VK_MEM_DEFAULT))
+			return 0;
+		grew = 1;
+	}
+	if (!grew)
+		return 1;
 	memset(dbi, 0, sizeof dbi);
-	dbi[0].buffer = bin;
+	dbi[0].buffer = mcc_vkr.bin;
 	dbi[0].range = VK_WHOLE_SIZE;
-	dbi[1].buffer = bout;
+	dbi[1].buffer = mcc_vkr.bout;
 	dbi[1].range = VK_WHOLE_SIZE;
+	dbi[2].buffer = mcc_vkr.bmem;
+	dbi[2].range = VK_WHOLE_SIZE;
 	memset(wds, 0, sizeof wds);
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < 3; i++) {
 		wds[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		wds[i].dstSet = dset;
+		wds[i].dstSet = mcc_vkr.dset;
 		wds[i].dstBinding = (unsigned)i;
 		wds[i].descriptorCount = 1;
 		wds[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		wds[i].pBufferInfo = &dbi[i];
 	}
-	vkUpdateDescriptorSets(mcc_gpu.dev, 2, wds, 0, 0);
+	vkUpdateDescriptorSets(mcc_gpu.dev, 3, wds, 0, 0);
+	return 1;
+}
+
+static MccVkPipe *mcc_vk_pipeline(const uint32_t *code, int nwords, int nlive) {
+	VkShaderModuleCreateInfo smci;
+	VkPipelineLayoutCreateInfo plci;
+	VkComputePipelineCreateInfo cpci;
+	uint64_t key = mcc_vk_key(code, nwords, nlive);
+	MccVkPipe *e;
+	int i;
+
+	for (i = 0; i < mcc_vkr.ncache; i++)
+		if (mcc_vkr.cache[i].key == key)
+			return &mcc_vkr.cache[i];
+
+	if (mcc_vkr.ncache < MCC_VK_CACHE_MAX) {
+		e = &mcc_vkr.cache[mcc_vkr.ncache++];
+	} else {
+		e = &mcc_vkr.cache[mcc_vkr.next];
+		mcc_vkr.next = (mcc_vkr.next + 1) % MCC_VK_CACHE_MAX;
+		if (e->pipe)
+			vkDestroyPipeline(mcc_gpu.dev, e->pipe, 0);
+		if (e->play)
+			vkDestroyPipelineLayout(mcc_gpu.dev, e->play, 0);
+		if (e->sm)
+			vkDestroyShaderModule(mcc_gpu.dev, e->sm, 0);
+	}
+	memset(e, 0, sizeof *e);
 
 	memset(&smci, 0, sizeof smci);
 	smci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	smci.codeSize = (size_t)nwords * 4;
 	smci.pCode = code;
-	if (vkCreateShaderModule(mcc_gpu.dev, &smci, 0, &sm) != VK_SUCCESS)
-		goto done;
+	if (vkCreateShaderModule(mcc_gpu.dev, &smci, 0, &e->sm) != VK_SUCCESS)
+		return 0;
 	memset(&plci, 0, sizeof plci);
 	plci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	plci.setLayoutCount = 1;
-	plci.pSetLayouts = &dsl;
-	if (vkCreatePipelineLayout(mcc_gpu.dev, &plci, 0, &play) != VK_SUCCESS)
-		goto done;
+	plci.pSetLayouts = &mcc_vkr.dsl;
+	if (vkCreatePipelineLayout(mcc_gpu.dev, &plci, 0, &e->play) != VK_SUCCESS)
+		return 0;
 	memset(&cpci, 0, sizeof cpci);
 	cpci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
 	cpci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	cpci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-	cpci.stage.module = sm;
+	cpci.stage.module = e->sm;
 	cpci.stage.pName = "main";
-	cpci.layout = play;
-	if (vkCreateComputePipelines(mcc_gpu.dev, VK_NULL_HANDLE, 1, &cpci, 0,
-															 &pipe) != VK_SUCCESS)
-		goto done;
-	memset(&cpoolci, 0, sizeof cpoolci);
-	cpoolci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	cpoolci.queueFamilyIndex = mcc_gpu.qfam;
-	if (vkCreateCommandPool(mcc_gpu.dev, &cpoolci, 0, &cpool) != VK_SUCCESS)
-		goto done;
-	memset(&cbai, 0, sizeof cbai);
-	cbai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	cbai.commandPool = cpool;
-	cbai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	cbai.commandBufferCount = 1;
-	if (vkAllocateCommandBuffers(mcc_gpu.dev, &cbai, &cb) != VK_SUCCESS)
-		goto done;
-	memset(&fci, 0, sizeof fci);
-	fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	if (vkCreateFence(mcc_gpu.dev, &fci, 0, &fence) != VK_SUCCESS)
-		goto done;
+	cpci.layout = e->play;
+	if (vkCreateComputePipelines(mcc_gpu.dev, mcc_vkr.pcache, 1, &cpci, 0,
+															 &e->pipe) != VK_SUCCESS)
+		return 0;
+	e->key = key;
+	return e;
+}
+
+static void mcc_vk_release(void) {
+	int i;
+	if (!mcc_vkr.ready)
+		return;
+	for (i = 0; i < mcc_vkr.ncache; i++) {
+		if (mcc_vkr.cache[i].pipe)
+			vkDestroyPipeline(mcc_gpu.dev, mcc_vkr.cache[i].pipe, 0);
+		if (mcc_vkr.cache[i].play)
+			vkDestroyPipelineLayout(mcc_gpu.dev, mcc_vkr.cache[i].play, 0);
+		if (mcc_vkr.cache[i].sm)
+			vkDestroyShaderModule(mcc_gpu.dev, mcc_vkr.cache[i].sm, 0);
+	}
+	if (mcc_vkr.pcache)
+		vkDestroyPipelineCache(mcc_gpu.dev, mcc_vkr.pcache, 0);
+	if (mcc_vkr.fence)
+		vkDestroyFence(mcc_gpu.dev, mcc_vkr.fence, 0);
+	if (mcc_vkr.cpool)
+		vkDestroyCommandPool(mcc_gpu.dev, mcc_vkr.cpool, 0);
+	if (mcc_vkr.dpool)
+		vkDestroyDescriptorPool(mcc_gpu.dev, mcc_vkr.dpool, 0);
+	if (mcc_vkr.dsl)
+		vkDestroyDescriptorSetLayout(mcc_gpu.dev, mcc_vkr.dsl, 0);
+	if (mcc_vkr.bin) {
+		vkUnmapMemory(mcc_gpu.dev, mcc_vkr.min_);
+		vkFreeMemory(mcc_gpu.dev, mcc_vkr.min_, 0);
+		vkDestroyBuffer(mcc_gpu.dev, mcc_vkr.bin, 0);
+	}
+	if (mcc_vkr.bout) {
+		vkUnmapMemory(mcc_gpu.dev, mcc_vkr.mout);
+		vkFreeMemory(mcc_gpu.dev, mcc_vkr.mout, 0);
+		vkDestroyBuffer(mcc_gpu.dev, mcc_vkr.bout, 0);
+	}
+	if (mcc_vkr.bmem) {
+		vkUnmapMemory(mcc_gpu.dev, mcc_vkr.mmem);
+		vkFreeMemory(mcc_gpu.dev, mcc_vkr.mmem, 0);
+		vkDestroyBuffer(mcc_gpu.dev, mcc_vkr.bmem, 0);
+	}
+	memset(&mcc_vkr, 0, sizeof mcc_vkr);
+}
+
+/* Set only for the duration of a frame dispatch, under the same lock that
+ * serialises everything else here. */
+static int32_t *mcc_gpu_rw_back;
+
+static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
+																	 const int32_t *in, int ntuple, int nlive,
+																	 int32_t *out) {
+	VkCommandBufferBeginInfo bi;
+	VkSubmitInfo si;
+	VkResult wr;
+	MccVkPipe *pl;
+	int submitted = 0;
+	int cap = ((ntuple + MCC_GPU_LOCAL_SIZE - 1) / MCC_GPU_LOCAL_SIZE) *
+						MCC_GPU_LOCAL_SIZE;
+
+	if (!mcc_gpu_init())
+		return 0;
+	if (!mcc_vk_resident())
+		return 0;
+	if (!mcc_vk_bind_buffers((VkDeviceSize)cap * nlive * MCC_GPU_IN_SLOTS * 4,
+													 (VkDeviceSize)cap * MCC_GPU_OUT_SLOTS * 4))
+		return 0;
+	pl = mcc_vk_pipeline(code, nwords, nlive);
+	if (!pl)
+		return 0;
+
+	/* Only the [ntuple, cap) padding tail needs clearing, and only on the input
+	 * side: every lane below cap writes all three out slots unconditionally, and
+	 * out is read only for t < ntuple, so zeroing pout was 100% dead. Zeroing the
+	 * whole of pin was 32 B/lane of duplicated work, since the memcpy immediately
+	 * overwrites the [0, ntuple) prefix. The mapping is write-combined, so these
+	 * stores are not free. */
+	memcpy(mcc_vkr.pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
+	if (cap > ntuple)
+		memset((char *)mcc_vkr.pin +
+							 (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4,
+					 0, (size_t)(cap - ntuple) * nlive * MCC_GPU_IN_SLOTS * 4);
+
+	if (vkResetFences(mcc_gpu.dev, 1, &mcc_vkr.fence) != VK_SUCCESS)
+		return 0;
+	if (vkResetCommandBuffer(mcc_vkr.cb, 0) != VK_SUCCESS)
+		return 0;
 	memset(&bi, 0, sizeof bi);
 	bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	if (vkBeginCommandBuffer(cb, &bi) != VK_SUCCESS)
-		goto done;
-	vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
-	vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, play, 0, 1, &dset,
-													0, 0);
-	vkCmdDispatch(cb, (unsigned)(cap / MCC_GPU_LOCAL_SIZE), 1, 1);
-	if (vkEndCommandBuffer(cb) != VK_SUCCESS)
-		goto done;
+	if (vkBeginCommandBuffer(mcc_vkr.cb, &bi) != VK_SUCCESS)
+		return 0;
+	vkCmdBindPipeline(mcc_vkr.cb, VK_PIPELINE_BIND_POINT_COMPUTE, pl->pipe);
+	vkCmdBindDescriptorSets(mcc_vkr.cb, VK_PIPELINE_BIND_POINT_COMPUTE, pl->play,
+													0, 1, &mcc_vkr.dset, 0, 0);
+	vkCmdDispatch(mcc_vkr.cb, (unsigned)(cap / MCC_GPU_LOCAL_SIZE), 1, 1);
+	if (vkEndCommandBuffer(mcc_vkr.cb) != VK_SUCCESS)
+		return 0;
 	memset(&si, 0, sizeof si);
 	si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	si.commandBufferCount = 1;
-	si.pCommandBuffers = &cb;
-	if (vkQueueSubmit(mcc_gpu.q, 1, &si, fence) != VK_SUCCESS)
-		goto done;
-	if (vkWaitForFences(mcc_gpu.dev, 1, &fence, VK_TRUE,
-											30ULL * 1000000000ULL) != VK_SUCCESS)
-		goto done;
-	memcpy(out, pout, (size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
+	si.pCommandBuffers = &mcc_vkr.cb;
+	if (vkQueueSubmit(mcc_gpu.q, 1, &si, mcc_vkr.fence) != VK_SUCCESS)
+		return 0;
+	submitted = 1;
+	wr = vkWaitForFences(mcc_gpu.dev, 1, &mcc_vkr.fence, VK_TRUE,
+											 mcc_vk_fence_ns());
+	if (wr != VK_SUCCESS) {
+		/* The command buffer is still pending and every resident object is
+		 * referenced by it. Touching any of them hands the driver memory a zombie
+		 * kernel is still writing to, which is how a timeout in dispatch N used to
+		 * silently corrupt dispatch N+1. Strand instead: the device is marked dead
+		 * here, so the leak is bounded at one process's worth of objects and no
+		 * further dispatch can occur. */
+		if (mcc_vk_diag())
+			fprintf(stderr,
+							"[gpu-vk] fence wait failed rc=%d after %llu ns; stranding the "
+							"resident objects and disabling the device\n",
+							(int)wr, (unsigned long long)mcc_vk_fence_ns());
+		mcc_gpu.ok = 0;
+		mcc_gpu.stranded++;
+		(void)submitted;
+		return 0;
+	}
+	if (out)
+		memcpy(out, mcc_vkr.pout, (size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
+	if (mcc_gpu_rw_back)
+		memcpy(mcc_gpu_rw_back, mcc_vkr.pin,
+					 (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
 	mcc_gpu.dispatches++;
 	mcc_gpu.lanes += ntuple;
-	rc = 1;
-
-done:
-	if (fence)
-		vkDestroyFence(mcc_gpu.dev, fence, 0);
-	if (cpool)
-		vkDestroyCommandPool(mcc_gpu.dev, cpool, 0);
-	if (pipe)
-		vkDestroyPipeline(mcc_gpu.dev, pipe, 0);
-	if (play)
-		vkDestroyPipelineLayout(mcc_gpu.dev, play, 0);
-	if (sm)
-		vkDestroyShaderModule(mcc_gpu.dev, sm, 0);
-	if (dpool)
-		vkDestroyDescriptorPool(mcc_gpu.dev, dpool, 0);
-	if (dsl)
-		vkDestroyDescriptorSetLayout(mcc_gpu.dev, dsl, 0);
-	vkUnmapMemory(mcc_gpu.dev, min_);
-	vkUnmapMemory(mcc_gpu.dev, mout);
-	vkFreeMemory(mcc_gpu.dev, min_, 0);
-	vkFreeMemory(mcc_gpu.dev, mout, 0);
-	vkDestroyBuffer(mcc_gpu.dev, bin, 0);
-	vkDestroyBuffer(mcc_gpu.dev, bout, 0);
-	return rc;
+	return 1;
 }
+
 
 static int mcc_gpu_backend_load(void) { return mcc_vk_load(); }
 
 #define MCC_GPU_CODE_PTR(p) ((const uint32_t *)(p))
 
 #endif /* MCC_GPU_LANG_MSL */
+
+int mcc_gpu_dispatch_rw2(const void *code, int n, int32_t *inout, int ntuple,
+												 int nslot, int32_t *out) {
+	int rc;
+	MCC_GPU_LOCK();
+	if (!mcc_gpu_backend_load()) {
+		MCC_GPU_UNLOCK();
+		return 0;
+	}
+	MCC_GPU_UNLOCK();
+	MCC_GPU_LOCK();
+	if (mcc_gpu_closing) {
+		MCC_GPU_UNLOCK();
+		return 0;
+	}
+	mcc_gpu_rw_back = inout;
+	rc = mcc_gpu_dispatch_locked(MCC_GPU_CODE_PTR(code), n, inout, ntuple, nslot,
+															 out);
+	mcc_gpu_rw_back = NULL;
+	MCC_GPU_UNLOCK();
+	return rc;
+}
+
+int mcc_gpu_dispatch_rw(const void *code, int n, int32_t *inout, int ntuple,
+												int nslot) {
+	return mcc_gpu_dispatch_rw2(code, n, inout, ntuple, nslot, NULL);
+}
+
+/* The host's view of the shared address space. Valid between dispatches only:
+ * the device sees these bytes at command-buffer granularity, so seeding must
+ * happen before submit and draining after completion, never during. */
+int mcc_gpu_mem(void **base, unsigned long *size) {
+	int rc = 0;
+	MCC_GPU_LOCK();
+	if (!mcc_gpu_backend_load()) {
+		MCC_GPU_UNLOCK();
+		return 0;
+	}
+	if (mcc_gpu_init() && mcc_vk_resident() && mcc_vk_bind_mem(MCC_VK_MEM_DEFAULT)) {
+		if (base)
+			*base = mcc_vkr.pmem;
+		if (size)
+			*size = (unsigned long)mcc_vkr.bmemsz;
+		rc = 1;
+	}
+	MCC_GPU_UNLOCK();
+	return rc;
+}
+
+int mcc_gpu_alive(void) { return mcc_gpu.ok; }
+
+long mcc_gpu_stranded(void) { return mcc_gpu.stranded; }
 
 void mcc_gpu_stats(MccGpuStats *out) {
 	out->tried = mcc_gpu.tried;

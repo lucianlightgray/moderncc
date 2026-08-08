@@ -67,6 +67,23 @@ typedef struct MccGpuStats {
 int mcc_gpu_dispatch(const void *code, int n, const int32_t *in, int ntuple,
 										 int nlive, int32_t *out);
 void mcc_gpu_quiesce(void);
+/* Frame dispatch: `inout` is both seeded into and read back out of the device
+ * frame, so a kernel that stores to local slots can hand its results back. */
+int mcc_gpu_dispatch_rw(const void *code, int n, int32_t *inout, int ntuple,
+												int nslot);
+/* As above, plus the per-lane value/defined slots for a run ending in Return. */
+int mcc_gpu_dispatch_rw2(const void *code, int n, int32_t *inout, int ntuple,
+												 int nslot, int32_t *out);
+/* Nonzero while the device may still be dispatched to. Cleared when a dispatch
+ * is stranded, i.e. abandoned with its command buffer still pending. */
+int mcc_gpu_alive(void);
+/* Host view of the shared device address space (binding 2): globals image,
+ * heap, and the printf ring. Offset 0 is reserved as NULL. Valid between
+ * dispatches only. */
+int mcc_gpu_mem(void **base, unsigned long *size);
+/* How many dispatches have been abandoned with resources deliberately leaked
+ * rather than freed under a live command buffer. */
+long mcc_gpu_stranded(void);
 void mcc_gpu_stats(MccGpuStats *out);
 
 #endif /* MCC_GPU_H */
@@ -775,8 +792,11 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 				return 0;
 			if (!msl_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, n), &k))
 				return 0;
-			*out = msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
-														 (t & VT_UNSIGNED) != 0);
+			/* Narrow to the ref's own type; msl_load_live_v carries only a width
+			 * flag and cannot deliver VT_BOOL/BYTE/SHORT on its own. */
+			*out = msl_fit_v(m, msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
+																					(t & VT_UNSIGNED) != 0),
+											 t);
 			return 1;
 		}
 		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
@@ -788,19 +808,20 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	}
 	case AST_Load: {
 		AstLocal c = ast_first_child(a, n);
-		int r, t, k;
-		if (c == AST_NONE || ast_kind(a, c) != AST_Ref)
+		int t, k;
+		int32_t fo;
+		if (c == AST_NONE)
 			return 0;
-		r = ast_op(a, c);
 		t = ast_type_t(a, n);
-		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
-			return 0;
 		if (!ast_eval_slice_intt(t) || is_float(t))
 			return 0;
-		if (!msl_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, c), &k))
+		if (!ast_eval_slice_frame_off(a, c, &fo, 0))
 			return 0;
-		*out = msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
-													 (t & VT_UNSIGNED) != 0);
+		if (!msl_env_index(off, nenv, fo, &k))
+			return 0;
+		*out = msl_fit_v(m, msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
+																				(t & VT_UNSIGNED) != 0),
+										 t);
 		return 1;
 	}
 	case AST_Convert: {
@@ -1668,11 +1689,7 @@ static void spv_module_begin(SpvMod *m, int nlive) {
 	spv_emit_udiv64(m);
 }
 
-static uint32_t spv_load_live(SpvMod *m, uint32_t base, int k) {
-	uint32_t idx = base;
-	if (k) {
-		idx = spv_emit3(m, SpvOpIAdd, m->id_int, base, spv_const(m, k));
-	}
+static uint32_t spv_load_at(SpvMod *m, uint32_t idx) {
 	uint32_t p = spv_id(m);
 	spvw_op(&m->body, SpvOpAccessChain, 5 + 1);
 	spvw_put(&m->body, m->id_ptr_sb_int);
@@ -1681,6 +1698,37 @@ static uint32_t spv_load_live(SpvMod *m, uint32_t base, int k) {
 	spvw_put(&m->body, spv_const(m, 0));
 	spvw_put(&m->body, idx);
 	return spv_emit2(m, SpvOpLoad, m->id_int, p);
+}
+
+static uint32_t spv_load_live(SpvMod *m, uint32_t base, int k) {
+	uint32_t idx = base;
+	if (k)
+		idx = spv_emit3(m, SpvOpIAdd, m->id_int, base, spv_const(m, k));
+	return spv_load_at(m, idx);
+}
+
+/* The store counterpart of spv_load_live. The input buffer is a plain
+ * StorageBuffer with no NonWritable decoration, so it is already writable --
+ * this makes it the device frame, which is what lets a run of statements lower
+ * as one kernel instead of one kernel per expression. */
+static void spv_store_at_in(SpvMod *m, uint32_t idx, uint32_t val) {
+	uint32_t p = spv_id(m);
+	spvw_op(&m->body, SpvOpAccessChain, 5 + 1);
+	spvw_put(&m->body, m->id_ptr_sb_int);
+	spvw_put(&m->body, p);
+	spvw_put(&m->body, m->id_in);
+	spvw_put(&m->body, spv_const(m, 0));
+	spvw_put(&m->body, idx);
+	spvw_op(&m->body, SpvOpStore, 3);
+	spvw_put(&m->body, p);
+	spvw_put(&m->body, val);
+}
+
+static void spv_store_live(SpvMod *m, uint32_t base, int k, uint32_t val) {
+	uint32_t idx = base;
+	if (k)
+		idx = spv_emit3(m, SpvOpIAdd, m->id_int, base, spv_const(m, k));
+	spv_store_at_in(m, idx, val);
 }
 
 static SpvV spv_mk(uint32_t id, int w64, int uns) {
@@ -1946,6 +1994,248 @@ static SpvV spv_load_live_v(SpvMod *m, uint32_t base, int k, int w64, int uns) {
 														spv_load_live(m, base, 2 * k + 1));
 		return spv_mk(spv_u2(m, lo, hi), 1, uns);
 	}
+}
+
+static void spv_store_live_v(SpvMod *m, uint32_t base, int k, SpvV v) {
+	if (!v.w64) {
+		/* The high word follows the value's own signedness, exactly as spv_widen
+		 * does: an unsigned 32-bit value zero-extends and a signed one
+		 * sign-extends. Sign-extending unconditionally stored -2 into an
+		 * `unsigned int` slot as -2 where the CPU has 4294967294. */
+		spv_store_live(m, base, 2 * k, v.id);
+		spv_store_live(m, base, 2 * k + 1,
+									 v.uns ? spv_const(m, 0)
+												 : spv_emit3(m, SpvOpShiftRightArithmetic, m->id_int,
+																		 v.id, spv_const(m, 31)));
+		return;
+	}
+	spv_store_live(m, base, 2 * k,
+								 spv_emit2(m, SpvOpBitcast, m->id_int, spv_lo(m, v.id)));
+	spv_store_live(m, base, 2 * k + 1,
+								 spv_emit2(m, SpvOpBitcast, m->id_int, spv_hi(m, v.id)));
+}
+
+/* B1. An element resolved at run time: `base + (slot0 + elem) * IN_SLOTS`.
+ * Because the frame gives every array element its own 8-byte slot, this reaches
+ * exactly the same cell layout the constant path uses, and the lo/hi pair of a
+ * 64-bit element still cannot reach a neighbour. */
+static uint32_t spv_slot_at(SpvMod *m, uint32_t base, int k0, uint32_t elem,
+														int half) {
+	uint32_t s = spv_emit3(m, SpvOpIAdd, m->id_int, elem, spv_const(m, k0));
+	uint32_t w = spv_emit3(m, SpvOpIMul, m->id_int, s,
+												 spv_const(m, MCC_GPU_IN_SLOTS));
+	uint32_t i = spv_emit3(m, SpvOpIAdd, m->id_int, base, w);
+	if (half)
+		i = spv_emit3(m, SpvOpIAdd, m->id_int, i, spv_const(m, half));
+	return i;
+}
+
+/* Three instructions, no branch, and the only ones the bound costs: compare,
+ * poison, mask. J3b requires that an out-of-range device access be impossible
+ * rather than merely detected, so the index is masked into the object's own
+ * padded span -- the worst case then rewrites another element of the same
+ * array, and the run carrying it is discarded because `def` is already false.
+ * The reference reaches the identical verdict in ast_eval_slice_idx_ok, or the
+ * two executors would differ precisely at the boundary. */
+static uint32_t spv_dyn_elem(SpvMod *m, SpvV idx, const AstEvalSliceIdx *ix) {
+	uint32_t u = spv_emit2(m, SpvOpBitcast, m->id_uint, spv_val_lo(m, idx));
+	uint32_t ok = spv_ucmp(m, SpvOpULessThan, u, spv_uintc(m, (uint32_t)ix->nelem));
+	uint32_t masked;
+	spv_def_and(m, &m->def, ok);
+	masked = spv_uop(m, SpvOpBitwiseAnd, u,
+									 spv_uintc(m, (uint32_t)(ix->nspan - 1)));
+	return spv_emit2(m, SpvOpBitcast, m->id_int, masked);
+}
+
+static SpvV spv_load_live_dv(SpvMod *m, uint32_t base, int k0, uint32_t elem,
+														 int w64, int uns) {
+	if (!w64)
+		return spv_mk(spv_load_at(m, spv_slot_at(m, base, k0, elem, 0)), 0, uns);
+	{
+		uint32_t lo = spv_emit2(m, SpvOpBitcast, m->id_uint,
+														spv_load_at(m, spv_slot_at(m, base, k0, elem, 0)));
+		uint32_t hi = spv_emit2(m, SpvOpBitcast, m->id_uint,
+														spv_load_at(m, spv_slot_at(m, base, k0, elem, 1)));
+		return spv_mk(spv_u2(m, lo, hi), 1, uns);
+	}
+}
+
+static void spv_store_live_dv(SpvMod *m, uint32_t base, int k0, uint32_t elem,
+															SpvV v) {
+	if (!v.w64) {
+		spv_store_at_in(m, spv_slot_at(m, base, k0, elem, 0), v.id);
+		spv_store_at_in(m, spv_slot_at(m, base, k0, elem, 1),
+										v.uns ? spv_const(m, 0)
+													: spv_emit3(m, SpvOpShiftRightArithmetic, m->id_int,
+																			v.id, spv_const(m, 31)));
+		return;
+	}
+	spv_store_at_in(m, spv_slot_at(m, base, k0, elem, 0),
+									spv_emit2(m, SpvOpBitcast, m->id_int, spv_lo(m, v.id)));
+	spv_store_at_in(m, spv_slot_at(m, base, k0, elem, 1),
+									spv_emit2(m, SpvOpBitcast, m->id_int, spv_hi(m, v.id)));
+}
+
+/* ---- byte-addressed access to a storage region ------------------------- *
+ *
+ * The device half of ast_eval_slice_bytes_load / _store, and the reason it is
+ * written as a region rather than as "the frame": a region is a storage-buffer
+ * variable, a word index where the region starts, and how many bytes of it are
+ * addressable. One lane's frame is a region whose base is the lane's own slice
+ * of the input buffer; a heap shared by every lane and the host is a region
+ * whose base is a constant in a different binding. Nothing below distinguishes
+ * them, so the second one needs no new emitter code -- only a different
+ * SpvRegion.
+ *
+ * Per-width is the whole point. The two-word store that the dense-slot path
+ * uses is only sound because slots are disjoint 8-byte cells; the moment two
+ * objects of different widths sit next to each other -- which is what a heap
+ * is -- writing a sign-extended high word past a 32-bit value overwrites its
+ * neighbour. So a store here writes exactly as many bytes as the type has, and
+ * a sub-word store is a read-modify-write of the containing word because
+ * SPIR-V has no 8-bit storage without StorageBuffer8BitAccess. */
+static uint32_t spv_fit(SpvMod *m, uint32_t v, int t);
+
+typedef struct SpvRegion {
+	uint32_t var;
+	uint32_t base;
+	uint32_t nbyte;
+} SpvRegion;
+
+static SpvRegion spv_region(uint32_t var, uint32_t base, uint32_t nbyte) {
+	SpvRegion r;
+	r.var = var;
+	r.base = base;
+	r.nbyte = nbyte;
+	return r;
+}
+
+static uint32_t spv_word_at(SpvMod *m, uint32_t var, uint32_t idx) {
+	uint32_t p = spv_id(m);
+	spvw_op(&m->body, SpvOpAccessChain, 6);
+	spvw_put(&m->body, m->id_ptr_sb_int);
+	spvw_put(&m->body, p);
+	spvw_put(&m->body, var);
+	spvw_put(&m->body, spv_const(m, 0));
+	spvw_put(&m->body, idx);
+	return spv_emit2(m, SpvOpLoad, m->id_int, p);
+}
+
+static void spv_word_set(SpvMod *m, uint32_t var, uint32_t idx, uint32_t val) {
+	uint32_t p = spv_id(m);
+	spvw_op(&m->body, SpvOpAccessChain, 6);
+	spvw_put(&m->body, m->id_ptr_sb_int);
+	spvw_put(&m->body, p);
+	spvw_put(&m->body, var);
+	spvw_put(&m->body, spv_const(m, 0));
+	spvw_put(&m->body, idx);
+	spvw_op(&m->body, SpvOpStore, 3);
+	spvw_put(&m->body, p);
+	spvw_put(&m->body, val);
+}
+
+/* Four instructions, no branch: range, alignment, poison, replace. The
+ * replacement is 0 rather than a masked offset because a region is not
+ * required to be a power of two in size, and masking a 48-byte region would
+ * reach byte 63 -- into whatever follows it. 0 is in range for every region
+ * that can hold the access at all, so this cannot leave the region no matter
+ * what the offset was, which is what J3b's "no PageFault by construction"
+ * needs. The reference reaches the identical verdict and the identical
+ * replacement in ast_eval_slice_addr_ok / _fix. */
+static uint32_t spv_region_addr(SpvMod *m, const SpvRegion *r, uint32_t byteoff,
+																int width) {
+	uint32_t u = spv_emit2(m, SpvOpBitcast, m->id_uint, byteoff);
+	uint32_t last = spv_uop(m, SpvOpISub, r->nbyte, spv_uintc(m, (uint32_t)width));
+	/* nbyte - width wraps when the region is smaller than the access, which
+	 * would read as "everything is in range". The reference refuses that case
+	 * outright, so the device has to as well. */
+	uint32_t big = spv_ucmp(m, SpvOpUGreaterThanEqual, r->nbyte,
+													spv_uintc(m, (uint32_t)width));
+	uint32_t inr = spv_and(m, big, spv_ucmp(m, SpvOpULessThanEqual, u, last));
+	uint32_t ok = inr;
+	if (width > 1) {
+		uint32_t al = spv_ucmp(
+				m, SpvOpIEqual,
+				spv_uop(m, SpvOpBitwiseAnd, u, spv_uintc(m, (uint32_t)(width - 1))),
+				spv_uintc(m, 0));
+		ok = spv_and(m, inr, al);
+	}
+	spv_def_and(m, &m->def, ok);
+	return spv_usel(m, ok, u, spv_uintc(m, 0));
+}
+
+static uint32_t spv_region_word(SpvMod *m, const SpvRegion *r, uint32_t uoff,
+																int plus) {
+	uint32_t w = spv_uop(m, SpvOpShiftRightLogical, uoff, spv_uintc(m, 2));
+	uint32_t i = spv_emit3(m, SpvOpIAdd, m->id_int, r->base,
+												 spv_emit2(m, SpvOpBitcast, m->id_int, w));
+	if (plus)
+		i = spv_emit3(m, SpvOpIAdd, m->id_int, i, spv_const(m, plus));
+	return i;
+}
+
+static SpvV spv_load_region(SpvMod *m, const SpvRegion *r, uint32_t byteoff,
+														int t) {
+	int width = ast_eval_slice_tsize(t);
+	int uns = (t & VT_UNSIGNED) != 0;
+	uint32_t uoff, lo, sh;
+	if (width <= 0)
+		return spv_mk(spv_const(m, 0), 0, 0);
+	uoff = spv_region_addr(m, r, byteoff, width);
+	if (width == 8) {
+		uint32_t a = spv_emit2(m, SpvOpBitcast, m->id_uint,
+													 spv_word_at(m, r->var, spv_region_word(m, r, uoff, 0)));
+		uint32_t b = spv_emit2(m, SpvOpBitcast, m->id_uint,
+													 spv_word_at(m, r->var, spv_region_word(m, r, uoff, 1)));
+		return spv_mk(spv_u2(m, a, b), 1, uns);
+	}
+	lo = spv_word_at(m, r->var, spv_region_word(m, r, uoff, 0));
+	if (width == 4)
+		return spv_mk(lo, 0, uns);
+	sh = spv_uop(m, SpvOpShiftLeftLogical,
+							 spv_uop(m, SpvOpBitwiseAnd, uoff, spv_uintc(m, 3)),
+							 spv_uintc(m, 3));
+	lo = spv_emit3(m, SpvOpShiftRightLogical, m->id_int, lo,
+								 spv_emit2(m, SpvOpBitcast, m->id_int, sh));
+	return spv_mk(spv_fit(m, lo, t), 0, uns);
+}
+
+static void spv_store_region(SpvMod *m, const SpvRegion *r, uint32_t byteoff,
+														 SpvV v, int t) {
+	int width = ast_eval_slice_tsize(t);
+	uint32_t uoff, sh, keep, cur, w;
+	if (width <= 0)
+		return;
+	uoff = spv_region_addr(m, r, byteoff, width);
+	if (width == 8) {
+		spv_widen(m, &v);
+		spv_word_set(m, r->var, spv_region_word(m, r, uoff, 0),
+								 spv_emit2(m, SpvOpBitcast, m->id_int, spv_lo(m, v.id)));
+		spv_word_set(m, r->var, spv_region_word(m, r, uoff, 1),
+								 spv_emit2(m, SpvOpBitcast, m->id_int, spv_hi(m, v.id)));
+		return;
+	}
+	if (width == 4) {
+		spv_word_set(m, r->var, spv_region_word(m, r, uoff, 0), spv_val_lo(m, v));
+		return;
+	}
+	sh = spv_uop(m, SpvOpShiftLeftLogical,
+							 spv_uop(m, SpvOpBitwiseAnd, uoff, spv_uintc(m, 3)),
+							 spv_uintc(m, 3));
+	keep = spv_uop(m, SpvOpShiftLeftLogical,
+								 spv_uintc(m, width == 1 ? 0xFFu : 0xFFFFu), sh);
+	cur = spv_emit2(m, SpvOpBitcast, m->id_uint,
+									spv_word_at(m, r->var, spv_region_word(m, r, uoff, 0)));
+	w = spv_uop(m, SpvOpBitwiseOr,
+							spv_uop(m, SpvOpBitwiseAnd, cur, spv_emit2(m, SpvOpNot, m->id_uint, keep)),
+							spv_uop(m, SpvOpBitwiseAnd,
+											spv_uop(m, SpvOpShiftLeftLogical,
+															spv_emit2(m, SpvOpBitcast, m->id_uint,
+																				spv_val_lo(m, v)),
+															sh),
+											keep));
+	spv_word_set(m, r->var, spv_region_word(m, r, uoff, 0),
+							 spv_emit2(m, SpvOpBitcast, m->id_int, w));
 }
 
 static uint32_t spv_fit(SpvMod *m, uint32_t v, int t) {
@@ -2315,8 +2605,12 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 				return 0;
 			if (!spv_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, n), &k))
 				return 0;
-			*out = spv_load_live_v(m, base, k, ast_eval_slice_is64(t),
-														 (t & VT_UNSIGNED) != 0);
+			/* Narrow to the ref's own type. spv_load_live_v takes only a width
+			 * flag, so it can deliver 32 or 64 bits but never VT_BOOL/BYTE/SHORT,
+			 * and a byte live-in holding 1000 arrived as 1000 rather than -24. */
+			*out = spv_fit_v(m, spv_load_live_v(m, base, k, ast_eval_slice_is64(t),
+																					(t & VT_UNSIGNED) != 0),
+											 t);
 			return 1;
 		}
 		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
@@ -2328,20 +2622,39 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	}
 	case AST_Load: {
 		AstLocal c = ast_first_child(a, n);
-		if (c == AST_NONE || ast_kind(a, c) != AST_Ref)
-			return 0;
-		int r = ast_op(a, c);
 		int t = ast_type_t(a, n);
-		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
-			return 0;
-		if (!ast_eval_slice_intt(t) || is_float(t))
-			return 0;
+		AstEvalSliceIdx ix;
+		int32_t fo;
 		int k;
-		if (!spv_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, c), &k))
+		if (c == AST_NONE)
 			return 0;
-		*out = spv_load_live_v(m, base, k, ast_eval_slice_is64(t),
-													 (t & VT_UNSIGNED) != 0);
-		return 1;
+		/* A local, or a constant offset from one via `.field`/`&`. Resolved
+		 * host-side, so the device still sees a constant OpAccessChain. */
+		if (ast_eval_slice_intt(t) && !is_float(t) &&
+				ast_eval_slice_frame_off(a, c, &fo, 0)) {
+			if (!spv_env_index(off, nenv, fo, &k))
+				return 0;
+			*out = spv_fit_v(m, spv_load_live_v(m, base, k, ast_eval_slice_is64(t),
+																					(t & VT_UNSIGNED) != 0),
+											 t);
+			return 1;
+		}
+		if (ast_eval_slice_dynidx(a, c, &ix)) {
+			SpvV iv;
+			uint32_t elem;
+			if (!spv_env_index(off, nenv, ix.base, &k))
+				return 0;
+			if (!spv_expr(m, a, ix.idx, off, nenv, base, &iv))
+				return 0;
+			elem = spv_dyn_elem(m, iv, &ix);
+			*out = spv_fit_v(
+					m,
+					spv_load_live_dv(m, base, k, elem, ast_eval_slice_is64(ix.etype),
+													 (ix.etype & VT_UNSIGNED) != 0),
+					ix.etype);
+			return 1;
+		}
+		return 0;
 	}
 	case AST_Convert: {
 		int t = ast_type_t(a, n);

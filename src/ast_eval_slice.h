@@ -114,8 +114,8 @@ static int ast_eval_binop(int op, int64_t a, int64_t b, int is64,
 		if (is64) {
 			if (a != 0 && b != 0) {
 				r = (int64_t)(ua * ub);
-				if (r / a != b || (a == INT64_MIN && b == -1) ||
-						(b == INT64_MIN && a == -1))
+				if ((a == INT64_MIN && b == -1) || (b == INT64_MIN && a == -1) ||
+						r / a != b)
 					return 0;
 			} else {
 				r = 0;
@@ -273,6 +273,206 @@ static int64_t ast_eval_slice_fit(int64_t x, int t) {
 	}
 }
 
+/* B1: a runtime index into a local array.
+ *
+ * `arr[i]` reaches the arena as Load(Binary('+')(Ref[VT_LOCAL|VT_ARRAY], i)),
+ * and the two facts that decide how it can be handled are both measured rather
+ * than assumed. First, the '+' replays through gen_op on an array base, so `i`
+ * is an ELEMENT index, not a byte offset. Second, the Binary and the Load above
+ * it carry type 0 in every real arena -- so the access width is not written
+ * down anywhere in the tree, and neither is the element count needed to bound
+ * the index. The base Ref's extent column gives the object's total size; the
+ * element type word gives the rest. Both arrive through this hook, which is
+ * NULL in the compiler itself (where nothing runs frames) and is installed by
+ * the runner from the arena dump's extent and element-type columns.
+ *
+ * A consumer that cannot resolve an object refuses the shape. It never guesses
+ * a width, because a guessed width is a wrong answer that both executors would
+ * agree on -- the exact failure a differential cannot see. */
+static int (*ast_eval_slice_obj_fn)(AstArena *a, AstLocal n, int32_t *extent,
+																		int *etype);
+
+static int ast_eval_slice_wtype(AstArena *a, AstLocal n);
+
+static int ast_eval_slice_tsize(int t) {
+	switch (t & VT_BTYPE) {
+	case VT_BOOL:
+	case VT_BYTE:
+		return 1;
+	case VT_SHORT:
+		return 2;
+	case VT_INT:
+		return 4;
+	case VT_LLONG:
+		return 8;
+	case VT_PTR:
+		return MCC_PTR_SIZE;
+	default:
+		return 0;
+	}
+}
+
+/* ---- byte-addressed access to a storage region ------------------------- *
+ *
+ * The reference half of the per-width load/store. A region is (words, nbyte):
+ * a run of 32-bit words and how many bytes of it are addressable, and an
+ * address is a byte offset into it. Nothing here knows or cares whether the
+ * region is one lane's frame or a buffer shared by every lane and the host --
+ * that distinction is entirely in who supplies the base, which is why the
+ * device side takes the same four things as parameters.
+ *
+ * Everything is expressed in words and shifts rather than in bytes of host
+ * memory, so it is byte-order independent and matches the device's arithmetic
+ * instruction for instruction rather than merely in result.
+ *
+ * The access rule is one comparison, and it is what makes an out-of-region
+ * access impossible rather than merely detected: an offset that is out of
+ * range or misaligned is replaced by 0, which is in range for every region
+ * large enough to hold the access at all, and the definedness flag is cleared.
+ * A select is used rather than the power-of-two mask the plan proposed because
+ * the mask needs the region padded up to a power of two -- and a region that
+ * is not padded (say 48 bytes) would let a masked offset reach byte 63, i.e.
+ * into whatever follows. Corrupting a neighbour is strictly worse than
+ * corrupting yourself, and the select has no such precondition. */
+static int ast_eval_slice_addr_ok(int32_t nbyte, int32_t off, int width) {
+	if (width <= 0 || off < 0 || nbyte < width)
+		return 0;
+	if (off > nbyte - width)
+		return 0;
+	return (off & (width - 1)) == 0;
+}
+
+static int32_t ast_eval_slice_addr_fix(int32_t nbyte, int32_t off, int width) {
+	return ast_eval_slice_addr_ok(nbyte, off, width) ? off : 0;
+}
+
+static int64_t ast_eval_slice_bytes_load(const uint32_t *w, int32_t nbyte,
+																				 int32_t off, int t, int *ok) {
+	int width = ast_eval_slice_tsize(t);
+	int uns = (t & VT_UNSIGNED) != 0;
+	uint32_t lo;
+	int sh;
+	if (ok)
+		*ok = ast_eval_slice_addr_ok(nbyte, off, width);
+	off = ast_eval_slice_addr_fix(nbyte, off, width);
+	if (width <= 0)
+		return 0;
+	if (width == 8)
+		return (int64_t)((uint64_t)w[off >> 2] |
+										 ((uint64_t)w[(off >> 2) + 1] << 32));
+	sh = (off & 3) * 8;
+	lo = w[off >> 2] >> sh;
+	if (width == 1)
+		return uns ? (int64_t)(uint8_t)lo : (int64_t)(int8_t)lo;
+	if (width == 2)
+		return uns ? (int64_t)(uint16_t)lo : (int64_t)(int16_t)lo;
+	return uns ? (int64_t)(uint32_t)lo : (int64_t)(int32_t)lo;
+}
+
+static void ast_eval_slice_bytes_store(uint32_t *w, int32_t nbyte, int32_t off,
+																			 int t, int64_t v, int *ok) {
+	int width = ast_eval_slice_tsize(t);
+	uint32_t keep, put;
+	int sh;
+	if (ok)
+		*ok = ast_eval_slice_addr_ok(nbyte, off, width);
+	off = ast_eval_slice_addr_fix(nbyte, off, width);
+	if (width <= 0)
+		return;
+	if (width == 8) {
+		w[off >> 2] = (uint32_t)(uint64_t)v;
+		w[(off >> 2) + 1] = (uint32_t)((uint64_t)v >> 32);
+		return;
+	}
+	if (width == 4) {
+		w[off >> 2] = (uint32_t)(uint64_t)v;
+		return;
+	}
+	/* A sub-word store is a read-modify-write of the containing word, because
+	 * SPIR-V has no 8- or 16-bit storage without StorageBuffer8BitAccess. Within
+	 * one lane's own region that is exactly a narrow store; in a region shared
+	 * between lanes it is not atomic, and two lanes writing different bytes of
+	 * one word would race. That is a property of the region, not of this code,
+	 * and it has to be settled by whoever hands out shared addresses. */
+	sh = (off & 3) * 8;
+	keep = width == 1 ? 0xFFu : 0xFFFFu;
+	put = ((uint32_t)(uint64_t)v & keep) << sh;
+	w[off >> 2] = (w[off >> 2] & ~(keep << sh)) | put;
+}
+
+typedef struct AstEvalSliceIdx {
+	int32_t base;
+	int32_t esize;
+	int etype;
+	int nelem;
+	int nspan;
+	AstLocal idx;
+} AstEvalSliceIdx;
+
+/* The whole span is rounded up to a power of two so that masking a wild index
+ * into it needs one AND and cannot leave the object. That is what makes J3b's
+ * "no PageFault is reachable" argument close by construction rather than by
+ * detection: the worst an out-of-range access can do is touch another element
+ * of the same array, and the run is discarded anyway because its definedness
+ * flag was cleared by the same comparison that produced the mask. */
+static int ast_eval_slice_dynidx(AstArena *a, AstLocal n, AstEvalSliceIdx *o) {
+	AstLocal x, y, base, idx;
+	int32_t extent = 0;
+	int etype = 0, r, it;
+	if (n == AST_NONE || !ast_eval_slice_obj_fn)
+		return 0;
+	if (ast_kind(a, n) != AST_Binary || ast_op(a, n) != '+' ||
+			ast_nchild(a, n) != 2)
+		return 0;
+	x = ast_child(a, n, 0);
+	y = ast_child(a, n, 1);
+	if (ast_kind(a, x) == AST_Ref && (ast_type_t(a, x) & VT_ARRAY)) {
+		base = x;
+		idx = y;
+	} else if (ast_kind(a, y) == AST_Ref && (ast_type_t(a, y) & VT_ARRAY)) {
+		base = y;
+		idx = x;
+	} else {
+		return 0;
+	}
+	r = ast_op(a, base);
+	if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+		return 0;
+	if (!ast_eval_slice_obj_fn(a, base, &extent, &etype))
+		return 0;
+	o->esize = ast_eval_slice_tsize(etype);
+	if (!o->esize || (etype & VT_ARRAY) || is_float(etype) ||
+			!ast_eval_slice_intt(etype))
+		return 0;
+	if (extent < o->esize || extent % o->esize)
+		return 0;
+	/* A 64-bit index would have to agree bit for bit between a host int64 and a
+	 * device lo/hi pair before the mask is applied; every index in the corpus is
+	 * a plain int, so the wide case is refused rather than approximated. */
+	it = ast_eval_slice_wtype(a, idx);
+	if (!it || is_float(it) || !ast_eval_slice_intt(it) ||
+			ast_eval_slice_is64(it))
+		return 0;
+	o->base = (int32_t)(int64_t)ast_ival(a, base);
+	o->etype = etype;
+	o->nelem = (int)(extent / o->esize);
+	o->nspan = 1;
+	while (o->nspan < o->nelem)
+		o->nspan <<= 1;
+	o->idx = idx;
+	return o->nelem >= 1;
+}
+
+/* The verdict both executors must reach identically: in range or not, and the
+ * masked element either way. Unsigned, so a negative index is out of range by
+ * the same single comparison. */
+static int ast_eval_slice_idx_ok(const AstEvalSliceIdx *o, int64_t v,
+																 int *elem) {
+	uint32_t u = (uint32_t)(int32_t)v;
+	*elem = (int)(u & (uint32_t)(o->nspan - 1));
+	return u < (uint32_t)o->nelem;
+}
+
 static int ast_eval_slice_wtype(AstArena *a, AstLocal n) {
 	int t;
 	if (n == AST_NONE)
@@ -290,6 +490,14 @@ static int ast_eval_slice_wtype(AstArena *a, AstLocal n) {
 				return ast_eval_slice_wtype(a, ast_child(a, n, 1));
 		}
 		return 0;
+	case AST_Load: {
+		/* An indexed element is the one node whose own type word is 0 in every
+		 * real arena, so its width has to come from the object it indexes. */
+		AstEvalSliceIdx ix;
+		if (ast_eval_slice_dynidx(a, ast_first_child(a, n), &ix))
+			return ix.etype;
+		return 0;
+	}
 	case AST_Unary:
 		return ast_eval_slice_wtype(a, ast_first_child(a, n));
 	case AST_If:
@@ -302,6 +510,81 @@ static int ast_eval_slice_wtype(AstArena *a, AstLocal n) {
 		return 0;
 	}
 }
+
+/* A frame address that is a constant offset from a local: the local itself, or
+ * a chain of `.field` / `&` over one. Measured over 344 real bodies, this
+ * resolves 244 of 275 AST_OP_MEMBER nodes (88.7%) and 222 of 312 AST_OP_ADDR
+ * (71.2%). AST_OP_MEMBER_ARROW resolves 0 of 59 and never can -- its replay
+ * does indir() first (src/mccast.c:5177), i.e. it loads a pointer, and no
+ * amount of constant folding crosses that.
+ *
+ * The point of doing it this way is that the resolved offset is just another
+ * frame-slot key, so the existing (off[], val[]) environment carries it with no
+ * ABI change and the device sees the same constant OpAccessChain it already
+ * emits for a plain local. This only ever turns a refusal into an acceptance --
+ * every shape it admits is one the predicates below reject today. */
+#define AST_EVAL_OP_ADDR 0x40000
+#define AST_EVAL_OP_MEMBER 0x40001
+
+static int ast_eval_slice_frame_off(AstArena *a, AstLocal n, int32_t *off,
+																		int depth) {
+	int r;
+	if (n == AST_NONE || depth > 6)
+		return 0;
+	if (ast_kind(a, n) == AST_Ref) {
+		r = ast_op(a, n);
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+			return 0;
+		*off = (int32_t)(int64_t)ast_ival(a, n);
+		return 1;
+	}
+	if (ast_kind(a, n) == AST_Unary &&
+			(ast_op(a, n) == AST_EVAL_OP_MEMBER || ast_op(a, n) == AST_EVAL_OP_ADDR)) {
+		int32_t base = 0;
+		if (!ast_eval_slice_frame_off(a, ast_first_child(a, n), &base, depth + 1))
+			return 0;
+		*off = base + (ast_op(a, n) == AST_EVAL_OP_MEMBER
+											 ? (int32_t)(int64_t)ast_ival(a, n)
+											 : 0);
+		return 1;
+	}
+	/* `base + K` with a literal K, folding to a constant offset exactly as
+	 * `.field` does -- but only where the '+' is plain arithmetic on a byte
+	 * address. When the base is a pointer or an array, gen_op scales K by the
+	 * ELEMENT size at replay, so folding K as a byte offset is simply the wrong
+	 * address; that case belongs to ast_eval_slice_dynidx, which knows the
+	 * element size and handles a literal index as one more runtime index. */
+	if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == '+' &&
+			ast_nchild(a, n) == 2) {
+		AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
+		int32_t base = 0;
+		AstLocal b = AST_NONE, k = AST_NONE;
+		if (ast_eval_slice_frame_off(a, x, &base, depth + 1)) {
+			b = x;
+			k = y;
+		} else if (ast_eval_slice_frame_off(a, y, &base, depth + 1)) {
+			b = y;
+			k = x;
+		} else {
+			return 0;
+		}
+		if ((ast_type_t(a, b) & VT_ARRAY) ||
+				(ast_type_t(a, b) & VT_BTYPE) == VT_PTR)
+			return 0;
+		if (ast_kind(a, k) != AST_Literal)
+			return 0;
+		if ((ast_op(a, k) & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
+			return 0;
+		*off = base + (int32_t)(int64_t)ast_ival(a, k);
+		return 1;
+	}
+	return 0;
+}
+
+/* Sticky, and cleared by the caller that cares. An out-of-range index does not
+ * stop evaluation -- the device cannot stop either -- so the fact that one
+ * happened has to travel beside the value rather than instead of it. */
+static int ast_eval_slice_undef;
 
 static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 															const int64_t *val, int nenv, int64_t *out) {
@@ -327,7 +610,16 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 				return 0;
 			if (!ast_eval_slice_intt(t) || is_float(t))
 				return 0;
-			*out = v;
+			/* Reading a live-in through a typed Ref yields a value *of that type*,
+			 * which is what the Literal arm below already does and what the device
+			 * does (spv_load_live_v is handed the ref's own type). Returning the raw
+			 * environment word instead diverged for any narrow or unsigned live-in:
+			 * a u32 ref holding -12345 read as -12345 here and as 4294954951 on the
+			 * device, and both then widened correctly from different starting
+			 * points. The ladder never saw it because ast_ladder_gpu_run pre-fits
+			 * every input to its live-in's type, so fit here is idempotent for that
+			 * caller -- but the precondition was unstated and nothing enforced it. */
+			*out = ast_eval_slice_fit(v, t);
 			return 1;
 		}
 		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
@@ -340,20 +632,41 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 	}
 	case AST_Load: {
 		AstLocal c = ast_first_child(a, n);
-		if (c == AST_NONE || ast_kind(a, c) != AST_Ref)
-			return 0;
-		int r = ast_op(a, c);
 		int t = ast_type_t(a, n);
-		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
-			return 0;
-		if (!ast_eval_slice_intt(t) || is_float(t))
-			return 0;
+		int32_t fo;
 		int64_t v;
-		if (!ast_eval_slice_env(off, val, nenv,
-														(int32_t)(int64_t)ast_ival(a, c), &v))
+		AstEvalSliceIdx ix;
+		if (c == AST_NONE)
 			return 0;
-		*out = v;
-		return 1;
+		/* A local, or a constant offset from one via `.field`/`&`. Both are just
+		 * frame-slot keys in the same numbering, so the environment carries them
+		 * unchanged. */
+		if (ast_eval_slice_intt(t) && !is_float(t) &&
+				ast_eval_slice_frame_off(a, c, &fo, 0)) {
+			if (!ast_eval_slice_env(off, val, nenv, fo, &v))
+				return 0;
+			*out = ast_eval_slice_fit(v, t);
+			return 1;
+		}
+		/* An indexed element. Out of range is not a refusal here: the device
+		 * cannot refuse mid-kernel, it masks and clears its definedness flag, so
+		 * the reference has to read the same masked element and report the same
+		 * verdict or the two disagree exactly at the boundary. The verdict is
+		 * carried by ast_eval_slice_undef rather than by the return value. */
+		if (ast_eval_slice_dynidx(a, c, &ix)) {
+			int64_t iv;
+			int elem;
+			if (!ast_eval_slice_rec(a, ix.idx, off, val, nenv, &iv))
+				return 0;
+			if (!ast_eval_slice_idx_ok(&ix, iv, &elem))
+				ast_eval_slice_undef = 1;
+			if (!ast_eval_slice_env(off, val, nenv,
+															ix.base + (int32_t)elem * ix.esize, &v))
+				return 0;
+			*out = ast_eval_slice_fit(v, ix.etype);
+			return 1;
+		}
+		return 0;
 	}
 	case AST_Convert: {
 		int t = ast_type_t(a, n);
@@ -566,13 +879,21 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 	}
 	case AST_Load: {
 		AstLocal c = ast_first_child(a, n);
-		int r, t = ast_type_t(a, n);
-		if (!allow_load || c == AST_NONE || ast_kind(a, c) != AST_Ref)
+		int t = ast_type_t(a, n);
+		int32_t fo;
+		AstEvalSliceIdx ix;
+		if (!allow_load)
 			return 0;
-		r = ast_op(a, c);
-		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+		if (c == AST_NONE)
 			return 0;
-		return ast_eval_slice_intt(t) && !is_float(t);
+		if (!ast_bad_type(t) && !is_float(t) && ast_eval_slice_intt(t) &&
+				ast_eval_slice_frame_off(a, c, &fo, 0))
+			return 1;
+		/* Gated on allow_load, which is exactly the frame runner: the ladder and
+		 * the expression slicer both pass 0, so widening this cannot change what
+		 * either of them accepts. */
+		return ast_eval_slice_dynidx(a, c, &ix) &&
+					 ast_eval_slice_kind_ok(a, ix.idx, allow_load);
 	}
 	case AST_Convert: {
 		int t = ast_type_t(a, n);
@@ -624,6 +945,41 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 	}
 }
 
+/* An indexed object takes a whole run of consecutive slots, one per element,
+ * padded up to the masked span. Consecutive is the load-bearing word: the
+ * device resolves an element as `slot_of(base) + index` at run time, which is
+ * only the right slot if the run was laid out in order and nothing was
+ * interleaved into it. So a run that would overlap an already-mapped offset is
+ * refused rather than reordered.
+ *
+ * One slot per element, rather than a byte-addressed region, is what keeps the
+ * existing two-word store correct: slots stay disjoint 8-byte cells, so
+ * spv_store_live_v's lo/hi pair cannot land on a neighbour and no per-width
+ * store or sub-word shift/mask is needed anywhere. */
+static int ast_eval_slice_livein_obj(const AstEvalSliceIdx *o, int32_t *offs,
+																		 int *cnt, int max) {
+	int i, k;
+	for (i = 0; i < *cnt; i++)
+		if (offs[i] == o->base) {
+			if (i + o->nspan > *cnt)
+				return 0;
+			for (k = 0; k < o->nspan; k++)
+				if (offs[i + k] != o->base + (int32_t)k * o->esize)
+					return 0;
+			return 1;
+		}
+	if (*cnt + o->nspan > max)
+		return 0;
+	for (k = 0; k < o->nspan; k++) {
+		int32_t e = o->base + (int32_t)k * o->esize;
+		for (i = 0; i < *cnt; i++)
+			if (offs[i] == e)
+				return 0;
+		offs[(*cnt)++] = e;
+	}
+	return 1;
+}
+
 static int ast_eval_slice_livein(AstArena *a, AstLocal n, int32_t *offs, int *cnt,
 																 int max) {
 	AstLocal c;
@@ -645,7 +1001,21 @@ static int ast_eval_slice_livein(AstArena *a, AstLocal n, int32_t *offs, int *cn
 		return 1;
 	}
 	if (ast_kind(a, n) == AST_Load) {
+		AstEvalSliceIdx ix;
 		c = ast_first_child(a, n);
+		if (ast_eval_slice_dynidx(a, c, &ix))
+			return ast_eval_slice_livein_obj(&ix, offs, cnt, max) &&
+						 ast_eval_slice_livein(a, ix.idx, offs, cnt, max);
+		if (c != AST_NONE && ast_kind(a, c) == AST_Unary &&
+				ast_eval_slice_frame_off(a, c, &o, 0)) {
+			for (i = 0; i < *cnt; i++)
+				if (offs[i] == o)
+					return 1;
+			if (*cnt >= max)
+				return 0;
+			offs[(*cnt)++] = o;
+			return 1;
+		}
 		if (c != AST_NONE && ast_kind(a, c) == AST_Ref) {
 			r = ast_op(a, c);
 			if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {

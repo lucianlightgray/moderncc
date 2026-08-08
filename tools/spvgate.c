@@ -1198,6 +1198,7 @@ int main(int argc, char **argv) {
 	for (ci = 0; ci < (int)(sizeof CASES / sizeof CASES[0]); ci++) {
 		const Case *c = &CASES[ci];
 		int case_bad = 0;
+		long case_cmp = 0;
 		if (only >= 0 && ci != only)
 			continue;
 		for (r = 0; r < (int)(sizeof RUNGS / sizeof RUNGS[0]); r++) {
@@ -1325,6 +1326,7 @@ int main(int argc, char **argv) {
 			total_pts += ntuple;
 			total_cmp += cmp;
 			total_vac += vac;
+			case_cmp += cmp;
 			mismatch += bad;
 			if (bad)
 				case_bad = 1;
@@ -1332,7 +1334,19 @@ int main(int argc, char **argv) {
 			gate_module_free(&m);
 			ast_arena_free(a);
 		}
-		printf("  %-10s %s\n", c->name, case_bad ? "FAIL" : "OK");
+		/* A case that lowered nothing, or that compared only vacuous points,
+		 * used to print OK -- so "0 mismatches" was indistinguishable from
+		 * "0 points compared", and a case that silently stopped lowering read as
+		 * evidence. It is a failure: this case proves nothing. */
+		if (!case_bad && case_cmp == 0) {
+			printf("  %-10s FAIL (0 defined points compared -- proves nothing)\n",
+						 c->name);
+			case_bad = 1;
+			mismatch++;
+		} else {
+			printf("  %-10s %s (%ld points)\n", c->name, case_bad ? "FAIL" : "OK",
+						 case_cmp);
+		}
 	}
 
 	printf(GATE_NAME ": dispatches=%ld lanes=%ld points=%ld compared=%ld vacuous=%ld "

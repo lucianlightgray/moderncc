@@ -1,0 +1,90 @@
+# Real libc, not a hand-written device one.
+#
+# The device libc phase does not have to mean writing memcpy in SPIR-V by hand.
+# musl is clean portable C, mcc compiles C, and the frame runner lowers arenas —
+# so a device libc is the existing lowering applied to musl's own source, and
+# every function it covers is one nobody had to reimplement or re-verify.
+#
+# This cell is the ratchet on that. It compiles musl/src/string with mcc, runs
+# every lowerable slice and frame run through both executors, and requires them
+# to agree. The mutation arm proves the comparison is not blind.
+#
+# What does NOT lower yet is as informative as what does: the pointer-walking
+# functions (memcmp, strcmp, strncmp) produce zero frame runs because they
+# dereference through a pointer, which needs the shared address space at
+# binding 2. They are the measure of that work, not a failure of this one.
+
+set(_dump "${BINDIR}/slicerun-musl.txt")
+file(REMOVE "${_dump}")
+
+set(_src "${SRCDIR}/vendor/musl-src/src/string")
+if(NOT EXISTS "${_src}")
+    message("slice/musl: vendor/musl-src absent, skipping")
+    return()
+endif()
+if(NOT EXISTS "${SRCDIR}/vendor/musl-sysroot/include/bits/alltypes.h")
+    message("slice/musl: vendor/musl-sysroot has no generated headers, skipping")
+    return()
+endif()
+
+set(_inc
+    -I${SRCDIR}/vendor/musl-sysroot/include
+    -I${SRCDIR}/vendor/musl-src/src/include
+    -I${SRCDIR}/vendor/musl-src/src/internal
+    -I${SRCDIR}/vendor/musl-src/arch/x86_64
+    -I${SRCDIR}/vendor/musl-src/arch/generic)
+
+file(GLOB _srcs "${_src}/*.c")
+list(SORT _srcs)
+set(_ok 0)
+foreach(_f IN LISTS _srcs)
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -E env "MCC_ARENA_DUMP=${_dump}"
+                "${MCC}" -w -c "${_f}" -o "${BINDIR}/slicerun-musl.o" -O1 ${_inc}
+        RESULT_VARIABLE _rc OUTPUT_QUIET ERROR_QUIET)
+    if(_rc EQUAL 0)
+        math(EXPR _ok "${_ok} + 1")
+    endif()
+endforeach()
+
+message("slice/musl: ${_ok} musl string TUs compiled by mcc")
+if(_ok LESS 20)
+    message(FATAL_ERROR "slice/musl: only ${_ok} musl TUs compiled; the front end "
+                        "regressed or the sysroot is wrong. A near-empty corpus "
+                        "would make the differential below pass vacuously")
+endif()
+if(NOT EXISTS "${_dump}")
+    message(FATAL_ERROR "slice/musl: no arenas dumped; MCC_ARENA_DUMP is not "
+                        "firing and this cell would measure nothing")
+endif()
+
+execute_process(COMMAND "${RUNNER}" --arenas "${_dump}" --quiet
+                RESULT_VARIABLE _clean OUTPUT_VARIABLE _out ERROR_VARIABLE _out)
+message("${_out}")
+if(_clean EQUAL 77)
+    if(MCC_GPU_REQUIRED)
+        message(FATAL_ERROR "slice/musl: no usable device, but MCC_GPU_REQUIRED is set")
+    endif()
+    message("slice/musl: no usable device, skipping the device half")
+    return()
+endif()
+if(NOT _clean EQUAL 0)
+    message(FATAL_ERROR "slice/musl: musl slices disagree between the CPU and "
+                        "device runners")
+endif()
+if(NOT _out MATCHES "slices=([1-9][0-9]*)")
+    message(FATAL_ERROR "slice/musl: zero musl slices lowered; a clean result "
+                        "here would mean nothing ran")
+endif()
+if(_out MATCHES "available=1" AND NOT _out MATCHES "frame-compared=([1-9][0-9]*)")
+    message(FATAL_ERROR "slice/musl: no musl frame run was compared on the "
+                        "device; accepted counts runs that were never built")
+endif()
+
+execute_process(COMMAND "${RUNNER}" --arenas "${_dump}" --quiet --mutate
+                RESULT_VARIABLE _mut OUTPUT_VARIABLE _mout ERROR_VARIABLE _mout)
+if(_mut EQUAL 0)
+    message(FATAL_ERROR "slice/musl: every kernel was perturbed and the "
+                        "differential still reported clean, so it is blind")
+endif()
+message("slice/musl: clean OK, mutation detected")

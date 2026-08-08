@@ -200,7 +200,14 @@ def self_flags(bdir):
             if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
 
 
-CORPUS_DEFS = ["MCC_DIAG"]
+# Every -D that changes WHICH source src/mcc.c amalgamates. Getting this list
+# wrong is silent: the guard exists to turn corpus-shape changes into a skip
+# rather than a fake regression, and a missing entry means it does neither.
+# MCC_EMBED_JIT gates two whole translation units (src/libmcc.c includes
+# mccjit_intent.c and mccjit_embed.c under it) and is a user-visible CMake
+# option defaulting ON, so it was the largest corpus-shaping option the guard
+# could not see.
+CORPUS_DEFS = ["MCC_DIAG", "MCC_EMBED_JIT"]
 
 
 def corpus_config(flags):

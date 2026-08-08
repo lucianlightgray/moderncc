@@ -1,0 +1,49 @@
+# The must-run manifest (N13).
+#
+# There are 141 `SKIP_RETURN_CODE 77` registrations in this tree and, until this
+# file existed, nothing anywhere asserted that any of them must ever fire. Two
+# distinct failures hide in that gap and they look identical from the outside:
+#
+#   1. the cell is never REGISTERED -- matrix.yml did not install the Vulkan
+#      headers, so spvgate did not build and gpu/spv-slice-* simply did not
+#      exist. 8913 cells ran instead of 8916 and nothing reported the loss.
+#   2. the cell is registered and SKIPS on every host, so it is dead weight that
+#      reads as coverage.
+#
+# Columns, `|`-separated:
+#   <exact ctest name> | registered|must-run | why it matters
+#
+# registered  the cell must appear in the build's test list. Checked by the
+#             ci/must-run-registered cell, on every build, everywhere.
+# must-run    additionally, it must not report Skipped in a results file.
+#             Checked only when tools/must-run.py is given --results, because
+#             whether it can run is a property of the host, not of the build.
+#
+# Adding a row is cheap. Deleting one should require saying why in the commit.
+
+gpu/spv-slice-differential   | registered | the SPIR-V differential; vanished silently when matrix.yml omitted libvulkan-dev
+gpu/spv-slice-known-positive | registered | proves the SPIR-V differential is not blind
+gpu/spv-slice-real           | registered | the only cell running the emitters over harvested arenas
+gpu/ladder-gpu-parity        | registered | the CPU/GPU oracle parity gate
+
+slice/task                   | must-run   | the tick scheduler; pure CPU, no device, so a skip here is always a bug
+slice/work                   | must-run   | AST-to-work-item extraction; no device needed
+slice/cpu                    | must-run   | the CPU executor's expected values; no device needed
+slice/sched                  | must-run   | both runners under one scheduler
+slice/gpu                    | registered | device differential; skips honestly with no device
+slice/wide64                 | registered | 64-bit full-width fidelity
+slice/wide64-known-positive  | registered | proves the 64-bit differential is not blind
+slice/ops                    | registered | the op matrix, including N9's six otherwise-unreachable opcodes
+slice/ops-known-positive     | registered | proves the op matrix is not blind
+slice/frame                  | must-run   | device frame storage: Store/Load lowered to GPU memory, CPU half needs no device
+slice/frame-known-positive   | registered | proves the frame differential is not blind
+slice/bytes                  | registered | per-width region load/store; the two-word store clobbered neighbours
+slice/mem                    | registered | the shared CPU<->GPU address space: pointers, heap, printf ring
+slice/fault                  | registered | the pending-command-buffer strand path
+slice/cost                   | registered | H6; the break-even table the plan's go/no-go rests on
+slice/real                   | registered | both runners over real recorded arenas
+
+slice/musl                   | registered | real musl libc lowered to the device, not a hand-written one
+
+rir/drop-ratchet             | must-run   | silently dropped RIR opcodes; no device needed
+rir-coverage                 | registered | the lowerable/kept census ratchet
