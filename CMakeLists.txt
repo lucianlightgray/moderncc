@@ -3622,7 +3622,7 @@ if(MCC_BUILD_TESTS)
             endforeach()
             # The 64-bit differential must be able to fail, or "0 mismatches"
             # is indistinguishable from "0 tuples compared".
-            foreach(_sk wide64 ops frame)
+            foreach(_sk wide64 ops frame gpu sched bytes)
                 add_test(NAME "slice/${_sk}-known-positive"
                     COMMAND "${CMAKE_COMMAND}"
                             -DRUNNER=$<TARGET_FILE:slicerun>
