@@ -5095,12 +5095,46 @@ void rir_low_regions(const long *regions, const long *big, const long *huge) {
 	}
 }
 
+static const char *rir_low_excl;
+static int rir_low_excl_read;
+
+static int rir_low_excluded(void) {
+	const char *f, *p, *e;
+	size_t n, lf;
+	if (!rir_low_excl_read) {
+		rir_low_excl = getenv("MCC_RIR_LOW_EXCLUDE");
+		rir_low_excl_read = 1;
+	}
+	if (!rir_low_excl || !*rir_low_excl)
+		return 0;
+	f = file && file->filename[0]
+					? file->filename
+					: (mcc_state && mcc_state->current_filename
+								 ? mcc_state->current_filename
+								 : "");
+	if (!*f)
+		return 0;
+	lf = strlen(f);
+	for (p = rir_low_excl; *p; p = *e ? e + 1 : e) {
+		e = strchr(p, ',');
+		if (!e)
+			e = p + strlen(p);
+		n = (size_t)(e - p);
+		if (n && lf >= n && !strncmp(f + lf - n, p, n) &&
+				(lf == n || f[lf - n - 1] == '/' || f[lf - n - 1] == '\\'))
+			return 1;
+	}
+	return 0;
+}
+
 static void rir_low_take(long nb) {
 	int i, nblk = 0, only = -1;
 	if (!rir_low_p_have)
 		return;
 	rir_low_p_have = 0;
 	if (rir_low_p_nodes <= 0)
+		return;
+	if (rir_low_excluded())
 		return;
 	rir_tot_low_bodies++;
 	rir_tot_low_bytes += nb;

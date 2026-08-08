@@ -413,6 +413,7 @@
     },
 
     { "name": "debug", "configurePreset": "debug", "inherits": "_test-native" },
+    { "name": "debug-all", "configurePreset": "debug", "inherits": "_test" },
     { "name": "release", "configurePreset": "release", "inherits": "_test-native" },
     { "name": "sanitize", "configurePreset": "sanitize", "inherits": "_test-native" },
     { "name": "diagnostics", "configurePreset": "diagnostics", "inherits": "_test-native" },

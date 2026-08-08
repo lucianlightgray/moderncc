@@ -101,7 +101,8 @@ jobs:
         if: startsWith(matrix.runner, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cmake ninja-build gcc python3
+          sudo apt-get install -y --no-install-recommends cmake ninja-build gcc python3 \
+            libvulkan-dev mesa-vulkan-drivers
       - name: install wine (linux pe cell drives pe-wine-conformance)
         if: ${{ startsWith(matrix.runner, 'ubuntu') && matrix.feature == 'pe' && !matrix.skip }}
         run: |
@@ -121,6 +122,11 @@ jobs:
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja
+      - name: install MoltenVK (macos gpu-vulkan cell sets MCC_GPU_REQUIRED=ON)
+        if: ${{ startsWith(matrix.runner, 'macos') && matrix.feature == 'gpu-vulkan' && !matrix.skip }}
+        run: |
+          brew install molten-vk
+          ls -l "$(brew --prefix)/lib/libMoltenVK.dylib"
       - name: install Rosetta 2 + wine (macos pe cell drives pe-wine-conformance)
         if: ${{ startsWith(matrix.runner, 'macos') && matrix.feature == 'pe' && !matrix.skip }}
         run: |

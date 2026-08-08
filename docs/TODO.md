@@ -107,34 +107,147 @@ estimated** — no staging path exists and it collides with `mcc_gpu_rw_back`'s 
 
 ### Debts that will corrupt the next measurement if left
 
-1. **`--mutate` is blind to `memcpy`.** It perturbs the returned value, and `memcpy`
-   discards its return at 462/462 sites, `memset` at 343/343. The operator must move to
-   the written memory, and the harness needs a frame-buffer comparison mode. This is
-   larger than the emitter work it guards.
+Four of the seven landed on `wt/debts`, 2026-08-08. Two of the diagnoses recorded below
+were **wrong**, and the corrections are worth more than the fixes: #7 was not about
+`cmake-cross`, and #1 is about a third of the size it was written up as. Each item now
+says what was measured, not what was assumed.
+
+1. **`--mutate` is blind to `memcpy` — OVERSTATED, and much smaller than written.**
+   The write-up said the operator must move to written memory and the harness needs a
+   frame-buffer comparison mode. Both already exist: four of the six operator sites
+   already perturb written memory (`mccslice.h` two sites, `slicerun.c` two more), and
+   `slicerun.c` has a frame-buffer comparison mode (`g_frame_mismatch`). **The real gap
+   is that there is no `memcpy`/`memset` in the slice corpus to mutate yet** — the
+   operator has nothing to bite on, which is a corpus problem, not a harness rewrite.
+   Still open, still owned elsewhere; the "larger than the emitter work it guards"
+   claim is retracted.
 2. **`ast_eval_slice()` sets `ast_eval_slice_undef` but neither resets nor returns it.**
    Only `mcc_slice_frame_exec_cpu2` reads it. Every other caller is safe today purely
    because `kind_ok` refuses all Loads on the expression path — so the next caller to
    relax that inherits a silent wrong answer. Found by `spvgate`, handled there, not in
-   the shared header.
-3. **`mcc_vk_bind_mem` recreates `bmem` on growth without rewriting the descriptor set**,
-   and `mcc_vk_bind_buffers` only writes descriptors when `grew`. Unreachable today, and
-   growing binding 2 is the first thing a heap needs.
-4. **The Metal arm diverges further with every landing.** `mcc_slice_frame_kernel_build`
-   returns 0, there is no region layer, and `msl_expr` has no `dynidx` arm. Declared, not
-   silent — but the gap is now most of the feature set.
-5. **`MCC_GPU_REQUIRED` appears nowhere under `.github/`.** Every Linux and Windows ctest
-   job runs with it `OFF`, so all device cells go green-via-skip without an ICD, and
-   `must-run.py --results` cannot catch it because every device cell is `registered`
-   rather than `must-run`. One flag on a runner with a guaranteed ICD.
-6. **The lowerable ratchet is measuring noise.** It failed by 0.0001 points on a baseline
-   margin of 0.0017. It will fire on the next commit to touch the device layer whatever
-   that commit does, because `src/mcc.c` amalgamates the device layer and is the census
-   subject. Either widen the tolerance deliberately or measure something else.
-7. **A full ctest run under the `debug` preset skips 464 cells** — 147 arm64, 39 riscv,
-   29 win32, 19 cross, 18 i386, 8 qemu — because the arch cells look for a `cmake-cross`
-   build dir. `qemu-aarch64`/`qemu-riscv64`/`qemu-arm`/`wine`/`docker` are all present on
-   this host, and `cmake-cross` is now built, so only the `macho`/Darwin cells should
-   legitimately skip here. **"0 failed" under `debug` alone is not a clean run.**
+   the shared header. **Still open.**
+3. **`mcc_vk_bind_mem` descriptor staleness — FIXED.** `mcc_vkr` grew an `int dsdirty`,
+   `mcc_vk_bind_mem` sets it after the recreate, and `mcc_vk_bind_buffers` folds it into
+   `grew` (and clears it) before the `if (!grew) return 1;` early-out. That covers the
+   `mcc_gpu_mem_backend` path too, since dispatch calls `bind_buffers` every time.
+   **Not test-covered, and cannot be**: both callers still pass the constant
+   `MCC_VK_MEM_DEFAULT`, so binding 2 never grows and the write is unreachable. The
+   first caller that grows it makes the fix live and makes a cell possible; write the
+   cell then.
+4. **The Metal arm diverges further with every landing — quantified, and it is a
+   multi-week rewrite, not a debt to pay down.** Measured over the `#if
+   MCC_GPU_LANG_MSL` / `#else` arms: **1754 MSL lines against 3578 SPIR-V**, split
+   `mccgpu.c` 653/1461, `mccgpu.h` 1008/1763, `mccslice.h` 27/62, `spvgate.c` 66/292.
+   `mcc_slice_frame_kernel_build`'s Metal arm is **three lines returning 0**. There are
+   **no `msl_region*` symbols at all**, against 25 distinct `spv_*` symbols reached from
+   `mccslice.h` alone. `tools/slicerun.c` carries one `#if` (`AST_EVAL_SLICE_PROVIDED`)
+   and none for the backend, so it cannot compile against the Metal arm. Nothing here is
+   a fix; treat it as a decision about whether Metal stays a target.
+5. **`MCC_GPU_REQUIRED` absent from CI — FIXED.** It was defined in `CMakeLists.txt`
+   (default `OFF`) and turned on in exactly one place, `tools/ci.c`'s `gpu-vulkan`
+   feature, gated `OS_MAC`. Every Linux and Windows ctest job ran with it `OFF`. Now
+   `ci.yml`'s `stage2-linux` installs `mesa-vulkan-drivers` (lavapipe — `libvulkan-dev`
+   alone is loader plus headers with **no ICD**) and passes `-DMCC_GPU_REQUIRED=ON`.
+   `matrix.yml` had two live defects fixed at the same time: its `stage2` job ran the
+   macOS `gpu-vulkan` cell — which sets `MCC_GPU_REQUIRED=ON` itself — with **no
+   `brew install molten-vk`**, so every device cell hit `FATAL_ERROR` nightly; and it
+   never installed `libvulkan-dev`, so its own `[ -d /usr/include/vulkan ]` guard
+   silently dropped `-DVulkan_INCLUDE_DIR` and three `gpu/spv-slice-*` cells with it.
+   Windows is deliberately **not** armed: vcpkg `vulkan-headers` is headers only, no ICD.
+   Note for anyone tempted to lean on `must-run.py --results`: it cannot catch any of
+   this. All four `gpu/*` rows and every device-bearing `slice/*` row in
+   `tests/must-run.txt` are `registered`, and `--results` only checks `must-run` rows.
+6. **The lowerable ratchet was measuring noise — FIXED at the root, not by widening
+   `--tol`.** The arithmetic was: floor 25.9207, `--tol` 0.05, so threshold 25.8707;
+   baseline 25.8724 (0.0017 inside); merged 25.8706 (0.0001 outside). The denominator
+   rose 434,204 → 434,401 nodes while absolute lowerable nodes rose 112,339 → 112,385.
+   **It fired on dilution while real coverage improved.** Cause: the census subject
+   `src/mcc.c` amalgamates `libmcc.c`, which `#include`s the device layer, so the
+   ratchet that guards the SPIR-V emitter had the SPIR-V emitter in its own denominator.
+   Fixed by splitting the subject: `src/mccrir.c` gained `MCC_RIR_LOW_EXCLUDE`, a
+   comma-separated suffix list whose bodies are dropped from the **lowerable** numerator
+   and denominator both (`rir_low_excluded`, applied in `rir_low_take`), and
+   `tools/rir-coverage.py` sets it to `src/mccgpu.c,src/mccgpu.h` and records it in the
+   bank's `corpus_config`, so a run without the exclusion skips instead of reporting the
+   difference as a regression. Coverage and byte accounting are untouched — they are not
+   self-referential. The device layer is 122 of 2812 bodies and ~17,000 of ~434,000
+   nodes. Re-banked `self`/elf floors (`--update-bank-low --rebank-config`):
+
+   | | O0 | O1 | O2 | O3 |
+   | --- | ---: | ---: | ---: | ---: |
+   | `nodes_pct_strict` | 26.1790 | 26.1576 | 26.1576 | 26.1576 |
+   | `nodes_pct` | 41.8190 | 41.8112 | 41.8112 | 41.8112 |
+   | `nodes_pct_loose` | 66.2243 | 66.2367 | 66.2367 | 66.2367 |
+   | `bodies_pct` | 9.1856 | 9.2159 | 9.2159 | 9.2159 |
+   | `region_nodes_pct` | 16.9886 | 17.0023 | 17.0023 | 17.0023 |
+   | denominator, nodes | 417,392 | 417,056 | 417,056 | 417,056 |
+
+   `--tol` is left at 0.05 deliberately: the point was that the gate could not tell
+   dilution from regression, and that is what changed. Two things stay open. The `pe`
+   floors could not be re-banked from an ELF host; they are stale-low, so they
+   under-gate on Windows rather than false-fail. And **`rir-coverage-census` (the `wide`
+   corpus) is red and was red before this** — measured on the pre-change tool against
+   the pre-change bank it fails `bodies_pct` 15.1452 < 15.6420, `nodes_pct_strict`
+   26.9255 < 27.1327 and, unrelated to lowerable at all, `kept coverage` 93.0371 <
+   98.3840 at -O2/-O3. The exclusion moves the first two *up* (to 15.4913 / 27.0635) and
+   does not touch the third. It is `--opt-in` and `LABELS census`, so it never runs in
+   CI, which is exactly how it stayed red. Not re-banked: banking a failing census
+   would bury the `kept coverage` gap.
+7. **The "464 skipped cells under `debug`" number was wrong, and so was its cause —
+   PARTLY FIXED.** It was not `MCC_CROSS_DIR` and not a missing `cmake-cross`:
+   `MCC_CROSS_DIR` defaults correctly, cross cells are registered unconditionally with
+   `FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT"` and `SKIP_RETURN_CODE 77`, and the
+   `mcc_cross_build` fixture builds the dir at test time. Measured on the current tree,
+   two separate things were happening and neither was 464:
+   - **The `native` label filter hides cells — 39 before the second fix below, 59
+     after.** `ctest --test-dir cmake-debug -N` reported 8942 against 8903 for
+     `-N -L native`, and now reports 9106 against 9047. The `debug` test preset inherits
+     `_test-native`, which is `"filter": {"include": {"label": "native"}}`, so every
+     `qemu`/`wine`/`macho`/`docker` cell is excluded before it runs. Added test preset
+     **`debug-all`** (same configure preset, no label filter) rather than dropping the
+     filter, so the fast native loop is preserved.
+   - **`if(TARGET mcc-<arch>)` silently dropped 164 cells at configure time.** 8942
+     `add_test` in `cmake-debug` against 9106 in `cmake-cross`; the difference is
+     exactly 144 `optfire-{arm64,i386,riscv64}/*` and 20 `*-docker`, none of which had
+     an `else()`, so they vanished without a skip line. The guards asked whether the
+     target exists *in this build*, not whether the binary exists in `MCC_CROSS_DIR` —
+     so `cmake-cross/mcc-i386` could be present and `i386-fastcall-abi` still be an
+     echo-SKIP. Replaced with `mcc_cross_cc(<arch> <ccvar> <fixvar>)`, which prefers
+     `$<TARGET_FILE:mcc-<arch>>`, falls back to `${MCC_CROSS_DIR}/mcc-<arch>` with
+     `MCC_CROSS_BUILT` added to the fixtures, and yields empty otherwise. `cmake-debug`
+     now registers **9106**, the same as `cmake-cross`. `arm-asm-testsuite` keeps the
+     `if(TARGET ...)` form on purpose: it is an `add_custom_target` with
+     `DEPENDS mcc-arm`, not a test cell.
+
+   Measured after the fix, on this host, `MCC_CROSS_DIR` pointing at the built
+   `cmake-cross`:
+
+   | run | cells | passed | skipped | failed |
+   | --- | ---: | ---: | ---: | ---: |
+   | `ctest --preset debug` | 9047 | 8672 | 375 | **0** |
+   | the 59 cells `debug-all` adds (`-LE native`) | 61¹ | 15 | 46 | **0** |
+
+   ¹ ctest pulls the `mcc_build` and `mcc_cross_build` fixtures in regardless of the
+   label filter, so 59 + 2. **The real skip count under `debug` is 375, not 464**, and
+   286 of those are `exec-*` feature skips that have nothing to do with cross. All 144
+   newly-unmasked `optfire-*` cells ran and passed; `dash-s-bytes-arm64`,
+   `dash-s-bytes-riscv64` and `i386-fastcall-abi` went from echo-SKIP to real passing
+   runs. Every one of the 20 newly-unmasked `*-docker` cells skips here, and so do the
+   five that were already registered: `tools/*-docker.sh` probes whether the container
+   can see its bind mount and exits 77 when it cannot, which it cannot for a build dir
+   under `.claude/worktrees/`. That is the host, not the cells.
+
+   `tools/{selfhost-run-parity,shadow-iv-sweep,qemu-selfhost}.sh` hardcoded
+   `$root/cmake-cross` and ignored `MCC_CROSS_DIR`; they now honour it, and the cells
+   that drive them pass it through in `ENVIRONMENT`. `cmake/cross_build.cmake` gained an
+   opt-in `MCC_CROSS_REQUIRED` (default `OFF`) that turns its silent
+   missing-cache `return()` into a `FATAL_ERROR`, so a missing cross build can never
+   again present as a wall of green skips.
+
+   Legitimate residual skips on this host, left alone: three `run-tier/*-win32|wince`
+   are unconditional; every `macho-*` that needs real Darwin. `qemu-arm` and `qemu-i386`
+   **are** on PATH here, contrary to an earlier note — the `selfhost-qemu-*` cells skip
+   on a missing vendored sysroot, not a missing emulator.
 
 ## Landed — `cli/perfn_inproc` is green, and the pass was never inert, 2026-08-08
 

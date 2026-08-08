@@ -2,6 +2,7 @@
 set -e
 
 root=$(cd "$(dirname "$0")/.." && pwd)
+xdir=${MCC_CROSS_DIR:-$root/cmake-cross}
 arch=${1:-riscv64}
 [ $# -gt 0 ] && shift
 KNOBS="$*"
@@ -60,7 +61,7 @@ esac
 
 if [ "$need_fallback" = 1 ]; then
   VSR="$root/vendor/gentoo-stage3-$arch-glibc"
-  VMCC="$root/cmake-cross/mcc-$arch"
+  VMCC="$xdir/mcc-$arch"
   [ -x "$VMCC" ] || { echo "SKIP: no '$CROSSCC' and no $VMCC to bootstrap with"; exit 77; }
   [ -d "$VSR" ] || { echo "SKIP: no '$CROSSCC' and no vendored sysroot at $VSR"; exit 77; }
   echo "[$arch] no '$CROSSCC'; bootstrapping with $VMCC against $VSR"
@@ -95,7 +96,7 @@ fi
 [ -n "$LOADER" ] && { [ -f "$LOADER" ] || { echo "SKIP: no dynamic loader $LOADER"; exit 77; }; }
 
 RTA=""
-for d in "$root/cmake-dist-macos" "$root/cmake-cross" "$root/cmake-dist"; do
+for d in "$root/cmake-dist-macos" "$xdir" "$root/cmake-dist"; do
   if [ -f "$d/$RTANAME" ]; then RTA="$d/$RTANAME"; break; fi
 done
 [ -n "$RTA" ] || { echo "SKIP: no $RTANAME (build the $arch runtime)"; exit 77; }

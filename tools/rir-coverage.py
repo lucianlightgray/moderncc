@@ -119,9 +119,16 @@ percentages are only comparable across builds that compile the same source into
 src/mcc.c.  The bank records that configuration under "corpus_config" (see
 corpus_config() below); a build that differs exits 77 (skip) rather than
 reporting the dilution as a regression.  No build option shapes the corpus
-today, so the recorded configuration is empty and every build compiles the same
-source.  --rebank-config, with --update-bank[-low], is the deliberate way to
-move the recorded configuration; do not use it to bank a non-default build.
+today; what the recorded configuration does carry is LOW_EXCLUDE, the device
+layer (src/mccgpu.c and src/mccgpu.h), which the LOWERABLE census alone drops
+from numerator and denominator both.  That census was the one measurement whose
+subject was also its author -- src/mcc.c amalgamates the SPIR-V emitter, so
+every line added to the emitter enlarged the denominator of the ratchet that
+guards it, and at 9abbcf5c it failed by 0.0001 points while absolute lowerable
+nodes ROSE by 46.  Coverage and byte accounting are not self-referential and are
+untouched by the exclusion.  --rebank-config, with --update-bank[-low], is the
+deliberate way to move the recorded configuration; do not use it to bank a
+non-default build.
 
 Exit status is 0 when every level is at or above its banked coverage and the
 byte accounting reconciles against the objects' real .text size.
@@ -219,6 +226,8 @@ def self_flags(bdir):
 # could not see.
 CORPUS_DEFS = ["MCC_DIAG", "MCC_EMBED_JIT"]
 
+LOW_EXCLUDE = "src/mccgpu.c,src/mccgpu.h"
+
 
 def corpus_config(flags):
     """The build options that change WHICH source src/mcc.c amalgamates.
@@ -245,6 +254,7 @@ def corpus_config(flags):
             elif f.startswith("-D" + name + "="):
                 val = f.split("=", 1)[1]
         cfg[name] = val
+    cfg["LOW_EXCLUDE"] = LOW_EXCLUDE
     return cfg
 
 
@@ -486,6 +496,7 @@ def census(mcc, flags, sources, opt, layer="arena", keep_rows=True):
               "MCC_REPLAY_IR", "MCC_REPLAY_IR_OUT", "MCC_RIR_FORCE",
               "MCC_TEST_OPT"):
         env0.pop(k, None)
+    env0["MCC_RIR_LOW_EXCLUDE"] = LOW_EXCLUDE
     agg = parse_report("")
     rows = []
     text = 0
