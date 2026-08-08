@@ -1623,7 +1623,13 @@ static int g_cost_mode;
 static int g_cost_synth;
 static int g_lax;
 
+/* Three counters, not one. `accepted` is what the predicate admits; `built` is
+ * what actually lowered to a kernel; `compared` is what a device dispatch
+ * actually checked against the CPU. Only the last is evidence. Reporting the
+ * first as coverage overstated it 2.26x, because a `return expr;`-only block is
+ * accepted with nstmt == 0 and mcc_slice_frame_kernel_build refuses it. */
 static long g_frame_slices, g_frame_stmts, g_frame_mismatch;
+static long g_frame_built, g_frame_compared;
 
 /* Frame runs from real arenas, differentialled the same way expression slices
  * are: seed N independent frames, run both executors, compare every slot and
@@ -1650,11 +1656,13 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 			return;
 	if (!g_have_device || !mcc_slice_frame_kernel_build(&fr, &k))
 		return;
+	g_frame_built++;
 	if (mcc_slice_run_frame_gpu(&fr, &k, gf, 8, grv, gdf) != MCC_TASK_DONE) {
 		mcc_slice_kernel_free(&k);
 		g_frame_mismatch++;
 		return;
 	}
+	g_frame_compared++;
 	for (t = 0; t < 8; t++) {
 		/* Only a run that ends in Return has a value to compare. Without one the
 		 * kernel still writes the out slots (spv_main_end always does), so the
@@ -1681,9 +1689,8 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 			if (fr.ret != AST_NONE)
 				fprintf(stderr, "    ret cpu=%lld/%d gpu=%lld/%d\n", (long long)crv[0],
 								cdf[0], (long long)grv[0], gdf[0]);
-			fprintf(stderr, "    store dest type=%#x value kind=%d\n",
-							ast_type_t(a, ast_child(a, fr.stmt[0], 0)),
-							(int)ast_kind(a, ast_child(a, fr.stmt[0], 1)));
+			fprintf(stderr, "    run: nslot=%d nstmt=%d nctrl=%d nloop=%d ret=%d\n",
+							fr.nslot, fr.nstmt, fr.nctrl, fr.nloop, fr.ret != AST_NONE);
 		}
 		g_frame_mismatch++;
 	}
@@ -1795,8 +1802,10 @@ static int arena_mode(const char *path, long limit, int quiet) {
 				 "dispatches=%ld mismatches=%ld\n",
 				 g_arena_bodies, g_arena_slices, g_arena_tuples, g_arena_gpu_slices,
 				 mcc_slice_dispatches(), g_arena_mismatch);
-	printf("slicerun: frame-slices=%ld frame-stmts=%ld frame-mismatches=%ld\n",
-				 g_frame_slices, g_frame_stmts, g_frame_mismatch);
+	printf("slicerun: frame-accepted=%ld frame-built=%ld frame-compared=%ld "
+				 "frame-stmts=%ld frame-mismatches=%ld\n",
+				 g_frame_slices, g_frame_built, g_frame_compared, g_frame_stmts,
+				 g_frame_mismatch);
 	g_arena_mismatch += g_frame_mismatch;
 	if (!g_arena_slices) {
 		printf("slicerun: FAIL (no real slice became schedulable work)\n");

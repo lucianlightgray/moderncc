@@ -146,9 +146,23 @@ the byte loop over B1 offsets work", with no second unknown bundled in.
 
 Then `memset` (+31, near-zero incremental risk), then `strcmp` + `strlen` together (they
 introduce the return path and share a scan loop), then `memcmp` (+22, free once `strcmp`
-exists). **`snprintf` is #2 by gain (+168) and last by sequencing** — it bundles varargs, a
-`%` engine and 64-bit division, and putting it early means a failing differential cannot
-tell you which of the three broke. **The allocator is last.**
+exists). **`snprintf` moves early — the varargs objection does not survive inspection.** It was
+ranked last on the grounds that it bundles varargs, a `%` engine and 64-bit division.
+Measured at a real call site, a variadic call in the arena is *just children with static
+types*: `snprintf(buf, 64, "%d %ld %s", a, b, s)` is an `AST_Invoke` with 7 children whose
+`type_t` values are `0x5` (ptr), `0x3` (int), `0x1004` (long), `0x5` (ptr) — every one
+known at emit time, with `size` now in the dump alongside.
+
+`va_list`, `gp_offset`, the register save area and the overflow area are **host codegen
+below the AST** and never appear at the call site. On the device we own the calling
+convention, so there is no reason to reproduce any of it: lower the variadic arguments to
+a contiguous `(tag, value)` array in the shared region, pass base and count, and let the
+formatter walk it. The tags are free.
+
+That leaves the `%` engine as the only real work — self-contained and testable on its own
+— and 64-bit division, which already exists and is verified at full width by
+`slice/wide64`. At +168 blocks it is #2 by marginal gain, so it should come soon after the
+`mem*`/`str*` tranche rather than last. **The allocator is last.**
 
 ## Residual after D4b + libc + posting
 

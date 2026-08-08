@@ -41,6 +41,17 @@ if(NOT _out MATCHES "slices=([1-9][0-9]*)")
     message(FATAL_ERROR "slice/real: zero real slices became schedulable work; a "
                         "clean result here would mean the runners never ran")
 endif()
+# Accepted is not evidence. A run the predicate admits but the kernel builder
+# refuses is counted, never dispatched and never compared -- that gap was 174 of
+# 300 before it was found, inflating the coverage figure 2.4x. Assert on what a
+# device dispatch actually checked.
+if(_out MATCHES "available=1")
+    if(NOT _out MATCHES "frame-compared=([1-9][0-9]*)")
+        message(FATAL_ERROR "slice/real: no frame run was compared against the "
+                            "CPU on the device; frame-accepted counts runs that "
+                            "were never built and proves nothing")
+    endif()
+endif()
 if(_out MATCHES "available=1")
     if(NOT _out MATCHES "dispatches=([1-9][0-9]*)")
         message(FATAL_ERROR "slice/real: a device was found and never dispatched")

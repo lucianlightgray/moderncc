@@ -196,7 +196,6 @@ typedef struct MccSliceFrame {
 	AstLocal root;
 	int32_t slot[MCC_SLICE_MAXSLOT];
 	int nslot;
-	AstLocal stmt[MCC_SLICE_MAXSTMT];
 	int nstmt;
 	AstLocal top[MCC_SLICE_MAXSTMT];
 	int ntop;
@@ -1057,7 +1056,13 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 static int mcc_slice_frame_kernel_build(MccSliceFrame *f, MccSliceKernel *k) {
 	uint32_t base;
 	int i, j;
-	if (!f || !k || f->nstmt < 1 || f->nslot < 1)
+	/* A run with no stores but a Return still computes a value and is worth
+	 * dispatching -- refusing it counted 174 accepted runs that were never
+	 * built, never dispatched and never compared, which inflated the coverage
+	 * figure 2.4x. */
+	if (!f || !k || f->nslot < 1)
+		return 0;
+	if (f->nstmt < 1 && f->ret == AST_NONE)
 		return 0;
 	memset(k, 0, sizeof *k);
 	for (i = 0; i < f->nslot; i++)
