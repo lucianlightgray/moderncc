@@ -665,7 +665,7 @@ static const struct {
 				"", OS_LINUX | OS_MAC, 0},
 		{"sanitize", "-DMCC_BUILD_SANITIZE=ON", "", "",
 				OS_LINUX | OS_MAC | OS_WIN, 0},
-		{"gpu-vulkan", "-DMCC_GPU_BACKEND=vulkan",
+		{"gpu-vulkan", "-DMCC_GPU_BACKEND=vulkan;-DMCC_GPU_REQUIRED=ON",
 				"Vulkan is already the default backend off Darwin, so this cell "
 				"would only re-run what every other cell on this host runs; "
 				"Darwin is the one host that can build both and so the only "
