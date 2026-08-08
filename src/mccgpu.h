@@ -2100,6 +2100,7 @@ typedef struct SpvRegion {
 	uint32_t var;
 	uint32_t base;
 	uint32_t nbyte;
+	int shared;
 } SpvRegion;
 
 static SpvRegion spv_region(uint32_t var, uint32_t base, uint32_t nbyte) {
@@ -2107,6 +2108,14 @@ static SpvRegion spv_region(uint32_t var, uint32_t base, uint32_t nbyte) {
 	r.var = var;
 	r.base = base;
 	r.nbyte = nbyte;
+	r.shared = 0;
+	return r;
+}
+
+static SpvRegion spv_region_shared(uint32_t var, uint32_t base,
+																	 uint32_t nbyte) {
+	SpvRegion r = spv_region(var, base, nbyte);
+	r.shared = 1;
 	return r;
 }
 
@@ -2206,6 +2215,10 @@ static void spv_store_region(SpvMod *m, const SpvRegion *r, uint32_t byteoff,
 	uint32_t uoff, sh, keep, cur, w;
 	if (width <= 0)
 		return;
+	if (r->shared && width < 4) {
+		m->failed = 1;
+		return;
+	}
 	uoff = spv_region_addr(m, r, byteoff, width);
 	if (width == 8) {
 		spv_widen(m, &v);

@@ -65,6 +65,7 @@ static int g_checks;
  * tooth below is what stops "no device" from masquerading as "all green". */
 static int g_have_device;
 static int g_device_required;
+static int g_device_or_skip;
 static int g_mutate;
 static char g_devname[256];
 
@@ -1480,7 +1481,7 @@ static void suite_frame(void) {
 /* Load from the offset in word 0, store the loaded value at the offset in word
  * 1. Both offsets are read from the region at run time, so neither the address
  * nor its range is known at emit time. */
-static int bytes_kernel(int t, MccGpuCode *out) {
+static int bytes_kernel_in(int t, int shared, MccGpuCode *out) {
 	SpvMod m;
 	SpvRegion r;
 	SpvV v;
@@ -1489,12 +1490,22 @@ static int bytes_kernel(int t, MccGpuCode *out) {
 	int nw = 0;
 	spv_module_begin(&m, BYTES_NSLOT);
 	base = spv_main_begin(&m, BYTES_NSLOT);
-	r = spv_region(m.id_in, base, spv_uintc(&m, BYTES_NBYTE));
+	r = shared ? spv_region_shared(m.id_in, base, spv_uintc(&m, BYTES_NBYTE))
+						 : spv_region(m.id_in, base, spv_uintc(&m, BYTES_NBYTE));
 	olo = spv_load_at(&m, base);
 	ohi = spv_emit3(&m, SpvOpIAdd, m.id_int, base, spv_const(&m, 1));
 	ohi = spv_load_at(&m, ohi);
 	v = spv_load_region(&m, &r, olo, t);
+	if (mcc_slice_mutate) {
+		uint32_t p = spv_pair(&m, v);
+		uint32_t lo = spv_uop(&m, SpvOpBitwiseXor, spv_lo(&m, p), spv_uintc(&m, 1));
+		v = spv_mk(spv_u2(&m, lo, spv_hi(&m, p)), 1, 0);
+	}
 	spv_store_region(&m, &r, ohi, v, t);
+	if (m.failed) {
+		spv_module_free(&m);
+		return 0;
+	}
 	spv_main_end(&m, m.lane, spv_mk(spv_const(&m, 0), 0, 0));
 	code = spv_module_finish(&m, &nw);
 	spv_module_free(&m);
@@ -1505,6 +1516,45 @@ static int bytes_kernel(int t, MccGpuCode *out) {
 	out->p = code;
 	out->n = nw;
 	return 1;
+}
+
+static int bytes_kernel(int t, MccGpuCode *out) {
+	return bytes_kernel_in(t, 0, out);
+}
+
+static void bytes_subword_shared(void) {
+	static const int NARROW[] = {VT_BYTE, VT_BYTE | VT_UNSIGNED, VT_SHORT,
+															 VT_SHORT | VT_UNSIGNED};
+	static const int WIDE[] = {VT_INT, VT_INT | VT_UNSIGNED, VT_LLONG,
+														 VT_LLONG | VT_UNSIGNED};
+	MccGpuCode c;
+	int i;
+	for (i = 0; i < (int)(sizeof NARROW / sizeof *NARROW); i++) {
+		if (bytes_kernel_in(NARROW[i], 1, &c)) {
+			CHECK(0, "a shared region refuses a sub-word store, which would be a "
+								"read-modify-write race between two lanes of one word");
+			free(c.p);
+		} else {
+			CHECK(1, "a shared region refuses a sub-word store, which would be a "
+								"read-modify-write race between two lanes of one word");
+		}
+		if (bytes_kernel_in(NARROW[i], 0, &c)) {
+			CHECK(1, "and a lane-private region of the same width still emits");
+			free(c.p);
+		} else {
+			CHECK(0, "and a lane-private region of the same width still emits");
+		}
+	}
+	for (i = 0; i < (int)(sizeof WIDE / sizeof *WIDE); i++) {
+		if (bytes_kernel_in(WIDE[i], 1, &c)) {
+			CHECK(1, "a word-or-wider store into a shared region is whole-word and "
+								"so is admitted");
+			free(c.p);
+		} else {
+			CHECK(0, "a word-or-wider store into a shared region is whole-word and "
+								"so is admitted");
+		}
+	}
 }
 
 static void suite_bytes(void) {
@@ -1541,6 +1591,7 @@ static void suite_bytes(void) {
 		ast_eval_slice_bytes_store(w, 8, 4, VT_INT, -1, &ok);
 		CHECK(w[0] == 0x1122FF44u, "a four-byte store does not reach backwards either");
 	}
+	bytes_subword_shared();
 
 	if (!g_have_device)
 		return;
@@ -2291,6 +2342,8 @@ int main(int argc, char **argv) {
 			quiet = 1;
 		else if (!strcmp(argv[i], "--require-device"))
 			g_device_required = 1;
+		else if (!strcmp(argv[i], "--device-or-skip"))
+			g_device_or_skip = 1;
 		else if (!strcmp(argv[i], "--mutate"))
 			g_mutate = 1;
 		else if (!strcmp(argv[i], "--cost"))
@@ -2304,6 +2357,10 @@ int main(int argc, char **argv) {
 	}
 
 	probe_device();
+	if (g_device_or_skip && !g_have_device) {
+		fprintf(stderr, "slicerun: no usable device, and this run needs one\n");
+		return 77;
+	}
 	mcc_slice_set_mutate(g_mutate);
 	ast_eval_slice_obj_fn = slicerun_obj;
 	(void)g_lax;

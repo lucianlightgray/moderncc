@@ -6,6 +6,145 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Landed — three more blind differentials, the sub-word atomicity decision, 2026-08-08
+
+### Three cells that could not fail now can, and one that was lying about why
+
+The rule from last session — *a cell that consumes a subprocess must assert on its exit
+status, and a cell that compares two things must assert that it compared something* — had
+three suites still outside it. Re-measured on this machine at the merge base, clean run
+then `--mutate`, exit code and the runner's own tally:
+
+| suite | clean | `--mutate` before | `--mutate` after | known-positive arm |
+| --- | --- | --- | --- | --- |
+| `wide64` | rc 0, 154/0 | rc 1, 154 checks 67 fail | unchanged | already had one |
+| `ops` | rc 0, 162/0 | rc 1, 162/52 | unchanged | already had one |
+| `frame` | rc 0, 157/0 | rc 1, 157/14 | unchanged | already had one |
+| `gpu` | rc 0, 32/0 | rc 1, 32/11 | unchanged | **added** |
+| `sched` | rc 0, 15/0 | rc 1, 15/5 | unchanged | **added** |
+| `bytes` | rc 0, 27/0 | **rc 0, 27/0** | rc 1, 39 checks 8 fail | **added** |
+| `mem` | rc 0, 7/0 | rc 0, 7/0 | rc 0, 7/0 | exempt, see below |
+
+`gpu` and `sched` were free: both were already mutation-sensitive and simply had no arm
+registered. `bytes` was not, and the reason is worth recording — `--mutate` is injected at
+the four sites inside `mcc_slice_kernel_build` / `mcc_slice_frame_kernel_build`, and
+`bytes_kernel` hand-rolls its own module, so the perturbation never reached it. It now
+carries the same `lo ^ 1` before the store that the other four sites carry.
+
+Observed red, which is the only evidence that counts here. Forcing `mcc_slice_set_mutate`
+to ignore its argument and rebuilding turns **all six** arms red at once, each with the
+driver's own diagnosis — `wide64`, `ops`, `frame`, `gpu`, `sched`, `bytes`, 6 of 7 cells
+failed, every one of them saying *"every ... kernel was perturbed and the differential
+still reported clean, so it is blind"*. Restored, all six pass, and the whole
+`^slice/|^gpu/|must-run` selection is 26/26.
+
+### The device-less arm was reporting blindness when it meant absence
+
+Found while adding the two new arms, and it was already live. `slicerun` only exits 77 for
+`gpu`, `wide64`, `ops`, `fault` and `mem`; `frame`, `sched` and `bytes` run their CPU half
+and exit **0** with no device. Measured with `MCC_VULKAN_LIB=/nonexistent`: all three
+returned rc 0 for *both* arms. So on any host without a device the driver reached its last
+branch and issued `FATAL_ERROR ... so it is blind` — about a host that had never dispatched
+anything. `slice/frame-known-positive` has been failing that way, with that message, on
+every device-less host since it was registered.
+
+The fix is a `--device-or-skip` flag: the runner exits 77 before running anything if no
+device came up, and the driver asks for it on both arms. Measured after: `frame`, `sched`
+and `bytes` all report *"no usable device, skipping"* at rc 0 device-less, and with
+`MCC_GPU_REQUIRED=ON` the same run is *"no usable device, but MCC_GPU_REQUIRED is set"* at
+rc 1. The verdict is now about the differential rather than about the host.
+
+`tests/must-run.txt` gains the three arms as `registered` rows, matching every other arm,
+which inherits its parent's skip. `must-run: 26 row(s) satisfied`.
+
+### `slice/mem` is exempt from a known-positive, and that is the honest answer
+
+`suite_mem` dispatches no kernel of its own. Its seven checks are host-side properties of
+the mapped region — mappability, a non-NULL host pointer, a ≥1 MiB extent, offset 0 zeroed,
+region identity across a second `mcc_gpu_mem` call, and host-write persistence. There is no
+computation for a mutation to perturb and no comparison for it to blind, so an arm that
+perturbed every kernel and then asserted the region is still mappable would be theatre: it
+would pass for reasons unrelated to what it claims to prove.
+
+What stands in for it is that `mem` already exits 77 without a device (measured), so it
+cannot green-via-silent-noop the way `frame`/`sched`/`bytes` could. If `mem` ever grows a
+device kernel that writes into the region and a host check on what it wrote, that check is
+a differential and this exemption should be deleted rather than defended.
+
+### Open item 0 decided — the allocator never co-locates two lanes' sub-word objects
+
+A shared-region sub-word store is a read-modify-write: load the containing word, mask,
+insert, store the word back. Two lanes writing different bytes of one word therefore lose
+one of the two writes. Decided now, before the allocator exists, on the same grounds the
+NULL reservation was: it costs nothing today and cannot be retrofitted cheaply.
+
+The three candidates, and why the third wins:
+
+1. **Byte-granular atomics.** Not available. SPIR-V's `OpAtomic*` operate on 32-bit
+   integers under `Shader` (64-bit under a further capability); there is no 8-bit atomic,
+   and MSL's atomics are 32/64-bit too. Measured here: `OpAtomic` does not appear anywhere
+   in `src/mccgpu.h`. This option is off the table outright, not merely expensive.
+
+2. **`StorageBuffer8BitAccess`.** Technically correct where present — distinct bytes are
+   distinct memory locations, so a byte-granular store is not an RMW and there is no race
+   to lose. Measured on this machine, RTX 5070 Ti Laptop GPU, `apiVersion 1.4.329`, driver
+   NVIDIA 595.84: `VK_KHR_8bit_storage` present, `storageBuffer8BitAccess`,
+   `uniformAndStorageBuffer8BitAccess`, `storagePushConstant8` and `shaderInt8` all true.
+   That is one device, and it is the wrong question for a portable compiler. The right one
+   is what the repo can reach: `mcc_gpu_vk_init` requests `ai.apiVersion =
+   VK_API_VERSION_1_1`, and `vkCreateDevice` is handed a `memset`-zeroed
+   `VkDeviceCreateInfo` — zero device extensions, zero feature structs chained on `pNext`.
+   The feature exists on the hardware and is unusable by this process. Adopting it means an
+   API-version bump, a per-device feature query, a `pNext` chain at device creation, an
+   `OpCapability StorageBuffer8BitAccess` variant of the emitter, **and** the shift/mask
+   fallback anyway for every device that answers false. Two emitters and a runtime branch,
+   to buy something option 3 gives for nothing. (The promotion history — core in Vulkan 1.2
+   as `VkPhysicalDeviceVulkan12Features::storageBuffer8BitAccess`, optional there — is from
+   knowledge, not measured here. The decision does not turn on it: the repo cannot reach
+   the feature at any version today.)
+
+3. **The allocator never co-locates two lanes' sub-word objects in one word.** Chosen.
+   It works on every device, needs no feature query, no fallback path and no second
+   emitter, and it makes the racy case *unrepresentable* rather than merely unlikely.
+
+**Consequences for the future allocator, which is what this decision is for.** In a region
+more than one lane can reach, a 4-byte word has exactly one owning lane. Concretely: the
+allocation granularity and the alignment for any object reachable by more than one lane are
+both 4 bytes, so a `char` or `short` that two lanes might write costs a full word. Lane-
+private regions are unaffected and keep packing at natural alignment — the frame path
+already relies on that and does not change. The cost is padding in a heap that does not
+exist yet; the alternative is a data race that no differential can see, because both
+executors would agree on whichever write happened to survive.
+
+**And it has teeth today.** `SpvRegion` gains a `shared` flag with an
+`spv_region_shared(var, base, nbyte)` constructor beside the existing `spv_region`, whose
+signature is unchanged so the binding-2 deref work in flight is not disturbed.
+`spv_store_region` refuses outright — `m->failed = 1`, no instruction emitted — when the
+region is shared and the width is under 4, so the kernel fails to build rather than
+emitting a store that races. Loads are untouched: a narrow read is a plain read and is not
+an RMW. `suite_bytes` asserts it in twelve new checks that need no device: the four
+sub-word types are refused in a shared region, the same four still emit in a lane-private
+one, and the four word-or-wider types are admitted in a shared region. Observed red by
+deleting the refusal and rebuilding — `slicerun bytes` went to rc 1, 39 checks, 4 failures,
+all four naming the sub-word store. Restored, rc 0, 39/0.
+
+### CI does not set `MCC_GPU_REQUIRED` on any Linux or Windows job
+
+Reported because it is a real gap, not because it was fixed here. `MCC_GPU_REQUIRED` does
+not appear anywhere under `.github/`. Its one CI use is the `gpu-vulkan` feature row in
+`tools/ci.c`, `-DMCC_GPU_BACKEND=vulkan;-DMCC_GPU_REQUIRED=ON`, and that row is gated
+`OS_MAC` — the comment there says Darwin is the only host where the backend choice is worth
+a cell, which is true of the *backend* and says nothing about the *requirement*. So every
+Linux and Windows ctest job configures with the default `OFF`, and all six device cells go
+green-via-skip if the ICD is missing. `tools/must-run.py --results` would catch it, but only
+for `must-run` rows, and every device cell is `registered`.
+
+So "the device was present at configure time but skipped at run time" is not detectable
+today on the hosts that actually run the device cells. The cheap fix is one flag on the
+Linux job that has a working ICD, not new harness machinery; it is left for whoever owns
+the workflow matrix, since choosing which runners are guaranteed to have a device is a CI
+decision and not a compiler one.
+
 ## Landed — B1 runtime addressing, and a per-width region layer, 2026-08-08
 
 ### The payoff is 19 blocks, not 41, and the difference is not effort
@@ -615,10 +754,11 @@ pending-command-buffer use-after-free, the worst-memory-type selection, two dead
 
 ### Next, in order
 
-0. **The sub-word atomicity decision, before the allocator exists.** A shared-region
-   sub-word store is a read-modify-write and two lanes writing different bytes of one word
-   race. Choosing "the allocator never co-locates two lanes' sub-word objects" costs
-   nothing today and cannot be retrofitted cheaply. Decide it first.
+0. ~~**The sub-word atomicity decision, before the allocator exists.**~~ **Decided**
+   2026-08-08 — the allocator never co-locates two lanes' sub-word objects in one word.
+   Reasoning, the measured portability of `StorageBuffer8BitAccess`, the consequences for
+   the allocator, and the `spv_region_shared` refusal that enforces it are at the top of
+   this file.
 
 1. **Pointer deref (`*p`) against binding 2.** This is what `memcmp`/`strcmp`/`strncmp`
    need, and it is the difference between musl's arithmetic halves lowering and musl
