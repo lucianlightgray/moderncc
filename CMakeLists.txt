@@ -3645,6 +3645,16 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("slice/cost" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                 PASS_REGULAR_EXPRESSION "win-within-[0-9]+-lanes=[1-9]")
+            add_test(NAME "slice/musl"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DRUNNER=$<TARGET_FILE:slicerun>
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_musl.cmake")
+            set_tests_properties("slice/musl" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 600)
             add_test(NAME "slice/real"
                 COMMAND "${CMAKE_COMMAND}"
                         -DRUNNER=$<TARGET_FILE:slicerun>

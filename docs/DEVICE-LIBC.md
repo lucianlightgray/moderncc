@@ -55,6 +55,39 @@ Raw Invoke class share, compiler corpus: **user-internal 90.0%**, pure `str*`/`m
 host I/O 3.6%, `snprintf` family 0.7%, allocator 0.4%, indirect 0.1%. The 90.0%
 independently corroborates the plan's measured 87.65%.
 
+## The device libc does not have to be written — musl compiles and lowers today
+
+`vendor/musl-src` is in the tree with full source, and `vendor/musl-sysroot` has the
+generated headers. musl is clean portable C, mcc compiles C, and the frame runner lowers
+arenas — so **a device libc is the existing lowering applied to musl's own source**, not a
+reimplementation. Every function it covers is one nobody has to write in SPIR-V or
+re-verify against the C standard.
+
+Measured, `musl/src/string` compiled by mcc at `-O1` and run through both executors:
+
+| | |
+| --- | ---: |
+| TUs mcc compiles | **65 of 74** |
+| arenas dumped | 83 |
+| expression slices lowered / mismatches | **475 / 0** |
+| frame runs accepted / built / **compared** | 120 / 94 / **94** |
+| frame mismatches | **0** |
+| under `--mutate` | 3,800 slice + 40 frame mismatches |
+
+Per function, verified frame runs: `memcpy` 6 (86 expression slices), `memset` 7 (44),
+`strlen` 1 (3). **`memcmp`, `strcmp`, `strncmp`, `memchr`, `strspn` lower zero frame
+runs** — they walk memory through a pointer, which needs the shared address space at
+binding 2. That zero is the measure of the remaining work, not a failure of this approach:
+the arithmetic halves of musl already run on the device, verified against the CPU.
+
+The 9 TUs mcc rejects are internal-dependency cases like `strchr.c` needing
+`__strchrnul` — an ordinary cross-TU call, not a front-end limitation.
+
+`slice/musl` is the standing ratchet: it requires at least 20 TUs to compile (a
+near-empty corpus would make the differential pass vacuously), requires a nonzero
+`frame-compared`, and requires the mutation arm to fail. Verified to go red when the
+compile floor is raised, so it can fail.
+
 ## Feasibility buckets
 
 **(a) Pure computation, buildable today — effectively empty.** Every `mem*`/`str*`

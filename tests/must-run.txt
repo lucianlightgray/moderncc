@@ -43,5 +43,7 @@ slice/fault                  | registered | the pending-command-buffer strand pa
 slice/cost                   | registered | H6; the break-even table the plan's go/no-go rests on
 slice/real                   | registered | both runners over real recorded arenas
 
+slice/musl                   | registered | real musl libc lowered to the device, not a hand-written one
+
 rir/drop-ratchet             | must-run   | silently dropped RIR opcodes; no device needed
 rir-coverage                 | registered | the lowerable/kept census ratchet
