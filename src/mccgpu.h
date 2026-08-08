@@ -885,8 +885,6 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		code = msl_binop_code(bop, uns, &is_cmp);
 		if (is_cmp < 0)
 			return 0;
-		if (is_cmp && is64)
-			code = msl_binop_code(bop, 0, &is_cmp);
 		if (!is64) {
 			uint32_t l = msl_lo(m, lv), r = msl_lo(m, rv), res;
 			if (is_cmp) {
@@ -2428,8 +2426,6 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		int code = spv_binop_code(bop, uns, &is_cmp);
 		if (is_cmp < 0)
 			return 0;
-		if (is_cmp && is64)
-			code = spv_binop_code(bop, 0, &is_cmp);
 		if (!is64) {
 			uint32_t l = spv_val_lo(m, lv), r = spv_val_lo(m, rv), res;
 			if (is_cmp) {

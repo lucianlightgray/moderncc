@@ -193,16 +193,16 @@ static int ast_eval_binop(int op, int64_t a, int64_t b, int is64,
 		r = (a != b);
 		break;
 	case TOK_LT:
-		r = (a < b);
+		r = is_unsigned ? (ua < ub) : (a < b);
 		break;
 	case TOK_GE:
-		r = (a >= b);
+		r = is_unsigned ? (ua >= ub) : (a >= b);
 		break;
 	case TOK_LE:
-		r = (a <= b);
+		r = is_unsigned ? (ua <= ub) : (a <= b);
 		break;
 	case TOK_GT:
-		r = (a > b);
+		r = is_unsigned ? (ua > ub) : (a > b);
 		break;
 	case TOK_ULT:
 		r = (ua < ub);
