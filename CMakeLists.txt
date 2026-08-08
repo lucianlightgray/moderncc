@@ -3552,6 +3552,42 @@ if(MCC_BUILD_TESTS)
                 FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
+        if(APPLE AND MCC_GPU_LANG_MSL_VALUE)
+            add_executable(mslgate tools/spvgate.c tools/spvgate_arena.c
+                                   src/mccgpu.c)
+            target_compile_definitions(mslgate PRIVATE SPVGATE_MSL=1)
+            target_include_directories(mslgate PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/src"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/arch"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/x86_64"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/i386"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/formats"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms"
+                "${CMAKE_CURRENT_SOURCE_DIR}/include")
+            target_link_libraries(mslgate ${MCC_COMPUTE_BACKEND_LIBS})
+            add_test(NAME "gpu/msl-slice-differential" COMMAND mslgate)
+            set_tests_properties("gpu/msl-slice-differential" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            add_test(NAME "gpu/msl-slice-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DCMD=$<TARGET_FILE:mslgate>
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_mutate.cmake")
+            set_tests_properties("gpu/msl-slice-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
+            add_test(NAME "gpu/msl-slice-real"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DGATE=$<TARGET_FILE:mslgate>
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_real.cmake")
+            set_tests_properties("gpu/msl-slice-real" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
+        endif()
+
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
             foreach(_case "ret42;42" "ret0;0" "retexpr;14" "mainempty;0" "argc_expr;42"
                           "local_ret;42" "local_two;42" "neg_fallback;42" "global_ref;42"

@@ -20,10 +20,18 @@ static int ast_bad_type(int tt) {
 #undef free
 #undef strdup
 
-/* The SPIR-V emitter only: this gate brings its own vulkan/vulkan.h and its own
- * device plumbing, so it must not pull in mccgpu.c's vendored Vulkan ABI, and
- * it is a SPIR-V gate on every host including Darwin. */
-#define MCC_GPU_LANG_MSL 0
+/* One source, two gates, chosen by SPVGATE_MSL on the compile line; it drives
+ * the same MCC_GPU_LANG_MSL switch mccgpu.h uses to pick an emitter, and must
+ * override whatever the directory-scope define says, because the two arms are
+ * built side by side out of one tree.  The SPIR-V arm is the default on every
+ * host including Darwin: it brings its own vulkan/vulkan.h and its own device
+ * plumbing, so it must not pull in mccgpu.c's vendored Vulkan ABI.  The Metal
+ * arm has no such conflict and dispatches through mccgpu.c itself. */
+#ifndef SPVGATE_MSL
+#define SPVGATE_MSL 0
+#endif
+#undef MCC_GPU_LANG_MSL
+#define MCC_GPU_LANG_MSL SPVGATE_MSL
 #define MCC_GPU_EMITTER 1
 #include "mccgpu.h"
 
@@ -33,6 +41,34 @@ static int ast_bad_type(int tt) {
 
 #include <stdio.h>
 #include <string.h>
+
+#if MCC_GPU_LANG_MSL
+#define GATE_NAME "mslgate"
+typedef MslMod GateMod;
+typedef MslV GateV;
+typedef char GateUnit;
+#define gate_module_begin msl_module_begin
+#define gate_main_begin msl_main_begin
+#define gate_expr msl_expr
+#define gate_main_end msl_main_end
+#define gate_module_finish msl_module_finish
+#define gate_module_free msl_module_free
+#define gate_mutate msl_mutate
+#else
+#define GATE_NAME "spvgate"
+typedef SpvMod GateMod;
+typedef SpvV GateV;
+typedef uint32_t GateUnit;
+#define gate_module_begin spv_module_begin
+#define gate_main_begin spv_main_begin
+#define gate_expr spv_expr
+#define gate_main_end spv_main_end
+#define gate_module_finish spv_module_finish
+#define gate_module_free spv_module_free
+#define gate_mutate spv_mutate
+#endif
+
+#if !MCC_GPU_LANG_MSL
 #include <vulkan/vulkan.h>
 
 #define VK(x)                                                              \
@@ -71,6 +107,7 @@ static int ast_bad_type(int tt) {
 			exit(77);                                                            \
 		}                                                                      \
 	} while (0)
+#endif
 
 #define MAX_LIVE 4
 #define MAX_TUPLES (1 << 18)
@@ -96,14 +133,73 @@ static int get_def(const int32_t *p, long t) {
 	return p[t * MCC_GPU_OUT_SLOTS + 2] != 0;
 }
 
+static char g_devname[256];
+static long g_dispatches;
+static long g_lanes;
+
+#if MCC_GPU_LANG_MSL
+
+ST_FUNC void *host_dlopen(const char *name) {
+	return dlopen(name, RTLD_GLOBAL | RTLD_LAZY);
+}
+
+ST_FUNC const char *host_dlerror(void) { return dlerror(); }
+
+ST_FUNC void *host_dlsym(void *h, const char *symbol) {
+	return dlsym(h, symbol);
+}
+
+ST_FUNC void *host_dlsym_process(const char *symbol) {
+	return dlsym(RTLD_DEFAULT, symbol);
+}
+
+static MslV msl_mutate(MslMod *m, MslV v) {
+	uint32_t p = msl_pair(m, v);
+	return msl_mk(msl_pv(m, "int2(p%u.x ^ 1, p%u.y)", p, p), 1, 0);
+}
+
+static void gpu_init(void) {
+	MslMod m;
+	MccGpuStats gs;
+	int32_t in[MCC_GPU_IN_SLOTS], out[MCC_GPU_OUT_SLOTS];
+	uint32_t base;
+	MslV v;
+	char *src;
+	int nb = 0;
+
+	msl_module_begin(&m, 1);
+	base = msl_main_begin(&m, 1);
+	v = msl_load_live_v(&m, base, 0, 1, 0);
+	msl_main_end(&m, m.lane, v);
+	src = msl_module_finish(&m, &nb);
+	msl_module_free(&m);
+	memset(in, 0, sizeof in);
+	if (!mcc_gpu_dispatch(src, nb, in, 1, 1, out)) {
+		free(src);
+		printf(GATE_NAME ": no usable metal host\n");
+		exit(77);
+	}
+	free(src);
+	mcc_gpu_stats(&gs);
+	snprintf(g_devname, sizeof g_devname, "%s", gs.name);
+}
+
+static int gpu_run(const char *code, int nbytes, const int32_t *in, int ntuple,
+									 int nlive, int32_t *out) {
+	if (!mcc_gpu_dispatch(code, nbytes, in, ntuple, nlive, out))
+		return -1;
+	g_dispatches++;
+	g_lanes += ntuple;
+	return 0;
+}
+
+#else
+
 static VkInstance g_inst;
 static VkPhysicalDevice g_phys;
 static VkDevice g_dev;
 static VkQueue g_q;
 static unsigned g_qfam;
-static char g_devname[256];
-static long g_dispatches;
-static long g_lanes;
 
 static void gpu_init(void) {
 	VkApplicationInfo ai;
@@ -379,6 +475,8 @@ static int gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 	return 0;
 }
 
+#endif
+
 static AstLocal mk(AstArena *a, uint16_t kind, int t) {
 	AstLocal n = ast_node(a, kind);
 	ast_set_type(a, n, t, 0);
@@ -552,11 +650,13 @@ static AstLocal b_ovfadd(AstArena *a, const int *o) {
 								VT_INT);
 }
 
+#if !MCC_GPU_LANG_MSL
 static SpvV spv_mutate(SpvMod *m, SpvV v) {
 	uint32_t p = spv_pair(m, v);
 	uint32_t lo = spv_uop(m, SpvOpBitwiseXor, spv_lo(m, p), spv_uintc(m, 1));
 	return spv_mk(spv_u2(m, lo, spv_hi(m, p)), 1, 0);
 }
+#endif
 
 #define VT_LL VT_LLONG
 #define VT_ULL (VT_LLONG | VT_UNSIGNED)
@@ -818,14 +918,14 @@ static long subtree_nodes(AstArena *a, AstLocal n) {
 }
 
 static int trial_lower(AstArena *a, AstLocal n, const int32_t *off, int nlive) {
-	SpvMod m;
+	GateMod m;
 	uint32_t base;
-	SpvV val;
+	GateV val;
 	int ok;
-	spv_module_begin(&m, nlive);
-	base = spv_main_begin(&m, nlive);
-	ok = spv_expr(&m, a, n, off, nlive, base, &val) && !m.failed;
-	spv_module_free(&m);
+	gate_module_begin(&m, nlive);
+	base = gate_main_begin(&m, nlive);
+	ok = gate_expr(&m, a, n, off, nlive, base, &val) && !m.failed;
+	gate_module_free(&m);
 	return ok;
 }
 
@@ -849,9 +949,10 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 		/* 64-bit, not long: long is 32 bits on LLP64, and the widest rung is
 		 * 2^(16*nlive), which overflows a 32-bit span to 0 for nlive >= 2. */
 		int64_t span = 1;
-		SpvMod m;
-		uint32_t *code, base;
-		SpvV val;
+		GateMod m;
+		GateUnit *code;
+		uint32_t base;
+		GateV val;
 		int ltype[MAX_LIVE];
 		long bad = 0, cmp = 0, vac = 0;
 
@@ -875,16 +976,16 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 			}
 		}
 
-		spv_module_begin(&m, nlive);
-		base = spv_main_begin(&m, nlive);
-		if (!spv_expr(&m, a, root, off, nlive, base, &val) || m.failed) {
-			spv_module_free(&m);
+		gate_module_begin(&m, nlive);
+		base = gate_main_begin(&m, nlive);
+		if (!gate_expr(&m, a, root, off, nlive, base, &val) || m.failed) {
+			gate_module_free(&m);
 			continue;
 		}
 		if (mutate)
-			val = spv_mutate(&m, val);
-		spv_main_end(&m, m.lane, val);
-		code = spv_module_finish(&m, &nwords);
+			val = gate_mutate(&m, val);
+		gate_main_end(&m, m.lane, val);
+		code = gate_module_finish(&m, &nwords);
 
 		for (t = 0; t < ntuple; t++) {
 			int64_t vals[MAX_LIVE], o;
@@ -897,7 +998,7 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 		if (gpu_run(code, nwords, g_in, ntuple, nlive, g_gout) != 0) {
 			tot_reject++;
 			free(code);
-			spv_module_free(&m);
+			gate_module_free(&m);
 			continue;
 		}
 		for (t = 0; t < ntuple; t++) {
@@ -928,7 +1029,7 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 		tot_bad += bad;
 		bad_all += bad;
 		free(code);
-		spv_module_free(&m);
+		gate_module_free(&m);
 	}
 	return bad_all;
 }
@@ -960,7 +1061,7 @@ static int arena_mode(const char *path, int minnodes, long limit, int quiet) {
 	RawNode *raw = NULL;
 	int cap = 0;
 	if (!f) {
-		printf("spvgate: cannot open %s\n", path);
+		printf(GATE_NAME ": cannot open %s\n", path);
 		return 1;
 	}
 	while (fgets(line, sizeof line, f)) {
@@ -1004,16 +1105,16 @@ static int arena_mode(const char *path, int minnodes, long limit, int quiet) {
 	}
 	fclose(f);
 	free(raw);
-	printf("spvgate: arenas=%ld bodies-with-lowerable-slice=%ld slices=%ld\n",
+	printf(GATE_NAME ": arenas=%ld bodies-with-lowerable-slice=%ld slices=%ld\n",
 				 g_bodies, g_lowerable_bodies, g_slices);
-	printf("spvgate: dispatches=%ld lanes=%ld points=%ld compared=%ld vacuous=%ld "
+	printf(GATE_NAME ": dispatches=%ld lanes=%ld points=%ld compared=%ld vacuous=%ld "
 				 "mismatches=%ld rejected-modules=%ld\n",
 				 g_dispatches, g_lanes, tot_pts, tot_cmp, tot_vac, tot_bad, tot_reject);
 	if (!g_dispatches) {
-		printf("spvgate: FAIL (no GPU dispatch happened)\n");
+		printf(GATE_NAME ": FAIL (no GPU dispatch happened)\n");
 		return 1;
 	}
-	printf("spvgate: %s\n", (tot_bad || tot_reject) ? "FAIL" : "OK");
+	printf(GATE_NAME ": %s\n", (tot_bad || tot_reject) ? "FAIL" : "OK");
 	return (tot_bad || tot_reject) ? 1 : 0;
 }
 
@@ -1068,30 +1169,30 @@ int main(int argc, char **argv) {
 		for (k = 1; k < argc; k++)
 			if (!strcmp(argv[k], "--spv") && k + 1 < argc) {
 				FILE *fp = fopen(argv[k + 1], "rb");
-				uint32_t *buf;
+				GateUnit *buf;
 				long sz;
 				int rc2;
-				if (!fp) { printf("spvgate: cannot open %s\n", argv[k + 1]); return 1; }
+				if (!fp) { printf(GATE_NAME ": cannot open %s\n", argv[k + 1]); return 1; }
 				fseek(fp, 0, SEEK_END); sz = ftell(fp); fseek(fp, 0, SEEK_SET);
 				buf = malloc((size_t)sz);
 				if (fread(buf, 1, (size_t)sz, fp) != (size_t)sz) { printf("short read\n"); return 1; }
 				fclose(fp);
 				memset(in, 0, sizeof(int32_t) * 64);
-				printf("spvgate: dispatching %s (%ld bytes) on %s\n", argv[k + 1], sz,
+				printf(GATE_NAME ": dispatching %s (%ld bytes) on %s\n", argv[k + 1], sz,
 							 g_devname);
-				rc2 = gpu_run(buf, (int)(sz / 4), in, 64, 1, gout);
-				printf("spvgate: rc=%d out0=%lld def0=%d\n", rc2,
+				rc2 = gpu_run(buf, (int)(sz / MCC_GPU_CODE_UNIT), in, 64, 1, gout);
+				printf(GATE_NAME ": rc=%d out0=%lld def0=%d\n", rc2,
 							 (long long)get_out(gout, 0), get_def(gout, 0));
 				return rc2 == 0 ? 0 : 1;
 			}
 	}
 	if (arenas) {
-		printf("spvgate: device %s\n", g_devname);
-		printf("spvgate: real slices from %s (min-nodes=%d)\n", arenas, minnodes);
+		printf(GATE_NAME ": device %s\n", g_devname);
+		printf(GATE_NAME ": real slices from %s (min-nodes=%d)\n", arenas, minnodes);
 		return arena_mode(arenas, minnodes, limit, quiet);
 	}
-	printf("spvgate: device %s\n", g_devname);
-	printf("spvgate: %d cases, rungs 1/2/4/8/16 bits, exhaustive per rung\n",
+	printf(GATE_NAME ": device %s\n", g_devname);
+	printf(GATE_NAME ": %d cases, rungs 1/2/4/8/16 bits, exhaustive per rung\n",
 				 (int)(sizeof CASES / sizeof CASES[0]));
 
 	for (ci = 0; ci < (int)(sizeof CASES / sizeof CASES[0]); ci++) {
@@ -1104,9 +1205,10 @@ int main(int argc, char **argv) {
 			int off[MAX_LIVE];
 			AstArena *a;
 			AstLocal root;
-			SpvMod m;
-			uint32_t *code, base;
-			SpvV val;
+			GateMod m;
+			GateUnit *code;
+			uint32_t base;
+			GateV val;
 			int nwords, k, t, ntuple;
 			/* Same span arithmetic, same guards, as the sweep above -- 64-bit so
 			 * the widest rung does not wrap to 0 on LLP64, and the <= 0 test so a
@@ -1143,29 +1245,30 @@ int main(int argc, char **argv) {
 				}
 			}
 
-			spv_module_begin(&m, c->nlive);
-			base = spv_main_begin(&m, c->nlive);
-			if (!spv_expr(&m, a, root, off, c->nlive, base, &val)) {
+			gate_module_begin(&m, c->nlive);
+			base = gate_main_begin(&m, c->nlive);
+			if (!gate_expr(&m, a, root, off, c->nlive, base, &val)) {
 				printf("  %-10s w=%-2d SKIP (not lowerable)\n", c->name, w);
-				spv_module_free(&m);
+				gate_module_free(&m);
 				ast_arena_free(a);
 				continue;
 			}
 			if (mutate)
-				val = spv_mutate(&m, val);
-			spv_main_end(&m, m.lane, val);
-			code = spv_module_finish(&m, &nwords);
+				val = gate_mutate(&m, val);
+			gate_main_end(&m, m.lane, val);
+			code = gate_module_finish(&m, &nwords);
 			if (corrupt_at >= 0 && corrupt_at < nwords)
-				code[corrupt_at] ^= 1u;
+				code[corrupt_at] = (GateUnit)(code[corrupt_at] ^ 1u);
 			{
 				const char *dp = getenv("SPVGATE_DUMP");
 				if (dp) {
 					char path[512];
 					FILE *fp;
-					snprintf(path, sizeof path, "%s/%s_w%d.spv", dp, c->name, w);
+					snprintf(path, sizeof path, "%s/%s_w%d." MCC_GPU_CODE_SUFFIX, dp,
+									 c->name, w);
 					fp = fopen(path, "wb");
 					if (fp) {
-						fwrite(code, 4, (size_t)nwords, fp);
+						fwrite(code, MCC_GPU_CODE_UNIT, (size_t)nwords, fp);
 						fclose(fp);
 					}
 				}
@@ -1185,7 +1288,7 @@ int main(int argc, char **argv) {
 				printf("  %-10s w=%-2d GPU REJECTED MODULE\n", c->name, w);
 				case_bad = 1;
 				free(code);
-				spv_module_free(&m);
+				gate_module_free(&m);
 				ast_arena_free(a);
 				continue;
 			}
@@ -1226,19 +1329,19 @@ int main(int argc, char **argv) {
 			if (bad)
 				case_bad = 1;
 			free(code);
-			spv_module_free(&m);
+			gate_module_free(&m);
 			ast_arena_free(a);
 		}
 		printf("  %-10s %s\n", c->name, case_bad ? "FAIL" : "OK");
 	}
 
-	printf("spvgate: dispatches=%ld lanes=%ld points=%ld compared=%ld vacuous=%ld "
+	printf(GATE_NAME ": dispatches=%ld lanes=%ld points=%ld compared=%ld vacuous=%ld "
 				 "mismatches=%ld\n",
 				 g_dispatches, g_lanes, total_pts, total_cmp, total_vac, mismatch);
 	if (g_dispatches == 0) {
-		printf("spvgate: FAIL (no GPU dispatch happened)\n");
+		printf(GATE_NAME ": FAIL (no GPU dispatch happened)\n");
 		return 1;
 	}
-	printf("spvgate: %s\n", mismatch ? "FAIL" : "OK");
+	printf(GATE_NAME ": %s\n", mismatch ? "FAIL" : "OK");
 	return mismatch ? 1 : 0;
 }
