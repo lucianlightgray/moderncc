@@ -3275,6 +3275,43 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_push_typed_addr(n);
 		break;
 	}
+	case IR_OP_VPUSHSYM:
+		if (o->vs_n >= 0 && o->vs_n <= VSTACK_SIZE) {
+			int q;
+			rir_pvt[o->vs_n] = o->ctype;
+			rir_pvr[o->vs_n] = VT_CONST | VT_SYM;
+			rir_pvc[o->vs_n].i = 0;
+			rir_pvok[o->vs_n] = 1;
+			for (q = o->vs_n + 1; q <= VSTACK_SIZE; q++)
+				rir_pvok[q] = 0;
+		}
+		break;
+	case IR_OP_MKPTR: {
+		AstLocal top;
+		int ct;
+		if (rir_after_ret && rir_shn == 0)
+			break;
+		if (o->vs_n - rir_base_depth < 1 ||
+				o->vs_n - rir_base_depth != rir_shn) {
+			rir_arena_mismatch++;
+			break;
+		}
+		top = rir_sh[rir_shn - 1];
+		if (top == AST_NONE || rir_shtype[rir_shn - 1] ||
+				ast_parent(rir_arena, top) != AST_NONE)
+			break;
+		ct = ast_type_t(rir_arena, top);
+		if (ct == 0 || (ct & VT_BTYPE) == VT_PTR)
+			break;
+		ast_set_type_bf(rir_arena, top, o->ctype.t,
+										(uint64_t)(uintptr_t)o->ctype.ref, o->ctype.bp,
+										o->ctype.bs);
+		break;
+	}
+	case IR_OP_RETVAL:
+		if (!rir_after_ret)
+			rir_arena_mismatch++;
+		break;
 	default:
 		rir_drop_note(o->kind);
 		break;
