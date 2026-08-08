@@ -1761,6 +1761,64 @@ for the host, and macho has none for either corpus — so `rir-coverage` and
 `rir-coverage-census` both skip locally, and the new gate (like the old ones) is
 exercised only on elf/pe hosts. Banking macho floors is a separate decision.
 
+## `rir-coverage` and `node-census` re-banked — and what actually moved, 2026-08-08
+
+Both cells were red on the Linux stage3 run. Neither is a regression in the compiler;
+both are banks that were never refreshed after a landed change. Bisected rather than
+assumed, because a 13-point drop is exactly the shape a real defect would have.
+
+**`rir-coverage`: the -O ladder moved the number, and `1ad3f1aa` is the commit.**
+Measured `kept_coverage` at -O1 across the range, one Debug build per commit:
+
+| commit | | fallback bodies | kept -O1 |
+| --- | --- | ---: | ---: |
+| `879bf988` | the last commit that banked it | 25 | **96.162%** |
+| `109d407a` | | 25 | 96.162% |
+| `6c46618e` | | 25 | 96.162% |
+| **`1ad3f1aa`** | **opt(ladder): the -O levels, measured** | **98** | **82.520%** |
+| `893c1e84` | | 98 | 82.520% |
+| `db7c6829` | | 98 | 82.520% |
+| `57442404` | the bank commit — *bank already stale here* | 98 | 82.520% |
+| `b740ae46` | HEAD | 98 | 82.772% |
+
+`1ad3f1aa` moved eleven passes across the ladder on measured CPU time. That changes
+which bodies replay byte-identically, so 73 more bodies fall back to direct emission.
+**The bank was not refreshed and nothing caught it**, because the `kept_coverage` gate
+did not exist yet — `78d4856f` added it four commits later, and item 10 below already
+records that it "has never been run against a clean HEAD build". This is that run.
+
+**It is a coverage number, not a correctness one.** Across all four levels the run
+still reports `MODELLED 100.000%` (99.967% at -O2/-O3), `GAP 0.000%`, `rerror 0`,
+`unfaithful 0 B`. Nothing replays to *wrong* bytes; more bodies decline to replay.
+-O0 is unaffected and in fact went **up** (82.4583 → 82.7139), which is the expected
+signature: the arena path only runs at `-O1`+, so a ladder change cannot touch -O0.
+
+**The lowerable floors moved for a different and duller reason — the corpus grew.**
+`bodies` 2721 → 2767 and `nodes` 420152 → 429213, because `src/mcc.c` amalgamates
+`src/mccgpu.h` (+1319 lines at `989e4b3b`), `src/mccrir.c` (+854) and
+`src/ast_eval_slice.h` (+564). Percentages over a bigger denominator with the same
+blocker mix drift down: `bodies_pct` 9.0408 → 8.9266. `corpus_config` cannot see this
+— it tracks `MCC_DIAG` only, and no build option shaped this growth; the source did.
+
+**`node-census`: the same corpus growth, nothing else.** `invoke_internal`
+18035 → 19111, `invoke_sites` 21266 → 22312 against `nodes` 420152 → 429213, so
+`all_invokes_on_cpu` = 94.9385% → 94.8004%. The external-only ceiling is **unchanged
+in substance** at 99.2540% (banked 99.231%), which is the number the plan's headline
+actually rests on. A ratchet on `all_invokes_on_cpu` moves whenever the compiler's own
+call density changes and is not a regression signal in either direction — worth
+revisiting whether that leaf should be gated at all.
+
+**Banked from the stage2 self-host tree** (`CC=mcc`), because that is the tree
+`ci stage3 --consume test` runs against. Verified green on **both** the stage2 tree and
+a gcc-hosted tree. That mattered: the two hosts do not agree exactly — stage2 reports
+`fallback 100 / kept 82.7139` at -O0 against gcc's `98 / 82.7770` — so the floors were
+taken from the lower of the two. The spread is 0.06pp at -O0 and 0.005pp at -O1,
+against the tool's `--tol` of 0.05pp, so **-O0 is inside the tolerance only because the
+bank was taken on the losing host.** Bank from stage2, not from a gcc host.
+
+Untouched by the re-bank, verified by comparison: the `wide` corpus, every `pe`
+lowerable floor, `corpus_config`, and `nofb_miscompiles`.
+
 ## The device becomes a JIT-lifetime resource — plan amended 2026-08-08
 
 [`docs/PLAN.md`](PLAN.md) gained **cluster L**: Metal and Vulkan are initialized once,
