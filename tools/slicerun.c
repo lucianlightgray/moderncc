@@ -68,6 +68,36 @@ static int g_device_required;
 static int g_mutate;
 static char g_devname[256];
 
+/* B1's object table: the byte extent and element type of every node, indexed by
+ * node id, which is what the arena dump's 13th and 14th columns carry. It is a
+ * hook rather than an arena field on purpose -- the compiler itself never runs
+ * frames, so leaving the hook NULL there keeps every runtime-index shape
+ * refused rather than resolved against information it does not have. One arena
+ * is live at a time on both the suite and the corpus path, so a flat table set
+ * before the scan and cleared after is the whole mechanism. */
+static int32_t *g_obj_ext;
+static int *g_obj_ety;
+static long g_obj_n;
+
+static int slicerun_obj(AstArena *a, AstLocal n, int32_t *extent, int *etype) {
+	(void)a;
+	if (!g_obj_ext || (long)n >= g_obj_n)
+		return 0;
+	if (g_obj_ext[n] <= 0 || !g_obj_ety[n])
+		return 0;
+	*extent = g_obj_ext[n];
+	*etype = g_obj_ety[n];
+	return 1;
+}
+
+static void slicerun_obj_reset(long n) {
+	free(g_obj_ext);
+	free(g_obj_ety);
+	g_obj_ext = n > 0 ? (int32_t *)calloc((size_t)n, sizeof *g_obj_ext) : NULL;
+	g_obj_ety = n > 0 ? (int *)calloc((size_t)n, sizeof *g_obj_ety) : NULL;
+	g_obj_n = (g_obj_ext && g_obj_ety) ? n : 0;
+}
+
 static AstLocal mk_lit(AstArena *a, int64_t v, int type) {
 	AstLocal n = ast_node(a, AST_Literal);
 	ast_set_op(a, n, VT_CONST);
@@ -1179,6 +1209,229 @@ static void suite_frame(void) {
 	}
 	ast_arena_free(a);
 
+	/* B1 -- a runtime index into a local array, on both sides of the store.
+	 *
+	 * `arr[i] = arr[j] * 2 + 1` over `int arr[4]` at frame offset -32, with i at
+	 * -8 and j at -12. The address is not known until the kernel runs, so the
+	 * device resolves a slot from a value in the frame; the object's element
+	 * slots are contiguous by construction, which is what makes `slot0 + index`
+	 * the right cell.
+	 *
+	 * Every index in the seed set is in range here, so this case is about the
+	 * address arithmetic and not about the bound -- the bound gets its own case
+	 * below. */
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal arr = mk_ref(a, -32, VT_PTR | VT_ARRAY);
+		AstLocal arr2 = mk_ref(a, -32, VT_PTR | VT_ARRAY);
+		AstLocal ld = ast_node(a, AST_Load);
+		AstLocal dst = ast_node(a, AST_Load);
+		MccSliceKernel k;
+		int64_t cf[4 * MCC_SLICE_MAXSLOT], gf[4 * MCC_SLICE_MAXSLOT];
+		int64_t crv[4], grv[4];
+		int cdf[4];
+		unsigned char gdf[4];
+		int t, bad = 0, si = -1, sj = -1, s0 = -1;
+		slicerun_obj_reset(64);
+		g_obj_ext[arr] = 16;
+		g_obj_ety[arr] = VT_INT;
+		g_obj_ext[arr2] = 16;
+		g_obj_ety[arr2] = VT_INT;
+		ast_add_child(a, ld, mk_bin(a, '+', arr2, mk_ref(a, -12, VT_INT), 0));
+		ast_set_type(a, ld, 0, 0);
+		ast_add_child(a, dst, mk_bin(a, '+', arr, mk_ref(a, -8, VT_INT), 0));
+		ast_set_type(a, dst, 0, 0);
+		{
+			AstLocal st = ast_node(a, AST_Store);
+			ast_add_child(a, st, dst);
+			ast_add_child(a, st,
+										mk_bin(a, '+',
+													 mk_bin(a, '*', ld, mk_lit(a, 2, VT_INT), VT_INT),
+													 mk_lit(a, 1, VT_INT), VT_INT));
+			ast_add_child(a, bb, st);
+		}
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1,
+					"a runtime-indexed store into a local array is frame work");
+		CHECK(fr.nidx == 2, "both the indexed load and the indexed store counted");
+		CHECK(fr.nslot == 6,
+					"four element slots plus the two index locals");
+		for (i = 0; i < fr.nslot; i++) {
+			if (fr.slot[i] == -8) si = i;
+			if (fr.slot[i] == -12) sj = i;
+			if (fr.slot[i] == -32) s0 = i;
+		}
+		CHECK(s0 == 0 && fr.slot[1] == -28 && fr.slot[2] == -24 &&
+							fr.slot[3] == -20,
+					"the array's element slots are consecutive and in order");
+		for (t = 0; t < 4; t++)
+			for (i = 0; i < fr.nslot; i++) {
+				int64_t v = i == si ? (int64_t)(t % 4)
+													 : i == sj ? (int64_t)((t + 1) % 4)
+																		 : (int64_t)(10 * i + t);
+				cf[t * fr.nslot + i] = gf[t * fr.nslot + i] = v;
+			}
+		for (t = 0; t < 4; t++)
+			CHECK(mcc_slice_frame_exec_cpu2(&fr, cf + (long)t * fr.nslot, &crv[t],
+																			&cdf[t]) == 1,
+						"the CPU reference runs the indexed frame");
+		for (t = 0; t < 4; t++)
+			CHECK(cdf[t] == 1, "every index is in range, so the run is defined");
+		for (t = 0; t < 4; t++) {
+			int di = t % 4, sr = (t + 1) % 4;
+			CHECK(cf[t * fr.nslot + di] == (int64_t)(10 * sr + t) * 2 + 1,
+						"arr[i] took arr[j]*2 + 1 at the element the index selected");
+		}
+		if (g_have_device && mcc_slice_frame_kernel_build(&fr, &k)) {
+			CHECK(mcc_slice_run_frame_gpu(&fr, &k, gf, 4, grv, gdf) == MCC_TASK_DONE,
+						"the device runs the indexed frame");
+			for (t = 0; t < 4 * fr.nslot; t++)
+				if (cf[t] != gf[t])
+					bad++;
+			for (t = 0; t < 4; t++)
+				if ((int)gdf[t] != cdf[t])
+					bad++;
+			CHECK(bad == 0,
+						"device and CPU agree on every element slot and on the verdict");
+			if (bad)
+				for (t = 0; t < fr.nslot; t++)
+					fprintf(stderr, "  slot %d off=%d cpu=%lld gpu=%lld\n", t, fr.slot[t],
+									(long long)cf[t], (long long)gf[t]);
+			mcc_slice_kernel_free(&k);
+		}
+		slicerun_obj_reset(0);
+	}
+	ast_arena_free(a);
+
+	/* An index that leaves its object. J3b says a device PageFault is our own
+	 * bug, so this must be impossible rather than merely detected: the index is
+	 * masked into the object's own padded span and the run's definedness flag is
+	 * cleared. Undefined is the only acceptable answer -- never a wrong one, and
+	 * never a fault. The CPU reference reaches the same verdict AND writes the
+	 * same masked element, so the two agree on the frame as well as the flag. */
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal arr = mk_ref(a, -32, VT_PTR | VT_ARRAY);
+		AstLocal dst = ast_node(a, AST_Load);
+		MccSliceKernel k;
+		int64_t cf[6 * MCC_SLICE_MAXSLOT], gf[6 * MCC_SLICE_MAXSLOT];
+		int64_t crv[6], grv[6];
+		int cdf[6];
+		unsigned char gdf[6];
+		static const int64_t IDX[6] = {0, 3, 4, -1, 99, 2};
+		int t, bad = 0, si = -1;
+		slicerun_obj_reset(64);
+		g_obj_ext[arr] = 16;
+		g_obj_ety[arr] = VT_INT;
+		ast_add_child(a, dst, mk_bin(a, '+', arr, mk_ref(a, -8, VT_INT), 0));
+		ast_set_type(a, dst, 0, 0);
+		{
+			AstLocal st = ast_node(a, AST_Store);
+			ast_add_child(a, st, dst);
+			ast_add_child(a, st, mk_lit(a, 777, VT_INT));
+			ast_add_child(a, bb, st);
+		}
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1,
+					"an out-of-range-capable store is still frame work");
+		for (i = 0; i < fr.nslot; i++)
+			if (fr.slot[i] == -8)
+				si = i;
+		for (t = 0; t < 6; t++)
+			for (i = 0; i < fr.nslot; i++)
+				cf[t * fr.nslot + i] = gf[t * fr.nslot + i] = i == si ? IDX[t] : 0;
+		for (t = 0; t < 6; t++)
+			CHECK(mcc_slice_frame_exec_cpu2(&fr, cf + (long)t * fr.nslot, &crv[t],
+																			&cdf[t]) == 1,
+						"the CPU reference completes even when the index is wild");
+		for (t = 0; t < 6; t++)
+			CHECK(cdf[t] == (IDX[t] >= 0 && IDX[t] < 4),
+						"in range is defined and out of range is undefined");
+		for (t = 0; t < 6; t++) {
+			int wrote = 0;
+			for (i = 0; i < fr.nslot; i++)
+				if (i != si && cf[t * fr.nslot + i] == 777)
+					wrote++;
+			CHECK(wrote == 1, "the masked store landed inside the array, exactly once");
+		}
+		if (g_have_device && mcc_slice_frame_kernel_build(&fr, &k)) {
+			CHECK(mcc_slice_run_frame_gpu(&fr, &k, gf, 6, grv, gdf) == MCC_TASK_DONE,
+						"the device survives every wild index");
+			for (t = 0; t < 6 * fr.nslot; t++)
+				if (cf[t] != gf[t])
+					bad++;
+			for (t = 0; t < 6; t++)
+				if ((int)gdf[t] != cdf[t])
+					bad++;
+			CHECK(bad == 0,
+						"device and CPU agree on the masked element and on undefinedness");
+			mcc_slice_kernel_free(&k);
+		}
+		slicerun_obj_reset(0);
+	}
+	ast_arena_free(a);
+
+	/* One slot per element rather than a byte-addressed region is what keeps the
+	 * existing two-word store correct. Under byte addressing an int at -12 and an
+	 * int at -8 are adjacent words, and spv_store_live_v's sign-extended high
+	 * word would land on the neighbour. Here they are separate 8-byte slots, so
+	 * this asserts the property the layout choice buys: a 32-bit store to one
+	 * element does not disturb the next, and neither does one to a scalar local
+	 * that sits at the adjacent frame offset. */
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal arr = mk_ref(a, -12, VT_PTR | VT_ARRAY);
+		AstLocal dst = ast_node(a, AST_Load);
+		MccSliceKernel k;
+		int64_t cf[3 * MCC_SLICE_MAXSLOT], gf[3 * MCC_SLICE_MAXSLOT];
+		int t, bad = 0, sn = -1;
+		slicerun_obj_reset(64);
+		g_obj_ext[arr] = 8;
+		g_obj_ety[arr] = VT_INT;
+		ast_add_child(a, dst, mk_bin(a, '+', arr, mk_lit(a, 0, VT_INT), 0));
+		ast_set_type(a, dst, 0, 0);
+		{
+			AstLocal st = ast_node(a, AST_Store);
+			ast_add_child(a, st, dst);
+			ast_add_child(a, st, mk_lit(a, -1, VT_INT));
+			ast_add_child(a, bb, st);
+		}
+		ast_add_child(a, bb, mk_store(a, -4, mk_lit(a, 5, VT_INT), VT_INT));
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1,
+					"an element store beside a scalar local is frame work");
+		CHECK(fr.nslot == 3, "two element slots and the neighbouring scalar");
+		CHECK(fr.slot[0] == -12 && fr.slot[1] == -8 && fr.slot[2] == -4,
+					"the neighbour is a separate slot, not an adjacent word");
+		for (i = 0; i < fr.nslot; i++)
+			if (fr.slot[i] == -8)
+				sn = i;
+		for (t = 0; t < 3; t++)
+			for (i = 0; i < fr.nslot; i++)
+				cf[t * fr.nslot + i] = gf[t * fr.nslot + i] = 12345;
+		for (t = 0; t < 3; t++)
+			CHECK(mcc_slice_frame_exec_cpu(&fr, cf + (long)t * fr.nslot) == 1,
+						"the CPU writes element 0 and the scalar");
+		for (t = 0; t < 3; t++) {
+			CHECK(cf[t * fr.nslot + 0] == -1, "element 0 took the -1");
+			CHECK(cf[t * fr.nslot + sn] == 12345,
+						"element 1 was not disturbed by the sign-extended high word");
+			CHECK(cf[t * fr.nslot + 2] == 5, "the scalar local took its own store");
+		}
+		if (g_have_device && mcc_slice_frame_kernel_build(&fr, &k)) {
+			CHECK(mcc_slice_run_frame_gpu(&fr, &k, gf, 3, NULL, NULL) ==
+								MCC_TASK_DONE,
+						"the device runs the adjacency case");
+			for (t = 0; t < 3 * fr.nslot; t++)
+				if (cf[t] != gf[t])
+					bad++;
+			CHECK(bad == 0, "the device disturbed no neighbour either");
+			mcc_slice_kernel_free(&k);
+		}
+		slicerun_obj_reset(0);
+	}
+	ast_arena_free(a);
+
 	/* Refusals: a store to something that is not a local frame slot, and a
 	 * block containing a non-store statement. */
 	a = ast_arena_new();
@@ -1203,6 +1456,164 @@ static void suite_frame(void) {
 					"a block containing a call is not frame work");
 	}
 	ast_arena_free(a);
+}
+
+/* ---------------------------------------- per-width byte-addressed access -- */
+
+/* The region layer, differentialled directly against its reference rather than
+ * through a slice. It is tested on its own because it is the piece everything
+ * later depends on: a heap shared between lanes and the host has objects of
+ * different widths sitting next to each other by construction, so a store that
+ * writes two words where the type has one is not an edge case there, it is the
+ * normal case. The dense-slot frame does not need it -- one slot per element
+ * keeps the cells disjoint -- which is exactly why it would otherwise ship
+ * unexercised.
+ *
+ * Every lane owns a region of NSLOT*2 words of the input buffer, the same
+ * storage the frame path uses; the only thing that makes it "the frame" rather
+ * than "a heap" is which base is handed in, and nothing in the emitter below
+ * knows the difference. */
+#define BYTES_NSLOT 8
+#define BYTES_NWORD (BYTES_NSLOT * MCC_GPU_IN_SLOTS)
+#define BYTES_NBYTE (BYTES_NWORD * 4)
+
+/* Load from the offset in word 0, store the loaded value at the offset in word
+ * 1. Both offsets are read from the region at run time, so neither the address
+ * nor its range is known at emit time. */
+static int bytes_kernel(int t, MccGpuCode *out) {
+	SpvMod m;
+	SpvRegion r;
+	SpvV v;
+	uint32_t base, olo, ohi;
+	uint32_t *code;
+	int nw = 0;
+	spv_module_begin(&m, BYTES_NSLOT);
+	base = spv_main_begin(&m, BYTES_NSLOT);
+	r = spv_region(m.id_in, base, spv_uintc(&m, BYTES_NBYTE));
+	olo = spv_load_at(&m, base);
+	ohi = spv_emit3(&m, SpvOpIAdd, m.id_int, base, spv_const(&m, 1));
+	ohi = spv_load_at(&m, ohi);
+	v = spv_load_region(&m, &r, olo, t);
+	spv_store_region(&m, &r, ohi, v, t);
+	spv_main_end(&m, m.lane, spv_mk(spv_const(&m, 0), 0, 0));
+	code = spv_module_finish(&m, &nw);
+	spv_module_free(&m);
+	if (!code || nw <= 0) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nw;
+	return 1;
+}
+
+static void suite_bytes(void) {
+	/* Offsets chosen so that every width sees: aligned and in range, the last
+	 * legal offset, one past it, a misaligned offset, a wildly out-of-range one,
+	 * and a negative one. */
+	static const int32_t OFF[] = {0,   1,   2,   4,   7,   8,   60,
+																61,  62,  63,  64,  128, -1,  -4};
+	static const int TY[] = {VT_BYTE, VT_BYTE | VT_UNSIGNED,
+													 VT_SHORT, VT_SHORT | VT_UNSIGNED,
+													 VT_INT,  VT_INT | VT_UNSIGNED,
+													 VT_LLONG, VT_LLONG | VT_UNSIGNED};
+	int noff = (int)(sizeof OFF / sizeof *OFF);
+	int nty = (int)(sizeof TY / sizeof *TY);
+	int ti, oi;
+
+	/* The reference on its own first: a device is optional, the rule is not. */
+	CHECK(ast_eval_slice_addr_ok(64, 60, 4) == 1, "the last legal word is in range");
+	CHECK(ast_eval_slice_addr_ok(64, 61, 4) == 0, "one byte past it is not");
+	CHECK(ast_eval_slice_addr_ok(64, 62, 4) == 0, "and neither is a misaligned word");
+	CHECK(ast_eval_slice_addr_ok(64, 56, 8) == 1, "the last legal doubleword is in range");
+	CHECK(ast_eval_slice_addr_ok(64, 60, 8) == 0, "a doubleword straddling the end is not");
+	CHECK(ast_eval_slice_addr_ok(4, 0, 8) == 0, "nor one wider than the region itself");
+	CHECK(ast_eval_slice_addr_ok(64, -4, 4) == 0, "a negative offset is out of range");
+	CHECK(ast_eval_slice_addr_fix(64, 999, 4) == 0,
+				"a rejected offset is replaced by one that cannot leave the region");
+	{
+		uint32_t w[2] = {0x11223344u, 0u};
+		int ok = 0;
+		ast_eval_slice_bytes_store(w, 8, 1, VT_BYTE, -1, &ok);
+		CHECK(ok == 1 && w[0] == 0x1122FF44u,
+					"a one-byte store rewrites one byte of its word and no other");
+		CHECK(w[1] == 0, "and does not reach the next word at all");
+		ast_eval_slice_bytes_store(w, 8, 4, VT_INT, -1, &ok);
+		CHECK(w[0] == 0x1122FF44u, "a four-byte store does not reach backwards either");
+	}
+
+	if (!g_have_device)
+		return;
+
+	for (ti = 0; ti < nty; ti++) {
+		MccGpuCode code;
+		uint32_t *ref;
+		int32_t *buf, *ob;
+		int *cdef;
+		int t = TY[ti], i, j, bad = 0, defbad = 0;
+		if (!bytes_kernel(t, &code)) {
+			CHECK(0, "the region kernel emits for every width");
+			continue;
+		}
+		ref = (uint32_t *)malloc((size_t)noff * BYTES_NWORD * sizeof *ref);
+		buf = (int32_t *)malloc((size_t)noff * BYTES_NWORD * sizeof *buf);
+		ob = (int32_t *)malloc((size_t)noff * MCC_GPU_OUT_SLOTS * sizeof *ob);
+		cdef = (int *)malloc((size_t)noff * sizeof *cdef);
+		if (!ref || !buf || !ob || !cdef) {
+			free(ref);
+			free(buf);
+			free(ob);
+			free(cdef);
+			free(code.p);
+			continue;
+		}
+		/* One lane per offset: lane i loads from OFF[i] and stores four entries
+		 * along, so the store address is exercised independently of the load
+		 * address and the two verdicts have to AND together into one flag. */
+		for (i = 0; i < noff; i++) {
+			uint32_t *w = ref + (long)i * BYTES_NWORD;
+			int lok = 0, sok = 0;
+			int64_t v;
+			for (j = 0; j < BYTES_NWORD; j++)
+				w[j] = 0xA5000000u + (uint32_t)j * 0x01010101u + (uint32_t)i;
+			w[0] = (uint32_t)OFF[i];
+			w[1] = (uint32_t)OFF[(i + 4) % noff];
+			for (j = 0; j < BYTES_NWORD; j++)
+				buf[(long)i * BYTES_NWORD + j] = (int32_t)w[j];
+			v = ast_eval_slice_bytes_load(w, BYTES_NBYTE, OFF[i], t, &lok);
+			ast_eval_slice_bytes_store(w, BYTES_NBYTE, OFF[(i + 4) % noff], t, v,
+																 &sok);
+			cdef[i] = lok && sok;
+		}
+		if (mcc_gpu_dispatch_rw2(code.p, code.n, buf, noff, BYTES_NSLOT, ob)) {
+			for (i = 0; i < noff; i++) {
+				for (j = 0; j < BYTES_NWORD; j++) {
+					uint32_t want = ref[(long)i * BYTES_NWORD + j];
+					uint32_t got = (uint32_t)buf[(long)i * BYTES_NWORD + j];
+					if (want == got)
+						continue;
+					if (!bad)
+						fprintf(stderr,
+										"  BYTES t=%#x load=%d store=%d word %d want=%08x "
+										"got=%08x\n",
+										t, OFF[i], OFF[(i + 4) % noff], j, want, got);
+					bad++;
+				}
+				if ((ob[(long)i * MCC_GPU_OUT_SLOTS + 2] != 0) != cdef[i])
+					defbad++;
+			}
+			CHECK(bad == 0, "every word of every region matches the reference");
+			CHECK(defbad == 0,
+						"and the device's verdict on range and alignment matches too");
+		} else {
+			CHECK(0, "the region kernel dispatches");
+		}
+		free(ref);
+		free(buf);
+		free(ob);
+		free(cdef);
+		free(code.p);
+	}
 }
 
 /* ------------------------------------------ the pending-command-buffer UAF -- */
@@ -1458,6 +1869,7 @@ typedef struct RawNode {
 	unsigned long long type_ref, sym, fbits;
 	unsigned bp, bs;
 	int size;
+	int etype;
 } RawNode;
 
 static AstArena *rebuild_arena(const RawNode *raw, int n, AstLocal *root_out,
@@ -1622,9 +2034,13 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 	for (t = 0; t < 8; t++) {
 		/* Only a run that ends in Return has a value to compare. Without one the
 		 * kernel still writes the out slots (spv_main_end always does), so the
-		 * flag there is a dummy, not a verdict. */
+		 * flag there is a dummy, not a verdict -- unless the run resolves an
+		 * address at run time, in which case the flag carries the index bound and
+		 * both executors have committed to the same verdict for it. */
 		if (fr.ret != AST_NONE &&
 				((int)gdf[t] != cdf[t] || (cdf[t] && grv[t] != crv[t])))
+			bad++;
+		if (fr.ret == AST_NONE && fr.nidx && (int)gdf[t] != cdf[t])
 			bad++;
 		for (j = 0; j < fr.nslot; j++)
 			if (cf[t * fr.nslot + j] != gf[t * fr.nslot + j])
@@ -1710,10 +2126,11 @@ static int arena_mode(const char *path, long limit, int quiet) {
 			if (!fgets(line, sizeof line, f))
 				break;
 			int nf = sscanf(line,
-											"%ld %d %d %d %lld %ld %ld %llu %u %u %llu %llu %d",
+											"%ld %d %d %d %lld %ld %ld %llu %u %u %llu %llu %d %d",
 											&id, &raw[i].kind, &raw[i].op, &raw[i].type_t,
 											&raw[i].ival, &fc, &ns, &raw[i].type_ref, &raw[i].bp,
-											&raw[i].bs, &raw[i].sym, &raw[i].fbits, &raw[i].size);
+											&raw[i].bs, &raw[i].sym, &raw[i].fbits, &raw[i].size,
+											&raw[i].etype);
 			if (nf < 7)
 				break;
 			if (nf < 12) {
@@ -1721,11 +2138,18 @@ static int arena_mode(const char *path, long limit, int quiet) {
 				raw[i].bp = raw[i].bs = 0;
 				raw[i].sym = raw[i].fbits = 0;
 			}
-			/* The 13th column is the object's byte extent, which older dumps do
-			 * not carry. A missing extent is 0, i.e. "unknown", and anything that
-			 * needs to bound an index must refuse rather than guess. */
+			/* The 13th column is the object's byte extent and the 14th its element
+			 * type, neither of which older dumps carry. Both missing read as 0,
+			 * i.e. "unknown", and anything that needs to bound or narrow a runtime
+			 * index must refuse rather than guess. The extent alone is not enough:
+			 * `arr[i]` scales i by the element size at replay, and the Load and
+			 * Binary above it are untyped in every real arena, so without the
+			 * element type there is neither an element count to bound i against nor
+			 * a width to narrow the stored value to. */
 			if (nf < 13)
 				raw[i].size = 0;
+			if (nf < 14)
+				raw[i].etype = 0;
 			raw[i].first_child = (unsigned)fc;
 			raw[i].next_sib = (unsigned)ns;
 		}
@@ -1737,7 +2161,13 @@ static int arena_mode(const char *path, long limit, int quiet) {
 			if (!a)
 				continue;
 			g_arena_bodies++;
+			slicerun_obj_reset(n);
+			for (i = 0; i < n && i < g_obj_n; i++) {
+				g_obj_ext[i] = (int32_t)raw[i].size;
+				g_obj_ety[i] = raw[i].etype;
+			}
 			scan_subtree(a, rt, quiet, limit);
+			slicerun_obj_reset(0);
 			ast_arena_free(a);
 		}
 		if (limit && g_arena_slices >= limit)
@@ -1830,6 +2260,7 @@ int main(int argc, char **argv) {
 
 	probe_device();
 	mcc_slice_set_mutate(g_mutate);
+	ast_eval_slice_obj_fn = slicerun_obj;
 	(void)g_lax;
 
 	if (g_cost_synth)
@@ -1858,6 +2289,8 @@ int main(int argc, char **argv) {
 		suite_cpu();
 	if (!only || !strcmp(only, "gpu"))
 		suite_gpu();
+	if (!only || !strcmp(only, "bytes"))
+		suite_bytes();
 	if (!only || !strcmp(only, "wide64"))
 		suite_wide64();
 	if (!only || !strcmp(only, "ops"))
