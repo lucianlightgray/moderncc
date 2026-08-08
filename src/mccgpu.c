@@ -44,6 +44,17 @@ static int mcc_gpu_closing;
 #include <objc/message.h>
 #include <objc/runtime.h>
 
+typedef id (*MccObjcGetClassFn)(const char *);
+typedef SEL (*MccObjcSelFn)(const char *);
+
+static MccObjcGetClassFn mcc_objc_getClass;
+static MccObjcSelFn mcc_sel_registerName;
+static void *mcc_objc_msgSend;
+
+#define objc_getClass mcc_objc_getClass
+#define sel_registerName mcc_sel_registerName
+#define objc_msgSend mcc_objc_msgSend
+
 #define MCC_MTL_UTF8 4
 #define MCC_MTL_CACHE_MAX 64
 
@@ -146,6 +157,22 @@ static int mcc_mtl_load(void) {
 	if (!mcc_mtl_create_device) {
 		if (mtl_diag())
 			fprintf(stderr, "[ladder-gpu] missing symbol MTLCreateSystemDefaultDevice\n");
+		return 0;
+	}
+	mcc_objc_getClass = (MccObjcGetClassFn)host_dlsym_process("objc_getClass");
+	mcc_sel_registerName = (MccObjcSelFn)host_dlsym_process("sel_registerName");
+	mcc_objc_msgSend = host_dlsym_process("objc_msgSend");
+	if (!mcc_objc_getClass || !mcc_sel_registerName || !mcc_objc_msgSend) {
+		void *lo = host_dlopen("/usr/lib/libobjc.A.dylib");
+		if (lo) {
+			mcc_objc_getClass = (MccObjcGetClassFn)host_dlsym(lo, "objc_getClass");
+			mcc_sel_registerName = (MccObjcSelFn)host_dlsym(lo, "sel_registerName");
+			mcc_objc_msgSend = host_dlsym(lo, "objc_msgSend");
+		}
+	}
+	if (!mcc_objc_getClass || !mcc_sel_registerName || !mcc_objc_msgSend) {
+		if (mtl_diag())
+			fprintf(stderr, "[ladder-gpu] no Objective-C runtime in the process\n");
 		return 0;
 	}
 	mcc_fe_get = (MccFeGetFn)host_dlsym_process("fegetenv");
