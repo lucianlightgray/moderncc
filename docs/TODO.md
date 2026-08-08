@@ -6,6 +6,151 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Landed — binding 2 reaches the device, and `*p` is measured rather than assumed, 2026-08-08
+
+### What landed
+
+Two things, both neutral on the corpus and both proven able to fail.
+
+1. **The shader declares binding 2.** `SpvMod` gains `id_mem`; `spv_module_begin` emits a
+   third `OpVariable` of the existing `id_ptr_buf` type and decorates it `DescriptorSet 0`
+   / `Binding 2`. The host side already had all of it — the 3-entry descriptor set layout,
+   `bmem`/`mmem`/`pmem`, `dbi[2]`, and `mcc_gpu_mem` — so this is the last missing half.
+   `spirv-val` accepts 7 of 7 modules: one that declares the variable and never uses it
+   (the shape every existing kernel now has), and six deref kernels at widths 1, 1u, 2, 4,
+   8 and 8u. All 22 pre-existing `slice/*` and `gpu/*` cells stayed green across the change.
+
+2. **`slice/deref` and `slice/deref-known-positive`**, 43 checks. A hand-rolled kernel
+   builds a `SpvRegion` over `id_mem` and loads and stores through it. Nothing in
+   `spv_load_region` / `spv_store_region` needed changing: a region is (var, base, nbyte),
+   and pointing `var` at binding 2 instead of binding 0 is the whole edit. The host seeds
+   the region through `mcc_gpu_mem` before submit and reads it after the fence, which is
+   the only coherence the mapping offers.
+
+### Sub-word atomicity: option (a), lane-private sub-regions
+
+Explicitly chosen and explicitly narrow. Each lane owns a **disjoint 64-byte, 16-whole-word**
+sub-region of binding 2 at byte offset 4096. No two lanes share a word, so the
+read-modify-write that a 1- or 2-byte store compiles to cannot race, and every width is
+exercised including the sub-word ones that are the entire reason the region layer exists.
+
+The shared-heap case — two lanes writing different bytes of one word — is **not tested and
+is not claimed to work**. It is still open decision item 0. Confining the first increment
+this way was preferred over restricting to 4- and 8-byte access, because restricting the
+width would have left the RMW path unexercised on binding 2, and that path is the one with
+the hazard in it.
+
+That the confinement is load-bearing is measured, not asserted: collapsing the per-lane
+base to a single shared region makes **14 of 43 checks fail**.
+
+### Proving the cell can fail
+
+Three separate perturbations, each observed red, then reverted:
+
+| perturbation | result |
+| --- | ---: |
+| `--mutate` (the kernel returns one bit wrong) | **28 of 43 fail** |
+| one expected `def` verdict flipped in the directed table | **1 fails** |
+| lane-private region base collapsed to a shared one | **14 fail** |
+
+The mutation had to be injected by hand. `mcc_slice_frame_kernel_build`'s perturbation does
+not reach a hand-rolled module, which is exactly why `slice/bytes` and `slice/mem` are not
+mutation-sensitive today; without the injection the known-positive arm would have passed
+vacuously.
+
+Because the same author wrote both the device path and the reference, the differential
+alone would not have seen a shared mistake. So 16 lanes across 6 type-shapes assert
+**hand-computed constants** — value, definedness and every one of the 16 region words —
+worked out from the seed pattern rather than from the CPU reference. Sign extension is
+separated from zero extension deliberately (`0x83828180` seeds, so byte *b* reads `0x80+b`):
+signed byte 0 is −128 and unsigned byte 0 is 128, and a load that got the extension wrong
+on both executors would still fail here. Under `--mutate` all 6 directed value checks and
+all 6 directed memory checks fail.
+
+The table was then checked against a third, fully independent oracle: a small C program
+compiled by the host compiler that builds the same 64-byte buffer and performs the same
+loads and stores through real pointers. All **12 in-range directed lanes agree exactly** —
+value and every changed word — across the device, the hand-written table and host C. The
+out-of-range lanes have no C analogue, since they are the cases C leaves undefined and the
+region layer answers with select-to-0; those are checked against the rule alone.
+
+### What this did NOT move, and the number is 0
+
+Measured on one dump of `vendor/musl-src/src/string` at `-O1` (83 bodies), before and after:
+
+| | before | after |
+| --- | ---: | ---: |
+| corpus `frame-compared` | 94 | **94** |
+| `memcmp` / `strcmp` / `strncmp` / `memchr` / `strspn` `frame-compared` | 0 | **0** |
+
+Nothing new lowers. Step 3 — admitting the `*p` shape into `mcc_slice_frame_stmt_ok` — was
+not attempted, and the measurement below is why that is a decision rather than a shortfall.
+
+### `*p` is `Load(Ref[LOCAL|LVAL])`, and pointer `++` is the co-requisite
+
+Two corrections to the premise, both measured over the same corpus.
+
+**The shape is a single `Load`, not a nested one.** `*l` in `memcmp` is
+`Load(Ref[op=0x132, ival=−32, t=VT_PTR])` — one `Load` over a pointer-typed local Ref.
+This matches the store-destination table already on the board (`Load(Ref[LOCAL|LVAL])`,
+45 nodes); a nested `Load(Load(...))` does not occur at all. Counted over the corpus:
+**159** `Load(Ref[LOCAL, VT_PTR])` sites, and **all 159 carry Load type 0**. So every one is
+refused today by `ast_eval_slice_intt(0) == 0`, and none is silently misread as a read of
+the pointer variable itself — which is what would happen if any of them ever carried a
+type, because the `frame_off` branch would swallow it first. Worth a guard whenever this
+is opened up.
+
+**The width is already available.** `ast_adump_etype` returns the *pointed-to* type for any
+`VT_PTR` node, so the 14th column gives the access width for all 159 sites with no new
+plumbing: `memcmp`'s `l` reads `0x261` = `const unsigned char`. The 13th/14th column work
+done for `arr[i]` covers `*p` too.
+
+**But `*p` alone cannot move the headline four off zero.** Pointer increment is refused by
+the same predicate (`mcc_slice_frame_stmt_ok` excludes `VT_PTR` from `++`/`--` because it
+scales by element size), and every one of the named functions needs it:
+
+| | pointer `++`/`--` nodes |
+| --- | ---: |
+| `memcmp` | 2 |
+| `strcmp` | 2 |
+| `strncmp` | 2 |
+| `memchr` | 3 |
+
+Corpus-wide: **440** BasicBlocks, **63** contain a `*p` load, **41 of those 63 also contain
+a pointer `++`/`--`** and stay refused regardless, leaving **22** as the *upper bound* on
+what admitting `*p` alone could add — an upper bound, since Invoke and the other blockers
+still apply to some of them. There are **169** pointer `++`/`--` nodes and **21**
+`Store(*p, v)` nodes in the corpus.
+
+So `*p` and pointer arithmetic are one item, not two, and doing the first without the second
+buys at most 22 blocks and exactly 0 of the functions the item was justified by.
+
+### The open question that has to be answered first
+
+What a pointer *value* means. The region layer is ready and the widths are known, but a
+frame slot holding a pointer holds a **host address**, not a binding-2 byte offset, and
+nothing yet maps one to the other. Seeding slots with synthetic values and calling them
+offsets would make both executors agree — they would agree on the range verdict, the loaded
+bytes and the stored bytes — while lowering nothing anybody could actually run. That is
+agreement without correctness, and it would move `frame-compared` while moving no real
+work, which is the specific overstatement this file exists to prevent.
+
+Next, in order: decide the pointer-value question (host allocations mirrored into binding 2,
+or a device-side allocator handing out offsets), then take `*p` and pointer `++`/`--`
+together, then re-measure the four functions.
+
+### A latent stale-descriptor bug, for whoever grows binding 2 first
+
+Not hit today and not fixed here, because nothing yet calls it the wrong way — but growing
+binding 2 is the first thing a heap needs, so it will be hit. `mcc_vk_bind_mem(want)`
+destroys and recreates `bmem` when `want > bmemsz`, and it does **not** rewrite the
+descriptor set. The only thing that writes descriptors is `mcc_vk_bind_buffers`, which
+returns early unless `grew` is set — and it sets `grew` for `bmem` only on the
+`!mcc_vkr.bmem` first-creation path. So a direct `mcc_vk_bind_mem(bigger)` leaves
+descriptor 2 pointing at a destroyed buffer. Today both callers pass
+`MCC_VK_MEM_DEFAULT`, so the size never grows and the path is unreachable. Either set
+`grew` on any recreation, or rewrite the descriptor inside `mcc_vk_bind_mem`.
+
 ## Landed — B1 runtime addressing, and a per-width region layer, 2026-08-08
 
 ### The payoff is 19 blocks, not 41, and the difference is not effort

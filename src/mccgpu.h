@@ -1216,7 +1216,7 @@ typedef struct SpvMod {
 	uint32_t id_ptr_in_v3uint, id_gid;
 	uint32_t id_rt, id_buf, id_ptr_buf, id_ptr_sb_int, id_pair;
 	uint32_t id_u2, id_upair, id_fn_u2, id_udiv;
-	uint32_t id_in, id_out, id_main, id_nlive;
+	uint32_t id_in, id_out, id_mem, id_main, id_nlive;
 	uint32_t cur_label;
 	uint32_t def;
 	uint32_t lane;
@@ -1567,6 +1567,7 @@ static void spv_module_begin(SpvMod *m, int nlive) {
 	m->id_udiv = spv_id(m);
 	m->id_in = spv_id(m);
 	m->id_out = spv_id(m);
+	m->id_mem = spv_id(m);
 	m->id_main = spv_id(m);
 	m->id_nlive = (uint32_t)nlive;
 
@@ -1619,6 +1620,14 @@ static void spv_module_begin(SpvMod *m, int nlive) {
 	spvw_put(&m->pre, m->id_out);
 	spvw_put(&m->pre, SpvDecBinding);
 	spvw_put(&m->pre, 1);
+	spvw_op(&m->pre, SpvOpDecorate, 4);
+	spvw_put(&m->pre, m->id_mem);
+	spvw_put(&m->pre, SpvDecDescriptorSet);
+	spvw_put(&m->pre, 0);
+	spvw_op(&m->pre, SpvOpDecorate, 4);
+	spvw_put(&m->pre, m->id_mem);
+	spvw_put(&m->pre, SpvDecBinding);
+	spvw_put(&m->pre, 2);
 
 	spvw_op(&m->types, SpvOpTypeVoid, 2);
 	spvw_put(&m->types, m->id_void);
@@ -1664,6 +1673,10 @@ static void spv_module_begin(SpvMod *m, int nlive) {
 	spvw_op(&m->types, SpvOpVariable, 4);
 	spvw_put(&m->types, m->id_ptr_buf);
 	spvw_put(&m->types, m->id_out);
+	spvw_put(&m->types, SpvStorageStorageBuffer);
+	spvw_op(&m->types, SpvOpVariable, 4);
+	spvw_put(&m->types, m->id_ptr_buf);
+	spvw_put(&m->types, m->id_mem);
 	spvw_put(&m->types, SpvStorageStorageBuffer);
 	spvw_op(&m->types, SpvOpTypePointer, 4);
 	spvw_put(&m->types, m->id_ptr_sb_int);
