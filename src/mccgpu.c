@@ -57,6 +57,7 @@ static void *mcc_objc_msgSend;
 
 #define MCC_MTL_UTF8 4
 #define MCC_MTL_CACHE_MAX 64
+#define MCC_MTL_CB_COMPLETED 4
 
 typedef id (*MccMtlCreateDeviceFn)(void);
 
@@ -377,6 +378,13 @@ static int mcc_gpu_dispatch_locked(const char *src, int len, const int32_t *in,
 	mtl_send_v(enc, "endEncoding");
 	mtl_send_v(cb, "commit");
 	mtl_send_v(cb, "waitUntilCompleted");
+	if (((unsigned long (*)(id, SEL))objc_msgSend)(
+					cb, sel_registerName("status")) != MCC_MTL_CB_COMPLETED) {
+		mtl_report_err("command buffer", mtl_send(cb, "error"));
+		mtl_release(bin);
+		mtl_release(bout);
+		goto done;
+	}
 	memcpy(out, pout, (size_t)ntuple * 2 * 4);
 	mcc_gpu.dispatches++;
 	mcc_gpu.lanes += ntuple;
