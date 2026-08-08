@@ -490,6 +490,9 @@ mcc_config_node(MCC_GPU_BACKEND TYPE STRING DEFAULT auto GROUP "Diagnostics" ADV
     HELP "Which compute backend the width-ladder GPU oracle is compiled against: metal (Metal + MSL) or vulkan (Vulkan + SPIR-V). auto picks metal on Darwin and vulkan everywhere else. Only Darwin can build both -- Vulkan there runs over MoltenVK, which the loader dlopens as libvulkan.dylib like any other ICD, so nothing is linked either way and the choice is purely which source arm compiles"
     CHOICES auto metal vulkan)
 
+mcc_config_node(MCC_GPU_REQUIRED TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
+    HELP "Fail the gpu/* test cells instead of skipping them when no usable compute device is present. Off by default so a machine without a GPU still passes the suite; set it on a CI cell whose whole purpose is to exercise a device, because otherwise every gpu/* cell reports success on a host where the backend never ran and the suite would stay green if both device backends were deleted")
+
 if(MCC_GPU_BACKEND STREQUAL "auto")
     if(APPLE)
         set(_mcc_gpu_backend metal)
@@ -2148,6 +2151,7 @@ add_test(NAME "gpu/ladder-gpu-parity"
             -DMCC=$<TARGET_FILE:mcc>
             -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
             -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+            -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ladder_gpu_parity.cmake")
 set_tests_properties("gpu/ladder-gpu-parity" PROPERTIES
     FIXTURES_REQUIRED MCC_BUILT)
@@ -3518,6 +3522,7 @@ if(MCC_BUILD_TESTS)
             add_test(NAME "gpu/spv-slice-known-positive"
                 COMMAND "${CMAKE_COMMAND}"
                         -DCMD=$<TARGET_FILE:spvgate>
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_mutate.cmake")
             set_tests_properties("gpu/spv-slice-known-positive" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
@@ -3527,6 +3532,7 @@ if(MCC_BUILD_TESTS)
                         -DMCC=$<TARGET_FILE:mcc>
                         -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
                         -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_real.cmake")
             set_tests_properties("gpu/spv-slice-real" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)

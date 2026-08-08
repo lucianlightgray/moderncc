@@ -25,6 +25,11 @@ execute_process(COMMAND "${GATE}" --arenas "${_dump}" --quiet
                 RESULT_VARIABLE _clean OUTPUT_VARIABLE _out ERROR_VARIABLE _out)
 message("${_out}")
 if(_clean EQUAL 77)
+    if(MCC_GPU_REQUIRED)
+        message(FATAL_ERROR "spvgate-real: no usable device, but MCC_GPU_REQUIRED "
+                            "is set -- this cell exists to exercise a device and "
+                            "there is none")
+    endif()
     message("spvgate-real: no usable device, skipping")
     return()
 endif()
