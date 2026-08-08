@@ -6,6 +6,194 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Landed — host marshalling profiled, and the 207 ns lever found already spent, 2026-08-08
+
+### The headline number in this file was 9x stale, and its name pointed at the wrong phase
+
+This file said: *"the ~207 ns/lane is host-side marshalling — pack, copy into the
+write-combined mapping, copy out, unpack. 207 ns to move 20 bytes is ~100 MB/s."* Both
+halves are wrong today, and the second half was wrong when it was written.
+
+Measured first, on a 3-node synthetic slice at 65,536 lanes, mean of 5 dispatches, debug
+build, by bracketing each phase with `CLOCK_MONOTONIC` (throwaway instrumentation, not
+committed):
+
+| phase | before, ns/lane | share |
+| --- | ---: | ---: |
+| scratch sizing | 0.03 | 0.1% |
+| pack int64 → int32 lo/hi into scratch | **7.48** | 22% |
+| `memcpy` scratch → mapped input | 0.37 | 1.1% |
+| command record + submit | 0.14 | 0.4% |
+| `vkWaitForFences` | **16.25** | 48% |
+| `memcpy` mapped output → scratch | 0.81 | 2.4% |
+| unpack + narrow into the caller's arrays | **7.40** | 22% |
+| **total** | **33.72** | |
+
+So the whole per-lane cost was **33.7 ns, not 207**. Host marshalling was 16.1 of it
+(48%), and the two phases the sentence names first — *"copy into the mapping, copy
+out"* — are **1.18 ns/lane between them, 3.5%**. The cost was in the two pack/unpack
+loops, which the sentence lists last.
+
+### Where 207 actually came from: it is the ReBAR read-back, and it reproduces exactly
+
+Forcing each memory type with the existing `MCC_GPU_MEMTYPE` override, same build, same
+sweep (all ten rows, so these are not single samples):
+
+| memory type | flags | host write in | host read out | fence wait | gpu ns/lane |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 3 (today's pick) | `HOST_VISIBLE\|COHERENT\|CACHED`, sysmem | 0.4–1.1 | **0.4–1.0** | 16–100 | 19–110 |
+| 2 | `HOST_VISIBLE\|COHERENT`, sysmem uncached | 0.6–1.7 | **19.8–21.8** | 14–142 | 25–112 |
+| 4 | `DEVICE_LOCAL\|HOST_VISIBLE\|COHERENT`, ReBAR VRAM | 0.7–0.8 | **198–370** | **1.0–20.2** | **200.5–206.4** |
+
+Type 4's rows read 206.4, 205.1, 204.8, 200.5 ns/lane. That is the 207. The archived
+figure was measured against ReBAR, where the mapping really was uncached-across-PCIe and
+reading it really did cost ~200 ns/lane — and the later `HOST_CACHED` fix already
+collected almost all of that win. **The lever this file advertised as "the one nobody
+costed" had in fact been spent by the memory-type change, and the sentence was never
+re-measured.** Cost of not re-measuring: the break-even table quoted alongside it (451
+lanes at 3 nodes) is not what the code does; it is 322–363.
+
+### What changed: the pack loop was a `memcpy`, and the `memcpy` was unnecessary
+
+On a little-endian host with 8-byte `int64_t`, an `int64_t[]` **is** the device's
+`(lo, hi)` `int32` pair array, byte for byte. `mcc_slice_run_gpu` was reading the
+caller's `int64` array, splitting each element into two `int32`s, writing them into a
+malloc'd staging array, and then handing that array to a `memcpy` into the mapping — three
+passes to produce bytes identical to the ones it started with. It now hands the caller's
+buffer straight to the driver when `mcc_slice_lohi_native()` says the layouts coincide
+(checked at runtime — byte-order probe, `sizeof`, and `MCC_GPU_IN_SLOTS == 2`; a
+big-endian or padded host keeps the explicit loops).
+
+`mcc_slice_run_frame_gpu` had the same shape on **both** sides — pack in, unpack out — plus
+a `malloc`/`free` pair per dispatch. Both loops and one allocation are gone on the native
+path; the device writes results back into the caller's `frames` array directly.
+
+That leaves the pack/unpack loops as code no little-endian host ever runs, which is how
+an arm rots. `MCC_SLICE_NO_LOHI=1` forces `mcc_slice_lohi_native()` to 0, and two new
+cells — `slice/ops-lohi-fallback` and `slice/frame-lohi-fallback` — run the existing
+clean-then-mutate driver with it set, so the fallback is exercised **and** proven
+non-blind. Both were observed red before being believed: breaking the expression-path
+pack (`>> 32` → `>> 31`) fails `ops-lohi-fallback` alone, and breaking the frame-path pack
+(`v` → `v + 1`) fails `frame-lohi-fallback` alone, with every native-path cell still green
+in both cases. The first break does *not* fail the frame cell, because that suite's slot
+values are all below 2^31 and the two shifts agree there — worth knowing before trusting
+either cell as a general guard.
+
+Incidental, found while restructuring that function: its `malloc` failure path returned
+without freeing `ob`. Now freed.
+
+The unpack loop that remains recomputed `ast_eval_slice_is64(k->wtype)` and
+`k->wtype & VT_UNSIGNED` **once per lane** for a value that cannot change inside the
+dispatch. Hoisting them is 7.40 → 4.26 ns/lane in the debug build, i.e. 42% of that
+phase was loop-invariant work.
+
+After, same conditions:
+
+| phase | before | after | release build, after |
+| --- | ---: | ---: | ---: |
+| pack | 7.48 | **0.00** | 0.00 |
+| `memcpy` in | 0.37 | 0.55 | 0.78 |
+| `memcpy` out | 0.81 | 0.92 | 1.27 |
+| unpack | 7.40 | **4.26** | **0.98** |
+| **host marshalling** | **16.06** | **5.73** | **3.03** |
+| fence wait | 16.25 | 20.80 | 22.65 |
+
+The release column is there because the debug build is `-O0` and the unpack figure is
+mostly loop overhead a real build deletes anyway: **in an optimized build host
+marshalling is ~1.6–3.0 ns/lane and everything else per-lane is the device.** Anyone
+reading the debug profile as the production cost will over-weight the host by ~3x.
+
+### Before/after, three interleaved runs of each binary
+
+`slicerun --cost-synth`, medians of 3, debug, same machine, alternating binaries so drift
+hits both:
+
+| nodes | 3 | 7 | 15 | 31 | 63 | 127 | 255 | 511 | 1023 | 2047 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| gpu ns/lane before | 22.72 | 33.93 | 103.65 | 88.14 | 61.29 | 88.10 | 100.86 | 58.73 | 70.44 | 59.15 |
+| gpu ns/lane after | **16.78** | **25.10** | **93.62** | **84.04** | 64.00 | 84.55 | 87.62 | 60.88 | 103.60 | 54.35 |
+| break-even before | 363 | 115 | 53 | 24 | 12 | 7 | 5 | 4 | 2 | 2 |
+| break-even after | **322** | **108** | **48** | 24 | 23 | 8 | 7 | 5 | 3 | 2 |
+
+Break-even is recomputed against the **pooled** CPU median at each node count, because
+`cpu_ns_per_tuple` drifts ±8% run to run on a code path this change does not touch, and
+the raw table's break-even column moves more from that drift than from the device column.
+
+**Only the 3-, 7- and 15-node rows are signal** (−26%, −26%, −10%). From 63 nodes up the
+device wait dominates and its run-to-run spread swamps a ~8 ns/lane host saving: for a
+*fixed* binary the per-lane figure ranged 13.9–64.1 at 511 nodes and 68.6–113.6 at 1023
+across three runs. Any single-run comparison at those sizes, in either direction, is
+noise. The `gpu_fixed_ns` column is worse still — it is derived from a 64-lane
+measurement — and this change does not touch it.
+
+Real corpus (`tests/exec/statements/for.c`, one 3-node `nlive=1` slice), medians of 5
+interleaved runs: **87.23 → 79.02 ns/lane (−9.4%)**. Smaller than the synthetic drop
+because `nlive=1` halves the input bytes the pack was touching. Break-even on that row is
+**not reportable**: `cpu_ns_per_tuple` came out 75.3 vs 99.3 for identical CPU code, so
+`cpu − gpu` is inside its own error bar both before and after.
+
+### Bought exactly zero
+
+- **Skipping the padding-tail `memset`.** It never runs in the measurements it was
+  supposed to help: `cap` rounds `ntuple` up to a multiple of 64, the sweep uses 64 and
+  65,536, and both are already multiples of 64. Worst case is 63 lanes of a batch, so it
+  cannot be a per-lane cost at all. Not implemented.
+- **Avoiding re-allocate/re-map.** Already done by `mcc_vk_bind_buffers`, which only grows
+  and only rewrites descriptors on growth. Measured at 0.01–0.08 ns/lane after the first
+  dispatch. Nothing to win.
+- **"The mapping is write-combined and the unpack reads it."** It is not. It is memory
+  type 3, `HOST_CACHED`, and reads cost 0.4–1.0 ns/lane. The hypothesis was right about
+  the mechanism and two memory-type generations out of date about the facts.
+- **Splitting the memory type by direction** — input in ReBAR VRAM (host writes stream
+  fine at 0.7 ns/lane) and output in host-cached sysmem (host reads at 0.4 ns/lane) — on
+  the theory that the fence wait is the kernel reading system RAM. It is not: the wait
+  came out **35–110 ns/lane against 16–110 for all-sysmem**, no better, and the whole
+  difference is inside the run-to-run spread. Reverted.
+
+### The next lever, and it is the device, not the host
+
+With every buffer in VRAM the fence wait is **1.0–20.2 ns/lane**; with every buffer in
+system memory it is **16–110**. The kernel is an order of magnitude faster on device-local
+memory, and the only reason the code does not use it is that the host then pays 198–370
+ns/lane to read the results back across PCIe. Both halves are avoidable at once by
+`DEVICE_LOCAL` buffers plus a host-cached staging buffer and `vkCmdCopyBuffer` on the DMA
+engine in each direction, which is how every other Vulkan compute application does this.
+
+**This is not measured.** No staging path exists to measure, and the numbers above only
+bound the two endpoints. Building it is a real change to the command recording — transfer
+usage bits, two pipeline barriers, a second buffer pair — and it collides with the
+`mcc_gpu_rw_back` read-back path, which reads binding 0 back into the caller and would
+need the input buffer staged in both directions. Estimated payoff is deliberately not
+stated here; the last three estimates in this file were wrong by 2–9x.
+
+Also unresolved and cheap to check first: the wait for a 3-node kernel over 65,536 lanes
+is ~1.1–1.5 ms on an RTX 5070 Ti. That is ~1.2 GB/s of effective traffic for a perfectly
+coalesced access pattern, and it is not obviously all PCIe — `nvidia-smi` sampled during
+the sweep shows the memory clock flipping between 810 MHz and 11,001 MHz, which would
+explain the bimodal ~60/~95 ns/lane the table keeps producing at fixed node counts.
+
+### Darwin: the reported break was real
+
+`mcc_gpu_dispatch_rw2` and `mcc_gpu_mem` were defined **after** `#endif /* MCC_GPU_LANG_MSL */`,
+in code common to both backends, while referencing `mcc_gpu_rw_back`, `mcc_vkr`,
+`mcc_vk_resident`, `mcc_vk_bind_mem` and `MCC_VK_MEM_DEFAULT` — every one of which is
+defined only inside the `!MCC_GPU_LANG_MSL` arm. Verified by symbol, not by eye: after the
+fix, the region below the `#endif` contains zero occurrences of `mcc_vk*`, `Vk*`, `vkCmd*`,
+`VK_*` or `MCC_VK_*`.
+
+The shared locking and `mcc_gpu_closing` handling stay in one place; the three
+backend-specific pieces become `mcc_gpu_rw_supported`, `mcc_gpu_rw_arm` and
+`mcc_gpu_mem_backend`, defined in both arms. The Metal arm returns **failure**, not a
+fake success: it has no resident buffer set, so there is nothing to read back into `inout`
+and no shared address space to hand out, and a caller that gets 0 falls back to the CPU
+oracle exactly as it does on a host with no driver. (The Metal `mcc_gpu_dispatch_locked`
+also `memcpy`s unconditionally into `out`, which `mcc_gpu_dispatch_rw` passes as NULL —
+that path is now unreachable rather than a null dereference.)
+
+**Unverified by execution.** There is no Darwin host here and no way to compile the Metal
+arm; the claim rests on the symbol audit above and on the Linux build and `slice/*` +
+`gpu/*` suites staying green.
+
 ## Landed — B1 runtime addressing, and a per-width region layer, 2026-08-08
 
 ### The payoff is 19 blocks, not 41, and the difference is not effort
@@ -1222,6 +1410,11 @@ not a count, and only when the init is a literal in the preceding statements).
 the write-combined mapping, copy out, unpack. 207 ns to move 20 bytes is ~100 MB/s. If
 that drops to 20 ns/lane, a **3-node** slice breaks even at 417 lanes and a 15-node slice
 at 52, and the corpus we already have becomes eligible without growing a single slice.
+
+> **Superseded 2026-08-08 — see the marshalling section at the top of this file.** The 207
+> was measured against ReBAR memory and was the host *read-back*, not the pack/unpack; the
+> `HOST_CACHED` memory-type change already collected it. Re-measured per-lane cost is
+> 22.7 ns at 3 nodes, of which host marshalling is 16.1 (debug) / ~3 (release).
 
 ### N14 and S3′
 

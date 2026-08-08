@@ -683,6 +683,16 @@ static int mcc_gpu_backend_load(void) { return mcc_mtl_load(); }
 
 #define MCC_GPU_CODE_PTR(p) ((const char *)(p))
 
+static int mcc_gpu_rw_supported(void) { return 0; }
+
+static void mcc_gpu_rw_arm(int32_t *p) { (void)p; }
+
+static int mcc_gpu_mem_backend(void **base, unsigned long *size) {
+	(void)base;
+	(void)size;
+	return 0;
+}
+
 #else /* !MCC_GPU_LANG_MSL */
 
 #if MCC_HOST_WIN32
@@ -2126,6 +2136,21 @@ static int mcc_gpu_backend_load(void) { return mcc_vk_load(); }
 
 #define MCC_GPU_CODE_PTR(p) ((const uint32_t *)(p))
 
+static int mcc_gpu_rw_supported(void) { return 1; }
+
+static void mcc_gpu_rw_arm(int32_t *p) { mcc_gpu_rw_back = p; }
+
+static int mcc_gpu_mem_backend(void **base, unsigned long *size) {
+	if (!mcc_gpu_init() || !mcc_vk_resident() ||
+			!mcc_vk_bind_mem(MCC_VK_MEM_DEFAULT))
+		return 0;
+	if (base)
+		*base = mcc_vkr.pmem;
+	if (size)
+		*size = (unsigned long)mcc_vkr.bmemsz;
+	return 1;
+}
+
 #endif /* MCC_GPU_LANG_MSL */
 
 int mcc_gpu_dispatch_rw2(const void *code, int n, int32_t *inout, int ntuple,
@@ -2138,14 +2163,14 @@ int mcc_gpu_dispatch_rw2(const void *code, int n, int32_t *inout, int ntuple,
 	}
 	MCC_GPU_UNLOCK();
 	MCC_GPU_LOCK();
-	if (mcc_gpu_closing) {
+	if (mcc_gpu_closing || !mcc_gpu_rw_supported()) {
 		MCC_GPU_UNLOCK();
 		return 0;
 	}
-	mcc_gpu_rw_back = inout;
+	mcc_gpu_rw_arm(inout);
 	rc = mcc_gpu_dispatch_locked(MCC_GPU_CODE_PTR(code), n, inout, ntuple, nslot,
 															 out);
-	mcc_gpu_rw_back = NULL;
+	mcc_gpu_rw_arm(NULL);
 	MCC_GPU_UNLOCK();
 	return rc;
 }
@@ -2165,13 +2190,7 @@ int mcc_gpu_mem(void **base, unsigned long *size) {
 		MCC_GPU_UNLOCK();
 		return 0;
 	}
-	if (mcc_gpu_init() && mcc_vk_resident() && mcc_vk_bind_mem(MCC_VK_MEM_DEFAULT)) {
-		if (base)
-			*base = mcc_vkr.pmem;
-		if (size)
-			*size = (unsigned long)mcc_vkr.bmemsz;
-		rc = 1;
-	}
+	rc = mcc_gpu_mem_backend(base, size);
 	MCC_GPU_UNLOCK();
 	return rc;
 }

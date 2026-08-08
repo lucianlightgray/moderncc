@@ -3632,6 +3632,17 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties("slice/${_sk}-known-positive" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT)
             endforeach()
+            foreach(_sk ops frame)
+                add_test(NAME "slice/${_sk}-lohi-fallback"
+                    COMMAND "${CMAKE_COMMAND}"
+                            -DRUNNER=$<TARGET_FILE:slicerun>
+                            -DSUITE=${_sk}
+                            -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_mutate.cmake")
+                set_tests_properties("slice/${_sk}-lohi-fallback" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT
+                    ENVIRONMENT "MCC_SLICE_NO_LOHI=1")
+            endforeach()
             # Runs alone: a stranded dispatch disables the device for the rest
             # of the process, which is the behaviour under test.
             add_test(NAME "slice/fault" COMMAND slicerun fault
