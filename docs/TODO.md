@@ -6,6 +6,162 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## The Darwin path was executed — 2026-08-08, Apple M1 Pro, macOS 26.5.2
+
+Everything below is measured on an M1 Pro, on AC power, **under heavy contention**
+(five concurrent agents, load 6.9–30.2). Timings are min-of-N, which is the right
+estimator because contention only adds; where a quiet window was caught the numbers
+agreed to within 3%.
+
+`otool -L mcc` shows **`libobjc.A.dylib` and nothing else** — no Metal.framework, no
+libvulkan. The `dlopen` loader claim in "Darwin is reasoned, not run" holds, now run.
+
+### E6 is closed as a negative result — refuse `double` on Metal, permanently
+
+MoltenVK reports `shaderFloat64 = 0` and does not emulate; `shaderInt64 = 1`, so the
+int64 rung was emulated *by choice* while f64 has no native option on either arm here.
+
+The payoff is zero, measured three ways:
+
+- **0 of 7,971 ladder type-rejections are float**, over two corpora including one
+  deliberately FP-saturated. 100% of the dominant `no-static-type` refusal is the
+  untyped-node artifact, not float.
+- **0 slices blocked solely by float** across 104,237 slices from 189 files. On a
+  corpus 27.5% float-carrying the payoff is **2 slices**, both `UNARY REF FLOAT` — a
+  sign-bit flip needing no arithmetic.
+- Float is *not* rare — 1.068% `DOUBLE` + 0.028% `FLOAT` of arena nodes, 1.673%
+  float-touching, 2.95% of `Binary` — and that makes it worse, not better. Every
+  float-carrying slice is co-blocked by `STORE` 1523, `RETURN` 1016, `BB` 858,
+  `INVOKE` 298, `FOR` 282. **The blocker is E4, not E6.**
+
+Cost is ~48 refusal sites against int64's 16, plus the first `OpTypeFloat` in the
+SPIR-V arm, a `Float64` capability, and the hard-wired `int` storage-buffer element
+type. A soft-f64 MSL prelude measures 8,700 B hand-minified (~12–16 KB emitted, 3–4×
+the entire current prelude) and **78.6 ms per pipeline compile**.
+
+**The cheap `float` rung does not exist.** Apple Silicon flushes subnormals
+unconditionally in `MTLMathModeSafe`, `Relaxed` and MSL 3.2 alike — it is the FPU, not
+the compiler, matching `shaderDenormPreserveFloat32 = 0`. `denorm + 0.0 → 0.0` and
+`denorm / 0.0 → NaN` where IEEE says `Inf`. So bit-exact native `float` is unreachable
+and E3 would need soft-float32 with per-operation exponent guards. Under safe math
+`+ - * /` are correctly-rounded RNE with **zero residual** once subnormal flushing and
+NaN payloads are accounted for; `sqrt` never is (155,585 residual mismatches in 1M).
+`int↔float` conversion is bit-exact in all three directions, 0 of 1,000,000.
+
+E6 leaves *Still genuinely open* and joins F5 and E5 as a closed row with a measured
+zero. The trigger to revisit is **E4 landing**, not any FP measurement.
+
+### The interpreter step rate — C3's `1<<20` budget is 16× too large
+
+A `glslc`-built C1a dispatch loop (verified by `spirv-dis` as 1 `OpLoopMerge` + 1
+`OpSelectionMerge` + 1 `OpSwitch` at every size, and `spirv-val`-clean at every size,
+which the C findings could not check). 32 B node stride, 4096 nodes, arms that cannot
+fold into one another. GLSL and MSL emitted from **one generator**, and at 320 arms all
+four mixes produce **bit-identical output through MoltenVK/SPIR-V and native
+Metal/MSL**.
+
+ns/step, 1 lane, by switch arm count:
+
+| arms | `reg` | `fetch` | `real` | `mem` |
+| ---: | ---: | ---: | ---: | ---: |
+| 8 | 120 | 205 | 239 | 405 |
+| 32 | 248 | 314 | 333 | 733 |
+| 128 | 582 | 681 | 730 | 1128 |
+| 320 | 903 | 1031 | 1029 | 1563 |
+
+**Quote ~1 µs/step, 1.0–1.4 M steps/s per lane**, bracketed 300 ns (32 arms) to 1.6 µs
+(320 arms, memory every step). The measured *floor* — pure register arithmetic, 8 arms,
+no device memory — is **120 ns/step**. **C3's structural 20–100 ns bracket is optimistic
+by 7–50× and its lower bound is unreachable in any configuration constructible here.**
+And these arms are 3 ALU ops; a real AST arm does operand decode, stack traffic, type
+dispatch and gas accounting, so every figure is a *lower bound*.
+
+**Per-lane latency is flat across a 16,384× change in occupancy** (1063 ns/step at 64
+lanes, 1101 at 16,384). The single-lane rate is the real per-lane latency, not an
+under-occupancy artifact: aggregate reaches **1.49e10 steps/s** while single-lane stays
+at 1.0e6. All of the device's power is width. 64 *converged* lanes cost the same wall
+clock as one and deliver 64×; **full divergence costs ~10×** (10,670 ns/step/lane at
+`real`/320). That prices B5/N14 exactly.
+
+**Switch width is the dominant controllable cost**: ~2.5 ns per added arm per step,
+decelerating but far closer to linear than logarithmic — a chain/tree lowering, not a
+jump table. A 14-kind switch to a 320-arm switch is ~4×. Whether a hierarchical or
+computed-goto lowering beats it is the obvious next experiment and is unmeasured.
+
+**Dispatch latency, measured directly**: Metal p50 **150 µs** (min 132, p90 187),
+MoltenVK p50 181 µs. The Metal figure reproduces the banked 150 µs exactly. So C3's
+rule window is `100·L = 15 ms` to `2 s / 20 = 100 ms` — **6.7× wide, not 33×**; the 33×
+assumed a ~30 µs latency and the real one is 5× that.
+
+`1<<20` steps costs 0.251–1.079 s per round, i.e. **2.5–10.8× over the 2 s/20 ceiling at
+every switch width**. The one power of two satisfying both bounds at every width is
+**`1<<16` = 65,536 steps** (rounds of 15.7–67.4 ms). **Bank the rule, not the number**:
+`budget = T_target / step_cost`, and `1<<16` is this host's instantiation at 1 µs/step.
+
+**The node count that follows.** `1<<16` steps at ~730 ns is 65,536 node visits in
+48 ms — 1074 median 61-node bodies, or 2642 mean 24.8-node invoke-free regions, or 9.3
+executions of the 7019-node `unary_nested`. **One pass over the whole 374,310-node
+self-compile arena is 5.71 rounds and 0.27 s of single-lane device time — 3× the entire
+0.093 s CPU self-compile.** That is the number the interpreter's performance story has
+to answer and it is not in the plan today.
+
+### Driver compile time — the SPIRV-Cross hypothesis is refuted
+
+MoltenVK cold, fresh process, never-before-compiled module. `vkCreateShaderModule` is a
+memcpy (0.34 ms at 99k words); **SPIRV-Cross and the Metal compile both live inside
+`vkCreateComputePipelines`** and cannot be separated by API call.
+
+| words | total cold | native Metal equivalent | ratio |
+| ---: | ---: | ---: | ---: |
+| 1649 | 120.6 ms | 62.5 ms | 1.93× |
+| 8050 | 160.7 | — | 1.47× |
+| 15958 | 245.0 | 109.5 | 1.22× |
+| 24906 | 433.1 | 201.5 | 1.21× |
+| 49740 | 1321.9 | — | 1.10× |
+| 99373 | 5948.5 | 5657.7 | 1.05× |
+
+**MoltenVK is not slow because of SPIRV-Cross.** Translation is 5–20% and its share
+*shrinks* with size. The seconds are in the Metal back end, and native Metal pays 95% of
+the same bill. **Choosing the Metal arm over MoltenVK buys 5–20% of compile time and
+nothing else** — this is not an argument for either backend.
+
+What matters is superlinearity: net of a ~75 ms fixed first-pipeline cost, cost grows
+with exponent ≈1.0 to 16k words, 1.65 at 25k, 1.80 at 50k, **2.23 at 100k** — linear
+(~14 µs/word) below ~25k words and quadratic above ~50k. **That makes A4's density
+estimate load-bearing**: 15–25k words is 245–433 ms; 50–100k is 1.3–5.9 s.
+
+**A cross-process cache exists whether you ask for one or not** — the macOS system
+shader cache gives 120 ms vs 5948 ms at 99k words, a 49× difference, so quoting a
+warm number as cold would badly mislead. A persisted `VkPipelineCache` works on
+MoltenVK and collapses every size to **1.6–3.1 ms, flat**.
+
+**Per-region marginal cost, 30 *distinct* modules back-to-back in one warm process** —
+the A1a number, and the reps above measure a cache hit, not this:
+**MoltenVK 5.1 ms + 8.5 µs/word; native Metal 4.0 ms + 6.9 µs/word.**
+
+**A1a is not viable as "emit every region", on driver compile time alone.** 374,310
+nodes at a mean 24.8-node region ≈ **15,100 regions inside a 0.093 s compile** — a demand
+of ~162,000 regions/s against a driver supply of **~52/s** at 1649 words. Shortfall
+**~1100–3100×**. Whole-function granularity is 2452 bodies × ~12 ms ≈ 29 s, still ~316×.
+Neither cache helps: both fire only on a *repeat* of the same module, which on a cold
+compile never happens. This is a new quantitative argument the plan does not make, and it
+is independent of the size cap, of correctness and of the step rate.
+
+**A1b's one-time 15–25k-word compile is acceptable** — 245–433 ms cold, 2–3 ms with a
+persisted cache. Caveat the plan should record: it is **per process**, so a compiler
+invoked 2452 times pays it 2452 times unless the cache blob (120 KB at 25k words) is
+persisted to disk. **A1c now has a budget**: at 5–19 ms per novel module a 1 s
+per-process specialization budget buys **50–200 compiled regions** — a hard cap of order
+100, not a preference.
+
+### Not measured
+
+NVIDIA/AMD/Intel back-end compile time (no such device here); Windows TDR; register
+pressure and AIR quality (no AGX disassembler — `maxTotalThreadsPerThreadgroup` stayed
+1024 up to 99,373 words, which is weak evidence of no cliff and nothing more); a real
+interpreter arm; realistic partial divergence (only the two extremes were run);
+`MTLBinaryArchive`; gas surcharging for D2b primitives.
+
 ## Where RIR replay accuracy stands — 2026-08-06
 
 RIR is **two layers**, and conflating them is what made the older boards unreadable. The
