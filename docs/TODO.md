@@ -1761,6 +1761,83 @@ for the host, and macho has none for either corpus — so `rir-coverage` and
 `rir-coverage-census` both skip locally, and the new gate (like the old ones) is
 exercised only on elf/pe hosts. Banking macho floors is a separate decision.
 
+## The Linux stage2 matrix, replicated locally — 2026-08-08
+
+`mcc-ci plan --job stage2` enumerates 11 runnable Linux cells. All 11 were built as real
+stage2 self-hosts (`mcc-ci stage2 <feature> --mcc <stage1>`) and one of them —
+`dynamic`, configured **without Vulkan headers**, which is what `matrix.yml`'s stage2
+step does since it passes no `-DVulkan_INCLUDE_DIR` — was carried through
+`mcc-ci stage3 --consume test` verbatim: parallel ctest, 900 s timeout, junit out.
+
+**Which cell CI was reporting, established by arithmetic rather than assumption.** The
+pasted failure list keys tests by index, and indices are assigned in registration order,
+so a missing cell shifts everything after it:
+
+| configuration | `optfire/ident_shift` index |
+| --- | ---: |
+| this host, Vulkan headers present, x86_64 | 7832 |
+| − the 3 `gpu/spv-slice-*` cells (`spvgate` needs Vulkan headers to build) | 7829 |
+| − `optfire/regdisp` (`tests/optfire/arch.txt` gates it to x86_64) | **7828** ← the CI run |
+
+So the failing cell is **arm64, without Vulkan headers** — `matrix.yml`'s nightly
+`stage2-nightly` plan, which includes `linux-arm64-gcc`, not `ci.yml`'s gate plan.
+Confirmed the −3 half directly: a no-Vulkan configure registers 8913 tests against 8916
+and puts `ident_shift` at 7829.
+
+**Six real failures the replication found, all one root cause.** `optfire/{pre,ltemp,licm}`
+and their `level-` twins: *"pass DID NOT FIRE (… =0 at -O10)"*. The `-O10` in
+`tests/optfire/counters.txt` and `levels.txt` is a "parked above the shipped ladder"
+sentinel, and `1ad3f1aa` moved these passes past it — `tree-loop-im` to **11**
+(`src/mccopt.h:118`) and `tree-pre` to **12** (`:121`), the latter pinned in
+`levelpins.txt:198`. The expectation files were not updated. Measured firing levels,
+**identical on x86_64, arm64, i386 and riscv64**, so this is not arch-specific:
+
+| counter | flag | declared level | fires at |
+| --- | --- | ---: | --- |
+| `ltemp` | `tree-loop-im` | 11 | `-O11` |
+| `licm` | `tree-loop-im` | 11 | `-O11` |
+| `pre` | `tree-pre` | 12 | `-O12` |
+
+Fixed by naming the real rung in `counters.txt`, and in `levels.txt` by pinning the
+**boundary** (`-O10:off,-O11:on`) rather than just moving the sentinel, so a future move
+in either direction is caught. All 123 `optfire/` cells pass.
+
+**Note the inversion, because it is not explained.** On this host these six fail and
+`optfire/ident_shift` passes — under gcc, under stage2 self-host, with and without
+Vulkan, at load average 23 (40/40), and its objects differ on all five targets. CI
+reports the opposite. Since the six are deterministic and arch-independent, CI's list of
+three was either partial or from a different tree.
+
+### `cli/perfn_inproc` — OPEN, and do not bank the expectation
+
+The seventh failure from the full run. Expects `DIFFER\nSAME`, gets `SAME\nSAME`:
+`-fopt-perfn-inproc` no longer changes the object even with `-fopt-slice` forced on.
+
+**It is not a recent regression.** Probed at `879bf988`, `c2838c61`, `109d407a`,
+`6c46618e` and `1ad3f1aa` with the current case text: `SAME` at every one. **`6c46618e`,
+whose entire purpose was to fix this cell, never fixed it** — it made the `-fopt-slice`
+premise explicit, correctly, but the case still cannot observe the flag.
+
+**Why it cannot.** The pass is guarded by `ast_perfn_inproc_env && do_inline`
+(`src/mccast.c:18038`), and `do_inline` (`:17943`) needs `ast_has_graftable_call`. The
+case's own `-fno-inline-functions` drives the `inline` counter to **0**, so the guard is
+unreachable — the case disables the precondition of the thing it is testing. But
+removing that flag does not rescue it either: with the inliner on (`inline=3`) the
+objects are still byte-identical, at `-O3`, `-O8`, `-O10` and `-O12`, with and without
+`-freemit-templates`, and equally when toggling the flag **off** where it is default-on
+(level 8). A deliberately fat callee inlined at eight sites — where refusing to inline
+must be shorter — is also byte-identical, 2198 bytes either way.
+
+The machinery is wired, not dead: `pf_best` is consumed at `src/mccast.c:18051`, outside
+the search block, so the default path emits with `do_inline` and the search path emits
+the shorter of `ui=0`/`ui=1`. It simply never picks `ui=0`.
+
+**Two readings, and they need different fixes.** Either the case needs an input that
+discriminates, or the pass has become inert and earns no level — the same shape as
+"an entire inliner ships unreachable" above. **Flipping the expectation to `SAME` would
+bank the second reading without establishing it**, which is why it is left red here
+rather than quietly made green.
+
 ## `rir-coverage` and `node-census` re-banked — and what actually moved, 2026-08-08
 
 Both cells were red on the Linux stage3 run. Neither is a regression in the compiler;

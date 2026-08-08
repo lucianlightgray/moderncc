@@ -8,10 +8,10 @@ ident|-O2|ident
 narrow|-O10|narrow
 cprop|-O2|cprop
 cse|-O2|cse
-ltemp|-O10|ltemp
+ltemp|-O11|ltemp
 ivsr|-O2|ivsr
-pre|-O10|pre
-licm|-O10|licm
+pre|-O12|pre
+licm|-O11|licm
 dse|-O2|dse
 sccp|-O2|sccp
 jt|-O2|jt
