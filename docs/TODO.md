@@ -6,6 +6,56 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Landed — `cli/perfn_inproc` is green, and the pass was never inert, 2026-08-08
+
+The cell asserted `DIFFER` and got `SAME` across at least six probed commits. Two readings
+were on the board: the case needs a discriminating input, or the pass is inert and earns
+no level. **It is the first, and the second is now refuted by measurement rather than left
+open.** Nothing in the compiler changed; the test did.
+
+### The input was the whole problem
+
+The case's own source cannot observe `-fopt-perfn-inproc` at any tier — `-O3`, `-O8` and
+`-O12` all give 2006 B with the flag on and off. The sibling input in
+`tests/optfire/src/perfn_inproc.c`, already green in `optfire/perfn_inproc`, observes it
+immediately:
+
+| input, `-fno-inline-functions -O3` | flag off | flag on | |
+| --- | ---: | ---: | --- |
+| the old `big`/`tiny` case | 2006 B | 2006 B | SAME at `-O3`/`-O8`/`-O12` |
+| `chunk`/`driver` shape | **3382 B** | **2022 B** | **DIFFER, −40.2%** |
+
+So the earlier note that "the case disables the precondition of the thing it is testing"
+is **wrong**: `ast_inline_pass_env` is `mcc_opt(s1, MCC_OPT_INLINE_FUNCTIONS)`, so
+`-fno-inline-functions` sets it to 0 and is what makes `!ast_inline_pass_env` — and hence
+`do_inline` — reachable. That flag is the precondition, not the obstacle. What the old
+case lacked was a callee whose graft is a size win.
+
+### What the cell asserts now
+
+1. `-fno-inline-functions -O3`, flag off vs on → **DIFFER**. The pass fires and shrinks.
+2. Default inliner on, flag off vs on → **SAME**. This pins the gate-ordering fact the
+   previous investigation established: `INLINE_FUNCTIONS` is level 2 and
+   `OPT_PERFN_INPROC` is level 8, so at any tier where the flag is on by default the
+   post-capture inliner has already closed the gate.
+3. The grafted binary runs, `rc=80`, matching `-O0`. The pass must not change behaviour.
+
+Every `{MCC}` invocation now sets `XDG_CACHE_HOME={W}/pfic`, closing the unsound premise
+recorded earlier: `ast_slice_consume` reads `~/.cache/mcc/sl-*.ck` whose salt excludes the
+`-f` flags. The `-fopt-slice` / `-fno-opt-slice` pair is gone — it was never what made the
+flag observable, and it made the case depend on a cache the case did not isolate.
+
+**Observed red both ways.** Dropping `-fopt-perfn-inproc` from arm 1 turns the cell red;
+restoring it turns it green. Determinism checked over three fresh cache dirs: 3382 → 2022
+every time. `optfire/perfn_inproc`, `flagsweep-exec/opt-perfn-inproc` and
+`cli/perfn_search` all stay green.
+
+**`SAME` was never banked**, per the standing instruction. The verdict recorded is the one
+the measurement supports: the pass works, it is worth −40% on a shape that suits it, and
+it still does not earn a lower tier — the corpus measurement that made real code 0.333%
+bigger stands untouched, as does the diagnosis that the trial's selection metric
+(`ind - ast_body_ind_sv`) does not predict object size.
+
 ## Merged — five parallel branches, and the ratchet re-banked for the fourth time, 2026-08-08
 
 The five sections below landed on separate branches and were merged in one pass:
@@ -2139,7 +2189,11 @@ Six items, each with the decision or measurement that closes it. Detail and evid
 in *The Linux stage2 matrix, replicated locally* and *`rir-coverage` and `node-census`
 re-banked* below; this list exists so none of them is only findable inside a write-up.
 
-1. **`cli/perfn_inproc` is red on purpose. Do not bank `SAME` to make it green.**
+1. **RESOLVED 2026-08-08 — the case needed a discriminating input; `SAME` was never
+   banked. See the `cli/perfn_inproc` section at the top of this file. The claim below
+   that the flag "changes no byte" is true only of the old case's own source: on the
+   `chunk`/`driver` shape it is 3382 → 2022 B at `-fno-inline-functions -O3`.**
+   ~~`cli/perfn_inproc` is red on purpose. Do not bank `SAME` to make it green.~~
    `-fopt-perfn-inproc` changes no byte at `-O3/-O8/-O10/-O12`, with or without
    `-freemit-templates`, with the inliner on or off, toggled on *or* off from its
    default, and on a fat callee inlined at eight sites. It is **not a recent

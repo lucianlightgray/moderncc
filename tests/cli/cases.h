@@ -263,16 +263,16 @@ static const cli_case_t cli_cases[] = {
 
 
 
-		 "printf 'static int big(int x,int y){int s=0;for(int i=0;i<x;i++){s+=(i*y)^(i+x);s-=(i&y)|(x^i);s+=(i*i)-(y*y);}return s;}static int tiny(int x){return x+1;}int main(void){int s=0;s+=big(5,3)+big(7,2)+big(9,4)+big(3,6);s+=tiny(10)+tiny(20)+tiny(30);return s&0x7f;}\\n' > {W}/pfi.c && "
-		 "{MCC} -fno-inline-functions -fopt-slice -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.off.o && "
-		 "{MCC} -fno-inline-functions -fopt-slice -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.on.o && "
+		 "printf 'static int chunk(int v,int k){int a=v*k+3;int b=a^(v<<2);int c=b+(k*7);int d=c^(a>>1);int e=d+(b*5);int f=e^(c<<1);return (f+a+b+c+d+e)&0xffff;}static int driver(int seed){int r=seed;int i;for(i=0;i<4;i++){r=chunk(r,3)+chunk(r,5);r^=chunk(r,7)+chunk(r,9);r&=0xffff;}return r;}int main(void){return driver(17)&0x7f;}\\n' > {W}/pfi.c && "
+		 "XDG_CACHE_HOME={W}/pfic {MCC} -fno-inline-functions -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.off.o && "
+		 "XDG_CACHE_HOME={W}/pfic {MCC} -fno-inline-functions -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.on.o && "
 		 "( cmp -s {W}/pfi.off.o {W}/pfi.on.o && echo SAME || echo DIFFER ) ; "
-		 "{MCC} -fno-inline-functions -fno-opt-slice -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.ns.off.o && "
-		 "{MCC} -fno-inline-functions -fno-opt-slice -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.ns.on.o && "
-		 "( cmp -s {W}/pfi.ns.off.o {W}/pfi.ns.on.o && echo SAME || echo DIFFER ) ; "
-		 "{MCC} -fopt-perfn-inproc -B{B} -I{I} -O3 {W}/pfi.c -o {W}/pfi.on && {W}/pfi.on ; echo rc=$? ; "
-		 "{MCC} -B{B} -I{I} -O0 {W}/pfi.c -o {W}/pfi.o0 && {W}/pfi.o0 ; echo rc=$?",
-		 "DIFFER\nSAME\nrc=28\nrc=28\n"},
+		 "XDG_CACHE_HOME={W}/pfic {MCC} -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.ni.off.o && "
+		 "XDG_CACHE_HOME={W}/pfic {MCC} -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.ni.on.o && "
+		 "( cmp -s {W}/pfi.ni.off.o {W}/pfi.ni.on.o && echo SAME || echo DIFFER ) ; "
+		 "XDG_CACHE_HOME={W}/pfic {MCC} -fno-inline-functions -fopt-perfn-inproc -B{B} -I{I} -O3 {W}/pfi.c -o {W}/pfi.on && {W}/pfi.on ; echo rc=$? ; "
+		 "XDG_CACHE_HOME={W}/pfic {MCC} -B{B} -I{I} -O0 {W}/pfi.c -o {W}/pfi.o0 && {W}/pfi.o0 ; echo rc=$?",
+		 "DIFFER\nSAME\nrc=80\nrc=80\n"},
 
 		{"perfn_search", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static int sq(int x){return x*x;}static int cube(int x){return x*x*x;}int main(void){int s=0;for(int i=0;i<8;i++)s+=sq(i)+cube(i);return s;}\\n' > {W}/pfs.c && "
