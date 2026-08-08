@@ -1104,6 +1104,20 @@ static int rir_cfind[64];
 static AstLocal rir_while_pfx = AST_NONE;
 static int rir_cfn;
 static int rir_arena_mismatch;
+
+static long rir_drop_n[IR_OP_COUNT];
+
+static int rir_drop_elsewhere(int kind) {
+	return kind == IR_OP_JMP || kind == IR_OP_JMPCOND || kind == IR_OP_JMPADDR ||
+				 kind == IR_OP_JMPAPPEND || kind == IR_OP_GSYMADDR;
+}
+
+static void rir_drop_note(int kind) {
+	if (kind < 0 || kind >= IR_OP_COUNT || rir_drop_elsewhere(kind))
+		return;
+	rir_drop_n[kind]++;
+}
+
 static int rir_cplx_depth;
 static int rir_cplxb_depth;
 static int rir_cplxb_on;
@@ -3262,6 +3276,7 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 	default:
+		rir_drop_note(o->kind);
 		break;
 	}
 }
@@ -5194,6 +5209,9 @@ static void rir_prod_report(void) {
 		if (rir_prod_why_n[i])
 			fprintf(f, "[rir-prod-why] %s=%ld bytes=%ld\n", rir_prod_why_name[i],
 							rir_prod_why_n[i], rir_prod_why_b[i]);
+	for (i = 0; i < IR_OP_COUNT; i++)
+		if (rir_drop_n[i])
+			fprintf(f, "[rir-drop-op] %s=%ld\n", ir_cap_op_name(i), rir_drop_n[i]);
 	for (i = 0; i < RIR_PROD_NUNF; i++)
 		if (rir_unfaithful_n[i])
 			fprintf(f, "[rir-prod-unfaithful] %s=%ld bytes=%ld\n",
