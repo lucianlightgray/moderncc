@@ -209,16 +209,11 @@ typedef struct MccSliceFrame {
 	AstLocal ret;
 	int rettype;
 	int nodes;
-	/* B1 minimal. When a run needs a real address -- a runtime index, or a
-	 * local whose address is taken and then dereferenced -- the frame stops
-	 * being a dense slot table and becomes a byte-addressed region, addressed
-	 * as 4-byte words. Selected per run, so a run that needs no address keeps
-	 * the proven slot path untouched and cannot regress. */
-	int bytemode;
-	int32_t base_min;
-	int32_t base_max;
-	int nword;
-	int nword_mask;
+	/* B1: how many accesses in this run resolve their address at run time. Non
+	 * zero means the run's definedness is a real verdict even without a Return,
+	 * because an out-of-range index is the one thing both executors report the
+	 * same way instead of refusing. */
+	int nidx;
 } MccSliceFrame;
 
 static int mcc_slice_slot_of(MccSliceFrame *f, int32_t off) {
@@ -260,6 +255,22 @@ static int mcc_slice_is_local_ref(AstArena *a, AstLocal n, int32_t *off) {
 }
 
 
+/* How many addresses in a subtree are resolved at run time. Only used to decide
+ * whether the run's definedness flag says anything -- see MccSliceFrame.nidx. */
+static int mcc_slice_dyn_count(AstArena *a, AstLocal n) {
+	AstEvalSliceIdx ix;
+	AstLocal c;
+	int t = 0;
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Load &&
+			ast_eval_slice_dynidx(a, ast_first_child(a, n), &ix))
+		t++;
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		t += mcc_slice_dyn_count(a, c);
+	return t;
+}
+
 static int mcc_slice_frame_scan(MccSliceFrame *f, AstLocal n) {
 	AstArena *a = f->a;
 	AstLocal c;
@@ -271,10 +282,23 @@ static int mcc_slice_frame_scan(MccSliceFrame *f, AstLocal n) {
 		return 0;
 	if (!ast_eval_slice_livein(a, n, f->slot, &f->nslot, MCC_SLICE_MAXSLOT))
 		return 0;
+	f->nidx += mcc_slice_dyn_count(a, n);
 	(void)off;
 	(void)c;
 	(void)cnt;
 	return 1;
+}
+
+/* A store through an address the run computes: `arr[i] = v`, which reaches the
+ * arena as Store(Load(Binary('+')(arr, i)), v). Measured over the corpus this
+ * is the whole of B1's payoff -- the other non-local store destinations are a
+ * global (46 nodes), `*p` (45), `p->f` (8) or `*(p+K)` (13), and every one of
+ * those is a host address rather than a frame offset, so a frame-scoped space
+ * refuses them by construction rather than by omission. */
+static int mcc_slice_store_dyn(AstArena *a, AstLocal d, AstEvalSliceIdx *ix) {
+	if (d == AST_NONE || ast_kind(a, d) != AST_Load)
+		return 0;
+	return ast_eval_slice_dynidx(a, ast_first_child(a, d), ix);
 }
 
 /* A statement-if is `AST_If` with op 0 and two or three children: condition,
@@ -388,6 +412,25 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 		return 0;
 	d = ast_child(a, s, 0);
 	v = ast_child(a, s, 1);
+	{
+		AstEvalSliceIdx ix;
+		if (mcc_slice_store_dyn(a, d, &ix)) {
+			if (!ast_eval_slice_kind_ok(a, ix.idx, 1))
+				return 0;
+			if (!ast_eval_slice_livein_obj(&ix, f->slot, &f->nslot,
+																		 MCC_SLICE_MAXSLOT))
+				return 0;
+			if (!ast_eval_slice_livein(a, ix.idx, f->slot, &f->nslot,
+																 MCC_SLICE_MAXSLOT))
+				return 0;
+			if (!mcc_slice_frame_scan(f, v))
+				return 0;
+			f->nidx++;
+			f->nstmt++;
+			f->nodes += mcc_slice_nodes(a, s);
+			return 1;
+		}
+	}
 	if (!mcc_slice_is_local_ref(a, d, &off))
 		return 0;
 	dt = ast_type_t(a, d);
@@ -399,45 +442,6 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 		return 0;
 	f->nstmt++;
 	f->nodes += mcc_slice_nodes(a, s);
-	return 1;
-}
-
-/* Word index of a frame byte offset, and the lane region size. Locals are laid
- * out at their real frame offsets so that ADDR(local) is simply that offset and
- * an address computed at runtime resolves back to the same word. */
-static int mcc_slice_word_of(const MccSliceFrame *f, int32_t off) {
-	return (int)((off - f->base_min) >> 2);
-}
-
-static int mcc_slice_frame_layout(MccSliceFrame *f) {
-	int i;
-	int32_t lo, hi;
-	if (!f->bytemode)
-		return 1;
-	if (f->nslot < 1)
-		return 0;
-	lo = hi = f->slot[0];
-	for (i = 1; i < f->nslot; i++) {
-		if (f->slot[i] < lo)
-			lo = f->slot[i];
-		if (f->slot[i] > hi)
-			hi = f->slot[i];
-	}
-	/* Align the base down to a word and leave room for the widest access at the
-	 * top offset. Measured span over real blocks: median 12 B, p90 88 B. */
-	f->base_min = lo & ~(int32_t)3;
-	f->base_max = hi + 8;
-	f->nword = (int)((f->base_max - f->base_min + 3) >> 2);
-	if (f->nword < 1 || f->nword > (1 << 14))
-		return 0;
-	/* Power-of-two extent so a dynamic index can be masked into the lane's own
-	 * region with one AND, making an out-of-range access harmless rather than a
-	 * PageFault. J3b requires that no PageFault be reachable by construction. */
-	f->nword_mask = 1;
-	while (f->nword_mask < f->nword)
-		f->nword_mask <<= 1;
-	f->nword = f->nword_mask;
-	f->nword_mask -= 1;
 	return 1;
 }
 
@@ -478,8 +482,6 @@ static int mcc_slice_frame_from_ast(AstArena *a, AstLocal root,
 		if (f->ntop < MCC_SLICE_MAXSTMT)
 			f->top[f->ntop++] = s;
 	}
-	if (!mcc_slice_frame_layout(f))
-		return 0;
 	return f->ntop > 0 || f->ret != AST_NONE;
 }
 
@@ -501,20 +503,6 @@ static int mcc_slice_frame_exec_seq(MccSliceFrame *f, int64_t *frame,
 		if (!mcc_slice_frame_exec_stmt(f, frame, c))
 			return 0;
 	return 1;
-}
-
-/* In byte mode the caller's array is still one int64 per SLOT (the harness and
- * the differential are slot-shaped), but addresses are byte offsets. The map
- * from a byte offset to a slot is exact for every offset the run named; a
- * runtime address that lands on no named offset is out of range for this run
- * and poisons the result, which is the same verdict the device reaches by
- * masking and clearing `def`. */
-static int mcc_slice_slot_at(const MccSliceFrame *f, int32_t off) {
-	int k;
-	for (k = 0; k < f->nslot; k++)
-		if (f->slot[k] == off)
-			return k;
-	return -1;
 }
 
 static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
@@ -586,6 +574,29 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 	v = ast_child(f->a, s, 1);
 	if (!ast_eval_slice_rec(f->a, v, f->slot, frame, f->nslot, &val))
 		return 0;
+	{
+		AstEvalSliceIdx ix;
+		if (mcc_slice_store_dyn(f->a, d, &ix)) {
+			int64_t iv = 0;
+			int elem;
+			if (!ast_eval_slice_rec(f->a, ix.idx, f->slot, frame, f->nslot, &iv))
+				return 0;
+			/* Out of range poisons the run and keeps going, because the device
+			 * cannot do anything else: it has already masked the index and cleared
+			 * its flag, and a reference that refused here instead would disagree
+			 * with it on every frame slot as well as on the verdict. */
+			if (!ast_eval_slice_idx_ok(&ix, iv, &elem))
+				ast_eval_slice_undef = 1;
+			off = ix.base + (int32_t)elem * ix.esize;
+			for (k = 0; k < f->nslot; k++)
+				if (f->slot[k] == off)
+					break;
+			if (k == f->nslot)
+				return 0;
+			frame[k] = ast_eval_slice_fit(val, ix.etype);
+			return 1;
+		}
+	}
 	if (!mcc_slice_is_local_ref(f->a, d, &off))
 		return 0;
 	for (k = 0; k < f->nslot; k++)
@@ -600,15 +611,21 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 
 static int mcc_slice_frame_exec_cpu2(MccSliceFrame *f, int64_t *frame,
 																		 int64_t *retval, int *retdef) {
-	int i;
+	int i, live;
 	if (!f || !frame)
 		return 0;
+	ast_eval_slice_undef = 0;
 	for (i = 0; i < f->ntop; i++)
 		if (!mcc_slice_frame_exec_stmt(f, frame, f->top[i]))
 			return 0;
+	/* The run's own verdict, distinct from the returned value's. An index that
+	 * left its object poisons the whole run on both executors, so it has to
+	 * survive past the statement that caused it. */
+	live = !ast_eval_slice_undef;
 	if (f->ret != AST_NONE) {
 		int64_t rv = 0;
-		int d = ast_eval_slice_rec(f->a, f->ret, f->slot, frame, f->nslot, &rv);
+		int d = ast_eval_slice_rec(f->a, f->ret, f->slot, frame, f->nslot, &rv) &&
+						!ast_eval_slice_undef;
 		if (retdef)
 			*retdef = d;
 		if (retval)
@@ -617,7 +634,7 @@ static int mcc_slice_frame_exec_cpu2(MccSliceFrame *f, int64_t *frame,
 									: 0;
 	} else {
 		if (retdef)
-			*retdef = 0;
+			*retdef = live;
 		if (retval)
 			*retval = 0;
 	}
@@ -1035,6 +1052,31 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 	d = ast_child(f->a, s, 0);
 	v = ast_child(f->a, s, 1);
 	dt = ast_type_t(f->a, d);
+	{
+		AstEvalSliceIdx ix;
+		if (mcc_slice_store_dyn(f->a, d, &ix)) {
+			SpvV iv;
+			uint32_t elem;
+			if (!spv_expr(m, f->a, v, f->slot, f->nslot, base, &val))
+				return 0;
+			if (!spv_expr(m, f->a, ix.idx, f->slot, f->nslot, base, &iv))
+				return 0;
+			for (j = 0; j < f->nslot; j++)
+				if (f->slot[j] == ix.base)
+					break;
+			if (j == f->nslot)
+				return 0;
+			if (mcc_slice_mutate) {
+				uint32_t p = spv_pair(m, val);
+				uint32_t lo = spv_uop(m, SpvOpBitwiseXor, spv_lo(m, p),
+															spv_uintc(m, 1));
+				val = spv_mk(spv_u2(m, lo, spv_hi(m, p)), 1, 0);
+			}
+			elem = spv_dyn_elem(m, iv, &ix);
+			spv_store_live_dv(m, base, j, elem, spv_fit_v(m, val, ix.etype));
+			return 1;
+		}
+	}
 	if (!mcc_slice_is_local_ref(f->a, d, &off))
 		return 0;
 	if (!spv_expr(m, f->a, v, f->slot, f->nslot, base, &val))

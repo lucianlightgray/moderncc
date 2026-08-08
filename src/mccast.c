@@ -13636,6 +13636,28 @@ static int ast_adump_size(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return sz > 0 ? sz : 0;
 }
 
+/* The element type word of an array or pointer node, 0 otherwise. The extent
+ * column above is not on its own enough to place a runtime index: `arr[i]`
+ * replays as gen_op('+') on a VT_ARRAY base, which scales i by the ELEMENT
+ * size, and neither the Binary nor the Load above it carries a type at all --
+ * both are 0 in every real arena. So the extent gives no element count to
+ * bound i against and no width to narrow the stored value to, and a consumer
+ * with only the extent would have to guess both. This word gives both, and
+ * follows the extent's convention: computed from the real CType before
+ * interning, 0 meaning unknown so an older dump refuses rather than guesses. */
+static int ast_adump_etype(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	CType ct;
+	int t = ast_type_t(a, n);
+	if (!t || (t & VT_BTYPE) != VT_PTR)
+		{ MCC_TRACE("br\n"); return 0; }
+	memset(&ct, 0, sizeof ct);
+	ct.t = t;
+	ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+	if (!ct.ref)
+		{ MCC_TRACE("br\n"); return 0; }
+	return pointed_type(&ct)->t;
+}
+
 static void ast_adump_body(AstArena *a, const char *fname) { MCC_TRACE("enter\n");
 	AstLocal nn, n;
 	ast_adump_open();
@@ -13647,7 +13669,8 @@ static void ast_adump_body(AstArena *a, const char *fname) { MCC_TRACE("enter\n"
 	fprintf(ast_adump_fp, "[arena] fn=%s n=%ld root=%ld\n", fname ? fname : "?",
 					(long)nn, (long)ast_root(a));
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
-		fprintf(ast_adump_fp, "%ld %d %d %d %lld %ld %ld %llu %u %u %llu %llu %d\n",
+		fprintf(ast_adump_fp,
+						"%ld %d %d %d %lld %ld %ld %llu %u %u %llu %llu %d %d\n",
 						(long)n, (int)ast_kind(a, n), ast_op(a, n), ast_type_t(a, n),
 						(long long)ast_ival(a, n), (long)ast_first_child(a, n),
 						(long)ast_next_sib(a, n),
@@ -13655,7 +13678,8 @@ static void ast_adump_body(AstArena *a, const char *fname) { MCC_TRACE("enter\n"
 								(uintptr_t)ast_type_ref(a, n)),
 						ast_type_bp(a, n), ast_type_bs(a, n),
 						(unsigned long long)ast_adump_intern((uintptr_t)ast_sym(a, n)),
-						(unsigned long long)ast_fbits(a, n), ast_adump_size(a, n));
+						(unsigned long long)ast_fbits(a, n), ast_adump_size(a, n),
+						ast_adump_etype(a, n));
 	}
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		AstLocal cref;

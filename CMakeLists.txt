@@ -3614,7 +3614,7 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties("slice/${_sr}" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT)
             endforeach()
-            foreach(_sg gpu wide64 ops mem)
+            foreach(_sg gpu wide64 ops mem bytes)
                 add_test(NAME "slice/${_sg}" COMMAND slicerun "${_sg}"
                          $<$<BOOL:${MCC_GPU_REQUIRED}>:--require-device>)
                 set_tests_properties("slice/${_sg}" PROPERTIES

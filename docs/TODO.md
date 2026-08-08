@@ -6,6 +6,157 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Landed — B1 runtime addressing, and a per-width region layer, 2026-08-08
+
+### The payoff is 19 blocks, not 41, and the difference is not effort
+
+Measured before building, the same way the last three items were, and then measured
+again after: frame slices **300 → 319 (+19, +6.3%)**, statements **182 → 201 (+10.4%)**,
+0 mismatches. The model that produced the prediction reproduced today's numbers exactly
+(947 blocks, 300 eligible, 182 statements) before it was trusted for tomorrow's, which is
+the only reason to believe it.
+
+The 41-block estimate counted address expressions, not blocks that only those expressions
+block. Classifying all 143 non-plain store destinations in the corpus:
+
+| destination | nodes | frame-addressable? |
+| --- | ---: | --- |
+| `Ref[SYM\|LVAL]` — a global | 46 | no: a host address, and per-lane globals is N14 |
+| `Load(Ref[LOCAL\|LVAL])` — `*p` | 45 | no: the local *holds* a host pointer |
+| **`Load(Binary('+')(Ref[LOCAL\|ARRAY], i))` — `arr[i]`** | **20** | **yes — this is the whole payoff** |
+| `Unary(ARROW)(...)` — `p->f` | 8 | no, and never can (replay does `indir()` first) |
+| `Load(Convert(...ptr...))` — `*(p+K)` | 13 | no |
+| other | 11 | no |
+
+Split by where the index appears: `arr[i]` in **store** position is +18 blocks, in **load**
+position +1, both +19. Constant-index `arr[K]` is **+0**, and folding a store destination
+through `.field`/`&` is **+0** — the fourth and fifth zero-payoff results in a row, both
+recorded rather than quietly dropped.
+
+### The 13th column was not the prerequisite. The 14th is
+
+The brief said the extent column had unblocked this. It had not, and the reason is worth
+writing down because it was only visible by dumping a directed case:
+
+- `arr[i]` replays as `gen_op('+')` on a `VT_PTR|VT_ARRAY` base, which scales `i` by the
+  **element** size. Verified: `int arr[4]` at −24 with `arr[2]` emits `Lit(2)`, not
+  `Lit(8)`.
+- The `Load` and the `Binary` above it carry **type 0 in every real arena** — 5 of 5 in a
+  directed case, all 143 in the corpus. So the tree records neither the access width nor
+  anything to derive it from.
+
+The extent therefore gives no element count to bound `i` against and no width to narrow a
+stored value to. A consumer holding only the extent must guess both, and a guessed width
+is a wrong answer that *both* executors would agree on — precisely what a differential
+cannot see. So `ast_adump_etype` adds a 14th column: the pointee type word, computed from
+the real `CType` before interning, exactly as the extent is. Verified `int arr[4]` → 3
+(`VT_INT`), `char buf[10]` → 1 (`VT_BYTE`), `long big[3]` → 0x1004 (`VT_LLONG|VT_LONG`).
+Older dumps read it as 0 = unknown and refuse. `spvgate` is unaffected (its `sscanf`
+reads 7 fields).
+
+### And the const-offset fold that "was worth zero blocks" was also wrong
+
+`ast_eval_slice_frame_off` folded `base + K` as a **byte** offset. For a pointer or array
+base that is the wrong address by a factor of the element size. It gained zero blocks and
+so was never caught by the block count; it could not be caught by the differential either,
+because both executors used the same wrong key and therefore agreed. It now refuses a
+pointer/array base outright and leaves that shape to the code that knows the element size.
+Corpus is unchanged at 783 expression slices / 0 mismatches, confirming nothing depended
+on it.
+
+### One slot per element, not a byte-addressed frame — and why that was the better trade
+
+The plan called for a byte-addressed frame, which forces per-width store/load because a
+32-bit local at −12 and one at −8 are adjacent words and `spv_store_live_v`'s two-word
+store clobbers the neighbour. Instead each admitted array gets a **contiguous run of
+ordinary 8-byte slots, one per element**, addressed as `slot_of(base) + index`. Slots stay
+disjoint, so the proven two-word store is reused verbatim: no per-width work is needed on
+this path at all, and the 300 previously-clean slices cannot regress. Contiguity is
+enforced rather than assumed — a run that would interleave with an already-mapped offset
+is refused.
+
+Raising `MCC_SLICE_MAXSLOT` from 16 to 32 or 64 was measured and changes nothing
+(319 either way), so slot capacity is not what binds.
+
+### Bounds safety, by construction, on both executors
+
+`ok = idx <u nelem` ; `def &= ok` ; `idx &= (nspan − 1)`, where `nspan` is the element
+count rounded up to a power of two and the object owns that many slots. The mask is
+relative to **the object's own run**, not the lane's region, so the worst an out-of-range
+access can do is touch another element of the same array — and the run is discarded
+anyway because the same comparison cleared `def`.
+
+The CPU reference does not refuse. It reaches the identical verdict *and writes the
+identical masked element*, because the device cannot refuse mid-kernel and a reference
+that bailed would disagree with it on every frame slot as well as on the flag. `def` is
+therefore compared for runs that carry a runtime index even when they have no `Return`,
+which is new: for those runs the out-slot flag is a real verdict rather than the dummy
+the comment used to call it.
+
+### The region layer — per-width, and parameterised rather than frame-local
+
+Added because a shared heap has adjacent objects of different widths **by construction**,
+so the two-word hazard is the normal case there rather than an edge case. `SpvRegion` is
+`(variable, base word, byte extent)` and `spv_load_region`/`spv_store_region` take
+`(region, byte offset, type)`. Nothing in them knows whether the region is one lane's
+frame or a buffer shared with the host; that is entirely which base is passed, so a second
+binding needs a different `SpvRegion` and no new emitter code.
+
+- 1 and 2-byte accesses are shift/mask, and a sub-word **store** is a read-modify-write of
+  the containing word, because SPIR-V has no 8-bit storage without
+  `StorageBuffer8BitAccess`. **Within one lane's region that is a narrow store; in a
+  region shared between lanes it is not atomic**, and two lanes writing different bytes of
+  one word would race. That is a property of who hands out shared addresses, and it is
+  unresolved.
+- Bounds use a **select, not the planned power-of-two mask**: `ok = off <=u nbyte − width
+  && aligned && nbyte >=u width`, then `off = ok ? off : 0`. The mask needs the region
+  padded to a power of two, and an unpadded 48-byte region would let a masked offset reach
+  byte 63 — into whatever follows. Corrupting a neighbour is strictly worse than
+  corrupting yourself; 0 is in range for every region that can hold the access at all, so
+  the select cannot leave the region and has no padding precondition.
+
+`slice/bytes` is a direct differential over 8 type/signedness combinations × 14 offsets
+(aligned, last legal, one past, misaligned, wild, negative), comparing every word of every
+lane's region and the verdict flag — 27 checks. **It was proved able to fail**: adding
+back the two-word store for a 4-byte type made it red immediately with
+`load=0 store=7 word 1 want=00000007 got=00000000`, i.e. exactly the neighbour clobber the
+layer exists to prevent.
+
+### Numbers
+
+| | before | after |
+| --- | ---: | ---: |
+| corpus frame slices | 300 | **319** |
+| corpus frame statements | 182 | **201** |
+| corpus frame mismatches | 0 | **0** |
+| corpus expression slices / mismatches | 783 / 0 | 783 / 0 |
+| `--mutate` frame mismatches (known-positive) | 40+ | **63** |
+| `--mutate` slice mismatches | — | 6149 |
+| `slice/frame` checks | 122 | **157** |
+| `slice/bytes` checks | — | **27** |
+| ctest | 8932, 1 red | **8933, 1 red** (`cli/perfn_inproc`, red on purpose) |
+| `VUID`/validation errors, `frame` and `bytes` | 0 | **0** |
+
+`rir-coverage` needed no re-banking: `nodes_pct` at `-O1` is **41.420%** against a banked
+floor of 41.4175%, and the absolute count rose too — 433,646 arena nodes at 41.420% is
+~179,616 lowerable against ~178,419 before.
+
+### Open after this
+
+1. **A sub-word store to a region shared between lanes is not atomic.** Read-modify-write
+   of the containing word is correct for a private region and racy for a shared one. Needs
+   either byte-granular atomics, `StorageBuffer8BitAccess` where available, or an
+   allocator that never puts two lanes' sub-word objects in one word.
+2. **`*p`, `p->f` and globals are still refused** — 99 of the 143 non-local store
+   destinations. They are host addresses, and they are exactly what the mapped-buffer
+   address space is for; they are not frame work and no widening of the frame reaches
+   them.
+3. **The Metal arm returns 0 for every frame kernel and for the region layer.** Declared,
+   not silently divergent, but the divergence is now larger than it was.
+4. **A 64-bit index is refused rather than approximated** — every index in the corpus is a
+   plain `int`, and a wide one would have to agree bit for bit between a host `int64` and
+   a device lo/hi pair before the mask applies.
+
 ## Landed — the three runners exist and are proven by test, 2026-08-08
 
 The JIT/GPU/coroutine runners are now the top of the board, and the first rung is
