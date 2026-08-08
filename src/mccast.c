@@ -15889,7 +15889,7 @@ void ast_ladder_gpu_setup(void) { MCC_TRACE("enter\n");
 		ast_set_ival(pa, r, 7);
 		poff[0] = -8;
 		if (mcc_gpu_emit(pa, r, poff, 1, &pcode)) { MCC_TRACE("br\n");
-			int32_t pin[64], pout[128];
+			int32_t pin[64 * MCC_GPU_IN_SLOTS], pout[64 * MCC_GPU_OUT_SLOTS];
 			memset(pin, 0, sizeof pin);
 			int wrc = mcc_gpu_run(&pcode, pin, 64, 1, pout);
 			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG")) { MCC_TRACE("br\n");
