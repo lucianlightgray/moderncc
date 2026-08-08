@@ -1237,6 +1237,370 @@ integers first** (one refusal predicate, eight sites, and it unblocks the only
 program known to have reached the ladder), then **float/double**, then the
 remaining unary and binary operators.
 
+### Corrections to the audit above — measured 2026-08-07
+
+The audit's counts hold; three of its conclusions do not. Measured on an instrumented
+copy compiling `src/mcc.c` at `-O2` (`-O1` identical, `-O0` zero — the arena path is
+off there).
+
+1. **"All 25 are reachable from the capture dispatch" is false. Exactly four fire:
+   `RETVAL` (4001 hits), `MKPTR` (3590), `VPUSHSYM` (3059), and `LOAD` (0 — it never
+   reaches the switch at all, killed by the `continue` at `src/mccrir.c:4678-4681`
+   when any of nine depth/pending flags is set).** The other 21 fire zero times;
+   `X87POP`, `XFERRET`, `VLA_RESULT`, `REGADDI` and `STRUCTCOPY` are `#ifdef`-ed out
+   on arm64 and *cannot* occur (`src/mccgen.c:7-43`); `RAW` is handled outside the
+   switch (`src/mccrir.c:4943,5309,5471,5782`) and belongs on no gap list.
+2. **The proposed one-line fix would break the compiler.** Five opcodes that reach the
+   `default:` arm — `JMP`, `JMPCOND`, `JMPADDR`, `JMPAPPEND`, `GSYMADDR` — are
+   correctly handled in *other* switches (`src/mccrir.c:965,969,987,1013,1029` and
+   `:4711,4717,4723,4739,4749`). They are **68% of that arm's traffic** (23,040 of
+   33,690 hits). Wiring `rir_arena_mismatch++` into the bare `default:` would mark
+   ~74% of all bodies unfaithful. The counter must be a **per-opcode histogram with
+   those five excluded**.
+3. **The causal chain "silently skipped → replay differs → unfaithful → every AST
+   optimization skipped" is refuted as a general claim.** Per-body correlation:
+   `bodies_with_drop=1823`, `bodies_nodrop=633`, `unf_with_drop=81`, `unf_nodrop=14`.
+   74.2% of bodies contain a dropped opcode and **95.6% of those still replay
+   byte-identically and are used**. Unfaithful rate is 4.4% with drops vs 2.2%
+   without — a 2× relative risk, not a mechanism. `RETVAL`/`MKPTR`/`VPUSHSYM` are
+   compensated by the region/reconcile machinery.
+4. **"64-bit is refused at eight sites" undercounts by half: it is 16** — 7 in the MSL
+   emitter, 7 in SPIR-V, 2 in the ladder hook (`src/mccgpu.h:500,512,522,539,552,564,
+   601,1382,1394,1404,1419,1432,1444,1479`; `src/mccast.c:15759,15766`). Better news
+   the audit missed: **the CPU slice evaluator already does int64** — `src/ast_eval_
+   slice.h:382,422` use `is64` to *select* width and pass it to `ast_eval_binop`.
+   Only the emitters and the ladder gate refuse. But int64 also needs a SPIR-V
+   type/ABI change: the module declares only `SpvCapShader` (`src/mccgpu.h:943-944`)
+   and the storage buffer is a runtime array of 32-bit ints with `ArrayStride 4`.
+5. **A refusal the audit did not list — but it is correct, not a gap.** The emitters
+   require `nchild == 3` for `AST_If` (`src/mccgpu.h:1526`), and 65.6% of `AST_If`
+   nodes are two-child. That is **not** 66% of a handled kind being wrongly refused:
+   cross-tabulating by `op` shows the two-child nodes are statement-`if`s (`op == 0`,
+   8755 of them) and loop regions, none of which produce a value an *expression*
+   emitter could return. Only **`op == 5 && nchild == 3` — the ternary, 1678 nodes,
+   11.5% of `AST_If`** — is value-producing. See item 0 of the priority board.
+
+## The RIR coverage headline is the wrong metric — 2026-08-07
+
+`tools/rir-coverage.py:924` computes `modelled = used + (fallback_bytes − abort_bytes)`.
+**A body that replayed to different bytes still counts as "modelled."** That is why the
+banked figure reads 100.000%/99.965% while the compiler is not, in fact, reproducing
+100% of anything.
+
+Scale, measured two ways — **the single-file and whole-corpus figures differ a lot, and
+conflating them overstates the gap:**
+
+| corpus | modelled | kept | bytes losing AST optimization |
+| --- | --- | --- | --- |
+| `src/mcc.c` alone, `-O2` | 99.9675% | **81.70%** | 18.3% |
+| `src/mcc.c` alone, `-O1` | 100.000% | **81.42%** | 18.6% |
+| **self corpus**, `-O1`, measured on this host | 100.000% | **97.784%** | 2.216% |
+| self corpus, banked `-O1` / `-O2` | 100.000% / 99.9666% | 96.156% / 96.127% | ~3.9% |
+
+So `src/mcc.c` is an outlier, not the norm — the whole-corpus gap is ~2–4%, not 18%.
+
+**The reporting was already honest; the ratchet was not.** `rir-coverage.py:943-945`
+has always printed `MODELLED … (kept … + discarded by byte compare …)`, and both
+figures are banked (`:924-925`). But the regression check gated **only**
+`modelled_coverage` and `residual` — `kept_coverage` was banked and never enforced, so
+the number that actually means "bodies ship optimized" could fall arbitrarily far with
+no test failing. **Fixed:** a `kept_coverage` regression check now sits beside the
+modelled one. Verified both ways — it fires on a doctored bank
+(`kept coverage regressed: 97.7839% < banked 99.9000%`) and stays silent against the
+real banked values.
+
+**Caveat on where this is enforced:** `rir-coverage` **does not run on Darwin at all.**
+`tools/rir-coverage.py:836-848` returns 77 when a corpus has no banked lowerable floors
+for the host, and macho has none for either corpus — so `rir-coverage` and
+`rir-coverage-census` both skip locally, and the new gate (like the old ones) is
+exercised only on elf/pe hosts. Banking macho floors is a separate decision.
+
+## Top priority — the decisive wins from the GPU-execution study, 2026-08-07
+
+Curated from [`docs/PLAN.md`](PLAN.md), which proposes moving AST/RIR execution onto the
+GPU until only link-time `AST_Invoke` remains on the CPU. **These do not depend on that
+plan being adopted.** Each is measured, each is cheap relative to its payoff. Ordered by
+measured value per unit of work; item 0 is retained as a record of a withdrawn item and
+item 4 is done.
+
+**The headline that came out of the study:** the internal/external `AST_Invoke` split is
+**87.65% internal / 12.12% external** (16,260 vs 2,248 of 18,550 sites). So the ceiling
+is **95.0% static if all calls stay on the CPU, but 99.40% static and 99.80–99.98%
+dynamic if internal calls run on device.** That 4.4-point gap is the whole difference
+between a curiosity and a result, and it makes "internal calls stay on device" the
+single load-bearing decision in the plan.
+
+**The counterweight, now with a measured latency rather than an assumed one.** The
+Metal round-trip is **144–180 µs** (not the 20 µs the plan assumed), and a persistent
+doorbell kernel is **24 µs**. Against 944,327 crossings that is **1523×** the 0.093 s
+baseline naively, and **still 16×** with device `str*`/`mem*` *and* a device allocator.
+Only all four reductions together — doorbell, device str/mem, device allocator, file
+staging — get under the baseline. So: **crossing reduction is a ~100× lever and the
+doorbell is a 6× lever; reduce first.** And the offload unit must be the whole function
+(75.9% of bodies contain zero external invokes), never the 24.8-node region, which at
+150 µs costs 6 µs of boundary per node against a ~10 ns CPU node — a 600× floor.
+
+**One hazard worth stating up front:** the doorbell works only because the GPU's L1 is
+*not* coherent with the CPU mid-kernel. Host→device writes are invisible by every
+qualifier MSL offers (there is no system scope, and all device atomics are forced to
+`memory_order_relaxed`); the only thing that works is a **≥32 KB cache-eviction sweep
+per poll**. Below that threshold it fails **silently as a hang** — 12 KB ran 516 rounds
+then stopped. That constant is hardware-specific and spec-unsanctioned, and must be a
+named, tested, tunable element rather than an implementation detail.
+
+0. ~~**Accept two-child `AST_If` in both emitters.**~~ **Withdrawn — it was a category
+   error, and the measurement that produced it was mis-framed.** The emitters are
+   *expression* evaluators; a two-child `AST_If` is a statement-if, which has no value
+   for them to produce. Cross-tabulating a real arena dump (2746 bodies / 419,936
+   nodes, `MCC_ARENA_DUMP` with the build's own `-D`/`-I` set) by child count **and
+   `op`**:
+
+   | nchild | op | count | share of `AST_If` | what it is |
+   | --- | --- | --- | --- | --- |
+   | 2 | 0 | 8755 | 60.2% | statement `if`, no `else` — **no value** |
+   | 3 | 0 | 1887 | 13.0% | statement `if`/`else` — **no value** |
+   | 3 | 5 | **1678** | **11.5%** | **the ternary — the only value-producing form** |
+   | 3 | 3 | 1402 | 9.6% | loop region — no value |
+   | 2 | 2/6/4/8 | 778 | 5.4% | loop/region forms — no value |
+
+   `op == 5 && nchild == 3` is exactly what `ast_abs_try` (`src/mccast.c:11515`) keys on
+   for the ternary; `op == 0` is the statement-if checked at `:9028`, `:9256`, `:9888`;
+   `op == 2` increments loop depth (`:4136`). So `src/mccgpu.h:1526`'s `nchild == 3`
+   gate is **refusing statements, correctly** — the honest figure is that only **11.5%
+   of `AST_If` nodes are ternaries at all**, not that 66% are wrongly refused.
+
+   The datum is still valuable, but it argues for something else: **73% of `AST_If`
+   nodes are statement control flow**, and reaching them needs the control-flow machine
+   (cluster C in `PLAN.md`), not a wider expression emitter. Re-file it there.
+
+1. **Bank the baseline node census — static and dynamic — before any device work.**
+   Cheap, zero-risk, and it makes every later claim interpretable. The dynamic half
+   does **not** need an interpreter, contrary to what the plan first assumed:
+   `mcc -ftest-coverage` self-build (0.5 s) then a self-compile (0.93 s, 10× baseline)
+   emits a 4.7 MB gcov-format `.tcov` (`src/objfmt/mccelf.c:1614-1646`) —
+   **789,238,394 block executions** over 48,909 blocks, joining to 2380/2452 bodies
+   (98.9% of nodes). Bank: the per-kind histogram both ways, the internal/external
+   invoke split, and the dead-node fraction. **Why it matters:** 58.4% of bodies
+   (50.3% of static nodes) never execute during a self-compile, and the top 250 bodies
+   — 27% of static nodes — carry **97% of dynamic weight**. Any static-only percentage
+   is half-vacuous without this.
+
+2. **int64 in the emitters, as a `uint2` pair.** 16 refusal sites (7 MSL, 7 SPIR-V, 2 in
+   the ladder hook), *not* the eight previously recorded. The CPU evaluator already
+   handles int64, so this is emitter-and-ABI work only: the SPIR-V module declares just
+   `SpvCapShader` and the storage buffer is a runtime array of 32-bit ints with
+   `ArrayStride 4`, so the two-slot layout is needed either way. Prefer the emulated
+   pair over the native `Int64` capability for the first rung — it needs no capability
+   query, no feature-floor plumbing, and works on both backends unmodified. This
+   unblocks `930921-1.c`, the one program in 600 known to have reached the ladder.
+
+   **Sites verified 2026-08-07** — `src/mccgpu.h:500,512,522,539,552,564,601` (MSL),
+   `:1382,1394,1404,1419,1432,1444,1479` (SPIR-V), `src/mccast.c:15774,15781` (ladder
+   hook). **Not started, and deliberately so:** this is not a matter of deleting 16
+   predicates. Each emitter needs 64-bit `add/sub/mul/div/mod/shift/cmp` with the same
+   overflow-and-definedness modelling `ast_eval_binop` already does at 64 bits, *and*
+   the dispatch ABI must widen from one `int32` slot per live-in and two per result to
+   a two-slot encoding, which changes `mcc_gpu_dispatch`, the tuple packing in
+   `ast_ladder_gpu_run`, and every existing emitter test. It is the largest item on
+   this board by a wide margin and it touches the only GPU path that currently works
+   and is guarded by five green cells. It should land as its own series with the
+   differential harness extended first, not folded into an unrelated batch.
+
+3. **The four RIR opcodes that actually fire.** Add a **per-opcode histogram** at
+   `src/mccrir.c:3264`, excluding `JMP`/`JMPCOND`/`JMPADDR`/`JMPAPPEND`/`GSYMADDR`
+   (which are handled in other switches and are 68% of that arm's traffic). Then handle
+   `RETVAL`, `MKPTR`, `VPUSHSYM`, and unblock `LOAD` from the `continue` at
+   `src/mccrir.c:4678-4681`. **Four features, not 25** — 21 of the 25 fire zero times on
+   this target and five are `#ifdef`-ed out on arm64.
+
+4. ~~**Quote `kept_coverage`, not `modelled`.**~~ **DONE, and the diagnosis was
+   half-wrong.** The tool already *printed* both (`tools/rir-coverage.py:943-945`); what
+   it did not do was **ratchet** `kept_coverage` — banked at `:925`, never enforced, so
+   the number meaning "body bytes that ship optimized" could regress freely. A gate now
+   sits beside the modelled check. Also corrected: the honest whole-corpus kept figure
+   is **96–98%**, not the 81.4% I quoted — that was `src/mcc.c` alone, which is an
+   outlier. **Remaining work:** `rir-coverage` skips entirely on Darwin
+   (`:836-848`, no banked lowerable floors for macho), so this gate is enforced only on
+   elf/pe. Decide whether to bank macho floors.
+
+5. ~~**Give the GPU cells teeth.**~~ **DONE (mechanism); one CI flip left, deliberately
+   not made blind.** Added `MCC_GPU_REQUIRED` (a `mcc_config_node` BOOL, default OFF)
+   which turns the three "no usable device, skipping" early-returns into
+   `FATAL_ERROR`s — `cmake/ladder_gpu_parity.cmake`, `cmake/spvgate_real.cmake`,
+   `cmake/spvgate_mutate.cmake`, threaded through their `add_test` invocations.
+   Verified all three directions: **device + `ON` → 5/5 pass**; **no device + `ON` →
+   fails with the explanatory message**; **no device + `OFF` → skips and passes**, so a
+   developer machine without a GPU is unaffected. Portable to the declared CMake 3.22
+   minimum (`cmake_language(EXIT)` would need 3.29).
+
+   **Left open on purpose:** setting `MCC_GPU_REQUIRED=ON` on the `gpu-vulkan` CI cell
+   (`tools/ci.c`) is a one-line change, but whether the GitHub `macos-15` runner
+   actually exposes a usable device is unknown from here — the "1413 dispatches"
+   evidence in commit e3882880 is local, not CI. Flipping it blind could turn a green
+   cell red; flipping it *knowingly* is the entire point. Run it once and see.
+
+5b. **Original finding, retained.** Measured: **CI would stay green if both device backends
+   were deleted.** `cmake/ladder_gpu_parity.cmake:27-30` matches `available=0` and
+   returns exit 0; `spvgate_real.cmake:27` and `spvgate_mutate.cmake:4` skip and
+   succeed; Linux CI installs `libvulkan-dev` (loader + headers, **no ICD**) and Windows
+   installs headers only. The `gpu-vulkan` cell is macOS + MoltenVK, and nothing asserts
+   its device is real. Fix: every GPU cell emits a dispatch count and `FATAL_ERROR`s at
+   zero — the tooth `ladder_gpu_parity.cmake:47-50` already has — and add
+   `mesa-vulkan-drivers` (lavapipe) to a Linux cell, one apt package that makes the
+   Vulkan arm tested on the only OS where Vulkan is the default backend.
+
+6. ~~**Build `spvgate` locally.**~~ **DONE — and the diagnosis was wrong.** It is not
+   the headers: `/opt/homebrew/opt/vulkan-headers/include/vulkan/vulkan.h` **exists**
+   (keg-only, unlinked). What is missing is the **loader** — there is no
+   `/opt/homebrew/lib/libvulkan*`. `spvgate` calls `vkCreateInstance` directly and
+   deliberately avoids `mccgpu.c`'s dlopen path, so it needs something to link against;
+   MoltenVK exports the Vulkan entry points and serves. Recipe:
+
+   ```
+   cmake -S . -B <build> \
+     -DVulkan_INCLUDE_DIR=/opt/homebrew/opt/vulkan-headers/include \
+     -DVulkan_LIBRARY=/opt/homebrew/lib/libMoltenVK.dylib
+   ```
+
+   Result: `spvgate` builds and runs on the M1 Pro — **18 cases, 72 dispatches,
+   1,184,616 lanes, 1,126,578 compared, 58,038 vacuous, 0 mismatches** — and all three
+   previously-unbuilt cells go live. Full local GPU suite now **5/5 passing**:
+   `ladder-gpu-parity`, `spv-slice-differential`, `spv-slice-known-positive`,
+   `spv-slice-real`. **Worth landing as a CMake hint** so Darwin developers get the
+   SPIR-V gate without knowing this incantation — currently a Darwin checkout silently
+   tests one GPU cell instead of four. (Harmless link warning: MoltenVK is built for
+   macOS 12.0, the project targets 11.0.)
+
+7. **Raise the emitter caps, and fix the one that binds first.** `SPV_MAX_CONST`/
+   `MSL_MAX_CONST` = 512 distinct constants (`src/mccgpu.h:764`, `:105`) — a 2049-node
+   arithmetic chain fails on the **constant cache**, not on module size. Measured
+   emitter cost is 11.7–20.4 SPIR-V words per node, so `MCC_GPU_CODE_MAX`'s 8192 words
+   is ~400–700 nodes; the largest real invoke-free region is 1114 nodes. Neither cap is
+   a device limit — Vulkan sets no module-size bound.
+
+8. ~~**Measure the Metal/Vulkan dispatch round-trip.**~~ **DONE — and it refutes the
+   plan's central assumption by 7.5×.** Measured on the M1 Pro, separate processes,
+   fresh buffers, magic-token-verified, N=2000–3000 after warm-up:
+
+   | mechanism | median | p99 |
+   | --- | ---: | ---: |
+   | dispatch-per-region (`waitUntilCompleted`) | **144–180 µs** | 224–240 |
+   | same, spin-poll shared memory | 101–105 µs | 159–169 |
+   | **persistent kernel + doorbell** | **24 µs** | 56 |
+   | pipelined submit, never waiting | 19.5 µs/CB (throughput, not latency) | |
+
+   Against 944,327 crossings and a 0.093 s baseline, dispatch-per-region is **141.7 s =
+   1523× slower**, not the 203× the 20 µs assumption predicted. Even with device
+   `str*`/`mem*` **and** a device allocator it is **1.45 s = 16×**. Only
+   doorbell + device str/mem + device allocator + file staging — **all four** — gets
+   under the baseline (0.068 s). **Crossing reduction is a ~100× lever; the doorbell is
+   a 6× lever. Reduce first.**
+
+9. ~~**The Metal path reports device failures as success.**~~ **DONE, fixed.**
+   `src/mccgpu.c` called `waitUntilCompleted` and then unconditionally `memcpy`d the
+   output and set `rc = 1`, never reading `[cb status]` or `[cb error]` — so a watchdog
+   kill, page fault or hang was reported as **a successful dispatch with garbage
+   output**. Now checks status against `MTLCommandBufferStatusCompleted` and refuses via
+   the existing `mtl_report_err`. Verified: dispatch still succeeds
+   (`dispatches=1 lanes=64`) and `gpu/ladder-gpu-parity` passes. This mattered because
+   the failure surfaces are real and were being swallowed: `…ErrorImpactingInteractivity`
+   (occupancy kill), `…ErrorPageFault` (OOB device write), `…ErrorHang`, and
+   `…ErrorInnocentVictim` — an unrelated command buffer discarded because another faulted.
+
+10. ~~**Stop destroying device buffers per dispatch — free performance.**~~
+    **WITHDRAWN — the premise does not reproduce.** The claim was +56 µs per dispatch
+    (39% of the round-trip) for allocating fresh buffers. Implemented buffer holding
+    (grow-on-demand, released at quiesce), verified correct across a 64→512→64→4096→
+    128→16384→64 size sequence with every lane checked, then **A/B'd it against
+    fresh-per-dispatch in the same binary**:
+
+    | ntuple | in/out bytes | fresh | held |
+    | ---: | --- | ---: | ---: |
+    | 64 | 256 B / 512 B | 192 / 190 µs | 193 / 188 µs |
+    | 1024 | 4 KB / 8 KB | 193 µs | 202 µs |
+    | 16384 | 64 KB / 128 KB | 226 µs | 226 µs |
+    | 262144 | 1 MB / 2 MB | 342 µs | 346 µs |
+
+    **No benefit at any size**, including the 4 KB case the original measurement used —
+    `newBufferWithLength:` is cheap on unified memory, and the ~190 µs floor is
+    dominated by fixed dispatch cost. The change was reverted rather than shipped on a
+    refuted rationale. When Phase 1 builds a device-resident address space the buffer
+    lifetime will be driven by *that* design, not by this stub. The untested half of the
+    original item — spin-polling a result word instead of `waitUntilCompleted`, claimed
+    at −45 µs — remains open and is the more promising of the two.
+
+11. **Add a tree-recursion exec golden.** `tests/exec/functions_abi/recursion.c` is
+    *linear* `factorial`, which MSL silently linearizes into a loop — it passes without
+    exercising recursion at all. Measured: MSL **compiles** `fib(n)=fib(n-1)+fib(n-2)`
+    with runtime `n` and then **hangs the GPU at n=5**
+    (`kIOGPUCommandBufferCallbackErrorHang`), taking sibling command buffers with it as
+    innocent victims. The failure mode is silent acceptance, not a compile error, so
+    only a tree-recursive golden will catch it. Also already in tree and unused as
+    conformance: `tests/diff/parts/legacy_expr.h:60-95 goto_test()` — computed goto
+    through a label table **jumping into a `for`-loop body**, the unstructured-entry
+    case; and `tests/exec/codegen/nodata_wanted.c:48,76` label *arithmetic*
+    (`&&te0 - &&ts0`), which no device model handles.
+
+## Two bugs found by widening the test matrix — 2026-08-07
+
+Both were found by enabling `MCC_ENABLE_CROSS=ON` and running the docker/wine/qemu
+cells, which are not exercised by a default Darwin build.
+
+1. **`src/mcc.c` forced every linker on Darwin to supply `libobjc`, and four separate
+   places had to learn it the hard way. Fixed at the root instead.**
+
+   Symptoms, all `unresolved reference to '_objc_msgSend' / '_objc_getClass' /
+   '_sel_registerName'`, all confirmed pre-existing by stashing every local change and
+   reproducing on a pristine tree:
+
+   | cell | why it linked `src/mcc.c` without `-lobjc` |
+   | --- | --- |
+   | `cross-factory`, `cross-factory-i386` | `tools/build.c` adds `-lm -ldl -lpthread` under `MCC_HOST_POSIX`, nothing for Metal |
+   | `run-tier/x86_64-osx`, `run-tier/arm64-osx` | the Mach-O bootstrap in `tools/run-tier.sh` passes `$SDKL` only |
+   | `macho-embedjit-arm64-osx` | `--embed-jit` bakes the JIT engine archive into a **user's** program |
+
+   Commit `d3b76220` fixed the CMake targets by adding `objc` to
+   `MCC_COMPUTE_BACKEND_LIBS`; it could not fix the script-driven ones, and it
+   fundamentally cannot fix `--embed-jit`, where the program being linked belongs to
+   the user. Patching each site with `-lobjc` would have been three workarounds and
+   left `--embed-jit` a product wart.
+
+   **The file already knew the answer.** `src/mccgpu.c:32-33` says *"fegetenv/fesetenv
+   are resolved dynamically for the same reason the drivers are: an --embed-jit program
+   has no business linking libm."* The Objective-C runtime is the same case and was the
+   one thing still resolved at link time. **Fixed** by resolving `objc_getClass`,
+   `sel_registerName` and `objc_msgSend` through `host_dlsym_process` at Metal-load
+   time, with a `/usr/lib/libobjc.A.dylib` fallback and a clean refusal if absent —
+   exactly the shape the `fegetenv` block above it already had.
+
+   Result: **`nm -u cmake-gpu/mcc` reports no undefined `objc` symbols at all**, the
+   GPU still dispatches (`available=1 device=Apple M1 Pro`), and all seven affected
+   cells pass — `cross-factory`, `cross-factory-i386`, `run-tier/{x86_64,arm64}-osx`,
+   `macho-embedjit-arm64-osx`, plus both GPU cells. The three `-lobjc` workarounds I
+   had already written were reverted; the root fix carries all of them. Note
+   `MCC_COMPUTE_BACKEND_LIBS objc` in `CMakeLists.txt:526` is now redundant too, left
+   in place as belt-and-braces rather than churned in the same change.
+
+3. **`runtime-bench-check` fails on a pristine tree — pre-existing, not investigated.**
+   `FAIL branchy [defaults]: output mismatch` — wants `487419720 122294685.000000`,
+   gets `-7621192680 -921869400.000000`. The magnitudes suggest a width/accumulation
+   difference rather than a link or environment problem. Confirmed pre-existing by
+   stashing all local work. Left open: it is unrelated to anything in this batch, and
+   guessing at it would have mixed an unrelated fix into a GPU/RIR change set.
+
+2. **Every docker cell fails misleadingly when the build directory is outside Docker's
+   shared paths.** On macOS a bind mount of an unshared path (e.g. anything under
+   `/private/tmp`) silently produces an **empty** directory inside the container rather
+   than an error, so the host-side objects the test just wrote are invisible and the
+   container reports `cannot find m0.o` or `gcc: error: def.o: No such file`. Seven
+   cells failed this way purely because of *where the build tree lived*; the same cells
+   pass from a tree under `$HOME`. **Fixed:** `dg_need_mount` in `tools/dockergate.sh`
+   writes a sentinel, checks it is visible inside a container, and `dg_skip`s (77) with
+   an actionable message otherwise. Wired into all 21 docker scripts. Verified both
+   directions: unshared path → `rc=77` with the explanation, shared path → `rc=0` and
+   the test runs. This converts a confusing red into an honest skip, which is the same
+   posture the repo already takes for a missing device or a missing toolchain.
+
 ## Open, in the order the measurements rank them — 2026-08-07
 
 Everything here is measured or reproduced, not speculative.
