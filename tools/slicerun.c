@@ -1162,6 +1162,66 @@ static void suite_frame(void) {
 	}
 	ast_arena_free(a);
 
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal lp = ast_node(a, AST_If);
+		AstLocal incr = ast_node(a, AST_BasicBlock);
+		AstLocal body = ast_node(a, AST_BasicBlock);
+		MccSliceKernel k;
+		int64_t cf[5 * MCC_SLICE_MAXSLOT], gf[5 * MCC_SLICE_MAXSLOT];
+		int t, bad = 0, si = -1, sn = -1, ss = -1;
+		ast_set_op(a, lp, 3);
+		ast_add_child(a, lp,
+									mk_bin(a, TOK_LT, mk_ref(a, -8, VT_INT),
+												 mk_ref(a, -24, VT_INT), VT_INT));
+		ast_add_child(a, incr,
+									mk_store(a, -8,
+													 mk_bin(a, '+', mk_ref(a, -8, VT_INT),
+																	mk_lit(a, 1, VT_INT), VT_INT),
+													 VT_INT));
+		ast_add_child(a, body,
+									mk_store(a, -16,
+													 mk_bin(a, '+', mk_ref(a, -16, VT_INT),
+																	mk_ref(a, -8, VT_INT), VT_INT),
+													 VT_INT));
+		ast_add_child(a, lp, incr);
+		ast_add_child(a, lp, body);
+		ast_add_child(a, bb, lp);
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1, "a for loop is frame work");
+		CHECK(fr.nloop == 1, "the for loop is counted");
+		for (i = 0; i < fr.nslot; i++) {
+			if (fr.slot[i] == -8) si = i;
+			if (fr.slot[i] == -24) sn = i;
+			if (fr.slot[i] == -16) ss = i;
+		}
+		CHECK(si >= 0 && sn >= 0 && ss >= 0, "all three slots mapped");
+		for (t = 0; t < 5; t++)
+			for (i = 0; i < fr.nslot; i++)
+				cf[t * fr.nslot + i] = gf[t * fr.nslot + i] =
+						(i == sn) ? (int64_t)t : 0;
+		for (t = 0; t < 5; t++)
+			CHECK(mcc_slice_frame_exec_cpu(&fr, cf + (long)t * fr.nslot) == 1,
+						"the CPU runs the for loop");
+		for (t = 0; t < 5; t++)
+			CHECK(cf[t * fr.nslot + ss] == (int64_t)(t * (t - 1) / 2),
+						"the body ran before the increment, so sum is sum(0..n-1)");
+		for (t = 0; t < 5; t++)
+			CHECK(cf[t * fr.nslot + si] == (int64_t)t,
+						"the induction variable ends at n");
+		if (g_have_device && mcc_slice_frame_kernel_build(&fr, &k)) {
+			CHECK(mcc_slice_run_frame_gpu(&fr, &k, gf, 5, NULL, NULL) ==
+								MCC_TASK_DONE,
+						"the device runs the for loop");
+			for (t = 0; t < 5 * fr.nslot; t++)
+				if (cf[t] != gf[t])
+					bad++;
+			CHECK(bad == 0, "device and CPU agree on every slot after the for loop");
+			mcc_slice_kernel_free(&k);
+		}
+	}
+	ast_arena_free(a);
+
 	/* `x++` / `x--` as statements. Measured to unblock 96 more corpus blocks on
 	 * their own, and they need no address space -- on an integer local the whole
 	 * operation is frame[slot] +/- 1. */
@@ -2138,6 +2198,88 @@ static void scan_subtree(AstArena *a, AstLocal n, int quiet, long limit) {
 		scan_subtree(a, c, quiet, limit);
 }
 
+static int g_census;
+static long g_cn_blocks, g_cn_elig, g_cn_op8n, g_cn_op9n, g_cn_op6n;
+static long g_cn_op8b, g_cn_op9b, g_cn_op6b;
+static long g_cn_op8t, g_cn_op9t, g_cn_op6t;
+static long g_cn_stfield, g_cn_staddr, g_cn_stother, g_cn_stlocal;
+
+static int has_op(AstArena *a, AstLocal n, int op) {
+	AstLocal c;
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_If && ast_op(a, n) == op)
+		return 1;
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (has_op(a, c, op))
+			return 1;
+	return 0;
+}
+
+static int top_op(AstArena *a, AstLocal bb, int op) {
+	AstLocal c;
+	for (c = ast_first_child(a, bb); c != AST_NONE; c = ast_next_sib(a, c))
+		if (ast_kind(a, c) == AST_If && ast_op(a, c) == op)
+			return 1;
+	return 0;
+}
+
+static void census_stores(AstArena *a, int n) {
+	AstLocal d;
+	int32_t off;
+	int i;
+	for (i = 0; i < n; i++) {
+		if (ast_kind(a, (AstLocal)i) != AST_Store || ast_nchild(a, (AstLocal)i) != 2)
+			continue;
+		d = ast_child(a, (AstLocal)i, 0);
+		if (mcc_slice_is_local_ref(a, d, &off))
+			g_cn_stlocal++;
+		else if (ast_kind(a, d) == AST_Unary && ast_op(a, d) == AST_EVAL_OP_MEMBER)
+			g_cn_stfield++;
+		else if (ast_kind(a, d) == AST_Unary && ast_op(a, d) == AST_EVAL_OP_ADDR)
+			g_cn_staddr++;
+		else
+			g_cn_stother++;
+	}
+}
+
+static void census_arena(AstArena *a, int n) {
+	int i;
+	MccSliceFrame fr;
+	for (i = 0; i < n; i++) {
+		if (ast_kind(a, (AstLocal)i) == AST_If) {
+			int op = ast_op(a, (AstLocal)i);
+			if (op == 8)
+				g_cn_op8n++;
+			else if (op == 9)
+				g_cn_op9n++;
+			else if (op == 6)
+				g_cn_op6n++;
+		}
+		if (ast_kind(a, (AstLocal)i) != AST_BasicBlock ||
+				ast_first_child(a, (AstLocal)i) == AST_NONE)
+			continue;
+		g_cn_blocks++;
+		if (mcc_slice_frame_from_ast(a, (AstLocal)i, &fr)) {
+			g_cn_elig++;
+			continue;
+		}
+		if (has_op(a, (AstLocal)i, 8))
+			g_cn_op8b++;
+		if (has_op(a, (AstLocal)i, 9))
+			g_cn_op9b++;
+		if (has_op(a, (AstLocal)i, 6))
+			g_cn_op6b++;
+		if (top_op(a, (AstLocal)i, 8))
+			g_cn_op8t++;
+		if (top_op(a, (AstLocal)i, 9))
+			g_cn_op9t++;
+		if (top_op(a, (AstLocal)i, 6))
+			g_cn_op6t++;
+	}
+	census_stores(a, n);
+}
+
 static int arena_mode(const char *path, long limit, int quiet) {
 	FILE *f = fopen(path, "r");
 	char line[512];
@@ -2209,7 +2351,10 @@ static int arena_mode(const char *path, long limit, int quiet) {
 				g_obj_ext[i] = (int32_t)raw[i].size;
 				g_obj_ety[i] = raw[i].etype;
 			}
-			scan_subtree(a, rt, quiet, limit);
+			if (g_census)
+				census_arena(a, (int)n);
+			else
+				scan_subtree(a, rt, quiet, limit);
 			slicerun_obj_reset(0);
 			ast_arena_free(a);
 		}
@@ -2219,6 +2364,18 @@ static int arena_mode(const char *path, long limit, int quiet) {
 	free(raw);
 	fclose(f);
 
+	if (g_census) {
+		printf("census: blocks=%ld eligible=%ld\n", g_cn_blocks, g_cn_elig);
+		printf("census: op8 nodes=%ld inelig-blocks-any=%ld inelig-blocks-top=%ld\n",
+					 g_cn_op8n, g_cn_op8b, g_cn_op8t);
+		printf("census: op9 nodes=%ld inelig-blocks-any=%ld inelig-blocks-top=%ld\n",
+					 g_cn_op9n, g_cn_op9b, g_cn_op9t);
+		printf("census: op6 nodes=%ld inelig-blocks-any=%ld inelig-blocks-top=%ld\n",
+					 g_cn_op6n, g_cn_op6b, g_cn_op6t);
+		printf("census: stores local=%ld field=%ld addr=%ld other=%ld\n",
+					 g_cn_stlocal, g_cn_stfield, g_cn_staddr, g_cn_stother);
+		return 0;
+	}
 	if (g_cost_mode) {
 		printf("# rows=%ld  win-within-%d-lanes=%ld  lowest-breakeven=%.0f\n",
 					 g_cost_rows, COST_LARGE, g_cost_wins, g_cost_best_be);
@@ -2293,6 +2450,8 @@ int main(int argc, char **argv) {
 			g_device_required = 1;
 		else if (!strcmp(argv[i], "--mutate"))
 			g_mutate = 1;
+		else if (!strcmp(argv[i], "--census"))
+			g_census = 1;
 		else if (!strcmp(argv[i], "--cost"))
 			g_cost_mode = 1;
 		else if (!strcmp(argv[i], "--cost-synth"))
