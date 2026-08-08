@@ -1126,6 +1126,7 @@ static int rir_vsup_depth;
 static int rir_vsup_nest;
 static int rir_acas_val;
 static int rir_after_ret;
+static AstLocal rir_last_return = AST_NONE;
 static long rir_tot_arena_fn, rir_tot_arena_nodes;
 static long rir_tot_raw_ops, rir_tot_raw_bytes, rir_tot_raw_fn;
 static long rir_tot_c2_skip;
@@ -3309,7 +3310,7 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 	case IR_OP_RETVAL:
-		if (!rir_after_ret)
+		if (rir_last_return == AST_NONE)
 			rir_arena_mismatch++;
 		break;
 	default:
@@ -3350,7 +3351,6 @@ static int rir_ptr_arith(AstLocal n, const SValue *pv) {
 static AstLocal rir_thold[16];
 static int rir_tholdn;
 
-static AstLocal rir_last_return = AST_NONE;
 static AstLocal rir_retexpr = AST_NONE;
 static int rir_retexpr_depth;
 static int rir_retexpr_pending;
