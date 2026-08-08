@@ -180,10 +180,14 @@ static int mcc_slice_run_cpu(MccSliceWork *w, int budget) {
  * whole frame back. The buffer was never decorated NonWritable, so this needs
  * no new binding and no ABI version bump.
  *
- * v1 scope, deliberately narrow: AST_Store with a local Ref destination (834 of
- * 987 stores in the corpus, 84.5%), sequenced by AST_BasicBlock. AST_StoreVal
- * is excluded on purpose -- it is a vstack-ordering marker for the replay
- * machinery, not a store, and it references its AST_Store by ival. */
+ * Scope, as of 2026-08-08: statements sequenced by AST_BasicBlock, each one an
+ * AST_Store to a local Ref (834 of 987 corpus stores, 84.5%) or to a runtime
+ * index into a local array, `x++`/`x--` on an integer local, a statement
+ * AST_If (op 0), a while/for/do loop (ops 2/3/4) under a trip cap, or a
+ * discarded ternary (op 7); optionally terminated by one AST_Return.
+ * Still refused: AST_StoreVal (a vstack-ordering marker that references its
+ * AST_Store by ival, not a store of its own), AST_Jump, AST_Invoke, switch
+ * (op 6), a condition-less `for` (op 8) and `x ?: y` (op 9). */
 
 /* C3's step budget, at the value the measurement settled on. A loop that hits
  * it makes the run undefined, not truncated. */
@@ -331,7 +335,7 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 		return 0;
 	if (ast_kind(a, s) == AST_If &&
 			(ast_op(a, s) == 2 || ast_op(a, s) == 3 || ast_op(a, s) == 4)) {
-		/* while {cond, body} | for {cond, body, incr} | do {body, cond}.
+		/* while {cond, body} | for {cond, incr, body} | do {body, cond}.
 		 * Every one gets a hard trip cap: an unbounded device loop is the
 		 * occupancy-watchdog hazard C3 exists for, and there is no trip count
 		 * available statically anywhere in this tree to bound it with instead.
@@ -342,7 +346,9 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 		int op = ast_op(a, s);
 		uint32_t nc = ast_nchild(a, s);
 		AstLocal cond = op == 4 ? ast_child(a, s, 1) : ast_child(a, s, 0);
-		AstLocal body = op == 4 ? ast_child(a, s, 0) : ast_child(a, s, 1);
+		AstLocal body = op == 4 ? ast_child(a, s, 0)
+									 : op == 3 ? ast_child(a, s, 2)
+														 : ast_child(a, s, 1);
 		if (op == 2 && nc != 2)
 			return 0;
 		if (op == 3 && nc != 3)
@@ -353,7 +359,7 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 			return 0;
 		if (!mcc_slice_frame_seq_ok(f, body, depth + 1))
 			return 0;
-		if (op == 3 && !mcc_slice_frame_seq_ok(f, ast_child(a, s, 2), depth + 1))
+		if (op == 3 && !mcc_slice_frame_seq_ok(f, ast_child(a, s, 1), depth + 1))
 			return 0;
 		f->nloop++;
 		f->nctrl++;
@@ -515,7 +521,9 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 			(ast_op(f->a, s) == 2 || ast_op(f->a, s) == 3 || ast_op(f->a, s) == 4)) {
 		int op = ast_op(f->a, s);
 		AstLocal cond = op == 4 ? ast_child(f->a, s, 1) : ast_child(f->a, s, 0);
-		AstLocal body = op == 4 ? ast_child(f->a, s, 0) : ast_child(f->a, s, 1);
+		AstLocal body = op == 4 ? ast_child(f->a, s, 0)
+									 : op == 3 ? ast_child(f->a, s, 2)
+														 : ast_child(f->a, s, 1);
 		long trips = 0;
 		for (;;) {
 			int64_t cv = 0;
@@ -530,7 +538,7 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 			if (!mcc_slice_frame_exec_seq(f, frame, body))
 				return 0;
 			if (op == 3 &&
-					!mcc_slice_frame_exec_seq(f, frame, ast_child(f->a, s, 2)))
+					!mcc_slice_frame_exec_seq(f, frame, ast_child(f->a, s, 1)))
 				return 0;
 			trips++;
 			if (op == 4) {
@@ -871,7 +879,9 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 		 * answer, and the CPU reference applies the identical cap. */
 		int op = ast_op(f->a, s);
 		AstLocal cond = op == 4 ? ast_child(f->a, s, 1) : ast_child(f->a, s, 0);
-		AstLocal body = op == 4 ? ast_child(f->a, s, 0) : ast_child(f->a, s, 1);
+		AstLocal body = op == 4 ? ast_child(f->a, s, 0)
+									 : op == 3 ? ast_child(f->a, s, 2)
+														 : ast_child(f->a, s, 1);
 		uint32_t l_hdr = spv_id(m), l_test = spv_id(m), l_body = spv_id(m);
 		uint32_t l_cont = spv_id(m), l_merge = spv_id(m);
 		uint32_t i_phi = spv_id(m), d_phi = spv_id(m);
@@ -932,7 +942,7 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 					m->def = d_phi;
 				if (!mcc_slice_spv_seq(m, f, base, body))
 					return 0;
-				if (op == 3 && !mcc_slice_spv_seq(m, f, base, ast_child(f->a, s, 2)))
+				if (op == 3 && !mcc_slice_spv_seq(m, f, base, ast_child(f->a, s, 1)))
 					return 0;
 				spvw_op(&m->body, SpvOpBranch, 2);
 				spvw_put(&m->body, l_cont);

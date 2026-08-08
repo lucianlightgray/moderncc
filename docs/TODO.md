@@ -6,6 +6,128 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Landed — the `for` loop ran its increment before its body, 2026-08-08
+
+Four candidate relaxations of the frame predicate were measured before any of them was
+built. All four are worth **+0 blocks**, so none was built. What the measuring turned up
+instead is a semantic bug in a shape that is already landed: `mcc_slice_frame_stmt_ok`,
+`mcc_slice_frame_exec_stmt` and `mcc_slice_spv_stmt` all read `AST_If` op 3 as
+`{cond, body, incr}`. The arena says `{cond, incr, body}`.
+
+### The bug, and why 244 clean device comparisons could not see it
+
+`ast_loop_parts` reads op 3 as `incr = child 1, body = child 2`, and a directed dump
+confirms the arena agrees: `for (i = 0; i < n; i++) { s = s + 5; }` at `-O1` emits
+`If(op 3){ Binary(TOK_LT), BasicBlock{Unary(TOK_INC) i}, BasicBlock{Store s} }`. The three
+frame switches took child 1 as the body and ran child 2 after it, so every `for` loop in
+the frame path ran its increment **before** its body.
+
+Measured on a real arena, not argued: `int f(void){ int s=0,i; for(i=0;i<3;i++) s=s+i;
+return s; }` compiles and prints **3**; the frame CPU reference returned **6** — 1+2+3
+instead of 0+1+2. Both executors read the same two child slots, so both were wrong in the
+same direction and the CPU-vs-device differential agreed with itself: 244 frame runs
+compared, 0 mismatches, before the fix and after it. This is the same failure mode as the
+`base + K` byte-offset fold recorded below — a wrong answer both executors share is
+exactly what a differential cannot report.
+
+Nothing shipped wrong. The only callers of `mcc_slice_frame_*` today are in
+`tools/slicerun.c`; the compiler never acts on a frame result yet, so the bug was latent
+and would have gone live the day the frame runner is wired into the compiler.
+
+Fixed in all three switches. The `slice/frame` suite had a `while` case and no `for` case,
+which is precisely why this survived; it now has one, built in the arena's child order and
+asserting what C means (`sum(0..n-1) = n(n-1)/2`, never `n(n+1)/2`) rather than what the
+other executor thinks. **Observed red first**: 4 of 177 checks failed on the sum
+assertion, 0 after. Corpus after the fix is unchanged at 319 accepted / 244 compared / 201
+statements / 0 mismatches, as it must be — the fix changes values, not acceptance.
+
+### Zero payoff #6: condition-less `for` (`AST_If` op 8)
+
+Measured before building, and not built.
+
+| corpus | bodies | non-empty blocks | eligible | op-8 nodes | ineligible blocks containing op 8 | eligible with op 8 admitted |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| first 60 of `tests/exec` (the standard one) | 344 | 947 | 319 | **0** | 0 | **319 (+0)** |
+| all 304 of `tests/exec` | 1271 | 3203 | 1126 | **4** | 3 | **1126 (+0)** |
+
+Op 8 does not occur at all in the standard corpus, and in the full corpus its 4 instances
+sit in 3 blocks that something else blocks as well. The delta was measured by admitting
+op 8 in `mcc_slice_frame_stmt_ok` and re-running the census, not by counting constructs —
+the B1 lesson.
+
+There is also a structural reason not to want it, independent of any corpus. A
+condition-less `for` has no exit except `break` or `return` inside its body, and both are
+`AST_Jump`/`AST_Return` in statement position, refused everywhere in the frame path. So
+the only op-8 loop the predicate could ever admit is one with **no exit at all**, which
+runs to `MCC_SLICE_TRIP_MAX` (65536 iterations), is then marked undefined, and falls back
+to the CPU: a dispatch that is guaranteed to be wasted. Both corpus instances confirm the
+shape — `tests/exec/statements/empty_for.c` exits by `break`, and
+`tests/exec/codegen/nocode_wanted.c` is `for (;;) printf("error\n")`, an `Invoke` with no
+exit. Admitting op 8 would buy zero blocks and cost dispatches.
+
+### Zero payoff #7: `x ?: y` (op 9) — plus a re-measurement that confirms #5
+
+- **Op 9** is refused on arity by `ast_eval_slice_kind_ok`. Population: **2 nodes** in
+  both corpora, in **1** ineligible block, **0** of them at a block's top level. Relaxing
+  the arity test to admit a 2-child op 9 leaves eligible at 319 and 1126. **+0.**
+- **Store destinations.** Census of all 987 store destinations in the standard corpus:
+  834 local `Ref`, **10** `.field` (`AST_OP_MEMBER`), **0** `&` (`AST_OP_ADDR`), 143
+  other; full corpus 70539 / 259 / 0 / 1185. Folding the store destination through
+  `ast_eval_slice_frame_off` — the resolver the *load* path already uses — leaves eligible
+  at 319 and 1126. **+0.** The earlier "+0 for folding a store destination through
+  `.field`/`&`" recorded under B1 was a model; this patched
+  `mcc_slice_frame_stmt_ok` itself and reaches the same number, so that line is now
+  confirmed against the real predicate and needs no revisit.
+
+### `switch` (op 6) is not a quick win and the ceiling is 8 blocks
+
+Population: **7 nodes** in **8** ineligible blocks (6 at top level) in the standard
+corpus; 35 nodes in 41 blocks (30 top level) in the full one. Not started, and the ceiling
+is what argues against starting: 8 of 947 blocks (0.84%) *if* the switch were the only
+blocker, and the op-8, op-9 and store-destination results above all say it will not be.
+It also needs a genuinely new control-flow shape (`OpSwitch` plus case merges) and every
+non-degenerate switch separates its cases with `break`, i.e. `AST_Jump`, which the frame
+path refuses everywhere. Measure the only-blocker figure before anyone starts it.
+
+### The measurement harness, and its positive control
+
+`slicerun --arenas <dump> --limit 0 --quiet` over the standard corpus reproduces the
+shipped reference exactly — 783 expression slices, frame-accepted 319, frame-stmts 201, 0
+mismatches — so it was trusted only after it did. Note `--limit 0`: the `slice/real` ctest
+cell passes `--limit 400`, which stops the scan at body 218 of 344 and reports 157/98
+rather than 319/201. Both are correct; they are different scans.
+
+New `slicerun --census` mode: counts non-empty `AST_BasicBlock`s, how many
+`mcc_slice_frame_from_ast` accepts, the op-6/8/9 populations split by "anywhere in an
+ineligible block" versus "at that block's top level", and store destinations by shape. Its
+eligible count is the real predicate, and equals `frame-accepted` on the same corpus.
+Earlier sections quote **358** eligible blocks; that figure came from a model of the
+predicate, not from `mcc_slice_frame_from_ast`, and the real number on the same 947 blocks
+is 319.
+
+Positive control, because a census that always prints the same number proves nothing:
+disabling the `x++`/`x--` arm drops eligible from 319 to **228** (−91). The zero deltas
+above are therefore zeros the harness could have seen move.
+
+### One accident turned into a check
+
+`ast_eval_slice_kind_ok`'s `AST_If` arm tested only `ast_nchild(a, n) != 3` and never
+looked at `ast_op`. It was correct only because every 3-child `AST_If` that is not a
+ternary has `AST_BasicBlock` arms, which its own recursion refuses — an undocumented,
+unasserted invariant that a future 3-child op with expression arms would have broken
+silently, admitting a statement as a ternary. It now requires op 5 or op 7 explicitly.
+Measured to change nothing: eligible 319 / 1126, 783 slices, 244 compared, 0 mismatches.
+
+`slicerun frame --mutate` still exits non-zero, so the known-positive is still positive.
+
+### Open, and not mine: `cli/perfn_inproc` is red on `main`
+
+A full `ctest` run is 8934 passed / 1 failed, and the one failure reproduces on a clean
+checkout of `main` with the working tree stashed, byte for byte: the cell expects
+`-fopt-perfn-inproc` to change the object file when `-fopt-slice` is on (`DIFFER`) and
+gets `SAME`. So either the flag no longer does anything under `-fopt-slice` at `-O3`, or
+the cell's expectation is stale. Unrelated to this work, and left as found.
+
 ## Landed — B1 runtime addressing, and a per-width region layer, 2026-08-08
 
 ### The payoff is 19 blocks, not 41, and the difference is not effort
@@ -628,14 +750,16 @@ pending-command-buffer use-after-free, the worst-memory-type selection, two dead
 2. **`snprintf` via the `(tag, value)` array.** +168 blocks, and the varargs objection is
    gone. Only the `%` engine remains.
 
-3. **Extend frame storage past the v1 subset.** The device now has a frame and Store/Load
-   lower (see above), but v1 only takes `AST_Store` with a local `Ref` destination
-   sequenced by `AST_BasicBlock`. The next increments, in measured order of payoff:
-   `AST_StoreVal` (3.0% of nodes -- needs the `AST_Store` it references, not a store of
-   its own), statement-`If`/loops (the control-flow machine, cluster C), and stores whose
-   destination is not a local (153 of 987, 15.5%). Wire the frame runner into
-   `scan_subtree` so the real-corpus differential covers it, and re-measure slice sizes:
-   the 3-4 node mode was an artifact of the expression-only unit.
+3. **Extend frame storage past today's subset.** Statement-`If`, `while`/`for`/`do`,
+   `x++`/`x--`, `arr[i]` on both sides of a store and a trailing `Return` have all
+   landed, and the frame runner is already wired into `scan_subtree`, so the real-corpus
+   differential covers it (319 accepted / 244 compared / 201 statements over 947 blocks).
+   What is left, with the 2026-08-08 measurements attached: `AST_StoreVal` (3.0% of
+   nodes -- needs the `AST_Store` it references, not a store of its own) and stores whose
+   destination is not a local (153 of 987, 15.5%), of which only the global and `*p`
+   shapes remain unmeasured. The three statement shapes still refused were measured and
+   are worth **+0 blocks** each -- see the 2026-08-08 section at the top of this file --
+   so none of them is the next increment.
 2. **S5' -- the iteration distribution, and it must be dynamic.** Static trip count does
    not exist in this tree: no function computes one, `ast_loop_bounds` gives a constant
    *IV bound* and only when the init is a literal in the preceding statements, and
