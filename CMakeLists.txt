@@ -3503,6 +3503,20 @@ if(MCC_BUILD_TESTS)
         endforeach()
 
         find_package(Vulkan QUIET)
+        if(NOT Vulkan_FOUND AND APPLE AND Vulkan_INCLUDE_DIR)
+            find_library(MCC_MOLTENVK_LIB MoltenVK
+                PATHS /opt/homebrew/lib /usr/local/lib
+                      /opt/homebrew/opt/molten-vk/lib /usr/local/opt/molten-vk/lib)
+            if(MCC_MOLTENVK_LIB)
+                set(Vulkan_LIBRARY "${MCC_MOLTENVK_LIB}")
+                set(Vulkan_LIBRARIES "${MCC_MOLTENVK_LIB}")
+                set(Vulkan_INCLUDE_DIRS "${Vulkan_INCLUDE_DIR}")
+                set(Vulkan_FOUND TRUE)
+                message(STATUS
+                    "mcc: Vulkan headers without a loader; linking spvgate against "
+                    "${MCC_MOLTENVK_LIB}")
+            endif()
+        endif()
         if(Vulkan_FOUND)
             add_executable(spvgate tools/spvgate.c tools/spvgate_arena.c)
             target_include_directories(spvgate PRIVATE
