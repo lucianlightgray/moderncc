@@ -11989,8 +11989,6 @@ change to the frames of the eight guarded functions. `docs/PLAN.md` used to name
 `MCC_MAX_UNARY_DEPTH 2048` budget at a `src/mccgen.c` anchor for a symbol that no longer
 exists; **fixed on `wt/docsync`**, and `docs/refs` (`tools/docref-lint.py`) now fails on a
 symbol quoted beside a file:line it does not occur at, so that shape cannot recur silently.
-change to the frames of the eight guarded functions. `docs/PLAN.md:435` still names
-`MCC_MAX_UNARY_DEPTH 2048` at `src/mccgen.c:241`; that symbol no longer exists.
 
 ## 256-bit integers: `__int256` / `unsigned __int256` (`wt/bits256`)
 

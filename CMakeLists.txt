@@ -3732,6 +3732,11 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("slice/real" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
 
+                set(_corpora
+                    "gcc-c-torture-execute@CLANG@GCC@1000@50000@-w,-std=gnu11,-fpermissive,-lm"
+                    "llvm-test-suite-regression-c@GCC@CLANG@700@10000@-w,-std=gnu11,-fpermissive,-lm"
+                    "llvm-test-suite-unittests@GCC@CLANG@120@4000@-w,-std=gnu11,-fpermissive,-lm"
+                    "compiler-rt-builtins-unit@GCC@CLANG@100@40@-w,-std=gnu11,-Ivendor/compiler-rt-builtins-unit,-Ivendor/compiler-rt-lib-builtins,-lm")
             if(MCC_PYTHON3 AND DIFF3_GCC AND DIFF3_CLANG)
                 add_test(NAME "slice/cref-oracle"
                     COMMAND "${CMAKE_COMMAND}"
@@ -3751,11 +3756,6 @@ if(MCC_BUILD_TESTS)
                     FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900
                     SKIP_REGULAR_EXPRESSION "SKIP:")
 
-                set(_corpora
-                    "gcc-c-torture-execute@CLANG@GCC@1000@50000@-w,-std=gnu11,-fpermissive,-lm"
-                    "llvm-test-suite-regression-c@GCC@CLANG@700@10000@-w,-std=gnu11,-fpermissive,-lm"
-                    "llvm-test-suite-unittests@GCC@CLANG@120@4000@-w,-std=gnu11,-fpermissive,-lm"
-                    "compiler-rt-builtins-unit@GCC@CLANG@100@40@-w,-std=gnu11,-Ivendor/compiler-rt-builtins-unit,-Ivendor/compiler-rt-lib-builtins,-lm")
                 foreach(_spec IN LISTS _corpora)
                     string(REPLACE "@" ";" _f "${_spec}")
                     list(GET _f 0 _cc)
@@ -3800,6 +3800,13 @@ if(MCC_BUILD_TESTS)
             else()
                 mcc_skip_test("slice/cref-oracle"
                     "needs python3 plus both gcc and clang as independent oracles; a single-compiler run would not be a cross oracle")
+                foreach(_spec IN LISTS _corpora)
+                    string(REPLACE "@" ";" _f "${_spec}")
+                    list(GET _f 0 _cc)
+                    mcc_skip_test("slice/cref-oracle-${_cc}"
+                        "needs python3 plus both gcc and clang as independent oracles; a single-compiler run would not be a cross oracle"
+                        LABELS "crefcorpus")
+                endforeach()
             endif()
 
             add_test(NAME "slice/inline"
@@ -6539,6 +6546,11 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 mcc_skip_test("jit/xoracle-conformance"
                     "no gcc.c-torture/execute corpus at ${MCC_XSUITE_GCC} -- point -DMCC_XSUITE_GCC=<gcc checkout> at one to measure the JIT against clang as cross oracle")
             endif()
+        else()
+            mcc_skip_test("jit/xoracle-conformance"
+                "needs python3, -DMCC_EMBED_JIT=ON and a host x86_64/arm64 target; the JIT cross-oracle differential runs the engine in-process and cannot be emulated")
+            mcc_skip_test("jit/xoracle-known-positive"
+                "needs python3, -DMCC_EMBED_JIT=ON and a host x86_64/arm64 target; without them the selfcheck has no engine to prove the differential against")
         endif()
 
         if(MCC_PYTHON3 AND MCC_EMBED_JIT AND WIN32 AND NOT MSVC)
@@ -6977,6 +6989,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         endif()
     else()
         set(_nopy2_why "the bench/census/determinism drivers are python3 scripts and no python3 is on PATH")
+        mcc_skip_test("docs/refs" "${_nopy2_why}")
+        mcc_skip_test("docs/refs-known-positive" "${_nopy2_why}")
         mcc_skip_test("runtime-bench-check" "${_nopy2_why}")
         mcc_skip_test("optbench/null-subject" "${_nopy2_why}")
         mcc_skip_test("optbench/null-subject-known-positive" "${_nopy2_why}")
