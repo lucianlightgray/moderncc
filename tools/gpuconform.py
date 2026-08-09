@@ -377,7 +377,16 @@ def main():
     bad = []
     nmis = sum(v["mismatch"] for v in cref["results"].values())
 
+    nnc = sum(v["nocompile"] for v in cref["results"].values())
     if a.expect_cref_mismatch:
+        if nmis == 0 and (nnc or not cref["results"]):
+            sys.stderr.write("gpuconform: the known-positive arm could not be "
+                             "adjudicated: %d oracle build(s) failed or timed "
+                             "out over %d fragment(s), so this run says nothing "
+                             "about whether the differential can fail. Retry on "
+                             "a quiet machine before reading it as blindness\n"
+                             % (nnc, cref["fragments"]))
+            return 1
         if nmis == 0:
             sys.stderr.write("gpuconform: the mutated slice bodies still agreed "
                              "with the CPU reference under every oracle, so the "
