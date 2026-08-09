@@ -12045,8 +12045,10 @@ tok_next:
 		skip('(');
 		expr_eq();
 		skip(',');
+		nocode_wanted++;
 		expr_eq();
 		vpop();
+		nocode_wanted--;
 		skip(')');
 		break;
 	case TOK_builtin_types_compatible_p:
@@ -12209,10 +12211,10 @@ tok_next:
 		skip('(');
 		expr_eq();
 		skip(',');
+		nocode_wanted++;
 		expr_eq();
 		vpop();
 		skip(',');
-		nocode_wanted++;
 		expr_eq();
 		vpop();
 		nocode_wanted--;
