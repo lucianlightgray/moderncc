@@ -2021,13 +2021,53 @@ static void suite_deref(void) {
 #define FMT_LANE_BYTE (FMT_LANE_WORD * 4)
 #define FMT_LANES MCC_GPU_LOCAL_SIZE
 #define FMT_DST 0
+#define FMT_POOL_BYTE 8192
 
 static const uint32_t FMT_SIZE[] = {0, 1, 5, 64};
 #define FMT_SIZE_N ((int)(sizeof FMT_SIZE / sizeof FMT_SIZE[0]))
 
+static const char *const FMT_STR[] = {"",
+																			"a",
+																			"ab",
+																			"abc",
+																			"hello, world",
+																			"0123456789abcdef0123456789abcde",
+																			"0123456789abcdef0123456789abcdef01"};
+#define FMT_STR_N ((int)(sizeof FMT_STR / sizeof FMT_STR[0]))
+#define FMT_PTR_N (FMT_STR_N + 3)
+#define FMT_TAIL 8
+
+static int64_t g_fmt_ptr[FMT_PTR_N];
+static MccFmtSrc g_fmt_src;
+
+static int fmt_pool(void) {
+	void *mem = NULL;
+	unsigned long msz = 0;
+	unsigned char *b;
+	uint32_t off = FMT_POOL_BYTE + 1;
+	int i, k = 0;
+	if (!mcc_gpu_mem(&mem, &msz) || !mem || msz < (1u << 20))
+		return 0;
+	b = (unsigned char *)mem;
+	for (i = 0; i < FMT_STR_N; i++) {
+		size_t n = strlen(FMT_STR[i]) + 1;
+		memcpy(b + off, FMT_STR[i], n);
+		g_fmt_ptr[k++] = (int64_t)(intptr_t)(b + off);
+		off += (uint32_t)n + 1;
+	}
+	memset(b + msz - FMT_TAIL, 'Z', FMT_TAIL);
+	g_fmt_ptr[k++] = (int64_t)(intptr_t)(b + msz - FMT_TAIL);
+	g_fmt_ptr[k++] = 0;
+	g_fmt_ptr[k++] = (int64_t)(intptr_t)FMT_STR[4];
+	g_fmt_src.w = (const uint32_t *)mem;
+	g_fmt_src.nbyte = (uint32_t)msz;
+	g_fmt_src.base = (int64_t)(intptr_t)mem;
+	return 1;
+}
+
 static int fmt_kernel(const MccFmtProg *p, MccGpuCode *out) {
 	SpvMod m;
-	SpvRegion r;
+	SpvRegion r, s;
 	SpvV arg[MCC_FMT_MAXARG];
 	uint32_t base, mbase, size, len;
 	uint32_t *code;
@@ -2035,11 +2075,15 @@ static int fmt_kernel(const MccFmtProg *p, MccGpuCode *out) {
 	if (p->narg > FMT_NSLOT - 1)
 		return 0;
 	spv_module_begin(&m, FMT_NSLOT);
+	m.mem_base = g_fmt_src.base;
+	m.mem_nbyte = g_fmt_src.nbyte;
 	base = spv_main_begin(&m, FMT_NSLOT);
 	mbase = spv_emit3(&m, SpvOpIAdd, m.id_int, spv_const(&m, FMT_ARENA_WORD),
 										spv_emit3(&m, SpvOpIMul, m.id_int, m.lane,
 															spv_const(&m, FMT_LANE_WORD)));
 	r = spv_region(m.id_mem, mbase, spv_uintc(&m, FMT_LANE_BYTE));
+	s = spv_region_shared(m.id_mem, spv_const(&m, 0),
+												spv_uintc(&m, g_fmt_src.nbyte));
 	for (i = 0; i < p->narg; i++) {
 		uint32_t lo = spv_load_at(
 				&m, spv_emit3(&m, SpvOpIAdd, m.id_int, base, spv_const(&m, i * 2)));
@@ -2053,7 +2097,8 @@ static int fmt_kernel(const MccFmtProg *p, MccGpuCode *out) {
 			&m, SpvOpBitcast, m.id_uint,
 			spv_load_at(&m, spv_emit3(&m, SpvOpIAdd, m.id_int, base,
 																spv_const(&m, (FMT_NSLOT - 1) * 2))));
-	len = spv_fmt_emit(&m, &r, p, spv_uintc(&m, FMT_DST), size, arg, p->narg);
+	len = spv_fmt_emit(&m, &r, &s, p, spv_uintc(&m, FMT_DST), size, arg,
+										 p->narg);
 	if (mcc_slice_mutate) {
 		uint32_t wi = spv_region_word(&m, &r, spv_uintc(&m, FMT_DST), 0);
 		spv_word_set(&m, r.var, wi,
@@ -2089,12 +2134,23 @@ static uint32_t *fmt_arena(void) {
 
 static uint32_t fmt_word(int j) { return 0x5A5A0000u + (uint32_t)j * 0x01010101u; }
 
+static const int32_t FMT_PREC[] = {-1, 0, 1, 3, 5, 12, 31, 33};
+#define FMT_PREC_N ((int)(sizeof FMT_PREC / sizeof FMT_PREC[0]))
+
 static int64_t fmt_fit(const MccFmtItem *it, int64_t v) {
 	if (it->kind == MCC_FMT_CHR)
 		return (int64_t)((uint64_t)v & 0xFFu);
 	if (it->wide)
 		return v;
 	return it->sgn ? (int64_t)(int32_t)v : (int64_t)(uint32_t)v;
+}
+
+static int64_t fmt_arg(const MccFmtItem *it, int lane, int k) {
+	if (it->kind == MCC_FMT_STR)
+		return g_fmt_ptr[(lane + k * 3) % FMT_PTR_N];
+	if (it->kind == MCC_FMT_PREC)
+		return (int64_t)FMT_PREC[(lane + k * 5) % FMT_PREC_N];
+	return fmt_fit(it, W64[(lane + k * 5) % W64_N]);
 }
 
 static const MccFmtItem *fmt_conv(const MccFmtProg *p, int k) {
@@ -2129,7 +2185,7 @@ static void fmt_case(const char *f) {
 	if (!g_have_device)
 		return;
 	arena = fmt_arena();
-	if (!arena) {
+	if (!arena || !fmt_pool()) {
 		CHECK(0, "the shared address space holds the per-lane format arena");
 		return;
 	}
@@ -2139,6 +2195,8 @@ static void fmt_case(const char *f) {
 		g_failures++;
 		return;
 	}
+	CHECK(code.n <= p.cost,
+				"the compile-time cost model bounds what the emitter lays down");
 	ref = (uint32_t *)malloc((size_t)n * FMT_LANE_WORD * sizeof *ref);
 	in = (int32_t *)calloc((size_t)n * FMT_NSLOT * MCC_GPU_IN_SLOTS, sizeof *in);
 	ob = (int32_t *)calloc((size_t)n * MCC_GPU_OUT_SLOTS, sizeof *ob);
@@ -2163,13 +2221,14 @@ static void fmt_case(const char *f) {
 		for (k = 0; k < p.narg; k++) {
 			const MccFmtItem *it = fmt_conv(&p, k);
 			long sp = (long)i * FMT_NSLOT * MCC_GPU_IN_SLOTS + k * MCC_GPU_IN_SLOTS;
-			a[k] = fmt_fit(it, W64[(i + k * 5) % W64_N]);
+			a[k] = fmt_arg(it, i, k);
 			in[sp] = (int32_t)(uint32_t)(uint64_t)a[k];
 			in[sp + 1] = (int32_t)(uint32_t)((uint64_t)a[k] >> 32);
 		}
 		in[(long)i * FMT_NSLOT * MCC_GPU_IN_SLOTS +
 			 (FMT_NSLOT - 1) * MCC_GPU_IN_SLOTS] = (int32_t)size;
-		clen[i] = mcc_fmt_exec(&p, w, FMT_LANE_BYTE, FMT_DST, size, a, p.narg);
+		clen[i] = mcc_fmt_exec(&p, w, FMT_LANE_BYTE, FMT_DST, size, a, p.narg,
+													 &g_fmt_src);
 	}
 	if (mcc_gpu_dispatch_rw2(code.p, code.n, in, n, FMT_NSLOT, ob)) {
 		for (i = 0; i < n; i++) {
@@ -2210,21 +2269,46 @@ static void fmt_refusals(void) {
 	static const struct {
 		const char *f;
 		int why;
-	} R[] = {{"%s", MCC_FMT_R_PTR},        {"%-3s", MCC_FMT_R_PTR},
-					 {"%p", MCC_FMT_R_PTR},        {"a %s b", MCC_FMT_R_PTR},
-					 {"%f", MCC_FMT_R_FLOAT},      {"%.17g", MCC_FMT_R_FLOAT},
-					 {"%e", MCC_FMT_R_FLOAT},      {"%Lf", MCC_FMT_R_FLOAT},
-					 {"%.*s", MCC_FMT_R_PTR},      {"%*d", MCC_FMT_R_SPEC},
+	} R[] = {{"%p", MCC_FMT_R_PTR},         {"%f", MCC_FMT_R_FLOAT},
+					 {"%.17g", MCC_FMT_R_FLOAT},   {"%e", MCC_FMT_R_FLOAT},
+					 {"%Lf", MCC_FMT_R_FLOAT},     {"%*d", MCC_FMT_R_SPEC},
 					 {"%-10d", MCC_FMT_R_SPEC},    {"%02d", MCC_FMT_R_SPEC},
 					 {"%o", MCC_FMT_R_SPEC},       {"%n", MCC_FMT_R_SPEC},
-					 {"%+d", MCC_FMT_R_SPEC},      {"%#x", MCC_FMT_R_SPEC}};
+					 {"%+d", MCC_FMT_R_SPEC},      {"%#x", MCC_FMT_R_SPEC},
+					 {"%.3d", MCC_FMT_R_SPEC},     {"%ls", MCC_FMT_R_SPEC},
+					 {"%08s", MCC_FMT_R_SPEC},     {"%+s", MCC_FMT_R_SPEC},
+					 {"%*s", MCC_FMT_R_SPEC},      {"%40s", MCC_FMT_R_SPEC},
+					 {"%s%s%s", MCC_FMT_R_ROOM},   {"%s %s %d", MCC_FMT_R_ROOM},
+					 {"%d %d %d", MCC_FMT_R_ROOM},
+					 {"%s%s-%s", MCC_FMT_R_ROOM},
+					 {"%s %2d %d", MCC_FMT_R_SPEC},
+					 {"arity %s n=%u nc=%u op=%d", MCC_FMT_R_ROOM},
+					 {"'%s' has internal linkage but is referenced in an inline "
+						"function with external linkage",
+						MCC_FMT_R_ROOM}};
+	static const char *const A[] = {"%s",     "%-3s",  "a %s b", "%.*s",
+																	"%6s",    "%-8s",  "%.5s",   "%s:%s",
+																	"%s=%d",  "%.*s/%s", "%s (%d)",
+																	"%.*s%s"};
 	MccFmtProg p;
 	int i;
 	for (i = 0; i < (int)(sizeof R / sizeof *R); i++) {
 		CHECK(mcc_fmt_compile(R[i].f, &p) == 0,
-					"a conversion outside tranche 1 is refused, not approximated");
+					"a conversion outside the tranche is refused, not approximated");
+		if (p.refuse != R[i].why)
+			fprintf(stderr, "  FMT refuse \"%s\" want=%d got=%d\n", R[i].f, R[i].why,
+							p.refuse);
 		CHECK(p.refuse == R[i].why,
-					"and the refusal says which of the three reasons it is");
+					"and the refusal says which of the four reasons it is");
+	}
+	for (i = 0; i < (int)(sizeof A / sizeof *A); i++) {
+		int ok = mcc_fmt_compile(A[i], &p);
+		if (!ok)
+			fprintf(stderr, "  FMT accept \"%s\" refused: %s\n", A[i],
+							mcc_fmt_why(p.refuse));
+		CHECK(ok == 1, "every %s spelling the corpus uses now compiles");
+		CHECK(p.cost <= MCC_FMT_MAXCOST,
+					"and its straight-line cost is inside the module budget");
 	}
 	CHECK(mcc_fmt_compile("%d", &p) == 1 && p.narg == 1, "%d is in scope");
 	CHECK(mcc_fmt_compile("%016llx", &p) == 1 && p.it[0].width == 16 &&
@@ -2233,6 +2317,15 @@ static void fmt_refusals(void) {
 	CHECK(mcc_fmt_compile("%%", &p) == 1 && p.narg == 0 && p.n == 1 &&
 					p.it[0].llen == 1,
 				"a doubled percent is one literal byte and consumes no argument");
+	CHECK(mcc_fmt_compile("%s", &p) == 1 && p.narg == 1 &&
+					p.it[0].kind == MCC_FMT_STR && p.it[0].prc == MCC_FMT_P_NONE,
+				"a bare %s is one item and one argument");
+	CHECK(mcc_fmt_compile("%.*s", &p) == 1 && p.narg == 2 && p.n == 2 &&
+					p.it[0].kind == MCC_FMT_PREC && p.it[1].prc == MCC_FMT_P_DYN,
+				"a star precision is its own item, so it consumes its own argument");
+	CHECK(mcc_fmt_compile("%-8s", &p) == 1 && p.it[0].left == 1 &&
+					p.it[0].width == 8,
+				"and left-justified width is carried on the item, not approximated");
 }
 
 static void fmt_directed(void) {
@@ -2275,7 +2368,7 @@ static void fmt_directed(void) {
 		a = fmt_fit(it, D[i].a);
 		for (j = 0; j < FMT_LANE_WORD; j++)
 			w[j] = 0xCCCCCCCCu;
-		got = mcc_fmt_exec(&p, w, FMT_LANE_BYTE, FMT_DST, D[i].size, &a, 1);
+		got = mcc_fmt_exec(&p, w, FMT_LANE_BYTE, FMT_DST, D[i].size, &a, 1, NULL);
 		CHECK(got == D[i].len, "the reference returns the untruncated length");
 		if (!D[i].want) {
 			for (j = 0; j < FMT_LANE_WORD; j++)
@@ -2297,14 +2390,117 @@ static void fmt_directed(void) {
 	}
 }
 
+#define FMT_SBW 32
+#define FMT_SBB (FMT_SBW * 4)
+#define FMT_SN 5
+
+static void fmt_directed_str(void) {
+	static const char *const S[FMT_SN] = {
+			"", "abc", "hi", "abcdef",
+			"0123456789012345678901234567890123456789"};
+	static const struct {
+		const char *f;
+		int si;
+		int64_t prec;
+		uint32_t size;
+		const char *want;
+		uint32_t len;
+	} D[] = {{"%s", 1, 0, 64, "abc", 3},
+					 {"%s", 0, 0, 64, "", 0},
+					 {"[%s]", 2, 0, 64, "[hi]", 4},
+					 {"%6s", 1, 0, 64, "   abc", 6},
+					 {"%-6s", 1, 0, 64, "abc   ", 6},
+					 {"%3s", 3, 0, 64, "abcdef", 6},
+					 {"%-3s", 3, 0, 64, "abcdef", 6},
+					 {"%.2s", 1, 0, 64, "ab", 2},
+					 {"%.0s", 1, 0, 64, "", 0},
+					 {"%.*s", 3, 4, 64, "abcd", 4},
+					 {"%.*s", 3, -1, 64, "abcdef", 6},
+					 {"%.*s", 3, 0, 64, "", 0},
+					 {"%6.2s", 1, 0, 64, "    ab", 6},
+					 {"%-6.2s", 1, 0, 64, "ab    ", 6},
+					 {"%s", 3, 0, 4, "abc", 6},
+					 {"%s", 3, 0, 1, "", 6},
+					 {"%s:%s", 2, 0, 64, "hi:hi", 5},
+					 {"%s", -1, 0, 64, "", 0},
+					 {"%s", -2, 0, 64, "", 0},
+					 {"%s", -3, 0, 64, "QQQQ", 4}};
+	uint32_t sbw[FMT_SBW], w[FMT_LANE_WORD];
+	unsigned char *sb = (unsigned char *)sbw;
+	uint32_t soff[FMT_SN];
+	MccFmtSrc src;
+	MccFmtProg p;
+	uint32_t off = 1;
+	int i, j;
+	memset(sbw, 0, sizeof sbw);
+	memset(soff, 0, sizeof soff);
+	for (i = 0; i < FMT_SN; i++) {
+		size_t n = strlen(S[i]) + 1;
+		if (off + n + 1 > FMT_SBB - 4)
+			break;
+		memcpy(sb + off, S[i], n);
+		soff[i] = off;
+		off += (uint32_t)n + 1;
+	}
+	memset(sb + FMT_SBB - 4, 'Q', 4);
+	src.w = sbw;
+	src.nbyte = FMT_SBB;
+	src.base = (int64_t)(intptr_t)sb;
+	for (i = 0; i < (int)(sizeof D / sizeof *D); i++) {
+		int64_t a[MCC_FMT_MAXARG];
+		uint32_t got;
+		int bad = 0, k, ai = 0;
+		if (!mcc_fmt_compile(D[i].f, &p)) {
+			fprintf(stderr, "  FMT str \"%s\" refused: %s\n", D[i].f,
+							mcc_fmt_why(p.refuse));
+			CHECK(0, "the directed string formats all compile");
+			continue;
+		}
+		for (k = 0; k < p.narg; k++) {
+			const MccFmtItem *it = fmt_conv(&p, k);
+			if (it->kind == MCC_FMT_PREC)
+				a[ai++] = D[i].prec;
+			else if (D[i].si >= 0)
+				a[ai++] = src.base + soff[D[i].si];
+			else if (D[i].si == -1)
+				a[ai++] = 0;
+			else if (D[i].si == -2)
+				a[ai++] = src.base + FMT_SBB + 4096;
+			else
+				a[ai++] = src.base + FMT_SBB - 4;
+		}
+		for (j = 0; j < FMT_LANE_WORD; j++)
+			w[j] = 0xCCCCCCCCu;
+		got = mcc_fmt_exec(&p, w, FMT_LANE_BYTE, FMT_DST, D[i].size, a, p.narg,
+											 &src);
+		if (got != D[i].len)
+			fprintf(stderr, "  FMT str \"%s\" #%d len want=%u got=%u\n", D[i].f, i,
+							D[i].len, got);
+		CHECK(got == D[i].len, "the reference returns the untruncated length");
+		for (j = 0; j <= (int)strlen(D[i].want); j++) {
+			unsigned b = (w[j >> 2] >> ((j & 3) * 8)) & 0xFFu;
+			unsigned e = (unsigned char)D[i].want[j];
+			if (b != e) {
+				fprintf(stderr, "  FMT str \"%s\" #%d byte %d want=%02x got=%02x\n",
+								D[i].f, i, j, e, b);
+				bad++;
+			}
+		}
+		CHECK(bad == 0, "and copies exactly the hand-written bytes plus a NUL");
+	}
+}
+
 static void suite_fmt(void) {
-	static const char *F[] = {"%d",   "%u",     "%x",      "%X",   "%lld",
-														"%llu", "%llx",   "%zu",     "%c",   "%02x",
-														"%08x", "%016llx", "[%d]",   "%%",   "n=%d.",
-														"%u/%x"};
+	static const char *F[] = {
+			"%d",     "%u",     "%x",      "%X",     "%lld", "%llu",
+			"%llx",   "%zu",    "%c",      "%02x",   "%08x", "%016llx",
+			"[%d]",   "%%",     "n=%d.",   "%u/%x",  "%s",   "[%s]",
+			"%6s",    "%-8s",   "%.*s",    "%.5s",   "%s=%d", "%s:%s",
+			"%.*s/%s"};
 	int i;
 	fmt_refusals();
 	fmt_directed();
+	fmt_directed_str();
 	if (!g_have_device) {
 		if (g_device_required) {
 			fprintf(stderr,

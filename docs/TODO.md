@@ -61,12 +61,18 @@ one 64-bit subtract plus a test that the high half came out zero. Both executors
 write the *same physical bytes*. Write-up and residual hazards: "Landed — `*p`, pointer
 `++`/`--`" below. What is still refused, and why, is in that section's table.
 
-### 2. `snprintf` — the `%` engine has landed; the rest is gated on item 1
+### 2. `snprintf` — `%s` has landed; what is left is the module budget, not the engine
 
-Rewritten 2026-08-08 after measuring the corpus. The previous version of this row was
-wrong in four ways and every correction is now reproducible from a committed script,
-`tools/fmt-census.py`. Run it with no argument for the site census over `src/*.c`, or
-with `--arenas=<MCC_ARENA_DUMP output>` for the block census.
+Rewritten 2026-08-08 (second time) after landing the `%s` arm on `wt/fmtstr`. Every
+number below is reproducible from `tools/fmt-census.py`, which now carries a
+line-for-line port of `mcc_fmt_compile` rather than a classification by conversion
+letter. Run it with no argument for the site census over `src/*.c`, `--refused` to list
+what it turns down and why, or `--arenas=<MCC_ARENA_DUMP output>` for the block census.
+**Open debt:** the port is a second implementation and nothing gates it against the C
+one. `fmt_refusals` in `tools/slicerun.c` pins the C verdict for the same 25 refused and
+12 accepted spellings the port is checked against, including four taken verbatim from the
+corpus, but the two lists are kept in step by hand. The next person to touch
+`mcc_fmt_compile` has to edit both, and `tools/fmt-census.py` is not a ctest cell.
 
 **The `(tag, value)` array is not needed and was not built.** 162 of 172 `snprintf` call
 sites in `src/*.c` carry a compile-time-constant format, so the format is parsed at *emit*
@@ -77,40 +83,85 @@ already knows each argument's `type_t`. If the 10 non-literal sites are ever wan
 shape is `{u32 tag; u32 pad; u64 value}`, 16 bytes, tag = the AST `type_t`; do not invent
 a second type enum.
 
-**`%s` gates this item on item 1, and that is most of it.** `%s` is 57.8% of `snprintf`
-specifiers and appears at 109 of the 162 literal-format sites (67.3%). A `%s` argument is
-a pointer, so `docs/DEVICE-LIBC.md` is right to put `snprintf` in bucket (b). Until the
-pointer-value question above is answered, `%s` and `%p` are refused with a distinct
-refusal code (`MCC_FMT_R_PTR`) that says so.
+**Site coverage, measured by running the real compiler over the corpus:**
 
-**"The `%` engine is the only remaining work" was false**, and it is now the *done* part.
-Landed on `wt/fmt`:
+| | sites | share of 162 |
+| --- | ---: | ---: |
+| accepted by `mcc_fmt_compile` today | **140** | **86.4%** |
+| — of those, sites carrying at least one `%s` | 98 | 60.5% |
+| refused: the straight-line program exceeds the module budget | 17 | 10.5% |
+| refused: flag, width or precision on a signed conversion | 4 | 2.5% |
+| refused: `%.17g` | 1 | 0.6% |
+| refused: `%p` | 0 | 0.0% |
+
+`MCC_FMT_R_PTR` fired at **109 sites before and 0 after**. `%p` is 0 of 162 `snprintf`
+sites — it appears only in `fprintf` — and it stays refused on purpose: glibc prints
+`(nil)` for a null pointer, so a device `%p` that printed `0x0` would be a silent
+wrong answer at the first integration, for zero corpus payoff. Of the 109 `%s` sites,
+**98 are enabled and 11 are not**: ten exceed the module budget (`%s%s-%s` ×2,
+`equiv rung=%s n=%d exact=%d inferred=%lu points=%lu`,
+`differ rung=%s smallest-width=%d n=%d a=%lld b=%s%lld`, two long diagnostic sentences
+in `mccgen.c`, `%smcc-me-%u-%u.c`, `%smcc-tmp-%u-%u.tmp`, `%s/kgc-%016llx-%u-%lu.z`,
+`arity %s n=%u nc=%u op=%d`) and one carries `%2d` (`%s %2d %d`).
+
+**"52 of 162, 32.1%" was never the compiler's answer, and the correction is downward.**
+That figure came from classifying each site by the set of conversion letters it uses,
+which ignores flags and ignores whether the program fits. Feeding the same 162 formats
+through the tranche-1 `mcc_fmt_compile` gives **49 accepted (30.2%)** — three sites carry
+`%02d`/`%-10d`/`%2d` and were always refused — and applying the module budget that now
+exists knocks that to **42 (25.9%)**. So the honest before/after for this row is
+**42 → 140 sites**, and the gap between 52 and 49 is a defect in the old census, not a
+regression.
+
+Landed on `wt/fmt`, extended on `wt/fmtstr`:
 
 | piece | where |
 | --- | --- |
-| format compiler, literal → program of runs and conversions | `mcc_fmt_compile`, `src/mccfmt.h` |
-| CPU reference, hand-written over region bytes | `mcc_fmt_exec` / `mcc_fmt_int` / `mcc_fmt_putb` |
-| device emitter, straight-line, no loop, no branch | `spv_fmt_emit` / `spv_fmt_int` / `spv_fmt_putb` |
+| format compiler, literal → program of runs, conversions and string copies | `mcc_fmt_compile`, `src/mccfmt.h` |
+| cost model and the budget refusal | `mcc_fmt_cost` / `MCC_FMT_MAXCOST` |
+| CPU reference, hand-written over region bytes | `mcc_fmt_exec` / `mcc_fmt_int` / `mcc_fmt_str` / `mcc_fmt_putb` / `mcc_fmt_getb` |
+| device emitter, straight-line, no loop, no branch | `spv_fmt_emit` / `spv_fmt_int` / `spv_fmt_str` / `spv_fmt_putb` / `spv_fmt_getb` |
 | differential over every destination byte and the length | `suite_fmt`, `tools/slicerun.c`; cells `slice/fmt`, `slice/fmt-known-positive` |
 
-Tranche 1 covers `%d %i %u %x %X %c` with the `l`/`ll`/`z`/`t`/`j`/`h`/`hh` spellings,
-literal runs, `%%`, and zero- or space-padded minimum width on the unsigned and hex
-conversions — which is `%016llx`, `%08x` and `%02x`, the only padded forms in the corpus
-worth having. That is **52 of the 162 literal-format sites, 32.1%**. Explicitly out:
+Covered: `%d %i %u %x %X %c` with the `l`/`ll`/`z`/`t`/`j`/`h`/`hh` spellings, literal
+runs, `%%`, zero- or space-padded minimum width on the unsigned and hex conversions, and
+now `%s` with minimum width, left-justify (`-`), constant precision (`%.5s`) and star
+precision (`%.*s`). Star precision is its own program item that consumes its own
+argument, so `narg` still equals the number of arguments the call passes. Explicitly out:
 
-- `%s`, `%p` — blocked on item 1, 109 sites. The `%s` arm slots into `spv_fmt_emit`'s
-  item loop without a rewrite once a pointer has a meaning.
+- `%p` — 0 sites, and `(nil)`. See above.
 - `%f` `%g` `%e` `%a` — 14 float specifiers in the whole `printf` family across `src/*.c`,
   and exactly **one** of them at an `snprintf` site (`%.17g`, 0.4% of the 230 `snprintf`
   specifiers). **Out of scope permanently, not deferred.** Device float formatting is
   disproportionate risk, and matching glibc's rounding would make the differential
   unstable.
 - `vsnprintf` — 0 of its 4 sites has a literal format.
-- flags `-` `+` space `#`, any precision, `*` width, and width on a *signed* conversion —
-  the sign/pad interleaving rule (`%05d` of -42 is `-0042`, `%5d` is `  -42`) is real work
-  for 7 corpus occurrences that are not already `%s`-blocked: `%02d` 3, `%-10d` 2,
-  `%2d` 1, `%.17g` 1. Flags/width/precision appear at 17 of 162 sites in total; the
-  supported half is `%016llx` 2 and `%02x` 1.
+- flags `+` space `#`, `*` width, and width or precision on a *signed* conversion — the
+  sign/pad interleaving rule (`%05d` of -42 is `-0042`, `%5d` is `  -42`) is real work for
+  4 remaining corpus sites: `%02d` 3, `%-10d` 2, `%2d` 1. `-` and precision *are*
+  implemented, but only on `%s`, where they are a pad count and a length cap rather than
+  an interleaving.
+
+**A `%s` copies at most `MCC_FMT_MAXSTR - 1` = 27 bytes, and that is a budget decision.**
+Every byte of a string costs a load, a definedness-free range gate and an unconditional
+read-modify-write store: ~229 SPIR-V words, measured. `MCC_GPU_CODE_MAX` is 16,384 words
+on the SPIR-V arm and the tranche-1 conversions already spend 4,700 (`%x`) to 6,900
+(`%d`) of it, so the cap is what decides how many *sites* fit, not how long a string is
+worth copying. Measured site counts against the cap: 20 → 142, 24 → 140, **28 → 140**,
+30 → 133, 32 → 130. 28 is the knee — going to 32 costs ten sites, and going to 20 buys
+two (both `%s%s-%s`) for four fewer characters.
+
+**Unterminated strings, and pointers that are not in binding 2, both have a defined
+answer and the two executors reach it identically.** The scan is a fixed 28 iterations
+with a monotone `alive` flag, never a loop to a NUL. A byte read past the end of binding 2
+reads as 0, so it terminates the string; a run of non-NUL bytes longer than 27 is
+truncated at 27 and the *returned length is the truncated length*, which is the one place
+this deliberately differs from `snprintf` — an argument longer than the cap does not
+report its true length. A pointer whose 64-bit distance from the binding-2 base does not
+fit in 32 bits (`NULL`, any host address outside the mapping) is forced out of range and
+formats as the empty string; it does not poison, fault or read host memory. `suite_fmt`
+carries all of those cases: empty, exactly-at-the-cap, an eight-byte run at the very top
+of the buffer with no NUL after it, `NULL`, and an out-of-mapping host address.
 
 **The return-value claim was transferred from the wrong function.** `printf` discards its
 return at 80/80 sites; **`snprintf` does not** — the byte count is consumed at 26 of 162
@@ -133,9 +184,18 @@ arenas, 50,045 non-empty `AST_BasicBlock`s:
 The board's 16,537/+168 and this 25,700/+246 are the same measurement over a tree three
 days apart and 18 sources rather than 15; the *share* barely moves (1.02% → 0.96%), so the
 ranking survives, but **quote the reproducible number, not the prose one**. Scaling by the
-tranche-1 site share gives roughly **79 blocks** for what shipped — that is an estimate,
+site share now enabled gives roughly **213 of the 246 blocks**; that is an estimate,
 because the format string bytes live in rodata and never enter the arena, so the dump
 cannot classify a block by its format.
+
+**The next lever on this row is the literal run, not a conversion.** A literal byte costs
+152 words because it is one unconditional read-modify-write each, and the two longest
+refused sites are refused for that alone: the 85 literal bytes of `'%s' has internal
+linkage but is referenced in an inline function with external linkage` are 12,920 words
+before a single conversion. Seven of the seventeen budget refusals carry no `%s` at all.
+Storing a run four bytes at a time needs the destination offset's alignment, which is
+only known at emit time for a run that starts at position 0; that covers the leading run
+of most formats and is worth measuring before anything else here.
 
 **What is left, and it is not the `%` engine.** The formatter is verified as a region
 primitive; wiring it to an `AST_Invoke` in statement position needs three things that do
@@ -150,10 +210,12 @@ not exist:
    frame — and the frame is dense 8-byte slots capped at `MCC_SLICE_MAXSLOT` = 16, so a
    64-byte buffer does not fit it at all. `suite_fmt` sidesteps this by addressing a
    lane-private slice of binding 2 directly, which is what a real emitter would also have
-   to do.
+   to do. The `%s` *source* does not have this problem: it is read straight out of
+   binding 2 at whatever offset the pointer maps to, by the same subtract-and-test gate
+   `spv_mem_off` uses for `*p`.
 3. The host drain. No ring header, producer index or consumer loop exists; the place for
    one is beside the `mcc_gpu_rw_back` copy-back inside `mcc_gpu_dispatch_locked`, under
-   the GPU lock, after the fence. `docs/PLAN.md` J3a′ requires a side-effect watermark
+   the GPU lock, after the fence. `docs/PLAN.md` J3a' requires a side-effect watermark
    before any stdout post, so tranche 1 writes to binding 2 and the host reads it; nothing
    is emitted to stdout from the device path.
 
@@ -166,14 +228,29 @@ One emitter property worth keeping: every byte store in `spv_fmt_putb` is uncond
 A byte the run must not write becomes a read-modify-write with a zero keep-mask at a
 clamped offset, which rewrites the word it just read. A branch instead would put
 `spv_region_addr`'s definedness update inside a conditional block and force an `OpPhi` per
-byte. It also means the destination must be a region only one lane writes —
-`spv_fmt_putb` fails the module for a `shared` region, by the same test
-`spv_store_region` uses.
+byte. The `%s` arm keeps that property despite having a data-dependent length: the copy is
+a fixed 28-iteration unrolled scan, the "this byte is part of the string" predicate is a
+monotone `alive` chain of `OpLogicalAnd`, and it reaches the store as the write-enable of
+an otherwise unconditional `spv_fmt_putb`. `spv_fmt_getb` is the read twin and is
+deliberately *not* `spv_load_region`: it clamps rather than poisoning, because a bounded
+scan reads past the string on purpose and must not report the module undefined for it.
+The destination must still be a region only one lane writes — `spv_fmt_putb` fails the
+module for a `shared` region, by the same test `spv_store_region` uses.
+
+**The cost model is an over-estimate with about 1.5% of margin, and a cell enforces it.**
+`mcc_fmt_cost` predicts the emitted word count from the item list; `mcc_fmt_compile`
+refuses with `MCC_FMT_R_ROOM` when the prediction exceeds `MCC_FMT_MAXCOST`. Measured
+against the emitter on the 25 formats `suite_fmt` builds, the model is above the truth
+every time and never by more than 2.2% (`%s` 7,264 emitted against 7,362 predicted;
+`%s:%s` 13,784 against 14,056; `%.*s/%s` 14,135 against 14,448). `fmt_case` asserts
+`code.n <= p.cost` on every format it builds, so if the emitter is ever made cheaper or
+dearer the cell goes red rather than the module silently overflowing.
 
 The mutation operator for this cell perturbs a **destination byte**, not the return value.
-Verified: `slice/fmt` is green over 1,024 lanes and 131,072 compared destination bytes on
-an RTX 5070 Ti, `--mutate` is red on all 16 formats, and an injected one-bit error in the
-hex nibble mask is caught at interior bytes rather than only at byte 0.
+Verified on an RTX 5070 Ti: `slice/fmt` is green over 1,600 lanes and 204,800 compared
+destination bytes across 25 formats, `--mutate` is red on all 25, and an injected one-bit
+error in the string copy at source byte 5 is caught in destination *words 1 and 2* — not
+only at byte 0 — including in the unterminated-run lane (`5a5a5a5a` → `5a5a7a5a`).
 
 ### 3. D4b — internal calls on the device — **803 blocks, not 12,901**
 
