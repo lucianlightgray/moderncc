@@ -708,7 +708,12 @@ def corpus_paths(root):
     want = [os.path.join(root, p) for p in CORPUS]
     missing = [p for p in CORPUS if not os.path.exists(os.path.join(root, p))]
     on_disk = set(glob.glob(os.path.join(root, "src", "*.c")))
-    unlisted = sorted(os.path.relpath(p, root) for p in on_disk - set(want))
+    # Compare on normalized paths: os.path.join keeps the forward slash of the
+    # CORPUS entries while glob returns the native separator, so on Windows the
+    # raw set difference treats every file as unlisted (src/x.c vs src\x.c).
+    want_norm = set(os.path.normpath(p) for p in want)
+    unlisted = sorted(os.path.relpath(p, root)
+                      for p in on_disk if os.path.normpath(p) not in want_norm)
     if missing or unlisted:
         for p in missing:
             sys.stderr.write("fmt-census: CORPUS lists %s, which is not on "

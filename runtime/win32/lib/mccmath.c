@@ -43,4 +43,25 @@ float __cdecl fabsf(float x) { return (float)fabs((double)x); }
 float __cdecl hypotf(float x, float y) { return (float)_hypot((double)x, (double)y); }
 float __cdecl _hypotf(float x, float y) { return (float)_hypot((double)x, (double)y); }
 
+#else
+
+/* On x86_64/arm64 Windows the UCRT exports the single-precision math variants
+   (sqrtf, sinf, ...), so msvcrt.def imports them and mcc must NOT redefine them
+   or the link duplicates. The two exceptions are fabsf and hypotf: MSVC treats
+   them as inline intrinsics and the CRT does not export them (they are absent
+   from msvcrt.def), so a program that references the fabsf/hypotf *functions*
+   -- e.g. tests/exec/features_c99_c11/fabs_edge.c -- fails to link with
+   "unresolved reference to 'fabsf'". Supply just those two, forwarding to the
+   exported double routines. _hypotf is exported, so it is not redefined here. */
+extern double __cdecl _hypot(double, double);
+
+/* fabs/fabsf must be bit-exact: they only clear the sign bit, preserving NaN
+   payloads and every other bit. The UCRT's fabs is non-conforming here -- it
+   returns a negative NaN unchanged, sign bit still set -- and does not export
+   fabsf at all, so route both through the sign-clear intrinsic instead. This
+   is what tests/exec/features_c99_c11/fabs_edge.c bit-compares against. */
+double __cdecl fabs(double x) { return __builtin_fabs(x); }
+float __cdecl fabsf(float x) { return __builtin_fabsf(x); }
+float __cdecl hypotf(float x, float y) { return (float)_hypot((double)x, (double)y); }
+
 #endif
