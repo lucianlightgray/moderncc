@@ -1185,6 +1185,171 @@ what catches the normalisation asymmetry above — and under `--mutate` every ro
 cell is a live known-positive rather than a green light nobody has tested. Endianness needs
 no case of its own: both halves are written in words and shifts rather than in host bytes, so
 there is no byte order to disagree about.
+## Landed — the four "operator and arity" refusal causes are almost entirely not operators, 2026-08-09 (`wt/slicops`)
+
+**The headline is a negative result, and it is the deliverable.** `op-unary` (9.18% of
+nodes), `arity` (6.06%), `op-ternary` (2.77%) and `no-working-type` (2.76%) together carry
+20.77% of all refused nodes over `gcc.c-torture/execute`, and were ranked as the largest
+block available to one change. Broken into the constructs behind them, **essentially none
+of that mass is a missing operator or a missing arity in the expression evaluator.** It is
+statements, addresses and loads standing in positions where "can this be evaluated as a
+value" is not the question being asked.
+
+`slicerun --refusals` now says so itself. Three new report lines:
+
+- `refusal-detail:` — each cause split by the concrete construct, with the AST op named.
+- `refusal-position:` — the *syntactic position* each refused node stands in (statement in
+  a block, address of a load, base of an address chain, store destination, value operand,
+  call operand, return value, control-flow operand).
+- `refusal-slot:` — nodes and accept rate per position, so a cause can be read against the
+  population that actually has to be a value.
+
+### The enumeration
+
+Re-taken on this machine at `2fbd830f`: 1,693 programs, 15,923 bodies, **1,172,443 nodes,
+377,231 accepted (32.17%)**, 119,363 blocks, 33,368 frame-accepted (27.96%). The 31.9% /
+373,780 in the funnel table below predates `wt/uacfix`; this is the same measurement after
+it, and is the baseline every figure in this section is against.
+
+**`op-unary` — 107,643 (9.18%)**
+
+| construct | nodes | share | what it actually is |
+| --- | ---: | ---: | --- |
+| `s.arr` — an **array-typed** member | 58,328 | 4.97% | the base *address* of an indexed array field. `s.arr[i]` is `Load(Binary('+')(Unary(MEMBER), i))` and `ast_eval_slice_dynidx` takes only an `AST_Ref` base. Indexing work, not operator work |
+| `++` / `--` | 33,456 | 2.85% | 32,514 of them are statement-position, where `mcc_slice_frame_seq_ok` already lowers them. They are counted here only because the *expression* predicate is asked of every node in the walk |
+| bitfield member | 4,397 | 0.37% | refused on purpose — see below |
+| `p->f` (`AST_OP_MEMBER_ARROW`) | 3,285 | 0.28% | the replay does `indir()` first, i.e. it loads a pointer |
+| `&x` (`AST_OP_ADDR`) | 2,763 | 0.24% | a host address of a frame slot, which the device does not have |
+| member with a bad or non-int type | 1,803 | 0.15% | types |
+| member whose base is not a frame slot | 1,236 | 0.11% | a global struct — `ref-not-local`'s population |
+| float-typed member | 992 | 0.08% | `wt/fpwidth`'s population |
+| `asm` / `asmops` / `ggoto` | 513 | 0.04% | statements |
+| `bswap` `ffs` `bitscan` `signbit` `bitb` `fneg` | 46 | 0.00% | builtins |
+| **plain integer `s.f` read for its value** | **824** | **0.07%** | **implemented on this branch** |
+
+**`arity` — 71,016 (6.06%). 71,014 of 71,016 are statement-position; not one is an
+expression, and no arity in the evaluator is wrong.**
+
+| construct | nodes | share |
+| --- | ---: | ---: |
+| `AST_If` with 2 children — `if`/`while`/`do`/`switch` statement headers | 38,524 | 3.29% |
+| `AST_Unary` with 0 children, op `AST_OP_ASMGEN` | 21,648 | 1.85% |
+| `AST_Unary` with 0 children, op `AST_OP_ASM` | 10,824 | 0.92% |
+| `AST_Unary` with 0 children, op `AST_OP_VLA` / `AST_OP_VLA_RESTORE` | 19 | 0.00% |
+| `AST_If` with 4 children | 1 | 0.00% |
+
+**`op-ternary` — 32,435 (2.77%). 100% statement-position, and not one of them is a
+ternary.** `AST_If`'s op is a statement kind, set by `rir_cf_op`: 0 = `if`, 2 = `while`,
+3 = `for`, 4 = `do`, 6 = `switch`, 5 = the conditional operator, 7 = the conditional
+operator in statement position, 9 = GNU `a ?: b`. **Ops 5 and 7 — the actual ternary —
+are already accepted**, so this cause is misnamed rather than open.
+
+| construct | nodes | share |
+| --- | ---: | ---: |
+| `for` (op 3) that happens to have 3 children | 31,799 | 2.71% |
+| `if` (op 0) with 3 children (cond, then, else) | 634 | 0.05% |
+| `while` (op 2) with 3 children | 2 | 0.00% |
+
+**`no-working-type` — 32,403 (2.76%)**
+
+| construct | nodes | share |
+| --- | ---: | ---: |
+| the operand is an untyped `AST_Load` that neither `dynidx` nor `deref` resolves | 32,130 | 2.74% |
+| the operand is a `Ref`/`Convert`/`Invoke` with a bad or non-int type | 223 | 0.02% |
+| the operand is an untyped `Binary` | 50 | 0.00% |
+
+**31,134 of the 32,403 are the condition of a statement `if` or a loop**, 1,003 are value
+operands, 254 store values. This cause is the untyped-load population wearing a different
+label; it belongs to whoever resolves `arr[i]` and `*p` on a base the object hook cannot
+name.
+
+### Accept rate by position — the denominator that makes the ranking honest
+
+| position | nodes | accepted | rate |
+| --- | ---: | ---: | ---: |
+| statement in a block | 233,029 | 195 | 0.08% |
+| value operand | 449,467 | 264,872 | 58.93% |
+| call operand | 117,018 | 25,991 | 22.21% |
+| control-flow operand (a condition) | 174,357 | 34,909 | 20.02% |
+| store value | 28,284 | 20,387 | 72.08% |
+| store destination | 28,284 | 20,210 | 71.45% |
+| return value | 4,635 | 3,363 | 72.56% |
+| address of a load | 47,818 | 2,786 | 5.83% |
+| base of an address chain | 73,628 | 4,518 | 6.14% |
+
+A cause whose nodes are 100% statement-position (`arity`, `op-ternary`) cannot be moved by
+any change to the expression evaluator, because the walk is asking those nodes a question
+they are not required to answer. Quote node-share against **value-position** nodes
+(599,404, 52.5% accepted) when ranking expression work.
+
+### What was implemented: `s.f` read for its value
+
+`AST_OP_MEMBER` yields an **lvalue** — `gaddrof()`, a constant `+ cofs`, and `VT_LVAL`
+(`ast_replay_value` in `src/mccast.c`). The load that turns it into a value is implicit in
+the replay's `gv()`, so in value position there is no `AST_Load` above it to carry the
+access, and the node *is* the load. Its address is the same constant frame offset
+`ast_eval_slice_frame_off` already resolves for the explicit-`Load` spelling, so the value
+is the frame slot at that offset fitted to the member's own type.
+
+`ast_eval_slice_member_off` is the one predicate; all four consumers call it and none
+re-derives the rule — `ast_eval_slice_kind_ok`, `ast_eval_slice_rec` and
+`ast_eval_slice_livein` in `src/ast_eval_slice.h`, `mcc_gpu_vwt` plus the `AST_Unary` arm
+of `spv_expr` and of `msl_expr` in `src/mccgpu.h`, and `cref_expr` in `tools/slicerun.c`.
+The last one is the point: **the new shape is spelled into the re-emitted C, so the
+external oracle adjudicates it** rather than the CPU and the device agreeing with each
+other about a rule they share. `tests/gpu/cref/member.c` is the checked-in regression, and
+`slicerun --mutate` over it turns all 96 tuples into mismatches, so the new coverage can
+fail.
+
+Refused rather than approximated, each for a stated reason:
+
+| refused | why |
+| --- | --- |
+| bitfield member (4,397 nodes) | `gv()` runs `adjust_bf`, which can move the byte offset, and then either `load_packed_bf` or a `SHL`/`SAR` pair. That is three implementations of a bit-extraction rule plus a fourth in the re-emitted C, for 0.37% of nodes. `ast_type_bp`/`ast_type_bs` are checked, so the refusal is explicit rather than incidental |
+| array-typed member (58,328) | `mccast.c` leaves it an address (no `VT_LVAL`), so its value is not a load at all. Wants `ast_eval_slice_dynidx` to accept a member base |
+| `p->f` (3,285) | needs a pointer load first; no constant folding crosses `indir()` |
+| `&x` (2,763) | its value is a host address of a frame slot |
+
+### Effect, direct and cascade, measured separately
+
+| | before | after |
+| --- | ---: | ---: |
+| accepted nodes | 377,231 (32.174%) | **378,387 (32.273%)** |
+| `op-unary` | 107,643 | 106,819 |
+| `child-refused` | 134,170 | 133,838 |
+| frame-accepted blocks | 33,368 (27.955%) | 33,370 (27.957%) |
+
+**+1,156 nodes, of which 824 are direct** (the node itself stopped being refused) **and
+332 are cascade** (a parent that was only refused because this child was). Cascade is
+**28.7% of the gain**, and it is reported separately because the naive before/after
+over-credits by that much. `op-unary`'s drop of 824 and `child-refused`'s drop of 332 sum
+exactly to the acceptance rise, which is the check that the attribution is not double
+counting.
+
+**+0.099 percentage points is the honest size of this lane.** It is small because the
+lane is small, not because the change is partial: after it, the four causes contain 824
+fewer nodes and every remaining node in them is accounted for in the tables above.
+
+### Open, and ranked by what the tables actually say
+
+1. **`s.arr[i]` — a runtime index into an array *field*, 58,328 nodes (4.97%).** The
+   single largest implementable construct left anywhere in these four causes.
+   `ast_eval_slice_dynidx` requires `ast_kind(base) == AST_Ref`; a base that is
+   `Unary(AST_OP_MEMBER)` over a local resolves to a constant frame offset by the same
+   `ast_eval_slice_frame_off`, and the extent and element type are already dumped per node
+   (columns 13 and 14) and already reach the tool through `ast_eval_slice_obj_fn`. It
+   needs `ast_eval_slice_livein_obj` to lay the run out from a member offset, so it is
+   **live-in/indexing work and should be taken by whoever owns that**, not by an operator
+   change.
+2. **The untyped-`Load` conditions, 31,134 nodes (2.66%).** `no-working-type` is a label
+   on the same population as `load-not-allowed` and `ref-not-local`; nothing in it is a
+   type rule that is wrong.
+3. **Do not file `arity` or `op-ternary` as slice work again.** 103,451 nodes (8.83%) of
+   pure statement structure. If the frame path ever accepts a `for` or a statement `if` as
+   a unit, they move; no expression change can touch them.
+4. **`slicerun --refusals` counts every node in the body, including statements and
+   address subtrees.** That is why these four causes looked like operator work. The
+   `refusal-slot:` table is the fix; use it before ranking.
 
 ## Landed — `rir_decayed_array` read a comparison's opcode as a `Sym *`, 2026-08-09 (`wt/decayfix`)
 
