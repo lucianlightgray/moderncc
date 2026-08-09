@@ -143,6 +143,79 @@ body, evaluation order only) · `%p` on the device (glibc prints `(nil)`) ·
 
 I found no decision on that list that looks wrongly settled.
 
+## Landed — `ast_eval_slice` disagrees with C, and only a cross oracle could see it, 2026-08-09 (`wt/gpuconform`)
+
+### The defect
+
+`ast_eval_slice` takes a binary operator's working type from **child 0 alone**
+(`src/ast_eval_slice.h:790`) and never consults the second operand, so C's usual
+arithmetic conversions are not applied. Minimal case:
+
+```c
+int f(int x) { return x < 4ULL; }   /* f(-3) */
+```
+
+gcc, clang, **and mcc's own generated code** all answer 0. `ast_eval_slice` answers 1: it
+derives `is64=0, uns=0` from the `int` operand and does a signed 32-bit compare, where C
+converts the `int` to `unsigned long long` first. The same rule is mirrored in both device
+emitters (`spv_expr`, `msl_expr`), so the CPU-versus-device differential that every other
+`slice/*` cell runs **cannot see this** — the two runners are wrong in exactly the same way
+because they are two readings of one model. Real shape it came from: `i < LEN(array)` where
+`LEN` is `sizeof(a)/sizeof(a[0])`, i.e. the ordinary signed/unsigned comparison.
+
+This is not a miscompile of shipped code — `ast_eval_slice` has no codegen caller — but it
+is a wrong answer from the thing the device path exists to substitute for, and it would
+become a miscompile the moment a frame kernel were dispatched for real.
+
+Second, narrower class, same root: a `_Bool` frame return diverged between the CPU and the
+device on `gcc.c-torture/execute/20230510-1.c` (`ret cpu=9/1 gpu=1/1`) — one runner fits the
+return to the declared type and the other does not. One occurrence in 32,867 compared frame
+runs, and the tree's own `tests/exec` corpus never reaches it.
+
+### What was added
+
+`slicerun --cref DIR` re-emits every accepted expression slice as standalone C — a Ref
+becomes a read of a variable of the Ref's own declared type, a Binary becomes the C operator
+with C's own conversions — and bakes the CPU reference's answer in as the expected value, so
+gcc and clang can adjudicate. Only tuples the reference calls *defined* are compared, which
+is exactly the set where the emitted program has no undefined behaviour to hit. The four
+operators with no natural C spelling (`TOK_SHR`, `TOK_SAR`, `TOK_UDIV`, `TOK_UMOD`) are
+transcribed instead, output narrow included — a half-transcription would charge the
+evaluator for a conversion the emitter skipped, which is how the first draft produced 38
+false positives.
+
+`--cref` emits only slices where every binary operator already has both operands at one
+working type, so the cell asserts a real guarantee rather than banking one number over a
+mixed population; `--cref-all` lifts that and is how the defect above is measured.
+`--mutate` extends to the emitted C, so one flag arms the known-positive on both arms.
+
+`slicerun --refusals` attributes every refused node to the first guard that rejects it. The
+predicates carry no reason channel — `mcc_slice_work_from_ast` has 5 bare `return 0` sites
+and the frame path 42 — so this re-decides each node from `tools/` rather than editing
+`src/mccslice.h` and `src/ast_eval_slice.h`, which other work is in. It will drift if those
+guards change; the check against that is the accepted/refused totals, which come from the
+real predicate.
+
+`tools/gpuconform.py` drives an external corpus end to end and `cmake/gpuconform_cref.cmake`
+lands it as `slice/cref-oracle` over the checked-in fixtures in `tests/gpu/cref/`, plus four
+`slice/cref-oracle-*` corpus cells that skip with a stated reason when `vendor/` has no
+checkout. A program counts only when the cross oracle and the suite's own compiler agree at
+both `-O0` and `-O2`, with stdout hashed into the verdict so a nondeterministic program
+disagrees with itself and is classified out rather than counted.
+
+### Open, and ranked
+
+1. **Fix the working-type derivation.** `ast_eval_slice_rec`'s `AST_Binary` arm should apply
+   the usual arithmetic conversions across the operand pair instead of taking child 0's type.
+   Both emitters need the same change or the differential flips from silent agreement to
+   loud disagreement. The `--cref-all` arm is the regression test and is already wired.
+2. **The `_Bool` frame return divergence.** One case, reproducible, and it is a genuine
+   CPU-versus-device disagreement of the kind `slice/real` asserts cannot happen.
+3. **`is_float` is not the binding constraint it is filed as.** Measured on real
+   application-shaped C it is **0.48% of refused nodes and 1.88% of bodies**; the structural
+   refusals — globals, invokes, statement boundaries — are twenty times larger. The `double`
+   work on `wt/fpwidth` is worth having, but it will not move the funnel much.
+
 ## Landed — the census label arms its own cells, and `slice-census`'s corpus is the goldens table, 2026-08-09 (`wt/censusfix`)
 
 Closes open rows 1 and 2 and filed item 3 above. Three separate defects were stacked behind

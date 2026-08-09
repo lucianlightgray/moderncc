@@ -2987,6 +2987,625 @@ static void dump_tree(AstArena *a, AstLocal n, int d) {
 
 static int g_dumped;
 
+/* --- C re-emission, for a cross oracle over the CPU reference -------------- *
+ *
+ * ast_eval_slice is a second implementation of C integer semantics, and until
+ * now the only thing it was ever checked against was the device -- two runners
+ * built from the same reading of the same tree. Agreement between them says
+ * nothing about whether either agrees with C.
+ *
+ * This writes each accepted expression slice back out as a standalone C program
+ * so gcc and clang can answer the same eight tuples. The emission is idiomatic
+ * C, not a transcription of the evaluator: a Ref becomes a read of a variable of
+ * the Ref's own declared type, a Binary becomes the C operator with C's usual
+ * arithmetic conversions, a ternary is a ternary. Where the evaluator's model
+ * (narrow to child 0's width, operate in int64, narrow again) and C's model
+ * disagree, the differential shows it rather than hiding it -- which is the
+ * entire point, and is why the operand types are NOT forced to the evaluator's
+ * working type.
+ *
+ * The four ops with no natural C spelling are the exception and are transcribed
+ * explicitly, because C cannot express them any other way: TOK_SHR is a logical
+ * shift regardless of operand signedness, TOK_SAR is arithmetic regardless,
+ * TOK_UDIV/TOK_UMOD force unsigned division, and TOK_ULT/UGE/ULE/UGT compare the
+ * evaluator's narrowed value reinterpreted as uint64. Those four carry an
+ * explicit cast to the working type; every other op does not.
+ *
+ * Only tuples the reference reports DEFINED are compared. The reference refuses
+ * on signed overflow, division by zero and out-of-range shift counts, so a
+ * defined tuple is one where the C program has no undefined behaviour to hit --
+ * and a tuple the reference calls defined but C wraps is a finding, not noise. */
+static const char *g_cref_dir;
+static const char *g_cref_pfx = "s";
+static char g_cref_tag[64];
+static FILE *g_cref_exp;
+static long g_cref_emitted, g_cref_toobig, g_cref_unspellable, g_cref_seen;
+static long g_cref_alldead, g_cref_tuples, g_cref_mixed;
+static int g_cref_mutate;
+static int g_cref_all;
+
+#define CREF_MAXNODES 512
+
+static const char *cref_ctype(int t) {
+	int uns = (t & VT_UNSIGNED) != 0;
+	switch (t & VT_BTYPE) {
+	case VT_BOOL:
+		return "_Bool";
+	case VT_BYTE:
+		return uns ? "unsigned char" : "signed char";
+	case VT_SHORT:
+		return uns ? "unsigned short" : "short";
+	case VT_INT:
+		return uns ? "unsigned int" : "int";
+	case VT_LLONG:
+		return uns ? "unsigned long long" : "long long";
+	case VT_PTR:
+		return uns ? "unsigned long long" : "long long";
+	default:
+		return NULL;
+	}
+}
+
+static const char *cref_wtype(int t) {
+	int uns = (t & VT_UNSIGNED) != 0;
+	if (ast_eval_slice_is64(t))
+		return uns ? "unsigned long long" : "long long";
+	return uns ? "unsigned int" : "int";
+}
+
+static void cref_lit(FILE *f, int64_t v) {
+	if (v == INT64_MIN)
+		fprintf(f, "(-9223372036854775807LL - 1)");
+	else
+		fprintf(f, "%lldLL", (long long)v);
+}
+
+static int cref_expr(FILE *f, AstArena *a, AstLocal n, const int32_t *off,
+										 int nlive) {
+	const char *ct;
+	int t;
+	if (n == AST_NONE)
+		return 0;
+	switch (ast_kind(a, n)) {
+	case AST_Literal:
+		ct = cref_ctype(ast_type_t(a, n));
+		if (!ct)
+			return 0;
+		fprintf(f, "((%s)", ct);
+		cref_lit(f, (int64_t)ast_ival(a, n));
+		fprintf(f, ")");
+		return 1;
+	case AST_Ref: {
+		int r = ast_op(a, n);
+		int j;
+		ct = cref_ctype(ast_type_t(a, n));
+		if (!ct)
+			return 0;
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+			int32_t o = (int32_t)(int64_t)ast_ival(a, n);
+			for (j = 0; j < nlive; j++)
+				if (off[j] == o)
+					break;
+			if (j == nlive)
+				return 0;
+			fprintf(f, "((%s)e%d)", ct, j);
+			return 1;
+		}
+		fprintf(f, "((%s)", ct);
+		cref_lit(f, (int64_t)ast_ival(a, n));
+		fprintf(f, ")");
+		return 1;
+	}
+	case AST_Convert:
+		ct = cref_ctype(ast_type_t(a, n));
+		if (!ct)
+			return 0;
+		fprintf(f, "((%s)(", ct);
+		if (!cref_expr(f, a, ast_first_child(a, n), off, nlive))
+			return 0;
+		fprintf(f, "))");
+		return 1;
+	case AST_Unary: {
+		int uop = ast_op(a, n);
+		const char *s = uop == '~' ? "~" : uop == '!' ? "!" : "-";
+		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
+			return 0;
+		fprintf(f, "(%s(", s);
+		if (!cref_expr(f, a, ast_first_child(a, n), off, nlive))
+			return 0;
+		fprintf(f, "))");
+		return 1;
+	}
+	case AST_Binary: {
+		int bop = ast_op(a, n);
+		AstLocal x, y;
+		const char *wt, *uwt, *swt, *s;
+		int xt;
+		if (bop == TOK_LAND || bop == TOK_LOR) {
+			uint32_t nc = ast_nchild(a, n), k;
+			fprintf(f, "(");
+			for (k = 0; k < nc; k++) {
+				if (k)
+					fprintf(f, " %s ", bop == TOK_LAND ? "&&" : "||");
+				fprintf(f, "(");
+				if (!cref_expr(f, a, ast_child(a, n, k), off, nlive))
+					return 0;
+				fprintf(f, ")");
+			}
+			fprintf(f, ")");
+			return 1;
+		}
+		if (ast_nchild(a, n) != 2)
+			return 0;
+		x = ast_child(a, n, 0);
+		y = ast_child(a, n, 1);
+		xt = ast_eval_slice_wtype(a, x);
+		wt = cref_wtype(xt);
+		uwt = ast_eval_slice_is64(xt) ? "unsigned long long" : "unsigned int";
+		swt = ast_eval_slice_is64(xt) ? "long long" : "int";
+		switch (bop) {
+		/* These four have no natural C spelling, so they are transcribed rather
+		 * than emitted as C -- and transcribed COMPLETELY, output narrow
+		 * included. A half-transcription is neither model: it would charge the
+		 * evaluator for a conversion this emitter skipped. */
+		case TOK_SHR:
+		case TOK_UDIV:
+		case TOK_UMOD:
+			s = bop == TOK_SHR ? ">>" : bop == TOK_UDIV ? "/" : "%";
+			fprintf(f, "((%s)((%s)(", wt, uwt);
+			if (!cref_expr(f, a, x, off, nlive))
+				return 0;
+			fprintf(f, ") %s (%s)(", s, uwt);
+			if (!cref_expr(f, a, y, off, nlive))
+				return 0;
+			fprintf(f, ")))");
+			return 1;
+		case TOK_SAR:
+			fprintf(f, "((%s)((%s)(", wt, swt);
+			if (!cref_expr(f, a, x, off, nlive))
+				return 0;
+			fprintf(f, ") >> (");
+			if (!cref_expr(f, a, y, off, nlive))
+				return 0;
+			fprintf(f, ")))");
+			return 1;
+		case TOK_ULT:
+		case TOK_UGE:
+		case TOK_ULE:
+		case TOK_UGT:
+			s = bop == TOK_ULT ? "<" : bop == TOK_UGE ? ">=" : bop == TOK_ULE ? "<=" : ">";
+			fprintf(f, "((unsigned long long)(long long)(%s)(", wt);
+			if (!cref_expr(f, a, x, off, nlive))
+				return 0;
+			fprintf(f, ") %s (unsigned long long)(long long)(%s)(", s, wt);
+			if (!cref_expr(f, a, y, off, nlive))
+				return 0;
+			fprintf(f, "))");
+			return 1;
+		default:
+			break;
+		}
+		switch (bop) {
+		case '+': s = "+"; break;
+		case '-': s = "-"; break;
+		case '*': s = "*"; break;
+		case '/': case TOK_PDIV: s = "/"; break;
+		case '%': s = "%"; break;
+		case '&': s = "&"; break;
+		case '|': s = "|"; break;
+		case '^': s = "^"; break;
+		case TOK_SHL: s = "<<"; break;
+		case TOK_EQ: s = "=="; break;
+		case TOK_NE: s = "!="; break;
+		case TOK_LT: s = "<"; break;
+		case TOK_GE: s = ">="; break;
+		case TOK_LE: s = "<="; break;
+		case TOK_GT: s = ">"; break;
+		default: return 0;
+		}
+		fprintf(f, "((");
+		if (!cref_expr(f, a, x, off, nlive))
+			return 0;
+		fprintf(f, ") %s (", s);
+		if (!cref_expr(f, a, y, off, nlive))
+			return 0;
+		fprintf(f, "))");
+		return 1;
+	}
+	case AST_If:
+		if (ast_nchild(a, n) != 3)
+			return 0;
+		fprintf(f, "((");
+		if (!cref_expr(f, a, ast_child(a, n, 0), off, nlive))
+			return 0;
+		fprintf(f, ") ? (");
+		if (!cref_expr(f, a, ast_child(a, n, 1), off, nlive))
+			return 0;
+		fprintf(f, ") : (");
+		if (!cref_expr(f, a, ast_child(a, n, 2), off, nlive))
+			return 0;
+		fprintf(f, "))");
+		return 1;
+	default:
+		t = 0;
+		(void)t;
+		return 0;
+	}
+}
+
+/* --- refusal attribution --------------------------------------------------- *
+ *
+ * The predicates carry no reason channel: mcc_slice_work_from_ast has 5 bare
+ * `return 0` sites and the frame path has 42, none of which records why. Adding
+ * one would mean editing src/mccslice.h and src/ast_eval_slice.h, which other
+ * work is in; so this classifies from the outside instead, re-deciding each node
+ * against the same conditions the predicate tests and naming the first one that
+ * fails. It is a reimplementation of the guards and will drift if they change --
+ * the check against that is the accepted/refused totals below, which are taken
+ * from the real predicate and must add up.
+ *
+ * Attribution is LOCAL: a node whose own guards all pass but whose children
+ * refuse is charged to REF_CHILD, so each blocking construct is counted once at
+ * the node that actually blocks rather than once per ancestor. */
+enum {
+	REF_OK = 0,
+	REF_CHILD,
+	REF_KIND_INVOKE,
+	REF_KIND_STORE,
+	REF_KIND_STOREVAL,
+	REF_KIND_BLOCK,
+	REF_KIND_JUMP,
+	REF_KIND_RETURN,
+	REF_KIND_POISON,
+	REF_KIND_OTHER,
+	REF_LOAD,
+	REF_TYPE_FLOAT,
+	REF_TYPE_BAD,
+	REF_TYPE_NONINT,
+	REF_REF_GLOBAL,
+	REF_LIT_NONCONST,
+	REF_OP_UNARY,
+	REF_OP_BINARY,
+	REF_OP_TERNARY,
+	REF_ARITY,
+	REF_NOWTYPE,
+	REF_N
+};
+
+static const char *refuse_name(int r) {
+	switch (r) {
+	case REF_OK: return "ok";
+	case REF_CHILD: return "child-refused";
+	case REF_KIND_INVOKE: return "kind-invoke";
+	case REF_KIND_STORE: return "kind-store";
+	case REF_KIND_STOREVAL: return "kind-storeval";
+	case REF_KIND_BLOCK: return "kind-basicblock";
+	case REF_KIND_JUMP: return "kind-jump";
+	case REF_KIND_RETURN: return "kind-return";
+	case REF_KIND_POISON: return "kind-poison";
+	case REF_KIND_OTHER: return "kind-other";
+	case REF_LOAD: return "load-not-allowed";
+	case REF_TYPE_FLOAT: return "type-float";
+	case REF_TYPE_BAD: return "type-bad";
+	case REF_TYPE_NONINT: return "type-nonint";
+	case REF_REF_GLOBAL: return "ref-not-local";
+	case REF_LIT_NONCONST: return "literal-not-const";
+	case REF_OP_UNARY: return "op-unary";
+	case REF_OP_BINARY: return "op-binary";
+	case REF_OP_TERNARY: return "op-ternary";
+	case REF_ARITY: return "arity";
+	case REF_NOWTYPE: return "no-working-type";
+	default: return "?";
+	}
+}
+
+static int refuse_binop_known(int op) {
+	switch (op) {
+	case '+': case '-': case '*': case '/': case '%':
+	case '&': case '|': case '^':
+	case TOK_SHL: case TOK_SHR: case TOK_SAR:
+	case TOK_PDIV: case TOK_UDIV: case TOK_UMOD:
+	case TOK_EQ: case TOK_NE:
+	case TOK_LT: case TOK_GE: case TOK_LE: case TOK_GT:
+	case TOK_ULT: case TOK_UGE: case TOK_ULE: case TOK_UGT:
+	case TOK_LAND: case TOK_LOR:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static int refuse_type(int t) {
+	if (is_float(t))
+		return REF_TYPE_FLOAT;
+	if (ast_bad_type(t))
+		return REF_TYPE_BAD;
+	if (!ast_eval_slice_intt(t))
+		return REF_TYPE_NONINT;
+	return REF_OK;
+}
+
+static int refuse_local(AstArena *a, AstLocal n) {
+	int t = ast_type_t(a, n), r;
+	switch (ast_kind(a, n)) {
+	case AST_Literal:
+		r = refuse_type(t);
+		if (r)
+			return r;
+		if ((ast_op(a, n) & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
+			return REF_LIT_NONCONST;
+		return REF_OK;
+	case AST_Ref: {
+		int rop = ast_op(a, n);
+		if ((rop & VT_VALMASK) == VT_LOCAL && !(rop & VT_SYM)) {
+			if (is_float(t))
+				return REF_TYPE_FLOAT;
+			if (!ast_eval_slice_intt(t))
+				return REF_TYPE_NONINT;
+			return REF_OK;
+		}
+		if ((rop & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST)
+			return refuse_type(t);
+		return REF_REF_GLOBAL;
+	}
+	case AST_Load:
+		return REF_LOAD;
+	case AST_Convert: {
+		AstLocal c = ast_first_child(a, n);
+		if (c == AST_NONE)
+			return REF_ARITY;
+		if (is_float(t) || is_float(ast_type_t(a, c)))
+			return REF_TYPE_FLOAT;
+		if (ast_bad_type(t))
+			return REF_TYPE_BAD;
+		if (!ast_eval_slice_intt(t))
+			return REF_TYPE_NONINT;
+		return REF_OK;
+	}
+	case AST_Unary: {
+		int uop = ast_op(a, n);
+		if (ast_first_child(a, n) == AST_NONE)
+			return REF_ARITY;
+		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
+			return REF_OP_UNARY;
+		if (!ast_eval_slice_wtype(a, n))
+			return REF_NOWTYPE;
+		return REF_OK;
+	}
+	case AST_Binary: {
+		int bop = ast_op(a, n);
+		AstLocal x, y;
+		if (bop == TOK_LAND || bop == TOK_LOR)
+			return REF_OK;
+		if (!refuse_binop_known(bop))
+			return REF_OP_BINARY;
+		if (ast_nchild(a, n) != 2)
+			return REF_ARITY;
+		x = ast_child(a, n, 0);
+		y = ast_child(a, n, 1);
+		if (is_float(ast_type_t(a, x)) || is_float(ast_type_t(a, y)))
+			return REF_TYPE_FLOAT;
+		if (!ast_eval_slice_wtype(a, x))
+			return REF_NOWTYPE;
+		return REF_OK;
+	}
+	case AST_If:
+		if (ast_nchild(a, n) != 3)
+			return REF_ARITY;
+		if (ast_op(a, n) != 5 && ast_op(a, n) != 7)
+			return REF_OP_TERNARY;
+		return REF_OK;
+	case AST_Invoke:
+		return REF_KIND_INVOKE;
+	case AST_Store:
+		return REF_KIND_STORE;
+	case AST_StoreVal:
+		return REF_KIND_STOREVAL;
+	case AST_BasicBlock:
+		return REF_KIND_BLOCK;
+	case AST_Jump:
+		return REF_KIND_JUMP;
+	case AST_Return:
+		return REF_KIND_RETURN;
+	case AST_Poison:
+		return REF_KIND_POISON;
+	default:
+		return REF_KIND_OTHER;
+	}
+}
+
+static long g_ref_nodes[REF_N];
+static long g_ref_bodies[REF_N];
+static long g_ref_bodynodes[REF_N];
+static long g_ref_total_nodes, g_ref_total_bodies, g_ref_total_bodynodes;
+static long g_ref_accepted_nodes, g_ref_blocks, g_ref_blocks_acc;
+static unsigned char g_ref_hit[REF_N];
+
+static void refuse_walk(AstArena *a, AstLocal n) {
+	AstLocal c;
+	int r;
+	if (n == AST_NONE)
+		return;
+	g_ref_total_nodes++;
+	if (ast_eval_slice_kind_ok(a, n, 0)) {
+		g_ref_accepted_nodes++;
+	} else {
+		r = refuse_local(a, n);
+		if (r == REF_OK)
+			r = REF_CHILD;
+		g_ref_nodes[r]++;
+		g_ref_hit[r] = 1;
+	}
+	if (ast_kind(a, n) == AST_BasicBlock) {
+		MccSliceFrame f;
+		g_ref_blocks++;
+		if (mcc_slice_frame_from_ast(a, n, &f))
+			g_ref_blocks_acc++;
+	}
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		refuse_walk(a, c);
+}
+
+static void refuse_body(AstArena *a, AstLocal root) {
+	int i;
+	long nn = mcc_slice_nodes(a, root);
+	memset(g_ref_hit, 0, sizeof g_ref_hit);
+	refuse_walk(a, root);
+	g_ref_total_bodies++;
+	g_ref_total_bodynodes += nn;
+	for (i = 0; i < REF_N; i++)
+		if (g_ref_hit[i]) {
+			g_ref_bodies[i]++;
+			g_ref_bodynodes[i] += nn;
+		}
+}
+
+static void refuse_report(void) {
+	int i;
+	printf("refusal: nodes=%ld accepted=%ld refused=%ld bodies=%ld "
+				 "body-nodes=%ld blocks=%ld frame-accepted-blocks=%ld\n",
+				 g_ref_total_nodes, g_ref_accepted_nodes,
+				 g_ref_total_nodes - g_ref_accepted_nodes, g_ref_total_bodies,
+				 g_ref_total_bodynodes, g_ref_blocks, g_ref_blocks_acc);
+	for (i = 1; i < REF_N; i++) {
+		if (!g_ref_nodes[i] && !g_ref_bodies[i])
+			continue;
+		printf("refusal: %-18s nodes=%ld node-share=%.2f%% bodies=%ld "
+					 "body-share=%.2f%% body-node-share=%.2f%%\n",
+					 refuse_name(i), g_ref_nodes[i],
+					 g_ref_total_nodes ? 100.0 * g_ref_nodes[i] / g_ref_total_nodes : 0.0,
+					 g_ref_bodies[i],
+					 g_ref_total_bodies ? 100.0 * g_ref_bodies[i] / g_ref_total_bodies
+															: 0.0,
+					 g_ref_total_bodynodes
+							 ? 100.0 * g_ref_bodynodes[i] / g_ref_total_bodynodes
+							 : 0.0);
+	}
+}
+
+/* True when every Binary in the slice has both operands already at one working
+ * type, so that taking the type from child 0 -- which is what the evaluator does
+ * at src/ast_eval_slice.h:790 -- lands on the same type C's usual arithmetic
+ * conversions would pick. Slices that fail this are exactly the ones where the
+ * evaluator and C are entitled to differ, and separating them is what lets the
+ * cell assert a real guarantee over the rest instead of banking one number over
+ * a mixed population. */
+static int cref_uac_clean(AstArena *a, AstLocal n) {
+	AstLocal c;
+	if (n == AST_NONE)
+		return 1;
+	if (ast_kind(a, n) == AST_Binary && ast_op(a, n) != TOK_LAND &&
+			ast_op(a, n) != TOK_LOR && ast_nchild(a, n) == 2) {
+		int xt = ast_eval_slice_wtype(a, ast_child(a, n, 0));
+		int yt = ast_eval_slice_wtype(a, ast_child(a, n, 1));
+		int op = ast_op(a, n);
+		/* Shifts are exempt: C converts the operands separately, so the right
+		 * operand's type never reaches the result and a mismatch there is not a
+		 * conversion the evaluator skipped. */
+		if (op != TOK_SHL && op != TOK_SHR && op != TOK_SAR) {
+			if (!xt || !yt)
+				return 0;
+			if (ast_eval_slice_is64(xt) != ast_eval_slice_is64(yt) ||
+					((xt & VT_UNSIGNED) != 0) != ((yt & VT_UNSIGNED) != 0))
+				return 0;
+		}
+	}
+	/* A narrow unsigned operand is promoted to int by C and left unsigned by the
+	 * evaluator, which is the same defect wearing a different hat. */
+	if ((ast_kind(a, n) == AST_Binary || ast_kind(a, n) == AST_Unary)) {
+		int t = ast_eval_slice_wtype(a, n);
+		int bt = t & VT_BTYPE;
+		if ((t & VT_UNSIGNED) &&
+				(bt == VT_BYTE || bt == VT_SHORT || bt == VT_BOOL))
+			return 0;
+	}
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (!cref_uac_clean(a, c))
+			return 0;
+	return 1;
+}
+
+static void cref_emit(AstArena *a, AstLocal root, MccSliceWork *w,
+											const int64_t *in, const int64_t *cout,
+											const unsigned char *cdef) {
+	char path[1024];
+	FILE *f;
+	long id = g_cref_emitted;
+	int t, j, nd, any = 0;
+
+	g_cref_seen++;
+	if (w->nodes > CREF_MAXNODES) {
+		g_cref_toobig++;
+		return;
+	}
+	for (t = 0; t < 8; t++)
+		if (cdef[t])
+			any = 1;
+	if (!any) {
+		g_cref_alldead++;
+		return;
+	}
+	if (!cref_uac_clean(a, root)) {
+		g_cref_mixed++;
+		if (!g_cref_all)
+			return;
+	}
+	snprintf(g_cref_tag, sizeof g_cref_tag, "%s%06ld", g_cref_pfx, id);
+
+	snprintf(path, sizeof path, "%s/s%06ld.c", g_cref_dir, id);
+	f = fopen(path, "w");
+	if (!f)
+		return;
+	fprintf(f, "static long long fn_%s(", g_cref_tag);
+	for (j = 0; j < w->nlive; j++)
+		fprintf(f, "%slong long e%d", j ? ", " : "", j);
+	fprintf(f, ") {\n\treturn (long long)(");
+	if (!cref_expr(f, a, root, w->off, w->nlive)) {
+		fclose(f);
+		remove(path);
+		g_cref_unspellable++;
+		return;
+	}
+	/* The mutation lands on the emitted C, not on the recorded reference value.
+	 * That is the direction that proves the oracle's answer is actually read: a
+	 * driver that compiled the program and ignored its stdout would still report
+	 * OK if the reference had been perturbed instead. */
+	fprintf(f, ")%s;\n}\n", g_cref_mutate ? " ^ 1" : "");
+	fprintf(f, "static int chk_%s(void) {\n\tint bad = 0;\n\tlong long v;\n",
+					g_cref_tag);
+	if (w->nlive > 0) {
+		fprintf(f, "\tvolatile long long ");
+		for (j = 0; j < w->nlive; j++)
+			fprintf(f, "%sa%d", j ? ", " : "", j);
+		fprintf(f, ";\n");
+	}
+	nd = 0;
+	for (t = 0; t < 8; t++) {
+		if (!cdef[t])
+			continue;
+		nd++;
+		for (j = 0; j < w->nlive; j++) {
+			fprintf(f, "\ta%d = ", j);
+			cref_lit(f, in[t * w->nlive + j]);
+			fprintf(f, ";\n");
+		}
+		fprintf(f, "\tv = fn_%s(", g_cref_tag);
+		for (j = 0; j < w->nlive; j++)
+			fprintf(f, "%sa%d", j ? ", " : "", j);
+		fprintf(f, ");\n\tif (v != ");
+		cref_lit(f, cout[t]);
+		fprintf(f, ") { printf(\"MISMATCH %s t%d got %%lld want %lld\\n\", v);"
+							 " bad = 1; }\n",
+						g_cref_tag, t, (long long)cout[t]);
+	}
+	fprintf(f, "\treturn bad;\n}\n");
+	fclose(f);
+
+	fprintf(g_cref_exp, "%s %d %d %d\n", g_cref_tag, w->nlive, w->nodes, nd);
+	g_cref_tuples += nd;
+	g_cref_emitted++;
+}
+
 static void run_real_slice(AstArena *a, AstLocal root, int quiet) {
 	MccSliceWork w;
 	MccSliceKernel k;
@@ -3009,6 +3628,9 @@ static void run_real_slice(AstArena *a, AstLocal root, int quiet) {
 	if (mcc_slice_run_cpu(&w, 0) != MCC_TASK_DONE)
 		return;
 	g_arena_tuples += 8;
+
+	if (g_cref_dir)
+		cref_emit(a, root, &w, in, cout, cdef);
 
 	if (!g_have_device || !mcc_slice_kernel_build(&w, &k))
 		return;
@@ -3251,6 +3873,7 @@ static void scan_subtree(AstArena *a, AstLocal n, int quiet, long limit) {
 }
 
 static int g_census;
+static int g_refusals;
 static int g_inline = 1;
 static long g_cn_blocks, g_cn_elig, g_cn_op8n, g_cn_op9n, g_cn_op6n;
 static long g_cn_op8b, g_cn_op9b, g_cn_op6b;
@@ -3800,7 +4423,11 @@ static int arena_pass(FILE *f, int pass, long limit, int quiet) {
 				g_obj_ext[i] = (int32_t)raw[i].size;
 				g_obj_ety[i] = raw[i].etype;
 			}
-			if (g_census) {
+			if (g_refusals) {
+				if (g_inline)
+					mcc_slice_inline_arena(a);
+				refuse_body(a, rt);
+			} else if (g_census) {
 				census_arena(a, (int)n);
 			} else {
 				if (g_inline)
@@ -3836,6 +4463,16 @@ static int arena_mode(const char *path, long limit, int quiet) {
 	fclose(f);
 	if (rc)
 		return rc;
+
+	if (g_refusals) {
+		if (!g_ref_total_nodes) {
+			fprintf(stderr, "slicerun: --refusals walked zero nodes; a refusal "
+											"breakdown over an empty tree is not a measurement\n");
+			return 1;
+		}
+		refuse_report();
+		return 0;
+	}
 
 	if (g_census) {
 		printf("census: blocks=%ld eligible=%ld\n", g_cn_blocks, g_cn_elig);
@@ -3888,6 +4525,15 @@ static int arena_mode(const char *path, long limit, int quiet) {
 				 g_frame_mismatch, g_frame_mem);
 	printf("slicerun: invoke-seen=%ld invoke-inlined=%ld leaf-callees=%d\n",
 				 mcc_slice_inl_seen, mcc_slice_inl_n, g_leaf_n);
+	if (g_cref_exp) {
+		fclose(g_cref_exp);
+		g_cref_exp = NULL;
+		printf("slicerun: cref-seen=%ld cref-emitted=%ld cref-tuples=%ld "
+					 "cref-toobig=%ld cref-unspellable=%ld cref-alldead=%ld "
+					 "cref-mixed-operand-types=%ld\n",
+					 g_cref_seen, g_cref_emitted, g_cref_tuples, g_cref_toobig,
+					 g_cref_unspellable, g_cref_alldead, g_cref_mixed);
+	}
 	g_arena_mismatch += g_frame_mismatch;
 	if (!g_arena_slices) {
 		printf("slicerun: FAIL (no real slice became schedulable work)\n");
@@ -3954,6 +4600,14 @@ int main(int argc, char **argv) {
 			g_device_or_skip = 1;
 		else if (!strcmp(argv[i], "--mutate"))
 			g_mutate = 1;
+		else if (!strcmp(argv[i], "--cref") && i + 1 < argc)
+			g_cref_dir = argv[++i];
+		else if (!strcmp(argv[i], "--cref-prefix") && i + 1 < argc)
+			g_cref_pfx = argv[++i];
+		else if (!strcmp(argv[i], "--cref-all"))
+			g_cref_all = 1;
+		else if (!strcmp(argv[i], "--refusals"))
+			g_refusals = 1;
 		else if (!strcmp(argv[i], "--census"))
 			g_census = 1;
 		else if (!strcmp(argv[i], "--fmt-cost-report"))
@@ -3981,6 +4635,26 @@ int main(int argc, char **argv) {
 	ast_eval_slice_obj_fn = slicerun_obj;
 	frame_ptr_arm();
 	(void)g_lax;
+
+	if (g_cref_dir) {
+		char p[1024];
+		if (!arenas) {
+			fprintf(stderr, "slicerun: --cref needs --arenas\n");
+			return 2;
+		}
+		snprintf(p, sizeof p, "%s/expect.txt", g_cref_dir);
+		g_cref_exp = fopen(p, "w");
+		if (!g_cref_exp) {
+			fprintf(stderr, "slicerun: cannot write %s\n", p);
+			return 2;
+		}
+		/* The mutation rides the same flag the device differential uses, so one
+		 * spelling arms the known-positive on both arms. It perturbs the emitted C
+		 * rather than the recorded reference, which is the direction that proves the
+		 * comparison is live: a driver that never reads the oracle's stdout would
+		 * still report OK. */
+		g_cref_mutate = g_mutate;
+	}
 
 	if (g_cost_synth)
 		return cost_synth();

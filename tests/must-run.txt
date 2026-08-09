@@ -47,6 +47,11 @@ slice/deref-known-positive   | registered | proves the binding-2 differential is
 slice/fault                  | registered | the pending-command-buffer strand path
 slice/cost                   | registered | H6; the break-even table the plan's go/no-go rests on
 slice/real                   | registered | both runners over real recorded arenas
+slice/cref-oracle            | must-run   | the only check that ast_eval_slice agrees with C rather than merely with the device; both other slice runners share one reading of the tree, so a shared misreading is invisible to all of them
+slice/cref-oracle-gcc-c-torture-execute | registered | external corpus, skips when vendor/ has no checkout; a registered skip is visible, a missing cell is not
+slice/cref-oracle-llvm-test-suite-regression-c | registered | as above, clang-side corpus adjudicated by gcc
+slice/cref-oracle-llvm-test-suite-unittests | registered | as above
+slice/cref-oracle-compiler-rt-builtins-unit | registered | as above
 
 slice/musl                   | registered | real musl libc lowered to the device, not a hand-written one
 
