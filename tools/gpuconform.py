@@ -64,19 +64,11 @@ def build_and_run(cc, src, work, tag, cflags, opt):
         return ("timeout", "")
     if rc == "oserror":
         return ("norun", out[:200])
-    # Exit status alone is not the whole verdict. gcc's torture corpus signals
-    # failure by abort(), but llvm-test-suite programs print and are checked
-    # against a reference file, so a program that returns 0 while printing
-    # something different is still a divergence. Hashing stdout into the verdict
-    # covers both idioms, and makes a nondeterministic program disagree with
-    # itself across the four configurations and be classified out rather than
-    # counted.
     h = hashlib.sha256(out.encode("utf-8", "replace")).hexdigest()[:16]
     return ("ok:%s" % h if rc == 0 else "fail:%s:%s" % (rc, h), out[:200])
 
 
 def qualify(prog, args, work):
-    """A program is evidence only if oracle and suite-compiler agree, twice."""
     base = os.path.basename(prog)[:-2]
     res = {}
     for name, cc in (("oracle", args.oracle_cc), ("suite", args.suite_cc)):
@@ -119,8 +111,10 @@ def one_program(idx, prog, args, root):
 
         dump = os.path.join(work, "arena.txt")
         env = dict(os.environ, MCC_ARENA_DUMP=dump)
+        incs = [f for f in args.cflags if f.startswith("-I") or
+                f.startswith("-D")]
         rc, out = run([args.mcc, "-c", prog, "-o", os.path.join(work, "a.o"),
-                       "-O1"], env=env, timeout=60)
+                       "-O1"] + incs, env=env, timeout=60)
         rec["mcc_static"] = "ok" if rc == 0 else ("timeout" if rc == "timeout"
                                                   else "reject")
         rec["mcc_msg"] = out[:200] if rc != 0 else ""
@@ -156,12 +150,6 @@ def one_program(idx, prog, args, root):
 
 
 def collect_cref(records, out_dir, jobs, cc_list, verbose):
-    """Compile every emitted slice fragment under each oracle and run it.
-
-    Fragments are deduplicated by content: the emitted text carries the input
-    tuples and the reference's answer, so two byte-identical fragments are the
-    same question and the same expected answer.
-    """
     os.makedirs(out_dir, exist_ok=True)
     frags, seen = [], {}
     dup = 0

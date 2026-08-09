@@ -1,11 +1,3 @@
-/* Fixture for slice/cref-oracle. Every function here is written so that mcc's
- * slice recogniser accepts its body as an expression slice: locals only, no
- * calls, no loads through pointers, integer types throughout. The expected
- * values were produced by the oracle, not by hand, so a wrong constant cannot
- * quietly become the thing under test.
- *
- * Exit status is the verdict: 0 passes, the failing check number otherwise. */
-
 static int chars(signed char a, signed char b) {
 	int t = a + b;
 	int u = a * b;

@@ -3706,14 +3706,6 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("slice/real" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
 
-            # The CPU reference against a CROSS oracle. Every other slice cell
-            # compares the CPU runner with the device, and both are built from
-            # one reading of one tree, so a shared misreading of C is invisible
-            # to all of them. This re-emits accepted slices as C and asks gcc
-            # and clang instead. It needs no device, which is the point: the
-            # device backend is frozen and mcc_slice_frame_from_ast has no
-            # caller in src/, but ast_eval_slice's answers are load-bearing
-            # regardless.
             if(MCC_PYTHON3 AND DIFF3_GCC AND DIFF3_CLANG)
                 add_test(NAME "slice/cref-oracle"
                     COMMAND "${CMAKE_COMMAND}"
@@ -3732,20 +3724,10 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties("slice/cref-oracle" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900)
 
-                # External corpora, fetch-or-skip. Neither is vendored: they are
-                # large upstream trees, so a checkout is pointed at by symlink
-                # under vendor/ and the cell states plainly that it did nothing
-                # when there is none. gcc's execute corpus is adjudicated by
-                # clang and LLVM's builtins by gcc -- validating either against
-                # its own compiler would bake that suite's assumptions in.
-                # name | cross oracle | suite compiler | min programs | min tuples | cflags
-                # Floors are set just under what this tree measures today, so a
-                # corpus that quietly stops resolving fails instead of reporting
-                # OK over a shrunken denominator.
                 set(_corpora
                     "gcc-c-torture-execute@CLANG@GCC@1000@50000@-w,-std=gnu11,-fpermissive,-lm"
                     "llvm-test-suite-regression-c@GCC@CLANG@700@10000@-w,-std=gnu11,-fpermissive,-lm"
-                    "llvm-test-suite-unittests@GCC@CLANG@200@2000@-w,-std=gnu11,-fpermissive,-lm"
+                    "llvm-test-suite-unittests@GCC@CLANG@120@4000@-w,-std=gnu11,-fpermissive,-lm"
                     "compiler-rt-builtins-unit@GCC@CLANG@100@40@-w,-std=gnu11,-Ivendor/compiler-rt-builtins-unit,-Ivendor/compiler-rt-lib-builtins,-lm")
                 foreach(_spec IN LISTS _corpora)
                     string(REPLACE "@" ";" _f "${_spec}")

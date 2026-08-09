@@ -2987,34 +2987,6 @@ static void dump_tree(AstArena *a, AstLocal n, int d) {
 
 static int g_dumped;
 
-/* --- C re-emission, for a cross oracle over the CPU reference -------------- *
- *
- * ast_eval_slice is a second implementation of C integer semantics, and until
- * now the only thing it was ever checked against was the device -- two runners
- * built from the same reading of the same tree. Agreement between them says
- * nothing about whether either agrees with C.
- *
- * This writes each accepted expression slice back out as a standalone C program
- * so gcc and clang can answer the same eight tuples. The emission is idiomatic
- * C, not a transcription of the evaluator: a Ref becomes a read of a variable of
- * the Ref's own declared type, a Binary becomes the C operator with C's usual
- * arithmetic conversions, a ternary is a ternary. Where the evaluator's model
- * (narrow to child 0's width, operate in int64, narrow again) and C's model
- * disagree, the differential shows it rather than hiding it -- which is the
- * entire point, and is why the operand types are NOT forced to the evaluator's
- * working type.
- *
- * The four ops with no natural C spelling are the exception and are transcribed
- * explicitly, because C cannot express them any other way: TOK_SHR is a logical
- * shift regardless of operand signedness, TOK_SAR is arithmetic regardless,
- * TOK_UDIV/TOK_UMOD force unsigned division, and TOK_ULT/UGE/ULE/UGT compare the
- * evaluator's narrowed value reinterpreted as uint64. Those four carry an
- * explicit cast to the working type; every other op does not.
- *
- * Only tuples the reference reports DEFINED are compared. The reference refuses
- * on signed overflow, division by zero and out-of-range shift counts, so a
- * defined tuple is one where the C program has no undefined behaviour to hit --
- * and a tuple the reference calls defined but C wraps is a finding, not noise. */
 static const char *g_cref_dir;
 static const char *g_cref_pfx = "s";
 static char g_cref_tag[64];
@@ -3144,10 +3116,6 @@ static int cref_expr(FILE *f, AstArena *a, AstLocal n, const int32_t *off,
 		uwt = ast_eval_slice_is64(xt) ? "unsigned long long" : "unsigned int";
 		swt = ast_eval_slice_is64(xt) ? "long long" : "int";
 		switch (bop) {
-		/* These four have no natural C spelling, so they are transcribed rather
-		 * than emitted as C -- and transcribed COMPLETELY, output narrow
-		 * included. A half-transcription is neither model: it would charge the
-		 * evaluator for a conversion this emitter skipped. */
 		case TOK_SHR:
 		case TOK_UDIV:
 		case TOK_UMOD:
@@ -3233,20 +3201,6 @@ static int cref_expr(FILE *f, AstArena *a, AstLocal n, const int32_t *off,
 	}
 }
 
-/* --- refusal attribution --------------------------------------------------- *
- *
- * The predicates carry no reason channel: mcc_slice_work_from_ast has 5 bare
- * `return 0` sites and the frame path has 42, none of which records why. Adding
- * one would mean editing src/mccslice.h and src/ast_eval_slice.h, which other
- * work is in; so this classifies from the outside instead, re-deciding each node
- * against the same conditions the predicate tests and naming the first one that
- * fails. It is a reimplementation of the guards and will drift if they change --
- * the check against that is the accepted/refused totals below, which are taken
- * from the real predicate and must add up.
- *
- * Attribution is LOCAL: a node whose own guards all pass but whose children
- * refuse is charged to REF_CHILD, so each blocking construct is counted once at
- * the node that actually blocks rather than once per ancestor. */
 enum {
 	REF_OK = 0,
 	REF_CHILD,
@@ -3483,13 +3437,6 @@ static void refuse_report(void) {
 	}
 }
 
-/* True when every Binary in the slice has both operands already at one working
- * type, so that taking the type from child 0 -- which is what the evaluator does
- * at src/ast_eval_slice.h:790 -- lands on the same type C's usual arithmetic
- * conversions would pick. Slices that fail this are exactly the ones where the
- * evaluator and C are entitled to differ, and separating them is what lets the
- * cell assert a real guarantee over the rest instead of banking one number over
- * a mixed population. */
 static int cref_uac_clean(AstArena *a, AstLocal n) {
 	AstLocal c;
 	if (n == AST_NONE)
@@ -3499,9 +3446,6 @@ static int cref_uac_clean(AstArena *a, AstLocal n) {
 		int xt = ast_eval_slice_wtype(a, ast_child(a, n, 0));
 		int yt = ast_eval_slice_wtype(a, ast_child(a, n, 1));
 		int op = ast_op(a, n);
-		/* Shifts are exempt: C converts the operands separately, so the right
-		 * operand's type never reaches the result and a mismatch there is not a
-		 * conversion the evaluator skipped. */
 		if (op != TOK_SHL && op != TOK_SHR && op != TOK_SAR) {
 			if (!xt || !yt)
 				return 0;
@@ -3510,8 +3454,6 @@ static int cref_uac_clean(AstArena *a, AstLocal n) {
 				return 0;
 		}
 	}
-	/* A narrow unsigned operand is promoted to int by C and left unsigned by the
-	 * evaluator, which is the same defect wearing a different hat. */
 	if ((ast_kind(a, n) == AST_Binary || ast_kind(a, n) == AST_Unary)) {
 		int t = ast_eval_slice_wtype(a, n);
 		int bt = t & VT_BTYPE;
@@ -3566,10 +3508,6 @@ static void cref_emit(AstArena *a, AstLocal root, MccSliceWork *w,
 		g_cref_unspellable++;
 		return;
 	}
-	/* The mutation lands on the emitted C, not on the recorded reference value.
-	 * That is the direction that proves the oracle's answer is actually read: a
-	 * driver that compiled the program and ignored its stdout would still report
-	 * OK if the reference had been perturbed instead. */
 	fprintf(f, ")%s;\n}\n", g_cref_mutate ? " ^ 1" : "");
 	fprintf(f, "static int chk_%s(void) {\n\tint bad = 0;\n\tlong long v;\n",
 					g_cref_tag);
@@ -4648,11 +4586,6 @@ int main(int argc, char **argv) {
 			fprintf(stderr, "slicerun: cannot write %s\n", p);
 			return 2;
 		}
-		/* The mutation rides the same flag the device differential uses, so one
-		 * spelling arms the known-positive on both arms. It perturbs the emitted C
-		 * rather than the recorded reference, which is the direction that proves the
-		 * comparison is live: a driver that never reads the oracle's stdout would
-		 * still report OK. */
 		g_cref_mutate = g_mutate;
 	}
 
