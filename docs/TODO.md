@@ -2851,7 +2851,7 @@ schedule.
 | **9** | **A stage-2 build dir does not rebuild when a header changes.** The stale binary is silent and plausible: it runs, it self-hosts, it passes. Workaround only (`rm cmake-<dir>/CMakeFiles/mcc.dir/src/mcc.c.o`); the fix is for `mcc` to emit a depfile for `CMAKE_DEPFILE_FLAGS_C`. This poisons **any** measurement taken from a stage-2 dir, which is most of the ladder work | medium | **measurement validity** |
 | **10** | **D6 — `scalar_storage_order` / `ms_abi` are not implemented at all** (`grep -rn 'scalar_storage_order\|ms_abi' src/*.c src/*.h` → **0**), and mcc objects link against gcc's, so a mismatch is *silent* wrong codegen across a linker boundary. The only item in the codegen list with that property | large | **correctness** |
 | **11** | **`selfhost-optbench.py --check` can pass over zero derivations.** `derive_levels` assigns `levels[f] = levels_now[f]`, so an all-`inert` run prints *"src/mccopt.h matches the ladder"* having derived nothing; the docstring says **48** level-assignable flags in five places and `flag_table()` yields **16**; no floor on `len(names)`; an empty sample list classifies `inert`. The board already carries "`selfhost-optbench --check` was not re-run" as a caveat, which is the same hole one level up | medium (several floors) | **census trust** |
-| **12** | **W8 — `selfhost-jit` heap-UAF of a `Sym` in the AST forward-inline re-emit path.** Root-caused, verified unfixed: `ast_inline_retain` (`src/mccast.c:3533`) and `ast_reemit_retain` (`:3561`) are still called at `:19217-19218` with no refcounting across cross-function grafts. It has a deterministic oracle (MSVC-ASan `mcc_s` + `tools/selfhost-jit.py`) | medium–large | **correctness** |
+| **12** | ~~**W8 — `selfhost-jit` heap-UAF of a `Sym` in the AST forward-inline re-emit path.**~~ **Closed 2026-08-09.** Not a cross-function refcount bug: a plain-local leaf's captured `sym` (needed during in-function replay by `wide256_sv_is_stable_lval`) dangles at re-emit after `ast_func_end`. Fixed by `ast_reemit_scrub_leaf_syms` (`src/mccast.c`), which nulls non-`VT_SYM` non-VLA local-leaf syms before re-emit replay. Oracle byte-identical; see the Windows/macOS host-items section | medium–large | **correctness** |
 | **13** | **`run-tier/x86_64` fails `tls_threads` when `MCC_JIT=1` meets an active AST replay.** Localised to three lines: `mcc_jit_tls_slab` (`src/mcchost.c:1450`), the `mcc_run_pthread_create` binding (`src/objfmt/mccelf.c:974`) under `s1->run_tls_active`, set only on the interpreter relocate path in `tls_setup_linux` (`src/mccrun.c:451`). `--no-jit` does not suppress it. Note this contradicts `:10090`'s "the deliberate-red count is now 0", which is true only of the default configuration | small–medium | **correctness** |
 | **14** | **`ptr_unlink` for-condition-store segfault** — root-caused to `rir_cf_cond`/`rir_docond`, needs a 5-fix/34-break discriminator. Orphaned: zero references anywhere else in this file | medium | **correctness** |
 | **15** | **`full_language.c` still diverges at `-O0` on x86_64/i386** — an `AST_OP_ASM` replay defect (P4 defect 4). Contained, not closed; zero later references | medium | **replay fidelity** |
@@ -13375,15 +13375,32 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
 - **W5** — mcc cannot self-host on Windows arm64: stage1 takes `0xC0000005` on
   `lib/atomic.c`, `lib/alloca.S`, `lib/alloca-bt.S`, `lib/builtin.c` (host ABI: varargs,
   alloca, stack probe). Needs Windows-on-ARM hardware.
-- **W8** — fix the `selfhost-jit` heap corruption. Root-caused (2026-08-05) to a
-  heap-use-after-free of a `Sym` in the AST forward-inline re-emit path: the sym is
-  retired by `ast_func_end` and then read by `ast_reemit_forward_inlines` →
-  `ast_inline_graft` → `ast_replay_value` → `gaddrof`. `ast_reemit_retain` /
-  `ast_inline_retain` under-count cross-function graft references, so a retained
-  forward-inline body's syms get dropped. Release builds recycle via `sym_free_first`
-  (hence the nondeterministic `0xC0000374`/`0xC0000005`); the MSVC-ASan `mcc_s` binary
-  makes it deterministic — `mcc_s` + `tools/selfhost-jit.py` is the verification
-  harness. The fix needs the full suite as a regression gate, not just the ASan oracle.
+- ~~**W8** — fix the `selfhost-jit` heap corruption.~~ **Closed 2026-08-09 on the
+  native x86_64 Windows host, via the MSVC-ASan `mcc_s` oracle.** The deterministic
+  crash is a heap-use-after-free of a `Sym` at `gaddrof` (`src/mccgen.c:2175`, the
+  `vtop->sym->type.t & VT_VLA` probe) during `ast_reemit` of `embed_resolve`.
+  **Root cause, corrected from the 2026-08-05 note:** a leaf's captured `sym` is the
+  *referencing frame's own local `Sym`*, stored verbatim by `rir_leaf_slot`
+  (`src/mccrir.c`). That sym is required during in-function RIR replay —
+  `wide256_sv_is_stable_lval` (`src/wide256_slice.h`) branches on it, so dropping it at
+  capture regresses `exec-replay/int256` `test_convert` — but it dangles at re-emit,
+  which runs at end-of-translation after `ast_func_end` has torn the frame down. It is
+  not the cross-function refcount problem the old note guessed; there is no graft of the
+  freed sym's owner. **Fix:** `ast_reemit_scrub_leaf_syms` (`src/mccast.c`) nulls the
+  `sym` on plain-local leaves (`VT_LOCAL` without `VT_SYM`, and not VLA — detected off
+  the node type, never by dereferencing the possibly-dangling pointer) before replay,
+  for the re-emit root arena and for each callee arena grafted while `ast_in_reemit` is
+  set. This matches AOT semantics, which carry no sym on a plain local lvalue and NULL
+  on a wide256 local. Verified: the `mcc_s` + `tools/selfhost-jit.py` oracle passes with
+  in-memory output **byte-identical to the AOT reference**, and the full native ctest
+  suite shows every `int256` cell (all replay/reemit variants) green with no new reds.
+- ~~**Windows build broken by `tools/slicerun.c`.**~~ **Closed 2026-08-09.** A merge
+  landed `slicerun.c` including POSIX `<dlfcn.h>` and calling `setenv`/`unsetenv`
+  unconditionally, so the whole MSVC build failed to compile/link (it supplies its own
+  `host_dl*` because it does not link `mcchost.c`). Ported its `host_dl*` shims to
+  `LoadLibrary`/`GetProcAddress` and added a `_putenv_s` `setenv`/`unsetenv` shim, both
+  under `MCC_HOST_WIN32` (not raw `_WIN32`, which `host-gate-invariant` rejects). Full
+  sanitize-msvc build is green; `host-gate-invariant` passes.
 - ~~**W3 residual** — the 3-way-concurrent stress re-run.~~ **Closed 2026-08-05 on a
   macOS arm64 host, with a negative control.** 399 chains at the fix, 0 non-identical,
   over default `-O`, `-O1`, `-Os`, `-O3`, the 12-flag gates set and

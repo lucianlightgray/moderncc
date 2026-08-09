@@ -32,21 +32,55 @@ static int ast_bad_type(int tt) {
 
 #include <stdio.h>
 #include <string.h>
-#include <dlfcn.h>
 #include <stdlib.h>
+#if MCC_HOST_WIN32
+#include <windows.h>
+/* MSVC has no POSIX setenv/unsetenv; route through _putenv_s as mccjit_win32.h
+   does. overwrite is ignored (mcc only ever sets keys it owns). */
+static int slicerun_setenv(const char *name, const char *val, int overwrite) {
+	(void)overwrite;
+	return _putenv_s(name, val);
+}
+static int slicerun_unsetenv(const char *name) { return _putenv_s(name, ""); }
+#define setenv(n, v, o) slicerun_setenv((n), (v), (o))
+#define unsetenv(n) slicerun_unsetenv((n))
+#else
+#include <dlfcn.h>
+#endif
 
+/* slicerun does not link mcchost.c, so it supplies its own dispatch-layer
+   dl* shims. Mirror mcchost.c's host_dl* Windows/POSIX split verbatim. */
 ST_FUNC void *host_dlopen(const char *name) {
+#if MCC_HOST_WIN32
+	return (void *)LoadLibraryA(name);
+#else
 	return dlopen(name, RTLD_GLOBAL | RTLD_LAZY);
+#endif
 }
 
-ST_FUNC const char *host_dlerror(void) { return dlerror(); }
+ST_FUNC const char *host_dlerror(void) {
+#if MCC_HOST_WIN32
+	return "error";
+#else
+	return dlerror();
+#endif
+}
 
 ST_FUNC void *host_dlsym(void *h, const char *symbol) {
+#if MCC_HOST_WIN32
+	return (void *)GetProcAddress((HMODULE)h, symbol);
+#else
 	return dlsym(h, symbol);
+#endif
 }
 
 ST_FUNC void *host_dlsym_process(const char *symbol) {
+#if MCC_HOST_WIN32
+	(void)symbol;
+	return NULL;
+#else
 	return dlsym(RTLD_DEFAULT, symbol);
+#endif
 }
 
 static int g_failures;
