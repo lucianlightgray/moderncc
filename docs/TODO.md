@@ -418,7 +418,85 @@ Two hazards this section introduces, stated rather than buried:
    take about a second, not to weight this census. The per-program table, not the corpus
    total, is the size-independent read — and it says three kernels of seventeen.
 
-### 2. Replay fidelity — ~4.3 points of `kept` still on the table; the ICE that blocked it is fixed
+### 2. ~~Replay fidelity — ~4.3 points of `kept`~~ — MEASURED 2026-08-09; the prize is 2.60 points and it does not pay
+
+**Both halves are now measured and the pins do not move.** The row was a licence to
+re-measure, so it was re-measured, on a fixed snapshot of `src/` + `include/`, `n=17`–`21`
+interleaved reps, against `cmake-debug/mcc`. The compile-time half costs **+1.499%** of
+stage-1 `instructions:u` for `-fchain-store -fchain-store-live -fchain-store-member`
+(5,439,530,105 → 5,521,074,220; two independent arms of the same config agree to
+±0.001%, so the counter's own floor is 0.003%), and **+1.627%** of stage-1 CPU time at
+n=21 against an identical-config floor of **+0.455%** measured in the same run — 3.6× the
+floor with the counter agreeing in sign. The emitted-code half — the number this
+row said was **UNMEASURED**, and the first move it asked for — is:
+
+| what | with the family on | metric |
+| --- | ---: | --- |
+| stage-2, the emitted compiler doing a fixed `-O2` self-compile | **−0.079%** | `instructions:u`, floor 0.004% |
+| the same, on the clock | −0.220%, **inside** the ±0.435% floor | CPU time, n=21, control +0.002% |
+| `sieve`, the one kernel of 17 whose object changes at all | **−1.97%** | `instructions:u`, min of 5 |
+| output of every changed kernel and of both stage-2 compilers | identical | `cmp` / `md5sum` |
+| `tests/exec` + `tools` + `runtime/lib` + kernels, 357 TUs | 3 change, net **−75** instructions | `objdump -d` |
+| stage-1 `src/mcc.c` object | −21 at `-O2`, **+1,723** at `-O3` | `objdump -d` |
+
+So the trade is **1.50% of compile time for 0.079% of stage-2**, a 19:1 loss on the
+self-host axis, plus a real but singular 1.97% on `sieve`. Compare `divmagic`, which the
+same rule keeps at rung 2: 0.44% of stage-1 for 28.2% on `divmod`, sixty times the
+efficiency. `chain-store` stays at 11, `chain-store-live` at 10, `chain-store-member` at
+11; no level moved, `tests/optfire/leveltime.tsv` and `defstate.txt` are untouched,
+`levelpins.txt` gained the note and nothing else, and
+`optfire{,-i386,-riscv64,-arm64}/chainstore` still fire.
+
+**The sieve number is not new, which is the useful part.** `tests/optfire/leveltime.tsv:130`
+already banked `chain-store sieve +26.190 +1.9658 32.18 inside layout floor` — the
+layout-immune counter had said 1.97% all along and the row was demoted on the correct
+reading that the *clock's* +26% was inside sieve's 32% floor. This re-measurement
+reproduces **1.9655%** independently, four figures, from a different harness. What has
+changed since is reach, not size: after `56da2ab6`, `-fchain-store` **alone** changes
+**0 of 17** kernel objects — sieve included, the very kernel that row was measured on —
+and takes all three flags to get the same transform back.
+
+**A per-flag sweep can no longer price this row, and the way it fails is instructive.**
+`chain-store` alone measures **−1.859%** of stage-1 `instructions:u`, i.e. *cheaper than
+the base*, and its four changed TUs are all **smaller** (net −81), and `src/mcc.c` shrinks
+4,203 instructions at `-O3`. None of that is optimization: the flag makes 34 more bodies
+unfaithful (2,816 → 2,782 replayed, `kept` 91.968 → 84.04), they stop running the strategy
+suite, they stop being retainable by the inliner, and the object shrinks because less
+happened to it. **A flag that saves compile time by suppressing optimization reads
+exactly like a flag that is efficient**, and on this row it also reads as a code-size win.
+That is a second way this tree's per-flag harness reports a number of the wrong quantity,
+alongside the `fires`/`gain` trap in debt #6a. The rule it earns: *a flag that moves
+`rir-coverage` must be priced with the coverage beside the counter, or the sign is
+meaningless.*
+
+**The 4.3 points did not reproduce, and the reason is a correctness fix, not a
+mismeasurement.** With the family on, `self` `kept` measures **93.673 / 94.483 / 94.566 /
+94.566** at `-O0`..`-O3` against a base of 83.069 / 91.903 / 91.968 / 91.968 — **+2.60**
+points at the three shipped levels, not +4.3. The 96.204/96.232/96.301/96.301 quoted
+below was taken at `55aaecb2`, before `56da2ab6` made `rir_chain_dup_ok()` refuse the
+`ast_dup_sub` branch when the dup'd value reads the source store's target or carries an
+`AST_StoreVal`. That fix removed a silent miscompile; it also removed 1.7 points of the
+prize, which is the correct order of priorities and worth recording as such.
+
+**And the exchange rate itself is now measured, for the first time.** +2.60 points of
+`kept` bought 0.079% of stage-2. At that rate `kept` is worth about 0.03% of stage-2 per
+point — which is why the `storeval-rot` row below, where 8.7 points of `kept` move in the
+*other* direction and stage-2 moves 0.232% the *wrong* way for the flag that supplies
+them, is not a contradiction but the same coin: `kept` says how many bodies run the
+strategy suite, not whether the suite helped them. Row 1's "the currency that converts"
+should be read with that constant attached.
+
+Reproduce:
+
+```
+python3 tools/rir-coverage.py <bd> --corpus self --levels O0,O1,O2,O3
+```
+where `<bd>` is a directory of symlinks to `cmake-debug` whose `mcc` is a two-line
+wrapper appending the three flags — `rir-coverage.py` has no switch for extra `-f` knobs
+and scrubs `MCC_TEST_OPT`, so a wrapper is the only way to drive it, and that is why this
+number had never been taken.
+
+#### The record the row was opened on
 
 `ast_run_strat_seq` gates **every** optimization strategy on `faithful`, so a body whose
 arena replay does not reproduce the parser's bytes gets *no* strategies at all. Debt #6
@@ -429,12 +507,14 @@ below root-caused and fixed the fidelity bug — an unconditional `ast_dup_sub` 
 correction inside that debt: the failure was at **-O1 as well**, not only -O2/-O3.
 
 The same tool measured what is left. With `-fchain-store -fchain-store-live
--fchain-store-member` all on, `self` reaches **96.204 / 96.232 / 96.301 / 96.301**, so
+-fchain-store-member` all on, `self` reached **96.204 / 96.232 / 96.301 / 96.301**, so
 roughly **4.3 further points** of bodies are unfaithful for an *optimization* reason rather
 than a defect — which means those bodies run no strategies today and would run all of them.
+*(Superseded: those figures predate `56da2ab6` and now read 93.673 / 94.483 / 94.566 /
+94.566, i.e. +2.60 points. See the re-measurement above.)*
 
-This is the largest remaining number on the board denominated in **emitted code**, the
-currency row 1 says still converts. Three things stand in the way, in order:
+This was the largest remaining number on the board denominated in **emitted code**, the
+currency row 1 says still converts. Three things stood in the way, in order:
 
 1. ~~**`mcc -O11` ICEs**~~ **FIXED 2026-08-08, and it was worse than an ICE.** `vstack
    leak (1)` on a chain feeding a 3-deep chain needed `chain-store` **and**
@@ -450,14 +530,19 @@ currency row 1 says still converts. Three things stand in the way, in order:
    on measured stage-1 compile cost. Re-promotion is a compile-time-against-emitted-code
    trade, and those pins are the record of the compile-time half. This row is not a licence
    to re-promote; it is a licence to re-measure.
-3. **What the 4.3 points are worth in emitted code is UNMEASURED.** Nobody has run
-   `tools/selfhost-optbench.py` or `tools/optlevel-bench.py` with the pair on, because the
-   ICE blocks it. That measurement is the first move on this row, not the promotion.
+3. ~~**What the 4.3 points are worth in emitted code is UNMEASURED.**~~ **DONE
+   2026-08-09** — see the table at the top of this row. It was not done with either named
+   tool. `optlevel-bench.py` toggles one flag *off* from the shipped set and these three
+   are already off, so it cannot reach them at all; `selfhost-optbench.py` does have an
+   add-one-in arm, but it adds **one** flag, and this row's whole finding is that one of
+   the three on its own reads backwards. What answers it is a stage-2 build with all
+   three forced on, benchmarked against the shipped stage-2 on `instructions:u`.
 
 Reach, already measured: over `tests/exec` + `tests/optfire/src` at `-O10`, `-fchain-store`
 changes bytes in 3 files on x86_64 and 2 on arm64, and in **0** on i386/riscv64 post-fix.
 So the emitted-code half may well come back small — which is exactly why it gets measured
-before it gets promoted.
+before it gets promoted. It came back small: 3 TUs of 357 with the whole family on, net
+−75 instructions, and one kernel.
 
 ### 3. Metal — decide it, do not pay it down
 
@@ -1021,10 +1106,10 @@ write the *same physical bytes*. Write-up and residual hazards: "Landed — `*p`
 
 | row | size, and the tool that produced it | currency |
 | --- | --- | --- |
-| chain-store re-promotion (row 2) | ~4.3 points of `kept`, `tools/rir-coverage.py`; emitted-code value **UNMEASURED** | emitted code |
+| chain-store re-promotion (row 2) | **MEASURED 2026-08-09, and the answer is no.** The `kept` prize is **+2.60** points, not ~4.3 (`tools/rir-coverage.py`, `self`, `-O1`/`-O2`/`-O3`); the emitted-code half is stage-2 **−0.079%** and sieve **−1.97%** `instructions:u`, for **+1.50%** of stage-1. Pins unchanged | emitted code |
 | `-O11` ICE, `vstack leak (1)` | **FIXED 2026-08-08**; it also silently miscompiled (6 wrong answers / 500 at `-O11`). Cell `exec-chainlive/*`, fuzz 900 programs 0/0 | correctness |
 | `vstack leak (-1)`, debt #6a | **FIXED 2026-08-09**. It fired at shipped `-O1`/`-O2`/`-O3` (78/77/77 of 500) and never miscompiled — every imbalance is `(-1)`, so it always aborted. Cells `exec-storevalrot{1,2,3}/*`, fuzz 1400 programs 0 ICE / 0 wrong. Stage-1 `.text` byte-identical, so it cost nothing | availability |
-| `storeval-rot` pays negative at `-O3` | **NEW, open**: flag on 405,242 stage-1 instructions vs `-fno-storeval-rot` 398,390 — **off is 1.69% better**. Pre-existing, same numbers before and after the #6a fix. `-O1` −20 for on, `-O2` +175 for off | emitted code |
+| `storeval-rot` pays negative at `-O3` | **CLOSED 2026-08-09, level unchanged at 1.** The 1.69% is cold inline-clone bytes: with `-fno-inline` the same gap is **+124**, and the flag's *dynamic* cost is 0.232% with the inliner and 0.245% without it. Turning it off takes `rir-coverage` **red by 8.7 points** of `kept`, because its off-state is an incomplete replay path, not a lowering | emitted code |
 | replay recompute reads a written target | **FIXED 2026-08-09 with #6a**: `c = 2 * (a = s + a)` returned the wrong answer under the shipped `-fno-replay-fallback` at `3ddd9933` with every `storeval-*` and `chain-store` flag off. Covered by `flagsweep-exec/replay-fallback` | correctness |
 | `rir_op_effect`'s clear (row 4) | **CLOSED 2026-08-08**, and the "<1%" bound was wrong: measured **−8.30% / −9.44%** of stage-1 `-O3`/`-O2` CPU time (n=21 interleaved, ±0.55% floor), `instructions:u` −12.29%. 1,464 objects byte-identical | compile time |
 | Metal, debt #4 (row 3) | 1754 vs 3578 lines, 3-line kernel arm, 0 `msl_region*` symbols. A rewrite, not a fix. | a decision |
@@ -1532,6 +1617,102 @@ item now says what was measured, not what was assumed.
    `-O1` and is off by 1.69% at `-O3`. No pin was touched here; this wants its own
    measurement and its own demotion argument, and the `-O2` sign says the answer may be
    "demote to a level, not off".
+
+   **It got that measurement — 2026-08-09 — and the row stays at 1. The 1.69% is real
+   and it is the wrong number.** Three findings, in the order they were taken.
+
+   **(a) Where the 0.0000% came from, because that matters more than the row.** It is
+   one cell: `tests/optfire/levelbench.tsv:47`, the `gain_pct` column of the
+   `storeval-rot` row, banked by `1ad3f1aa` and quoted in `893c1e84`'s commit message and
+   at the ladder write-up below. `tools/optlevel-bench.py`'s `gain` is a **geometric mean
+   of dynamic `instructions:u` over the 17 `tests/runtime` kernels** — not a static count,
+   and not `src/mcc.c`. The same row's `fires_kernels` column is **empty**: the flag
+   changed **zero of 17** kernel objects, so `gain` was a geomean over binaries that were
+   bit-identical and **could only ever be 0.0000**. The tool knew — `optlevel-bench.py`
+   has a "changes no kernel object; nothing to adjudicate" path — and the honesty axis
+   fired correctly. The write-up quoted the derived zero instead of the "did not fire".
+   Re-checked on today's tree: `storeval-rot` still changes **0 of 17** kernels at `-O2`
+   and `-O3`, so no runtime-kernel benchmark can ever say anything about this flag, and
+   driving `tools/runtime-bench.py` through an `--mcc` wrapper would be a null experiment
+   by construction. **This is the seventh headline figure on this board that did not
+   reproduce, and it failed differently from the other six: nothing was mismeasured, a
+   correctly computed number of the wrong quantity was quoted as if it were the right
+   one.** The rule it earns: *a ratio whose denominator did not move is not a measurement
+   of zero effect, it is a measurement of no coverage* — quote `fires`, never `gain`,
+   when `fires` is 0. And this is not a one-off: **24 of `levelbench.tsv`'s 47 rows have
+   an empty `fires_kernels`**, i.e. change no kernel object at all, and **11 of those**
+   carry a `gain_pct` of `-0.0000` that is a division over unchanged binaries. Any of the
+   eleven can be quoted the same way this one was.
+
+   **(b) The 1.69% is the inliner, and it is cold.** `-O3` differs from `-O2` by exactly
+   one thing — `grep -c "MCC_OPTD_LEVEL(3)" src/mccopt.h` is **0**, and
+   `src/mccast.c:2235` turns `MCC_OPT_INLINE` on at `optimize >= 3`. Reproduced on this
+   tree (`70b92fb3`, so slightly different absolutes): `-O1` 366,000 vs 366,020 (−20, on
+   better), `-O2` 379,404 vs 379,280 (+124), `-O3` 401,236 vs 394,404 (+6,832, 1.73%).
+   Add `-fno-inline` at `-O3` and the gap collapses to **+124** — identical to `-O2` —
+   and `-O2 -finline` reproduces the full +6,832. So the entire 1.69% is inline
+   replication, which is why it appeared only after `ffa6cf16` deleted the 512-body pool
+   cap: `src/mcc.c` is the only TU in the tree big enough to have blown it. **Corollary
+   the ladder should act on: `tests/optfire/levelbench.tsv` is stale with respect to
+   `ffa6cf16` for every row whose effect scales with inlining, not just this one.**
+
+   And those 6,832 instructions are **cold**. Stage-2 — two compilers built from the
+   identical snapshot, differing only in this flag, verified to emit a **byte-identical**
+   object (`md5 10f27ec3…`), then benchmarked compiling that snapshot at `-O2`, `n=15`
+   interleaved, each arm duplicated so the run carries its own noise control:
+
+   | stage-2 config | `instructions:u`, median | vs shipped |
+   | --- | ---: | ---: |
+   | `-O3` (shipped) | 5,928,147,497 | — |
+   | `-O3 -fno-storeval-rot` | 5,914,420,963 | **−0.232%** |
+   | `-O3 -fno-inline` | 5,936,353,998 | +0.138% |
+   | `-O3 -fno-inline -fno-storeval-rot` | 5,921,800,105 | −0.107% |
+
+   The flag's dynamic cost is **0.232% with the inliner and 0.245% without it** — the same
+   number either way, so it is *not* inline-mediated at all. The +6,832 cold bytes are
+   worth nothing; the +124 hot ones are worth 0.23%, and a per-function diff says where:
+   `gen_op` +55, `parse_atomic` +46, `parse_number` +17, `expr_cond` +17, `parse_string`
+   +16 — 30 functions differ and the growth is in the parser/codegen hot set. Two
+   identical arms of each config bracket the noise at **0.004%**, so 0.232% is ~60σ.
+
+   In `leveltime.tsv`'s own columns, the row should read `storeval-rot 1 1 -2.210 +0.034
+   -0.2327 differs - - -`, against the banked `-0.211 2.241 -0.0245`. Every field moved
+   and none changed sign on the counter: the compile-time cost is **10× larger** than
+   banked, the counter's stage-2 verdict is **9.5× larger**, and the banked `+2.241` of
+   stage-2 *time* was layout — a clean n=21 re-read with an identical-config control of
+   **+0.002%** puts it at **+0.034%**, i.e. nothing. Stage-1: n=21 interleaved, CPU time
+   512.60 ms → 501.27 ms with the flag off (**−2.210%**) against an identical-config
+   floor measured at **+0.455%** in the same run, and `instructions:u` agreeing at
+   **−2.313%**. That is 4.9× the floor with the layout-immune counter agreeing in sign
+   and magnitude, which is the strongest form this tree's rule recognises.
+
+   **(c) So every axis says demote, and the row stays anyway.** `-fno-storeval-rot` is
+   not an alternative lowering — its `levelpins.txt` row already said its off-state is "an
+   incomplete path". Measured, that is worth **8.7 points of `kept`**: `tools/rir-coverage.py
+   --corpus self` reads 83.069 / **83.103** / **83.242** / **83.242** with the flag off
+   against 83.069 / 91.903 / 91.968 / 91.968 shipped, and the run **FAILS** at `-O1`,
+   `-O2` and `-O3` against the bank. Per TU: 2,816 → 2,779 bodies replayed, 1,366,667 →
+   1,237,966 `used` bytes. Demoting the row therefore means banking an **8.7-point
+   coverage regression** — twice what board row 2 was trying to win — to buy 2.31% of
+   compile time and 0.23% of stage-2. That is not a trade this tree should take, so
+   `src/mccopt.h:40` stays at `MCC_OPTD_LEVEL(1)` and no pin moved.
+
+   The residue is a genuine open question, and it is not about this flag: for these 37
+   bodies the strategy suite makes the hot code **larger and slower**. `kept` counts
+   bodies that run the strategies, not bodies the strategies helped. Anyone who re-opens
+   `storeval-rot` should re-open it as "which strategy pessimizes `gen_op`", not as a
+   ladder move.
+
+   Reproduce (all of it, from the repo root, with `cmake-debug` built):
+
+   ```
+   FLAGS=$(python3 -c "import json,shlex;cc=json.load(open('cmake-debug/compile_commands.json'));\
+   r=[x for x in cc if x['file'].endswith('/mcc.c')][0];\
+   print(' '.join(a for a in shlex.split(r['command'])[1:] if a.startswith(('-I','-D'))))")
+   cmake-debug/mcc $FLAGS -O3 -fno-storeval-rot -c src/mcc.c -o /tmp/m.o
+   objdump -d --no-show-raw-insn /tmp/m.o | grep -cE '^[[:space:]]+[0-9a-f]+:'
+   MCC_RIR_PROD=2 MCC_RIR_PROD_OUT=/tmp/p.txt cmake-debug/mcc $FLAGS -O3 -fno-storeval-rot -c src/mcc.c -o /tmp/m.o
+   ```
 7. **The "464 skipped cells under `debug`" number was wrong, and so was its cause —
    PARTLY FIXED.** It was not `MCC_CROSS_DIR` and not a missing `cmake-cross`:
    `MCC_CROSS_DIR` defaults correctly, cross cells are registered unconditionally with
@@ -5366,6 +5547,17 @@ counter agrees in sign; that rule dissolved a bogus +2.2–2.8% "win" cluster
 including `storeval-rot`, which changes 0.0000% of emitted instructions, and
 `chain-store`'s apparent +26% on sieve, which sat entirely inside sieve's own 32%
 floor.
+
+**Both of those two sentences are wrong as written, and 2026-08-09 measured how.**
+The `storeval-rot` 0.0000% is `levelbench.tsv:47`'s `gain_pct`, a geomean of
+dynamic kernel `instructions:u` over 17 kernels **none of which the flag changes**
+— a ratio with an unmoved denominator, not a measurement of no effect. Its real
+static reading on `src/mcc.c` is +124 at `-O2` and +6,832 at `-O3`, and its real
+dynamic reading is 0.232% of stage-2. And `chain-store`'s sieve win was correctly
+rejected at +26% on the clock, but on the layout-immune counter the family is
+**−1.97%** on sieve, so there was a real ~2% there under a 32% floor. Neither
+correction moves a level — see debt #6a and board row 2 — but the phrasing rule
+does: **when `fires` is 0, quote `fires`, never `gain`.**
 
 **Removing all the candidates at once is what caught the one real mistake.** With
 all 35 off, `-O2` came out 0.52% slower. `reg-color` alone explained it: per-flag
