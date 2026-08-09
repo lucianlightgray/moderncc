@@ -324,12 +324,14 @@ for (q = o->vs_n + 1; q <= VSTACK_SIZE; q++)
 
 **The board's own bound was wrong by a factor of ~180, and the error is worth more than the
 fix.** "Against a self-compile that takes ~90 s of `mcc`, that bounds the row well under 1%
-of wall-clock" took the ~90 s figure from the D4b row, where it describes a self-compile
-**under `MCC_ARENA_DUMP` census instrumentation**. A plain `mcc -O3 -c src/mcc.c` on this
-host is **0.50 s** — the same 0.5641 s the pool-cap row measured two sections down. Divide
+of wall-clock" rests entirely on that 90 s, and **no self-compile on this host takes
+anything like it**: plain `mcc -O3 -c src/mcc.c` is **0.50 s**, and the same compile under
+`MCC_ARENA_DUMP` with `MCC_RIR_PROD=2` — the D4b row's own instrumented configuration,
+which is the only other place this file says "~90 s" — is **0.98 s**. The pool-cap row two
+sections down independently measured 0.5641 s for the same workload and agrees. Divide
 105.1M one-byte stores by 0.5 s instead of 90 s and the arithmetic bound is ~10%, which is
-what the clock then said. **Never carry a denominator across rows without re-reading what
-it measures.**
+what the clock then said. **A denominator carried between rows is a measurement only if
+someone re-takes it.**
 
 **Measured, and it is the largest compile-time item ever taken off this tree.** Method,
 `cmake-debug` `mcc` (the `-g`, no-`-O` host build, which is the stage-1 reference compiler
