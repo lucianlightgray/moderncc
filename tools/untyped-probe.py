@@ -73,9 +73,15 @@ for lvl in levels:
                 t[0] += a
                 t[1] += b
                 t[2] += c2
+    if not n:
+        print("== -%s  FAIL: no [rir-untyped] record was emitted, so nodes=0 "
+              "and every share below has an empty denominator. This tool's "
+              "whole subject is the denominator that has to reach zero, and a "
+              "compile that failed outright renders identically to the goal "
+              "being met." % lvl)
+        sys.exit(1)
     print("== -%s  nodes=%d unknown=%d %.3f%%  knownvoid=%d %.3f%%" %
-          (lvl, n, u, 100.0 * u / n if n else 0.0, v,
-           100.0 * v / n if n else 0.0))
+          (lvl, n, u, 100.0 * u / n, v, 100.0 * v / n))
     for k in sorted(tot, key=lambda x: -tot[x][1]):
         a, b, c2 = tot[k]
         print("   %-12s n=%-8d unknown=%-8d %6.3f%% of all   knownvoid=%-8d"

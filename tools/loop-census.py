@@ -125,7 +125,34 @@ bucket_names = slice_census.bucket_names
 BREAKEVEN = [(3, 322), (7, 108), (15, 48), (31, 24), (63, 23), (127, 8)]
 THRESHOLDS = [8, 23, 24, 48, 108, 322]
 
+BREAKEVEN_PROVENANCE = (
+    "break-even lane table: HAND-PINNED, not measured on this host. The six\n"
+    "  numbers are transcribed from docs/TODO.md's `slicerun --cost-synth` row;\n"
+    "  this run did not invoke --cost-synth and cannot tell you whether they\n"
+    "  still hold here. Three known limits, all of them affecting every number\n"
+    "  above that is scored `at break-even`:\n"
+    "    - only the 3-, 7- and 15-node rows were ever signal. At 511 nodes a\n"
+    "      FIXED binary ranged 13.9-64.1 ns/lane across three runs, so the 23\n"
+    "      and the 8 are noise frozen into a constant.\n"
+    "    - --cost-synth measured ten sizes; this table stops at 127 nodes, so\n"
+    "      every larger loop body is held to 8 trips when the measured value\n"
+    "      was 7/5/3/2. That biases the fractions DOWNWARD by an unknown amount.\n"
+    "    - runtime/lib/loopcensus.c pins the same six values a second time, in\n"
+    "      C, as lc_thr[]; the accumulator this fraction reads is bucketed by\n"
+    "      THAT copy. The two are cross-checked below, not by construction.\n"
+    "  The fixed-threshold tables above are BREAKEVEN-independent -- read the\n"
+    "  conclusion off those if you do not want to trust this constant.")
+
 ORACLE = []
+
+
+def pctna(v):
+    """A share, or `n/a` when there was nothing to take a share of.
+
+    0.00% from "measured, and nothing qualified" and 0.00% from "the
+    denominator was empty" are the same four characters, and the second is the
+    project's most consequential negative result if anyone quotes it."""
+    return "n/a" if v is None else "%.2f%%" % v
 
 
 def breakeven_trips(nodes):
@@ -133,6 +160,26 @@ def breakeven_trips(nodes):
         if nodes <= n:
             return t
     return BREAKEVEN[-1][1]
+
+
+def check_thresholds(trips):
+    """THRESHOLDS against the thresholds the instrumented binary actually used.
+
+    lc_thr[] in runtime/lib/loopcensus.c is a second, independent copy of the
+    same six numbers, and every `at break-even` figure is an index into the
+    accumulator it buckets. If the two ever drift, `tr["gew"][thr]` raises
+    KeyError on a lucky day and silently reads the wrong bucket on an unlucky
+    one -- both copies are ordered lists, so a changed value at a shared key
+    would not raise. Say so instead."""
+    for tr in trips.values():
+        got = sorted(tr["gew"])
+        if got != sorted(THRESHOLDS):
+            return ("threshold drift: the instrumented binary bucketed at %s, "
+                    "tools/loop-census.py's THRESHOLDS is %s. Every `at "
+                    "break-even` number below would be read out of the wrong "
+                    "bucket." % (got, sorted(THRESHOLDS)))
+        return None
+    return None
 
 
 def find_mcc(bdir):
@@ -455,7 +502,16 @@ def run_corpus(bdir, progs, opt, top, keep, want_json):
     if not os.access(mcc, os.X_OK):
         print("loop-census: no mcc at %s" % mcc)
         return 77
+    if not progs:
+        print("loop-census: FAIL: the corpus is empty -- not one kernel source "
+              "is present in this checkout, so there is nothing to compile and "
+              "nothing to count. Reporting 0.00%% here would read as 'the "
+              "numeric workload has no exploitable parallelism', which is the "
+              "opposite of what an empty corpus establishes.")
+        return 1
     all_loops, all_trips, per_prog = {}, {}, []
+    rt_tot = {"entries": 0, "exits": 0, "lost": 0, "stray": 0, "iters": 0,
+              "overflow": 0}
     ctx = tempfile.TemporaryDirectory() if not keep else _KeepDir(keep)
     with ctx as work:
         for k, (rel, args, cflags) in enumerate(progs):
@@ -469,7 +525,9 @@ def run_corpus(bdir, progs, opt, top, keep, want_json):
                                   "p%02d" % k)
             if got is None:
                 return 1
-            loops, trips, _tot, bpn = got
+            loops, trips, ptot, bpn = got
+            for key in rt_tot:
+                rt_tot[key] += (ptot or {}).get(key, 0)
             base = (k + 1) * PROG_ID_STRIDE
             kern = os.path.basename(rel).rsplit(".", 1)[0]
             for i, lp in loops.items():
@@ -502,16 +560,14 @@ def run_corpus(bdir, progs, opt, top, keep, want_json):
         print()
         print("largest contributing PROGRAM: %s, %.1f%% of all iterations"
               % (hot[0], 100.0 * hot[1]["iters"] / tot_it))
-        print("  corpus raw fraction without it            %.2f%%"
-              % (100.0 * rest_raw / rest_it if rest_it else 0.0))
-        print("  corpus parallel-legal fraction without it %.2f%% of the "
+        print("  corpus raw fraction without it            %s"
+              % pctna(100.0 * rest_raw / rest_it if rest_it else None))
+        print("  corpus parallel-legal fraction without it %s of the "
               "remaining, %.2f%% of all"
-              % (100.0 * rest_par / rest_it if rest_it else 0.0,
+              % (pctna(100.0 * rest_par / rest_it if rest_it else None),
                  100.0 * rest_par / tot_it))
 
-    tot = {"entries": merged["entries"], "exits": 0, "lost": merged["lost"],
-           "stray": merged["stray"], "iters": merged["iters"], "overflow": 0}
-    rc = report(all_loops, all_trips, tot, None, -1, top, opt,
+    rc = report(all_loops, all_trips, rt_tot, None, -1, top, opt,
                 "%d-program corpus" % len(progs), want_json)
     return rc
 
@@ -656,11 +712,12 @@ def report(loops, trips, tot, bpn, ncal, top, opt, src, want_json):
               "its own MCC_SLICE_CENSUS ratio)")
     else:
         print("bytes-per-node calibration  UNAVAILABLE -- fell back to toks")
-    wf = 100.0 * weighted_num / tot_iters if tot_iters else 0.0
-    print("ITERATION-WEIGHTED FRACTION AT EACH LOOP'S OWN BREAK-EVEN   %.2f%%"
-          % wf)
+    wf = 100.0 * weighted_num / tot_iters if tot_iters else None
+    print("ITERATION-WEIGHTED FRACTION AT EACH LOOP'S OWN BREAK-EVEN   %s"
+          % pctna(wf))
     print("  (share of executed iterations in loop entries whose trip count")
     print("   meets the break-even lane count for that loop's node bucket)")
+    print("  " + BREAKEVEN_PROVENANCE.replace("\n", "\n  "))
     print()
     print("same statistic at each fixed threshold, size ignored:")
     for t in THRESHOLDS:
@@ -668,7 +725,7 @@ def report(loops, trips, tot, bpn, ncal, top, opt, src, want_json):
               % (t, fixed_num[t], 100.0 * fixed_num[t] / tot_iters
                  if tot_iters else 0.0, fixed_ent[t]))
 
-    pwf = 100.0 * par_num["1"] / tot_iters if tot_iters else 0.0
+    pwf = 100.0 * par_num["1"] / tot_iters if tot_iters else None
     print()
     print("=== parallel legality (ast_loop_parallel_legal) ===")
     print("par=  static loops   entered   entries        iterations      "
@@ -696,12 +753,12 @@ def report(loops, trips, tot, bpn, ncal, top, opt, src, want_json):
                  100.0 * w["iters"] / tot_iters if tot_iters else 0.0,
                  w["hot"]))
     print()
-    print("PARALLEL-LEGAL ITERATION-WEIGHTED FRACTION                   %.2f%%"
-          % pwf)
+    print("PARALLEL-LEGAL ITERATION-WEIGHTED FRACTION                   %s"
+          % pctna(pwf))
     print("  (share of executed iterations in loop entries that BOTH meet the")
     print("   break-even for their node bucket AND sit in a par=1 loop)")
-    print("  raw (dependence ignored)  %.2f%%   legal-only  %.2f%%"
-          % (wf, pwf))
+    print("  raw (dependence ignored)  %s   legal-only  %s"
+          % (pctna(wf), pctna(pwf)))
     print()
     print("raw vs legal-only at each fixed threshold:")
     for t in THRESHOLDS:
@@ -777,6 +834,17 @@ def report(loops, trips, tot, bpn, ncal, top, opt, src, want_json):
             "parallel_legal_weighted_fraction": pwf,
         }, open(want_json, "w"), indent=1)
         print("\nwrote %s" % want_json)
+    drift = check_thresholds(trips)
+    if drift:
+        print("\nFAIL: " + drift)
+        return 1
+    if not tot_iters:
+        print("\nFAIL: not one loop iteration was executed, so every fraction "
+              "above has an empty denominator. This is not a census that found "
+              "no parallelism -- it is a census with no subject, and reporting "
+              "it as 0.00%% would be the strongest negative result this project "
+              "can state, taken over nothing.")
+        return 1
     return 0
 
 

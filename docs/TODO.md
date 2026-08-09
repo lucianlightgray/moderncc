@@ -119,7 +119,13 @@ Four provenance hazards, stated rather than buried:
    read back from a `--cost-synth` run. If the bench moves, every fraction scored against
    it moves and nothing notices. Worse, only the 3-, 7- and 15-node rows of that bench were
    ever signal: at 511 nodes a *fixed* binary ranged 13.9–64.1 ns/lane across three runs.
-   The 23 and the 8 are noise that has been frozen into a constant.
+   The 23 and the 8 are noise that has been frozen into a constant. **The tool now says so
+   in its own output** (2026-08-09, `wt/benchtrap`) — a `BREAKEVEN_PROVENANCE` banner prints
+   directly under the headline fraction and names all three limits, including a third one
+   nobody had written down: `breakeven_trips` stops at 127 nodes and holds every larger
+   loop body to 8 trips where `--cost-synth` measured 7/5/3/2, so the fractions are biased
+   *downward* by an unknown amount. The constant itself is still pinned; see the audit
+   section below for the cost of un-pinning it.
 2. **16,537 is unreconstructible.** No corpus reaches it — the amalgamated self-compile
    gives 10,238, the 15 sources separately and de-duplicated give 10,239, and the same 15
    *with* the dump's duplicate body records give 28,753. Anything still resting on it
@@ -128,10 +134,424 @@ Four provenance hazards, stated rather than buried:
    forbids `tests/exec` for the libc phase: `printf` alone is 35% of its Invoke nodes and
    its libc ceiling is 3 blocks against the compiler's 734 — the two disagree by **47×**.
    Never put them in one column.
-4. **`tools/fmt-census.py` is a second implementation of `mcc_fmt_compile`, and nothing
-   gates it against the C one.** `fmt_refusals` in `tools/slicerun.c` pins the C verdict for
-   the same 25 refused and 12 accepted spellings the port is checked against, but the two
-   lists are kept in step by hand and `tools/fmt-census.py` is not a ctest cell.
+4. **`tools/fmt-census.py` is a second implementation of `mcc_fmt_compile`.** ~~and nothing
+   gates it against the C one~~ — **CLOSED**, and re-verified 2026-08-09: `fmt/census-oracle`
+   pipes ~41,000 formats (every literal in `src/*.c` plus a seeded walk over the item/arg/
+   literal-run/budget boundaries) through `slicerun --fmt-verdict`, which calls the real
+   `mcc_fmt_compile`, and diffs **both** the verdict and the accepted cost. It has a floor
+   (`len(fmts) < 1000` fails) and a known-positive that re-injects the historical drift. The
+   cost-model constants `C_BASE`/`C_BYTE`/`C_HEX`/`MAXCOST` are therefore continuously
+   diffed and are *not* hand-pinned in the dangerous sense. Three residues survive and are
+   filed below: three port branches with no subject in either corpus half, an ungated
+   `AST_INVOKE = 11` in the `--arenas=` path, and the fact that the board row this tool
+   feeds was never regenerated after the drift closed. Row 4 of the table above reads
+   `172 sites, 162 literal, 140 accepted (86.4%), 98 carrying %s, 17 budget / 4 flag / 1
+   float`. Re-run on this tree it is **162 literal, 148 accepted (91.4%), 100 carrying
+   `%s`, 9 budget / 4 flag / 1 float** — four of the six figures moved, `140 → 148` past
+   the `140 → 142` correction filed elsewhere on this board. The oracle verifies the
+   *port*; nothing verifies the *doc row*, and this is a re-run, not a measurement.
+
+### The measurement-tool audit — 2026-08-09, `wt/benchtrap`
+
+Seven headline figures on this board have now failed to reproduce, and at least two of the
+seven failed because a **tool** was wrong rather than a transcription. The `storeval-rot`
+`0.0000%` (debt #6a) and the `fmt-census` drift are the two. This section is the sweep that
+followed: every committed measurement tool read for four specific failure modes, with the
+cheap fixes landed on this branch and the rest filed precisely. **No pin value changed and
+nothing was re-measured.**
+
+The four modes, because naming them is most of the work:
+
+| mode | the shape | why it survives review |
+| --- | --- | --- |
+| **null experiment** | a statistic computed over an empty or degenerate subject set and printed as a number | `0.0000` from "measured, effect is zero" and `0.0000` from "there was nothing to measure" are the same six characters |
+| **second implementation** | the tool reimplements compiler logic in Python instead of asking the compiler | it agrees on the day it is written, and drifts silently after |
+| **hand-pinned constant** | a frozen number presented in output alongside measured ones | nothing in the output distinguishes the two |
+| **silent denominator** | a share whose population is "whatever compiled" or "whatever the dump contained" | the ratio stays plausible while the corpus moves under it |
+
+#### LANDED — `tools/optlevel-bench.py`, the defect that started this
+
+`gain` is a geometric mean of dynamic `instructions:u` over the 17 `tests/runtime` kernels.
+When a flag changes **zero kernel objects**, that geomean runs over 17 pairs of
+bit-identical binaries and returns `0.0000` — correctly computed, of a quantity nobody
+measured. That is the cell the ladder write-up quoted as "`storeval-rot` … changes 0.0000%
+of emitted instructions" for a flag that costs **2.31% of stage-1**.
+
+Verified as filed: of `tests/optfire/levelbench.tsv`'s 47 rows, **24 change no kernel
+object** (23 measured plus the excluded `inline-functions`) and **11 of the 23 carried a
+`-0.0000` gain**. Any of the eleven was quotable exactly as `storeval-rot` was.
+
+What landed:
+
+- A **`no-kernel-subject` bucket**. `cost-no-gain` is an assertion that a gain was measured
+  and found absent; these rows never had a subject, so they no longer claim one.
+- Every kernel-derived column — `gain_pct`, `efficiency`, `text_kernels_pct`, `best_kernel`,
+  `best_kernel_pct` — reads **`n/a`** on such a row, and on an `error` row, where the
+  configuration never built and its `0.0000` cost columns and `0` fire counts were equally
+  fabricated.
+- A new **`kernels_moved`** column, `0/17` … `17/17`. The honesty axis was already there as
+  `fires_kernels`, and it was a comma-separated name list that read as blank; a fraction in
+  its own column is what a reader scanning `gain_pct` will actually see.
+- `tests/optfire/levelbench.tsv` **relabelled in place** — 23 rows to `n/a` and the new
+  bucket, one error row to `n/a` throughout, header note recording exactly what changed.
+  Row order changed with the bucket rank, so the `levelbench.tsv:47` anchor in debt #6a now
+  points at line 51. **No value was edited and nothing was re-run.**
+- Two new ctest cells, on the `fmt/census-oracle-known-positive` pattern:
+  **`optbench/null-subject`** runs `optlevel-bench.py --selfcheck` over a synthetic
+  three-row table (a flag that fires in the corpus but moves no kernel, a flag that really
+  moves one, and a configuration that would not build) and fails if any kernel-derived
+  column of the first or third parses as a float; **`optbench/null-subject-known-positive`**
+  asserts the clean run is green, then re-runs with `--mutate`, which restores the old
+  zero-reporting behaviour, and fails if the check still passes. The mutated run reproduces
+  the original defect exactly: `nullflag gain_pct reads 0.0001`. Neither cell needs `perf`
+  or a built `mcc`, so both are `must-run`; `fmt/census-oracle` and its known-positive were
+  added to `tests/must-run.txt` at the same time, having been missing since they landed.
+
+**What the eleven rows actually measure now.** All eleven are `no-kernel-subject`: their
+`cost_self_pct` / `cost_corpus_pct` / `text_self_pct` / `fires_corpus` columns are real
+measurements of the *compiler*, and nothing in this table says anything about the emitted
+code. Eight of the eleven — `fmov-imm`, `gcse`, `zero-initialized-in-bss`, `tree-dse`,
+`storeval-calllast`, `chain-store-live`, `narrow-fix`, `tree-switch-conversion` — fire on
+1–9 of 293 corpus objects, so they are plausibly genuinely inert on numeric kernels and are
+fine once labelled. Three need a different instrument, not a different label:
+
+| row | why the kernel table structurally cannot see it |
+| --- | --- |
+| `storeval-rot` | already priced on the right axis: 2.31% of stage-1 and 0.232% of stage-2 `instructions:u`, and 8.7 points of `rir-coverage` `kept` if it is turned off. See debt #6a; the row stays at 1 |
+| `narrow` | 15 corpus objects and a **2.17% `cost_self`** — the second-largest compile-time cost in the whole table with no emitted-code reading at all. It is a compiler-side transform priced only on the compiler, and the ladder currently ranks it on nothing |
+| `tree-copy-prop` | 15 corpus objects, 1.26% `cost_self` / 0.70% `cost_corpus`, same shape |
+
+The instrument those three want is the one debt #6a used: a stage-1/stage-2 self-compile
+read under `instructions:u`, i.e. `tools/selfhost-optbench.py`, not a numeric kernel. That
+is filed below, not done — it is a measurement, and this was an audit.
+
+**The dilution hazard the fix does NOT close, filed rather than half-done.** `gain` is a
+geomean over **all 17** kernels even when only one moved. `chain-store` reads `0.1169`
+against its own `sieve` delta of `1.9658` — a real ~2% win diluted ~17× by sixteen pairs of
+identical binaries. That is the same error as the null case, one order weaker, and it
+affects every `ranked` and `cost-no-gain` row with `kernels_moved` below `17/17` — 20 of the
+23. `tests/optfire/levelbench-cycles.tsv` gets this right (`cycles_adjudicate` measures only
+the kernels the flag moves, and says so). The fix is a `gain_movers_pct` column restricted
+to the moved set; it cannot be backfilled into the banked table because per-kernel deltas
+are not in the TSV, so it needs a re-run of the bench. **Do not quote `gain_pct` against
+`best_kernel_pct` without dividing by `kernels_moved` first.**
+
+#### LANDED — the rest of the sweep
+
+| tool | landed on `wt/benchtrap` |
+| --- | --- |
+| `tools/loop-census.py` | `--corpus runtime` with an empty roster **fails** instead of printing a complete report of `0.00%`. Both headline fractions print **`n/a`** rather than `0.00%` on an empty denominator, as do the two "without the hottest program" lines. `report()` fails outright when zero iterations were executed. The corpus mode's `runtime totals` line now sums each program's **real** `[trip-tot]`, where it used to synthesize one from the tally itself with `exits=0 overflow=0` hard-coded — a tautological cross-check that also asserted no loop ever exited and nothing was lost to the `LC_MAX` id cap. `THRESHOLDS` is cross-checked against the buckets the instrumented binary actually used (`lc_thr[]` in `runtime/lib/loopcensus.c` is a second copy of the same six numbers). Plus the `BREAKEVEN` provenance banner in hazard 1 above |
+| `tools/runtime-bench.py` | `--gates` took `NAME=VALUE` **environment** knobs and put them in the child's environment. The optimizer knobs moved to argv (`MCC_OPT_ROW`), so every `--gates` configuration compiled the **identical binary** and the delta columns reported one program against itself — a `+0.0%` instruction column that is maximally convincing and completely empty. `GATE_WINS` was moved to flags when this bit; this path was not. It now takes flags and **refuses** the retired spelling, the way `tools/selfhost-smoke.py` does. Separately: a run where every kernel's *reference* build or run failed printed `runtime-bench: OK (0 kernels x 1 config(s), output verified vs gcc)` and exited 0 — `runtime-bench-check` going green having compiled nothing with `mcc`. That is now a failure |
+| `tools/node-census.py` | `KINDS` was a positional retype of `enum AstKind`; it is now diffed against `src/mccast.h` on every run. Inserting a kind mid-enum shifted every label by one with no other symptom (plausible percentages, wrong names, and a bank comparison diffing mismatched kinds); appending a 15th silently shrank the **denominator** and inflated every share including the `external_invokes_on_cpu` ratio the tool ratchets on. Also, `make_dump` discarded the compile's return code and tested only that the file existed — `MCC_ARENA_DUMP` is append-mode and line-buffered, so an ICE part-way through leaves a valid-looking partial dump, and the bank compares **ratios**, which survive truncation. A nonzero compile is now a hard failure |
+| `tools/slice-census.py` | `src_fail` was counted and never checked, and reached stdout only through `report()`, which `--quiet` suppresses. `slice-enum` is `--quiet --min-slices 100` over 12 pinned sources: 11 of the 12 could stop compiling and the cell would pass on the twelfth with no mention of the loss. `src_fail > 0` and `fn_n == 0` now fail |
+| `tools/selfhost-fixpoint.py` | **the same argv/environment bug as `runtime-bench --gates`, and it had disarmed four ctest cells.** Trailing arguments were turned into environment variables; the four cells that drive this file pass `-f` spellings, so `-fdivmagic` became an environment variable *named* `-fdivmagic`. `selfhost-fixpoint-gates` and the three `selfhost-fixpoint-memmodel-*` cells were byte-for-byte reruns of the plain cell while printing `knobs=[...]` as if they were not. Flags now go on argv and a non-flag argument is refused. Confirmed live: `selfhost-fixpoint-gates` now produces `o1=3411935` against the plain cell's `3413759`, i.e. the twelve flags demonstrably reach the compiler, and the fixpoint still holds |
+| `tools/untyped-probe.py` | `nodes=0` printed `0.000%` unknown and exited 0. The docstring calls that percentage "the denominator that has to go to zero first", so **a completely broken run rendered as the goal being achieved** — the return code of the probe compile was never checked either. Now a hard failure |
+| `tools/shadow-iv-sweep.sh` | `clean=` counted anything that did not print the divergence string, including hard compile errors, missing sysroots and `timeout` kills, and the vacuity guard tested `clean > 0` — so a sweep in which nothing compiled printed `attempts=610 clean=610 divergences=0  PASS`. `clean` and `failed` are now separate and both reported. **On this tree 20 of 610 attempts were in the wrong column**; see the filed item on the missing floor |
+| `tools/strategy-ledger.sh` | the `awk` block ends `print "FAIL: ... the ledger is vacuous"; exit 1`, and it was the **left side of a pipe into `sort`**, so its exit status was discarded and under `set -eu` the pipeline reported `sort`'s 0. The FAIL was a printed string, not a failure. It now runs to a file and the status is checked |
+| `tools/slicerun.c --census` | the only one of the three report modes in that function with no zero-subject exit — its siblings already say `FAIL (the cost table has no rows)` and `FAIL (no real slice became schedulable work)`. An empty or unparseable dump printed ten `census:` lines of zeros and exited 0. `blocks == 0` now fails |
+| `tools/opt-cache-determinism.py` | see the LOST SUBJECT item below — it now counts what was actually written to `XDG_CACHE_HOME` and refuses to make its claim over an empty one |
+| `tools/opt-determinism.py` | `--runs 1` printed `determinism: OK (1 runs of X byte-identical)` having compared nothing against anything. `--runs < 2` is now refused |
+
+Full `ctest` after all of it: **9138 cells, 0 failures** — the 9136 baseline plus the two new
+`optbench/null-subject*` cells.
+
+#### LOST SUBJECT — `opt-cache-determinism` has been passing over an empty cache
+
+Not a tool defect and worth its own heading, because the mechanism is one this board has
+not seen before: **a ladder demotion silently removed a cell's subject and the cell went on
+passing.**
+
+`tools/opt-cache-determinism.py` compares four cache states and asserts all four objects are
+byte-identical, concluding "the disk cache is a side channel, not an input to codegen". The
+cache in question is the opt-slice memo, `sl-<target-salt>.ck`. `src/mccopt.h` carries
+`opt-slice` at **`MCC_OPTD_LEVEL(9)`** — off at every shipped level. So at `-O3`, which is
+what the ctest cell runs, **nothing is ever written to `XDG_CACHE_HOME`**, all four objects
+are trivially identical, and the tool printed its strongest claim on the strength of there
+being no cache.
+
+Measured today, with the subject restored:
+
+```
+python3 tools/opt-cache-determinism.py cmake-debug/mcc src/mcc.c \
+        --opt=-O3 --from-build cmake-debug -- -fopt-slice
+cold        ba19af67…   self  ba19af67…   foreign-tu  ba19af67…   foreign-fl  81178595…
+cache entries written under XDG_CACHE_HOME: 2
+FAIL: the object depends on the optimizer's disk cache state
+```
+
+**The defect the tool was written to catch is still there.** It is simply unreachable from
+the shipped ladder. The cell now counts cache entries and returns **77 with a message that
+names this as a lost subject rather than a pass** — it does not fail, because turning a
+long-green cell red over a pre-existing compiler defect is a different decision than this
+audit gets to make. Two things follow and neither is done here:
+
+1. Someone owns `-fopt-slice`'s cache-state dependence, or the pass is deleted. A rung-9
+   flag whose off-state is the only tested state is not a demotion, it is a dead pass with a
+   live bug in it.
+2. `opt-cache-determinism` should be a `registered` row in `tests/must-run.txt` **and** a
+   permanent 77 should be visible as such. Right now the tree reads it as green.
+
+#### FILED — found, not fixed, with what a reader would wrongly conclude
+
+Ordered by how much a currently-quoted number depends on it.
+
+1. **`BREAKEVEN` is still hand-pinned, and un-pinning it is not a five-line job.**
+   `tools/loop-census.py`, `BREAKEVEN` / `THRESHOLDS`. Sixteen printed statistics and two
+   JSON fields are scored against it, including both headline fractions. The banner now
+   says so, which is the honest half. The real fix is blocked on a second copy: the
+   numerator is accumulated **inside the instrumented binary**, bucketed by `lc_thr[]` in
+   `runtime/lib/loopcensus.c`, so a measured break-even of 310 cannot be used without the
+   C side learning it too. Estimated: ~15 lines of C (read the thresholds from an env var
+   at first `__mcc_loop_census_enter`, `LC_NGE` stays 6) plus ~25 of Python (run
+   `slicerun --cost-synth`, parse — it is already tab-separated with `nodes` in column 1
+   and `breakeven_ntuple` in column 6, and its `SIZES[]` land on exactly the node keys
+   `BREAKEVEN` uses — and fall back to the pinned table with a loud banner). **And it
+   cannot be gated:** `cost_synth` returns 77 without a device and `slice/cost` carries
+   `SKIP_RETURN_CODE 77`, so on every GPU-less box the only cell that could regenerate the
+   table silently skips. *A reader concludes `52.51% raw / 0.01% parallel-legal` was scored
+   against a break-even measured on the machine that produced it.*
+2. **`loop-census.py`'s node count is a Python model of `ast_count`.** `loop_nodes` /
+   `calibrate_bytes_per_node` estimate a loop body's node count from its byte extent, and
+   that estimate is what picks each loop's `BREAKEVEN` row — so it sits directly under the
+   headline. It is avoidable and cheaply: `ast_loop_par_census` already runs at
+   `ast_func_end` with the arena live and already emits `[loopar] id= par= why=` per loop.
+   Adding `nodes=%ld` to that one `fprintf` deletes the estimator, the calibration pass and
+   its extra full compile, and the `toks` fallback. One line of C plus a `parse_map` key.
+3. **No cell covers the statistic `loop-census.py` publishes.** `loop-census-control` is a
+   genuinely good ground-truth cell — nine hand-derived expectations at all four `-O`
+   levels, a row-count check, a negative control (no flag, no data) and a perturbation
+   (move a bound, the numbers move) — and its CMake comment and `must-run.txt` row are both
+   correctly scoped to "the trip census". But `--selftest` calls neither `report()` nor
+   `tally()`, so `breakeven_trips`, `loop_nodes`, `weighted_num`, `par_num`, both headline
+   fractions and the entire `--corpus runtime` path have **no control at all**.
+   `known_trips.c` has known trip counts *and* known body sizes, so `--selftest` could
+   compute `weighted_num` over it against a hand-checked value in ~10 lines. Also
+   `loop-census-parallel` and `node-census` are not in `tests/must-run.txt`, so a permanent
+   77 on either is invisible.
+4. **`rir-coverage.py`'s ratchet denominator is "the files that happened to compile".**
+   Compile failures are counted and printed but never gate, and every banked ratio
+   (`modelled_coverage`, `kept_coverage`, `coverage`) is over the survivors. Dropping files
+   shrinks `text`, `fn_bytes` and `residual` **together**, so the residual reconciliation
+   does not fire. Worse for the `wide` corpus: it is an `os.walk` of seven directories with
+   no manifest, and the bank records `corpus_config` (the `-D` axis) but **not** the file
+   list, count, or a hash — so any commit that adds a `.c` test file moves every banked
+   percentage with no signal, and `--update-bank` then locks the drift in. The docstring
+   promises the opposite ("a build that differs exits 77 rather than reporting the dilution
+   as a regression"); that promise covers only the `-D` axis. `slice-enum` pins its 12
+   sources explicitly in `CMakeLists.txt` — that is the right pattern and `wide` does not
+   use it. *A reader concludes "kept coverage 91.960% of the corpus"; the true statement is
+   "of the part of the corpus that still compiles at this level".* Cheap first step: bank
+   `sources=N` and fail when it moves.
+5. **`rir-coverage.py` prints seven historical numbers at runtime as if this run produced
+   them.** The partial-skip message is a block of string literals containing `100.000%`,
+   `120`, `82.520`, `92.92-93.01` and the `96.156`-vs-`83.219` story, and one of them is
+   introduced by the word *measured*. *A reader of a ctest log attributes them to this run
+   on this host.* They are not recomputed and cannot go stale visibly. Delete or recompute.
+6. **`rir-coverage.py`'s `--nofb-probe` passes vacuously.** With zero byte-divergent bodies
+   it prints its summary and exits 0, which is the same output as probing nothing; the bank
+   already holds four empty `nofb_miscompiles` lists and the cell passes no floor. Same
+   family: `--check-gap-dir` and `--check-low-dir` iterate `os.listdir` and return 0 on an
+   **empty** fixture directory, and the gap fixtures cover 3 of the 18 `UNF`+`WHY` classes.
+7. **`LOW_EXCLUDE = "src/mccgpu.c,src/mccgpu.h"` is a filename suffix match with no
+   count.** It removes the GPU emitter from both numerator and denominator of the lowerable
+   percentage, `print_lowerable` announces `denominator: %d arena-modelled bodies` without
+   mentioning the excision, and the compiler reports no excluded-body count. A change to
+   the constant is caught by `corpus_config`; **renaming or splitting `mccgpu.c` is not** —
+   the exclusion silently stops matching and the ratchet then compares a full-corpus number
+   against an excluded-corpus floor, which is a fake regression with no diagnostic.
+8. **`node-census.py`'s bank never compares `bodies` or `nodes`.** It holds
+   `bodies: 2765, nodes: 429114` and checks only that no kind went to exactly zero, that
+   invokes did not appear from nothing, and one one-sided ratio with a `0.05` tolerance —
+   against a documented dilution of `0.1381pp`, i.e. 2.8× the tolerance. *A reader concludes
+   `node-census: OK` means the census covered the same corpus as the bank.* With the
+   partial-dump hole now closed the exposure is smaller, but the floor is still absent.
+   Related: `ceilings()` re-derives device eligibility in Python by treating every non-Invoke
+   node as eligible, which is not what `mcc_slice_work_from_ast` accepts;
+   `slicerun --census` already computes this properly at block granularity. So
+   `external_invokes_on_cpu 99.254%` is a call-density statistic, not a ceiling — exactly
+   the criticism the file levels at its *sibling* ratio without noticing it applies to the
+   gated one.
+9. **`runtime-bench.py`'s `GATE_WINS` ratchet has had no subject in this checkout for as
+   long as `vendor/` has been absent.** Its one entry points at `vendor/plb/spectral-norm`,
+   which does not exist here, so `runtime-bench-gatewin` takes `return 77` on every run and
+   `SKIP_RETURN_CODE 77` makes that green. *A reader concludes a passing
+   `runtime-bench-gatewin` re-confirmed the `chain-store` 8% win.* A `registered` row in
+   `tests/must-run.txt` would have surfaced this immediately; it is the strongest candidate
+   in the tree for one. Its thresholds are pinned too — `GATE_WIN_NOISE_MAX = 0.12` accepts
+   a box drifting 11.9% against itself as a valid measurement of an 8% win — and nothing
+   re-derives them.
+10. **`runtime-bench.py --assert-baseline` asserts over whatever intersection exists.** The
+    only stored baseline holds **5** kernels against `KERNELS`'s 20, and two of the five
+    need the absent `vendor/plb`. Kernels missing from either side print `-` and count as
+    neither regressed nor improved, with no floor on the intersection size — contrast
+    `fmt-census.py`, which fails when its corpus drops below 1000. *A reader concludes a
+    passing `--assert-baseline` means no kernel regressed.* Also note `KERNELS` declares 20
+    and the board's row 6 says "the 17 in-tree kernels"; the tool prints only a count, never
+    the roster, and its JSON carries neither.
+11. **`fmt-census.py` residues.** (a) `AST_BB = 0` / `AST_INVOKE = 11` / `AST_NONE` are
+    hand-pinned duplicates of `AstKind` used by the `--arenas=` path, which the oracle does
+    not cover — that path produces the `25,700 Invoke-blocked / 246 (0.96%)` row of the
+    table above, and one enumerator inserted before `AST_Invoke` silently reclassifies every
+    block. (This is the same defect just fixed in `node-census.py`; the fix transplants.)
+    (b) Three port branches have no subject in either corpus half: the `L` length modifier
+    (`%Lf` — `slicerun.c`'s own refusal table *does* cover it, so the C side is tested and
+    the port side is not), the `j` and `t` modifiers, and the space flag. (c)
+    `largest accepted program: %d words` prints `0` when nothing was accepted.
+12. **`tools/selfhost-optbench.py --check` passes when nothing was derived.** `levels` is
+    populated only when the greedy stage runs, so `--check --stage marginal` prints nothing
+    and returns 0; and when greedy *does* run, `derive_levels` assigns every unmeasured flag
+    `levels[f] = levels_now[f]` with the note "nothing measured to move it on" — so a
+    degenerate run in which every flag came out `inert` produces `levels == levels_now`
+    identically and the tool prints *"src/mccopt.h matches the ladder derived from these
+    measurements"* over **zero derivations**. This board already carries the caveat
+    "`selfhost-optbench --check` was not re-run"; the tool cannot distinguish "re-run and
+    agreed" from "re-run and measured nothing". Same file: the docstring says **48**
+    level-assignable flags in five places and the live `flag_table()` yields **16**
+    (`MCC_OPTD_LEVEL(1)` ×10, `(2)` ×6, `(3)` ×0 — the other 33 sit at rungs 10/11/12), the
+    count is never printed or written into the TSV header, and there is no floor on
+    `len(names)`; with an empty flag table `full` and `empty` collapse to the same cache key
+    `"(empty)"` and the "all-on vs all-off" header reports a `0.0000` delta between one
+    measurement and itself. Also `pct(a, 0)` returns `0.0`, and a flag with an empty sample
+    list gets `gain = 0.0` and classifies **`inert`** — "this flag changes nothing" is the
+    recorded verdict for "this flag was never sampled".
+13. **`tools/idiomgate.c`'s invariant covers 17 of 37 config macros, from two hand-typed
+    lists.** `VALUE_KIND[]` and `FLAG_KIND[]` are a second implementation of the
+    `MCC_CONFIG_*` registry; a macro in neither list falls through both predicates and is
+    exempt, and the 20 currently exempt include `MCC_CONFIG_JIT`, `MCC_CONFIG_DWARF`,
+    `MCC_CONFIG_LIBC`, `MCC_CONFIG_SYSROOT` and `MCC_CONFIG_NEW_MACHO`. `main()` prints **no
+    subject count** — no files scanned, no macros checked, no directives examined — so a run
+    that visited zero files is character-for-character identical to a clean one. The
+    denominator shrinks silently every time a `MCC_CONFIG_*` is added.
+14. **`tests/optfire/optfire.sh defstate` cannot tell "off by default" from "does not
+    exist".** An unrecognised option is a *warning* in `src/libmcc.c`, not an error, so a
+    deleted or renamed flag compiles fine, the two objects match, and `got=off`. Thirteen
+    rows of `defstate.txt` assert `off` and **every one would stay green if its flag were
+    removed from `src/mccopt.h`**. `cdelta` mode is immune because it also requires
+    `c1 > 0`. Adjacent: `flagsweep.sh accept` derives its flag list with a `sed` that
+    requires a literal leading tab in `mccopt.h`; reindent that file and `n=0` and the cell
+    prints `PASS flagsweep-accept: 0 flags accept -f and -fno-`. `cover` mode has the
+    corresponding guard; `accept` does not — and `accept` is the only thing standing between
+    a renamed flag and vacuously-green `flagsweep-exec`, `flagsweep-cover` and `defstate`.
+15. **`tests/optfire/stratsweep.sh` drops subjects when the compiler under test is wrong.**
+    A subject is admitted only if its `-O2` baseline already matches its `-O0` reference —
+    deliberate and well argued in the header — but the consequence is that a broad `-O2`
+    regression *removes subjects from the sweep* rather than failing it. `$WORK/skipped` is
+    written and never printed or counted, and the only floor is `n > 0`, so a miscompile
+    breaking 30 of 31 subjects yields `PASS stratsweep-iso all: 22 strategy/ies x 1
+    subjects`. Same family: `flagsweep.sh` drops a subject on a failed `-O0` build before
+    `ran` is incremented, floor `ran > 0`. Both print the survivor count; neither pins it.
+    (`stratsweep.sh check` is the *good* pattern and is clean: `STRAT_NAMES` is a second
+    implementation of `ast_strategies[]` and the mode exists precisely to gate it against
+    `src/mccast.c` name-for-name and in order.)
+16. **`tools/shadow-iv-sweep.sh` still has no floor on its failure count.** The `clean`/
+    `failed` split landed above, and on this tree the sweep reports `attempts=610 clean=590
+    failed=20 divergences=0`. Those 20 are almost certainly subjects that legitimately need
+    flags the sweep does not pass, but nothing pins the number, so a regression that stopped
+    500 of 610 building would still print `divergences=0` and PASS. Pin it or classify the
+    20.
+17. **Four shell tools grep for `ast_env_gate`, which no longer exists in `src/`.**
+    `tools/c2_sweep.sh`, `tools/o0_ab.sh`, `tools/gate-ledger.sh` and `tools/c2_equiv.sh`
+    derive their "optimize >= 1" gate set from a symbol the compiler renamed (`mcc_env_on`,
+    `ast_env_int`, `ast_search_gates_now`). **All of them fail loudly** rather than measuring
+    nothing — `c2_sweep.sh` says in as many words *"this run would measure -O0 with every
+    pass off and call it parity"* — so this is broken, not lying, which is the correct
+    failure mode and the reason it is filed rather than fixed here. Two residues: the guards
+    are all-or-nothing, so a *partial* spelling change drops gates while the count stays
+    positive and `gate-ledger` then reports the shrunken registry as the registry; and
+    `c2_sweep.sh` claims parity with `cmake/rir_parity.cmake`, which does not exist.
+18. **`tools/spvgate.c --arenas` lacks the zero-comparison guard its built-in-case mode
+    has.** The case mode gained `FAIL (0 defined points compared -- proves nothing)` after
+    exactly this incident; `arena_mode` prints `compared=` and gates only on `dispatches`,
+    so a run where every dispatched point was vacuous prints `compared=0 vacuous=N
+    mismatches=0` and `spvgate: OK`. The *cells* are protected (`cmake/spvgate_real.cmake`
+    requires `slices=[1-9]` and a red `--mutate` arm); the hazard is the hand-run
+    invocation, which is how every arena figure quoted on this board was taken.
+19. **`tools/xsuite-report.py` prints `0.0%` for suite/opt pairs that never ran.** `tally`
+    is a `defaultdict` indexed over the full `suite × opt` cross-product, so a suite that ran
+    only at `-O0` gets an `-O3` row of zeros and a `0.0%` rate — a reader scanning the table
+    sees a total-failure suite where nothing ran. Separately the rate is pass-of-*admitted*:
+    `SKIP`/`REFSKIP` are removed from the denominator, so a change that skips more tests
+    **raises** the reported rate. The board carries that caveat in prose ("26,281 of 47,919
+    files are skipped by directives before anything runs"); the tool's own column is labelled
+    simply `rate`.
+20. **`selfhost-smoke.py`'s second correctness check is optional and silent.** If
+    `tests/exec/programs/quicksort.c` is absent the whole array/sort check vanishes with no
+    message and the tool still prints "produced correct executable**s**", leaving `fib(10)`
+    — which exercises essentially no codegen — as the entire gate. *A reader concludes a
+    green `selfhost-smoke` validated the self-hosted compiler on real array and loop code.*
+    Everything else about this tool is **clean**: the brief's worry that it degrades when
+    run from the wrong directory does **not** reproduce — `root` comes from `__file__`, every
+    subprocess passes `cwd=root`, missing pieces all `sys.exit` loudly, non-flag knobs are
+    rejected outright, compile flags are lifted from `compile_commands.json`, and all four
+    `subprocess.run` calls use `check=True`. Its one hand-pinned constant, the `["-lm",
+    "-ldl"]` fallback when `selfhost-link-libs.txt` is absent, produces a loud link failure
+    rather than a wrong number.
+
+#### Clean bills of health, because those are results too
+
+- **`selfhost-smoke.py`** — clean apart from item 12 above.
+- **`loop-census.py`'s parsers.** `parse_map` / `parse_trips` classify nothing. `par=` and
+  `why=` come only from `ast_loop_parallel_legal`; `?` is never collapsed into `0` and the
+  three counts are reported separately. `runtime_corpus()` **imports** `runtime-bench.py`'s
+  `KERNELS` rather than restating it — the right defence against corpus curation. A kernel
+  that fails to build **aborts** rather than shrinking the denominator. The six
+  fixed-threshold tables are `BREAKEVEN`-independent, which is a real escape hatch from
+  item 1. `--selftest` and `--partest` are genuine ground truth with negative and
+  perturbation controls.
+- **`rir-coverage.py`'s core.** `parse_report`/`merge` are pure accumulation of
+  compiler-emitted fields. The self-reconciliation gates (`unf_sum != fallback`,
+  `body != used+fallback+skip`) turn an accounting drift into a hard failure and are the
+  tool's strongest property. A **missing** bank is a failure, not a pass — most census tools
+  get this backwards. The `checked`/`skipped` ledger is precisely the anti-null-experiment
+  discipline this audit is about: every skip names what it dropped, `return 77` happens only
+  when `checked` is empty, and a pass prints `PASS: %d comparison(s) enforced`. Items 5–7 are
+  places that discipline was not applied, not places it is wrong.
+- **`slice-census.py`'s `verify_fn`** is the best measurement code in the family: structural
+  invariants derived from the definition, checking the compiler against itself (coverage
+  monotone under transparency, a call-free body is exactly one slice covering all attributed
+  bytes, `inv_graft == 0 ⇒ t=1 ≡ t=0`). It cannot pass by being inert. Byte extents come
+  from the compiler's replay counter, not from a Python model. Both tools scrub inherited
+  `MCC_*` variables so an ambient setting cannot alter a measurement.
+- **`runtime-bench.py`'s counter layer.** `counter_backend` demands a **non-zero count from a
+  real workload** rather than trusting `which()` — exemplary. `run_once_cpu` uses `wait4`
+  rusage with an honest write-up of why wall-clock lied; `baseline_report` returns `None`
+  rather than a number when nothing is comparable, which is correct handling of "no
+  subject"; `baseline_snapshot` refuses to bank milliseconds; output is checked on every run
+  so fast-but-wrong fails; and the table tells the reader in as many words to judge on the
+  instruction columns because a time delta with no instruction delta is layout.
+- **`fmt-census.py`'s oracle** — see hazard 4. It also has an explicit corpus floor, which
+  is the single most transplantable idea in this audit.
+- **`tools/must-run.py`** is the model for the whole family. Every degenerate input is an
+  explicit refusal: an empty manifest exits 2 (*"the manifest is empty, so it asserts
+  nothing"*), a `ctest -N` that listed nothing exits 2 (*"refusing to report a clean manifest
+  against an empty build"*), no `testcase` elements exits 2, and the docstring states
+  *"Never 77: a manifest that cannot be checked is a failure, not a skip"*.
+- **`tests/optfire/cover3.py`** — `verify` re-derives from `mccopt.h` rather than trusting
+  `gen`, checks row width and alphabet, checks each pinned column is genuinely constant, and
+  walks all C(k,3)×8 triples. **`tests/optfire/stratsweep.sh check`** exists specifically to
+  gate a second implementation (`STRAT_NAMES` against `ast_strategies[]`, name for name and
+  in order) — that is what a disclosed second implementation should look like.
+  **`tools/gate-ledger.sh`** runs a *control* gate the compiler never reads and subtracts its
+  run-to-run noise from every real gate, and prints the floor rather than hiding it.
+  **`tools/arm64pe_diff.py`**, **`tools/selfhost-o3.py`**, **`tools/embed-jit-smoke.py`** and
+  **`slicerun --cost-synth`** are clean.
+- **`cmake/slicerun_musl.cmake`** has all five teeth in one place — a corpus floor, a
+  dump-exists check, non-zero `slices`, non-zero `frame-compared`, non-zero `frame-mem`, and
+  a `--mutate` known-positive. Every LANDED fix above and filed items 6, 18 and the lost
+  subject are a missing instance of one of those five. **It is the template.**
+- **`tests/optfire/levelbench-cycles.tsv`** — `cycles_adjudicate` measures only the kernels a
+  flag actually moves and says "changes no kernel object; nothing to adjudicate" otherwise.
+  The tool always knew; only the TSV writer did not.
+
+#### Not touched, and why
+
+`tests/optfire/leveltime.tsv` reports a `gain_pct` for rows whose `stage1_obj` column reads
+`identical` — a stage-2 time over a byte-identical compiler, i.e. the same null experiment.
+It is left alone deliberately: the column **is** there, the header explains that those rows'
+"true effect is exactly zero, so the spread of what they measured IS the floor", and
+`levelpins.txt` records that the file is "a record of one campaign's numbers, not a running
+ledger". Relabelling it would edit a campaign record. The `n/a` rule should apply to
+whatever regenerates it next.
 
 ### 1. S5′ — the iteration distribution, and the measurement that prices every row below
 
@@ -1955,6 +2375,19 @@ item now says what was measured, not what was assumed.
    an empty `fires_kernels`**, i.e. change no kernel object at all, and **11 of those**
    carry a `gain_pct` of `-0.0000` that is a division over unchanged binaries. Any of the
    eleven can be quoted the same way this one was.
+
+   > **CLOSED at the tool 2026-08-09 (`wt/benchtrap`).** The eleven can no longer be quoted
+   > that way: `tools/optlevel-bench.py` buckets such a row `no-kernel-subject`, gives it a
+   > `kernels_moved` column reading `0/17`, and prints `n/a` in `gain_pct`, `efficiency`,
+   > `text_kernels_pct`, `best_kernel` and `best_kernel_pct` — as it now does for `error`
+   > rows too, whose `0.0000` cost columns were equally fabricated. Two ctest cells,
+   > `optbench/null-subject` and `optbench/null-subject-known-positive`, hold the rule and
+   > the second one deliberately restores the old behaviour and must go red. The banked
+   > table was relabelled in place with no value changed, so **`levelbench.tsv:47` is now
+   > line 51**. `narrow` and `tree-copy-prop` are two more rows in this family that want a
+   > stage-1/stage-2 instrument rather than a label. Full write-up in the measurement-tool
+   > audit section near the top of this file, including the dilution hazard the fix does not
+   > close: `gain` is still a geomean over all 17 kernels even when only one moved.
 
    **(b) The 1.69% is the inliner, and it is cold.** `-O3` differs from `-O2` by exactly
    one thing — `grep -c "MCC_OPTD_LEVEL(3)" src/mccopt.h` is **0**, and
@@ -5870,6 +6303,14 @@ rejected at +26% on the clock, but on the layout-immune counter the family is
 **−1.97%** on sieve, so there was a real ~2% there under a 32% floor. Neither
 correction moves a level — see debt #6a and board row 2 — but the phrasing rule
 does: **when `fires` is 0, quote `fires`, never `gain`.**
+
+> **The phrasing rule is now a tool rule, 2026-08-09 (`wt/benchtrap`).** That row's
+> `gain_pct` reads **`n/a`**, its bucket is `no-kernel-subject` and it carries
+> `kernels_moved 0/17`, so the sentence above cannot be written again from the
+> table. 23 rows were relabelled the same way with no value changed, and the row
+> order moved with the new bucket rank — the anchor is **`levelbench.tsv:51`**, not
+> `:47`. `optbench/null-subject-known-positive` fails if the tool is ever put back.
+> See the measurement-tool audit section near the top of this file.
 
 **Removing all the candidates at once is what caught the one real mistake.** With
 all 35 off, `-O2` came out 0.52% slower. `reg-color` alone explained it: per-flag

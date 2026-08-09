@@ -3861,6 +3861,12 @@ static int arena_mode(const char *path, long limit, int quiet) {
 					 g_cn_pincok);
 		printf("census: blocks-with-deref=%ld eligible-with-ptr=%ld\n", g_cn_dblocks,
 					 g_cn_pblocks);
+		if (!g_cn_blocks) {
+			printf("slicerun: FAIL (the census walked 0 blocks -- every number "
+						 "above is a zero with no subject behind it, and the two "
+						 "sibling modes in this same function already refuse this)\n");
+			return 1;
+		}
 		return 0;
 	}
 	if (g_cost_mode) {

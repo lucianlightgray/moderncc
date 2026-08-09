@@ -6331,6 +6331,19 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(runtime-bench-check PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 TIMEOUT 900)
 
+        add_test(NAME "optbench/null-subject"
+            COMMAND "${MCC_PYTHON3}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/optlevel-bench.py" --selfcheck)
+        set_tests_properties("optbench/null-subject" PROPERTIES TIMEOUT 120)
+
+        add_test(NAME "optbench/null-subject-known-positive"
+            COMMAND "${CMAKE_COMMAND}"
+                -DPY=${MCC_PYTHON3}
+                -DBENCH=${CMAKE_CURRENT_SOURCE_DIR}/tools/optlevel-bench.py
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/optlevel_bench_mutate.cmake")
+        set_tests_properties("optbench/null-subject-known-positive" PROPERTIES
+            TIMEOUT 120)
+
         if(NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING
            AND NOT MCC_TARGETOS STREQUAL "WIN32")
             add_test(NAME runtime-bench-gatewin

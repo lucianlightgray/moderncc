@@ -2,51 +2,53 @@
 # base=mcc opt=-O3 kernels=17 corpus=293
 # noise floor (base measured twice): self 0.0010%  corpus 0.0009%  kernels max 0.0000%
 # gain>0 means the flag makes the emitted program retire fewer instructions; cost>0 means it makes the compiler retire more
-flag	level	bucket	gain_pct	cost_self_pct	cost_corpus_pct	efficiency	text_kernels_pct	text_self_pct	fires_corpus	corpus_total	fires_kernels	best_kernel	best_kernel_pct
-trunc32	1	ranked	0.6001	-0.1383	-0.0727	inf	-1.6150	-0.2451	30	293	sieve,nbody,interp,structops,calls,divmod,branchy,hashmap,loopnest,vlaloop,regpress,poly,narrowops,mathfun,strproc,mandelbrot,matmul	divmod	5.3920
-promote-leaf-callee	3	ranked	-0.3360	-0.0095	-0.0929	inf	1.3803	0.1127	22	293	interp,calls,vlaloop,regpress,poly	regpress	-5.5700
-sethi-ullman-leaf	1	ranked	0.1035	0.0148	-0.0810	6.97	-0.1863	0.0019	11	293	nbody,calls,divmod,branchy,hashmap,vlaloop	calls	1.7437
-builtin-math	1	ranked	1.1053	0.1913	0.0470	5.78	-0.0509	0.0000	2	293	nbody,branchy,mathfun	mathfun	10.7866
-builtin-math-prepass	1	ranked	0.3007	0.1921	0.0241	1.57	-0.0382	0.0000	1	293	nbody	nbody	4.9766
-if-conversion-abs	2	ranked	0.1905	0.2094	-0.0072	0.91	-0.0466	-0.0162	2	293	branchy	branchy	3.1843
-reg-color	2	ranked	0.1796	0.4284	-0.0199	0.42	0.5459	-0.0011	155	293	sieve,nbody,interp,structops,calls,divmod,branchy,hashmap,loopnest,vlaloop,regpress,poly,narrowops,mathfun,strproc,mandelbrot,matmul	interp	1.9263
-chain-store-member	3	ranked	0.1169	2.1247	-0.0874	0.05	0.1785	0.7751	1	293	sieve	sieve	1.9658
-reemit-templates	1	ranked	0.3550	12.0687	4.8186	0.03	-0.7201	-0.2470	97	293	interp,calls,branchy,hashmap,loopnest,vlaloop,regpress,poly,narrowops,mathfun,strproc,matmul	poly	4.5934
-chain-store	3	ranked	0.1169	7.0521	-0.0079	0.02	0.1785	3.2001	1	293	sieve	sieve	1.9658
-tree-vrp	3	ranked	-0.1502	0.3970	0.0336	-0.38	-0.1144	-0.1259	3	293	interp,strproc	strproc	-2.5882
-if-conversion	3	ranked	-0.6582	0.3905	-0.0106	-1.69	-0.1059	-0.0901	21	293	branchy,strproc	strproc	-8.2019
-divmagic	2	ranked	-7.0266	0.4440	0.0588	-15.83	7.3686	0.1868	8	293	nbody,interp,structops,divmod,branchy,hashmap,loopnest,mathfun,strproc,matmul	divmod	-124.4110
-tree-reassoc	2	cost-no-gain	0.0650	0.4298	0.0316	0.00	-0.0763	-0.0130	3	293	nbody,poly	poly	1.0988
-builtin-copysign	1	cost-no-gain	0.0590	-0.0009	-0.0891	0.00	0.0807	0.0000	2	293	mathfun	mathfun	0.9976
-opt-cycle	3	cost-no-gain	0.0402	10.5470	1.0638	0.00	0.2765	-0.0016	9	293	calls,loopnest,poly,narrowops,matmul	poly	0.3690
-loop-fusion	2	cost-no-gain	0.0000	0.0137	-0.0743	0.00	-0.1017	0.0000	3	293	loopnest	loopnest	0.0003
-arg-forward	2	cost-no-gain	0.0000	0.0113	-0.0812	0.00	0.0000	-0.0082	1	293	-	mathfun	0.0000
-tree-pre	1	cost-no-gain	0.0000	0.2811	0.0250	0.00	0.0000	0.0000	2	293	-	matmul	0.0000
-sethi-ullman-nary	1	cost-no-gain	0.0000	0.5085	0.0088	0.00	0.0000	-0.0009	2	293	divmod,poly	hashmap	0.0000
-narrow-elim	1	cost-no-gain	0.0000	0.0490	-0.0236	0.00	0.0000	0.0000	4	293	-	regpress	0.0000
-call-window	1	cost-no-gain	0.0000	0.0508	0.3623	0.00	0.0000	-0.0001	10	293	-	matmul	0.0000
-loop-vlat	2	cost-no-gain	0.0000	0.7060	0.2711	0.00	0.0000	0.0000	2	293	-	mathfun	0.0000
-merge-constants	2	cost-no-gain	0.0000	4.1710	-0.0688	0.00	0.0000	0.0000	76	293	-	mathfun	0.0000
-storeval-callstore	2	cost-no-gain	0.0000	0.0442	-0.0714	0.00	0.0000	-0.0010	1	293	-	mathfun	0.0000
-storeval-constl	1	cost-no-gain	0.0000	0.0254	-0.0760	0.00	0.0000	0.0016	0	293	-	branchy	0.0000
-tree-copy-prop	2	cost-no-gain	0.0000	1.2622	0.6972	0.00	0.0000	-0.0027	15	293	-	interp	0.0000
-gcse-join	2	cost-no-gain	0.0000	0.3779	0.0516	0.00	0.0000	0.0000	3	293	-	hashmap	0.0000
-optimize-sibling-calls	2	cost-no-gain	0.0000	0.1174	-0.0934	0.00	0.0000	-0.0077	1	293	-	branchy	0.0000
-spill-share	2	cost-no-gain	0.0000	-0.0123	-0.0825	0.00	-0.0254	-0.0813	49	293	regpress,poly	mathfun	-0.0000
-loop-interchange	2	cost-no-gain	0.0000	0.0091	-0.0863	0.00	0.0000	0.0000	2	293	loopnest	poly	0.0000
-sethi-ullman	1	cost-no-gain	0.0000	0.9740	0.1188	0.00	0.0000	-0.0004	7	293	nbody,divmod,branchy,regpress,poly,narrowops,strproc	mathfun	-0.0000
-tree-const-load	2	cost-no-gain	0.0000	0.6952	0.1774	0.00	0.0000	-0.0108	4	293	-	calls	0.0000
-fmov-imm	1	cost-no-gain	-0.0000	-0.0009	-0.0604	0.00	0.0000	0.0000	1	293	-	hashmap	-0.0000
-gcse	1	cost-no-gain	-0.0000	0.0046	-0.0596	0.00	0.0000	0.0000	1	293	-	mathfun	-0.0000
-tree-ccp-iterate	2	cost-no-gain	-0.0000	1.2699	0.8455	0.00	0.0000	-0.0010	2	293	-	hashmap	-0.0000
-tree-switch-conversion	2	cost-no-gain	-0.0000	1.0064	0.1818	0.00	0.0000	-0.0956	2	293	-	hashmap	-0.0000
-narrow	2	cost-no-gain	-0.0000	2.1717	0.9529	0.00	0.0000	-0.0165	15	293	-	mandelbrot	-0.0000
-zero-initialized-in-bss	2	cost-no-gain	-0.0000	-0.0031	-0.1068	0.00	0.0000	0.0000	9	293	-	hashmap	-0.0000
-chain-store-live	2	cost-no-gain	-0.0000	0.7934	-0.0762	0.00	0.0000	-0.0171	2	293	-	hashmap	-0.0000
-tree-dse	2	cost-no-gain	-0.0000	0.0742	0.0268	0.00	0.0000	0.0000	2	293	-	hashmap	-0.0000
-storeval-rot	1	cost-no-gain	-0.0000	0.0062	-0.0673	0.00	0.0000	-0.0023	3	293	-	hashmap	-0.0000
-storeval-calllast	1	cost-no-gain	-0.0000	-0.0009	-0.0710	0.00	0.0000	0.0000	2	293	-	mandelbrot	-0.0000
-narrow-fix	2	cost-no-gain	-0.0000	0.9068	0.4113	0.00	0.0000	0.0000	1	293	-	hashmap	-0.0000
-tree-loop-im	2	cost-no-gain	-0.0000	0.8459	0.4533	0.00	0.1019	0.0095	4	293	loopnest,matmul	loopnest	-0.0000
-loop-block	2	cost-no-gain	-0.0003	0.0070	-0.0623	0.00	0.3063	0.0000	2	293	loopnest	loopnest	-0.0044
-inline-functions	2	error	0.0000	0.0000	0.0000	0.00	0.0000	0.0000	0	0	-	-	0.0000
+# kernels_moved is the subject size of every kernel-derived column. At 0/17 the subject set is EMPTY and gain_pct, efficiency, text_kernels_pct and best_kernel read n/a -- a geomean over bit-identical binaries is not a measurement of zero effect, it is the absence of one. Quote kernels_moved, never gain_pct, on such a row.
+# RELABELLED 2026-08-09 (wt/benchtrap). No pin VALUE changed and nothing was re-measured: 23 rows that changed 0 of 17 kernel objects had their five kernel-derived columns replaced by n/a (11 of them read -0.0000) and moved from bucket cost-no-gain to no-kernel-subject, and the excluded inline-functions row lost the zeros it never measured. See docs/TODO.md, the provenance/hazards section.
+flag	level	bucket	gain_pct	cost_self_pct	cost_corpus_pct	efficiency	text_kernels_pct	text_self_pct	fires_corpus	corpus_total	kernels_moved	fires_kernels	best_kernel	best_kernel_pct
+trunc32	1	ranked	0.6001	-0.1383	-0.0727	inf	-1.6150	-0.2451	30	293	17/17	sieve,nbody,interp,structops,calls,divmod,branchy,hashmap,loopnest,vlaloop,regpress,poly,narrowops,mathfun,strproc,mandelbrot,matmul	divmod	5.3920
+promote-leaf-callee	3	ranked	-0.3360	-0.0095	-0.0929	inf	1.3803	0.1127	22	293	5/17	interp,calls,vlaloop,regpress,poly	regpress	-5.5700
+sethi-ullman-leaf	1	ranked	0.1035	0.0148	-0.0810	6.97	-0.1863	0.0019	11	293	6/17	nbody,calls,divmod,branchy,hashmap,vlaloop	calls	1.7437
+builtin-math	1	ranked	1.1053	0.1913	0.0470	5.78	-0.0509	0.0000	2	293	3/17	nbody,branchy,mathfun	mathfun	10.7866
+builtin-math-prepass	1	ranked	0.3007	0.1921	0.0241	1.57	-0.0382	0.0000	1	293	1/17	nbody	nbody	4.9766
+if-conversion-abs	2	ranked	0.1905	0.2094	-0.0072	0.91	-0.0466	-0.0162	2	293	1/17	branchy	branchy	3.1843
+reg-color	2	ranked	0.1796	0.4284	-0.0199	0.42	0.5459	-0.0011	155	293	17/17	sieve,nbody,interp,structops,calls,divmod,branchy,hashmap,loopnest,vlaloop,regpress,poly,narrowops,mathfun,strproc,mandelbrot,matmul	interp	1.9263
+chain-store-member	3	ranked	0.1169	2.1247	-0.0874	0.05	0.1785	0.7751	1	293	1/17	sieve	sieve	1.9658
+reemit-templates	1	ranked	0.3550	12.0687	4.8186	0.03	-0.7201	-0.2470	97	293	12/17	interp,calls,branchy,hashmap,loopnest,vlaloop,regpress,poly,narrowops,mathfun,strproc,matmul	poly	4.5934
+chain-store	3	ranked	0.1169	7.0521	-0.0079	0.02	0.1785	3.2001	1	293	1/17	sieve	sieve	1.9658
+tree-vrp	3	ranked	-0.1502	0.3970	0.0336	-0.38	-0.1144	-0.1259	3	293	2/17	interp,strproc	strproc	-2.5882
+if-conversion	3	ranked	-0.6582	0.3905	-0.0106	-1.69	-0.1059	-0.0901	21	293	2/17	branchy,strproc	strproc	-8.2019
+divmagic	2	ranked	-7.0266	0.4440	0.0588	-15.83	7.3686	0.1868	8	293	10/17	nbody,interp,structops,divmod,branchy,hashmap,loopnest,mathfun,strproc,matmul	divmod	-124.4110
+tree-reassoc	2	cost-no-gain	0.0650	0.4298	0.0316	0.00	-0.0763	-0.0130	3	293	2/17	nbody,poly	poly	1.0988
+builtin-copysign	1	cost-no-gain	0.0590	-0.0009	-0.0891	0.00	0.0807	0.0000	2	293	1/17	mathfun	mathfun	0.9976
+opt-cycle	3	cost-no-gain	0.0402	10.5470	1.0638	0.00	0.2765	-0.0016	9	293	5/17	calls,loopnest,poly,narrowops,matmul	poly	0.3690
+loop-fusion	2	cost-no-gain	0.0000	0.0137	-0.0743	0.00	-0.1017	0.0000	3	293	1/17	loopnest	loopnest	0.0003
+sethi-ullman-nary	1	cost-no-gain	0.0000	0.5085	0.0088	0.00	0.0000	-0.0009	2	293	2/17	divmod,poly	hashmap	0.0000
+spill-share	2	cost-no-gain	0.0000	-0.0123	-0.0825	0.00	-0.0254	-0.0813	49	293	2/17	regpress,poly	mathfun	-0.0000
+loop-interchange	2	cost-no-gain	0.0000	0.0091	-0.0863	0.00	0.0000	0.0000	2	293	1/17	loopnest	poly	0.0000
+sethi-ullman	1	cost-no-gain	0.0000	0.9740	0.1188	0.00	0.0000	-0.0004	7	293	7/17	nbody,divmod,branchy,regpress,poly,narrowops,strproc	mathfun	-0.0000
+tree-loop-im	2	cost-no-gain	-0.0000	0.8459	0.4533	0.00	0.1019	0.0095	4	293	2/17	loopnest,matmul	loopnest	-0.0000
+loop-block	2	cost-no-gain	-0.0003	0.0070	-0.0623	0.00	0.3063	0.0000	2	293	1/17	loopnest	loopnest	-0.0044
+arg-forward	2	no-kernel-subject	n/a	0.0113	-0.0812	n/a	n/a	-0.0082	1	293	0/17	n/a	n/a	n/a
+tree-pre	1	no-kernel-subject	n/a	0.2811	0.0250	n/a	n/a	0.0000	2	293	0/17	n/a	n/a	n/a
+narrow-elim	1	no-kernel-subject	n/a	0.0490	-0.0236	n/a	n/a	0.0000	4	293	0/17	n/a	n/a	n/a
+call-window	1	no-kernel-subject	n/a	0.0508	0.3623	n/a	n/a	-0.0001	10	293	0/17	n/a	n/a	n/a
+loop-vlat	2	no-kernel-subject	n/a	0.7060	0.2711	n/a	n/a	0.0000	2	293	0/17	n/a	n/a	n/a
+merge-constants	2	no-kernel-subject	n/a	4.1710	-0.0688	n/a	n/a	0.0000	76	293	0/17	n/a	n/a	n/a
+storeval-callstore	2	no-kernel-subject	n/a	0.0442	-0.0714	n/a	n/a	-0.0010	1	293	0/17	n/a	n/a	n/a
+storeval-constl	1	no-kernel-subject	n/a	0.0254	-0.0760	n/a	n/a	0.0016	0	293	0/17	n/a	n/a	n/a
+tree-copy-prop	2	no-kernel-subject	n/a	1.2622	0.6972	n/a	n/a	-0.0027	15	293	0/17	n/a	n/a	n/a
+gcse-join	2	no-kernel-subject	n/a	0.3779	0.0516	n/a	n/a	0.0000	3	293	0/17	n/a	n/a	n/a
+optimize-sibling-calls	2	no-kernel-subject	n/a	0.1174	-0.0934	n/a	n/a	-0.0077	1	293	0/17	n/a	n/a	n/a
+tree-const-load	2	no-kernel-subject	n/a	0.6952	0.1774	n/a	n/a	-0.0108	4	293	0/17	n/a	n/a	n/a
+fmov-imm	1	no-kernel-subject	n/a	-0.0009	-0.0604	n/a	n/a	0.0000	1	293	0/17	n/a	n/a	n/a
+gcse	1	no-kernel-subject	n/a	0.0046	-0.0596	n/a	n/a	0.0000	1	293	0/17	n/a	n/a	n/a
+tree-ccp-iterate	2	no-kernel-subject	n/a	1.2699	0.8455	n/a	n/a	-0.0010	2	293	0/17	n/a	n/a	n/a
+tree-switch-conversion	2	no-kernel-subject	n/a	1.0064	0.1818	n/a	n/a	-0.0956	2	293	0/17	n/a	n/a	n/a
+narrow	2	no-kernel-subject	n/a	2.1717	0.9529	n/a	n/a	-0.0165	15	293	0/17	n/a	n/a	n/a
+zero-initialized-in-bss	2	no-kernel-subject	n/a	-0.0031	-0.1068	n/a	n/a	0.0000	9	293	0/17	n/a	n/a	n/a
+chain-store-live	2	no-kernel-subject	n/a	0.7934	-0.0762	n/a	n/a	-0.0171	2	293	0/17	n/a	n/a	n/a
+tree-dse	2	no-kernel-subject	n/a	0.0742	0.0268	n/a	n/a	0.0000	2	293	0/17	n/a	n/a	n/a
+storeval-rot	1	no-kernel-subject	n/a	0.0062	-0.0673	n/a	n/a	-0.0023	3	293	0/17	n/a	n/a	n/a
+storeval-calllast	1	no-kernel-subject	n/a	-0.0009	-0.0710	n/a	n/a	0.0000	2	293	0/17	n/a	n/a	n/a
+narrow-fix	2	no-kernel-subject	n/a	0.9068	0.4113	n/a	n/a	0.0000	1	293	0/17	n/a	n/a	n/a
+inline-functions	2	error	n/a	n/a	n/a	n/a	n/a	n/a	n/a	n/a	n/a	n/a	n/a	n/a

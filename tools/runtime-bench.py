@@ -560,12 +560,25 @@ def baseline_report(cur, path, tolerance):
 
 
 def parse_gates(s):
-    env = {}
+    """One extra configuration, as compiler FLAGS on argv.
+
+    This took `NAME=VALUE` environment knobs until the optimizer knobs moved to
+    argv (`MCC_OPT_ROW` in src/mccopt.h). An env token is now read by nobody, so
+    both arms of a `--gates` comparison compiled the IDENTICAL binary and the
+    delta columns below reported the difference between one program and itself
+    -- a +0.0% instruction column that is maximally convincing and completely
+    empty. GATE_WINS was moved to flags when that bit it; this path was not.
+    Refuse the retired spelling rather than measure nothing, the same way
+    tools/selfhost-smoke.py refuses it."""
+    flags = []
     for tok in (s or "").split():
-        k, _, v = tok.partition("=")
-        if k:
-            env[k] = v
-    return env
+        if not tok.startswith("-"):
+            sys.exit("--gates takes compiler flags (-fno-chain-store), not the "
+                     "retired NAME=VALUE environment spelling: %r reaches no "
+                     "part of mcc, so both arms would compile the same binary "
+                     "and the delta would read 0.0%% for every kernel" % tok)
+        flags.append(tok)
+    return flags
 
 
 def main():
@@ -652,9 +665,10 @@ def main():
                     results.setdefault(name, {})["ref_ins"] = ref_ins
 
             for gi, gates in enumerate(gate_sets):
-                env = parse_gates(gates)
+                gflags = parse_gates(gates)
                 exe = os.path.join(td, f"{name}.mcc{gi}")
-                ok, err = build(args.mcc, src, exe, env, mcc=True, flags=mflags)
+                ok, err = build(args.mcc, src, exe, None, mcc=True,
+                                flags=mflags + gflags)
                 if not ok:
                     failures.append(f"{name} [{gates or 'defaults'}]: mcc build failed: {err.strip()[:160]}")
                     continue
@@ -745,6 +759,14 @@ def main():
             failures.append(f"{regressed} kernel(s) retired more than "
                             f"{args.baseline_tolerance:.1f}% extra instructions "
                             f"against the stored baseline")
+
+    if not results:
+        failures.append(
+            f"{len(kernels)} kernel source(s) were present and NONE was "
+            f"measured -- every one lost its reference build or reference run "
+            f"above. Without this line the run prints 'OK (0 kernels ...)' and "
+            f"exits 0, which reads as 'mcc's output was verified against "
+            f"{os.path.basename(cc)}' when nothing was compiled with mcc at all")
 
     for f in failures:
         print(f"FAIL {f}")

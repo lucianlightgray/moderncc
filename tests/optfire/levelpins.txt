@@ -119,6 +119,13 @@ fmov-imm|1|ast_fmov_imm_env is compiled out off arm64, so this host cannot measu
 # and is worth nothing either way. Do not read levelbench.tsv's kernel columns
 # for this row: the flag changes 0 of 17 kernel objects, so its 0.0000% "gain" is
 # a ratio with an unmoved denominator.
+#
+# 2026-08-09 (wt/benchtrap): levelbench.tsv now says that itself. The row is
+# bucketed no-kernel-subject, carries kernels_moved 0/17, and every
+# kernel-derived column reads n/a instead of a number. 22 other rows were in the
+# same state; 10 of them also carried a -0.0000. No pin value moved, nothing was
+# re-measured, and the row order changed with the new bucket rank, so the
+# levelbench.tsv:47 anchor quoted elsewhere is now line 51.
 # storeval-callstore used to ICE alone of the ladder rows at -O3 with
 # mccircap.c:797 vstack leak (1). That was never about storeval: the row's
 # on-state produces the AST shape that reaches the capture-time graft, and the

@@ -55,5 +55,10 @@ for o in "${OPTS[@]}"; do
 		printf "  summary: %d technique(s) fire, %d never fire anywhere in the corpus\n",
 		       nfired, nnever
 		if (nfired + nnever == 0) { print "  FAIL: no STRATEGY panel parsed; the ledger is vacuous"; exit 1 }
-	}' "$WORK/raw$o" | sort
+	}' "$WORK/raw$o" > "$WORK/panel$o" || {
+		sort "$WORK/panel$o"
+		echo "FAIL: the vacuity check above used to be the left side of a pipe into sort, so its exit status was discarded and the ledger reported a clean run over a panel it never parsed"
+		exit 1
+	}
+	sort "$WORK/panel$o"
 done

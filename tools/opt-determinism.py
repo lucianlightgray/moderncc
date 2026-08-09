@@ -42,6 +42,10 @@ def main():
 
     if not os.path.exists(a.mcc):
         sys.exit(f"determinism: no mcc at {a.mcc}")
+    if a.runs < 2:
+        sys.exit(f"determinism: --runs {a.runs} compares nothing against "
+                 f"anything; the OK line below would report byte-identity over "
+                 f"a single object, or over none")
 
     with tempfile.TemporaryDirectory() as work:
         ref = None
