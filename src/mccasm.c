@@ -99,7 +99,15 @@ static Sym *asm_section_sym(MCCState *s1, Section *sec) { MCC_TRACE("enter\n");
 	return sym ? sym : asm_new_label1(s1, label, 1, sec->sh_num, 0);
 }
 
+static void asm_expr_unary_nested(MCCState *s1, ExprValue *pe);
+
 static void asm_expr_unary(MCCState *s1, ExprValue *pe) { MCC_TRACE("enter\n");
+	mcc_parse_depth_enter();
+	asm_expr_unary_nested(s1, pe);
+	mcc_parse_depth_leave();
+}
+
+static void asm_expr_unary_nested(MCCState *s1, ExprValue *pe) { MCC_TRACE("enter\n");
 	Sym *sym;
 	int op, label;
 	uint64_t n;

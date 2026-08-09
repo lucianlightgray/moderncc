@@ -8134,6 +8134,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			next();
 			skip('(');
 			memset(&ad1, 0, sizeof(AttributeDef));
+			mcc_parse_depth_enter();
 			if (parse_btype(&type1, &ad1, 0)) { MCC_TRACE("br\n");
 				type_decl(&type1, &ad1, &n, TYPE_ABSTRACT);
 				if (ad1.a.aligned)
@@ -8145,6 +8146,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 				if (n < 0 || (n & (n - 1)) != 0)
 					{ MCC_TRACE("br\n"); mcc_error("alignment must be a positive power of two"); }
 			}
+			mcc_parse_depth_leave();
 			skip(')');
 			ad->a.aligned = exact_log2p1(n);
 			ad->storage_class |= 8;

@@ -1,25 +1,35 @@
 {
  "bisect_kib": {
-  "blocks": 187,
-  "cast": 449,
+  "alignasnest": 116,
+  "asmparen": 259,
+  "blocks": 188,
+  "cast": 451,
   "declfnptr": 116,
-  "declparen": 120,
-  "derefchain": 449,
-  "forchain": 221,
+  "declparen": 113,
+  "derefchain": 448,
+  "forchain": 218,
   "ifchain": 187,
-  "initbraces": 232,
+  "initbraces": 227,
   "macronest": 467,
   "paren": 300,
-  "sizeofchain": 530,
+  "sizeofchain": 529,
   "structnest": 308,
-  "ternary": 120
+  "ternary": 128
  },
  "compiler": "GNU 15.3.0",
  "enter_sites": {
-  "mccgen.c": 7,
+  "mccasm.c": 1,
+  "mccgen.c": 8,
   "mccpp.c": 1
  },
  "frames": {
+  "asm_expr": 32,
+  "asm_expr_cmp": 80,
+  "asm_expr_logic": 80,
+  "asm_expr_prod": 80,
+  "asm_expr_sum": 96,
+  "asm_expr_unary": 32,
+  "asm_expr_unary_nested": 80,
   "block": 32,
   "block_nested": 304,
   "decl_initializer": 64,
@@ -48,6 +58,8 @@
  "max_parse_depth": 512,
  "need_bytes": 544768,
  "per_level_bytes": {
+  "alignasnest": 192,
+  "asmparen": 480,
   "blocks": 336,
   "cast": 864,
   "declfnptr": 192,

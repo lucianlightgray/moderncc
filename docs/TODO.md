@@ -655,7 +655,7 @@ schedule.
 | **2** | ~~**`ctest -L census` runs 3 of its 6 cells and reports 6.**~~ **CLOSED on `wt/censusfix`** — all five census cells now carry their own `ENVIRONMENT` switch, and a new `census/gates-armed` cell fails if any `census`-labelled cell is gated on an opt-in switch its registration does not set. `ctest -L census` is **7/0 with nothing Skipped** and needs no exported variable at all. `MCC_RIR_CENSUS` was in the same state as the other two — named nowhere in `CMakeLists.txt` — so `rir-coverage-census` and `rir-nofb-probe` only ever ran because somebody typed it | — | **cells** |
 | **3** | **`-fopt-slice` makes object output depend on the optimizer's disk cache, and nothing watches it.** Reproduced verbatim today: `python3 tools/opt-cache-determinism.py cmake-debug/mcc src/mcc.c --opt=-O3 --from-build cmake-debug -- -fopt-slice` → `cold/self/foreign-tu = daffa4e023f9`, **`foreign-fl = 1dbdfbe1bc0c`**, `cache entries written: 2`, `FAIL`. The cell is a **permanent 77** because the flag is `MCC_OPTD_LEVEL(9)` and has no subject at any shipped level, so the defect is invisible rather than absent. Decide: own the pass, or delete it | unknown (a pass) | **correctness / determinism** |
 | **4** | **`if-conversion-abs` ships at `MCC_OPTD_LEVEL(2)` and the freshly re-run bench says it makes code worse.** `tests/optfire/levelbench.tsv:20`: moves **1 of 17** kernels, `gain_movers` **−0.0334**, `branchy` **−0.5700** — a sign flip from the `+0.1905` / `+3.1843` it was promoted on. It is bucketed `ranked`, not `cost-no-gain`, so the ladder still treats it as a win. It is filed **only** in the failed-to-reproduce table at `:685`; no row of the ranking table owns it, and `:517` asserts "row 1 is the only unmeasured row left" | small (one level decision, the measurement already exists) | **emitted code** |
-| **5** | **`MCC_MAX_UNARY_DEPTH` was mis-sized *and* it was one guard where the parser needs eight — DONE, and the eight are now watched.** `diag.parse-frames` re-prices `MCC_MAX_PARSE_DEPTH` against the frames it was sized on, every run; the per-level table it was sized from was re-derived and nine of its ten rows were low. **Still open, filed with crash depths:** two more recursion points bypass the shared budget entirely and SIGSEGV at the 8 MiB default — `parse_btype`'s `_Alignas` arm at **43,609**, and `mccasm.c`'s six-function `asm_expr` cycle at **~19,000**. See "The parse-depth guard" below | small (two more wrappers) | **correctness** |
+| **5** | **`MCC_MAX_UNARY_DEPTH` was mis-sized *and* it was one guard where the parser needs eight — DONE, and the eight are now watched.** `diag.parse-frames` re-prices `MCC_MAX_PARSE_DEPTH` against the frames it was sized on, every run; the per-level table it was sized from was re-derived and nine of its ten rows were low. **The two that were filed are now closed on `wt/depthholes`** — `parse_btype`'s `_Alignas` arm (SIGSEGV at **43,606**) and `mccasm.c`'s six-function `asm_expr` cycle (at **18,694**) are both charged to the shared budget, the frames bank is re-derived at **15 cycles** with the worst axis and the 532 KiB requirement unmoved, and `diag.parse-depth` carries both axes. **Newly open, filed with a crash depth:** `next()` self-recurses on `_Pragma` (`src/mccpp.c`) and SIGSEGVs at **130,794** consecutive `_Pragma` tokens; the fix is the `goto redo` the macro arm beside it already uses, not a budget level on the hottest function in the compiler. See "The parse-depth guard" below | small (one `goto`) | **correctness** |
 | **6** | **Nine number-producing tools are registered nowhere — the board says four.** `:1688-1696` names `xsuite-report.py`, `gate-ledger.sh`, `strategy-ledger.sh`, `c2_sweep.sh` and closes "Four tools left on this item." Also unregistered and board-quoted: `xsuite.py`, `xoracle.py`, `c2_equiv.sh`, `selfhost-o3.py`, `arm64pe_diff.py`. **`xoracle.py` is the sharpest**: `tests/optfire/levelpins.txt:78` pins `merge-constants` at level 2 on "two xoracle cases change verdict without it" — a shipped ladder pin whose only evidence comes from a tool no cell runs | medium (five more cells) | **census trust** |
 | **7** | **`ast_env_gate` no longer exists in `src/` and four shell tools still grep for it.** `grep -rn ast_env_gate src/` is **0**; `tools/{c2_sweep,c2_equiv,gate-ledger,o0_ab}.sh` all still reference it. They fail loudly, which is the right mode, but this is the widest blocker in the file: it freezes `o0_ab.sh`'s gated half (twelve `*.gated.rir.txt` + `board.gated.txt`, uncovered by `ast/o0-baseline` and not pretending otherwise), blocks three of the four tools in row 5, and blocks the cheap "which `-O1` gate erases the 72 `len` bodies" experiment. The restoration recipe is already written down at `:9899-9906` | medium | **gate strength** |
 | **8** | **`spirv-val` and `glslc` are installed at `/usr/bin` and referenced nowhere in the build.** `grep -rn 'spirv-val\|glslc' CMakeLists.txt cmake/ tools/ src/` is empty. 152/152 modules already validate by hand at `--target-env vulkan1.1`. One `find_program` and one `add_test` arm. The cheapest open item in the file, and it survives the device freeze because it validates what the emitter already ships | small | **device correctness** |
@@ -12374,21 +12374,39 @@ against an optimised build at all, which is why the cell is registered only for 
 unoptimised gcc x86-64 host build and why a missing symbol is a failure rather than a
 skip.
 
-### Two more recursion points the eight did not cover — filed, not fixed
+### Two more recursion points the eight did not cover — CLOSED on `wt/depthholes` — 2026-08-09
 
-Probed on this tree at the default 8 MiB stack, no `ulimit` needed. Both bypass
-`mcc_parse_depth` completely, so `MCC_MAX_PARSE_DEPTH` does not bound them:
+Both were re-probed on this tree at the default 8 MiB stack, no `ulimit` involved, before
+being fixed. Both bypassed `mcc_parse_depth` completely, so `MCC_MAX_PARSE_DEPTH` did not
+bound either:
 
-| path | shape | crashes at |
-| --- | --- | ---: |
-| `parse_btype` `TOK_ALIGNAS` arm (`src/mccgen.c`) calls `parse_btype` directly, not through any of the eight | `int _Alignas(_Alignas(_Alignas(int) int) int) x;` | **43,609** |
-| the assembler expression parser, `asm_expr`/`asm_expr_logic`/`asm_expr_cmp`/`asm_expr_sum`/`asm_expr_prod`/`asm_expr_unary` (`src/mccasm.c`), a six-function cycle that never touches `mcc_parse_depth` | `__asm__(".set zz, ((((…1…))))");` | **~19,000** (clean at 18,000, SIGSEGV at 20,000) |
+| path | shape | crashed at | now |
+| --- | --- | ---: | --- |
+| `parse_btype` `TOK_ALIGNAS` arm (`src/mccgen.c`) calls `parse_btype` directly, not through any of the eight | `int _Alignas(_Alignas(_Alignas(int) int) int) x;` | **43,606** (clean at 43,605; the band is a few hundred wide, run to run) | `mcc_parse_depth_enter()`/`leave()` around the arm |
+| the assembler expression parser, `asm_expr`/`asm_expr_logic`/`asm_expr_cmp`/`asm_expr_sum`/`asm_expr_prod`/`asm_expr_unary` (`src/mccasm.c`), a six-function cycle that never touched `mcc_parse_depth` | `__asm__(".set zz, ((((…1…))))");` | **18,694** (clean at 18,693) | `asm_expr_unary` split into a guard wrapper and `asm_expr_unary_nested`, the tenth `*_nested` pair |
 
-The `_Alignas` one is the sharper of the two: `int _Alignas(_Alignas(int) int) x;` is an
-mcc extension — `gcc -std=c11` rejects it with *"expected specifier-qualifier-list before
-`_Alignas`"* — so it is unbounded recursion reachable from a plain `mcc -c` on grammar
-mcc alone accepts. Both are cheap to fix the same way the eight were, and neither is
-fixed here.
+**The `_Alignas` grammar was left alone, and the recursion guarded instead.** Both gcc
+and clang reject the nesting — `gcc -std=c11` *and* `gcc -std=c23` say *"expected
+specifier-qualifier-list before `_Alignas`"*, `clang -std=c23` says *"expected
+expression"* — so mcc is more permissive than either, and narrowing it is a real
+conformance question. It is not *this* defect's question, for three reasons. First, mcc's
+default dialect is C23 (`cversion` is set to `202311` in `src/libmcc.c`), and C23 admits
+an `alignment-specifier` in a `specifier-qualifier-list`, hence in a `type-name`: `gcc
+-std=c23` parses `sizeof(_Alignas(16) int)` and rejects it on a *constraint* — *"alignment
+specified for type name in 'sizeof'"* — not on the grammar. So the narrowing mcc would
+need is a constraint diagnostic, and it would have to decide which of the twelve
+`parse_btype` call sites are type-names, which is a much wider change than the crash.
+Second, `parse_btype` is on a recursion cycle either way — `struct_decl` → `parse_btype` →
+`struct_decl` is the banked `structnest` axis — so guarding is what the budget is *for*,
+and a grammar narrowing would leave the next production that reaches `parse_btype` from
+`parse_btype` unpriced again. Third, guarding cannot change what mcc accepts, and the
+sweep below proves it did not: `_Alignas(_Alignas(16) int)` still yields 16.
+
+The guard is on the arm, **not on the whole of `parse_btype`**, deliberately. Wrapping the
+function would charge a second budget level to every `structnest` and every nested-block
+declaration, halving the effective nesting depth of both, and the C11 5.2.4.1 floor is
+sized against those. On the arm, only `_Alignas` nesting spends budget: the new
+`alignasnest` axis is a one-function cycle, `parse_btype` at 192 B/level.
 
 **Probed and clean, so that the next reader does not re-probe them.** None of these
 crashes at depth 40,000: array-typedef chains (`typedef A0 A1[1];` ×n, then `sizeof`,
@@ -12399,6 +12417,102 @@ replay and optimiser walkers are bounded transitively by the parse guard even wi
 inlining amplifying AST depth: sixteen `static` functions chained through
 `ast_inline_depth_max`, each carrying a 250-deep parenthesised expression, compiles clean
 at `-O0`, `-O1`, `-O2` and `-O3`.
+
+#### The bank after the two new axes — the margin did not move
+
+The coverage gate did exactly what it is for. Guarding the two turned `diag.parse-frames`
+red before anything else could:
+
+```
+parse-frames: mcc_parse_depth_enter() is called from mccasm.c x1, mccgen.c x8, mccpp.c x1,
+banked mccgen.c x7, mccpp.c x1. A recursion point was guarded, moved or dropped since the
+frames were priced, and AXES in tools/parse-frames.py still prices 13 cycles over the old
+set -- so the new one's per-level cost is in nobody's budget.
+```
+
+Both cycles were read off a gdb backtrace at `mcc_parse_depth == 200`, as the tool says
+to: `alignasnest` is `parse_btype` alone, `asmparen` is `asm_expr_unary`,
+`asm_expr_unary_nested`, `asm_expr`, `asm_expr_cmp`, `asm_expr_sum`, `asm_expr_logic`,
+`asm_expr_prod`. Re-derived with `--bisect --update-bank`: **31 frames on 15 cycles**.
+
+| | banked before | banked now |
+| --- | --- | --- |
+| worst axis | `sizeofchain`, 1024 B/level | **`sizeofchain`, 1024 B/level — unchanged** |
+| 512 levels need | 532 KiB | **532 KiB**, against the 768 KiB ceiling and the 1024 KiB rlimit |
+| the two new axes | — | `alignasnest` **192 B/level** (bisect 116 KiB), `asmparen` **480 B/level** (bisect 259 KiB) |
+
+Neither new axis comes close to the worst, so `MCC_MAX_PARSE_DEPTH` did not have to move
+and the ceiling was not touched. `parse_btype`'s own frame is unchanged at 192 B, so
+`structnest` is still 576 B/level. The static sums and the rlimit bisect now agree to
+within 3.2% across all fifteen (worst axis 0.6%); the two loosest are `ternary` (+3.2%)
+and `declparen` (−2.6%), and both were that loose in the old bank too.
+
+`tests/diagnostics/parse-depth.sh` grew the two axes, its vacuity floor went 14 → 16, and
+it is **16 cases OK at a 1024 KiB stack**. Ablated — the two guards reverted, everything
+else kept — it reports exactly the failure the cell exists to report:
+
+```
+parse-depth: SIGNAL rc=139 (signal 11) on alignasnest
+parse-depth: SIGNAL rc=139 (signal 11) on asmparen
+parse-depth: 2 of 16 cases failed at a 1024 KiB stack
+```
+
+and `diag.parse-frames` fails the same ablation on its own axis, by name:
+`asm_expr_unary_nested` *"is not in cmake-debug/mcc at all"*.
+
+#### A third hole, found by the audit and filed here: `_Pragma`
+
+`next()` recurses into itself on the `_Pragma` operator — `src/mccpp.c:5314`, the
+`next_nomacro` path, right after `pragma_operator()` — with nothing counting the levels.
+
+| path | shape | crashes at |
+| --- | --- | ---: |
+| `next` → `pragma_operator` → `next` (`src/mccpp.c`) | `_Pragma("pack()")` ×n then `int x;` | **130,794** (clean at 130,793) |
+
+Measured on this tree, default 8 MiB stack, `-O0` build; the backtrace is a wall of
+`next () at src/mccpp.c:5314`. The frame is thin, which is why it takes 130k tokens rather
+than 19k. **Not fixed here, deliberately**: the right fix is not a budget level on the
+hottest function in the compiler but the `goto redo` the *macro* arm eleven lines above it
+already uses — the self-call is a syntactic tail call, so it is a loop written as a
+recursion. That also means an optimised build may be immune where the `-O0` one is not,
+which is its own reason to fix the shape rather than price it.
+
+**The rest of the audit — a full SCC pass over `src/**/*.c`, 3259 function bodies.** Every
+other cycle it turned up is either bounded or was not reproducible. Probed and clean on
+this tree, so the next reader does not re-probe them: nested `.rept` in the assembler
+(`asm_parse_directive` → `mcc_assemble_internal` → `asm_parse_directive`, `src/mccasm.c`)
+compiles to a clean *"we at end of file, .endr not found"* at 300,000 levels and at
+300,000 with the stack rlimit at 1024 KiB, because the body collector stops at the first
+`.endr` and so the depth does not follow the nesting; the x86-64 by-value ABI classifier
+over a 40,000-deep `struct Sn { struct Sn-1 m; };` chain (`classify_x86_64_inner`,
+`src/arch/x86_64/x86_64-gen.c`) compiles clean; and a 40,000-long function-typedef chain
+(`typedef fN-1 *fN(void);`) with `-g`, which drives `mcc_get_dwarf_info`, compiles clean.
+Bounded by construction and checked: `__VA_OPT__` nesting is rejected at definition time
+in `parse_define` so `va_opt_subst` ↔ `macro_arg_subst2` is depth ≤ 2 — *that rejection is
+load-bearing, and relaxing it opens a hole*; `#include`/`#embed` is `INCLUDE_STACK_SIZE`,
+`#if` is `IFDEF_STACK_SIZE`, `#pragma pack` is `PACK_STACK_SIZE`; every `src/mccrir.c`
+walker carries its own `depth > 8`/`> 16`/`> 64` cap, as do `type_to_str` and
+`aggr_has_const_member_rec`. **Still unprobed, and not compiler-input at all**:
+self-referential linker scripts (`INPUT(self.ld)` — `ld_add_file_list` ↔
+`mcc_add_file_internal`, `src/objfmt/mccelf.c`, no already-seen set) and self-re-exporting
+Mach-O dylibs (`macho_load_dll`, `src/objfmt/mccmacho.c`, where the `mcc_add_dllref`
+dedupe is *after* the load-command loop that recurses) are unbounded *loops*, not deep
+parses; they need a visited set, not a depth budget, and are a separate item.
+
+Verification for `wt/depthholes`, `cmake-cross` built before `cmake-debug` was
+configured: `ctest` **9455/9455, 0 failures**, `-L flagsweep` 193/193, `-L stratsweep`
+116/116, `ctest -L census` 7/7 with nothing Skipped, `tools/must-run.py --build
+cmake-debug` **78 rows**, `tools/selfhost-smoke.py cmake-debug` green, `docs/refs`
+(`tools/docref-lint.py`) and `ci/registration-stubs` (`tools/regstub-lint.py`) both clean.
+No cell was added or removed, so no `else()` stub was needed. **Emitted code is
+unchanged**, and the sweep says so independently: every `.c` under `tests/` and
+`examples/` compiled at `-O0`, `-O1`, `-O2` and `-O3` by the pre- and post-change `mcc`,
+**2,780 objects byte-identical, 0 differing**, 392 not compilable by both. (Run the
+baseline binary from *inside* the build directory when repeating this: `mcc` derives its
+default include search from `argv[0]`, so a baseline copied to `/tmp` picks
+`/usr/include/stdint.h` where the in-tree one picks `cmake-debug/include/stdint.h`, and
+the anonymous-symbol counter then differs by one on any TU that includes a header —
+40 spurious "differences" that are entirely the harness.)
 
 Still stale and untouched here: `docs/PLAN.md:435` names `MCC_MAX_UNARY_DEPTH 2048` at
 `src/mccgen.c:241`; that symbol no longer exists.

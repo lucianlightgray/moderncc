@@ -112,6 +112,12 @@ expect_diag structnest
 { printf '#define M(x) x\nint main(void){return '; rep 'M(' "$DEPTH"; printf '0'; rep ')' "$DEPTH"; printf ';}\n'; } >"$WORK/macronest.c"
 expect_diag macronest
 
+{ printf 'int '; rep '_Alignas(' "$DEPTH"; printf 'int'; rep ') int' "$((DEPTH - 1))"; printf ') x;\nint main(void){return 0;}\n'; } >"$WORK/alignasnest.c"
+expect_diag alignasnest
+
+{ printf '__asm__(".set mccz, '; rep '(' "$DEPTH"; printf '1'; rep ')' "$DEPTH"; printf '");\nint main(void){return 0;}\n'; } >"$WORK/asmparen.c"
+expect_diag asmparen
+
 {
 	i=0
 	while [ "$i" -lt 63 ]; do printf '#if 1\n'; i=$((i + 1)); done
@@ -142,7 +148,7 @@ if [ "$rc" -ne 0 ]; then
 	fails=$((fails + 1))
 fi
 
-if [ "$checked" -lt 14 ]; then
+if [ "$checked" -lt 16 ]; then
 	echo "parse-depth: only $checked cases ran, this check is vacuous" >&2
 	exit 1
 fi

@@ -2,8 +2,8 @@
 """`MCC_MAX_PARSE_DEPTH` is a depth budget priced in host stack bytes; this prices it again.
 
 The guard admits 512 levels of parser recursion.  512 is safe only because a
-level was measured to cost at most 992 bytes of host stack in the `-O0` build,
-so the whole budget fits in 516 KiB.  Nothing in that sentence is checked by a
+level was measured to cost at most 1024 bytes of host stack in the `-O0` build,
+so the whole budget fits in 532 KiB.  Nothing in that sentence is checked by a
 compiler: add one array to `unary_nested` and the same 512 levels need a stack
 the compiler no longer gets, and every symptom of that is a SIGSEGV in somebody
 else's build with no diagnostic attached.
@@ -12,9 +12,10 @@ This reads the frame size of every function on the parser's recursion cycles
 straight out of the built `mcc`, from the x86-64 prologue -- 8 bytes of return
 address, 8 per `push`, plus the `sub $N,%rsp`.  Summing the frames around each
 cycle in AXES reproduces the per-level cost measured independently by lowering
-the stack rlimit and bisecting the depth at which each axis dies: all thirteen
-axes agree to within 0.6%, so the static sum is the same number as the bisect
-and is exact, instant, and names the function that moved.
+the stack rlimit and bisecting the depth at which each axis dies: all fifteen
+axes agree to within 3.2%, and the worst axis to within 0.6%, so the static sum
+is the same number as the bisect and is exact, instant, and names the function
+that moved.
 
 The bisect is kept as `--bisect`, for re-deriving the bank, not as the gate.
 Near the threshold it is not deterministic: `sizeofchain` at depth 20,000 fails
@@ -31,8 +32,8 @@ the exact sequence of frames the `-O0` build pushes between two consecutive
 one source level of that axis spends.
 
 The bank describes the `-O0` build, which is the worst case and therefore the
-one worth banking: the same source built `-O2` needs 452 KiB rather than 516,
-because gcc inlines the eight thin `mcc_parse_depth_enter` wrappers into their
+one worth banking: the same source built `-O2` needs materially less, because
+gcc inlines the thin `mcc_parse_depth_enter` wrappers into their
 `*_nested` bodies.  That also means AXES does not describe an optimised build
 at all, which is why a banked function that has stopped existing in the binary
 is a failure and not a skip.
@@ -54,6 +55,10 @@ ROOT = os.path.dirname(HERE)
 BANK = os.path.join(ROOT, "tests", "diagnostics", "parse-frames.json")
 
 AXES = {
+    "alignasnest": (1, ["parse_btype"]),
+    "asmparen":    (1, ["asm_expr_unary", "asm_expr_unary_nested", "asm_expr",
+                        "asm_expr_cmp", "asm_expr_sum", "asm_expr_logic",
+                        "asm_expr_prod"]),
     "blocks":      (1, ["block", "block_nested"]),
     "cast":        (1, ["unary", "unary_nested"]),
     "declfnptr":   (1, ["type_decl_1", "type_decl_nested"]),
@@ -168,6 +173,10 @@ def price(got):
 
 def gen(axis, n):
     return {
+        "alignasnest": lambda: ("int " + "_Alignas(" * n + "int" + ") int" * (n - 1) +
+                                ") x;\nint main(void){return 0;}\n"),
+        "asmparen": lambda: ('__asm__(".set mccz, ' + "(" * n + "1" + ")" * n +
+                             '");\nint main(void){return 0;}\n'),
         "paren": lambda: "int main(void){return " + "(" * n + "0" + ")" * n + ";}\n",
         "cast": lambda: "int main(void){return " + "(int)" * n + "0;}\n",
         "sizeofchain": lambda: "int main(void){return (int)" + "sizeof " * n + "(0);}\n",
@@ -354,8 +363,9 @@ def main():
         print("parse-frames: that is past the %d KiB ceiling. tests/diagnostics/"
               "parse-depth.sh runs mcc at a %d KiB rlimit and is the cell that "
               "proves the diagnostic fires instead of the guard page; once the "
-              "requirement passes that, it fails as thirteen SIGSEGVs at once "
-              "and names no cause" % (CEILING_BYTES // 1024, PROVED_AT_KIB))
+              "requirement passes that, it fails as %d SIGSEGVs at once "
+              "and names no cause" % (CEILING_BYTES // 1024, PROVED_AT_KIB,
+                                      len(AXES)))
     print("parse-frames: a reader who did not run this would conclude that "
           "MCC_MAX_PARSE_DEPTH %d still has the %.2fx margin over a %d KiB stack "
           "it was sized with. It has %.2fx"
