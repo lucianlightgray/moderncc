@@ -4290,6 +4290,116 @@ static int refuse_local(AstArena *a, AstLocal n) {
 	}
 }
 
+enum {
+	RG_FUNC = 0,
+	RG_AGG,
+	RG_ARRAY,
+	RG_SCALAR_INT,
+	RG_SCALAR_FLOAT,
+	RG_SCALAR_OTHER,
+	RG_ADDR,
+	RG_LLOCAL,
+	RG_REG,
+	RG_OTHER,
+	RG_N
+};
+
+static const char *refuse_global_name(int g) {
+	switch (g) {
+	case RG_FUNC: return "func-symbol";
+	case RG_AGG: return "global-aggregate";
+	case RG_ARRAY: return "global-array";
+	case RG_SCALAR_INT: return "global-scalar-int";
+	case RG_SCALAR_FLOAT: return "global-scalar-float";
+	case RG_SCALAR_OTHER: return "global-scalar-other";
+	case RG_ADDR: return "global-address";
+	case RG_LLOCAL: return "indirect-local";
+	case RG_REG: return "register-temp";
+	default: return "other";
+	}
+}
+
+static int refuse_global_class(AstArena *a, AstLocal n) {
+	int rop = ast_op(a, n), t = ast_type_t(a, n), vm = rop & VT_VALMASK, bt;
+	if (vm == VT_LLOCAL)
+		return RG_LLOCAL;
+	if (vm != VT_CONST && vm != VT_LOCAL)
+		return RG_REG;
+	if (!(rop & VT_SYM))
+		return RG_OTHER;
+	bt = t & VT_BTYPE;
+	if (bt == VT_FUNC)
+		return RG_FUNC;
+	if (t & VT_ARRAY)
+		return RG_ARRAY;
+	if (bt == VT_STRUCT)
+		return RG_AGG;
+	if (!(rop & VT_LVAL))
+		return RG_ADDR;
+	if (!t || bt == VT_VOID)
+		return RG_OTHER;
+	if (is_float(t))
+		return RG_SCALAR_FLOAT;
+	if (ast_eval_slice_intt(t))
+		return RG_SCALAR_INT;
+	return RG_SCALAR_OTHER;
+}
+
+static int refuse_parent_blocked(AstArena *a, AstLocal n) {
+	AstLocal p = ast_parent(a, n);
+	if (p == AST_NONE)
+		return 1;
+	return refuse_local(a, p) != REF_OK;
+}
+
+enum { RA_LOCAL_LVAL = 0, RA_LOCAL_SCALAR, RA_LOCAL_ARRAY, RA_CONST, RA_N };
+
+static const char *refuse_accept_name(int k) {
+	switch (k) {
+	case RA_LOCAL_LVAL: return "local-lvalue";
+	case RA_LOCAL_SCALAR: return "local-address-scalar";
+	case RA_LOCAL_ARRAY: return "local-address-array";
+	default: return "constant";
+	}
+}
+
+static long g_ref_a_nodes[RA_N];
+static long g_ref_a_value[RA_N];
+
+static int refuse_base_consumed(AstArena *a, AstLocal n) {
+	AstLocal p = ast_parent(a, n);
+	AstEvalSliceIdx ix;
+	int32_t fo;
+	if (p == AST_NONE)
+		return 0;
+	if (ast_eval_slice_dynidx(a, p, &ix) && ix.idx != n)
+		return 1;
+	if (ast_kind(a, p) == AST_Unary &&
+			(ast_op(a, p) == AST_EVAL_OP_MEMBER || ast_op(a, p) == AST_EVAL_OP_ADDR) &&
+			ast_eval_slice_frame_off(a, p, &fo, 0))
+		return 1;
+	return 0;
+}
+
+static void refuse_accepted_ref(AstArena *a, AstLocal n) {
+	int rop, t, k;
+	if (ast_kind(a, n) != AST_Ref)
+		return;
+	rop = ast_op(a, n);
+	t = ast_type_t(a, n);
+	if ((rop & VT_VALMASK) == VT_LOCAL && !(rop & VT_SYM))
+		k = (rop & VT_LVAL) ? RA_LOCAL_LVAL
+											: ((t & VT_ARRAY) ? RA_LOCAL_ARRAY : RA_LOCAL_SCALAR);
+	else
+		k = RA_CONST;
+	g_ref_a_nodes[k]++;
+	if (k != RA_LOCAL_LVAL && k != RA_CONST && !refuse_base_consumed(a, n))
+		g_ref_a_value[k]++;
+}
+
+static long g_ref_g_nodes[RG_N];
+static long g_ref_g_free[RG_N];
+static long g_ref_g_callee[RG_N];
 static long g_ref_nodes[REF_N];
 static long g_ref_bodies[REF_N];
 static long g_ref_bodynodes[REF_N];
@@ -4994,6 +5104,7 @@ static void refuse_walk(AstArena *a, AstLocal n, AstLocal parent, int idx) {
 	if (ast_eval_slice_kind_ok(a, n, 0)) {
 		g_ref_accepted_nodes++;
 		g_ref_pos_acc[g_ref_pos_cur]++;
+		refuse_accepted_ref(a, n);
 	} else {
 		r = refuse_local(a, n);
 		if (r == REF_OK)
@@ -5001,6 +5112,16 @@ static void refuse_walk(AstArena *a, AstLocal n, AstLocal parent, int idx) {
 		g_ref_nodes[r]++;
 		g_ref_hit[r] = 1;
 		g_ref_pos[r][g_ref_pos_cur]++;
+		if (r == REF_REF_GLOBAL) {
+			int g = refuse_global_class(a, n);
+			AstLocal p = ast_parent(a, n);
+			g_ref_g_nodes[g]++;
+			if (!refuse_parent_blocked(a, n))
+				g_ref_g_free[g]++;
+			if (p != AST_NONE && ast_kind(a, p) == AST_Invoke &&
+					ast_first_child(a, p) == n)
+				g_ref_g_callee[g]++;
+		}
 	}
 	if (ast_kind(a, n) == AST_BasicBlock) {
 		MccSliceFrame f;
@@ -5032,8 +5153,9 @@ static void refuse_body(AstArena *a, AstLocal root) {
 		}
 }
 
-static void refuse_report(void) {
+static int refuse_report(void) {
 	int i;
+	long gsum = 0;
 	printf("refusal: nodes=%ld accepted=%ld refused=%ld bodies=%ld "
 				 "body-nodes=%ld blocks=%ld frame-accepted-blocks=%ld\n",
 				 g_ref_total_nodes, g_ref_accepted_nodes,
@@ -5088,6 +5210,36 @@ static void refuse_report(void) {
 			g_det_cause[bi] = -1;
 		}
 	}
+	for (i = 0; i < RG_N; i++) {
+		gsum += g_ref_g_nodes[i];
+		if (!g_ref_g_nodes[i])
+			continue;
+		printf("refusal: ref-not-local/%-20s nodes=%ld node-share=%.2f%% "
+					 "class-share=%.2f%% parent-open=%ld callee=%ld\n",
+					 refuse_global_name(i), g_ref_g_nodes[i],
+					 g_ref_total_nodes
+							 ? 100.0 * g_ref_g_nodes[i] / g_ref_total_nodes
+							 : 0.0,
+					 g_ref_nodes[REF_REF_GLOBAL]
+							 ? 100.0 * g_ref_g_nodes[i] / g_ref_nodes[REF_REF_GLOBAL]
+							 : 0.0,
+					 g_ref_g_free[i], g_ref_g_callee[i]);
+	}
+	for (i = 0; i < RA_N; i++) {
+		if (!g_ref_a_nodes[i])
+			continue;
+		printf("refusal: ref-accepted/%-21s nodes=%ld value-position=%ld\n",
+					 refuse_accept_name(i), g_ref_a_nodes[i], g_ref_a_value[i]);
+	}
+	if (gsum != g_ref_nodes[REF_REF_GLOBAL]) {
+		fprintf(stderr,
+						"slicerun: ref-not-local classes sum to %ld, bucket holds %ld; "
+						"the sub-attribution is not a partition\n",
+						gsum, g_ref_nodes[REF_REF_GLOBAL]);
+		return 1;
+	}
+	printf("refusal: ref-not-local-classes-sum=%ld\n", gsum);
+	return 0;
 }
 
 static int cref_mixed_operands(AstArena *a, AstLocal n) {
@@ -6320,6 +6472,7 @@ static int arena_mode(const char *path, long limit, int quiet) {
 		memshape_report();
 		block_cause_report();
 		return 0;
+		return refuse_report();
 	}
 
 	if (g_census) {
