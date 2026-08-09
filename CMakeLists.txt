@@ -6051,7 +6051,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         "${CMAKE_BINARY_DIR}" --corpus wide --levels O0,O1,O2,O3
                         --top 3 --opt-in)
             set_tests_properties(rir-coverage-census PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600)
+                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600
+                ENVIRONMENT "MCC_RIR_CENSUS=1")
 
             add_test(NAME slice-enum
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/slice-census.py"
@@ -6077,7 +6078,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         "${CMAKE_BINARY_DIR}" --corpus wide --levels O0,O1,O2,O3
                         --verify --top 20 --jobs 8 --opt-in)
             set_tests_properties(slice-census PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600)
+                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600
+                ENVIRONMENT "MCC_SLICE_CENSUS_RUN=1;MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS}")
 
             # S5': the dynamic per-loop trip census. The control cell is the one
             # that matters -- it compiles a program whose trip counts are known
@@ -6106,7 +6108,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/loop-census.py"
                         "${CMAKE_BINARY_DIR}" --levels O2 --top 20 --opt-in)
             set_tests_properties(loop-census PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600)
+                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600
+                ENVIRONMENT "MCC_LOOP_CENSUS_RUN=1")
 
             # The same census over a NUMERIC workload. The self-compile is
             # pointer-chasing, allocation and switch dispatch -- close to the
@@ -6121,14 +6124,21 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         --top 20 --opt-in)
             set_tests_properties(loop-census-numeric PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT LABELS "census" SKIP_RETURN_CODE 77
-                TIMEOUT 3600)
+                TIMEOUT 3600 ENVIRONMENT "MCC_LOOP_CENSUS_RUN=1")
 
             add_test(NAME rir-nofb-probe
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
                         "${CMAKE_BINARY_DIR}" --corpus exec --levels O0,O1,O2,O3
                         --nofb-probe --opt-in)
             set_tests_properties(rir-nofb-probe PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600)
+                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600
+                ENVIRONMENT "MCC_RIR_CENSUS=1")
+
+            add_test(NAME "census/gates-armed"
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/census-armed.py"
+                        "${CMAKE_BINARY_DIR}" --min-cells 5)
+            set_tests_properties("census/gates-armed" PROPERTIES
+                LABELS "census" TIMEOUT 300)
 
             add_test(NAME selfhost-fixpoint
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"

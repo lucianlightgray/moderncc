@@ -14479,7 +14479,7 @@ static void ast_slc_walk(AstArena *a, AstLocal bb, int t) { MCC_TRACE("enter\n")
 }
 
 static void ast_slc_dump(AstArena *a, const char *fname, long body_bytes,
-												 int faithful) { MCC_TRACE("enter\n");
+												 long replay_bytes, int faithful) { MCC_TRACE("enter\n");
 	AstLocal nn, n;
 	long nodes = 0, attr = 0;
 	unsigned kinds = 0;
@@ -14516,10 +14516,12 @@ static void ast_slc_dump(AstArena *a, const char *fname, long body_bytes,
 		ast_slc_walk(a, ast_root(a), t);
 	}
 	fprintf(ast_slc_fp,
-					"[slice-fn] fn=%s nodes=%ld bytes=%ld attr=%ld stmts=%d faithful=%d "
+					"[slice-fn] fn=%s nodes=%ld bytes=%ld rbytes=%ld attr=%ld stmts=%d "
+					"faithful=%d "
 					"loops=%d inv_ind=%d inv_ext=%d inv_ret=%d inv_graft=%d "
 					"ns0=%ld nb0=%ld nn0=%ld ns1=%ld nb1=%ld nn1=%ld ovf=%d kinds=%08x\n",
-					ast_slc_fn, nodes, body_bytes, attr, stmts, faithful, loops, inv[0],
+					ast_slc_fn, nodes, body_bytes, replay_bytes, attr, stmts, faithful,
+					loops, inv[0],
 					inv[1], inv[2], inv[3], ast_slc_nslice[0], ast_slc_sbytes[0],
 					ast_slc_snodes[0], ast_slc_nslice[1], ast_slc_sbytes[1],
 					ast_slc_snodes[1], ast_slc_ovf, kinds);
@@ -18496,7 +18498,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				ast_fn_faithful = faithful;
 				if (ast_slc_on)
 					{ MCC_TRACE("br\n"); ast_slc_dump(ast_cur, funcname, (long)body_len,
-																					 faithful); }
+																					 (long)new_len, faithful); }
 				ast_adump_body(ast_cur, funcname);
 				if (!faithful && mcc_log_enabled(MCC_LOG_TRACE)) { MCC_TRACE("br\n");
 					int ast_bd = -1, ast_i;

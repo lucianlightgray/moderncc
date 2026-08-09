@@ -35,8 +35,8 @@ schedule.
 
 | # | row | size | currency |
 | ---: | --- | --- | --- |
-| **1** | **`slice-census` is RED on this tree and no documented invocation runs it.** `MCC_SLICE_CENSUS_RUN=1 ctest -R slice-census` fails: `--verify` reports `cst_alloc_node` 595/560 B and `rir_low_set` 345/307 B over budget at all four levels, and the `src_fail` gate added by `7c5c736e` fires on **9 of 359** `wide` sources. It has been red since that commit and nobody saw it, because **nothing in `CMakeLists.txt` sets `MCC_SLICE_CENSUS_RUN`** — `grep -c 'MCC_SLICE_CENSUS_RUN\|MCC_LOOP_CENSUS_RUN\|MCC_RIR_CENSUS' CMakeLists.txt` is **0**. `slice-census` is `tests/must-run.txt:92`, `registered`, so `ci/must-run-registered` passes on it | small–medium (2 verify overruns + 9 sources, or a tolerance decision) | **cells** |
-| **2** | **`ctest -L census` runs 3 of its 6 cells and reports 6.** `loop-census`, `loop-census-numeric` and `slice-census` skip under the recipe this file quotes (`MCC_RIR_CENSUS=1 ctest -L census`, and `slice-census.py`'s own message literally says *"set `MCC_SLICE_CENSUS_RUN=1` to run this census (ctest -L census)"*). The `6` at `:1507` counted **registered** cells, not run ones — the exact failure mode this project keeps finding. Fix: have CMake set the three env vars on the `census`-labelled cells, so the label means what it says | small (three `ENVIRONMENT` properties) | **cells** |
+| **1** | ~~**`slice-census` is RED on this tree and no documented invocation runs it.**~~ **CLOSED on `wt/censusfix`** — both halves. The 9 `src_fail` sources were a corpus defect, not compiler defects: the walk handed `tests/exec/*.c` to a bare `mcc -c`, ignoring the flags and the `req` each source's row in `tests/exec/goldens.h` declares. The two `--verify` overruns were a denominator defect: slice extents are measured on the *replay* and were being compared against the *parser's* body length, which only coincide when the body is faithful, and neither of those two is. See the Landed section below for both readings | — | **cells** |
+| **2** | ~~**`ctest -L census` runs 3 of its 6 cells and reports 6.**~~ **CLOSED on `wt/censusfix`** — all five census cells now carry their own `ENVIRONMENT` switch, and a new `census/gates-armed` cell fails if any `census`-labelled cell is gated on an opt-in switch its registration does not set. `ctest -L census` is **7/0 with nothing Skipped** and needs no exported variable at all. `MCC_RIR_CENSUS` was in the same state as the other two — named nowhere in `CMakeLists.txt` — so `rir-coverage-census` and `rir-nofb-probe` only ever ran because somebody typed it | — | **cells** |
 | **3** | **`-fopt-slice` makes object output depend on the optimizer's disk cache, and nothing watches it.** Reproduced verbatim today: `python3 tools/opt-cache-determinism.py cmake-debug/mcc src/mcc.c --opt=-O3 --from-build cmake-debug -- -fopt-slice` → `cold/self/foreign-tu = daffa4e023f9`, **`foreign-fl = 1dbdfbe1bc0c`**, `cache entries written: 2`, `FAIL`. The cell is a **permanent 77** because the flag is `MCC_OPTD_LEVEL(9)` and has no subject at any shipped level, so the defect is invisible rather than absent. Decide: own the pass, or delete it | unknown (a pass) | **correctness / determinism** |
 | **4** | **`if-conversion-abs` ships at `MCC_OPTD_LEVEL(2)` and the freshly re-run bench says it makes code worse.** `tests/optfire/levelbench.tsv:20`: moves **1 of 17** kernels, `gain_movers` **−0.0334**, `branchy` **−0.5700** — a sign flip from the `+0.1905` / `+3.1843` it was promoted on. It is bucketed `ranked`, not `cost-no-gain`, so the ladder still treats it as a win. It is filed **only** in the failed-to-reproduce table at `:685`; no row of the ranking table owns it, and `:517` asserts "row 1 is the only unmeasured row left" | small (one level decision, the measurement already exists) | **emitted code** |
 | **5** | **`MCC_MAX_UNARY_DEPTH` is mis-sized and the guard admits inputs that segfault the compiler.** `src/mccgen.c:241` caps nesting at **2048** against a measured **~1.15 KiB of host stack per unary level**, so the limit needs ~2,560 KiB and a 2 MiB stack — the Linux default for a *thread* — is not enough. **Verified this sweep**, 2,040 nested parens, `ulimit -s`: **2048 KiB → SIGSEGV (exit 139, core dumped); 4096 KiB → exit 0; 8192 KiB → exit 0.** The diagnostic at `:13321` never fires because the crash happens first. Filed at `:8211-8214` as a residual of N8 and never mentioned again | one constant, or a depth derived from the rlimit | **correctness** |
@@ -142,6 +142,166 @@ body, evaluation order only) · `%p` on the device (glibc prints `(nil)`) ·
 `-1` is the safe answer).
 
 I found no decision on that list that looks wrongly settled.
+
+## Landed — the census label arms its own cells, and `slice-census`'s corpus is the goldens table, 2026-08-09 (`wt/censusfix`)
+
+Closes open rows 1 and 2 and filed item 3 above. Three separate defects were stacked behind
+one red cell, and only one of them was in the census tool.
+
+### The 9 `src_fail` sources were the corpus, not the compiler
+
+Named, with the cause of each, at `-O0`/`-O1`/`-O2`/`-O3` alike — the set does not vary by
+level:
+
+| source | what it wanted | class |
+| --- | --- | --- |
+| `tests/exec/lexical/trigraphs.c` | `-trigraphs` | flags its golden already declares |
+| `tests/exec/types/std_gated_keywords.c` | `-std=c2y -pedantic-errors` | same |
+| `tests/exec/functions_abi/gnu89_extern_inline_redef.c` | `-std=gnu89` | same |
+| `tests/exec/features_c99_c11/builtins_extra.c` | `-Itests/support` (for `vlog.h`) | include path the runner passes and the census did not |
+| `tests/exec/arch/arm64_encoding.c` | `req: cpu=arm64,asm` | not buildable on this target |
+| `tests/exec/arch/arm64_extasm.c` | `req: cpu=arm64,asm` | same |
+| `tests/exec/arch/winarm64_interlocked.c` | `req: cpu=arm64,os=WIN32` | same |
+| `tests/exec/functions_abi/fastcall.c` | `req: cpu=i386` | same |
+| `tests/exec/pointers_arrays/array_assignment.c` | `req: note:whole-array assignment (b = a) is invalid C; mcc rejects it like gcc/clang` | rejected on purpose |
+
+**The `src/` fragment trap was checked and is not the explanation.** `slice-census.py`'s
+`wide` corpus is `src/mcc.c` plus a walk of `tests/exec`, `tests/behavior`, `tests/ast` and
+`examples` — it never walks `src/`, so `mccast.c`, `mccircap.c` and `mccrir.c` were never in
+it and none of the 9 is a fragment. The 9-vs-3 coincidence was a coincidence. (Note in
+passing that `rir-coverage.py`'s `wide` is a *different* 380-source set — it also walks
+`tests/asm`, `tests/runtime` and `tests/static`. Two corpora under one name; not touched
+here because the `rir` banks are held by another branch.)
+
+**The fix is that `tests/exec/goldens.h` is the authority on what a `tests/exec` source is.**
+It is the same table `tests/runner.c` executes. `slice-census.py` now reads it: it passes
+each source's declared `flags` (minus `-l`/`-L`, which `mcc -c` refuses outright —
+`mcc: error: cannot specify libraries with -c` — and which affect linking, not translation),
+adds the runner's own `-Iruntime/include -Itests/support`, and honours `req` through a port
+of `req_met()` restricted to the clauses that decide whether a *compile* can happen. The
+run-time clauses (`asm`, `bcheck`, `backtrace`, `diff3!=`) are deliberately **not** honoured:
+this census never runs the program, so dropping a source over them would shrink the
+denominator for no reason. Every source goldens.h excludes is **named in the report**, with
+its reason, so the denominator stays auditable. A source that fails to compile is still a
+hard failure — the `src_fail` gate was not touched, and it now names the offenders.
+
+### The 2 `--verify` overruns were the denominator, not the attribution
+
+`cst_alloc_node: slice bytes 595/595 exceed body bytes 560` and `rir_low_set: 345/307`. Both
+bodies have **`faithful=0`**, and that is the whole of it. `bytes=` is `body_len`, the length
+the *parser* emitted; the per-statement extents are measured on the *replay*. Equal length is
+a precondition of equal content, so for a faithful body the two are the same number — but an
+unfaithful body is under no obligation to emit the parser's byte count, and neither of these
+two does. `RIRPRODDUMP=cst_alloc_node` prints it directly:
+
+```
+[ast-postreplay] cst_alloc_node loc=-16 saved_loc=-20 newlen=616 bodylen=560
+[ast-postreplay] rir_low_set     loc=-32 saved_loc=-48 newlen=345 bodylen=307
+```
+
+Different frame layout, more bytes, and the attribution was charged the difference. The
+`[slice-fn]` record now carries **`rbytes=`**, the replay's own length, `verify_fn()` measures
+slice extents against it, and the check got *stronger* rather than weaker in three ways: a
+faithful body whose `rbytes != bytes` is now an error (that identity used to be assumed), the
+statement attribution is now checked against `rbytes` as well as the slice extents, and the
+report prints `body bytes N (replayed M, +x%)` so the drift is on the page instead of hidden
+in a ratio. With the right denominator, statement attribution reads **100.000% of replayed at
+every level** — it was never approximate; it was being divided by the wrong number.
+
+Ablated, all three cells fail as claimed:
+
+```
+slice-census: -O2: 2 of 3 sources did not compile … tests/exec/arch/arm64_encoding.c
+  (unknown opcode 'mrs'); tests/exec/functions_abi/fastcall.c (bad operand with opcode 'pushl')
+slice-census: -O1 cst_alloc_node: slice bytes 595/595 exceed replayed body bytes 560
+  (parser 560) by more than 32                     [rbytes reverted to body_len]
+slice-census: -O0 host_stderr_isatty: faithful body replayed 14 bytes against a 13-byte
+  parser body                                      [rbytes perturbed by +1]
+census-armed: slice-census: slice-census.py gates it on MCC_SLICE_CENSUS_RUN, and the cell's
+  ENVIRONMENT does not set it. The cell will report Skipped and ctest will count it as passed
+```
+
+### Both readings, and which one the board should quote
+
+Same compiler, same tool, same four levels; the only difference is the corpus and the
+denominator. **Quote the right-hand column.** The left-hand one is an average over the 350
+sources that happened to survive out of 359 attempted, which is not a defined population.
+
+| | old: 359 walked, **9 failing**, shares over the survivors | new: 346 declared, **0 failing** |
+| --- | --- | --- |
+| sources | 359 (failed 9) | 346 (failed 0), 13 excluded by `goldens.h` and named |
+| modelled bodies `-O0` | 4321 (faithful 4192) | 4196 (faithful 4067) |
+| modelled bodies `-O1`/`-O2`/`-O3` | 4328 (faithful 4248/4251/4251) | 4202 (faithful 4122/4125/4125) |
+| body bytes `-O1`..`-O3` | 3,563,866 | 3,542,417 (replayed 3,543,317, **+0.025%**) |
+| attribution | 100.025% *of parser body bytes* | **100.000% of replayed** |
+| `t=0` slices `-O1`..`-O3` | 81,738 | **81,615** |
+| `t=0` bytes `-O1`..`-O3` | 1,487,094 B (41.73%) | **1,483,262 B (41.87%)** |
+| `t=1` bytes `-O2`/`-O3` | 1,587,674 B (44.55%) | **1,583,924 B (44.71%)** |
+
+**The number barely moved, and that is the finding, not an excuse.** The 9 sources were tiny;
+losing them cost 0.15 points of the byte share. A gate that fires on a defect worth 0.15
+points is a gate working correctly — the alternative reading, the one this cell had before
+`7c5c736e` added `src_fail`, is that 11 of 12 sources could have dropped out and the cell
+would still have passed on the twelfth.
+
+**13 excluded, not 9 — and 8 of the 13 do compile here.** Only 5 of the 13 were among the 9
+failures. The other 8 were verified by hand to build cleanly on `x86_64/Linux` and are
+dropped anyway: five carry a `note:` (`inline.c`, `alias.c`, `backtrace.c`, `btdll.c`,
+`stdcountof_header.c` — documentation rows whose coverage lives in a named cell elsewhere),
+and three are arch goldens whose C body happens to be portable (`arm64.c`, `arm64_errors.c`
+under `cpu=arm64`, `riscv_asm.c` under `cpu=riscv64`).
+
+That cost is deliberate, and it is the one judgement call in this branch. The corpus is now
+*"the goldens `tests/runner.c` runs on this target"* — one sentence, mechanically checkable,
+and derived from a table nobody maintains with this census in mind. The alternative, *"the
+goldens this target runs, plus the eight that happen to build"*, is decided by outcome, which
+is the gate-lowering move this cell was red for catching, and it is a list that rots.
+`array_assignment.c` is the proof that the weaker rule is unsafe: it carries a `note:` and it
+does **not** compile, so `note:` cannot be assumed to mean *"compilable, just not run"*. The
+8 are worth 1.4% of the corpus and are named on stdout on every run, so anyone who wants them
+back can see exactly what they would be arguing for.
+
+### The label arms its own cells
+
+`grep -c 'MCC_SLICE_CENSUS_RUN\|MCC_LOOP_CENSUS_RUN\|MCC_RIR_CENSUS' CMakeLists.txt` was
+**0**; it is **5** now, one `ENVIRONMENT` property per census cell. `MCC_RIR_CENSUS` was
+*not* wired the way the recipes in this file assume — it was in exactly the same state as the
+two undocumented switches, and `rir-coverage-census`/`rir-nofb-probe` ran only because the
+recipe told people to export it by hand.
+
+Always-on rather than opt-in, because the cost is not the reason they were gated:
+`slice-census` **7.9 s**, `loop-census` **3.1 s**, `loop-census-numeric` **7.9 s**,
+`rir-coverage-census` **~24 s**, `rir-nofb-probe` **14.9 s** — 40 s of wall clock added to a
+full run, `ctest -L census` **98 s** end to end. The `--opt-in` flags stay in the tools,
+where they do their real job of warning a human before a hand-typed run.
+
+`tools/census-armed.py` (cell `census/gates-armed`, `must-run`) closes the loop structurally
+rather than by list: for every `census`-labelled cell that passes `--opt-in` it reads the tool
+named on the command line, recovers the variable that tool's own guard consults, and requires
+the cell's `ENVIRONMENT` to set it to something other than empty or `0`. A census cell added
+tomorrow with a new switch is caught by the same rule; a switch renamed in the tool but not in
+`CMakeLists.txt` is caught as a mismatch instead of as a silent skip. It never returns 77 —
+a cell whose job is to make a skip visible must not be able to skip.
+
+`slice-census` is promoted `registered` → **`must-run`** in `tests/must-run.txt`: its opt-in
+guard is now its only `return 77`, so a Skipped there can only mean the arming was lost.
+`loop-census`, `loop-census-numeric`, `rir-coverage-census` and `rir-nofb-probe` are left at
+`registered` on purpose — they have other, legitimate 77 paths (7 and 4 of them respectively)
+that are properties of the host, and promoting them would be a claim about hosts this branch
+did not measure. Worth someone's time to audit those paths and promote what deserves it.
+
+### Verified
+
+`cmake-cross` built before `cmake-debug` was configured (hazard 5), `vendor/` symlinked from
+the primary checkout. `ctest -N` registers **9156** — the 9155 baseline plus
+`census/gates-armed`, the only cell this branch adds.
+
+Full `ctest -j16`: **9156 cells, 0 failures**. `ctest -L flagsweep` **119/0**,
+`-L stratsweep` **30/0**, `ctest -L census` **7/0 with nothing Skipped** (and identically
+7/0 under the old `MCC_RIR_CENSUS=1` recipe, which is now redundant rather than wrong),
+`python3 tools/must-run.py --build cmake-debug` **65 row(s) satisfied**, and
+`python3 tools/selfhost-smoke.py cmake-debug` OK from the repo root.
+`tests/optfire/*` untouched.
 
 ## The board — re-derived 2026-08-09 against a retaken corpus
 
@@ -1461,7 +1621,7 @@ re-running all 424 cells under `ctest -V`. **`mcc_skip_test` does report why** (
 | `diff3/*` `note:`, `bcheck`, and `#ifdef __MCC__` | 14 | 6 + 4 + 4; `portable_req()` rejects mcc-only bounds-checking and mcc-only source outright |
 | `asm-gas-directives` | 1 | a permanent 77 carrying a named blocker: the integrated assembler lacks `sgdtq`/`sidtq`/`swapgs` (`gas_directives.S:811`) |
 | **Opt-in by design, off by default** | **9** | |
-| `rir-coverage-census`, `rir-nofb-probe` (`MCC_RIR_CENSUS`), `loop-census`, `loop-census-numeric` (`MCC_LOOP_CENSUS_RUN`), `slice-census` (`MCC_SLICE_CENSUS_RUN`) | 5 | see the caveat below |
+| ~~`rir-coverage-census`, `rir-nofb-probe` (`MCC_RIR_CENSUS`), `loop-census`, `loop-census-numeric` (`MCC_LOOP_CENSUS_RUN`), `slice-census` (`MCC_SLICE_CENSUS_RUN`)~~ | ~~5~~ **0** | **`wt/censusfix`: all five are armed by their own registration and none of them skips any more.** The five cost 40 s of wall clock between them, which was never the reason they were opt-in — the `--opt-in` flag exists so that a developer typing the tool by hand is told what it costs, and CMake simply never set what the flag asks for. The tools keep the flag; the cells set the switch |
 | `jit/selftest-{observability,bench,benchwire}` | 3 | `-DMCC_DEV=ON` |
 | `flagsweep-cover` | 1 | `-DMCC_FLAGSWEEP_FULL=ON`, then `ctest -L flagsweep-full` |
 | **Lost subject, already filed and already carrying a manifest row** | **2** | `opt-cache-determinism`, `runtime-bench-gatewin` |
@@ -1482,6 +1642,15 @@ selects **6** cells, and `MCC_RIR_CENSUS=1 ctest -L census` reports 6 run and 0 
 77 inside a run whose headline says the census label is green. `MCC_SLICE_CENSUS_RUN` is
 additionally named **nowhere else in the tree** — not in this file, not in the README — so
 `slice-census` is a cell with a manifest row and no findable switch.
+
+**Closed on `wt/censusfix`.** The recipe is now plain `ctest -L census`: **7 cells, 0
+failed, 0 Skipped**, no exported variable. The `6` in the paragraph above was itself two
+different things added together — five census cells plus the `mcc_build` fixture ctest pulls
+in for `FIXTURES_REQUIRED` — which is why "6 registered, 3 run" was so easy to read as
+"6 run". `census/gates-armed` now makes the shape unrepresentable: it fails if any
+`census`-labelled cell passes `--opt-in` to a tool whose opt-in guard reads a variable the
+cell's `ENVIRONMENT` does not set, and it refuses to pass at all if the label selects fewer
+than five cells.
 
 #### THE FINDING — `ast/rir-c2-*`: fourteen cells, a banked ratchet, and a macro nothing ever defined
 
@@ -1610,9 +1779,11 @@ caveat above), `python3 tools/must-run.py --build cmake-debug` 64 rows satisfied
    consensus cells lost to a toolchain default drifting under a hard-coded command line —
    the same shape as the `-O0` bank, one layer down. `alignas`, `builtin_inf_nan` and
    `asm_lvalue_cast` are genuinely non-portable and should stay skipped.
-3. **`MCC_SLICE_CENSUS_RUN` is undocumented** and `-L census` reports green while three of
+3. ~~**`MCC_SLICE_CENSUS_RUN` is undocumented** and `-L census` reports green while three of
    its six cells 77. Either document the two missing switches next to `MCC_RIR_CENSUS`, or
-   give the label one arming variable.
+   give the label one arming variable.~~ **Done on `wt/censusfix`, by the third option this
+   line did not consider: the label arms its own cells, so there is no switch left for a
+   reader to know about.**
 4. **Registration gates with no `else()` skip stub** — cells that *vanish* rather than skip,
    which is the class `tests/must-run.txt` was built for and still cannot see: 86
    `stratsweep/isofull-*` and `stratsweep/perm3-*` under `MCC_STRATSWEEP_FULL`, the whole

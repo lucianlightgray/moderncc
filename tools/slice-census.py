@@ -43,12 +43,29 @@ one `[slice]` per slice and one `[slice-fn]` per modelled body.  Bodies the
 arena never modelled emit nothing, so `fn_n` here is the modelled population,
 not every function compiled.
 
+Corpus.  A `tests/exec` source is not a free-standing translation unit: what it
+is, and whether it is compilable on this target at all, is declared by its row
+in `tests/exec/goldens.h`, which is the same table `tests/runner.c` executes.
+Walking the directory and handing every `.c` to a bare `mcc -c` therefore
+mis-states the corpus in two directions at once -- it drops sources that only
+need the flags their row already names (`-trigraphs`, `-std=gnu89`,
+`-std=c2y -pedantic-errors`, `-Itests/support`), and it counts as failures
+sources the table says this target cannot build (`cpu=arm64`, `cpu=i386`,
+`os=WIN32`) or that mcc rejects on purpose (`note:` rows such as whole-array
+assignment).  Both are read here: `flags` is passed, minus the link-only
+entries that `-c` refuses, and `req` is honoured by the same rules as
+`req_met()` in tests/runner.c, restricted to the clauses that decide whether a
+*compile* can happen -- the run-time gates (`asm`, `bcheck`, `backtrace`,
+`diff3!=`) do not, because this census never runs the program.  Sources
+excluded that way are named in the report, so the denominator stays auditable;
+a source that fails to compile is still a hard failure, never a silent drop.
+
 Usage:
   tools/slice-census.py <build-dir> [--levels O0,O1,O2,O3]
                         [--corpus self|exec|wide] [--sources ...]
                         [--top N] [--json FILE] [--jobs N] [--opt-in]
 """
-import argparse, json, os, shlex, subprocess, sys, tempfile
+import argparse, ast, json, os, re, shlex, subprocess, sys, tempfile
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -85,6 +102,109 @@ def self_flags(bdir):
             if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
 
 
+def read_goldens():
+    """tests/exec/goldens.h as {abs source path: (flags, req)}.
+
+    The first row wins when several goldens share one source, so the mapping is
+    a function of the table's order and not of the walk's.
+    """
+    path = os.path.join(ROOT, "tests", "exec", "goldens.h")
+    out = {}
+    if not os.path.exists(path):
+        return out
+    txt = open(path, errors="replace").read()
+    for row in re.findall(r'^\s*\{(".*")\s*\},\s*$', txt, re.M):
+        try:
+            rec = ast.literal_eval("(" + row + ")")
+        except (SyntaxError, ValueError):
+            continue
+        if len(rec) < 7:
+            continue
+        key = os.path.normpath(os.path.join(ROOT, "tests", rec[2]))
+        out.setdefault(key, (rec[4], rec[6]))
+    return out
+
+
+def target_id(mcc):
+    """(cpu, os) of the target `mcc` builds for, in tests/runner.c's spelling."""
+    cpu = os.environ.get("MCC_TEST_CPU")
+    tos = os.environ.get("MCC_TEST_OS")
+    if cpu and tos:
+        return cpu, tos
+    try:
+        p = subprocess.run([mcc, "--version"], capture_output=True, text=True)
+    except OSError:
+        return cpu or "unknown", tos or "unknown"
+    m = re.search(r"\(([^()\s]+)\s+([^()]+)\)", (p.stdout or "") + (p.stderr or ""))
+    if m:
+        cpu = cpu or m.group(1)
+        tos = tos or m.group(2).strip()
+    return cpu or "unknown", tos or "unknown"
+
+
+def req_unmet(req, cpu, tos):
+    """Why goldens.h says this source cannot be compiled here, or None.
+
+    A port of the compile-deciding half of req_met() in tests/runner.c.  The
+    clauses left out -- `asm`, `bcheck`, `backtrace`, `diff3!=` -- gate running
+    or differential comparison, not translation, and a census that only ever
+    reaches `-c` must not drop a source over them.
+    """
+    if not req:
+        return None
+    for tok in req.split(","):
+        tok = tok.strip()
+        if tok.startswith("note:"):
+            return tok[5:]
+        if tok.startswith("cpu="):
+            want = tok[4:]
+            ok = cpu in ("i386", "x86_64") if want == "x86" else cpu == want
+            if not ok:
+                return "requires %s target (host target: %s)" % (want, cpu)
+        elif tok.startswith("os!="):
+            want, _, why = tok[4:].partition(":")
+            if tos == want:
+                return why or ("not applicable to the %s target" % want)
+        elif tok.startswith("os="):
+            if tos != tok[3:]:
+                return "requires %s target OS (host: %s)" % (tok[3:], tos)
+        elif tok == "elf":
+            if tos in ("Darwin", "WIN32"):
+                return "requires an ELF target (host: %s)" % tos
+        elif tok.startswith("skipon="):
+            plat, _, why = tok[7:].partition(":")
+            wcpu, slash, wos = plat.partition("/")
+            if slash and cpu == wcpu and tos == wos:
+                return why or ("not run on %s/%s" % (wcpu, wos))
+    return None
+
+
+def golden_flags(flags):
+    """The golden's flags a `-c` compile can take: mcc refuses `-l` with -c."""
+    return [f for f in shlex.split(flags or "")
+            if not f.startswith("-l") and not f.startswith("-L")]
+
+
+def annotate(paths, gold, cpu, tos, drop):
+    """[(path, extra flags)] plus the [(path, why)] goldens.h excludes."""
+    tests = os.path.join(ROOT, "tests") + os.sep
+    inc = ["-I" + os.path.join(ROOT, "runtime", "include"),
+           "-I" + os.path.join(ROOT, "tests", "support")]
+    out, dropped = [], []
+    for p in paths:
+        key = os.path.normpath(os.path.abspath(p))
+        extra = list(inc) if key.startswith(tests) else []
+        rec = gold.get(key)
+        if rec:
+            why = req_unmet(rec[1], cpu, tos)
+            if why and drop:
+                dropped.append((os.path.relpath(key, ROOT), why))
+                continue
+            extra += golden_flags(rec[0])
+        out.append((p, extra))
+    return out, dropped
+
+
 def bucket(n):
     for i, b in enumerate(BUCKETS):
         if n <= b:
@@ -111,8 +231,9 @@ def new_part():
 
 
 def new_acc():
-    return {"fn_n": 0, "fn_faithful": 0, "body_bytes": 0, "attr_bytes": 0,
-            "nodes": 0, "ovf": 0, "src_n": 0, "src_fail": 0,
+    return {"fn_n": 0, "fn_faithful": 0, "body_bytes": 0, "replay_bytes": 0,
+            "attr_bytes": 0,
+            "nodes": 0, "ovf": 0, "src_n": 0, "src_fail": 0, "fail_names": [],
             "inv_ind": 0, "inv_ext": 0, "inv_ret": 0, "inv_graft": 0,
             "fn_callfree": 0, "fn_callfree_bytes": 0,
             "part": [new_part(), new_part()]}
@@ -140,10 +261,25 @@ def verify_fn(m, seen):
     already emitted, so per-statement attribution never loses a byte but can
     double-count a retracted one.  Measured drift on src/mcc.c is 0.005% of
     body bytes at -O1..-O3 and 0.05% at -O0, in four bodies; hence the slack.
+
+    The denominator for a slice extent is `rbytes`, the length the *replay*
+    emitted, not `bytes`, the length the parser emitted.  They are the same
+    number for a faithful body -- equal length is a precondition of equal
+    content -- and that identity is checked here rather than assumed.  An
+    unfaithful body is under no obligation to emit the parser's byte count, and
+    two on src/mcc.c do not: cst_alloc_node replays 616 B against a 560 B
+    parser body and rir_low_set 345 against 307, each because the replay picked
+    a different frame layout (loc -16 vs -20, -32 vs -48).  Charging that
+    difference to the slice attribution read as a 6%-12% overrun of a body that
+    is in fact attributed to the byte.
     """
     out = []
     fn = m["fn"]
     nodes, byts, attr = int(m["nodes"]), int(m["bytes"]), int(m["attr"])
+    rbyts = int(m.get("rbytes", byts))
+    if int(m["faithful"]) and rbyts != byts:
+        out.append("%s: faithful body replayed %d bytes against a %d-byte "
+                   "parser body" % (fn, rbyts, byts))
     ns0, nb0, nn0 = int(m["ns0"]), int(m["nb0"]), int(m["nn0"])
     ns1, nb1, nn1 = int(m["ns1"]), int(m["nb1"]), int(m["nn1"])
     ninv = sum(int(m[k]) for k in
@@ -151,10 +287,15 @@ def verify_fn(m, seen):
     if nn0 > nodes or nn1 > nodes:
         out.append("%s: slice nodes %d/%d exceed arena nodes %d"
                    % (fn, nn0, nn1, nodes))
-    slack = max(32, byts // 50)
-    if nb0 > byts + slack or nb1 > byts + slack:
-        out.append("%s: slice bytes %d/%d exceed body bytes %d by more than %d"
-                   % (fn, nb0, nb1, byts, slack))
+    slack = max(32, rbyts // 50)
+    if nb0 > rbyts + slack or nb1 > rbyts + slack:
+        out.append("%s: slice bytes %d/%d exceed replayed body bytes %d "
+                   "(parser %d) by more than %d"
+                   % (fn, nb0, nb1, rbyts, byts, slack))
+    if attr > rbyts + slack:
+        out.append("%s: statement attribution %d exceeds replayed body bytes "
+                   "%d (parser %d) by more than %d"
+                   % (fn, attr, rbyts, byts, slack))
     if nn1 < nn0 or nb1 < nb0:
         out.append("%s: t=1 covers less than t=0 (%d/%d/%d vs %d/%d/%d)"
                    % (fn, ns1, nn1, nb1, ns0, nn0, nb0))
@@ -213,6 +354,7 @@ def absorb(acc, text, top_n, verify=None, seen=None):
             acc["fn_n"] += 1
             acc["fn_faithful"] += int(m["faithful"])
             acc["body_bytes"] += int(m["bytes"])
+            acc["replay_bytes"] += int(m.get("rbytes", m["bytes"]))
             acc["attr_bytes"] += int(m["attr"])
             acc["nodes"] += int(m["nodes"])
             acc["ovf"] += int(m["ovf"])
@@ -225,7 +367,8 @@ def absorb(acc, text, top_n, verify=None, seen=None):
                 verify.extend(verify_fn(m, seen))
 
 
-def run_one(mcc, flags, src, opt, tmpdir, idx):
+def run_one(mcc, flags, item, opt, tmpdir, idx):
+    src, extra = item
     cen = os.path.join(tmpdir, "c%d.txt" % idx)
     out_o = os.path.join(tmpdir, "o%d.o" % idx)
     env = dict(os.environ)
@@ -237,7 +380,7 @@ def run_one(mcc, flags, src, opt, tmpdir, idx):
         env["MCC_FORCE_REPLAY"] = "1"
     else:
         env.pop("MCC_FORCE_REPLAY", None)
-    cmd = [mcc] + flags + ["-" + opt, "-c", src, "-o", out_o]
+    cmd = [mcc] + flags + extra + ["-" + opt, "-c", src, "-o", out_o]
     p = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, env=env)
     txt = ""
     if os.path.exists(cen):
@@ -245,7 +388,7 @@ def run_one(mcc, flags, src, opt, tmpdir, idx):
         os.unlink(cen)
     if os.path.exists(out_o):
         os.unlink(out_o)
-    return p.returncode, txt
+    return p.returncode, txt, (p.stderr or p.stdout or "").strip()
 
 
 def census(mcc, flags, sources, opt, top_n, jobs, verify=None):
@@ -254,11 +397,14 @@ def census(mcc, flags, sources, opt, top_n, jobs, verify=None):
         with ThreadPoolExecutor(max_workers=jobs) as ex:
             futs = [ex.submit(run_one, mcc, flags, s, opt, td, i)
                     for i, s in enumerate(sources)]
-            for fu in futs:
-                rc, txt = fu.result()
+            for item, fu in zip(sources, futs):
+                rc, txt, err = fu.result()
                 acc["src_n"] += 1
                 if rc != 0:
                     acc["src_fail"] += 1
+                    acc["fail_names"].append(
+                        (os.path.relpath(item[0], ROOT),
+                         err.splitlines()[0] if err else "rc=%d" % rc))
                 absorb(acc, txt, top_n, verify, {})
     for p in acc["part"]:
         p["top"].sort(reverse=True)
@@ -275,9 +421,12 @@ def report(level, acc, top_n):
     print("=== -%s  sources=%d (failed %d)  modelled bodies=%d "
           "(faithful %d)" % (level, acc["src_n"], acc["src_fail"],
                              acc["fn_n"], acc["fn_faithful"]))
-    print("    body bytes %d   statement-attributed %d (%.3f%%)   arena nodes %d"
-          % (acc["body_bytes"], acc["attr_bytes"],
-             pct(acc["attr_bytes"], acc["body_bytes"]), acc["nodes"]))
+    print("    body bytes %d (replayed %d, %+.3f%%)   statement-attributed %d "
+          "(%.3f%% of replayed)   arena nodes %d"
+          % (acc["body_bytes"], acc["replay_bytes"],
+             pct(acc["replay_bytes"], acc["body_bytes"]) - 100.0,
+             acc["attr_bytes"], pct(acc["attr_bytes"], acc["replay_bytes"]),
+             acc["nodes"]))
     inv_tot = sum(acc[k] for k in ("inv_ind", "inv_ext", "inv_ret", "inv_graft"))
     print("    invokes %d = indirect %d + opaque-direct %d + retained %d + "
           "graftable %d  (anonymous %d = %.1f%%)"
@@ -351,12 +500,13 @@ def main():
     mcc = find_mcc(bdir)
     flags = self_flags(bdir)
 
+    walked = a.sources is None
     if a.sources:
-        sources = a.sources
+        paths = list(a.sources)
     elif a.corpus == "self":
-        sources = [os.path.join(ROOT, "src", "mcc.c")]
+        paths = [os.path.join(ROOT, "src", "mcc.c")]
     else:
-        sources = [] if a.corpus == "exec" else [os.path.join(ROOT, "src", "mcc.c")]
+        paths = [] if a.corpus == "exec" else [os.path.join(ROOT, "src", "mcc.c")]
         for d in (("tests/exec",) if a.corpus == "exec" else
                   ("tests/exec", "tests/behavior", "tests/ast", "examples")):
             p = os.path.join(ROOT, d)
@@ -365,7 +515,16 @@ def main():
             for dp, _, fns in os.walk(p):
                 for fn in sorted(fns):
                     if fn.endswith(".c"):
-                        sources.append(os.path.join(dp, fn))
+                        paths.append(os.path.join(dp, fn))
+
+    cpu, tos = target_id(mcc)
+    sources, dropped = annotate(paths, read_goldens(), cpu, tos, walked)
+    if dropped and not a.quiet:
+        print("corpus: %d of %d walked sources excluded by tests/exec/goldens.h "
+              "on %s/%s; the other %d must all compile"
+              % (len(dropped), len(paths), cpu, tos, len(sources)))
+        for name, why in dropped:
+            print("    %-52s %s" % (name, why))
 
     out = {}
     bad = []
@@ -390,8 +549,10 @@ def main():
                        "below is over the survivors. The count reaches stdout "
                        "only via report(), which --quiet suppresses, and "
                        "nothing gated it: 11 of 12 sources could drop out and "
-                       "the cell would still pass on the twelfth."
-                       % (level, acc["src_fail"], acc["src_n"]))
+                       "the cell would still pass on the twelfth: %s"
+                       % (level, acc["src_fail"], acc["src_n"],
+                          "; ".join("%s (%s)" % nm
+                                    for nm in acc["fail_names"][:12])))
         if not acc["fn_n"]:
             bad.append("-%s: zero bodies were modelled, so every percentage is "
                        "over an empty denominator and the OK line below would "

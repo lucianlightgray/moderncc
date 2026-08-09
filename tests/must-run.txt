@@ -89,7 +89,8 @@ loop-census                  | registered | the self-compile trip census the boa
 loop-census-numeric          | registered | the runtime-corpus trip census the board's 97.76% / 80.60% row comes from
 loop-census-parallel         | registered | --partest, the parallel-legality ground truth
 slice-enum                   | registered | 12 pinned sources; the cell that would notice 11 of them ceasing to compile
-slice-census                 | registered | the 552-of-12,957 loop-slice figure
+slice-census                 | must-run   | the 552-of-12,957 loop-slice figure. `registered` was not enough: nothing set MCC_SLICE_CENSUS_RUN, so the row was green on a cell that had never executed. CMakeLists.txt now arms it, and the opt-in guard is its only 77 path, so a Skipped here means the arming was lost
+census/gates-armed           | must-run   | proves the census cells are armed at all; the cell that would have caught `-L census` reporting 6 passed with 3 Skipped
 rir-coverage-census          | registered | the census half of the coverage ratchet
 rir-gap-classes              | registered | the UNF/WHY gap fixtures
 rir-lowerable-classes        | registered | the lowerable-percentage floor
