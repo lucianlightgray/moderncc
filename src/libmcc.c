@@ -917,7 +917,7 @@ LIBMCCAPI void mcc_undefine_symbol(MCCState *s1, const char *sym) { MCC_TRACE("e
 	cstr_printf(&s1->cmdline_defs, "#undef %s\n", sym);
 }
 
-#if defined MCC_CONFIG_AUTO_MCCDIR && MCC_HOST_POSIX
+#if MCC_CONFIG_AUTO_MCCDIR && MCC_HOST_POSIX
 #include <sys/stat.h>
 static char auto_mccdir_buf[1024];
 
@@ -1040,7 +1040,7 @@ ST_FUNC void mcc_isa_init(MCCState *s1) { MCC_TRACE("enter\n");
 #elif defined(MCC_TARGET_I386)
 	s1->isa_mask = 0;
 	s1->isa_level = "i686";
-#elif defined(MCC_TARGET_ARM) && defined(MCC_CONFIG_CPUVER)
+#elif defined(MCC_TARGET_ARM)
 	s1->isa_mask = (MCC_CONFIG_CPUVER >= 5 ? MCC_ISA_ARM_BLX : 0) |
 								 (MCC_CONFIG_CPUVER >= 7 ? MCC_ISA_ARM_MOVT : 0);
 	s1->isa_level = MCC_CONFIG_CPUVER >= 7   ? "armv7"

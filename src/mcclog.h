@@ -156,7 +156,7 @@ static inline void mcc_trace_at_v(unsigned char verbose, const char *file, int l
 #define MCC_DEBUG(...) mcc_logf(MCC_LOG_DEBUG, __VA_ARGS__)
 #define MCC_DEBUG_V(verbose, ...) mcc_logf_v(verbose, MCC_LOG_DEBUG, __VA_ARGS__)
 
-#if defined(MCC_CONFIG_TRACE) && MCC_CONFIG_TRACE
+#if MCC_CONFIG_TRACE
 #define MCC_TRACE(...) mcc_trace_at(__FILE__, __LINE__, __func__, __VA_ARGS__)
 #define MCC_TRACE_V(verbose, ...)                                              \
 	mcc_trace_at_v(verbose, __FILE__, __LINE__, __func__, __VA_ARGS__)
