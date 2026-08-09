@@ -1,5 +1,7 @@
 int a[256], b[256], c[256];
 int m[32][32];
+int m2[32][32];
+int *gp, *gq;
 int gsum;
 
 int dp_plain(int n) {
@@ -133,6 +135,26 @@ int dp_dist8(int n) {
 	return a[0];
 }
 
+int dp_nest_two_arrays(int n) {
+	for (int i = 0; i < n; i++)
+		for (int j = 0; j < n; j++)
+			m[i][j] = m2[i][j] + 1;
+	return m[0][0];
+}
+
+int dp_nest_two_rowptrs(int (*p)[32], int (*q)[32], int n) {
+	for (int i = 0; i < n; i++)
+		for (int j = 0; j < n; j++)
+			p[i][j] = q[i][j] + 1;
+	return p[0][0];
+}
+
+int dp_gptr_alias(int n) {
+	for (int i = 0; i < n; i++)
+		gp[i] = gq[i] + 1;
+	return gp[0];
+}
+
 int main(void) {
 	int r = dp_plain(4) + dp_fwd(4) + dp_bwd(4) + dp_reduce(4);
 	r += dp_alias(a, b, 4) + dp_nest_outer_carried(4);
@@ -140,5 +162,9 @@ int main(void) {
 	r += dp_priv_temp(4) + dp_cond_scalar(4) + dp_global_acc(4);
 	r += dp_break(4) + dp_ptr_bump(a, 4) + dp_while(4) + dp_do(4);
 	r += dp_stride2(4) + dp_dist8(16);
+	r += dp_nest_two_arrays(4) + dp_nest_two_rowptrs(m, m2, 4);
+	gp = a;
+	gq = b;
+	r += dp_gptr_alias(4);
 	return r != r;
 }

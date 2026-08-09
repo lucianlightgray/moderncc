@@ -3654,10 +3654,18 @@ static void rir_mark_apply(const RirOp *ro) {
 		}
 		n = ast_node(rir_arena, AST_Load);
 		ast_add_child(rir_arena, n, a);
-		if (ro->mvs_n - rir_base_depth > 0 &&
-				(rir_mvs[ro->mvs_off + ro->mvs_n - 1].r & VT_LVAL))
-			ast_set_fbits(rir_arena, n,
-										ast_fbits(rir_arena, n) | AST_FB_LOAD_LVAL);
+		if (ro->mvs_n - rir_base_depth > 0) {
+			const SValue *pv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
+			const Sym *pd = (const Sym *)(uintptr_t)pv->type.ref;
+			if (pv->r & VT_LVAL)
+				ast_set_fbits(rir_arena, n,
+											ast_fbits(rir_arena, n) | AST_FB_LOAD_LVAL);
+			if ((pv->type.t & (VT_BTYPE | VT_ARRAY | VT_VLA)) == VT_PTR && pd &&
+					(pd->type.t & (VT_ARRAY | VT_VLA)) == VT_ARRAY)
+				ast_set_type_bf(rir_arena, n, pd->type.t,
+												(uint64_t)(uintptr_t)pd->type.ref, pd->type.bp,
+												pd->type.bs);
+		}
 		rir_push(n);
 		break;
 	case RIR_M_NORETURN:

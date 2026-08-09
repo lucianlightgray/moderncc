@@ -13140,6 +13140,11 @@ typedef struct AstDepRef {
 	AstDepSub sub[AST_DEP_MAXDIM];
 } AstDepRef;
 
+static int ast_dep_decay(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	int t = ast_type_t(a, n);
+	return (t & (VT_ARRAY | VT_VLA)) == VT_ARRAY;
+}
+
 static AstLocal ast_dep_strip(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	while (n != AST_NONE && ast_kind(a, n) == AST_Convert &&
 				 ast_nchild(a, n) == 1)
@@ -13247,12 +13252,15 @@ static void ast_dep_decode(AstArena *a, AstLocal E, const int *ivs, int niv,
 		if (k == AST_Load && ast_nchild(a, E) >= 1) { MCC_TRACE("br\n");
 			if (consumed && (uint32_t)E < (uint32_t)nn)
 				{ MCC_TRACE("br\n"); consumed[E] = 1; }
-			r->indirect = 1;
+			if (!ast_dep_decay(a, E))
+				{ MCC_TRACE("br\n"); r->indirect = 1; }
 			E = ast_first_child(a, E);
 			continue;
 		}
 		if (k == AST_Ref) { MCC_TRACE("br\n");
 			int rr = ast_op(a, E);
+			if ((rr & VT_LVAL) && !(ast_type_t(a, E) & VT_ARRAY))
+				{ MCC_TRACE("br\n"); r->indirect = 1; }
 			if ((rr & VT_VALMASK) == VT_CONST && (rr & VT_SYM) &&
 					ast_sym(a, E) != 0) { MCC_TRACE("br\n");
 				r->base_kind = 1;

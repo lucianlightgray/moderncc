@@ -54,6 +54,14 @@ rather than a hand-read list of twelve array fills.
 - The raw, dependence-ignoring fraction is **97.76%** against the self-compile's 52.51%.
   The numeric workload has the iterations; the predicate cannot see them.
 
+> **Superseded 2026-08-09 by `wt/decaytype`.** The 1.39% and the 79.35% are both *before*
+> figures now. `a[i][j]` no longer decodes as an indirection, the corpus fraction is
+> **80.60%** without any unsound assumption, and `--alias-oracle` moves it by zero. The
+> self-compile is still 0.01% and still declines for calls and `goto`s, so the verdict below
+> is unchanged — only the alias half of it has been paid. See
+> `#### LANDED — the 79.35% converts *soundly*` at the end of board row 1, including the
+> collapse to 3.67% when the one hot loop is removed, which is the part that still governs.
+
 So the correct statement is narrower than "freeze the device path". **The compiler has no
 lane source and cannot be given one. A numeric workload has one, and what stands between
 the predicate and it is a single sound-but-blunt alias gate.** Both halves are measured;
@@ -341,6 +349,11 @@ absent from this checkout and are named as skipped by the tool. Cell: `loop-cens
 | hottest loop | `ast_strpool_find_or_add`, 11.4% | `matmul.c:22`, **76.9%** |
 | top ten loops | 33.8% | 96.8% |
 
+**This table is the state before `wt/decaytype`.** Its corpus column's `1.39% / 80.60%`
+split no longer exists: the shipped predicate now answers 80.60% on its own and the oracle
+row is worth zero. Read it for the shape of the two workloads, then read
+`#### LANDED — the 79.35% converts *soundly*` below for the current values.
+
 Read the last three rows together. The shipped predicate says *both* workloads are barren,
 so the headline generalises. It generalises for opposite reasons.
 
@@ -417,6 +430,111 @@ Two hazards this section introduces, stated rather than buried:
    76.9% of all 2.25 billion iterations, and that size was picked by `runtime-bench.py` to
    take about a second, not to weight this census. The per-program table, not the corpus
    total, is the size-independent read — and it says three kernels of seventeen.
+
+#### LANDED — the 79.35% converts *soundly*, and the oracle it was measured against was not the only unsound thing here, 2026-08-09
+
+Branch `wt/decaytype`. The row above closed with "the cheapest predicate work with a
+measured payoff is teaching `AstDepRef` to tell an array-decay `Load` from a pointer read".
+That is done, by the route the earlier attempt filed rather than the one it abandoned: the
+representation now carries the fact, and the alias gate is untouched.
+
+**What was actually wrong.** `rir_hook_indir()` marks `RIR_M_LOAD` on *every* `indir()`,
+including the one that peels `a[i]` out of `a[i][j]`. For a pointer-to-array, `indir()`
+yields an array-typed value and deliberately does **not** set `VT_LVAL` — no memory is
+read, the value *is* the address. But the replay built that `AST_Load` with no type at all,
+so `ast_type_t` answered `0` and `ast_dep_decode` could only guess, guessed "indirection",
+and set `AstDepRef.indirect`. Two fixes, both in the construction/decode, none at a query
+site:
+
+- `src/mccrir.c`, `RIR_M_LOAD`: when the pre-`indir` `SValue` is a pointer whose pointee is
+  a (non-VLA) array, stamp the `AST_Load` with that array type. `ast_type_t` now answers
+  correctly on decay nodes instead of `0`.
+- `src/mccast.c`, `ast_dep_decode`: an `AST_Load` whose type is an array is an address
+  computation, so it no longer sets `indirect`. The gate in `ast_loop_parallel_legal` is
+  unchanged.
+
+**A second, pre-existing unsoundness, found while checking the first.** The same decoder
+accepted an `AST_Ref` as a *base address* without looking at `VT_LVAL`. A global pointer
+read is `AST_Ref` with `op & VT_LVAL` and a non-array type — the symbol is the pointer
+variable, not the object — so the shipped predicate answered
+
+    int *gp, *gq;
+    for (int i = 0; i < n; i++) gp[i] = gq[i] + 1;
+
+`parallel(#5): legal` on pristine `70b92fb3`, with **no** `-fdep-alias-oracle`. That is
+precisely the assumption the census docstring attributes to the oracle alone ("`p[i]` and
+`q[i]` through two distinct global pointers have distinct base symbols and may be the same
+memory"), and it was already being made by default. `ast_dep_decode` now sets `indirect` on
+any lvalue `Ref` of non-array type. Cell `id=25 dp_gptr_alias` in
+`tests/loopcensus/known_deps.expect` comes back `par=1` on the pristine tree and `par=?`
+now.
+
+**What is proved now, and what is still refused.** Proved: two references whose address
+chains reach *distinct declared symbols* through pure address arithmetic, including
+array-decay steps — `a[i][j]` vs `b[i][j]` on distinct file-scope arrays. That is the same
+`ast_dep_base_distinct` rule 1-D global arrays have always used; nothing was weakened to
+get it. Still refused, deliberately: anything reached through a genuine pointer load
+(`p[i][j]` vs `q[i][j]`, whether the pointers are parameters or globals); any pair of
+*frame-local* arrays, because `ast_dep_base_distinct` returns 0 for `base_kind == 2` and a
+frame offset can also be a temp holding a loaded pointer; and `a[i][j]` vs `a[k][l]`, which
+still goes through the direction test.
+
+**Measured** (`MCC_LOOP_CENSUS_RUN=1 tools/loop-census.py cmake-debug --corpus runtime`,
+and the same with `--alias-oracle`; 17 kernels, 2,246,355,539 iterations, identical to the
+run in the table above):
+
+| | before | after | `--alias-oracle` ceiling |
+| --- | ---: | ---: | ---: |
+| parallel-legal iteration-weighted fraction | 1.39% | **80.60%** | 80.60% |
+| entered loops `par=1` | 14 | **26** | 26 |
+| `bases-may-alias-indirect`, iteration-weighted | **79.35%** | **0.00%** | 0.00% |
+| hottest loop removed | 1.39% | **3.67%** | 3.67% |
+| largest program (`matmul.c`) removed | 1.39% | **3.66%** | 3.66% |
+| self-compile of `src/mcc.c` | 0.01% | **0.01%** | 0.01% |
+
+The after column and the oracle column are the *same report, byte for byte* (`diff` of the
+two census outputs is empty). All 79.35 points convert, and they convert soundly:
+`-fdep-alias-oracle` is now worth **zero** on this corpus, having been worth 79.2 points
+yesterday. It is not removed — it still bounds workloads whose bases are pointers.
+
+**The same skepticism, applied to this headline.** It does not survive it, and it was never
+going to: 76.9% of the corpus's iterations are one loop, `matmul.c:22`, and 80.60% becomes
+**3.67%** the moment that loop is dropped and **3.66%** when the whole `matmul.c` program
+is. Under the new predicate exactly the same three kernels of seventeen carry everything
+that the oracle said would — `matmul`, `loopnest` (whose hot nest *is* the same i-k-j
+matmul) and `vlaloop`. What changed is that the number is now the predicate's own answer
+rather than a ceiling; what did not change is that the corpus's lane source is still dense
+matrix multiply, and that is still not evidence about real programs. Hazard 1 above is
+retired only in the sense that the two columns now coincide; hazard 2 stands unaltered.
+
+**Emitted code did not move.** `ast_loop_parallel_legal` still has exactly two call sites,
+both diagnostic (`grep -rn ast_loop_parallel_legal src tools include runtime` → one
+declaration, one definition, `ast_loop_par_census`, `ast_loopdep_dump`), so the decode
+change cannot reach codegen; the `mccrir.c` type stamp can, so it was measured rather than
+argued. 721 TUs from `tools/`, `runtime/lib/` and `tests/**` compiled at `-O0/-O1/-O2/-O3`
+= **2884 objects, 2884 byte-identical**. Eight of them hashed differently across the two
+runs and all eight are `__TIME__` string literals: compiling them back-to-back with the
+pre-change and post-change binaries gives identical bytes at all four levels. The only
+other object that moved is `tests/loopcensus/known_deps.c`, whose source this change edits.
+
+**The cell that fails without it.** `tests/loopcensus/known_deps.c` gains `m2[32][32]`,
+`gp`/`gq`, and three functions; `known_deps.expect` gains four rows. On pristine
+`70b92fb3`, `tools/loop-census.py cmake-debug --partest` reports **12 mismatches** at
+`-O1/-O2/-O3`: `dp_nest_two_arrays` (both loops) wants `par=1` and answers `par=?`, and
+`dp_gptr_alias` wants `par=?` and answers `par=1`. `dp_nest_two_rowptrs` — the same nest
+through two `int (*)[32]` parameters — must stay `par=?` in both trees, and does; it is the
+soundness control, not a positive.
+
+**What this does not do.** Frame-local 2-D arrays (`double x[N][N]; double y[N][N];` inside
+a function) still decline, because base distinctness is only implemented for symbols. That
+is the next sound point on this line and it is not free: a `base_kind == 2` offset is
+sometimes a real object and sometimes a compiler temp holding a loaded pointer, and the two
+are not distinguished today. Also **unaudited and not touched here**:
+`ast_loop_interchange_legal` and `ast_dep_fusion_pair_illegal` call `ast_dep_base_distinct`
+with *no* `indirect` guard at all, so they never had the protection this row is about.
+`-floop-interchange` and `-floop-tile` sit at `MCC_OPTD_LEVEL(12)`, above `-O3`, so they are
+opt-in — but they are shipped, they do reach emitted code, and nothing above proves them
+sound for pointer bases. That is a separate row.
 
 ### 2. Replay fidelity — ~4.3 points of `kept` still on the table; the ICE that blocked it is fixed
 

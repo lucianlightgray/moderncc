@@ -19,3 +19,8 @@ id=17 par=1 fn=dp_while
 id=18 par=1 fn=dp_do
 id=19 par=1 fn=dp_stride2
 id=20 par=0 fn=dp_dist8
+id=21 par=1 fn=dp_nest_two_arrays
+id=22 par=1 fn=dp_nest_two_arrays
+id=23 par=? fn=dp_nest_two_rowptrs
+id=24 par=? fn=dp_nest_two_rowptrs
+id=25 par=? fn=dp_gptr_alias
