@@ -6780,11 +6780,29 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             mcc_skip_test(diag.parse-depth
                 "cell lowers its own stack rlimit; needs a POSIX shell")
         endif()
+
+        find_program(MCC_OBJDUMP NAMES objdump)
+        if(MCC_PYTHON3 AND MCC_OBJDUMP AND CMAKE_HOST_UNIX
+           AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64)$"
+           AND CMAKE_C_COMPILER_ID STREQUAL "GNU"
+           AND NOT CMAKE_C_FLAGS MATCHES "-O[123gsz]"
+           AND (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL ""))
+            add_test(NAME diag.parse-frames
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/parse-frames.py"
+                        "${CMAKE_BINARY_DIR}" --mcc "${_mcc_exe}")
+            set_tests_properties(diag.parse-frames PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                TIMEOUT 300)
+        else()
+            mcc_skip_test(diag.parse-frames
+                "prices MCC_MAX_PARSE_DEPTH from the x86-64 -O0 prologues of the built mcc; needs python3, objdump, an x86-64 host and an unoptimised gcc build")
+        endif()
     else()
         mcc_skip_test(diag.dg-error
             "negative diagnostic tier runs mcc directly; not registered under an emulator")
         mcc_skip_test(diag.parse-depth
             "cell runs mcc directly; not registered under an emulator")
+        mcc_skip_test(diag.parse-frames
+            "cell reads host prologues out of the built mcc; not registered under an emulator")
     endif()
 
     if(MCC_TARGETOS STREQUAL "WIN32")

@@ -119,3 +119,5 @@ ast/rir-c2-O1                | registered | the C2 re-emit ratchet (BANKGAP=0, B
 ast/rir-c2-O2                | registered | same family, same permanent 77, same never-checked bank; real gap 12 (was 13)
 ast/rir-c2-O3                | registered | same family, same permanent 77, same never-checked bank; real gap 12 (was 13)
 asm-gas-directives           | registered | a PERMANENT 77 carrying a named blocker: the integrated assembler lacks sgdtq/sidtq/swapgs (gas_directives.S:811). The row is here so the blocker cannot outlive its fix unnoticed
+
+diag.parse-frames            | registered | prices MCC_MAX_PARSE_DEPTH against the frames it was sized on; if the cell stops being registered, the 512 budget goes back to resting on a number nobody re-derives
