@@ -987,6 +987,25 @@ while indexes still remain to be traversed"* on `OpCompositeExtract %uint %doubl
 value/destination type-match guards on frame stores and returns. `spirv-val` now passes on
 every module the probe emits; it is still referenced nowhere in the build (row 8).
 
+**And a performance trap, plus the one cell that can see it — OPEN.** The first cut of the
+float type inference had no early-out for a node whose own type word is already a plain
+integer type, so on an all-integer tree it walked the whole subtree instead of answering
+from the node in front of it: O(n²) per slice, and `slicerun --cost-synth` went from
+**21.6s to over 600s**. `slice/cost` is the only cell in the suite that can catch an
+interpreter slowdown, because it is the only one that measures time — and **it has no
+`TIMEOUT` property**, so what it actually did was hang the whole `ctest` run rather than
+fail it. Two hours were spent finding that by hand. Fixed (23.2s, 7% over baseline, and the
+cell passes in 23.35s), but the cell should get a `TIMEOUT` and, better, a banked duration:
+a 28× regression that presents as "ctest never finishes" is indistinguishable from a
+flaky machine.
+
+Adjacent and also fixed here: `ast_eval_slice_wtype`'s `AST_Load` arm returns the element
+type of an indexed access, and once `ast_eval_slice_dynidx` accepts a `double` element type
+that arm could return `VT_DOUBLE` — a value every one of its callers reads as "not 64-bit,
+signed" and narrows to int32. It now returns 0 for a float element, which is what its
+integer-width contract always promised. Anyone widening `dynidx` again should re-read that
+arm first.
+
 **The interaction with the usual-arithmetic-conversions bug, stated rather than left to be
 found.** `ast_eval_slice` takes a Binary's working type from **child 0 alone** and never
 consults operand 1, so C's usual arithmetic conversions are never applied; `spv_expr` and
