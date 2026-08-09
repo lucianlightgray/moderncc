@@ -9,10 +9,11 @@
 # every lowerable slice and frame run through both executors, and requires them
 # to agree. The mutation arm proves the comparison is not blind.
 #
-# What does NOT lower yet is as informative as what does: the pointer-walking
-# functions (memcmp, strcmp, strncmp) produce zero frame runs because they
-# dereference through a pointer, which needs the shared address space at
-# binding 2. They are the measure of that work, not a failure of this one.
+# The pointer-walking functions (memcmp, strcmp, strncmp, memchr) used to produce
+# zero frame runs. They now lower: a frame slot holding a host address inside
+# binding 2 is dereferenced by both executors over the same physical bytes. The
+# frame-mem tooth below is what keeps that honest -- a run that lowers `*p` but
+# dereferences nothing would still be counted by frame-compared.
 
 set(_dump "${BINDIR}/slicerun-musl.txt")
 file(REMOVE "${_dump}")
@@ -79,6 +80,11 @@ endif()
 if(_out MATCHES "available=1" AND NOT _out MATCHES "frame-compared=([1-9][0-9]*)")
     message(FATAL_ERROR "slice/musl: no musl frame run was compared on the "
                         "device; accepted counts runs that were never built")
+endif()
+if(_out MATCHES "available=1" AND NOT _out MATCHES "frame-mem=([1-9][0-9]*)")
+    message(FATAL_ERROR "slice/musl: no musl frame run dereferenced the shared "
+                        "address space, so the byte-for-byte comparison of "
+                        "binding 2 compared nothing")
 endif()
 
 execute_process(COMMAND "${RUNNER}" --arenas "${_dump}" --quiet --mutate

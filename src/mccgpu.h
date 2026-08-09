@@ -1227,6 +1227,9 @@ typedef struct SpvMod {
 	uint32_t ucid[SPV_MAX_CONST];
 	int nucached;
 	int failed;
+	int64_t mem_base;
+	uint32_t mem_nbyte;
+	int mem_used;
 } SpvMod;
 
 static void spvw_put(SpvWords *b, uint32_t v) {
@@ -2264,6 +2267,24 @@ static void spv_store_region(SpvMod *m, const SpvRegion *r, uint32_t byteoff,
 							 spv_emit2(m, SpvOpBitcast, m->id_int, w));
 }
 
+static int spv_mem_region(SpvMod *m, SpvRegion *r) {
+	if (!m->mem_nbyte)
+		return 0;
+	*r = spv_region_shared(m->id_mem, spv_const(m, 0),
+												 spv_uintc(m, m->mem_nbyte));
+	m->mem_used = 1;
+	return 1;
+}
+
+static uint32_t spv_mem_off(SpvMod *m, SpvV p) {
+	SpvV d;
+	spv_widen(m, &p);
+	d = spv_sub64(m, p, spv_const64(m, m->mem_base), 1);
+	spv_def_and(m, &m->def,
+							spv_ucmp(m, SpvOpIEqual, spv_hi(m, d.id), spv_uintc(m, 0)));
+	return spv_emit2(m, SpvOpBitcast, m->id_int, spv_lo(m, d.id));
+}
+
 static uint32_t spv_fit(SpvMod *m, uint32_t v, int t) {
 	int bt = t & VT_BTYPE;
 	int uns = (t & VT_UNSIGNED) != 0;
@@ -2650,8 +2671,9 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		AstLocal c = ast_first_child(a, n);
 		int t = ast_type_t(a, n);
 		AstEvalSliceIdx ix;
+		SpvRegion mr;
 		int32_t fo;
-		int k;
+		int k, et;
 		if (c == AST_NONE)
 			return 0;
 		/* A local, or a constant offset from one via `.field`/`&`. Resolved
@@ -2678,6 +2700,15 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 					spv_load_live_dv(m, base, k, elem, ast_eval_slice_is64(ix.etype),
 													 (ix.etype & VT_UNSIGNED) != 0),
 					ix.etype);
+			return 1;
+		}
+		if (ast_eval_slice_deref(a, n, &fo, &et)) {
+			if (!spv_env_index(off, nenv, fo, &k))
+				return 0;
+			if (!spv_mem_region(m, &mr))
+				return 0;
+			*out = spv_load_region(
+					m, &mr, spv_mem_off(m, spv_load_live_v(m, base, k, 1, 0)), et);
 			return 1;
 		}
 		return 0;

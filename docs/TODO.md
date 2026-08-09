@@ -26,29 +26,14 @@ compiler's 734, **and the two disagree by 47×**. So **+168 and +19 are not comp
 and any ranking that puts them in one column is wrong. Fixing this is a prerequisite for
 trusting rows 2 and 3 below, not an afterthought.
 
-### 1. `*p` and pointer `++`/`--` — one item, not two
+### 1. ~~`*p` and pointer `++`/`--`~~ — LANDED 2026-08-08, see below
 
-Binding 2 now reaches the device, the region layer is parameterised, and sub-word
-atomicity is decided, so the emitter side is ready. What is not ready is the meaning of a
-pointer *value*: a frame slot holds a host address, and binding 2 addresses are byte
-offsets. Measured on the 440-block musl/string corpus:
-
-| | count |
-| --- | ---: |
-| `*p` loads refused (`Load(Ref[LOCAL\|LVAL])`, all with Load type 0) | 159 |
-| `*p = v` stores refused | 21 |
-| pointer `++`/`--` refused | 169 |
-| blocks containing a `*p` | 63 of 440 |
-| **of those, blocks that also contain a pointer `++`/`--`** | **41** |
-| **upper bound on what `*p` alone can add** | **22 blocks** |
-| `memcmp`/`strcmp`/`strncmp`/`memchr` frame runs it would unblock | **0** |
-
-Doing `*p` without pointer arithmetic buys 22 blocks and none of the named functions.
-**The decision to take first is the pointer-value question**, and there are two candidates:
-mirror host allocations into binding 2 so a host address has a stable offset, or lower
-only pointers that originate in binding 2 and refuse the rest. Seeding frame slots with
-synthetic values and calling them offsets is not a third option — both executors would
-agree while nothing runnable lowers, which moves `frame-compared` without moving work.
+Row retired. The pointer-value question was answered **(c) a pointer stays a host
+address, and lowering is gated dynamically**: binding 2 is permanently mapped and
+host-coherent, so an address inside it already has a stable byte offset, and the map is
+one 64-bit subtract plus a test that the high half came out zero. Both executors read and
+write the *same physical bytes*. Write-up and residual hazards: "Landed — `*p`, pointer
+`++`/`--`" below. What is still refused, and why, is in that section's table.
 
 ### 2. `snprintf` via the `(tag, value)` array — +168 blocks, compiler corpus
 
@@ -107,15 +92,19 @@ estimated** — no staging path exists and it collides with `mcc_gpu_rw_back`'s 
 
 ### Debts that will corrupt the next measurement if left
 
+0. **Nothing dispatches a binding-2 kernel except `tools/slicerun.c`.** The predicate,
+   both executors and the emitter are done; there is no *caller* in the compiler, because
+   `mcc_slice_frame_from_ast` has no call site outside the harness. Everything under
+   "Landed — `*p`" is measured on the harness, so it is a lowering result, not a
+   speed-up. Read row 5 of the board with that in mind.
 1. **`--mutate` is blind to `memcpy`.** It perturbs the returned value, and `memcpy`
    discards its return at 462/462 sites, `memset` at 343/343. The operator must move to
    the written memory, and the harness needs a frame-buffer comparison mode. This is
    larger than the emitter work it guards.
-2. **`ast_eval_slice()` sets `ast_eval_slice_undef` but neither resets nor returns it.**
-   Only `mcc_slice_frame_exec_cpu2` reads it. Every other caller is safe today purely
-   because `kind_ok` refuses all Loads on the expression path — so the next caller to
-   relax that inherits a silent wrong answer. Found by `spvgate`, handled there, not in
-   the shared header.
+2. ~~**`ast_eval_slice()` sets `ast_eval_slice_undef` but neither resets nor returns it.**~~
+   FIXED 2026-08-08 in the same branch as row 1, which is what made it reachable:
+   `ast_eval_slice` now clears the flag at entry and returns `d && !undef`. The two
+   `spvgate` sites that did it by hand are now redundant and harmless.
 3. **`mcc_vk_bind_mem` recreates `bmem` on growth without rewriting the descriptor set**,
    and `mcc_vk_bind_buffers` only writes descriptors when `grew`. Unreachable today, and
    growing binding 2 is the first thing a heap needs.
@@ -135,6 +124,116 @@ estimated** — no staging path exists and it collides with `mcc_gpu_rw_back`'s 
    build dir. `qemu-aarch64`/`qemu-riscv64`/`qemu-arm`/`wine`/`docker` are all present on
    this host, and `cmake-cross` is now built, so only the `macho`/Darwin cells should
    legitimately skip here. **"0 failed" under `debug` alone is not a clean run.**
+
+## Landed — `*p`, pointer `++`/`--`, and a host address that lowers, 2026-08-08
+
+### The decision, and why the two rejected options were rejected
+
+**(c) a pointer stays a host address; lowering is gated dynamically.** Binding 2
+(`mcc_vkr.{bmem,mmem,pmem,bmemsz}`, `MCC_VK_MEM_DEFAULT` = 1 MiB, `HOST_VISIBLE |
+HOST_COHERENT`, permanently mapped, exposed by `mcc_gpu_mem`) means an address inside
+`[pmem, pmem+bmemsz)` **already** has a stable byte offset. So the address→offset map is
+one 64-bit subtract and one test that the high half is zero — `ast_eval_slice_rw_addr` on
+the reference, `spv_mem_off` on the device, instruction for instruction — and the low half
+is handed on either way so that `spv_region_addr` / `ast_eval_slice_addr_ok`, not the map,
+decides what an out-of-range access reads. The CPU reference and the device then read and
+write the **same physical bytes**: no mirror, no copy-back, no aliasing question, no
+extent question.
+
+(a) mirroring host allocations was rejected for having no extent source —
+`ast_eval_slice_obj_fn` is NULL inside the compiler and resolves an extent only for a
+local object `Ref`, never for a pointer parameter — and because aliasing would diverge
+silently. (b) binding-2-origin-only was rejected as circular: the only honest producer is
+the allocator, ranked last on the board at +50 blocks / 0.30%.
+
+### Measured, 440-block musl/string corpus, same dump before and after
+
+`slicerun --no-ptr` reproduces the "before" column exactly, in the same binary, by
+leaving the mapping unarmed — which is also the switch that proves the numbers are the
+pointer work and not something else that moved.
+
+| | before | after |
+| --- | ---: | ---: |
+| corpus `frame-compared` | 94 | **143** |
+| eligible blocks (`--census`) | 120 | **174** |
+| `*p` loads lowered, of 159 | 0 | **159** |
+| pointer `++`/`--` lowered, of 168 | 0 | **168** |
+| `*p = v` stores lowered, of 21 | 0 | **10** |
+| blocks with a `*p`, of which eligible | 63 / 0 | 63 / **54** |
+| runs that actually dereference the mapping (`frame-mem`) | 0 | **49** |
+
+`memcmp` / `strcmp` / `strncmp` / `memchr` — the four the item was justified by, and **0**
+on the board — are now **6 frame runs compared on the device**: `memchr` 3, `memcmp` 1,
+`strcmp` 1, `strncmp` 1. Neighbours came with them: `strspn` 4, `strlen` 4, `strlcpy` 5.
+
+### The 11 `*p = v` stores that still refuse, and why that is deliberate
+
+Binding 2 is one region shared by every lane, so it is a `spv_region_shared`, and
+`spv_store_region` sets `m->failed` for a sub-word store there: the read-modify-write it
+compiles to is not atomic against another lane writing a different byte of the same word,
+and nothing at emit time can prove two lanes' pointers are in disjoint words. So a `char`
+store through a pointer refuses; 4- and 8-byte ones lower. `memcpy`'s byte loop is on the
+wrong side of that line and stays there until either `StorageBuffer8BitAccess` or a
+disjointness proof exists.
+
+### Two defects found by building this, both pre-existing
+
+**The loop merge discarded the exiting iteration's definedness.** `mcc_slice_spv_stmt`
+took `m->def` at `l_merge` from `d_phi`, the value *entering* the header — so an undefined
+access in the condition on the iteration that fails the test was thrown away, while the
+CPU reference's sticky flag kept it. Reachable before this branch through `arr[i]` in a
+loop condition; unreachable in practice because no corpus loop had one. `*p` in a loop
+condition is the common case, and `strlcpy` failed on it immediately. Fixed by carrying
+`d_exit` out of `l_test` (or out of `l_cont` for `do`), both of which dominate the merge.
+
+**`--mutate` was blind to `++`/`--`.** The operator perturbed stores only, so a block whose
+whole effect was `n--, l++, r++` — which is most of what the four named functions
+contribute — was dispatched, compared and reported clean no matter what the kernel did.
+With the perturbation added to that arm, the four-function cell goes from 1 red run of 6
+to 6 of 6.
+
+### Proof the new cells can fail
+
+Each break applied alone, built, run, reverted. `musl` is the 143-run corpus, `four` is
+the `memcmp`/`strcmp`/`strncmp`/`memchr` subset.
+
+| deliberate break | musl red | four red |
+| --- | ---: | ---: |
+| none | 0 | 0 |
+| device pointer `++` loses its element-size scale | **19** | **1** |
+| CPU `*p` load reads one byte over | **7** | 0 |
+| CPU `*p = v` store writes `val+1` | **5** | 0 |
+| device loop merge reverted to `d_phi` | **1** | 0 |
+| `--mutate` | **115** | **6** |
+
+The `*p = v` row is caught **only** by the byte-for-byte comparison of the mapping — the
+stored value reaches no frame slot and no return value — which is what makes step 4 of
+the plan (move the harness's allocations inside the mapping) load-bearing rather than
+decorative. The two zero cells in the `four` column are honest and worth stating: the six
+runs those four functions contribute are pointer-increment blocks, not deref blocks. The
+derefs are in the loop *conditions*, which belong to the enclosing `AST_If` and are
+compared as part of a different block.
+
+### Residual hazards, none papered over
+
+- **`nbyte` is the whole 1 MiB.** An access that leaves its object but stays in the buffer
+  is in range, and both executors agree on garbage. This is a real weakening of "no
+  PageFault by construction" — the property still holds, but it now bounds a wild pointer
+  to the whole shared region rather than to one object. `SpvRegion.nbyte` is already a
+  parameter; narrowing it needs a per-object extent for a *pointer*, which is exactly what
+  option (a) was rejected for not having.
+- **A workgroup is dispatched whole, and there is no lane guard.** Lanes past `ntuple` get
+  a zeroed frame, and a zeroed slot read as a pointer is an address like any other: it
+  maps somewhere in the shared region and *stores* there, which the reference never does.
+  This is what made `slice/real` fail with `cpu=00 gpu=ff` at byte 0. Nothing in the ABI
+  carries a lane count, so `mcc_slice_run_frame_gpu` now **refuses** a binding-2 kernel
+  unless `ntuple` is a whole multiple of `MCC_GPU_LOCAL_SIZE`, and the harness dispatches
+  64 tuples. A real caller must obey the same rule or add the guard.
+- **Lane isolation in the harness is by construction, not by proof.** Each tuple gets an
+  8 KiB window and the seed pattern makes every walk terminate within tens of bytes, so no
+  lane reaches another's window. A pointer that walked far enough would, and both
+  executors would then disagree because the reference runs its 64 tuples sequentially.
+- **Debt #3 becomes reachable the moment binding 2 grows.** It was not grown here.
 
 ## Landed — `cli/perfn_inproc` is green, and the pass was never inert, 2026-08-08
 
@@ -917,9 +1016,11 @@ bytes and the stored bytes — while lowering nothing anybody could actually run
 agreement without correctness, and it would move `frame-compared` while moving no real
 work, which is the specific overstatement this file exists to prevent.
 
-Next, in order: decide the pointer-value question (host allocations mirrored into binding 2,
-or a device-side allocator handing out offsets), then take `*p` and pointer `++`/`--`
-together, then re-measure the four functions.
+SUPERSEDED 2026-08-08 by "Landed — `*p`, pointer `++`/`--`, and a host address that
+lowers". The pointer-value question was answered with a third option neither candidate
+here anticipated: keep the host address and convert it at the point of use, because
+binding 2 is permanently mapped and both executors can therefore address the same bytes.
+The four functions are no longer 0.
 
 ### A latent stale-descriptor bug, for whoever grows binding 2 first
 

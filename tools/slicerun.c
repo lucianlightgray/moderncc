@@ -2439,7 +2439,61 @@ static int g_lax;
  * first as coverage overstated it 2.26x, because a `return expr;`-only block is
  * accepted with nstmt == 0 and mcc_slice_frame_kernel_build refuses it. */
 static long g_frame_slices, g_frame_stmts, g_frame_mismatch;
-static long g_frame_built, g_frame_compared;
+static long g_frame_built, g_frame_compared, g_frame_mem;
+
+#define FRAME_NT MCC_GPU_LOCAL_SIZE
+#define FRAME_PTR_BASE (128 * 1024)
+#define FRAME_PTR_STRIDE (8 * 1024)
+#define FRAME_PTR_SLOT 72
+#define FRAME_PTR_SPAN (FRAME_PTR_BASE + FRAME_NT * FRAME_PTR_STRIDE)
+
+static unsigned char *g_rw;
+static unsigned long g_rwsz;
+static unsigned char *g_rw_pre, *g_rw_cpu;
+
+static int g_no_ptr;
+
+static void frame_ptr_arm(void) {
+	void *base = NULL;
+	unsigned long sz = 0;
+	if (g_no_ptr)
+		return;
+	if (!mcc_gpu_mem(&base, &sz) || !base || sz < FRAME_PTR_SPAN)
+		return;
+	if (sz > 0x7ffffffcul)
+		sz = 0x7ffffffcul;
+	g_rw_pre = (unsigned char *)malloc(sz);
+	g_rw_cpu = (unsigned char *)malloc(sz);
+	if (!g_rw_pre || !g_rw_cpu) {
+		free(g_rw_pre);
+		free(g_rw_cpu);
+		g_rw_pre = g_rw_cpu = NULL;
+		return;
+	}
+	g_rw = (unsigned char *)base;
+	g_rwsz = sz;
+	ast_eval_slice_rw = (uint32_t *)base;
+	ast_eval_slice_rw_base = (int64_t)(intptr_t)base;
+	ast_eval_slice_rw_nbyte = (int32_t)sz;
+}
+
+static unsigned char frame_ptr_byte(long b) {
+	long k = b % FRAME_PTR_SLOT;
+	unsigned char v = k ? (unsigned char)(1 + (k * 7) % 31) : 0;
+	return (b % 37) ? v : (unsigned char)(v ^ 0x40);
+}
+
+static void frame_ptr_seed(void) {
+	long i;
+	for (i = 0; i < FRAME_NT * (long)FRAME_PTR_STRIDE; i++)
+		g_rw[FRAME_PTR_BASE + i] = frame_ptr_byte(i);
+}
+
+static int64_t frame_ptr_addr(int t, int j) {
+	return (int64_t)(intptr_t)(g_rw + FRAME_PTR_BASE +
+														 (long)t * FRAME_PTR_STRIDE + 2048 +
+														 (long)j * FRAME_PTR_SLOT);
+}
 
 /* Frame runs from real arenas, differentialled the same way expression slices
  * are: seed N independent frames, run both executors, compare every slot and
@@ -2447,33 +2501,53 @@ static long g_frame_built, g_frame_compared;
 static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 	MccSliceFrame fr;
 	MccSliceKernel k;
-	int64_t cf[8 * MCC_SLICE_MAXSLOT], gf[8 * MCC_SLICE_MAXSLOT];
-	int64_t crv[8], grv[8];
-	int cdf[8];
-	unsigned char gdf[8];
-	int t, j, bad = 0;
+	int64_t cf[FRAME_NT * MCC_SLICE_MAXSLOT], gf[FRAME_NT * MCC_SLICE_MAXSLOT];
+	int64_t crv[FRAME_NT], grv[FRAME_NT];
+	int cdf[FRAME_NT];
+	unsigned char gdf[FRAME_NT];
+	int t, j, bad = 0, membad = 0, usemem;
 
 	if (!mcc_slice_frame_from_ast(a, bb, &fr))
 		return;
 	g_frame_slices++;
 	g_frame_stmts += fr.nstmt;
-	for (t = 0; t < 8; t++)
+	usemem = fr.nptr > 0 && g_rw != NULL;
+	for (t = 0; t < FRAME_NT; t++)
 		for (j = 0; j < fr.nslot; j++)
-			cf[t * fr.nslot + j] = gf[t * fr.nslot + j] = seed_value(t, j);
-	for (t = 0; t < 8; t++)
+			cf[t * fr.nslot + j] = gf[t * fr.nslot + j] =
+					fr.sptr[j] && usemem ? frame_ptr_addr(t, j) : seed_value(t, j);
+	if (usemem) {
+		frame_ptr_seed();
+		memcpy(g_rw_pre, g_rw, g_rwsz);
+	}
+	for (t = 0; t < FRAME_NT; t++)
 		if (!mcc_slice_frame_exec_cpu2(&fr, cf + (long)t * fr.nslot, &crv[t],
-																	 &cdf[t]))
+																	 &cdf[t])) {
+			if (usemem)
+				memcpy(g_rw, g_rw_pre, g_rwsz);
 			return;
+		}
+	if (usemem) {
+		memcpy(g_rw_cpu, g_rw, g_rwsz);
+		memcpy(g_rw, g_rw_pre, g_rwsz);
+	}
 	if (!g_have_device || !mcc_slice_frame_kernel_build(&fr, &k))
 		return;
 	g_frame_built++;
-	if (mcc_slice_run_frame_gpu(&fr, &k, gf, 8, grv, gdf) != MCC_TASK_DONE) {
+	if (mcc_slice_run_frame_gpu(&fr, &k, gf, FRAME_NT, grv, gdf) != MCC_TASK_DONE) {
 		mcc_slice_kernel_free(&k);
 		g_frame_mismatch++;
 		return;
 	}
 	g_frame_compared++;
-	for (t = 0; t < 8; t++) {
+	if (usemem) {
+		g_frame_mem++;
+		if (memcmp(g_rw_cpu, g_rw, g_rwsz)) {
+			membad = 1;
+			bad++;
+		}
+	}
+	for (t = 0; t < FRAME_NT; t++) {
 		/* Only a run that ends in Return has a value to compare. Without one the
 		 * kernel still writes the out slots (spv_main_end always does), so the
 		 * flag there is a dummy, not a verdict -- unless the run resolves an
@@ -2490,8 +2564,18 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 	}
 	if (bad) {
 		if (!quiet && g_frame_mismatch < 4) {
-			fprintf(stderr, "  FRAME MISMATCH nslot=%d nstmt=%d ret=%d\n", fr.nslot,
-							fr.nstmt, fr.ret != AST_NONE);
+			fprintf(stderr, "  FRAME MISMATCH nslot=%d nstmt=%d ret=%d mem=%d\n",
+							fr.nslot, fr.nstmt, fr.ret != AST_NONE, membad);
+			if (membad) {
+				unsigned long b;
+				int shown = 0;
+				for (b = 0; b < g_rwsz && shown < 4; b++)
+					if (g_rw_cpu[b] != g_rw[b]) {
+						fprintf(stderr, "    mem byte %lu cpu=%02x gpu=%02x\n", b,
+										g_rw_cpu[b], g_rw[b]);
+						shown++;
+					}
+			}
 			for (t = 0; t < 2; t++)
 				for (j = 0; j < fr.nslot; j++)
 					if (cf[t * fr.nslot + j] != gf[t * fr.nslot + j])
@@ -2503,6 +2587,18 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 			if (fr.ret != AST_NONE)
 				fprintf(stderr, "    ret cpu=%lld/%d gpu=%lld/%d\n", (long long)crv[0],
 								cdf[0], (long long)grv[0], gdf[0]);
+			fprintf(stderr, "    def cpu=");
+			for (t = 0; t < FRAME_NT; t++)
+				fprintf(stderr, "%d", cdf[t]);
+			fprintf(stderr, " gpu=");
+			for (t = 0; t < FRAME_NT; t++)
+				fprintf(stderr, "%d", gdf[t]);
+			fprintf(stderr, " nidx=%d nptr=%d\n", fr.nidx, fr.nptr);
+			for (j = 0; j < fr.nslot; j++)
+				fprintf(stderr, "    slot%d off=%d sptr=%d seed=%lld\n", j, fr.slot[j],
+								fr.sptr[j], (long long)(fr.sptr[j] && usemem
+																						? frame_ptr_addr(0, j)
+																						: seed_value(0, j)));
 			fprintf(stderr, "    run: nslot=%d nstmt=%d nctrl=%d nloop=%d ret=%d\n",
 							fr.nslot, fr.nstmt, fr.nctrl, fr.nloop, fr.ret != AST_NONE);
 		}
@@ -2541,6 +2637,8 @@ static long g_cn_blocks, g_cn_elig, g_cn_op8n, g_cn_op9n, g_cn_op6n;
 static long g_cn_op8b, g_cn_op9b, g_cn_op6b;
 static long g_cn_op8t, g_cn_op9t, g_cn_op6t;
 static long g_cn_stfield, g_cn_staddr, g_cn_stother, g_cn_stlocal;
+static long g_cn_deref, g_cn_derefok, g_cn_pstore, g_cn_pstoreok;
+static long g_cn_pinc, g_cn_pincok, g_cn_dblocks, g_cn_pblocks;
 
 static int has_op(AstArena *a, AstLocal n, int op) {
 	AstLocal c;
@@ -2581,9 +2679,62 @@ static void census_stores(AstArena *a, int n) {
 	}
 }
 
+static int census_ptr_ref(AstArena *a, AstLocal n) {
+	int r, t;
+	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
+		return 0;
+	r = ast_op(a, n);
+	if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+		return 0;
+	t = ast_type_t(a, n);
+	return t && !ast_bad_type(t) && !(t & VT_ARRAY) && (t & VT_BTYPE) == VT_PTR;
+}
+
+static void census_ptrs(AstArena *a, int n) {
+	int32_t pf;
+	int i, et;
+	for (i = 0; i < n; i++) {
+		AstLocal x = (AstLocal)i;
+		if (ast_kind(a, x) == AST_Load && census_ptr_ref(a, ast_first_child(a, x))) {
+			g_cn_deref++;
+			if (ast_eval_slice_deref(a, x, &pf, &et))
+				g_cn_derefok++;
+		}
+		if (ast_kind(a, x) == AST_Store && ast_nchild(a, x) == 2) {
+			AstLocal d = ast_child(a, x, 0);
+			if (ast_kind(a, d) == AST_Load && census_ptr_ref(a, ast_first_child(a, d))) {
+				g_cn_pstore++;
+				if (ast_eval_slice_deref(a, d, &pf, &et) &&
+						ast_eval_slice_tsize(et) >= 4)
+					g_cn_pstoreok++;
+			}
+		}
+		if (ast_kind(a, x) == AST_Unary &&
+				(ast_op(a, x) == TOK_INC || ast_op(a, x) == TOK_DEC) &&
+				census_ptr_ref(a, ast_first_child(a, x))) {
+			g_cn_pinc++;
+			if (ast_eval_slice_ptr_et(a, ast_first_child(a, x)))
+				g_cn_pincok++;
+		}
+	}
+}
+
+static int census_has_deref(AstArena *a, AstLocal n) {
+	AstLocal c;
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Load && census_ptr_ref(a, ast_first_child(a, n)))
+		return 1;
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (census_has_deref(a, c))
+			return 1;
+	return 0;
+}
+
 static void census_arena(AstArena *a, int n) {
 	int i;
 	MccSliceFrame fr;
+	census_ptrs(a, n);
 	for (i = 0; i < n; i++) {
 		if (ast_kind(a, (AstLocal)i) == AST_If) {
 			int op = ast_op(a, (AstLocal)i);
@@ -2598,8 +2749,12 @@ static void census_arena(AstArena *a, int n) {
 				ast_first_child(a, (AstLocal)i) == AST_NONE)
 			continue;
 		g_cn_blocks++;
+		if (census_has_deref(a, (AstLocal)i))
+			g_cn_dblocks++;
 		if (mcc_slice_frame_from_ast(a, (AstLocal)i, &fr)) {
 			g_cn_elig++;
+			if (fr.nptr)
+				g_cn_pblocks++;
 			continue;
 		}
 		if (has_op(a, (AstLocal)i, 8))
@@ -2712,6 +2867,12 @@ static int arena_mode(const char *path, long limit, int quiet) {
 					 g_cn_op6n, g_cn_op6b, g_cn_op6t);
 		printf("census: stores local=%ld field=%ld addr=%ld other=%ld\n",
 					 g_cn_stlocal, g_cn_stfield, g_cn_staddr, g_cn_stother);
+		printf("census: deref loads=%ld lowered=%ld stores=%ld lowered=%ld "
+					 "ptrinc=%ld lowered=%ld\n",
+					 g_cn_deref, g_cn_derefok, g_cn_pstore, g_cn_pstoreok, g_cn_pinc,
+					 g_cn_pincok);
+		printf("census: blocks-with-deref=%ld eligible-with-ptr=%ld\n", g_cn_dblocks,
+					 g_cn_pblocks);
 		return 0;
 	}
 	if (g_cost_mode) {
@@ -2728,9 +2889,9 @@ static int arena_mode(const char *path, long limit, int quiet) {
 				 g_arena_bodies, g_arena_slices, g_arena_tuples, g_arena_gpu_slices,
 				 mcc_slice_dispatches(), g_arena_mismatch);
 	printf("slicerun: frame-accepted=%ld frame-built=%ld frame-compared=%ld "
-				 "frame-stmts=%ld frame-mismatches=%ld\n",
+				 "frame-stmts=%ld frame-mismatches=%ld frame-mem=%ld\n",
 				 g_frame_slices, g_frame_built, g_frame_compared, g_frame_stmts,
-				 g_frame_mismatch);
+				 g_frame_mismatch, g_frame_mem);
 	g_arena_mismatch += g_frame_mismatch;
 	if (!g_arena_slices) {
 		printf("slicerun: FAIL (no real slice became schedulable work)\n");
@@ -2796,6 +2957,8 @@ int main(int argc, char **argv) {
 			g_cost_mode = 1;
 		else if (!strcmp(argv[i], "--cost-synth"))
 			g_cost_synth = 1;
+		else if (!strcmp(argv[i], "--no-ptr"))
+			g_no_ptr = 1;
 		else if (!strcmp(argv[i], "--lax"))
 			g_lax = 1;
 		else
@@ -2809,6 +2972,7 @@ int main(int argc, char **argv) {
 	}
 	mcc_slice_set_mutate(g_mutate);
 	ast_eval_slice_obj_fn = slicerun_obj;
+	frame_ptr_arm();
 	(void)g_lax;
 
 	if (g_cost_synth)
