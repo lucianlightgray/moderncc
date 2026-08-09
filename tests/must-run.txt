@@ -90,3 +90,5 @@ rir-coverage-census          | registered | the census half of the coverage ratc
 rir-gap-classes              | registered | the UNF/WHY gap fixtures
 rir-lowerable-classes        | registered | the lowerable-percentage floor
 rir-nofb-probe               | registered | the no-fallback miscompile probe
+idiom-gate-invariant         | must-run   | the config-macro idiom invariant. It printed OK over a walk that read nothing until it was given a subject count; pure source scan, no device, so a skip here is always a bug
+idiom-gate-known-positive    | must-run   | proves that gate detects all three violation shapes and refuses an empty walk

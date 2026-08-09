@@ -3482,6 +3482,14 @@ if(MCC_BUILD_TESTS)
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(idiom-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+        add_test(NAME idiom-gate-known-positive
+            COMMAND "${CMAKE_COMMAND}"
+                    -DGATE=$<TARGET_FILE:idiomgate>
+                    -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/idiomgate_known_positive.cmake")
+        set_tests_properties(idiom-gate-known-positive PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         add_executable(tracegate tools/tracegate.c tools/toolsupport.c)
         target_link_libraries(tracegate ${CMAKE_DL_LIBS})
         add_test(NAME trace-gate-invariant
