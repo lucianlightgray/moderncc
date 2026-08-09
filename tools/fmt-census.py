@@ -7,7 +7,14 @@ for the libc phase.
 
   tools/fmt-census.py                 # site census over src/*.c
   tools/fmt-census.py --json          # machine-readable
+  tools/fmt-census.py --refused       # every site mcc_fmt_compile turns down
   tools/fmt-census.py path/to/*.c
+
+fmt_compile below is a port of mcc_fmt_compile in src/mccfmt.h, including its
+cost model. It is a second implementation and nothing gates the two against
+each other automatically: slicerun's fmt_refusals pins the C side on the same
+list of format spellings this port is checked against, and both lists have to
+be edited together.
 
 The block census, which is what the board's "+N blocks" figures mean, needs an
 arena dump rather than source text:
@@ -32,6 +39,105 @@ SPEC = re.compile(r"%(?:[-+ #0]*)(?:\*|[0-9]+)?(?:\.(?:\*|[0-9]+))?"
 T1 = {"d", "i", "u", "x", "X", "c"}
 BLOCKED_PTR = {"s", "p"}
 OUT_FLOAT = {"e", "E", "f", "F", "g", "G", "a", "A"}
+
+MAXITEM, MAXARG, MAXW, MAXSTR = 24, 8, 32, 28
+C_BASE, C_BYTE, C_DEC, C_HEX = 820, 152, 6900, 4700
+C_SFIX, C_SBYTE, C_SDYN, MAXCOST = 130, 229, 14, 16384
+
+OK, R_PTR, R_FLOAT, R_SPEC, R_ROOM = 0, 1, 2, 3, 4
+WHY = {OK: "ok", R_PTR: "%p", R_FLOAT: "float", R_SPEC: "flag/width/conv",
+       R_ROOM: "module budget"}
+
+
+def fmt_compile(f):
+    """Returns (verdict, cost). Verdict 0 is accepted."""
+    items, narg, i, n = [], 0, 0, len(f)
+    while i < n:
+        if f[i] != "%":
+            items.append(("L", 1)); i += 1; continue
+        i += 1
+        if i < n and f[i] == "%":
+            items.append(("L", 1)); i += 1; continue
+        w = zero = base = sgn = left = lmod = 0
+        kind, pend, prc = "I", OK, -1
+        while i < n:
+            if f[i] == "-":
+                left = 1; i += 1; continue
+            if f[i] in "+ #":
+                pend = R_SPEC; i += 1; continue
+            if f[i] == "0":
+                zero = 1; i += 1; continue
+            break
+        if i < n and f[i] == "*":
+            pend = R_SPEC; i += 1
+        else:
+            while i < n and f[i].isdigit():
+                w = w * 10 + int(f[i]); i += 1
+                if w > MAXW:
+                    pend = R_SPEC
+        if i < n and f[i] == ".":
+            i += 1
+            if i < n and f[i] == "*":
+                prc = -2; i += 1
+            else:
+                prc = 0
+                while i < n and f[i].isdigit():
+                    prc = min(prc * 10 + int(f[i]), MAXSTR); i += 1
+        if f[i:i + 2] in ("hh", "ll"):
+            lmod = 1; i += 2
+        elif f[i:i + 1] in ("h", "l", "z", "t", "j"):
+            lmod = 1; i += 1
+        elif f[i:i + 1] == "L":
+            return R_FLOAT, 0
+        if i >= n:
+            return R_SPEC, 0
+        cv = f[i]
+        if cv in "di":
+            base, sgn = 10, 1
+        elif cv == "u":
+            base = 10
+        elif cv in "xX":
+            base = 16
+        elif cv == "c":
+            kind = "C"
+        elif cv == "s":
+            kind = "S"
+        elif cv == "p":
+            return R_PTR, 0
+        elif cv in OUT_FLOAT:
+            return R_FLOAT, 0
+        else:
+            return R_SPEC, 0
+        i += 1
+        if kind == "S":
+            if pend or zero or lmod:
+                pend = R_SPEC
+        elif left or prc != -1 or (w and (sgn or kind == "C")):
+            pend = R_SPEC
+        if pend:
+            return R_SPEC, 0
+        if prc == -2:
+            items.append(("P", 0)); narg += 1
+        items.append((kind, base, w, prc)); narg += 1
+        if narg > MAXARG or len(items) > MAXITEM:
+            return R_ROOM, 0
+    cost = C_BASE
+    for it in items:
+        if it[0] == "L":
+            cost += C_BYTE * it[1]
+        elif it[0] == "C":
+            cost += C_BYTE
+        elif it[0] == "P":
+            pass
+        elif it[0] == "S":
+            nb = it[3] if 0 <= it[3] < MAXSTR else MAXSTR
+            cost += C_SFIX + nb * (C_SBYTE + (C_SDYN if it[3] == -2 else 0)) \
+                + it[2] * C_BYTE
+        else:
+            cost += (C_DEC if it[1] == 10 else C_HEX) + it[2] * C_BYTE
+    if cost > MAXCOST:
+        return R_ROOM, cost
+    return OK, cost
 
 
 def strip(src):
@@ -230,6 +336,9 @@ def main(argv):
     ret_used = collections.Counter()
     tu = set()
     sn_class = collections.Counter()
+    verdict = collections.Counter()
+    refused = []
+    maxcost = [0]
 
     call = re.compile(r"\b(" + "|".join(FUNCS) + r")\s*\(")
     for p in paths:
@@ -288,6 +397,14 @@ def main(argv):
                     sn_class["tranche1"] += 1
                 else:
                     sn_class["other"] += 1
+                v, cost = fmt_compile(f)
+                verdict[WHY[v]] += 1
+                if v == OK:
+                    maxcost[0] = max(maxcost[0], cost)
+                    if "s" in site_kinds:
+                        verdict["  of which carry a %s"] += 1
+                else:
+                    refused.append((WHY[v], f, p))
 
     tot = sum(specs.values())
     rep = {
@@ -299,6 +416,9 @@ def main(argv):
         "snprintf_specifiers": dict(specs.most_common()),
         "snprintf_flagged_specs": dict(flagged.most_common()),
         "snprintf_site_class": dict(sn_class),
+        "snprintf_compile_verdict": dict(verdict),
+        "max_accepted_cost": maxcost[0],
+        "refused": [{"why": w, "fmt": f, "file": p} for w, f, p in refused],
     }
     if as_json:
         print(json.dumps(rep, indent=2))
@@ -319,6 +439,16 @@ def main(argv):
     for k, c in sn_class.most_common():
         print("  %-20s %4d  %5.1f%%" % (k, c, 100.0 * c /
                                         max(lit_sites["snprintf"], 1)))
+    ns = max(lit_sites["snprintf"], 1)
+    print("\nmcc_fmt_compile verdict, MCC_FMT_MAXSTR=%d, budget %d words:" %
+          (MAXSTR, MAXCOST))
+    for k, c in verdict.most_common():
+        print("  %-24s %4d  %5.1f%%" % (k, c, 100.0 * c / ns))
+    print("  largest accepted program: %d words" % maxcost[0])
+    if "--refused" in argv:
+        print("\nrefused sites:")
+        for w, f, p in refused:
+            print("  %-16s %-64r %s" % (w, f, os.path.basename(p)))
     return 0
 
 
