@@ -121,6 +121,7 @@
 	MCC_OPT_ROW(TREE_PRE,                      "tree-pre",                     MCC_OPTD_LEVEL(12)) \
 	MCC_OPT_ROW(DUMP_LOOPNEST,                 "dump-loopnest",                MCC_OPTD_OFF) \
 	MCC_OPT_ROW(DUMP_LOOPDEP,                  "dump-loopdep",                 MCC_OPTD_OFF) \
+	MCC_OPT_ROW(DEP_ALIAS_ORACLE,              "dep-alias-oracle",             MCC_OPTD_OFF) \
 	MCC_OPT_ROW(OPT_PERFN_INPROC,              "opt-perfn-inproc",             MCC_OPTD_LEVEL(8)) \
 	MCC_OPT_ROW(ARG_FORWARD,                   "arg-forward",                  MCC_OPTD_LEVEL(12)) \
 	MCC_OPT_ROW(REG_COLOR,                     "reg-color",                    MCC_OPTD_LEVEL(2)) \

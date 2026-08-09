@@ -1600,6 +1600,7 @@ static MCC_OPT_TLS int ast_ivsr_ptr_env;
 static MCC_OPT_TLS int ast_pre_env;
 static int ast_loopnest_dump_env;
 static int ast_loopdep_dump_env;
+static int ast_dep_alias_oracle_env;
 static int ast_perfn_inproc_env;
 static int ast_argfwd_env;
 
@@ -2423,6 +2424,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_pre_env = mcc_opt(s1, MCC_OPT_TREE_PRE);
 	ast_loopnest_dump_env = mcc_opt(s1, MCC_OPT_DUMP_LOOPNEST);
 	ast_loopdep_dump_env = mcc_opt(s1, MCC_OPT_DUMP_LOOPDEP);
+	ast_dep_alias_oracle_env = mcc_opt(s1, MCC_OPT_DEP_ALIAS_ORACLE);
 	ast_perfn_inproc_env = mcc_opt(s1, MCC_OPT_OPT_PERFN_INPROC);
 	ast_argfwd_env = mcc_opt(s1, MCC_OPT_ARG_FORWARD);
 	ast_color_env = mcc_opt(s1, MCC_OPT_REG_COLOR);
@@ -13837,42 +13839,54 @@ static int ast_par_cond_pure(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return 1;
 }
 
+static const char *ast_par_why_s = "?";
+
+const char *ast_loop_parallel_why(void) { MCC_TRACE("enter\n");
+	return ast_par_why_s;
+}
+
 int ast_loop_parallel_legal(AstArena *a, AstLocal loop) { MCC_TRACE("enter\n");
 	ast_loopnest_sync(a);
-	if (ast_loopnest_overflow || !ast_loop_analyzable(a, loop))
-		{ MCC_TRACE("br\n"); return -1; }
+	ast_par_why_s = "ok";
+	if (ast_loopnest_overflow)
+		{ MCC_TRACE("br\n"); ast_par_why_s = "nest-overflow"; return -1; }
+	if (!ast_loop_analyzable(a, loop))
+		{ MCC_TRACE("br\n"); ast_par_why_s = "not-analyzable"; return -1; }
 	int ivs[AST_DEP_MAXIV], niv = 0, self = -1;
 	if (!ast_par_ivs(a, loop, ivs, &niv, &self))
-		{ MCC_TRACE("br\n"); return -1; }
+		{ MCC_TRACE("br\n"); ast_par_why_s = "no-iv-nest"; return -1; }
 	AstLocal body, incr;
 	ast_loop_parts(a, loop, ast_op(a, loop), &body, &incr);
 	if (body == AST_NONE)
-		{ MCC_TRACE("br\n"); return -1; }
+		{ MCC_TRACE("br\n"); ast_par_why_s = "no-body"; return -1; }
 	AstLoopInfo *li = ast_loop_find(a, loop);
 	if (!li || li->bound_kind == AST_LOOP_BOUND_NONE)
-		{ MCC_TRACE("br\n"); return -1; }
+		{ MCC_TRACE("br\n"); ast_par_why_s = "no-bound"; return -1; }
 	if (!ast_par_cond_pure(a, li->cond))
-		{ MCC_TRACE("br\n"); return -1; }
+		{ MCC_TRACE("br\n"); ast_par_why_s = "cond-loads"; return -1; }
 	AstParScal sc;
 	memset(&sc, 0, sizeof sc);
 	for (AstLocal c = ast_first_child(a, loop); c != AST_NONE;
 			 c = ast_next_sib(a, c))
 		{ MCC_TRACE("br\n"); ast_par_scan(a, c, ivs, niv, 0, &sc); }
 	if (sc.bad)
-		{ MCC_TRACE("br\n"); return -1; }
+		{ MCC_TRACE("br\n"); ast_par_why_s = "body-unsafe"; return -1; }
 	if (sc.carried)
-		{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); ast_par_why_s = "global-scalar-carried"; return 0; }
 	for (int i = 0; i < sc.n; i++)
 		{ MCC_TRACE("br\n"); if (sc.wrote[i] && sc.upread[i])
-			{ MCC_TRACE("br\n"); return 0; } }
+			{ MCC_TRACE("br\n"); ast_par_why_s = "scalar-carried"; return 0; } }
 	for (int i = 0; i < sc.n; i++)
 		{ MCC_TRACE("br\n"); if (sc.condw[i] && !sc.killed[i])
-			{ MCC_TRACE("br\n"); return -1; } }
+			{ MCC_TRACE("br\n"); ast_par_why_s = "cond-written-scalar"; return -1; } }
 	int nref, overflow;
 	AstDepRef *refs = ast_dep_collect(a, loop, ivs, niv, &nref, &overflow);
 	int verdict = overflow ? -1 : 1;
+	if (overflow)
+		{ MCC_TRACE("br\n"); ast_par_why_s = "too-many-refs"; }
 	for (int i = 0; i < nref && verdict == 1; i++) { MCC_TRACE("br\n");
 		if (!refs[i].ok) { MCC_TRACE("br\n");
+			ast_par_why_s = "ref-not-affine";
 			verdict = -1;
 			break;
 		}
@@ -13880,20 +13894,25 @@ int ast_loop_parallel_legal(AstArena *a, AstLocal loop) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); continue; }
 		for (int j = 0; j < sc.n; j++)
 			{ MCC_TRACE("br\n"); if (sc.off[j] == (int)refs[i].base_off && sc.wrote[j])
-				{ MCC_TRACE("br\n"); verdict = -1; } }
+				{ MCC_TRACE("br\n"); ast_par_why_s = "base-is-written-scalar";
+					verdict = -1; } }
 	}
 	for (int i = 0; i < nref && verdict == 1; i++)
 		{ MCC_TRACE("br\n"); for (int j = i; j < nref && verdict == 1; j++) { MCC_TRACE("br\n");
 			if (!(refs[i].is_store || refs[j].is_store))
 				{ MCC_TRACE("br\n"); continue; }
-			if (!refs[i].indirect && !refs[j].indirect &&
+			if ((ast_dep_alias_oracle_env ||
+					 (!refs[i].indirect && !refs[j].indirect)) &&
 					ast_dep_base_distinct(&refs[i], &refs[j]))
 				{ MCC_TRACE("br\n"); continue; }
 			if (!ast_dep_base_same(&refs[i], &refs[j])) { MCC_TRACE("br\n");
+				ast_par_why_s = refs[i].indirect || refs[j].indirect
+						? "bases-may-alias-indirect" : "bases-may-alias";
 				verdict = -1;
 				break;
 			}
 			if (refs[i].ndim == 0 && refs[j].ndim == 0) { MCC_TRACE("br\n");
+				ast_par_why_s = "same-scalar-object";
 				verdict = 0;
 				break;
 			}
@@ -13902,11 +13921,14 @@ int ast_loop_parallel_legal(AstArena *a, AstLocal loop) { MCC_TRACE("enter\n");
 			if (dep == AST_DEP_INDEP)
 				{ MCC_TRACE("br\n"); continue; }
 			if (dep == AST_DEP_CONSERV) { MCC_TRACE("br\n");
+				ast_par_why_s = "subscript-not-comparable";
 				verdict = -1;
 				break;
 			}
 			if (dir[self] == '=')
 				{ MCC_TRACE("br\n"); continue; }
+			ast_par_why_s = dir[self] == '<' || dir[self] == '>'
+					? "dep-carried" : "dep-direction-unknown";
 			verdict = dir[self] == '<' || dir[self] == '>' ? 0 : -1;
 			break;
 		} }
@@ -13934,6 +13956,8 @@ static void ast_dep_dump_refs(AstArena *a, AstLocal loop) { MCC_TRACE("enter\n")
 			{ MCC_TRACE("br\n"); fprintf(stderr, "base=sym#%llu", (unsigned long long)r->base_sym); }
 		else
 			{ MCC_TRACE("br\n"); fprintf(stderr, "base=@%lld", (long long)r->base_off); }
+		if (r->indirect)
+			{ MCC_TRACE("br\n"); fprintf(stderr, " INDIRECT"); }
 		for (int d = 0; d < r->ndim; d++) { MCC_TRACE("br\n");
 			fprintf(stderr, "[");
 			int first = 1;
@@ -13965,8 +13989,8 @@ static void ast_loop_par_census(AstArena *a) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); hdr[i] = ast_loopnest[i].header; }
 	for (int i = 0; i < n; i++) { MCC_TRACE("br\n");
 		int p = ast_loop_parallel_legal(a, hdr[i]);
-		fprintf(lcen_fp, "[loopar] id=%d par=%s\n", lcen_fn_ids[i],
-						p > 0 ? "1" : p == 0 ? "0" : "?");
+		fprintf(lcen_fp, "[loopar] id=%d par=%s why=%s\n", lcen_fn_ids[i],
+						p > 0 ? "1" : p == 0 ? "0" : "?", ast_loop_parallel_why());
 	}
 }
 

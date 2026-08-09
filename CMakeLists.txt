@@ -5978,6 +5978,21 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(loop-census PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600)
 
+            # The same census over a NUMERIC workload. The self-compile is
+            # pointer-chasing, allocation and switch dispatch -- close to the
+            # worst case for data parallelism -- so on its own it cannot decide
+            # whether a lane source exists anywhere, only whether one exists in
+            # the compiler. The corpus is tools/runtime-bench.py's KERNELS,
+            # imported rather than restated so it cannot be curated to produce
+            # lanes, and its per-kernel argv is used unchanged.
+            add_test(NAME loop-census-numeric
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/loop-census.py"
+                        "${CMAKE_BINARY_DIR}" --corpus runtime --levels O2
+                        --top 20 --opt-in)
+            set_tests_properties(loop-census-numeric PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT LABELS "census" SKIP_RETURN_CODE 77
+                TIMEOUT 3600)
+
             add_test(NAME rir-nofb-probe
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
                         "${CMAKE_BINARY_DIR}" --corpus exec --levels O0,O1,O2,O3

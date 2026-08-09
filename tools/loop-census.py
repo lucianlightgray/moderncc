@@ -57,6 +57,27 @@ the share in loop entries that both clear their own break-even and sit in a
 par=1 loop.  Both are printed side by side, because the gap between them is the
 whole point.
 
+Every par= line also carries `why=`, the reason the predicate reached its
+verdict.  That is what bounds the par=? bucket: a reason that names a weakness
+of the analysis (`bases-may-alias-indirect`, `ref-not-affine`,
+`subscript-not-comparable`) is convertible in principle by a stronger
+predicate, while one that names a property of the program (`body-unsafe` -- the
+loop calls a function; `not-analyzable` -- the loop contains a label or goto)
+is not, and no amount of dependence arithmetic will move it.
+
+`--alias-oracle` puts a *measured* ceiling on the convertible half.  It passes
+`-fdep-alias-oracle`, which makes the dependence code assume two distinct base
+symbols never alias even when the address chain went through a load.  That
+assumption is UNSOUND in general -- `p[i]` and `q[i]` through two global
+pointers have distinct base symbols and may be the same memory -- and it is
+safe to ship only because `ast_loop_parallel_legal` has no caller outside this
+census and `-fdump-loopdep`, so it cannot reach emitted code.  Its purpose is
+to answer "if alias disambiguation were perfect, how much of par=? would
+actually become par=1", which is a question the reason histogram alone cannot
+answer, because a loop unblocked at the alias step can still be refused at the
+next one.  Never read an --alias-oracle number as a property of the workload;
+it is a property of the ceiling.
+
 Usage:
   tools/loop-census.py <build-dir> --partest
       the control for par=: tests/loopcensus/known_deps.c has loops whose
@@ -75,6 +96,17 @@ Usage:
                        [--levels O2] [--json FILE] [--keep DIR] [--opt-in]
       the self-compile census.  --opt-in makes it exit 77 unless
       MCC_LOOP_CENSUS_RUN=1, because it self-compiles three times.
+
+  tools/loop-census.py <build-dir> --corpus runtime [--top N] [--opt-in]
+      the same census over a NUMERIC workload instead of the compiler.  A
+      compiler self-compile is pointer-chasing, allocation and switch dispatch,
+      so it is close to the worst case for data parallelism and cannot on its
+      own decide whether a lane source exists anywhere.  The corpus is
+      tools/runtime-bench.py's KERNELS table, imported rather than restated so
+      it cannot be curated here, and its per-kernel argv is used unchanged.
+      Every statistic the self-compile prints is printed here, plus a
+      per-program table, because a corpus number carried by one program is
+      exactly what a second workload is supposed to expose.
 """
 import argparse, json, os, re, shlex, subprocess, sys, tempfile
 from importlib import machinery, util as importlib_util
@@ -92,6 +124,8 @@ bucket_names = slice_census.bucket_names
 
 BREAKEVEN = [(3, 322), (7, 108), (15, 48), (31, 24), (63, 23), (127, 8)]
 THRESHOLDS = [8, 23, 24, 48, 108, 322]
+
+ORACLE = []
 
 
 def breakeven_trips(nodes):
@@ -167,6 +201,7 @@ def parse_map(txt):
             continue
         if i in loops and m.get("par") in ("0", "1", "?"):
             loops[i]["par"] = m["par"]
+            loops[i]["why"] = m.get("why", "?")
     return loops
 
 
@@ -275,8 +310,8 @@ def run(bdir, src, opt, top, keep, want_json):
         env.pop("MCC_LOOP_CENSUS", None)
         env["MCC_LOOP_CENSUS_MAP"] = mapf
         print("loop-census: compiling %s with -floop-census" % src)
-        p = subprocess.run([mcc, *flags, "-" + opt, "-floop-census", "-c",
-                            os.path.join(ROOT, src), "-o", obj],
+        p = subprocess.run([mcc, *flags, "-" + opt, "-floop-census", *ORACLE,
+                            "-c", os.path.join(ROOT, src), "-o", obj],
                            cwd=ROOT, env=env, capture_output=True, text=True)
         if p.returncode != 0:
             print(p.stdout + p.stderr)
@@ -322,6 +357,165 @@ def run(bdir, src, opt, top, keep, want_json):
     return report(loops, trips, tot, bpn, ncal, top, opt, src, want_json)
 
 
+PROG_ID_STRIDE = 1000000
+
+
+def runtime_corpus():
+    """The numeric corpus, taken verbatim from tools/runtime-bench.py.
+
+    Not hand-picked here on purpose.  `KERNELS` in that file is the roster the
+    runtime benchmark already uses, fixed long before this question was asked
+    and chosen to exercise codegen -- integer divide, switch dispatch, struct
+    copy, call depth, narrowing, string work -- not to look parallel.  Importing
+    it rather than restating it means the corpus cannot be curated to produce
+    lanes, which is the failure mode a second workload exists to rule out.  The
+    per-kernel argv is theirs too, so the sizes are not chosen here either.
+    Kernels whose source is absent (the vendor/plb ones) are skipped and named.
+    """
+    ldr = machinery.SourceFileLoader(
+        "runtime_bench", os.path.join(ROOT, "tools", "runtime-bench.py"))
+    spec = importlib_util.spec_from_loader(ldr.name, ldr)
+    mod = importlib_util.module_from_spec(spec)
+    ldr.exec_module(mod)
+    progs, missing = [], []
+    for name, path, args, cflags in mod.KERNELS:
+        if os.path.exists(path):
+            progs.append((os.path.relpath(path, ROOT), args, cflags))
+        else:
+            missing.append(name)
+    if missing:
+        print("loop-census: kernels absent from this checkout, skipped: %s"
+              % " ".join(missing))
+    return progs
+
+
+def run_one_program(mcc, src, args, cflags, opt, work, tag):
+    """Compile one standalone program with -floop-census, run it, read it back.
+
+    Same three steps as the self-compile, minus the self-compile: the program
+    under census IS the workload, so the instrumented binary is the program
+    rather than an instrumented copy of mcc.  Returns (loops, trips, tot, bpn)
+    with each loop's node estimate already resolved against that program's own
+    bytes-per-node calibration, so programs with different code density stay
+    comparable when they are merged.
+    """
+    mapf = os.path.join(work, tag + ".map")
+    lcf = os.path.join(work, tag + ".lc")
+    binp = os.path.join(work, tag + (".exe" if mcc.endswith(".exe") else ""))
+    for p in (mapf, lcf):
+        if os.path.exists(p):
+            os.remove(p)
+    env = dict(os.environ)
+    for k in ("MCC_LOOP_CENSUS", "MCC_SLICE_CENSUS", "MCC_RIR_PROD",
+              "MCC_RIR_PROD_OUT", "MCC_REPLAY_IR", "MCC_TEST_OPT"):
+        env.pop(k, None)
+    env["MCC_LOOP_CENSUS_MAP"] = mapf
+    p = subprocess.run([mcc, "-" + opt, "-floop-census", *ORACLE, *cflags, src,
+                        "-o", binp, "-lm"], cwd=ROOT, env=env,
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        print(p.stdout[-3000:] + p.stderr[-3000:])
+        print("loop-census: %s FAILED to build" % src)
+        return None
+    loops = parse_map(open(mapf, errors="replace").read()
+                      if os.path.exists(mapf) else "")
+    if not loops:
+        print("loop-census: %s emitted no [loop] records" % src)
+        return None
+    env2 = dict(os.environ)
+    env2.pop("MCC_LOOP_CENSUS_MAP", None)
+    env2["MCC_LOOP_CENSUS"] = lcf
+    p = subprocess.run([binp] + list(args), cwd=work, env=env2,
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        print(p.stdout[-2000:] + p.stderr[-2000:])
+        print("loop-census: %s exited %d" % (src, p.returncode))
+        return None
+    if not os.path.exists(lcf):
+        print("loop-census: %s produced no census dump" % src)
+        return None
+    trips, tot = parse_trips(open(lcf, errors="replace").read())
+    bpn, _ = calibrate_bytes_per_node(mcc, [], src, opt, work)
+    for lp in loops.values():
+        lp["est"] = (max(1, int(round(lp["bytes"] / bpn))) if bpn
+                     else lp["toks"])
+    return loops, trips, tot, bpn
+
+
+def run_corpus(bdir, progs, opt, top, keep, want_json):
+    """The same census over a corpus of standalone programs.
+
+    Every statistic the self-compile row reports is reported here over the
+    merged corpus, so the two are directly comparable; ids are offset per
+    program so they cannot collide.  A per-program table comes first, because a
+    corpus number that one program carries is the failure mode this whole
+    measurement exists to catch.
+    """
+    mcc = find_mcc(bdir)
+    if not os.access(mcc, os.X_OK):
+        print("loop-census: no mcc at %s" % mcc)
+        return 77
+    all_loops, all_trips, per_prog = {}, {}, []
+    ctx = tempfile.TemporaryDirectory() if not keep else _KeepDir(keep)
+    with ctx as work:
+        for k, (rel, args, cflags) in enumerate(progs):
+            src = rel if os.path.isabs(rel) else os.path.join(ROOT, rel)
+            if not os.path.exists(src):
+                print("loop-census: missing %s" % src)
+                return 1
+            print("loop-census: [%d/%d] %s %s"
+                  % (k + 1, len(progs), rel, " ".join(args)))
+            got = run_one_program(mcc, src, args, cflags, opt, work,
+                                  "p%02d" % k)
+            if got is None:
+                return 1
+            loops, trips, _tot, bpn = got
+            base = (k + 1) * PROG_ID_STRIDE
+            kern = os.path.basename(rel).rsplit(".", 1)[0]
+            for i, lp in loops.items():
+                lp["prog"] = rel
+                lp["fn"] = "%s/%s" % (kern, lp["fn"])
+                all_loops[base + i] = lp
+            for i, tr in trips.items():
+                all_trips[base + i] = tr
+            per_prog.append((rel, tally(loops, trips, bpn), bpn))
+
+    print()
+    print("=== per-program (each compiled at -%s, run once) ===" % opt)
+    print("%-46s %11s %13s %7s %7s %7s"
+          % ("program", "entered", "iterations", "raw%", "par1%", "par?%"))
+    for rel, t, _bpn in per_prog:
+        it = t["iters"]
+        print("%-46s %11d %13d %6.2f%% %6.2f%% %6.2f%%"
+              % (rel[-46:], len(t["rows"]), it,
+                 100.0 * t["weighted_num"] / it if it else 0.0,
+                 100.0 * t["par_num"]["1"] / it if it else 0.0,
+                 100.0 * t["par_iters"]["?"] / it if it else 0.0))
+
+    merged = tally(all_loops, all_trips, None)
+    tot_it = merged["iters"]
+    if tot_it:
+        hot = max(per_prog, key=lambda x: x[1]["iters"])
+        rest_it = tot_it - hot[1]["iters"]
+        rest_par = merged["par_num"]["1"] - hot[1]["par_num"]["1"]
+        rest_raw = merged["weighted_num"] - hot[1]["weighted_num"]
+        print()
+        print("largest contributing PROGRAM: %s, %.1f%% of all iterations"
+              % (hot[0], 100.0 * hot[1]["iters"] / tot_it))
+        print("  corpus raw fraction without it            %.2f%%"
+              % (100.0 * rest_raw / rest_it if rest_it else 0.0))
+        print("  corpus parallel-legal fraction without it %.2f%% of the "
+              "remaining, %.2f%% of all"
+              % (100.0 * rest_par / rest_it if rest_it else 0.0,
+                 100.0 * rest_par / tot_it))
+
+    tot = {"entries": merged["entries"], "exits": 0, "lost": merged["lost"],
+           "stray": merged["stray"], "iters": merged["iters"], "overflow": 0}
+    rc = report(all_loops, all_trips, tot, None, -1, top, opt,
+                "%d-program corpus" % len(progs), want_json)
+    return rc
+
+
 class _KeepDir:
     def __init__(self, d):
         self.d = d
@@ -334,59 +528,85 @@ class _KeepDir:
         return False
 
 
-def report(loops, trips, tot, bpn, ncal, top, opt, src, want_json):
+def loop_nodes(lp, bpn):
+    if "est" in lp:
+        return lp["est"]
+    return max(1, int(round(lp["bytes"] / bpn))) if bpn else lp["toks"]
+
+
+def tally(loops, trips, bpn):
     names = bucket_names()
-    hist = [0] * len(names)
-    tot_iters = tot_entries = tot_lost = tot_zero = tot_stray = 0
-    stray_loops = []
-    per_fn = {}
-    weighted_num = 0
-    fixed_num = {t: 0 for t in THRESHOLDS}
-    fixed_ent = {t: 0 for t in THRESHOLDS}
-    nodes_hist = [0] * len(names)
-    unmapped = 0
-    rows = []
-    par_static = {"1": 0, "0": 0, "?": 0}
-    par_entered = {"1": 0, "0": 0, "?": 0}
-    par_entries = {"1": 0, "0": 0, "?": 0}
-    par_iters = {"1": 0, "0": 0, "?": 0}
-    par_num = {"1": 0, "0": 0, "?": 0}
+    t = {
+        "hist": [0] * len(names), "nodes_hist": [0] * len(names),
+        "iters": 0, "entries": 0, "lost": 0, "zero": 0, "stray": 0,
+        "stray_loops": [], "per_fn": {}, "weighted_num": 0, "unmapped": 0,
+        "rows": [], "names": names,
+        "fixed_num": {x: 0 for x in THRESHOLDS},
+        "fixed_ent": {x: 0 for x in THRESHOLDS},
+        "par_static": {"1": 0, "0": 0, "?": 0},
+        "par_entered": {"1": 0, "0": 0, "?": 0},
+        "par_entries": {"1": 0, "0": 0, "?": 0},
+        "par_iters": {"1": 0, "0": 0, "?": 0},
+        "par_num": {"1": 0, "0": 0, "?": 0},
+        "why": {},
+    }
     for lp in loops.values():
-        par_static[lp.get("par", "?")] += 1
+        t["par_static"][lp.get("par", "?")] += 1
     for i, tr in trips.items():
         lp = loops.get(i)
         if lp is None:
-            unmapped += 1
+            t["unmapped"] += 1
             continue
         for j, v in enumerate(tr["h"]):
-            hist[j] += v
-        tot_iters += tr["iters"]
-        tot_entries += tr["entries"]
-        tot_lost += tr["lost"]
-        tot_stray += tr["stray"]
-        tot_zero += tr["zero"]
+            t["hist"][j] += v
+        t["iters"] += tr["iters"]
+        t["entries"] += tr["entries"]
+        t["lost"] += tr["lost"]
+        t["stray"] += tr["stray"]
+        t["zero"] += tr["zero"]
         if tr["stray"]:
-            stray_loops.append((tr["stray"], i, lp, tr))
-        est = max(1, int(round(lp["bytes"] / bpn))) if bpn else lp["toks"]
-        nodes_hist[bucket(est)] += tr["iters"]
+            t["stray_loops"].append((tr["stray"], i, lp, tr))
+        est = loop_nodes(lp, bpn)
+        t["nodes_hist"][bucket(est)] += tr["iters"]
         thr = breakeven_trips(est)
-        weighted_num += tr["gew"][thr]
-        for t in THRESHOLDS:
-            fixed_num[t] += tr["gew"][t]
-            fixed_ent[t] += tr["ge"][t]
-        a = per_fn.setdefault(lp["fn"], {"loops": 0, "entries": 0, "iters": 0,
-                                         "lost": 0, "hot": 0})
+        t["weighted_num"] += tr["gew"][thr]
+        for x in THRESHOLDS:
+            t["fixed_num"][x] += tr["gew"][x]
+            t["fixed_ent"][x] += tr["ge"][x]
+        a = t["per_fn"].setdefault(lp["fn"], {"loops": 0, "entries": 0,
+                                              "iters": 0, "lost": 0, "hot": 0})
         a["loops"] += 1
         a["entries"] += tr["entries"]
         a["iters"] += tr["iters"]
         a["lost"] += tr["lost"]
         a["hot"] += tr["gew"][thr]
         pv = lp.get("par", "?")
-        par_entered[pv] += 1
-        par_entries[pv] += tr["entries"]
-        par_iters[pv] += tr["iters"]
-        par_num[pv] += tr["gew"][thr]
-        rows.append((tr["iters"], i, lp, tr, est, thr))
+        t["par_entered"][pv] += 1
+        t["par_entries"][pv] += tr["entries"]
+        t["par_iters"][pv] += tr["iters"]
+        t["par_num"][pv] += tr["gew"][thr]
+        w = t["why"].setdefault((pv, lp.get("why", "?")),
+                                {"loops": 0, "iters": 0, "hot": 0})
+        w["loops"] += 1
+        w["iters"] += tr["iters"]
+        w["hot"] += tr["gew"][thr]
+        t["rows"].append((tr["iters"], i, lp, tr, est, thr))
+    t["rows"].sort(reverse=True)
+    return t
+
+
+def report(loops, trips, tot, bpn, ncal, top, opt, src, want_json):
+    ta = tally(loops, trips, bpn)
+    names = ta["names"]
+    hist, nodes_hist = ta["hist"], ta["nodes_hist"]
+    tot_iters, tot_entries = ta["iters"], ta["entries"]
+    tot_lost, tot_zero, tot_stray = ta["lost"], ta["zero"], ta["stray"]
+    stray_loops, per_fn, rows = ta["stray_loops"], ta["per_fn"], ta["rows"]
+    weighted_num, unmapped = ta["weighted_num"], ta["unmapped"]
+    fixed_num, fixed_ent = ta["fixed_num"], ta["fixed_ent"]
+    par_static, par_entered = ta["par_static"], ta["par_entered"]
+    par_entries, par_iters, par_num = (ta["par_entries"], ta["par_iters"],
+                                       ta["par_num"])
 
     print()
     print("=== loop census: %s at -%s ===" % (src, opt))
@@ -431,6 +651,9 @@ def report(loops, trips, tot, bpn, ncal, top, opt, src, want_json):
     if bpn:
         print("bytes-per-node calibration  %.2f  (median over %d census slices)"
               % (bpn, ncal))
+    elif ncal < 0:
+        print("bytes-per-node calibration  per-program (each TU calibrated on "
+              "its own MCC_SLICE_CENSUS ratio)")
     else:
         print("bytes-per-node calibration  UNAVAILABLE -- fell back to toks")
     wf = 100.0 * weighted_num / tot_iters if tot_iters else 0.0
@@ -458,6 +681,20 @@ def report(loops, trips, tot, bpn, ncal, top, opt, src, want_json):
                  par_num[pv]))
     print("  (par=? is an honest refusal: the analysis could not decide, and")
     print("   is never collapsed into par=0)")
+
+    print()
+    print("why the predicate answered as it did, iteration-weighted")
+    print("  this is the bound on par=?: a reason that names a WEAKNESS of the")
+    print("  analysis is convertible by a stronger predicate; one that names a")
+    print("  property of the PROGRAM is not")
+    print("  %-4s %-26s %6s %13s %8s %13s"
+          % ("par", "reason", "loops", "iterations", "share", "at break-even"))
+    for (pv, why), w in sorted(ta["why"].items(),
+                               key=lambda kv: -kv[1]["iters"]):
+        print("  %-4s %-26s %6d %13d %7.2f%% %13d"
+              % (pv, why, w["loops"], w["iters"],
+                 100.0 * w["iters"] / tot_iters if tot_iters else 0.0,
+                 w["hot"]))
     print()
     print("PARALLEL-LEGAL ITERATION-WEIGHTED FRACTION                   %.2f%%"
           % pwf)
@@ -784,19 +1021,32 @@ def main():
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--partest", action="store_true")
     ap.add_argument("--opt-in", action="store_true")
+    ap.add_argument("--corpus", choices=["self", "runtime"], default="self")
+    ap.add_argument("--program", action="append", default=[])
+    ap.add_argument("--alias-oracle", action="store_true")
     a = ap.parse_args()
+    if a.alias_oracle:
+        ORACLE.append("-fdep-alias-oracle")
     bdir = a.bdir if os.path.isabs(a.bdir) else os.path.join(ROOT, a.bdir)
     if a.partest:
         sys.exit(partest(bdir))
     if a.selftest:
         sys.exit(selftest(bdir))
     if a.opt_in and not os.environ.get("MCC_LOOP_CENSUS_RUN"):
-        print("loop-census: set MCC_LOOP_CENSUS_RUN=1 to run this census "
-              "(it self-compiles twice)")
+        print("loop-census: set MCC_LOOP_CENSUS_RUN=1 to run this census")
         sys.exit(77)
+    if a.program:
+        progs = [(shlex.split(x)[0], shlex.split(x)[1:], []) for x in a.program]
+    elif a.corpus == "runtime":
+        progs = runtime_corpus()
+    else:
+        progs = None
     rc = 0
     for opt in a.levels.split(","):
-        rc |= run(bdir, a.source, opt, a.top, a.keep, a.json)
+        if progs is None:
+            rc |= run(bdir, a.source, opt, a.top, a.keep, a.json)
+        else:
+            rc |= run_corpus(bdir, progs, opt, a.top, a.keep, a.json)
     sys.exit(rc)
 
 
