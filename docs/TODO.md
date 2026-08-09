@@ -6,6 +6,462 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Windows — the whole surface, enumerated, measured and priced, 2026-08-09 (`wt/winspec`)
+
+> **Read §0 before anything else in this section.** Windows is not a thin cell that skips.
+> It is **five targets, 2,932 lines of PE emitter, a 112-file CRT tree and 89 registered
+> cells**, and it is the second-largest object format in the tree. It is also the one
+> platform whose *object files cannot be linked by any other toolchain on that platform*
+> — measured today, not inferred — and the one platform the two external cross-oracle
+> corpora have never been pointed at. §0 states what can actually be validated and by
+> what; §4 prices the largest coverage win available anywhere in this tree and reports a
+> pilot that has already been run rather than proposing one.
+>
+> Every figure below was re-derived on this branch on 2026-08-09 against `2fbd830f`.
+> Nothing is inherited. Where a number could not be re-derived it is marked
+> **UNMEASURED**; where a claim survives only as prose it is marked **PROSE-ONLY**.
+
+### 0. The testability answer, stated first
+
+**Roughly two of the five Windows targets are executed anywhere, and the executed pair is
+executed only under wine on a Linux host and only on 33 distinct programs.**
+
+| what | how it is validated today | how much |
+| --- | --- | --- |
+| `x86_64-win32` | wine on Linux/macOS: `pe-wine-conformance`, `run-tier/x86_64-win32` | **18 + 15 = 33 programs** |
+| `i386-win32` | same two cells | **18 + 15 = 33 programs** |
+| `arm64-win32` | **compiled and byte-banked only.** `run-tier/arm64-win32` is a permanent `mcc_skip_test` (`CMakeLists.txt:4531-4534`) | **0 programs executed** |
+| `arm-win32` | compiled and byte-banked only, same skip | **0 programs executed** |
+| `arm-wince` | compiled and byte-banked only, same skip | **0 programs executed** |
+| native Windows host | `pe-native-conformance` — CI only, `windows-latest`, MSVC-bootstrapped self-host | Skipped on every non-Windows host |
+
+**The wine tier is trustworthy under parallel load, measured today.** The historic flake
+was diagnosed and fixed (the wineserver-writeback race, `tools/run-tier.sh:112-131`), and
+this session could not reproduce it: **two** full `ctest --test-dir cmake-debug -j32`
+sweeps returned **9456 cells, 0 failures** (229.95 s and 213.12 s wall, 625 Skipped), and a targeted
+`ctest -R "run-tier/.*-win32|run-tier/arm-wince|pe-wine-conformance" -j32 --repeat
+until-fail:5` returned **8/8 passed, 0 flakes, 22.58 s** with no abandoned prefix left
+behind. What remains is a *structural* hazard rather than an observed one: **no wine cell
+carries `RUN_SERIAL` or `RESOURCE_LOCK`, and `RESOURCE_LOCK` is used nowhere in this
+tree**, so the isolation is by-construction (each runner gets its own `mktemp -d`
+`WINEPREFIX` and kills only its own suffix-matched `wineserver`) rather than enforced by
+ctest. `mccharness`'s `pewine` arm never got the `run-tier.sh` teardown fix — it creates a
+prefix under `${CMAKE_BINARY_DIR}/pe-wine-work/.wineprefix` and contains no `wineserver`
+shutdown at all, so it leaves a live server holding that prefix after the cell reports.
+
+**CI, as evidence.** Expanding every workflow once gives **195 job instances, 56 of them
+Windows-touching**, but the number overstates: **18 of the 39 `matrix.yml` Windows stage2
+cells are pure no-ops** that check out, install MSVC and ninja, then `exit 0` on the skip
+guard. Wine is installed in CI **only on Linux and macOS runners, never on a Windows
+runner** (`.github/workflows/ci.yml:117-137`, `:180-185`). The whole `windows-11-arm`
+surface is nightly-only and two of its three appearances carry `continue-on-error`. Push
+and PR see exactly **five** Windows job instances.
+
+**The honest summary:** the surface *is* built everywhere, is byte-banked at `-O0` for all
+five targets, and self-hosts natively on Windows in CI. What it is not is *differentially
+executed*. Three of five targets have never run a program. The two that do run programs
+run 33 of them, against goldens, with no external oracle. Compare Linux, where
+`jit/xoracle-conformance` and `slice/cref-oracle-*` drive **1,693 + 1,745 + 671 + 226**
+external programs through cross-vendor adjudication. That asymmetry is the finding.
+
+### 1. The inventory, re-derived today
+
+**The target list is five, and the board proves it.** `tests/ast/o0-baseline/board.txt`
+carries twelve keys, of which the Windows five are `x86_64-win32`, `i386-win32`,
+`arm64-win32`, `arm-win32`, `arm-wince`. The authoritative table is `CMakeLists.txt:3070-3071`.
+`cmake-cross/` builds five separate binaries — `mcc-x86_64-win32`, `mcc-i386-win32`,
+`mcc-arm64-win32`, `mcc-arm-win32`, `mcc-arm-wince` — because **`MCC_TARGET_PE`
+(`src/mcc.h:55`) is a compile-time macro**: one binary is a PE compiler or an ELF one,
+never both.
+
+**`arm-wince` is not a target. It is a byte-identical alias of `arm-win32`.** The two
+define sets at `CMakeLists.txt:3115-3118` and `:3119-3122` are identical token for token,
+there is no `MCC_TARGET_WINCE` anywhere in `src/`, and the only "wince" string in the
+compiler is the subsystem-name alias in `pe_setsubsy` (`src/objfmt/mccpe.c:2826`), which
+any `MCC_TARGET_ARM` PE build can reach. The `-O0` bank's twin check
+(`tests/ast/o0-baseline/arm-win32.obj.txt` against `arm-wince.obj.txt`) is not a
+coincidence that needs guarding — it is a tautology, and the cell that checks it is
+measuring the build system, not the compiler. That is worth saying plainly: **one of the
+five targets is free**, and the parity matrix below has four rows, not five.
+
+**`arm-win32`/`arm-wince` have no ARM-side PE backend at all.** `grep -c MCC_TARGET_PE
+src/arch/arm/arm-gen.c` is **0**. Consequences, each verified: no PE TLS sequence, no
+`__chkstk` stack probe, no `.pdata`/`.xdata`, no COFF ARM32 relocation mapping (the
+`coff_map_reloc` switch in `src/objfmt/mccpe.c` has AMD64/I386/ARM64 cases and falls
+through to `return 0` for ARM32), and `runtime/win32/lib/chkstk.c` has no ARM32 branch —
+its bare `#else` emits x86-64 assembly, and the build avoids that only by not adding
+`chkstk` for `cpu == arm` (`CMakeLists.txt:2563-2565`). The PE machine id used is `0x01C0`
+(legacy WinCE ARM), not `0x01C4` (`ARMNT`).
+
+**The code, measured.**
+
+| file | lines | what it is |
+| --- | ---: | --- |
+| `src/objfmt/mccelf.c` | **4411** | ELF writer **and** the shared object/archive loader for every format |
+| `src/objfmt/mccmacho.c` | **3316** | Mach-O writer |
+| `src/objfmt/mccpe.c` | **2932** | PE image writer **plus** a read-only COFF/import-library loader |
+| `src/mccjit_win32.h` | **393** | Windows-host JIT support (SRWLOCK, `_Interlocked*64`) |
+| `runtime/win32/` | **112 files** | 87 headers (39 CRT + 9 `sys/` + 13 `sec_api/` + 25 `winapi/`), 21 lib sources incl. **7 `.def`**, 4 examples |
+
+`MCC_TARGET_PE` guards **182 sites across 24 files**. The concentration is real work, not
+`#ifdef` noise: `src/mccgen.c` 23, `src/arch/x86_64/x86_64-gen.c` 22,
+`src/arch/arm64/arm64-gen.c` 22, `src/arch/i386/i386-gen.c` 20, `src/libmcc.c` 17,
+`src/mcc.h` 16, `src/objfmt/mccelf.c` 14. The x86_64 count is understated by that metric:
+`#ifdef MCC_TARGET_PE` at `src/arch/x86_64/x86_64-gen.c:805` opens a **whole-ABI fork** —
+`gfunc_sret`/`gfunc_call`/`gfunc_prolog`/`gfunc_epilog` are separate function bodies for
+Win64 and SysV, not shared code with branches.
+
+**The registered cells.** `ctest -N` lists **89** cells whose name carries a Windows
+token, and **35** of them reported Skipped in today's `-j32` sweep:
+
+| family | cells | skipped here | why |
+| --- | ---: | ---: | --- |
+| `exec*/winarm64_interlocked` | 23 | **23** | golden carries `req: cpu=arm64,os=WIN32` (`tests/exec/goldens.h:108`) — unrunnable on *any* host this tree can produce |
+| `ast/rir-parity-<pe>`, `ast/rir-c2-<pe>` | 25 | 5 | the `rir-c2` five are the `MCC_REPLAY_IR_C2`-defaults-OFF permanent 77, not a Windows fact |
+| `exec*/fastcall` | 23 | 0 | i386 **ELF** `__attribute__((fastcall))`; Windows-adjacent by name only |
+| `cross/no-compiler-abort-<pe>` | 5 | 0 | compile-only, all five targets |
+| `run-tier/<pe>` | 5 | 3 | `arm64-win32`, `arm-win32`, `arm-wince` permanently skipped |
+| `pe-wine-conformance`, `pe-native-conformance` | 2 | 1 | native needs a WIN32 host |
+| `compile.win32`, `embed-jit-smoke`, `runtime-bench-gatewin` | 3 | 3 | see below |
+| `i386-fastcall-abi{,-docker}` | 2 | 0 | **passes here** — see the probe below |
+
+**The skip audit's "5 Windows cells in environmental, legitimate" reproduces exactly**:
+`run-tier/{arm64-win32,arm-win32,arm-wince}`, `compile.win32`, `pe-native-conformance`.
+A **sixth** belongs in that bucket and was not in it: `embed-jit-smoke`, gated
+`if(MCC_PYTHON3 AND MCC_EMBED_JIT AND WIN32 AND NOT MSVC)` (`CMakeLists.txt:6556`) — the
+only cell in the tree gated on raw `WIN32 AND NOT MSVC`, and therefore the only cell that
+requires a *mingw-hosted* Windows build to run at all. It runs in exactly one CI cell
+family and nowhere else.
+
+**`i386-fastcall-abi` is green here, and the configure-time probe is why.**
+`mcc_mingw_resolve()` (`CMakeLists.txt:565`) composes `.exe` paths and performs **no
+existence and no executability check**; the fix at `CMakeLists.txt:6674-6694` prefers the
+i686 winlibs gcc, falls back to the multilib one with `-m32`, and then runs
+`execute_process(COMMAND "${_fc_gcc}" --version)` — because a PE `gcc.exe` in a shared
+`vendor/` satisfies `EXISTS` on Linux while being unrunnable. It works. The residual is
+reporting: the cell's verdict does not distinguish "measured against mingw gcc" from
+"fell back to the harness default", and the only trace is a configure-time
+`message(STATUS ...)`.
+
+**`runtime-bench-gatewin` is misnamed and doubly dead.** "gatewin" is *gate wins*, not
+Windows: the cell is registered under `NOT MCC_TARGETOS STREQUAL "WIN32"`
+(`CMakeLists.txt:6931-6941`), i.e. it is deliberately **excluded** on Windows. Its subject
+is `vendor/plb/bench/algorithm/spectral-norm/3.c` via `GATE_WINS`
+(`tools/runtime-bench.py:92`); `vendor/plb` does not exist in this checkout, both
+measurement paths filter the entry out, and `--assert-gate-wins` returns 77
+unconditionally on every host. `tests/must-run.txt:94` records the missing-subject half
+and not the WIN32-exclusion half — so on a native Windows build the row would be a
+permanent 77 **for a reason the manifest does not state**. Two independent causes, one
+recorded.
+
+**Registration asymmetries found while enumerating, each a live defect of the shape
+`ci/registration-stubs` exists to catch:**
+
+1. `pe/short-import` (`CMakeLists.txt:6037-6060`) has **no `else()`**. On every non-Windows
+   build the cell is absent from `ctest -N` entirely. Its inner skip message still says
+   "x86_64/arm64 PE host only" although i386 was added.
+2. `exec-gatecombo/*` (`CMakeLists.txt:4636-4647`) is registered **only** under
+   `if(MCC_TARGETOS STREQUAL "WIN32")`, with no `else()` — a whole cell family that exists
+   on Windows and nowhere else. It is the exact mirror of the omission
+   `tests/must-run.txt:121-126` puts on the record.
+3. `compile.win32` registers `compile.win32.<name>` per example on Windows and the bare
+   literal `compile.win32` on its skip branch, so **no `must-run.txt` row can ever name
+   both states** — `tools/must-run.py` matches by exact string.
+4. **Not one PE or wine cell appears in `tests/must-run.txt`.** Not `pe-wine-conformance`,
+   not `pe-native-conformance`, not `run-tier/*-win32`, not `compile.win32`,
+   not `def-verify`, not `pe/short-import`.
+5. **There is no `MCC_WINE*` cache variable of any kind** and no `MCC_WINE_REQUIRED`
+   analogue to `MCC_CROSS_REQUIRED`. Wine is discovered by hardcoded name lists
+   (`tools/run-tier.sh:219-226`, `tools/mccharness.c:2314-2315`). A wine-less host
+   green-skips the entire PE runtime surface and nothing reports the loss.
+6. `tools/i386win32-soak.sh` and `tools/arm64pe-wine-docker.sh` are **registered nowhere**.
+   The second matters: it is the only arm64-PE *execution* path in the repo, and it
+   contradicts the permanent-skip reason at `CMakeLists.txt:4533` that says no host can
+   run arm64 PE. `tools/i386win32-soak.sh:7` also hardcodes a personal absolute path as
+   its default mingw prefix.
+7. `tools/build.c`'s `CROSS[]` table (`tools/build.c:271-283`) **omits `arm-win32`**, which
+   `CMakeLists.txt:3070-3071` has. Two target tables, out of sync.
+
+**`MCC_CONFIG_MINGW` confirmed as a pure input.** Declared `CMakeLists.txt:1311`, read at
+exactly one site — `CMakeLists.txt:1391`, `if(WIN32 OR CMAKE_SYSTEM_NAME MATCHES ... OR
+MCC_CONFIG_MINGW)` → `set(MCC_TARGETOS "WIN32")`. Never emitted as a `-D`; asserted by
+`tools/idiomgate.c:89`; injected as `-DMCC_CONFIG_MINGW=ON` only by the `pe` CI feature
+(`tools/ci.c:655`). The idiom-gate audit's finding reproduces exactly.
+
+### 2. The parity matrix against Linux/ELF
+
+Method: for each capability the ELF path has, the Windows status with the file and symbol,
+re-derived today. **Read the object-emission row first: it is the only row that makes the
+others academic for anyone who wants to link mcc's Windows output into anything else.**
+
+| capability | Linux / ELF | Windows / PE | verdict |
+| --- | --- | --- | --- |
+| **object emission (`-c`)** | `elf_output_obj` (`src/objfmt/mccelf.c:3333`) | **the same call.** `mcc_output_file` (`src/objfmt/mccelf.c:3325`) dispatches `MCC_OUTPUT_OBJ` to `elf_output_obj` *before* the `#ifdef MCC_TARGET_PE` arm at `:3336` | **lacks it — `mcc -c` on every Windows target emits an ELF object.** Measured: `file` reports `ELF 64-bit LSB relocatable` for `x86_64-win32`, `ELF 32-bit` for `i386-win32`, `ELF aarch64` for `arm64-win32`, `ELF ARM EABI5` for `arm-wince`. There is **no `coff_output_file` symbol in the tree** |
+| **object interoperability** | `.o` links with gcc/clang/lld | **does not link.** `x86_64-w64-mingw32-gcc` on a one-line leaf `int addup(int,int)` object: `relocation ".uw_base+0x0 (type R_X86_64_RELATIVE)" goes out of range; final link failed`. `link.exe`/`lld-link` cannot read ELF at all | **lacks it** — one-way. mcc *reads* COFF fine (`coff_load_object_file`, short-import members, COMDAT dedup); nothing reads mcc's |
+| final image | `elf_output_file` | `pe_output_file` (`src/mcc.h:2004`), 2,932 lines: sections, imports, exports, base relocs, subsystem, entry selection, DLL, `.def` in **and out** | **has it, and it works** — measured `PE32+ executable for MS Windows (console), 4 sections`, runs under wine |
+| linking / archives | ELF `.a`, ld scripts | `.def` first, then `.dll` (`src/libmcc.c:1849-1851`); COFF `.lib` incl. short-import members; `#pragma comment(lib,…)` (`src/mccpp.c:2538-2558`) | **has it** |
+| **debug info** | DWARF 2–5 + stabs (`src/mccdbg.c`) | **the same DWARF**, emitted into the PE as `sec_debug`, marked `IMAGE_SCN_MEM_DISCARDABLE`; plus a COFF symbol table under `-g` (`pe_add_coffsym`) | **partial** — **no CodeView, no `.debug$S`/`.debug$T`, no PDB writer.** `-g.pdb` shells out to an external `cv2pdb.exe` (`pe_run_cv2pdb`, `src/objfmt/mccpe.c:556`). No Microsoft debugger reads mcc output natively |
+| **EH / unwind** | DWARF `.eh_frame` (`MCC_EH_FRAME`, `src/mcc.h:2060`) | `.eh_frame` is **force-disabled** for PE (`src/objfmt/mccelf.c:87-91`); replaced by `.pdata`/`.xdata` via `pe_add_unwind_data` — x86_64 `src/objfmt/mccpe.c:2572`, arm64 `:2615`, called from `src/arch/x86_64/x86_64-gen.c:1071` and `src/arch/arm64/arm64-gen.c:1854` | **partial, two ways.** x86_64's `UNWIND_INFO` is **one hardcoded 8-byte blob shared by every function** — walkable, not handler-capable. **i386-win32, arm-win32 and arm-wince emit no unwind data at all** |
+| **SEH (`__try`/`__except`/`__finally`)** | n/a | **absent.** No tokens, no parser, no codegen. `runtime/win32/include/excpt.h` declares the runtime pieces; nothing consumes them. The `__try` in `src/mcchost.c` is mcc's *own* crash handler on a Windows host | **lacks it** |
+| TLS | ELF GD/LD/IE/LE + TLSDESC | ELF `.tdata`/`.tbss` synthesised into an `IMAGE_TLS_DIRECTORY`: `pe_add_tls` (`src/objfmt/mccpe.c:2665`), `pe_set_tls` (`:422`). Access via TEB — x86_64 `gs:[0x58]`, i386 `fs:[0x2c]`, arm64 `x18+0x58` (x18 removed from the allocatable set) | **has it on 3 of 4** — nothing on arm-win32. Verified executing under wine on both x86 targets, and `run-tier` covers `tls` and `tls_threads` |
+| `__declspec(thread)` | n/a | **unsupported** — `runtime/win32/include/_mingw.h` rewrites `__declspec(x)` to `__attribute__((x))` and there is no `thread` attribute, so it hits the unknown-attribute warning. `__thread` and `_Thread_local` work | **lacks it** |
+| calling convention | SysV eightbyte classifier | Win64: 4-register `RCX/RDX/R8/R9`, 32-byte home area, non-1/2/4/8 aggregates by reference, first two args mirrored into both GPR and XMM for varargs (`src/arch/x86_64/x86_64-gen.c:805-1088`) | **has it** — a genuine second ABI |
+| `__stdcall`/`__fastcall`/`__thiscall` | n/a | parsed for all targets, **honoured only under `#if defined(MCC_TARGET_I386)`** (`src/mccgen.c:5793-5821`). `_name@N` decoration in `put_extern_sym2` | **has it where it means something** |
+| **JIT — `--embed-jit`, `-run --jit`** | full | full. `MCC_HOST_WIN32` arms throughout `src/mccjit_embed.c` plus `src/mccjit_win32.h` (393 lines). Measured today: `run-tier/x86_64-win32` reports **15/15 programs OK under both JIT tiers**, same for i386 | **has it** |
+| **JIT conformance measurement** | `jit/xoracle-conformance`, ≤400 programs per suite | **none.** Guard is `MCC_PYTHON3 AND MCC_EMBED_JIT AND MCC_TARGET_IS_HOST AND UNIX AND MCC_CPU ∈ {x86_64, arm64}` (`CMakeLists.txt:6515-6516`) | **lacks it entirely** — see §4 |
+| slice cross-oracle | `slice/cref-oracle-*`, 4 corpora | gated `if(NOT CMAKE_CROSSCOMPILING)` — never reached for a PE triple | **lacks it** |
+| **GPU / Vulkan** | `libvulkan.so.1` | **the loader has a full Windows arm**: `vulkan-1.dll` in the soname list (`src/mccgpu.c:1520-1526`), `#define VKAPI_PTR __stdcall` (`src/mccgpu.c:699-703`), `ucrtbase.dll`/`msvcrt.dll` for the libm fallbacks | **has the code, has never executed it.** CI installs `vulkan-headers` on `windows-latest` so it *builds*; the `gpu-vulkan` feature is skipped on every Windows host. **UNMEASURED** whether a Windows Vulkan dispatch has ever run |
+| `_Complex` | full | **compiles on all five targets**, executes correctly under wine: `(1+2i)*(3+4i)` → `-5.000000 10.000000` on both x86 PE targets | **has it** |
+| `__int256` / `unsigned __int256` | full, `wide256/gmp-diff` 9,402 rows | **compiles on all five targets**, executes correctly under wine (`1<<200` × 3 → 3). Passed by memory on Win64 like any >8-byte aggregate — the `using_regs` rule at `src/arch/x86_64/x86_64-gen.c:829-831` sends anything not 1/2/4/8 bytes to memory, which is the correct Win64 treatment | **has it — but see below.** `wide256/gmp-diff`, the only proof `__int256` is *correct*, is a native-host cell. **UNMEASURED on any PE target** |
+| `__int128` | `MCC_HAVE_INT128` | **0 on PE** (`src/mcc.h:1115-1119`). `LONG_SIZE` is forced to 4 on PE even at 64 bits (`src/mcc.h:166-170`) | **lacks it, deliberately** |
+| stack probing | not needed | `__chkstk` at frames ≥ 4096 — x86_64 `src/arch/x86_64/x86_64-gen.c:1074-1084`, i386 `src/arch/i386/i386-gen.c:840-846`, arm64 `src/arch/arm64/arm64-gen.c:1201-1214`. Runtime in `runtime/win32/lib/chkstk.c`. VLA forced through the call path on PE. Measured: a 200,000-byte frame compiles on all five and runs under wine on both x86 targets | **has it on 3 of 4** — **arm-win32/arm-wince frames > 4 KiB never touch a guard page** |
+| DLL import/export | `-shared`, visibility | `__declspec(dllimport/dllexport)` via `_mingw.h`'s attribute rewrite, `pe_check_linkage` (`src/mccgen.c`), `ST_PE_IMPORT`/`ST_PE_EXPORT` (`src/mcc.h:2014-2016`), `pe_build_exports` writes a companion `.def`, `-impdef` via `mcc_get_dllexports` (`src/objfmt/mccpe.c:2531`), `-rdynamic` exports everything | **has it** |
+| resources (`.rc`) | n/a | `pe_load_res` ingests a **pre-compiled** `.res`. No `.rc` compiler, no `windres` invocation anywhere | **partial** |
+| `_MSC_VER` emulation | n/a | **none.** Predefines are `_WIN32` (+`_WIN64` at 64 bits) only (`src/mccpp.c:5364-5370`); `_mingw.h` supplies `__MSVCRT__`, `_M_IX86`/`_M_X64`/`_M_ARM64`. `-fms-extensions` exists but only affects anonymous struct/union acceptance | **lacks it** — mcc is a mingw-flavoured Windows compiler, not an MSVC-compatible one |
+| CRT / libc | glibc/musl, `mcc_add_runtime` | `msvcrt.dll` via `.def`; entries `_start`/`_wstart`/`__winstart`/`__wwinstart`/`__dllstart` selected by `pe_add_runtime`. **No `mainCRTStartup`.** `mcc_add_runtime` is compiled out entirely under `#ifndef MCC_TARGET_PE` (`src/objfmt/mccelf.c:1707-1708`); `-lm` is a no-op | **has its own, by a different construction.** musl is Linux-only and always will be |
+| leading underscore | n/a | **0 by default on PE** — `s->leading_underscore` is set only under `#if defined MCC_TARGET_MACHO` (`src/libmcc.c:1223-1225`). A deliberate divergence from tcc's i386-win32 | **has it, differently** — settable with `-fleading-underscore` |
+| bounds checking | `-b`/`-bt`/`-fsanitize=bounds` | skipped: "unsupported on the PE/msvcrt target (faults in msvcrt callbacks/library calls)" | **lacks it** |
+| `tests/diff/parts/*` | full | skipped: "the PE/msvcrt target has no msvcrt equivalent for the parts' complex/tgmath/libm surface" | **lacks it** |
+
+**What the matrix says when you stand back.** Windows is not thin. It has a real second
+ABI, a real second unwind format, a real second TLS mechanism, a real second CRT, and a
+working JIT. What it lacks clusters into exactly three shapes: **(a) it cannot write the
+platform's object format**, **(b) it cannot describe itself to the platform's debugger**,
+and **(c) nothing on it is measured against an external oracle**. Every remaining cell in
+the "lacks it" column is downstream of one of those three.
+
+### 3. Five divergences nobody had looked for — found in ten seconds
+
+Before pricing the cross-oracle in §4, here is what it already found. A hand-written
+runner compiled all **1,693** `vendor/gcc-c-torture-execute` programs with
+`cmake-cross/mcc-x86_64-win32` at `-O0` and with `x86_64-w64-mingw32-gcc` 15.2.0 at `-O0`,
+ran both under `wine64`, and compared exit status and CRLF-normalised stdout. **9.95 s
+wall at 16 threads.**
+
+| status | count |
+| --- | ---: |
+| agree | **1505** |
+| oracle failed to compile (mingw-gcc) | 132 |
+| mcc failed to compile | 46 |
+| **DISAGREE** | **10** |
+
+The first 300 on `i386-win32` against `i686-w64-mingw32-gcc`: **281 agree / 11 / 7 / 1**.
+
+Each of the ten was then re-run on ELF (`cmake-debug/mcc` against system `gcc` 15, native
+`-O0`) to separate a Windows defect from a pre-existing mcc-vs-gcc divergence:
+
+| program | ELF verdict | reading |
+| --- | --- | --- |
+| `20021127-1` | mcc 134 / gcc 0 | target-independent (builtin `llabs` folding vs a user definition) |
+| `20230630-2`, `20230630-4` | mcc 134 / gcc 0 | target-independent |
+| `pr85156` | mcc 134 / gcc 0 | target-independent |
+| `return-addr` | rc equal, **stdout differs** | target-independent (`__builtin_return_address`) |
+| **`20101011-1`** | **ELF agrees** | **Windows-specific** — `-fnon-call-exceptions`, integer divide-by-zero. On Windows this raises SEH, not `SIGFPE`. Lands squarely on the missing-SEH row |
+| **`pr92904`** | **ELF agrees** | **Windows-specific** — "PR target/92904", varargs with **over-aligned aggregates** (`__attribute__((aligned(16)))`, `(32)`). Lands squarely on the Win64 calling-convention row |
+| **`pr23324`** | **ELF agrees** | **Windows-specific** — signed bitfields in nested structs plus an empty union. Struct/bitfield **layout** |
+| **`pr36321`** | **ELF agrees** | **Windows-specific** — `__builtin_alloca(0)`; the program's own body contains `#ifdef _WIN32 abort();` |
+| **`pr123864`** | **ELF agrees** | **Windows-specific** — `__builtin_mul_overflow_p` on `long long` × `~0U` |
+
+**Five Windows-specific divergences, and every one of them lands on a row this section
+already flagged as a gap.** That is the strongest available evidence that the parity
+matrix is describing something real rather than cataloguing `#ifdef`s: the oracle found
+the same holes independently, from the outside, in under ten seconds, on a corpus that has
+been sitting in `vendor/` this whole time.
+
+None of these five is triaged here and none is claimed as a proven miscompile — a
+disagreement with one oracle is a subject for triage, not a verdict. Three of them
+(`pr92904`, `pr23324`, `pr36321`) are the shapes where a Windows ABI genuinely differs
+from SysV, so at least one is likely to resolve as "mcc is right and the corpus encodes
+gcc's Windows behaviour". Which is exactly why the cell should exist: nobody can currently
+tell.
+
+### 4. Cross-oracle under wine — priced, with the pilot already run
+
+**Both external corpora can be run for the two x86 Windows targets under wine. This is the
+single largest coverage gain available in this tree, and it is cheap.**
+
+**What the oracle would be.** `x86_64-w64-mingw32-gcc` / `i686-w64-mingw32-gcc` for the
+gcc corpora, and `clang --target=x86_64-w64-mingw32` for the llvm corpora — preserving the
+project's cross-vendor rule that a suite is never judged by its own vendor. **One caveat
+must be stated rather than buried:** on the pilot host `clang --target=x86_64-w64-mingw32`
+resolves the triple but has no mingw sysroot, so the *pilot above used mingw-gcc against
+the gcc corpus*, which violates the cross-vendor rule. Its 1,505/10 is therefore a
+**lower bound on agreement and an upper bound on nothing** — a same-vendor oracle
+systematically under-reports. The real cell must either ship the llvm-mingw clang the
+build already knows how to fetch (`MCC_LLVMMINGW_AARCH64_URL` in `cmake/winlibs.cmake` is
+the same mechanism, aarch64-only today) or run the llvm corpora, judged by mingw-gcc,
+where the vendors are correctly crossed by construction.
+
+**What breaks, concretely.** All four cross-oracle tools execute natively and have **no
+wrapper hook whatsoever** — `xoracle.py`'s `Phase.execute`, `xsuite.py`'s runner,
+`jitconform.py`'s `run_prog`, `gpuconform.py`'s `run` all call `subprocess.run` on the
+produced binary directly. A tree-wide grep for `MCC_RUN_WRAPPER` / `MCC_EXEC_WRAPPER` /
+`MCC_RUNNER` returns **nothing**; that variable does not exist. What *does* exist is
+`MCC_TEST_RUNEMU` (read only by `tests/runner.c`) and the `RUN`/`ENVPFX` pair in
+`tools/run-tier.sh`, which already selects wine correctly. All three also use
+`preexec_fn=` for `RLIMIT_*`, which is POSIX-only — fine under wine-on-Linux, since the
+*harness* stays on Linux and only the produced `.exe` goes through wine.
+
+The work is: thread an optional wrapper list through the three execute sites and the build
+sites, add `--target-mcc`/`--wrapper` arguments, and relax the `UNIX AND MCC_CPU
+x86_64|arm64` guard at `CMakeLists.txt:6515-6516` so a PE triple with a wine on PATH
+qualifies. Nothing structural resists it. The runner in §3 is 60 lines and already proves
+the shape works end to end.
+
+**Price.**
+
+| | |
+| --- | --- |
+| wrapper plumbing across the four tools | ~120–200 lines |
+| a `--pe-target` mode: `-B` staging, win32 include paths, CRLF normalisation | ~120–180 lines |
+| oracle selection + a clang-mingw probe, with a hard skip when no cross-vendor pair exists | ~80–140 lines |
+| cell registration, guard relaxation, floors, known-positive arm | ~80–120 lines |
+| **total** | **~400–640 lines** |
+| wall cost per cell at `--limit 400` | **~4 s**, extrapolated from 9.95 s for 1,693 at `-O0` on 16 threads |
+
+Compare: `double` on the SPIR-V side was ~1,100–1,700 lines; Metal parity 1,530–2,360;
+256-bit `ymm` codegen 2,000–3,000. **This is a quarter of the cheapest of those and it
+buys the first external measurement of a platform that has none.**
+
+**What it cannot buy.** Nothing for `arm64-win32`, `arm-win32` or `arm-wince` — wine
+emulates x86 PE only. `tools/arm64pe-wine-docker.sh` is the one existing counter-example
+and it is registered nowhere; whether it still works is **UNMEASURED**.
+
+### 5. The staged plan
+
+Each stage lands independently and each carries a differential that fails if the stage did
+nothing. Line estimates are for compiler/harness code, comments excluded per the standing
+instruction.
+
+**Stage W1 — the wine cross-oracle. ~400–640 lines.**
+As priced in §4. Differential: a `--mutate` arm in the same shape as
+`cmake/gpuconform_cref.cmake`'s — perturb one emitted constant and require the cell to go
+red, so the oracle cannot pass by adjudicating nothing. Floors `--min-pass` and
+`--max-differ` banked from the first clean run, never from the pilot. **Land this first.**
+It is the cheapest stage, it is the only one that produces new *information* rather than
+new code, and it will re-rank every stage below it.
+
+**Stage W2 — triage the five. ~0–400 lines, unknown until W1 lands.**
+`20101011-1`, `pr92904`, `pr23324`, `pr36321`, `pr123864`. Some will resolve as
+"the corpus encodes gcc's Windows behaviour and mcc is right", which costs an exclusion
+entry and a sentence. `pr92904` (over-aligned aggregates through Win64 varargs) is the one
+most likely to be a real ABI defect and the one with the largest blast radius. Differential:
+each finding gets an `tests/exec` golden with a `req: os=WIN32` line, so it is checked on
+every Windows build forever. **Do not schedule W2 before W1** — triaging five programs by
+hand when a cell could triage 1,693 is the wrong order.
+
+**Stage W3 — a COFF object writer. ~900–1,400 lines.**
+`coff_output_obj` alongside `elf_output_obj`, reusing the section/symbol/reloc model the
+PE image writer already has, plus the inverse of `coff_map_reloc` (which already exists for
+AMD64/I386/ARM64 in the read direction) and an ARM32 arm. This is what makes mcc a
+*participating* Windows toolchain rather than a self-contained one: separate compilation,
+`ar`/`lib` archives, linking against mingw or MSVC objects in both directions.
+Differential: compile each half of a two-TU program with mcc and with mingw-gcc in all four
+combinations, link with both linkers, run under wine, require all outputs identical — the
+same four-way shape `tools/i386fastcall-docker.sh` already uses for the i386 ELF ABI.
+This is the largest genuine gap and the one with the clearest user-visible payoff.
+
+**Stage W4 — per-function `UNWIND_INFO`, and unwind for i386/arm. ~500–800 lines.**
+Replace the single shared 8-byte blob at `src/objfmt/mccpe.c:2549-2558` with real prologue
+opcodes derived from the frame the epilog already knows, so a Windows debugger and
+`RtlUnwind` can walk mcc frames truthfully. Extend `.pdata` to arm-win32 (which today has
+none) and add the i386 `FS:[0]` chain. Differential: a `CaptureStackBackTrace` /
+`RtlVirtualUnwind` depth check across a known call chain, run under wine, plus the same
+under `-O0`/`-O2`/`-O3`. Note this stage is **partly blocked on W3** for i386, since an
+i386 SEH chain is meaningless without objects anyone can link.
+
+**Stage W5 — CodeView `.debug$S`/`.debug$T`. ~1,200–1,800 lines.**
+Line tables and symbol records to start; types after. Removes the `cv2pdb.exe` dependency
+and makes mcc output debuggable by WinDbg/Visual Studio. Differential: the same shape
+`dwarfgdb-docker.sh` uses on the ELF side — set a breakpoint at a named line, check the
+reported frame and one local. **Requires W3**, because CodeView lives in COFF sections.
+
+**Stage W6 — SEH statements (`__try`/`__except`/`__finally`). ~800–1,300 lines.**
+Parser, scope tables, `__C_specific_handler` on x64 and the FS:[0] chain on i386.
+Differential: filter-expression ordering, `__finally` on both normal and unwinding exit,
+and `20101011-1`'s divide-by-zero. **Requires W4** — a handler needs a truthful
+`UNWIND_INFO` to be reached at all.
+
+**Stage W7 — arm-win32/arm-wince, or delete them. ~600–900 lines, or ~50.**
+`arm-wince` is a byte-identical alias of `arm-win32` (§1) and `arm-win32` has no ARM PE
+backend at all. The choice is: give ARM32 PE TLS, `__chkstk`, unwind and COFF relocations
+(~600–900) and accept a target nobody can execute, or delete `arm-wince` and demote
+`arm-win32` to an explicitly-compile-only target with the bank cells labelled as such
+(~50 lines, mostly CMake and `tools/build.c:271-283`). **The second is correct.** Windows
+CE has been end-of-life since 2013 and `arm-win32` targets a machine id (`0x01C0`) that
+modern Windows does not load. Two of the twelve `-O0` bank keys are currently spending
+budget proving that two identical configurations produce identical bytes.
+
+**Housekeeping that is cheap and should ride along with W1, ~60–100 lines total:** give
+`pe/short-import` and `exec-gatecombo/*` `else()` arms; give `pe-wine-conformance` the
+`run-tier.sh` wineserver teardown; add `RESOURCE_LOCK "wine"` to the wine cells so the
+structural hazard in §0 stops being structural; add `MCC_WINE` and `MCC_WINE_REQUIRED`
+cache variables so a wine-less host can be made to fail rather than green-skip; add
+`pe-wine-conformance` and `run-tier/{x86_64,i386}-win32` to `tests/must-run.txt`; correct
+`tests/must-run.txt:94` to state both of `runtime-bench-gatewin`'s causes; add `arm-win32`
+to `tools/build.c:271-283`; fix the stale i386 message at `CMakeLists.txt:6058`.
+
+### 6. The verdict, and the sequencing
+
+**What is a real gap.**
+
+1. **No COFF object writer.** This is the one. It is not a cell that skips; it is a
+   capability the platform requires and the compiler does not have, and it was invisible
+   because every Windows cell in the tree drives mcc all the way to a linked `.exe`, where
+   the format is right. Measured today, in both directions, on a one-line function.
+2. **No external oracle on any Windows target**, while Linux has four corpora and 4,335
+   external programs. §3 shows the cost of that absence is not hypothetical: **five
+   divergences, none previously known, in under ten seconds.**
+3. **No CodeView/PDB.** A shipped Windows compiler whose output no Microsoft debugger
+   reads is a real gap, not a preference.
+4. **A single shared `UNWIND_INFO` blob on x64, and none at all on i386/arm.**
+5. **No SEH statements.** Bounded and honest — but `20101011-1` shows it has observable
+   consequences beyond `__try` itself.
+
+**What merely looks like a gap because a cell skips.**
+
+- `compile.win32`, `pe-native-conformance` — correct WIN32-host gating. They run in CI on
+  `windows-latest` and are supposed to skip here.
+- `runtime-bench-gatewin` — not a Windows cell at all. Misnamed, and dead for a missing
+  `vendor/plb`.
+- `embed-jit-smoke` — correctly gated; needs a mingw-hosted Windows build.
+- The 23 `exec*/winarm64_interlocked` cells — a `req: cpu=arm64,os=WIN32` golden that no
+  host in this tree can satisfy. Not a defect; but 23 cells that can never run anywhere are
+  a reporting problem, and they are 26% of the Windows cell count.
+- `run-tier/{arm64,arm}-win32`, `run-tier/arm-wince` — genuinely unrunnable, correctly
+  skipped, with an accurate reason. `arm64-win32` is the one worth revisiting, because
+  `tools/arm64pe-wine-docker.sh` exists and contradicts the reason text.
+- The five `ast/rir-c2-<pe>` skips — the `MCC_REPLAY_IR_C2` default, nothing to do with
+  Windows.
+- **`arm-wince` in its entirety.** It looks like a fifth target; it is a duplicate.
+
+**Sequencing against everything else open.** **W1 goes first and it should go before most
+of what is currently ranked above it.** The argument is not that Windows matters more than
+the GPU or the optimizer; it is that W1 is ~400–640 lines, runs in ~4 s, and is the only
+open item that *converts an unmeasured surface into a measured one*. This file's cardinal
+sin is agreement over nothing, and 2,932 lines of PE emitter validated by 33 goldens is
+that sin at platform scale — the same defect `slice-census` had when nothing set
+`MCC_SLICE_CENSUS_RUN`, except that the population is a whole object format. W1 is also
+the only stage whose result changes the priority of the others: if W2's triage resolves
+`pr92904` as a genuine Win64 varargs defect, that outranks W3.
+
+**W3 (COFF writer) is the largest real gap and should be scheduled next**, but only after
+W1, because W1 costs a fifth as much and will tell you whether the codegen underneath the
+object format is even correct. Shipping an interoperable object format for a backend with
+five unmeasured divergences would be shipping the divergences to more people.
+
+**W5 (CodeView) and W6 (SEH) are correctly below the GPU and optimizer work.** They are
+large, they are blocked on W3 and W4, and neither is a correctness gap — they are
+integration gaps. They belong on the ladder, not at the top of it.
+
+**W7 should be taken as a deletion, now, independent of everything else.** It is ~50 lines,
+it removes a target that duplicates another byte for byte, and it stops two `-O0` bank keys
+from spending budget proving a tautology.
+
+**Below the line and deliberately:** anything requiring Windows-on-ARM hardware, a real
+Windows CI runner beyond what `matrix.yml` already has, or a `.rc` compiler. All three are
+real absences and none is on the critical path of anything above.
+
 ## Landed — `rir_decayed_array` read a comparison's opcode as a `Sym *`, 2026-08-09 (`wt/decayfix`)
 
 **The defect.** `rir_decayed_array` in `src/mccrir.c` opened with a null test and three
