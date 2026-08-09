@@ -26,11 +26,24 @@ levels = (sys.argv[2] if len(sys.argv) > 2 else "O0,O1,O2,O3").split(",")
 corpus = sys.argv[3] if len(sys.argv) > 3 else "self"
 extra = os.environ.get("PROBE_ENV", "")
 
-cc = json.load(open(os.path.join(bdir, "compile_commands.json")))
-rec = [x for x in cc if x["file"].endswith("/mcc.c")][0]
-flags = [a for a in shlex.split(rec["command"])[1:]
-         if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
+ccpath = os.path.join(bdir, "compile_commands.json")
+if not os.path.exists(ccpath):
+    print("untyped-probe: no %s; the probe reconstructs mcc's own -D/-I set "
+          "from it, and a guessed flag set would compile a different program "
+          "than the one being censused" % ccpath)
+    sys.exit(77)
 mcc = os.path.join(bdir, "mcc")
+if not os.path.exists(mcc):
+    print("untyped-probe: no mcc at %s" % mcc)
+    sys.exit(77)
+cc = json.load(open(ccpath))
+rec = [x for x in cc if x["file"].endswith("/mcc.c")]
+if not rec:
+    print("untyped-probe: %s has no entry for mcc.c, so there is no flag set "
+          "to census with" % ccpath)
+    sys.exit(77)
+flags = [a for a in shlex.split(rec[0]["command"])[1:]
+         if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
 
 if corpus == "self":
     srcs = [os.path.join(ROOT, "src", "mcc.c")]

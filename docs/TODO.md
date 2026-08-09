@@ -354,12 +354,63 @@ shape with better arithmetic.
 per-device, so the same bit-exact differential can return different answers on different
 CI cells. `ci.yml:152` passes `-DMCC_GPU_REQUIRED=ON` on every Linux stage2 cell, which
 turns a lavapipe/NVIDIA denormal disagreement into a hard CI failure **no code change can
-fix**. Whether lavapipe agrees is **UNVERIFIED**: `mesa-vulkan-drivers` is installed in CI
-(`ci.yml:116`, `matrix.yml:105`) but there is no lavapipe ICD on this host
-(`/usr/share/vulkan/icd.d/` holds `nvidia_icd.json` only), and `vulkan.gpuinfo.org` and the
-Mesa source mirror both refused fetches. `docs/PLAN.md:625` asserts lavapipe has
-`shaderFloat64`; **that assertion has not been reproduced and should not be quoted as
-measured.**
+fix**.
+
+**RESOLVED 2026-08-09 (`wt/gatefin`) — lavapipe HAS `shaderFloat64`, read from Mesa source,
+not inferred.** There is still no lavapipe ICD on this host (`/usr/share/vulkan/icd.d/`
+holds `nvidia_icd.json` only; Mesa 26.0.8 here is built `VIDEO_CARDS="nvidia"`, so its
+installed file list contains no Vulkan component at all and `find / -name 'libvulkan_lvp*'`
+returns nothing), so this is a source reading and is labelled as one. The source was to
+hand: `/var/cache/distfiles/mesa-26.0.8.tar.xz`, the Gentoo distfile for the Mesa actually
+installed. Two lines decide it, and both are unconditional:
+
+```
+src/gallium/frontends/lavapipe/lvp_device.c:454   .shaderFloat64 = (pdevice->pscreen->caps.doubles == 1),
+src/gallium/drivers/llvmpipe/lp_screen.c:301      caps->doubles = true;
+```
+
+`lvp_get_features()` fills `device->vk.supported_features` at `lvp_device.c:1443`, and
+`lvp_device.c:1050` confirms the driver identity (`.driverID = VK_DRIVER_ID_MESA_LLVMPIPE`).
+`caps->doubles` sits in a flat run of unconditional assignments in
+`llvmpipe_init_screen_caps()` — no `#if`, no LLVM-version gate, no `debug_get_bool_option`.
+A grep for `doubles` across `drivers/llvmpipe/`, `frontends/lavapipe/` and `auxiliary/draw/`
+returns exactly three hits: those two plus `lp_screen.c:485 .lower_doubles_options`, a NIR
+option. `DRAW_USE_LLVM` (`lp_screen.c:143`) is in `llvmpipe_init_shader_caps()` and touches
+only const-buffer and sampler limits; it does not reach `caps->doubles`. Confirmed
+byte-identical at the same line numbers in `mesa-26.0.7.tar.xz`. **Scope of the claim:
+Mesa 26.0.x. The Mesa version on the CI runner's `mesa-vulkan-drivers` is not pinned in
+`ci.yml:116` and was not read, so "CI's lavapipe" remains an inference from "26.0.x
+lavapipe".**
+
+`docs/PLAN.md:625`'s bare assertion — the thing this went looking for — is therefore
+**correct but still uncited in PLAN.md**, and `PLAN.md:797` (I2's `shaderFloat64 = TRUE`
+refusal floor, "see E6") rests on it. Left as-is here rather than edited in place, because
+this branch owns the audit section and not the E-track rows; the citation above is the
+record to copy across when someone owns E6.
+
+**Which means row 6's float row does NOT close permanently — and the denormal question is
+live.** The consequence chain in the paragraph above now runs to its end, and the answer is
+that the two devices *agree*. `lvp_device.c:1073-1077` gives lavapipe's fp64 float-controls:
+
+```
+.shaderDenormFlushToZeroFloat64 = false,
+.shaderDenormPreserveFloat64    = false,
+.shaderRoundingModeRTEFloat64   = true,
+.shaderRoundingModeRTZFloat64   = false,
+.shaderSignedZeroInfNanPreserveFloat64 = true,
+```
+
+Set that beside the measured NVIDIA `vulkaninfo` banked at `:297-304`, which reports both
+fp64 denorm modes false as well. So `ci.yml:152`'s `MCC_GPU_REQUIRED=ON` does **not** turn a
+denormal *advertisement* disagreement into an unfixable CI failure: neither device advertises
+either fp64 denorm mode, and a differential that pins nothing about denormals is consistent
+across both. **What that does not buy is agreement on denormal *behaviour*.** Advertising
+neither mode means the implementation is unconstrained by `VK_KHR_shader_float_controls`, so
+lavapipe's LLVM-generated fp64 and NVIDIA's may still differ on a denormal input while both
+report the same feature bits. `:344`'s "fp64 denormals measured preserved" is a measurement of
+**the NVIDIA device only** and must not be quoted of lavapipe. The recommendation below is
+unchanged: what closed row 6 was never the `shaderFloat64` bit, it was the ~1,100–1,700 lines
+and the green-by-corpus-construction differential.
 
 **The line estimate, against the actual code — ~1,100–1,700 lines, not "a handful".** The
 board's "six lines of refusal in files we own" is right about the *gates* and wrong about
@@ -404,10 +455,17 @@ false`.
 1. A device advertising `shaderDenormPreserveFloat32/64 = true` (making both widths
    pinnable), *or* a decision to restrict the device path to fp64 and refuse `/` — the
    latter is free and is what a reopened row should assume.
-2. A measured `vulkaninfo` from lavapipe under CI conditions. If it lacks `shaderFloat64`,
+2. ~~A measured `vulkaninfo` from lavapipe under CI conditions. If it lacks `shaderFloat64`,
    the 79.2 points are unreachable on the only device the suite tests against and the row
-   is closed permanently rather than provisionally. **This is one command on a CI runner
-   and it has never been run.**
+   is closed permanently rather than provisionally.~~ **SETTLED 2026-08-09 (`wt/gatefin`),
+   and it did not reopen the row.** Mesa 26.0.8's `lvp_device.c:454` reads `shaderFloat64`
+   off `llvmpipe`'s `caps->doubles`, set unconditionally at `lp_screen.c:301` — see the
+   RESOLVED block above. So the 79.2 points are *reachable* on lavapipe and the row closes
+   **provisionally, not permanently**. It stays closed on the line count and on the
+   green-by-corpus-construction argument, neither of which this touched. Still open, and
+   now the only device question left: a *runtime* fp64 denormal reading from lavapipe.
+   Both devices advertise neither fp64 denorm mode, which makes them consistent on paper
+   and says nothing about what either computes.
 3. A corpus kernel whose hot loop is `float`, which would change the +0.0 above.
 
 #### Metal — settled, 2026-08-09: dropped
@@ -437,11 +495,11 @@ row denominated in it ranks below every row that is not: *device-eligible blocks
 | # | row | currency | expected payoff |
 | ---: | --- | --- | --- |
 | 1 | `ast_loop_interchange_legal` / `ast_dep_fusion_pair_illegal` consult `ast_dep_base_distinct` with **no `indirect` guard**, and unlike the census predicate they reach emitted code | **correctness** | UNMEASURED, and it is the same defect class that produced two miscompiles this month |
-| 2 | `tests/optfire/levelbench.tsv` is a generation stale and has no `--check` | **census trust** — every future ladder decision is priced off it | 32 of 47 rows name flags no longer at levels 1–3 |
+| 2 | ~~`tests/optfire/levelbench.tsv` is a generation stale and has no `--check`~~ | **census trust** — every future ladder decision is priced off it | ~~32 of 47 rows name flags no longer at levels 1–3~~ — **LANDED 2026-08-09 (`wt/gatefin`).** The stale generation was re-measured by `wt/ladder2`; `--check` now exists, has a ctest cell and a known-positive, and the build-dir TSV is compared back to `tests/optfire/`. See the audit section |
 | 3 | Metal | **a decision** | free to make, grows with every SPIR-V landing. **Decided above: dropped** |
 | 4 | the device path | **device-eligible blocks** — no exchange rate | **Frozen above.** ≈1.45% device-executable lanes on the best corpus anyone has found |
 | 5 | `snprintf` module budget | **device-accepted sites** — no exchange rate | banked at 148/162; the 7th site buys one site, the 8th needs `MCC_GPU_CODE_MAX` raised. **Stop** |
-| 6 | float in the slice engine and the SPIR-V emitter | **device-executable lanes** | ~~the only thing that would make row 4's 80.60% mean anything. **UNMEASURED and unpriced**~~ — **PRICED 2026-08-09 (`wt/spvfloat`), NOT PAID.** ~1,100–1,700 lines across two backends and an `int64_t`-only CPU reference. **`float` is unreachable bit-exactly** (`shaderDenormPreserveFloat32 = false` and fp32 denormals measurably flushed; `OpFDiv` is 2.5 ULP by spec) **and worth +0.0 points**; `double` is reachable and worth +79.2, but only over a corpus that cannot reach either divergence class. Verdict stands. **Next step is one `vulkaninfo` on a lavapipe CI runner**, never yet run |
+| 6 | float in the slice engine and the SPIR-V emitter | **device-executable lanes** | ~~the only thing that would make row 4's 80.60% mean anything. **UNMEASURED and unpriced**~~ — **PRICED 2026-08-09 (`wt/spvfloat`), NOT PAID.** ~1,100–1,700 lines across two backends and an `int64_t`-only CPU reference. **`float` is unreachable bit-exactly** (`shaderDenormPreserveFloat32 = false` and fp32 denormals measurably flushed; `OpFDiv` is 2.5 ULP by spec) **and worth +0.0 points**; `double` is reachable and worth +79.2, but only over a corpus that cannot reach either divergence class. Verdict stands. ~~**Next step is one `vulkaninfo` on a lavapipe CI runner**, never yet run~~ — **SETTLED 2026-08-09 (`wt/gatefin`) from Mesa 26.0.8 source, not from a device: lavapipe HAS `shaderFloat64`, unconditionally** (`lvp_device.c:454` → `lp_screen.c:301`). The row therefore closes **provisionally, not permanently** — the 79.2 points are reachable on the device CI can test. It stays closed on the line count. Next device question is a *runtime* fp64 denormal reading; both devices advertise neither fp64 denorm mode |
 | 7 | chain-store re-promotion | emitted code | **MEASURED, refused.** +2.60 `kept` → −0.079% stage-2 for +1.50% stage-1; 60× worse than `divmagic`'s rung |
 | 8 | `storeval-rot` demotion | emitted code | **MEASURED, refused.** Its off-state is an incomplete replay path, `kept` 91.978 → 83.242 |
 | 9 | `narrow` (rung 10) and `tree-copy-prop` (rung 11) priced on the self-host axis | emitted code | **MEASURED 2026-08-09, both levels unchanged.** `narrow` +0.876% of stage-1 for −0.0088% of stage-2 (**100:1 against**); `tree-copy-prop` +0.799% for −0.0048% (**166:1**). Both are worse than the 19:1 the ladder already refused at row 7. Neither was "priced on nothing" — that premise was false, see the correction in the audit section |
@@ -455,7 +513,8 @@ spelled `-floop-block`, **not** `-floop-tile`, which does not exist), all three 
 `ast_loop_interchange_legal`, i.e. the unguarded predicate. A fuzz corpus of `p[i]`/`q[i]`
 nests through two global pointers at `-O12` is the measurement.
 
-Row 2 is second because it is the instrument every other ranking uses. See hazard 2.
+Row 2 is second because it is the instrument every other ranking uses. See hazard 2. It is
+now **landed**, so row 1 is the only unmeasured row left above the priced ones.
 
 ### Where every number on this board comes from
 
@@ -540,8 +599,10 @@ tool and the corpus that produces it, or is marked **PROSE-ONLY** / **UNMEASURED
      bench**: the banked table is 16 rows against `src/mccopt.h`'s 16, `builtin-math-fabs`
      has a row, and the stale-row trap is now itself documented — reading a stale row's
      `n/a` as "this flag is unpriced" is what produced the false `narrow` /
-     `tree-copy-prop` claim in the audit section below. There is still **no `--check`
-     arm**, so nothing stops the file going stale again; that is the remaining debt.
+     `tree-copy-prop` claim in the audit section below. ~~There is still **no `--check`
+     arm**, so nothing stops the file going stale again; that is the remaining debt.~~
+     **`--check` LANDED 2026-08-09 (`wt/gatefin`), both halves** — the arm itself and the
+     CMake half that wrote to the build dir and never compared back. See the audit section.
 3. **A per-flag sweep cannot price a family, and the failure reads like a win.**
    `optlevel-bench.py` builds jobs as `[("__base__", []), ("__noise__", [])] + [(n,
    ["-fno-"+n])]` against an `-O3` base, so it can only ever take a shipped flag *out* —
@@ -824,6 +885,101 @@ gain (`copysign`), and `--selfcheck`'s `worseflag` row gates it.
 
 Full `ctest` after all of it: **9138 cells, 0 failures** — the 9136 baseline plus the two new
 `optbench/null-subject*` cells.
+
+#### LANDED — `optlevel-bench.py --check`, and the last two unregistered number-producers, 2026-08-09 (`wt/gatefin`)
+
+This closes hazard 2's remaining debt and the two cheapest rows the registration sweep left
+open. **No pin value in `tests/optfire/` changed.** Full `ctest` after it: **9149 cells, 0
+failures** — the 9143 baseline plus six, and `cmake-cross -N` and `cmake-debug -N` still
+agree at 9149.
+
+**1. `--check` has two halves because the gap had two halves, and the second one is the one
+that was easy to miss.** The arm was missing *and* CMake wrote the fresh TSV to
+`${CMAKE_BINARY_DIR}/levelbench.tsv` and never compared it back to `tests/optfire/`. Fixing
+only the first would have left a `--check` nothing ran against a fresh run. Both are closed:
+
+- `optlevel-bench.py --check` with no `--mcc` is the **ladder half** — it needs neither
+  `perf` nor a built compiler, reads `tests/optfire/levelbench.tsv` against `src/mccopt.h`,
+  and reports three shapes: a row naming a flag no longer at levels 1–3 (the shape 32 of the
+  old 47 rows had), a row whose `level` column drifted off what ships, and **a shipped rung
+  with no row at all**. The third is the one that reads as a zero: a rung nothing priced
+  looks exactly like a rung that cost nothing, which is the mirror of the null-row defect
+  the `--selfcheck` arm already gates.
+- `optlevel-bench.py --check --fresh PATH` adds the **value half**. The `optlevel-bench`
+  cell now passes `--check --bank …/tests/optfire/levelbench.tsv`, so the ladder bench's own
+  build-dir output is compared back on every run, and `--check` refuses outright if `--out`
+  and `--bank` resolve to the same file — comparing the bank against a run that just
+  overwrote it is the vacuous pass this was meant to prevent.
+
+**The tolerance is stated, and most of the comparison does not use one.** `level`, `bucket`,
+`kernels_moved`, `fires_corpus` and `corpus_total` are compared **exactly**: none of the five
+is a timing. Two are decisions and three are counts of objects whose sha256 changed, and no
+tolerance on a gain column can express "this row now measures a different thing". The
+gain/cost columns are
+compared against `max(0.05 pp, 10% relative)`. The floor is 100× the self noise and 80× the
+corpus noise this table's own header reports (0.0005% and 0.0006%, the base configuration
+measured twice), so counter jitter cannot meet it; the relative band is what one
+host's instruction counts may differ from another's without the ranking moving. A banked
+`n/a` against a fresh number, or the reverse, is **always** a failure regardless of tolerance
+— that is exactly the `storeval-rot` shape, and it is a change in what was measured.
+
+**2. The known-positive, `optbench/levelbench-bank-known-positive`.** `--check --mutate`
+rebuilds the 1ad3f1aa generation in memory — it renames one row onto a flag at rung 11,
+drifts one row's level, and deletes one shipped rung's row — and then requires `--check` to
+report **all three** shapes, not merely a nonzero count. If any shape goes unreported the
+tool prints `BLIND:` and exits **0**, so the cmake driver's mutated-arm assertion fires.
+Verified by pointing the driver at a stub that always exits 0:
+
+```
+CMake Error at cmake/optlevel_bench_bank_mutate.cmake:19 (message):
+  optbench/levelbench-bank-known-positive: the table was put back to a
+  generation stale -- a row naming a flag no longer at levels 1-3, a row
+  whose level drifted off what src/mccopt.h ships, and a shipped rung with no
+  row at all, which is the shape 32 of the old 47 rows had and the shape that
+  made narrow/tree-copy-prop's stale rows get read as unmeasured -- and
+  --check still passed, so it is comparing nothing
+```
+
+And verified against a **real** tree change rather than a stub: moving `trunc32` from
+`MCC_OPTD_LEVEL(1)` to `(2)` in `src/mccopt.h` (reverted) turns `optbench/levelbench-bank`
+red with `FAIL trunc32: the table says level 1, src/mccopt.h ships it at level 2. The row was
+measured against a ladder that no longer exists`, and turns the known-positive red on its
+*clean* arm with "the unmutated check is already failing, so this cell cannot say anything" —
+which is the two-sided guarantee behaving as designed.
+
+**3. The two cheapest remaining registrations.** Both were named last round as
+number-producers with no cell. Both now have one and a known-positive, and both grew a
+77 path so a host that cannot run them says so instead of failing for the wrong reason.
+
+| cell | subject | known-positive |
+| --- | --- | --- |
+| `opt-determinism` | 4 runs of `src/mcc.c` at `-O3`, byte-identical objects. Takes its `-D`/`-I` set from `compile_commands.json` via a new `--from-build`, the same idiom `opt-cache-determinism.py` already uses, so the subject is the program the build compiles and not a guessed approximation | `--mutate` compiles run 0 at `-O0` and the rest at `-O3`, so the objects genuinely differ and the tool must say so. A determinism gate that passes over objects that differ is comparing a file against itself, and its `OK` line is the strongest-looking vacuous pass in the tree |
+| `untyped-probe` | `unknown`/`knownvoid` shares at `-O0..-O3` over the self-compile — the denominator the equivalence-oracle work has to drive to zero | `PROBE_ENV=MCC_RIR_PROD=0` stops the compiler emitting the `[rir-untyped]` record the probe reads, so `nodes=0`. The probe's existing zero-subject guard must fire; if it exits 0 the driver fails |
+
+Both known-positives were proved to fire the same way, by pointing their driver at a stub
+that always exits 0:
+
+```
+CMake Error at cmake/opt_determinism_mutate.cmake:22 (message):
+  opt-determinism-known-positive: run 0 was compiled at -O0 and the rest at
+  -O3, so the objects genuinely differ, and the tool still reported every run
+  byte-identical. ...
+
+CMake Error at cmake/untyped_probe_known_positive.cmake:20 (message):
+  untyped-probe-known-positive: MCC_RIR_PROD=0 stops the compiler emitting
+  the [rir-untyped] record the probe reads, so nodes=0 and every share has an
+  empty denominator -- and the probe still exited 0. ...
+```
+
+`untyped-probe.py` also stopped tracebacking on a missing `compile_commands.json`, a missing
+`mcc` or a `compile_commands.json` with no `mcc.c` record — all three are now 77 with the
+reason, because reconstructing the flag set is the whole point of reading that file and a
+guessed one would census a different program.
+
+Manifest rows: `optbench/levelbench-bank` and its known-positive are **`must-run`** (python3
+and the source tree, nothing else). `opt-determinism` and `untyped-probe` and theirs are
+**`registered`** — each has an `mcc_skip_test` arm for emulated and cross builds, which is
+why `cmake-cross` and `cmake-debug` both register 9149 rather than diverging.
 
 #### LOST SUBJECT — `opt-cache-determinism` has been passing over an empty cache
 
@@ -1284,13 +1440,15 @@ would be false on every normal build.
 3. **`tools/o0_ab.sh`'s gated half stays frozen** until filed item 17 (`ast_env_gate`) is
    closed. Thirteen banked files are unreachable; `ast/o0-baseline` does not cover them and
    does not pretend to.
-4. **The remaining not-a-cell tools.** `tools/opt-determinism.py`, `tools/untyped-probe.py`,
-   `tools/xsuite-report.py`, `tools/gate-ledger.sh`, `tools/strategy-ledger.sh` and
-   `tools/c2_sweep.sh` all publish or feed a board figure and are registered nowhere. The
-   last three are additionally blocked on filed item 17. `opt-determinism.py` and
-   `untyped-probe.py` are the two cheapest remaining registrations in the tree — both are
-   pure-CPU, both already refuse their degenerate inputs after the last sweep, and neither
-   needs a bank invented for it.
+4. **The remaining not-a-cell tools.** ~~`tools/opt-determinism.py`,
+   `tools/untyped-probe.py`,~~ `tools/xsuite-report.py`, `tools/gate-ledger.sh`,
+   `tools/strategy-ledger.sh` and `tools/c2_sweep.sh` all publish or feed a board figure and
+   are registered nowhere. The last three are additionally blocked on filed item 17.
+   ~~`opt-determinism.py` and `untyped-probe.py` are the two cheapest remaining
+   registrations in the tree — both are pure-CPU, both already refuse their degenerate
+   inputs after the last sweep, and neither needs a bank invented for it.~~ **Both LANDED
+   2026-08-09 (`wt/gatefin`)**, each with a known-positive; see the audit section. Four
+   tools left on this item, all of them blocked on something other than cheapness.
 
 ### 1. S5′ — the iteration distribution, and the measurement that prices every row below
 
@@ -2608,7 +2766,7 @@ the top because three of them are the only rows here in a currency that converts
 | row | size, and the tool that produced it | currency |
 | --- | --- | --- |
 | `ast_loop_interchange_legal` / `ast_dep_fusion_pair_illegal` call `ast_dep_base_distinct` with **no `indirect` guard** | **UNMEASURED, and it is the top of the board.** Verified 2026-08-09: the guarded call is `src/mccast.c:13949` (census only), the unguarded ones are `:13516` and `:13566`. `-floop-interchange`, `-floop-fusion` and `-floop-block` are `MCC_OPTD_LEVEL(12)` (`src/mccopt.h:109-111`), bound at `src/mccast.c:2384-2386`, run from `ast_func_end` at `:18586-18590` into a *mutating* apply. `ast_tile_run` reuses the interchange predicate. The measurement is a fuzz corpus of `p[i]`/`q[i]` nests at `-O12` | **correctness** |
-| `tests/optfire/levelbench.tsv` is stale by a generation and has no `--check` | **RE-MEASURED 2026-08-09 (`wt/ladder2`); three of the four defects closed, the `--check` arm still missing.** The banked table is now a fresh 16-row run matching `src/mccopt.h`'s 16 `LEVEL(1..3)` rows, with `gain_movers_pct`/`eff_movers` beside the diluted columns and a signed efficiency (`inline-functions`, `gain_movers` −1.96, fell from rank 4 to rank 9). **Nothing stops it going stale again** — CMake still writes to the build dir and never compares. See hazard 2 | **census trust** |
+| ~~`tests/optfire/levelbench.tsv` is stale by a generation and has no `--check`~~ | **CLOSED 2026-08-09 (`wt/ladder2` then `wt/gatefin`).** `wt/ladder2` re-measured it: the banked table is a fresh 16-row run matching `src/mccopt.h`'s 16 `LEVEL(1..3)` rows, with `gain_movers_pct`/`eff_movers` beside the diluted columns and a signed efficiency (`inline-functions`, `gain_movers` −1.96, fell from rank 4 to rank 9). `wt/gatefin` closed the fourth defect **in both its halves**: `--check` exists with `optbench/levelbench-bank` + a known-positive, and the `optlevel-bench` cell now compares its build-dir TSV back to `tests/optfire/`. See the audit section | **census trust** |
 | the ~17× dilution of `gain_pct` (filed, not fixed, on `wt/benchtrap`) | **CLOSED 2026-08-09 by re-running the bench.** Measured dilution up to **17.4×** (`builtin-math-prepass` 0.3007 all-kernel vs **5.2372** over its one mover). `trunc32` moves 17/17 and its two gain columns agree to the digit, which is the control. It also **flipped a bucket** — `builtin-copysign`'s real **1.0076%** win read 0.0590% and was filed `cost-no-gain`, the bucket asserting no gain was found | **census trust** |
 | `narrow` / `tree-copy-prop` "ranked on nothing" | **THE PREMISE WAS FALSE, and the measurement was taken anyway.** Both were already priced on the self-host axis in `levelpins.txt:196,227`; the `n/a` in `levelbench.tsv` was a **stale row for a flag that table no longer sweeps** (levels 10 and 11 against a `<= 3` filter). Re-taken n=25 paired: `narrow` +0.876% stage-1 for −0.0088% stage-2 (**100:1 against**, 25/25 reps), `tree-copy-prop` +0.799% for −0.0048% (**166:1**, 24/25). `rir-coverage` clear for both. **Levels unchanged** | emitted code |
 | float in the slice engine and the SPIR-V emitter | **UNMEASURED and unpriced, and it is the measurement that would overturn the verdict.** `grep -c Float src/mccgpu.{h,c} src/mccslice.h` = 0/0/0; `is_float` is refused at 5 sites in `mccslice.h` and 6 in `mccgpu.h`. It costs `OpTypeFloat`, the F-opcodes, conversions, a bit-exact CPU reference and a differential that is stable under rounding | device-executable lanes |

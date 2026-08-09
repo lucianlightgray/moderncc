@@ -75,9 +75,26 @@ Usage:
   tools/optlevel-bench.py --mcc PATH [--cc PATH] [--jobs N] [--reads N]
                           [--base-level 3] [--out tests/optfire/levelbench.tsv]
                           [--json PATH] [--only a,b,c] [--kernels-only]
+  tools/optlevel-bench.py --check [--bank TSV] [--mccopt src/mccopt.h]
+                          [--fresh TSV] [--tolerance F] [--tolerance-floor F]
 
-Exit status: 0 all good, 1 an output mismatch or a build failure, 77 skip (no
-perf counter, or no reference compiler).
+THE BANK GATE, --check. Without it nothing compared tests/optfire/levelbench.tsv
+to anything: the table went a generation with 32 of its 47 rows naming flags
+src/mccopt.h no longer put at levels 1-3, and those rows were then read as
+prices on the shipped ladder -- narrow and tree-copy-prop's stale rows were read
+as UNMEASURED, which is the mirror of the null-row-as-measured-zero defect the
+null-subject rule above exists to stop. CMake was the other half of the same
+gap: it wrote the fresh table to the build dir and never compared it back.
+
+--check alone needs neither perf nor a compiler and gates the LADDER: a row for
+a flag no longer at levels 1-3, a row whose level drifted, and a shipped rung
+with no row at all. The third is the one that reads as a zero. Given --fresh (or
+--mcc, which makes --out the fresh table) it also gates the VALUES; see
+check_values for which columns carry a tolerance and which cannot.
+--check --mutate is the known-positive and must fail.
+
+Exit status: 0 all good, 1 an output mismatch, a build failure or a --check
+violation, 77 skip (no perf counter, or no reference compiler).
 """
 import argparse, concurrent.futures, hashlib, json, os, re, shutil
 import subprocess, sys, tempfile
@@ -699,6 +716,215 @@ def selfcheck():
     return 1 if bad else 0
 
 
+BANK = os.path.join(ROOT, "tests", "optfire", "levelbench.tsv")
+MCCOPT = os.path.join(ROOT, "src", "mccopt.h")
+
+TOL_REL = 0.10
+TOL_FLOOR = 0.05
+
+CHECK_EXACT = ["level", "bucket", "kernels_moved", "fires_corpus",
+               "corpus_total"]
+CHECK_NUMERIC = ["gain_movers_pct", "gain_pct", "cost_self_pct",
+                 "cost_corpus_pct"]
+
+
+def read_table(path):
+    hdr, rows = None, []
+    with open(path) as fh:
+        for line in fh:
+            if line.startswith("#") or not line.strip():
+                continue
+            f = line.rstrip("\n").split("\t")
+            if hdr is None:
+                hdr = f
+                continue
+            rows.append(dict(zip(hdr, f)))
+    return hdr, rows
+
+
+def check_ladder(rows, ladder, bank_path):
+    """Does every row of the banked table still describe the shipped ladder?
+
+    This is the half that needs neither perf nor a compiler, and it is the half
+    that was missing: the 1ad3f1aa-generation table went a whole generation
+    with 32 of its 47 rows naming flags src/mccopt.h no longer puts at levels
+    1-3, and those rows were then read as measurements of the shipped ladder.
+    A row for a retired flag and a missing row for a shipped one are the two
+    directions of the same defect, and the second one is the one that reads as
+    a zero: a rung nothing priced looks exactly like a rung that cost nothing.
+
+    Returns (class, message) pairs so the known-positive can assert that each
+    shape is actually reported and not merely that the count is non-zero."""
+    bad = []
+    lvl = dict(ladder)
+    banked = {r["flag"]: r for r in rows}
+    if not ladder:
+        bad.append(("no-ladder",
+                    "%s parsed 0 MCC_OPTD_LEVEL(1..3) rows, so this check "
+                    "would agree with any table at all" % MCCOPT))
+    if not rows:
+        bad.append(("no-bank",
+                    "%s parsed 0 data rows, so this check would agree with "
+                    "any ladder at all" % bank_path))
+    for r in rows:
+        f = r["flag"]
+        if f not in lvl:
+            bad.append(("off-ladder",
+                        "%s: the table carries a row at level %s, but "
+                        "src/mccopt.h no longer puts it at levels 1-3. The row "
+                        "is a generation stale and reads as a price on the "
+                        "shipped ladder" % (f, r.get("level"))))
+        elif r.get("level") != str(lvl[f]):
+            bad.append(("level-drift",
+                        "%s: the table says level %s, src/mccopt.h ships it at "
+                        "level %d. The row was measured against a ladder that "
+                        "no longer exists" % (f, r.get("level"), lvl[f])))
+    for f, l in ladder:
+        if f not in banked:
+            bad.append(("missing-row",
+                        "%s: src/mccopt.h ships it at level %d and the table "
+                        "has no row for it, so a shipped rung is priced by "
+                        "nothing. An absent row is not a measured zero" % (f, l)))
+    return bad
+
+
+def as_float(s):
+    if s in (NA, "-", "", None):
+        return None
+    if s == "inf":
+        return float("inf")
+    if s == "-inf":
+        return float("-inf")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def check_values(rows, fresh, bank_path, fresh_path, tol_rel, tol_floor):
+    """Does the banked table still say what a fresh run of it says?
+
+    The exact columns come first and carry no tolerance, because none of them
+    is a timing: level and bucket are decisions, and kernels_moved,
+    fires_corpus and corpus_total are counts of objects whose sha256 changed.
+    A move in any of those is a change in WHAT was measured, and no tolerance
+    on a gain column can express it. The numeric columns are compared against
+    max(tol_floor, tol_rel * |banked|). The floor is 100x the self noise and 80x
+    the corpus noise the table's own header reports (0.0005% and 0.0006%, the
+    base configuration measured twice), so it cannot be met by counter jitter;
+    the relative band is what one host's instruction counts may differ from
+    another's without the ranking changing."""
+    bad = []
+    fr = {r["flag"]: r for r in fresh}
+    banked = {r["flag"]: r for r in rows}
+    if not fresh:
+        bad.append(("no-fresh",
+                    "%s parsed 0 data rows; a fresh run that measured nothing "
+                    "agrees with every bank" % fresh_path))
+    for r in rows:
+        f = r["flag"]
+        n = fr.get(f)
+        if n is None:
+            bad.append(("lost-row",
+                        "%s: banked in %s, and the fresh run produced no row "
+                        "for it" % (f, bank_path)))
+            continue
+        for c in CHECK_EXACT:
+            if r.get(c) != n.get(c):
+                bad.append(("moved-" + c,
+                            "%s %s: banked %s, fresh run %s. This column is a "
+                            "decision or a count of changed objects, not a "
+                            "timing, so there is no tolerance under which the "
+                            "two are the same reading"
+                            % (f, c, r.get(c), n.get(c))))
+        for c in CHECK_NUMERIC:
+            a, b = r.get(c), n.get(c)
+            if a == b:
+                continue
+            av, bv = as_float(a), as_float(b)
+            if (av is None) != (bv is None):
+                bad.append(("subject-" + c,
+                            "%s %s: banked %s, fresh run %s. One of the two "
+                            "has a kernel subject and the other does not, "
+                            "which is a change in what was measured"
+                            % (f, c, a, b)))
+                continue
+            if av is None:
+                continue
+            tol = max(tol_floor, tol_rel * abs(av))
+            if abs(bv - av) > tol:
+                bad.append(("drift-" + c,
+                            "%s %s: banked %.4f, fresh run %.4f, delta %.4f "
+                            "over a tolerance of %.4f. Re-bank it or explain "
+                            "it; do not widen the tolerance"
+                            % (f, c, av, bv, bv - av, tol)))
+    for f in fr:
+        if f not in banked:
+            bad.append(("unbanked-row",
+                        "%s: the fresh run measured it and %s has no row for "
+                        "it" % (f, bank_path)))
+    return bad
+
+
+def mutate_bank(rows, mccopt_path):
+    """Put the 1ad3f1aa-generation table back, in memory.
+
+    Three corruptions, one per shape check_ladder claims to catch: a row
+    renamed onto a flag that sits above level 3 (the shape 32 of the old 47
+    rows had), a row whose level drifted off what src/mccopt.h ships, and a
+    shipped rung with no row at all."""
+    out = [dict(r) for r in rows]
+    if len(out) < 3:
+        return out
+    txt = open(mccopt_path).read()
+    high = re.findall(r'MCC_OPT_ROW\(\s*\w+,\s*"([^"]+)",\s*'
+                      r'MCC_OPTD_LEVEL\((\d+)\)\s*\)', txt)
+    off = [n for n, l in high if int(l) > 3]
+    out[0]["level"] = str(1 + int(out[0]["level"]) % 3)
+    out[-1]["flag"] = off[0] if off else "__retired-flag__"
+    del out[len(out) // 2]
+    return out
+
+
+def run_check(args):
+    ladder = flag_table(args.mccopt)
+    _, rows = read_table(args.bank)
+    if args.mutate:
+        bad = check_ladder(mutate_bank(rows, args.mccopt), ladder, args.bank)
+        for cls, m in bad:
+            print("FAIL " + m)
+        seen = {c for c, _ in bad}
+        want = {"off-ladder", "level-drift", "missing-row"}
+        blind = want - seen
+        if blind:
+            print("optlevel-bench check --mutate: the table was put back to a "
+                  "generation stale and --check did not report %s, so it is "
+                  "comparing nothing" % ", ".join(sorted(blind)))
+            return 0
+        print("optlevel-bench check --mutate: %d violation(s), all three stale "
+              "shapes reported (%s)" % (len(bad), ", ".join(sorted(want))))
+        return 1
+
+    bad = check_ladder(rows, ladder, args.bank)
+    if args.fresh:
+        _, fresh = read_table(args.fresh)
+        bad += check_values(rows, fresh, args.bank, args.fresh,
+                            args.tolerance, args.tolerance_floor)
+    for cls, m in bad:
+        print("FAIL " + m)
+    print("optlevel-bench check: %d ladder row(s) in %s, %d table row(s) in "
+          "%s, %s, %d violation(s)"
+          % (len(ladder), os.path.basename(args.mccopt), len(rows),
+             os.path.basename(args.bank),
+             ("values compared against %s at rel %.2f floor %.2f"
+              % (os.path.basename(args.fresh), args.tolerance,
+                 args.tolerance_floor)) if args.fresh
+             else "LEVELS ONLY -- no fresh run was given, so no number in the "
+                  "table was compared against anything",
+             len(bad)))
+    return 1 if bad else 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--selfcheck", action="store_true",
@@ -707,7 +933,24 @@ def main():
     ap.add_argument("--mutate", action="store_true",
                     help="with --selfcheck, put back the behaviour that "
                          "reported a geomean over unchanged binaries as a "
-                         "number; the selfcheck must then fail")
+                         "number; with --check, put back a generation-stale "
+                         "table. Either way the arm it modifies must fail")
+    ap.add_argument("--check", action="store_true",
+                    help="gate the banked tests/optfire/levelbench.tsv against "
+                         "src/mccopt.h, and -- if --fresh or --mcc gives it a "
+                         "fresh run -- against that run's numbers")
+    ap.add_argument("--bank", default=BANK,
+                    help="the committed table --check gates")
+    ap.add_argument("--mccopt", default=MCCOPT,
+                    help="the header --check reads the shipped ladder from")
+    ap.add_argument("--fresh", default=None,
+                    help="a TSV from a fresh run to compare the bank against; "
+                         "with --mcc and --check this defaults to --out")
+    ap.add_argument("--tolerance", type=float, default=TOL_REL,
+                    help="relative band on the gain/cost columns")
+    ap.add_argument("--tolerance-floor", type=float, default=TOL_FLOOR,
+                    help="absolute band in percentage points, for columns whose "
+                         "banked value is near zero")
     ap.add_argument("--mcc")
     ap.add_argument("--cc", default=None)
     ap.add_argument("--builddir", default=None)
@@ -732,8 +975,10 @@ def main():
         global MUTATE
         MUTATE = args.mutate
         return selfcheck()
+    if args.check and not args.mcc:
+        return run_check(args)
     if not args.mcc:
-        ap.error("--mcc is required unless --selfcheck is given")
+        ap.error("--mcc is required unless --selfcheck or --check is given")
 
     if not shutil.which("perf"):
         print("no perf; skipping")
@@ -868,6 +1113,17 @@ def main():
             json.dump({"base": base, "noise": noise, "rows": rows,
                        "floor": floor}, fh, indent=1, sort_keys=True)
         print("wrote %s" % args.json)
+
+    if args.check:
+        if os.path.abspath(args.out) == os.path.abspath(args.bank):
+            print("FAIL --check was asked to compare %s against itself; the "
+                  "fresh run overwrote the bank, so there is nothing left to "
+                  "disagree with it" % args.bank)
+            return 1
+        args.fresh = args.fresh or args.out
+        rc = run_check(args)
+        if rc:
+            return rc
 
     errs = [r for r in rows if r["bucket"] == "error"]
     for r in errs:
