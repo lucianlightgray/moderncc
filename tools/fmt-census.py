@@ -11,10 +11,20 @@ for the libc phase.
   tools/fmt-census.py path/to/*.c
 
 fmt_compile below is a port of mcc_fmt_compile in src/mccfmt.h, including its
-cost model. It is a second implementation and nothing gates the two against
-each other automatically: slicerun's fmt_refusals pins the C side on the same
-list of format spellings this port is checked against, and both lists have to
-be edited together.
+cost model. It is a second implementation, so it is gated:
+
+  tools/fmt-census.py --selfcheck --oracle=<path-to-slicerun>
+
+runs every corpus format plus a generated set through `slicerun --fmt-verdict`,
+which calls the real mcc_fmt_compile, and fails on the first disagreement. The
+ctest cell fmt/census-oracle runs exactly that, and fmt/census-oracle-known-
+positive proves the check can fail. Pass --oracle without --selfcheck to have
+the census report the compiler's own verdicts rather than the port's.
+
+The port drifted once already: it appended one item per literal byte instead of
+merging runs the way mcc_fmt_lit does, so any format with more than 24 leading
+literal characters was reported "module budget" when the compiler accepted it.
+That cost the board two sites (140/162 reported, 142/162 real).
 
 The block census, which is what the board's "+N blocks" figures mean, needs an
 arena dump rather than source text:
@@ -27,7 +37,9 @@ import collections
 import glob
 import json
 import os
+import random
 import re
+import subprocess
 import sys
 
 FUNCS = ("fprintf", "snprintf", "vsnprintf", "sprintf", "vfprintf", "printf",
@@ -40,25 +52,49 @@ T1 = {"d", "i", "u", "x", "X", "c"}
 BLOCKED_PTR = {"s", "p"}
 OUT_FLOAT = {"e", "E", "f", "F", "g", "G", "a", "A"}
 
-MAXITEM, MAXARG, MAXW, MAXSTR = 24, 8, 32, 28
-C_BASE, C_BYTE, C_DEC, C_HEX = 820, 152, 6900, 4700
+MAXITEM, MAXARG, MAXW, MAXSTR, MAXLIT = 24, 8, 32, 28, 192
+C_BASE, C_BYTE, C_HEX = 820, 152, 4700
+C_DEC, C_DEC32, C_HEX32 = 6900, 2400, 1750
 C_SFIX, C_SBYTE, C_SDYN, MAXCOST = 130, 229, 14, 16384
 
 OK, R_PTR, R_FLOAT, R_SPEC, R_ROOM = 0, 1, 2, 3, 4
 WHY = {OK: "ok", R_PTR: "%p", R_FLOAT: "float", R_SPEC: "flag/width/conv",
        R_ROOM: "module budget"}
 
+MUTATE = [0]
+
 
 def fmt_compile(f):
     """Returns (verdict, cost). Verdict 0 is accepted."""
-    items, narg, i, n = [], 0, 0, len(f)
+    items, narg, nlit, i, n = [], 0, 0, 0, len(f)
+
+    def lit():
+        nonlocal nlit
+        if nlit >= MAXLIT:
+            return False
+        if items and items[-1][0] == "L" and not MUTATE[0]:
+            items[-1][1] += 1
+            nlit += 1
+            return True
+        if len(items) >= MAXITEM:
+            return False
+        items.append(["L", 1])
+        nlit += 1
+        return True
+
     while i < n:
         if f[i] != "%":
-            items.append(("L", 1)); i += 1; continue
+            i += 1
+            if not lit():
+                return R_ROOM, 0
+            continue
         i += 1
         if i < n and f[i] == "%":
-            items.append(("L", 1)); i += 1; continue
-        w = zero = base = sgn = left = lmod = 0
+            i += 1
+            if not lit():
+                return R_ROOM, 0
+            continue
+        w = zero = base = sgn = wide = left = lmod = 0
         kind, pend, prc = "I", OK, -1
         while i < n:
             if f[i] == "-":
@@ -84,9 +120,11 @@ def fmt_compile(f):
                 while i < n and f[i].isdigit():
                     prc = min(prc * 10 + int(f[i]), MAXSTR); i += 1
         if f[i:i + 2] in ("hh", "ll"):
-            lmod = 1; i += 2
-        elif f[i:i + 1] in ("h", "l", "z", "t", "j"):
+            lmod = 1; wide = 1 if f[i] == "l" else 0; i += 2
+        elif f[i:i + 1] == "h":
             lmod = 1; i += 1
+        elif f[i:i + 1] in ("l", "z", "t", "j"):
+            lmod = wide = 1; i += 1
         elif f[i:i + 1] == "L":
             return R_FLOAT, 0
         if i >= n:
@@ -117,10 +155,12 @@ def fmt_compile(f):
         if pend:
             return R_SPEC, 0
         if prc == -2:
-            items.append(("P", 0)); narg += 1
-        items.append((kind, base, w, prc)); narg += 1
-        if narg > MAXARG or len(items) > MAXITEM:
+            if len(items) >= MAXITEM or narg >= MAXARG:
+                return R_ROOM, 0
+            items.append(["P", 0]); narg += 1
+        if len(items) >= MAXITEM or narg >= MAXARG:
             return R_ROOM, 0
+        items.append([kind, base, w, prc, wide]); narg += 1
     cost = C_BASE
     for it in items:
         if it[0] == "L":
@@ -133,11 +173,106 @@ def fmt_compile(f):
             nb = it[3] if 0 <= it[3] < MAXSTR else MAXSTR
             cost += C_SFIX + nb * (C_SBYTE + (C_SDYN if it[3] == -2 else 0)) \
                 + it[2] * C_BYTE
+        elif it[1] == 10:
+            cost += (C_DEC if it[4] else C_DEC32) + it[2] * C_BYTE
         else:
-            cost += (C_DEC if it[1] == 10 else C_HEX) + it[2] * C_BYTE
+            cost += (C_HEX if it[4] else C_HEX32) + it[2] * C_BYTE
     if cost > MAXCOST:
         return R_ROOM, cost
     return OK, cost
+
+
+ESC = {"n": "\n", "t": "\t", "r": "\r", "a": "\a", "b": "\b", "f": "\f",
+       "v": "\v", "e": "\x1b", "\\": "\\", '"': '"', "'": "'", "?": "?"}
+
+
+def unescape(s):
+    """Decode the C escapes in a string literal's text. The compiler sees the
+    decoded bytes, so costing "\\n" as two literal bytes overcharges the site."""
+    out, i, n = [], 0, len(s)
+    while i < n:
+        c = s[i]
+        if c != "\\" or i + 1 >= n:
+            out.append(c); i += 1; continue
+        d = s[i + 1]
+        if d in ESC:
+            out.append(ESC[d]); i += 2; continue
+        if d == "x":
+            j = i + 2
+            while j < n and s[j] in "0123456789abcdefABCDEF":
+                j += 1
+            if j > i + 2:
+                out.append(chr(int(s[i + 2:j], 16) & 0xFF)); i = j; continue
+            out.append(d); i += 2; continue
+        if d in "01234567":
+            j, v = i + 1, 0
+            while j < n and j < i + 4 and s[j] in "01234567":
+                v = v * 8 + int(s[j]); j += 1
+            out.append(chr(v & 0xFF)); i = j; continue
+        out.append(d); i += 2
+    return "".join(out)
+
+
+def oracle_verdicts(path, fmts):
+    """Ask the compiler itself. Returns [(verdict, cost, nitem, narg)]."""
+    inp = "".join(f.encode("latin-1", "replace").hex() + "\n" for f in fmts)
+    r = subprocess.run([path, "--fmt-verdict"], input=inp, capture_output=True,
+                       text=True)
+    if r.returncode != 0:
+        sys.stderr.write(r.stderr)
+        raise SystemExit("oracle %s failed rc=%d" % (path, r.returncode))
+    rows = [tuple(int(x) for x in l.split()) for l in r.stdout.splitlines()]
+    if len(rows) != len(fmts):
+        raise SystemExit("oracle returned %d rows for %d formats" %
+                         (len(rows), len(fmts)))
+    return rows
+
+
+GEN_LIT = "abcdefg ,:.=/[]()<>-_\n\t"
+GEN_CONV = ("%d", "%u", "%s", "%c", "%x", "%X", "%lld", "%llu", "%llx", "%lu",
+            "%zu", "%ld", "%.*s", "%02x", "%08x", "%016llx", "%-8s", "%6s",
+            "%.5s", "%%", "%2d", "%-10d", "%p", "%f", "%.17g", "%o", "%n",
+            "%+d", "%#x", "%*d", "%40s", "%hhd", "%hd", "%33d", "%.3d")
+
+
+def generated(n=40000):
+    """A deterministic corpus that walks the item, argument, literal-run and
+    budget limits, which is where the port drifted before."""
+    rnd = random.Random(20260808)
+    out = ["", "%", "%%", "%l", "%.", "%.*", "%1", "%-", "%hh"]
+    for k in (1, 23, 24, 25, 191, 192, 193, 200):
+        out.append("a" * k)
+        out.append("a" * k + "%d")
+        out.append("%d" + "a" * k)
+    for _ in range(n):
+        parts = []
+        for _ in range(rnd.randint(0, 40)):
+            if rnd.random() < 0.7:
+                parts.append(rnd.choice(GEN_LIT))
+            else:
+                parts.append(rnd.choice(GEN_CONV))
+        out.append("".join(parts))
+    return out
+
+
+def selfcheck(oracle, paths):
+    fmts = [f for _, f, _, _ in call_sites(paths) if f is not None]
+    fmts = [f for f in fmts + generated() if "\0" not in f]
+    rows = oracle_verdicts(oracle, fmts)
+    bad = 0
+    for f, (v, cost, nitem, narg) in zip(fmts, rows):
+        pv, pc = fmt_compile(f)
+        if pv != v or (v == OK and pc != cost):
+            bad += 1
+            if bad <= 20:
+                print("DRIFT port=(%s,%d) mcc_fmt_compile=(%s,%d) %r" %
+                      (WHY[pv], pc, WHY[v], cost, f))
+    print("fmt-census selfcheck: %d formats, %d disagreements" %
+          (len(fmts), bad))
+    if not fmts or len(fmts) < 1000:
+        print("FAIL: the selfcheck corpus is too small to mean anything")
+        return 1
+    return 1 if bad else 0
 
 
 def strip(src):
@@ -213,7 +348,32 @@ PIECE = re.compile(r'"((?:[^"\\]|\\.)*)"')
 def literal(a):
     if not LIT.match(a):
         return None
-    return "".join(PIECE.findall(a))
+    return unescape("".join(PIECE.findall(a)))
+
+
+CALL = re.compile(r"\b(" + "|".join(FUNCS) + r")\s*\(")
+
+
+def call_sites(paths):
+    """Yields (func, decoded-format-or-None, path, preceding-40-chars)."""
+    for p in paths:
+        try:
+            with open(p, "r", errors="replace") as f:
+                src = f.read()
+        except OSError:
+            continue
+        src = strip(src)
+        for m in CALL.finditer(src):
+            fn = m.group(1)
+            if m.start() and (src[m.start() - 1].isalnum() or
+                              src[m.start() - 1] == "_"):
+                continue
+            al, end = args(src, m.end() - 1)
+            if al is None:
+                continue
+            fi = fmt_index(fn)
+            f = literal(al[fi]) if fi < len(al) else None
+            yield fn, f, p, src[max(0, m.start() - 40):m.start()]
 
 
 def fmt_index(fn):
@@ -311,6 +471,12 @@ def arena_blocks(path):
 
 def main(argv):
     as_json = "--json" in argv
+    oracle = None
+    for a in argv:
+        if a.startswith("--oracle="):
+            oracle = a.split("=", 1)[1]
+        elif a == "--mutate":
+            MUTATE[0] = 1
     for a in argv:
         if a.startswith("--arenas="):
             na, tot, per = arena_blocks(a.split("=", 1)[1])
@@ -327,7 +493,15 @@ def main(argv):
     paths = [a for a in argv if not a.startswith("--")]
     if not paths:
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for a in argv:
+            if a.startswith("--root="):
+                root = a.split("=", 1)[1]
         paths = sorted(glob.glob(os.path.join(root, "src", "*.c")))
+
+    if "--selfcheck" in argv:
+        if not oracle:
+            raise SystemExit("--selfcheck needs --oracle=<path-to-slicerun>")
+        return selfcheck(oracle, paths)
 
     sites = collections.Counter()
     lit_sites = collections.Counter()
@@ -340,71 +514,62 @@ def main(argv):
     refused = []
     maxcost = [0]
 
-    call = re.compile(r"\b(" + "|".join(FUNCS) + r")\s*\(")
-    for p in paths:
-        try:
-            with open(p, "r", errors="replace") as f:
-                src = f.read()
-        except OSError:
-            continue
-        src = strip(src)
+    found = list(call_sites(paths))
+    sn = [(f, p) for fn, f, p, _ in found if fn == "snprintf" and f is not None]
+    if oracle:
+        rows = oracle_verdicts(oracle, [f for f, _ in sn])
+        oracled = {i: (rows[i][0], rows[i][1]) for i in range(len(rows))}
+    else:
+        oracled = None
+    sni = 0
+    for fn, f, p, pre in found:
         tu.add(p)
-        for m in call.finditer(src):
-            fn = m.group(1)
-            if m.start() and (src[m.start() - 1].isalnum() or
-                              src[m.start() - 1] == "_"):
+        sites[fn] += 1
+        if f is None:
+            continue
+        lit_sites[fn] += 1
+        used = not re.search(r"[;{}\)]\s*$|^\s*$", pre) or \
+            bool(re.search(r"(\+=|=|<|>|\breturn\b|\bif\b|\bwhile\b)\s*$",
+                           pre.rstrip()))
+        if used:
+            ret_used[fn] += 1
+        site_kinds = set()
+        for sm in SPEC.finditer(f):
+            conv = sm.group(1)
+            if conv == "%":
                 continue
-            al, end = args(src, m.end() - 1)
-            if al is None:
-                continue
-            sites[fn] += 1
-            fi = fmt_index(fn)
-            f = literal(al[fi]) if fi < len(al) else None
-            if f is None:
-                continue
-            lit_sites[fn] += 1
-            pre = src[max(0, m.start() - 40):m.start()]
-            used = not re.search(r"[;{}\)]\s*$|^\s*$", pre) or \
-                bool(re.search(r"(\+=|=|<|>|\breturn\b|\bif\b|\bwhile\b)\s*$",
-                               pre.rstrip()))
-            if used:
-                ret_used[fn] += 1
-            site_kinds = set()
-            for sm in SPEC.finditer(f):
-                conv = sm.group(1)
-                if conv == "%":
-                    continue
-                body = sm.group(0)[1:-1]
-                length = ""
-                for L in ("hh", "ll", "h", "l", "j", "z", "t", "L"):
-                    if body.endswith(L):
-                        length = L
-                        body = body[:-len(L)]
-                        break
-                if fn == "snprintf":
-                    specs[length + conv] += 1
-                    if body:
-                        flagged[sm.group(0)] += 1
-                    site_kinds.add(conv)
+            body = sm.group(0)[1:-1]
+            length = ""
+            for L in ("hh", "ll", "h", "l", "j", "z", "t", "L"):
+                if body.endswith(L):
+                    length = L
+                    body = body[:-len(L)]
+                    break
             if fn == "snprintf":
-                if not site_kinds:
-                    sn_class["literal-only"] += 1
-                elif site_kinds & BLOCKED_PTR:
-                    sn_class["blocked-on-pointer"] += 1
-                elif site_kinds & OUT_FLOAT:
-                    sn_class["float-out-of-scope"] += 1
-                elif site_kinds <= T1:
-                    sn_class["tranche1"] += 1
-                else:
-                    sn_class["other"] += 1
-                v, cost = fmt_compile(f)
-                verdict[WHY[v]] += 1
-                if v == OK:
-                    maxcost[0] = max(maxcost[0], cost)
-                    if "s" in site_kinds:
-                        verdict["  of which carry a %s"] += 1
-                else:
-                    refused.append((WHY[v], f, p))
+                specs[length + conv] += 1
+                if body:
+                    flagged[sm.group(0)] += 1
+                site_kinds.add(conv)
+        if fn == "snprintf":
+            if not site_kinds:
+                sn_class["literal-only"] += 1
+            elif site_kinds & BLOCKED_PTR:
+                sn_class["blocked-on-pointer"] += 1
+            elif site_kinds & OUT_FLOAT:
+                sn_class["float-out-of-scope"] += 1
+            elif site_kinds <= T1:
+                sn_class["tranche1"] += 1
+            else:
+                sn_class["other"] += 1
+            v, cost = oracled[sni] if oracled else fmt_compile(f)
+            sni += 1
+            verdict[WHY[v]] += 1
+            if v == OK:
+                maxcost[0] = max(maxcost[0], cost)
+                if "s" in site_kinds:
+                    verdict["  of which carry a %s"] += 1
+            else:
+                refused.append((WHY[v], f, p))
 
     tot = sum(specs.values())
     rep = {
@@ -440,8 +605,8 @@ def main(argv):
         print("  %-20s %4d  %5.1f%%" % (k, c, 100.0 * c /
                                         max(lit_sites["snprintf"], 1)))
     ns = max(lit_sites["snprintf"], 1)
-    print("\nmcc_fmt_compile verdict, MCC_FMT_MAXSTR=%d, budget %d words:" %
-          (MAXSTR, MAXCOST))
+    print("\nmcc_fmt_compile verdict (%s), MCC_FMT_MAXSTR=%d, budget %d words:" %
+          ("oracle" if oracle else "port", MAXSTR, MAXCOST))
     for k, c in verdict.most_common():
         print("  %-24s %4d  %5.1f%%" % (k, c, 100.0 * c / ns))
     print("  largest accepted program: %d words" % maxcost[0])

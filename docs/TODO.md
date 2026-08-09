@@ -801,16 +801,37 @@ re-banked.
 
 ### 6. `snprintf` — `%s` has landed; what is left is the module budget, not the engine
 
-Rewritten 2026-08-08 (second time) after landing the `%s` arm on `wt/fmtstr`. Every
-number below is reproducible from `tools/fmt-census.py`, which now carries a
-line-for-line port of `mcc_fmt_compile` rather than a classification by conversion
-letter. Run it with no argument for the site census over `src/*.c`, `--refused` to list
-what it turns down and why, or `--arenas=<MCC_ARENA_DUMP output>` for the block census.
-**Open debt:** the port is a second implementation and nothing gates it against the C
-one. `fmt_refusals` in `tools/slicerun.c` pins the C verdict for the same 25 refused and
-12 accepted spellings the port is checked against, including four taken verbatim from the
-corpus, but the two lists are kept in step by hand. The next person to touch
-`mcc_fmt_compile` has to edit both, and `tools/fmt-census.py` is not a ctest cell.
+Rewritten 2026-08-09 on `wt/fmtbudget`. Every number below is reproducible from
+`tools/fmt-census.py`, and the numbers are now the compiler's own rather than a port's:
+
+```
+tools/fmt-census.py --oracle=cmake-debug/slicerun --refused
+```
+
+makes the census ask `slicerun --fmt-verdict`, which calls the real `mcc_fmt_compile`.
+Without `--oracle` it still answers from the Python port; the port is kept because it
+makes the tool runnable with no build, and it is now *gated* rather than trusted.
+
+**The port had drifted, and the 140/162 this row used to quote was wrong.** `fmt_compile`
+in `tools/fmt-census.py` appended one item per literal byte where `mcc_fmt_lit` merges a
+run into a single item, so any format with more than 24 leading literal characters tripped
+the port's `MCC_FMT_MAXITEM` check and was reported `module budget` while the compiler
+accepted it. Over the 984 printf-family literal formats in `src/*.c` the two disagreed at
+**61 formats**; restricted to the 162 `snprintf` sites it cost **two**, so the real
+pre-branch verdict was **142/162 (87.7%) with 15 budget refusals**, not 140/162 with 17.
+The port also charged `\n` and `\t` as two literal bytes each, because it never decoded C
+escapes; that one does not move the 162 but did overstate every affected cost. Both are
+fixed, and the *class* is closed rather than re-documented as debt:
+
+| cell | what it does |
+| --- | --- |
+| `fmt/census-oracle` | pushes the 984 corpus formats plus 40,033 generated ones through the port and through `mcc_fmt_compile` and fails on the first disagreement in verdict *or* cost. 41,017 formats, 0 disagreements, 0.9 s |
+| `fmt/census-oracle-known-positive` | puts the literal-run bug back with `--mutate` and requires the check to go red. 759 disagreements, so the cell is not comparing nothing |
+
+The generated corpus is deterministic and deliberately walks the limits the drift lived
+at: literal runs of 1/23/24/25/191/192/193/200 bytes with and without a trailing
+conversion, and random mixtures of every conversion spelling in the corpus including the
+refused ones.
 
 **The `(tag, value)` array is not needed and was not built.** 162 of 172 `snprintf` call
 sites in `src/*.c` carry a compile-time-constant format, so the format is parsed at *emit*
@@ -825,22 +846,26 @@ a second type enum.
 
 | | sites | share of 162 |
 | --- | ---: | ---: |
-| accepted by `mcc_fmt_compile` today | **140** | **86.4%** |
-| — of those, sites carrying at least one `%s` | 98 | 60.5% |
-| refused: the straight-line program exceeds the module budget | 17 | 10.5% |
+| accepted by `mcc_fmt_compile` today | **148** | **91.4%** |
+| — of those, sites carrying at least one `%s` | 100 | 61.7% |
+| refused: the straight-line program exceeds the module budget | 9 | 5.6% |
 | refused: flag, width or precision on a signed conversion | 4 | 2.5% |
 | refused: `%.17g` | 1 | 0.6% |
 | refused: `%p` | 0 | 0.0% |
+
+142 → 148 is the narrow-conversion path landed on this branch, below. 140 → 142 is the
+census bug above, not work.
 
 `MCC_FMT_R_PTR` fired at **109 sites before and 0 after**. `%p` is 0 of 162 `snprintf`
 sites — it appears only in `fprintf` — and it stays refused on purpose: glibc prints
 `(nil)` for a null pointer, so a device `%p` that printed `0x0` would be a silent
 wrong answer at the first integration, for zero corpus payoff. Of the 109 `%s` sites,
-**98 are enabled and 11 are not**: ten exceed the module budget (`%s%s-%s` ×2,
+**100 are enabled and 9 are not**: eight exceed the module budget (`%s%s-%s` ×2,
 `equiv rung=%s n=%d exact=%d inferred=%lu points=%lu`,
 `differ rung=%s smallest-width=%d n=%d a=%lld b=%s%lld`, two long diagnostic sentences
-in `mccgen.c`, `%smcc-me-%u-%u.c`, `%smcc-tmp-%u-%u.tmp`, `%s/kgc-%016llx-%u-%lu.z`,
-`arity %s n=%u nc=%u op=%d`) and one carries `%2d` (`%s %2d %d`).
+in `mccgen.c`, `%s/kgc-%016llx-%u-%lu.z`, `arity %s n=%u nc=%u op=%d`) and one carries
+`%2d` (`%s %2d %d`). `%smcc-me-%u-%u.c` and `%smcc-tmp-%u-%u.tmp` were on that list and
+are now accepted.
 
 **"52 of 162, 32.1%" was never the compiler's answer, and the correction is downward.**
 That figure came from classifying each site by the set of conversion letters it uses,
@@ -848,10 +873,10 @@ which ignores flags and ignores whether the program fits. Feeding the same 162 f
 through the tranche-1 `mcc_fmt_compile` gives **49 accepted (30.2%)** — three sites carry
 `%02d`/`%-10d`/`%2d` and were always refused — and applying the module budget that now
 exists knocks that to **42 (25.9%)**. So the honest before/after for this row is
-**42 → 140 sites**, and the gap between 52 and 49 is a defect in the old census, not a
+**42 → 148 sites**, and the gap between 52 and 49 is a defect in the old census, not a
 regression.
 
-Landed on `wt/fmt`, extended on `wt/fmtstr`:
+Landed on `wt/fmt`, extended on `wt/fmtstr`, budget work on `wt/fmtbudget`:
 
 | piece | where |
 | --- | --- |
@@ -859,7 +884,10 @@ Landed on `wt/fmt`, extended on `wt/fmtstr`:
 | cost model and the budget refusal | `mcc_fmt_cost` / `MCC_FMT_MAXCOST` |
 | CPU reference, hand-written over region bytes | `mcc_fmt_exec` / `mcc_fmt_int` / `mcc_fmt_str` / `mcc_fmt_putb` / `mcc_fmt_getb` |
 | device emitter, straight-line, no loop, no branch | `spv_fmt_emit` / `spv_fmt_int` / `spv_fmt_str` / `spv_fmt_putb` / `spv_fmt_getb` |
+| 32-bit path for conversions with no length modifier | the `!it->wide` arms of `mcc_fmt_int` and `spv_fmt_int`; `MCC_FMT_NDEC32` / `MCC_FMT_NHEX32` / `MCC_FMT_C_DEC32` / `MCC_FMT_C_HEX32` |
 | differential over every destination byte and the length | `suite_fmt`, `tools/slicerun.c`; cells `slice/fmt`, `slice/fmt-known-positive` |
+| the compiler answering the census directly | `slicerun --fmt-verdict`, hex in / verdict out; cells `fmt/census-oracle`, `fmt/census-oracle-known-positive` |
+| predicted-against-emitted words, printed by the cell | `slicerun fmt --fmt-cost-report` |
 
 Covered: `%d %i %u %x %X %c` with the `l`/`ll`/`z`/`t`/`j`/`h`/`hh` spellings, literal
 runs, `%%`, zero- or space-padded minimum width on the unsigned and hex conversions, and
@@ -883,11 +911,21 @@ argument, so `narg` still equals the number of arguments the call passes. Explic
 **A `%s` copies at most `MCC_FMT_MAXSTR - 1` = 27 bytes, and that is a budget decision.**
 Every byte of a string costs a load, a definedness-free range gate and an unconditional
 read-modify-write store: ~229 SPIR-V words, measured. `MCC_GPU_CODE_MAX` is 16,384 words
-on the SPIR-V arm and the tranche-1 conversions already spend 4,700 (`%x`) to 6,900
-(`%d`) of it, so the cap is what decides how many *sites* fit, not how long a string is
-worth copying. Measured site counts against the cap: 20 → 142, 24 → 140, **28 → 140**,
-30 → 133, 32 → 130. 28 is the knee — going to 32 costs ten sites, and going to 20 buys
-two (both `%s%s-%s`) for four fewer characters.
+on the SPIR-V arm and a wide conversion still spends 4,700 (`%llx`) to 6,900 (`%lld`) of
+it, so the cap is what decides how many *sites* fit, not how long a string is worth
+copying. Re-measured 2026-08-09 with the oracle and the narrow conversion path in place
+(the old 20 → 142 / 24 → 140 / 28 → 140 / 30 → 133 / 32 → 130 row was taken from the
+drifted port and against the old cost model):
+
+| `MCC_FMT_MAXSTR` | 16 | 20 | 24 | 26 | **28** | 30 | 32 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| sites accepted | 151 | 151 | 149 | 148 | **148** | 143 | 141 |
+
+28 is still the knee and the cliff is still just above it — 30 costs five sites and 32
+costs seven — but the shape below it changed: 20 now buys **three** sites (both
+`%s%s-%s` and `%s/kgc-%016llx-%u-%lu.z`) for eight fewer characters, where before it
+bought two. Left at 28 anyway: a shorter cap truncates real strings, which is the kind of
+approximation this row refuses everywhere else.
 
 **Unterminated strings, and pointers that are not in binding 2, both have a defined
 answer and the two executors reach it identically.** The scan is a fixed 28 iterations
@@ -926,14 +964,88 @@ site share now enabled gives roughly **213 of the 246 blocks**; that is an estim
 because the format string bytes live in rodata and never enter the arena, so the dump
 cannot classify a block by its format.
 
-**The next lever on this row is the literal run, not a conversion.** A literal byte costs
-152 words because it is one unconditional read-modify-write each, and the two longest
-refused sites are refused for that alone: the 85 literal bytes of `'%s' has internal
-linkage but is referenced in an inline function with external linkage` are 12,920 words
-before a single conversion. Seven of the seventeen budget refusals carry no `%s` at all.
-Storing a run four bytes at a time needs the destination offset's alignment, which is
-only known at emit time for a run that starts at position 0; that covers the leading run
-of most formats and is worth measuring before anything else here.
+**"The next lever is the literal run" was wrong, and the measurement is what says so.**
+The filed claim was that a literal byte costs 152 words, that seven of the seventeen
+budget refusals carry no `%s` at all, and that those are therefore "pure literal text"
+waiting on a packing scheme. Checked against the compiler: it is **five of fifteen** that
+carry no `%s`, and **none of the five is pure literal** — every one of them carries
+integer conversions, and two of them are over budget on those conversions alone. Splitting
+each of the 15 budget refusals into its fixed (conversion) cost and its literal-byte count:
+
+| | |
+| --- | ---: |
+| refusals whose conversions alone exceed 16,384 words, with zero literal bytes | **11 of 15** |
+| rescued by packing literals at 100 words/byte (a 1.5× win) | 2 |
+| rescued at 76 words/byte (2×) | 4 |
+| rescued at **0** words/byte — literals made entirely free | **4** |
+
+So a literal-packing scheme had a ceiling of 4 sites no matter how good it is, and to
+reach that ceiling it had to get a literal byte under 84 words. **Not implemented**: the
+binding constraint is the conversion, not the run. Three of those four were then taken by
+the narrow conversion path below, for free, so the lever's remaining reach is **one
+site**.
+
+**What was implemented is the narrow conversion path, and it is worth 6 sites.** The cost
+that dominates is `MCC_FMT_C_DEC` = 6,900 words for *one* decimal conversion — twenty
+`spv_udiv64` software divisions of a 64-bit value. Three decimal conversions are 20,700
+words and exceed the budget before anything else in the format is emitted. But `%d`, `%u`
+and `%x` with no length modifier take an `int`/`unsigned` through varargs, `it->wide` is
+already 0 for them, and `fmt_fit` already narrows the argument, so the 64-bit machinery
+was being spent on a 32-bit value. `mcc_fmt_int` and `spv_fmt_int` now take a 32-bit path
+when `!it->wide`: ten native `OpUDiv` steps instead of twenty software ones for decimal,
+eight `OpShiftRightLogical` instead of sixteen for hex. Measured emitted words, from
+`slicerun fmt --fmt-cost-report`:
+
+| format | before | after |
+| --- | ---: | ---: |
+| `%d` | 7,644 | **3,056** |
+| `%u` | 7,400 | **2,899** |
+| `%x` | 5,444 | **2,447** |
+| `%lld` / `%llu` / `%llx` | unchanged | 7,644 / 7,400 / 5,444 |
+
+`MCC_FMT_C_DEC32` = 2,400 and `MCC_FMT_C_HEX32` = 1,750 are the model's bounds over those,
+and `fmt_case`'s `code.n <= p.cost` assertion holds on every format. The six sites this
+turns from refused to accepted are `root width %u != src %u` and
+`reflect size %zu != src %u` (`mcccst.c`), `%smcc-me-%u-%u.c` and `%smcc-tmp-%u-%u.tmp`
+(`mcchost.c`), `\tfirst=%d\tend=%d\tblen=%d\tnlen=%d` (`mccrir.c`) and the 75-literal-byte
+JIT source template in `mccjit_embed.c`. **All six are in `suite_fmt`'s differential
+list**, so the win is a device kernel that agrees with the CPU reference byte for byte
+over real work, not a census number: 1,984 lanes and 253,952 destination bytes compared,
+and `--mutate` is red (32 failing checks across the 31 formats, against 0 clean).
+
+`FMT_NSLOT` went from 4 to `MCC_FMT_MAXARG + 1`, because a four-argument format could not
+previously be dispatched at all — `fmt_kernel` refused `p->narg > 3` and the suite had
+never contained one.
+
+**The nine that are left, by how far over 16,384 words each one is.** The narrow path does
+not help a conversion that really is 64 bits, and nothing shrinks `%s`.
+
+| format | cost | over by | why it stays refused |
+| --- | ---: | ---: | --- |
+| `arity %s n=%u nc=%u op=%d` (`mccrir.c`) | 17,146 | **762** | the closest miss on the board, 4.6%. One `%s` at 6,542 plus four narrow decimals |
+| `'%s' has internal linkage but is referenced in an inline function with external linkage` (`mccgen.c`) | 20,282 | 3,898 | 85 literal bytes at 152 = 12,920 words. **The only remaining site literal packing would reach**, and it needs only 106 words/byte to do it |
+| `%s%s-%s` ×2 (`libmcc.c`) | 20,598 | 4,214 | 3 × 6,542 = 19,626 words of `%s` alone. Only a smaller `MCC_FMT_MAXSTR` fits it, and that truncates strings |
+| `%lu.%lu.%lu` (`mcchost.c`) | 21,824 | 5,440 | three *wide* decimals, 20,700 words. `%lu` is `unsigned long`; narrowing it would be wrong on LP64 |
+| `%s/kgc-%016llx-%u-%lu.z` (`mccjit_embed.c`) | 25,162 | 8,778 | `%s` + `%016llx` + `%lu`, three expensive items |
+| `string literal of length %ld … ISO C%s …` (`mccgen.c`) | 30,950 | 14,566 | 94 literal bytes is 14,288 words — even free literals leave it 278 over |
+| `equiv rung=%s n=%d exact=%d inferred=%lu points=%lu` (`mccast.c`) | 31,890 | 15,506 | `%s` + two wide + two narrow decimals |
+| `differ rung=%s smallest-width=%d n=%d a=%lld b=%s%lld` (`mccast.c`) | 38,128 | 21,744 | two `%s` + two wide + two narrow decimals |
+
+**Where this row stops, and the cost that says so.** Six sites landed for one contained
+change confined to `mcc_fmt_int`, `spv_fmt_int` and two cost constants. The *seventh*
+costs a literal-run packing scheme — runtime destination alignment, per-byte room masks
+folded into a word mask, and a matching rewrite of the CPU reference — and buys **exactly
+one site**. The eighth would need `MCC_GPU_CODE_MAX` raised, which is a cross-cutting
+change to the whole GPU arm: `docs/PLAN.md` N2 already records that Vulkan sets no
+module-size bound, that raising it is a prerequisite for the interpreter, and that the MSL
+arm already uses 65,536 — so it is a real option, just not one this row should spend.
+
+**The payoff on all of it is still device-*eligibility*, not device execution.**
+`mcc_slice_frame_from_ast` has no caller in `src/`, `mcc_fmt_compile` has no caller
+outside `tools/slicerun.c`, and the parallel-legal iteration fraction on a self-compile is
+0.01%. Stop here. The next thing that makes this row worth more is row 1's `a[i][j]` /
+`b[i][j]` aliasing representation — 79.35% of numeric-corpus iterations are refused only
+for that — not the fourteen remaining format strings.
 
 **What is left, and it is not the `%` engine.** The formatter is verified as a region
 primitive; wiring it to an `AST_Invoke` in statement position needs three things that do
@@ -975,18 +1087,25 @@ scan reads past the string on purpose and must not report the module undefined f
 The destination must still be a region only one lane writes — `spv_fmt_putb` fails the
 module for a `shared` region, by the same test `spv_store_region` uses.
 
-**The cost model is an over-estimate with about 1.5% of margin, and a cell enforces it.**
+**The cost model is an over-estimate, and a cell enforces it — and now prints it.**
 `mcc_fmt_cost` predicts the emitted word count from the item list; `mcc_fmt_compile`
-refuses with `MCC_FMT_R_ROOM` when the prediction exceeds `MCC_FMT_MAXCOST`. Measured
-against the emitter on the 25 formats `suite_fmt` builds, the model is above the truth
-every time and never by more than 2.2% (`%s` 7,264 emitted against 7,362 predicted;
-`%s:%s` 13,784 against 14,056; `%.*s/%s` 14,135 against 14,448). `fmt_case` asserts
-`code.n <= p.cost` on every format it builds, so if the emitter is ever made cheaper or
-dearer the cell goes red rather than the module silently overflowing.
+refuses with `MCC_FMT_R_ROOM` when the prediction exceeds `MCC_FMT_MAXCOST`. `fmt_case`
+asserts `code.n <= p.cost` on every format it builds, so if the emitter is ever made
+cheaper or dearer the cell goes red rather than the module silently overflowing. The
+`slice/fmt` cell now runs with `--fmt-cost-report`, which prints predicted against emitted
+for every format, so the constants can be recalibrated from a ctest log instead of by
+patching the runner: that is exactly how `MCC_FMT_C_DEC32` and `MCC_FMT_C_HEX32` were set.
+
+The margin is tighter on the wide arm than the narrow one, which is where the model
+matters: `%lld` 7,644 emitted against 7,720 predicted (1.0%), `%016llx` 7,736 against
+7,952 (2.7%), `%s` 7,264 against 7,362 (1.3%), `%s:%s` 13,784 against 14,056 (1.9%). The
+narrow constants were rounded up rather than fitted, so `%d` is 3,056 against 3,220 (5.1%)
+and `%u/%x` is 4,678 against 5,122 (8.7%). A literal byte is priced at 152 and measures
+about 136, from `[%d]` − `%d` = 272 words for two bytes and `n=%d.` − `%d` = 403 for three.
 
 The mutation operator for this cell perturbs a **destination byte**, not the return value.
-Verified on an RTX 5070 Ti: `slice/fmt` is green over 1,600 lanes and 204,800 compared
-destination bytes across 25 formats, `--mutate` is red on all 25, and an injected one-bit
+Verified on an RTX 5070 Ti: `slice/fmt` is green over 1,984 lanes and 253,952 compared
+destination bytes across 31 formats, `--mutate` is red with 32 failing checks, and a one-bit
 error in the string copy at source byte 5 is caught in destination *words 1 and 2* — not
 only at byte 0 — including in the unterminated-run lane (`5a5a5a5a` → `5a5a7a5a`).
 
@@ -1029,8 +1148,9 @@ write the *same physical bytes*. Write-up and residual hazards: "Landed — `*p`
 | `rir_op_effect`'s clear (row 4) | **CLOSED 2026-08-08**, and the "<1%" bound was wrong: measured **−8.30% / −9.44%** of stage-1 `-O3`/`-O2` CPU time (n=21 interleaved, ±0.55% floor), `instructions:u` −12.29%. 1,464 objects byte-identical | compile time |
 | Metal, debt #4 (row 3) | 1754 vs 3578 lines, 3-line kernel arm, 0 `msl_region*` symbols. A rewrite, not a fix. | a decision |
 | D4b leaf-inline pool cap (row 5) | ceiling **803** blocks, `slicerun --census`. **Cap removed 2026-08-08**: reach 41 → 72 grafts, and it delivered **one** more block (10,381 → 10,375 `inv-blocks`). Row closed, not advanced | device-eligible blocks |
-| `snprintf` module budget (row 6) | **22 of 162** sites still refused; 17 of them on `MCC_GPU_CODE_MAX` = 16,384 words, not on semantics | device-accepted sites |
-| the literal-run packing lever (row 6) | a literal byte costs 152 words as a read-modify-write; 7 of the 17 budget refusals carry no `%s` at all. Payoff **UNMEASURED** | device-accepted sites |
+| `snprintf` module budget (row 6) | **14 of 162** refused, was 22. The narrow 32-bit conversion path landed 6 sites 2026-08-09 (`142 → 148`, and `140 → 142` was a census bug, not work). 9 on the budget, 4 on flags, 1 on float. The closest miss is 762 words | device-accepted sites |
+| the literal-run packing lever (row 6) | **MEASURED AND DROPPED 2026-08-09.** The filed "7 pure-literal refusals" do not exist — 5 of 15 carry no `%s` and every one of them carries integer conversions. 11 of 15 were over budget with *zero* literal bytes, so packing had a **4-site ceiling even if a literal byte were free**; the narrow conversion path then took 3 of those 4, leaving the lever with **one site** and a delicate emitter rewrite. Not implemented, deliberately | device-accepted sites |
+| `tools/fmt-census.py` was an ungated second implementation | **CLOSED 2026-08-09.** It had already drifted: one item per literal byte instead of merged runs, 61 disagreements over 984 corpus formats, 2 over the 162 `snprintf` sites. Now gated by `fmt/census-oracle` (41,017 formats vs the real `mcc_fmt_compile`) and `fmt/census-oracle-known-positive` | census trust |
 | the fence wait (unranked) | all-VRAM 1.0–20.2 ns/lane against all-sysmem 16–110 — **PROSE-ONLY**; no staging path exists and no payoff was estimated | device time, no subject |
 | debt #1, `--mutate` blind to `memcpy` | smaller than filed: four of six operator sites already perturb written memory and `g_frame_mismatch` already exists. The real gap is that **no `memcpy`/`memset` exists in the slice corpus to mutate** | test strength |
 | indirect callees | 115 blocks, and no device answer anywhere in `docs/PLAN.md` | device-eligible blocks |

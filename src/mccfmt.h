@@ -6,6 +6,8 @@
 #define MCC_FMT_MAXARG 8
 #define MCC_FMT_NDEC 20
 #define MCC_FMT_NHEX 16
+#define MCC_FMT_NDEC32 10
+#define MCC_FMT_NHEX32 8
 #define MCC_FMT_MAXW 32
 #define MCC_FMT_MAXSTR 28
 
@@ -13,6 +15,8 @@
 #define MCC_FMT_C_BYTE 152
 #define MCC_FMT_C_DEC 6900
 #define MCC_FMT_C_HEX 4700
+#define MCC_FMT_C_DEC32 2400
+#define MCC_FMT_C_HEX32 1750
 #define MCC_FMT_C_SFIX 130
 #define MCC_FMT_C_SBYTE 229
 #define MCC_FMT_C_SDYN 14
@@ -95,7 +99,8 @@ static int mcc_fmt_cost(const MccFmtProg *p) {
 					 it->width * MCC_FMT_C_BYTE;
 			break;
 		default:
-			c += (it->base == 10 ? MCC_FMT_C_DEC : MCC_FMT_C_HEX) +
+			c += (it->base == 10 ? (it->wide ? MCC_FMT_C_DEC : MCC_FMT_C_DEC32)
+													: (it->wide ? MCC_FMT_C_HEX : MCC_FMT_C_HEX32)) +
 					 it->width * MCC_FMT_C_BYTE;
 		}
 	}
@@ -326,10 +331,14 @@ static void mcc_fmt_emit1(MccFmtDst *d, unsigned b) {
 
 static void mcc_fmt_int(MccFmtDst *d, const MccFmtItem *it, int64_t v) {
 	uint64_t x[MCC_FMT_NDEC + 1];
-	uint32_t n = (uint32_t)(it->base == 10 ? MCC_FMT_NDEC : MCC_FMT_NHEX);
+	uint32_t n = (uint32_t)(it->wide
+													? (it->base == 10 ? MCC_FMT_NDEC : MCC_FMT_NHEX)
+													: (it->base == 10 ? MCC_FMT_NDEC32 : MCC_FMT_NHEX32));
 	uint32_t nd = 1, lead, padn = 0, bl, i, j;
-	int neg = it->sgn && v < 0;
-	x[0] = neg ? (uint64_t)0 - (uint64_t)v : (uint64_t)v;
+	int64_t a = it->wide ? v
+											 : (it->sgn ? (int64_t)(int32_t)v : (int64_t)(uint32_t)v);
+	int neg = it->sgn && a < 0;
+	x[0] = neg ? (uint64_t)0 - (uint64_t)a : (uint64_t)a;
 	for (i = 1; i <= n; i++)
 		x[i] = it->base == 10 ? x[i - 1] / 10u : x[i - 1] >> 4;
 	for (i = 1; i < n; i++)
@@ -503,27 +512,52 @@ static uint32_t spv_fmt_int(SpvMod *m, const SpvRegion *r, uint32_t dst,
 														uint32_t size, uint32_t pos, SpvV v,
 														const MccFmtItem *it) {
 	SpvV x[MCC_FMT_NDEC + 1], ten;
-	int n = it->base == 10 ? MCC_FMT_NDEC : MCC_FMT_NHEX;
+	uint32_t y[MCC_FMT_NDEC + 1];
+	int wide = it->wide;
+	int n = wide ? (it->base == 10 ? MCC_FMT_NDEC : MCC_FMT_NHEX)
+							 : (it->base == 10 ? MCC_FMT_NDEC32 : MCC_FMT_NHEX32);
 	uint32_t nd, lead, padn, bl, neg = 0;
 	int i, j;
-	x[0] = v;
+	ten.id = 0;
+	ten.w64 = 0;
+	ten.uns = 0;
 	lead = spv_uintc(m, 0);
-	if (it->sgn) {
-		neg = spv_sign64(m, v);
-		x[0] = spv_sel64(m, neg, spv_neg64(m, v), v);
-		lead = spv_usel(m, neg, spv_uintc(m, 1), spv_uintc(m, 0));
+	if (wide) {
+		x[0] = v;
+		if (it->sgn) {
+			neg = spv_sign64(m, v);
+			x[0] = spv_sel64(m, neg, spv_neg64(m, v), v);
+			lead = spv_usel(m, neg, spv_uintc(m, 1), spv_uintc(m, 0));
+		}
+		ten = spv_const64(m, 10);
+		for (i = 1; i <= n; i++)
+			x[i] = it->base == 10
+								 ? spv_udiv64(m, x[i - 1], ten, 1)
+								 : spv_shift64(m, SpvOpShiftRightLogical, x[i - 1],
+															 spv_uintc(m, 4), 1);
+	} else {
+		uint32_t lo = spv_lo(m, spv_pair(m, v));
+		y[0] = lo;
+		if (it->sgn) {
+			neg = spv_ucmp(m, SpvOpUGreaterThanEqual, lo,
+										 spv_uintc(m, 0x80000000u));
+			y[0] = spv_usel(m, neg,
+											spv_uop(m, SpvOpISub, spv_uintc(m, 0), lo), lo);
+			lead = spv_usel(m, neg, spv_uintc(m, 1), spv_uintc(m, 0));
+		}
+		for (i = 1; i <= n; i++)
+			y[i] = it->base == 10
+								 ? spv_uop(m, SpvOpUDiv, y[i - 1], spv_uintc(m, 10))
+								 : spv_uop(m, SpvOpShiftRightLogical, y[i - 1],
+													 spv_uintc(m, 4));
 	}
-	ten = spv_const64(m, 10);
-	for (i = 1; i <= n; i++)
-		x[i] = it->base == 10
-							 ? spv_udiv64(m, x[i - 1], ten, 1)
-							 : spv_shift64(m, SpvOpShiftRightLogical, x[i - 1],
-														 spv_uintc(m, 4), 1);
 	nd = spv_uintc(m, 1);
-	for (i = 1; i < n; i++)
+	for (i = 1; i < n; i++) {
+		uint32_t nz = wide ? spv_bool_of_v(m, x[i])
+											 : spv_ucmp(m, SpvOpINotEqual, y[i], spv_uintc(m, 0));
 		nd = spv_uop(m, SpvOpIAdd, nd,
-								 spv_usel(m, spv_bool_of_v(m, x[i]), spv_uintc(m, 1),
-													spv_uintc(m, 0)));
+								 spv_usel(m, nz, spv_uintc(m, 1), spv_uintc(m, 0)));
+	}
 	bl = spv_uop(m, SpvOpIAdd, lead, nd);
 	padn = spv_uintc(m, 0);
 	if (it->width > 0) {
@@ -546,7 +580,12 @@ static uint32_t spv_fmt_int(SpvMod *m, const SpvRegion *r, uint32_t dst,
 	}
 	for (i = 0; i < n; i++) {
 		uint32_t g, c, p, lt;
-		if (it->base == 10)
+		if (!wide)
+			g = it->base == 10
+							? spv_uop(m, SpvOpISub, y[i],
+												spv_uop(m, SpvOpIMul, y[i + 1], spv_uintc(m, 10)))
+							: spv_uop(m, SpvOpBitwiseAnd, y[i], spv_uintc(m, 15));
+		else if (it->base == 10)
 			g = spv_lo(m, spv_sub64(m, x[i], spv_mul64(m, x[i + 1], ten, 1), 1).id);
 		else
 			g = spv_uop(m, SpvOpBitwiseAnd, spv_lo(m, x[i].id), spv_uintc(m, 15));
