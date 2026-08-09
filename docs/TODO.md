@@ -8,6 +8,16 @@
 
 ## Total lowering — the decided architecture, 2026-08-09
 
+> **Bank note, 2026-08-09.** `tests/fmt/census-bank.json` was re-taken when the
+> five-branch GPU merge landed. `fmt/census-bank` failed first and named every figure that
+> moved, which is what it is for. Cause: new diagnostics, not new formatting work —
+> `src/mccgpu.c` 30 → 33 printf-family sites (the host-pointer import reporting its
+> alignment and imported range) and `src/mccgen.c` 28 → 29 (`-fdepth-census`). One of the
+> new sites is an `snprintf`, so literal `snprintf` sites went 162 → 163 and accepted
+> 148 → 149. **The ratio is unchanged at 91.4%** and no site changed its acceptance class;
+> `blocked-on-pointer` went 109 → 110 with the new site.
+
+
 > **This section is decisions, not measurements.** Every line below was chosen by the
 > project owner in conversation on 2026-08-09 and supersedes any earlier ranking that
 > treated device coverage as an incremental menu. Where a decision contradicts a measured
@@ -5527,7 +5537,7 @@ row denominated in it ranks below every row that is not: *device-eligible blocks
 | 2 | ~~`tests/optfire/levelbench.tsv` is a generation stale and has no `--check`~~ | **census trust** — every future ladder decision is priced off it | ~~32 of 47 rows name flags no longer at levels 1–3~~ — **LANDED 2026-08-09 (`wt/gatefin`).** The stale generation was re-measured by `wt/ladder2`; `--check` now exists, has a ctest cell and a known-positive, and the build-dir TSV is compared back to `tests/optfire/`. See the audit section |
 | 3 | Metal | **a decision** | ~~free to make, grows with every SPIR-V landing. **Decided above: dropped**~~ — **REVERSED BY DECISION 2026-08-09 (`wt/metalspec`), and the row is now priced rather than open.** Behavioural parity **1,530–2,360** lines, capability parity including fp64 **2,200–3,400** — the `ymm` band, lower than "multi-week rewrite" implied because the Metal *runtime* was already written and has already run 151.9 M differential points. The decisive cost is not lines: **no runner this project has can execute a Metal kernel**, so every stage lands with its differential skipped. See the spec at the head of this file, and note its §4 — MoltenVK gives macOS the whole SPIR-V arm for ~10 lines of build config |
 | 4 | the device path | **device-eligible blocks** — no exchange rate | **Frozen above, and the freeze now rests on a different reason than the one it was taken for.** ≈1.45% device-executable lanes on the best corpus anyone has found — **still ≈1.45% after row 6 landed `double` (`wt/fpwidth`, 2026-08-09).** The 79.21 float points were never gated by `is_float`. They are gated by **`static` storage and by `MCC_SLICE_MAXSLOT = 16`**: `matmul.c:22` (76.92% of all corpus iterations) and `loopnest.c:44` (2.24%) index `static double [600][600]` and `[256][256]`, the live-in model addresses frame **locals** only, and it gives every array element its own slot. Measured three ways on this tree — a 4-element **local** `double` array lowers and dispatches; the same source with `static` arrays does not; a 64-element **local** array does not. Float was necessary, and nowhere near sufficient |
-| 5 | `snprintf` module budget | **device-accepted sites** — no exchange rate | banked at 148/162; the 7th site buys one site, the 8th needs `MCC_GPU_CODE_MAX` raised. **Stop** |
+| 5 | `snprintf` module budget | **device-accepted sites** — no exchange rate | banked at 149/163 (was 148/162 before this merge added device-import and depth-census diagnostics); the 7th site buys one site, the 8th needs `MCC_GPU_CODE_MAX` raised. **Stop** |
 | 6 | float in the slice engine and the SPIR-V emitter | **device-executable lanes** | ~~UNMEASURED and unpriced~~ · ~~PRICED 2026-08-09 (`wt/spvfloat`), NOT PAID~~ — **LANDED 2026-08-09 (`wt/fpwidth`), and it bought +0.0 iteration-weighted points, not +79.2. The `+79.2` estimate was wrong, and the reason is in the next row.** `double` now runs on the device: `OpTypeFloat 64`, `OpCapability Float64`, `OpFAdd/FSub/FMul/FNegate` every one decorated `NoContraction`, the six `OpFOrd*`/`OpFUnordNotEqual` comparisons, `shaderFloat64` queried and enabled at `vkCreateDevice`, and a uvec2↔double `OpBitcast` at the buffer boundary so the ABI, the stride and the lo/hi packing are all unchanged. `float`, `long double`, division at any width and int↔float conversion are **excluded, each with a cell that fails if the exclusion lapses**. New cells `slice/f64` + `slice/f64-known-positive` (9161 → **9163**). See the M6 section below for what is certified, what was measured on the device, and the two things this found that nobody had filed |
 | 7 | chain-store re-promotion | emitted code | **MEASURED, refused.** +2.60 `kept` → −0.079% stage-2 for +1.50% stage-1; 60× worse than `divmagic`'s rung |
 | 8 | `storeval-rot` demotion | emitted code | **MEASURED, refused.** Its off-state is an incomplete replay path, `kept` 91.978 → 83.242 |
@@ -5569,7 +5579,7 @@ tool and the corpus that produces it, or is marked **PROSE-ONLY** / **UNMEASURED
 | **0** occurrences of `Float` in `src/mccgpu.h`, `src/mccgpu.c`, `src/mccslice.h` | `grep -c` — **no committed tool** | the device layer |
 | `kept` **83.090 / 91.913 / 91.978 / 91.978** (`self`), **92.881 / 96.546 / 96.597 / 96.597** (`wide`), at `-O0`..`-O3` | `tools/rir-coverage.py cmake-debug --corpus self --levels O0,O1,O2,O3`; `MCC_RIR_CENSUS=1 … --corpus wide … --opt-in` | `self` = `src/mcc.c`; `wide` = 380 sources |
 | **552 slices of 12,957 contain a loop (4.26%)** | `tools/slice-census.py cmake-debug --corpus self --levels O0,O1,O2,O3` | self-compile |
-| 172 `snprintf` sites, 162 literal, **148 accepted (91.4%)**, 100 carrying `%s`, 9 budget / 4 flag / 1 float; return consumed at 26 of 162 | `tools/fmt-census.py --check` — **gated**, `fmt/census-bank` + known-positive | `src/*.c`, the 18-file roster pinned in `CORPUS` |
+| 173 `snprintf` sites, 163 literal, **149 accepted (91.4%)**, 101 carrying `%s`, 9 budget / 4 flag / 1 float; return consumed at 26 of 163 | `tools/fmt-census.py --check` — **gated**, `fmt/census-bank` + known-positive | `src/*.c`, the 18-file roster pinned in `CORPUS` |
 | **10,423** Invoke-blocked blocks, **86 (0.825%)** unblocked by the `snprintf` family alone, 10th among single-callee unblocks behind `_mcc_error` 432, `fprintf` 214, `printf` 160, `memcpy` 126 — **RE-TAKEN 2026-08-09** on the de-duplicated corpus. The old `29,309 / 242` was the same measurement over a dump that recorded each body **2.8636** times; the counts deflate, the share does not (0.826% → 0.825%) | `tools/fmt-census.py --arena-check=<build-dir>` — **gated**, `fmt/arena-census-bank` + known-positive | `src/mcc.c`, the one real TU, @ `-O1`: 2,880 arenas over **2,880 distinct bodies**, 19,901 non-empty blocks |
 | twelve-key `-O0` object `sha256` + forced-Replay_IR counters, 304 files, `bar=OK` on every key | `tools/o0_ab.sh` — **gated**, `ast/o0-baseline` + known-positive | `tests/exec`; re-taken 2026-08-09 after 426 unwatched commits, **28 objects had moved** |
 | 947 non-empty blocks, **454** Invoke-blocked, 319 eligible, **33** sole-blocker | `slicerun --arenas <dump> --census` | `tests/exec`, 60 files @ `-O1` |
@@ -8183,7 +8193,7 @@ a second type enum.
 
 | | sites | share of 162 |
 | --- | ---: | ---: |
-| accepted by `mcc_fmt_compile` today | **148** | **91.4%** |
+| accepted by `mcc_fmt_compile` today | **149** | **91.4%** |
 | — of those, sites carrying at least one `%s` | 100 | 61.7% |
 | refused: the straight-line program exceeds the module budget | 9 | 5.6% |
 | refused: flag, width or precision on a signed conversion | 4 | 2.5% |
