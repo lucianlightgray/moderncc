@@ -1952,13 +1952,15 @@ caveat above), `python3 tools/must-run.py --build cmake-debug` 64 rows satisfied
    give the label one arming variable.~~ **Done on `wt/censusfix`, by the third option this
    line did not consider: the label arms its own cells, so there is no switch left for a
    reader to know about.**
-4. **Registration gates with no `else()` skip stub** — cells that *vanish* rather than skip,
+4. ~~**Registration gates with no `else()` skip stub** — cells that *vanish* rather than skip,
    which is the class `tests/must-run.txt` was built for and still cannot see: 86
    `stratsweep/isofull-*` and `stratsweep/perm3-*` under `MCC_STRATSWEEP_FULL`, the whole
    `qemu-*` block under `MCC_QEMU_TESTS`, `selfhost-jit` and `embed-jit-smoke` under
    `MCC_PYTHON3`/`MCC_EMBED_JIT`, and the seven `macho-libsystem/*` cells whose OFF-branch
    stub is registered under the *unrelated* name `macho-libsystem-kernel-fused`, so no
-   manifest row can name both states.
+   manifest row can name both states.~~ **CLOSED on `wt/regstub`.** See the section below;
+   the list above was a quarter of it, and the 164 the class is named after were **still
+   vanishing** when this branch started.
 5. **The 24 in-container `apt-get … || exit 77` sites** in `tools/*-docker.sh`. A transient
    network failure silently converts a real differential test into a skip. They are honest
    about *what* failed; nothing distinguishes "no docker on this host" from "the mirror was
@@ -1972,6 +1974,98 @@ caveat above), `python3 tools/must-run.py --build cmake-debug` 64 rows satisfied
    the build instructions at the head of this file rather than a fix. **The 424 baseline this
    section audits is a no-`vendor/` number**; with `vendor/` symlinked in, the same tree and
    the same commit report **390**, still 0 failures.
+
+#### Registration gates with no `else()` — closed on `wt/regstub`, and it was 537 cells, not 93
+
+The class is the one that ate 164 cells (144 `optfire-*` + 20 `*-docker`) once already. The
+fix credited with closing it, `mcc_cross_cc()`, **did not close it**: it made the gate's
+condition true more often, by letting `cmake-debug` find `cmake-cross`'s binaries. The
+`if(UNIX AND NOT _ofx_cc STREQUAL "")` around the optfire cross loop still had no `else()`,
+so on a host with no cross build at all the same 144 cells still evaporated. That is
+measurable, and it was measured before anything was changed.
+
+**The measurement.** A deliberately capability-poor configure — `PATH` reduced to a curated
+bin with no `docker`, no `wine`, no `qemu-*`; `-DMCC_CROSS_DIR=<empty dir>`;
+`-DMCC_VENDOR_DIR=<empty dir>` — against the same commit as a fully-equipped one:
+
+| configure | `ctest -N` before | `ctest -N` after |
+| --- | ---: | ---: |
+| fully equipped (cross built, docker, wine, qemu, `vendor/`) | 9161 | **9397** |
+| capability-poor (none of the above) | **8624** | **9397** |
+| gap | **537 cells silently absent** | **0** |
+
+`comm` over the two sorted name lists is now empty in both directions. Only the pass/skip
+split moves: the equipped tree reports **9397 cells, 0 failures, 620 skipped**; the
+capability-poor tree registers the same 9397 names, with the extra ones registered as
+`SKIP: <reason>` echoes rather than as nothing.
+
+What the 537 were: **144** `optfire-{arm64,i386,riscv64}/*` and **20** `*-docker` — the
+original 164, still gone; **296** `diff3/*`, **41** `preprocess/*`, **33** `parts/*` and
+**7** `fuzz/*`, which collapsed into a single `diff3-suite` / `preprocess-suite` /
+`parts-suite` / `fuzz-suite` stub each, so 377 named cells were represented by 4 names no
+manifest row could match. On top of those, gates that hold on this host but drop cells
+elsewhere: 86 `stratsweep-full`, 75 `flagsweep-cover/*`, 59 `qemu-*`, 51 `jit/selftest-*`
+under `MCC_EMBED_JIT`, 26 selfhost/census cells under `MCC_PYTHON3`, 15 bench/determinism
+cells under a second `MCC_PYTHON3`, the 7 `macho-libsystem/*`, plus `sanitize-*`,
+`gpu/spv-*`, `gpu/msl-*`, `ubsan/*`, `cli/*`, `mccbuild`'s six, and
+`superopt/promote-floor`.
+
+**The rule that stops it coming back** is `tools/regstub-lint.py`, registered as
+`ci/registration-stubs` and modelled on `census/gates-armed`: structural, not a list. It
+parses `CMakeLists.txt` and `cmake/*.cmake`, recovers which variables are *probe-rooted* —
+reachable by assignment or by an enclosing gate from `find_program`/`find_path`/
+`find_library`/`find_file`, `find_package`, `execute_process`, `option`,
+`mcc_config_node`, a `set(... CACHE ...)`, `if(TARGET ...)`, or an `if(EXISTS ...)` on a
+path outside the source tree, including through out-parameters of functions such as
+`mcc_cross_cc()` — and requires every `if/elseif/else` chain that registers a test and
+consults one to **register the same set of cell names on every branch**, the implicit
+absent `else()` counted as the empty set. Names are compared as written, `${...}` included,
+which is what catches a stub filed under a name unrelated to the cells it stands in for.
+It exempts exactly two things and says so: the chain containing `enable_testing()`, and
+variables that name *the target that was asked for* rather than the host's equipment
+(`MCC_CPU`, `MCC_TARGETOS`, `CMAKE_CROSSCOMPILING`, `WIN32`, …) — two targets are two
+suites; a host with docker and the same host without are one suite. It reads **48**
+capability-gated chains and never exits 77. Run against `d67f16b5`, the commit this branch
+started from, it reports **37 of those 48 broken** — the four filed instances were a tenth
+of the population.
+
+Ablated by putting back the old `macho-libsystem-kernel-fused` stub name and deleting the
+`else()` that stubs the `stratsweep-full` rows, it fails:
+
+> `regstub-lint: CMakeLists.txt:5047: if(MCC_STRATSWEEP_FULL) registers`
+> `` `stratsweep/isofull-${_ss_row}` `` `and has no else(). It is gated on`
+> `MCC_STRATSWEEP_FULL, declared by mcc_config_node at CMakeLists.txt:1271, so where that`
+> ``does not hold the cell is not registered at all -- invisible to `ctest -N`, to``
+> `tools/must-run.py and to every count in docs/TODO.md. Add an else() that`
+> `mcc_skip_test()s the same name with a reason`
+>
+> `regstub-lint: CMakeLists.txt:7329: if(MCC_DARWIN_HOST AND CMAKE_SYSTEM_NAME STREQUAL`
+> `"Darwin") is gated on MCC_DARWIN_HOST, declared by option at CMakeLists.txt:7328, and`
+> `` its if branch at line 7329 does not register `macho-libsystem-kernel-fused`. Every ``
+> `branch of a capability gate registers the same cells; …`
+>
+> `regstub-lint: 2 of 48 capability-gated registration chain(s) drop cells instead of`
+> `skipping them`
+
+and pointed at a tree with no gates at all it refuses to report a pass:
+
+> `regstub-lint: only 0 capability-gated registration chain(s) found, expected at least 30.`
+> `Either the parser stopped early or the probe-rooting analysis collapsed; a check that`
+> `inspected nothing must not be reported as passing`
+
+**Counts that moved, and why.** `ctest -N` 9161 → **9397**. `-L stratsweep` 30 → **116**
+(116/0, 86 Skipped — the opt-in tier is now visible as 86 skips instead of absent).
+`-L flagsweep` 119 → **193** (the single `flagsweep-cover` stub became the 75 real row
+names, 193/0 with 75 Skipped). `-L qemu` 14 → **73** (73/0, 59 Skipped). `-L macho` 18 →
+**25**. `-L census` stays **7**, 7/0 with nothing Skipped. `must-run.py` 64 → **66 rows
+satisfied** (a row was added for `ci/registration-stubs`). `tools/selfhost-smoke.py
+cmake-debug` OK. Anything quoting 9161, 119 or 30 is now stale.
+
+**What the lint deliberately does not catch.** A gate whose skip branch registers a single
+wildcard name such as `${_tn}` cannot be distinguished statically from one registering the
+whole family; the qemu block was rewritten by hand for that reason. And the two identity
+axes above are exempt by design, so an arm64 host and an x86_64 host may still register
+different counts — that is a different suite, not a lost cell.
 
 #### THE FOURTH FINDING — `vendor/`'s mingw shadows a working reference. **RE-ENABLED, and green**
 

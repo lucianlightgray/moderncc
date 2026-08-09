@@ -3388,6 +3388,11 @@ if(MCC_BUILD_TESTS)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/sanitize/run_selfcheck.cmake")
         set_tests_properties(sanitize-selfcheck PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             TIMEOUT 600)
+    else()
+        mcc_skip_test(sanitize-smoke
+            "needs the ASan/UBSan build of mcc (mcc_s); configure with -DMCC_BUILD_SANITIZE=ON, e.g. cmake --preset sanitize")
+        mcc_skip_test(sanitize-selfcheck
+            "needs the ASan/UBSan build of mcc (mcc_s); configure with -DMCC_BUILD_SANITIZE=ON, e.g. cmake --preset sanitize")
     endif()
 
     set(_ubsan_run OFF)
@@ -3398,9 +3403,9 @@ if(MCC_BUILD_TESTS)
            AND (MCC_EMULATOR OR NOT CMAKE_CROSSCOMPILING))
         set(_ubsan_run ON)
     endif()
+    set(_ubsan_dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/sanitize/ubsan")
+    file(GLOB _ubsan_traps RELATIVE "${_ubsan_dir}" "${_ubsan_dir}/trap_*.c")
     if(_ubsan_run)
-        set(_ubsan_dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/sanitize/ubsan")
-        file(GLOB _ubsan_traps RELATIVE "${_ubsan_dir}" "${_ubsan_dir}/trap_*.c")
         foreach(_uf IN LISTS _ubsan_traps)
             string(REGEX REPLACE "\\.c$" "" _un "${_uf}")
             add_test(NAME "ubsan/${_un}" COMMAND "${CMAKE_COMMAND}"
@@ -3436,7 +3441,14 @@ if(MCC_BUILD_TESTS)
             -P "${_ubsan_dir}/run_ubsan.cmake")
         set_tests_properties("ubsan/recover_signed_add" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     else()
-        mcc_skip_test(ubsan-suite "-fsanitize=undefined trap/recover validated on x86_64 (ELF/Mach-O/PE) + ELF arm64/i386/arm/riscv64 (native or qemu); this target/format not covered or lacks an emulator")
+        set(_ubsan_why "-fsanitize=undefined trap/recover validated on x86_64 (ELF/Mach-O/PE) + ELF arm64/i386/arm/riscv64 (native or qemu); this target/format not covered or lacks an emulator")
+        foreach(_uf IN LISTS _ubsan_traps)
+            string(REGEX REPLACE "\\.c$" "" _un "${_uf}")
+            mcc_skip_test("ubsan/${_un}" "${_ubsan_why}")
+        endforeach()
+        mcc_skip_test("ubsan/clean_arith" "${_ubsan_why}")
+        mcc_skip_test("ubsan/clean_unsigned_wrap" "${_ubsan_why}")
+        mcc_skip_test("ubsan/recover_signed_add" "${_ubsan_why}")
     endif()
 
     if(NOT CMAKE_CROSSCOMPILING)
@@ -3578,6 +3590,11 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_real.cmake")
             set_tests_properties("gpu/spv-slice-real" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+        else()
+            set(_spv_why "no Vulkan headers/loader on this host, so the spvgate differential tool cannot be built (install the Vulkan SDK, or MoltenVK on Darwin)")
+            mcc_skip_test("gpu/spv-slice-differential" "${_spv_why}")
+            mcc_skip_test("gpu/spv-slice-known-positive" "${_spv_why}")
+            mcc_skip_test("gpu/spv-slice-real" "${_spv_why}")
         endif()
 
         if(APPLE AND MCC_GPU_LANG_MSL_VALUE)
@@ -3614,6 +3631,11 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_real.cmake")
             set_tests_properties("gpu/msl-slice-real" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+        else()
+            set(_msl_why "the MSL slice differential needs a Darwin host with the Metal backend selected (-DMCC_GPU_BACKEND=metal)")
+            mcc_skip_test("gpu/msl-slice-differential" "${_msl_why}")
+            mcc_skip_test("gpu/msl-slice-known-positive" "${_msl_why}")
+            mcc_skip_test("gpu/msl-slice-real" "${_msl_why}")
         endif()
 
         # slicerun: the scheduler cells. Unlike spvgate it brings no Vulkan of
@@ -3769,6 +3791,12 @@ if(MCC_BUILD_TESTS)
                             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fmt_arena_census_mutate.cmake")
                 set_tests_properties("fmt/arena-census-known-positive"
                     PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 600)
+            else()
+                set(_fmtcensus_why "tools/fmt-census.py needs a python3 interpreter and none is on PATH")
+                mcc_skip_test("fmt/census-oracle" "${_fmtcensus_why}")
+                mcc_skip_test("fmt/census-oracle-known-positive" "${_fmtcensus_why}")
+                mcc_skip_test("fmt/arena-census-bank" "${_fmtcensus_why}")
+                mcc_skip_test("fmt/arena-census-known-positive" "${_fmtcensus_why}")
             endif()
         endif()
 
@@ -4424,6 +4452,10 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(superopt/promote-floor PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
                 TIMEOUT 600 RUN_SERIAL TRUE)
+        else()
+            mcc_skip_test(superopt/promote-floor
+                "the promote-floor ratchet counts spill slots with objcopy on a POSIX host; no objcopy on PATH, or not a POSIX host"
+                LABELS native)
         endif()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4696,6 +4728,10 @@ if(MCC_BUILD_TESTS)
             foreach(_ofx_cpu IN ITEMS arm64 i386 riscv64)
             mcc_cross_cc(${_ofx_cpu} _ofx_cc _ofx_fix)
             if(UNIX AND NOT _ofx_cc STREQUAL "")
+                set(_ofx_have 1)
+            else()
+                set(_ofx_have 0)
+            endif()
             file(GLOB _ofx_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
             file(GLOB _ofx_xfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/cdelta*.txt")
             set(_ofx_seen "")
@@ -4739,19 +4775,24 @@ if(MCC_BUILD_TESTS)
                         endif()
                         if(NOT _ofskip AND EXISTS "${_ofsrc}")
                             list(APPEND _ofx_seen "${_ofcell}")
-                            add_test(NAME "optfire-${_ofx_cpu}/${_ofcell}"
-                                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh"
-                                        "${_ofxmode}" "${_ofx_cc}" "${_ofsrc}"
-                                        "${CMAKE_BINARY_DIR}/optfire-${_ofx_cpu}" "${_ofcell}"
-                                        "${_ofopt}" "${_ofarg}" "${_ofextra}" "${_ofx_tail}")
-                            set_tests_properties("optfire-${_ofx_cpu}/${_ofcell}" PROPERTIES
-                                FIXTURES_REQUIRED "${_ofx_fix}" SKIP_RETURN_CODE 77 LABELS native
-                                ENVIRONMENT "OPTFIRE_NORUN=1;OPTFIRE_MCCFLAGS=-B${CMAKE_BINARY_DIR}")
+                            if(_ofx_have)
+                                add_test(NAME "optfire-${_ofx_cpu}/${_ofcell}"
+                                    COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh"
+                                            "${_ofxmode}" "${_ofx_cc}" "${_ofsrc}"
+                                            "${CMAKE_BINARY_DIR}/optfire-${_ofx_cpu}" "${_ofcell}"
+                                            "${_ofopt}" "${_ofarg}" "${_ofextra}" "${_ofx_tail}")
+                                set_tests_properties("optfire-${_ofx_cpu}/${_ofcell}" PROPERTIES
+                                    FIXTURES_REQUIRED "${_ofx_fix}" SKIP_RETURN_CODE 77 LABELS native
+                                    ENVIRONMENT "OPTFIRE_NORUN=1;OPTFIRE_MCCFLAGS=-B${CMAKE_BINARY_DIR}")
+                            else()
+                                mcc_skip_test("optfire-${_ofx_cpu}/${_ofcell}"
+                                    "no ${_ofx_cpu} cross compiler on this host, and a POSIX host is required: build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-${_ofx_cpu}"
+                                    LABELS native)
+                            endif()
                         endif()
                     endif()
                 endforeach()
             endforeach()
-            endif()
             endforeach()
 
             file(GLOB _of_cfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/counters*.txt")
@@ -4804,12 +4845,15 @@ if(MCC_BUILD_TESTS)
                                 set(_ofskip 1)
                             endif()
                         endif()
-                        if(_ofskip)
-                            message(STATUS "optfire: skipping ${_ofcell} (needs CPU ${_ofreq}, have ${MCC_CPU})")
-                        elseif(_ofcell IN_LIST _of_seen)
+                        if(_ofcell IN_LIST _of_seen)
                             message(STATUS "optfire: skipping duplicate case ${_ofcell}")
                         elseif(NOT EXISTS "${_ofsrc}")
                             message(STATUS "optfire: skipping ${_ofname} (no source)")
+                        elseif(_ofskip)
+                            list(APPEND _of_seen "${_ofcell}")
+                            mcc_skip_test("optfire/${_ofcell}"
+                                "pinned to CPU ${_ofreq}; this build targets ${MCC_CPU}"
+                                LABELS native)
                         else()
                             list(APPEND _of_seen "${_ofcell}")
                             if(_ofmode STREQUAL "counter")
@@ -4907,21 +4951,23 @@ if(MCC_BUILD_TESTS)
                     set(_fs_nrow "${CMAKE_MATCH_1}")
                 endif()
             endif()
-            if(MCC_FLAGSWEEP_FULL AND _fs_nrow GREATER 0)
+            if(_fs_nrow GREATER 0)
                 math(EXPR _fs_last "${_fs_nrow} - 1")
                 foreach(_fn RANGE 0 ${_fs_last})
-                    add_test(NAME "flagsweep-cover/${_fn}"
-                        COMMAND "${_fs_sh}" cover "${_mcc_exe}" "${_bdir}" "${_idir}"
-                                "${CMAKE_BINARY_DIR}/flagsweep/cover-${_fn}" "${_fn}")
-                    set_tests_properties("flagsweep-cover/${_fn}" PROPERTIES
-                        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
-                        LABELS "flagsweep;flagsweep-full" TIMEOUT 600)
+                    if(MCC_FLAGSWEEP_FULL)
+                        add_test(NAME "flagsweep-cover/${_fn}"
+                            COMMAND "${_fs_sh}" cover "${_mcc_exe}" "${_bdir}" "${_idir}"
+                                    "${CMAKE_BINARY_DIR}/flagsweep/cover-${_fn}" "${_fn}")
+                        set_tests_properties("flagsweep-cover/${_fn}" PROPERTIES
+                            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                            LABELS "flagsweep;flagsweep-full" TIMEOUT 600)
+                    else()
+                        mcc_skip_test("flagsweep-cover/${_fn}"
+                            "the ${_fs_nrow} covering-array rows are opt-in: cmake -DMCC_FLAGSWEEP_FULL=ON, then ctest -L flagsweep-full"
+                            LABELS "flagsweep\;flagsweep-full")
+                    endif()
                 endforeach()
                 message(STATUS "flagsweep: ${_fs_nrow} covering-array rows as flagsweep-cover/* cells")
-            else()
-                mcc_skip_test(flagsweep-cover
-                    "${_fs_nrow} covering-array rows are opt-in: cmake -DMCC_FLAGSWEEP_FULL=ON, then ctest -L flagsweep-full"
-                    LABELS flagsweep)
             endif()
 
             # Strategy-registry sweeps. The registry (src/mccast.c,
@@ -4996,8 +5042,9 @@ if(MCC_BUILD_TESTS)
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                     LABELS "native;stratsweep" TIMEOUT 600)
             endforeach()
-            if(MCC_STRATSWEEP_FULL)
-                foreach(_ss_row IN LISTS _ss_rows)
+            set(_ss_optin "the exhaustive strategy tier is opt-in (6440 sec*proc): cmake -DMCC_STRATSWEEP_FULL=ON, then ctest -L stratsweep-full")
+            foreach(_ss_row IN LISTS _ss_rows)
+                if(MCC_STRATSWEEP_FULL)
                     add_test(NAME "stratsweep/isofull-${_ss_row}"
                         COMMAND "${_ss_sh}" iso "${_mcc_exe}" "${_bdir}"
                                 "${_idir}" "${CMAKE_BINARY_DIR}/stratsweep-isofull-${_ss_row}"
@@ -5005,8 +5052,13 @@ if(MCC_BUILD_TESTS)
                     set_tests_properties("stratsweep/isofull-${_ss_row}" PROPERTIES
                         FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                         LABELS "native;stratsweep;stratsweep-full" TIMEOUT 3600)
-                endforeach()
-                foreach(_ss_shard RANGE 0 31)
+                else()
+                    mcc_skip_test("stratsweep/isofull-${_ss_row}" "${_ss_optin}"
+                        LABELS "native\;stratsweep\;stratsweep-full")
+                endif()
+            endforeach()
+            foreach(_ss_shard RANGE 0 31)
+                if(MCC_STRATSWEEP_FULL)
                     add_test(NAME "stratsweep/perm3-exhaustive-${_ss_shard}"
                         COMMAND "${_ss_sh}" perm3 "${_mcc_exe}" "${_bdir}"
                                 "${_idir}" "${CMAKE_BINARY_DIR}/stratsweep-full-${_ss_shard}"
@@ -5021,12 +5073,23 @@ if(MCC_BUILD_TESTS)
                     set_tests_properties("stratsweep/perm3-exhaustive-based-${_ss_shard}" PROPERTIES
                         FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                         LABELS "native;stratsweep;stratsweep-full" TIMEOUT 3600)
-                endforeach()
-            endif()
+                else()
+                    mcc_skip_test("stratsweep/perm3-exhaustive-${_ss_shard}" "${_ss_optin}"
+                        LABELS "native\;stratsweep\;stratsweep-full")
+                    mcc_skip_test("stratsweep/perm3-exhaustive-based-${_ss_shard}" "${_ss_optin}"
+                        LABELS "native\;stratsweep\;stratsweep-full")
+                endif()
+            endforeach()
         endif()
 
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli/cases.h" _cli_clines
+         REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"[ \t]*,")
     if(MCC_EMULATOR)
-        mcc_skip_test(cli-suite "structural readelf/nm suite runs on native host only")
+        foreach(_cl IN LISTS _cli_clines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_cl}")
+            set(_cn "${CMAKE_MATCH_1}")
+            mcc_skip_test("cli/${_cn}" "structural readelf/nm suite runs on native host only")
+        endforeach()
     else()
 
         set(_cli_sh "")
@@ -5056,7 +5119,12 @@ if(MCC_BUILD_TESTS)
             endif()
         endif()
         if(MCC_TARGETOS STREQUAL "WIN32" AND NOT _cli_sh)
-            mcc_skip_test(cli-suite "needs a POSIX shell (no sh/bash found; set MCC_TEST_SH)")
+            foreach(_cl IN LISTS _cli_clines)
+                string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_cl}")
+                set(_cn "${CMAKE_MATCH_1}")
+                mcc_skip_test("cli/${_cn}"
+                    "needs a POSIX shell (no sh/bash found; set MCC_TEST_SH)")
+            endforeach()
         else()
             add_executable(cli_runner tests/cli/runner.c)
             target_include_directories(cli_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli")
@@ -5064,8 +5132,6 @@ if(MCC_BUILD_TESTS)
             if(_cli_sh)
                 set(_cli_env "${_cli_env};MCC_TEST_SH=${_cli_sh}")
             endif()
-            file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli/cases.h" _cli_clines
-                 REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"[ \t]*,")
             foreach(_cl IN LISTS _cli_clines)
                 string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_cl}")
                 set(_cn "${CMAKE_MATCH_1}")
@@ -5149,6 +5215,8 @@ if(MCC_BUILD_TESTS)
     if(MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_TEST_SH)
         set(_diff3_sh_ok FALSE)
     endif()
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/goldens.h" _d3_glines
+         REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"[ \t]*,[ \t]*\"run2?\"")
     if(NOT MCC_EMULATOR AND _diff3_nref GREATER_EQUAL 2 AND _diff3_sh_ok)
         add_executable(diff3_runner tests/diff3/runner.c)
         target_include_directories(diff3_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
@@ -5156,8 +5224,6 @@ if(MCC_BUILD_TESTS)
         if(MCC_TEST_SH)
             set(_diff3_env "${_diff3_env};MCC_TEST_SH=${MCC_TEST_SH}")
         endif()
-        file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/goldens.h" _d3_glines
-             REGEX "^[ \t]*{[ \t]*\"[A-Za-z0-9_]+\"[ \t]*,[ \t]*\"run2?\"")
         foreach(_d3l IN LISTS _d3_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_d3l}")
             set(_d3n "${CMAKE_MATCH_1}")
@@ -5173,10 +5239,17 @@ if(MCC_BUILD_TESTS)
                     ENVIRONMENT_MODIFICATION "${_win_sh_pathmod}")
             endif()
         endforeach()
-    elseif(NOT _diff3_sh_ok)
-        mcc_skip_test(diff3-suite "needs a POSIX shell on Windows (no sh/bash found; set MCC_TEST_SH)")
     else()
-        mcc_skip_test(diff3-suite "needs native host + >=2 distinct reference compilers (gcc/clang, or add -DMCC_DIFF3_EXTRA_REFS=label=path; build the clang-toolchain target for a self-contained clang)")
+        if(NOT _diff3_sh_ok)
+            set(_d3why "needs a POSIX shell on Windows (no sh/bash found; set MCC_TEST_SH)")
+        else()
+            set(_d3why "needs native host + >=2 distinct reference compilers (gcc/clang, or add -DMCC_DIFF3_EXTRA_REFS=label=path; build the clang-toolchain target for a self-contained clang)")
+        endif()
+        foreach(_d3l IN LISTS _d3_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_d3l}")
+            set(_d3n "${CMAKE_MATCH_1}")
+            mcc_skip_test("diff3/${_d3n}" "${_d3why}")
+        endforeach()
     endif()
 
     if(NOT MCC_EMULATOR AND _diff3_nref GREATER_EQUAL 2 AND _diff3_sh_ok
@@ -5211,15 +5284,24 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("fuzz/corpus" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
     else()
-        mcc_skip_test(fuzz-suite "needs native x86_64/arm64 host + >=2 distinct reference compilers (differential oracle executes mcc's own target ISA; add -DMCC_DIFF3_EXTRA_REFS=label=path to widen)")
+        set(_fzwhy "needs native x86_64/arm64 host + >=2 distinct reference compilers (differential oracle executes mcc's own target ISA; add -DMCC_DIFF3_EXTRA_REFS=label=path to widen)")
+        mcc_skip_test("fuzz/smoke" "${_fzwhy}")
+        mcc_skip_test("fuzz/o4" "${_fzwhy}")
+        foreach(_fm_shard RANGE 0 3)
+            mcc_skip_test("fuzz/matrix-${_fm_shard}" "${_fzwhy}")
+        endforeach()
+        mcc_skip_test("fuzz/corpus" "${_fzwhy}")
     endif()
 
+    file(GLOB _parts_wraps RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/parts"
+         "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/parts/run_*.c")
     if(MCC_TARGETOS STREQUAL "WIN32")
-        mcc_skip_test(parts-suite "native gcc/clang/mcc 3-way needs a shared C99 libc; the PE/msvcrt target has no msvcrt equivalent for the parts' complex/tgmath/libm surface (covered in aggregate by mcctest)")
+        foreach(_pw IN LISTS _parts_wraps)
+            string(REGEX REPLACE "\\.c$" "" _pn "${_pw}")
+            mcc_skip_test("parts/${_pn}" "native gcc/clang/mcc 3-way needs a shared C99 libc; the PE/msvcrt target has no msvcrt equivalent for the parts' complex/tgmath/libm surface (covered in aggregate by mcctest)")
+        endforeach()
     elseif(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG
        AND TARGET mccharness)
-        file(GLOB _parts_wraps RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/parts"
-             "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/parts/run_*.c")
         foreach(_pw IN LISTS _parts_wraps)
             string(REGEX REPLACE "\\.c$" "" _pn "${_pw}")
             add_test(NAME "parts/${_pn}" COMMAND "$<TARGET_FILE:mccharness>" parts
@@ -5230,13 +5312,16 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("parts/${_pn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
     else()
-        mcc_skip_test(parts-suite "needs native host + gcc + clang + integrated assembler")
+        foreach(_pw IN LISTS _parts_wraps)
+            string(REGEX REPLACE "\\.c$" "" _pn "${_pw}")
+            mcc_skip_test("parts/${_pn}" "needs native host + gcc + clang + integrated assembler")
+        endforeach()
     endif()
 
+    file(GLOB_RECURSE _pp_cases RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess"
+         "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess/*.c"
+         "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess/*.S")
     if(NOT MCC_EMULATOR AND DIFF3_GCC AND DIFF3_CLANG)
-        file(GLOB_RECURSE _pp_cases RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess"
-             "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess/*.c"
-             "${CMAKE_CURRENT_SOURCE_DIR}/tests/preprocess/*.S")
         foreach(_ppc IN LISTS _pp_cases)
             string(REGEX REPLACE "\\.[cS]$" "" _ppn "${_ppc}")
             add_test(NAME "preprocess/${_ppn}"
@@ -5248,8 +5333,11 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77)
         endforeach()
     else()
-        mcc_skip_test(preprocess-suite
-            "needs native host + both gcc and clang (build the clang-toolchain target for a self-contained clang)")
+        foreach(_ppc IN LISTS _pp_cases)
+            string(REGEX REPLACE "\\.[cS]$" "" _ppn "${_ppc}")
+            mcc_skip_test("preprocess/${_ppn}"
+                "needs native host + both gcc and clang (build the clang-toolchain target for a self-contained clang)")
+        endforeach()
     endif()
 
     if(MCC_TARGET_IS_HOST)
@@ -5565,6 +5653,9 @@ if(MCC_BUILD_TESTS)
                             "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include"
                             "${CMAKE_BINARY_DIR}")
                 set_tests_properties(jit/standalone-static PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            else()
+                mcc_skip_test(jit/standalone-static
+                    "links libmcc.a into a standalone JIT host: needs -DMCC_BUILD_STATIC_LIB=ON on a Linux target")
             endif()
 
             if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" AND MCC_CPU STREQUAL "arm64")
@@ -5574,6 +5665,59 @@ if(MCC_BUILD_TESTS)
                     set_tests_properties(jit/selftest-${_jt} PROPERTIES DISABLED TRUE)
                 endforeach()
             endif()
+        else()
+            set(_jitoff_why "the Tier-B runtime-JIT engine is not linked into this build; configure with -DMCC_EMBED_JIT=ON")
+            mcc_skip_test(jit/selftest-leaf-int "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-reemit-gates "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-stage2 "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-kgc "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-nearmatch "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-purity "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-strlit "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-struct "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-ptrret "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-lazy "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-pool "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-eligibility "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-submit "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-fork "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-observability "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-liverun "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-poison "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-bench "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-profile "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-vrange "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-fparg "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-mixed "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-qsbr "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-patch "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-slice "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-sliceextract "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-sliceoracle "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-sliceladder "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-consteval "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-fold-consts "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-gated "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-search "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-search-live "${_jitoff_why}")
+            mcc_skip_test(regression/o4-aot-jit "${_jitoff_why}")
+            mcc_skip_test(regression/jit-submit-aot-diff "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-search-live-kgc "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-search-live-struct "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-search-live-ptrret "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-search-live-purity "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-search-live-pool "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-search-live-lazy "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-slicekernel "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-slicereemit "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-sliceinstall "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-slicesearch "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-slice-live "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-noescape "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-evalgate "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-l4a "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-benchwire "${_jitoff_why}")
+            mcc_skip_test(jit/standalone-static "${_jitoff_why}")
         endif()
 
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -5916,6 +6060,9 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(mcctest-bcheck PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77)
         endif()
+    else()
+        mcc_skip_test(mcctest "tests/diff/full_language.c is missing from this tree")
+        mcc_skip_test(mcctest-bcheck "tests/diff/full_language.c is missing from this tree")
     endif()
 
     if(MCC_CPU MATCHES "^(i386|x86_64)$"
@@ -5970,6 +6117,9 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
 
             add_test(NAME qemu-fetch-parse COMMAND "$<TARGET_FILE:mccharness>" qemufetch --selftest)
             set_tests_properties(qemu-fetch-parse PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        else()
+            mcc_skip_test(ci-pkg-smoke "the mccharness driver is not built in this configuration")
+            mcc_skip_test(qemu-fetch-parse "the mccharness driver is not built in this configuration")
         endif()
 
         find_program(MCC_PYTHON3 NAMES python3 python)
@@ -6140,6 +6290,11 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties("census/gates-armed" PROPERTIES
                 LABELS "census" TIMEOUT 300)
 
+            add_test(NAME "ci/registration-stubs"
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/regstub-lint.py"
+                        "${CMAKE_CURRENT_SOURCE_DIR}" --min-chains 30)
+            set_tests_properties("ci/registration-stubs" PROPERTIES TIMEOUT 300)
+
             add_test(NAME selfhost-fixpoint
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
                         "${CMAKE_BINARY_DIR}")
@@ -6206,6 +6361,41 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 set_tests_properties(selfhost-smoke-memmodel PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                     TIMEOUT 300)
             endif()
+        else()
+            set(_nopy_why "the selfhost/census drivers are python3 scripts and need both a python3 on PATH and an mcc that can rebuild itself (MCC_EMBED_MCCRT, or a Darwin/mingw target)")
+            mcc_skip_test("selfhost-smoke" "${_nopy_why}")
+            mcc_skip_test("selfhost-smoke-gates" "${_nopy_why}")
+            mcc_skip_test("ci/must-run-registered" "${_nopy_why}")
+            mcc_skip_test("ci/registration-stubs" "${_nopy_why}")
+            mcc_skip_test("rir/drop-ratchet" "${_nopy_why}")
+            mcc_skip_test("rir-coverage" "${_nopy_why}")
+            mcc_skip_test("node-census" "${_nopy_why}")
+            mcc_skip_test("rir-gap-classes" "${_nopy_why}")
+            mcc_skip_test("rir-lowerable-classes" "${_nopy_why}")
+            mcc_skip_test("slice-enum" "${_nopy_why}")
+            mcc_skip_test("loop-census-control" "${_nopy_why}")
+            mcc_skip_test("loop-census-parallel" "${_nopy_why}")
+            mcc_skip_test("selfhost-fixpoint" "${_nopy_why}")
+            mcc_skip_test("selfhost-fixpoint-O3" "${_nopy_why}")
+            mcc_skip_test("selfhost-fixpoint-O1" "${_nopy_why}")
+            mcc_skip_test("selfhost-fixpoint-Os" "${_nopy_why}")
+            mcc_skip_test("selfhost-fixpoint-gates" "${_nopy_why}")
+            mcc_skip_test("rir-coverage-census" "${_nopy_why}" LABELS census)
+            mcc_skip_test("slice-census" "${_nopy_why}" LABELS census)
+            mcc_skip_test("loop-census" "${_nopy_why}" LABELS census)
+            mcc_skip_test("loop-census-numeric" "${_nopy_why}" LABELS census)
+            mcc_skip_test("rir-nofb-probe" "${_nopy_why}" LABELS census)
+            mcc_skip_test("census/gates-armed" "${_nopy_why}" LABELS census)
+            foreach(_op -O2 -O3)
+                string(REPLACE "-" "" _optag "${_op}")
+                mcc_skip_test("selfhost-output-parity-${_optag}" "${_nopy_why}")
+            endforeach()
+            foreach(_qa riscv64 arm arm64 i386)
+                foreach(_qo -O1 -O2)
+                    string(REPLACE "-" "" _qon "${_qo}")
+                    mcc_skip_test("selfhost-qemu-${_qa}-${_qon}" "${_nopy_why}" LABELS qemu)
+                endforeach()
+            endforeach()
         endif()
 
         if(MCC_PYTHON3 AND MCC_EMBED_JIT)
@@ -6214,6 +6404,9 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         "${CMAKE_BINARY_DIR}" "${MCC_CPU}")
             set_tests_properties(selfhost-jit PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 TIMEOUT 300)
+        else()
+            mcc_skip_test(selfhost-jit
+                "tools/selfhost-jit.py needs a python3 on PATH and -DMCC_EMBED_JIT=ON")
         endif()
 
         if(MCC_PYTHON3 AND MCC_EMBED_JIT AND WIN32 AND NOT MSVC)
@@ -6222,6 +6415,9 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         "${CMAKE_BINARY_DIR}")
             set_tests_properties(embed-jit-smoke PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 TIMEOUT 180)
+        else()
+            mcc_skip_test(embed-jit-smoke
+                "the --embed-jit PE smoke needs a python3 on PATH, -DMCC_EMBED_JIT=ON and a non-MSVC Windows host")
         endif()
 
         if(TARGET mccbuild AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
@@ -6229,6 +6425,9 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(git-stamp PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
                 PASS_REGULAR_EXPRESSION "@")
+        else()
+            mcc_skip_test(git-stamp
+                "needs the mccbuild driver and a .git directory to stamp from (this is not a git checkout)")
         endif()
 
         if(TARGET mccbuild AND NOT CMAKE_CROSSCOMPILING AND "${MCC_TARGET_ARCH}" STREQUAL "")
@@ -6238,6 +6437,9 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 --expect-triplet "${MCC_TRIPLET}")
             set_tests_properties(host-detect PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        else()
+            mcc_skip_test(host-detect
+                "mccbuild --detect compares against the host it is running on; not built, cross-compiling, or MCC_TARGET_ARCH overrides the target")
         endif()
 
         if(UNIX)
@@ -6252,6 +6454,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         if(TARGET mccbuild)
             add_test(NAME arm-abi-detect COMMAND "$<TARGET_FILE:mccbuild>" --detect --arm-selftest)
             set_tests_properties(arm-abi-detect PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        else()
+            mcc_skip_test(arm-abi-detect "the mccbuild driver is not built in this configuration")
         endif()
 
         if(TARGET mccbuild AND _ref_cc)
@@ -6269,6 +6473,11 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         elseif(TARGET mccbuild)
             mcc_skip_test(cross-factory
                 "needs a GCC-compatible cc (set MCC_REF_CC or put gcc on PATH)")
+            mcc_skip_test(cross-factory-i386
+                "needs a GCC-compatible cc (set MCC_REF_CC or put gcc on PATH)")
+        else()
+            mcc_skip_test(cross-factory "the mccbuild driver is not built in this configuration")
+            mcc_skip_test(cross-factory-i386 "the mccbuild driver is not built in this configuration")
         endif()
 
         if(TARGET mccbuild)
@@ -6286,6 +6495,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 --triplet "${MCC_TRIPLET}" --os-release "${MCC_OS_RELEASE}" --sysroot "${MCC_SYSROOT}"
                 --mccdir "${MCC_RESOLVED_MCCDIR}")
             set_tests_properties(config-defines PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        else()
+            mcc_skip_test(config-defines "the mccbuild driver is not built in this configuration")
         endif()
     endif()
     foreach(_dsb_arch arm64 riscv64)
@@ -6377,6 +6588,16 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
     else()
         mcc_skip_test(i386-fastcall-abi
             "requires an i386 cross-compiler (target mcc-i386 is not configured)")
+        mcc_skip_test(i386-fastcall-abi-docker
+            "requires the mcc-i386 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-i386)")
+        mcc_skip_test(i386-tls-docker
+            "requires the mcc-i386 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-i386)")
+        mcc_skip_test(i386-codegen-diff-docker
+            "requires the mcc-i386 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-i386)")
+        mcc_skip_test(i386-divmagic-soak-docker
+            "requires the mcc-i386 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-i386)")
+        mcc_skip_test(i386-inline-docker
+            "requires the mcc-i386 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-i386)")
     endif()
 
     add_test(NAME dwarf-gdb-docker
@@ -6407,6 +6628,11 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 "amd64" "${CMAKE_BINARY_DIR}/abi-diff-amd64-docker")
         set_tests_properties(abi-diff-amd64-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_x86_64}"
             SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(extlink-x86_64-docker
+            "requires the mcc-x86_64 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-x86_64)")
+        mcc_skip_test(abi-diff-amd64-docker
+            "requires the mcc-x86_64 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-x86_64)")
     endif()
     mcc_cross_cc(arm64 _xcc_arm64 _xfix_arm64)
     if(NOT _xcc_arm64 STREQUAL "")
@@ -6435,6 +6661,15 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 "arm64" "${CMAKE_BINARY_DIR}/abi-diff-arm64-docker")
         set_tests_properties(abi-diff-arm64-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_arm64}"
             SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(extlink-arm64-docker
+            "requires the mcc-arm64 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-arm64)")
+        mcc_skip_test(arm64-inline-docker
+            "requires the mcc-arm64 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-arm64)")
+        mcc_skip_test(arm64-divmagic-soak-docker
+            "requires the mcc-arm64 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-arm64)")
+        mcc_skip_test(abi-diff-arm64-docker
+            "requires the mcc-arm64 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-arm64)")
     endif()
     if(MCC_PYTHON3)
         add_test(NAME runtime-bench-check
@@ -6580,13 +6815,37 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 set_tests_properties(selfhost-optbench PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 RUN_SERIAL TRUE
                     TIMEOUT 10800 LABELS "optbench")
+            else()
+                set(_ladder_why "the -O ladder benchmarks take hours and are opt-in: cmake -DMCC_OPT_LADDER_BENCH=ON, then ctest -L optbench")
+                mcc_skip_test(optlevel-bench "${_ladder_why}" LABELS optbench)
+                mcc_skip_test(selfhost-optbench "${_ladder_why}" LABELS optbench)
             endif()
         else()
+            mcc_skip_test(opt-cache-determinism
+                "the -fopt-cache determinism gate recompiles src/mcc.c with the host mcc on a POSIX host; an emulated or cross build is not running the compiler under test"
+                LABELS native)
             mcc_skip_test(optlevel-bench
                 "the -O ladder benchmarks count instructions retired on the host they run on; an emulated or cross build has no such counter")
             mcc_skip_test(selfhost-optbench
                 "the -O ladder benchmarks count instructions retired on the host they run on; an emulated or cross build has no such counter")
         endif()
+    else()
+        set(_nopy2_why "the bench/census/determinism drivers are python3 scripts and no python3 is on PATH")
+        mcc_skip_test("runtime-bench-check" "${_nopy2_why}")
+        mcc_skip_test("optbench/null-subject" "${_nopy2_why}")
+        mcc_skip_test("optbench/null-subject-known-positive" "${_nopy2_why}")
+        mcc_skip_test("optbench/levelbench-bank" "${_nopy2_why}")
+        mcc_skip_test("optbench/levelbench-bank-known-positive" "${_nopy2_why}")
+        mcc_skip_test("fmt/census-bank" "${_nopy2_why}")
+        mcc_skip_test("fmt/census-bank-known-positive" "${_nopy2_why}")
+        mcc_skip_test("opt-determinism" "${_nopy2_why}")
+        mcc_skip_test("opt-determinism-known-positive" "${_nopy2_why}")
+        mcc_skip_test("untyped-probe" "${_nopy2_why}")
+        mcc_skip_test("untyped-probe-known-positive" "${_nopy2_why}")
+        mcc_skip_test("runtime-bench-gatewin" "${_nopy2_why}")
+        mcc_skip_test("opt-cache-determinism" "${_nopy2_why}")
+        mcc_skip_test("optlevel-bench" "${_nopy2_why}")
+        mcc_skip_test("selfhost-optbench" "${_nopy2_why}")
     endif()
 
     if(UNIX)
@@ -6671,6 +6930,19 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 "riscv64" "${CMAKE_BINARY_DIR}/abi-diff-riscv64-docker")
         set_tests_properties(abi-diff-riscv64-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_riscv64}"
             SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(extlink-riscv64-docker
+            "requires the mcc-riscv64 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-riscv64)")
+        mcc_skip_test(riscv64-promote-docker
+            "requires the mcc-riscv64 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-riscv64)")
+        mcc_skip_test(riscv64-inline-docker
+            "requires the mcc-riscv64 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-riscv64)")
+        mcc_skip_test(riscv64-divmagic-soak-docker
+            "requires the mcc-riscv64 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-riscv64)")
+        mcc_skip_test(riscv64-const-docker
+            "requires the mcc-riscv64 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-riscv64)")
+        mcc_skip_test(abi-diff-riscv64-docker
+            "requires the mcc-riscv64 cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-riscv64)")
     endif()
 
     mcc_cross_cc(arm _xcc_arm _xfix_arm)
@@ -6686,6 +6958,11 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 "arm" "${CMAKE_BINARY_DIR}/abi-diff-arm-docker")
         set_tests_properties(abi-diff-arm-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_arm}"
             SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(arm-inline-docker
+            "requires the mcc-arm cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-arm)")
+        mcc_skip_test(abi-diff-arm-docker
+            "requires the mcc-arm cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-arm)")
     endif()
 
     mcc_cross_cc(arm _xcc_arm _xfix_arm)
@@ -6695,6 +6972,9 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 "${CMAKE_BINARY_DIR}/arm-interwork-docker")
         set_tests_properties(arm-interwork-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_arm}"
             SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(arm-interwork-docker
+            "requires the mcc-arm cross compiler (build one with cmake --preset cross, or point -DMCC_CROSS_DIR at a tree that has mcc-arm)")
     endif()
 
     add_custom_target(gcctestsuite
@@ -7065,86 +7345,88 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 TIMEOUT 300)
         endforeach()
     else()
-        mcc_skip_test(macho-libsystem-kernel-fused
-            "libmalloc/locale-stdio/dyld/pthread/GCD/ObjC need a macOS or darling host (-DMCC_DARWIN_HOST=ON); kernel-fused, no portable variant")
+        foreach(_dt malloc stdio dyld pthread gcd mach objc)
+            mcc_skip_test("macho-libsystem/${_dt}"
+                "libmalloc/locale-stdio/dyld/pthread/GCD/ObjC need a macOS or darling host (-DMCC_DARWIN_HOST=ON); kernel-fused, no portable variant"
+                LABELS macho)
+        endforeach()
     endif()
 
     option(MCC_QEMU_TESTS
         "Download Gentoo stage3 rootfs and run cross conformance tests under qemu-user" OFF)
-    if(MCC_QEMU_TESTS)
-        set(MCC_QEMU_MIRROR "https://distfiles.gentoo.org/releases" CACHE STRING
-            "Base URL of the Gentoo releases mirror (…/releases)")
-        set(MCC_QEMU_ARCHS "x86_64;i386;arm;arm64;riscv64" CACHE STRING
-            "Architectures to exercise under qemu-user")
-        set(MCC_QEMU_LIBCS "glibc;musl" CACHE STRING
-            "C libraries to exercise (glibc;musl)")
-        set(MCC_QEMU_DLDIR "${MCC_VENDOR_DIR}" CACHE PATH
-            "Parent dir for the downloaded Gentoo stage3 rootfs trees (vendor/gentoo-stage3-<arch>-<libc>)")
+    set(MCC_QEMU_MIRROR "https://distfiles.gentoo.org/releases" CACHE STRING
+        "Base URL of the Gentoo releases mirror (…/releases)")
+    set(MCC_QEMU_ARCHS "x86_64;i386;arm;arm64;riscv64" CACHE STRING
+        "Architectures to exercise under qemu-user")
+    set(MCC_QEMU_LIBCS "glibc;musl" CACHE STRING
+        "C libraries to exercise (glibc;musl)")
+    set(MCC_QEMU_DLDIR "${MCC_VENDOR_DIR}" CACHE PATH
+        "Parent dir for the downloaded Gentoo stage3 rootfs trees (vendor/gentoo-stage3-<arch>-<libc>)")
 
-        set(_qsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/conformance")
-        foreach(_arch IN LISTS MCC_QEMU_ARCHS)
+    set(_qsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/conformance")
+    foreach(_arch IN LISTS MCC_QEMU_ARCHS)
 
-            if(_arch STREQUAL "x86_64")
-                set(_gdir amd64)
-                set(_qbin qemu-x86_64)
-                set(_gptr latest-stage3-amd64-openrc.txt)
-                set(_mptr latest-stage3-amd64-musl-openrc.txt)
-            elseif(_arch STREQUAL "i386")
-                set(_gdir x86)
-                set(_qbin qemu-i386)
-                set(_gptr latest-stage3-i686-openrc.txt)
-                set(_mptr latest-stage3-i686-musl-openrc.txt)
-            elseif(_arch STREQUAL "arm")
-                set(_gdir arm)
-                set(_qbin qemu-arm)
-                set(_gptr latest-stage3-armv7a_hardfp-openrc.txt)
-                set(_mptr latest-stage3-armv7a_hardfp_musl-openrc.txt)
-            elseif(_arch STREQUAL "arm64")
-                set(_gdir arm64)
-                set(_qbin qemu-aarch64)
-                set(_gptr latest-stage3-arm64-openrc.txt)
-                set(_mptr latest-stage3-arm64-musl-openrc.txt)
-            elseif(_arch STREQUAL "riscv64")
-                set(_gdir riscv)
-                set(_qbin qemu-riscv64)
-                set(_gptr latest-stage3-rv64_lp64d-openrc.txt)
-                set(_mptr latest-stage3-rv64_lp64d_musl-openrc.txt)
+        if(_arch STREQUAL "x86_64")
+            set(_gdir amd64)
+            set(_qbin qemu-x86_64)
+            set(_gptr latest-stage3-amd64-openrc.txt)
+            set(_mptr latest-stage3-amd64-musl-openrc.txt)
+        elseif(_arch STREQUAL "i386")
+            set(_gdir x86)
+            set(_qbin qemu-i386)
+            set(_gptr latest-stage3-i686-openrc.txt)
+            set(_mptr latest-stage3-i686-musl-openrc.txt)
+        elseif(_arch STREQUAL "arm")
+            set(_gdir arm)
+            set(_qbin qemu-arm)
+            set(_gptr latest-stage3-armv7a_hardfp-openrc.txt)
+            set(_mptr latest-stage3-armv7a_hardfp_musl-openrc.txt)
+        elseif(_arch STREQUAL "arm64")
+            set(_gdir arm64)
+            set(_qbin qemu-aarch64)
+            set(_gptr latest-stage3-arm64-openrc.txt)
+            set(_mptr latest-stage3-arm64-musl-openrc.txt)
+        elseif(_arch STREQUAL "riscv64")
+            set(_gdir riscv)
+            set(_qbin qemu-riscv64)
+            set(_gptr latest-stage3-rv64_lp64d-openrc.txt)
+            set(_mptr latest-stage3-rv64_lp64d_musl-openrc.txt)
+        else()
+            message(WARNING "MCC_QEMU_TESTS: unknown arch '${_arch}', skipping")
+            continue()
+        endif()
+
+        if(_arch STREQUAL MCC_CPU)
+            set(_qcc "$<TARGET_FILE:mcc>")
+        elseif(TARGET mcc-${_arch})
+            set(_qcc "$<TARGET_FILE:mcc-${_arch}>")
+        else()
+            set(_qcc "")
+        endif()
+        find_program(_QEMU_${_arch} ${_qbin})
+
+        foreach(_libc IN LISTS MCC_QEMU_LIBCS)
+            set(_tn "qemu-${_arch}-${_libc}")
+            if(_libc STREQUAL "glibc")
+                set(_ptr "${_gptr}")
+            elseif(_libc STREQUAL "musl")
+                set(_ptr "${_mptr}")
             else()
-                message(WARNING "MCC_QEMU_TESTS: unknown arch '${_arch}', skipping")
+                mcc_skip_test(${_tn} "unknown libc '${_libc}'" LABELS qemu)
                 continue()
             endif()
 
-            if(_arch STREQUAL MCC_CPU)
-                set(_qcc "$<TARGET_FILE:mcc>")
-            elseif(TARGET mcc-${_arch})
-                set(_qcc "$<TARGET_FILE:mcc-${_arch}>")
-            else()
-                set(_qcc "")
+            set(_qwhy "")
+            if(NOT MCC_QEMU_TESTS)
+                set(_qwhy "the qemu-user conformance matrix is opt-in because it downloads a Gentoo stage3 rootfs per arch/libc: cmake -DMCC_QEMU_TESTS=ON, then ctest -L qemu")
+            elseif(_qcc STREQUAL "")
+                set(_qwhy "no compiler for ${_arch} (native target is ${MCC_CPU}; build mcc-${_arch} via -DMCC_ENABLE_CROSS=ON)")
+            elseif(NOT _QEMU_${_arch})
+                set(_qwhy "${_qbin} not found (install the qemu-user package)")
             endif()
-            find_program(_QEMU_${_arch} ${_qbin})
 
-            foreach(_libc IN LISTS MCC_QEMU_LIBCS)
-                set(_tn "qemu-${_arch}-${_libc}")
-                if(_libc STREQUAL "glibc")
-                    set(_ptr "${_gptr}")
-                elseif(_libc STREQUAL "musl")
-                    set(_ptr "${_mptr}")
-                else()
-                    mcc_skip_test(${_tn} "unknown libc '${_libc}'" LABELS qemu)
-                    continue()
-                endif()
-                if(_qcc STREQUAL "")
-                    mcc_skip_test(${_tn}
-                        "no compiler for ${_arch} (native target is ${MCC_CPU}; build mcc-${_arch} via -DMCC_ENABLE_CROSS=ON)"
-                        LABELS qemu)
-                    continue()
-                endif()
-                if(NOT _QEMU_${_arch})
-                    mcc_skip_test(${_tn} "${_qbin} not found (install the qemu-user package)" LABELS qemu)
-                    continue()
-                endif()
-
-                set(_root "${MCC_QEMU_DLDIR}/gentoo-stage3-${_arch}-${_libc}")
+            set(_root "${MCC_QEMU_DLDIR}/gentoo-stage3-${_arch}-${_libc}")
+            if(_qwhy STREQUAL "")
                 add_test(NAME ${_tn}-fetch COMMAND "$<TARGET_FILE:mccharness>" qemufetch
                     --ptrurl "${MCC_QEMU_MIRROR}/${_gdir}/autobuilds/${_ptr}"
                     --mirrorbase "${MCC_QEMU_MIRROR}/${_gdir}/autobuilds"
@@ -7170,8 +7452,16 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                     set_tests_properties(${_tn}-${_qopt} PROPERTIES
                         FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu TIMEOUT 600)
                 endforeach()
+            else()
+                mcc_skip_test(${_tn}-fetch "${_qwhy}" LABELS qemu)
+                mcc_skip_test(${_tn} "${_qwhy}" LABELS qemu)
+                foreach(_qopt IN ITEMS O2 O3 Os)
+                    mcc_skip_test(${_tn}-${_qopt} "${_qwhy}" LABELS qemu)
+                endforeach()
+            endif()
 
-                if(NOT _arch STREQUAL MCC_CPU)
+            if(NOT _arch STREQUAL MCC_CPU)
+                if(_qwhy STREQUAL "")
                     add_test(NAME ${_tn}-exec COMMAND exec_runner
                         "${_qcc}" "${CMAKE_BINARY_DIR}"
                         "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include"
@@ -7185,25 +7475,30 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu
                         SKIP_RETURN_CODE 77 TIMEOUT 1200
                         ENVIRONMENT "MCC_TEST_EMU=;MCC_TEST_RUNEMU=${_QEMU_${_arch}} -L ${_root};MCC_TEST_SYSROOT=${_root};MCC_TEST_CPU=${_arch};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_BCHECK=0;MCC_TEST_BACKTRACE=${_mcc_diag_bt}")
+                else()
+                    mcc_skip_test(${_tn}-exec "${_qwhy}" LABELS qemu)
                 endif()
-            endforeach()
+            endif()
         endforeach()
+    endforeach()
 
-        if((";${MCC_QEMU_ARCHS};" MATCHES ";arm64;")
-           AND (";${MCC_QEMU_LIBCS};" MATCHES ";glibc;"))
-            add_test(NAME qemu-arm64-osx COMMAND "$<TARGET_FILE:mccharness>" machocodegen
-                --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
-                --work "${CMAKE_BINARY_DIR}/macho-arm64-work" --arch arm64
-                --sysroot "${MCC_QEMU_DLDIR}/gentoo-stage3-arm64-glibc")
-            set_tests_properties(qemu-arm64-osx PROPERTIES
-                FIXTURES_REQUIRED "MCC_BUILT;FX_qemu-arm64-glibc"
-                LABELS "qemu;macho" SKIP_RETURN_CODE 77 TIMEOUT 600)
-        else()
-            mcc_skip_test(qemu-arm64-osx
-                "requires arm64+glibc in the qemu matrix and the arm64-osx cross compiler (cmake --preset cross)"
-                LABELS qemu)
-        endif()
+    if(MCC_QEMU_TESTS
+       AND (";${MCC_QEMU_ARCHS};" MATCHES ";arm64;")
+       AND (";${MCC_QEMU_LIBCS};" MATCHES ";glibc;"))
+        add_test(NAME qemu-arm64-osx COMMAND "$<TARGET_FILE:mccharness>" machocodegen
+            --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
+            --work "${CMAKE_BINARY_DIR}/macho-arm64-work" --arch arm64
+            --sysroot "${MCC_QEMU_DLDIR}/gentoo-stage3-arm64-glibc")
+        set_tests_properties(qemu-arm64-osx PROPERTIES
+            FIXTURES_REQUIRED "MCC_BUILT;FX_qemu-arm64-glibc"
+            LABELS "qemu;macho" SKIP_RETURN_CODE 77 TIMEOUT 600)
+    else()
+        mcc_skip_test(qemu-arm64-osx
+            "requires -DMCC_QEMU_TESTS=ON with arm64+glibc in the matrix, and the arm64-osx cross compiler (cmake --preset cross)"
+            LABELS qemu)
+    endif()
 
+    if(MCC_QEMU_TESTS)
         message(STATUS "mcc tests: qemu matrix enabled (ctest -L qemu) for "
                        "archs=[${MCC_QEMU_ARCHS}] libcs=[${MCC_QEMU_LIBCS}]")
     endif()
