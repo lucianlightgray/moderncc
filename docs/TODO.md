@@ -526,15 +526,89 @@ through two `int (*)[32]` parameters — must stay `par=?` in both trees, and do
 soundness control, not a positive.
 
 **What this does not do.** Frame-local 2-D arrays (`double x[N][N]; double y[N][N];` inside
-a function) still decline, because base distinctness is only implemented for symbols. That
-is the next sound point on this line and it is not free: a `base_kind == 2` offset is
-sometimes a real object and sometimes a compiler temp holding a loaded pointer, and the two
-are not distinguished today. Also **unaudited and not touched here**:
-`ast_loop_interchange_legal` and `ast_dep_fusion_pair_illegal` call `ast_dep_base_distinct`
-with *no* `indirect` guard at all, so they never had the protection this row is about.
-`-floop-interchange` and `-floop-tile` sit at `MCC_OPTD_LEVEL(12)`, above `-O3`, so they are
-opt-in — but they are shipped, they do reach emitted code, and nothing above proves them
-sound for pointer bases. That is a separate row.
+a function) still decline, because base distinctness is only implemented for symbols. See
+`#### LANDED — the unguarded callers were a live miscompile` below for what happened to the
+rest of this paragraph: the unaudited callers were reachable and are fixed, and the
+frame-local item was measured and does not pay.
+
+#### LANDED — the unguarded callers were a live miscompile, in all three shipped passes
+
+**The prediction was right and it understated the blast radius.** The row above flagged
+`ast_loop_interchange_legal` and `ast_dep_fusion_pair_illegal` as calling
+`ast_dep_base_distinct` with no `indirect` guard, and asked whether that could reach emitted
+code. It could, in **three** passes, not two — `-floop-interchange`, `-floop-block` and
+`-floop-fusion`, all `MCC_OPTD_LEVEL(12)`, all on by default at `-O12`. Every one of them
+produced a wrong answer on pristine `72c60f84`, with **no** `-fdep-alias-oracle`:
+
+| pass | reproducer (globals `gp`/`gq` both assigned the same object) | correct | shipped |
+| --- | --- | ---: | ---: |
+| `-floop-interchange`, `-O12` | `int (*gp)[8],(*gq)[8];` `for i for j gp[j][i] = gq[j-1][i+1]+1;` | `1526249087836454304` | `843238774219177898` |
+| `-floop-block` | same nest, constant bounds | `8322330699240940126` | `-6047003803493180258` |
+| `-floop-fusion` | `int *gp,*gq;` `for i gp[i]=…;` then `for i out[i]=gq[i+1];` | `-6383020598026989609` | `-6585256009372028400` |
+
+`-fdump-loopdep` on the first prints `interchange(outer#5,inner#17): legal` over two refs
+both marked `INDIRECT` whose direction vector is `(<,>)` — the one shape interchange must
+never take. The dependence is real; the pass only failed to see it because two distinct
+*pointer variables* were read as two distinct *objects*.
+
+**Two things had to be true at once, and both are easy to hit.** The bases must be pointer
+loads (so `indirect` is set and the guard was the only thing standing between the pass and a
+wrong answer), and the loops must clear the pass's own preconditions. The second is what
+made the first fusion attempt read as unreachable: `ast_dep_same_trip` needs
+`ast_loop_bounds`, which wants a **constant** bound, so `for (i = 0; i < n; i++)` declines
+and `for (i = 0; i < 32; i++)` fuses. A reachability probe that only tried variable bounds
+would have reported this row closed. It is not.
+
+**The fix.** `ast_dep_base_distinct` takes an explicit `allow_indirect` argument and refuses
+`indirect` bases unless the caller opts in. `ast_loop_parallel_legal` passes
+`ast_dep_alias_oracle_env` — the deliberately-unsound census ceiling, unchanged, and now the
+*only* place that can reach it. The three emitting passes pass `0` and are sound
+unconditionally, including under `-fdep-alias-oracle`, which previously could not have
+helped them because they never consulted the flag at all. Making the parameter explicit
+rather than reading the env global inside the predicate is the point: a future caller has to
+write the `0` or the `1`, so it cannot inherit the hole by omission the way these three did.
+
+**Emitted code did not move where it must not.** 366 TUs from `src/`, `runtime/`, `tools/`
+and `tests/**` compiled at `-O0/-O1/-O2/-O3` with the pre- and post-change compilers =
+**1464 objects, 1464 byte-identical, zero differing** (no `__TIME__` noise: this corpus
+produced none). At `-O12`, where the three passes are live, **363 of 366 are byte-identical**
+and the three that differ are exactly `tests/exec/optimizer/loop_{interchange,fusion,tile}.c`
+— the files this change adds the aliasing cases to. Nothing else in the corpus was relying on
+the unsound answer, which is why this was invisible: the hole was wide, and the corpus never
+stepped in it.
+
+**The cells that fail without it.** `tests/exec/optimizer/loop_interchange.c` gains
+`RP`/`RQ` (`int (*)[N]`) and `rowptr_skew()`, `loop_tile.c` gains `aliased_rowptr_skew()`,
+`loop_fusion.c` gains `aliased_ptr_backward_dep()`, each aliased onto one array in `main`;
+three `tests/exec/goldens.h` strings move. Ablating only `src/mccast.c` and rebuilding:
+**17 cells fail** — `exec-interchange/{loop_interchange,loop_tile}`,
+`exec-fusion/loop_fusion`, `exec-tile/{loop_interchange,loop_tile}`, and
+`exec-search{,-emitsize,-emitiso,-threads}/{loop_interchange,loop_fusion,loop_tile}` — and
+all 17 pass with the fix. The `tests/optfire/` interchange/fusion/tile pins use file-scope
+`static` arrays with direct bases, so the guard cannot reach them and they are untouched.
+
+**Frame-local array distinctness (`base_kind == 2`): measured, and it does not pay.** The
+paragraph above says the blocker is that a `base_kind == 2` offset cannot be told apart from
+a compiler temp holding a loaded pointer. That is **no longer true** — the `indirect` flag
+already separates them, and `-fdump-loopdep` shows it directly: two local `int[64]`s decode
+as `base=@-264` / `base=@-520` with no `INDIRECT`, two local `int *`s decode as
+`base=@-32 INDIRECT` / `base=@-40 INDIRECT`, and a local array against a local pointer gets
+one of each. The folding hazard does not bite either: `*(x + 8 + i)` decodes as
+`base=@-264[8][1*@-268]`, i.e. the constant becomes a *subscript*, not a second base offset,
+and local struct/union members decline at decode. So the work is smaller than this row
+claims. It still should not be done, because the prize is not there:
+
+| | self-compile of `src/mcc.c` | 17-kernel runtime corpus |
+| --- | ---: | ---: |
+| `bases-may-alias` (non-indirect), iteration-weighted | **0.72%** (6 loops) | **0.00%** (absent) |
+| current parallel-legal fraction | 0.01% | 80.60% |
+
+0.72% is an *upper* bound — it counts every non-indirect base mismatch, including
+symbol-vs-local pairs that frame-local distinctness would not convert. On the corpus the
+reason does not appear at all. Converting all of it would move the self-compile from 0.01%
+to at most ~0.7% on a workload where 83.9% of iterations are in loops that call a function or
+contain a `goto`. Not worth the soundness surface. **Do not implement without a workload
+that shows the reason.**
 
 ### 2. ~~Replay fidelity — ~4.3 points of `kept`~~ — MEASURED 2026-08-09; the prize is 2.60 points and it does not pay
 

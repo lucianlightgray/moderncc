@@ -45,6 +45,15 @@ static void stencil(void) {
 			A[i][j] = A[i - 1][j] + A[i][j - 1];
 }
 
+int (*RP)[N];
+int (*RQ)[N];
+
+static void rowptr_skew(void) {
+	for (int i = 1; i < N; i++)
+		for (int j = 1; j < N; j++)
+			RP[j][i] = RQ[j - 1][i + 1] + 1;
+}
+
 int main(void) {
 	hh = 1469598103934665603UL;
 	for (int i = 0; i < N; i++)
@@ -57,9 +66,13 @@ int main(void) {
 	trans();
 	long long sc = scal();
 	stencil();
+	RP = B;
+	RQ = B;
+	rowptr_skew();
 	for (int i = 0; i < N; i++)
 		for (int j = 0; j < N; j++) {
 			mix(A[i][j]);
+			mix(B[i][j]);
 			mix(C[i][j]);
 			mix(D[i][j]);
 		}

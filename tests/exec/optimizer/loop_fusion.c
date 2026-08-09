@@ -32,11 +32,24 @@ static void backward_dep(void) {
 		b[i] = a[i + 1] - 1;
 }
 
+int *gp;
+int *gq;
+
+static void aliased_ptr_backward_dep(void) {
+	for (int i = 0; i < N - 1; i++)
+		gp[i] = i * 5 + 2;
+	for (int i = 0; i < N - 1; i++)
+		d[i] = gq[i + 1] - 3;
+}
+
 int main(void) {
 	hh = 1469598103934665603ULL;
 	distinct_iv();
 	forward_dep();
 	backward_dep();
+	gp = c;
+	gq = c;
+	aliased_ptr_backward_dep();
 	for (int i = 0; i < N; i++) {
 		mix(a[i]);
 		mix(b[i]);

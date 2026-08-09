@@ -29,6 +29,15 @@ static void skewed(void) {
 			A[i][j] = A[i - 1][j + 1] + 1;
 }
 
+int (*RP)[M];
+int (*RQ)[M];
+
+static void aliased_rowptr_skew(void) {
+	for (int i = 1; i < M - 1; i++)
+		for (int j = 1; j < N; j++)
+			RP[j][i] = RQ[j - 1][i + 1] + 1;
+}
+
 int main(void) {
 	hh = 1469598103934665603ULL;
 	for (int i = 0; i < N; i++)
@@ -39,9 +48,14 @@ int main(void) {
 	elementwise();
 	forward();
 	skewed();
+	RP = B;
+	RQ = B;
+	aliased_rowptr_skew();
 	for (int i = 0; i < N; i++)
-		for (int j = 0; j < M; j++)
+		for (int j = 0; j < M; j++) {
 			mix(A[i][j]);
+			mix(B[i][j]);
+		}
 	printf("%llu\n", hh);
 	return 0;
 }

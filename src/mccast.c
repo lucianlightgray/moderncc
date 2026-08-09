@@ -13343,8 +13343,11 @@ static int ast_dep_base_same(const AstDepRef *r1, const AstDepRef *r2) { MCC_TRA
 	return 0;
 }
 
-static int ast_dep_base_distinct(const AstDepRef *r1, const AstDepRef *r2) { MCC_TRACE("enter\n");
+static int ast_dep_base_distinct(const AstDepRef *r1, const AstDepRef *r2,
+																 int allow_indirect) { MCC_TRACE("enter\n");
 	if (!r1->ok || !r2->ok)
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((r1->indirect || r2->indirect) && !allow_indirect)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (r1->base_kind == 1 && r2->base_kind == 1)
 		{ MCC_TRACE("br\n"); return r1->base_sym != r2->base_sym; }
@@ -13513,7 +13516,7 @@ int ast_loop_interchange_legal(AstArena *a, AstLocal outer, AstLocal inner) { MC
 		{ MCC_TRACE("br\n"); for (int j = i; j < nref && legal; j++) { MCC_TRACE("br\n");
 			if (!(refs[i].is_store || refs[j].is_store))
 				{ MCC_TRACE("br\n"); continue; }
-			if (ast_dep_base_distinct(&refs[i], &refs[j]))
+			if (ast_dep_base_distinct(&refs[i], &refs[j], 0))
 				{ MCC_TRACE("br\n"); continue; }
 			if (!ast_dep_base_same(&refs[i], &refs[j])) { MCC_TRACE("br\n");
 				legal = 0;
@@ -13563,7 +13566,7 @@ static int ast_dep_fusion_pair_illegal(const AstDepRef *r1,
 																			 const AstDepRef *r2) { MCC_TRACE("enter\n");
 	if (!r1->ok || !r2->ok)
 		{ MCC_TRACE("br\n"); return 1; }
-	if (ast_dep_base_distinct(r1, r2))
+	if (ast_dep_base_distinct(r1, r2, 0))
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_dep_base_same(r1, r2))
 		{ MCC_TRACE("br\n"); return 1; }
@@ -13944,9 +13947,8 @@ int ast_loop_parallel_legal(AstArena *a, AstLocal loop) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); for (int j = i; j < nref && verdict == 1; j++) { MCC_TRACE("br\n");
 			if (!(refs[i].is_store || refs[j].is_store))
 				{ MCC_TRACE("br\n"); continue; }
-			if ((ast_dep_alias_oracle_env ||
-					 (!refs[i].indirect && !refs[j].indirect)) &&
-					ast_dep_base_distinct(&refs[i], &refs[j]))
+			if (ast_dep_base_distinct(&refs[i], &refs[j],
+																ast_dep_alias_oracle_env))
 				{ MCC_TRACE("br\n"); continue; }
 			if (!ast_dep_base_same(&refs[i], &refs[j])) { MCC_TRACE("br\n");
 				ast_par_why_s = refs[i].indirect || refs[j].indirect
