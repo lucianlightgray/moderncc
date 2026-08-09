@@ -52,3 +52,4 @@ slice/musl                   | registered | real musl libc lowered to the device
 
 rir/drop-ratchet             | must-run   | silently dropped RIR opcodes; no device needed
 rir-coverage                 | registered | the lowerable/kept census ratchet
+loop-census-control          | must-run   | S5' ground truth: known trip counts at every -O, plus the negative and perturbation controls. A skip here means the trip census is unverified.

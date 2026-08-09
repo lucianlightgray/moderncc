@@ -5255,6 +5255,7 @@ static int c23_keyword_subst(int t) { MCC_TRACE("enter\n");
 
 ST_FUNC void next(void) { MCC_TRACE("enter\n");
 	int t;
+	total_toks++;
 	while (macro_ptr) { MCC_TRACE("br\n");
 	redo:
 		t = *macro_ptr;

@@ -70,14 +70,41 @@ CPU reference has **no `AST_Invoke` case at all** — confirmed zero occurrences
 *vacuous, not merely weak*. The reference must land in the same commit as the first
 emitter, or the first green run will prove nothing.
 
-### 4. S5′ — the iteration distribution, still unmeasured
+### 4. S5′ — the iteration distribution, measured 2026-08-08
 
-`docs/PLAN.md` calls this "the single measurement that decides whether the project has a
-subject", and it still has not been taken. It must be **dynamic**: no function in this
-tree computes a static trip count, and `ast_loopdep` has no `ast_loop_parallel_legal`
-(~30 lines from the existing direction-vector machinery). Wanted: a per-loop trip
-histogram over a self-compile, in the manner of `MCC_SLICE_CENSUS`. The bar it must clear,
-after the marshalling work below:
+`-floop-census` + `runtime/lib/loopcensus.c` + `tools/loop-census.py` now take the
+measurement `docs/PLAN.md` calls "the single measurement that decides whether the project
+has a subject". Ground truth first: `loop-census-control` compiles a program whose trip
+counts are known by construction and checks the histogram against them at `-O0/1/2/3`,
+with a negative control (no flag, no data) and a perturbation (move a bound, the numbers
+move). It is `must-run`.
+
+Self-compile of `src/mcc.c` at `-O2`, 1979 loops instrumented, 597 entered:
+
+| | |
+| --- | ---: |
+| loop entries | 25,336,468 |
+| iterations | 162,656,621 |
+| entries with 0 trips | 9,764,126 (38.5%) |
+| entries lost (`return`/`goto`/`longjmp` out of the loop) | 2,242,930 (8.85%) |
+| stray exits (`goto` *into* a body) | 929 (0.004%, all in `parse_comment`) |
+| **iteration-weighted fraction at each loop's own break-even** | **85.45%** |
+| the same with the single hottest loop removed | **59.73%** |
+
+| trips | 1 | 2 | 3-4 | 5-8 | 9-16 | 17-32 | 33-64 | 65-128 | 129-256 | 257-512 | 513-1024 | 1025+ |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| entries | 18.33M | 2.26M | 1.10M | 758K | 200K | 105K | 49.7K | 29.3K | 18.1K | 231K | 4.0K | 4.2K |
+| share | 79.4% | 9.8% | 4.8% | 3.3% | 0.9% | 0.5% | 0.2% | 0.1% | 0.1% | 1.0% | 0.02% | 0.02% |
+
+Read those two rows together. **79.4% of loop entries run exactly one iteration**, and the
+85.45% is iteration-weighted, so it is carried by a handful of long runs: one loop,
+`rir_op_effect` at `mccrir.c:2959`, is **63.9% of every iteration in the compile**, and the
+top ten are 78.7%. Against the fixed bar the answer barely moves with the threshold —
+87.4% at trips≥8, 78.3% at trips≥322 — which is the same fact: the distribution is
+bimodal, not graded. The subject, if there is one, is roughly ten loops, most of them the
+compiler's own RIR/AST bookkeeping.
+
+The break-even table the fraction is scored against:
 
 | nodes | 3 | 7 | 15 | 31 | 63 | 127 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -85,6 +112,21 @@ after the marshalling work below:
 
 Only **4.3%** of census slices contain a loop at all, which is why this is the binding
 half rather than eligibility.
+
+Three caveats that the next user of this number must not drop:
+
+1. **Body size in AST nodes is a conversion, not a reading.** The arena is built from the
+   RIR recording *after* the body is parsed, so `block()` has no node count to report. The
+   compiler emits what it knows exactly — code `bytes` (instrumentation excluded) and
+   preprocessed `toks` — and `loop-census.py` divides bytes by a bytes-per-node constant
+   measured on the same TU in the same run from `MCC_SLICE_CENSUS` (**3.75**, median over
+   24,747 slices). The per-threshold sweep is printed so the conclusion can be read
+   without that constant.
+2. **`par=?` in the `[loop]` record is still a question mark.** `ast_loopdep` has no
+   `ast_loop_parallel_legal` (~30 lines from the existing direction-vector machinery), so
+   nothing here says any of those iterations are legal to run in parallel.
+3. **Ids are per-`mcc`-process.** Linking two `-floop-census` objects from separate
+   invocations would collide. The tool compiles one TU.
 
 ### 5. The fence wait is the remaining device-side cost
 
