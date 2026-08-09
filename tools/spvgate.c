@@ -136,6 +136,8 @@ static int get_def(const int32_t *p, long t) {
 static char g_devname[256];
 static long g_dispatches;
 static long g_lanes;
+static int g_f64;
+static long g_f64_skipped;
 
 #if MCC_GPU_LANG_MSL
 
@@ -209,6 +211,7 @@ static void gpu_init(void) {
 	VkPhysicalDeviceProperties props;
 	VkDeviceQueueCreateInfo qci;
 	VkDeviceCreateInfo dci;
+	VkPhysicalDeviceFeatures feat;
 	float prio = 1.0f;
 	unsigned ndev = 0, nq = 32, i;
 
@@ -257,6 +260,15 @@ static void gpu_init(void) {
 	dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	dci.queueCreateInfoCount = 1;
 	dci.pQueueCreateInfos = &qci;
+	memset(&feat, 0, sizeof feat);
+	{
+		VkPhysicalDeviceFeatures have;
+		memset(&have, 0, sizeof have);
+		vkGetPhysicalDeviceFeatures(g_phys, &have);
+		g_f64 = have.shaderFloat64 ? 1 : 0;
+		feat.shaderFloat64 = have.shaderFloat64;
+	}
+	dci.pEnabledFeatures = &feat;
 	VK_HOST(vkCreateDevice(g_phys, &dci, 0, &g_dev));
 	vkGetDeviceQueue(g_dev, g_qfam, 0, &g_q);
 }
@@ -935,6 +947,12 @@ static int trial_lower(AstArena *a, AstLocal n, const int32_t *off, int nlive) {
 	gate_module_begin(&m, nlive);
 	base = gate_main_begin(&m, nlive);
 	ok = gate_expr(&m, a, n, off, nlive, base, &val) && !m.failed;
+#if !MCC_GPU_LANG_MSL
+	if (ok && m.used_f64 && !g_f64) {
+		g_f64_skipped++;
+		ok = 0;
+	}
+#endif
 	gate_module_free(&m);
 	return ok;
 }
@@ -994,6 +1012,13 @@ static long run_one_slice(AstArena *a, AstLocal root, const int32_t *off,
 			gate_module_free(&m);
 			continue;
 		}
+#if !MCC_GPU_LANG_MSL
+		if (m.used_f64 && !g_f64) {
+			g_f64_skipped++;
+			gate_module_free(&m);
+			continue;
+		}
+#endif
 		if (mutate)
 			val = gate_mutate(&m, val);
 		gate_main_end(&m, m.lane, val);
@@ -1167,8 +1192,9 @@ static int arena_mode(const char *path, int minnodes, long limit, int quiet) {
 				 g_bodies, g_lowerable_bodies, g_slices, g_idx_slices, tot_idx_cmp,
 				 tot_idx_vac);
 	printf(GATE_NAME ": dispatches=%ld lanes=%ld points=%ld compared=%ld vacuous=%ld "
-				 "mismatches=%ld rejected-modules=%ld\n",
-				 g_dispatches, g_lanes, tot_pts, tot_cmp, tot_vac, tot_bad, tot_reject);
+				 "mismatches=%ld rejected-modules=%ld fp64-unsupported=%ld\n",
+				 g_dispatches, g_lanes, tot_pts, tot_cmp, tot_vac, tot_bad, tot_reject,
+				 g_f64_skipped);
 	if (!g_dispatches) {
 		printf(GATE_NAME ": FAIL (no GPU dispatch happened)\n");
 		return 1;

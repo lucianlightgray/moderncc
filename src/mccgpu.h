@@ -85,6 +85,7 @@ int mcc_gpu_mem(void **base, unsigned long *size);
  * rather than freed under a live command buffer. */
 long mcc_gpu_stranded(void);
 void mcc_gpu_stats(MccGpuStats *out);
+int mcc_gpu_f64(void);
 
 #endif /* MCC_GPU_H */
 
@@ -1161,7 +1162,12 @@ static void msl_module_free(MslMod *m) {
 enum {
 	SpvOpEntryPoint = 15, SpvOpExecutionMode = 16, SpvOpCapability = 17,
 	SpvOpMemoryModel = 14, SpvOpTypeVoid = 19, SpvOpTypeBool = 20,
-	SpvOpTypeInt = 21, SpvOpTypeVector = 23, SpvOpTypeRuntimeArray = 29,
+	SpvOpTypeInt = 21, SpvOpTypeFloat = 22,
+	SpvOpTypeVector = 23, SpvOpTypeRuntimeArray = 29,
+	SpvOpFNegate = 127, SpvOpFAdd = 129, SpvOpFSub = 131, SpvOpFMul = 133,
+	SpvOpFOrdEqual = 180, SpvOpFOrdNotEqual = 182, SpvOpFOrdLessThan = 184,
+	SpvOpFOrdGreaterThan = 186, SpvOpFOrdLessThanEqual = 188,
+	SpvOpFOrdGreaterThanEqual = 190, SpvOpFUnordNotEqual = 183,
 	SpvOpTypeStruct = 30, SpvOpTypePointer = 32, SpvOpTypeFunction = 33,
 	SpvOpConstant = 43, SpvOpFunction = 54, SpvOpFunctionEnd = 56,
 	SpvOpVariable = 59, SpvOpLoad = 61, SpvOpStore = 62, SpvOpAccessChain = 65,
@@ -1187,13 +1193,14 @@ enum {
 
 enum {
 	SpvDecBlock = 2, SpvDecArrayStride = 6, SpvDecBuiltIn = 11,
+	SpvDecNoContraction = 42,
 	SpvDecBinding = 33, SpvDecDescriptorSet = 34, SpvDecOffset = 35
 };
 
 enum { SpvStorageInput = 1, SpvStorageStorageBuffer = 12, SpvStorageFunction = 7 };
 enum { SpvBuiltInGlobalInvocationId = 28 };
 enum { SpvExecModelGLCompute = 5, SpvExecModeLocalSize = 17 };
-enum { SpvCapShader = 1 };
+enum { SpvCapShader = 1, SpvCapFloat64 = 10 };
 
 #define SPV_LOCAL_SIZE MCC_GPU_LOCAL_SIZE
 #define SPV_MAX_CONST 512
@@ -1207,10 +1214,11 @@ typedef struct SpvV {
 	uint32_t id;
 	int w64;
 	int uns;
+	int f64;
 } SpvV;
 
 typedef struct SpvMod {
-	SpvWords pre, types, body;
+	SpvWords caps, pre, types, body;
 	uint32_t next_id;
 	uint32_t id_void, id_fnvoid, id_bool, id_int, id_uint, id_v3uint;
 	uint32_t id_ptr_in_v3uint, id_gid;
@@ -1226,6 +1234,11 @@ typedef struct SpvMod {
 	uint32_t ucval[SPV_MAX_CONST];
 	uint32_t ucid[SPV_MAX_CONST];
 	int nucached;
+	uint32_t id_f64;
+	uint64_t fcval[SPV_MAX_CONST];
+	uint32_t fcid[SPV_MAX_CONST];
+	int nfcached;
+	int used_f64;
 	int failed;
 	int64_t mem_base;
 	uint32_t mem_nbyte;
@@ -1308,6 +1321,42 @@ static uint32_t spv_uintc(SpvMod *m, uint32_t v) {
 	m->ucval[m->nucached] = v;
 	m->ucid[m->nucached] = id;
 	m->nucached++;
+	return id;
+}
+
+static uint32_t spv_f64_type(SpvMod *m) {
+	if (!m->id_f64) {
+		m->id_f64 = spv_id(m);
+		m->used_f64 = 1;
+		spvw_op(&m->caps, SpvOpCapability, 2);
+		spvw_put(&m->caps, SpvCapFloat64);
+		spvw_op(&m->types, SpvOpTypeFloat, 3);
+		spvw_put(&m->types, m->id_f64);
+		spvw_put(&m->types, 64);
+	}
+	return m->id_f64;
+}
+
+static uint32_t spv_f64_const(SpvMod *m, uint64_t bits) {
+	int i;
+	uint32_t id, ft;
+	for (i = 0; i < m->nfcached; i++)
+		if (m->fcval[i] == bits)
+			return m->fcid[i];
+	if (m->nfcached == SPV_MAX_CONST) {
+		m->failed = 1;
+		return m->fcid[0];
+	}
+	ft = spv_f64_type(m);
+	id = spv_id(m);
+	spvw_op(&m->types, SpvOpConstant, 5);
+	spvw_put(&m->types, ft);
+	spvw_put(&m->types, id);
+	spvw_put(&m->types, (uint32_t)(bits & 0xFFFFFFFFu));
+	spvw_put(&m->types, (uint32_t)(bits >> 32));
+	m->fcval[m->nfcached] = bits;
+	m->fcid[m->nfcached] = id;
+	m->nfcached++;
 	return id;
 }
 
@@ -1415,6 +1464,33 @@ static uint32_t spv_lo(SpvMod *m, uint32_t p) {
 
 static uint32_t spv_hi(SpvMod *m, uint32_t p) {
 	return spv_ex(m, m->id_uint, p, 1);
+}
+
+static uint32_t spv_f64_unpack(SpvMod *m, uint32_t pair) {
+	uint32_t ft = spv_f64_type(m);
+	return spv_emit2(m, SpvOpBitcast, ft, pair);
+}
+
+static uint32_t spv_f64_pack(SpvMod *m, uint32_t fid) {
+	return spv_emit2(m, SpvOpBitcast, m->id_u2, fid);
+}
+
+static uint32_t spv_f64_arith(SpvMod *m, int opcode, uint32_t a, uint32_t b) {
+	uint32_t ft = spv_f64_type(m);
+	uint32_t r = spv_emit3(m, opcode, ft, a, b);
+	spvw_op(&m->pre, SpvOpDecorate, 3);
+	spvw_put(&m->pre, r);
+	spvw_put(&m->pre, SpvDecNoContraction);
+	return r;
+}
+
+static uint32_t spv_f64_neg(SpvMod *m, uint32_t a) {
+	uint32_t ft = spv_f64_type(m);
+	uint32_t r = spv_emit2(m, SpvOpFNegate, ft, a);
+	spvw_op(&m->pre, SpvOpDecorate, 3);
+	spvw_put(&m->pre, r);
+	spvw_put(&m->pre, SpvDecNoContraction);
+	return r;
 }
 
 static uint32_t spv_uop(SpvMod *m, int op, uint32_t a, uint32_t b) {
@@ -1574,8 +1650,8 @@ static void spv_module_begin(SpvMod *m, int nlive) {
 	m->id_main = spv_id(m);
 	m->id_nlive = (uint32_t)nlive;
 
-	spvw_op(&m->pre, SpvOpCapability, 2);
-	spvw_put(&m->pre, SpvCapShader);
+	spvw_op(&m->caps, SpvOpCapability, 2);
+	spvw_put(&m->caps, SpvCapShader);
 	spvw_op(&m->pre, SpvOpMemoryModel, 3);
 	spvw_put(&m->pre, 0);
 	spvw_put(&m->pre, 1);
@@ -1752,11 +1828,18 @@ static SpvV spv_mk(uint32_t id, int w64, int uns) {
 	v.id = id;
 	v.w64 = w64;
 	v.uns = uns;
+	v.f64 = 0;
 	return v;
 }
 
 static void spv_widen(SpvMod *m, SpvV *v) {
 	uint32_t lo, hi;
+	if (v->f64) {
+		v->id = spv_f64_pack(m, v->id);
+		v->f64 = 0;
+		v->w64 = 1;
+		return;
+	}
 	if (v->w64)
 		return;
 	lo = spv_emit2(m, SpvOpBitcast, m->id_uint, v->id);
@@ -1773,8 +1856,26 @@ static uint32_t spv_val_lo(SpvMod *m, SpvV v) {
 }
 
 static uint32_t spv_pair(SpvMod *m, SpvV v) {
+	if (v.f64)
+		return spv_f64_pack(m, v.id);
 	spv_widen(m, &v);
 	return v.id;
+}
+
+static SpvV spv_mkf(uint32_t id) {
+	SpvV v;
+	v.id = id;
+	v.w64 = 1;
+	v.uns = 0;
+	v.f64 = 1;
+	return v;
+}
+
+static SpvV spv_f64_of(SpvMod *m, SpvV v) {
+	if (v.f64)
+		return v;
+	spv_widen(m, &v);
+	return spv_mkf(spv_f64_unpack(m, v.id));
 }
 
 static SpvV spv_const64(SpvMod *m, int64_t x) {
@@ -1785,6 +1886,9 @@ static SpvV spv_const64(SpvMod *m, int64_t x) {
 
 static uint32_t spv_bool_of_v(SpvMod *m, SpvV v) {
 	uint32_t o;
+	if (v.f64)
+		return spv_emit3(m, SpvOpFUnordNotEqual, m->id_bool, v.id,
+										 spv_f64_const(m, 0));
 	if (!v.w64)
 		return spv_bool_of(m, v.id);
 	o = spv_uop(m, SpvOpBitwiseOr, spv_lo(m, v.id), spv_hi(m, v.id));
@@ -2013,6 +2117,8 @@ static SpvV spv_load_live_v(SpvMod *m, uint32_t base, int k, int w64, int uns) {
 }
 
 static void spv_store_live_v(SpvMod *m, uint32_t base, int k, SpvV v) {
+	if (v.f64)
+		v = spv_mk(spv_f64_pack(m, v.id), 1, 0);
 	if (!v.w64) {
 		/* The high word follows the value's own signedness, exactly as spv_widen
 		 * does: an unsigned 32-bit value zero-extends and a signed one
@@ -2078,6 +2184,8 @@ static SpvV spv_load_live_dv(SpvMod *m, uint32_t base, int k0, uint32_t elem,
 
 static void spv_store_live_dv(SpvMod *m, uint32_t base, int k0, uint32_t elem,
 															SpvV v) {
+	if (v.f64)
+		v = spv_mk(spv_f64_pack(m, v.id), 1, 0);
 	if (!v.w64) {
 		spv_store_at_in(m, spv_slot_at(m, base, k0, elem, 0), v.id);
 		spv_store_at_in(m, spv_slot_at(m, base, k0, elem, 1),
@@ -2316,6 +2424,8 @@ static uint32_t spv_fit(SpvMod *m, uint32_t v, int t) {
 
 static SpvV spv_fit_v(SpvMod *m, SpvV v, int t) {
 	int uns = (t & VT_UNSIGNED) != 0;
+	if (ast_eval_slice_f64t(t))
+		return spv_f64_of(m, v);
 	if (ast_eval_slice_is64(t)) {
 		spv_widen(m, &v);
 		v.uns = uns;
@@ -2481,6 +2591,31 @@ static int spv_binop_code(int op, int uns, int *is_cmp) {
 	return 0;
 }
 
+static int spv_f64_binop_code(int op) {
+	switch (op) {
+	case '+':
+		return SpvOpFAdd;
+	case '-':
+		return SpvOpFSub;
+	case '*':
+		return SpvOpFMul;
+	case TOK_EQ:
+		return SpvOpFOrdEqual;
+	case TOK_NE:
+		return SpvOpFUnordNotEqual;
+	case TOK_LT:
+		return SpvOpFOrdLessThan;
+	case TOK_LE:
+		return SpvOpFOrdLessThanEqual;
+	case TOK_GT:
+		return SpvOpFOrdGreaterThan;
+	case TOK_GE:
+		return SpvOpFOrdGreaterThanEqual;
+	default:
+		return 0;
+	}
+}
+
 static int spv_env_index(const int32_t *off, int nenv, int32_t want, int *out) {
 	int i;
 	for (i = 0; i < nenv; i++)
@@ -2501,7 +2636,12 @@ static int spv_branch_pair(SpvMod *m, AstArena *a, AstLocal n,
 	AstLocal en = ast_child(a, n, 2);
 	SpvV cv, tv, ev;
 	int w64, uns;
+	int ft = ast_eval_slice_ftype(a, n);
 	mcc_gpu_vw(a, n, &w64, &uns);
+	if (ft) {
+		w64 = 1;
+		uns = 0;
+	}
 	if (!spv_expr(m, a, cn, off, nenv, base, &cv))
 		return 0;
 	uint32_t cb = spv_bool_of_v(m, cv);
@@ -2553,7 +2693,7 @@ static int spv_branch_pair(SpvMod *m, AstArena *a, AstLocal n,
 	spvw_put(&m->body, def_else);
 	spvw_put(&m->body, from_else);
 	m->def = dphi;
-	*out = spv_mk(phi, w64, uns);
+	*out = ft ? spv_mkf(spv_f64_unpack(m, phi)) : spv_mk(phi, w64, uns);
 	return 1;
 }
 
@@ -2619,8 +2759,13 @@ static int spv_logical(SpvMod *m, AstArena *a, AstLocal n, int want,
 }
 
 static int spv_konst(SpvMod *m, AstArena *a, AstLocal n, int t, SpvV *out) {
-	int64_t x = ast_eval_slice_fit((int64_t)ast_ival(a, n), t);
+	int64_t x;
 	int uns = (t & VT_UNSIGNED) != 0;
+	if (ast_eval_slice_f64t(t)) {
+		*out = spv_mkf(spv_f64_const(m, ast_ival(a, n)));
+		return 1;
+	}
+	x = ast_eval_slice_fit((int64_t)ast_ival(a, n), t);
 	if (ast_eval_slice_is64(t)) {
 		*out = spv_const64(m, x);
 		out->uns = uns;
@@ -2637,9 +2782,11 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	switch (ast_kind(a, n)) {
 	case AST_Literal: {
 		int t = ast_type_t(a, n);
-		if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
+		if (ast_bad_type(t))
 			return 0;
 		if ((ast_op(a, n) & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
+			return 0;
+		if (!ast_eval_slice_f64t(t) && (is_float(t) || !ast_eval_slice_intt(t)))
 			return 0;
 		return spv_konst(m, a, n, t, out);
 	}
@@ -2648,6 +2795,13 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		int t = ast_type_t(a, n);
 		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
 			int k;
+			if (!ast_bad_type(t) && ast_eval_slice_f64t(t)) {
+				if (!spv_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, n), &k))
+					return 0;
+				*out = spv_mkf(
+						spv_f64_unpack(m, spv_load_live_v(m, base, k, 1, 0).id));
+				return 1;
+			}
 			if (!ast_eval_slice_intt(t) || is_float(t))
 				return 0;
 			if (!spv_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, n), &k))
@@ -2661,7 +2815,9 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			return 1;
 		}
 		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
-			if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
+			if (ast_bad_type(t))
+				return 0;
+			if (!ast_eval_slice_f64t(t) && (is_float(t) || !ast_eval_slice_intt(t)))
 				return 0;
 			return spv_konst(m, a, n, t, out);
 		}
@@ -2678,6 +2834,13 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			return 0;
 		/* A local, or a constant offset from one via `.field`/`&`. Resolved
 		 * host-side, so the device still sees a constant OpAccessChain. */
+		if (!ast_bad_type(t) && ast_eval_slice_f64t(t) &&
+				ast_eval_slice_frame_off(a, c, &fo, 0)) {
+			if (!spv_env_index(off, nenv, fo, &k))
+				return 0;
+			*out = spv_mkf(spv_f64_unpack(m, spv_load_live_v(m, base, k, 1, 0).id));
+			return 1;
+		}
 		if (ast_eval_slice_intt(t) && !is_float(t) &&
 				ast_eval_slice_frame_off(a, c, &fo, 0)) {
 			if (!spv_env_index(off, nenv, fo, &k))
@@ -2697,7 +2860,9 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			elem = spv_dyn_elem(m, iv, &ix);
 			*out = spv_fit_v(
 					m,
-					spv_load_live_dv(m, base, k, elem, ast_eval_slice_is64(ix.etype),
+					spv_load_live_dv(m, base, k, elem,
+													 ast_eval_slice_is64(ix.etype) ||
+															 ast_eval_slice_f64t(ix.etype),
 													 (ix.etype & VT_UNSIGNED) != 0),
 					ix.etype);
 			return 1;
@@ -2718,6 +2883,8 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		AstLocal c = ast_first_child(a, n);
 		if (c == AST_NONE || is_float(t) || is_float(ast_type_t(a, c)))
 			return 0;
+		if (ast_eval_slice_ftype(a, c))
+			return 0;
 		if (ast_bad_type(t) || !ast_eval_slice_intt(t))
 			return 0;
 		SpvV v;
@@ -2730,13 +2897,29 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		int uop = ast_op(a, n);
 		int t = ast_eval_slice_wtype(a, n);
 		AstLocal c = ast_first_child(a, n);
-		if (c == AST_NONE || !t)
+		int ft;
+		if (c == AST_NONE)
 			return 0;
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
+			return 0;
+		ft = ast_eval_slice_ftype(a, c);
+		if (ft && uop == '~')
+			return 0;
+		if (!ft && !t)
 			return 0;
 		SpvV v;
 		if (!spv_expr(m, a, c, off, nenv, base, &v))
 			return 0;
+		if (ft) {
+			SpvV fv = spv_f64_of(m, v);
+			if (uop == '!') {
+				*out = spv_mk(spv_int_of_bool(m, spv_not(m, spv_bool_of_v(m, fv))), 0,
+											0);
+				return 1;
+			}
+			*out = spv_mkf(spv_f64_neg(m, fv.id));
+			return 1;
+		}
 		int is64 = ast_eval_slice_is64(t);
 		int uns = (t & VT_UNSIGNED) != 0;
 		if (uop == '!') {
@@ -2782,8 +2965,31 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		if (ast_nchild(a, n) != 2)
 			return 0;
 		AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
+		int xft = ast_eval_slice_ftype(a, x);
+		if (xft) {
+			SpvV fl, fr;
+			int fcode = spv_f64_binop_code(bop);
+			if (!ast_eval_slice_ftype(a, y) || !fcode)
+				return 0;
+			if (!spv_expr(m, a, x, off, nenv, base, &fl))
+				return 0;
+			if (!spv_expr(m, a, y, off, nenv, base, &fr))
+				return 0;
+			fl = spv_f64_of(m, fl);
+			fr = spv_f64_of(m, fr);
+			if (fcode == SpvOpFAdd || fcode == SpvOpFSub || fcode == SpvOpFMul) {
+				*out = spv_mkf(spv_f64_arith(m, fcode, fl.id, fr.id));
+				return 1;
+			}
+			*out = spv_mk(
+					spv_int_of_bool(m, spv_emit3(m, fcode, m->id_bool, fl.id, fr.id)), 0,
+					0);
+			return 1;
+		}
 		int xt = ast_eval_slice_wtype(a, x);
 		if (!xt || is_float(ast_type_t(a, x)) || is_float(ast_type_t(a, y)))
+			return 0;
+		if (ast_eval_slice_ftype(a, y))
 			return 0;
 		SpvV lv, rv;
 		if (!spv_expr(m, a, x, off, nenv, base, &lv))
@@ -2891,7 +3097,7 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 }
 
 static uint32_t *spv_module_finish(SpvMod *m, int *nwords) {
-	int total = 5 + m->pre.n + m->types.n + m->body.n;
+	int total = 5 + m->caps.n + m->pre.n + m->types.n + m->body.n;
 	uint32_t *w = (uint32_t *)SPV_MALLOC((size_t)total * sizeof *w);
 	int i = 0;
 	w[i++] = SPV_MAGIC;
@@ -2899,6 +3105,8 @@ static uint32_t *spv_module_finish(SpvMod *m, int *nwords) {
 	w[i++] = 0;
 	w[i++] = m->next_id;
 	w[i++] = 0;
+	memcpy(w + i, m->caps.w, (size_t)m->caps.n * sizeof *w);
+	i += m->caps.n;
 	memcpy(w + i, m->pre.w, (size_t)m->pre.n * sizeof *w);
 	i += m->pre.n;
 	memcpy(w + i, m->types.w, (size_t)m->types.n * sizeof *w);
@@ -2910,6 +3118,7 @@ static uint32_t *spv_module_finish(SpvMod *m, int *nwords) {
 }
 
 static void spv_module_free(SpvMod *m) {
+	SPV_FREE(m->caps.w);
 	SPV_FREE(m->pre.w);
 	SPV_FREE(m->types.w);
 	SPV_FREE(m->body.w);

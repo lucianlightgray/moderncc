@@ -130,8 +130,12 @@ static int mcc_slice_work_from_ast(AstArena *a, AstLocal root, MccSliceWork *w) 
 	w->wtype = ast_type_t(a, root);
 	if (!w->wtype)
 		w->wtype = ast_eval_slice_wtype(a, root);
-	if (!w->wtype || ast_bad_type(w->wtype) || is_float(w->wtype) ||
-			!ast_eval_slice_intt(w->wtype))
+	if (!w->wtype)
+		w->wtype = ast_eval_slice_ftype(a, root);
+	if (!w->wtype || ast_bad_type(w->wtype))
+		return 0;
+	if (!ast_eval_slice_f64t(w->wtype) &&
+			(is_float(w->wtype) || !ast_eval_slice_intt(w->wtype)))
 		return 0;
 	w->a = a;
 	w->root = root;
@@ -444,6 +448,9 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 		if (mcc_slice_store_dyn(a, d, &ix)) {
 			if (!ast_eval_slice_kind_ok(a, ix.idx, 1))
 				return 0;
+			if ((ast_eval_slice_ftype(a, v) != 0) !=
+					(ast_eval_slice_f64t(ix.etype) != 0))
+				return 0;
 			if (!ast_eval_slice_livein_obj(&ix, f->slot, &f->nslot,
 																		 MCC_SLICE_MAXSLOT))
 				return 0;
@@ -477,7 +484,11 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 	if (!mcc_slice_is_local_ref(a, d, &off))
 		return 0;
 	dt = ast_type_t(a, d);
-	if (!dt || ast_bad_type(dt) || is_float(dt) || !ast_eval_slice_intt(dt))
+	if (!dt || ast_bad_type(dt))
+		return 0;
+	if (!ast_eval_slice_f64t(dt) && (is_float(dt) || !ast_eval_slice_intt(dt)))
+		return 0;
+	if ((ast_eval_slice_ftype(a, v) != 0) != (ast_eval_slice_f64t(dt) != 0))
 		return 0;
 	if (mcc_slice_slot_of(f, off) < 0)
 		return 0;
@@ -542,8 +553,15 @@ static int mcc_slice_frame_from_ast(AstArena *a, AstLocal root,
 			f->rettype = ast_type_t(a, rv);
 			if (!f->rettype)
 				f->rettype = ast_eval_slice_wtype(a, rv);
-			if (!f->rettype || ast_bad_type(f->rettype) || is_float(f->rettype) ||
-					!ast_eval_slice_intt(f->rettype))
+			if (!f->rettype)
+				f->rettype = ast_eval_slice_ftype(a, rv);
+			if (!f->rettype || ast_bad_type(f->rettype))
+				return 0;
+			if (!ast_eval_slice_f64t(f->rettype) &&
+					(is_float(f->rettype) || !ast_eval_slice_intt(f->rettype)))
+				return 0;
+			if ((ast_eval_slice_ftype(a, rv) != 0) !=
+					(ast_eval_slice_f64t(f->rettype) != 0))
 				return 0;
 			f->ret = rv;
 			f->nodes += mcc_slice_nodes(a, s);
@@ -740,7 +758,9 @@ static int mcc_slice_frame_exec_cpu2(MccSliceFrame *f, int64_t *frame,
 		if (retdef)
 			*retdef = d;
 		if (retval)
-			*retval = d ? ast_eval_narrow(rv, ast_eval_slice_is64(f->rettype),
+			*retval = d ? ast_eval_narrow(rv,
+																		ast_eval_slice_is64(f->rettype) ||
+																				ast_eval_slice_f64t(f->rettype),
 																		(f->rettype & VT_UNSIGNED) != 0)
 									: 0;
 	} else {
@@ -828,6 +848,10 @@ static int mcc_slice_kernel_build(MccSliceWork *w, MccSliceKernel *k) {
 			val = spv_mk(spv_u2(&m, lo, spv_hi(&m, p)), 1, 0);
 		}
 		spv_main_end(&m, m.lane, val);
+		if (m.used_f64 && !mcc_gpu_f64()) {
+			spv_module_free(&m);
+			return 0;
+		}
 		code = spv_module_finish(&m, &nw);
 		spv_module_free(&m);
 		if (!code || nw <= 0) {
@@ -930,7 +954,7 @@ static int mcc_slice_run_gpu(MccSliceWork *w, MccSliceKernel *k, int budget) {
 	 * over-narrows: an unsigned-char-typed add of 255 + 1 evaluates to 256 under
 	 * C's integer promotions and under ast_eval_binop, and fitting that result
 	 * back to unsigned char turns it into 0. */
-	is64 = ast_eval_slice_is64(k->wtype);
+	is64 = ast_eval_slice_is64(k->wtype) || ast_eval_slice_f64t(k->wtype);
 	uns = (k->wtype & VT_UNSIGNED) != 0;
 	{
 		const int32_t *o = out32;
@@ -1313,6 +1337,10 @@ static int mcc_slice_frame_kernel_build(MccSliceFrame *f, MccSliceKernel *k) {
 			spv_main_end(&m, m.lane, spv_mk(spv_const(&m, 0), 0, 0));
 		}
 		k->usemem = m.mem_used;
+		if (m.used_f64 && !mcc_gpu_f64()) {
+			spv_module_free(&m);
+			return 0;
+		}
 		code = spv_module_finish(&m, &nw);
 		spv_module_free(&m);
 		if (!code || nw <= 0) {
@@ -1381,7 +1409,8 @@ static int mcc_slice_run_frame_gpu(MccSliceFrame *f, MccSliceKernel *k,
 		return MCC_TASK_FAILED;
 	}
 	if (ob) {
-		is64 = ast_eval_slice_is64(f->rettype);
+		is64 = ast_eval_slice_is64(f->rettype) ||
+					 ast_eval_slice_f64t(f->rettype);
 		uns = (f->rettype & VT_UNSIGNED) != 0;
 		for (t = 0; t < ntuple; t++) {
 			long sp = (long)t * MCC_GPU_OUT_SLOTS;

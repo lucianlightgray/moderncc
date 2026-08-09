@@ -13,9 +13,11 @@ Every section below this one was enumerated and each item classified OPEN / CLOS
 the tool or the cell**, not by reading. **24 spot-checks were taken; 20 reproduced exactly,
 3 did not, and one probe turned up a crash nobody had filed** — all four are in this table
 below, at rows 1, 2, 5 and in the staleness list. The device-path verdict, the Metal
-drop, chain-store re-promotion, `storeval-rot`'s demotion, `narrow`/`tree-copy-prop` and
-float support were each re-read against their measurements and are **settled**; nothing
-below re-litigates them.
+drop, chain-store re-promotion, `storeval-rot`'s demotion and `narrow`/`tree-copy-prop` were
+each re-read against their measurements and are **settled**; nothing below re-litigates them.
+**Float support was reopened by decision and landed on 2026-08-09 (`wt/fpwidth`) — see row 6
+and the M6 section. Its headline finding is that the row's own price was wrong about which
+gate was binding, so do not quote the +79.2.**
 
 **Reading the `:NNNN` anchors below.** They were taken against this file as it stood at
 `09a248e4`, *before* this section was inserted. Inserting it added exactly **137** lines
@@ -67,7 +69,7 @@ schedule.
 | **30** | **No tree-recursion exec golden exists, and the failure mode is a GPU hang.** MSL compiles `fib(n)=fib(n-1)+fib(n-2)` and then **hangs the device at n=5** (`kIOGPUCommandBufferCallbackErrorHang`), taking sibling command buffers with it. Recorded as `PLAN.md:475` (C4); the golden was never written. Partly defused by the Metal drop, but the golden is a CPU-side conformance test and is still missing. Two more unused-as-conformance shapes named beside it: computed `goto` **into** a `for` body (`tests/diff/parts/legacy_expr.h:60-95`) and label arithmetic (`tests/exec/codegen/nodata_wanted.c:48,76`) | one golden | **conformance** |
 | **31** | **Two device residuals nothing owns.** N11's duplicated upload in `ast_ladder_gpu_run` (the identical `tin` uploaded twice per rung) is untouched — `PLAN.md:1059` says so. N10 picks `devs[0]` with no scoring while `VkPhysicalDeviceLimits` is fully transcribed at `src/mccgpu.c:604-711` and only `deviceName` is read — `PLAN.md:1058`, "the `devs[0]` half of I2(D) is still open". Both are frozen with the device path; both are cheap and neither is written down as a row | ~10 lines / ~60 lines | **device correctness** |
 
-Below the line, and deliberately: the device path's own open rows — float (**priced at ~1,100–1,700 lines, not paid**), the dispatcher (three subsystems, priced nowhere), 115 indirect blocks, recursion (no data), the `pe` lowerable floors (stale-low, so they under-gate rather than false-fail), and debt #3's descriptor staleness (fixed, unreachable until binding 2 grows). All are frozen by the 2026-08-09 decision and none should be scheduled while that stands.
+Below the line, and deliberately: the device path's own open rows — float (**LANDED 2026-08-09 on `wt/fpwidth`: `double` only, `+ − *` and comparisons, bit-exact; `float`, division and int↔float excluded with cells. It moved the numeric corpus's device-executable fraction by ≈0.0 iteration-weighted points — the 79.2 were gated by `static` storage and `MCC_SLICE_MAXSLOT = 16`, not by `is_float`. See row 6 and the M6 section**), the dispatcher (three subsystems, priced nowhere), 115 indirect blocks, recursion (no data), the `pe` lowerable floors (stale-low, so they under-gate rather than false-fail), and debt #3's descriptor staleness (fixed, unreachable until binding 2 grows). All are frozen by the 2026-08-09 decision and none should be scheduled while that stands.
 
 ### Claimed closed, and nothing enforces it
 
@@ -558,6 +560,15 @@ Splitting the 80.66 points of `par=1` iterations by that column:
 | `par=1` **and** floating-point (`matmul` + `loopnest`) | **79.21** |
 | `par=1` **and** integer (`vlaloop` 1.37, everything else 0.08) | **1.45** |
 
+> **SUPERSEDED IN PART, 2026-08-09 (`wt/fpwidth`).** Everything in this section's tables
+> still reproduces. What does not survive is the inference drawn from it: the paragraph
+> below is right that the engine refused floating point, and wrong that the refusal was what
+> stood between 1.45% and 80.60%. `double` now runs on the device and the fraction is
+> **still ≈1.45%**, because `matmul` and `loopnest` index `static` arrays of 360,000 and
+> 65,536 elements and the live-in model addresses frame locals one slot per element against
+> `MCC_SLICE_MAXSLOT = 16`. The `gd.c`/`gi.c` demonstration below now reads
+> `slices=2 gpu-slices=2 ... OK` for the `double` body. See the M6 section further down.
+
 **The slice engine and both of its executors refuse floating point by construction.**
 `mcc_slice_work_from_ast` rejects any slice whose root type `is_float` (`src/mccslice.h:133`),
 and there are four more `is_float` refusals in `src/mccslice.h` and six in `src/mccgpu.h`.
@@ -900,7 +911,100 @@ and it is the width that cannot be made exact. That asymmetry is the whole resul
 points are all in the one type that works, and the type the brief proposed starting with is
 worth nothing and is broken besides.
 
-**Recommendation: do not implement. The row is priced and closed.** Not because the emitter
+#### M6 was implemented after all — 2026-08-09 (`wt/fpwidth`). Read this before quoting anything above it.
+
+The recommendation below was overturned by decision, not by argument, and `double` was
+built. What follows is what it cost, what it is certified to do, and the two things the
+differential found that were not in anyone's price.
+
+**The corpus verdict, and it is the opposite of the +79.2 above.** The predicate ceiling
+reproduces exactly (`tools/loop-census.py cmake-debug --corpus runtime --levels O2 --top 20
+--opt-in` → 97.76% raw, **80.60%** parallel-legal, `matmul.c:22` 76.92%, `loopnest.c:44`
+2.24%, `vlaloop.c:13` 1.37%). The **device-executable** parallel-legal iteration-weighted
+fraction goes **≈1.45% → ≈1.45%**. Every `double` par=1 loop in the corpus — 76.92 + 2.24 +
+`nbody.c:27` 0.06 + `matmul.c:14` 0.02 + three `loopnest` loops at 0.01 — indexes a
+**`static`** array, and `static` is not a frame local. Even as locals they would not lower:
+`MCC_SLICE_MAXSLOT` is **16** and every array element takes a slot, against 360,000 elements
+in `matmul` and 65,536 in `loopnest`. This was checkable before the row was priced and
+nobody checked it; the price was written as though `is_float` were the only gate.
+
+**What did move**, measured over the same 17 kernels by harvesting each one's arena and
+running `slicerun --arenas`: f64 device work went from **0** to **40 expression slices and 3
+frame runs**, in 6 of the 17 kernels (`regpress` 26, `mandelbrot` 6+1, `mathfun` 3, `calls`
+2+2, `nbody` 2, `poly` 1), 378 slices and 97 frame kernels compared in total, **0
+mismatches**. Real work, dispatched and compared bit-exactly; just not the hot loops.
+
+**And a second correction, from the conformance side (`gcc.c-torture`, 1,172,443 nodes,
+31.9% accepted): `type-float` is 0.48% of node refusals and 1.88% of bodies**, against
+`ref-not-local` 12.03%, `child-refused` 11.45%, `kind-basicblock` 10.18%, `op-unary` 9.18%.
+Twenty times smaller than the structural refusals. **Do not quote `double` as unblocking the
+funnel on a general corpus.** The numeric corpus is where the type mattered, and there it
+was outranked by storage class.
+
+**Certified bit-exact**, over a 22-payload table crossed with itself (484 tuples per row) —
+`VT_DOUBLE` only, `+`, `-`, `*`, unary `-`, `!`, the six ordered comparisons, and `&&`/`||`
+truth: **3,965 tuples, exact bit equality of the 64-bit payload, no tolerance.** The table
+carries +0.0, −0.0, both infinities, `DBL_MAX`, `DBL_MIN`, the largest and smallest
+subnormals, 1.0+1ulp and three quiet NaNs with distinct payloads, so the negative classes
+are in the input set rather than absent from it.
+
+**Excluded, each with a cell that fails if the exclusion lapses** (`f64_exclusions`):
+`/` and `%` at any width (`OpFDiv` is 2.5 ULP by spec — not bit-exact on any conformant
+device, ever), all of `VT_FLOAT` (fp32 denormals measurably flush on this device and
+`shaderDenormPreserveFloat32` is false, so no execution mode can pin it), `VT_LDOUBLE`,
+int↔float conversion in both directions, and **mixed int/float operands in both orders**.
+Metal is gated off rather than emulated: `mcc_gpu_f64()` returns 0 unconditionally on the
+Metal arm, because MSL has no `double`.
+
+**Two device readings, taken at runtime over real work rather than from feature bits:**
+
+1. **fp64 denormals are PRESERVED on the NVIDIA RTX 5070 Ti — 373 denormal-touching tuples
+   compared bit-exactly.** This is the *runtime* reading the row above asked for and never
+   had. It is not asserted: the cell requires the device to match one of the two models
+   the spec permits (preserve, or flush-with-sign) **consistently**, prints which, and
+   fails if it matches neither or mixes them. A lavapipe runner that flushes reports
+   "FLUSHES" and stays green; a device that does something else is a failure. Neither
+   device advertises either fp64 denorm execution mode, so this could not have been
+   predicted from `vulkaninfo`.
+2. **NEW, and nobody had filed it: the two-NaN payload tie-break diverges.** When both
+   operands of an fp64 arithmetic op are NaN with different payloads, IEEE-754 does not say
+   which propagates — and **x86-64 SSE returns the first operand's payload while the device
+   returns the second.** 18 tuples. Every *single*-NaN tuple matches exactly, payload
+   included, so this is one specific tie-break and not "NaNs are unreliable". The cell
+   asserts the IEEE-legal model (the result is one of the two operand payloads) rather than
+   asserting the divergence away. This is a third permanently unpinnable class beside fp32
+   denormals and `OpFDiv`, and it was found by running the differential, not by reading a
+   spec.
+
+**A miscompile found and fixed on the way in, and it predates this branch in kind.**
+`is_float(ast_type_t(a, child))` is not a float test: an indexed element's node carries type
+**0** in every real arena, its element type living on the object. So `(int)c[0]` over a
+`double c[4]` passed the `AST_Convert` guard in `ast_eval_slice_rec`, in
+`ast_eval_slice_kind_ok` and in `spv_expr`, and the emitter then ran `spv_val_lo` on an
+`OpTypeFloat 64` value — an **invalid module** (`spirv-val`: *"Reached non-composite type
+while indexes still remain to be traversed"* on `OpCompositeExtract %uint %double 0`) that
+**segfaulted inside `libnvidia-glvkspirv.so`**. Fixed at all three sites plus the
+value/destination type-match guards on frame stores and returns. `spirv-val` now passes on
+every module the probe emits; it is still referenced nowhere in the build (row 8).
+
+**The interaction with the usual-arithmetic-conversions bug, stated rather than left to be
+found.** `ast_eval_slice` takes a Binary's working type from **child 0 alone** and never
+consults operand 1, so C's usual arithmetic conversions are never applied; `spv_expr` and
+`msl_expr` mirror the rule, which is why the existing differential is blind to it. **That
+bug is not touched here** — a separate agent owns it. The float lane is written so it does
+not depend on the broken rule: `ast_eval_slice_ftype` is a **separate** function from
+`ast_eval_slice_wtype` (which is unchanged, byte for byte), it over-reports for a Binary
+(either operand float ⇒ subtree float), and every acceptance site demands **both** operands
+be float. Over-reporting can therefore only turn an acceptance into a refusal, and the
+answer does not depend on operand order — `1.5 + x` and `x + 1.5` are both refused, and
+there is a cell for both orders over five operators. **What will need revisiting when the
+conversion fix lands:** the mixed-operand refusals become the place to implement promotion
+instead, and `ast_eval_slice_f64_op` is where the promoted operator set would be widened.
+Nothing else in the float path reads a working type.
+
+**Recommendation: do not implement. The row is priced and closed.** ~~Not because the emitter~~
+*(superseded 2026-08-09 by the section above; kept because the reasoning about `float`,
+division and denormals is still correct and is why those three are excluded.)* Not because the emitter
 is hard — it is ordinary — but because the honest version costs ~1,100–1,700 lines across
 two backends and a CPU reference that has no float representation at all, and buys a
 differential that is **green by corpus construction**, **unable to fail on its two real
@@ -965,9 +1069,9 @@ row denominated in it ranks below every row that is not: *device-eligible blocks
 | 1 | `ast_loop_interchange_legal` / `ast_dep_fusion_pair_illegal` consult `ast_dep_base_distinct` with **no `indirect` guard**, and unlike the census predicate they reach emitted code | **correctness** | UNMEASURED, and it is the same defect class that produced two miscompiles this month |
 | 2 | ~~`tests/optfire/levelbench.tsv` is a generation stale and has no `--check`~~ | **census trust** — every future ladder decision is priced off it | ~~32 of 47 rows name flags no longer at levels 1–3~~ — **LANDED 2026-08-09 (`wt/gatefin`).** The stale generation was re-measured by `wt/ladder2`; `--check` now exists, has a ctest cell and a known-positive, and the build-dir TSV is compared back to `tests/optfire/`. See the audit section |
 | 3 | Metal | **a decision** | free to make, grows with every SPIR-V landing. **Decided above: dropped** |
-| 4 | the device path | **device-eligible blocks** — no exchange rate | **Frozen above.** ≈1.45% device-executable lanes on the best corpus anyone has found |
+| 4 | the device path | **device-eligible blocks** — no exchange rate | **Frozen above, and the freeze now rests on a different reason than the one it was taken for.** ≈1.45% device-executable lanes on the best corpus anyone has found — **still ≈1.45% after row 6 landed `double` (`wt/fpwidth`, 2026-08-09).** The 79.21 float points were never gated by `is_float`. They are gated by **`static` storage and by `MCC_SLICE_MAXSLOT = 16`**: `matmul.c:22` (76.92% of all corpus iterations) and `loopnest.c:44` (2.24%) index `static double [600][600]` and `[256][256]`, the live-in model addresses frame **locals** only, and it gives every array element its own slot. Measured three ways on this tree — a 4-element **local** `double` array lowers and dispatches; the same source with `static` arrays does not; a 64-element **local** array does not. Float was necessary, and nowhere near sufficient |
 | 5 | `snprintf` module budget | **device-accepted sites** — no exchange rate | banked at 148/162; the 7th site buys one site, the 8th needs `MCC_GPU_CODE_MAX` raised. **Stop** |
-| 6 | float in the slice engine and the SPIR-V emitter | **device-executable lanes** | ~~the only thing that would make row 4's 80.60% mean anything. **UNMEASURED and unpriced**~~ — **PRICED 2026-08-09 (`wt/spvfloat`), NOT PAID.** ~1,100–1,700 lines across two backends and an `int64_t`-only CPU reference. **`float` is unreachable bit-exactly** (`shaderDenormPreserveFloat32 = false` and fp32 denormals measurably flushed; `OpFDiv` is 2.5 ULP by spec) **and worth +0.0 points**; `double` is reachable and worth +79.2, but only over a corpus that cannot reach either divergence class. Verdict stands. ~~**Next step is one `vulkaninfo` on a lavapipe CI runner**, never yet run~~ — **SETTLED 2026-08-09 (`wt/gatefin`) from Mesa 26.0.8 source, not from a device: lavapipe HAS `shaderFloat64`, unconditionally** (`lvp_device.c:454` → `lp_screen.c:301`). The row therefore closes **provisionally, not permanently** — the 79.2 points are reachable on the device CI can test. It stays closed on the line count. Next device question is a *runtime* fp64 denormal reading; both devices advertise neither fp64 denorm mode |
+| 6 | float in the slice engine and the SPIR-V emitter | **device-executable lanes** | ~~UNMEASURED and unpriced~~ · ~~PRICED 2026-08-09 (`wt/spvfloat`), NOT PAID~~ — **LANDED 2026-08-09 (`wt/fpwidth`), and it bought +0.0 iteration-weighted points, not +79.2. The `+79.2` estimate was wrong, and the reason is in the next row.** `double` now runs on the device: `OpTypeFloat 64`, `OpCapability Float64`, `OpFAdd/FSub/FMul/FNegate` every one decorated `NoContraction`, the six `OpFOrd*`/`OpFUnordNotEqual` comparisons, `shaderFloat64` queried and enabled at `vkCreateDevice`, and a uvec2↔double `OpBitcast` at the buffer boundary so the ABI, the stride and the lo/hi packing are all unchanged. `float`, `long double`, division at any width and int↔float conversion are **excluded, each with a cell that fails if the exclusion lapses**. New cells `slice/f64` + `slice/f64-known-positive` (9161 → **9163**). See the M6 section below for what is certified, what was measured on the device, and the two things this found that nobody had filed |
 | 7 | chain-store re-promotion | emitted code | **MEASURED, refused.** +2.60 `kept` → −0.079% stage-2 for +1.50% stage-1; 60× worse than `divmagic`'s rung |
 | 8 | `storeval-rot` demotion | emitted code | **MEASURED, refused.** Its off-state is an incomplete replay path, `kept` 91.978 → 83.242 |
 | 9 | `narrow` (rung 10) and `tree-copy-prop` (rung 11) priced on the self-host axis | emitted code | **MEASURED 2026-08-09, both levels unchanged.** `narrow` +0.876% of stage-1 for −0.0088% of stage-2 (**100:1 against**); `tree-copy-prop` +0.799% for −0.0048% (**166:1**). Both are worse than the 19:1 the ladder already refused at row 7. Neither was "priced on nothing" — that premise was false, see the correction in the audit section |
