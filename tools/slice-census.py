@@ -98,7 +98,13 @@ def self_flags(bdir):
     rec = [x for x in cc if x["file"].endswith("/mcc.c")]
     if not rec:
         return []
-    return [a for a in shlex.split(rec[0]["command"])[1:]
+    cmd = rec[0]["command"]
+    # On Windows the command carries backslash paths (-IC:\...); POSIX shlex
+    # eats them as escapes and the -I paths vanish, so src/mcc.c fails to find
+    # libmcc.h. Turn path backslashes into forward slashes, leaving \" escapes.
+    if os.name == "nt":
+        cmd = re.sub(r'\\(?!")', "/", cmd)
+    return [a for a in shlex.split(cmd)[1:]
             if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
 
 
