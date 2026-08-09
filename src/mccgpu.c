@@ -1686,6 +1686,7 @@ typedef struct MccGpu {
 	int f64;
 	int hostimp;
 	unsigned long hostimp_align;
+	unsigned long maxsbrange;
 	char hostimp_why[192];
 	long dispatches;
 	long lanes;
@@ -1865,6 +1866,7 @@ static int mcc_gpu_init(void) {
 	mcc_gpu.phys = devs[0];
 	vkGetPhysicalDeviceProperties(mcc_gpu.phys, &props);
 	snprintf(mcc_gpu.name, sizeof mcc_gpu.name, "%s", props.deviceName);
+	mcc_gpu.maxsbrange = (unsigned long)props.limits.maxStorageBufferRange;
 	mcc_gpu.qfam = 0xFFFFFFFFu;
 	vkGetPhysicalDeviceQueueFamilyProperties(mcc_gpu.phys, &nq, qf);
 	for (i = 0; i < nq; i++)
@@ -2245,6 +2247,12 @@ static int mcc_vk_import_mem(void *p, VkDeviceSize size) {
 	if ((uintptr_t)p & (mcc_gpu.hostimp_align - 1))
 		return 0;
 	if (size & (mcc_gpu.hostimp_align - 1))
+		return 0;
+	/* The descriptor binds VK_WHOLE_SIZE, so the range is the limit that
+	 * applies. Importing costs no device allocation -- the pages already exist
+	 * -- which is exactly why the budget has to be checked here rather than
+	 * inherited from MCC_VK_MEM_DEFAULT, which sizes only the fallback window. */
+	if (mcc_gpu.maxsbrange && size > mcc_gpu.maxsbrange)
 		return 0;
 
 	memset(&hpp, 0, sizeof hpp);
