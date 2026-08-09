@@ -609,6 +609,10 @@ static id mtl_buffer(unsigned long len, void **map) {
 	return b;
 }
 
+/* Set only for the duration of a frame dispatch, under the same lock that
+ * serialises everything else here. */
+static int32_t *mcc_gpu_rw_back;
+
 static int mcc_gpu_dispatch_locked(const char *src, int len, const int32_t *in,
 																	 int ntuple, int nlive, int32_t *out) {
 	id pool, pso, bin, bout, cb, enc;
@@ -680,7 +684,20 @@ static int mcc_gpu_dispatch_locked(const char *src, int len, const int32_t *in,
 		goto done;
 	}
 	mcc_gpu.fault = MCC_MTL_FAULT_NONE;
-	memcpy(out, pout, (size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
+	/* `out` is NULL whenever the caller wants only the frame back --
+	 * mcc_gpu_dispatch_rw passes NULL, and mcc_slice_run_frame_gpu passes a NULL
+	 * ob when neither retval nor retdef was asked for. The Vulkan twin has always
+	 * guarded this; here it was unreachable only because dispatch_rw2 bailed on
+	 * !mcc_gpu_rw_supported(), which now returns 1. */
+	if (out)
+		memcpy(out, pout, (size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
+	/* The frame copy-back. Buffer 0 is MTLResourceStorageModeShared (options 0
+	 * in mtl_buffer), so `contents` is CPU-coherent the moment
+	 * waitUntilCompleted returns -- no blit, no synchronizeResource:. If those
+	 * options ever become Managed this reads stale bytes. */
+	if (mcc_gpu_rw_back)
+		memcpy(mcc_gpu_rw_back, pin,
+					 (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
 	mcc_gpu.dispatches++;
 	mcc_gpu.lanes += ntuple;
 	rc = 1;
@@ -696,9 +713,9 @@ static int mcc_gpu_backend_load(void) { return mcc_mtl_load(); }
 
 #define MCC_GPU_CODE_PTR(p) ((const char *)(p))
 
-static int mcc_gpu_rw_supported(void) { return 0; }
+static int mcc_gpu_rw_supported(void) { return 1; }
 
-static void mcc_gpu_rw_arm(int32_t *p) { (void)p; }
+static void mcc_gpu_rw_arm(int32_t *p) { mcc_gpu_rw_back = p; }
 
 /* Same contract as MCC_VK_MEM_DEFAULT on the Vulkan arm: one host-mapped region
  * every lane sees, offset 0 reserved as NULL, coherent at command-buffer

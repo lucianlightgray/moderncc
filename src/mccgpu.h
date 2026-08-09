@@ -394,6 +394,48 @@ static MslV msl_load_live_v(MslMod *m, uint32_t base, int k, int w64, int uns) {
 								1, uns);
 }
 
+/* The store counterpart of msl_load_at, and the twin of spv_store_at_in. The
+ * input buffer is the device frame: making it writable is what lets a run of
+ * statements lower as one kernel instead of one kernel per expression. Setting
+ * wrote_in is what drops `const` from buffer 0 in the emitted signature, and it
+ * must be set here rather than by the caller -- a module that stores through
+ * any path at all needs the read-write signature. */
+static void msl_store_at_in(MslMod *m, uint32_t idx, uint32_t val) {
+	m->wrote_in = 1;
+	msl_line(m, "inb[v%u] = v%u;", idx, val);
+}
+
+/* k is a WORD offset, as in msl_load_live. */
+static void msl_store_live(MslMod *m, uint32_t base, int k, uint32_t val) {
+	m->wrote_in = 1;
+	if (k)
+		msl_line(m, "inb[v%u + %d] = v%u;", base, k, val);
+	else
+		msl_line(m, "inb[v%u] = v%u;", base, val);
+}
+
+static void msl_store_live_v(MslMod *m, uint32_t base, int k, MslV v) {
+	if (!v.w64) {
+		/* The high word follows the value's own signedness, exactly as
+		 * spv_store_live_v does: an unsigned 32-bit value zero-extends and a
+		 * signed one sign-extends. Sign-extending unconditionally stored -2 into
+		 * an `unsigned int` slot as -2 where the CPU has 4294967294. */
+		uint32_t hi = v.uns ? msl_const(m, 0) : msl_iv(m, "mcc_sar(v%u, 31)", v.id);
+		msl_store_live(m, base, 2 * k, v.id);
+		msl_store_live(m, base, 2 * k + 1, hi);
+		return;
+	}
+	{
+		/* Named before the stores: msl_iv emits on evaluation and C leaves
+		 * argument order unspecified, so inlining these would leave the emitted
+		 * line order up to the host compiler. */
+		uint32_t lo = msl_iv(m, "p%u.x", v.id);
+		uint32_t hi = msl_iv(m, "p%u.y", v.id);
+		msl_store_live(m, base, 2 * k, lo);
+		msl_store_live(m, base, 2 * k + 1, hi);
+	}
+}
+
 static uint32_t msl_fit(MslMod *m, uint32_t v, int t) {
 	int bt = t & VT_BTYPE;
 	int uns = (t & VT_UNSIGNED) != 0;

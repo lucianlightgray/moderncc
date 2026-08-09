@@ -3719,7 +3719,7 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties("slice/${_sr}" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             endforeach()
-            foreach(_sg gpu wide64 f64 ops mem bytes deref ext fmt)
+            foreach(_sg gpu wide64 f64 ops mem bytes deref ext fmt rwstore)
                 # Built as a list rather than with generator expressions. A
                 # genex that evaluates false expands to an empty *argument*,
                 # not to nothing, so these cells ran `slicerun <suite> "" ""`;

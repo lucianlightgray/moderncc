@@ -3328,6 +3328,157 @@ static void suite_fmt(void) {
 	}
 }
 
+/* ------------------------------------------------ M1: store round-trip -- */
+
+/* Loads slot 0 (signed) and slot 1 (unsigned), adds 1 to the first, and stores
+ * both back through the live-slot path. Slot 1 is rewritten unchanged and is
+ * there for its high word: it must zero-extend, not sign-extend. */
+static int rwstore_kernel(MccGpuCode *out) {
+#if MCC_GPU_LANG_MSL
+	MslMod m;
+	char *code;
+	uint32_t base;
+	int nb = 0;
+	MslV a, b;
+	msl_module_begin(&m, 2);
+	base = msl_main_begin(&m, 2);
+	a = msl_load_live_v(&m, base, 0, 0, 0);
+	b = msl_load_live_v(&m, base, 1, 0, 1);
+	a = msl_mk(msl_iv(&m, "mcc_add(v%u, v%u)", a.id, msl_const(&m, 1)), 0, 0);
+	msl_store_live_v(&m, base, 0, a);
+	msl_store_live_v(&m, base, 1, b);
+	msl_main_end(&m, m.lane, msl_mk(msl_const(&m, 0), 0, 0));
+	if (m.failed) {
+		msl_module_free(&m);
+		return 0;
+	}
+	code = msl_module_finish(&m, &nb);
+	msl_module_free(&m);
+	if (!code || nb <= 0) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nb;
+	return 1;
+#else
+	SpvMod m;
+	uint32_t *code;
+	uint32_t base;
+	int nw = 0;
+	SpvV a, b;
+	spv_module_begin(&m, 2);
+	base = spv_main_begin(&m, 2);
+	a = spv_load_live_v(&m, base, 0, 0, 0);
+	b = spv_load_live_v(&m, base, 1, 0, 1);
+	a = spv_mk(spv_emit3(&m, SpvOpIAdd, m.id_int, a.id, spv_const(&m, 1)), 0, 0);
+	spv_store_live_v(&m, base, 0, a);
+	spv_store_live_v(&m, base, 1, b);
+	spv_main_end(&m, m.lane, spv_mk(spv_const(&m, 0), 0, 0));
+	if (m.failed) {
+		spv_module_free(&m);
+		return 0;
+	}
+	code = spv_module_finish(&m, &nw);
+	spv_module_free(&m);
+	if (!code || nw <= 0) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nw;
+	return 1;
+#endif
+}
+
+
+/* The live-slot store path has no other differential. Every existing device
+ * suite either never stores (gpu, ops, wide64 are expression suites reaching
+ * the device through mcc_gpu_dispatch, which cannot write buffer 0) or is
+ * behind a stage that is not built yet (frame needs M2, bytes/deref/fmt need
+ * M4). So mcc_gpu_dispatch_rw2 had zero reachable call sites on the Metal arm
+ * and M1 could have been entirely wrong while every cell stayed green.
+ *
+ * This builds one module by hand -- load slot k, transform, store it back --
+ * dispatches it read-write, and checks the host frame afterwards. It also
+ * passes out = NULL, which is the shape mcc_gpu_dispatch_rw uses and which was
+ * an unguarded memcpy on the Metal arm until rw support was enabled. */
+static void suite_rwstore(void) {
+#define RW_NSLOT 2
+#define RW_NT 8
+	int32_t frame[RW_NT * RW_NSLOT * MCC_GPU_IN_SLOTS];
+	int32_t want[RW_NT * RW_NSLOT * MCC_GPU_IN_SLOTS];
+	MccGpuCode code;
+	int t, ok;
+
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr, "FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+	memset(&code, 0, sizeof code);
+	if (!rwstore_kernel(&code)) {
+		fprintf(stderr, "FAIL suite_rwstore: the store kernel did not build\n");
+		g_failures++;
+		return;
+	}
+
+	/* slot 0 = a signed value that goes negative, slot 1 = an unsigned one with
+	 * the high bit set. The second is the case spv_store_live_v's comment is
+	 * about: sign-extending it would put -2 in the slot where the host must see
+	 * 4294967294. */
+	for (t = 0; t < RW_NT; t++) {
+		int b = t * RW_NSLOT * MCC_GPU_IN_SLOTS;
+		frame[b + 0] = t - 4;
+		frame[b + 1] = (t - 4) < 0 ? -1 : 0;
+		frame[b + 2] = (int32_t)0xFFFFFFFEu;
+		frame[b + 3] = 0;
+	}
+	memcpy(want, frame, sizeof frame);
+	for (t = 0; t < RW_NT; t++) {
+		int b = t * RW_NSLOT * MCC_GPU_IN_SLOTS;
+		int32_t v = want[b + 0] + 1;
+		want[b + 0] = v;
+		want[b + 1] = v < 0 ? -1 : 0;
+		/* slot 1 is rewritten unchanged, through the unsigned path */
+		want[b + 2] = (int32_t)0xFFFFFFFEu;
+		want[b + 3] = 0;
+	}
+
+	ok = mcc_gpu_dispatch_rw2(code.p, code.n, frame, RW_NT, RW_NSLOT, NULL);
+	if (!ok) {
+		/* mcc_gpu_dispatch_rw2 returns 0 both when the backend has no read-write
+		 * path and when the dispatch itself failed. Either way nothing was
+		 * compared, so this must not report success. */
+		free(code.p);
+		unsupported("a read-write dispatch", "TODO.md §5 stage M1");
+		return;
+	}
+	g_checks++;
+	{
+		int bad = 0;
+		for (t = 0; t < RW_NT * RW_NSLOT * MCC_GPU_IN_SLOTS; t++)
+			if (frame[t] != want[t]) {
+				if (!bad)
+					fprintf(stderr,
+									"  RWSTORE word %d cpu=%d gpu=%d\n", t, want[t], frame[t]);
+				bad++;
+			}
+		g_checks++;
+		if (bad) {
+			fprintf(stderr, "FAIL suite_rwstore: %d of %d words wrong after the "
+											"store-back\n",
+							bad, RW_NT * RW_NSLOT * MCC_GPU_IN_SLOTS);
+			g_failures++;
+		}
+	}
+	free(code.p);
+#undef RW_NSLOT
+#undef RW_NT
+}
+
 /* ------------------------------------------ the pending-command-buffer UAF -- */
 
 /* Runs last and in its own process: a stranded dispatch disables the device for
@@ -6854,7 +7005,7 @@ int main(int argc, char **argv) {
 		static const char *const SUITES[] = {
 				"task", "work",  "cpu", "gpu",   "bytes", "wide64", "f64",
 				"ops",  "frame", "mem", "deref", "fmt",   "fault",  "sched",
-				"ext"};
+				"ext",  "rwstore"};
 		size_t si;
 		int known = 0;
 		for (si = 0; si < sizeof SUITES / sizeof SUITES[0]; si++)
@@ -6896,6 +7047,8 @@ int main(int argc, char **argv) {
 		suite_ext();
 	if (!only || !strcmp(only, "fmt"))
 		suite_fmt();
+	if (!only || !strcmp(only, "rwstore"))
+		suite_rwstore();
 	if (only && !strcmp(only, "fault"))
 		suite_fault();
 	if (!only || !strcmp(only, "sched"))
@@ -6910,7 +7063,8 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "FAIL slicerun: a device is required and none was usable\n");
 		return 1;
 	}
-	if (only && (!strcmp(only, "gpu") || !strcmp(only, "wide64") ||
+	if (only && (!strcmp(only, "rwstore") || !strcmp(only, "gpu") ||
+							 !strcmp(only, "wide64") ||
 							 !strcmp(only, "ops") || !strcmp(only, "fault") ||
 			 !strcmp(only, "mem") || !strcmp(only, "deref") ||
 			 !strcmp(only, "ext") || !strcmp(only, "f64") ||
