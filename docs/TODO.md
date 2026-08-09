@@ -6,6 +6,215 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Landed — `ref-not-local` is four causes wearing one label, and 91.7% of it cascades nowhere, 2026-08-09 (`wt/refwiden`)
+
+`ref-not-local` was the largest single refusal in the corpus — 12.03% of all nodes, 141,027
+of them, appearing in 90.17% of bodies — and it was ranked as the next big win on that
+basis. It is not one cause. It is one label over four unrelated referents whose fixes have
+nothing in common, and the two that carry 91.7% of its mass cannot cascade at all: their
+parents are refused for reasons of their own no matter what the `Ref` predicate does.
+`slicerun --refusals` now attributes the bucket, and the cell `slice/refusal-classes` keeps
+the attribution a partition rather than a sample.
+
+### The breakdown
+
+Whole gcc torture corpus, 1,693 programs at `-O1` through `MCC_ARENA_DUMP`, 15,923 bodies /
+1,172,443 nodes, **377,231 accepted (32.17%)**. The `ref-not-local` total reproduces the
+banked 141,027 / 12.03% exactly; the accepted figure has moved up from the 373,780 / 31.9%
+in the funnel table below because `wt/uacfix` and `wt/censusfix` landed since.
+
+`parent-open` is the count whose parent has no refusal cause of its own — i.e. the only
+nodes for which accepting this `Ref` could propagate upward at all.
+
+| class | nodes | share of all nodes | share of the bucket | parent-open | in callee position |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `func-symbol` | 67,116 | 5.72% | **47.59%** | 19 | 67,089 |
+| `global-aggregate` | 62,228 | 5.31% | **44.12%** | 3 | 0 |
+| `global-array` | 5,106 | 0.44% | 3.62% | 4,211 | 0 |
+| `global-scalar-int` | 4,947 | 0.42% | 3.51% | 2,792 | 0 |
+| `indirect-local` (`VT_LLOCAL`) | 1,370 | 0.12% | 0.97% | 0 | 0 |
+| `global-scalar-float` | 192 | 0.02% | 0.14% | 0 | 0 |
+| `global-address` | 43 | <0.01% | 0.03% | 16 | 0 |
+| `global-scalar-other` | 18 | <0.01% | 0.01% | 0 | 0 |
+| `register-temp` | 7 | <0.01% | <0.01% | 6 | 0 |
+| **sum** | **141,027** | **12.03%** | **100%** | 7,037 | 67,089 |
+
+Parent shapes, over the same dump: 67,672 of 67,810 `func-symbol` refs sit under an
+`AST_Invoke`, and 61,593 of 83,037 `global-aggregate` refs sit under a `Unary` with
+`AST_EVAL_OP_MEMBER` (a further 20,743 are unreachable from the body root and are not in
+the walked population). `global-scalar` parents are ordinary value positions — 968 `Store`,
+801 `+`, 549 `TOK_INC`, 337 `TOK_NE`, 279 `Convert`. `global-array` parents are 2,500 `+`
+(an index), 1,679 `Convert` (a decay) and 772 `Invoke` (an argument); 2,713 of the 5,215
+have a **byte** element type, so the largest single shape inside that class is a string
+literal, which `get_sym_ref` gives an anonymous `VT_STATIC` symbol in `rodata`.
+
+### The same population by storage class
+
+The table above is the walked population, which is what `--refusals` attributes. Crossing
+the referent against the storage bits in the type word needs the whole dump, including the
+163,657 refused `Ref` nodes that are not reachable from a body root, so these totals are
+larger; the proportions are the point. `static+extern` is the pair mcc leaves on a
+file-scope object that is defined in this TU and also externally visible, and
+`defined-here` means neither bit is set.
+
+| referent | `static` | `extern` | defined-here | `static+extern` | total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| function symbol | 11,255 | 49,532 | 7,002 | 21 | 67,810 |
+| global aggregate (struct/union) | 51,688 | 4,197 | 26,960 | 192 | 83,037 |
+| global array, `char` element | 80 | 82 | 2,545 | 6 | 2,713 |
+| global array, other element | 484 | 1,180 | 758 | 80 | 2,502 |
+| global scalar | 264 | 2,632 | 2,235 | 226 | 5,357 |
+| global address-of | 12 | 4 | 35 | 0 | 51 |
+| indirect local (`VT_LLOCAL`) | — | — | — | — | 1,370 |
+| register / other | — | — | — | — | 817 |
+| **total refused** | | | | | **163,657** |
+
+The `char`-element array row is where string literals live: `get_sym_ref` gives each one an
+anonymous `Sym` (`v >= SYM_FIRST_ANOM`, printed `L.<n>`) in `rodata` with `VT_STATIC` forced
+on, and the *reference* to it is `VT_CONST | VT_SYM` of type `VT_PTR | VT_ARRAY`. The 2,545
+in the `defined-here` column are the named `char` arrays; the dump interns symbol pointers
+to dense ids so anonymous and named cannot be separated further without a name column, and
+the anonymous class is not exclusively strings anyway — `vpush_ref` uses it for negated FP
+constants, complex temporaries, compound-literal blobs and switch jump tables.
+
+**Accepted, for contrast, in the same pass:** 158,443 frame-local `Ref`s, of which 150,894
+carry a `Sym *` and 7,549 do not. That second number is a floor on compiler temporaries and
+spill slots, which is the only way this dump distinguishes them: `get_temp_local_var` and
+the spill paths never create a `Sym`, while `unary()` attaches one to every identifier
+whether local or global.
+
+Two of the shapes the brief expected are simply not in the bucket, and it is worth saying
+why rather than leaving them unaccounted. **Parameters** are `VT_LOCAL | VT_LVAL` frame
+refs — `gfunc_set_param` patches only `Sym->c`, never `r` — so they are already accepted;
+the only exception is a by-reference struct parameter, which is `VT_LLOCAL | VT_LVAL` and
+lands in `indirect-local`. **Compiler temporaries** are `VT_LOCAL` slots with a null `sym`,
+also already accepted. **`VT_LOCAL | VT_SYM`** is never constructed anywhere in the tree and
+measures zero here, which is the check that would have caught it if it were.
+
+### The ceiling, measured rather than argued
+
+The addressable residue is `global-array` plus `global-scalar-int`: 10,053 nodes, 0.86% of
+all nodes, 7.1% of the bucket. Widening the predicate to admit exactly those two classes
+and re-running the attribution gives the whole prize, direct and cascade separated:
+
+| | baseline | classes admitted | delta |
+| --- | ---: | ---: | ---: |
+| accepted nodes | 377,231 | 394,334 | **+17,103** |
+| acceptance | 32.17% | 33.63% | **+1.46 pp** |
+| `ref-not-local` | 141,027 | 130,977 | −10,050 (direct) |
+| `child-refused` | 134,170 | 127,061 | −7,109 (**cascade**) |
+| frame-accepted blocks | 33,368 | 33,445 | +77 |
+
+So the honest price of the whole of this task's target is **+1.46 percentage points**, of
+which 41% is cascade — not the 12.03% the label advertises. That measurement was taken by
+patching `ast_eval_slice_kind_ok` behind `AST_EVAL_SLICE_GLOBAL_PROBE` and reverting; it is
+an upper bound on acceptance, and it says nothing about whether the accepted nodes could
+compute a correct value, which is the next section.
+
+### Class by class: what is soundly addressable
+
+| class | verdict |
+| --- | --- |
+| `func-symbol` | **Genuinely not, and worthless if it were.** 67,089 of 67,116 are the callee child of an `AST_Invoke`, which `kind-invoke` refuses regardless; 19 nodes in the whole corpus have a parent that is not independently refused. This class is 47.6% of the largest refusal in the corpus and its entire contribution is to make that refusal look actionable. |
+| `global-aggregate` | **Not at the `Ref` predicate.** It is a struct base under a member fold: 3 nodes corpus-wide have an open parent. The blocking node is the `Unary AST_EVAL_OP_MEMBER` above it, which `refuse_local` attributes to `op-unary` (9.18%). Global struct field access is one shape needing two fixes, and widening only the `Ref` half buys 3 nodes. |
+| `global-array`, `global-scalar-int` | **Addressable only under an assumption that does not hold today: that the object's storage is visible to the kernel.** It is not. Binding 2 is the only shared window and a `.data` or `.rodata` address is not in it — `ast_eval_slice_rw_addr` and `spv_mem_off` both test `(uint64)p − mem_base >> 32 == 0` against `mcc_gpu_mem`'s mapping, and the "globals image" that description promises is planned, not built. Making these work means staging the object's bytes into binding 2, keying it into the live-in vector, and copying back on write. That is the live-in/frame model, which `wt/slotmodel` owns; it is **not** implemented here, deliberately. |
+| `global-scalar-float` | Same as above and additionally gated on `type-float`. 0 open parents. |
+| `indirect-local` (`VT_LLOCAL`) | **Addressable in principle, worth nothing here.** `VT_LLOCAL` is one indirection through a frame slot, which is exactly the shape the landed pointer path already handles: load the pointer from the slot, `spv_mem_off`, `spv_load_region`. But all 1,370 in the corpus are struct-typed with a member fold above them and 0 open parents, so the machinery would fire on nothing. Revisit if a corpus with by-reference scalar parameters appears. |
+| `global-address`, `register-temp`, `global-scalar-other` | **Genuinely not.** 68 nodes between them. A register-resident `SValue` has no address at all, and `ast_ref_reg_dangle` already treats a retained one as a defect. |
+
+### The trap this measurement exists to prevent
+
+A widening of these classes without the staging is not merely useless, it is **invisible to
+the oracle**. A global's address is outside binding 2's window, so `ast_eval_slice_rw_addr`
+sets `ast_eval_slice_undef` and `spv_mem_off` clears `def` — both sides poison, both sides
+agree, the differential passes, and the acceptance figure goes up by 17,103 nodes that
+compute nothing. The device-vs-CPU differential cannot see a rule the two implementations
+share; that is the same shape as the `wt/uacfix` finding, and it is why the classes above
+are refused with a reason rather than admitted with a hope.
+
+### A latent wrong rule on the *accepting* side, now with a number
+
+The same census counts what the predicate accepts, and it settles an open question that
+`src/mccslice.h` records as unresolved. A local `Ref` **without** `VT_LVAL` denotes the
+variable's *address* — a decayed array base or an `&x` — while a local `Ref` *with* it
+denotes the variable. `ast_ref_is_local_off` requires `VT_LVAL`; `mcc_slice_is_local_ref`,
+`ast_eval_slice_frame_off` and the `AST_Ref` arms of `ast_eval_slice`, `spv_expr` and
+`msl_expr` all drop the requirement and look both up in the live-in environment, so an
+address is read as a value. The comment that left this open cites 24 measurements. Over
+gcc torture:
+
+| accepted `Ref` shape | nodes | of which in a value position |
+| --- | ---: | ---: |
+| `VT_LOCAL \| VT_LVAL` (the variable) | 148,807 | — |
+| `VT_LOCAL`, no `VT_LVAL`, array type (`&arr`) | 1,951 | **1,375** |
+| `VT_LOCAL`, no `VT_LVAL`, scalar type (`&x`) | 705 | **700** |
+
+"Value position" means no enclosing `ast_eval_slice_dynidx` or `frame_off` fold consumes
+the node as a base — i.e. nothing downstream reinterprets it as the address it is. 2,075
+nodes, 80× the sample that left the question open.
+
+**Not fixed here, and the reason is not timidity.** Refusing every non-`VT_LVAL` local
+`Ref` was tried before and reverted because this tree's own synthetic slices (`mk_ref` in
+`tools/slicerun.c` and `tools/spvgate.c`) write plain `VT_LOCAL` to mean "the value", so a
+blanket refusal breaks the idiom the device tests are written in. The narrower cut is
+available and is the one to take: refuse only the **array-typed** case, 1,951 nodes, on the
+grounds that `VT_ARRAY` can never be a scalar value and that every neighbouring gate in the
+same header already excludes it — `ast_eval_slice_ptr_et` rejects `(t & VT_ARRAY)`, and
+`ast_eval_slice_dynidx` rejects `(etype & VT_ARRAY)`. The `AST_Ref` arm is the one place
+that forgot, because `ast_eval_slice_intt` answers yes for `VT_PTR` and never looks at
+`VT_ARRAY`. It is a *narrowing* of acceptance, it touches all three implementations plus
+`cref_expr`, and it belongs with whoever next opens the live-in model rather than bolted to
+a measurement branch.
+
+### Open, and ranked, after this branch
+
+1. **Globals need storage before they need a predicate.** Staging a referenced global's
+   bytes into binding 2 and keying it into the live-in vector is the whole of the
+   addressable 1.46 pp, and it is one piece of work, not two: `global-array` and
+   `global-scalar-int` are the same mechanism at different widths. Owner: the live-in/frame
+   model. Watch items are named above — coherence needs copy-in and copy-out, address
+   stability is free (static storage duration outlives any dispatch), and the aliasing case
+   that bites is a slice that both reads a global directly and dereferences a pointer live-in
+   aimed at that same global, which would see the staged copy and the original as two objects.
+2. **`op-unary` is the gate on `global-aggregate`, not the `Ref` predicate.** 62,228 `Ref`
+   nodes sit under a `Unary AST_EVAL_OP_MEMBER` that `refuse_local` does not know about.
+   Whoever prices `op-unary` (9.18%) should price the member fold first and expect the two
+   causes to move together.
+3. **The array-decay narrowing above**, 2,075 nodes across two shapes, as part of the next
+   change to the live-in model rather than on its own.
+
+### Verification, this tree
+
+`cmake-cross` built before `cmake-debug` was configured (hazard 5), `vendor/` symlinked
+from the primary checkout. `ctest --test-dir cmake-debug -N` registers **9457** — the 9456
+baseline plus `slice/refusal-classes`, the only cell this branch adds. Full `ctest -j8`:
+**9448 cells reported, 8,829 passed, 619 skipped, 0 failures**. **UNVERIFIED:** the four
+`slice/cref-oracle-*` corpus cells did not complete here. Four worktrees were sharing one
+GPU and every attempt — inside the full run and again on its own — ended in
+`Subprocess terminated` after 25–40 minutes, which is the contention signature, not a
+verdict. They are re-run centrally. Nothing in this branch touches the `--cref` path:
+`slicerun`'s `--refusals` mode is a separate arm of `arena_mode`, and the predicate itself
+is unchanged, so there is no mechanism by which those cells could move. That is an argument,
+not a measurement, and it is recorded as one. `-L flagsweep` **193/193**, `-L stratsweep` **116/116**, `-L census`
+**7/7 with nothing skipped**, `python3 tools/must-run.py --build cmake-debug` **78 row(s)
+satisfied**, `python3 tools/selfhost-smoke.py cmake-debug` OK from the repo root,
+`python3 tools/docref-lint.py` OK (and `--mutate` still reports all four planted shapes).
+`tests/optfire/*` untouched and no ratchet moved.
+
+The new cell is shown to be able to fail rather than assumed to be: dropping `RG_FUNC` from
+the class histogram — a change that leaves the printed table looking entirely plausible —
+turns `slice/refusal-classes` red on the partition identity.
+
+**Emitted code is unchanged, and it is measured rather than argued.** No file compiled into
+`mcc` changed: the diff is `tools/slicerun.c`, one `add_test` in `CMakeLists.txt`, and
+`cmake/slicerun_refclass.cmake`. The sweep confirms it — 889 `.c` files under `tests/`,
+`src/`, `examples/` and `runtime/` compiled at `-O0`–`-O3` by a binary built from this
+branch's base commit and by this one: **1,580 objects byte-identical, 0 differing, 0
+self-unstable**, with 1,976 (file, level) pairs not compilable standalone by either binary,
+identically. Both binaries were copied into one directory and invoked from one working
+directory, because the two-directory version of this sweep fabricates about 40 differences
+out of the anonymous-symbol counter.
+
 ## Landed — `rir_decayed_array` read a comparison's opcode as a `Sym *`, 2026-08-09 (`wt/decayfix`)
 
 **The defect.** `rir_decayed_array` in `src/mccrir.c` opened with a null test and three

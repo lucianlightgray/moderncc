@@ -3838,6 +3838,15 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_census.cmake")
             set_tests_properties("slice/census" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
+            add_test(NAME "slice/refusal-classes"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DRUNNER=$<TARGET_FILE:slicerun>
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_refclass.cmake")
+            set_tests_properties("slice/refusal-classes" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
             find_program(MCC_PYTHON3 NAMES python3 python)
             if(MCC_PYTHON3)
                 add_test(NAME "fmt/census-oracle"
