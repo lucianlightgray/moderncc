@@ -1,9 +1,9 @@
 key=arm64-win32
 opt=-O0
-files=304
-objects=290
-rirok=290
-rirfiles=290
+files=306
+objects=292
+rirok=292
+rirfiles=292
 extra=0
 rirextra=0
 fn=1515

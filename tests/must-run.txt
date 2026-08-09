@@ -119,3 +119,6 @@ ast/rir-c2-O1                | registered | the C2 re-emit ratchet (BANKGAP=0, B
 ast/rir-c2-O2                | registered | same family, same permanent 77, same never-checked bank; real gap 12 (was 13)
 ast/rir-c2-O3                | registered | same family, same permanent 77, same never-checked bank; real gap 12 (was 13)
 asm-gas-directives           | registered | a PERMANENT 77 carrying a named blocker: the integrated assembler lacks sgdtq/sidtq/swapgs (gas_directives.S:811). The row is here so the blocker cannot outlive its fix unnoticed
+
+wide256/gmp-diff             | must-run   | the only oracle-backed proof that '__int256' is right. 9402 rows of arithmetic, shifts, comparisons and conversions -- runtime AND compile-time-folded -- compared byte-for-byte against libgmp, which shares no code with mcc. Losing this cell loses every claim mcc makes about 256-bit integers
+wide256/gmp-diff-known-positive | registered | proves wide256/gmp-diff is not blind: it perturbs one corpus operand and one folded constant and requires the differential to go red

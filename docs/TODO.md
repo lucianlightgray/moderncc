@@ -11207,3 +11207,219 @@ bound is only as good as the frame sizes it was measured against. **Anything tha
 The cheapest watchdog is the `520 KiB` figure above: re-run the rlimit bisect after any
 change to the frames of the eight guarded functions. `docs/PLAN.md:435` still names
 `MCC_MAX_UNARY_DEPTH 2048` at `src/mccgen.c:241`; that symbol no longer exists.
+
+## 256-bit integers: `__int256` / `unsigned __int256` (`wt/bits256`)
+
+### Which "256-bit" this is, and why
+
+Two readings were live. The survey settled it before any code was written.
+
+**256-bit SIMD was already there.** `__attribute__((vector_size(32)))` parses, computes
+and is passed today: a vector is an anonymous struct carrying `SymAttr.is_vector`
+(`mk_vector_type` / `is_vector_type` in `src/mccgen.c`), the size cap is on the element
+*count* (`MCC_VECTOR_MAX_ELEM` = 1024), and `runtime/include/avxintrin.h` already
+defines `__m256`, `__m256d`, `__m256i` plus the AVX/AVX2 intrinsic bodies as pure C over
+that extension. What is missing is not correctness but (a) 32-byte *alignment* — capped
+at `MCC_MAX_ALIGN` in `mk_vector_type`, already an open row in this file — and (b) real
+`ymm` codegen, which needs a VEX encoder (none exists anywhere in `src/arch/`), a
+width-aware register model (`MCC_NB_REGS` is a flat 33 scalar slots) and a
+size-parametric spiller (`save_reg_upstack` reduces a spilled value to a bare base type
+with no `ref`, so a `VT_STRUCT` vector cannot survive it). That is the multi-week
+rewrite; a conservative estimate is 2,000–3,000 lines across the x86-64 backend, the
+allocator and the SysV classifier, and it buys speed on a path that is already correct.
+
+**256-bit integers did not exist at all.** No `_BitInt`, no `__int256`, and `__int128`
+is x86-64-ELF-only (`MCC_HAVE_INT128`), modelled as a register *pair* (`r`/`r2`,
+`qexpand`/`qbuild`). So the integer axis was the real gap, and the instruction was to
+prefer it. This section is the integer one.
+
+### The shape, and why it is not a register quad
+
+`SValue` has exactly two register fields, `r` and `r2`. A 256-bit value needs four
+64-bit registers, so the `__int128` scheme does not extend without rewriting the value
+stack, the spiller and every backend's `load`/`store`. It is instead **memory-backed**,
+following the precedent the tree already set for vectors and `_Complex`: `__int256` is
+an anonymous four-limb struct of `unsigned long long` (`long long` for the signed
+variant) carrying a new one-bit `SymAttr.is_wideint`. Signedness is read off the first
+limb's type rather than a second attribute bit, so the change costs **one** bit of the
+three that were free in `SymAttr`.
+
+Everything structural then falls out of the struct path that every target already
+implements: `sizeof` 32, `_Alignof` 16 (`min(32, MCC_MAX_ALIGN)`, so 8 on i386/arm),
+little-endian limb order, struct members, arrays, assignment, `va_arg`, and the ABI.
+
+| file | what is new |
+| --- | --- |
+| `src/mcc.h` | `MCC_WIDE256_BITS`/`_LIMBS`/`_SIZE`; `CValue.q` widened `{lo,hi}` → `{lo,hi,w2,w3}`; `SymAttr.is_wideint`; `gen_wide256_type_cache[2]` + `gen_wide256_limb_tok` |
+| `src/mcctok.h` | `TOK_INT256` and fifteen `__mcc_i256_*` helper tokens (placed **outside** the `MCC_ARM_EABI` guard — inside it the arm build cannot see them) |
+| `src/wide256_arith.h` | the 4-limb kernel: add/sub/mul/div/mod/shift/compare/neg/not, shared verbatim by the compiler's folder and the runtime |
+| `src/wide256_slice.h` | `mk_wide256_type`, `gen_wide256_op`, `gen_wide256_cast`, `wide256_deconst`, `wide256_settle`, `wide256_init_putv` |
+| `src/mccgen.c` | `is_wide256_type`/`wide256_is_unsigned`; hooks in `gen_op`, `gen_cast`, `combine_types`, `verify_assign_cast`, `vstore`, `gen_assign_cast`, `gaddrof`, `inc`, `init_putv`, `decl_initializer_nested`, `type_to_str`, `parse_btype`, and the cast-to-non-scalar guard in `unary` |
+| `src/mccpp.c` | `__SIZEOF_INT256__` predefine |
+| `runtime/lib/int256.c` | the `__mcc_i256_*` exports; added to the `_common` mccrt object list, so every cpu gets it |
+
+Runtime values go through the helper calls; compile-time constants are folded in the
+compiler with the *same* kernel and land in `.data` through `init_putv`, so
+`static __int256 g = ((__int256)1 << 200) + 3;` is a load-time constant.
+
+### What is gated off, and why
+
+Each of these is a hard error with its own message, proved by
+`tests/exec/types/int256_gates.c` (a `dt` golden — sixteen arms, fifteen of them
+diagnostics):
+
+- **`__int256` ↔ `float`/`double`/`long double`** — *"conversion between `__int256` and
+  floating-point types is not supported"*. Deliberate: a conversion routine would be the
+  one part of this work with **no independent oracle** (GMP is exact-integer; gcc has no
+  256-bit integer type to compare against), so it would be agreement with nothing. The
+  refusal is cheap to lift once an oracle exists.
+- **`switch` on `__int256`** — *"switch value not an integer"*. `expr_case_const` tops
+  out at 128 bits.
+- **bitfields, `vector_size`, `_Complex __int256`, `long __int256`, `__int256 int`,
+  pointer↔`__int256` casts, constant division by zero, non-constant load-time
+  initialisers** — all rejected.
+
+`__int256` itself is **not** gated by target: because it is memory-backed it works
+everywhere, and that is verified below on all five.
+
+### The ABI decision, per target
+
+There is no new ABI. A 256-bit value is passed and returned exactly as the target's
+existing 32-byte struct: **memory class** on x86-64 SysV (`classify_x86_64_arg` sends
+anything over 16 bytes to `x86_64_mode_memory`), indirect via the sret pointer on arm64,
+memory on riscv64 (over 2×XLEN), stack on i386 and arm AAPCS. This is the only choice
+that needs no backend change and no new classification rule, and it is the same rule
+gcc/clang apply to a 32-byte aggregate. Alignment is 16 where `MCC_MAX_ALIGN` allows it
+and 8 on i386/arm; nothing external interoperates with `__int256`, so this is a
+definition rather than a constraint.
+
+Because it is an mcc extension there is no cross-toolchain compatibility claim: a
+`__int256` never crosses a TU boundary to gcc.
+
+### The differential, and its oracle
+
+`wide256/gmp-diff` (`cmake/wide256_diff.cmake`, subject `tests/wide256/subject.c`,
+oracle `tests/wide256/oracle.c`). The oracle is **libgmp** — arbitrary-precision integers
+reduced mod 2^256, compiled by the *host* C compiler. It shares no line of code with mcc,
+so an agreement is evidence and a disagreement is an mcc defect.
+
+The corpus is 18 operands (0, ±1, `INT256_MIN`, `INT256_MAX`, each limb boundary
+2^64/2^128/2^192 and their predecessors, mixed-limb patterns) crossed with itself for
++ − × ÷ % & | ^ signed *and* unsigned, ten comparisons, 14 shift counts
+(0, 1, 31, 32, 63, 64, 65, 127, 128, 191, 192, 255, **256**, **−5**) for `<<`, `>>`
+arithmetic and `>>` logical, and conversions to and from `signed char`, `unsigned char`,
+`short`, `unsigned short`, `int`, `unsigned`, `long long`, `unsigned long long` and
+`_Bool` in both directions. **9,402 rows.** Every row is emitted twice: once from
+runtime values loaded by `memcpy` (so the print path does not depend on the shift
+implementation being right) and once from `static const` arrays built by the
+*compile-time folder*, so the folder and the runtime are both on the hook.
+
+Result: **9402/9402 agree, at `-O0`, `-O1`, `-O2`, `-O3` and `-Os`.**
+
+Cross-target, driven by hand with `cmake-cross` and qemu-user against the same oracle
+output: **arm64, riscv64, i386 and arm each produce all 9,402 rows byte-identical at
+`-O0` and `-O2`**, and x86-64 natively. That is the ABI claim, tested rather than argued.
+
+Two semantics this differential *defines* rather than discovers, because C leaves them
+undefined and the oracle had to be told: a shift count outside `[0, 256)` yields 0 (or
+all sign bits for `>>` on a signed value), and division by zero yields an all-ones
+quotient with the dividend as remainder — no trap. A **constant** division by zero is
+still a hard compile error, so the two never disagree observably.
+
+### Cells that can fail
+
+`wide256/gmp-diff-known-positive` perturbs one corpus operand and one folded constant and
+requires the differential to go red; both rows are in `tests/must-run.txt`. It reports
+`clean OK, mutation detected`. The differential also carries a floor — under 9,000 oracle
+rows is a hard failure, so a truncated or empty subject cannot agree with an empty
+expectation.
+
+Two ablations were taken against the *implementation*, not the test:
+
+1. Borrow propagation dropped in the 4-limb subtract (`borrow = b1 | b2` → `borrow = b1`
+   in `src/wide256_arith.h`). `wide256/gmp-diff` and `exec/int256` both fail;
+   the text is *"wide256/gmp-diff: mcc's `__int256` disagrees with GMP at
+   -O0;-O1;-O2;-O3;-Os. The oracle is libgmp compiled by the host C compiler and shares
+   no code with mcc, so a disagreement is an mcc defect -- fix the compiler or the
+   runtime, do not re-pin the expectation. First differences (-O0): ...
+   < smod 2 9 ffff...ffff / > smod 2 9 0000...ffff"*.
+2. Sign extension removed from the front end (`wide256_store_int` forced to zero-extend).
+   Same two cells fail, first difference at row 7541,
+   *"< fromsc 2 0 ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"*.
+
+Plus 44 exec cells: `int256` and `int256_gates` are `dt` goldens, so each runs through all
+22 exec pipelines (`exec/`, `-O1`, `-O3`, `-Os`, `replay`, `replay-tmpl`,
+`replay-promote`, `narrowfix`, `chainstore`, `ivsrptr`, `vlat`, `select`, `zerobss`,
+`interchange`, `fusion`, `tile`, `mergestrings`, `search`, `search-emitsize`,
+`search-emitiso`, `search-threads`, `gatesoff`). `dt` mode deliberately registers **no**
+`diff3` cell — gcc and clang cannot compile `__int256`, so a three-way consensus cell
+there would be a permanent skip.
+
+### Emitted code for existing types
+
+Two independent checks, both clean.
+
+1. **TU sweep.** 493 sources under `tests/exec`, `tests/diff`, `tests/idiom`,
+   `tests/optfire/src`, `tests/behavior`, `tests/runtime` and `runtime/lib`, compiled at
+   `-O0`–`-O3` by the pre-change `mcc` and the post-change `mcc`: **1,972 objects,
+   1,915 byte-identical, 0 self-unstable, 56 not compilable standalone by either (skipped
+   identically), 1 spurious** — `tests/exec/preprocessor/predefined_macros.c` at `-O3`,
+   which embeds `__TIME__`; a back-to-back recompile of that one file is byte-identical.
+2. **The `-O0` object bank.** `tests/ast/o0-baseline/*.obj.txt` was re-taken on all
+   twelve target keys. Every one gained **exactly two** lines (the two new goldens) and
+   **changed none** — so no pre-existing object hash moved on x86_64, i386, arm, arm64,
+   riscv64, their `-win32`/`-wince` variants or the two `-osx` ones.
+
+### Banks re-taken, and why
+
+- `tests/rir/coverage-bank.json` (`--update-bank-low`): the new lowering is call-heavy
+  and struct-typed, so it dilutes `self`'s `nodes_pct_strict` 26.1250% → 26.0727% at
+  `-O0` and 26.1038% → 26.0519% at `-O1`–`-O3`. Denominator growth, not a regression.
+- `tests/ast/o0-baseline/` (both boards, ungated first): the corpus is
+  `find tests/exec -name '*.c'`, which now finds two more files. 306 files per key.
+- `src/wide256_arith.h` is named `.h`, not `.inc.c`, on purpose: `tools/fmt-census.py`
+  globs `src/*.c` and treats anything unlisted as a corpus that moved under the census.
+
+### Parser depth
+
+**No new recursion and no growth in any guarded frame.** `gen_wide256_op` and
+`gen_wide256_cast` are called from `gen_op`/`gen_cast`, which are not among the eight
+`MCC_MAX_PARSE_DEPTH` entry points; the recursion they do add is bounded at one
+(`gen_wide256_op` re-enters `gen_op` only after narrowing a 256-bit shift *count* to
+`int`, at which point neither operand is 256-bit). `parse_btype` gained one `case` and
+one finalisation block, no call.
+
+### Latent defect found on the way, not fixed here
+
+`rir_decayed_array` in `src/mccrir.c` dereferences `sv->sym` after only a `!sv->sym`
+null test. For a `VT_CMP` `SValue` that field aliases `cmp_op`/`cmp_r`, and after `gv()`
+materialises a `VT_CMP` the field is left stale rather than cleared — `gv` assigns
+`vtop->r` without touching `vtop->sym`. Either shape reaches `rir_leaf_slot` as a small
+integer masquerading as a `Sym *` and segfaults the compiler. It is reachable only when a
+comparison or a `_Bool` cast survives into a captured vstack snapshot, which is why it had
+never fired. This work walked into it twice and side-steps it with `wide256_settle`
+(materialise, then clear `sym`) rather than changing `mccrir.c`, because that file is
+under concurrent edit. **The underlying hazard is still there for the next caller.** The
+cheap fix is to reorder the test in `rir_decayed_array` to check `sv->r != VT_CMP` first,
+or to clear `sym` in `gv`'s `VT_CMP` path; neither was taken here.
+
+### Still open
+
+- Float conversions, gated above. Needs an oracle before it needs code.
+- `_BitInt(N)`, still absent; `__int256` does not advance it, though the 4-limb kernel and
+  the memory-backed struct representation are the two pieces a fixed-width `_BitInt` would
+  reuse.
+- No `__int256` literal suffix — the same gap `__int128` has. Constants are written as
+  shifted/or-ed 64-bit literals and folded.
+- DWARF describes an `__int256` as its underlying anonymous four-limb struct, so a
+  debugger prints limbs rather than a value. `type_to_str` already says `__int256` in
+  diagnostics; the debug-info side was not done.
+- Arithmetic is a call per operation. Inlining add/sub/bitwise is a straightforward
+  follow-up; nothing here was measured for speed, only for correctness.
+
+### Verification, this tree
+
+`cmake-cross` built before `cmake-debug` was configured; both register **9207** cells
+(9161 + 44 exec + 2 wide256). Full `ctest` **9207/9207, 0 failures**;
+`-L flagsweep` 119/119; `-L stratsweep` 30/30; `-L census` 7/7 with nothing skipped;
+`python3 tools/selfhost-smoke.py cmake-debug` green.

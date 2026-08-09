@@ -5474,6 +5474,7 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 	cstr_printf(cs, "#define __SIZEOF_PTRDIFF_T__ %d\n", MCC_PTR_SIZE);
 	cstr_printf(cs, "#define __SIZEOF_WCHAR_T__ %d\n", (int)sizeof(nwchar_t));
 	cstr_printf(cs, "#define __SIZEOF_WINT_T__ 4\n");
+	cstr_printf(cs, "#define __SIZEOF_INT256__ %d\n", MCC_WIDE256_SIZE);
 	if (!is_asm) { MCC_TRACE("br\n");
 		putdef(cs, "__STDC__");
 		if (s1->std_strict_ansi)

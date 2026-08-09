@@ -1,9 +1,9 @@
 key=arm
 opt=-O0
-files=304
-objects=288
-rirok=288
-rirfiles=288
+files=306
+objects=290
+rirok=290
+rirfiles=290
 extra=0
 rirextra=0
 fn=1284

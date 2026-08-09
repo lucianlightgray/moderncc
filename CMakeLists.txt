@@ -2504,7 +2504,7 @@ function(_mcc_mccrt_src obj outvar)
 endfunction()
 
 function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir out_extra)
-    set(_common stdatomic atomic builtin alloca alloca-bt complex complexabi mccchk float16)
+    set(_common stdatomic atomic builtin alloca alloca-bt complex complexabi mccchk float16 int256)
     set(_rt_gcc OFF)
     if(native AND (MCC_MCCRT_USE_HOSTCC OR MCC_EMBED_MCCRT)
        AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -2677,10 +2677,14 @@ function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir ou
             set(_out "${objdir}/${obj}.o")
             list(APPEND _archived "${_out}")
         endif()
+        set(_srcdep "")
+        if(obj STREQUAL "int256")
+            set(_srcdep "${CMAKE_CURRENT_SOURCE_DIR}/src/wide256_arith.h")
+        endif()
         add_custom_command(
             OUTPUT "${_out}"
             COMMAND ${_run} "${_cc}" -c "${_src}" -o "${_out}" ${_flags}
-            DEPENDS ${_ccdep} "${_src}"
+            DEPENDS ${_ccdep} "${_src}" ${_srcdep}
             COMMENT "${tname} -c ${obj}"
             VERBATIM)
     endforeach()
@@ -3818,6 +3822,27 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("build/fragments-are-not-tus-known-positive"
                 PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900
                 SKIP_RETURN_CODE 77)
+
+            add_test(NAME "wide256/gmp-diff"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DMCC=${_mcc_exe}
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_BINARY_DIR}
+                        -DHOSTCC=${CMAKE_C_COMPILER}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/wide256_diff.cmake")
+            set_tests_properties("wide256/gmp-diff" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900 SKIP_RETURN_CODE 77)
+
+            add_test(NAME "wide256/gmp-diff-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/wide256_diff.cmake
+                        -DMCC=${_mcc_exe}
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_BINARY_DIR}
+                        -DHOSTCC=${CMAKE_C_COMPILER}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/wide256_diff_mutate.cmake")
+            set_tests_properties("wide256/gmp-diff-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 1800 SKIP_RETURN_CODE 77)
 
             add_test(NAME "ast/o0-baseline-gated"
                 COMMAND "${CMAKE_COMMAND}" -E env

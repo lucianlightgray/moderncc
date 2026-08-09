@@ -1,9 +1,9 @@
 key=arm64
 opt=-O0
-files=304
-objects=291
-rirok=291
-rirfiles=291
+files=306
+objects=293
+rirok=293
+rirfiles=293
 extra=0
 rirextra=0
 fn=1353
