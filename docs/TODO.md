@@ -6,6 +6,409 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## arm64 and Metal — the context, the traps and the unmeasured, 2026-08-09 (`wt/arm64ctx`)
+
+> **This is not a plan and not a spec.** `## Metal parity — the drop is reversed by decision`
+> below is the spec; it owns the staging, the line estimates and the parity matrix, and
+> nothing here re-prices any of it. This section is the *context* an implementer sitting in
+> front of an Apple-silicon Mac would otherwise spend days rediscovering: what the Metal
+> driver already is, which properties of this tree will waste their afternoon, which device
+> facts we hold were measured on hardware we own and **not** on theirs, and — separately
+> from Metal — what arm64 coverage this suite actually executes.
+>
+> **Every figure below was re-derived on 2026-08-09 against `ef8da0b1`**, with
+> `src/mccgpu.h`, `src/mccslice.h` and `src/ast_eval_slice.h` clean at HEAD. Four branches
+> were editing those three files concurrently, so treat the line anchors as dated readings
+> and confirm by content — §2's first trap is precisely that this has already gone wrong
+> three times.
+
+### 1. What already exists on the Metal side, precisely
+
+**There is no Objective-C in this project, and there never was.** Not one `.m` or `.mm`
+file, no `enable_language(OBJC)`, no `-fobjc-*` flag, no `@interface`, no bridging header —
+verified by tree-wide search on 2026-08-09. The whole Metal backend is plain C that
+`dlopen`s the frameworks and hand-casts a `dlsym`'d `objc_msgSend` per call site. The two
+`#include`s at `src/mccgpu.c:44-45` (`<objc/message.h>`, `<objc/runtime.h>`) supply the `id`
+and `SEL` typedefs and nothing more. Executed on an M1 Pro on 2026-08-08 and recorded below
+in *The Darwin path was executed*: `otool -L` on the Metal build shows **`libSystem.B.dylib`
+and `libobjc.A.dylib`, nothing else**, and `Foundation` plus `Metal` appear only under
+`DYLD_PRINT_LIBRARIES`, i.e. at runtime. (The shorter phrasing "`libobjc.A.dylib` and
+nothing else" is also banked below; `libSystem` is the accurate reading and the two are the
+same claim about frameworks.)
+
+**The block.** `#if MCC_GPU_LANG_MSL` at `src/mccgpu.c:42`, `#else` at `:697`, `#endif` at
+`:2229`. MSL arm 654 body lines against the Vulkan arm's 1,523 by the arm-counting pass
+described in §3. The backend-agnostic public API is the tail at `:2231-2306`, shared.
+
+| what | where | note |
+| --- | --- | --- |
+| framework candidates | `src/mccgpu.c:95-101` | Foundation and Metal, absolute path first then bare framework path; `MCC_METAL_LIB` overrides (`:204-205`) |
+| loader | `mcc_mtl_load` (`src/mccgpu.c:196-253`) | resolves `MTLCreateSystemDefaultDevice` (`:211`), optional `MTLCopyAllDevices` (`:218`) and `MTLCommandBufferEncoderInfoErrorKey` (`:219`) |
+| ObjC runtime | `src/mccgpu.c:221-229` | exactly three symbols — `objc_getClass`, `sel_registerName`, `objc_msgSend` — from the process first, then `/usr/lib/libobjc.A.dylib` |
+| FP environment | `src/mccgpu.c:237-243` | `fegetenv`/`fesetenv`, process then `libSystem.B.dylib` |
+| message helpers | `src/mccgpu.c:139-186` | `mtl_send`, `mtl_send_v`, `mtl_release`, `mtl_str`, `mtl_utf8`, `mtl_responds`, `mtl_ulong`, `mtl_bool` — the whole bridging layer, 48 lines |
+| device selection | `mtl_score` (`src/mccgpu.c:351-362`), `mtl_pick_device` (`:364-411`) | |
+| init | `mcc_gpu_init` (`src/mccgpu.c:413-501`) | `MTLCompileOptions` at `:469`, `setMathMode:` pinned to `MCC_MTL_MATH_SAFE` at `:475` |
+| pipeline cache | `MtlPipe` (`src/mccgpu.c:127-131`), array `:135`, `MCC_MTL_CACHE_MAX` 64 at `:59`, FNV-1a `mtl_key` `:513-521`, lookup/insert `mtl_pipeline` `:523-585` | compiles from source text via `newLibraryWithSource:options:error:` (`:536`) |
+| buffers | `mtl_buffer` (`src/mccgpu.c:587-598`) | `newBufferWithLength:options:` with options 0 (shared storage), host pointer from `contents` at `:592` |
+| dispatch | `mcc_gpu_dispatch_locked` (`src/mccgpu.c:600-681`) | two buffers created at `:621`/`:624`, bound at index 0 and 1 at `:647-650`, `dispatchThreadgroups:` `:657-659`, `waitUntilCompleted` `:662` |
+| fault taxonomy | names `src/mccgpu.c:81-84`, `mtl_classify` `:262-289`, `mtl_encoder_state` `:291-315`, `mtl_fault` `:317-335` | eleven classes, six description substrings and five numeric codes |
+| fault query API | `mcc_gpu_fault` (`src/mccgpu.c:337-345`), `mcc_gpu_fault_count` (`:347-349`) | **MSL-only** — neither symbol exists on the Vulkan arm, and neither is declared in `src/mccgpu.h` |
+
+**The claim that the fault reporting is better than the Vulkan arm's holds, and here is the
+measurement.** The MSL arm has 16 `fprintf(stderr, …)` sites in 654 lines against the
+Vulkan arm's 12 in 1,523 — 2.4 per 100 lines against 0.78 — and six of the Metal ones fire
+*unconditionally* where every Vulkan one is behind a diagnostic env gate. Metal names the
+fault, keeps a per-class histogram, and reads the per-encoder error state so it can tell
+"our kernel faulted" from "innocent victim of another process". `mcc_gpu_dispatch_locked`
+on the Vulkan arm returns 0 with no message at nine distinct points. The Vulkan arm has one
+thing Metal does not: a bounded fence timeout and a stranding protocol. `waitUntilCompleted`
+at `src/mccgpu.c:662` blocks forever with no timeout, so `mcc_gpu_stranded` (`:2277`) is
+permanently 0 under Metal — **a hung kernel hangs `ctest`, it does not fail it.**
+
+**Correction to a description that is circulating: the two "missing" functions are not
+missing, they are present and inert.** Both arms define both symbols.
+
+| symbol | Vulkan | MSL | effect |
+| --- | --- | --- | --- |
+| `mcc_gpu_rw_supported` | `src/mccgpu.c:2214`, `return 1` | `src/mccgpu.c:687`, `return 0` | `mcc_gpu_dispatch_rw2` (`:2231`) and `mcc_gpu_dispatch_rw` (`:2253`) return 0 without touching the device |
+| `mcc_gpu_rw_arm` | `src/mccgpu.c:2216` | `src/mccgpu.c:689`, `(void)p` | no copy-back pointer is recorded |
+| `mcc_gpu_mem_backend` | `src/mccgpu.c:2218-2228` | `src/mccgpu.c:691-695`, `return 0` | `mcc_gpu_mem` (`:2261`) always returns 0 |
+
+So the runtime-side work is not "write three functions"; it is **give three existing stubs a
+body, and add the third buffer they need.** That third `MTLBuffer` is the only genuinely new
+object: a persistent shared-storage allocation bound at index 2, whose `contents` pointer
+`mcc_gpu_mem_backend` hands back with its length. The mechanism already exists —
+`mtl_buffer` (`src/mccgpu.c:587-598`) already asks for `contents` at `:592` — what is absent
+is *persistence*, because today both buffers are created and released per dispatch where the
+Vulkan arm keeps resident ones. That, plus the emitter side the spec section stages, is the
+~200 lines.
+
+`mcc_gpu.f64` is declared on the MSL arm and **never assigned** anywhere in `:43-696`; the
+Vulkan arm sets it from `shaderFloat64` at `src/mccgpu.c:1692`. `mcc_gpu_f64` (`:2275`) is
+therefore 0 on Metal unconditionally, which is the "gate it off" behaviour the spec section
+describes — not a bug.
+
+### 2. Traps in this tree that will cost you time
+
+**Trap 1 — the `is_float` guards are mirrored, and their line numbers have now been banked
+wrong three times running.** `src/mccgpu.h` holds one MSL emitter and one SPIR-V emitter
+behind a hard `#if MCC_GPU_LANG_MSL` (`:163`) / `#else` (`:1144`) / `#endif` (`:3121`), so
+only one is ever compiled. Twelve `is_float` sites, **six per side**, all inside the single
+expression dispatcher on each arm — `msl_expr` (`src/mccgpu.h:764-988`) and `spv_expr`
+(`:2771-3091`). **Anyone who counts, edits or greps one emitter has touched half the
+problem.**
+
+| refuses | MSL | SPIR-V |
+| --- | ---: | ---: |
+| float literal | 771 | 2782 |
+| float local read (`AST_Ref`) | 782 | 2798 |
+| float const ref (`AST_Ref`) | 794 | 2813 |
+| float frame load (`AST_Load`) | 807 | 2837 |
+| int↔float cast (`AST_Convert`) | 822 | 2877 |
+| float binary operator | 890 | 2984 |
+
+Read as of 2026-08-09 against `ef8da0b1`, file clean. **Both sets previously banked in
+`## Metal parity` §1 — MSL 781/792/804/817/832/899 and SPIR-V 2789/2805/2820/2844/2884/2990
+— are wrong now, and the set banked before *those* was wrong then.** The cause is
+mechanical and will happen again: §1's reading was taken at 09:36 on 2026-08-09, and
+`6707857a` (the usual-arithmetic-conversions fix, merged as `2fbd830f`) landed at 11:20 the
+same day and moved the MSL six down by 9–10 lines and the SPIR-V six down by 6–7. Nothing
+in the tree pins these; `docs/refs` only checks that an anchor lands *inside* a file that
+exists, which it still does. **Find them with `grep -n is_float src/mccgpu.h`, expect twelve
+hits, and never quote a banked number.**
+
+The `AST_Load` pair is the one that does not textually mirror: MSL writes a bail, SPIR-V
+writes the same refusal as a positive admission condition. Three of the six pairs are
+byte-identical. The SPIR-V side additionally carries `ast_eval_slice_f64t` and
+`ast_eval_slice_ftype` — 13 sites, **zero** on the MSL side — because it has a real fp64
+path; do not read those as guards you have to mirror.
+
+**Trap 2 — a baseline `mcc` run from the wrong directory fabricates ~40 object diffs at
+every optimisation level, `-O0` included.** `mcc_auto_mccdir` (`src/libmcc.c:940-961`)
+derives the include search from `host_exe_path` (`src/mcchost.c:101`), falling back to
+`argv[0]`. A baseline binary copied to `/tmp` therefore picks `/usr/include/stdint.h` where
+the in-tree one picks `cmake-debug/include/stdint.h`; the anonymous-symbol counter then
+differs by one on **every TU that includes a header**, and a byte-comparison sweep reports
+~40 differences that are entirely the harness. Two branches hit this independently. Run the
+baseline binary from *inside* its build directory. This will bite anyone doing a
+"did my emitter change touch codegen?" sweep, which is exactly what Metal work needs.
+
+**Trap 3 — `prec` is a macro with the whole amalgamation as its blast radius.**
+`src/mccgen.c:13492` is `#define prec (mcc_state->gen_prec)`, there is no `#undef` anywhere
+in `src/`, and `src/libmcc.c:9` includes `mccgen.c` fourth — *before* `mccast.c`,
+`mccgpu.c`, `mccrir.c` and the rest. In the default `MCC_AMALGAMATED` build the macro is
+live for every file included after it. No collision exists today, which is exactly why it is
+a trap: a local named `prec` in new GPU code compiles fine in a multi-TU build
+(`MCC_SINGLE_SOURCE=OFF`) and breaks the default one. `precedence` (`src/mccgen.c:13499`) is
+the same shape.
+
+**Trap 4 — build `cmake-cross` before you configure `cmake-debug`.** `mcc_cross_cc`
+(`CMakeLists.txt:3350`) falls back to an `EXISTS` test on the cross build directory, which
+CMake evaluates at *configure* time. Configuring `cmake-debug` on a tree with no
+`cmake-cross` present registers ~164 fewer cells — the `optfire-{arm64,i386,riscv64}` and
+`*-docker` families — **and reports no skips**, so the loss is silent. Any cell count taken
+from a `cmake-debug` configured first is low and worthless as a baseline. This is hazard 5
+in *What is actually still open* below; it is repeated here because a Metal implementer's
+first act on a new Mac is a fresh configure.
+
+**Trap 5 — the Metal arm's `objc_msgSend` casting is silently arm64-only.**
+`src/mccgpu.c:438-439` sends `maxThreadsPerThreadgroup` through plain `objc_msgSend` cast to
+return an `MtlSize`, which is three `unsigned long` — 24 bytes. On arm64 that is correct: a
+large struct returns indirectly through `x8` and the same entry point handles it. On x86_64
+macOS a 24-byte struct return requires `objc_msgSend_stret`, which **does not appear
+anywhere in this tree**. There are no `objc_msgSend_fpret` or `_stret` variants resolved at
+`src/mccgpu.c:221-229` either. The backend has only ever been executed on Apple silicon, so
+this has never fired. If anyone tries the Metal arm on an Intel Mac, `maxthreads` is the
+first thing that will be garbage — and `mcc_gpu_init` refuses the device on it (`:441-448`),
+so the symptom is "no usable Metal device" rather than a crash. **Not a defect to fix
+blindly**; it is a documented restriction to make explicit, or a `stret` path to add.
+
+**Trap 6 — the pipeline cache keys on a hash, not on the source.** `mtl_key`
+(`src/mccgpu.c:513-521`) is FNV-1a over the source bytes and `mtl_pipeline` (`:523-585`)
+matches on `(key, len)` only; the text itself is never compared. A collision at equal length
+returns the wrong compiled pipeline. The Vulkan cache has the same shape. Worth knowing
+before you debug a "kernel produced someone else's answer" report.
+
+### 3. What MSL has, lacks, and cannot have — re-derived
+
+Arm sizes, counted 2026-08-09 by an uncommitted pass over the `#if MCC_GPU_LANG_MSL`
+boundaries (lines strictly between directives, directives excluded): `src/mccgpu.h` 1,009
+MSL against 2,005 SPIR-V; `src/mccgpu.c` 654 against 1,523; `src/mccslice.h` 27 against 73;
+`tools/spvgate.c` 66 against 354. Four-file ratio **2.25:1**, and the format engine at
+`src/mccfmt.h:453` is gated `!MCC_GPU_LANG_MSL`, i.e. SPIR-V-only by construction, which
+pushes it further. These reproduce `## Metal parity` §1's table to within eight lines on the
+largest cell; that section's table is the one to quote, and this is an independent check on
+it rather than a replacement.
+
+**At parity, and it is more than the size ratio suggests.** The MSL arm is a faithful mirror
+for the *entire scalar-integer expression language*: 32- and 64-bit, signed and unsigned,
+the full arithmetic/bitwise/shift/compare operator set (`msl_binop_code`
+`src/mccgpu.h:616-650` against `spv_binop_code` `:2551-2585`), short-circuit `&&`/`||`,
+ternary, and identical UB-definedness propagation. Integer division is **guarded, not
+excluded**, on both arms. Soft-int64 lives in `msl_prelude` where SPIR-V emits real
+`OpFunction`s. 145 of `msl_expr`'s lines are a byte-for-byte mirror of `spv_expr` once the
+prefixes are normalised.
+
+**SPIR-V-only, and each one is unwritten work rather than a language limit**: fp64; the
+third binding and the byte-addressed region layer; dynamic indexing; pointer deref
+load/store; the format engine; and frame kernels — statements, stores and loops — which are
+`return 0` at `src/mccslice.h:1306-1308` and unsupported at the device layer too
+(`src/mccgpu.c:687`).
+
+**Neither arm has any cross-lane structure at all** — no reductions, no subgroup ops, no
+atomics. Every lane is independent and the only shared shape is the per-lane output triple.
+Do not plan a Metal feature around `simd_sum`; there is nothing on the other side to
+differentiate it against.
+
+**`double`.** `double` landed on the SPIR-V arm at `15b60365` and is real: `spv_f64_type`
+(`src/mccgpu.h:1318-1329`) emits `OpCapability Float64` and `OpTypeFloat … 64`, with
+`NoContraction` on every arithmetic result. **MSL has no 64-bit floating-point type at all**
+— a property of the shading language, not of this tree — and the MSL arm reflects that
+honestly: an `awk` pass over `src/mccgpu.h:163-1143` for `f64|double|Float64` returns **zero
+lines**. `MslV` has no `f64` member and `MslMod` no `used_f64`. A `double` node fails both
+halves of the guard at `src/mccgpu.h:771` and the host falls back to the CPU oracle.
+
+**What is mirrorable in soft-f64, and why.** The certified set is not a taste judgement; it
+is three allow-lists that agree, and every one of them is a **deterministic integer
+algorithm** when implemented in software, so a correct implementation is bit-exact by
+construction — subnormals, both zeros and both infinities included.
+
+| where | what it admits |
+| --- | --- |
+| `spv_f64_binop_code` (`src/mccgpu.h:2587-2610`) | `+` `-` `*`, and the six ordered comparisons; `default: return 0` |
+| `ast_eval_slice_f64_op` (`src/ast_eval_slice.h:1169-1186`) | the same, plus `TOK_LAND`/`TOK_LOR` |
+| `ast_eval_binop_f64` (`src/ast_eval_slice.h:91-130`) | the same eleven cases — the CPU reference refuses too, so no arm can silently diverge |
+
+Unary `-` and `!` are handled one level up (`src/mccgpu.h:2906-2914`); `~` on an fp64 operand
+is explicitly barred. `&&`/`||` never reach the binop table because `spv_expr` routes them to
+`spv_logical` first. **Division is excluded on both arms and in the CPU reference** — six
+independent sites — because `OpFDiv` is 2.5 ULP by spec and bit-exactness is unattainable on
+any conformant device. A software f64 divide would be *more* exact than the certified arm,
+which is a differential failure, not a win. `float`/fp32, `long double` and int↔float
+conversion in either direction are likewise excluded on both arms.
+
+### 4. Device facts — what was measured on which hardware, and what only a Mac can settle
+
+**Read this table before designing any float probe.** Two independent measurement campaigns
+exist and they were taken on *different* hardware; several statements in this file inherit
+the wrong one.
+
+| fact | NVIDIA RTX 5070 Ti, Vulkan | Apple silicon, Metal |
+| --- | --- | --- |
+| fp64 denormals | **preserved**, 373 denormal-touching tuples compared bit-exactly | **not applicable** — MSL has no `double`. The question only exists for a soft-f64, where the answer is whatever the algorithm computes |
+| fp32 denormals | **flushed**, and *unpinnable*: both `shaderDenormPreserveFloat32` and `shaderDenormFlushToZeroFloat32` are false, so no execution mode can declare either behaviour | **flushed unconditionally** — measured 2026-08-08 on an M1 Pro, in `MTLMathModeSafe`, `Relaxed` and MSL 3.2 alike; it is the FPU, not the compiler. `denorm + 0.0 → 0.0`, `denorm / 0.0 → NaN` where IEEE says `Inf` |
+| contraction | **no `NoContraction` in emitted modules** until it was added; the two observed non-contractions were driver discretion, not a guarantee | **UNMEASURED.** `setMathMode:` is pinned to `MCC_MTL_MATH_SAFE` at `src/mccgpu.c:475`, and under safe math `+ - * /` were measured correctly-rounded RNE with zero residual — but *whether an emitted `a*b+c` contracts to an FMA under that mode was never separately probed*, and nothing in this tree pins the MSL language version |
+| two-NaN payload tie-break | **diverges**: x86-64 SSE returns the **first** operand's payload, the device returns the **second**. 18 tuples. Every single-NaN tuple matches exactly, so this is one specific tie-break, not "NaNs are unreliable" | **UNMEASURED**, and it is the one that decides how a soft-f64 must be written |
+
+The Vulkan readings came from a **standalone, uncommitted probe** — `glslc` plus
+`vkQueueSubmit`, device created with `shaderFloat64 = VK_TRUE`, values passed through an
+SSBO so nothing constant-folds. It is not in the tree and cannot be re-run from here. Mark
+its artefact **PROSE-ONLY**; the readings themselves are banked in *`double` on the device*
+below.
+
+**Three probes worth running on a real Mac, all cheap, and the shape they take.** Because
+the driver is `dlopen`-only, a probe needs **no Objective-C compiler and no Xcode project**
+— roughly 60 lines of C that copy the plumbing from `src/mccgpu.c:139-194` and `:196-253`,
+compile one hard-coded MSL string through `newLibraryWithSource:options:error:`, allocate
+one shared `MTLBuffer`, dispatch a single lane, and print the result bits as hex. Values
+must be read from the input buffer, never written as literals, or the Metal compiler folds
+them.
+
+1. **Contraction.** Emit `c = a*b + d` with `a = 1+2⁻²³`, `b = 1−2⁻²³`, `d = −1` in fp32 and
+   compare against separate-rounding and fused-rounding host answers. Run it once with
+   `setMathMode:` at `MCC_MTL_MATH_SAFE` and once without setting it at all. This settles
+   whether the safe-math pin is doing the job the SPIR-V arm needs `NoContraction` for.
+2. **Two-NaN payload tie-break, in software.** MSL has no `double`, so probe the *integer*
+   layer this actually constrains: implement the certified soft-f64 `+` over `uint2`, feed
+   two quiet NaNs with distinct payloads in both operand orders, and print the 64 result
+   bits. The answer is a property of the algorithm, not the device — which is the point.
+   **The device question that remains is the fp32 one**: two fp32 NaNs with distinct
+   payloads through a native `+`, both orders. If Apple silicon takes the second operand
+   like the NVIDIA part does, that is a second data point on a divergence nobody had filed;
+   if it takes the first, the divergence is per-vendor and the soft-f64 must be written to
+   the *host* convention on Darwin and the device convention elsewhere.
+3. **fp32 denormal flush, re-confirmed under this driver.** `FLT_MIN*0.5` through the
+   dispatch path in `src/mccgpu.c:600-681` rather than through a hand-built pipeline. The
+   2026-08-08 reading was taken outside this driver; confirming it *inside* it costs one
+   dispatch and removes an inherited assumption.
+
+Every one of these is a thing the Mac-side implementer can settle in an afternoon and
+nobody else can settle at all.
+
+### 5. arm64 as a target, separately from Metal
+
+**The short version: on a default configure, arm64 has almost no execution coverage. Nearly
+everything green is cross-compile-and-inspect.**
+
+| family | registered | executes arm64 code? |
+| --- | --- | --- |
+| `macho-structural` (`CMakeLists.txt:7305`) | always | **no** — covers `arm64-osx` but the verdicts are object-structure checks |
+| `macho-reloc-arm64` (`CMakeLists.txt:7397`) | `if(UNIX)` | **no** — `clang`, `llvm-objdump`, `llvm-nm`; greps for `PAGE21`/`PAGOF12`/`BR26` |
+| `macho-got-sub-arm64` (`CMakeLists.txt:7418`) | `if(UNIX)` | **no** — `llvm-nm`/`llvm-objdump` |
+| `macho-embedjit-arm64-osx` (`CMakeLists.txt:7429`) | `if(UNIX)` | would, but its script exits 77 on any non-Darwin host |
+| `jit/arm64-{dispatch,counter,kgc,kgcfp}` (`CMakeLists.txt:5828`) | Linux only | yes under qemu — **but the programs are clang-built aarch64 validators with zero `mcc` involvement**. They prove the platform's icache/slot-swap/FP-KGC mechanics, not this compiler's codegen |
+| `qemu-arm64-{glibc,musl}[-O2/-O3/-Os]`, `-exec` (`CMakeLists.txt:7623`, `:7632`, `:7650`) | **opt-in only** — `MCC_QEMU_TESTS` defaults OFF at `CMakeLists.txt:7540` | yes, genuinely, plus a stage3 rootfs download |
+| `qemu-arm64-osx` (`CMakeLists.txt:7673`) | same opt-in gate | **yes — the single cell that executes mcc's arm64 Mach-O codegen**, ELF-linked against a glibc sysroot and run under `qemu-aarch64` |
+| `run-parity-arm64` (`CMakeLists.txt:7048`) | `if(UNIX)` | yes when it gets there — compares `-run` output at `MCC_JIT=0` against `MCC_JIT=1` against a golden. Skips 77 on a non-aarch64 host without both `mcc-arm64` and a vendored sysroot |
+| `jit/xoracle-conformance` (`CMakeLists.txt:6535`) | gated `MCC_PYTHON3 AND MCC_EMBED_JIT AND MCC_TARGET_IS_HOST AND UNIX AND (x86_64 OR arm64)` (`:6516`) | **arm64 is in scope** — but the differential runs in-process and cannot be emulated, so it needs a real arm64 host and the gcc torture corpus |
+| `arm64-win32` — `cross/no-compiler-abort-arm64-win32` (`:4385`), `ast/rir-parity-arm64-win32[-Ox]`, the `ast/o0-baseline` bank | always | **zero programs, ever.** `run-tier/arm64-win32` is a hardcoded skip stub at `CMakeLists.txt:4531-4534`. Same for `arm-win32` and `arm-wince` |
+
+**`jit/arm64-*` were reporting Passed on every skip path, and their history is therefore not
+evidence.** Fixed at `0e5b5cf0`, which needed both halves: the four cells were registered
+with no ctest skip property *and* their scripts returned `exit 0` on every bail. Current
+state is `SKIP_RETURN_CODE 77` at `CMakeLists.txt:5832` and `exit 77` at
+`tests/qemu/jit_arm64_dispatch.sh:18` and its three siblings. Anyone reading a green
+`jit/arm64-kgc` from before that commit is reading nothing.
+
+**One live contradiction worth knowing.** The `run-tier/arm64-win32` skip reason at
+`CMakeLists.txt:4532-4533` says no host here can execute an arm64 PE — and
+`tools/arm64pe-wine-docker.sh` is a complete, working executor that builds a hello and a
+hand-written arm64-PE JIT-dispatch validator with `mcc-arm64-win32` and runs both under wine
+in a `linux/arm64` container. It is registered nowhere. That is the single highest-yield
+change in this table and it is not Metal work.
+
+### 6. arm64 ABI facts that recently landed and touch this work
+
+**`__int256` passes indirect and returns via `x8` on arm64, and there is no arm64-specific
+code that makes it so.** `__int256` is a synthesized anonymous struct of four `long long`
+limbs, 16-byte aligned, `sizeof` 32 (`mk_wide256_type`, `src/wide256_slice.h:23-63`), so its
+ABI falls entirely out of the generic large-aggregate path: `src/arch/arm64/arm64-gen.c:1074`
+takes the `size > 16` branch and sets the low "pointer" bit, the caller materialises a copy
+and passes its address (`:1266-1296`), the return classifies as the `x8` class and the callee
+stores through the hidden pointer (`:1803-1810`), and `gfunc_sret` is `return 0`
+unconditionally at `:1781-1784` because arm64 never uses the front end's register-pair
+decomposition. `va_arg` is indirect too. **Caveat, re-derived and worth stating: the
+cross-target reproduction across the five qemu targets (`x86_64;i386;arm;arm64;riscv64`,
+`CMakeLists.txt:7544`) was driven by hand, not by a registered cell.** `wide256/gmp-diff`
+(`CMakeLists.txt:3932`) is host-only, `exec/int256` is host-only, and `int256` is not in the
+`qemu-<arch>-<libc>-exec` golden list at `CMakeLists.txt:7650-7663`. The arm64 classification
+is proved by construction and by the host differential; it is **not under continuous arm64
+ctest coverage**.
+
+**The JIT KGC fix is architecture-generic and applies to arm64 unchanged — confirmed from
+the code, not assumed.** `mccjit_invoke` (`src/mccjit_embed.c:3188-3193`) calls
+`mccjit_invoke_raw` and returns `(int64_t)(uint32_t)r` when the return is not wide. That is
+plain C: no intrinsic, no inline asm, no architecture macro. Its preprocessor nesting depth
+is 1, and the single open block is the `#ifdef MCC_EMBED_JIT` at `src/mccjit_embed.c:1` — a
+feature gate. The nearest architecture guards are all *after* it, including the arm64 stub
+builder at `:4212`. The defect it repairs is arch-independent by nature: the non-wide path
+dispatches through an `int`-returning function pointer, so the C conversion sign-extends on
+any host. And the arm64 route is live rather than theoretical — `mccjit_make_kgc_stub_n` has
+an arm64 arm inside that `#elif`, and it targets the same `mccjit_kgc_calln`
+(`src/mccjit_embed.c:3416`) whose every return path goes through the generic
+`mccjit_invoke`. The commit is `6c5e1278`, merged as `6a96d739`, and it registered
+`jit/kgc-route-parity` at `CMakeLists.txt:7029`.
+
+One asymmetry it left: the mixed GP/FP route (`mccjit_kgc_calln_mixed_i`,
+`src/mccjit_embed.c:3706`) sign-extends only for its comparison and returns the raw value.
+That is safe today because the mixed path goes through a hand-written asm thunk with no C
+narrowing cast — including the arm64 thunk — so it never had the defect. But the two routes
+now use different internal extension conventions, which is a readability trap for whoever
+edits the mixed path next.
+
+### 7. CI reality — what you validate on your Mac, CI cannot re-validate
+
+`## Metal parity` §4 owns this argument and prices the alternatives; three things belong
+here as context rather than as plan.
+
+**Nothing you measure locally can be reproduced by this project's CI.**
+`MTLCreateSystemDefaultDevice` returns nil inside GitHub-hosted macOS runners; there is no
+software Metal comparable to lavapipe, and none exists to be installed; and there is **no
+offline SPIR-V or MSL validator in this tree at all** — zero hits for `spirv-val`,
+SPIRV-Tools, `spirv-as`, `spirv-opt`, `glslang` or `metal-shaderconverter` anywhere in
+`CMakeLists.txt`, `cmake/`, `tools/`, `src/` or `.github/`, re-confirmed 2026-08-09. The one
+`glslc` reference is `tests/gpu/run.sh:27`, and that script is wired into no ctest cell and
+no workflow. Every `xcrun` hit in the tree is `--show-sdk-path`. So there is not even a
+"does it compile" backstop to fall back on.
+
+**The consequence for design: any cell you add must be self-checking.** It cannot rely on a
+reviewer's machine, a golden that a validator produced, or a CI run to catch its own decay.
+The pattern the existing GPU cells already use is the one to copy: exit 77 for "no device"
+with `SKIP_RETURN_CODE 77` and a matching `mcc_skip_test` stub on the dead branch (the three
+`gpu/msl-slice-*` registrations at `CMakeLists.txt:3604-3642` are the model, and
+`tools/regstub-lint.py` enforces that both branches register the same names); a mutation
+mode that must report failure, so a cell that has gone blind is detectable; and a floor on
+the row count, so a corpus that silently emptied fails rather than passes.
+
+**One asymmetry to know about before you copy a registration.**
+`gpu/spv-slice-differential` (`CMakeLists.txt:3577`) runs its gate directly with only
+`SKIP_RETURN_CODE 77`, so it **skips even under `MCC_GPU_REQUIRED=ON`**, where its
+`-known-positive` and `-real` siblings go through `cmake/spvgate_mutate.cmake` and
+`cmake/spvgate_real.cmake`, which turn 77 into a `FATAL_ERROR`. The `gpu/msl-slice-*` trio
+inherits the same asymmetry. If a Metal cell must be armed on a self-hosted runner, it needs
+the wrapper, not the bare registration.
+
+**MoltenVK is the cheap alternative and it is half-installed already.** `brew install
+molten-vk` is in both workflows (`.github/workflows/ci.yml:186-190`,
+`.github/workflows/matrix.yml:125-129`), and it supplies a **loader only** — neither macOS
+job passes `-DVulkan_INCLUDE_DIR`, so `find_package(Vulkan QUIET)`
+(`CMakeLists.txt:3549`) fails, the Darwin fallback at `:3550-3558` never fires, `spvgate` is
+never built, and the three `gpu/spv-slice-*` names stay `mcc_skip_test` stubs on macOS. Two
+things follow. On a **developer's** Mac, passing the headers makes the entire SPIR-V arm —
+regions, binding 2, the format engine, frame kernels, dynamic indexing — run over Metal
+today, with no MSL written. In **CI** it changes nothing, because MoltenVK still needs a
+Metal device the runner does not have; the cells would build and then exit 77. The only
+macOS gate cell is `{"macos-arm64-clang", "gpu-vulkan"}` (`tools/ci.c:696`), it sets
+`MCC_GPU_REQUIRED=ON` itself, and no CI cell anywhere sets `-DMCC_GPU_BACKEND=metal` — so
+the `gpu/msl-slice-*` trio has never been built by CI, not once. There are no self-hosted
+runners; every `runs-on` in this repo is a GitHub-hosted image.
+
+### Verification, this tree
+
+`cmake-cross` built before `cmake-debug` was configured (trap 4). Docs-only: no cell added
+or removed, no `src/` change, `tests/optfire/*` untouched. `ctest --test-dir cmake-debug -N`
+registers **9456**, matching the baseline. `python3 tools/docref-lint.py` OK,
+`python3 tools/regstub-lint.py` OK, `python3 tools/selfhost-smoke.py cmake-debug` OK, all
+from the repo root.
+
+**Marked unmeasured, so it is not inherited as fact:** MSL contraction behaviour under
+`setMathMode:`; the fp32 two-NaN payload tie-break on Apple silicon; fp32 denormal flush
+observed from inside this driver rather than from outside it; and the Metal shader
+toolchain's availability and standard-library naming across macOS versions, which is
+external to this tree entirely. **Marked prose-only:** the standalone Vulkan probe that
+produced the RTX 5070 Ti readings — the readings are banked, the tool is not in the tree.
+
 ## Windows — the whole surface, enumerated, measured and priced, 2026-08-09 (`wt/winspec`)
 
 > **Read §0 before anything else in this section.** Windows is not a thin cell that skips.
