@@ -3794,6 +3794,26 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("ast/o0-baseline-known-positive" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 3600)
 
+            add_test(NAME "build/fragments-are-not-tus"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_BINARY_DIR}
+                        "-DPINNED=mccast.c;mccircap.c;mccrir.c"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu.cmake")
+            set_tests_properties("build/fragments-are-not-tus" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900 SKIP_RETURN_CODE 77)
+
+            add_test(NAME "build/fragments-are-not-tus-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu.cmake
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_BINARY_DIR}
+                        "-DPINNED=mccast.c;mccircap.c;mccrir.c"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu_mutate.cmake")
+            set_tests_properties("build/fragments-are-not-tus-known-positive"
+                PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900
+                SKIP_RETURN_CODE 77)
+
             add_test(NAME "ast/o0-baseline-gated"
                 COMMAND "${CMAKE_COMMAND}" -E env
                         "C2_NO_EXTRA=1" "O0_AB_CHECK=1" "O0_AB_GATES=1"
