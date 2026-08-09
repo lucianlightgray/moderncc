@@ -1734,20 +1734,27 @@ a=0x558d7511b540   (page offset 1344)
 ```
 
 So the RW group starts 64-byte aligned, and the *whole* RW group — `.data .bss .tdata .tbss
-.got` — is contiguous, which is exactly the single import range the lever wants. Two
-consequences:
+.got` — is contiguous, which is exactly the single import range the lever wants.
 
-- **On Linux, align outward and import; no linker change is needed.** Only `.text` is
-  `mprotect`ed (see the single `protect rwx` line above — the RO and RW groups are skipped
-  by the `f >= HOST_RUNMEM_RO` branch), so a range aligned down into the tail of `.data.ro`
-  is the same mapping with the same protection and importing it is sound.
-- **On Darwin it is required**, because there `HOST_RUNMEM_RO` is 1 and the RO group is
-  protected read-only; a range aligned down across the RO/RW boundary would ask the device
-  for write access to read-only pages. The fix is the one guard: force `PAGESIZE` for the RW
-  group too. Cost is at most one page of padding per run image (`ELF_PAGE_SIZE`, 0x1000 on
-  x86_64/i386/riscv64 and 0x10000 on arm/arm64), and the run block already carries a page of
-  slack. **Not landed here** — nothing consumes it yet, and it moves every JIT run image's
-  addresses, which is not a change to make without a caller.
+**And on today's tree no linker change is needed at all, on any host.** Read the protection
+loop rather than assuming from the group table: `f = k; if (f >= HOST_RUNMEM_RO) { if (f !=
+0) continue; f = 3; }`. With `HOST_RUNMEM_RO` 0 the RO and RW groups both hit `continue`;
+with it 1 they *still* both hit `continue`, and the only effect of the flag is that the text
+group is protected `rx` instead of `rwx`. The single `protect rwx` line above is the whole
+output. **No page in a run image is ever made read-only**, so a range aligned down into the
+tail of `.data.ro` is the same mapping at the same protection and importing it is sound.
+The dual-mapping path does not change this either: it maps the image twice from one unlinked
+file and puts every `k >= 1` section in the RW view at `mem + ptr_diff`, which is
+`PROT_READ|PROT_WRITE` throughout.
+
+The page-alignment change therefore becomes **required only if the `f = 1` "ro" branch is
+ever reached**, which the code is plainly written to allow and currently never takes. When
+that day comes the fix is the one guard — `if (k <= HOST_RUNMEM_RO) align = PAGESIZE;`
+extended to the RW group — and it costs at most one page of address space per group
+(`ELF_PAGE_SIZE`, 0x1000 on x86_64/i386/riscv64 and 0x10000 on arm/arm64). The sizing pass
+computes the same offsets as the placing pass, so the run block sizes itself correctly, and
+the non-dual path already over-allocates by a page. **Not landed here**: nothing consumes
+it, it is not needed for correctness today, and it moves every JIT run image's addresses.
 
 ### The sizing policy, which is now a different question
 
