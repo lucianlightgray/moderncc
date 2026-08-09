@@ -583,6 +583,17 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {W}/loc.c -o {W}/loc 2>/dev/null && {W}/loc && echo LOC_OK; echo END",
 		 "LOC_OK\nEND\n"},
 
+		{"builtin_expect_is_code_neutral", "",
+		 "printf 'int g;\\nint f(void){ if (__builtin_expect(!!(g==0),0)) return 1; return 2; }\\n' > {W}/be.c && "
+		 "{MCC} -B{B} -I{I} -w -O1 -c {W}/be.c -o {W}/beA.o && "
+		 "printf 'int g;\\nint f(void){ if (__builtin_expect_with_probability(!!(g==0),0,0.9)) return 1; return 2; }\\n' > {W}/be.c && "
+		 "{MCC} -B{B} -I{I} -w -O1 -c {W}/be.c -o {W}/beC.o && "
+		 "printf 'int g;\\nint f(void){ if (!!(g==0)) return 1; return 2; }\\n' > {W}/be.c && "
+		 "{MCC} -B{B} -I{I} -w -O1 -c {W}/be.c -o {W}/beB.o && "
+		 "{ cmp {W}/beA.o {W}/beB.o > /dev/null 2>&1 && echo expect=NEUTRAL || echo expect=COSTS; }; "
+		 "{ cmp {W}/beC.o {W}/beB.o > /dev/null 2>&1 && echo prob=NEUTRAL || echo prob=COSTS; }; echo END",
+		 "expect=NEUTRAL\nprob=NEUTRAL\nEND\n"},
+
 		{"builtin_inline_mem_and_retaddr", "",
 		 "printf 'int main(void){ char a[8]={0}, b[8]={1,2,3,4,5,6,7,8}, c[8], d[4];"
 		 " __builtin_memcpy_inline(a,b,8); __builtin_memmove_inline(c,a,8); __builtin_memset_inline(d,9,4);"

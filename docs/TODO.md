@@ -143,6 +143,175 @@ body, evaluation order only) · `%p` on the device (glibc prints `(nil)`) ·
 
 I found no decision on that list that looks wrongly settled.
 
+## `ast/rir-c2-*` — the fourteen bodies, named and attributed, 2026-08-09 (`wt/ric2`)
+
+The previous sweep turned `MCC_REPLAY_IR_C2` into a real `mcc_config_node`, measured
+**gap 14** at `-O1` / **13** at `-O2`/`-O3` against a banked `0`, and deliberately left both
+the default and the bank alone. This section names all fourteen. **They are not fourteen
+bugs. One was, and it is fixed; the other thirteen are three causes, and twelve of them are
+fixtures that did not exist when `BANKGAP=0` was taken.**
+
+Measured with `-DMCC_REPLAY_IR_C2=ON` on x86_64 Linux, corpus `tests/exec` +
+`tests/diff/full_language.c`, the exact cell in `tests/ast/rir_c2.cmake`. A failing body is
+`[rir-c2part] <fn> ok=0`; the per-body dumps are `[rir-c2op]`, `[rir-c2len]`,
+`[rir-c2byte]` at `MCC_REPLAY_IR=5`.
+
+| # | body | file | verdict |
+| --- | --- | --- | --- |
+| 1 | `extend_brk` | `tests/exec/codegen/codeopt.c` | **REGRESSION, FIXED below** |
+| 2 | `compile` | `tests/exec/programs/grep.c` | `-O1` only; `storeval-callstore` left level 1 at `1ad3f1aa` |
+| 3–13 | `rot_member_chain`, `rot_deep_member`, `rot_array_chain`, `rot_const_left`, `rot_call_arg`, `rot_member_of_member`, `rot_volatile_mid`, `rot_volatile_elem`, `rot_narrow_mid`, `rot_dead_mid`, `rot_impure_target` | `tests/exec/statements/chained_assign.c` | eleven fixtures **added by `99f6afd9`**, the storeval-rot fix, whose own commit message records them as *"inherently discarded by the byte gate"* |
+| 14 | `main` | `tests/exec/types/const_member_copy.c` | fixture added by `89003447`; equal length, equivalent encoding |
+
+`BANKGAP=0`/`BANKFN=1149` were pinned at `3395f5f2` and tightened to `1150` at `bc85ce70`.
+The population today is `fn=1309`. **Twelve of the fourteen are bodies added after
+`bc85ce70`** — rows 3–14 — so comparing a gap over 1309 bodies against a bank taken over
+1149 is the same apples-to-oranges the `BANKFN` floor exists to catch, pointing the other
+way. Both regressions (rows 1 and 2) were found by `git bisect run` over the 450 commits
+`bc85ce70..HEAD`, rebuilding with `-DCMAKE_C_FLAGS=-DMCC_REPLAY_IR_C2=1` at each step.
+
+### Row 1 — `__builtin_expect` stopped being code-neutral at `72fedcf1`. FIXED
+
+`72fedcf1` ("register-pointee address-of, C23 one-arg `va_start`, complex `++`/`--`")
+changed the second argument of `__builtin_expect` and `__builtin_expect_with_probability`
+from `expr_const64()` to `expr_eq(); vpop();`, so that a non-constant argument evaluates
+instead of ICE-ing. That is correct, but `expr_const64()` parses under
+`nocode_wanted += CONST_WANTED_BIT` and `expr_eq()` does not, and `vsetc()` materialises a
+pending `VT_CMP` into a register **only when `nocode_wanted` is 0**. So pushing the second
+argument on top of a live comparison started forcing it out:
+
+```
+  parser: 48 83 f8 00  0f 94 c0  0f b6 c0  83 f8 00  0f 84 ..   cmp/sete/movzx/cmp/je
+  rir   : 48 83 f8 00                                0f 85 ..   cmp/jne
+```
+
+Nine bytes, at every `-O` level, for every `__builtin_expect` over a comparison. The C2 arm
+was reporting it as a re-emit divergence (`want=150 got=141`) because the arena re-emit
+folds the comparison straight into the branch, which is what the parser did before
+`72fedcf1`.
+
+**Fix:** the two discarded operands parse under `nocode_wanted++`, the same treatment
+`72fedcf1` itself gave the third argument of `__builtin_expect_with_probability` and the
+c23 `va_start` second argument. `codeopt.c` `.text`: `-O0` 842 → **833**, `-O1` 832 →
+**823**. `tests/ast/o0-baseline/*.obj.txt` re-taken on all twelve keys
+(`C2_NO_EXTRA=1 O0_AB_BANK=1 tools/o0_ab.sh cmake-cross all …`, then the same with
+`O0_AB_GATES=1`): **exactly one row moves per key, and it is `codeopt.c` on all twelve.**
+No `.rir.txt` counter moved. Gap 14 → **13** at `-O1`, 13 → **12** at `-O2`/`-O3`.
+
+New cell `cli/builtin_expect_is_code_neutral` pins the invariant directly — the object for
+`if (__builtin_expect(!!(g==0),0))` must be byte-identical to the object for `if (!!(g==0))`,
+and the same for `__builtin_expect_with_probability`. Ablated (fix reverted, `cmake-debug`
+rebuilt):
+
+```
+FAIL  builtin_expect_is_code_neutral
+  --- expected ---   expect=NEUTRAL / prob=NEUTRAL / END
+  --- got ---        expect=COSTS   / prob=COSTS   / END
+```
+
+`ast/o0-baseline` ablates on the same revert with
+`o0_ab: x86_64 -- an -O0 object moved. The AST recorder does not run at -O0, so nothing in
+the cut had any business touching these bytes.`
+
+### Row 2 — `grep.c:compile` is a level-placement consequence, not a defect
+
+`switch (tolower(c = *s++))`. The parser keeps the stored value live in a register
+(`mov [rbp-0x1c],ecx` / `mov rdi,rcx`); the replay reloads it (`mov eax,[rbp-0x1c]` /
+`mov rdi,rax`), three bytes longer. The live mark comes from `ast_finalize_storevals`,
+which is **gated on optimisation flags while the parser's vstack discipline is not**, so
+moving a `storeval-*` row off a level necessarily costs replay fidelity at that level.
+`1ad3f1aa` moved `storeval-callstore` 1 → 2 (and `chain-store` 1 → 3, `chain-store-live`
+1 → 2, `chain-store-member` 1 → 3). Confirmed by single-flag probe: `-O1 -fstoreval-callstore`
+takes `grep.c` from `c2ok=13/14` to `c2ok=14/14`, and the body is already clean at `-O2`
+and `-O3`. **That is the whole of the `-O1` vs `-O2`/`-O3` difference in the gap.** Nothing
+to fix here; it is the ladder decision showing up on a second axis. Worth knowing before
+the next level move: `-f<row>` demotions have a replay-fidelity price the ladder benchmarks
+do not see.
+
+### Rows 3–13 — the eleven `chained_assign.c` `rot_*` fixtures
+
+They are minimal reproducers for `q->x = c = a = e`, added by `99f6afd9` together with the
+fix for the `-O1`/`-O2`/`-O3` `vstack leak (-1)` ICE. They diverge for two reasons, and the
+split was measured by ablating each half of that fix behind a `getenv` in a scratch build:
+
+| ablation | bodies still failing | what it proves |
+| --- | ---: | --- |
+| none (HEAD) | 11 | — |
+| revert the `ast_replay_value_inner` reload fallback | 1 | five bodies come from the **reload** arm: `rot_deep_member`, `rot_array_chain`, `rot_const_left`, `rot_call_arg`, `rot_member_of_member` |
+| revert the `ast_finalize_storevals` reload-ok guard | 6 | five bodies come from the **declined live mark**: `rot_volatile_mid`, `rot_volatile_elem`, `rot_narrow_mid`, `rot_dead_mid`, `rot_impure_target` |
+| both | 1 | `rot_member_chain` is a third cause |
+
+**Both halves are load-bearing and neither may be removed.** Compiling
+`chained_assign.c` with either ablation, at `-O1`/`-O2`/`-O3`/`-O11`: the reload ablation
+fails to compile (the `vstack leak` the fix was for), the guard ablation **segfaults the
+compiler**. HEAD compiles all four levels and matches `gcc -O0` output.
+
+`rot_member_chain` is the structural one and it names the real limitation. The parser
+evaluates the whole chain's lvalues first and the value last (`push &q->x; push &c;
+push &a; eval s+a; vstore; vstore; vstore`), so the address load never clobbers the live
+value. The arena hoists each store into its own statement, so `Store(q->x, StoreVal)` loads
+`q` **after** the value is live, `mov rax,[rbp-24]` clobbers `eax`, and the replay reloads
+`c`. `ast_storeval_push_leaf` correctly refuses to grant the rot mark for a non-leaf target
+(`q->x` is `Unary deref(Ref q)`), because the push does emit code. Reproducing the parser
+needs the outer store's *address* hoisted above the preceding chained statements —
+`AST_FB_STORE_CHAIN_MEMBER` in `ast_replay_bb` already does exactly that for a two-store
+chain, and extending it to a 3-deep chain through a non-leaf target is the open item.
+**Not attempted here**; it is a replay-shape change with ICE risk and it wants its own
+branch and its own random-program cross-validation, the way `99f6afd9` had.
+
+**This is a production cost, not only a measurement artefact.** `RIRPRODDUMP=<fn>` shows the
+*production* AST replay diverging by the identical lengths — `rot_member_chain` 60 → 63,
+`rot_volatile_mid` 97 → 109, `rot_deep_member` 119 → 128, `rot_dead_mid` 122 → 128,
+`rot_impure_target` 137 → 149 — so these bodies fall back to the parser's bytes and every
+optimiser strategy applied to them is discarded. That is the same quantity
+`tools/rir-coverage.py` reports as `kept`, and it is why `storeval-rot`'s off-state is
+already recorded in this file as *"an incomplete replay path"*. A fixpoint that grants the
+live mark whenever the ancestor store is itself live was tried and **changes nothing**: the
+outer `Store(q->x, StoreVal)` is a discarded statement, so it never carries the mark for an
+inner store to inherit.
+
+### Row 14 — `const_member_copy.c:main`, the one `bytes=1`
+
+`__imag__ cp[0]` on a `double _Complex *`. Equal length, different encoding:
+
+```
+  parser: 48 8b 00  48 83 c0 08  f3 0f 7e 05 ..  66 0f 2e 00        mov/add rax,8/movq/ucomisd [rax]
+  rir   : 48 8b 00              f3 0f 7e 05 ..  66 0f 2e 80 08000000 mov/movq/ucomisd [rax+8]
+```
+
+The parser materialises the `+8` into the register; the arena carries the displacement on
+the node and the re-emit folds it into the addressing mode. Both are 391 bytes and the same
+instruction count. `rir_c2_equiv_proven()` does not prove it (`c2equiv=0 c2unproven=1`), but
+proving it would not move the gap — the cell counts `c2try - c2ok`, not `c2unproven`. This
+is the arena being *more* canonical than the parser, which is the direction the C2 arm wants;
+"fixing" it means either making the parser fold (a broad codegen change with no measured
+gain) or making the arena reproduce a redundant `add` (wrong direction). **Legitimate
+divergence, correct as it stands.**
+
+### The default: `MCC_REPLAY_IR_C2` stays **OFF**, and the banks stay at `0`
+
+The board today is `gap 13 (bytes=1 len=12)` at `-O1` and `gap 12 (bytes=1 len=11)` at
+`-O2`/`-O3`, over `fn=1309 faithful=1274`, `c2skip=0 c2err=0 c2invalid=0`.
+
+- The tree's own recorded gate for flipping it (`docs/ARCHIVED.md`, P4) is a key reaching
+  **100% on the `all` corpus**. No key is there, and `exec` alone is `1258/1271` = 99.0%.
+- Flipping it on today means either fourteen red cells or re-banking `0 → 13`, and inflating
+  a ratchet to match the day's measurement is what the previous agent refused for exactly
+  the right reason. Twelve of the thirteen now have a named cause and a commit, which is a
+  justification for a *future* re-bank, but a re-bank is only worth taking together with the
+  default flip and a re-measurement of all eleven cross keys — which needs a cross build
+  with the arm compiled in, and is a separate piece of work.
+- The switch is discoverable now (`-DMCC_REPLAY_IR_C2=ON`), the skip message names it, and
+  this section is the board it produces. That is the honest state: a ratchet that is red
+  when armed, with every red body named, rather than a green one that asserts nothing.
+
+**Open, in the order the measurement ranks them:** (a) hoist the chained store's outer
+target address, closing up to eleven bodies and the same eleven `kept` points in production
+— the `AST_FB_STORE_CHAIN_MEMBER` generalisation above; (b) decide whether `storeval-*`
+demotions should carry their replay-fidelity cost into the ladder's cost model, which would
+put row 2 back at `-O1`; (c) then, and only then, flip the default and re-bank all fourteen
+cells from measurement.
+
 ## The board — re-derived 2026-08-09 against a retaken corpus
 
 Supersedes the "Next, in order" list further down this file, the 2026-08-08 board, and that

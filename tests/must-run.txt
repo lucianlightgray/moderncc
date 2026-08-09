@@ -114,7 +114,7 @@ idiom-gate-known-positive    | must-run   | proves that gate detects all three v
 # Windows build. All five were the *other* finding of this audit (skip paths
 # that reported Passed) and are fixed on this branch instead.
 
-ast/rir-c2-O1                | registered | the C2 re-emit ratchet (BANKGAP=0, BANKSKIP=0, BANKFN=1150). A PERMANENT 77 on every build in this tree: MCC_REPLAY_IR_C2 defaulted to 0 in src/mccrir.c and nothing in the build system ever defined it, so the probe saw c2try=0 and the bank asserted nothing. Built with it defined, the real gap is 14, not the banked 0
-ast/rir-c2-O2                | registered | same family, same permanent 77, same never-checked bank; real gap 13
-ast/rir-c2-O3                | registered | same family, same permanent 77, same never-checked bank; real gap 13
+ast/rir-c2-O1                | registered | the C2 re-emit ratchet (BANKGAP=0, BANKSKIP=0, BANKFN=1150). A PERMANENT 77 on every build in this tree: MCC_REPLAY_IR_C2 defaults to OFF, so the probe sees c2try=0 and the bank asserts nothing. Built -DMCC_REPLAY_IR_C2=ON the real gap is 13 (was 14 before the __builtin_expect fix); all thirteen bodies are named and attributed in docs/TODO.md, and the default stays OFF
+ast/rir-c2-O2                | registered | same family, same permanent 77, same never-checked bank; real gap 12 (was 13)
+ast/rir-c2-O3                | registered | same family, same permanent 77, same never-checked bank; real gap 12 (was 13)
 asm-gas-directives           | registered | a PERMANENT 77 carrying a named blocker: the integrated assembler lacks sgdtq/sidtq/swapgs (gas_directives.S:811). The row is here so the blocker cannot outlive its fix unnoticed
