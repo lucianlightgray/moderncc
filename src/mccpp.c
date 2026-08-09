@@ -5134,7 +5134,23 @@ static int macro_subst_tok(
 	}
 }
 
+static int macro_subst_nested(
+		TokenString *tok_str,
+		Sym **nested_list,
+		const int *macro_str);
+
 static int macro_subst(
+		TokenString *tok_str,
+		Sym **nested_list,
+		const int *macro_str) { MCC_TRACE("enter\n");
+	int r;
+	mcc_parse_depth_enter();
+	r = macro_subst_nested(tok_str, nested_list, macro_str);
+	mcc_parse_depth_leave();
+	return r;
+}
+
+static int macro_subst_nested(
 		TokenString *tok_str,
 		Sym **nested_list,
 		const int *macro_str) { MCC_TRACE("enter\n");
@@ -5490,6 +5506,7 @@ ST_FUNC void preprocess_start(MCCState *s1, int filetype) { MCC_TRACE("enter\n")
 	s1->include_stack_ptr = s1->include_stack;
 	s1->ifdef_stack_ptr = s1->ifdef_stack;
 	file->ifdef_stack_ptr = s1->ifdef_stack_ptr;
+	mcc_parse_depth = 0;
 	pp_expr = 0;
 	pp_counter = 0;
 	pp_debug_tok = pp_debug_symv = 0;
