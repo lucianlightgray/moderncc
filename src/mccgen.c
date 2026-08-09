@@ -14334,6 +14334,12 @@ typedef struct LoopCensus {
 static int lcen_on, lcen_tried, lcen_next_id, lcen_depth;
 static FILE *lcen_fp;
 
+#define LCEN_FNMAX 512
+static int lcen_fn_ids[LCEN_FNMAX];
+static int lcen_fn_slots[LCEN_FNMAX];
+static int lcen_fn_n, lcen_fn_ovf;
+static int lcen_tok_enter, lcen_tok_exit;
+
 static void lcen_open(void) { MCC_TRACE("enter\n");
 	const char *p;
 	if (lcen_on || lcen_tried)
@@ -14366,12 +14372,18 @@ static void lcen_begin(LoopCensus *lc, const char *kind) { MCC_TRACE("enter\n");
 	lc->fname = file ? file->filename : "?";
 	loc = (loc - 8) & -8;
 	lc->slot = loc;
+	if (lcen_fn_n < LCEN_FNMAX) { MCC_TRACE("br\n");
+		lcen_fn_slots[lcen_fn_n] = lc->slot;
+		lcen_fn_ids[lcen_fn_n++] = lc->id;
+	} else
+		{ MCC_TRACE("br\n"); lcen_fn_ovf = 1; }
 	lcen_slot(lc->slot);
 	vpushll(0);
 	vstore();
 	vpop();
 	vpushi(lc->id);
-	vpush_helper_func(tok_alloc_const("__mcc_loop_census_enter"));
+	lcen_tok_enter = tok_alloc_const("__mcc_loop_census_enter");
+	vpush_helper_func(lcen_tok_enter);
 	vrott(2);
 	gfunc_call(1);
 	lc->ind0 = ind;
@@ -14405,7 +14417,8 @@ static void lcen_end(LoopCensus *lc) { MCC_TRACE("enter\n");
 	--lcen_depth;
 	vpushi(lc->id);
 	lcen_slot(lc->slot);
-	vpush_helper_func(tok_alloc_const("__mcc_loop_census"));
+	lcen_tok_exit = tok_alloc_const("__mcc_loop_census");
+	vpush_helper_func(lcen_tok_exit);
 	vrott(3);
 	gfunc_call(2);
 	lcen_slot(lc->slot);

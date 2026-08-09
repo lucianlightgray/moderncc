@@ -5942,6 +5942,18 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(loop-census-control PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
 
+            # The par= verdict has its own ground truth: loops whose dependence
+            # structure is known by construction.  The cell that matters is the
+            # unsoundness check -- a loop that carries a dependence must never
+            # come back par=1 -- plus a negative control (-O0 builds no AST, so
+            # every loop is par=?) and a perturbation (drop the carry, the
+            # verdict flips), so the predicate cannot pass by being inert.
+            add_test(NAME loop-census-parallel
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/loop-census.py"
+                        "${CMAKE_BINARY_DIR}" --partest)
+            set_tests_properties(loop-census-parallel PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
+
             add_test(NAME loop-census
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/loop-census.py"
                         "${CMAKE_BINARY_DIR}" --levels O2 --top 20 --opt-in)
