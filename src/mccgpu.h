@@ -2367,7 +2367,7 @@ static SpvV spv_load_region(SpvMod *m, const SpvRegion *r, uint32_t byteoff,
 static void spv_store_region(SpvMod *m, const SpvRegion *r, uint32_t byteoff,
 														 SpvV v, int t) {
 	int width = ast_eval_slice_tsize(t);
-	uint32_t uoff, sh, keep, cur, w;
+	uint32_t uoff, sh, keep;
 	if (width <= 0)
 		return;
 	uoff = spv_region_addr(m, r, byteoff, width);
@@ -2388,29 +2388,13 @@ static void spv_store_region(SpvMod *m, const SpvRegion *r, uint32_t byteoff,
 							 spv_uintc(m, 3));
 	keep = spv_uop(m, SpvOpShiftLeftLogical,
 								 spv_uintc(m, width == 1 ? 0xFFu : 0xFFFFu), sh);
-	if (r->shared) {
-		spv_word_rmw_atomic(
-				m, r->var, spv_region_word(m, r, uoff, 0), keep,
-				spv_uop(m, SpvOpBitwiseAnd,
-								spv_uop(m, SpvOpShiftLeftLogical,
-												spv_emit2(m, SpvOpBitcast, m->id_uint,
-																	spv_val_lo(m, v)),
-												sh),
-								keep));
-		return;
-	}
-	cur = spv_emit2(m, SpvOpBitcast, m->id_uint,
-									spv_word_at(m, r->var, spv_region_word(m, r, uoff, 0)));
-	w = spv_uop(m, SpvOpBitwiseOr,
-							spv_uop(m, SpvOpBitwiseAnd, cur, spv_emit2(m, SpvOpNot, m->id_uint, keep)),
-							spv_uop(m, SpvOpBitwiseAnd,
-											spv_uop(m, SpvOpShiftLeftLogical,
-															spv_emit2(m, SpvOpBitcast, m->id_uint,
-																				spv_val_lo(m, v)),
-															sh),
-											keep));
-	spv_word_set(m, r->var, spv_region_word(m, r, uoff, 0),
-							 spv_emit2(m, SpvOpBitcast, m->id_int, w));
+	spv_word_rmw_atomic(
+			m, r->var, spv_region_word(m, r, uoff, 0), keep,
+			spv_uop(m, SpvOpBitwiseAnd,
+							spv_uop(m, SpvOpShiftLeftLogical,
+											spv_emit2(m, SpvOpBitcast, m->id_uint, spv_val_lo(m, v)),
+											sh),
+							keep));
 }
 
 static int spv_mem_region(SpvMod *m, SpvRegion *r) {
