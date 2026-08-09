@@ -845,8 +845,8 @@ and simply unwatched — by making the numbers breakable. **No pin value changed
 `tests/optfire/*` value was edited, and nothing was re-measured except where a bank was
 re-taken and the diff is set out in full below.**
 
-Six new cells, seventeen new `tests/must-run.txt` rows, and one finding that only exists
-because a bank got read for the first time in six days.
+**Five new cells** — 9138 → **9143** — **nineteen new `tests/must-run.txt` rows**, and one
+finding that only exists because a bank got read for the first time in six days.
 
 #### THE FINDING — 28 `-O0` objects moved and nothing noticed for 426 commits
 
@@ -952,7 +952,7 @@ overlap; by how much is unknown until someone re-takes it. Do not quote the `0.8
 as if its denominator were 56,281 distinct blocks. This is the one number on the board this
 branch has made *less* certain, and saying so is the point.
 
-#### LANDED — `tests/must-run.txt`, seventeen rows
+#### LANDED — `tests/must-run.txt`, nineteen rows
 
 The `fmt/census-oracle` pair had never been added to the manifest; nor had thirteen other
 registered cells that publish a figure this board quotes. Every one is `registered` rather
