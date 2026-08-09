@@ -6409,6 +6409,42 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 "tools/selfhost-jit.py needs a python3 on PATH and -DMCC_EMBED_JIT=ON")
         endif()
 
+        if(MCC_PYTHON3 AND MCC_EMBED_JIT AND MCC_TARGET_IS_HOST AND UNIX
+           AND (MCC_CPU STREQUAL "x86_64" OR MCC_CPU STREQUAL "arm64"))
+            add_test(NAME "jit/xoracle-known-positive"
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/jitconform.py"
+                        --phase selfcheck
+                        "--out=${CMAKE_BINARY_DIR}/jitconform-selfcheck"
+                        "--mcc=$<TARGET_FILE:mcc>" --surface embed)
+            set_tests_properties("jit/xoracle-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
+
+            set(MCC_XSUITE_GCC "$ENV{HOME}/Projects/gcc" CACHE PATH
+                "gcc source checkout supplying gcc.c-torture/execute for jit/xoracle-conformance")
+            set(MCC_XSUITE_LLVMTS "$ENV{HOME}/Projects/llvm-test-suite" CACHE PATH
+                "llvm-test-suite checkout supplying SingleSource/UnitTests for jit/xoracle-conformance")
+            mark_as_advanced(MCC_XSUITE_GCC MCC_XSUITE_LLVMTS)
+            set(_jitconf_ts "")
+            if(EXISTS "${MCC_XSUITE_LLVMTS}/SingleSource/UnitTests")
+                set(_jitconf_ts "--testsuite=${MCC_XSUITE_LLVMTS}" --suite ts-unittests)
+            endif()
+            if(EXISTS "${MCC_XSUITE_GCC}/gcc/testsuite/gcc.c-torture/execute")
+                add_test(NAME "jit/xoracle-conformance"
+                    COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/jitconform.py"
+                            --phase both
+                            "--out=${CMAKE_BINARY_DIR}/jitconform-cell"
+                            "--gcc=${MCC_XSUITE_GCC}" ${_jitconf_ts}
+                            --suite c-torture/execute --limit 400
+                            "--mcc=$<TARGET_FILE:mcc>" --surface embed --label cell
+                            --min-pass 100 --max-miscompile 1)
+                set_tests_properties("jit/xoracle-conformance" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+            else()
+                mcc_skip_test("jit/xoracle-conformance"
+                    "no gcc.c-torture/execute corpus at ${MCC_XSUITE_GCC} -- point -DMCC_XSUITE_GCC=<gcc checkout> at one to measure the JIT against clang as cross oracle")
+            endif()
+        endif()
+
         if(MCC_PYTHON3 AND MCC_EMBED_JIT AND WIN32 AND NOT MSVC)
             add_test(NAME embed-jit-smoke
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed-jit-smoke.py"
