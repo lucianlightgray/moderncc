@@ -6,6 +6,143 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## What is actually still open — swept and verified 2026-08-09 (`wt/sweep`)
+
+Every section below this one was enumerated and each item classified OPEN / CLOSED-VERIFIED
+/ CLOSED-UNVERIFIED / REFUSED / SUPERSEDED-STALE. Closure claims were checked by **running
+the tool or the cell**, not by reading. **24 spot-checks were taken; 20 reproduced exactly,
+3 did not, and one probe turned up a crash nobody had filed** — all four are in this table
+below, at rows 1, 2, 5 and in the staleness list. The device-path verdict, the Metal
+drop, chain-store re-promotion, `storeval-rot`'s demotion, `narrow`/`tree-copy-prop` and
+float support were each re-read against their measurements and are **settled**; nothing
+below re-litigates them.
+
+**Reading the `:NNNN` anchors below.** They were taken against this file as it stood at
+`09a248e4`, *before* this section was inserted. Inserting it added exactly **137** lines
+ahead of everything, so **an anchor `:N` here is at line `N + 137` today** — `:16` is now
+`:153`, `:3015` is now `:3152`. Anchors into other files (`src/`, `tools/`, `PLAN.md`,
+`CMakeLists.txt`) are unaffected and are current. This is the drift the header warns
+about; it is stated rather than left to be rediscovered.
+
+Tree state at the time of the sweep: `cmake-cross` built before `cmake-debug` was
+configured, both register **9151** cells, `tools/selfhost-smoke.py cmake-debug` green, all
+34 `slice/*` + `gpu/*` cells green on a real device, `must-run: 60 row(s) satisfied`.
+
+**The honest headline: no ranked row of the board is materially unfinished. What is left is
+gates that do not reach, two live compiler defects nothing watches, and a set of figures
+that will corrupt the next measurement if quoted.** Rows 1–5 below are the only ones I would
+schedule.
+
+| # | row | size | currency |
+| ---: | --- | --- | --- |
+| **1** | **`slice-census` is RED on this tree and no documented invocation runs it.** `MCC_SLICE_CENSUS_RUN=1 ctest -R slice-census` fails: `--verify` reports `cst_alloc_node` 595/560 B and `rir_low_set` 345/307 B over budget at all four levels, and the `src_fail` gate added by `7c5c736e` fires on **9 of 359** `wide` sources. It has been red since that commit and nobody saw it, because **nothing in `CMakeLists.txt` sets `MCC_SLICE_CENSUS_RUN`** — `grep -c 'MCC_SLICE_CENSUS_RUN\|MCC_LOOP_CENSUS_RUN\|MCC_RIR_CENSUS' CMakeLists.txt` is **0**. `slice-census` is `tests/must-run.txt:92`, `registered`, so `ci/must-run-registered` passes on it | small–medium (2 verify overruns + 9 sources, or a tolerance decision) | **cells** |
+| **2** | **`ctest -L census` runs 3 of its 6 cells and reports 6.** `loop-census`, `loop-census-numeric` and `slice-census` skip under the recipe this file quotes (`MCC_RIR_CENSUS=1 ctest -L census`, and `slice-census.py`'s own message literally says *"set `MCC_SLICE_CENSUS_RUN=1` to run this census (ctest -L census)"*). The `6` at `:1507` counted **registered** cells, not run ones — the exact failure mode this project keeps finding. Fix: have CMake set the three env vars on the `census`-labelled cells, so the label means what it says | small (three `ENVIRONMENT` properties) | **cells** |
+| **3** | **`-fopt-slice` makes object output depend on the optimizer's disk cache, and nothing watches it.** Reproduced verbatim today: `python3 tools/opt-cache-determinism.py cmake-debug/mcc src/mcc.c --opt=-O3 --from-build cmake-debug -- -fopt-slice` → `cold/self/foreign-tu = daffa4e023f9`, **`foreign-fl = 1dbdfbe1bc0c`**, `cache entries written: 2`, `FAIL`. The cell is a **permanent 77** because the flag is `MCC_OPTD_LEVEL(9)` and has no subject at any shipped level, so the defect is invisible rather than absent. Decide: own the pass, or delete it | unknown (a pass) | **correctness / determinism** |
+| **4** | **`if-conversion-abs` ships at `MCC_OPTD_LEVEL(2)` and the freshly re-run bench says it makes code worse.** `tests/optfire/levelbench.tsv:20`: moves **1 of 17** kernels, `gain_movers` **−0.0334**, `branchy` **−0.5700** — a sign flip from the `+0.1905` / `+3.1843` it was promoted on. It is bucketed `ranked`, not `cost-no-gain`, so the ladder still treats it as a win. It is filed **only** in the failed-to-reproduce table at `:685`; no row of the ranking table owns it, and `:517` asserts "row 1 is the only unmeasured row left" | small (one level decision, the measurement already exists) | **emitted code** |
+| **5** | **`MCC_MAX_UNARY_DEPTH` is mis-sized and the guard admits inputs that segfault the compiler.** `src/mccgen.c:241` caps nesting at **2048** against a measured **~1.15 KiB of host stack per unary level**, so the limit needs ~2,560 KiB and a 2 MiB stack — the Linux default for a *thread* — is not enough. **Verified this sweep**, 2,040 nested parens, `ulimit -s`: **2048 KiB → SIGSEGV (exit 139, core dumped); 4096 KiB → exit 0; 8192 KiB → exit 0.** The diagnostic at `:13321` never fires because the crash happens first. Filed at `:8211-8214` as a residual of N8 and never mentioned again | one constant, or a depth derived from the rlimit | **correctness** |
+| **6** | **Nine number-producing tools are registered nowhere — the board says four.** `:1688-1696` names `xsuite-report.py`, `gate-ledger.sh`, `strategy-ledger.sh`, `c2_sweep.sh` and closes "Four tools left on this item." Also unregistered and board-quoted: `xsuite.py`, `xoracle.py`, `c2_equiv.sh`, `selfhost-o3.py`, `arm64pe_diff.py`. **`xoracle.py` is the sharpest**: `tests/optfire/levelpins.txt:78` pins `merge-constants` at level 2 on "two xoracle cases change verdict without it" — a shipped ladder pin whose only evidence comes from a tool no cell runs | medium (five more cells) | **census trust** |
+| **7** | **`ast_env_gate` no longer exists in `src/` and four shell tools still grep for it.** `grep -rn ast_env_gate src/` is **0**; `tools/{c2_sweep,c2_equiv,gate-ledger,o0_ab}.sh` all still reference it. They fail loudly, which is the right mode, but this is the widest blocker in the file: it freezes `o0_ab.sh`'s gated half (twelve `*.gated.rir.txt` + `board.gated.txt`, uncovered by `ast/o0-baseline` and not pretending otherwise), blocks three of the four tools in row 5, and blocks the cheap "which `-O1` gate erases the 72 `len` bodies" experiment. The restoration recipe is already written down at `:9899-9906` | medium | **gate strength** |
+| **8** | **`spirv-val` and `glslc` are installed at `/usr/bin` and referenced nowhere in the build.** `grep -rn 'spirv-val\|glslc' CMakeLists.txt cmake/ tools/ src/` is empty. 152/152 modules already validate by hand at `--target-env vulkan1.1`. One `find_program` and one `add_test` arm. The cheapest open item in the file, and it survives the device freeze because it validates what the emitter already ships | small | **device correctness** |
+| **9** | **A stage-2 build dir does not rebuild when a header changes.** The stale binary is silent and plausible: it runs, it self-hosts, it passes. Workaround only (`rm cmake-<dir>/CMakeFiles/mcc.dir/src/mcc.c.o`); the fix is for `mcc` to emit a depfile for `CMAKE_DEPFILE_FLAGS_C`. This poisons **any** measurement taken from a stage-2 dir, which is most of the ladder work | medium | **measurement validity** |
+| **10** | **D6 — `scalar_storage_order` / `ms_abi` are not implemented at all** (`grep -rn 'scalar_storage_order\|ms_abi' src/*.c src/*.h` → **0**), and mcc objects link against gcc's, so a mismatch is *silent* wrong codegen across a linker boundary. The only item in the codegen list with that property | large | **correctness** |
+| **11** | **`selfhost-optbench.py --check` can pass over zero derivations.** `derive_levels` assigns `levels[f] = levels_now[f]`, so an all-`inert` run prints *"src/mccopt.h matches the ladder"* having derived nothing; the docstring says **48** level-assignable flags in five places and `flag_table()` yields **16**; no floor on `len(names)`; an empty sample list classifies `inert`. The board already carries "`selfhost-optbench --check` was not re-run" as a caveat, which is the same hole one level up | medium (several floors) | **census trust** |
+| **12** | **W8 — `selfhost-jit` heap-UAF of a `Sym` in the AST forward-inline re-emit path.** Root-caused, verified unfixed: `ast_inline_retain` (`src/mccast.c:3533`) and `ast_reemit_retain` (`:3561`) are still called at `:19217-19218` with no refcounting across cross-function grafts. It has a deterministic oracle (MSVC-ASan `mcc_s` + `tools/selfhost-jit.py`) | medium–large | **correctness** |
+| **13** | **`run-tier/x86_64` fails `tls_threads` when `MCC_JIT=1` meets an active AST replay.** Localised to three lines: `mcc_jit_tls_slab` (`src/mcchost.c:1450`), the `mcc_run_pthread_create` binding (`src/objfmt/mccelf.c:974`) under `s1->run_tls_active`, set only on the interpreter relocate path in `tls_setup_linux` (`src/mccrun.c:451`). `--no-jit` does not suppress it. Note this contradicts `:10090`'s "the deliberate-red count is now 0", which is true only of the default configuration | small–medium | **correctness** |
+| **14** | **`ptr_unlink` for-condition-store segfault** — root-caused to `rir_cf_cond`/`rir_docond`, needs a 5-fix/34-break discriminator. Orphaned: zero references anywhere else in this file | medium | **correctness** |
+| **15** | **`full_language.c` still diverges at `-O0` on x86_64/i386** — an `AST_OP_ASM` replay defect (P4 defect 4). Contained, not closed; zero later references | medium | **replay fidelity** |
+| **16** | **The `jit-splice` pin hides a live miscompile.** `tests/optfire/cover3.py:44` pins it with the reason *"miscompiles `programs/random_stuff` at `-O2`; OFF in `mccopt.h` for that reason"*. That miscompile appears nowhere in the codegen-defect list | medium | **correctness** |
+| **17** | **`-O3` re-emission leaves the pre-inline copy in `.text`** — **27 functions / 52,022 B, ~3.6%** of `.text`. Not a correctness bug; no cell, no bank, no entry in the codegen list | medium | **emitted code** |
+| **18** | **`--mutate` is blind to `memcpy`, and the real gap is the corpus.** Four of six operator sites already perturb written memory and `g_frame_mismatch` exists; what is missing is **any `memcpy`/`memset` in the slice corpus to mutate**. Smaller than the debt as filed | small | **test strength** |
+| **19** | **Debt 6-vi — the chain-store *member* fixture was never written.** Its stated blocker (debt #6a's `-O1` vstack underflow) has been gone since 2026-08-09. `exec-chainlive/*` covers the live half; the member half of the pairing has no cell | small | **regression cover** |
+| **20** | **`flagsweep-cover` and `asm-gas-directives` are `mcc_skip_test` stubs — `cmake -E echo`, structurally incapable of failing.** `flagsweep-cover` hides 75 covering-array rows behind an opt-in that nothing runs; `asm-gas-directives` parks a real unimplemented feature (*"integrated assembler lacks sgdtq/sidtq/swapgs encodings"*) as an always-green cell. Neither is in `tests/must-run.txt`. There are **74** `mcc_skip_test` call sites, 17 live in this configuration | small each | **cells** |
+| **21** | **Hazard 1 is still live: `BREAKEVEN` is a hand-pinned literal** at `tools/loop-census.py:125`, duplicated as `lc_thr[]` in C, and it cannot be gated (`--cost-synth` 77s with no device, `slice/cost` carries `SKIP_RETURN_CODE 77`). The provenance banner landed; the constant did not. **Un-pinning is ~15 lines of C + ~25 of Python**, and it is what the entire remaining integer lane source (`vlaloop`'s 64 trips against a frozen `8`) is adjudicated against | ~40 lines | **ns / lanes** |
+| **22** | **`rir-coverage.py`'s `wide` denominator is "the files that happened to compile"** — an `os.walk` of seven directories with no manifest, so a source dropping out silently shrinks the ratchet. Cheap first step already named: bank `sources=N` and fail when it moves. Adjacent: `LOW_EXCLUDE` is a **filename suffix match with no count**, so renaming `mccgpu.c` produces a fake regression with no diagnostic | small (the floor) | **census trust** |
+| **23** | **`rir-nofb-probe`, `--check-gap-dir` and `--check-low-dir` all pass over an empty input.** The bank already holds four empty `nofb_miscompiles` lists; gap fixtures cover **3 of 18** `UNF`+`WHY` classes | small per guard, medium for fixtures | **gate strength** |
+| **24** | **`stratsweep.sh` and `flagsweep.sh` drop subjects silently.** `$WORK/skipped` is written and never counted; the only floor is `n > 0`, so a miscompile breaking 30 of 31 subjects prints `PASS stratsweep-iso all: 22 strategy/ies x 1 subjects`. Both already print the survivor count — pin it | small | **gate strength** |
+| **25** | **The non-LVAL local `Ref` question is now answerable, not open** (`src/mccslice.h:264`, `:5685`). `wt/decaytype` fixed the identical defect in `ast_dep_decode` on 2026-08-09 — an `AST_Ref` accepted as a base address without checking `VT_LVAL` — with cell `id=25 dp_gptr_alias`. That answers the semantics in favour of "address" but did not touch `ast_eval_slice.h`'s `Ref` arm, `kind_ok` or `livein`. Blast radius **93 of 3994 accepted slices (2.3%)**; one directed test settles it | small | **reference correctness** |
+| **26** | **Cluster L is a dependency chain and its first link is unbuilt.** `L1` — give the JIT a shutdown — blocks `L2`/`L3`/`L4`/`L6`/`L7`/`L8`/`L9` by construction (`:8044` says so). Workers are `pthread_detach`ed at `src/mccjit_embed.c:1375` into an unbounded `pthread_cond_wait` at `:1341`/`:1347` with no `pthread_t` retained. `L5` landed as L3 residency (**32×** on fixed cost); nothing else in the cluster has. It is the same defect as open item 4 at `:8657`, `PLAN.md:916`, and the coroutine task's item 1 — **four rows naming one blocker** | redesign | **device lifetime** |
+| **27** | **The gate-mask gap.** `ast_math_inline_env`, `ast_interchange`, `ast_fusion`, `ast_tile` and `loop-vlat` mutate the arena before the JIT's mask snapshot and carry no `AST_SG_*` bit, so the JIT cannot know what shaped the tree it is handed. Stated at `:8650` and again at `:7756`; no later mention. This is the same class of defect as row 1 of the board's own ranking (a predicate reaching emitted code without its guard) | design | **correctness** |
+| **28** | **`storeval-callstore` is at `MCC_OPTD_LEVEL(2)` and was never ranked in either direction** (`src/mccopt.h:39`). The ICE that made its off-state unmeasurable was fixed at `:7629`; nobody has run the bench since. Adjacent and larger: **32 of the 34 demoted rows on rungs 10/11/12 are still unpriced** — only `narrow` and `tree-copy-prop` were measured, and rung 12 remains a deletion-candidate list nobody has read | one bench, then 32 | **emitted code** |
+| **29** | **The `MCC_OPT_REPLAY_FALLBACK` flip is an untaken decision, and the fallback is silent either way.** No known defect blocks it (`:9126`), the backstop landed at `705f0b0f`, all four delta-debugged flag sets closed, and `rir-nofb-probe` banks zero miscompiles. Keeping the gate costs **2.0% of bodies but 10.2% of body bytes** getting no optimization at all at `-O1`. **Recommended under either decision and not done: make the divergence visible** — `rir_prod_note` only reports at `MCC_RIR_PROD>=2`, so in a default build a fallback leaves no trace | small (visibility), then a decision | **emitted code** |
+| **30** | **No tree-recursion exec golden exists, and the failure mode is a GPU hang.** MSL compiles `fib(n)=fib(n-1)+fib(n-2)` and then **hangs the device at n=5** (`kIOGPUCommandBufferCallbackErrorHang`), taking sibling command buffers with it. Recorded as `PLAN.md:475` (C4); the golden was never written. Partly defused by the Metal drop, but the golden is a CPU-side conformance test and is still missing. Two more unused-as-conformance shapes named beside it: computed `goto` **into** a `for` body (`tests/diff/parts/legacy_expr.h:60-95`) and label arithmetic (`tests/exec/codegen/nodata_wanted.c:48,76`) | one golden | **conformance** |
+| **31** | **Two device residuals nothing owns.** N11's duplicated upload in `ast_ladder_gpu_run` (the identical `tin` uploaded twice per rung) is untouched — `PLAN.md:1059` says so. N10 picks `devs[0]` with no scoring while `VkPhysicalDeviceLimits` is fully transcribed at `src/mccgpu.c:604-711` and only `deviceName` is read — `PLAN.md:1058`, "the `devs[0]` half of I2(D) is still open". Both are frozen with the device path; both are cheap and neither is written down as a row | ~10 lines / ~60 lines | **device correctness** |
+
+Below the line, and deliberately: the device path's own open rows — float (**priced at ~1,100–1,700 lines, not paid**), the dispatcher (three subsystems, priced nowhere), 115 indirect blocks, recursion (no data), the `pe` lowerable floors (stale-low, so they under-gate rather than false-fail), and debt #3's descriptor staleness (fixed, unreachable until binding 2 grows). All are frozen by the 2026-08-09 decision and none should be scheduled while that stands.
+
+### Claimed closed, and nothing enforces it
+
+These are the ones worth knowing about. None is a lie; each is a closure resting on prose,
+on a single hand-run, or on a cell that cannot reach it.
+
+1. **`slice-census`, `loop-census`, `loop-census-numeric`** — `registered` in the manifest, so `ci/must-run-registered` is green on all three, while no documented invocation runs any of them and one is red. Rows 1–2 above.
+2. **`opt-cache-determinism` and `runtime-bench-gatewin`** — both permanent 77s. The manifest discloses this honestly, which is the right thing; nothing ratchets them back to live, and for the first the underlying defect still reproduces. Row 3.
+3. **Debt #3, `mcc_vk_bind_mem` descriptor staleness** — the fix is in the tree (`dsdirty`, `src/mccgpu.c:1781/1894/1933`) and the debt states plainly that it is *"not test-covered, and cannot be"*, because both callers pass the constant `MCC_VK_MEM_DEFAULT`. A debt marked paid whose payment is unreachable by construction.
+4. **Debt #7, "464 skipped cells"** — closes with *"`cmake-debug` now registers 9106, the same as `cmake-cross`"* (`:3693`). Hazard 5 measures exactly that claim as **false** (8972 vs 9136 by configure order) and says the fix *"did not close the gap — it moved it"*. The debt and the hazard contradict each other and both are written as current.
+5. **The Metal freeze** — *"Keep the `#if MCC_GPU_LANG_MSL` arms only where they already compile; add no more"* (`:483`) is enforced by nothing: no cell, no lint. The decision is right; it has no ratchet.
+6. **W3's 3-way-concurrent closure** — the best-evidenced result in the file (399 chains / 0 non-identical against a reverse-applied negative control, Fisher p = 0.0015) and no cell holds it. A regression reappears only as flake.
+7. **The `mslgate` arm** (`:4033`) — compiles clean and links 51 `msl_*` refs; never executed. Now moot under the Metal drop, but still written as an open verification gap.
+8. **`ast_eval_slice()`'s poison-flag fix** (debt row 2) — fixed in code and correct; no cell is named for it. Coverage is incidental via `slice/deref` / `slice/real` / `slice/musl`.
+9. **The `narrow` pin** — the banked figure did not reproduce (banked **−0.60%** cpu / **1.91%** stage-1; re-read **−0.0088%** / **+0.876%**, about half). The pin rows now carry both numbers; the discrepancy was annotated, not explained, and no cell compares `levelpins.txt` against a re-take.
+
+### Written as live, actually superseded
+
+1. **Board row 1 and still-open row 1** (`:497`, `:507-514`, `:3015`) call the missing `indirect` guard on `ast_dep_base_distinct` **"UNMEASURED, and it is the top of the board."** It landed at **`adf08e3b`**. Verified in the tree: the parameter is `src/mccast.c:13347`, the guard `:13350`, both emitting callers pass `0` (`:13516`, `:13566`), only the census site passes `ast_dep_alias_oracle_env` (`:13949`) — and the **22 `exec-{interchange,fusion,tile,search*}/loop_*` cells are registered and green**. *The board's number-one open row is closed.* Its own body says so at `:2104`.
+2. **The registration figure is two generations stale.** `:16-17` say **9136**; `:624` and `:2656` say 9136 *"today"*; `:985` says **9149**; the tree says **9151** in both dirs. The `wt/gatefin` write-up raised it to 9149 and never propagated to the head; the merge with `wt/idiomcov` added the last two and nothing recorded it. Hazard 5's "164 low" delta is quoted against the stale pair.
+3. **Three counts of one list.** `:521` "**Twelve** have now failed to reproduce", `:670` "**The nine** figures that have failed to reproduce", `:697` "**Seven** headline figures" — and the table at `:675-687` has **thirteen** rows.
+4. **`SKIP_RETURN_CODE` count.** `tests/must-run.txt:3` says **141**, `docs/PLAN.md:1011` says **138**, `CMakeLists.txt` has **149**.
+5. **`:9598` — "Deliberately not banked: byte faithfulness."** False at HEAD. `kept_coverage` is banked on all eight rows of `tests/rir/coverage-bank.json` **and enforced** (`tools/rir-coverage.py:1105-1109`, skipped only on an unbanked host format). The reversal is recorded at `:7886`; the C2 paragraph was never rewritten.
+6. **`:9600-9602`** — "modelled 99.59% / 99.56%, capture 100.00%" is stale; the bank reads **100.0 / 100.0 / 99.9681 / 99.9681**.
+7. **`:9584-9590`** — the lowerable floors are **three re-bankings** stale (`MCC_RIR_LOW_EXCLUDE`, the leaf graft, and the fourth re-bank).
+8. **`:9624-9626`** — "do not turn `-fno-replay-fallback` on by default… ≥4 fallback bodies are genuinely wrong" is contradicted by the **newer** decision at `:9124-9154` (no known defect blocks it; suite green; `nofb_miscompiles` empty). The prohibition predates the `union_cast` / `transparent_union` / `chained_assign` fixes and has no subject.
+9. **`:3116`** — "Five of the eight landed" over a list that holds **nine** items (0–7 plus 6a).
+10. **`:3597`** — "`levelbench.tsv:47` is now line 51". The file is **29 lines / 16 data rows**; neither line exists. The same applies to every "24 of 47" / "32 of the 47" count in hazard 2.
+11. **`:353-357`** — "turns a lavapipe/NVIDIA denormal disagreement into a hard CI failure no code change can fix" is refuted at `:404-408` and never struck; `:439` still lists the retracted reason as load-bearing in the recommendation.
+12. **`docs/PLAN.md:625`** marks E6 **"NEW 2026-08-08, OPEN"** while `PLAN.md:1035` and `:6238` of this file both say E6 is closed permanently. It is also the line carrying the uncited lavapipe assertion. Same class: `PLAN.md:498/511` "Vulkan — LIVE" vs `:1052` "CLOSED"; `PLAN.md:754` "half-landed" vs `:1060` "CLOSED"; `PLAN.md:1011` N13 open vs `:1061` N13 closed.
+13. **`:10011` duplicates `:10039`** (32-byte vector alignment), **`:9282` duplicates `:10076`**, **`:9759` duplicates `:10078`**, **`:10051`** sends a reader at a capture path that measures **100.000%**, and **`:10182`** still lists `__builtin_powi`/`powif` as missing after `:9303` closed them.
+14. **E1's refusal-site count has now been stated three incompatible ways** and every one was written as current: `:7810` "**eight** separate sites", corrected at `:7851` to "**16**, not 8" with the sites enumerated, corrected again at `:100-113` to "**36 lines, 43 occurrences**, not the 1 + 4 + 6 = 11 this paragraph claims". Only the last is right — verified this sweep: `slice_inline.h:2`, `mccslice.h:4`, `mccgpu.h:12`, `ast_eval_slice.h:18`, because `mccgpu.h`'s block is mirrored across the two emitters and `ast_eval_slice.h`'s eighteen were never counted. `PLAN.md:620` still carries the "16 refusal sites, not 8" figure.
+15. **Seven `TODO` markers in the tree name sections of this file that do not exist**: `tests/cst/macro-nesting.cmake:24,31` and `tests/cst/symref-shadow.cmake:30` cite `'CST slice-J'` / `'CST slice-I'` (**`CST` appears nowhere in this file**); `tests/jit/run-parity.sh:48` cites a "TODO KGC section"; `tests/superopt/promote-floor.sh:39` cites `'Floor the search'`; `tools/embed-jit-smoke.py:10` cites "P0 step 5"; `:103` cites a "gcc-engine startup residual". Three more point at the wrong row: `tools/fmt-census.py:4` and `tests/optfire/levelpins.txt:256` say "board row 2" (now `levelbench.tsv`), `cmake/slicerun_census.cmake:50` says "board item 3" (now Metal).
+
+### The lavapipe citation, now sourced — copy it across
+
+`docs/TODO.md:385-389` files this and defers it to *"whoever owns E6"*. Nobody owns E6, so it
+has not moved. It was **independently re-verified during this sweep** against
+`/var/cache/distfiles/mesa-26.0.8.tar.xz`, at exactly the cited lines:
+
+```
+src/gallium/frontends/lavapipe/lvp_device.c:454   .shaderFloat64 = (pdevice->pscreen->caps.doubles == 1),
+src/gallium/drivers/llvmpipe/lp_screen.c:301      caps->doubles = true;
+```
+
+`docs/PLAN.md:625` still carries the bare assertion *"Vulkan's `shaderFloat64` is optional
+but present on both the NVIDIA host and lavapipe"*, and `PLAN.md:797` (I2's
+`shaderFloat64 = TRUE` refusal floor, "see E6") rests on it. **The citation is a two-line
+edit and should be made.** Two residues survive it and are genuinely open:
+
+- **`ci.yml:116` does not pin the Mesa version** (`libvulkan-dev mesa-vulkan-drivers`, confirmed), so *"CI's lavapipe"* remains an inference from *"26.0.x lavapipe"*. Pinning it is one line.
+- **A *runtime* fp64 denormal reading from lavapipe** has never been taken. Both devices advertise neither fp64 denorm mode, which makes them consistent on paper and says nothing about what either computes. There is no lavapipe ICD on this host (`/usr/share/vulkan/icd.d/` holds `nvidia_icd.json` only).
+
+### Settled — do not reopen without new evidence
+
+Each of these was measured, declined, and re-read during this sweep. The measurement is in
+the file beside the row.
+
+Chain-store re-promotion (**+2.60** points of `kept` bought **−0.079%** stage-2 for
+**+1.50%** stage-1, 19:1 against) · `storeval-rot` demotion (off-state is an incomplete
+replay path; `kept` **91.978 → 83.242**) · `narrow` (**100:1**) and `tree-copy-prop`
+(**166:1**) · Metal (**1754** MSL lines against **3612** SPIR-V, a 2-line kernel arm, **0**
+`msl_region*` symbols against **31** `spv_*`) · the device-path freeze (**79.21** of the
+corpus's **80.66** parallel-legal points are `double`; **1.45** are integer) · float in the
+emitter (priced at ~1,100–1,700 lines; `float` is unreachable bit-exactly and worth
+**+0.0**, `double` is reachable and worth **+79.2** over a corpus that cannot reach either
+divergence class) · per-region keep/restore (**4.0%** of 129,861 regions clean at both
+boundaries; `ast_replay_body` has no entry point below the body) · frame-local base
+distinctness (**0.72%** self-compile, **absent** on the corpus) · `revargs` (21 nodes, one
+body, evaluation order only) · `%p` on the device (glibc prints `(nil)`) ·
+`__builtin_object_size` subobject-from-declared-array-type (reverted, regressed 5 tests;
+`-1` is the safe answer).
+
+I found no decision on that list that looks wrongly settled.
+
 ## The board — re-derived 2026-08-09 against a retaken corpus
 
 Supersedes the "Next, in order" list further down this file, the 2026-08-08 board, and that
