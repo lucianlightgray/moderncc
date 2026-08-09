@@ -1094,6 +1094,7 @@ static CType rir_pvt[VSTACK_SIZE + 1];
 static int rir_pvr[VSTACK_SIZE + 1];
 static CValue rir_pvc[VSTACK_SIZE + 1];
 static unsigned char rir_pvok[VSTACK_SIZE + 1];
+static int rir_pvhw;
 static AstLocal rir_bb[64];
 static int rir_bbn;
 static AstLocal rir_cf[64];
@@ -2994,13 +2995,14 @@ static void rir_op_effect(const RirOp *ro) {
 	case IR_OP_PUSHLIT:
 	case IR_OP_VSETC:
 		if (o->vs_n >= 0 && o->vs_n <= VSTACK_SIZE) {
-			int q;
 			rir_pvt[o->vs_n] = o->ctype;
 			rir_pvr[o->vs_n] = o->a0;
 			rir_pvc[o->vs_n] = o->cval;
 			rir_pvok[o->vs_n] = 1;
-			for (q = o->vs_n + 1; q <= VSTACK_SIZE; q++)
-				rir_pvok[q] = 0;
+			if (rir_pvhw > o->vs_n)
+				memset(rir_pvok + o->vs_n + 1, 0,
+							 (size_t)(rir_pvhw - o->vs_n));
+			rir_pvhw = o->vs_n;
 		}
 		if (rir_pending_call != AST_NONE) {
 			if (o->kind == IR_OP_PUSHLIT || (o->a0 & VT_VALMASK) < VT_CONST ||
@@ -3321,13 +3323,14 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case IR_OP_VPUSHSYM:
 		if (o->vs_n >= 0 && o->vs_n <= VSTACK_SIZE) {
-			int q;
 			rir_pvt[o->vs_n] = o->ctype;
 			rir_pvr[o->vs_n] = VT_CONST | VT_SYM;
 			rir_pvc[o->vs_n].i = 0;
 			rir_pvok[o->vs_n] = 1;
-			for (q = o->vs_n + 1; q <= VSTACK_SIZE; q++)
-				rir_pvok[q] = 0;
+			if (rir_pvhw > o->vs_n)
+				memset(rir_pvok + o->vs_n + 1, 0,
+							 (size_t)(rir_pvhw - o->vs_n));
+			rir_pvhw = o->vs_n;
 		}
 		break;
 	case IR_OP_MKPTR: {
@@ -4598,6 +4601,7 @@ static void rir_to_arena(void) {
 	rir_cvt_n = 0;
 	rir_argcast_n = 0;
 	memset(rir_pvok, 0, sizeof rir_pvok);
+	rir_pvhw = 0;
 	rir_ternn = 0;
 	rir_tholdn = 0;
 	rir_incr_bb = AST_NONE;

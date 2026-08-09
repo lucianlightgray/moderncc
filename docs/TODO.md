@@ -314,29 +314,85 @@ the SPIR-V arm either — the honest default is **drop Metal as a device target*
 not a measurement; it is ranked here so that it stops being taken by default, one landing
 at a time.
 
-### 4. `rir_op_effect`'s 512-byte clear — the biggest count on the board, and probably a small time
+### 4. ~~`rir_op_effect`'s 512-byte clear~~ — CLOSED 2026-08-08. It was **8.3–9.4% of stage-1**, not "well under 1%", and the arithmetic that said otherwise divided by the wrong self-compile time
 
 ```c
-/* src/mccrir.c:2959 and again at :3286, inside rir_op_effect */
+/* was, at both sites inside rir_op_effect */
 for (q = o->vs_n + 1; q <= VSTACK_SIZE; q++)
         rir_pvok[q] = 0;
 ```
 
-`tools/loop-census.py` says that single `for` is **63.88% of every loop iteration in a
-self-compile** (105.1M of 164.6M), entered 205,764 times to clear a mean of 511 bytes; its
-twin at `:3286` is another 1.32%. The fix is a `memset`, or a liveness argument for not
-clearing at all. It is a host-side compiler-speed row, **not** a dispatch target: the
-predicate is right that it is parallel, and it is worth exactly nothing to a device.
+**The board's own bound was wrong by a factor of ~180, and the error is worth more than the
+fix.** "Against a self-compile that takes ~90 s of `mcc`, that bounds the row well under 1%
+of wall-clock" took the ~90 s figure from the D4b row, where it describes a self-compile
+**under `MCC_ARENA_DUMP` census instrumentation**. A plain `mcc -O3 -c src/mcc.c` on this
+host is **0.50 s** — the same 0.5641 s the pool-cap row measured two sections down. Divide
+105.1M one-byte stores by 0.5 s instead of 90 s and the arithmetic bound is ~10%, which is
+what the clock then said. **Never carry a denominator across rows without re-reading what
+it measures.**
 
-**Size it before doing it, and the arithmetic is not encouraging.** `rir_pvok` is
-`unsigned char[VSTACK_SIZE + 1]` with `VSTACK_SIZE` 512, so this is 105.1M iterations of a
-single one-byte store. Against a self-compile that takes ~90 s of `mcc`, that bounds the
-row well under 1% of wall-clock. That bound is arithmetic, not a measurement: **the actual share of
-self-compile time is UNMEASURED.** Take it with `tools/optlevel-bench.py` or
-`tools/runtime-bench.py` first. If it is inside the noise, close this row and say so rather
-than doing a rewrite for the size of a percentage in a census that counts iterations, not
-seconds. Ranking it above rows 5 and 6 says only that its currency converts, not that the
-amount is large.
+**Measured, and it is the largest compile-time item ever taken off this tree.** Method,
+`cmake-debug` `mcc` (the `-g`, no-`-O` host build, which is the stage-1 reference compiler
+these rows are denominated in), fixed snapshot of `src/` + `include/` in a scratch tree so
+both binaries compile identical bytes:
+
+| | before | after | delta | floor |
+| --- | ---: | ---: | ---: | ---: |
+| stage-1 `-O3` CPU time, median of n=21 interleaved | 0.5083 s | 0.4661 s | **−8.30%** | ±0.55% |
+| stage-1 `-O2` CPU time, median of n=21 interleaved | 0.5003 s | 0.4531 s | **−9.44%** | ±0.55% |
+| `instructions:u`, `perf stat -r 5`, `-O3` | 5,465,561,225 | 4,794,023,991 | **−12.29%** | — |
+| `cycles:u`, same run | 2,563,123,360 | 2,320,810,912 | −9.45% | — |
+
+The layout-immune counter agrees in sign and exceeds the time delta, which is the shape a
+real removal of work has and a layout accident does not. Run-to-run sd was 1.82% / 1.38%
+of the mean at `-O3` and 0.73% / 0.44% at `-O2`, so the delta is 5–20 sd.
+
+**`perf` located it before the fix and confirms it after.** 20 self-compiles under
+`perf record -F 9999 -e cycles:u` (101,801 samples): `rir_op_effect` was **11.15%** of user
+cycles, and summing the per-instruction samples over the two clear loops gives **89.52% of
+that symbol** (88.01 for the `PUSHLIT`/`VSETC` site, 1.51 for the `VPUSHSYM` twin) —
+**9.98% of the whole self-compile**. That is 255M cycles for the census's 107.3M
+iterations, i.e. **2.4 cycles per iteration**, exactly an unoptimised loop with a
+stack-resident counter; and the 671.5M-instruction delta over 107.3M iterations is
+**6.3 instructions per iteration**, exactly the 7-instruction body `-O0` emits. The census
+count and the clock agree to within a rounding, which is the cross-check that makes this a
+measurement rather than a coincidence. After the fix `rir_op_effect` is **1.33%** and
+`__memset_avx512_unaligned_erms` is unmoved at 1.66% — the new `memset` calls are too short
+to appear.
+
+**The fix is a high-water mark, and it is provably equivalent, not merely tested.** A new
+`rir_pvhw` holds the largest index that may be non-zero. Both sites clear only
+`(vs_n, rir_pvhw]` with a `memset` and then set `rir_pvhw = vs_n`; `rir_to_arena`'s existing
+`memset(rir_pvok, ...)` zeroes it. The invariant is `rir_pvok[q] == 0` for every
+`q > rir_pvhw`, and the whole array has exactly five writers and one reader
+(`rir_prov_ok`), so it closes by inspection: the two sites re-establish it, the two clears
+in `rir_leaf_slot` only lower entries, and the reset zeroes both. The old loop's
+postcondition — everything above `vs_n` is zero — is preserved bit for bit, so no
+observation point can tell the two versions apart.
+
+**Emitted code is unchanged, checked and not assumed.** 366 TUs across `tests/exec`,
+`tools` and `runtime/lib` × `-O0/-O1/-O2/-O3` = 1,464 compiles: **1,400 objects
+byte-identical, 0 differing**, 64 TUs that fail to compile standalone on both binaries
+alike. The amalgamated self-compile object is byte-identical at `-O2` and `-O3` as well.
+`ctest` 9120/0, `-L flagsweep` 118/0, `-L stratsweep` 30/0, `MCC_RIR_CENSUS=1 -L census`
+green, `tools/selfhost-smoke.py` green. No ratchet moved and none was re-banked.
+
+**What this leaves for row 1, re-run rather than predicted.**
+`MCC_LOOP_CENSUS_RUN=1 tools/loop-census.py cmake-debug --levels O2` on the fixed tree:
+total loop iterations in a self-compile **164.6M → ~52.2M**, and the parallel-legal
+iteration-weighted fraction **65.75% → 0.01%**. Not the 1.88% the section above predicted
+with the hottest loop removed — that figure still counted the twin, which is also gone now.
+The raw, dependence-ignored fraction is 52.46%, and the hottest loop in the compiler is now
+`ast_strpool_find_or_add` (`mccast.c:3720`) at 11.3% of all iterations, `par=?`. The twelve
+array-fill loops are all that is left on the parallel side and they total under 180,000
+iterations in an entire self-compile.
+
+**The verdict is unchanged and is now much harder to argue with.** It was already written
+against the with-it-removed figure; the removal has happened and the number came back an
+order of magnitude *smaller* than predicted. The 65.75% / 1.88% pair in the verdict section
+and in section 1 is stale as of this landing — left in place deliberately, because that
+section is being edited elsewhere, but read those two numbers as **0.01%** and treat the
+`rir_op_effect` rows in its loop table as retired.
 
 ### 5. D4b — internal calls on the device — **803 blocks**, in a currency that does not convert
 
@@ -804,7 +860,7 @@ write the *same physical bytes*. Write-up and residual hazards: "Landed — `*p`
 | chain-store re-promotion (row 2) | ~4.3 points of `kept`, `tools/rir-coverage.py`; emitted-code value **UNMEASURED** | emitted code |
 | `-O11` ICE, `vstack leak (1)` | **FIXED 2026-08-08**; it also silently miscompiled (6 wrong answers / 500 at `-O11`). Cell `exec-chainlive/*`, fuzz 900 programs 0/0 | correctness |
 | `vstack leak (-1)`, debt #6a | pre-existing, **open**, and it fires at shipped `-O1`/`-O2`/`-O3` (111 of 400); segfaults at `-O11`. `-fno-storeval-rot` clears it | correctness |
-| `rir_op_effect`'s clear (row 4) | 63.88% of iterations, `tools/loop-census.py`; wall-clock share **UNMEASURED**, arithmetic bound <1% | compile time |
+| `rir_op_effect`'s clear (row 4) | **CLOSED 2026-08-08**, and the "<1%" bound was wrong: measured **−8.30% / −9.44%** of stage-1 `-O3`/`-O2` CPU time (n=21 interleaved, ±0.55% floor), `instructions:u` −12.29%. 1,464 objects byte-identical | compile time |
 | Metal, debt #4 (row 3) | 1754 vs 3578 lines, 3-line kernel arm, 0 `msl_region*` symbols. A rewrite, not a fix. | a decision |
 | D4b leaf-inline pool cap (row 5) | ceiling **803** blocks, `slicerun --census`. **Cap removed 2026-08-08**: reach 41 → 72 grafts, and it delivered **one** more block (10,381 → 10,375 `inv-blocks`). Row closed, not advanced | device-eligible blocks |
 | `snprintf` module budget (row 6) | **22 of 162** sites still refused; 17 of them on `MCC_GPU_CODE_MAX` = 16,384 words, not on semantics | device-accepted sites |
