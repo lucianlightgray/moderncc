@@ -101,6 +101,8 @@ node-census                  | registered | the AstKind census the bank ratchets
 loop-census                  | registered | the self-compile trip census the board's 52.51% / 0.01% row comes from
 loop-census-numeric          | registered | the runtime-corpus trip census the board's 97.76% / 80.60% row comes from
 loop-census-parallel         | registered | --partest, the parallel-legality ground truth
+depth-census-control         | must-run   | -fdepth-census against hand-derivable ground truth, including the per-level frontier WIDTH -- depth alone cannot tell a chain recursion from a tree one, and a census that had silently lost the width data would still satisfy a depth-only check. Needs no device, so a skip here is always a bug
+slice/depth-bailout          | registered | proves a runtime excursion past the instrumented depth maximum reaches the guard and both executors report undefined rather than a truncated answer. Registered rather than must-run because the device half skips honestly with no device
 slice-enum                   | registered | 12 pinned sources; the cell that would notice 11 of them ceasing to compile
 slice-census                 | must-run   | the wide-corpus slice census (81,615 t=0 slices at -O1..-O3). NOT the 552-of-12,957 loop-slice figure, which is a --corpus self number; this row claimed it until 2026-08-09. `registered` was not enough: nothing set MCC_SLICE_CENSUS_RUN, so the row was green on a cell that had never executed. CMakeLists.txt now arms it, and the opt-in guard is its only 77 path, so a Skipped here means the arming was lost
 census/gates-armed           | must-run   | proves the census cells are armed at all; the cell that would have caught `-L census` reporting 6 passed with 3 Skipped

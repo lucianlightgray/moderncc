@@ -883,6 +883,7 @@ static int ast_eval_slice_arrow(AstArena *a, AstLocal n, int32_t *pfo,
  * stop evaluation -- the device cannot stop either -- so the fact that one
  * happened has to travel beside the value rather than instead of it. */
 static int ast_eval_slice_undef;
+static long ast_eval_slice_bail_n;
 
 static int ast_eval_slice_ext_load(const AstEvalSliceIdx *ix, int elem,
 																	 const int32_t *off, const int64_t *val,
@@ -908,6 +909,15 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 	if (n == AST_NONE)
 		return 0;
 	switch (ast_kind(a, n)) {
+	case AST_Bailout: {
+		int t = ast_type_t(a, n);
+		if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
+			return 0;
+		ast_eval_slice_undef = 1;
+		ast_eval_slice_bail_n++;
+		*out = 0;
+		return 1;
+	}
 	case AST_Literal: {
 		int t = ast_type_t(a, n);
 		if ((ast_op(a, n) & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
@@ -1312,6 +1322,10 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 	if (n == AST_NONE)
 		return 0;
 	switch (ast_kind(a, n)) {
+	case AST_Bailout: {
+		int t = ast_type_t(a, n);
+		return !ast_bad_type(t) && !is_float(t) && ast_eval_slice_intt(t);
+	}
 	case AST_Literal: {
 		int t = ast_type_t(a, n);
 		if (ast_bad_type(t) ||

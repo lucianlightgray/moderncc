@@ -21,6 +21,7 @@ typedef enum AstKind {
 	AST_Invoke,
 	AST_Poison,
 	AST_StoreVal,
+	AST_Bailout,
 
 	AST_KIND_COUNT
 } AstKind;
@@ -105,6 +106,8 @@ int ast_slice_splice(AstArena *a, AstLocal site_root, const AstArena *kernel_src
 										 AstLocal kernel_root);
 int ast_slice_locate(const AstArena *a, uint64_t ident, AstLocal *sites, int max);
 int ast_slice_promote_static(int64_t baseline_cost, int64_t candidate_cost);
+long ast_slice_breakeven_lanes(long nodes);
+int64_t ast_slice_width_cost(int64_t nodes, int64_t lanes);
 
 int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k,
 										int *color);

@@ -56,12 +56,16 @@
 
 #define MCC_SLICE_INL_MAXPARAM 4
 #define MCC_SLICE_INL_MAXNODE 48
+#define MCC_SLICE_INL_RECNODE 512
+#define MCC_SLICE_INL_EXPAND 200000
+#define MCC_SLICE_INL_DEPTH_CAP 64
 
 typedef struct MccSliceLeaf {
 	AstArena *a;
 	AstLocal expr;
 	int nparam;
 	int nodes;
+	int nodemax;
 	int32_t off[MCC_SLICE_INL_MAXPARAM];
 	int ptype[MCC_SLICE_INL_MAXPARAM];
 } MccSliceLeaf;
@@ -76,15 +80,91 @@ static AstArena *(*mcc_slice_leaf_hook)(AstArena *a, AstLocal inv,
 																				int *pnparam);
 static long mcc_slice_inl_n;
 static long mcc_slice_inl_seen;
+static long mcc_slice_inl_rec;
+static long mcc_slice_inl_bail;
+static long mcc_slice_inl_expand;
+static long mcc_slice_inl_expand_tot;
+static int mcc_slice_inl_depth_max;
+static long mcc_slice_inl_expand_max = MCC_SLICE_INL_EXPAND;
 /* The argument-to-parameter mapping is recovered from frame offsets, and a
  * wrong recovery would swap operands identically in both executors, so the
  * graft has to be readable by a human before it is trusted. Set
  * MCC_SLICE_INL_DUMP=1 and check an asymmetric callee. */
 static int mcc_slice_inl_dump;
 
+static int mcc_slice_has_invoke(AstArena *c, AstLocal n) {
+	AstLocal k;
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(c, n) == AST_Invoke)
+		return 1;
+	for (k = ast_first_child(c, n); k != AST_NONE; k = ast_next_sib(c, k))
+		if (mcc_slice_has_invoke(c, k))
+			return 1;
+	return 0;
+}
+
+static int mcc_slice_inl_body_ok(AstArena *c, AstLocal n) {
+	uint32_t nc, k;
+	if (n == AST_NONE)
+		return 0;
+	switch (ast_kind(c, n)) {
+	case AST_Invoke: {
+		AstLocal cref;
+		int rt = ast_type_t(c, n);
+		nc = ast_nchild(c, n);
+		if (nc < 1 || nc - 1 > MCC_SLICE_INL_MAXPARAM)
+			return 0;
+		cref = ast_child(c, n, 0);
+		if (cref == AST_NONE || ast_kind(c, cref) != AST_Ref || !ast_sym(c, cref))
+			return 0;
+		if (ast_bad_type(rt) || is_float(rt) || !ast_eval_slice_intt(rt))
+			return 0;
+		for (k = 1; k < nc; k++)
+			if (!mcc_slice_inl_body_ok(c, ast_child(c, n, k)))
+				return 0;
+		return 1;
+	}
+	case AST_If:
+		if (ast_nchild(c, n) != 3 || (ast_op(c, n) != 5 && ast_op(c, n) != 7))
+			return 0;
+		return mcc_slice_inl_body_ok(c, ast_child(c, n, 0)) &&
+					 mcc_slice_inl_body_ok(c, ast_child(c, n, 1)) &&
+					 mcc_slice_inl_body_ok(c, ast_child(c, n, 2));
+	case AST_Binary:
+	case AST_Unary:
+	case AST_Convert: {
+		int uop = ast_op(c, n);
+		if (!mcc_slice_has_invoke(c, n))
+			return ast_eval_slice_kind_ok(c, n, 0);
+		nc = ast_nchild(c, n);
+		if (nc < 1 || !ast_eval_slice_wtype(c, n))
+			return 0;
+		if (ast_kind(c, n) == AST_Unary && uop != '-' && uop != TOK_NEG &&
+				uop != '~' && uop != '!')
+			return 0;
+		if (ast_kind(c, n) == AST_Binary && nc != 2 && uop != TOK_LAND &&
+				uop != TOK_LOR)
+			return 0;
+		if (ast_kind(c, n) == AST_Convert && nc != 1)
+			return 0;
+		for (k = 0; k < nc; k++) {
+			AstLocal ch = ast_child(c, n, k);
+			if (ast_eval_slice_ftype(c, ch) || is_float(ast_type_t(c, ch)))
+				return 0;
+			if (!mcc_slice_inl_body_ok(c, ch))
+				return 0;
+		}
+		return 1;
+	}
+	default:
+		return ast_eval_slice_kind_ok(c, n, 0);
+	}
+}
+
 static int mcc_slice_leaf_walk(AstArena *c, AstLocal n, MccSliceLeaf *L) {
 	AstLocal k;
-	if (++L->nodes > MCC_SLICE_INL_MAXNODE)
+	if (++L->nodes > L->nodemax)
 		return 0;
 	if (ast_kind(c, n) == AST_Ref) {
 		int r = ast_op(c, n);
@@ -114,11 +194,13 @@ static int mcc_slice_leaf_walk(AstArena *c, AstLocal n, MccSliceLeaf *L) {
 	return 1;
 }
 
-static int mcc_slice_leaf_scan(AstArena *c, AstLocal root, MccSliceLeaf *L,
-                               const int32_t *poff, int pnparam) {
+static int mcc_slice_leaf_scan_rec(AstArena *c, AstLocal root, MccSliceLeaf *L,
+                                   const int32_t *poff, int pnparam,
+                                   int allow_invoke) {
 	AstLocal s, e;
 	int i, j;
 	memset(L, 0, sizeof *L);
+	L->nodemax = allow_invoke ? MCC_SLICE_INL_RECNODE : MCC_SLICE_INL_MAXNODE;
 	if (!c)
 		return 0;
 	if (root == AST_NONE || root >= ast_count(c))
@@ -131,7 +213,8 @@ static int mcc_slice_leaf_scan(AstArena *c, AstLocal root, MccSliceLeaf *L,
 	if (ast_kind(c, s) != AST_Return || ast_nchild(c, s) != 1)
 		return 0;
 	e = ast_first_child(c, s);
-	if (!ast_eval_slice_kind_ok(c, e, 0))
+	if (allow_invoke ? !mcc_slice_inl_body_ok(c, e)
+									 : !ast_eval_slice_kind_ok(c, e, 0))
 		return 0;
 	if (!mcc_slice_leaf_walk(c, e, L))
 		return 0;
@@ -204,6 +287,11 @@ static int mcc_slice_leaf_scan(AstArena *c, AstLocal root, MccSliceLeaf *L,
 	return 1;
 }
 
+static int mcc_slice_leaf_scan(AstArena *c, AstLocal root, MccSliceLeaf *L,
+                               const int32_t *poff, int pnparam) {
+	return mcc_slice_leaf_scan_rec(c, root, L, poff, pnparam, 0);
+}
+
 static AstLocal mcc_slice_conv(AstArena *a, AstLocal v, int t) {
 	AstLocal cv;
 	if (v == AST_NONE)
@@ -267,14 +355,37 @@ static void mcc_slice_become(AstArena *a, AstLocal dst, AstLocal src) {
 	}
 }
 
+static void mcc_slice_plant_bailout(AstArena *a, AstLocal inv) {
+	ast_clear_children(a, inv);
+	ast_set_kind(a, inv, AST_Bailout);
+	ast_set_op(a, inv, 0);
+	ast_set_ival(a, inv, 0);
+	ast_set_fbits(a, inv, 0);
+	ast_set_sym(a, inv, 0);
+	mcc_slice_inl_bail++;
+}
+
+static int mcc_slice_resolvable(AstArena *a, AstLocal inv) {
+	AstLocal croot = AST_NONE;
+	int32_t cpoff[MCC_SLICE_INL_MAXPARAM];
+	int cpn = 0;
+	AstArena *c;
+	if (!mcc_slice_leaf_hook)
+		return 0;
+	c = mcc_slice_leaf_hook(a, inv, &croot, cpoff, &cpn);
+	return c && c != a && croot != AST_NONE;
+}
+
 /* Rewrite one AST_Invoke in place. Returns 1 if the node is no longer an
  * Invoke. */
-static int mcc_slice_inline_at(AstArena *a, AstLocal inv) {
+static int mcc_slice_inline_depth(AstArena *a, AstLocal inv, int depth) {
 	AstLocal arg[MCC_SLICE_INL_MAXPARAM], cref, g, croot = AST_NONE;
 	int32_t cpoff[MCC_SLICE_INL_MAXPARAM];
 	int cpn = 0;
 	MccSliceLeaf L;
 	AstArena *c;
+	AstLocal n0, nn, j;
+	int rec = mcc_slice_inl_depth_max > 0;
 	int rt = ast_type_t(a, inv);
 	int nargs, i;
 	if (ast_kind(a, inv) != AST_Invoke)
@@ -295,7 +406,7 @@ static int mcc_slice_inline_at(AstArena *a, AstLocal inv) {
 	/* cpn == 0 means the provider had no parameter list to give (slicerun,
 	 * rebuilding from a dump). Pass NULL so the scan derives the order rather
 	 * than comparing against an empty signature and refusing everything. */
-	if (!mcc_slice_leaf_scan(c, croot, &L, cpn ? cpoff : NULL, cpn))
+	if (!mcc_slice_leaf_scan_rec(c, croot, &L, cpn ? cpoff : NULL, cpn, rec))
 		return 0;
 	if (L.nparam != nargs)
 		return 0;
@@ -304,6 +415,7 @@ static int mcc_slice_inline_at(AstArena *a, AstLocal inv) {
 		if (arg[i] == AST_NONE || !ast_eval_slice_kind_ok(a, arg[i], 1))
 			return 0;
 	}
+	n0 = ast_count(a);
 	ast_clear_children(a, inv);
 	g = mcc_slice_graft(a, c, L.expr, &L, arg);
 	if (g == AST_NONE) {
@@ -315,23 +427,44 @@ static int mcc_slice_inline_at(AstArena *a, AstLocal inv) {
 	g = mcc_slice_conv(a, g, rt);
 	mcc_slice_become(a, inv, g);
 	mcc_slice_inl_n++;
+	if (depth > 0)
+		mcc_slice_inl_rec++;
+	nn = ast_count(a);
+	mcc_slice_inl_expand += (long)(nn - n0);
+	for (j = n0; j < nn; j++) {
+		if (ast_kind(a, j) != AST_Invoke)
+			continue;
+		if (depth + 1 >= mcc_slice_inl_depth_max ||
+				mcc_slice_inl_expand >= mcc_slice_inl_expand_max) {
+			if (mcc_slice_resolvable(a, j))
+				mcc_slice_plant_bailout(a, j);
+			continue;
+		}
+		mcc_slice_inline_depth(a, j, depth + 1);
+	}
 	if (mcc_slice_inl_dump) {
 		char buf[4096];
 		ast_dump(a, inv, buf, sizeof buf);
-		fprintf(stderr, "[graft] node=%u nparam=%d\n%s\n", (unsigned)inv, L.nparam,
-						buf);
+		fprintf(stderr, "[graft] node=%u nparam=%d depth=%d\n%s\n", (unsigned)inv,
+						L.nparam, depth, buf);
 	}
 	return 1;
 }
 
+static int mcc_slice_inline_at(AstArena *a, AstLocal inv) {
+	return mcc_slice_inline_depth(a, inv, 0);
+}
+
 static void mcc_slice_inline_arena(AstArena *a) {
 	AstLocal nn = ast_count(a), n;
+	mcc_slice_inl_expand = 0;
 	for (n = 0; n < nn; n++) {
 		if (ast_kind(a, n) != AST_Invoke)
 			continue;
 		mcc_slice_inl_seen++;
 		mcc_slice_inline_at(a, n);
 	}
+	mcc_slice_inl_expand_tot += mcc_slice_inl_expand;
 }
 
 #endif

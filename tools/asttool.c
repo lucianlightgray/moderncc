@@ -1146,6 +1146,18 @@ static void suite_slice_locate(void) {
 	CHECK(ast_slice_promote_static(-1, 7) == 1, "no baseline -> accept a measured candidate");
 	CHECK(ast_slice_promote_static(7, -1) == 0, "an unmeasurable candidate is rejected");
 
+	CHECK(ast_slice_breakeven_lanes(3) == 322, "a 3-node body needs 322 lanes");
+	CHECK(ast_slice_breakeven_lanes(31) == 24, "a 31-node body needs 24 lanes");
+	CHECK(ast_slice_breakeven_lanes(2) == 322, "below the table, the widest row holds");
+	CHECK(ast_slice_width_cost(100, 0) == 100, "no width information leaves the score alone");
+	CHECK(ast_slice_width_cost(200, 400) == 200, "a frontier past break-even pays node cost only");
+	CHECK(ast_slice_width_cost(200, 8) == 200, "a frontier exactly at break-even pays node cost only");
+	CHECK(ast_slice_width_cost(200, 1) == 200 * 8, "a one-lane frontier pays the whole dispatch");
+	CHECK(ast_slice_width_cost(200, 4) == 200 * 2, "a narrow frontier pays a proportional share");
+	CHECK(ast_slice_width_cost(31, 1) == 31 * 24, "a smaller body needs a wider frontier");
+	CHECK(ast_slice_promote_static(64, ast_slice_width_cost(64, 1)) == 0,
+				"a one-lane candidate never beats the CPU incumbent");
+
 	ast_arena_free(a);
 }
 

@@ -123,6 +123,8 @@ int mcc_gpu_f64(void);
 #define MCC_GPU_FREE free
 #endif
 
+static long mcc_gpu_bail_emit;
+
 static int mcc_gpu_op_is_cmp(int op) {
 	switch (op) {
 	case TOK_EQ: case TOK_NE: case TOK_ULT: case TOK_UGE: case TOK_ULE:
@@ -783,6 +785,20 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	if (n == AST_NONE || m->failed)
 		return 0;
 	switch (ast_kind(a, n)) {
+	case AST_Bailout: {
+		int t = ast_type_t(a, n);
+		if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
+			return 0;
+		msl_def_and(m, &m->def, msl_bv(m, "false"));
+		mcc_gpu_bail_emit++;
+		if (ast_eval_slice_is64(t)) {
+			*out = msl_const64(m, 0);
+			out->uns = (t & VT_UNSIGNED) != 0;
+			return 1;
+		}
+		*out = msl_mk(msl_const(m, 0), 0, (t & VT_UNSIGNED) != 0);
+		return 1;
+	}
 	case AST_Literal: {
 		int t = ast_type_t(a, n);
 		if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
@@ -2840,6 +2856,20 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	if (n == AST_NONE || m->failed)
 		return 0;
 	switch (ast_kind(a, n)) {
+	case AST_Bailout: {
+		int t = ast_type_t(a, n);
+		if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
+			return 0;
+		spv_def_and(m, &m->def, spv_not(m, spv_true(m)));
+		mcc_gpu_bail_emit++;
+		if (ast_eval_slice_is64(t)) {
+			*out = spv_const64(m, 0);
+			out->uns = (t & VT_UNSIGNED) != 0;
+			return 1;
+		}
+		*out = spv_mk(spv_const(m, 0), 0, (t & VT_UNSIGNED) != 0);
+		return 1;
+	}
 	case AST_Literal: {
 		int t = ast_type_t(a, n);
 		if (ast_bad_type(t))

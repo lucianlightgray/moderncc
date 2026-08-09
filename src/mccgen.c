@@ -14522,6 +14522,42 @@ static void lcen_begin(LoopCensus *lc, const char *kind) { MCC_TRACE("enter\n");
 	lc->tok0 = total_toks;
 }
 
+static int dcen_on, dcen_tried, dcen_next_id, dcen_tok;
+static FILE *dcen_fp;
+
+static void dcen_open(void) { MCC_TRACE("enter\n");
+	const char *p;
+	if (dcen_on || dcen_tried)
+		{ MCC_TRACE("br\n"); return; }
+	dcen_tried = 1;
+	p = getenv("MCC_DEPTH_CENSUS_MAP");
+	if (!p || !p[0])
+		{ MCC_TRACE("br\n"); return; }
+	dcen_fp = (p[0] == '-' && !p[1]) ? stderr : fopen(p, "a");
+	if (!dcen_fp)
+		{ MCC_TRACE("br\n"); return; }
+	setvbuf(dcen_fp, NULL, _IOLBF, 0);
+	dcen_on = 1;
+}
+
+static void dcen_entry(void) { MCC_TRACE("enter\n");
+	int id;
+	if (!mcc_state->depth_census)
+		{ MCC_TRACE("br\n"); return; }
+	dcen_open();
+	id = dcen_next_id++;
+	if (dcen_on)
+		{ MCC_TRACE("br\n"); fprintf(dcen_fp, "[dfn] id=%d fn=%s file=%s:%d\n", id,
+																 funcname ? funcname : "?",
+																 file ? file->filename : "?",
+																 file ? file->line_num : 0); }
+	vpushi(id);
+	dcen_tok = tok_alloc_const("__mcc_depth_census");
+	vpush_helper_func(dcen_tok);
+	vrott(2);
+	gfunc_call(1);
+}
+
 static void lcen_iter(LoopCensus *lc) { MCC_TRACE("enter\n");
 	int i0;
 	if (lc->id < 0)
@@ -16771,6 +16807,7 @@ static void gen_function(Sym *sym) {
 	rir_hook_body_begin();
 	rir_prod_fn_begin();
 	ast_func_begin(sym);
+	dcen_entry();
 	block(0);
 	ast_func_end(sym);
 	if ((mcc_state->warn_unused_parameter & WARN_ON) && sym->type.ref->f.func_type != FUNC_OLD) { MCC_TRACE("br\n");
