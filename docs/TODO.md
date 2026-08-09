@@ -6,6 +6,132 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Landed — `rir_decayed_array` read a comparison's opcode as a `Sym *`, 2026-08-09 (`wt/decayfix`)
+
+**The defect.** `rir_decayed_array` in `src/mccrir.c` opened with a null test and three
+dereferences of `sv->sym` *before* it looked at `sv->r`. In `SValue` (`src/mcc.h`) `sym`
+is a union member aliasing `unsigned short cmp_op, cmp_r`, and `vset_VT_CMP` in
+`src/mccgen.c` writes **only** `cmp_op` — two of the eight bytes. For a slot that last
+held `sym == NULL` the field becomes `(Sym *)op`, a small non-null integer that passes
+`!sv->sym` and faults on the first load; for a slot that last held a real `Sym *` it
+becomes that pointer with its low 16 bits replaced, which is worse in kind because it is
+usually still mapped. Only `src/arch/x86_64/x86_64-gen.c` and `src/arch/riscv64/riscv64-gen.c`
+write `cmp_r` at all, and even there bits 32–63 stay stale. `gv` never clears `sym`
+either, so the corrupted value survives materialisation into a register.
+
+**Reproducer, and it is a shipped-default crash.** `int h(__int256 a) { return (_Bool)a; }`
+at plain `-O1`, `-O2` or `-O3` — no environment variable. The RIR production arm is armed
+by `ast_replay_env`, which is `optimize >= 1`, so the capture layer `memcpy`s the whole
+vstack (`ir_cap_snap_vstack` in `src/mccircap.c`) with the `VT_CMP` entry verbatim, and
+`rir_reconcile_sv` hands that entry to `rir_leaf_slot`, which calls `rir_decayed_array`
+unconditionally. The faulting value observed was `sym = 0x95`, `r = 0x33` (`VT_CMP`),
+`type.t = 0xb` (`VT_BOOL`); `0x95` is the comparison token. `-O0` does not fault, because
+the RIR arm is off there.
+
+**Only a crash is reachable, not a wrong answer, and that is structural rather than
+luck.** Both `return 1` paths require `(r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM)`
+or `(r & (VT_VALMASK | VT_SYM | VT_LVAL)) == VT_LOCAL`. `vset_VT_CMP` assigns `r` exactly,
+so a `VT_CMP` carries neither `VT_SYM` nor `VT_LVAL` and matches neither shape. A garbage
+`sym` can therefore only fault on the way to a verdict it cannot change. This was checked
+rather than assumed: the two previous defects in this family — the `AST_StoreVal`
+double-consume and the `storeval-rot` underflow — both looked like ICEs, and one of them
+silently miscompiled as well.
+
+**The fix** reorders the function: the two `r` shapes are computed first, the type test
+second, and `sv->sym` is not touched until both have passed. It is a pure reordering; the
+truth table is unchanged for every input that did not previously fault.
+
+**Is the union aliasing systemic?** The *root cause* is: nothing in this tree maintains an
+invariant that `sym` is a pointer. `vsetc` nulls it, `save_reg_upstack` and
+`save_regdisp_group` null it when they spill, and a handful of sites null it by hand;
+`gv`, `vpushv`/`vdup`, `vswap`, `vrotb`/`vrott`/`vrev` and the two whole-vstack `memcpy`s
+in `src/mccircap.c` and `src/mccrir.c` all propagate whatever is there. `VT_JMP`/`VT_JMPI`
+are *not* affected — they are only produced through `vseti`, hence through `vsetc`, hence
+with `sym == NULL`, so a bare null test is sound for them. The hazard is `VT_CMP` alone.
+
+The *readers*, swept across `src/mccrir.c`, `src/mccgen.c`, `src/mccast.c`,
+`src/arch/*/*-gen.c`, `src/arch/asm-constraints.inc.c` and `src/wide256_slice.h`, are
+mostly guarded: the large majority test `(r & VT_SYM)` or `(r & VT_VALMASK) == VT_LOCAL`
+before dereferencing, and every `load()` reads only `cmp_op`/`cmp_r`/`c.i` in its
+`VT_CMP` arm. Three unguarded dereferences remain and are filed below.
+
+Two adjacent suspicions were measured and cleared rather than assumed. The convert block
+further down `rir_leaf_slot`, which types a node from `sv->sym->type` under a `VT_LVAL`
+test rather than a `VT_SYM` test, fires **2,227** times over `tests/` + `src/` at `-O1`,
+and every single firing has `r == VT_LOCAL | VT_LVAL`, where `sym` is the local's own
+`Sym` — correct by construction. And an instrumented `rir_decayed_array` across
+`tests/` + `src/` + `examples/` at `-O1`/`-O2`/`-O3` recorded **zero** `VT_CMP` arrivals
+and zero small-pointer arrivals; the 240 arrivals it did record are register-resident
+values carrying a valid stale `Sym *`, which the reordered guard now rejects on `r` alone.
+This defect had genuinely never fired before `__int256` reached it, which is why it
+survived.
+
+**The `wide256_settle` workaround is gone.** `src/wide256_slice.h` no longer carries it;
+its two call sites call `vcheck_cmp()` directly, which was the half with a codegen effect.
+The half that cleared `sym` was papering over this one reader, and dropping it puts
+`__int256` comparisons on the same footing as every other comparison in the compiler,
+which all leave a corrupted `sym` behind. Removing it is also what makes the tree bite
+without the fix: ablated, the *existing* `[test_convert]` section of
+`tests/exec/types/int256.c` segfaults at `-O1` before the new section is reached.
+
+**The regression cell.** `tests/exec/types/int256.c` gains a `test_replay_cmp` section
+(`(_Bool)x`, `(a < b) + 1`, and a two-comparison sum) and `tests/exec/goldens.h` gains its
+three output lines. No new golden name, so the cell count is unchanged at **9455** and no
+registration stub is involved; the cells that carry it and compile at `-O1` are
+`exec-replay/int256`, `exec-replay-tmpl/int256`, `exec-replay-promote/int256` and
+`exec-O1/int256`. Ablating `src/mccrir.c` alone turns `exec-replay/int256` into
+`FAIL  int256  (mismatch)`, with the expected text ending at `[test_convert]` and the
+compiler dying on `Segmentation fault (core dumped)`, exit 139.
+
+### Still open — three unguarded `sym` dereferences, filed with their reachability
+
+1. **`src/mccgen.c`, `unary()` case `'&'`.** `vtop->sym && vtop->sym->a.is_register` runs
+   *before* the `test_lvalue()` that would reject a comparison, so `&(a < b)` reads
+   `a.is_register` through the corrupted pointer. It does not fault today because the
+   operand slot last held a real `Sym *`, so the pointer is mapped and the bit reads as
+   zero — the `lvalue expected` diagnostic that follows is right by accident. The cheap
+   fix is to move the register check after `test_lvalue()`.
+2. **`src/mccgen.c`, `check_va_start_register` and `check_va_start_last_param`.** Both
+   dereference `vtop->sym` under a bare null test, and the `va_start` argument reaches
+   them through `parse_builtin_params`' `'e'` case, which does not coerce. `va_start(ap,
+   a < b)` compiles clean today for the same accidental reason as (1).
+3. **`src/mccast.c`, the builtin-fold ISA scan.** `((Sym *)(uintptr_t)a->sym[c])->v` on
+   the first child of an `AST_Invoke`, guarded only by a null test and an `AST_Ref` kind
+   test, with no `VT_SYM` test on the node's op. An indirect call through a local function
+   pointer reaches it with the *variable's* `Sym`, a valid pointer, so the read is benign —
+   but nothing enforces that.
+
+The root-cause fix that would close all three at once is to make `vset_VT_CMP` write the
+whole union and to have `gv` clear `sym` when it drops `VT_SYM` from `r`. Neither was
+taken here: `vset_VT_CMP` is on the hot path of every comparison, `gv`'s surviving `sym`
+is read as an identity key by `seqp_key` and is the target of the `addrtaken` write in
+`unary()`, and this branch's contract was that emitted code must not change. The three
+reader-side guards above are each a one-line change and carry none of that risk.
+
+### Verification, this tree
+
+`cmake-cross` built before `cmake-debug` was configured (hazard 5), `vendor/` symlinked
+from the primary checkout. `ctest --test-dir cmake-debug -N` registers **9455**,
+unchanged. Full `ctest -j16`: **9455 cells, 0 failures** — including `wide256/gmp-diff`,
+the 9,402-row differential against libgmp that is the only proof `__int256` is correct.
+`-L flagsweep` 193/193, `-L stratsweep` 116/116, `-L census` 7/7 with nothing skipped,
+`python3 tools/must-run.py --build cmake-debug` 78 rows, `python3 tools/selfhost-smoke.py
+cmake-debug` green from the repo root, `python3 tools/docref-lint.py` OK. `tests/optfire/*`
+untouched and no ratchet moved.
+
+**Emitted code is unchanged, measured rather than asserted.** 883 `.c` files under
+`tests/`, `src/`, `examples/` and `runtime/` compiled at `-O0`–`-O3` by the `main` binary
+and by this one: **2,935 objects byte-identical, 0 differing, 1 self-unstable**
+(`tests/diff/parts/run_s6_10_4.c` at `-O2`, which reaches `__TIME__` through
+`tests/diff/parts/s6_10_4.h`; a back-to-back recompile by the *same* binary differs, so it
+is not attributable to this change), and 596 (file, level) pairs not compilable standalone
+by either binary, identically. **One methodology trap worth recording:** the two binaries
+must be invoked from the same directory. Run one from the build tree and the other from a
+scratch copy and 40 objects differ at every level including `-O0`, where the RIR arm is
+off — the anonymous-symbol counter shifts by one and every `L.N` local name renumbers. The
+same binary invoked from the two paths reproduces the difference, which is how it was
+isolated.
+
 ## Metal parity — the drop is reversed by decision, and this is the spec, 2026-08-09 (`wt/metalspec`)
 
 > **This section overturns a refusal that is still live in this file.** `#### Metal —

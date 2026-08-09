@@ -192,12 +192,6 @@ static void wide256_deconst(void) { MCC_TRACE("enter\n");
 	vpushv(&res);
 }
 
-static void wide256_settle(void) { MCC_TRACE("enter\n");
-	vcheck_cmp();
-	if (vtop->r != VT_CMP && !(vtop->r & VT_SYM))
-		{ MCC_TRACE("br\n"); vtop->sym = NULL; }
-}
-
 static int wide256_op_ok(int op) { MCC_TRACE("enter\n");
 	switch (op) { MCC_TRACE("br\n");
 	case '+':
@@ -452,7 +446,7 @@ static void gen_wide256_op(int op) { MCC_TRACE("enter\n");
 		vtop->r = REG_IRET;
 		vpushi(0);
 		gen_op(wide256_cmp_signed_tok(op));
-		wide256_settle();
+		vcheck_cmp();
 		return;
 	}
 
@@ -509,7 +503,7 @@ static void gen_wide256_cast(CType *dt) { MCC_TRACE("enter\n");
 				gen_op('|');
 			}
 			gen_cast(dt);
-			wide256_settle();
+			vcheck_cmp();
 			return;
 		}
 		gen_cast(dt);

@@ -1236,15 +1236,16 @@ static int rir_prov_ok(int slot, const SValue *sv) {
 }
 
 static int rir_decayed_array(const SValue *sv) {
-	if (!sv->sym || !(sv->sym->type.t & VT_ARRAY) ||
-			(sv->sym->type.t & VT_VLA) || !sv->sym->type.ref)
+	int as_sym = (sv->r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM);
+	int as_loc = (sv->r & (VT_VALMASK | VT_SYM | VT_LVAL)) == VT_LOCAL;
+	if (!as_sym && !as_loc)
 		return 0;
 	if ((sv->type.t & (VT_BTYPE | VT_ARRAY | VT_VLA)) != VT_PTR)
 		return 0;
-	if ((sv->r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM))
-		return 1;
-	return (sv->r & (VT_VALMASK | VT_SYM | VT_LVAL)) == VT_LOCAL &&
-				 sv->c.i == (uint64_t)(int64_t)sv->sym->c;
+	if (!sv->sym || !(sv->sym->type.t & VT_ARRAY) ||
+			(sv->sym->type.t & VT_VLA) || !sv->sym->type.ref)
+		return 0;
+	return as_sym || sv->c.i == (uint64_t)(int64_t)sv->sym->c;
 }
 
 static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
