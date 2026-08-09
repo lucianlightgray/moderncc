@@ -16,10 +16,10 @@ mkdir -p "$WORK/cells"
 find tests/exec -name '*.c' | sort > "$WORK/corpus.txt"
 echo tests/diff/full_language.c >> "$WORK/corpus.txt"
 
-grep -oE 'ast_env_gate\("MCC_[A-Z0-9_]+"' src/mccast.c |
-	sed 's/.*"\(MCC_[A-Z0-9_]*\)"/\1/' | sort -u > "$WORK/gates.txt"
+grep -oE 'MCC_OPT_ROW\([A-Z0-9_]+, *"[a-z0-9-]+"' src/mccopt.h |
+	sed 's/.*"\([a-z0-9-]*\)"/\1/' | sort -u > "$WORK/gates.txt"
 NG=$(wc -l < "$WORK/gates.txt" | tr -d ' ')
-[ "$NG" -gt 0 ] || { echo "FAIL: no ast_env_gate names parsed from src/mccast.c"; exit 1; }
+[ "$NG" -gt 0 ] || { echo "FAIL: no MCC_OPT_ROW names parsed from src/mccopt.h"; exit 1; }
 
 cat > "$WORK/cell.sh" <<'CELL'
 #!/usr/bin/env bash
@@ -28,11 +28,12 @@ REPO=$1; MCC=$2; OPT=$3; WORK=$4; G=$5; shift 5
 T="$WORK/cells/$G"
 rm -rf "$T"; mkdir -p "$T"
 for v in 0 1; do
+	if [ "$v" = 0 ]; then GF="-fno-$G"; else GF="-f$G"; fi
 	: > "$T/h$v"; : > "$T/o$v"
 	while read -r f; do
 		rm -f "$T/hf" "$T/a.o"
-		( cd "$REPO" && env "$G=$v" MCC_AST_HASH_OUT="$T/hf" \
-			"$MCC" -w "$OPT" "$@" -c -o "$T/a.o" "$f" ) >/dev/null 2>&1
+		( cd "$REPO" && env MCC_AST_HASH_OUT="$T/hf" \
+			"$MCC" -w "$OPT" "$GF" "$@" -c -o "$T/a.o" "$f" ) >/dev/null 2>&1
 		if [ $? -eq 0 ] && [ -f "$T/a.o" ]; then
 			echo "$f $(cksum < "$T/a.o")" >> "$T/o$v"
 		else
@@ -47,9 +48,9 @@ diff "$T/o0" "$T/o1" | grep '^<' | awk '{print $2}' | sort -u > "$T/do"
 CELL
 chmod +x "$WORK/cell.sh"
 
-"$WORK/cell.sh" "$REPO" "$MCC" "$OPT" "$WORK" MCC_AST_GATELEDGER_CONTROL $MCCFLAGS
-awk '{print $1" "$2}' "$WORK/cells/MCC_AST_GATELEDGER_CONTROL/dh" | sort -u > "$WORK/noise.fn"
-sort -u "$WORK/cells/MCC_AST_GATELEDGER_CONTROL/do" > "$WORK/noise.tu"
+"$WORK/cell.sh" "$REPO" "$MCC" "$OPT" "$WORK" gateledger-control $MCCFLAGS
+awk '{print $1" "$2}' "$WORK/cells/gateledger-control/dh" | sort -u > "$WORK/noise.fn"
+sort -u "$WORK/cells/gateledger-control/do" > "$WORK/noise.tu"
 NF=$(wc -l < "$WORK/noise.fn" | tr -d ' ')
 NT=$(wc -l < "$WORK/noise.tu" | tr -d ' ')
 echo "gate-ledger: $NG gate(s), corpus $(wc -l < "$WORK/corpus.txt" | tr -d ' ') file(s) at $OPT"

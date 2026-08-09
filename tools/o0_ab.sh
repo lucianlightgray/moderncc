@@ -5,9 +5,10 @@
 # Two independent measurements per target key, both at -O0, both banked:
 #
 #   A. Object identity.  Plain -O0 with no MCC_* in the environment.  The AST
-#      recorder does not run at -O0 (ast_replay_env needs optimize >= 1,
-#      src/mccast.c:2035), so no phase of the cut may move a single one of
-#      these bytes.  Recorded as a sorted, diffable per-file sha256.
+#      recorder does not run at -O0 (ast_replay_env needs optimize >= 1; find
+#      it by symbol, it is the assignment to ast_replay_env in ast_configure),
+#      so no phase of the cut may move a single one of these bytes.  Recorded
+#      as a sorted, diffable per-file sha256.
 #
 #   B. Forced Replay_IR coverage.  MCC_REPLAY_IR=1 MCC_FORCE_REPLAY=1 at -O0
 #      arms Replay_IR over every body independently of the recorder.  The bar
@@ -34,11 +35,20 @@
 # Environment:
 #   C2_NO_EXTRA=1   drop tests/diff/full_language.c, so a board is like-for-like
 #                   with a c2_sweep.sh board taken the same way.
-#   O0_AB_GATES=1   additionally force the 38 "o4 || s1->optimize >= 1" AST
-#                   gates on for measurement B, the way
-#                   tests/ast/rir_parity.cmake FORCE does.  The gate names are
-#                   derived by regex over src/*.c per run, never remembered;
-#                   deriving zero of them is fatal.
+#   O0_AB_GATES=1   additionally force on, for measurement B, every optimizer
+#                   knob that some -O level would turn on and -O0 leaves off:
+#                   each MCC_OPTD_LEVEL(n) row of src/mccopt.h, passed as
+#                   -f<name>.  Until a55c0a07 these were environment variables
+#                   and the set was derived by regex for
+#                   ast_env_gate("MCC_AST_*", o4 || s1->optimize >= 1) over
+#                   src/*.c; that function and those variables are gone, and
+#                   the flag table is now the definition rather than a second
+#                   copy of it.  The names are re-derived per run, never
+#                   remembered; deriving zero of them is fatal.  mcc ignores an
+#                   unknown -f silently, so a derivation that still yields
+#                   names but the wrong ones cannot be caught that way -- see
+#                   the vacuity check in run_key, which requires the gated
+#                   counters to differ from the ungated bank's.
 #   O0_AB_BANK=1    write the result into tests/ast/o0-baseline/ as well as
 #                   into <outdir>.
 #   O0_AB_CHECK=1   diff the result against tests/ast/o0-baseline/ and fail on
@@ -58,8 +68,8 @@
 # Regenerate the banked baseline (from the repo root, after a
 #   cmake -S . -B b -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMCC_ENABLE_CROSS=ON
 #   ninja -C b
-# build).  Both boards are banked; the second is what
-# tests/ast/rir_parity.cmake's FORCE mode measures:
+# build).  Both boards are banked, and the ungated one has to be banked first
+# because the gated run's vacuity check reads it:
 #
 #   C2_NO_EXTRA=1 O0_AB_BANK=1 tools/o0_ab.sh b all /tmp/o0ab
 #   C2_NO_EXTRA=1 O0_AB_BANK=1 O0_AB_GATES=1 tools/o0_ab.sh b all /tmp/o0ab-g
@@ -72,9 +82,9 @@
 #   <key>.obj.txt        one "<key>\t<path>\t<sha256>" line per file that
 #                        compiled, sorted, paths relative to the repo root
 #   <key>.rir.txt        key=value counters for the forced-O0 run
-#   <key>.gated.rir.txt  same, with the 38 gates forced on
+#   <key>.gated.rir.txt  same, with the level knobs forced on
 #   board.txt            one summary line per key, written by "all"
-#   board.gated.txt      same, with the 38 gates forced on
+#   board.gated.txt      same, with the level knobs forced on
 #
 # Measurement A does not depend on O0_AB_GATES -- it runs with an empty
 # MCC_* environment either way -- so only measurement B is banked twice.
@@ -133,9 +143,9 @@ fi
 mkdir -p "$OUT"
 
 derive_gates() {
-	grep -Eoh 'ast_env_gate\("MCC_AST_[A-Z0-9_]+", *o4 \|\| s1->optimize >= 1\)' \
-		"$S"/src/*.c \
-		| sed -E 's/.*"(MCC_AST_[A-Z0-9_]+)".*/\1/' | sort -u
+	grep -Eoh 'MCC_OPT_ROW\([A-Z0-9_]+, *"[a-z0-9-]+", *MCC_OPTD_LEVEL\([0-9]+\)\)' \
+		"$S"/src/mccopt.h \
+		| sed -E 's/.*"([a-z0-9-]+)".*/-f\1/' | sort -u
 }
 
 AOPT=-O0
@@ -145,22 +155,27 @@ if [ -n "$O0_AB_MUTATE" ]; then
 		"object hash must move; a check that still passes compared nothing" >&2
 fi
 
-GATE_ENV=
+GATE_FLAGS=
 SUF=
 if [ -n "$O0_AB_GATES" ]; then
 	SUF=.gated
-	gates=$(derive_gates)
-	ngates=$(echo "$gates" | grep -c . || true)
+	GATE_FLAGS=$(derive_gates | tr '\n' ' ')
+	ngates=$(derive_gates | grep -c . || true)
 	if [ "$ngates" -eq 0 ]; then
-		echo "o0_ab: derived 0 optimize>=1 gates from $S/src -- the" \
-			"ast_env_gate spelling changed, so this run would measure -O0 with" \
-			"every pass off and call it coverage" >&2
+		echo "o0_ab: derived 0 level knobs from $S/src/mccopt.h -- the" \
+			"MCC_OPT_ROW/MCC_OPTD_LEVEL spelling changed, so this run would" \
+			"measure -O0 with every pass off and call it coverage" >&2
 		exit 1
 	fi
-	for g in $gates; do
-		GATE_ENV="$GATE_ENV $g=1"
-	done
-	echo "o0_ab: O0_AB_GATES -- $ngates optimize>=1 gate(s) forced on" >&2
+	if [ -n "$O0_AB_NOGATES" ]; then
+		GATE_FLAGS=
+		echo "o0_ab: O0_AB_NOGATES -- the known-positive arm: the $ngates knob(s)" \
+			"are derived and then dropped, so measurement B is the ungated one" \
+			"under a gated name and every gated bank row must read as vacuous" >&2
+	else
+		echo "o0_ab: O0_AB_GATES -- $ngates level knob(s) forced on:" \
+			"$GATE_FLAGS" >&2
+	fi
 fi
 
 key_flags() {
@@ -248,8 +263,8 @@ run_key() {
 			case "$f" in */full_language.c) extra=1 ;; esac
 		fi
 
-		if env MCC_REPLAY_IR=1 MCC_FORCE_REPLAY=1 $GATE_ENV \
-				"$MCC" -w -O0 $FLAGS $xflags -c -o "$OUT/r-$k.o" "$f" \
+		if env MCC_REPLAY_IR=1 MCC_FORCE_REPLAY=1 \
+				"$MCC" -w -O0 $FLAGS $GATE_FLAGS $xflags -c -o "$OUT/r-$k.o" "$f" \
 				> "$OUT/r-$k.err" 2>&1; then
 			nok=$((nok + 1))
 			case "$f" in */full_language.c) rirextra=1 ;; esac
@@ -324,6 +339,24 @@ run_key() {
 		printf "bar=%s\n", (tot["faithful"] + vd["rempty"] == tot["fn"]) ? "OK" : "FAIL"
 	}
 	' "$log" > "$rirtxt"
+
+	if [ -n "$SUF" ]; then
+		if [ ! -f "$BANKDIR/$k.rir.txt" ]; then
+			echo "$k: no $BANKDIR/$k.rir.txt to compare against -- the gated run" \
+				"cannot show that forcing the knobs on changed anything, and mcc" \
+				"ignores an unknown -f silently, so bank the ungated board first" >&2
+			return 1
+		fi
+		if cmp -s "$BANKDIR/$k.rir.txt" "$rirtxt"; then
+			echo "$k: the gated counters are identical to the ungated bank's." \
+				"$ngates knob(s) were passed as -f and not one body changed" \
+				"shape, which is what a silently-ignored flag name looks like." \
+				"Either the derivation in derive_gates no longer names anything" \
+				"mcc parses, or this half of the bank is a second copy of the" \
+				"other half and should be retired rather than re-banked." >&2
+			return 1
+		fi
+	fi
 
 	if [ -n "$O0_AB_BANK" ]; then
 		mkdir -p "$BANKDIR"

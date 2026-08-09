@@ -39,23 +39,25 @@ export SOURCE_DATE_EPOCH
 
 # ast_replay_env needs optimize >= 1, so a plain -O0 run journals nothing at
 # all and would read as a perfect board over an empty population. C2_FORCE=1
-# turns capture back on and, with it, every pass gated on "o4 || optimize >= 1"
-# -- the same derivation rir_parity.cmake does, by regex over the sources, so a
-# renamed gate cannot silently drop out of the set.
+# turns capture back on and, with it, every pass some -O level would turn on
+# and -O0 leaves off: one -f<name> per MCC_OPTD_LEVEL(n) row of src/mccopt.h,
+# the same list tools/o0_ab.sh derives. Until a55c0a07 these were MCC_AST_*
+# environment variables read through ast_env_gate; both are gone, and the flag
+# table is the definition rather than a second copy of it.
 FORCEENV=
+FORCEFLAGS=
 if [ -n "$C2_FORCE" ]; then
-	gates=$(grep -hoE 'ast_env_gate\("MCC_AST_[A-Z0-9_]+", *o4 \|\| s1->optimize >= 1\)' \
-			"$S"/src/*.c | sed -E 's/.*"(MCC_AST_[A-Z0-9_]+)".*/\1/' | sort -u)
-	ngate=$(printf '%s\n' $gates | grep -c . || true)
+	FORCEFLAGS=$(grep -hoE 'MCC_OPT_ROW\([A-Z0-9_]+, *"[a-z0-9-]+", *MCC_OPTD_LEVEL\([0-9]+\)\)' \
+			"$S"/src/mccopt.h | sed -E 's/.*"([a-z0-9-]+)".*/-f\1/' | sort -u | tr '\n' ' ')
+	ngate=$(printf '%s\n' $FORCEFLAGS | grep -c . || true)
 	if [ "$ngate" -eq 0 ]; then
-		echo "c2_sweep: C2_FORCE derived 0 gates from $S/src -- the ast_env_gate" >&2
-		echo "  spelling changed, so this run would measure -O0 with every pass" >&2
-		echo "  off and call it parity" >&2
+		echo "c2_sweep: C2_FORCE derived 0 knobs from $S/src/mccopt.h -- the" >&2
+		echo "  MCC_OPT_ROW/MCC_OPTD_LEVEL spelling changed, so this run would" >&2
+		echo "  measure -O0 with every pass off and call it parity" >&2
 		exit 1
 	fi
 	FORCEENV="MCC_FORCE_REPLAY=1"
-	for g in $gates; do FORCEENV="$FORCEENV $g=1"; done
-	echo "c2_sweep: C2_FORCE -- $ngate optimize>=1 gate(s) forced on" >&2
+	echo "c2_sweep: C2_FORCE -- $ngate level knob(s) forced on" >&2
 fi
 
 # The corpus. C2_CORPUS names a subtree of tests/ ("exec" for the historical
@@ -85,7 +87,7 @@ for f in $files; do
 	case "$f" in
 	*/full_language.c) xflags="$xflags -I $S -DCC_NAME=CC_gcc" ;;
 	esac
-	if env $FORCEENV MCC_REPLAY_IR=5 "$MCC" -w $OPT $FLAGS $xflags \
+	if env $FORCEENV MCC_REPLAY_IR=5 "$MCC" -w $OPT $FLAGS $FORCEFLAGS $xflags \
 			-c -o "$OUT/a-$KEY.o" "$f" > "$OUT/f.log" 2>&1; then
 		nok=$((nok + 1))
 		echo "### $f" >> "$LOG"

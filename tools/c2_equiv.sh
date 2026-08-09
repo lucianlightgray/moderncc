@@ -101,7 +101,8 @@ leg() {
 	# "Invalid ELF image for this architecture".
 	env MCC_TEST_EMU= MCC_TEST_CPU="$_cpu" MCC_TEST_OS="$_os" \
 		MCC_TEST_ASM=1 MCC_TEST_BCHECK=0 MCC_TEST_BACKTRACE=0 \
-		MCC_TEST_SYSROOT="$_sys" MCC_TEST_RUNEMU="$_emu" MCC_TEST_OPT="$OPT" \
+		MCC_TEST_SYSROOT="$_sys" MCC_TEST_RUNEMU="$_emu" \
+		MCC_TEST_OPT="$OPT $FORCEFLAGS" \
 		$FORCEENV $_extra \
 		"$R" "$_mcc" "$_bdir" "$S/runtime/include" "$S/tests" "$_work" \
 		> "$OUT/$_key.$_tag.txt" 2>/dev/null || true
@@ -111,7 +112,8 @@ leg() {
 # The differential turns on production, and production is
 # rir_prod_env = ast_replay_env && !rir_env with ast_replay_env =
 # `optimize >= 1 || embed_jit || MCC_FORCE_REPLAY || MCC_RIR_FORCE`
-# (src/mccast.c:1923-1925). At a plain -O0 no term holds, so BOTH legs ship the
+# (the assignment to ast_replay_env in ast_configure; find it by symbol, the
+# line number has moved twice). At a plain -O0 no term holds, so BOTH legs ship the
 # parser's bytes and the differential is NONE over a population with zero
 # Replay_IR in it -- a green row that measures nothing. Measured on this tree at
 # -O0 on tests/exec/programs/grep.c: [rir-prod-total] used=0 without this, used=9
@@ -120,29 +122,31 @@ leg() {
 # Note this is NOT the same thing C2_FORCE does in tools/c2_sweep.sh. That
 # script runs under MCC_REPLAY_IR=5, and capture is armed by
 # `rir_env || rir_prod_env` (src/mccrir.c:535), so rir_env alone already gives
-# the byte board a full -O0 population -- there the 28 gates are the whole
+# the byte board a full -O0 population -- there the level knobs are the whole
 # effect and MCC_FORCE_REPLAY is inert. Here rir_env is 0 in the arena leg, so
-# MCC_FORCE_REPLAY is what arms the arena and the gates only make the -O0 leg
+# MCC_FORCE_REPLAY is what arms the arena and the knobs only make the -O0 leg
 # comparable with an optimized one.
 #
-# The gate list is derived by the same regex over src/ that tools/c2_sweep.sh
-# uses, so a renamed gate cannot silently drop out of the set, and a derivation
-# of zero aborts rather than measuring -O0 with every pass off and calling it
-# parity.
+# The knob list is derived from src/mccopt.h the same way tools/c2_sweep.sh and
+# tools/o0_ab.sh derive it -- one -f<name> per MCC_OPTD_LEVEL(n) row -- and a
+# derivation of zero aborts rather than measuring -O0 with every pass off and
+# calling it parity. They reach the compiler through MCC_TEST_OPT, which the
+# runner splices into its compile line, because there is no mcc command line
+# here to put them on.
 FORCEENV=
+FORCEFLAGS=
 if [ -n "$C2_FORCE" ]; then
-	gates=$(grep -hoE 'ast_env_gate\("MCC_AST_[A-Z0-9_]+", *o4 \|\| s1->optimize >= 1\)' \
-			"$S"/src/*.c | sed -E 's/.*"(MCC_AST_[A-Z0-9_]+)".*/\1/' | sort -u)
-	ngate=$(printf '%s\n' $gates | grep -c . || true)
+	FORCEFLAGS=$(grep -hoE 'MCC_OPT_ROW\([A-Z0-9_]+, *"[a-z0-9-]+", *MCC_OPTD_LEVEL\([0-9]+\)\)' \
+			"$S"/src/mccopt.h | sed -E 's/.*"([a-z0-9-]+)".*/-f\1/' | sort -u | tr '\n' ' ')
+	ngate=$(printf '%s\n' $FORCEFLAGS | grep -c . || true)
 	if [ "$ngate" -eq 0 ]; then
-		echo "c2_equiv: C2_FORCE derived 0 gates from $S/src -- the ast_env_gate" >&2
-		echo "  spelling changed, so this run would measure -O0 with every pass" >&2
-		echo "  off and call it parity" >&2
+		echo "c2_equiv: C2_FORCE derived 0 knobs from $S/src/mccopt.h -- the" >&2
+		echo "  MCC_OPT_ROW/MCC_OPTD_LEVEL spelling changed, so this run would" >&2
+		echo "  measure -O0 with every pass off and call it parity" >&2
 		exit 1
 	fi
 	FORCEENV="MCC_FORCE_REPLAY=1"
-	for g in $gates; do FORCEENV="$FORCEENV $g=1"; done
-	echo "c2_equiv: C2_FORCE -- $ngate optimize>=1 gate(s) forced on" >&2
+	echo "c2_equiv: C2_FORCE -- $ngate level knob(s) forced on" >&2
 fi
 
 # summary line is "exec runner: N passed, M failed, K skipped (of T)"
