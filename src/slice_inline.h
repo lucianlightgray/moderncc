@@ -1,0 +1,273 @@
+#ifndef MCC_SLICE_INLINE_H
+#define MCC_SLICE_INLINE_H
+
+/* --- D4b step 1: slice-level inlining of a graftable leaf callee ---------- *
+ *
+ * This is deliberately not OpFunctionCall. SPIR-V compute has no recursion and
+ * the corpus has a ~130-function SCC, so a real call boundary cannot be taken
+ * in one increment. What can be taken in one increment is the case where the
+ * callee has no boundary at all: a body that is exactly
+ *
+ *     BasicBlock { Return <pure expression over the parameters> }
+ *
+ * Such a call is a macro with a stack frame. Substituting the argument
+ * subtrees for the parameter refs turns the AST_Invoke into an ordinary
+ * expression node, and every consumer downstream -- the frame predicate, the
+ * CPU reference in ast_eval_slice.h/mccslice.h, and the SPIR-V builder in
+ * mccgpu.h -- sees a tree with no AST_Invoke in it. That is the whole point:
+ * the board's hard precondition is that the CPU reference has NO AST_Invoke
+ * case, so any arm that leaves an Invoke in the tree for one executor and not
+ * the other is a vacuous differential. Rewriting the shared tree instead makes
+ * both arms the same tree by construction, and neither arm can silently refuse
+ * what the other accepted.
+ *
+ * Every restriction below exists because dropping it would make the graft
+ * wrong in a way the differential cannot see (both executors would run the
+ * same wrong tree):
+ *
+ *   direct callee only   an indirect callee has no device answer anywhere in
+ *                        the plan, and no body to graft. Refused, not guessed.
+ *   allow_load = 0       the callee expression may not touch memory. A leaf
+ *                        that loads reads a host address, which a frame-scoped
+ *                        space cannot resolve.
+ *   one Return, one BB   no control flow, no stores, no second exit.
+ *   param slots -8*(i+1) the arena carries a body, not a signature, so the
+ *                        argument-to-parameter mapping has to be recovered
+ *                        from frame offsets. mcc spills incoming scalars to
+ *                        -8, -16, ... in declaration order (verified against
+ *                        asr32(x, n) = x >> n, whose left operand is -8). Any
+ *                        body whose used offsets are not exactly that
+ *                        contiguous run -- an unused parameter, a wide slot, a
+ *                        different ABI -- is REFUSED. A wrong mapping would
+ *                        swap operands identically in both executors and the
+ *                        differential would stay green, so this rule is
+ *                        checked rather than assumed.
+ *   Convert wrappers     C converts each argument to the parameter type and
+ *                        the result to the return type. Both conversions are
+ *                        materialised as AST_Convert nodes rather than left
+ *                        implicit, so the graft computes what the call
+ *                        computed and not merely something of the right shape.
+ *
+ * The callee body is not in the caller's arena, so the host supplies it
+ * through mcc_slice_leaf_hook. Nothing is inlined when the hook is unset. */
+
+#define MCC_SLICE_INL_MAXPARAM 4
+#define MCC_SLICE_INL_MAXNODE 48
+
+typedef struct MccSliceLeaf {
+	AstArena *a;
+	AstLocal expr;
+	int nparam;
+	int nodes;
+	int32_t off[MCC_SLICE_INL_MAXPARAM];
+	int ptype[MCC_SLICE_INL_MAXPARAM];
+} MccSliceLeaf;
+
+static AstArena *(*mcc_slice_leaf_hook)(AstArena *a, AstLocal inv,
+																				AstLocal *root);
+static long mcc_slice_inl_n;
+static long mcc_slice_inl_seen;
+/* The argument-to-parameter mapping is recovered from frame offsets, and a
+ * wrong recovery would swap operands identically in both executors, so the
+ * graft has to be readable by a human before it is trusted. Set
+ * MCC_SLICE_INL_DUMP=1 and check an asymmetric callee. */
+static int mcc_slice_inl_dump;
+
+static int mcc_slice_leaf_walk(AstArena *c, AstLocal n, MccSliceLeaf *L) {
+	AstLocal k;
+	if (++L->nodes > MCC_SLICE_INL_MAXNODE)
+		return 0;
+	if (ast_kind(c, n) == AST_Ref) {
+		int r = ast_op(c, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+			int32_t o = (int32_t)(int64_t)ast_ival(c, n);
+			int t = ast_type_t(c, n);
+			int i;
+			for (i = 0; i < L->nparam; i++)
+				if (L->off[i] == o)
+					break;
+			if (i == L->nparam) {
+				if (L->nparam >= MCC_SLICE_INL_MAXPARAM)
+					return 0;
+				if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
+					return 0;
+				L->off[L->nparam] = o;
+				L->ptype[L->nparam] = t;
+				L->nparam++;
+			} else if (L->ptype[i] != t) {
+				return 0;
+			}
+		}
+	}
+	for (k = ast_first_child(c, n); k != AST_NONE; k = ast_next_sib(c, k))
+		if (!mcc_slice_leaf_walk(c, k, L))
+			return 0;
+	return 1;
+}
+
+static int mcc_slice_leaf_scan(AstArena *c, AstLocal root, MccSliceLeaf *L) {
+	AstLocal s, e;
+	int i, j;
+	memset(L, 0, sizeof *L);
+	if (!c)
+		return 0;
+	if (root == AST_NONE || root >= ast_count(c))
+		return 0;
+	if (ast_kind(c, root) != AST_BasicBlock)
+		return 0;
+	s = ast_first_child(c, root);
+	if (s == AST_NONE || ast_next_sib(c, s) != AST_NONE)
+		return 0;
+	if (ast_kind(c, s) != AST_Return || ast_nchild(c, s) != 1)
+		return 0;
+	e = ast_first_child(c, s);
+	if (!ast_eval_slice_kind_ok(c, e, 0))
+		return 0;
+	if (!mcc_slice_leaf_walk(c, e, L))
+		return 0;
+	if (!ast_eval_slice_wtype(c, e))
+		return 0;
+	for (i = 0; i < L->nparam; i++)
+		for (j = i + 1; j < L->nparam; j++)
+			if (L->off[j] > L->off[i]) {
+				int32_t to = L->off[i];
+				int tt = L->ptype[i];
+				L->off[i] = L->off[j];
+				L->ptype[i] = L->ptype[j];
+				L->off[j] = to;
+				L->ptype[j] = tt;
+			}
+	for (i = 0; i < L->nparam; i++)
+		if (L->off[i] != -8 * (i + 1))
+			return 0;
+	L->a = c;
+	L->expr = e;
+	return 1;
+}
+
+static AstLocal mcc_slice_conv(AstArena *a, AstLocal v, int t) {
+	AstLocal cv;
+	if (v == AST_NONE)
+		return AST_NONE;
+	if (ast_type_t(a, v) == t)
+		return v;
+	cv = ast_node(a, AST_Convert);
+	ast_set_type(a, cv, t, 0);
+	ast_add_child(a, cv, v);
+	return cv;
+}
+
+static AstLocal mcc_slice_graft(AstArena *a, AstArena *c, AstLocal n,
+																const MccSliceLeaf *L, const AstLocal *arg) {
+	AstLocal g, k;
+	if (L && ast_kind(c, n) == AST_Ref) {
+		int r = ast_op(c, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+			int32_t o = (int32_t)(int64_t)ast_ival(c, n);
+			int i;
+			for (i = 0; i < L->nparam; i++)
+				if (L->off[i] == o)
+					return mcc_slice_conv(
+							a, mcc_slice_graft(a, a, arg[i], NULL, NULL), L->ptype[i]);
+			return AST_NONE;
+		}
+	}
+	g = ast_node(a, ast_kind(c, n));
+	ast_set_op(a, g, ast_op(c, n));
+	ast_copy_type(a, g, c, n);
+	ast_set_ival(a, g, ast_ival(c, n));
+	ast_set_fbits(a, g, ast_fbits(c, n));
+	ast_set_sym(a, g, ast_sym(c, n));
+	if (ast_wide_r2(c, n) != AST_R2_NONE)
+		ast_set_wide(a, g, ast_wide_hi(c, n), ast_wide_r2(c, n));
+	for (k = ast_first_child(c, n); k != AST_NONE; k = ast_next_sib(c, k)) {
+		AstLocal d = mcc_slice_graft(a, c, k, L, arg);
+		if (d == AST_NONE)
+			return AST_NONE;
+		ast_add_child(a, g, d);
+	}
+	return g;
+}
+
+static void mcc_slice_become(AstArena *a, AstLocal dst, AstLocal src) {
+	AstLocal c, next;
+	ast_set_kind(a, dst, ast_kind(a, src));
+	ast_set_op(a, dst, ast_op(a, src));
+	ast_copy_type(a, dst, a, src);
+	ast_set_ival(a, dst, ast_ival(a, src));
+	ast_set_fbits(a, dst, ast_fbits(a, src));
+	ast_set_sym(a, dst, ast_sym(a, src));
+	if (ast_wide_r2(a, src) != AST_R2_NONE)
+		ast_set_wide(a, dst, ast_wide_hi(a, src), ast_wide_r2(a, src));
+	c = ast_first_child(a, src);
+	ast_clear_children(a, src);
+	ast_clear_children(a, dst);
+	for (; c != AST_NONE; c = next) {
+		next = ast_next_sib(a, c);
+		ast_add_child(a, dst, c);
+	}
+}
+
+/* Rewrite one AST_Invoke in place. Returns 1 if the node is no longer an
+ * Invoke. */
+static int mcc_slice_inline_at(AstArena *a, AstLocal inv) {
+	AstLocal arg[MCC_SLICE_INL_MAXPARAM], cref, g, croot = AST_NONE;
+	MccSliceLeaf L;
+	AstArena *c;
+	int rt = ast_type_t(a, inv);
+	int nargs, i;
+	if (ast_kind(a, inv) != AST_Invoke)
+		return 0;
+	nargs = (int)ast_nchild(a, inv) - 1;
+	if (nargs < 0 || nargs > MCC_SLICE_INL_MAXPARAM)
+		return 0;
+	cref = ast_child(a, inv, 0);
+	if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
+		return 0;
+	if (ast_bad_type(rt) || is_float(rt) || !ast_eval_slice_intt(rt))
+		return 0;
+	if (!mcc_slice_leaf_hook)
+		return 0;
+	c = mcc_slice_leaf_hook(a, inv, &croot);
+	if (!c || c == a)
+		return 0;
+	if (!mcc_slice_leaf_scan(c, croot, &L))
+		return 0;
+	if (L.nparam != nargs)
+		return 0;
+	for (i = 0; i < nargs; i++) {
+		arg[i] = ast_child(a, inv, (uint32_t)i + 1);
+		if (arg[i] == AST_NONE || !ast_eval_slice_kind_ok(a, arg[i], 1))
+			return 0;
+	}
+	ast_clear_children(a, inv);
+	g = mcc_slice_graft(a, c, L.expr, &L, arg);
+	if (g == AST_NONE) {
+		ast_add_child(a, inv, cref);
+		for (i = 0; i < nargs; i++)
+			ast_add_child(a, inv, arg[i]);
+		return 0;
+	}
+	g = mcc_slice_conv(a, g, rt);
+	mcc_slice_become(a, inv, g);
+	mcc_slice_inl_n++;
+	if (mcc_slice_inl_dump) {
+		char buf[4096];
+		ast_dump(a, inv, buf, sizeof buf);
+		fprintf(stderr, "[graft] node=%u nparam=%d\n%s\n", (unsigned)inv, L.nparam,
+						buf);
+	}
+	return 1;
+}
+
+static void mcc_slice_inline_arena(AstArena *a) {
+	AstLocal nn = ast_count(a), n;
+	for (n = 0; n < nn; n++) {
+		if (ast_kind(a, n) != AST_Invoke)
+			continue;
+		mcc_slice_inl_seen++;
+		mcc_slice_inline_at(a, n);
+	}
+}
+
+#endif

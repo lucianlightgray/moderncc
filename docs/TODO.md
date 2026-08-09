@@ -18,7 +18,19 @@ them freely:
 | corpus | unit | size | which claims use it |
 | --- | --- | ---: | --- |
 | `tests/exec`, 60 files @ `-O1` | non-empty `AST_BasicBlock` | **947** | +19 (`arr[i]`), 319 eligible, the 143-destination census, 987 stores |
-| the compiler's own 15 sources | `AST_Invoke`-blocked block | **16,537** | +168 (`snprintf`), 734 libc ceiling, 12,901 (D4b) |
+| `tests/exec`, 60 files @ `-O1` | `AST_Invoke`-blocked block | **454** | reproduced exactly, 2026-08-08 |
+| the compiler's own 15 sources | `AST_Invoke`-blocked block | ~~16,537~~ **10,238** | +168 (`snprintf`), 734 libc ceiling, 12,901 (D4b) — see item 3 |
+
+**The compiler-side base does not reproduce and the claims resting on it inherit that.**
+`slicerun --arenas <dump> --census` now counts `AST_Invoke`-blocked blocks directly and
+gets **454** on `tests/exec`, which matches `docs/DEVICE-LIBC.md` to the block — so the
+unit and the method are the same one. The same tool on a self-compile gets **10,238**,
+not 16,537, and no corpus tried reaches 16,537: the amalgamated `mcc -O2 -c src/mcc.c`
+gives 10,238, the 15 sources compiled separately and de-duplicated give 10,239, and the
+same 15 sources *with* the duplicate body records the dump emits (8,039 records for 2,811
+distinct bodies) give 28,753. **+168 and 734 were measured against a base this tree can no
+longer reconstruct**, so both need re-taking with the committed tool before they can be
+ranked.
 
 `docs/DEVICE-LIBC.md` is explicit that `tests/exec` must not be used for the libc phase —
 `printf` alone is 35% of its Invoke nodes, its libc ceiling is 3 blocks against the
@@ -61,14 +73,100 @@ more than its 0.7% Invoke share suggests: `printf`'s return is discarded at 80/8
 and 452/452 `tests/exec` sites, so the formatting half is device work and only byte
 emission is a host post.
 
-### 3. D4b — internal calls on the device — 12,901 blocks, 78.01%
+### 3. D4b — internal calls on the device — **803 blocks, not 12,901**
 
-Numerically this dominates every other row on the board and it is not on the old list at
-all. It needs the call boundary rather than an emitter change. **Hard precondition:** the
-CPU reference has **no `AST_Invoke` case at all** — confirmed zero occurrences in
-`ast_eval_slice.h` and `mccslice.h` — so a differential over any invoke-bearing arena is
-*vacuous, not merely weak*. The reference must land in the same commit as the first
-emitter, or the first green run will prove nothing.
+**12,901 / 78.01% does not reproduce, and the number that predicts payoff is 16× smaller.**
+The census is now a committed tool rather than an ad-hoc pass: `slicerun --arenas <dump>
+--census` joins the per-`AST_BasicBlock` unit it already had to the callee class the
+`[inv]` records already carried, using `tools/node-census.py`'s classification (a callee
+is INTERNAL when some body in the same dump defines it, INDIRECT when the dump wrote `?`,
+EXTERNAL otherwise). Measured 2026-08-08:
+
+| | `tests/exec` 60 @ `-O1` | self-compile (`mcc -O2 -c src/mcc.c`, `MCC_RIR_PROD=2`) |
+| --- | ---: | ---: |
+| bodies / non-empty blocks | 344 / 947 | 2,810 / 19,454 |
+| blocks eligible today | 319 | 4,029 |
+| blocks containing ≥1 `AST_Invoke` | **454** | **10,238** |
+| — all callees internal | 169 (37.2%) | **7,524 (73.49%)** |
+| — all callees external | 197 (43.4%) | 1,231 (12.02%) |
+| — mixed | 87 (19.2%) | 1,368 (13.36%) |
+| — any indirect callee | 1 (0.2%) | 115 (1.12%) |
+| **`Invoke` is the SOLE blocker** | **33** | **803** |
+| blocks that are nothing but calls | 9 | 926 |
+| unblocked by the leaf inliner below | 7 | 4 |
+
+The `tests/exec` row reproduces `docs/DEVICE-LIBC.md`'s 454 exactly, so the disagreement
+is not one of method. The compiler row's base is 10,238, not 16,537, and the internal-only
+share is 73.49%, not 78.01% — close enough that the *ratio* survives, far enough that the
+*count* does not: 7,524 against 12,901.
+
+**And 73.49% is not a payoff figure at all.** It is an eligibility statement about the
+`AST_Invoke` node alone — "no callee in this block is external or indirect" — and it makes
+no claim that anything else in the block lowers. The figure that does make that claim is
+the last-but-two row: blocks `mcc_slice_frame_stmt_ok` refuses today and would accept if
+every `Invoke` in them were free, counted only when every argument of every such `Invoke`
+is itself lowerable. That is **803 blocks: 7.84% of the Invoke-blocked set, 4.13% of all
+blocks, and +19.9% on the 4,029 eligible today.** It is the block-granularity twin of what
+`rir_low_take` already banks per body, where `call` is the sole blocker of ~0.01% of body
+bytes, and the two agree on direction by a wide margin.
+
+**Re-ranking.** 803 blocks is still the largest single number anyone has measured at block
+granularity on the compiler corpus, so D4b does not fall off the board — but it no longer
+dominates it, its headline was 16× too large, and rows 1 and 2 were measured against the
+same unreconstructible 16,537 base and need re-taking before any of the three can be
+ordered honestly.
+
+The `tests/exec` column is now **ratcheted** by `slice/census`
+(`cmake/slicerun_census.cmake`): the corpus-and-classifier figures (947, 454, 169/197/87/1)
+are asserted exactly, and the two predicate-dependent ones are floors, because a cell that
+forbade those from rising would be a cell against the project. The compiler column is not
+banked — one self-compile is 5 s of census but ~90 s of `mcc`, which is a `ctest -L census`
+opt-in and not a default cell.
+
+**The first increment is landed, and it is not `OpFunctionCall`.** SPIR-V compute has no
+recursion and the corpus has a ~130-function SCC, so the call boundary cannot be taken in
+one step. `src/slice_inline.h` takes the case that has no boundary: a callee whose whole
+body is `BasicBlock { Return <pure expression over the parameters> }` is substituted into
+the caller's arena, argument subtrees for parameter refs, with `AST_Convert` nodes
+materialising C's argument and return conversions. Every consumer downstream then sees a
+tree with no `AST_Invoke` in it, which is the point — the board's hard precondition is
+that the CPU reference has **no `AST_Invoke` case at all** (still true: zero occurrences
+in `ast_eval_slice.h` and `mccslice.h`), so an arm that teaches one executor about Invoke
+and not the other is a vacuous differential. Rewriting the shared tree makes the reference
+arm and the emitter arm the same arm.
+
+Refused, because a wrong graft would be identical in both executors and the differential
+could not see it: indirect callees, callees that touch memory, callees with control flow
+or a second exit, and any body whose used frame offsets are not exactly `-8, -16, …`
+(mcc spills incoming scalars in declaration order; verified against `asr32(x, n)` in
+`tests/exec/arch/arm64_encoding.c`, whose `>>` has the `-8` ref on the left, and against
+`mix3(a, b) = a * 3 + b` in the fixture). `MCC_SLICE_INL_DUMP=1` prints each graft.
+
+`slice/inline` (`cmake/slicerun_inline.cmake`, fixture `tests/gpu/inline_leaf.c`) is the
+three-toothed cell the board asked for, and all three are real on this host:
+
+- `invoke-inlined=4` — the graft fires,
+- `frame-stmts` 0 → 3 and `frame-compared` 2 → 3 — without the graft this corpus compares
+  two frame runs with **zero statements** between them, so the un-inlined arm is provably
+  blind and a green cell there would mean nothing,
+- `--mutate` gives `frame-mismatches=1` with the graft and `frame-mismatches=0` without
+  it, so the redness is attributable to the inlined call rather than to the
+  expression-slice arm reddening the process on its own.
+
+On the whole `tests/exec` corpus the same switch takes `frame-compared` 244 → 251,
+`frame-stmts` 201 → 236 and `dispatches` 1,023 → 1,114 with `invoke-inlined=130` and zero
+mismatches. `--no-inline` restores the old behaviour.
+
+**Still open.** Real calls — anything with a store, a loop, a second return, or its own
+call — are untouched, and the 803 figure is what they would be worth in total. Indirect
+callees (115 blocks) still have no device answer anywhere in the plan. Recursion still has
+no data: `docs/PLAN.md`'s ~130-function SCC and the dynamic depth figures (`unary()` peaks
+at 11, `ast_replay_bb` at 35 with a 27,424-byte frame → 1.75–3.5 MiB/lane) are the whole
+of it. And the graft is wired into `tools/slicerun.c` only: `mcc_slice_leaf_hook` is a
+host-supplied resolver because the callee body is not in the caller's arena, and `mcc`
+never sets it, so nothing the compiler emits changes yet. Wiring it to
+`ast_inline_pool`/`ast_inline_body` is the next step and is the point at which this stops
+being a harness result.
 
 ### 4. S5′ — the iteration distribution, still unmeasured
 

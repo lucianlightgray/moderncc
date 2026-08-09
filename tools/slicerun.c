@@ -28,6 +28,7 @@ static int ast_bad_type(int tt) {
 #define MCC_SLICE_GPU 1
 #include "mcctask.h"
 #include "mccslice.h"
+#include "slice_inline.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -2537,10 +2538,201 @@ static void scan_subtree(AstArena *a, AstLocal n, int quiet, long limit) {
 }
 
 static int g_census;
+static int g_inline = 1;
 static long g_cn_blocks, g_cn_elig, g_cn_op8n, g_cn_op9n, g_cn_op6n;
 static long g_cn_op8b, g_cn_op9b, g_cn_op6b;
 static long g_cn_op8t, g_cn_op9t, g_cn_op6t;
 static long g_cn_stfield, g_cn_staddr, g_cn_stother, g_cn_stlocal;
+
+/* D4b step 0. The board ranks "internal calls on the device" on 12,901 blocks
+ * / 78.01%, a figure no committed tool in this tree produces: it was an ad-hoc
+ * pass over MCC_ARENA_DUMP text, and `slicerun --census` -- the only per-block
+ * counter here -- carries no callee classification at all. The two halves have
+ * simply never been joined, so the number has never been ratcheted and cannot
+ * be reproduced on demand.
+ *
+ * Joined here. The block unit is the existing one (a non-empty AST_BasicBlock,
+ * 947 over the tests/exec 60), the callee class comes from the `[inv]` records
+ * the dump already emits, and the classes follow tools/node-census.py: a
+ * callee is INTERNAL when its name is the `fn=` of some body in the same dump,
+ * INDIRECT when the dump wrote `?`, EXTERNAL otherwise.
+ *
+ * Three block-level figures come out, and only the third predicts payoff:
+ *
+ *   inv-blocks + class split  reproduces the board's methodology, i.e. blocks
+ *                             whose invokes are all internal. It is an
+ *                             eligibility statement about the Invoke node and
+ *                             claims nothing about the rest of the block.
+ *   sole                      blocks that mcc_slice_frame_stmt_ok refuses
+ *                             today and would accept if every Invoke in them
+ *                             were free. This is the block-granularity twin of
+ *                             what rir_low_take already banks per body, where
+ *                             `call` is the sole blocker of ~0.01% of body
+ *                             bytes. A block is only counted when every
+ *                             argument of every Invoke in it is itself
+ *                             lowerable -- a call whose arguments cannot reach
+ *                             the device is not unblocked by putting the call
+ *                             there.
+ *   inline-unblocked          blocks the leaf inliner in src/slice_inline.h
+ *                             actually unblocks, which is a floor under the
+ *                             first increment rather than a ceiling over the
+ *                             phase. */
+static long g_cn_invblk, g_cn_inv_int, g_cn_inv_ext, g_cn_inv_mix, g_cn_inv_ind;
+static long g_cn_sole, g_cn_soleonly, g_cn_inlblk, g_cn_invn;
+static signed char *g_cn_wasel;
+static long g_cn_wascap;
+
+#define INV_NAMEMAX 128
+
+typedef struct LeafEnt {
+	char name[INV_NAMEMAX];
+	AstArena *a;
+	AstLocal root;
+	unsigned long long hash;
+} LeafEnt;
+
+static LeafEnt *g_leaf;
+static int g_leaf_n, g_leaf_cap;
+static char (*g_defn)[INV_NAMEMAX];
+static long g_defn_n, g_defn_cap;
+static int g_defn_sorted;
+static signed char *g_invcls;
+static int *g_invleaf;
+static long g_invcap;
+
+static int defn_cmp(const void *x, const void *y) {
+	return strcmp((const char *)x, (const char *)y);
+}
+
+static void defn_add(const char *s) {
+	if (g_defn_n == g_defn_cap) {
+		long nc = g_defn_cap ? g_defn_cap * 2 : 1024;
+		char (*p)[INV_NAMEMAX] = realloc(g_defn, (size_t)nc * INV_NAMEMAX);
+		if (!p)
+			return;
+		g_defn = p;
+		g_defn_cap = nc;
+	}
+	snprintf(g_defn[g_defn_n], INV_NAMEMAX, "%s", s);
+	g_defn_n++;
+	g_defn_sorted = 0;
+}
+
+static int defn_has(const char *s) {
+	if (!g_defn_n)
+		return 0;
+	if (!g_defn_sorted) {
+		qsort(g_defn, (size_t)g_defn_n, INV_NAMEMAX, defn_cmp);
+		g_defn_sorted = 1;
+	}
+	return bsearch(s, g_defn, (size_t)g_defn_n, INV_NAMEMAX, defn_cmp) != NULL;
+}
+
+static int leaf_find(const char *s) {
+	int i;
+	for (i = 0; i < g_leaf_n; i++)
+		if (!strcmp(g_leaf[i].name, s))
+			return i;
+	return -1;
+}
+
+/* A name that is defined twice with structurally different bodies is two
+ * different static functions in two translation units, and the dump cannot
+ * tell them apart. Grafting either one into the other's caller would be a
+ * miscompile both executors would agree on, so such a name is dropped rather
+ * than resolved. */
+static void leaf_offer(const char *name, AstArena *a, AstLocal root,
+											 unsigned long long h) {
+	int i = leaf_find(name);
+	if (i >= 0) {
+		if (g_leaf[i].hash != h && g_leaf[i].a) {
+			ast_arena_free(g_leaf[i].a);
+			g_leaf[i].a = NULL;
+		}
+		ast_arena_free(a);
+		return;
+	}
+	if (g_leaf_n == g_leaf_cap) {
+		int nc = g_leaf_cap ? g_leaf_cap * 2 : 64;
+		LeafEnt *p = realloc(g_leaf, (size_t)nc * sizeof *p);
+		if (!p) {
+			ast_arena_free(a);
+			return;
+		}
+		g_leaf = p;
+		g_leaf_cap = nc;
+	}
+	snprintf(g_leaf[g_leaf_n].name, INV_NAMEMAX, "%s", name);
+	g_leaf[g_leaf_n].a = a;
+	g_leaf[g_leaf_n].root = root;
+	g_leaf[g_leaf_n].hash = h;
+	g_leaf_n++;
+}
+
+static AstArena *slicerun_leaf_hook(AstArena *a, AstLocal inv, AstLocal *root) {
+	int i;
+	(void)a;
+	if (!g_invleaf || (long)inv >= g_invcap)
+		return NULL;
+	i = g_invleaf[inv];
+	if (i < 0 || !g_leaf[i].a)
+		return NULL;
+	*root = g_leaf[i].root;
+	return g_leaf[i].a;
+}
+
+static void inv_reset(long n) {
+	long i;
+	if (n > g_invcap) {
+		free(g_invcls);
+		free(g_invleaf);
+		g_invcls = malloc((size_t)n);
+		g_invleaf = malloc((size_t)n * sizeof *g_invleaf);
+		g_invcap = (g_invcls && g_invleaf) ? n : 0;
+	}
+	for (i = 0; i < g_invcap; i++) {
+		g_invcls[i] = -1;
+		g_invleaf[i] = -1;
+	}
+}
+
+static void inv_set(long node, const char *callee) {
+	if (!g_invcls || node < 0 || node >= g_invcap)
+		return;
+	g_invcls[node] = !strcmp(callee, "?") ? 0 : defn_has(callee) ? 2 : 1;
+	g_invleaf[node] = leaf_find(callee);
+}
+
+static void leaf_pass0(const char *fn, const RawNode *raw, int n, long root) {
+	unsigned long long h = 1469598103934665603ULL;
+	MccSliceLeaf L;
+	AstArena *a;
+	AstLocal rt;
+	int i;
+	if (n > MCC_SLICE_INL_MAXNODE + 8)
+		return;
+	for (i = 0; i < n; i++) {
+		int k = raw[i].kind;
+		if (k != AST_BasicBlock && k != AST_Return && k != AST_Ref &&
+				k != AST_Literal && k != AST_Unary && k != AST_Binary &&
+				k != AST_Convert && k != AST_If)
+			return;
+		h = (h ^ (unsigned long long)k) * 1099511628211ULL;
+		h = (h ^ (unsigned long long)raw[i].op) * 1099511628211ULL;
+		h = (h ^ (unsigned long long)raw[i].type_t) * 1099511628211ULL;
+		h = (h ^ (unsigned long long)raw[i].ival) * 1099511628211ULL;
+		h = (h ^ raw[i].first_child) * 1099511628211ULL;
+		h = (h ^ raw[i].next_sib) * 1099511628211ULL;
+	}
+	a = rebuild_arena(raw, n, &rt, root);
+	if (!a)
+		return;
+	if (!mcc_slice_leaf_scan(a, rt, &L)) {
+		ast_arena_free(a);
+		return;
+	}
+	leaf_offer(fn, a, rt, h);
+}
 
 static int has_op(AstArena *a, AstLocal n, int op) {
 	AstLocal c;
@@ -2581,10 +2773,117 @@ static void census_stores(AstArena *a, int n) {
 	}
 }
 
+static void block_inv(AstArena *a, AstLocal n, int *cnt, int *cls) {
+	AstLocal c;
+	if (ast_kind(a, n) == AST_Invoke) {
+		int k = ((long)n < g_invcap && g_invcls[n] >= 0) ? g_invcls[n] : 0;
+		(*cnt)++;
+		*cls |= 1 << k;
+	}
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		block_inv(a, c, cnt, cls);
+}
+
+/* The "if the call were free" transform. A value-position Invoke becomes a
+ * constant of its own type; a statement-position one is dropped from its
+ * block. Both are refused when any argument is not itself lowerable, which
+ * leaves the block blocked -- a device call whose arguments live on the host
+ * is not a call the device can make. */
+static void census_free_invokes(AstArena *a, signed char *mark) {
+	AstLocal nn = ast_count(a), n, c;
+	for (n = 0; n < nn; n++) {
+		uint32_t k, nc;
+		int t;
+		mark[n] = 0;
+		if (ast_kind(a, n) != AST_Invoke)
+			continue;
+		nc = ast_nchild(a, n);
+		for (k = 1; k < nc; k++)
+			if (!ast_eval_slice_kind_ok(a, ast_child(a, n, k), 1))
+				break;
+		if (k != nc)
+			continue;
+		mark[n] = ast_kind(a, ast_parent(a, n)) == AST_BasicBlock ? 2 : 1;
+		t = ast_type_t(a, n);
+		if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
+			t = VT_INT;
+		ast_clear_children(a, n);
+		ast_set_kind(a, n, AST_Literal);
+		ast_set_op(a, n, VT_CONST);
+		ast_set_type(a, n, t, 0);
+		ast_set_ival(a, n, 0);
+		ast_set_sym(a, n, 0);
+	}
+	for (n = 0; n < nn; n++) {
+		AstLocal keep[MCC_SLICE_MAXSTMT * 4];
+		int nk = 0, drop = 0, j;
+		if (ast_kind(a, n) != AST_BasicBlock)
+			continue;
+		for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c)) {
+			if (mark[c] == 2) {
+				drop = 1;
+				continue;
+			}
+			if (nk == (int)(sizeof keep / sizeof *keep)) {
+				drop = 0;
+				break;
+			}
+			keep[nk++] = c;
+		}
+		if (!drop)
+			continue;
+		ast_clear_children(a, n);
+		for (j = 0; j < nk; j++)
+			ast_add_child(a, n, keep[j]);
+	}
+}
+
+static void census_probe(AstArena *a, int n, int free_invokes, long *unblk,
+												 long *emptied) {
+	AstArena *p = ast_arena_clone(a);
+	MccSliceFrame fr;
+	signed char *mark;
+	int i;
+	if (!p)
+		return;
+	mark = calloc((size_t)ast_count(p) + 1, 1);
+	if (!mark) {
+		ast_arena_free(p);
+		return;
+	}
+	if (free_invokes)
+		census_free_invokes(p, mark);
+	else
+		mcc_slice_inline_arena(p);
+	for (i = 0; i < n; i++) {
+		if (ast_kind(p, (AstLocal)i) != AST_BasicBlock || !g_cn_wasel ||
+				g_cn_wasel[i] != 1)
+			continue;
+		if (ast_first_child(p, (AstLocal)i) == AST_NONE) {
+			if (emptied)
+				(*emptied)++;
+			continue;
+		}
+		if (mcc_slice_frame_from_ast(p, (AstLocal)i, &fr))
+			(*unblk)++;
+	}
+	free(mark);
+	ast_arena_free(p);
+}
+
 static void census_arena(AstArena *a, int n) {
 	int i;
+	long anyinv = 0;
 	MccSliceFrame fr;
+	if (n > g_cn_wascap) {
+		free(g_cn_wasel);
+		g_cn_wasel = malloc((size_t)n);
+		g_cn_wascap = g_cn_wasel ? n : 0;
+	}
+	for (i = 0; i < n && i < g_cn_wascap; i++)
+		g_cn_wasel[i] = 0;
 	for (i = 0; i < n; i++) {
+		int ninv = 0, cls = 0;
 		if (ast_kind(a, (AstLocal)i) == AST_If) {
 			int op = ast_op(a, (AstLocal)i);
 			if (op == 8)
@@ -2598,9 +2897,26 @@ static void census_arena(AstArena *a, int n) {
 				ast_first_child(a, (AstLocal)i) == AST_NONE)
 			continue;
 		g_cn_blocks++;
+		block_inv(a, (AstLocal)i, &ninv, &cls);
+		if (ninv) {
+			g_cn_invblk++;
+			g_cn_invn += ninv;
+			if (cls & 1)
+				g_cn_inv_ind++;
+			else if (cls == 4)
+				g_cn_inv_int++;
+			else if (cls == 2)
+				g_cn_inv_ext++;
+			else
+				g_cn_inv_mix++;
+		}
 		if (mcc_slice_frame_from_ast(a, (AstLocal)i, &fr)) {
 			g_cn_elig++;
 			continue;
+		}
+		if (ninv && i < g_cn_wascap) {
+			g_cn_wasel[i] = 1;
+			anyinv = 1;
 		}
 		if (has_op(a, (AstLocal)i, 8))
 			g_cn_op8b++;
@@ -2615,21 +2931,25 @@ static void census_arena(AstArena *a, int n) {
 		if (top_op(a, (AstLocal)i, 6))
 			g_cn_op6t++;
 	}
+	if (anyinv) {
+		census_probe(a, n, 1, &g_cn_sole, &g_cn_soleonly);
+		census_probe(a, n, 0, &g_cn_inlblk, NULL);
+	}
 	census_stores(a, n);
 }
 
-static int arena_mode(const char *path, long limit, int quiet) {
-	FILE *f = fopen(path, "r");
+/* Two passes over the same dump. A callee is INTERNAL when some body in the
+ * dump defines it and a leaf body is only graftable once it is known not to be
+ * one of two same-named statics, and neither fact is available until the whole
+ * file has been read -- so pass 0 builds the name set and the leaf table, and
+ * pass 1 does the work. */
+static int arena_pass(FILE *f, int pass, long limit, int quiet) {
 	char line[512];
 	RawNode *raw = NULL;
-	int cap = 0;
+	int cap = 0, pend = 0;
 
-	if (!f) {
-		fprintf(stderr, "slicerun: cannot open %s\n", path);
-		return 1;
-	}
-	while (fgets(line, sizeof line, f)) {
-		char fn[128];
+	while (pend ? (pend = 0, 1) : fgets(line, sizeof line, f) != NULL) {
+		char fn[INV_NAMEMAX];
 		long n, root;
 		int i;
 		if (sscanf(line, "[arena] fn=%127s n=%ld root=%ld", fn, &n, &root) != 3)
@@ -2639,10 +2959,8 @@ static int arena_mode(const char *path, long limit, int quiet) {
 		if (n > cap) {
 			cap = (int)n;
 			raw = (RawNode *)realloc(raw, (size_t)cap * sizeof *raw);
-			if (!raw) {
-				fclose(f);
+			if (!raw)
 				return 1;
-			}
 		}
 		for (i = 0; i < n; i++) {
 			long id, fc, ns;
@@ -2678,6 +2996,27 @@ static int arena_mode(const char *path, long limit, int quiet) {
 		}
 		if (i != n)
 			continue;
+		if (pass == 0) {
+			defn_add(fn);
+			leaf_pass0(fn, raw, (int)n, root);
+			while (fgets(line, sizeof line, f)) {
+				if (strncmp(line, "[inv] ", 6)) {
+					pend = 1;
+					break;
+				}
+			}
+			continue;
+		}
+		inv_reset(n);
+		while (fgets(line, sizeof line, f)) {
+			long id;
+			char cal[INV_NAMEMAX];
+			if (sscanf(line, "[inv] %ld %127s", &id, cal) != 2) {
+				pend = 1;
+				break;
+			}
+			inv_set(id, cal);
+		}
 		{
 			AstLocal rt;
 			AstArena *a = rebuild_arena(raw, (int)n, &rt, root);
@@ -2689,10 +3028,13 @@ static int arena_mode(const char *path, long limit, int quiet) {
 				g_obj_ext[i] = (int32_t)raw[i].size;
 				g_obj_ety[i] = raw[i].etype;
 			}
-			if (g_census)
+			if (g_census) {
 				census_arena(a, (int)n);
-			else
+			} else {
+				if (g_inline)
+					mcc_slice_inline_arena(a);
 				scan_subtree(a, rt, quiet, limit);
+			}
 			slicerun_obj_reset(0);
 			ast_arena_free(a);
 		}
@@ -2700,7 +3042,28 @@ static int arena_mode(const char *path, long limit, int quiet) {
 			break;
 	}
 	free(raw);
+	return 0;
+}
+
+static int arena_mode(const char *path, long limit, int quiet) {
+	FILE *f = fopen(path, "r");
+	int rc;
+
+	if (!f) {
+		fprintf(stderr, "slicerun: cannot open %s\n", path);
+		return 1;
+	}
+	mcc_slice_leaf_hook = slicerun_leaf_hook;
+	mcc_slice_inl_dump = getenv("MCC_SLICE_INL_DUMP") != NULL;
+	if (arena_pass(f, 0, limit, quiet)) {
+		fclose(f);
+		return 1;
+	}
+	rewind(f);
+	rc = arena_pass(f, 1, limit, quiet);
 	fclose(f);
+	if (rc)
+		return rc;
 
 	if (g_census) {
 		printf("census: blocks=%ld eligible=%ld\n", g_cn_blocks, g_cn_elig);
@@ -2712,6 +3075,14 @@ static int arena_mode(const char *path, long limit, int quiet) {
 					 g_cn_op6n, g_cn_op6b, g_cn_op6t);
 		printf("census: stores local=%ld field=%ld addr=%ld other=%ld\n",
 					 g_cn_stlocal, g_cn_stfield, g_cn_staddr, g_cn_stother);
+		printf("census: inv-blocks=%ld invokes=%ld all-internal=%ld all-external=%ld "
+					 "mixed=%ld any-indirect=%ld\n",
+					 g_cn_invblk, g_cn_invn, g_cn_inv_int, g_cn_inv_ext, g_cn_inv_mix,
+					 g_cn_inv_ind);
+		printf("census: inv-sole-blocker=%ld invoke-only-blocks=%ld "
+					 "inline-unblocked=%ld inline-grafts=%ld leaf-callees=%ld\n",
+					 g_cn_sole, g_cn_soleonly, g_cn_inlblk, mcc_slice_inl_n,
+					 (long)g_leaf_n);
 		return 0;
 	}
 	if (g_cost_mode) {
@@ -2731,6 +3102,8 @@ static int arena_mode(const char *path, long limit, int quiet) {
 				 "frame-stmts=%ld frame-mismatches=%ld\n",
 				 g_frame_slices, g_frame_built, g_frame_compared, g_frame_stmts,
 				 g_frame_mismatch);
+	printf("slicerun: invoke-seen=%ld invoke-inlined=%ld leaf-callees=%d\n",
+				 mcc_slice_inl_seen, mcc_slice_inl_n, g_leaf_n);
 	g_arena_mismatch += g_frame_mismatch;
 	if (!g_arena_slices) {
 		printf("slicerun: FAIL (no real slice became schedulable work)\n");
@@ -2792,6 +3165,8 @@ int main(int argc, char **argv) {
 			g_mutate = 1;
 		else if (!strcmp(argv[i], "--census"))
 			g_census = 1;
+		else if (!strcmp(argv[i], "--no-inline"))
+			g_inline = 0;
 		else if (!strcmp(argv[i], "--cost"))
 			g_cost_mode = 1;
 		else if (!strcmp(argv[i], "--cost-synth"))
