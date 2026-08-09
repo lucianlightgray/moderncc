@@ -2143,6 +2143,7 @@ int ast_sym_defer(Sym *sym) { MCC_TRACE("enter\n");
 
 static int ast_reemit_n;
 static int ast_inline_n;
+static void ast_inline_index_reset(void);
 
 static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_ladder_gpu_setup();
@@ -2193,6 +2194,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	int o4 = s1->optimize_search_seconds > 0;
 	ast_reemit_n = 0;
 	ast_inline_n = 0;
+	ast_inline_index_reset();
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 	opt_promote = s1->optimize >= 2;
 #endif
@@ -2713,7 +2715,7 @@ static int ast_argfwd_read_count(AstArena *a, int off) { MCC_TRACE("enter\n");
 }
 #define AST_INLINE_MAX 512
 #define AST_INLINE_MAX_PARAMS 6
-static struct AstInlineFn {
+struct AstInlineFn {
 	void *sym;
 	AstArena *ast;
 	int frame_size;
@@ -2725,7 +2727,10 @@ static struct AstInlineFn {
 	int param_stack[AST_INLINE_MAX_PARAMS];
 	int param_indirect[AST_INLINE_MAX_PARAMS];
 	int graftable;
-} ast_inline_pool[AST_INLINE_MAX];
+};
+static struct AstInlineFn *ast_inline_pool;
+static int ast_inline_pool_cap;
+static int ast_inline_hi;
 static int ast_inline_n;
 
 static struct AstReemitFn {
@@ -2744,11 +2749,76 @@ static int ast_inline_cap_stack[AST_INLINE_MAX_PARAMS];
 static int ast_inline_cap_ind[AST_INLINE_MAX_PARAMS];
 static int ast_inline_cap_ok;
 
+static int *ast_inline_hash;
+static int ast_inline_hash_cap;
+
+static void ast_inline_index_reset(void) { MCC_TRACE("enter\n");
+	if (ast_inline_hash)
+		{ MCC_TRACE("br\n"); memset(ast_inline_hash, 0,
+															 (size_t)ast_inline_hash_cap * sizeof(int)); }
+}
+
+static int ast_inline_hash_slot(void *sym, int cap) { MCC_TRACE("enter\n");
+	uintptr_t h = (uintptr_t)sym >> 4;
+	h *= (uintptr_t)0x9e3779b97f4a7c15ull;
+	return (int)((h >> 32) & (uintptr_t)(cap - 1));
+}
+
+static int ast_inline_index(void *sym) { MCC_TRACE("enter\n");
+	int s;
+	if (!ast_inline_hash_cap)
+		{ MCC_TRACE("br\n"); return -1; }
+	s = ast_inline_hash_slot(sym, ast_inline_hash_cap);
+	for (;;) { MCC_TRACE("br\n");
+		int v = ast_inline_hash[s];
+		if (!v)
+			{ MCC_TRACE("br\n"); return -1; }
+		if (ast_inline_pool[v - 1].sym == sym)
+			{ MCC_TRACE("br\n"); return v - 1; }
+		s = (s + 1) & (ast_inline_hash_cap - 1);
+	}
+}
+
+static void ast_inline_index_add(int i) { MCC_TRACE("enter\n");
+	int s = ast_inline_hash_slot(ast_inline_pool[i].sym, ast_inline_hash_cap);
+	while (ast_inline_hash[s])
+		{ MCC_TRACE("br\n"); s = (s + 1) & (ast_inline_hash_cap - 1); }
+	ast_inline_hash[s] = i + 1;
+}
+
+static int ast_inline_grow(void) { MCC_TRACE("enter\n");
+	int i;
+	if (ast_inline_n == ast_inline_pool_cap) { MCC_TRACE("br\n");
+		int nc = ast_inline_pool_cap ? ast_inline_pool_cap * 2 : 128;
+		struct AstInlineFn *np =
+				mcc_realloc(ast_inline_pool, (size_t)nc * sizeof(*ast_inline_pool));
+		if (!np)
+			{ MCC_TRACE("br\n"); return 0; }
+		ast_inline_pool = np;
+		ast_inline_pool_cap = nc;
+	}
+	if ((ast_inline_n + 1) * 2 > ast_inline_hash_cap) { MCC_TRACE("br\n");
+		int nc = ast_inline_hash_cap ? ast_inline_hash_cap * 2 : 512;
+		int *nh = mcc_realloc(ast_inline_hash, (size_t)nc * sizeof(int));
+		if (!nh)
+			{ MCC_TRACE("br\n"); return 0; }
+		ast_inline_hash = nh;
+		ast_inline_hash_cap = nc;
+		memset(ast_inline_hash, 0, (size_t)nc * sizeof(int));
+		for (i = 0; i < ast_inline_n; i++)
+			{ MCC_TRACE("br\n"); ast_inline_index_add(i); }
+	}
+	return 1;
+}
+
+static struct AstInlineFn *ast_inline_find(void *sym) { MCC_TRACE("enter\n");
+	int i = ast_inline_index(sym);
+	return i < 0 ? NULL : &ast_inline_pool[i];
+}
+
 static AstArena *ast_inline_lookup(void *sym) { MCC_TRACE("enter\n");
-	for (int i = 0; i < ast_inline_n; i++)
-		{ MCC_TRACE("br\n"); if (ast_inline_pool[i].sym == sym)
-			{ MCC_TRACE("br\n"); return ast_inline_pool[i].ast; } }
-	return NULL;
+	struct AstInlineFn *e = ast_inline_find(sym);
+	return e ? e->ast : NULL;
 }
 
 static int ast_fn_inlinable(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
@@ -3212,12 +3282,7 @@ static int ast_inline_graft(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
 		{ MCC_TRACE("br\n"); return 0; }
 	void *csym = (void *)(uintptr_t)ast_sym(a, cref);
-	struct AstInlineFn *e = NULL;
-	for (int i = 0; i < ast_inline_n; i++)
-		{ MCC_TRACE("br\n"); if (ast_inline_pool[i].sym == csym) { MCC_TRACE("br\n");
-			e = &ast_inline_pool[i];
-			break;
-		} }
+	struct AstInlineFn *e = ast_inline_find(csym);
 	if (!e || !e->graftable)
 		{ MCC_TRACE("br\n"); return 0; }
 	int nargs = (int)ast_nchild(a, n) - 1;
@@ -3454,20 +3519,23 @@ static int ast_has_graftable_call(AstArena *a) { MCC_TRACE("enter\n");
 		if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
 			{ MCC_TRACE("br\n"); continue; }
 		void *csym = (void *)(uintptr_t)ast_sym(a, cref);
-		for (int i = 0; i < ast_inline_n; i++)
-			{ MCC_TRACE("br\n"); if (ast_inline_pool[i].sym == csym && ast_inline_pool[i].graftable)
-				{ MCC_TRACE("br\n"); return 1; } }
+		struct AstInlineFn *e = ast_inline_find(csym);
+		if (e && e->graftable)
+			{ MCC_TRACE("br\n"); return 1; }
 	}
 	return 0;
 }
 
 static int ast_inline_retain(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
-	if (!ast_fn_inlinable(a, sym) || ast_inline_n >= AST_INLINE_MAX ||
-			ast_inline_lookup(sym) || ast_arena_has_hole(a))
+	if (!ast_fn_inlinable(a, sym) || ast_inline_lookup(sym) ||
+			ast_arena_has_hole(a) || !ast_inline_grow())
 		{ MCC_TRACE("br\n"); return 0; }
 	struct AstInlineFn *e = &ast_inline_pool[ast_inline_n++];
+	if (ast_inline_n > ast_inline_hi)
+		{ MCC_TRACE("br\n"); ast_inline_hi = ast_inline_n; }
 	e->sym = sym;
 	e->ast = a;
+	ast_inline_index_add(ast_inline_n - 1);
 	e->frame_size = loc < 0 ? -loc : 0;
 	e->nparams = ast_inline_cap_np;
 	for (int i = 0; i < ast_inline_cap_np; i++) { MCC_TRACE("br\n");
@@ -3588,9 +3656,9 @@ static int ast_reemit_has_forward(struct AstReemitFn *f) { MCC_TRACE("enter\n");
 		void *cs = ce != AST_NONE ? (void *)(uintptr_t)ast_sym(a, ce) : NULL;
 		if (!cs)
 			{ MCC_TRACE("br\n"); continue; }
-		for (int i = f->inline_n_at_gen; i < ast_inline_n; i++)
-			{ MCC_TRACE("br\n"); if (ast_inline_pool[i].sym == cs && ast_inline_pool[i].graftable)
-				{ MCC_TRACE("br\n"); return 1; } }
+		int i = ast_inline_index(cs);
+		if (i >= f->inline_n_at_gen && ast_inline_pool[i].graftable)
+			{ MCC_TRACE("br\n"); return 1; }
 	}
 	return 0;
 }
@@ -3972,6 +4040,13 @@ void ast_teardown(void) { MCC_TRACE("enter\n");
 	mcc_free(ast_rp_labels);
 	mcc_free(ast_sattr);
 	mcc_free(ast_slc_memo);
+	mcc_free(ast_inline_pool);
+	mcc_free(ast_inline_hash);
+	ast_inline_pool = NULL;
+	ast_inline_hash = NULL;
+	ast_inline_pool_cap = 0;
+	ast_inline_hash_cap = 0;
+	ast_inline_n = 0;
 	ast_sattr = NULL;
 	ast_sattr_cap = 0;
 	ast_sattr_arena = NULL;
@@ -10113,12 +10188,7 @@ static int ast_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 		if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
 			{ MCC_TRACE("br\n"); continue; }
 		void *csym = (void *)(uintptr_t)ast_sym(a, cref);
-		struct AstInlineFn *e = NULL;
-		for (int i = 0; i < ast_inline_n; i++)
-			{ MCC_TRACE("br\n"); if (ast_inline_pool[i].sym == csym) { MCC_TRACE("br\n");
-				e = &ast_inline_pool[i];
-				break;
-			} }
+		struct AstInlineFn *e = ast_inline_find(csym);
 		if (!e || !e->graftable || !ast_inline_pass_simple(e))
 			{ MCC_TRACE("br\n"); continue; }
 		if (ast_inline_graft_node(a, n, e)) { MCC_TRACE("br\n");
@@ -14094,24 +14164,22 @@ static int ast_slc_callee_sym(const AstArena *a, AstLocal inv, void **out) { MCC
 
 static int ast_slc_graftable(const AstArena *a, AstLocal inv) { MCC_TRACE("enter\n");
 	void *cs;
-	int i;
+	struct AstInlineFn *e;
 	if (!ast_slc_callee_sym(a, inv, &cs))
 		{ MCC_TRACE("br\n"); return 0; }
-	for (i = 0; i < ast_inline_n; i++)
-		{ MCC_TRACE("br\n"); if (ast_inline_pool[i].sym == cs)
-			{ MCC_TRACE("br\n"); return ast_inline_pool[i].graftable ? 1 : 0; } }
-	return 0;
+	e = ast_inline_find(cs);
+	return e && e->graftable ? 1 : 0;
 }
 
 static int ast_slc_invclass(const AstArena *a, AstLocal inv) { MCC_TRACE("enter\n");
 	void *cs;
-	int i;
+	struct AstInlineFn *e;
 	if (!ast_slc_callee_sym(a, inv, &cs))
 		{ MCC_TRACE("br\n"); return 0; }
-	for (i = 0; i < ast_inline_n; i++)
-		{ MCC_TRACE("br\n"); if (ast_inline_pool[i].sym == cs)
-			{ MCC_TRACE("br\n"); return ast_inline_pool[i].graftable ? 3 : 2; } }
-	return 1;
+	e = ast_inline_find(cs);
+	if (!e)
+		{ MCC_TRACE("br\n"); return 1; }
+	return e->graftable ? 3 : 2;
 }
 
 static int ast_slc_hascall(const AstArena *a, AstLocal n, int transparent) { MCC_TRACE("enter\n");
@@ -16206,27 +16274,23 @@ static int ast_eval_slice(AstArena *a, AstLocal n, const int32_t *o, const int64
 
 static AstArena *ast_slice_leaf_pool(AstArena *a, AstLocal inv, AstLocal *root) { MCC_TRACE("enter\n");
 	AstLocal cref = ast_child(a, inv, 0);
+	struct AstInlineFn *e;
 	void *cs;
-	int i;
 	if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
 		{ MCC_TRACE("br\n"); return NULL; }
 	cs = (void *)(uintptr_t)ast_sym(a, cref);
 	if (!cs || (((Sym *)cs)->type.t & VT_BTYPE) != VT_FUNC)
 		{ MCC_TRACE("br\n"); return NULL; }
-	for (i = 0; i < ast_inline_n; i++) { MCC_TRACE("br\n");
-		if (ast_inline_pool[i].sym != cs || !ast_inline_pool[i].ast)
-			{ MCC_TRACE("br\n"); continue; }
-		if (ast_arena_has_hole(ast_inline_pool[i].ast))
-			{ MCC_TRACE("br\n"); return NULL; }
-		*root = ast_root(ast_inline_pool[i].ast);
-		return ast_inline_pool[i].ast;
-	}
-	return NULL;
+	e = ast_inline_find(cs);
+	if (!e || !e->ast || ast_arena_has_hole(e->ast))
+		{ MCC_TRACE("br\n"); return NULL; }
+	*root = ast_root(e->ast);
+	return e->ast;
 }
 
 static void ast_slice_inl_report(void) { MCC_TRACE("enter\n");
 	fprintf(stderr, "[slice-inline] invoke-seen=%ld invoke-inlined=%ld pool=%d\n",
-					mcc_slice_inl_seen, mcc_slice_inl_n, ast_inline_n);
+					mcc_slice_inl_seen, mcc_slice_inl_n, ast_inline_hi);
 }
 
 static int ast_slice_inl_env = -1;
