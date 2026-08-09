@@ -3798,6 +3798,46 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/o0_ab_mutate.cmake")
             set_tests_properties("ast/o0-baseline-known-positive" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 3600)
+
+            add_test(NAME "build/fragments-are-not-tus"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_BINARY_DIR}
+                        "-DPINNED=mccast.c;mccircap.c;mccrir.c"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu.cmake")
+            set_tests_properties("build/fragments-are-not-tus" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900 SKIP_RETURN_CODE 77)
+
+            add_test(NAME "build/fragments-are-not-tus-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu.cmake
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_BINARY_DIR}
+                        "-DPINNED=mccast.c;mccircap.c;mccrir.c"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu_mutate.cmake")
+            set_tests_properties("build/fragments-are-not-tus-known-positive"
+                PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900
+                SKIP_RETURN_CODE 77)
+
+            add_test(NAME "ast/o0-baseline-gated"
+                COMMAND "${CMAKE_COMMAND}" -E env
+                        "C2_NO_EXTRA=1" "O0_AB_CHECK=1" "O0_AB_GATES=1"
+                        "O0_AB_MIN_KEYS=${_o0ab_min}"
+                        sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/o0_ab.sh"
+                        "${CMAKE_BINARY_DIR}" measurable
+                        "${CMAKE_BINARY_DIR}/o0ab-gated")
+            set_tests_properties("ast/o0-baseline-gated" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 1800)
+
+            add_test(NAME "ast/o0-baseline-gated-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/tools/o0_ab.sh
+                        -DBUILD=${CMAKE_BINARY_DIR}
+                        -DOUTDIR=${CMAKE_BINARY_DIR}/o0ab-gated-kp
+                        -DMINKEYS=${_o0ab_min}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/o0_ab_gates_mutate.cmake")
+            set_tests_properties("ast/o0-baseline-gated-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 3600)
         endif()
 
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
