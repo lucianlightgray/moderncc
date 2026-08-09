@@ -1005,6 +1005,51 @@ differential is not blind. Both cells are registered in `tests/must-run.txt` (78
 rows), as `registered` rather than `must-run` because they are device differentials and skip
 honestly on a host without one.
 
+**Verification, and what of it is UNVERIFIED.** Everything below was measured against a
+binary built from this commit's source unless marked otherwise. The box was shared with three
+other worktrees at load 350–490 throughout, and the run was stopped deliberately rather than
+completed, so the gaps are real gaps.
+
+| checked | result |
+| --- | --- |
+| `slicerun ext` | 448 checks, **0 failures** |
+| `slicerun ext --mutate` | **6 failures** — all six positive cases detect the mutation |
+| `slicerun frame` | 177 checks, 0 failures |
+| numeric-corpus funnel, 17 kernels | the table above, **0 mismatches**; byte-identical to the pre-refactor build, which is what establishes that turning `ext` from a field into a predicate changed no behaviour |
+| `rir/drop-ratchet` command, final binary and source | `regaddi=4`, at the bank |
+| emitted-code TU sweep `-O0`–`-O3` | 2,932 identical, 0 differing |
+| `tools/must-run.py --build cmake-debug` | 80 rows |
+| `tools/docref-lint.py`, `tools/regstub-lint.py` | OK |
+| `ctest -N` | 9458 |
+| full `ctest -j8` | **9450 of 9458 completed: 1 Failed, 4 Exception, and 8 cells never reached** |
+
+**The five non-passes are all one environmental cause and none is this change.**
+`gpu/ladder-gpu-parity` failed with *"Maximum number of clients reached"*, and
+`slice/task`, `slice/work`, `slice/cpu`, `slice/sched` were reported `Subprocess terminated`
+in the same window — all five open a Vulkan device, and four worktrees were contending for
+one. In an earlier full run of the same tree (differing only by a function reordering and the
+field-to-predicate refactor) `slice/task` and `slice/cpu` **Passed**, and `slice/ext` and
+`slice/ext-known-positive` passed in both.
+
+**UNVERIFIED, in order of how much it matters.** (1) **`slice/cref-oracle-gcc-c-torture-execute`
+and `slice/cref-oracle-llvm-test-suite-regression-c` never ran to completion on this tree** —
+the other two corpora, `llvm-test-suite-unittests` (1628 s) and `compiler-rt-builtins-unit`
+(681 s), **passed**, as did the in-tree `slice/cref-oracle`. Verify with
+`ctest --test-dir cmake-debug -R 'cref-oracle-(gcc-c-torture|llvm-test-suite-regression)'` on
+an uncontended box; expected: pass, because the expression path refuses extents outright, so
+`--cref` sees exactly what it saw before. (2) The other six cells never reached:
+`gpu/spv-slice-real`, `superopt/promote-floor`, `runtime-bench-gatewin` (a permanent 77 here)
+and the three `run-parity-*` qemu cells. (3) **The general-corpus funnel was never measured** —
+four attempts were killed by contention or by background-task lifetime, so there is **no
+before/after funnel number for `gcc.c-torture`** in this write-up, only the numeric corpus.
+Reproduce with `tools/gpuconform.py --corpus vendor/gcc-c-torture-execute --mcc … --slicerun …
+--oracle-cc clang --suite-cc gcc --limit 600`, once against this tree and once against a
+`slicerun` built from the merge base; the line to compare is `gpuconform: frame accepted= …
+built= … compared= … mismatches=`. (4) `ctest -L flagsweep` / `-L stratsweep` / `-L census`
+and `tools/selfhost-smoke.py` were not run as separate labelled passes; the flagsweep and
+stratsweep cells were reached inside the full run and none failed, `-L census` needs its
+`MCC_*_CENSUS*` opt-ins and was not exercised at all.
+
 **Emitted code is unchanged, measured rather than asserted.** Every `.c` under `tests/`,
 `src/`, `examples/` and `runtime/` compiled at `-O0`–`-O3` by a binary built from the merge
 base and by this one: **2,932 objects byte-identical, 0 differing, 0 self-unstable**, 624
