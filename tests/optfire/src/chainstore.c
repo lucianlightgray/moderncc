@@ -27,9 +27,18 @@ static int loopsum(int s)
 	return t;
 }
 
+static int relay(int s)
+{
+	int a, b, c;
+
+	c = b = a = s + 1;
+	a = b = c * 3 + a;
+	return a + b + c;
+}
+
 int main(void)
 {
-	int total = pair(3) + triple(5) + loopsum(7);
+	int total = pair(3) + triple(5) + loopsum(7) + relay(4);
 
 	printf("chainstore=%d\n", total);
 	return 0;
