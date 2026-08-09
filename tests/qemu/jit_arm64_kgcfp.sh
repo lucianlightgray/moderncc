@@ -15,11 +15,11 @@ find_tool() {
 
 CLANG=$(find_tool clang clang-22 /usr/lib/llvm/22/bin/clang) || {
 	echo "SKIP: no clang cross-compiler"
-	exit 0
+	exit 77
 }
 QEMU=$(find_tool qemu-aarch64 qemu-aarch64-static) || {
 	echo "SKIP: no qemu-aarch64"
-	exit 0
+	exit 77
 }
 
 EXE="$WORK/jit_arm64_kgcfp"
@@ -27,7 +27,7 @@ if ! "$CLANG" --target=aarch64-linux-gnu -fuse-ld=lld -nostdlib -static -O1 \
 		-o "$EXE" "$SRC" 2>"$WORK/jit_arm64_kgcfp.log"; then
 	echo "SKIP: aarch64 cross-link unavailable"
 	cat "$WORK/jit_arm64_kgcfp.log"
-	exit 0
+	exit 77
 fi
 
 if "$QEMU" "$EXE"; then

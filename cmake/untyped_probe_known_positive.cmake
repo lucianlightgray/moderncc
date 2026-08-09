@@ -4,7 +4,7 @@ message("${_out}")
 if(_clean EQUAL 77)
     message("untyped-probe-known-positive: SKIP: the clean arm reported 77, so "
             "this host has no compile_commands.json or no mcc to census")
-    return()
+    cmake_language(EXIT 77)
 endif()
 if(NOT _clean EQUAL 0)
     message(FATAL_ERROR "untyped-probe-known-positive: the unmutated probe is "

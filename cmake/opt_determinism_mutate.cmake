@@ -5,7 +5,7 @@ message("${_out}")
 if(_clean EQUAL 77)
     message("opt-determinism-known-positive: SKIP: the clean arm reported 77, "
             "so this host has no runnable mcc or no compile_commands.json")
-    return()
+    cmake_language(EXIT 77)
 endif()
 if(NOT _clean EQUAL 0)
     message(FATAL_ERROR "opt-determinism-known-positive: the unmutated run is "

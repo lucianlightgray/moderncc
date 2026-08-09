@@ -1465,15 +1465,15 @@ static int perfn_run(const char *mcc, const char *bflag, const char *w,
 	A(&v, mcc);
 	A(&v, bflag);
 	A(&v, "-O13");
-	A(&v, "-v");
+	A(&v, "-v64");
 	A(&v, "-c");
 	A(&v, "-o");
 	A(&v, ao);
 	A(&v, src);
 	memset(&o, 0, sizeof o);
 	o.env = env_over(ov);
-	o.stdout_buf = out;
-	o.stderr_buf = &err;
+	o.stdout_buf = &err;
+	o.stderr_buf = out;
 	rc = host_spawn_ex(Z(&v), &o);
 	free((void *)o.env);
 	free(err);

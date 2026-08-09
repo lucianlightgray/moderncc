@@ -11,7 +11,7 @@ if(rc EQUAL 77)
     message("${_tag}-known-positive: no usable device, skipping -- "
             "the matching differential cell reports SKIPPED for the same reason, so "
             "nothing is silently claimed here")
-    return()
+    cmake_language(EXIT 77)
 endif()
 if(rc EQUAL 0)
     message(FATAL_ERROR

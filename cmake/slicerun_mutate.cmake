@@ -17,7 +17,7 @@ if(_clean EQUAL 77)
                             "MCC_GPU_REQUIRED is set")
     endif()
     message("slice/${SUITE}-known-positive: no usable device, skipping")
-    return()
+    cmake_language(EXIT 77)
 endif()
 if(NOT _clean EQUAL 0)
     message(FATAL_ERROR "slice/${SUITE}-known-positive: the unmutated "

@@ -100,3 +100,21 @@ untyped-probe                | registered | the unknown/knownvoid denominator th
 untyped-probe-known-positive | registered | proves the probe fails rather than reporting an empty census when the [rir-untyped] record it reads stops being emitted
 idiom-gate-invariant         | must-run   | the config-macro idiom invariant. It printed OK over a walk that read nothing until it was given a subject count; pure source scan, no device, so a skip here is always a bug
 idiom-gate-known-positive    | must-run   | proves that gate detects all three violation shapes and refuses an empty walk
+
+# The skip audit, 2026-08-09 (wt/skipaudit). 424 of 9151 cells reported Skipped
+# and nobody had ever read the list. These rows name the two families the audit
+# found 77ing on EVERY host in EVERY configuration this tree can produce, which
+# is the one shape no host fact excuses. Both are `registered` rather than
+# `must-run`: each names a blocker a manifest cannot assert away.
+#
+# Not added, and why, so the omissions are on the record rather than forgotten:
+# jit/arm64-{dispatch,counter,kgc,kgcfp} and superopt/promote-floor are
+# Linux/UNIX-only registrations, and superopt-perfn-cache is behind
+# MCC_TARGET_IS_HOST AND NOT WIN32 -- a row for any of them would be false on a
+# Windows build. All five were the *other* finding of this audit (skip paths
+# that reported Passed) and are fixed on this branch instead.
+
+ast/rir-c2-O1                | registered | the C2 re-emit ratchet (BANKGAP=0, BANKSKIP=0, BANKFN=1150). A PERMANENT 77 on every build in this tree: MCC_REPLAY_IR_C2 defaulted to 0 in src/mccrir.c and nothing in the build system ever defined it, so the probe saw c2try=0 and the bank asserted nothing. Built with it defined, the real gap is 14, not the banked 0
+ast/rir-c2-O2                | registered | same family, same permanent 77, same never-checked bank; real gap 13
+ast/rir-c2-O3                | registered | same family, same permanent 77, same never-checked bank; real gap 13
+asm-gas-directives           | registered | a PERMANENT 77 carrying a named blocker: the integrated assembler lacks sgdtq/sidtq/swapgs (gas_directives.S:811). The row is here so the blocker cannot outlive its fix unnoticed
