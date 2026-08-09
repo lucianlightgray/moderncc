@@ -1143,11 +1143,34 @@ the same way.
 for 1- and 2-byte stores is not atomic and two lanes writing different bytes of one 32-bit
 word would lose one of them. The refusal was correct for a plain RMW and unnecessary for an
 atomic one: `spv_word_rmw_atomic` does the same mask and shift as `OpAtomicAnd` of `~keep`
-followed by `OpAtomicOr` of the shifted value. Each lane clears and sets only its own bytes,
-so disjoint-byte writes all survive in any interleaving, and the result is what the CPU
-reference already computed sequentially. No new capability is needed — 32-bit integer
-atomics on a storage buffer are core `Shader` — and `Int64`, `Int16` and
-`StorageBuffer8BitAccess` are still never declared.
+followed by `OpAtomicOr` of the shifted value, at `Device` scope with relaxed semantics. Each
+lane clears and sets only its own bytes, so disjoint-byte writes all survive in any
+interleaving, and the result is what the CPU reference already computed sequentially. No new
+capability is needed — 32-bit integer atomics on a storage buffer are core `Shader` — and
+`Int64`, `Int16` and `StorageBuffer8BitAccess` are still never declared.
+
+**Which shapes are atomic, exhaustively.** `spv_store_region` now emits **no non-atomic
+read-modify-write at any width**, and the atomic path is taken regardless of `r->shared`
+rather than only for a shared region. Binding 2 is host-coherent shared memory and the
+`shared` flag is a caller promise that lanes hold disjoint words, not an enforced property,
+so making the private path depend on that promise was the wrong side of the trade:
+
+| width | what is emitted | read-modify-write? |
+| --- | --- | --- |
+| 8 | two whole-word `OpStore` | no |
+| 4 | one whole-word `OpStore` | no |
+| 2 | `OpAtomicAnd(~keep)` then `OpAtomicOr(v<<sh & keep)` | yes, atomic |
+| 1 | `OpAtomicAnd(~keep)` then `OpAtomicOr(v<<sh & keep)` | yes, atomic |
+
+Widths 4 and 8 write whole words and read nothing, so two lanes touching the same word there
+is a data race in the source program rather than one the emitter introduces.
+
+There is a **second, independent sub-word writer** in the tree that this does not go through:
+`spv_fmt_putb` in `src/mccfmt.h`, which the device printf engine builds directly on
+`spv_word_at` / `spv_word_set`. It is still a plain non-atomic RMW — and it is *already*
+correct by the rule this section is about, because it opens with `if (r->shared) { m->failed
+= 1; return; }`. The non-atomic shape there is refused rather than emitted, so no shared-region
+sub-word write anywhere in the tree is non-atomic. It was left unchanged.
 
 **A `_Bool` deref store normalised on the device and not on the CPU.** The device applies
 `spv_fit_v` before `spv_store_region`, whose `VT_BOOL` arm is `!= 0`; the CPU handed the raw
@@ -1215,6 +1238,44 @@ continuing down its own list.
    the same reason `ast_eval_slice_frame_off` already resolves 0 of 59 of them on the load
    side. The 836 unresolvable local-base store destinations are mostly this, and they are
    structurally out rather than pending.
+
+### Verified, and what is UNVERIFIED
+
+Run before the branch was told to stop testing (device contended by four worktrees):
+
+* `slicerun --require-device`, all suites: **1345 checks, 0 failures**, including the new
+  `subword_shared_one`. Under `--mutate` every new row fails, so the cell is a live
+  known-positive.
+* Emitted-code identity: 1,224 compiles over `tests/exec/*.c` at `-O0`–`-O3`, baseline vs
+  patched binary run from the same directory, **0 object diffs**.
+* Full `ctest`: **9456 cells registered, exit 0**. `-L flagsweep` 193/193, `-L stratsweep`
+  116/116, `-L census` 7/7 nothing skipped. `must-run.py --build` 78 rows satisfied.
+  `selfhost-smoke.py cmake-debug` OK. `docref-lint.py` OK.
+* `slice/cref-oracle` (checked-in fixtures): **passed**, 166 s.
+* `slice/cref-oracle-compiler-rt-builtins-unit`: **passed**, 1956 s.
+* `slice/cref-oracle-llvm-test-suite-unittests`: **passed**, 1680 s
+  (qualified=150, ok=42, mismatch=0 on all four oracle arms).
+
+**UNVERIFIED, in order of what they would have proven:**
+
+1. **`slice/cref-oracle-gcc-c-torture-execute` and
+   `slice/cref-oracle-llvm-test-suite-regression-c` never completed.** Both were killed
+   mid-run when this branch was told to stop testing; the torture clean arm had reached
+   ~1,250 of 1,693 programs with no mismatch reported. These are the two cells that would
+   have exercised the widened store destinations and the sub-word deref store over real
+   application C. Expected result: pass, with more slices reaching them than before.
+2. **`spv_store_region` taking the atomic path for a lane-private region is UNVERIFIED.**
+   The shared path was certified by `subword_shared_one` and by `spirv-val` on the emitted
+   module; the private path was changed *after* the last device run. The emitted value is
+   bit-identical — `(cur & ~keep) | ((v<<sh) & keep)` and `AtomicAnd(~keep); AtomicOr((v<<sh)
+   & keep)` compute the same word whenever no other lane touches it — and the instruction
+   sequence is the one `spv-val` already accepted, so the expected result is that the `bytes`
+   and `deref` device suites in `slicerun` are unchanged. It has not been run.
+3. **The full `ctest` result predates the `cmake-debug` reconfigure** that registered the four
+   corpus cells as real rather than as skip stubs (the `vendor/` symlink was created after the
+   first configure). The cell count is 9456 either way, and only those four cells differ.
+4. **`must-run.py --results`** was never run against a full-suite JUnit file; only the
+   `--build` half was checked.
 
 ### Certification
 
