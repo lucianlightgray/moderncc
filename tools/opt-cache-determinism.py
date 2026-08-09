@@ -152,6 +152,21 @@ def main():
         order = ("cold", "self", "foreign-tu", "foreign-fl")
         for k in order:
             print("%-11s %s" % (k, shas[k]))
+        warmed = sum(1 for d in (gdir,) for _, _, fs in os.walk(d) for _ in fs)
+        print("cache entries written under XDG_CACHE_HOME: %d" % warmed)
+        if not warmed:
+            print("SKIP: nothing was written to XDG_CACHE_HOME, so all four "
+                  "objects are trivially identical and this run measured "
+                  "NOTHING. Reporting OK here would assert that the disk cache "
+                  "is not an input to codegen, on the strength of there being "
+                  "no disk cache.\n"
+                  "      The memo belongs to opt-slice, which src/mccopt.h "
+                  "carries at MCC_OPTD_LEVEL(9) -- off at every shipped level, "
+                  "so %s has no subject. Re-add it and the subject comes back, "
+                  "and so does the defect this tool was written for: at the "
+                  "time of writing, `--opt=-O3 -- -fopt-slice` still diverges "
+                  "on foreign-fl. This is a LOST SUBJECT, not a pass." % a.opt)
+            return 77
         if len(set(shas.values())) == 1:
             print("opt-cache-determinism: OK (%s %s: the disk cache is a side "
                   "channel, not an input to codegen)"

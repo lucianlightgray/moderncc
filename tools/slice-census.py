@@ -385,6 +385,18 @@ def main():
         json.dump(out, open(a.json, "w"), indent=1, sort_keys=True)
 
     for level, acc in out.items():
+        if acc["src_fail"]:
+            bad.append("-%s: %d of %d sources did not compile, so every share "
+                       "below is over the survivors. The count reaches stdout "
+                       "only via report(), which --quiet suppresses, and "
+                       "nothing gated it: 11 of 12 sources could drop out and "
+                       "the cell would still pass on the twelfth."
+                       % (level, acc["src_fail"], acc["src_n"]))
+        if not acc["fn_n"]:
+            bad.append("-%s: zero bodies were modelled, so every percentage is "
+                       "over an empty denominator and the OK line below would "
+                       "read `0 slices (0.0%% of 0 body bytes)` as a result"
+                       % level)
         if a.min_slices and acc["part"][0]["n"] < a.min_slices:
             bad.append("-%s: enumerated %d slices, expected >= %d"
                        % (level, acc["part"][0]["n"], a.min_slices))

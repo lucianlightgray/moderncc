@@ -47,20 +47,22 @@ host|x86_64) BFLAG=(-B "$REPO/cmake-debug") ;;
 *)           BFLAG=(-B "$XDIR") ;;
 esac
 
-n=0; div=0; built=0
+n=0; div=0; built=0; failed=0
 for f in $(find tests/exec -name '*.c' | sort) tests/diff/full_language.c; do
 	for o in "${OPTS[@]}"; do
 		n=$((n+1))
+		rc=0
 		out=$(timeout 300 "$WORK/mcc-shadow" "$o" "${BFLAG[@]}" "${EXTRA[@]}" \
-			-c "$f" -o /dev/null 2>&1) || true
+			-c "$f" -o /dev/null 2>&1) || rc=$?
 		case "$out" in
 		*"side-car divergence"*) div=$((div+1)); echo "DIVERGE $f $o"; echo "$out" | grep divergence | head -1 ;;
-		*) built=$((built+1)) ;;
+		*) if [ "$rc" -eq 0 ]; then built=$((built+1)); else failed=$((failed+1)); fi ;;
 		esac
 	done
 done
 
-echo "shadow-iv-sweep $ARCH: attempts=$n clean=$built divergences=$div"
+echo "shadow-iv-sweep $ARCH: attempts=$n clean=$built failed=$failed divergences=$div"
 [ "$built" -gt 0 ] || { echo "FAIL: nothing compiled; the sweep is vacuous"; exit 1; }
+[ "$failed" -eq 0 ] && echo "shadow-iv-sweep $ARCH: every attempt compiled" || echo "shadow-iv-sweep $ARCH: NOTE $failed of $n attempts exited nonzero and were exercised by the side-car zero times. Until 2026-08-09 clean= counted them, so the vacuity guard below was satisfiable by a sweep in which nothing compiled at all. There is still no floor on this count, so a regression that stops 500 of 610 subjects building would report divergences=0 and PASS"
 [ "$div" -eq 0 ] || exit 1
 echo "PASS: $ARCH shadow-IV zero divergence over ${OPTS[*]}"

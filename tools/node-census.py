@@ -9,6 +9,32 @@ KINDS = ["BasicBlock", "If", "Jump", "Return", "Ref", "Literal", "Load", "Store"
          "Unary", "Binary", "Convert", "Invoke", "Poison", "StoreVal"]
 
 
+def check_kinds(srcdir):
+    """KINDS against enum AstKind, which is what the dump's column 2 indexes.
+
+    The dump carries kind NUMBERS; the names live only here. Insert a kind
+    mid-enum and every label from that point shifts by one -- the percentages
+    stay plausible and every name is wrong, and the bank comparison then diffs
+    mismatched kinds. Append a 15th and it is rejected by the `0 <= k <
+    len(KINDS)` guard instead, which silently shrinks the DENOMINATOR and
+    inflates every share, including the external_invokes_on_cpu ratio this tool
+    ratchets on. Neither failure has any other symptom, so read the enum."""
+    hdr = os.path.join(srcdir, "src", "mccast.h")
+    try:
+        txt = open(hdr, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return "cannot read %s, so KINDS is unverified" % hdr
+    m = re.search(r"enum\s+AstKind\s*\{(.*?)\}", txt, re.S)
+    if not m:
+        return "no `enum AstKind` in %s, so KINDS is unverified" % hdr
+    got = [n for n in re.findall(r"\bAST_(\w+)", m.group(1))
+           if n != "KIND_COUNT"]
+    if got != KINDS:
+        return ("KINDS has drifted from enum AstKind in %s:\n    tool     %s\n"
+                "    compiler %s" % (hdr, KINDS, got))
+    return None
+
+
 def build_flags(build_dir):
     cc = os.path.join(build_dir, "compile_commands.json")
     if not os.path.exists(cc):
@@ -28,9 +54,14 @@ def make_dump(mcc, flags, src, out, opt):
     if os.path.exists(out):
         os.remove(out)
     cmd = [mcc] + flags + ["-" + opt, "-c", src, "-o", out + ".o"]
-    subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL, timeout=600)
-    return os.path.exists(out)
+    p = subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.PIPE, timeout=600)
+    if p.returncode != 0:
+        return ("the dump compile exited %d: %s" % (p.returncode,
+                (p.stderr or b"").decode("utf-8", "replace").strip()[:300]))
+    if not os.path.exists(out):
+        return "MCC_ARENA_DUMP produced nothing"
+    return None
 
 
 def census(path):
@@ -132,9 +163,19 @@ def main():
         if not os.path.exists(srcpath):
             print("node-census: SKIP: no source at %s" % srcpath)
             return 77
-        if not make_dump(mcc, flags, srcpath, dump, a.opt):
-            print("node-census: SKIP: MCC_ARENA_DUMP produced nothing")
-            return 77
+        why = make_dump(mcc, flags, srcpath, dump, a.opt)
+        if why:
+            print("node-census: FAIL: %s. MCC_ARENA_DUMP is append-mode and "
+                  "line-buffered, so a compile that dies part-way leaves a "
+                  "valid-looking PARTIAL dump; every share below would be over "
+                  "whatever fraction of the corpus got written, and the bank "
+                  "compares ratios, which survive truncation." % why)
+            return 1
+
+    drift = check_kinds(a.srcdir)
+    if drift:
+        print("node-census: FAIL: %s" % drift)
+        return 1
 
     c = census(dump)
     if not c["nodes"]:

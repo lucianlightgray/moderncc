@@ -33,6 +33,21 @@ cost is only meaningful in the configuration it ships in:
           that changes zero bytes anywhere has no gain to divide by a cost,
           and a gain/cost sort would happily rank it on noise/noise.
 
+THE NULL-SUBJECT RULE. gain, efficiency, text_kernels and best_kernel are all
+computed over the kernel set, so when a flag changes ZERO kernel objects their
+subject set is empty and none of them is a measurement. Such a row is bucketed
+`no-kernel-subject` and every kernel-derived column reads `n/a`, never a number:
+a geometric mean over 17 pairs of bit-identical binaries is a correctly computed
+ratio of a quantity nobody measured, and it was quoted as "changes 0.0000% of
+emitted instructions" for a flag that costs 2.31% of stage-1. 24 of the 47 rows
+of tests/optfire/levelbench.tsv have an empty kernel subject and 11 of them used
+to carry a -0.0000 gain. `kernels_moved` states the subject size in the row
+itself so the reader does not have to parse a name list to find out. Rows in the
+`error` bucket -- a configuration that would not build or whose output did not
+match -- read `n/a` for the same reason: nothing about them was measured.
+`--selfcheck` gates this rule, and `--selfcheck --mutate` puts the old
+zero-reporting behaviour back and must fail.
+
 EFFICIENCY is gain% / cost%, and it is only computed for flags that cleared
 both noise floors. The floors are not guessed: the base configuration is
 measured TWICE (the `__noise__` pseudo-flag) and the observed self-difference
@@ -79,6 +94,17 @@ SELF_INCLUDES = ["src", "src/formats", "src/objfmt", "src/arch/i386",
 COST_NOISE = 0.02
 GAIN_NOISE = 0.10
 TEXT_NOISE = 0
+
+NA = "n/a"
+MUTATE = False
+
+
+def num(v, fmt="%.4f"):
+    return NA if v is None else fmt % v
+
+
+def txt(v):
+    return NA if v is None else v
 
 
 def flag_table(path):
@@ -361,6 +387,33 @@ def cycles_adjudicate(mcc, wanted, refs, opt, reads, base_json):
     return out
 
 
+HDR = ["flag", "level", "bucket", "gain_pct", "cost_self_pct",
+       "cost_corpus_pct", "efficiency", "text_kernels_pct", "text_self_pct",
+       "fires_corpus", "corpus_total", "kernels_moved", "fires_kernels",
+       "best_kernel", "best_kernel_pct"]
+
+KERNEL_DERIVED = ["gain_pct", "efficiency", "text_kernels_pct", "best_kernel",
+                  "best_kernel_pct"]
+
+
+def row_fields(r):
+    """One analysed row as the TSV columns a reader will actually quote."""
+    kd = r.get("kernel_delta", {})
+    bk = max(kd, key=lambda k: abs(kd[k])) if kd else ""
+    eff = r.get("efficiency")
+    ktot = r.get("kernels_total")
+    return [r["flag"], str(r["level"]), r["bucket"],
+            num(r.get("gain")), num(r.get("cost_self")),
+            num(r.get("cost_corpus")),
+            ("inf" if eff == float("inf") else num(eff, "%.2f")),
+            num(r.get("text_delta")), num(r.get("self_text_delta")),
+            num(r.get("fires_corpus"), "%d"), num(r.get("corpus_total"), "%d"),
+            (NA if ktot is None
+             else "%d/%d" % (r.get("kernels_moved", 0), ktot)),
+            ",".join(r.get("fires_kernels", [])) or NA,
+            txt(bk or None), num(kd[bk] if bk else None)]
+
+
 def geomean(xs):
     if not xs:
         return None
@@ -389,6 +442,12 @@ def analyse(base, noise, runs, flags):
         if r is None or "error" in r:
             row["bucket"] = "error"
             row["note"] = (r or {}).get("error", "not measured")
+            for k in ("gain", "cost_self", "cost_corpus", "efficiency",
+                      "text_delta", "self_text_delta"):
+                row[k] = 0.0 if MUTATE else None
+            if MUTATE:
+                row["kernels_total"] = len(kn)
+                row["fires_corpus"] = row["corpus_total"] = 0
             out.append(row)
             continue
         row["cost_self"] = (base["self_insns"] - r["self_insns"]) \
@@ -425,6 +484,8 @@ def analyse(base, noise, runs, flags):
             text_off += kr["text"] or 0
         row["kernel_delta"] = kdelta
         row["fires_kernels"] = moved
+        row["kernels_moved"] = len(moved)
+        row["kernels_total"] = len(kn)
         row["errors"] = bad
         g = geomean(ratios)
         row["gain"] = (g - 1.0) * 100.0 if g else 0.0
@@ -450,17 +511,120 @@ def analyse(base, noise, runs, flags):
             row["bucket"] = "inert"
         elif has_gain:
             row["bucket"] = "ranked"
+        elif not moved and not MUTATE:
+            row["bucket"] = "no-kernel-subject"
         else:
             row["bucket"] = "cost-no-gain"
         row["efficiency"] = (row["gain"] / cost) if (has_gain and cost > 0.005) \
             else (float("inf") if has_gain else 0.0)
+        if not moved and not MUTATE:
+            for k in ("gain", "efficiency", "text_delta"):
+                row[k] = None
+            row["kernel_delta"] = {}
         out.append(row)
     return out, floor
 
 
+SELF_KERNELS = ["ka", "kb", "kc"]
+
+
+def synth_config(self_insns, self_sha, corpus_insns, corpus_sha, kernels):
+    return {"self_insns": self_insns, "self_text": 5000, "self_sha": self_sha,
+            "corpus_insns": corpus_insns, "corpus_n": len(corpus_sha),
+            "corpus_text": 9000, "corpus_sha": dict(corpus_sha),
+            "kernels": {n: {"insns": i, "text": t, "sha": s}
+                        for n, (i, t, s) in kernels.items()}}
+
+
+def selfcheck():
+    """Gate the null-subject rule on a synthetic table, without perf or a mcc.
+
+    Three rows, each a shape the real table contains: a flag that fires in the
+    corpus but changes no kernel object (the storeval-rot shape), a flag that
+    moves one kernel for real, and a configuration that would not build. Only
+    the second one measured anything, and the check is that the other two say
+    so in the columns rather than in a name list nobody reads."""
+    base = synth_config(1000000, "S0", 2000000,
+                        {"x.o": "X0", "y.o": "Y0"},
+                        {"ka": (1000000, 100, "A0"),
+                         "kb": (2000000, 200, "B0"),
+                         "kc": (4000000, 400, "C0")})
+    noise = synth_config(1000010, "S0", 2000018,
+                         {"x.o": "X0", "y.o": "Y0"},
+                         {"ka": (1000004, 100, "A0"),
+                          "kb": (2000006, 200, "B0"),
+                          "kc": (4000012, 400, "C0")})
+    runs = {
+        "nullflag": synth_config(985000, "S1", 1999000,
+                                 {"x.o": "X1", "y.o": "Y0"},
+                                 {"ka": (1000003, 100, "A0"),
+                                  "kb": (1999995, 200, "B0"),
+                                  "kc": (4000009, 400, "C0")}),
+        "realflag": synth_config(996000, "S1", 1998000,
+                                 {"x.o": "X1", "y.o": "Y0"},
+                                 {"ka": (1050000, 130, "A1"),
+                                  "kb": (2000005, 200, "B0"),
+                                  "kc": (4000011, 400, "C0")}),
+        "errflag": {"error": "self-compile failed (rc=1)"},
+    }
+    flags = [("nullflag", 1), ("realflag", 2), ("errflag", 3)]
+    rows, _ = analyse(base, noise, runs, flags)
+    by = {r["flag"]: r for r in rows}
+    cols = {f: dict(zip(HDR, row_fields(by[f]))) for f in by}
+    bad = []
+
+    def numeric(s):
+        try:
+            float(s)
+            return True
+        except ValueError:
+            return False
+
+    nf = cols["nullflag"]
+    if by["nullflag"]["bucket"] != "no-kernel-subject":
+        bad.append("nullflag changed 0 kernel objects but is bucketed %r, "
+                   "which asserts a gain was measured and found absent"
+                   % by["nullflag"]["bucket"])
+    if nf["kernels_moved"] != "0/3":
+        bad.append("nullflag kernels_moved is %r, not 0/3, so the subject size "
+                   "is not stated in the row" % nf["kernels_moved"])
+    for c in KERNEL_DERIVED:
+        if numeric(nf[c]):
+            bad.append("nullflag %s reads %s -- a number over an empty kernel "
+                       "subject set, quotable as a measurement" % (c, nf[c]))
+    ef = cols["errflag"]
+    for c in KERNEL_DERIVED + ["cost_self_pct", "cost_corpus_pct",
+                               "fires_corpus", "corpus_total"]:
+        if numeric(ef[c]):
+            bad.append("errflag %s reads %s -- the configuration never built, "
+                       "so nothing about it was measured" % (c, ef[c]))
+    rf = cols["realflag"]
+    if by["realflag"]["bucket"] != "ranked":
+        bad.append("realflag moves ka by 5%% and is bucketed %r; the rule has "
+                   "eaten a real measurement" % by["realflag"]["bucket"])
+    if not numeric(rf["gain_pct"]) or float(rf["gain_pct"]) <= 0:
+        bad.append("realflag gain_pct is %r; a row with a subject must still "
+                   "report a number" % rf["gain_pct"])
+    if rf["kernels_moved"] != "1/3":
+        bad.append("realflag kernels_moved is %r, not 1/3" % rf["kernels_moved"])
+
+    for b in bad:
+        print("FAIL " + b)
+    print("optlevel-bench selfcheck: %d row(s), %d violation(s)%s"
+          % (len(rows), len(bad), " [MUTATED]" if MUTATE else ""))
+    return 1 if bad else 0
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mcc", required=True)
+    ap.add_argument("--selfcheck", action="store_true",
+                    help="gate the null-subject rule on a synthetic table; "
+                         "needs neither perf nor a built compiler")
+    ap.add_argument("--mutate", action="store_true",
+                    help="with --selfcheck, put back the behaviour that "
+                         "reported a geomean over unchanged binaries as a "
+                         "number; the selfcheck must then fail")
+    ap.add_argument("--mcc")
     ap.add_argument("--cc", default=None)
     ap.add_argument("--builddir", default=None)
     ap.add_argument("--jobs", type=int, default=6)
@@ -479,6 +643,13 @@ def main():
                     help="reuse a previous run's --json instead of re-measuring; "
                          "only meaningful with --cycles")
     args = ap.parse_args()
+
+    if args.selfcheck:
+        global MUTATE
+        MUTATE = args.mutate
+        return selfcheck()
+    if not args.mcc:
+        ap.error("--mcc is required unless --selfcheck is given")
 
     if not shutil.which("perf"):
         print("no perf; skipping")
@@ -568,14 +739,12 @@ def main():
         return 1
     rows, floor = analyse(base, noise, results, flags)
 
-    rows_sorted = sorted(rows, key=lambda r: (-{"ranked": 3, "cost-no-gain": 2,
-                                                "inert": 1, "error": 0}[r["bucket"]],
-                                              -r.get("efficiency", 0),
-                                              -r.get("gain", 0)))
-    hdr = ["flag", "level", "bucket", "gain_pct", "cost_self_pct",
-           "cost_corpus_pct", "efficiency", "text_kernels_pct", "text_self_pct",
-           "fires_corpus", "corpus_total", "fires_kernels", "best_kernel",
-           "best_kernel_pct"]
+    rank = {"ranked": 4, "cost-no-gain": 3, "no-kernel-subject": 2, "inert": 1,
+            "error": 0}
+    rows_sorted = sorted(rows, key=lambda r: (-rank[r["bucket"]],
+                                              -(r.get("efficiency") or 0),
+                                              -(r.get("gain") or 0)))
+    hdr = HDR
     with open(args.out, "w") as fh:
         fh.write("# optlevel-bench: emitted-code gain per unit of compile cost, "
                  "instructions retired\n")
@@ -588,22 +757,16 @@ def main():
                     max(v for k, v in floor.items() if k not in ("self", "corpus"))))
         fh.write("# gain>0 means the flag makes the emitted program retire fewer "
                  "instructions; cost>0 means it makes the compiler retire more\n")
+        fh.write("# kernels_moved is the subject size of every kernel-derived "
+                 "column. At 0/%d the subject set is EMPTY and gain_pct, "
+                 "efficiency, text_kernels_pct and best_kernel read %s -- a "
+                 "geomean over bit-identical binaries is not a measurement of "
+                 "zero effect, it is the absence of one. Quote kernels_moved, "
+                 "never gain_pct, on such a row.\n"
+                 % (len(base["kernels"]), NA))
         fh.write("\t".join(hdr) + "\n")
         for r in rows_sorted:
-            kd = r.get("kernel_delta", {})
-            bk = max(kd, key=lambda k: abs(kd[k])) if kd else ""
-            fh.write("\t".join([
-                r["flag"], str(r["level"]), r["bucket"],
-                "%.4f" % r.get("gain", 0.0),
-                "%.4f" % r.get("cost_self", 0.0),
-                "%.4f" % r.get("cost_corpus", 0.0),
-                ("inf" if r.get("efficiency") == float("inf")
-                 else "%.2f" % r.get("efficiency", 0.0)),
-                "%.4f" % r.get("text_delta", 0.0),
-                "%.4f" % r.get("self_text_delta", 0.0),
-                str(r.get("fires_corpus", 0)), str(r.get("corpus_total", 0)),
-                ",".join(r.get("fires_kernels", [])) or "-",
-                bk or "-", "%.4f" % (kd[bk] if bk else 0.0)]) + "\n")
+            fh.write("\t".join(row_fields(r)) + "\n")
     print("wrote %s" % args.out)
 
     if args.json:

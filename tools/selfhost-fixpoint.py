@@ -11,7 +11,16 @@ Shares the selfhost-smoke recipe: link WITH mcc (its runtime supplies the x87
 long-double helpers GNU ld can't), and add the embedded JIT blob object when the
 build bakes it (MCC_EMBED_JIT_BLOB).
 
-Usage: tools/selfhost-fixpoint.py <build-dir> [KNOB=VAL ...]
+Usage: tools/selfhost-fixpoint.py <build-dir> [--opt=-ON] [-fflag ...]
+
+The trailing arguments are compiler FLAGS and go on argv. They used to be
+`KNOB=VAL` environment knobs; the optimizer knobs moved to argv (MCC_OPT_ROW in
+src/mccopt.h) and the four ctest cells that drive this file were updated to pass
+`-f` spellings, but this file was not -- so `-fdivmagic` became an environment
+variable named `-fdivmagic` that nothing reads, and selfhost-fixpoint-gates and
+the three selfhost-fixpoint-memmodel-* cells were byte-for-byte reruns of the
+plain cell while printing `knobs=[...]` as if they were not. Non-flag arguments
+are refused rather than silently ignored.
 """
 import json, os, re, shlex, subprocess, sys, tempfile
 
@@ -38,7 +47,7 @@ def selfhost_link_libs(bdir, pe=False):
 
 def main():
     if len(sys.argv) < 2:
-        sys.exit("usage: selfhost-fixpoint.py <build-dir> [--opt=-ON] [KNOB=VAL ...]")
+        sys.exit("usage: selfhost-fixpoint.py <build-dir> [--opt=-ON] [-fflag ...]")
     bdir = sys.argv[1]
     env = dict(os.environ)
     opt = "-O2"
@@ -48,9 +57,12 @@ def main():
             opt = a.split("=", 1)[1]
         else:
             rest.append(a)
-    for kv in rest:
-        k, _, v = kv.partition("=")
-        env[k] = v
+    for a in rest:
+        if not a.startswith("-"):
+            sys.exit("selfhost-fixpoint: %r is not a compiler flag. The "
+                     "retired KNOB=VAL spelling reached the environment and no "
+                     "part of mcc, so the run would be a byte-for-byte rerun of "
+                     "the default configuration while printing knobs=[...]" % a)
     if os.name == "nt":
         try:
             import ctypes
@@ -102,7 +114,7 @@ def main():
         args = [cc_bin, *flags]
         if extra_inc:
             args += ["-I" + inc, *win32_pre]
-        args += [opt, "-c", src, "-o", obj]
+        args += [opt, *rest, "-c", src, "-o", obj]
         subprocess.run(args, cwd=root, env=env, check=True)
 
     def link_mcc(cc_bin, obj, out):

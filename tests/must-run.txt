@@ -50,6 +50,11 @@ slice/real                   | registered | both runners over real recorded aren
 
 slice/musl                   | registered | real musl libc lowered to the device, not a hand-written one
 
+fmt/census-oracle            | must-run   | tools/fmt-census.py is a Python port of mcc_fmt_compile; this is the only thing that diffs it against the C. It drifted once already and the board read 140/162 while the compiler accepted 142
+fmt/census-oracle-known-positive | must-run | proves that oracle is not comparing nothing
+optbench/null-subject        | must-run   | tools/optlevel-bench.py must not report a gain over kernels it did not change. Needs no perf and no mcc, so a skip here is always a bug
+optbench/null-subject-known-positive | must-run | proves that guard can still detect a null experiment being reported as a number
+
 rir/drop-ratchet             | must-run   | silently dropped RIR opcodes; no device needed
 rir-coverage                 | registered | the lowerable/kept census ratchet
 loop-census-control          | must-run   | S5' ground truth: known trip counts at every -O, plus the negative and perturbation controls. A skip here means the trip census is unverified.
