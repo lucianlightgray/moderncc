@@ -240,8 +240,27 @@ static void suite_work(void) {
 	{
 		AstLocal f = mk_bin(a, '+', mk_ref(a, -32, VT_DOUBLE),
 												mk_ref(a, -40, VT_DOUBLE), VT_DOUBLE);
+		CHECK(mcc_slice_work_from_ast(a, f, &w) == 1,
+					"M6: a double slice IS schedulable work, and carries VT_DOUBLE");
+		CHECK(w.wtype == VT_DOUBLE, "the work item keeps the double width type");
+	}
+	{
+		AstLocal f = mk_bin(a, '/', mk_ref(a, -32, VT_DOUBLE),
+												mk_ref(a, -40, VT_DOUBLE), VT_DOUBLE);
 		CHECK(mcc_slice_work_from_ast(a, f, &w) == 0,
-					"a float slice is not schedulable work");
+					"double division is not work: OpFDiv is 2.5 ULP by spec");
+	}
+	{
+		AstLocal f = mk_bin(a, '+', mk_ref(a, -32, VT_FLOAT),
+												mk_ref(a, -40, VT_FLOAT), VT_FLOAT);
+		CHECK(mcc_slice_work_from_ast(a, f, &w) == 0,
+					"a float slice is not work: fp32 denormals flush and cannot be pinned");
+	}
+	{
+		AstLocal f = mk_bin(a, '+', mk_ref(a, -32, VT_LDOUBLE),
+												mk_ref(a, -40, VT_LDOUBLE), VT_LDOUBLE);
+		CHECK(mcc_slice_work_from_ast(a, f, &w) == 0,
+					"a long double slice is not work: no device has an 80-bit float");
 	}
 	{
 		AstLocal wide = mk_ref(a, -8, VT_INT);
