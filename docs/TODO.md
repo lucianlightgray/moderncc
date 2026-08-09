@@ -6,6 +6,141 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## The JIT, measured for the first time — 2026-08-09 (`wt/jitconform`)
+
+The JIT had never been measured against an external corpus. Everything below is the
+first such measurement. Harness: [`tools/jitconform.py`](../tools/jitconform.py), which
+reuses the corpus collector in [`tools/xsuite.py`](../tools/xsuite.py) and the
+oracle-qualification phase of [`tools/xoracle.py`](../tools/xoracle.py), and scores each
+suite by the **other** vendor's compiler — gcc's tests by clang, llvm's by gcc.
+
+**Corpus provenance, so the number reproduces.** gcc checkout at
+`basepoints/gcc-17-2762-g9d8f85ca333`, llvm-project at
+`llvmorg-23-init-21709-g0f1f456263b5`, both read-only. gcc side is
+`gcc/testsuite/gcc.c-torture/{execute,compile,unsorted}`, `gcc.dg`, `gcc.misc-tests`,
+`c-c++-common`, `gcc.target/{i386,x86_64}` — run-mode tests only. **There is no
+`llvm-test-suite` on this host and `llvm/test/ExecutionEngine` holds no `.c` files at
+all**; clang's own suite is lit/FileCheck over IR and is not an execution corpus. The
+substitute, already used by `collect_builtins` in `tools/xoracle.py`, is
+`compiler-rt/test/builtins/Unit/*_test.c` paired with its `compiler-rt/lib/builtins`
+implementation — genuinely executable, self-checking C, judged by gcc.
+
+**Classify-out count.** 5343 run-mode programs were collected; **4898 entered the oracle
+set and 445 (8.3%) were classified out** — 420 the oracle itself could not build, 19
+whose `-O0` and `-O2` oracle binaries disagree (undefined-behaviour-sensitive), 4
+nondeterministic across two runs of the same binary, 1 oracle timeout, 1 oracle bad
+flag. A program both compilers reject is not an mcc failure and is not counted as one.
+
+**The coverage number, x86_64 Linux, `-O2`, against those 4898 programs.**
+
+| surface | AGREE | UNSUPPORTED | DIFFER | MCC-REJECTED |
+|---|---|---|---|---|
+| `--embed-jit` bake, run under `MCC_JIT=1` | **2587 (52.8%)** | 2146 | 86 | 79 |
+| `-run --jit` in-process | **2565 (52.4%)** | 2153 | 73 | 107 |
+
+AGREE means the runtime JIT engine was *observed to boot inside the program* — the
+harness only counts a pass when `MCC_JIT_VERBOSE=1` produced an `mccjit-boot[...]` or
+`mccjit-lazy[install]` line — **and** the program's exit status and stdout matched the
+cross oracle byte for byte. A program the engine never touched is recorded as
+UNSUPPORTED, never as coverage.
+
+**What the JIT refuses that the static path accepts: 2146 of 4898 (43.8%).** These are
+`NOT_BAKED` — `--embed-jit` linked no engine into the output because
+`mccjit_intent_serialize` (`src/mccjit_intent.c`) could not serialize the function. Its
+refusal conditions are `ast_arena_has_asm`, a named symbol that is neither a data symbol
+nor an identifier-range token, and any called symbol that is `VT_STATIC | VT_INLINE`.
+The static path compiles all 2146 fine. The engine booted in 2633 programs, and its own
+routing verdict there was `refused` 1798, `swapped` 572, `kept-aot` 263 — so it declines
+a second time, at runtime, in 68% of the programs it had agreed to bake.
+
+**Per suite (embed surface, AGREE / oracle-qualified):** `gcc.target` 1112/1222,
+`gcc.dg` 687/1831, `gcc.c-torture/execute` 623/1605, `llvm:builtins` 126/139,
+`c-c++-common` 33/87, `llvm:compiler-rt` 5/9, `gcc.misc-tests` 1/5.
+
+### OPEN, and it is a miscompile: the KGC route zero-extends nothing
+
+**13 programs (embed surface) / 7 (`-run` surface) produce a different answer under
+`MCC_JIT=1` than the same binary produces under `MCC_JIT=0`.** Same object code, same
+libc, only the runtime JIT differs — so nothing about the AOT compiler is implicated.
+Eleven of the thirteen abort (the torture tests are self-checking and call `abort`).
+Affected: `20050502-1.c`, `970217-1.c`, `builtin-prefetch-4.c`, `loop-3.c`, `loop-3b.c`,
+`pr109986.c`, `pr39240.c`, `pr65215-2.c`, `pr65215-3.c` in
+`gcc.c-torture/execute`, plus `gcc.dg/fastmath-1.c`, `gcc.dg/pr96674.c`,
+`gcc.dg/torture/pr45830.c`, `gcc.dg/torture/pr126136.c`.
+
+Minimal reproducer, banked at [`tests/jit/known-bad/kgc_zext_ret.c`](../tests/jit/known-bad/kgc_zext_ret.c):
+
+```c
+int printf(const char *, ...);
+unsigned int foo(unsigned int x) { return x; }
+unsigned long long lo(unsigned long long *x) { return foo(*x >> 32); }
+int main(void) { unsigned long long l = 0xfeedbea800000000ULL; printf("lo=%llx\n", lo(&l)); return 0; }
+```
+
+```
+MCC_JIT=0 mcc -O2 -run tests/jit/known-bad/kgc_zext_ret.c   ->  lo=feedbea8          (gcc, clang agree)
+MCC_JIT=1 mcc -O2 -run tests/jit/known-bad/kgc_zext_ret.c   ->  lo=fffffffffeedbea8
+MCC_JIT=1 MCC_JIT_KGC=0 ...                                 ->  lo=feedbea8
+```
+
+The JIT widens an `unsigned int`-returning call to `unsigned long long` with **sign**
+extension. Replacing `unsigned int foo` with `int foo` makes all three agree on
+`fffffffffeedbea8`, which is the correct answer for a signed callee — so the JIT is
+behaving as though the callee's return type had lost its `unsigned`. `MCC_JIT_VERBOSE=1`
+reports `route=kgc ... swapped` on the failing run, and `MCC_JIT_KGC=0` is a complete
+workaround, so the defect is in the known-good-constant specialization route, not in the
+direct recompile. Reproduces identically on both JIT surfaces. **Not fixed** — the fault
+is somewhere in the intent-blob round trip of the callee signature
+(`mccjit_intent_serialize` / `mccjit_intent_deserialize` / `mccjit_build_rec` in
+`src/mccjit_intent.c`) or in the KGC variant builder in `src/mccjit_embed.c`; narrowing
+it further needs more time than this branch had.
+
+The existing `jit/run-parity-host` cell (`tests/jit/run-parity.sh`) runs exactly this
+`MCC_JIT=0` vs `MCC_JIT=1` differential and is green, because its corpus is five
+hand-written programs in `tests/jit/parity/` and none of them return a high-bit-set
+32-bit unsigned value through a widening call. Dropping `kgc_zext_ret.c` into
+`tests/jit/parity/` would turn that cell red immediately; it is deliberately parked one
+directory away, in `tests/jit/known-bad/`, until the bug is fixed.
+
+### The two new cells, and what arms them
+
+- **`jit/xoracle-known-positive`** — `tools/jitconform.py --phase selfcheck`. Needs no
+  corpus and no second compiler. It runs two programs through the real check path with
+  four fixed oracle records: a JIT-hot one that must reach `PASS` (proving the engine
+  actually booted — if it does not, the cell says so and fails), and falsified expected
+  exits on both a JIT-engaged and a JIT-declined program, both of which must come back
+  `DIFF_EXIT`.
+- **`jit/xoracle-conformance`** — qualifies and checks a deterministic 400-program slice
+  of `gcc.c-torture/execute` against clang, `--min-pass 100 --max-miscompile 1`. Runs in
+  ~22 s. Current measurement on that slice: 379 oracle-qualified, **125 AGREE**, 249
+  NOT_BAKED, 3 MCC-REJECTED, 2 DIFFER of which **1 is the KGC miscompile above** — that
+  is what `--max-miscompile 1` banks. A second miscompile fails the cell.
+  `MCC_XSUITE_GCC` is a cache PATH defaulting to `$ENV{HOME}/Projects/gcc`; when it does
+  not hold a `gcc/testsuite/gcc.c-torture/execute`, the cell registers as a *skip with
+  the reason*, never as a silent pass. `--limit` is applied to a path-sorted oracle set
+  so the slice does not drift with thread-completion order.
+
+### Still open on the JIT after this branch
+
+1. **The KGC zero-extension miscompile above.** Highest priority; it is a wrong-answer
+   bug reachable from ordinary C.
+2. **43.8% of programs cannot be baked at all.** The single largest lever on JIT
+   coverage is the `VT_STATIC | VT_INLINE` callee refusal in `mccjit_intent_serialize` —
+   a static helper called from the JIT'd function disqualifies the whole function, and
+   that is the commonest shape in the corpus.
+3. **`--embed-jit` suppresses its own no-bake warning under `-w`.** `mcc_warning` is
+   routed through the warning machinery, so `mcc -w --embed-jit` silently produces an
+   engine-less binary. `tools/jitconform.py` had to detect the bake by searching the
+   output for the engine's own strings instead. Callers who pass `-w` get no signal.
+4. **The lazy route fails to build a variant on programs the sync route handles.**
+   `MCC_JIT_LAZY=1 MCC_JIT_HOT_CALLS=1` on the `tools/embed-jit-smoke.py` program prints
+   `mccjit-lazy[promote]: build failed (1/3) ... giving up, baseline is final` three
+   times while `MCC_JIT=1` alone reaches `route=direct ... kept-aot` on the same binary.
+   Not measured at corpus scale here.
+5. **Nothing measured off x86_64.** The engine compiles for x86_64, arm64 and i386
+   (`MCCJIT_X64` / `MCCJIT_ARM64` / `MCCJIT_I386` in `src/mccjit_embed.c`); only x86_64
+   was run. The `jit/arm64-*` qemu cells remain the only arm64 evidence.
+
 ## What is actually still open — swept and verified 2026-08-09 (`wt/sweep`)
 
 Every section below this one was enumerated and each item classified OPEN / CLOSED-VERIFIED
