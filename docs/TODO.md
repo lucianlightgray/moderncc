@@ -6,135 +6,377 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
-## The board — re-ranked 2026-08-08 against the loop census
+## The board — re-derived 2026-08-09 against a retaken corpus
 
-Supersedes the "Next, in order" list further down this file, and supersedes this board's
-own morning version, which ranked by *blocks unblocked* — a currency the afternoon's
-measurement showed has no exchange rate in this workload.
+Supersedes the "Next, in order" list further down this file, the 2026-08-08 board, and that
+board's own 2026-08-09 revision. Nothing here is patched forward: every figure below was
+re-taken today with the committed tool named beside it, on this tree, and the ones that did
+not come back are listed as failures rather than quietly corrected.
 
-Everything cited below is merged to `main` and green: `ctest --test-dir cmake-debug -N`
-registers **9114** cells on this host, up from the 9106 the debt-#7 fix reached.
+`ctest --test-dir cmake-cross -N` registers **9136** cells on this host and `--test-dir
+cmake-debug -N` registers **9136** as well — *but only if `cmake-cross` already exists when
+`cmake-debug` is configured*. Configured against an absent `cmake-cross` it registers
+**8972**. See hazard 5.
 
 ### The verdict, and why it re-ranks everything
 
-> **Revised 2026-08-09 by a second workload.** The one-workload version of this section is
-> superseded in two places and confirmed in a third. The self-compile numbers below are
-> retaken; the `65.75%` / `1.88%` pair that used to head this section is stale in both
-> directions and must not be quoted again. Read `#### The second workload` under board row 1
-> before acting on any of this.
+The board has to answer one question honestly, and the previous two versions answered
+different halves of it:
 
-`tools/loop-census.py` plus the `ast_loop_parallel_legal` predicate answered the census's
-`par=` field on 2026-08-08. `docs/PLAN.md` calls this "the single measurement that decides
-whether the project has a subject". It was taken on exactly one workload — `mcc` compiling
-`mcc` — and a compiler self-compile is pointer-chasing, allocation and switch dispatch,
-close to the worst case for data parallelism. It has now been taken on a second.
+> A sound **80.60%** parallel-legal iteration-weighted fraction on a numeric corpus —
+> **3.67%** without its hottest loop — against a compiler that has **no batch producer**.
+> Does that overturn "freeze the device path"?
 
-**Self-compile of `src/mcc.c` at `-O2`**, with the `rir_pvok` high-water-mark fix applied
-(`415b736c`, branch `wt/pvokclear`, unmerged at the time of measurement), 600 loops entered,
-52,077,202 iterations:
+**It does not, and the reason is new.** The reason is not the one the last board gave
+("there is no lane source"), which the corpus disproved. It is that **the lanes that exist
+are in a type neither executor implements**, behind a producer that does not exist.
 
-- The parallel-legal iteration-weighted fraction is **0.01%**. Not 65.75%, and not the
-  1.88% that removing the `memset`-shaped loop and its twin by hand was estimated to leave:
-  the real fix removes both and what remains is lower than the hand correction.
-- **A perfect alias oracle does not move it.** `--alias-oracle` also gives **0.01%**.
-- **83.9% of all iterations sit in a loop that the predicate declines because it calls a
-  function (50.0%) or contains a label or `goto` (33.8%)** — properties of the program, not
-  gaps in the dependence arithmetic. No subscript or aliasing work converts them.
+#### 1. The self-compile is barren, and it is barren structurally
 
-**There is no lane source in this workload, and no dependence-analysis improvement would
-create one.** That is stronger than the original claim and it now has a measured reason
-rather than a hand-read list of twelve array fills.
+`tools/loop-census.py cmake-debug --top 20`, self-compile of `src/mcc.c` at `-O2`, 2035
+loops instrumented / 602 entered / 26,103,304 entries / ~52.15M iterations:
 
-**17-kernel numeric corpus at `-O2`** (`--corpus runtime`), 2,246,355,539 iterations:
+| | |
+| --- | ---: |
+| raw iteration-weighted fraction at each loop's own break-even | **52.51%** |
+| **parallel-legal iteration-weighted fraction** | **0.01%** |
+| the same with `--alias-oracle` | **0.01%** |
+| iteration share `par=1` / `par=0` / `par=?` | 0.35% / 3.88% / **95.77%** |
+| `why= body-unsafe` (the loop calls a function, or uses `asm`/`volatile`) | **50.04%** |
+| `why= not-analyzable` (a label or `goto`, or no affine IV) | **33.82%** |
+| hottest loop (`ast_strpool_find_or_add`, `mccast.c:3722`) | 11.4% |
 
-- The parallel-legal fraction is **1.39%** — so the *headline* generalises.
-- The *reason* does not. **79.35% of all iterations decline for one reason**,
-  `bases-may-alias-indirect`, which on the self-compile is 0.71%. Turn that one gate off
-  and the corpus goes to **80.60%** while the self-compile stays at 0.01%.
-- The raw, dependence-ignoring fraction is **97.76%** against the self-compile's 52.51%.
-  The numeric workload has the iterations; the predicate cannot see them.
+**83.86% of every iteration in a self-compile is in a loop that calls a function or
+contains a `goto`.** Those are properties of the program. No dependence arithmetic, and no
+alias oracle — measured, byte for byte, at zero points — converts them. This half of the
+old verdict survives intact and got stronger: it now has a measured *reason* rather than a
+hand-read list of twelve array fills.
 
-> **Superseded 2026-08-09 by `wt/decaytype`.** The 1.39% and the 79.35% are both *before*
-> figures now. `a[i][j]` no longer decodes as an indirection, the corpus fraction is
-> **80.60%** without any unsound assumption, and `--alias-oracle` moves it by zero. The
-> self-compile is still 0.01% and still declines for calls and `goto`s, so the verdict below
-> is unchanged — only the alias half of it has been paid. See
-> `#### LANDED — the 79.35% converts *soundly*` at the end of board row 1, including the
-> collapse to 3.67% when the one hot loop is removed, which is the part that still governs.
+#### 2. The numeric corpus does have lanes, and the predicate now proves them soundly
 
-So the correct statement is narrower than "freeze the device path". **The compiler has no
-lane source and cannot be given one. A numeric workload has one, and what stands between
-the predicate and it is a single sound-but-blunt alias gate.** Both halves are measured;
-neither is an argument. The device path should not be frozen on the strength of the
-self-compile alone, and it should not be resumed on the strength of the corpus alone —
-80.60% of that corpus is dense matrix multiply, and 14 of its 17 kernels have essentially
-no parallel-legal iterations even with perfect aliasing.
+`tools/loop-census.py cmake-debug --corpus runtime --top 20`, the 17 in-tree kernels of
+`tools/runtime-bench.py`'s `KERNELS` with their argv unchanged, 2,246,355,539 iterations:
 
-The rest of this section stands as written. The AST-slice engine is a **lowering
-achievement with no dispatch site**: the predicate, both executors, the SPIR-V emitter, the
-format engine and the leaf inliner all work, are all differentially tested, and none of
-them has a caller whose runtime they could improve. Debt #0 says the same thing
-from the other end and was re-checked by inspection today — `mcc_slice_frame_from_ast` has
-**0 call sites in `src/`**; `src/mccslice.h`, which defines it, is included by
-`tools/slicerun.c` and by nothing else, and `tools/slicerun.c` does not link `libmcc`. The
-device is never consulted during `mcc -O2 -c foo.c`. Writing the missing caller would give
-it nothing to call.
+| | |
+| --- | ---: |
+| raw iteration-weighted fraction | **97.76%** |
+| **parallel-legal iteration-weighted fraction** | **80.60%** |
+| the same with `--alias-oracle` | **80.60%** — the two reports are byte-identical (`diff` empty) |
+| with the hottest loop (`matmul.c:22`) removed | **3.67%** |
+| with the largest program (`matmul.c`) removed | **3.66%** |
+| entered loops `par=1` / `par=0` / `par=?` | 26 / 17 / 34 |
 
-One correction to that debt as filed: `src/slice_inline.h` **is** compiled into `mcc` as of
-today's leaf-graft landing, via `src/mccast.c` under `AST_EVAL_SLICE_PROVIDED`. It carries
-the inliner, not the dispatcher. `src/mccslice.h` is the half that is absent, and it is the
-half that matters.
+`bases-may-alias-indirect` no longer appears in the corpus histogram **at all** — not
+0.00%, the row is absent — because `wt/decaytype` converted the whole of it. That work was
+real and it was sound. `-fdep-alias-oracle` is now worth exactly zero here.
 
-So rows denominated in *device-eligible blocks* or *device-accepted call sites* now rank
-below rows denominated in *the compiler's own emitted code or wall-clock*, because only the
-second currency has a demonstrated exchange rate here. Nothing is deleted: the evidence for
-every device row is kept below at full length, and every one of those rows is still
-correct. It was the ranking that was wrong, not the measurements.
+#### 3. And the lanes are floating-point, which neither executor can run — NEW, and it decides the row
+
+This is the measurement the last two boards did not take, and it is the one that settles
+the question. The corpus's parallel-legal iterations are not distributed; they are three
+kernels, and two of them are `double`:
+
+| kernel | share of all corpus iterations | `par=1` share of the program | scalar type of the hot loop |
+| --- | ---: | ---: | --- |
+| `matmul.c` | 77.07% | 99.83% | **`double`** (`static double a[600][600]`, `c[i][j] += aik * b[k][j]`) |
+| `loopnest.c` | 2.29% | 99.23% | **`double`** (same i-k-j nest, `static double a[256][256]`) |
+| `vlaloop.c` | 2.15% | 63.68% | `int` (`buf[i] = (buf[i] + t + i) & 0xffff`, 64 trips) |
+| the other fourteen | 18.49% | ≤ 0.83% each | mixed |
+
+Splitting the 80.66 points of `par=1` iterations by that column:
+
+| | points of all corpus iterations |
+| --- | ---: |
+| `par=1` **and** floating-point (`matmul` + `loopnest`) | **79.21** |
+| `par=1` **and** integer (`vlaloop` 1.37, everything else 0.08) | **1.45** |
+
+**The slice engine and both of its executors refuse floating point by construction.**
+`mcc_slice_work_from_ast` rejects any slice whose root type `is_float` (`src/mccslice.h:133`),
+and there are four more `is_float` refusals in `src/mccslice.h` and six in `src/mccgpu.h`.
+The SPIR-V emitter has no float support to refuse *with*: `grep -c Float src/mccgpu.h
+src/mccgpu.c src/mccslice.h` is **0, 0, 0** — no `OpTypeFloat`, no `OpFAdd`, no `OpFMul`,
+nowhere in the device layer.
+
+Demonstrated rather than argued, with the committed harness:
+
+```
+MCC_ARENA_DUMP=$D cmake-debug/mcc -c gd.c -o /dev/null -O2   # double gd(double x, double y) { return x*y + x - y*3.0; }
+cmake-debug/slicerun --arenas $D --limit 400
+  → bodies=1 slices=0 tuples=0 gpu-slices=0 ... FAIL (no real slice became schedulable work)
+
+MCC_ARENA_DUMP=$D cmake-debug/mcc -c gi.c -o /dev/null -O2   # int    gi(int x, int y)       { return x*y + x - y*3;   }
+cmake-debug/slicerun --arenas $D --limit 400
+  → bodies=1 slices=1 tuples=8 gpu-slices=1 ... OK
+```
+
+Same shape, same node count, one scalar type apart: the integer body becomes schedulable
+work and the `double` body produces **zero slices**. So the honest restatement of the
+corpus result is:
+
+> **The device-executable parallel-legal iteration-weighted fraction of the numeric corpus
+> is ≈1.45%, not 80.60%**, and 94% of that 1.45 is one 64-trip integer loop inside
+> `vlaloop`. 79.21 of the 80.60 points are arithmetic the stack declines before dependence
+> analysis is ever consulted.
+
+The 80.60% is a real and sound measurement of what `ast_loop_parallel_legal` can *prove*.
+It is not a measurement of what the device can *run*, and the two were being read as one
+number.
+
+#### 4. There is still no batch producer, and the two halves have disjoint input domains
+
+Verified by inspection today, not inherited:
+
+- `MccSliceWork` (`src/mccslice.h:15-29`) does run a block over `ntuple` argument tuples:
+  `mcc_slice_work_bind` sets `ntuple`, `mcc_slice_run_cpu` loops `while (w->done <
+  w->ntuple)` gathering `w->in[done * nlive + j]`, and `mcc_slice_frame_run_gpu` is "one
+  dispatch, `ntuple` independent frames".
+- **No file in `src/` constructs an `MccSliceWork`.** `src/mccslice.h` has exactly one
+  includer in the whole tree, `tools/slicerun.c:30`, and that binary does not link
+  `libmcc` (`CMakeLists.txt:3611` — it compiles `tools/slicerun_arena.c` and `src/mccgpu.c`
+  and brings its own arena).
+- `mcc_slice_frame_from_ast` is defined once (`src/mccslice.h:521`) and called **16 times,
+  all in `tools/slicerun.c`**. Zero call sites in `src/`.
+- The compiler's only two slice-evaluation sites are `ast_jit_const_fn`
+  (`src/mccast.c:16636`) and `ast_jit_fold_consts` (`:16685`). Both pass `NULL` offsets,
+  `NULL` values, **`nlive = 0`**, and evaluate **one** tuple. The surrounding loop in the
+  second walks *nodes*, not argument tuples.
+- And `mcc_slice_work_from_ast` **rejects `cnt < 1`** (`src/mccslice.h:119`). The batching
+  machinery refuses precisely the zero-live-in shape the compiler produces, and the
+  compiler never produces the shape the batching machinery wants. **The two halves have
+  disjoint input domains.** This is stronger than "the caller is missing": the caller
+  cannot be written by connecting what exists.
+
+`ast_loop_parallel_legal` — the analysis that would have to nominate the batch — is
+declaration `src/mccast.h:218`, definition `src/mccast.c:13891`, and **two call sites, both
+`fprintf`** (`ast_loop_par_census:14034`, `ast_loopdep_dump:14053`). It cannot reach
+emitted code, which is also why `-fdep-alias-oracle` is safe to ship.
+
+#### The argument for resuming, stated at its strongest
+
+It is not weak and it should be read before the recommendation.
+
+`docs/PLAN.md`'s S5c is explicit that the batch comes from "slices already inside a loop
+over independent tuples", supplied by `ast_loopdep` — so `ast_loop_parallel_legal` is not
+an unrelated analysis, it *is* the batch producer's prerequisite, and it now works. H6 says
+the project's answer arrives when "the break-even column is uniformly above the batch sizes
+the loop-nest analyses can supply", and on `matmul 600` the inner loop supplies **600
+lanes** against a break-even of 48 at 15 nodes and 24 at 31 — the first time in this
+file that a measured batch has cleared a measured bar by an order of magnitude. The JIT is
+not a side project either: `MCC_CONFIG_JIT` is on by default and bakes the runtime JIT
+"into every program mcc builds (and mcc's own `-run`)", so the target workload is *programs
+mcc compiles*, of which the self-compile is one unrepresentative sample and the corpus is
+seventeen more. Meanwhile the device path's cost is now **sunk** — predicate, both
+executors, emitter, format engine, leaf inliner, region layer, `*p` lowering, all built,
+all differentially tested — and it has been the tree's most productive bug-finder: the
+`spvgate` differential and the ladder census produced the arena-fidelity diagnosis, the
+`for`-increment-before-body bug, and the two miscompiles fixed this month. Freezing a
+mechanism that finds miscompiles in order to save effort on a mechanism that is already
+built is a strange trade.
+
+#### The recommendation
+
+**Freeze the SPIR-V device path. Do not write the `mcc_slice_frame_from_ast` caller. Drop
+Metal.** Keep every existing device cell green as regression cover, and keep the ladder
+census (`MCC_AST_EVAL_LADDER_CENSUS`) and `spvgate` running, because those are the parts
+that find bugs and neither of them needs a dispatcher.
+
+The grounds, in the order of their weight:
+
+1. **The corpus's lanes are floating-point and the stack has no floating point.** 79.21 of
+   80.66 points. Closing that is not a caller — it is `OpTypeFloat`, `OpFAdd`, `OpFMul`,
+   `OpFOrd*`, conversions, a CPU reference that matches them bit for bit, and a
+   differential that is stable under rounding. Nothing in the tree has any of it, and the
+   `%f`/`%g` row of the `snprintf` work already refused device float formatting on exactly
+   this reasoning ("disproportionate risk … matching glibc's rounding would make the
+   differential unstable"). That judgement does not become wrong when the arithmetic is
+   arrays instead of formats.
+2. **The remaining integer lane source is 1.45 points, 94% of it one loop in one
+   synthetic kernel.** `vlaloop`'s inner loop is 64 trips against a hand-pinned break-even
+   of 48 — inside the noise of a constant that hazard 1 says was never measured properly.
+3. **The caller cannot be written by connecting what exists.** Zero live-ins against a
+   producer that refuses zero live-ins. A dispatcher needs a batch source, a write-back
+   path for `c[i][j]` (frames are dense 8-byte slots capped at `MCC_SLICE_MAXSLOT` = 16, so
+   a 600×600 tile does not fit one at all), and a per-compile correctness gate. That is
+   three new subsystems, priced nowhere.
+4. **The self-compile is barren for reasons no work removes**, and it is the one workload
+   this project can measure whenever it likes.
+
+#### The counter-argument, at equal length, because it is the useful part
+
+1. **"Device-executable" is a property of today's stack, not of the workload, and this
+   board has just made the same mistake it accuses the last one of.** The last board read
+   `par=?` as "not parallel" and the corpus proved it wrong. This board reads `is_float` as
+   "not lanes" — but `is_float` is six lines of refusal in files we own, not a fact about
+   `matmul`. A SPIR-V compute shader doing `double` FMA is the single most ordinary thing a
+   GPU does; the reason mcc cannot emit one is that nobody wrote it, which is precisely the
+   category of objection the 80.60% result demolished for aliasing. **The honest label for
+   row 1's headline is therefore "≈1.45% today, 80.60% ceiling", and this board's
+   recommendation rests on declining to pay for the difference, not on the difference being
+   unreachable.** Nobody has priced float in the emitter. It is UNMEASURED.
+2. **The 3.67% collapse cuts both ways.** Yes, `matmul 600 8` is 77% of the corpus and its
+   argv was chosen by `runtime-bench.py` to take about a second. But dense matrix multiply
+   being over-represented in a benchmark suite is not evidence that it is rare in
+   programs — it is over-represented in benchmark suites *because* it is common in the
+   workloads people accelerate. The corpus was assembled to exercise codegen, not to look
+   parallel, and it still came back 80.60%. A roster picked adversarially against this
+   project produced the best possible result for it.
+3. **Freezing has a compounding cost that nothing on this board prices.** Metal already
+   demonstrates it: 1754 lines against 3612 (re-counted today; the board's 3578 is stale by
+   a commit), a kernel arm that is two lines returning 0, and zero `msl_region*` symbols —
+   a divergence that grew *while the arm was nominally maintained*. A frozen SPIR-V arm
+   will do the same to itself against the AST, and the differential that currently catches
+   miscompiles will decay into a differential that catches nothing because it cannot lower
+   anything current. **"Freezing is not deleting" was true when the stack matched the
+   compiler; it stops being true the moment the compiler moves.**
+4. **The bug-finding yield is real and this board is not counting it.** Two silent
+   miscompiles were caught this month by machinery built for the device, and
+   `ast_loop_parallel_legal` is a host-usable dependence analysis regardless of where it
+   dispatches — row 1 below shows two shipped transforms that need exactly the soundness
+   fix it already has. Ranking the device column last while spending the top row on a
+   defect the device work discovered is, at minimum, an accounting choice worth stating.
+
+**Both sides of 1 are honest, and the recommendation stands on cost, not on impossibility.**
+The measurement that would overturn it is named in row 6: price float in the SPIR-V emitter
+and the CPU reference. If it comes back cheap, this verdict is wrong.
+
+#### Metal — settled, 2026-08-09: dropped
+
+The last board said "decide it, do not pay it down" and left it undecided. Deciding it:
+**Metal is not a device target.** Re-counted today with a nesting-aware pass over the
+`#if MCC_GPU_LANG_MSL` / `#else` arms — **1754 MSL lines against 3612 SPIR-V** (`mccgpu.c`
+653/1461, `mccgpu.h` 1008/1794, `mccslice.h` 27/65, `spvgate.c` 66/292); the board's 3578
+was stale by commit `99e043c1` and the MSL side matched to the line *because nothing has
+been added to it*. `mcc_slice_frame_kernel_build`'s Metal arm is two lines returning 0
+(`src/mccslice.h:1282-1285`); `grep -rn msl_region src/ tools/` is **0** against 31 distinct
+`spv_*` symbols reached from `mccslice.h` alone; `src/mccfmt.h:453` gates the whole format
+emitter `!MCC_GPU_LANG_MSL`; and `tools/slicerun.c` carries exactly one `#if`, for
+`AST_EVAL_SLICE_PROVIDED`, so it cannot compile against the Metal arm even in principle.
+Keep the `#if MCC_GPU_LANG_MSL` arms only where they already compile; add no more. This is
+an owner's decision recorded so it stops being taken by default, one landing at a time.
+
+### The ranking, and the currency each row is paid in
+
+Rows are ordered by expected payoff **in a currency that has a demonstrated exchange rate in
+this tree**. Two currencies convert: *correctness* and *the compiler's own emitted code or
+wall-clock*. One currency has a measured rate: `kept` buys stage-2 at **0.03% per point**
+(+2.60 points bought −0.079%, row 2). One currency has **no** exchange rate here and every
+row denominated in it ranks below every row that is not: *device-eligible blocks* and
+*device-accepted sites*.
+
+| # | row | currency | expected payoff |
+| ---: | --- | --- | --- |
+| 1 | `ast_loop_interchange_legal` / `ast_dep_fusion_pair_illegal` consult `ast_dep_base_distinct` with **no `indirect` guard**, and unlike the census predicate they reach emitted code | **correctness** | UNMEASURED, and it is the same defect class that produced two miscompiles this month |
+| 2 | `tests/optfire/levelbench.tsv` is a generation stale and has no `--check` | **census trust** — every future ladder decision is priced off it | 32 of 47 rows name flags no longer at levels 1–3 |
+| 3 | Metal | **a decision** | free to make, grows with every SPIR-V landing. **Decided above: dropped** |
+| 4 | the device path | **device-eligible blocks** — no exchange rate | **Frozen above.** ≈1.45% device-executable lanes on the best corpus anyone has found |
+| 5 | `snprintf` module budget | **device-accepted sites** — no exchange rate | banked at 148/162; the 7th site buys one site, the 8th needs `MCC_GPU_CODE_MAX` raised. **Stop** |
+| 6 | float in the slice engine and the SPIR-V emitter | **device-executable lanes** | the only thing that would make row 4's 80.60% mean anything. **UNMEASURED and unpriced** — pricing it is what would overturn the verdict |
+| 7 | chain-store re-promotion | emitted code | **MEASURED, refused.** +2.60 `kept` → −0.079% stage-2 for +1.50% stage-1; 60× worse than `divmagic`'s rung |
+| 8 | `storeval-rot` demotion | emitted code | **MEASURED, refused.** Its off-state is an incomplete replay path, `kept` 91.978 → 83.242 |
+
+Row 1 is first because it is the only row on this board that could be a wrong answer in
+shipped output, and because it is cheap to settle: `-floop-interchange`, `-floop-fusion` and
+`-floop-block` are all `MCC_OPTD_LEVEL(12)` (`src/mccopt.h:109-111` — note the flag is
+spelled `-floop-block`, **not** `-floop-tile`, which does not exist), all three are bound in
+`ast_configure` (`src/mccast.c:2384-2386`) and all three run from `ast_func_end`
+(`:18586-18590`) inside the emission path, calling a *mutating* apply. `ast_tile_run` reuses
+`ast_loop_interchange_legal`, i.e. the unguarded predicate. A fuzz corpus of `p[i]`/`q[i]`
+nests through two global pointers at `-O12` is the measurement.
+
+Row 2 is second because it is the instrument every other ranking uses. See hazard 2.
 
 ### Where every number on this board comes from
 
-The recurring failure of 2026-08-08 was headline figures with no script behind them. Three
-were re-derived and **none of the three survived**: `+168` → 246, `12,901 / 78.01%` → 803 /
-73.49%, and the `16,537` base both rested on → 10,238. Every number below names the
-committed tool and the corpus that produces it, or is marked **PROSE-ONLY**.
+The recurring failure of this file is headline figures with no script behind them. **Nine
+have now failed to reproduce**, and the two most recent failed for a new reason — the
+measuring tool was defective, not the transcription. Every number below names the committed
+tool and the corpus that produces it, or is marked **PROSE-ONLY** / **UNMEASURED** /
+**DERIVED**.
 
 | number | tool | corpus |
 | --- | --- | --- |
+| 2035 loops instrumented, 602 entered, 26,103,304 entries, ~52.15M iterations, 52.51% raw, **0.01%** parallel-legal, **0.01%** with `--alias-oracle`, `body-unsafe` 50.04% + `not-analyzable` 33.82% | `tools/loop-census.py cmake-debug --top 20`, and `… --alias-oracle` | self-compile of `src/mcc.c` @ `-O2` |
+| 77 loops entered, 19,803,274 entries, 2,246,355,539 iterations, 97.76% raw, **80.60%** parallel-legal, **80.60%** with `--alias-oracle` (reports byte-identical), 3.67% hottest-loop-removed, 3.66% `matmul.c`-removed, 26 loops `par=1` | `tools/loop-census.py cmake-debug --corpus runtime --top 20`, and `… --alias-oracle` | the 17 in-tree kernels of `tools/runtime-bench.py`'s `KERNELS`, argv unchanged |
+| per-program `par=1`: `matmul` 99.83%, `loopnest` 99.23%, `vlaloop` 63.68%, all other 14 ≤ 0.83% | the same run's per-program table | the same |
+| **79.21 points floating-point / 1.45 points integer** of the corpus's 80.66 `par=1` points | **DERIVED**: the per-program table above × the scalar type of each kernel's hot loop, read from `tests/runtime/*.c` | the same |
+| a `double` body gives `slices=0 gpu-slices=0` and `FAIL`; the identical `int` body gives `slices=1 gpu-slices=1` and `OK` | `mcc -O2 -c` under `MCC_ARENA_DUMP`, then `slicerun --arenas <dump> --limit 400` | a two-line fixture, both spellings |
+| **0** occurrences of `Float` in `src/mccgpu.h`, `src/mccgpu.c`, `src/mccslice.h` | `grep -c` — **no committed tool** | the device layer |
+| `kept` **83.090 / 91.913 / 91.978 / 91.978** (`self`), **92.881 / 96.546 / 96.597 / 96.597** (`wide`), at `-O0`..`-O3` | `tools/rir-coverage.py cmake-debug --corpus self --levels O0,O1,O2,O3`; `MCC_RIR_CENSUS=1 … --corpus wide … --opt-in` | `self` = `src/mcc.c`; `wide` = 380 sources |
+| **552 slices of 12,957 contain a loop (4.26%)** | `tools/slice-census.py cmake-debug --corpus self --levels O0,O1,O2,O3` | self-compile |
+| 172 `snprintf` sites, 162 literal, **148 accepted (91.4%)**, 100 carrying `%s`, 9 budget / 4 flag / 1 float; return consumed at 26 of 162 | `tools/fmt-census.py` | `src/*.c` |
+| **29,309** Invoke-blocked blocks, **242 (0.826%)** unblocked by the `snprintf` family alone, 10th among single-callee unblocks behind `_mcc_error` 1254, `fprintf` 631, `printf` 444, `memcpy` 369 | `tools/fmt-census.py --arenas=` over a dump of `src/*.c` @ `-O1` | 8,250 arenas, 56,281 non-empty blocks |
 | 947 non-empty blocks, **454** Invoke-blocked, 319 eligible, **33** sole-blocker | `slicerun --arenas <dump> --census` | `tests/exec`, 60 files @ `-O1` |
 | 19,454 blocks, **10,238** Invoke-blocked, 7,524 (73.49%) all-internal, 4,029 eligible, **803** sole-blocker | `slicerun --arenas <dump> --census` | `mcc -O2 -c src/mcc.c`, `MCC_RIR_PROD=2` |
-| 25,700 Invoke-blocked, **246** (0.96%) unblocked by `snprintf` alone — 8th, behind `_mcc_error` 1254, `fprintf` 554, `memcpy` 366 | `tools/fmt-census.py --arenas=` | `src/*.c`, 18 sources @ `-O1`, duplicate body records included |
-| 172 sites, 162 literal, **140 accepted (86.4%)**, 98 carrying `%s`, 17 budget / 4 flag / 1 float | `tools/fmt-census.py` | `src/*.c` |
-| 26.1M entries, 52.1M iterations, 52.51% raw / **0.01%** parallel-legal / **0.01%** with `--alias-oracle` | `tools/loop-census.py <bdir>` and `… --alias-oracle` | self-compile of `src/mcc.c` @ `-O2`, on `415b736c` (`wt/pvokclear`, unmerged) |
-| 19.8M entries, 2246.4M iterations, 97.76% raw / **1.39%** parallel-legal / **80.60%** with `--alias-oracle` | `tools/loop-census.py <bdir> --corpus runtime` and `… --alias-oracle` | the 17 in-tree kernels of `tools/runtime-bench.py`'s `KERNELS`, its argv unchanged |
-| ~~25.3M entries, 162.7M iterations, **79.4%** single-trip, 85.45% / **65.75%** / **1.88%**~~ | — | **STALE 2026-08-09.** Pre-`pvokclear`. The `1.88%` was a hand correction that the real fix undercuts; see the verdict section |
-| `kept` 83.122 → **91.960** (`self`), 93.006 → **96.653** (`wide`); every lowerable floor | `tools/rir-coverage.py` | `self` = `src/mcc.c`; `wide` = 380 sources |
-| **4.3%** of census slices contain a loop at all | `tools/slice-census.py` ("slices containing a loop") | `MCC_SLICE_CENSUS` over a self-compile |
-| break-even lanes 322 / 108 / 48 / 24 / 23 / 8 | `slicerun --cost-synth` | synthetic, this host |
-| 143 corpus `frame-compared`, `*p` 0 → **159**, pointer `++`/`--` 0 → **168**, the four named functions 0 → **6** | `slicerun` with and without `--no-ptr` | 440-block musl/string corpus |
-| 1754 MSL lines against 3578 SPIR-V, **0** `msl_region*` symbols | `grep` over `src/` — **no committed tool** | `src/mccgpu.{c,h}`, `src/mccslice.h`, `tools/spvgate.c` |
+| break-even lanes 322 / 108 / 48 / 24 / 23 / 8 | `slicerun --cost-synth` | synthetic, this host — **and see hazard 1** |
+| 143 corpus `frame-compared`, `*p` 0 → **159**, pointer `++`/`--` 0 → **168** | `slicerun` with and without `--no-ptr` | 440-block musl/string corpus |
+| **1754** MSL lines against **3612** SPIR-V; 2-line Metal kernel arm; **0** `msl_region*` symbols against **31** `spv_*` reached from `mccslice.h` | `grep` + a nesting-aware `awk` over the `#if MCC_GPU_LANG_MSL` arms — **no committed tool** | `src/mccgpu.{c,h}`, `src/mccslice.h`, `tools/spvgate.c` |
+| ~~25.3M entries, 162.7M iterations, 85.45% / **65.75%** / **1.88%**~~ | — | **STALE.** Pre-`pvokclear`. Do not quote; the parallel-legal figure is 0.01% |
+| ~~corpus **1.39%** parallel-legal, **79.35%** `bases-may-alias-indirect`~~ | — | **STALE.** Pre-`wt/decaytype`. The predicate answers 80.60% on its own and that reason row no longer exists |
 
-Four provenance hazards, stated rather than buried:
+**Ten hazards, stated rather than buried.**
 
-1. **The break-even lanes are pinned by hand** in `tools/loop-census.py` (`BREAKEVEN`), not
-   read back from a `--cost-synth` run. If the bench moves, every fraction scored against
-   it moves and nothing notices. Worse, only the 3-, 7- and 15-node rows of that bench were
-   ever signal: at 511 nodes a *fixed* binary ranged 13.9–64.1 ns/lane across three runs.
-   The 23 and the 8 are noise that has been frozen into a constant. **The tool now says so
-   in its own output** (2026-08-09, `wt/benchtrap`) — a `BREAKEVEN_PROVENANCE` banner prints
-   directly under the headline fraction and names all three limits, including a third one
-   nobody had written down: `breakeven_trips` stops at 127 nodes and holds every larger
-   loop body to 8 trips where `--cost-synth` measured 7/5/3/2, so the fractions are biased
+1. **The break-even lanes are pinned by hand** in `tools/loop-census.py:125` —
+   `BREAKEVEN = [(3, 322), (7, 108), (15, 48), (31, 24), (63, 23), (127, 8)]` — a literal,
+   read back from no run. If the bench moves, every fraction scored against it moves and
+   nothing notices. Worse, only the 3-, 7- and 15-node rows of that bench were ever signal:
+   at 511 nodes a *fixed* binary ranged 13.9–64.1 ns/lane across three runs. The 23 and the
+   8 are noise frozen into a constant — and `vlaloop`'s 64 trips, the entire remaining
+   integer lane source, are adjudicated against exactly that frozen region. **The tool now
+   says so in its own output** (2026-08-09, `wt/benchtrap`): a `BREAKEVEN_PROVENANCE` banner
+   prints directly under the headline fraction and names all three limits, including a third
+   nobody had written down — `breakeven_trips` stops at 127 nodes and holds every larger loop
+   body to 8 trips where `--cost-synth` measured 7/5/3/2, so the fractions are biased
    *downward* by an unknown amount. The constant itself is still pinned; see the audit
    section below for the cost of un-pinning it.
-2. **16,537 is unreconstructible.** No corpus reaches it — the amalgamated self-compile
+2. **`tests/optfire/levelbench.tsv` is a null-experiment factory, and it is also a
+   generation stale.** Four separate defects, all verified today:
+   - **24 of its 47 rows have an empty `fires_kernels`** — the flag changes no kernel object
+     at all — and **11 of those carry a `gain_pct` of `-0.0000`**, a geometric mean of
+     `instructions:u` over binaries that are bit-identical. A `-0.0000` is not a rounded
+     zero: it requires a *timing difference between two identical objects*, which
+     `tools/optlevel-bench.py` collects because the timed executable lives in a
+     `tempfile.mkdtemp` path whose length changes the loader's work. **Any of the eleven can
+     be quoted as "measured no effect" the way `storeval-rot`'s was.**
+   - The tool's only null guard is `bucket = "inert"`, which requires the flag to change
+     nothing in the corpus *and* the self-compile *and* all 17 kernels. **Zero rows in the
+     shipped file are `inert`.** The real guard — "changes no kernel object; nothing to
+     adjudicate" — exists at `optlevel-bench.py:302-306` but runs only under
+     `--cycles --from-json` and never touches the TSV.
+   - `efficiency` is `gain / cost` when `cost > 0.005` and `inf` otherwise, and `has_gain`
+     tests `abs(gain)`, **not its sign**. So a flag that makes emitted code *worse* at
+     near-zero cost is awarded `+inf` and sorted to the top: `promote-leaf-callee`
+     (`gain=-0.3360`) sits at **rank 2 of the whole table**.
+   - **32 of the 47 rows name flags that are no longer at levels 1–3.** The file was written
+     at `1ad3f1aa`; `893c1e84` moved 34 rows. `src/mccopt.h` has **16** `LEVEL(1..3)` rows
+     today, `builtin-math-fabs` has no row at all, and `optlevel-bench.py` has no `--check`
+     arm (`selfhost-optbench.py` does). CMake writes the TSV to the *build* dir, never back
+     to `tests/optfire/`, so nothing compares them.
+3. **A per-flag sweep cannot price a family, and the failure reads like a win.**
+   `optlevel-bench.py` builds jobs as `[("__base__", []), ("__noise__", [])] + [(n,
+   ["-fno-"+n])]` against an `-O3` base, so it can only ever take a shipped flag *out* —
+   flags at rungs 4–12 produce no row. `selfhost-optbench.py` does have an add-one-in arm,
+   but it adds a **singleton**, never a family, and carries the same `<= 3` filter. And a
+   flag that suppresses optimization reads exactly like a flag that is efficient:
+   `-fchain-store` alone measures −1.859% of stage-1 while taking `kept` 91.978 → 84.04.
+   **A flag that moves `rir-coverage` must be priced with the coverage beside the counter,
+   or the sign is meaningless.**
+4. **16,537 is unreconstructible.** No corpus reaches it — the amalgamated self-compile
    gives 10,238, the 15 sources separately and de-duplicated give 10,239, and the same 15
-   *with* the dump's duplicate body records give 28,753. Anything still resting on it
-   (`+168`, the 734-block libc ceiling) is dead until re-taken with a named tool.
-3. **`tests/exec` and self-compile numbers are never comparable.** `docs/DEVICE-LIBC.md`
+   *with* the dump's duplicate body records give 28,753. Anything still resting on it is
+   dead until re-taken with a named tool.
+5. **ctest registration is configure-order dependent, and the debt-#7 fix did not close
+   the gap — it moved it.** `mcc_cross_cc` (`CMakeLists.txt:3340`) falls back to
+   `EXISTS "${MCC_CROSS_DIR}/mcc-<arch>"`, which CMake evaluates **at configure time**.
+   Measured today: configuring `cmake-debug` with no `cmake-cross` present registers
+   **8972** cells; building `cmake-cross` and re-running `cmake --preset debug` registers
+   **9136**, matching `cmake-cross` exactly. The 164 missing cells are the same 144
+   `optfire-{arm64,i386,riscv64}/*` + 20 `*-docker` the debt describes. **Any cell count
+   taken from a `cmake-debug` configured first is 164 low and reports no skips.**
+6. **`tests/exec` and self-compile numbers are never comparable.** `docs/DEVICE-LIBC.md`
    forbids `tests/exec` for the libc phase: `printf` alone is 35% of its Invoke nodes and
    its libc ceiling is 3 blocks against the compiler's 734 — the two disagree by **47×**.
    Never put them in one column.
-4. **`tools/fmt-census.py` is a second implementation of `mcc_fmt_compile`.** ~~and nothing
+7. **`tools/fmt-census.py` is a second implementation of `mcc_fmt_compile`.** ~~and nothing
    gates it against the C one~~ — **CLOSED**, and re-verified 2026-08-09: `fmt/census-oracle`
    pipes ~41,000 formats (every literal in `src/*.c` plus a seeded walk over the item/arg/
    literal-run/budget boundaries) through `slicerun --fmt-verdict`, which calls the real
@@ -151,6 +393,48 @@ Four provenance hazards, stated rather than buried:
    the `140 → 142` correction filed elsewhere on this board. The oracle verifies the
    *port*; nothing verifies the *doc row*, and this is a re-run, not a measurement.
 
+8. **`tools/fmt-census.py`'s site census is unguarded, and the claim that the tool is
+   ungated is now only half true.** `fmt/census-oracle` and
+   `fmt/census-oracle-known-positive` gate the Python port against the real
+   `mcc_fmt_compile` over 41,017 formats — that class is closed. But the **default mode,
+   the one that prints 172 / 162 / 148, is not a ctest cell and is ratcheted nowhere**, and
+   it does not appear in `tests/must-run.txt`. Its corpus is also treacherous: three of
+   `src/*.c` are include-only fragments that fail standalone and contribute nothing, and
+   `src/mcc.c` is the amalgamation of `libmcc.c` + `mcctools.c`, so the docstring's
+   `src/*.c` loop double-counts most bodies.
+9. **The self-compile census total is not deterministic.** Three runs of the identical
+   command gave `iterations` = 52,152,515 / 52,152,453 / 52,152,533. Every loop count, every
+   `par=` column and every printed percentage is stable; the drift is a few dozen iterations
+   in one `not-analyzable` loop, from the randomized temp-dir output path. **Quote 52.15M,
+   never an exact figure** — the previously banked 52,077,202 is not reproducible to the
+   digit and neither is any successor.
+10. **`--alias-oracle` numbers are properties of a ceiling, not of a workload.** They now
+   coincide with the shipped predicate on both corpora, which retires the old "never quote
+   80.60% without 1.39% beside it" — but the discipline it encoded is what section 3 of the
+   verdict is about, and it now applies to `is_float` instead: **never quote 80.60% without
+   1.45% beside it.**
+
+**The nine figures that have failed to reproduce**, kept as a list because the pattern is
+the finding:
+
+| figure | actual | how it failed |
+| --- | --- | --- |
+| `+168` blocks unblocked by `snprintf` | 246, now **242 (0.826%)** | prose only, no script |
+| `12,901 / 78.01%` internal-only | 803 / 73.49% | ad-hoc pass, 16× |
+| `16,537` Invoke-blocked | 10,238 | unreconstructible, hazard 4 |
+| `65.75%` / `1.88%` parallel-legal | **0.01%** | one `memset`-shaped loop, fixed at `415b736c` |
+| `140/162` formats accepted | 142, now **148** | the census port had drifted from `mcc_fmt_compile` |
+| `~4.3` points of `kept` | **+2.60** | measured before a correctness fix removed 1.7 of them |
+| `storeval-rot` "0.0000% of emitted instructions" | −2.31% stage-1, −0.232% stage-2 | **a correctly computed number of the wrong quantity**: a geomean over unmoved binaries |
+| `25,700` Invoke-blocked / `246` = 0.96% | **29,309 / 242 = 0.826%** | re-taken today; the ratio moved, the ranking survived |
+| `cmake-debug` registers `9106`, same as `cmake-cross` | **8972 vs 9136** unless cross is built first | configure-order dependence, hazard 5 |
+
+Three more, smaller, recorded so they are not re-quoted: `self` `kept` `83.122 → 91.960` is
+**83.090 → 91.978**; `wide` `93.006 → 96.653` is **92.881 → 96.597**; the self-compile's
+`bases-may-alias-indirect` at `0.71%` is today **0.00%** (one loop, 32 iterations) — the
+0.71 was `bases-may-alias`, a *different* reason row, now 0.72%. None of these is a
+regression: every `rir-coverage` measurement sits at or above its banked floor and the cell
+passes. They are stale prose.
 ### The measurement-tool audit — 2026-08-09, `wt/benchtrap`
 
 Seven headline figures on this board have now failed to reproduce, and at least two of the
@@ -554,6 +838,14 @@ ledger". Relabelling it would edit a campaign record. The `n/a` rule should appl
 whatever regenerates it next.
 
 ### 1. S5′ — the iteration distribution, and the measurement that prices every row below
+
+> **Read `#### 3. And the lanes are floating-point` at the head of this file before quoting
+> anything in this row.** Every subsection below is kept for its method, its controls and
+> its history, and each carries its own supersession banner where a figure moved. The one
+> thing none of them say, because it was not measured until 2026-08-09, is that **79.21 of
+> the corpus's 80.66 parallel-legal points are `double` arithmetic that neither executor
+> implements**. The `65.75%` / `1.88%` pair and the `1.39%` / `79.35%` pair below are both
+> **STALE** and must not be quoted again in either direction.
 
 `-floop-census` + `runtime/lib/loopcensus.c` + `tools/loop-census.py` now take the
 measurement `docs/PLAN.md` calls "the single measurement that decides whether the project
@@ -1156,21 +1448,32 @@ So the emitted-code half may well come back small — which is exactly why it ge
 before it gets promoted. It came back small: 3 TUs of 357 with the whole family on, net
 −75 instructions, and one kernel.
 
-### 3. Metal — decide it, do not pay it down
+### 3. Metal — ~~decide it, do not pay it down~~ — DECIDED 2026-08-09: dropped
+
+**The decision is taken at the head of this file (`#### Metal — settled`): Metal is not a
+device target.** Everything below is the evidence it was taken on, with today's re-count.
 
 Debt #4 quantified the divergence and the answer is that this is a multi-week rewrite, not
-a debt: **1754 MSL lines against 3578 SPIR-V** (`mccgpu.c` 653/1461, `mccgpu.h` 1008/1763,
-`mccslice.h` 27/62, `spvgate.c` 66/292), `mcc_slice_frame_kernel_build`'s Metal arm is
-**three lines returning 0**, there are **zero `msl_region*` symbols in `src/`** (re-verified
-today, 0 grep hits) against 25 distinct `spv_*` symbols reached from `mccslice.h` alone,
-and `tools/slicerun.c` carries no backend `#if` at all, so it cannot compile against the
-Metal arm even in principle.
+a debt: **1754 MSL lines against 3612 SPIR-V** (`mccgpu.c` 653/1461, `mccgpu.h` 1008/1794,
+`mccslice.h` 27/65, `spvgate.c` 66/292), `mcc_slice_frame_kernel_build`'s Metal arm is
+**two lines returning 0** (`src/mccslice.h:1282-1285`), there are **zero `msl_region*`
+symbols in `src/`** (re-verified 2026-08-09, 0 grep hits) against **31** distinct `spv_*`
+symbols reached from `mccslice.h` alone, and `tools/slicerun.c` carries no backend `#if` at
+all — its single conditional is `AST_EVAL_SLICE_PROVIDED` — so it cannot compile against the
+Metal arm even in principle. `src/mccfmt.h:453` gates the whole device format emitter
+`!MCC_GPU_LANG_MSL`, so that feature was already SPIR-V-only by construction.
 
-It ranks this high because it is the only row that costs nothing to *decide* and grows more
+**Three of those figures were stale and the direction of the error is the point.** The
+board's `3578` / `1763` / `62` / `25` were taken before `99e043c1` (the `*p` and pointer
+`++`/`--` landing) grew the SPIR-V arms; the MSL total of **1754 still matches to the
+line**, because nothing has been added to it. The divergence measured itself while the arm
+was nominally maintained, which is the whole argument for deciding rather than deferring.
+
+It ranked this high because it is the only row that costs nothing to *decide* and grows more
 expensive with every landing on the SPIR-V arm. Given row 1 — there is no dispatch site on
 the SPIR-V arm either — the honest default is **drop Metal as a device target** and keep the
 `#if MCC_GPU_LANG_MSL` arms only where they already compile. That is an owner's decision,
-not a measurement; it is ranked here so that it stops being taken by default, one landing
+not a measurement; it was ranked here so that it stopped being taken by default, one landing
 at a time.
 
 ### 4. ~~`rir_op_effect`'s 512-byte clear~~ — CLOSED 2026-08-08. It was **8.3–9.4% of stage-1**, not "well under 1%", and the arithmetic that said otherwise divided by the wrong self-compile time
@@ -1484,14 +1787,17 @@ the compiler nothing it emits — it feeds diagnostics and the ladder oracle, be
 limiter really was the cap, the cap really is gone, the reach really did go 41 → 72, and
 the whole of it is **one additional block out of 19,844** on a number that is a lowering
 census, not a speed-up — the parallel-legal iteration-weighted fraction in this workload
-is ~1.88% and nothing dispatches a binding-2 kernel, so no result on this row can be a
+is **0.01%** (the `~1.88%` this paragraph carried is **STALE**, pre-`415b736c`) and nothing
+dispatches a binding-2 kernel, so no result on this row can be a
 performance win. Nor is the compile time: the shipped build lands inside the stage-1
 floor, so the honest statement is that the extra reach cost nothing, not that it gained
 anything. Anyone reading this row for the next increment should read the 803-block figure
 at the top of it, not this paragraph.
 
 Verified: `cmake-cross` **9114 cells, 0 failures** (with `cmake-debug` and `cmake-cross`
-both built), `tools/selfhost-smoke.py cmake-debug` green, and the three ratchets that
+both built — the same command registers **9136** today, and see hazard 5 for why the same
+count taken from a `cmake-debug` configured first is 164 low),
+`tools/selfhost-smoke.py cmake-debug` green, and the three ratchets that
 could have seen this — `rir-coverage`, `node-census`, `rir/drop-ratchet` — all pass
 unchanged, so the arena node counts did not move enough to dilute and nothing was
 re-banked.
@@ -1740,9 +2046,12 @@ arm already uses 65,536 — so it is a real option, just not one this row should
 **The payoff on all of it is still device-*eligibility*, not device execution.**
 `mcc_slice_frame_from_ast` has no caller in `src/`, `mcc_fmt_compile` has no caller
 outside `tools/slicerun.c`, and the parallel-legal iteration fraction on a self-compile is
-0.01%. Stop here. The next thing that makes this row worth more is row 1's `a[i][j]` /
+0.01%. Stop here. ~~The next thing that makes this row worth more is row 1's `a[i][j]` /
 `b[i][j]` aliasing representation — 79.35% of numeric-corpus iterations are refused only
-for that — not the fourteen remaining format strings.
+for that~~ — **that landed on `wt/decaytype` and it did not make this row worth more.** The
+79.35 points converted, the corpus reads 80.60%, and 79.21 of those points are `double`
+arithmetic the device layer has no opcode for. **Nothing makes this row worth more short of
+floating point in the emitter**, and certainly not the fourteen remaining format strings.
 
 **What is left, and it is not the `%` engine.** The formatter is verified as a region
 primitive; wiring it to an `AST_Invoke` in statement position needs three things that do
@@ -1808,8 +2117,11 @@ only at byte 0 — including in the unterminated-run lane (`5a5a5a5a` → `5a5a7
 
 ### Unranked — the fence wait, and there is nothing to wait for
 
-**Read row 1's `par=` section before ranking this.** The parallel-legal iteration-weighted
-fraction on a self-compile is **1.88% once the one `memset`-shaped loop is removed**, and
+**Read row 1's `par=` section before ranking this.** *(Retaken 2026-08-09: the fraction below
+is **0.01%**, not 1.88%, and the twelve array fills are not the shape of the answer. The
+conclusion this row draws from it is unchanged and, if anything, harder.)* The
+parallel-legal iteration-weighted
+fraction on a self-compile is ~~**1.88% once the one `memset`-shaped loop is removed**~~, and
 the entire lane source is twelve array-fill loops. Per-lane cost is not the binding
 constraint on this workload; the absence of lanes is. Everything below is still true and
 still the right fix *if* a caller ever appears — it is no longer a ranked item.
@@ -1835,15 +2147,22 @@ write the *same physical bytes*. Write-up and residual hazards: "Landed — `*p`
 
 ### What is still open, with honest sizes
 
+Four rows were added 2026-08-09 by the re-derivation at the head of this file; they are at
+the top because three of them are the only rows here in a currency that converts.
+
 | row | size, and the tool that produced it | currency |
 | --- | --- | --- |
+| `ast_loop_interchange_legal` / `ast_dep_fusion_pair_illegal` call `ast_dep_base_distinct` with **no `indirect` guard** | **UNMEASURED, and it is the top of the board.** Verified 2026-08-09: the guarded call is `src/mccast.c:13949` (census only), the unguarded ones are `:13516` and `:13566`. `-floop-interchange`, `-floop-fusion` and `-floop-block` are `MCC_OPTD_LEVEL(12)` (`src/mccopt.h:109-111`), bound at `src/mccast.c:2384-2386`, run from `ast_func_end` at `:18586-18590` into a *mutating* apply. `ast_tile_run` reuses the interchange predicate. The measurement is a fuzz corpus of `p[i]`/`q[i]` nests at `-O12` | **correctness** |
+| `tests/optfire/levelbench.tsv` is stale by a generation and has no `--check` | **32 of 47 rows name flags no longer at levels 1–3**; `src/mccopt.h` has 16 such rows today and `builtin-math-fabs` has none. 24 rows change no kernel object, 11 of those carry a `-0.0000` "gain", and `efficiency=inf` is awarded on `abs(gain)` so a pessimization sorts to rank 2. CMake writes the TSV to the build dir and never compares it. See hazard 2 | **census trust** |
+| float in the slice engine and the SPIR-V emitter | **UNMEASURED and unpriced, and it is the measurement that would overturn the verdict.** `grep -c Float src/mccgpu.{h,c} src/mccslice.h` = 0/0/0; `is_float` is refused at 5 sites in `mccslice.h` and 6 in `mccgpu.h`. It costs `OpTypeFloat`, the F-opcodes, conversions, a bit-exact CPU reference and a differential that is stable under rounding | device-executable lanes |
+| the device dispatcher | **Not merely absent — unwritable from what exists.** The compiler's two slice sites pass `nlive = 0` / one tuple; `mcc_slice_work_from_ast` refuses `cnt < 1`. Plus a write-back (`MCC_SLICE_MAXSLOT` = 16 dense 8-byte slots; a 600×600 tile does not fit one) and a per-compile correctness gate. Three subsystems, priced nowhere | device-eligible blocks |
 | chain-store re-promotion (row 2) | **MEASURED 2026-08-09, and the answer is no.** The `kept` prize is **+2.60** points, not ~4.3 (`tools/rir-coverage.py`, `self`, `-O1`/`-O2`/`-O3`); the emitted-code half is stage-2 **−0.079%** and sieve **−1.97%** `instructions:u`, for **+1.50%** of stage-1. Pins unchanged | emitted code |
 | `-O11` ICE, `vstack leak (1)` | **FIXED 2026-08-08**; it also silently miscompiled (6 wrong answers / 500 at `-O11`). Cell `exec-chainlive/*`, fuzz 900 programs 0/0 | correctness |
 | `vstack leak (-1)`, debt #6a | **FIXED 2026-08-09**. It fired at shipped `-O1`/`-O2`/`-O3` (78/77/77 of 500) and never miscompiled — every imbalance is `(-1)`, so it always aborted. Cells `exec-storevalrot{1,2,3}/*`, fuzz 1400 programs 0 ICE / 0 wrong. Stage-1 `.text` byte-identical, so it cost nothing | availability |
 | `storeval-rot` pays negative at `-O3` | **CLOSED 2026-08-09, level unchanged at 1.** The 1.69% is cold inline-clone bytes: with `-fno-inline` the same gap is **+124**, and the flag's *dynamic* cost is 0.232% with the inliner and 0.245% without it. Turning it off takes `rir-coverage` **red by 8.7 points** of `kept`, because its off-state is an incomplete replay path, not a lowering | emitted code |
 | replay recompute reads a written target | **FIXED 2026-08-09 with #6a**: `c = 2 * (a = s + a)` returned the wrong answer under the shipped `-fno-replay-fallback` at `3ddd9933` with every `storeval-*` and `chain-store` flag off. Covered by `flagsweep-exec/replay-fallback` | correctness |
 | `rir_op_effect`'s clear (row 4) | **CLOSED 2026-08-08**, and the "<1%" bound was wrong: measured **−8.30% / −9.44%** of stage-1 `-O3`/`-O2` CPU time (n=21 interleaved, ±0.55% floor), `instructions:u` −12.29%. 1,464 objects byte-identical | compile time |
-| Metal, debt #4 (row 3) | 1754 vs 3578 lines, 3-line kernel arm, 0 `msl_region*` symbols. A rewrite, not a fix. | a decision |
+| Metal, debt #4 (row 3) | **DECIDED 2026-08-09: dropped.** Re-counted: 1754 vs **3612** lines (the 3578 was stale by `99e043c1`, and the MSL total is unchanged because nothing is added to it), **2**-line kernel arm, 0 `msl_region*` symbols against **31** `spv_*`. A rewrite, not a fix | a decision |
 | D4b leaf-inline pool cap (row 5) | ceiling **803** blocks, `slicerun --census`. **Cap removed 2026-08-08**: reach 41 → 72 grafts, and it delivered **one** more block (10,381 → 10,375 `inv-blocks`). Row closed, not advanced | device-eligible blocks |
 | `snprintf` module budget (row 6) | **14 of 162** refused, was 22. The narrow 32-bit conversion path landed 6 sites 2026-08-09 (`142 → 148`, and `140 → 142` was a census bug, not work). 9 on the budget, 4 on flags, 1 on float. The closest miss is 762 words | device-accepted sites |
 | the literal-run packing lever (row 6) | **MEASURED AND DROPPED 2026-08-09.** The filed "7 pure-literal refusals" do not exist — 5 of 15 carry no `%s` and every one of them carries integer conversions. 11 of 15 were over budget with *zero* literal bytes, so packing had a **4-site ceiling even if a literal byte were free**; the narrow conversion path then took 3 of those 4, leaving the lever with **one site** and a delicate emitter rewrite. Not implemented, deliberately | device-accepted sites |
@@ -1855,7 +2174,19 @@ write the *same physical bytes*. Write-up and residual hazards: "Landed — `*p`
 | debt #3, descriptor staleness | fixed, and **unreachable until binding 2 grows** — both callers pass the constant `MCC_VK_MEM_DEFAULT`, so no cell is possible yet | latent |
 | `pe` lowerable floors | stale-low; could not be re-banked from an ELF host, so they under-gate on Windows rather than false-fail | gate strength |
 
-### The recommendation on direction
+### ~~The recommendation on direction~~ — SUPERSEDED 2026-08-09
+
+> **Superseded by `#### The recommendation` and `#### The counter-argument` at the head of
+> this file.** The conclusion is unchanged — freeze, no caller, drop Metal — but **every
+> ground stated below has since been retaken and two of the three are wrong.** The 1.88% is
+> 0.01% (`415b736c` fixed the `memset`-shaped loop the correction was hand-derived around),
+> and "no lane source" is false: the numeric corpus has 80.60%. What replaces those grounds
+> is that 79.21 of those 80.66 points are `double` arithmetic that neither executor
+> implements, and that the compiler's slice sites and the batching machinery have disjoint
+> input domains. The counter-argument below is kept because points 3 and 4 still hold and
+> are argued at greater length in the new section; points 1 and 2 have been **answered** —
+> the `par=?` bound was taken (83.86% of self-compile iterations are calls and `goto`s) and
+> the second corpus was run.
 
 **Stop investing in the device path.** Concretely: freeze SPIR-V emitter feature work at
 what is banked, do **not** write the missing `mcc_slice_frame_from_ast` caller, drop Metal
@@ -1863,16 +2194,18 @@ what is banked, do **not** write the missing `mcc_slice_frame_from_ast` caller, 
 stack that is finished and proven. Spend the next weeks on rows 2 and 4 and on the `-O11`
 ICE, all of which are denominated in currencies this workload actually pays in.
 
-The grounds are three measurements, not a preference:
+The grounds were three measurements, not a preference. Two did not survive:
 
-- `tools/loop-census.py`: **1.88%** parallel-legal iteration-weighted fraction once one
+- ~~`tools/loop-census.py`: **1.88%** parallel-legal iteration-weighted fraction once one
   `memset`-shaped loop and its twin are removed, spread over twelve array fills, nine of
-  them under 70,000 iterations in a whole self-compile.
+  them under 70,000 iterations in a whole self-compile.~~ **STALE — it is 0.01%, and the
+  twelve array fills are not the shape of the answer.**
 - `tools/slice-census.py` ("slices containing a loop"): only **4.3%** of census slices
   contain a loop at all, so even a workload *with* lanes meets a thin eligibility surface
-  here.
+  here. **Re-taken 2026-08-09 and it holds: 552 of 12,957 slices, 4.26%.**
 - Inspection: **0** call sites for `mcc_slice_frame_from_ast` in `src/`, and no device
-  consultation of any kind during an ordinary `mcc -O2 -c`.
+  consultation of any kind during an ordinary `mcc -O2 -c`. **Re-verified 2026-08-09: the
+  definition is `src/mccslice.h:521` and all 16 call sites are in `tools/slicerun.c`.**
 
 **The counter-argument, stated fairly, because it is not weak:**
 
@@ -1935,10 +2268,15 @@ item now says what was measured, not what was assumed.
    Everything under "Landed — `*p`" is measured on the harness, so it is a lowering result,
    not a speed-up. **The missing caller is no longer the top of this debt — the missing
    work is.** `ast_loop_parallel_legal` now answers the census's `par=` field, and on a
-   self-compile the parallel-legal iteration-weighted fraction is **65.75%, of which 65.2
+   self-compile the parallel-legal iteration-weighted fraction is ~~**65.75%, of which 65.2
    points are one 512-byte `memset` inside `rir_op_effect`**; with it removed the figure is
    **1.88%**, spread over twelve array-fill loops, nine of which run under 70,000 iterations
-   in the whole compile. Writing the caller would give it nothing to call. See row 1.
+   in the whole compile~~ — **STALE, retaken 2026-08-09: it is 0.01%, the `memset` was fixed
+   at `415b736c`, and the numeric corpus reads 80.60% of which only 1.45 points are a type
+   either executor can run.** Writing the caller would give it nothing to call — and, added
+   2026-08-09, **it cannot be written by connecting what exists**: the compiler's two
+   slice-evaluation sites pass `nlive = 0` and one tuple, and `mcc_slice_work_from_ast`
+   refuses `cnt < 1`. The two halves have disjoint input domains. See row 1 and the verdict.
 1. **`--mutate` is blind to `memcpy` — OVERSTATED, and much smaller than written.**
    The write-up said the operator must move to written memory and the harness needs a
    frame-buffer comparison mode. Both already exist: four of the six operator sites
@@ -1962,11 +2300,18 @@ item now says what was measured, not what was assumed.
    first caller that grows it makes the fix live and makes a cell possible; write the
    cell then.
 4. **The Metal arm diverges further with every landing — quantified, and it is a
-   multi-week rewrite, not a debt to pay down.** Measured over the `#if
-   MCC_GPU_LANG_MSL` / `#else` arms: **1754 MSL lines against 3578 SPIR-V**, split
-   `mccgpu.c` 653/1461, `mccgpu.h` 1008/1763, `mccslice.h` 27/62, `spvgate.c` 66/292.
-   `mcc_slice_frame_kernel_build`'s Metal arm is **three lines returning 0**. There are
-   **no `msl_region*` symbols at all**, against 25 distinct `spv_*` symbols reached from
+   multi-week rewrite, not a debt to pay down. DECIDED 2026-08-09: dropped as a device
+   target; see board row 3 and `#### Metal — settled` at the head of this file.** Measured
+   over the `#if MCC_GPU_LANG_MSL` / `#else` arms — the four SPIR-V figures below are
+   **STALE**, re-counted 2026-08-09 as **1754 MSL against 3612 SPIR-V**, `mccgpu.h`
+   1008/**1794**, `mccslice.h` 27/**65**, and **31** distinct `spv_*` symbols; the MSL
+   totals did not move at all, which is the divergence measuring itself:
+   ~~**1754 MSL lines against 3578 SPIR-V**, split
+   `mccgpu.c` 653/1461, `mccgpu.h` 1008/1763, `mccslice.h` 27/62, `spvgate.c` 66/292.~~
+   `mcc_slice_frame_kernel_build`'s Metal arm is ~~three~~ **two** lines returning 0
+   (`src/mccslice.h:1282-1285`). There are
+   **no `msl_region*` symbols at all**, against ~~25~~ **31** distinct `spv_*` symbols
+   reached from
    `mccslice.h` alone. `tools/slicerun.c` carries one `#if` (`AST_EVAL_SLICE_PROVIDED`)
    and none for the backend, so it cannot compile against the Metal arm. Nothing here is
    a fix; treat it as a decision about whether Metal stays a target.
@@ -2374,7 +2719,11 @@ item now says what was measured, not what was assumed.
    when `fires` is 0. And this is not a one-off: **24 of `levelbench.tsv`'s 47 rows have
    an empty `fires_kernels`**, i.e. change no kernel object at all, and **11 of those**
    carry a `gain_pct` of `-0.0000` that is a division over unchanged binaries. Any of the
-   eleven can be quoted the same way this one was.
+   eleven can be quoted the same way this one was. **Verified independently 2026-08-09 —
+   all three counts are exact — and three further defects were found in the same file;
+   they are hazard 2 at the head of this board. The one that matters most for anyone
+   reading this row: 32 of those 47 rows name flags that are no longer at levels 1–3 at
+   all, so the table is a generation stale and nothing in CMake compares it.**
 
    > **CLOSED at the tool 2026-08-09 (`wt/benchtrap`).** The eleven can no longer be quoted
    > that way: `tools/optlevel-bench.py` buckets such a row `no-kernel-subject`, gives it a
