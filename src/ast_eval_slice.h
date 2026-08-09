@@ -400,6 +400,52 @@ static void ast_eval_slice_bytes_store(uint32_t *w, int32_t nbyte, int32_t off,
 	w[off >> 2] = (w[off >> 2] & ~(keep << sh)) | put;
 }
 
+static uint32_t *ast_eval_slice_rw;
+static int32_t ast_eval_slice_rw_nbyte;
+static int64_t ast_eval_slice_rw_base;
+
+static int ast_eval_slice_rw_addr(int64_t p, int32_t *off) {
+	uint64_t d = (uint64_t)p - (uint64_t)ast_eval_slice_rw_base;
+	*off = (int32_t)(uint32_t)d;
+	return (d >> 32) == 0;
+}
+
+static int ast_eval_slice_ptr_et(AstArena *a, AstLocal n) {
+	int32_t extent = 0;
+	int et = 0, r, t;
+	if (n == AST_NONE || !ast_eval_slice_rw || !ast_eval_slice_obj_fn)
+		return 0;
+	if (ast_kind(a, n) != AST_Ref)
+		return 0;
+	r = ast_op(a, n);
+	if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+		return 0;
+	t = ast_type_t(a, n);
+	if (!t || ast_bad_type(t) || (t & VT_ARRAY) || (t & VT_BTYPE) != VT_PTR)
+		return 0;
+	if (!ast_eval_slice_obj_fn(a, n, &extent, &et))
+		return 0;
+	if (!et || (et & VT_ARRAY) || is_float(et) || !ast_eval_slice_intt(et) ||
+			!ast_eval_slice_tsize(et))
+		return 0;
+	return et;
+}
+
+static int ast_eval_slice_deref(AstArena *a, AstLocal n, int32_t *poff,
+																int *etype) {
+	AstLocal c;
+	int et;
+	if (n == AST_NONE || ast_kind(a, n) != AST_Load || ast_type_t(a, n))
+		return 0;
+	c = ast_first_child(a, n);
+	et = ast_eval_slice_ptr_et(a, c);
+	if (!et)
+		return 0;
+	*poff = (int32_t)(int64_t)ast_ival(a, c);
+	*etype = et;
+	return 1;
+}
+
 typedef struct AstEvalSliceIdx {
 	int32_t base;
 	int32_t esize;
@@ -494,8 +540,12 @@ static int ast_eval_slice_wtype(AstArena *a, AstLocal n) {
 		/* An indexed element is the one node whose own type word is 0 in every
 		 * real arena, so its width has to come from the object it indexes. */
 		AstEvalSliceIdx ix;
+		int32_t pf;
+		int et;
 		if (ast_eval_slice_dynidx(a, ast_first_child(a, n), &ix))
 			return ix.etype;
+		if (ast_eval_slice_deref(a, n, &pf, &et))
+			return et;
 		return 0;
 	}
 	case AST_Unary:
@@ -666,6 +716,19 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 			*out = ast_eval_slice_fit(v, ix.etype);
 			return 1;
 		}
+		if (ast_eval_slice_deref(a, n, &fo, &t)) {
+			int32_t bo = 0;
+			int ok = 0;
+			if (!ast_eval_slice_env(off, val, nenv, fo, &v))
+				return 0;
+			if (!ast_eval_slice_rw_addr(v, &bo))
+				ast_eval_slice_undef = 1;
+			*out = ast_eval_slice_bytes_load(ast_eval_slice_rw,
+																			 ast_eval_slice_rw_nbyte, bo, t, &ok);
+			if (!ok)
+				ast_eval_slice_undef = 1;
+			return 1;
+		}
 		return 0;
 	}
 	case AST_Convert: {
@@ -752,7 +815,10 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 
 static int ast_eval_slice(AstArena *a, AstLocal node, const int32_t *off,
 													const int64_t *val, int n, int64_t *out) {
-	return ast_eval_slice_rec(a, node, off, val, n, out);
+	int d;
+	ast_eval_slice_undef = 0;
+	d = ast_eval_slice_rec(a, node, off, val, n, out);
+	return d && !ast_eval_slice_undef;
 }
 
 #define AST_EVAL_SLICE_MAXRET 64
@@ -881,6 +947,7 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 		AstLocal c = ast_first_child(a, n);
 		int t = ast_type_t(a, n);
 		int32_t fo;
+		int et;
 		AstEvalSliceIdx ix;
 		if (!allow_load)
 			return 0;
@@ -892,6 +959,8 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 		/* Gated on allow_load, which is exactly the frame runner: the ladder and
 		 * the expression slicer both pass 0, so widening this cannot change what
 		 * either of them accepts. */
+		if (ast_eval_slice_deref(a, n, &fo, &et))
+			return 1;
 		return ast_eval_slice_dynidx(a, c, &ix) &&
 					 ast_eval_slice_kind_ok(a, ix.idx, allow_load);
 	}

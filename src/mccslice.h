@@ -36,6 +36,7 @@ typedef struct MccSliceKernel {
 	int32_t off[MCC_SLICE_MAXLIVE];
 	int nlive;
 	int wtype;
+	int usemem;
 	uint64_t key;
 } MccSliceKernel;
 
@@ -225,6 +226,8 @@ typedef struct MccSliceFrame {
 	AstLocal ret;
 	int rettype;
 	int nodes;
+	unsigned char sptr[MCC_SLICE_MAXSLOT];
+	int nptr;
 	/* B1: how many accesses in this run resolve their address at run time. Non
 	 * zero means the run's definedness is a real verdict even without a Return,
 	 * because an out-of-range index is the one thing both executors report the
@@ -279,9 +282,13 @@ static int mcc_slice_dyn_count(AstArena *a, AstLocal n) {
 	int t = 0;
 	if (n == AST_NONE)
 		return 0;
-	if (ast_kind(a, n) == AST_Load &&
-			ast_eval_slice_dynidx(a, ast_first_child(a, n), &ix))
-		t++;
+	if (ast_kind(a, n) == AST_Load) {
+		int32_t pf;
+		int et;
+		if (ast_eval_slice_dynidx(a, ast_first_child(a, n), &ix) ||
+				ast_eval_slice_deref(a, n, &pf, &et))
+			t++;
+	}
 	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
 		t += mcc_slice_dyn_count(a, c);
 	return t;
@@ -409,16 +416,18 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 			(ast_op(a, s) == TOK_INC || ast_op(a, s) == TOK_DEC)) {
 		/* `x++` / `x--` as a statement: the value is discarded, so pre and post
 		 * are the same thing, and on an integer local it is exactly
-		 * frame[slot] = frame[slot] +/- 1. Pointers are excluded because they
-		 * scale by element size, which needs the address space this does not
-		 * have. Measured: this alone takes eligible blocks from 254 to 350. */
+		 * frame[slot] = frame[slot] +/- 1. A pointer scales by element size,
+		 * which is the 14th dump column, and the step must be identical on both
+		 * executors or the answer is silently wrong rather than refused.
+		 * Measured: this alone takes eligible blocks from 254 to 350. */
 		AstLocal t = ast_first_child(a, s);
 		int tt;
 		if (t == AST_NONE || !mcc_slice_is_local_ref(a, t, &off))
 			return 0;
 		tt = ast_type_t(a, t);
-		if (!tt || ast_bad_type(tt) || is_float(tt) || !ast_eval_slice_intt(tt) ||
-				(tt & VT_BTYPE) == VT_PTR)
+		if (!tt || ast_bad_type(tt) || is_float(tt) || !ast_eval_slice_intt(tt))
+			return 0;
+		if ((tt & VT_BTYPE) == VT_PTR && !ast_eval_slice_ptr_et(a, t))
 			return 0;
 		if (mcc_slice_slot_of(f, off) < 0)
 			return 0;
@@ -449,6 +458,22 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 			return 1;
 		}
 	}
+	{
+		int32_t pf;
+		int et;
+		if (ast_eval_slice_deref(a, d, &pf, &et)) {
+			if (ast_eval_slice_tsize(et) < 4)
+				return 0;
+			if (mcc_slice_slot_of(f, pf) < 0)
+				return 0;
+			if (!mcc_slice_frame_scan(f, v))
+				return 0;
+			f->nidx++;
+			f->nstmt++;
+			f->nodes += mcc_slice_nodes(a, s);
+			return 1;
+		}
+	}
 	if (!mcc_slice_is_local_ref(a, d, &off))
 		return 0;
 	dt = ast_type_t(a, d);
@@ -463,9 +488,40 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 	return 1;
 }
 
+/* Which slots hold an address rather than a number, and the width each one is
+ * dereferenced at. Not a predicate: by the time this runs every shape below has
+ * already been accepted. It exists so a seeder can put a real address inside the
+ * mapping into a pointer slot, without which a `*p` run compares two executors
+ * agreeing that an arbitrary integer is out of range. */
+static void mcc_slice_frame_mark_ptr(MccSliceFrame *f, AstLocal n) {
+	AstLocal c, t;
+	int32_t po = 0;
+	int et = 0, i;
+	if (n == AST_NONE)
+		return;
+	if (ast_kind(f->a, n) == AST_Load)
+		ast_eval_slice_deref(f->a, n, &po, &et);
+	else if (ast_kind(f->a, n) == AST_Unary &&
+					 (ast_op(f->a, n) == TOK_INC || ast_op(f->a, n) == TOK_DEC)) {
+		t = ast_first_child(f->a, n);
+		et = ast_eval_slice_ptr_et(f->a, t);
+		if (et)
+			po = (int32_t)(int64_t)ast_ival(f->a, t);
+	}
+	if (et)
+		for (i = 0; i < f->nslot; i++)
+			if (f->slot[i] == po && !f->sptr[i]) {
+				f->sptr[i] = (unsigned char)ast_eval_slice_tsize(et);
+				f->nptr++;
+			}
+	for (c = ast_first_child(f->a, n); c != AST_NONE; c = ast_next_sib(f->a, c))
+		mcc_slice_frame_mark_ptr(f, c);
+}
+
 static int mcc_slice_frame_from_ast(AstArena *a, AstLocal root,
 																		MccSliceFrame *f) {
 	AstLocal s;
+	int i;
 	if (!a || !f || root == AST_NONE || root >= ast_count(a))
 		return 0;
 	if (ast_kind(a, root) != AST_BasicBlock)
@@ -500,7 +556,20 @@ static int mcc_slice_frame_from_ast(AstArena *a, AstLocal root,
 		if (f->ntop < MCC_SLICE_MAXSTMT)
 			f->top[f->ntop++] = s;
 	}
-	return f->ntop > 0 || f->ret != AST_NONE;
+	if (f->ntop == 0 && f->ret == AST_NONE)
+		return 0;
+	for (i = 0; i < f->ntop; i++)
+		mcc_slice_frame_mark_ptr(f, f->top[i]);
+	mcc_slice_frame_mark_ptr(f, f->ret);
+	return 1;
+}
+
+static int mcc_slice_step_of(AstArena *a, AstLocal t, int dt) {
+	int et;
+	if ((dt & VT_BTYPE) != VT_PTR)
+		return 1;
+	et = ast_eval_slice_ptr_et(a, t);
+	return et ? ast_eval_slice_tsize(et) : 0;
 }
 
 /* The CPU reference for a frame run. Reuses ast_eval_slice_rec for the value of
@@ -579,6 +648,7 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 			(ast_op(f->a, s) == TOK_INC || ast_op(f->a, s) == TOK_DEC)) {
 		AstLocal t = ast_first_child(f->a, s);
 		int delta = ast_op(f->a, s) == TOK_INC ? 1 : -1;
+		int step;
 		if (!mcc_slice_is_local_ref(f->a, t, &off))
 			return 0;
 		for (k = 0; k < f->nslot; k++)
@@ -587,7 +657,10 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 		if (k == f->nslot)
 			return 0;
 		dt = ast_type_t(f->a, t);
-		frame[k] = ast_eval_slice_fit(frame[k] + delta, dt);
+		step = mcc_slice_step_of(f->a, t, dt);
+		if (!step)
+			return 0;
+		frame[k] = ast_eval_slice_fit(frame[k] + (int64_t)delta * step, dt);
 		return 1;
 	}
 	d = ast_child(f->a, s, 0);
@@ -614,6 +687,24 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 			if (k == f->nslot)
 				return 0;
 			frame[k] = ast_eval_slice_fit(val, ix.etype);
+			return 1;
+		}
+	}
+	{
+		int32_t pf, bo = 0;
+		int et, ok = 0;
+		if (ast_eval_slice_deref(f->a, d, &pf, &et)) {
+			for (k = 0; k < f->nslot; k++)
+				if (f->slot[k] == pf)
+					break;
+			if (k == f->nslot)
+				return 0;
+			if (!ast_eval_slice_rw_addr(frame[k], &bo))
+				ast_eval_slice_undef = 1;
+			ast_eval_slice_bytes_store(ast_eval_slice_rw, ast_eval_slice_rw_nbyte,
+																 bo, et, val, &ok);
+			if (!ok)
+				ast_eval_slice_undef = 1;
 			return 1;
 		}
 	}
@@ -910,7 +1001,7 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 		uint32_t l_cont = spv_id(m), l_merge = spv_id(m);
 		uint32_t i_phi = spv_id(m), d_phi = spv_id(m);
 		uint32_t from_pre, i_next, d_body, ilt, go;
-		uint32_t def_in = m->def;
+		uint32_t def_in = m->def, d_exit = d_phi;
 		SpvV cv;
 
 		from_pre = m->cur_label;
@@ -951,6 +1042,7 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 					m->def = d_phi;
 					if (!spv_expr(m, f->a, cond, f->slot, f->nslot, base, &cv))
 						return 0;
+					d_exit = m->def;
 					ilt = spv_emit3(m, SpvOpSLessThan, m->id_bool, i_phi,
 													spv_const(m, MCC_SLICE_TRIP_MAX));
 					go = spv_emit3(m, SpvOpLogicalAnd, m->id_bool,
@@ -989,6 +1081,8 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 					spvw_put(&m->body, l_hdr);
 				}
 				d_body = m->def;
+				if (op == 4)
+					d_exit = d_body;
 				m->body.w[patch_i] = i_next;
 				m->body.w[patch_d] = d_body;
 			}
@@ -996,10 +1090,13 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 
 		spv_label_at(m, l_merge);
 		/* i_phi and ilt dominate the merge, so the over-budget test is available
-		 * here without another phi. */
+		 * here without another phi. d_exit rather than d_phi: the iteration that
+		 * fails the test still evaluates the condition, and an undefined access in
+		 * it clears the CPU reference's sticky flag, so discarding it here would
+		 * disagree exactly at loop exit. */
 		ilt = spv_emit3(m, SpvOpSLessThan, m->id_bool, i_phi,
 										spv_const(m, MCC_SLICE_TRIP_MAX));
-		m->def = spv_emit3(m, SpvOpLogicalAnd, m->id_bool, d_phi, ilt);
+		m->def = spv_emit3(m, SpvOpLogicalAnd, m->id_bool, d_exit, ilt);
 		return 1;
 	}
 	if (ast_kind(f->a, s) == AST_If && ast_op(f->a, s) == 7)
@@ -1060,9 +1157,14 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 		AstLocal t = ast_first_child(f->a, s);
 		int delta = ast_op(f->a, s) == TOK_INC ? 1 : -1;
 		SpvV cur;
+		int step;
 		if (!mcc_slice_is_local_ref(f->a, t, &off))
 			return 0;
 		dt = ast_type_t(f->a, t);
+		step = mcc_slice_step_of(f->a, t, dt);
+		if (!step)
+			return 0;
+		delta *= step;
 		for (j = 0; j < f->nslot; j++)
 			if (f->slot[j] == off)
 				break;
@@ -1071,14 +1173,19 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 		cur = spv_load_live_v(m, base, j, ast_eval_slice_is64(dt),
 													(dt & VT_UNSIGNED) != 0);
 		if (cur.w64) {
-			SpvV one = spv_mk(spv_u2(m, spv_uintc(m, (uint32_t)(delta > 0 ? 1 : -1)),
-															 spv_uintc(m, delta > 0 ? 0u : 0xffffffffu)),
-												1, 0);
-			cur = spv_add64(m, cur, one, (dt & VT_UNSIGNED) != 0);
+			cur = spv_add64(m, cur, spv_const64(m, (int64_t)delta),
+											(dt & VT_UNSIGNED) != 0);
 		} else {
 			cur = spv_mk(spv_emit3(m, SpvOpIAdd, m->id_int, spv_val_lo(m, cur),
 														 spv_const(m, delta)),
 									 0, (dt & VT_UNSIGNED) != 0);
+		}
+		if (mcc_slice_mutate) {
+			uint32_t p = spv_pair(m, cur);
+			cur = spv_mk(spv_u2(m, spv_uop(m, SpvOpBitwiseXor, spv_lo(m, p),
+																		 spv_uintc(m, 1)),
+													spv_hi(m, p)),
+									 1, 0);
 		}
 		spv_store_live_v(m, base, j, spv_fit_v(m, cur, dt));
 		return 1;
@@ -1108,6 +1215,33 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 			}
 			elem = spv_dyn_elem(m, iv, &ix);
 			spv_store_live_dv(m, base, j, elem, spv_fit_v(m, val, ix.etype));
+			return 1;
+		}
+	}
+	{
+		int32_t pf;
+		int et;
+		if (ast_eval_slice_deref(f->a, d, &pf, &et)) {
+			SpvRegion mr;
+			uint32_t bo;
+			if (!spv_mem_region(m, &mr))
+				return 0;
+			if (!spv_expr(m, f->a, v, f->slot, f->nslot, base, &val))
+				return 0;
+			for (j = 0; j < f->nslot; j++)
+				if (f->slot[j] == pf)
+					break;
+			if (j == f->nslot)
+				return 0;
+			if (mcc_slice_mutate) {
+				uint32_t p = spv_pair(m, val);
+				val = spv_mk(spv_u2(m, spv_uop(m, SpvOpBitwiseXor, spv_lo(m, p),
+																			 spv_uintc(m, 1)),
+														spv_hi(m, p)),
+										 1, 0);
+			}
+			bo = spv_mem_off(m, spv_load_live_v(m, base, j, 1, 0));
+			spv_store_region(m, &mr, bo, spv_fit_v(m, val, et), et);
 			return 1;
 		}
 	}
@@ -1154,6 +1288,8 @@ static int mcc_slice_frame_kernel_build(MccSliceFrame *f, MccSliceKernel *k) {
 		uint32_t *code;
 		int nw = 0;
 		spv_module_begin(&m, f->nslot);
+		m.mem_base = ast_eval_slice_rw_base;
+		m.mem_nbyte = (uint32_t)ast_eval_slice_rw_nbyte;
 		base = spv_main_begin(&m, f->nslot);
 		for (i = 0; i < f->ntop; i++)
 			if (!mcc_slice_spv_stmt(&m, f, base, f->top[i]) || m.failed) {
@@ -1176,6 +1312,7 @@ static int mcc_slice_frame_kernel_build(MccSliceFrame *f, MccSliceKernel *k) {
 		} else {
 			spv_main_end(&m, m.lane, spv_mk(spv_const(&m, 0), 0, 0));
 		}
+		k->usemem = m.mem_used;
 		code = spv_module_finish(&m, &nw);
 		spv_module_free(&m);
 		if (!code || nw <= 0) {
@@ -1202,6 +1339,14 @@ static int mcc_slice_run_frame_gpu(MccSliceFrame *f, MccSliceKernel *k,
 	int32_t *buf, *ob = NULL;
 	int t, j, rc, native, is64, uns;
 	if (!f || !k || !k->code.p || !frames || ntuple < 1)
+		return MCC_TASK_FAILED;
+	/* A workgroup is dispatched whole. Lanes past ntuple get a zeroed frame, and
+	 * a zeroed frame slot read as a pointer is an address like any other -- it
+	 * lands somewhere in the shared region and stores there, which the CPU
+	 * reference, running exactly ntuple times, never does. Nothing in the ABI
+	 * carries a lane count to guard on, so a kernel that touches binding 2 is
+	 * only dispatchable at a whole multiple of the workgroup. */
+	if (k->usemem && ntuple % MCC_GPU_LOCAL_SIZE)
 		return MCC_TASK_FAILED;
 	native = mcc_slice_lohi_native();
 	if (retval || retdef) {
