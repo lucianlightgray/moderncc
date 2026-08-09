@@ -1417,6 +1417,234 @@ It is left alone deliberately: the column **is** there, the header explains that
 ledger". Relabelling it would edit a campaign record. The `n/a` rule should apply to
 whatever regenerates it next.
 
+### The skip audit — 2026-08-09, `wt/skipaudit`
+
+The suite reports **9151 cells, 0 failures, 424 skipped**, and until this branch nobody had
+read the skip list. A skip is the same defect class the last four rounds kept finding,
+wearing a different hat: in a green run *"not applicable on this host"* and *"this stopped
+working and someone disabled it"* render identically. Worse, the audit found a second hat —
+**cells whose skip path returns 0**, which render as *Passed*.
+
+**The first thing to record is that ctest's own record of a skip carries no reason.** Every
+one of the 424 `<skipped>` elements in the JUnit XML — the artefact the board quotes and the
+artefact `tools/must-run.py --results` consumes — says either `SKIP_RETURN_CODE=77` or
+`SKIP_REGULAR_EXPRESSION_MATCHED` and nothing else. The reason is on the cell's stdout or
+stderr, which ctest discards for a non-failing test. Reconstructing the table below required
+re-running all 424 cells under `ctest -V`. **`mcc_skip_test` does report why** (it echoes
+`SKIP: <reason>` and matches on it), and so do the `dockergate.sh`, `ts_skip()` and
+`tests/runner.c` paths; the loss is in the results file, not the cells.
+
+#### The breakdown, 424 cells, x86_64 Linux, `cmake-cross` built first
+
+| category | cells | what it is |
+| --- | ---: | --- |
+| **Environmental — needs a host, device or toolchain this machine is not** | **219** | |
+| `exec-*/{arm64,arm64_encoding,arm64_errors,arm64_extasm,fastcall,riscv_asm,winarm64_interlocked}` | 154 | 7 goldens × 22 pipelines; `cpu=`/`os=` mismatch |
+| `*-docker` | 25 | `docker info` fails, or the bind mount is invisible inside the container |
+| macho/Darwin: `macho-*`, `cli/macho_*`, `run-tier/*-osx`, `cli/apple_arm64_long_double_is_double` | 18 | needs a Darwin host (or `-DMCC_DARWIN_HOST=ON`) |
+| `diff3/*` wrong arch, or `<2` reference compilers could build the source | 15 | 6 arch/OS, 9 where gcc 15 and clang 22 in their default configuration reject the program |
+| Windows: `run-tier/arm{64,}-win32`, `run-tier/arm-wince`, `compile.win32`, `pe-native-conformance` | 5 | wine emulates x86 PE only and qemu-user cannot load PE |
+| `tls-shared` | 1 | arm64 ELF only |
+| `preprocess/expansion/standard_example` | 1 | impl-defined divergence, gcc != clang, so there is no consensus to compare against |
+| **Environmental, but the prerequisite exists in the checkout** | **32** | |
+| `cross/*`, `run-tier/{i386,arm,arm64,riscv64}`, `selfhost-qemu-*`, `selfhost-arm64-native`, `run-parity-*` | 32 | `vendor/gentoo-stage3-*` is `.gitignore`d, so **every git worktree skips all 32** unless `vendor/` is symlinked in. They run in the primary checkout. This is not a defect in the cells; it is a property of how the tree is branched, and it is worth knowing before quoting a skip count taken in a worktree |
+| **Permanently disabled by design, documented, never runs on any host** | **147** | |
+| `exec-*/{inline,backtrace,btdll,alias,array_assignment,stdcountof_header}` | 132 | 6 goldens × 22 pipelines carrying a `note:` req, which `req_met()` fails unconditionally. All six notes were checked; all six still hold. The four that delegate coverage elsewhere name cells that exist and run (`cli/c99_inline_emission_matrix`, `exec/alias_single_tu`, the `bound_*`/`builtins` goldens, which do run because `MCC_TEST_BCHECK=1`). `stdcountof_header`'s claim was re-verified against this host: gcc 15.3.0 still has no `<stdcountof.h>`, clang 22.1.8 does |
+| `diff3/*` `note:`, `bcheck`, and `#ifdef __MCC__` | 14 | 6 + 4 + 4; `portable_req()` rejects mcc-only bounds-checking and mcc-only source outright |
+| `asm-gas-directives` | 1 | a permanent 77 carrying a named blocker: the integrated assembler lacks `sgdtq`/`sidtq`/`swapgs` (`gas_directives.S:811`) |
+| **Opt-in by design, off by default** | **9** | |
+| `rir-coverage-census`, `rir-nofb-probe` (`MCC_RIR_CENSUS`), `loop-census`, `loop-census-numeric` (`MCC_LOOP_CENSUS_RUN`), `slice-census` (`MCC_SLICE_CENSUS_RUN`) | 5 | see the caveat below |
+| `jit/selftest-{observability,bench,benchwire}` | 3 | `-DMCC_DEV=ON` |
+| `flagsweep-cover` | 1 | `-DMCC_FLAGSWEEP_FULL=ON`, then `ctest -L flagsweep-full` |
+| **Lost subject, already filed and already carrying a manifest row** | **2** | `opt-cache-determinism`, `runtime-bench-gatewin` |
+| **THE FINDING — silently disabled** | **15** | `ast/rir-c2-*` (14) and `superopt-perfn-cache` (1); both below |
+
+**The docker row is not a stable 25.** Re-running the suite the docker cells split their
+reasons between *"docker daemon not available"* and *"docker cannot see `<path>`"* — two
+mutually exclusive claims, since the second requires the first to have succeeded. Under
+`-j32` `docker info` times out and the cell reports the first; run less loaded, some of the
+same cells get further and one (`selfhost-riscv64-docker`) runs to completion and passes.
+A skip that is a function of machine load is a skip that will read as *"not applicable
+here"* forever. Filed as item 5 below.
+
+**One caveat on the opt-in row, because the verification recipe hides it.** `-L census`
+selects **6** cells, and `MCC_RIR_CENSUS=1 ctest -L census` reports 6 run and 0 failed — but
+`MCC_RIR_CENSUS` only arms two of them. `slice-census` wants `MCC_SLICE_CENSUS_RUN=1` and
+`loop-census`/`loop-census-numeric` want `MCC_LOOP_CENSUS_RUN=1`, so three of the six still
+77 inside a run whose headline says the census label is green. `MCC_SLICE_CENSUS_RUN` is
+additionally named **nowhere else in the tree** — not in this file, not in the README — so
+`slice-census` is a cell with a manifest row and no findable switch.
+
+#### THE FINDING — `ast/rir-c2-*`: fourteen cells, a banked ratchet, and a macro nothing ever defined
+
+`tests/ast/rir_c2.cmake` is registered fourteen times (`-O1/-O2/-O3` plus eleven cross
+targets) with **`BANKGAP=0 BANKSKIP=0 BANKFN=1150`** — a real three-way ratchet on the C2
+re-emit: how many function bodies the Replay-IR C2 arm can re-emit byte-identically to what
+the parser produced. Every one of the fourteen skips, on every host, with:
+
+> `rir_c2: c2try=0 on the probe — the C2 re-emit needs a -DMCC_REPLAY_IR_C2=1 build; SKIP`
+
+`MCC_REPLAY_IR_C2` is a compile-time macro that `src/mccrir.c:12-13` defaults to `0`, and
+**no CMakeLists, preset, workflow or toolchain file in this tree has ever defined it to 1.**
+The skip condition is therefore not a host fact. It is unsatisfiable by construction, and it
+has been quietly true for the whole life of the cells. `docs/TODO.md` does not mention
+`rir-c2` anywhere: fourteen cells and a pinned bank that no board entry has ever quoted.
+
+**Re-enabled, it is red.** Built with `MCC_EXTRA_CFLAGS=-DMCC_REPLAY_IR_C2=1` (native
+`x86_64`, 305 sources: `tests/exec/**.c` + `tests/diff/full_language.c`):
+
+| level | population | c2ok | gap vs banked `0` |
+| --- | --- | --- | ---: |
+| `-O1` | `srcs=305 ok=295 fn=1309 faithful=1274` | `1257/1271` | **14** |
+| `-O2` | `srcs=305 ok=295 fn=1309 faithful=1274` | `1258/1271` | **13** |
+| `-O3` | `srcs=305 ok=295 fn=1309 faithful=1274` | `1258/1271` | **13** |
+
+```
+CMake Error at tests/ast/rir_c2.cmake:110 (message):
+  rir_c2: gap 14 against a banked 0 — 14 more body(ies) whose C2 re-emit
+  does not reproduce the parser's bytes
+```
+
+`c2skip=0` and `c2err=0 c2invalid=0` throughout, so the fourteen are not declined re-emits
+or crashes: they are `bytes=1 len=13` at `-O1` — one body whose re-emitted bytes differ and
+thirteen whose length differs. `fn=1309 >= BANKFN=1150`, so the population is not the
+explanation; the gap is.
+
+**Landed on this branch:** `MCC_REPLAY_IR_C2` is now an `mcc_config_node` (BOOL, default
+OFF, group Development) that appends `MCC_REPLAY_IR_C2=1` to `_mccdefs`, so the switch the
+skip message names is a real, discoverable, documented build option instead of a macro you
+have to know to inject through `MCC_EXTRA_CFLAGS`. **The default is unchanged and no bank
+was re-pinned** — re-banking `0` to `14` is exactly the move that makes a ratchet mean
+nothing, and the whole point of the cell is that somebody has to look at the fourteen. Three
+`registered` rows are in `tests/must-run.txt` so the family cannot be deleted quietly.
+
+**Not chased here:** which fourteen bodies, and whether the C2 arm regressed or was banked
+optimistically. `BANKGAP=0` was pinned by somebody who had the macro on; nothing in the tree
+records when, and `git log` on the bank is the next step.
+
+#### THE SECOND FINDING — `superopt-perfn-cache` asked the compiler a question it could not hear. **RE-ENABLED, and green**
+
+`superopt-perfn-cache` drives `mccharness perfncache`, which compiles a three-function
+program three times (cold / warm / one function edited) and requires the per-function
+superopt checkpoint cache to report **0, then 3, then 2** functions cached. It reported:
+
+> `SKIP: superopt per-function search never ran (driver fell back to a plain compile)`
+
+The diagnosis was wrong, and in the most expensive direction: the search *was* running.
+`perfn_run()` invoked `mcc -O13 -v` and scanned **stdout** for `superopt-perfn:`. The line is
+emitted by `mcc_logf_v(s->verbose, MCC_LOG_DEBUG, ...)`, which is bit 6 of the verbosity mask
+and writes to **stderr** — `-v` sets bit 0. So the harness looked for a line at a verbosity
+that does not include it, on a stream it does not carry, concluded the feature was absent,
+retried four times, and skipped. `MCC_LOG=64` would not have helped either: `mcc_log_enabled_v`
+consults `s->verbose` only and ignores the `MCC_LOG` floor.
+
+Two-character fix in `tools/mccharness.c` (`-v` → `-v64`, and swap the stdout/stderr
+buffers). The cell now runs and passes, asserting the real thing:
+
+```
+[DEBUG] superopt-perfn: 3 functions (0 cached) in 77ms, total .text 233
+[DEBUG] superopt-perfn: 3 functions (3 cached) in 9ms, total .text 233
+```
+
+#### THE THIRD FINDING — twenty-three registrations whose skip path reported *Passed*
+
+These never appear in the 424 at all. They are in the 8727 that passed.
+
+| cell(s) | the shape |
+| --- | --- |
+| `jit/arm64-{dispatch,counter,kgc,kgcfp}` | registered with **no `set_tests_properties` at all** — no `SKIP_RETURN_CODE`, no `SKIP_REGULAR_EXPRESSION` — and all three skip paths in `tests/qemu/jit_arm64_*.sh` `echo "SKIP: …"` then **`exit 0`**. On any host without clang or `qemu-aarch64` (i.e. most CI images) four arm64 JIT validators report Passed having compiled nothing. They do run on this host, which is why nothing ever noticed |
+| `superopt/promote-floor` | declares `SKIP_RETURN_CODE 77` and **never emits 77**: a missing subject `continue`s the loop and the script exits `$rc` = 0. A vanished `tests/superopt/src/spillheavy.c` would read as a pass |
+| `gpu/ladder-gpu-parity` | `cmake/ladder_gpu_parity.cmake` sees `available=0`, prints *"no usable GPU device, skipping"* and `return()`s — exit 0. This cell is in `tests/must-run.txt` as the CPU/GPU oracle parity gate |
+| `gpu/spv-slice-known-positive`, `gpu/spv-slice-real`, `gpu/msl-slice-*`, `slice/*-known-positive`, `slice/*-lohi-fallback`, `slice/musl`, `opt-determinism-known-positive`, `untyped-probe-known-positive` | same shape via `cmake/{spvgate_mutate,spvgate_real,slicerun_mutate,slicerun_musl,opt_determinism_mutate,untyped_probe_known_positive}.cmake`: the child's 77 is caught, a reason is printed, and the driver `return()`s 0. **`slice/musl` is doing this today** — `vendor/musl-src` is absent in a worktree, so it printed *"vendor/musl-src absent, skipping"* and reported Passed in 0.00 sec |
+| `tools/slicerun.c` | the device-differential bail was a bare `return 77` with **no message at all** — the only fully silent skip found in the tree |
+
+All fixed on this branch: the `return()`s became `cmake_language(EXIT 77)`, the four
+`exit 0`s became `exit 77`, `promote-floor.sh` counts subjects and 77s when it measured
+none, `slicerun.c` says why, and all twenty-three registrations gained
+`SKIP_RETURN_CODE 77` so the honest answer reaches the results file. On this host every one
+of them still passes, because this host has a device, clang, `qemu-aarch64` and (once
+`vendor/` is present) `musl-src` — which is precisely why none of it was ever noticed.
+
+#### Also fixed: two cells that skipped without saying why
+
+- **`diff3/*`** — `portable_req()` returned a bare 0 and the caller `continue`d **printing
+  nothing**, so 29 diff3 cells reported Skipped with no reason recoverable even under `-V`.
+  It now fills a reason buffer and the caller prints `SKIP  <name> -- <why>`, with a
+  separate `not-portable` column in the summary line so it is not conflated with
+  `ref-cant-build`.
+- **`tests/ci/target-link-gate.sh`** — skipped with the message `no cc`. It now names the
+  compiler `$CC` resolved to.
+
+#### Verified
+
+`cmake-cross` built before `cmake-debug` was configured (hazard 5). `ctest -N` registers
+**9151**. Full `ctest -j32`: **9151 cells, 0 failures, 390 skipped** — the 424 baseline
+minus the 32 `vendor/` sysroot cells, minus `superopt-perfn-cache` and `i386-fastcall-abi`,
+which this branch put back. Nothing turned red that was not red before, and the only cell
+this branch could have turned red is `ast/rir-c2-*`, which is left skipping on the shipped
+default with its bank untouched. `ctest -L flagsweep` 119/0, `-L stratsweep` 30/0,
+`MCC_RIR_CENSUS=1 ctest -L census` 6/0 **with three of the six still Skipped** (see the
+caveat above), `python3 tools/must-run.py --build cmake-debug` 64 rows satisfied, and
+`python3 tools/selfhost-smoke.py cmake-debug` OK.
+
+#### Filed by this sweep, not fixed
+
+1. **The results file still cannot carry a reason.** Everything above had to be recovered by
+   re-running 424 cells under `-V`. The cheap fix is a `tools/must-run.py --skip-audit`
+   mode that classifies a JUnit file against a declared taxonomy and fails on an
+   unclassified skip — the same shape as the manifest itself, applied to skips rather than
+   registrations. Not built here; this section is its first output, produced by hand.
+2. **Nine `diff3/*` cells skip because of the runner's fixed build line, not the host.**
+   `old_func`, `grep` and `types` compile cleanly under `gcc -std=gnu17` and fail only
+   because gcc 15 defaults to `gnu23` (K&R `()` now means `(void)`); `ternary_op` fails only
+   on gcc 14+'s promotion of `-Wint-conversion` to an error; `atomic_aggregate` and
+   `atomic_inlang_rmw` fail at **link** for want of `-latomic`. That is five three-way
+   consensus cells lost to a toolchain default drifting under a hard-coded command line —
+   the same shape as the `-O0` bank, one layer down. `alignas`, `builtin_inf_nan` and
+   `asm_lvalue_cast` are genuinely non-portable and should stay skipped.
+3. **`MCC_SLICE_CENSUS_RUN` is undocumented** and `-L census` reports green while three of
+   its six cells 77. Either document the two missing switches next to `MCC_RIR_CENSUS`, or
+   give the label one arming variable.
+4. **Registration gates with no `else()` skip stub** — cells that *vanish* rather than skip,
+   which is the class `tests/must-run.txt` was built for and still cannot see: 86
+   `stratsweep/isofull-*` and `stratsweep/perm3-*` under `MCC_STRATSWEEP_FULL`, the whole
+   `qemu-*` block under `MCC_QEMU_TESTS`, `selfhost-jit` and `embed-jit-smoke` under
+   `MCC_PYTHON3`/`MCC_EMBED_JIT`, and the seven `macho-libsystem/*` cells whose OFF-branch
+   stub is registered under the *unrelated* name `macho-libsystem-kernel-fused`, so no
+   manifest row can name both states.
+5. **The 24 in-container `apt-get … || exit 77` sites** in `tools/*-docker.sh`. A transient
+   network failure silently converts a real differential test into a skip. They are honest
+   about *what* failed; nothing distinguishes "no docker on this host" from "the mirror was
+   down for 30 seconds", and only the first is a legitimate skip.
+6. **`tools/spvgate.c`'s `VK_HOST` macro** skips with `spvgate: no usable vulkan host, line
+   %d rc=%d` — a source line number and a raw `VkResult`. It is the one remaining skip
+   message in the tree that a reader cannot act on.
+7. **`vendor/` is `.gitignore`d, so 32 cells skip in every worktree.** Any measurement taken
+   on a branch — which is how every one of the last five rounds was taken — silently loses
+   the whole cross/qemu/sysroot tier unless somebody symlinks `vendor/` in. Worth a line in
+   the build instructions at the head of this file rather than a fix. **The 424 baseline this
+   section audits is a no-`vendor/` number**; with `vendor/` symlinked in, the same tree and
+   the same commit report **390**, still 0 failures.
+
+#### THE FOURTH FINDING — `vendor/`'s mingw shadows a working reference. **RE-ENABLED, and green**
+
+Symlinking `vendor/` in did not only recover 32 cells; it *lost* one, which is how it was
+found. `i386-fastcall-abi` passed without `vendor/` and reported
+
+> `SKIP: no gcc`
+
+with it. `mcc_mingw_resolve()` finds the vendored
+`vendor/winlibs-mingw-w64-16.1.0-ucrt-i686/mingw32/bin/**gcc.exe**` — a Windows PE binary —
+and hands it to `mccharness i386fastcall` as `--gcc` on a Linux host, where nothing can
+execute it. The `elseif` chain tested `EXISTS`, which a PE file on Linux satisfies. So in the
+**primary checkout**, which has `vendor/`, the i386 fastcall ABI differential has been
+skipping — and because the same checkout also runs the 32 sysroot cells, the two effects
+cancel in the headline and neither is visible in a count.
+
+Fixed by probing the candidate with `--version` at configure time and falling back to the
+harness default when it does not run, with a `message(STATUS)` saying so. The cell runs and
+passes again.
+
 ### The registration sweep — 2026-08-09, `wt/gateall`
 
 The audit above named the defect class: **a recorded number that nothing forces to stay

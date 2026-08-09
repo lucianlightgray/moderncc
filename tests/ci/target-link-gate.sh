@@ -14,7 +14,10 @@ inc="-I$root/src -I$root/include -I$root/src/formats -I$root/src/objfmt \
  -I$root/src/arch/i386 -I$root/src/arch/x86_64 -I$root/src/arch/arm \
  -I$root/src/arch/arm64 -I$root/src/arch/riscv64"
 
-command -v "$cc" >/dev/null 2>&1 || { echo "no cc"; exit 77; }
+command -v "$cc" >/dev/null 2>&1 || {
+  echo "SKIP: target-link-gate needs a host C compiler; '\$CC' resolved to '$cc', which is not on PATH"
+  exit 77
+}
 
 objcgate=0
 if [ "$(uname -s)" = Darwin ] && command -v nm >/dev/null 2>&1; then

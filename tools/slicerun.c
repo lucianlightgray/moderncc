@@ -4040,7 +4040,11 @@ int main(int argc, char **argv) {
 							 !strcmp(only, "ops") || !strcmp(only, "fault") ||
 			 !strcmp(only, "mem") || !strcmp(only, "deref") ||
 			 !strcmp(only, "fmt")) &&
-			!g_have_device)
+			!g_have_device) {
+		fprintf(stderr, "SKIP: slicerun %s is a device differential and no usable "
+										"device was found on this host (device=%s)\n",
+						only, g_devname);
 		return 77;
+	}
 	return g_failures ? 1 : 0;
 }

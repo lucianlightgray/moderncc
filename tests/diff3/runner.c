@@ -38,11 +38,20 @@ static int crashed(int raw_status) {
 #define RUN_SYSTEM(c) HC_SYSTEM_SH(c)
 #define RUN_POPEN(c) HC_POPEN_SH(c)
 
-static int portable_req(const char *req) {
+static int portable_req(const char *req, char *why, size_t wn) {
+	snprintf(why, wn, "%s", "");
 	if (!req || !*req)
 		return 1;
-	if (strstr(req, "note:") || strstr(req, "bcheck") || strstr(req, "backtrace"))
+	if (strstr(req, "note:")) {
+		snprintf(why, wn, "permanently excluded by its note: %s",
+						 strstr(req, "note:") + 5);
 		return 0;
+	}
+	if (strstr(req, "bcheck") || strstr(req, "backtrace")) {
+		snprintf(why, wn, "requires mcc-only bounds-checking/backtrace, which no "
+										 "reference compiler can join");
+		return 0;
+	}
 	char buf[256];
 	snprintf(buf, sizeof buf, "%s", req);
 	const char *cpu = hc_envv("MCC_TEST_CPU", "unknown");
@@ -57,31 +66,45 @@ static int portable_req(const char *req) {
 				ok = !strcmp(cpu, "i386") || !strcmp(cpu, "x86_64");
 			else
 				ok = !strcmp(cpu, want);
-			if (!ok)
+			if (!ok) {
+				snprintf(why, wn, "requires %s target (host target: %s)", want, cpu);
 				return 0;
+			}
 		} else if (!strncmp(tok, "os=", 3)) {
-			if (strcmp(os, tok + 3))
+			if (strcmp(os, tok + 3)) {
+				snprintf(why, wn, "requires %s target OS (host: %s)", tok + 3, os);
 				return 0;
+			}
 		} else if (!strncmp(tok, "os!=", 4)) {
 
 			const char *want = tok + 4;
 			const char *colon = strchr(want, ':');
 			size_t wl = colon ? (size_t)(colon - want) : strlen(want);
-			if (!strncmp(os, want, wl) && os[wl] == '\0')
+			if (!strncmp(os, want, wl) && os[wl] == '\0') {
+				snprintf(why, wn, "%s", colon && colon[1] ? colon + 1
+																									: "not applicable to this target OS");
 				return 0;
+			}
 		} else if (!strncmp(tok, "diff3!=", 7)) {
 			const char *want = tok + 7;
 			const char *colon = strchr(want, ':');
 			size_t wl = colon ? (size_t)(colon - want) : strlen(want);
-			if (!strncmp(os, want, wl) && os[wl] == '\0')
+			if (!strncmp(os, want, wl) && os[wl] == '\0') {
+				snprintf(why, wn, "%s", colon && colon[1] ? colon + 1
+																									: "no three-way consensus on this OS");
 				return 0;
+			}
 		} else if (!strcmp(tok, "elf")) {
 
-			if (!strcmp(os, "Darwin") || !strcmp(os, "WIN32"))
+			if (!strcmp(os, "Darwin") || !strcmp(os, "WIN32")) {
+				snprintf(why, wn, "requires an ELF target (host: %s)", os);
 				return 0;
+			}
 		} else if (!strcmp(tok, "asm")) {
-			if (strcmp(hc_envv("MCC_TEST_ASM", "1"), "1"))
+			if (strcmp(hc_envv("MCC_TEST_ASM", "1"), "1")) {
+				snprintf(why, wn, "requires the integrated assembler");
 				return 0;
+			}
 		}
 	}
 	return 1;
@@ -338,14 +361,17 @@ int main(int argc, char **argv) {
 		return 2;
 	}
 
-	int pass = 0, mcc_diff = 0, impl = 0, skip = 0, mcc_build_fail = 0, mcc_only = 0, intent = 0;
+	int pass = 0, mcc_diff = 0, impl = 0, skip = 0, mcc_build_fail = 0, mcc_only = 0, intent = 0, nonport = 0;
 	for (int i = 0; i < mcc_goldens_count; i++) {
 		const mcc_golden_t *g = &mcc_goldens[i];
 		if (only && strcmp(only, g->name))
 			continue;
 		if (strcmp(g->mode, "run") && strcmp(g->mode, "run2"))
 			continue;
-		if (!portable_req(g->req)) {
+		char whynot[512];
+		if (!portable_req(g->req, whynot, sizeof whynot)) {
+			printf("SKIP  %-28s -- %s\n", g->name, whynot);
+			nonport++;
 			continue;
 		}
 
@@ -439,8 +465,8 @@ int main(int argc, char **argv) {
 		free(mout);
 	}
 	printf("diff3: %d agree, %d mcc-divergence, %d impl-defined, %d intentional, "
-				 "%d ref-cant-build, %d mcc-only, %d mcc-build-fail\n",
-				 pass, mcc_diff, impl, intent, skip, mcc_only, mcc_build_fail);
+				 "%d ref-cant-build, %d mcc-only, %d not-portable, %d mcc-build-fail\n",
+				 pass, mcc_diff, impl, intent, skip, mcc_only, nonport, mcc_build_fail);
 	if (mcc_diff || mcc_build_fail)
 		return 1;
 	if (pass == 0)

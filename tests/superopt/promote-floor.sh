@@ -11,8 +11,10 @@ shift 2
 mkdir -p "$WORK"
 
 rc=0
+measured=0
 for src in "$@"; do
 	[ -f "$src" ] || { echo "SKIP: $src not present"; continue; }
+	measured=$((measured + 1))
 	n=$(basename "$src" .c)
 	for leg in free pinned; do
 		hd=$WORK/$n.$leg.home
@@ -40,4 +42,8 @@ for src in "$@"; do
 		rc=1
 	fi
 done
+if [ "$measured" -eq 0 ]; then
+	echo "SKIP: none of the $# named subject(s) is present, so this cell compared nothing"
+	exit 77
+fi
 exit $rc

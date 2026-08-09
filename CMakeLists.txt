@@ -1274,6 +1274,8 @@ mcc_config_node(MCC_CONFIG_TRACE TYPE BOOL DEFAULT OFF GROUP "Advanced" ADVANCED
     HELP "Compile in the MCC_TRACE() instrumentation macro (emitted at the [TRACE] verbosity bit); off = MCC_TRACE compiles to nothing. Separate from MCC_DIAG: ~12,600 call sites, one in nearly every basic block")
 mcc_config_node(MCC_DEV TYPE BOOL DEFAULT OFF GROUP "Development" ADVANCED
     HELP "Compile in the AST side-car coherence oracle: recompute every fast-index answer the slow authoritative way and abort on divergence (def/use table, property memos, structural hash, VLat lattice). CI instrument -- it aborts rather than reports. Separate from MCC_DIAG, which instruments the running compiler and changes allocation layout")
+mcc_config_node(MCC_REPLAY_IR_C2 TYPE BOOL DEFAULT OFF GROUP "Development" ADVANCED
+    HELP "Compile in the Replay-IR C2 re-emit arm (rir_tot_c2_*). Without it the fourteen ast/rir-c2-* cells probe c2try=0 and skip on every host, so their BANKGAP/BANKFN ratchet asserts nothing. On 2026-08-09 the first run with it ON measured gap 14 at -O1 and 13 at -O2/-O3 against a banked 0")
 mcc_config_node(MCC_DIAG TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
     HELP "Everything-on self-scrutiny, one switch. Compiles in every internal instrument -- the MCC_TRACE() per-basic-block tracer, allocator and tiny-allocator leak tracking, one-allocation-per-Sym, the Replay_IR operation trace -- and builds with the verbose warning/debug-info flag set plus the mcc_s (sanitized) and mcc_c (coverage) targets. None of it can be a runtime flag: MCC_TRACE alone expands ~12,600 times, and the allocator/Sym instruments change struct layout. Runtime options are -f flags, see src/mccopt.h")
 
@@ -1807,6 +1809,9 @@ endif()
 if(MCC_DEV)
     list(APPEND _mccdefs "MCC_DEV=1")
 endif()
+if(MCC_REPLAY_IR_C2)
+    list(APPEND _mccdefs "MCC_REPLAY_IR_C2=1")
+endif()
 if(MCC_CONFIG_TRACE)
     list(APPEND _mccdefs "MCC_CONFIG_TRACE=1")
 endif()
@@ -2156,7 +2161,7 @@ add_test(NAME "gpu/ladder-gpu-parity"
             -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ladder_gpu_parity.cmake")
 set_tests_properties("gpu/ladder-gpu-parity" PROPERTIES
-    FIXTURES_REQUIRED MCC_BUILT)
+    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
 if(TARGET mcc_mccdefs)
     add_dependencies(mcc mcc_mccdefs)
 endif()
@@ -3562,7 +3567,7 @@ if(MCC_BUILD_TESTS)
                         -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_mutate.cmake")
             set_tests_properties("gpu/spv-slice-known-positive" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT)
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             add_test(NAME "gpu/spv-slice-real"
                 COMMAND "${CMAKE_COMMAND}"
                         -DGATE=$<TARGET_FILE:spvgate>
@@ -3572,7 +3577,7 @@ if(MCC_BUILD_TESTS)
                         -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_real.cmake")
             set_tests_properties("gpu/spv-slice-real" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT)
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
         endif()
 
         if(APPLE AND MCC_GPU_LANG_MSL_VALUE)
@@ -3598,7 +3603,7 @@ if(MCC_BUILD_TESTS)
                         -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_mutate.cmake")
             set_tests_properties("gpu/msl-slice-known-positive" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT)
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             add_test(NAME "gpu/msl-slice-real"
                 COMMAND "${CMAKE_COMMAND}"
                         -DGATE=$<TARGET_FILE:mslgate>
@@ -3608,7 +3613,7 @@ if(MCC_BUILD_TESTS)
                         -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_real.cmake")
             set_tests_properties("gpu/msl-slice-real" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT)
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
         endif()
 
         # slicerun: the scheduler cells. Unlike spvgate it brings no Vulkan of
@@ -3654,7 +3659,7 @@ if(MCC_BUILD_TESTS)
                             -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
                             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_mutate.cmake")
                 set_tests_properties("slice/${_sk}-known-positive" PROPERTIES
-                    FIXTURES_REQUIRED MCC_BUILT)
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             endforeach()
             foreach(_sk ops frame)
                 add_test(NAME "slice/${_sk}-lohi-fallback"
@@ -3664,7 +3669,7 @@ if(MCC_BUILD_TESTS)
                             -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
                             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_mutate.cmake")
                 set_tests_properties("slice/${_sk}-lohi-fallback" PROPERTIES
-                    FIXTURES_REQUIRED MCC_BUILT
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                     ENVIRONMENT "MCC_SLICE_NO_LOHI=1")
             endforeach()
             # Runs alone: a stranded dispatch disables the device for the rest
@@ -3689,7 +3694,7 @@ if(MCC_BUILD_TESTS)
                         -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_musl.cmake")
             set_tests_properties("slice/musl" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 600)
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 600)
             add_test(NAME "slice/real"
                 COMMAND "${CMAKE_COMMAND}"
                         -DRUNNER=$<TARGET_FILE:slicerun>
@@ -5532,22 +5537,13 @@ if(MCC_BUILD_TESTS)
         endif()
 
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-            add_test(NAME jit/arm64-dispatch
-                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_dispatch.sh"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_dispatch.c"
-                        "${CMAKE_BINARY_DIR}")
-            add_test(NAME jit/arm64-counter
-                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_counter.sh"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_counter.c"
-                        "${CMAKE_BINARY_DIR}")
-            add_test(NAME jit/arm64-kgc
-                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgc.sh"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgc.c"
-                        "${CMAKE_BINARY_DIR}")
-            add_test(NAME jit/arm64-kgcfp
-                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgcfp.sh"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgcfp.c"
-                        "${CMAKE_BINARY_DIR}")
+            foreach(_ja dispatch counter kgc kgcfp)
+                add_test(NAME jit/arm64-${_ja}
+                    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_${_ja}.sh"
+                            "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_${_ja}.c"
+                            "${CMAKE_BINARY_DIR}")
+                set_tests_properties(jit/arm64-${_ja} PROPERTIES SKIP_RETURN_CODE 77)
+            endforeach()
         endif()
 
         add_executable(libmcc_test_extra tests/embed/api_extra.c)
@@ -6272,10 +6268,24 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
 
         mcc_mingw_resolve()
         set(_fc_harness_args "")
+        set(_fc_gcc "")
+        set(_fc_m32 "")
         if(EXISTS "${_MCC_MINGW_I686_GCC}")
-            set(_fc_harness_args --gcc "${_MCC_MINGW_I686_GCC}" --m32 "")
+            set(_fc_gcc "${_MCC_MINGW_I686_GCC}")
+            set(_fc_m32 "")
         elseif(EXISTS "${_MCC_MINGW_MULTILIB_GCC}")
-            set(_fc_harness_args --gcc "${_MCC_MINGW_MULTILIB_GCC}" --m32 "-m32")
+            set(_fc_gcc "${_MCC_MINGW_MULTILIB_GCC}")
+            set(_fc_m32 "-m32")
+        endif()
+        if(NOT _fc_gcc STREQUAL "")
+            execute_process(COMMAND "${_fc_gcc}" --version
+                RESULT_VARIABLE _fc_gcc_rc OUTPUT_QUIET ERROR_QUIET)
+            if(_fc_gcc_rc EQUAL 0)
+                set(_fc_harness_args --gcc "${_fc_gcc}" --m32 "${_fc_m32}")
+            else()
+                message(STATUS "i386-fastcall-abi: ${_fc_gcc} is not executable on "
+                               "this host; falling back to the harness default reference")
+            endif()
         endif()
         add_test(NAME i386-fastcall-abi COMMAND "$<TARGET_FILE:mccharness>" i386fastcall
             --imcc ${_xcc_i386} ${_fc_harness_args}
@@ -6446,7 +6456,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                     -DRUNS=4 -DOPT=-O3
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/opt_determinism_mutate.cmake")
             set_tests_properties(opt-determinism-known-positive PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 1800)
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 1800)
 
             add_test(NAME untyped-probe
                 COMMAND "${MCC_PYTHON3}"
@@ -6463,7 +6473,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                     -DLEVELS=O2
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/untyped_probe_known_positive.cmake")
             set_tests_properties(untyped-probe-known-positive PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900)
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
         else()
             mcc_skip_test(opt-determinism
                 "the determinism gate recompiles src/mcc.c with the host mcc; an emulated or cross build is not running the compiler under test")
