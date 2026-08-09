@@ -500,6 +500,12 @@ static int mcc_gpu_init(void) {
 	return 1;
 }
 
+/* The process-resident shared region; see mtl_bind_mem below. Declared here
+ * because mcc_gpu_quiesce releases it. */
+static id mcc_mtl_mem;
+static void *mcc_mtl_pmem;
+static unsigned long mcc_mtl_memsz;
+
 void mcc_gpu_quiesce(void) {
 	int i;
 	MCC_GPU_LOCK();
@@ -507,6 +513,12 @@ void mcc_gpu_quiesce(void) {
 	for (i = 0; i < mcc_mtl_cache_n; i++)
 		mtl_release(mcc_mtl_cache[i].pso);
 	mcc_mtl_cache_n = 0;
+	/* Safe to drop here: the Metal dispatch is synchronous (waitUntilCompleted),
+	 * so no command buffer can still own it. */
+	mtl_release(mcc_mtl_mem);
+	mcc_mtl_mem = 0;
+	mcc_mtl_pmem = NULL;
+	mcc_mtl_memsz = 0;
 	MCC_GPU_UNLOCK();
 }
 
@@ -688,10 +700,46 @@ static int mcc_gpu_rw_supported(void) { return 0; }
 
 static void mcc_gpu_rw_arm(int32_t *p) { (void)p; }
 
+/* Same contract as MCC_VK_MEM_DEFAULT on the Vulkan arm: one host-mapped region
+ * every lane sees, offset 0 reserved as NULL, coherent at command-buffer
+ * granularity only -- seed before submit, drain after, never during.
+ *
+ * Unlike bin/bout, which mcc_gpu_dispatch_locked creates and releases per
+ * dispatch, this one is process-resident: suite_mem writes a byte, calls back in
+ * and requires the identical pointer with the byte intact. */
+#define MCC_MTL_MEM_DEFAULT (1u << 20)
+
+static int mtl_bind_mem(unsigned long want) {
+	id b;
+	void *p = NULL;
+	if (mcc_mtl_mem && want <= mcc_mtl_memsz)
+		return 1;
+	if (want > mcc_gpu.maxbuf) {
+		mtl_fault(MCC_MTL_FAULT_OVER_LIMIT, "newBufferWithLength", 0);
+		return 0;
+	}
+	b = mtl_buffer(want, &p);
+	if (!b)
+		return 0;
+	memset(p, 0, (size_t)want);
+	if (mcc_mtl_mem) {
+		memcpy(p, mcc_mtl_pmem, (size_t)mcc_mtl_memsz);
+		mtl_release(mcc_mtl_mem);
+	}
+	mcc_mtl_mem = b;
+	mcc_mtl_pmem = p;
+	mcc_mtl_memsz = want;
+	return 1;
+}
+
 static int mcc_gpu_mem_backend(void **base, unsigned long *size) {
-	(void)base;
-	(void)size;
-	return 0;
+	if (!mcc_gpu_init() || !mtl_bind_mem(MCC_MTL_MEM_DEFAULT))
+		return 0;
+	if (base)
+		*base = mcc_mtl_pmem;
+	if (size)
+		*size = mcc_mtl_memsz;
+	return 1;
 }
 
 #else /* !MCC_GPU_LANG_MSL */

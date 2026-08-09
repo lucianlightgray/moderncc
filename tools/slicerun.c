@@ -123,6 +123,17 @@ static int backend_has_frame_kernels(void) {
 #endif
 }
 
+/* Only the Vulkan arm waits on a fence with a caller-supplied timeout, so only
+ * it can be made to strand a dispatch on demand. Metal's dispatch is
+ * synchronous. */
+static int backend_has_fence_timeout(void) {
+#if MCC_GPU_LANG_MSL
+	return 0;
+#else
+	return 1;
+#endif
+}
+
 static int backend_has_regions(void) {
 #if MCC_GPU_LANG_MSL
 	return 0;
@@ -3343,9 +3354,18 @@ static void suite_mem(void) {
 		}
 		return;
 	}
+	/* Deliberately NOT gated on backend_has_regions(): this suite tests the host
+	 * mapping only -- that a shared region exists, is process-resident and can be
+	 * seeded. No kernel addresses it, so it is live on a backend whose emitter
+	 * has no region layer yet. */
 	CHECK(mcc_gpu_mem(&base, &size) == 1, "the shared address space is mappable");
 	CHECK(base != NULL, "and the host has a pointer to it");
 	CHECK(size >= (1u << 20), "and it is at least the default extent");
+	/* CHECK records and continues, so without this the NULL base below is
+	 * dereferenced and the suite dies with SIGSEGV rather than reporting three
+	 * failures. That is exactly what it did on the Metal arm. */
+	if (!base || size < (1u << 20))
+		return;
 
 	p = (unsigned char *)base;
 	CHECK(p[0] == 0 && p[1] == 0 && p[2] == 0 && p[3] == 0,
@@ -3391,6 +3411,21 @@ static void suite_fault(void) {
 	for (i = 0; i < AFFINE_N; i++)
 		CHECK(out[i] == AFFINE_EXPECT[i], "and returns the expected values");
 
+	/* The rest of this suite forces a fence timeout to strand a dispatch. That
+	 * needs MCC_GPU_FENCE_NS, which only the Vulkan arm reads (src/mccgpu.c,
+	 * inside the !MCC_GPU_LANG_MSL block) -- the Metal dispatch is synchronous
+	 * through waitUntilCompleted and has no pending-submission state to strand.
+	 * The checks above are real on both arms; asserting the stranding semantics
+	 * on a backend that cannot produce them would grade the backend, not the
+	 * fault path. */
+	if (!backend_has_fence_timeout()) {
+		fprintf(stderr, "slicerun: this backend cannot strand a dispatch (no "
+										"fence-timeout injection); the stranding half of suite_fault "
+										"is not applicable\n");
+		mcc_slice_kernel_free(&k);
+		ast_arena_free(a);
+		return;
+	}
 	/* One nanosecond is shorter than any real kernel, so the fence times out
 	 * with the command buffer genuinely pending -- a real device, a real
 	 * pending submission, no fault injection and no hang. */
@@ -6745,8 +6780,14 @@ int main(int argc, char **argv) {
 			g_no_ptr = 1;
 		else if (!strcmp(argv[i], "--lax"))
 			g_lax = 1;
-		else
+		else if (argv[i][0])
 			only = argv[i];
+		/* An empty argument is not a suite name. CMake generator expressions that
+		 * evaluate false expand to an empty *argument* rather than to nothing, so
+		 * `slicerun mem "" ""` is what the slice/<suite> cells actually ran --
+		 * and the last non-flag argument wins, so `only` became "", every suite
+		 * test below failed to match, and the run reported "0 checks, 0 failures"
+		 * with exit 0. Eight cells were green because they executed nothing. */
 	}
 
 	probe_device();
@@ -6801,6 +6842,31 @@ int main(int argc, char **argv) {
 				return 77;
 			}
 			return _rc;
+		}
+	}
+
+	/* A named suite that matches nothing must be an error. Without this the
+	 * ladder below simply runs no suite, main returns g_failures ? 1 : 0 with
+	 * g_failures still 0, and the cell reports a pass having compared nothing --
+	 * which is how eight slice/<suite> cells stayed green while executing
+	 * nothing at all. A typo in a driver script deserves the same treatment. */
+	if (only) {
+		static const char *const SUITES[] = {
+				"task", "work",  "cpu", "gpu",   "bytes", "wide64", "f64",
+				"ops",  "frame", "mem", "deref", "fmt",   "fault",  "sched",
+				"ext"};
+		size_t si;
+		int known = 0;
+		for (si = 0; si < sizeof SUITES / sizeof SUITES[0]; si++)
+			if (!strcmp(only, SUITES[si])) {
+				known = 1;
+				break;
+			}
+		if (!known) {
+			fprintf(stderr, "slicerun: unknown suite '%s'; nothing would run and "
+											"a run that compared nothing must not report success\n",
+							only);
+			return 2;
 		}
 	}
 

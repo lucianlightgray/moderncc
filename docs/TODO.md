@@ -71,6 +71,109 @@ runs on every dispatch. What it produces is a second independent implementation 
 the first against real data rather than test data. That is a currency which converts —
 the device differential has already caught three miscompiles that internal comparisons
 were structurally blind to — whereas device-eligible blocks never had an exchange rate.
+## Landed — nine `slice/*` cells were running nothing, and M4's host half, 2026-08-09
+
+Starting M1–M7 turned up something that outranks them. **Nine device cells have been
+reporting `Passed` while executing zero checks**, on every platform, since the generator
+expressions were introduced.
+
+### The defect
+
+`CMakeLists.txt` registered the eight `slice/<suite>` cells as
+
+```cmake
+add_test(NAME "slice/${_sg}" COMMAND slicerun "${_sg}"
+         $<$<BOOL:${MCC_GPU_REQUIRED}>:--require-device>
+         $<$<STREQUAL:${_sg},fmt>:--fmt-cost-report>)
+```
+
+A generator expression that evaluates false expands to an **empty argument, not to
+nothing**. With `MCC_GPU_REQUIRED` off — the default everywhere — the registered command
+was literally `slicerun mem "" ""`. `slicerun`'s parser ends with `else only = argv[i];`,
+so the *last* non-flag argument wins: `only` became `""`, no suite matched, and the run
+reported `0 checks, 0 failures` and exited 0.
+
+```
+$ slicerun ops "" ""   ->  slicerun: 0 checks, 0 failures   (ctest: Passed)
+$ slicerun ops         ->  slicerun: op matrix 52 rows, 12249 defined tuples compared
+                           slicerun: 162 checks, 0 failures
+```
+
+Affected: `slice/{gpu,wide64,f64,ops,mem,bytes,deref,fmt}` and `slice/fault`, which had the
+same pattern. Their `-known-positive` twins were never affected — `slicerun_mutate.cmake`
+builds its own argument list — which is why `slice/f64-known-positive` did real work while
+`slice/f64` beside it did none.
+
+**Fixed three ways**, because one was not enough: the registrations build a real list
+instead of using genexes; `slicerun` ignores empty arguments; and **an unrecognised suite
+name is now a hard error**, so a run that would compare nothing can never exit 0 again.
+That last one is the ratchet — the other two are the fix.
+
+### What the un-disarming exposed
+
+On the **Vulkan** arm, nothing: 39 cells, 0 failures. The SPIR-V arm genuinely works and was
+simply not being asked.
+
+On the **Metal** arm, two real defects that had been invisible:
+
+1. **`slice/mem` segfaulted.** `suite_mem` is not gated by `backend_has_regions()` — correctly,
+   since it tests only the host mapping — so it called `mcc_gpu_mem`, got 0 from the Metal
+   stub, recorded three failures, and then dereferenced the still-NULL base. `CHECK` records
+   and continues; nothing stopped it. Now it returns after a failed mapping.
+2. **`slice/fault` asserted Vulkan-only semantics.** Its second half forces a fence timeout
+   with `MCC_GPU_FENCE_NS` to strand a dispatch, and that variable is read only inside the
+   `!MCC_GPU_LANG_MSL` block — Metal dispatches synchronously through `waitUntilCompleted`
+   and has no pending-submission state to strand. The healthy-dispatch half is valid on both
+   arms and still runs; the stranding half now declares itself inapplicable via a new
+   `backend_has_fence_timeout()`. Metal: 8 checks. Vulkan: still all 14.
+
+### M4, step 1 — the Metal shared region
+
+The host half of M4, which needs no emitter work: `mtl_bind_mem` plus a process-resident
+`MTLBuffer`, `mcc_gpu_mem_backend` returning its `contents`, and release in
+`mcc_gpu_quiesce`. Same contract as `MCC_VK_MEM_DEFAULT` — 1 MiB, offset 0 reserved as NULL,
+coherent at command-buffer granularity. It is resident rather than per-dispatch because
+`suite_mem` writes a byte, calls back in, and requires the identical pointer with the byte
+intact. **`slice/mem` on Metal: 7 checks, 0 failures.**
+
+### M1, the behaviour-neutral half
+
+`msl_load_live`'s `k` was a *slot* while `spv_load_live`'s was a *word* — the MSL body
+doubled it, the SPIR-V twin added it directly. The store helpers M1–M4 all need index the
+same way, so a slot-vs-word mix-up would have put every high word on top of the next slot's
+low word. Normalised to words, with `msl_load_at` factored out. The kernel signature is also
+now chosen per module (`msl_kernel_ro`/`msl_kernel_rw` selected by a new `MslMod.wrote_in`)
+so buffer 0 can lose `const` only for modules that actually store, leaving every existing
+expression kernel byte-identical. `gpu/msl-slice-{differential,known-positive,real}` all
+still pass.
+
+### Metal scoreboard
+
+**0 failures, 14 skips.** Of those, `slice/f64-known-positive` (no fp64 device) and
+`slice/musl` (no musl toolchain) are correct and permanent. The remaining twelve are the
+M1–M7 target: `frame`, `frame-known-positive`, `frame-lohi-fallback`, `real`, `inline`,
+`mcc-leaf-graft` (M2); `bytes`, `bytes-known-positive`, `deref`, `deref-known-positive`
+(M4); `fmt`, `fmt-known-positive` (M5).
+
+### Note on the three design documents
+
+M1/M3, M4/M5 and M2/M6a/M7 were each designed against the tree before any code was written,
+and all three found §5 claims that do not hold. The corrections are worth keeping:
+
+- **M1's and M3's stated differentials do not exercise them.** `slice/ops`/`slice/gpu` are
+  expression suites that never store; every `dynidx` cell lives in `suite_frame`, which is
+  behind M2. `mcc_gpu_dispatch_rw2` has *zero* reachable call sites on the Metal arm, so M1
+  can land wrong and turn nothing red. It needs a store round-trip probe of its own.
+- **M4 and M5 are hard-blocked on M1**, which §5's ordering does not say: every M4 cell
+  reaches the device through `mcc_gpu_dispatch_rw2`, and `bytes_kernel_in` stores through
+  buffer 0, which the MSL kernel declared `const`.
+- **M2's differential list names `gpu/msl-slice-real`, which cannot observe it** — `mslgate`
+  never includes `src/mccslice.h`, so `mcc_slice_frame_kernel_build` is not linked into it.
+- **M7's real blocker is not the descriptor count.** Neither gate ever sets
+  `mem_base`/`mem_nbyte`, so `spv_mem_region`/`msl_mem_region` refuse by construction and no
+  region case is emittable however many bindings are declared.
+- **~150 lines of M4/M5 land in `tools/slicerun.c`**, which §5 attributes entirely to the
+  emitter and host.
 
 ## arm64 and Metal — the context, the traps and the unmeasured, 2026-08-09 (`wt/arm64ctx`)
 

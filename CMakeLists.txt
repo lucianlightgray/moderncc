@@ -3720,9 +3720,23 @@ if(MCC_BUILD_TESTS)
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             endforeach()
             foreach(_sg gpu wide64 f64 ops mem bytes deref ext fmt)
-                add_test(NAME "slice/${_sg}" COMMAND slicerun "${_sg}"
-                         $<$<BOOL:${MCC_GPU_REQUIRED}>:--require-device>
-                         $<$<STREQUAL:${_sg},fmt>:--fmt-cost-report>)
+                # Built as a list rather than with generator expressions. A
+                # genex that evaluates false expands to an empty *argument*,
+                # not to nothing, so these cells ran `slicerun <suite> "" ""`;
+                # slicerun's parser takes the last non-flag argument as the
+                # suite name, so `only` became "", no suite matched, and all
+                # of them reported "0 checks, 0 failures" with exit 0. They
+                # were green because they executed nothing. slicerun now also
+                # ignores empty arguments and refuses an unknown suite, so this
+                # cannot recur silently even if a genex creeps back in.
+                set(_sg_args "${_sg}")
+                if(MCC_GPU_REQUIRED)
+                    list(APPEND _sg_args --require-device)
+                endif()
+                if(_sg STREQUAL "fmt")
+                    list(APPEND _sg_args --fmt-cost-report)
+                endif()
+                add_test(NAME "slice/${_sg}" COMMAND slicerun ${_sg_args})
                 set_tests_properties("slice/${_sg}" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             endforeach()
@@ -3751,8 +3765,13 @@ if(MCC_BUILD_TESTS)
             endforeach()
             # Runs alone: a stranded dispatch disables the device for the rest
             # of the process, which is the behaviour under test.
-            add_test(NAME "slice/fault" COMMAND slicerun fault
-                     $<$<BOOL:${MCC_GPU_REQUIRED}>:--require-device>)
+            # List, not a genex -- see the slice/${_sg} loop above for why an
+            # empty generator expression silently disarmed these cells.
+            set(_fault_args fault)
+            if(MCC_GPU_REQUIRED)
+                list(APPEND _fault_args --require-device)
+            endif()
+            add_test(NAME "slice/fault" COMMAND slicerun ${_fault_args})
             set_tests_properties("slice/fault" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             # H6, Phase 0a: the cost table. Informational, but it must produce
