@@ -158,6 +158,31 @@ the reason, recorded so nobody re-derives it.
 `runtime/lib` was not measurable this way: its translation units are library
 objects with no entry point, so there is nothing to run instrumented.
 
+### What it buys on the real corpus: nothing, and that is the finding
+
+The mechanism works and is measured (see the fixture figures below), but the
+payoff on `gcc-c-torture-execute` is **zero blocks**, for two compounding
+reasons that are worth separating.
+
+**First, the corpus barely recurses** — 44 functions in 1,587 programs.
+
+**Second, the recursion it does have is not in the shape the scan accepts.**
+Compiling the **26** recursion-bearing files at `-O2` with
+`MCC_SLICE_INL_DEPTH=6` produces an arena dump **byte-for-byte the same size**
+as without it: `rec-grafts=0`, `bailouts=0`, and not one `AST_Bailout` node in
+25,223 dump lines. Of the 26, **24 write their recursion as a statement `if`
+with two exits**, which is two statements short of the `BasicBlock { Return
+<expr> }` the scan requires. The remaining two have a ternary return and still
+refuse for independent reasons: `nestfunc-4` recurses through a GCC nested
+function, and `stkalign` has an `asm` block and an `assert` call ahead of its
+`return`, so neither body is a single statement either.
+
+So the ranking this produces is unambiguous: **normalising `if (c) return a;
+return b;` into a ternary is the single highest-value follow-up**, because it is
+what stands between this mechanism and 24 of the 26 places in the corpus where
+recursion actually occurs. Nothing else on the list is worth doing first, and
+the wavefront is worth doing last.
+
 ### The cost estimate, so the boundary is priced rather than drawn
 
 No linear-vs-tree classifier was written, deliberately — a hand-drawn boundary is
@@ -191,8 +216,20 @@ node cost is the honest headline: binary recursion expands as 2^d, and the
 expansion is bounded by `MCC_SLICE_INL_EXPAND` (200,000 nodes, env-overridable),
 which plants a guard when it binds exactly as the depth bound does.
 
-**No emitted byte changes.** The graft still runs only on the clone taken by
-`ast_adump_body` and `ast_ladder_census`; `ast_cur` is untouched.
+**No emitted byte changes, measured rather than argued.** The graft still runs
+only on the clone taken by `ast_adump_body` and `ast_ladder_census`; `ast_cur` is
+untouched. Checked against a `HEAD~1` binary over 57 `tests/exec` TUs at `-O0`,
+`-O1` and `-O2`: **171 objects, all byte-identical, 0 differing**. Both arms were
+invoked from inside their own build directories, because `mcc_auto_mccdir`
+derives the include search from `host_exe_path` and a baseline run from anywhere
+else fabricates a diff on every TU that includes a header (hazard 2).
+
+### The cells
+
+| cell | what it would catch |
+| --- | --- |
+| `depth-census-control` (`cmake/depth_census_control.cmake`) | the instrumentation losing its call, depth or **width** figures. Ground truth is hand-derivable from `tests/depthcensus/known_depth.c` — `fact` 29 calls / depth 7 / width 1, `fib` 276 / 9 / **7**, `chain` 13 / 13 / 1 — and identical at `-O0` and `-O2`. Mutating the expected `fib` width to 1 reddens it, so the width half is live and not decoration. Negative control: without `-fdepth-census` there is no dump at all |
+| `slice/depth-bailout` (`cmake/mcc_depth_bailout.cmake`) | a truncated answer. It drives the excursion deliberately and requires the guard to be *reached at run time*, not merely planted |
 
 ### A regression this branch caused and fixed, worth knowing about
 
@@ -222,10 +259,9 @@ bug is still latent: this branch stopped provoking it, it did not fix it.
 - The wavefront strategy itself is unbuilt, on the evidence above. If a corpus
   with wide recursion appears, the instrumentation and the cost estimate are the
   two things it would have needed and they are landed.
-- Only the ternary body shape is expanded: `return c ? base : f(...)`. A callee
-  written as `if (c) return base; return f(...);` is two statements and one exit
-  short of the scan's shape, and normalising control flow into a ternary was not
-  taken.
+- **Only the ternary body shape is expanded** — `return c ? base : f(...)`. This
+  is the binding limit, not a footnote: it is why the corpus payoff is zero, and
+  24 of the corpus's 26 recursion-bearing files are behind it.
 - Self-recursion resolves through `ast_cur` because `ast_inline_retain` runs at
   the *end* of a body, so a function is never in its own pool at the moment its
   arena is dumped. Mutual recursion still needs the pool and therefore still

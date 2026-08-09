@@ -3900,6 +3900,17 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/mcc_depth_bailout.cmake")
             set_tests_properties("slice/depth-bailout" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            # No capability gate: -fdepth-census instruments and the runtime
+            # helper links on every native host, so there is nothing to probe
+            # for and nothing to stub.
+            add_test(NAME "depth-census-control"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/depth_census_control.cmake")
+            set_tests_properties("depth-census-control" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
             # The census counts blocks and callee classes over a compiled corpus,
             # so every figure is a property of the target's own AST/RIR shape.
             # The driver banks one column per architecture; it needs to know

@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 KINDS = ["BasicBlock", "If", "Jump", "Return", "Ref", "Literal", "Load", "Store",
-         "Unary", "Binary", "Convert", "Invoke", "Poison", "StoreVal"]
+         "Unary", "Binary", "Convert", "Invoke", "Poison", "StoreVal", "Bailout"]
 
 
 def check_kinds(srcdir):
