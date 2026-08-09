@@ -211,14 +211,19 @@ run to settle, and it is settled: 0 objects differ.**
 ### Open, and ranked by what the tables actually say
 
 1. **`s.arr[i]` — a runtime index into an array *field*, 58,328 nodes (4.97%).** The
-   single largest implementable construct left anywhere in these four causes.
-   `ast_eval_slice_dynidx` requires `ast_kind(base) == AST_Ref`; a base that is
-   `Unary(AST_OP_MEMBER)` over a local resolves to a constant frame offset by the same
-   `ast_eval_slice_frame_off`, and the extent and element type are already dumped per node
-   (columns 13 and 14) and already reach the tool through `ast_eval_slice_obj_fn`. It
-   needs `ast_eval_slice_livein_obj` to lay the run out from a member offset, so it is
-   **live-in/indexing work and should be taken by whoever owns that**, not by an operator
-   change.
+   single largest implementable construct left anywhere in these four causes, and
+   **re-confirmed still open against `3f36c67b`**: `ast_eval_slice_dynidx` there still
+   opens with `ast_kind(a, x) == AST_Ref && (ast_type_t(a, x) & VT_ARRAY)` for either
+   operand and returns 0 otherwise, so a `Unary(AST_OP_MEMBER)` base is still refused.
+   Such a base over a local resolves to a constant frame offset by the same
+   `ast_eval_slice_frame_off` this branch already leans on, and the extent and element
+   type are dumped per node (columns 13 and 14) and reach the tool through
+   `ast_eval_slice_obj_fn`. The live-in half has moved since this branch was cut —
+   `ast_eval_slice_livein_obj` now dispatches through `ast_eval_slice_ext` /
+   `ast_eval_slice_livein_ext` (the descriptor model from `wt/slotmodel`, `c048d98b`)
+   before the per-element run, so an implementer should extend **that** path rather than
+   the element loop below it. Still **live-in/indexing work for whoever owns that**, not
+   an operator change.
 2. **The untyped-`Load` conditions, 31,134 nodes (2.66%).** `no-working-type` is a label
    on the same population as `load-not-allowed` and `ref-not-local`; nothing in it is a
    type rule that is wrong.
@@ -228,6 +233,37 @@ run to settle, and it is settled: 0 objects differ.**
 4. **`slicerun --refusals` counts every node in the body, including statements and
    address subtrees.** That is why these four causes looked like operator work. The
    `refusal-slot:` table is the fix; use it before ranking.
+5. **Every figure in this section is against `2fbd830f` and is now stale as an absolute.**
+   `wt/slicops` was merged to main at `ac757583` and again at `63e13784`; main is at
+   `3f36c67b` with `wt/slotmodel`, `wt/memwiden` and `wt/refwiden` landed after it, and
+   `ref-not-local` has since been split into its four referent classes (`3f983c49`). The
+   *decomposition* of the four causes is a property of the corpus and the AST shapes and
+   does not move; the acceptance percentages do. **Re-take the baseline before comparing
+   any new number to the 32.17% / 27.96% here.**
+
+### Reproducing the enumeration
+
+The whole table is one dump and one command, and nothing about it is stored:
+
+```sh
+# one arena dump over the corpus (per-file, then concatenated -- the format is
+# record-per-body, so cat is a valid merge and -j is safe)
+for f in vendor/gcc-c-torture-execute/*.c; do
+    MCC_ARENA_DUMP=dump/$(basename "$f" .c).txt \
+        cmake-debug/mcc -c "$f" -o /tmp/a.o -O1 >/dev/null 2>&1
+done
+cat dump/*.txt > torture-arenas.txt
+
+cmake-debug/slicerun --arenas torture-arenas.txt --refusals
+```
+
+`refusal:` gives the per-cause totals, `refusal-slot:` the accept rate per syntactic
+position, `refusal-position:` each cause split by position, and `refusal-detail:` each
+cause split by construct with the AST op named. The accepted/refused totals come from the
+real predicate (`ast_eval_slice_kind_ok`); the *attribution* is re-decided in `tools/` and
+will drift if the guards in `src/ast_eval_slice.h` change, which is why the sub-counts are
+worth re-checking against the cause totals — on this branch every construct list sums
+exactly to its cause, which is the check that nothing was truncated by `REF_DET_CAP`.
 
 ## Landed — `rir_decayed_array` read a comparison's opcode as a `Sym *`, 2026-08-09 (`wt/decayfix`)
 
