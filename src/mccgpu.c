@@ -512,6 +512,12 @@ static int mcc_gpu_init(void) {
 	return 1;
 }
 
+/* The process-resident shared region; see mtl_bind_mem below. Declared here
+ * because mcc_gpu_quiesce releases it. */
+static id mcc_mtl_mem;
+static void *mcc_mtl_pmem;
+static unsigned long mcc_mtl_memsz;
+
 void mcc_gpu_quiesce(void) {
 	int i;
 	MCC_GPU_LOCK();
@@ -519,6 +525,12 @@ void mcc_gpu_quiesce(void) {
 	for (i = 0; i < mcc_mtl_cache_n; i++)
 		mtl_release(mcc_mtl_cache[i].pso);
 	mcc_mtl_cache_n = 0;
+	/* Safe to drop here: the Metal dispatch is synchronous (waitUntilCompleted),
+	 * so no command buffer can still own it. */
+	mtl_release(mcc_mtl_mem);
+	mcc_mtl_mem = 0;
+	mcc_mtl_pmem = NULL;
+	mcc_mtl_memsz = 0;
 	MCC_GPU_UNLOCK();
 }
 
@@ -609,6 +621,10 @@ static id mtl_buffer(unsigned long len, void **map) {
 	return b;
 }
 
+/* Set only for the duration of a frame dispatch, under the same lock that
+ * serialises everything else here. */
+static int32_t *mcc_gpu_rw_back;
+
 static int mcc_gpu_dispatch_locked(const char *src, int len, const int32_t *in,
 																	 int ntuple, int nlive, int32_t *out) {
 	id pool, pso, bin, bout, cb, enc;
@@ -680,7 +696,20 @@ static int mcc_gpu_dispatch_locked(const char *src, int len, const int32_t *in,
 		goto done;
 	}
 	mcc_gpu.fault = MCC_MTL_FAULT_NONE;
-	memcpy(out, pout, (size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
+	/* `out` is NULL whenever the caller wants only the frame back --
+	 * mcc_gpu_dispatch_rw passes NULL, and mcc_slice_run_frame_gpu passes a NULL
+	 * ob when neither retval nor retdef was asked for. The Vulkan twin has always
+	 * guarded this; here it was unreachable only because dispatch_rw2 bailed on
+	 * !mcc_gpu_rw_supported(), which now returns 1. */
+	if (out)
+		memcpy(out, pout, (size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
+	/* The frame copy-back. Buffer 0 is MTLResourceStorageModeShared (options 0
+	 * in mtl_buffer), so `contents` is CPU-coherent the moment
+	 * waitUntilCompleted returns -- no blit, no synchronizeResource:. If those
+	 * options ever become Managed this reads stale bytes. */
+	if (mcc_gpu_rw_back)
+		memcpy(mcc_gpu_rw_back, pin,
+					 (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
 	mcc_gpu.dispatches++;
 	mcc_gpu.lanes += ntuple;
 	rc = 1;
@@ -696,14 +725,50 @@ static int mcc_gpu_backend_load(void) { return mcc_mtl_load(); }
 
 #define MCC_GPU_CODE_PTR(p) ((const char *)(p))
 
-static int mcc_gpu_rw_supported(void) { return 0; }
+static int mcc_gpu_rw_supported(void) { return 1; }
 
-static void mcc_gpu_rw_arm(int32_t *p) { (void)p; }
+static void mcc_gpu_rw_arm(int32_t *p) { mcc_gpu_rw_back = p; }
+
+/* Same contract as MCC_VK_MEM_DEFAULT on the Vulkan arm: one host-mapped region
+ * every lane sees, offset 0 reserved as NULL, coherent at command-buffer
+ * granularity only -- seed before submit, drain after, never during.
+ *
+ * Unlike bin/bout, which mcc_gpu_dispatch_locked creates and releases per
+ * dispatch, this one is process-resident: suite_mem writes a byte, calls back in
+ * and requires the identical pointer with the byte intact. */
+#define MCC_MTL_MEM_DEFAULT (1u << 20)
+
+static int mtl_bind_mem(unsigned long want) {
+	id b;
+	void *p = NULL;
+	if (mcc_mtl_mem && want <= mcc_mtl_memsz)
+		return 1;
+	if (want > mcc_gpu.maxbuf) {
+		mtl_fault(MCC_MTL_FAULT_OVER_LIMIT, "newBufferWithLength", 0);
+		return 0;
+	}
+	b = mtl_buffer(want, &p);
+	if (!b)
+		return 0;
+	memset(p, 0, (size_t)want);
+	if (mcc_mtl_mem) {
+		memcpy(p, mcc_mtl_pmem, (size_t)mcc_mtl_memsz);
+		mtl_release(mcc_mtl_mem);
+	}
+	mcc_mtl_mem = b;
+	mcc_mtl_pmem = p;
+	mcc_mtl_memsz = want;
+	return 1;
+}
 
 static int mcc_gpu_mem_backend(void **base, unsigned long *size) {
-	(void)base;
-	(void)size;
-	return 0;
+	if (!mcc_gpu_init() || !mtl_bind_mem(MCC_MTL_MEM_DEFAULT))
+		return 0;
+	if (base)
+		*base = mcc_mtl_pmem;
+	if (size)
+		*size = mcc_mtl_memsz;
+	return 1;
 }
 
 /* Metal's shared-storage MTLBuffer is the analogue of a host-pointer import,

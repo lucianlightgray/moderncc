@@ -220,6 +220,9 @@ typedef struct MslMod {
 	int ncached;
 	int indent;
 	int failed;
+	/* Set by the store helpers. Selects the kernel signature in
+	 * msl_module_finish; see msl_kernel_ro/msl_kernel_rw. */
+	int wrote_in;
 } MslMod;
 
 static void mslb_need(MslBuf *b, int extra) {
@@ -383,18 +386,69 @@ static uint32_t msl_bool_of_v(MslMod *m, MslV v) {
 	return msl_bv(m, "mcc64_nz(p%u)", v.id);
 }
 
+static uint32_t msl_load_at(MslMod *m, uint32_t idx) {
+	return msl_iv(m, "inb[v%u]", idx);
+}
+
+/* k is a WORD offset here, matching spv_load_live. It used to be a slot -- the
+ * body doubled it -- while the SPIR-V twin added it directly, so the two arms
+ * disagreed on what the same argument meant. The store helpers below index the
+ * same way, and a slot-vs-word mix-up there would land every high word on top
+ * of the next slot's low word. */
 static uint32_t msl_load_live(MslMod *m, uint32_t base, int k) {
 	if (k)
-		return msl_iv(m, "inb[v%u + %d]", base, 2 * k);
-	return msl_iv(m, "inb[v%u]", base);
+		return msl_iv(m, "inb[v%u + %d]", base, k);
+	return msl_load_at(m, base);
 }
 
 static MslV msl_load_live_v(MslMod *m, uint32_t base, int k, int w64, int uns) {
 	if (!w64)
-		return msl_mk(msl_load_live(m, base, k), 0, uns);
+		return msl_mk(msl_load_live(m, base, 2 * k), 0, uns);
 	return msl_mk(msl_pv(m, "int2(inb[v%u + %d], inb[v%u + %d])", base, 2 * k,
 											 base, 2 * k + 1),
 								1, uns);
+}
+
+/* The store counterpart of msl_load_at, and the twin of spv_store_at_in. The
+ * input buffer is the device frame: making it writable is what lets a run of
+ * statements lower as one kernel instead of one kernel per expression. Setting
+ * wrote_in is what drops `const` from buffer 0 in the emitted signature, and it
+ * must be set here rather than by the caller -- a module that stores through
+ * any path at all needs the read-write signature. */
+static void msl_store_at_in(MslMod *m, uint32_t idx, uint32_t val) {
+	m->wrote_in = 1;
+	msl_line(m, "inb[v%u] = v%u;", idx, val);
+}
+
+/* k is a WORD offset, as in msl_load_live. */
+static void msl_store_live(MslMod *m, uint32_t base, int k, uint32_t val) {
+	m->wrote_in = 1;
+	if (k)
+		msl_line(m, "inb[v%u + %d] = v%u;", base, k, val);
+	else
+		msl_line(m, "inb[v%u] = v%u;", base, val);
+}
+
+static void msl_store_live_v(MslMod *m, uint32_t base, int k, MslV v) {
+	if (!v.w64) {
+		/* The high word follows the value's own signedness, exactly as
+		 * spv_store_live_v does: an unsigned 32-bit value zero-extends and a
+		 * signed one sign-extends. Sign-extending unconditionally stored -2 into
+		 * an `unsigned int` slot as -2 where the CPU has 4294967294. */
+		uint32_t hi = v.uns ? msl_const(m, 0) : msl_iv(m, "mcc_sar(v%u, 31)", v.id);
+		msl_store_live(m, base, 2 * k, v.id);
+		msl_store_live(m, base, 2 * k + 1, hi);
+		return;
+	}
+	{
+		/* Named before the stores: msl_iv emits on evaluation and C leaves
+		 * argument order unspecified, so inlining these would leave the emitted
+		 * line order up to the host compiler. */
+		uint32_t lo = msl_iv(m, "p%u.x", v.id);
+		uint32_t hi = msl_iv(m, "p%u.y", v.id);
+		msl_store_live(m, base, 2 * k, lo);
+		msl_store_live(m, base, 2 * k + 1, hi);
+	}
 }
 
 static uint32_t msl_fit(MslMod *m, uint32_t v, int t) {
@@ -1148,8 +1202,20 @@ static const char msl_prelude[] =
 		"\t}\n"
 		"\treturn int2(as_type<int>(ql), as_type<int>(qh));\n"
 		"}\n"
-		"\n"
+		"\n";
+
+/* Buffer 0 is read-only unless the module actually stores through it. Dropping
+ * `const` unconditionally would make inb and outb mutually aliasable to the
+ * Metal compiler and perturb codegen for every expression kernel, and the only
+ * green evidence this backend has is mslgate's per-value differential. The
+ * signature is therefore chosen per module from MslMod.wrote_in, so a module
+ * that stores nothing emits the byte-identical text it emitted before. */
+static const char msl_kernel_ro[] =
 		"kernel void mcc_main(device const int *inb [[buffer(0)]],\n"
+		"                     device int *outb [[buffer(1)]],\n"
+		"                     uint gid [[thread_position_in_grid]]) {\n";
+static const char msl_kernel_rw[] =
+		"kernel void mcc_main(device int *inb [[buffer(0)]],\n"
 		"                     device int *outb [[buffer(1)]],\n"
 		"                     uint gid [[thread_position_in_grid]]) {\n";
 
@@ -1161,12 +1227,16 @@ static void msl_module_begin(MslMod *m, int nlive) {
 }
 
 static char *msl_module_finish(MslMod *m, int *nbytes) {
+	const char *kh = m->wrote_in ? msl_kernel_rw : msl_kernel_ro;
 	int pre = (int)(sizeof msl_prelude - 1);
-	int total = pre + m->decls.n + m->body.n + 2;
+	int khn = (int)strlen(kh);
+	int total = pre + khn + m->decls.n + m->body.n + 2;
 	char *s = (char *)MSL_MALLOC((size_t)total + 1);
 	int i = 0;
 	memcpy(s + i, msl_prelude, (size_t)pre);
 	i += pre;
+	memcpy(s + i, kh, (size_t)khn);
+	i += khn;
 	if (m->decls.n) {
 		memcpy(s + i, m->decls.s, (size_t)m->decls.n);
 		i += m->decls.n;

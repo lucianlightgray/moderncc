@@ -3725,10 +3725,15 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_effect_mutate.cmake")
             set_tests_properties("slice/effect-known-positive" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
-            foreach(_sg gpu wide64 f64 ops mem bytes deref ext arrow fmt hostimport)
-                add_test(NAME "slice/${_sg}" COMMAND slicerun "${_sg}"
-                         $<$<BOOL:${MCC_GPU_REQUIRED}>:--require-device>
-                         $<$<STREQUAL:${_sg},fmt>:--fmt-cost-report>)
+            foreach(_sg gpu wide64 f64 ops mem bytes deref ext arrow fmt hostimport rwstore)
+                set(_sg_args "${_sg}")
+                if(MCC_GPU_REQUIRED)
+                    list(APPEND _sg_args --require-device)
+                endif()
+                if(_sg STREQUAL "fmt")
+                    list(APPEND _sg_args --fmt-cost-report)
+                endif()
+                add_test(NAME "slice/${_sg}" COMMAND slicerun ${_sg_args})
                 set_tests_properties("slice/${_sg}" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             endforeach()
@@ -3757,8 +3762,13 @@ if(MCC_BUILD_TESTS)
             endforeach()
             # Runs alone: a stranded dispatch disables the device for the rest
             # of the process, which is the behaviour under test.
-            add_test(NAME "slice/fault" COMMAND slicerun fault
-                     $<$<BOOL:${MCC_GPU_REQUIRED}>:--require-device>)
+            # List, not a genex -- see the slice/${_sg} loop above for why an
+            # empty generator expression silently disarmed these cells.
+            set(_fault_args fault)
+            if(MCC_GPU_REQUIRED)
+                list(APPEND _fault_args --require-device)
+            endif()
+            add_test(NAME "slice/fault" COMMAND slicerun ${_fault_args})
             set_tests_properties("slice/fault" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             # H6, Phase 0a: the cost table. Informational, but it must produce

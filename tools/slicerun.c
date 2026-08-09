@@ -123,6 +123,17 @@ static int backend_has_frame_kernels(void) {
 #endif
 }
 
+/* Only the Vulkan arm waits on a fence with a caller-supplied timeout, so only
+ * it can be made to strand a dispatch on demand. Metal's dispatch is
+ * synchronous. */
+static int backend_has_fence_timeout(void) {
+#if MCC_GPU_LANG_MSL
+	return 0;
+#else
+	return 1;
+#endif
+}
+
 static int backend_has_regions(void) {
 #if MCC_GPU_LANG_MSL
 	return 0;
@@ -2136,6 +2147,12 @@ static int bytes_kernel(int t, MccGpuCode *out) {
 #define SWS_LANES MCC_GPU_LOCAL_SIZE
 
 static int subword_shared_kernel(int t, MccGpuCode *out) {
+#if MCC_GPU_LANG_MSL
+	/* Metal arm: no region layer, so no shared sub-word store. TODO.md §5 M4.
+	 * Same contract as the other builders here -- 0 means "could not build". */
+	(void)t; (void)out;
+	return 0;
+#else
 	SpvMod m;
 	SpvRegion r;
 	uint32_t base, off, val;
@@ -2165,6 +2182,7 @@ static int subword_shared_kernel(int t, MccGpuCode *out) {
 	out->p = code;
 	out->n = nw;
 	return 1;
+#endif /* MCC_GPU_LANG_MSL */
 }
 
 static unsigned char *subword_shared_span(void) {
@@ -3317,6 +3335,157 @@ static void suite_fmt(void) {
 	}
 }
 
+/* ------------------------------------------------ M1: store round-trip -- */
+
+/* Loads slot 0 (signed) and slot 1 (unsigned), adds 1 to the first, and stores
+ * both back through the live-slot path. Slot 1 is rewritten unchanged and is
+ * there for its high word: it must zero-extend, not sign-extend. */
+static int rwstore_kernel(MccGpuCode *out) {
+#if MCC_GPU_LANG_MSL
+	MslMod m;
+	char *code;
+	uint32_t base;
+	int nb = 0;
+	MslV a, b;
+	msl_module_begin(&m, 2);
+	base = msl_main_begin(&m, 2);
+	a = msl_load_live_v(&m, base, 0, 0, 0);
+	b = msl_load_live_v(&m, base, 1, 0, 1);
+	a = msl_mk(msl_iv(&m, "mcc_add(v%u, v%u)", a.id, msl_const(&m, 1)), 0, 0);
+	msl_store_live_v(&m, base, 0, a);
+	msl_store_live_v(&m, base, 1, b);
+	msl_main_end(&m, m.lane, msl_mk(msl_const(&m, 0), 0, 0));
+	if (m.failed) {
+		msl_module_free(&m);
+		return 0;
+	}
+	code = msl_module_finish(&m, &nb);
+	msl_module_free(&m);
+	if (!code || nb <= 0) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nb;
+	return 1;
+#else
+	SpvMod m;
+	uint32_t *code;
+	uint32_t base;
+	int nw = 0;
+	SpvV a, b;
+	spv_module_begin(&m, 2);
+	base = spv_main_begin(&m, 2);
+	a = spv_load_live_v(&m, base, 0, 0, 0);
+	b = spv_load_live_v(&m, base, 1, 0, 1);
+	a = spv_mk(spv_emit3(&m, SpvOpIAdd, m.id_int, a.id, spv_const(&m, 1)), 0, 0);
+	spv_store_live_v(&m, base, 0, a);
+	spv_store_live_v(&m, base, 1, b);
+	spv_main_end(&m, m.lane, spv_mk(spv_const(&m, 0), 0, 0));
+	if (m.failed) {
+		spv_module_free(&m);
+		return 0;
+	}
+	code = spv_module_finish(&m, &nw);
+	spv_module_free(&m);
+	if (!code || nw <= 0) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nw;
+	return 1;
+#endif
+}
+
+
+/* The live-slot store path has no other differential. Every existing device
+ * suite either never stores (gpu, ops, wide64 are expression suites reaching
+ * the device through mcc_gpu_dispatch, which cannot write buffer 0) or is
+ * behind a stage that is not built yet (frame needs M2, bytes/deref/fmt need
+ * M4). So mcc_gpu_dispatch_rw2 had zero reachable call sites on the Metal arm
+ * and M1 could have been entirely wrong while every cell stayed green.
+ *
+ * This builds one module by hand -- load slot k, transform, store it back --
+ * dispatches it read-write, and checks the host frame afterwards. It also
+ * passes out = NULL, which is the shape mcc_gpu_dispatch_rw uses and which was
+ * an unguarded memcpy on the Metal arm until rw support was enabled. */
+static void suite_rwstore(void) {
+#define RW_NSLOT 2
+#define RW_NT 8
+	int32_t frame[RW_NT * RW_NSLOT * MCC_GPU_IN_SLOTS];
+	int32_t want[RW_NT * RW_NSLOT * MCC_GPU_IN_SLOTS];
+	MccGpuCode code;
+	int t, ok;
+
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr, "FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+	memset(&code, 0, sizeof code);
+	if (!rwstore_kernel(&code)) {
+		fprintf(stderr, "FAIL suite_rwstore: the store kernel did not build\n");
+		g_failures++;
+		return;
+	}
+
+	/* slot 0 = a signed value that goes negative, slot 1 = an unsigned one with
+	 * the high bit set. The second is the case spv_store_live_v's comment is
+	 * about: sign-extending it would put -2 in the slot where the host must see
+	 * 4294967294. */
+	for (t = 0; t < RW_NT; t++) {
+		int b = t * RW_NSLOT * MCC_GPU_IN_SLOTS;
+		frame[b + 0] = t - 4;
+		frame[b + 1] = (t - 4) < 0 ? -1 : 0;
+		frame[b + 2] = (int32_t)0xFFFFFFFEu;
+		frame[b + 3] = 0;
+	}
+	memcpy(want, frame, sizeof frame);
+	for (t = 0; t < RW_NT; t++) {
+		int b = t * RW_NSLOT * MCC_GPU_IN_SLOTS;
+		int32_t v = want[b + 0] + 1;
+		want[b + 0] = v;
+		want[b + 1] = v < 0 ? -1 : 0;
+		/* slot 1 is rewritten unchanged, through the unsigned path */
+		want[b + 2] = (int32_t)0xFFFFFFFEu;
+		want[b + 3] = 0;
+	}
+
+	ok = mcc_gpu_dispatch_rw2(code.p, code.n, frame, RW_NT, RW_NSLOT, NULL);
+	if (!ok) {
+		/* mcc_gpu_dispatch_rw2 returns 0 both when the backend has no read-write
+		 * path and when the dispatch itself failed. Either way nothing was
+		 * compared, so this must not report success. */
+		free(code.p);
+		unsupported("a read-write dispatch", "TODO.md §5 stage M1");
+		return;
+	}
+	g_checks++;
+	{
+		int bad = 0;
+		for (t = 0; t < RW_NT * RW_NSLOT * MCC_GPU_IN_SLOTS; t++)
+			if (frame[t] != want[t]) {
+				if (!bad)
+					fprintf(stderr,
+									"  RWSTORE word %d cpu=%d gpu=%d\n", t, want[t], frame[t]);
+				bad++;
+			}
+		g_checks++;
+		if (bad) {
+			fprintf(stderr, "FAIL suite_rwstore: %d of %d words wrong after the "
+											"store-back\n",
+							bad, RW_NT * RW_NSLOT * MCC_GPU_IN_SLOTS);
+			g_failures++;
+		}
+	}
+	free(code.p);
+#undef RW_NSLOT
+#undef RW_NT
+}
+
 /* ------------------------------------------ the pending-command-buffer UAF -- */
 
 /* Runs last and in its own process: a stranded dispatch disables the device for
@@ -3343,9 +3512,18 @@ static void suite_mem(void) {
 		}
 		return;
 	}
+	/* Deliberately NOT gated on backend_has_regions(): this suite tests the host
+	 * mapping only -- that a shared region exists, is process-resident and can be
+	 * seeded. No kernel addresses it, so it is live on a backend whose emitter
+	 * has no region layer yet. */
 	CHECK(mcc_gpu_mem(&base, &size) == 1, "the shared address space is mappable");
 	CHECK(base != NULL, "and the host has a pointer to it");
 	CHECK(size >= (1u << 20), "and it is at least the default extent");
+	/* CHECK records and continues, so without this the NULL base below is
+	 * dereferenced and the suite dies with SIGSEGV rather than reporting three
+	 * failures. That is exactly what it did on the Metal arm. */
+	if (!base || size < (1u << 20))
+		return;
 
 	p = (unsigned char *)base;
 	CHECK(p[0] == 0 && p[1] == 0 && p[2] == 0 && p[3] == 0,
@@ -3391,6 +3569,21 @@ static void suite_fault(void) {
 	for (i = 0; i < AFFINE_N; i++)
 		CHECK(out[i] == AFFINE_EXPECT[i], "and returns the expected values");
 
+	/* The rest of this suite forces a fence timeout to strand a dispatch. That
+	 * needs MCC_GPU_FENCE_NS, which only the Vulkan arm reads (src/mccgpu.c,
+	 * inside the !MCC_GPU_LANG_MSL block) -- the Metal dispatch is synchronous
+	 * through waitUntilCompleted and has no pending-submission state to strand.
+	 * The checks above are real on both arms; asserting the stranding semantics
+	 * on a backend that cannot produce them would grade the backend, not the
+	 * fault path. */
+	if (!backend_has_fence_timeout()) {
+		fprintf(stderr, "slicerun: this backend cannot strand a dispatch (no "
+										"fence-timeout injection); the stranding half of suite_fault "
+										"is not applicable\n");
+		mcc_slice_kernel_free(&k);
+		ast_arena_free(a);
+		return;
+	}
 	/* One nanosecond is shorter than any real kernel, so the fence times out
 	 * with the command buffer genuinely pending -- a real device, a real
 	 * pending submission, no fault injection and no hang. */
@@ -6061,6 +6254,13 @@ static void suite_ext(void) {
 		}
 		return;
 	}
+	/* An extent frame is a frame kernel (M2) that addresses binding 2 (M4).
+	 * Neither exists on the Metal arm yet, so this compares nothing there and
+	 * must say so rather than assert that lowering succeeded. */
+	if (!backend_has_frame_kernels() || !backend_has_regions()) {
+		unsupported("extent frames", "TODO.md §5 stages M2 and M4");
+		return;
+	}
 	CHECK(g_rw != NULL && ast_eval_slice_rw != NULL,
 				"the shared region is armed, without which no object is an extent");
 	if (!g_rw)
@@ -7771,8 +7971,14 @@ int main(int argc, char **argv) {
 			g_no_ptr = 1;
 		else if (!strcmp(argv[i], "--lax"))
 			g_lax = 1;
-		else
+		else if (argv[i][0])
 			only = argv[i];
+		/* An empty argument is not a suite name. CMake generator expressions that
+		 * evaluate false expand to an empty *argument* rather than to nothing, so
+		 * `slicerun mem "" ""` is what the slice/<suite> cells actually ran --
+		 * and the last non-flag argument wins, so `only` became "", every suite
+		 * test below failed to match, and the run reported "0 checks, 0 failures"
+		 * with exit 0. Eight cells were green because they executed nothing. */
 	}
 
 	probe_device();
@@ -7830,6 +8036,31 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	/* A named suite that matches nothing must be an error. Without this the
+	 * ladder below simply runs no suite, main returns g_failures ? 1 : 0 with
+	 * g_failures still 0, and the cell reports a pass having compared nothing --
+	 * which is how eight slice/<suite> cells stayed green while executing
+	 * nothing at all. A typo in a driver script deserves the same treatment. */
+	if (only) {
+		static const char *const SUITES[] = {
+				"task", "work",  "cpu", "gpu",   "bytes", "wide64", "f64",
+				"ops",  "frame", "mem", "deref", "fmt",   "fault",  "sched",
+				"ext",  "rwstore"};
+		size_t si;
+		int known = 0;
+		for (si = 0; si < sizeof SUITES / sizeof SUITES[0]; si++)
+			if (!strcmp(only, SUITES[si])) {
+				known = 1;
+				break;
+			}
+		if (!known) {
+			fprintf(stderr, "slicerun: unknown suite '%s'; nothing would run and "
+											"a run that compared nothing must not report success\n",
+							only);
+			return 2;
+		}
+	}
+
 	if (!only || !strcmp(only, "task"))
 		suite_task();
 	if (!only || !strcmp(only, "work"))
@@ -7858,6 +8089,8 @@ int main(int argc, char **argv) {
 		suite_arrow();
 	if (!only || !strcmp(only, "fmt"))
 		suite_fmt();
+	if (!only || !strcmp(only, "rwstore"))
+		suite_rwstore();
 	if (only && !strcmp(only, "fault"))
 		suite_fault();
 	/* Named only. It replaces binding 2 with host pages for the rest of the
@@ -7879,7 +8112,8 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "FAIL slicerun: a device is required and none was usable\n");
 		return 1;
 	}
-	if (only && (!strcmp(only, "gpu") || !strcmp(only, "wide64") ||
+	if (only && (!strcmp(only, "rwstore") || !strcmp(only, "gpu") ||
+							 !strcmp(only, "wide64") ||
 							 !strcmp(only, "ops") || !strcmp(only, "fault") ||
 			 !strcmp(only, "mem") || !strcmp(only, "deref") ||
 			 !strcmp(only, "ext") || !strcmp(only, "arrow") ||

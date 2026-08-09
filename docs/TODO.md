@@ -82,6 +82,158 @@ the first against real data rather than test data. That is a currency which conv
 the device differential has already caught three miscompiles that internal comparisons
 were structurally blind to — whereas device-eligible blocks never had an exchange rate.
 
+## Landed — nine `slice/*` cells were running nothing; M1 and M4's host half, 2026-08-09
+
+Starting M1–M7 turned up something that outranks them. **Nine device cells have been
+reporting `Passed` while executing zero checks**, on every platform, since the generator
+expressions were introduced.
+
+### The defect
+
+`CMakeLists.txt` registered the eight `slice/<suite>` cells as
+
+```cmake
+add_test(NAME "slice/${_sg}" COMMAND slicerun "${_sg}"
+         $<$<BOOL:${MCC_GPU_REQUIRED}>:--require-device>
+         $<$<STREQUAL:${_sg},fmt>:--fmt-cost-report>)
+```
+
+A generator expression that evaluates false expands to an **empty argument, not to
+nothing**. With `MCC_GPU_REQUIRED` off — the default everywhere — the registered command
+was literally `slicerun mem "" ""`. `slicerun`'s parser ends with `else only = argv[i];`,
+so the *last* non-flag argument wins: `only` became `""`, no suite matched, and the run
+reported `0 checks, 0 failures` and exited 0.
+
+```
+$ slicerun ops "" ""   ->  slicerun: 0 checks, 0 failures   (ctest: Passed)
+$ slicerun ops         ->  slicerun: op matrix 52 rows, 12249 defined tuples compared
+                           slicerun: 162 checks, 0 failures
+```
+
+Affected: `slice/{gpu,wide64,f64,ops,mem,bytes,deref,fmt}` and `slice/fault`, which had the
+same pattern. Their `-known-positive` twins were never affected — `slicerun_mutate.cmake`
+builds its own argument list — which is why `slice/f64-known-positive` did real work while
+`slice/f64` beside it did none.
+
+**Fixed three ways**, because one was not enough: the registrations build a real list
+instead of using genexes; `slicerun` ignores empty arguments; and **an unrecognised suite
+name is now a hard error**, so a run that would compare nothing can never exit 0 again.
+That last one is the ratchet — the other two are the fix.
+
+### What the un-disarming exposed
+
+On the **Vulkan** arm, nothing: 39 cells, 0 failures. The SPIR-V arm genuinely works and was
+simply not being asked.
+
+On the **Metal** arm, two real defects that had been invisible:
+
+1. **`slice/mem` segfaulted.** `suite_mem` is not gated by `backend_has_regions()` — correctly,
+   since it tests only the host mapping — so it called `mcc_gpu_mem`, got 0 from the Metal
+   stub, recorded three failures, and then dereferenced the still-NULL base. `CHECK` records
+   and continues; nothing stopped it. Now it returns after a failed mapping.
+2. **`slice/fault` asserted Vulkan-only semantics.** Its second half forces a fence timeout
+   with `MCC_GPU_FENCE_NS` to strand a dispatch, and that variable is read only inside the
+   `!MCC_GPU_LANG_MSL` block — Metal dispatches synchronously through `waitUntilCompleted`
+   and has no pending-submission state to strand. The healthy-dispatch half is valid on both
+   arms and still runs; the stranding half now declares itself inapplicable via a new
+   `backend_has_fence_timeout()`. Metal: 8 checks. Vulkan: still all 14.
+
+### M4, step 1 — the Metal shared region
+
+The host half of M4, which needs no emitter work: `mtl_bind_mem` plus a process-resident
+`MTLBuffer`, `mcc_gpu_mem_backend` returning its `contents`, and release in
+`mcc_gpu_quiesce`. Same contract as `MCC_VK_MEM_DEFAULT` — 1 MiB, offset 0 reserved as NULL,
+coherent at command-buffer granularity. It is resident rather than per-dispatch because
+`suite_mem` writes a byte, calls back in, and requires the identical pointer with the byte
+intact. **`slice/mem` on Metal: 7 checks, 0 failures.**
+
+### M1 — DONE, live-slot store-back
+
+The MSL twins of `spv_store_at_in`, `spv_store_live` and `spv_store_live_v`, plus the host
+half: buffer 0 becomes read-write for modules that store, `mcc_gpu_dispatch_locked` copies
+the frame back after `waitUntilCompleted`, and `mcc_gpu_rw_supported()` returns 1.
+
+Three things had to be right, and two of them were latent bugs:
+
+1. **`msl_load_live`'s `k` was a *slot* where `spv_load_live`'s was a *word*** — the MSL body
+   doubled it, the SPIR-V twin added it directly, so the two arms disagreed on what the same
+   argument meant. Every store helper M1–M4 needs indexes the same way; the mix-up would
+   have put each high word on top of the next slot's low word. Normalised to words, with
+   `msl_load_at` factored out.
+2. **`memcpy(out, …)` in the Metal dispatch was unguarded** where the Vulkan twin has always
+   tested `out`. It is NULL whenever a caller wants only the frame back —
+   `mcc_gpu_dispatch_rw` passes NULL, and `mcc_slice_run_frame_gpu` passes a NULL `ob` when
+   neither `retval` nor `retdef` was asked for. Unreachable only because `dispatch_rw2`
+   bailed on `!mcc_gpu_rw_supported()`, which now returns 1. Guarded before flipping it.
+3. **The kernel signature is chosen per module** (`msl_kernel_ro`/`msl_kernel_rw`, selected
+   by a new `MslMod.wrote_in`), so buffer 0 loses `const` only where something stores through
+   it. Dropping it unconditionally would make `inb` and `outb` mutually aliasable to the
+   Metal compiler and perturb codegen for every expression kernel — and mslgate's per-value
+   differential is the only green evidence this backend has.
+
+The high word follows the value's **own** signedness rather than sign-extending
+unconditionally, mirroring `spv_store_live_v`: otherwise `-2` in an `unsigned` slot reaches
+the host as `-2` where the CPU has `4294967294`.
+
+### The differential M1 did not have, and now does
+
+`mcc_gpu_dispatch_rw2` had **zero reachable call sites on the Metal arm**. The expression
+suites (`gpu`, `ops`, `wide64`) reach the device through `mcc_gpu_dispatch`, which cannot
+write buffer 0; every suite that does store is behind M2 or M4. So M1 could have landed
+entirely wrong with every cell still green — the same shape as the nine vacuous cells above,
+arrived at from the opposite direction.
+
+**`slice/rwstore`** closes it: one module built by hand — load slot 0, add 1, store it back;
+load slot 1, store it back unchanged — dispatched read-write with `out = NULL`, which is
+also the shape that was an unguarded `memcpy` until (2). Slot 1 holds `0xFFFFFFFE` so the
+zero-extension rule is pinned rather than assumed. Both arms build the probe from their own
+emitter, so it is a cross-backend check and not a Metal-only one.
+
+**Verified live by falsification**, not by trusting it: changing the expected increment by
+one turns the cell red on 9 of 32 words and exits 1.
+
+### Metal scoreboard
+
+**0 failures, 12 skips** (36/36 on the Metal arm, 40/40 on Vulkan). Of the skips,
+`slice/f64-known-positive` (no fp64 device) and `slice/musl` (no musl toolchain) are correct
+and permanent. The remaining ten are the M2–M5 target: `frame`, `frame-known-positive`,
+`frame-lohi-fallback`, `real`, `inline`, `mcc-leaf-graft` (M2); `bytes`,
+`bytes-known-positive`, `deref`, `deref-known-positive` (M4); `fmt`, `fmt-known-positive`
+(M5).
+
+### Next: M2, and where its difficulty actually is
+
+Not the line count. **MSL emits scoped C control flow, not SSA with labels**, so every value
+that crosses a block boundary — the loop trip counter, the carried definedness, the
+if-merge — must be `msl_id()` plus an explicit declaration *before* the block, the way
+`msl_branch_pair` already does it. A value id created inside `{ }` dies at the brace, and
+the failure mode is a Metal *compile* error inside `mtl_pipeline`, surfacing as
+`mcc_gpu_dispatch` returning 0 — i.e. as `MCC_TASK_FAILED`, not as a build failure.
+
+The second trap is `d_exit`, not `d_phi`: the iteration that fails the loop test still
+evaluates the condition, and an undefined access in it must clear definedness. Get it wrong
+and the two executors disagree *precisely at loop exit and nowhere else*.
+
+### Note on the three design documents
+
+M1/M3, M4/M5 and M2/M6a/M7 were each designed against the tree before any code was written,
+and all three found §5 claims that do not hold. The corrections are worth keeping:
+
+- **M1's and M3's stated differentials do not exercise them.** `slice/ops`/`slice/gpu` are
+  expression suites that never store; every `dynidx` cell lives in `suite_frame`, which is
+  behind M2. `mcc_gpu_dispatch_rw2` has *zero* reachable call sites on the Metal arm, so M1
+  can land wrong and turn nothing red. It needs a store round-trip probe of its own.
+- **M4 and M5 are hard-blocked on M1**, which §5's ordering does not say: every M4 cell
+  reaches the device through `mcc_gpu_dispatch_rw2`, and `bytes_kernel_in` stores through
+  buffer 0, which the MSL kernel declared `const`.
+- **M2's differential list names `gpu/msl-slice-real`, which cannot observe it** — `mslgate`
+  never includes `src/mccslice.h`, so `mcc_slice_frame_kernel_build` is not linked into it.
+- **M7's real blocker is not the descriptor count.** Neither gate ever sets
+  `mem_base`/`mem_nbyte`, so `spv_mem_region`/`msl_mem_region` refuse by construction and no
+  region case is emittable however many bindings are declared.
+- **~150 lines of M4/M5 land in `tools/slicerun.c`**, which §5 attributes entirely to the
+  emitter and host.
+
 ## Landed — recursion lowers by depth-bounded expansion behind a bailout guard, and the wavefront has no candidate on this corpus, 2026-08-09 (`wt/depthinline`)
 
 **The bailout guard first, because it is the only part that is a correctness
@@ -14751,6 +14903,34 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
 - **W5** — mcc cannot self-host on Windows arm64: stage1 takes `0xC0000005` on
   `lib/atomic.c`, `lib/alloca.S`, `lib/alloca-bt.S`, `lib/builtin.c` (host ABI: varargs,
   alloca, stack probe). Needs Windows-on-ARM hardware.
+- ~~**`stage2 / windows / dynamic` CI was red (40 cells).**~~ **Closed 2026-08-09 down
+  to a residual four.** The bulk were Windows-portability defects, now fixed and pushed:
+  - `exec/fabs_edge` (×24): `mccmath.c` gated the single-precision math shims on
+    `__i386__`, so x86_64/arm64 Windows had no `fabsf`/`hypotf` (the UCRT does not export
+    them) — unresolved at link. It also imported the UCRT `fabs`, which returns a negative
+    NaN with the sign bit set; the bit-exact golden rejects it. Now `fabs`/`fabsf` route
+    through the sign-clear intrinsic and `hypotf` through `_hypot` for non-i386 Windows.
+  - `fmt/census-*`, `docs/refs` (×6): `fmt-census.py` and `docref-lint.py` compared
+    POSIX-style paths against native (backslash) `os.path.relpath`/`glob` output, so on
+    Windows every source/citation read as missing. Normalised both sides.
+  - `fmt/arena-census`, `slice-census`, `opt-determinism` (×5): these extract the build's
+    `-D/-I` flags for `src/mcc.c` from `compile_commands.json` with `shlex.split`. On
+    Windows the command carries backslash paths (`-IC:\...`) and POSIX `shlex` eats them
+    as escapes, so every `-I` collapses and the stage2 compile fails with
+    `libmcc.h not found`. Decode the path backslashes first, as `loop-census`/`rir-coverage`
+    already did. `fmt/arena-census` also skips cleanly on the VS generator, which emits no
+    `compile_commands.json`.
+  - `loop-census` (×1): the temp-linked instrumented compiler missed its bundled headers;
+    the PE self-compile now gets the same `-Bruntime/win32` the link step uses, so it finds
+    `stdlib.h` (which on PE lives in `runtime/win32/include`).
+  - **Residual four, each an owner call rather than a portability bug:** `rir-coverage`
+    (PE `lowerable` floor is stale-high — a re-bank, once confirmed to be codegen evolution
+    not a real regression); `ci/must-run-registered` (`ast/o0-baseline` is gated
+    `UNIX AND NOT WIN32` yet `must-run.txt` requires it everywhere; `wide256/gmp-diff` needs
+    libgmp — register-on-Windows vs. exempt is a coverage-policy decision); `cross/shadow-iv-x86_64`
+    (the bash sweep reports 614/614 attempts failed — a deeper Windows-run issue); and
+    `runtime-bench-check` (mcc-vs-reference divergence on signed-overflow UB in `branchy`
+    and `%f` CRT rounding — not a portability bug).
 - ~~**W8** — fix the `selfhost-jit` heap corruption.~~ **Closed 2026-08-09 on the
   native x86_64 Windows host, via the MSVC-ASan `mcc_s` oracle.** The deterministic
   crash is a heap-use-after-free of a `Sym` at `gaddrof` (`src/mccgen.c:2175`, the
