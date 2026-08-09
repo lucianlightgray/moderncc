@@ -253,7 +253,8 @@ opt-cycle|11|8.04% of stage-1 cpu time; the +2.83% stage-2 reading is layout, th
 # +1.9658% on the counter for chain-store, and the independent re-read agrees to
 # four figures. What changed is that after 56da2ab6 chain-store ALONE no longer
 # changes sieve's object at all -- all three flags are now needed to get the same
-# transform. Levels unchanged. Write-up and recipe: docs/TODO.md board row 2.
+# transform. Levels unchanged. Write-up and recipe: docs/TODO.md, the section
+# "2. Replay fidelity -- ~4.3 points of kept -- MEASURED 2026-08-09".
 chain-store|11|6.24% of stage-1 cpu time; +2.42% stage-2 is layout (counter -0.504%), and sieve +26% is inside sieve's 32% layout floor; re-measured 2026-08-09 as a family, +1.50% stage-1 for -0.079% stage-2, still no
 chain-store-member|11|1.78% of stage-1 cpu time; +2.25% stage-2 is layout (counter -0.368%), sieve likewise inside its floor; see the family note above
 tree-switch-conversion|11|1.68% of stage-1 cpu time, stage-2 unmoved

@@ -6487,6 +6487,20 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties("fmt/census-bank-known-positive" PROPERTIES
             TIMEOUT 120)
 
+        add_test(NAME "docs/refs"
+            COMMAND "${MCC_PYTHON3}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/docref-lint.py"
+                "--root=${CMAKE_CURRENT_SOURCE_DIR}" --min-refs 600)
+        set_tests_properties("docs/refs" PROPERTIES TIMEOUT 120)
+
+        add_test(NAME "docs/refs-known-positive"
+            COMMAND "${CMAKE_COMMAND}"
+                -DPY=${MCC_PYTHON3}
+                -DLINT=${CMAKE_CURRENT_SOURCE_DIR}/tools/docref-lint.py
+                -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/docref_lint_mutate.cmake")
+        set_tests_properties("docs/refs-known-positive" PROPERTIES TIMEOUT 120)
+
         if(NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING)
             add_test(NAME opt-determinism
                 COMMAND "${MCC_PYTHON3}"

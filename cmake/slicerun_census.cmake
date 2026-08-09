@@ -47,7 +47,7 @@ foreach(_pair "blocks;947" "inv-blocks;454" "all-internal;169"
     if(NOT CMAKE_MATCH_1 EQUAL _v)
         message(FATAL_ERROR "slice/census: ${_k} is ${CMAKE_MATCH_1}, banked ${_v}. "
                             "The corpus or the callee classifier moved; re-take the "
-                            "numbers in docs/TODO.md board item 3 before re-banking.")
+                            "numbers with tools/slice-census.py before re-banking.")
     endif()
 endforeach()
 

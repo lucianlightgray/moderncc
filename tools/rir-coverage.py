@@ -752,6 +752,17 @@ def main():
     else:
         sys.exit("rir-coverage: unknown corpus " + a.corpus)
 
+    if a.sources:
+        corpus_seen = "explicit --sources"
+    elif a.corpus == "self":
+        corpus_seen = "self = src/mcc.c"
+    elif a.corpus == "exec":
+        corpus_seen = "exec = tests/exec/**.c"
+    else:
+        corpus_seen = ("wide[rir-coverage] = src/mcc.c + "
+                       "tests/{exec,behavior,ast,asm,runtime,static} + examples, "
+                       "unfiltered")
+
     bank = {}
     if os.path.exists(a.bank):
         bank = json.load(open(a.bank))
@@ -963,8 +974,8 @@ def main():
                 "unnoted": cc2["unnoted"], "unnoted_bytes": cc2["b_unnoted"],
                 "residual": ctext - cfn, "coverage": round(ccov, 4),
             }
-            print("== -%s  CAPTURE layer (op stream, MCC_REPLAY_IR=3)  files=%d"
-                  % (opt, len(sources)))
+            print("== -%s  CAPTURE layer (op stream, MCC_REPLAY_IR=3)  "
+                  "corpus=%s files=%d" % (opt, corpus_seen, len(sources)))
             print("   bodies %d, rfaithful %d, rerror %d, unnoted fns %d"
                   % (cc2["cap_fn"], cc2["cap_faithful"], cc2["cap_n_err"],
                      cc2["unnoted"]))
@@ -1024,8 +1035,8 @@ def main():
         }
         low = lowerable(c)
         result[opt]["lowerable"] = low
-        print("== -%s  ARENA layer (production, MCC_RIR_PROD=2)  corpus=%s files=%d"
-              % (opt, a.corpus, len(sources)))
+        print("== -%s  ARENA layer (production, MCC_RIR_PROD=2)  corpus=%s "
+              "files=%d" % (opt, corpus_seen, len(sources)))
         print("   bodies %d = used %d + fallback %d + skip %d"
               % (result[opt]["arena"]["bodies"], c["used"], c["fallback"],
                  c["skip"]))

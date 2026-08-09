@@ -45,7 +45,10 @@ for src in "$SRC"/*.c; do
 		echo "FAIL $name: widened admission changed the output"
 		echo "  jit0: $ref"
 		echo "  wide: $wide"
-		echo "  this is the MCC_JIT_NEARMATCH parity hazard; see TODO KGC section"
+		echo "  this is the MCC_JIT_NEARMATCH parity hazard (src/mccjit_embed.c)."
+		echo "  The 'TODO KGC section' this used to cite was purged at 4ab363ce;"
+		echo "  the nearest live prose is docs/TODO.md, 'The runtime JIT never"
+		echo "  consults the oracle', which does NOT cover near-match parity."
 		rc=1
 		continue
 	fi

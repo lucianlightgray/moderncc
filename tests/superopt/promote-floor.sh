@@ -38,7 +38,11 @@ for src in "$@"; do
 		echo "PASS $n: -O13 keeps promotion ($(wc -c < "$WORK/$n.pinned.text") B .text)"
 	else
 		echo "FAIL $n: -O13 SUBTRACTED promotion -- free .text $(wc -c < "$WORK/$n.free.text") B vs pinned $(wc -c < "$WORK/$n.pinned.text") B"
-		echo "  the size-scored search switched MCC_AST_PROMOTE off; see TODO 'Floor the search'"
+		echo "  the size-scored search switched MCC_AST_PROMOTE off; the floor is"
+		echo "  so_unsetenv_axis/MCC_SO_PROMOTE_FLOOR in src/mcc.c. The TODO item"
+		echo "  'Floor the search' this used to cite was pruned at 71f3330b; the"
+		echo "  surviving prose is docs/TODO.md, 'What the JIT can and cannot"
+		echo "  recover from a demotion'."
 		rc=1
 	fi
 done

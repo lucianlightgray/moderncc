@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Census of printf-family call sites and format specifiers over a C corpus.
 
-Regenerates the numbers docs/TODO.md board item 2 quotes. Default corpus is
+Regenerates the numbers docs/TODO.md quotes under "Where every number on this
+board comes from" (this tool's rows name it). Default corpus is
 src/*.c, matching docs/DEVICE-LIBC.md's rule that tests/exec must not be used
 for the libc phase.
 

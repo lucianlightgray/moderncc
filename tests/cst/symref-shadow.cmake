@@ -27,8 +27,10 @@ foreach(_m IN LISTS _maps)
             "symref-shadow: two `x` uses resolved to DIFFERENT defs "
             "(${_first} vs ${_id}). The v1 resolver is last-declaration-wins and "
             "should map both to the same def — a scope-aware resolver now exists, "
-            "so update this boundary test (and TODO 'CST slice-I') to assert the "
-            "correct scoped mappings.\n${_all}")
+            "so update this boundary test to assert the correct scoped mappings. "
+            "(The 'CST slice-I' section this used to send you to lived in "
+            "docs/NOTES.md, deleted at bb2469bd; the boundary it described is "
+            "stated here and nowhere else.)\n${_all}")
     endif()
 endforeach()
 
