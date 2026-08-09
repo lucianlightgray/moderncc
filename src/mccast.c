@@ -13658,14 +13658,22 @@ static int ast_adump_etype(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return pointed_type(&ct)->t;
 }
 
+static AstArena *ast_slice_leaf_inline(AstArena *a);
+
 static void ast_adump_body(AstArena *a, const char *fname) { MCC_TRACE("enter\n");
 	AstLocal nn, n;
+	AstArena *g;
 	ast_adump_open();
 	if (!ast_adump_on || !a)
 		{ MCC_TRACE("br\n"); return; }
 	nn = ast_count(a);
 	if (!nn)
 		{ MCC_TRACE("br\n"); return; }
+	g = ast_slice_leaf_inline(a);
+	if (g) { MCC_TRACE("br\n");
+		a = g;
+		nn = ast_count(a);
+	}
 	fprintf(ast_adump_fp, "[arena] fn=%s n=%ld root=%ld\n", fname ? fname : "?",
 					(long)nn, (long)ast_root(a));
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
@@ -13693,6 +13701,8 @@ static void ast_adump_body(AstArena *a, const char *fname) { MCC_TRACE("enter\n"
 		fprintf(ast_adump_fp, "[inv] %ld %s\n", (long)n,
 						cs ? get_tok_str(cs->v, NULL) : "?");
 	}
+	if (g)
+		{ MCC_TRACE("br\n"); ast_arena_free(g); }
 }
 
 static FILE *ast_slc_fp;
@@ -15841,6 +15851,65 @@ static int ast_eval_slice(AstArena *a, AstLocal n, const int32_t *o, const int64
 #define MCC_GPU_ORACLE 1
 #include "mccgpu.h"
 
+#ifdef AST_EVAL_SLICE_PROVIDED
+#include "slice_inline.h"
+
+static AstArena *ast_slice_leaf_pool(AstArena *a, AstLocal inv, AstLocal *root) { MCC_TRACE("enter\n");
+	AstLocal cref = ast_child(a, inv, 0);
+	void *cs;
+	int i;
+	if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
+		{ MCC_TRACE("br\n"); return NULL; }
+	cs = (void *)(uintptr_t)ast_sym(a, cref);
+	if (!cs || (((Sym *)cs)->type.t & VT_BTYPE) != VT_FUNC)
+		{ MCC_TRACE("br\n"); return NULL; }
+	for (i = 0; i < ast_inline_n; i++) { MCC_TRACE("br\n");
+		if (ast_inline_pool[i].sym != cs || !ast_inline_pool[i].ast)
+			{ MCC_TRACE("br\n"); continue; }
+		if (ast_arena_has_hole(ast_inline_pool[i].ast))
+			{ MCC_TRACE("br\n"); return NULL; }
+		*root = ast_root(ast_inline_pool[i].ast);
+		return ast_inline_pool[i].ast;
+	}
+	return NULL;
+}
+
+static void ast_slice_inl_report(void) { MCC_TRACE("enter\n");
+	fprintf(stderr, "[slice-inline] invoke-seen=%ld invoke-inlined=%ld pool=%d\n",
+					mcc_slice_inl_seen, mcc_slice_inl_n, ast_inline_n);
+}
+
+static int ast_slice_inl_env = -1;
+
+static int ast_slice_inl_on(void) { MCC_TRACE("enter\n");
+	if (ast_slice_inl_env < 0) { MCC_TRACE("br\n");
+		ast_slice_inl_env = mcc_env_flag("MCC_AST_SLICE_INLINE", 1);
+		mcc_slice_inl_dump = mcc_env_on("MCC_SLICE_INL_DUMP");
+		if (ast_slice_inl_env) { MCC_TRACE("br\n");
+			mcc_slice_leaf_hook = ast_slice_leaf_pool;
+			atexit(ast_slice_inl_report);
+		}
+	}
+	return ast_slice_inl_env;
+}
+
+static AstArena *ast_slice_leaf_inline(AstArena *a) { MCC_TRACE("enter\n");
+	AstArena *g;
+	if (!a || !ast_inline_n || !ast_slice_inl_on())
+		{ MCC_TRACE("br\n"); return NULL; }
+	g = ast_arena_clone(a);
+	if (!g)
+		{ MCC_TRACE("br\n"); return NULL; }
+	mcc_slice_inline_arena(g);
+	return g;
+}
+#else
+static AstArena *ast_slice_leaf_inline(AstArena *a) { MCC_TRACE("enter\n");
+	(void)a;
+	return NULL;
+}
+#endif
+
 #define AST_LADDER_GPU_MAX (1u << 20)
 
 static long ast_ladder_gpu_budget;
@@ -16495,6 +16564,7 @@ static void ast_ladder_census_rec(AstArena *a, AstLocal n, AstLocal *roots,
 
 static void ast_ladder_census(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal roots[AST_LADDER_CENSUS_ROOTS];
+	AstArena *g;
 	int cnt = 0, i, j, pairs = 0;
 	if (ast_ladder_census_env < 0) { MCC_TRACE("br\n");
 		ast_ladder_census_env = mcc_env_on("MCC_AST_EVAL_LADDER_CENSUS");
@@ -16503,6 +16573,9 @@ static void ast_ladder_census(AstArena *a) { MCC_TRACE("enter\n");
 	}
 	if (!ast_ladder_census_env || !a)
 		{ MCC_TRACE("br\n"); return; }
+	g = ast_slice_leaf_inline(a);
+	if (g)
+		{ MCC_TRACE("br\n"); a = g; }
 	ast_ladder_census_rec(a, ast_root(a), roots, &cnt, AST_LADDER_CENSUS_ROOTS);
 	for (i = 0; i < cnt; i++) { MCC_TRACE("br\n");
 		AstArena *cp = ast_slice_extract(a, roots[i]);
@@ -16529,6 +16602,8 @@ static void ast_ladder_census(AstArena *a) { MCC_TRACE("enter\n");
 			ast_ladder_tally(&ast_ladder_cross, &r, seed_ok, t1 - t0);
 			pairs++;
 		}
+	if (g)
+		{ MCC_TRACE("br\n"); ast_arena_free(g); }
 }
 
 #endif

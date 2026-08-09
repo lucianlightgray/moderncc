@@ -3701,6 +3701,16 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_inline.cmake")
             set_tests_properties("slice/inline" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
+            add_test(NAME "slice/mcc-leaf-graft"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DRUNNER=$<TARGET_FILE:slicerun>
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/mcc_leaf_graft.cmake")
+            set_tests_properties("slice/mcc-leaf-graft" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
             add_test(NAME "slice/census"
                 COMMAND "${CMAKE_COMMAND}"
                         -DRUNNER=$<TARGET_FILE:slicerun>
