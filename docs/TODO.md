@@ -6,6 +6,156 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Landed — an array live-in costs one descriptor, not one slot per element, 2026-08-09 (`wt/slotmodel`)
+
+**What was measured before anything was built.** The predicate ceiling reproduces exactly:
+`MCC_LOOP_CENSUS_RUN=1 tools/loop-census.py cmake-debug --corpus runtime --levels O2 --top 20
+--opt-in` → 97.76% raw, **80.60%** parallel-legal, 80.66% `par=1`, 26 loops `par=1`,
+`matmul.c:22` 1,728,000,000 of 2,246,355,539 iterations (76.92%), `loopnest.c:44` 2.24%,
+`vlaloop.c:13` 1.37%. Nothing in that row was overstated.
+
+**The ≈1.45% was.** That figure is not printed by any tool — the provenance table below marks
+it **DERIVED**, as "`par=1` *and* integer", and 94% of it is one loop: `vlaloop.c:13`. Run
+directly, that loop's array is `int buf[64]` — a **local**, so storage class is not what
+refused it — and 64 elements against `MCC_SLICE_MAXSLOT = 16` is what refused it. So
+`vlaloop` contributed **0** device-executable points before this branch, not 1.37, and the
+honest before-figure for the numeric corpus is ≈0.08%, not ≈1.45%. Measured four ways on
+this tree with one function per file, `frame-mem` being the count of frame runs that reach
+binding 2:
+
+| probe | before | after |
+| --- | --- | --- |
+| `double a[4],b[4],c[4]` local, `c[i] += a[i]*b[i]` | accepted 2, mem 0 | accepted 2, mem 0 |
+| the same source with the three arrays `static` | accepted 1, mem 0 | accepted 1, mem 0 |
+| `double a[64],b[64],c[64]` local | accepted 1, mem 0 | **accepted 2, mem 1** |
+| the same source with the three arrays `static` | accepted 1, mem 0 | accepted 1, mem 0 |
+
+The 64-element local goes from one accepted run to two, and the second is the one that
+indexes the array — it lowers, dispatches and agrees. The `static` rows do not move at
+either size, and the run they do accept never touches an array.
+
+**The model.** `ast_eval_slice_livein_obj` gave an indexed object one frame slot per element,
+padded up to `nspan`, and both executors resolved an element as `slot_of(base) + index`. An
+object whose padded span exceeds `AST_EVAL_SLICE_DENSE_MAX` now becomes an **extent**
+instead: one slot holding the object's host address, the bytes in the shared region, and an
+element at `addr - mem_base + elem * esize`. That is the descriptor a `*p` live-in already
+was, so it reuses `spv_mem_region`, `spv_mem_off`, `spv_load_region`, `spv_store_region` and
+their references `ast_eval_slice_rw_addr`, `ast_eval_slice_bytes_load` and
+`ast_eval_slice_bytes_store` — no new binding, no new emitter primitive, no ABI change. The
+new pieces are `ast_eval_slice_ext`, `ast_eval_slice_livein_ext`, `ast_eval_slice_ext_off`,
+`ast_eval_slice_ext_load`, `spv_ext_off` and `MccSliceFrame.sextb`, which is the extent twin
+of `sptr`: it tells a seeder which slot holds an address and how many bytes it must reserve.
+
+**Three properties the shape of the rule is chosen for, rather than asserted.**
+`ast_eval_slice_ext` is a predicate over an `AstEvalSliceIdx` rather than a field in it, and
+that is not a stylistic choice twice over. It has to be a pure function of the object's shape
+and of whether a shared region exists at all, because `ast_eval_slice_dynidx` is recomputed
+from the AST at every site and the two executors and the emitter must reach the same answer
+without consulting state one of them built — a predicate makes that literal instead of a
+convention. And a *field* was measured to fail `rir/drop-ratchet`: growing `AstEvalSliceIdx`
+by one `int` changes the stack layout of every function in `src/mccast.c`'s translation unit
+that declares one, which moved `save_regdisp_group`'s spill count and took silently-dropped
+`regaddi` from the banked 4 to 5. The compiler was not the regression — the **baseline**
+binary compiling the new `src/mcc.c` reports 5 too, and 4 on the base source — but the cell is
+right that the bank should not grow, and the predicate keeps it at 4. Worth knowing before
+adding a field to any hot struct in that TU. The threshold is a floor rather than a switch: a padded span of 9 or more never
+fitted `MCC_SLICE_MAXSLOT` alongside a live-in index, so every shape the dense model accepts
+with a runtime index still takes the dense path. The one shape that does move is a 9-to-16
+element object indexed by a *literal*, which costs no index slot and so exactly filled the
+frame before; it is still accepted, now as an extent. And the reserved
+span is the **padded** span, because an out-of-range index is masked into it by both
+executors, so the padding has to be part of the object or the mask reaches a neighbour.
+Elements narrower than 4 bytes are refused rather than made extents: a sub-word store into a
+region shared between lanes is a read-modify-write that races, which `spv_store_region`
+already declines.
+
+**Storage class, and it is not "nothing, it was never wired".** A `static` array reaches the
+arena as a `Ref` whose op is `VT_CONST | VT_SYM` — measured on `matmul`'s dump, op 560, `ival`
+0, identified by the `sym` column. Three independent things block it and only the first is a
+gate. (1) `ast_eval_slice_dynidx` requires the base to be `VT_LOCAL` and not `VT_SYM`, as do
+`ast_eval_slice_ptr_et`, `ast_eval_slice_kind_ok`, `ast_eval_slice_livein`,
+`ast_eval_slice_rec` and `spv_expr`. (2) An extent needs the object's address at run time. A
+local's comes from the frame slot the host seeds; a `static` has no frame slot, its `ival` is
+an offset within a symbol, and nothing carries the symbol's address — the dump's extent and
+element-type columns are present and correct for a static, but there is no value for either
+executor to read. Reaching it needs a live-in class keyed by symbol rather than by frame
+offset, and a host that resolves symbols at run time. (3) The bytes must lie **inside**
+binding 2. Binding 2 is a Vulkan `HOST_VISIBLE|HOST_COHERENT` allocation; a `static` lives in
+`.bss`, and nothing in this tree imports host memory into a buffer, so the only routes are
+placing file-scope objects in the shared address space at compile time — the "globals image"
+`mcc_gpu_mem` names and nothing implements — or copying in and out around every dispatch. And
+at today's `MCC_VK_MEM_DEFAULT` of 1 MiB, `matmul`'s three `double[600][600]` are **8.64 MB**
+and `loopnest`'s six are 2.09 MB, so neither working set fits even after a storage-class fix.
+`mcc_vk_bind_mem` can grow, so that last one is a caller default rather than a hard cap, but
+no caller asks for more.
+
+**Funnel, numeric corpus** — the 17 in-tree kernels of `tools/runtime-bench.py`'s `KERNELS`,
+each compiled at `-O1` under `MCC_ARENA_DUMP` and replayed with `slicerun --arenas`:
+
+| stage | before | after |
+| --- | ---: | ---: |
+| bodies | 55 | 55 |
+| expression slices produced / lowered | 379 / 379 | 379 / 379 |
+| expression mismatches | 0 | 0 |
+| frame runs accepted | 98 | **123** |
+| frame runs lowered | 95 | **118** |
+| frame runs dispatched and compared | 95 | **118** |
+| frame runs reaching binding 2 | 0 | **23** |
+| frame statements | 130 | 196 |
+| frame mismatches | 0 | **0** |
+| dispatches | 491 | 514 |
+
+Per kernel the movement is exactly where the model predicts and nowhere else: `vlaloop`
+7 → 14 compared with 7 reaching binding 2 — and its `work`, the function holding
+`vlaloop.c:13`, compiled on its own goes **3 → 6 runs compared, 0 → 3 reaching binding 2, and
+3 → 21 statements inside them**, so what moved is whole loop bodies over `int buf[64]` and not
+something adjacent. `interp` 6 → 22 with 16, and **`matmul` 8 → 8 and
+`loopnest` 17 → 17, both still at 0** — their arrays are `static`, which this branch does not
+address. The expression path is unchanged by construction: `mcc_slice_has_ext` refuses an
+extent there, because an expression kernel is built with no `mem_base` and its live-in vector
+is seeded with plain integers, so the CPU runner would evaluate an arbitrary number as an
+address and `--cref` would spell it to the C oracle as one.
+
+**So the headline, stated the way it should have been stated the first time.** The
+device-executable parallel-legal iteration-weighted fraction of the numeric corpus goes from
+**≈0.08% to ≈1.45%** against the same 80.60% ceiling — the 1.37 points this branch unblocks
+are the ones the board was already claiming, and the claim is now true. The 79.21 points of
+`double` in `matmul` and `loopnest` are **unmoved**, and the reason is storage class plus a
+1 MiB shared region, not the slot model and not `is_float`.
+
+**What adjudicates the widening, stated rather than left implicit.** `--cref` spells
+*expression* slices back out as C and has never seen a frame run, so widening the frame path
+does not widen it — which is precisely why the expression path refuses extents instead of
+quietly handing the C oracle a live-in it would spell as an integer. What does adjudicate an
+extent is what already adjudicates every frame run: the CPU reference against the device over
+a whole workgroup of independent frames, every slot and the returned value compared, plus a
+`memcmp` of the entire shared region, which is the only check that sees a store landing at the
+wrong address. That differential grew by 23 runs on the numeric corpus in the same commit,
+and `--mutate` makes all six of the new suite's positive cases fail.
+
+**Cells.** `slice/ext` and `slice/ext-known-positive` (9456 → **9458**). The suite asserts
+that a 32-, 48- and 64-element array is frame work at all, that it costs **one** slot and not
+one per element, that `sextb` reserves the padded span, that the kernel declares it touches
+binding 2, and that every descriptor slot and every byte the two executors wrote to the shared
+region agrees over a whole workgroup of frames — with wild indices as well as in-range ones,
+at 4-byte, 8-byte and `double` element widths. It also pins the two refusals the rule depends
+on: a four-element array still takes one slot per element, and a 32-element array of `short`
+is refused rather than raced. Under `--mutate` all six positive cases fail, so the
+differential is not blind. Both cells are registered in `tests/must-run.txt` (78 → **80**
+rows), as `registered` rather than `must-run` because they are device differentials and skip
+honestly on a host without one.
+
+**Emitted code is unchanged, measured rather than asserted.** Every `.c` under `tests/`,
+`src/`, `examples/` and `runtime/` compiled at `-O0`–`-O3` by a binary built from the merge
+base and by this one: **2,932 objects byte-identical, 0 differing, 0 self-unstable**, 624
+(file, level) pairs not compilable standalone by either binary, identically. Both binaries
+were invoked from the same
+directory *and* live in the same directory, because `mcc` derives its include search from
+`argv[0]` and a baseline run elsewhere shifts the anonymous-symbol counter and fabricates
+diffs at every level. That the count is unchanged is expected rather than lucky:
+`ast_eval_slice_obj_fn` and `ast_eval_slice_rw` are both NULL inside the compiler, so
+`ast_eval_slice_ext` is false on every path an AOT compile takes.
+
 ## Landed — `rir_decayed_array` read a comparison's opcode as a `Sym *`, 2026-08-09 (`wt/decayfix`)
 
 **The defect.** `rir_decayed_array` in `src/mccrir.c` opened with a null test and three

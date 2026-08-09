@@ -107,11 +107,28 @@ static int mcc_slice_nodes(AstArena *a, AstLocal n) {
 	return t;
 }
 
+static int mcc_slice_has_ext(AstArena *a, AstLocal n) {
+	AstEvalSliceIdx ix;
+	AstLocal c;
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Load &&
+			ast_eval_slice_dynidx(a, ast_first_child(a, n), &ix) &&
+			ast_eval_slice_ext(&ix))
+		return 1;
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (mcc_slice_has_ext(a, c))
+			return 1;
+	return 0;
+}
+
 static int mcc_slice_work_from_ast(AstArena *a, AstLocal root, MccSliceWork *w) {
 	int cnt = 0;
 	if (!a || !w || root == AST_NONE || root >= ast_count(a))
 		return 0;
 	if (!ast_eval_slice_kind_ok(a, root, 0))
+		return 0;
+	if (mcc_slice_has_ext(a, root))
 		return 0;
 	memset(w, 0, sizeof *w);
 	if (!ast_eval_slice_livein(a, root, w->off, &cnt, MCC_SLICE_MAXLIVE))
@@ -232,6 +249,8 @@ typedef struct MccSliceFrame {
 	int nodes;
 	unsigned char sptr[MCC_SLICE_MAXSLOT];
 	int nptr;
+	int32_t sextb[MCC_SLICE_MAXSLOT];
+	int next;
 	/* B1: how many accesses in this run resolve their address at run time. Non
 	 * zero means the run's definedness is a real verdict even without a Return,
 	 * because an out-of-range index is the one thing both executors report the
@@ -529,6 +548,33 @@ static void mcc_slice_frame_mark_ptr(MccSliceFrame *f, AstLocal n) {
 		mcc_slice_frame_mark_ptr(f, c);
 }
 
+static int mcc_slice_frame_mark_ext(MccSliceFrame *f, AstLocal n) {
+	AstEvalSliceIdx ix;
+	AstLocal c;
+	int i;
+	if (n == AST_NONE)
+		return 1;
+	if (ast_kind(f->a, n) == AST_Load &&
+			ast_eval_slice_dynidx(f->a, ast_first_child(f->a, n), &ix) &&
+			ast_eval_slice_ext(&ix)) {
+		for (i = 0; i < f->nslot; i++)
+			if (f->slot[i] == ix.base) {
+				int32_t nb = ix.nspan * ix.esize;
+				if (f->sptr[i])
+					return 0;
+				if (!f->sextb[i])
+					f->next++;
+				else if (f->sextb[i] != nb)
+					return 0;
+				f->sextb[i] = nb;
+			}
+	}
+	for (c = ast_first_child(f->a, n); c != AST_NONE; c = ast_next_sib(f->a, c))
+		if (!mcc_slice_frame_mark_ext(f, c))
+			return 0;
+	return 1;
+}
+
 static int mcc_slice_frame_from_ast(AstArena *a, AstLocal root,
 																		MccSliceFrame *f) {
 	AstLocal s;
@@ -579,6 +625,11 @@ static int mcc_slice_frame_from_ast(AstArena *a, AstLocal root,
 	for (i = 0; i < f->ntop; i++)
 		mcc_slice_frame_mark_ptr(f, f->top[i]);
 	mcc_slice_frame_mark_ptr(f, f->ret);
+	for (i = 0; i < f->ntop; i++)
+		if (!mcc_slice_frame_mark_ext(f, f->top[i]))
+			return 0;
+	if (!mcc_slice_frame_mark_ext(f, f->ret))
+		return 0;
 	return 1;
 }
 
@@ -698,12 +749,26 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 			 * with it on every frame slot as well as on the verdict. */
 			if (!ast_eval_slice_idx_ok(&ix, iv, &elem))
 				ast_eval_slice_undef = 1;
-			off = ix.base + (int32_t)elem * ix.esize;
+			off = ast_eval_slice_ext(&ix) ? ix.base
+																		: ix.base + (int32_t)elem * ix.esize;
 			for (k = 0; k < f->nslot; k++)
 				if (f->slot[k] == off)
 					break;
 			if (k == f->nslot)
 				return 0;
+			if (ast_eval_slice_ext(&ix)) {
+				int32_t bo = 0;
+				int ok = 0;
+				if (!ast_eval_slice_rw_addr(frame[k], &bo))
+					ast_eval_slice_undef = 1;
+				bo = ast_eval_slice_ext_off(bo, elem, ix.esize);
+				ast_eval_slice_bytes_store(ast_eval_slice_rw, ast_eval_slice_rw_nbyte,
+																	 bo, ix.etype,
+																	 ast_eval_slice_fit(val, ix.etype), &ok);
+				if (!ok)
+					ast_eval_slice_undef = 1;
+				return 1;
+			}
 			frame[k] = ast_eval_slice_fit(val, ix.etype);
 			return 1;
 		}
@@ -1238,6 +1303,16 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 				val = spv_mk(spv_u2(m, lo, spv_hi(m, p)), 1, 0);
 			}
 			elem = spv_dyn_elem(m, iv, &ix);
+			if (ast_eval_slice_ext(&ix)) {
+				SpvRegion mr;
+				if (!spv_mem_region(m, &mr))
+					return 0;
+				spv_store_region(
+						m, &mr,
+						spv_ext_off(m, spv_load_live_v(m, base, j, 1, 0), elem, &ix),
+						spv_fit_v(m, val, ix.etype), ix.etype);
+				return 1;
+			}
 			spv_store_live_dv(m, base, j, elem, spv_fit_v(m, val, ix.etype));
 			return 1;
 		}

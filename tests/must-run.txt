@@ -46,6 +46,8 @@ slice/bytes-known-positive   | registered | proves the per-width region differen
 slice/mem                    | registered | the shared CPU<->GPU address space: pointers, heap, printf ring
 slice/deref                  | registered | *p through binding 2: the region layer re-parameterised onto the shared address space
 slice/deref-known-positive   | registered | proves the binding-2 differential is not blind
+slice/ext                    | registered | an array live-in as one descriptor instead of one slot per element; the only check that an object larger than MCC_SLICE_MAXSLOT is addressable at all
+slice/ext-known-positive     | registered | proves the extent differential is not blind
 slice/fault                  | registered | the pending-command-buffer strand path
 slice/cost                   | registered | H6; the break-even table the plan's go/no-go rests on
 slice/real                   | registered | both runners over real recorded arenas

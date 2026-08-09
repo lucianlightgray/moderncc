@@ -525,6 +525,10 @@ static int ast_eval_slice_rw_addr(int64_t p, int32_t *off) {
 	return (d >> 32) == 0;
 }
 
+static int32_t ast_eval_slice_ext_off(int32_t base, int elem, int32_t esize) {
+	return (int32_t)((uint32_t)base + (uint32_t)elem * (uint32_t)esize);
+}
+
 static int ast_eval_slice_ptr_et(AstArena *a, AstLocal n) {
 	int32_t extent = 0;
 	int et = 0, r, t;
@@ -561,6 +565,8 @@ static int ast_eval_slice_deref(AstArena *a, AstLocal n, int32_t *poff,
 	return 1;
 }
 
+#define AST_EVAL_SLICE_DENSE_MAX 8
+
 typedef struct AstEvalSliceIdx {
 	int32_t base;
 	int32_t esize;
@@ -569,6 +575,12 @@ typedef struct AstEvalSliceIdx {
 	int nspan;
 	AstLocal idx;
 } AstEvalSliceIdx;
+
+static int ast_eval_slice_ext(const AstEvalSliceIdx *o) {
+	return ast_eval_slice_rw != 0 && o->nspan > AST_EVAL_SLICE_DENSE_MAX &&
+				 o->esize >= 4 &&
+				 (int64_t)o->nspan * o->esize <= (int64_t)0x40000000;
+}
 
 /* The whole span is rounded up to a power of two so that masking a wild index
  * into it needs one AND and cannot leave the object. That is what makes J3b's
@@ -809,6 +821,25 @@ static int ast_eval_slice_frame_off(AstArena *a, AstLocal n, int32_t *off,
  * happened has to travel beside the value rather than instead of it. */
 static int ast_eval_slice_undef;
 
+static int ast_eval_slice_ext_load(const AstEvalSliceIdx *ix, int elem,
+																	 const int32_t *off, const int64_t *val,
+																	 int nenv, int64_t *out) {
+	int64_t v = 0;
+	int32_t bo = 0;
+	int ok = 0;
+	if (!ast_eval_slice_env(off, val, nenv, ix->base, &v))
+		return 0;
+	if (!ast_eval_slice_rw_addr(v, &bo))
+		ast_eval_slice_undef = 1;
+	bo = ast_eval_slice_ext_off(bo, elem, ix->esize);
+	v = ast_eval_slice_bytes_load(ast_eval_slice_rw, ast_eval_slice_rw_nbyte, bo,
+																ix->etype, &ok);
+	if (!ok)
+		ast_eval_slice_undef = 1;
+	*out = ast_eval_slice_fit(v, ix->etype);
+	return 1;
+}
+
 static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 															const int64_t *val, int nenv, int64_t *out) {
 	if (n == AST_NONE)
@@ -902,6 +933,8 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 				return 0;
 			if (!ast_eval_slice_idx_ok(&ix, iv, &elem))
 				ast_eval_slice_undef = 1;
+			if (ast_eval_slice_ext(&ix))
+				return ast_eval_slice_ext_load(&ix, elem, off, val, nenv, out);
 			if (!ast_eval_slice_env(off, val, nenv,
 															ix.base + (int32_t)elem * ix.esize, &v))
 				return 0;
@@ -1297,6 +1330,18 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 	}
 }
 
+static int ast_eval_slice_livein_ext(const AstEvalSliceIdx *o, int32_t *offs,
+																		 int *cnt, int max) {
+	int i;
+	for (i = 0; i < *cnt; i++)
+		if (offs[i] == o->base)
+			return 1;
+	if (*cnt >= max)
+		return 0;
+	offs[(*cnt)++] = o->base;
+	return 1;
+}
+
 /* An indexed object takes a whole run of consecutive slots, one per element,
  * padded up to the masked span. Consecutive is the load-bearing word: the
  * device resolves an element as `slot_of(base) + index` at run time, which is
@@ -1311,6 +1356,8 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 static int ast_eval_slice_livein_obj(const AstEvalSliceIdx *o, int32_t *offs,
 																		 int *cnt, int max) {
 	int i, k;
+	if (ast_eval_slice_ext(o))
+		return ast_eval_slice_livein_ext(o, offs, cnt, max);
 	for (i = 0; i < *cnt; i++)
 		if (offs[i] == o->base) {
 			if (i + o->nspan > *cnt)
