@@ -6396,6 +6396,22 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties("optbench/null-subject-known-positive" PROPERTIES
             TIMEOUT 120)
 
+        add_test(NAME "optbench/levelbench-bank"
+            COMMAND "${MCC_PYTHON3}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/optlevel-bench.py" --check
+                "--bank=${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/levelbench.tsv"
+                "--mccopt=${CMAKE_CURRENT_SOURCE_DIR}/src/mccopt.h")
+        set_tests_properties("optbench/levelbench-bank" PROPERTIES TIMEOUT 120)
+
+        add_test(NAME "optbench/levelbench-bank-known-positive"
+            COMMAND "${CMAKE_COMMAND}"
+                -DPY=${MCC_PYTHON3}
+                -DBENCH=${CMAKE_CURRENT_SOURCE_DIR}/tools/optlevel-bench.py
+                -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/optlevel_bench_bank_mutate.cmake")
+        set_tests_properties("optbench/levelbench-bank-known-positive" PROPERTIES
+            TIMEOUT 120)
+
         add_test(NAME "fmt/census-bank"
             COMMAND "${MCC_PYTHON3}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tools/fmt-census.py" --check
@@ -6410,6 +6426,54 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fmt_census_bank_mutate.cmake")
         set_tests_properties("fmt/census-bank-known-positive" PROPERTIES
             TIMEOUT 120)
+
+        if(NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING)
+            add_test(NAME opt-determinism
+                COMMAND "${MCC_PYTHON3}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/opt-determinism.py"
+                    "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c"
+                    --runs 4 --from-build "${CMAKE_BINARY_DIR}" -- -O3 -c)
+            set_tests_properties(opt-determinism PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+            add_test(NAME opt-determinism-known-positive
+                COMMAND "${CMAKE_COMMAND}"
+                    -DPY=${MCC_PYTHON3}
+                    -DTOOL=${CMAKE_CURRENT_SOURCE_DIR}/tools/opt-determinism.py
+                    -DMCC=$<TARGET_FILE:mcc>
+                    -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c
+                    -DBDIR=${CMAKE_BINARY_DIR}
+                    -DRUNS=4 -DOPT=-O3
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/opt_determinism_mutate.cmake")
+            set_tests_properties(opt-determinism-known-positive PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 1800)
+
+            add_test(NAME untyped-probe
+                COMMAND "${MCC_PYTHON3}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/untyped-probe.py"
+                    "${CMAKE_BINARY_DIR}" "O0,O1,O2,O3" self)
+            set_tests_properties(untyped-probe PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+            add_test(NAME untyped-probe-known-positive
+                COMMAND "${CMAKE_COMMAND}"
+                    -DPY=${MCC_PYTHON3}
+                    -DTOOL=${CMAKE_CURRENT_SOURCE_DIR}/tools/untyped-probe.py
+                    -DBDIR=${CMAKE_BINARY_DIR}
+                    -DLEVELS=O2
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/untyped_probe_known_positive.cmake")
+            set_tests_properties(untyped-probe-known-positive PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900)
+        else()
+            mcc_skip_test(opt-determinism
+                "the determinism gate recompiles src/mcc.c with the host mcc; an emulated or cross build is not running the compiler under test")
+            mcc_skip_test(opt-determinism-known-positive
+                "the determinism gate recompiles src/mcc.c with the host mcc; an emulated or cross build is not running the compiler under test")
+            mcc_skip_test(untyped-probe
+                "the untyped census reads a report the host mcc emits while compiling src/mcc.c; an emulated or cross build is not running the compiler under test")
+            mcc_skip_test(untyped-probe-known-positive
+                "the untyped census reads a report the host mcc emits while compiling src/mcc.c; an emulated or cross build is not running the compiler under test")
+        endif()
 
         if(NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING
            AND NOT MCC_TARGETOS STREQUAL "WIN32")
@@ -6439,7 +6503,10 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tools/optlevel-bench.py"
                         --mcc "$<TARGET_FILE:mcc>" --builddir "${CMAKE_BINARY_DIR}"
                         --out "${CMAKE_BINARY_DIR}/levelbench.tsv"
-                        --json "${CMAKE_BINARY_DIR}/levelbench.json")
+                        --json "${CMAKE_BINARY_DIR}/levelbench.json"
+                        --check
+                        "--bank=${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/levelbench.tsv"
+                        "--mccopt=${CMAKE_CURRENT_SOURCE_DIR}/src/mccopt.h")
                 set_tests_properties(optlevel-bench PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 RUN_SERIAL TRUE
                     TIMEOUT 7200 LABELS "optbench")
