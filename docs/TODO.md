@@ -1375,6 +1375,63 @@ counting.
 lane is small, not because the change is partial: after it, the four causes contain 824
 fewer nodes and every remaining node in them is accounted for in the tables above.
 
+### Verification — what was run, and what was NOT
+
+The branch was stopped early on instruction: four worktrees were contending for one
+machine (load average 340–390) and one GPU, and the long corpus cells were costing more
+than they informed. **Read the two lists below as written; the second one is not a
+formality.**
+
+**Ran to completion, and is evidence:**
+
+| check | result |
+| --- | --- |
+| `cmake-cross` built before `cmake-debug` configured (hazard 5), `vendor/` symlinked | done |
+| full build of `cmake-debug` | clean |
+| `tools/spvgate.c` compiled `-DSPVGATE_MSL=1 -fsyntax-only` | clean — the MSL arm is compiled on this host even though nothing links it |
+| **emitted code unchanged** — 890 `.c` files under `tests/`, `src/`, `examples/`, `runtime/` at `-O0`–`-O3`, both binaries invoked from `cmake-debug/` | **2,947 objects byte-identical, 0 differing, 1 self-unstable** (`tests/exec/preprocessor/predefined_macros.c` at `-O1`, `__TIME__`), 612 (file, level) pairs not standalone-compilable by either binary, identically |
+| `slice/cref-oracle` over `tests/gpu/cref` (now 9 programs, `member.c` added) | programs=9 qualified=9 classified-out=0; 67 slices / 536 tuples; 108 dispatches; frame accepted=116 built=32 compared=32 mismatches=0; **clang-O0, clang-O2, gcc-O0, gcc-O2 all `ok=1 mismatch=0 nocompile=0`** |
+| the same cell's `--mutate` arm | device-mismatch-progs=9, frame mismatches=13, all four oracle arms `mismatch=1` — **the new coverage can fail** |
+| `slicerun --mutate` directly over `tests/gpu/cref/member.c` | 96 of 96 tuples mismatch, `FAIL` |
+| `python3 tools/docref-lint.py` | OK |
+| `tests/optfire/*` | untouched |
+
+**UNVERIFIED — do not report these as passing:**
+
+| check | state |
+| --- | --- |
+| **full `ctest`** | **UNVERIFIED.** The run reached **9,446 of 9,456 cells with 0 failures** and then the `ctest` process itself died under machine load — no summary was written and `LastTest.log` was never finalised. `slice/census`, `slice/cost`, `gpu/ladder-gpu-parity`, `selfhost-smoke`, `ci/must-run-registered` are all among the cells that *did* report and did not fail |
+| **`slice/cref-oracle-gcc-c-torture-execute`** | **UNVERIFIED.** Attempted twice. Under `ctest` it ran 39 minutes and was recorded Failed with an **empty output block** — no `gpuconform:` line at all, which is the signature of the process being killed rather than of an oracle disagreement. A direct `gpuconform.py --jobs 6` re-run reached ~982 of 1,693 programs with **no `CREF-DISAGREE` printed** and was then killed on the stop instruction. **Expected, if run on a quiet machine: clean, as it is on `main` — the new shape is a frame-slot read fitted to the member's own type, the same operation the `AST_Load`-over-`.field` arm already performs and which this corpus already exercises. That expectation is not evidence.** |
+| `slice/cref-oracle-llvm-test-suite-regression-c`, `-llvm-test-suite-unittests`, `-compiler-rt-builtins-unit` | **UNVERIFIED — not run** |
+| `-L flagsweep` (193), `-L stratsweep` (116), `-L census` (7 with nothing skipped), `tools/must-run.py` (78 rows), `tools/selfhost-smoke.py` from the repo root | **UNVERIFIED as standalone runs.** Their cells were inside the aborted full run and did not fail there; the labelled totals were never printed |
+
+**What the static review covers instead**, checked by reading rather than by running:
+`ast_eval_slice_member_off` is the only predicate and all seven consumers call it —
+`ast_eval_slice_kind_ok`, `ast_eval_slice_rec`, `ast_eval_slice_livein`, `mcc_gpu_vwt`,
+`spv_expr`, `msl_expr`, `cref_expr` — so accept, evaluate, lower and re-emit cannot drift
+apart the way the working-type rule did. It is placed identically in all of them: after
+the `c == AST_NONE` test and before the `- ~ ! TOK_NEG` whitelist, so a node accepted by
+one is evaluated by the next. `ast_eval_slice_wtype` and `ast_eval_slice_ftype` need no
+change and got none: a member node's own type word is a plain integer, so `wtype` already
+returns it unpromoted through its first branch and `ftype` already returns 0 before
+reaching its `AST_Unary` arm. `mcc_gpu_vwt` returns `ast_type_t` rather than
+`promote(wtype)` specifically to match its own `AST_Load` arm. The `livein` arm records
+the resolved offset and does not recurse into the `Ref`, so the struct's base offset is
+not also claimed; a member node in *address* position never reaches it, because the
+`AST_Load` arm above returns without visiting its child and `mcc_slice_is_local_ref`
+rejects a member store destination outright. `ast_eval_slice_member_off` sits inside the
+`AST_EVAL_SLICE_KERNEL_ONLY` guard alongside `ast_eval_slice_frame_off`, and is used
+within `ast_eval_slice.h` itself, so no TU sees it unused.
+
+The one decision with blast radius outside the slice engine: **the member arm is not
+gated on `allow_load`**, unlike the `AST_Load` arm. That is deliberate — gating it would
+confine the shape to the frame runner, which has no external oracle, so the CPU and the
+device would agree about a rule nothing else had checked. Ungated, `--cref` puts it in
+front of gcc and clang. The cost is that `ast_eval_slice_kind_ok(…, 0)` is also what the
+compiler's own `ast_eval_slice_sound`/`ast_eval_slice_equiv_seed` consult, so widening it
+could in principle change emitted code. **That is the one thing the TU sweep above was
+run to settle, and it is settled: 0 objects differ.**
+
 ### Open, and ranked by what the tables actually say
 
 1. **`s.arr[i]` — a runtime index into an array *field*, 58,328 nodes (4.97%).** The
