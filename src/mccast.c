@@ -16419,6 +16419,9 @@ static int ast_search_should_stop(void) { MCC_TRACE("enter\n");
 	return ast_search_expect_ms() > rem;
 }
 
+#define MCC_EFFECT_MALLOC mcc_malloc
+#define MCC_EFFECT_REALLOC mcc_realloc
+#define MCC_EFFECT_FREE mcc_free
 #if defined(__has_include)
 #if __has_include("ast_eval_slice.h")
 #include "ast_eval_slice.h"

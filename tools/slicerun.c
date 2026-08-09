@@ -11,12 +11,12 @@ static int ast_bad_type(int tt) {
 	return bt == VT_STRUCT || bt == VT_FUNC || tt == VT_VOID;
 }
 
-#include "ast_eval_slice.h"
-
 #undef malloc
 #undef realloc
 #undef free
 #undef strdup
+
+#include "ast_eval_slice.h"
 
 #ifndef AST_EVAL_SLICE_PROVIDED
 #error "slicerun needs the real ast_eval_slice; the mccast.c fallback stub returns 1 without writing *out, so the CPU runner would be comparing uninitialised memory against the device and every cell would pass."
@@ -6676,6 +6676,488 @@ static int arena_mode(const char *path, long limit, int quiet) {
 	return g_arena_mismatch ? 1 : 0;
 }
 
+#define EFFECT_LANES 8
+#define EFFECT_REGION_BYTE (64 * 1024)
+#define EFFECT_LANE_BYTE 256
+#define EFFECT_P_OFF 64
+#define EFFECT_Q_OFF 128
+#define EFFECT_PER_LANE 3
+
+static unsigned char *g_eff_mem;
+static unsigned char *g_eff_pre;
+static unsigned char *g_eff_post;
+static long g_eff_undone;
+static long g_eff_records;
+static long g_eff_replays;
+static int g_eff_detected;
+static int g_eff_tried;
+static MccEffectLog g_eff_log;
+
+static void effect_seed_mem(void) {
+	long i;
+	for (i = 0; i < EFFECT_REGION_BYTE; i++)
+		g_eff_mem[i] = (i % 8) ? 0 : (unsigned char)(((i / 8) * 7 + 3) & 0x1f);
+}
+
+static int64_t effect_addr(int lane, int32_t off) {
+	return (int64_t)(intptr_t)(g_eff_mem + (long)lane * EFFECT_LANE_BYTE + off);
+}
+
+static AstLocal effect_deref(AstArena *a, int32_t poff, int etype) {
+	AstLocal p = mk_ref(a, poff, VT_PTR);
+	AstLocal ld = ast_node(a, AST_Load);
+	if (g_obj_ext && (long)p < g_obj_n) {
+		g_obj_ext[p] = (int32_t)ast_eval_slice_tsize(etype);
+		g_obj_ety[p] = etype;
+	}
+	ast_add_child(a, ld, p);
+	ast_set_type(a, ld, 0, 0);
+	return ld;
+}
+
+static int effect_exec(MccSliceFrame *fr, const int64_t *seed, int64_t *frame,
+											 int64_t *rv, int *rd, int reverse) {
+	int i, t, bad = 0;
+	for (i = 0; i < EFFECT_LANES; i++) {
+		t = reverse ? EFFECT_LANES - 1 - i : i;
+		memcpy(frame + (long)t * fr->nslot, seed + (long)t * fr->nslot,
+					 (size_t)fr->nslot * sizeof *frame);
+		ast_eval_slice_effect_lane((uint32_t)t);
+		if (!mcc_slice_frame_exec_cpu2(fr, frame + (long)t * fr->nslot, &rv[t],
+																	 &rd[t]))
+			bad++;
+	}
+	return bad == 0;
+}
+
+static void effect_record(MccSliceFrame *fr, const int64_t *seed,
+													int64_t *frame, int64_t *rv, int *rd) {
+	effect_seed_mem();
+	memcpy(g_eff_pre, g_eff_mem, EFFECT_REGION_BYTE);
+	mcc_effect_log_clear(&g_eff_log);
+	g_eff_log.mode = MCC_EFFECT_RECORD;
+	ast_eval_slice_effect_bind(&g_eff_log);
+	effect_exec(fr, seed, frame, rv, rd, 0);
+	g_eff_log.mode = MCC_EFFECT_OFF;
+	ast_eval_slice_effect_bind(NULL);
+	memcpy(g_eff_post, g_eff_mem, EFFECT_REGION_BYTE);
+	g_eff_records += g_eff_log.recorded;
+}
+
+static int effect_rewind(void) {
+	memcpy(g_eff_mem, g_eff_post, EFFECT_REGION_BYTE);
+	g_eff_undone += mcc_effect_undo(&g_eff_log, ast_eval_slice_eff_undo, NULL);
+	return memcmp(g_eff_mem, g_eff_pre, EFFECT_REGION_BYTE) == 0;
+}
+
+static void effect_key_case(void) {
+	MccEffectKey k, k2;
+	MccEffectLog L;
+	MccEffect ev;
+	char whatp[128];
+
+	mcc_effect_key_init(&k, 0x9e3779b97f4a7c15ull);
+	CHECK(mcc_effect_traceable(&k) == 0,
+				"a slice with no live-ins recorded yet is not yet traceable");
+	CHECK(mcc_effect_key_live(&k, -8, MCC_PROV_PARAM) == 1,
+				"a live-in and its provenance class go into the key");
+	CHECK(mcc_effect_key_live(&k, -16, MCC_PROV_LITERAL) == 1,
+				"and so does a second");
+	CHECK(mcc_effect_key_live(&k, -24, MCC_PROV_LOAD) == 1,
+				"and a load from a known object is traceable provenance");
+	CHECK(mcc_effect_traceable(&k) == 1,
+				"the eligibility question is one integer compare, not a walk");
+	CHECK(mcc_effect_key_live(&k, -32, MCC_PROV_ANON) == 1,
+				"a pointer from an anonymously-linked call is recorded like any other");
+	CHECK(mcc_effect_traceable(&k) == 0,
+				"and it is the one class that makes the whole slice ineligible");
+	CHECK(k.nopaque == 1, "the opaque count says how many, not merely whether");
+
+	mcc_effect_key_init(&k2, 0x9e3779b97f4a7c15ull);
+	mcc_effect_key_live(&k2, -8, MCC_PROV_PARAM);
+	mcc_effect_key_live(&k2, -16, MCC_PROV_LITERAL);
+	mcc_effect_key_live(&k2, -24, MCC_PROV_LOAD);
+	CHECK(mcc_effect_key_eq(&k, &k2) == 0,
+				"two keys over the same slice with different live-in vectors differ");
+	CHECK(mcc_effect_key_hash(&k) != mcc_effect_key_hash(&k2),
+				"and so do their hashes, so a cache cannot conflate them");
+	CHECK(mcc_effect_traceable(&k2) == 1,
+				"the traceable one stays traceable");
+
+	mcc_effect_log_init(&L);
+	CHECK(mcc_effect_key_seal(&k2, &L) == 1, "an empty log seals as a certificate");
+	CHECK(mcc_effect_effectful(&k2) == 0, "a slice that performed no effect is pure");
+	CHECK(mcc_effect_memoisable(&k2) == 1,
+				"and a traceable, sealed, effect-free slice is the only memoisable "
+				"shape");
+	CHECK(mcc_effect_key_match(&k2, &L) == 1, "and its certificate matches its log");
+
+	L.mode = MCC_EFFECT_RECORD;
+	memset(&ev, 0, sizeof ev);
+	ev.kind = MCC_EFFECT_STORE;
+	ev.site = 7;
+	ev.addr = 16;
+	ev.width = 4;
+	ev.value = 99;
+	mcc_effect_record(&L, &ev, NULL, 0);
+	L.mode = MCC_EFFECT_OFF;
+	CHECK(mcc_effect_key_match(&k2, &L) == 0,
+				"a log that grew an effect no longer matches the sealed certificate");
+	mcc_effect_key_seal(&k2, &L);
+	CHECK(mcc_effect_effectful(&k2) == 1,
+				"and re-sealing records that the slice is effectful");
+	CHECK(mcc_effect_memoisable(&k2) == 0,
+				"which is exactly the admission test a value-memoising cache needs: a "
+				"non-empty effect log is the refusal");
+	CHECK(mcc_effect_perturb(&L, 0, whatp, sizeof whatp) == 1,
+				"the sealed log can be perturbed");
+	CHECK(mcc_effect_key_match(&k2, &L) == 0,
+				"and a certificate detects a log perturbed after sealing");
+	mcc_effect_log_free(&L);
+}
+
+static int effect_replay(MccSliceFrame *fr, const int64_t *seed,
+												 int64_t *frame, int64_t *rv, int *rd, int reverse) {
+	int closed;
+	memcpy(g_eff_mem, g_eff_pre, EFFECT_REGION_BYTE);
+	mcc_effect_replay_begin(&g_eff_log);
+	ast_eval_slice_effect_bind(&g_eff_log);
+	effect_exec(fr, seed, frame, rv, rd, reverse);
+	closed = mcc_effect_replay_end(&g_eff_log);
+	ast_eval_slice_effect_bind(NULL);
+	g_eff_replays += g_eff_log.consumed;
+	return closed && !mcc_effect_diverged(&g_eff_log);
+}
+
+static int effect_same(const MccSliceFrame *fr, const int64_t *cf,
+											 const int64_t *rf, const int64_t *crv,
+											 const int64_t *rrv, const int *cdf, const int *rdf) {
+	int i;
+	for (i = 0; i < EFFECT_LANES * fr->nslot; i++)
+		if (cf[i] != rf[i])
+			return 0;
+	for (i = 0; i < EFFECT_LANES; i++)
+		if (crv[i] != rrv[i] || cdf[i] != rdf[i])
+			return 0;
+	return 1;
+}
+
+static const char *effect_verdict(int v) {
+	switch (v) {
+	case 1:
+		return "divergence";
+	case 2:
+		return "result mismatch";
+	case 3:
+		return "effect performed twice";
+	case 4:
+		return "rewind did not restore the pre-image";
+	default:
+		return "UNDETECTED";
+	}
+}
+
+static void effect_case(int etype, const char *what) {
+	AstArena *a = ast_arena_new();
+	AstLocal bb = ast_node(a, AST_BasicBlock);
+	MccSliceFrame fr;
+	int64_t *seed = NULL, *cf = NULL, *rf = NULL;
+	int64_t crv[EFFECT_LANES], rrv[EFFECT_LANES];
+	int cdf[EFFECT_LANES], rdf[EFFECT_LANES];
+	int i, t, sp = -1, sq = -1, w;
+	char msg[256];
+
+	slicerun_obj_reset(64);
+	ast_add_child(a, bb,
+								mk_store(a, -24,
+												 mk_bin(a, '+', effect_deref(a, -8, etype),
+																mk_lit(a, 1, etype), etype),
+												 etype));
+	{
+		AstLocal st = ast_node(a, AST_Store);
+		ast_add_child(a, st, effect_deref(a, -16, etype));
+		ast_add_child(a, st,
+									mk_bin(a, '*', mk_ref(a, -24, etype),
+												 mk_lit(a, 3, etype), etype));
+		ast_add_child(a, bb, st);
+	}
+	ast_add_child(a, bb,
+								mk_store(a, -32, effect_deref(a, -16, etype), etype));
+
+	CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1, what);
+	if (fr.nslot < 1) {
+		slicerun_obj_reset(0);
+		ast_arena_free(a);
+		return;
+	}
+	for (i = 0; i < fr.nslot; i++) {
+		if (fr.slot[i] == -8)
+			sp = i;
+		if (fr.slot[i] == -16)
+			sq = i;
+	}
+	CHECK(sp >= 0 && sq >= 0, "both pointer live-ins survive into the slot map");
+	if (sp < 0 || sq < 0) {
+		slicerun_obj_reset(0);
+		ast_arena_free(a);
+		return;
+	}
+	seed = (int64_t *)malloc((size_t)EFFECT_LANES * fr.nslot * sizeof *seed);
+	cf = (int64_t *)malloc((size_t)EFFECT_LANES * fr.nslot * sizeof *cf);
+	rf = (int64_t *)malloc((size_t)EFFECT_LANES * fr.nslot * sizeof *rf);
+	if (!seed || !cf || !rf) {
+		free(seed);
+		free(cf);
+		free(rf);
+		slicerun_obj_reset(0);
+		ast_arena_free(a);
+		return;
+	}
+	for (t = 0; t < EFFECT_LANES; t++)
+		for (i = 0; i < fr.nslot; i++)
+			seed[(long)t * fr.nslot + i] =
+					i == sp ? effect_addr(t, EFFECT_P_OFF)
+									: i == sq ? effect_addr(t, EFFECT_Q_OFF) : (int64_t)t;
+
+	effect_record(&fr, seed, cf, crv, cdf);
+	CHECK(g_eff_log.recorded == (long)EFFECT_LANES * EFFECT_PER_LANE,
+				"the recorder saw every effect of every lane and no others");
+	CHECK(!mcc_effect_diverged(&g_eff_log), "recording itself does not diverge");
+	CHECK(memcmp(g_eff_mem, g_eff_pre, EFFECT_REGION_BYTE) != 0,
+				"the executor's run really did change the shared region");
+
+	CHECK(effect_replay(&fr, seed, rf, rrv, rdf, 0) == 1,
+				"the replayed side asks for exactly the effects the executor performed");
+	if (mcc_effect_diverged(&g_eff_log)) {
+		mcc_effect_div_str(&g_eff_log, msg, sizeof msg);
+		fprintf(stderr, "  %s\n", msg);
+	}
+	CHECK(memcmp(g_eff_mem, g_eff_pre, EFFECT_REGION_BYTE) == 0,
+				"and performs none of them: every observable effect ran exactly once");
+	CHECK(effect_same(&fr, cf, rf, crv, rrv, cdf, rdf),
+				"and computes the same frame, return value and verdict as the executor");
+	CHECK(g_eff_log.consumed == g_eff_log.recorded,
+				"and consumes the whole log, so no effect went unclaimed");
+
+	{
+		uint64_t h0 = mcc_effect_hash(&g_eff_log);
+		CHECK(effect_replay(&fr, seed, rf, rrv, rdf, 1) == 1,
+					"replaying the lanes in the opposite order is still faithful");
+		CHECK(effect_same(&fr, cf, rf, crv, rrv, cdf, rdf),
+					"and lane order does not change any lane's result");
+		CHECK(mcc_effect_hash(&g_eff_log) == h0,
+					"and a replay never mutates the log it replays against");
+		CHECK(mcc_effect_shuffle_lanes(&g_eff_log) == 1,
+					"the log can be regrouped across lanes without touching per-lane "
+					"order");
+		CHECK(mcc_effect_hash(&g_eff_log) != h0,
+					"and that regrouping really is a different serialisation");
+	}
+	CHECK(effect_replay(&fr, seed, rf, rrv, rdf, 0) == 1,
+				"a cross-lane reinterleaving of the log is not a divergence, by design");
+	CHECK(effect_same(&fr, cf, rf, crv, rrv, cdf, rdf),
+				"and yields the same per-lane results");
+
+	effect_record(&fr, seed, cf, crv, cdf);
+	CHECK(mcc_effect_rewindable(&g_eff_log, 0) == 0,
+				"prior values are off by default, so the log says outright that it "
+				"cannot be rewound rather than offering a plausible zero");
+	g_eff_log.want_prev = 1;
+	effect_record(&fr, seed, cf, crv, cdf);
+	CHECK(mcc_effect_rewindable(&g_eff_log, 0) == 1,
+				"and with the mode switch on it says it can");
+	CHECK(mcc_effect_mark(&g_eff_log) == (int)g_eff_log.recorded,
+				"a checkpoint is an index into the log, taken after the dispatch's "
+				"effects");
+	CHECK(effect_rewind() == 1,
+				"walking the log backwards and restoring each store's prior value "
+				"returns the shared region to its pre-image exactly");
+	CHECK(mcc_effect_undo_to(&g_eff_log, mcc_effect_mark(&g_eff_log),
+													 ast_eval_slice_eff_undo, NULL) == 0,
+				"and rewinding to the checkpoint at the end of the log undoes nothing");
+
+	for (w = 0; w < MCC_EFFECT_PERTURB_COUNT; w++) {
+		char whatp[128];
+		int verdict = 0;
+		effect_record(&fr, seed, cf, crv, cdf);
+		if (!mcc_effect_perturb(&g_eff_log, w, whatp, sizeof whatp))
+			continue;
+		g_eff_tried++;
+		if (!effect_replay(&fr, seed, rf, rrv, rdf, 0))
+			verdict = 1;
+		else if (!effect_same(&fr, cf, rf, crv, rrv, cdf, rdf))
+			verdict = 2;
+		else if (memcmp(g_eff_mem, g_eff_pre, EFFECT_REGION_BYTE) != 0)
+			verdict = 3;
+		else if (!effect_rewind())
+			verdict = 4;
+		if (verdict)
+			g_eff_detected++;
+		snprintf(msg, sizeof msg, "a perturbed log is detected: %s -> %s", whatp,
+						 effect_verdict(verdict));
+		CHECK(verdict != 0, msg);
+	}
+	g_eff_log.want_prev = 0;
+
+	if (g_mutate) {
+		char whatp[128];
+		effect_record(&fr, seed, cf, crv, cdf);
+		if (mcc_effect_perturb(&g_eff_log, 0, whatp, sizeof whatp)) {
+			fprintf(stderr, "  MUTATE: %s\n", whatp);
+			CHECK(effect_replay(&fr, seed, rf, rrv, rdf, 0) == 1,
+						"the mutated log replays faithfully");
+			mcc_effect_div_str(&g_eff_log, msg, sizeof msg);
+			fprintf(stderr, "  MUTATE: %s\n", msg);
+			CHECK(effect_same(&fr, cf, rf, crv, rrv, cdf, rdf),
+						"the mutated log reproduces the executor's results");
+		}
+	}
+
+	free(seed);
+	free(cf);
+	free(rf);
+	slicerun_obj_reset(0);
+	ast_arena_free(a);
+}
+
+static int effect_write_lane(MccEffectLog *L, int mode, uint32_t lane, int fd,
+														 int32_t off, const char *bytes, int nb) {
+	MccEffect ev;
+	memset(&ev, 0, sizeof ev);
+	ev.kind = MCC_EFFECT_WRITE;
+	ev.space = MCC_EFFECT_SPACE_FD;
+	ev.chan = fd;
+	ev.site = 1000u + lane;
+	ev.lane = lane;
+	ev.addr = off;
+	ev.width = nb;
+	ev.flags = MCC_EFFECT_F_NOUNDO;
+	if (mode == MCC_EFFECT_REPLAY)
+		return mcc_effect_replay(L, &ev, bytes, nb);
+	return mcc_effect_record(L, &ev, bytes, nb);
+}
+
+static void effect_kinds_case(void) {
+	static const char *TXT[4] = {"alpha", "bravo", "charlie", "delta"};
+	MccEffectLog L;
+	char msg[256], whatp[128];
+	int lane, w, detected = 0, tried = 0;
+
+	mcc_effect_log_init(&L);
+	L.mode = MCC_EFFECT_RECORD;
+	for (lane = 0; lane < 4; lane++) {
+		effect_write_lane(&L, MCC_EFFECT_RECORD, (uint32_t)lane, 1, lane * 16,
+											TXT[lane], (int)strlen(TXT[lane]));
+		effect_write_lane(&L, MCC_EFFECT_RECORD, (uint32_t)lane, 2, lane * 8,
+											TXT[3 - lane], (int)strlen(TXT[3 - lane]));
+	}
+	L.mode = MCC_EFFECT_OFF;
+	CHECK(L.recorded == 8,
+				"a kind the memory path never produces records through the same log");
+	CHECK(mcc_effect_rewindable(&L, 0) == 0,
+				"and a file write declares itself not rewindable, so a rollback that "
+				"crossed it would be reported as partial rather than believed");
+	CHECK(mcc_effect_undo(&L, ast_eval_slice_eff_undo, NULL) == 0,
+				"and the rewind walk skips it rather than inventing a prior value");
+
+	mcc_effect_replay_begin(&L);
+	for (lane = 3; lane >= 0; lane--) {
+		effect_write_lane(&L, MCC_EFFECT_REPLAY, (uint32_t)lane, 1, lane * 16,
+											TXT[lane], (int)strlen(TXT[lane]));
+		effect_write_lane(&L, MCC_EFFECT_REPLAY, (uint32_t)lane, 2, lane * 8,
+											TXT[3 - lane], (int)strlen(TXT[3 - lane]));
+	}
+	CHECK(mcc_effect_replay_end(&L) == 1,
+				"a payload-carrying output effect replays by byte comparison");
+	if (mcc_effect_diverged(&L)) {
+		mcc_effect_div_str(&L, msg, sizeof msg);
+		fprintf(stderr, "  %s\n", msg);
+	}
+
+	for (w = 11; w <= 13; w++) {
+		int ok;
+		mcc_effect_log_clear(&L);
+		L.mode = MCC_EFFECT_RECORD;
+		for (lane = 0; lane < 4; lane++)
+			effect_write_lane(&L, MCC_EFFECT_RECORD, (uint32_t)lane, 1, lane * 16,
+												TXT[lane], (int)strlen(TXT[lane]));
+		L.mode = MCC_EFFECT_OFF;
+		if (!mcc_effect_perturb(&L, w, whatp, sizeof whatp))
+			continue;
+		tried++;
+		mcc_effect_replay_begin(&L);
+		for (lane = 0; lane < 4; lane++)
+			effect_write_lane(&L, MCC_EFFECT_REPLAY, (uint32_t)lane, 1, lane * 16,
+												TXT[lane], (int)strlen(TXT[lane]));
+		ok = mcc_effect_replay_end(&L);
+		if (!ok)
+			detected++;
+		snprintf(msg, sizeof msg, "a perturbed write log is detected: %s -> %s",
+						 whatp, ok ? "UNDETECTED" : mcc_effect_div_name(L.div.code));
+		CHECK(!ok, msg);
+	}
+	CHECK(tried == 3 && detected == 3,
+				"channel, payload and address-space perturbations are all caught");
+	g_eff_tried += tried;
+	g_eff_detected += detected;
+	mcc_effect_log_free(&L);
+}
+
+static void suite_effect(void) {
+	uint32_t *save_rw = ast_eval_slice_rw;
+	int32_t save_n = ast_eval_slice_rw_nbyte;
+	int64_t save_b = ast_eval_slice_rw_base;
+
+	g_eff_mem = (unsigned char *)malloc(EFFECT_REGION_BYTE);
+	g_eff_pre = (unsigned char *)malloc(EFFECT_REGION_BYTE);
+	g_eff_post = (unsigned char *)malloc(EFFECT_REGION_BYTE);
+	if (!g_eff_mem || !g_eff_pre || !g_eff_post) {
+		free(g_eff_mem);
+		free(g_eff_pre);
+		free(g_eff_post);
+		g_eff_mem = g_eff_pre = g_eff_post = NULL;
+		CHECK(0, "the effect suite can allocate its own shared region");
+		return;
+	}
+	ast_eval_slice_rw = (uint32_t *)(void *)g_eff_mem;
+	ast_eval_slice_rw_nbyte = EFFECT_REGION_BYTE;
+	ast_eval_slice_rw_base = (int64_t)(intptr_t)g_eff_mem;
+	mcc_effect_log_init(&g_eff_log);
+
+	effect_case(VT_BYTE, "a run of pointer loads and stores is frame work (i8)");
+	effect_case(VT_INT, "a run of pointer loads and stores is frame work (i32)");
+	effect_case(VT_LLONG, "a run of pointer loads and stores is frame work (i64)");
+	effect_kinds_case();
+	effect_key_case();
+
+	CHECK(g_eff_records >= 3 * EFFECT_LANES * EFFECT_PER_LANE,
+				"the record/replay self-check recorded effects rather than nothing");
+	CHECK(g_eff_replays >= 3 * 3 * EFFECT_LANES * EFFECT_PER_LANE,
+				"and every faithful replay consumed a whole log rather than stopping "
+				"early");
+	CHECK(g_eff_tried >= 3 * 11 + 3,
+				"and every perturbation shape was applied somewhere it applies");
+	CHECK(g_eff_detected == g_eff_tried,
+				"and not one of them survived");
+	CHECK(g_eff_undone >= 3 * EFFECT_LANES,
+				"and the rewind path really put stores back rather than finding none");
+	fprintf(stderr,
+					"slicerun: effect records=%ld replays=%ld undone=%ld "
+					"perturbations=%d/%d detected\n",
+					g_eff_records, g_eff_replays, g_eff_undone, g_eff_detected,
+					g_eff_tried);
+
+	mcc_effect_log_free(&g_eff_log);
+	ast_eval_slice_effect_bind(NULL);
+	ast_eval_slice_rw = save_rw;
+	ast_eval_slice_rw_nbyte = save_n;
+	ast_eval_slice_rw_base = save_b;
+	free(g_eff_mem);
+	free(g_eff_pre);
+	free(g_eff_post);
+	g_eff_mem = g_eff_pre = g_eff_post = NULL;
+}
+
 /* ------------------------------------------------------------------ main -- */
 
 static void probe_device(void) {
@@ -6834,6 +7316,8 @@ int main(int argc, char **argv) {
 		suite_fault();
 	if (!only || !strcmp(only, "sched"))
 		suite_sched();
+	if (!only || !strcmp(only, "effect"))
+		suite_effect();
 
 	fprintf(stderr, "slicerun: %d checks, %d failures, device=%s available=%d "
 									"dispatches=%ld\n",

@@ -3714,11 +3714,21 @@ if(MCC_BUILD_TESTS)
             # SKIP_RETURN_CODE covers `frame`, whose kernel builder has no Metal
             # arm (TODO.md §5 stage M2): there the suite exits 77 rather than
             # asserting that lowering succeeded. The other four never return 77.
-            foreach(_sr task work cpu sched frame)
+            foreach(_sr task work cpu sched frame effect)
                 add_test(NAME "slice/${_sr}" COMMAND slicerun "${_sr}")
                 set_tests_properties("slice/${_sr}" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             endforeach()
+            # The effect log's own known-positive. It takes no --device-or-skip:
+            # both the executor and the replayed side are the CPU reference, so a
+            # device-less host is not a reason to skip and never gets to look
+            # like one.
+            add_test(NAME "slice/effect-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DRUNNER=$<TARGET_FILE:slicerun>
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_effect_mutate.cmake")
+            set_tests_properties("slice/effect-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
             foreach(_sg gpu wide64 f64 ops mem bytes deref ext fmt)
                 add_test(NAME "slice/${_sg}" COMMAND slicerun "${_sg}"
                          $<$<BOOL:${MCC_GPU_REQUIRED}>:--require-device>

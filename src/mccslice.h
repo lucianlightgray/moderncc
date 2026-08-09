@@ -801,9 +801,9 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 				if (!ast_eval_slice_rw_addr(frame[k], &bo))
 					ast_eval_slice_undef = 1;
 				bo = ast_eval_slice_ext_off(bo, elem, ix.esize);
-				ast_eval_slice_bytes_store(ast_eval_slice_rw, ast_eval_slice_rw_nbyte,
-																	 bo, ix.etype,
-																	 ast_eval_slice_fit(val, ix.etype), &ok);
+				ast_eval_slice_eff_store((uint32_t)s, bo, ix.etype,
+																 ast_eval_slice_fit(val, ix.etype),
+																 ast_eval_slice_qual(f->a, d), &ok);
 				if (!ok)
 					ast_eval_slice_undef = 1;
 				return 1;
@@ -823,8 +823,9 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 				return 0;
 			if (!ast_eval_slice_rw_addr(frame[k], &bo))
 				ast_eval_slice_undef = 1;
-			ast_eval_slice_bytes_store(ast_eval_slice_rw, ast_eval_slice_rw_nbyte,
-																 bo, et, ast_eval_slice_fit(val, et), &ok);
+			ast_eval_slice_eff_store((uint32_t)s, bo, et,
+															 ast_eval_slice_fit(val, et),
+															 ast_eval_slice_qual(f->a, d), &ok);
 			if (!ok)
 				ast_eval_slice_undef = 1;
 			return 1;
