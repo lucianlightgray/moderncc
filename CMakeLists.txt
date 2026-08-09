@@ -4334,9 +4334,9 @@ if(MCC_BUILD_TESTS)
         # chain-store-live off and never reaches the pairing pass, and no -O
         # level below 11 turns the family on by itself. The pairing marks are
         # what the strategies invalidate, so nothing below this rung reaches the
-        # arena state at all. storeval-rot is off because chain_member_mix also
-        # trips a separate pre-existing storeval-rot defect that segfaults the
-        # compiler here and ICEs it as low as -O1 -- docs/TODO.md debt #6a.
+        # arena state at all. The storeval-rot defect that used to block a
+        # chain_member_mix fixture here is fixed -- docs/TODO.md debt #6a -- so
+        # that fixture is now free to be added.
         foreach(_gn IN ITEMS chained_assign assign_value_effects dead_store_elim
                              cse local_const_prop region_store)
             add_test(NAME "exec-chainlive/${_gn}"
@@ -4346,6 +4346,27 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("exec-chainlive/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 TIMEOUT 900
                 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O11 -fchain-store -fchain-store-live -fchain-store-member")
+        endforeach()
+
+        # storeval-rot is default-on from -O1, so the shipped ladder is where its
+        # replay has to balance the vstack. The rot mark makes a store's value a
+        # single-use live entry; an outer AST_StoreVal that recomputed the middle
+        # store's value subtree consumed that entry twice and the function ended
+        # on "vstack leak (-1)" -- docs/TODO.md debt #6a. These rungs pin the flag
+        # explicitly at three levels so the shape cannot be silently lost to a
+        # default change, and the fixtures carry chains whose outer target is a
+        # member/element rather than a leaf, which is what defeats the mark.
+        foreach(_lv IN ITEMS 1 2 3)
+            foreach(_gn IN ITEMS chained_assign assign_value_effects
+                                 local_const_prop region_store)
+                add_test(NAME "exec-storevalrot${_lv}/${_gn}"
+                    COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                            "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                            "${CMAKE_BINARY_DIR}/exec-storevalrot${_lv}-${_gn}" --only "${_gn}")
+                set_tests_properties("exec-storevalrot${_lv}/${_gn}" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900
+                    ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O${_lv} -fstoreval-rot -fstoreval-constl -fstoreval-calllast")
+            endforeach()
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)

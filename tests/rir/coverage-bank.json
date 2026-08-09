@@ -259,173 +259,173 @@
  "wide": {
   "O0": {
    "arena": {
-    "bodies": 4337,
-    "body_bytes": 3558514,
-    "coverage": 90.7365,
-    "discarded_bytes": 251829,
+    "bodies": 4400,
+    "body_bytes": 3581118,
+    "coverage": 90.6711,
+    "discarded_bytes": 255115,
     "gap_bodies": 39,
     "gap_bytes": 0,
-    "kept_coverage": 92.9232,
-    "modelled_bytes": 3558514,
+    "kept_coverage": 92.8761,
+    "modelled_bytes": 3581118,
     "modelled_coverage": 100.0,
     "residual": -119,
-    "text": 3644274,
-    "used_bytes": 3306685
+    "text": 3668205,
+    "used_bytes": 3326003
    },
    "capture": {
-    "bodies": 4337,
+    "bodies": 4400,
     "coverage": 100.0,
-    "faithful_bytes": 3558514,
+    "faithful_bytes": 3581118,
     "residual": -119,
-    "text": 3644274
+    "text": 3668205
    },
    "lowerable": {
     "elf": {
-     "big_region_nodes_pct": 3.0401,
+     "big_region_nodes_pct": 3.0714,
      "blockers": {
-      "asm": 0.0054,
+      "asm": 0.0053,
       "call": 0.0085,
-      "frame": 0.2057,
-      "global": 0.6791,
+      "frame": 0.2151,
+      "global": 0.6748,
       "opaque": 0.0,
-      "reg": 1.0827,
-      "type": 0.2867
+      "reg": 1.0798,
+      "type": 0.2935
      },
-     "bodies_pct": 15.4859,
-     "bytes_pct": 1.2842,
-     "nodes_pct": 35.2841,
-     "nodes_pct_loose": 64.4015,
-     "nodes_pct_strict": 27.0595,
-     "region_nodes_pct": 10.1922
+     "bodies_pct": 15.5152,
+     "bytes_pct": 1.2991,
+     "nodes_pct": 35.3974,
+     "nodes_pct_loose": 64.4694,
+     "nodes_pct_strict": 27.0394,
+     "region_nodes_pct": 10.2717
     }
    }
   },
   "O1": {
    "arena": {
-    "bodies": 4361,
-    "body_bytes": 3551972,
-    "coverage": 94.3171,
-    "discarded_bytes": 120608,
+    "bodies": 4424,
+    "body_bytes": 3574531,
+    "coverage": 94.2376,
+    "discarded_bytes": 123551,
     "gap_bodies": 39,
     "gap_bytes": 0,
-    "kept_coverage": 96.6045,
-    "modelled_bytes": 3551972,
+    "kept_coverage": 96.5436,
+    "modelled_bytes": 3574531,
     "modelled_coverage": 100.0,
     "residual": -119,
-    "text": 3638114,
-    "used_bytes": 3431364
+    "text": 3662000,
+    "used_bytes": 3450980
    },
    "capture": {
-    "bodies": 4361,
+    "bodies": 4424,
     "coverage": 100.0,
-    "faithful_bytes": 3558182,
+    "faithful_bytes": 3580774,
     "residual": -119,
-    "text": 3644324
+    "text": 3668243
    },
    "lowerable": {
     "elf": {
-     "big_region_nodes_pct": 3.0396,
+     "big_region_nodes_pct": 3.0709,
      "blockers": {
       "asm": 0.0054,
       "call": 0.0086,
-      "frame": 0.2076,
-      "global": 0.6741,
+      "frame": 0.2171,
+      "global": 0.6698,
       "opaque": 0.0,
-      "reg": 1.0777,
-      "type": 0.3146
+      "reg": 1.0749,
+      "type": 0.3213
      },
-     "bodies_pct": 15.445,
-     "bytes_pct": 1.2478,
-     "nodes_pct": 35.2861,
-     "nodes_pct_loose": 64.3988,
-     "nodes_pct_strict": 27.0391,
-     "region_nodes_pct": 10.2028
+     "bodies_pct": 15.4748,
+     "bytes_pct": 1.2617,
+     "nodes_pct": 35.3993,
+     "nodes_pct_loose": 64.4667,
+     "nodes_pct_strict": 27.0192,
+     "region_nodes_pct": 10.2822
     }
    }
   },
   "O2": {
    "arena": {
-    "bodies": 4361,
-    "body_bytes": 3564543,
-    "coverage": 93.4488,
-    "discarded_bytes": 118824,
+    "bodies": 4424,
+    "body_bytes": 3588855,
+    "coverage": 93.3631,
+    "discarded_bytes": 121767,
     "gap_bodies": 40,
     "gap_bytes": 467,
-    "kept_coverage": 96.6534,
-    "modelled_bytes": 3564076,
-    "modelled_coverage": 99.9869,
+    "kept_coverage": 96.5941,
+    "modelled_bytes": 3588388,
+    "modelled_coverage": 99.987,
     "residual": -119,
-    "text": 3686779,
-    "used_bytes": 3445252
+    "text": 3713052,
+    "used_bytes": 3466621
    },
    "capture": {
-    "bodies": 4361,
+    "bodies": 4424,
     "coverage": 100.0,
-    "faithful_bytes": 3558182,
+    "faithful_bytes": 3580774,
     "residual": -119,
-    "text": 3644324
+    "text": 3668243
    },
    "lowerable": {
     "elf": {
-     "big_region_nodes_pct": 3.0396,
+     "big_region_nodes_pct": 3.0709,
      "blockers": {
-      "asm": 0.0054,
-      "call": 0.0115,
-      "frame": 0.1969,
-      "global": 0.686,
+      "asm": 0.0053,
+      "call": 0.0114,
+      "frame": 0.2063,
+      "global": 0.6813,
       "opaque": 0.0,
-      "reg": 1.0216,
-      "type": 0.2626
+      "reg": 1.0187,
+      "type": 0.2687
      },
-     "bodies_pct": 15.445,
-     "bytes_pct": 1.2608,
-     "nodes_pct": 35.2861,
-     "nodes_pct_loose": 64.3988,
-     "nodes_pct_strict": 27.0391,
-     "region_nodes_pct": 10.2028
+     "bodies_pct": 15.4748,
+     "bytes_pct": 1.2762,
+     "nodes_pct": 35.3993,
+     "nodes_pct_loose": 64.4667,
+     "nodes_pct_strict": 27.0192,
+     "region_nodes_pct": 10.2822
     }
    }
   },
   "O3": {
    "arena": {
-    "bodies": 4361,
-    "body_bytes": 3564543,
-    "coverage": 91.8092,
-    "discarded_bytes": 118824,
+    "bodies": 4424,
+    "body_bytes": 3588855,
+    "coverage": 90.8231,
+    "discarded_bytes": 121767,
     "gap_bodies": 40,
     "gap_bytes": 467,
-    "kept_coverage": 96.6534,
-    "modelled_bytes": 3564076,
-    "modelled_coverage": 99.9869,
+    "kept_coverage": 96.5941,
+    "modelled_bytes": 3588388,
+    "modelled_coverage": 99.987,
     "residual": -119,
-    "text": 3752623,
-    "used_bytes": 3445252
+    "text": 3816893,
+    "used_bytes": 3466621
    },
    "capture": {
-    "bodies": 4361,
+    "bodies": 4424,
     "coverage": 100.0,
-    "faithful_bytes": 3558182,
+    "faithful_bytes": 3580774,
     "residual": -119,
-    "text": 3644324
+    "text": 3668243
    },
    "lowerable": {
     "elf": {
-     "big_region_nodes_pct": 3.0396,
+     "big_region_nodes_pct": 3.0709,
      "blockers": {
-      "asm": 0.0054,
-      "call": 0.0115,
-      "frame": 0.1969,
-      "global": 0.686,
+      "asm": 0.0053,
+      "call": 0.0114,
+      "frame": 0.2063,
+      "global": 0.6813,
       "opaque": 0.0,
-      "reg": 1.0216,
-      "type": 0.2626
+      "reg": 1.0187,
+      "type": 0.2687
      },
-     "bodies_pct": 15.445,
-     "bytes_pct": 1.2608,
-     "nodes_pct": 35.2861,
-     "nodes_pct_loose": 64.3988,
-     "nodes_pct_strict": 27.0391,
-     "region_nodes_pct": 10.2028
+     "bodies_pct": 15.4748,
+     "bytes_pct": 1.2762,
+     "nodes_pct": 35.3993,
+     "nodes_pct_loose": 64.4667,
+     "nodes_pct_strict": 27.0192,
+     "region_nodes_pct": 10.2822
     }
    }
   }

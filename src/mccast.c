@@ -4922,6 +4922,26 @@ static int ast_val_has_call(AstArena *a, AstLocal n, int depth) {
 	return 0;
 }
 
+static int ast_storeval_reload_ok(AstArena *a, AstLocal n, int depth) {
+	MCC_TRACE("enter\n");
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return 1; }
+	if (depth <= 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	int k = ast_kind(a, n);
+	if (k == AST_Invoke || k == AST_Store || k == AST_StoreVal ||
+			k == AST_If || k == AST_Poison || (ast_type_t(a, n) & VT_VOLATILE))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (k == AST_Unary &&
+			(ast_op(a, n) == AST_OP_VLA || ast_op(a, n) == AST_OP_VLA_RESTORE))
+		{ MCC_TRACE("br\n"); return 0; }
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE;
+			 c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); if (!ast_storeval_reload_ok(a, c, depth - 1))
+			{ MCC_TRACE("br\n"); return 0; } }
+	return 1;
+}
+
 static int ast_load_over_member(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal c = ast_nchild(a, n) == 1 ? ast_child(a, n, 0) : AST_NONE;
 	while (c != AST_NONE && ast_kind(a, c) == AST_Convert && ast_nchild(a, c) == 1)
@@ -5015,7 +5035,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 			if (ast_nchild(a, st) == 2) { MCC_TRACE("br\n");
 				if (ast_parent(a, st) == AST_NONE)
 					{ MCC_TRACE("br\n"); ast_replay_value(a, st); }
-				else if (ast_val_has_call(a, ast_child(a, st, 1), 0))
+				else if (ast_val_has_call(a, ast_child(a, st, 1), 0) ||
+								 ast_storeval_reload_ok(a, ast_child(a, st, 0), 16))
 					{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, st, 0)); }
 				else
 					{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, st, 1)); }
@@ -6395,6 +6416,20 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 						{ MCC_TRACE("br\n"); pfx_ok = 1; }
 				}
 				if (!pfx_ok)
+					{ MCC_TRACE("br\n"); continue; }
+			}
+			{
+				AstLocal it = n;
+				int reload_ok = 1;
+				while (it != AST_NONE && it != up) { MCC_TRACE("br\n");
+					AstLocal pu = ast_parent(a, it);
+					if (pu != AST_NONE && ast_kind(a, pu) == AST_Store &&
+							ast_nchild(a, pu) == 2 && ast_child(a, pu, 1) == it &&
+							!ast_storeval_reload_ok(a, ast_child(a, pu, 0), 16))
+						{ MCC_TRACE("br\n"); reload_ok = 0; break; }
+					it = pu;
+				}
+				if (!reload_ok)
 					{ MCC_TRACE("br\n"); continue; }
 			}
 			if (call_up != AST_NONE)
