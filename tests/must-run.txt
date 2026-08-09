@@ -93,6 +93,7 @@ loop-census-parallel         | registered | --partest, the parallel-legality gro
 slice-enum                   | registered | 12 pinned sources; the cell that would notice 11 of them ceasing to compile
 slice-census                 | must-run   | the wide-corpus slice census (81,615 t=0 slices at -O1..-O3). NOT the 552-of-12,957 loop-slice figure, which is a --corpus self number; this row claimed it until 2026-08-09. `registered` was not enough: nothing set MCC_SLICE_CENSUS_RUN, so the row was green on a cell that had never executed. CMakeLists.txt now arms it, and the opt-in guard is its only 77 path, so a Skipped here means the arming was lost
 census/gates-armed           | must-run   | proves the census cells are armed at all; the cell that would have caught `-L census` reporting 6 passed with 3 Skipped
+ci/registration-stubs        | must-run   | proves no capability gate registers a cell on one branch and nothing on the other; the cell that would have caught the 164 (144 `optfire-*` + 20 `*-docker`) that vanished instead of skipping
 rir-coverage-census          | registered | the census half of the coverage ratchet
 rir-gap-classes              | registered | the UNF/WHY gap fixtures
 rir-lowerable-classes        | registered | the lowerable-percentage floor
