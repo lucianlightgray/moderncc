@@ -6228,13 +6228,19 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
 
             set(MCC_XSUITE_GCC "$ENV{HOME}/Projects/gcc" CACHE PATH
                 "gcc source checkout supplying gcc.c-torture/execute for jit/xoracle-conformance")
-            mark_as_advanced(MCC_XSUITE_GCC)
+            set(MCC_XSUITE_LLVMTS "$ENV{HOME}/Projects/llvm-test-suite" CACHE PATH
+                "llvm-test-suite checkout supplying SingleSource/UnitTests for jit/xoracle-conformance")
+            mark_as_advanced(MCC_XSUITE_GCC MCC_XSUITE_LLVMTS)
+            set(_jitconf_ts "")
+            if(EXISTS "${MCC_XSUITE_LLVMTS}/SingleSource/UnitTests")
+                set(_jitconf_ts "--testsuite=${MCC_XSUITE_LLVMTS}" --suite ts-unittests)
+            endif()
             if(EXISTS "${MCC_XSUITE_GCC}/gcc/testsuite/gcc.c-torture/execute")
                 add_test(NAME "jit/xoracle-conformance"
                     COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/jitconform.py"
                             --phase both
                             "--out=${CMAKE_BINARY_DIR}/jitconform-cell"
-                            "--gcc=${MCC_XSUITE_GCC}"
+                            "--gcc=${MCC_XSUITE_GCC}" ${_jitconf_ts}
                             --suite c-torture/execute --limit 400
                             "--mcc=$<TARGET_FILE:mcc>" --surface embed --label cell
                             --min-pass 100 --max-miscompile 1)

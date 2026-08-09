@@ -14,29 +14,47 @@ reuses the corpus collector in [`tools/xsuite.py`](../tools/xsuite.py) and the
 oracle-qualification phase of [`tools/xoracle.py`](../tools/xoracle.py), and scores each
 suite by the **other** vendor's compiler — gcc's tests by clang, llvm's by gcc.
 
-**Corpus provenance, so the number reproduces.** gcc checkout at
+**Corpus provenance, so the number reproduces.** Three read-only checkouts: gcc at
 `basepoints/gcc-17-2762-g9d8f85ca333`, llvm-project at
-`llvmorg-23-init-21709-g0f1f456263b5`, both read-only. gcc side is
-`gcc/testsuite/gcc.c-torture/{execute,compile,unsorted}`, `gcc.dg`, `gcc.misc-tests`,
-`c-c++-common`, `gcc.target/{i386,x86_64}` — run-mode tests only. **There is no
-`llvm-test-suite` on this host and `llvm/test/ExecutionEngine` holds no `.c` files at
-all**; clang's own suite is lit/FileCheck over IR and is not an execution corpus. The
-substitute, already used by `collect_builtins` in `tools/xoracle.py`, is
-`compiler-rt/test/builtins/Unit/*_test.c` paired with its `compiler-rt/lib/builtins`
-implementation — genuinely executable, self-checking C, judged by gcc.
+`llvmorg-23-init-21709-g0f1f456263b5`, llvm-test-suite at `63a9fd935`.
 
-**Classify-out count.** 5343 run-mode programs were collected; **4898 entered the oracle
-set and 445 (8.3%) were classified out** — 420 the oracle itself could not build, 19
-whose `-O0` and `-O2` oracle binaries disagree (undefined-behaviour-sensitive), 4
+- **gcc side, judged by clang 22.1.8** — `gcc/testsuite/gcc.c-torture/{execute,compile,unsorted}`,
+  `gcc.dg`, `gcc.misc-tests`, `c-c++-common`, `gcc.target/{i386,x86_64}`, run-mode only.
+- **llvm side, judged by gcc 15.3.0** — `llvm-test-suite/SingleSource/{Regression/C,UnitTests}`,
+  plus `llvm-project/compiler-rt/test/builtins/Unit/*_test.c` paired with its
+  `compiler-rt/lib/builtins` implementation.
+
+Two provenance caveats that change how the llvm-side number reads.
+**(1)** `llvm-project` itself has no executable C corpus — `llvm/test/ExecutionEngine`
+holds zero `.c` files and `clang/test` is lit/FileCheck over IR. Only `llvm-test-suite`
+and the compiler-rt builtins Unit tests are runnable.
+**(2) 1543 of the 1580 qualified `SingleSource/Regression/C` programs are a vendored
+copy of gcc's own c-torture suite** (`SingleSource/Regression/C/gcc-c-torture/`). They
+are *not* an independent corpus; what they add is a second, different adjudicator over
+programs clang already judged. The genuinely llvm-authored executable corpus here is
+small: 37 non-vendored Regression/C programs, 149 `SingleSource/UnitTests`, and 148
+compiler-rt builtins/tests — **334 programs**. Deduplicating the vendored overlap, the
+measurement covers **5084 distinct programs**, not 6627.
+
+**Classify-out count.** 7759 run-mode programs were collected; **6627 entered the oracle
+set and 1132 (14.6%) were classified out** — 1088 the oracle itself could not build
+(475 of those are LoongArch `lsxintrin.h`/`lasxintrin.h`, AVX-512 `m512_test_util.h` and
+PowerPC `altivec.h` intrinsic tests that cannot build on this host at all), 35 whose
+`-O0` and `-O2` oracle binaries disagree (undefined-behaviour-sensitive), 7
 nondeterministic across two runs of the same binary, 1 oracle timeout, 1 oracle bad
 flag. A program both compilers reject is not an mcc failure and is not counted as one.
+`llvm-test-suite`'s SingleSource is pre-C99 K&R-era C and is compiled `-std=gnu89
+-fcommon` — its own `SingleSource/Regression/C/CMakeLists.txt` passes `-Wno-implicit-int`
+for the same reason. Without that flag a C23-default gcc 15 refuses 640 of them on
+implicit-int and implicit-declaration alone, and they would classify out as untestable
+rather than measure anything. Oracle and mcc get the identical flag.
 
-**The coverage number, x86_64 Linux, `-O2`, against those 4898 programs.**
+**The coverage number, x86_64 Linux, `-O2`, against those 6627 programs.**
 
 | surface | AGREE | UNSUPPORTED | DIFFER | MCC-REJECTED |
 |---|---|---|---|---|
-| `--embed-jit` bake, run under `MCC_JIT=1` | **2587 (52.8%)** | 2146 | 86 | 79 |
-| `-run --jit` in-process | **2565 (52.4%)** | 2153 | 73 | 107 |
+| `--embed-jit` bake, run under `MCC_JIT=1` | **3251 (49.1%)** | 3118 | 113 | 145 |
+| `-run --jit` in-process | **3235 (48.8%)** | 3120 | 101 | 171 |
 
 AGREE means the runtime JIT engine was *observed to boot inside the program* — the
 harness only counts a pass when `MCC_JIT_VERBOSE=1` produced an `mccjit-boot[...]` or
@@ -44,29 +62,43 @@ harness only counts a pass when `MCC_JIT_VERBOSE=1` produced an `mccjit-boot[...
 cross oracle byte for byte. A program the engine never touched is recorded as
 UNSUPPORTED, never as coverage.
 
-**What the JIT refuses that the static path accepts: 2146 of 4898 (43.8%).** These are
+**What the JIT refuses that the static path accepts: 3118 of 6627 (47.1%).** These are
 `NOT_BAKED` — `--embed-jit` linked no engine into the output because
 `mccjit_intent_serialize` (`src/mccjit_intent.c`) could not serialize the function. Its
 refusal conditions are `ast_arena_has_asm`, a named symbol that is neither a data symbol
 nor an identifier-range token, and any called symbol that is `VT_STATIC | VT_INLINE`.
-The static path compiles all 2146 fine. The engine booted in 2633 programs, and its own
-routing verdict there was `refused` 1798, `swapped` 572, `kept-aot` 263 — so it declines
-a second time, at runtime, in 68% of the programs it had agreed to bake.
+The static path compiles all 3118 fine. The engine booted in 3313 programs, and its own
+routing verdict there was `refused` 2154, `swapped` 778, `kept-aot` 381 — so it declines
+a second time, at runtime, in 65% of the programs it had agreed to bake.
+
+**MCC-REJECTED is a language gap, not a JIT verdict**, and is bucketed separately by the
+harness: of the 145, the top reasons are `unresolved reference` 42 (mostly missing
+builtins), `cannot use local functions` 29 (GNU nested functions), 10 unusable flags, and
+a long tail of one- and two-count parse/semantic gaps. Nothing in that bucket is counted
+against the JIT.
 
 **Per suite (embed surface, AGREE / oracle-qualified):** `gcc.target` 1112/1222,
-`gcc.dg` 687/1831, `gcc.c-torture/execute` 623/1605, `llvm:builtins` 126/139,
-`c-c++-common` 33/87, `llvm:compiler-rt` 5/9, `gcc.misc-tests` 1/5.
+`gcc.dg` 687/1831, `gcc.c-torture/execute` 623/1605, `llvm:ts-regression` 611/1580,
+`llvm:builtins` 126/139, `llvm:ts-unittests` 53/149, `c-c++-common` 33/87,
+`llvm:compiler-rt` 5/9, `gcc.misc-tests` 1/5.
 
 ### OPEN, and it is a miscompile: the KGC route zero-extends nothing
 
-**13 programs (embed surface) / 7 (`-run` surface) produce a different answer under
+**22 records on the embed surface and 14 on `-run` produce a different answer under
 `MCC_JIT=1` than the same binary produces under `MCC_JIT=0`.** Same object code, same
 libc, only the runtime JIT differs — so nothing about the AOT compiler is implicated.
-Eleven of the thirteen abort (the torture tests are self-checking and call `abort`).
-Affected: `20050502-1.c`, `970217-1.c`, `builtin-prefetch-4.c`, `loop-3.c`, `loop-3b.c`,
-`pr109986.c`, `pr39240.c`, `pr65215-2.c`, `pr65215-3.c` in
-`gcc.c-torture/execute`, plus `gcc.dg/fastmath-1.c`, `gcc.dg/pr96674.c`,
-`gcc.dg/torture/pr45830.c`, `gcc.dg/torture/pr126136.c`.
+Deduplicating the vendored gcc-c-torture copy inside llvm-test-suite, that is **16
+distinct programs**, 14 on the embed surface and 8 on `-run`. Most abort, because the
+torture tests are self-checking and call `abort`. The union:
+`20050502-1.c`, `941014-2.c`, `970217-1.c`, `builtin-prefetch-4.c`, `loop-3.c`,
+`loop-3b.c`, `pr109986.c`, `pr17377.c`, `pr39240.c`, `pr65215-2.c`, `pr65215-3.c` in
+`gcc.c-torture/execute`; `gcc.dg/fastmath-1.c`, `gcc.dg/pr96674.c`,
+`gcc.dg/torture/pr45830.c`, `gcc.dg/torture/pr126136.c`; and
+`llvm-test-suite/SingleSource/UnitTests/Threads/tls.c`. (`pr17377.c` reached the harness
+only through llvm-test-suite's vendored copy: the gcc-side original carries
+`dg-require-effective-target return_address`, which `xsuite.py`'s DejaGnu handling skips,
+and llvm-test-suite ships it stripped of directives. `tls.c` is genuinely llvm's. So the
+second corpus did earn its keep even where it duplicates the first.)
 
 Minimal reproducer, banked at [`tests/jit/known-bad/kgc_zext_ret.c`](../tests/jit/known-bad/kgc_zext_ret.c):
 
@@ -110,21 +142,49 @@ directory away, in `tests/jit/known-bad/`, until the bug is fixed.
   actually booted — if it does not, the cell says so and fails), and falsified expected
   exits on both a JIT-engaged and a JIT-declined program, both of which must come back
   `DIFF_EXIT`.
-- **`jit/xoracle-conformance`** — qualifies and checks a deterministic 400-program slice
-  of `gcc.c-torture/execute` against clang, `--min-pass 100 --max-miscompile 1`. Runs in
-  ~22 s. Current measurement on that slice: 379 oracle-qualified, **125 AGREE**, 249
-  NOT_BAKED, 3 MCC-REJECTED, 2 DIFFER of which **1 is the KGC miscompile above** — that
-  is what `--max-miscompile 1` banks. A second miscompile fails the cell.
-  `MCC_XSUITE_GCC` is a cache PATH defaulting to `$ENV{HOME}/Projects/gcc`; when it does
-  not hold a `gcc/testsuite/gcc.c-torture/execute`, the cell registers as a *skip with
-  the reason*, never as a silent pass. `--limit` is applied to a path-sorted oracle set
-  so the slice does not drift with thread-completion order.
+- **`jit/xoracle-conformance`** — qualifies and checks a deterministic slice of at most
+  400 programs per suite from `gcc.c-torture/execute` (clang as oracle) and
+  `llvm-test-suite/SingleSource/UnitTests` (gcc as oracle), so the cell itself runs both
+  oracle directions. `--min-pass 100 --max-miscompile 1`, ~47 s. Current measurement:
+  493 oracle-qualified, **167 AGREE** (125 gcc-side, 42 llvm-side), 315 NOT_BAKED,
+  5 MCC-REJECTED, 6 DIFFER of which **1 is the KGC miscompile above** — that is what
+  `--max-miscompile 1` banks. A second miscompile fails the cell.
+  `MCC_XSUITE_GCC` and `MCC_XSUITE_LLVMTS` are cache PATHs defaulting to
+  `$ENV{HOME}/Projects/{gcc,llvm-test-suite}`; without the gcc corpus the cell registers
+  as a *skip with the reason*, never as a silent pass, and without llvm-test-suite it
+  measures the gcc direction alone. `--limit` is applied per suite to a path-sorted
+  oracle set, so the slice does not drift with thread-completion order.
+
+The ablations, quoted. Floor: `--min-pass 9999` gives
+`jitconform: FAIL floor: 125 programs ran correctly under the JIT, below the --min-pass
+9999 floor -- an empty or vacuous corpus must fail here, not pass quietly`. Miscompile
+pin: `--max-miscompile 0` gives `jitconform: FAIL miscompile: 1 programs where MCC_JIT=1
+and MCC_JIT=0 disagree in the same binary, above the --max-miscompile 0 pin`. Absent
+corpus: configuring with `-DMCC_XSUITE_GCC=/nonexistent/gcc` registers the cell and
+ctest reports `jit/xoracle-conformance (Skipped)`. Known-positive: deleting the two
+oracle comparisons from `check_embed` turns the selfcheck into
+`hot-lie want=DIFF_EXIT got=PASS FAIL` / `cold-lie want=DIFF_EXIT got=NOT_BAKED FAIL` /
+`jitconform selfcheck: FAIL (2 case(s))`, exit 1.
+
+### Routing note for the `__int128` and float/double work
+
+The compiler-rt builtins corpus is the densest `__int128` and soft-float set available,
+and it isolates cleanly: **131 of 148 pass, and every one of the 14 that differ has
+`aot_agrees: false`** — the JIT and the AOT path agree with each other and both differ
+from gcc, so these are language/runtime gaps, not JIT defects. They are exactly:
+`divtf3`, `divtc3`, `multc3`, `extendxftf2`, `trunctfxf2`, `fixunstfdi`, `floatditf`,
+`floattitf`, `floatunsitf`, `floatunditf`, `floatuntitf` (all `tf`/`xf` — `long double`
+and `__float128` soft float), `muloti4` (`__int128` overflow multiply), and
+`compiler_rt_logbl`/`compiler_rt_scalbnl` (`long double` math). One more,
+`trampoline_setup_test.c`, is refused outright with `error: cannot use local functions`.
+The per-record verdicts are in `<build>/jitconform-all/jit-embed-O2.jsonl`; each carries
+`got_head`/`want_head` for the first differing output.
 
 ### Still open on the JIT after this branch
 
 1. **The KGC zero-extension miscompile above.** Highest priority; it is a wrong-answer
    bug reachable from ordinary C.
-2. **43.8% of programs cannot be baked at all.** The single largest lever on JIT
+2. **47.1% of programs cannot be baked at all.** The single largest lever on JIT
    coverage is the `VT_STATIC | VT_INLINE` callee refusal in `mccjit_intent_serialize` —
    a static helper called from the JIT'd function disqualifies the whole function, and
    that is the commonest shape in the corpus.

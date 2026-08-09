@@ -5,8 +5,12 @@ The static path has been measured for a long time; the JIT has not. This runs
 external C corpora through the JIT and scores every program against the *other*
 vendor's compiler, exactly as tools/xoracle.py does for the static path:
 
-  gcc's gcc.c-torture/execute  -> judged by clang
-  llvm's compiler-rt builtins  -> judged by gcc
+  gcc's gcc.c-torture/execute      -> judged by clang   (--gcc)
+  llvm-test-suite SingleSource     -> judged by gcc     (--testsuite)
+  llvm's compiler-rt builtins Unit -> judged by gcc     (--llvm)
+
+clang's own test tree is lit/FileCheck over IR and is not an execution corpus;
+llvm-test-suite is where the runnable clang-side programs live.
 
 Two JIT surfaces exist in this tree and both are driven here:
 
@@ -212,6 +216,10 @@ def summarize(recs, surface, opt, out, label):
     for r in recs:
         if r.get("outcome"):
             outcomes[r["outcome"]] = outcomes.get(r["outcome"], 0) + 1
+    why = {}
+    for r in recs:
+        if r["status"] in ("MCC_NOBUILD", "LINK_POLICY") and r.get("why"):
+            why[r["why"]] = why.get(r["why"], 0) + 1
     suites = {}
     for r in recs:
         s = suites.setdefault(r["suite"], {"n": 0, "pass": 0})
@@ -232,16 +240,56 @@ def summarize(recs, surface, opt, out, label):
         print("\n  engine routing outcome (MCC_JIT_VERBOSE)")
         for k in sorted(outcomes, key=lambda k: -outcomes[k]):
             print(f"  {k:<22}{outcomes[k]:>8}")
+    if why:
+        print("\n  mcc refused to build (a language/builtin gap, not a JIT verdict)")
+        for k in sorted(why, key=lambda k: -why[k])[:20]:
+            print(f"  {why[k]:>6}  {k}")
     print("\n  per suite")
     for k in sorted(suites):
         s = suites[k]
         print(f"  {k:<30}{s['pass']:>6} / {s['n']:<6}")
     summary = {"surface": surface, "opt": opt, "label": label, "total": len(recs),
                "status": tally, "verdict": verd, "outcome": outcomes,
-               "suites": suites}
+               "refusal": why, "suites": suites}
     with open(os.path.join(out, "summary-%s.json" % label), "w") as f:
         json.dump(summary, f, indent=1, sort_keys=True)
     return summary
+
+
+TESTSUITE_DIRS = (("SingleSource/Regression/C", "llvm:ts-regression"),
+                  ("SingleSource/UnitTests", "llvm:ts-unittests"))
+
+
+def collect_testsuite(root):
+    """Collect llvm-test-suite SingleSource programs as gcc-judged run tests.
+
+    These are the executable clang-side corpus that clang's own suite is not:
+    single-file, self-checking C with a `.reference_output` beside it. The
+    reference file is deliberately ignored -- the cross-oracle rule is that
+    gcc adjudicates the llvm corpus, never llvm's own recorded expectations.
+
+    `-std=gnu89` is not a thumb on the scale: the corpus is pre-C99 K&R-era C
+    and SingleSource/Regression/C/CMakeLists.txt passes `-Wno-implicit-int` for
+    exactly this reason. Under a C23-default gcc, 640 of these fail to build at
+    all on implicit-int and implicit-declaration, which would classify them out
+    as untestable rather than measure anything. The oracle and mcc get the
+    identical flag, so the comparison is unaffected.
+    """
+    out = []
+    for sub, name in TESTSUITE_DIRS:
+        base = os.path.join(root, sub)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, dirnames, files in os.walk(base):
+            dirnames[:] = [d for d in dirnames if d not in ("Inputs", "CMakeFiles")]
+            for f in sorted(files):
+                if not f.endswith(".c"):
+                    continue
+                out.append({"suite": name, "file": os.path.join(dirpath, f),
+                            "mode": "run", "expect": "ok",
+                            "flags": ["-w", "-std=gnu89", "-fcommon"],
+                            "extra": [], "inc": [dirpath]})
+    return out
 
 
 def load_oracle(out, suite, limit):
@@ -254,19 +302,30 @@ def load_oracle(out, suite, limit):
     if suite:
         oracle = [o for o in oracle if any(x in o["suite"] for x in suite)]
     if limit:
-        oracle = oracle[:limit]
+        seen, kept = {}, []
+        for o in oracle:
+            n = seen.get(o["suite"], 0)
+            if n < limit:
+                seen[o["suite"]] = n + 1
+                kept.append(o)
+        oracle = kept
     return oracle
 
 
 def do_qualify(args):
-    if not (args.gcc or args.llvm):
-        print("jitconform: SKIP (no --gcc and no --llvm corpus)")
+    if not (args.gcc or args.llvm or args.testsuite):
+        print("jitconform: SKIP (no --gcc, --llvm or --testsuite corpus)")
         return SKIP
     if args.gcc and not os.path.isdir(os.path.join(args.gcc, "gcc", "testsuite")):
         print(f"jitconform: SKIP (no gcc testsuite under {args.gcc})")
         return SKIP
     xsuite.ANSI_OK = True
-    tests = xoracle.load_tests(args)
+    tests = xoracle.load_tests(args) if (args.gcc or args.llvm) else []
+    if args.testsuite:
+        ts = collect_testsuite(args.testsuite)
+        if args.suite:
+            ts = [t for t in ts if any(x in t["suite"] for x in args.suite)]
+        tests += ts[:args.limit] if args.limit else ts
     if not tests:
         print("jitconform: SKIP (corpus collected zero run-mode tests)")
         return SKIP
@@ -420,6 +479,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--gcc", default="")
     ap.add_argument("--llvm", default="")
+    ap.add_argument("--testsuite", default="")
     ap.add_argument("--gcc-bin", default="gcc")
     ap.add_argument("--clang-bin", default="clang")
     ap.add_argument("--mcc", default="")
