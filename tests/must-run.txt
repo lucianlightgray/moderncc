@@ -35,6 +35,8 @@ slice/gpu                    | registered | device differential; skips honestly 
 slice/gpu-known-positive     | registered | proves the device differential is not blind
 slice/wide64                 | registered | 64-bit full-width fidelity
 slice/wide64-known-positive  | registered | proves the 64-bit differential is not blind
+slice/f64                    | registered | fp64 differential: bit-exact payloads, and the measured denormal and two-NaN readings
+slice/f64-known-positive     | registered | proves the fp64 differential is not blind
 slice/ops                    | registered | the op matrix, including N9's six otherwise-unreachable opcodes
 slice/ops-known-positive     | registered | proves the op matrix is not blind
 slice/frame                  | must-run   | device frame storage: Store/Load lowered to GPU memory, CPU half needs no device
@@ -130,4 +132,4 @@ asm-gas-directives           | registered | a PERMANENT 77 carrying a named bloc
 
 diag.parse-frames            | registered | prices MCC_MAX_PARSE_DEPTH against the frames it was sized on; if the cell stops being registered, the 512 budget goes back to resting on a number nobody re-derives
 wide256/gmp-diff             | must-run   | the only oracle-backed proof that '__int256' is right. 9402 rows of arithmetic, shifts, comparisons and conversions -- runtime AND compile-time-folded -- compared byte-for-byte against libgmp, which shares no code with mcc. Losing this cell loses every claim mcc makes about 256-bit integers
->>>>>>> wt/bits256
+wide256/gmp-diff-known-positive | registered | proves wide256/gmp-diff is not blind: it perturbs one corpus operand and one folded constant and requires the differential to go red

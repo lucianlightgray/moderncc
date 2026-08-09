@@ -240,8 +240,27 @@ static void suite_work(void) {
 	{
 		AstLocal f = mk_bin(a, '+', mk_ref(a, -32, VT_DOUBLE),
 												mk_ref(a, -40, VT_DOUBLE), VT_DOUBLE);
+		CHECK(mcc_slice_work_from_ast(a, f, &w) == 1,
+					"M6: a double slice IS schedulable work, and carries VT_DOUBLE");
+		CHECK(w.wtype == VT_DOUBLE, "the work item keeps the double width type");
+	}
+	{
+		AstLocal f = mk_bin(a, '/', mk_ref(a, -32, VT_DOUBLE),
+												mk_ref(a, -40, VT_DOUBLE), VT_DOUBLE);
 		CHECK(mcc_slice_work_from_ast(a, f, &w) == 0,
-					"a float slice is not schedulable work");
+					"double division is not work: OpFDiv is 2.5 ULP by spec");
+	}
+	{
+		AstLocal f = mk_bin(a, '+', mk_ref(a, -32, VT_FLOAT),
+												mk_ref(a, -40, VT_FLOAT), VT_FLOAT);
+		CHECK(mcc_slice_work_from_ast(a, f, &w) == 0,
+					"a float slice is not work: fp32 denormals flush and cannot be pinned");
+	}
+	{
+		AstLocal f = mk_bin(a, '+', mk_ref(a, -32, VT_LDOUBLE),
+												mk_ref(a, -40, VT_LDOUBLE), VT_LDOUBLE);
+		CHECK(mcc_slice_work_from_ast(a, f, &w) == 0,
+					"a long double slice is not work: no device has an 80-bit float");
 	}
 	{
 		AstLocal wide = mk_ref(a, -8, VT_INT);
@@ -542,6 +561,446 @@ static void w64_binop(const char *what, int op, int type, const int64_t *lhs,
 out:
 	free(in); free(cout); free(gout); free(cdef); free(gdef);
 	ast_arena_free(a);
+}
+
+#define VT_DBL VT_DOUBLE
+#define VT_FLT VT_FLOAT
+#define VT_LDBL VT_LDOUBLE
+
+static const uint64_t F64V[] = {
+		0x0000000000000000ull, /* +0.0 */
+		0x8000000000000000ull, /* -0.0 */
+		0x3FF0000000000000ull, /* 1.0 */
+		0xBFF0000000000000ull, /* -1.0 */
+		0x4000000000000000ull, /* 2.0 */
+		0x3FE0000000000000ull, /* 0.5 */
+		0x400921FB54442D18ull, /* pi */
+		0xC02E000000000000ull, /* -15.0 */
+		0x3FF0000000000001ull, /* 1.0 + 1ulp, the value a 1-bit mutation lands on */
+		0x0010000000000000ull, /* DBL_MIN, the smallest normal */
+		0x000FFFFFFFFFFFFFull, /* the largest subnormal */
+		0x0000000000000001ull, /* the smallest subnormal */
+		0x8000000000000001ull, /* and its negative */
+		0x7FEFFFFFFFFFFFFFull, /* DBL_MAX -- pairs with itself to overflow to inf */
+		0xFFEFFFFFFFFFFFFFull,
+		0x7FF0000000000000ull, /* +inf */
+		0xFFF0000000000000ull, /* -inf */
+		0x7FF8000000000000ull, /* the default quiet NaN */
+		0x7FF8000000ABCDEFull, /* a quiet NaN with a distinctive payload */
+		0xFFF8000000FEDCBAull, /* a negative quiet NaN, different payload again */
+		0x4330000000000000ull, /* 2^52: x+1 stops being representable above here */
+		0x3CB0000000000000ull  /* 2^-52 */
+};
+#define F64V_N ((int)(sizeof F64V / sizeof F64V[0]))
+
+static double f64_of(int64_t b) {
+	double d;
+	uint64_t u = (uint64_t)b;
+	memcpy(&d, &u, sizeof d);
+	return d;
+}
+
+static int f64_is_subnormal(int64_t b) {
+	uint64_t u = (uint64_t)b & 0x7FFFFFFFFFFFFFFFull;
+	return u != 0 && u < 0x0010000000000000ull;
+}
+
+static int f64_is_zero(int64_t b) {
+	return ((uint64_t)b & 0x7FFFFFFFFFFFFFFFull) == 0;
+}
+
+static int f64_denorm_flushed(int64_t cpu, int64_t dev) {
+	if (!f64_is_zero(dev))
+		return 0;
+	return ((uint64_t)cpu >> 63) == ((uint64_t)dev >> 63);
+}
+
+static int f64_is_nan(int64_t b) {
+	uint64_t u = (uint64_t)b;
+	return (u & 0x7FF0000000000000ull) == 0x7FF0000000000000ull &&
+				 (u & 0x000FFFFFFFFFFFFFull) != 0;
+}
+
+static int f64_nan_select(int64_t a, int64_t b) {
+	return f64_is_nan(a) && f64_is_nan(b) && a != b;
+}
+
+static long g_f64_denorm_exact, g_f64_denorm_flush, g_f64_certified;
+static long g_f64_nansel_first, g_f64_nansel_second;
+static int g_f64_denorm_seen;
+
+static void f64_binop(const char *what, int op, int cmpresult) {
+	AstArena *a = ast_arena_new();
+	AstLocal root =
+			mk_bin(a, op, mk_ref(a, -8, VT_DBL), mk_ref(a, -16, VT_DBL), VT_DBL);
+	MccSliceWork w;
+	MccSliceKernel k;
+	int64_t *in, *cout, *gout;
+	unsigned char *cdef, *gdef;
+	int n = F64V_N * F64V_N, i, j, bad = 0, cmp = 0, dn = 0, odd = 0;
+
+	if (cmpresult)
+		ast_set_type(a, root, VT_INT, 0);
+	in = (int64_t *)malloc((size_t)n * 2 * sizeof *in);
+	cout = (int64_t *)malloc((size_t)n * sizeof *cout);
+	gout = (int64_t *)malloc((size_t)n * sizeof *gout);
+	cdef = (unsigned char *)malloc((size_t)n);
+	gdef = (unsigned char *)malloc((size_t)n);
+	if (!in || !cout || !gout || !cdef || !gdef) {
+		free(in); free(cout); free(gout); free(cdef); free(gdef);
+		ast_arena_free(a);
+		return;
+	}
+	for (i = 0; i < F64V_N; i++)
+		for (j = 0; j < F64V_N; j++) {
+			in[((long)i * F64V_N + j) * 2] = (int64_t)F64V[i];
+			in[((long)i * F64V_N + j) * 2 + 1] = (int64_t)F64V[j];
+		}
+
+	g_checks++;
+	if (!mcc_slice_work_from_ast(a, root, &w)) {
+		fprintf(stderr, "FAIL %s: %s is not schedulable work\n", __func__, what);
+		g_failures++;
+		goto out;
+	}
+	mcc_slice_work_bind(&w, in, n, cout, cdef);
+	g_checks++;
+	if (mcc_slice_run_cpu(&w, 0) != MCC_TASK_DONE) {
+		fprintf(stderr, "FAIL %s: %s CPU run did not complete\n", __func__, what);
+		g_failures++;
+		goto out;
+	}
+	g_checks++;
+	if (!mcc_slice_kernel_build(&w, &k)) {
+		fprintf(stderr, "FAIL %s: %s did not lower to a device kernel\n", __func__,
+						what);
+		g_failures++;
+		goto out;
+	}
+	mcc_slice_work_bind(&w, in, n, gout, gdef);
+	g_checks++;
+	if (mcc_slice_run_gpu(&w, &k, 0) != MCC_TASK_DONE) {
+		fprintf(stderr, "FAIL %s: %s device run did not complete\n", __func__,
+						what);
+		g_failures++;
+		mcc_slice_kernel_free(&k);
+		goto out;
+	}
+	mcc_slice_kernel_free(&k);
+
+	for (i = 0; i < n; i++) {
+		int64_t la = in[(long)i * 2], rb = in[(long)i * 2 + 1];
+		int touches;
+		if (gdef[i] != cdef[i]) {
+			if (bad < 4)
+				fprintf(stderr, "FAIL %s: %s definedness a=%016llx b=%016llx c=%d g=%d\n",
+								__func__, what, (unsigned long long)la, (unsigned long long)rb,
+								cdef[i], gdef[i]);
+			bad++;
+			continue;
+		}
+		if (!cdef[i])
+			continue;
+		touches = !cmpresult && (f64_is_subnormal(la) || f64_is_subnormal(rb) ||
+														 f64_is_subnormal(cout[i]));
+		if (!cmpresult && f64_nan_select(la, rb)) {
+			g_checks++;
+			if (gout[i] == la)
+				g_f64_nansel_first++;
+			else if (gout[i] == rb)
+				g_f64_nansel_second++;
+			else {
+				if (bad < 4)
+					fprintf(stderr,
+									"FAIL %s: %s a=%016llx b=%016llx gpu=%016llx is neither "
+									"operand's NaN payload\n",
+									__func__, what, (unsigned long long)la,
+									(unsigned long long)rb, (unsigned long long)gout[i]);
+				bad++;
+			}
+			continue;
+		}
+		if (gout[i] == cout[i]) {
+			if (touches) {
+				dn++;
+				g_f64_denorm_exact++;
+			} else {
+				cmp++;
+				g_f64_certified++;
+			}
+			continue;
+		}
+		if (touches && f64_denorm_flushed(cout[i], gout[i])) {
+			dn++;
+			g_f64_denorm_flush++;
+			continue;
+		}
+		if (touches)
+			odd++;
+		if (bad < 4)
+			fprintf(stderr,
+							"FAIL %s: %s a=%016llx b=%016llx cpu=%016llx gpu=%016llx%s\n",
+							__func__, what, (unsigned long long)la, (unsigned long long)rb,
+							(unsigned long long)cout[i], (unsigned long long)gout[i],
+							touches ? " (denormal-touching, and neither model fits)" : "");
+		bad++;
+	}
+	g_checks++;
+	if (bad)
+		g_failures++;
+	g_checks++;
+	if (!cmp) {
+		fprintf(stderr, "FAIL %s: %s compared no certified tuple\n", __func__,
+						what);
+		g_failures++;
+	}
+	if (dn)
+		g_f64_denorm_seen = 1;
+	(void)odd;
+out:
+	free(in); free(cout); free(gout); free(cdef); free(gdef);
+	ast_arena_free(a);
+}
+
+static void f64_identity(void) {
+	AstArena *a = ast_arena_new();
+	AstLocal id = mk_ref(a, -8, VT_DBL);
+	MccSliceWork w;
+	MccSliceKernel k;
+	int64_t in[F64V_N], out[F64V_N];
+	unsigned char def[F64V_N];
+	int i, bad = 0;
+	for (i = 0; i < F64V_N; i++)
+		in[i] = (int64_t)F64V[i];
+	CHECK(mcc_slice_work_from_ast(a, id, &w) == 1, "a bare double ref is work");
+	CHECK(w.wtype == VT_DBL, "the work item carries VT_DOUBLE as its width type");
+	CHECK(mcc_slice_kernel_build(&w, &k) == 1, "a double ref lowers to a kernel");
+	mcc_slice_work_bind(&w, in, F64V_N, out, def);
+	CHECK(mcc_slice_run_gpu(&w, &k, 0) == MCC_TASK_DONE, "the double batch runs");
+	for (i = 0; i < F64V_N; i++) {
+		if (def[i] != 1 || out[i] != in[i]) {
+			if (bad < 4)
+				fprintf(stderr, "FAIL %s: payload %016llx returned %016llx def=%d\n",
+								__func__, (unsigned long long)in[i],
+								(unsigned long long)out[i], def[i]);
+			bad++;
+		}
+	}
+	g_checks++;
+	if (bad)
+		g_failures++;
+	mcc_slice_kernel_free(&k);
+	ast_arena_free(a);
+}
+
+static void f64_exclusions(void) {
+	static const struct {
+		const char *why;
+		int op;
+		int type;
+	} NO[] = {
+			{"double division: OpFDiv is 2.5 ULP by spec", '/', VT_DBL},
+			{"double remainder is not an arithmetic op on floats", '%', VT_DBL},
+			{"float add: fp32 denormals measurably flush on the device", '+', VT_FLT},
+			{"float multiply", '*', VT_FLT},
+			{"float compare", TOK_LT, VT_FLT},
+			{"long double: no device has an 80-bit float", '+', VT_LDBL},
+			{"long double multiply", '*', VT_LDBL}};
+	int i;
+	for (i = 0; i < (int)(sizeof NO / sizeof NO[0]); i++) {
+		AstArena *a = ast_arena_new();
+		AstLocal root = mk_bin(a, NO[i].op, mk_ref(a, -8, NO[i].type),
+													 mk_ref(a, -16, NO[i].type), NO[i].type);
+		MccSliceWork w;
+		g_checks++;
+		if (mcc_slice_work_from_ast(a, root, &w)) {
+			fprintf(stderr, "FAIL %s: excluded shape became work -- %s\n", __func__,
+							NO[i].why);
+			g_failures++;
+		}
+		ast_arena_free(a);
+	}
+	{
+		static const int MIXOP[] = {'+', '-', '*', TOK_LT, TOK_EQ};
+		int i;
+		for (i = 0; i < (int)(sizeof MIXOP / sizeof MIXOP[0]); i++) {
+			int order;
+			for (order = 0; order < 2; order++) {
+				AstArena *a = ast_arena_new();
+				AstLocal l = order ? mk_ref(a, -8, VT_INT) : mk_ref(a, -8, VT_DBL);
+				AstLocal r = order ? mk_ref(a, -16, VT_DBL) : mk_ref(a, -16, VT_INT);
+				AstLocal root = mk_bin(a, MIXOP[i], l, r, 0);
+				MccSliceWork w;
+				g_checks++;
+				if (mcc_slice_work_from_ast(a, root, &w)) {
+					fprintf(stderr,
+									"FAIL %s: mixed int/double operands became work (op=%#x, "
+									"double %s)\n",
+									__func__, MIXOP[i], order ? "second" : "first");
+					g_failures++;
+				}
+				ast_arena_free(a);
+			}
+		}
+	}
+	{
+		AstArena *a = ast_arena_new();
+		AstLocal cvt = ast_node(a, AST_Convert);
+		MccSliceWork w;
+		ast_set_type(a, cvt, VT_DBL, 0);
+		ast_add_child(a, cvt, mk_ref(a, -8, VT_INT));
+		g_checks++;
+		if (mcc_slice_work_from_ast(a, cvt, &w))
+			g_failures++, fprintf(stderr, "FAIL %s: int->double convert became work\n",
+														__func__);
+		ast_arena_free(a);
+	}
+	{
+		AstArena *a = ast_arena_new();
+		AstLocal cvt = ast_node(a, AST_Convert);
+		MccSliceWork w;
+		ast_set_type(a, cvt, VT_INT, 0);
+		ast_add_child(a, cvt, mk_ref(a, -8, VT_DBL));
+		g_checks++;
+		if (mcc_slice_work_from_ast(a, cvt, &w))
+			g_failures++, fprintf(stderr, "FAIL %s: double->int convert became work\n",
+														__func__);
+		ast_arena_free(a);
+	}
+}
+
+static void suite_f64(void) {
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr,
+							"FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+#if defined(__FLT_EVAL_METHOD__)
+	g_checks++;
+	if (__FLT_EVAL_METHOD__ != 0) {
+		fprintf(stderr,
+						"FAIL suite_f64: FLT_EVAL_METHOD=%d, so the host reference is not "
+						"plain double and no bit-exact claim is possible\n",
+						(int)__FLT_EVAL_METHOD__);
+		g_failures++;
+		return;
+	}
+#endif
+	g_checks++;
+	if (!mcc_gpu_f64()) {
+		fprintf(stderr,
+						"slicerun: device %s lacks shaderFloat64; fp64 arithmetic excluded\n",
+						g_devname);
+		f64_exclusions();
+		{
+			AstArena *a = ast_arena_new();
+			AstLocal root = mk_bin(a, '+', mk_ref(a, -8, VT_DBL),
+														 mk_ref(a, -16, VT_DBL), VT_DBL);
+			MccSliceWork w;
+			MccSliceKernel k;
+			g_checks++;
+			if (mcc_slice_work_from_ast(a, root, &w) &&
+					mcc_slice_kernel_build(&w, &k)) {
+				fprintf(stderr, "FAIL suite_f64: built an fp64 kernel for a device "
+												"without shaderFloat64\n");
+				g_failures++;
+				mcc_slice_kernel_free(&k);
+			}
+			ast_arena_free(a);
+		}
+		return;
+	}
+
+	f64_identity();
+	f64_exclusions();
+	f64_binop("f64-add", '+', 0);
+	f64_binop("f64-sub", '-', 0);
+	f64_binop("f64-mul", '*', 0);
+	f64_binop("f64-eq", TOK_EQ, 1);
+	f64_binop("f64-ne", TOK_NE, 1);
+	f64_binop("f64-lt", TOK_LT, 1);
+	f64_binop("f64-le", TOK_LE, 1);
+	f64_binop("f64-gt", TOK_GT, 1);
+	f64_binop("f64-ge", TOK_GE, 1);
+
+	{
+		AstArena *a = ast_arena_new();
+		AstLocal neg = ast_node(a, AST_Unary);
+		MccSliceWork w;
+		MccSliceKernel k;
+		int64_t in[F64V_N], cout[F64V_N], gout[F64V_N];
+		unsigned char cdef[F64V_N], gdef[F64V_N];
+		int i, bad = 0;
+		ast_set_op(a, neg, '-');
+		ast_set_type(a, neg, VT_DBL, 0);
+		ast_add_child(a, neg, mk_ref(a, -8, VT_DBL));
+		for (i = 0; i < F64V_N; i++)
+			in[i] = (int64_t)F64V[i];
+		CHECK(mcc_slice_work_from_ast(a, neg, &w) == 1, "double negate is work");
+		mcc_slice_work_bind(&w, in, F64V_N, cout, cdef);
+		CHECK(mcc_slice_run_cpu(&w, 0) == MCC_TASK_DONE, "negate runs on the CPU");
+		CHECK(mcc_slice_kernel_build(&w, &k) == 1, "double negate lowers");
+		mcc_slice_work_bind(&w, in, F64V_N, gout, gdef);
+		CHECK(mcc_slice_run_gpu(&w, &k, 0) == MCC_TASK_DONE, "negate runs on device");
+		for (i = 0; i < F64V_N; i++)
+			if (gdef[i] != cdef[i] || (cdef[i] && gout[i] != cout[i]))
+				bad++;
+		g_checks++;
+		if (bad) {
+			fprintf(stderr, "FAIL suite_f64: %d of %d negations diverged\n", bad,
+							F64V_N);
+			g_failures++;
+		}
+		CHECK(cout[0] == (int64_t)0x8000000000000000ull,
+					"negating +0.0 gives -0.0, not +0.0");
+		CHECK(cout[1] == 0, "negating -0.0 gives +0.0");
+		mcc_slice_kernel_free(&k);
+		ast_arena_free(a);
+	}
+
+	g_checks++;
+	if (!g_f64_denorm_seen) {
+		fprintf(stderr, "FAIL suite_f64: no denormal-touching tuple was compared, "
+										"so the denormal question was never asked\n");
+		g_failures++;
+	}
+	g_checks++;
+	if (g_f64_denorm_exact && g_f64_denorm_flush) {
+		fprintf(stderr,
+						"FAIL suite_f64: the device preserved %ld denormal results and "
+						"flushed %ld -- it matches neither model consistently\n",
+						g_f64_denorm_exact, g_f64_denorm_flush);
+		g_failures++;
+	}
+	g_checks++;
+	if (!g_f64_nansel_first && !g_f64_nansel_second) {
+		fprintf(stderr, "FAIL suite_f64: no two-NaN tuple was compared, so the "
+										"payload tie-break was never asked\n");
+		g_failures++;
+	}
+	g_checks++;
+	if (g_f64_nansel_first && g_f64_nansel_second) {
+		fprintf(stderr,
+						"FAIL suite_f64: the device took the first operand's NaN payload "
+						"%ld times and the second %ld times -- it follows neither rule\n",
+						g_f64_nansel_first, g_f64_nansel_second);
+		g_failures++;
+	}
+	fprintf(stderr,
+					"slicerun: fp64 device=%s certified=%ld tuples bit-exact, "
+					"denormal-touching=%ld (%s), two-NaN=%ld (device takes the %s "
+					"operand's payload; host takes the first)\n",
+					g_devname, g_f64_certified,
+					g_f64_denorm_exact + g_f64_denorm_flush,
+					g_f64_denorm_flush ? "device FLUSHES fp64 denormals, excluded from "
+															 "the certified set"
+														 : "device PRESERVES fp64 denormals, and they are "
+															 "compared bit-exactly",
+					g_f64_nansel_first + g_f64_nansel_second,
+					g_f64_nansel_second ? "second" : "first");
 }
 
 static void suite_wide64(void) {
@@ -2973,6 +3432,52 @@ static int64_t seed_value(long t, int k) {
 	return seeds[(t * 3 + k * 5) & 7];
 }
 
+static int64_t seed_f64_value(long t, int k) {
+	static const double seeds[8] = {0.0, 1.0, -1.0, 2.0, 0.5, -3.0, 1000.0,
+																	-12345.0};
+	double d = seeds[(t * 3 + k * 5) & 7];
+	uint64_t u;
+	memcpy(&u, &d, sizeof u);
+	return (int64_t)u;
+}
+
+static int slicerun_nan(int64_t b) {
+	uint64_t u = (uint64_t)b;
+	return (u & 0x7FF0000000000000ull) == 0x7FF0000000000000ull &&
+				 (u & 0x000FFFFFFFFFFFFFull) != 0;
+}
+
+static long g_arena_nantie;
+static long g_arena_f64_slices, g_arena_f64_frames;
+
+static int arena_nan_tie(int flt, int64_t c, int64_t g) {
+	return flt && c != g && slicerun_nan(c) && slicerun_nan(g);
+}
+
+static int subtree_has_f64(AstArena *a, AstLocal n, int depth) {
+	AstLocal c;
+	if (n == AST_NONE || depth > 24)
+		return 0;
+	if (ast_eval_slice_f64t(ast_type_t(a, n)))
+		return 1;
+	if (ast_kind(a, n) == AST_Load) {
+		AstEvalSliceIdx ix;
+		if (ast_eval_slice_dynidx(a, ast_first_child(a, n), &ix) &&
+				ast_eval_slice_f64t(ix.etype))
+			return 1;
+	}
+	if (ast_kind(a, n) == AST_Store) {
+		AstEvalSliceIdx ix;
+		if (mcc_slice_store_dyn(a, ast_child(a, n, 0), &ix) &&
+				ast_eval_slice_f64t(ix.etype))
+			return 1;
+	}
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (subtree_has_f64(a, c, depth + 1))
+			return 1;
+	return 0;
+}
+
 static void dump_tree(AstArena *a, AstLocal n, int d) {
 	AstLocal c;
 	int i;
@@ -3550,7 +4055,7 @@ static void run_real_slice(AstArena *a, AstLocal root, int quiet) {
 	int64_t in[8 * MCC_SLICE_MAXLIVE];
 	int64_t cout[8], gout[8];
 	unsigned char cdef[8], gdef[8];
-	int t, j;
+	int t, j, flt;
 
 	if (!mcc_slice_work_from_ast(a, root, &w))
 		return;
@@ -3558,9 +4063,10 @@ static void run_real_slice(AstArena *a, AstLocal root, int quiet) {
 		return;
 	g_arena_slices++;
 
+	flt = subtree_has_f64(a, root, 0);
 	for (t = 0; t < 8; t++)
 		for (j = 0; j < w.nlive; j++)
-			in[t * w.nlive + j] = seed_value(t, j);
+			in[t * w.nlive + j] = flt ? seed_f64_value(t, j) : seed_value(t, j);
 
 	mcc_slice_work_bind(&w, in, 8, cout, cdef);
 	if (mcc_slice_run_cpu(&w, 0) != MCC_TASK_DONE)
@@ -3573,6 +4079,8 @@ static void run_real_slice(AstArena *a, AstLocal root, int quiet) {
 	if (!g_have_device || !mcc_slice_kernel_build(&w, &k))
 		return;
 	g_arena_gpu_slices++;
+	if (subtree_has_f64(a, root, 0))
+		g_arena_f64_slices++;
 	mcc_slice_work_bind(&w, in, 8, gout, gdef);
 	if (mcc_slice_run_gpu(&w, &k, 0) != MCC_TASK_DONE) {
 		mcc_slice_kernel_free(&k);
@@ -3580,6 +4088,10 @@ static void run_real_slice(AstArena *a, AstLocal root, int quiet) {
 		return;
 	}
 	for (t = 0; t < 8; t++) {
+		if (cdef[t] && gdef[t] == cdef[t] && arena_nan_tie(flt, cout[t], gout[t])) {
+			g_arena_nantie++;
+			continue;
+		}
 		if (gdef[t] != cdef[t] || (cdef[t] && gout[t] != cout[t])) {
 			if (!quiet && !g_dumped) {
 				g_dumped = 1;
@@ -3683,17 +4195,20 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 	int64_t crv[FRAME_NT], grv[FRAME_NT];
 	int cdf[FRAME_NT];
 	unsigned char gdf[FRAME_NT];
-	int t, j, bad = 0, membad = 0, usemem;
+	int t, j, bad = 0, membad = 0, usemem, flt;
 
 	if (!mcc_slice_frame_from_ast(a, bb, &fr))
 		return;
 	g_frame_slices++;
 	g_frame_stmts += fr.nstmt;
 	usemem = fr.nptr > 0 && g_rw != NULL;
+	flt = subtree_has_f64(a, bb, 0);
 	for (t = 0; t < FRAME_NT; t++)
 		for (j = 0; j < fr.nslot; j++)
 			cf[t * fr.nslot + j] = gf[t * fr.nslot + j] =
-					fr.sptr[j] && usemem ? frame_ptr_addr(t, j) : seed_value(t, j);
+					fr.sptr[j] && usemem ? frame_ptr_addr(t, j)
+															 : flt ? seed_f64_value(t, j)
+																		 : seed_value(t, j);
 	if (usemem) {
 		frame_ptr_seed();
 		memcpy(g_rw_pre, g_rw, g_rwsz);
@@ -3712,6 +4227,19 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 	if (!g_have_device || !mcc_slice_frame_kernel_build(&fr, &k))
 		return;
 	g_frame_built++;
+	if (flt)
+		g_arena_f64_frames++;
+	if (getenv("MCC_SLICE_SPV_DUMP")) {
+		char p[256];
+		FILE *fp;
+		snprintf(p, sizeof p, "%s/frame%04ld." MCC_GPU_CODE_SUFFIX,
+						 getenv("MCC_SLICE_SPV_DUMP"), g_frame_built);
+		fp = fopen(p, "wb");
+		if (fp) {
+			fwrite(k.code.p, MCC_GPU_CODE_UNIT, (size_t)k.code.n, fp);
+			fclose(fp);
+		}
+	}
 	if (mcc_slice_run_frame_gpu(&fr, &k, gf, FRAME_NT, grv, gdf) != MCC_TASK_DONE) {
 		mcc_slice_kernel_free(&k);
 		g_frame_mismatch++;
@@ -3731,14 +4259,21 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 		 * flag there is a dummy, not a verdict -- unless the run resolves an
 		 * address at run time, in which case the flag carries the index bound and
 		 * both executors have committed to the same verdict for it. */
-		if (fr.ret != AST_NONE &&
-				((int)gdf[t] != cdf[t] || (cdf[t] && grv[t] != crv[t])))
+		if (fr.ret != AST_NONE && (int)gdf[t] == cdf[t] && cdf[t] &&
+				arena_nan_tie(flt, crv[t], grv[t]))
+			g_arena_nantie++;
+		else if (fr.ret != AST_NONE &&
+						 ((int)gdf[t] != cdf[t] || (cdf[t] && grv[t] != crv[t])))
 			bad++;
 		if (fr.ret == AST_NONE && fr.nidx && (int)gdf[t] != cdf[t])
 			bad++;
 		for (j = 0; j < fr.nslot; j++)
-			if (cf[t * fr.nslot + j] != gf[t * fr.nslot + j])
-				bad++;
+			if (cf[t * fr.nslot + j] != gf[t * fr.nslot + j]) {
+				if (arena_nan_tie(flt, cf[t * fr.nslot + j], gf[t * fr.nslot + j]))
+					g_arena_nantie++;
+				else
+					bad++;
+			}
 	}
 	if (bad) {
 		if (!quiet && g_frame_mismatch < 4) {
@@ -4472,6 +5007,8 @@ static int arena_mode(const char *path, long limit, int quiet) {
 					 g_cref_seen, g_cref_emitted, g_cref_tuples, g_cref_toobig,
 					 g_cref_unspellable, g_cref_alldead, g_cref_mixed);
 	}
+	printf("slicerun: f64-slices=%ld f64-frames=%ld nan-tiebreak=%ld\n",
+				 g_arena_f64_slices, g_arena_f64_frames, g_arena_nantie);
 	g_arena_mismatch += g_frame_mismatch;
 	if (!g_arena_slices) {
 		printf("slicerun: FAIL (no real slice became schedulable work)\n");
@@ -4619,6 +5156,8 @@ int main(int argc, char **argv) {
 		suite_bytes();
 	if (!only || !strcmp(only, "wide64"))
 		suite_wide64();
+	if (!only || !strcmp(only, "f64"))
+		suite_f64();
 	if (!only || !strcmp(only, "ops"))
 		suite_ops();
 	if (!only || !strcmp(only, "frame"))
@@ -4646,7 +5185,7 @@ int main(int argc, char **argv) {
 	if (only && (!strcmp(only, "gpu") || !strcmp(only, "wide64") ||
 							 !strcmp(only, "ops") || !strcmp(only, "fault") ||
 			 !strcmp(only, "mem") || !strcmp(only, "deref") ||
-			 !strcmp(only, "fmt")) &&
+			 !strcmp(only, "f64") || !strcmp(only, "fmt")) &&
 			!g_have_device) {
 		fprintf(stderr, "SKIP: slicerun %s is a device differential and no usable "
 										"device was found on this host (device=%s)\n",
