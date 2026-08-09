@@ -3924,22 +3924,34 @@ if(MCC_BUILD_TESTS)
                             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fmt_census_mutate.cmake")
                 set_tests_properties("fmt/census-oracle-known-positive" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT)
-                add_test(NAME "fmt/arena-census-bank"
-                    COMMAND "${MCC_PYTHON3}"
-                            "${CMAKE_CURRENT_SOURCE_DIR}/tools/fmt-census.py"
-                            "--arena-check=${CMAKE_CURRENT_BINARY_DIR}"
-                            "--root=${CMAKE_CURRENT_SOURCE_DIR}")
-                set_tests_properties("fmt/arena-census-bank" PROPERTIES
-                    FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
-                add_test(NAME "fmt/arena-census-known-positive"
-                    COMMAND "${CMAKE_COMMAND}"
-                            -DPY=${MCC_PYTHON3}
-                            -DCENSUS=${CMAKE_CURRENT_SOURCE_DIR}/tools/fmt-census.py
-                            -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
-                            -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
-                            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fmt_arena_census_mutate.cmake")
-                set_tests_properties("fmt/arena-census-known-positive"
-                    PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 600)
+                # The arena census reads the build's own flags for src/mcc.c back
+                # out of compile_commands.json. CMAKE_EXPORT_COMPILE_COMMANDS is on,
+                # but the Visual Studio (MSBuild) generator ignores it and emits no
+                # such file, so the take cannot run there -- skip rather than hard
+                # -fail, exactly as the GPU cells skip with no device. Ninja-based
+                # Windows builds (the mingw preset) still run it.
+                if(CMAKE_GENERATOR MATCHES "Visual Studio")
+                    set(_arena_why "the arena census needs compile_commands.json to reproduce the build's flags for src/mcc.c; the Visual Studio generator does not emit one -- configure with Ninja (e.g. --preset mingw) to run this cell")
+                    mcc_skip_test("fmt/arena-census-bank" "${_arena_why}")
+                    mcc_skip_test("fmt/arena-census-known-positive" "${_arena_why}")
+                else()
+                    add_test(NAME "fmt/arena-census-bank"
+                        COMMAND "${MCC_PYTHON3}"
+                                "${CMAKE_CURRENT_SOURCE_DIR}/tools/fmt-census.py"
+                                "--arena-check=${CMAKE_CURRENT_BINARY_DIR}"
+                                "--root=${CMAKE_CURRENT_SOURCE_DIR}")
+                    set_tests_properties("fmt/arena-census-bank" PROPERTIES
+                        FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
+                    add_test(NAME "fmt/arena-census-known-positive"
+                        COMMAND "${CMAKE_COMMAND}"
+                                -DPY=${MCC_PYTHON3}
+                                -DCENSUS=${CMAKE_CURRENT_SOURCE_DIR}/tools/fmt-census.py
+                                -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                                -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fmt_arena_census_mutate.cmake")
+                    set_tests_properties("fmt/arena-census-known-positive"
+                        PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 600)
+                endif()
             else()
                 set(_fmtcensus_why "tools/fmt-census.py needs a python3 interpreter and none is on PATH")
                 mcc_skip_test("fmt/census-oracle" "${_fmtcensus_why}")
