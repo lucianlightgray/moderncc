@@ -97,6 +97,21 @@ The SPIR-V emitter has no float support to refuse *with*: `grep -c Float src/mcc
 src/mccgpu.c src/mccslice.h` is **0, 0, 0** — no `OpTypeFloat`, no `OpFAdd`, no `OpFMul`,
 nowhere in the device layer.
 
+> **CORRECTION 2026-08-09 (`wt/spvfloat`), the "eleven sites" undercount.** The `grep -c
+> Float` **0, 0, 0** reproduces exactly, and so does every corpus figure above (80.60 /
+> 80.66 / 79.21 / 1.45 — see the pricing section below). **The refusal-site count does
+> not.** `grep -c is_float` over the slice engine returns **`slice_inline.h:2`,
+> `mccslice.h:4`, `mccgpu.h:12`, `ast_eval_slice.h:18` — 36 lines, 43 occurrences**, not
+> the 1 + 4 + 6 = 11 this paragraph claims. Two independent causes, and both of them
+> matter for the price:
+>
+> - **`mccgpu.h` is 12, not 6, because the block is mirrored.** Lines 780/791/803/816/831/898
+>   are the MSL arm and 2640/2651/2664/2681/2719/2786 are the SPIR-V arm — the same six
+>   guards written twice. Anyone counting one emitter counted half the work.
+> - **`ast_eval_slice.h`'s 18 were never counted at all**, and they are the expensive ones:
+>   that file is the **CPU reference**, and it is the reason the price is not what this
+>   board assumed. See below.
+
 Demonstrated rather than argued, with the committed harness:
 
 ```
@@ -213,6 +228,14 @@ The grounds, in the order of their weight:
    row 1's headline is therefore "≈1.45% today, 80.60% ceiling", and this board's
    recommendation rests on declining to pay for the difference, not on the difference being
    unreachable.** Nobody has priced float in the emitter. It is UNMEASURED.
+   — **ANSWERED 2026-08-09 (`wt/spvfloat`), and this point is half right.** "Six lines" is
+   36 (the mirrored MSL/SPIR-V blocks, plus 18 in the CPU reference nobody counted), and the
+   price is ~1,100–1,700 lines. But the objection fails for a reason better than cost:
+   `is_float` is *not* only a choice we own. **`shaderDenormPreserveFloat32 = false` is a
+   fact about the device**, fp32 denormals are measurably flushed on it, and `OpFDiv` is
+   2.5 ULP by specification — so a bit-exact `float` path is unreachable no matter who
+   writes it. `double` is reachable and is where all 79.2 points are. See "The price,
+   measured 2026-08-09" below.
 2. **The 3.67% collapse cuts both ways.** Yes, `matmul 600 8` is 77% of the corpus and its
    argv was chosen by `runtime-bench.py` to take about a second. But dense matrix multiply
    being over-represented in a benchmark suite is not evidence that it is rare in
@@ -238,6 +261,154 @@ The grounds, in the order of their weight:
 **Both sides of 1 are honest, and the recommendation stands on cost, not on impossibility.**
 The measurement that would overturn it is named in row 6: price float in the SPIR-V emitter
 and the CPU reference. If it comes back cheap, this verdict is wrong.
+
+#### The price, measured 2026-08-09 (`wt/spvfloat`) — PRICED, NOT PAID
+
+It did not come back cheap, and the reason is not the emitter. **The verdict stands, on a
+ground the board did not have: bit-exactness is unattainable for `float` on the reference
+device, and unpinnable in principle for division on every conformant device.** Nothing was
+implemented. What follows is why, and what it would take to reopen.
+
+**Everything in the premise reproduces except the site count.** `grep -c Float` is 0, 0, 0.
+`tools/loop-census.py cmake-debug --corpus runtime` gives 80.66% `par=1`, 80.60%
+iteration-weighted, hottest loop `id=2000005 matmul/main matmul.c:22` at 76.92%,
+`id=11000015 loopnest/main loopnest.c:44` at 2.24%, `id=12000002 vlaloop/work` at 1.37%.
+`matmul.c:4` and `loopnest.c:6` are `static double` arrays; 76.92 + 2.24 + `nbody.c:27`'s
+0.06 ≈ **79.2 points of `double`**, and vlaloop is **94% of the 1.45-point integer
+remainder**. The site count is wrong (36, not 11 — corrected above).
+
+**The two hazards were measured on the real device, not argued from the spec.** A
+standalone Vulkan probe (`glslc` + `vkQueueSubmit`, device created with
+`shaderFloat64 = VK_TRUE`, values passed through an SSBO so nothing constant-folds) on the
+NVIDIA RTX 5070 Ti:
+
+| probe | host | device | verdict |
+| --- | --- | --- | --- |
+| `a*b+c`, fp64, `a=1+2⁻⁵²`, `b=1−2⁻⁵²`, `c=−1` | `0` (separate) / `−4.93e−32` (fma) | `0` | **did not contract** |
+| `a*b+c`, fp32, same shape at 2⁻²³ | `0` (separate) / `−1.42e−14` (fma) | `0` | **did not contract** |
+| `DBL_MIN*0.5` (fp64 denormal) | `1.1125369292536007e−308` | `1.1125369292536007e−308` | **preserved** |
+| `FLT_MIN*0.5` (fp32 denormal) | `5.87747175e−39` | **`0`** | **FLUSHED — host/device disagree** |
+
+`spirv-dis` confirms the module carries **no `NoContraction` decoration**, so the two
+non-contractions are the driver's discretion, not a guarantee — contraction is permitted by
+default and must be pinned. That part is cheap and sound: `NoContraction` is core SPIR-V,
+needs no capability and no device property.
+
+**The blocker is denormals, and it is not fixable from our side.** `vulkaninfo` on the same
+device:
+
+```
+shaderDenormPreserveFloat32     = false     shaderDenormFlushToZeroFloat32 = false
+shaderDenormPreserveFloat64     = false     shaderDenormFlushToZeroFloat64 = false
+shaderRoundingModeRTEFloat32/64 = true      shaderSignedZeroInfNanPreserveFloat32/64 = true
+shaderFloat64                   = true
+```
+
+Both denormal execution modes are unavailable for both widths, so the shader may declare
+**neither** `DenormPreserve` **nor** `DenormFlushToZero` — denormal behaviour is whatever
+the driver does, and the measurement above shows what it does: **preserves fp64, flushes
+fp32.** Rounding mode and signed-zero/Inf/NaN *are* pinnable. Denormals are not.
+
+**This inverts the brief's fallback.** "Start with `float` if `double` is blocked" is
+exactly backwards:
+
+- **`float` (fp32) is the arithmetically broken one** — a measured, reproducible,
+  unpinnable host/device disagreement — **and it buys zero corpus points.** `mathfun.c` is
+  the only `float` user in all 17 kernels and its loop is not in the `par=1` set.
+- **`double` (fp64) is the clean one on this device** and is worth the whole 79.2.
+
+**Vulkan's `OpFDiv` is 2.5 ULP, not correctly rounded** (spec Table 80, "Precision and
+Operation of SPIR-V Instructions"; `OpFAdd`/`OpFSub`/`OpFMul` *are* correctly rounded, and
+doubles are only promised "at least that of single precision"). So float division is
+non-bit-exact **by specification, on every conformant device, forever**. Any float device
+path must refuse `/` permanently or abandon exact comparison.
+
+**The comparison that would be sound, and why.** Exact bit equality of the 64-bit payload —
+integer compare of the bit pattern, differing NaN payloads counted as failure — matching the
+discipline the integer differential already uses (`tools/slicerun.c:3022` exact `!=` plus a
+definedness flag, `:3163` byte-exact `memcmp` of the shared region). **No tolerance.** A ULP
+tolerance would be actively worse than nothing here: the corpus is mul/add over order-1
+values where any real miscompile produces a *large* error, while the only legitimate
+divergence (denormal flush) produces a difference a ULP window would also swallow. The
+tolerance would hide exactly the bug class it was introduced for.
+
+And bit-exactness *is* reachable for the 79.2 points, which is what makes this expensive
+rather than simply impossible:
+
+- The `par=1` loop in `matmul` is **`matmul.c:22`, the innermost `j`** of the i-k-j nest.
+  Parallelising `j` does **not** reorder the `k` reduction into `c[i][j]` — `c[i][j] += aik
+  * b[k][j]` accumulates in source order per lane. **No reassociation hazard.**
+- `OpFAdd`/`OpFMul` are correctly rounded, so they are bit-exact with the host by definition.
+- `NoContraction` pins FMA; RTE and SignedZeroInfNanPreserve are advertised true.
+- fp64 denormals measured preserved, and `matmul`/`loopnest` never generate one anyway.
+
+**Which is precisely the trap.** Such a differential would be green — and green *over a
+corpus that cannot reach either divergent region*. `--mutate` would still pass its own test
+(the 1-bit XOR at `tools/spvgate.c:654` is a 1-ULP perturbation on a double, comfortably
+detectable), so the cells would satisfy the letter of the known-positive rule while being
+**structurally unable to fail on denormals or on division** — the cardinal sin restated one
+level up. Five cells passing over nothing was this month's lesson; this would be the same
+shape with better arithmetic.
+
+**Worse, the verdict would be device-dependent.** Denormal behaviour is unpinnable *and*
+per-device, so the same bit-exact differential can return different answers on different
+CI cells. `ci.yml:152` passes `-DMCC_GPU_REQUIRED=ON` on every Linux stage2 cell, which
+turns a lavapipe/NVIDIA denormal disagreement into a hard CI failure **no code change can
+fix**. Whether lavapipe agrees is **UNVERIFIED**: `mesa-vulkan-drivers` is installed in CI
+(`ci.yml:116`, `matrix.yml:105`) but there is no lavapipe ICD on this host
+(`/usr/share/vulkan/icd.d/` holds `nvidia_icd.json` only), and `vulkan.gpuinfo.org` and the
+Mesa source mirror both refused fetches. `docs/PLAN.md:625` asserts lavapipe has
+`shaderFloat64`; **that assertion has not been reproduced and should not be quoted as
+measured.**
+
+**The line estimate, against the actual code — ~1,100–1,700 lines, not "a handful".** The
+board's "six lines of refusal in files we own" is right about the *gates* and wrong about
+what the gates are holding back:
+
+| | work | est. lines |
+| --- | --- | ---: |
+| **CPU reference value model** | `src/ast_eval_slice.h` is **`int64_t`-only** — no tagged union, no float lane. `ast_eval_narrow:62`, `ast_eval_binop:70`, `ast_eval_slice_fit:255`, `ast_eval_slice_env:234`, `ast_eval_slice_rec:639` (every AST kind), `bytes_load/store:349,372`, plus `MccSliceWork.out[]`, `mcc_slice_run_cpu` (`mccslice.h:156`) and the frame interpreter (`:595`, `:723`) | **350–550** |
+| **SPIR-V emitter** | `OpTypeFloat` 32/64, `OpFAdd/FSub/FMul/FDiv/FNegate`, `OpFOrd*`, `OpConvertSToF/FToS/FConvert`, float constants (fp64 = 2 literal words), typed load/store, `NoContraction` threaded through `spv_emit3` | **400–550** |
+| **`Float64` capability plumbing** | `VkPhysicalDeviceFeatures` is a **bodyless forward typedef** (`mccgpu.c:769`), `vkGetPhysicalDeviceFeatures` is **not in the loader X-macro** (`:1373`), and `pEnabledFeatures = NULL` (`:1623`). Needs the struct body, the loader entry, the query and the enable — **twice**, because `tools/spvgate.c:225` carries its own duplicated Vulkan | **80–120** |
+| **Buffer/ABI** | all three SSBOs are `OpTypeRuntimeArray` of **int32, ArrayStride 4** (`mccgpu.h:1662`, `:1600`). fp64 needs a `uvec2`↔`double` `OpBitcast` (reusing E2b's pair machinery, the cheap route) or a second aliased binding at stride 8 | **60–100** |
+| **Slice-engine gates** | the 36 lines above — each becomes type-directed dispatch, not a deletion | **80–150** |
+| **MSL parity** | **MSL has no `double` at all** (`PLAN.md` E6). Either gate the Metal arm off for fp64 — which also strands the macOS `gpu-vulkan` cell, since MoltenVK-on-Metal has no fp64 either — or write a software f64 the size of E2b's int64 emulation | **50** *(gate)* / **600+** *(emulate)* |
+| **Tests** | new suites, `--mutate` hooks, `must-run.txt` registration, and **new seeds**: `seed_value()` (`slicerun.c:2971`) is `{0,1,-1,2,7,-3,1000,-12345}` — integers, which would exercise none of this | **200–300** |
+
+**What the corpus number becomes if the block is lifted.** `double` add/sub/mul only, no
+division: **≈1.45% → ≈80.6%** device-executable parallel-legal (+79.2). `float`: **+0.0**,
+and it is the width that cannot be made exact. That asymmetry is the whole result — the
+points are all in the one type that works, and the type the brief proposed starting with is
+worth nothing and is broken besides.
+
+**Recommendation: do not implement. The row is priced and closed.** Not because the emitter
+is hard — it is ordinary — but because the honest version costs ~1,100–1,700 lines across
+two backends and a CPU reference that has no float representation at all, and buys a
+differential that is **green by corpus construction**, **unable to fail on its two real
+divergence classes**, **restricted to Vulkan on a discrete GPU**, and **liable to hard-fail
+CI on a device nobody has measured**.
+
+**The counter-argument, because it is not weak.** 79.2 points is a 55× increase in
+device-executable coverage, the `matmul` reduction genuinely does not reassociate, `OpFAdd`
+and `OpFMul` genuinely are correctly rounded, fp64 denormals genuinely are preserved on the
+device we have, and `--mutate` genuinely would prove the new cells can fail. A `double`-only,
+`+`/`−`/`*`-only path with `NoContraction` and RTE pinned would be bit-exact on the corpus
+and is defensible on its own terms. The answer is that "bit-exact on a corpus that cannot
+reach the divergent region" is the exact claim this project has already been burned by
+five times this month, and the burn is worse here because the divergence is **unpinnable**
+rather than merely unimplemented — no future commit fixes `shaderDenormPreserveFloat32 =
+false`.
+
+**What would reopen it**, in order of decisiveness:
+
+1. A device advertising `shaderDenormPreserveFloat32/64 = true` (making both widths
+   pinnable), *or* a decision to restrict the device path to fp64 and refuse `/` — the
+   latter is free and is what a reopened row should assume.
+2. A measured `vulkaninfo` from lavapipe under CI conditions. If it lacks `shaderFloat64`,
+   the 79.2 points are unreachable on the only device the suite tests against and the row
+   is closed permanently rather than provisionally. **This is one command on a CI runner
+   and it has never been run.**
+3. A corpus kernel whose hot loop is `float`, which would change the +0.0 above.
 
 #### Metal — settled, 2026-08-09: dropped
 
@@ -270,7 +441,7 @@ row denominated in it ranks below every row that is not: *device-eligible blocks
 | 3 | Metal | **a decision** | free to make, grows with every SPIR-V landing. **Decided above: dropped** |
 | 4 | the device path | **device-eligible blocks** — no exchange rate | **Frozen above.** ≈1.45% device-executable lanes on the best corpus anyone has found |
 | 5 | `snprintf` module budget | **device-accepted sites** — no exchange rate | banked at 148/162; the 7th site buys one site, the 8th needs `MCC_GPU_CODE_MAX` raised. **Stop** |
-| 6 | float in the slice engine and the SPIR-V emitter | **device-executable lanes** | the only thing that would make row 4's 80.60% mean anything. **UNMEASURED and unpriced** — pricing it is what would overturn the verdict |
+| 6 | float in the slice engine and the SPIR-V emitter | **device-executable lanes** | ~~the only thing that would make row 4's 80.60% mean anything. **UNMEASURED and unpriced**~~ — **PRICED 2026-08-09 (`wt/spvfloat`), NOT PAID.** ~1,100–1,700 lines across two backends and an `int64_t`-only CPU reference. **`float` is unreachable bit-exactly** (`shaderDenormPreserveFloat32 = false` and fp32 denormals measurably flushed; `OpFDiv` is 2.5 ULP by spec) **and worth +0.0 points**; `double` is reachable and worth +79.2, but only over a corpus that cannot reach either divergence class. Verdict stands. **Next step is one `vulkaninfo` on a lavapipe CI runner**, never yet run |
 | 7 | chain-store re-promotion | emitted code | **MEASURED, refused.** +2.60 `kept` → −0.079% stage-2 for +1.50% stage-1; 60× worse than `divmagic`'s rung |
 | 8 | `storeval-rot` demotion | emitted code | **MEASURED, refused.** Its off-state is an incomplete replay path, `kept` 91.978 → 83.242 |
 
