@@ -1228,6 +1228,8 @@ else()
 endif()
 set(MCC_CROSS_DIR "${_mcc_cross_default}"
     CACHE PATH "cross-compiler build dir for the cross test cells")
+mcc_config_node(MCC_CROSS_REQUIRED TYPE BOOL DEFAULT OFF GROUP "Diagnostics" ADVANCED
+    HELP "Fail mcc_cross_build instead of skipping it when MCC_CROSS_DIR holds no configured build. Off by default so a tree without a cross build still passes; set it on a CI cell that is supposed to exercise the cross/qemu/macho cells, because otherwise a missing cross dir turns every one of them into a green skip and nothing reports the loss")
 mcc_config_node(MCC_CROSS_OPTIMIZER TYPE BOOL DEFAULT ON GROUP "Build targets" ADVANCED
     VISIBLE_WHEN "MCC_ENABLE_CROSS"
     HELP "Build the cross compilers (mcc-<arch>) with the optimizer. ON (default) makes the cross reemit/JIT parity axes (divmagic/select/promotion/replay-inline/embed-jit) real on every triple, matching native; also appends MCC_EMBED_JIT=1. OFF builds the cross compilers without the AST reemit optimizer (smaller/faster cross build, byte-identical to the pre-ungate cross output) but leaves those per-triple parity axes compiled out so they silently no-op.")
@@ -3336,6 +3338,19 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(${_name} PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP:" ${ARGN})
     endfunction()
 
+    function(mcc_cross_cc _arch _out _fixout)
+        if(TARGET mcc-${_arch})
+            set(${_out} "$<TARGET_FILE:mcc-${_arch}>" PARENT_SCOPE)
+            set(${_fixout} "MCC_BUILT" PARENT_SCOPE)
+        elseif(EXISTS "${MCC_CROSS_DIR}/mcc-${_arch}${MCC_EXESUF}")
+            set(${_out} "${MCC_CROSS_DIR}/mcc-${_arch}${MCC_EXESUF}" PARENT_SCOPE)
+            set(${_fixout} "MCC_BUILT;MCC_CROSS_BUILT" PARENT_SCOPE)
+        else()
+            set(${_out} "" PARENT_SCOPE)
+            set(${_fixout} "MCC_BUILT" PARENT_SCOPE)
+        endif()
+    endfunction()
+
     if(NOT CMAKE_CROSSCOMPILING)
         add_executable(mccharness tools/mccharness.c tools/toolsupport.c)
         target_link_libraries(mccharness ${CMAKE_DL_LIBS})
@@ -4067,7 +4082,7 @@ if(MCC_BUILD_TESTS)
                     COMMAND "${_shadow_bash}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/shadow-iv-sweep.sh" "${_sv}")
                 set_tests_properties(cross/shadow-iv-${_sv} PROPERTIES
                     FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
-                    LABELS "cross" TIMEOUT 3600 ${_shadow_pathmod})
+                    LABELS "cross" TIMEOUT 3600 ENVIRONMENT "MCC_CROSS_DIR=${MCC_CROSS_DIR}" ${_shadow_pathmod})
             endif()
         endforeach()
 
@@ -4493,7 +4508,8 @@ if(MCC_BUILD_TESTS)
                 endforeach()
             endif()
             foreach(_ofx_cpu IN ITEMS arm64 i386 riscv64)
-            if(UNIX AND TARGET mcc-${_ofx_cpu})
+            mcc_cross_cc(${_ofx_cpu} _ofx_cc _ofx_fix)
+            if(UNIX AND NOT _ofx_cc STREQUAL "")
             file(GLOB _ofx_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
             file(GLOB _ofx_xfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/cdelta*.txt")
             set(_ofx_seen "")
@@ -4539,11 +4555,11 @@ if(MCC_BUILD_TESTS)
                             list(APPEND _ofx_seen "${_ofcell}")
                             add_test(NAME "optfire-${_ofx_cpu}/${_ofcell}"
                                 COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh"
-                                        "${_ofxmode}" "$<TARGET_FILE:mcc-${_ofx_cpu}>" "${_ofsrc}"
+                                        "${_ofxmode}" "${_ofx_cc}" "${_ofsrc}"
                                         "${CMAKE_BINARY_DIR}/optfire-${_ofx_cpu}" "${_ofcell}"
                                         "${_ofopt}" "${_ofarg}" "${_ofextra}" "${_ofx_tail}")
                             set_tests_properties("optfire-${_ofx_cpu}/${_ofcell}" PROPERTIES
-                                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                                FIXTURES_REQUIRED "${_ofx_fix}" SKIP_RETURN_CODE 77 LABELS native
                                 ENVIRONMENT "OPTFIRE_NORUN=1;OPTFIRE_MCCFLAGS=-B${CMAKE_BINARY_DIR}")
                         endif()
                     endif()
@@ -5914,7 +5930,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                                 "${_qo}")
                     set_tests_properties(selfhost-qemu-${_qa}-${_qon} PROPERTIES
                         FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT"
-                        LABELS "qemu" SKIP_RETURN_CODE 77 TIMEOUT 1800)
+                        LABELS "qemu" SKIP_RETURN_CODE 77 TIMEOUT 1800 ENVIRONMENT "MCC_CROSS_DIR=${MCC_CROSS_DIR}")
                 endforeach()
             endforeach()
 
@@ -6042,15 +6058,16 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         endif()
     endif()
     foreach(_dsb_arch arm64 riscv64)
-        if(TARGET mcc-${_dsb_arch} AND TARGET dashsbytes)
+        mcc_cross_cc(${_dsb_arch} _dsb_cc _dsb_fix)
+        if(NOT _dsb_cc STREQUAL "" AND TARGET dashsbytes)
             add_test(NAME dash-s-bytes-${_dsb_arch}
                 COMMAND "$<TARGET_FILE:dashsbytes>"
-                "$<TARGET_FILE:mcc-${_dsb_arch}>"
+                "${_dsb_cc}"
                 "$<TARGET_FILE:seccmp>"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/dash_s_roundtrip/prog.c"
                 "${CMAKE_BINARY_DIR}/dash-s-bytes-${_dsb_arch}")
             set_tests_properties(dash-s-bytes-${_dsb_arch} PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT)
+                FIXTURES_REQUIRED "${_dsb_fix}")
         else()
             mcc_skip_test(dash-s-bytes-${_dsb_arch}
                 "requires the mcc-${_dsb_arch} cross compiler (cmake --preset cross)")
@@ -6065,7 +6082,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
     set(MCC_ARM_CROSS_COMPILE "" CACHE STRING
         "binutils prefix (e.g. arm-linux-gnueabi-) for `arm-asm-testsuite`")
 
-    if(TARGET mcc-i386)
+    mcc_cross_cc(i386 _xcc_i386 _xfix_i386)
+    if(NOT _xcc_i386 STREQUAL "")
 
         mcc_mingw_resolve()
         set(_fc_harness_args "")
@@ -6075,41 +6093,41 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set(_fc_harness_args --gcc "${_MCC_MINGW_MULTILIB_GCC}" --m32 "-m32")
         endif()
         add_test(NAME i386-fastcall-abi COMMAND "$<TARGET_FILE:mccharness>" i386fastcall
-            --imcc $<TARGET_FILE:mcc-i386> ${_fc_harness_args}
+            --imcc ${_xcc_i386} ${_fc_harness_args}
             --work ${CMAKE_BINARY_DIR}/i386-fastcall-abi)
-        set_tests_properties(i386-fastcall-abi PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(i386-fastcall-abi PROPERTIES FIXTURES_REQUIRED "${_xfix_i386}"
             SKIP_REGULAR_EXPRESSION "SKIP:")
 
         add_test(NAME i386-fastcall-abi-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/i386fastcall-docker.sh"
-                "$<TARGET_FILE:mcc-i386>" "${CMAKE_BINARY_DIR}/i386-fastcall-abi-docker")
-        set_tests_properties(i386-fastcall-abi-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                "${_xcc_i386}" "${CMAKE_BINARY_DIR}/i386-fastcall-abi-docker")
+        set_tests_properties(i386-fastcall-abi-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_i386}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME i386-tls-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/i386tls-docker.sh"
-                "$<TARGET_FILE:mcc-i386>" "${CMAKE_BINARY_DIR}/i386-tls-docker")
-        set_tests_properties(i386-tls-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                "${_xcc_i386}" "${CMAKE_BINARY_DIR}/i386-tls-docker")
+        set_tests_properties(i386-tls-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_i386}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME i386-codegen-diff-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/i386diff-docker.sh"
-                "$<TARGET_FILE:mcc-i386>" "${CMAKE_BINARY_DIR}/i386-libmccrt.a"
+                "${_xcc_i386}" "${CMAKE_BINARY_DIR}/i386-libmccrt.a"
                 "${CMAKE_BINARY_DIR}/i386-codegen-diff-docker")
-        set_tests_properties(i386-codegen-diff-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(i386-codegen-diff-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_i386}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME i386-divmagic-soak-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/i386divmagic-docker.sh"
-                "$<TARGET_FILE:mcc-i386>" "${CMAKE_BINARY_DIR}/i386-libmccrt.a"
+                "${_xcc_i386}" "${CMAKE_BINARY_DIR}/i386-libmccrt.a"
                 "${CMAKE_BINARY_DIR}/i386-divmagic-soak-docker")
-        set_tests_properties(i386-divmagic-soak-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(i386-divmagic-soak-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_i386}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME i386-inline-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/i386inline-docker.sh"
                 "${CMAKE_BINARY_DIR}/i386-inline-docker")
-        set_tests_properties(i386-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(i386-inline-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_i386}"
             SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(i386-fastcall-abi
@@ -6130,45 +6148,47 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             SKIP_RETURN_CODE 77)
     endforeach()
 
-    if(TARGET mcc-x86_64)
+    mcc_cross_cc(x86_64 _xcc_x86_64 _xfix_x86_64)
+    if(NOT _xcc_x86_64 STREQUAL "")
         add_test(NAME extlink-x86_64-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/extlink-docker.sh"
-                "$<TARGET_FILE:mcc-x86_64>" "linux/amd64"
+                "${_xcc_x86_64}" "linux/amd64"
                 "${CMAKE_BINARY_DIR}/extlink-x86_64-docker")
-        set_tests_properties(extlink-x86_64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(extlink-x86_64-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_x86_64}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME abi-diff-amd64-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/abidiff-docker.sh"
                 "amd64" "${CMAKE_BINARY_DIR}/abi-diff-amd64-docker")
-        set_tests_properties(abi-diff-amd64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(abi-diff-amd64-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_x86_64}"
             SKIP_RETURN_CODE 77)
     endif()
-    if(TARGET mcc-arm64)
+    mcc_cross_cc(arm64 _xcc_arm64 _xfix_arm64)
+    if(NOT _xcc_arm64 STREQUAL "")
         add_test(NAME extlink-arm64-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/extlink-docker.sh"
-                "$<TARGET_FILE:mcc-arm64>" "linux/arm64"
+                "${_xcc_arm64}" "linux/arm64"
                 "${CMAKE_BINARY_DIR}/extlink-arm64-docker")
-        set_tests_properties(extlink-arm64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(extlink-arm64-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_arm64}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME arm64-inline-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/arm64inline-docker.sh"
                 "${CMAKE_BINARY_DIR}/arm64-inline-docker")
-        set_tests_properties(arm64-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(arm64-inline-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_arm64}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME arm64-divmagic-soak-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/arm64divmagic-docker.sh"
-                "$<TARGET_FILE:mcc-arm64>"
+                "${_xcc_arm64}"
                 "${CMAKE_BINARY_DIR}/arm64-divmagic-soak-docker")
-        set_tests_properties(arm64-divmagic-soak-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(arm64-divmagic-soak-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_arm64}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME abi-diff-arm64-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/abidiff-docker.sh"
                 "arm64" "${CMAKE_BINARY_DIR}/abi-diff-arm64-docker")
-        set_tests_properties(abi-diff-arm64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(abi-diff-arm64-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_arm64}"
             SKIP_RETURN_CODE 77)
     endif()
     if(MCC_PYTHON3)
@@ -6249,21 +6269,25 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
 
         add_test(NAME run-parity-riscv64
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-run-parity.sh" riscv64)
-        set_tests_properties(run-parity-riscv64 PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-            SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 1800)
+        set_tests_properties(run-parity-riscv64 PROPERTIES
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT"
+            SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 1800 ENVIRONMENT "MCC_CROSS_DIR=${MCC_CROSS_DIR}")
 
         add_test(NAME run-parity-arm
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-run-parity.sh" arm)
-        set_tests_properties(run-parity-arm PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-            SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 1800)
+        set_tests_properties(run-parity-arm PROPERTIES
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT"
+            SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 1800 ENVIRONMENT "MCC_CROSS_DIR=${MCC_CROSS_DIR}")
 
         add_test(NAME run-parity-arm64
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-run-parity.sh" arm64)
-        set_tests_properties(run-parity-arm64 PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-            SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 1800)
+        set_tests_properties(run-parity-arm64 PROPERTIES
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT"
+            SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 1800 ENVIRONMENT "MCC_CROSS_DIR=${MCC_CROSS_DIR}")
     endif()
 
-    if(TARGET mcc-riscv64)
+    mcc_cross_cc(riscv64 _xcc_riscv64 _xfix_riscv64)
+    if(NOT _xcc_riscv64 STREQUAL "")
         if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
             set(_extlink_host_plat "linux/arm64")
         else()
@@ -6271,63 +6295,65 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         endif()
         add_test(NAME extlink-riscv64-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/extlink-docker.sh"
-                "$<TARGET_FILE:mcc-riscv64>" "${_extlink_host_plat}"
+                "${_xcc_riscv64}" "${_extlink_host_plat}"
                 "${CMAKE_BINARY_DIR}/extlink-riscv64-docker" "riscv64-linux-gnu-")
-        set_tests_properties(extlink-riscv64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(extlink-riscv64-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_riscv64}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME riscv64-promote-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/riscv64promo-docker.sh"
                 "${CMAKE_BINARY_DIR}/riscv64-promote-docker")
-        set_tests_properties(riscv64-promote-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(riscv64-promote-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_riscv64}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME riscv64-inline-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/riscv64inline-docker.sh"
                 "${CMAKE_BINARY_DIR}/riscv64-inline-docker")
-        set_tests_properties(riscv64-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(riscv64-inline-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_riscv64}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME riscv64-divmagic-soak-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/riscv64divmagic-docker.sh"
-                "$<TARGET_FILE:mcc-riscv64>"
+                "${_xcc_riscv64}"
                 "${CMAKE_BINARY_DIR}/riscv64-divmagic-soak-docker")
-        set_tests_properties(riscv64-divmagic-soak-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(riscv64-divmagic-soak-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_riscv64}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME riscv64-const-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/riscv64const-docker.sh"
-                "$<TARGET_FILE:mcc-riscv64>"
+                "${_xcc_riscv64}"
                 "${CMAKE_BINARY_DIR}/riscv64-const-docker")
-        set_tests_properties(riscv64-const-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(riscv64-const-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_riscv64}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME abi-diff-riscv64-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/abidiff-docker.sh"
                 "riscv64" "${CMAKE_BINARY_DIR}/abi-diff-riscv64-docker")
-        set_tests_properties(abi-diff-riscv64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(abi-diff-riscv64-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_riscv64}"
             SKIP_RETURN_CODE 77)
     endif()
 
-    if(TARGET mcc-arm)
+    mcc_cross_cc(arm _xcc_arm _xfix_arm)
+    if(NOT _xcc_arm STREQUAL "")
         add_test(NAME arm-inline-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/arminline-docker.sh"
                 "${CMAKE_BINARY_DIR}/arm-inline-docker")
-        set_tests_properties(arm-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(arm-inline-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_arm}"
             SKIP_RETURN_CODE 77)
 
         add_test(NAME abi-diff-arm-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/abidiff-docker.sh"
                 "arm" "${CMAKE_BINARY_DIR}/abi-diff-arm-docker")
-        set_tests_properties(abi-diff-arm-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(abi-diff-arm-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_arm}"
             SKIP_RETURN_CODE 77)
     endif()
 
-    if(TARGET mcc-arm)
+    mcc_cross_cc(arm _xcc_arm _xfix_arm)
+    if(NOT _xcc_arm STREQUAL "")
         add_test(NAME arm-interwork-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/arminterwork-docker.sh"
                 "${CMAKE_BINARY_DIR}/arm-interwork-docker")
-        set_tests_properties(arm-interwork-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        set_tests_properties(arm-interwork-docker PROPERTIES FIXTURES_REQUIRED "${_xfix_arm}"
             SKIP_RETURN_CODE 77)
     endif()
 
@@ -6425,6 +6451,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
 
     add_test(NAME mcc_cross_build COMMAND "${CMAKE_COMMAND}"
         "-DXDIR=${MCC_CROSS_DIR}" "-DBDIR=${CMAKE_BINARY_DIR}"
+        "-DXREQUIRED=${MCC_CROSS_REQUIRED}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cross_build.cmake")
     set_tests_properties(mcc_cross_build PROPERTIES
         FIXTURES_SETUP MCC_CROSS_BUILT TIMEOUT 3600)

@@ -1778,6 +1778,7 @@ static struct {
 	VkDeviceMemory min_, mout, mmem;
 	void *pin, *pout, *pmem;
 	VkDeviceSize binsz, boutsz, bmemsz;
+	int dsdirty;
 	MccVkPipe cache[MCC_VK_CACHE_MAX];
 	int ncache, next;
 } mcc_vkr;
@@ -1890,6 +1891,7 @@ static int mcc_vk_bind_mem(VkDeviceSize want) {
 	if (!mcc_gpu_buffer(want, &mcc_vkr.bmem, &mcc_vkr.mmem, &mcc_vkr.pmem))
 		return 0;
 	mcc_vkr.bmemsz = want;
+	mcc_vkr.dsdirty = 1;
 	memset(mcc_vkr.pmem, 0, (size_t)want);
 	return 1;
 }
@@ -1928,6 +1930,8 @@ static int mcc_vk_bind_buffers(VkDeviceSize insz, VkDeviceSize outsz) {
 			return 0;
 		grew = 1;
 	}
+	grew |= mcc_vkr.dsdirty;
+	mcc_vkr.dsdirty = 0;
 	if (!grew)
 		return 1;
 	memset(dbi, 0, sizeof dbi);

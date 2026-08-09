@@ -6,7 +6,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="${2:-$REPO/w-selfhost-$ARCH}"
 OPT="${3:--O1}"
 SR="$REPO/vendor/gentoo-stage3-$ARCH-glibc"
-CROSS="$REPO/cmake-cross"
+CROSS="${MCC_CROSS_DIR:-$REPO/cmake-cross}"
 MCC0="$CROSS/mcc-$ARCH"
 
 case "$ARCH" in

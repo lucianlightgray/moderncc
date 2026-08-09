@@ -7,6 +7,7 @@ OPTS=("$@")
 [ "${#OPTS[@]}" -gt 0 ] || OPTS=(-O1 -O2)
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+XDIR="${MCC_CROSS_DIR:-$REPO/cmake-cross}"
 cd "$REPO"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -43,7 +44,7 @@ gcc -w "${DEFS[@]}" "${INCS[@]}" -O1 -o "$WORK/mcc-shadow" src/mcc.c 2>"$WORK/be
 
 case "$ARCH" in
 host|x86_64) BFLAG=(-B "$REPO/cmake-debug") ;;
-*)           BFLAG=(-B "$REPO/cmake-cross") ;;
+*)           BFLAG=(-B "$XDIR") ;;
 esac
 
 n=0; div=0; built=0
