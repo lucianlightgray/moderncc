@@ -19,11 +19,6 @@
 
 #include "mccgpu.h"
 
-/* Inside the amalgamation mcc.h has already redefined malloc and free to
- * undeclared poison names, and mccast.c has already pointed MCC_GPU_MALLOC at
- * the tracked allocators; compiled standalone into slicerun neither is true.
- * Route the one allocation this file makes through the same pair the emitters
- * use so it is correct in both. */
 #ifndef MCC_GPU_MALLOC
 #define MCC_GPU_MALLOC malloc
 #endif
@@ -706,9 +701,6 @@ static int mcc_gpu_mem_backend(void **base, unsigned long *size) {
 	return 0;
 }
 
-/* Metal's shared-storage MTLBuffer is the analogue of a host-pointer import,
- * but the Metal arm has no persistent third buffer yet, so there is nothing to
- * point at a host range. Refuse with a reason rather than a bare zero. */
 static unsigned long mcc_gpu_host_import_align_backend(const char **why) {
 	if (why)
 		*why = "the Metal arm has no shared window to import into "
@@ -1316,14 +1308,6 @@ typedef struct VkFenceCreateInfo {
 	VkFenceCreateFlags flags;
 } VkFenceCreateInfo;
 
-/* VK_EXT_external_memory_host, plus the two core structures it needs. The
- * project transcribes Vulkan rather than including it, so the fields below are
- * copied from vulkan_core.h and their order is load-bearing.
- *
- * VkPhysicalDeviceProperties2 embeds the whole of VkPhysicalDeviceProperties by
- * value, so the transcription above it has to be exact or the driver writes
- * past the end. That is not a new exposure: vkGetPhysicalDeviceProperties has
- * been handed the same struct since the backend was written. */
 #define VK_MAX_EXTENSION_NAME_SIZE 256
 #define VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT 0x00000080
 
@@ -1572,11 +1556,6 @@ typedef VkResult(VKAPI_PTR *PFN_vkWaitForFences)(VkDevice device,
 	X(vkResetFences)                                                             \
 	X(vkResetCommandBuffer)
 
-/* Optional tier. Every name in MCC_VK_FNS is mandatory -- one missing symbol
- * fails the whole backend -- which is the right policy for the core it needs
- * and the wrong one for a capability that is allowed to be absent. These three
- * are core entry points, but a loader that does not export them must lose
- * host-pointer import and nothing else. */
 #define MCC_VK_OPT_FNS(X)                                                      \
 	X(vkGetPhysicalDeviceProperties2)                                            \
 	X(vkEnumerateDeviceExtensionProperties)                                      \
@@ -1723,10 +1702,6 @@ static void mcc_vk_hostimp_no(const char *why) {
 	snprintf(mcc_gpu.hostimp_why, sizeof mcc_gpu.hostimp_why, "%s", why);
 }
 
-/* Decide, before vkCreateDevice, whether VK_EXT_external_memory_host can be
- * asked for. The answer is enumerated, never assumed: a device that does not
- * advertise it must produce a reason a cell can print rather than a silent
- * fallback that lets the differential pass on nothing. */
 static int mcc_vk_want_hostimport(void) {
 	VkExtensionProperties *ep;
 	uint32_t n = 0, i;
@@ -1745,8 +1720,6 @@ static int mcc_vk_want_hostimport(void) {
 		return 0;
 	}
 	{
-		/* vkGetPhysicalDeviceProperties2 is core in 1.1 and undefined below it,
-		 * and the instance's apiVersion says nothing about the device's. */
 		VkPhysicalDeviceProperties pp;
 		memset(&pp, 0, sizeof pp);
 		vkGetPhysicalDeviceProperties(mcc_gpu.phys, &pp);
@@ -1907,9 +1880,6 @@ static int mcc_gpu_init(void) {
 	{
 		VkResult _r = vkCreateDevice(mcc_gpu.phys, &dci, 0, &mcc_gpu.dev);
 		if (_r != VK_SUCCESS && mcc_gpu.hostimp) {
-			/* The extension was enumerated and still refused. Retry without it
-			 * rather than lose the device: host-pointer import is a capability, not
-			 * a floor. */
 			mcc_vk_hostimp_no("vkCreateDevice refused " MCC_VK_EXT_HOSTMEM);
 			dci.enabledExtensionCount = 0;
 			dci.ppEnabledExtensionNames = 0;
@@ -2186,9 +2156,6 @@ static int mcc_vk_resident(void) {
 static void mcc_vk_drop_mem(void) {
 	if (!mcc_vkr.bmem)
 		return;
-	/* An imported allocation is never mapped -- the host already had these
-	 * pages -- so unmapping it would be an error, and freeing it releases the
-	 * device's claim without touching the memory itself. */
 	if (!mcc_vkr.memimported)
 		vkUnmapMemory(mcc_gpu.dev, mcc_vkr.mmem);
 	vkFreeMemory(mcc_gpu.dev, mcc_vkr.mmem, 0);
@@ -2214,17 +2181,6 @@ static int mcc_vk_bind_mem(VkDeviceSize want) {
 	return 1;
 }
 
-/* Import host pages as the shared window instead of allocating device memory
- * and handing back the driver's mapping. The point is the address: the window
- * is then at an address the host already had, so an object that lives there --
- * a page-aligned .data/.bss range, say -- has one address on both sides and
- * ast_eval_slice_rw_addr's (uint64)p - mem_base >> 32 == 0 holds for it. No
- * copy, no staging, no write-back.
- *
- * The memory type is not assumed. vkGetMemoryHostPointerPropertiesEXT reports
- * which types can back this particular pointer; the buffer reports which types
- * it can bind; the intersection is what may be chosen from, and on lavapipe
- * that intersection is a single type while on this NVIDIA host it is not. */
 static int mcc_vk_import_mem(void *p, VkDeviceSize size) {
 	VkExternalMemoryBufferCreateInfo embci;
 	VkBufferCreateInfo bci;
@@ -2248,10 +2204,6 @@ static int mcc_vk_import_mem(void *p, VkDeviceSize size) {
 		return 0;
 	if (size & (mcc_gpu.hostimp_align - 1))
 		return 0;
-	/* The descriptor binds VK_WHOLE_SIZE, so the range is the limit that
-	 * applies. Importing costs no device allocation -- the pages already exist
-	 * -- which is exactly why the budget has to be checked here rather than
-	 * inherited from MCC_VK_MEM_DEFAULT, which sizes only the fallback window. */
 	if (mcc_gpu.maxsbrange && size > mcc_gpu.maxsbrange)
 		return 0;
 

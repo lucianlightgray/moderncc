@@ -3794,6 +3794,8 @@ static int cref_expr(FILE *f, AstArena *a, AstLocal n, const int32_t *off,
 			fprintf(f, "((%s)e%d)", ct, j);
 			return 1;
 		}
+		if (r & VT_SYM)
+			return 0;
 		fprintf(f, "((%s)", ct);
 		cref_lit(f, (int64_t)ast_ival(a, n));
 		fprintf(f, ")");
@@ -5816,25 +5818,6 @@ static void suite_ext(void) {
 	ast_arena_free(a);
 }
 
-/* --- statics on the device ----------------------------------------------- *
- * Everywhere else in this file the addresses the kernel dereferences are
- * fabricated: they point into the window mcc_gpu_mem() hands back, which is the
- * driver's mapping of device memory, and no object the C program declares lives
- * there. That is exactly why the global-Ref classes are refused -- a .data or
- * .bss address is outside binding 2 and both executors poison on it, agree, and
- * the differential passes while nothing was computed.
- *
- * This suite closes that by going the other way: it imports the host pages that
- * already hold three ordinary file-scope statics, so binding 2 *is* those pages
- * and the address is the same integer on both sides. The three arrays stand in
- * for matmul's three `static double`s; one page-aligned import covers all of
- * them, which is the property that makes doing this per section rather than per
- * object the cheap option.
- *
- * The definedness slot is the load-bearing assertion, not the value. A kernel
- * whose address fell outside the window returns def=0 with a junk value and the
- * CPU reference poisons identically, so a check on the value alone would pass
- * without the import having done anything. */
 #define HI_N MCC_GPU_LOCAL_SIZE
 #define HI_NSLOT 2
 
@@ -5999,9 +5982,6 @@ static void suite_hostimport(void) {
 		g_hi_b[i] = (double)((long)i * -5 + 11) / 3.0;
 	}
 
-	/* One page-aligned range covering all three objects. This is the per-section
-	 * shape in miniature: the alignment requirement is awkward per object and
-	 * free once a whole span is aligned outward. */
 	lo = (uintptr_t)(void *)g_hi_a;
 	hi = lo + sizeof g_hi_a;
 	p = (uintptr_t)(void *)g_hi_b;
@@ -7068,9 +7048,6 @@ int main(int argc, char **argv) {
 		suite_fmt();
 	if (only && !strcmp(only, "fault"))
 		suite_fault();
-	/* Named only. It replaces binding 2 with host pages for the rest of the
-	 * process, so running it alongside the suites that expect the driver's own
-	 * window would change what they are testing. */
 	if (only && !strcmp(only, "hostimport"))
 		suite_hostimport();
 	if (!only || !strcmp(only, "sched"))
