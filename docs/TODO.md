@@ -1682,7 +1682,6 @@ would be false on every normal build.
    `tools/idiomgate.c`'s denominator* above. This is the thirteenth headline figure in this
    project to fail to reproduce, and the third whose cause was a count taken once and read as
    something it did not measure.
->>>>>>> wt/idiomcov
 3. **`tools/o0_ab.sh`'s gated half stays frozen** until filed item 17 (`ast_env_gate`) is
    closed. Thirteen banked files are unreachable; `ast/o0-baseline` does not cover them and
    does not pretend to.
