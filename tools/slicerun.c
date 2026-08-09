@@ -4129,8 +4129,10 @@ static long g_frame_built, g_frame_compared, g_frame_mem;
 
 #define FRAME_NT MCC_GPU_LOCAL_SIZE
 #define FRAME_PTR_BASE (128 * 1024)
-#define FRAME_PTR_STRIDE (8 * 1024)
+#define FRAME_PTR_STRIDE (12 * 1024)
 #define FRAME_PTR_SLOT 72
+#define FRAME_EXT_BASE 4096
+#define FRAME_EXT_SLOT 512
 #define FRAME_PTR_SPAN (FRAME_PTR_BASE + FRAME_NT * FRAME_PTR_STRIDE)
 
 static unsigned char *g_rw;
@@ -4181,6 +4183,225 @@ static int64_t frame_ptr_addr(int t, int j) {
 														 (long)j * FRAME_PTR_SLOT);
 }
 
+static int64_t frame_ext_addr(int t, int j) {
+	return (int64_t)(intptr_t)(g_rw + FRAME_PTR_BASE +
+														 (long)t * FRAME_PTR_STRIDE + FRAME_EXT_BASE +
+														 (long)j * FRAME_EXT_SLOT);
+}
+
+static AstLocal ext_lit_f64(AstArena *a, double d) {
+	uint64_t u;
+	memcpy(&u, &d, sizeof u);
+	return mk_lit(a, (int64_t)u, VT_DOUBLE);
+}
+
+static void ext_fill(int64_t addr, int nspan, int etype) {
+	unsigned char *p = (unsigned char *)(intptr_t)addr;
+	int i;
+	for (i = 0; i < nspan; i++) {
+		if (ast_eval_slice_f64t(etype)) {
+			double d = (double)(i * 3 - 5) / 4.0;
+			memcpy(p + (long)i * 8, &d, sizeof d);
+		} else if (ast_eval_slice_tsize(etype) == 8) {
+			int64_t v = (int64_t)i * 7 - 3;
+			memcpy(p + (long)i * 8, &v, sizeof v);
+		} else {
+			int32_t v = (int32_t)(i * 11 - 4);
+			memcpy(p + (long)i * 4, &v, sizeof v);
+		}
+	}
+}
+
+static void ext_case(int nelem, int etype, const int64_t *idx, int nidx,
+										 const char *what) {
+	AstArena *a = ast_arena_new();
+	AstLocal bb = ast_node(a, AST_BasicBlock);
+	AstLocal arr = mk_ref(a, -256, VT_PTR | VT_ARRAY);
+	AstLocal arr2 = mk_ref(a, -256, VT_PTR | VT_ARRAY);
+	AstLocal ld = ast_node(a, AST_Load);
+	AstLocal dst = ast_node(a, AST_Load);
+	MccSliceFrame fr;
+	MccSliceKernel k;
+	int esize = ast_eval_slice_tsize(etype);
+	int64_t *cf, *gf;
+	int t, i, si = -1, sa = -1, bad = 0;
+
+	slicerun_obj_reset(64);
+	g_obj_ext[arr] = (int32_t)(nelem * esize);
+	g_obj_ety[arr] = etype;
+	g_obj_ext[arr2] = g_obj_ext[arr];
+	g_obj_ety[arr2] = etype;
+	ast_add_child(a, ld, mk_bin(a, '+', arr2, mk_ref(a, -8, VT_INT), 0));
+	ast_set_type(a, ld, 0, 0);
+	ast_add_child(a, dst, mk_bin(a, '+', arr, mk_ref(a, -8, VT_INT), 0));
+	ast_set_type(a, dst, 0, 0);
+	{
+		AstLocal st = ast_node(a, AST_Store);
+		ast_add_child(a, st, dst);
+		ast_add_child(a, st,
+									ast_eval_slice_f64t(etype)
+											? mk_bin(a, '+', ld, ext_lit_f64(a, 1.5), etype)
+											: mk_bin(a, '+', ld, mk_lit(a, 1, etype), etype));
+		ast_add_child(a, bb, st);
+	}
+	CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1, what);
+	if (fr.nslot < 1) {
+		slicerun_obj_reset(0);
+		ast_arena_free(a);
+		return;
+	}
+	CHECK(fr.nslot == 2, "the array costs one descriptor slot, not one per element");
+	CHECK(fr.next == 1, "and exactly one slot is marked as an extent");
+	for (i = 0; i < fr.nslot; i++) {
+		if (fr.slot[i] == -256)
+			sa = i;
+		if (fr.slot[i] == -8)
+			si = i;
+	}
+	CHECK(sa >= 0 && si >= 0, "the descriptor and the index are both live-ins");
+	if (sa < 0 || si < 0) {
+		slicerun_obj_reset(0);
+		ast_arena_free(a);
+		return;
+	}
+	{
+		int32_t nspan = 1;
+		while (nspan < nelem)
+			nspan <<= 1;
+		CHECK(fr.sextb[sa] == nspan * esize,
+					"the reserved span is the padded span the mask can reach");
+	}
+	cf = (int64_t *)malloc((size_t)FRAME_NT * fr.nslot * sizeof *cf);
+	gf = (int64_t *)malloc((size_t)FRAME_NT * fr.nslot * sizeof *gf);
+	if (!cf || !gf) {
+		free(cf);
+		free(gf);
+		slicerun_obj_reset(0);
+		ast_arena_free(a);
+		return;
+	}
+	for (t = 0; t < FRAME_NT; t++)
+		for (i = 0; i < fr.nslot; i++)
+			cf[t * fr.nslot + i] = gf[t * fr.nslot + i] =
+					i == sa ? frame_ext_addr(t, i) : idx[t % nidx];
+	frame_ptr_seed();
+	{
+		int32_t nspan = 1;
+		while (nspan < nelem)
+			nspan <<= 1;
+		for (t = 0; t < FRAME_NT; t++)
+			ext_fill(frame_ext_addr(t, sa), nspan, etype);
+	}
+	memcpy(g_rw_pre, g_rw, g_rwsz);
+	for (t = 0; t < FRAME_NT; t++)
+		CHECK(mcc_slice_frame_exec_cpu(&fr, cf + (long)t * fr.nslot) == 1,
+					"the CPU reference runs every extent frame");
+	memcpy(g_rw_cpu, g_rw, g_rwsz);
+	memcpy(g_rw, g_rw_pre, g_rwsz);
+	CHECK(mcc_slice_frame_kernel_build(&fr, &k) == 1,
+				"the extent run lowers to a device kernel");
+	if (k.code.p) {
+		CHECK(k.usemem == 1, "and the kernel declares that it touches binding 2");
+		CHECK(mcc_slice_run_frame_gpu(&fr, &k, gf, FRAME_NT, NULL, NULL) ==
+							MCC_TASK_DONE,
+					"the device runs a whole workgroup of extent frames");
+		for (t = 0; t < FRAME_NT * fr.nslot; t++)
+			if (cf[t] != gf[t])
+				bad++;
+		CHECK(bad == 0, "every descriptor slot survives the dispatch unchanged");
+		CHECK(memcmp(g_rw_cpu, g_rw, g_rwsz) == 0,
+					"and every byte the two executors wrote to the shared region agrees");
+		if (memcmp(g_rw_cpu, g_rw, g_rwsz)) {
+			unsigned long b;
+			int shown = 0;
+			for (b = 0; b < g_rwsz && shown < 4; b++)
+				if (g_rw_cpu[b] != g_rw[b]) {
+					fprintf(stderr, "  EXT mem byte %lu cpu=%02x gpu=%02x\n", b,
+									g_rw_cpu[b], g_rw[b]);
+					shown++;
+				}
+		}
+		mcc_slice_kernel_free(&k);
+	}
+	free(cf);
+	free(gf);
+	slicerun_obj_reset(0);
+	ast_arena_free(a);
+}
+
+static void suite_ext(void) {
+	static const int64_t INR[8] = {0, 1, 5, 17, 31, 12, 3, 30};
+	static const int64_t WILD[8] = {0, 40, -1, 31, 99, 1000000, 7, -12345};
+	AstArena *a;
+	MccSliceFrame fr;
+
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr,
+							"FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+	CHECK(g_rw != NULL && ast_eval_slice_rw != NULL,
+				"the shared region is armed, without which no object is an extent");
+	if (!g_rw)
+		return;
+
+	ext_case(32, VT_INT, INR, 8, "a 32-element array is frame work at all");
+	ext_case(32, VT_INT, WILD, 8, "and stays frame work with a wild index");
+	ext_case(64, VT_INT, INR, 8, "so is a 64-element one, four times the slot cap");
+	ext_case(64, VT_INT, WILD, 8, "and it too survives every wild index");
+	ext_case(48, VT_LLONG, INR, 8, "and one of 48 eight-byte elements");
+	ext_case(32, VT_DOUBLE, INR, 8, "and one of 32 doubles");
+
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal arr = mk_ref(a, -32, VT_PTR | VT_ARRAY);
+		AstLocal dst = ast_node(a, AST_Load);
+		slicerun_obj_reset(64);
+		g_obj_ext[arr] = 16;
+		g_obj_ety[arr] = VT_INT;
+		ast_add_child(a, dst, mk_bin(a, '+', arr, mk_ref(a, -8, VT_INT), 0));
+		ast_set_type(a, dst, 0, 0);
+		{
+			AstLocal st = ast_node(a, AST_Store);
+			ast_add_child(a, st, dst);
+			ast_add_child(a, st, mk_lit(a, 7, VT_INT));
+			ast_add_child(a, bb, st);
+		}
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1,
+					"a four-element array is still frame work");
+		CHECK(fr.next == 0 && fr.nslot == 5,
+					"and still takes one slot per element, not a descriptor");
+		slicerun_obj_reset(0);
+	}
+	ast_arena_free(a);
+
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal arr = mk_ref(a, -128, VT_PTR | VT_ARRAY);
+		AstLocal dst = ast_node(a, AST_Load);
+		slicerun_obj_reset(64);
+		g_obj_ext[arr] = 64;
+		g_obj_ety[arr] = VT_SHORT;
+		ast_add_child(a, dst, mk_bin(a, '+', arr, mk_ref(a, -8, VT_INT), 0));
+		ast_set_type(a, dst, 0, 0);
+		{
+			AstLocal st = ast_node(a, AST_Store);
+			ast_add_child(a, st, dst);
+			ast_add_child(a, st, mk_lit(a, 7, VT_SHORT));
+			ast_add_child(a, bb, st);
+		}
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 0,
+					"a 32-element array of shorts is refused, not raced");
+		slicerun_obj_reset(0);
+	}
+	ast_arena_free(a);
+}
+
 /* Frame runs from real arenas, differentialled the same way expression slices
  * are: seed N independent frames, run both executors, compare every slot and
  * the returned value. */
@@ -4195,16 +4416,23 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 
 	if (!mcc_slice_frame_from_ast(a, bb, &fr))
 		return;
+	for (j = 0; j < fr.nslot; j++)
+		if (fr.sextb[j] > FRAME_EXT_SLOT)
+			return;
 	g_frame_slices++;
 	g_frame_stmts += fr.nstmt;
-	usemem = fr.nptr > 0 && g_rw != NULL;
+	usemem = (fr.nptr > 0 || fr.next > 0) && g_rw != NULL;
+	if (fr.next > 0 && !usemem)
+		return;
 	flt = subtree_has_f64(a, bb, 0);
 	for (t = 0; t < FRAME_NT; t++)
 		for (j = 0; j < fr.nslot; j++)
 			cf[t * fr.nslot + j] = gf[t * fr.nslot + j] =
-					fr.sptr[j] && usemem ? frame_ptr_addr(t, j)
-															 : flt ? seed_f64_value(t, j)
-																		 : seed_value(t, j);
+					fr.sextb[j] && usemem
+							? frame_ext_addr(t, j)
+							: fr.sptr[j] && usemem ? frame_ptr_addr(t, j)
+																		 : flt ? seed_f64_value(t, j)
+																					 : seed_value(t, j);
 	if (usemem) {
 		frame_ptr_seed();
 		memcpy(g_rw_pre, g_rw, g_rwsz);
@@ -5160,6 +5388,8 @@ int main(int argc, char **argv) {
 		suite_mem();
 	if (!only || !strcmp(only, "deref"))
 		suite_deref();
+	if (!only || !strcmp(only, "ext"))
+		suite_ext();
 	if (!only || !strcmp(only, "fmt"))
 		suite_fmt();
 	if (only && !strcmp(only, "fault"))
@@ -5179,7 +5409,8 @@ int main(int argc, char **argv) {
 	if (only && (!strcmp(only, "gpu") || !strcmp(only, "wide64") ||
 							 !strcmp(only, "ops") || !strcmp(only, "fault") ||
 			 !strcmp(only, "mem") || !strcmp(only, "deref") ||
-			 !strcmp(only, "f64") || !strcmp(only, "fmt")) &&
+			 !strcmp(only, "ext") || !strcmp(only, "f64") ||
+			 !strcmp(only, "fmt")) &&
 			!g_have_device) {
 		fprintf(stderr, "SKIP: slicerun %s is a device differential and no usable "
 										"device was found on this host (device=%s)\n",

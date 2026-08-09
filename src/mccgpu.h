@@ -2386,6 +2386,14 @@ static uint32_t spv_mem_off(SpvMod *m, SpvV p) {
 	return spv_emit2(m, SpvOpBitcast, m->id_int, spv_lo(m, d.id));
 }
 
+static uint32_t spv_ext_off(SpvMod *m, SpvV p, uint32_t elem,
+														const AstEvalSliceIdx *ix) {
+	uint32_t b = spv_mem_off(m, p);
+	uint32_t d = spv_emit3(m, SpvOpIMul, m->id_int, elem,
+												 spv_const(m, ix->esize));
+	return spv_emit3(m, SpvOpIAdd, m->id_int, b, d);
+}
+
 static uint32_t spv_fit(SpvMod *m, uint32_t v, int t) {
 	int bt = t & VT_BTYPE;
 	int uns = (t & VT_UNSIGNED) != 0;
@@ -2851,6 +2859,18 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			if (!spv_expr(m, a, ix.idx, off, nenv, base, &iv))
 				return 0;
 			elem = spv_dyn_elem(m, iv, &ix);
+			if (ast_eval_slice_ext(&ix)) {
+				if (!spv_mem_region(m, &mr))
+					return 0;
+				*out = spv_fit_v(
+						m,
+						spv_load_region(m, &mr,
+														spv_ext_off(m, spv_load_live_v(m, base, k, 1, 0),
+																				elem, &ix),
+														ix.etype),
+						ix.etype);
+				return 1;
+			}
 			*out = spv_fit_v(
 					m,
 					spv_load_live_dv(m, base, k, elem,
