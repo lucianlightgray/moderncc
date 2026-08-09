@@ -406,6 +406,165 @@ reason, and an entry that starts resolving fails the cell.
 later validation, and most of what it cites was deleted after the snapshot was taken.
 Its 13 dangling citations are real and are listed by `--include-archived`; demanding they
 resolve would demand that history be rewritten.
+## Landed — `ast_eval_slice` disagrees with C, and only a cross oracle could see it, 2026-08-09 (`wt/gpuconform`)
+
+### The defect
+
+`ast_eval_slice` takes a binary operator's working type from **child 0 alone**
+(`src/ast_eval_slice.h:790`) and never consults the second operand, so C's usual
+arithmetic conversions are not applied. Minimal case:
+
+```c
+int f(int x) { return x < 4ULL; }   /* f(-3) */
+```
+
+gcc, clang, **and mcc's own generated code** all answer 0. `ast_eval_slice` answers 1: it
+derives `is64=0, uns=0` from the `int` operand and does a signed 32-bit compare, where C
+converts the `int` to `unsigned long long` first. The same rule is mirrored in both device
+emitters (`spv_expr`, `msl_expr`), so the CPU-versus-device differential that every other
+`slice/*` cell runs **cannot see this** — the two runners are wrong in exactly the same way
+because they are two readings of one model. Real shape it came from: `i < LEN(array)` where
+`LEN` is `sizeof(a)/sizeof(a[0])`, i.e. the ordinary signed/unsigned comparison.
+
+This is not a miscompile of shipped code — `ast_eval_slice` has no codegen caller — but it
+is a wrong answer from the thing the device path exists to substitute for, and it would
+become a miscompile the moment a frame kernel were dispatched for real.
+
+Blast radius, measured with `--cref-all`: **13,981 of 39,209** gcc-torture slices (35.7%),
+**2,471 of 6,603** llvm-test-suite Regression/C slices, **265 of 6,545** UnitTests slices
+contain at least one operator pair the rule mishandles. Every disagreement found across all
+four corpora falls in this one family — classified, there is no residue:
+
+| sub-case | Regression/C fragments | example |
+| --- | ---: | --- |
+| mixed signedness **and** width | 139 | `(int)e0 < (unsigned long long)2` |
+| mixed signedness | 18 | `(int)e0 * 2 + 4 - (unsigned int)8` |
+| mixed width | 10 | `(unsigned int)e0 - (unsigned long long)32` |
+| narrow unsigned operand (C promotes to `int`, the evaluator does not) | 6 | `(unsigned char)e0 - (unsigned char)e1` |
+
+With those slices excluded, the differential is **clean over the entire gcc torture corpus**:
+170/170 batches, **201,383 tuples**, under gcc and clang at `-O0` and `-O2`. That is the
+guarantee `slice/cref-oracle` now enforces; the excluded set is the debt.
+
+### Two device divergences, same root cause, that no cell in the tree could reach
+
+The habit of deriving a type from **one** child rather than from the operand pair also puts
+the CPU and the device into disagreement — which `slice/real` asserts cannot happen. Both
+were found by external corpora on a real device; the tree's own `tests/exec` reaches
+neither.
+
+1. **A ternary whose arms differ in signedness.**
+   `llvm-test-suite/SingleSource/UnitTests/SignlessTypes/div.c`, the `X == Y ? 0 : Y` shape
+   with `unsigned X, Y`. `ast_eval_slice_wtype`'s `AST_If` arm takes child 1's type, which is
+   the `int` literal `0`, so the device narrows the result to **signed** int while the CPU
+   returns the taken arm fitted to its own **unsigned** type: `cpu=4294967293 gpu=-3`,
+   3 tuples of 8.
+2. **A `_Bool` frame return.** `gcc.c-torture/execute/20230510-1.c`, `ret cpu=9/1 gpu=1/1` —
+   one runner fits the return to the declared type and the other does not. One occurrence in
+   32,867 compared frame runs.
+
+### What was added
+
+`slicerun --cref DIR` re-emits every accepted expression slice as standalone C — a Ref
+becomes a read of a variable of the Ref's own declared type, a Binary becomes the C operator
+with C's own conversions — and bakes the CPU reference's answer in as the expected value, so
+gcc and clang can adjudicate. Only tuples the reference calls *defined* are compared, which
+is exactly the set where the emitted program has no undefined behaviour to hit. The four
+operators with no natural C spelling (`TOK_SHR`, `TOK_SAR`, `TOK_UDIV`, `TOK_UMOD`) are
+transcribed instead, output narrow included — a half-transcription would charge the
+evaluator for a conversion the emitter skipped, which is how the first draft produced 38
+false positives.
+
+`--cref` emits only slices where every binary operator already has both operands at one
+working type, so the cell asserts a real guarantee rather than banking one number over a
+mixed population; `--cref-all` lifts that and is how the defect above is measured.
+`--mutate` extends to the emitted C, so one flag arms the known-positive on both arms.
+
+`slicerun --refusals` attributes every refused node to the first guard that rejects it. The
+predicates carry no reason channel — `mcc_slice_work_from_ast` has 5 bare `return 0` sites
+and the frame path 42 — so this re-decides each node from `tools/` rather than editing
+`src/mccslice.h` and `src/ast_eval_slice.h`, which other work is in. It will drift if those
+guards change; the check against that is the accepted/refused totals, which come from the
+real predicate.
+
+`tools/gpuconform.py` drives an external corpus end to end and `cmake/gpuconform_cref.cmake`
+lands it as `slice/cref-oracle` over the checked-in fixtures in `tests/gpu/cref/`, plus four
+`slice/cref-oracle-*` corpus cells that skip with a stated reason when `vendor/` has no
+checkout. A program counts only when the cross oracle and the suite's own compiler agree at
+both `-O0` and `-O2`, with stdout hashed into the verdict so a nondeterministic program
+disagrees with itself and is classified out rather than counted.
+
+### The funnel, with a count at every stage
+
+All figures measured on `wt/gpuconform` off `d67f16b5`, **before `wt/fpwidth` lands
+`double`** — a funnel taken after that is not comparable to this one. Device present
+(NVIDIA RTX 5070 Ti, Vulkan), so no stage is skipped. Corpus revisions:
+gcc `9d8f85ca3335` (`basepoints/gcc-17-2762-g9d8f85ca333`), llvm-test-suite `63a9fd93580b`,
+llvm-project `0f1f456263b5` (`llvmorg-23-init-21709-g0f1f456263b5`).
+
+| stage | gcc torture | lts Regression/C | lts UnitTests | compiler-rt Unit |
+| --- | ---: | ---: | ---: | ---: |
+| programs in corpus | 1693 | 1745 | 671 | 226 |
+| **classified out** (oracles disagree or both reject) | **200** | **866** | **521** | **81** |
+| adjudicated (both oracles pass, `-O0` and `-O2`) | 1493 | 879 | 150 | 145 |
+| mcc accepts the source | 1483 | 871 | 147 | 34 |
+| …produced ≥1 recorded body | 1479 | 871 | 147 | 34 |
+| …produced ≥1 expression slice | **986** | **582** | **80** | **3** |
+| …lowered ≥1 slice to SPIR-V | 986 | 582 | 80 | 3 |
+| …dispatched to the device | 1479 | 871 | 147 | 34 |
+| slices / tuples compared | 39,209 / 313,672 | 5,270 / 42,160 | 653 / 5,224 | 8 / 64 |
+| device dispatches | 73,555 | 7,339 | 959 | 43 |
+| frame accepted / built / **compared** | 33,226 / 32,867 / **32,867** | 1,422 / 1,198 / **1,198** | 332 / 159 / **159** | 10 / 1 / **1** |
+| device-vs-CPU disagreements | **1** (frame) | 0 | **1** (expression) | 0 |
+
+No stage collapses to zero on the two large corpora. `compiler-rt/test/builtins/Unit` is the
+exception and is reported as such: 3 programs of 226 produce a slice at all, because 105 of
+its 111 mcc rejections were the harness not handing mcc the corpus's `-I` paths — a
+front-end/header bucket, not a slice-engine refusal. That is fixed in `tools/gpuconform.py`;
+the row above is the pre-fix measurement and should be retaken.
+
+`classified out` is the number that decides whether the harness is vacuous. On gcc torture
+it is 194 programs where the two oracles disagree with each other (overwhelmingly `-O0` vs
+`-O2` under signed-overflow UB) plus 5 that neither compiles and 1 that aborts under all
+four; on the llvm sets it is dominated by programs that need a build harness this driver
+does not provide.
+
+### Where the slice engine refuses
+
+Attributed over the whole gcc torture corpus: 15,923 bodies, 1,172,443 nodes, of which
+**373,780 (31.9%) are accepted** and 798,663 refused. 119,363 basic blocks, of which
+**33,349 (27.9%)** are accepted by the frame predicate. Node-share, then share of bodies in
+which the cause appears at all:
+
+| cause | nodes | node-share | body-share |
+| --- | ---: | ---: | ---: |
+| `ref-not-local` (a global, not a frame slot) | 141,027 | 12.03% | 90.17% |
+| `child-refused` (node itself fine) | 134,199 | 11.45% | 81.86% |
+| `kind-basicblock` (statement boundary) | 119,363 | 10.18% | 100.00% |
+| `op-unary` (unary op outside `- ~ !`) | 107,643 | 9.18% | 81.71% |
+| `arity` | 71,016 | 6.06% | 78.61% |
+| `kind-invoke` | 67,119 | 5.72% | 83.33% |
+| `load-not-allowed` (`allow_load=0` for expression slices) | 47,818 | 4.08% | 73.55% |
+| `op-ternary` | 32,435 | 2.77% | 70.00% |
+| `no-working-type` | 32,385 | 2.76% | 67.04% |
+| `kind-store` | 28,284 | 2.41% | 85.29% |
+| **`type-float`** | **5,654** | **0.48%** | **1.88%** |
+| `type-nonint` | 4,795 | 0.41% | 5.64% |
+| `kind-return` | 4,696 | 0.40% | 24.83% |
+| `kind-jump` / `type-bad` / `kind-storeval` / `op-binary` | 1,244 / 676 / 308 / 1 | <0.11% each | — |
+
+### Open, and ranked
+
+1. **Fix the working-type derivation.** `ast_eval_slice_rec`'s `AST_Binary` arm should apply
+   the usual arithmetic conversions across the operand pair instead of taking child 0's type.
+   Both emitters need the same change or the differential flips from silent agreement to
+   loud disagreement. The `--cref-all` arm is the regression test and is already wired.
+2. **The `_Bool` frame return divergence.** One case, reproducible, and it is a genuine
+   CPU-versus-device disagreement of the kind `slice/real` asserts cannot happen.
+3. **`is_float` is not the binding constraint it is filed as.** Measured on real
+   application-shaped C it is **0.48% of refused nodes and 1.88% of bodies**; the structural
+   refusals — globals, invokes, statement boundaries — are twenty times larger. The `double`
+   work on `wt/fpwidth` is worth having, but it will not move the funnel much.
 
 ## Landed — the census label arms its own cells, and `slice-census`'s corpus is the goldens table, 2026-08-09 (`wt/censusfix`)
 

@@ -3727,6 +3727,77 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_real.cmake")
             set_tests_properties("slice/real" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
+
+            if(MCC_PYTHON3 AND DIFF3_GCC AND DIFF3_CLANG)
+                add_test(NAME "slice/cref-oracle"
+                    COMMAND "${CMAKE_COMMAND}"
+                            -DPY=${MCC_PYTHON3}
+                            -DTOOL=${CMAKE_CURRENT_SOURCE_DIR}/tools/gpuconform.py
+                            -DRUNNER=$<TARGET_FILE:slicerun>
+                            -DMCC=$<TARGET_FILE:mcc>
+                            -DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu/cref
+                            -DORACLE_CC=${DIFF3_CLANG}
+                            -DSUITE_CC=${DIFF3_GCC}
+                            -DWORK=${CMAKE_CURRENT_BINARY_DIR}/cref-oracle
+                            -DMINPROG=7
+                            -DMINTUPLE=300
+                            "-DCFLAGS=-w,-std=gnu11"
+                            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gpuconform_cref.cmake")
+                set_tests_properties("slice/cref-oracle" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900
+                    SKIP_REGULAR_EXPRESSION "SKIP:")
+
+                set(_corpora
+                    "gcc-c-torture-execute@CLANG@GCC@1000@50000@-w,-std=gnu11,-fpermissive,-lm"
+                    "llvm-test-suite-regression-c@GCC@CLANG@700@10000@-w,-std=gnu11,-fpermissive,-lm"
+                    "llvm-test-suite-unittests@GCC@CLANG@120@4000@-w,-std=gnu11,-fpermissive,-lm"
+                    "compiler-rt-builtins-unit@GCC@CLANG@100@40@-w,-std=gnu11,-Ivendor/compiler-rt-builtins-unit,-Ivendor/compiler-rt-lib-builtins,-lm")
+                foreach(_spec IN LISTS _corpora)
+                    string(REPLACE "@" ";" _f "${_spec}")
+                    list(GET _f 0 _cc)
+                    list(GET _f 1 _o)
+                    list(GET _f 2 _su)
+                    list(GET _f 3 _mp)
+                    list(GET _f 4 _mt)
+                    list(GET _f 5 _ccf)
+                    if(_o STREQUAL "CLANG")
+                        set(_ocl "${DIFF3_CLANG}")
+                        set(_scl "${DIFF3_GCC}")
+                    else()
+                        set(_ocl "${DIFF3_GCC}")
+                        set(_scl "${DIFF3_CLANG}")
+                    endif()
+                    string(REPLACE "vendor/" "${MCC_VENDOR_DIR}/" _ccf "${_ccf}")
+                    if(EXISTS "${MCC_VENDOR_DIR}/${_cc}")
+                        add_test(NAME "slice/cref-oracle-${_cc}"
+                            COMMAND "${CMAKE_COMMAND}"
+                                    -DPY=${MCC_PYTHON3}
+                                    -DTOOL=${CMAKE_CURRENT_SOURCE_DIR}/tools/gpuconform.py
+                                    -DRUNNER=$<TARGET_FILE:slicerun>
+                                    -DMCC=$<TARGET_FILE:mcc>
+                                    -DCORPUS=${MCC_VENDOR_DIR}/${_cc}
+                                    -DORACLE_CC=${_ocl}
+                                    -DSUITE_CC=${_scl}
+                                    -DWORK=${CMAKE_CURRENT_BINARY_DIR}/cref-${_cc}
+                                    -DMINPROG=${_mp}
+                                    -DMINTUPLE=${_mt}
+                                    "-DCFLAGS=${_ccf}"
+                                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gpuconform_cref.cmake")
+                        set_tests_properties("slice/cref-oracle-${_cc}" PROPERTIES
+                            FIXTURES_REQUIRED MCC_BUILT TIMEOUT 7200
+                            SKIP_REGULAR_EXPRESSION "SKIP:"
+                            LABELS "crefcorpus")
+                    else()
+                        mcc_skip_test("slice/cref-oracle-${_cc}"
+                            "no corpus at ${MCC_VENDOR_DIR}/${_cc} (symlink an upstream checkout there; it is deliberately not vendored)"
+                            LABELS "crefcorpus")
+                    endif()
+                endforeach()
+            else()
+                mcc_skip_test("slice/cref-oracle"
+                    "needs python3 plus both gcc and clang as independent oracles; a single-compiler run would not be a cross oracle")
+            endif()
+
             add_test(NAME "slice/inline"
                 COMMAND "${CMAKE_COMMAND}"
                         -DRUNNER=$<TARGET_FILE:slicerun>
