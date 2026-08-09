@@ -760,6 +760,7 @@ static int ast_eval_slice_ftype(AstArena *a, AstLocal n) {
  * every shape it admits is one the predicates below reject today. */
 #define AST_EVAL_OP_ADDR 0x40000
 #define AST_EVAL_OP_MEMBER 0x40001
+#define AST_EVAL_OP_ARROW 0x40002
 
 static int ast_eval_slice_frame_off(AstArena *a, AstLocal n, int32_t *off,
 																		int depth) {
@@ -828,6 +829,54 @@ static int ast_eval_slice_member_off(AstArena *a, AstLocal n, int32_t *off) {
 			!ast_eval_slice_intt(t) || !ast_eval_slice_tsize(t))
 		return 0;
 	return ast_eval_slice_frame_off(a, n, off, 0);
+}
+
+/* `p->f` -- a read at a runtime pointer plus a constant member offset. It is
+ * the same shape as `*p` and reuses the same region and the same bound check;
+ * what differs is where the access width comes from. A plain deref has to ask
+ * the object hook for the pointee type, because neither the Load nor its child
+ * carries one. The member node does carry one -- the field's own type word and
+ * its byte offset are both written down -- so nothing here is guessed, and a
+ * struct pointee, which `ast_eval_slice_ptr_et` refuses because a struct is not
+ * a loadable width, is exactly the case this admits.
+ *
+ * Restricted to a pointer held in a frame slot, and not to any expression that
+ * evaluates to a pointer, because the seeder has to be able to put a real
+ * in-mapping address there: `mcc_slice_frame_mark_ptr` marks slots, and a
+ * pointer that is not in a slot would be seeded as an arbitrary integer, which
+ * both executors would then agree is out of range -- green for the wrong
+ * reason. Bitfields, array-typed and float members are refused rather than
+ * approximated. */
+static int ast_eval_slice_arrow(AstArena *a, AstLocal n, int32_t *pfo,
+																int32_t *madd, int *etype) {
+	AstLocal c;
+	int t, ct, r;
+	if (n == AST_NONE || ast_kind(a, n) != AST_Unary ||
+			ast_op(a, n) != AST_EVAL_OP_ARROW)
+		return 0;
+	if (!ast_eval_slice_rw)
+		return 0;
+	if (ast_type_bp(a, n) || ast_type_bs(a, n))
+		return 0;
+	t = ast_type_t(a, n);
+	if (!t || ast_bad_type(t) || (t & (VT_ARRAY | VT_BITFIELD)) || is_float(t) ||
+			!ast_eval_slice_intt(t) || !ast_eval_slice_tsize(t))
+		return 0;
+	c = ast_first_child(a, n);
+	if (c == AST_NONE || ast_kind(a, c) != AST_Ref)
+		return 0;
+	r = ast_op(a, c);
+	if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+		return 0;
+	ct = ast_type_t(a, c);
+	if (!ct || ast_bad_type(ct) || (ct & VT_ARRAY) || (ct & VT_BTYPE) != VT_PTR)
+		return 0;
+	if ((int64_t)ast_ival(a, n) < 0)
+		return 0;
+	*pfo = (int32_t)(int64_t)ast_ival(a, c);
+	*madd = (int32_t)(int64_t)ast_ival(a, n);
+	*etype = t;
+	return 1;
 }
 
 /* Sticky, and cleared by the caller that cares. An out-of-range index does not
@@ -999,6 +1048,25 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 				return 0;
 			*out = ast_eval_slice_fit(mv, ast_type_t(a, n));
 			return 1;
+		}
+		{
+			int32_t pfo, madd;
+			int at;
+			if (ast_eval_slice_arrow(a, n, &pfo, &madd, &at)) {
+				int64_t pv;
+				int32_t bo = 0;
+				int ok = 0;
+				if (!ast_eval_slice_env(off, val, nenv, pfo, &pv))
+					return 0;
+				if (!ast_eval_slice_rw_addr(pv, &bo))
+					ast_eval_slice_undef = 1;
+				*out = ast_eval_slice_bytes_load(
+						ast_eval_slice_rw, ast_eval_slice_rw_nbyte,
+						(int32_t)((uint32_t)bo + (uint32_t)madd), at, &ok);
+				if (!ok)
+					ast_eval_slice_undef = 1;
+				return 1;
+			}
 		}
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
@@ -1307,6 +1375,15 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 			return 0;
 		if (ast_eval_slice_member_off(a, n, &mo))
 			return 1;
+		/* Gated on allow_load for the same reason the deref arm of AST_Load is:
+		 * only the frame runner supplies a memory region and a seeded pointer
+		 * slot, and it is the only caller that passes 1. */
+		if (allow_load) {
+			int32_t pfo, madd;
+			int at;
+			if (ast_eval_slice_arrow(a, n, &pfo, &madd, &at))
+				return 1;
+		}
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
 		if (ast_eval_slice_ftype(a, c)) {

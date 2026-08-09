@@ -528,6 +528,22 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 			return 1;
 		}
 	}
+	{
+		int32_t pf, madd;
+		int et;
+		if (ast_eval_slice_arrow(a, d, &pf, &madd, &et)) {
+			if (ast_eval_slice_ftype(a, v))
+				return 0;
+			if (mcc_slice_slot_of(f, pf) < 0)
+				return 0;
+			if (!mcc_slice_frame_scan(f, v))
+				return 0;
+			f->nidx++;
+			f->nstmt++;
+			f->nodes += mcc_slice_nodes(a, s);
+			return 1;
+		}
+	}
 	if (!mcc_slice_is_local_ref(a, d, &off)) {
 		if (!mcc_slice_store_frame(a, d, &off, &dt))
 			return 0;
@@ -571,6 +587,10 @@ static void mcc_slice_frame_mark_ptr(MccSliceFrame *f, AstLocal n) {
 	if (ast_kind(f->a, n) == AST_Load)
 		ast_eval_slice_deref(f->a, n, &po, &et);
 	else if (ast_kind(f->a, n) == AST_Unary &&
+					 ast_op(f->a, n) == AST_EVAL_OP_ARROW) {
+		int32_t madd = 0;
+		ast_eval_slice_arrow(f->a, n, &po, &madd, &et);
+	} else if (ast_kind(f->a, n) == AST_Unary &&
 					 (ast_op(f->a, n) == TOK_INC || ast_op(f->a, n) == TOK_DEC)) {
 		t = ast_first_child(f->a, n);
 		et = ast_eval_slice_ptr_et(f->a, t);
@@ -825,6 +845,25 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 				ast_eval_slice_undef = 1;
 			ast_eval_slice_bytes_store(ast_eval_slice_rw, ast_eval_slice_rw_nbyte,
 																 bo, et, ast_eval_slice_fit(val, et), &ok);
+			if (!ok)
+				ast_eval_slice_undef = 1;
+			return 1;
+		}
+	}
+	{
+		int32_t pf, madd, bo = 0;
+		int et, ok = 0;
+		if (ast_eval_slice_arrow(f->a, d, &pf, &madd, &et)) {
+			for (k = 0; k < f->nslot; k++)
+				if (f->slot[k] == pf)
+					break;
+			if (k == f->nslot)
+				return 0;
+			if (!ast_eval_slice_rw_addr(frame[k], &bo))
+				ast_eval_slice_undef = 1;
+			ast_eval_slice_bytes_store(ast_eval_slice_rw, ast_eval_slice_rw_nbyte,
+																 (int32_t)((uint32_t)bo + (uint32_t)madd), et,
+																 ast_eval_slice_fit(val, et), &ok);
 			if (!ok)
 				ast_eval_slice_undef = 1;
 			return 1;
@@ -1389,6 +1428,35 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 										 1, 0);
 			}
 			bo = spv_mem_off(m, spv_load_live_v(m, base, j, 1, 0));
+			spv_store_region(m, &mr, bo, spv_fit_v(m, val, et), et);
+			return 1;
+		}
+	}
+	{
+		int32_t pf, madd;
+		int et;
+		if (ast_eval_slice_arrow(f->a, d, &pf, &madd, &et)) {
+			SpvRegion mr;
+			uint32_t bo;
+			if (!spv_mem_region(m, &mr))
+				return 0;
+			if (!spv_expr(m, f->a, v, f->slot, f->nslot, base, &val))
+				return 0;
+			for (j = 0; j < f->nslot; j++)
+				if (f->slot[j] == pf)
+					break;
+			if (j == f->nslot)
+				return 0;
+			if (mcc_slice_mutate) {
+				uint32_t p = spv_pair(m, val);
+				val = spv_mk(spv_u2(m, spv_uop(m, SpvOpBitwiseXor, spv_lo(m, p),
+																			 spv_uintc(m, 1)),
+														spv_hi(m, p)),
+										 1, 0);
+			}
+			bo = spv_emit3(m, SpvOpIAdd, m->id_int,
+										 spv_mem_off(m, spv_load_live_v(m, base, j, 1, 0)),
+										 spv_const(m, madd));
 			spv_store_region(m, &mr, bo, spv_fit_v(m, val, et), et);
 			return 1;
 		}

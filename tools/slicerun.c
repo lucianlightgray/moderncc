@@ -5061,6 +5061,138 @@ static const char *block_cause_name(int k) {
 static long g_bc[BC_N];
 static long g_bc_blocks;
 
+#define COND_CAUSE_CAP 512
+
+static long g_cc_key[COND_CAUSE_CAP];
+static long g_cc_n[COND_CAUSE_CAP];
+static int g_cc_used;
+static long g_cc_blocked;
+
+static void cond_cause_add(long key) {
+	int i;
+	for (i = 0; i < g_cc_used; i++)
+		if (g_cc_key[i] == key) {
+			g_cc_n[i]++;
+			return;
+		}
+	if (g_cc_used >= COND_CAUSE_CAP)
+		return;
+	g_cc_key[g_cc_used] = key;
+	g_cc_n[g_cc_used] = 1;
+	g_cc_used++;
+}
+
+static int cond_load_sub(AstArena *a, AstLocal n) {
+	AstLocal c = ast_first_child(a, n);
+	AstEvalSliceIdx ix;
+	int32_t fo;
+	int et, t = ast_type_t(a, n);
+	if (c == AST_NONE)
+		return 0;
+	if (ast_eval_slice_deref(a, n, &fo, &et) ||
+			(ast_eval_slice_dynidx(a, c, &ix) &&
+			 ast_eval_slice_kind_ok(a, ix.idx, 1)))
+		return 1;
+	if (!t)
+		return 2;
+	if (ast_bad_type(t))
+		return 3;
+	if (is_float(t) && !ast_eval_slice_f64t(t))
+		return 4;
+	if (!ast_eval_slice_intt(t) && !ast_eval_slice_f64t(t))
+		return 5;
+	return 6;
+}
+
+static const char *cond_load_subname(int sub) {
+	switch (sub) {
+	case 0: return "no-child";
+	case 1: return "index-refused";
+	case 2: return "untyped";
+	case 3: return "bad-type";
+	case 4: return "float";
+	case 5: return "nonint";
+	default: return "typed-addr-unresolved";
+	}
+}
+
+#define COND_CC_KEY(k, sub, op) \
+	(((long)(k) << 40) | ((long)(sub) << 32) | (long)(op))
+
+static void cond_cause_label(long key, char *buf, size_t cap) {
+	int k = (int)(key >> 40);
+	int sub = (int)((key >> 32) & 0xFF);
+	int op = (int)(key & 0xFFFFFFFF);
+	const char *s = op ? refuse_opname(op) : NULL;
+	if (k == AST_Load) {
+		snprintf(buf, cap, "%s/%s addr=%s", refuse_kindname(k),
+						 cond_load_subname(sub), refuse_kindname(op));
+		return;
+	}
+	if (k == AST_Ref) {
+		snprintf(buf, cap, "Ref/%s%s", refuse_global_name(sub),
+						 op == 1		 ? " local/array-type"
+						 : op == 2 ? " local/struct"
+						 : op == 3 ? " local/untyped"
+						 : op == 4 ? " local/float"
+						 : op == 5 ? " local/nonint"
+						 : op == 6 ? " local/address-taken"
+											 : "");
+		return;
+	}
+	if (op)
+		snprintf(buf, cap, "%s op=%s(0x%x)", refuse_kindname(k), s ? s : "?", op);
+	else
+		snprintf(buf, cap, "%s", refuse_kindname(k));
+}
+
+/* The deepest node in a refused condition whose own children all pass, i.e.
+ * the node that has to change for the condition to lower. Reading the cause
+ * off the root of the condition names the comparison, not the operand that
+ * actually blocked it. */
+static AstLocal cond_first_blocker(AstArena *a, AstLocal n) {
+	AstLocal c;
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (!ast_eval_slice_kind_ok(a, c, 1))
+			return cond_first_blocker(a, c);
+	return n;
+}
+
+static void cond_cause_note(AstArena *a, AstLocal cond) {
+	AstLocal b;
+	int k;
+	g_cc_blocked++;
+	if (cond == AST_NONE) {
+		cond_cause_add(COND_CC_KEY(0, 0, 0));
+		return;
+	}
+	b = cond_first_blocker(a, cond);
+	k = ast_kind(a, b);
+	if (k == AST_Ref) {
+		int cls = refuse_global_class(a, b), t = ast_type_t(a, b), sub = 0;
+		if (cls == RG_OTHER) {
+			int rop = ast_op(a, b);
+			sub = !t											 ? 3
+						: (t & VT_ARRAY)				 ? 1
+						: (t & VT_BTYPE) == VT_STRUCT ? 2
+						: is_float(t)					 ? 4
+						: !ast_eval_slice_intt(t)		 ? 5
+						: !(rop & VT_LVAL)			 ? 6
+														 : 0;
+		}
+		cond_cause_add(COND_CC_KEY(k, cls, sub));
+		return;
+	}
+	if (k == AST_Load) {
+		AstLocal c = ast_first_child(a, b);
+		cond_cause_add(COND_CC_KEY(k, cond_load_sub(a, b),
+															 c == AST_NONE ? 0 : ast_kind(a, c)));
+		return;
+	}
+	cond_cause_add(COND_CC_KEY(
+			k, 0, (k == AST_Unary || k == AST_Binary || k == AST_If) ? ast_op(a, b) : 0));
+}
+
 static int block_cause_stmt(AstArena *a, AstLocal s, int depth);
 
 static int block_cause_seq(AstArena *a, AstLocal n, int depth) {
@@ -5109,8 +5241,10 @@ static int block_cause_stmt(AstArena *a, AstLocal s, int depth) {
 											: op == 4	 ? ast_child(a, s, 0)
 											: op == 3	 ? ast_child(a, s, 2)
 																 : ast_child(a, s, 1);
-			if (!ast_eval_slice_kind_ok(a, cond, 1))
+			if (!ast_eval_slice_kind_ok(a, cond, 1)) {
+				cond_cause_note(a, cond);
 				return BC_CTRL_COND;
+			}
 			r = block_cause_seq(a, body, depth + 1);
 			if (r != BC_OK)
 				return r;
@@ -5150,6 +5284,11 @@ static int block_cause_stmt(AstArena *a, AstLocal s, int depth) {
 		if (ast_eval_slice_tsize(et) <= 0)
 			return BC_ST_DEREF_SUBWORD;
 		return ast_eval_slice_kind_ok(a, v, 1) ? BC_OK : BC_ST_VALUE;
+	}
+	{
+		int32_t madd;
+		if (ast_eval_slice_arrow(a, d, &pf, &madd, &et))
+			return ast_eval_slice_kind_ok(a, v, 1) ? BC_OK : BC_ST_VALUE;
 	}
 	if (ast_kind(a, d) == AST_Load && ast_first_child(a, d) != AST_NONE &&
 			ast_kind(a, ast_first_child(a, d)) == AST_Ref &&
@@ -5195,6 +5334,29 @@ static void block_cause_walk(AstArena *a, AstLocal n) {
 	if (r == BC_OK)
 		r = BC_CAPACITY;
 	g_bc[r]++;
+}
+
+static void cond_cause_report(void) {
+	int i;
+	if (!g_cc_blocked)
+		return;
+	printf("condcause: blocked-conditions=%ld\n", g_cc_blocked);
+	for (;;) {
+		long best = 0;
+		int bi = -1;
+		char lbl[96];
+		for (i = 0; i < g_cc_used; i++)
+			if (g_cc_n[i] > best) {
+				best = g_cc_n[i];
+				bi = i;
+			}
+		if (bi < 0)
+			break;
+		cond_cause_label(g_cc_key[bi], lbl, sizeof lbl);
+		printf("condcause: %-52s n=%ld share=%.2f%%\n", lbl, g_cc_n[bi],
+					 100.0 * (double)g_cc_n[bi] / (double)g_cc_blocked);
+		g_cc_n[bi] = 0;
+	}
 }
 
 static void block_cause_report(void) {
@@ -5740,6 +5902,143 @@ static void ext_case(int nelem, int etype, const int64_t *idx, int nidx,
 	free(cf);
 	free(gf);
 	slicerun_obj_reset(0);
+	ast_arena_free(a);
+}
+
+static AstLocal mk_arrow(AstArena *a, int32_t poff, int32_t madd, int mtype) {
+	AstLocal n = ast_node(a, AST_Unary);
+	ast_set_op(a, n, AST_EVAL_OP_ARROW);
+	ast_set_type(a, n, mtype, 0);
+	ast_set_ival(a, n, (uint64_t)(int64_t)madd);
+	ast_add_child(a, n, mk_ref(a, poff, VT_PTR));
+	return n;
+}
+
+/* `p->f` read and written at a runtime pointer. The differential is the point:
+ * the CPU reference and the device both address the same shared region, so a
+ * disagreement about where `ptr + member offset` lands, or about the width the
+ * field is read at, shows up as a byte difference rather than as a refusal. */
+static void arrow_case(int32_t madd, int mtype, int64_t v, const char *what) {
+	AstArena *a = ast_arena_new();
+	AstLocal bb = ast_node(a, AST_BasicBlock);
+	MccSliceFrame fr;
+	MccSliceKernel k;
+	int64_t cf[FRAME_NT * MCC_SLICE_MAXSLOT], gf[FRAME_NT * MCC_SLICE_MAXSLOT];
+	int t, j, bad = 0;
+
+	{
+		AstLocal st = ast_node(a, AST_Store);
+		ast_set_type(a, st, mtype, 0);
+		ast_add_child(a, st, mk_arrow(a, -8, madd, mtype));
+		ast_add_child(a, st, mk_lit(a, v, mtype));
+		ast_add_child(a, bb, st);
+	}
+	ast_add_child(a, bb,
+								mk_store(a, -16,
+												 mk_bin(a, '+', mk_arrow(a, -8, madd, mtype),
+																mk_ref(a, -16, VT_INT), VT_INT),
+												 VT_INT));
+	CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1, what);
+	if (fr.nslot < 2 || fr.nptr != 1) {
+		CHECK(0, "the pointer slot is marked so the seeder puts a real address in it");
+		ast_arena_free(a);
+		return;
+	}
+	for (t = 0; t < FRAME_NT; t++)
+		for (j = 0; j < fr.nslot; j++)
+			cf[t * fr.nslot + j] = gf[t * fr.nslot + j] =
+					fr.sptr[j] ? frame_ptr_addr(t, j) : seed_value(t, j);
+	frame_ptr_seed();
+	memcpy(g_rw_pre, g_rw, g_rwsz);
+	for (t = 0; t < FRAME_NT; t++)
+		CHECK(mcc_slice_frame_exec_cpu(&fr, cf + (long)t * fr.nslot) == 1,
+					"the CPU reference runs every arrow frame");
+	memcpy(g_rw_cpu, g_rw, g_rwsz);
+	memcpy(g_rw, g_rw_pre, g_rwsz);
+	if (mcc_slice_frame_kernel_build(&fr, &k) != 1) {
+		CHECK(0, "the arrow run lowers to a device kernel");
+		ast_arena_free(a);
+		return;
+	}
+	CHECK(k.usemem == 1, "and the kernel declares that it touches binding 2");
+	CHECK(mcc_slice_run_frame_gpu(&fr, &k, gf, FRAME_NT, NULL, NULL) ==
+						MCC_TASK_DONE,
+				"the device runs a whole workgroup of arrow frames");
+	for (t = 0; t < FRAME_NT * fr.nslot; t++)
+		if (cf[t] != gf[t])
+			bad++;
+	CHECK(bad == 0, "every frame slot agrees after the dispatch");
+	CHECK(memcmp(g_rw_cpu, g_rw, g_rwsz) == 0,
+				"and every byte the two executors wrote through `p->f` agrees");
+	mcc_slice_kernel_free(&k);
+	ast_arena_free(a);
+}
+
+static void suite_arrow(void) {
+	AstArena *a;
+	MccSliceFrame fr;
+
+	if (!backend_has_frame_kernels()) {
+		unsupported("frame kernels", "TODO.md §5 stage M2");
+		return;
+	}
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr,
+							"FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+	CHECK(g_rw != NULL && ast_eval_slice_rw != NULL,
+				"the shared region is armed, without which `p->f` has no address");
+	if (!g_rw)
+		return;
+
+	arrow_case(0, VT_INT, 0x11223344, "`p->f` at offset 0 is frame work");
+	arrow_case(4, VT_INT, -7, "and at a non-zero member offset");
+	arrow_case(8, VT_INT | VT_UNSIGNED, 0x89abcdef, "and an unsigned int field");
+	arrow_case(5, VT_BYTE, -3, "and a signed byte field at an odd offset");
+	arrow_case(6, VT_SHORT | VT_UNSIGNED, 0xbeef,
+						 "and an unsigned short field");
+	arrow_case(16, VT_LLONG, -1234567890123LL, "and a 64-bit field");
+
+	/* Refused rather than approximated: the shapes whose width or address the
+	 * tree does not write down. */
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal ar = mk_arrow(a, -8, 4, VT_INT);
+		ast_set_type_bf(a, ar, VT_INT | VT_BITFIELD, 0, 3, 5);
+		ast_add_child(a, bb, mk_store(a, -16, ar, VT_INT));
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 0,
+					"a bitfield member is refused, not read at the containing width");
+	}
+	ast_arena_free(a);
+
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		ast_add_child(a, bb,
+									mk_store(a, -16, mk_arrow(a, -8, 4, VT_INT | VT_ARRAY),
+													 VT_INT));
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 0,
+					"an array-typed member is refused: it is an address, not a value");
+	}
+	ast_arena_free(a);
+
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal ar = ast_node(a, AST_Unary);
+		ast_set_op(a, ar, AST_EVAL_OP_ARROW);
+		ast_set_type(a, ar, VT_INT, 0);
+		ast_set_ival(a, ar, 4);
+		ast_add_child(a, ar, mk_ref(a, -8, VT_INT));
+		ast_add_child(a, bb, mk_store(a, -16, ar, VT_INT));
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 0,
+					"a non-pointer base is refused: an int slot is not an address");
+	}
 	ast_arena_free(a);
 }
 
@@ -6593,6 +6892,7 @@ static int arena_mode(const char *path, long limit, int quiet) {
 		refuse_report();
 		memshape_report();
 		block_cause_report();
+		cond_cause_report();
 		return 0;
 		return refuse_report();
 	}
@@ -6828,6 +7128,8 @@ int main(int argc, char **argv) {
 		suite_deref();
 	if (!only || !strcmp(only, "ext"))
 		suite_ext();
+	if (!only || !strcmp(only, "arrow"))
+		suite_arrow();
 	if (!only || !strcmp(only, "fmt"))
 		suite_fmt();
 	if (only && !strcmp(only, "fault"))
@@ -6847,8 +7149,8 @@ int main(int argc, char **argv) {
 	if (only && (!strcmp(only, "gpu") || !strcmp(only, "wide64") ||
 							 !strcmp(only, "ops") || !strcmp(only, "fault") ||
 			 !strcmp(only, "mem") || !strcmp(only, "deref") ||
-			 !strcmp(only, "ext") || !strcmp(only, "f64") ||
-			 !strcmp(only, "fmt")) &&
+			 !strcmp(only, "ext") || !strcmp(only, "arrow") ||
+			 !strcmp(only, "f64") || !strcmp(only, "fmt")) &&
 			!g_have_device) {
 		fprintf(stderr, "SKIP: slicerun %s is a device differential and no usable "
 										"device was found on this host (device=%s)\n",

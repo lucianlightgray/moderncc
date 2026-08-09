@@ -133,9 +133,12 @@ static int mcc_gpu_vwt(AstArena *a, AstLocal n) {
 	case AST_Convert:
 		return ast_type_t(a, n);
 	case AST_Unary: {
-		int32_t mo;
+		int32_t mo, madd;
+		int at;
 		if (ast_eval_slice_member_off(a, n, &mo))
 			return ast_type_t(a, n);
+		if (ast_eval_slice_arrow(a, n, &mo, &madd, &at))
+			return at;
 		if (ast_op(a, n) == '!')
 			return VT_INT;
 		return ast_eval_slice_promote(ast_eval_slice_wtype(a, n));
@@ -2969,6 +2972,24 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 																					(mt & VT_UNSIGNED) != 0),
 											 mt);
 			return 1;
+		}
+		{
+			int32_t pfo, madd;
+			int at, k;
+			SpvRegion ar;
+			if (ast_eval_slice_arrow(a, n, &pfo, &madd, &at)) {
+				if (!spv_env_index(off, nenv, pfo, &k))
+					return 0;
+				if (!spv_mem_region(m, &ar))
+					return 0;
+				*out = spv_load_region(
+						m, &ar,
+						spv_emit3(m, SpvOpIAdd, m->id_int,
+											spv_mem_off(m, spv_load_live_v(m, base, k, 1, 0)),
+											spv_const(m, madd)),
+						at);
+				return 1;
+			}
 		}
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
