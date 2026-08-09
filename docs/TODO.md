@@ -303,8 +303,9 @@ tool and the corpus that produces it, or is marked **PROSE-ONLY** / **UNMEASURED
 | **0** occurrences of `Float` in `src/mccgpu.h`, `src/mccgpu.c`, `src/mccslice.h` | `grep -c` — **no committed tool** | the device layer |
 | `kept` **83.090 / 91.913 / 91.978 / 91.978** (`self`), **92.881 / 96.546 / 96.597 / 96.597** (`wide`), at `-O0`..`-O3` | `tools/rir-coverage.py cmake-debug --corpus self --levels O0,O1,O2,O3`; `MCC_RIR_CENSUS=1 … --corpus wide … --opt-in` | `self` = `src/mcc.c`; `wide` = 380 sources |
 | **552 slices of 12,957 contain a loop (4.26%)** | `tools/slice-census.py cmake-debug --corpus self --levels O0,O1,O2,O3` | self-compile |
-| 172 `snprintf` sites, 162 literal, **148 accepted (91.4%)**, 100 carrying `%s`, 9 budget / 4 flag / 1 float; return consumed at 26 of 162 | `tools/fmt-census.py` | `src/*.c` |
-| **29,309** Invoke-blocked blocks, **242 (0.826%)** unblocked by the `snprintf` family alone, 10th among single-callee unblocks behind `_mcc_error` 1254, `fprintf` 631, `printf` 444, `memcpy` 369 | `tools/fmt-census.py --arenas=` over a dump of `src/*.c` @ `-O1` | 8,250 arenas, 56,281 non-empty blocks |
+| 172 `snprintf` sites, 162 literal, **148 accepted (91.4%)**, 100 carrying `%s`, 9 budget / 4 flag / 1 float; return consumed at 26 of 162 | `tools/fmt-census.py --check` — **gated**, `fmt/census-bank` + known-positive | `src/*.c`, the 18-file roster pinned in `CORPUS` |
+| **29,309** Invoke-blocked blocks, **242 (0.826%)** unblocked by the `snprintf` family alone, 10th among single-callee unblocks behind `_mcc_error` 1254, `fprintf` 631, `printf` 444, `memcpy` 369 — **UPPER BOUND, see the registration sweep**: the loop compiles `mcc.c`, which `#include`s `libmcc.c`, which `#include`s fifteen more, so most bodies are counted many times over. Not re-taken | `tools/fmt-census.py --arenas=` over a dump of `src/*.c` @ `-O1` | 8,250 arenas, 56,281 non-empty blocks — **inflated by that overlap** |
+| twelve-key `-O0` object `sha256` + forced-Replay_IR counters, 304 files, `bar=OK` on every key | `tools/o0_ab.sh` — **gated**, `ast/o0-baseline` + known-positive | `tests/exec`; re-taken 2026-08-09 after 426 unwatched commits, **28 objects had moved** |
 | 947 non-empty blocks, **454** Invoke-blocked, 319 eligible, **33** sole-blocker | `slicerun --arenas <dump> --census` | `tests/exec`, 60 files @ `-O1` |
 | 19,454 blocks, **10,238** Invoke-blocked, 7,524 (73.49%) all-internal, 4,029 eligible, **803** sole-blocker | `slicerun --arenas <dump> --census` | `mcc -O2 -c src/mcc.c`, `MCC_RIR_PROD=2` |
 | break-even lanes 322 / 108 / 48 / 24 / 23 / 8 | `slicerun --cost-synth` | synthetic, this host — **and see hazard 1** |
@@ -393,15 +394,14 @@ tool and the corpus that produces it, or is marked **PROSE-ONLY** / **UNMEASURED
    the `140 → 142` correction filed elsewhere on this board. The oracle verifies the
    *port*; nothing verifies the *doc row*, and this is a re-run, not a measurement.
 
-8. **`tools/fmt-census.py`'s site census is unguarded, and the claim that the tool is
-   ungated is now only half true.** `fmt/census-oracle` and
-   `fmt/census-oracle-known-positive` gate the Python port against the real
-   `mcc_fmt_compile` over 41,017 formats — that class is closed. But the **default mode,
-   the one that prints 172 / 162 / 148, is not a ctest cell and is ratcheted nowhere**, and
-   it does not appear in `tests/must-run.txt`. Its corpus is also treacherous: three of
-   `src/*.c` are include-only fragments that fail standalone and contribute nothing, and
-   `src/mcc.c` is the amalgamation of `libmcc.c` + `mcctools.c`, so the docstring's
-   `src/*.c` loop double-counts most bodies.
+8. ~~**`tools/fmt-census.py`'s site census is unguarded.**~~ **CLOSED 2026-08-09,
+   `wt/gateall`** — see the registration sweep. `fmt/census-bank` pins all fourteen figures
+   of row 4 against `tests/fmt/census-bank.json`, `fmt/census-bank-known-positive` proves
+   the comparison is live, both are in `tests/must-run.txt`, and `CORPUS` is now an explicit
+   roster that fails in both directions rather than a glob. **The figures did not move**:
+   the site census scans each file's own text and never follows an `#include`, so the
+   amalgamation never double-counted it. What the amalgamation *does* inflate is the
+   `--arenas=` row below, which is now labelled an upper bound and is **not** re-taken.
 9. **The self-compile census total is not deterministic.** Three runs of the identical
    command gave `iterations` = 52,152,515 / 52,152,453 / 52,152,533. Every loop count, every
    `par=` column and every printed percentage is stable; the drift is a few dozen iterations
@@ -836,6 +836,175 @@ It is left alone deliberately: the column **is** there, the header explains that
 `levelpins.txt` records that the file is "a record of one campaign's numbers, not a running
 ledger". Relabelling it would edit a campaign record. The `n/a` rule should apply to
 whatever regenerates it next.
+
+### The registration sweep — 2026-08-09, `wt/gateall`
+
+The audit above named the defect class: **a recorded number that nothing forces to stay
+true.** It fixed the tools. This branch closes the other half — the tools that were correct
+and simply unwatched — by making the numbers breakable. **No pin value changed, no
+`tests/optfire/*` value was edited, and nothing was re-measured except where a bank was
+re-taken and the diff is set out in full below.**
+
+Six new cells, seventeen new `tests/must-run.txt` rows, and one finding that only exists
+because a bank got read for the first time in six days.
+
+#### THE FINDING — 28 `-O0` objects moved and nothing noticed for 426 commits
+
+`tests/ast/o0-baseline/` was last taken at `bc85ce70` (2026-08-03). `tools/o0_ab.sh` has
+never been a ctest cell, so between then and `a2733199` — **426 commits, 209 of them
+touching `src/`** — nothing compared anything against it.
+
+Re-taken here. The diff is not the `+N lines, -0` shape a clean re-bank has:
+
+| | |
+| --- | --- |
+| **+300 lines** | 25 corpus files added to `tests/exec` since the bank, × 12 keys. 277 → 304 files, 270 → 295 objects on `x86_64` |
+| **~296 hashes** | objects whose `sha256` moved |
+| **−0** | nothing was dropped |
+
+On `x86_64`, 32 of the moves split **4 / 28**. Four are files whose source changed —
+`loop_{fusion,interchange,tile}.c` (`adf08e3b`, the `ast_dep_base_distinct` indirect guard
+the board's top row is about) and `chained_assign.c`. **The other 28 have byte-identical
+sources.**
+
+Those 28 were adjudicated, not assumed. Running *this* `mcc` over the whole tree as it
+stood at `bc85ce70` — old sources, old `runtime/include`, which itself moved 10,166 lines
+in the window — reproduces **exactly 28 differing hashes and no others, twice**. So neither
+the corpus nor the headers explain them: the compiler does. They cluster on float and
+complex (`complex*.c`, `tgmath_dispatch.c`, `libm_builtin_fold.c`, `fenv_access_fold.c`,
+`flt_eval_method.c`, `fp_wide_return.c`, `floating_point.c`, `math_library.c`), on
+predefined macros (`feature_macros.c`, `predefined_macros.c`, `line_directive.c`,
+`variadic_macros.c`), on ABI (`int128.c`, `struct_abi.c`, `struct_byval.c`,
+`variadic_promotions.c`, `std_short_enums.c`) and on the overflow builtins — which is
+exactly where `_Float16` on all five backends, the complex sign-of-zero fix,
+`__has_attribute` as a builtin macro, the `gnu23` default and the vector/riscv64 ABI fixes
+landed in this window. All 304 files still compile and every `tests/exec` cell over them is
+green, so these read as 28 **intended** codegen changes that drifted past a baseline nobody
+was reading.
+
+**The point is not the 28. The point is that they arrived as one indistinguishable blob.**
+A tripwire nobody runs cannot tell you which commit moved a byte; it can only tell you, six
+days later, that something did. With `ast/o0-baseline` registered, each future move lands on
+the commit that causes it.
+
+Thirteen banked files are deliberately **not** re-taken: the twelve `*.gated.rir.txt` and
+`board.gated.txt`. `O0_AB_GATES=1` exits 1 at HEAD because `derive_gates` greps for
+`ast_env_gate`, which `src/` no longer spells (filed item 17). That half of the bank is
+frozen and unreachable until 17 is closed, and now says so.
+
+#### LANDED — the cells
+
+| cell | what it holds | known-positive, and the text it produces |
+| --- | --- | --- |
+| **`ast/o0-baseline`** | the per-key `-O0` object `sha256` bank and the forced-Replay_IR counters, over the `measurable` key set: every key whose compiler *and* sysroot are present, with the dropped ones named | **`ast/o0-baseline-known-positive`** takes measurement A at `-O1` (`O0_AB_MUTATE=1`), so every banked hash must move: `o0_ab: x86_64 -- an -O0 object moved`, 244 hash lines |
+| **`fmt/census-bank`** | the fourteen figures the board's row 4 quotes — `172` sites, `162` literal, `148` accepted, `100` carrying `%s`, `9` budget / `4` flag / `1` float, return consumed at `26` of `162` — plus the per-file site counts, against `tests/fmt/census-bank.json` | **`fmt/census-bank-known-positive`** reintroduces the port's literal-run drift: `accepted banked 148, now 143`, `refused_budget banked 9, now 15` |
+| **`idiom-gate-known-positive`** | that `idiom-gate-invariant` can fail at all | all three violation shapes on a fixture (`3 violation(s)`), **and** an empty directory, which used to print `OK` |
+
+`o0_ab.sh` and `idiomgate.c` gained the floors that make those cells mean something:
+
+- **`o0_ab.sh`** could bank, or agree with, a baseline of nothing — an empty `<key>.obj.txt`
+  diffs clean against an empty bank. Now: a corpus floor (`O0_AB_MIN_FILES`, default 64), a
+  `nobj == 0` refusal, a **key floor** (`O0_AB_MIN_KEYS`, set to 8 under `MCC_ENABLE_CROSS`
+  and 1 otherwise) so that *"this build has no cross compilers"* and *"this check has no
+  subject"* stop being the same green tick, and a refusal to bank from `measurable` at all.
+  Ablated: with no cross build, `FAIL -- 1 measurable key(s) is below the floor of 12`.
+- **`tools/idiomgate.c`** (filed item 13's first half) printed **no subject count at all**,
+  so a walk that read zero files was character-for-character identical to a clean run. It
+  now prints `idiom-gate subject: 130 file(s) scanned, 1739 conditional(s) examined, 4
+  test(s) of the 17 named config macro(s)` and fails on a zero in any of the three.
+  **That `4` is itself a result**: of the 17 macros in `VALUE_KIND`/`FLAG_KIND`, only four
+  are ever reached by a conditional in `src` + `tools`, so the invariant is thin as well as
+  narrow. Item 13's *other* half — 17 of 37 `MCC_CONFIG_*` covered, from two hand-typed
+  lists — is untouched and still filed.
+
+#### LANDED — `tools/fmt-census.py`'s corpus, and both readings
+
+Hazard 8 is closed for the default mode. Two things changed and it matters which:
+
+**The roster is pinned, and the numbers did not move.** `CORPUS` now lists the eighteen
+`src/*.c` explicitly instead of globbing them, and `--check` fails in **both** directions
+before it compares a single figure — a listed file that is gone, and a `src/*.c` nobody
+listed. Ablated: `src/mccnewpass.c is on disk and not in CORPUS`, and `CORPUS lists
+src/mcchost.c, which is not on disk`. **The roster is the same eighteen files the glob
+returned and every printed figure is identical.** `172 / 162 / 148` is unchanged and the
+board's row 4 stands.
+
+**The double-counting was never in this census.** `src/*.c` is not eighteen translation
+units — `libmcc.c` `#include`s fifteen siblings and `mcc.c` `#include`s `libmcc.c` and
+`mcctools.c` — but the site census scans each file's own text and **never follows an
+`#include`**, so no body was ever counted twice. Also explained rather than left mysterious:
+`TUs: 16` over eighteen files, because `mccdbg.c` and `mccjit_intent.c` hold no
+printf-family call site at all. Both are pinned at `0`, so a file that stops contributing
+fails instead of quietly shrinking a denominator.
+
+**Where the double-counting really is: the `--arenas=` row, and it is NOT re-measured.**
+The docstring's `for f in src/*.c; do … mcc -c -O1 …; done` compiles what it is given, so
+that loop compiles most of the tree seventeen times over. The docstring is corrected to the
+one real TU. **Both readings, honestly:**
+
+| reading | figure |
+| --- | --- |
+| as banked, loop over `src/*.c` | 8,250 arenas, 56,281 non-empty blocks, **29,309** Invoke-blocked, **242 (0.826%)** unblocked by the `snprintf` family |
+| the one real TU, `src/mcc.c` alone | **not taken** — the arena path needs a live recorder, not source text, and arming it is a measurement, not a registration |
+
+**Treat the `--arenas=` row as an upper bound of unknown tightness.** It is inflated by the
+overlap; by how much is unknown until someone re-takes it. Do not quote the `0.826%` share
+as if its denominator were 56,281 distinct blocks. This is the one number on the board this
+branch has made *less* certain, and saying so is the point.
+
+#### LANDED — `tests/must-run.txt`, seventeen rows
+
+The `fmt/census-oracle` pair had never been added to the manifest; nor had thirteen other
+registered cells that publish a figure this board quotes. Every one is `registered` rather
+than `must-run` where it honestly 77s on some host, because a manifest that demanded they
+run everywhere would assert something false. Two of the thirteen are the reason the section
+exists:
+
+- **`opt-cache-determinism`** — a **permanent 77**, exactly as the LOST SUBJECT item above
+  describes. The row does not fix it; it stops the tree reading it as green. This is the
+  `registered` row that item asked for.
+- **`runtime-bench-gatewin`** — a **permanent 77** since `vendor/plb` left the checkout.
+  Filed item 9 called it *"the strongest candidate in the tree"* for a row. It now has one.
+
+Also added: `node-census`, `loop-census`, `loop-census-numeric`, `loop-census-parallel`
+(filed item 3 named the last two), `slice-enum`, `slice-census`, `runtime-bench-check`,
+`rir-coverage-census`, `rir-gap-classes`, `rir-lowerable-classes`, `rir-nofb-probe`, plus
+all six new cells. `optlevel-bench` and `selfhost-optbench` are deliberately **not** added:
+they are gated on `MCC_OPT_LADDER_BENCH`, which is OFF by default, so a `registered` row
+would be false on every normal build.
+
+#### Clean bills of health from this sweep
+
+- **`tools/o0_ab.sh`'s refusal discipline was already good** and is why the re-bank was
+  trustworthy: it refuses a key with no sysroot in as many words (*"measured as unmeasurable
+  rather than measured"*), refuses a run with no `[rir-total]`, refuses zero derived gates,
+  and runs an `arm-win32` == `arm-wince` twin check as *"the cheapest available proof that a
+  run measured what it thinks it did"*. The four floors added above are the same idea
+  applied to the three inputs it did not check.
+- **`tools/fmt-census.py`'s corpus floor** (`< 1000` formats fails the selfcheck) transplants
+  directly; `--check` now carries the same shape as a `< 100` literal-site floor.
+- **The `-O0` bank's own arithmetic is sound.** `bar=OK` on all twelve keys, `faithful +
+  empty == fn` on every row, `arm-win32` and `arm-wince` identical on both counters and
+  object `sha256`, and the whole twelve-key board reproduces in 29 seconds.
+
+#### Filed by this sweep, not fixed
+
+1. **The `--arenas=` figure needs re-taking against one TU.** See the two-reading table
+   above. Blocked on arming the recorder, which is a measurement.
+2. **`idiomgate`'s subject is four.** Only 4 of the 17 named `MCC_CONFIG_*` macros are
+   reached by any conditional in `src` + `tools`; the floor is `> 0` and that is now honest,
+   but the invariant is far thinner than its name suggests. Combined with item 13's 17-of-37
+   coverage, the true statement is *"4 of 37 config macros have their idiom checked"*.
+3. **`tools/o0_ab.sh`'s gated half stays frozen** until filed item 17 (`ast_env_gate`) is
+   closed. Thirteen banked files are unreachable; `ast/o0-baseline` does not cover them and
+   does not pretend to.
+4. **The remaining not-a-cell tools.** `tools/opt-determinism.py`, `tools/untyped-probe.py`,
+   `tools/xsuite-report.py`, `tools/gate-ledger.sh`, `tools/strategy-ledger.sh` and
+   `tools/c2_sweep.sh` all publish or feed a board figure and are registered nowhere. The
+   last three are additionally blocked on filed item 17. `opt-determinism.py` and
+   `untyped-probe.py` are the two cheapest remaining registrations in the tree — both are
+   pure-CPU, both already refuse their degenerate inputs after the last sweep, and neither
+   needs a bank invented for it.
 
 ### 1. S5′ — the iteration distribution, and the measurement that prices every row below
 
@@ -7800,8 +7969,11 @@ Everything here is measured or reproduced, not speculative.
    that made its off-state unmeasurable is fixed, so it can finally be ranked.
 6. **`selfhost-optbench --check` has not been re-run** since the reemit-templates
    cost fell; no row moved, but the greedy boundaries are not provably unshifted.
-7. **`tests/ast/o0-baseline/` is stale at HEAD** — 277 banked files against 303 in
-   the tree. Pre-existing, left alone deliberately.
+7. ~~**`tests/ast/o0-baseline/` is stale at HEAD** — 277 banked files against 303 in
+   the tree.~~ **CLOSED 2026-08-09, `wt/gateall`.** Re-taken at 304 files on all twelve
+   keys and registered as `ast/o0-baseline`, so it can no longer go stale unnoticed. The
+   re-bank was not routine: 28 objects with byte-identical sources had moved. See the
+   registration sweep. The thirteen `*.gated.*` files remain frozen on filed item 17.
 8. **`if-conversion-abs`** ships on a +2.13% margin against a 1.76% floor, the
    thinnest thing on the ladder.
 
@@ -9002,7 +9174,11 @@ per level, `MCC_FORCE_REPLAY=1` on the `-O0` row. Every row reconciles.
   `ast_rir_nofb_env` is always 0 unless `-fno-replay-fallback` is passed. The comment
   above that line in `mccast.c` claims the no-fallback path is the default — it is not,
   and the TODO entry above (do not turn it on) is the accurate one.
-- Re-bank `o0-baseline` at HEAD on an x86_64 Linux host. **Not a macOS item — a Mac
+- ~~Re-bank `o0-baseline` at HEAD on an x86_64 Linux host.~~ **DONE 2026-08-09,
+  `wt/gateall`**, on exactly such a host, all twelve keys, and registered as a cell so the
+  next drift surfaces on the commit that causes it. Everything below still describes the
+  constraint correctly and is kept because the *next* re-bank faces it too. **Not a macOS
+  item — a Mac
   cannot do this, by construction.** The five ELF glibc keys need the Gentoo stage3
   sysroots under `vendor/`, and the `<arch>-fetch` cells that download them are gated on
   `if(NOT _QEMU_${arch}) continue()` — i.e. on a qemu-user binary being present, which is
