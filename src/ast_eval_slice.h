@@ -608,9 +608,9 @@ static int ast_eval_slice_wtype(AstArena *a, AstLocal n) {
 		int32_t pf;
 		int et;
 		if (ast_eval_slice_dynidx(a, ast_first_child(a, n), &ix))
-			return ix.etype;
+			return is_float(ix.etype) ? 0 : ix.etype;
 		if (ast_eval_slice_deref(a, n, &pf, &et))
-			return et;
+			return is_float(et) ? 0 : et;
 		return 0;
 	}
 	case AST_Unary:
@@ -626,13 +626,21 @@ static int ast_eval_slice_wtype(AstArena *a, AstLocal n) {
 	}
 }
 
+static int ast_eval_slice_plain_int(int t) {
+	return t && !ast_bad_type(t) && !is_float(t) && ast_eval_slice_intt(t);
+}
+
 static int ast_eval_slice_ftype(AstArena *a, AstLocal n) {
 	int t;
 	if (n == AST_NONE)
 		return 0;
 	t = ast_type_t(a, n);
-	if (!ast_bad_type(t) && ast_eval_slice_f64t(t))
-		return t;
+	if (!ast_bad_type(t)) {
+		if (ast_eval_slice_f64t(t))
+			return t;
+		if (t && (is_float(t) || ast_eval_slice_intt(t)))
+			return 0;
+	}
 	switch (ast_kind(a, n)) {
 	case AST_Binary: {
 		int op = ast_op(a, n);
@@ -879,9 +887,11 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 		int ft;
 		if (c == AST_NONE)
 			return 0;
-		ft = ast_eval_slice_ftype(a, c);
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
+		ft = ast_eval_slice_plain_int(ast_type_t(a, c))
+						 ? 0
+						 : ast_eval_slice_ftype(a, c);
 		if (ft && uop != '~') {
 			int64_t fv;
 			if (!ast_eval_slice_rec(a, c, off, val, nenv, &fv))
@@ -921,7 +931,10 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 				int truth;
 				if (!ast_eval_slice_rec(a, ch, off, val, nenv, &v))
 					return 0;
-				truth = ast_eval_slice_ftype(a, ch) ? ast_eval_f64_truth(v) : (v != 0);
+				truth = (!ast_eval_slice_plain_int(ast_type_t(a, ch)) &&
+								 ast_eval_slice_ftype(a, ch))
+										? ast_eval_f64_truth(v)
+										: (v != 0);
 				if (truth != want) {
 					*out = want ? 0 : 1;
 					return 1;
@@ -933,22 +946,23 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 		if (ast_nchild(a, n) != 2)
 			return 0;
 		AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
-		int xft = ast_eval_slice_ftype(a, x);
-		if (xft) {
-			int64_t flv, frv;
-			if (!ast_eval_slice_ftype(a, y))
-				return 0;
-			if (!ast_eval_slice_rec(a, x, off, val, nenv, &flv))
-				return 0;
-			if (!ast_eval_slice_rec(a, y, off, val, nenv, &frv))
-				return 0;
-			return ast_eval_binop_f64(bop, flv, frv, out);
-		}
 		int xt = ast_eval_slice_wtype(a, x);
-		if (!xt || is_float(ast_type_t(a, x)) || is_float(ast_type_t(a, y)))
-			return 0;
-		if (ast_eval_slice_ftype(a, y))
-			return 0;
+		int xw = ast_type_t(a, x), yw = ast_type_t(a, y);
+		if (!xt || !xw || !yw || is_float(xw) || is_float(yw)) {
+			int xft = ast_eval_slice_ftype(a, x);
+			if (xft) {
+				int64_t flv, frv;
+				if (!ast_eval_slice_ftype(a, y))
+					return 0;
+				if (!ast_eval_slice_rec(a, x, off, val, nenv, &flv))
+					return 0;
+				if (!ast_eval_slice_rec(a, y, off, val, nenv, &frv))
+					return 0;
+				return ast_eval_binop_f64(bop, flv, frv, out);
+			}
+			if (!xt || is_float(xw) || is_float(yw) || ast_eval_slice_ftype(a, y))
+				return 0;
+		}
 		int64_t lv, rv;
 		if (!ast_eval_slice_rec(a, x, off, val, nenv, &lv))
 			return 0;
@@ -966,7 +980,10 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 		int truth;
 		if (!ast_eval_slice_rec(a, cond, off, val, nenv, &cv))
 			return 0;
-		truth = ast_eval_slice_ftype(a, cond) ? ast_eval_f64_truth(cv) : (cv != 0);
+		truth = (!ast_eval_slice_plain_int(ast_type_t(a, cond)) &&
+						 ast_eval_slice_ftype(a, cond))
+								? ast_eval_f64_truth(cv)
+								: (cv != 0);
 		AstLocal taken = truth ? ast_child(a, n, 1) : ast_child(a, n, 2);
 		return ast_eval_slice_rec(a, taken, off, val, nenv, out);
 	}
