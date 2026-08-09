@@ -4,6 +4,18 @@
 > re-measured on a separate 5-file sample before being written down, because it
 > contradicts the strategy it was commissioned to plan.
 
+> **Correction, 2026-08-08.** The block counts below came from an ad-hoc pass over
+> `MCC_ARENA_DUMP` text that was never committed. `slicerun --arenas <dump> --census`
+> now measures the same unit and reproduces the `tests/exec` row exactly (454), so the
+> method agrees — but **the compiler row does not reproduce**: the self-compile gives
+> **10,238** Invoke-blocked blocks, not 16,537, and **7,524 (73.49%)** all-internal, not
+> 12,901 (78.01%). Every figure below that is a share of 16,537 — the 734 libc ceiling
+> included — is a share of a base this tree can no longer reconstruct and needs re-taking
+> with the committed tool. The *shape* of the result survives: internal calls dominate,
+> libc does not. See `docs/TODO.md` board item 3 for the reproduced numbers and for the
+> separate finding that 73.49% is an eligibility statement about the `AST_Invoke` node
+> and not a payoff figure — the blocks for which `Invoke` is the *sole* blocker are 803.
+
 ## The headline: a device libc is a latency lever, not a coverage lever
 
 A device libc unblocks **4.4–4.7% of Invoke-blocked blocks**. Not 40%. The mass of

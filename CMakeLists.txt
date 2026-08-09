@@ -3691,6 +3691,25 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_real.cmake")
             set_tests_properties("slice/real" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
+            add_test(NAME "slice/inline"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DRUNNER=$<TARGET_FILE:slicerun>
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_inline.cmake")
+            set_tests_properties("slice/inline" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
+            add_test(NAME "slice/census"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DRUNNER=$<TARGET_FILE:slicerun>
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_census.cmake")
+            set_tests_properties("slice/census" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
