@@ -331,11 +331,15 @@ absent from this checkout and are named as skipped by the tool. Cell: `loop-cens
 | loop entries | 26,066,284 | 19,803,274 |
 | iterations | 52,077,202 | 2,246,355,539 |
 | entries running exactly 1 trip | 79.96% | **1.35%** |
+| entered loops `par=1` / `par=0` / `par=?` | 9 / 15 / 576 | 14 / 17 / 46 |
+| iteration share `par=1` / `par=0` / `par=?` | 0.35% / 3.88% / **95.77%** | 1.45% / 13.55% / **85.00%** |
 | raw iteration-weighted fraction at break-even | 52.51% | **97.76%** |
 | **parallel-legal iteration-weighted fraction** | **0.01%** | **1.39%** |
 | the same with the single hottest loop removed | 0.01% | 1.39% |
 | **the same with `--alias-oracle`** | **0.01%** | **80.60%** |
 | `--alias-oracle`, hottest loop removed | — | **3.67%** |
+| hottest loop | `ast_strpool_find_or_add`, 11.4% | `matmul.c:22`, **76.9%** |
+| top ten loops | 33.8% | 96.8% |
 
 Read the last three rows together. The shipped predicate says *both* workloads are barren,
 so the headline generalises. It generalises for opposite reasons.
