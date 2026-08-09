@@ -187,8 +187,9 @@ the full arithmetic/bitwise/shift/compare operator set (`msl_binop_code`
 `src/mccgpu.h:616-650` against `spv_binop_code` `:2551-2585`), short-circuit `&&`/`||`,
 ternary, and identical UB-definedness propagation. Integer division is **guarded, not
 excluded**, on both arms. Soft-int64 lives in `msl_prelude` where SPIR-V emits real
-`OpFunction`s. 145 of `msl_expr`'s lines are a byte-for-byte mirror of `spv_expr` once the
-prefixes are normalised.
+`OpFunction`s. `## Metal parity` §1's "145 byte-for-byte mirrored lines once the `msl_`/`spv_`
+prefixes are normalised" was **not re-derived here** — treat it as that section's figure, and
+note that `msl_expr` is 225 lines and `spv_expr` 321 today against the 224/320 it counted.
 
 **SPIR-V-only, and each one is unwritten work rather than a language limit**: fp64; the
 third binding and the byte-addressed region layer; dynamic indexing; pointer deref
