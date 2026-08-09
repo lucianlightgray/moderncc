@@ -97,6 +97,28 @@ fmov-imm|1|ast_fmov_imm_env is compiled out off arm64, so this host cannot measu
 # lowering (docs/TODO.md, the bisection-handle note). Sweeping one off measures
 # the handle. Their stage-2 time readings (-1.08%, -1.17%) disagree in sign with
 # the counter and are layout.
+#
+# That sentence now has a number behind it, and it is the reason storeval-rot
+# survived a demotion argument it lost on every other axis. Measured 2026-08-09,
+# fixed snapshot, n=17-21 interleaved: -fno-storeval-rot makes stage-1 2.313% and
+# stage-2 0.233% CHEAPER in instructions:u (identical-config control 0.004%), and
+# the flag's own -O3 object is 1.73% larger. In this table's columns the row is
+# -2.210 / +0.034 / -0.2327 against the banked -0.211 / 2.241 / -0.0245: the cost
+# is 10x what was banked, the counter 9.5x, and the banked +2.241 of stage-2 time
+# was layout -- a clean n=21 re-read with a +0.002% control puts it at +0.034%.
+# leveltime.tsv itself is NOT edited, because no level moved and that table is a
+# record of one campaign's numbers, not a running ledger.
+#
+# It still stays on, because "off" is not "the pass did not run": 2816 -> 2779
+# bodies replay faithfully and rir-coverage FAILS at -O1/-O2/-O3, 91.968 ->
+# 83.242 on self. Demoting it would mean banking an 8.7-point kept regression --
+# twice what board row 2 was trying to win -- to save 2.3% of a compile.
+# The 1.73% itself is cold: with -fno-inline the same gap is +124 instructions
+# (0.03%), and the flag's dynamic cost is the same with the inliner and without,
+# so the -O3 object growth is inline replication of ~37 newly-retainable bodies
+# and is worth nothing either way. Do not read levelbench.tsv's kernel columns
+# for this row: the flag changes 0 of 17 kernel objects, so its 0.0000% "gain" is
+# a ratio with an unmoved denominator.
 # storeval-callstore used to ICE alone of the ladder rows at -O3 with
 # mccircap.c:797 vstack leak (1). That was never about storeval: the row's
 # on-state produces the AST shape that reaches the capture-time graft, and the
@@ -105,7 +127,7 @@ fmov-imm|1|ast_fmov_imm_env is compiled out off arm64, so this host cannot measu
 # holds both shapes. Both states of the row build clean; it is measurable and
 # has not been re-measured, so the level stands where the last sweep left it.
 storeval-constl|1|replay-fidelity bisection handle; its off-state is an incomplete path, not a lowering
-storeval-rot|1|replay-fidelity bisection handle; its off-state is an incomplete path, not a lowering
+storeval-rot|1|replay-fidelity bisection handle; its off-state is an incomplete path, not a lowering -- MEASURED 2026-08-09: off costs 8.7 points of kept and takes rir-coverage red at -O1/-O2/-O3, so the row stays at 1 despite losing on every time axis (2.31% of stage-1, 0.232% of stage-2)
 storeval-calllast|1|replay-fidelity bisection handle; inert here, stage-1 object byte identical to the base
 storeval-callstore|2|replay-fidelity bisection handle; the -O3 ICE is fixed and both states now build, so the row is measurable and the level simply awaits a re-measurement
 #
@@ -166,7 +188,7 @@ sethi-ullman-leaf|10|stage-2 -1.71% cpu against a 0.43% floor, counter agrees; n
 sethi-ullman|10|stage-2 -1.05% cpu, counter agrees (-0.036%), and 1.23% of stage-1 on top
 narrow|10|stage-2 -0.60% cpu, counter agrees (-0.016%), and 1.91% of stage-1 on top
 promote-leaf-callee|10|stage-2 -0.68% cpu, counter agrees (-0.074%); poly and regpress read -4% but inside their layout floors
-chain-store-live|10|stage-2 -0.66% cpu, counter agrees (-0.038%)
+chain-store-live|10|stage-2 -0.66% cpu, counter agrees (-0.038%); re-measured 2026-08-09 with the rest of the family, see the rung-11 note on chain-store
 tree-reassoc|10|stage-2 -0.53% cpu, counter agrees (-0.012%), and 0.64% of stage-1; poly +2.16% is inside poly's 6.3% floor
 #
 # --- rung 11: real compile-time cost above the 0.55% stage-1 floor, no payoff
@@ -178,8 +200,22 @@ tree-reassoc|10|stage-2 -0.53% cpu, counter agrees (-0.012%), and 0.64% of stage
 # time on 0.0015% MORE instructions, which is a code-layout accident, not a
 # transform.
 opt-cycle|11|8.04% of stage-1 cpu time; the +2.83% stage-2 reading is layout, the counter says -0.0015%
-chain-store|11|6.24% of stage-1 cpu time; +2.42% stage-2 is layout (counter -0.504%), and sieve +26% is inside sieve's 32% layout floor
-chain-store-member|11|1.78% of stage-1 cpu time; +2.25% stage-2 is layout (counter -0.368%), sieve likewise inside its floor
+# The chain-store family was RE-MEASURED as a group on 2026-08-09, which is what
+# board row 2 asked for, and the group verdict is the same as the three per-flag
+# ones: it does not pay. Per-flag sweeps cannot see this row -- chain-store ALONE
+# makes 34 bodies unfaithful and so measures CHEAPER (-1.86% of stage-1) by doing
+# LESS optimization, and only the three together are a transform. Together they
+# cost +1.499% of stage-1 instructions:u (+1.627% cpu, n=21, identical-config
+# control +0.455% in the same run) and buy -0.079% of stage-2 and -1.97% on
+# sieve (min of 5 perf reads, output identical), i.e. 19:1 against on the
+# self-host axis; divmagic, which ships at rung 2, is 0.44% for 28.2%. The sieve
+# number is not new and it is not a correction: leveltime.tsv already banked
+# +1.9658% on the counter for chain-store, and the independent re-read agrees to
+# four figures. What changed is that after 56da2ab6 chain-store ALONE no longer
+# changes sieve's object at all -- all three flags are now needed to get the same
+# transform. Levels unchanged. Write-up and recipe: docs/TODO.md board row 2.
+chain-store|11|6.24% of stage-1 cpu time; +2.42% stage-2 is layout (counter -0.504%), and sieve +26% is inside sieve's 32% layout floor; re-measured 2026-08-09 as a family, +1.50% stage-1 for -0.079% stage-2, still no
+chain-store-member|11|1.78% of stage-1 cpu time; +2.25% stage-2 is layout (counter -0.368%), sieve likewise inside its floor; see the family note above
 tree-switch-conversion|11|1.68% of stage-1 cpu time, stage-2 unmoved
 tree-copy-prop|11|1.53% of stage-1 cpu time, stage-2 unmoved
 tree-loop-im|11|1.14% of stage-1 cpu time; +1.59% stage-2 is layout (counter -0.054%), loopnest inside its 8.5% floor
