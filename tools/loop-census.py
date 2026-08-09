@@ -387,7 +387,11 @@ def run(bdir, src, opt, top, keep, want_json):
         env2["MCC_LOOP_CENSUS"] = lcf
         devnull = os.path.join(work, "out.o")
         rtinc = "-I" + os.path.join(ROOT, "runtime/include")
-        p = subprocess.run([binp, rtinc, *flags, "-" + opt, "-c",
+        # The freshly-linked instrumented compiler sits in a temp dir, so its
+        # MCCDIR auto-detect misses the bundled headers. On PE stdlib.h lives in
+        # runtime/win32/include; pass the same -B the link step uses so the
+        # self-compile can find it (else: 'stdlib.h not found').
+        p = subprocess.run([binp, *win32_pre, rtinc, *flags, "-" + opt, "-c",
                             os.path.join(ROOT, src), "-o", devnull],
                            cwd=ROOT, env=env2, capture_output=True, text=True)
         if p.returncode != 0:

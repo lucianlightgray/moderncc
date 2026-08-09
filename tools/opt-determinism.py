@@ -19,7 +19,7 @@ Example (once the threaded scorer lands):
   tools/opt-determinism.py cmake-build-tsan/mcc_t src/mccstats.c \
       --runs 8 --flag -fopt-search --flag -fopt-search-threads -- -O4 -c
 """
-import sys, os, json, shlex, subprocess, tempfile, filecmp, argparse
+import sys, os, json, re, shlex, subprocess, tempfile, filecmp, argparse
 
 
 def main():
@@ -61,7 +61,13 @@ def main():
         if not recs:
             print(f"determinism: no src/mcc.c record in {cdb}; skipping")
             sys.exit(77)
-        extra = [x for x in shlex.split(recs[0]["command"])[1:]
+        cmd = recs[0]["command"]
+        # On Windows the command carries backslash paths (-IC:\...); POSIX shlex
+        # eats them as escapes and the -I paths vanish, so src/mcc.c fails to find
+        # libmcc.h. Turn path backslashes into forward slashes, leaving \" escapes.
+        if os.name == "nt":
+            cmd = re.sub(r'\\(?!")', "/", cmd)
+        extra = [x for x in shlex.split(cmd)[1:]
                  if (x.startswith("-D") or x.startswith("-I"))
                  and not x.endswith(".c")] + extra
 
