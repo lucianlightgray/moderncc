@@ -341,11 +341,77 @@ call — are untouched, and the 803 figure is what they would be worth in total.
 callees (115 blocks) still have no device answer anywhere in the plan. Recursion still has
 no data: `docs/PLAN.md`'s ~130-function SCC and the dynamic depth figures (`unary()` peaks
 at 11, `ast_replay_bb` at 35 with a 27,424-byte frame → 1.75–3.5 MiB/lane) are the whole
-of it. And the graft is wired into `tools/slicerun.c` only: `mcc_slice_leaf_hook` is a
-host-supplied resolver because the callee body is not in the caller's arena, and `mcc`
-never sets it, so nothing the compiler emits changes yet. Wiring it to
-`ast_inline_pool`/`ast_inline_body` is the next step and is the point at which this stops
-being a harness result.
+of it.
+
+**The compiler now sets the hook — measured 2026-08-08.** `mcc_slice_leaf_hook` is a
+host-supplied resolver because the callee body is not in the caller's arena. `mcc` now
+supplies one: `ast_slice_leaf_pool` in `src/mccast.c` takes the callee `Sym` from child 0
+of the `AST_Invoke` and looks it up in `ast_inline_pool`, the compiler's own retained-body
+pool (`ast_inline_body` does not exist; `ast_inline_pool` + `ast_root` is the whole
+interface). Refusals stay exactly the harness's, because they all live in
+`mcc_slice_leaf_scan`, which is unchanged: indirect callee (no `Sym`, no pool entry),
+memory, control flow, a second exit, or used frame offsets that are not exactly
+`-8, -16, …`. `ast_arena_has_hole` is checked on the pool arena as well. The pool is
+strictly better identified than the harness's resolver — `Sym` pointers, not names, so the
+two-static-functions-with-one-name hazard `leaf_offer` guards against cannot arise.
+
+**When the pool is populated, and by how much.** `ast_inline_retain` runs at the end of
+each function body, so at the moment `mcc` grafts into caller *N* the pool holds bodies
+`1..N-1` — a callee defined after its caller is never resolved. `ast_fn_inlinable` gates
+it on `-finline-functions`-or-`-finline` and on `VT_STATIC` (or a C99 weak inline body),
+so the pool is **empty at `-O0` and `-O1`** and the hook has nothing to resolve there;
+`-O2` and `-O3` populate it. Measured on the fixture: 0 grafts at `-O0`/`-O1`, 4 at `-O2`
+and `-O3`, and `MCC_SLICE_INL_DUMP=1` prints all four, with `mix3(x,y)` → `x*3+y` and
+`mix3(y,x)` → `y*3+x` on distinct `Sym`s, which is the argument-order check.
+
+**Where it is wired, and where it deliberately is not.** The graft runs on a *clone* at
+the compiler's two slice consumers — `ast_adump_body` (the `MCC_ARENA_DUMP` arenas the
+harness reads) and `ast_ladder_census` (the compiler's own CPU-vs-GPU slice oracle). It
+does **not** touch `ast_cur`, so no byte of emitted code changes: `ctest` is 8948/0 and
+`tools/selfhost-smoke.py` is green with it on by default.
+
+**Self-compile: `invoke-inlined=40` out of 20,219 `AST_Invoke` nodes seen**, on
+`mcc -O3 -c src/mcc.c`. Census over the compiler-grafted dump against the same dump with
+`MCC_AST_SLICE_INLINE=0`, both read with `--no-inline` so the harness grafts nothing:
+`eligible` 3,821 → 3,822, `inv-blocks` 9,212 → 9,208, `inv-sole-blocker` 754 → 753. **One
+block.** The reason is not the graft, it is the pool: `AST_INLINE_MAX` is 512 and
+`ast_inline_n` saturates at 512 long before the leaf-shaped callees are reached, so the
+resolver answers for a fixed early prefix of the translation unit. The harness's
+name-indexed table over the same dump grafts 118 where the pool grafts 40, and that 3×
+gap is the pool cap plus the `static`-only and define-before-use rules — none of which are
+properties of the graft. Raising or making the pool cap adaptive is the cheapest next
+thing on this row.
+
+**Dispatch does follow, but through binding 1, not binding 2.** Debt #0 is still true:
+`mcc_slice_frame_from_ast` has no call site outside `tools/slicerun.c`, so no frame kernel
+is dispatched by the compiler. The ladder census is a different consumer and it does reach
+the device. With the compiler's own `-O3` arena inliner disabled (`MCC_AST_INLINE_LIMIT=0`,
+so the `AST_Invoke` nodes actually survive to the census) the leaf graft takes
+`ladder-self` pairs 6 → 9, `ladder-cross` pairs 2 → 9, GPU rungs 28 → 48 and
+**dispatches 57 → 97** (lanes 666,556 → 1,061,644) with every verdict unchanged
+(certified 6/6 → 9/9, differ 0). Without that knob the number is zero at `-O3`, and that
+is itself the finding: **`AST_STRAT_INLINE` has already eaten these calls out of the arena
+by the time the ladder census runs**, so at `-O3` the leaf graft's marginal value at that
+particular consumer is nil. It is the pre-optimisation `ast_adump_body` arena where the
+graft has something to do.
+
+`slice/mcc-leaf-graft` (`cmake/mcc_leaf_graft.cmake`) is the three-toothed cell for the
+compiler path, and it is the compiler's graft under test rather than the harness's:
+both arms pass `--no-inline` and assert `invoke-seen=0 invoke-inlined=0`, so anything the
+grafted arm gains, it gained because `mcc` emitted an arena with no `AST_Invoke` in it.
+
+- `[slice-inline] invoke-inlined=4` on a real `-O2` compile,
+- `frame-stmts` 0 → 3 and `frame-compared` 2 → 3 — the ungrafted arm compares frame runs
+  with zero statements in them and is provably blind,
+- `--mutate` gives `frame-mismatches=1` on the grafted dump and `0` on the ungrafted one.
+
+Negative control taken: flipping the `MCC_AST_SLICE_INLINE` default to 0 turns the cell
+red.
+
+**Still open here.** The pool cap above. Callees defined after their callers. `-O0`/`-O1`,
+where there is no pool at all and a leaf resolver would have to be built from something
+else. And the graft still buys the compiler nothing it emits — it feeds diagnostics and
+the ladder oracle, because debt #0 means there is no frame dispatcher to feed.
 
 ### 4. S5′ — the iteration distribution, measured 2026-08-08
 
@@ -505,6 +571,23 @@ item now says what was measured, not what was assumed.
    | `bodies_pct` | 9.1856 | 9.2159 | 9.2159 | 9.2159 |
    | `region_nodes_pct` | 16.9886 | 17.0023 | 17.0023 | 17.0023 |
    | denominator, nodes | 417,392 | 417,056 | 417,056 | 417,056 |
+
+   Re-banked again 2026-08-08, and for the same reason: the compiler-side leaf graft
+   (board item 3) adds bodies to `src/mccast.c` that are not whole-body lowerable, and the
+   denominator went 417,392 → 422,275 nodes at O0. `nodes_pct` and `nodes_pct_loose` rose
+   (41.8190 → 41.9326, 66.2243 → 66.2852) while `nodes_pct_strict` and `bodies_pct` fell,
+   and the absolute strict-lowerable node count rose 109,268 → 110,310 — dilution again,
+   not regression. Verified by reverting the change and re-running: `rir-coverage` is
+   green on the unmodified tree against the old floors.
+
+   | | O0 | O1 | O2 | O3 |
+   | --- | ---: | ---: | ---: | ---: |
+   | `nodes_pct_strict` | 26.1230 | 26.1019 | 26.1019 | 26.1019 |
+   | `nodes_pct` | 41.9326 | 41.9250 | 41.9250 | 41.9250 |
+   | `nodes_pct_loose` | 66.2852 | 66.2975 | 66.2975 | 66.2975 |
+   | `bodies_pct` | 9.1210 | 9.1510 | 9.1510 | 9.1510 |
+   | `region_nodes_pct` | 17.0152 | 17.0288 | 17.0288 | 17.0288 |
+   | denominator, nodes | 422,275 | 421,939 | 421,939 | 421,939 |
 
    `--tol` is left at 0.05 deliberately: the point was that the gate could not tell
    dilution from regression, and that is what changed. Two things stay open. The `pe`
