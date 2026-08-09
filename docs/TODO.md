@@ -932,6 +932,137 @@ from spending budget proving a tautology.
 **Below the line and deliberately:** anything requiring Windows-on-ARM hardware, a real
 Windows CI runner beyond what `matrix.yml` already has, or a `.rc` compiler. All three are
 real absences and none is on the critical path of anything above.
+## Landed — a global `Ref` resolves to an address, and the oracle now reads a real global, 2026-08-09 (`wt/globreloc`)
+
+`ref-not-local/global-scalar-int` was refused for one reason and it was not addressability:
+**a global `Ref` carries no address at all.** `unary()` (`src/mccgen.c`, the
+`tok_identifier` arm) does `vtop->c.i = 0` for every `VT_SYM` value because `c.i` is the
+addend to the symbol rather than the symbol, and `ast_finalize_leaf` copies that addend into
+the node's `ival`. So the node says "symbol S plus 0" and nothing in the arena says where S
+is. That is correct compiler behaviour — it is line-for-line upstream tinycc — and it is
+why widening the predicate on its own would have been invisible rather than wrong: every
+global would have resolved to 0, every tuple would have poisoned, `cref_emit` would have
+counted `cref-alldead` and emitted no fragment, and both the device and the corpora would
+have seen nothing move.
+
+**Relocation is therefore a hook, not a field.** `ast_eval_slice_reloc_fn` sits beside the
+existing `ast_eval_slice_obj_fn` and answers one question: where does the object this `Ref`
+denotes live, in the frame-offset key space that `off[]`, the device buffer and both
+emitters already agree on. Only the holder of the arena can answer it, because only the
+holder knows what the `sym` slot means — a live `Sym *` whose storage is not laid out until
+link time in the compiler, an interned dense id in a rebuilt arena. **With no hook installed
+there is no address and every predicate refuses a global exactly as before**, which is what
+makes "emitted code must not change" true by construction rather than by test. Verified
+anyway: 1,376 TU compiles at `-O0`–`-O3` over `tests/exec` and 300 gcc-torture programs,
+both binaries run from the same directory, **byte-identical, zero rc differences**.
+
+`slicerun` installs the hook (`slicerun_reloc`), placing each distinct interned sym id at
+`0x40000000 + i * 0x1000`. A gigabyte up because a collision with a genuine frame offset
+would not fail — `off[]` is deduplicated by value and has no idea which entry is a local and
+which a global, so an alias would silently merge them. `--no-globals` withholds the hook,
+which is how the before/after below was measured with one binary.
+
+### What moved
+
+400 gcc-c-torture-execute programs at `-O1`, one dump, one `slicerun` binary:
+
+| counter | before (`--no-globals`) | after | |
+| --- | ---: | ---: | ---: |
+| slices | 1,905 | 2,551 | +33.9% |
+| tuples | 15,240 | 20,408 | +33.9% |
+| gpu-slices | 1,905 | 2,551 | +33.9% |
+| dispatches | 2,460 | 3,119 | +26.8% |
+| device mismatches | 0 | 0 | |
+| `cref-emitted` | 1,898 | 2,544 | +34.0% |
+| `cref-tuples` | 15,034 | 19,923 | +32.5% |
+| `cref-alldead` | 1 | 1 | unchanged |
+| `cref-unspellable` | 6 | 6 | unchanged |
+| fragments that read a global | 0 | 650 | |
+
+`cref-alldead` and `cref-unspellable` are the two counters that separate "adjudicated" from
+"silently skipped", and neither moved: the widening produced fragments, not poison. All
+2,544 fragments in 17 batches compiled and agreed under gcc-15 and clang-22 at `-O0` and
+`-O2`, zero mismatches, zero nocompiles.
+
+### The spelling
+
+A live-in that resolved through the relocation table is emitted as a **file-scope object**
+rather than a parameter, re-seeded per tuple in `chk_` beside the `a0..aN` assignments, so
+the oracle compiles a real read of a real global:
+
+```c
+static volatile long long g_p00042n000117_3;
+static long long fn_p00042n000117(long long e1) {
+	return (long long)(((((int)g_p00042n000117_3)) + (((int)e1))));
+}
+```
+
+Three decisions inside that shape are load-bearing. The name is `g_<tag>_<symid>` — 150
+fragments concatenate into one TU, so every file-scope name must be `static` and
+tag-unique, and the id is the dump's column 11 rather than any name, because no name
+survives the rebuilt arena. The storage type is `long long` and `cref_expr`'s cast does the
+narrowing, which is exactly what `ast_eval_slice_rec` does (`ast_eval_slice_fit(v, t)` on
+the environment word) — so nothing is spelled as a byte array and the aliasing rules the
+compile line leaves in force (`-w -fwrapv -fno-strict-overflow`, no
+`-fno-strict-aliasing`) are never engaged. `volatile` matches what the parameters already
+use, to keep the oracle evaluating the expression rather than folding the seed to the
+answer. A slot that is an element rather than the whole object gets `g_<tag>_<id>_<delta>`,
+one C object per live-in slot, which is what the environment model already is.
+
+The `AST_Ref` fallthrough in `cref_expr` no longer reaches a global: an unresolvable or
+unspellable global returns 0 and lands in `cref-unspellable` rather than being emitted as a
+plausible `((T)0LL)`.
+
+### The intern cap now fails loudly
+
+`ast_adump_intern` returned 0 past 4,096 distinct pointers. That was survivable while nobody
+consumed column 11 and stopped being survivable the moment a consumer names objects by the
+id: two distinct globals both handed 0 become one object with one name and one value, so a
+silently degraded identity becomes **wrong output rather than missing output**. The table now
+grows geometrically with rehash (ids are preserved, they are first-encounter order), and the
+one path that still cannot hand out an identity prints to stderr, writes `[intern-overflow]`
+into the dump, and stops dumping. `slicerun` refuses any dump carrying that marker rather
+than relocating and naming on a guess. `MCC_ARENA_DUMP_ICAP` pins the ceiling so the failure
+path is reachable; `slice/arena-intern-cap` drives it and also asserts the default capacity
+does *not* fail over the same source.
+
+### The census had to move with it
+
+`refuse_walk` asks `ast_eval_slice_kind_ok` first, so the refusal census tracked the
+widening automatically: over the `slice/refusal-classes` corpus `ref-not-local/global-scalar-int`
+went to **zero** and `ref-accepted/global-scalar-int` appeared with 225 nodes (178 in value
+position). `cmake/slicerun_refclass.cmake` therefore no longer requires that class non-empty
+on the refused side — doing so would now assert the widening did *not* land — and requires
+it on the accepting side instead, which is the stronger statement. `func-symbol`,
+`global-aggregate` and `global-array` stay required on the refused side and are all still
+populated.
+
+### Open — what `ast_eval_slice_frame_off` should return for an aggregate
+
+`global-aggregate` is 94.87% of the addressable global residue and is deliberately still
+refused: `ast_eval_slice_globl` rejects a `VT_STRUCT` base outright, so `.field` on a global
+keeps failing at the base rather than folding an addend onto an address whose contract is
+unsettled. The contract this branch recommends: **`ast_eval_slice_frame_off` should keep
+returning a key in the one address space, never a host address.** Its `int32_t *off` is not
+an address and must not become one — every consumer (`ast_eval_slice_env`, `spv_env_index`,
+`msl_env_index`, `ast_eval_slice_livein_obj`'s consecutive-run layout) treats it as an
+opaque dedup-and-index key, and handing back a real `.data` address would break all four at
+once while looking like it worked for the one case tested. The global base case belongs in
+`ast_eval_slice_globl`, which already folds `base + ival`; the aggregate work is then
+entirely in `ast_eval_slice_member_off`, which must decide *which* fields of a global struct
+become live-in slots and refuse when the count exceeds `MCC_SLICE_MAXLIVE`. Where a global's
+real host address genuinely is the answer — the imported-host-pages design in *Total
+lowering* — that address belongs in the `ext` descriptor path (`ast_eval_slice_rw_base` /
+`spv_mem_off`), which already carries a 64-bit pointer in a slot and converts it to a window
+offset, not in `frame_off`.
+
+Two things that section assumes are not in the tree and were checked on this branch:
+there is **no `slice/hostimport` cell** and **no `VK_EXT_external_memory_host` code** —
+`external_memory_host`, `hostimport` and `minImportedHostPointerAlignment` appear only in
+`docs/TODO.md`. `mcc_gpu_mem` hands back the separate Vulkan-allocated shared scratch
+buffer, not an import of `.data`/`.bss`. Nothing in this branch depends on that: a global
+here is a live-in slot in the buffer the device already has.
+
 ## Landed — an array live-in costs one descriptor, not one slot per element, 2026-08-09 (`wt/slotmodel`)
 
 **What was measured before anything was built.** The predicate ceiling reproduces exactly:

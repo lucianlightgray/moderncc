@@ -3914,6 +3914,14 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_refclass.cmake")
             set_tests_properties("slice/refusal-classes" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            add_test(NAME "slice/arena-intern-cap"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DRUNNER=$<TARGET_FILE:slicerun>
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_interncap.cmake")
+            set_tests_properties("slice/arena-intern-cap" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             find_program(MCC_PYTHON3 NAMES python3 python)
             if(MCC_PYTHON3)
                 add_test(NAME "fmt/census-oracle"
