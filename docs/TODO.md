@@ -71,7 +71,8 @@ runs on every dispatch. What it produces is a second independent implementation 
 the first against real data rather than test data. That is a currency which converts —
 the device differential has already caught three miscompiles that internal comparisons
 were structurally blind to — whereas device-eligible blocks never had an exchange rate.
-## Landed — nine `slice/*` cells were running nothing, and M4's host half, 2026-08-09
+
+## Landed — nine `slice/*` cells were running nothing; M1 and M4's host half, 2026-08-09
 
 Starting M1–M7 turned up something that outranks them. **Nine device cells have been
 reporting `Passed` while executing zero checks**, on every platform, since the generator
@@ -136,24 +137,72 @@ coherent at command-buffer granularity. It is resident rather than per-dispatch 
 `suite_mem` writes a byte, calls back in, and requires the identical pointer with the byte
 intact. **`slice/mem` on Metal: 7 checks, 0 failures.**
 
-### M1, the behaviour-neutral half
+### M1 — DONE, live-slot store-back
 
-`msl_load_live`'s `k` was a *slot* while `spv_load_live`'s was a *word* — the MSL body
-doubled it, the SPIR-V twin added it directly. The store helpers M1–M4 all need index the
-same way, so a slot-vs-word mix-up would have put every high word on top of the next slot's
-low word. Normalised to words, with `msl_load_at` factored out. The kernel signature is also
-now chosen per module (`msl_kernel_ro`/`msl_kernel_rw` selected by a new `MslMod.wrote_in`)
-so buffer 0 can lose `const` only for modules that actually store, leaving every existing
-expression kernel byte-identical. `gpu/msl-slice-{differential,known-positive,real}` all
-still pass.
+The MSL twins of `spv_store_at_in`, `spv_store_live` and `spv_store_live_v`, plus the host
+half: buffer 0 becomes read-write for modules that store, `mcc_gpu_dispatch_locked` copies
+the frame back after `waitUntilCompleted`, and `mcc_gpu_rw_supported()` returns 1.
+
+Three things had to be right, and two of them were latent bugs:
+
+1. **`msl_load_live`'s `k` was a *slot* where `spv_load_live`'s was a *word*** — the MSL body
+   doubled it, the SPIR-V twin added it directly, so the two arms disagreed on what the same
+   argument meant. Every store helper M1–M4 needs indexes the same way; the mix-up would
+   have put each high word on top of the next slot's low word. Normalised to words, with
+   `msl_load_at` factored out.
+2. **`memcpy(out, …)` in the Metal dispatch was unguarded** where the Vulkan twin has always
+   tested `out`. It is NULL whenever a caller wants only the frame back —
+   `mcc_gpu_dispatch_rw` passes NULL, and `mcc_slice_run_frame_gpu` passes a NULL `ob` when
+   neither `retval` nor `retdef` was asked for. Unreachable only because `dispatch_rw2`
+   bailed on `!mcc_gpu_rw_supported()`, which now returns 1. Guarded before flipping it.
+3. **The kernel signature is chosen per module** (`msl_kernel_ro`/`msl_kernel_rw`, selected
+   by a new `MslMod.wrote_in`), so buffer 0 loses `const` only where something stores through
+   it. Dropping it unconditionally would make `inb` and `outb` mutually aliasable to the
+   Metal compiler and perturb codegen for every expression kernel — and mslgate's per-value
+   differential is the only green evidence this backend has.
+
+The high word follows the value's **own** signedness rather than sign-extending
+unconditionally, mirroring `spv_store_live_v`: otherwise `-2` in an `unsigned` slot reaches
+the host as `-2` where the CPU has `4294967294`.
+
+### The differential M1 did not have, and now does
+
+`mcc_gpu_dispatch_rw2` had **zero reachable call sites on the Metal arm**. The expression
+suites (`gpu`, `ops`, `wide64`) reach the device through `mcc_gpu_dispatch`, which cannot
+write buffer 0; every suite that does store is behind M2 or M4. So M1 could have landed
+entirely wrong with every cell still green — the same shape as the nine vacuous cells above,
+arrived at from the opposite direction.
+
+**`slice/rwstore`** closes it: one module built by hand — load slot 0, add 1, store it back;
+load slot 1, store it back unchanged — dispatched read-write with `out = NULL`, which is
+also the shape that was an unguarded `memcpy` until (2). Slot 1 holds `0xFFFFFFFE` so the
+zero-extension rule is pinned rather than assumed. Both arms build the probe from their own
+emitter, so it is a cross-backend check and not a Metal-only one.
+
+**Verified live by falsification**, not by trusting it: changing the expected increment by
+one turns the cell red on 9 of 32 words and exits 1.
 
 ### Metal scoreboard
 
-**0 failures, 14 skips.** Of those, `slice/f64-known-positive` (no fp64 device) and
-`slice/musl` (no musl toolchain) are correct and permanent. The remaining twelve are the
-M1–M7 target: `frame`, `frame-known-positive`, `frame-lohi-fallback`, `real`, `inline`,
-`mcc-leaf-graft` (M2); `bytes`, `bytes-known-positive`, `deref`, `deref-known-positive`
-(M4); `fmt`, `fmt-known-positive` (M5).
+**0 failures, 12 skips** (36/36 on the Metal arm, 40/40 on Vulkan). Of the skips,
+`slice/f64-known-positive` (no fp64 device) and `slice/musl` (no musl toolchain) are correct
+and permanent. The remaining ten are the M2–M5 target: `frame`, `frame-known-positive`,
+`frame-lohi-fallback`, `real`, `inline`, `mcc-leaf-graft` (M2); `bytes`,
+`bytes-known-positive`, `deref`, `deref-known-positive` (M4); `fmt`, `fmt-known-positive`
+(M5).
+
+### Next: M2, and where its difficulty actually is
+
+Not the line count. **MSL emits scoped C control flow, not SSA with labels**, so every value
+that crosses a block boundary — the loop trip counter, the carried definedness, the
+if-merge — must be `msl_id()` plus an explicit declaration *before* the block, the way
+`msl_branch_pair` already does it. A value id created inside `{ }` dies at the brace, and
+the failure mode is a Metal *compile* error inside `mtl_pipeline`, surfacing as
+`mcc_gpu_dispatch` returning 0 — i.e. as `MCC_TASK_FAILED`, not as a build failure.
+
+The second trap is `d_exit`, not `d_phi`: the iteration that fails the loop test still
+evaluates the condition, and an undefined access in it must clear definedness. Get it wrong
+and the two executors disagree *precisely at loop exit and nowhere else*.
 
 ### Note on the three design documents
 
