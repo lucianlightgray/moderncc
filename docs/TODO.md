@@ -39,7 +39,7 @@ schedule.
 | **2** | **`ctest -L census` runs 3 of its 6 cells and reports 6.** `loop-census`, `loop-census-numeric` and `slice-census` skip under the recipe this file quotes (`MCC_RIR_CENSUS=1 ctest -L census`, and `slice-census.py`'s own message literally says *"set `MCC_SLICE_CENSUS_RUN=1` to run this census (ctest -L census)"*). The `6` at `:1507` counted **registered** cells, not run ones — the exact failure mode this project keeps finding. Fix: have CMake set the three env vars on the `census`-labelled cells, so the label means what it says | small (three `ENVIRONMENT` properties) | **cells** |
 | **3** | **`-fopt-slice` makes object output depend on the optimizer's disk cache, and nothing watches it.** Reproduced verbatim today: `python3 tools/opt-cache-determinism.py cmake-debug/mcc src/mcc.c --opt=-O3 --from-build cmake-debug -- -fopt-slice` → `cold/self/foreign-tu = daffa4e023f9`, **`foreign-fl = 1dbdfbe1bc0c`**, `cache entries written: 2`, `FAIL`. The cell is a **permanent 77** because the flag is `MCC_OPTD_LEVEL(9)` and has no subject at any shipped level, so the defect is invisible rather than absent. Decide: own the pass, or delete it | unknown (a pass) | **correctness / determinism** |
 | **4** | **`if-conversion-abs` ships at `MCC_OPTD_LEVEL(2)` and the freshly re-run bench says it makes code worse.** `tests/optfire/levelbench.tsv:20`: moves **1 of 17** kernels, `gain_movers` **−0.0334**, `branchy` **−0.5700** — a sign flip from the `+0.1905` / `+3.1843` it was promoted on. It is bucketed `ranked`, not `cost-no-gain`, so the ladder still treats it as a win. It is filed **only** in the failed-to-reproduce table at `:685`; no row of the ranking table owns it, and `:517` asserts "row 1 is the only unmeasured row left" | small (one level decision, the measurement already exists) | **emitted code** |
-| **5** | **`MCC_MAX_UNARY_DEPTH` is mis-sized and the guard admits inputs that segfault the compiler.** `src/mccgen.c:241` caps nesting at **2048** against a measured **~1.15 KiB of host stack per unary level**, so the limit needs ~2,560 KiB and a 2 MiB stack — the Linux default for a *thread* — is not enough. **Verified this sweep**, 2,040 nested parens, `ulimit -s`: **2048 KiB → SIGSEGV (exit 139, core dumped); 4096 KiB → exit 0; 8192 KiB → exit 0.** The diagnostic at `:13321` never fires because the crash happens first. Filed at `:8211-8214` as a residual of N8 and never mentioned again | one constant, or a depth derived from the rlimit | **correctness** |
+| **5** | **DONE — `MCC_MAX_UNARY_DEPTH` was mis-sized *and* it was one guard where the parser needs eight.** See "The parse-depth guard" below | — | **correctness** |
 | **6** | **Nine number-producing tools are registered nowhere — the board says four.** `:1688-1696` names `xsuite-report.py`, `gate-ledger.sh`, `strategy-ledger.sh`, `c2_sweep.sh` and closes "Four tools left on this item." Also unregistered and board-quoted: `xsuite.py`, `xoracle.py`, `c2_equiv.sh`, `selfhost-o3.py`, `arm64pe_diff.py`. **`xoracle.py` is the sharpest**: `tests/optfire/levelpins.txt:78` pins `merge-constants` at level 2 on "two xoracle cases change verdict without it" — a shipped ladder pin whose only evidence comes from a tool no cell runs | medium (five more cells) | **census trust** |
 | **7** | **`ast_env_gate` no longer exists in `src/` and four shell tools still grep for it.** `grep -rn ast_env_gate src/` is **0**; `tools/{c2_sweep,c2_equiv,gate-ledger,o0_ab}.sh` all still reference it. They fail loudly, which is the right mode, but this is the widest blocker in the file: it freezes `o0_ab.sh`'s gated half (twelve `*.gated.rir.txt` + `board.gated.txt`, uncovered by `ast/o0-baseline` and not pretending otherwise), blocks three of the four tools in row 5, and blocks the cheap "which `-O1` gate erases the 72 `len` bodies" experiment. The restoration recipe is already written down at `:9899-9906` | medium | **gate strength** |
 | **8** | **`spirv-val` and `glslc` are installed at `/usr/bin` and referenced nowhere in the build.** `grep -rn 'spirv-val\|glslc' CMakeLists.txt cmake/ tools/ src/` is empty. 152/152 modules already validate by hand at `--target-env vulkan1.1`. One `find_program` and one `add_test` arm. The cheapest open item in the file, and it survives the device freeze because it validates what the emitter already ships | small | **device correctness** |
@@ -8673,9 +8673,8 @@ stated, and they do not always match the M1's — the re-measured allocation cen
    save-area or move the ASMGEN arm into a `noinline` helper. ~10 lines.
    Two related findings: the 930 KiB/992 KiB peak **only exists at `-O1`+**, because
    `ast_replay_env` requires `optimize >= 1` (`-O0` peaks at 20,672 B, 49× less); and
-   `MCC_MAX_UNARY_DEPTH 2048` is mis-sized at a measured **1.15 KiB of host stack per
-   unary level** — 2,040 nested parens SIGSEGV at a 2 MiB stack and need 2,560 KiB. It
-   survives only because the default host stack is 8 MiB.
+   `MCC_MAX_UNARY_DEPTH 2048` is mis-sized. **Closed — see "The parse-depth guard"
+   below; the per-level figure quoted here as 1.15 KiB is 1,088 B measured exactly.**
 
 4. **Six binary opcodes have zero test coverage of any kind.**
    `TOK_UDIV`, `TOK_UMOD`, `TOK_PDIV`, `TOK_UGE`, `TOK_ULE`, `TOK_UGT` each have an MSL
@@ -10727,3 +10726,145 @@ not building, not by copying it elsewhere.
 Unfixed and still latent: `subprocess.run`'s timeout kills the driver but not the
 `-cc1` grandchild, so orphaned compilers accumulate and keep burning CPU; `preexec_fn`
 is also documented-unsafe under threads.
+
+## The parse-depth guard — closed, and it was five holes not one — 2026-08-09
+
+`MCC_MAX_UNARY_DEPTH 2048` is gone. The parser now shares one budget,
+`MCC_MAX_PARSE_DEPTH 512` (`src/mcc.h`), charged and released by
+`mcc_parse_depth_enter/leave` (`src/mccgen.c`) at **eight** recursion entry points:
+`unary`, `expr_cond`, `block`, `post_type`, `type_decl_1`, `decl_initializer_1`,
+`struct_decl` (`src/mccgen.c`) and `macro_subst` (`src/mccpp.c`). Each is a thin
+wrapper over a renamed `*_nested` body, the shape `unary`/`unary_nested` already had.
+The counter is reset in `preprocess_start`, which runs on every entry path
+(`-c`, `-E`, `-S`, asm) and is therefore the correct place to absorb the `longjmp`
+out of `mcc_error` that skips every pending `leave`.
+
+**The per-level cost, measured rather than estimated.** A gdb script sampling `$sp` at
+each recursion entry, in the `cmake-debug` (`-O0`) build:
+
+| axis | cycle | B per source level | depth units per level |
+| --- | --- | ---: | ---: |
+| `sizeof sizeof …` | `unary` + `unary_nested` | **992** | 1 |
+| nested `(…)` | `unary`+`expr_cond`+`expr_eq`+`gexpr`+`unary_nested` | **1,088** | 2 |
+| casts, `*`, `!`, `&` chains | `unary` + `unary_nested` | **848** | 1 |
+| macro nesting | `macro_subst` | **784** | 1 |
+| nested `struct` | `struct_decl` | **528** | 1 |
+| `for`/`while` nesting | `block` | **368** | 1 |
+| nested initializer braces | `decl_initializer_1` | **368** | 1 |
+| block / `if` nesting | `block` | **304** | 1 |
+| `?:` chains | `expr_cond` | **240** | 1 |
+| parenthesised declarators | `type_decl_1` + `post_type` | **~608** | 2 |
+
+`unary_nested` alone is 832 B of the 1,088 B paren cycle — 76%. The same slope falls
+out of the rlimit independently: `paren` last compiles at depth 462 / 947 / 1,912 under
+`ulimit -s` 512 / 1024 / 2048 KiB, i.e. 1.056–1.061 KiB per level. The board's
+**1.15 KiB** was close; the exact figure is **1,088 B**.
+
+**What the old guard admitted.** 2048 × 1,088 B = 2,176 KiB, so `MCC_MAX_UNARY_DEPTH`
+needed a stack larger than the 2 MiB a Linux *thread* gets by default. Reproduced
+verbatim at `afe3fa18` with 2,040 nested parens: `ulimit -s 2048` → **exit 139
+(SIGSEGV)**, `4096` → exit 0, `8192` → exit 0.
+
+**Worse: seven of the eight paths had no guard at all**, so they were unbounded at any
+stack. Measured crash depths on the unfixed tree at the 8 MiB default — every one of
+these SIGSEGVs a *default* shell, no `ulimit` needed:
+
+| path | crashes at depth (8 MiB) |
+| --- | ---: |
+| macro nesting `M(M(M(…)))` | 16,383 |
+| nested `struct` definitions | 16,383 |
+| nested `{}` blocks, `if`, `while`, `for` | 32,767 |
+| nested initializer braces | 32,767 |
+| `?:` chains | 65,535 |
+| parenthesised / function-pointer declarators | 131,071 |
+
+Three shapes are genuinely iterative and never crash, checked to depth 262,143:
+long binary-operator chains (`expr_infix`), `&&`/`||` chains, and comma chains.
+`assign`, `arraydecl` and nested calls hit `memory full (vstack)` — a clean diagnostic,
+already correct.
+
+**Sizing.** 512 × 992 B (the worst per-unit axis) ≈ 496 KiB. Bisecting the rlimit
+across all thirteen axes at depth 20,000: the smallest stack on which every one of them
+reaches the diagnostic instead of the guard page is **520 KiB**. That fits Windows'
+1 MiB default reserve with 480 KiB spare, the glibc 2 MiB thread default 4× over, and
+the 8 MiB main-thread default 16× over. It does **not** fit musl's 128 KiB thread
+default — mcc on a musl thread needs an explicit `pthread_attr_setstacksize`.
+
+**What a conforming program is entitled to, versus what mcc supports.** C11 §5.2.4.1
+requires an implementation to translate at least one program containing 127 nesting
+levels of blocks, 63 of parenthesised expressions within a full expression, 63 of
+parenthesised declarators, 63 of conditional inclusion, 63 of nested structure or union
+definitions, and 12 declarators modifying a type. Because the budget is *shared*, the
+worst case is all of them nested inside one another — so that program was built and
+compiled rather than argued about. It reaches **`mcc_parse_depth` = 256, exactly half
+of 512**, and both mcc and `gcc -std=c11 -pedantic` accept it. mcc's headroom over the
+standard's floor is therefore **2×** with every minimum simultaneously in force, and
+much larger per-axis: 256 nested parens, 512 nested blocks, 512 nested declarators.
+The floor program is regenerated and compiled by the new cell, so a future attempt to
+buy safety by lowering the constant will fail loudly instead of silently dropping below
+conformance. **512 is not a limit any hand-written C reaches**: the high-water mark over
+every `.c` file in `src/`, `tests/`, `tools/`, `runtime/` and `examples/` is **130**,
+and that is `tests/exec/statements/translation_limits.c`, which exists to be extreme.
+
+**The cell.** `diag.parse-depth` (`tests/diagnostics/parse-depth.sh`, registered beside
+the `dg-error` glob) generates all thirteen axes at depth 40,000 plus the C11 floor
+program, and requires each to exit with `program nests too deeply` — never a signal,
+never rc 0. It **lowers its own stack rlimit to 1024 KiB and refuses to run if it
+cannot**, saying so on stdout: a pass at the runner's inherited 8 MiB would prove
+nothing, since the whole defect is that the admitted depth outgrows a small stack.
+Three `dg-error` drop-ins (`parse_depth_parens`, `parse_depth_blocks`,
+`parse_depth_macro`) assert the same diagnostic with no rlimit involved at all.
+
+Ablation against `afe3fa18` rebuilt in scratchpad — 13 of 14 cases:
+
+```
+parse-depth: SIGNAL rc=139 (signal 11) on paren
+parse-depth: SIGNAL rc=139 (signal 11) on cast
+parse-depth: SIGNAL rc=139 (signal 11) on sizeofchain
+parse-depth: SIGNAL rc=139 (signal 11) on derefchain
+parse-depth: SIGNAL rc=139 (signal 11) on ternary
+parse-depth: SIGNAL rc=139 (signal 11) on blocks
+parse-depth: SIGNAL rc=139 (signal 11) on ifchain
+parse-depth: SIGNAL rc=139 (signal 11) on forchain
+parse-depth: SIGNAL rc=139 (signal 11) on initbraces
+parse-depth: SIGNAL rc=139 (signal 11) on declparen
+parse-depth: SIGNAL rc=139 (signal 11) on declfnptr
+parse-depth: SIGNAL rc=139 (signal 11) on structnest
+parse-depth: SIGNAL rc=139 (signal 11) on macronest
+parse-depth: 13 of 14 cases failed at a 1024 KiB stack
+```
+
+The fourteenth is the C11 floor program, which compiles on both trees — it is a
+conformance guard, not a crash guard, and it is meant to be insensitive to the fix.
+The three `dg-error` cells ablate as
+`expected compile to FAIL for …/parse_depth_parens.c, but it succeeded (rc=0)`.
+
+**Emitted code is unchanged.** 900 TUs (`tests/`, `examples/`, `runtime/`, `src/`,
+`tools/`) compiled by both trees at `-O0`–`-O3`: **2,995 objects byte-identical, 0
+differing**, 604 failing identically on both (the negative-diagnostic corpus), and **1**
+self-unstable under a back-to-back recompile of the *same* binary — the `__TIME__`
+case, which is why the sweep re-compiles before believing any diff.
+
+**The census had to be re-banked, and it is dilution, not regression** — exactly the
+case "The lowerable ratchet is self-referential" describes. Eight wrappers plus
+`mcc_parse_depth_enter`/`leave` add 14 tiny non-lowerable bodies to `src/mcc.c`. The
+absolute lowerable count is **658 bodies before and after**; only the denominator moved,
+4,241 → 4,255, so `wide` `bodies_pct` fell 15.5152% → 15.4642% at `-O0` and 15.4748% →
+15.4242% at `-O1`–`-O3`. Re-banked with `--update-bank-low`; nothing else in
+`tests/rir/coverage-bank.json` moved.
+
+Verification on this tree, `cmake-cross` built before `cmake-debug` was configured:
+`ctest` **9159/9159** (9155 + `diag.parse-depth` + three `dg-error` drop-ins),
+`-L flagsweep` 119/119, `-L stratsweep` 30/30, `MCC_RIR_CENSUS=1 ctest -L census` 6
+registered / 3 skipped / 0 failed, `tools/selfhost-smoke.py cmake-debug` green,
+`tracegate src` and `schemagate src` both OK.
+
+**Left open, deliberately.** The guard is a *depth* budget with a per-level cost fixed
+by measurement of the `-O0` build; it is not a stack-headroom probe. That is the right
+trade here — the diagnostic must be reproducible for the cell to be worth anything, and
+an rlimit-derived limit would fire at a different depth on every host — but it means the
+bound is only as good as the frame sizes it was measured against. **Anything that grows
+`unary_nested`'s 832-byte frame silently erodes the margin, and nothing watches it.**
+The cheapest watchdog is the `520 KiB` figure above: re-run the rlimit bisect after any
+change to the frames of the eight guarded functions. `docs/PLAN.md:435` still names
+`MCC_MAX_UNARY_DEPTH 2048` at `src/mccgen.c:241`; that symbol no longer exists.

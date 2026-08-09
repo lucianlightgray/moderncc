@@ -238,8 +238,19 @@ ST_DATA long mcc_stackref_count;
 static long mcc_stackref_fn;
 static int mcc_stackref_ind;
 
-#define MCC_MAX_UNARY_DEPTH 2048
-static int unary_depth;
+ST_DATA int mcc_parse_depth;
+
+ST_FUNC void mcc_parse_depth_enter(void) { MCC_TRACE("enter\n");
+	if (mcc_parse_depth >= MCC_MAX_PARSE_DEPTH) { MCC_TRACE("br\n");
+		mcc_parse_depth = 0;
+		mcc_error("program nests too deeply (maximum %d levels)", MCC_MAX_PARSE_DEPTH);
+	}
+	mcc_parse_depth++;
+}
+
+ST_FUNC void mcc_parse_depth_leave(void) { MCC_TRACE("enter\n");
+	mcc_parse_depth--;
+}
 
 ST_FUNC void mcc_stackref_note(int r) { MCC_TRACE("enter\n");
 	int v = r & VT_VALMASK;
@@ -984,7 +995,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) { MCC_TRACE("enter\n");
 	func_ind = -1;
 	anon_sym = SYM_FIRST_ANOM;
 	assign_ctx_is_init = 0;
-	unary_depth = 0;
+	mcc_parse_depth = 0;
 	nocode_wanted = DATA_ONLY_WANTED;
 	debug_modes = (s1->do_debug ? 1 : 0) | s1->test_coverage << 1;
 	global_expr = 0;
@@ -6375,7 +6386,15 @@ static int tags_compatible(Sym *a, Sym *b) { MCC_TRACE("enter\n");
 	return !fa && !fb;
 }
 
+static void struct_decl_nested(CType *type, int u, AttributeDef *ad_out);
+
 static void struct_decl(CType *type, int u, AttributeDef *ad_out) { MCC_TRACE("enter\n");
+	mcc_parse_depth_enter();
+	struct_decl_nested(type, u, ad_out);
+	mcc_parse_depth_leave();
+}
+
+static void struct_decl_nested(CType *type, int u, AttributeDef *ad_out) { MCC_TRACE("enter\n");
 	int v, c, size, align, flexible, saw_vla, no_field, late_bf;
 	int bit_size, bsize, bt, ut;
 	Sym *s, *ss, **ps, *redef_prev = NULL;
@@ -8439,7 +8458,17 @@ static int asm_label_instr(void) { MCC_TRACE("enter\n");
 	return v;
 }
 
+static int post_type_nested(CType *type, AttributeDef *ad, int storage, int td);
+
 static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_TRACE("enter\n");
+	int r;
+	mcc_parse_depth_enter();
+	r = post_type_nested(type, ad, storage, td);
+	mcc_parse_depth_leave();
+	return r;
+}
+
+static int post_type_nested(CType *type, AttributeDef *ad, int storage, int td) { MCC_TRACE("enter\n");
 	int n, l, t1, arg_size, align;
 	int star_param = 0;
 	Sym **plast, *s, *first, **ps, *sr;
@@ -8719,8 +8748,20 @@ struct restrict_ctx {
 	int nb;
 };
 
+static CType *type_decl_nested(CType *type, AttributeDef *ad, int *v, int td,
+															 struct restrict_ctx *rc);
+
 static CType *type_decl_1(CType *type, AttributeDef *ad, int *v, int td,
 													struct restrict_ctx *rc) { MCC_TRACE("enter\n");
+	CType *r;
+	mcc_parse_depth_enter();
+	r = type_decl_nested(type, ad, v, td, rc);
+	mcc_parse_depth_leave();
+	return r;
+}
+
+static CType *type_decl_nested(CType *type, AttributeDef *ad, int *v, int td,
+															 struct restrict_ctx *rc) { MCC_TRACE("enter\n");
 	CType *post, *ret;
 	int qualifiers, restrict_q, storage, arr_nested = 0;
 
@@ -13318,13 +13359,9 @@ tok_next:
 #undef CST_PRIMARY
 
 ST_FUNC void unary(void) { MCC_TRACE("enter\n");
-	if (unary_depth >= MCC_MAX_UNARY_DEPTH) { MCC_TRACE("br\n");
-		unary_depth = 0;
-		mcc_error("expression nests too deeply (maximum %d)", MCC_MAX_UNARY_DEPTH);
-	}
-	unary_depth++;
+	mcc_parse_depth_enter();
 	unary_nested();
-	unary_depth--;
+	mcc_parse_depth_leave();
 }
 
 #define expr_landor_next(op) unary(), expr_infix(precedence(op) + 1)
@@ -13521,7 +13558,15 @@ ST_FUNC void gen_select(CType *type) { MCC_TRACE("enter\n");
 }
 #endif
 
+static void expr_cond_nested(void);
+
 static void expr_cond(void) { MCC_TRACE("enter\n");
+	mcc_parse_depth_enter();
+	expr_cond_nested();
+	mcc_parse_depth_leave();
+}
+
+static void expr_cond_nested(void) { MCC_TRACE("enter\n");
 	int tt, u, r1, r2, rc, islv, c, g;
 	SValue sv;
 	CType type;
@@ -14548,7 +14593,15 @@ static void warn_return_local_addr(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); mcc_warning_c(warn_return_local_addr)("function returns address of local variable"); }
 }
 
+static void block_nested(int flags);
+
 static void block(int flags) { MCC_TRACE("enter\n");
+	mcc_parse_depth_enter();
+	block_nested(flags);
+	mcc_parse_depth_leave();
+}
+
+static void block_nested(int flags) { MCC_TRACE("enter\n");
 	int a, b, c, d, e, t, nc_pre;
 	struct scope o;
 	LoopCensus lcen;
@@ -15618,7 +15671,15 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 	}
 }
 
+static void decl_initializer_nested(init_params *p, CType *type, unsigned long c, int flags);
+
 static void decl_initializer_1(init_params *p, CType *type, unsigned long c, int flags) {
+	mcc_parse_depth_enter();
+	decl_initializer_nested(p, type, c, flags);
+	mcc_parse_depth_leave();
+}
+
+static void decl_initializer_nested(init_params *p, CType *type, unsigned long c, int flags) {
 	int len, n, no_oblock;
 	int size1, align1;
 	Sym *s, *f;

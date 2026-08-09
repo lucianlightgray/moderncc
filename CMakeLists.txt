@@ -6760,9 +6760,21 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/run_dgerror.cmake")
             set_tests_properties(diag.dg-error.${_n} PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
+        if(CMAKE_HOST_UNIX)
+            add_test(NAME diag.parse-depth
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/parse-depth.sh"
+                        "${_mcc_exe}" "${_bdir}" "${CMAKE_BINARY_DIR}/parse-depth-work")
+            set_tests_properties(diag.parse-depth PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 TIMEOUT 900)
+        else()
+            mcc_skip_test(diag.parse-depth
+                "cell lowers its own stack rlimit; needs a POSIX shell")
+        endif()
     else()
         mcc_skip_test(diag.dg-error
             "negative diagnostic tier runs mcc directly; not registered under an emulator")
+        mcc_skip_test(diag.parse-depth
+            "cell runs mcc directly; not registered under an emulator")
     endif()
 
     if(MCC_TARGETOS STREQUAL "WIN32")
