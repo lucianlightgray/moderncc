@@ -2015,7 +2015,7 @@ static void suite_deref(void) {
 	}
 }
 
-#define FMT_NSLOT 4
+#define FMT_NSLOT (MCC_FMT_MAXARG + 1)
 #define FMT_ARENA_WORD 4096
 #define FMT_LANE_WORD 32
 #define FMT_LANE_BYTE (FMT_LANE_WORD * 4)
@@ -2166,6 +2166,7 @@ static const MccFmtItem *fmt_conv(const MccFmtProg *p, int k) {
 
 static long g_fmt_cmp;
 static long g_fmt_bytes;
+static int g_fmt_report;
 
 static void fmt_case(const char *f) {
 	MccFmtProg p;
@@ -2197,6 +2198,9 @@ static void fmt_case(const char *f) {
 	}
 	CHECK(code.n <= p.cost,
 				"the compile-time cost model bounds what the emitter lays down");
+	if (g_fmt_report)
+		fprintf(stderr, "  FMT cost \"%s\" predicted=%d emitted=%d\n", f, p.cost,
+						code.n);
 	ref = (uint32_t *)malloc((size_t)n * FMT_LANE_WORD * sizeof *ref);
 	in = (int32_t *)calloc((size_t)n * FMT_NSLOT * MCC_GPU_IN_SLOTS, sizeof *in);
 	ob = (int32_t *)calloc((size_t)n * MCC_GPU_OUT_SLOTS, sizeof *ob);
@@ -2265,6 +2269,45 @@ static void fmt_case(const char *f) {
 	free(code.p);
 }
 
+static int fmt_hexv(int c) {
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	if (c >= 'a' && c <= 'f')
+		return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F')
+		return c - 'A' + 10;
+	return -1;
+}
+
+static int fmt_verdict_mode(void) {
+	static char line[1 + 2 * MCC_FMT_MAXLIT * 8];
+	static char buf[sizeof line / 2];
+	while (fgets(line, (int)sizeof line, stdin)) {
+		MccFmtProg p;
+		size_t n = strlen(line), i, k = 0;
+		int ok;
+		while (n && (line[n - 1] == '\n' || line[n - 1] == '\r'))
+			line[--n] = 0;
+		if (n & 1) {
+			fprintf(stderr, "slicerun --fmt-verdict: odd hex run\n");
+			return 2;
+		}
+		for (i = 0; i < n; i += 2) {
+			int hi = fmt_hexv((unsigned char)line[i]);
+			int lo = fmt_hexv((unsigned char)line[i + 1]);
+			if (hi < 0 || lo < 0) {
+				fprintf(stderr, "slicerun --fmt-verdict: bad hex\n");
+				return 2;
+			}
+			buf[k++] = (char)(hi * 16 + lo);
+		}
+		buf[k] = 0;
+		ok = mcc_fmt_compile(buf, &p);
+		printf("%d %d %d %d\n", ok ? MCC_FMT_OK : p.refuse, p.cost, p.n, p.narg);
+	}
+	return fflush(stdout) ? 2 : 0;
+}
+
 static void fmt_refusals(void) {
 	static const struct {
 		const char *f;
@@ -2279,17 +2322,24 @@ static void fmt_refusals(void) {
 					 {"%08s", MCC_FMT_R_SPEC},     {"%+s", MCC_FMT_R_SPEC},
 					 {"%*s", MCC_FMT_R_SPEC},      {"%40s", MCC_FMT_R_SPEC},
 					 {"%s%s%s", MCC_FMT_R_ROOM},   {"%s %s %d", MCC_FMT_R_ROOM},
-					 {"%d %d %d", MCC_FMT_R_ROOM},
+					 {"%lld %lld %lld", MCC_FMT_R_ROOM},
+					 {"%lu.%lu.%lu", MCC_FMT_R_ROOM},
 					 {"%s%s-%s", MCC_FMT_R_ROOM},
 					 {"%s %2d %d", MCC_FMT_R_SPEC},
 					 {"arity %s n=%u nc=%u op=%d", MCC_FMT_R_ROOM},
 					 {"'%s' has internal linkage but is referenced in an inline "
 						"function with external linkage",
 						MCC_FMT_R_ROOM}};
-	static const char *const A[] = {"%s",     "%-3s",  "a %s b", "%.*s",
-																	"%6s",    "%-8s",  "%.5s",   "%s:%s",
-																	"%s=%d",  "%.*s/%s", "%s (%d)",
-																	"%.*s%s"};
+	static const char *const A[] = {
+			"%s",      "%-3s",   "a %s b",   "%.*s",
+			"%6s",     "%-8s",   "%.5s",     "%s:%s",
+			"%s=%d",   "%.*s/%s", "%s (%d)", "%.*s%s",
+			"%d %d %d", "%d %d %d %d", "root width %u != src %u",
+			"reflect size %zu != src %u", "%smcc-me-%u-%u.c",
+			"%smcc-tmp-%u-%u.tmp",
+			"\tfirst=%d\tend=%d\tblen=%d\tnlen=%d",
+			"int v(int x){volatile int a=0;int k;for(k=0;k<600;k++)a++;(void)x;"
+			"return %d;}"};
 	MccFmtProg p;
 	int i;
 	for (i = 0; i < (int)(sizeof R / sizeof *R); i++) {
@@ -2306,7 +2356,7 @@ static void fmt_refusals(void) {
 		if (!ok)
 			fprintf(stderr, "  FMT accept \"%s\" refused: %s\n", A[i],
 							mcc_fmt_why(p.refuse));
-		CHECK(ok == 1, "every %s spelling the corpus uses now compiles");
+		CHECK(ok == 1, "every spelling the corpus now gets accepted still compiles");
 		CHECK(p.cost <= MCC_FMT_MAXCOST,
 					"and its straight-line cost is inside the module budget");
 	}
@@ -2326,6 +2376,23 @@ static void fmt_refusals(void) {
 	CHECK(mcc_fmt_compile("%-8s", &p) == 1 && p.it[0].left == 1 &&
 					p.it[0].width == 8,
 				"and left-justified width is carried on the item, not approximated");
+	{
+		MccFmtProg q;
+		int narrow, wide;
+		CHECK(mcc_fmt_compile("%d", &p) == 1 && mcc_fmt_compile("%lld", &q) == 1,
+					"the narrow and the wide decimal both compile");
+		narrow = p.cost;
+		wide = q.cost;
+		CHECK(narrow * 2 < wide,
+					"a 32-bit decimal costs less than half a 64-bit one, because it "
+					"needs ten native divisions instead of twenty software ones");
+		CHECK(mcc_fmt_compile("%x", &p) == 1 && mcc_fmt_compile("%llx", &q) == 1 &&
+						p.cost * 2 < q.cost,
+					"and the same asymmetry holds for hex");
+		CHECK(mcc_fmt_compile("%u", &p) == 1 && p.it[0].wide == 0 &&
+						mcc_fmt_compile("%zu", &q) == 1 && q.it[0].wide == 1,
+					"the length modifier, not the conversion, is what picks the path");
+	}
 }
 
 static void fmt_directed(void) {
@@ -2351,7 +2418,12 @@ static void fmt_directed(void) {
 			{"[%d]", 7, 64, "[7]", 3},
 			{"%d", 12345, 4, "123", 5},
 			{"%d", 12345, 1, "", 5},
-			{"%d", 12345, 0, NULL, 5}};
+			{"%d", 12345, 0, NULL, 5},
+			{"%u", 1000000000, 64, "1000000000", 10},
+			{"%d", 999999999, 64, "999999999", 9},
+			{"%x", (int64_t)0xffffffffu, 64, "ffffffff", 8},
+			{"%u", 0, 64, "0", 1},
+			{"%x", 0, 64, "0", 1}};
 	uint32_t w[FMT_LANE_WORD];
 	MccFmtProg p;
 	int i, j;
@@ -2387,6 +2459,36 @@ static void fmt_directed(void) {
 			}
 		}
 		CHECK(bad == 0, "and writes exactly the hand-written bytes plus a NUL");
+	}
+	{
+		static const struct {
+			const char *f;
+			int64_t a;
+			const char *want;
+		} N[] = {{"%u", (int64_t)0x1234567800000005ll, "5"},
+						 {"%d", (int64_t)0x00000001ffffffffll, "-1"},
+						 {"%x", (int64_t)0xabcdef00deadbeefll, "deadbeef"},
+						 {"%llu", (int64_t)0x0000000100000000ll, "4294967296"}};
+		for (i = 0; i < (int)(sizeof N / sizeof *N); i++) {
+			int64_t a = N[i].a;
+			int bad = 0;
+			if (!mcc_fmt_compile(N[i].f, &p)) {
+				CHECK(0, "the narrowing formats compile");
+				continue;
+			}
+			for (j = 0; j < FMT_LANE_WORD; j++)
+				w[j] = 0xCCCCCCCCu;
+			mcc_fmt_exec(&p, w, FMT_LANE_BYTE, FMT_DST, 64, &a, 1, NULL);
+			for (j = 0; j <= (int)strlen(N[i].want); j++)
+				if (((w[j >> 2] >> ((j & 3) * 8)) & 0xFFu) !=
+						(unsigned char)N[i].want[j])
+					bad++;
+			if (bad)
+				fprintf(stderr, "  FMT narrow \"%s\" want=\"%s\"\n", N[i].f, N[i].want);
+			CHECK(bad == 0,
+						"a conversion with no length modifier reads the low 32 bits and "
+						"nothing else, which is what the emitter's narrow path does");
+		}
 	}
 }
 
@@ -2496,7 +2598,14 @@ static void suite_fmt(void) {
 			"%llx",   "%zu",    "%c",      "%02x",   "%08x", "%016llx",
 			"[%d]",   "%%",     "n=%d.",   "%u/%x",  "%s",   "[%s]",
 			"%6s",    "%-8s",   "%.*s",    "%.5s",   "%s=%d", "%s:%s",
-			"%.*s/%s"};
+			"%.*s/%s",
+			"root width %u != src %u",
+			"reflect size %zu != src %u",
+			"%smcc-me-%u-%u.c",
+			"%smcc-tmp-%u-%u.tmp",
+			"\tfirst=%d\tend=%d\tblen=%d\tnlen=%d",
+			"int v(int x){volatile int a=0;int k;for(k=0;k<600;k++)a++;(void)x;"
+			"return %d;}"};
 	int i;
 	fmt_refusals();
 	fmt_directed();
@@ -3817,7 +3926,14 @@ int main(int argc, char **argv) {
 	const char *only = NULL;
 	const char *arenas = NULL;
 	long limit = 0;
-	int quiet = 0, i;
+	int quiet = 0, i, fmt_verdict = 0;
+
+	for (i = 1; i < argc; i++) {
+		if (!strcmp(argv[i], "--fmt-verdict"))
+			fmt_verdict = 1;
+	}
+	if (fmt_verdict)
+		return fmt_verdict_mode();
 
 	for (i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--arenas") && i + 1 < argc)
@@ -3834,6 +3950,8 @@ int main(int argc, char **argv) {
 			g_mutate = 1;
 		else if (!strcmp(argv[i], "--census"))
 			g_census = 1;
+		else if (!strcmp(argv[i], "--fmt-cost-report"))
+			g_fmt_report = 1;
 		else if (!strcmp(argv[i], "--no-inline"))
 			g_inline = 0;
 		else if (!strcmp(argv[i], "--cost"))

@@ -3631,7 +3631,8 @@ if(MCC_BUILD_TESTS)
             endforeach()
             foreach(_sg gpu wide64 ops mem bytes deref fmt)
                 add_test(NAME "slice/${_sg}" COMMAND slicerun "${_sg}"
-                         $<$<BOOL:${MCC_GPU_REQUIRED}>:--require-device>)
+                         $<$<BOOL:${MCC_GPU_REQUIRED}>:--require-device>
+                         $<$<STREQUAL:${_sg},fmt>:--fmt-cost-report>)
                 set_tests_properties("slice/${_sg}" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             endforeach()
@@ -3720,6 +3721,26 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_census.cmake")
             set_tests_properties("slice/census" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
+            find_program(MCC_PYTHON3 NAMES python3 python)
+            if(MCC_PYTHON3)
+                add_test(NAME "fmt/census-oracle"
+                    COMMAND "${MCC_PYTHON3}"
+                            "${CMAKE_CURRENT_SOURCE_DIR}/tools/fmt-census.py"
+                            --selfcheck
+                            "--oracle=$<TARGET_FILE:slicerun>"
+                            "--root=${CMAKE_CURRENT_SOURCE_DIR}")
+                set_tests_properties("fmt/census-oracle" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT)
+                add_test(NAME "fmt/census-oracle-known-positive"
+                    COMMAND "${CMAKE_COMMAND}"
+                            -DPY=${MCC_PYTHON3}
+                            -DCENSUS=${CMAKE_CURRENT_SOURCE_DIR}/tools/fmt-census.py
+                            -DORACLE=$<TARGET_FILE:slicerun>
+                            -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fmt_census_mutate.cmake")
+                set_tests_properties("fmt/census-oracle-known-positive" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT)
+            endif()
         endif()
 
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
