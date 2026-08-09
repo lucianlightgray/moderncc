@@ -1026,6 +1026,10 @@ than relocating and naming on a guess. `MCC_ARENA_DUMP_ICAP` pins the ceiling so
 path is reachable; `slice/arena-intern-cap` drives it and also asserts the default capacity
 does *not* fail over the same source.
 
+`tests/fmt/census-bank.json` was re-taken: `fprintf` 381 → 383 and `mccast.c` 145 → 147,
+the two sites in `ast_adump_ifail` — one to stderr and one into the dump. Nothing else in
+the format census moved.
+
 ### The census had to move with it
 
 `refuse_walk` asks `ast_eval_slice_kind_ok` first, so the refusal census tracked the
