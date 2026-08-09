@@ -19,12 +19,19 @@ them freely:
 | --- | --- | ---: | --- |
 | `tests/exec`, 60 files @ `-O1` | non-empty `AST_BasicBlock` | **947** | +19 (`arr[i]`), 319 eligible, the 143-destination census, 987 stores |
 | the compiler's own 15 sources | `AST_Invoke`-blocked block | **16,537** | +168 (`snprintf`), 734 libc ceiling, 12,901 (D4b) |
+| the compiler's own 18 sources, `-O1`, 2026-08-08 | `AST_Invoke`-blocked block | **25,700** | +246 (`snprintf`), reproducible from `tools/fmt-census.py --arenas=` |
 
 `docs/DEVICE-LIBC.md` is explicit that `tests/exec` must not be used for the libc phase —
 `printf` alone is 35% of its Invoke nodes, its libc ceiling is 3 blocks against the
 compiler's 734, **and the two disagree by 47×**. So **+168 and +19 are not comparable**,
 and any ranking that puts them in one column is wrong. Fixing this is a prerequisite for
 trusting rows 2 and 3 below, not an afterthought.
+
+The third row is the same measurement as the second, taken again from the tree by a
+committed script rather than from prose. **Row 2's numbers do not reproduce and row 3's
+do**; the shares agree to within 6%, so no ranking changes, but every future claim on this
+corpus should cite the script. Rows 3 and 4 below have not been re-derived and are still
+prose-only.
 
 ### 1. `*p` and pointer `++`/`--` — one item, not two
 
@@ -50,16 +57,119 @@ only pointers that originate in binding 2 and refuse the rest. Seeding frame slo
 synthetic values and calling them offsets is not a third option — both executors would
 agree while nothing runnable lowers, which moves `frame-compared` without moving work.
 
-### 2. `snprintf` via the `(tag, value)` array — +168 blocks, compiler corpus
+### 2. `snprintf` — the `%` engine has landed; the rest is gated on item 1
 
-Ranked #2 by marginal gain on the corpus that matters. The varargs objection is retired
-(a variadic call in the arena is children with static types; `va_list` and the register
-save area are host codegen below the AST) and 64-bit division already exists and is
-verified at full width by `slice/wide64`. **The `%` engine is the only remaining work**,
-and it is self-contained and testable on its own. Note the split that makes this worth
-more than its 0.7% Invoke share suggests: `printf`'s return is discarded at 80/80 compiler
-and 452/452 `tests/exec` sites, so the formatting half is device work and only byte
-emission is a host post.
+Rewritten 2026-08-08 after measuring the corpus. The previous version of this row was
+wrong in four ways and every correction is now reproducible from a committed script,
+`tools/fmt-census.py`. Run it with no argument for the site census over `src/*.c`, or
+with `--arenas=<MCC_ARENA_DUMP output>` for the block census.
+
+**The `(tag, value)` array is not needed and was not built.** 162 of 172 `snprintf` call
+sites in `src/*.c` carry a compile-time-constant format, so the format is parsed at *emit*
+time and the emitter lays down straight-line code: constant byte runs stored directly, one
+inlined conversion per specifier. That removes three problems at once — no `%` scanner on
+device, no format string to place in binding 2, and no tag array, because the emitter
+already knows each argument's `type_t`. If the 10 non-literal sites are ever wanted the
+shape is `{u32 tag; u32 pad; u64 value}`, 16 bytes, tag = the AST `type_t`; do not invent
+a second type enum.
+
+**`%s` gates this item on item 1, and that is most of it.** `%s` is 57.8% of `snprintf`
+specifiers and appears at 109 of the 162 literal-format sites (67.3%). A `%s` argument is
+a pointer, so `docs/DEVICE-LIBC.md` is right to put `snprintf` in bucket (b). Until the
+pointer-value question above is answered, `%s` and `%p` are refused with a distinct
+refusal code (`MCC_FMT_R_PTR`) that says so.
+
+**"The `%` engine is the only remaining work" was false**, and it is now the *done* part.
+Landed on `wt/fmt`:
+
+| piece | where |
+| --- | --- |
+| format compiler, literal → program of runs and conversions | `mcc_fmt_compile`, `src/mccfmt.h` |
+| CPU reference, hand-written over region bytes | `mcc_fmt_exec` / `mcc_fmt_int` / `mcc_fmt_putb` |
+| device emitter, straight-line, no loop, no branch | `spv_fmt_emit` / `spv_fmt_int` / `spv_fmt_putb` |
+| differential over every destination byte and the length | `suite_fmt`, `tools/slicerun.c`; cells `slice/fmt`, `slice/fmt-known-positive` |
+
+Tranche 1 covers `%d %i %u %x %X %c` with the `l`/`ll`/`z`/`t`/`j`/`h`/`hh` spellings,
+literal runs, `%%`, and zero- or space-padded minimum width on the unsigned and hex
+conversions — which is `%016llx`, `%08x` and `%02x`, the only padded forms in the corpus
+worth having. That is **52 of the 162 literal-format sites, 32.1%**. Explicitly out:
+
+- `%s`, `%p` — blocked on item 1, 109 sites. The `%s` arm slots into `spv_fmt_emit`'s
+  item loop without a rewrite once a pointer has a meaning.
+- `%f` `%g` `%e` `%a` — 14 float specifiers in the whole `printf` family across `src/*.c`,
+  and exactly **one** of them at an `snprintf` site (`%.17g`, 0.4% of the 230 `snprintf`
+  specifiers). **Out of scope permanently, not deferred.** Device float formatting is
+  disproportionate risk, and matching glibc's rounding would make the differential
+  unstable.
+- `vsnprintf` — 0 of its 4 sites has a literal format.
+- flags `-` `+` space `#`, any precision, `*` width, and width on a *signed* conversion —
+  the sign/pad interleaving rule (`%05d` of -42 is `-0042`, `%5d` is `  -42`) is real work
+  for 7 corpus occurrences that are not already `%s`-blocked: `%02d` 3, `%-10d` 2,
+  `%2d` 1, `%.17g` 1. Flags/width/precision appear at 17 of 162 sites in total; the
+  supported half is `%016llx` 2 and `%02x` 1.
+
+**The return-value claim was transferred from the wrong function.** `printf` discards its
+return at 80/80 sites; **`snprintf` does not** — the byte count is consumed at 26 of 162
+literal-format sites (16.0%): `p += snprintf(...)` accumulations and
+`if (snprintf(...) >= size)` truncation checks. Return plumbing is not free and is
+implemented: `spv_fmt_emit` returns the untruncated length, snprintf semantics, and
+`suite_fmt` diffs it at four buffer sizes including 0 and 1.
+
+**+168 does not reproduce.** No script in the tree derived it and the derivation was prose
+only. Re-measured over `src/*.c` at `-O1` with `tools/fmt-census.py --arenas=`, 7,314
+arenas, 50,045 non-empty `AST_BasicBlock`s:
+
+| | count |
+| --- | ---: |
+| Invoke-blocked blocks | **25,700** |
+| unblocked by `snprintf` alone | **246** (0.96%) |
+| unblocked by the `snprintf`/`vsnprintf`/`sprintf` family | **261** |
+| rank of `snprintf` among single-callee unblocks | **8th**, behind `_mcc_error` 1254, `fprintf` 554, `memcpy` 366, `_mcc_warning` 327, `ast_next_sib` 283, `mcc_pedantic` 264, `expect` 249 |
+
+The board's 16,537/+168 and this 25,700/+246 are the same measurement over a tree three
+days apart and 18 sources rather than 15; the *share* barely moves (1.02% → 0.96%), so the
+ranking survives, but **quote the reproducible number, not the prose one**. Scaling by the
+tranche-1 site share gives roughly **79 blocks** for what shipped — that is an estimate,
+because the format string bytes live in rodata and never enter the arena, so the dump
+cannot classify a block by its format.
+
+**What is left, and it is not the `%` engine.** The formatter is verified as a region
+primitive; wiring it to an `AST_Invoke` in statement position needs three things that do
+not exist:
+
+1. `ast_slc_callee_sym` and `ast_slc_invclass` are `static` in `src/mccast.c` and depend on
+   `Sym` and `ast_inline_pool`, neither visible from `src/mccslice.h` (which `slicerun`
+   compiles without a symbol table). They need a hook in the manner of
+   `ast_eval_slice_obj_fn`, not a second callee resolver and not a duplicate.
+2. The destination. `snprintf`'s *first* argument is a pointer even when the format has no
+   `%s`, so a local `char buf[N]` destination is either item 1 again or a byte-addressed
+   frame — and the frame is dense 8-byte slots capped at `MCC_SLICE_MAXSLOT` = 16, so a
+   64-byte buffer does not fit it at all. `suite_fmt` sidesteps this by addressing a
+   lane-private slice of binding 2 directly, which is what a real emitter would also have
+   to do.
+3. The host drain. No ring header, producer index or consumer loop exists; the place for
+   one is beside the `mcc_gpu_rw_back` copy-back inside `mcc_gpu_dispatch_locked`, under
+   the GPU lock, after the fence. `docs/PLAN.md` J3a′ requires a side-effect watermark
+   before any stdout post, so tranche 1 writes to binding 2 and the host reads it; nothing
+   is emitted to stdout from the device path.
+
+No MSL twin was written and none is needed: binding 2 does not exist in the Metal backend
+(`mcc_gpu_mem_backend` returns 0 there and `mcc_gpu_rw_supported()` is 0), so
+`src/mccfmt.h`'s device half is compiled only on the SPIR-V arm and the Metal path
+declines the whole feature rather than diverging from it.
+
+One emitter property worth keeping: every byte store in `spv_fmt_putb` is unconditional.
+A byte the run must not write becomes a read-modify-write with a zero keep-mask at a
+clamped offset, which rewrites the word it just read. A branch instead would put
+`spv_region_addr`'s definedness update inside a conditional block and force an `OpPhi` per
+byte. It also means the destination must be a region only one lane writes —
+`spv_fmt_putb` fails the module for a `shared` region, by the same test
+`spv_store_region` uses.
+
+The mutation operator for this cell perturbs a **destination byte**, not the return value.
+Verified: `slice/fmt` is green over 1,024 lanes and 131,072 compared destination bytes on
+an RTX 5070 Ti, `--mutate` is red on all 16 formats, and an injected one-bit error in the
+hex nibble mask is caught at interior bytes rather than only at byte 0.
 
 ### 3. D4b — internal calls on the device — 12,901 blocks, 78.01%
 
