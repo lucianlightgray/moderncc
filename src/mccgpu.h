@@ -132,10 +132,14 @@ static int mcc_gpu_vwt(AstArena *a, AstLocal n) {
 	case AST_Load:
 	case AST_Convert:
 		return ast_type_t(a, n);
-	case AST_Unary:
+	case AST_Unary: {
+		int32_t mo;
+		if (ast_eval_slice_member_off(a, n, &mo))
+			return ast_type_t(a, n);
 		if (ast_op(a, n) == '!')
 			return VT_INT;
 		return ast_eval_slice_promote(ast_eval_slice_wtype(a, n));
+	}
 	case AST_Binary: {
 		int bop = ast_op(a, n);
 		if (bop == TOK_LAND || bop == TOK_LOR || mcc_gpu_op_is_cmp(bop))
@@ -834,7 +838,20 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		AstLocal c = ast_first_child(a, n);
 		MslV v;
 		int is64, uns;
-		if (c == AST_NONE || !t)
+		int32_t mo;
+		if (c == AST_NONE)
+			return 0;
+		if (ast_eval_slice_member_off(a, n, &mo)) {
+			int mt = ast_type_t(a, n);
+			int k;
+			if (!msl_env_index(off, nenv, mo, &k))
+				return 0;
+			*out = msl_fit_v(m, msl_load_live_v(m, base, k, ast_eval_slice_is64(mt),
+																					(mt & VT_UNSIGNED) != 0),
+											 mt);
+			return 1;
+		}
+		if (!t)
 			return 0;
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
@@ -2891,8 +2908,19 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		int t = ast_eval_slice_promote(ast_eval_slice_wtype(a, n));
 		AstLocal c = ast_first_child(a, n);
 		int ft;
+		int32_t mo;
 		if (c == AST_NONE)
 			return 0;
+		if (ast_eval_slice_member_off(a, n, &mo)) {
+			int mt = ast_type_t(a, n);
+			int k;
+			if (!spv_env_index(off, nenv, mo, &k))
+				return 0;
+			*out = spv_fit_v(m, spv_load_live_v(m, base, k, ast_eval_slice_is64(mt),
+																					(mt & VT_UNSIGNED) != 0),
+											 mt);
+			return 1;
+		}
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
 		ft = ast_eval_slice_ftype(a, c);

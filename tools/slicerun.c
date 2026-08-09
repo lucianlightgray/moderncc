@@ -3398,8 +3398,9 @@ static AstArena *rebuild_arena(const RawNode *raw, int n, AstLocal *root_out,
 		 * ids after N7, not addresses, so they are stable identities -- but they
 		 * are still installed into pointer-shaped slots, which is only safe
 		 * because nothing on this path dereferences them (verified: zero uses of
-		 * ast_sym/ast_type_ref/ast_fbits/ast_type_bp/ast_type_bs in
-		 * ast_eval_slice.h and mccgpu.h). A consumer that needs the real Sym
+		 * ast_sym/ast_type_ref/ast_fbits in ast_eval_slice.h and mccgpu.h; bp/bs
+		 * are read there, and are plain integers rather than pointers). A
+		 * consumer that needs the real Sym
 		 * would need a side table, not this. */
 		ast_set_type(a, id, raw[i].type_t, (uint64_t)raw[i].type_ref);
 		if (raw[i].bp || raw[i].bs)
@@ -3584,6 +3585,20 @@ static int cref_expr(FILE *f, AstArena *a, AstLocal n, const int32_t *off,
 	case AST_Unary: {
 		int uop = ast_op(a, n);
 		const char *s = uop == '~' ? "~" : uop == '!' ? "!" : "-";
+		int32_t mo;
+		if (ast_eval_slice_member_off(a, n, &mo)) {
+			int j;
+			ct = cref_ctype(ast_type_t(a, n));
+			if (!ct)
+				return 0;
+			for (j = 0; j < nlive; j++)
+				if (off[j] == mo)
+					break;
+			if (j == nlive)
+				return 0;
+			fprintf(f, "((%s)e%d)", ct, j);
+			return 1;
+		}
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
 		fprintf(f, "(%s(", s);
@@ -3783,6 +3798,258 @@ static int refuse_type(int t) {
 	return REF_OK;
 }
 
+enum {
+	POS_ROOT = 0,
+	POS_LOAD_ADDR,
+	POS_ADDR_CHAIN,
+	POS_STMT,
+	POS_STORE_DEST,
+	POS_STORE_VAL,
+	POS_VALUE,
+	POS_CALL_ARG,
+	POS_RETURN,
+	POS_CTRL,
+	POS_OTHER,
+	POS_N
+};
+
+static const char *refuse_posname(int p) {
+	switch (p) {
+	case POS_ROOT: return "root";
+	case POS_LOAD_ADDR: return "address-of-a-load";
+	case POS_ADDR_CHAIN: return "base-of-an-address";
+	case POS_STMT: return "statement-in-a-block";
+	case POS_STORE_DEST: return "store-destination";
+	case POS_STORE_VAL: return "store-value";
+	case POS_VALUE: return "value-operand";
+	case POS_CALL_ARG: return "call-operand";
+	case POS_RETURN: return "return-value";
+	case POS_CTRL: return "control-flow-operand";
+	default: return "other";
+	}
+}
+
+static long g_ref_pos[REF_N][POS_N];
+static long g_ref_pos_acc[POS_N];
+static long g_ref_pos_all[POS_N];
+
+static int refuse_pos(AstArena *a, AstLocal parent, int idx) {
+	if (parent == AST_NONE)
+		return POS_ROOT;
+	switch (ast_kind(a, parent)) {
+	case AST_Load:
+		return idx == 0 ? POS_LOAD_ADDR : POS_OTHER;
+	case AST_BasicBlock:
+		return POS_STMT;
+	case AST_Store:
+	case AST_StoreVal:
+		return idx == 0 ? POS_STORE_DEST : POS_STORE_VAL;
+	case AST_Unary: {
+		int op = ast_op(a, parent);
+		if (op == AST_EVAL_OP_ADDR || op == AST_EVAL_OP_MEMBER || op == 0x40002)
+			return POS_ADDR_CHAIN;
+		return POS_VALUE;
+	}
+	case AST_Binary:
+	case AST_Convert:
+		return POS_VALUE;
+	case AST_If:
+		return (ast_op(a, parent) == 5 || ast_op(a, parent) == 7) ? POS_VALUE
+																															: POS_CTRL;
+	case AST_Invoke:
+		return POS_CALL_ARG;
+	case AST_Return:
+		return POS_RETURN;
+	default:
+		return POS_OTHER;
+	}
+}
+
+static const char *refuse_kindname(int k) {
+	switch (k) {
+	case AST_Literal: return "Literal";
+	case AST_Ref: return "Ref";
+	case AST_Load: return "Load";
+	case AST_Convert: return "Convert";
+	case AST_Unary: return "Unary";
+	case AST_Binary: return "Binary";
+	case AST_If: return "If";
+	case AST_Invoke: return "Invoke";
+	case AST_Store: return "Store";
+	case AST_StoreVal: return "StoreVal";
+	case AST_BasicBlock: return "BasicBlock";
+	case AST_Jump: return "Jump";
+	case AST_Return: return "Return";
+	case AST_Poison: return "Poison";
+	default: return "?";
+	}
+}
+
+static const char *refuse_opname(int op) {
+	switch (op) {
+	case '-': return "neg";
+	case TOK_NEG: return "neg-tok";
+	case '~': return "bnot";
+	case '!': return "lnot";
+	case TOK_INC: return "inc";
+	case TOK_DEC: return "dec";
+	case AST_EVAL_OP_ADDR: return "addr";
+	case AST_EVAL_OP_MEMBER: return "member";
+	case 0x40002: return "member-arrow";
+	case 0x40003: return "imag";
+	case 0x40004: return "vla";
+	case 0x40005: return "vla-restore";
+	case 0x40006: return "mulhu";
+	case 0x40007: return "mulhs";
+	case 0x40008: return "fabs";
+	case 0x40009: return "sqrt";
+	case 0x4000A: return "opassign";
+	case 0x4000B: return "floor";
+	case 0x4000C: return "ceil";
+	case 0x4000D: return "trunc";
+	case 0x4000E: return "copysign";
+	case 0x4000F: return "round";
+	case 0x40010: return "fmin";
+	case 0x40011: return "fmax";
+	case 0x40012: return "rint";
+	case 0x40013: return "nearbyint";
+	case 0x40014: return "fma";
+	case 0x40015: return "fneg";
+	case 0x40016: return "bswap";
+	case 0x40017: return "signbit";
+	case 0x40018: return "ffs";
+	case 0x40019: return "bitscan";
+	case 0x4001a: return "asmgen";
+	case 0x4001b: return "asm";
+	case 0x4001c: return "axadd";
+	case 0x4001d: return "axchg";
+	case 0x4001e: return "acmpxchg";
+	case 0x4001f: return "bitb";
+	case 0x40020: return "acasrmw";
+	case 0x40021: return "ggoto";
+	case 0x40022: return "cplxbuild";
+	case 0x40023: return "vaarg";
+	case 0x40024: return "vastart";
+	case 0x40025: return "asmops";
+	case 0x50001: return "member:bitfield";
+	case 0x50002: return "member:untyped";
+	case 0x50003: return "member:array-type";
+	case 0x50004: return "member:bad-type";
+	case 0x50005: return "member:float-type";
+	case 0x50006: return "member:nonint-type";
+	case 0x50007: return "member:base-not-a-frame-slot";
+	default: return NULL;
+	}
+}
+
+#define REF_DET_CAP 4096
+
+static long g_det_cause[REF_DET_CAP];
+static long g_det_key[REF_DET_CAP];
+static long g_det_n[REF_DET_CAP];
+static int g_det_used;
+
+static void refuse_det(int cause, long key) {
+	int i;
+	for (i = 0; i < g_det_used; i++)
+		if (g_det_cause[i] == cause && g_det_key[i] == key) {
+			g_det_n[i]++;
+			return;
+		}
+	if (g_det_used >= REF_DET_CAP)
+		return;
+	g_det_cause[g_det_used] = cause;
+	g_det_key[g_det_used] = key;
+	g_det_n[g_det_used] = 1;
+	g_det_used++;
+}
+
+static int g_ref_pos_cur;
+
+#define REF_DET_ARITY(k, nc, op) \
+	(((long)(k) << 40) | ((long)(nc) << 32) | (long)(op))
+#define REF_DET_WT(k, sub, op) \
+	(((long)(k) << 40) | ((long)(sub) << 32) | (long)(op))
+
+static int refuse_wt_sub(AstArena *a, AstLocal n) {
+	int t;
+	if (n == AST_NONE)
+		return 5;
+	t = ast_type_t(a, n);
+	if (!t)
+		return 0;
+	if (ast_bad_type(t))
+		return 2;
+	if (is_float(t))
+		return 1;
+	if (!ast_eval_slice_intt(t))
+		return 3;
+	return 4;
+}
+
+static const char *refuse_wt_subname(int sub) {
+	switch (sub) {
+	case 0: return "untyped";
+	case 1: return "float";
+	case 2: return "bad-type";
+	case 3: return "nonint";
+	case 4: return "int-but-refused";
+	default: return "no-child";
+	}
+}
+
+static void refuse_det_wt(int cause, AstArena *a, AstLocal c) {
+	int k = c == AST_NONE ? 0 : ast_kind(a, c);
+	int sub = refuse_wt_sub(a, c);
+	int op = (c != AST_NONE && (k == AST_Unary || k == AST_Binary))
+							 ? ast_op(a, c)
+							 : 0;
+	refuse_det(cause, REF_DET_WT(k, sub, op));
+}
+
+static void refuse_det_label(int cause, long key, char *buf, size_t cap) {
+	if (cause == REF_OP_UNARY || cause == REF_OP_TERNARY) {
+		int op = (int)(key & 0xFFFFFFFF);
+		int pos = (int)(key >> 40);
+		const char *s = refuse_opname(op);
+		char nm[64];
+		if (s)
+			snprintf(nm, sizeof nm, "%s (0x%x)", s, op);
+		else if (op >= 32 && op < 127)
+			snprintf(nm, sizeof nm, "'%c' (0x%x)", (char)op, op);
+		else
+			snprintf(nm, sizeof nm, "op 0x%x", op);
+		snprintf(buf, cap, "%-22s in %s", nm, refuse_posname(pos));
+		return;
+	}
+	if (cause == REF_ARITY) {
+		int k = (int)(key >> 40);
+		int nc = (int)((key >> 32) & 0xFF);
+		int op = (int)(key & 0xFFFFFFFF);
+		const char *s = op ? refuse_opname(op) : NULL;
+		if (op)
+			snprintf(buf, cap, "%s nchild=%d op=%s(0x%x)", refuse_kindname(k), nc,
+							 s ? s : "?", op);
+		else
+			snprintf(buf, cap, "%s nchild=%d", refuse_kindname(k), nc);
+		return;
+	}
+	if (cause == REF_NOWTYPE) {
+		int k = (int)(key >> 40);
+		int sub = (int)((key >> 32) & 0xFF);
+		int op = (int)(key & 0xFFFFFFFF);
+		const char *s = op ? refuse_opname(op) : NULL;
+		if (op)
+			snprintf(buf, cap, "child=%s/%s op=%s(0x%x)", refuse_kindname(k),
+							 refuse_wt_subname(sub), s ? s : "?", op);
+		else
+			snprintf(buf, cap, "child=%s/%s", refuse_kindname(k),
+							 refuse_wt_subname(sub));
+		return;
+	}
+	snprintf(buf, cap, "key=%ld", key);
+}
+
 static int refuse_local(AstArena *a, AstLocal n) {
 	int t = ast_type_t(a, n), r;
 	switch (ast_kind(a, n)) {
@@ -3810,8 +4077,10 @@ static int refuse_local(AstArena *a, AstLocal n) {
 		return REF_LOAD;
 	case AST_Convert: {
 		AstLocal c = ast_first_child(a, n);
-		if (c == AST_NONE)
+		if (c == AST_NONE) {
+			refuse_det(REF_ARITY, REF_DET_ARITY(AST_Convert, 0, 0));
 			return REF_ARITY;
+		}
 		if (is_float(t) || is_float(ast_type_t(a, c)))
 			return REF_TYPE_FLOAT;
 		if (ast_bad_type(t))
@@ -3822,12 +4091,37 @@ static int refuse_local(AstArena *a, AstLocal n) {
 	}
 	case AST_Unary: {
 		int uop = ast_op(a, n);
-		if (ast_first_child(a, n) == AST_NONE)
+		if (ast_first_child(a, n) == AST_NONE) {
+			refuse_det(REF_ARITY, REF_DET_ARITY(AST_Unary, 0, ast_op(a, n)));
 			return REF_ARITY;
-		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
+		}
+		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!') {
+			int key = uop;
+			if (uop == AST_EVAL_OP_MEMBER) {
+				int32_t mo;
+				int mt = ast_type_t(a, n);
+				if (ast_type_bp(a, n) || ast_type_bs(a, n))
+					key = 0x50001;
+				else if (!mt)
+					key = 0x50002;
+				else if (mt & VT_ARRAY)
+					key = 0x50003;
+				else if (ast_bad_type(mt))
+					key = 0x50004;
+				else if (is_float(mt))
+					key = 0x50005;
+				else if (!ast_eval_slice_intt(mt))
+					key = 0x50006;
+				else if (!ast_eval_slice_frame_off(a, n, &mo, 0))
+					key = 0x50007;
+			}
+			refuse_det(REF_OP_UNARY, ((long)g_ref_pos_cur << 40) | (long)key);
 			return REF_OP_UNARY;
-		if (!ast_eval_slice_wtype(a, n))
+		}
+		if (!ast_eval_slice_wtype(a, n)) {
+			refuse_det_wt(REF_NOWTYPE, a, ast_first_child(a, n));
 			return REF_NOWTYPE;
+		}
 		return REF_OK;
 	}
 	case AST_Binary: {
@@ -3837,21 +4131,32 @@ static int refuse_local(AstArena *a, AstLocal n) {
 			return REF_OK;
 		if (!refuse_binop_known(bop))
 			return REF_OP_BINARY;
-		if (ast_nchild(a, n) != 2)
+		if (ast_nchild(a, n) != 2) {
+			refuse_det(REF_ARITY,
+								 REF_DET_ARITY(AST_Binary, ast_nchild(a, n), ast_op(a, n)));
 			return REF_ARITY;
+		}
 		x = ast_child(a, n, 0);
 		y = ast_child(a, n, 1);
 		if (is_float(ast_type_t(a, x)) || is_float(ast_type_t(a, y)))
 			return REF_TYPE_FLOAT;
-		if (!ast_eval_slice_wtype(a, x))
+		if (!ast_eval_slice_wtype(a, x)) {
+			refuse_det_wt(REF_NOWTYPE, a, x);
 			return REF_NOWTYPE;
+		}
 		return REF_OK;
 	}
 	case AST_If:
-		if (ast_nchild(a, n) != 3)
+		if (ast_nchild(a, n) != 3) {
+			refuse_det(REF_ARITY,
+								 REF_DET_ARITY(AST_If, ast_nchild(a, n), ast_op(a, n)));
 			return REF_ARITY;
-		if (ast_op(a, n) != 5 && ast_op(a, n) != 7)
+		}
+		if (ast_op(a, n) != 5 && ast_op(a, n) != 7) {
+			refuse_det(REF_OP_TERNARY,
+								 ((long)g_ref_pos_cur << 40) | (long)ast_op(a, n));
 			return REF_OP_TERNARY;
+		}
 		return REF_OK;
 	case AST_Invoke:
 		return REF_KIND_INVOKE;
@@ -3879,20 +4184,24 @@ static long g_ref_total_nodes, g_ref_total_bodies, g_ref_total_bodynodes;
 static long g_ref_accepted_nodes, g_ref_blocks, g_ref_blocks_acc;
 static unsigned char g_ref_hit[REF_N];
 
-static void refuse_walk(AstArena *a, AstLocal n) {
+static void refuse_walk(AstArena *a, AstLocal n, AstLocal parent, int idx) {
 	AstLocal c;
-	int r;
+	int r, k = 0;
 	if (n == AST_NONE)
 		return;
 	g_ref_total_nodes++;
+	g_ref_pos_cur = refuse_pos(a, parent, idx);
+	g_ref_pos_all[g_ref_pos_cur]++;
 	if (ast_eval_slice_kind_ok(a, n, 0)) {
 		g_ref_accepted_nodes++;
+		g_ref_pos_acc[g_ref_pos_cur]++;
 	} else {
 		r = refuse_local(a, n);
 		if (r == REF_OK)
 			r = REF_CHILD;
 		g_ref_nodes[r]++;
 		g_ref_hit[r] = 1;
+		g_ref_pos[r][g_ref_pos_cur]++;
 	}
 	if (ast_kind(a, n) == AST_BasicBlock) {
 		MccSliceFrame f;
@@ -3901,14 +4210,14 @@ static void refuse_walk(AstArena *a, AstLocal n) {
 			g_ref_blocks_acc++;
 	}
 	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		refuse_walk(a, c);
+		refuse_walk(a, c, n, k++);
 }
 
 static void refuse_body(AstArena *a, AstLocal root) {
 	int i;
 	long nn = mcc_slice_nodes(a, root);
 	memset(g_ref_hit, 0, sizeof g_ref_hit);
-	refuse_walk(a, root);
+	refuse_walk(a, root, AST_NONE, 0);
 	g_ref_total_bodies++;
 	g_ref_total_bodynodes += nn;
 	for (i = 0; i < REF_N; i++)
@@ -3938,6 +4247,41 @@ static void refuse_report(void) {
 					 g_ref_total_bodynodes
 							 ? 100.0 * g_ref_bodynodes[i] / g_ref_total_bodynodes
 							 : 0.0);
+	}
+	for (i = 0; i < POS_N; i++)
+		if (g_ref_pos_all[i])
+			printf("refusal-slot: %-24s nodes=%ld accepted=%ld accept-rate=%.2f%%\n",
+						 refuse_posname(i), g_ref_pos_all[i], g_ref_pos_acc[i],
+						 100.0 * g_ref_pos_acc[i] / g_ref_pos_all[i]);
+	for (i = 1; i < REF_N; i++) {
+		int j;
+		for (j = 0; j < POS_N; j++)
+			if (g_ref_pos[i][j])
+				printf("refusal-position: %-16s %-24s nodes=%ld node-share=%.2f%%\n",
+							 refuse_name(i), refuse_posname(j), g_ref_pos[i][j],
+							 g_ref_total_nodes
+									 ? 100.0 * g_ref_pos[i][j] / g_ref_total_nodes
+									 : 0.0);
+		for (;;) {
+			long best = -1;
+			int bi = -1;
+			for (j = 0; j < g_det_used; j++)
+				if (g_det_cause[j] == i && g_det_n[j] > best) {
+					best = g_det_n[j];
+					bi = j;
+				}
+			if (bi < 0)
+				break;
+			{
+				char lab[160];
+				refuse_det_label(i, g_det_key[bi], lab, sizeof lab);
+				printf("refusal-detail: %-16s %-44s nodes=%ld node-share=%.2f%%\n",
+							 refuse_name(i), lab, g_det_n[bi],
+							 g_ref_total_nodes ? 100.0 * g_det_n[bi] / g_ref_total_nodes
+																 : 0.0);
+			}
+			g_det_cause[bi] = -1;
+		}
 	}
 }
 

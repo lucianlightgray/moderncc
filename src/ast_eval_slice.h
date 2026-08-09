@@ -804,6 +804,20 @@ static int ast_eval_slice_frame_off(AstArena *a, AstLocal n, int32_t *off,
 	return 0;
 }
 
+static int ast_eval_slice_member_off(AstArena *a, AstLocal n, int32_t *off) {
+	int t;
+	if (n == AST_NONE || ast_kind(a, n) != AST_Unary ||
+			ast_op(a, n) != AST_EVAL_OP_MEMBER)
+		return 0;
+	if (ast_type_bp(a, n) || ast_type_bs(a, n))
+		return 0;
+	t = ast_type_t(a, n);
+	if (!t || ast_bad_type(t) || (t & VT_ARRAY) || is_float(t) ||
+			!ast_eval_slice_intt(t) || !ast_eval_slice_tsize(t))
+		return 0;
+	return ast_eval_slice_frame_off(a, n, off, 0);
+}
+
 /* Sticky, and cleared by the caller that cares. An out-of-range index does not
  * stop evaluation -- the device cannot stop either -- so the fact that one
  * happened has to travel beside the value rather than instead of it. */
@@ -943,8 +957,16 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 		int t = ast_eval_slice_promote(ast_eval_slice_wtype(a, n));
 		AstLocal c = ast_first_child(a, n);
 		int ft;
+		int32_t mo;
 		if (c == AST_NONE)
 			return 0;
+		if (ast_eval_slice_member_off(a, n, &mo)) {
+			int64_t mv;
+			if (!ast_eval_slice_env(off, val, nenv, mo, &mv))
+				return 0;
+			*out = ast_eval_slice_fit(mv, ast_type_t(a, n));
+			return 1;
+		}
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
 		ft = ast_eval_slice_plain_int(ast_type_t(a, c))
@@ -1247,8 +1269,11 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 	case AST_Unary: {
 		int uop = ast_op(a, n), t = ast_eval_slice_wtype(a, n);
 		AstLocal c = ast_first_child(a, n);
+		int32_t mo;
 		if (c == AST_NONE)
 			return 0;
+		if (ast_eval_slice_member_off(a, n, &mo))
+			return 1;
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
 		if (ast_eval_slice_ftype(a, c)) {
@@ -1350,6 +1375,15 @@ static int ast_eval_slice_livein(AstArena *a, AstLocal n, int32_t *offs, int *cn
 				return 0;
 			offs[(*cnt)++] = o;
 		}
+		return 1;
+	}
+	if (ast_kind(a, n) == AST_Unary && ast_eval_slice_member_off(a, n, &o)) {
+		for (i = 0; i < *cnt; i++)
+			if (offs[i] == o)
+				return 1;
+		if (*cnt >= max)
+			return 0;
+		offs[(*cnt)++] = o;
 		return 1;
 	}
 	if (ast_kind(a, n) == AST_Load) {
