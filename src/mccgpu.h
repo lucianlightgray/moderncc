@@ -123,49 +123,39 @@ static int mcc_gpu_op_is_cmp(int op) {
 	}
 }
 
-static void mcc_gpu_vw(AstArena *a, AstLocal n, int *w64, int *uns) {
-	int t = 0;
-	*w64 = 0;
-	*uns = 0;
+static int mcc_gpu_vwt(AstArena *a, AstLocal n) {
 	if (n == AST_NONE)
-		return;
+		return VT_INT;
 	switch (ast_kind(a, n)) {
 	case AST_Literal:
 	case AST_Ref:
 	case AST_Load:
 	case AST_Convert:
-		t = ast_type_t(a, n);
-		break;
+		return ast_type_t(a, n);
 	case AST_Unary:
 		if (ast_op(a, n) == '!')
-			return;
-		t = ast_eval_slice_wtype(a, n);
-		break;
+			return VT_INT;
+		return ast_eval_slice_promote(ast_eval_slice_wtype(a, n));
 	case AST_Binary: {
 		int bop = ast_op(a, n);
 		if (bop == TOK_LAND || bop == TOK_LOR || mcc_gpu_op_is_cmp(bop))
-			return;
+			return VT_INT;
 		if (ast_nchild(a, n) != 2)
-			return;
-		t = ast_eval_slice_wtype(a, ast_child(a, n, 0));
-		break;
+			return VT_INT;
+		return ast_eval_slice_binop_wtype(a, n);
 	}
-	case AST_If: {
-		int w1, u1, w2, u2;
+	case AST_If:
 		if (ast_nchild(a, n) != 3)
-			return;
-		mcc_gpu_vw(a, ast_child(a, n, 1), &w1, &u1);
-		mcc_gpu_vw(a, ast_child(a, n, 2), &w2, &u2);
-		if (w1 || w2 || u1 != u2) {
-			*w64 = 1;
-			return;
-		}
-		*uns = u1;
-		return;
-	}
+			return VT_INT;
+		return ast_eval_slice_uac(mcc_gpu_vwt(a, ast_child(a, n, 1)),
+															mcc_gpu_vwt(a, ast_child(a, n, 2)));
 	default:
-		return;
+		return VT_INT;
 	}
+}
+
+static void mcc_gpu_vw(AstArena *a, AstLocal n, int *w64, int *uns) {
+	int t = mcc_gpu_vwt(a, n);
 	*w64 = ast_eval_slice_is64(t);
 	*uns = (t & VT_UNSIGNED) != 0;
 }
@@ -840,7 +830,7 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	}
 	case AST_Unary: {
 		int uop = ast_op(a, n);
-		int t = ast_eval_slice_wtype(a, n);
+		int t = ast_eval_slice_promote(ast_eval_slice_wtype(a, n));
 		AstLocal c = ast_first_child(a, n);
 		MslV v;
 		int is64, uns;
@@ -887,7 +877,7 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	case AST_Binary: {
 		int bop = ast_op(a, n);
 		AstLocal x, y;
-		int xt, uns, is_cmp, code, is64;
+		int xt, wt, uns, is_cmp, code, is64;
 		MslV lv, rv;
 		if (bop == TOK_LAND || bop == TOK_LOR)
 			return msl_logical(m, a, n, bop == TOK_LAND, off, nenv, base, out, 0);
@@ -896,14 +886,15 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		x = ast_child(a, n, 0);
 		y = ast_child(a, n, 1);
 		xt = ast_eval_slice_wtype(a, x);
-		if (!xt || is_float(ast_type_t(a, x)) || is_float(ast_type_t(a, y)))
+		wt = ast_eval_slice_binop_wtype(a, n);
+		if (!xt || !wt || is_float(ast_type_t(a, x)) || is_float(ast_type_t(a, y)))
 			return 0;
 		if (!msl_expr(m, a, x, off, nenv, base, &lv))
 			return 0;
 		if (!msl_expr(m, a, y, off, nenv, base, &rv))
 			return 0;
-		uns = (xt & VT_UNSIGNED) != 0;
-		is64 = ast_eval_slice_is64(xt);
+		uns = (wt & VT_UNSIGNED) != 0;
+		is64 = ast_eval_slice_is64(wt);
 		code = msl_binop_code(bop, uns, &is_cmp);
 		if (is_cmp < 0)
 			return 0;
@@ -2330,6 +2321,8 @@ static SpvV spv_load_region(SpvMod *m, const SpvRegion *r, uint32_t byteoff,
 							 spv_uintc(m, 3));
 	lo = spv_emit3(m, SpvOpShiftRightLogical, m->id_int, lo,
 								 spv_emit2(m, SpvOpBitcast, m->id_int, sh));
+	if ((t & VT_BTYPE) == VT_BOOL)
+		lo = spv_emit3(m, SpvOpBitwiseAnd, m->id_int, lo, spv_const(m, 0xFF));
 	return spv_mk(spv_fit(m, lo, t), 0, uns);
 }
 
@@ -2895,7 +2888,7 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	}
 	case AST_Unary: {
 		int uop = ast_op(a, n);
-		int t = ast_eval_slice_wtype(a, n);
+		int t = ast_eval_slice_promote(ast_eval_slice_wtype(a, n));
 		AstLocal c = ast_first_child(a, n);
 		int ft;
 		if (c == AST_NONE)
@@ -2987,7 +2980,8 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			return 1;
 		}
 		int xt = ast_eval_slice_wtype(a, x);
-		if (!xt || is_float(ast_type_t(a, x)) || is_float(ast_type_t(a, y)))
+		int wt = ast_eval_slice_binop_wtype(a, n);
+		if (!xt || !wt || is_float(ast_type_t(a, x)) || is_float(ast_type_t(a, y)))
 			return 0;
 		if (ast_eval_slice_ftype(a, y))
 			return 0;
@@ -2996,8 +2990,8 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			return 0;
 		if (!spv_expr(m, a, y, off, nenv, base, &rv))
 			return 0;
-		int uns = (xt & VT_UNSIGNED) != 0;
-		int is64 = ast_eval_slice_is64(xt);
+		int uns = (wt & VT_UNSIGNED) != 0;
+		int is64 = ast_eval_slice_is64(wt);
 		int is_cmp;
 		int code = spv_binop_code(bop, uns, &is_cmp);
 		if (is_cmp < 0)

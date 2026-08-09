@@ -3499,7 +3499,6 @@ static FILE *g_cref_exp;
 static long g_cref_emitted, g_cref_toobig, g_cref_unspellable, g_cref_seen;
 static long g_cref_alldead, g_cref_tuples, g_cref_mixed;
 static int g_cref_mutate;
-static int g_cref_all;
 
 #define CREF_MAXNODES 512
 
@@ -3942,10 +3941,10 @@ static void refuse_report(void) {
 	}
 }
 
-static int cref_uac_clean(AstArena *a, AstLocal n) {
+static int cref_mixed_operands(AstArena *a, AstLocal n) {
 	AstLocal c;
 	if (n == AST_NONE)
-		return 1;
+		return 0;
 	if (ast_kind(a, n) == AST_Binary && ast_op(a, n) != TOK_LAND &&
 			ast_op(a, n) != TOK_LOR && ast_nchild(a, n) == 2) {
 		int xt = ast_eval_slice_wtype(a, ast_child(a, n, 0));
@@ -3953,23 +3952,23 @@ static int cref_uac_clean(AstArena *a, AstLocal n) {
 		int op = ast_op(a, n);
 		if (op != TOK_SHL && op != TOK_SHR && op != TOK_SAR) {
 			if (!xt || !yt)
-				return 0;
+				return 1;
 			if (ast_eval_slice_is64(xt) != ast_eval_slice_is64(yt) ||
 					((xt & VT_UNSIGNED) != 0) != ((yt & VT_UNSIGNED) != 0))
-				return 0;
+				return 1;
 		}
 	}
 	if ((ast_kind(a, n) == AST_Binary || ast_kind(a, n) == AST_Unary)) {
-		int t = ast_eval_slice_wtype(a, n);
+		int t = ast_eval_slice_wtype(a, ast_first_child(a, n));
 		int bt = t & VT_BTYPE;
 		if ((t & VT_UNSIGNED) &&
 				(bt == VT_BYTE || bt == VT_SHORT || bt == VT_BOOL))
-			return 0;
+			return 1;
 	}
 	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (!cref_uac_clean(a, c))
-			return 0;
-	return 1;
+		if (cref_mixed_operands(a, c))
+			return 1;
+	return 0;
 }
 
 static void cref_emit(AstArena *a, AstLocal root, MccSliceWork *w,
@@ -3992,11 +3991,8 @@ static void cref_emit(AstArena *a, AstLocal root, MccSliceWork *w,
 		g_cref_alldead++;
 		return;
 	}
-	if (!cref_uac_clean(a, root)) {
+	if (cref_mixed_operands(a, root))
 		g_cref_mixed++;
-		if (!g_cref_all)
-			return;
-	}
 	snprintf(g_cref_tag, sizeof g_cref_tag, "%s%06ld", g_cref_pfx, id);
 
 	snprintf(path, sizeof path, "%s/s%06ld.c", g_cref_dir, id);
@@ -5079,8 +5075,6 @@ int main(int argc, char **argv) {
 			g_cref_dir = argv[++i];
 		else if (!strcmp(argv[i], "--cref-prefix") && i + 1 < argc)
 			g_cref_pfx = argv[++i];
-		else if (!strcmp(argv[i], "--cref-all"))
-			g_cref_all = 1;
 		else if (!strcmp(argv[i], "--refusals"))
 			g_refusals = 1;
 		else if (!strcmp(argv[i], "--census"))

@@ -6,6 +6,155 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## The usual arithmetic conversions, applied — and the quarantine that hid them, deleted, 2026-08-09 (`wt/uacfix`)
+
+### The emitted-code question, first, because everything else is downstream of it
+
+**No AOT compile can commit a wrong `ast_eval_slice` value. `mcc x.c -o x.o` at `-O0`
+through `-O12` never reaches the fold.** The reachability is exhaustive, not sampled:
+
+- `ast_eval_slice` mutates an AST in exactly **one** place — `ast_jit_fold_consts`, which
+  replaces the folded node with an `AST_Literal` and re-checks nothing. Every other consumer
+  (`ast_slice_equiv`, `ast_eval_slice_ladder`, `ast_eval_slice_sound`, `mccslice.h`'s CPU
+  runner, `tools/spvgate.c`) uses it as an **oracle**, where a wrong answer buys a wrong
+  *verdict* — a missed report or a spurious one — and never a rewritten node.
+- `ast_jit_fold_consts` has **three** callers, all in `src/mccjit_embed.c`, all inside
+  `mccjit_recompile_common`: one behind `ast_slice_enabled() && MCC_AST_SLICE_SPLICE`, one
+  behind `MCC_JIT_SELFTEST_FOLD_CONSTS` in an `MCC_DEV` build, and one selftest that only
+  counts. The first two **do** reach machine code, unverified, via `ast_reemit_extern`.
+- `mccjit_recompile_common` is reachable only from the `mcc_jit_recompile*` entry points,
+  which are the embedded JIT's recompile API. **The driver never calls them**, and
+  `mccgen_compile` never calls `ast_jit_fold_consts`. The AOT constant folder is a different
+  one (`ast_constparam_fold` + `ast_sccp_run`), which does not touch `ast_eval_slice`.
+- `ast_jit_const_fn`'s only caller is `mccjit_consteval_one`, a selftest.
+
+So the exposure is real but confined to the runtime JIT recompiler under an opt-in switch,
+and the previously banked claim that "`ast_eval_slice` has no codegen caller" is **wrong** —
+corrected in place in the `wt/gpuconform` section below. Measured, not only traced: **1,850
+objects over 450 distinct gcc-torture translation units — the first 250 at
+`-O0`/`-O1`/`-O2`/`-O3` and all 450 at `-O9`/`-O12` — are byte-identical before and after
+this branch, 0 differing, 0 unstable**
+(each TU compiled twice with the same binary first, so `__TIME__` churn would have shown up
+as `unstable` rather than as a diff). The reproducer and four more foldable shapes give the
+same answers as gcc at every level, including with `MCC_AST_SLICE_SPLICE=1` set and under
+`mcc -run`.
+
+### The fix
+
+`ast_eval_slice_promote` and `ast_eval_slice_uac` in `src/ast_eval_slice.h` implement C's
+integer promotions and usual arithmetic conversions. On every target this evaluator accepts,
+only `int` and `long long` survive promotion, so the rank comparison collapses to a width
+comparison: the wider type wins outright (a 64-bit signed type represents every 32-bit
+unsigned value) and at equal width the unsigned one wins. The 81-entry type-pair table was
+checked against gcc's own `_Generic` answer for `a + b`; it agrees on all 81.
+
+A shift is deliberately **not** a conversion pair — its result type is the promoted *left*
+operand — so `ast_eval_slice_binop_wtype` special-cases `TOK_SHL`/`TOK_SHR`/`TOK_SAR`.
+Widening a shift to its count's type would silently legalise counts C leaves undefined, which
+`ast_eval_binop` currently refuses to fold.
+
+**Two type questions, not one — and conflating them is what the first fix got wrong.** The
+type an operator *computes in* and the type of the value it *yields* are the same for
+arithmetic and different for every comparison and both logical operators, which always yield
+`int`. The first pass made `ast_eval_slice_wtype` return the operand common type for a
+comparison as well, and the oracle caught it immediately: `0 - (a > b)` with `unsigned a, b`
+answered `4294967295` where C answers `-1`, because the `-` took `unsigned int` from the
+comparison instead of `int`. `ast_eval_slice_int_result_op` now separates them —
+`ast_eval_slice_wtype` answers `int` for the twelve int-yielding operators, while
+`ast_eval_slice_binop_wtype`, which the evaluator and both emitters use to pick the
+comparison's own width and signedness, still answers the operand common type. The old
+child-0 rule got this shape right **by accident**, because child 0 of that `-` is an `int`
+literal; nothing in the tree was checking it.
+
+**All three implementations changed together**, which is the whole point: fixing only the CPU
+would have turned a silent agreement into a red device cell.
+
+| site | file | what it now takes |
+| --- | --- | --- |
+| `ast_eval_slice_rec`'s `AST_Binary` | `src/ast_eval_slice.h` | `ast_eval_slice_binop_wtype` over the pair, not child 0 |
+| `ast_eval_slice_wtype`'s `AST_Binary` / `AST_If` / `AST_Unary` | `src/ast_eval_slice.h` | the pair; the conditional's common type; the promoted operand |
+| `spv_expr`'s `AST_Binary` / `AST_Unary` | `src/mccgpu.h` | same |
+| `msl_expr`'s `AST_Binary` / `AST_Unary` | `src/mccgpu.h` | same |
+| `mcc_gpu_vw` (now `mcc_gpu_vwt`) | `src/mccgpu.h` | the same rule for the value's own width/signedness, including the `AST_If` phi |
+
+### The `_Bool` frame return was **not** the same root cause
+
+It was filed as sharing the root and it does not. `gcc.c-torture/execute/20230510-1.c`
+reported `ret cpu=9/1 gpu=1/1`, and applying the conversions changed nothing. The real cause
+is a sub-word `_Bool` load: `spv_load_region` normalises through `spv_fit`, and
+`ast_eval_slice_bytes_load` did not, so a synthesized `_Bool` byte holding 9 read as 9 on the
+CPU and 1 on the device. **The device was also wrong**: `spv_fit`'s `VT_BOOL` arm tested the
+whole shifted word, so a `_Bool` at byte 0 of a word holding `0x00000100` would have read as
+1. Both sides now mask to the byte and then test — `(uint8_t)lo != 0` on the CPU, an explicit
+`OpBitwiseAnd 0xFF` before `spv_fit` on the device. MSL has no region layer, so it has no
+twin to fix.
+
+### The quarantine is deleted, which is what makes the cells assert anything
+
+`slicerun --cref` refused to emit any slice containing a mixed operand pair, and `--cref-all`
+lifted the refusal. That refusal is why `main` is green with the defect in it *even with the
+corpora present*: on gcc-torture it withheld **14,350 of 39,658 slices (36.2%)** from the
+oracle, and on Regression/C 2,581 of 5,380. `cref_uac_clean` is gone, `--cref-all` is gone
+from both `tools/slicerun.c` and
+`tools/gpuconform.py`, and `--cref` now emits every accepted slice. The population is still
+*counted* and still reported as `cref-mixed-operand-types`; it is now adjudicated instead of
+skipped.
+
+`tests/gpu/cref/uac.c` is the checked-in regression — mixed signedness, mixed width, mixed
+both, two narrow-unsigned promotions, a ternary with arms of different signedness, and a
+shift whose count is wider than its value. It rides the existing `slice/cref-oracle` cell,
+so it runs wherever python3, gcc and clang are present and needs no vendor corpus and no new
+registration.
+
+### Before and after, on the four corpora
+
+This machine, corpora symlinked into `vendor/`, `cmake-cross` built before `cmake-debug` was
+configured. The **before** column is the unfixed binaries with the quarantine lifted
+(`--cref-all`), so the two columns adjudicate the *same population* — the fragment counts
+agree to within one on every corpus, which is the check that they do.
+
+| corpus | fragments adjudicated | **before**: batches wrong | **after**: batches wrong | tuples |
+| --- | ---: | ---: | ---: | ---: |
+| gcc-torture execute | 40,471 | **245 of 270** | **0** of 270 | 314,696 |
+| llvm-test-suite Regression/C | 6,603 | **32 of 45** | **0** of 45 | 41,564 |
+| llvm-test-suite UnitTests | 6,545 | **4 of 44** | **0** of 44 | 5,043 |
+| compiler-rt builtins Unit | 547 | **1 of 4** | **0** of 4 | 2,096 |
+
+Every "before" figure is the same under each of the four adjudicators independently — gcc
+`-O0`, gcc `-O2`, clang `-O0`, clang `-O2` — and so is every "after" figure.
+
+And the cells themselves, which is what `main` was green on:
+
+| cell | before | after |
+| --- | --- | --- |
+| `slice/cref-oracle-gcc-c-torture-execute` | **FAIL** — 1 frame mismatch, and 14,350 of 39,658 slices withheld from the oracle | **PASS** — 0 frame, 0 device, nothing withheld |
+| `slice/cref-oracle-llvm-test-suite-regression-c` | pass, with 2,581 of 5,380 slices withheld | **PASS**, nothing withheld |
+| `slice/cref-oracle-llvm-test-suite-unittests` | **FAIL** — 1 device-mismatch program, and 3,007 tuples under the 4,000 floor | **PASS** — 0 device, 5,043 tuples |
+| `slice/cref-oracle-compiler-rt-builtins-unit` | pass, with 164 of 574 slices withheld | **PASS**, nothing withheld |
+
+### Verification
+
+`cmake-cross` built before `cmake-debug` was configured. Full `ctest -j8`: **9455 cells, 0
+failures** (1,308 skipped, the usual capability gates). `-L flagsweep` **193/193**,
+`-L stratsweep` **116/116**, `-L census` **7/7** with nothing skipped.
+`python3 tools/must-run.py --build cmake-debug` **78 rows**,
+`python3 tools/selfhost-smoke.py cmake-debug` OK, `python3 tools/docref-lint.py` OK,
+`python3 tools/regstub-lint.py` OK (53 chains). `tests/optfire/*` untouched. No cell was
+added or removed — `tests/gpu/cref/uac.c` joins an existing corpus directory.
+
+**Residue: none.** But one was found and fixed on the way — the comparison-result-type
+conflation above, which the first pass introduced and which showed up as exactly 2 bad
+batches per corpus, all of them `got -1 want 4294967295`. It is worth stating plainly that
+the oracle caught a bug the fix itself created, three hours after it caught the one the fix
+was for.
+
+**A measurement trap, recorded because it cost a re-run.** `gpuconform.py` reuses its
+`--work` directory and `MCC_ARENA_DUMP` **appends**, so a second run over a work tree left by
+a first one reports exactly doubled `bodies`, `slices` and `frame accepted`. The first
+post-fix pass looked like a 2× widening of the funnel and was nothing of the kind. Delete
+`<build>/cref-*` between runs, or every absolute count is a multiple of how many times you
+have run it.
+
 ## Metal parity — the drop is reversed by decision, and this is the spec, 2026-08-09 (`wt/metalspec`)
 
 > **This section overturns a refusal that is still live in this file.** `#### Metal —
@@ -838,9 +987,18 @@ emitters (`spv_expr`, `msl_expr`), so the CPU-versus-device differential that ev
 because they are two readings of one model. Real shape it came from: `i < LEN(array)` where
 `LEN` is `sizeof(a)/sizeof(a[0])`, i.e. the ordinary signed/unsigned comparison.
 
-This is not a miscompile of shipped code — `ast_eval_slice` has no codegen caller — but it
+This is not a miscompile of shipped code — ~~`ast_eval_slice` has no codegen caller~~ — but it
 is a wrong answer from the thing the device path exists to substitute for, and it would
 become a miscompile the moment a frame kernel were dispatched for real.
+
+**Correction, `wt/uacfix`: "no codegen caller" is wrong, and the corrected statement is
+narrower rather than more alarming.** `ast_eval_slice` *does* have one caller that rewrites
+a live AST — `ast_jit_fold_consts`, which replaces a folded node with a `AST_Literal` and
+never re-checks it. That caller is reachable only from the embedded runtime JIT's
+recompiler, behind two gates that no AOT compile passes, so the conclusion "not a
+miscompile of `mcc x.c -o x.o` at any `-O`" survives. The full trace is in the `wt/uacfix`
+section at the head of this file; it is stated there rather than here because the sentence
+above was believed and repeated.
 
 Blast radius, measured with `--cref-all`: **13,981 of 39,209** gcc-torture slices (35.7%),
 **2,471 of 6,603** llvm-test-suite Regression/C slices, **265 of 6,545** UnitTests slices
@@ -887,9 +1045,13 @@ transcribed instead, output narrow included — a half-transcription would charg
 evaluator for a conversion the emitter skipped, which is how the first draft produced 38
 false positives.
 
-`--cref` emits only slices where every binary operator already has both operands at one
-working type, so the cell asserts a real guarantee rather than banking one number over a
-mixed population; `--cref-all` lifts that and is how the defect above is measured.
+`--cref` emitted only slices where every binary operator already had both operands at one
+working type, so the cell asserted a real guarantee rather than banking one number over a
+mixed population; `--cref-all` lifted that and was how the defect above was measured.
+*(Superseded on `wt/uacfix`: the conversions are implemented, the quarantine is deleted and
+`--cref-all` with it, and `--cref` now emits every accepted slice. The excluded population is
+still counted and still reported as `cref-mixed-operand-types`, but it is now adjudicated
+rather than skipped. See the `wt/uacfix` section at the head of this file.)*
 `--mutate` extends to the emitted C, so one flag arms the known-positive on both arms.
 
 `slicerun --refusals` attributes every refused node to the first guard that rejects it. The
@@ -967,12 +1129,13 @@ which the cause appears at all:
 
 ### Open, and ranked
 
-1. **Fix the working-type derivation.** `ast_eval_slice_rec`'s `AST_Binary` arm should apply
-   the usual arithmetic conversions across the operand pair instead of taking child 0's type.
-   Both emitters need the same change or the differential flips from silent agreement to
-   loud disagreement. The `--cref-all` arm is the regression test and is already wired.
-2. **The `_Bool` frame return divergence.** One case, reproducible, and it is a genuine
-   CPU-versus-device disagreement of the kind `slice/real` asserts cannot happen.
+1. ~~**Fix the working-type derivation.**~~ **Closed on `wt/uacfix`** — see the section at
+   the head of this file. All three implementations changed together, the quarantine that
+   hid the family from the oracle is deleted, and the regression is the checked-in
+   `tests/gpu/cref/uac.c`.
+2. ~~**The `_Bool` frame return divergence.**~~ **Closed on `wt/uacfix`**, and it was *not*
+   the same root cause: a sub-word `_Bool` load normalised on the device and did not on the
+   CPU, and the device's normalisation tested the whole shifted word rather than the byte.
 3. **`is_float` is not the binding constraint it is filed as.** Measured on real
    application-shaped C it is **0.48% of refused nodes and 1.88% of bodies**; the structural
    refusals — globals, invokes, statement boundaries — are twenty times larger. The `double`

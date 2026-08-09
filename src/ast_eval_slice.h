@@ -314,6 +314,55 @@ static int ast_eval_slice_is64(int t) {
 	return bt == VT_LLONG || (MCC_PTR_SIZE == 8 && bt == VT_PTR);
 }
 
+static int ast_eval_slice_promote(int t) {
+	int bt = t & VT_BTYPE;
+	if (!t)
+		return 0;
+	if (bt == VT_BOOL || bt == VT_BYTE || bt == VT_SHORT)
+		return VT_INT;
+	return t;
+}
+
+static int ast_eval_slice_uac(int xt, int yt) {
+	int x = ast_eval_slice_promote(xt), y = ast_eval_slice_promote(yt);
+	int xw, yw, xu, yu;
+	if (!x || !y)
+		return x ? x : y;
+	xw = ast_eval_slice_is64(x);
+	yw = ast_eval_slice_is64(y);
+	if (xw != yw)
+		return xw ? x : y;
+	xu = (x & VT_UNSIGNED) != 0;
+	yu = (y & VT_UNSIGNED) != 0;
+	if (xu == yu)
+		return x;
+	return xu ? x : y;
+}
+
+static int ast_eval_slice_shift_op(int op) {
+	return op == TOK_SHL || op == TOK_SHR || op == TOK_SAR;
+}
+
+static int ast_eval_slice_int_result_op(int op) {
+	switch (op) {
+	case TOK_EQ:
+	case TOK_NE:
+	case TOK_LT:
+	case TOK_GE:
+	case TOK_LE:
+	case TOK_GT:
+	case TOK_ULT:
+	case TOK_UGE:
+	case TOK_ULE:
+	case TOK_UGT:
+	case TOK_LAND:
+	case TOK_LOR:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 static int64_t ast_eval_slice_fit(int64_t x, int t) {
 	int bt = t & VT_BTYPE;
 	int uns = (t & VT_UNSIGNED) != 0;
@@ -426,6 +475,8 @@ static int64_t ast_eval_slice_bytes_load(const uint32_t *w, int32_t nbyte,
 										 ((uint64_t)w[(off >> 2) + 1] << 32));
 	sh = (off & 3) * 8;
 	lo = w[off >> 2] >> sh;
+	if ((t & VT_BTYPE) == VT_BOOL)
+		return (uint8_t)lo != 0;
 	if (width == 1)
 		return uns ? (int64_t)(uint8_t)lo : (int64_t)(int8_t)lo;
 	if (width == 2)
@@ -584,6 +635,16 @@ static int ast_eval_slice_idx_ok(const AstEvalSliceIdx *o, int64_t v,
 	return u < (uint32_t)o->nelem;
 }
 
+static int ast_eval_slice_binop_wtype(AstArena *a, AstLocal n) {
+	int xt;
+	if (ast_nchild(a, n) < 1)
+		return 0;
+	xt = ast_eval_slice_wtype(a, ast_child(a, n, 0));
+	if (ast_nchild(a, n) < 2 || ast_eval_slice_shift_op(ast_op(a, n)))
+		return ast_eval_slice_promote(xt);
+	return ast_eval_slice_uac(xt, ast_eval_slice_wtype(a, ast_child(a, n, 1)));
+}
+
 static int ast_eval_slice_wtype(AstArena *a, AstLocal n) {
 	int t;
 	if (n == AST_NONE)
@@ -593,14 +654,9 @@ static int ast_eval_slice_wtype(AstArena *a, AstLocal n) {
 		return t;
 	switch (ast_kind(a, n)) {
 	case AST_Binary:
-		if (ast_nchild(a, n) >= 1) {
-			int wt = ast_eval_slice_wtype(a, ast_child(a, n, 0));
-			if (wt)
-				return wt;
-			if (ast_nchild(a, n) >= 2)
-				return ast_eval_slice_wtype(a, ast_child(a, n, 1));
-		}
-		return 0;
+		if (ast_eval_slice_int_result_op(ast_op(a, n)))
+			return VT_INT;
+		return ast_eval_slice_binop_wtype(a, n);
 	case AST_Load: {
 		/* An indexed element is the one node whose own type word is 0 in every
 		 * real arena, so its width has to come from the object it indexes. */
@@ -614,12 +670,14 @@ static int ast_eval_slice_wtype(AstArena *a, AstLocal n) {
 		return 0;
 	}
 	case AST_Unary:
-		return ast_eval_slice_wtype(a, ast_first_child(a, n));
+		if (ast_op(a, n) == '!')
+			return VT_INT;
+		return ast_eval_slice_promote(
+				ast_eval_slice_wtype(a, ast_first_child(a, n)));
 	case AST_If:
-		if (ast_nchild(a, n) == 3) {
-			int wt = ast_eval_slice_wtype(a, ast_child(a, n, 1));
-			return wt ? wt : ast_eval_slice_wtype(a, ast_child(a, n, 2));
-		}
+		if (ast_nchild(a, n) == 3)
+			return ast_eval_slice_uac(ast_eval_slice_wtype(a, ast_child(a, n, 1)),
+																ast_eval_slice_wtype(a, ast_child(a, n, 2)));
 		return 0;
 	default:
 		return 0;
@@ -882,7 +940,7 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 	}
 	case AST_Unary: {
 		int uop = ast_op(a, n);
-		int t = ast_eval_slice_wtype(a, n);
+		int t = ast_eval_slice_promote(ast_eval_slice_wtype(a, n));
 		AstLocal c = ast_first_child(a, n);
 		int ft;
 		if (c == AST_NONE)
@@ -964,12 +1022,15 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 				return 0;
 		}
 		int64_t lv, rv;
+		int wt = ast_eval_slice_binop_wtype(a, n);
+		if (!wt)
+			return 0;
 		if (!ast_eval_slice_rec(a, x, off, val, nenv, &lv))
 			return 0;
 		if (!ast_eval_slice_rec(a, y, off, val, nenv, &rv))
 			return 0;
-		int is64 = ast_eval_slice_is64(xt);
-		int uns = (xt & VT_UNSIGNED) != 0;
+		int is64 = ast_eval_slice_is64(wt);
+		int uns = (wt & VT_UNSIGNED) != 0;
 		return ast_eval_binop(bop, lv, rv, is64, uns, out);
 	}
 	case AST_If: {
