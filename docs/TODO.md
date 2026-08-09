@@ -13,10 +13,13 @@ board's own 2026-08-09 revision. Nothing here is patched forward: every figure b
 re-taken today with the committed tool named beside it, on this tree, and the ones that did
 not come back are listed as failures rather than quietly corrected.
 
-`ctest --test-dir cmake-cross -N` registers **9136** cells on this host and `--test-dir
-cmake-debug -N` registers **9136** as well — *but only if `cmake-cross` already exists when
+`ctest --test-dir cmake-cross -N` registers **9155** cells on this host and `--test-dir
+cmake-debug -N` registers **9155** as well — *but only if `cmake-cross` already exists when
 `cmake-debug` is configured*. Configured against an absent `cmake-cross` it registers
-**8972**. See hazard 5.
+**8972**. See hazard 5. (The count was 9136 when this board was derived and 9151 before
+`wt/envgate`, which adds four: `ast/o0-baseline-gated` and `build/fragments-are-not-tus`,
+each with its known-positive. The 8972 figure has not been re-taken since; it is the
+*shape* of hazard 5, not a current reading.)
 
 ### The verdict, and why it re-ranks everything
 
@@ -1176,16 +1179,21 @@ Ordered by how much a currently-quoted number depends on it.
     flags the sweep does not pass, but nothing pins the number, so a regression that stopped
     500 of 610 building would still print `divergences=0` and PASS. Pin it or classify the
     20.
-17. **Four shell tools grep for `ast_env_gate`, which no longer exists in `src/`.**
-    `tools/c2_sweep.sh`, `tools/o0_ab.sh`, `tools/gate-ledger.sh` and `tools/c2_equiv.sh`
-    derive their "optimize >= 1" gate set from a symbol the compiler renamed (`mcc_env_on`,
-    `ast_env_int`, `ast_search_gates_now`). **All of them fail loudly** rather than measuring
-    nothing — `c2_sweep.sh` says in as many words *"this run would measure -O0 with every
-    pass off and call it parity"* — so this is broken, not lying, which is the correct
-    failure mode and the reason it is filed rather than fixed here. Two residues: the guards
-    are all-or-nothing, so a *partial* spelling change drops gates while the count stays
-    positive and `gate-ledger` then reports the shrunken registry as the registry; and
-    `c2_sweep.sh` claims parity with `cmake/rir_parity.cmake`, which does not exist.
+17. ~~**Four shell tools grep for `ast_env_gate`, which no longer exists in `src/`.**~~
+    **CLOSED 2026-08-09 (`wt/envgate`).** All four are repointed at `src/mccopt.h`, and the
+    thirteen stranded `*.gated.*` bank files are regenerated and registered. See *LANDED —
+    the gated half of `ast/o0-baseline`* below for the history, the option taken and the
+    cell. In short: the gates were not renamed, they were **converted** — `a55c0a07` turned
+    112 `MCC_AST_*`/`MCC_RIR_*` environment gates into `-f` flags generated from one table,
+    so the successor of `ast_env_gate("MCC_AST_…", o4 || s1->optimize >= 1)` is *"every
+    `MCC_OPTD_LEVEL(n)` row of `src/mccopt.h`, spelled `-f<name>`"* — **54** rows on this
+    tree. The derivation now reads the table that *defines* the knobs rather than a second
+    copy of it, so it cannot go stale the way the old regex did. The old residues, resolved:
+    the all-or-nothing guard is no longer the only guard (`o0_ab.sh` additionally requires
+    the gated counters to differ from the ungated bank's, because **mcc ignores an unknown
+    `-f` silently** and a zero-count check cannot see a wrong-but-nonempty list); and
+    `c2_sweep.sh`'s claim of parity with a non-existent `cmake/rir_parity.cmake` is gone
+    with the comment that made it.
 18. **`tools/spvgate.c --arenas` lacks the zero-comparison guard its built-in-case mode
     has.** The case mode gained `FAIL (0 defined points compared -- proves nothing)` after
     exactly this incident; `arena_mode` prints `compared=` and gates only on `dispatches`,
@@ -1330,16 +1338,88 @@ A tripwire nobody runs cannot tell you which commit moved a byte; it can only te
 days later, that something did. With `ast/o0-baseline` registered, each future move lands on
 the commit that causes it.
 
-Thirteen banked files are deliberately **not** re-taken: the twelve `*.gated.rir.txt` and
-`board.gated.txt`. `O0_AB_GATES=1` exits 1 at HEAD because `derive_gates` greps for
-`ast_env_gate`, which `src/` no longer spells (filed item 17). That half of the bank is
-frozen and unreachable until 17 is closed, and now says so.
+~~Thirteen banked files are deliberately **not** re-taken.~~ **Re-taken 2026-08-09
+(`wt/envgate`); see the next section.**
+
+#### LANDED — the gated half of `ast/o0-baseline`, and the thirteen files that held nothing
+
+**The history first, because "the symbol is gone" was the wrong reading.** `ast_env_gate`
+was not renamed; it was **converted**. `a55c0a07` (*"one runtime `-f` surface, four
+compile-time switches"*, 2026-08-04) turned 112 `MCC_AST_*`/`MCC_RIR_*` environment gates
+into `-f`/`-fno-` flags generated from a single table, `src/mccopt.h`, and re-laid `-O` as a
+ladder: 1–3 settled, 4–12 one in-development optimizer each, 13+ the strategy search. So the
+gated half's *subject* survives in full. At `a55c0a07^` the old regex named **29** gates (not
+the "38" every comment claimed); of those, **six** became `MCC_OPTD_ALWAYS` (they need no
+forcing — that is `a55c0a07`'s *"the arena replayed WRONG at `-O0`"* fix), **two** became
+`MCC_OPTD_SPECIAL`, and the remaining **21** are `MCC_OPTD_LEVEL(n)` rows spread over
+`n = 1, 2, 10, 11, 12`. That last spread is why `ARCHIVED.md`'s guess that the successor set
+is *"`MCC_OPTD_LEVEL(n)` with `n <= 3`"* is wrong: only 8 of the 21 sit at `n <= 3`, so it
+would silently drop 13 members of the very set it claims to reconstruct — `gcse`,
+`tree-pre`, `tree-vrp`, `narrow`, the three `sethi-ullman` rows, the three `chain-store`
+rows, `call-window`, `narrow-elim` and `tree-const-load`, all of which the ladder moved out
+to 10–12. **The successor taken here is every `MCC_OPTD_LEVEL(n)` row, all 54 of them**,
+which is the ladder's own definition of "off at `-O0`, on at some `-O`", derived per run and
+fatal at zero.
+
+Not taken: the `MCC_OPTD_SPECIAL` rows. Their defaults are expressions, not table entries,
+and some are per-target — `reg-disp` is `optimize >= 1` only under `MCC_TARGET_X86_64`, and
+the archive records that forcing it on `arm64` fabricates a divergence. A target-independent
+`-f` set cannot do that, and the `arm-win32 == arm-wince` twin check passes on both counters
+and object `sha256`, which is the cheapest evidence that it did not.
+
+**The option taken was Regenerate, and the reason is that the thirteen files were provably
+empty of information.** Before re-banking, the committed `*.gated.*` files were compared to
+the *ungated* bank of the day they were taken (`7ae6bec9^`): **all thirteen are
+byte-identical to their ungated counterparts** — every key, and `board.gated.txt` to
+`board.txt`. Forcing the 29 environment gates on moved not one of the five counters the bank
+records on any of the twelve keys. So the frozen half was never a second measurement; it was
+a copy, and it had been one since `03e3735b`. Retiring it would have lost nothing — but
+regenerating it costs 30 seconds and, for the first time, produces a row that differs.
+
+**The re-bank, split by cause.** All thirteen files move. Two causes, and they are separable:
+
+| | |
+| --- | --- |
+| **corpus** | `files=277 → 304`, `objects` +25 per key. The same 25 `tests/exec` fixtures the ungated half already absorbed at `7ae6bec9`; this half simply never caught up. |
+| **mechanism** | with the corpus held equal — both legs taken on *this* tree, same 304 files, same compilers — the gated leg now differs from the ungated one on **every** key: `fn` +2 (`x86_64`) to +68 (`i386`), `empty` 35 → 37 everywhere, `faithful` +0 to +66, `objects` unchanged, `bar=OK` on all twelve. |
+
+No third cause: the object half (`<key>.obj.txt`) is not re-taken and does not move, because
+measurement A never sees `O0_AB_GATES`.
+
+The `x86_64` row moves least (+2) and every cross key moves ~+60. That is a property of the
+key's *flags*, not of the knobs: `x86_64` is the only key `o0_ab.sh` runs with no
+`-I runtime/include` and no sysroot, so `-freemit-templates` has far fewer inline bodies to
+re-emit. Per-file it is the same effect — 82 `[rir-*]` lines differ on `x86_64` even where the
+totals nearly agree.
+
+**What protects it now.** **mcc ignores an unknown `-f` silently** — verified,
+`mcc -O0 -fnosuchflagzz -c` exits 0 — so "derived a non-empty list" is *not* evidence that
+anything was forced on, and the old zero-count guard could not have caught a
+wrong-but-nonempty list. `o0_ab.sh` therefore refuses to bank or pass a gated row
+whose counters equal the ungated bank's, by name and with the reason. Ablated two ways: the
+committed thirteen fail it (that is how they were caught), and `O0_AB_NOGATES=1` derives the
+54 knobs and then drops them, producing
+
+> `x86_64: the gated counters are identical to the ungated bank's. 54 knob(s) were passed as
+> -f and not one body changed shape, which is what a silently-ignored flag name looks like.`
+
+**The other three tools are repointed too**, at the same table and with the same fatal-at-zero
+guard. `tools/c2_sweep.sh` passes the 54 as `-f` on the compile line (`C2_FORCE=1` at `-O0`
+on `x86_64` now reads `files=304 ok=295 fn=1374 faithful=1337` instead of exiting 1);
+`tools/c2_equiv.sh` splices them through `MCC_TEST_OPT`, which is the only channel it has,
+since it drives `exec_runner` rather than `mcc`; `tools/gate-ledger.sh` toggles each row as
+`-f<name>`/`-fno-<name>` and its control cell is now `gateledger-control`, a flag name the
+table does not contain. It reads **115 knobs at `-O1`: 4 change the AST, 51 change only the
+object, 60 never fire** — the first ledger this tool has produced since `a55c0a07`. Those
+three are repointed and run, **not** registered; that half of open item 4 stays open.
 
 #### LANDED — the cells
 
 | cell | what it holds | known-positive, and the text it produces |
 | --- | --- | --- |
 | **`ast/o0-baseline`** | the per-key `-O0` object `sha256` bank and the forced-Replay_IR counters, over the `measurable` key set: every key whose compiler *and* sysroot are present, with the dropped ones named | **`ast/o0-baseline-known-positive`** takes measurement A at `-O1` (`O0_AB_MUTATE=1`), so every banked hash must move: `o0_ab: x86_64 -- an -O0 object moved`, 244 hash lines |
+| **`ast/o0-baseline-gated`** (2026-08-09) | the other twelve `*.gated.rir.txt` and `board.gated.txt`: the same forced-Replay_IR counters with all 54 `MCC_OPTD_LEVEL(n)` knobs of `src/mccopt.h` forced on as `-f<name>`, derived per run from the table that defines them | **`ast/o0-baseline-gated-known-positive`** derives the 54 and then drops them (`O0_AB_NOGATES=1`): `x86_64: the gated counters are identical to the ungated bank's. 54 knob(s) were passed as -f and not one body changed shape, which is what a silently-ignored flag name looks like.` |
+| **`build/fragments-are-not-tus`** (2026-08-09) | that `src/*.c` is **not** a set of translation units: compiled standalone with the build's own `-D`/`-I`, read back from `compile_commands.json`, exactly `mccast.c`, `mccircap.c`, `mccrir.c` exit non-zero, and the pin is by name | **`build/fragments-are-not-tus-known-positive`** adds `-DMCC_AMALGAMATED=0`, the define the one build that *does* compile fragments separately uses, which switches those three bodies off entirely: `the set of src/*.c that do NOT compile as their own translation unit is now [], pinned [mccast.c mccircap.c mccrir.c]` |
 | **`fmt/census-bank`** | the fourteen figures the board's row 4 quotes — `172` sites, `162` literal, `148` accepted, `100` carrying `%s`, `9` budget / `4` flag / `1` float, return consumed at `26` of `162` — plus the per-file site counts, against `tests/fmt/census-bank.json` | **`fmt/census-bank-known-positive`** reintroduces the port's literal-run drift: `accepted banked 148, now 143`, `refused_budget banked 9, now 15` |
 | **`idiom-gate-known-positive`** | that `idiom-gate-invariant` can fail at all | since 2026-08-09, five must-fail probes: all four violation shapes over 16 named macros (`17 violation(s)`), an unregistered `MCC_CONFIG_*`, a contradicted no-subject refusal, the zero-conditional floor, **and** an empty directory, which used to print `OK` |
 
@@ -1593,6 +1673,20 @@ a strict superset of the TU's by **exactly one name**, `is_float_abi` — an `ST
 `mcc.h` that only gets a body emitted when an arch fragment is compiled standalone, i.e. a
 body no build ever produces. Every other body the loop saw, the single TU also saw, once.
 
+**The three non-compiling fragments were adjudicated 2026-08-09 (`wt/envgate`): by design,
+not a defect — and now gated.** The three are the only `src/*.c` that do not `#include
+"mcc.h"`, so they never define `MCC_INTERNAL`, and their entire bodies sit behind
+`#if (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))`. Outside their include context
+they do not parse (`unknown type name 'Sym'`, `'IrCapOp'`, `'CType'`). The one build that
+*does* compile the fragments as separate TUs — `-DMCC_SINGLE_SOURCE=OFF`, which the default
+`ON` hides — compiles them with `-DMCC_AMALGAMATED=0`, which switches those bodies **off**:
+`ninja libmcc` there is green, and `src/mccast.c.o` is 1,464 bytes with **0** defined
+symbols against `src/libmcc.c.o`'s 148,576 and **120**. So neither spelling produces a
+translation unit: without the define three of eighteen fail to parse and the rest duplicate
+the amalgamation; with it, the three are empty. **`build/fragments-are-not-tus`** pins that
+by name, with `-DMCC_AMALGAMATED=0` as its known-positive, so the next tool that reaches for
+`for f in src/*.c` meets a red cell before it meets a plausible number.
+
 **One figure drifted, and it is not the one you would expect.**
 The banked block count for the loop spelling was **56,281**; the identical spelling gives
 **56,284** today. Three blocks, 0.005%, from source that has moved since — the *age* failure
@@ -1682,18 +1776,23 @@ would be false on every normal build.
    `tools/idiomgate.c`'s denominator* above. This is the thirteenth headline figure in this
    project to fail to reproduce, and the third whose cause was a count taken once and read as
    something it did not measure.
-3. **`tools/o0_ab.sh`'s gated half stays frozen** until filed item 17 (`ast_env_gate`) is
-   closed. Thirteen banked files are unreachable; `ast/o0-baseline` does not cover them and
-   does not pretend to.
+3. ~~**`tools/o0_ab.sh`'s gated half stays frozen**~~ **CLOSED 2026-08-09 (`wt/envgate`).**
+   The thirteen files are regenerated against `src/mccopt.h` and `ast/o0-baseline-gated`
+   covers them, with a known-positive that the committed thirteen would have failed. See
+   *LANDED — the gated half of `ast/o0-baseline`*.
 4. **The remaining not-a-cell tools.** ~~`tools/opt-determinism.py`,
    `tools/untyped-probe.py`,~~ `tools/xsuite-report.py`, `tools/gate-ledger.sh`,
    `tools/strategy-ledger.sh` and `tools/c2_sweep.sh` all publish or feed a board figure and
-   are registered nowhere. The last three are additionally blocked on filed item 17.
+   are registered nowhere. ~~The last three are additionally blocked on filed item 17.~~
+   **No longer blocked** — item 17 closed 2026-08-09 and `gate-ledger.sh` and `c2_sweep.sh`
+   both run and produce their figures again (115 knobs / 4 FIRES / 51 OBJONLY / 60 NEVER at
+   `-O1`; `files=304 ok=295 fn=1374` forced at `-O0` on `x86_64`). They are still registered
+   nowhere, which is now the *whole* of what is left on them.
    ~~`opt-determinism.py` and `untyped-probe.py` are the two cheapest remaining
    registrations in the tree — both are pure-CPU, both already refuse their degenerate
    inputs after the last sweep, and neither needs a bank invented for it.~~ **Both LANDED
    2026-08-09 (`wt/gatefin`)**, each with a known-positive; see the audit section. Four
-   tools left on this item, all of them blocked on something other than cheapness.
+   tools left on this item, none blocked on anything but the work.
 
 ### 1. S5′ — the iteration distribution, and the measurement that prices every row below
 
@@ -9887,6 +9986,15 @@ per level, `MCC_FORCE_REPLAY=1` on the `-O0` row. Every row reconciles.
   reported a plausible board of 276 objects for a key it never touched; it now checks the
   `mcc -v` target string and falls back to `mcc-x86_64` plus the usual sysroot
   requirement.)
+- ~~**`C2_FORCE=1` is dead, and was failing silently until 2026-08-05.**~~ **REPOINTED
+  2026-08-09 (`wt/envgate`), filed item 17.** Both scripts now derive the set from
+  `src/mccopt.h`. The restoration recipe below was followed only in part, on purpose: the
+  set taken is **every** `MCC_OPTD_LEVEL(n)` row (54), not the `LEVEL(1)` rows plus
+  per-target `MCC_OPT_SPECIAL`s — the `LEVEL(1)`-only reading drops thirteen members of the
+  historical set that the `-O` ladder moved out to levels 10–12, and the `SPECIAL` rows are
+  exactly the per-target hazard this bullet warns about, so a target-independent set cannot
+  fabricate the `reg-disp`-on-arm64 divergence it describes. Everything below stands as the
+  record of why. Both scripts' original text follows:
 - **`C2_FORCE=1` is dead, and was failing silently until 2026-08-05.** Both
   `tools/c2_sweep.sh` and `tools/c2_equiv.sh` derive the forced-`-O0` gate list by regex
   for `ast_env_gate("MCC_AST_…", o4 || s1->optimize >= 1)`; `ast_env_gate` no longer
