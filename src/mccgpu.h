@@ -1179,7 +1179,8 @@ enum {
 	SpvOpLogicalNotEqual = 165,
 	SpvOpLogicalOr = 166, SpvOpLogicalAnd = 167, SpvOpLogicalNot = 168,
 	SpvOpNot = 200, SpvOpPhi = 245, SpvOpSelectionMerge = 247, SpvOpLabel = 248,
-	SpvOpBranch = 249, SpvOpBranchConditional = 250, SpvOpReturn = 253
+	SpvOpBranch = 249, SpvOpBranchConditional = 250, SpvOpReturn = 253,
+	SpvOpAtomicAnd = 240, SpvOpAtomicOr = 241
 };
 
 enum {
@@ -2245,6 +2246,43 @@ static uint32_t spv_word_at(SpvMod *m, uint32_t var, uint32_t idx) {
 	return spv_emit2(m, SpvOpLoad, m->id_int, p);
 }
 
+static uint32_t spv_word_ptr(SpvMod *m, uint32_t var, uint32_t idx) {
+	uint32_t p = spv_id(m);
+	spvw_op(&m->body, SpvOpAccessChain, 6);
+	spvw_put(&m->body, m->id_ptr_sb_int);
+	spvw_put(&m->body, p);
+	spvw_put(&m->body, var);
+	spvw_put(&m->body, spv_const(m, 0));
+	spvw_put(&m->body, idx);
+	return p;
+}
+
+static void spv_word_rmw_atomic(SpvMod *m, uint32_t var, uint32_t idx,
+																uint32_t keep, uint32_t put) {
+	uint32_t scope = spv_const(m, 1);
+	uint32_t sem = spv_const(m, 0);
+	uint32_t clr = spv_emit2(m, SpvOpBitcast, m->id_int,
+													 spv_emit2(m, SpvOpNot, m->id_uint, keep));
+	uint32_t set = spv_emit2(m, SpvOpBitcast, m->id_int, put);
+	uint32_t p = spv_word_ptr(m, var, idx);
+	uint32_t r = spv_id(m);
+	spvw_op(&m->body, SpvOpAtomicAnd, 7);
+	spvw_put(&m->body, m->id_int);
+	spvw_put(&m->body, r);
+	spvw_put(&m->body, p);
+	spvw_put(&m->body, scope);
+	spvw_put(&m->body, sem);
+	spvw_put(&m->body, clr);
+	r = spv_id(m);
+	spvw_op(&m->body, SpvOpAtomicOr, 7);
+	spvw_put(&m->body, m->id_int);
+	spvw_put(&m->body, r);
+	spvw_put(&m->body, p);
+	spvw_put(&m->body, scope);
+	spvw_put(&m->body, sem);
+	spvw_put(&m->body, set);
+}
+
 static void spv_word_set(SpvMod *m, uint32_t var, uint32_t idx, uint32_t val) {
 	uint32_t p = spv_id(m);
 	spvw_op(&m->body, SpvOpAccessChain, 6);
@@ -2332,10 +2370,6 @@ static void spv_store_region(SpvMod *m, const SpvRegion *r, uint32_t byteoff,
 	uint32_t uoff, sh, keep, cur, w;
 	if (width <= 0)
 		return;
-	if (r->shared && width < 4) {
-		m->failed = 1;
-		return;
-	}
 	uoff = spv_region_addr(m, r, byteoff, width);
 	if (width == 8) {
 		spv_widen(m, &v);
@@ -2354,6 +2388,17 @@ static void spv_store_region(SpvMod *m, const SpvRegion *r, uint32_t byteoff,
 							 spv_uintc(m, 3));
 	keep = spv_uop(m, SpvOpShiftLeftLogical,
 								 spv_uintc(m, width == 1 ? 0xFFu : 0xFFFFu), sh);
+	if (r->shared) {
+		spv_word_rmw_atomic(
+				m, r->var, spv_region_word(m, r, uoff, 0), keep,
+				spv_uop(m, SpvOpBitwiseAnd,
+								spv_uop(m, SpvOpShiftLeftLogical,
+												spv_emit2(m, SpvOpBitcast, m->id_uint,
+																	spv_val_lo(m, v)),
+												sh),
+								keep));
+		return;
+	}
 	cur = spv_emit2(m, SpvOpBitcast, m->id_uint,
 									spv_word_at(m, r->var, spv_region_word(m, r, uoff, 0)));
 	w = spv_uop(m, SpvOpBitwiseOr,

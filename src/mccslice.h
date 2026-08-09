@@ -277,6 +277,34 @@ static int mcc_slice_is_local_ref(AstArena *a, AstLocal n, int32_t *off) {
 	return 1;
 }
 
+static int mcc_slice_store_frame(AstArena *a, AstLocal d, int32_t *off,
+																 int *ty) {
+	AstLocal x = d;
+	int t, uop;
+	if (d == AST_NONE)
+		return 0;
+	if (ast_kind(a, d) == AST_Load) {
+		x = ast_first_child(a, d);
+		if (x == AST_NONE)
+			return 0;
+	}
+	if (ast_kind(a, x) != AST_Unary)
+		return 0;
+	uop = ast_op(a, x);
+	if (uop != AST_EVAL_OP_MEMBER && uop != AST_EVAL_OP_ADDR)
+		return 0;
+	if (!ast_eval_slice_frame_off(a, x, off, 0))
+		return 0;
+	t = ast_type_t(a, d);
+	if (!t)
+		t = ast_type_t(a, x);
+	if (!t || ast_bad_type(t))
+		return 0;
+	if (!ast_eval_slice_f64t(t) && (is_float(t) || !ast_eval_slice_intt(t)))
+		return 0;
+	*ty = t;
+	return 1;
+}
 
 /* How many addresses in a subtree are resolved at run time. Only used to decide
  * whether the run's definedness flag says anything -- see MccSliceFrame.nidx. */
@@ -469,7 +497,7 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 		int32_t pf;
 		int et;
 		if (ast_eval_slice_deref(a, d, &pf, &et)) {
-			if (ast_eval_slice_tsize(et) < 4)
+			if (ast_eval_slice_tsize(et) <= 0)
 				return 0;
 			if (mcc_slice_slot_of(f, pf) < 0)
 				return 0;
@@ -481,8 +509,19 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 			return 1;
 		}
 	}
-	if (!mcc_slice_is_local_ref(a, d, &off))
-		return 0;
+	if (!mcc_slice_is_local_ref(a, d, &off)) {
+		if (!mcc_slice_store_frame(a, d, &off, &dt))
+			return 0;
+		if ((ast_eval_slice_ftype(a, v) != 0) != (ast_eval_slice_f64t(dt) != 0))
+			return 0;
+		if (mcc_slice_slot_of(f, off) < 0)
+			return 0;
+		if (!mcc_slice_frame_scan(f, v))
+			return 0;
+		f->nstmt++;
+		f->nodes += mcc_slice_nodes(a, s);
+		return 1;
+	}
 	dt = ast_type_t(a, d);
 	if (!dt || ast_bad_type(dt))
 		return 0;
@@ -720,20 +759,23 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 			if (!ast_eval_slice_rw_addr(frame[k], &bo))
 				ast_eval_slice_undef = 1;
 			ast_eval_slice_bytes_store(ast_eval_slice_rw, ast_eval_slice_rw_nbyte,
-																 bo, et, val, &ok);
+																 bo, et, ast_eval_slice_fit(val, et), &ok);
 			if (!ok)
 				ast_eval_slice_undef = 1;
 			return 1;
 		}
 	}
-	if (!mcc_slice_is_local_ref(f->a, d, &off))
-		return 0;
+	if (!mcc_slice_is_local_ref(f->a, d, &off)) {
+		if (!mcc_slice_store_frame(f->a, d, &off, &dt))
+			return 0;
+	} else {
+		dt = ast_type_t(f->a, d);
+	}
 	for (k = 0; k < f->nslot; k++)
 		if (f->slot[k] == off)
 			break;
 	if (k == f->nslot)
 		return 0;
-	dt = ast_type_t(f->a, d);
 	frame[k] = ast_eval_slice_fit(val, dt);
 	return 1;
 }
@@ -1269,7 +1311,8 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 			return 1;
 		}
 	}
-	if (!mcc_slice_is_local_ref(f->a, d, &off))
+	if (!mcc_slice_is_local_ref(f->a, d, &off) &&
+			!mcc_slice_store_frame(f->a, d, &off, &dt))
 		return 0;
 	if (!spv_expr(m, f->a, v, f->slot, f->nslot, base, &val))
 		return 0;
