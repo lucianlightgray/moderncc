@@ -12,7 +12,7 @@ cross-compiles 5 architectures × 3 object formats.
 | **Modes**     | compile+link · `-c` · `-S` (asm listing) · `-run` (JIT, no `a.out`) · `libmcc` C API                                                                                            |
 | **Speed**     | single-pass — compiles and links in one pass when using `-O0`                                                                                                                   |
 | **Size**      | <2MB executables/libraries                                                                                                                                                      |
-| **Assembler** | integrated (`MCC_CONFIG_ASM`, incl. scalar SSE + `.cfi_*`) · inline asm · `asm goto` · `-S` via built-in disassembler (all 5 targets)                                           |
+| **Assembler** | integrated (always compiled in; `-fasm`/`-fno-asm` at runtime, incl. scalar SSE + `.cfi_*`) · inline asm · `asm goto` · `-S` via built-in disassembler (all 5 targets)          |
 | **Safety**    | optional bounds checker (`-b`) · backtraces (`-bt`) · `-fsanitize=undefined` (trap mode; x86_64/arm64/riscv64) · `-fsanitize=address`/`=bounds` (built-in memory-error checker) |
 | **Optimizer** | `-O1..-O3` AST-replay passes (byte-verified against `-O0`) · `-O<N>` (N≥4) superoptimizer search with a resumable per-user cache (`--clear-cache`)                              |
 | **Cross**     | `mcc-<arch>` compilers via `MCC_ENABLE_CROSS`                                                                                                                                   |
@@ -46,12 +46,8 @@ cmake --build cmake-release -j
 | Option                  | Default                        | Meaning                                                                     |
 |-------------------------|:------------------------------:|-----------------------------------------------------------------------------|
 | `MCC_BUILD_TESTS`       | ON                             | Register the CTest suite                                                    |
-| `MCC_CONFIG_ASM`        | ON                             | Integrated assembler                                                        |
-| `MCC_CONFIG_OPTIMIZER`  | ON                             | The `-O1`+ AST-replay optimizer                                             |
 | `MCC_EMBED_JIT`         | ON                             | Bake the runtime-JIT engine into `mcc` and the programs it builds           |
 | `MCC_CONFIG_JIT`        | ON                             | Built programs JIT by default (runtime `MCC_JIT` / `--jit` override it)     |
-| `MCC_CONFIG_LSP`        | ON                             | `--lsp` concrete-syntax-tree capture                                        |
-| `MCC_CONFIG_DIAG_RT`    | `bounds` in Debug, else `off`  | Runtime diagnostics: `off` / `backtrace` (`-bt`) / `bounds` (adds `-b`)     |
 | `MCC_ENABLE_CROSS`      | OFF                            | Also build `mcc-<arch>` cross compilers                                     |
 | `MCC_BUILD_STATIC_LIB`  | OFF                            | Build static `libmcc-static.a` instead of shared `libmcc.so`                |
 | `MCC_BUILD_DYNAMIC_LIB` | OFF                            | Also build shared `libmcc-dynamic.so` alongside `libmcc-static.a`           |
@@ -61,6 +57,15 @@ cmake --build cmake-release -j
 | `MCC_BUILD_MUSL`        | OFF                            | Also build musl-targeting variants (`*-musl`, Linux only)                   |
 | `MCC_BUILD_STRIP`       | ON for Release/MinSizeRel      | Strip symbols during link                                                   |
 | `MCC_QEMU_TESTS`        | OFF                            | qemu-user cross-conformance matrix (below)                                  |
+
+**Four options were removed from this table on 2026-08-09 because the build has not
+had them since `a55c0a07`, and passing them did nothing but leave an ignored cache
+entry.** `MCC_CONFIG_ASM`, `MCC_CONFIG_OPTIMIZER`, `MCC_CONFIG_LSP` and
+`MCC_CONFIG_DIAG_RT` are gone; those capabilities are always compiled in and are
+reached at runtime instead — `-fasm`/`-fno-asm`, `-O0`, `--lsp`, and
+`-b`/`-bt`/`-fsanitize=bounds` respectively. The four compile-time switches that do
+exist are `MCC_DIAG`, `MCC_DEV`, `MCC_CONFIG_TRACE` and `MCC_EMBED_JIT`; `ccmake`
+lists every real one.
 
 All compiler binaries follow one suffix convention:
 `mcc[-<arch>][-static|-dynamic][-musl]` — arch first (cross targets only),

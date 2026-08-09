@@ -20,15 +20,18 @@ list(LENGTH _mi _n)
 if(NOT _n EQUAL 1)
     message(FATAL_ERROR
         "macro-nesting: expected exactly 1 MacroInvocation (object-like macro in "
-        "args left as a plain token, v1), got ${_n}. If slice-J now wraps nested "
-        "object-like macros, update this boundary and TODO 'CST slice-J'.\n${_all}")
+        "args left as a plain token, v1), got ${_n}. If the CST now wraps nested "
+        "object-like macros, update this boundary. (The 'CST slice-J' section this "
+        "used to send you to lived in docs/NOTES.md, deleted at bb2469bd; the "
+        "boundary it described is stated here and nowhere else.)\n${_all}")
 endif()
 
 if(NOT _all MATCHES "MacroInv[^P]*Paren")
     message(FATAL_ERROR
         "macro-nesting: expected the function-like invocation's trailing ')' to "
         "split into a sibling Paren node (v1). If the MacroInvocation now spans "
-        "the ')', update this boundary and TODO 'CST slice-J'.\n${_all}")
+        "the ')', update this boundary. (The 'CST slice-J' section this used to "
+        "send you to lived in docs/NOTES.md, deleted at bb2469bd.)\n${_all}")
 endif()
 
 message(STATUS "macro-nesting: round-trip clean; 1 MacroInvocation with trailing "

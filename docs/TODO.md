@@ -17,12 +17,23 @@ drop, chain-store re-promotion, `storeval-rot`'s demotion, `narrow`/`tree-copy-p
 float support were each re-read against their measurements and are **settled**; nothing
 below re-litigates them.
 
-**Reading the `:NNNN` anchors below.** They were taken against this file as it stood at
-`09a248e4`, *before* this section was inserted. Inserting it added exactly **137** lines
-ahead of everything, so **an anchor `:N` here is at line `N + 137` today** — `:16` is now
-`:153`, `:3015` is now `:3152`. Anchors into other files (`src/`, `tools/`, `PLAN.md`,
-`CMakeLists.txt`) are unaffected and are current. This is the drift the header warns
-about; it is stated rather than left to be rediscovered.
+**Reading the `:NNNN` anchors below — the `+137` rule that used to be here was WRONG, and
+this is a correction, not a refresh.** It claimed *"an anchor `:N` here is at line `N + 137`
+today — `:16` is now `:153`, `:3015` is now `:3152`."* Both worked examples are false: line
+153 is *"Named, with the cause of each, at `-O0`/`-O1`…"*, not the registration figure, and
+line 3152 is the `MCC_ARENA_DUMP` paragraph, not the `indirect`-guard row. **There is no
+single offset**, because more than one section was inserted ahead of the body at different
+times. Measured on this tree, two clusters:
+
+- anchors in the low thousands and below drift by **+468** — `:521` → `:989`, `:670` →
+  `:1138`, `:675-687` → `:1143-1155`, `:685` → `:1153`, `:697` → `:1165`;
+- anchors from roughly `:3600` up drift by **+802 to +804** — `:3693` → `:4497`, `:9598` →
+  `:10400`, `:9600-9602` → `:10402-10404`, `:9584-9590` → `:10386-10392`.
+
+Treat every `:NNNN` in this file as approximate and confirm by content, not by arithmetic.
+Anchors into other files (`src/`, `tools/`, `PLAN.md`, `CMakeLists.txt`) are unaffected and
+are checked by `docs/refs` (`tools/docref-lint.py`). This is the drift the header warns
+about; the arithmetic that was supposed to defuse it did not.
 
 Tree state at the time of the sweep: `cmake-cross` built before `cmake-debug` was
 configured, both register **9151** cells, `tools/selfhost-smoke.py cmake-debug` green, all
@@ -88,7 +99,7 @@ on a single hand-run, or on a cell that cannot reach it.
 
 1. **Board row 1 and still-open row 1** (`:497`, `:507-514`, `:3015`) call the missing `indirect` guard on `ast_dep_base_distinct` **"UNMEASURED, and it is the top of the board."** It landed at **`adf08e3b`**. Verified in the tree: the parameter is `src/mccast.c:13347`, the guard `:13350`, both emitting callers pass `0` (`:13516`, `:13566`), only the census site passes `ast_dep_alias_oracle_env` (`:13949`) — and the **22 `exec-{interchange,fusion,tile,search*}/loop_*` cells are registered and green**. *The board's number-one open row is closed.* Its own body says so at `:2104`.
 2. **The registration figure is two generations stale.** `:16-17` say **9136**; `:624` and `:2656` say 9136 *"today"*; `:985` says **9149**; the tree says **9151** in both dirs. The `wt/gatefin` write-up raised it to 9149 and never propagated to the head; the merge with `wt/idiomcov` added the last two and nothing recorded it. Hazard 5's "164 low" delta is quoted against the stale pair.
-3. **Three counts of one list.** `:521` "**Twelve** have now failed to reproduce", `:670` "**The nine** figures that have failed to reproduce", `:697` "**Seven** headline figures" — and the table at `:675-687` has **thirteen** rows.
+3. ~~**Three counts of one list.** `:521` "**Twelve** have now failed to reproduce", `:670` "**The nine** figures that have failed to reproduce", `:697` "**Seven** headline figures" — and the table at `:675-687` has **thirteen** rows.~~ **CLOSED on `wt/docsync`.** The table is now the only place the count is stated; every other site points at it instead of restating it, and the two historical ordinals ("the seventh", "the thirteenth") are date-stamped as counts-at-the-time rather than current. `docs/refs` (`tools/docref-lint.py`) counts the table's rows and fails if the stated count moves off them, so this cannot drift again silently.
 4. **`SKIP_RETURN_CODE` count.** `tests/must-run.txt:3` says **141**, `docs/PLAN.md:1011` says **138**, `CMakeLists.txt` has **149**.
 5. **`:9598` — "Deliberately not banked: byte faithfulness."** False at HEAD. `kept_coverage` is banked on all eight rows of `tests/rir/coverage-bank.json` **and enforced** (`tools/rir-coverage.py:1105-1109`, skipped only on an unbanked host format). The reversal is recorded at `:7886`; the C2 paragraph was never rewritten.
 6. **`:9600-9602`** — "modelled 99.59% / 99.56%, capture 100.00%" is stale; the bank reads **100.0 / 100.0 / 99.9681 / 99.9681**.
@@ -97,15 +108,16 @@ on a single hand-run, or on a cell that cannot reach it.
 9. **`:3116`** — "Five of the eight landed" over a list that holds **nine** items (0–7 plus 6a).
 10. **`:3597`** — "`levelbench.tsv:47` is now line 51". The file is **29 lines / 16 data rows**; neither line exists. The same applies to every "24 of 47" / "32 of the 47" count in hazard 2.
 11. **`:353-357`** — "turns a lavapipe/NVIDIA denormal disagreement into a hard CI failure no code change can fix" is refuted at `:404-408` and never struck; `:439` still lists the retracted reason as load-bearing in the recommendation.
-12. **`docs/PLAN.md:625`** marks E6 **"NEW 2026-08-08, OPEN"** while `PLAN.md:1035` and `:6238` of this file both say E6 is closed permanently. It is also the line carrying the uncited lavapipe assertion. Same class: `PLAN.md:498/511` "Vulkan — LIVE" vs `:1052` "CLOSED"; `PLAN.md:754` "half-landed" vs `:1060` "CLOSED"; `PLAN.md:1011` N13 open vs `:1061` N13 closed.
+12. ~~**`docs/PLAN.md:625`** marks E6 **"NEW 2026-08-08, OPEN"** while `PLAN.md:1035` and `:6238` of this file both say E6 is closed permanently. It is also the line carrying the uncited lavapipe assertion.~~ **CLOSED on `wt/docsync`**: the E6 row now reads *"CLOSED 2026-08-09 — REFUSE permanently"*, carries the Mesa citation inline, and points at the closure below it; `PLAN.md`'s I2 row records that the `shaderFloat64` floor rests on a *source* reading of lavapipe, not a device one. Still open, same class: `PLAN.md:498/511` "Vulkan — LIVE" vs `:1052` "CLOSED"; `PLAN.md:754` "half-landed" vs `:1060` "CLOSED"; `PLAN.md:1011` N13 open vs `:1061` N13 closed. Those three are status contradictions in prose, which `docs/refs` cannot see — it checks that a citation resolves, not that two sentences agree.
 13. **`:10011` duplicates `:10039`** (32-byte vector alignment), **`:9282` duplicates `:10076`**, **`:9759` duplicates `:10078`**, **`:10051`** sends a reader at a capture path that measures **100.000%**, and **`:10182`** still lists `__builtin_powi`/`powif` as missing after `:9303` closed them.
 14. **E1's refusal-site count has now been stated three incompatible ways** and every one was written as current: `:7810` "**eight** separate sites", corrected at `:7851` to "**16**, not 8" with the sites enumerated, corrected again at `:100-113` to "**36 lines, 43 occurrences**, not the 1 + 4 + 6 = 11 this paragraph claims". Only the last is right — verified this sweep: `slice_inline.h:2`, `mccslice.h:4`, `mccgpu.h:12`, `ast_eval_slice.h:18`, because `mccgpu.h`'s block is mirrored across the two emitters and `ast_eval_slice.h`'s eighteen were never counted. `PLAN.md:620` still carries the "16 refusal sites, not 8" figure.
-15. **Seven `TODO` markers in the tree name sections of this file that do not exist**: `tests/cst/macro-nesting.cmake:24,31` and `tests/cst/symref-shadow.cmake:30` cite `'CST slice-J'` / `'CST slice-I'` (**`CST` appears nowhere in this file**); `tests/jit/run-parity.sh:48` cites a "TODO KGC section"; `tests/superopt/promote-floor.sh:39` cites `'Floor the search'`; `tools/embed-jit-smoke.py:10` cites "P0 step 5"; `:103` cites a "gcc-engine startup residual". Three more point at the wrong row: `tools/fmt-census.py:4` and `tests/optfire/levelpins.txt:256` say "board row 2" (now `levelbench.tsv`), `cmake/slicerun_census.cmake:50` says "board item 3" (now Metal).
+15. ~~**Seven `TODO` markers in the tree name sections of this file that do not exist**~~ **CLOSED on `wt/docsync`, and the item as filed was itself wrong on two counts.** It said "seven markers in `tests/`"; there are **five markers in four files** under `tests/`, and the count of seven only reaches seven by including two markers in `tools/` and by counting `macro-nesting.cmake`'s two separately. It also cited `tests/superopt/promote-floor.sh:39`; the marker is at **`:41`**. What each named and what was done: `tests/cst/macro-nesting.cmake` and `tests/cst/symref-shadow.cmake` cited `'CST slice-J'` / `'CST slice-I'`, which **never lived in this file** — they were sections of `docs/NOTES.md`, deleted wholesale at `bb2469bd` and not migrated, so the boundary each test pins is now stated in the test's own failure message and the dead pointer says where it went; `tests/jit/run-parity.sh` cited a "TODO KGC section" purged at `4ab363ce`, and now names `MCC_JIT_NEARMATCH` and `src/mccjit_embed.c` directly, with a note that the nearest live prose does **not** cover near-match parity; `tests/superopt/promote-floor.sh` cited `'Floor the search'`, pruned at `71f3330b`, and now names `so_unsetenv_axis` / `MCC_SO_PROMOTE_FLOOR` in `src/mcc.c`; `tools/embed-jit-smoke.py` cited "P0 step 5" and a "gcc-engine startup residual", **neither of which any row of this file owns**, and now says so rather than implying they are tracked. The three that pointed at the wrong row — `tools/fmt-census.py`, `tests/optfire/levelpins.txt` and `cmake/slicerun_census.cmake` — now cite section headings or the tool to re-run, not board ordinals, because board ordinals renumber.
 
-### The lavapipe citation, now sourced — copy it across
+### The lavapipe citation, now sourced — COPIED ACROSS on `wt/docsync`
 
-`docs/TODO.md:385-389` files this and defers it to *"whoever owns E6"*. Nobody owns E6, so it
-has not moved. It was **independently re-verified during this sweep** against
+This was filed further down this file and deferred to *"whoever owns E6"*. Nobody owned E6,
+so it did not move for two sweeps; it has now been copied into `docs/PLAN.md` without
+waiting for an owner. It was **independently re-verified during the `wt/sweep` pass** against
 `/var/cache/distfiles/mesa-26.0.8.tar.xz`, at exactly the cited lines:
 
 ```
@@ -113,10 +125,11 @@ src/gallium/frontends/lavapipe/lvp_device.c:454   .shaderFloat64 = (pdevice->psc
 src/gallium/drivers/llvmpipe/lp_screen.c:301      caps->doubles = true;
 ```
 
-`docs/PLAN.md:625` still carries the bare assertion *"Vulkan's `shaderFloat64` is optional
-but present on both the NVIDIA host and lavapipe"*, and `PLAN.md:797` (I2's
-`shaderFloat64 = TRUE` refusal floor, "see E6") rests on it. **The citation is a two-line
-edit and should be made.** Two residues survive it and are genuinely open:
+`docs/PLAN.md`'s E6 row used to carry the bare assertion *"Vulkan's `shaderFloat64` is
+optional but present on both the NVIDIA host and lavapipe"*, and PLAN's I2 row (the
+`shaderFloat64 = TRUE` refusal floor, "see E6") rested on it. **Both now carry the two
+lines above and the fact that lavapipe's half is a source reading, not a device reading.**
+Two residues survive that and are genuinely open:
 
 - **`ci.yml:116` does not pin the Mesa version** (`libvulkan-dev mesa-vulkan-drivers`, confirmed), so *"CI's lavapipe"* remains an inference from *"26.0.x lavapipe"*. Pinning it is one line.
 - **A *runtime* fp64 denormal reading from lavapipe** has never been taken. Both devices advertise neither fp64 denorm mode, which makes them consistent on paper and says nothing about what either computes. There is no lavapipe ICD on this host (`/usr/share/vulkan/icd.d/` holds `nvidia_icd.json` only).
@@ -143,6 +156,62 @@ body, evaluation order only) · `%p` on the device (glibc prints `(nil)`) ·
 
 I found no decision on that list that looks wrongly settled.
 
+## Landed — the docs cite the tree, and now something checks it, 2026-08-09 (`wt/docsync`)
+
+Nothing in this tree had ever opened a file under `docs/`. Every citation in every board
+was unverified prose, and the class had already produced defects nobody had noticed.
+
+**The sweep, run as `tools/docref-lint.py` over the pre-`wt/docsync` docs.** Live boards
+(`PLAN.md`, `TODO.md`, `DEVICE-LIBC.md`, `README.md`): **1,227 checkable citations — 796
+in-tree paths, 372 line anchors, 59 symbol-at-a-location claims — of which 7 dangle. A
+99.43% hit rate**, plus the failed-to-reproduce table's count, which was stated three
+ways. Including `ARCHIVED.md`: **1,912 citations (1,198 / 591 / 123), 20 dangling,
+98.95%.** Read the right way round, that number is not reassuring: the documentation is
+overwhelmingly *decorative* — of 372 line anchors the tool can prove only that 371 land
+inside a file that exists, never that they land on the right line — and the 0.57% that was
+load-bearing enough to break is exactly the part somebody had acted on.
+
+**Four defects, not stale figures, found by the sweep and fixed:**
+
+1. `PLAN.md` named `MCC_MAX_UNARY_DEPTH 2048` at what was then line 241 of `src/mccgen.c`.
+   The symbol was deleted by `wt/unarydepth`, one guard replaced by
+   `MCC_MAX_PARSE_DEPTH 512` charged at eight parser entry points.
+   The **peak-11 measurement beside it was taken against the old budget and
+   is marked stale rather than re-taken** — re-running it is a measurement, not a
+   reconciliation.
+2. **`README.md` advertised four `-DMCC_CONFIG_*` build options the build has not had
+   since `a55c0a07`** — `MCC_CONFIG_ASM`, `MCC_CONFIG_OPTIMIZER`, `MCC_CONFIG_LSP`,
+   `MCC_CONFIG_DIAG_RT`. This is the loudest thing in the sweep and it is **wrong, not
+   stale**: passing one leaves a silently ignored cache entry, and `tools/ckretired.c`
+   already treats the family as retired. Removed, with the runtime successors named.
+3. `tests/must-run.txt` attributed the `552 of 12,957` loop-slice figure to the
+   `slice-census` cell, which runs `--corpus wide` — a corpus whose `t=0` slice count is
+   **81,615**. **Wrong, not stale**; see the `wide` collision above.
+4. The `+137` anchor-drift rule at the head of this file was **wrong in both of its own
+   worked examples**, and there is no single offset. Corrected in place with the two
+   measured clusters.
+
+Plus one dead line anchor (`levelbench.tsv:47`, a 30-line file), the three-way count of
+the failed-to-reproduce table, E6 marked OPEN in `PLAN.md` while two other places said
+closed, the lavapipe citation finally copied across, and ten `TODO` markers in `tests/`,
+`tools/` and `cmake/` — seven naming doc sections that do not exist, three naming board
+rows that have renumbered — of which the item filing them was itself wrong about the
+count and about one line number.
+
+**The gate.** `docs/refs` (`tools/docref-lint.py`) + `docs/refs-known-positive`, both
+`must-run`. Four rules, each scoped so a design doc naming its own unbuilt work cannot trip
+it: a rooted path must exist; a `file:line` must land inside that file; a
+project-namespaced symbol quoted *beside a `file:line`* must occur in that file; and the
+failed-to-reproduce table's row count must equal the one sentence that states it. Run
+against the pre-`wt/docsync` docs it reports all eight, defect 1 included, by name.
+`tools/docref-allow.txt` holds the five citations that must **not** resolve, each with its
+reason, and an entry that starts resolving fails the cell.
+
+`ARCHIVED.md` is out of the gate's scope by its own header — it is a snapshot kept for
+later validation, and most of what it cites was deleted after the snapshot was taken.
+Its 13 dangling citations are real and are listed by `--include-archived`; demanding they
+resolve would demand that history be rewritten.
+
 ## Landed — the census label arms its own cells, and `slice-census`'s corpus is the goldens table, 2026-08-09 (`wt/censusfix`)
 
 Closes open rows 1 and 2 and filed item 3 above. Three separate defects were stacked behind
@@ -168,10 +237,34 @@ level:
 **The `src/` fragment trap was checked and is not the explanation.** `slice-census.py`'s
 `wide` corpus is `src/mcc.c` plus a walk of `tests/exec`, `tests/behavior`, `tests/ast` and
 `examples` — it never walks `src/`, so `mccast.c`, `mccircap.c` and `mccrir.c` were never in
-it and none of the 9 is a fragment. The 9-vs-3 coincidence was a coincidence. (Note in
-passing that `rir-coverage.py`'s `wide` is a *different* 380-source set — it also walks
-`tests/asm`, `tests/runtime` and `tests/static`. Two corpora under one name; not touched
-here because the `rir` banks are held by another branch.)
+it and none of the 9 is a fragment. The 9-vs-3 coincidence was a coincidence.
+
+### Two corpora were both called `wide` — RESOLVED by disclosure, not by renaming, `wt/docsync`
+
+`rir-coverage.py`'s `wide` is a **different** set from `slice-census.py`'s: it also walks
+`tests/asm`, `tests/runtime` and `tests/static`, so it is 380 walked sources against
+slice-census's 359 walked / **346 declared**, and it is differently *constructed* as well —
+slice-census filters and re-flags through `tests/exec/goldens.h` and hard-fails on a
+compile error, rir-coverage compiles all 380 with bare `mcc -c` and silently drops the ~9
+that fail. They are not two sizes of one population.
+
+**Neither was renamed, and the reason is that renaming was the more expensive wrong fix.**
+`rir-coverage`'s `wide` is a bank key in `tests/rir/coverage-bank.json` and the corpus
+selector of the `rir-coverage-census` cell; renaming it edits a ratchet that is not this
+branch's, against a 0.05-point tolerance across four levels. Renaming *slice-census*'s
+instead is free — it banks nothing — but it would not fix the actual defect, which is that
+**a figure could not be attributed to a corpus at all**: neither tool printed which corpus
+it had walked, so a pasted log carried no provenance and two `wide` figures could be
+compared silently. Both tools now print `corpus=…` **with its membership spelled out** on
+every report header (`wide[slice-census] = …` / `wide[rir-coverage] = …`) and in
+slice-census's `--quiet` one-liner, alongside the source count. That is the cheap correct
+fix: the name stays ambiguous, the output does not.
+
+**The collision already produced one wrong attribution, and it is a wrong claim, not a
+stale one.** The `552 of 12,957` loop-slice figure is recorded below as
+`--corpus self`, and `tests/must-run.txt` attributed the same figure to the `slice-census`
+cell — which runs `--corpus wide`, whose `t=0` slice count is **81,615**, not 12,957. The
+manifest row has been corrected; the figure itself is a `self` number and is unchanged.
 
 **The fix is that `tests/exec/goldens.h` is the authority on what a `tests/exec` source is.**
 It is the same table `tests/runner.c` executes. `slice-census.py` now reads it: it passes
@@ -850,11 +943,11 @@ Mesa 26.0.x. The Mesa version on the CI runner's `mesa-vulkan-drivers` is not pi
 `ci.yml:116` and was not read, so "CI's lavapipe" remains an inference from "26.0.x
 lavapipe".**
 
-`docs/PLAN.md:625`'s bare assertion — the thing this went looking for — is therefore
-**correct but still uncited in PLAN.md**, and `PLAN.md:797` (I2's `shaderFloat64 = TRUE`
-refusal floor, "see E6") rests on it. Left as-is here rather than edited in place, because
-this branch owns the audit section and not the E-track rows; the citation above is the
-record to copy across when someone owns E6.
+`docs/PLAN.md`'s E6 assertion — the thing this went looking for — is therefore **correct**,
+and PLAN's I2 row (the `shaderFloat64 = TRUE` refusal floor, "see E6") rests on it. It was
+left uncited here because this branch owned the audit section and not the E-track rows;
+**`wt/docsync` copied the citation across on 2026-08-09**, so both PLAN rows now carry it
+and both say plainly that lavapipe's half is read from Mesa source, not from a device.
 
 **Which means row 6's float row does NOT close permanently — and the denormal question is
 live.** The consequence chain in the paragraph above now runs to its end, and the answer is
@@ -986,8 +1079,10 @@ now **landed**, so row 1 is the only unmeasured row left above the priced ones.
 
 ### Where every number on this board comes from
 
-The recurring failure of this file is headline figures with no script behind them. **Twelve
-have now failed to reproduce**, and the two that failed on `wt/benchtrap` failed for a new
+The recurring failure of this file is headline figures with no script behind them. **The
+count is the failed-to-reproduce table below and nowhere else** — do not restate it here;
+that is how it came to be written as twelve, nine and seven in three places at once. The
+two that failed on `wt/benchtrap` failed for a new
 reason — the measuring tool was defective, not the transcription. The three added on
 `wt/ladder2` are a third reason again: `reg-color` and `if-conversion-abs` were correctly
 measured on a **tree that has since moved**, and the `narrow` / `tree-copy-prop` claim was a
@@ -1135,8 +1230,10 @@ tool and the corpus that produces it, or is marked **PROSE-ONLY** / **UNMEASURED
    verdict is about, and it now applies to `is_float` instead: **never quote 80.60% without
    1.45% beside it.**
 
-**The nine figures that have failed to reproduce**, kept as a list because the pattern is
-the finding:
+**The 13 figures that have failed to reproduce**, kept as a list because the pattern is
+the finding. This sentence is the only statement of the count in this file, and
+`docs/refs` (`tools/docref-lint.py`) derives the number from the table's own rows and fails
+if the two disagree — so the count moves when a row is added, or the cell goes red:
 
 | figure | actual | how it failed |
 | --- | --- | --- |
@@ -1162,8 +1259,10 @@ regression: every `rir-coverage` measurement sits at or above its banked floor a
 passes. They are stale prose.
 ### The measurement-tool audit — 2026-08-09, `wt/benchtrap`
 
-Seven headline figures on this board have now failed to reproduce, and at least two of the
-seven failed because a **tool** was wrong rather than a transcription. The `storeval-rot`
+**Seven** headline figures had failed to reproduce *when this audit was taken on
+2026-08-09*; the list has grown since and its current count is the table above, not this
+number. At least two of those seven failed because a **tool** was wrong rather than a
+transcription. The `storeval-rot`
 `0.0000%` (debt #6a) and the `fmt-census` drift are the two. This section is the sweep that
 followed: every committed measurement tool read for four specific failure modes, with the
 cheap fixes landed on this branch and the rest filed precisely. **No pin value changed and
@@ -2477,9 +2576,10 @@ would be false on every normal build.
    `#if MCC_CONFIG_MACHO_CHAINED_FIXUPS` scored zero. All 17 named macros were reached, and
    *"4 of 37 config macros have their idiom checked"* was never true; **17 of 37** was.
    Coverage is now **29 of 37** with the other 8 refused by name. See *LANDED —
-   `tools/idiomgate.c`'s denominator* above. This is the thirteenth headline figure in this
-   project to fail to reproduce, and the third whose cause was a count taken once and read as
-   something it did not measure.
+   `tools/idiomgate.c`'s denominator* above. This was the thirteenth headline figure in this
+   project to fail to reproduce **as the list stood when this was written**, and the third
+   whose cause was a count taken once and read as something it did not measure. For the
+   current count, read the failed-to-reproduce table, not this ordinal.
 3. ~~**`tools/o0_ab.sh`'s gated half stays frozen**~~ **CLOSED 2026-08-09 (`wt/envgate`).**
    The thirteen files are regenerated against `src/mccopt.h` and `ast/o0-baseline-gated`
    covers them, with a known-positive that the committed thirteen would have failed. See
@@ -3865,9 +3965,11 @@ The grounds were three measurements, not a preference. Two did not survive:
   `memset`-shaped loop and its twin are removed, spread over twelve array fills, nine of
   them under 70,000 iterations in a whole self-compile.~~ **STALE — it is 0.01%, and the
   twelve array fills are not the shape of the answer.**
-- `tools/slice-census.py` ("slices containing a loop"): only **4.3%** of census slices
-  contain a loop at all, so even a workload *with* lanes meets a thin eligibility surface
-  here. **Re-taken 2026-08-09 and it holds: 552 of 12,957 slices, 4.26%.**
+- `tools/slice-census.py --corpus self` ("slices containing a loop"): only **4.3%** of
+  census slices contain a loop at all, so even a workload *with* lanes meets a thin
+  eligibility surface here. **Re-taken 2026-08-09 and it holds: 552 of 12,957 slices,
+  4.26%.** This is a `self` figure — `wide` enumerates 81,615 `t=0` slices, so the two
+  must never be compared.
 - Inspection: **0** call sites for `mcc_slice_frame_from_ast` in `src/`, and no device
   consultation of any kind during an ordinary `mcc -O2 -c`. **Re-verified 2026-08-09: the
   definition is `src/mccslice.h:521` and all 16 call sites are in `tools/slicerun.c`.**
@@ -4364,8 +4466,10 @@ item now says what was measured, not what was assumed.
    and it is the wrong number.** Three findings, in the order they were taken.
 
    **(a) Where the 0.0000% came from, because that matters more than the row.** It is
-   one cell: `tests/optfire/levelbench.tsv:47`, the `gain_pct` column of the
-   `storeval-rot` row, banked by `1ad3f1aa` and quoted in `893c1e84`'s commit message and
+   one cell: the `gain_pct` column of the `storeval-rot` row of
+   `tests/optfire/levelbench.tsv` — cited here as `:47` when the file had 47 lines, and
+   **that anchor is dead: the file is 30 lines / 16 data rows today and the row is at
+   `tests/optfire/levelbench.tsv:26`**. Banked by `1ad3f1aa` and quoted in `893c1e84`'s commit message and
    at the ladder write-up below. `tools/optlevel-bench.py`'s `gain` is a **geometric mean
    of dynamic `instructions:u` over the 17 `tests/runtime` kernels** — not a static count,
    and not `src/mcc.c`. The same row's `fires_kernels` column is **empty**: the flag
@@ -4376,8 +4480,10 @@ item now says what was measured, not what was assumed.
    Re-checked on today's tree: `storeval-rot` still changes **0 of 17** kernels at `-O2`
    and `-O3`, so no runtime-kernel benchmark can ever say anything about this flag, and
    driving `tools/runtime-bench.py` through an `--mcc` wrapper would be a null experiment
-   by construction. **This is the seventh headline figure on this board that did not
-   reproduce, and it failed differently from the other six: nothing was mismeasured, a
+   by construction. **This was the seventh headline figure on this board that did not
+   reproduce *as the list stood when this was written* (read the failed-to-reproduce table
+   for the current count), and it failed differently from the other six: nothing was
+   mismeasured, a
    correctly computed number of the wrong quantity was quoted as if it were the right
    one.** The rule it earns: *a ratio whose denominator did not move is not a measurement
    of zero effect, it is a measurement of no coverage* — quote `fires`, never `gain`,
@@ -6081,7 +6187,8 @@ both shipped the same day this was written.
    existing direction-vector machinery). The measurement wanted is a per-loop trip
    histogram over a self-compile, in the manner of `MCC_SLICE_CENSUS`. Less urgent than
    it was -- the bar is now **451 lanes at 3 nodes and 27 at 31 nodes**, not ~1,177 --
-   but still the binding half, because only 4.3% of census slices contain a loop at all.
+   but still the binding half, because only 4.3% of `self`-corpus census slices contain a
+   loop at all.
 4. **Then the JIT seam** (S2/S4/S8): narrow `mccjit_swap_lock`, graduate the bench out
    of `MCC_DEV_ENV` and flip it fail-closed for device candidates, and add the fourth
    branch to `mccjit_lazy_entry`.
@@ -6650,8 +6757,8 @@ thing that terminates the subtrees — multiple outputs, one per store.
 
 And a second number that constrains it: at 1 lane the device costs ~20,207 ns against
 ~14 ns/node on the CPU, so **break-even at one lane is ~1,443 nodes** — larger than the
-biggest invoke-free region in the tree (1,114). Only **4.3% of census slices contain a
-loop at all**. So growing the unit is necessary and *not sufficient*; S5′ is the binding
+biggest invoke-free region in the tree (1,114). Only **4.3% of `self`-corpus census slices
+contain a loop at all**. So growing the unit is necessary and *not sufficient*; S5′ is the binding
 half, and it needs a **dynamic** trip-count histogram, because static trip count does not
 exist in this tree (no function computes one; `ast_loop_bounds` gives a constant IV bound,
 not a count, and only when the init is a literal in the preceding statements).
@@ -10302,8 +10409,10 @@ Prologues and epilogues are modelled by neither layer, by construction, and are 
 the largest non-covered slice of `.text` — 5.5%, two orders of magnitude bigger than
 the gap.
 
-The wide corpus (`src/mcc.c` + every `tests/{exec,behavior,ast,asm,runtime,static}/**.c`
-+ `examples`, 363 files, 9 of which are negative tests that do not compile) agrees:
+The wide corpus (`rir-coverage`'s, not `slice-census`'s: `src/mcc.c` + every
+`tests/{exec,behavior,ast,asm,runtime,static}/**.c` + `examples`, **363 files when this was
+written — STALE, the walk is 380 today**, 9 of which are negative tests that do not
+compile) agrees:
 modelled 100.000% / 100.000% / 99.986% / 99.986%, gap 0 B at `-O0`/`-O1` and the same
 467 B at `-O2`/`-O3` — **the same body as the self corpus**, so what remains lives in
 `src/`.
@@ -11298,3 +11407,14 @@ configured: `ctest` **9162/9162** (9161 + `diag.parse-frames`), `-L flagsweep` 1
 `CMakeLists.txt` registration and a manifest row — and the sweep says so independently:
 900 TUs at `-O0`–`-O3`, **2,996 objects byte-identical, 0 differing**, 604 failing
 identically on both, 0 self-unstable.
+**Left open, deliberately.** The guard is a *depth* budget with a per-level cost fixed
+by measurement of the `-O0` build; it is not a stack-headroom probe. That is the right
+trade here — the diagnostic must be reproducible for the cell to be worth anything, and
+an rlimit-derived limit would fire at a different depth on every host — but it means the
+bound is only as good as the frame sizes it was measured against. **Anything that grows
+`unary_nested`'s 832-byte frame silently erodes the margin, and nothing watches it.**
+The cheapest watchdog is the `520 KiB` figure above: re-run the rlimit bisect after any
+change to the frames of the eight guarded functions. `docs/PLAN.md` used to name the old
+`MCC_MAX_UNARY_DEPTH 2048` budget at a `src/mccgen.c` anchor for a symbol that no longer
+exists; **fixed on `wt/docsync`**, and `docs/refs` (`tools/docref-lint.py`) now fails on a
+symbol quoted beside a file:line it does not occur at, so that shape cannot recur silently.

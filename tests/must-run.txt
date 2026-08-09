@@ -54,6 +54,8 @@ fmt/census-oracle            | must-run   | tools/fmt-census.py is a Python port
 fmt/census-oracle-known-positive | must-run | proves that oracle is not comparing nothing
 fmt/census-bank              | must-run   | the oracle gates the PORT; this gates the NUMBER. 172/162/148/100 and 9/4/1 are quoted on the board and were ratcheted nowhere. Needs only python3 and the source tree, so a skip here is always a bug
 fmt/census-bank-known-positive | must-run | proves that bank check moves when a board figure moves
+docs/refs                    | must-run   | every file:line and namespaced symbol the live docs cite still resolves against the tree. Nothing read a file under docs/ until 2026-08-09, which is how PLAN.md named MCC_MAX_UNARY_DEPTH at src/mccgen.c:241 for a round after the symbol was deleted, and how README advertised four -DMCC_CONFIG_* options the build had not had since a55c0a07. Needs only python3 and the source tree, so a skip here is always a bug
+docs/refs-known-positive     | must-run   | proves docs/refs is not blind: one planted defect of each of its four shapes, plus the subject floor and the no-documents case
 fmt/arena-census-bank        | must-run   | the de-duplicated D4b block census. 10,423 Invoke-blocked / 86 (0.825%) is on the board, and its predecessor sat there for a week as an upper bound because nobody had armed the recorder over one TU
 fmt/arena-census-known-positive | must-run | proves that arena bank fails on a double-counted dump, a shrunken one, and a moved share
 
@@ -89,7 +91,7 @@ loop-census                  | registered | the self-compile trip census the boa
 loop-census-numeric          | registered | the runtime-corpus trip census the board's 97.76% / 80.60% row comes from
 loop-census-parallel         | registered | --partest, the parallel-legality ground truth
 slice-enum                   | registered | 12 pinned sources; the cell that would notice 11 of them ceasing to compile
-slice-census                 | must-run   | the 552-of-12,957 loop-slice figure. `registered` was not enough: nothing set MCC_SLICE_CENSUS_RUN, so the row was green on a cell that had never executed. CMakeLists.txt now arms it, and the opt-in guard is its only 77 path, so a Skipped here means the arming was lost
+slice-census                 | must-run   | the wide-corpus slice census (81,615 t=0 slices at -O1..-O3). NOT the 552-of-12,957 loop-slice figure, which is a --corpus self number; this row claimed it until 2026-08-09. `registered` was not enough: nothing set MCC_SLICE_CENSUS_RUN, so the row was green on a cell that had never executed. CMakeLists.txt now arms it, and the opt-in guard is its only 77 path, so a Skipped here means the arming was lost
 census/gates-armed           | must-run   | proves the census cells are armed at all; the cell that would have caught `-L census` reporting 6 passed with 3 Skipped
 rir-coverage-census          | registered | the census half of the coverage ratchet
 rir-gap-classes              | registered | the UNF/WHY gap fixtures

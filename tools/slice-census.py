@@ -416,10 +416,21 @@ def pct(a, b):
     return 100.0 * a / b if b else 0.0
 
 
-def report(level, acc, top_n):
+def corpus_id(corpus, explicit):
+    if explicit:
+        return "explicit --sources"
+    if corpus == "self":
+        return "self = src/mcc.c"
+    if corpus == "exec":
+        return "exec = tests/exec/**.c"
+    return ("wide[slice-census] = src/mcc.c + tests/{exec,behavior,ast} + "
+            "examples, filtered by tests/exec/goldens.h")
+
+
+def report(level, acc, top_n, corpus):
     names = bucket_names()
-    print("=== -%s  sources=%d (failed %d)  modelled bodies=%d "
-          "(faithful %d)" % (level, acc["src_n"], acc["src_fail"],
+    print("=== -%s  corpus=%s  sources=%d (failed %d)  modelled bodies=%d "
+          "(faithful %d)" % (level, corpus, acc["src_n"], acc["src_fail"],
                              acc["fn_n"], acc["fn_faithful"]))
     print("    body bytes %d (replayed %d, %+.3f%%)   statement-attributed %d "
           "(%.3f%% of replayed)   arena nodes %d"
@@ -518,6 +529,7 @@ def main():
                         paths.append(os.path.join(dp, fn))
 
     cpu, tos = target_id(mcc)
+    corpus = corpus_id(a.corpus, not walked)
     sources, dropped = annotate(paths, read_goldens(), cpu, tos, walked)
     if dropped and not a.quiet:
         print("corpus: %d of %d walked sources excluded by tests/exec/goldens.h "
@@ -535,7 +547,7 @@ def main():
         errs = [] if a.verify else None
         acc = census(mcc, flags, sources, level, a.top, a.jobs, errs)
         if not a.quiet:
-            report(level, acc, a.top)
+            report(level, acc, a.top, corpus)
         if errs:
             bad += ["-%s %s" % (level, e) for e in errs]
         out[level] = acc
@@ -570,10 +582,11 @@ def main():
     if a.quiet:
         for level, acc in out.items():
             p = acc["part"][0]
-            print("slice-census -%s: %d bodies, %d slices, %d B in slices "
-                  "(%.1f%% of %d body bytes)  OK"
-                  % (level, acc["fn_n"], p["n"], p["bytes"],
-                     pct(p["bytes"], acc["body_bytes"]), acc["body_bytes"]))
+            print("slice-census -%s: corpus=%s, %d sources, %d bodies, %d "
+                  "slices, %d B in slices (%.1f%% of %d body bytes)  OK"
+                  % (level, corpus, acc["src_n"], acc["fn_n"], p["n"],
+                     p["bytes"], pct(p["bytes"], acc["body_bytes"]),
+                     acc["body_bytes"]))
     return 0
 
 

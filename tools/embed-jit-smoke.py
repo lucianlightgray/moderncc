@@ -7,7 +7,10 @@ a-la-carte loader, __ImageBase synthesis, the compiler-rt/libgcc runtime
 fallback) — then runs the produced standalone exe and asserts it prints the
 right answer. This locks in the PE --embed-jit LINK path; it deliberately does
 NOT drive the runtime JIT of a full self-compile (MCC_JIT=1 on the amalgamation
-still 0xC0000005s on the winlibs CI cells — P0 step 5, tracked in docs/TODO).
+still 0xC0000005s on the winlibs CI cells).  This was cited as "P0 step 5,
+tracked in docs/TODO"; there is no P0 step 5 in docs/TODO.md and no row owns
+this.  The nearest filed item is W8 under "Windows / macOS host items", which
+is a different defect (a heap-UAF in the AST re-emit path).
 
 Exit codes:
   0  bake linked a working engine-embedded exe and it ran correct
@@ -100,7 +103,8 @@ def main():
                 sys.exit("FAIL: embedded exe 0xC0000005 at startup with the "
                          "mcc-built engine (self-bake regression)")
             print("embed-jit-smoke: SKIP (embedded exe 0xC0000005 at MCC_JIT=0 "
-                  "-- gcc-engine startup residual; LINK succeeded, tracked in docs/TODO)")
+                  "-- gcc-engine startup residual; LINK succeeded. No row of "
+                  "docs/TODO.md owns this; it is tracked here and nowhere else)")
             sys.exit(SKIP)
         if r.returncode != EXPECT_RC or EXPECT_STDOUT not in out:
             sys.exit(f"FAIL: embedded exe wrong result (rc={r.returncode} "
