@@ -17,20 +17,52 @@ registers **9114** cells on this host, up from the 9106 the debt-#7 fix reached.
 
 ### The verdict, and why it re-ranks everything
 
-`tools/loop-census.py` plus the new `ast_loop_parallel_legal` predicate answered the
-census's `par=` field on 2026-08-08. `docs/PLAN.md` calls this "the single measurement that
-decides whether the project has a subject". Self-compile of `src/mcc.c` at `-O2`, 2017
-loops instrumented, 597 entered:
+> **Revised 2026-08-09 by a second workload.** The one-workload version of this section is
+> superseded in two places and confirmed in a third. The self-compile numbers below are
+> retaken; the `65.75%` / `1.88%` pair that used to head this section is stale in both
+> directions and must not be quoted again. Read `#### The second workload` under board row 1
+> before acting on any of this.
 
-- **79.4% of loop entries run exactly one iteration.**
-- The parallel-legal iteration-weighted fraction is **65.75%** — and **65.2 of those 65.75
-  points are one statement**: `rir_pvok[q] = 0` inside `rir_op_effect`, plus its twin.
-- Take those two out and it is **1.88% of all iterations**.
-- The whole remaining lane source is **twelve loops**, every one read by hand, every one an
-  array initialisation. Nine run under 70,000 iterations in an entire self-compile. The one
-  with volume is a `memset` whose correct fix is `memset`.
+`tools/loop-census.py` plus the `ast_loop_parallel_legal` predicate answered the census's
+`par=` field on 2026-08-08. `docs/PLAN.md` calls this "the single measurement that decides
+whether the project has a subject". It was taken on exactly one workload — `mcc` compiling
+`mcc` — and a compiler self-compile is pointer-chasing, allocation and switch dispatch,
+close to the worst case for data parallelism. It has now been taken on a second.
 
-**There is no lane source in this workload.** The AST-slice engine is a **lowering
+**Self-compile of `src/mcc.c` at `-O2`**, with the `rir_pvok` high-water-mark fix applied
+(`415b736c`, branch `wt/pvokclear`, unmerged at the time of measurement), 600 loops entered,
+52,077,202 iterations:
+
+- The parallel-legal iteration-weighted fraction is **0.01%**. Not 65.75%, and not the
+  1.88% that removing the `memset`-shaped loop and its twin by hand was estimated to leave:
+  the real fix removes both and what remains is lower than the hand correction.
+- **A perfect alias oracle does not move it.** `--alias-oracle` also gives **0.01%**.
+- **83.9% of all iterations sit in a loop that the predicate declines because it calls a
+  function (50.0%) or contains a label or `goto` (33.8%)** — properties of the program, not
+  gaps in the dependence arithmetic. No subscript or aliasing work converts them.
+
+**There is no lane source in this workload, and no dependence-analysis improvement would
+create one.** That is stronger than the original claim and it now has a measured reason
+rather than a hand-read list of twelve array fills.
+
+**17-kernel numeric corpus at `-O2`** (`--corpus runtime`), 2,246,355,539 iterations:
+
+- The parallel-legal fraction is **1.39%** — so the *headline* generalises.
+- The *reason* does not. **79.35% of all iterations decline for one reason**,
+  `bases-may-alias-indirect`, which on the self-compile is 0.71%. Turn that one gate off
+  and the corpus goes to **80.60%** while the self-compile stays at 0.01%.
+- The raw, dependence-ignoring fraction is **97.76%** against the self-compile's 52.51%.
+  The numeric workload has the iterations; the predicate cannot see them.
+
+So the correct statement is narrower than "freeze the device path". **The compiler has no
+lane source and cannot be given one. A numeric workload has one, and what stands between
+the predicate and it is a single sound-but-blunt alias gate.** Both halves are measured;
+neither is an argument. The device path should not be frozen on the strength of the
+self-compile alone, and it should not be resumed on the strength of the corpus alone —
+80.60% of that corpus is dense matrix multiply, and 14 of its 17 kernels have essentially
+no parallel-legal iterations even with perfect aliasing.
+
+The rest of this section stands as written. The AST-slice engine is a **lowering
 achievement with no dispatch site**: the predicate, both executors, the SPIR-V emitter, the
 format engine and the leaf inliner all work, are all differentially tested, and none of
 them has a caller whose runtime they could improve. Debt #0 says the same thing
@@ -64,7 +96,9 @@ committed tool and the corpus that produces it, or is marked **PROSE-ONLY**.
 | 19,454 blocks, **10,238** Invoke-blocked, 7,524 (73.49%) all-internal, 4,029 eligible, **803** sole-blocker | `slicerun --arenas <dump> --census` | `mcc -O2 -c src/mcc.c`, `MCC_RIR_PROD=2` |
 | 25,700 Invoke-blocked, **246** (0.96%) unblocked by `snprintf` alone — 8th, behind `_mcc_error` 1254, `fprintf` 554, `memcpy` 366 | `tools/fmt-census.py --arenas=` | `src/*.c`, 18 sources @ `-O1`, duplicate body records included |
 | 172 sites, 162 literal, **140 accepted (86.4%)**, 98 carrying `%s`, 17 budget / 4 flag / 1 float | `tools/fmt-census.py` | `src/*.c` |
-| 25.3M entries, 162.7M iterations, **79.4%** single-trip, 85.45% / **65.75%** / **1.88%** | `tools/loop-census.py` | self-compile of `src/mcc.c` @ `-O2` |
+| 26.1M entries, 52.1M iterations, 52.51% raw / **0.01%** parallel-legal / **0.01%** with `--alias-oracle` | `tools/loop-census.py <bdir>` and `… --alias-oracle` | self-compile of `src/mcc.c` @ `-O2`, on `415b736c` (`wt/pvokclear`, unmerged) |
+| 19.8M entries, 2246.4M iterations, 97.76% raw / **1.39%** parallel-legal / **80.60%** with `--alias-oracle` | `tools/loop-census.py <bdir> --corpus runtime` and `… --alias-oracle` | the 17 in-tree kernels of `tools/runtime-bench.py`'s `KERNELS`, its argv unchanged |
+| ~~25.3M entries, 162.7M iterations, **79.4%** single-trip, 85.45% / **65.75%** / **1.88%**~~ | — | **STALE 2026-08-09.** Pre-`pvokclear`. The `1.88%` was a hand correction that the real fix undercuts; see the verdict section |
 | `kept` 83.122 → **91.960** (`self`), 93.006 → **96.653** (`wide`); every lowerable floor | `tools/rir-coverage.py` | `self` = `src/mcc.c`; `wide` = 380 sources |
 | **4.3%** of census slices contain a loop at all | `tools/slice-census.py` ("slices containing a loop") | `MCC_SLICE_CENSUS` over a self-compile |
 | break-even lanes 322 / 108 / 48 / 24 / 23 / 8 | `slicerun --cost-synth` | synthetic, this host |
@@ -100,7 +134,11 @@ counts are known by construction and checks the histogram against them at `-O0/1
 with a negative control (no flag, no data) and a perturbation (move a bound, the numbers
 move). It is `must-run`.
 
-Self-compile of `src/mcc.c` at `-O2`, 1979 loops instrumented, 597 entered:
+Self-compile of `src/mcc.c` at `-O2`, 1979 loops instrumented, 597 entered. **Every figure
+in the next two tables predates `415b736c` (`wt/pvokclear`), which replaces the `rir_pvok`
+clear with a high-water-mark `memset` and takes a self-compile from ~163M iterations to
+52.1M. They are kept for the shape of the distribution, not for their values; the current
+numbers are in `#### The second workload` below.**
 
 | | |
 | --- | ---: |
@@ -219,6 +257,16 @@ are *not* distinct objects, and the shared decoder had been treating them as suc
 gate is new (`AstDepRef.indirect`) and is not read by `ast_loop_interchange_legal` or
 `ast_loop_fusion_legal`, so their behaviour is unchanged.
 
+**Priced 2026-08-09.** That gate is correct and it is the single most expensive refusal on
+array code. `mcc` marks *every* access to a 2-D array `INDIRECT` — `a[i][j]` decodes through
+an `AST_Load` between the two subscript peels (`mcc -O2 -fdump-loopdep`), even though `a` is
+a static array whose base is fully known and no memory is read there — so the gate that
+exists to stop `p[i]`/`q[i]` also stops `a[i][j]`/`b[i][j]`. It costs **79.35% of all
+iterations** in the numeric corpus and **0.71%** in a self-compile. The clean fix is to tell
+an array-decay `Load` from a pointer read; that was attempted and abandoned, because
+`ast_type_t` on those nodes returns 0, so the decoder has no type to test. Anyone picking
+this up needs to add the type, not the test.
+
 It answers `0` (proven carried) on: a scalar read upward-exposed in the body and written in
 it (`s += a[i]`, `p++` under `*p`), a store to a fixed symbol address (`gsum += b[i]`), a
 store and a ref to the same base at distance ≠ 0 in this loop's direction component
@@ -252,9 +300,123 @@ Three caveats that the next user of this number must not drop:
    24,747 slices). The per-threshold sweep is printed so the conclusion can be read
    without that constant.
 2. ~~**`par=?` in the `[loop]` record is still a question mark.**~~ **ANSWERED
-   2026-08-08 — and the answer is that there is no lane source. See the section below.**
+   2026-08-08 — no lane source in this workload — and *bounded* 2026-08-09: every record
+   now carries `why=`, and on the self-compile 83.9% of iterations decline because the loop
+   calls a function or contains a `goto`, so the bucket is genuine here and convertible
+   elsewhere. See `#### The second workload`.**
 3. **Ids are per-`mcc`-process.** Linking two `-floop-census` objects from separate
    invocations would collide. The tool compiles one TU.
+
+#### The second workload — the conclusion survives, the reasoning does not, 2026-08-09
+
+Everything above was measured on one workload, and it is the least representative one that
+exists for this question: a compiler self-compile is pointer-chasing, allocation and switch
+dispatch. `tools/loop-census.py --corpus runtime` now takes the identical measurement over
+standalone numeric programs. **The corpus is not chosen here.** It is
+`tools/runtime-bench.py`'s `KERNELS` table, *imported* by the census rather than restated,
+with its per-kernel argv used unchanged — a roster fixed long before this question was
+asked, and fixed to exercise codegen (integer divide, switch dispatch, struct copy, call
+depth, narrowing, string work), not to look parallel. Five of its seventeen kernels are not
+array code at all — `interp` is a bytecode VM, `hashmap` is chained hashing, `calls` is a
+recursion ladder, `strproc` is tokenisation, `divmod` is scalar integer arithmetic — and
+they are in the corpus because they were already in it. The three vendor/plb kernels are
+absent from this checkout and are named as skipped by the tool. Cell: `loop-census-numeric` (label `census`, `--opt-in`, 5.1 s).
+
+    tools/loop-census.py cmake-debug --corpus runtime --levels O2 --top 20 --opt-in
+    tools/loop-census.py cmake-debug --corpus runtime --alias-oracle
+
+| | self-compile @ `415b736c` | 17-kernel numeric corpus |
+| --- | ---: | ---: |
+| loops entered | 600 | 77 |
+| loop entries | 26,066,284 | 19,803,274 |
+| iterations | 52,077,202 | 2,246,355,539 |
+| entries running exactly 1 trip | 79.96% | **1.35%** |
+| entered loops `par=1` / `par=0` / `par=?` | 9 / 15 / 576 | 14 / 17 / 46 |
+| iteration share `par=1` / `par=0` / `par=?` | 0.35% / 3.88% / **95.77%** | 1.45% / 13.55% / **85.00%** |
+| raw iteration-weighted fraction at break-even | 52.51% | **97.76%** |
+| **parallel-legal iteration-weighted fraction** | **0.01%** | **1.39%** |
+| the same with the single hottest loop removed | 0.01% | 1.39% |
+| **the same with `--alias-oracle`** | **0.01%** | **80.60%** |
+| `--alias-oracle`, hottest loop removed | — | **3.67%** |
+| hottest loop | `ast_strpool_find_or_add`, 11.4% | `matmul.c:22`, **76.9%** |
+| top ten loops | 33.8% | 96.8% |
+
+Read the last three rows together. The shipped predicate says *both* workloads are barren,
+so the headline generalises. It generalises for opposite reasons.
+
+**Why each workload refuses.** Every `[loopar]` record now carries `why=`, and the census
+prints an iteration-weighted histogram of those reasons. A reason that names a weakness of
+the analysis is convertible in principle; one that names a property of the program is not.
+
+| reason | self-compile | corpus | kind |
+| --- | ---: | ---: | --- |
+| `body-unsafe` (the loop calls a function, or uses `asm`/`volatile`) | **50.04%** | 1.45% | program |
+| `not-analyzable` (a label or `goto` in the loop, or no affine IV) | **33.82%** | 4.15% | program, mostly |
+| `bases-may-alias-indirect` | 0.71% | **79.35%** | analysis |
+| `no-iv-nest` / `no-bound` / `cond-loads` / `ref-not-affine` | 11.20% | 0.05% | mixed |
+| `dep-direction-unknown` | 0.00% | 0.01% | analysis |
+
+**83.9% of the self-compile's iterations are in a loop that calls a function or contains a
+`goto`.** Those need inlining or goto-tolerant loop analysis, not dependence arithmetic.
+**79.35% of the corpus's iterations are one alias question.**
+
+**The bound on `par=?`, measured rather than argued.** `-fdep-alias-oracle` makes the
+dependence code assume two distinct base symbols never alias even when the address chain
+went through a load. That assumption is **unsound in general** — `p[i]` and `q[i]` through
+two distinct global pointers have distinct base symbols and may be the same memory — and it
+is safe to ship only because `ast_loop_parallel_legal` has no caller outside this census and
+`-fdump-loopdep` (verified: `grep -rn ast_loop_parallel_legal src tools include runtime`
+gives one declaration, one definition, and two diagnostic call sites), so it cannot reach
+emitted code. `flagsweep-exec/dep-alias-oracle` gates that it changes no exec result. With
+it on:
+
+- the corpus goes **1.39% → 80.60%**, so ~79.2 of the 79.35 points really do convert to
+  `par=1` rather than falling to the next refusal;
+- the self-compile goes **0.01% → 0.01%**. Zero points. A perfect alias oracle is worth
+  nothing to the compiler.
+
+So the defensible ceilings are: **self-compile ≤ ~12%** (95.77% declines, of which 83.86%
+is calls-and-`goto`s that no dependence work touches), with the *measured* alias
+contribution being **0.00 points**; **corpus ≤ ~85%** (the whole `par=?` bucket), of which
+**79.2 points are measured convertible** and about 1.9 more are `sieve`'s
+`for (j = i*i; j < n; j += i)` — parallel, refused only for a symbolic stride. The residual
+~4% is genuine: `strproc`'s `while (*p)` pointer walk, `interp`'s VM, and reductions
+(`acc += …`), which the predicate refuses **by design** — nobody has written a reduction
+transform, and that is a different capability from a stronger dependence test.
+
+**Now apply the same skepticism to this headline that killed the last one.** The 80.60%
+collapses to **3.67%** when the single hottest loop is removed, exactly as 65.75% collapsed
+to 1.88%. Per program, under the oracle, only three of seventeen kernels have any lanes at
+all: `matmul` 99.83%, `loopnest` 99.23% (whose hot nest *is* the same i-k-j matmul), and
+`vlaloop` 63.68%. The other fourteen are under 1%. The corpus's entire lane source is dense
+matrix multiply.
+
+But the two collapses are not the same finding. The self-compile's hot loop was
+`rir_pvok[q] = 0`, a 512-byte clear whose correct fix is `memset` — and `415b736c` has
+since applied it, which is why that 65.75% is now 0.01%. The corpus's hot loop is
+`c[i][j] += aik * b[k][j]` over three distinct 600×600 static `double` arrays. Its correct
+fix is not `memset`. It is the one workload shape a device path exists for, and here the
+oracle is not merely an upper bound: `a`, `b` and `c` are distinct file-scope statics, so
+for these specific loops the assumption is *true*, and `par=1` is the correct answer.
+
+**What this does and does not license.** It does not license resuming the device path: a
+17-kernel micro-benchmark suite whose lane source is one BLAS-3 kernel is not evidence that
+real programs `mcc` compiles have one. It does license retiring the claim that *the
+measurement* has settled the question. What has been measured is that the compiler is
+barren and cannot be made otherwise, and that on array code the predicate's own alias gate —
+documented above as deliberate, and it is correct — is worth 79 points of visibility. If
+anyone wants to reopen the device column, the next measurement is a real numeric
+application, not a third synthetic corpus, and the cheapest predicate work with a measured
+payoff is teaching `AstDepRef` to tell an array-decay `Load` from a pointer read.
+
+Two hazards this section introduces, stated rather than buried:
+
+1. **`--alias-oracle` numbers are not properties of a workload.** They are properties of a
+   ceiling. Never quote 80.60% without the 1.39% next to it.
+2. **The corpus's iteration count is dominated by one kernel's argv.** `matmul 600 8` is
+   76.9% of all 2.25 billion iterations, and that size was picked by `runtime-bench.py` to
+   take about a second, not to weight this census. The per-program table, not the corpus
+   total, is the size-independent read — and it says three kernels of seventeen.
 
 ### 2. Replay fidelity — ~4.3 points of `kept` still on the table; the ICE that blocked it is fixed
 
