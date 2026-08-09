@@ -1265,7 +1265,7 @@ decides whether more memory work pays:
 | first blocker | blocks | share | owner |
 | --- | ---: | ---: | --- |
 | a statement `AST_Invoke` | 47,883 | 55.69% | calls |
-| the condition of an `if`/loop is a refused expression | 32,559 | 37.87% | operators, `ref-not-local` |
+| the condition of an `if`/loop is a refused expression | 32,559 | 37.87% | **globals** — partitioned by `wt/condlower`, 94.87% is a `Ref` to a global |
 | store destination still unresolvable | 1,492 | 1.74% | mostly globals |
 | store *value* is a refused expression | 1,308 | 1.52% | operators |
 | return expression / no value / not last | 551 / 32 / 2 | 0.68% | frame |
@@ -1357,6 +1357,157 @@ what catches the normalisation asymmetry above — and under `--mutate` every ro
 cell is a live known-positive rather than a green light nobody has tested. Endianness needs
 no case of its own: both halves are written in words and shifts rather than in host bytes, so
 there is no byte order to disagree about.
+## Landed — the refused `if`/loop conditions are the globals bucket wearing a condition, and `p->f` is what was actually lowerable there, 2026-08-09 (`wt/condlower`)
+
+**The headline is that the premise was wrong, and the measurement is the deliverable.**
+The block-level census says 37.88% of refused blocks are first blocked by an `if`/loop
+condition, and two node-level causes — `op-ternary` (2.77%) and `no-working-type` (2.76%,
+of which 31,134 nodes are exactly a condition) — pointed at it as a *typing* gap. It is
+neither a typing gap nor a missing control-flow capability. **94.87% of it is a `Ref` to a
+global.**
+
+### The diagnostic: `condcause:`
+
+Reading the refusal cause off the **root** of a condition names the comparison, not the
+operand that blocked it — which is why this bucket has now been ranked as operator work
+three times. `slicerun --refusals` grows a `condcause:` table that reports, for every block
+charged `block/ctrl-cond`, the **deepest node in the condition whose own children all pass**
+(`cond_first_blocker` in `tools/slicerun.c`). It is a partition of `block/ctrl-cond`, not a
+sample: `condcause: blocked-conditions=` reproduces `blockcause: block/ctrl-cond` exactly.
+
+Whole gcc torture corpus at `-O1` through `MCC_ARENA_DUMP`, 15,923 bodies / 1,172,443
+nodes, 32,545 blocked conditions:
+
+| first blocker inside the condition | nodes | share |
+| --- | ---: | ---: |
+| `Ref` → `global-aggregate` (a `VT_SYM` `VT_STRUCT` symbol) | 30,875 | **94.87%** |
+| `Unary` `member-arrow` — `p->f` | 526 | 1.62% |
+| `Ref` → `func-symbol` | 492 | 1.51% |
+| `Ref` → `global-scalar-int` | 194 | 0.60% |
+| `Ref` → `indirect-local` (`VT_LLOCAL`) | 140 | 0.43% |
+| `Unary` `addr` — `&x` | 126 | 0.39% |
+| `Ref` → `global-array` | 69 | 0.21% |
+| `Unary` `inc`/`dec` — `while (i++)` | 51 | 0.16% |
+| an untyped `Load` (`a[i]`, `*p`, `(T)e`) | 40 | 0.12% |
+| everything else | 32 | 0.10% |
+
+The dominant shape is `if (g.field != K) abort();` — the gcc torture suite's whole idiom.
+`20000801-3.c` is the minimal witness: the condition is
+`Binary(TOK_EQ, Unary(MEMBER, Ref[VT_SYM|VT_LVAL|VT_CONST, VT_STRUCT]), Literal)`, and the
+blocker is the global `s`, not the member read and not the comparison.
+
+### What this retires
+
+1. **The 31,134 untyped-`Load` conditions are a relabelling, not a gap.** They are measured
+   at `allow_load = 0`, where a `Load` is refused whole. Giving the `Load` its type at
+   `RIR_M_LOAD` — the site the array-decay fix already edits, where `pv->type` is the
+   pointee and is in hand — would move those nodes from `no-working-type` to
+   `child-refused` and change **no** acceptance, because `ast_eval_slice_kind_ok`'s `Load`
+   arm still returns 0 without `allow_load`. At `allow_load = 1`, which is the predicate the
+   frame path actually asks, untyped-`Load` conditions are **40 blocks**, not 31,134. The
+   type is recoverable at construction; recovering it is not worth anything here. Do not
+   file it as condition work again.
+2. **Structured control flow is not missing.** `mcc_slice_spv_stmt` (`src/mccslice.h`)
+   already emits `OpSelectionMerge`/`OpBranchConditional` for a statement `if` (op 0) and
+   `OpLoopMerge` with a trip cap for `while`/`for`/`do` (ops 2/3/4), and the CPU reference
+   applies the same `MCC_SLICE_TRIP_MAX`. `switch` (op 6, 46 blocks), a condition-less `for`
+   (op 8) and `x ?: y` (op 9) are the only statement forms still refused, together **67
+   blocks**. Nothing about `if`/loop lowering is owed.
+3. **`ref-not-local/global-aggregate` is 35.9% of *all* refused blocks** (30,875 of 85,926)
+   once you count it through conditions. That makes globals the largest single non-call item
+   in the census, above every operator and memory item that has been ranked ahead of it, and
+   it lands squarely on the `VK_EXT_external_memory_host` decision in
+   *Total lowering*. **A contained down payment exists and is not taken here:** an accepted
+   frame slice cannot call and cannot store to a global (`block/store-dest-global` is a
+   refusal), so **every global read inside one is loop-invariant and read-only** and could be
+   seeded as an ordinary live-in rather than needing device-visible global memory. What
+   blocks it is the *oracle*, not the device — `cref_expr` spells a slice back to C for gcc
+   and clang to adjudicate, and a global that is not in the spelled-back program cannot be
+   adjudicated. Whoever takes globals owes that answer first.
+
+### What was lowered: `p->f`
+
+`p->f` reaches the arena as `Unary(0x40002, Ref[p])` with the **field's own type word** in
+`type_t` and the **member byte offset** in `ival`. That is the whole difference from `*p`:
+`ast_eval_slice_deref` has to ask the object hook for the pointee type because neither the
+`Load` nor its child carries one, and it therefore refuses a struct pointee — which is
+exactly the case here. Nothing is guessed; the region and the single bound comparison are
+the ones `*p` already uses.
+
+`ast_eval_slice_arrow` is the one predicate and there are six callers, none of which
+re-derives the rule: `ast_eval_slice_rec`'s `AST_Unary` arm, `ast_eval_slice_kind_ok`'s,
+`mcc_gpu_vwt`, `spv_expr`'s `AST_Unary` arm, and — for the store direction —
+`mcc_slice_frame_store`, `mcc_slice_frame_exec_stmt`, `mcc_slice_spv_store` and
+`mcc_slice_frame_mark_ptr`. The MSL arm deliberately does not implement it, exactly as it
+does not implement `*p` or `a[i]`: it has no region layer (§5 stage M4), so it returns 0 and
+the slice is not dispatched rather than being dispatched wrongly.
+
+Three restrictions, all of them refusals rather than approximations:
+
+- **The pointer must be in a frame slot**, not any expression that evaluates to a pointer.
+  `mcc_slice_frame_mark_ptr` marks slots so the seeder can put a *real in-mapping address*
+  there; a pointer that is not in a slot is seeded as an arbitrary integer that both
+  executors then agree is out of range — green for the wrong reason, and invisible to a
+  differential by construction.
+- **Bitfields are refused** (`type_bp`/`type_bs`, and `VT_BITFIELD` in the type word).
+- **Array-typed and float members are refused** — an array-typed member is an address, not
+  a value.
+
+The offset convention matches `spv_ext_off`/`ast_eval_slice_ext_off` exactly: convert the
+pointer to a region byte offset first, then add the constant. Both executors do it in that
+order, so the 32-bit truncation cannot be a place they disagree.
+
+### Measured effect, direct and cascade
+
+| | before | after |
+| --- | ---: | ---: |
+| `blockcause: block/ctrl-cond` | 32,545 | **32,050** |
+| `condcause:` member-arrow conditions | 526 | **23** |
+| refused blocks | 85,926 | **85,710** |
+| `frame-accepted-blocks` | 33,437 | **33,653** |
+
+**+216 blocks, +0.65% relative.** Taken in two steps, which is the honest decomposition: the
+**read** side alone unblocked 495 conditions but accepted only **+73 blocks**, because 540 of
+the freed blocks immediately hit a store *to* `p->f` — `block/store-dest-other` rose
+1,492 → 2,032. Lowering the store destination with the same predicate took it back to 1,451
+and added **+143 more**. The residue moved on to `block/other` (338 → 752), which is the next
+blocker in those blocks and is not claimed here.
+
+**Node-level acceptance does not move and cannot**: `refusal: accepted=378387` is unchanged,
+because the node walk runs at `allow_load = 0` and the arrow arm is gated on `allow_load`
+for the same reason the `deref` arm of `AST_Load` is — only the frame runner supplies a
+region and a seeded pointer slot. Claiming a node-level gain here would be double-counting.
+
+### Verification
+
+- `slice/arrow` and `slice/arrow-known-positive` are new (9,459 → 9,461 cells). Six device
+  differentials — `int`, `unsigned int`, `signed char`, `unsigned short`, `long long` at
+  member offsets 0, 4, 5, 6, 8 and 16 — each one a read *and* a store over a whole workgroup
+  of independent frames, comparing every frame slot **and every byte of the shared region**.
+  Plus three refusal cases (bitfield, array-typed member, non-pointer base). 418 checks, 0
+  failures. Under `--mutate` all six turn into **12 failures**, so the cell is a live
+  known-positive.
+- **Emitted code unchanged: 2,932 objects byte-identical, 0 differing**, 628 (file, level)
+  pairs not standalone-compilable by either binary, identically — `tests/`, `src/`,
+  `examples/`, `runtime/` at `-O0`–`-O3`, both binaries run from inside `cmake-debug/`
+  (trap 2). The static argument agrees and is the stronger one: `ast_eval_slice_rw` is
+  assigned **only** in `tools/slicerun.c`, so `ast_eval_slice_arrow` returns 0 on its second
+  line inside the compiler, and `src/mccslice.h` has no includer in `src/` at all.
+- `docref-lint.py` OK, `regstub-lint.py` OK (53 chains).
+
+### Reproducing the partition
+
+```sh
+for f in vendor/gcc-c-torture-execute/*.c; do
+    MCC_ARENA_DUMP=dump/$(basename "$f" .c).txt \
+        cmake-debug/mcc -c "$f" -o /tmp/a.o -O1 >/dev/null 2>&1
+done
+cat dump/*.txt > torture-arenas.txt
+cmake-debug/slicerun --arenas torture-arenas.txt --refusals | grep condcause
+```
+
+`MCC_ARENA_DUMP` **appends** — remove stale dumps first.
+
 ## Landed — the four "operator and arity" refusal causes are almost entirely not operators, 2026-08-09 (`wt/slicops`)
 
 **The headline is a negative result, and it is the deliverable.** `op-unary` (9.18% of
@@ -1575,9 +1726,12 @@ run to settle, and it is settled: 0 objects differ.**
    before the per-element run, so an implementer should extend **that** path rather than
    the element loop below it. Still **live-in/indexing work for whoever owns that**, not
    an operator change.
-2. **The untyped-`Load` conditions, 31,134 nodes (2.66%).** `no-working-type` is a label
-   on the same population as `load-not-allowed` and `ref-not-local`; nothing in it is a
-   type rule that is wrong.
+2. **The untyped-`Load` conditions, 31,134 nodes (2.66%). CLOSED as a non-item by
+   `wt/condlower`** — see *the refused `if`/loop conditions are the globals bucket* above.
+   `no-working-type` is a label on the same population as `load-not-allowed` and
+   `ref-not-local`; nothing in it is a type rule that is wrong, and at the `allow_load = 1`
+   predicate the frame path actually asks, untyped-`Load` conditions are **40 blocks**, not
+   31,134 nodes.
 3. **Do not file `arity` or `op-ternary` as slice work again.** 103,451 nodes (8.83%) of
    pure statement structure. If the frame path ever accepts a `for` or a statement `if` as
    a unit, they move; no expression change can touch them.
