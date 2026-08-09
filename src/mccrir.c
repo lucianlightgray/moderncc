@@ -2704,15 +2704,17 @@ static void rir_op_effect(const RirOp *ro) {
 						ast_nchild(rir_arena, src) == 2) {
 					AstLocal iv = ast_child(rir_arena, src, 1);
 					if (rir_effectful(iv) && rir_bbn &&
-							ast_detach_last_child(rir_arena, rir_bb[rir_bbn - 1], src))
+							ast_detach_last_child(rir_arena, rir_bb[rir_bbn - 1], src)) {
 						v = src;
-					else
+						chained = 1;
+					} else if (ast_chainstore_env) {
 						v = ast_dup_sub(rir_arena, iv);
-					chained = 1;
+						chained = 1;
+					}
 				}
 			}
 			n = ast_node(rir_arena, AST_Store);
-			if (chained && ast_chainstore_env)
+			if (chained)
 				ast_set_fbits(rir_arena, n, ast_fbits(rir_arena, n) | 1u);
 			if (rir_is_cmp_binary(v) && o->vs_n - rir_base_depth >= 2 &&
 					ir_cap_vs[o->vs_off + o->vs_n - 1].r != VT_CMP &&

@@ -433,13 +433,53 @@ item now says what was measured, not what was assumed.
    dilution from regression, and that is what changed. Two things stay open. The `pe`
    floors could not be re-banked from an ELF host; they are stale-low, so they
    under-gate on Windows rather than false-fail. And **`rir-coverage-census` (the `wide`
-   corpus) is red and was red before this** — measured on the pre-change tool against
-   the pre-change bank it fails `bodies_pct` 15.1452 < 15.6420, `nodes_pct_strict`
-   26.9255 < 27.1327 and, unrelated to lowerable at all, `kept coverage` 93.0371 <
-   98.3840 at -O2/-O3. The exclusion moves the first two *up* (to 15.4913 / 27.0635) and
-   does not touch the third. It is `--opt-in` and `LABELS census`, so it never runs in
-   CI, which is exactly how it stayed red. Not re-banked: banking a failing census
-   would bury the `kept coverage` gap.
+   corpus) was red and was red before this — now GREEN, and the cause was a
+   replay-fidelity bug, not a census artefact.** Two of the three failures were
+   lowerable dilution (`bodies_pct` 15.1452 < 15.6420, `nodes_pct_strict` 26.9255 <
+   27.1327; the exclusion moved both *up*, to 15.4913 / 27.0635). The third was not:
+   `kept coverage` failed at **-O1, -O2 and -O3** — the earlier note said "-O2/-O3",
+   which was wrong — 92.9416 / 93.0058 / 93.0058 against 98.3968 / 98.3841 / 98.3840
+   banked. -O0 alone passed, and that asymmetry was the tell.
+
+   `rir_to_arena()`'s `IR_OP_VSTORE` case collapsed a childless `AST_StoreVal` over its
+   `AST_Store` source **unconditionally**, but tagged the resulting `Store` with fbit
+   `1u` only when `ast_chainstore_env` was set. Both consumers of that bit — the
+   coalescing poison loop in `ast_func_end` and `ast_finalize_chainstores` — are gated
+   on the same flag family, so with the flags off the arena kept a collapsed chain that
+   nothing re-expanded and the replay's bytes drifted from the parser's. `chain-store`
+   went to level 3 at `1ad3f1aa` (killing -O1) and to level 11 at `893c1e84` (killing
+   -O2/-O3); -O0 never had the flag, which is why -O0 alone still matched its bank. Not
+   a miscompile — modelled coverage stayed 100%, `nofb_miscompiles` is empty, and the
+   byte gate restored the parser's bytes — but it cost optimization, because
+   `ast_run_strat_seq` gates every strategy on `faithful`.
+
+   Fixed in `src/mccrir.c` by splitting the two collapse branches: reusing the source
+   `Store` in the value position (`ast_detach_last_child` succeeds) is a faithful
+   re-nesting of a node the parser already had there and stays unconditional; *rewriting*
+   `a = b` into `a = <copy of b's value>` (`ast_dup_sub`) is the chain-store optimization
+   proper and is now gated on `ast_chainstore_env`. The `1u` tag is set whenever either
+   fires, so it records the structural fact and the consumers keep their own gates. The
+   `-O` levels in `src/mccopt.h` are untouched — `tests/optfire/{defstate.txt,levelpins.txt,
+   leveltime.tsv}` pin `chain-store` at 11 on measured stage-1 compile cost, and this is
+   not a licence to re-promote it. Measured effect (`kept`, elf/x86-64):
+
+   | | O0 | O1 | O2 | O3 |
+   | --- | ---: | ---: | ---: | ---: |
+   | `self` before | 82.939 | 82.998 | 83.122 | 83.122 |
+   | `self` after | 82.939 | **91.904** | **91.960** | **91.960** |
+   | `wide` before | 92.923 | 92.942 | 93.006 | 93.006 |
+   | `wide` after | 92.923 | **96.604** | **96.653** | **96.653** |
+
+   Both banks re-banked at `--update-bank --update-bank-low` (the fix moves the arena's
+   node count, so `self`'s `nodes_pct_strict` drops 26.151→26.125 / 26.130→26.104 —
+   inside the tolerance it had been sitting on, which is why the `self` cell went red on
+   lowerable while `kept` rose 9 points). `wide` needed re-banking regardless: the corpus
+   has grown to 380 sources (9 pre-existing negative/arch tests still fail to compile)
+   and `corpus_config` guards only `MCC_DIAG`/`MCC_EMBED_JIT`, not test-file count. With
+   all three of `-fchain-store -fchain-store-live -fchain-store-member` on, `self` reaches
+   96.204 / 96.232 / 96.301 / 96.301, so ~4.3 points of the old gap is still recoverable
+   by the two optimization passes and is not a fidelity defect. The cell is still
+   `--opt-in` with `LABELS census`, which is how it stayed red unnoticed.
 7. **The "464 skipped cells under `debug`" number was wrong, and so was its cause —
    PARTLY FIXED.** It was not `MCC_CROSS_DIR` and not a missing `cmake-cross`:
    `MCC_CROSS_DIR` defaults correctly, cross cells are registered unconditionally with
@@ -2873,12 +2913,19 @@ Measured at HEAD on darwin/aarch64 against the refreshed bank:
 
 So the two corpora disagree about the size of the effect, which is the part worth
 keeping. **`self` is gateable on Darwin today** — it clears the refreshed floor at every
-level. **`wide` is not**, and the 5 points at `-O1`+ are genuinely unexplained: they may
-be a host axis, or a residual Darwin-specific modelling gap that `8fd8c54e` narrowed
-(44% → 93.4%) without closing. `e2b8bdc4` explicitly did not re-bank wide, so the 98.4%
-floor is also of unverified vintage. **Nothing is armed on the strength of the self
-margin**, and the tool's stale 96.156-vs-83.219 justification string has been replaced
-with the numbers above.
+level. **Nothing is armed on the strength of the self margin**, and the tool's stale
+96.156-vs-83.219 justification string has been replaced with the numbers above.
+
+**`wide`'s 5 points were the same failure mode a second time — SETTLED, and it was not
+the host.** This section guessed "host axis or residual Darwin modelling gap"; the answer
+is neither. elf/x86-64 measures wide at **92.9416 / 93.0058 / 93.0058** at -O1/-O2/-O3
+against that same 98.4 bank, i.e. Linux is within a tenth of darwin's 93.4 and it is the
+*bank* that predates the `chain-store` demotion — exactly the `1ad3f1aa` staleness this
+section had just finished diagnosing for `self`, missed for `wide` because `e2b8bdc4`
+re-banked only `self`. The underlying defect was a replay-fidelity bug in
+`rir_to_arena()` (see debt #6); with it fixed, elf `wide` is 92.923 / 96.604 / 96.653 /
+96.653 and re-banked. **Lesson, third time: before attributing a gap to a host, measure
+the other host.**
 
 Two durable lessons. A ratchet whose gate lands *after* its bank is written has a
 window in which the bank silently rots, and `78d4856f` sat four commits behind
@@ -2886,8 +2933,8 @@ window in which the bank silently rots, and `78d4856f` sat four commits behind
 made the comparison look controlled while the bank it was compared against came from
 somewhere else entirely.
 
-**Still open:** whether wide's 5 points is host or gap; and a per-format schema for
-`residual` and `kept_coverage`, without which neither can be armed off elf.
+**Still open:** a per-format schema for `residual` and `kept_coverage`, without which
+neither can be armed off elf. (wide's 5 points is settled — stale bank, see above.)
 
 ## D1e is measured, and it wins — 2026-08-08, Apple M1 Pro
 
