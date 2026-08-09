@@ -3722,7 +3722,8 @@ if(MCC_BUILD_TESTS)
                             "-DCFLAGS=-w,-std=gnu11"
                             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gpuconform_cref.cmake")
                 set_tests_properties("slice/cref-oracle" PROPERTIES
-                    FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900)
+                    FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900
+                    SKIP_REGULAR_EXPRESSION "SKIP:")
 
                 set(_corpora
                     "gcc-c-torture-execute@CLANG@GCC@1000@50000@-w,-std=gnu11,-fpermissive,-lm"
@@ -3762,6 +3763,7 @@ if(MCC_BUILD_TESTS)
                                     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gpuconform_cref.cmake")
                         set_tests_properties("slice/cref-oracle-${_cc}" PROPERTIES
                             FIXTURES_REQUIRED MCC_BUILT TIMEOUT 7200
+                            SKIP_REGULAR_EXPRESSION "SKIP:"
                             LABELS "crefcorpus")
                     else()
                         mcc_skip_test("slice/cref-oracle-${_cc}"

@@ -358,6 +358,8 @@ def main():
               "with-dispatch=%d\n"
               % (summary["with_bodies"], len(withslice), len(withgpu),
                  len(withdisp)))
+    out.write("gpuconform: device present=%d dispatches=%d\n"
+              % (1 if device else 0, summary["dispatches_total"]))
     out.write("gpuconform: frame accepted=%d built=%d compared=%d mismatches=%d\n"
               % (summary["frame_accepted"], summary["frame_built"],
                  summary["frame_compared"], summary["frame_mismatches"]))

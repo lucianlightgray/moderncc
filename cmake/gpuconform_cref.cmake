@@ -37,11 +37,16 @@ if(NOT _out MATCHES "cref-oracle [^ ]+ ok=([1-9][0-9]*)")
                         "nothing")
 endif()
 
-if(_out MATCHES "device-mismatch-progs")
-    if(_out MATCHES "dispatches=0 ")
-        message(FATAL_ERROR "slice/cref-oracle: a device was found and never "
-                            "dispatched")
-    endif()
+if(_out MATCHES "device present=1 dispatches=0")
+    message(FATAL_ERROR "slice/cref-oracle: a device was found and never "
+                        "dispatched, so the device half of this cell measured "
+                        "nothing while reporting the same text as a full run")
+endif()
+if(_out MATCHES "device present=0")
+    message("slice/cref-oracle: no usable device; the dispatch stage did not "
+            "run and nothing below is a statement about it. The CPU reference "
+            "was still adjudicated against both oracles, which is this cell's "
+            "primary question and needs no device.")
 endif()
 
 execute_process(COMMAND "${PY}" "${TOOL}"
