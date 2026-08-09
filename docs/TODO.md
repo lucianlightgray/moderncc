@@ -444,6 +444,7 @@ row denominated in it ranks below every row that is not: *device-eligible blocks
 | 6 | float in the slice engine and the SPIR-V emitter | **device-executable lanes** | ~~the only thing that would make row 4's 80.60% mean anything. **UNMEASURED and unpriced**~~ — **PRICED 2026-08-09 (`wt/spvfloat`), NOT PAID.** ~1,100–1,700 lines across two backends and an `int64_t`-only CPU reference. **`float` is unreachable bit-exactly** (`shaderDenormPreserveFloat32 = false` and fp32 denormals measurably flushed; `OpFDiv` is 2.5 ULP by spec) **and worth +0.0 points**; `double` is reachable and worth +79.2, but only over a corpus that cannot reach either divergence class. Verdict stands. **Next step is one `vulkaninfo` on a lavapipe CI runner**, never yet run |
 | 7 | chain-store re-promotion | emitted code | **MEASURED, refused.** +2.60 `kept` → −0.079% stage-2 for +1.50% stage-1; 60× worse than `divmagic`'s rung |
 | 8 | `storeval-rot` demotion | emitted code | **MEASURED, refused.** Its off-state is an incomplete replay path, `kept` 91.978 → 83.242 |
+| 9 | `narrow` (rung 10) and `tree-copy-prop` (rung 11) priced on the self-host axis | emitted code | **MEASURED 2026-08-09, both levels unchanged.** `narrow` +0.876% of stage-1 for −0.0088% of stage-2 (**100:1 against**); `tree-copy-prop` +0.799% for −0.0048% (**166:1**). Both are worse than the 19:1 the ladder already refused at row 7. Neither was "priced on nothing" — that premise was false, see the correction in the audit section |
 
 Row 1 is first because it is the only row on this board that could be a wrong answer in
 shipped output, and because it is cheap to settle: `-floop-interchange`, `-floop-fusion` and
@@ -458,9 +459,13 @@ Row 2 is second because it is the instrument every other ranking uses. See hazar
 
 ### Where every number on this board comes from
 
-The recurring failure of this file is headline figures with no script behind them. **Nine
-have now failed to reproduce**, and the two most recent failed for a new reason — the
-measuring tool was defective, not the transcription. Every number below names the committed
+The recurring failure of this file is headline figures with no script behind them. **Twelve
+have now failed to reproduce**, and the two that failed on `wt/benchtrap` failed for a new
+reason — the measuring tool was defective, not the transcription. The three added on
+`wt/ladder2` are a third reason again: `reg-color` and `if-conversion-abs` were correctly
+measured on a **tree that has since moved**, and the `narrow` / `tree-copy-prop` claim was a
+**stale row misread as an unmeasured one**. Age is now as good a reason to distrust a figure
+here as method is. Every number below names the committed
 tool and the corpus that produces it, or is marked **PROSE-ONLY** / **UNMEASURED** /
 **DERIVED**.
 
@@ -499,8 +504,13 @@ tool and the corpus that produces it, or is marked **PROSE-ONLY** / **UNMEASURED
    body to 8 trips where `--cost-synth` measured 7/5/3/2, so the fractions are biased
    *downward* by an unknown amount. The constant itself is still pinned; see the audit
    section below for the cost of un-pinning it.
-2. **`tests/optfire/levelbench.tsv` is a null-experiment factory, and it is also a
-   generation stale.** Four separate defects, all verified today:
+2. **~~`tests/optfire/levelbench.tsv` is a null-experiment factory, and it is also a
+   generation stale.~~ ALL FOUR DEFECTS CLOSED — three on `wt/benchtrap` and `wt/ladder2`,
+   the fourth by re-running the bench 2026-08-09.** The table is now a fresh measurement of
+   the **16** flags `src/mccopt.h` actually has at levels 1–3, with `gain_movers_pct` /
+   `eff_movers` beside the diluted columns and a signed efficiency. Kept below as the
+   statement of what was wrong, because three of the four are live traps in any table of
+   this shape. Per-defect status is inline. Four separate defects, all verified today:
    - **24 of its 47 rows have an empty `fires_kernels`** — the flag changes no kernel object
      at all — and **11 of those carry a `gain_pct` of `-0.0000`**, a geometric mean of
      `instructions:u` over binaries that are bit-identical. A `-0.0000` is not a rounded
@@ -516,12 +526,21 @@ tool and the corpus that produces it, or is marked **PROSE-ONLY** / **UNMEASURED
    - `efficiency` is `gain / cost` when `cost > 0.005` and `inf` otherwise, and `has_gain`
      tests `abs(gain)`, **not its sign**. So a flag that makes emitted code *worse* at
      near-zero cost is awarded `+inf` and sorted to the top: `promote-leaf-callee`
-     (`gain=-0.3360`) sits at **rank 2 of the whole table**.
+     (`gain=-0.3360`) sits at **rank 2 of the whole table**. **FIXED 2026-08-09
+     (`wt/ladder2`)** — and it was still live: in the fresh run `inline-functions`
+     (`gain_movers` **−1.9557**) sorted to **rank 4** before the fix and sits at **rank 9**
+     with `-inf` after it. Efficiency now carries the sign of the gain; `--selfcheck`'s
+     `worseflag` row fails if it stops doing so.
    - **32 of the 47 rows name flags that are no longer at levels 1–3.** The file was written
      at `1ad3f1aa`; `893c1e84` moved 34 rows. `src/mccopt.h` has **16** `LEVEL(1..3)` rows
      today, `builtin-math-fabs` has no row at all, and `optlevel-bench.py` has no `--check`
      arm (`selfhost-optbench.py` does). CMake writes the TSV to the *build* dir, never back
-     to `tests/optfire/`, so nothing compares them.
+     to `tests/optfire/`, so nothing compares them. **CLOSED 2026-08-09 by re-running the
+     bench**: the banked table is 16 rows against `src/mccopt.h`'s 16, `builtin-math-fabs`
+     has a row, and the stale-row trap is now itself documented — reading a stale row's
+     `n/a` as "this flag is unpriced" is what produced the false `narrow` /
+     `tree-copy-prop` claim in the audit section below. There is still **no `--check`
+     arm**, so nothing stops the file going stale again; that is the remaining debt.
 3. **A per-flag sweep cannot price a family, and the failure reads like a win.**
    `optlevel-bench.py` builds jobs as `[("__base__", []), ("__noise__", [])] + [(n,
    ["-fno-"+n])]` against an `-O3` base, so it can only ever take a shipped flag *out* —
@@ -599,6 +618,9 @@ the finding:
 | `storeval-rot` "0.0000% of emitted instructions" | −2.31% stage-1, −0.232% stage-2 | **a correctly computed number of the wrong quantity**: a geomean over unmoved binaries |
 | `25,700` Invoke-blocked / `246` = 0.96% | **29,309 / 242 = 0.826%** | re-taken today; the ratio moved, the ranking survived |
 | `cmake-debug` registers `9106`, same as `cmake-cross` | **8972 vs 9136** unless cross is built first | configure-order dependence, hazard 5 |
+| `reg-color` `gain 0.1796`, ranked on `interp` +1.9263 | **0.0017**, `gain_movers` **0.0019**, `cost-no-gain` | re-run 2026-08-09; the tree moved since `1ad3f1aa`, not a tool defect |
+| `if-conversion-abs` `gain +0.1905`, `branchy` +3.1843 | **−0.0334**, `branchy` **−0.5700** | a **sign flip** — the flag now makes `branchy` worse. Same cause |
+| `narrow` / `tree-copy-prop` are "ranked on nothing" | both priced in `levelpins.txt` on the self-host axis | a **stale** `levelbench.tsv` row read as an **unmeasured** one; see the correction below |
 
 Three more, smaller, recorded so they are not re-quoted: `self` `kept` `83.122 → 91.960` is
 **83.090 → 91.978**; `wide` `93.006 → 96.653` is **92.881 → 96.597**; the self-compile's
@@ -673,23 +695,116 @@ fine once labelled. Three need a different instrument, not a different label:
 | row | why the kernel table structurally cannot see it |
 | --- | --- |
 | `storeval-rot` | already priced on the right axis: 2.31% of stage-1 and 0.232% of stage-2 `instructions:u`, and 8.7 points of `rir-coverage` `kept` if it is turned off. See debt #6a; the row stays at 1 |
-| `narrow` | 15 corpus objects and a **2.17% `cost_self`** — the second-largest compile-time cost in the whole table with no emitted-code reading at all. It is a compiler-side transform priced only on the compiler, and the ladder currently ranks it on nothing |
-| `tree-copy-prop` | 15 corpus objects, 1.26% `cost_self` / 0.70% `cost_corpus`, same shape |
+| `narrow` | 15 corpus objects and a **2.17% `cost_self`** — the second-largest compile-time cost in the whole table with no emitted-code reading at all. It is a compiler-side transform priced only on the compiler. ~~and the ladder currently ranks it on nothing~~ **that last clause was FALSE — see the correction below** |
+| `tree-copy-prop` | 15 corpus objects, 1.26% `cost_self` / 0.70% `cost_corpus`, same shape, same correction |
 
 The instrument those three want is the one debt #6a used: a stage-1/stage-2 self-compile
 read under `instructions:u`, i.e. `tools/selfhost-optbench.py`, not a numeric kernel. That
 is filed below, not done — it is a measurement, and this was an audit.
 
-**The dilution hazard the fix does NOT close, filed rather than half-done.** `gain` is a
-geomean over **all 17** kernels even when only one moved. `chain-store` reads `0.1169`
-against its own `sieve` delta of `1.9658` — a real ~2% win diluted ~17× by sixteen pairs of
-identical binaries. That is the same error as the null case, one order weaker, and it
-affects every `ranked` and `cost-no-gain` row with `kernels_moved` below `17/17` — 20 of the
-23. `tests/optfire/levelbench-cycles.tsv` gets this right (`cycles_adjudicate` measures only
-the kernels the flag moves, and says so). The fix is a `gain_movers_pct` column restricted
-to the moved set; it cannot be backfilled into the banked table because per-kernel deltas
-are not in the TSV, so it needs a re-run of the bench. **Do not quote `gain_pct` against
-`best_kernel_pct` without dividing by `kernels_moved` first.**
+**CORRECTED 2026-08-09 (`wt/ladder2`): the last sentence of the `narrow` row above was
+false, and it is the kind of false this board exists to catch.** Neither `narrow` nor
+`tree-copy-prop` was ever "on the ladder on the strength of a number that was never taken".
+Both are priced in `tests/optfire/levelpins.txt` on exactly the stage-1/stage-2 axis this
+section recommends — `narrow|10|stage-2 -0.60% cpu, counter agrees (-0.016%), and 1.91% of
+stage-1 on top` (`:196`) and `tree-copy-prop|11|1.53% of stage-1 cpu time, stage-2 unmoved`
+(`:227`). What is `n/a` in `levelbench.tsv` is a **stale row for a flag the kernel table no
+longer sweeps at all**: `narrow` is `MCC_OPTD_LEVEL(10)` and `tree-copy-prop` is `LEVEL(11)`
+(`src/mccopt.h:66-67`), both far outside `optlevel-bench.py`'s `<= 3` filter, so the 2.17%
+`cost_self` quoted above was measured in a generation when they still sat at levels 1–3.
+The kernel table is not their instrument and has not been since `893c1e84`. Reading a
+stale row's `n/a` as "unpriced" is the mirror image of reading a null row's `0.0000` as
+"measured zero" — same file, same trap, opposite direction.
+
+They were re-priced anyway, because the pins deserved a re-take. **Both levels are
+confirmed and neither moved.**
+
+| | `narrow` (rung 10) | `tree-copy-prop` (rung 11) | how |
+| --- | ---: | ---: | --- |
+| stage-1 `instructions:u` | **+0.8762%** | **+0.7991%** | n=25 paired, IQR 0.0024% / 0.0029%, **25/25 reps positive** |
+| stage-1 CPU | +1.3925% | +1.4984% | same run, control **+0.093%**, in band against the 0.55% floor |
+| stage-2 `instructions:u` | **−0.0088%** | **−0.0048%** | **25/25** and **24/25** reps negative, control +0.0010% |
+| stage-2 CPU | — | — | **not quoted**: the control read −0.479% against a 0.435% floor, out of band |
+| stage-2 object | byte-identical | byte-identical | correctness gate, `md5 2f48cd51…`, all four arms |
+| `rir-coverage` `kept` | 83.087 / 91.912 / 91.977 / 91.977 | 83.089 / 91.913 / 91.978 / 91.978 | control 83.089 / 91.913 / 91.978 / 91.978, all three PASS |
+| verdict | **100:1 against** | **166:1 against** | vs the **19:1** that got `chain-store` refused |
+
+Both effects are real and both are tiny. The sign is believable *because* hazard 3 was
+checked: `narrow` moves `kept` by **0.001** points and `tree-copy-prop` by none, against
+`-fchain-store`'s **−7.9** — neither is buying its stage-2 number by making bodies
+unfaithful and skipping the strategy suite. And neither is a rung-12 no-op: both change the
+stage-1 object (`1f3fa3d9…`, `31f93151…` against a base of `0d6e5cae…`), which is also the
+evidence that the passes still fire.
+
+The one number that did not reproduce is `narrow`'s own banked pin: `levelpins.txt` had
+`stage-2 -0.60% cpu, counter agrees (-0.016%), and 1.91% of stage-1`, and this run reads
+about **half** of each (−0.0088% counter, +0.876% stage-1). `tree-copy-prop`'s banked
+`1.53%` of stage-1 CPU reproduces at **1.4984%**. The pin rows now carry both.
+
+Method, and why not a committed tool: `optlevel-bench.py` filters to `level <= 3` and both
+flags are at 10/11, and it only ever takes a shipped flag *out* — these two ship **off** at
+`-O3`, so the experiment is **add-one-in**, which is the arm `selfhost-optbench.py` has but
+behind the same `<= 3` filter. So, by hand, exactly as debt #6a was:
+
+```
+FLAGS=$(python3 -c "import json,shlex;cc=json.load(open('cmake-debug/compile_commands.json'));\
+r=[x for x in cc if x['file'].endswith('/mcc.c')][0];\
+print(' '.join(a for a in shlex.split(r['command'])[1:] if a.startswith(('-I','-D'))))")
+# stage-1, one arm; the base arm is the same line without the -f flag
+perf stat -e instructions:u,task-clock cmake-debug/mcc $FLAGS -O3 -fnarrow -c src/mcc.c -o o1.o
+cmake-debug/mcc o1.o cmake-debug/CMakeFiles/mcc.dir/mccrt_blob.c.o \
+    cmake-debug/CMakeFiles/mcc.dir/mccjit_blob.c.o -o mcc1 $(cat cmake-debug/selfhost-link-libs.txt)
+# stage-2, the fixed job
+perf stat -e instructions:u,task-clock ./mcc1 $FLAGS -I runtime/include -O2 -c src/mcc.c -o o2.o
+```
+
+Each read gets a **private, cold `XDG_CACHE_HOME`** (opt-slice memoises to
+`~/.cache/mcc/sl-*.ck`, so a warm cache measures the cache). Arms are interleaved within a
+rep and compared **pairwise per rep**, not median-to-median: the box was carrying other
+agents at load 5–34, and a paired sign test over 25 reps is what makes a −0.0088% effect
+readable at all. A first attempt at n=21 had to be discarded — its stage-1 CPU control read
+**+1.225%** against the 0.55% floor with 27–59% within-arm spread, which is exactly the
+"repeat until the control is in band" the previous ladder agent described. `rir-coverage`
+needs a directory of symlinks to `cmake-debug` whose `mcc` is a wrapper appending the flag,
+since it scrubs `MCC_TEST_OPT` and has no switch for extra `-f` knobs.
+
+**~~The dilution hazard the fix does NOT close, filed rather than half-done.~~ CLOSED
+2026-08-09 (`wt/ladder2`), by re-running the bench.** `gain` was a geomean over **all 17**
+kernels even when only one moved. `chain-store` read `0.1169` against its own `sieve` delta
+of `1.9658` — a real ~2% win diluted ~17× by sixteen pairs of identical binaries. The
+arithmetic reproduces exactly: `1.020052^(1/17) = 1.0011686`, i.e. `0.1169`, so the
+mechanism was never in doubt, only its size.
+
+What landed: a **`gain_movers_pct`** column (geomean over the kernels the flag actually
+moved) and an **`eff_movers`** column beside the old ones, which are kept because they are
+a different quantity rather than a wrong one — `gain_pct` is the movers figure diluted by
+this kernel set's reach, and it is a payoff estimate only if you believe these 17 kernels
+are your program mix, which nothing establishes. **The ladder ranks on `gain_movers_pct`,
+and the table is sorted by `eff_movers`.** The bench was re-run rather than backfilled,
+because per-kernel deltas are not in the TSV.
+
+Measured dilution on the fresh table, up to **17.4×**: `builtin-math-prepass` reads
+`0.3007` all-kernel against **`5.2372`** over the one kernel it moves; `builtin-copysign`
+`0.0590` against **`1.0076`**; `builtin-math-fabs` `0.8065` against **`7.0664`**.
+**`trunc32` is the control that proves the mechanism**: it moves 17/17, so its two gain
+columns agree to the digit (`0.6005` / `0.6005`). The columns diverge exactly and only as
+reach falls short of total, which is what a dilution is.
+
+**The part the filing got wrong: it is not only a magnitude error, it flips buckets.**
+`has_gain` thresholds the gain at `GAIN_NOISE = 0.10`, and it was thresholding the *diluted*
+number. So `builtin-copysign`'s real **1.0076%** win on `mathfun` arrived as `0.0590%` and
+was filed **`cost-no-gain`** — the bucket whose whole meaning is "a gain was looked for and
+found absent". A true measurement was being filed under a claim of absence, which is the
+same failure this section was written about, one layer down. `has_gain` now tests
+`gain_movers`, and `--selfcheck`'s `diluteflag` row is the known-positive: it fails if
+bucketing goes back to the diluted number.
+
+**A third defect, hazard 2's own bullet 3, was still live in the fresh table and is now
+fixed too.** `efficiency` was `+inf` for any flag that cleared the gain floor at near-zero
+cost, tested on `abs(gain)` — so a flag that makes emitted code *worse* for free was ranked
+top. In the fresh run `inline-functions` (`gain_movers` **−1.9557**) sorted to **rank 4**
+with `eff_movers = inf`, above every flag that pays. Efficiency now carries the sign of the
+gain (`copysign`), and `--selfcheck`'s `worseflag` row gates it.
 
 #### LANDED — the rest of the sweep
 
@@ -2324,7 +2439,9 @@ the top because three of them are the only rows here in a currency that converts
 | row | size, and the tool that produced it | currency |
 | --- | --- | --- |
 | `ast_loop_interchange_legal` / `ast_dep_fusion_pair_illegal` call `ast_dep_base_distinct` with **no `indirect` guard** | **UNMEASURED, and it is the top of the board.** Verified 2026-08-09: the guarded call is `src/mccast.c:13949` (census only), the unguarded ones are `:13516` and `:13566`. `-floop-interchange`, `-floop-fusion` and `-floop-block` are `MCC_OPTD_LEVEL(12)` (`src/mccopt.h:109-111`), bound at `src/mccast.c:2384-2386`, run from `ast_func_end` at `:18586-18590` into a *mutating* apply. `ast_tile_run` reuses the interchange predicate. The measurement is a fuzz corpus of `p[i]`/`q[i]` nests at `-O12` | **correctness** |
-| `tests/optfire/levelbench.tsv` is stale by a generation and has no `--check` | **32 of 47 rows name flags no longer at levels 1–3**; `src/mccopt.h` has 16 such rows today and `builtin-math-fabs` has none. 24 rows change no kernel object, 11 of those carry a `-0.0000` "gain", and `efficiency=inf` is awarded on `abs(gain)` so a pessimization sorts to rank 2. CMake writes the TSV to the build dir and never compares it. See hazard 2 | **census trust** |
+| `tests/optfire/levelbench.tsv` is stale by a generation and has no `--check` | **RE-MEASURED 2026-08-09 (`wt/ladder2`); three of the four defects closed, the `--check` arm still missing.** The banked table is now a fresh 16-row run matching `src/mccopt.h`'s 16 `LEVEL(1..3)` rows, with `gain_movers_pct`/`eff_movers` beside the diluted columns and a signed efficiency (`inline-functions`, `gain_movers` −1.96, fell from rank 4 to rank 9). **Nothing stops it going stale again** — CMake still writes to the build dir and never compares. See hazard 2 | **census trust** |
+| the ~17× dilution of `gain_pct` (filed, not fixed, on `wt/benchtrap`) | **CLOSED 2026-08-09 by re-running the bench.** Measured dilution up to **17.4×** (`builtin-math-prepass` 0.3007 all-kernel vs **5.2372** over its one mover). `trunc32` moves 17/17 and its two gain columns agree to the digit, which is the control. It also **flipped a bucket** — `builtin-copysign`'s real **1.0076%** win read 0.0590% and was filed `cost-no-gain`, the bucket asserting no gain was found | **census trust** |
+| `narrow` / `tree-copy-prop` "ranked on nothing" | **THE PREMISE WAS FALSE, and the measurement was taken anyway.** Both were already priced on the self-host axis in `levelpins.txt:196,227`; the `n/a` in `levelbench.tsv` was a **stale row for a flag that table no longer sweeps** (levels 10 and 11 against a `<= 3` filter). Re-taken n=25 paired: `narrow` +0.876% stage-1 for −0.0088% stage-2 (**100:1 against**, 25/25 reps), `tree-copy-prop` +0.799% for −0.0048% (**166:1**, 24/25). `rir-coverage` clear for both. **Levels unchanged** | emitted code |
 | float in the slice engine and the SPIR-V emitter | **UNMEASURED and unpriced, and it is the measurement that would overturn the verdict.** `grep -c Float src/mccgpu.{h,c} src/mccslice.h` = 0/0/0; `is_float` is refused at 5 sites in `mccslice.h` and 6 in `mccgpu.h`. It costs `OpTypeFloat`, the F-opcodes, conversions, a bit-exact CPU reference and a differential that is stable under rounding | device-executable lanes |
 | the device dispatcher | **Not merely absent — unwritable from what exists.** The compiler's two slice sites pass `nlive = 0` / one tuple; `mcc_slice_work_from_ast` refuses `cnt < 1`. Plus a write-back (`MCC_SLICE_MAXSLOT` = 16 dense 8-byte slots; a 600×600 tile does not fit one) and a per-compile correctness gate. Three subsystems, priced nowhere | device-eligible blocks |
 | chain-store re-promotion (row 2) | **MEASURED 2026-08-09, and the answer is no.** The `kept` prize is **+2.60** points, not ~4.3 (`tools/rir-coverage.py`, `self`, `-O1`/`-O2`/`-O3`); the emitted-code half is stage-2 **−0.079%** and sieve **−1.97%** `instructions:u`, for **+1.50%** of stage-1. Pins unchanged | emitted code |

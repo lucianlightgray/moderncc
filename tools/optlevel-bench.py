@@ -25,6 +25,24 @@ cost is only meaningful in the configuration it ships in:
           scoring. Reported as a geometric mean over kernels, so a kernel is
           weighted by its ratio and not by how long it happens to run.
 
+          TWO COLUMNS, BECAUSE THEY ARE TWO QUANTITIES. gain_movers_pct is the
+          geomean over the kernels whose object the flag actually CHANGED;
+          gain_pct is the geomean over all 17, where each unmoved kernel is a
+          pair of bit-identical binaries contributing a ratio of exactly 1.0.
+          Mixing 1.0s into a geometric mean is not a weaker reading of the same
+          effect, it is the effect divided by 17/kernels_moved. Measured here:
+          chain-store reads gain_pct 0.1169 against a sieve delta of 1.9658 --
+          a real ~2% win reported as ~0.12%. gain_pct is a payoff estimate ONLY
+          under the assumption that these 17 kernels are the program mix you
+          care about, which nothing establishes; gain_movers_pct is the property
+          of the pass. THE LADDER RANKS ON gain_movers_pct.
+
+          The dilution also flipped BUCKETS, not just magnitudes: has_gain
+          thresholds at GAIN_NOISE, so a 1.0% win on the single kernel a flag
+          touches arrived as 0.059% and was filed `cost-no-gain` -- the bucket
+          asserting a gain was looked for and found absent. has_gain now tests
+          gain_movers, and --selfcheck's `diluteflag` row is the known-positive.
+
   size    .text bytes of the emitted objects (kernels, and the self-compile
           object). Some passes pay in size rather than speed, and -Os exists.
 
@@ -387,13 +405,14 @@ def cycles_adjudicate(mcc, wanted, refs, opt, reads, base_json):
     return out
 
 
-HDR = ["flag", "level", "bucket", "gain_pct", "cost_self_pct",
-       "cost_corpus_pct", "efficiency", "text_kernels_pct", "text_self_pct",
+HDR = ["flag", "level", "bucket", "gain_movers_pct", "gain_pct",
+       "cost_self_pct", "cost_corpus_pct", "eff_movers", "efficiency",
+       "text_kernels_pct", "text_self_pct",
        "fires_corpus", "corpus_total", "kernels_moved", "fires_kernels",
        "best_kernel", "best_kernel_pct"]
 
-KERNEL_DERIVED = ["gain_pct", "efficiency", "text_kernels_pct", "best_kernel",
-                  "best_kernel_pct"]
+KERNEL_DERIVED = ["gain_movers_pct", "gain_pct", "eff_movers", "efficiency",
+                  "text_kernels_pct", "best_kernel", "best_kernel_pct"]
 
 
 def row_fields(r):
@@ -401,10 +420,12 @@ def row_fields(r):
     kd = r.get("kernel_delta", {})
     bk = max(kd, key=lambda k: abs(kd[k])) if kd else ""
     eff = r.get("efficiency")
+    effm = r.get("eff_movers")
     ktot = r.get("kernels_total")
     return [r["flag"], str(r["level"]), r["bucket"],
-            num(r.get("gain")), num(r.get("cost_self")),
-            num(r.get("cost_corpus")),
+            num(r.get("gain_movers")), num(r.get("gain")),
+            num(r.get("cost_self")), num(r.get("cost_corpus")),
+            ("inf" if effm == float("inf") else num(effm, "%.2f")),
             ("inf" if eff == float("inf") else num(eff, "%.2f")),
             num(r.get("text_delta")), num(r.get("self_text_delta")),
             num(r.get("fires_corpus"), "%d"), num(r.get("corpus_total"), "%d"),
@@ -421,6 +442,21 @@ def geomean(xs):
     for x in xs:
         acc += __import__("math").log(x)
     return __import__("math").exp(acc / len(xs))
+
+
+def eff_of(gain, cost, has_gain):
+    """gain per unit cost, with the sign of the gain preserved at zero cost.
+
+    A flag that is free and makes the emitted code BETTER is infinitely
+    efficient; a flag that is free and makes it WORSE is infinitely bad, not
+    infinitely good. Awarding a bare +inf to both put promote-leaf-callee
+    (gain -0.3360) at rank 2 of the shipped table and inline-functions
+    (gain_movers -1.9557) at rank 4, above every flag that actually pays."""
+    if not has_gain or gain is None:
+        return 0.0
+    if cost > 0.005:
+        return gain / cost
+    return __import__("math").copysign(float("inf"), gain)
 
 
 def analyse(base, noise, runs, flags):
@@ -442,8 +478,9 @@ def analyse(base, noise, runs, flags):
         if r is None or "error" in r:
             row["bucket"] = "error"
             row["note"] = (r or {}).get("error", "not measured")
-            for k in ("gain", "cost_self", "cost_corpus", "efficiency",
-                      "text_delta", "self_text_delta"):
+            for k in ("gain", "gain_movers", "cost_self", "cost_corpus",
+                      "efficiency", "eff_movers", "text_delta",
+                      "self_text_delta"):
                 row[k] = 0.0 if MUTATE else None
             if MUTATE:
                 row["kernels_total"] = len(kn)
@@ -466,6 +503,7 @@ def analyse(base, noise, runs, flags):
         row["fires_self"] = int(r.get("self_sha") != base.get("self_sha"))
 
         ratios, moved, kdelta, bad = [], [], {}, []
+        mratios = []
         text_on = text_off = 0
         for k in kn:
             kr = r["kernels"].get(k, {})
@@ -480,6 +518,7 @@ def analyse(base, noise, runs, flags):
             kdelta[k] = d
             if kr.get("sha") != base["kernels"][k].get("sha"):
                 moved.append(k)
+                mratios.append(off / on)
             text_on += base["kernels"][k]["text"] or 0
             text_off += kr["text"] or 0
         row["kernel_delta"] = kdelta
@@ -489,6 +528,8 @@ def analyse(base, noise, runs, flags):
         row["errors"] = bad
         g = geomean(ratios)
         row["gain"] = (g - 1.0) * 100.0 if g else 0.0
+        gm = geomean(mratios)
+        row["gain_movers"] = (gm - 1.0) * 100.0 if gm else None
         row["text_kernels_on"] = text_on
         row["text_kernels_off"] = text_off
         row["text_delta"] = (text_on - text_off) / text_off * 100.0 if text_off else 0.0
@@ -501,7 +542,7 @@ def analyse(base, noise, runs, flags):
         cost = max(row["cost_self"], row["cost_corpus"])
         has_cost = abs(row["cost_self"]) >= max(COST_NOISE, floor["self"]) or \
             abs(row["cost_corpus"]) >= max(COST_NOISE, floor["corpus"])
-        has_gain = abs(row["gain"]) >= GAIN_NOISE and \
+        has_gain = abs(row["gain_movers"] or 0.0) >= GAIN_NOISE and \
             any(abs(v) >= 2 * floor.get(k, 0.05) for k, v in kdelta.items())
         row["has_cost"] = has_cost
         row["has_gain"] = has_gain
@@ -515,10 +556,11 @@ def analyse(base, noise, runs, flags):
             row["bucket"] = "no-kernel-subject"
         else:
             row["bucket"] = "cost-no-gain"
-        row["efficiency"] = (row["gain"] / cost) if (has_gain and cost > 0.005) \
-            else (float("inf") if has_gain else 0.0)
+        row["efficiency"] = eff_of(row["gain"], cost, has_gain)
+        row["eff_movers"] = eff_of(row["gain_movers"], cost, has_gain)
         if not moved and not MUTATE:
-            for k in ("gain", "efficiency", "text_delta"):
+            for k in ("gain", "gain_movers", "efficiency", "eff_movers",
+                      "text_delta"):
                 row[k] = None
             row["kernel_delta"] = {}
         out.append(row)
@@ -607,6 +649,48 @@ def selfcheck():
                    "report a number" % rf["gain_pct"])
     if rf["kernels_moved"] != "1/3":
         bad.append("realflag kernels_moved is %r, not 1/3" % rf["kernels_moved"])
+    if not numeric(rf["gain_movers_pct"]):
+        bad.append("realflag gain_movers_pct is %r; one kernel moved, so the "
+                   "movers geomean has a subject" % rf["gain_movers_pct"])
+    elif float(rf["gain_movers_pct"]) <= float(rf["gain_pct"]) * 2:
+        bad.append("realflag gain_movers_pct %s is not meaningfully above "
+                   "gain_pct %s; ka moved 5%% and 2 of 3 kernels are "
+                   "bit-identical, so the all-kernel geomean must be diluted "
+                   "about 3x and the two columns must not agree"
+                   % (rf["gain_movers_pct"], rf["gain_pct"]))
+    worse = synth_config(1000200, "S1", 2000050,
+                         {"x.o": "X1", "y.o": "Y0"},
+                         {"ka": (950000, 130, "A1"),
+                          "kb": (2000005, 200, "B0"),
+                          "kc": (4000011, 400, "C0")})
+    wrows, _ = analyse(base, noise, dict(runs, worseflag=worse),
+                       flags + [("worseflag", 1)])
+    wby = {r["flag"]: r for r in wrows}
+    if wby["worseflag"]["eff_movers"] == float("inf"):
+        bad.append("worseflag makes ka 5% WORSE at no compile cost and is "
+                   "awarded eff_movers +inf, which sorts it above every flag "
+                   "that pays; a free pessimisation is infinitely bad, not "
+                   "infinitely good")
+    if wby["worseflag"]["eff_movers"] > wby["realflag"]["eff_movers"]:
+        bad.append("worseflag (gain_movers %.4f) outranks realflag "
+                   "(gain_movers %.4f) on eff_movers"
+                   % (wby["worseflag"]["gain_movers"],
+                      wby["realflag"]["gain_movers"]))
+    dilute = synth_config(996000, "S1", 1998000,
+                          {"x.o": "X1", "y.o": "Y0"},
+                          {"ka": (1002000, 130, "A1"),
+                           "kb": (2000005, 200, "B0"),
+                           "kc": (4000011, 400, "C0")})
+    drows, _ = analyse(base, noise, dict(runs, diluteflag=dilute),
+                       flags + [("diluteflag", 1)])
+    dc = dict(zip(HDR, row_fields({r["flag"]: r
+                                   for r in drows}["diluteflag"])))
+    if dc["bucket"] != "ranked":
+        bad.append("diluteflag moves ka by 0.2%% -- a real win on the one "
+                   "kernel it touches -- and is bucketed %r. Dilution across "
+                   "3 kernels drops the all-kernel geomean under GAIN_NOISE, "
+                   "so bucketing on it files a measured gain under a bucket "
+                   "that asserts none was found" % dc["bucket"])
 
     for b in bad:
         print("FAIL " + b)
@@ -742,8 +826,8 @@ def main():
     rank = {"ranked": 4, "cost-no-gain": 3, "no-kernel-subject": 2, "inert": 1,
             "error": 0}
     rows_sorted = sorted(rows, key=lambda r: (-rank[r["bucket"]],
-                                              -(r.get("efficiency") or 0),
-                                              -(r.get("gain") or 0)))
+                                              -(r.get("eff_movers") or 0),
+                                              -(r.get("gain_movers") or 0)))
     hdr = HDR
     with open(args.out, "w") as fh:
         fh.write("# optlevel-bench: emitted-code gain per unit of compile cost, "
@@ -764,6 +848,16 @@ def main():
                  "zero effect, it is the absence of one. Quote kernels_moved, "
                  "never gain_pct, on such a row.\n"
                  % (len(base["kernels"]), NA))
+        fh.write("# gain_movers_pct is the geomean over the kernels the flag "
+                 "ACTUALLY MOVED; gain_pct is the geomean over all %d, in "
+                 "which every unmoved kernel contributes a ratio of exactly "
+                 "1.0 and pulls the mean toward zero. The two answer different "
+                 "questions: gain_movers_pct is how much better the flag makes "
+                 "code it changes, gain_pct is that diluted by this kernel "
+                 "set's reach and is only a payoff estimate if you believe "
+                 "these %d kernels are your program mix. THE LADDER RANKS ON "
+                 "gain_movers_pct/eff_movers, and rows are sorted by "
+                 "eff_movers.\n" % (len(base["kernels"]), len(base["kernels"])))
         fh.write("\t".join(hdr) + "\n")
         for r in rows_sorted:
             fh.write("\t".join(row_fields(r)) + "\n")

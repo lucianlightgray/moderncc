@@ -193,7 +193,40 @@ if-conversion|10|strproc -21.1% cpu against a 5.08% layout floor, counter agrees
 tree-vrp|10|strproc -11.9% cpu against a 5.08% layout floor, counter agrees (-2.59%); stage-2 -0.77% and 0.75% of stage-1
 sethi-ullman-leaf|10|stage-2 -1.71% cpu against a 0.43% floor, counter agrees; no kernel clears its own layout floor
 sethi-ullman|10|stage-2 -1.05% cpu, counter agrees (-0.036%), and 1.23% of stage-1 on top
-narrow|10|stage-2 -0.60% cpu, counter agrees (-0.016%), and 1.91% of stage-1 on top
+# narrow and tree-copy-prop were RE-PRICED 2026-08-09 (wt/ladder2) because a
+# board item claimed they were "on the ladder on the strength of a number that
+# was never taken". They were not: these two rows are that number, and they were
+# taken on the stage-1/stage-2 axis. The re-take confirms both levels and is
+# recorded because the magnitudes moved. Method: fixed tree at a2733199, stage-1
+# = cmake-debug/mcc compiling src/mcc.c at -O3 with the one flag forced ON (both
+# ship OFF at -O3, so this is add-one-in, not leave-one-out -- optlevel-bench.py
+# cannot reach either flag, its filter is level <= 3); stage-2 = the resulting
+# compiler doing a fixed -O2 self-compile. n=25 interleaved, PAIRED per-rep
+# deltas, identical-config control arm in the same run. Control read +0.0007%
+# stage-1 instructions:u and +0.093% stage-1 cpu -- in band against the 0.55%
+# floor. The stage-2 CPU control read -0.479% against a 0.435% floor, i.e. OUT
+# of band, so no stage-2 time number from that run is quoted here; the counter
+# carries it. Correctness gate: all four stage-2 objects byte-identical
+# (md5 2f48cd51...), so neither flag was excluded.
+#   narrow          stage-1 +0.8762% instructions:u (IQR 0.0024%, 25/25 reps
+#                   positive), +1.3925% cpu; stage-2 -0.0088% instructions:u,
+#                   25/25 reps negative, IQR 0.0028% against a control of
+#                   +0.0010%. Real, and 100:1 against.
+#   tree-copy-prop  stage-1 +0.7991% instructions:u (IQR 0.0029%, 25/25),
+#                   +1.4984% cpu -- the banked 1.53% reproduces; stage-2
+#                   -0.0048%, 24/25 reps negative. 166:1 against.
+# Hazard 3 checked for both, which is why the stage-2 signs can be believed:
+# tools/rir-coverage.py --corpus self --levels O0,O1,O2,O3 through a wrapper dir
+# reads kept 83.087/91.912/91.977/91.977 with -fnarrow and
+# 83.089/91.913/91.978/91.978 with -ftree-copy-prop, against a control run of
+# 83.089/91.913/91.978/91.978 that reproduces the banked baseline exactly. Both
+# PASS the ratchet. narrow moves kept by 0.001 points and tree-copy-prop by
+# none, against -fchain-store's -7.9 -- neither is buying its number by making
+# bodies unfaithful and skipping the strategy suite.
+# Both stay where they are: 100:1 and 166:1 are far worse than the 19:1 that got
+# the chain-store family refused at rung 11, so neither has a promotion case,
+# and both DO change the stage-1 object, so neither is a rung-12 no-op.
+narrow|10|stage-2 -0.0088% instructions:u, 25/25 interleaved reps, for +0.876% of stage-1; 100:1 against. Re-measured 2026-08-09, see the note above; the banked -0.60% cpu / -0.016% counter / 1.91% stage-1 were about 2x this run
 promote-leaf-callee|10|stage-2 -0.68% cpu, counter agrees (-0.074%); poly and regpress read -4% but inside their layout floors
 chain-store-live|10|stage-2 -0.66% cpu, counter agrees (-0.038%); re-measured 2026-08-09 with the rest of the family, see the rung-11 note on chain-store
 tree-reassoc|10|stage-2 -0.53% cpu, counter agrees (-0.012%), and 0.64% of stage-1; poly +2.16% is inside poly's 6.3% floor
@@ -224,7 +257,7 @@ opt-cycle|11|8.04% of stage-1 cpu time; the +2.83% stage-2 reading is layout, th
 chain-store|11|6.24% of stage-1 cpu time; +2.42% stage-2 is layout (counter -0.504%), and sieve +26% is inside sieve's 32% layout floor; re-measured 2026-08-09 as a family, +1.50% stage-1 for -0.079% stage-2, still no
 chain-store-member|11|1.78% of stage-1 cpu time; +2.25% stage-2 is layout (counter -0.368%), sieve likewise inside its floor; see the family note above
 tree-switch-conversion|11|1.68% of stage-1 cpu time, stage-2 unmoved
-tree-copy-prop|11|1.53% of stage-1 cpu time, stage-2 unmoved
+tree-copy-prop|11|1.50% of stage-1 cpu time (+0.799% instructions:u); stage-2 is NOT unmoved as this row used to say -- it reads -0.0048% instructions:u at 24/25 reps, which is measurable and still 166:1 against. Re-measured 2026-08-09, see the note at the narrow row
 tree-loop-im|11|1.14% of stage-1 cpu time; +1.59% stage-2 is layout (counter -0.054%), loopnest inside its 8.5% floor
 tree-ccp-iterate|11|1.09% of stage-1 cpu time, stage-2 unmoved
 tree-const-load|11|0.96% of stage-1 cpu time; +2.46% stage-2 is layout (counter -0.019%)
