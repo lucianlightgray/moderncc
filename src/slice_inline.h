@@ -31,14 +31,17 @@
  *                        that loads reads a host address, which a frame-scoped
  *                        space cannot resolve.
  *   one Return, one BB   no control flow, no stores, no second exit.
- *   param slots -8*(i+1) the arena carries a body, not a signature, so the
+ *   recorded param slots the arena carries a body, not a signature, so the
  *                        argument-to-parameter mapping has to be recovered
- *                        from frame offsets. mcc spills incoming scalars to
- *                        -8, -16, ... in declaration order (verified against
- *                        asr32(x, n) = x >> n, whose left operand is -8). Any
- *                        body whose used offsets are not exactly that
- *                        contiguous run -- an unused parameter, a wide slot, a
- *                        different ABI -- is REFUSED. A wrong mapping would
+ *                        from frame offsets. The hook supplies the callee's
+ *                        own offsets in declaration order, as the arch layer
+ *                        recorded them, and the used set must equal that set
+ *                        exactly -- an unused parameter, a wide slot or a
+ *                        reference to anything that is not a parameter is
+ *                        REFUSED. This used to hard-code -8, -16, ..., which is
+ *                        x86-64's layout; arm64 puts parameters above the frame
+ *                        pointer and ascending, so every leaf was refused there
+ *                        and nothing was ever grafted. A wrong mapping would
  *                        swap operands identically in both executors and the
  *                        differential would stay green, so this rule is
  *                        checked rather than assumed.
@@ -63,8 +66,14 @@ typedef struct MccSliceLeaf {
 	int ptype[MCC_SLICE_INL_MAXPARAM];
 } MccSliceLeaf;
 
+/* poff/pnparam return the callee's own incoming-parameter offsets in
+ * declaration order, as the arch layer recorded them. The scan below needs them
+ * because the frame layout is not portable and this header may not ask which
+ * target it is: MCC_TARGET_* in a conditional outside src/arch/ is what
+ * target-gate-invariant forbids. */
 static AstArena *(*mcc_slice_leaf_hook)(AstArena *a, AstLocal inv,
-																				AstLocal *root);
+																				AstLocal *root, int32_t *poff,
+																				int *pnparam);
 static long mcc_slice_inl_n;
 static long mcc_slice_inl_seen;
 /* The argument-to-parameter mapping is recovered from frame offsets, and a
@@ -105,7 +114,8 @@ static int mcc_slice_leaf_walk(AstArena *c, AstLocal n, MccSliceLeaf *L) {
 	return 1;
 }
 
-static int mcc_slice_leaf_scan(AstArena *c, AstLocal root, MccSliceLeaf *L) {
+static int mcc_slice_leaf_scan(AstArena *c, AstLocal root, MccSliceLeaf *L,
+                               const int32_t *poff, int pnparam) {
 	AstLocal s, e;
 	int i, j;
 	memset(L, 0, sizeof *L);
@@ -127,19 +137,68 @@ static int mcc_slice_leaf_scan(AstArena *c, AstLocal root, MccSliceLeaf *L) {
 		return 0;
 	if (!ast_eval_slice_wtype(c, e))
 		return 0;
-	for (i = 0; i < L->nparam; i++)
-		for (j = i + 1; j < L->nparam; j++)
-			if (L->off[j] > L->off[i]) {
+	/* Put index i on declaration parameter i by matching the offsets the walk
+	 * collected against the ones the arch layer recorded for this callee, and
+	 * reject the leaf if the two sets are not equal.
+	 *
+	 * This used to be `L->off[i] != -8 * (i + 1)` after a descending sort, which
+	 * is x86-64's layout written as if it were universal: parameters below the
+	 * frame pointer at -8, -16, ... arm64 puts them above it and ascending --
+	 * `mix3(int, int)` reports 160 and 168 -- so every candidate was refused
+	 * there and nothing was ever grafted (`invoke-seen=4 invoke-inlined=0`).
+	 * Matching recorded offsets is both portable and stricter than the old
+	 * stride test: it pins each slot to a specific declared parameter instead of
+	 * inferring the mapping from an assumed order. */
+	if (poff) {
+		if (pnparam != L->nparam)
+			return 0;
+		for (i = 0; i < L->nparam; i++) {
+			int found = -1;
+			for (j = i; j < L->nparam; j++)
+				if (L->off[j] == poff[i]) {
+					found = j;
+					break;
+				}
+			if (found < 0)
+				return 0;
+			if (found != i) {
 				int32_t to = L->off[i];
 				int tt = L->ptype[i];
-				L->off[i] = L->off[j];
-				L->ptype[i] = L->ptype[j];
-				L->off[j] = to;
-				L->ptype[j] = tt;
+				L->off[i] = L->off[found];
+				L->ptype[i] = L->ptype[found];
+				L->off[found] = to;
+				L->ptype[found] = tt;
 			}
-	for (i = 0; i < L->nparam; i++)
-		if (L->off[i] != -8 * (i + 1))
-			return 0;
+		}
+	} else {
+		/* No signature available -- slicerun rebuilds callee bodies from arena
+		 * dumps, which carry nodes and not parameter lists. Fall back to the one
+		 * ordering rule that holds on every layout mcc targets: parameter 0 sits
+		 * closest to the frame base and the rest follow at stride 8, whichever
+		 * side of it they are on. x86-64 gives -8, -16, ...; arm64 gives 160,
+		 * 168, ... and |off| ascending puts both in declaration order. Ordering
+		 * by the signed value instead is what pinned this to x86-64 and refused
+		 * every arm64 leaf. */
+		for (i = 0; i < L->nparam; i++)
+			for (j = i + 1; j < L->nparam; j++) {
+				int32_t ai = L->off[i] < 0 ? -L->off[i] : L->off[i];
+				int32_t aj = L->off[j] < 0 ? -L->off[j] : L->off[j];
+				if (aj < ai) {
+					int32_t to = L->off[i];
+					int tt = L->ptype[i];
+					L->off[i] = L->off[j];
+					L->ptype[i] = L->ptype[j];
+					L->off[j] = to;
+					L->ptype[j] = tt;
+				}
+			}
+		for (i = 1; i < L->nparam; i++) {
+			int32_t a0 = L->off[0] < 0 ? -L->off[0] : L->off[0];
+			int32_t ai = L->off[i] < 0 ? -L->off[i] : L->off[i];
+			if (ai != a0 + 8 * i)
+				return 0;
+		}
+	}
 	L->a = c;
 	L->expr = e;
 	return 1;
@@ -212,6 +271,8 @@ static void mcc_slice_become(AstArena *a, AstLocal dst, AstLocal src) {
  * Invoke. */
 static int mcc_slice_inline_at(AstArena *a, AstLocal inv) {
 	AstLocal arg[MCC_SLICE_INL_MAXPARAM], cref, g, croot = AST_NONE;
+	int32_t cpoff[MCC_SLICE_INL_MAXPARAM];
+	int cpn = 0;
 	MccSliceLeaf L;
 	AstArena *c;
 	int rt = ast_type_t(a, inv);
@@ -228,10 +289,13 @@ static int mcc_slice_inline_at(AstArena *a, AstLocal inv) {
 		return 0;
 	if (!mcc_slice_leaf_hook)
 		return 0;
-	c = mcc_slice_leaf_hook(a, inv, &croot);
+	c = mcc_slice_leaf_hook(a, inv, &croot, cpoff, &cpn);
 	if (!c || c == a)
 		return 0;
-	if (!mcc_slice_leaf_scan(c, croot, &L))
+	/* cpn == 0 means the provider had no parameter list to give (slicerun,
+	 * rebuilding from a dump). Pass NULL so the scan derives the order rather
+	 * than comparing against an empty signature and refusing everything. */
+	if (!mcc_slice_leaf_scan(c, croot, &L, cpn ? cpoff : NULL, cpn))
 		return 0;
 	if (L.nparam != nargs)
 		return 0;

@@ -4354,6 +4354,16 @@ static void ast_promo_poison_vla_size(AstArena *a, AstLocal n, const int *coff,
 	}
 }
 
+/* A struct type the arena recorded without its Sym. type_size() reads
+ * `type->ref->r` unconditionally for VT_STRUCT, so asking it for the size of one
+ * of these is a null dereference inside the compiler rather than a wrong answer.
+ * The promotion planner only ever wants the size to decide how much of the frame
+ * an object covers, and every caller here can treat "unknown" as "covers
+ * everything from its offset up", which is the safe direction. */
+static int ast_promo_size_unknown(const CType *t) { MCC_TRACE("enter\n");
+	return (t->t & VT_BTYPE) == VT_STRUCT && !t->ref;
+}
+
 static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 	ast_promo_n = 0;
 	ast_promo_callful = 0;
@@ -4447,14 +4457,26 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 			ct.bp = ast_type_bp(a, n);
 			ct.bs = ast_type_bs(a, n);
 			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			/* Both of these can be handed a struct whose ref the arena did not
+			 * carry -- for the pointer case it is the *pointee* that is refless,
+			 * which the `ct.ref` test does not cover. type_size would then
+			 * dereference a null Sym and take the compiler down; `-O2` on a
+			 * variadic `unsigned __int256` did exactly that on arm64. An unknown
+			 * size is not a small size, so widen to unbounded instead of
+			 * guessing. */
 			if ((ct.t & VT_BTYPE) == VT_PTR && ct.ref) { MCC_TRACE("br\n");
-				sz = type_size(&ct.ref->type, &al);
+				if (ast_promo_size_unknown(&ct.ref->type))
+					{ MCC_TRACE("br\n"); unbounded = 1; }
+				else
+					{ MCC_TRACE("br\n"); sz = type_size(&ct.ref->type, &al); }
 			}
 			lt.t = ast_type_t(a, c);
 			lt.bp = ast_type_bp(a, c);
 			lt.bs = ast_type_bs(a, c);
 			lt.ref = (Sym *)(uintptr_t)ast_type_ref(a, c);
-			if ((lt.t & VT_BTYPE) != VT_PTR) { MCC_TRACE("br\n");
+			if (ast_promo_size_unknown(&lt)) { MCC_TRACE("br\n");
+				unbounded = 1;
+			} else if ((lt.t & VT_BTYPE) != VT_PTR) { MCC_TRACE("br\n");
 				int lsz = type_size(&lt, &al);
 				if (lsz > sz)
 					{ MCC_TRACE("br\n"); sz = lsz; }
@@ -4486,15 +4508,21 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 		ct.bp = ast_type_bp(a, n);
 		ct.bs = ast_type_bs(a, n);
 		ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
-		int al, sz = 8;
+		int al, sz = 8, sz_unknown = 0;
 		if ((ct.t & VT_BTYPE) == VT_PTR && ct.ref)
-			{ MCC_TRACE("br\n"); sz = type_size(&ct.ref->type, &al); }
+			{ MCC_TRACE("br\n"); if (ast_promo_size_unknown(&ct.ref->type))
+					{ MCC_TRACE("br\n"); sz_unknown = 1; }
+				else
+					{ MCC_TRACE("br\n"); sz = type_size(&ct.ref->type, &al); } }
+		else if (ast_promo_size_unknown(&ct))
+			{ MCC_TRACE("br\n"); sz_unknown = 1; }
 		else if ((ct.t & VT_BTYPE) == VT_STRUCT || (ct.t & VT_ARRAY))
 			{ MCC_TRACE("br\n"); sz = type_size(&ct, &al); }
 		if (sz <= 0)
 			{ MCC_TRACE("br\n"); sz = 8; }
 		for (int j = 0; j < nc; j++)
-			{ MCC_TRACE("br\n"); if (coff[j] >= off && coff[j] < off + sz)
+			{ MCC_TRACE("br\n"); if (coff[j] >= off &&
+					(sz_unknown || coff[j] < off + sz))
 				{ MCC_TRACE("br\n"); cpoison[j] = 1; } }
 	}
 	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
@@ -4507,13 +4535,27 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); continue; }
 		CType ct;
 		ct.t = t;
+		ct.bp = ast_type_bp(a, n);
+		ct.bs = ast_type_bs(a, n);
 		ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
-		int al, size = type_size(&ct, &al);
-		if (size <= 0)
+		/* A struct-typed Ref whose ref the arena did not carry. type_size would
+		 * dereference the null Sym (`*a = s->r`) and take the compiler down --
+		 * `-O2` on a variadic `unsigned __int256` did exactly that on arm64,
+		 * where gen_va_arg asks for the size on entry. An unknown size cannot be
+		 * guessed at: the object may cover anything from its own offset up, so
+		 * poison that whole range rather than the 8 bytes the fallback below
+		 * would have assumed. */
+		int al, size, size_unknown = 0;
+		if ((t & VT_BTYPE) == VT_STRUCT && !ct.ref)
+			{ MCC_TRACE("br\n"); size = 0; size_unknown = 1; }
+		else
+			{ MCC_TRACE("br\n"); size = type_size(&ct, &al); }
+		if (size <= 0 && !size_unknown)
 			{ MCC_TRACE("br\n"); size = 8; }
 		int base = (int)(int64_t)ast_ival(a, n);
 		for (int j = 0; j < nc; j++)
-			{ MCC_TRACE("br\n"); if (coff[j] >= base && coff[j] < base + size)
+			{ MCC_TRACE("br\n"); if (coff[j] >= base &&
+					(size_unknown || coff[j] < base + size))
 				{ MCC_TRACE("br\n"); cpoison[j] = 1; } }
 	}
 	for (int j = 0; j < nc; j++)
@@ -16404,10 +16446,12 @@ static int ast_eval_slice(AstArena *a, AstLocal n, const int32_t *o, const int64
 #ifdef AST_EVAL_SLICE_PROVIDED
 #include "slice_inline.h"
 
-static AstArena *ast_slice_leaf_pool(AstArena *a, AstLocal inv, AstLocal *root) { MCC_TRACE("enter\n");
+static AstArena *ast_slice_leaf_pool(AstArena *a, AstLocal inv, AstLocal *root,
+																		 int32_t *poff, int *pnparam) { MCC_TRACE("enter\n");
 	AstLocal cref = ast_child(a, inv, 0);
 	struct AstInlineFn *e;
 	void *cs;
+	int i;
 	if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
 		{ MCC_TRACE("br\n"); return NULL; }
 	cs = (void *)(uintptr_t)ast_sym(a, cref);
@@ -16416,6 +16460,15 @@ static AstArena *ast_slice_leaf_pool(AstArena *a, AstLocal inv, AstLocal *root) 
 	e = ast_inline_find(cs);
 	if (!e || !e->ast || ast_arena_has_hole(e->ast))
 		{ MCC_TRACE("br\n"); return NULL; }
+	/* Hand back the incoming-parameter offsets in declaration order. The scanner
+	 * cannot derive them: they are the target's frame layout, and mcc supports
+	 * targets that put parameters above the frame pointer and targets that put
+	 * them below it. */
+	if (e->nparams > MCC_SLICE_INL_MAXPARAM)
+		{ MCC_TRACE("br\n"); return NULL; }
+	for (i = 0; i < e->nparams; i++)
+		{ MCC_TRACE("br\n"); poff[i] = (int32_t)e->param_off[i]; }
+	*pnparam = e->nparams;
 	*root = ast_root(e->ast);
 	return e->ast;
 }

@@ -33,12 +33,62 @@ endif()
 execute_process(COMMAND "${RUNNER}" --arenas "${_dump}" --census
                 RESULT_VARIABLE _rc OUTPUT_VARIABLE _out ERROR_VARIABLE _out)
 message("${_out}")
+
+# 77 from the runner means this backend emits nothing the suite exercises --
+# the Metal arm has no frame kernel builder (TODO.md §5 stage M2). Treating it
+# as failure graded the backend instead of the differential.
+if(${_rc} EQUAL 77)
+    if(MCC_GPU_REQUIRED)
+        message(FATAL_ERROR "slice/census: the runner reports nothing to compare on "
+                            "this backend, but MCC_GPU_REQUIRED is set")
+    endif()
+    message("slice/census: this backend emits nothing this cell compares, skipping")
+    cmake_language(EXIT 77)
+endif()
+
 if(NOT _rc EQUAL 0)
     message(FATAL_ERROR "slice/census: the census run failed")
 endif()
 
-foreach(_pair "blocks;947" "inv-blocks;454" "all-internal;169"
-              "all-external;197" "mixed;87" "any-indirect;1")
+# Every figure below is a count over a corpus this build just compiled, so it
+# is a property of the target's AST/RIR shape and not a portable invariant. The
+# banked column was x86-64's; on arm64 the same corpus yields different block
+# and callee-class counts, and comparing against x86-64's numbers failed for a
+# reason that says nothing about drift. One column per architecture, re-taken
+# with tools/slice-census.py as the message below instructs.
+# `=` rather than `;` between key and value: a ;-joined pair is indistinguishable
+# from two list elements once foreach(... IN LISTS ...) flattens it.
+#
+# The key is architecture AND operating system, because both move these counts.
+# The corpus is compiled here, so it picks up the host's system headers: same
+# arm64, `blocks` is 990 on Darwin and 1022 on Linux. Measured columns:
+#
+#   x86_64-Linux   947   -- the original bank; re-verified in Docker, unchanged
+#   arm64-Darwin   990   -- this machine
+#   arm64-Linux   1022   -- Debian bookworm in Docker
+#
+# An unbanked combination skips the exact half rather than comparing against a
+# foreign column; the ratchets below still run. If this list starts to feel
+# unmanageable the real fix is to give the census a corpus that does not include
+# system headers, which would make one column serve everywhere.
+if(CENSUS_ARCH STREQUAL "arm64" AND CENSUS_OS STREQUAL "Darwin")
+    set(_census_bank "blocks=990" "inv-blocks=517" "all-internal=165"
+                     "all-external=265" "mixed=85" "any-indirect=2")
+elseif(CENSUS_ARCH STREQUAL "arm64" AND CENSUS_OS STREQUAL "Linux")
+    set(_census_bank "blocks=1022" "inv-blocks=554" "all-internal=164"
+                     "all-external=306" "mixed=83" "any-indirect=1")
+elseif(CENSUS_ARCH STREQUAL "x86_64" AND
+       (CENSUS_OS STREQUAL "Linux" OR CENSUS_OS STREQUAL ""))
+    set(_census_bank "blocks=947" "inv-blocks=454" "all-internal=169"
+                     "all-external=197" "mixed=87" "any-indirect=1")
+else()
+    message("slice/census: no banked column for ${CENSUS_ARCH}-${CENSUS_OS}; the "
+            "exact-count half of this cell is skipped, the ratchets below still run")
+    set(_census_bank "")
+endif()
+
+foreach(_entry IN LISTS _census_bank)
+    string(REPLACE "=" ";" _pair "${_entry}")
     list(GET _pair 0 _k)
     list(GET _pair 1 _v)
     if(NOT _out MATCHES "${_k}=([0-9]+)")

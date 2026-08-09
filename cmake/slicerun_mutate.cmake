@@ -32,4 +32,17 @@ if(_mut EQUAL 0)
                         "perturbed and the differential still reported clean, so "
                         "it is blind")
 endif()
+# 77 from the mutated run means the runner found nothing to perturb on this
+# device -- not that it perturbed something and caught it. Without this branch
+# any non-zero counted as "mutation detected", so the cell reported a positive
+# result about a comparison that never happened. slice/f64 on a device without
+# shaderFloat64 (MoltenVK on Apple silicon) is the case that surfaced it.
+if(_mut EQUAL 77)
+    if(MCC_GPU_REQUIRED)
+        message(FATAL_ERROR "slice/${SUITE}-known-positive: nothing mutable on this "
+                            "device, but MCC_GPU_REQUIRED is set")
+    endif()
+    message("slice/${SUITE}-known-positive: nothing mutable on this device, skipping")
+    cmake_language(EXIT 77)
+endif()
 message("slice/${SUITE}-known-positive: clean OK, mutation detected")

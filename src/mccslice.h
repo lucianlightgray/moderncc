@@ -1084,6 +1084,13 @@ static int mcc_slice_run_gpu(MccSliceWork *w, MccSliceKernel *k, int budget) {
  * the frame as the environment and storing the narrowed result back into the
  * destination slot. A later statement therefore reads what an earlier one
  * wrote, on the device, exactly as the CPU reference does. */
+#if !MCC_GPU_LANG_MSL
+/* Everything from here to mcc_slice_frame_kernel_build is the SPIR-V frame
+ * emitter and names SpvMod/SpvV/spv_* directly. It is guarded because the
+ * Metal arm of mcc_slice_frame_kernel_build returns 0 (TODO.md §5 stage M2)
+ * and links none of it: unguarded, a -DMCC_GPU_LANG_MSL=1 build of slicerun
+ * failed to compile with 20 errors, which is how Darwin/Metal stood. */
+
 /* Emit one frame statement. A statement-if becomes SelectionMerge plus two
  * blocks of stores and a merge label -- no OpPhi, because the arms communicate
  * through the frame rather than through a value. The definedness flag still
@@ -1404,6 +1411,7 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 	spv_store_live_v(m, base, j, spv_fit_v(m, val, dt));
 	return 1;
 }
+#endif /* !MCC_GPU_LANG_MSL */
 
 static int mcc_slice_frame_kernel_build(MccSliceFrame *f, MccSliceKernel *k) {
 	uint32_t base;

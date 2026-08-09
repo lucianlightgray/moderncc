@@ -44,6 +44,18 @@ execute_process(COMMAND "${RUNNER}" --arenas "${_dump}" --quiet
                 RESULT_VARIABLE _inl_rc OUTPUT_VARIABLE _inl ERROR_VARIABLE _inl)
 message("${_inl}")
 
+# 77 from the runner means this backend emits nothing the suite exercises --
+# the Metal arm has no frame kernel builder (TODO.md §5 stage M2). Treating it
+# as failure graded the backend instead of the differential.
+if(${_base_rc} EQUAL 77)
+    if(MCC_GPU_REQUIRED)
+        message(FATAL_ERROR "slice/inline: the runner reports nothing to compare on "
+                            "this backend, but MCC_GPU_REQUIRED is set")
+    endif()
+    message("slice/inline: this backend emits nothing this cell compares, skipping")
+    cmake_language(EXIT 77)
+endif()
+
 if(NOT _base_rc EQUAL 0 OR NOT _inl_rc EQUAL 0)
     message(FATAL_ERROR "slice/inline: the unmutated differential is already "
                         "failing")
