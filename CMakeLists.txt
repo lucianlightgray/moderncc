@@ -3614,7 +3614,7 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties("slice/${_sr}" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT)
             endforeach()
-            foreach(_sg gpu wide64 ops mem bytes deref)
+            foreach(_sg gpu wide64 ops mem bytes deref fmt)
                 add_test(NAME "slice/${_sg}" COMMAND slicerun "${_sg}"
                          $<$<BOOL:${MCC_GPU_REQUIRED}>:--require-device>)
                 set_tests_properties("slice/${_sg}" PROPERTIES
@@ -3622,7 +3622,7 @@ if(MCC_BUILD_TESTS)
             endforeach()
             # The 64-bit differential must be able to fail, or "0 mismatches"
             # is indistinguishable from "0 tuples compared".
-            foreach(_sk wide64 ops frame gpu sched bytes deref)
+            foreach(_sk wide64 ops frame gpu sched bytes deref fmt)
                 add_test(NAME "slice/${_sk}-known-positive"
                     COMMAND "${CMAKE_COMMAND}"
                             -DRUNNER=$<TARGET_FILE:slicerun>

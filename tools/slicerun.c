@@ -2014,6 +2014,318 @@ static void suite_deref(void) {
 	}
 }
 
+#define FMT_NSLOT 4
+#define FMT_ARENA_WORD 4096
+#define FMT_LANE_WORD 32
+#define FMT_LANE_BYTE (FMT_LANE_WORD * 4)
+#define FMT_LANES MCC_GPU_LOCAL_SIZE
+#define FMT_DST 0
+
+static const uint32_t FMT_SIZE[] = {0, 1, 5, 64};
+#define FMT_SIZE_N ((int)(sizeof FMT_SIZE / sizeof FMT_SIZE[0]))
+
+static int fmt_kernel(const MccFmtProg *p, MccGpuCode *out) {
+	SpvMod m;
+	SpvRegion r;
+	SpvV arg[MCC_FMT_MAXARG];
+	uint32_t base, mbase, size, len;
+	uint32_t *code;
+	int nw = 0, i;
+	if (p->narg > FMT_NSLOT - 1)
+		return 0;
+	spv_module_begin(&m, FMT_NSLOT);
+	base = spv_main_begin(&m, FMT_NSLOT);
+	mbase = spv_emit3(&m, SpvOpIAdd, m.id_int, spv_const(&m, FMT_ARENA_WORD),
+										spv_emit3(&m, SpvOpIMul, m.id_int, m.lane,
+															spv_const(&m, FMT_LANE_WORD)));
+	r = spv_region(m.id_mem, mbase, spv_uintc(&m, FMT_LANE_BYTE));
+	for (i = 0; i < p->narg; i++) {
+		uint32_t lo = spv_load_at(
+				&m, spv_emit3(&m, SpvOpIAdd, m.id_int, base, spv_const(&m, i * 2)));
+		uint32_t hi = spv_load_at(
+				&m, spv_emit3(&m, SpvOpIAdd, m.id_int, base, spv_const(&m, i * 2 + 1)));
+		arg[i] = spv_mk(spv_u2(&m, spv_emit2(&m, SpvOpBitcast, m.id_uint, lo),
+													 spv_emit2(&m, SpvOpBitcast, m.id_uint, hi)),
+										1, 0);
+	}
+	size = spv_emit2(
+			&m, SpvOpBitcast, m.id_uint,
+			spv_load_at(&m, spv_emit3(&m, SpvOpIAdd, m.id_int, base,
+																spv_const(&m, (FMT_NSLOT - 1) * 2))));
+	len = spv_fmt_emit(&m, &r, p, spv_uintc(&m, FMT_DST), size, arg, p->narg);
+	if (mcc_slice_mutate) {
+		uint32_t wi = spv_region_word(&m, &r, spv_uintc(&m, FMT_DST), 0);
+		spv_word_set(&m, r.var, wi,
+								 spv_emit3(&m, SpvOpBitwiseXor, m.id_int,
+													 spv_word_at(&m, r.var, wi), spv_const(&m, 1)));
+	}
+	if (m.failed) {
+		spv_module_free(&m);
+		return 0;
+	}
+	spv_main_end(&m, m.lane,
+							 spv_mk(spv_emit2(&m, SpvOpBitcast, m.id_int, len), 0, 1));
+	code = spv_module_finish(&m, &nw);
+	spv_module_free(&m);
+	if (!code || nw <= 0 || nw > MCC_GPU_CODE_MAX) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nw;
+	return 1;
+}
+
+static uint32_t *fmt_arena(void) {
+	void *mem = NULL;
+	unsigned long msz = 0;
+	if (!mcc_gpu_mem(&mem, &msz) || !mem)
+		return NULL;
+	if (msz < (unsigned long)(FMT_ARENA_WORD + FMT_LANES * FMT_LANE_WORD) * 4)
+		return NULL;
+	return (uint32_t *)mem + FMT_ARENA_WORD;
+}
+
+static uint32_t fmt_word(int j) { return 0x5A5A0000u + (uint32_t)j * 0x01010101u; }
+
+static int64_t fmt_fit(const MccFmtItem *it, int64_t v) {
+	if (it->kind == MCC_FMT_CHR)
+		return (int64_t)((uint64_t)v & 0xFFu);
+	if (it->wide)
+		return v;
+	return it->sgn ? (int64_t)(int32_t)v : (int64_t)(uint32_t)v;
+}
+
+static const MccFmtItem *fmt_conv(const MccFmtProg *p, int k) {
+	int i, n = 0;
+	for (i = 0; i < p->n; i++) {
+		if (p->it[i].kind == MCC_FMT_LIT)
+			continue;
+		if (n++ == k)
+			return &p->it[i];
+	}
+	return NULL;
+}
+
+static long g_fmt_cmp;
+static long g_fmt_bytes;
+
+static void fmt_case(const char *f) {
+	MccFmtProg p;
+	MccGpuCode code;
+	uint32_t *arena, *ref;
+	int32_t *in, *ob;
+	uint32_t *clen;
+	int n = W64_N * FMT_SIZE_N, i, j, k, bad = 0, lenbad = 0;
+
+	if (!mcc_fmt_compile(f, &p)) {
+		fprintf(stderr, "FAIL fmt_case: \"%s\" refused: %s\n", f,
+						mcc_fmt_why(p.refuse));
+		g_checks++;
+		g_failures++;
+		return;
+	}
+	if (!g_have_device)
+		return;
+	arena = fmt_arena();
+	if (!arena) {
+		CHECK(0, "the shared address space holds the per-lane format arena");
+		return;
+	}
+	if (!fmt_kernel(&p, &code)) {
+		fprintf(stderr, "FAIL fmt_case: \"%s\" did not emit\n", f);
+		g_checks++;
+		g_failures++;
+		return;
+	}
+	ref = (uint32_t *)malloc((size_t)n * FMT_LANE_WORD * sizeof *ref);
+	in = (int32_t *)calloc((size_t)n * FMT_NSLOT * MCC_GPU_IN_SLOTS, sizeof *in);
+	ob = (int32_t *)calloc((size_t)n * MCC_GPU_OUT_SLOTS, sizeof *ob);
+	clen = (uint32_t *)malloc((size_t)n * sizeof *clen);
+	if (!ref || !in || !ob || !clen) {
+		free(ref);
+		free(in);
+		free(ob);
+		free(clen);
+		free(code.p);
+		return;
+	}
+	for (i = 0; i < n; i++)
+		for (j = 0; j < FMT_LANE_WORD; j++)
+			arena[(long)i * FMT_LANE_WORD + j] = fmt_word(j);
+	for (i = 0; i < n; i++) {
+		uint32_t *w = ref + (long)i * FMT_LANE_WORD;
+		int64_t a[MCC_FMT_MAXARG];
+		uint32_t size = FMT_SIZE[i / W64_N];
+		for (j = 0; j < FMT_LANE_WORD; j++)
+			w[j] = fmt_word(j);
+		for (k = 0; k < p.narg; k++) {
+			const MccFmtItem *it = fmt_conv(&p, k);
+			long sp = (long)i * FMT_NSLOT * MCC_GPU_IN_SLOTS + k * MCC_GPU_IN_SLOTS;
+			a[k] = fmt_fit(it, W64[(i + k * 5) % W64_N]);
+			in[sp] = (int32_t)(uint32_t)(uint64_t)a[k];
+			in[sp + 1] = (int32_t)(uint32_t)((uint64_t)a[k] >> 32);
+		}
+		in[(long)i * FMT_NSLOT * MCC_GPU_IN_SLOTS +
+			 (FMT_NSLOT - 1) * MCC_GPU_IN_SLOTS] = (int32_t)size;
+		clen[i] = mcc_fmt_exec(&p, w, FMT_LANE_BYTE, FMT_DST, size, a, p.narg);
+	}
+	if (mcc_gpu_dispatch_rw2(code.p, code.n, in, n, FMT_NSLOT, ob)) {
+		for (i = 0; i < n; i++) {
+			uint32_t glen = (uint32_t)ob[(long)i * MCC_GPU_OUT_SLOTS];
+			for (j = 0; j < FMT_LANE_WORD; j++) {
+				uint32_t want = ref[(long)i * FMT_LANE_WORD + j];
+				uint32_t got = arena[(long)i * FMT_LANE_WORD + j];
+				g_fmt_bytes += 4;
+				if (want == got)
+					continue;
+				if (bad < 2)
+					fprintf(stderr,
+									"  FMT \"%s\" lane %d size=%u word %d want=%08x got=%08x\n",
+									f, i, FMT_SIZE[i / W64_N], j, want, got);
+				bad++;
+			}
+			if (glen != clen[i]) {
+				if (lenbad < 2)
+					fprintf(stderr, "  FMT \"%s\" lane %d size=%u len want=%u got=%u\n", f,
+									i, FMT_SIZE[i / W64_N], clen[i], glen);
+				lenbad++;
+			}
+			g_fmt_cmp++;
+		}
+		CHECK(bad == 0, "every byte the device wrote matches the reference");
+		CHECK(lenbad == 0, "and the returned length matches at every size");
+	} else {
+		CHECK(0, "the compiled-format kernel dispatches");
+	}
+	free(ref);
+	free(in);
+	free(ob);
+	free(clen);
+	free(code.p);
+}
+
+static void fmt_refusals(void) {
+	static const struct {
+		const char *f;
+		int why;
+	} R[] = {{"%s", MCC_FMT_R_PTR},        {"%-3s", MCC_FMT_R_PTR},
+					 {"%p", MCC_FMT_R_PTR},        {"a %s b", MCC_FMT_R_PTR},
+					 {"%f", MCC_FMT_R_FLOAT},      {"%.17g", MCC_FMT_R_FLOAT},
+					 {"%e", MCC_FMT_R_FLOAT},      {"%Lf", MCC_FMT_R_FLOAT},
+					 {"%.*s", MCC_FMT_R_PTR},      {"%*d", MCC_FMT_R_SPEC},
+					 {"%-10d", MCC_FMT_R_SPEC},    {"%02d", MCC_FMT_R_SPEC},
+					 {"%o", MCC_FMT_R_SPEC},       {"%n", MCC_FMT_R_SPEC},
+					 {"%+d", MCC_FMT_R_SPEC},      {"%#x", MCC_FMT_R_SPEC}};
+	MccFmtProg p;
+	int i;
+	for (i = 0; i < (int)(sizeof R / sizeof *R); i++) {
+		CHECK(mcc_fmt_compile(R[i].f, &p) == 0,
+					"a conversion outside tranche 1 is refused, not approximated");
+		CHECK(p.refuse == R[i].why,
+					"and the refusal says which of the three reasons it is");
+	}
+	CHECK(mcc_fmt_compile("%d", &p) == 1 && p.narg == 1, "%d is in scope");
+	CHECK(mcc_fmt_compile("%016llx", &p) == 1 && p.it[0].width == 16 &&
+					p.it[0].pad == '0',
+				"and so is the zero-padded wide hex the corpus actually uses");
+	CHECK(mcc_fmt_compile("%%", &p) == 1 && p.narg == 0 && p.n == 1 &&
+					p.it[0].llen == 1,
+				"a doubled percent is one literal byte and consumes no argument");
+}
+
+static void fmt_directed(void) {
+	static const struct {
+		const char *f;
+		int64_t a;
+		uint32_t size;
+		const char *want;
+		uint32_t len;
+	} D[] = {
+			{"%d", -42, 64, "-42", 3},
+			{"%d", 0, 64, "0", 1},
+			{"%d", -2147483647 - 1, 64, "-2147483648", 11},
+			{"%u", 4294967295u, 64, "4294967295", 10},
+			{"%llu", (int64_t)0x8000000000000000ull, 64, "9223372036854775808", 19},
+			{"%lld", (int64_t)0x8000000000000000ull, 64, "-9223372036854775808", 20},
+			{"%llx", -1, 64, "ffffffffffffffff", 16},
+			{"%016llx", 255, 64, "00000000000000ff", 16},
+			{"%02x", 5, 64, "05", 2},
+			{"%08x", 0xdeadbeefu, 64, "deadbeef", 8},
+			{"%X", 0xabcu, 64, "ABC", 3},
+			{"%c", 'q', 64, "q", 1},
+			{"[%d]", 7, 64, "[7]", 3},
+			{"%d", 12345, 4, "123", 5},
+			{"%d", 12345, 1, "", 5},
+			{"%d", 12345, 0, NULL, 5}};
+	uint32_t w[FMT_LANE_WORD];
+	MccFmtProg p;
+	int i, j;
+	for (i = 0; i < (int)(sizeof D / sizeof *D); i++) {
+		const MccFmtItem *it;
+		int64_t a;
+		uint32_t got;
+		int bad = 0;
+		if (!mcc_fmt_compile(D[i].f, &p)) {
+			CHECK(0, "the directed formats all compile");
+			continue;
+		}
+		it = fmt_conv(&p, 0);
+		a = fmt_fit(it, D[i].a);
+		for (j = 0; j < FMT_LANE_WORD; j++)
+			w[j] = 0xCCCCCCCCu;
+		got = mcc_fmt_exec(&p, w, FMT_LANE_BYTE, FMT_DST, D[i].size, &a, 1);
+		CHECK(got == D[i].len, "the reference returns the untruncated length");
+		if (!D[i].want) {
+			for (j = 0; j < FMT_LANE_WORD; j++)
+				if (w[j] != 0xCCCCCCCCu)
+					bad++;
+			CHECK(bad == 0, "a zero size writes no byte at all, not even the NUL");
+			continue;
+		}
+		for (j = 0; j <= (int)strlen(D[i].want); j++) {
+			unsigned b = (w[j >> 2] >> ((j & 3) * 8)) & 0xFFu;
+			unsigned e = (unsigned char)D[i].want[j];
+			if (b != e) {
+				fprintf(stderr, "  FMT ref \"%s\" byte %d want=%02x got=%02x\n", D[i].f,
+								j, e, b);
+				bad++;
+			}
+		}
+		CHECK(bad == 0, "and writes exactly the hand-written bytes plus a NUL");
+	}
+}
+
+static void suite_fmt(void) {
+	static const char *F[] = {"%d",   "%u",     "%x",      "%X",   "%lld",
+														"%llu", "%llx",   "%zu",     "%c",   "%02x",
+														"%08x", "%016llx", "[%d]",   "%%",   "n=%d.",
+														"%u/%x"};
+	int i;
+	fmt_refusals();
+	fmt_directed();
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr,
+							"FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+	for (i = 0; i < (int)(sizeof F / sizeof *F); i++)
+		fmt_case(F[i]);
+	g_checks++;
+	if (!g_fmt_cmp || !g_fmt_bytes) {
+		fprintf(stderr,
+						"FAIL suite_fmt: compared %ld lanes and %ld destination bytes\n",
+						g_fmt_cmp, g_fmt_bytes);
+		g_failures++;
+	} else {
+		fprintf(stderr, "slicerun: fmt compared %ld lanes, %ld destination bytes\n",
+						g_fmt_cmp, g_fmt_bytes);
+	}
+}
+
 /* ------------------------------------------ the pending-command-buffer UAF -- */
 
 /* Runs last and in its own process: a stranded dispatch disables the device for
@@ -2849,6 +3161,8 @@ int main(int argc, char **argv) {
 		suite_mem();
 	if (!only || !strcmp(only, "deref"))
 		suite_deref();
+	if (!only || !strcmp(only, "fmt"))
+		suite_fmt();
 	if (only && !strcmp(only, "fault"))
 		suite_fault();
 	if (!only || !strcmp(only, "sched"))
@@ -2865,7 +3179,8 @@ int main(int argc, char **argv) {
 	}
 	if (only && (!strcmp(only, "gpu") || !strcmp(only, "wide64") ||
 							 !strcmp(only, "ops") || !strcmp(only, "fault") ||
-			 !strcmp(only, "mem") || !strcmp(only, "deref")) &&
+			 !strcmp(only, "mem") || !strcmp(only, "deref") ||
+			 !strcmp(only, "fmt")) &&
 			!g_have_device)
 		return 77;
 	return g_failures ? 1 : 0;

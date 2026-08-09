@@ -2885,6 +2885,9 @@ static void spv_module_free(SpvMod *m) {
 }
 
 #endif /* MCC_GPU_LANG_MSL */
+
+#include "mccfmt.h"
+
 #endif /* MCC_GPU_EMITTER */
 
 #if defined(MCC_GPU_ORACLE) && !defined(MCC_GPU_ORACLE_PROVIDED)
