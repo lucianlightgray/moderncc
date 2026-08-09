@@ -795,9 +795,124 @@ item now says what was measured, not what was assumed.
    `chain-store-live` together — `-O10 -fchain-store` ICEs, `-O10 -fchain-store
    -fno-chain-store-live` does not, and `-O11` ICEs with no flags at all because both are
    default-on there. `-O0`..`-O3` are clean, which is the only reason this has never been
-   seen: the shipped ladder never turns the pair on. It is a live blocker on any future
-   attempt to re-promote the chain-store family, and it wants fixing before that
-   measurement is re-run.
+   seen: the shipped ladder never turns the pair on.
+
+   **FIXED, and it was not only an ICE — it silently miscompiled.** The assertion is
+   `mcc_error` in `check_vstack()`, not an `assert`, so it is present in release and
+   `NDEBUG` builds and a leak always fails the compile. But the leak and its mirror, an
+   *underflow*, cancel: when one statement orphans a producer and a later one orphans a
+   consumer, the depth is back to zero at function end, `check_vstack()` is happy, and
+   the consumer stored whatever unrelated value was on the vstack. Over 500 random
+   chain-heavy functions at `-O11`, `1fa038ee` compiles 212 with `vstack leak` and
+   **silently returns wrong answers for 6 more**; `-O0`/`-O3` and `-fno-chain-store` are
+   correct on all of them. Post-fix the same corpus is 0 and 0 at every configuration
+   tried (`-O11`, `-O11 -fno-chain-store-live`, `-O11 -fno-chain-store`, the whole family
+   off, `-O10`, `-O3`).
+
+   One root cause, in `rir_to_arena()`'s `IR_OP_VSTORE` collapse, with two symptoms.
+   `ast_dup_sub` rewrites `b = (a = E)` into `a = E; b = E'` where `E'` is a *copy* of
+   `E`. When `E` reads `a` — `c = e = d = (s * d * s)` — the copy is not an expression
+   that can be evaluated at `b`'s position, because `a` has already been written. The
+   arena is a lie about what those statements compute, and it stays consistent only as
+   long as nothing evaluates the copy. The `1u` fbit records this, and
+   `ast_finalize_chainstores` pairs the run so the value is computed once
+   (`AST_FB_STORE_VALUE_LIVE` on the producer, `AST_FB_STORE_CHAIN_REUSE` on the
+   consumer); the faithfulness gate then passes and the strategies run. Both symptoms are
+   the pairing being taken apart afterwards:
+
+   - The marks are set on the first (faithfulness) replay and never cleared. `ast_dse`
+     then poisons a store in the middle of a marked run — legitimately, it is dead — and
+     the surviving partner keeps a mark whose other half no longer exists. A producer
+     with no consumer leaks one vstack entry; a consumer with no producer takes an entry
+     it did not put there. That is the ICE and the miscompile.
+   - `ast_cprop`/`ast_cse` read the copy as if it described the value that store
+     computes, and fold the *destination* to a constant derived from re-reading `a`
+     after `a` was written (`b = a = s * 7 - a` with `a` known zero folds `b` to `0`).
+     That is a miscompile with no vstack imbalance at all.
+
+   Fixed in two places, and the fix is deliberately at the source rather than a guard on
+   each consumer — an earlier attempt guarded `ast_dse`/`ast_cse`/`ast_cprop` on the `1u`
+   bit, which is correct but suppresses the pass outright and took
+   `optfire-{i386,riscv64}/chainstore` red for exactly the reason that row exists.
+
+   1. `src/mccrir.c`: `rir_chain_dup_ok()` refuses the `ast_dup_sub` branch when the
+      value expression reads the source store's target (or, for a non-leaf target such as
+      `q->x`, reads any memory at all), and when it contains an `AST_StoreVal` — that
+      node is a single-use reference to a value already on the vstack and duplicating it
+      double-consumes. The collapse then falls back to leaving the `StoreVal` in place,
+      which is what `-fno-chain-store` does and is correct. Every `1u`-tagged store the
+      arena still contains is now one whose value child really is evaluable at its own
+      position, so `dse`/`cse`/`cprop` need no special case and the pass keeps its full
+      effect on the shapes that motivated it — `a = b = s`, `relay()`, and the whole
+      `optfire` chainstore fixture are untouched.
+   2. `src/mccast.c`: `ast_revoke_chainstores()` runs at the top of `ast_replay_body()`,
+      before `ast_finalize_storevals`/`ast_finalize_chainstores`, and drops a pairing
+      mark whose partner is no longer an adjacent `AST_Store` carrying the matching mark.
+      `AST_FB_STORE_CHAIN_LIVE` was added so a `VALUE_LIVE` set by the chain pairing can
+      be revoked without touching one set by `ast_finalize_storevals`. It only ever
+      *subtracts*: the pairing decision is still made on the faithful arena, where it is
+      known sound, and is only invalidated, never re-derived onto an optimized one.
+      Revocation must skip non-`Store` nodes entirely rather than clearing their bits —
+      `RIR_M_CASE` stores case data, not flags, in an `AST_Jump`'s `fbits`, and clearing
+      bit 8/9/10 there rewrites a switch label. That mistake took
+      `flagsweep-exec/replay-fallback` and `rir-coverage` red and is what those two cells
+      caught.
+
+   `ast_finalize_chainstores` also gained a mutual-exclusion guard: a store could be
+   marked `CHAIN_REUSE` by the live pair with its predecessor *and* `CHAIN_MEMBER` by the
+   member pair with its successor, and `ast_replay_bb` tests `CHAIN_MEMBER` first and
+   never consumes the predecessor's live value. That is worth 83 of 400 `vstack leak (1)`
+   ICEs on a struct/member chain corpus at `-O11`.
+
+   Regression cell: `exec-chainlive/{chained_assign,assign_value_effects,dead_store_elim,
+   cse,local_const_prop,region_store}` at `-O11 -fchain-store -fchain-store-live
+   -fchain-store-member`. `exec-chainstore` pins only `-fchain-store`, which leaves
+   `chain-store-live` off and never reaches the pairing pass, and no `-O` level below 11
+   turns the family on, so nothing existing could have caught this. Five functions were
+   added to `tests/exec/statements/chained_assign.c` — the 3-deep and 4-deep chains, a
+   chain feeding a chain, a chain whose value reads its own target, and a chain whose
+   target is killed by a later store. The cell fails on the unfixed tree with the ICE,
+   and fails again with each of the two fixes ablated in turn (revocation off →
+   `vstack leak (1)`; `rir_chain_dup_ok` off → wrong answers).
+
+   Two things this did **not** fix and did not try to. The `-O` levels in `src/mccopt.h`
+   and `tests/optfire/{defstate.txt,levelpins.txt}` are untouched — this removes a
+   blocker on re-promoting the family, it is not a licence to re-promote it. And the
+   member half of the pairing has no cell: every fixture found that reaches the
+   `CHAIN_REUSE`/`CHAIN_MEMBER` collision also trips debt #6a below at `-O1`, so it
+   cannot go into the shared `tests/exec` corpus until that is fixed. Add it then.
+6a. **Pre-existing and unrelated: `storeval-rot` underflows the vstack at `-O1`.** Found
+   while fuzzing debt #6; reproduces identically at `1fa038ee` and on the current tree.
+
+   ```c
+   struct S { int x; };
+   int f(int s) {
+   	struct S r;
+   	struct S *q = &r;
+   	int a = 1, c = 3;
+   	q->x = c = a = s + a;
+   	return a + c + q->x;
+   }
+   ```
+
+   `error: internal compiler error: vstack leak (-1)` at `-O1`, `-O2` and `-O3`; `-O0` is
+   clean and `-fno-storeval-rot` fixes it at every level. Unlike debt #6 this needs no
+   chain-store flag and lands on the shipped ladder. At `-O11` the same shape *segfaults*
+   the compiler (`vswap()` on an underflowed vstack reads below `vstack[0]`), before and
+   after the debt #6 fix alike — debt #6's leak merely used to abort first on some inputs.
+
+   Diagnosed but not fixed. `ast_finalize_storevals`' rot path marks the innermost store
+   `AST_FB_STORE_VALUE_LIVE | AST_FB_STORE_LIVE_ROT`, and the `AST_StoreVal` replay for a
+   live store pushes nothing because the value is already on the vstack. The middle store
+   of the chain is *not* marked live, so when the outermost store's `AST_StoreVal` falls
+   through to `ast_replay_value(a, ast_child(a, st, 1))` it re-evaluates the middle
+   store's value child — which is the same already-consumed `AST_StoreVal` node — and
+   takes the entry a second time. Same shape as the `AST_StoreVal` case
+   `rir_chain_dup_ok()` now refuses in debt #6: a single-use reference to a live value
+   being evaluated twice. Over 400 random struct/pointer chain functions it fires on 111
+   at `-O3` and, with chain-store out of the way (`-O11 -fno-chain-store`), on 300, so it
+   is not a corner. Wants a cell of its own; the member fixture for debt #6 should be
+   added at the same time.
 7. **The "464 skipped cells under `debug`" number was wrong, and so was its cause —
    PARTLY FIXED.** It was not `MCC_CROSS_DIR` and not a missing `cmake-cross`:
    `MCC_CROSS_DIR` defaults correctly, cross cells are registered unconditionally with

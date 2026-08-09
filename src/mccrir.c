@@ -1315,6 +1315,46 @@ static int rir_has_atomic(AstLocal n, int depth) {
 }
 #endif
 
+static int rir_reads_loc(AstLocal n, int vm, int64_t off) {
+	AstLocal c;
+	uint16_t k;
+	if (n == AST_NONE)
+		return 0;
+	k = ast_kind(rir_arena, n);
+	if (k == AST_Invoke || k == AST_Store || k == AST_StoreVal)
+		return 1;
+	if (k == AST_Unary && ast_op(rir_arena, n) == AST_OP_ADDR)
+		return 1;
+	if (k == AST_Ref || k == AST_Literal) {
+		int r = (int)ast_op(rir_arena, n);
+		if (vm < 0) {
+			if (r & (VT_LVAL | VT_SYM))
+				return 1;
+		} else if (!(r & VT_SYM) &&
+							 ((r & VT_VALMASK) == vm || (r & VT_VALMASK) == VT_LLOCAL) &&
+							 (int64_t)ast_ival(rir_arena, n) == off) {
+			return 1;
+		}
+	}
+	for (c = ast_first_child(rir_arena, n); c != AST_NONE;
+			 c = ast_next_sib(rir_arena, c))
+		if (rir_reads_loc(c, vm, off))
+			return 1;
+	return 0;
+}
+
+static int rir_chain_dup_ok(AstLocal tgt, AstLocal val) {
+	int r;
+	if (tgt == AST_NONE || val == AST_NONE)
+		return 0;
+	if (ast_kind(rir_arena, tgt) != AST_Ref || ast_nchild(rir_arena, tgt) != 0)
+		return !rir_reads_loc(val, -1, 0);
+	r = (int)ast_op(rir_arena, tgt);
+	if (r & VT_SYM)
+		return !rir_reads_loc(val, -1, 0);
+	return !rir_reads_loc(val, r & VT_VALMASK, (int64_t)ast_ival(rir_arena, tgt));
+}
+
 static int rir_effectful(AstLocal n) {
 	uint16_t k;
 	if (n == AST_NONE)
@@ -2707,7 +2747,8 @@ static void rir_op_effect(const RirOp *ro) {
 							ast_detach_last_child(rir_arena, rir_bb[rir_bbn - 1], src)) {
 						v = src;
 						chained = 1;
-					} else if (ast_chainstore_env) {
+					} else if (ast_chainstore_env &&
+										 rir_chain_dup_ok(ast_child(rir_arena, src, 0), iv)) {
 						v = ast_dup_sub(rir_arena, iv);
 						chained = 1;
 					}

@@ -90,6 +90,8 @@ typedef char ast_vt_bitfield_check[VT_BITFIELD == 0x0100 ? 1 : -1];
 #define AST_FB_NOCODE 2097152u
 #define AST_FB_LOAD_LVAL 4194304u
 
+#define AST_FB_STORE_CHAIN_LIVE 8388608u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -6360,12 +6362,17 @@ static void ast_finalize_chainstores(AstArena *a) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); continue; }
 		}
 		if (ast_chainstore_live_env &&
+				!(ast_fbits(a, nx) & (AST_FB_STORE_CHAIN_MEMBER |
+															AST_FB_STORE_CHAIN_SKIP)) &&
 				ast_storeval_lval_leaf(a, ast_child(a, nx, 0))) { MCC_TRACE("br\n");
-			ast_set_fbits(a, n, ast_fbits(a, n) | AST_FB_STORE_VALUE_LIVE);
+			ast_set_fbits(a, n, ast_fbits(a, n) | AST_FB_STORE_VALUE_LIVE |
+														 AST_FB_STORE_CHAIN_LIVE);
 			ast_set_fbits(a, nx, ast_fbits(a, nx) | AST_FB_STORE_CHAIN_REUSE);
 			continue;
 		}
 		if (!ast_chainstore_member_env)
+			{ MCC_TRACE("br\n"); continue; }
+		if (ast_fbits(a, n) & AST_FB_STORE_CHAIN_REUSE)
 			{ MCC_TRACE("br\n"); continue; }
 		if (ast_fbits(a, nx) & AST_FB_STORE_VALUE_LIVE)
 			{ MCC_TRACE("br\n"); continue; }
@@ -6406,6 +6413,53 @@ static void ast_finalize_chainstores(AstArena *a) { MCC_TRACE("enter\n");
 		ast_set_fbits(a, n, ast_fbits(a, n) | AST_FB_STORE_CHAIN_MEMBER);
 		ast_set_fbits(a, nx, ast_fbits(a, nx) | AST_FB_STORE_CHAIN_SKIP);
 	}
+}
+
+static AstLocal ast_prev_sib(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	AstLocal p = ast_parent(a, n), c, prev = AST_NONE;
+	if (p == AST_NONE)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	for (c = ast_first_child(a, p); c != AST_NONE && c != n; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); prev = c; }
+	return prev;
+}
+
+static int ast_chain_partner_ok(AstArena *a, AstLocal n, uint64_t want) { MCC_TRACE("enter\n");
+	return n != AST_NONE && ast_kind(a, n) == AST_Store &&
+				 ast_nchild(a, n) == 2 && (ast_fbits(a, n) & want) != 0;
+}
+
+static void ast_revoke_chainstores(AstArena *a) { MCC_TRACE("enter\n");
+	int changed;
+	do { MCC_TRACE("br\n");
+		AstLocal n;
+		changed = 0;
+		for (n = 0; n < a->count; n++) { MCC_TRACE("br\n");
+			uint64_t fb, drop = 0;
+			if (ast_kind(a, n) != AST_Store || ast_nchild(a, n) != 2)
+				{ MCC_TRACE("br\n"); continue; }
+			fb = ast_fbits(a, n);
+			if (!(fb & (AST_FB_STORE_CHAIN_LIVE | AST_FB_STORE_CHAIN_REUSE |
+									AST_FB_STORE_CHAIN_MEMBER | AST_FB_STORE_CHAIN_SKIP)))
+				{ MCC_TRACE("br\n"); continue; }
+			if ((fb & AST_FB_STORE_CHAIN_LIVE) &&
+					!ast_chain_partner_ok(a, ast_next_sib(a, n), AST_FB_STORE_CHAIN_REUSE))
+				{ MCC_TRACE("br\n"); drop |= AST_FB_STORE_CHAIN_LIVE | AST_FB_STORE_VALUE_LIVE; }
+			if ((fb & AST_FB_STORE_CHAIN_REUSE) &&
+					!ast_chain_partner_ok(a, ast_prev_sib(a, n), AST_FB_STORE_CHAIN_LIVE))
+				{ MCC_TRACE("br\n"); drop |= AST_FB_STORE_CHAIN_REUSE; }
+			if ((fb & AST_FB_STORE_CHAIN_MEMBER) &&
+					!ast_chain_partner_ok(a, ast_next_sib(a, n), AST_FB_STORE_CHAIN_SKIP))
+				{ MCC_TRACE("br\n"); drop |= AST_FB_STORE_CHAIN_MEMBER; }
+			if ((fb & AST_FB_STORE_CHAIN_SKIP) &&
+					!ast_chain_partner_ok(a, ast_prev_sib(a, n), AST_FB_STORE_CHAIN_MEMBER))
+				{ MCC_TRACE("br\n"); drop |= AST_FB_STORE_CHAIN_SKIP; }
+			if (drop) { MCC_TRACE("br\n");
+				ast_set_fbits(a, n, fb & ~drop);
+				changed = 1;
+			}
+		}
+	} while (changed);
 }
 
 static void ast_replay_body(AstArena *a) { MCC_TRACE("enter\n");
@@ -6456,6 +6510,7 @@ static void ast_replay_body(AstArena *a) { MCC_TRACE("enter\n");
 		ast_graft_base = loc;
 	}
 	ast_sv_live_depth = 0;
+	ast_revoke_chainstores(a);
 	ast_finalize_storevals(a);
 	ast_finalize_chainstores(a);
 	ast_replay_bb(a, ast_root(a));
