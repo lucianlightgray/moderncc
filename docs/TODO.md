@@ -1770,6 +1770,176 @@ will drift if the guards in `src/ast_eval_slice.h` change, which is why the sub-
 worth re-checking against the cause totals — on this branch every construct list sums
 exactly to its cause, which is the check that nothing was truncated by `REF_DET_CAP`.
 
+## Landed — globals are now device-*addressable*, and the predicate is still deliberately closed, 2026-08-09 (`wt/hostimport`)
+
+The section below measures a +1.46 pp ceiling for admitting `global-array` and
+`global-scalar-int`, and then refuses to bank it, because the address those nodes would
+compute is outside binding 2 and **both executors poison identically** — the differential
+would pass on 17,103 nodes that computed nothing. This branch removes that objection by
+making the address real. It does **not** widen the predicate. Widening is the next step and
+it is now sound to take; taking it here would have shipped the mechanism and its first
+consumer in one diff with no independent evidence that the mechanism works.
+
+### What landed
+
+`VK_EXT_external_memory_host`. Instead of allocating device memory, mapping it, and handing
+the host the driver's mapping as the base of the shared address space, `mcc_gpu_mem_import`
+takes host pages the process already has and points binding 2 at them. The window is then at
+an address the host already knew, so an object living there has **one** address on both
+sides and `ast_eval_slice_rw_addr`'s `(uint64)p - mem_base >> 32 == 0` holds for it. No
+copy, no staging, no write-back, and `spv_mem_off` is untouched — the base was always a
+variable, it was only ever pointed at the wrong memory.
+
+| piece | where |
+| --- | --- |
+| capability probe and reason | `mcc_vk_want_hostimport` in `src/mccgpu.c` |
+| the import itself | `mcc_vk_import_mem` in `src/mccgpu.c` |
+| public API | `mcc_gpu_host_import_align`, `mcc_gpu_mem_import` in `src/mccgpu.h` |
+| the demonstration | `suite_hostimport` in `tools/slicerun.c`, cells `slice/hostimport` and `slice/hostimport-known-positive` |
+
+Three new loader symbols — `vkGetPhysicalDeviceProperties2`,
+`vkEnumerateDeviceExtensionProperties`, `vkGetDeviceProcAddr` — bind through a **new
+optional tier** next to `MCC_VK_FNS`, whose every name is mandatory and whose absence fails
+the whole backend. A loader missing these loses host-pointer import and nothing else.
+`vkGetMemoryHostPointerPropertiesEXT` is resolved through `vkGetDeviceProcAddr` because the
+Khronos loader does **not** export it statically (`nm -D libvulkan.so.1` on this host lists
+the three core names above and not that one).
+
+The memory type is selected, never assumed: `vkGetMemoryHostPointerPropertiesEXT` reports
+which types can back this particular pointer, the buffer reports which types it can bind,
+and the choice is made from the intersection. Those two masks genuinely differ —
+lavapipe answers `memoryTypeBits = 1` unconditionally
+(`lvp_GetMemoryHostPointerPropertiesEXT`, Mesa 26.0.8) while this NVIDIA host answers a
+wider mask and the import lands on type 3, `HOST_VISIBLE|COHERENT|CACHED`.
+
+### The device reads a value a `static` actually holds
+
+`slice/hostimport` declares three ordinary file-scope statics — two `double[64]`, one
+`long long[64]`, the shape matmul has — page-aligns one range outward across all three,
+imports it, and dispatches a kernel that loads through `spv_mem_off` at the *real* address
+of `g_hi_a[lane]` and stores the result at the *real* address of `g_hi_c[lane]`. Measured
+on this host:
+
+```
+[gpu-vk] host-pointer import yes align=4096
+[gpu-vk] imported host range 0x55e3b4309000+4096 as memory type 3
+slicerun hostimport: imported 4096 bytes at 0x55e3b4309000 (align 4096) covering
+                     g_hi_a=0x55e3b43094c0 g_hi_b=0x55e3b43096c0 g_hi_c=0x55e3b43098c0
+slicerun: 8 checks, 0 failures, device=NVIDIA GeForce RTX 5070 Ti Laptop GPU
+```
+
+**The load-bearing assertion is the definedness slot, not the value.** A kernel whose
+address fell outside the window returns `def = 0` with a junk value, and the CPU reference
+poisons in exactly the same way, so a check on the value alone would pass with the import
+having done nothing — that is the precise failure mode the section below names. The cell
+checks all four of: every lane reports `def = 1`; the device's value equals the bits the
+static holds; a device *store* lands in a static the host then reads with ordinary C; and
+`ast_eval_slice_bytes_load` through `ast_eval_slice_rw_addr` resolves the same address to
+the same bytes.
+
+`--mutate` fails it: 4 of 8 checks, exit 1.
+
+### The device that cannot do it skips, with the reason
+
+`mcc_gpu_host_import_align` returns 0 and a printable reason, and the cell exits 77. Each
+refusal has its own sentence rather than one shared "unsupported": the loader did not export
+the three core entry points; the device is below Vulkan 1.1 so
+`vkGetPhysicalDeviceProperties2` cannot be called; the device does not enumerate
+`VK_EXT_external_memory_host`; `minImportedHostPointerAlignment` is not a power of two;
+`vkCreateDevice` refused the extension after enumerating it (which retries without it rather
+than losing the device); `vkGetDeviceProcAddr` did not resolve the EXT entry point. The
+Metal arm refuses with a different reason again — it has no persistent third buffer to
+import into. `MCC_GPU_NO_HOST_IMPORT=1` forces the skip path so it is exercisable on a
+device that *does* support the extension; that is how it was tested here.
+
+### Both facts about lavapipe, re-derived rather than inherited
+
+Mesa 26.0.8, `src/gallium/frontends/lavapipe/lvp_device.c`: `:236` is
+`.EXT_external_memory_host = true,` and `:1182-1183` is
+`/* VK_EXT_external_memory_host */ .minImportedHostPointerAlignment = 4096,` inside
+`lvp_get_properties`, which fills the `vk_properties` the common
+`GetPhysicalDeviceProperties2` copies out — so the alignment is readable on lavapipe, not
+merely declared. Independently on this host, `vulkaninfo` reports
+`VK_EXT_external_memory_host : extension revision 1` and
+`minImportedHostPointerAlignment = 0x00001000`. **CI on the Linux runner can exercise this
+and `MCC_GPU_REQUIRED=ON` stays honest.**
+
+### The linker lever, priced
+
+The design lever was that mcc is also the linker, so page-aligning `.data`/`.bss` and
+importing the whole range as one allocation avoids per-object alignment work. That is
+correct, and it is cheaper than expected, because **on Linux it is not even required.**
+
+In `-run` the whole image is one page-aligned block from `host_runmem_alloc`, and
+`mcc_relocate_ex` lays sections out in three groups — `SHF_ALLOC|SHF_EXECINSTR`, `SHF_ALLOC`,
+`SHF_ALLOC|SHF_WRITE` — of which only the first is forced to `PAGESIZE`, because the guard
+reads `if (k <= HOST_RUNMEM_RO)` and `HOST_RUNMEM_RO` is `MCC_CONFIG_RUNMEM_RO`
+(`src/mcchost.h:273-276`), i.e. **0 on Linux and 1 on Darwin**. Measured with `mcc -vv -run`
+on a program with three statics:
+
+```
+0: .text   0x558d7511b000  len 002f0  align 1000
+1: .data.ro 0x558d7511b380 len 00028  align 0040
+2: .data   0x558d7511b540  len 00000  align 0040
+2: .bss    0x558d7511b540  len 03204  align 0020
+2: .got    0x558d7511e748  len 00070  align 0008
+protect  rwx 0x558d7511b000  len 01000
+a=0x558d7511b540   (page offset 1344)
+```
+
+So the RW group starts 64-byte aligned, and the *whole* RW group — `.data .bss .tdata .tbss
+.got` — is contiguous, which is exactly the single import range the lever wants.
+
+**And on today's tree no linker change is needed at all, on any host.** Read the protection
+loop rather than assuming from the group table: `f = k; if (f >= HOST_RUNMEM_RO) { if (f !=
+0) continue; f = 3; }`. With `HOST_RUNMEM_RO` 0 the RO and RW groups both hit `continue`;
+with it 1 they *still* both hit `continue`, and the only effect of the flag is that the text
+group is protected `rx` instead of `rwx`. The single `protect rwx` line above is the whole
+output. **No page in a run image is ever made read-only**, so a range aligned down into the
+tail of `.data.ro` is the same mapping at the same protection and importing it is sound.
+The dual-mapping path does not change this either: it maps the image twice from one unlinked
+file and puts every `k >= 1` section in the RW view at `mem + ptr_diff`, which is
+`PROT_READ|PROT_WRITE` throughout.
+
+The page-alignment change therefore becomes **required only if the `f = 1` "ro" branch is
+ever reached**, which the code is plainly written to allow and currently never takes. When
+that day comes the fix is the one guard — `if (k <= HOST_RUNMEM_RO) align = PAGESIZE;`
+extended to the RW group — and it costs at most one page of address space per group
+(`ELF_PAGE_SIZE`, 0x1000 on x86_64/i386/riscv64 and 0x10000 on arm/arm64). The sizing pass
+computes the same offsets as the placing pass, so the run block sizes itself correctly, and
+the non-dual path already over-allocates by a page. **Not landed here**: nothing consumes
+it, it is not needed for correctness today, and it moves every JIT run image's addresses.
+
+### The sizing policy, which is now a different question
+
+`MCC_VK_MEM_DEFAULT` is 1 MiB and matmul's three `static double` arrays are 8.64 MB, which
+reads like a 9x shortfall. It is not, because **an import is not an allocation.** The pages
+already exist and belong to the process; nothing is copied and no device memory is reserved,
+so 1 MiB does not bound it. `MCC_VK_MEM_DEFAULT` now sizes exactly one thing: the fallback
+window for a device or a run that did not import. The bounds that actually apply to an
+imported range are three, and all three are enforced:
+
+| bound | value here | where |
+| --- | --- | --- |
+| the descriptor binds `VK_WHOLE_SIZE`, so `maxStorageBufferRange` applies | 4294967295 on this host; driver-dependent on lavapipe | checked in `mcc_vk_import_mem` |
+| `ast_eval_slice_rw_nbyte` is `int32_t` and `spv_mem_off` yields a 32-bit offset | 2 GiB − 4 | checked in `mcc_gpu_mem_import` |
+| pointer and size must both be multiples of `minImportedHostPointerAlignment` | 4096 on both this host and lavapipe | checked in `mcc_vk_import_mem` |
+
+8.64 MB clears all three by three orders of magnitude. The honest residue is that the
+window is **one** range: a program whose globals do not fit in one 2 GiB span, or which
+needs the heap and the printf ring in a range disjoint from `.data`, would need a second
+binding, and nothing here provides one.
+
+### What is now owed
+
+1. **Widen `ast_eval_slice_kind_ok` for `global-array` and `global-scalar-int`**, the two
+   classes the table below prices at +1.46 pp. The addressability objection is discharged;
+   what remains is arranging that the run being sliced has actually imported the range its
+   globals live in, which is a `-run`/JIT-path question and not a predicate question.
+2. **The Darwin one-liner** above, when there is a caller.
+3. **`mcc_vk_bind_mem`'s grow path is still unreachable** for the non-imported window: both
+   callers pass the literal `MCC_VK_MEM_DEFAULT`. Import does not fix that; it sidesteps it.
+
 ## Landed — `ref-not-local` is four causes wearing one label, and 91.7% of it cascades nowhere, 2026-08-09 (`wt/refwiden`)
 
 `ref-not-local` was the largest single refusal in the corpus — 12.03% of all nodes, 141,027

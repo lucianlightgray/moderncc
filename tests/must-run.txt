@@ -48,6 +48,8 @@ slice/deref                  | registered | *p through binding 2: the region lay
 slice/deref-known-positive   | registered | proves the binding-2 differential is not blind
 slice/ext                    | registered | an array live-in as one descriptor instead of one slot per element; the only check that an object larger than MCC_SLICE_MAXSLOT is addressable at all
 slice/ext-known-positive     | registered | proves the extent differential is not blind
+slice/hostimport             | registered | the only check that a real static's own address is valid on the device: VK_EXT_external_memory_host puts .bss pages behind binding 2, and the definedness slot is what proves the address was inside the window rather than poisoned on both sides
+slice/hostimport-known-positive | registered | proves the imported-window differential is not blind
 slice/fault                  | registered | the pending-command-buffer strand path
 slice/cost                   | registered | H6; the break-even table the plan's go/no-go rests on
 slice/real                   | registered | both runners over real recorded arenas

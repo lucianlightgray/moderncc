@@ -19,6 +19,18 @@
 
 #include "mccgpu.h"
 
+/* Inside the amalgamation mcc.h has already redefined malloc and free to
+ * undeclared poison names, and mccast.c has already pointed MCC_GPU_MALLOC at
+ * the tracked allocators; compiled standalone into slicerun neither is true.
+ * Route the one allocation this file makes through the same pair the emitters
+ * use so it is correct in both. */
+#ifndef MCC_GPU_MALLOC
+#define MCC_GPU_MALLOC malloc
+#endif
+#ifndef MCC_GPU_FREE
+#define MCC_GPU_FREE free
+#endif
+
 #if MCC_HOST_POSIX
 #include <pthread.h>
 static pthread_mutex_t mcc_gpu_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -694,6 +706,22 @@ static int mcc_gpu_mem_backend(void **base, unsigned long *size) {
 	return 0;
 }
 
+/* Metal's shared-storage MTLBuffer is the analogue of a host-pointer import,
+ * but the Metal arm has no persistent third buffer yet, so there is nothing to
+ * point at a host range. Refuse with a reason rather than a bare zero. */
+static unsigned long mcc_gpu_host_import_align_backend(const char **why) {
+	if (why)
+		*why = "the Metal arm has no shared window to import into "
+					 "(mcc_gpu_mem_backend returns 0 there)";
+	return 0;
+}
+
+static int mcc_gpu_mem_import_backend(void *base, unsigned long size) {
+	(void)base;
+	(void)size;
+	return 0;
+}
+
 #else /* !MCC_GPU_LANG_MSL */
 
 #if MCC_HOST_WIN32
@@ -862,6 +890,12 @@ typedef enum VkStructureType {
 	VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO = 39,
 	VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO = 40,
 	VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO = 42,
+	VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 = 1000059001,
+	VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO = 1000072000,
+	VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT = 1000178000,
+	VK_STRUCTURE_TYPE_MEMORY_HOST_POINTER_PROPERTIES_EXT = 1000178001,
+	VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT =
+			1000178002,
 	VK_STRUCTURE_TYPE_MAX_ENUM = 0x7FFFFFFF
 } VkStructureType;
 
@@ -1282,6 +1316,56 @@ typedef struct VkFenceCreateInfo {
 	VkFenceCreateFlags flags;
 } VkFenceCreateInfo;
 
+/* VK_EXT_external_memory_host, plus the two core structures it needs. The
+ * project transcribes Vulkan rather than including it, so the fields below are
+ * copied from vulkan_core.h and their order is load-bearing.
+ *
+ * VkPhysicalDeviceProperties2 embeds the whole of VkPhysicalDeviceProperties by
+ * value, so the transcription above it has to be exact or the driver writes
+ * past the end. That is not a new exposure: vkGetPhysicalDeviceProperties has
+ * been handed the same struct since the backend was written. */
+#define VK_MAX_EXTENSION_NAME_SIZE 256
+#define VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT 0x00000080
+
+typedef uint32_t VkExternalMemoryHandleTypeFlagBits;
+typedef uint32_t VkExternalMemoryHandleTypeFlags;
+
+typedef struct VkExtensionProperties {
+	char extensionName[VK_MAX_EXTENSION_NAME_SIZE];
+	uint32_t specVersion;
+} VkExtensionProperties;
+
+typedef struct VkPhysicalDeviceProperties2 {
+	VkStructureType sType;
+	void *pNext;
+	VkPhysicalDeviceProperties properties;
+} VkPhysicalDeviceProperties2;
+
+typedef struct VkPhysicalDeviceExternalMemoryHostPropertiesEXT {
+	VkStructureType sType;
+	void *pNext;
+	VkDeviceSize minImportedHostPointerAlignment;
+} VkPhysicalDeviceExternalMemoryHostPropertiesEXT;
+
+typedef struct VkExternalMemoryBufferCreateInfo {
+	VkStructureType sType;
+	const void *pNext;
+	VkExternalMemoryHandleTypeFlags handleTypes;
+} VkExternalMemoryBufferCreateInfo;
+
+typedef struct VkImportMemoryHostPointerInfoEXT {
+	VkStructureType sType;
+	const void *pNext;
+	VkExternalMemoryHandleTypeFlagBits handleType;
+	void *pHostPointer;
+} VkImportMemoryHostPointerInfoEXT;
+
+typedef struct VkMemoryHostPointerPropertiesEXT {
+	VkStructureType sType;
+	void *pNext;
+	uint32_t memoryTypeBits;
+} VkMemoryHostPointerPropertiesEXT;
+
 typedef VkResult(VKAPI_PTR *PFN_vkCreateInstance)(
 		const VkInstanceCreateInfo *pCreateInfo,
 		const VkAllocationCallbacks *pAllocator, VkInstance *pInstance);
@@ -1298,6 +1382,19 @@ typedef void(VKAPI_PTR *PFN_vkGetPhysicalDeviceQueueFamilyProperties)(
 typedef void(VKAPI_PTR *PFN_vkGetPhysicalDeviceMemoryProperties)(
 		VkPhysicalDevice physicalDevice,
 		VkPhysicalDeviceMemoryProperties *pMemoryProperties);
+typedef void(VKAPI_PTR *PFN_vkGetPhysicalDeviceProperties2)(
+		VkPhysicalDevice physicalDevice,
+		VkPhysicalDeviceProperties2 *pProperties);
+typedef VkResult(VKAPI_PTR *PFN_vkEnumerateDeviceExtensionProperties)(
+		VkPhysicalDevice physicalDevice, const char *pLayerName,
+		uint32_t *pPropertyCount, VkExtensionProperties *pProperties);
+typedef void(VKAPI_PTR *PFN_vkVoidFunction_mcc)(void);
+typedef PFN_vkVoidFunction_mcc(VKAPI_PTR *PFN_vkGetDeviceProcAddr)(
+		VkDevice device, const char *pName);
+typedef VkResult(VKAPI_PTR *PFN_vkGetMemoryHostPointerPropertiesEXT)(
+		VkDevice device, VkExternalMemoryHandleTypeFlagBits handleType,
+		const void *pHostPointer,
+		VkMemoryHostPointerPropertiesEXT *pMemoryHostPointerProperties);
 typedef VkResult(VKAPI_PTR *PFN_vkCreateDevice)(
 		VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
 		const VkAllocationCallbacks *pAllocator, VkDevice *pDevice);
@@ -1475,9 +1572,22 @@ typedef VkResult(VKAPI_PTR *PFN_vkWaitForFences)(VkDevice device,
 	X(vkResetFences)                                                             \
 	X(vkResetCommandBuffer)
 
+/* Optional tier. Every name in MCC_VK_FNS is mandatory -- one missing symbol
+ * fails the whole backend -- which is the right policy for the core it needs
+ * and the wrong one for a capability that is allowed to be absent. These three
+ * are core entry points, but a loader that does not export them must lose
+ * host-pointer import and nothing else. */
+#define MCC_VK_OPT_FNS(X)                                                      \
+	X(vkGetPhysicalDeviceProperties2)                                            \
+	X(vkEnumerateDeviceExtensionProperties)                                      \
+	X(vkGetDeviceProcAddr)
+
 #define MCC_VK_DECL(n) static PFN_##n n;
 MCC_VK_FNS(MCC_VK_DECL)
+MCC_VK_OPT_FNS(MCC_VK_DECL)
 #undef MCC_VK_DECL
+
+static PFN_vkGetMemoryHostPointerPropertiesEXT vkGetMemoryHostPointerPropertiesEXT;
 
 static int mcc_vk_tried;
 static int mcc_vk_ok;
@@ -1555,6 +1665,9 @@ static int mcc_vk_load(void) {
 	}
 	MCC_VK_FNS(MCC_VK_BIND)
 #undef MCC_VK_BIND
+#define MCC_VK_BINDOPT(n) n = (PFN_##n)host_dlsym(h, #n);
+	MCC_VK_OPT_FNS(MCC_VK_BINDOPT)
+#undef MCC_VK_BINDOPT
 	if (!mcc_fe_bind())
 		return 0;
 	mcc_vk_ok = 1;
@@ -1571,6 +1684,10 @@ typedef struct MccGpu {
 	unsigned qfam;
 	char name[256];
 	int f64;
+	int hostimp;
+	unsigned long hostimp_align;
+	unsigned long maxsbrange;
+	char hostimp_why[192];
 	long dispatches;
 	long lanes;
 	long stranded;
@@ -1594,6 +1711,95 @@ static uint64_t mcc_vk_fence_ns(void) {
 			return (uint64_t)v;
 	}
 	return 30ULL * 1000000000ULL;
+}
+
+#define MCC_VK_EXT_HOSTMEM "VK_EXT_external_memory_host"
+
+static const char *const mcc_vk_hostmem_ext = MCC_VK_EXT_HOSTMEM;
+
+static void mcc_vk_hostimp_no(const char *why) {
+	mcc_gpu.hostimp = 0;
+	mcc_gpu.hostimp_align = 0;
+	snprintf(mcc_gpu.hostimp_why, sizeof mcc_gpu.hostimp_why, "%s", why);
+}
+
+/* Decide, before vkCreateDevice, whether VK_EXT_external_memory_host can be
+ * asked for. The answer is enumerated, never assumed: a device that does not
+ * advertise it must produce a reason a cell can print rather than a silent
+ * fallback that lets the differential pass on nothing. */
+static int mcc_vk_want_hostimport(void) {
+	VkExtensionProperties *ep;
+	uint32_t n = 0, i;
+	int found = 0;
+	VkResult r;
+
+	if (getenv("MCC_GPU_NO_HOST_IMPORT")) {
+		mcc_vk_hostimp_no("host-pointer import disabled by MCC_GPU_NO_HOST_IMPORT");
+		return 0;
+	}
+	if (!vkEnumerateDeviceExtensionProperties || !vkGetPhysicalDeviceProperties2 ||
+			!vkGetDeviceProcAddr) {
+		mcc_vk_hostimp_no("the Vulkan loader does not export "
+											"vkEnumerateDeviceExtensionProperties, "
+											"vkGetPhysicalDeviceProperties2 and vkGetDeviceProcAddr");
+		return 0;
+	}
+	{
+		/* vkGetPhysicalDeviceProperties2 is core in 1.1 and undefined below it,
+		 * and the instance's apiVersion says nothing about the device's. */
+		VkPhysicalDeviceProperties pp;
+		memset(&pp, 0, sizeof pp);
+		vkGetPhysicalDeviceProperties(mcc_gpu.phys, &pp);
+		if (pp.apiVersion < VK_API_VERSION_1_1) {
+			mcc_vk_hostimp_no("the device is below Vulkan 1.1, so "
+												"vkGetPhysicalDeviceProperties2 cannot be called to read "
+												"minImportedHostPointerAlignment");
+			return 0;
+		}
+	}
+	r = vkEnumerateDeviceExtensionProperties(mcc_gpu.phys, 0, &n, 0);
+	if (r != VK_SUCCESS || !n) {
+		mcc_vk_hostimp_no("the device enumerates no extensions");
+		return 0;
+	}
+	ep = (VkExtensionProperties *)MCC_GPU_MALLOC((size_t)n * sizeof *ep);
+	if (!ep) {
+		mcc_vk_hostimp_no("out of memory enumerating device extensions");
+		return 0;
+	}
+	memset(ep, 0, (size_t)n * sizeof *ep);
+	r = vkEnumerateDeviceExtensionProperties(mcc_gpu.phys, 0, &n, ep);
+	if (r == VK_SUCCESS || r == VK_INCOMPLETE)
+		for (i = 0; i < n && !found; i++)
+			if (!strcmp(ep[i].extensionName, MCC_VK_EXT_HOSTMEM))
+				found = 1;
+	MCC_GPU_FREE(ep);
+	if (!found) {
+		mcc_vk_hostimp_no("the device does not support " MCC_VK_EXT_HOSTMEM);
+		return 0;
+	}
+	{
+		VkPhysicalDeviceExternalMemoryHostPropertiesEXT hp;
+		VkPhysicalDeviceProperties2 p2;
+		memset(&hp, 0, sizeof hp);
+		hp.sType =
+				VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT;
+		memset(&p2, 0, sizeof p2);
+		p2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+		p2.pNext = &hp;
+		vkGetPhysicalDeviceProperties2(mcc_gpu.phys, &p2);
+		if (!hp.minImportedHostPointerAlignment ||
+				(hp.minImportedHostPointerAlignment &
+				 (hp.minImportedHostPointerAlignment - 1))) {
+			mcc_vk_hostimp_no("the device reports a minImportedHostPointerAlignment "
+												"that is not a power of two");
+			return 0;
+		}
+		mcc_gpu.hostimp_align = (unsigned long)hp.minImportedHostPointerAlignment;
+	}
+	mcc_gpu.hostimp = 1;
+	mcc_gpu.hostimp_why[0] = 0;
+	return 1;
 }
 
 static int mcc_gpu_init(void) {
@@ -1660,6 +1866,7 @@ static int mcc_gpu_init(void) {
 	mcc_gpu.phys = devs[0];
 	vkGetPhysicalDeviceProperties(mcc_gpu.phys, &props);
 	snprintf(mcc_gpu.name, sizeof mcc_gpu.name, "%s", props.deviceName);
+	mcc_gpu.maxsbrange = (unsigned long)props.limits.maxStorageBufferRange;
 	mcc_gpu.qfam = 0xFFFFFFFFu;
 	vkGetPhysicalDeviceQueueFamilyProperties(mcc_gpu.phys, &nq, qf);
 	for (i = 0; i < nq; i++)
@@ -1693,8 +1900,21 @@ static int mcc_gpu_init(void) {
 		feat.shaderFloat64 = have.shaderFloat64;
 	}
 	dci.pEnabledFeatures = &feat;
+	if (mcc_vk_want_hostimport()) {
+		dci.enabledExtensionCount = 1;
+		dci.ppEnabledExtensionNames = &mcc_vk_hostmem_ext;
+	}
 	{
 		VkResult _r = vkCreateDevice(mcc_gpu.phys, &dci, 0, &mcc_gpu.dev);
+		if (_r != VK_SUCCESS && mcc_gpu.hostimp) {
+			/* The extension was enumerated and still refused. Retry without it
+			 * rather than lose the device: host-pointer import is a capability, not
+			 * a floor. */
+			mcc_vk_hostimp_no("vkCreateDevice refused " MCC_VK_EXT_HOSTMEM);
+			dci.enabledExtensionCount = 0;
+			dci.ppEnabledExtensionNames = 0;
+			_r = vkCreateDevice(mcc_gpu.phys, &dci, 0, &mcc_gpu.dev);
+		}
 		if (_r != VK_SUCCESS) {
 			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
 				fprintf(stderr, "[ladder-gpu] vkCreateDevice rc=%d\n", (int)_r);
@@ -1702,6 +1922,18 @@ static int mcc_gpu_init(void) {
 		}
 	}
 	vkGetDeviceQueue(mcc_gpu.dev, mcc_gpu.qfam, 0, &mcc_gpu.q);
+	if (mcc_gpu.hostimp) {
+		vkGetMemoryHostPointerPropertiesEXT =
+				(PFN_vkGetMemoryHostPointerPropertiesEXT)vkGetDeviceProcAddr(
+						mcc_gpu.dev, "vkGetMemoryHostPointerPropertiesEXT");
+		if (!vkGetMemoryHostPointerPropertiesEXT)
+			mcc_vk_hostimp_no("vkGetDeviceProcAddr did not resolve "
+												"vkGetMemoryHostPointerPropertiesEXT");
+	}
+	if (mcc_vk_diag())
+		fprintf(stderr, "[gpu-vk] host-pointer import %s align=%lu%s%s\n",
+						mcc_gpu.hostimp ? "yes" : "no", mcc_gpu.hostimp_align,
+						mcc_gpu.hostimp ? "" : " -- ", mcc_gpu.hostimp_why);
 	mcc_gpu.ok = 1;
 	return 1;
 }
@@ -1850,6 +2082,7 @@ static struct {
 	void *pin, *pout, *pmem;
 	VkDeviceSize binsz, boutsz, bmemsz;
 	int dsdirty;
+	int memimported;
 	MccVkPipe cache[MCC_VK_CACHE_MAX];
 	int ncache, next;
 } mcc_vkr;
@@ -1950,20 +2183,145 @@ static int mcc_vk_resident(void) {
  * never during. That is why the printf ring is device-writes-only. */
 #define MCC_VK_MEM_DEFAULT (1u << 20)
 
+static void mcc_vk_drop_mem(void) {
+	if (!mcc_vkr.bmem)
+		return;
+	/* An imported allocation is never mapped -- the host already had these
+	 * pages -- so unmapping it would be an error, and freeing it releases the
+	 * device's claim without touching the memory itself. */
+	if (!mcc_vkr.memimported)
+		vkUnmapMemory(mcc_gpu.dev, mcc_vkr.mmem);
+	vkFreeMemory(mcc_gpu.dev, mcc_vkr.mmem, 0);
+	vkDestroyBuffer(mcc_gpu.dev, mcc_vkr.bmem, 0);
+	mcc_vkr.bmem = 0;
+	mcc_vkr.mmem = 0;
+	mcc_vkr.pmem = 0;
+	mcc_vkr.bmemsz = 0;
+	mcc_vkr.memimported = 0;
+}
+
 static int mcc_vk_bind_mem(VkDeviceSize want) {
 	if (want <= mcc_vkr.bmemsz)
 		return 1;
-	if (mcc_vkr.bmem) {
-		vkUnmapMemory(mcc_gpu.dev, mcc_vkr.mmem);
-		vkFreeMemory(mcc_gpu.dev, mcc_vkr.mmem, 0);
-		vkDestroyBuffer(mcc_gpu.dev, mcc_vkr.bmem, 0);
-		mcc_vkr.bmem = 0;
-	}
+	if (mcc_vkr.memimported)
+		return 0;
+	mcc_vk_drop_mem();
 	if (!mcc_gpu_buffer(want, &mcc_vkr.bmem, &mcc_vkr.mmem, &mcc_vkr.pmem))
 		return 0;
 	mcc_vkr.bmemsz = want;
 	mcc_vkr.dsdirty = 1;
 	memset(mcc_vkr.pmem, 0, (size_t)want);
+	return 1;
+}
+
+/* Import host pages as the shared window instead of allocating device memory
+ * and handing back the driver's mapping. The point is the address: the window
+ * is then at an address the host already had, so an object that lives there --
+ * a page-aligned .data/.bss range, say -- has one address on both sides and
+ * ast_eval_slice_rw_addr's (uint64)p - mem_base >> 32 == 0 holds for it. No
+ * copy, no staging, no write-back.
+ *
+ * The memory type is not assumed. vkGetMemoryHostPointerPropertiesEXT reports
+ * which types can back this particular pointer; the buffer reports which types
+ * it can bind; the intersection is what may be chosen from, and on lavapipe
+ * that intersection is a single type while on this NVIDIA host it is not. */
+static int mcc_vk_import_mem(void *p, VkDeviceSize size) {
+	VkExternalMemoryBufferCreateInfo embci;
+	VkBufferCreateInfo bci;
+	VkMemoryRequirements mr;
+	VkMemoryHostPointerPropertiesEXT hpp;
+	VkImportMemoryHostPointerInfoEXT imhp;
+	VkMemoryAllocateInfo mai;
+	VkPhysicalDeviceMemoryProperties mp;
+	VkBuffer buf = 0;
+	VkDeviceMemory mem = 0;
+	unsigned want = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+									VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	unsigned mask, i;
+	int idx = -1;
+
+	if (!mcc_gpu.hostimp || !vkGetMemoryHostPointerPropertiesEXT)
+		return 0;
+	if (!p || !size)
+		return 0;
+	if ((uintptr_t)p & (mcc_gpu.hostimp_align - 1))
+		return 0;
+	if (size & (mcc_gpu.hostimp_align - 1))
+		return 0;
+	/* The descriptor binds VK_WHOLE_SIZE, so the range is the limit that
+	 * applies. Importing costs no device allocation -- the pages already exist
+	 * -- which is exactly why the budget has to be checked here rather than
+	 * inherited from MCC_VK_MEM_DEFAULT, which sizes only the fallback window. */
+	if (mcc_gpu.maxsbrange && size > mcc_gpu.maxsbrange)
+		return 0;
+
+	memset(&hpp, 0, sizeof hpp);
+	hpp.sType = VK_STRUCTURE_TYPE_MEMORY_HOST_POINTER_PROPERTIES_EXT;
+	if (vkGetMemoryHostPointerPropertiesEXT(
+					mcc_gpu.dev, VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT, p,
+					&hpp) != VK_SUCCESS ||
+			!hpp.memoryTypeBits)
+		return 0;
+
+	memset(&embci, 0, sizeof embci);
+	embci.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO;
+	embci.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT;
+	memset(&bci, 0, sizeof bci);
+	bci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bci.pNext = &embci;
+	bci.size = size;
+	bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	bci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	if (vkCreateBuffer(mcc_gpu.dev, &bci, 0, &buf) != VK_SUCCESS)
+		return 0;
+	vkGetBufferMemoryRequirements(mcc_gpu.dev, buf, &mr);
+	if (mr.size > size) {
+		vkDestroyBuffer(mcc_gpu.dev, buf, 0);
+		return 0;
+	}
+	mask = mr.memoryTypeBits & hpp.memoryTypeBits;
+	vkGetPhysicalDeviceMemoryProperties(mcc_gpu.phys, &mp);
+	for (i = 0; i < mp.memoryTypeCount; i++) {
+		unsigned f = mp.memoryTypes[i].propertyFlags;
+		if (!(mask & (1u << i)) || (f & want) != want)
+			continue;
+		if (idx < 0 || (f & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
+			idx = (int)i;
+		if (f & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+			break;
+	}
+	if (idx < 0) {
+		vkDestroyBuffer(mcc_gpu.dev, buf, 0);
+		return 0;
+	}
+	memset(&imhp, 0, sizeof imhp);
+	imhp.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT;
+	imhp.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT;
+	imhp.pHostPointer = p;
+	memset(&mai, 0, sizeof mai);
+	mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	mai.pNext = &imhp;
+	mai.allocationSize = size;
+	mai.memoryTypeIndex = (uint32_t)idx;
+	if (vkAllocateMemory(mcc_gpu.dev, &mai, 0, &mem) != VK_SUCCESS) {
+		vkDestroyBuffer(mcc_gpu.dev, buf, 0);
+		return 0;
+	}
+	if (vkBindBufferMemory(mcc_gpu.dev, buf, mem, 0) != VK_SUCCESS) {
+		vkFreeMemory(mcc_gpu.dev, mem, 0);
+		vkDestroyBuffer(mcc_gpu.dev, buf, 0);
+		return 0;
+	}
+	mcc_vk_drop_mem();
+	mcc_vkr.bmem = buf;
+	mcc_vkr.mmem = mem;
+	mcc_vkr.pmem = p;
+	mcc_vkr.bmemsz = size;
+	mcc_vkr.memimported = 1;
+	mcc_vkr.dsdirty = 1;
+	if (mcc_vk_diag())
+		fprintf(stderr, "[gpu-vk] imported host range %p+%lu as memory type %d\n", p,
+						(unsigned long)size, idx);
 	return 1;
 }
 
@@ -2109,11 +2467,7 @@ static void mcc_vk_release(void) {
 		vkFreeMemory(mcc_gpu.dev, mcc_vkr.mout, 0);
 		vkDestroyBuffer(mcc_gpu.dev, mcc_vkr.bout, 0);
 	}
-	if (mcc_vkr.bmem) {
-		vkUnmapMemory(mcc_gpu.dev, mcc_vkr.mmem);
-		vkFreeMemory(mcc_gpu.dev, mcc_vkr.mmem, 0);
-		vkDestroyBuffer(mcc_gpu.dev, mcc_vkr.bmem, 0);
-	}
+	mcc_vk_drop_mem();
 	memset(&mcc_vkr, 0, sizeof mcc_vkr);
 }
 
@@ -2216,14 +2570,42 @@ static int mcc_gpu_rw_supported(void) { return 1; }
 static void mcc_gpu_rw_arm(int32_t *p) { mcc_gpu_rw_back = p; }
 
 static int mcc_gpu_mem_backend(void **base, unsigned long *size) {
-	if (!mcc_gpu_init() || !mcc_vk_resident() ||
-			!mcc_vk_bind_mem(MCC_VK_MEM_DEFAULT))
+	if (!mcc_gpu_init() || !mcc_vk_resident())
+		return 0;
+	if (!mcc_vkr.memimported && !mcc_vk_bind_mem(MCC_VK_MEM_DEFAULT))
 		return 0;
 	if (base)
 		*base = mcc_vkr.pmem;
 	if (size)
 		*size = (unsigned long)mcc_vkr.bmemsz;
 	return 1;
+}
+
+static unsigned long mcc_gpu_host_import_align_backend(const char **why) {
+	if (!mcc_gpu_init()) {
+		if (why)
+			*why = "no usable Vulkan device";
+		return 0;
+	}
+	if (!mcc_gpu.hostimp) {
+		if (why)
+			*why = mcc_gpu.hostimp_why;
+		return 0;
+	}
+	if (why)
+		*why = "";
+	return mcc_gpu.hostimp_align;
+}
+
+static int mcc_gpu_mem_import_backend(void *base, unsigned long size) {
+	if (!mcc_gpu_init() || !mcc_vk_resident())
+		return 0;
+	if (size > 0x7ffffffcul)
+		return 0;
+	if (!mcc_vk_import_mem(base, (VkDeviceSize)size))
+		return 0;
+	return mcc_vk_bind_buffers(mcc_vkr.binsz ? mcc_vkr.binsz : 4,
+														 mcc_vkr.boutsz ? mcc_vkr.boutsz : 4);
 }
 
 #endif /* MCC_GPU_LANG_MSL */
@@ -2266,6 +2648,32 @@ int mcc_gpu_mem(void **base, unsigned long *size) {
 		return 0;
 	}
 	rc = mcc_gpu_mem_backend(base, size);
+	MCC_GPU_UNLOCK();
+	return rc;
+}
+
+unsigned long mcc_gpu_host_import_align(const char **why) {
+	unsigned long rc;
+	if (why)
+		*why = "the GPU backend did not load";
+	MCC_GPU_LOCK();
+	if (!mcc_gpu_backend_load()) {
+		MCC_GPU_UNLOCK();
+		return 0;
+	}
+	rc = mcc_gpu_host_import_align_backend(why);
+	MCC_GPU_UNLOCK();
+	return rc;
+}
+
+int mcc_gpu_mem_import(void *base, unsigned long size) {
+	int rc;
+	MCC_GPU_LOCK();
+	if (!mcc_gpu_backend_load()) {
+		MCC_GPU_UNLOCK();
+		return 0;
+	}
+	rc = mcc_gpu_mem_import_backend(base, size);
 	MCC_GPU_UNLOCK();
 	return rc;
 }
