@@ -13888,6 +13888,34 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
 - **W5** — mcc cannot self-host on Windows arm64: stage1 takes `0xC0000005` on
   `lib/atomic.c`, `lib/alloca.S`, `lib/alloca-bt.S`, `lib/builtin.c` (host ABI: varargs,
   alloca, stack probe). Needs Windows-on-ARM hardware.
+- ~~**`stage2 / windows / dynamic` CI was red (40 cells).**~~ **Closed 2026-08-09 down
+  to a residual four.** The bulk were Windows-portability defects, now fixed and pushed:
+  - `exec/fabs_edge` (×24): `mccmath.c` gated the single-precision math shims on
+    `__i386__`, so x86_64/arm64 Windows had no `fabsf`/`hypotf` (the UCRT does not export
+    them) — unresolved at link. It also imported the UCRT `fabs`, which returns a negative
+    NaN with the sign bit set; the bit-exact golden rejects it. Now `fabs`/`fabsf` route
+    through the sign-clear intrinsic and `hypotf` through `_hypot` for non-i386 Windows.
+  - `fmt/census-*`, `docs/refs` (×6): `fmt-census.py` and `docref-lint.py` compared
+    POSIX-style paths against native (backslash) `os.path.relpath`/`glob` output, so on
+    Windows every source/citation read as missing. Normalised both sides.
+  - `fmt/arena-census`, `slice-census`, `opt-determinism` (×5): these extract the build's
+    `-D/-I` flags for `src/mcc.c` from `compile_commands.json` with `shlex.split`. On
+    Windows the command carries backslash paths (`-IC:\...`) and POSIX `shlex` eats them
+    as escapes, so every `-I` collapses and the stage2 compile fails with
+    `libmcc.h not found`. Decode the path backslashes first, as `loop-census`/`rir-coverage`
+    already did. `fmt/arena-census` also skips cleanly on the VS generator, which emits no
+    `compile_commands.json`.
+  - `loop-census` (×1): the temp-linked instrumented compiler missed its bundled headers;
+    the PE self-compile now gets the same `-Bruntime/win32` the link step uses, so it finds
+    `stdlib.h` (which on PE lives in `runtime/win32/include`).
+  - **Residual four, each an owner call rather than a portability bug:** `rir-coverage`
+    (PE `lowerable` floor is stale-high — a re-bank, once confirmed to be codegen evolution
+    not a real regression); `ci/must-run-registered` (`ast/o0-baseline` is gated
+    `UNIX AND NOT WIN32` yet `must-run.txt` requires it everywhere; `wide256/gmp-diff` needs
+    libgmp — register-on-Windows vs. exempt is a coverage-policy decision); `cross/shadow-iv-x86_64`
+    (the bash sweep reports 614/614 attempts failed — a deeper Windows-run issue); and
+    `runtime-bench-check` (mcc-vs-reference divergence on signed-overflow UB in `branchy`
+    and `%f` CRT rounding — not a portability bug).
 - ~~**W8** — fix the `selfhost-jit` heap corruption.~~ **Closed 2026-08-09 on the
   native x86_64 Windows host, via the MSVC-ASan `mcc_s` oracle.** The deterministic
   crash is a heap-use-after-free of a `Sym` at `gaddrof` (`src/mccgen.c:2175`, the
