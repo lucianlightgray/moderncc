@@ -140,20 +140,31 @@ quantities are host-sensitive and only those three are dropped:
               source amalgamates into the corpus.
   residual    unattributed .text.  Darwin's mcc_tlv_thunk is 120 bytes of raw
               asm with no C body, so 120 here is correct against an ELF 0.
-  kept_coverage  host-sensitive, but by far less than first reported, and the
-              size differs by corpus.  The original 96.156-vs-83.219 figure was
-              an artifact: 96.156 was banked at 879bf988, before 1ad3f1aa moved
-              eleven passes across the -O ladder and took elf/x86-64 kept to
-              82.520.  Comparing a post-ladder darwin number against a
-              pre-ladder bank attributed ~12.2 points of bank staleness to the
-              host.  Against the refreshed bank the real spread is: self
-              84.1-84.5 on darwin/aarch64 against 82.7-82.9 banked, i.e. darwin
-              is 1.4-1.6 points ABOVE the floor and would pass; wide is 93.4 on
-              darwin against 98.4 banked at -O1+, i.e. 5 points BELOW.  So self
-              is gateable here and wide is not, and whether wide's 5 points is
-              a host axis or a residual darwin modelling gap is UNMEASURED.
-              Both stay skipped until that is settled and a per-format schema
-              exists; do not read the self margin as licence to arm it.
+  kept_coverage  host-sensitive, but by far less than first reported, and both
+              figures once blamed on the host were bank staleness.  The original
+              96.156-vs-83.219 figure was an artifact: 96.156 was banked at
+              879bf988, before 1ad3f1aa moved eleven passes across the -O ladder
+              and took elf/x86-64 kept to 82.520.  Comparing a post-ladder
+              darwin number against a pre-ladder bank attributed ~12.2 points of
+              bank staleness to the host.  This file then claimed wide's
+              93.4-on-darwin against 98.4-banked was 5 points BELOW the floor
+              and that whether those 5 points were a host axis or a darwin
+              modelling gap was UNMEASURED.  It was the same failure mode a
+              second time: elf/x86-64 measured wide at 92.92-93.01 against that
+              same 98.4 bank, so darwin agreed with Linux to within a tenth and
+              the bank -- taken before chain-store was demoted off the ladder --
+              was stale.  Root cause was a replay-fidelity bug, not a host axis:
+              rir_to_arena() collapsed a childless AST_StoreVal over its
+              AST_Store source unconditionally while only tagging the result
+              when -fchain-store was on, so with the flag off the arena carried
+              a chained store nothing re-expanded and ~110 bodies re-emitted
+              different bytes.  Fixed in src/mccrir.c (IR_OP_VSTORE) and both
+              banks refreshed; wide is now 92.92 / 96.60 / 96.65 / 96.65 on elf.
+              The remaining host spread is: self 84.1-84.5 on darwin/aarch64
+              against 82.9-91.9 banked, wide ~93.4 against 92.92-96.65.  Both
+              stay in the unbanked-host partial skip, which is keyed on the
+              lowerable floors and covers every corpus alike; arming
+              kept_coverage per host still needs a per-format schema.
 
 capture coverage, modelled coverage and the census self-reconciliation still
 run everywhere, and that is measured, not assumed: on darwin/aarch64 the wide
@@ -904,17 +915,20 @@ def main():
               "no C body, so Darwin's residual is legitimately 120 against an "
               "ELF-banked 0.  Comparing it would fail a correct number.")
         print("  arena kept_coverage -- host-sensitive, but by much less than "
-              "this tool once claimed, and the size differs by corpus.  The old "
-              "96.156-vs-83.219 figure was an artifact: 96.156 was banked at "
-              "879bf988, BEFORE 1ad3f1aa moved eleven passes across the -O "
-              "ladder and took elf/x86-64 kept to 82.520, so ~12.2 points of "
-              "bank staleness were being attributed to the host.  Against the "
-              "refreshed bank, self kept is 84.1-84.5 here against 82.7-82.9 "
-              "banked (darwin is ABOVE the floor and would pass) while wide is "
-              "93.4 here against 98.4 banked at -O1+ (5 points BELOW).  Whether "
-              "wide's 5 points is a host axis or a residual darwin modelling "
-              "gap is UNMEASURED, so both stay skipped pending a per-format "
-              "schema; the self margin is not licence to arm it.")
+              "this tool once claimed, and twice what was blamed on the host "
+              "turned out to be a stale bank.  The old 96.156-vs-83.219 figure "
+              "was an artifact: 96.156 was banked at 879bf988, BEFORE 1ad3f1aa "
+              "moved eleven passes across the -O ladder and took elf/x86-64 "
+              "kept to 82.520, so ~12.2 points of bank staleness were being "
+              "attributed to the host.  wide's 93.4-vs-98.4 was the same thing "
+              "again: elf/x86-64 measured 92.92-93.01 against that bank, so "
+              "darwin agreed with Linux and the bank predated the chain-store "
+              "demotion.  The arena builder's unconditional chained-store "
+              "collapse is fixed and both banks are refreshed (wide 92.92 / "
+              "96.60 / 96.65 / 96.65 on elf), so the residual host spread is "
+              "small on both corpora.  They stay skipped here only because this "
+              "partial skip is keyed on the lowerable floors; arming "
+              "kept_coverage per host needs a per-format schema.")
         print("  Still enforced here: capture byte coverage, arena modelled "
               "coverage, and the census self-reconciliation.  Those are "
               "near-saturated ratios that do carry across hosts -- measured: "
