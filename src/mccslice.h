@@ -340,6 +340,12 @@ static int mcc_slice_dyn_count(AstArena *a, AstLocal n) {
 				ast_eval_slice_deref(a, n, &pf, &et))
 			t++;
 	}
+	if (ast_kind(a, n) == AST_Unary) {
+		int32_t pf, madd;
+		int et;
+		if (ast_eval_slice_arrow(a, n, &pf, &madd, &et))
+			t++;
+	}
 	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
 		t += mcc_slice_dyn_count(a, c);
 	return t;
