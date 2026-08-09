@@ -760,6 +760,44 @@ item now says what was measured, not what was assumed.
    96.204 / 96.232 / 96.301 / 96.301, so ~4.3 points of the old gap is still recoverable
    by the two optimization passes and is not a fidelity defect. The cell is still
    `--opt-in` with `LABELS census`, which is how it stayed red unnoticed.
+
+   **Follow-up: the fix took `optfire-{i386,riscv64}/chainstore` red, and the cell was
+   right to notice.** Those two cells assert `-fno-chain-store` and `-fchain-store`
+   differ at `-O10`; after the fix they were byte-identical. The tempting reading — that
+   the tag is now set regardless of the flag, so both configurations behave alike — is
+   **wrong, and was checked**: instrumenting both collapse branches shows the `detach`
+   branch never fires for that fixture on any target, so every collapse goes through the
+   gated `dup` branch and the two arenas really do differ. What vanished is the *byte*
+   difference, and the reason is the bug: pre-fix, `-fno-chain-store` left an unmarked
+   collapsed chain, the replay went unfaithful, the body fell back to the parser's bytes
+   and `ast_run_strat_seq` refused to run any strategy on it — *that* was the difference
+   the cell read. Proof it was the bug and not the pass: **post-fix `-fno-chain-store` is
+   byte-identical to pre-fix `-fchain-store`** on both targets. The flag-off path now
+   reaches the state the flag used to be needed for.
+
+   The pass is not dead there. A chain that FEEDS a second chain (`c = b = a = s + 1;
+   a = b = c * 3 + a;`) still differs on all four targets, so `relay()` was added to
+   `tests/optfire/src/chainstore.c` and the four cells are green again on the pass's real
+   effect rather than on the bug's. `differs.txt` records why `relay()` is load-bearing.
+   Two measurements sized the reach: over `tests/exec` + `tests/optfire/src` at `-O10`,
+   `-fchain-store` changes bytes in 3 files on x86_64 and 2 on arm64, and in **0** on
+   i386/riscv64 post-fix against 2 pre-fix — and both of those two were the synthetic
+   optfire fixtures, never a real program.
+
+   **Found on the way, unrelated to this fix and pre-existing at `1fa038ee`: `mcc -O11`
+   ICEs on a chain feeding a 3-deep chain.**
+
+   ```c
+   int f(int s) { int a, b, c;  c = b = a = s + 1;  a = b = c = a * 2 + b;  return a + b + c; }
+   ```
+
+   `error: internal compiler error: vstack leak (1)`. It needs `chain-store` **and**
+   `chain-store-live` together — `-O10 -fchain-store` ICEs, `-O10 -fchain-store
+   -fno-chain-store-live` does not, and `-O11` ICEs with no flags at all because both are
+   default-on there. `-O0`..`-O3` are clean, which is the only reason this has never been
+   seen: the shipped ladder never turns the pair on. It is a live blocker on any future
+   attempt to re-promote the chain-store family, and it wants fixing before that
+   measurement is re-run.
 7. **The "464 skipped cells under `debug`" number was wrong, and so was its cause —
    PARTLY FIXED.** It was not `MCC_CROSS_DIR` and not a missing `cmake-cross`:
    `MCC_CROSS_DIR` defaults correctly, cross cells are registered unconditionally with
