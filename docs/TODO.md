@@ -621,6 +621,7 @@ the finding:
 | `reg-color` `gain 0.1796`, ranked on `interp` +1.9263 | **0.0017**, `gain_movers` **0.0019**, `cost-no-gain` | re-run 2026-08-09; the tree moved since `1ad3f1aa`, not a tool defect |
 | `if-conversion-abs` `gain +0.1905`, `branchy` +3.1843 | **−0.0334**, `branchy` **−0.5700** | a **sign flip** — the flag now makes `branchy` worse. Same cause |
 | `narrow` / `tree-copy-prop` are "ranked on nothing" | both priced in `levelpins.txt` on the self-host axis | a **stale** `levelbench.tsv` row read as an **unmeasured** one; see the correction below |
+| `idiomgate` covers "4 of 37 config macros" | **17 of 37**, now **29 of 37** | the `4` counted rule-*firings*, not macros reached; fourteen correct `#if MCC_CONFIG_MACHO_CHAINED_FIXUPS` scored zero |
 
 Three more, smaller, recorded so they are not re-quoted: `self` `kept` `83.122 → 91.960` is
 **83.090 → 91.978**; `wide` `93.006 → 96.653` is **92.881 → 96.597**; the self-compile's
@@ -984,14 +985,12 @@ Ordered by how much a currently-quoted number depends on it.
     measurement and itself. Also `pct(a, 0)` returns `0.0`, and a flag with an empty sample
     list gets `gain = 0.0` and classifies **`inert`** — "this flag changes nothing" is the
     recorded verdict for "this flag was never sampled".
-13. **`tools/idiomgate.c`'s invariant covers 17 of 37 config macros, from two hand-typed
-    lists.** `VALUE_KIND[]` and `FLAG_KIND[]` are a second implementation of the
-    `MCC_CONFIG_*` registry; a macro in neither list falls through both predicates and is
-    exempt, and the 20 currently exempt include `MCC_CONFIG_JIT`, `MCC_CONFIG_DWARF`,
-    `MCC_CONFIG_LIBC`, `MCC_CONFIG_SYSROOT` and `MCC_CONFIG_NEW_MACHO`. `main()` prints **no
-    subject count** — no files scanned, no macros checked, no directives examined — so a run
-    that visited zero files is character-for-character identical to a clean one. The
-    denominator shrinks silently every time a `MCC_CONFIG_*` is added.
+13. ~~**`tools/idiomgate.c`'s invariant covers 17 of 37 config macros, from two hand-typed
+    lists.**~~ **CLOSED 2026-08-09 on `wt/idiomcov`.** Coverage **17/37 → 29/37**; the
+    remaining 8 are refused by name in the tool. See *LANDED — `tools/idiomgate.c`'s
+    denominator* below for the derivation, the corrected reading of the `4`, the five
+    idiom violations the widened check found in the tree, and what each newly covered
+    macro now guarantees.
 14. **`tests/optfire/optfire.sh defstate` cannot tell "off by default" from "does not
     exist".** An unrecognised option is a *warning* in `src/libmcc.c`, not an error, so a
     deleted or renamed flag compiles fine, the two objects match, and `got=off`. Thirteen
@@ -1184,7 +1183,7 @@ frozen and unreachable until 17 is closed, and now says so.
 | --- | --- | --- |
 | **`ast/o0-baseline`** | the per-key `-O0` object `sha256` bank and the forced-Replay_IR counters, over the `measurable` key set: every key whose compiler *and* sysroot are present, with the dropped ones named | **`ast/o0-baseline-known-positive`** takes measurement A at `-O1` (`O0_AB_MUTATE=1`), so every banked hash must move: `o0_ab: x86_64 -- an -O0 object moved`, 244 hash lines |
 | **`fmt/census-bank`** | the fourteen figures the board's row 4 quotes — `172` sites, `162` literal, `148` accepted, `100` carrying `%s`, `9` budget / `4` flag / `1` float, return consumed at `26` of `162` — plus the per-file site counts, against `tests/fmt/census-bank.json` | **`fmt/census-bank-known-positive`** reintroduces the port's literal-run drift: `accepted banked 148, now 143`, `refused_budget banked 9, now 15` |
-| **`idiom-gate-known-positive`** | that `idiom-gate-invariant` can fail at all | all three violation shapes on a fixture (`3 violation(s)`), **and** an empty directory, which used to print `OK` |
+| **`idiom-gate-known-positive`** | that `idiom-gate-invariant` can fail at all | since 2026-08-09, five must-fail probes: all four violation shapes over 16 named macros (`17 violation(s)`), an unregistered `MCC_CONFIG_*`, a contradicted no-subject refusal, the zero-conditional floor, **and** an empty directory, which used to print `OK` |
 
 `o0_ab.sh` and `idiomgate.c` gained the floors that make those cells mean something:
 
@@ -1196,12 +1195,160 @@ frozen and unreachable until 17 is closed, and now says so.
   Ablated: with no cross build, `FAIL -- 1 measurable key(s) is below the floor of 12`.
 - **`tools/idiomgate.c`** (filed item 13's first half) printed **no subject count at all**,
   so a walk that read zero files was character-for-character identical to a clean run. It
-  now prints `idiom-gate subject: 130 file(s) scanned, 1739 conditional(s) examined, 4
-  test(s) of the 17 named config macro(s)` and fails on a zero in any of the three.
-  **That `4` is itself a result**: of the 17 macros in `VALUE_KIND`/`FLAG_KIND`, only four
-  are ever reached by a conditional in `src` + `tools`, so the invariant is thin as well as
-  narrow. Item 13's *other* half — 17 of 37 `MCC_CONFIG_*` covered, from two hand-typed
-  lists — is untouched and still filed.
+  gained `idiom-gate subject: 130 file(s) scanned, 1739 conditional(s) examined, 4
+  test(s) of the 17 named config macro(s)` and a fail on a zero in any of the three. That
+  wording is **superseded** — the run line and the walk both changed the same day.
+  **That `4` was read as a coverage figure and it was not one** — see the correction in
+  *LANDED — `tools/idiomgate.c`'s denominator* below. Item 13's *other* half — 17 of 37
+  `MCC_CONFIG_*` covered, from two hand-typed lists — is closed there too.
+
+#### LANDED — `tools/idiomgate.c`'s denominator, and the `4` that was not a coverage figure
+
+**The real denominator is 37, and it is now derivable rather than typed.** 41 distinct
+`MCC_CONFIG_*` identifiers occur in `.c`/`.h`/`.inc` under `src` + `tools` + `runtime` +
+`include`; four of them (`_AST`, `_CST`, `_BCHECK`, `_BACKTRACE`) occur *only* inside
+`tools/ckretired.c`'s `RETIRED[]` and are that tool's subject, not this one's. 41 − 4 = **37**,
+reproducible with
+
+```
+grep -rhoE 'MCC_CONFIG_[A-Z0-9_]+' --include=*.c --include=*.h --include=*.inc \
+     src tools runtime include | sort -u
+```
+
+and **the gate now takes that derivation itself**: it harvests every `MCC_CONFIG_*` token
+from the text of every file it walks, skipping only the two files that hold a *registry* of
+names rather than a use of one (`tools/idiomgate.c`, `tools/ckretired.c`), and fails if the
+harvest and the registry disagree in either direction. The harvest returns exactly the 37
+rows, zero unknown. The 37 is no longer a number anyone types.
+
+A note on how those four retired names are excluded, because the first attempt got it wrong
+in an instructive way: `idiomgate.c` originally carried them in a `RETIRED[]` array of its
+own, and `retired-macro-invariant` **failed the tree** — `ckretired` bans those spellings
+everywhere under `src`/`tools`/`runtime` except its own file, and a second copy of the list
+is exactly what it exists to prevent. They are excluded by *skipping `ckretired.c`* instead,
+so there is still only one place in the tree that spells them.
+
+Of those 37, **6 are CMake cache variables** that appear in C only inside string literals
+(`_JIT` in `src/mcc.c`'s `--help`, `_DWARF`/`_NEW_MACHO`/`_MINGW` in `tools/ci.c`'s matrix,
+`_LIBC`/`_AUTOCORRECT` in `tools/ckconfig.c`'s allow-lists) and are never emitted as a `-D`,
+and **2 more** (`_UCLIBC`, `_OPTIMIZER`) are emitted as a `-D` and read by no conditional —
+`ckconfig --list` already reports `MCC_CONFIG_UCLIBC (DEAD)`. **The preprocessor-testable
+surface is therefore 29, and all 29 occur in a conditional today.**
+
+**The `4` measured rule-firings, not macros, and reading it as coverage was wrong.**
+`g_tests++` sat inside `is_value_kind`/`is_flag_kind`, which were only consulted where a
+*violation was possible* — `#ifdef`/`#ifndef`/`defined()` on a value-kind macro, or a
+flag-kind macro used as a value. Correct usage incremented nothing. Decomposed file by file
+against the old binary, the entire 4 comes from **two files**: `src/mcc.h` (2) and
+`src/mccdefaults.h` (2) — the four `#ifndef X` + `#define X` default-provider pairs on
+`MACHO_CHAINED_FIXUPS`, `NEW_DTAGS`, `PIE`, `PIC`. `src/objfmt/mccmacho.c`, which holds
+**fourteen** `#if MCC_CONFIG_MACHO_CHAINED_FIXUPS`, contributed **0**; so did `mccrun.c`'s
+four `#ifndef MCC_CONFIG_BACKTRACE_ONLY` and `mcchost.c`'s `#ifdef MCC_CONFIG_TOOLHOST`.
+All 17 named macros did occur in a conditional, and a wrong idiom on any of them would have
+been caught. **The honest before-figure is 17 of 37 (45.9%)**, not 4 of 37; the board's
+*"4 of 37 config macros have their idiom checked"* is withdrawn.
+
+| | before | after |
+| --- | --- | --- |
+| enforced idiom | **17 / 37 (45.9%)** | **29 / 37 (78.4%)** |
+| refused by name, with a reason | 0 (20 silently exempt) | **8** |
+| conditional sites ruled on | 4 (rule-firings only) | **72** |
+| walk | `src` `tools`, 130 files, 1739 conditionals | `src` `tools` `runtime` `include`, **307** files, **3808** conditionals |
+
+Both lines are now printed on every run, so `OK` is never unqualified:
+
+```
+idiom-gate subject: 307 file(s) scanned, 3808 conditional(s) examined, 72 config-macro site(s) ruled on
+idiom-gate coverage: 29 of 37 registered MCC_CONFIG_* macro(s) carry an enforced idiom (78.4%),
+  29 of those reached by a conditional (100.0%); 8 refused with a reason (--registry lists them)
+```
+
+**The twelve macros added, and what each now guarantees.** Value-kind means numeric, so the
+canonical test is `#if X` and `#ifdef`/`defined()` on it is a bug; flag-kind means a string
+literal or presence-only, so the canonical test is `#ifdef`/`defined()` and using it as a
+value is a bug. Every one has a fixture in `tests/idiom/known-positive` that makes the gate
+name it:
+
+| macro | kind | the failure the gate can now produce |
+| --- | --- | --- |
+| `MCC_CONFIG_TRACE` | value | `#ifdef` **and** `#ifndef` with no default `#define` |
+| `MCC_CONFIG_CPUVER` | value | `defined()` |
+| `MCC_CONFIG_DWARF_VERSION` | value | `#ifdef` |
+| `MCC_CONFIG_SEMLOCK` | value | `defined` |
+| `MCC_CONFIG_RUNMEM_RO` | value | `#ifdef` |
+| `MCC_CONFIG_AUTO_MCCDIR` | value | `defined()` |
+| `MCC_CONFIG_SYSROOT` | flag | used as a value in `#if` |
+| `MCC_CONFIG_CROSSPREFIX` | flag | used as a value in `#elif` |
+| `MCC_CONFIG_CRTPREFIX` | flag | used as a value in `#if` |
+| `MCC_CONFIG_LIBPATHS` | flag | used as a value in `#if` |
+| `MCC_CONFIG_SYSINCLUDEPATHS` | flag | used as a value in `#if` |
+| `MCC_CONFIG_ELFINTERP_ARMHF` | flag | used as a value in `#if` |
+
+`MCC_CONFIG_ELFINTERP` is a thirteenth in practice: it was matched only by a
+`len > 20 && !strncmp(tok, "MCC_CONFIG_ELFINTERP", 20)` prefix hack that would equally have
+claimed any `MCC_CONFIG_ELFINTERP*` name. Both names are explicit rows now and both have
+fixtures.
+
+**Five genuine violations, found by the widened check and fixed, not excluded.** All five are
+behaviour-preserving: each macro is emitted only as `=1` or not at all, so `defined X` and `X`
+agree on every configuration.
+
+| site | was | now |
+| --- | --- | --- |
+| `src/mcclog.h:159` | `#if defined(MCC_CONFIG_TRACE) && MCC_CONFIG_TRACE` | `#if MCC_CONFIG_TRACE` |
+| `src/libmcc.c:920` | `#if defined MCC_CONFIG_AUTO_MCCDIR && MCC_HOST_POSIX` | `#if MCC_CONFIG_AUTO_MCCDIR && MCC_HOST_POSIX` |
+| `src/libmcc.c:1043` | `#elif defined(MCC_TARGET_ARM) && defined(MCC_CONFIG_CPUVER)` | `#elif defined(MCC_TARGET_ARM)` |
+| `runtime/lib/bcheck.c:163` | `#if defined MCC_CONFIG_MUSL \|\| defined __ANDROID__` | `#if MCC_CONFIG_MUSL \|\| defined __ANDROID__` |
+| `runtime/lib/bcheck.c:1132` | `!defined MCC_CONFIG_MUSL` | `!MCC_CONFIG_MUSL` |
+
+The `libmcc.c:1043` conjunct was **dead-true**: `src/mcc.h:129` includes `arm-gen.h` on every
+ARM target and `arm-gen.h:14` defaults `MCC_CONFIG_CPUVER` to 5, so `defined(MCC_CONFIG_CPUVER)`
+could not be false under `defined(MCC_TARGET_ARM)`. That is exactly the reader-misleading shape
+the value-kind rule exists to catch, and it had been sitting under the old exemption.
+
+**The eight refusals, each carrying its reason in the tool** (`idiomgate --registry` prints
+them, and `idiom-gate-invariant` runs with `--registry` so the ctest log carries the whole
+table):
+
+| macro | why no idiom can be enforced |
+| --- | --- |
+| `MCC_CONFIG_UCLIBC` | emitted by `CMakeLists.txt` and `tools/build.c`, read by no conditional; `ckconfig` reports it `DEAD` and lists it in `ALLOW_DEAD` |
+| `MCC_CONFIG_OPTIMIZER` | emitted by `tools/build.c`, read by no conditional |
+| `MCC_CONFIG_JIT` | CMake cache variable; selects `MCC_JIT_DEFAULT`, never emitted as a `-D` |
+| `MCC_CONFIG_LIBC` | CMake cache variable; selects `MCC_CONFIG_MUSL`/`_UCLIBC`, never emitted as a `-D` |
+| `MCC_CONFIG_DWARF` | CMake cache variable; selects `MCC_CONFIG_DWARF_VERSION` |
+| `MCC_CONFIG_NEW_MACHO` | CMake cache variable; selects `MCC_CONFIG_MACHO_CHAINED_FIXUPS` |
+| `MCC_CONFIG_MINGW` | CMake cache variable; selects the PE target |
+| `MCC_CONFIG_AUTOCORRECT` | CMake cache variable; relaxes `mcc_validate_config` |
+
+Six of the eight are not preprocessor macros at all, so `78.4%` understates what is
+reachable: **29 of the 29 testable macros are covered**, and the gate prints that as its
+second fraction.
+
+**Four new floors, so the count cannot rise while the guarantee stays hollow:**
+
+1. a `MCC_CONFIG_*` anywhere in the walked tree with **no registry row** fails the run. This
+   is the half of item 13 that mattered — *"the denominator shrinks silently every time a
+   `MCC_CONFIG_*` is added"* is now impossible.
+2. a row of kind value/flag with **zero** conditional sites fails, naming itself. A macro
+   whose last conditional is deleted stops counting toward coverage instead of padding it.
+3. a row registered as *reachable by no conditional* that **acquires** one fails. A refusal
+   that cannot be contradicted is not a refusal.
+4. a row whose name occurs **nowhere** in the tree fails. `tools/idiomgate.c` skips itself
+   during the name harvest, so its own registry strings cannot satisfy this.
+
+`idiom-gate-known-positive` now runs six probes, five of which must fail, and asserts the
+violation *count* and every macro *name*: `17 violation(s)` over 16 macros on
+`tests/idiom/known-positive`; `MCC_CONFIG_NOT_A_REAL_KNOB` on `tests/idiom/unregistered`;
+`MCC_CONFIG_UCLIBC:` and `MCC_CONFIG_JIT:` contradicting their refusals on
+`tests/idiom/no-subject`; the zero-conditional floor naming the 13 unreached macros when the
+fixture directory is walked without `--subset`; and `tests/idiom/empty`, still refused.
+
+Verified with `cmake-cross` built before `cmake-debug` was configured (hazard 5):
+`cmake-debug` **9143 cells, 0 failures**, `cmake-cross` **9143 cells, 0 failures**,
+`-L flagsweep` **119**, `-L stratsweep` **30**, `MCC_RIR_CENSUS=1 -L census` **6**, and
+`tools/selfhost-smoke.py cmake-debug` green. No cell was added — the two existing idiom
+cells carry all of it.
 
 #### LANDED — `tools/fmt-census.py`'s corpus, and both readings
 
@@ -1277,10 +1424,15 @@ would be false on every normal build.
 
 1. **The `--arenas=` figure needs re-taking against one TU.** See the two-reading table
    above. Blocked on arming the recorder, which is a measurement.
-2. **`idiomgate`'s subject is four.** Only 4 of the 17 named `MCC_CONFIG_*` macros are
-   reached by any conditional in `src` + `tools`; the floor is `> 0` and that is now honest,
-   but the invariant is far thinner than its name suggests. Combined with item 13's 17-of-37
-   coverage, the true statement is *"4 of 37 config macros have their idiom checked"*.
+2. ~~**`idiomgate`'s subject is four.**~~ **WITHDRAWN 2026-08-09 — the claim did not
+   reproduce.** The `4` counts rule-*firings*, not macros reached: `g_tests++` only ran where
+   a violation was possible, so `src/objfmt/mccmacho.c`'s fourteen correct
+   `#if MCC_CONFIG_MACHO_CHAINED_FIXUPS` scored zero. All 17 named macros were reached, and
+   *"4 of 37 config macros have their idiom checked"* was never true; **17 of 37** was.
+   Coverage is now **29 of 37** with the other 8 refused by name. See *LANDED —
+   `tools/idiomgate.c`'s denominator* above. This is the thirteenth headline figure in this
+   project to fail to reproduce, and the third whose cause was a count taken once and read as
+   something it did not measure.
 3. **`tools/o0_ab.sh`'s gated half stays frozen** until filed item 17 (`ast_env_gate`) is
    closed. Thirteen banked files are unreachable; `ast/o0-baseline` does not cover them and
    does not pretend to.
