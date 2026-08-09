@@ -130,8 +130,6 @@ def one_program(idx, prog, args, root):
                "--cref", cref, "--cref-prefix", "p%05dn" % idx]
         if args.mutate:
             cmd.append("--mutate")
-        if args.cref_all:
-            cmd.append("--cref-all")
         rc, out = run(cmd, timeout=180)
         c = slicerun_counts(out)
         rec.update({k: c.get(k, 0) for k in
@@ -249,11 +247,6 @@ def main():
     ap.add_argument("--work")
     ap.add_argument("--json")
     ap.add_argument("--mutate", action="store_true")
-    ap.add_argument("--cref-all", action="store_true",
-                    help="also emit slices whose binary operands differ in "
-                         "working type, where the evaluator and C are entitled "
-                         "to disagree; off by default so the clean arm asserts "
-                         "a guarantee rather than banking a number")
     ap.add_argument("--min-adjudicated", type=int, default=0)
     ap.add_argument("--min-cref-tuples", type=int, default=0)
     ap.add_argument("--expect-cref-mismatch", action="store_true",
