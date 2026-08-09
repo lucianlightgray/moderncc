@@ -1,0 +1,9 @@
+id=0 entries=1 iters=5 lost=0 bucket=3
+id=1 entries=1 iters=3 lost=0 bucket=2
+id=2 entries=1 iters=1 lost=0 bucket=0
+id=3 entries=1 iters=4 lost=0 bucket=2
+id=4 entries=4 iters=28 lost=0 bucket=3
+id=5 entries=1 iters=10 lost=0 bucket=4
+id=6 entries=1 iters=1000 lost=0 bucket=10
+id=7 entries=1 iters=0 lost=0 bucket=0
+id=8 entries=1 iters=0 lost=1 bucket=-1

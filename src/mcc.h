@@ -734,6 +734,7 @@ struct MCCState {
 	unsigned char do_backtrace;
 	unsigned char do_bounds_check;
 	unsigned char test_coverage;
+	unsigned char loop_census;
 
 	unsigned char gnu_ext;
 	unsigned char mcc_ext;
@@ -948,6 +949,7 @@ struct MCCState {
 
 	int total_idents;
 	int total_lines;
+	int total_toks;
 	int total_funcs;
 	unsigned int total_bytes;
 	unsigned int total_output[4];
@@ -2154,6 +2156,7 @@ dwarf_read_sleb128(unsigned char **ln, unsigned char *end) {
 
 #define total_idents MCC_STATE_VAR(total_idents)
 #define total_lines MCC_STATE_VAR(total_lines)
+#define total_toks MCC_STATE_VAR(total_toks)
 #define total_funcs MCC_STATE_VAR(total_funcs)
 #define total_bytes MCC_STATE_VAR(total_bytes)
 

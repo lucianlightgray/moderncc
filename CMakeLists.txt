@@ -2525,7 +2525,7 @@ function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir ou
     endif()
 
     if(native)
-        list(APPEND _objs runmain tcov)
+        list(APPEND _objs runmain tcov loopcensus)
         if((cpu STREQUAL "x86_64" OR cpu STREQUAL "arm64" OR cpu STREQUAL "riscv64" OR cpu STREQUAL "i386" OR cpu STREQUAL "arm") AND NOT os STREQUAL "WIN32" AND NOT os STREQUAL "Darwin")
             list(APPEND _objs mccasan)
         endif()
@@ -5884,6 +5884,23 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         "${CMAKE_BINARY_DIR}" --corpus wide --levels O0,O1,O2,O3
                         --verify --top 20 --jobs 8 --opt-in)
             set_tests_properties(slice-census PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600)
+
+            # S5': the dynamic per-loop trip census. The control cell is the one
+            # that matters -- it compiles a program whose trip counts are known
+            # by construction at every -O level and compares the histogram to
+            # ground truth, plus a negative control (no -floop-census, no data)
+            # and a perturbation (change a bound, the numbers move).
+            add_test(NAME loop-census-control
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/loop-census.py"
+                        "${CMAKE_BINARY_DIR}" --selftest)
+            set_tests_properties(loop-census-control PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
+
+            add_test(NAME loop-census
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/loop-census.py"
+                        "${CMAKE_BINARY_DIR}" --levels O2 --top 20 --opt-in)
+            set_tests_properties(loop-census PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600)
 
             add_test(NAME rir-nofb-probe

@@ -2403,6 +2403,7 @@ static const FlagDef options_f[] = {
 		{offsetof(MCCState, permissive), 0, "permissive"},
 		{offsetof(MCCState, dollars_in_identifiers), 0, "dollars-in-identifiers"},
 		{offsetof(MCCState, test_coverage), 0, "test-coverage"},
+		{offsetof(MCCState, loop_census), 0, "loop-census"},
 		{offsetof(MCCState, reverse_funcargs), 0, "reverse-funcargs"},
 		{offsetof(MCCState, macro_eval), 0, "macro-eval"},
 		{offsetof(MCCState, gnu89_inline), 0, "gnu89-inline"},

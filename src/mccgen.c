@@ -14319,6 +14319,101 @@ static void prev_scope_s(struct scope *o) { MCC_TRACE("enter\n");
 	--local_scope;
 }
 
+typedef struct LoopCensus {
+	int id;
+	int slot;
+	int depth;
+	int ind0;
+	int iterb;
+	int tok0;
+	int line;
+	const char *fname;
+	const char *kind;
+} LoopCensus;
+
+static int lcen_on, lcen_tried, lcen_next_id, lcen_depth;
+static FILE *lcen_fp;
+
+static void lcen_open(void) { MCC_TRACE("enter\n");
+	const char *p;
+	if (lcen_on || lcen_tried)
+		{ MCC_TRACE("br\n"); return; }
+	lcen_tried = 1;
+	p = getenv("MCC_LOOP_CENSUS_MAP");
+	if (!p || !p[0])
+		{ MCC_TRACE("br\n"); return; }
+	lcen_fp = (p[0] == '-' && !p[1]) ? stderr : fopen(p, "a");
+	if (!lcen_fp)
+		{ MCC_TRACE("br\n"); return; }
+	setvbuf(lcen_fp, NULL, _IOLBF, 0);
+	lcen_on = 1;
+}
+
+static void lcen_slot(int slot) { MCC_TRACE("enter\n");
+	vset(&(CType){.t = VT_LLONG | VT_UNSIGNED, .ref = NULL}, VT_LOCAL | VT_LVAL,
+			 slot);
+}
+
+static void lcen_begin(LoopCensus *lc, const char *kind) { MCC_TRACE("enter\n");
+	lc->id = -1;
+	if (!mcc_state->loop_census)
+		{ MCC_TRACE("br\n"); return; }
+	lcen_open();
+	lc->id = lcen_next_id++;
+	lc->depth = ++lcen_depth;
+	lc->kind = kind;
+	lc->line = file ? file->line_num : 0;
+	lc->fname = file ? file->filename : "?";
+	loc = (loc - 8) & -8;
+	lc->slot = loc;
+	lcen_slot(lc->slot);
+	vpushll(0);
+	vstore();
+	vpop();
+	vpushi(lc->id);
+	vpush_helper_func(tok_alloc_const("__mcc_loop_census_enter"));
+	vrott(2);
+	gfunc_call(1);
+	lc->ind0 = ind;
+	lc->iterb = 0;
+	lc->tok0 = total_toks;
+}
+
+static void lcen_iter(LoopCensus *lc) { MCC_TRACE("enter\n");
+	int i0;
+	if (lc->id < 0)
+		{ MCC_TRACE("br\n"); return; }
+	i0 = ind;
+	lcen_slot(lc->slot);
+	lcen_slot(lc->slot);
+	vpushll(1);
+	gen_op('+');
+	vstore();
+	vpop();
+	lc->iterb = ind - i0;
+}
+
+static void lcen_end(LoopCensus *lc) { MCC_TRACE("enter\n");
+	if (lc->id < 0)
+		{ MCC_TRACE("br\n"); return; }
+	if (lcen_on)
+		{ MCC_TRACE("br\n"); fprintf(lcen_fp,
+				"[loop] id=%d fn=%s file=%s:%d kind=%s depth=%d bytes=%d toks=%d "
+				"par=?\n",
+				lc->id, funcname ? funcname : "?", lc->fname, lc->line, lc->kind,
+				lc->depth, ind - lc->ind0 - lc->iterb, total_toks - lc->tok0); }
+	--lcen_depth;
+	vpushi(lc->id);
+	lcen_slot(lc->slot);
+	vpush_helper_func(tok_alloc_const("__mcc_loop_census"));
+	vrott(3);
+	gfunc_call(2);
+	lcen_slot(lc->slot);
+	vpushll(0);
+	vstore();
+	vpop();
+}
+
 static void lblock(int *bsym, int *csym) { MCC_TRACE("enter\n");
 	struct scope *lo = loop_scope, *co = cur_scope;
 	int *b = co->bsym, *c = co->csym;
@@ -14443,6 +14538,7 @@ static void warn_return_local_addr(void) { MCC_TRACE("enter\n");
 static void block(int flags) { MCC_TRACE("enter\n");
 	int a, b, c, d, e, t, nc_pre;
 	struct scope o;
+	LoopCensus lcen;
 	Sym *s;
 	unsigned char stdc_save_fp, stdc_save_fenv, stdc_save_cx;
 
@@ -14490,6 +14586,7 @@ again:
 		prev_scope_s(&o);
 	} else if (t == TOK_WHILE) { MCC_TRACE("br\n");
 		new_scope_s(&o);
+		lcen_begin(&lcen, "while");
 		d = gind();
 		rir_hook_while_cond_start();
 		skip('(');
@@ -14503,11 +14600,13 @@ again:
 		rir_hook_if_gvtst_done();
 		skip(')');
 		b = 0;
+		lcen_iter(&lcen);
 		lblock(&a, &b);
 		rir_hook_while_end();
 		gjmp_addr(d);
 		gsym_addr(b, d);
 		gsym(a);
+		lcen_end(&lcen);
 		prev_scope_s(&o);
 	} else if (t == TOK_TRANSACTION_ATOMIC || t == TOK_TRANSACTION_RELAXED) { MCC_TRACE("br\n");
 		parse_attribute(NULL);
@@ -14630,6 +14729,7 @@ again:
 		seqp_flush();
 		skip(';');
 		a = b = 0;
+		lcen_begin(&lcen, "for");
 		c = d = gind();
 		rir_hook_for_begin();
 		if (tok != ';') { MCC_TRACE("br\n");
@@ -14658,17 +14758,21 @@ again:
 			{ MCC_TRACE("br\n"); rir_hook_for_no_incr(); }
 		skip(')');
 		rir_hook_for_body_begin();
+		lcen_iter(&lcen);
 		lblock(&a, &b);
 		rir_hook_for_end();
 		gjmp_addr(d);
 		gsym_addr(b, d);
 		gsym(a);
+		lcen_end(&lcen);
 		prev_scope(&o, 0);
 	} else if (t == TOK_DO) { MCC_TRACE("br\n");
 		new_scope_s(&o);
 		a = b = 0;
+		lcen_begin(&lcen, "do");
 		d = gind();
 		rir_hook_do_begin();
+		lcen_iter(&lcen);
 		lblock(&a, &b);
 		rir_hook_do_body_end();
 		gsym(b);
@@ -14687,6 +14791,7 @@ again:
 		gsym_addr(c, d);
 		gsym(a);
 		rir_hook_do_end();
+		lcen_end(&lcen);
 		prev_scope_s(&o);
 	} else if (t == TOK_SWITCH) { MCC_TRACE("br\n");
 		struct switch_t *sw;
