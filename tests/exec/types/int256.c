@@ -236,4 +236,23 @@ int main(void) {
 	return 0;
 }
 
+#elif defined test_replay_cmp
+
+#include <stdio.h>
+
+static int tobool(__int256 x) { return (_Bool)x; }
+
+static int lt1(__int256 a, __int256 b) { return (a < b) + 1; }
+
+static int chain(__int256 a, __int256 b) { return (a == b) + (a < b) + 1; }
+
+int main(void) {
+	__int256 z = 0, o = 1, big = (__int256)1 << 200;
+
+	printf("bool %d %d %d\n", tobool(z), tobool(o), tobool(big));
+	printf("lt1 %d %d %d\n", lt1(z, o), lt1(o, z), lt1(big, big));
+	printf("chain %d %d\n", chain(z, o), chain(o, o));
+	return 0;
+}
+
 #endif
