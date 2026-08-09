@@ -281,9 +281,9 @@ currency row 1 says still converts. Three things stand in the way, in order:
    **silently miscompiled**: over 500 random chain-heavy functions at `-O11`, 212 ICE and
    **6 more return wrong answers**. Fixed at the source (`rir_chain_dup_ok` refuses the
    unfaithful dup; `ast_revoke_chainstores` drops half-pairs), cell `exec-chainlive/*`.
-   Debt #6 carries the full diagnosis. **This row is no longer blocked by an ICE — but see
-   debt #6a, a separate pre-existing `vstack leak (-1)` that fires at `-O1`/`-O2`/`-O3`
-   and is still open.**
+   Debt #6 carries the full diagnosis. **This row is no longer blocked by an ICE.** Debt
+   #6a — a separate pre-existing `vstack leak (-1)` that fired at `-O1`/`-O2`/`-O3` — is
+   fixed as of 2026-08-09, so the member fixture it used to block can now go in.
 2. `tests/optfire/{defstate.txt,levelpins.txt,leveltime.tsv}` pin `chain-store` at level 11
    on measured stage-1 compile cost. Re-promotion is a compile-time-against-emitted-code
    trade, and those pins are the record of the compile-time half. This row is not a licence
@@ -803,7 +803,9 @@ write the *same physical bytes*. Write-up and residual hazards: "Landed — `*p`
 | --- | --- | --- |
 | chain-store re-promotion (row 2) | ~4.3 points of `kept`, `tools/rir-coverage.py`; emitted-code value **UNMEASURED** | emitted code |
 | `-O11` ICE, `vstack leak (1)` | **FIXED 2026-08-08**; it also silently miscompiled (6 wrong answers / 500 at `-O11`). Cell `exec-chainlive/*`, fuzz 900 programs 0/0 | correctness |
-| `vstack leak (-1)`, debt #6a | pre-existing, **open**, and it fires at shipped `-O1`/`-O2`/`-O3` (111 of 400); segfaults at `-O11`. `-fno-storeval-rot` clears it | correctness |
+| `vstack leak (-1)`, debt #6a | **FIXED 2026-08-09**. It fired at shipped `-O1`/`-O2`/`-O3` (78/77/77 of 500) and never miscompiled — every imbalance is `(-1)`, so it always aborted. Cells `exec-storevalrot{1,2,3}/*`, fuzz 1400 programs 0 ICE / 0 wrong. Stage-1 `.text` byte-identical, so it cost nothing | availability |
+| `storeval-rot` pays negative at `-O3` | **NEW, open**: flag on 405,242 stage-1 instructions vs `-fno-storeval-rot` 398,390 — **off is 1.69% better**. Pre-existing, same numbers before and after the #6a fix. `-O1` −20 for on, `-O2` +175 for off | emitted code |
+| replay recompute reads a written target | **FIXED 2026-08-09 with #6a**: `c = 2 * (a = s + a)` returned the wrong answer under the shipped `-fno-replay-fallback` at `3ddd9933` with every `storeval-*` and `chain-store` flag off. Covered by `flagsweep-exec/replay-fallback` | correctness |
 | `rir_op_effect`'s clear (row 4) | 63.88% of iterations, `tools/loop-census.py`; wall-clock share **UNMEASURED**, arithmetic bound <1% | compile time |
 | Metal, debt #4 (row 3) | 1754 vs 3578 lines, 3-line kernel arm, 0 `msl_region*` symbols. A rewrite, not a fix. | a decision |
 | D4b leaf-inline pool cap (row 5) | ceiling **803** blocks, `slicerun --census`. **Cap removed 2026-08-08**: reach 41 → 72 grafts, and it delivered **one** more block (10,381 → 10,375 `inv-blocks`). Row closed, not advanced | device-eligible blocks |
@@ -1157,10 +1159,12 @@ item now says what was measured, not what was assumed.
    and `tests/optfire/{defstate.txt,levelpins.txt}` are untouched — this removes a
    blocker on re-promoting the family, it is not a licence to re-promote it. And the
    member half of the pairing has no cell: every fixture found that reaches the
-   `CHAIN_REUSE`/`CHAIN_MEMBER` collision also trips debt #6a below at `-O1`, so it
-   cannot go into the shared `tests/exec` corpus until that is fixed. Add it then.
-6a. **Pre-existing and unrelated: `storeval-rot` underflows the vstack at `-O1`.** Found
-   while fuzzing debt #6; reproduces identically at `1fa038ee` and on the current tree.
+   `CHAIN_REUSE`/`CHAIN_MEMBER` collision also tripped debt #6a below at `-O1`, so it
+   could not go into the shared `tests/exec` corpus. **Debt #6a is fixed as of
+   2026-08-09** and that block is gone; the member fixture is still owed.
+6a. **`storeval-rot` underflowed the vstack at `-O1` — FIXED 2026-08-09. It never
+   miscompiled: the failure mode is an abort, measured, not assumed.** Found while
+   fuzzing debt #6; reproduced identically at `1fa038ee` and on `3ddd9933`.
 
    ```c
    struct S { int x; };
@@ -1173,24 +1177,141 @@ item now says what was measured, not what was assumed.
    }
    ```
 
-   `error: internal compiler error: vstack leak (-1)` at `-O1`, `-O2` and `-O3`; `-O0` is
-   clean and `-fno-storeval-rot` fixes it at every level. Unlike debt #6 this needs no
-   chain-store flag and lands on the shipped ladder. At `-O11` the same shape *segfaults*
-   the compiler (`vswap()` on an underflowed vstack reads below `vstack[0]`), before and
-   after the debt #6 fix alike — debt #6's leak merely used to abort first on some inputs.
+   `error: internal compiler error: vstack leak (-1)` at `-O1`, `-O2`, `-O3` and `-O11`;
+   `-O0` is clean and `-fno-storeval-rot` cleared it at every level. Unlike debt #6 this
+   needed no chain-store flag and landed on the shipped ladder.
 
-   Diagnosed but not fixed. `ast_finalize_storevals`' rot path marks the innermost store
+   **The miscompile question, answered.** Debt #6 cancelled a leak against an underflow
+   and returned wrong answers on 6 of 500 at `-O11`, so the same experiment was run here
+   before anything was changed: 1400 random struct/pointer/chain programs with checkable
+   output, each cross-validated against `gcc -O0`, `gcc -O2` and `mcc -O0` before use,
+   then run at `-O1`/`-O2`/`-O3`/`-O11`, `-O3 -fno-storeval-rot`, `-O11 -fno-chain-store`
+   and `-O11` with the whole chain-store family forced on. **Every imbalance this defect
+   produces is `(-1)`** — 115 of 115 ICE messages over the first two corpora at `-O3` and
+   106 of 106 at `-O11`, no `(+1)` anywhere. It never pairs with a leak of the opposite
+   sign, so it never cancels, so it always aborts: **0 wrong answers over 1400 programs
+   and every configuration above, before the fix**.
+   That is the difference from debt #6 and it is why this was an availability bug, not a
+   correctness one. It did also fault: one program in 500 segfaulted the compiler at
+   `-O11`, non-deterministically (the underflowed read below `vstack[0]` lands on
+   whatever precedes the array), so the fault is real but not reliable.
+
+   **Root cause.** `ast_finalize_storevals`' rot path marks the innermost store
    `AST_FB_STORE_VALUE_LIVE | AST_FB_STORE_LIVE_ROT`, and the `AST_StoreVal` replay for a
    live store pushes nothing because the value is already on the vstack. The middle store
-   of the chain is *not* marked live, so when the outermost store's `AST_StoreVal` falls
-   through to `ast_replay_value(a, ast_child(a, st, 1))` it re-evaluates the middle
-   store's value child — which is the same already-consumed `AST_StoreVal` node — and
-   takes the entry a second time. Same shape as the `AST_StoreVal` case
-   `rir_chain_dup_ok()` now refuses in debt #6: a single-use reference to a live value
-   being evaluated twice. Over 400 random struct/pointer chain functions it fires on 111
-   at `-O3` and, with chain-store out of the way (`-O11 -fno-chain-store`), on 300, so it
-   is not a corner. Wants a cell of its own; the member fixture for debt #6 should be
-   added at the same time.
+   of the chain is *not* marked live, so the outermost store's `AST_StoreVal` fell through
+   to `ast_replay_value(a, ast_child(a, st, 1))` and re-evaluated the middle store's value
+   child — the same already-consumed `AST_StoreVal` node — taking the entry a second time.
+   Same shape as the `AST_StoreVal` case `rir_chain_dup_ok()` refuses in debt #6: a
+   single-use reference to a live value evaluated twice. It fired on 78 of 500 at `-O1`,
+   77 at `-O2`/`-O3`, 63 at `-O11` on a one-statement corpus, and 98 of 400 at `-O11` on a
+   corpus carrying `volatile`, narrowing and bit-field targets.
+
+   **The fix, in two halves, both at the source.** Neither half disables a pass. The
+   recompute was the wrong default, not a special case that needed one more exception, so
+   the fallback was inverted rather than patched.
+   - `ast_replay_value_inner`'s `AST_StoreVal` fallback now **reloads the store's target**
+     whenever that target is safe to re-evaluate, and only recomputes the value expression
+     when it is not. That is the branch `ast_val_has_call` already took, and it is the
+     faithful answer in general: the target holds the post-conversion value that C says
+     the assignment yields, so `char c; q->x = c = a = s * 100 + 7;` now agrees with gcc
+     where recomputing the value subtree skipped the narrowing.
+   - `ast_finalize_storevals` refuses the live mark when any ancestor `AST_Store` on the
+     walk from the `AST_StoreVal` up to the basic block holds the node in its *value* child
+     and has a target that cannot be re-evaluated: `volatile`, a call, a nested store
+     (`arr[i++]`), a VLA. Without this half a `volatile int` middle target still ICE'd —
+     the guard is load-bearing, not belt and braces.
+
+   **After: 1400 programs × 7 configurations, 0 ICE, 0 wrong answers, 0 faults.**
+
+   **A second, older defect fell out of the same inversion, and it is why the fallback was
+   inverted instead of special-cased.** The recompute path is unfaithful whenever the
+   stored value reads the store's own target, because by replay time the target has already
+   been written:
+
+   ```c
+   int c1(int s) { int a = 1, c = 3; c = 2 * (a = s + a); return a + c; }
+   ```
+
+   At `3ddd9933`, with **all** `storeval-*` flags and `chain-store` forced off, this
+   returns the wrong answer under `-fno-replay-fallback` at `-O1` and `-O3` — the replay
+   recomputes `s + a` after `a` was updated. Nothing to do with `storeval-rot`; the
+   always-on `replay-fallback` was discarding the unfaithful body and hiding it, which is
+   also why no existing cell saw it. `-fno-replay-fallback` is a shipped `-f` flag with a
+   `flagsweep-exec` rung of its own, so this was a live wrong-answer path. The inverted
+   fallback fixes it: the same program is correct at `-O0`/`-O1`/`-O3` with and without
+   `-fno-replay-fallback`. Adding the reproducing shapes to
+   `tests/exec/statements/chained_assign.c` is what turned `flagsweep-exec/replay-fallback`
+   red on the half-fix, and it is green with the inversion — that cell is now the
+   regression cover for this half.
+
+   **What this does *not* buy, said plainly.** These chains stay **unfaithful**: with
+   `MCC_RIR_PROD=2` every new fixture lands in `disc fallback/len` at `-O1`/`-O2`/`-O3`,
+   so the parser's bytes ship and no arena strategy runs on those bodies. That is not a
+   shortfall of the fix, it is what the shape is: for `q->x = c = a = s + a` the parser
+   pushes *all three* addresses before evaluating anything, while the arena holds three
+   sibling stores and replays address-value-store three times. `ast_storeval_push_leaf`'s
+   leaf requirement is exactly the condition under which that reordering emits no bytes and
+   is therefore invisible; a member target emits an address computation, so the reordering
+   shows and the byte gate discards it — with or without this fix. The bug was that the
+   compiler *aborted* instead of falling back. Making these bodies faithful is a different
+   and larger job (the middle store would have to become live too) and is not attempted
+   here.
+
+   **The bank had to move, and the reason is the corpus, not the compiler.** Adding eleven
+   inherently-discarded bodies drops `wide` `kept` from 96.576 to 96.5436 at `-O1` and from
+   96.626 to 96.5941 at `-O2`/`-O3`, which is more than the 0.05 tolerance had left. Two
+   measurements say the compiler is not what moved:
+   with the *original* fixture, the fixed compiler reports `kept` 92.907 / 96.576 / 96.627
+   / 96.627 against the pre-fix compiler's 92.906 / 96.576 / 96.626 / 96.626 — the same
+   number. And `3ddd9933` was already **50 bodies stale** against its own bank (4387
+   measured, 4337 banked) and already sat 0.0285 under the banked `-O1` `kept`, i.e. it had
+   spent 57% of the tolerance before this branch existed. `tests/rir/coverage-bank.json`
+   was refreshed with `--update-bank` for `wide` only; `self` is untouched and
+   `rir-coverage` was green throughout.
+
+   **Cost in emitted code: zero.** Compiling the *unmodified* stage-1 `src/mcc.c` at
+   `3ddd9933` with the pre-fix and the fixed compiler gives a **byte-identical `.text`** at
+   `-O1`, `-O2` and `-O3` (368,376 / 383,388 / 405,242 instructions either way; the objects
+   differ only in a header field). An earlier reading of "+74 instructions" was an artifact
+   of measuring the fix's own added source into the object — measure the compiler, not the
+   compiler plus the patch. Compare the alternative the brief asked to be priced: turning
+   the pass off with `-fno-storeval-rot` moves the same object to 398,390 at `-O3`,
+   **−1.69%** — see the note below.
+
+   Regression cells: `exec-storevalrot{1,2,3}/{chained_assign,assign_value_effects,
+   local_const_prop,region_store}` — twelve new cells, `-O{1,2,3} -fstoreval-rot
+   -fstoreval-constl -fstoreval-calllast`, pinning the flag explicitly at all three
+   shipped levels. Eleven functions were added to
+   `tests/exec/statements/chained_assign.c`: the reproducer, a chain through nested
+   members, an array-element outer target, the `constl` variant, a chain inside a call
+   argument, a `volatile` middle target under a member and under an array element, a
+   narrowing (`char`/`short`) middle target, a middle store killed by a later write, and
+   an impure outer target (`arr[i++]`).
+
+   **Both halves are ablated and both go red, on the shipped ladder.** Six cells fail
+   either way — `exec-storevalrot{1,2,3}/chained_assign`, `exec-chainstore/chained_assign`,
+   `exec-chainlive/chained_assign`, `flagsweep-exec/replay-fallback` — and the two halves
+   fail on *different* functions, which is the point:
+   - replay half off → `tests/exec/statements/chained_assign.c:134: error: internal
+     compiler error: vstack leak (-1)` (line 134 is `rot_member_chain`, the reproducer).
+   - finalize guard off → `tests/exec/statements/chained_assign.c:203: error: internal
+     compiler error: vstack leak (-1)` (line 203 is `rot_volatile_elem`, the `volatile`
+     middle target under `arr[s & 1]`).
+
+   `exec/chained_assign` at `-O0` stays green through both ablations, which is the control
+   that says the cells are reading the optimizer and not the fixture.
+
+   **Follow-up worth a row of its own: `storeval-rot` is a pessimization at `-O3`.**
+   Measured on stage-1 `src/mcc.c` at `3ddd9933`, instruction counts from `objdump -d`,
+   flag on against `-fno-storeval-rot`, and identical for the pre-fix and fixed compilers:
+   `-O1` 368,376 vs 368,396 (**−20**, on is better), `-O2` 383,388 vs 383,213 (**+175**,
+   off is better), `-O3` 405,242 vs 398,390 (**+6,852, off is 1.69% better**). The `-O3`
+   gap is pre-existing and nothing to do with this fix. It also contradicts the ladder
+   write-up's "`storeval-rot` … changes 0.0000% of emitted instructions", which holds at
+   `-O1` and is off by 1.69% at `-O3`. No pin was touched here; this wants its own
+   measurement and its own demotion argument, and the `-O2` sign says the answer may be
+   "demote to a level, not off".
 7. **The "464 skipped cells under `debug`" number was wrong, and so was its cause —
    PARTLY FIXED.** It was not `MCC_CROSS_DIR` and not a missing `cmake-cross`:
    `MCC_CROSS_DIR` defaults correctly, cross cells are registered unconditionally with
