@@ -2042,21 +2042,128 @@ static int bytes_kernel(int t, MccGpuCode *out) {
 	return bytes_kernel_in(t, 0, out);
 }
 
+#define SWS_NSLOT 1
+#define SWS_ARENA_WORD 2048
+#define SWS_SPAN_BYTE 256
+#define SWS_LANES MCC_GPU_LOCAL_SIZE
+
+static int subword_shared_kernel(int t, MccGpuCode *out) {
+	SpvMod m;
+	SpvRegion r;
+	uint32_t base, off, val;
+	uint32_t *code;
+	int nw = 0;
+	spv_module_begin(&m, SWS_NSLOT);
+	base = spv_main_begin(&m, SWS_NSLOT);
+	r = spv_region_shared(m.id_mem, spv_const(&m, SWS_ARENA_WORD),
+												spv_uintc(&m, SWS_SPAN_BYTE));
+	off = spv_load_at(&m, base);
+	val = spv_load_at(&m,
+										spv_emit3(&m, SpvOpIAdd, m.id_int, base, spv_const(&m, 1)));
+	if (mcc_slice_mutate)
+		val = spv_emit3(&m, SpvOpBitwiseXor, m.id_int, val, spv_const(&m, 1));
+	spv_store_region(&m, &r, off, spv_fit_v(&m, spv_mk(val, 0, 0), t), t);
+	if (m.failed) {
+		spv_module_free(&m);
+		return 0;
+	}
+	spv_main_end(&m, m.lane, spv_mk(spv_const(&m, 0), 0, 0));
+	code = spv_module_finish(&m, &nw);
+	spv_module_free(&m);
+	if (!code || nw <= 0) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nw;
+	return 1;
+}
+
+static unsigned char *subword_shared_span(void) {
+	void *mem = NULL;
+	unsigned long msz = 0;
+	if (!mcc_gpu_mem(&mem, &msz) || !mem)
+		return NULL;
+	if (msz < (unsigned long)SWS_ARENA_WORD * 4 + SWS_SPAN_BYTE)
+		return NULL;
+	return (unsigned char *)mem + (long)SWS_ARENA_WORD * 4;
+}
+
+static void subword_shared_one(int t, const char *what) {
+	MccGpuCode code;
+	unsigned char *span = subword_shared_span();
+	unsigned char ref[SWS_SPAN_BYTE];
+	int32_t *in, *ob;
+	int width = ast_eval_slice_tsize(t);
+	int i, j, bad = 0;
+	if (!span) {
+		CHECK(0, "the shared address space is mappable for the sub-word race case");
+		return;
+	}
+	if (!subword_shared_kernel(t, &code)) {
+		CHECK(0, "a sub-word store into a shared region emits");
+		return;
+	}
+	CHECK(1, "a sub-word store into a shared region emits");
+	in = (int32_t *)calloc((size_t)SWS_LANES * MCC_GPU_IN_SLOTS, sizeof *in);
+	ob = (int32_t *)calloc((size_t)SWS_LANES * MCC_GPU_OUT_SLOTS, sizeof *ob);
+	if (!in || !ob) {
+		free(in);
+		free(ob);
+		free(code.p);
+		return;
+	}
+	for (j = 0; j < SWS_SPAN_BYTE; j++) {
+		ref[j] = (unsigned char)(0xA5u ^ (unsigned)j);
+		span[j] = ref[j];
+	}
+	for (i = 0; i < SWS_LANES; i++) {
+		int32_t off = (int32_t)i * width;
+		int32_t v = (int32_t)(0x1234 + i * 7);
+		int ok = 0;
+		if (off + width > SWS_SPAN_BYTE)
+			off = 0;
+		in[(long)i * MCC_GPU_IN_SLOTS] = off;
+		in[(long)i * MCC_GPU_IN_SLOTS + 1] = v;
+		ast_eval_slice_bytes_store((uint32_t *)ref, SWS_SPAN_BYTE, off, t,
+															 ast_eval_slice_fit(v, t), &ok);
+		CHECK(ok == 1, "every lane's sub-word address is in range for the reference");
+	}
+	if (!mcc_gpu_dispatch_rw2(code.p, code.n, in, SWS_LANES, SWS_NSLOT, ob)) {
+		CHECK(0, "the shared sub-word kernel dispatches");
+		free(in);
+		free(ob);
+		free(code.p);
+		return;
+	}
+	for (j = 0; j < SWS_SPAN_BYTE; j++) {
+		if (ref[j] == span[j])
+			continue;
+		if (!bad)
+			fprintf(stderr, "  SUBWORD %s byte %d want=%02x got=%02x\n", what, j,
+							ref[j], span[j]);
+		bad++;
+	}
+	CHECK(bad == 0, "and every lane's sub-word write survives the ones sharing its "
+									"word, byte for byte against the reference");
+	free(in);
+	free(ob);
+	free(code.p);
+}
+
 static void bytes_subword_shared(void) {
 	static const int NARROW[] = {VT_BYTE, VT_BYTE | VT_UNSIGNED, VT_SHORT,
-															 VT_SHORT | VT_UNSIGNED};
+															 VT_SHORT | VT_UNSIGNED, VT_BOOL};
 	static const int WIDE[] = {VT_INT, VT_INT | VT_UNSIGNED, VT_LLONG,
 														 VT_LLONG | VT_UNSIGNED};
 	MccGpuCode c;
 	int i;
 	for (i = 0; i < (int)(sizeof NARROW / sizeof *NARROW); i++) {
 		if (bytes_kernel_in(NARROW[i], 1, &c)) {
-			CHECK(0, "a shared region refuses a sub-word store, which would be a "
-								"read-modify-write race between two lanes of one word");
+			CHECK(1, "a shared region admits a sub-word store");
 			free(c.p);
 		} else {
-			CHECK(1, "a shared region refuses a sub-word store, which would be a "
-								"read-modify-write race between two lanes of one word");
+			CHECK(0, "a shared region admits a sub-word store");
 		}
 		if (bytes_kernel_in(NARROW[i], 0, &c)) {
 			CHECK(1, "and a lane-private region of the same width still emits");
@@ -2075,6 +2182,12 @@ static void bytes_subword_shared(void) {
 								"so is admitted");
 		}
 	}
+	if (!g_have_device)
+		return;
+	subword_shared_one(VT_BYTE, "byte");
+	subword_shared_one(VT_BYTE | VT_UNSIGNED, "ubyte");
+	subword_shared_one(VT_SHORT, "short");
+	subword_shared_one(VT_BOOL, "bool");
 }
 
 static void suite_bytes(void) {
@@ -3879,6 +3992,692 @@ static long g_ref_total_nodes, g_ref_total_bodies, g_ref_total_bodynodes;
 static long g_ref_accepted_nodes, g_ref_blocks, g_ref_blocks_acc;
 static unsigned char g_ref_hit[REF_N];
 
+enum {
+	MSL_FRAME_F64,
+	MSL_FRAME_INT,
+	MSL_DEREF,
+	MSL_DYNIDX,
+	MSL_DYNIDX_IDX,
+	MSL_NOCHILD,
+	MSL_TYPE_FLOAT,
+	MSL_TYPE_BAD,
+	MSL_TYPE_NONINT,
+	MSL_PTR_NOTREF,
+	MSL_PTR_NOTLOCAL,
+	MSL_PTR_NOTPTR,
+	MSL_PTR_NOOBJ,
+	MSL_PTR_ETYPE,
+	MSL_IDX_NOTARRAY,
+	MSL_IDX_NOOBJ,
+	MSL_IDX_ETYPE,
+	MSL_IDX_EXTENT,
+	MSL_IDX_WIDE,
+	MSL_ADDR_GLOBAL,
+	MSL_ADDR_OTHER,
+	MSL_N
+};
+
+static const char *memshape_load_name(int k) {
+	switch (k) {
+	case MSL_FRAME_F64: return "load/frame-f64";
+	case MSL_FRAME_INT: return "load/frame-int";
+	case MSL_DEREF: return "load/deref";
+	case MSL_DYNIDX: return "load/dynidx";
+	case MSL_DYNIDX_IDX: return "load/dynidx-index-refused";
+	case MSL_NOCHILD: return "load/no-child";
+	case MSL_TYPE_FLOAT: return "load/type-float";
+	case MSL_TYPE_BAD: return "load/type-bad";
+	case MSL_TYPE_NONINT: return "load/type-nonint";
+	case MSL_PTR_NOTREF: return "load/ptr-base-not-ref";
+	case MSL_PTR_NOTLOCAL: return "load/ptr-base-not-local";
+	case MSL_PTR_NOTPTR: return "load/ptr-base-not-ptr";
+	case MSL_PTR_NOOBJ: return "load/ptr-pointee-unknown";
+	case MSL_PTR_ETYPE: return "load/ptr-pointee-type";
+	case MSL_IDX_NOTARRAY: return "load/idx-base-not-array";
+	case MSL_IDX_NOOBJ: return "load/idx-object-unknown";
+	case MSL_IDX_ETYPE: return "load/idx-elem-type";
+	case MSL_IDX_EXTENT: return "load/idx-extent";
+	case MSL_IDX_WIDE: return "load/idx-64bit";
+	case MSL_ADDR_GLOBAL: return "load/addr-global";
+	case MSL_ADDR_OTHER: return "load/addr-other";
+	default: return "?";
+	}
+}
+
+enum {
+	MSS_LOCAL,
+	MSS_DEREF,
+	MSS_DYNIDX,
+	MSS_DYNIDX_IDX,
+	MSS_ARITY,
+	MSS_DEST_GLOBAL,
+	MSS_DEST_LOAD,
+	MSS_DEST_OTHER,
+	MSS_TYPE,
+	MSS_N
+};
+
+static const char *memshape_store_name(int k) {
+	switch (k) {
+	case MSS_LOCAL: return "store/local-slot";
+	case MSS_DEREF: return "store/deref";
+	case MSS_DYNIDX: return "store/dynidx";
+	case MSS_DYNIDX_IDX: return "store/dynidx-index-refused";
+	case MSS_ARITY: return "store/arity";
+	case MSS_DEST_GLOBAL: return "store/dest-global";
+	case MSS_DEST_LOAD: return "store/dest-load-other";
+	case MSS_DEST_OTHER: return "store/dest-other";
+	case MSS_TYPE: return "store/dest-type";
+	default: return "?";
+	}
+}
+
+enum {
+	MSD_L_PTR_LOCAL,
+	MSD_L_PTR_GLOBAL,
+	MSD_L_ARR_GLOBAL,
+	MSD_L_BASE_LOAD,
+	MSD_L_BASE_CONV,
+	MSD_L_BASE_OTHER,
+	MSD_S_FRAMEOFF,
+	MSD_S_MEMBER_NOFRAME,
+	MSD_S_MEMBER_GLOBAL,
+	MSD_S_CONV,
+	MSD_S_OTHER,
+	MSD_SL_DYN_PTR,
+	MSD_SL_DYN_GLOBAL,
+	MSD_SL_FRAMEOFF,
+	MSD_SL_OTHER,
+	MSD_N
+};
+
+static const char *memshape_detail_name(int k) {
+	switch (k) {
+	case MSD_L_PTR_LOCAL: return "load/idx-base=local-pointer";
+	case MSD_L_PTR_GLOBAL: return "load/idx-base=global-pointer";
+	case MSD_L_ARR_GLOBAL: return "load/idx-base=global-array";
+	case MSD_L_BASE_LOAD: return "load/idx-base=load";
+	case MSD_L_BASE_CONV: return "load/idx-base=convert";
+	case MSD_L_BASE_OTHER: return "load/idx-base=other";
+	case MSD_S_FRAMEOFF: return "store/dest-other=frame-off";
+	case MSD_S_MEMBER_NOFRAME: return "store/dest-other=local-base-nonframe";
+	case MSD_S_MEMBER_GLOBAL: return "store/dest-other=global-base";
+	case MSD_S_CONV: return "store/dest-other=convert";
+	case MSD_S_OTHER: return "store/dest-other=other";
+	case MSD_SL_DYN_PTR: return "store/dest-load=ptr-index";
+	case MSD_SL_DYN_GLOBAL: return "store/dest-load=global-index";
+	case MSD_SL_FRAMEOFF: return "store/dest-load=frame-off";
+	case MSD_SL_OTHER: return "store/dest-load=other";
+	default: return "?";
+	}
+}
+
+static long g_msd[MSD_N];
+static long g_msd_w[MSD_N][9];
+static long g_msd_kx[32], g_msd_ky[32];
+
+static long g_msl[MSL_N];
+static long g_msl_w[MSL_N][9];
+static long g_mss[MSS_N];
+static long g_mss_w[MSS_N][9];
+static long g_mss_valbad[MSS_N];
+static long g_msl_total, g_mss_total;
+
+static int memshape_width_bucket(int t) {
+	int w = ast_eval_slice_tsize(t);
+	if (w < 0 || w > 8)
+		return 0;
+	return w;
+}
+
+static int memshape_ptr_why(AstArena *a, AstLocal c) {
+	int32_t extent = 0;
+	int et = 0, r, t;
+	if (c == AST_NONE || ast_kind(a, c) != AST_Ref)
+		return MSL_PTR_NOTREF;
+	r = ast_op(a, c);
+	if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+		return MSL_PTR_NOTLOCAL;
+	t = ast_type_t(a, c);
+	if (!t || ast_bad_type(t) || (t & VT_ARRAY) || (t & VT_BTYPE) != VT_PTR)
+		return MSL_PTR_NOTPTR;
+	if (!ast_eval_slice_obj_fn(a, c, &extent, &et))
+		return MSL_PTR_NOOBJ;
+	if (!et || (et & VT_ARRAY) || is_float(et) || !ast_eval_slice_intt(et) ||
+			!ast_eval_slice_tsize(et))
+		return MSL_PTR_ETYPE;
+	return MSL_PTR_ETYPE;
+}
+
+static int memshape_idx_why(AstArena *a, AstLocal n, int *pw) {
+	AstLocal x, y, base, idx;
+	int32_t extent = 0;
+	int etype = 0, r, it, esize;
+	*pw = 0;
+	if (n == AST_NONE || ast_kind(a, n) != AST_Binary || ast_op(a, n) != '+' ||
+			ast_nchild(a, n) != 2)
+		return MSL_ADDR_OTHER;
+	x = ast_child(a, n, 0);
+	y = ast_child(a, n, 1);
+	if (ast_kind(a, x) == AST_Ref && (ast_type_t(a, x) & VT_ARRAY)) {
+		base = x;
+		idx = y;
+	} else if (ast_kind(a, y) == AST_Ref && (ast_type_t(a, y) & VT_ARRAY)) {
+		base = y;
+		idx = x;
+	} else {
+		return MSL_IDX_NOTARRAY;
+	}
+	r = ast_op(a, base);
+	if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+		return MSL_IDX_NOTARRAY;
+	if (!ast_eval_slice_obj_fn(a, base, &extent, &etype))
+		return MSL_IDX_NOOBJ;
+	esize = ast_eval_slice_tsize(etype);
+	*pw = esize < 0 || esize > 8 ? 0 : esize;
+	if (!esize || (etype & VT_ARRAY) ||
+			(!ast_eval_slice_f64t(etype) &&
+			 (is_float(etype) || !ast_eval_slice_intt(etype))))
+		return MSL_IDX_ETYPE;
+	if (extent < esize || extent % esize)
+		return MSL_IDX_EXTENT;
+	it = ast_eval_slice_wtype(a, idx);
+	if (!it || is_float(it) || !ast_eval_slice_intt(it))
+		return MSL_IDX_ETYPE;
+	if (ast_eval_slice_is64(it))
+		return MSL_IDX_WIDE;
+	return MSL_IDX_EXTENT;
+}
+
+static void memshape_bump(long *tab, long (*wtab)[9], int k, int w) {
+	tab[k]++;
+	if (w >= 0 && w <= 8)
+		wtab[k][w]++;
+}
+
+static void memshape_load_detail(AstArena *a, AstLocal c) {
+	AstLocal x, y, base;
+	int bt;
+	x = ast_child(a, c, 0);
+	y = ast_child(a, c, 1);
+	base = x;
+	if (ast_kind(a, x) == AST_Literal ||
+			(ast_kind(a, y) != AST_Literal &&
+			 (ast_type_t(a, y) & VT_BTYPE) == VT_PTR &&
+			 (ast_type_t(a, x) & VT_BTYPE) != VT_PTR))
+		base = y;
+	bt = ast_type_t(a, base);
+	if (ast_kind(a, base) == AST_Ref) {
+		int r = ast_op(a, base);
+		if (bt & VT_ARRAY)
+			g_msd[MSD_L_ARR_GLOBAL]++;
+		else if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM))
+			g_msd[MSD_L_PTR_LOCAL]++;
+		else
+			g_msd[MSD_L_PTR_GLOBAL]++;
+		if ((bt & VT_BTYPE) == VT_PTR || (bt & VT_ARRAY)) {
+			int w = 0;
+			int32_t ext = 0;
+			int et = 0;
+			if (ast_eval_slice_obj_fn && ast_eval_slice_obj_fn(a, base, &ext, &et))
+				w = memshape_width_bucket(et);
+			g_msd_w[ast_kind(a, base) == AST_Ref && (bt & VT_ARRAY)
+									? MSD_L_ARR_GLOBAL
+									: ((ast_op(a, base) & VT_VALMASK) == VT_LOCAL &&
+														 !(ast_op(a, base) & VT_SYM)
+												 ? MSD_L_PTR_LOCAL
+												 : MSD_L_PTR_GLOBAL)][w]++;
+		}
+		return;
+	}
+	if (ast_kind(a, base) == AST_Load)
+		g_msd[MSD_L_BASE_LOAD]++;
+	else if (ast_kind(a, base) == AST_Convert)
+		g_msd[MSD_L_BASE_CONV]++;
+	else
+		g_msd[MSD_L_BASE_OTHER]++;
+	if (ast_kind(a, x) == AST_Unary) {
+		int uop = ast_op(a, x);
+		int slot = uop == 0x40000 ? 0 : uop == 0x40001 ? 1 : uop == 0x40002 ? 2 : 3;
+		AstLocal ub = ast_first_child(a, x);
+		int32_t fo;
+		g_msd_kx[slot]++;
+		if (ast_eval_slice_frame_off(a, x, &fo, 0))
+			g_msd_ky[slot]++;
+		if (ub != AST_NONE && ast_kind(a, ub) == AST_Ref &&
+				(ast_type_t(a, ub) & VT_ARRAY))
+			g_msd_ky[8 + slot]++;
+		if (ub != AST_NONE && ast_kind(a, ub) == AST_Ref &&
+				(ast_op(a, ub) & VT_SYM))
+			g_msd_ky[16 + slot]++;
+	}
+}
+
+static void memshape_store_detail(AstArena *a, AstLocal d) {
+	int32_t fo;
+	int ty;
+	if (mcc_slice_store_frame(a, d, &fo, &ty)) {
+		memshape_bump(g_msd, g_msd_w, MSD_S_FRAMEOFF, memshape_width_bucket(ty));
+		return;
+	}
+	{
+		AstLocal b = d;
+		int guard = 0;
+		while (b != AST_NONE && guard++ < 8 &&
+					 (ast_kind(a, b) == AST_Unary || ast_kind(a, b) == AST_Load ||
+						ast_kind(a, b) == AST_Convert))
+			b = ast_first_child(a, b);
+		if (b != AST_NONE && ast_kind(a, b) == AST_Ref) {
+			if (ast_op(a, b) & VT_SYM)
+				g_msd[MSD_S_MEMBER_GLOBAL]++;
+			else
+				g_msd[MSD_S_MEMBER_NOFRAME]++;
+			return;
+		}
+	}
+	if (ast_kind(a, d) == AST_Convert)
+		g_msd[MSD_S_CONV]++;
+	else
+		g_msd[MSD_S_OTHER]++;
+}
+
+static void memshape_storeload_detail(AstArena *a, AstLocal d) {
+	AstLocal c = ast_first_child(a, d);
+	int32_t fo;
+	int et;
+	if (mcc_slice_store_frame(a, d, &fo, &et)) {
+		memshape_bump(g_msd, g_msd_w, MSD_SL_FRAMEOFF, memshape_width_bucket(et));
+		return;
+	}
+	if (c != AST_NONE && ast_kind(a, c) == AST_Binary && ast_op(a, c) == '+' &&
+			ast_nchild(a, c) == 2) {
+		AstLocal x = ast_child(a, c, 0), y = ast_child(a, c, 1), b = x;
+		int r;
+		if ((ast_type_t(a, y) & (VT_ARRAY | VT_BTYPE)) &&
+				ast_kind(a, y) == AST_Ref && ast_kind(a, x) != AST_Ref)
+			b = y;
+		r = ast_kind(a, b) == AST_Ref ? ast_op(a, b) : 0;
+		if (ast_kind(a, b) == AST_Ref && (r & VT_SYM))
+			g_msd[MSD_SL_DYN_GLOBAL]++;
+		else
+			g_msd[MSD_SL_DYN_PTR]++;
+		return;
+	}
+	g_msd[MSD_SL_OTHER]++;
+}
+
+static void memshape_load(AstArena *a, AstLocal n) {
+	AstLocal c = ast_first_child(a, n);
+	int t = ast_type_t(a, n);
+	AstEvalSliceIdx ix;
+	int32_t fo;
+	int et, w;
+
+	g_msl_total++;
+	if (c == AST_NONE) {
+		memshape_bump(g_msl, g_msl_w, MSL_NOCHILD, 0);
+		return;
+	}
+	if (!ast_bad_type(t) && ast_eval_slice_f64t(t) &&
+			ast_eval_slice_frame_off(a, c, &fo, 0)) {
+		memshape_bump(g_msl, g_msl_w, MSL_FRAME_F64, 8);
+		return;
+	}
+	if (!ast_bad_type(t) && !is_float(t) && ast_eval_slice_intt(t) &&
+			ast_eval_slice_frame_off(a, c, &fo, 0)) {
+		memshape_bump(g_msl, g_msl_w, MSL_FRAME_INT, memshape_width_bucket(t));
+		return;
+	}
+	if (ast_eval_slice_deref(a, n, &fo, &et)) {
+		memshape_bump(g_msl, g_msl_w, MSL_DEREF, memshape_width_bucket(et));
+		return;
+	}
+	if (ast_eval_slice_dynidx(a, c, &ix)) {
+		w = ix.esize < 0 || ix.esize > 8 ? 0 : ix.esize;
+		if (ast_eval_slice_kind_ok(a, ix.idx, 1))
+			memshape_bump(g_msl, g_msl_w, MSL_DYNIDX, w);
+		else
+			memshape_bump(g_msl, g_msl_w, MSL_DYNIDX_IDX, w);
+		return;
+	}
+	if (t && !ast_bad_type(t) && is_float(t)) {
+		memshape_bump(g_msl, g_msl_w, MSL_TYPE_FLOAT, memshape_width_bucket(t));
+		return;
+	}
+	if (t && ast_bad_type(t)) {
+		memshape_bump(g_msl, g_msl_w, MSL_TYPE_BAD, 0);
+		return;
+	}
+	if (t && !ast_eval_slice_intt(t)) {
+		memshape_bump(g_msl, g_msl_w, MSL_TYPE_NONINT, memshape_width_bucket(t));
+		return;
+	}
+	if (!t) {
+		int why;
+		w = 0;
+		why = memshape_idx_why(a, c, &w);
+		memshape_bump(g_msl, g_msl_w, why, w);
+		if (why == MSL_IDX_NOTARRAY)
+			memshape_load_detail(a, c);
+		return;
+	}
+	if (ast_kind(a, c) == AST_Ref && (ast_op(a, c) & VT_SYM)) {
+		memshape_bump(g_msl, g_msl_w, MSL_ADDR_GLOBAL, memshape_width_bucket(t));
+		return;
+	}
+	if ((ast_type_t(a, c) & VT_BTYPE) == VT_PTR || ast_kind(a, c) == AST_Ref) {
+		memshape_bump(g_msl, g_msl_w, memshape_ptr_why(a, c),
+									memshape_width_bucket(t));
+		return;
+	}
+	memshape_bump(g_msl, g_msl_w, MSL_ADDR_OTHER, memshape_width_bucket(t));
+}
+
+static void memshape_store(AstArena *a, AstLocal n) {
+	AstLocal d, v;
+	AstEvalSliceIdx ix;
+	int32_t off, pf;
+	int dt, et, k, w;
+
+	g_mss_total++;
+	if (ast_nchild(a, n) != 2) {
+		memshape_bump(g_mss, g_mss_w, MSS_ARITY, 0);
+		return;
+	}
+	d = ast_child(a, n, 0);
+	v = ast_child(a, n, 1);
+	if (mcc_slice_store_dyn(a, d, &ix)) {
+		w = ix.esize < 0 || ix.esize > 8 ? 0 : ix.esize;
+		k = ast_eval_slice_kind_ok(a, ix.idx, 1) ? MSS_DYNIDX : MSS_DYNIDX_IDX;
+		memshape_bump(g_mss, g_mss_w, k, w);
+		if (!ast_eval_slice_kind_ok(a, v, 1))
+			g_mss_valbad[k]++;
+		return;
+	}
+	if (ast_eval_slice_deref(a, d, &pf, &et)) {
+		memshape_bump(g_mss, g_mss_w, MSS_DEREF, memshape_width_bucket(et));
+		if (!ast_eval_slice_kind_ok(a, v, 1))
+			g_mss_valbad[MSS_DEREF]++;
+		return;
+	}
+	if (mcc_slice_is_local_ref(a, d, &off)) {
+		dt = ast_type_t(a, d);
+		if (!dt || ast_bad_type(dt) ||
+				(!ast_eval_slice_f64t(dt) &&
+				 (is_float(dt) || !ast_eval_slice_intt(dt)))) {
+			memshape_bump(g_mss, g_mss_w, MSS_TYPE, memshape_width_bucket(dt));
+			return;
+		}
+		memshape_bump(g_mss, g_mss_w, MSS_LOCAL, memshape_width_bucket(dt));
+		if (!ast_eval_slice_kind_ok(a, v, 1))
+			g_mss_valbad[MSS_LOCAL]++;
+		return;
+	}
+	if (ast_kind(a, d) == AST_Ref && (ast_op(a, d) & VT_SYM)) {
+		memshape_bump(g_mss, g_mss_w, MSS_DEST_GLOBAL,
+									memshape_width_bucket(ast_type_t(a, d)));
+		return;
+	}
+	if (ast_kind(a, d) == AST_Load) {
+		memshape_bump(g_mss, g_mss_w, MSS_DEST_LOAD,
+									memshape_width_bucket(ast_type_t(a, d)));
+		memshape_storeload_detail(a, d);
+		return;
+	}
+	memshape_bump(g_mss, g_mss_w, MSS_DEST_OTHER,
+								memshape_width_bucket(ast_type_t(a, d)));
+	memshape_store_detail(a, d);
+}
+
+static void memshape_report(void) {
+	int i, w;
+	printf("memshape: loads=%ld stores=%ld\n", g_msl_total, g_mss_total);
+	for (i = 0; i < MSL_N; i++) {
+		if (!g_msl[i])
+			continue;
+		printf("memshape: %-28s n=%ld share=%.2f%% widths=", memshape_load_name(i),
+					 g_msl[i], g_msl_total ? 100.0 * g_msl[i] / g_msl_total : 0.0);
+		for (w = 0; w <= 8; w++)
+			if (g_msl_w[i][w])
+				printf("%d:%ld ", w, g_msl_w[i][w]);
+		printf("\n");
+	}
+	for (i = 0; i < MSS_N; i++) {
+		if (!g_mss[i])
+			continue;
+		printf("memshape: %-28s n=%ld share=%.2f%% val-refused=%ld widths=",
+					 memshape_store_name(i), g_mss[i],
+					 g_mss_total ? 100.0 * g_mss[i] / g_mss_total : 0.0,
+					 g_mss_valbad[i]);
+		for (w = 0; w <= 8; w++)
+			if (g_mss_w[i][w])
+				printf("%d:%ld ", w, g_mss_w[i][w]);
+		printf("\n");
+	}
+	for (i = 0; i < MSD_N; i++) {
+		if (!g_msd[i])
+			continue;
+		printf("memshape: %-28s n=%ld widths=", memshape_detail_name(i), g_msd[i]);
+		for (w = 0; w <= 8; w++)
+			if (g_msd_w[i][w])
+				printf("%d:%ld ", w, g_msd_w[i][w]);
+		printf("\n");
+	}
+	for (i = 0; i < 32; i++)
+		if (g_msd_kx[i] || g_msd_ky[i])
+			printf("memshape: idx-operand-kind %d lhs=%ld rhs=%ld\n", i, g_msd_kx[i],
+						 g_msd_ky[i]);
+}
+
+enum {
+	BC_OK,
+	BC_EMPTY,
+	BC_CAPACITY,
+	BC_INVOKE,
+	BC_STOREVAL,
+	BC_JUMP,
+	BC_POISON,
+	BC_RET_MID,
+	BC_RET_NOVAL,
+	BC_RET_TYPE,
+	BC_RET_EXPR,
+	BC_SWITCH,
+	BC_IF_OTHER,
+	BC_CTRL_COND,
+	BC_CTRL_BODY,
+	BC_INCDEC,
+	BC_ST_ARITY,
+	BC_ST_DEST_GLOBAL,
+	BC_ST_DEST_OTHER,
+	BC_ST_DEREF_SUBWORD,
+	BC_ST_DEREF_TYPE,
+	BC_ST_IDX,
+	BC_ST_TYPE,
+	BC_ST_VALUE,
+	BC_EXPR,
+	BC_OTHER,
+	BC_N
+};
+
+static const char *block_cause_name(int k) {
+	switch (k) {
+	case BC_EMPTY: return "block/empty";
+	case BC_CAPACITY: return "block/capacity";
+	case BC_INVOKE: return "block/stmt-invoke";
+	case BC_STOREVAL: return "block/stmt-storeval";
+	case BC_JUMP: return "block/stmt-jump";
+	case BC_POISON: return "block/stmt-poison";
+	case BC_RET_MID: return "block/return-not-last";
+	case BC_RET_NOVAL: return "block/return-no-value";
+	case BC_RET_TYPE: return "block/return-type";
+	case BC_RET_EXPR: return "block/return-expr";
+	case BC_SWITCH: return "block/switch";
+	case BC_IF_OTHER: return "block/if-other-op";
+	case BC_CTRL_COND: return "block/ctrl-cond";
+	case BC_CTRL_BODY: return "block/ctrl-body";
+	case BC_INCDEC: return "block/incdec";
+	case BC_ST_ARITY: return "block/store-arity";
+	case BC_ST_DEST_GLOBAL: return "block/store-dest-global";
+	case BC_ST_DEST_OTHER: return "block/store-dest-other";
+	case BC_ST_DEREF_SUBWORD: return "block/store-deref-subword";
+	case BC_ST_DEREF_TYPE: return "block/store-deref-type";
+	case BC_ST_IDX: return "block/store-index-refused";
+	case BC_ST_TYPE: return "block/store-dest-type";
+	case BC_ST_VALUE: return "block/store-value-refused";
+	case BC_EXPR: return "block/expr-refused";
+	case BC_OTHER: return "block/other";
+	default: return "?";
+	}
+}
+
+static long g_bc[BC_N];
+static long g_bc_blocks;
+
+static int block_cause_stmt(AstArena *a, AstLocal s, int depth);
+
+static int block_cause_seq(AstArena *a, AstLocal n, int depth) {
+	AstLocal c;
+	int r;
+	if (n == AST_NONE)
+		return BC_OK;
+	if (ast_kind(a, n) != AST_BasicBlock)
+		return block_cause_stmt(a, n, depth);
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c)) {
+		r = block_cause_stmt(a, c, depth);
+		if (r != BC_OK)
+			return r;
+	}
+	return BC_OK;
+}
+
+static int block_cause_stmt(AstArena *a, AstLocal s, int depth) {
+	AstLocal d, v;
+	AstEvalSliceIdx ix;
+	int32_t off, pf;
+	int dt, et, r;
+	if (depth > 8)
+		return BC_CAPACITY;
+	switch (ast_kind(a, s)) {
+	case AST_Invoke:
+		return BC_INVOKE;
+	case AST_StoreVal:
+		return BC_STOREVAL;
+	case AST_Jump:
+		return BC_JUMP;
+	case AST_Poison:
+		return BC_POISON;
+	default:
+		break;
+	}
+	if (ast_kind(a, s) == AST_If) {
+		int op = ast_op(a, s);
+		if (op == 6)
+			return BC_SWITCH;
+		if (op == 7)
+			return ast_eval_slice_kind_ok(a, s, 1) ? BC_OK : BC_EXPR;
+		if (op == 0 || op == 2 || op == 3 || op == 4) {
+			AstLocal cond = op == 4 ? ast_child(a, s, 1) : ast_child(a, s, 0);
+			AstLocal body = op == 0	 ? ast_child(a, s, 1)
+											: op == 4	 ? ast_child(a, s, 0)
+											: op == 3	 ? ast_child(a, s, 2)
+																 : ast_child(a, s, 1);
+			if (!ast_eval_slice_kind_ok(a, cond, 1))
+				return BC_CTRL_COND;
+			r = block_cause_seq(a, body, depth + 1);
+			if (r != BC_OK)
+				return r;
+			if (op == 0 && ast_nchild(a, s) == 3)
+				return block_cause_seq(a, ast_child(a, s, 2), depth + 1);
+			if (op == 3)
+				return block_cause_seq(a, ast_child(a, s, 1), depth + 1);
+			return BC_OK;
+		}
+		return BC_IF_OTHER;
+	}
+	if (ast_kind(a, s) == AST_Unary &&
+			(ast_op(a, s) == TOK_INC || ast_op(a, s) == TOK_DEC)) {
+		AstLocal t = ast_first_child(a, s);
+		int tt;
+		if (t == AST_NONE || !mcc_slice_is_local_ref(a, t, &off))
+			return BC_INCDEC;
+		tt = ast_type_t(a, t);
+		if (!tt || ast_bad_type(tt) || is_float(tt) || !ast_eval_slice_intt(tt))
+			return BC_INCDEC;
+		if ((tt & VT_BTYPE) == VT_PTR && !ast_eval_slice_ptr_et(a, t))
+			return BC_INCDEC;
+		return BC_OK;
+	}
+	if (ast_kind(a, s) != AST_Store)
+		return BC_OTHER;
+	if (ast_nchild(a, s) != 2)
+		return BC_ST_ARITY;
+	d = ast_child(a, s, 0);
+	v = ast_child(a, s, 1);
+	if (mcc_slice_store_dyn(a, d, &ix)) {
+		if (!ast_eval_slice_kind_ok(a, ix.idx, 1))
+			return BC_ST_IDX;
+		return ast_eval_slice_kind_ok(a, v, 1) ? BC_OK : BC_ST_VALUE;
+	}
+	if (ast_eval_slice_deref(a, d, &pf, &et)) {
+		if (ast_eval_slice_tsize(et) <= 0)
+			return BC_ST_DEREF_SUBWORD;
+		return ast_eval_slice_kind_ok(a, v, 1) ? BC_OK : BC_ST_VALUE;
+	}
+	if (ast_kind(a, d) == AST_Load && ast_first_child(a, d) != AST_NONE &&
+			ast_kind(a, ast_first_child(a, d)) == AST_Ref &&
+			!(ast_op(a, ast_first_child(a, d)) & VT_SYM) &&
+			(ast_op(a, ast_first_child(a, d)) & VT_VALMASK) == VT_LOCAL)
+		return BC_ST_DEREF_TYPE;
+	if (!mcc_slice_is_local_ref(a, d, &off)) {
+		if (mcc_slice_store_frame(a, d, &off, &dt))
+			return ast_eval_slice_kind_ok(a, v, 1) ? BC_OK : BC_ST_VALUE;
+		if (ast_kind(a, d) == AST_Ref && (ast_op(a, d) & VT_SYM))
+			return BC_ST_DEST_GLOBAL;
+		return BC_ST_DEST_OTHER;
+	}
+	dt = ast_type_t(a, d);
+	if (!dt || ast_bad_type(dt) ||
+			(!ast_eval_slice_f64t(dt) && (is_float(dt) || !ast_eval_slice_intt(dt))))
+		return BC_ST_TYPE;
+	return ast_eval_slice_kind_ok(a, v, 1) ? BC_OK : BC_ST_VALUE;
+}
+
+static void block_cause_walk(AstArena *a, AstLocal n) {
+	AstLocal s;
+	int r = BC_OK, seen = 0;
+	g_bc_blocks++;
+	for (s = ast_first_child(a, n); s != AST_NONE; s = ast_next_sib(a, s)) {
+		seen++;
+		if (ast_kind(a, s) == AST_Return) {
+			AstLocal rv = ast_first_child(a, s);
+			if (ast_next_sib(a, s) != AST_NONE)
+				r = BC_RET_MID;
+			else if (rv == AST_NONE)
+				r = BC_RET_NOVAL;
+			else if (!ast_eval_slice_kind_ok(a, rv, 1))
+				r = BC_RET_EXPR;
+			break;
+		}
+		r = block_cause_stmt(a, s, 0);
+		if (r != BC_OK)
+			break;
+	}
+	if (!seen)
+		r = BC_EMPTY;
+	if (r == BC_OK)
+		r = BC_CAPACITY;
+	g_bc[r]++;
+}
+
+static void block_cause_report(void) {
+	int i;
+	printf("blockcause: refused-blocks=%ld\n", g_bc_blocks);
+	for (i = 1; i < BC_N; i++)
+		if (g_bc[i])
+			printf("blockcause: %-28s n=%ld share=%.2f%%\n", block_cause_name(i),
+						 g_bc[i], g_bc_blocks ? 100.0 * g_bc[i] / g_bc_blocks : 0.0);
+}
+
 static void refuse_walk(AstArena *a, AstLocal n) {
 	AstLocal c;
 	int r;
@@ -3899,7 +4698,13 @@ static void refuse_walk(AstArena *a, AstLocal n) {
 		g_ref_blocks++;
 		if (mcc_slice_frame_from_ast(a, n, &f))
 			g_ref_blocks_acc++;
+		else
+			block_cause_walk(a, n);
 	}
+	if (ast_kind(a, n) == AST_Load)
+		memshape_load(a, n);
+	if (ast_kind(a, n) == AST_Store)
+		memshape_store(a, n);
 	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
 		refuse_walk(a, c);
 }
@@ -5168,6 +5973,8 @@ static int arena_mode(const char *path, long limit, int quiet) {
 			return 1;
 		}
 		refuse_report();
+		memshape_report();
+		block_cause_report();
 		return 0;
 	}
 

@@ -1015,6 +1015,176 @@ directory *and* live in the same directory, because `mcc` derives its include se
 diffs at every level. That the count is unchanged is expected rather than lucky:
 `ast_eval_slice_obj_fn` and `ast_eval_slice_rw` are both NULL inside the compiler, so
 `ast_eval_slice_ext` is false on every path an AOT compile takes.
+## Landed — the store half now resolves a frame address the way the load half always did, and a sub-word store into a shared region is atomic rather than refused, 2026-08-09 (`wt/memwiden`)
+
+### `kind-basicblock` is not a memory refusal, and it is not this branch's to fix
+
+`kind-basicblock` is 10.18% of refused nodes and **100.00% of bodies**, and the 100% is the
+tell. `refuse_walk` in `tools/slicerun.c` asks `ast_eval_slice_kind_ok(a, n, 0)` of *every*
+node, and that predicate is an expression predicate: its switch has arms for `AST_Literal`,
+`AST_Ref`, `AST_Load`, `AST_Convert`, `AST_Unary`, `AST_Binary`, `AST_If` and a `default:
+return 0`. `AST_BasicBlock` is a statement-sequencing node — `rir_to_arena` makes one the
+root of every function body — so it falls to the `default` in every body that exists. The
+cause is a *census artifact of asking an expression predicate about a statement*, not a
+capability gap, and it cannot be driven to zero by any change to the expression path.
+
+Blocks are adjudicated by a different predicate on the same walk: `mcc_slice_frame_from_ast`,
+whose verdict is the `frame-accepted-blocks` figure. That predicate, its slot model and its
+live-in seeding are the frame owner's area, so **`kind-basicblock` is handed over, not
+worked here.** The same reading applies to `load-not-allowed` (4.08%): it is the
+`if (!allow_load) return 0;` arm, and the census, the expression slicer and the ladder all
+pass 0 while the frame runner passes 1 — so that 4.08% is also "this census refuses loads by
+construction", not "these loads are unsupported".
+
+Because both headline causes are structural, the useful ranking is per *shape*, and for
+stores it is per *block*, since one refused statement kills a whole run. Both censuses were
+added to `slicerun --refusals` and are re-derived from the real predicates.
+
+### The memory-shape enumeration, gcc torture, 1,172,443 nodes
+
+47,818 `AST_Load` and 28,284 `AST_Store` nodes. Loads first, one bucket per node, in the
+order `ast_eval_slice_kind_ok` tries them:
+
+| load shape | nodes | share of loads |
+| --- | ---: | ---: |
+| accepted today — `deref` / `dynidx` / constant frame offset | 483 / 517 / 5 | 2.10% |
+| `dynidx` whose index expression is refused | 25 | 0.05% |
+| address is `Unary MEMBER` over a **global** base | 39,221 | 82.02% |
+| address is a **global array** base | 1,907 | 3.99% |
+| address is `Unary MEMBER`/`ADDR` over a local base | 435 | 0.91% |
+| address is `*(p + i)`, p a **local pointer** | 407 | 0.85% |
+| address base is itself a load (`p->x[i]`) | 259 | 0.54% |
+| element type refused / 64-bit index / other | 362 / 5 / 3,181 | 7.42% |
+
+**41,197 of 47,818 loads (86.2%) are refused because the base is a global**, which is the
+`ref-not-local` owner's predicate, not a width, address-form, volatility or aliasing
+question. There is no volatile or bitfield component at all: `VT_VOLATILE` is never tested
+in `src/ast_eval_slice.h`, and bitfields are excluded upstream by `ast_bad_type`.
+
+Stores, by destination form:
+
+| store destination | nodes | share of stores |
+| --- | ---: | ---: |
+| a local slot (accepted; 3,737 have a refused *value* subtree) | 20,209 | 71.45% |
+| a **global** | 934 + 1,986 | 10.32% |
+| `arr[i]` (accepted) / its index refused | 221 / 18 | 0.85% |
+| `*p` (accepted) — 42 of them sub-word | 216 | 0.76% |
+| **a constant frame address that is not a bare local** | **693** | **2.45%** |
+| a local base `frame_off` cannot fold (mostly `MEMBER_ARROW`) | 836 | 2.96% |
+| destination type refused (struct/array/float) | 1,088 | 3.85% |
+| no resolvable base | 415 + 811 | 4.34% |
+
+### What was wrong, and what landed
+
+**The two halves disagreed about what a frame address is.** `ast_eval_slice_frame_off` folds
+`&x`, `x.f` and `base + K` into one frame-slot key, and the *load* half has resolved
+addresses through it since it was written. The *store* half only ever accepted a bare
+local `Ref` via `mcc_slice_is_local_ref`. `mcc_slice_store_frame` closes that asymmetry in
+all three implementations at once — the predicate, the CPU reference
+`mcc_slice_frame_exec_stmt`, and the SPIR-V emitter `mcc_slice_spv_stmt`.
+
+It deliberately admits **only** the `AST_OP_MEMBER` and `AST_OP_ADDR` spellings, and refuses
+the bare-`Ref` and `base + K` forms that `frame_off` would also fold. `Store(Load(Ref p), v)`
+is `*p = v`, whose destination is the address *held in* p, not p's own slot; folding it here
+would have silently written the pointer variable instead of what it points at. That shape
+belongs to `ast_eval_slice_deref`, which runs first, and a shape it refuses has to stay
+refused rather than fall through to a second reading of the same tree that happens to
+resolve. A differential cannot see that class of defect, because both halves would fold it
+the same way.
+
+**A sub-word store into a shared region was refused on both sides rather than implemented.**
+`mcc_slice_frame_stmt_ok` refused `ast_eval_slice_tsize(et) < 4` and `spv_store_region` set
+`m->failed` for `r->shared && width < 4`, both because the read-modify-write the emitter uses
+for 1- and 2-byte stores is not atomic and two lanes writing different bytes of one 32-bit
+word would lose one of them. The refusal was correct for a plain RMW and unnecessary for an
+atomic one: `spv_word_rmw_atomic` does the same mask and shift as `OpAtomicAnd` of `~keep`
+followed by `OpAtomicOr` of the shifted value. Each lane clears and sets only its own bytes,
+so disjoint-byte writes all survive in any interleaving, and the result is what the CPU
+reference already computed sequentially. No new capability is needed — 32-bit integer
+atomics on a storage buffer are core `Shader` — and `Int64`, `Int16` and
+`StorageBuffer8BitAccess` are still never declared.
+
+**A `_Bool` deref store normalised on the device and not on the CPU.** The device applies
+`spv_fit_v` before `spv_store_region`, whose `VT_BOOL` arm is `!= 0`; the CPU handed the raw
+value to `ast_eval_slice_bytes_store`, which masks but does not booleanise. Storing 2 through
+a `_Bool *` therefore left `0x02` in the region on the CPU and `0x01` on the device. Both
+executors *load* it back as 1, so the value comparison agreed and only the region `memcmp`
+would have caught it — and it could not fire before, because sub-word deref stores were
+refused. The CPU call site now applies `ast_eval_slice_fit(val, et)`, which is the same rule
+`spv_fit_v` applies. This is the sub-word `_Bool` hazard closed on `wt/uacfix`, in the store
+direction.
+
+### Measured effect, direct and cascade
+
+`frame-accepted-blocks` over gcc torture: **33,368 → 33,394**, +26 blocks (+17 from the
+store-destination widening, +9 from sub-word deref stores). Node-level `kind-store` and
+`load-not-allowed` do **not** move, and cannot: both are whole-kind refusals of the
+expression predicate, so `child-refused` (11.45%) takes no cascade credit from this branch
+either. Claiming the 693 newly-resolvable store destinations as a node-level gain would be
+double-counting a census artifact; the +26 blocks is the whole of it.
+
+### Where the remaining block refusals actually are
+
+The block-level first-blocker census over the 85,969 refused blocks, which is the number that
+decides whether more memory work pays:
+
+| first blocker | blocks | share | owner |
+| --- | ---: | ---: | --- |
+| a statement `AST_Invoke` | 47,883 | 55.69% | calls |
+| the condition of an `if`/loop is a refused expression | 32,559 | 37.87% | operators, `ref-not-local` |
+| store destination still unresolvable | 1,492 | 1.74% | mostly globals |
+| store *value* is a refused expression | 1,308 | 1.52% | operators |
+| return expression / no value / not last | 551 / 32 / 2 | 0.68% | frame |
+| store destination type, `*p` pointee type, dest global | 301 / 168 / 361 | 0.96% | types, globals |
+| jump, incdec, other, capacity, switch, sub-word `*p` | 293 / 286 / 335 / 42 / 45 / 20 | 1.19% | — |
+
+**93.6% of refused blocks are first blocked by an invoke or a refused condition expression.**
+Memory-op widening has a hard ceiling near 2% of blocks, and 1,986 of the 2,822 unresolvable
+store destinations are globals. That ranking is why this branch stops here rather than
+continuing down its own list.
+
+### Open, ranked, in this area
+
+1. **`*(p + i)` where p is a local pointer — 407 load nodes, ~0.34pp of blocks at best.**
+   `ast_eval_slice_dynidx` requires an `AST_Ref` base carrying `VT_ARRAY`; a pointer base is
+   refused. Widening it needs a runtime byte offset through the region on both sides plus
+   live-in registration for the index — real machinery for a small, capped payoff. Ranked
+   below the two items above it on measured evidence, not on difficulty.
+2. **Expression slices cannot load at all, and that is a seeding problem, not a load
+   problem.** `mcc_slice_work_from_ast` passes `allow_load = 0`. The emitter arm for a deref
+   load already exists and the frame path already seeds a real in-mapping address into a
+   pointer slot via `mcc_slice_frame_mark_ptr`; `MccSliceWork` has no equivalent. Passing 1
+   without that would compare two executors agreeing that an arbitrary integer is out of
+   range — vacuously green over 47,818 nodes. **This is the single largest item in the
+   memory area and it is blocked on the live-in model, so it belongs to whoever owns
+   seeding.**
+3. **`ast_eval_slice_addr_fix` clamps to 0 but the access still runs when the region is
+   smaller than the access.** With `nbyte < width` both halves clear the definedness flag and
+   then read or write at word 0 (and word 1 for an 8-byte access), i.e. outside a region that
+   cannot hold the access. Both executors do the identical thing, so the differential is
+   blind to it by construction, and the frame path never hits it because its region is the
+   whole mapping. It is reachable for a caller that hands out a sub-region smaller than the
+   access. Filed rather than fixed: an asymmetric fix would make the two halves disagree on
+   the bytes written, which is worse than the hazard.
+4. **`AST_OP_MEMBER_ARROW` destinations can never fold** — its replay does `indir()` first,
+   the same reason `ast_eval_slice_frame_off` already resolves 0 of 59 of them on the load
+   side. The 836 unresolvable local-base store destinations are mostly this, and they are
+   structurally out rather than pending.
+
+### Certification
+
+The sub-word and alignment cases are cells, not assumptions. `slicerun`'s `bytes` suite
+already asserted the reference's own rule at every width over 14 offsets — the last legal
+word, one past it, a misaligned word, a straddling doubleword, a negative offset, and that a
+one-byte store rewrites exactly one byte. What was missing was a **shared-region race**, and
+it is now `subword_shared_one`: 32 lanes each store one sub-word at `lane * width` into one
+shared binding-2 region, so at width 1 lanes 0–3 read-modify-write the same 32-bit word. The
+whole 256-byte span is compared byte for byte against the CPU reference applying the same
+stores. It runs at `signed char`, `unsigned char`, `short` and `_Bool` — the `_Bool` row is
+what catches the normalisation asymmetry above — and under `--mutate` every row fails, so the
+cell is a live known-positive rather than a green light nobody has tested. Endianness needs
+no case of its own: both halves are written in words and shifts rather than in host bytes, so
+there is no byte order to disagree about.
 
 ## Landed — `rir_decayed_array` read a comparison's opcode as a `Sym *`, 2026-08-09 (`wt/decayfix`)
 
