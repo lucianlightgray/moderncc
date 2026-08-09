@@ -6,62 +6,498 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
-## The board — next big wins, ranked by measured payoff, 2026-08-08
+## The board — re-ranked 2026-08-08 against the loop census
 
-Supersedes the "Next, in order" list further down this file, which is stale in three ways:
-its item 0 is decided, its item 1 is now measured and is *not* one item, and its item 3
-names statement-`If` and loops as future work when both shipped on 2026-08-08.
+Supersedes the "Next, in order" list further down this file, and supersedes this board's
+own morning version, which ranked by *blocks unblocked* — a currency the afternoon's
+measurement showed has no exchange rate in this workload.
 
-**Read this first.** Two different "block" units are in play and the older sections mix
-them freely:
+Everything cited below is merged to `main` and green: `ctest --test-dir cmake-debug -N`
+registers **9114** cells on this host, up from the 9106 the debt-#7 fix reached.
 
-| corpus | unit | size | which claims use it |
-| --- | --- | ---: | --- |
-| `tests/exec`, 60 files @ `-O1` | non-empty `AST_BasicBlock` | **947** | +19 (`arr[i]`), 319 eligible, the 143-destination census, 987 stores |
-| `tests/exec`, 60 files @ `-O1` | `AST_Invoke`-blocked block | **454** | reproduced exactly, 2026-08-08 |
-| the compiler's own 15 sources | `AST_Invoke`-blocked block | ~~16,537~~ **10,238** | +168 (`snprintf`), 734 libc ceiling, 12,901 (D4b) — see item 3 |
-| the compiler's own 18 sources, `-O1`, 2026-08-08 | `AST_Invoke`-blocked block | **25,700** | +246 (`snprintf`), reproducible from `tools/fmt-census.py --arenas=` |
+### The verdict, and why it re-ranks everything
 
-**The compiler-side base does not reproduce and the claims resting on it inherit that.**
-`slicerun --arenas <dump> --census` now counts `AST_Invoke`-blocked blocks directly and
-gets **454** on `tests/exec`, which matches `docs/DEVICE-LIBC.md` to the block — so the
-unit and the method are the same one. The same tool on a self-compile gets **10,238**,
-not 16,537, and no corpus tried reaches 16,537: the amalgamated `mcc -O2 -c src/mcc.c`
-gives 10,238, the 15 sources compiled separately and de-duplicated give 10,239, and the
-same 15 sources *with* the duplicate body records the dump emits (8,039 records for 2,811
-distinct bodies) give 28,753. **+168 and 734 were measured against a base this tree can no
-longer reconstruct**, so both need re-taking with the committed tool before they can be
-ranked.
+`tools/loop-census.py` plus the new `ast_loop_parallel_legal` predicate answered the
+census's `par=` field on 2026-08-08. `docs/PLAN.md` calls this "the single measurement that
+decides whether the project has a subject". Self-compile of `src/mcc.c` at `-O2`, 2017
+loops instrumented, 597 entered:
 
-The two committed censuses disagree on the base because they count different things:
-`slicerun --arenas --census` counts `AST_Invoke`-blocked blocks over the arenas a
-self-compile emits, and `tools/fmt-census.py --arenas=` counts them over 18 sources at
-`-O1` including the duplicate body records. Neither reproduces 16,537. Cite the script
-and the corpus with every future number on this row.
+- **79.4% of loop entries run exactly one iteration.**
+- The parallel-legal iteration-weighted fraction is **65.75%** — and **65.2 of those 65.75
+  points are one statement**: `rir_pvok[q] = 0` inside `rir_op_effect`, plus its twin.
+- Take those two out and it is **1.88% of all iterations**.
+- The whole remaining lane source is **twelve loops**, every one read by hand, every one an
+  array initialisation. Nine run under 70,000 iterations in an entire self-compile. The one
+  with volume is a `memset` whose correct fix is `memset`.
 
-`docs/DEVICE-LIBC.md` is explicit that `tests/exec` must not be used for the libc phase —
-`printf` alone is 35% of its Invoke nodes, its libc ceiling is 3 blocks against the
-compiler's 734, **and the two disagree by 47×**. So **+168 and +19 are not comparable**,
-and any ranking that puts them in one column is wrong. Fixing this is a prerequisite for
-trusting rows 2 and 3 below, not an afterthought.
+**There is no lane source in this workload.** The AST-slice engine is a **lowering
+achievement with no dispatch site**: the predicate, both executors, the SPIR-V emitter, the
+format engine and the leaf inliner all work, are all differentially tested, and none of
+them has a caller whose runtime they could improve. Debt #0 says the same thing
+from the other end and was re-checked by inspection today — `mcc_slice_frame_from_ast` has
+**0 call sites in `src/`**; `src/mccslice.h`, which defines it, is included by
+`tools/slicerun.c` and by nothing else, and `tools/slicerun.c` does not link `libmcc`. The
+device is never consulted during `mcc -O2 -c foo.c`. Writing the missing caller would give
+it nothing to call.
 
-Board items 2 and 3 below have both been re-derived from the tree by committed scripts as
-of 2026-08-08, and **neither headline number survived**: `+168` became 246 blocks (0.96%)
-and `12,901 / 78.01%` became 7,524 / 73.49%, with the number that actually predicts payoff
-— `AST_Invoke` as the *sole* blocker at block granularity — coming in at **803**. The
-shares moved little, so the ranking is roughly intact, but the magnitudes were wrong.
-Item 5 has still not been re-derived and remains prose-only.
+One correction to that debt as filed: `src/slice_inline.h` **is** compiled into `mcc` as of
+today's leaf-graft landing, via `src/mccast.c` under `AST_EVAL_SLICE_PROVIDED`. It carries
+the inliner, not the dispatcher. `src/mccslice.h` is the half that is absent, and it is the
+half that matters.
 
-### 1. ~~`*p` and pointer `++`/`--`~~ — LANDED 2026-08-08, see below
+So rows denominated in *device-eligible blocks* or *device-accepted call sites* now rank
+below rows denominated in *the compiler's own emitted code or wall-clock*, because only the
+second currency has a demonstrated exchange rate here. Nothing is deleted: the evidence for
+every device row is kept below at full length, and every one of those rows is still
+correct. It was the ranking that was wrong, not the measurements.
 
-Row retired. The pointer-value question was answered **(c) a pointer stays a host
-address, and lowering is gated dynamically**: binding 2 is permanently mapped and
-host-coherent, so an address inside it already has a stable byte offset, and the map is
-one 64-bit subtract plus a test that the high half came out zero. Both executors read and
-write the *same physical bytes*. Write-up and residual hazards: "Landed — `*p`, pointer
-`++`/`--`" below. What is still refused, and why, is in that section's table.
+### Where every number on this board comes from
 
-### 2. `snprintf` — `%s` has landed; what is left is the module budget, not the engine
+The recurring failure of 2026-08-08 was headline figures with no script behind them. Three
+were re-derived and **none of the three survived**: `+168` → 246, `12,901 / 78.01%` → 803 /
+73.49%, and the `16,537` base both rested on → 10,238. Every number below names the
+committed tool and the corpus that produces it, or is marked **PROSE-ONLY**.
+
+| number | tool | corpus |
+| --- | --- | --- |
+| 947 non-empty blocks, **454** Invoke-blocked, 319 eligible, **33** sole-blocker | `slicerun --arenas <dump> --census` | `tests/exec`, 60 files @ `-O1` |
+| 19,454 blocks, **10,238** Invoke-blocked, 7,524 (73.49%) all-internal, 4,029 eligible, **803** sole-blocker | `slicerun --arenas <dump> --census` | `mcc -O2 -c src/mcc.c`, `MCC_RIR_PROD=2` |
+| 25,700 Invoke-blocked, **246** (0.96%) unblocked by `snprintf` alone — 8th, behind `_mcc_error` 1254, `fprintf` 554, `memcpy` 366 | `tools/fmt-census.py --arenas=` | `src/*.c`, 18 sources @ `-O1`, duplicate body records included |
+| 172 sites, 162 literal, **140 accepted (86.4%)**, 98 carrying `%s`, 17 budget / 4 flag / 1 float | `tools/fmt-census.py` | `src/*.c` |
+| 25.3M entries, 162.7M iterations, **79.4%** single-trip, 85.45% / **65.75%** / **1.88%** | `tools/loop-census.py` | self-compile of `src/mcc.c` @ `-O2` |
+| `kept` 83.122 → **91.960** (`self`), 93.006 → **96.653** (`wide`); every lowerable floor | `tools/rir-coverage.py` | `self` = `src/mcc.c`; `wide` = 380 sources |
+| **4.3%** of census slices contain a loop at all | `tools/slice-census.py` ("slices containing a loop") | `MCC_SLICE_CENSUS` over a self-compile |
+| break-even lanes 322 / 108 / 48 / 24 / 23 / 8 | `slicerun --cost-synth` | synthetic, this host |
+| 143 corpus `frame-compared`, `*p` 0 → **159**, pointer `++`/`--` 0 → **168**, the four named functions 0 → **6** | `slicerun` with and without `--no-ptr` | 440-block musl/string corpus |
+| 1754 MSL lines against 3578 SPIR-V, **0** `msl_region*` symbols | `grep` over `src/` — **no committed tool** | `src/mccgpu.{c,h}`, `src/mccslice.h`, `tools/spvgate.c` |
+
+Four provenance hazards, stated rather than buried:
+
+1. **The break-even lanes are pinned by hand** in `tools/loop-census.py` (`BREAKEVEN`), not
+   read back from a `--cost-synth` run. If the bench moves, every fraction scored against
+   it moves and nothing notices. Worse, only the 3-, 7- and 15-node rows of that bench were
+   ever signal: at 511 nodes a *fixed* binary ranged 13.9–64.1 ns/lane across three runs.
+   The 23 and the 8 are noise that has been frozen into a constant.
+2. **16,537 is unreconstructible.** No corpus reaches it — the amalgamated self-compile
+   gives 10,238, the 15 sources separately and de-duplicated give 10,239, and the same 15
+   *with* the dump's duplicate body records give 28,753. Anything still resting on it
+   (`+168`, the 734-block libc ceiling) is dead until re-taken with a named tool.
+3. **`tests/exec` and self-compile numbers are never comparable.** `docs/DEVICE-LIBC.md`
+   forbids `tests/exec` for the libc phase: `printf` alone is 35% of its Invoke nodes and
+   its libc ceiling is 3 blocks against the compiler's 734 — the two disagree by **47×**.
+   Never put them in one column.
+4. **`tools/fmt-census.py` is a second implementation of `mcc_fmt_compile`, and nothing
+   gates it against the C one.** `fmt_refusals` in `tools/slicerun.c` pins the C verdict for
+   the same 25 refused and 12 accepted spellings the port is checked against, but the two
+   lists are kept in step by hand and `tools/fmt-census.py` is not a ctest cell.
+
+### 1. S5′ — the iteration distribution, and the measurement that prices every row below
+
+`-floop-census` + `runtime/lib/loopcensus.c` + `tools/loop-census.py` now take the
+measurement `docs/PLAN.md` calls "the single measurement that decides whether the project
+has a subject". Ground truth first: `loop-census-control` compiles a program whose trip
+counts are known by construction and checks the histogram against them at `-O0/1/2/3`,
+with a negative control (no flag, no data) and a perturbation (move a bound, the numbers
+move). It is `must-run`.
+
+Self-compile of `src/mcc.c` at `-O2`, 1979 loops instrumented, 597 entered:
+
+| | |
+| --- | ---: |
+| loop entries | 25,336,468 |
+| iterations | 162,656,621 |
+| entries with 0 trips | 9,764,126 (38.5%) |
+| entries lost (`return`/`goto`/`longjmp` out of the loop) | 2,242,930 (8.85%) |
+| stray exits (`goto` *into* a body) | 929 (0.004%, all in `parse_comment`) |
+| **iteration-weighted fraction at each loop's own break-even** | **85.45%** |
+| the same with the single hottest loop removed | **59.73%** |
+| **the same, restricted to loops `ast_loop_parallel_legal` proves parallel** | **65.75%** |
+| the same with the single hottest loop removed | **1.88%** |
+
+| trips | 1 | 2 | 3-4 | 5-8 | 9-16 | 17-32 | 33-64 | 65-128 | 129-256 | 257-512 | 513-1024 | 1025+ |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| entries | 18.33M | 2.26M | 1.10M | 758K | 200K | 105K | 49.7K | 29.3K | 18.1K | 231K | 4.0K | 4.2K |
+| share | 79.4% | 9.8% | 4.8% | 3.3% | 0.9% | 0.5% | 0.2% | 0.1% | 0.1% | 1.0% | 0.02% | 0.02% |
+
+Read those two rows together. **79.4% of loop entries run exactly one iteration**, and the
+85.45% is iteration-weighted, so it is carried by a handful of long runs: one loop,
+`rir_op_effect` at `mccrir.c:2959`, is **63.9% of every iteration in the compile**, and the
+top ten are 78.7%. Against the fixed bar the answer barely moves with the threshold —
+87.4% at trips≥8, 78.3% at trips≥322 — which is the same fact: the distribution is
+bimodal, not graded. The subject, if there is one, is roughly ten loops, most of them the
+compiler's own RIR/AST bookkeeping.
+
+The break-even table the fraction is scored against:
+
+| nodes | 3 | 7 | 15 | 31 | 63 | 127 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| break-even lanes | **322** | **108** | **48** | 24 | 23 | 8 |
+
+Only **4.3%** of census slices contain a loop at all (`tools/slice-census.py`, "slices
+containing a loop"), which is why this is the binding half rather than eligibility.
+
+#### `par=` answers now, and the answer kills the dispatch column
+
+`ast_loop_parallel_legal(AstArena *, AstLocal)` landed on `wt/parlegal`. It returns 1
+(provably no dependence carried by this loop), 0 (a carried dependence is *proven*), or -1
+(the analysis declines) — and `-floop-census` now emits a `[loopar] id= par=` record per
+loop from `ast_func_end`, where the arena exists, so `par=` is `1` / `0` / `?` instead of a
+literal question mark. `?` is never collapsed into `0`; the three counts are reported
+separately. `-O0` builds no arena, so every loop is `?` there — that is the negative
+control, not a bug.
+
+Self-compile of `src/mcc.c` at `-O2`, 2017 loops instrumented, 597 entered:
+
+| par= | static loops | entered | entries | iterations | share of iterations |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **1** (parallel) | 55 | 12 | 231,716 | 108,407,312 | **65.86%** |
+| **0** (carried) | 85 | 15 | 49,804 | 1,990,963 | 1.21% |
+| **?** (declined) | 1877 | 570 | 25,331,783 | 54,203,641 | 32.93% |
+
+| | raw | parallel-legal |
+| --- | ---: | ---: |
+| iteration-weighted fraction at each loop's own break-even | 85.45% | **65.75%** |
+| the same, hottest loop removed (of all iterations) | 59.71% | **1.88%** |
+| at trips≥8 | 87.39% | 65.84% |
+| at trips≥322 | 78.33% | 65.62% |
+
+**Read the second row, not the first.** 65.75% looks like a subject and is not one. It is
+one statement:
+
+```c
+/* src/mccrir.c:2959 and again at :3286, inside rir_op_effect */
+for (q = o->vs_n + 1; q <= VSTACK_SIZE; q++)
+        rir_pvok[q] = 0;
+```
+
+That single `for` is **63.88% of every loop iteration in the compile** (105.1M of 164.6M),
+its twin at `:3286` is another 1.32%, and together they are **65.2 of the 65.75 points**.
+It is a `memset` of a 512-byte flag array, entered 205,764 times to clear a mean of 511
+bytes. It is genuinely parallel — the predicate is right about it — and it is worth
+exactly nothing to a device: the fix is `memset`, or not clearing at all.
+
+Take those two out and the parallel-legal iteration-weighted fraction is **1.88% of all
+iterations** (5.19% of what remains). The complete measured lane source is **twelve
+loops**, every one of them read by hand:
+
+| id | site | what it is |
+| ---: | --- | --- |
+| 1294, 1297 | `mccrir.c:2959`, `:3286` | `rir_pvok[q] = 0` |
+| 1242 | `mccrir.c:925` | `rir_vslbl[i] = rir_vslbl2[i] = -1; rir_vscapt[i] = 0` |
+| 614 | `mccast.c:1852` | `ast_strat_order[i] = i` |
+| 1202 | `mccast.c:18350` | `sf[si] = 0` |
+| 713, 726, 737 | `mccast.c:4470/4564/4617` | `cweight[j] = 0`, `careg[j] = -1`, `colorable[j] = 1` |
+| 596 | `mccast.c:1334` | `color[i] = -1` |
+| 746 | `mccast.c:4684` | `ast_promo_save_slot[i] = i` |
+| 633 | `mccast.c:2300` | `reg_classes[hr] \|= MCC_RC_FLOAT`, 8 iterations total |
+| 1850 | `asm-constraints.inc.c:45` | `sorted_op[i] = i`, 7 iterations total |
+
+Twelve array fills. Nine of them run fewer than 70,000 iterations across an entire
+self-compile. **There is no dispatch site in this workload.** The AST-slice engine is a
+lowering achievement — the predicate, both executors, the SPIR-V emitter and the leaf
+inliner all work and are all tested — but the compiler contains no loop that both carries
+enough iterations to clear break-even *and* has independent lanes to give it. Stop ranking
+dispatch work off the 85.45%. The unranked fence-wait row below, and debt #0, both say the
+same thing from the other end.
+
+The 63.9%-in-`rir_op_effect` line above is still true and still worth acting on, but not
+as a dispatch target: two thirds of all loop iterations in a self-compile are a redundant
+512-byte clear. That is a `memset` and a liveness question, not a GPU.
+
+**What the predicate refuses, and why each refusal is deliberate.** It declines (`?`) on:
+a call, `asm`, a `return`/`goto`/label/`case` in the body, `AST_StoreVal` (a store used as
+a value, which `ast_dep_collect` does not model as a store), any `AST_OP_*` outside a
+fixed safe list (atomics, VLA, `va_arg`, `OPASSIGN`), a `volatile` type, an
+address-escaping local, a base it cannot resolve (`!r->ok`), more than 64 distinct scalars
+or `AST_DEP_MAXREF` refs, a conservative direction vector, a scalar written only under a
+condition with no unconditional definition ahead of it, and — this one is not in the
+classical recipe — **any memory read in the exit test**, because a loop whose trip count is
+data-dependent has no lane count to hand a dispatcher even when no data dependence is
+carried. It also refuses to trust `ast_dep_base_distinct` between two refs when either
+reached its base through a `Load`: `p[i]` and `q[i]` for distinct global pointers `p`, `q`
+are *not* distinct objects, and the shared decoder had been treating them as such. That
+gate is new (`AstDepRef.indirect`) and is not read by `ast_loop_interchange_legal` or
+`ast_loop_fusion_legal`, so their behaviour is unchanged.
+
+It answers `0` (proven carried) on: a scalar read upward-exposed in the body and written in
+it (`s += a[i]`, `p++` under `*p`), a store to a fixed symbol address (`gsum += b[i]`), a
+store and a ref to the same base at distance ≠ 0 in this loop's direction component
+(`a[i] = a[i-1]`, `a[i] = a[i+1]`, `a[i] = a[i-8]`), and two same-base refs that are both
+subscript-free, i.e. the same address every iteration.
+
+Two limits are stated rather than hidden. First, the predicate assumes a store through a
+pointer does not clobber a *named global scalar* read in the same loop's exit test —
+closing that needs a memory model this tree does not have. Second, a reduction is `0` by
+design: `s += a[i]` is not parallel without a reduction transform, and nobody has written
+one.
+
+**The controls.** `tests/loopcensus/known_deps.c` holds 21 loops of known dependence
+structure and `known_deps.expect` the verdict each must get; `loop-census-parallel`
+(`tools/loop-census.py --partest`) checks every one at `-O1/-O2/-O3`, asserts separately
+that **no loop the expectations call carried ever comes back `par=1`**, checks that `-O0`
+answers `?` everywhere, and perturbs the source (drop the `a[i-1]` read, turn `s +=` into
+`s =`) to show both flip to `par=1` — so the predicate reads the dependence and not the
+loop shape. It was also broken twice on purpose to prove the cells bite: disabling the
+direction-component test made `dp_fwd`, `dp_bwd`, `dp_dist8` and both nested carried cases
+report `par=1` (5 unsound verdicts, 18 failures); disabling the upward-exposed-scalar test
+made `dp_reduce` and `dp_cond_scalar` report `par=1`.
+
+Three caveats that the next user of this number must not drop:
+
+1. **Body size in AST nodes is a conversion, not a reading.** The arena is built from the
+   RIR recording *after* the body is parsed, so `block()` has no node count to report. The
+   compiler emits what it knows exactly — code `bytes` (instrumentation excluded) and
+   preprocessed `toks` — and `loop-census.py` divides bytes by a bytes-per-node constant
+   measured on the same TU in the same run from `MCC_SLICE_CENSUS` (**3.75**, median over
+   24,747 slices). The per-threshold sweep is printed so the conclusion can be read
+   without that constant.
+2. ~~**`par=?` in the `[loop]` record is still a question mark.**~~ **ANSWERED
+   2026-08-08 — and the answer is that there is no lane source. See the section below.**
+3. **Ids are per-`mcc`-process.** Linking two `-floop-census` objects from separate
+   invocations would collide. The tool compiles one TU.
+
+### 2. Replay fidelity — ~4.3 points of `kept` still on the table, blocked by an ICE
+
+`ast_run_strat_seq` gates **every** optimization strategy on `faithful`, so a body whose
+arena replay does not reproduce the parser's bytes gets *no* strategies at all. Debt #6
+below root-caused and fixed the fidelity bug — an unconditional `ast_dup_sub` collapse in
+`rir_to_arena()`'s `IR_OP_VSTORE` case that was only tagged under the env flag — and
+`tools/rir-coverage.py` measured the move: `kept` 83.122 → **91.960** on `self` and
+93.006 → **96.653** on `wide`. `rir-coverage-census` is green after being red. Note the
+correction inside that debt: the failure was at **-O1 as well**, not only -O2/-O3.
+
+The same tool measured what is left. With `-fchain-store -fchain-store-live
+-fchain-store-member` all on, `self` reaches **96.204 / 96.232 / 96.301 / 96.301**, so
+roughly **4.3 further points** of bodies are unfaithful for an *optimization* reason rather
+than a defect — which means those bodies run no strategies today and would run all of them.
+
+This is the largest remaining number on the board denominated in **emitted code**, the
+currency row 1 says still converts. Three things stand in the way, in order:
+
+1. **`mcc -O11` ICEs**: `error: internal compiler error: vstack leak (1)` on a chain
+   feeding a 3-deep chain. Pre-existing at `1fa038ee`, reproduced again on this tree. It
+   needs `chain-store` **and** `chain-store-live` together; `-O0`..`-O3` are clean, which is
+   the only reason it has never been seen. **A fix is in flight on another branch — do not
+   touch it here.** Debt #6 carries the reproducer and the flag bisection.
+2. `tests/optfire/{defstate.txt,levelpins.txt,leveltime.tsv}` pin `chain-store` at level 11
+   on measured stage-1 compile cost. Re-promotion is a compile-time-against-emitted-code
+   trade, and those pins are the record of the compile-time half. This row is not a licence
+   to re-promote; it is a licence to re-measure.
+3. **What the 4.3 points are worth in emitted code is UNMEASURED.** Nobody has run
+   `tools/selfhost-optbench.py` or `tools/optlevel-bench.py` with the pair on, because the
+   ICE blocks it. That measurement is the first move on this row, not the promotion.
+
+Reach, already measured: over `tests/exec` + `tests/optfire/src` at `-O10`, `-fchain-store`
+changes bytes in 3 files on x86_64 and 2 on arm64, and in **0** on i386/riscv64 post-fix.
+So the emitted-code half may well come back small — which is exactly why it gets measured
+before it gets promoted.
+
+### 3. Metal — decide it, do not pay it down
+
+Debt #4 quantified the divergence and the answer is that this is a multi-week rewrite, not
+a debt: **1754 MSL lines against 3578 SPIR-V** (`mccgpu.c` 653/1461, `mccgpu.h` 1008/1763,
+`mccslice.h` 27/62, `spvgate.c` 66/292), `mcc_slice_frame_kernel_build`'s Metal arm is
+**three lines returning 0**, there are **zero `msl_region*` symbols in `src/`** (re-verified
+today, 0 grep hits) against 25 distinct `spv_*` symbols reached from `mccslice.h` alone,
+and `tools/slicerun.c` carries no backend `#if` at all, so it cannot compile against the
+Metal arm even in principle.
+
+It ranks this high because it is the only row that costs nothing to *decide* and grows more
+expensive with every landing on the SPIR-V arm. Given row 1 — there is no dispatch site on
+the SPIR-V arm either — the honest default is **drop Metal as a device target** and keep the
+`#if MCC_GPU_LANG_MSL` arms only where they already compile. That is an owner's decision,
+not a measurement; it is ranked here so that it stops being taken by default, one landing
+at a time.
+
+### 4. `rir_op_effect`'s 512-byte clear — the biggest count on the board, and probably a small time
+
+```c
+/* src/mccrir.c:2959 and again at :3286, inside rir_op_effect */
+for (q = o->vs_n + 1; q <= VSTACK_SIZE; q++)
+        rir_pvok[q] = 0;
+```
+
+`tools/loop-census.py` says that single `for` is **63.88% of every loop iteration in a
+self-compile** (105.1M of 164.6M), entered 205,764 times to clear a mean of 511 bytes; its
+twin at `:3286` is another 1.32%. The fix is a `memset`, or a liveness argument for not
+clearing at all. It is a host-side compiler-speed row, **not** a dispatch target: the
+predicate is right that it is parallel, and it is worth exactly nothing to a device.
+
+**Size it before doing it, and the arithmetic is not encouraging.** `rir_pvok` is
+`unsigned char[VSTACK_SIZE + 1]` with `VSTACK_SIZE` 512, so this is 105.1M iterations of a
+single one-byte store. Against a self-compile that takes ~90 s of `mcc`, that bounds the
+row well under 1% of wall-clock. That bound is arithmetic, not a measurement: **the actual share of
+self-compile time is UNMEASURED.** Take it with `tools/optlevel-bench.py` or
+`tools/runtime-bench.py` first. If it is inside the noise, close this row and say so rather
+than doing a rewrite for the size of a percentage in a census that counts iterations, not
+seconds. Ranking it above rows 5 and 6 says only that its currency converts, not that the
+amount is large.
+
+### 5. D4b — internal calls on the device — **803 blocks**, in a currency that does not convert
+
+**12,901 / 78.01% does not reproduce, and the number that predicts payoff is 16× smaller.**
+The census is now a committed tool rather than an ad-hoc pass: `slicerun --arenas <dump>
+--census` joins the per-`AST_BasicBlock` unit it already had to the callee class the
+`[inv]` records already carried, using `tools/node-census.py`'s classification (a callee
+is INTERNAL when some body in the same dump defines it, INDIRECT when the dump wrote `?`,
+EXTERNAL otherwise). Measured 2026-08-08:
+
+| | `tests/exec` 60 @ `-O1` | self-compile (`mcc -O2 -c src/mcc.c`, `MCC_RIR_PROD=2`) |
+| --- | ---: | ---: |
+| bodies / non-empty blocks | 344 / 947 | 2,810 / 19,454 |
+| blocks eligible today | 319 | 4,029 |
+| blocks containing ≥1 `AST_Invoke` | **454** | **10,238** |
+| — all callees internal | 169 (37.2%) | **7,524 (73.49%)** |
+| — all callees external | 197 (43.4%) | 1,231 (12.02%) |
+| — mixed | 87 (19.2%) | 1,368 (13.36%) |
+| — any indirect callee | 1 (0.2%) | 115 (1.12%) |
+| **`Invoke` is the SOLE blocker** | **33** | **803** |
+| blocks that are nothing but calls | 9 | 926 |
+| unblocked by the leaf inliner below | 7 | 4 |
+
+The `tests/exec` row reproduces `docs/DEVICE-LIBC.md`'s 454 exactly, so the disagreement
+is not one of method. The compiler row's base is 10,238, not 16,537, and the internal-only
+share is 73.49%, not 78.01% — close enough that the *ratio* survives, far enough that the
+*count* does not: 7,524 against 12,901.
+
+**And 73.49% is not a payoff figure at all.** It is an eligibility statement about the
+`AST_Invoke` node alone — "no callee in this block is external or indirect" — and it makes
+no claim that anything else in the block lowers. The figure that does make that claim is
+the last-but-two row: blocks `mcc_slice_frame_stmt_ok` refuses today and would accept if
+every `Invoke` in them were free, counted only when every argument of every such `Invoke`
+is itself lowerable. That is **803 blocks: 7.84% of the Invoke-blocked set, 4.13% of all
+blocks, and +19.9% on the 4,029 eligible today.** It is the block-granularity twin of what
+`rir_low_take` already banks per body, where `call` is the sole blocker of ~0.01% of body
+bytes, and the two agree on direction by a wide margin.
+
+**Re-ranking, second pass, 2026-08-08 evening.** 803 blocks is still the largest single
+number anyone has measured at block granularity on the compiler corpus, and its original
+headline was 16× too large. Both facts are now beside the point: 803 is denominated in
+*device-eligible blocks*, and row 1 shows that currency has no exchange rate in this
+workload — nothing dispatches these blocks, and debt #0 says why. This row keeps its
+position for its evidence and for the leaf inliner it produced, not because the number
+predicts a speed-up. The old cross-reference to "rows 1 and 2" is retired: both were
+re-taken with committed tools on the same day (see the provenance table above).
+
+The `tests/exec` column is now **ratcheted** by `slice/census`
+(`cmake/slicerun_census.cmake`): the corpus-and-classifier figures (947, 454, 169/197/87/1)
+are asserted exactly, and the two predicate-dependent ones are floors, because a cell that
+forbade those from rising would be a cell against the project. The compiler column is not
+banked — one self-compile is 5 s of census but ~90 s of `mcc`, which is a `ctest -L census`
+opt-in and not a default cell.
+
+**The first increment is landed, and it is not `OpFunctionCall`.** SPIR-V compute has no
+recursion and the corpus has a ~130-function SCC, so the call boundary cannot be taken in
+one step. `src/slice_inline.h` takes the case that has no boundary: a callee whose whole
+body is `BasicBlock { Return <pure expression over the parameters> }` is substituted into
+the caller's arena, argument subtrees for parameter refs, with `AST_Convert` nodes
+materialising C's argument and return conversions. Every consumer downstream then sees a
+tree with no `AST_Invoke` in it, which is the point — the board's hard precondition is
+that the CPU reference has **no `AST_Invoke` case at all** (still true: zero occurrences
+in `ast_eval_slice.h` and `mccslice.h`), so an arm that teaches one executor about Invoke
+and not the other is a vacuous differential. Rewriting the shared tree makes the reference
+arm and the emitter arm the same arm.
+
+Refused, because a wrong graft would be identical in both executors and the differential
+could not see it: indirect callees, callees that touch memory, callees with control flow
+or a second exit, and any body whose used frame offsets are not exactly `-8, -16, …`
+(mcc spills incoming scalars in declaration order; verified against `asr32(x, n)` in
+`tests/exec/arch/arm64_encoding.c`, whose `>>` has the `-8` ref on the left, and against
+`mix3(a, b) = a * 3 + b` in the fixture). `MCC_SLICE_INL_DUMP=1` prints each graft.
+
+`slice/inline` (`cmake/slicerun_inline.cmake`, fixture `tests/gpu/inline_leaf.c`) is the
+three-toothed cell the board asked for, and all three are real on this host:
+
+- `invoke-inlined=4` — the graft fires,
+- `frame-stmts` 0 → 3 and `frame-compared` 2 → 3 — without the graft this corpus compares
+  two frame runs with **zero statements** between them, so the un-inlined arm is provably
+  blind and a green cell there would mean nothing,
+- `--mutate` gives `frame-mismatches=1` with the graft and `frame-mismatches=0` without
+  it, so the redness is attributable to the inlined call rather than to the
+  expression-slice arm reddening the process on its own.
+
+On the whole `tests/exec` corpus the same switch takes `frame-compared` 244 → 251,
+`frame-stmts` 201 → 236 and `dispatches` 1,023 → 1,114 with `invoke-inlined=130` and zero
+mismatches. `--no-inline` restores the old behaviour.
+
+**Still open.** Real calls — anything with a store, a loop, a second return, or its own
+call — are untouched, and the 803 figure is what they would be worth in total. Indirect
+callees (115 blocks) still have no device answer anywhere in the plan. Recursion still has
+no data: `docs/PLAN.md`'s ~130-function SCC and the dynamic depth figures (`unary()` peaks
+at 11, `ast_replay_bb` at 35 with a 27,424-byte frame → 1.75–3.5 MiB/lane) are the whole
+of it.
+
+**The compiler now sets the hook — measured 2026-08-08.** `mcc_slice_leaf_hook` is a
+host-supplied resolver because the callee body is not in the caller's arena. `mcc` now
+supplies one: `ast_slice_leaf_pool` in `src/mccast.c` takes the callee `Sym` from child 0
+of the `AST_Invoke` and looks it up in `ast_inline_pool`, the compiler's own retained-body
+pool (`ast_inline_body` does not exist; `ast_inline_pool` + `ast_root` is the whole
+interface). Refusals stay exactly the harness's, because they all live in
+`mcc_slice_leaf_scan`, which is unchanged: indirect callee (no `Sym`, no pool entry),
+memory, control flow, a second exit, or used frame offsets that are not exactly
+`-8, -16, …`. `ast_arena_has_hole` is checked on the pool arena as well. The pool is
+strictly better identified than the harness's resolver — `Sym` pointers, not names, so the
+two-static-functions-with-one-name hazard `leaf_offer` guards against cannot arise.
+
+**When the pool is populated, and by how much.** `ast_inline_retain` runs at the end of
+each function body, so at the moment `mcc` grafts into caller *N* the pool holds bodies
+`1..N-1` — a callee defined after its caller is never resolved. `ast_fn_inlinable` gates
+it on `-finline-functions`-or-`-finline` and on `VT_STATIC` (or a C99 weak inline body),
+so the pool is **empty at `-O0` and `-O1`** and the hook has nothing to resolve there;
+`-O2` and `-O3` populate it. Measured on the fixture: 0 grafts at `-O0`/`-O1`, 4 at `-O2`
+and `-O3`, and `MCC_SLICE_INL_DUMP=1` prints all four, with `mix3(x,y)` → `x*3+y` and
+`mix3(y,x)` → `y*3+x` on distinct `Sym`s, which is the argument-order check.
+
+**Where it is wired, and where it deliberately is not.** The graft runs on a *clone* at
+the compiler's two slice consumers — `ast_adump_body` (the `MCC_ARENA_DUMP` arenas the
+harness reads) and `ast_ladder_census` (the compiler's own CPU-vs-GPU slice oracle). It
+does **not** touch `ast_cur`, so no byte of emitted code changes: `ctest` is 8948/0 and
+`tools/selfhost-smoke.py` is green with it on by default.
+
+**Self-compile: `invoke-inlined=40` out of 20,219 `AST_Invoke` nodes seen**, on
+`mcc -O3 -c src/mcc.c`. Census over the compiler-grafted dump against the same dump with
+`MCC_AST_SLICE_INLINE=0`, both read with `--no-inline` so the harness grafts nothing:
+`eligible` 3,821 → 3,822, `inv-blocks` 9,212 → 9,208, `inv-sole-blocker` 754 → 753. **One
+block.** The reason is not the graft, it is the pool: `AST_INLINE_MAX` is 512 and
+`ast_inline_n` saturates at 512 long before the leaf-shaped callees are reached, so the
+resolver answers for a fixed early prefix of the translation unit. The harness's
+name-indexed table over the same dump grafts 118 where the pool grafts 40, and that 3×
+gap is the pool cap plus the `static`-only and define-before-use rules — none of which are
+properties of the graft. Raising or making the pool cap adaptive is the cheapest next
+thing on this row.
+
+**Dispatch does follow, but through binding 1, not binding 2.** Debt #0 is still true:
+`mcc_slice_frame_from_ast` has no call site outside `tools/slicerun.c`, so no frame kernel
+is dispatched by the compiler. The ladder census is a different consumer and it does reach
+the device. With the compiler's own `-O3` arena inliner disabled (`MCC_AST_INLINE_LIMIT=0`,
+so the `AST_Invoke` nodes actually survive to the census) the leaf graft takes
+`ladder-self` pairs 6 → 9, `ladder-cross` pairs 2 → 9, GPU rungs 28 → 48 and
+**dispatches 57 → 97** (lanes 666,556 → 1,061,644) with every verdict unchanged
+(certified 6/6 → 9/9, differ 0). Without that knob the number is zero at `-O3`, and that
+is itself the finding: **`AST_STRAT_INLINE` has already eaten these calls out of the arena
+by the time the ladder census runs**, so at `-O3` the leaf graft's marginal value at that
+particular consumer is nil. It is the pre-optimisation `ast_adump_body` arena where the
+graft has something to do.
+
+`slice/mcc-leaf-graft` (`cmake/mcc_leaf_graft.cmake`) is the three-toothed cell for the
+compiler path, and it is the compiler's graft under test rather than the harness's:
+both arms pass `--no-inline` and assert `invoke-seen=0 invoke-inlined=0`, so anything the
+grafted arm gains, it gained because `mcc` emitted an arena with no `AST_Invoke` in it.
+
+- `[slice-inline] invoke-inlined=4` on a real `-O2` compile,
+- `frame-stmts` 0 → 3 and `frame-compared` 2 → 3 — the ungrafted arm compares frame runs
+  with zero statements in them and is provably blind,
+- `--mutate` gives `frame-mismatches=1` on the grafted dump and `0` on the ungrafted one.
+
+Negative control taken: flipping the `MCC_AST_SLICE_INLINE` default to 0 turns the cell
+red.
+
+**Still open here.** The pool cap above. Callees defined after their callers. `-O0`/`-O1`,
+where there is no pool at all and a leaf resolver would have to be built from something
+else. And the graft still buys the compiler nothing it emits — it feeds diagnostics and
+the ladder oracle, because debt #0 means there is no frame dispatcher to feed.
+
+### 6. `snprintf` — `%s` has landed; what is left is the module budget, not the engine
 
 Rewritten 2026-08-08 (second time) after landing the `%s` arm on `wt/fmtstr`. Every
 number below is reproducible from `tools/fmt-census.py`, which now carries a
@@ -252,335 +688,9 @@ destination bytes across 25 formats, `--mutate` is red on all 25, and an injecte
 error in the string copy at source byte 5 is caught in destination *words 1 and 2* — not
 only at byte 0 — including in the unterminated-run lane (`5a5a5a5a` → `5a5a7a5a`).
 
-### 3. D4b — internal calls on the device — **803 blocks, not 12,901**
+### Unranked — the fence wait, and there is nothing to wait for
 
-**12,901 / 78.01% does not reproduce, and the number that predicts payoff is 16× smaller.**
-The census is now a committed tool rather than an ad-hoc pass: `slicerun --arenas <dump>
---census` joins the per-`AST_BasicBlock` unit it already had to the callee class the
-`[inv]` records already carried, using `tools/node-census.py`'s classification (a callee
-is INTERNAL when some body in the same dump defines it, INDIRECT when the dump wrote `?`,
-EXTERNAL otherwise). Measured 2026-08-08:
-
-| | `tests/exec` 60 @ `-O1` | self-compile (`mcc -O2 -c src/mcc.c`, `MCC_RIR_PROD=2`) |
-| --- | ---: | ---: |
-| bodies / non-empty blocks | 344 / 947 | 2,810 / 19,454 |
-| blocks eligible today | 319 | 4,029 |
-| blocks containing ≥1 `AST_Invoke` | **454** | **10,238** |
-| — all callees internal | 169 (37.2%) | **7,524 (73.49%)** |
-| — all callees external | 197 (43.4%) | 1,231 (12.02%) |
-| — mixed | 87 (19.2%) | 1,368 (13.36%) |
-| — any indirect callee | 1 (0.2%) | 115 (1.12%) |
-| **`Invoke` is the SOLE blocker** | **33** | **803** |
-| blocks that are nothing but calls | 9 | 926 |
-| unblocked by the leaf inliner below | 7 | 4 |
-
-The `tests/exec` row reproduces `docs/DEVICE-LIBC.md`'s 454 exactly, so the disagreement
-is not one of method. The compiler row's base is 10,238, not 16,537, and the internal-only
-share is 73.49%, not 78.01% — close enough that the *ratio* survives, far enough that the
-*count* does not: 7,524 against 12,901.
-
-**And 73.49% is not a payoff figure at all.** It is an eligibility statement about the
-`AST_Invoke` node alone — "no callee in this block is external or indirect" — and it makes
-no claim that anything else in the block lowers. The figure that does make that claim is
-the last-but-two row: blocks `mcc_slice_frame_stmt_ok` refuses today and would accept if
-every `Invoke` in them were free, counted only when every argument of every such `Invoke`
-is itself lowerable. That is **803 blocks: 7.84% of the Invoke-blocked set, 4.13% of all
-blocks, and +19.9% on the 4,029 eligible today.** It is the block-granularity twin of what
-`rir_low_take` already banks per body, where `call` is the sole blocker of ~0.01% of body
-bytes, and the two agree on direction by a wide margin.
-
-**Re-ranking.** 803 blocks is still the largest single number anyone has measured at block
-granularity on the compiler corpus, so D4b does not fall off the board — but it no longer
-dominates it, its headline was 16× too large, and rows 1 and 2 were measured against the
-same unreconstructible 16,537 base and need re-taking before any of the three can be
-ordered honestly.
-
-The `tests/exec` column is now **ratcheted** by `slice/census`
-(`cmake/slicerun_census.cmake`): the corpus-and-classifier figures (947, 454, 169/197/87/1)
-are asserted exactly, and the two predicate-dependent ones are floors, because a cell that
-forbade those from rising would be a cell against the project. The compiler column is not
-banked — one self-compile is 5 s of census but ~90 s of `mcc`, which is a `ctest -L census`
-opt-in and not a default cell.
-
-**The first increment is landed, and it is not `OpFunctionCall`.** SPIR-V compute has no
-recursion and the corpus has a ~130-function SCC, so the call boundary cannot be taken in
-one step. `src/slice_inline.h` takes the case that has no boundary: a callee whose whole
-body is `BasicBlock { Return <pure expression over the parameters> }` is substituted into
-the caller's arena, argument subtrees for parameter refs, with `AST_Convert` nodes
-materialising C's argument and return conversions. Every consumer downstream then sees a
-tree with no `AST_Invoke` in it, which is the point — the board's hard precondition is
-that the CPU reference has **no `AST_Invoke` case at all** (still true: zero occurrences
-in `ast_eval_slice.h` and `mccslice.h`), so an arm that teaches one executor about Invoke
-and not the other is a vacuous differential. Rewriting the shared tree makes the reference
-arm and the emitter arm the same arm.
-
-Refused, because a wrong graft would be identical in both executors and the differential
-could not see it: indirect callees, callees that touch memory, callees with control flow
-or a second exit, and any body whose used frame offsets are not exactly `-8, -16, …`
-(mcc spills incoming scalars in declaration order; verified against `asr32(x, n)` in
-`tests/exec/arch/arm64_encoding.c`, whose `>>` has the `-8` ref on the left, and against
-`mix3(a, b) = a * 3 + b` in the fixture). `MCC_SLICE_INL_DUMP=1` prints each graft.
-
-`slice/inline` (`cmake/slicerun_inline.cmake`, fixture `tests/gpu/inline_leaf.c`) is the
-three-toothed cell the board asked for, and all three are real on this host:
-
-- `invoke-inlined=4` — the graft fires,
-- `frame-stmts` 0 → 3 and `frame-compared` 2 → 3 — without the graft this corpus compares
-  two frame runs with **zero statements** between them, so the un-inlined arm is provably
-  blind and a green cell there would mean nothing,
-- `--mutate` gives `frame-mismatches=1` with the graft and `frame-mismatches=0` without
-  it, so the redness is attributable to the inlined call rather than to the
-  expression-slice arm reddening the process on its own.
-
-On the whole `tests/exec` corpus the same switch takes `frame-compared` 244 → 251,
-`frame-stmts` 201 → 236 and `dispatches` 1,023 → 1,114 with `invoke-inlined=130` and zero
-mismatches. `--no-inline` restores the old behaviour.
-
-**Still open.** Real calls — anything with a store, a loop, a second return, or its own
-call — are untouched, and the 803 figure is what they would be worth in total. Indirect
-callees (115 blocks) still have no device answer anywhere in the plan. Recursion still has
-no data: `docs/PLAN.md`'s ~130-function SCC and the dynamic depth figures (`unary()` peaks
-at 11, `ast_replay_bb` at 35 with a 27,424-byte frame → 1.75–3.5 MiB/lane) are the whole
-of it.
-
-**The compiler now sets the hook — measured 2026-08-08.** `mcc_slice_leaf_hook` is a
-host-supplied resolver because the callee body is not in the caller's arena. `mcc` now
-supplies one: `ast_slice_leaf_pool` in `src/mccast.c` takes the callee `Sym` from child 0
-of the `AST_Invoke` and looks it up in `ast_inline_pool`, the compiler's own retained-body
-pool (`ast_inline_body` does not exist; `ast_inline_pool` + `ast_root` is the whole
-interface). Refusals stay exactly the harness's, because they all live in
-`mcc_slice_leaf_scan`, which is unchanged: indirect callee (no `Sym`, no pool entry),
-memory, control flow, a second exit, or used frame offsets that are not exactly
-`-8, -16, …`. `ast_arena_has_hole` is checked on the pool arena as well. The pool is
-strictly better identified than the harness's resolver — `Sym` pointers, not names, so the
-two-static-functions-with-one-name hazard `leaf_offer` guards against cannot arise.
-
-**When the pool is populated, and by how much.** `ast_inline_retain` runs at the end of
-each function body, so at the moment `mcc` grafts into caller *N* the pool holds bodies
-`1..N-1` — a callee defined after its caller is never resolved. `ast_fn_inlinable` gates
-it on `-finline-functions`-or-`-finline` and on `VT_STATIC` (or a C99 weak inline body),
-so the pool is **empty at `-O0` and `-O1`** and the hook has nothing to resolve there;
-`-O2` and `-O3` populate it. Measured on the fixture: 0 grafts at `-O0`/`-O1`, 4 at `-O2`
-and `-O3`, and `MCC_SLICE_INL_DUMP=1` prints all four, with `mix3(x,y)` → `x*3+y` and
-`mix3(y,x)` → `y*3+x` on distinct `Sym`s, which is the argument-order check.
-
-**Where it is wired, and where it deliberately is not.** The graft runs on a *clone* at
-the compiler's two slice consumers — `ast_adump_body` (the `MCC_ARENA_DUMP` arenas the
-harness reads) and `ast_ladder_census` (the compiler's own CPU-vs-GPU slice oracle). It
-does **not** touch `ast_cur`, so no byte of emitted code changes: `ctest` is 8948/0 and
-`tools/selfhost-smoke.py` is green with it on by default.
-
-**Self-compile: `invoke-inlined=40` out of 20,219 `AST_Invoke` nodes seen**, on
-`mcc -O3 -c src/mcc.c`. Census over the compiler-grafted dump against the same dump with
-`MCC_AST_SLICE_INLINE=0`, both read with `--no-inline` so the harness grafts nothing:
-`eligible` 3,821 → 3,822, `inv-blocks` 9,212 → 9,208, `inv-sole-blocker` 754 → 753. **One
-block.** The reason is not the graft, it is the pool: `AST_INLINE_MAX` is 512 and
-`ast_inline_n` saturates at 512 long before the leaf-shaped callees are reached, so the
-resolver answers for a fixed early prefix of the translation unit. The harness's
-name-indexed table over the same dump grafts 118 where the pool grafts 40, and that 3×
-gap is the pool cap plus the `static`-only and define-before-use rules — none of which are
-properties of the graft. Raising or making the pool cap adaptive is the cheapest next
-thing on this row.
-
-**Dispatch does follow, but through binding 1, not binding 2.** Debt #0 is still true:
-`mcc_slice_frame_from_ast` has no call site outside `tools/slicerun.c`, so no frame kernel
-is dispatched by the compiler. The ladder census is a different consumer and it does reach
-the device. With the compiler's own `-O3` arena inliner disabled (`MCC_AST_INLINE_LIMIT=0`,
-so the `AST_Invoke` nodes actually survive to the census) the leaf graft takes
-`ladder-self` pairs 6 → 9, `ladder-cross` pairs 2 → 9, GPU rungs 28 → 48 and
-**dispatches 57 → 97** (lanes 666,556 → 1,061,644) with every verdict unchanged
-(certified 6/6 → 9/9, differ 0). Without that knob the number is zero at `-O3`, and that
-is itself the finding: **`AST_STRAT_INLINE` has already eaten these calls out of the arena
-by the time the ladder census runs**, so at `-O3` the leaf graft's marginal value at that
-particular consumer is nil. It is the pre-optimisation `ast_adump_body` arena where the
-graft has something to do.
-
-`slice/mcc-leaf-graft` (`cmake/mcc_leaf_graft.cmake`) is the three-toothed cell for the
-compiler path, and it is the compiler's graft under test rather than the harness's:
-both arms pass `--no-inline` and assert `invoke-seen=0 invoke-inlined=0`, so anything the
-grafted arm gains, it gained because `mcc` emitted an arena with no `AST_Invoke` in it.
-
-- `[slice-inline] invoke-inlined=4` on a real `-O2` compile,
-- `frame-stmts` 0 → 3 and `frame-compared` 2 → 3 — the ungrafted arm compares frame runs
-  with zero statements in them and is provably blind,
-- `--mutate` gives `frame-mismatches=1` on the grafted dump and `0` on the ungrafted one.
-
-Negative control taken: flipping the `MCC_AST_SLICE_INLINE` default to 0 turns the cell
-red.
-
-**Still open here.** The pool cap above. Callees defined after their callers. `-O0`/`-O1`,
-where there is no pool at all and a leaf resolver would have to be built from something
-else. And the graft still buys the compiler nothing it emits — it feeds diagnostics and
-the ladder oracle, because debt #0 means there is no frame dispatcher to feed.
-
-### 4. S5′ — the iteration distribution, measured 2026-08-08
-
-`-floop-census` + `runtime/lib/loopcensus.c` + `tools/loop-census.py` now take the
-measurement `docs/PLAN.md` calls "the single measurement that decides whether the project
-has a subject". Ground truth first: `loop-census-control` compiles a program whose trip
-counts are known by construction and checks the histogram against them at `-O0/1/2/3`,
-with a negative control (no flag, no data) and a perturbation (move a bound, the numbers
-move). It is `must-run`.
-
-Self-compile of `src/mcc.c` at `-O2`, 1979 loops instrumented, 597 entered:
-
-| | |
-| --- | ---: |
-| loop entries | 25,336,468 |
-| iterations | 162,656,621 |
-| entries with 0 trips | 9,764,126 (38.5%) |
-| entries lost (`return`/`goto`/`longjmp` out of the loop) | 2,242,930 (8.85%) |
-| stray exits (`goto` *into* a body) | 929 (0.004%, all in `parse_comment`) |
-| **iteration-weighted fraction at each loop's own break-even** | **85.45%** |
-| the same with the single hottest loop removed | **59.73%** |
-| **the same, restricted to loops `ast_loop_parallel_legal` proves parallel** | **65.75%** |
-| the same with the single hottest loop removed | **1.88%** |
-
-| trips | 1 | 2 | 3-4 | 5-8 | 9-16 | 17-32 | 33-64 | 65-128 | 129-256 | 257-512 | 513-1024 | 1025+ |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| entries | 18.33M | 2.26M | 1.10M | 758K | 200K | 105K | 49.7K | 29.3K | 18.1K | 231K | 4.0K | 4.2K |
-| share | 79.4% | 9.8% | 4.8% | 3.3% | 0.9% | 0.5% | 0.2% | 0.1% | 0.1% | 1.0% | 0.02% | 0.02% |
-
-Read those two rows together. **79.4% of loop entries run exactly one iteration**, and the
-85.45% is iteration-weighted, so it is carried by a handful of long runs: one loop,
-`rir_op_effect` at `mccrir.c:2959`, is **63.9% of every iteration in the compile**, and the
-top ten are 78.7%. Against the fixed bar the answer barely moves with the threshold —
-87.4% at trips≥8, 78.3% at trips≥322 — which is the same fact: the distribution is
-bimodal, not graded. The subject, if there is one, is roughly ten loops, most of them the
-compiler's own RIR/AST bookkeeping.
-
-The break-even table the fraction is scored against:
-
-| nodes | 3 | 7 | 15 | 31 | 63 | 127 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| break-even lanes | **322** | **108** | **48** | 24 | 23 | 8 |
-
-Only **4.3%** of census slices contain a loop at all, which is why this is the binding
-half rather than eligibility.
-
-#### `par=` answers now, and the answer kills the dispatch column
-
-`ast_loop_parallel_legal(AstArena *, AstLocal)` landed on `wt/parlegal`. It returns 1
-(provably no dependence carried by this loop), 0 (a carried dependence is *proven*), or -1
-(the analysis declines) — and `-floop-census` now emits a `[loopar] id= par=` record per
-loop from `ast_func_end`, where the arena exists, so `par=` is `1` / `0` / `?` instead of a
-literal question mark. `?` is never collapsed into `0`; the three counts are reported
-separately. `-O0` builds no arena, so every loop is `?` there — that is the negative
-control, not a bug.
-
-Self-compile of `src/mcc.c` at `-O2`, 2017 loops instrumented, 597 entered:
-
-| par= | static loops | entered | entries | iterations | share of iterations |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| **1** (parallel) | 55 | 12 | 231,716 | 108,407,312 | **65.86%** |
-| **0** (carried) | 85 | 15 | 49,804 | 1,990,963 | 1.21% |
-| **?** (declined) | 1877 | 570 | 25,331,783 | 54,203,641 | 32.93% |
-
-| | raw | parallel-legal |
-| --- | ---: | ---: |
-| iteration-weighted fraction at each loop's own break-even | 85.45% | **65.75%** |
-| the same, hottest loop removed (of all iterations) | 59.71% | **1.88%** |
-| at trips≥8 | 87.39% | 65.84% |
-| at trips≥322 | 78.33% | 65.62% |
-
-**Read the second row, not the first.** 65.75% looks like a subject and is not one. It is
-one statement:
-
-```c
-/* src/mccrir.c:2959 and again at :3286, inside rir_op_effect */
-for (q = o->vs_n + 1; q <= VSTACK_SIZE; q++)
-        rir_pvok[q] = 0;
-```
-
-That single `for` is **63.88% of every loop iteration in the compile** (105.1M of 164.6M),
-its twin at `:3286` is another 1.32%, and together they are **65.2 of the 65.75 points**.
-It is a `memset` of a 512-byte flag array, entered 205,764 times to clear a mean of 511
-bytes. It is genuinely parallel — the predicate is right about it — and it is worth
-exactly nothing to a device: the fix is `memset`, or not clearing at all.
-
-Take those two out and the parallel-legal iteration-weighted fraction is **1.88% of all
-iterations** (5.19% of what remains). The complete measured lane source is **twelve
-loops**, every one of them read by hand:
-
-| id | site | what it is |
-| ---: | --- | --- |
-| 1294, 1297 | `mccrir.c:2959`, `:3286` | `rir_pvok[q] = 0` |
-| 1242 | `mccrir.c:925` | `rir_vslbl[i] = rir_vslbl2[i] = -1; rir_vscapt[i] = 0` |
-| 614 | `mccast.c:1852` | `ast_strat_order[i] = i` |
-| 1202 | `mccast.c:18350` | `sf[si] = 0` |
-| 713, 726, 737 | `mccast.c:4470/4564/4617` | `cweight[j] = 0`, `careg[j] = -1`, `colorable[j] = 1` |
-| 596 | `mccast.c:1334` | `color[i] = -1` |
-| 746 | `mccast.c:4684` | `ast_promo_save_slot[i] = i` |
-| 633 | `mccast.c:2300` | `reg_classes[hr] \|= MCC_RC_FLOAT`, 8 iterations total |
-| 1850 | `asm-constraints.inc.c:45` | `sorted_op[i] = i`, 7 iterations total |
-
-Twelve array fills. Nine of them run fewer than 70,000 iterations across an entire
-self-compile. **There is no dispatch site in this workload.** The AST-slice engine is a
-lowering achievement — the predicate, both executors, the SPIR-V emitter and the leaf
-inliner all work and are all tested — but the compiler contains no loop that both carries
-enough iterations to clear break-even *and* has independent lanes to give it. Stop ranking
-dispatch work off the 85.45%. Row 5 of the board, and debt #0, both say the same thing
-from the other end.
-
-The 63.9%-in-`rir_op_effect` line above is still true and still worth acting on, but not
-as a dispatch target: two thirds of all loop iterations in a self-compile are a redundant
-512-byte clear. That is a `memset` and a liveness question, not a GPU.
-
-**What the predicate refuses, and why each refusal is deliberate.** It declines (`?`) on:
-a call, `asm`, a `return`/`goto`/label/`case` in the body, `AST_StoreVal` (a store used as
-a value, which `ast_dep_collect` does not model as a store), any `AST_OP_*` outside a
-fixed safe list (atomics, VLA, `va_arg`, `OPASSIGN`), a `volatile` type, an
-address-escaping local, a base it cannot resolve (`!r->ok`), more than 64 distinct scalars
-or `AST_DEP_MAXREF` refs, a conservative direction vector, a scalar written only under a
-condition with no unconditional definition ahead of it, and — this one is not in the
-classical recipe — **any memory read in the exit test**, because a loop whose trip count is
-data-dependent has no lane count to hand a dispatcher even when no data dependence is
-carried. It also refuses to trust `ast_dep_base_distinct` between two refs when either
-reached its base through a `Load`: `p[i]` and `q[i]` for distinct global pointers `p`, `q`
-are *not* distinct objects, and the shared decoder had been treating them as such. That
-gate is new (`AstDepRef.indirect`) and is not read by `ast_loop_interchange_legal` or
-`ast_loop_fusion_legal`, so their behaviour is unchanged.
-
-It answers `0` (proven carried) on: a scalar read upward-exposed in the body and written in
-it (`s += a[i]`, `p++` under `*p`), a store to a fixed symbol address (`gsum += b[i]`), a
-store and a ref to the same base at distance ≠ 0 in this loop's direction component
-(`a[i] = a[i-1]`, `a[i] = a[i+1]`, `a[i] = a[i-8]`), and two same-base refs that are both
-subscript-free, i.e. the same address every iteration.
-
-Two limits are stated rather than hidden. First, the predicate assumes a store through a
-pointer does not clobber a *named global scalar* read in the same loop's exit test —
-closing that needs a memory model this tree does not have. Second, a reduction is `0` by
-design: `s += a[i]` is not parallel without a reduction transform, and nobody has written
-one.
-
-**The controls.** `tests/loopcensus/known_deps.c` holds 21 loops of known dependence
-structure and `known_deps.expect` the verdict each must get; `loop-census-parallel`
-(`tools/loop-census.py --partest`) checks every one at `-O1/-O2/-O3`, asserts separately
-that **no loop the expectations call carried ever comes back `par=1`**, checks that `-O0`
-answers `?` everywhere, and perturbs the source (drop the `a[i-1]` read, turn `s +=` into
-`s =`) to show both flip to `par=1` — so the predicate reads the dependence and not the
-loop shape. It was also broken twice on purpose to prove the cells bite: disabling the
-direction-component test made `dp_fwd`, `dp_bwd`, `dp_dist8` and both nested carried cases
-report `par=1` (5 unsound verdicts, 18 failures); disabling the upward-exposed-scalar test
-made `dp_reduce` and `dp_cond_scalar` report `par=1`.
-
-Three caveats that the next user of this number must not drop:
-
-1. **Body size in AST nodes is a conversion, not a reading.** The arena is built from the
-   RIR recording *after* the body is parsed, so `block()` has no node count to report. The
-   compiler emits what it knows exactly — code `bytes` (instrumentation excluded) and
-   preprocessed `toks` — and `loop-census.py` divides bytes by a bytes-per-node constant
-   measured on the same TU in the same run from `MCC_SLICE_CENSUS` (**3.75**, median over
-   24,747 slices). The per-threshold sweep is printed so the conclusion can be read
-   without that constant.
-2. ~~**`par=?` in the `[loop]` record is still a question mark.**~~ **ANSWERED
-   2026-08-08 — and the answer is that there is no lane source. See the section below.**
-3. **Ids are per-`mcc`-process.** Linking two `-floop-census` objects from separate
-   invocations would collide. The tool compiles one TU.
-
-### 5. The fence wait is the remaining device-side cost — but there is nothing to wait for
-
-**Read item 4's `par=` section before ranking this.** The parallel-legal iteration-weighted
+**Read row 1's `par=` section before ranking this.** The parallel-legal iteration-weighted
 fraction on a self-compile is **1.88% once the one `memset`-shaped loop is removed**, and
 the entire lane source is twelve array-fill loops. Per-lane cost is not the binding
 constraint on this workload; the absence of lanes is. Everything below is still true and
@@ -591,6 +701,87 @@ it is no longer where the time is. `vkWaitForFences` is, and it is memory-type s
 **all-VRAM 1.0–20.2 ns/lane against all-sysmem 16–110**. `DEVICE_LOCAL` buffers plus a
 staging buffer and `vkCmdCopyBuffer` would get both halves. **Not measured, no payoff
 estimated** — no staging path exists and it collides with `mcc_gpu_rw_back`'s read-back.
+
+**PROSE-ONLY.** No committed script derives 1.0–20.2 or 16–110. `slicerun --cost-synth`
+measures per-lane cost but not memory-type sensitivity, and nothing in the tree sweeps
+`vkWaitForFences` against the allocation type. Treat both figures as unreproduced.
+
+### Retired — ~~`*p` and pointer `++`/`--`~~, LANDED 2026-08-08
+
+Row retired. The pointer-value question was answered **(c) a pointer stays a host
+address, and lowering is gated dynamically**: binding 2 is permanently mapped and
+host-coherent, so an address inside it already has a stable byte offset, and the map is
+one 64-bit subtract plus a test that the high half came out zero. Both executors read and
+write the *same physical bytes*. Write-up and residual hazards: "Landed — `*p`, pointer
+`++`/`--`" below. What is still refused, and why, is in that section's table.
+
+### What is still open, with honest sizes
+
+| row | size, and the tool that produced it | currency |
+| --- | --- | --- |
+| chain-store re-promotion (row 2) | ~4.3 points of `kept`, `tools/rir-coverage.py`; emitted-code value **UNMEASURED** | emitted code |
+| `-O11` ICE, `vstack leak (1)` | one reproducer; blocks the row above. **Fix in flight on another branch — do not touch.** | correctness |
+| `rir_op_effect`'s clear (row 4) | 63.88% of iterations, `tools/loop-census.py`; wall-clock share **UNMEASURED**, arithmetic bound <1% | compile time |
+| Metal, debt #4 (row 3) | 1754 vs 3578 lines, 3-line kernel arm, 0 `msl_region*` symbols. A rewrite, not a fix. | a decision |
+| D4b leaf-inline pool cap (row 5) | ceiling **803** blocks, `slicerun --census`; delivering **1**, because `AST_INLINE_MAX` is 512 and `ast_inline_n` saturates early | device-eligible blocks |
+| `snprintf` module budget (row 6) | **22 of 162** sites still refused; 17 of them on `MCC_GPU_CODE_MAX` = 16,384 words, not on semantics | device-accepted sites |
+| the literal-run packing lever (row 6) | a literal byte costs 152 words as a read-modify-write; 7 of the 17 budget refusals carry no `%s` at all. Payoff **UNMEASURED** | device-accepted sites |
+| the fence wait (unranked) | all-VRAM 1.0–20.2 ns/lane against all-sysmem 16–110 — **PROSE-ONLY**; no staging path exists and no payoff was estimated | device time, no subject |
+| debt #1, `--mutate` blind to `memcpy` | smaller than filed: four of six operator sites already perturb written memory and `g_frame_mismatch` already exists. The real gap is that **no `memcpy`/`memset` exists in the slice corpus to mutate** | test strength |
+| indirect callees | 115 blocks, and no device answer anywhere in `docs/PLAN.md` | device-eligible blocks |
+| recursion on device | **no data at all** beyond the ~130-function SCC and the dynamic depth figures (`unary()` peaks at 11, `ast_replay_bb` at 35, 1.75–3.5 MiB/lane) | unknown |
+| debt #3, descriptor staleness | fixed, and **unreachable until binding 2 grows** — both callers pass the constant `MCC_VK_MEM_DEFAULT`, so no cell is possible yet | latent |
+| `pe` lowerable floors | stale-low; could not be re-banked from an ELF host, so they under-gate on Windows rather than false-fail | gate strength |
+
+### The recommendation on direction
+
+**Stop investing in the device path.** Concretely: freeze SPIR-V emitter feature work at
+what is banked, do **not** write the missing `mcc_slice_frame_from_ast` caller, drop Metal
+(row 3), and keep the existing device cells green purely as regression cover for a lowering
+stack that is finished and proven. Spend the next weeks on rows 2 and 4 and on the `-O11`
+ICE, all of which are denominated in currencies this workload actually pays in.
+
+The grounds are three measurements, not a preference:
+
+- `tools/loop-census.py`: **1.88%** parallel-legal iteration-weighted fraction once one
+  `memset`-shaped loop and its twin are removed, spread over twelve array fills, nine of
+  them under 70,000 iterations in a whole self-compile.
+- `tools/slice-census.py` ("slices containing a loop"): only **4.3%** of census slices
+  contain a loop at all, so even a workload *with* lanes meets a thin eligibility surface
+  here.
+- Inspection: **0** call sites for `mcc_slice_frame_from_ast` in `src/`, and no device
+  consultation of any kind during an ordinary `mcc -O2 -c`.
+
+**The counter-argument, stated fairly, because it is not weak:**
+
+1. **`par=?` is 32.93% of iterations and 570 of the 597 entered loops.** The predicate
+   *declines* on the overwhelming majority of what it examined, and `?` is not "not
+   parallel" — it is "`ast_loop_parallel_legal` gave up". The verdict therefore rests on the
+   twelve loops it could prove, not on 597 it ruled out. **How much of the `?` bucket a
+   stronger predicate could convert is UNMEASURED, and no upper bound has been taken.** The
+   refusal list is in row 1 and is long: a call anywhere in the body, `asm`, a
+   `return`/`goto`/label, `AST_StoreVal`, >64 distinct scalars, a conservative direction
+   vector, and any memory read in the exit test. If someone wants to overturn this
+   recommendation, that bound is the measurement to take, and it is a real one.
+2. **The corpus is mcc compiling mcc.** mcc's job is compiling other people's C, and a
+   compiler is close to a worst case for lane structure: pointer chasing, early exits,
+   data-dependent trip counts. Nobody has run `-floop-census` over a numeric or
+   image-processing workload. Against this: `docs/DEVICE-LIBC.md` already rules `tests/exec`
+   unrepresentative in the other direction, and no third corpus has been proposed, so "some
+   other program might have lanes" is at present a hope with no census behind it. It would
+   be cheap to take — `-floop-census` works on any TU — and that is the second measurement
+   that could overturn this.
+3. **Freezing is not deleting.** The predicate, both executors, the emitter, the format
+   engine and the leaf inliner are tested and differentially verified, and the cells that
+   guard them are cheap to keep. If a subject ever appears, the stack is there. The
+   recommendation is to stop *adding*, not to remove.
+4. **The device work has been a productive way of finding compiler bugs.** Building `*p`
+   found and fixed two pre-existing defects — the loop merge discarding the exiting
+   iteration's definedness, and `--mutate` blind to `++`/`--`. `ast_loop_parallel_legal` is
+   a dependence analysis the host optimizer can use whether or not a GPU ever runs, and it
+   already found that the shared decoder treated `p[i]` and `q[i]` as distinct objects.
+   Whatever is decided about dispatch, that yield is real and is not an argument for
+   dispatch.
 
 ### Deprioritised, each with the measurement that says so
 
@@ -613,15 +804,19 @@ item now says what was measured, not what was assumed.
 0. **Nothing dispatches a binding-2 kernel except `tools/slicerun.c`, and as of
    2026-08-08 we know there is nothing for it to dispatch.** The predicate, both executors
    and the emitter are done; there is no *caller* in the compiler, because
-   `mcc_slice_frame_from_ast` has no call site outside the harness (`src/mccslice.h` and
-   `src/slice_inline.h` are not included by `src/libmcc.c` or any `src/*.c` at all).
+   `mcc_slice_frame_from_ast` has **0 call sites in `src/`** — `src/mccslice.h`, which
+   defines it, is included by `tools/slicerun.c` and by nothing in `src/`, and
+   `tools/slicerun.c` does not link `libmcc`. (Correction, 2026-08-08 evening:
+   `src/slice_inline.h` **is** now compiled into `mcc`, via `src/mccast.c` under
+   `AST_EVAL_SLICE_PROVIDED`, as of the leaf graft. It carries the inliner, not the
+   dispatcher.)
    Everything under "Landed — `*p`" is measured on the harness, so it is a lowering result,
    not a speed-up. **The missing caller is no longer the top of this debt — the missing
    work is.** `ast_loop_parallel_legal` now answers the census's `par=` field, and on a
    self-compile the parallel-legal iteration-weighted fraction is **65.75%, of which 65.2
    points are one 512-byte `memset` inside `rir_op_effect`**; with it removed the figure is
    **1.88%**, spread over twelve array-fill loops, nine of which run under 70,000 iterations
-   in the whole compile. Writing the caller would give it nothing to call. See item 4.
+   in the whole compile. Writing the caller would give it nothing to call. See row 1.
 1. **`--mutate` is blind to `memcpy` — OVERSTATED, and much smaller than written.**
    The write-up said the operator must move to written memory and the harness needs a
    frame-buffer comparison mode. Both already exist: four of the six operator sites
