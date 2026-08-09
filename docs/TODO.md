@@ -379,8 +379,68 @@ block.** The reason is not the graft, it is the pool: `AST_INLINE_MAX` is 512 an
 resolver answers for a fixed early prefix of the translation unit. The harness's
 name-indexed table over the same dump grafts 118 where the pool grafts 40, and that 3×
 gap is the pool cap plus the `static`-only and define-before-use rules — none of which are
-properties of the graft. Raising or making the pool cap adaptive is the cheapest next
-thing on this row.
+properties of the graft.
+
+**The pool cap is gone, the reach nearly doubled, and it bought one more block —
+2026-08-08.** `ast_inline_pool` was a fixed `AST_INLINE_MAX`-entry array searched by
+**linear scan** from eight call sites, seven of them once per `AST_Invoke` node. That is
+what the cap was really protecting: not memory (~200 B/entry) but the scan, so raising the
+constant alone trades a reach limit for a compile-time regression. Measured, and it does:
+`AST_INLINE_MAX 8192` with the scan left in place costs **+1.23% of stage-1 CPU time**
+(n=21 interleaved, `-O3`, fixed snapshot of `src/mcc.c`), which is outside `levelpins`'
+own ±0.55% stage-1 floor and would be a real regression.
+
+So the scan went first. The pool is now a `mcc_realloc`'d array with an open-addressing
+`Sym *` → slot index beside it (`ast_inline_index`/`ast_inline_find`, load factor ≤ 0.5,
+cleared in `ast_configure`, freed in `ast_teardown`), every one of the eight scans is an
+O(1) probe, and with the lookup O(1) the cap has nothing left to protect and is deleted —
+the pool grows to whatever the TU has. Stage-1 CPU time, same n=21 interleaved runs over
+the same fixed snapshot:
+
+| build | `-O3` stage-1 | `-O2` stage-1 |
+| --- | ---: | ---: |
+| cap 512, linear scan (before) | 0.5641 s | 0.5558 s |
+| cap 512, hashed | −1.90% | −1.78% |
+| **unbounded, hashed (shipped)** | **−0.42%** | **−0.37%** |
+| cap 8192, linear scan | +1.23% | — |
+
+**So the reach was bought for nothing**, which is the point: the shipped row is −0.42% /
+−0.37%, i.e. *inside* the ±0.55% floor and therefore not a cost and not a win either — the
+index pays for the larger pool, no more. The middle row is what the index is worth on its
+own (−1.9%, outside the floor) and the last row is the regression that raising the
+constant alone would have shipped. Peak RSS 44.7 → 48.4 MiB (+3.7 MiB, the 552 extra
+retained bodies). Emitted `-O3` object 3,516,447 → 3,569,983 bytes (+1.52%), because
+`AST_STRAT_INLINE` reads this same pool and now sees 1,060 candidate bodies rather than
+the first 512 — **removing the cap changes codegen, it is not a census-only knob**. It
+changes it only where the cap actually bound: over 344 TUs (`tests/exec`, `tools`,
+`runtime/lib`) the before and after binaries emit byte-identical objects at `-O0`, `-O1`
+and `-O2`, because none of those TUs has 512 retainable bodies. In this repo the
+amalgamated compiler is the only TU that does.
+
+**What it bought, measured like-for-like** (both binaries over the *same* snapshot source,
+so the base dump is the same 19,844 blocks; both censuses `--no-inline`):
+
+| | grafts | `eligible` | `inv-blocks` | `inv-sole-blocker` |
+| --- | ---: | ---: | ---: | ---: |
+| before, cap 512 | 41 | 4,361 → 4,362 | 10,381 → 10,377 | 835 → **834** |
+| after, unbounded | **72** | 4,361 → **4,363** | 10,381 → **10,375** | 835 → **833** |
+
+**One block became two.** The pool high-water is 1,060 and no longer saturates, the
+compiler's resolver now answers 72 of the 125 leaf grafts the harness finds over the same
+dump (was 41), and the census moved by one more block. The bases differ from the 3,821 /
+9,212 / 754 triple above because that was taken before the `*p` landing moved `eligible`;
+the before-row here is this tree's own baseline, re-taken.
+
+**Which of the remaining limits bind, measured.** Not the body-size limit:
+`MCC_AST_INLINE_NODES=100000` more than doubles the pool (1,064 → 2,285 bodies, this
+tree's own source) and the grafts stay at **72** — leaf-shaped callees are small, so
+`ast_inline_node_limit` (64) is not on this path at all. Barely the `VT_STATIC` gate:
+lifting it in a throwaway build takes the pool to 1,394 and the grafts 72 → **74**, worth
+two. That leaves **~51 of the 53 residual
+grafts on the define-before-use rule** — `ast_inline_retain` runs at the end of each body,
+so caller *N* only ever sees callees `1..N-1`. A deferred second pass would have to retain
+every body's arena to the end of the TU, and on the evidence above 51 more grafts are
+worth about one more census block. **Measured, not worth it** — the ordering rule stays.
 
 **Dispatch does follow, but through binding 1, not binding 2.** Debt #0 is still true:
 `mcc_slice_frame_from_ast` has no call site outside `tools/slicerun.c`, so no frame kernel
@@ -408,10 +468,27 @@ grafted arm gains, it gained because `mcc` emitted an arena with no `AST_Invoke`
 Negative control taken: flipping the `MCC_AST_SLICE_INLINE` default to 0 turns the cell
 red.
 
-**Still open here.** The pool cap above. Callees defined after their callers. `-O0`/`-O1`,
-where there is no pool at all and a leaf resolver would have to be built from something
-else. And the graft still buys the compiler nothing it emits — it feeds diagnostics and
-the ladder oracle, because debt #0 means there is no frame dispatcher to feed.
+**Still open here.** Callees defined after their callers, measured above at ~51 grafts and
+about one census block, and therefore declined. `-O0`/`-O1`, where there is no pool at all
+and a leaf resolver would have to be built from something else. And the graft still buys
+the compiler nothing it emits — it feeds diagnostics and the ladder oracle, because debt
+#0 means there is no frame dispatcher to feed.
+
+**And the honest verdict on the pool row: it is closed, and it was not worth much.** The
+limiter really was the cap, the cap really is gone, the reach really did go 41 → 72, and
+the whole of it is **one additional block out of 19,844** on a number that is a lowering
+census, not a speed-up — the parallel-legal iteration-weighted fraction in this workload
+is ~1.88% and nothing dispatches a binding-2 kernel, so no result on this row can be a
+performance win. Nor is the compile time: the shipped build lands inside the stage-1
+floor, so the honest statement is that the extra reach cost nothing, not that it gained
+anything. Anyone reading this row for the next increment should read the 803-block figure
+at the top of it, not this paragraph.
+
+Verified: `cmake-cross` **9114 cells, 0 failures** (with `cmake-debug` and `cmake-cross`
+both built), `tools/selfhost-smoke.py cmake-debug` green, and the three ratchets that
+could have seen this — `rir-coverage`, `node-census`, `rir/drop-ratchet` — all pass
+unchanged, so the arena node counts did not move enough to dilute and nothing was
+re-banked.
 
 ### 4. S5′ — the iteration distribution, measured 2026-08-08
 
