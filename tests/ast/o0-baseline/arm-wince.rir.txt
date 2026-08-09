@@ -1,9 +1,9 @@
 key=arm-wince
 opt=-O0
-files=304
-objects=287
-rirok=287
-rirfiles=287
+files=306
+objects=289
+rirok=289
+rirfiles=289
 extra=0
 rirextra=0
 fn=1392

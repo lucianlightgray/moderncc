@@ -482,6 +482,13 @@ static void gen_vector_shuffle(int two_src);
 static void gen_vector_convert(CType *dt);
 static void gen_vector_cast(CType *dt);
 static int apply_attr_vector_size(CType *type, int vsize, int hard);
+static inline int is_wide256_type(CType *type);
+static inline int wide256_is_unsigned(CType *type);
+static void mk_wide256_type(CType *type, int is_unsigned);
+static void gen_wide256_op(int op);
+static void gen_wide256_cast(CType *dt);
+static void wide256_deconst(void);
+static void wide256_init_putv(void *ptr, SValue *sv);
 static void gen_complex_cast(CType *type);
 static int is_compatible_unqualified_types(CType *type1, CType *type2);
 static inline int64_t expr_const64(void);
@@ -639,6 +646,14 @@ static inline int is_vector_type(CType *type) { MCC_TRACE("enter\n");
 
 static inline CType *vector_elem_type(CType *type) { MCC_TRACE("enter\n");
 	return &type->ref->next->type;
+}
+
+static inline int is_wide256_type(CType *type) { MCC_TRACE("enter\n");
+	return (type->t & VT_BTYPE) == VT_STRUCT && type->ref->a.is_wideint;
+}
+
+static inline int wide256_is_unsigned(CType *type) { MCC_TRACE("enter\n");
+	return (type->ref->next->type.t & VT_UNSIGNED) != 0;
 }
 
 static inline int is_integer_btype(int bt) { MCC_TRACE("enter\n");
@@ -1092,6 +1107,9 @@ ST_FUNC void mccgen_finish(MCCState *s1) { MCC_TRACE("enter\n");
 	s1->gen_complex_type_cache_n = 0;
 	memset(s1->gen_vector_type_cache, 0, sizeof s1->gen_vector_type_cache);
 	s1->gen_vector_type_cache_n = 0;
+	memset(s1->gen_wide256_type_cache, 0, sizeof s1->gen_wide256_type_cache);
+	s1->gen_wide256_type_cache_n = 0;
+	memset(s1->gen_wide256_limb_tok, 0, sizeof s1->gen_wide256_limb_tok);
 	memset(s1->gen_complex_call_ftype, 0, sizeof s1->gen_complex_call_ftype);
 	memset(s1->gen_complex_idiv_ftype, 0, sizeof s1->gen_complex_idiv_ftype);
 	s1->gen_complex_re_tok = s1->gen_complex_im_tok = 0;
@@ -2141,6 +2159,7 @@ static void move_reg(int r, int s, int t) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC void (gaddrof)(void) { MCC_TRACE("enter\n");
+	wide256_deconst();
 	if ((vtop->r & VT_REGDISP) && (vtop->r & VT_LVAL)) { MCC_TRACE("br\n");
 		CType sv_type = vtop->type;
 		rir_hook_synth_begin();
@@ -3889,6 +3908,10 @@ static void type_to_str(char *buf, int buf_size,
 		pstrcat(buf, buf_size, tstr);
 		break;
 	case VT_STRUCT:
+		if (type->ref && type->ref->a.is_wideint) { MCC_TRACE("br\n");
+			tstr = wide256_is_unsigned(type) ? "unsigned __int256" : "__int256";
+			goto add_tstr;
+		}
 		tstr = "struct ";
 		if (IS_UNION(t))
 			{ MCC_TRACE("br\n"); tstr = "union "; }
@@ -4246,6 +4269,18 @@ static int combine_types(CType *dest, SValue *op1, SValue *op2, int op) { MCC_TR
 			combine_complex_base(&r0, &r1, &wb);
 			mk_complex_type(&type, &wb);
 		}
+	} else if (is_wide256_type(type1) || is_wide256_type(type2)) { MCC_TRACE("br\n");
+		CType *w = is_wide256_type(type1) ? type1 : type2;
+		CType *o = is_wide256_type(type1) ? type2 : type1;
+		int uns = wide256_is_unsigned(w);
+		if (is_wide256_type(type1) && is_wide256_type(type2))
+			{ MCC_TRACE("br\n"); uns = wide256_is_unsigned(type1) || wide256_is_unsigned(type2); }
+		else if (!is_integer_btype(o->t & VT_BTYPE) || is_float(o->t))
+			{ MCC_TRACE("br\n"); ret = 0; }
+		if (ret)
+			{ MCC_TRACE("br\n"); mk_wide256_type(&type, uns); }
+		else
+			{ MCC_TRACE("br\n"); type = *type1; }
 	} else if (bt1 == VT_STRUCT || bt2 == VT_STRUCT) { MCC_TRACE("br\n");
 		if (op != '?' || !compare_types(type1, type2, 1))
 			{ MCC_TRACE("br\n"); ret = 0; }
@@ -4313,6 +4348,13 @@ redo:
 	bs2 = vtop[0].type.bs;
 	bt1 = t1 & VT_BTYPE;
 	bt2 = t2 & VT_BTYPE;
+
+	if (is_wide256_type(&vtop[-1].type) || is_wide256_type(&vtop[0].type)) { MCC_TRACE("br\n");
+		rir_hook_cplx_begin();
+		gen_wide256_op(op);
+		rir_hook_cplx_end();
+		return;
+	}
 
 	if (is_vector_type(&vtop[-1].type) || is_vector_type(&vtop[0].type)) { MCC_TRACE("br\n");
 		gen_vector_op(op);
@@ -4677,6 +4719,13 @@ static void gen_cast(CType *type) { MCC_TRACE("enter\n");
 
 	if (vtop->r & VT_MUSTCAST)
 		{ MCC_TRACE("br\n"); force_charshort_cast(); }
+
+	if (is_wide256_type(type) || is_wide256_type(&vtop->type)) { MCC_TRACE("br\n");
+		rir_hook_cplx_begin();
+		gen_wide256_cast(type);
+		rir_hook_cplx_end();
+		return;
+	}
 
 	if (is_complex_type(type) || is_complex_type(&vtop->type)) { MCC_TRACE("br\n");
 		if (is_complex_type(type) && is_complex_type(&vtop->type) && (type->ref->next->type.t & (VT_BTYPE | VT_LONG)) == (vtop->type.ref->next->type.t & (VT_BTYPE | VT_LONG)))
@@ -5279,12 +5328,14 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 			mcc_warning_c(warn_int_conversion)(
 					"assignment makes integer from pointer without a cast");
 		} else if (sbt == VT_STRUCT) { MCC_TRACE("br\n");
-			if (!is_complex_type(st))
+			if (!is_complex_type(st) && !is_wide256_type(st))
 				{ MCC_TRACE("br\n"); goto case_VT_STRUCT; }
 		}
 		break;
 	case VT_STRUCT:
 	case_VT_STRUCT:
+		if (is_wide256_type(dt) && (is_wide256_type(st) || is_integer_btype(sbt)))
+			{ MCC_TRACE("br\n"); break; }
 		if (is_complex_type(dt) && (is_complex_type(st) || is_integer_btype(sbt) || is_float(st->t)))
 			{ MCC_TRACE("br\n"); break; }
 		if (!is_compatible_unqualified_types(dt, st)) { MCC_TRACE("br\n");
@@ -5326,6 +5377,7 @@ static void gen_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 	}
 	verify_assign_cast(dt);
 	gen_cast(dt);
+	wide256_deconst();
 }
 
 ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
@@ -5334,6 +5386,7 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 	rir_hook_vstore();
 
 	seqp_record_sv(vtop - 1, SEQP_WRITE);
+	wide256_deconst();
 
 	if (!atomic_lowering && (vtop->type.t & VT_ATOMIC_BIT) && (vtop->r & VT_LVAL) && atomic_store_needs_generic(vtop))
 		{ MCC_TRACE("br\n"); gen_atomic_load_aggregate(); }
@@ -5345,7 +5398,14 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 	dbt = ft & VT_BTYPE;
 	verify_assign_cast(&vtop[-1].type);
 
-	if (is_complex_type(&vtop[-1].type) && !is_complex_type(&vtop->type)) { MCC_TRACE("br\n");
+	if (is_wide256_type(&vtop[-1].type) && !is_wide256_type(&vtop->type)) { MCC_TRACE("br\n");
+		gen_cast(&vtop[-1].type);
+		wide256_deconst();
+		sbt = vtop->type.t & VT_BTYPE;
+	} else if (!is_wide256_type(&vtop[-1].type) && is_wide256_type(&vtop->type) && dbt != VT_STRUCT) { MCC_TRACE("br\n");
+		gen_cast(&vtop[-1].type);
+		sbt = vtop->type.t & VT_BTYPE;
+	} else if (is_complex_type(&vtop[-1].type) && !is_complex_type(&vtop->type)) { MCC_TRACE("br\n");
 		gen_cast(&vtop[-1].type);
 		sbt = vtop->type.t & VT_BTYPE;
 	} else if (!is_complex_type(&vtop[-1].type) && is_complex_type(&vtop->type) && dbt != VT_STRUCT) { MCC_TRACE("br\n");
@@ -5517,7 +5577,7 @@ ST_FUNC void inc(int post, int c) { MCC_TRACE("enter\n");
 							"(only integer/pointer atomics up to a machine word)");
 	}
 	rir_hook_inc(post, c);
-	if (post && is_complex_type(&vtop->type)) { MCC_TRACE("br\n");
+	if (post && (is_complex_type(&vtop->type) || is_wide256_type(&vtop->type))) { MCC_TRACE("br\n");
 		cplx = vtop->type;
 		cplx_local(&cplx, &res);
 		vdup();
@@ -7118,6 +7178,8 @@ static void gen_vector_shuffle(int two_src) { MCC_TRACE("enter\n");
 	vpushv(&res);
 }
 
+#include "wide256_slice.h"
+
 static int vector_op_ok(int op) { MCC_TRACE("enter\n");
 	switch (op) { MCC_TRACE("br\n");
 	case '+':
@@ -8011,6 +8073,7 @@ static int apply_attr_mode(int t, int attr_mode) { MCC_TRACE("enter\n");
 
 static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TRACE("enter\n");
 	int t, u, bt, st, type_found, typespec_found, g, n, complex_seen, ext_seen;
+	int int256_seen;
 	int at_ok = auto_type_allowed;
 	Sym *s;
 	CType type1;
@@ -8020,6 +8083,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 	type_found = 0;
 	typespec_found = 0;
 	complex_seen = 0;
+	int256_seen = 0;
 	ext_seen = 0;
 	t = VT_INT;
 	bt = st = -1;
@@ -8109,6 +8173,13 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 				{ MCC_TRACE("br\n"); mcc_error("'__int128' is not supported on this target"); }
 			u = VT_INT128;
 			goto basic_type;
+		case TOK_INT256:
+			if (bt != -1 || st != -1)
+				{ MCC_TRACE("br\n"); goto tmbt; }
+			int256_seen = 1;
+			next();
+			typespec_found = 1;
+			break;
 		case TOK_FLOAT16:
 			u = VT_FLOAT16;
 			goto basic_type;
@@ -8385,6 +8456,8 @@ the_end:
 	}
 	if (type_found && !typespec_found)
 		{ MCC_TRACE("br\n"); ad->implicit_int = 1; }
+	if (int256_seen && (bt != -1 || st != -1))
+		{ MCC_TRACE("br\n"); mcc_error("too many basic types"); }
 	if (complex_seen && bt == -1 && st == -1 && !(t & VT_DEFSIGN))
 		{ MCC_TRACE("br\n"); t = (t & ~(VT_BTYPE | VT_LONG)) | VT_DOUBLE; }
 	if (mcc_state->char_is_unsigned) { MCC_TRACE("br\n");
@@ -8398,6 +8471,14 @@ the_end:
 	if (bt == VT_LDOUBLE)
 		{ MCC_TRACE("br\n"); t = (t & ~(VT_BTYPE | VT_LONG)) | (VT_DOUBLE | VT_LONG); }
 #endif
+	if (int256_seen) { MCC_TRACE("br\n");
+		if (complex_seen)
+			{ MCC_TRACE("br\n"); mcc_error("'_Complex __int256' is not supported"); }
+		mk_wide256_type(type, (t & VT_UNSIGNED) != 0);
+		type->t |= t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_EXTERN |
+										VT_STATIC | VT_TYPEDEF | VT_INLINE | VT_TLS);
+		return type_found;
+	}
 	if (complex_seen) { MCC_TRACE("br\n");
 		CType base;
 		base.t = t & (VT_BTYPE | VT_LONG | VT_UNSIGNED);
@@ -11894,7 +11975,8 @@ tok_next:
 					gen_vector_cast(&type);
 					break;
 				}
-				if ((type.t & VT_BTYPE) == VT_STRUCT && !is_complex_type(&type)) { MCC_TRACE("br\n");
+				if ((type.t & VT_BTYPE) == VT_STRUCT && !is_complex_type(&type) &&
+						!is_wide256_type(&type)) { MCC_TRACE("br\n");
 					if (is_compatible_unqualified_types(&type, &vtop->type)) { MCC_TRACE("br\n");
 						mcc_pedantic("ISO C forbids casting nonscalar to the same type");
 					} else if (type.ref->type.t == VT_UNION) { MCC_TRACE("br\n");
@@ -15566,6 +15648,8 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 					*p = (*p & ~m) | (v & m);
 					bits += n, bit_size -= n, bit_pos = 0, ++p;
 				}
+			} else if (is_wide256_type(type)) { MCC_TRACE("br\n");
+				wide256_init_putv(ptr, vtop);
 			} else
 				switch (bt) { MCC_TRACE("br\n");
 				case VT_BOOL:
@@ -15877,6 +15961,8 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 		}
 		if (!no_oblock)
 			{ MCC_TRACE("br\n"); skip('}'); }
+	} else if ((flags & DIF_HAVE_ELEM) && (is_wide256_type(type) && (is_wide256_type(&vtop->type) || is_integer_btype(vtop->type.t & VT_BTYPE)))) { MCC_TRACE("br\n");
+		goto one_elem;
 	} else if ((flags & DIF_HAVE_ELEM) && (is_compatible_unqualified_types(type, &vtop->type) || (is_complex_type(type) &&
 																																																(is_complex_type(&vtop->type) || is_integer_btype(vtop->type.t & VT_BTYPE) || is_float(vtop->type.t))))) { MCC_TRACE("br\n");
 		goto one_elem;

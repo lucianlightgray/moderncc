@@ -1,9 +1,9 @@
 key=riscv64
 opt=-O0
-files=304
-objects=289
-rirok=289
-rirfiles=289
+files=306
+objects=291
+rirok=291
+rirfiles=291
 extra=0
 rirextra=0
 fn=1372

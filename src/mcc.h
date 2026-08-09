@@ -176,6 +176,10 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 #define TOKSTR_MAX_SIZE 256
 #define PACK_STACK_SIZE 8
 
+#define MCC_WIDE256_BITS 256
+#define MCC_WIDE256_LIMBS 4
+#define MCC_WIDE256_SIZE 32
+
 #define STDC_DEFAULT 0
 #define STDC_ON 1
 #define STDC_OFF 2
@@ -223,7 +227,7 @@ typedef union CValue {
 
 	struct
 	{
-		uint64_t lo, hi;
+		uint64_t lo, hi, w2, w3;
 	} q;
 
 	struct
@@ -275,6 +279,7 @@ struct SymAttr {
 			transp_union : 1,
 			is_complex : 1,
 			is_vector : 1,
+			is_wideint : 1,
 			tentative_array : 1,
 			tentative_incomplete : 1,
 			deprecated : 1,
@@ -976,6 +981,9 @@ struct MCCState {
 	int gen_complex_type_cache_n;
 	CType gen_vector_type_cache[64];
 	int gen_vector_type_cache_n;
+	CType gen_wide256_type_cache[2];
+	int gen_wide256_type_cache_n;
+	int gen_wide256_limb_tok[MCC_WIDE256_LIMBS];
 	Sym *gen_complex_call_ftype[4];
 	Sym *gen_complex_idiv_ftype[2];
 	unsigned char gen_prec[256];

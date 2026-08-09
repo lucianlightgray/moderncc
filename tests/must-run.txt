@@ -129,3 +129,5 @@ ast/rir-c2-O3                | registered | same family, same permanent 77, same
 asm-gas-directives           | registered | a PERMANENT 77 carrying a named blocker: the integrated assembler lacks sgdtq/sidtq/swapgs (gas_directives.S:811). The row is here so the blocker cannot outlive its fix unnoticed
 
 diag.parse-frames            | registered | prices MCC_MAX_PARSE_DEPTH against the frames it was sized on; if the cell stops being registered, the 512 budget goes back to resting on a number nobody re-derives
+wide256/gmp-diff             | must-run   | the only oracle-backed proof that '__int256' is right. 9402 rows of arithmetic, shifts, comparisons and conversions -- runtime AND compile-time-folded -- compared byte-for-byte against libgmp, which shares no code with mcc. Losing this cell loses every claim mcc makes about 256-bit integers
+>>>>>>> wt/bits256

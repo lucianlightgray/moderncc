@@ -1,9 +1,9 @@
 key=x86_64-osx
 opt=-O0
-files=304
-objects=292
-rirok=292
-rirfiles=292
+files=306
+objects=294
+rirok=294
+rirfiles=294
 extra=0
 rirextra=0
 fn=1300
