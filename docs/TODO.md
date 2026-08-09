@@ -245,8 +245,9 @@ the wrong one.
 The Vulkan readings came from a **standalone, uncommitted probe** — `glslc` plus
 `vkQueueSubmit`, device created with `shaderFloat64 = VK_TRUE`, values passed through an
 SSBO so nothing constant-folds. It is not in the tree and cannot be re-run from here. Mark
-its artefact **PROSE-ONLY**; the readings themselves are banked in *`double` on the device*
-below.
+its artefact **PROSE-ONLY**; the readings themselves are banked under *The price, measured
+2026-08-09 (`wt/spvfloat`)* below, and the two-NaN finding under the `wt/spvfloat` landing
+note beside it.
 
 **Three probes worth running on a real Mac, all cheap, and the shape they take.** Because
 the driver is `dlopen`-only, a probe needs **no Objective-C compiler and no Xcode project**
