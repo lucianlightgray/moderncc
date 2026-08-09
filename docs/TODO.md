@@ -269,6 +269,337 @@ bug is still latent: this branch stopped provoking it, it did not fix it.
 - Effect ordering is untouched. Nothing here reorders anything — a depth
   expansion is the same evaluation order the call had — but a wavefront would,
   and `wt/effectlog` owns that representation.
+## The effect record/replay representation — landed, 2026-08-09 (`wt/effectlog`)
+
+> This implements the **Observable effects run exactly once** decision above and nothing
+> else. `volatile` lowering and inline-asm lowering both consume this; neither is touched
+> here, and the shape this forces on them is written down at the end rather than built.
+
+### The record
+
+`src/mcceffect.h` is the representation: a self-contained, allocator-parameterised header
+(`MCC_EFFECT_MALLOC`/`_REALLOC`/`_FREE`, because `src/mcc.h` poisons the libc names inside
+the compiler's translation unit). One effect is eight fields, and the split between them
+is the entire design:
+
+| field | what it is | on replay |
+| --- | --- | --- |
+| `kind` | a tag: `load`, `store`, `write`, `asm` | compared |
+| `space` | which address space `addr` is in: `region`, `fd`, `port` | compared |
+| `chan` | the object within that space: 0 for the shared region, the fd for a `write`, a port for asm | compared |
+| `site` | the `AstLocal` node id of the access — what syntactically performed it | compared |
+| `lane` | which lane of the batch performed it | compared (selects the cursor) |
+| `seq` | per-lane sequence number, assigned by the recorder | compared against the replay's own count |
+| `addr` | byte offset within `(space, chan)` | compared |
+| `width` | access width in bytes | compared |
+| `flags` | `VOLATILE` (request), `UNDEF` and `NOUNDO` (observed) | the request bit compared, the rest supplied |
+| `value` | scalar observed (input) or performed (output) | **output: compared. input: supplied.** |
+| `pay`/`paylen` | a variable-length payload in the log's byte arena, for effects that move bytes rather than a scalar | **output: compared byte for byte. input: supplied.** |
+| `prev` | opt-in: the value at `addr` before an output effect overwrote it | supplied, never compared |
+
+The `value`/`pay` rows are the point. An **output** effect's value is part of what the executor did,
+so a replayed side that wants to store something else has diverged. An **input** effect's
+value is not something the replayed side can have an opinion about — it never reads the
+device, the MMIO register or the timer, it is *told* what the executor saw. So is the
+`UNDEF` bit, which records that the executor's access was out of region or misaligned: the
+replayed side cannot derive it, because it never touches the region.
+
+A mismatch on any compared field is a **divergence**, reported as its own class —
+`missing`, `extra`, `kind`, `space`, `chan`, `site`, `addr`, `width`, `flags`, `value`,
+`payload`, `order`, `capacity` — and rendered by `mcc_effect_div_str` as *"the replayed
+side asked for a different effect than the executor performed"* rather than as a value
+mismatch. `order` exists because two effects in one lane can be identical in every other
+field; the recorder's per-lane `seq` is what catches a swap between them.
+
+**A new effect kind costs a tag, not a schema change**, and the split between input and
+output is the one place a tag must be classified: `mcc_effect_output_kind` treats
+everything except `load` as an output, so an unrecognised kind has its value *compared*
+rather than silently supplied. That fails closed — a consumer that adds a tag and forgets
+to classify it gets false divergences, not false agreement. `write` is already there: a
+`write` syscall under the decided I/O lowering (files staged into device memory, the RIR
+simulating the API against preconsumed data, the boundary at the syscall floor) is an
+output effect on `space=fd, chan=fd, addr=offset` with the bytes as the payload, recorded
+and applied once by the executor exactly like a `volatile` store. `asm` is reserved for
+the inline-asm consumer. Neither is produced by anything in this commit; both are
+exercised as representations by the cell.
+
+The serialised form is the flat array in record order. `mcc_effect_str` is a stable
+one-line text form, and `mcc_effect_hash` an order-sensitive FNV-1a over every field of
+every entry, so two logs can be compared as values without walking them.
+
+### The keying axis: slice identity plus provenance, never input values
+
+**Nothing in this format is keyed on an input value, and nothing in it should become so.**
+An entry is identified by `site` — an `AstLocal` in the arena being executed — plus `lane`
+and `seq`. That is a property of *code*, and a lowering is correct for all inputs or for
+none, so a comparison establishes a property of the slice rather than of the argument
+tuple it was run with. Value-keying is the `MCC_JIT_KGC` axis (memoise on known argument
+values) and it inherits `KGC`'s defect class directly. The finite thing to cover is the
+**slice set**, not the input domain.
+
+So the log does not name its slice, and `MccEffectKey` is what binds it to one:
+
+| field | what it is |
+| --- | --- |
+| `slice` | the slice identity — `ast_slice_ident_hash`, what `MccSliceKernel` already keys on |
+| `off[]`, `nlive` | the live-in vector, which is the slice's calling convention |
+| `prov[]` | one provenance class per live-in: `literal`, `computed`, `load`, `param`, `anonymous-call`, `unknown` |
+| `nopaque` | **how many live-ins are `anonymous-call` or `unknown`**, maintained as they are added |
+| `loghash`, `nrec`, `sealed` | the certificate: the hash and length of the effect log the certified run produced |
+
+**`mcc_effect_traceable` is `nlive > 0 && nopaque == 0` — one integer compare, no walk.**
+That is the whole point of `nopaque` existing as a counter rather than being derived: the
+validity gate is consulted on every dispatch, so the question *"is this slice's provenance
+fully traceable?"* must be O(1) or the gate becomes the bottleneck. Only `anonymous-call`
+is untraceable — a pointer manipulated by an anonymously-linked `INVOKE`/`CALL` — which is
+the same boundary as the terminator rule, and `nopaque` says *how many* rather than merely
+whether, so a refusal can name its cause.
+
+The classifier itself is deliberately not here. The dependency engine follows provenance;
+this file is the representation it fills in and the gate reads, in the same shape as
+`ast_eval_slice_obj_fn` — a hook the compiler leaves empty because the compiler does not
+run slices.
+
+**`MCC_JIT_KGC`'s missing admission test falls out as one expression.** The filed defect is
+that side-effecting callees are admitted and memoised. `mcc_effect_memoisable` is
+`traceable && sealed && !effectful`, and `effectful` is `nrec != 0` — a **non-empty effect
+log is the refusal**. It needs no new machinery beyond binding a recorder around the run
+`KGC` already performs. `mcc_effect_key_match` then re-checks a sealed certificate against
+a log, so a cache entry cannot outlive the behaviour it certified; the cell proves it
+catches both a log that grew an effect and a log perturbed after sealing.
+
+### The value-dependent residue, which is not this format's job
+
+Undefined behaviour and IEEE corner cases can diverge under a *correct* lowering: the
+measured instance is fp32 denormal flush — `FLT_MIN*0.5` is `5.877e-39` on the host and `0`
+on the device because neither denorm feature bit is set, so neither execution mode can be
+declared. Signed overflow, shifts past the operand width and NaN payload propagation are
+the same shape. These are properties of **operations**, so they are static and belong
+pinned or refused per operation. They are deliberately absent from the record: an observed
+`value` in a log is evidence about one execution, never about an operation, and reading it
+as the latter is how a value-keyed cache gets built by accident.
+
+### Who records and who replays
+
+`ast_eval_slice_eff_load` and `ast_eval_slice_eff_store` in `src/ast_eval_slice.h` are the
+only doors to the shared region. With no log bound they are byte-for-byte the previous
+`ast_eval_slice_bytes_load`/`_store` calls, which is why the compiler is unaffected — it
+never binds a log, so `ast_eval_slice_elog` is `NULL` there for the whole run. The four
+call sites are the two pointer-deref accesses and the two extent-indexed accesses: one
+load and one store in `src/ast_eval_slice.h`, one load and one store reached from
+`mcc_slice_frame_exec_stmt` in `src/mccslice.h`. Frame-slot reads and writes are **not**
+effects: a frame slot is lane-private, and recording it would make the log quadratic in
+nothing useful.
+
+Both sides of the self-check are the CPU reference today, which is deliberate and is the
+independently-testable intermediate the task asked for. The device does not participate
+yet.
+
+### What this guarantees, and what it does not
+
+Guaranteed, and checked by the `slice/effect` cell over three widths (i8, i32, i64) and
+eight lanes:
+
+1. **Faithful.** A replay against an unperturbed log computes the same frame, the same
+   return value and the same definedness verdict as the executor, for every lane.
+2. **Exactly once.** After the replay the shared region is byte-identical to its
+   pre-image. The replayed side performs no effect at all — the property the whole
+   always-compare gate rests on.
+3. **Complete.** `consumed == recorded`; no effect goes unclaimed and no lane's cursor is
+   left mid-log.
+4. **Rewindable on request.** With `want_prev` set, restoring the post-image and walking
+   the log backwards returns the region to its pre-image byte for byte. With it clear —
+   the default — the log says it is not rewindable rather than pretending.
+5. **Falsifiable.** Every applicable perturbation shape is detected. See the ablation
+   below.
+
+Not guaranteed, and none of it should be inferred from a green cell:
+
+- **Nothing about the device.** Both executors here are `ast_eval_slice`. The device half
+  is unwritten and is the next commit's problem.
+- **No executor-selection policy.** The representation says what an executor did; it does
+  not say which side should have been the executor for a given dispatch.
+- **No idempotence.** A log replayed twice performs nothing twice, but the executor half
+  still ran once per dispatch. This makes an effect happen once *per compare*, not once
+  per program.
+- **No timing and no liveness.** A log records what was observed, not when. Two reads of a
+  free-running timer are two entries with different values and nothing says how far apart.
+- **No coverage claim.** An effect the CPU reference cannot express is not in the log, and
+  its absence is invisible *from the log*. Only the eligibility check can owe that, and it
+  is not this file.
+- **No provenance analysis.** `MccEffectKey` is the shape the answer goes in and the O(1)
+  gate that reads it; the dependency engine still has to fill `prov[]` in.
+
+### Ordering — what is promised across lanes and what is not
+
+**Within a lane the order is total and exact.** Effects are appended in the order the
+executor performed them; the replayer walks that lane's list and demands them in exactly
+that order. Any deviation is a divergence, including a swap of two otherwise-identical
+effects, which `seq` catches.
+
+**Across lanes nothing is promised.** The interleaving of different lanes in the flat log
+is a recording artefact, not part of the contract. The cell proves this in both
+directions: it replays the lanes in the reverse order and gets the same result, and it
+regroups the whole log by lane (`mcc_effect_shuffle_lanes`, a stable group-by that
+provably preserves per-lane order) and requires that this is **not** reported as a
+divergence. A batched replay may therefore run its lanes in any order or in parallel.
+
+This is the honest boundary, and it is exactly where `volatile` is threatened: "observable
+in program order" is a per-thread property, and a batched lane replay preserves per-lane
+program order and nothing else. **A slice whose correctness depends on the relative order
+of effects in different lanes cannot be validated by this and must be refused by the
+eligibility check, or dispatched at one lane.** Two lanes writing the same MMIO register
+is the canonical case. Nothing in this commit enforces that; it is a debt on the consumer.
+
+**Chunked I/O streaming with mid-dispatch refill is the case to check this against, and it
+survives.** A lane that consumes staged data which arrives part-way through a dispatch
+still produces one input effect per read, each carrying what *that* read observed, so the
+replay is exact regardless of when the bytes landed: `seq` is the order the executor
+performed effects, never the order data arrived, and the two are allowed to disagree. What
+does **not** survive is a refill that creates a cross-lane dependency — "lane A's read must
+happen after the refill that lane B's read triggered". That is a cross-lane ordering
+constraint, this format does not express it, and a replay may violate it silently. If the
+refill protocol ever needs one, it needs a mechanism this file does not have.
+
+### Rewind: built, off by default, and not the chosen path
+
+Compare-always is a phase, not the end state, and it has two possible exits: a certified
+cache covering every slice with execution gated on it (deny-by-default), or a
+lookahead-and-rewind buffer that speculates and backtracks. **The owner chose
+deny-by-default**, on the grounds that certification costs one CPU execution per slice over
+a finite static slice set and then stops, whereas rollback costs are unbounded and scale
+with the miss rate — one is warmup, the other is a permanent tax. So there is nothing to
+unwind, and rewind is not what this log is for. Its job is effects-run-once under
+compare-always: one side executes and records, the other replays effect-free, and the
+comparison detects divergence.
+
+The undo direction is nevertheless present, because an effect log and an undo log are the
+same entries read in opposite directions and the cost of leaving the door open is one
+optional field. It is **off by default**: `MccEffectLog.want_prev` is 0, output effects are
+recorded with `NOUNDO` set and `prev` left at zero, and `mcc_effect_rewindable` therefore
+answers *no* rather than offering a plausible zero. With the switch on, the recorder
+captures the prior value at the same width and offset the store will use, `mcc_effect_undo`
+walks the flat array backwards through `ast_eval_slice_eff_undo`, and `mcc_effect_mark` /
+`mcc_effect_undo_to` bound it at a checkpoint. The cell exercises both settings and
+requires a full rewind to return the shared region to its pre-image byte for byte.
+
+Two limits, stated rather than papered over, for whoever revives this:
+
+1. **A file write is not reversible and says so.** A memory store's prior value is readable
+   before you overwrite it; a `write`'s would cost a read of the file at that offset. Every
+   `write` therefore carries `NOUNDO`, `mcc_effect_undo` skips it instead of inventing a
+   prior value, and `mcc_effect_rewindable` reports the log as not fully rewindable. A
+   rollback that crossed one would be partial, and the log makes that visible rather than
+   silent. Write-only and write-to-clear MMIO registers, and clear-on-read status words,
+   are the same shape and get the same bit.
+2. **A checkpoint is not a complete rollback state, and rewind order is the flat array.**
+   The log restores the shared region and nothing else — frame slots and live-ins are
+   lane-private, not effects, and are the caller's `memcpy`. And the flat interleaving is a
+   valid total order only because the recorder is single-threaded; a concurrent device-side
+   recorder would break it wherever two lanes' stores alias, which is the cross-lane hazard
+   of the ordering section arriving through a second door.
+
+### What this format makes cheap to check, and what it does not
+
+Detection is a separate problem from rollback, and under speculation a detector must be
+cheaper than a full CPU re-run or the speculation buys nothing. Stated so whoever builds
+one is not guessing:
+
+**Cheap.** *Is this slice's provenance fully traceable?* is one integer compare
+(`mcc_effect_traceable`). *Is it memoisable?* is three. *Is it effectful?* is `nrec != 0`.
+Comparing two logs for equality is one `mcc_effect_hash` each — a linear pass with no
+allocation, order-sensitive, covering every field and every payload byte. Re-checking a
+sealed certificate is a length compare and one hash. Finding the first divergence during a
+replay is free: a fixed number of integer compares per effect, already on the path.
+
+**Not cheap, and not provided.** Deciding that a replayed side would have asked for the
+same effects *without running it* — that is a re-execution, and the format does nothing to
+avoid it. Comparing two logs that differ only in cross-lane interleaving requires the
+stable regrouping (`mcc_effect_shuffle_lanes`) first, because the hash is order-sensitive
+by design; a consumer that wants an interleaving-insensitive fingerprint must regroup then
+hash, at one extra pass and one allocation. And a hash match is evidence about the effects
+only — two runs with identical logs can still differ in every frame slot, because frame
+slots are not effects.
+
+### The ablation, and its text
+
+`slice/effect-known-positive` (`cmake/slicerun_effect_mutate.cmake`) runs the suite clean,
+requires 0, then runs it with `--mutate` and requires non-zero. It deliberately does **not**
+pass `--device-or-skip`: both halves are the CPU reference, so a device-less host is not a
+reason to skip and never gets to look like one.
+
+The clean arm additionally applies fourteen perturbation shapes one at a time — address,
+observed value, kind, site, width, drop, duplicate, intra-lane reorder, lane
+reattribution, truncation, prior value, channel, payload byte and address space — each
+where it applies, and requires every one to be detected. Measured on this host:
+`records=1224 replays=687 undone=48 perturbations=42/42 detected`, 135 checks, 0 failures.
+Under `--mutate` the same machinery perturbs the log the main comparison runs against, and
+the cell fails with:
+
+```
+  MUTATE: entry 12 moved to a different address
+FAIL effect_case: the mutated log replays faithfully
+  MUTATE: effect divergence (addr) at lane=4 seq=0: executor performed
+    [lane=4 seq=0 load site=3 addr=1092 w=1 flags=0 val=27], replay asked for
+    [lane=4 seq=0 load site=3 addr=1088 w=1 flags=0 val=0]
+FAIL effect_case: the mutated log reproduces the executor's results
+```
+
+Which check catches which perturbation is itself part of the design, so the cell grades
+each one as detected by *divergence*, by *result mismatch*, by *the region having been
+touched*, or by *rewind not restoring the pre-image*, and prints which. Two shapes are
+deliberately invisible to the divergence check: perturbing an **observed** load value is
+not a divergence — the replayer takes the value it is given — and is caught because the
+replayed run then computes a different answer; perturbing `prev` is invisible to both
+replay checks and is caught only by the rewind. A format where every field were compared
+would have been easier to test and wrong.
+
+### The shape this forces on the `volatile` and asm consumers
+
+Written down rather than implemented, as the task required:
+
+1. **`site` is an `AstLocal` in the arena being executed.** Both sides must be executing
+   the same arena, or the site ids do not name the same access. A device path that lowers
+   from a *different* arena (an inlined or specialised copy) must carry a site mapping, not
+   a second numbering. This is the one decision here that a consumer cannot work around.
+2. **`width` is part of identity.** A `volatile` access must not be split into two narrower
+   ones or merged with a neighbour by either side, because the replayed side would then ask
+   for an effect the executor never performed. The existing sub-word store in
+   `ast_eval_slice_bytes_store` is a read-modify-write of the containing word; for a
+   `volatile` byte store that is already wrong on real hardware, and the log now makes it
+   *visibly* wrong rather than silently so.
+3. **One cursor per lane means cross-lane effect order is not validated.** See above. The
+   eligibility predicate for effectful slices owes a refusal.
+4. **`flags` is the extension point, not `addr`.** Inline asm needs more request identity
+   than `VOLATILE` — a port number, a barrier class, an opcode — and it belongs in `flags`
+   and `site`, never encoded into `addr`, which is compared as a region offset.
+5. **A new address space costs a `space` tag and a `chan`, not a schema change.** MMIO gets
+   `space=port`; a file gets `space=fd, chan=fd`. `addr` is an offset *within* `(space,
+   chan)`, so nothing has to be smuggled into it.
+6. **A read with a side effect is still an input effect.** A FIFO pop or a clear-on-read
+   status word is `kind=load` — its value is supplied on replay, which is correct — but it
+   is not undoable, so it must carry `NOUNDO` if a rewind consumer ever returns. It is the
+   one shape where "input" and "reversible" come apart.
+
+### Measured here, and what is unverified
+
+Measured on this host: `cmake-cross` built before `cmake-debug` was configured (hazard 5),
+no `vendor/` checkout. `ctest -N` goes from 9459 to **9461** cells — the two new ones. The
+`slice/*`, `gpu/*` and `fmt/*` cells all pass, including `slice/cref-oracle`. Emitted code
+is unchanged: 1452 object comparisons (363 in-tree test TUs x `-O0`–`-O3`) between a
+baseline `mcc` and this one, both run from inside `cmake-debug` so `argv[0]`-derived
+include resolution matches, gave **0 differences**. That is expected by construction, since
+the compiler never binds a log.
+
+**UNVERIFIED**, with the expectation stated:
+
+- The four `slice/cref-oracle-*` corpus cells were not run — no `vendor/` checkout exists
+  on this host and they registered as skips. Expectation: unaffected, since the compiler's
+  behaviour is provably unchanged (see the object sweep).
+- `slice/musl` skipped on this host for its own reasons; expectation: unaffected.
+- The Metal arm was not built or run. The changed code in `src/mccslice.h` is inside the
+  shared CPU frame runner, not inside either emitter arm, so expectation: unaffected.
+- No cross-compiler or Windows host was exercised beyond the `cmake-cross` build.
 
 ## arm64 and Metal — the context, the traps and the unmeasured, 2026-08-09 (`wt/arm64ctx`)
 

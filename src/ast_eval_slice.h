@@ -293,6 +293,8 @@ static int ast_eval_binop(int op, int64_t a, int64_t b, int is64,
 
 #ifndef AST_EVAL_SLICE_KERNEL_ONLY
 
+#include "mcceffect.h"
+
 static int ast_eval_slice_env(const int32_t *off, const int64_t *val, int n,
 															int32_t o, int64_t *out) {
 	for (int i = 0; i < n; i++)
@@ -519,6 +521,124 @@ static uint32_t *ast_eval_slice_rw;
 static int32_t ast_eval_slice_rw_nbyte;
 static int64_t ast_eval_slice_rw_base;
 
+static MccEffectLog *ast_eval_slice_elog;
+static uint32_t ast_eval_slice_lane;
+
+static void ast_eval_slice_effect_bind(MccEffectLog *L) {
+	ast_eval_slice_elog = L;
+}
+
+static void ast_eval_slice_effect_lane(uint32_t lane) {
+	ast_eval_slice_lane = lane;
+}
+
+static int ast_eval_slice_width_type(int32_t w) {
+	switch (w) {
+	case 1:
+		return VT_BYTE;
+	case 2:
+		return VT_SHORT;
+	case 4:
+		return VT_INT;
+	case 8:
+		return VT_LLONG;
+	default:
+		return 0;
+	}
+}
+
+static void ast_eval_slice_eff_undo(const MccEffect *e, const void *payload,
+																		void *user) {
+	int ok = 0;
+	(void)user;
+	(void)payload;
+	if (!e || e->kind != MCC_EFFECT_STORE ||
+			e->space != MCC_EFFECT_SPACE_REGION)
+		return;
+	ast_eval_slice_bytes_store(ast_eval_slice_rw, ast_eval_slice_rw_nbyte,
+														 e->addr, ast_eval_slice_width_type(e->width),
+														 e->prev, &ok);
+}
+
+static int64_t ast_eval_slice_eff_load(uint32_t site, int32_t off, int t,
+																			 uint32_t qual, int *ok) {
+	MccEffectLog *L = ast_eval_slice_elog;
+	MccEffect ev;
+	int lok = 0;
+	int64_t v;
+	if (!L || L->mode == MCC_EFFECT_OFF)
+		return ast_eval_slice_bytes_load(ast_eval_slice_rw,
+																		 ast_eval_slice_rw_nbyte, off, t, ok);
+	memset(&ev, 0, sizeof ev);
+	ev.kind = MCC_EFFECT_LOAD;
+	ev.site = site;
+	ev.lane = ast_eval_slice_lane;
+	ev.addr = off;
+	ev.width = ast_eval_slice_tsize(t);
+	ev.flags = qual;
+	if (L->mode == MCC_EFFECT_REPLAY) {
+		if (!mcc_effect_replay(L, &ev, NULL, 0)) {
+			if (ok)
+				*ok = 0;
+			return 0;
+		}
+		if (ok)
+			*ok = (ev.flags & MCC_EFFECT_F_UNDEF) ? 0 : 1;
+		return ev.value;
+	}
+	v = ast_eval_slice_bytes_load(ast_eval_slice_rw, ast_eval_slice_rw_nbyte, off,
+																t, &lok);
+	if (ok)
+		*ok = lok;
+	ev.value = v;
+	if (!lok)
+		ev.flags |= MCC_EFFECT_F_UNDEF;
+	mcc_effect_record(L, &ev, NULL, 0);
+	return v;
+}
+
+static void ast_eval_slice_eff_store(uint32_t site, int32_t off, int t,
+																		 int64_t v, uint32_t qual, int *ok) {
+	MccEffectLog *L = ast_eval_slice_elog;
+	MccEffect ev;
+	int sok = 0;
+	if (!L || L->mode == MCC_EFFECT_OFF) {
+		ast_eval_slice_bytes_store(ast_eval_slice_rw, ast_eval_slice_rw_nbyte, off,
+															 t, v, ok);
+		return;
+	}
+	memset(&ev, 0, sizeof ev);
+	ev.kind = MCC_EFFECT_STORE;
+	ev.site = site;
+	ev.lane = ast_eval_slice_lane;
+	ev.addr = off;
+	ev.width = ast_eval_slice_tsize(t);
+	ev.flags = qual;
+	ev.value = v;
+	if (L->mode == MCC_EFFECT_REPLAY) {
+		if (!mcc_effect_replay(L, &ev, NULL, 0)) {
+			if (ok)
+				*ok = 0;
+			return;
+		}
+		if (ok)
+			*ok = (ev.flags & MCC_EFFECT_F_UNDEF) ? 0 : 1;
+		return;
+	}
+	if (L->want_prev)
+		ev.prev = ast_eval_slice_bytes_load(ast_eval_slice_rw,
+																				ast_eval_slice_rw_nbyte, off, t, NULL);
+	else
+		ev.flags |= MCC_EFFECT_F_NOUNDO;
+	ast_eval_slice_bytes_store(ast_eval_slice_rw, ast_eval_slice_rw_nbyte, off, t,
+														 v, &sok);
+	if (ok)
+		*ok = sok;
+	if (!sok)
+		ev.flags |= MCC_EFFECT_F_UNDEF;
+	mcc_effect_record(L, &ev, NULL, 0);
+}
+
 static int ast_eval_slice_rw_addr(int64_t p, int32_t *off) {
 	uint64_t d = (uint64_t)p - (uint64_t)ast_eval_slice_rw_base;
 	*off = (int32_t)(uint32_t)d;
@@ -527,6 +647,14 @@ static int ast_eval_slice_rw_addr(int64_t p, int32_t *off) {
 
 static int32_t ast_eval_slice_ext_off(int32_t base, int elem, int32_t esize) {
 	return (int32_t)((uint32_t)base + (uint32_t)elem * (uint32_t)esize);
+}
+
+static uint32_t ast_eval_slice_qual(AstArena *a, AstLocal n) {
+	int t;
+	if (n == AST_NONE)
+		return 0;
+	t = ast_type_t(a, n);
+	return (t & VT_VOLATILE) ? MCC_EFFECT_F_VOLATILE : 0u;
 }
 
 static int ast_eval_slice_ptr_et(AstArena *a, AstLocal n) {
@@ -887,7 +1015,7 @@ static long ast_eval_slice_bail_n;
 
 static int ast_eval_slice_ext_load(const AstEvalSliceIdx *ix, int elem,
 																	 const int32_t *off, const int64_t *val,
-																	 int nenv, int64_t *out) {
+																	 int nenv, uint32_t site, int64_t *out) {
 	int64_t v = 0;
 	int32_t bo = 0;
 	int ok = 0;
@@ -896,8 +1024,7 @@ static int ast_eval_slice_ext_load(const AstEvalSliceIdx *ix, int elem,
 	if (!ast_eval_slice_rw_addr(v, &bo))
 		ast_eval_slice_undef = 1;
 	bo = ast_eval_slice_ext_off(bo, elem, ix->esize);
-	v = ast_eval_slice_bytes_load(ast_eval_slice_rw, ast_eval_slice_rw_nbyte, bo,
-																ix->etype, &ok);
+	v = ast_eval_slice_eff_load(site, bo, ix->etype, 0, &ok);
 	if (!ok)
 		ast_eval_slice_undef = 1;
 	*out = ast_eval_slice_fit(v, ix->etype);
@@ -1007,7 +1134,8 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 			if (!ast_eval_slice_idx_ok(&ix, iv, &elem))
 				ast_eval_slice_undef = 1;
 			if (ast_eval_slice_ext(&ix))
-				return ast_eval_slice_ext_load(&ix, elem, off, val, nenv, out);
+				return ast_eval_slice_ext_load(&ix, elem, off, val, nenv, (uint32_t)n,
+																			 out);
 			if (!ast_eval_slice_env(off, val, nenv,
 															ix.base + (int32_t)elem * ix.esize, &v))
 				return 0;
@@ -1021,8 +1149,8 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 				return 0;
 			if (!ast_eval_slice_rw_addr(v, &bo))
 				ast_eval_slice_undef = 1;
-			*out = ast_eval_slice_bytes_load(ast_eval_slice_rw,
-																			 ast_eval_slice_rw_nbyte, bo, t, &ok);
+			*out = ast_eval_slice_eff_load((uint32_t)n, bo, t,
+																		 ast_eval_slice_qual(a, n), &ok);
 			if (!ok)
 				ast_eval_slice_undef = 1;
 			return 1;

@@ -13,12 +13,12 @@ static int ast_bad_type(int tt) {
 				 bt == VT_QFLOAT || bt == VT_INT128;
 }
 
-#include "ast_eval_slice.h"
-
 #undef malloc
 #undef realloc
 #undef free
 #undef strdup
+
+#include "ast_eval_slice.h"
 
 /* One source, two gates, chosen by SPVGATE_MSL on the compile line; it drives
  * the same MCC_GPU_LANG_MSL switch mccgpu.h uses to pick an emitter, and must

@@ -41,6 +41,8 @@ slice/ops                    | registered | the op matrix, including N9's six ot
 slice/ops-known-positive     | registered | proves the op matrix is not blind
 slice/frame                  | must-run   | device frame storage: Store/Load lowered to GPU memory, CPU half needs no device
 slice/frame-known-positive   | registered | proves the frame differential is not blind
+slice/effect                 | must-run   | the effect record/replay representation: an executor records what it observed and performed, the other side replays effect-free against that log; needs no device, so it must never skip
+slice/effect-known-positive  | must-run   | proves the replayer can tell "the replayed side asked for a different effect" from "the same effect with a different value"; a replayer that cannot detect a perturbed log would let every effectful differential pass vacuously
 slice/bytes                  | registered | per-width region load/store; the two-word store clobbered neighbours
 slice/bytes-known-positive   | registered | proves the per-width region differential is not blind
 slice/mem                    | registered | the shared CPU<->GPU address space: pointers, heap, printf ring
