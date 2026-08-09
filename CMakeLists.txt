@@ -3482,6 +3482,14 @@ if(MCC_BUILD_TESTS)
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(idiom-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+        add_test(NAME idiom-gate-known-positive
+            COMMAND "${CMAKE_COMMAND}"
+                    -DGATE=$<TARGET_FILE:idiomgate>
+                    -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/idiomgate_known_positive.cmake")
+        set_tests_properties(idiom-gate-known-positive PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         add_executable(tracegate tools/tracegate.c tools/toolsupport.c)
         target_link_libraries(tracegate ${CMAKE_DL_LIBS})
         add_test(NAME trace-gate-invariant
@@ -3741,6 +3749,34 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties("fmt/census-oracle-known-positive" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT)
             endif()
+        endif()
+
+        if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR
+           AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_TARGETOS STREQUAL "Darwin")
+            if(MCC_ENABLE_CROSS)
+                set(_o0ab_min 8)
+            else()
+                set(_o0ab_min 1)
+            endif()
+            add_test(NAME "ast/o0-baseline"
+                COMMAND "${CMAKE_COMMAND}" -E env
+                        "C2_NO_EXTRA=1" "O0_AB_CHECK=1"
+                        "O0_AB_MIN_KEYS=${_o0ab_min}"
+                        sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/o0_ab.sh"
+                        "${CMAKE_BINARY_DIR}" measurable
+                        "${CMAKE_BINARY_DIR}/o0ab")
+            set_tests_properties("ast/o0-baseline" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 1800)
+
+            add_test(NAME "ast/o0-baseline-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/tools/o0_ab.sh
+                        -DBUILD=${CMAKE_BINARY_DIR}
+                        -DOUTDIR=${CMAKE_BINARY_DIR}/o0ab-kp
+                        -DMINKEYS=${_o0ab_min}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/o0_ab_mutate.cmake")
+            set_tests_properties("ast/o0-baseline-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 3600)
         endif()
 
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")
@@ -6342,6 +6378,21 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 -DBENCH=${CMAKE_CURRENT_SOURCE_DIR}/tools/optlevel-bench.py
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/optlevel_bench_mutate.cmake")
         set_tests_properties("optbench/null-subject-known-positive" PROPERTIES
+            TIMEOUT 120)
+
+        add_test(NAME "fmt/census-bank"
+            COMMAND "${MCC_PYTHON3}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/fmt-census.py" --check
+                "--root=${CMAKE_CURRENT_SOURCE_DIR}")
+        set_tests_properties("fmt/census-bank" PROPERTIES TIMEOUT 120)
+
+        add_test(NAME "fmt/census-bank-known-positive"
+            COMMAND "${CMAKE_COMMAND}"
+                -DPY=${MCC_PYTHON3}
+                -DCENSUS=${CMAKE_CURRENT_SOURCE_DIR}/tools/fmt-census.py
+                -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fmt_census_bank_mutate.cmake")
+        set_tests_properties("fmt/census-bank-known-positive" PROPERTIES
             TIMEOUT 120)
 
         if(NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING

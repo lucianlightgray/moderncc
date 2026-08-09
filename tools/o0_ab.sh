@@ -14,12 +14,22 @@
 #      is faithful + empty == fn.
 #
 # Usage:
-#   tools/o0_ab.sh <builddir> <key> [outdir]      one key
-#   tools/o0_ab.sh <builddir> all   [outdir]      all twelve keys + gates
+#   tools/o0_ab.sh <builddir> <key>        [outdir]   one key
+#   tools/o0_ab.sh <builddir> all          [outdir]   all twelve keys + gates
+#   tools/o0_ab.sh <builddir> measurable   [outdir]   every key this host and
+#                                                     build can actually measure
 #
 # Keys: x86_64 i386 arm arm64 riscv64
 #       x86_64-win32 i386-win32 arm64-win32 arm-win32 arm-wince
 #       x86_64-osx arm64-osx
+#
+# "all" is the re-bank spelling and demands every key: a missing cross compiler
+# or sysroot is a failure, because a board with a hole in it is not the board.
+# "measurable" is the ctest spelling: it drops the keys whose compiler or
+# sysroot is absent, names every one it dropped, and refuses to report anything
+# at all unless it measured at least O0_AB_MIN_KEYS of them.  That floor is the
+# difference between "this build has no cross compilers" and "this check has no
+# subject", which are otherwise the same green tick.
 #
 # Environment:
 #   C2_NO_EXTRA=1   drop tests/diff/full_language.c, so a board is like-for-like
@@ -34,6 +44,16 @@
 #   O0_AB_CHECK=1   diff the result against tests/ast/o0-baseline/ and fail on
 #                   any drift.  This is the gate every phase of the cut has to
 #                   pass.
+#   O0_AB_MIN_KEYS  floor on the number of keys "measurable" must have measured
+#                   (default 1).  Set it to 12 where every cross compiler is
+#                   expected, so that losing one is a failure rather than a
+#                   quieter pass.
+#   O0_AB_MIN_FILES floor on the corpus size, default 64.  A find(1) that
+#                   matched nothing must not be bankable as a baseline of
+#                   nothing.
+#   O0_AB_MUTATE=1  the known-positive arm: take measurement A at -O1 instead
+#                   of -O0.  Every banked object hash must then move, so a
+#                   check run that still passes is comparing nothing.
 #
 # Regenerate the banked baseline (from the repo root, after a
 #   cmake -S . -B b -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMCC_ENABLE_CROSS=ON
@@ -118,6 +138,13 @@ derive_gates() {
 		| sed -E 's/.*"(MCC_AST_[A-Z0-9_]+)".*/\1/' | sort -u
 }
 
+AOPT=-O0
+if [ -n "$O0_AB_MUTATE" ]; then
+	AOPT=-O1
+	echo "o0_ab: O0_AB_MUTATE -- measurement A taken at -O1, so every banked" \
+		"object hash must move; a check that still passes compared nothing" >&2
+fi
+
 GATE_ENV=
 SUF=
 if [ -n "$O0_AB_GATES" ]; then
@@ -170,6 +197,15 @@ corpus() {
 	fi
 }
 
+key_available() {
+	key_flags "$1"
+	[ -x "$MCC" ] || return 1
+	if [ -n "$SYSROOT" ] && [ ! -d "$SYSROOT/usr/include" ]; then
+		return 1
+	fi
+	return 0
+}
+
 run_key() {
 	k=$1
 	key_flags "$k"
@@ -204,7 +240,7 @@ run_key() {
 		*/full_language.c) xflags="-I $S -DCC_NAME=CC_gcc" ;;
 		esac
 
-		if "$MCC" -w -O0 $FLAGS $xflags -c -o "$OUT/o-$k.o" "$f" \
+		if "$MCC" -w $AOPT $FLAGS $xflags -c -o "$OUT/o-$k.o" "$f" \
 				> "$OUT/o-$k.err" 2>&1; then
 			nobj=$((nobj + 1))
 			h=$(sha256 "$OUT/o-$k.o" | cut -d' ' -f1)
@@ -223,6 +259,19 @@ run_key() {
 			echo "!!! rc!=0 $f" >> "$log"
 		fi
 	done
+
+	if [ "$nfile" -lt "${O0_AB_MIN_FILES:-64}" ]; then
+		echo "$k: corpus is $nfile file(s), floor is ${O0_AB_MIN_FILES:-64} --" \
+			"find(1) matched (almost) nothing under tests/exec, so this run" \
+			"would bank, or agree with, a baseline of nothing" >&2
+		return 1
+	fi
+	if [ "$nobj" -eq 0 ]; then
+		echo "$k: 0 of $nfile corpus files produced an object -- an empty" \
+			"$objtxt diffs clean against an empty bank, which is the whole" \
+			"failure mode this harness exists to catch" >&2
+		return 1
+	fi
 
 	if ! grep -q '^\[rir-total\]' "$log"; then
 		echo "$k: no [rir-total] in any of $nok successful compiles -- this" \
@@ -337,15 +386,50 @@ twin_check() {
 	fi
 }
 
-if [ "$KEY" != "all" ]; then
+RUNKEYS=$KEYS
+SKIPPED=
+case "$KEY" in
+all)
+	;;
+measurable)
+	RUNKEYS=
+	for k in $KEYS; do
+		if key_available "$k"; then
+			RUNKEYS="$RUNKEYS $k"
+		else
+			SKIPPED="$SKIPPED $k"
+		fi
+	done ;;
+*)
 	run_key "$KEY"
-	exit $?
+	exit $? ;;
+esac
+
+nkeys=$(echo $KEYS | wc -w | tr -d ' ')
+nrun=$(echo $RUNKEYS | wc -w | tr -d ' ')
+minkeys=${O0_AB_MIN_KEYS:-1}
+if [ -n "$O0_AB_BANK" ] && [ "$KEY" = "measurable" ]; then
+	echo "o0_ab: FAIL -- refusing to bank from 'measurable'. The board is a" \
+		"twelve-row artefact and 'all' is the only spelling that demands all" \
+		"twelve; banking whichever rows this host happened to reach would" \
+		"freeze a hole into the baseline. Use 'all'." >&2
+	exit 1
+fi
+if [ "$KEY" = "measurable" ]; then
+	echo "o0_ab: measurable -- $nrun/$nkeys key(s), floor $minkeys;" \
+		"unmeasurable:${SKIPPED:- (none)}" >&2
+	if [ "$nrun" -lt "$minkeys" ]; then
+		echo "o0_ab: FAIL -- $nrun measurable key(s) is below the floor of" \
+			"$minkeys. Every remaining key is missing its compiler or its" \
+			"sysroot, so this run has no subject and must not read as a pass." >&2
+		exit 1
+	fi
 fi
 
 board=$OUT/board$SUF.txt
 : > "$board"
 rc=0
-for k in $KEYS; do
+for k in $RUNKEYS; do
 	if run_key "$k" >> "$board"; then
 		:
 	else
@@ -361,5 +445,10 @@ twin_check || rc=1
 if [ -n "$O0_AB_BANK" ]; then
 	mkdir -p "$BANKDIR"
 	cp "$board" "$BANKDIR/board$SUF.txt"
+fi
+if [ -n "$O0_AB_CHECK" ] && [ "$KEY" = "all" ] \
+		&& ! diff -u "$BANKDIR/board$SUF.txt" "$board" >&2; then
+	echo "o0_ab: the twelve-key board moved." >&2
+	rc=1
 fi
 exit $rc

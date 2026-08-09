@@ -12,6 +12,9 @@ static const char *FLAG_KIND[] = {
 		"MCC_CONFIG_MCCDIR", "MCC_CONFIG_ELFINTERP", "MCC_CONFIG_SWITCHES", 0};
 
 static int g_violations;
+static int g_files;
+static int g_dirs;
+static int g_tests;
 
 static int is_id(int c) {
 	return isalnum((unsigned char)c) || c == '_';
@@ -26,13 +29,19 @@ static int in_list(const char *const *list, const char *tok, int len) {
 }
 
 static int is_value_kind(const char *tok, int len) {
-	return in_list(VALUE_KIND, tok, len);
+	if (!in_list(VALUE_KIND, tok, len))
+		return 0;
+	g_tests++;
+	return 1;
 }
 
 static int is_flag_kind(const char *tok, int len) {
-	if (len > 20 && !strncmp(tok, "MCC_CONFIG_ELFINTERP", 20))
+	if ((len > 20 && !strncmp(tok, "MCC_CONFIG_ELFINTERP", 20)) ||
+			in_list(FLAG_KIND, tok, len)) {
+		g_tests++;
 		return 1;
-	return in_list(FLAG_KIND, tok, len);
+	}
+	return 0;
 }
 
 static void violate(const char *path, int ln, const char *line, const char *why) {
@@ -134,6 +143,7 @@ static int scan_file(const char *path, int is_dir, void *ud) {
 		return 0;
 	if (!(text = ts_read_file(path, NULL)))
 		return 0;
+	g_files++;
 	for (p = text; *p;) {
 		char *e = strchr(p, '\n');
 		int len = e ? (int)(e - p) : (int)strlen(p);
@@ -149,10 +159,12 @@ static int scan_file(const char *path, int is_dir, void *ud) {
 		} else if ((k = directive(p, &rest)) == D_IF || k == D_ELIF) {
 			cont = len && p[len - 1] == '\\';
 			pend_defined = 0;
+			g_dirs++;
 			scan_expr(path, ln, p, rest, &pend_defined);
 		} else if (k == D_IFDEF || k == D_IFNDEF) {
 			const char *name;
 			int nlen;
+			g_dirs++;
 			if ((name = first_ident(rest, &nlen)) && is_value_kind(name, nlen)) {
 				if (k == D_IFDEF) {
 					violate(path, ln, p, "#ifdef on value-kind config macro");
@@ -187,7 +199,7 @@ static int scan_file(const char *path, int is_dir, void *ud) {
 int main(int argc, char **argv) {
 	static const char *defaults[] = {"src", "tools", 0};
 	const char *const *roots = argc > 1 ? (const char *const *)(argv + 1) : defaults;
-	int i, n = argc > 1 ? argc - 1 : 2;
+	int i, nnames, n = argc > 1 ? argc - 1 : 2;
 
 	for (i = 0; i < n; ++i) {
 		int isd;
@@ -196,6 +208,26 @@ int main(int argc, char **argv) {
 			return 2;
 		}
 		host_dir_walk(roots[i], 1, scan_file, NULL);
+	}
+
+	nnames = 0;
+	for (i = 0; VALUE_KIND[i]; ++i)
+		++nnames;
+	for (i = 0; FLAG_KIND[i]; ++i)
+		++nnames;
+
+	printf("idiom-gate subject: %d file(s) scanned, %d conditional(s) examined, "
+				 "%d test(s) of the %d named config macro(s)\n",
+				 g_files, g_dirs, g_tests, nnames);
+
+	if (!g_files || !g_dirs || !g_tests) {
+		fprintf(stderr,
+						"idiom-gate FAIL - this run has no subject. A walk that read no\n"
+						"file, or found no #if/#ifdef, or never reached one of the %d\n"
+						"macros in VALUE_KIND/FLAG_KIND, prints exactly the same 'OK' as a\n"
+						"clean one. Nothing was checked, so nothing may be reported.\n",
+						nnames);
+		return 1;
 	}
 
 	if (g_violations) {

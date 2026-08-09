@@ -1,0 +1,5 @@
+This directory is deliberately empty. tools/idiomgate.c used to print
+"idiom-gate invariant OK" over it, character for character identically to a run
+that scanned 130 files and checked 1739 conditionals, because it reported no
+subject count at all. It now fails here instead, and the
+idiom-gate-known-positive cell is what holds it to that.
