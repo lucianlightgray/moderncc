@@ -33,6 +33,18 @@ execute_process(COMMAND "${RUNNER}" --arenas "${_dump}" --limit 400 --quiet
                 RESULT_VARIABLE _clean OUTPUT_VARIABLE _out ERROR_VARIABLE _out)
 message("${_out}")
 
+# 77 from the runner means this backend emits nothing the suite exercises --
+# the Metal arm has no frame kernel builder (TODO.md §5 stage M2). Treating it
+# as failure graded the backend instead of the differential.
+if(${_clean} EQUAL 77)
+    if(MCC_GPU_REQUIRED)
+        message(FATAL_ERROR "slice/real: the runner reports nothing to compare on "
+                            "this backend, but MCC_GPU_REQUIRED is set")
+    endif()
+    message("slice/real: this backend emits nothing this cell compares, skipping")
+    cmake_language(EXIT 77)
+endif()
+
 if(NOT _clean EQUAL 0)
     message(FATAL_ERROR "slice/real: real slices disagree between the CPU and "
                         "device runners")

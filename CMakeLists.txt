@@ -3342,6 +3342,54 @@ if(MCC_BUILD_TESTS)
     set(_bdir "${CMAKE_BINARY_DIR}")
     set(_idir "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
 
+    # The two independent reference compilers. Resolved here, before the first
+    # consumer: the cref-oracle corpora gate on these, and a resolution placed
+    # after them registered four skips on a clean tree and real cells only on
+    # the second configure, once find_program's cache entry existed.
+    set(MCC_DIFF3_GCC "" CACHE FILEPATH
+        "Explicit gcc/mingw reference compiler for the diff3/preprocess suites (overrides auto-detect)")
+    set(MCC_DIFF3_CLANG "" CACHE FILEPATH
+        "Explicit clang reference compiler for the diff3/preprocess suites (overrides auto-detect)")
+
+    if(MCC_DIFF3_GCC)
+        set(DIFF3_GCC "${MCC_DIFF3_GCC}")
+    else()
+        # A real GNU gcc first, and only then `gcc`/`cc` from PATH: on macOS
+        # those two are Apple clang, and clang adjudicating clang is not a
+        # cross oracle. Probing in this order also keeps the cache entry
+        # honest -- find_program would otherwise record the shim that the
+        # normal-variable set() below it shadows.
+        mcc_find_gnu_gcc(_diff3_gnu_gcc)
+        if(_diff3_gnu_gcc)
+            set(DIFF3_GCC "${_diff3_gnu_gcc}")
+        else()
+            find_program(DIFF3_GCC NAMES gcc cc)
+        endif()
+
+        if(NOT DIFF3_GCC AND WIN32)
+            mcc_mingw_resolve()
+            if(EXISTS "${_MCC_MINGW_X86_64_GCC}")
+                set(DIFF3_GCC "${_MCC_MINGW_X86_64_GCC}")
+            endif()
+        endif()
+    endif()
+
+    if(MCC_DIFF3_CLANG)
+        set(DIFF3_CLANG "${MCC_DIFF3_CLANG}")
+    else()
+        find_program(DIFF3_CLANG NAMES clang)
+
+        if(NOT DIFF3_CLANG)
+            mcc_clang_resolve()
+            if(EXISTS "${_MCC_CLANG_EXE}")
+                set(DIFF3_CLANG "${_MCC_CLANG_EXE}")
+            endif()
+        endif()
+    endif()
+    if(DIFF3_GCC AND DIFF3_CLANG)
+        message(STATUS "mcc diff3 oracles: gcc=${DIFF3_GCC} clang=${DIFF3_CLANG}")
+    endif()
+
     function(mcc_skip_test _name _reason)
         add_test(NAME ${_name} COMMAND "${CMAKE_COMMAND}" -E echo "SKIP: ${_reason}")
         set_tests_properties(${_name} PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP:" ${ARGN})
@@ -3663,10 +3711,13 @@ if(MCC_BUILD_TESTS)
             if(NOT WIN32)
                 target_link_libraries(slicerun ${CMAKE_DL_LIBS})
             endif()
+            # SKIP_RETURN_CODE covers `frame`, whose kernel builder has no Metal
+            # arm (TODO.md §5 stage M2): there the suite exits 77 rather than
+            # asserting that lowering succeeded. The other four never return 77.
             foreach(_sr task work cpu sched frame)
                 add_test(NAME "slice/${_sr}" COMMAND slicerun "${_sr}")
                 set_tests_properties("slice/${_sr}" PROPERTIES
-                    FIXTURES_REQUIRED MCC_BUILT)
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             endforeach()
             foreach(_sg gpu wide64 f64 ops mem bytes deref fmt)
                 add_test(NAME "slice/${_sg}" COMMAND slicerun "${_sg}"
@@ -3730,13 +3781,25 @@ if(MCC_BUILD_TESTS)
                         -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_real.cmake")
             set_tests_properties("slice/real" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT)
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
 
+                # name@oracle@suite@MINPROG@MINTUPLE@cflags. The two floors are
+                # coverage guards: they exist so that "0 mismatches" cannot mean
+                # "0 tuples compared". They were written before any of these
+                # corpora had a checkout to run against, so the first four values
+                # were estimates rather than measurements -- and on the first real
+                # run two of them were above what their corpus yields at all
+                # (unittests produced 2111 against 4000, compiler-rt-builtins 32
+                # against 40) while the other two cleared comfortably (torture
+                # 198147 against 50000, regression-c 20934 against 10000).
+                # The two failing floors are now set from that measurement with a
+                # small margin. Measured on Darwin/arm64 only: re-take them on
+                # Linux/x86-64 before treating either as a ratchet.
                 set(_corpora
                     "gcc-c-torture-execute@CLANG@GCC@1000@50000@-w,-std=gnu11,-fpermissive,-lm"
                     "llvm-test-suite-regression-c@GCC@CLANG@700@10000@-w,-std=gnu11,-fpermissive,-lm"
-                    "llvm-test-suite-unittests@GCC@CLANG@120@4000@-w,-std=gnu11,-fpermissive,-lm"
-                    "compiler-rt-builtins-unit@GCC@CLANG@100@40@-w,-std=gnu11,-Ivendor/compiler-rt-builtins-unit,-Ivendor/compiler-rt-lib-builtins,-lm")
+                    "llvm-test-suite-unittests@GCC@CLANG@120@2000@-w,-std=gnu11,-fpermissive,-lm"
+                    "compiler-rt-builtins-unit@GCC@CLANG@100@30@-w,-std=gnu11,-Ivendor/compiler-rt-builtins-unit,-Ivendor/compiler-rt-lib-builtins,-lm")
             if(MCC_PYTHON3 AND DIFF3_GCC AND DIFF3_CLANG)
                 add_test(NAME "slice/cref-oracle"
                     COMMAND "${CMAKE_COMMAND}"
@@ -3818,7 +3881,7 @@ if(MCC_BUILD_TESTS)
                         -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_inline.cmake")
             set_tests_properties("slice/inline" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT)
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             add_test(NAME "slice/mcc-leaf-graft"
                 COMMAND "${CMAKE_COMMAND}"
                         -DRUNNER=$<TARGET_FILE:slicerun>
@@ -3828,16 +3891,22 @@ if(MCC_BUILD_TESTS)
                         -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/mcc_leaf_graft.cmake")
             set_tests_properties("slice/mcc-leaf-graft" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT)
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            # The census counts blocks and callee classes over a compiled corpus,
+            # so every figure is a property of the target's own AST/RIR shape.
+            # The driver banks one column per architecture; it needs to know
+            # which one to compare against.
             add_test(NAME "slice/census"
                 COMMAND "${CMAKE_COMMAND}"
                         -DRUNNER=$<TARGET_FILE:slicerun>
                         -DMCC=$<TARGET_FILE:mcc>
                         -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
                         -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -DCENSUS_ARCH=${MCC_CPU}
+                        -DCENSUS_OS=${CMAKE_SYSTEM_NAME}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_census.cmake")
             set_tests_properties("slice/census" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT)
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             find_program(MCC_PYTHON3 NAMES python3 python)
             if(MCC_PYTHON3)
                 add_test(NAME "fmt/census-oracle"
@@ -5252,41 +5321,8 @@ if(MCC_BUILD_TESTS)
         endif()
     endif()
 
-    set(MCC_DIFF3_GCC "" CACHE FILEPATH
-        "Explicit gcc/mingw reference compiler for the diff3/preprocess suites (overrides auto-detect)")
-    set(MCC_DIFF3_CLANG "" CACHE FILEPATH
-        "Explicit clang reference compiler for the diff3/preprocess suites (overrides auto-detect)")
-
-    if(MCC_DIFF3_GCC)
-        set(DIFF3_GCC "${MCC_DIFF3_GCC}")
-    else()
-        find_program(DIFF3_GCC NAMES gcc cc)
-
-        mcc_find_gnu_gcc(_diff3_gnu_gcc)
-        if(_diff3_gnu_gcc)
-            set(DIFF3_GCC "${_diff3_gnu_gcc}")
-        endif()
-
-        if(NOT DIFF3_GCC AND WIN32)
-            mcc_mingw_resolve()
-            if(EXISTS "${_MCC_MINGW_X86_64_GCC}")
-                set(DIFF3_GCC "${_MCC_MINGW_X86_64_GCC}")
-            endif()
-        endif()
-    endif()
-
-    if(MCC_DIFF3_CLANG)
-        set(DIFF3_CLANG "${MCC_DIFF3_CLANG}")
-    else()
-        find_program(DIFF3_CLANG NAMES clang)
-
-        if(NOT DIFF3_CLANG)
-            mcc_clang_resolve()
-            if(EXISTS "${_MCC_CLANG_EXE}")
-                set(DIFF3_CLANG "${_MCC_CLANG_EXE}")
-            endif()
-        endif()
-    endif()
+    # DIFF3_GCC/DIFF3_CLANG are resolved at the top of MCC_BUILD_TESTS -- the
+    # cref-oracle corpora consume them ~1500 lines above here.
     set(MCC_DIFF3_EXTRA_REFS "" CACHE STRING
         "Extra diff3 reference compilers as a ;-list of label=path; each must accept a gcc-style '-o' build line and run its output natively on the host. Widens the N-way majority consensus (use independent compiler families, not a second build of one already listed -- the runner de-dups identical --version but cannot tell two gcc builds apart, and double-weighting one family skews the vote).")
 

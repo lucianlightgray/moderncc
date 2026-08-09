@@ -304,16 +304,46 @@ def lit_plan(path, text):
 FSIZE_MAX = 64 << 20
 
 
+def _setlim(what, want):
+    """Best-effort rlimit, for use inside a preexec_fn.
+
+    Darwin refuses RLIMIT_AS and RLIMIT_DATA with EINVAL -- which Python
+    reports as ValueError("current limit exceeds maximum limit") -- even when
+    the request lowers the limit. An exception raised inside preexec_fn aborts
+    the child, so the old unconditional setrlimit turned every jitconform
+    subprocess on macOS into SubprocessError and took the jit/xoracle-* cells
+    down with it. Losing one limit weakens the sandbox; it does not change an
+    answer, so this is deliberately not fatal. On Linux, where RLIMIT_AS is
+    settable, the effect is identical to the previous code.
+    """
+    try:
+        _, hard = resource.getrlimit(what)
+    except (OSError, ValueError):
+        return False
+    if hard != resource.RLIM_INFINITY and want > hard:
+        want = hard
+    for pair in ((want, want), (want, hard)):
+        try:
+            resource.setrlimit(what, pair)
+            return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def _limits(addr_space):
+    if not _setlim(resource.RLIMIT_AS, addr_space):
+        _setlim(resource.RLIMIT_DATA, addr_space)
+    _setlim(resource.RLIMIT_FSIZE, FSIZE_MAX)
+    _setlim(resource.RLIMIT_CORE, 0)
+
+
 def limits_compile():
-    resource.setrlimit(resource.RLIMIT_AS, (8 << 30, 8 << 30))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (FSIZE_MAX, FSIZE_MAX))
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    _limits(8 << 30)
 
 
 def limits_run():
-    resource.setrlimit(resource.RLIMIT_AS, (4 << 30, 4 << 30))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (FSIZE_MAX, FSIZE_MAX))
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    _limits(4 << 30)
 
 
 CAP = 1 << 20

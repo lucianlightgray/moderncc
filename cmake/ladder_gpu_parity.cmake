@@ -16,7 +16,28 @@ file(WRITE "${BINDIR}/ladder_gpu_probe.c"
 set(_srcs "${BINDIR}/ladder_gpu_probe.c")
 file(GLOB _more "${SRCDIR}/tests/exec/expressions/*.c")
 list(SORT _more)
+# Drop files carrying inline asm before taking the first 8. The corpus is read
+# for a ladder census differential and an asm statement contributes nothing to
+# an AST ladder on any host -- but it is not arch-neutral: the first file
+# alphabetically, al_ax_extend.c, is x86 (`movl $0x1234ABCD, %eax`), so on
+# arm64 the CPU arm refused it with "ARM64 instruction 'movl' not implemented"
+# and the status check below turned that into a hard failure. That check is
+# correct and stays; the corpus selection was what was host-blind.
+set(_keep "")
+foreach(_c IN LISTS _more)
+    file(READ "${_c}" _txt)
+    if(NOT _txt MATCHES "(^|[^A-Za-z_])(__asm__|asm)[ \t\n]*\\(")
+        list(APPEND _keep "${_c}")
+    endif()
+endforeach()
+set(_more "${_keep}")
 list(LENGTH _more _n)
+if(_n LESS 4)
+    message(FATAL_ERROR
+        "ladder-gpu-parity: only ${_n} asm-free files in tests/exec/expressions; "
+        "the corpus filter has eaten the corpus and the differential would "
+        "compare almost nothing")
+endif()
 if(_n GREATER 8)
     list(SUBLIST _more 0 8 _more)
 endif()

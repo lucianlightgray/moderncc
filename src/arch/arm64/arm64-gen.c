@@ -1680,7 +1680,10 @@ ST_FUNC void gen_va_arg(CType *t) { MCC_TRACE("enter\n");
 			o(0x54000041);
 			o(0x910383a0 | r1 | 29 << 5);
 		}
-		if (align == 16) { MCC_TRACE("br\n");
+		/* Same rule as the AAPCS64 path below: an indirect argument occupies a
+		 * pointer-sized, pointer-aligned slot, so the pointee's alignment must
+		 * not move the cursor. */
+		if (!indirect && align == 16) { MCC_TRACE("br\n");
 			o(0x91003c00 | r1 | r1 << 5);
 			o(0x927cec00 | r1 | r1 << 5);
 		}
@@ -1706,7 +1709,13 @@ ST_FUNC void gen_va_arg(CType *t) { MCC_TRACE("enter\n");
 
 #if !defined(MCC_TARGET_MACHO)
 		o(0xb940181e | r0 << 5);
-		if (align == 16) { MCC_TRACE("br\n");
+		/* Same rule as the stack cursor below: above 16 bytes the argument is a
+		 * pointer in one 8-byte GP slot, so the pointee's 16-byte alignment must
+		 * not adjust the register offset. Without the size test `unsigned
+		 * __int256` (align 16) reached the assert(0) here and aborted the
+		 * compiler on ELF arm64 -- the case is not unimplemented, it simply does
+		 * not arise for an indirect argument. */
+		if (size <= 16 && align == 16) { MCC_TRACE("br\n");
 			assert(0);
 			o(0x11003fde);
 			o(0x121c6fde);
@@ -1716,7 +1725,16 @@ ST_FUNC void gen_va_arg(CType *t) { MCC_TRACE("enter\n");
 #endif
 
 		o(ARM64_LDR_X | ARM64_RN(r0) | r1);
-		if (align == 16) { MCC_TRACE("br\n");
+		/* Only a directly-passed argument sits in the slot with its own
+		 * alignment. Above 16 bytes AAPCS64 passes a pointer instead (that is
+		 * what `n = 8` and the indirect load below mean), and the pointer is
+		 * 8-aligned whatever the pointee needs. Rounding the list up to 16 here
+		 * for an indirect argument steps over the pointer: the first va_arg
+		 * leaves the cursor 8 mod 16, the second rounds it up and reads the
+		 * word past the one it wanted. `unsigned __int256` (a 4-limb struct,
+		 * align 16) crashed exactly there -- the second va_arg loaded the
+		 * *value* 2 and used it as an address. */
+		if (size <= 16 && align == 16) { MCC_TRACE("br\n");
 			o(0x91003c00 | r1 | r1 << 5);
 			o(0x927cec00 | r1 | r1 << 5);
 		}

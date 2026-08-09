@@ -102,6 +102,41 @@ static int g_have_device;
 static int g_device_required;
 static int g_device_or_skip;
 static int g_mutate;
+/* Set when suite_f64 finds the device has no shaderFloat64, so the fp64 value
+ * differential never ran and --mutate has nothing to perturb. */
+static int g_f64_no_diff;
+/* Set when a suite is asked for something this backend does not emit at all.
+ * The suite then compares nothing, and reporting either pass or fail would be
+ * a statement about the backend rather than about the comparison. */
+static int g_unsupported;
+
+/* The Metal arm emits per-value kernels (mslgate proves that against the CPU
+ * reference) but not frame kernels, and has no region layer or format engine:
+ * TODO.md §5 stages M2, M4 and M5. Under MCC_GPU_LANG_MSL the builders above
+ * return 0 by construction, so the suites that drive them must say
+ * "unsupported" rather than assert that lowering succeeded. */
+static int backend_has_frame_kernels(void) {
+#if MCC_GPU_LANG_MSL
+	return 0;
+#else
+	return 1;
+#endif
+}
+
+static int backend_has_regions(void) {
+#if MCC_GPU_LANG_MSL
+	return 0;
+#else
+	return 1;
+#endif
+}
+
+static void unsupported(const char *what, const char *stage) {
+	fprintf(stderr, "SKIP: slicerun: this backend does not emit %s (%s); the "
+									"comparison would compare nothing\n",
+					what, stage);
+	g_unsupported = 1;
+}
 static char g_devname[256];
 
 /* B1's object table: the byte extent and element type of every node, indexed by
@@ -928,6 +963,12 @@ static void suite_f64(void) {
 		fprintf(stderr,
 						"slicerun: device %s lacks shaderFloat64; fp64 arithmetic excluded\n",
 						g_devname);
+		/* The exclusion checks below are real and still run. The fp64 *value*
+		 * differential is not reached, though, so there is no fp64 kernel for
+		 * --mutate to perturb -- and "the mutant survived" would then be a fact
+		 * about the device, not about the comparison. MoltenVK on Apple silicon
+		 * reports shaderFloat64 = 0, which is how this first showed up. */
+		g_f64_no_diff = 1;
 		f64_exclusions();
 		{
 			AstArena *a = ast_arena_new();
@@ -1380,6 +1421,11 @@ static void suite_frame(void) {
 	MccSliceFrame fr;
 	int64_t f[MCC_SLICE_MAXSLOT];
 	int i;
+
+	if (!backend_has_frame_kernels()) {
+		unsupported("frame kernels", "TODO.md §5 stage M2");
+		return;
+	}
 
 	/* One statement: x(-8) = x(-8)*3 + x(-16) */
 	a = ast_arena_new();
@@ -2036,6 +2082,13 @@ static void suite_frame(void) {
  * 1. Both offsets are read from the region at run time, so neither the address
  * nor its range is known at emit time. */
 static int bytes_kernel_in(int t, int shared, MccGpuCode *out) {
+#if MCC_GPU_LANG_MSL
+	/* Metal arm: no region layer, so no byte kernel. TODO.md §5 stage M4.
+	 * Returning 0 is the builder's existing "could not build" contract and the
+	 * caller already reports the suite unsupported on it. */
+	(void)t; (void)shared; (void)out;
+	return 0;
+#else
 	SpvMod m;
 	SpvRegion r;
 	SpvV v;
@@ -2070,6 +2123,7 @@ static int bytes_kernel_in(int t, int shared, MccGpuCode *out) {
 	out->p = code;
 	out->n = nw;
 	return 1;
+#endif /* MCC_GPU_LANG_MSL */
 }
 
 static int bytes_kernel(int t, MccGpuCode *out) {
@@ -2112,6 +2166,10 @@ static void bytes_subword_shared(void) {
 }
 
 static void suite_bytes(void) {
+	if (!backend_has_regions()) {
+		unsupported("a region layer", "TODO.md §5 stage M4");
+		return;
+	}
 	/* Offsets chosen so that every width sees: aligned and in range, the last
 	 * legal offset, one past it, a misaligned offset, a wildly out-of-range one,
 	 * and a negative one. */
@@ -2229,6 +2287,11 @@ static void suite_bytes(void) {
 #define DEREF_LANES MCC_GPU_LOCAL_SIZE
 
 static int deref_kernel(int t, MccGpuCode *out) {
+#if MCC_GPU_LANG_MSL
+	/* Metal arm: no region layer, so no host-pointer deref. TODO.md §5 M4. */
+	(void)t; (void)out;
+	return 0;
+#else
 	SpvMod m;
 	SpvRegion r;
 	SpvV v;
@@ -2263,6 +2326,7 @@ static int deref_kernel(int t, MccGpuCode *out) {
 	out->p = code;
 	out->n = nw;
 	return 1;
+#endif /* MCC_GPU_LANG_MSL */
 }
 
 static uint32_t *deref_arena(void) {
@@ -2366,6 +2430,10 @@ static void deref_directed(int t, uint32_t seed0, const DerefWant *w, int n,
 }
 
 static void suite_deref(void) {
+	if (!backend_has_regions()) {
+		unsupported("a region layer", "TODO.md §5 stage M4");
+		return;
+	}
 	static const int32_t OFF[] = {0,  1,  2,  4,  7,  8,   16, 32,
 																56, 60, 61, 62, 64, 128, -1, -4};
 	static const int TY[] = {VT_BYTE,  VT_BYTE | VT_UNSIGNED,
@@ -2559,6 +2627,12 @@ static int fmt_pool(void) {
 }
 
 static int fmt_kernel(const MccFmtProg *p, MccGpuCode *out) {
+#if MCC_GPU_LANG_MSL
+	/* Metal arm: src/mccfmt.h has no MSL half, and every fmt primitive
+	 * addresses a region. TODO.md §5 stage M5, which depends on M4. */
+	(void)p; (void)out;
+	return 0;
+#else
 	SpvMod m;
 	SpvRegion r, s;
 	SpvV arg[MCC_FMT_MAXARG];
@@ -2613,6 +2687,7 @@ static int fmt_kernel(const MccFmtProg *p, MccGpuCode *out) {
 	out->p = code;
 	out->n = nw;
 	return 1;
+#endif /* MCC_GPU_LANG_MSL */
 }
 
 static uint32_t *fmt_arena(void) {
@@ -3086,6 +3161,10 @@ static void fmt_directed_str(void) {
 }
 
 static void suite_fmt(void) {
+	if (!backend_has_regions()) {
+		unsupported("the on-device format engine", "TODO.md §5 stage M5");
+		return;
+	}
 	static const char *F[] = {
 			"%d",     "%u",     "%x",      "%X",     "%lld", "%llu",
 			"%llx",   "%zu",    "%c",      "%02x",   "%08x", "%016llx",
@@ -4227,6 +4306,10 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 	unsigned char gdf[FRAME_NT];
 	int t, j, bad = 0, membad = 0, usemem, flt;
 
+	if (!backend_has_frame_kernels()) {
+		unsupported("frame kernels", "TODO.md §5 stage M2");
+		return;
+	}
 	if (!mcc_slice_frame_from_ast(a, bb, &fr))
 		return;
 	g_frame_slices++;
@@ -4510,9 +4593,14 @@ static void leaf_offer(const char *name, AstArena *a, AstLocal root,
 	g_leaf_n++;
 }
 
-static AstArena *slicerun_leaf_hook(AstArena *a, AstLocal inv, AstLocal *root) {
+static AstArena *slicerun_leaf_hook(AstArena *a, AstLocal inv, AstLocal *root,
+                                    int32_t *poff, int *pnparam) {
 	int i;
 	(void)a;
+	/* Rebuilt from a dump: no parameter list to hand over. NULL asks the scan
+	 * to order the slots by |offset|, which is layout-neutral. */
+	(void)poff;
+	*pnparam = 0;
 	if (!g_invleaf || (long)inv >= g_invcap)
 		return NULL;
 	i = g_invleaf[inv];
@@ -4568,7 +4656,7 @@ static void leaf_pass0(const char *fn, const RawNode *raw, int n, long root) {
 	a = rebuild_arena(raw, n, &rt, root);
 	if (!a)
 		return;
-	if (!mcc_slice_leaf_scan(a, rt, &L)) {
+	if (!mcc_slice_leaf_scan(a, rt, &L, NULL, 0)) {
 		ast_arena_free(a);
 		return;
 	}
@@ -5169,7 +5257,19 @@ int main(int argc, char **argv) {
 		} else {
 			printf("slicerun: device %s (available=%d)\n", g_devname, g_have_device);
 		}
-		return arena_mode(arenas, limit, quiet);
+		{
+			int _rc = arena_mode(arenas, limit, quiet);
+			/* Same rule as the suite path below: if the backend emitted nothing
+			 * this mode compares, say so with 77 rather than returning a clean 0
+			 * that the drivers would read as "compared and agreed". */
+			if (_rc == 0 && g_unsupported && !g_failures) {
+				fprintf(stderr, "SKIP: slicerun --arenas: nothing this backend emits "
+												"was exercised (device=%s)\n",
+								g_devname);
+				return 77;
+			}
+			return _rc;
+		}
 	}
 
 	if (!only || !strcmp(only, "task"))
@@ -5218,6 +5318,20 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "SKIP: slicerun %s is a device differential and no usable "
 										"device was found on this host (device=%s)\n",
 						only, g_devname);
+		return 77;
+	}
+	if (g_unsupported && !g_failures) {
+		fprintf(stderr, "SKIP: slicerun %s: nothing this backend emits was "
+										"exercised (device=%s)\n",
+						only ? only : "(all)", g_devname);
+		return 77;
+	}
+	if (g_mutate && g_f64_no_diff && !g_failures) {
+		fprintf(stderr, "SKIP: slicerun f64 --mutate has no fp64 kernel to perturb "
+										"on a device without shaderFloat64 (device=%s); reporting the "
+										"mutant as survived would grade the device, not the "
+										"differential\n",
+						g_devname);
 		return 77;
 	}
 	return g_failures ? 1 : 0;

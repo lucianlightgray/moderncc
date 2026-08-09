@@ -65,6 +65,17 @@ message("${_ontxt}")
 execute_process(COMMAND "${RUNNER}" --arenas "${_off}" --quiet --no-inline
                 RESULT_VARIABLE _off_rc OUTPUT_VARIABLE _offtxt ERROR_VARIABLE _offtxt)
 message("${_offtxt}")
+# 77 from the runner means this backend emits nothing the cell compares -- the
+# Metal arm has no frame kernel builder (TODO.md §5 stage M2), and every
+# frame-stmts assertion below is about that executor.
+if(_on_rc EQUAL 77 OR _off_rc EQUAL 77)
+    if(MCC_GPU_REQUIRED)
+        message(FATAL_ERROR "mcc-leaf-graft: nothing to compare on this backend, "
+                            "but MCC_GPU_REQUIRED is set")
+    endif()
+    message("mcc-leaf-graft: this backend emits no frame kernel, skipping")
+    cmake_language(EXIT 77)
+endif()
 if(NOT _on_rc EQUAL 0 OR NOT _off_rc EQUAL 0)
     message(FATAL_ERROR "mcc-leaf-graft: the unmutated differential is already "
                         "failing")
