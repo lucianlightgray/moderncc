@@ -3270,6 +3270,8 @@ static int ast_argsub_n;
 static int ast_argsub_off[AST_INLINE_MAX_PARAMS];
 static SValue ast_argsub_val[AST_INLINE_MAX_PARAMS];
 static int ast_in_graft;
+static int ast_in_reemit;
+static void ast_reemit_scrub_leaf_syms(AstArena *a);
 static int ast_fn_faithful;
 static int ast_fn_tco;
 static CType ast_graft_rt;
@@ -3480,6 +3482,10 @@ static int ast_inline_graft(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	memcpy(ast_argsub_off, suboff, sizeof suboff);
 	memcpy(ast_argsub_val, subval, sizeof subval);
 	save_regs(0);
+	/* A callee grafted during re-emit runs after its own frame is gone, so its
+	   leaves' captured local syms dangle exactly as the re-emit root's do. */
+	if (ast_in_reemit)
+		{ MCC_TRACE("br\n"); ast_reemit_scrub_leaf_syms(e->ast); }
 	ast_replay_bb(e->ast, ast_root(e->ast));
 	gsym(ast_inline_ret_sym);
 	SValue res;
@@ -19256,6 +19262,30 @@ void ast_func_epilog(void) { MCC_TRACE("enter\n");
 	ast_promo_callful = 0;
 }
 
+/* Forward-inline re-emit runs at end-of-translation, after every frame whose
+   leaves this arena references has been torn down by ast_func_end. A leaf's
+   captured sym is the referencing frame's own local Sym -- valid, and required,
+   during in-function RIR replay (wide256_sv_is_stable_lval consults it), but a
+   dangling pointer here. gaddrof dereferences it for its VLA-struct check and
+   faults on the freed Sym (defect W8). Re-emit rebuilds the frame from scratch
+   exactly as an AOT compile would, and an AOT compile carries no sym on a plain
+   local lvalue -- VT_LOCAL without VT_SYM -- so drop those before replay. A real
+   symbol reference (VT_SYM) stays valid to end-of-translation and is kept; a VLA
+   leaf keeps its sym (gaddrof still needs it), recognised off the node type so
+   the possibly-dangling pointer is never dereferenced. */
+static void ast_reemit_scrub_leaf_syms(AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		uint16_t k = ast_kind(a, n);
+		if (k != AST_Ref && k != AST_Literal)
+			{ MCC_TRACE("br\n"); continue; }
+		unsigned r = (unsigned)ast_op(a, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM) &&
+				!(ast_type_t(a, n) & VT_VLA))
+			{ MCC_TRACE("br\n"); ast_set_sym(a, n, 0); }
+	}
+}
+
 static void ast_reemit(Sym *sym, AstArena *ast) { MCC_TRACE("enter\n");
 	struct scope f = {0};
 	cur_scope = root_scope = &f;
@@ -19305,6 +19335,9 @@ static void ast_reemit(Sym *sym, AstArena *ast) { MCC_TRACE("enter\n");
 	Sym *saved_free = sym_free_first;
 	sym_free_first = NULL;
 	ast_cur = ast;
+	int saved_in_reemit = ast_in_reemit;
+	ast_in_reemit = 1;
+	ast_reemit_scrub_leaf_syms(ast);
 	ast_replaying = 1;
 	ast_rp_switch = NULL;
 	ast_rp_nlabel = 0;
@@ -19329,6 +19362,7 @@ static void ast_reemit(Sym *sym, AstArena *ast) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); loc = ast_loc_low; }
 	ast_inline_active = 0;
 	ast_replaying = 0;
+	ast_in_reemit = saved_in_reemit;
 	sym_free_first = saved_free;
 	ast_cur = NULL;
 
