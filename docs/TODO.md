@@ -614,57 +614,215 @@ against the JIT.
 `llvm:builtins` 126/139, `llvm:ts-unittests` 53/149, `c-c++-common` 33/87,
 `llvm:compiler-rt` 5/9, `gcc.misc-tests` 1/5.
 
-### OPEN, and it is a miscompile: the KGC route zero-extends nothing
+### LANDED — the KGC stub threw away the callee's return-register convention, 2026-08-09 (`wt/kgcfix`)
 
-**22 records on the embed surface and 14 on `-run` produce a different answer under
-`MCC_JIT=1` than the same binary produces under `MCC_JIT=0`.** Same object code, same
-libc, only the runtime JIT differs — so nothing about the AOT compiler is implicated.
-Deduplicating the vendored gcc-c-torture copy inside llvm-test-suite, that is **16
-distinct programs**, 14 on the embed surface and 8 on `-run`. Most abort, because the
-torture tests are self-checking and call `abort`. The union:
-`20050502-1.c`, `941014-2.c`, `970217-1.c`, `builtin-prefetch-4.c`, `loop-3.c`,
-`loop-3b.c`, `pr109986.c`, `pr17377.c`, `pr39240.c`, `pr65215-2.c`, `pr65215-3.c` in
-`gcc.c-torture/execute`; `gcc.dg/fastmath-1.c`, `gcc.dg/pr96674.c`,
-`gcc.dg/torture/pr45830.c`, `gcc.dg/torture/pr126136.c`; and
-`llvm-test-suite/SingleSource/UnitTests/Threads/tls.c`. (`pr17377.c` reached the harness
-only through llvm-test-suite's vendored copy: the gcc-side original carries
-`dg-require-effective-target return_address`, which `xsuite.py`'s DejaGnu handling skips,
-and llvm-test-suite ships it stripped of directives. `tls.c` is genuinely llvm's. So the
-second corpus did earn its keep even where it duplicates the first.)
+The section this replaces called the defect "the KGC route zero-extends nothing" and
+guessed the fault was in the intent-blob round trip of the callee signature. **The
+signature round trip is fine.** `it.ret_type_t` carries `VT_UNSIGNED` intact from
+[`mccjit_intent_serialize`](../src/mccjit_intent.c) through
+`mccjit_intent_deserialize` to the stub builder. The fault was one layer further out, and
+it is not about signedness at all.
 
-Minimal reproducer, banked at [`tests/jit/known-bad/kgc_zext_ret.c`](../tests/jit/known-bad/kgc_zext_ret.c):
+**Root cause.** The KGC stub does not jump to the callee; it calls it from C, through
+`mccjit_invoke` in [`src/mccjit_embed.c`](../src/mccjit_embed.c), so that it can run the
+variant and the baseline on the same arguments and compare them. For a return type that
+is not 64 bits wide that call went through an `int (*)(...)` function pointer, so the
+32-bit result was **sign**-extended into the `int64_t` the stub then hands back in the
+return register. mcc's own convention is the opposite: a sub-64-bit GP return occupies
+the low half of the register and **the high half is zero** — that is what 32-bit
+`x86_64`/`arm64` writes leave behind — and the caller re-extends signed narrow results
+itself while assuming zero for unsigned ones. The stub was answering a question the ABI
+never asks, and its answer was wrong exactly where the caller declines to re-extend.
+
+The fix is three lines: `mccjit_invoke` zero-extends every non-wide GP return before
+handing it back, reproducing the register state the AOT callee would have left. Nothing
+is disabled — `MCC_JIT_VERBOSE=1` still reports `route=kgc ... swapped` on the
+reproducer, and the widened parity corpus below enters the route 29 times.
+
+**One bug across widths — but not the family the old section named.** Sweeping every
+scalar return class through the route
+([`tests/jit/parity/ret_ext_matrix.c`](../tests/jit/parity/ret_ext_matrix.c)), only the
+32-bit case can diverge at all: `unsigned char`/`unsigned short` results are non-negative
+as 32-bit ints, so sign- and zero-extension agree on them, and 64-bit returns never take
+the narrowing path. Parameters are unaffected — the stub sign-extends narrow arguments
+with `movsxd`, and the callee re-narrows them, so nothing observable depends on it.
+
+What does widen the family is the **caller**, not the callee.
+`gcc.c-torture/execute/pr39240.c` is the case a signedness-aware fix still fails: its
+callee `foo1` returns `int`, its caller `bar1` returns that value as `unsigned int`, and
+neither re-extends — so a stub that faithfully honours the *callee's declared* signedness
+is still wrong. That is why the fix is unconditional zero-extension and not a
+`VT_UNSIGNED` test. The first version of this patch keyed on the callee's signedness,
+passed `ret_ext_matrix.c`, closed three programs, and left `pr39240.c` broken;
+[`tests/jit/parity/ret_ext_recast.c`](../tests/jit/parity/ret_ext_recast.c) is the axis
+that catches that, eight callee/caller return-type pairs that disagree on signedness or
+width.
+
+**Measured with `tools/jitconform.py --phase check` over the whole 6479-program oracle
+set, same tree, only `src/mccjit_embed.c` differing between the two rows of each pair.**
+
+| surface | miscompile records | distinct programs | correct under the JIT |
+|---|---|---|---|
+| `--embed-jit` bake, before | 22 | 14 | 3120 |
+| `--embed-jit` bake, after | **15** | **10** | **3127** |
+| `-run --jit`, before | 14 | 8 | 3127 |
+| `-run --jit`, after | **8** | **5** | **3134** |
+
+The 22 records before match the count the previous section banked exactly, on a corpus
+qualified independently here (6479 oracle programs against that section's 6627 — different
+`gcc`/`clang` builds on this host), so the two measurements are comparable on this metric.
+**Coverage does not move**: the fix changes what a stub returns, never whether one is
+built. One record appears in the after column that was not in the before column,
+`llvm-test-suite`'s vendored `920501-3.c` on the `-run` surface, and it is not a
+regression: it is a computed-`goto` (`&&label`) program that **crashes under `MCC_JIT=0`
+too** — `jit_exit=-11` (SIGSEGV) against `aot_exit=-7` (SIGBUS). The harness scores a
+differing exit as a miscompile, so two crashes with different signals land in this bucket.
+The AOT path owns that one.
+
+**Four distinct programs close, not sixteen, and the other ten were mis-attributed.**
+Closed on both surfaces: `pr39240.c`, `pr65215-2.c`, `pr65215-3.c`, `pr109986.c`. The old
+section listed sixteen programs under this one heading; that grouping was an assumption
+and it does not survive `MCC_JIT_KGC=0` triage. Of the ten distinct programs still failing
+on the embed surface, **five are not KGC at all** — `970217-1.c`, `pr17377.c`,
+`gcc.dg/fastmath-1.c`, `gcc.dg/pr96674.c` and `gcc.dg/torture/pr45830.c` fail identically
+with the route switched off — and the other five are a second, distinct KGC defect,
+described next.
+
+### OPEN — the KGC route admits callees that have side effects
+
+`20050502-1.c`, `builtin-prefetch-4.c`, `loop-3.c`, `loop-3b.c` and
+`gcc.dg/torture/pr126136.c` are each cured by `MCC_JIT_KGC=0` and each untouched by the
+extension fix. The route's premise is that the callee is a function of its arguments: it
+invokes the variant *and* the baseline to compare them, and under `memoize_ok` it later
+serves a repeated argument tuple from one side alone. Both are unsound for a callee with
+side effects, and the admission test — `mccjit_last_purity != AST_PURITY_IMPURE` in
+`src/mccjit_embed.c` — lets one through on the `--embed-jit` surface. Reduced, showing
+both halves of the damage:
 
 ```c
 int printf(const char *, ...);
-unsigned int foo(unsigned int x) { return x; }
-unsigned long long lo(unsigned long long *x) { return foo(*x >> 32); }
-int main(void) { unsigned long long l = 0xfeedbea800000000ULL; printf("lo=%llx\n", lo(&l)); return 0; }
+int i;
+signed char foo(signed char val) { i++; if (i > 1) return -1; else return val; }
+int main(void) { int a, b; i = 0; a = foo(10); i += 2; b = foo(11); printf("a=%d b=%d i=%d\n", a, b, i); return 0; }
 ```
 
 ```
-MCC_JIT=0 mcc -O2 -run tests/jit/known-bad/kgc_zext_ret.c   ->  lo=feedbea8          (gcc, clang agree)
-MCC_JIT=1 mcc -O2 -run tests/jit/known-bad/kgc_zext_ret.c   ->  lo=fffffffffeedbea8
-MCC_JIT=1 MCC_JIT_KGC=0 ...                                 ->  lo=feedbea8
+mcc -O2 --embed-jit t.c -o t
+MCC_JIT=0 ./t   ->  a=10 b=-1 i=4     (gcc agrees)
+MCC_JIT=1 ./t   ->  a=10 b=-1 i=6     the side effect ran twice
 ```
 
-The JIT widens an `unsigned int`-returning call to `unsigned long long` with **sign**
-extension. Replacing `unsigned int foo` with `int foo` makes all three agree on
-`fffffffffeedbea8`, which is the correct answer for a signed callee — so the JIT is
-behaving as though the callee's return type had lost its `unsigned`. `MCC_JIT_VERBOSE=1`
-reports `route=kgc ... swapped` on the failing run, and `MCC_JIT_KGC=0` is a complete
-workaround, so the defect is in the known-good-constant specialization route, not in the
-direct recompile. Reproduces identically on both JIT surfaces. **Not fixed** — the fault
-is somewhere in the intent-blob round trip of the callee signature
-(`mccjit_intent_serialize` / `mccjit_intent_deserialize` / `mccjit_build_rec` in
-`src/mccjit_intent.c`) or in the KGC variant builder in `src/mccjit_embed.c`; narrowing
-it further needs more time than this branch had.
+Change the second call to `foo(10)` so the argument tuple repeats and the memo serves the
+stale answer instead: `a=10 b=10 i=4` against a correct `a=10 b=-1 i=4`. The same source
+under `-run` is refused, so this is a purity disagreement between the two surfaces rather
+than a universal one. It is the highest-priority JIT item now, and it belongs with whoever
+owns `ast_fn_purity`.
 
-The existing `jit/run-parity-host` cell (`tests/jit/run-parity.sh`) runs exactly this
-`MCC_JIT=0` vs `MCC_JIT=1` differential and is green, because its corpus is five
-hand-written programs in `tests/jit/parity/` and none of them return a high-bit-set
-32-bit unsigned value through a widening call. Dropping `kgc_zext_ret.c` into
-`tests/jit/parity/` would turn that cell red immediately; it is deliberately parked one
-directory away, in `tests/jit/known-bad/`, until the bug is fixed.
+### The cell that could not see it, and what it carries now
+
+`jit/run-parity-host` ([`tests/jit/run-parity.sh`](../tests/jit/run-parity.sh)) runs
+exactly the `MCC_JIT=0` vs `MCC_JIT=1` differential that finds this bug and was green
+throughout, because its corpus was five hand-written programs, none of which returned a
+high-bit-set 32-bit value through a widening call — and, measured now, **none of which
+enters the KGC route at all**. `jit/xoracle-conformance` could not see it either, for a
+different reason: its `--limit 400` slice contains **none** of the four programs that
+close, checked by name against `<build>/jitconform-cell/jit-cell.jsonl`. Its miscompile
+count is 1 before the fix and 1 after, and the one it pins, `20050502-1.c`, is the
+side-effect defect above — so `--max-miscompile 1` still pins a real bug and is left
+alone.
+
+`tests/jit/parity/` goes from 5 programs to **11** and `tests/jit/known-bad/` is deleted:
+the reproducer parked one directory outside the glob now sits inside it. Counting that
+witness, six programs carry the KGC route, and they are indexed **one per axis the stub
+builder classifies on**, not one per bug — which is the answer to "why that size":
+
+| program | axis it holds open |
+|---|---|
+| `kgc_zext_ret.c` | the reduced witness, kept verbatim |
+| `ret_ext_matrix.c` | every scalar return class × 3 payloads — the `ret_wide`/`ret_gp` classification in `mccjit_make_kgc_stub_n` |
+| `ret_ext_recast.c` | callee return type ≠ caller return type, the axis `ret_ext_matrix.c` is blind to |
+| `ret_arity_sweep.c` | arity 1…6 with alternating narrow/wide slots — the per-slot `movsxd`/`mov64` emission |
+| `ret_ext_allfp.c` | the all-double route, `mccjit_make_kgc_stub_fp` |
+| `ret_ext_mixed.c` | the GP+FP route, `mccjit_make_kgc_stub_mixed` |
+
+Six, because `mccjit_recompile_common` classifies on exactly those six things before a
+stub is picked — return width, return signedness against the caller's, arity, per-slot parameter
+width, all-FP, and mixed — and any one of them can be misread the way this one was. A
+corpus indexed by axis keeps catching new bugs; a corpus indexed by bug only re-catches
+this one. Cost: back to back on the same shell the widening moves `run-parity.sh` from
+**1.9 s to 2.1 s**, and the new cell below costs **1.2 s** on the same corpus; as ctest
+pays for them they are **1.00 s** and **0.50 s**. Cheap enough to stay unconditional,
+which is the whole point of putting the coverage here rather than behind a corpus that
+has to be fetched. `ret_ext_allfp.c` and
+`ret_ext_mixed.c` pass with and without the fix on purpose: the FP and mixed routes hand
+back the callee's register untouched and never had this bug, and a corpus that holds only
+witnesses cannot notice when a route that was right becomes wrong.
+
+**New cell, `jit/kgc-route-parity`**
+([`tests/jit/run-kgcroute.sh`](../tests/jit/run-kgcroute.sh)), over the same corpus. It
+asserts something `jit/run-parity-host` cannot: that `MCC_JIT_KGC=1` and `MCC_JIT_KGC=0`
+agree, **and** that the route was entered — it counts `route=kgc ... swapped` lines and
+fails if the total is zero across the whole corpus. Without that second half the obvious
+wrong fix to this bug, narrowing admission until the route stops firing, would leave the
+cell green. It is registered beside `jit/run-parity-host` inside the same `if(UNIX)`,
+which `tools/regstub-lint.py` exempts as identity rather than equipment, so it needs no
+`else()` stub.
+
+**The ablations, quoted.** With `src/mccjit_embed.c` reverted and the rest of the branch
+in place, `jit/run-parity-host` reports 4 of 11 red:
+
+```
+FAIL kgc_zext_ret: MCC_JIT=1 output differs from MCC_JIT=0
+  jit0: lo=feedbea8
+  jit1: lo=fffffffffeedbea8
+FAIL ret_arity_sweep: MCC_JIT=1 output differs from MCC_JIT=0
+  jit0: a1=ffff67a0 a2=9abc468f a3=9abbc690 a4=9abbc78e a5=8abbc78f a6=8abbc792
+  jit1: a1=ffffffffffff67a0 a2=ffffffff9abc468f a3=ffffffff9abbc690 a4=ffffffff9abbc78e a5=ffffffff8abbc78f a6=ffffffff8abbc792
+FAIL ret_ext_matrix: MCC_JIT=1 output differs from MCC_JIT=0
+  jit0: sc=ffffffffffffffa0 uc=a0 ss=67a0 us=67a0 si=ffffffffffff67a0 ui=ffff67a0 ...
+  jit1: sc=ffffffffffffffa0 uc=a0 ss=67a0 us=67a0 si=ffffffffffff67a0 ui=ffffffffffff67a0 ...
+FAIL ret_ext_recast: MCC_JIT=1 output differs from MCC_JIT=0
+  jit0: r1=fffffffc r2=fffffffffffffffc r3=fffc r4=fffffffffffffffc
+  jit1: r1=fffffffffffffffc r2=fffffffffffffffc r3=fffc r4=fffffffffffffffc
+```
+
+`jit/kgc-route-parity` reports the same four, with the attribution attached:
+
+```
+FAIL kgc_zext_ret: the known-good-constant route changed the answer
+  jit0: lo=feedbea8
+  kgc1: lo=fffffffffeedbea8
+  MCC_JIT_KGC=0 agrees, so the divergence is the KGC stub itself:
+  the 64-bit value it hands back is not the one the AOT callee
+  would have left in the return register. A sub-64-bit GP return
+  occupies the low half only and the high half is zero; the caller
+  re-extends signed results itself and assumes zero for unsigned
+  ones (src/mccjit_embed.c, mccjit_invoke).
+```
+
+Route-liveness ablation, with the corpus narrowed back to the five original programs:
+
+```
+FAIL: no program in <dir> took the kgc route across 5 programs -- this
+  cell compares a KGC route that was never entered against itself, so
+  it cannot see a KGC defect. Fix the corpus or the admission rule
+  before trusting a green result here.
+```
+
+### Verified, this tree (`wt/kgcfix`)
+
+`cmake-cross` built before `cmake-debug` was configured (hazard 5), `vendor/` symlinked
+from the primary checkout. `ctest --test-dir cmake-debug -N` registers **9456** — the 9455
+baseline plus `jit/kgc-route-parity`, the only cell this branch adds. Full `ctest -j16`:
+**9456 cells, 0 failures**. `ctest -L flagsweep` **193/0**, `-L stratsweep` **116/0**,
+`ctest -L census` **7/0 with nothing Skipped**, `python3 tools/must-run.py --build
+cmake-debug` **78 row(s) satisfied**, `python3 tools/selfhost-smoke.py cmake-debug` OK from
+the repo root, `python3 tools/docref-lint.py` OK (and `--mutate` still reports all four
+planted shapes), `python3 tools/regstub-lint.py` OK. `tests/optfire/*` untouched.
+
+The six corpus programs were also checked against gcc 15.3.0 and clang 22.1.8 directly,
+not only against `MCC_JIT=0`: all three agree byte for byte on every line of output, so the
+corpus pins the C answer and not merely mcc's self-consistency.
 
 ### The two new cells, and what arms them
 
@@ -677,10 +835,11 @@ directory away, in `tests/jit/known-bad/`, until the bug is fixed.
 - **`jit/xoracle-conformance`** — qualifies and checks a deterministic slice of at most
   400 programs per suite from `gcc.c-torture/execute` (clang as oracle) and
   `llvm-test-suite/SingleSource/UnitTests` (gcc as oracle), so the cell itself runs both
-  oracle directions. `--min-pass 100 --max-miscompile 1`, ~47 s. Current measurement:
-  493 oracle-qualified, **167 AGREE** (125 gcc-side, 42 llvm-side), 315 NOT_BAKED,
-  5 MCC-REJECTED, 6 DIFFER of which **1 is the KGC miscompile above** — that is what
-  `--max-miscompile 1` banks. A second miscompile fails the cell.
+  oracle directions. `--min-pass 100 --max-miscompile 1`, ~35 s. Current measurement:
+  493 oracle-qualified, 6 DIFFER of which **1 is a JIT miscompile** — that is what
+  `--max-miscompile 1` banks. A second miscompile fails the cell. That count is 1 both
+  before and after `wt/kgcfix`: the slice holds none of the four programs that branch
+  closed, and the one it does pin is `20050502-1.c`, the side-effect admission defect.
   `MCC_XSUITE_GCC` and `MCC_XSUITE_LLVMTS` are cache PATHs defaulting to
   `$ENV{HOME}/Projects/{gcc,llvm-test-suite}`; without the gcc corpus the cell registers
   as a *skip with the reason*, never as a silent pass, and without llvm-test-suite it
@@ -714,8 +873,11 @@ The per-record verdicts are in `<build>/jitconform-all/jit-embed-O2.jsonl`; each
 
 ### Still open on the JIT after this branch
 
-1. **The KGC zero-extension miscompile above.** Highest priority; it is a wrong-answer
-   bug reachable from ordinary C.
+1. ~~**The KGC zero-extension miscompile above.**~~ FIXED on `wt/kgcfix`; the
+   return-register convention section above records what it actually was and what it
+   closed. What replaces it at the top of this list is the **side-effect admission
+   defect** in the same route — five distinct corpus programs, wrong answers reachable
+   from ordinary C, and the reduced case is in this file.
 2. **47.1% of programs cannot be baked at all.** The single largest lever on JIT
    coverage is the `VT_STATIC | VT_INLINE` callee refusal in `mccjit_intent_serialize` —
    a static helper called from the JIT'd function disqualifies the whole function, and

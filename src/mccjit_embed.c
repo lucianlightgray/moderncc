@@ -3153,7 +3153,7 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 }
 
 typedef intptr_t mccjit_argw;
-static int64_t mccjit_invoke(void *fn, const int64_t *a, uint32_t n, int wide) { MCC_TRACE("enter\n");
+static int64_t mccjit_invoke_raw(void *fn, const int64_t *a, uint32_t n, int wide) { MCC_TRACE("enter\n");
 	switch (n) { MCC_TRACE("br\n");
 	case 1:
 		return wide ? (int64_t)((long long (*)(mccjit_argw))fn)(a[0])
@@ -3183,6 +3183,13 @@ static int64_t mccjit_invoke(void *fn, const int64_t *a, uint32_t n, int wide) {
 	default:
 		return 0;
 	}
+}
+
+static int64_t mccjit_invoke(void *fn, const int64_t *a, uint32_t n, int wide) { MCC_TRACE("enter\n");
+	int64_t r = mccjit_invoke_raw(fn, a, n, wide);
+	if (wide)
+		{ MCC_TRACE("br\n"); return r; }
+	return (int64_t)(uint32_t)r;
 }
 
 static double mccjit_invoke_fp(void *fn, const double *a, uint32_t n) { MCC_TRACE("enter\n");
@@ -3264,7 +3271,7 @@ static void mccjit_bench_run_pair(void *cand, void *incumbent,
 						(const double *)(tuples + (size_t)i * MCCJIT_KGC_ARITY), nargs);
 				int64_t b; memcpy(&b, &d, sizeof b); sink += b;
 			} else { MCC_TRACE("br\n");
-				sink += mccjit_invoke(cand, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide);
+				sink += mccjit_invoke_raw(cand, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide);
 			}
 		}
 		if (clock_gettime(CLOCK_MONOTONIC, &t1) != 0)
@@ -3275,7 +3282,7 @@ static void mccjit_bench_run_pair(void *cand, void *incumbent,
 						(const double *)(tuples + (size_t)i * MCCJIT_KGC_ARITY), nargs);
 				int64_t b; memcpy(&b, &d, sizeof b); sink += b;
 			} else { MCC_TRACE("br\n");
-				sink += mccjit_invoke(incumbent, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide);
+				sink += mccjit_invoke_raw(incumbent, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide);
 			}
 		}
 		if (clock_gettime(CLOCK_MONOTONIC, &t2) != 0)
