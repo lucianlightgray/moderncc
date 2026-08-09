@@ -16522,22 +16522,39 @@ static void ast_slice_inl_report(void) { MCC_TRACE("enter\n");
 }
 
 static int ast_slice_inl_env = -1;
+static int ast_slice_inl_cfg_done;
 
-static int ast_slice_inl_on(void) { MCC_TRACE("enter\n");
-	if (ast_slice_inl_env < 0) { MCC_TRACE("br\n");
+/* Reading the knobs must not install the hook or register the atexit report.
+ * atexit handlers run in reverse registration order, and ast_ladder_gpu_report
+ * tears the device down from one of them, so registering an extra handler at a
+ * different moment reorders that teardown against the driver's own unload and
+ * turns mcc_gpu_quiesce into a call through an unmapped page. Keep the
+ * side-effecting arm on exactly the path that already reached it. */
+static int ast_slice_inl_depth_cfg(void) { MCC_TRACE("enter\n");
+	if (!ast_slice_inl_cfg_done) { MCC_TRACE("br\n");
 		const char *d;
-		ast_slice_inl_env = mcc_env_flag("MCC_AST_SLICE_INLINE", 1);
-		mcc_slice_inl_dump = mcc_env_on("MCC_SLICE_INL_DUMP");
+		ast_slice_inl_cfg_done = 1;
 		d = getenv("MCC_SLICE_INL_DEPTH");
 		if (d && d[0])
 			{ MCC_TRACE("br\n"); mcc_slice_inl_depth_max = (int)strtol(d, NULL, 10); }
 		if (mcc_slice_inl_depth_max < 0)
 			{ MCC_TRACE("br\n"); mcc_slice_inl_depth_max = 0; }
+		if (mcc_slice_inl_depth_max > MCC_SLICE_INL_DEPTH_CAP)
+			{ MCC_TRACE("br\n"); mcc_slice_inl_depth_max = MCC_SLICE_INL_DEPTH_CAP; }
 		d = getenv("MCC_SLICE_INL_EXPAND");
 		if (d && d[0])
 			{ MCC_TRACE("br\n"); mcc_slice_inl_expand_max = strtol(d, NULL, 10); }
 		if (mcc_slice_inl_expand_max <= 0)
 			{ MCC_TRACE("br\n"); mcc_slice_inl_expand_max = MCC_SLICE_INL_EXPAND; }
+	}
+	return mcc_slice_inl_depth_max;
+}
+
+static int ast_slice_inl_on(void) { MCC_TRACE("enter\n");
+	if (ast_slice_inl_env < 0) { MCC_TRACE("br\n");
+		ast_slice_inl_env = mcc_env_flag("MCC_AST_SLICE_INLINE", 1);
+		mcc_slice_inl_dump = mcc_env_on("MCC_SLICE_INL_DUMP");
+		ast_slice_inl_depth_cfg();
 		if (ast_slice_inl_env) { MCC_TRACE("br\n");
 			mcc_slice_leaf_hook = ast_slice_leaf_pool;
 			atexit(ast_slice_inl_report);
@@ -16548,9 +16565,8 @@ static int ast_slice_inl_on(void) { MCC_TRACE("enter\n");
 
 static AstArena *ast_slice_leaf_inline(AstArena *a) { MCC_TRACE("enter\n");
 	AstArena *g;
-	if (!a || !ast_slice_inl_on())
-		{ MCC_TRACE("br\n"); return NULL; }
-	if (!ast_inline_n && mcc_slice_inl_depth_max <= 0)
+	if (!a || (!ast_inline_n && ast_slice_inl_depth_cfg() <= 0) ||
+			!ast_slice_inl_on())
 		{ MCC_TRACE("br\n"); return NULL; }
 	g = ast_arena_clone(a);
 	if (!g)

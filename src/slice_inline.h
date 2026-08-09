@@ -58,6 +58,7 @@
 #define MCC_SLICE_INL_MAXNODE 48
 #define MCC_SLICE_INL_RECNODE 512
 #define MCC_SLICE_INL_EXPAND 200000
+#define MCC_SLICE_INL_DEPTH_CAP 64
 
 typedef struct MccSliceLeaf {
 	AstArena *a;

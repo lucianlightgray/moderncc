@@ -194,6 +194,29 @@ which plants a guard when it binds exactly as the depth bound does.
 **No emitted byte changes.** The graft still runs only on the clone taken by
 `ast_adump_body` and `ast_ladder_census`; `ast_cur` is untouched.
 
+### A regression this branch caused and fixed, worth knowing about
+
+The first version of this change moved `ast_slice_inl_on()` earlier in
+`ast_slice_leaf_inline` so the self-recursion path could reach it without a
+populated pool. That call registers `atexit(ast_slice_inl_report)`, and calling
+it on a path that previously returned first **reordered the exit handlers**.
+`ast_ladder_gpu_report` tears the device down from its own handler, so the shift
+put `mcc_gpu_quiesce` after the driver's unload and it jumped through an unmapped
+page: `gpu/ladder-gpu-parity` segfaulted **3 runs in 10**, nondeterministically,
+with the CPU arm clean 10 in 10 and `HEAD~1` clean 10 in 10 (both arms verified
+to be dispatching, `available=1 dispatches=129`, so the comparison was not
+vacuous).
+
+The fix splits the knob read (`ast_slice_inl_depth_cfg`, no side effects) from
+the arming (`ast_slice_inl_on`, installs the hook and registers the report), so
+the side-effecting call happens on exactly the path that already reached it.
+0 crashes in 30 runs after.
+
+Two things are worth carrying forward. **An `atexit` registration is a
+behavioural change, not bookkeeping** — the order is observable and something in
+this tree already depends on it. And the underlying device-teardown-after-unload
+bug is still latent: this branch stopped provoking it, it did not fix it.
+
 ### Still open
 
 - The wavefront strategy itself is unbuilt, on the evidence above. If a corpus
