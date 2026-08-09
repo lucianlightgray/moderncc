@@ -3783,23 +3783,21 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("slice/real" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
 
-                # name@oracle@suite@MINPROG@MINTUPLE@cflags. The two floors are
+                # name@oracle@suite@MINPROG@MINTUPLE@cflags. The floors are
                 # coverage guards: they exist so that "0 mismatches" cannot mean
-                # "0 tuples compared". They were written before any of these
-                # corpora had a checkout to run against, so the first four values
-                # were estimates rather than measurements -- and on the first real
-                # run two of them were above what their corpus yields at all
-                # (unittests produced 2111 against 4000, compiler-rt-builtins 32
-                # against 40) while the other two cleared comfortably (torture
-                # 198147 against 50000, regression-c 20934 against 10000).
-                # The two failing floors are now set from that measurement with a
-                # small margin. Measured on Darwin/arm64 only: re-take them on
-                # Linux/x86-64 before treating either as a ratchet.
+                # "0 tuples compared". Two of them were briefly lowered here on
+                # the evidence of a Darwin run that measured 2111 tuples against
+                # 4000 for unittests and 32 against 40 for compiler-rt-builtins.
+                # That evidence was an artefact of the cref quarantine, which
+                # withheld most slices from the oracle; wt/uacfix lifted it and
+                # the same corpora now yield 5043 and 2096. The original values
+                # stand -- do not lower them again without checking that the
+                # quarantine is not what is suppressing the count.
                 set(_corpora
                     "gcc-c-torture-execute@CLANG@GCC@1000@50000@-w,-std=gnu11,-fpermissive,-lm"
                     "llvm-test-suite-regression-c@GCC@CLANG@700@10000@-w,-std=gnu11,-fpermissive,-lm"
-                    "llvm-test-suite-unittests@GCC@CLANG@120@2000@-w,-std=gnu11,-fpermissive,-lm"
-                    "compiler-rt-builtins-unit@GCC@CLANG@100@30@-w,-std=gnu11,-Ivendor/compiler-rt-builtins-unit,-Ivendor/compiler-rt-lib-builtins,-lm")
+                    "llvm-test-suite-unittests@GCC@CLANG@120@4000@-w,-std=gnu11,-fpermissive,-lm"
+                    "compiler-rt-builtins-unit@GCC@CLANG@100@40@-w,-std=gnu11,-Ivendor/compiler-rt-builtins-unit,-Ivendor/compiler-rt-lib-builtins,-lm")
             if(MCC_PYTHON3 AND DIFF3_GCC AND DIFF3_CLANG)
                 add_test(NAME "slice/cref-oracle"
                     COMMAND "${CMAKE_COMMAND}"

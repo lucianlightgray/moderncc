@@ -1140,6 +1140,453 @@ a first one reports exactly doubled `bodies`, `slices` and `frame accepted`. The
 post-fix pass looked like a 2× widening of the funnel and was nothing of the kind. Delete
 `<build>/cref-*` between runs, or every absolute count is a multiple of how many times you
 have run it.
+## Landed — the Darwin default build did not compile, and the device arm was never the blocker, 2026-08-09
+
+> **Read alongside `## arm64 and Metal — the context, the traps and the unmeasured` at the
+> top of this file.** The two were written in parallel on different machines and neither
+> knew of the other. They agree on the picture and each supplies what the other lacks; two
+> points are worth reconciling explicitly. That section's §6 says `__int256` "passes indirect
+> and returns via `x8` on arm64" and that `va_arg` is indirect too — all correct, and the
+> classification was never the problem. What it could not know is that the *cursor* in
+> `gen_va_arg` was rounded to the pointee's 16-byte alignment anyway, so the second and later
+> varargs read past the pointer; that defect and a compiler crash beside it are item 3 below.
+> Its §6 also notes `__int256` is "not under continuous arm64 ctest coverage" — that is
+> exactly how both defects survived, and it is now measured rather than inferred.
+
+Measured on an Apple M1 Pro, macOS 26.5.2, Homebrew GCC 16.1.0 + Apple clang 21.0.0,
+MoltenVK 1.4.2. **The headline is that §4's MoltenVK row below is stale: the build-config
+change it prices at "~10 lines" is already in the tree** (`CMakeLists.txt`, the
+`find_library(MCC_MOLTENVK_LIB MoltenVK)` fallback when Vulkan headers exist without a
+loader), and `src/mccgpu.c` already dlopens `libMoltenVK.dylib` and the Homebrew path by
+name. Nothing about the device path needed writing. What did not work was the build.
+
+### The Darwin default target did not compile
+
+`MCC_GPU_BACKEND=auto` picks `metal` on Darwin, `slicerun` is in the default `all` target,
+and `slicerun` did not build under `-DMCC_GPU_LANG_MSL=1`: 20 errors, because the SPIR-V
+frame emitter in `src/mccslice.h` and three kernel builders in `tools/slicerun.c` name
+`SpvMod`/`SpvV`/`spv_*` outside any backend guard. So `cmake -B build && ninja` failed on a
+stock Mac. §6 ground 5 already said `tools/slicerun.c` "carries no backend `#if`" — it
+reproduces exactly, and it was a hard break, not a missing feature.
+
+**Fixed** by guarding, not by implementing: `#if !MCC_GPU_LANG_MSL` around the SPIR-V frame
+emitter block, and an MSL early-return in `bytes_kernel_in`, `deref_kernel` and
+`fmt_kernel`. All three return 0, which is the builders' existing "could not build"
+contract. Full `all` target now builds clean on both arms.
+
+### Unsupported now reports as unsupported, not as failure
+
+With the build fixed, ten `slice/*` cells failed on the Metal arm — newly reachable ground,
+but the wrong report: the Metal arm has no frame kernel (M2), no region layer (M4) and no
+format engine (M5), so those cells compare nothing. `suite_frame` asserted *"the frame run
+lowers to a device kernel"* and failed on a backend where that is false by construction.
+
+**Fixed** with a capability predicate (`backend_has_frame_kernels`, `backend_has_regions`)
+and a `g_unsupported` flag that makes the runner exit 77, plus `SKIP_RETURN_CODE 77` on
+`slice/frame` and on the four driver cells, and a 77 branch in `slicerun_real.cmake`,
+`slicerun_inline.cmake`, `slicerun_census.cmake` and `mcc_leaf_graft.cmake`. The
+`--arenas` path needed its own check: it returned 0 having compared nothing, which the
+drivers read as "compared and agreed". Metal arm now: 8 skips, 0 failures.
+
+### Three cells were passing, or failing, for reasons unrelated to what they test
+
+1. **`gpu/ladder-gpu-parity` failed on arm64.** Its corpus is the first 8 files of
+   `tests/exec/expressions/*.c` sorted; the first alphabetically is `al_ax_extend.c`, which
+   is x86 inline asm (`movl $0x1234ABCD, %eax`), so the CPU arm refused it with "ARM64
+   instruction 'movl' not implemented". The status check that turned that into a hard
+   failure is correct and stays; the corpus selection was host-blind. Now filters inline
+   asm before taking 8, and hard-fails if fewer than 4 survive.
+2. **`slice/f64-known-positive` failed, correctly, and could not have passed.** MoltenVK
+   reports `shaderFloat64 = 0` on Apple silicon (independently confirmed with a standalone
+   `vkEnumeratePhysicalDevices` probe), so `suite_f64` excludes all fp64 arithmetic — and
+   then `--mutate` has no fp64 kernel to perturb, so the mutant "survives" and the cell
+   calls the differential blind. It is not blind; there is nothing there. The runner now
+   exits 77 in that case. **`slicerun_mutate.cmake` also treated any non-zero as "mutation
+   detected"**, so a 77 read as a positive result — it now distinguishes them.
+3. **`tools/xsuite.py` aborted every jitconform subprocess on macOS.** `limits_compile` /
+   `limits_run` call `setrlimit(RLIMIT_AS)` in a `preexec_fn`; Darwin refuses both
+   `RLIMIT_AS` and `RLIMIT_DATA` with EINVAL even when the request *lowers* the limit, and
+   an exception in `preexec_fn` kills the child. Every `jit/xoracle-*` cell died with
+   `SubprocessError`. Now best-effort per limit, identical on Linux where `RLIMIT_AS` is
+   settable. This is what unblocked the JIT cross-oracle runs below.
+
+### What now runs on this Mac
+
+| cell | result |
+| --- | --- |
+| `gpu/spv-slice-{differential,known-positive,real}` | **pass** on the device via MoltenVK |
+| `gpu/msl-slice-{differential,known-positive,real}` | **pass** on native Metal |
+| `gpu/ladder-gpu-parity` | pass (was failing) |
+| `slice/*` on the Vulkan arm | pass, `slice/f64-known-positive` skips honestly |
+| `slice/*` on the Metal arm | 8 skips, 0 failures (was: did not build) |
+| `jit/xoracle-known-positive` | pass (was: SubprocessError) |
+| `jit/xoracle-conformance` | **pass, 720 s** (was: SubprocessError) |
+
+`slicerun --cost-synth` produces a real H6 table on `device Apple M1 Pro`, so the device is
+executing compute, not being detected and skipped.
+
+### The cross-oracle corpus runs — first execution, and they found real divergences
+
+Four corpora, each compiler adjudicating the other's, at `-O0` and `-O2`:
+
+| corpus | programs | wall | CPU ref vs clang/gcc | device vs CPU ref | floors |
+| --- | ---: | ---: | --- | --- | --- |
+| `compiler-rt-builtins-unit` | 249 | 497 s | **21×4 ok, 0 mismatch** | **0** | tuples 32 < 40 **miss** |
+| `llvm-test-suite-unittests` | 671 | 475 s | **21×4 ok, 0 mismatch** | **1 prog** | tuples 2111 < 4000 **miss** |
+| `llvm-test-suite-regression-c` | 1745 | 1972 s | **21×4 ok, 0 mismatch** | **3 progs + 8 frames** | met |
+| `gcc-c-torture-execute` | 1917 | 2755 s | **168×4 ok, 0 mismatch** | **3 progs + 9 frames** | met |
+
+Scale of the torture run, the largest: 1548 qualified, 15803 bodies, 38794 slices,
+**310352 tuples**, 72940 dispatches, **32884 frame runs compared**, 198147 cref tuples.
+
+**The CPU reference agreed with both external oracles on every re-checkable fragment, at
+both optimisation levels, in all four corpora — 231 fragments × 4 configurations, zero
+mismatches.** As a second implementation of C semantics `ast_eval_slice` is not contradicted
+by any external compiler here. Every disagreement found is **CPU-vs-device**: 7 programs and
+17 frame runs. Against 310k+41k tuples and 34k frame comparisons, that is a narrow, specific
+fault rather than a broken arm.
+
+### Open
+
+1. **CLOSED by `wt/uacfix` — the divergences below are fixed; the diagnosis is kept because
+   it is the independent half of that fix's evidence.** These were found and named here
+   before `## The usual arithmetic conversions, applied` landed on another machine, from the
+   device side rather than the emitted-code side, and the two accounts agree on every
+   program. That section's after-column now reports **0 device mismatches and 0 frame
+   mismatches on all four corpora**. Nothing below is an outstanding defect; read it as the
+   corroborating measurement.
+
+   **The `unittests` divergence is named, and it is a signedness bug, not a device quirk.**
+   The program is `SignlessTypes/div.c`, 3 mismatching tuples, and despite the file's name
+   it is not about division:
+
+   ```
+   MISMATCH nodes=6 nlive=2 op=0x5 wtype=0x3 c0k=9 c0t=0 c0w=0x63 tuple=0 cpu=4294967293 gpu=-3
+   MISMATCH ...                                              tuple=6 cpu=4294954951 gpu=-12345
+   MISMATCH ...                                              tuple=7 cpu=4294967295 gpu=-1
+   ```
+
+   `4294967293` is `0xFFFFFFFD`; the device answered `-3`. Every pair is the same 32-bit
+   pattern, zero-extended on the CPU and **sign-extended on the device**. The operand type
+   `c0w = 0x63` is `VT_INT | VT_UNSIGNED | VT_DEFSIGN` — an explicit `unsigned int` — while
+   the slice work type `wtype = 0x3` is plain signed `VT_INT`. **The work type dropped
+   `VT_UNSIGNED`**, so the device widened per the signed work type and the CPU reference
+   widened per the operand's own type. All four oracle configurations agree with the CPU
+   (`ok:028932270485e549` for clang and gcc-16, `-O0` and `-O2`), so the CPU is right and
+   the widening is wrong.
+
+   **Not fixed here, deliberately: this is the "ast_eval_slice ignores usual arithmetic
+   conversions" item being worked on Linux, and it is the same shape as the JIT KGC
+   unsigned-return sign extension on that list** — an `unsigned` 32-bit result widened with
+   sign extension in two different lowerings. Worth checking whether they share a widening
+   helper before fixing either in isolation.
+
+   **`regression-c`'s divergences are the same bug, and they name it unambiguously.** Every
+   one is `gcc-c-torture/execute/20040409-{1,2,3}.c` and their `w` variants — six programs,
+   3/6/3 slice mismatches and 2/4/2 frame mismatches each. That file is nothing but
+   `unsigned int` expressions whose result sets bit 31:
+
+   ```c
+   unsigned int test1u(unsigned int x) { return x ^ (unsigned int)INT_MIN; }
+   unsigned int test2u(unsigned int x) { return x + (unsigned int)INT_MIN; }
+   unsigned int test3u(unsigned int x) { return x - (unsigned int)INT_MIN; }
+   ```
+
+   **They are not provably the same defect, and the first reading of them here was wrong.**
+   Both are `unsigned int` results with bit 31 set, but the two signatures differ:
+
+   | | `div.c` | `20040409-1.c` |
+   | --- | --- | --- |
+   | `wtype` | `0x3` — plain signed `VT_INT` | `0x63` — `VT_INT\|VT_UNSIGNED\|VT_DEFSIGN` |
+   | operand `c0w` | `0x63` (unsigned) | `0x63` (unsigned) |
+   | shape | cpu zero-extends, gpu sign-extends | cpu and gpu differ by exactly 2^31 |
+   | example | `cpu=4294967295 gpu=-1` | `cpu=2147483647 gpu=4294967295` |
+
+   In `div.c` the work type has **lost** `VT_UNSIGNED` relative to its operand; in
+   `20040409-1.c` it has kept it and the two arms still disagree on a `+` (`op=0x2b`). So
+   there are at least two questions here, not one: where `wtype` loses signedness, and what
+   the device does with a 32-bit unsigned add whose result wraps. Do not assume one fix
+   closes both.
+
+   **These corpora had never run on any host**, so nothing here was Mac-specific; the same
+   tuples had simply never been reached. That prediction held — `wt/uacfix` reproduced and
+   fixed all of it on Linux. Two notes on the analysis above, now that the answer is known:
+   the caution against assuming one fix closed both was **over-cautious** — one did, and the
+   two signatures differ because `div.c` was caught after the work type had already lost
+   `VT_UNSIGNED` while `20040409-1.c` was caught before. The instinct to read this as a
+   device fault was also wrong: the emitted code was correct and the CPU reference was not,
+   which is the direction the four oracles were pointing all along.
+2. **Two `MINTUPLE` floors looked miscalibrated and were not — WITHDRAWN.** The run above
+   measured 2111 tuples for `unittests` against a floor of 4000, and 32 for
+   `compiler-rt-builtins-unit` against 40, and I lowered both to 2000 and 30 on that
+   evidence. **That was wrong and is reverted.** The counts were suppressed by the cref
+   quarantine, which withheld most slices from the oracle; `wt/uacfix` lifted it and the
+   same corpora now yield **5043** and **2096** — both comfortably over the original floors,
+   which now pass on their own terms. The lesson generalises: a coverage floor that fails is
+   evidence about the *funnel* before it is evidence about the floor, and lowering it would
+   have permanently masked the quarantine that was the real cause.
+3. **Three pre-existing arm64 failures, all now fixed.** None was GPU-related and all three
+   failed on both backends, before any change in this section.
+
+   **`exec/int256` segfaulted — an arm64 `va_arg` ABI bug, not the JIT.** `MCC_JIT=0` and
+   `MCC_JIT=1` crashed identically and the AOT binary crashed too, so neither the JIT nor
+   the in-process runner was at fault. Reduced to:
+
+   ```c
+   static unsigned __int256 vsum(int n, ...) { ... __builtin_va_arg(ap, unsigned __int256) ... }
+   vsum(1, a)     /* ok */
+   vsum(2, a, b)  /* SIGSEGV, faulting address 0x2 -- b's *value* used as a pointer */
+   ```
+
+   `gen_va_arg` in `src/arch/arm64/arm64-gen.c` rounded the va_list cursor up to 16 for any
+   type with `align == 16`. Above 16 bytes AAPCS64 passes a **pointer**, and the pointer is
+   8-aligned whatever the pointee needs: the first `va_arg` left the cursor 8 mod 16, the
+   second rounded up and read the word *past* the pointer it wanted. `__int256` is a 4-limb
+   struct with align 16, so it hit this on the second and every later vararg. The caller was
+   correct all along — the disassembly stores `[sp]` and `[sp+8]` as pointers exactly per
+   AAPCS64. **Fixed** by gating the rounding on `size <= 16`; the Windows/PE arm of the same
+   function had the identical bug against its own `indirect` flag and is gated on that.
+   `__int256` landed at `cefd0017` as "proved against GMP on five targets" — a variadic
+   `__int256` on arm64 was not among them. **This is a general arm64 defect, not Darwin's.**
+   A plain 32-byte struct through `va_arg` now works at `-O0` and `-O2` as well, so the fix
+   is not `__int256`-specific.
+
+   **A second, ELF-only instance of the same mistake, found by building in Docker.** The
+   function has *two* `align == 16` adjustments: the stack cursor above, and one in the
+   register-save-area path that is compiled only when `MCC_TARGET_MACHO` is not defined —
+   so macOS never sees it and no amount of testing on the owner's Mac could. On
+   Debian/arm64 the same reproducer aborted the compiler outright:
+
+   ```
+   mcc: src/arch/arm64/arm64-gen.c:1713: gen_va_arg: Assertion `0' failed.
+   ```
+
+   That `assert(0)` guards an unimplemented 16-byte-alignment case — but for an indirect
+   argument the case does not arise at all, because the GP slot holds an 8-byte pointer.
+   Gated on `size <= 16` like the other one. `exec/int256` and `exec-replay/int256` now pass
+   on Linux/arm64. **Verify any arm64 ABI change on both object formats; Darwin exercises
+   roughly half of this function.**
+
+   > **Heads-up for whoever owns Linux.** Two edits in this section reach beyond Darwin and
+   > were made before the Mac/Metal-only split: the ELF `assert(0)` gate just above
+   > (`src/arch/arm64/arm64-gen.c`), and the `arm64-Linux` / `x86_64-Linux` columns in
+   > `cmake/slicerun_census.cmake`. Both are verified green in Docker on Debian bookworm —
+   > `x86_64-Linux` reproduces the original banked numbers exactly — but they are Linux
+   > surface authored from a Mac. The PE arm of the same `gen_va_arg` fix is reasoned, not
+   > run: nothing here can execute Windows-on-ARM.
+
+3a. **FIXED — `mcc` itself crashed compiling a variadic `__int256` under `promote-locals`.**
+   Separate from the ABI bug above, and pre-existing. Ten-line reproducer:
+
+   ```c
+   static unsigned __int256 vsum(int n, ...) {
+       unsigned __int256 t = 0; __builtin_va_list ap;
+       __builtin_va_start(ap, n);
+       while (n-- > 0) t = t + __builtin_va_arg(ap, unsigned __int256);
+       __builtin_va_end(ap); return t;
+   }
+   int main(void) { unsigned __int256 a = 1; return (int)vsum(1, a); }
+   ```
+
+   `mcc -O2` dies with SIGSEGV in `type_size` (`src/mccgen.c`, `*a = s->r`) on a `CType`
+   whose `VT_BTYPE` is `VT_STRUCT` but whose `ref` is **NULL**. Bisected precisely:
+   `-O2 -fno-promote-locals` compiles, `-O1 -fpromote-locals` crashes, so **`promote-locals`
+   is the trigger** and the optimisation level is incidental. Not the JIT, not the runner,
+   not the ABI fix above — the pre-change compiler crashes identically, and a plain 32-byte
+   struct in the same shape compiles fine, so it is the wide256 type specifically.
+
+   **It is arm64-only.** Same reproducer, same compiler revision, `-c` so the linker is not
+   involved:
+
+   | | `-O0` | `-O2` | `-O2 -fno-promote-locals` | `-O1 -fpromote-locals` |
+   | --- | --- | --- | --- | --- |
+   | macOS arm64 | ok | **SIGSEGV** | ok | **SIGSEGV** |
+   | Debian arm64 | ok | **SIGSEGV** | ok | **SIGSEGV** |
+   | Debian x86_64 | ok | ok | ok | ok |
+
+   x86-64 CI would never have caught it: arm64's `gen_va_arg` asks `type_size` for the
+   argument's size on entry, so it is the arm64 backend that walks into the null.
+
+   **Root cause and fix.** Not the AST replay — instrumenting both ends showed the
+   `AST_OP_VAARG` node carries its ref correctly from capture to replay. The refless type
+   reaches `ast_plan_promotion`, which reconstructs `CType`s from arena fields and calls
+   `type_size` at five places to decide how much of the frame each object covers. Three of
+   them could be handed a `VT_STRUCT` with `ref == NULL`, and the guards that did exist
+   checked the *pointer's* ref rather than the **pointee's**:
+
+   ```c
+   if ((ct.t & VT_BTYPE) == VT_PTR && ct.ref)
+           sz = type_size(&ct.ref->type, &al);   /* ct.ref->type is the refless struct */
+   ```
+
+   Added `ast_promo_size_unknown()` and routed those sites through it. An unknown size is
+   **not** a small size, so each caller now widens to unbounded — poisoning every candidate
+   at or above the offset — instead of falling back to the 8 bytes the old code assumed;
+   under-poisoning here would be an aliasing miscompile rather than a crash. Two nearby
+   `CType`s were also being built with `bp`/`bs` left uninitialised; now set.
+
+   **All 45 `int256` cells pass on macOS arm64**, and the reproducer compiles clean at
+   `-O0`, `-O1`, `-O2`, `-O3`, `-Os` and `-O1 -fpromote-locals`. `test_abi` at `-O2` prints
+   the right values for `add3`, `mixed`, `vsum` and `arr3`.
+
+   Where the ref is lost: the AST replay rebuilds the type by hand at
+   `mccast.c` (`uop == AST_OP_VAARG`) with `vat.ref = ast_type_ref(a, n)`, and for the
+   wide256 struct that comes back 0. The RIR side does store it
+   (`ast_set_type_bf(..., o->ctype.ref, ...)` in `src/mccrir.c`) and the capture side copies
+   a live `CType`, so the ref is valid when captured and gone by the time it is replayed.
+   **Note also that `is_wide256_type()` dereferences `type->ref` with no null check**, so
+   the usual "is this a wide int?" test cannot even be asked once the ref is missing — that
+   is a latent null-deref in its own right and probably wants fixing first.
+
+   Two speculative guards in `ast_plan_promotion` were tried and **reverted**: they did not
+   fix the crash and they would have quietly made promotion more conservative for every
+   target. The fix belongs in whatever drops the ref between capture and replay.
+
+   **`slice/inline` and `slice/mcc-leaf-graft` — the leaf scanner hard-coded x86-64's frame
+   layout.** `mcc_slice_leaf_scan` in `src/slice_inline.h` ended with
+   `if (L->off[i] != -8 * (i + 1)) return 0;`, which asserts that incoming parameters sit
+   *below* the frame pointer at -8, -16, ... On arm64 they sit above it, ascending: the same
+   corpus reports 160 and 168 for `mix3(int, int)`. Every candidate was therefore refused —
+   `[slice-inline] invoke-seen=4 invoke-inlined=0 pool=2` — and nothing was ever grafted on
+   arm64.
+
+   The obvious fix, `#if defined(MCC_TARGET_ARM64)`, is **not allowed here** and
+   `target-gate-invariant` caught it: `MCC_TARGET_*` may not appear in a preprocessor
+   conditional outside `src/arch/` and a frozen allowlist, and that gate scans `tools/` as
+   well as `src/`. The fix therefore carries the layout as *data* instead:
+
+   - `struct AstInlineFn` already records `param_off[]` in declaration order, filled by the
+     arch layer. The hook now hands those to the scan, which matches the collected offsets
+     against them and pins each slot to a specific declared parameter. That is **stricter**
+     than the old stride test, which only inferred the mapping from an assumed order.
+   - `tools/slicerun.c` rebuilds callee bodies from arena dumps, which carry nodes and no
+     parameter list, so it has no signature to pass. It passes NULL and the scan falls back
+     to the one rule that holds on every layout mcc targets: parameter 0 is closest to the
+     frame base, the rest follow at stride 8, whichever side of it they are on — ordering by
+     |offset| puts x86-64's -8, -16 and arm64's 160, 168 both in declaration order.
+
+   Now `invoke-seen=4 invoke-inlined=4` in the compiler and `8/8` in slicerun. Parameter
+   *order* matters here and a swap would be a miscompile that both executors would make
+   identically, so it is checked two ways: `slice/inline`'s inlined-vs-non-inlined
+   differential passes, and `sub2`/`mix3`/`shf` (all non-commutative) agree with gcc-16.
+
+   **`slice/census` — the banked counts are per-environment and only one column existed.**
+   Every figure is a count over a corpus the build just compiled, so it picks up both the
+   target's AST/RIR shape *and* the host's system headers. Measured in Docker:
+
+   | environment | `blocks` | `inv-blocks` | `all-internal` | `all-external` | `mixed` | `any-indirect` |
+   | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+   | x86_64-Linux (the original bank) | 947 | 454 | 169 | 197 | 87 | 1 |
+   | arm64-Darwin | 990 | 517 | 165 | 265 | 85 | 2 |
+   | arm64-Linux | 1022 | 554 | 164 | 306 | 83 | 1 |
+
+   Same architecture, different OS, `blocks` moves by 32 — so keying on architecture alone
+   was not enough. **Fixed** by banking one column per `CENSUS_ARCH`/`CENSUS_OS` pair
+   (`MCC_CPU` / `CMAKE_SYSTEM_NAME`); an unbanked combination skips the exact half and keeps
+   the ratchets rather than comparing against a foreign column. All three columns verified
+   green. The arm64-Darwin column was taken *after* the graft fix above, which moved
+   `eligible` 356 → 366 and `inline-grafts` 0 → 130.
+
+   If this table grows awkward, the real fix is a census corpus that does not include system
+   headers, which would let one column serve everywhere.
+3b. **`cross/shadow-iv-*` (all five targets) fail as "nothing compiled; the sweep is
+   vacuous"** — 614 attempts, 614 compile failures, 0 divergences. Pre-existing: they failed
+   identically in the first run of this session, before any change. This tree was configured
+   native-only in a scratch directory with no cross build beside it, which is hazard 5's
+   configure-order territory, so it is probably an artefact of *this* build layout rather
+   than a repo defect — verify against a tree with `cmake-cross` built first before
+   spending time on it. Worth noting either way that the cell fails loudly rather than
+   skipping when its prerequisite is absent, which is the opposite of the convention the
+   rest of this section just established.
+
+4. **`MCC_GPU_BACKEND=auto` picks the weaker arm on Darwin.** `metal` gives 8 skips;
+   `vulkan` over MoltenVK gives the whole SPIR-V arm running on the device. §6 already says
+   MoltenVK is strictly dominant. Changing the default is a documented-behaviour change and
+   is left as the owner's call — the help text still says "auto picks metal on Darwin".
+5. **M1–M7 remain unwritten.** Nothing in this section implements an MSL emitter; it makes
+   the Metal arm build and report honestly. §5's 1,530–3,400 line estimate stands.
+
+## Landed — the four cref corpora are wired, and the oracle they were adjudicated by was a shim, 2026-08-09
+
+The four `slice/cref-oracle-*` cells have never run. `tests/must-run.txt` records them as
+`registered` with "skips when `vendor/` has no checkout", and that is what the board showed.
+Two separate things kept them down; the corpus was only the first, and the second is the
+one that mattered.
+
+### The corpora, now symlinked
+
+`vendor/` is gitignored, so these are local symlinks at the names `CMakeLists.txt` resolves
+under `MCC_VENDOR_DIR`. All four clear their `MINPROG` floors:
+
+| `vendor/` name | points at | `.c` | `MINPROG` |
+|---|---|---|---|
+| `gcc-c-torture-execute` | `~/Projects/gcc/gcc/testsuite/gcc.c-torture/execute` | 1917 | 1000 |
+| `llvm-test-suite-regression-c` | `~/Projects/llvm-test-suite/SingleSource/Regression/C` | 1745 | 700 |
+| `llvm-test-suite-unittests` | `~/Projects/llvm-test-suite/SingleSource/UnitTests` | 671 | 120 |
+| `compiler-rt-builtins-unit` | `~/Projects/llvm-project/compiler-rt/test/builtins/Unit` | 249 | 100 |
+| `compiler-rt-lib-builtins` | `~/Projects/llvm-project/compiler-rt/lib/builtins` | 220 | (`-I` only) |
+
+Checkouts: gcc **17.0.0** (`6b97b4f0f63`, trunk), llvm-project `llvmorg-24-init-3573-gc3278d53c4c7`,
+llvm-test-suite `llvmorg-23.1.0-rc2-13-g63a9fd935`.
+
+`gcc-c-torture-execute` deliberately points at the **live gcc trunk**, not at
+llvm-test-suite's vendored copy of the same suite. That copy is an SVN r275024 (2019)
+snapshot and its own CMake excludes `execute/builtins`; trunk is current and carries
+`builtins/` (118) and `ieee/` (78) — 1917 programs against 1708. Anyone re-pointing this
+at the llvm-test-suite copy should know they are trading 209 programs and six years for
+nothing.
+
+### The defect this exposed: `DIFF3_GCC` was read 1500 lines before it was written
+
+`MCC_BUILD_TESTS` consumed `DIFF3_GCC`/`DIFF3_CLANG` at the `_corpora` loop, but resolved
+them ~1500 lines later. On a **clean tree the first configure therefore registered all four
+as skips** — `SKIP: needs python3 plus both gcc and clang as independent oracles` — and the
+*second* configure registered them as real cells, because `find_program`'s cache entry now
+existed by the time the loop ran. A CI job that configures a fresh build directory got four
+silent skips and a green board; only an incremental reconfigure ever armed them.
+
+**Fixed** by hoisting the whole `MCC_DIFF3_*` resolution to the top of `MCC_BUILD_TESTS`,
+above its first consumer, and emitting `mcc diff3 oracles: gcc=… clang=…` at configure time
+so the binding is visible rather than inferred.
+
+### The worse half: on macOS the cross oracle was clang adjudicating clang
+
+Auto-detect ran `find_program(DIFF3_GCC NAMES gcc cc)` **first** and only then consulted
+`mcc_find_gnu_gcc`. On macOS `/usr/bin/gcc` is Apple clang (`Apple clang version 21.0.0`),
+and `find_program` caches it; the later GNU probe set a *normal* variable that shadowed the
+cache entry within the file but left `CMakeCache.txt` reading `DIFF3_GCC=/usr/bin/gcc`. Any
+consumer ahead of the resolution — the `_corpora` loop, exactly — saw the shim. The cells
+would have run `ORACLE_CC=/usr/bin/clang` against `SUITE_CC=/usr/bin/gcc`: **one compiler
+family voting twice, which is the single-compiler case the skip message says must not
+count.**
+
+**Fixed** by probing `mcc_find_gnu_gcc` *before* falling back to `gcc`/`cc`. That function
+already ordered `gcc-16 … gcc-10 gcc cc` and already required `Free Software Foundation`
+and not `clang` in `--version`; it simply never got asked first. On Linux the fallback is
+unchanged (real GNU gcc satisfies the probe under either order), and the cache entry is no
+longer written with a value that something else shadows.
+
+### Verification, this tree
+
+- Fresh build directory, **first** configure: `mcc diff3 oracles: gcc=/opt/homebrew/bin/gcc-16 clang=/usr/bin/clang` (Homebrew GCC 16.1.0).
+- All four cells register real, with the roles swapping per corpus as `_corpora` intends —
+  `gcc-c-torture-execute` is `suite=gcc-16 oracle=clang`; the three llvm-side corpora are
+  `suite=clang oracle=gcc-16`.
+- 382 registered cells now bind `gcc-16`; **0** bind `/usr/bin/gcc`.
+- Test set is byte-identical before and after the change (9446 names) — the fix moves *when*
+  resolution happens and *which* gcc wins, and registers nothing new.
+- `MCC_DIFF3_GCC` as an explicit override still works and is still what `tools/ci.c` and
+  `CMakePresets.json` pass.
+
+### Open
+
+1. **None of the four has actually been run.** Registering is not passing. `MINTUPLE` is
+   50000 for the torture corpus at `TIMEOUT 7200`; budget a real run before trusting the row.
+2. **CI has no GNU gcc on macOS runners**, so the same clang-vs-clang collapse is live there
+   under the *old* ordering and, under the new one, `mcc_find_gnu_gcc` returns empty and the
+   cells skip honestly instead. Decide whether macOS CI should install `gcc` or accept the skip.
+3. `tests/must-run.txt` still describes these three rows as "skips when `vendor/` has no
+   checkout". True, but it was never the reason they skipped here. Reword once they run.
 
 ## Metal parity — the drop is reversed by decision, and this is the spec, 2026-08-09 (`wt/metalspec`)
 
