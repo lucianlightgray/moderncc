@@ -5816,6 +5816,242 @@ static void suite_ext(void) {
 	ast_arena_free(a);
 }
 
+/* --- statics on the device ----------------------------------------------- *
+ * Everywhere else in this file the addresses the kernel dereferences are
+ * fabricated: they point into the window mcc_gpu_mem() hands back, which is the
+ * driver's mapping of device memory, and no object the C program declares lives
+ * there. That is exactly why the global-Ref classes are refused -- a .data or
+ * .bss address is outside binding 2 and both executors poison on it, agree, and
+ * the differential passes while nothing was computed.
+ *
+ * This suite closes that by going the other way: it imports the host pages that
+ * already hold three ordinary file-scope statics, so binding 2 *is* those pages
+ * and the address is the same integer on both sides. The three arrays stand in
+ * for matmul's three `static double`s; one page-aligned import covers all of
+ * them, which is the property that makes doing this per section rather than per
+ * object the cheap option.
+ *
+ * The definedness slot is the load-bearing assertion, not the value. A kernel
+ * whose address fell outside the window returns def=0 with a junk value and the
+ * CPU reference poisons identically, so a check on the value alone would pass
+ * without the import having done anything. */
+#define HI_N MCC_GPU_LOCAL_SIZE
+#define HI_NSLOT 2
+
+static double g_hi_a[HI_N];
+static double g_hi_b[HI_N];
+static long long g_hi_c[HI_N];
+
+static int hi_kernel(MccGpuCode *out) {
+#if MCC_GPU_LANG_MSL
+	(void)out;
+	return 0;
+#else
+	SpvMod m;
+	SpvRegion r;
+	SpvV v, pa, pc;
+	uint32_t base;
+	uint32_t *code;
+	int nw = 0;
+	spv_module_begin(&m, HI_NSLOT);
+	m.mem_base = ast_eval_slice_rw_base;
+	m.mem_nbyte = (uint32_t)ast_eval_slice_rw_nbyte;
+	base = spv_main_begin(&m, HI_NSLOT);
+	if (!spv_mem_region(&m, &r)) {
+		spv_module_free(&m);
+		return 0;
+	}
+	pa = spv_load_live_v(&m, base, 0, 1, 1);
+	pc = spv_load_live_v(&m, base, 1, 1, 1);
+	v = spv_load_region(&m, &r, spv_mem_off(&m, pa), VT_LLONG);
+	if (mcc_slice_mutate) {
+		uint32_t p = spv_pair(&m, v);
+		v = spv_mk(spv_u2(&m,
+											spv_uop(&m, SpvOpBitwiseXor, spv_lo(&m, p),
+															spv_uintc(&m, 1)),
+											spv_hi(&m, p)),
+							 1, 0);
+	}
+	spv_store_region(&m, &r, spv_mem_off(&m, pc), v, VT_LLONG);
+	spv_main_end(&m, m.lane, v);
+	code = spv_module_finish(&m, &nw);
+	spv_module_free(&m);
+	if (!code || nw <= 0) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nw;
+	return 1;
+#endif
+}
+
+static void hi_read_back(const void *src, int64_t *out) {
+	uint64_t u;
+	memcpy(&u, src, sizeof u);
+	*out = (int64_t)u;
+}
+
+static void hi_round(const MccGpuCode *code, const void *src, size_t esize,
+										 const char *what) {
+	int32_t *in, *ob;
+	int i, badv = 0, baddef = 0, badstore = 0, badcpu = 0;
+
+	in = (int32_t *)calloc((size_t)HI_N * HI_NSLOT * MCC_GPU_IN_SLOTS, sizeof *in);
+	ob = (int32_t *)calloc((size_t)HI_N * MCC_GPU_OUT_SLOTS, sizeof *ob);
+	if (!in || !ob) {
+		free(in);
+		free(ob);
+		return;
+	}
+	memset(g_hi_c, 0, sizeof g_hi_c);
+	for (i = 0; i < HI_N; i++) {
+		int64_t pa = (int64_t)(intptr_t)((const char *)src + (size_t)i * esize);
+		int64_t pc = (int64_t)(intptr_t)&g_hi_c[i];
+		int32_t *slot = in + (long)i * HI_NSLOT * MCC_GPU_IN_SLOTS;
+		slot[0] = (int32_t)(uint32_t)(uint64_t)pa;
+		slot[1] = (int32_t)(uint32_t)((uint64_t)pa >> 32);
+		slot[2] = (int32_t)(uint32_t)(uint64_t)pc;
+		slot[3] = (int32_t)(uint32_t)((uint64_t)pc >> 32);
+	}
+	if (!mcc_gpu_dispatch_rw2(code->p, code->n, in, HI_N, HI_NSLOT, ob)) {
+		CHECK(0, "the kernel reading a static through the imported window "
+							"dispatches");
+		free(in);
+		free(ob);
+		return;
+	}
+	for (i = 0; i < HI_N; i++) {
+		int64_t want, got, stored;
+		int32_t off = 0;
+		int cpuok = 0;
+		int64_t cpu;
+		hi_read_back((const char *)src + (size_t)i * esize, &want);
+		got = (int64_t)((uint64_t)(uint32_t)ob[(long)i * MCC_GPU_OUT_SLOTS] |
+										((uint64_t)(uint32_t)ob[(long)i * MCC_GPU_OUT_SLOTS + 1]
+										 << 32));
+		if (!ob[(long)i * MCC_GPU_OUT_SLOTS + 2])
+			baddef++;
+		if (got != want)
+			badv++;
+		stored = g_hi_c[i];
+		if (stored != want)
+			badstore++;
+		if (!ast_eval_slice_rw_addr(
+						(int64_t)(intptr_t)((const char *)src + (size_t)i * esize), &off)) {
+			badcpu++;
+			continue;
+		}
+		cpu = ast_eval_slice_bytes_load(ast_eval_slice_rw, ast_eval_slice_rw_nbyte,
+																		off, VT_LLONG, &cpuok);
+		if (!cpuok || cpu != want)
+			badcpu++;
+	}
+	if (baddef)
+		fprintf(stderr,
+						"slicerun: %d of %d lanes reported the address of %s outside the "
+						"window; the import did not take\n",
+						baddef, HI_N, what);
+	CHECK(baddef == 0, "every lane's address of a real static lands inside the "
+										 "imported window");
+	CHECK(badv == 0, "and the device reads back the value that static holds");
+	CHECK(badstore == 0, "and a device store lands in a real static the host "
+											 "then reads with ordinary C");
+	CHECK(badcpu == 0, "and the CPU reference resolves the same address to the "
+										 "same bytes");
+	free(in);
+	free(ob);
+}
+
+static void suite_hostimport(void) {
+	const char *why = "";
+	unsigned long align, span, i;
+	uintptr_t lo, hi, p;
+	void *base;
+	unsigned long msz = 0;
+	MccGpuCode code;
+
+	if (!backend_has_regions()) {
+		unsupported("a region layer", "TODO.md §5 stage M4");
+		return;
+	}
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr,
+							"FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+	align = mcc_gpu_host_import_align(&why);
+	if (!align) {
+		fprintf(stderr,
+						"SKIP: slicerun hostimport needs VK_EXT_external_memory_host to put "
+						"a static's own pages behind binding 2, and this device cannot: "
+						"%s (device=%s)\n",
+						why && why[0] ? why : "no reason reported", g_devname);
+		g_unsupported = 1;
+		return;
+	}
+
+	for (i = 0; i < HI_N; i++) {
+		g_hi_a[i] = (double)((long)i * 3 - 7) / 8.0;
+		g_hi_b[i] = (double)((long)i * -5 + 11) / 3.0;
+	}
+
+	/* One page-aligned range covering all three objects. This is the per-section
+	 * shape in miniature: the alignment requirement is awkward per object and
+	 * free once a whole span is aligned outward. */
+	lo = (uintptr_t)(void *)g_hi_a;
+	hi = lo + sizeof g_hi_a;
+	p = (uintptr_t)(void *)g_hi_b;
+	if (p < lo)
+		lo = p;
+	if (p + sizeof g_hi_b > hi)
+		hi = p + sizeof g_hi_b;
+	p = (uintptr_t)(void *)g_hi_c;
+	if (p < lo)
+		lo = p;
+	if (p + sizeof g_hi_c > hi)
+		hi = p + sizeof g_hi_c;
+	lo &= ~(uintptr_t)(align - 1);
+	hi = (hi + align - 1) & ~(uintptr_t)(align - 1);
+	span = (unsigned long)(hi - lo);
+	if (span > 0x7ffffffcul) {
+		fprintf(stderr,
+						"SKIP: slicerun hostimport: the three statics span %lu bytes, more "
+						"than a 32-bit window offset can address\n",
+						span);
+		g_unsupported = 1;
+		return;
+	}
+
+	if (!mcc_gpu_mem_import((void *)lo, span)) {
+		CHECK(0, "the host pages holding three statics import as device memory");
+		return;
+	}
+	if (!mcc_gpu_mem(&base, &msz) || base != (void *)lo || msz != span) {
+		CHECK(0, "and the shared window then reports exactly that host range");
+		return;
+	}
+	ast_eval_slice_rw = (uint32_t *)base;
+	ast_eval_slice_rw_base = (int64_t)(intptr_t)base;
+	ast_eval_slice_rw_nbyte = (int32_t)msz;
+	fprintf(stderr,
+					"slicerun hostimport: imported %lu bytes at %p (align %lu) covering "
+					"g_hi_a=%p g_hi_b=%p g_hi_c=%p\n",
+					span, (void *)lo, align, (void *)g_hi_a, (void *)g_hi_b,
+					(void *)g_hi_c);
+
+	if (!hi_kernel(&code)) {
+		CHECK(0, "the imported-window kernel emits");
+		return;
+	}
+	hi_round(&code, g_hi_a, sizeof g_hi_a[0], "g_hi_a");
+	hi_round(&code, g_hi_b, sizeof g_hi_b[0], "g_hi_b");
+	free(code.p);
+}
+
 /* Frame runs from real arenas, differentialled the same way expression slices
  * are: seed N independent frames, run both executors, compare every slot and
  * the returned value. */
@@ -6832,6 +7068,11 @@ int main(int argc, char **argv) {
 		suite_fmt();
 	if (only && !strcmp(only, "fault"))
 		suite_fault();
+	/* Named only. It replaces binding 2 with host pages for the rest of the
+	 * process, so running it alongside the suites that expect the driver's own
+	 * window would change what they are testing. */
+	if (only && !strcmp(only, "hostimport"))
+		suite_hostimport();
 	if (!only || !strcmp(only, "sched"))
 		suite_sched();
 
@@ -6848,7 +7089,7 @@ int main(int argc, char **argv) {
 							 !strcmp(only, "ops") || !strcmp(only, "fault") ||
 			 !strcmp(only, "mem") || !strcmp(only, "deref") ||
 			 !strcmp(only, "ext") || !strcmp(only, "f64") ||
-			 !strcmp(only, "fmt")) &&
+			 !strcmp(only, "fmt") || !strcmp(only, "hostimport")) &&
 			!g_have_device) {
 		fprintf(stderr, "SKIP: slicerun %s is a device differential and no usable "
 										"device was found on this host (device=%s)\n",
