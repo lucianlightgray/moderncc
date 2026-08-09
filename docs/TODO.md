@@ -6,6 +6,72 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## Total lowering — the decided architecture, 2026-08-09
+
+> **This section is decisions, not measurements.** Every line below was chosen by the
+> project owner in conversation on 2026-08-09 and supersedes any earlier ranking that
+> treated device coverage as an incremental menu. Where a decision contradicts a measured
+> refusal in a section below, the decision wins and the measurement becomes a work item.
+
+**The governing rule.** Every AST/RIR node must lower to the GPU. A slice terminates only
+where mcc **cannot see the callee's body** — `dlopen`, an unseen object, or an indirect
+call whose target set is not resolvable. The test is **body visibility, not C linkage
+class**: `extern int f(void);` whose definition exists anywhere in the program being
+linked lowers like any other call. This turns the refusal census from a menu into a bug
+list: every refusal that is not a body-invisible call is a defect with a fix owed.
+
+**Recursion is not a terminator.** SPIR-V forbids recursive `OpFunctionCall`, but a
+recursion inlined to a finite measured depth is ordinary nested code. The pipeline is:
+run the non-linear or recursive body on the **CPU first with iteration and depth
+counters** (the `-floop-census` machinery already has this shape); take the observed
+maxima as thresholds; build **aggressively inlined slices up to those maxima** as an
+optimization strategy; validate for correctness; and promote through the existing
+hotpatch benchmark, which already scores a base and candidate wrap with `ast_cost_score`
+and asks `ast_slice_promote_static` for KEEP or REJECT before splicing. Instrumentation
+yields an *observed* bound and not a proof, so a **bailout guard is mandatory**: a runtime
+excursion past the measured maximum falls back to the CPU rather than computing a
+truncated answer.
+
+**Inline asm lowers by lifting, not by pattern-matching.** `mccasm.c` already models each
+instruction's semantics in order to assemble it; that model is reused to decompile an asm
+block into RIR/AST nodes, which then lower through the ordinary path. One semantic model,
+no per-idiom table.
+
+**`setjmp`/`longjmp` lowers as a structured state machine** when both halves are inside
+the slice: a per-lane status flag plus an outer loop that resumes at the recorded target,
+which is expressible in SPIR-V's structured control flow.
+
+**Observable effects run exactly once.** This is the constraint that shapes the rest.
+The runtime gate is **always compare** — every dispatch runs the CPU reference and the
+device and compares — which is sound for pure computation but would *duplicate* a
+`volatile` store, an MMIO write or a timer read. So for effectful slices one side is
+designated the executor for that dispatch and the other is **replayed effect-free against
+a captured log of what the executor observed**. Every effect therefore needs a
+record/replay representation. This is the most demanding decision in this section and it
+is what makes a true differential possible for effectful code rather than only for pure
+code.
+
+**Globals reach the device as imported host pages.** `VK_EXT_external_memory_host`,
+verified supported by lavapipe (`.EXT_external_memory_host = true`,
+`minImportedHostPointerAlignment = 4096`, Mesa 26.0.x `lvp_device.c`), so CI on the Linux
+runner can exercise it and `MCC_GPU_REQUIRED=ON` stays honest. Since mcc is also the
+linker it can page-align `.data`/`.bss` and import the range as one allocation, which
+avoids per-object alignment work entirely. A device without the extension must **skip
+with a stated reason**, never pass vacuously.
+
+**Dispatch comes from parallel loop iteration spaces** — one lane per iteration, using
+`ast_loop_parallel_legal`, which became sound once array-decay `Load`s were typed.
+
+**Inlining is unbounded and measured afterwards**, including any pin or ratchet that
+moves.
+
+**The honest consequence, recorded so nobody rediscovers it as a disappointment.** Under
+always-compare the device produces **no wall-clock speed-up**, because the CPU reference
+runs on every dispatch. What it produces is a second independent implementation checking
+the first against real data rather than test data. That is a currency which converts —
+the device differential has already caught three miscompiles that internal comparisons
+were structurally blind to — whereas device-eligible blocks never had an exchange rate.
+
 ## arm64 and Metal — the context, the traps and the unmeasured, 2026-08-09 (`wt/arm64ctx`)
 
 > **This is not a plan and not a spec.** `## Metal parity — the drop is reversed by decision`
