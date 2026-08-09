@@ -98,10 +98,15 @@ def walk_tree(root):
     for dp, dns, fns in os.walk(root):
         dns[:] = [d for d in dns
                   if d not in SKIP_DIR and not d.startswith("cmake-")]
-        rel = os.path.relpath(dp, root)
+        # Key on forward slashes: citations in the docs are POSIX-style, but
+        # os.path.relpath yields the native separator, so on Windows the raw keys
+        # (docs\TODO.md) never match a cited docs/TODO.md and every ref reads as
+        # "not in the tree".
+        rel = os.path.relpath(dp, root).replace(os.sep, "/")
         dirs.add("" if rel == "." else rel)
         for fn in fns:
-            files[os.path.relpath(os.path.join(dp, fn), root)] = None
+            files[os.path.relpath(os.path.join(dp, fn),
+                                  root).replace(os.sep, "/")] = None
     return files, dirs
 
 
