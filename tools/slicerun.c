@@ -2147,6 +2147,12 @@ static int bytes_kernel(int t, MccGpuCode *out) {
 #define SWS_LANES MCC_GPU_LOCAL_SIZE
 
 static int subword_shared_kernel(int t, MccGpuCode *out) {
+#if MCC_GPU_LANG_MSL
+	/* Metal arm: no region layer, so no shared sub-word store. TODO.md §5 M4.
+	 * Same contract as the other builders here -- 0 means "could not build". */
+	(void)t; (void)out;
+	return 0;
+#else
 	SpvMod m;
 	SpvRegion r;
 	uint32_t base, off, val;
@@ -2176,6 +2182,7 @@ static int subword_shared_kernel(int t, MccGpuCode *out) {
 	out->p = code;
 	out->n = nw;
 	return 1;
+#endif /* MCC_GPU_LANG_MSL */
 }
 
 static unsigned char *subword_shared_span(void) {
@@ -5941,6 +5948,13 @@ static void suite_ext(void) {
 							"FAIL slicerun: no usable device but a device is required\n");
 			g_failures++;
 		}
+		return;
+	}
+	/* An extent frame is a frame kernel (M2) that addresses binding 2 (M4).
+	 * Neither exists on the Metal arm yet, so this compares nothing there and
+	 * must say so rather than assert that lowering succeeded. */
+	if (!backend_has_frame_kernels() || !backend_has_regions()) {
+		unsupported("extent frames", "TODO.md §5 stages M2 and M4");
 		return;
 	}
 	CHECK(g_rw != NULL && ast_eval_slice_rw != NULL,
