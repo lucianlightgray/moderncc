@@ -54,6 +54,8 @@ fmt/census-oracle            | must-run   | tools/fmt-census.py is a Python port
 fmt/census-oracle-known-positive | must-run | proves that oracle is not comparing nothing
 fmt/census-bank              | must-run   | the oracle gates the PORT; this gates the NUMBER. 172/162/148/100 and 9/4/1 are quoted on the board and were ratcheted nowhere. Needs only python3 and the source tree, so a skip here is always a bug
 fmt/census-bank-known-positive | must-run | proves that bank check moves when a board figure moves
+fmt/arena-census-bank        | must-run   | the de-duplicated D4b block census. 10,423 Invoke-blocked / 86 (0.825%) is on the board, and its predecessor sat there for a week as an upper bound because nobody had armed the recorder over one TU
+fmt/arena-census-known-positive | must-run | proves that arena bank fails on a double-counted dump, a shrunken one, and a moved share
 
 ast/o0-baseline              | must-run   | the -O0 per-key object sha256 bank. It went 426 commits without anything comparing anything, and 28 objects moved unnoticed. The native key needs no sysroot and no cross compiler, so a skip here is always a bug
 ast/o0-baseline-known-positive | must-run | proves that check is diffing real objects and not an empty corpus against an empty bank

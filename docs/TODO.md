@@ -480,7 +480,7 @@ tool and the corpus that produces it, or is marked **PROSE-ONLY** / **UNMEASURED
 | `kept` **83.090 / 91.913 / 91.978 / 91.978** (`self`), **92.881 / 96.546 / 96.597 / 96.597** (`wide`), at `-O0`..`-O3` | `tools/rir-coverage.py cmake-debug --corpus self --levels O0,O1,O2,O3`; `MCC_RIR_CENSUS=1 … --corpus wide … --opt-in` | `self` = `src/mcc.c`; `wide` = 380 sources |
 | **552 slices of 12,957 contain a loop (4.26%)** | `tools/slice-census.py cmake-debug --corpus self --levels O0,O1,O2,O3` | self-compile |
 | 172 `snprintf` sites, 162 literal, **148 accepted (91.4%)**, 100 carrying `%s`, 9 budget / 4 flag / 1 float; return consumed at 26 of 162 | `tools/fmt-census.py --check` — **gated**, `fmt/census-bank` + known-positive | `src/*.c`, the 18-file roster pinned in `CORPUS` |
-| **29,309** Invoke-blocked blocks, **242 (0.826%)** unblocked by the `snprintf` family alone, 10th among single-callee unblocks behind `_mcc_error` 1254, `fprintf` 631, `printf` 444, `memcpy` 369 — **UPPER BOUND, see the registration sweep**: the loop compiles `mcc.c`, which `#include`s `libmcc.c`, which `#include`s fifteen more, so most bodies are counted many times over. Not re-taken | `tools/fmt-census.py --arenas=` over a dump of `src/*.c` @ `-O1` | 8,250 arenas, 56,281 non-empty blocks — **inflated by that overlap** |
+| **10,423** Invoke-blocked blocks, **86 (0.825%)** unblocked by the `snprintf` family alone, 10th among single-callee unblocks behind `_mcc_error` 432, `fprintf` 214, `printf` 160, `memcpy` 126 — **RE-TAKEN 2026-08-09** on the de-duplicated corpus. The old `29,309 / 242` was the same measurement over a dump that recorded each body **2.8636** times; the counts deflate, the share does not (0.826% → 0.825%) | `tools/fmt-census.py --arena-check=<build-dir>` — **gated**, `fmt/arena-census-bank` + known-positive | `src/mcc.c`, the one real TU, @ `-O1`: 2,880 arenas over **2,880 distinct bodies**, 19,901 non-empty blocks |
 | twelve-key `-O0` object `sha256` + forced-Replay_IR counters, 304 files, `bar=OK` on every key | `tools/o0_ab.sh` — **gated**, `ast/o0-baseline` + known-positive | `tests/exec`; re-taken 2026-08-09 after 426 unwatched commits, **28 objects had moved** |
 | 947 non-empty blocks, **454** Invoke-blocked, 319 eligible, **33** sole-blocker | `slicerun --arenas <dump> --census` | `tests/exec`, 60 files @ `-O1` |
 | 19,454 blocks, **10,238** Invoke-blocked, 7,524 (73.49%) all-internal, 4,029 eligible, **803** sole-blocker | `slicerun --arenas <dump> --census` | `mcc -O2 -c src/mcc.c`, `MCC_RIR_PROD=2` |
@@ -591,7 +591,9 @@ tool and the corpus that produces it, or is marked **PROSE-ONLY** / **UNMEASURED
    roster that fails in both directions rather than a glob. **The figures did not move**:
    the site census scans each file's own text and never follows an `#include`, so the
    amalgamation never double-counted it. What the amalgamation *does* inflate is the
-   `--arenas=` row below, which is now labelled an upper bound and is **not** re-taken.
+   `--arenas=` row below, and that one was re-taken on `wt/arenaretake`: the factor is
+   **2.8636**, the counts deflate by it, the share does not move, and
+   `fmt/arena-census-bank` now fails on a double-counted dump.
 9. **The self-compile census total is not deterministic.** Three runs of the identical
    command gave `iterations` = 52,152,515 / 52,152,453 / 52,152,533. Every loop count, every
    `par=` column and every printed percentage is stable; the drift is a few dozen iterations
@@ -609,14 +611,14 @@ the finding:
 
 | figure | actual | how it failed |
 | --- | --- | --- |
-| `+168` blocks unblocked by `snprintf` | 246, now **242 (0.826%)** | prose only, no script |
+| `+168` blocks unblocked by `snprintf` | 246, then 242, now **86 (0.825%)** | prose only, no script |
 | `12,901 / 78.01%` internal-only | 803 / 73.49% | ad-hoc pass, 16× |
 | `16,537` Invoke-blocked | 10,238 | unreconstructible, hazard 4 |
 | `65.75%` / `1.88%` parallel-legal | **0.01%** | one `memset`-shaped loop, fixed at `415b736c` |
 | `140/162` formats accepted | 142, now **148** | the census port had drifted from `mcc_fmt_compile` |
 | `~4.3` points of `kept` | **+2.60** | measured before a correctness fix removed 1.7 of them |
 | `storeval-rot` "0.0000% of emitted instructions" | −2.31% stage-1, −0.232% stage-2 | **a correctly computed number of the wrong quantity**: a geomean over unmoved binaries |
-| `25,700` Invoke-blocked / `246` = 0.96% | **29,309 / 242 = 0.826%** | re-taken today; the ratio moved, the ranking survived |
+| `25,700` Invoke-blocked / `246` = 0.96% | **10,423 / 86 = 0.825%** | re-taken twice: the ratio moved at the first re-take and the ranking survived; the second re-take de-duplicated the corpus, and **only the counts moved** |
 | `cmake-debug` registers `9106`, same as `cmake-cross` | **8972 vs 9136** unless cross is built first | configure-order dependence, hazard 5 |
 | `reg-color` `gain 0.1796`, ranked on `interp` +1.9263 | **0.0017**, `gain_movers` **0.0019**, `cost-no-gain` | re-run 2026-08-09; the tree moved since `1ad3f1aa`, not a tool defect |
 | `if-conversion-abs` `gain +0.1905`, `branchy` +3.1843 | **−0.0334**, `branchy` **−0.5700** | a **sign flip** — the flag now makes `branchy` worse. Same cause |
@@ -1223,20 +1225,109 @@ units — `libmcc.c` `#include`s fifteen siblings and `mcc.c` `#include`s `libmc
 printf-family call site at all. Both are pinned at `0`, so a file that stops contributing
 fails instead of quietly shrinking a denominator.
 
-**Where the double-counting really is: the `--arenas=` row, and it is NOT re-measured.**
-The docstring's `for f in src/*.c; do … mcc -c -O1 …; done` compiles what it is given, so
-that loop compiles most of the tree seventeen times over. The docstring is corrected to the
-one real TU. **Both readings, honestly:**
+**Where the double-counting really is: the `--arenas=` row.** The docstring's
+`for f in src/*.c; do … mcc -c -O1 …; done` compiles what it is given, so that loop compiles
+most of the tree several times over. The docstring is corrected to the one real TU. This
+branch left the row as an upper bound of unknown tightness — correctly, because arming the
+recorder is a measurement and this branch was doing registration. **It was re-taken on
+`wt/arenaretake`; the section below has both readings and the tightness is no longer
+unknown.**
 
-| reading | figure |
-| --- | --- |
-| as banked, loop over `src/*.c` | 8,250 arenas, 56,281 non-empty blocks, **29,309** Invoke-blocked, **242 (0.826%)** unblocked by the `snprintf` family |
-| the one real TU, `src/mcc.c` alone | **not taken** — the arena path needs a live recorder, not source text, and arming it is a measurement, not a registration |
+#### LANDED — the D4b `--arenas=` row, re-taken. **The duplication factor is 2.8636, and the share the board quotes survives it intact**
 
-**Treat the `--arenas=` row as an upper bound of unknown tightness.** It is inflated by the
-overlap; by how much is unknown until someone re-takes it. Do not quote the `0.826%` share
-as if its denominator were 56,281 distinct blocks. This is the one number on the board this
-branch has made *less* certain, and saying so is the point.
+The row above left `8,250 arenas / 29,309 Invoke-blocked / 242 (0.826%)` as an upper bound of
+unknown tightness. It is measured now, and the tightness turns out to be two different
+answers for the two halves of the figure: the **counts** are inflated ~2.81–2.86×, and the
+**share** is not inflated at all.
+
+**The duplication factor, derived rather than borrowed.** Every `[arena]` record is one body
+and carries that body's name in its `fn=`, so records-against-distinct-names measures the
+double-counting directly — no structural fingerprint, no guessing. The loop spelling emits
+**8,250 records over 2,881 distinct bodies = 2.8636**, and the multiplicity histogram says
+exactly where it comes from:
+
+| bodies recorded | 1× | 2× | 3× | 4× | 5× | 6× |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| count | 51 | 346 | **2,441** | 35 | 4 | 4 |
+
+The 2,441 at exactly 3× are the ordinary case: a source is compiled once as a fragment, once
+inside `libmcc.c`, and once inside `mcc.c`. The 4–6× tail is the `static inline` bodies in
+the shared headers, which every fragment that uses them emits its own copy of —
+`read16le`, `read32le`, `dwarf_read_uleb128` and `dwarf_read_sleb128` (`src/mcc.h`) land six
+times each, `ast_gate_from_so` / `ast_gate_to_so` (`src/mccgate.h`) five.
+**Not the 2.8× carried in from the `10,239 vs 28,753` body count** — that figure was a
+different count on a different corpus; this one is re-derived here and happens to agree,
+which is the only reason it is safe to say they agree.
+
+**Both readings, side by side.** Same compiler (`cmake-debug`), same level, same tool; the
+only difference is what gets compiled:
+
+| | loop over `src/*.c` (as banked) | `src/mcc.c`, the one real TU |
+| --- | ---: | ---: |
+| `[arena]` records | 8,250 | **2,880** |
+| distinct bodies | 2,881 | **2,880** |
+| duplication factor | **2.8636** | **1.0000** |
+| non-empty blocks | 56,284 | **19,901** |
+| Invoke-blocked | 29,309 | **10,423** |
+| unblocked by the `snprintf` family alone | 242 | **86** |
+| that share | 0.8257% | **0.8251%** |
+
+Deflation, count by count: arenas 2.8646, blocks 2.8282, Invoke-blocked 2.8119,
+`snprintf`-only 2.8140. **The share moves by 0.0006 points.** The contamination was very
+nearly uniform, which is what you would expect of a corpus that is the same tree repeated,
+and it is why the *ranking* this row fed was never wrong even while its counts were.
+
+**Quote the right-hand column: 10,423 Invoke-blocked, 86 (0.825%).** There is no
+two-translation-units ambiguity to split here, and that is worth stating because it is the
+usual reason a de-duplication is contestable. `src/*.c` is not eighteen translation units —
+seventeen of the eighteen are textual fragments that exist only to be `#include`d, the build
+compiles exactly one object from `src/`, and three of the seventeen (`mccast.c`,
+`mccircap.c`, `mccrir.c`) **exit non-zero even with the build's own `-D`/`-I`**, so part of
+the left-hand column is records from compiles that failed. The extra records are not "the
+same body reached through a second TU"; they are the same body reached through one real TU
+and up to five make-believe ones. The check that settles it: the loop's set of body names is
+a strict superset of the TU's by **exactly one name**, `is_float_abi` — an `ST_INLN` in
+`mcc.h` that only gets a body emitted when an arch fragment is compiled standalone, i.e. a
+body no build ever produces. Every other body the loop saw, the single TU also saw, once.
+
+**One figure drifted, and it is not the one you would expect.**
+The banked block count for the loop spelling was **56,281**; the identical spelling gives
+**56,284** today. Three blocks, 0.005%, from source that has moved since — the *age* failure
+mode, the third of the three this board tracks. It is not worth a row in the
+failed-to-reproduce table and it is not being given one; it is worth knowing that the loop
+reading reproduces to five figures. And the `242`/`29,309` pair itself is **not** a
+failed-to-reproduce entry either: it reproduces exactly, on exactly the corpus its row named.
+The corpus was the defect, not the transcription and not the tool. What changed in that table
+is only the successor column.
+
+**The gate, and it can fail three ways.** `tools/fmt-census.py --arena-check=<build-dir>`
+arms the recorder itself — it reads the `-D`/`-I` for `src/mcc.c` back out of the build's own
+`compile_commands.json`, the way `slice-census.py` and `selfhost-smoke.py` already do — and
+compares against `tests/fmt/arena-census-bank.json`. Three assertions of deliberately
+different kinds:
+
+- **the de-duplication invariant, exact**: one record per distinct body. This is the defect
+  itself, and a cell that cannot fail on it cannot protect the corrected number.
+- **the counts, as floors at 90%**: the corpus is the compiler's own source and moves on
+  nearly every commit, so an equality here would be a cell against the project; a floor still
+  catches a dump that silently loses bodies.
+- **the share, as a ±0.10-point band** around 0.825%. Wide enough that ordinary churn does
+  not move it — the entire 2.86× deflation moved it 0.0006 — and narrow enough that a change
+  of method cannot hide in it.
+
+`fmt/arena-census-known-positive` proves all three: it runs the clean check (must pass), then
+`--mutate-arenas=dup` (census the dump twice — the loop-spelling shape), `=shrink` (stop at a
+thousand bodies) and `=share` (score a block unblocked when *any* callee is in the family
+rather than every one), and fails if any of the three still passes the bank. Ablated: the
+three mutations report 2.0000× duplication, four counts under their floors, and 2.763%
+against a banked 0.825%.
+
+**What this is worth, stated so nobody re-reads it as a payoff.** D4b is denominated in
+device-eligible blocks; `mcc_slice_frame_from_ast` is still a single definition in
+`src/mccslice.h` with no caller anywhere in `src/`, and 86 is 86 blocks of a currency with no
+exchange rate. This is a bookkeeping correction and was
+sized like one: the whole re-take is a **1.18 s** cell plus a 4.87 s known-positive, and the
+corrected number costs nothing to keep honest from here.
 
 #### LANDED — `tests/must-run.txt`, nineteen rows
 
@@ -1275,8 +1366,10 @@ would be false on every normal build.
 
 #### Filed by this sweep, not fixed
 
-1. **The `--arenas=` figure needs re-taking against one TU.** See the two-reading table
-   above. Blocked on arming the recorder, which is a measurement.
+1. ~~**The `--arenas=` figure needs re-taking against one TU.**~~ **CLOSED 2026-08-09,
+   `wt/arenaretake`.** The recorder is armed by the tool itself now
+   (`--arena-check=<build-dir>`), the factor is 2.8636, and the corrected
+   `10,423 / 86 (0.825%)` has a cell.
 2. **`idiomgate`'s subject is four.** Only 4 of the 17 named `MCC_CONFIG_*` macros are
    reached by any conditional in `src` + `tools`; the floor is `> 0` and that is now honest,
    but the invariant is far thinner than its name suggests. Combined with item 13's 17-of-37
@@ -2417,7 +2510,9 @@ arenas, 50,045 non-empty `AST_BasicBlock`s:
 
 The board's 16,537/+168 and this 25,700/+246 are the same measurement over a tree three
 days apart and 18 sources rather than 15; the *share* barely moves (1.02% → 0.96%), so the
-ranking survives, but **quote the reproducible number, not the prose one**. Scaling by the
+ranking survives, but **quote the reproducible number, not the prose one**. Every count in
+this table is on the contaminated loop corpus and is inflated ~2.86×; the current figures
+are `10,423` / `86` (0.825%) — see the `--arenas=` re-take. Scaling by the
 site share now enabled gives roughly **213 of the 246 blocks**; that is an estimate,
 because the format string bytes live in rodata and never enter the arena, so the dump
 cannot classify a block by its format.

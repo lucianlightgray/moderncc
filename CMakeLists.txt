@@ -3748,6 +3748,22 @@ if(MCC_BUILD_TESTS)
                             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fmt_census_mutate.cmake")
                 set_tests_properties("fmt/census-oracle-known-positive" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT)
+                add_test(NAME "fmt/arena-census-bank"
+                    COMMAND "${MCC_PYTHON3}"
+                            "${CMAKE_CURRENT_SOURCE_DIR}/tools/fmt-census.py"
+                            "--arena-check=${CMAKE_CURRENT_BINARY_DIR}"
+                            "--root=${CMAKE_CURRENT_SOURCE_DIR}")
+                set_tests_properties("fmt/arena-census-bank" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
+                add_test(NAME "fmt/arena-census-known-positive"
+                    COMMAND "${CMAKE_COMMAND}"
+                            -DPY=${MCC_PYTHON3}
+                            -DCENSUS=${CMAKE_CURRENT_SOURCE_DIR}/tools/fmt-census.py
+                            -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                            -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fmt_arena_census_mutate.cmake")
+                set_tests_properties("fmt/arena-census-known-positive"
+                    PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 600)
             endif()
         endif()
 

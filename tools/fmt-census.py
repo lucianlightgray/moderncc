@@ -50,17 +50,27 @@ That cost the board two sites (140/162 reported, 142/162 real).
 The block census, which is what the board's "+N blocks" figures mean, needs an
 arena dump rather than source text. This loop must NOT be `for f in src/*.c`:
 mcc.c pulls in libmcc.c which pulls in fifteen more, so that spelling compiles
-most of the tree seventeen times and the dump double-counts nearly every block.
-Compile the one real TU, and only it:
+most of the tree three times over and the dump double-counts nearly every block.
+Compile the one real TU, and only it -- which is what --arena-take does, reading
+the -D/-I back out of the build's own compile_commands.json:
 
-  MCC_ARENA_DUMP=arenas.txt mcc -c -O1 -o /dev/null src/mcc.c ...
-  tools/fmt-census.py --arenas=arenas.txt
+  tools/fmt-census.py --arena-take=cmake-debug    # take it
+  tools/fmt-census.py --arena-check=cmake-debug   # take it and gate it
+  tools/fmt-census.py --update-arena-bank=cmake-debug
+  tools/fmt-census.py --arenas=arenas.txt         # census a dump you already have
 
-The 8,250-arena / 56,281-block figure the board quotes against `src/*.c` was
-taken with the loop spelling, so it counts most bodies many times over. It is
-NOT re-measured here and --check does not cover it: the arena path needs a live
-recorder, not source text. Treat that row as an upper bound of unknown
-tightness until someone re-takes it; the board says so too.
+RE-TAKEN 2026-08-09, and the duplication is now measured rather than feared.
+The loop spelling emits 8,250 [arena] records over 2,881 distinct bodies: a
+factor of 2.8636, with 2,441 bodies recorded exactly three times (as a fragment,
+inside libmcc.c, inside mcc.c) and a tail up to six for the static inline bodies
+in the shared headers. The one real TU emits 2,880 records over 2,880 distinct
+bodies -- no body twice, and every name in it but one is in the loop's set. The
+counts deflate by ~2.8x; the SHARE the board quotes does not move at all:
+242/29,309 = 0.826% becomes 86/10,423 = 0.825%.
+
+--arena-check gates that. The de-duplication invariant is exact, the counts are
+floors because the corpus is the compiler's own moving source, and the share is
+a band. fmt/arena-census-known-positive proves all three can fail.
 """
 
 import collections
@@ -69,6 +79,7 @@ import json
 import os
 import random
 import re
+import shlex
 import subprocess
 import sys
 
@@ -423,6 +434,12 @@ AST_INVOKE = 11
 AST_NONE = 0xFFFFFFFF
 SNFAM = ("snprintf", "vsnprintf", "sprintf")
 
+ARENA_TU = "src/mcc.c"
+ARENA_BANK = "tests/fmt/arena-census-bank.json"
+ARENA_FLOOR = 0.90
+ARENA_PCT_TOL = 0.10
+MUT_ARENAS = [""]
+
 
 def arena_blocks(path):
     """Re-derive the board's block figure from MCC_ARENA_DUMP output.
@@ -430,9 +447,24 @@ def arena_blocks(path):
     A block is a non-empty AST_BasicBlock; it is Invoke-blocked if its subtree
     contains an AST_Invoke. Adding one callee unblocks a block only when every
     invoke in that block names a callee in the set, which is why the per-callee
-    numbers do not sum."""
+    numbers do not sum.
+
+    Every [arena] record is one body, and the fn= it carries is that body's
+    name, so counting records against distinct names measures directly how many
+    times the dump saw the same body. On a dump taken over the one real TU the
+    two are equal; on a dump taken with the loop spelling they are not, and the
+    ratio is the inflation factor of every count below.
+
+    MUT_ARENAS is the known-positive's lever, one mutation per kind of thing
+    check_arenas asserts. "dup" reads the dump twice, which is the shape the
+    loop spelling produces and must be caught by the record-against-name
+    invariant. "shrink" stops at a thousand bodies, which must be caught by the
+    floors. "share" scores a block as snprintf-unblocked when ANY callee is in
+    the family rather than every one, which moves the share the board quotes and
+    must be caught by the tolerance band."""
     tot = collections.Counter()
     per = collections.Counter()
+    names = collections.Counter()
     kind, fc, ns, inv, arenas = {}, {}, {}, {}, []
     cur = None
 
@@ -473,36 +505,199 @@ def arena_blocks(path):
             for name in set(cs):
                 if cs <= {name}:
                     per[name] += 1
-            if cs and cs <= set(SNFAM):
+            hit = cs & set(SNFAM) if MUT_ARENAS[0] == "share" else set()
+            if hit or (cs and cs <= set(SNFAM)):
                 tot["snprintf_only"] += 1
 
-    with open(path, "r", errors="replace") as fh:
-        for line in fh:
-            if line.startswith("[arena]"):
-                flush()
-                kind, fc, ns, inv = {}, {}, {}, {}
-                cur = (kind, fc, ns, inv)
-                arenas.append(1)
-                continue
-            if cur is None:
-                continue
-            if line.startswith("[inv]"):
+    for _ in range(2 if MUT_ARENAS[0] == "dup" else 1):
+        with open(path, "r", errors="replace") as fh:
+            for line in fh:
+                if line.startswith("[arena]"):
+                    flush()
+                    if MUT_ARENAS[0] == "shrink" and len(arenas) >= 1000:
+                        cur = None
+                        break
+                    kind, fc, ns, inv = {}, {}, {}, {}
+                    cur = (kind, fc, ns, inv)
+                    arenas.append(1)
+                    p = line.split()
+                    names[p[1][3:] if len(p) > 1 else "?"] += 1
+                    continue
+                if cur is None:
+                    continue
+                if line.startswith("[inv]"):
+                    p = line.split()
+                    if len(p) >= 3:
+                        inv[int(p[1])] = p[2]
+                    continue
                 p = line.split()
-                if len(p) >= 3:
-                    inv[int(p[1])] = p[2]
-                continue
-            p = line.split()
-            if len(p) < 7:
-                continue
-            try:
-                n = int(p[0])
-            except ValueError:
-                continue
-            kind[n] = int(p[1])
-            fc[n] = int(p[5])
-            ns[n] = int(p[6])
-    flush()
-    return len(arenas), tot, per
+                if len(p) < 7:
+                    continue
+                try:
+                    n = int(p[0])
+                except ValueError:
+                    continue
+                kind[n] = int(p[1])
+                fc[n] = int(p[5])
+                ns[n] = int(p[6])
+        flush()
+        cur = None
+    rep = {
+        "arenas": len(arenas),
+        "distinct_bodies": len(names),
+        "max_multiplicity": max(names.values()) if names else 0,
+        "blocks": tot["blocks"],
+        "invoke_blocked": tot["invoke_blocked"],
+        "snprintf_only": tot["snprintf_only"],
+    }
+    rep["multiplicity"] = sorted(collections.Counter(names.values()).items())
+    rep["snprintf_only_pct"] = (
+        round(100.0 * rep["snprintf_only"] / rep["invoke_blocked"], 3)
+        if rep["invoke_blocked"] else 0.0)
+    return rep, per
+
+
+def print_arenas(rep, per):
+    print("arenas: %d" % rep["arenas"])
+    print("distinct bodies (by fn=): %d" % rep["distinct_bodies"])
+    print("duplication factor: %.4f (records per distinct body)" %
+          (rep["arenas"] / rep["distinct_bodies"]
+           if rep["distinct_bodies"] else 0.0))
+    print("multiplicity histogram: %s" %
+          ", ".join("%dx:%d" % (m, c) for m, c in rep["multiplicity"]))
+    print("non-empty AST_BasicBlock: %d" % rep["blocks"])
+    print("Invoke-blocked: %d" % rep["invoke_blocked"])
+    print("unblocked by the snprintf family alone: %d (%.3f%%)" %
+          (rep["snprintf_only"], rep["snprintf_only_pct"]))
+    print("\ntop single-callee unblocks:")
+    for name, c in per.most_common(20):
+        if c:
+            print("  %-24s %5d" % (name, c))
+
+
+def self_flags(bdir):
+    """The -D/-I the build itself uses for src/mcc.c.
+
+    Seventeen of the eighteen src/*.c are #include fragments that the build
+    never compiles on their own -- and three of those seventeen exit non-zero
+    when made to, even with these exact flags -- so the corpus this census is
+    denominated in exists only through the one real TU, and the only honest way
+    to get its flags is to read them back from the build that already compiles
+    it."""
+    cdb = os.path.join(bdir, "compile_commands.json")
+    if not os.path.exists(cdb):
+        raise SystemExit("fmt-census: no compile_commands.json in %s, so the "
+                         "arena take cannot reproduce the build's own flags "
+                         "for %s" % (bdir, ARENA_TU))
+    with open(cdb) as f:
+        cc = json.load(f)
+    rec = [x for x in cc if x["file"].endswith("/mcc.c")]
+    if not rec:
+        raise SystemExit("fmt-census: no %s entry in %s" % (ARENA_TU, cdb))
+    return [a for a in shlex.split(rec[0]["command"])[1:]
+            if (a.startswith("-D") or a.startswith("-I"))
+            and not a.endswith(".c")]
+
+
+def arena_take(root, bdir):
+    """Arm the recorder over the one real translation unit and return the dump.
+
+    This is the measurement the --arenas= row never had: MCC_ARENA_DUMP needs a
+    live compile, and the loop over src/*.c that stood in for one compiled most
+    of the tree three times over."""
+    mcc = os.path.join(bdir, "mcc")
+    if not os.access(mcc, os.X_OK) and os.access(mcc + ".exe", os.X_OK):
+        mcc += ".exe"
+    if not os.access(mcc, os.X_OK):
+        raise SystemExit("fmt-census: no mcc at %s" % mcc)
+    tag = "fmt-arena-census-%d" % os.getpid()
+    dump = os.path.join(bdir, tag + ".txt")
+    obj = os.path.join(bdir, tag + ".o")
+    for p in (dump, obj):
+        if os.path.exists(p):
+            os.remove(p)
+    env = dict(os.environ, MCC_ARENA_DUMP=dump)
+    r = subprocess.run([mcc, "-w", "-c", "-O1"] + self_flags(bdir) +
+                       [os.path.join(root, ARENA_TU), "-o", obj],
+                       env=env, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.PIPE)
+    if r.returncode != 0 or not os.path.exists(dump):
+        sys.stderr.write(r.stderr.decode("utf-8", "replace")[-4000:])
+        raise SystemExit("fmt-census: the arena take failed to compile %s" %
+                         ARENA_TU)
+    return dump
+
+
+def check_arenas(root, rep, update):
+    """Gate the de-duplicated arena census.
+
+    Three things are asserted and they are deliberately of different kinds.
+
+    The de-duplication invariant is exact and is the whole point of the row:
+    one [arena] record per distinct body. It is what the banked 8,250-arena
+    figure violated 2.86 times over, and a census that cannot fail on that
+    cannot protect the corrected number.
+
+    The counts are floors, not equalities. The corpus is the compiler's own
+    source and it moves on nearly every commit, so an equality here would be a
+    cell against the project; a floor still catches a dump that silently
+    shrinks, which is the failure that would make the share meaningless.
+
+    The share is a band. It is the figure the board quotes, so it is checked,
+    but +-0.10 points is wide enough that ordinary source churn does not move
+    it -- the whole 2.86x deflation moved it by 0.001 -- and narrow enough that
+    a change of method cannot hide inside it."""
+    path = os.path.join(root, ARENA_BANK)
+    now = {k: rep[k] for k in ("arenas", "distinct_bodies", "blocks",
+                               "invoke_blocked", "snprintf_only",
+                               "snprintf_only_pct")}
+    now["corpus"] = ARENA_TU
+    now["level"] = "-O1"
+    if update:
+        with open(path, "w") as f:
+            json.dump(now, f, indent=1, sort_keys=True)
+            f.write("\n")
+        print("fmt-census: banked %s" % ARENA_BANK)
+        return 0
+    if not os.path.exists(path):
+        print("FAIL: no bank at %s. A missing bank is a failure, not a pass" %
+              ARENA_BANK)
+        return 1
+    with open(path) as f:
+        was = json.load(f)
+    bad = []
+    if rep["arenas"] != rep["distinct_bodies"] or rep["max_multiplicity"] > 1:
+        bad.append("  %d arena records over %d distinct bodies (max "
+                   "multiplicity %d). The dump double-counts: every count "
+                   "below is inflated by %.4fx and the corpus is not the one "
+                   "real translation unit" %
+                   (rep["arenas"], rep["distinct_bodies"],
+                    rep["max_multiplicity"],
+                    rep["arenas"] / max(1, rep["distinct_bodies"])))
+    for k in ("arenas", "blocks", "invoke_blocked", "snprintf_only"):
+        floor = int(was[k] * ARENA_FLOOR)
+        if now[k] < floor:
+            bad.append("  %-16s %d, below the floor of %d (%.0f%% of the "
+                       "banked %d)" %
+                       (k, now[k], floor, ARENA_FLOOR * 100, was[k]))
+    d = abs(now["snprintf_only_pct"] - was["snprintf_only_pct"])
+    if d > ARENA_PCT_TOL:
+        bad.append("  snprintf_only share %.3f%%, banked %.3f%%, moved %.3f "
+                   "points against a tolerance of %.2f. This is the figure the "
+                   "board quotes" %
+                   (now["snprintf_only_pct"], was["snprintf_only_pct"], d,
+                    ARENA_PCT_TOL))
+    if bad:
+        print("FAIL: the arena census moved against %s:" % ARENA_BANK)
+        print("\n".join(bad))
+        print("\nRe-take with --update-arena-bank=<build-dir> and say on the "
+              "board which figure moved and why.")
+        return 1
+    print("fmt-census: arena OK, %d bodies each counted once, %d blocks, %d "
+          "Invoke-blocked, %d (%.3f%%) unblocked by the snprintf family" %
+          (rep["distinct_bodies"], rep["blocks"], rep["invoke_blocked"],
+           rep["snprintf_only"], rep["snprintf_only_pct"]))
+    return 0
 
 
 def corpus_paths(root):
@@ -599,23 +794,29 @@ def main(argv):
             oracle = a.split("=", 1)[1]
         elif a == "--mutate":
             MUTATE[0] = 1
-    for a in argv:
-        if a.startswith("--arenas="):
-            na, tot, per = arena_blocks(a.split("=", 1)[1])
-            print("arenas: %d" % na)
-            print("non-empty AST_BasicBlock: %d" % tot["blocks"])
-            print("Invoke-blocked: %d" % tot["invoke_blocked"])
-            print("unblocked by the snprintf family alone: %d" %
-                  tot["snprintf_only"])
-            print("\ntop single-callee unblocks:")
-            for name, c in per.most_common(20):
-                if c:
-                    print("  %-24s %5d" % (name, c))
-            return 0
+        elif a.startswith("--mutate-arenas="):
+            MUT_ARENAS[0] = a.split("=", 1)[1]
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     for a in argv:
         if a.startswith("--root="):
             root = a.split("=", 1)[1]
+    for a in argv:
+        if a.startswith("--arenas="):
+            rep, per = arena_blocks(a.split("=", 1)[1])
+            print_arenas(rep, per)
+            return 0
+        if (a.startswith("--arena-take=") or a.startswith("--arena-check=")
+                or a.startswith("--update-arena-bank=")):
+            dump = arena_take(root, a.split("=", 1)[1])
+            rep, per = arena_blocks(dump)
+            for p in (dump, dump[:-4] + ".o"):
+                if os.path.exists(p):
+                    os.remove(p)
+            print_arenas(rep, per)
+            if a.startswith("--arena-take="):
+                return 0
+            return check_arenas(root, rep,
+                                a.startswith("--update-arena-bank="))
     paths = [a for a in argv if not a.startswith("--")]
     pinned = not paths
     if pinned:

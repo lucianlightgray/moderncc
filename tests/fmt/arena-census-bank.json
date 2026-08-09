@@ -1,0 +1,10 @@
+{
+ "arenas": 2880,
+ "blocks": 19901,
+ "corpus": "src/mcc.c",
+ "distinct_bodies": 2880,
+ "invoke_blocked": 10423,
+ "level": "-O1",
+ "snprintf_only": 86,
+ "snprintf_only_pct": 0.825
+}
