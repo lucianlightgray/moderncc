@@ -215,6 +215,7 @@ void ast_loopnest_dump(AstArena *a, const char *fname);
 
 int ast_loop_interchange_legal(AstArena *a, AstLocal outer, AstLocal inner);
 int ast_loop_fusion_legal(AstArena *a, AstLocal loop1, AstLocal loop2);
+int ast_loop_parallel_legal(AstArena *a, AstLocal loop);
 void ast_loopdep_dump(AstArena *a, const char *fname);
 
 #endif

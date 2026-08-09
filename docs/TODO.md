@@ -290,6 +290,8 @@ Self-compile of `src/mcc.c` at `-O2`, 1979 loops instrumented, 597 entered:
 | stray exits (`goto` *into* a body) | 929 (0.004%, all in `parse_comment`) |
 | **iteration-weighted fraction at each loop's own break-even** | **85.45%** |
 | the same with the single hottest loop removed | **59.73%** |
+| **the same, restricted to loops `ast_loop_parallel_legal` proves parallel** | **65.75%** |
+| the same with the single hottest loop removed | **1.88%** |
 
 | trips | 1 | 2 | 3-4 | 5-8 | 9-16 | 17-32 | 33-64 | 65-128 | 129-256 | 257-512 | 513-1024 | 1025+ |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -313,6 +315,112 @@ The break-even table the fraction is scored against:
 Only **4.3%** of census slices contain a loop at all, which is why this is the binding
 half rather than eligibility.
 
+#### `par=` answers now, and the answer kills the dispatch column
+
+`ast_loop_parallel_legal(AstArena *, AstLocal)` landed on `wt/parlegal`. It returns 1
+(provably no dependence carried by this loop), 0 (a carried dependence is *proven*), or -1
+(the analysis declines) — and `-floop-census` now emits a `[loopar] id= par=` record per
+loop from `ast_func_end`, where the arena exists, so `par=` is `1` / `0` / `?` instead of a
+literal question mark. `?` is never collapsed into `0`; the three counts are reported
+separately. `-O0` builds no arena, so every loop is `?` there — that is the negative
+control, not a bug.
+
+Self-compile of `src/mcc.c` at `-O2`, 2017 loops instrumented, 597 entered:
+
+| par= | static loops | entered | entries | iterations | share of iterations |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **1** (parallel) | 55 | 12 | 231,716 | 108,407,312 | **65.86%** |
+| **0** (carried) | 85 | 15 | 49,804 | 1,990,963 | 1.21% |
+| **?** (declined) | 1877 | 570 | 25,331,783 | 54,203,641 | 32.93% |
+
+| | raw | parallel-legal |
+| --- | ---: | ---: |
+| iteration-weighted fraction at each loop's own break-even | 85.45% | **65.75%** |
+| the same, hottest loop removed (of all iterations) | 59.71% | **1.88%** |
+| at trips≥8 | 87.39% | 65.84% |
+| at trips≥322 | 78.33% | 65.62% |
+
+**Read the second row, not the first.** 65.75% looks like a subject and is not one. It is
+one statement:
+
+```c
+/* src/mccrir.c:2959 and again at :3286, inside rir_op_effect */
+for (q = o->vs_n + 1; q <= VSTACK_SIZE; q++)
+        rir_pvok[q] = 0;
+```
+
+That single `for` is **63.88% of every loop iteration in the compile** (105.1M of 164.6M),
+its twin at `:3286` is another 1.32%, and together they are **65.2 of the 65.75 points**.
+It is a `memset` of a 512-byte flag array, entered 205,764 times to clear a mean of 511
+bytes. It is genuinely parallel — the predicate is right about it — and it is worth
+exactly nothing to a device: the fix is `memset`, or not clearing at all.
+
+Take those two out and the parallel-legal iteration-weighted fraction is **1.88% of all
+iterations** (5.19% of what remains). The complete measured lane source is **twelve
+loops**, every one of them read by hand:
+
+| id | site | what it is |
+| ---: | --- | --- |
+| 1294, 1297 | `mccrir.c:2959`, `:3286` | `rir_pvok[q] = 0` |
+| 1242 | `mccrir.c:925` | `rir_vslbl[i] = rir_vslbl2[i] = -1; rir_vscapt[i] = 0` |
+| 614 | `mccast.c:1852` | `ast_strat_order[i] = i` |
+| 1202 | `mccast.c:18350` | `sf[si] = 0` |
+| 713, 726, 737 | `mccast.c:4470/4564/4617` | `cweight[j] = 0`, `careg[j] = -1`, `colorable[j] = 1` |
+| 596 | `mccast.c:1334` | `color[i] = -1` |
+| 746 | `mccast.c:4684` | `ast_promo_save_slot[i] = i` |
+| 633 | `mccast.c:2300` | `reg_classes[hr] \|= MCC_RC_FLOAT`, 8 iterations total |
+| 1850 | `asm-constraints.inc.c:45` | `sorted_op[i] = i`, 7 iterations total |
+
+Twelve array fills. Nine of them run fewer than 70,000 iterations across an entire
+self-compile. **There is no dispatch site in this workload.** The AST-slice engine is a
+lowering achievement — the predicate, both executors, the SPIR-V emitter and the leaf
+inliner all work and are all tested — but the compiler contains no loop that both carries
+enough iterations to clear break-even *and* has independent lanes to give it. Stop ranking
+dispatch work off the 85.45%. Row 5 of the board, and debt #0, both say the same thing
+from the other end.
+
+The 63.9%-in-`rir_op_effect` line above is still true and still worth acting on, but not
+as a dispatch target: two thirds of all loop iterations in a self-compile are a redundant
+512-byte clear. That is a `memset` and a liveness question, not a GPU.
+
+**What the predicate refuses, and why each refusal is deliberate.** It declines (`?`) on:
+a call, `asm`, a `return`/`goto`/label/`case` in the body, `AST_StoreVal` (a store used as
+a value, which `ast_dep_collect` does not model as a store), any `AST_OP_*` outside a
+fixed safe list (atomics, VLA, `va_arg`, `OPASSIGN`), a `volatile` type, an
+address-escaping local, a base it cannot resolve (`!r->ok`), more than 64 distinct scalars
+or `AST_DEP_MAXREF` refs, a conservative direction vector, a scalar written only under a
+condition with no unconditional definition ahead of it, and — this one is not in the
+classical recipe — **any memory read in the exit test**, because a loop whose trip count is
+data-dependent has no lane count to hand a dispatcher even when no data dependence is
+carried. It also refuses to trust `ast_dep_base_distinct` between two refs when either
+reached its base through a `Load`: `p[i]` and `q[i]` for distinct global pointers `p`, `q`
+are *not* distinct objects, and the shared decoder had been treating them as such. That
+gate is new (`AstDepRef.indirect`) and is not read by `ast_loop_interchange_legal` or
+`ast_loop_fusion_legal`, so their behaviour is unchanged.
+
+It answers `0` (proven carried) on: a scalar read upward-exposed in the body and written in
+it (`s += a[i]`, `p++` under `*p`), a store to a fixed symbol address (`gsum += b[i]`), a
+store and a ref to the same base at distance ≠ 0 in this loop's direction component
+(`a[i] = a[i-1]`, `a[i] = a[i+1]`, `a[i] = a[i-8]`), and two same-base refs that are both
+subscript-free, i.e. the same address every iteration.
+
+Two limits are stated rather than hidden. First, the predicate assumes a store through a
+pointer does not clobber a *named global scalar* read in the same loop's exit test —
+closing that needs a memory model this tree does not have. Second, a reduction is `0` by
+design: `s += a[i]` is not parallel without a reduction transform, and nobody has written
+one.
+
+**The controls.** `tests/loopcensus/known_deps.c` holds 21 loops of known dependence
+structure and `known_deps.expect` the verdict each must get; `loop-census-parallel`
+(`tools/loop-census.py --partest`) checks every one at `-O1/-O2/-O3`, asserts separately
+that **no loop the expectations call carried ever comes back `par=1`**, checks that `-O0`
+answers `?` everywhere, and perturbs the source (drop the `a[i-1]` read, turn `s +=` into
+`s =`) to show both flip to `par=1` — so the predicate reads the dependence and not the
+loop shape. It was also broken twice on purpose to prove the cells bite: disabling the
+direction-component test made `dp_fwd`, `dp_bwd`, `dp_dist8` and both nested carried cases
+report `par=1` (5 unsound verdicts, 18 failures); disabling the upward-exposed-scalar test
+made `dp_reduce` and `dp_cond_scalar` report `par=1`.
+
 Three caveats that the next user of this number must not drop:
 
 1. **Body size in AST nodes is a conversion, not a reading.** The arena is built from the
@@ -322,13 +430,18 @@ Three caveats that the next user of this number must not drop:
    measured on the same TU in the same run from `MCC_SLICE_CENSUS` (**3.75**, median over
    24,747 slices). The per-threshold sweep is printed so the conclusion can be read
    without that constant.
-2. **`par=?` in the `[loop]` record is still a question mark.** `ast_loopdep` has no
-   `ast_loop_parallel_legal` (~30 lines from the existing direction-vector machinery), so
-   nothing here says any of those iterations are legal to run in parallel.
+2. ~~**`par=?` in the `[loop]` record is still a question mark.**~~ **ANSWERED
+   2026-08-08 — and the answer is that there is no lane source. See the section below.**
 3. **Ids are per-`mcc`-process.** Linking two `-floop-census` objects from separate
    invocations would collide. The tool compiles one TU.
 
-### 5. The fence wait is the remaining device-side cost
+### 5. The fence wait is the remaining device-side cost — but there is nothing to wait for
+
+**Read item 4's `par=` section before ranking this.** The parallel-legal iteration-weighted
+fraction on a self-compile is **1.88% once the one `memset`-shaped loop is removed**, and
+the entire lane source is twelve array-fill loops. Per-lane cost is not the binding
+constraint on this workload; the absence of lanes is. Everything below is still true and
+still the right fix *if* a caller ever appears — it is no longer a ranked item.
 
 Host marshalling is now 5.73 ns/lane debug, 3.03 release, out of a 33.7 ns/lane total —
 it is no longer where the time is. `vkWaitForFences` is, and it is memory-type sensitive:
@@ -354,11 +467,18 @@ recorded below were **wrong**, and the corrections are worth more than the fixes
 not about `cmake-cross`, and #1 is about a third of the size it was written up as. Each
 item now says what was measured, not what was assumed.
 
-0. **Nothing dispatches a binding-2 kernel except `tools/slicerun.c`.** The predicate,
-   both executors and the emitter are done; there is no *caller* in the compiler, because
-   `mcc_slice_frame_from_ast` has no call site outside the harness. Everything under
-   "Landed — `*p`" is measured on the harness, so it is a lowering result, not a
-   speed-up. Read row 5 of the board with that in mind.
+0. **Nothing dispatches a binding-2 kernel except `tools/slicerun.c`, and as of
+   2026-08-08 we know there is nothing for it to dispatch.** The predicate, both executors
+   and the emitter are done; there is no *caller* in the compiler, because
+   `mcc_slice_frame_from_ast` has no call site outside the harness (`src/mccslice.h` and
+   `src/slice_inline.h` are not included by `src/libmcc.c` or any `src/*.c` at all).
+   Everything under "Landed — `*p`" is measured on the harness, so it is a lowering result,
+   not a speed-up. **The missing caller is no longer the top of this debt — the missing
+   work is.** `ast_loop_parallel_legal` now answers the census's `par=` field, and on a
+   self-compile the parallel-legal iteration-weighted fraction is **65.75%, of which 65.2
+   points are one 512-byte `memset` inside `rir_op_effect`**; with it removed the figure is
+   **1.88%**, spread over twelve array-fill loops, nine of which run under 70,000 iterations
+   in the whole compile. Writing the caller would give it nothing to call. See item 4.
 1. **`--mutate` is blind to `memcpy` — OVERSTATED, and much smaller than written.**
    The write-up said the operator must move to written memory and the harness needs a
    frame-buffer comparison mode. Both already exist: four of the six operator sites

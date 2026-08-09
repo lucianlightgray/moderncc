@@ -46,7 +46,25 @@ bytes-per-node constant printed in the output.  Because that constant is a
 measurement and not a model, the report also prints the fraction at each of the
 six fixed thresholds, so the conclusion can be read without trusting it.
 
+The compiler also answers `par=` per loop.  `ast_loop_parallel_legal` runs at
+`ast_func_end`, where the arena exists, and writes a `[loopar] id= par=` record
+that refines the `par=?` on the static `[loop]` line to `1` (provably no
+dependence carried by this loop), `0` (a carried dependence is *proven*) or `?`
+(the analysis declined).  `?` is reported separately and never folded into `0`.
+`-O0` builds no arena, so every loop is `?` there.  The statistic that follows is
+the *parallel-legal* iteration-weighted fraction: of all executed iterations,
+the share in loop entries that both clear their own break-even and sit in a
+par=1 loop.  Both are printed side by side, because the gap between them is the
+whole point.
+
 Usage:
+  tools/loop-census.py <build-dir> --partest
+      the control for par=: tests/loopcensus/known_deps.c has loops whose
+      dependence structure is known by construction, known_deps.expect holds the
+      verdict each must get, and the cell asserts separately that no carried
+      loop ever comes back par=1.  Plus a negative control (-O0 -> all par=?)
+      and a perturbation (drop the carry -> the verdict flips).
+
   tools/loop-census.py <build-dir> --selftest
       the positive control: tests/loopcensus/known_trips.c has trip counts that
       are known by construction, and known_trips.expect holds them.  Checked at
@@ -136,7 +154,19 @@ def parse_map(txt):
             "depth": int(m.get("depth", 0)),
             "bytes": int(m.get("bytes", 0)),
             "toks": int(m.get("toks", 0)),
+            "par": m.get("par", "?"),
         }
+    for ln in txt.splitlines():
+        f = ln.split()
+        if not f or f[0] != "[loopar]":
+            continue
+        m = dict(kv.split("=", 1) for kv in f[1:] if "=" in kv)
+        try:
+            i = int(m["id"])
+        except (KeyError, ValueError):
+            continue
+        if i in loops and m.get("par") in ("0", "1", "?"):
+            loops[i]["par"] = m["par"]
     return loops
 
 
@@ -316,6 +346,13 @@ def report(loops, trips, tot, bpn, ncal, top, opt, src, want_json):
     nodes_hist = [0] * len(names)
     unmapped = 0
     rows = []
+    par_static = {"1": 0, "0": 0, "?": 0}
+    par_entered = {"1": 0, "0": 0, "?": 0}
+    par_entries = {"1": 0, "0": 0, "?": 0}
+    par_iters = {"1": 0, "0": 0, "?": 0}
+    par_num = {"1": 0, "0": 0, "?": 0}
+    for lp in loops.values():
+        par_static[lp.get("par", "?")] += 1
     for i, tr in trips.items():
         lp = loops.get(i)
         if lp is None:
@@ -344,6 +381,11 @@ def report(loops, trips, tot, bpn, ncal, top, opt, src, want_json):
         a["iters"] += tr["iters"]
         a["lost"] += tr["lost"]
         a["hot"] += tr["gew"][thr]
+        pv = lp.get("par", "?")
+        par_entered[pv] += 1
+        par_entries[pv] += tr["entries"]
+        par_iters[pv] += tr["iters"]
+        par_num[pv] += tr["gew"][thr]
         rows.append((tr["iters"], i, lp, tr, est, thr))
 
     print()
@@ -403,6 +445,36 @@ def report(loops, trips, tot, bpn, ncal, top, opt, src, want_json):
               % (t, fixed_num[t], 100.0 * fixed_num[t] / tot_iters
                  if tot_iters else 0.0, fixed_ent[t]))
 
+    pwf = 100.0 * par_num["1"] / tot_iters if tot_iters else 0.0
+    print()
+    print("=== parallel legality (ast_loop_parallel_legal) ===")
+    print("par=  static loops   entered   entries        iterations      "
+          "share   at break-even")
+    for pv, lab in (("1", "yes"), ("0", "no"), ("?", "unknown")):
+        print("  %-3s %-12d %-9d %-14d %-14d %6.2f%%  %14d"
+              % (lab, par_static[pv], par_entered[pv], par_entries[pv],
+                 par_iters[pv],
+                 100.0 * par_iters[pv] / tot_iters if tot_iters else 0.0,
+                 par_num[pv]))
+    print("  (par=? is an honest refusal: the analysis could not decide, and")
+    print("   is never collapsed into par=0)")
+    print()
+    print("PARALLEL-LEGAL ITERATION-WEIGHTED FRACTION                   %.2f%%"
+          % pwf)
+    print("  (share of executed iterations in loop entries that BOTH meet the")
+    print("   break-even for their node bucket AND sit in a par=1 loop)")
+    print("  raw (dependence ignored)  %.2f%%   legal-only  %.2f%%"
+          % (wf, pwf))
+    print()
+    print("raw vs legal-only at each fixed threshold:")
+    for t in THRESHOLDS:
+        lo = sum(tr["gew"][t] for _, _, lp, tr, _, _ in rows
+                 if lp.get("par") == "1")
+        print("  trips >= %-4d  raw %12d  %6.2f%%   legal %12d  %6.2f%%"
+              % (t, fixed_num[t],
+                 100.0 * fixed_num[t] / tot_iters if tot_iters else 0.0,
+                 lo, 100.0 * lo / tot_iters if tot_iters else 0.0))
+
     rows.sort(reverse=True)
     if rows:
         top1 = rows[0]
@@ -416,16 +488,37 @@ def report(loops, trips, tot, bpn, ncal, top, opt, src, want_json):
                  100.0 * top10 / tot_iters))
         print("  weighted fraction with that one loop removed  %.2f%%"
               % (100.0 * rest_num / rest_it if rest_it else 0.0))
+        rest_par = par_num["1"] - (top1[3]["gew"][top1[5]]
+                                   if top1[2].get("par") == "1" else 0)
+        print("  parallel-legal fraction with that one loop removed  %.2f%% "
+              "of the remaining iterations, %.2f%% of all"
+              % (100.0 * rest_par / rest_it if rest_it else 0.0,
+                 100.0 * rest_par / tot_iters if tot_iters else 0.0))
+
+    par_rows = [r for r in rows if r[2].get("par") == "1"]
+    if par_rows:
+        print()
+        print("top %d par=1 loops by iterations -- the whole lane source"
+              % min(top, len(par_rows)))
+        for it, i, lp, tr, est, thr in par_rows[:top]:
+            print("  id=%-5d %-28s %s:%s %-5s nodes~%-4d thr=%-4d "
+                  "entries=%-9d iters=%-12d %5.2f%% of all"
+                  % (i, lp["fn"][:28],
+                     os.path.basename(lp["file"].rsplit(":", 1)[0]),
+                     lp["file"].rsplit(":", 1)[1], lp["kind"], est, thr,
+                     tr["entries"], it,
+                     100.0 * it / tot_iters if tot_iters else 0.0))
 
     print()
     print("top %d loops by iterations" % top)
     for it, i, lp, tr, est, thr in rows[:top]:
         print("  id=%-5d %-28s %s:%s %-5s d=%d nodes~%-4d thr=%-4d "
-              "entries=%-9d iters=%-12d mean=%.1f hot=%.1f%%"
+              "entries=%-9d iters=%-12d mean=%.1f hot=%.1f%% par=%s"
               % (i, lp["fn"][:28], os.path.basename(lp["file"].rsplit(":", 1)[0]),
                  lp["file"].rsplit(":", 1)[1], lp["kind"], lp["depth"], est, thr,
                  tr["entries"], it, it / tr["exits"] if tr["exits"] else 0.0,
-                 100.0 * tr["gew"][thr] / it if it else 0.0))
+                 100.0 * tr["gew"][thr] / it if it else 0.0,
+                 lp.get("par", "?")))
 
     print()
     print("top %d functions by iterations" % top)
@@ -442,6 +535,9 @@ def report(loops, trips, tot, bpn, ncal, top, opt, src, want_json):
             "hist": hist, "hist_names": names, "iters_by_nodes": nodes_hist,
             "bytes_per_node": bpn, "weighted_fraction": wf,
             "fixed": {str(t): fixed_num[t] for t in THRESHOLDS},
+            "par_static": par_static, "par_entered": par_entered,
+            "par_entries": par_entries, "par_iters": par_iters,
+            "parallel_legal_weighted_fraction": pwf,
         }, open(want_json, "w"), indent=1)
         print("\nwrote %s" % want_json)
     return 0
@@ -565,6 +661,118 @@ def selftest(bdir):
     return 1 if bad else 0
 
 
+def partest(bdir):
+    """Positive/negative control for the par= verdict.
+
+    tests/loopcensus/known_deps.c holds loops whose dependence structure is
+    known by construction; known_deps.expect holds the verdict each one must
+    get.  A loop that carries a dependence must never come back par=1 -- that
+    is the failure this control exists to catch.  par=? is accepted only where
+    the expectation says so.
+    """
+    mcc = find_mcc(bdir)
+    if not os.access(mcc, os.X_OK):
+        print("loop-census: no mcc at %s" % mcc)
+        return 77
+    prog = os.path.join(ROOT, "tests", "loopcensus", "known_deps.c")
+    exp = os.path.join(ROOT, "tests", "loopcensus", "known_deps.expect")
+    if not os.path.exists(prog) or not os.path.exists(exp):
+        print("loop-census: missing %s" % prog)
+        return 1
+    want = {}
+    for ln in open(exp):
+        m = re.match(r"id=(\d+)\s+par=([01?])\s+fn=(\S+)", ln.strip())
+        if m:
+            want[int(m.group(1))] = (m.group(2), m.group(3))
+    if not want:
+        print("loop-census: no expectations in %s" % exp)
+        return 1
+    bad = 0
+    with tempfile.TemporaryDirectory() as work:
+        for opt in ("O1", "O2", "O3"):
+            got = _par_of(mcc, prog, opt, work)
+            if got is None:
+                print("loop-census partest: compile FAILED at -" + opt)
+                return 1
+            if len(got) != len(want):
+                print("  -%s: %d [loop] records, expected %d"
+                      % (opt, len(got), len(want)))
+                bad += 1
+            for i, (pv, fn) in sorted(want.items()):
+                g = got.get(i)
+                if g is None:
+                    print("  -%s id=%d MISSING" % (opt, i))
+                    bad += 1
+                    continue
+                ok = g["par"] == pv and g["fn"] == fn
+                print("  -%s id=%-3d %-24s par=%s  %s"
+                      % (opt, i, g["fn"][:24], g["par"],
+                         "ok" if ok else "MISMATCH want par=%s fn=%s"
+                         % (pv, fn)))
+                if not ok:
+                    bad += 1
+            wrong = [i for i, g in got.items()
+                     if g["par"] == "1" and want.get(i, ("?",))[0] != "1"]
+            if wrong:
+                print("  -%s UNSOUND: par=1 on carried loops %s" % (opt, wrong))
+                bad += 1
+
+        print("\n-- negative control: -O0 builds no AST, so nothing is claimed")
+        got = _par_of(mcc, prog, "O0", work)
+        if got is None:
+            return 1
+        claimed = [i for i, g in got.items() if g["par"] != "?"]
+        if claimed:
+            print("  FAIL: -O0 answered par= for %s" % claimed)
+            bad += 1
+        else:
+            print("  ok: every loop is par=? at -O0")
+
+        print("-- inertness control: removing the carry makes the verdict move")
+        pert = os.path.join(work, "pert.c")
+        txt = open(prog).read()
+        ptxt = txt.replace("a[i] = a[i - 1] + 1;", "a[i] = b[i - 1] + 1;")
+        ptxt = ptxt.replace("s += a[i];", "s = a[i];")
+        if ptxt == txt:
+            print("  FAIL: could not perturb the control program")
+            return 1
+        open(pert, "w").write(ptxt)
+        got = _par_of(mcc, pert, "O2", work)
+        if got is None:
+            return 1
+        moved = got.get(1, {}).get("par"), got.get(3, {}).get("par")
+        if moved != ("1", "1"):
+            print("  FAIL: perturbed run gave id=1 par=%s id=3 par=%s, "
+                  "wanted 1 and 1" % moved)
+            bad += 1
+        else:
+            print("  ok: dropping the a[i-1] read and the += flipped both to "
+                  "par=1, so the predicate reads the dependence and not the "
+                  "loop shape")
+
+    print("\nloop-census partest: %s" % ("FAILED (%d)" % bad if bad else "ok"))
+    return 1 if bad else 0
+
+
+def _par_of(mcc, prog, opt, work):
+    mapf = os.path.join(work, "pmap" + opt + ".txt")
+    if os.path.exists(mapf):
+        os.remove(mapf)
+    env = dict(os.environ)
+    env["MCC_LOOP_CENSUS_MAP"] = mapf
+    env.pop("MCC_LOOP_CENSUS", None)
+    p = subprocess.run([mcc, "-" + opt, "-floop-census", "-c", prog,
+                        "-o", os.path.join(work, "kd" + opt + ".o")],
+                       cwd=ROOT, env=env, capture_output=True, text=True)
+    if p.returncode != 0:
+        print(p.stdout + p.stderr)
+        return None
+    if not os.path.exists(mapf):
+        print("loop-census: no map at %s" % mapf)
+        return None
+    return parse_map(open(mapf, errors="replace").read())
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("bdir")
@@ -574,9 +782,12 @@ def main():
     ap.add_argument("--json")
     ap.add_argument("--keep")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--partest", action="store_true")
     ap.add_argument("--opt-in", action="store_true")
     a = ap.parse_args()
     bdir = a.bdir if os.path.isabs(a.bdir) else os.path.join(ROOT, a.bdir)
+    if a.partest:
+        sys.exit(partest(bdir))
     if a.selftest:
         sys.exit(selftest(bdir))
     if a.opt_in and not os.environ.get("MCC_LOOP_CENSUS_RUN"):
