@@ -740,6 +740,7 @@ struct MCCState {
 	unsigned char do_bounds_check;
 	unsigned char test_coverage;
 	unsigned char loop_census;
+	unsigned char depth_census;
 
 	unsigned char gnu_ext;
 	unsigned char mcc_ext;

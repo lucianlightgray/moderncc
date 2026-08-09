@@ -72,6 +72,145 @@ the first against real data rather than test data. That is a currency which conv
 the device differential has already caught three miscompiles that internal comparisons
 were structurally blind to — whereas device-eligible blocks never had an exchange rate.
 
+## Landed — recursion lowers by depth-bounded expansion behind a bailout guard, and the wavefront has no candidate on this corpus, 2026-08-09 (`wt/depthinline`)
+
+**The bailout guard first, because it is the only part that is a correctness
+property.** `-fdepth-census` yields an *observed* maximum recursion depth, not a
+proof, so an expansion that simply stopped at the bound would compute a
+truncated answer — and both executors would compute the *identical* truncation,
+so the differential would stay green while the result was wrong. The expansion
+is therefore terminated by a new AST kind, `AST_Bailout`, which is a guard and
+not a value.
+
+It rides the definedness channel that already existed for exactly this event.
+`MCC_SLICE_TRIP_MAX` already makes a loop that outruns its budget *undefined
+rather than truncated*: the CPU reference says so through
+`ast_eval_slice_undef`, the device says so by AND-ing its per-lane flag down
+before `spv_main_end` writes out slot 2, and every comparison site already reads
+a definedness disagreement as a mismatch. A depth excursion is the same event
+one level up, so `AST_Bailout` sets `ast_eval_slice_undef` and returns 0 in
+`ast_eval_slice_rec`, and clears `m->def` in both `spv_expr` and `msl_expr`.
+Reaching the guard costs the run its *answer*, which the host reads as "this
+slice cannot speak for these inputs" and satisfies from the ordinary CPU path.
+It never costs the run its correctness.
+
+Two properties make the guard honest rather than merely present:
+
+- **It is planted only where the expansion chose to stop** — at the depth bound
+  or the node budget, with the callee resolvable and one more level available
+  for the asking (`mcc_slice_resolvable`). Where the graft merely *failed*, the
+  `AST_Invoke` is left standing and the block stays refused. A guard planted over
+  an unresolvable callee would buy an accepted block that can never answer, which
+  would inflate the acceptance count and mean nothing.
+- **A ternary evaluates one arm.** The guard sits in the recursive arm, so it is
+  reached only when the runtime actually goes deeper than the bound. The CPU
+  reference takes one arm in `ast_eval_slice_rec`'s `AST_If` case; the device
+  emits a real branch with a definedness phi at the merge (`spv_branch_pair`,
+  `msl_branch_pair`), so the not-taken arm does not poison the lane.
+
+**Measured, on an RTX 5070 Ti via `slice/depth-bailout`
+(`cmake/mcc_depth_bailout.cmake`, fixture `tests/gpu/depth_rec.c`):** 26
+recursive grafts, 28 guards planted, 28 present in the dump, **4,116 guards
+reached at run time**, 66 emitted into SPIR-V kernels, `frame-mismatches=0`.
+The run-time hit count is the tooth that matters — a cell that only checked "no
+mismatch" could not tell a fired guard from a guard that was never reached, and
+would have proved nothing about the excursion it exists to test. `--mutate`
+gives `frame-mismatches=3`, so the comparison is not blind.
+
+### The instrumentation measures width per level, not only depth
+
+`-fdepth-census` emits one `__mcc_depth_census(id)` call at function entry
+(`dcen_entry` in `src/mccgen.c`, called from `gen_function`), and
+`runtime/lib/depthcensus.c` recovers live depth **without any exit
+instrumentation**: it keeps a shadow stack of frame anchor addresses and, on
+each entry, pops every recorded anchor at or below the current one. On a
+downward-growing stack a recorded frame is still live exactly when its anchor is
+above the current one, so `return`, `goto`, `break` and `longjmp` all account
+correctly — which entry/exit pairing would not, and which is why the loop census
+has to report `lost=`.
+
+Per level it records the call count, and the frontier width at level *d* is that
+count divided by the number of root invocations. That is the lane count a
+wavefront dispatch of that level would have.
+
+### What the corpus actually contains, which decided the strategy
+
+`tools/depth-census.py` over **1,587 gcc-c-torture-execute programs**, compiled
+and run instrumented at `-O1`:
+
+| | |
+| --- | ---: |
+| programs that built and ran | 1,587 |
+| functions that recurse at all (live depth >= 2) | **44** |
+| of those, frontier width 1 (strictly linear) | **38 (86.4%)** |
+| widest frontier anywhere in the corpus | **16 lanes** (`981001-1:sub`) |
+| functions whose frontier reaches 8 lanes | **1** |
+| deepest recursion | 500 (`nestfunc-4:foo`, width 1) |
+
+The break-even table needs 322 lanes for a 3-node body, 24 for a 31-node body,
+and 8 only for a 127-node body — and that last row is one of the two the
+provenance note in `tools/loop-census.py` records as measured noise. **No
+function in the corpus clears a trustworthy break-even.** The wavefront
+strategy does not lose the benchmark here; it has no candidate to enter. So the
+strategy that landed is depth-bounded expansion, and the width distribution is
+the reason, recorded so nobody re-derives it.
+
+`runtime/lib` was not measurable this way: its translation units are library
+objects with no entry point, so there is nothing to run instrumented.
+
+### The cost estimate, so the boundary is priced rather than drawn
+
+No linear-vs-tree classifier was written, deliberately — a hand-drawn boundary is
+a cliff. `ast_slice_width_cost(nodes, lanes)` returns `nodes` when the frontier
+clears `ast_slice_breakeven_lanes(nodes)` and `nodes * ceil(need / lanes)` when
+it does not, so a one-lane frontier prices itself out and the CPU wins the
+existing `ast_slice_promote_static` benchmark without anyone writing a rule.
+`lanes <= 0` means "no width information" and returns `nodes` unchanged, which
+is what `mccjit_slice_hotpatch` passes by default — so the promotion decision is
+**byte-identical to before** unless `MCC_JIT_SLICE_LANES` is set. Contract pinned
+by five new checks in `tools/asttool.c` (785 checks, 0 failures).
+
+The break-even numbers are now a *third* copy of the same six values, after
+`lc_thr[]` in `runtime/lib/loopcensus.c` and `THRESHOLDS` in
+`tools/loop-census.py`. That is a debt: a scheduler consults this table
+continuously rather than once, so it wants one source, and the 63- and 127-node
+rows want re-measuring before anything leans on them.
+
+### What it costs, and what it buys
+
+Off by default. `mcc_slice_inl_depth_max` is 0 unless `MCC_SLICE_INL_DEPTH` is
+set, and at 0 the expansion path is not entered, no guard is planted, and
+`AST_Bailout` cannot appear in any arena. The default `ctest` run is 9,460 cells
+(was 9,459; the one new cell is `slice/depth-bailout`).
+
+On `tests/gpu/depth_rec.c` at `-O2` with `MCC_SLICE_INL_DEPTH=4`, block
+acceptance moves **`frame-accepted` 2 -> 7, `frame-compared` 2 -> 7,
+`frame-stmts` 2 -> 4, dispatches 12 -> 16, mismatches 0**, at a cost of 2,983
+expanded nodes — `fib`'s arena goes 20 -> 1,766 nodes, `fact`'s 15 -> 161. That
+node cost is the honest headline: binary recursion expands as 2^d, and the
+expansion is bounded by `MCC_SLICE_INL_EXPAND` (200,000 nodes, env-overridable),
+which plants a guard when it binds exactly as the depth bound does.
+
+**No emitted byte changes.** The graft still runs only on the clone taken by
+`ast_adump_body` and `ast_ladder_census`; `ast_cur` is untouched.
+
+### Still open
+
+- The wavefront strategy itself is unbuilt, on the evidence above. If a corpus
+  with wide recursion appears, the instrumentation and the cost estimate are the
+  two things it would have needed and they are landed.
+- Only the ternary body shape is expanded: `return c ? base : f(...)`. A callee
+  written as `if (c) return base; return f(...);` is two statements and one exit
+  short of the scan's shape, and normalising control flow into a ternary was not
+  taken.
+- Self-recursion resolves through `ast_cur` because `ast_inline_retain` runs at
+  the *end* of a body, so a function is never in its own pool at the moment its
+  arena is dumped. Mutual recursion still needs the pool and therefore still
+  needs define-before-use.
+- Effect ordering is untouched. Nothing here reorders anything — a depth
+  expansion is the same evaluation order the call had — but a wavefront would,
+  and `wt/effectlog` owns that representation.
+
 ## arm64 and Metal — the context, the traps and the unmeasured, 2026-08-09 (`wt/arm64ctx`)
 
 > **This is not a plan and not a spec.** `## Metal parity — the drop is reversed by decision`

@@ -534,6 +534,11 @@ static int mccjit_slice_hotpatch(AstArena *arena) { MCC_TRACE("enter\n");
 	ast_jit_fold_consts(opt_wrap);
 	base_cost = ast_cost_score(base_wrap);
 	cand_cost = ast_cost_score(opt_wrap);
+	{
+		const char *lv = getenv("MCC_JIT_SLICE_LANES");
+		long lanes = lv && lv[0] ? strtol(lv, NULL, 10) : 0;
+		cand_cost = ast_slice_width_cost(cand_cost, lanes);
+	}
 	keep = ast_slice_promote_static(base_cost, cand_cost);
 	if (mcc_env_on("MCC_JIT_VERBOSE"))
 		{ MCC_TRACE("br\n"); fprintf(stderr,

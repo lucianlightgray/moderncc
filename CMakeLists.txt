@@ -2532,7 +2532,7 @@ function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir ou
     endif()
 
     if(native)
-        list(APPEND _objs runmain tcov loopcensus)
+        list(APPEND _objs runmain tcov loopcensus depthcensus)
         if((cpu STREQUAL "x86_64" OR cpu STREQUAL "arm64" OR cpu STREQUAL "riscv64" OR cpu STREQUAL "i386" OR cpu STREQUAL "arm") AND NOT os STREQUAL "WIN32" AND NOT os STREQUAL "Darwin")
             list(APPEND _objs mccasan)
         endif()
@@ -3889,6 +3889,16 @@ if(MCC_BUILD_TESTS)
                         -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/mcc_leaf_graft.cmake")
             set_tests_properties("slice/mcc-leaf-graft" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            add_test(NAME "slice/depth-bailout"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DRUNNER=$<TARGET_FILE:slicerun>
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/mcc_depth_bailout.cmake")
+            set_tests_properties("slice/depth-bailout" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             # The census counts blocks and callee classes over a compiled corpus,
             # so every figure is a property of the target's own AST/RIR shape.

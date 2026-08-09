@@ -3609,6 +3609,8 @@ typedef struct RawNode {
 	int etype;
 } RawNode;
 
+static long g_bail_nodes;
+
 static AstArena *rebuild_arena(const RawNode *raw, int n, AstLocal *root_out,
 															 long root_in) {
 	AstArena *a = ast_arena_new();
@@ -3619,6 +3621,8 @@ static AstArena *rebuild_arena(const RawNode *raw, int n, AstLocal *root_out,
 			ast_arena_free(a);
 			return NULL;
 		}
+		if (raw[i].kind == AST_Bailout)
+			g_bail_nodes++;
 		ast_set_op(a, id, raw[i].op);
 		/* N12: consume all 12 dumped fields, not 7. sym and type_ref are interned
 		 * ids after N7, not addresses, so they are stable identities -- but they
@@ -4107,6 +4111,7 @@ static const char *refuse_kindname(int k) {
 	case AST_Jump: return "Jump";
 	case AST_Return: return "Return";
 	case AST_Poison: return "Poison";
+	case AST_Bailout: return "Bailout";
 	default: return "?";
 	}
 }
@@ -6648,6 +6653,9 @@ static int arena_mode(const char *path, long limit, int quiet) {
 				 g_frame_mismatch, g_frame_mem);
 	printf("slicerun: invoke-seen=%ld invoke-inlined=%ld leaf-callees=%d\n",
 				 mcc_slice_inl_seen, mcc_slice_inl_n, g_leaf_n);
+	printf("slicerun: depth-guards-emitted=%ld depth-guards-hit=%ld "
+				 "depth-guards-gpu=%ld\n",
+				 g_bail_nodes, ast_eval_slice_bail_n, mcc_gpu_bail_emit);
 	if (g_cref_exp) {
 		fclose(g_cref_exp);
 		g_cref_exp = NULL;

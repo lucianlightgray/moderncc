@@ -654,6 +654,7 @@ static const char *const kind_names[AST_KIND_COUNT] = {
 		"Invoke",
 		"Poison",
 		"StoreVal",
+		"Bailout",
 };
 
 const char *ast_kind_name(uint16_t kind) { MCC_TRACE("enter\n");
@@ -1311,6 +1312,29 @@ int ast_slice_locate(const AstArena *a, uint64_t ident, AstLocal *sites,
 		found++;
 	}
 	return found;
+}
+
+long ast_slice_breakeven_lanes(long nodes) { MCC_TRACE("enter\n");
+	static const long thr[6] = {3, 7, 15, 31, 63, 127};
+	static const long lanes[6] = {322, 108, 48, 24, 23, 8};
+	long best = lanes[0];
+	int i;
+	for (i = 0; i < 6; i++)
+		if (nodes >= thr[i])
+			{ MCC_TRACE("br\n"); best = lanes[i]; }
+	return best;
+}
+
+int64_t ast_slice_width_cost(int64_t nodes, int64_t lanes) { MCC_TRACE("enter\n");
+	long need;
+	if (nodes < 0)
+		{ MCC_TRACE("br\n"); return -1; }
+	if (lanes <= 0)
+		{ MCC_TRACE("br\n"); return nodes; }
+	need = ast_slice_breakeven_lanes((long)nodes);
+	if (lanes >= need)
+		{ MCC_TRACE("br\n"); return nodes; }
+	return nodes * (int64_t)((need + lanes - 1) / lanes);
 }
 
 int ast_slice_promote_static(int64_t baseline_cost, int64_t candidate_cost) { MCC_TRACE("enter\n");
@@ -2857,6 +2881,8 @@ static int ast_fn_inlinable(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 	}
 	return 1;
 }
+
+static void *ast_slice_self_sym;
 
 static void ast_inline_capture(Sym *fnsym) { MCC_TRACE("enter\n");
 	ast_inline_cap_np = 0;
@@ -15438,6 +15464,7 @@ static void ast_verify_dump_diff(const char *fn, const unsigned char *base,
 
 void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 	MCC_TRACE("%s\n", funcname);
+	ast_slice_self_sym = (void *)sym;
 	lcen_fn_n = 0;
 	lcen_fn_ovf = 0;
 	ast_fn_switch = 0;
@@ -16457,6 +16484,18 @@ static AstArena *ast_slice_leaf_pool(AstArena *a, AstLocal inv, AstLocal *root,
 	cs = (void *)(uintptr_t)ast_sym(a, cref);
 	if (!cs || (((Sym *)cs)->type.t & VT_BTYPE) != VT_FUNC)
 		{ MCC_TRACE("br\n"); return NULL; }
+	if (mcc_slice_inl_depth_max > 0 && cs == ast_slice_self_sym && ast_cur &&
+			ast_cur != a && !ast_arena_has_hole(ast_cur)) { MCC_TRACE("br\n");
+		*pnparam = 0;
+		if (ast_inline_cap_ok && ast_inline_cap_np > 0 &&
+				ast_inline_cap_np <= MCC_SLICE_INL_MAXPARAM) { MCC_TRACE("br\n");
+			for (i = 0; i < ast_inline_cap_np; i++)
+				{ MCC_TRACE("br\n"); poff[i] = (int32_t)ast_inline_cap_off[i]; }
+			*pnparam = ast_inline_cap_np;
+		}
+		*root = ast_root(ast_cur);
+		return ast_cur;
+	}
 	e = ast_inline_find(cs);
 	if (!e || !e->ast || ast_arena_has_hole(e->ast))
 		{ MCC_TRACE("br\n"); return NULL; }
@@ -16474,16 +16513,31 @@ static AstArena *ast_slice_leaf_pool(AstArena *a, AstLocal inv, AstLocal *root,
 }
 
 static void ast_slice_inl_report(void) { MCC_TRACE("enter\n");
-	fprintf(stderr, "[slice-inline] invoke-seen=%ld invoke-inlined=%ld pool=%d\n",
-					mcc_slice_inl_seen, mcc_slice_inl_n, ast_inline_hi);
+	fprintf(stderr,
+					"[slice-inline] invoke-seen=%ld invoke-inlined=%ld pool=%d "
+					"depth-max=%d rec-grafts=%ld bailouts=%ld expand-nodes=%ld\n",
+					mcc_slice_inl_seen, mcc_slice_inl_n, ast_inline_hi,
+					mcc_slice_inl_depth_max, mcc_slice_inl_rec, mcc_slice_inl_bail,
+					mcc_slice_inl_expand_tot);
 }
 
 static int ast_slice_inl_env = -1;
 
 static int ast_slice_inl_on(void) { MCC_TRACE("enter\n");
 	if (ast_slice_inl_env < 0) { MCC_TRACE("br\n");
+		const char *d;
 		ast_slice_inl_env = mcc_env_flag("MCC_AST_SLICE_INLINE", 1);
 		mcc_slice_inl_dump = mcc_env_on("MCC_SLICE_INL_DUMP");
+		d = getenv("MCC_SLICE_INL_DEPTH");
+		if (d && d[0])
+			{ MCC_TRACE("br\n"); mcc_slice_inl_depth_max = (int)strtol(d, NULL, 10); }
+		if (mcc_slice_inl_depth_max < 0)
+			{ MCC_TRACE("br\n"); mcc_slice_inl_depth_max = 0; }
+		d = getenv("MCC_SLICE_INL_EXPAND");
+		if (d && d[0])
+			{ MCC_TRACE("br\n"); mcc_slice_inl_expand_max = strtol(d, NULL, 10); }
+		if (mcc_slice_inl_expand_max <= 0)
+			{ MCC_TRACE("br\n"); mcc_slice_inl_expand_max = MCC_SLICE_INL_EXPAND; }
 		if (ast_slice_inl_env) { MCC_TRACE("br\n");
 			mcc_slice_leaf_hook = ast_slice_leaf_pool;
 			atexit(ast_slice_inl_report);
@@ -16494,7 +16548,9 @@ static int ast_slice_inl_on(void) { MCC_TRACE("enter\n");
 
 static AstArena *ast_slice_leaf_inline(AstArena *a) { MCC_TRACE("enter\n");
 	AstArena *g;
-	if (!a || !ast_inline_n || !ast_slice_inl_on())
+	if (!a || !ast_slice_inl_on())
+		{ MCC_TRACE("br\n"); return NULL; }
+	if (!ast_inline_n && mcc_slice_inl_depth_max <= 0)
 		{ MCC_TRACE("br\n"); return NULL; }
 	g = ast_arena_clone(a);
 	if (!g)
