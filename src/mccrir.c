@@ -1105,8 +1105,6 @@ static int rir_cfind[64];
 static AstLocal rir_while_pfx = AST_NONE;
 static int rir_cfn;
 static int rir_arena_mismatch;
-static long rir_bf_loads;
-static long rir_bf_stores;
 
 static long rir_drop_n[IR_OP_COUNT];
 
@@ -4742,7 +4740,6 @@ static void rir_bf_lower_load(AstLocal n) {
 	ast_set_sym(rir_arena, n, 0);
 	ast_add_child(rir_arena, n, e);
 	ast_add_child(rir_arena, n, rir_bf_lit(VT_INT, bits - bs));
-	rir_bf_loads++;
 }
 
 static void rir_bf_lower_store(AstLocal s) {
@@ -4785,7 +4782,6 @@ static void rir_bf_lower_store(AstLocal s) {
 	}
 	ast_add_child(rir_arena, s, d);
 	ast_add_child(rir_arena, s, val);
-	rir_bf_stores++;
 }
 
 static void rir_bf_normalise(void) {
