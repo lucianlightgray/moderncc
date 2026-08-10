@@ -12,7 +12,9 @@
 
 ### Where the tree is
 
-`main` at `325739cd`, **9468 cells**, 19 commits ahead of `origin/main` and 0 behind.
+`main` at `91b6140b` or later, **9468 cells**, ~20 commits ahead of `origin/main` and 0
+behind at the time of writing. **The push is pending a full validation run that was still
+in flight** — check it finished green before pushing, and fetch/merge first.
 Three machines share this branch: this one (Linux/Vulkan), a Windows box and a Mac box.
 Both peers were idle at the time of writing. The last full validated run was 9467/0 before
 the `wt/attrib` merge; a run on the current head was in flight and unfinished.
