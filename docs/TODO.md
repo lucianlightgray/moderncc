@@ -221,7 +221,7 @@ the slice engine is being asked about.
 | --- | ---: | ---: |
 | bodies failing `faithful`, wide corpus, `-O0`/`-O1`/`-O2`/`-O3` | 134 / 86 / 84 / 84 | **134 / 86 / 84 / 84** |
 | their body bytes | 258,221 / 125,996 / 124,212 | **identical, byte for byte** |
-| `kept`, wide corpus | 92.869 / 96.514 / 96.565 / 96.565 | 92.869 / 96.515 / 96.570 / 96.570 |
+| `kept`, wide corpus | 92.869 / 96.514 / 96.566 / 96.566 | 92.869 / 96.515 / 96.569 / 96.569 |
 
 `faithful` is **untouched** — the same bodies fall back, carrying the same bytes, at every
 level. That is the check that the move worked: if either normalisation were still upstream of
