@@ -1219,6 +1219,8 @@ int main(int argc, char **argv) {
 	int only = -1, i, r, ci;
 	long total_pts = 0, total_cmp = 0, total_vac = 0, mismatch = 0;
 	const char *arenas = NULL;
+	const char *emit_only = NULL;
+	long emitted = 0;
 	int minnodes = 3, quiet = 0;
 	long limit = 0;
 	int32_t *in =
@@ -1239,6 +1241,8 @@ int main(int argc, char **argv) {
 			mutate = 1;
 		else if (!strcmp(argv[i], "--arenas") && i + 1 < argc)
 			arenas = argv[++i];
+		else if (!strcmp(argv[i], "--emit-only") && i + 1 < argc)
+			emit_only = argv[++i];
 		else if (!strcmp(argv[i], "--min-nodes") && i + 1 < argc)
 			minnodes = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "--limit") && i + 1 < argc)
@@ -1249,7 +1253,8 @@ int main(int argc, char **argv) {
 			only = atoi(argv[i]);
 	}
 
-	gpu_init();
+	if (!emit_only)
+		gpu_init();
 	{
 		int k;
 		for (k = 1; k < argc; k++)
@@ -1277,7 +1282,10 @@ int main(int argc, char **argv) {
 		printf(GATE_NAME ": real slices from %s (min-nodes=%d)\n", arenas, minnodes);
 		return arena_mode(arenas, minnodes, limit, quiet);
 	}
-	printf(GATE_NAME ": device %s\n", g_devname);
+	if (emit_only)
+		printf(GATE_NAME ": emit-only, no device, modules into %s\n", emit_only);
+	else
+		printf(GATE_NAME ": device %s\n", g_devname);
 	printf(GATE_NAME ": %d cases, rungs 1/2/4/8/16 bits, exhaustive per rung\n",
 				 (int)(sizeof CASES / sizeof CASES[0]));
 
@@ -1322,15 +1330,16 @@ int main(int argc, char **argv) {
 				ltype[k] = VT_INT;
 				live_type(a, root, (int32_t)off[k], &ltype[k]);
 			}
-			for (t = 0; t < ntuple; t++) {
-				long v = t;
-				for (k = 0; k < c->nlive; k++) {
-					put_in(in, (long)t * c->nlive + k,
-								 ast_eval_slice_fit(fit_rung(v & ((1L << w) - 1), w),
-																		ltype[k]));
-					v >>= w;
+			if (!emit_only)
+				for (t = 0; t < ntuple; t++) {
+					long v = t;
+					for (k = 0; k < c->nlive; k++) {
+						put_in(in, (long)t * c->nlive + k,
+									 ast_eval_slice_fit(fit_rung(v & ((1L << w) - 1), w),
+																			ltype[k]));
+						v >>= w;
+					}
 				}
-			}
 
 			gate_module_begin(&m, c->nlive);
 			base = gate_main_begin(&m, c->nlive);
@@ -1347,18 +1356,33 @@ int main(int argc, char **argv) {
 			if (corrupt_at >= 0 && corrupt_at < nwords)
 				code[corrupt_at] = (GateUnit)(code[corrupt_at] ^ 1u);
 			{
-				const char *dp = getenv("SPVGATE_DUMP");
+				const char *dp = emit_only ? emit_only : getenv("SPVGATE_DUMP");
 				if (dp) {
 					char path[512];
 					FILE *fp;
 					snprintf(path, sizeof path, "%s/%s_w%d." MCC_GPU_CODE_SUFFIX, dp,
 									 c->name, w);
 					fp = fopen(path, "wb");
-					if (fp) {
-						fwrite(code, MCC_GPU_CODE_UNIT, (size_t)nwords, fp);
-						fclose(fp);
+					if (!fp) {
+						printf(GATE_NAME ": cannot write %s\n", path);
+						return 1;
 					}
+					if (fwrite(code, MCC_GPU_CODE_UNIT, (size_t)nwords, fp) !=
+							(size_t)nwords) {
+						printf(GATE_NAME ": short write %s\n", path);
+						fclose(fp);
+						return 1;
+					}
+					fclose(fp);
+					emitted++;
 				}
+			}
+			if (emit_only) {
+				case_cmp++;
+				free(code);
+				gate_module_free(&m);
+				ast_arena_free(a);
+				continue;
 			}
 
 			for (t = 0; t < ntuple; t++) {
@@ -1437,6 +1461,14 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	if (emit_only) {
+		printf(GATE_NAME ": emitted=%ld\n", emitted);
+		if (emitted == 0) {
+			printf(GATE_NAME ": FAIL (no module was emitted)\n");
+			return 1;
+		}
+		return 0;
+	}
 	printf(GATE_NAME ": dispatches=%ld lanes=%ld points=%ld compared=%ld vacuous=%ld "
 				 "mismatches=%ld\n",
 				 g_dispatches, g_lanes, total_pts, total_cmp, total_vac, mismatch);

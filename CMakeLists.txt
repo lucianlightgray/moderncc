@@ -3642,11 +3642,39 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_real.cmake")
             set_tests_properties("gpu/spv-slice-real" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+
+            find_program(MCC_SPIRV_VAL NAMES spirv-val)
+            if(MCC_SPIRV_VAL)
+                message(STATUS "mcc: spirv-val = ${MCC_SPIRV_VAL}")
+            else()
+                message(STATUS "mcc: no spirv-val; gpu/spv-validate* will skip")
+            endif()
+            add_test(NAME "gpu/spv-validate"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DGATE=$<TARGET_FILE:spvgate>
+                        -DSPIRV_VAL=${MCC_SPIRV_VAL}
+                        -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/spv-validate
+                        -DEXPECT=140
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvval.cmake")
+            set_tests_properties("gpu/spv-validate" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            add_test(NAME "gpu/spv-validate-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DGATE=$<TARGET_FILE:spvgate>
+                        -DSPIRV_VAL=${MCC_SPIRV_VAL}
+                        -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/spv-validate-kp
+                        -DEXPECT=140
+                        -DCORRUPT=6
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvval.cmake")
+            set_tests_properties("gpu/spv-validate-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
         else()
             set(_spv_why "no Vulkan headers/loader on this host, so the spvgate differential tool cannot be built (install the Vulkan SDK, or MoltenVK on Darwin)")
             mcc_skip_test("gpu/spv-slice-differential" "${_spv_why}")
             mcc_skip_test("gpu/spv-slice-known-positive" "${_spv_why}")
             mcc_skip_test("gpu/spv-slice-real" "${_spv_why}")
+            mcc_skip_test("gpu/spv-validate" "${_spv_why}")
+            mcc_skip_test("gpu/spv-validate-known-positive" "${_spv_why}")
         endif()
 
         if(APPLE AND MCC_GPU_LANG_MSL_VALUE)

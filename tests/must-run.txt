@@ -24,6 +24,8 @@
 gpu/spv-slice-differential   | registered | the SPIR-V differential; vanished silently when matrix.yml omitted libvulkan-dev
 gpu/spv-slice-known-positive | registered | proves the SPIR-V differential is not blind
 gpu/spv-slice-real           | registered | the only cell running the emitters over harvested arenas
+gpu/spv-validate             | registered | spirv-val over every emitted module; the only SPIR-V check that needs no device
+gpu/spv-validate-known-positive | registered | proves the validator cell can go red
 gpu/ladder-gpu-parity        | registered | the CPU/GPU oracle parity gate
 
 slice/task                   | must-run   | the tick scheduler; pure CPU, no device, so a skip here is always a bug
