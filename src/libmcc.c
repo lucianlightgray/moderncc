@@ -1806,29 +1806,6 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 		s1->filetype = saved;
 	}
 #endif
-#if !defined MCC_TARGET_PE && !defined MCC_TARGET_MACHO && defined MCC_EMBED_JIT_GCC_LIBDIR
-	if (ret == 0) { MCC_TRACE("br\n");
-		int saved = s1->filetype;
-		char lp[1024];
-		FILE *lf;
-		s1->filetype &= ~AFF_WHOLE_ARCHIVE;
-		mcc_add_library_path(s1, MCC_EMBED_JIT_GCC_LIBDIR);
-		snprintf(lp, sizeof lp, "%s/libgcc.a", MCC_EMBED_JIT_GCC_LIBDIR);
-		if ((lf = fopen(lp, "rb"))) { MCC_TRACE("br\n");
-			fclose(lf);
-			mcc_add_library(s1, "gcc");
-		} else { MCC_TRACE("br\n");
-			snprintf(lp, sizeof lp,
-					 "%s/libclang_rt.builtins-" MCC_EMBED_RT_ARCH ".a",
-					 MCC_EMBED_JIT_GCC_LIBDIR);
-			if ((lf = fopen(lp, "rb"))) { MCC_TRACE("br\n");
-				fclose(lf);
-				mcc_add_library(s1, "clang_rt.builtins-" MCC_EMBED_RT_ARCH);
-			}
-		}
-		s1->filetype = saved;
-	}
-#endif
 	return ret;
 }
 #endif
