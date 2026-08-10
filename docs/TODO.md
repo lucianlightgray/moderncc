@@ -5627,6 +5627,35 @@ The five corpus programs are pinned against a second vendor, not only against
 `MCC_JIT=0`: gcc 15.3.0, clang 22.1.8, `MCC_JIT=0` and `MCC_JIT=1` agree byte for byte on
 every line of output of all five.
 
+**Verified, this tree (`wt/kgcpure`).** `cmake-cross` built before `cmake-debug` was
+configured (hazard 5), `vendor/` symlinked from the primary checkout.
+`ctest --test-dir cmake-debug -N` registers **9504** against the 9501 baseline: **+3, and
+they are the three cells named above** — `jit/selftest-purity-known-positive`,
+`jit/kgc-effect-parity`, `jit/kgc-effect-parity-known-positive`. `jit/selftest-purity`
+already existed and grew rows rather than becoming a new cell; the
+`jit/xoracle-conformance` change is a pin value, not a registration. No cell was removed.
+
+`ctest -R "jit|kgc|purity" -j4` is **70/70, 0 failures**, 6 Skipped with their reasons
+(`jit/selftest-observability`, `jit/selftest-bench`, `jit/selftest-benchwire`,
+`jit/standalone-static`, `embed-jit-smoke`, `macho-embedjit-arm64-osx`). Because the
+defect is *an effect running twice*, the KGC cells were repeated rather than merely run:
+`ctest -R "kgc-effect|selftest-purity|kgc-route|run-parity-host" -j4 --repeat
+until-fail:25` is **7/7 green over 25 consecutive rounds**, and `ctest -R jit -j4 --repeat
+until-fail:5` is green over 5. `python3 tools/regstub-lint.py` OK (54 chains),
+`python3 tools/docref-lint.py` OK and `--mutate` still reports all four planted shapes,
+`python3 tools/must-run.py --build cmake-debug` **90 row(s) satisfied**,
+`python3 tools/selfhost-smoke.py cmake-debug` OK. `tests/optfire/*` untouched.
+
+**No full `ctest` was run from this branch, deliberately.** Five agents shared this host
+and the load average was 286 with 19 concurrent `ctest` processes; at that level device
+cells fail for contention and are indistinguishable from regressions. A full run was
+started, reached 9,495 of 9,504 with no failure, and was stopped through the harness
+rather than being trusted. The authoritative full run is the central one on merged `main`.
+
+The `MCC_JIT_PURITY_NOESCAPE=1` axis was checked separately, since it selects
+`mccjit_last_purity_ne` for admission while `memoize_ok` still reads the base tier: all
+five effect programs agree with `MCC_JIT=0` on that axis too.
+
 ### The cell that could not see it, and what it carries now
 
 `jit/run-parity-host` ([`tests/jit/run-parity.sh`](../tests/jit/run-parity.sh)) runs
