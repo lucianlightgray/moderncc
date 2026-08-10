@@ -1265,6 +1265,18 @@ cannot go vacuous by deletion. `flagsweep/dev-gate-known-positive`
 gate by exporting `MCC_DEV=1` into the refusal phase; measured, that turns up **17
 violations** — 12 flags plus 5 levels — and the twin fails if it does not.
 
+**Validation, and the four reds that are not this branch's.** `cmake-cross` built before
+`cmake-debug` was configured; both register **9535**, against **9532** for `main` at
+`a79cb2ce` — the three added cells are `flagsweep/dev-gate`,
+`flagsweep/dev-gate-known-positive` and `optfire/default-promo_leaf_callee_dev`. 3,150
+cells over `smoke/`, `optfire*`, `flagsweep*`, `stratsweep*`, `ast/*`, `census`, `cli` and
+`optlevel` run with 4 failures, and **all four reproduce on an unmodified `main` on this
+host**: `smoke/native` (the `-O13` `replay-fallback` bail ratchet, 3→7 bytes and 18→42 len,
+identical there), `optlevel/torture-differential` (the two computed-`goto` rows, identical
+there), and `fmt/census-bank` with its twin (`src/mccast.c` measures 153 printf-family
+sites against a banked 151; this branch adds none — `git diff main -- src/` contains zero
+added format calls). None of the four is touched here.
+
 
 ## Landed — the lowerable ratchet is taken on bodies, not on the corpus ratio, 2026-08-10
 
