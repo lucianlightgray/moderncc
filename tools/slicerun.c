@@ -1485,6 +1485,35 @@ static AstLocal mk_member_idx(AstArena *a, int32_t base, int32_t madd,
 	return ld;
 }
 
+static AstLocal mk_gref(AstArena *a, uint64_t sym, int type) {
+	AstLocal n = ast_node(a, AST_Ref);
+	ast_set_op(a, n, VT_CONST | VT_LVAL | VT_SYM);
+	ast_set_type(a, n, type, 0);
+	ast_set_ival(a, n, 0);
+	ast_set_sym(a, n, sym);
+	return n;
+}
+
+static AstLocal mk_gmember(AstArena *a, uint64_t sym, int32_t madd, int type) {
+	AstLocal m = ast_node(a, AST_Unary);
+	ast_set_op(a, m, AST_EVAL_OP_MEMBER);
+	ast_set_type(a, m, type, 0);
+	ast_set_ival(a, m, (uint64_t)(int64_t)madd);
+	ast_add_child(a, m, mk_gref(a, sym, VT_STRUCT));
+	return m;
+}
+
+static AstLocal mk_gmember_idx(AstArena *a, uint64_t sym, int32_t madd,
+															 int32_t nbytes, int etype, int32_t ioff) {
+	AstLocal m = mk_gmember(a, sym, madd, VT_PTR | VT_ARRAY);
+	AstLocal ld = ast_node(a, AST_Load);
+	g_obj_ext[m] = nbytes;
+	g_obj_ety[m] = etype;
+	ast_add_child(a, ld, mk_bin(a, '+', m, mk_ref(a, ioff, VT_INT), 0));
+	ast_set_type(a, ld, 0, 0);
+	return ld;
+}
+
 static void suite_frame(void) {
 	AstArena *a;
 	MccSliceFrame fr;
@@ -1655,6 +1684,91 @@ static void suite_frame(void) {
 			mcc_slice_kernel_free(&k);
 		}
 		slicerun_obj_reset(0);
+	}
+	ast_arena_free(a);
+
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal dst, ld, st;
+		int64_t cf[8 * MCC_SLICE_MAXSLOT], gf[8 * MCC_SLICE_MAXSLOT];
+		unsigned gid = 0;
+		int32_t gdel = -1;
+		int t, bad = 0;
+		slicerun_obj_reset(64);
+		dst = mk_gmember_idx(a, 0x51ce01u, 8, 16, VT_INT, -8);
+		ld = mk_gmember_idx(a, 0x51ce01u, 8, 16, VT_INT, -8);
+		st = ast_node(a, AST_Store);
+		ast_add_child(a, st, dst);
+		ast_add_child(a, st, mk_bin(a, '+', ld, mk_lit(a, 1, VT_INT), VT_INT));
+		ast_add_child(a, bb, st);
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1,
+					"an indexed array field of a global struct is frame work");
+		CHECK(fr.nslot == 5, "four element slots and the index");
+		if (fr.nslot == 5) {
+			CHECK(slicerun_glob_of(fr.slot[0], &gid, &gdel) == 1,
+						"the object's first slot is a relocated global key");
+			CHECK(gid == 0x51ce01u && gdel == 8,
+						"the key names the base symbol at the field's byte offset");
+			CHECK(fr.slot[3] == fr.slot[0] + 12 && fr.slot[4] == -8,
+						"the element run is consecutive and the index follows it");
+		}
+		for (t = 0; t < 8 * MCC_SLICE_MAXSLOT; t++)
+			cf[t] = gf[t] = 0;
+		for (t = 0; t < 8; t++)
+			for (i = 0; i < fr.nslot; i++) {
+				int64_t v = fr.slot[i] == -8 ? (t & 3) : (t * 7 + i);
+				cf[t * fr.nslot + i] = gf[t * fr.nslot + i] = v;
+			}
+		for (t = 0; t < 8; t++)
+			CHECK(mcc_slice_frame_exec_cpu(&fr, cf + (long)t * fr.nslot) == 1,
+						"the CPU reference runs each global indexed-field frame");
+		if (fr.nslot == 5) {
+			CHECK(cf[0 * 5 + 0] == 1, "frame 0 indexes element 0 and increments it");
+			CHECK(cf[1 * 5 + 1] == 9, "frame 1 indexes element 1 and increments it");
+		}
+		if (g_have_device && fr.nslot == 5) {
+			MccSliceKernel k;
+			CHECK(mcc_slice_frame_kernel_build(&fr, &k) == 1,
+						"the global indexed-field run lowers to a device kernel");
+			CHECK(mcc_slice_run_frame_gpu(&fr, &k, gf, 8, NULL, NULL) == MCC_TASK_DONE,
+						"the device runs eight global indexed-field frames");
+			for (t = 0; t < 8 * fr.nslot; t++)
+				if (cf[t] != gf[t])
+					bad++;
+			CHECK(bad == 0,
+						"every slot of every global indexed-field frame matches");
+			mcc_slice_kernel_free(&k);
+		}
+		slicerun_obj_reset(0);
+	}
+	ast_arena_free(a);
+
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		unsigned gid = 0;
+		int32_t gdel = -1;
+		int64_t f2[MCC_SLICE_MAXSLOT];
+		ast_add_child(a, bb,
+									mk_store(a, -8,
+													 mk_bin(a, '+',
+																	mk_gmember(a, 0x51ce02u, 4, VT_INT),
+																	mk_lit(a, 100, VT_INT), VT_INT),
+													 VT_INT));
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1,
+					"a scalar field of a global struct is frame work");
+		CHECK(fr.nslot == 2, "the destination local and the global field");
+		if (fr.nslot == 2) {
+			CHECK(slicerun_glob_of(fr.slot[1], &gid, &gdel) == 1 &&
+								gid == 0x51ce02u && gdel == 4,
+						"the field key is the base symbol at the member offset");
+			f2[0] = 0;
+			f2[1] = 11;
+			CHECK(mcc_slice_frame_exec_cpu(&fr, f2) == 1,
+						"the CPU reference runs the global-field frame");
+			CHECK(f2[0] == 111, "11 + 100 lands in the destination slot");
+		}
 	}
 	ast_arena_free(a);
 
@@ -4987,6 +5101,8 @@ static int refuse_parent_blocked(AstArena *a, AstLocal n) {
 	AstLocal p = ast_parent(a, n);
 	if (p == AST_NONE)
 		return 1;
+	if (ast_eval_slice_kind_ok(a, p, 0))
+		return 0;
 	return refuse_local(a, p) != REF_OK;
 }
 

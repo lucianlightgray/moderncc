@@ -689,6 +689,25 @@ static int ast_eval_slice_globl(AstArena *a, AstLocal n, int32_t *off) {
 	return 1;
 }
 
+static int ast_eval_slice_globl_agg(AstArena *a, AstLocal n, int32_t *off) {
+	int r, t;
+	int32_t base = 0;
+	if (n == AST_NONE || !ast_eval_slice_reloc_fn)
+		return 0;
+	if (ast_kind(a, n) != AST_Ref)
+		return 0;
+	r = ast_op(a, n);
+	t = ast_type_t(a, n);
+	if ((r & VT_VALMASK) != VT_CONST || !(r & VT_SYM) || !(r & VT_LVAL))
+		return 0;
+	if (!t || (t & VT_ARRAY) || (t & VT_BTYPE) != VT_STRUCT)
+		return 0;
+	if (!ast_eval_slice_reloc_fn(a, n, &base))
+		return 0;
+	*off = base + (int32_t)(int64_t)ast_ival(a, n);
+	return 1;
+}
+
 static int ast_eval_slice_ptr_et(AstArena *a, AstLocal n) {
 	int32_t extent = 0;
 	int et = 0, r, t;
@@ -956,8 +975,10 @@ static int ast_eval_slice_frame_off(AstArena *a, AstLocal n, int32_t *off,
 	}
 	if (ast_kind(a, n) == AST_Unary &&
 			(ast_op(a, n) == AST_EVAL_OP_MEMBER || ast_op(a, n) == AST_EVAL_OP_ADDR)) {
+		AstLocal c = ast_first_child(a, n);
 		int32_t base = 0;
-		if (!ast_eval_slice_frame_off(a, ast_first_child(a, n), &base, depth + 1))
+		if (!ast_eval_slice_frame_off(a, c, &base, depth + 1) &&
+				!ast_eval_slice_globl_agg(a, c, &base))
 			return 0;
 		*off = base + (ast_op(a, n) == AST_EVAL_OP_MEMBER
 											 ? (int32_t)(int64_t)ast_ival(a, n)
