@@ -187,12 +187,30 @@ builtin-math|1|nbody -10.5% cpu at -O2 against a 1.18% layout floor, counter agr
 builtin-math-fabs|1|mathfun -27.3% and branchy -0.85% cpu at -O2 against 0.67% and 0.53% layout floors, counters agree (-10.79%, -2.22%)
 builtin-math-prepass|1|nbody's entire -10.5% is carried by the prepass: with it off and builtin-math on, nbody reads +0.15%, inside its floor
 #
-# --- rung 10
+# --- CONSOLIDATED ONTO RUNG 4, 2026-08-10
 #
-if-conversion|10|strproc -21.1% cpu against a 5.08% layout floor, counter agrees (-8.20%); stage-2 -0.48% and 0.69% of stage-1
-tree-vrp|10|strproc -11.9% cpu against a 5.08% layout floor, counter agrees (-2.59%); stage-2 -0.77% and 0.75% of stage-1
-sethi-ullman-leaf|10|stage-2 -1.71% cpu against a 0.43% floor, counter agrees; no kernel clears its own layout floor
-sethi-ullman|10|stage-2 -1.05% cpu, counter agrees (-0.036%), and 1.23% of stage-1 on top
+# The three sections below were rungs 10, 11 and 12. Every row in them now
+# reads |4|: -O4 is the single rung above the shipped -O0..-O3 ladder and every
+# validated optimizer is consolidated onto it, so -O5..-O12 no longer exist and
+# are a hard error. The measurement in each reason is UNCHANGED and is why the
+# row is not on the shipped ladder -- what changed is only that the levels it
+# was parked on collapsed into one. The section titles record what each group
+# was priced at, because that pricing is still the reason none of them ships at
+# -O3 or below.
+#
+# The exceptions are the six MCC_OPTD_DEV rows -- promote-leaf-callee (10),
+# opt-cycle and narrow-fix (11), loop-fusion, loop-interchange and loop-block
+# (12). Their rungs are kept exactly as measured, because MCC_OPTD_DEV wraps a
+# level rather than replacing it and MCC_DEV=1 is what reaches them; under
+# MCC_DEV the whole -O5..-O12 band is live again and those rungs still mean
+# what they say.
+#
+# --- was rung 10: measurably faster somewhere, but not on the shipped ladder
+#
+if-conversion|4|strproc -21.1% cpu against a 5.08% layout floor, counter agrees (-8.20%); stage-2 -0.48% and 0.69% of stage-1
+tree-vrp|4|strproc -11.9% cpu against a 5.08% layout floor, counter agrees (-2.59%); stage-2 -0.77% and 0.75% of stage-1
+sethi-ullman-leaf|4|stage-2 -1.71% cpu against a 0.43% floor, counter agrees; no kernel clears its own layout floor
+sethi-ullman|4|stage-2 -1.05% cpu, counter agrees (-0.036%), and 1.23% of stage-1 on top
 # narrow and tree-copy-prop were RE-PRICED 2026-08-09 (wt/ladder2) because a
 # board item claimed they were "on the ladder on the strength of a number that
 # was never taken". They were not: these two rows are that number, and they were
@@ -226,12 +244,12 @@ sethi-ullman|10|stage-2 -1.05% cpu, counter agrees (-0.036%), and 1.23% of stage
 # Both stay where they are: 100:1 and 166:1 are far worse than the 19:1 that got
 # the chain-store family refused at rung 11, so neither has a promotion case,
 # and both DO change the stage-1 object, so neither is a rung-12 no-op.
-narrow|10|stage-2 -0.0088% instructions:u, 25/25 interleaved reps, for +0.876% of stage-1; 100:1 against. Re-measured 2026-08-09, see the note above; the banked -0.60% cpu / -0.016% counter / 1.91% stage-1 were about 2x this run
+narrow|4|stage-2 -0.0088% instructions:u, 25/25 interleaved reps, for +0.876% of stage-1; 100:1 against. Re-measured 2026-08-09, see the note above; the banked -0.60% cpu / -0.016% counter / 1.91% stage-1 were about 2x this run
 promote-leaf-callee|10|stage-2 -0.68% cpu, counter agrees (-0.074%); poly and regpress read -4% but inside their layout floors
-chain-store-live|10|stage-2 -0.66% cpu, counter agrees (-0.038%); re-measured 2026-08-09 with the rest of the family, see the rung-11 note on chain-store
-tree-reassoc|10|stage-2 -0.53% cpu, counter agrees (-0.012%), and 0.64% of stage-1; poly +2.16% is inside poly's 6.3% floor
+chain-store-live|4|stage-2 -0.66% cpu, counter agrees (-0.038%); re-measured 2026-08-09 with the rest of the family, see the rung-11 note on chain-store
+tree-reassoc|4|stage-2 -0.53% cpu, counter agrees (-0.012%), and 0.64% of stage-1; poly +2.16% is inside poly's 6.3% floor
 #
-# --- rung 11: real compile-time cost above the 0.55% stage-1 floor, no payoff
+# --- was rung 11: real compile-time cost above the 0.55% stage-1 floor, no payoff
 #
 # Every row here was read the same way: stage-1 CPU time is measurably worse
 # with it on, and neither stage-2 nor any kernel is measurably better. Where a
@@ -255,32 +273,32 @@ opt-cycle|11|8.04% of stage-1 cpu time; the +2.83% stage-2 reading is layout, th
 # changes sieve's object at all -- all three flags are now needed to get the same
 # transform. Levels unchanged. Write-up and recipe: docs/TODO.md, the section
 # "2. Replay fidelity -- ~4.3 points of kept -- MEASURED 2026-08-09".
-chain-store|11|6.24% of stage-1 cpu time; +2.42% stage-2 is layout (counter -0.504%), and sieve +26% is inside sieve's 32% layout floor; re-measured 2026-08-09 as a family, +1.50% stage-1 for -0.079% stage-2, still no
-chain-store-member|11|1.78% of stage-1 cpu time; +2.25% stage-2 is layout (counter -0.368%), sieve likewise inside its floor; see the family note above
-tree-switch-conversion|11|1.68% of stage-1 cpu time, stage-2 unmoved
-tree-copy-prop|11|1.50% of stage-1 cpu time (+0.799% instructions:u); stage-2 is NOT unmoved as this row used to say -- it reads -0.0048% instructions:u at 24/25 reps, which is measurable and still 166:1 against. Re-measured 2026-08-09, see the note at the narrow row
-tree-loop-im|11|1.14% of stage-1 cpu time; +1.59% stage-2 is layout (counter -0.054%), loopnest inside its 8.5% floor
-tree-ccp-iterate|11|1.09% of stage-1 cpu time, stage-2 unmoved
-tree-const-load|11|0.96% of stage-1 cpu time; +2.46% stage-2 is layout (counter -0.019%)
-sethi-ullman-nary|11|0.81% of stage-1 cpu time, stage-2 unmoved
-loop-vlat|11|0.81% of stage-1 cpu time for a BYTE IDENTICAL stage-1 object -- it runs and changes nothing
+chain-store|4|6.24% of stage-1 cpu time; +2.42% stage-2 is layout (counter -0.504%), and sieve +26% is inside sieve's 32% layout floor; re-measured 2026-08-09 as a family, +1.50% stage-1 for -0.079% stage-2, still no
+chain-store-member|4|1.78% of stage-1 cpu time; +2.25% stage-2 is layout (counter -0.368%), sieve likewise inside its floor; see the family note above
+tree-switch-conversion|4|1.68% of stage-1 cpu time, stage-2 unmoved
+tree-copy-prop|4|1.50% of stage-1 cpu time (+0.799% instructions:u); stage-2 is NOT unmoved as this row used to say -- it reads -0.0048% instructions:u at 24/25 reps, which is measurable and still 166:1 against. Re-measured 2026-08-09, see the note at the narrow row
+tree-loop-im|4|1.14% of stage-1 cpu time; +1.59% stage-2 is layout (counter -0.054%), loopnest inside its 8.5% floor
+tree-ccp-iterate|4|1.09% of stage-1 cpu time, stage-2 unmoved
+tree-const-load|4|0.96% of stage-1 cpu time; +2.46% stage-2 is layout (counter -0.019%)
+sethi-ullman-nary|4|0.81% of stage-1 cpu time, stage-2 unmoved
+loop-vlat|4|0.81% of stage-1 cpu time for a BYTE IDENTICAL stage-1 object -- it runs and changes nothing
 narrow-fix|11|0.80% of stage-1 cpu time for a BYTE IDENTICAL stage-1 object -- it runs and changes nothing
-gcse-join|11|0.72% of stage-1 cpu time for a BYTE IDENTICAL stage-1 object -- it runs and changes nothing
+gcse-join|4|0.72% of stage-1 cpu time for a BYTE IDENTICAL stage-1 object -- it runs and changes nothing
 #
-# --- rung 12: measured, no effect on anything, at no measurable cost
+# --- was rung 12: measured, no effect on anything, at no measurable cost
 #
 # These are the honest nothing. Each was measured on both workloads and moved
 # neither, and none of them costs enough stage-1 time to clear the floor either.
 # Eight of them do not change a single byte of the stage-1 object.
-tree-pre|12|no measured effect on either workload; stage-1 object byte identical to the base
-tree-dse|12|no measured effect on either workload; stage-1 object byte identical to the base
-narrow-elim|12|no measured effect on either workload; stage-1 object byte identical to the base
-gcse|12|no measured effect on either workload; stage-1 object byte identical to the base
+tree-pre|4|no measured effect on either workload; stage-1 object byte identical to the base
+tree-dse|4|no measured effect on either workload; stage-1 object byte identical to the base
+narrow-elim|4|no measured effect on either workload; stage-1 object byte identical to the base
+gcse|4|no measured effect on either workload; stage-1 object byte identical to the base
 loop-fusion|12|no measured effect on either workload; stage-1 object byte identical to the base
 loop-interchange|12|no measured effect on either workload; stage-1 object byte identical to the base
 loop-block|12|no measured effect on either workload; stage-1 object byte identical to the base
-call-window|12|no measured effect on either workload; -0.475% of stage-1, inside the 0.55% floor
-zero-initialized-in-bss|12|no measured effect and no size effect either: the on and off objects are the same bytes on a zero-array probe
-arg-forward|12|no measured effect; the pass is inert in the graft path from -O2, which tests/optfire/defstate.txt pins as a tripwire
-optimize-sibling-calls|12|no measured effect; +2.80% stage-2 is layout, the counter says -0.054%
-spill-share|12|no measured effect alone, and ON TOP OF reg-color at -O2 it costs 0.9% of stage-2 time and 0.06% of instructions
+call-window|4|no measured effect on either workload; -0.475% of stage-1, inside the 0.55% floor
+zero-initialized-in-bss|4|no measured effect and no size effect either: the on and off objects are the same bytes on a zero-array probe
+arg-forward|4|no measured effect; the pass is inert in the graft path from -O2, which tests/optfire/defstate.txt pins as a tripwire
+optimize-sibling-calls|4|no measured effect; +2.80% stage-2 is layout, the counter says -0.054%
+spill-share|4|no measured effect alone, and ON TOP OF reg-color at -O2 it costs 0.9% of stage-2 time and 0.06% of instructions

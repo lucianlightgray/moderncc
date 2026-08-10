@@ -141,8 +141,11 @@ mcc -O2 -fno-xmm-hi t.c       # always accepted: it asks for the state the gate 
 
 Passing a gated flag is an **error**, not a silent no-op, because `mcc` merely
 warns on an unknown `-f` and exits 0 — a quiet gate would make them
-indistinguishable from typos. `-O5` through `-O9` reach only gated knobs, so
-they say so rather than quietly compiling as `-O4`. This runtime `MCC_DEV` is
+indistinguishable from typos. For the same reason `-O5` through `-O12` are an
+**error** without `MCC_DEV`: every validated optimizer is consolidated onto
+`-O4`, so those rungs reach only gated knobs and a silent clamp would make any
+claim about them vacuously true. `-O13` is the optimization search and stays;
+`-O14` and above are an error too. This runtime `MCC_DEV` is
 independent of the `MCC_DEV` **build** option above, which compiles in the AST
 side-car coherence oracle and does not enable these knobs.
 

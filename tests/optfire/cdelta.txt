@@ -9,7 +9,7 @@
 # MCC_OPTD_ALWAYS, but the strategy they feed is gated by tree-reassoc, which
 # came off the shipped ladder to rung 10, so the counter is 0 at every shipped
 # level and the delta has nothing to measure. Naming the parent here keeps the
-# cell at -O2 and states the dependency, which -O10 would not: that rung turns
+# cell at -O2 and states the dependency, which -O4 would not: that rung turns
 # on nine other demoted rows, and they add reassoc folds of their own that the
 # off side would then also see (8 instead of 0).
 reassoc_assoc|-O2|reassoc|reassoc-assoc|-ftree-reassoc

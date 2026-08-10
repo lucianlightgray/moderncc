@@ -4416,11 +4416,19 @@ if(MCC_BUILD_TESTS)
 
     # tests/smoke: the fast inner-loop goldens suite and the engine-bail ratchet.
     # One table-driven subject compiled once per -O level, from -O0 up to and
-    # including MCC_OPT_SEARCH_LEVEL -- the first rung at which the search
-    # optimizer engages (mccopt.h:11, libmcc.c:3263, mccast.c:19296). smokerun
-    # reads that constant from src/mccopt.h, so the ladder cannot drift from the
-    # compiler. Adding a value case means one line in tests/smoke/cases.h and
-    # never a new cell.
+    # including the highest rung an ungated knob is reached by -- -O4, since the
+    # consolidation. smokerun derives that bound by walking MCC_OPT_LIST in
+    # src/mccopt.h, so the ladder cannot drift from the compiler. -O5..-O12 are
+    # a hard error and -O13 is the search rung, which is a different subject and
+    # not a value-coverage tier; dropping it dropped its bail ratchet rows too,
+    # see tests/smoke/bails.txt and docs/TODO.md.
+    #
+    # The floor below is a COVERAGE floor, not a runtime one: the retarget from
+    # 0..13 to 0..4 cut the case count from 6,308,092 to 2,759,779, and the
+    # float, _Complex, long double and _Float16 tables were deepened until the
+    # total came back over the old number. Fewer levels must not mean fewer
+    # cases. Adding a value case means one line in tests/smoke/cases.h or
+    # tests/smoke/fcases.h and never a new cell.
     if(NOT CMAKE_CROSSCOMPILING)
         add_executable(smokerun tools/smokerun.c tools/toolsupport.c)
         target_include_directories(smokerun PRIVATE
@@ -4430,7 +4438,7 @@ if(MCC_BUILD_TESTS)
             COMMAND smokerun --mcc "${_mcc_exe}"
                     --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
                     --work "${CMAKE_BINARY_DIR}/smoke-native"
-                    --min-cases 6300000)
+                    --min-cases 6700000)
         set_tests_properties("smoke/native" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
 
@@ -4438,7 +4446,7 @@ if(MCC_BUILD_TESTS)
             COMMAND smokerun --mcc "${_mcc_exe}"
                     --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
                     --work "${CMAKE_BINARY_DIR}/smoke-kp"
-                    --min-cases 6300000 --known-positive)
+                    --min-cases 6700000 --known-positive)
         set_tests_properties("smoke/native-known-positive" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
 
@@ -4892,7 +4900,7 @@ if(MCC_BUILD_TESTS)
 
         # exec-chainstore above pins only -fchain-store, which leaves
         # chain-store-live off and never reaches the pairing pass, and no -O
-        # level below 11 turns the family on by itself. The pairing marks are
+        # level below 4 turns the family on by itself. The pairing marks are
         # what the strategies invalidate, so nothing below this rung reaches the
         # arena state at all. The storeval-rot defect that used to block a
         # chain_member_mix fixture here is fixed -- docs/TODO.md debt #6a -- so
@@ -4905,7 +4913,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_BINARY_DIR}/exec-chainlive-${_gn}" --only "${_gn}")
             set_tests_properties("exec-chainlive/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 TIMEOUT 900
-                ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O11 -fchain-store -fchain-store-live -fchain-store-member")
+                ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4 -fchain-store -fchain-store-live -fchain-store-member")
         endforeach()
 
         # storeval-rot is default-on from -O1, so the shipped ladder is where its
@@ -5432,7 +5440,7 @@ if(MCC_BUILD_TESTS)
                             --mcc "${_mcc_exe}" --corpus "${_ld_corpus}"
                             --known "${_ld_known}"
                             --work "${CMAKE_BINARY_DIR}/leveldiff"
-                            --levels 0,1,2,3,4,5,6,7,8,9,10,11,12
+                            --levels 0,1,2,3,4
                             --jobs 32 --minprog 1200)
                 set_tests_properties("optlevel/torture-differential" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77

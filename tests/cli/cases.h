@@ -2625,9 +2625,9 @@ static const cli_case_t cli_cases[] = {
 		 "'static inline int dead_caller(void){if(dead_body==dead_body)return 1;return dead_body();}' "
 		 "'int main(void){exit(0);}' > {W}/dsi.c && "
 		 "{MCC} -B{B} -I{I} -w -O0 {W}/dsi.c -o {W}/dsi0 && {W}/dsi0 && echo O0-ok && "
-		 "{MCC} -B{B} -I{I} -w -O7 {W}/dsi.c -o {W}/dsi7 && {W}/dsi7 && echo O7-ok && "
-		 "{MCC} -B{B} -I{I} -w -O12 {W}/dsi.c -o {W}/dsi12 && {W}/dsi12 && echo O12-ok",
-		 "O0-ok\nO7-ok\nO12-ok\n"},
+		 "{MCC} -B{B} -I{I} -w -O4 {W}/dsi.c -o {W}/dsi4 && {W}/dsi4 && echo O4-ok && "
+		 "{MCC} -B{B} -I{I} -w -O13 {W}/dsi.c -o {W}/dsi13 && {W}/dsi13 && echo O13-ok",
+		 "O0-ok\nO4-ok\nO13-ok\n"},
 
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));

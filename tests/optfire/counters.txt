@@ -1,26 +1,27 @@
 # <name>|<olevel>|<--stats counter>[|<extra link flags>]
-# The olevel is the lowest -O at which the pass fires. Nine rows name a rung
-# above -O3: those passes came off the shipped ladder when the -O levels were
-# re-derived on CPU TIME (tests/optfire/leveltime.tsv), and the cell now proves
-# they still fire where they are parked rather than proving they ship.
+# The olevel is the lowest -O at which the pass fires. Nine rows name -O4:
+# those passes came off the shipped ladder when the -O levels were re-derived
+# on CPU TIME (tests/optfire/leveltime.tsv) and were parked on rungs 10-12,
+# which are now consolidated onto -O4. The cell proves they still fire where
+# they are parked rather than proving they ship at -O3 and below.
 bfold|-O2|bfold|-lm
 ident|-O2|ident
-narrow|-O10|narrow
+narrow|-O4|narrow
 cprop|-O2|cprop
 cse|-O2|cse
-ltemp|-O11|ltemp
+ltemp|-O4|ltemp
 ivsr|-O2|ivsr
-pre|-O12|pre
-licm|-O11|licm
+pre|-O4|pre
+licm|-O4|licm
 dse|-O2|dse
 sccp|-O2|sccp
 jt|-O2|jt
-bf|-O11|bf
-range|-O10|range
+bf|-O4|bf
+range|-O4|range
 divmagic|-O2|divmagic
 abs|-O2|abs
-select|-O10|select
-reassoc|-O10|reassoc
-sethi|-O10|sethi
+select|-O4|select
+reassoc|-O4|reassoc
+sethi|-O4|sethi
 tco|-O2|tco
 inline|-O2|inline

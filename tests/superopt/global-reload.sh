@@ -53,7 +53,7 @@ firstoff() {
 	awk -v f="$1" -v s="$2" '$1=="REL" && $2==f && $4==s {print $3; exit}' "$F"
 }
 
-for lv in 0 1 2 3 4 5 6 7 8 9 10 11 12; do
+for lv in 0 1 2 3 4; do
 	obj=$WORK/g$lv.o
 	if ! "$MCC" -B"$BASE" "-O$lv" -c "$SRC" -o "$obj" >"$WORK/e$lv" 2>&1; then
 		fail compile "the subject did not compile"
@@ -126,7 +126,7 @@ store-order store-order-control"
 
 if [ -z "$EXPECT" ]; then
 	if [ $rc = 0 ]; then
-		echo "PASS: over -O0..-O12 a plain global is re-read inside the loop,"
+		echo "PASS: over -O0..-O4 a plain global is re-read inside the loop,"
 		echo "  reloaded after an opaque call, and its stores keep their program"
 		echo "  order; the cached, single-read and reversed twins answer the other"
 		echo "  way, so the three checks read the emitted code and not a constant"

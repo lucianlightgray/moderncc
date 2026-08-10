@@ -32,7 +32,9 @@
 #define SMF_OPS(X, A) \
 	X(A, FADD) X(A, FSUB) X(A, FMUL) X(A, FDIV) \
 	X(A, FNEG) X(A, FSEL) X(A, FLT) X(A, FEQ) X(A, FABS) \
-	X(A, FSELI) X(A, FSELZ) X(A, FSELMIXL) X(A, FSELMIXR) X(A, FSELCMP)
+	X(A, FSELI) X(A, FSELZ) X(A, FSELMIXL) X(A, FSELMIXR) X(A, FSELCMP) \
+	X(A, FMULADD) X(A, FDIVSEL) X(A, FMIN3) X(A, FNEST) X(A, FSCALE) \
+	X(A, FSUBABS) X(A, FSELIC) X(A, FSELMIXB) X(A, FSELMIXN) X(A, FCMPMIX)
 
 #define SMF_EXPR_FADD(T, a, b, c) ((T)(a) + (T)(b))
 #define SMF_EXPR_FSUB(T, a, b, c) ((T)(a) - (T)(b))
@@ -48,6 +50,22 @@
 #define SMF_EXPR_FSELMIXL(T, a, b, c) ((T)(a) != (T)0 ? (int)(T)(b) : (T)(c))
 #define SMF_EXPR_FSELMIXR(T, a, b, c) ((T)(a) != (T)0 ? (T)(b) : (int)(T)(c))
 #define SMF_EXPR_FSELCMP(T, a, b, c) ((T)(a) > (T)(b) ? 1 : (T)(c))
+#define SMF_EXPR_FMULADD(T, a, b, c) ((T)((T)(a) * (T)(b) + (T)(c)))
+#define SMF_EXPR_FDIVSEL(T, a, b, c) ((T)(b) != (T)0 ? (T)((T)(a) / (T)(b)) : (T)(c))
+#define SMF_EXPR_FMIN3(T, a, b, c) \
+	((T)(a) < (T)(b) ? ((T)(a) < (T)(c) ? (T)(a) : (T)(c)) \
+									 : ((T)(b) < (T)(c) ? (T)(b) : (T)(c)))
+#define SMF_EXPR_FNEST(T, a, b, c) \
+	((T)(a) > (T)0 ? ((T)(b) > (T)0 ? (T)(b) : (T)(c)) : (T)(a))
+#define SMF_EXPR_FSCALE(T, a, b, c) \
+	((T)((T)((T)(a) * (T)2) - (T)((T)(b) / (T)2) + (T)(c)))
+#define SMF_EXPR_FSUBABS(T, a, b, c) \
+	((T)((T)(a) - (T)(b)) < (T)0 ? (T)((T)(b) - (T)(a)) : (T)((T)(a) - (T)(b)))
+#define SMF_EXPR_FSELIC(T, a, b, c) ((int)((T)(a) != (T)0) ? (T)(b) : (T)(c))
+#define SMF_EXPR_FSELMIXB(T, a, b, c) ((T)(a) < (T)(b) ? (int)(T)(c) : (T)(b))
+#define SMF_EXPR_FSELMIXN(T, a, b, c) ((T)(a) == (T)(b) ? (T)(c) : (long)(T)(a))
+#define SMF_EXPR_FCMPMIX(T, a, b, c) \
+	((T)((int)((T)(a) < (T)(b)) + (int)((T)(b) < (T)(c))))
 
 enum {
 #define SMF_T_ROW(tag, cty, w) SMF_T_##tag,
@@ -94,7 +112,8 @@ typedef struct
 	double ar, ai, br, bi, foldr, foldi, wantr, wanti;
 } SmCRow;
 
-#define SMC_OPS(X, A) X(A, CADD) X(A, CSUB) X(A, CMUL) X(A, CSEL)
+#define SMC_OPS(X, A) X(A, CADD) X(A, CSUB) X(A, CMUL) X(A, CSEL) \
+	X(A, CNEG) X(A, CCONJ) X(A, CSCALE) X(A, CSELR)
 
 enum {
 #define SMC_O_ROW(a, op) SMC_O_##op,
@@ -308,7 +327,15 @@ static long double smf_run(int tag, int op, long double a, long double b,
 
 static const long double smf_corpus[] = {
 		0.0L, -0.0L, 1.0L, -1.0L, 0.5L, -0.5L, 2.25L, -2.25L, 1.5L, 5.5L,
-		1e-30L, -1e-30L, 1e30L, -1e30L, 3.0L, -3.0L, 1024.0L, -1024.0L};
+		1e-30L, -1e-30L, 1e30L, -1e30L, 3.0L, -3.0L, 1024.0L, -1024.0L,
+		0.25L, -0.25L, 0.75L, -0.75L, 0.125L, -0.125L, 0.0625L, -0.0625L,
+		1.25L, -1.25L, 1.75L, -1.75L, 2.0L, -2.0L, 4.0L, -4.0L,
+		6.0L, -6.0L, 7.5L, -7.5L, 8.0L, -8.0L, 12.0L, -12.0L,
+		16.0L, -16.0L, 31.0L, -31.0L, 32.0L, -32.0L, 63.0L, -63.0L,
+		64.0L, -64.0L, 100.0L, -100.0L, 127.0L, -127.0L, 128.0L, -128.0L,
+		255.0L, -255.0L, 256.0L, -256.0L, 512.0L, -512.0L, 2048.0L, -2048.0L,
+		4096.0L, -4096.0L, 32768.0L, -32768.0L, 65504.0L, -65504.0L,
+		0.001953125L, -0.001953125L, 6.103515625e-05L, -6.103515625e-05L};
 
 #define SMF_CORPUS_N ((int)(sizeof smf_corpus / sizeof smf_corpus[0]))
 
@@ -355,6 +382,13 @@ static void smc_run(int tag, int op, double ar, double ai, double br, double bi,
 		case SMC_O_CADD: r = x + y; break;
 		case SMC_O_CSUB: r = x - y; break;
 		case SMC_O_CMUL: r = x * y; break;
+		case SMC_O_CNEG: r = -x; break;
+		case SMC_O_CCONJ:
+			r = (float _Complex)(__real__ x) -
+					(float _Complex)(__extension__ 1.0i) * (float)(__imag__ x);
+			break;
+		case SMC_O_CSCALE: r = x * (float)br; break;
+		case SMC_O_CSELR: r = ((float)ar < (float)br) ? x : y; break;
 		default: r = (ar != 0.0) ? y : x; break;
 		}
 		*rr = (double)__real__ r;
@@ -369,12 +403,60 @@ static void smc_run(int tag, int op, double ar, double ai, double br, double bi,
 		case SMC_O_CADD: r = x + y; break;
 		case SMC_O_CSUB: r = x - y; break;
 		case SMC_O_CMUL: r = x * y; break;
+		case SMC_O_CNEG: r = -x; break;
+		case SMC_O_CCONJ:
+			r = (double _Complex)(__real__ x) -
+					(double _Complex)(__extension__ 1.0i) * (double)(__imag__ x);
+			break;
+		case SMC_O_CSCALE: r = x * br; break;
+		case SMC_O_CSELR: r = (ar < br) ? x : y; break;
 		default: r = (ar != 0.0) ? y : x; break;
 		}
 		*rr = __real__ r;
 		*ri = __imag__ r;
 	}
 }
+
+static const double smc_corpus[] = {
+		0.0, -0.0, 1.0, -1.0, 0.5, -0.5, 0.25, -0.25,
+		0.75, -0.75, 1.25, -1.25, 1.5, -1.5, 1.75, -1.75,
+		2.0, -2.0, 2.25, -2.25, 3.0, -3.0, 4.0, -4.0,
+		5.5, -5.5, 6.0, -6.0, 7.5, -7.5, 8.0, -8.0,
+		12.0, -12.0, 16.0, -16.0, 31.0, -31.0, 64.0, -64.0,
+		128.0, -128.0, 256.0, -256.0, 1024.0, -1024.0, 4096.0, -4096.0};
+
+#define SMC_CORPUS_N ((int)(sizeof smc_corpus / sizeof smc_corpus[0]))
+
+static long smc_sweep(SmBits *digest)
+{
+	int t, op, i, j;
+	long n = 0;
+	for (t = 0; t < SMC_T_COUNT; t++)
+		for (op = 0; op < SMC_O_COUNT; op++)
+			for (i = 0; i < SMC_CORPUS_N; i++)
+				for (j = 0; j < SMC_CORPUS_N; j++) {
+					double gr = 0, gi = 0;
+					SmBits a1, a2;
+					smc_run(t, op, smc_corpus[i], smc_corpus[j], smc_corpus[j],
+									smc_corpus[(i + j + 1) % SMC_CORPUS_N], &gr, &gi);
+					memcpy(&a1, &gr, 8);
+					memcpy(&a2, &gi, 8);
+					*digest = (*digest ^ (SmBits)(t * SMC_O_COUNT + op)) *
+										1099511628211ull;
+					*digest = (*digest ^ a1) * 1099511628211ull;
+					*digest = (*digest ^ a2) * 1099511628211ull;
+					n++;
+				}
+	return n;
+}
+
+static const char *const smc_type_name[] = {"C32", "C64"};
+
+static const char *const smc_op_name[] = {
+#define SMC_ON(a, op) #op,
+		SMC_OPS(SMC_ON, _)
+#undef SMC_ON
+};
 
 static void smw_run(int tag, int op, SmBits ahi, SmBits alo, SmBits bhi,
 										SmBits blo, SmBits *whi, SmBits *wlo)
@@ -586,6 +668,25 @@ static void smf_row_dump(void)
 					}
 				printf("V fsweep.%s.%s 0 %016llx %016llx %016llx\n", smf_type_name[t],
 							 smf_op_name[op], (unsigned long long)h, (unsigned long long)h,
+							 (unsigned long long)h);
+			}
+	}
+	{
+		int t, op, k, m;
+		for (t = 0; t < SMC_T_COUNT; t++)
+			for (op = 0; op < SMC_O_COUNT; op++) {
+				SmBits h = 14695981039346656037ull, a1, a2;
+				for (k = 0; k < SMC_CORPUS_N; k++)
+					for (m = 0; m < SMC_CORPUS_N; m++) {
+						double gr = 0, gi = 0;
+						smc_run(t, op, smc_corpus[k], smc_corpus[m], smc_corpus[m],
+										smc_corpus[(k + m + 1) % SMC_CORPUS_N], &gr, &gi);
+						memcpy(&a1, &gr, 8);
+						memcpy(&a2, &gi, 8);
+						h = ((h ^ a1) * 1099511628211ull ^ a2) * 1099511628211ull;
+					}
+				printf("V csweep.%s.%s 0 %016llx %016llx %016llx\n", smc_type_name[t],
+							 smc_op_name[op], (unsigned long long)h, (unsigned long long)h,
 							 (unsigned long long)h);
 			}
 	}

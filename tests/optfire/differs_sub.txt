@@ -8,16 +8,17 @@
 # needs: the parent came off the shipped ladder when the -O levels were
 # re-derived on CPU time, so forcing the sub-knob on at -O2 no longer makes the
 # object move on its own. Naming the parent keeps the cell at the level it
-# tested before and records which row it now depends on. Two rows name a rung
-# instead, because no single parent was enough to make them fire.
+# tested before and records which row it now depends on. Two rows name -O4
+# instead, because no single parent was enough to make them fire and -O4 is the
+# rung the whole consolidated set turns on at.
 ident_conv|-O2|ident-conv|-
-ident_shift|-O12|ident-shift|-fopt-cycle MCC_DEV=1
+ident_shift|-O4|ident-shift|-fopt-cycle MCC_DEV=1
 ident_arith|-O2|ident-arith|-
 ident_bit|-O2|ident-bit|-
 ident_rel|-O2|ident-rel|-
 ident_urange|-O2|ident-urange|-
 narrow_fix|-O2|narrow-fix|-fnarrow MCC_DEV=1
-narrow_elim|-O11|narrow-elim|-
+narrow_elim|-O4|narrow-elim|-
 narrow_class0|-O2|narrow-class0|-fnarrow
 narrow_class1|-O2|narrow-class1|-fnarrow
 narrow_class2|-O2|narrow-class2|-fnarrow
