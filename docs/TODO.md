@@ -23,6 +23,23 @@
 > treated device coverage as an incremental menu. Where a decision contradicts a measured
 > refusal in a section below, the decision wins and the measurement becomes a work item.
 
+**The correctness criterion is input/output equivalence, not byte-faithfulness.**
+A transformed or optimized slice is correct when it produces the same outputs for the same
+inputs — established by differential against an external oracle, which is what the four
+`slice/cref-oracle-*` cells do by adjudicating slices against gcc and clang over real
+argument tuples. `kept` (`tools/rir-coverage.py`) measures byte-identity of the arena
+replay against the parser's bytes; that is a *proxy* for semantic equivalence and a
+conservative one, since it fails exactly when a normalisation is doing its job. **A
+transformation that moves bytes while preserving behaviour is a success.** `kept` remains
+worth reporting as information; it is no longer a veto.
+
+**Consequence, open and not yet acted on.** `ast_run_strat_seq` gates every optimizer
+strategy on `faithful` — the byte test. Under this criterion that gate asks the wrong
+question: a semantically-correct normalisation can silently disable optimizations for the
+bodies it touches, not because they are wrong but because their bytes moved. Replacing it
+with a semantic gate is now possible — the cref oracle establishes I/O equivalence and the
+effect log makes observable behaviour comparable — and is the open item this raises.
+
 **The governing rule.** Every AST/RIR node must lower to the GPU. A slice terminates only
 where mcc **cannot see the callee's body** — `dlopen`, an unseen object, or an indirect
 call whose target set is not resolvable. The test is **body visibility, not C linkage

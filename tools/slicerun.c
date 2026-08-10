@@ -8043,9 +8043,9 @@ int main(int argc, char **argv) {
 	 * nothing at all. A typo in a driver script deserves the same treatment. */
 	if (only) {
 		static const char *const SUITES[] = {
-				"task", "work",  "cpu", "gpu",   "bytes", "wide64", "f64",
-				"ops",  "frame", "mem", "deref", "fmt",   "fault",  "sched",
-				"ext",  "rwstore"};
+				"task", "work",  "cpu",        "gpu",    "bytes",  "wide64", "f64",
+				"ops",  "frame", "mem",        "deref",  "fmt",    "fault",  "sched",
+				"ext",  "rwstore", "arrow", "hostimport", "effect"};
 		size_t si;
 		int known = 0;
 		for (si = 0; si < sizeof SUITES / sizeof SUITES[0]; si++)
