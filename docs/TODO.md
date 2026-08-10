@@ -14,8 +14,9 @@
 ### How to validate — standing rule, 2026-08-10
 
 **Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the
-oracles.** `ctest -R "^smoke/"` is ~10 s for 6.7M value cases across `-O0`–`-O4`, plus the
-device arm and the divergence arm. Do not run the full suite to validate a change.
+oracles.** `ctest -R "^smoke/"` is ~40 s for 12.9M value cases across `-O0`–`-O4` (was
+~10 s / 6.7M before `wt/smokedepth` deepened the float tables), plus the device arm and
+the divergence arm. Do not run the full suite to validate a change.
 
 The reasons are measured, not stylistic. The full suite is **~23 minutes and is not
 `-j`-bound** — one cell alone is 1,378 s, so the wall floor is a single cell and buying
@@ -35,8 +36,11 @@ Consequences that follow, and they are not optional:
   implementation-defined, or where the two references disagree with each other, pin mcc's
   answer as the golden and record the disagreement. Where mcc differs from **both**, that is
   a `diverge-both` row and a defect until proven otherwise — report it loudly, never bank it
-  quietly. The `_Float16` intermediate-rounding bug (open item 22) was found exactly this
-  way: gcc and clang agree with each other and mcc does not.
+  quietly. The `_Float16` intermediate-rounding divergence (item 22) shows both halves of
+  the rule working: found exactly this way — gcc and clang agree with each other and mcc
+  does not — and then *proven otherwise* by `wt/smokedepth`, which showed it is a
+  flag-selectable evaluation format (`gcc -fexcess-precision=16` reproduces mcc bit for
+  bit), not a wrong answer. The rows stay banked so the choice cannot change silently.
 
 ### Where the tree is
 
@@ -44,12 +48,14 @@ Consequences that follow, and they are not optional:
 > `wt/jitshutdown`/`wt/threadmap-int`/`wt/o4fold` unmerged) moved to `docs/ARCHIVED.md`
 > on 2026-08-10 — every branch it tracked has merged.
 
-`main` at `afa4e0d5`, pushed, **9535 cells on this host** (`ctest -N` identical before
-and after the `wt/o4fold` merge — no cell added or lost). The whole wave is in:
-`wt/earlyret`, `wt/jitshutdown`, `wt/kgcpure`, `wt/probearm`, `wt/threadmap-int`,
-`wt/globagg`, `wt/noslot`, `wt/bakewiden`, `wt/replayfix`, `wt/o2wrong`, `wt/f64tern`,
-`wt/smoke`, `wt/parseframe`, `wt/o4bugs`, `wt/o4ticks`, `wt/mccdev` and `wt/o4fold`
-(merged at `074a92d7`). `wt/rirnorm`, `wt/globreloc` and `wt/threadmap` are
+`main` past the `wt/smokedepth` merge (`3150681f`), **9535 cells on this host**
+(`ctest -N` unchanged through the `wt/o4fold`, `wt/smokefix` and `wt/smokedepth` merges —
+no cell added or lost). The whole wave is in: `wt/earlyret`, `wt/jitshutdown`,
+`wt/kgcpure`, `wt/probearm`, `wt/threadmap-int`, `wt/globagg`, `wt/noslot`,
+`wt/bakewiden`, `wt/replayfix`, `wt/o2wrong`, `wt/f64tern`, `wt/smoke`, `wt/parseframe`,
+`wt/o4bugs`, `wt/o4ticks`, `wt/mccdev`, `wt/o4fold` (merged at `074a92d7`), then
+`wt/smokefix` (named compile-pass rows) and `wt/smokedepth` (the IEEE boundary and
+conversion sweeps). `wt/rirnorm`, `wt/globreloc` and `wt/threadmap` are
 **superseded** — they landed through `wt/rirphase`, `wt/globreloc-int` and
 `wt/threadmap-int` respectively; do not merge the originals (`wt/threadmap`'s `de928597`
 carries the second classifier and a bank re-taken against a stale base). **Count cells on
@@ -57,8 +63,9 @@ the host rather than adding them up** — registration is glob-, loop- and
 capability-driven (Vulkan + `spirv-val`, `objdump`), so the total is host-dependent.
 
 `-O4` is now the consolidation of all 26 validated knobs, `-O5`–`-O12` and `-O14`+ are a
-hard error, `-O13` is the search entry, and smoke covers `-O0`–`-O4` at 6,772,291 value
-cases. Two fixes sit on top of the merge:
+hard error, `-O13` is the search entry, and smoke covers `-O0`–`-O4` at 12,875,605 value
+cases (6,772,291 at the `wt/o4fold` merge; `wt/smokedepth` deepened the float tables to
+the IEEE boundaries). Two fixes sit on top of the `wt/o4fold` merge:
 
 - `c61d1aa5` — `ast_search_evals_report` (new with the tick redesign) opened without
   `MCC_TRACE("enter\n")`; caught by `trace-gate-invariant`, not by a reviewer.
@@ -73,10 +80,15 @@ With those two, the four reds that predated `wt/mccdev` are all resolved:
 `optlevel/torture-differential` and `fmt/census-bank` (+ twin) at `93cc8b07` — the two
 stale computed-goto rows dropped, the census re-banked 151 → 153 for the two
 `-fdump-opt-search` prints — and `smoke/native` green since the `wt/o4fold` retarget,
-**by omission, not by fix**. **Read open items 21 and 22 on the audit board before
-reading green cells in those areas**: item 21 owns the unmeasured `-O13`
-replay-fallback regression, item 22 the `_Float16` per-operation rounding defect the
-smoke deepening surfaced.
+**by omission, not by fix**. **Read open items 21–26 on the audit board before reading
+green cells in those areas**: item 21 owns the unmeasured `-O13` replay-fallback
+regression; item 22 is since **corrected** by `wt/smokedepth` — mcc rounds every
+`_Float16` operation back to `_Float16` and the references keep a `float` intermediate,
+a flag-selectable evaluation format, so what remains there is a decision, not a fix —
+and the same sweeps filed items 23–26: the `(unsigned int)` cast losing its truncation
+in wider expressions, the `long double`→`int` truncation inconsistency, the `--embed-jit`
+double archive load that blocks the `unsigned long long` conversion leg, and the
+`_Complex` sibling-block miscompile whose shape is now uncovered.
 
 Three machines share this tree: this one (Linux/Vulkan), a Windows box and a Mac box.
 Both peers were idle through this wave.
