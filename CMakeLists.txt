@@ -4438,7 +4438,7 @@ if(MCC_BUILD_TESTS)
             COMMAND smokerun --mcc "${_mcc_exe}"
                     --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
                     --work "${CMAKE_BINARY_DIR}/smoke-native"
-                    --min-cases 6700000)
+                    --min-cases 6700000 --min-passes 49)
         set_tests_properties("smoke/native" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
 
@@ -4446,7 +4446,7 @@ if(MCC_BUILD_TESTS)
             COMMAND smokerun --mcc "${_mcc_exe}"
                     --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
                     --work "${CMAKE_BINARY_DIR}/smoke-kp"
-                    --min-cases 6700000 --known-positive)
+                    --min-cases 6700000 --min-passes 49 --known-positive)
         set_tests_properties("smoke/native-known-positive" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
 
