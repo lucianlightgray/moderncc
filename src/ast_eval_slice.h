@@ -406,6 +406,8 @@ static int (*ast_eval_slice_obj_fn)(AstArena *a, AstLocal n, int32_t *extent,
 																		int *etype);
 
 static int ast_eval_slice_wtype(AstArena *a, AstLocal n);
+static int ast_eval_slice_frame_off(AstArena *a, AstLocal n, int32_t *off,
+																		int depth);
 
 static int ast_eval_slice_tsize(int t) {
 	switch (t & VT_BTYPE) {
@@ -740,6 +742,31 @@ static int ast_eval_slice_ext(const AstEvalSliceIdx *o) {
 				 (int64_t)o->nspan * o->esize <= (int64_t)0x40000000;
 }
 
+#define AST_EVAL_OP_ADDR 0x40000
+#define AST_EVAL_OP_MEMBER 0x40001
+#define AST_EVAL_OP_ARROW 0x40002
+
+static int ast_eval_slice_idx_base(AstArena *a, AstLocal n, int32_t *off) {
+	int r;
+	if (n == AST_NONE || !(ast_type_t(a, n) & VT_ARRAY))
+		return 0;
+	if (ast_kind(a, n) == AST_Ref) {
+		r = ast_op(a, n);
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+			return ast_eval_slice_globl(a, n, off);
+		*off = (int32_t)(int64_t)ast_ival(a, n);
+		return 1;
+	}
+	if (ast_kind(a, n) == AST_Unary && ast_op(a, n) == AST_EVAL_OP_MEMBER) {
+		if (ast_type_bp(a, n) || ast_type_bs(a, n))
+			return 0;
+		if ((int64_t)ast_ival(a, n) < 0)
+			return 0;
+		return ast_eval_slice_frame_off(a, n, off, 0);
+	}
+	return 0;
+}
+
 /* The whole span is rounded up to a power of two so that masking a wild index
  * into it needs one AND and cannot leave the object. That is what makes J3b's
  * "no PageFault is reachable" argument close by construction rather than by
@@ -748,8 +775,8 @@ static int ast_eval_slice_ext(const AstEvalSliceIdx *o) {
  * flag was cleared by the same comparison that produced the mask. */
 static int ast_eval_slice_dynidx(AstArena *a, AstLocal n, AstEvalSliceIdx *o) {
 	AstLocal x, y, base, idx;
-	int32_t extent = 0, gb = 0;
-	int etype = 0, r, it;
+	int32_t extent = 0, bo = 0;
+	int etype = 0, it;
 	if (n == AST_NONE || !ast_eval_slice_obj_fn)
 		return 0;
 	if (ast_kind(a, n) != AST_Binary || ast_op(a, n) != '+' ||
@@ -757,22 +784,17 @@ static int ast_eval_slice_dynidx(AstArena *a, AstLocal n, AstEvalSliceIdx *o) {
 		return 0;
 	x = ast_child(a, n, 0);
 	y = ast_child(a, n, 1);
-	if (ast_kind(a, x) == AST_Ref && (ast_type_t(a, x) & VT_ARRAY)) {
+	if (ast_eval_slice_idx_base(a, x, &bo)) {
 		base = x;
 		idx = y;
-	} else if (ast_kind(a, y) == AST_Ref && (ast_type_t(a, y) & VT_ARRAY)) {
+	} else if (ast_eval_slice_idx_base(a, y, &bo)) {
 		base = y;
 		idx = x;
 	} else {
 		return 0;
 	}
-	r = ast_op(a, base);
-	if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM)) {
-		if (!ast_eval_slice_globl(a, base, &gb))
-			return 0;
-	} else {
-		gb = (int32_t)(int64_t)ast_ival(a, base);
-	}
+	if (ast_type_t(a, idx) & VT_ARRAY)
+		return 0;
 	if (!ast_eval_slice_obj_fn(a, base, &extent, &etype))
 		return 0;
 	o->esize = ast_eval_slice_tsize(etype);
@@ -789,7 +811,7 @@ static int ast_eval_slice_dynidx(AstArena *a, AstLocal n, AstEvalSliceIdx *o) {
 	if (!it || is_float(it) || !ast_eval_slice_intt(it) ||
 			ast_eval_slice_is64(it))
 		return 0;
-	o->base = gb;
+	o->base = bo;
 	o->etype = etype;
 	o->nelem = (int)(extent / o->esize);
 	o->nspan = 1;
@@ -920,10 +942,6 @@ static int ast_eval_slice_ftype(AstArena *a, AstLocal n) {
  * ABI change and the device sees the same constant OpAccessChain it already
  * emits for a plain local. This only ever turns a refusal into an acceptance --
  * every shape it admits is one the predicates below reject today. */
-#define AST_EVAL_OP_ADDR 0x40000
-#define AST_EVAL_OP_MEMBER 0x40001
-#define AST_EVAL_OP_ARROW 0x40002
-
 static int ast_eval_slice_frame_off(AstArena *a, AstLocal n, int32_t *off,
 																		int depth) {
 	int r;

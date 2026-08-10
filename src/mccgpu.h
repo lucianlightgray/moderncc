@@ -66,6 +66,9 @@ typedef struct MccGpuStats {
 /* `n` counts MCC_GPU_CODE_UNIT-sized units of `code`. */
 int mcc_gpu_dispatch(const void *code, int n, const int32_t *in, int ntuple,
 										 int nlive, int32_t *out);
+int mcc_gpu_dispatch2_ro_in(const void *ca, int na, const void *cb, int nb,
+														const int32_t *in, int ntuple, int nlive,
+														int32_t *oa, int32_t *ob);
 void mcc_gpu_quiesce(void);
 /* Frame dispatch: `inout` is both seeded into and read back out of the device
  * frame, so a kernel that stores to local slots can hand its results back. */
@@ -3422,6 +3425,13 @@ static void mcc_gpu_code_dump(const MccGpuCode *c, const char *path) {
 static int mcc_gpu_run(const MccGpuCode *c, const int32_t *in, int ntuple,
 											 int nlive, int32_t *out) {
 	return mcc_gpu_dispatch(c->p, c->n, in, ntuple, nlive, out);
+}
+
+static int mcc_gpu_run2(const MccGpuCode *a, const MccGpuCode *b,
+												const int32_t *in, int ntuple, int nlive, int32_t *oa,
+												int32_t *ob) {
+	return mcc_gpu_dispatch2_ro_in(a->p, a->n, b->p, b->n, in, ntuple, nlive, oa,
+																 ob);
 }
 
 #endif /* MCC_GPU_ORACLE */

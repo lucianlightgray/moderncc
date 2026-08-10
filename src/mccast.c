@@ -15984,7 +15984,8 @@ static void ast_isa_key_update(const AstArena *a) { MCC_TRACE("enter\n");
 			if (ast_kind(a, n) != AST_Invoke)
 				{ MCC_TRACE("br\n"); continue; }
 			c = ast_first_child(a, n);
-			if (c == AST_NONE || ast_kind(a, c) != AST_Ref || !a->sym[c])
+			if (c == AST_NONE || ast_kind(a, c) != AST_Ref ||
+					!(ast_op(a, c) & VT_SYM) || !a->sym[c])
 				{ MCC_TRACE("br\n"); continue; }
 			nm = get_tok_str(((Sym *)(uintptr_t)a->sym[c])->v, NULL);
 			if (!nm)
@@ -16734,9 +16735,7 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 			seq++;
 		}
 	}
-	if (!mcc_gpu_run(&ca, tin, ntuple, n, oa))
-		goto bail;
-	if (!mcc_gpu_run(&cb, tin, ntuple, n, ob))
+	if (!mcc_gpu_run2(&ca, &cb, tin, ntuple, n, oa, ob))
 		goto bail;
 
 	for (code = 0; code < space; code++) { MCC_TRACE("br\n");

@@ -13,7 +13,8 @@ DEPTH=40000
 }
 [ -x "$MCC" ] || { echo "SKIP: no mcc at $MCC"; exit 77; }
 
-echo "parse-depth: every recursive path must reach the depth diagnostic, not the guard page."
+echo "parse-depth: every recursive path must reach the depth diagnostic, not the guard page,"
+echo "parse-depth: and a flat token sequence must not recurse at all."
 echo "parse-depth: lowering this cell's stack rlimit to ${STACK_KIB} KiB; a pass at the"
 echo "parse-depth: runner's inherited limit would prove nothing, so refusing to run without it."
 
@@ -64,6 +65,23 @@ expect_diag() {
 		fails=$((fails + 1))
 		;;
 	esac
+}
+
+expect_clean() {
+	name=$1
+	out=$("$MCC" "-B$BDIR" -c "$WORK/$name.c" -o "$WORK/$name.o" 2>&1)
+	rc=$?
+	checked=$((checked + 1))
+	if [ "$rc" -ge 128 ]; then
+		echo "parse-depth: SIGNAL rc=$rc (signal $((rc - 128))) on $name" >&2
+		fails=$((fails + 1))
+		return
+	fi
+	if [ "$rc" -ne 0 ]; then
+		echo "parse-depth: $name is a flat sequence, not nesting, and must compile; rc=$rc:" >&2
+		echo "$out" | head -3 >&2
+		fails=$((fails + 1))
+	fi
 }
 
 { printf 'int main(void){return '; rep '(' "$DEPTH"; printf '0'; rep ')' "$DEPTH"; printf ';}\n'; } >"$WORK/paren.c"
@@ -118,6 +136,9 @@ expect_diag alignasnest
 { printf '__asm__(".set mccz, '; rep '(' "$DEPTH"; printf '1'; rep ')' "$DEPTH"; printf '");\nint main(void){return 0;}\n'; } >"$WORK/asmparen.c"
 expect_diag asmparen
 
+{ printf 'int main(void){'; rep '_Pragma("pack()") ' "$DEPTH"; printf 'return 0;}\n'; } >"$WORK/pragmachain.c"
+expect_clean pragmachain
+
 {
 	i=0
 	while [ "$i" -lt 63 ]; do printf '#if 1\n'; i=$((i + 1)); done
@@ -148,7 +169,7 @@ if [ "$rc" -ne 0 ]; then
 	fails=$((fails + 1))
 fi
 
-if [ "$checked" -lt 16 ]; then
+if [ "$checked" -lt 17 ]; then
 	echo "parse-depth: only $checked cases ran, this check is vacuous" >&2
 	exit 1
 fi

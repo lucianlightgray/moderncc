@@ -8996,12 +8996,18 @@ ST_FUNC void indir(void) { MCC_TRACE("enter\n");
 
 #if defined MCC_TARGET_RISCV64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_X86_64
 static void check_va_start_register(void) { MCC_TRACE("enter\n");
+	int v = vtop->r & VT_VALMASK;
+	if (!(vtop->r & VT_SYM) && v != VT_LOCAL && v != VT_LLOCAL)
+		{ MCC_TRACE("br\n"); return; }
 	if (vtop->sym && vtop->sym->a.is_register)
 		{ MCC_TRACE("br\n"); mcc_warning("undefined behavior when the second parameter of 'va_start' "
 								"is declared with 'register' storage"); }
 }
 
 static void check_va_start_last_param(void) { MCC_TRACE("enter\n");
+	int v = vtop->r & VT_VALMASK;
+	if (!(vtop->r & VT_SYM) && v != VT_LOCAL && v != VT_LLOCAL)
+		{ MCC_TRACE("br\n"); return; }
 	if ((mcc_state->warn_varargs & WARN_ON) && cur_func_last_param && vtop->sym && (vtop->sym->v & ~SYM_FIELD) != cur_func_last_param)
 		{ MCC_TRACE("br\n"); mcc_warning_c(warn_varargs)("second argument to 'va_start' is not the "
 																"last named parameter"); }
@@ -12039,14 +12045,14 @@ tok_next:
 		unary();
 		if (vtop->type.t & VT_BITFIELD)
 			{ MCC_TRACE("br\n"); mcc_error("cannot take address of bit-field"); }
+		if ((vtop->type.t & VT_BTYPE) != VT_FUNC &&
+				!(vtop->type.t & (VT_ARRAY | VT_VLA)))
+			{ MCC_TRACE("br\n"); test_lvalue(); }
 		if (vtop->sym && vtop->sym->a.is_register &&
 				((vtop->r & VT_VALMASK) == VT_LOCAL ||
 				 (vtop->sym->type.t & (VT_ARRAY | VT_VLA))))
 			{ MCC_TRACE("br\n"); mcc_error("address of register variable '%s' requested",
 								get_tok_str(vtop->sym->v, NULL)); }
-		if ((vtop->type.t & VT_BTYPE) != VT_FUNC &&
-				!(vtop->type.t & (VT_ARRAY | VT_VLA)))
-			{ MCC_TRACE("br\n"); test_lvalue(); }
 		if (vtop->r & VT_NONLVAL)
 			{ MCC_TRACE("br\n"); mcc_error("cannot take the address of a function-call result"); }
 		if (vtop->sym)

@@ -5271,6 +5271,7 @@ static int c23_keyword_subst(int t) { MCC_TRACE("enter\n");
 
 ST_FUNC void next(void) { MCC_TRACE("enter\n");
 	int t;
+tail:
 	total_toks++;
 	while (macro_ptr) { MCC_TRACE("br\n");
 	redo:
@@ -5311,8 +5312,7 @@ ST_FUNC void next(void) { MCC_TRACE("enter\n");
 	t = tok;
 	if (t == TOK__Pragma && (parse_flags & PARSE_FLAG_PREPROCESS) && mcc_state->output_type != MCC_OUTPUT_PREPROCESS) { MCC_TRACE("br\n");
 		pragma_operator();
-		next();
-		return;
+		goto tail;
 	}
 	if (t >= TOK_IDENT && (parse_flags & PARSE_FLAG_PREPROCESS)) { MCC_TRACE("br\n");
 		Sym *s = tok_ts->sym_define;

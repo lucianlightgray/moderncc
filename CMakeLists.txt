@@ -3642,11 +3642,53 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_real.cmake")
             set_tests_properties("gpu/spv-slice-real" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+
+            add_test(NAME "gpu/spv-mem-binding" COMMAND spvgate --mem)
+            set_tests_properties("gpu/spv-mem-binding" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            add_test(NAME "gpu/spv-mem-binding-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DCMD=$<TARGET_FILE:spvgate>
+                        -DGATEARGS=--mem
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_mutate.cmake")
+            set_tests_properties("gpu/spv-mem-binding-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+
+            find_program(MCC_SPIRV_VAL NAMES spirv-val)
+            if(MCC_SPIRV_VAL)
+                message(STATUS "mcc: spirv-val = ${MCC_SPIRV_VAL}")
+            else()
+                message(STATUS "mcc: no spirv-val; gpu/spv-validate* will skip")
+            endif()
+            add_test(NAME "gpu/spv-validate"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DGATE=$<TARGET_FILE:spvgate>
+                        -DSPIRV_VAL=${MCC_SPIRV_VAL}
+                        -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/spv-validate
+                        -DEXPECT=140
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvval.cmake")
+            set_tests_properties("gpu/spv-validate" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            add_test(NAME "gpu/spv-validate-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DGATE=$<TARGET_FILE:spvgate>
+                        -DSPIRV_VAL=${MCC_SPIRV_VAL}
+                        -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/spv-validate-kp
+                        -DEXPECT=140
+                        -DCORRUPT=6
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvval.cmake")
+            set_tests_properties("gpu/spv-validate-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
         else()
             set(_spv_why "no Vulkan headers/loader on this host, so the spvgate differential tool cannot be built (install the Vulkan SDK, or MoltenVK on Darwin)")
             mcc_skip_test("gpu/spv-slice-differential" "${_spv_why}")
             mcc_skip_test("gpu/spv-slice-known-positive" "${_spv_why}")
             mcc_skip_test("gpu/spv-slice-real" "${_spv_why}")
+            mcc_skip_test("gpu/spv-validate" "${_spv_why}")
+            mcc_skip_test("gpu/spv-validate-known-positive" "${_spv_why}")
+            mcc_skip_test("gpu/spv-mem-binding" "${_spv_why}")
+            mcc_skip_test("gpu/spv-mem-binding-known-positive" "${_spv_why}")
         endif()
 
         if(APPLE AND MCC_GPU_LANG_MSL_VALUE)
@@ -4691,6 +4733,36 @@ if(MCC_BUILD_TESTS)
         else()
             mcc_skip_test(superopt/promote-floor
                 "the promote-floor ratchet counts spill slots with objcopy on a POSIX host; no objcopy on PATH, or not a POSIX host"
+                LABELS native)
+        endif()
+
+        find_program(MCC_OBJDUMP NAMES objdump)
+        if(UNIX AND MCC_OBJDUMP)
+            add_test(NAME superopt/global-reload
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/global-reload.sh"
+                        "${_mcc_exe}" "${_bdir}"
+                        "${CMAKE_BINARY_DIR}/global-reload"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/src/globreload.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/globreload.awk")
+            set_tests_properties(superopt/global-reload PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                TIMEOUT 600)
+            add_test(NAME superopt/global-reload-known-positive
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/global-reload.sh"
+                        "${_mcc_exe}" "${_bdir}"
+                        "${CMAKE_BINARY_DIR}/global-reload-kp"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/src/globreload-broken.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/globreload.awk"
+                        known-positive)
+            set_tests_properties(superopt/global-reload-known-positive PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                TIMEOUT 600)
+        else()
+            mcc_skip_test(superopt/global-reload
+                "the global-reload cell reads relocations out of objdump -dr on a POSIX host; no objdump on PATH, or not a POSIX host"
+                LABELS native)
+            mcc_skip_test(superopt/global-reload-known-positive
+                "the global-reload cell reads relocations out of objdump -dr on a POSIX host; no objdump on PATH, or not a POSIX host"
                 LABELS native)
         endif()
 
@@ -6763,6 +6835,16 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
     mcc_skip_test(asm-gas-directives
         "blocked: integrated assembler lacks sgdtq/sidtq/swapgs encodings (gas_directives.S:811)")
 
+    add_test(NAME "asm/reloc-suffix"
+        COMMAND "${CMAKE_COMMAND}"
+                -DMCC=$<TARGET_FILE:mcc>
+                -DBINDIR=${CMAKE_BINARY_DIR}
+                -DCPU=${MCC_CPU}
+                -DTARGETOS=${MCC_TARGETOS}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/asm_reloc_suffix.cmake")
+    set_tests_properties("asm/reloc-suffix" PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+
     set(MCC_GCCTESTSUITE_PATH "" CACHE PATH
         "gcc.c-torture directory for the `gcctestsuite` target")
     set(MCC_ARM_CROSS_COMPILE "" CACHE STRING
@@ -7278,7 +7360,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         "${CMAKE_CURRENT_SOURCE_DIR}/examples/*.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/bounds_stress.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/floating_point.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/compile_errors.c")
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/compile_errors.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/va_start_nonsym.c")
 
     set(_x11_search "${MCC_SYSROOT}/usr/include" /usr/include /opt/X11/include
                     /usr/X11R6/include /usr/local/include /opt/homebrew/include)

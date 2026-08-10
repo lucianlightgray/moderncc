@@ -12,13 +12,34 @@
 
 ### Where the tree is
 
-`main` at `91b6140b` or later, **9468 cells — 9469 once `wt/globreloc` is in**, the one new
-cell being `slice/arena-intern-cap`; ~20 commits ahead of `origin/main` and 0
-behind at the time of writing. **The push is pending a full validation run that was still
-in flight** — check it finished green before pushing, and fetch/merge first.
+`main` at `96cacf64`, **9500 cells on this host — 9501 once `wt/globreloc` is in**, the one
+new cell being `slice/arena-intern-cap`. The jump from the 9468 of `91b6140b` is +32: seven
+literally-named cells (`asm/reloc-suffix`; `gpu/spv-mem-binding{,-known-positive}`;
+`gpu/spv-validate{,-known-positive}`; `superopt/global-reload{,-known-positive}`) and 25
+from glob- and loop-driven registration. **Count it on the host rather than adding it up** —
+four of those seven are conditional on Vulkan headers plus `spirv-val`, and two more on
+`objdump`, so the total is host-dependent and an arithmetic estimate came out 4 low.
+The push is pending a full validation run — check it finished green before pushing, and
+fetch/merge first.
 Three machines share this branch: this one (Linux/Vulkan), a Windows box and a Mac box.
 Both peers were idle at the time of writing. The last full validated run was 9467/0 before
 the `wt/attrib` merge; a run on the current head was in flight and unfinished.
+
+### RED ON `main` RIGHT NOW — `ast/o0-baseline`, and it is not a code bug
+
+**Four cells fail on `96cacf64` itself**: `ast/o0-baseline`, `ast/o0-baseline-gated`, and
+both `-known-positive` twins. `111d1eb2` added `tests/exec/inline_asm/asm_reloc_suffix.c`
+and did not re-bank `tests/ast/o0-baseline/`. The bank is one row short of the corpus it
+describes, so the unmutated check fails, and the known-positive twins then correctly refuse
+to report anything.
+
+**Nothing moved.** Diffing the regenerated table against the bank gives **one line added,
+zero removed, zero hashes changed** — the added row is `asm_reloc_suffix.c` itself. No `-O0`
+object shifted a byte; the bank is simply missing a file. The remedy is to re-take
+`tests/ast/o0-baseline/*.txt` and confirm that same shape (additions only, no hash moves)
+before banking. Deliberately **not** done on `wt/globreloc-int` — that branch touches no
+file under `tests/ast/` or `tests/exec/`, and folding someone else's bank re-take into a
+merge commit is how a real object move gets banked by accident.
 
 ### Branches merged into local `main` but NOT pushed
 
@@ -30,7 +51,7 @@ textual** (see the trap list).
 
 | branch | commits | what it holds | why not merged |
 | --- | ---: | --- | --- |
-| ~~`wt/globreloc`~~ | 2 | globals resolve to real addresses; `cref_expr` spells them for the oracle; the `ast_adump_intern` 4096-pointer cap fails loudly instead of degrading | **merged** via `wt/globreloc-int`, which re-took `tests/fmt/census-bank.json`, re-derived the headline numbers against `p->f`, and reconciled the `hostimport` obstacle list |
+| ~~`wt/globreloc`~~ | 2 | globals resolve to real addresses; `cref_expr` spells them for the oracle; the `ast_adump_intern` 4096-pointer cap fails loudly instead of degrading | **merged** via `wt/globreloc-int`, rebased onto `96cacf64`: census bank re-taken (three times, once per rebase), headline numbers re-derived against `p->f` **and** `wt/memberidx`, `hostimport`'s obstacle list reconciled, and `ast_eval_slice_globl` folded into `wt/memberidx`'s new `ast_eval_slice_idx_base` — a resolution worth 758 indexed loads that no cell would have caught losing |
 | `wt/hostimport` | 2 | the `cref-unspellable` fix (a global used to spell as a plausible `((T)0LL)`) and comment removal | held so a 40-minute validation would not be invalidated mid-flight |
 | `wt/rirnorm` | 3 | bitfields → shift/mask at RIR; `if (c) return a; return b;` → ternary | agent still running |
 
@@ -63,10 +84,10 @@ work until something in `src/` maps an iteration space onto lanes.
 | 1 | statement `Invoke` | **55.91%** | `if`-return→ternary is the unlock; inlining already landed and bought 0 blocks without it |
 | 2 | conditions | **37.39%** | 94.87% of blocked conditions are a global-aggregate `Ref`; `p->f` landed (+216 blocks) |
 | 3 | early `return` inside an `if`/loop body | 580 blocks | **cheap and new** — `mcc_slice_frame_from_ast` admits `Return` only as the last *top-level* statement, and 572 of 580 already have an accepted return value |
-| 4 | `s.arr[i]` as an indexed base | 58,328 nodes (4.97%) | **unowned**; needs `dynidx` to take a `Unary(MEMBER)` base plus `ast_eval_slice_livein_ext` |
+| 4 | `s.arr[i]` as an indexed base | 58,328 nodes (4.97%) | **LANDED on `wt/memberidx`, and the 58,328 was a mislabel** — `dynidx` now takes a `Unary(MEMBER)` base. 98.9% of the population is a *global* struct and needs the globals image, not indexing work. See the write-up below |
 | 5 | inline asm | 32,472 nodes | unblocked by the effect log; not started |
 | 6 | `volatile` | — | unblocked by the effect log; not started |
-| 7 | I/O calls | — | gated on one unverified fact: can mcc *compile* musl, not merely link a prebuilt sysroot |
+| 7 | I/O calls | — | **gate answered YES, 2026-08-09.** mcc compiles **1347 of musl 1.2.5's 1352** x86_64 objects, `libc.a` links, and binaries built against it are output-identical to gcc-built reference musl including the dynamic path through musl's own mcc-built `ld.so`. So the I/O work proceeds on the premise that `src/stdio`, `src/internal/syscall*` and `src/malloc` are **mcc-parsed arenas already**, not something to reimplement. See *musl compiles* below for the 5 refusals and the two integration facts |
 
 ### Traps that have already cost time — do not rediscover these
 
@@ -98,6 +119,35 @@ model where placement is a cost decision. Three cases need defined answers becau
 implied answer is a miscompile: blocking on the world rather than on work; threading that
 is load-bearing for *behaviour* rather than throughput; and detached threads outliving
 `main`.
+
+#### How much threading the slicer actually walks away from — measured, `wt/threadname`
+
+`ast_eval_slice_kind_ok` has no `AST_Invoke` case, so until now `pthread_mutex_lock` and
+`strlen` were literally the same refusal and the compiler could not say how much threading
+it declined. `kind-invoke` now splits into `kind-invoke` + `kind-invoke-thread`, and
+`block/stmt-invoke` into `block/stmt-invoke` + `block/stmt-thread`, by a name classifier
+(`mcc_thread_sym_class` in `src/mcceffect.h`) over `pthread_{create,join,detach,exit,mutex,
+cond,rwlock,key,once}*`, the C11 `thrd_`/`mtx_`/`cnd_`/`tss_` prefixes plus `call_once`, and
+`__atomic_*`/`__sync_*`. **No behaviour changed**: the same node is refused with the same
+outcome, only under its own name. The split is a partition and slicerun proves it —
+`kind-invoke-partition-sum` and `stmt-invoke-partition-sum` are counted independently by
+node kind and the run fails if they do not reproduce the parent.
+
+The first honest answer, four corpora, `-O1`:
+
+| corpus | refused Invoke | thread | pthread | c11 | atomic |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| gcc-c-torture-execute | 73,826 | 0 | 0 | 0 | 0 |
+| llvm-test-suite-regression-c | 20,647 | 0 | 0 | 0 | 0 |
+| llvm-test-suite-unittests | 26,238 | 4 | 4 | 0 | 0 |
+| compiler-rt-builtins-unit | 495 | 120 | 0 | 0 | 120 |
+| **total** | **121,206** | **124** | **4** | **0** | **120** |
+
+**0.10% of refused calls are thread primitives, and 1 refused block out of 67,873.** The C11
+`thrd_`/`mtx_`/`cnd_`/`tss_` set never appears at all; every atomic is compiler-rt testing
+its own `__atomic_*`/`__sync_*` lowering. Taking threading over cannot be justified by
+coverage on these corpora — it has to be justified by the programs the project intends to
+compile, and that argument now has a number to beat rather than an impression.
 
 ## Total lowering — the decided architecture, 2026-08-09
 
@@ -191,6 +241,207 @@ runs on every dispatch. What it produces is a second independent implementation 
 the first against real data rather than test data. That is a currency which converts —
 the device differential has already caught three miscompiles that internal comparisons
 were structurally blind to — whereas device-eligible blocks never had an exchange rate.
+
+## Landed — `s.arr[i]` indexes like `arr[i]`, and gap #4's 58,328 was 98.9% globals, 2026-08-09 (`wt/memberidx`)
+
+**The change is one predicate helper and it is the whole of it.**
+`ast_eval_slice_dynidx` opened with `ast_kind(a, x) == AST_Ref && (ast_type_t(a, x) &
+VT_ARRAY)` for either operand of the `'+'`, then re-checked `VT_LOCAL && !VT_SYM` on the
+winner and took `ast_ival(base)` as the object's frame offset. That test and that offset are
+now one function, `ast_eval_slice_idx_base`, which returns the frame offset an indexed
+object starts at and admits two shapes: the `Ref` it always did, and a
+`Unary(AST_EVAL_OP_MEMBER)` whose own type word carries `VT_ARRAY`, resolved through
+`ast_eval_slice_frame_off` — the same constant folding `.field` already used for a scalar
+member. `o->base = bo` replaces `o->base = ast_ival(a, base)` and nothing else in the file
+moved.
+
+**Nothing else needed to move, and that is the load-bearing observation.** Every consumer of
+`AstEvalSliceIdx` — `ast_eval_slice_rec`, `ast_eval_slice_livein_obj` /
+`ast_eval_slice_livein_ext`, `ast_eval_slice_kind_ok`, `ast_eval_slice_wtype` /
+`ast_eval_slice_ftype`, `mcc_slice_store_dyn`, `mcc_slice_frame_mark_ext`,
+`mcc_slice_has_ext` and `spv_expr`/`mcc_slice_spv_stmt` on the device — reads `base` as a frame-slot
+key and never asks what syntax produced it. A struct field's offset is a frame-slot key in
+exactly the same numbering. So there is **no new slot class, no new emitter primitive, no
+ABI change and no new live-in kind**: the dense model lays the same run of per-element
+slots, and an object over `AST_EVAL_SLICE_DENSE_MAX` becomes the same one-slot descriptor
+`wt/slotmodel` built, at the field's offset instead of the local's. The extent and element
+type come from the member node's own dumped `size`/`etype` columns through
+`ast_eval_slice_obj_fn`, which needed no change either: an array member's type word is
+`VT_PTR | VT_ARRAY`, so `ast_adump_size` returns the array's bytes and `ast_adump_etype`
+returns the element type, both already correct for a member node.
+
+`tools/slicerun.c`'s `memshape_idx_why` was changed the same way, because it re-decides the
+base test for attribution and would otherwise have reported the newly-accepted shapes in
+`load/idx-base-not-array`. The partition check below is what that is for.
+
+**Two cells now pin the shape** and neither is a new ctest cell, so the count is unchanged
+at 9468. `slicerun`'s `frame` suite builds `s.arr[i] = s.arr[i] + 1` over a four-element
+field of a struct at `-64`, asserts the object is keyed at `-56` rather than `-64`, runs
+eight frames on the CPU reference and compares every slot of every frame against the
+device. `ext` builds a 32-element field and asserts it costs one descriptor slot keyed at
+the *field's* offset with the padded span reserved — the `ast_eval_slice_livein_ext` half.
+A member base is the one shape whose base offset is **computed rather than read**, so an
+off-by-one in the fold would still have agreed with itself; that is what the `-56` and
+`-496` assertions exist to catch.
+
+**The compiler cannot be affected, statically.** `ast_eval_slice_dynidx` returns 0 on its
+third line when `ast_eval_slice_obj_fn` is null, and `ast_eval_slice_obj_fn` is assigned in
+`tools/slicerun.c` and `tools/spvgate.c` and nowhere else in the tree. Re-dumping all 1,693
+`gcc.c-torture/execute` programs with the new `mcc` and diffing against the old dump gives
+226 differing lines out of 1,421,567, every one of them a `kind=5 op=48` literal whose
+`ival` is a raw pointer — ASLR, not the change. No byte-identity sweep was run because the
+static argument is stronger than one.
+
+### Measured, `gcc.c-torture/execute` — 1,693 programs, 1,560 arenas, 15,923 bodies, 1,172,443 nodes, 119,363 blocks
+
+Both columns are the *same* arena file replayed by the two `slicerun` binaries, so the
+difference is the predicate and nothing else.
+
+| figure | before | after |
+| --- | ---: | ---: |
+| nodes accepted (`ast_eval_slice_kind_ok(…, 0)`) | 378,387 | **378,387** |
+| **frame-accepted blocks** | 33,653 | **33,666** |
+| refused blocks | 85,710 | 85,697 |
+| `memshape: load/dynidx` | 517 | **707** |
+| `memshape: store/dynidx` | 221 | **286** |
+| `memshape: load/idx-base-not-array` | 43,204 | 42,987 |
+| `refusal: no-working-type` | 32,403 | 32,346 |
+
+**+13 blocks, +190 indexed loads, +65 indexed stores.** The node column does not move **and
+cannot**: the refusal census asks the *expression* predicate, `allow_load = 0`, under which
+every `AST_Load` is refused on its second line — and an array-typed member node is an
+address, never a value, so it is refused in both columns as well. The 4.97% is a label on a
+population, not on anything a node census can unblock. Rank this kind of work on
+`frame-accepted-blocks`. **Stated in the units the gap table uses — share of refused
+blocks — `s.arr[i]` was worth 13 of 85,710, or 0.015%.** The baseline column reproduces the
+33,653 the funnel section above publishes, which is what makes the 13 attributable.
+
+**The bucket table is a partition, reproduced.** Loads: 43,204 − 42,987 = 217 = 190 into
+`load/dynidx` + 25 into `load/idx-elem-type` + 2 into `load/idx-object-unknown`. Stores:
+`store/dest-load-other` 1,668 → 1,603 = the 65 that `store/dynidx` gained, and
+`store/dest-load=ptr-index` fell 313 → 248 by the same 65. `no-working-type` fell 57 and
+`child-refused` rose 57 — an untyped `AST_Load` whose width `ast_eval_slice_wtype` can now
+infer stops being *its own* cause and becomes its parent's. `blockcause: block/no-cause`
+rose 28 → 48, and the second-level `nocause:` table names all 20:
+`slot-table-full` 4 → 12, `statement-unmodelled` 18 → 28, `return-value-refused` 0 → 2. The
+slot half is the expected one — a dense member array claims `nspan` of the 16
+`MCC_SLICE_MAXSLOT` slots, so widening what is *admitted* pushes more blocks into the
+capacity wall behind it.
+
+### The 58,328 was a mislabel, and the real ceiling is 217
+
+`memshape: idx-operand-kind` counts the `Unary` bases that stand in an indexed `'+'`:
+
+| base | nodes | resolve to a frame offset | base `Ref` is `VT_SYM` |
+| --- | ---: | ---: | ---: |
+| `AST_OP_MEMBER` (`s.arr`) | 39,656 | **221** | **39,221** |
+| `AST_OP_ADDR` (`&x`) | 739 | 437 | 14 |
+| `AST_OP_MEMBER_ARROW` (`p->arr`) | 153 | 0 | 9 |
+
+**98.9% of `s.arr[i]` in this corpus is a *global* struct.** That is not indexing work and no
+change to `dynidx` can reach it: it is the same wall `wt/slotmodel` documented and
+`wt/hostimport` began dismantling — a live-in class keyed by symbol rather than by frame
+offset, and the object's bytes inside binding 2. The 217 that *are* frame-resolvable are
+what this branch converts, and it converts 217 of 217 (190 loads + 25 refused on element
+type + 2 with no dumped object). **Gap #4 is closed; what it was standing in front of is
+gap #2's globals problem wearing an indexing label.**
+
+`AST_OP_ADDR` is left refused deliberately: an `&`-node's type is `T *`, not `T[]`, so
+`ast_eval_slice_obj_fn` reports an 8-byte extent and the `extent < esize` guard refuses it.
+Admitting it would mean guessing the pointee's extent, which is the one thing the object
+hook exists not to do.
+
+### `p->arr[i]` is **out**, and not for lack of trying
+
+It does not fall out. `ast_eval_slice_frame_off` refuses `AST_OP_MEMBER_ARROW` and always
+will — its replay does `indir()` first, so the base is a pointer *loaded at run time* and
+there is no constant to fold. `p->arr[i]` is therefore a **region** access, not a frame
+offset, and the work is not a predicate line:
+
+- a descriptor carrying (pointer frame slot, member byte offset, element type, extent),
+  which cannot be a field on `AstEvalSliceIdx` — `wt/slotmodel` measured that growing that
+  struct by one `int` moves `save_regdisp_group`'s spill count and fails `rir/drop-ratchet`;
+- new arms in `ast_eval_slice_rec` *and* `spv_expr` *and* `mcc_slice_spv_stmt`, since neither the
+  dense nor the extent load applies: the address is `slot_value + madd + elem * esize`;
+- `mcc_slice_frame_mark_ptr` reserves `tsize(et)` bytes behind a marked pointer slot; it
+  would have to reserve `madd + extent`, and `MccSliceFrame.sptr` is one byte wide;
+- `ast_eval_slice_arrow` admits only scalar, non-bitfield, non-array members today, and the
+  bound check would have to be the array's rather than the field's.
+
+Against **153 nodes corpus-wide, 0 of them frame-resolvable today**. Filed, not started.
+
+### Positive control
+
+Four bodies over `struct S { int lead; int arr[8]; int tail; }`, a 64-element member array,
+a member store `s.arr[j] = i` and a nested `u.in.arr[j]`:
+
+| | before | after |
+| --- | ---: | ---: |
+| `frame-accepted` / `frame-compared` | 0 / 0 | **4 / 4** |
+| `frame-stmts` | 0 | **15** |
+| `frame-mem` (runs reaching binding 2) | 0 | **1** |
+| `frame-mismatches` | 0 | **0** |
+| `funnel-refused` / `funnel-agreed` | 4 / 0 | **0 / 4** |
+
+The 64-element member array takes the descriptor path, so `ast_eval_slice_livein_ext` is
+exercised by a member base and agrees with the device. On `tests/exec` (306 files, 1,291
+bodies, 3,379 blocks) frame-accepted blocks go 1,193 → 1,194, `load/dynidx` 161 → 192,
+`store/dynidx` 46 → 56, `frame-compared` 1,019 → 1,020 and `frame-mismatches` stays 0. The
+8 *expression* mismatches that run reports are present in both columns and predate this
+branch.
+
+**The cref oracle does not cover this shape and cannot be made to.** `cref_expr` is only
+ever reached from `mcc_slice_work_from_ast`, which gates on
+`ast_eval_slice_kind_ok(root, 0)`, and `allow_load = 0` refuses every `AST_Load` — so no
+indexed access, member-based or not, has ever been in front of gcc and clang. The four
+`slice/cref-oracle-*` cells are still the right adjudicator for the *expression* path and
+they are green here, but the evidence for this branch is the device differential plus the
+CPU reference, which is what `frame-mismatches=0` over 1,024 compared frame runs is.
+
+## Landed — three SIGSEGVs on `SValue.sym`, one unguarded arena read, and the last parse-depth hole, 2026-08-09 (`wt/symguard`)
+
+**One root cause behind four of the five.** `SValue.sym` shares a union with
+`cmp_op`/`cmp_r`. `vset_VT_CMP` writes only `cmp_op`, so a `VT_CMP` value carries a `sym`
+that is the comparison token in its low 16 bits over whatever the vstack slot held before —
+**never null**, so `if (vtop->sym)` is not a guard. Whether it crashes depends on the
+previous occupant of that cell: if it was a real `Sym *` the stale high half still points
+into the heap and the wild read survives, and if it was a constant (`vsetc` nulls `sym`)
+the pointer is the bare token and the read is at address ~0xa7.
+
+That is why `&(a < b)` looked fine and `&(1 < a)` did not. Both are the same defect.
+
+| # | shape | crashed at | fix | cell |
+| --- | --- | --- | --- | --- |
+| 1 | `int f(int a){ return (int)(long)&(1 < a); }` | `mccgen.c` `unary()` `case '&'`, the `is_register` deref | run `test_lvalue()` first; every other arm keeps its diagnostic | `diag.dg-error.address_of_comparison` |
+| 2 | `va_start(ap, 1 < x)` | `check_va_start_register` | test `r` for `VT_SYM`/`VT_LOCAL`/`VT_LLOCAL` before `sym` | `compile.va_start_nonsym` |
+| 3 | same input, after 2 | `check_va_start_last_param` | same guard | same cell |
+| 4 | a local function pointer as an `AST_Invoke` callee | `ast_isa_key_update` (`mccast.c`) | require `VT_SYM` on the callee `Ref` | none — see below |
+| 5 | 40,000 consecutive `_Pragma("pack()")` | `next()` self-recursion (`mccpp.c`) | `tail:` label + `goto`, no budget level | `diag.parse-depth` case `pragmachain` |
+
+Verified against ASan (`cmake-sanitize/mcc_s`): `SEGV on unknown address 0x00000000000a7`
+at `mccgen.c:12042` for #1 and `mccgen.c:8999` for #2, and at `mccgen.c:9008` for #3 once
+#2 was guarded. **+2 ctest cells, 9468 → 9470.**
+
+**`VT_SYM` alone is not the guard everywhere, and the difference matters.** A local is
+pushed `VT_LOCAL | VT_LVAL` with `vtop->sym = s` and **no** `VT_SYM` bit, so gating the
+`va_start` checks on `VT_SYM` would have silently retired both diagnostics. They test
+`VT_SYM || VT_LOCAL || VT_LLOCAL`. The ISA scan is the opposite case: it only ever wants
+named global functions, which are always `VT_CONST | VT_SYM`, so `VT_SYM` is exactly right
+there and dropping locals is the correction.
+
+**#4 is the one that is not a demonstrated crash, recorded plainly.** With
+`fp p = a < b ? round : floor; p(x) + h(x) + round(x)` under
+`MCC_SEARCH_WORKER=1 mcc -O13 -fopt-search -c`, the scan dereferences three `Ref`s: two at
+`op=0x230` (the real function symbols) and one at `op=0x132` — the local variable `p`. It
+reads a *variable's* `Sym` and matches that variable's name against `ast_bfold_tab`, so a
+local named `round` would salt the search key with SSE4.1. Every callee actually shaped
+like a comparison lands under an `AST_Convert` or an `AST_If`, never a bare `Ref`, so the
+`VT_CMP` garbage could not be driven into that slot. No cell: nothing observable outside
+the search cache key changes, and a compile-succeeds cell would have passed before the fix.
+
+**`MCC_SEARCH_WORKER=1` is how to get the search under a debugger.** Without it
+`ast_search_select` forks and the breakpoints sit in the parent, which reads exactly like
+the code never running.
 
 ## Landed — `block/other` is early `return`, the funnel from acceptance to the device loses 1.24%, and the 28%/1.45% pair are not two ends of one pipe, 2026-08-09 (`wt/attrib`)
 
@@ -1974,37 +2225,85 @@ which is how the before/after below was measured with one binary.
 
 ### What moved
 
-400 gcc-c-torture-execute programs at `-O1`, one dump, one `slicerun` binary. **Re-taken on
-the merged tree** — the first take was on a branch cut before `main`'s `p->f`-at-a-runtime-
-pointer lowering, and both edit `ast_eval_slice_kind_ok`, `_rec` and `_frame_off`, so the
-auto-merge had to be measured rather than assumed:
+400 gcc-c-torture-execute programs at `-O1`, compiled into **one** arena dump and replayed
+by **one** `slicerun` binary with and without `--no-globals`. Re-taken on the tree rebased
+onto `96cacf64`, which carries `p->f`-at-a-runtime-pointer, `wt/memberidx`'s
+`ast_eval_slice_idx_base` and `wt/threadname`'s refusal split:
 
 | counter | before (`--no-globals`) | after | |
 | --- | ---: | ---: | ---: |
-| slices | 1,908 | 2,558 | +34.1% |
-| tuples | 15,264 | 20,464 | +34.1% |
-| gpu-slices | 1,908 | 2,558 | +34.1% |
-| dispatches | 2,872 | 3,535 | +23.1% |
+| slices / gpu-slices | 1,905 | 2,551 | +33.9% |
+| tuples | 15,240 | 20,408 | +33.9% |
+| dispatches | 2,487 | 3,146 | +26.5% |
 | device mismatches | 0 | 0 | |
-| `cref-emitted` | 1,901 | 2,551 | +34.2% |
-| `cref-tuples` | 15,065 | 19,986 | +32.7% |
-| `cref-alldead` | 1 | 1 | unchanged |
-| `cref-unspellable` | 6 | 6 | unchanged |
-| fragments that read a global | 0 | 670 | |
+| `frame-accepted` | 650 | 664 | +2.2% |
+| `frame-compared` / `funnel-agreed` | 581 | 594 | +2.2% |
+| `frame-mismatches` | 0 | 0 | |
+| `ref-accepted/global-scalar-int` | — | 1,171 nodes / 1,060 in value position | |
+| `ref-not-local/global-scalar-int` | 1,171 | 0 | |
 
-`cref-alldead` and `cref-unspellable` are the two counters that separate "adjudicated" from
-"silently skipped", and neither moved: the widening produced fragments, not poison. All
-2,551 deduplicated fragments in 18 batches compiled and agreed under gcc-15 and clang-22 at
-`-O0` and `-O2`, zero mismatches, zero nocompiles.
+The `ref-not-local` → `ref-accepted` move is **exactly 1,171 ↔ 1,171**, and
+`ref-not-local-classes-sum` drops 10,657 → 9,485 to match its own bucket, so the
+re-attribution is a partition rather than a leak.
 
-**The two widenings compose; they do not double-count.** On the pre-`p->f` branch the same
-measurement read 1,905 → 2,551, a delta of +646. On the merged tree the baseline is 1,908
-— `p->f` alone is worth **+3 slices** on this corpus — and the widened figure is 2,558, a
-delta of **+650**. Purely additive composition predicts 2,551 + 3 = 2,554; the observed
-2,558 is **4 slices higher**, not lower. Those four need *both* widenings — a `p->f` read
-and a global in the same expression — so the intersection is a small genuine gain rather
-than a shape counted twice. A double-count would have shown up as a merged figure *below*
-the additive prediction, and it does not.
+**Adjudicated at full corpus scale, not just on the 400.** The four `slice/cref-oracle-*`
+cells re-emit every accepted slice as standalone C and put it to gcc and clang at `-O0` and
+`-O2`. On the rebased tree they emit **117,178 fragments, of which 7,878 read a global**
+— 4,279 over gcc-c-torture-execute, 3,488 over llvm-test-suite-regression-c, 82 over
+llvm-test-suite-unittests, 29 over compiler-rt-builtins-unit — and all four cells are green,
+so every one of those 7,878 was compiled by two independent oracles at two optimisation
+levels and agreed. That is the number that matters: not that the predicate widened, but that
+the widening was adjudicated rather than assumed.
+
+**There are two axes here and they must not be conflated.** The expression predicate
+(`ast_eval_slice_kind_ok(..., allow_load=0)`) is what `slices` counts, and **`p->f` and
+`wt/memberidx` cannot move it at all** — both widen shapes underneath an `AST_Load`, and the
+expression slicer refuses every `AST_Load` outright. That is why `slices` reads 1,905 →
+2,551 here, *byte-identical* to the pre-rebase branch: on this axis there is no composition
+question to answer, and the earlier "+3 from `p->f`" reported against the merged-but-not-
+rebased tree was an artefact of tallying per-program dumps over a qualified subset rather
+than one arena. The frame predicate (`allow_load=1`) is where all three widenings actually
+live, and there `frame-accepted` moves 650 → 664.
+
+### The conflict resolution is load-bearing, and nothing would have caught it
+
+`wt/memberidx` factored `dynidx`'s base test into `ast_eval_slice_idx_base`, which collides
+with this branch's global base case. The obvious resolution — take `main`'s `dynidx`, drop
+the branch's inline base patch — **builds, type-checks and passes every cell in the suite**,
+and silently gives up most of what this branch is for. Measured three ways over the same
+arena:
+
+| | `--no-globals` | naive resolution | `globl` folded into `idx_base` |
+| --- | ---: | ---: | ---: |
+| `frame-accepted` | 650 | 658 | **664** |
+| `memshape load/dynidx` | 146 | 146 | **891** |
+| `memshape load/idx-base-not-array` | 953 | 953 | **195** |
+| `memshape load/idx-base=global-array` | 758 | 758 | **0** |
+| `memshape store/dynidx` | 33 | 33 | **378** |
+| `memshape store/dest-load=global-index` | 350 | 350 | **4** |
+| node census (`accepted`/`refused`) | 27,341 / 46,736 | 29,678 / 44,400 | 29,678 / 44,400 |
+
+The last row is the point: **the node-level census is identical between the naive and the
+correct resolution**, because it asks the expression predicate. `slice/refusal-classes` is
+green either way. The 758 indexed loads and 346 indexed stores that stop being resolvable
+show up in exactly one place, the memshape attribution table, which no cell gates on.
+
+### Does folding `globl` into `idx_base` reach the 39,221?
+
+`wt/memberidx` measured that **39,221 of 39,656 member bases standing in an indexed `'+'`
+are a global struct**. The fold does **not** reach them, and the reason is one line:
+`ast_eval_slice_globl` rejects a `VT_STRUCT` base outright. `idx_base`'s member arm resolves
+`s.arr[i]` through `ast_eval_slice_frame_off`, whose `AST_Ref` base case now calls
+`ast_eval_slice_globl` — and for `gs.arr[i]` that call sees the base `Ref` typed `VT_STRUCT`
+and refuses. `ref-not-local/global-aggregate` is 3,481 nodes **before and after**, unmoved.
+
+What the fold does reach is the global *array* base: all 758 of them. So the two widenings
+are adjacent rather than overlapping — `wt/memberidx` unlocked a local struct's array field,
+this branch unlocks a global array, and **the intersection, a global struct's array field,
+is still closed by the same `VT_STRUCT` rejection that closes `.field` on a global.** That
+rejection is now the single blocker in front of the largest remaining item in the census,
+and it is the same one named in *Open — what `ast_eval_slice_frame_off` should return for an
+aggregate* below. It is one predicate, in one function, gating both.
 
 ### The spelling
 
@@ -2048,14 +2347,22 @@ than relocating and naming on a guess. `MCC_ARENA_DUMP_ICAP` pins the ceiling so
 path is reachable; `slice/arena-intern-cap` drives it and also asserts the default capacity
 does *not* fail over the same source.
 
-`tests/fmt/census-bank.json` was re-taken, and re-taken again on the merged tree rather than
-hand-merged, because `wt/hostimport` moved the same two rows. Both figures move by exactly
-`ast_adump_ifail`'s two `fprintf` sites — one to stderr, one into the dump: `sites.fprintf`
-**384 → 386** and `literal_fmt_sites.fprintf` **380 → 382** off `main`, with
-`per_file_sites.mccast.c` **145 → 147**. On the pre-merge branch the same two sites read
-381 → 383 against a lower `main`. **Nothing else in the format census moved** — every other
-row, including all 18 per-file counts and the whole `snprintf` classification, is byte-for-
-byte `main`'s.
+`tests/fmt/census-bank.json` was re-taken by running the cell, never hand-merged — three
+times, because it conflicted on every rebase: `wt/hostimport`, then `wt/gpusmall` (which
+moved `mccgpu.c` 33 → 36) and `wt/symguard`, all touched rows this branch also touches.
+Against `96cacf64` exactly three figures move, and all three are `ast_adump_ifail`'s two
+`fprintf` sites — one to stderr, one into the dump:
+
+| row | `96cacf64` | this branch |
+| --- | ---: | ---: |
+| `sites.fprintf` | 387 | **389** |
+| `literal_fmt_sites.fprintf` | 383 | **385** |
+| `per_file_sites.mccast.c` | 145 | **147** |
+
+**Nothing else in the format census moved** — every other row, including all 18 per-file
+counts (`mccgpu.c` stays at `wt/gpusmall`'s 36) and the whole `snprintf` classification, is
+byte-for-byte `main`'s. Earlier takes of this same pair read 381 → 383 and then 384 → 386
+against lower bases; the delta is always +2, which is the invariant worth remembering.
 
 ### The census had to move with it
 
@@ -3245,21 +3552,22 @@ prize rather than shortening the path. Items 1, 2 and the scalar/array half of 3
 3. **Widen `ast_eval_slice_kind_ok`** — `global-scalar-int` is **DONE** (`wt/globreloc`;
    `ref-not-local/global-scalar-int` went to zero and `ref-accepted/global-scalar-int`
    appeared at 225 nodes / 178 in value position, which `cmake/slicerun_refclass.cmake` now
-   requires). **`global-array` is not.** `ast_eval_slice_globl` does resolve an array base —
-   it has an explicit `VT_ARRAY` arm, and the dump carries the extent and element type a
-   global base needs (columns 13 and 14 are populated: 16 and `VT_INT` for a `static int
-   ga[4]`) — but nothing downstream converts that into an accepted indexed read:
-   `ref-not-local/global-array` is still **930 nodes over the `slice/refusal-classes`
-   corpus, 39.74% of the bucket**, the largest addressable class after `func-symbol`, and a
-   one-function probe of `return ga[x] + x;` still yields `slices=0`. **The blocking step is
-   not identified** — it is somewhere between `ast_eval_slice_dynidx` and the slicer's
-   `allow_load=0` callers, and finding it is the first thing the next branch here should do,
-   because the resolution half of the work is already done and unused. **The aggregate case
-   is also still owed**, and needs `ast_eval_slice_member_off` to decide which fields of a
-   global struct become live-in slots; `ast_eval_slice_globl` refuses a `VT_STRUCT` base
-   outright, which a probe confirms (`gs.a` lowers to `Unary(MEMBER)(Ref[gs])` with the base
-   Ref typed `VT_STRUCT`). The "what does `frame_off` return" question is settled — a key,
-   never a window address.
+   requires). **`global-array` is DONE too, and the census cannot show it.** An earlier pass
+   of this section read `ref-not-local/global-array nodes=942` as an open gap; it is not.
+   That counter asks the *expression* predicate, where every `AST_Load` is refused whatever
+   its base, so an indexed read can never be attributed anywhere else — the number is a
+   property of the node census, not a ceiling. On the *frame* predicate the shape is
+   accepted: `memshape load/idx-base=global-array` goes **758 → 0**, `load/dynidx` **146 →
+   891**, `store/dynidx` **33 → 378**, and a one-function probe of `return ga[x] + x;` goes
+   from `frame-accepted=0` under `--no-globals` to `frame-accepted=1`, agreeing with the
+   device. This is the counter to watch; `ref-not-local/global-array` is not.
+   **Still owed: the aggregate case.** `ast_eval_slice_globl` refuses a `VT_STRUCT` base
+   outright — confirmed by probe, `gs.a` lowers to `Unary(MEMBER)(Ref[gs])` with the base
+   `Ref` typed `VT_STRUCT` — which closes `.field` on a global *and* `gs.arr[i]`, the
+   intersection with `wt/memberidx`. `ref-not-local/global-aggregate` is 3,481 nodes,
+   unmoved. One predicate in one function now gates the largest remaining item in the
+   census. The "what does `frame_off` return" question is settled — a key, never a window
+   address.
 4. **A name column in the arena dump**, optional but cheap — the writer already calls
    `get_tok_str` for `[inv]` records — and the thing that makes a re-emitted global legible
    in a failure report instead of an opaque id.
@@ -5008,7 +5316,7 @@ schedule.
 | **2** | ~~**`ctest -L census` runs 3 of its 6 cells and reports 6.**~~ **CLOSED on `wt/censusfix`** — all five census cells now carry their own `ENVIRONMENT` switch, and a new `census/gates-armed` cell fails if any `census`-labelled cell is gated on an opt-in switch its registration does not set. `ctest -L census` is **7/0 with nothing Skipped** and needs no exported variable at all. `MCC_RIR_CENSUS` was in the same state as the other two — named nowhere in `CMakeLists.txt` — so `rir-coverage-census` and `rir-nofb-probe` only ever ran because somebody typed it | — | **cells** |
 | **3** | **`-fopt-slice` makes object output depend on the optimizer's disk cache, and nothing watches it.** Reproduced verbatim today: `python3 tools/opt-cache-determinism.py cmake-debug/mcc src/mcc.c --opt=-O3 --from-build cmake-debug -- -fopt-slice` → `cold/self/foreign-tu = daffa4e023f9`, **`foreign-fl = 1dbdfbe1bc0c`**, `cache entries written: 2`, `FAIL`. The cell is a **permanent 77** because the flag is `MCC_OPTD_LEVEL(9)` and has no subject at any shipped level, so the defect is invisible rather than absent. Decide: own the pass, or delete it | unknown (a pass) | **correctness / determinism** |
 | **4** | **`if-conversion-abs` ships at `MCC_OPTD_LEVEL(2)` and the freshly re-run bench says it makes code worse.** `tests/optfire/levelbench.tsv:20`: moves **1 of 17** kernels, `gain_movers` **−0.0334**, `branchy` **−0.5700** — a sign flip from the `+0.1905` / `+3.1843` it was promoted on. It is bucketed `ranked`, not `cost-no-gain`, so the ladder still treats it as a win. It is filed **only** in the failed-to-reproduce table at `:685`; no row of the ranking table owns it, and `:517` asserts "row 1 is the only unmeasured row left" | small (one level decision, the measurement already exists) | **emitted code** |
-| **5** | **`MCC_MAX_UNARY_DEPTH` was mis-sized *and* it was one guard where the parser needs eight — DONE, and the eight are now watched.** `diag.parse-frames` re-prices `MCC_MAX_PARSE_DEPTH` against the frames it was sized on, every run; the per-level table it was sized from was re-derived and nine of its ten rows were low. **The two that were filed are now closed on `wt/depthholes`** — `parse_btype`'s `_Alignas` arm (SIGSEGV at **43,606**) and `mccasm.c`'s six-function `asm_expr` cycle (at **18,694**) are both charged to the shared budget, the frames bank is re-derived at **15 cycles** with the worst axis and the 532 KiB requirement unmoved, and `diag.parse-depth` carries both axes. **Newly open, filed with a crash depth:** `next()` self-recurses on `_Pragma` (`src/mccpp.c`) and SIGSEGVs at **130,794** consecutive `_Pragma` tokens; the fix is the `goto redo` the macro arm beside it already uses, not a budget level on the hottest function in the compiler. See "The parse-depth guard" below | small (one `goto`) | **correctness** |
+| **5** | **`MCC_MAX_UNARY_DEPTH` was mis-sized *and* it was one guard where the parser needs eight — DONE, and the eight are now watched.** `diag.parse-frames` re-prices `MCC_MAX_PARSE_DEPTH` against the frames it was sized on, every run; the per-level table it was sized from was re-derived and nine of its ten rows were low. **The two that were filed are now closed on `wt/depthholes`** — `parse_btype`'s `_Alignas` arm (SIGSEGV at **43,606**) and `mccasm.c`'s six-function `asm_expr` cycle (at **18,694**) are both charged to the shared budget, the frames bank is re-derived at **15 cycles** with the worst axis and the 532 KiB requirement unmoved, and `diag.parse-depth` carries both axes. **The third, `next()` self-recursing on `_Pragma` (`src/mccpp.c`, SIGSEGV at 130,794 consecutive `_Pragma` tokens), is closed on `wt/symguard`** — a `tail:` label and a `goto`, no budget level, and `diag.parse-depth` now carries a `pragmachain` case that asserts a clean compile rather than a diagnostic. **No parse-depth hole is currently open.** See "The parse-depth guard" below | done | **correctness** |
 | **6** | **Nine number-producing tools are registered nowhere — the board says four.** `:1688-1696` names `xsuite-report.py`, `gate-ledger.sh`, `strategy-ledger.sh`, `c2_sweep.sh` and closes "Four tools left on this item." Also unregistered and board-quoted: `xsuite.py`, `xoracle.py`, `c2_equiv.sh`, `selfhost-o3.py`, `arm64pe_diff.py`. **`xoracle.py` is the sharpest**: `tests/optfire/levelpins.txt:78` pins `merge-constants` at level 2 on "two xoracle cases change verdict without it" — a shipped ladder pin whose only evidence comes from a tool no cell runs | medium (five more cells) | **census trust** |
 | **7** | **`ast_env_gate` no longer exists in `src/` and four shell tools still grep for it.** `grep -rn ast_env_gate src/` is **0**; `tools/{c2_sweep,c2_equiv,gate-ledger,o0_ab}.sh` all still reference it. They fail loudly, which is the right mode, but this is the widest blocker in the file: it freezes `o0_ab.sh`'s gated half (twelve `*.gated.rir.txt` + `board.gated.txt`, uncovered by `ast/o0-baseline` and not pretending otherwise), blocks three of the four tools in row 5, and blocks the cheap "which `-O1` gate erases the 72 `len` bodies" experiment. The restoration recipe is already written down at `:9899-9906` | medium | **gate strength** |
 | **8** | **`spirv-val` and `glslc` are installed at `/usr/bin` and referenced nowhere in the build.** `grep -rn 'spirv-val\|glslc' CMakeLists.txt cmake/ tools/ src/` is empty. 152/152 modules already validate by hand at `--target-env vulkan1.1`. One `find_program` and one `add_test` arm. The cheapest open item in the file, and it survives the device freeze because it validates what the emitter already ships | small | **device correctness** |
@@ -11585,7 +11893,7 @@ not something to write in SPIR-V and re-verify against the standard.
 
 | | |
 | --- | ---: |
-| `musl/src/string` TUs mcc compiles | **65 of 74** |
+| `musl/src/string` TUs mcc compiles | **74 of 74** (was 65; the 9 were an include-order bug in the cell, not in mcc) |
 | expression slices lowered / mismatches | **475 / 0** |
 | frame runs accepted / built / **compared** | 120 / 94 / **94** |
 | frame mismatches | **0**, and 3800+40 under `--mutate` |
@@ -11593,12 +11901,106 @@ not something to write in SPIR-V and re-verify against the standard.
 Per function: `memcpy` 6 verified frame runs (86 expression slices), `memset` 7 (44),
 `strlen` 1 (3). **`memcmp`, `strcmp`, `strncmp`, `memchr` lower zero frame runs** — they
 walk memory through a pointer, which needs binding 2. That zero is the measure of the
-remaining work, not a failure of the approach. The 9 rejected TUs are internal-dependency
-cases (`strchr.c` wants `__strchrnul`), an ordinary cross-TU call.
+remaining work, not a failure of the approach.
 
-`slice/musl` ratchets it: a 20-TU compile floor so a near-empty corpus cannot pass
-vacuously, a required nonzero `frame-compared`, and a mutation arm. Verified red when the
-floor is raised.
+**Correction, 2026-08-09 — the 9 rejected TUs were nothing of the kind.** The earlier note
+here ("internal-dependency cases, `strchr.c` wants `__strchrnul`, an ordinary cross-TU
+call") is wrong twice over: `strchr.c` is not in the failing set, and **nothing about the
+9 was link-time**. All nine were refused at *parse* time, by `cmake/slicerun_musl.cmake`'s
+own `-I` order. It listed `vendor/musl-sysroot/include` **before**
+`vendor/musl-src/src/include`, so the installed *public* headers shadowed musl's
+*internal* ones:
+
+| refused TUs | what actually happened |
+| ---: | --- |
+| 8 — `memrchr` `stpcpy` `stpncpy` `strcasecmp` `strchrnul` `strerror_r` `strncasecmp` `strsignal` | `features.h`/`libc.h` came from the sysroot, so `hidden` and `weak_alias` were undefined; `weak_alias(__memrchr, memrchr);` then parses as a K&R declaration — *"return type defaults to 'int'"*, *"type defaults to 'int' in declaration"* |
+| 1 — `strcspn` | the public `string.h` shadowed the internal one, so `__strchrnul` was implicit-int |
+
+Put the internal include paths first, in musl's own `CFLAGS_ALL` order
+(`arch/$ARCH`, `arch/generic`, `src/include`, `src/internal`, then the sysroot), and the
+count is **74 of 74** with no compiler change at all. This was never evidence about mcc's
+front end.
+
+`slice/musl` ratchets it: the compile floor is now **all TUs must compile**, plus a
+74-TU corpus-size floor, a required nonzero `frame-compared`, a nonzero `frame-mem`, and a
+mutation arm. The old floor of 20 guarded nothing — it sat 54 TUs below the real number.
+The failure message names the refused files and points at the include order.
+
+### musl compiles — gap #7's gating question, answered YES
+
+Not `src/string`, the **whole libc**. mcc compiles **1347 of musl 1.2.5's 1352** x86_64
+objects, `libc.a` links, and binaries built against it are **output-identical to gcc-built
+reference musl**, including the dynamic path through musl's own mcc-built `ld.so`.
+
+So **gap #7 (I/O calls) is no longer gated.** The I/O work proceeds on the premise that
+`src/stdio`, `src/internal/syscall*` and `src/malloc` are **mcc-parsed arenas already** —
+real source that lowers, not a libc to reimplement and then re-verify against the standard.
+
+The 5 refusals partition exactly into two causes, and both are **parse-level, not
+codegen-level**: each is invariant across `-O0`–`-O3` and under `-fPIC -DSHARED`.
+
+| cause | TUs | which | state |
+| --- | ---: | --- | --- |
+| `@<reloc>` suffix on an x86_64 asm operand | 2 | `src/signal/x86_64/sigsetjmp.s` (`call setjmp@PLT`), `src/math/x86_64/expl.s` (`call exp2l@PLT`) | **fixed**, see below |
+| the x87 `u` constraint in an `asm` operand list | 3 | `src/math/x86_64/{fmodl,remainderl,remquol}.c` | **deliberately not built**, see below |
+
+Re-measured after the fix: all **32** x86_64-relevant `.s` files under `src/`, `crt/` and
+`ldso/` assemble, and of the 1366 x86_64-relevant `.c` files only the 3 x87 ones are
+refused by mcc and not by gcc. (`src/internal/version.c` wants the build's generated
+`version.h`; `src/stdio/{__stdio_seek,freopen,pclose}.c` and `src/time/__tz.c` fail
+**identically under gcc** when handed a bare `-I` set instead of the real build's
+`CFLAGS_ALL` — they are sweep artifacts, not refusals. Check any future count against gcc
+the same way before recording it.)
+
+**The `@PLT` fix.** `asm_parse_ntpoff()` in `src/arch/i386/i386-asm.c` was
+`#define asm_parse_ntpoff() 0` under `MCC_TARGET_X86_64`, i.e. **no `@suffix` parser
+existed on that target at all** — every `@` in an operand died at *"end of line expected"*.
+It is now one function on both targets: i386 keeps `@ntpoff`, x86_64 accepts `@PLT`
+(consume and ignore), and anything else on either target raises
+*"unsupported relocation operator '@X'"*. Ignoring `@PLT` is sound and measured, not
+assumed: `readelf -r` shows mcc already emits **`R_X86_64_PLT32`** for a plain `call g`,
+at the same offset and with the same addend as for `call g@PLT`, and the same for
+`jmp h`/`jmp h@PLT`. gcc emits `R_X86_64_PLT32` for the same source. The suffix was a
+semantic no-op mcc merely refused to parse.
+
+**`@GOTPCREL` is a separate and larger job** — it needs a real GOT-indirect relocation, not
+a suffix to swallow — and **no musl TU needs it**. It is deliberately left diagnosing:
+silently ignoring it would emit a direct reference where an indirection through the GOT was
+written. `asm/reloc-suffix` asserts that refusal, so the shortcut cannot be widened by
+accident.
+
+Cells: **`asm/reloc-suffix`** (`cmake/asm_reloc_suffix.cmake`) compares the relocation
+lists of `call g` / `call g@PLT` and `jmp h` / `jmp h@PLT` and requires them equal *and*
+requires `R_X86_64_PLT32` to be present — if the plain form ever stops carrying PLT32 the
+premise of ignoring the suffix has evaporated and the cell says so — then requires
+`@GOTPCREL` and an unknown `@suffix` to fail *with the relocation-operator diagnostic*, so
+an incidental parse error cannot be mistaken for a deliberate refusal. Plus the
+`asm_reloc_suffix` golden, which runs `call plt_target@PLT` for real across every `exec-*`
+rung and `diff3` against gcc.
+
+**Found while writing that golden, still open: a `call` in inline asm to a symbol already
+defined earlier in the same TU is position-dependent under RIR replay.** The integrated
+assembler resolves it to a direct displacement rather than a relocation, so
+`ast/rir-position` reports `shift=bad sfop=asm@2 sdiff=1` — one byte moves when the body
+is re-emitted at a shifted base. Nothing in `tests/exec` had that shape before, which is
+why it had never fired. `asm_reloc_suffix.c` sidesteps it by defining `plt_target` at the
+*bottom* of the file, so the assembler sees an undefined symbol and emits a relocation;
+**do not reorder that file** without re-running `ast/rir-position`. The real fix is for the
+asm path to emit a relocation for a same-TU `call` as well, and it is not attempted here.
+
+**Priced, not built: the x87 `u` constraint** (3 TUs). It needs x87 stack bookkeeping in
+the register allocator, and musl's own generic C for those three is **verified identical**,
+so the corpus loses nothing by taking the C path. Take it only if something outside musl
+demands the constraint; it is not on the critical path for anything currently planned.
+
+**Two integration facts, non-blocking but they will cost an hour each if rediscovered:**
+
+1. **mcc's driver cannot link `-shared` against musl** — `error: '__init_array_start'
+   defined twice`. GNU `ld` links the same objects fine, so this is mcc's linker, not the
+   objects. Use `ld` for the shared case until it is fixed.
+2. **musl's `configure` picks `-lgcc`, which is the wrong runtime for mcc.** `libgcc`
+   has no `__fixxfdi`, which mcc emits for `long double` → `int64`. Use
+   `cmake-cross/libmccrt.a`.
 
 ### The shared CPU<->GPU address space (binding 2)
 
@@ -16872,22 +17274,28 @@ parse-depth: 2 of 16 cases failed at a 1024 KiB stack
 and `diag.parse-frames` fails the same ablation on its own axis, by name:
 `asm_expr_unary_nested` *"is not in cmake-debug/mcc at all"*.
 
-#### A third hole, found by the audit and filed here: `_Pragma`
+#### A third hole, found by the audit and filed here: `_Pragma` — CLOSED on `wt/symguard`
 
-`next()` recurses into itself on the `_Pragma` operator — `src/mccpp.c:5314`, the
-`next_nomacro` path, right after `pragma_operator()` — with nothing counting the levels.
+`next()` recursed into itself on the `_Pragma` operator — the `next_nomacro` path, right
+after `pragma_operator()` — with nothing counting the levels. Fixed as filed: a `tail:`
+label above `total_toks++` and `goto tail` in place of `next(); return;`, no budget level.
+The label sits above the counter so the token census is unchanged. `parse-depth.sh` grows
+an `expect_clean` arm and a `pragmachain` case at the shared `DEPTH` of 40,000, and its
+vacuity floor moves 16 → 17; ablated against a pre-fix binary at 1024 KiB it reports
+`SIGNAL rc=139 (signal 11) on pragmachain`. The record below is what was measured.
 
 | path | shape | crashes at |
 | --- | --- | ---: |
 | `next` → `pragma_operator` → `next` (`src/mccpp.c`) | `_Pragma("pack()")` ×n then `int x;` | **130,794** (clean at 130,793) |
 
 Measured on this tree, default 8 MiB stack, `-O0` build; the backtrace is a wall of
-`next () at src/mccpp.c:5314`. The frame is thin, which is why it takes 130k tokens rather
-than 19k. **Not fixed here, deliberately**: the right fix is not a budget level on the
-hottest function in the compiler but the `goto redo` the *macro* arm eleven lines above it
-already uses — the self-call is a syntactic tail call, so it is a loop written as a
-recursion. That also means an optimised build may be immune where the `-O0` one is not,
-which is its own reason to fix the shape rather than price it.
+`next () at src/mccpp.c:5314`. The frame is thin (~64 B/level), which is why it takes 130k
+tokens rather than 19k, and why 40,000 suffices at the 1024 KiB `parse-depth` runs on. The
+fix was not a budget level on the hottest function in the compiler but the `goto` the
+*macro* arm already uses — the self-call was a syntactic tail call, so it was a loop
+written as a recursion. It could not be `goto redo` verbatim: `redo` sits inside
+`while (macro_ptr)` and this arm is reached with `macro_ptr` NULL, so the loop condition
+has to be re-tested, which is why the label went above it.
 
 **The rest of the audit — a full SCC pass over `src/**/*.c`, 3259 function bodies.** Every
 other cycle it turned up is either bounded or was not reproducible. Probed and clean on

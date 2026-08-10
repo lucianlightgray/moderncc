@@ -620,8 +620,9 @@ static id mtl_buffer(unsigned long len, void **map) {
  * serialises everything else here. */
 static int32_t *mcc_gpu_rw_back;
 
-static int mcc_gpu_dispatch_locked(const char *src, int len, const int32_t *in,
-																	 int ntuple, int nlive, int32_t *out) {
+static int mcc_gpu_dispatch_locked2(const char *src, int len, const int32_t *in,
+																		int ntuple, int nlive, int32_t *out,
+																		int reuse_in) {
 	id pool, pso, bin, bout, cb, enc;
 	void *pin, *pout;
 	MtlSize grid, tg;
@@ -630,6 +631,7 @@ static int mcc_gpu_dispatch_locked(const char *src, int len, const int32_t *in,
 	unsigned long outlen = (unsigned long)cap * MCC_GPU_OUT_SLOTS * 4;
 	int rc = 0;
 
+	(void)reuse_in;
 	if (!mcc_gpu_init())
 		return 0;
 	if (inlen > mcc_gpu.maxbuf || outlen > mcc_gpu.maxbuf) {
@@ -719,6 +721,7 @@ done:
 static int mcc_gpu_backend_load(void) { return mcc_mtl_load(); }
 
 #define MCC_GPU_CODE_PTR(p) ((const char *)(p))
+#define MCC_GPU_IN_IS_RESIDENT 0
 
 static int mcc_gpu_rw_supported(void) { return 1; }
 
@@ -958,6 +961,10 @@ typedef enum VkStructureType {
 
 typedef enum VkPhysicalDeviceType {
 	VK_PHYSICAL_DEVICE_TYPE_OTHER = 0,
+	VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU = 1,
+	VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU = 2,
+	VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU = 3,
+	VK_PHYSICAL_DEVICE_TYPE_CPU = 4,
 	VK_PHYSICAL_DEVICE_TYPE_MAX_ENUM = 0x7FFFFFFF
 } VkPhysicalDeviceType;
 
@@ -1840,17 +1847,103 @@ static int mcc_vk_want_hostimport(void) {
 	return 1;
 }
 
+static int mcc_vk_compute_qfam(VkPhysicalDevice d, unsigned *out) {
+	VkQueueFamilyProperties qf[32];
+	unsigned nq = 32, i;
+	vkGetPhysicalDeviceQueueFamilyProperties(d, &nq, qf);
+	if (nq > 32)
+		nq = 32;
+	for (i = 0; i < nq; i++)
+		if (qf[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+			*out = i;
+			return 1;
+		}
+	return 0;
+}
+
+#define MCC_VK_MIN_SB_RANGE (1u << 20)
+#define MCC_VK_MIN_GROUPS ((1u << 20) / MCC_GPU_LOCAL_SIZE)
+
+static long mcc_vk_device_score(const VkPhysicalDeviceProperties *p, int f64) {
+	long s;
+
+	if (p->limits.maxComputeWorkGroupInvocations < MCC_GPU_LOCAL_SIZE ||
+			p->limits.maxComputeWorkGroupSize[0] < MCC_GPU_LOCAL_SIZE ||
+			p->limits.maxComputeWorkGroupCount[0] < MCC_VK_MIN_GROUPS ||
+			p->limits.maxBoundDescriptorSets < 1 ||
+			p->limits.maxPerStageDescriptorStorageBuffers < 3 ||
+			p->limits.maxStorageBufferRange < MCC_VK_MIN_SB_RANGE)
+		return -1;
+
+	switch (p->deviceType) {
+	case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+		s = 5000;
+		break;
+	case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+		s = 4000;
+		break;
+	case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+		s = 3000;
+		break;
+	case VK_PHYSICAL_DEVICE_TYPE_CPU:
+		s = 1000;
+		break;
+	default:
+		s = 2000;
+		break;
+	}
+	if (f64)
+		s += 400;
+	if (p->apiVersion >= VK_API_VERSION_1_1)
+		s += 100;
+	{
+		unsigned long mb = (unsigned long)(p->limits.maxStorageBufferRange >> 20);
+		if (mb > 64)
+			mb = 64;
+		s += (long)mb;
+	}
+	return s;
+}
+
+static int mcc_vk_pin_matches(const char *pin, unsigned idx,
+															const VkPhysicalDeviceProperties *p) {
+	const char *q;
+	size_t i, j, n;
+	int isnum = 1;
+	for (q = pin; *q; q++)
+		if (*q < '0' || *q > '9')
+			isnum = 0;
+	if (isnum && pin[0])
+		return (unsigned)atoi(pin) == idx;
+	n = strlen(pin);
+	if (!n)
+		return 0;
+	for (i = 0; p->deviceName[i]; i++) {
+		for (j = 0; j < n; j++) {
+			char a = p->deviceName[i + j], b = pin[j];
+			if (a >= 'A' && a <= 'Z')
+				a = (char)(a - 'A' + 'a');
+			if (b >= 'A' && b <= 'Z')
+				b = (char)(b - 'A' + 'a');
+			if (a != b)
+				break;
+		}
+		if (j == n)
+			return 1;
+	}
+	return 0;
+}
+
 static int mcc_gpu_init(void) {
 	VkApplicationInfo ai;
 	VkInstanceCreateInfo ici;
 	VkPhysicalDevice devs[8];
-	VkQueueFamilyProperties qf[32];
 	VkPhysicalDeviceProperties props;
 	VkDeviceQueueCreateInfo qci;
 	VkDeviceCreateInfo dci;
 	VkPhysicalDeviceFeatures feat;
 	float prio = 1.0f;
-	unsigned ndev = 0, nq = 32, i;
+	unsigned ndev = 0, i;
 
 	if (mcc_gpu_closing)
 		return 0;
@@ -1880,8 +1973,8 @@ static int mcc_gpu_init(void) {
 		 * the handles such a loader writes are not valid (AMD's
 		 * VK_LAYER_AMD_switchable_graphics does exactly this).  VK_INCOMPLETE from
 		 * the *fill* is expected and fine: it only means there are more devices
-		 * than devs[] holds, ndev is the number actually written, and we use
-		 * devs[0]. */
+		 * than devs[] holds and ndev is the number actually written, which is the
+		 * set the scoring below ranks. */
 		unsigned cap = (unsigned)(sizeof devs / sizeof devs[0]);
 		VkResult _r = vkEnumeratePhysicalDevices(mcc_gpu.inst, &ndev, 0);
 		if (_r != VK_SUCCESS || !ndev) {
@@ -1901,25 +1994,64 @@ static int mcc_gpu_init(void) {
 			return 0;
 		}
 	}
-	mcc_gpu.phys = devs[0];
-	vkGetPhysicalDeviceProperties(mcc_gpu.phys, &props);
-	snprintf(mcc_gpu.name, sizeof mcc_gpu.name, "%s", props.deviceName);
-	mcc_gpu.maxsbrange = (unsigned long)props.limits.maxStorageBufferRange;
-	mcc_gpu.qfam = 0xFFFFFFFFu;
-	vkGetPhysicalDeviceQueueFamilyProperties(mcc_gpu.phys, &nq, qf);
-	for (i = 0; i < nq; i++)
-		if (qf[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
-			mcc_gpu.qfam = i;
-			break;
+	{
+		const char *pin = getenv("MCC_GPU_DEVICE");
+		long best = -1;
+		unsigned bestq = 0, pinned = 0;
+		mcc_gpu.phys = 0;
+		for (i = 0; i < ndev; i++) {
+			VkPhysicalDeviceProperties cp;
+			VkPhysicalDeviceFeatures cf;
+			unsigned q = 0;
+			long sc;
+			memset(&cp, 0, sizeof cp);
+			memset(&cf, 0, sizeof cf);
+			vkGetPhysicalDeviceProperties(devs[i], &cp);
+			if (pin && pin[0]) {
+				if (!mcc_vk_pin_matches(pin, i, &cp))
+					continue;
+				pinned = 1;
+			}
+			if (!mcc_vk_compute_qfam(devs[i], &q)) {
+				if (mcc_vk_diag())
+					fprintf(stderr, "[gpu-vk] device %u \"%s\" has no compute queue\n", i,
+									cp.deviceName);
+				continue;
+			}
+			vkGetPhysicalDeviceFeatures(devs[i], &cf);
+			sc = mcc_vk_device_score(&cp, cf.shaderFloat64 ? 1 : 0);
+			if (mcc_vk_diag())
+				fprintf(stderr, "[gpu-vk] device %u \"%s\" type=%d f64=%d score=%ld\n", i,
+								cp.deviceName, (int)cp.deviceType, cf.shaderFloat64 ? 1 : 0, sc);
+			if (sc < 0)
+				continue;
+			if (sc > best) {
+				best = sc;
+				bestq = q;
+				mcc_gpu.phys = devs[i];
+				props = cp;
+			}
 		}
-	if (mcc_gpu.qfam == 0xFFFFFFFFu) {
+		if (!mcc_gpu.phys) {
+			if (pin && pin[0] && !pinned)
+				fprintf(stderr,
+								"[gpu-vk] MCC_GPU_DEVICE=\"%s\" matched none of the %u "
+								"enumerated devices\n",
+								pin, ndev);
+			else if (mcc_vk_diag())
+				fprintf(stderr,
+								"[gpu-vk] none of the %u enumerated devices can run a "
+								"%d-wide compute group over three storage buffers\n",
+								ndev, MCC_GPU_LOCAL_SIZE);
+			return 0;
+		}
+		mcc_gpu.qfam = bestq;
+		snprintf(mcc_gpu.name, sizeof mcc_gpu.name, "%s", props.deviceName);
+		mcc_gpu.maxsbrange = (unsigned long)props.limits.maxStorageBufferRange;
 		if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
-			fprintf(stderr, "[ladder-gpu] no compute queue (nq=%u)\n", nq);
-		return 0;
+			fprintf(stderr, "[ladder-gpu] init ok dev=%s qfam=%u score=%ld\n",
+							mcc_gpu.name, mcc_gpu.qfam, best);
 	}
-	if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
-		fprintf(stderr, "[ladder-gpu] init ok dev=%s qfam=%u\n", mcc_gpu.name,
-						mcc_gpu.qfam);
 	memset(&qci, 0, sizeof qci);
 	qci.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 	qci.queueFamilyIndex = mcc_gpu.qfam;
@@ -2492,9 +2624,9 @@ static void mcc_vk_release(void) {
  * serialises everything else here. */
 static int32_t *mcc_gpu_rw_back;
 
-static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
-																	 const int32_t *in, int ntuple, int nlive,
-																	 int32_t *out) {
+static int mcc_gpu_dispatch_locked2(const uint32_t *code, int nwords,
+																		const int32_t *in, int ntuple, int nlive,
+																		int32_t *out, int reuse_in) {
 	VkCommandBufferBeginInfo bi;
 	VkSubmitInfo si;
 	VkResult wr;
@@ -2520,11 +2652,13 @@ static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
 	 * whole of pin was 32 B/lane of duplicated work, since the memcpy immediately
 	 * overwrites the [0, ntuple) prefix. The mapping is write-combined, so these
 	 * stores are not free. */
-	memcpy(mcc_vkr.pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
-	if (cap > ntuple)
-		memset((char *)mcc_vkr.pin +
-							 (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4,
-					 0, (size_t)(cap - ntuple) * nlive * MCC_GPU_IN_SLOTS * 4);
+	if (!reuse_in) {
+		memcpy(mcc_vkr.pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
+		if (cap > ntuple)
+			memset((char *)mcc_vkr.pin +
+								 (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4,
+						 0, (size_t)(cap - ntuple) * nlive * MCC_GPU_IN_SLOTS * 4);
+	}
 
 	if (vkResetFences(mcc_gpu.dev, 1, &mcc_vkr.fence) != VK_SUCCESS)
 		return 0;
@@ -2581,6 +2715,7 @@ static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
 static int mcc_gpu_backend_load(void) { return mcc_vk_load(); }
 
 #define MCC_GPU_CODE_PTR(p) ((const uint32_t *)(p))
+#define MCC_GPU_IN_IS_RESIDENT 1
 
 static int mcc_gpu_rw_supported(void) { return 1; }
 
@@ -2642,8 +2777,8 @@ int mcc_gpu_dispatch_rw2(const void *code, int n, int32_t *inout, int ntuple,
 		return 0;
 	}
 	mcc_gpu_rw_arm(inout);
-	rc = mcc_gpu_dispatch_locked(MCC_GPU_CODE_PTR(code), n, inout, ntuple, nslot,
-															 out);
+	rc = mcc_gpu_dispatch_locked2(MCC_GPU_CODE_PTR(code), n, inout, ntuple, nslot,
+																out, 0);
 	mcc_gpu_rw_arm(NULL);
 	MCC_GPU_UNLOCK();
 	return rc;
@@ -2722,8 +2857,34 @@ int mcc_gpu_dispatch(const void *code, int n, const int32_t *in, int ntuple,
 	mcc_gpu_fe_ok = (mcc_fe_get(&mcc_gpu_fe) == 0);
 	MCC_GPU_LOCK();
 	rc = mcc_gpu_closing ? 0
-											 : mcc_gpu_dispatch_locked(MCC_GPU_CODE_PTR(code), n, in,
-																								 ntuple, nlive, out);
+											 : mcc_gpu_dispatch_locked2(MCC_GPU_CODE_PTR(code), n, in,
+																									ntuple, nlive, out, 0);
+	MCC_GPU_UNLOCK();
+	if (mcc_gpu_fe_ok)
+		mcc_fe_set(&mcc_gpu_fe);
+	return rc;
+}
+
+int mcc_gpu_dispatch2_ro_in(const void *ca, int na, const void *cb, int nb,
+														const int32_t *in, int ntuple, int nlive,
+														int32_t *oa, int32_t *ob) {
+	int rc, ready;
+	fenv_t mcc_gpu_fe;
+	int mcc_gpu_fe_ok;
+	MCC_GPU_LOCK();
+	ready = mcc_gpu_backend_load();
+	MCC_GPU_UNLOCK();
+	if (!ready)
+		return 0;
+	mcc_gpu_fe_ok = (mcc_fe_get(&mcc_gpu_fe) == 0);
+	MCC_GPU_LOCK();
+	rc = mcc_gpu_closing
+					 ? 0
+					 : mcc_gpu_dispatch_locked2(MCC_GPU_CODE_PTR(ca), na, in, ntuple,
+																			nlive, oa, 0);
+	if (rc)
+		rc = mcc_gpu_dispatch_locked2(MCC_GPU_CODE_PTR(cb), nb, in, ntuple, nlive,
+																	ob, MCC_GPU_IN_IS_RESIDENT);
 	MCC_GPU_UNLOCK();
 	if (mcc_gpu_fe_ok)
 		mcc_fe_set(&mcc_gpu_fe);
