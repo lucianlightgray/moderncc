@@ -4414,6 +4414,82 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("cst/increment" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    # tests/smoke: the fast inner-loop goldens suite and the engine-bail ratchet.
+    # One table-driven subject compiled once per -O level, from -O0 up to and
+    # including MCC_OPT_SEARCH_LEVEL -- the first rung at which the search
+    # optimizer engages (mccopt.h:11, libmcc.c:3263, mccast.c:19296). smokerun
+    # reads that constant from src/mccopt.h, so the ladder cannot drift from the
+    # compiler. Adding a value case means one line in tests/smoke/cases.h and
+    # never a new cell.
+    if(NOT CMAKE_CROSSCOMPILING)
+        add_executable(smokerun tools/smokerun.c tools/toolsupport.c)
+        target_include_directories(smokerun PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+        add_test(NAME "smoke/native"
+            COMMAND smokerun --mcc "${_mcc_exe}"
+                    --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
+                    --work "${CMAKE_BINARY_DIR}/smoke-native"
+                    --min-cases 6300000)
+        set_tests_properties("smoke/native" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+        add_test(NAME "smoke/native-known-positive"
+            COMMAND smokerun --mcc "${_mcc_exe}"
+                    --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
+                    --work "${CMAKE_BINARY_DIR}/smoke-kp"
+                    --min-cases 6300000 --known-positive)
+        set_tests_properties("smoke/native-known-positive" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+        add_test(NAME "smoke/slice-bails"
+            COMMAND smokerun --mcc "${_mcc_exe}"
+                    --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
+                    --work "${CMAKE_BINARY_DIR}/smoke-slice"
+                    --slice-census)
+        set_tests_properties("smoke/slice-bails" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+        find_program(MCC_SMOKE_GCC NAMES gcc-15 gcc)
+        find_program(MCC_SMOKE_CLANG NAMES clang-22 clang)
+        add_test(NAME "smoke/divergence"
+            COMMAND smokerun --mcc "${_mcc_exe}"
+                    --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
+                    --work "${CMAKE_BINARY_DIR}/smoke-div"
+                    --divergence)
+        set_tests_properties("smoke/divergence" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900
+            ENVIRONMENT "MCC_SMOKE_GCC=${MCC_SMOKE_GCC};MCC_SMOKE_CLANG=${MCC_SMOKE_CLANG}")
+
+        set(_smoke_dev_args --device --min-cases 500000)
+        if(MCC_GPU_REQUIRED)
+            list(APPEND _smoke_dev_args --require-device)
+        endif()
+        add_test(NAME "smoke/device"
+            COMMAND smokerun --mcc "${_mcc_exe}"
+                    --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
+                    --work "${CMAKE_BINARY_DIR}/smoke-device"
+                    ${_smoke_dev_args})
+        set_tests_properties("smoke/device" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+        add_test(NAME "smoke/device-known-positive"
+            COMMAND smokerun --mcc "${_mcc_exe}"
+                    --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
+                    --work "${CMAKE_BINARY_DIR}/smoke-device-kp"
+                    ${_smoke_dev_args} --known-positive)
+        set_tests_properties("smoke/device-known-positive" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+    else()
+        set(_smoke_why "smokerun drives a native mcc and runs what it builds, so it cannot run in a cross build")
+        mcc_skip_test("smoke/native" "${_smoke_why}")
+        mcc_skip_test("smoke/native-known-positive" "${_smoke_why}")
+        mcc_skip_test("smoke/slice-bails" "${_smoke_why}")
+        mcc_skip_test("smoke/divergence" "${_smoke_why}")
+        mcc_skip_test("smoke/device" "${_smoke_why}")
+        mcc_skip_test("smoke/device-known-positive" "${_smoke_why}")
+    endif()
+
     add_executable(exec_runner tests/runner.c)
     target_include_directories(exec_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
     set(_exec_env "MCC_TEST_EMU=${MCC_EMULATOR};MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_BCHECK=${_mcc_diag_bc};MCC_TEST_BACKTRACE=${_mcc_diag_bt}")

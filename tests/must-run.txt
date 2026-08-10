@@ -154,3 +154,10 @@ optfire/labeladdr            | must-run   | the only cell that runs a computed-g
 optfire/labeladdr-known-positive | must-run | proves optfire/labeladdr is not blind: it rebuilds the same subject with -DLABELADDR_KP=1, which adds one line of output, and requires every one of the eight optimized configurations to go red
 optfire/asm-replay-recover   | must-run   | the only cell that survives a replay error raised from inside inline asm. mcc_assemble_inline pushes a :asm: BufferedFile and switches parse_flags and the '.' idnum class; the ast_func_end / rir recovery longjmps past all of it, so before mcc_asm_inline_unwind existed the C parser resumed inside the dead asm buffer and the whole TU died on a bogus "';' expected". Needs only the native x86 mcc
 optfire/asm-replay-recover-known-positive | must-run | proves optfire/asm-replay-recover is not blind: it rebuilds the same subject with -DASMREPLAY_KP=1, which adds one line of output, and requires every one of the seven configurations to go red
+
+smoke/native                 | must-run   | the fast inner-loop value matrix: every -O level from 0 to the first search rung, table-driven, no device and no reference compiler needed, so a skip here is always a bug
+smoke/native-known-positive  | must-run   | proves the value matrix is not blind: it poisons a banked expectation and must go red at every level, which is the guard nine cells that passed while executing zero checks did not have
+smoke/slice-bails            | must-run   | the slice-engine refusal ratchet, carried per reason (no-static-type, all-undefined, ...); pure CPU ladder census, so a skip is always a bug
+smoke/divergence             | registered | the gcc/clang UB divergence report; skips honestly when neither reference compiler is installed, and never decides a golden
+smoke/device                 | registered | the device arm: the same value table under the GPU oracle, digest-compared against the CPU arm; skips honestly with no Vulkan or Metal device
+smoke/device-known-positive  | registered | proves the device arm is not blind
