@@ -18570,6 +18570,21 @@ front end — so this is not an `-O2` pipeline gap. Recurring shapes: `fabs(x) <
 `__builtin_constant_p` chains, and signed-overflow reasoning.
 
 #### Newly-confirmed wrong-answer defects, each reproduced by hand at `-O2`
+
+> **All five are now closed** (`wt/o2wrong`, 2026-08-10, four commits, one per defect).
+> **The header is wrong and worth remembering as a shape.** They were *reproduced* at
+> `-O2`, which is not the same as being `-O2` defects: only `fwrapv-2` is a pass, and it is
+> wrong at `-O1`/`-O2`/`-O3`. The other three are wrong at **every** level including `-O0`
+> and are all front-end. The level range is the cheapest thing to measure and it localises
+> the cause before any code is read — measure it first, and label the item with it.
+> Method for all four: build and run under gcc-15 and clang-22 at `-O0`/`-O1`/`-O2`/`-O3`
+> and compare exit status and stdout, which is `tools/gpuconform.py`'s `build_and_run`
+> qualification reused by hand. It also showed that `fwrapv-2` at `-O0` is **not
+> adjudicable** — clang aborts there too, so the oracles disagree and no verdict is owed.
+> Cells: `cli/{c90_selection_stmt_tag_scope, no_wrapv_folds_mul_div_by_same_constant,
+> abs_family_outranks_a_local_definition, gnu_range_designator_nested_and_partial_override}`,
+> +4 on this host, 9510 → 9514.
+
 - ~~`__builtin_expect` discards side effects in its second operand.~~ **Fixed** — see
   the closed list above.
 - ~~**`-fno-wrapv` does not enable signed-overflow simplification.**~~ **Fixed 2026-08-10
