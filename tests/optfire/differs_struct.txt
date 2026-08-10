@@ -7,13 +7,13 @@
 # in mccast.c is `&& !ast_inline_pass_env`, so the capture-time graft is dead
 # whenever the post-capture inliner is on.
 templates|-O2|reemit-templates|-
-promote|-O2|promote-locals|-fpromote-leaf-callee
+promote|-O2|promote-locals|-fpromote-leaf-callee MCC_DEV=1
 inline_capture|-O3|inline|-fno-inline-functions
 inline_pass|-O2|inline-functions|-
-cycle|-O3|opt-cycle|-
+cycle|-O3|opt-cycle|MCC_DEV=1
 math_inline|-O2|builtin-math|-
 regdisp|-Os|reg-disp|-
-perfn_inproc|-O3|opt-perfn-inproc|-fno-inline-functions
+perfn_inproc|-O3|opt-perfn-inproc|-fno-inline-functions MCC_DEV=1
 # inline_void_discard is the regression cell for the graft/void asymmetry: a
 # call whose result is thrown away with (void) records an Invoke node typed
 # VT_VOID, the direct-call replay pushes nothing for it and the statement level

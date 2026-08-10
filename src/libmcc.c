@@ -2349,6 +2349,7 @@ typedef struct FlagDef {
 
 #define WD_ALL 0x0001
 #define FD_INVERT 0x0002
+#define FD_DEV 0x0004
 
 static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_all), WD_ALL, "all"},
@@ -2427,8 +2428,9 @@ static const FlagDef options_f[] = {
 		{offsetof(MCCState, freestanding), FD_INVERT, "hosted"},
 		{offsetof(MCCState, syntax_only), 0, "syntax-only"},
 		{offsetof(MCCState, diag_no_caret), FD_INVERT, "diagnostics-show-caret"},
-#define MCC_OPT_ROW(id, name, dflt) \
-	{(uint16_t)(offsetof(MCCState, optflag) + MCC_OPT_##id), 0, name},
+#define MCC_OPT_ROW(id, name, dflt)                              \
+	{(uint16_t)(offsetof(MCCState, optflag) + MCC_OPT_##id),        \
+	 (uint16_t)(MCC_OPTD_IS_DEV(dflt) ? FD_DEV : 0), name},
 		MCC_OPT_LIST(MCC_OPT_ROW)
 #undef MCC_OPT_ROW
 		{0, 0, NULL}};
@@ -2520,6 +2522,9 @@ static int set_flag(MCCState *s, const FlagDef *flags, const char *name) { MCC_T
 				{ MCC_TRACE("br\n"); continue; }
 		}
 
+		if ((p->flags & FD_DEV) && value && !mcc_dev_enabled())
+			{ MCC_TRACE("br\n"); return -2; }
+
 		f = (unsigned char *)s + p->offset;
 		*f = (*f & mask) | (value ^ !!(p->flags & FD_INVERT));
 
@@ -2530,6 +2535,33 @@ static int set_flag(MCCState *s, const FlagDef *flags, const char *name) { MCC_T
 		}
 	}
 	return ret;
+}
+
+static void opt_level_dev_note(MCCState *s1) { MCC_TRACE("enter\n");
+	static const int dflt[] = {
+#define MCC_OPT_ROW(id, name, d) (d),
+			MCC_OPT_LIST(MCC_OPT_ROW)
+#undef MCC_OPT_ROW
+	};
+	int i, lvl = s1->optimize_level, top = 3;
+	if (lvl <= 4 || lvl >= MCC_OPT_SEARCH_LEVEL || mcc_dev_enabled())
+		{ MCC_TRACE("br\n"); return; }
+	for (i = 0; i < MCC_OPT_COUNT; i++) { MCC_TRACE("br\n");
+		int n;
+		if (MCC_OPTD_IS_DEV(dflt[i]) || !MCC_OPTD_IS_LEVEL(dflt[i]))
+			{ MCC_TRACE("br\n"); continue; }
+		n = MCC_OPTD_LEVEL_OF(dflt[i]);
+		if (n <= lvl && n > top)
+			{ MCC_TRACE("br\n"); top = n; }
+	}
+	if (top >= lvl)
+		{ MCC_TRACE("br\n"); return; }
+	mcc_warning_c(warn_unsupported_option)(
+			"-O%d reaches no optimization this build can enable: every knob first "
+			"reached above -O%d is experimental and gated behind MCC_DEV, so -O%d "
+			"here compiles exactly as -O%d. Set MCC_DEV=1 in the environment to "
+			"enable them",
+			lvl, top, lvl, top);
 }
 
 static const char dumpmachine_str[] =
@@ -3108,8 +3140,18 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				s->cx_limited_range = on;
 				s->optflag[MCC_OPT_BUILTIN_MATH] = on ? 1 : MCC_OPT_UNSET;
 				s->optflag[MCC_OPT_BUILTIN_MATH_FABS] = on ? 1 : MCC_OPT_UNSET;
-			} else if (set_flag(s, options_f, optarg) < 0)
-				{ MCC_TRACE("br\n"); goto unsupported_option; }
+			} else { MCC_TRACE("br\n");
+				int sf = set_flag(s, options_f, optarg);
+				if (sf == -2)
+					{ MCC_TRACE("br\n"); return mcc_error_noabort(
+							"-f%s is an experimental optimization and is gated off in this "
+							"build. It is refused rather than ignored so that it cannot be "
+							"mistaken for a flag that does not exist. Set MCC_DEV=1 in the "
+							"environment to enable it; -fno-%s is always accepted",
+							optarg, optarg); }
+				if (sf < 0)
+					{ MCC_TRACE("br\n"); goto unsupported_option; }
+			}
 		} break;
 #ifdef MCC_TARGET_ARM
 		case MCC_OPTION_mfloat_abi:
@@ -3376,6 +3418,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		x = 0, r = 0;
 		goto extra_action;
 	}
+	opt_level_dev_note(s);
 	if (!empty)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (MCC_VTIER(s->verbose) == MCC_V2)

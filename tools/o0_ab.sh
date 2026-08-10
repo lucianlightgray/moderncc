@@ -148,8 +148,13 @@ fi
 
 mkdir -p "$OUT"
 
+# MCC_OPTD_DEV rows are level rows too -- the class wraps the level rather than
+# replacing it -- so they belong in the forced set, and the caller runs with
+# MCC_DEV=1 or the driver refuses them. Dropping them silently would shrink the
+# forced set to a subset of the banked one and the gated bank would read as a
+# second copy of the ungated half.
 derive_gates() {
-	grep -Eoh 'MCC_OPT_ROW\([A-Z0-9_]+, *"[a-z0-9-]+", *MCC_OPTD_LEVEL\([0-9]+\)\)' \
+	grep -Eoh 'MCC_OPT_ROW\([A-Z0-9_]+, *"[a-z0-9-]+", *(MCC_OPTD_DEV\()?MCC_OPTD_LEVEL\([0-9]+\)\)' \
 		"$S"/src/mccopt.h \
 		| sed -E 's/.*"([a-z0-9-]+)".*/-f\1/' | sort -u
 }

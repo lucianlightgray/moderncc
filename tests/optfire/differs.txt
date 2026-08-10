@@ -1,9 +1,9 @@
 # <name>|<olevel>|<gate flag>|<extra env or ->[|<extra link flags>]
-interchange|-O2|loop-interchange|-
-fusion|-O2|loop-fusion|-
-tile|-O2|loop-block|MCC_AST_TILE_SIZE=7
+interchange|-O2|loop-interchange|MCC_DEV=1
+fusion|-O2|loop-fusion|MCC_DEV=1
+tile|-O2|loop-block|MCC_AST_TILE_SIZE=7 MCC_DEV=1
 vlat|-O2|loop-vlat|-fnarrow
-ivsr_ptr|-O2|ivopts-ptr|-
+ivsr_ptr|-O2|ivopts-ptr|MCC_DEV=1
 # chain-store needs chain-store-live beside it on x86_64/arm64 and a
 # combination of rung-10 rows on i386/riscv64 that no single flag
 # reproduces, so this one reads at the rung rather than naming a parent.

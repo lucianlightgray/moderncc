@@ -1,4 +1,5 @@
-set(_env "C2_NO_EXTRA=1" "O0_AB_CHECK=1" "O0_AB_GATES=1" "O0_AB_MIN_KEYS=${MINKEYS}")
+set(_env "C2_NO_EXTRA=1" "O0_AB_CHECK=1" "O0_AB_GATES=1" "MCC_DEV=1"
+         "O0_AB_MIN_KEYS=${MINKEYS}")
 
 execute_process(COMMAND "${CMAKE_COMMAND}" -E env ${_env}
                         sh "${SCRIPT}" "${BUILD}" measurable "${OUTDIR}/clean"

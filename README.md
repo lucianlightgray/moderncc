@@ -125,6 +125,27 @@ Precedence is `MCC_JIT` env > `--jit`/`--no-jit` flag (for `-run`) > the
 `--jit-functions=`, `--jit-max-duration=`, `--jit-threads=`, and `--stats[=N]`
 for a live optimizer/JIT panel.
 
+### Experimental optimizations (`MCC_DEV`)
+
+Twelve `-f` optimizer knobs are marked `MCC_OPTD_DEV` in `src/mccopt.h` and a
+default build cannot reach them: three change zero bytes across the 1,937-program
+corpus, three cost `.text` for no gain, four are legality-guarded or plausible
+but unexercised, and two are the search worker pools. None is known to be wrong;
+all lack evidence. Set `MCC_DEV=1` in the environment to get them back:
+
+```sh
+mcc -O2 -fxmm-hi t.c          # error: gated off, names the flag and MCC_DEV
+MCC_DEV=1 mcc -O2 -fxmm-hi t.c # enabled
+mcc -O2 -fno-xmm-hi t.c       # always accepted: it asks for the state the gate gives
+```
+
+Passing a gated flag is an **error**, not a silent no-op, because `mcc` merely
+warns on an unknown `-f` and exits 0 — a quiet gate would make them
+indistinguishable from typos. `-O5` through `-O9` reach only gated knobs, so
+they say so rather than quietly compiling as `-O4`. This runtime `MCC_DEV` is
+independent of the `MCC_DEV` **build** option above, which compiles in the AST
+side-car coherence oracle and does not enable these knobs.
+
 ## Embedding (`libmcc`)
 
 `include/libmcc.h` exposes a TinyCC-style C API: `mcc_new` / `mcc_delete`,

@@ -306,7 +306,7 @@ static const gate_t GATES[] = {
 
 
 
-	{"NARROW_FIX", "-fnarrow-fix"},
+	{"NARROW_FIX", "-fnarrow-fix MCC_DEV=1"},
 	{"SETHI_LEAF", "-fsethi-ullman-leaf"},
 	{"SCCP_FIX", "-ftree-ccp-iterate"},
 	{"DSE_CALL", "-ftree-dse"},
@@ -323,10 +323,10 @@ static const gate_t GATES[] = {
 
 	{"REGDISP", "-freg-disp"},
 	{"REASSOC", "-ftree-reassoc"},
-	{"INTERCHANGE", "-floop-interchange"},
-	{"FUSION", "-floop-fusion"},
-	{"TILE", "-floop-block"},
-	{"TILE7", "-floop-block MCC_AST_TILE_SIZE=7"},
+	{"INTERCHANGE", "-floop-interchange MCC_DEV=1"},
+	{"FUSION", "-floop-fusion MCC_DEV=1"},
+	{"TILE", "-floop-block MCC_DEV=1"},
+	{"TILE7", "-floop-block MCC_AST_TILE_SIZE=7 MCC_DEV=1"},
 	{"CSE_WINDOW", "MCC_AST_CSE_WINDOW=256"},
 	{"CPROP_WINDOW", "MCC_AST_CPROP_WINDOW=512"},
 	{"INLINE_DEEP", "-finline MCC_AST_INLINE_DEPTH=16"},
@@ -341,7 +341,7 @@ static const gate_t GATES[] = {
 
 
 
-	{"SLICE", "-fopt-slice"},
+	{"SLICE", "-fopt-slice MCC_DEV=1"},
 	{"NO_CALLFUL", "-fno-promote-across-calls"},
 	{"JIT_SPLICE", "-fjit-splice"},
 	{"REPLAY_IR", "MCC_REPLAY_IR=1"},
