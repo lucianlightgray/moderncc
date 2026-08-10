@@ -7642,24 +7642,132 @@ static int ast_ident_pure_compute(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 }
 
 #if MCC_EMBED_JIT
+static int ast_purity_op_effectfree(int op) { MCC_TRACE("enter\n");
+	switch (op) { MCC_TRACE("br\n");
+	case AST_OP_ADDR:
+	case AST_OP_MEMBER:
+	case AST_OP_MEMBER_ARROW:
+	case AST_OP_IMAG:
+	case AST_OP_MULHU:
+	case AST_OP_MULHS:
+	case AST_OP_FABS:
+	case AST_OP_SQRT:
+	case AST_OP_FLOOR:
+	case AST_OP_CEIL:
+	case AST_OP_TRUNC:
+	case AST_OP_COPYSIGN:
+	case AST_OP_ROUND:
+	case AST_OP_FMIN:
+	case AST_OP_FMAX:
+	case AST_OP_RINT:
+	case AST_OP_NEARBYINT:
+	case AST_OP_FMA:
+	case AST_OP_FNEG:
+	case AST_OP_BSWAP:
+	case AST_OP_SIGNBIT:
+	case AST_OP_FFS:
+	case AST_OP_BITSCAN:
+	case AST_OP_CPLXBUILD:
+		return 1;
+	default:
+		break;
+	}
+	if ((op & 0xffff0000) == 0x40000)
+		{ MCC_TRACE("br\n"); return 0; }
+	switch (op) { MCC_TRACE("br\n");
+	case '+':
+	case '-':
+	case '*':
+	case '/':
+	case '%':
+	case '&':
+	case '|':
+	case '^':
+	case '~':
+	case '!':
+	case TOK_SHL:
+	case TOK_SAR:
+	case TOK_SHR:
+	case TOK_NEG:
+	case TOK_UDIV:
+	case TOK_UMOD:
+	case TOK_PDIV:
+	case TOK_UMULL:
+	case TOK_ADDC1:
+	case TOK_ADDC2:
+	case TOK_SUBC1:
+	case TOK_SUBC2:
+	case TOK_LAND:
+	case TOK_LOR:
+	case TOK_ULT:
+	case TOK_UGE:
+	case TOK_EQ:
+	case TOK_NE:
+	case TOK_ULE:
+	case TOK_UGT:
+	case TOK_LT:
+	case TOK_GE:
+	case TOK_LE:
+	case TOK_GT:
+		return 1;
+	default:
+		break;
+	}
+	return 0;
+}
+
+static int ast_purity_local_slot(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	int r;
+	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
+		{ MCC_TRACE("br\n"); return 0; }
+	r = ast_op(a, n);
+	return (r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM);
+}
+
+static int ast_purity_storeval_marker(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	AstLocal st = (AstLocal)ast_ival(a, n);
+	return st != AST_NONE && st < ast_count(a) && ast_kind(a, st) == AST_Store;
+}
+
+static int ast_purity_node(const AstArena *a, AstLocal n, int *has_load) { MCC_TRACE("enter\n");
+	if (ast_type_t(a, n) & VT_VOLATILE)
+		{ MCC_TRACE("br\n"); return 0; }
+	switch (ast_kind(a, n)) { MCC_TRACE("br\n");
+	case AST_BasicBlock:
+	case AST_If:
+	case AST_Jump:
+	case AST_Return:
+	case AST_Literal:
+	case AST_Convert:
+		return 1;
+	case AST_StoreVal:
+		return ast_purity_storeval_marker(a, n);
+	case AST_Load:
+		*has_load = 1;
+		return 1;
+	case AST_Ref: { MCC_TRACE("br\n");
+		int r = ast_op(a, n);
+		if ((r & VT_LVAL) && (r & VT_VALMASK) != VT_LOCAL)
+			{ MCC_TRACE("br\n"); *has_load = 1; }
+		return 1;
+	}
+	case AST_Unary:
+	case AST_Binary:
+		return ast_purity_op_effectfree(ast_op(a, n));
+	default:
+		break;
+	}
+	return 0;
+}
+
 int ast_fn_purity(const AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n;
 	int has_load = 0;
 	if (ast_arena_has_hole(a))
 		{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
-		if (ast_type_t(a, n) & VT_VOLATILE)
+		if (!ast_purity_node(a, n, &has_load))
 			{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
-		switch (ast_kind(a, n)) { MCC_TRACE("br\n");
-		case AST_Store:
-		case AST_Invoke:
-			return AST_PURITY_IMPURE;
-		case AST_Load:
-			has_load = 1;
-			break;
-		default:
-			break;
-		}
 	}
 	return has_load ? AST_PURITY_TIER1 : AST_PURITY_TIER0;
 }
@@ -7699,15 +7807,17 @@ int ast_fn_purity_noescape(const AstArena *a) { MCC_TRACE("enter\n");
 		if (ast_type_t(a, n) & VT_VOLATILE)
 			{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
 		switch (ast_kind(a, n)) { MCC_TRACE("br\n");
-		case AST_Invoke:
-			return AST_PURITY_IMPURE;
 		case AST_Store: { MCC_TRACE("br\n");
-			AstLocal tgt = ast_child(a, n, 0);
-			int r;
-			if (tgt == AST_NONE || ast_kind(a, tgt) != AST_Ref)
+			if (!ast_purity_local_slot(a, ast_child(a, n, 0)))
 				{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
-			r = ast_op(a, tgt);
-			if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
+			break;
+		}
+		case AST_Unary: { MCC_TRACE("br\n");
+			int op = ast_op(a, n);
+			if ((op == TOK_INC || op == TOK_DEC) &&
+					ast_purity_local_slot(a, ast_first_child(a, n)))
+				{ MCC_TRACE("br\n"); break; }
+			if (!ast_purity_node(a, n, &has_load))
 				{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
 			break;
 		}
@@ -7715,12 +7825,13 @@ int ast_fn_purity_noescape(const AstArena *a) { MCC_TRACE("enter\n");
 			int r = ast_op(a, n);
 			if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_LVAL) && !(r & VT_SYM))
 				{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
+			if (!ast_purity_node(a, n, &has_load))
+				{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
 			break;
 		}
-		case AST_Load:
-			has_load = 1;
-			break;
 		default:
+			if (!ast_purity_node(a, n, &has_load))
+				{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
 			break;
 		}
 	}
