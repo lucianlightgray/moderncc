@@ -4874,8 +4874,20 @@ static AstLocal rir_tern_sole_return(AstLocal bb) {
 	return c;
 }
 
+static AstLocal rir_tern_retcast(AstLocal v) {
+	AstLocal c;
+	if (v == AST_NONE)
+		return v;
+	c = ast_node(rir_arena, AST_Convert);
+	ast_set_type(rir_arena, c, func_vt.t, (uint64_t)(uintptr_t)func_vt.ref);
+	ast_add_child(rir_arena, c, v);
+	return c;
+}
+
 static void rir_tern_build(AstLocal bb, AstLocal iff, AstLocal ret, AstLocal drop,
 													 AstLocal cnd, AstLocal va, AstLocal vb) {
+	va = rir_tern_retcast(va);
+	vb = rir_tern_retcast(vb);
 	ast_clear_children(rir_arena, iff);
 	ast_set_op(rir_arena, iff, 5);
 	ast_set_ival(rir_arena, iff, 0);

@@ -42,9 +42,13 @@
 # 9. O2 jit-not-baked:signature 120 -> 177: same 22 shapes; the JIT declines
 #    them by signature. They are value-checked over -O0..-O4 regardless, which
 #    is what they were added for.
+# 10. 177 -> 183: two more scases shapes (TERNRET, TERNRETX) plus their three
+#    helpers, added for the ternary-fold return-conversion miscompile. Same
+#    situation as note 9 -- new functions in the subject, compiler unchanged
+#    across the step.
 O0 replay-fallback:len 2
 O1 replay-fallback:len 2
-O2 jit-not-baked:signature 177
+O2 jit-not-baked:signature 183
 O2 replay-fallback:len 2
 O3 replay-fallback:len 2
 O4 replay-fallback:len 2

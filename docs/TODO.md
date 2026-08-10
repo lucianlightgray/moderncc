@@ -400,6 +400,42 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
     is the right denominator, not gcc c-torture (item 6). If the duplication is small, the
     cache is `opt-slice` again.
 
+## Landed — the two-return `if` fold dropped the return conversion, and it was miscompiling on `main`, 2026-08-10
+
+`rir_tern_normalise` folds `if (c) return A; return B;` into `return c ? A : B;`. Those are
+not the same program. Each `return` converts its value to the function's return type
+*independently*; a ternary first applies the usual arithmetic conversions **between the two
+arms** and converts once. When the arms have different signedness the fold changes the answer:
+
+    long long h(int c, unsigned uu, int ii) { if (c) return uu; return ii; }
+    h(0, 1u, -1)  ->  -1          gcc-15, clang-22, mcc -O0, mcc -O1
+                  ->  4294967295  mcc -O2, -O3, -O4
+
+This is a **`diverge-both` row and a miscompile**, on unmodified `main`, at every level where
+the fold runs. Writing the ternary by hand (`return c ? uu : ii;`) correctly gives
+`4294967295` on all three compilers — that spelling really does have the arithmetic
+conversion, which is what makes the two cases a clean control pair.
+
+`rir_tern_build` now wraps each arm in an `AST_Convert` to `func_vt` before building the
+`AST_If` op 5, so the fold is semantics-preserving. Found while implementing open item 4:
+the fold's `AST_Invoke` veto was hiding the same defect from call-valued arms, so removing
+that veto without this fix turns it into a *new* miscompile — which is why item 4 must land
+on top of this, not beside it.
+
+### Measured
+
+15 of 1,626 gcc c-torture objects change at `-O2`; all 15 still pass at `-O0`, `-O2` and
+`-O4`. `smoke/`, `exec*`, `ast`/`rir`/`jit`/`optfire` and `rir-coverage` are green — 7,982
+cells. `rir-coverage` matters here: the `mccrir.c` change alone drifts −0.0207 pp, inside
+the 0.05 pp tolerance, so no re-bank is needed for this commit.
+
+`tests/smoke/scases.h` gains `TERNRET` and `TERNRETX`, which cover mixed-signedness returns,
+a narrower-than-return arm, and an `unsigned long long` return with a signed arm. Proven to
+fail without the fix: the subject digest splits across levels, `87ca30017a37ac58` at `-O0`
+against `544628c4fa37ac58` at `-O2` and `-O4`, which is exactly the comparison
+`smoke/native` makes. `O2 jit-not-baked:signature` re-banked 177 -> 183 for the new
+functions.
+
 ## Landed — item 26 was not a stack-slot overlap, it was the replay frame record handing out a slot too small for what it was about to hold, 2026-08-10
 
 `ast_alloc_loc` records every frame offset the parser allocates and the arena replay consumes

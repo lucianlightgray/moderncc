@@ -29,7 +29,9 @@ static long long sms_ga = 6, sms_gb = 7, sms_gn = 20;
 	X(SETHI, sms_sethi) \
 	X(TCO, sms_tco) \
 	X(INLINE, sms_inline) \
-	X(CLOAD, sms_cload)
+	X(CLOAD, sms_cload) \
+	X(TERNRET, sms_ternret) \
+	X(TERNRETX, sms_ternretx)
 
 static long long sms_bfold(void)
 {
@@ -225,6 +227,44 @@ static long long sms_cload(void)
 	static const long long tab[8] = {1, 2, 3, 5, 8, 13, 21, 34};
 	long long v = sms_ga & 7;
 	return tab[(int)v] * 2 + tab[(int)((v + 1) & 7)] + sms_gb;
+}
+
+static long long sms_ternret_h(int c, unsigned uu, int ii)
+{
+	if (c)
+		return uu;
+	return ii;
+}
+
+static long long sms_ternret_t(int c, unsigned uu, int ii)
+{
+	return c ? uu : ii;
+}
+
+static unsigned long long sms_ternret_u(int c, int ii, unsigned uu)
+{
+	if (c)
+		return ii;
+	return uu;
+}
+
+static long long sms_ternret(void)
+{
+	int c = (int)(sms_gn & 1);
+	unsigned uu = (unsigned)sms_ga;
+	int ii = (int)sms_gb;
+	return sms_ternret_h(c, uu, ii) * 3 + sms_ternret_t(c, uu, ii);
+}
+
+static long long sms_ternretx(void)
+{
+	int c = (int)(sms_gn & 1);
+	int ii = (int)sms_ga;
+	unsigned uu = (unsigned)sms_gb;
+	unsigned long long r = sms_ternret_u(c, ii, uu);
+	short sh = (short)sms_ga;
+	long long w = c ? (long long)sh : (long long)uu;
+	return (long long)(r >> 1) + w;
 }
 
 enum {
