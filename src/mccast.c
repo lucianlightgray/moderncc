@@ -1554,7 +1554,6 @@ static int ast_bitflag_report_env;
 static int ast_bitflag_min;
 static int ast_cprop_join_env;
 static MCC_OPT_TLS int ast_narrow_env;
-int ast_inline_static_env;
 static MCC_OPT_TLS int ast_switch_expr_env;
 int ast_trunc32_env;
 static MCC_OPT_TLS int ast_narrow_fix_env;
@@ -1570,6 +1569,7 @@ static MCC_OPT_TLS int ast_ident_arith_env;
 static MCC_OPT_TLS int ast_ident_bit_env;
 static MCC_OPT_TLS int ast_ident_rel_env;
 static MCC_OPT_TLS int ast_ident_urange_env;
+static MCC_OPT_TLS int ast_strict_overflow_env;
 static MCC_OPT_TLS int ast_dse_call_env;
 static MCC_OPT_TLS int ast_tco_ptr_env;
 static MCC_OPT_TLS int ast_cse_comm_env;
@@ -1800,6 +1800,29 @@ static int ast_jit_eligible(Sym *sym) { MCC_TRACE("enter\n");
 }
 
 static int ast_jit_body_has_vla(void);
+
+static int ast_jit_slot_taken(const char *fn) { MCC_TRACE("enter\n");
+	MCCState *s1 = mcc_state;
+	Section *st;
+	char nm[256];
+	unsigned long merged, i;
+	if (!s1 || !symtab_section || !fn || !fn[0])
+		{ MCC_TRACE("br\n"); return 0; }
+	st = symtab_section;
+	if (!st->link)
+		{ MCC_TRACE("br\n"); return 0; }
+	merged = (unsigned long)st->sh_offset / sizeof(ElfSym);
+	if (merged <= 1)
+		{ MCC_TRACE("br\n"); return 0; }
+	snprintf(nm, sizeof nm, "%s__mccjit_slot_%s", s1->leading_underscore ? "_" : "",
+					 fn);
+	for (i = 1; i < merged; i++) { MCC_TRACE("br\n");
+		ElfSym *es = (ElfSym *)st->data + i;
+		if (!strcmp((const char *)st->link->data + es->st_name, nm))
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
 
 static int ast_jit_want(const char *fn, Sym *sym) { MCC_TRACE("enter\n");
 	if (!ast_jit_selected(fn))
@@ -2367,7 +2390,6 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_narrow_env = mcc_opt(s1, MCC_OPT_NARROW);
 	ast_trunc32_env = mcc_opt(s1, MCC_OPT_TRUNC32);
 	ast_switch_expr_env = mcc_opt(s1, MCC_OPT_SWITCH_EXPR);
-	ast_inline_static_env = mcc_opt(s1, MCC_OPT_INLINE_FUNCTIONS_CALLED_ONCE);
 	ast_narrow_fix_env = mcc_opt(s1, MCC_OPT_NARROW_FIX);
 	ast_narrow_c0_env = mcc_opt(s1, MCC_OPT_NARROW_CLASS0);
 	ast_narrow_c1_env = mcc_opt(s1, MCC_OPT_NARROW_CLASS1);
@@ -2381,6 +2403,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_ident_bit_env = mcc_opt(s1, MCC_OPT_IDENT_BIT);
 	ast_ident_rel_env = mcc_opt(s1, MCC_OPT_IDENT_REL);
 	ast_ident_urange_env = mcc_opt(s1, MCC_OPT_IDENT_URANGE);
+	ast_strict_overflow_env = !s1->wrapv && s1->optimize_level >= 1;
 	ast_dse_call_env = mcc_opt(s1, MCC_OPT_TREE_DSE);
 	ast_tco_ptr_env = mcc_opt(s1, MCC_OPT_OPTIMIZE_SIBLING_CALLS);
 	ast_cse_comm_env = mcc_opt(s1, MCC_OPT_GCSE);
@@ -8159,6 +8182,38 @@ static int ast_ident_addk(AstArena *a, AstLocal s, AstLocal e) { MCC_TRACE("ente
 	return ast_ident_same(a, p, e) && ast_ident_pure(a, p);
 }
 
+static int ast_ident_exact_t(int t1, int t2) { MCC_TRACE("enter\n");
+	return ast_ident_intt(t1) && ast_ident_intt(t2) &&
+				 (t1 & (VT_BTYPE | VT_UNSIGNED)) == (t2 & (VT_BTYPE | VT_UNSIGNED));
+}
+
+static AstLocal ast_ident_muldivk(AstArena *a, AstLocal n, AstLocal x, AstLocal y) { MCC_TRACE("enter\n");
+	int nt, xt, ot, lt, mt;
+	uint64_t nref, xref, oref, lv, mv;
+	AstLocal p, q, other;
+	if (!ast_ident_cval(a, y, &lt, &lv) || lv == 0 || lv == 1)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if (ast_kind(a, x) != AST_Binary || ast_op(a, x) != '*' || ast_nchild(a, x) != 2)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if (!ast_ident_etype(a, n, &nt, &nref) || !ast_ident_etype(a, x, &xt, &xref))
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if ((nt & VT_UNSIGNED) || !ast_ident_exact_t(nt, xt) || !ast_ident_exact_t(nt, lt))
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if (ast_ii_width(nt) < 4)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	p = ast_child(a, x, 0);
+	q = ast_child(a, x, 1);
+	if (ast_ident_cval(a, q, &mt, &mv) && mv == lv && ast_ident_exact_t(nt, mt))
+		{ MCC_TRACE("br\n"); other = p; }
+	else if (ast_ident_cval(a, p, &mt, &mv) && mv == lv && ast_ident_exact_t(nt, mt))
+		{ MCC_TRACE("br\n"); other = q; }
+	else
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if (!ast_ident_etype(a, other, &ot, &oref) || !ast_ident_exact_t(nt, ot))
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	return other;
+}
+
 static int ast_ident_node(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (ast_ident_conv_env) { MCC_TRACE("br\n");
 		int cr = ast_ident_convert(a, n);
@@ -8223,6 +8278,13 @@ static int ast_ident_node(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		if (ast_ident_cval(a, y, &lt, &lv) && lv == 1 && ast_ident_keep(lt, tx)) { MCC_TRACE("br\n");
 			ast_ident_adopt(a, n, x);
 			return 1;
+		}
+		if (ast_strict_overflow_env) { MCC_TRACE("br\n");
+			AstLocal q = ast_ident_muldivk(a, n, x, y);
+			if (q != AST_NONE) { MCC_TRACE("br\n");
+				ast_ident_adopt(a, n, q);
+				return 2;
+			}
 		}
 		return 0;
 	case '*':
@@ -19360,7 +19422,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
-				const int ast_opt_ok = faithful && !ast_fn_hole;
+				const int ast_opt_ok =
+						faithful && !ast_fn_hole && !ast_func_has_labeladdr;
 				const int ast_asm_only_hole =
 						ast_fn_hole && ast_fn_has_asm && !ast_fn_asm.unknown &&
 						!ast_arena_has_dangle(ast_cur);
@@ -19602,7 +19665,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						memset(slotp, 0, MCC_PTR_SIZE);
 #ifdef MCC_EMBED_JIT
 						if (mcc_state && (mcc_state->embed_jit ||
-															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
+															mcc_state->output_type == MCC_OUTPUT_MEMORY) &&
+								!ast_jit_slot_taken(funcname)) { MCC_TRACE("br\n");
 							char slotname[256];
 							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
 											 mcc_state->leading_underscore ? "_" : "", funcname);
@@ -19642,7 +19706,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						memset(slotp, 0, MCC_PTR_SIZE);
 #ifdef MCC_EMBED_JIT
 						if (mcc_state && (mcc_state->embed_jit ||
-															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
+															mcc_state->output_type == MCC_OUTPUT_MEMORY) &&
+								!ast_jit_slot_taken(funcname)) { MCC_TRACE("br\n");
 							char slotname[256];
 							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
 											 mcc_state->leading_underscore ? "_" : "", funcname);
@@ -19684,20 +19749,20 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						unsigned char *slotp = data_section->data + slot_off;
 						Sym *slot_sym, *body_sym;
 						memset(slotp, 0, MCC_PTR_SIZE);
-						{ MCC_TRACE("br\n");
+						if (!ast_jit_slot_taken(funcname)) { MCC_TRACE("br\n");
 							char slotname[256];
 							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
 											 mcc_state->leading_underscore ? "_" : "", funcname);
 							set_global_sym(mcc_state, slotname, data_section, slot_off);
-						}
 #ifdef MCC_EMBED_JIT
-						if (mcc_state && (mcc_state->embed_jit ||
-															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
-							mccjit_embed_note(funcname, ast_cur, sym,
-																(uint64_t)ast_search_gates_now());
-							ast_jit_submit_aot(sym);
-						}
+							if (mcc_state && (mcc_state->embed_jit ||
+																mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
+								mccjit_embed_note(funcname, ast_cur, sym,
+																	(uint64_t)ast_search_gates_now());
+								ast_jit_submit_aot(sym);
+							}
 #endif
+						}
 						ind = aot_base;
 						rsym = 0;
 						if (rs)
@@ -19903,6 +19968,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 #endif
 				}
 			} else { MCC_TRACE("br\n");
+				mcc_asm_inline_unwind();
 				if (ast_rir_used)
 					{ MCC_TRACE("br\n"); rir_prod_replay_end(); }
 				mcc_state->nb_errors = ast_saved_nberr;
