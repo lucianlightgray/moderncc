@@ -1105,6 +1105,8 @@ static int rir_cfind[64];
 static AstLocal rir_while_pfx = AST_NONE;
 static int rir_cfn;
 static int rir_arena_mismatch;
+static long rir_bf_loads;
+static long rir_bf_stores;
 
 static long rir_drop_n[IR_OP_COUNT];
 
@@ -4582,6 +4584,243 @@ static void rir_castgv_apply(void) {
 		rir_pending_call = cv;
 }
 
+static int rir_bf_norm_on(void) {
+	static int v = -1;
+	if (v < 0) {
+		const char *e = getenv("MCC_RIR_BF_NORM");
+		v = e ? atoi(e) : 1;
+	}
+	return v;
+}
+
+static AstLocal rir_bf_lit(int t, long long v) {
+	AstLocal n = ast_node(rir_arena, AST_Literal);
+	ast_set_op(rir_arena, n, VT_CONST);
+	ast_set_type(rir_arena, n, t, 0);
+	ast_set_ival(rir_arena, n, (uint64_t)v);
+	return n;
+}
+
+static AstLocal rir_bf_bin(int op, int t, AstLocal l, AstLocal r) {
+	AstLocal n = ast_node(rir_arena, AST_Binary);
+	ast_set_op(rir_arena, n, op);
+	ast_set_type(rir_arena, n, t, 0);
+	ast_add_child(rir_arena, n, l);
+	ast_add_child(rir_arena, n, r);
+	return n;
+}
+
+static AstLocal rir_bf_cvt(int t, AstLocal c) {
+	AstLocal n = ast_node(rir_arena, AST_Convert);
+	ast_set_type(rir_arena, n, t, 0);
+	ast_add_child(rir_arena, n, c);
+	return n;
+}
+
+static int rir_bf_intbt(int t) {
+	int bt = t & VT_BTYPE;
+	return bt == VT_BYTE || bt == VT_SHORT || bt == VT_INT || bt == VT_LLONG ||
+				 bt == VT_BOOL;
+}
+
+static int rir_bf_frame_base(AstLocal n, int depth) {
+	int op;
+	if (n == AST_NONE || depth > 6)
+		return 0;
+	if (ast_kind(rir_arena, n) == AST_Ref) {
+		op = ast_op(rir_arena, n);
+		return (op & VT_VALMASK) == VT_LOCAL && !(op & VT_SYM);
+	}
+	if (ast_kind(rir_arena, n) == AST_Unary) {
+		op = ast_op(rir_arena, n);
+		if (op == AST_OP_MEMBER || op == AST_OP_ADDR)
+			return rir_bf_frame_base(ast_first_child(rir_arena, n), depth + 1);
+	}
+	return 0;
+}
+
+static int rir_bf_shape(AstLocal n, int *pt0, int *pt1, int *pgvt, int *pbits) {
+	int tt, t0, t1, gvt, bits, aux, bp, bs;
+	Sym *f;
+	if (n == AST_NONE || ast_kind(rir_arena, n) != AST_Unary ||
+			ast_op(rir_arena, n) != AST_OP_MEMBER)
+		return 0;
+	tt = ast_type_t(rir_arena, n);
+	bp = ast_type_bp(rir_arena, n);
+	bs = ast_type_bs(rir_arena, n);
+	if (!(tt & VT_BITFIELD) || bs <= 0)
+		return 0;
+	if (!rir_bf_frame_base(ast_first_child(rir_arena, n), 0))
+		return 0;
+	f = (Sym *)(uintptr_t)ast_type_ref(rir_arena, n);
+	aux = f ? f->auxtype : -1;
+	if (aux == VT_STRUCT)
+		return 0;
+	t0 = tt & ~VT_STRUCT_MASK;
+	t1 = (f && aux != -1 && aux > 0) ? ((t0 & ~(VT_BTYPE | VT_LONG)) | aux) : t0;
+	if (!rir_bf_intbt(t0) || !rir_bf_intbt(t1))
+		return 0;
+	gvt = t0 & VT_UNSIGNED;
+	if ((t0 & VT_BTYPE) == VT_BOOL)
+		gvt |= VT_UNSIGNED;
+	gvt |= ((t1 & VT_BTYPE) == VT_LLONG) ? VT_LLONG : VT_INT;
+	bits = ((gvt & VT_BTYPE) == VT_LLONG) ? 64 : 32;
+	if (bp < 0 || bs > bits || bp + bs > bits)
+		return 0;
+	*pt0 = t0;
+	*pt1 = t1;
+	*pgvt = gvt;
+	*pbits = bits;
+	return 1;
+}
+
+static AstLocal rir_bf_plain(AstLocal n, int t1) {
+	AstLocal kids[8], c;
+	int nk = 0, i;
+	AstLocal m = ast_node(rir_arena, AST_Unary);
+	ast_set_op(rir_arena, m, ast_op(rir_arena, n));
+	ast_set_type_bf(rir_arena, m, t1, ast_type_ref(rir_arena, n), 0, 0);
+	ast_set_ival(rir_arena, m, ast_ival(rir_arena, n));
+	ast_set_fbits(rir_arena, m, ast_fbits(rir_arena, n));
+	ast_set_sym(rir_arena, m, ast_sym(rir_arena, n));
+	for (c = ast_first_child(rir_arena, n); c != AST_NONE && nk < 8;
+			 c = ast_next_sib(rir_arena, c))
+		kids[nk++] = c;
+	ast_clear_children(rir_arena, n);
+	for (i = 0; i < nk; i++)
+		ast_add_child(rir_arena, m, kids[i]);
+	return m;
+}
+
+static int rir_bf_value_pos(AstLocal n) {
+	AstLocal p = ast_parent(rir_arena, n);
+	int pop;
+	if (p == AST_NONE)
+		return 0;
+	pop = ast_op(rir_arena, p);
+	switch (ast_kind(rir_arena, p)) {
+	case AST_Convert:
+	case AST_Return:
+		return 1;
+	case AST_If:
+		return 1;
+	case AST_Invoke:
+		return ast_child(rir_arena, p, 0) != n;
+	case AST_Store:
+		return pop != AST_OP_OPASSIGN && ast_child(rir_arena, p, 0) != n;
+	case AST_Binary:
+		return pop < 0x40000;
+	case AST_Unary:
+		return pop == '-' || pop == '~' || pop == '!' || pop == TOK_NEG;
+	default:
+		return 0;
+	}
+}
+
+static void rir_bf_lower_load(AstLocal n) {
+	int t0, t1, gvt, bits, bp, bs;
+	AstLocal m, e;
+	if (!rir_bf_shape(n, &t0, &t1, &gvt, &bits))
+		return;
+	bp = ast_type_bp(rir_arena, n);
+	bs = ast_type_bs(rir_arena, n);
+	m = rir_bf_plain(n, t1);
+	e = rir_bf_cvt(gvt, m);
+	e = rir_bf_bin(TOK_SHL, gvt, e, rir_bf_lit(VT_INT, bits - (bp + bs)));
+	ast_set_kind(rir_arena, n, AST_Binary);
+	ast_set_op(rir_arena, n, TOK_SAR);
+	ast_set_type(rir_arena, n, gvt, 0);
+	ast_set_ival(rir_arena, n, 0);
+	ast_set_fbits(rir_arena, n, 0);
+	ast_set_sym(rir_arena, n, 0);
+	ast_add_child(rir_arena, n, e);
+	ast_add_child(rir_arena, n, rir_bf_lit(VT_INT, bits - bs));
+	rir_bf_loads++;
+}
+
+static void rir_bf_lower_store(AstLocal s) {
+	int t0, t1, gvt, bits, bp, bs, dbt, lt;
+	unsigned long long mask;
+	AstLocal d, v, keep, val;
+	d = ast_child(rir_arena, s, 0);
+	v = ast_child(rir_arena, s, 1);
+	if (d == AST_NONE || v == AST_NONE)
+		return;
+	if (!rir_bf_shape(d, &t0, &t1, &gvt, &bits))
+		return;
+	bp = ast_type_bp(rir_arena, d);
+	bs = ast_type_bs(rir_arena, d);
+	mask = bs >= 64 ? ~0ULL : ((1ULL << bs) - 1);
+	if ((t0 & VT_BTYPE) == VT_BOOL) {
+		int td = (t0 & ~(VT_BTYPE | VT_LONG)) | VT_BYTE | VT_UNSIGNED;
+		Sym *f = (Sym *)(uintptr_t)ast_type_ref(rir_arena, d);
+		int aux = f ? f->auxtype : -1;
+		ast_clear_children(rir_arena, s);
+		val = rir_bf_cvt(t0, v);
+		t1 = (f && aux != -1 && aux > 0) ? ((td & ~(VT_BTYPE | VT_LONG)) | aux) : td;
+		dbt = VT_BOOL;
+	} else {
+		ast_clear_children(rir_arena, s);
+		dbt = t1 & VT_BTYPE;
+		lt = dbt == VT_LLONG ? VT_LLONG : VT_INT;
+		val = rir_bf_cvt(t1, v);
+		val = rir_bf_bin('&', lt, val, rir_bf_lit(lt, (long long)mask));
+	}
+	lt = dbt == VT_LLONG ? VT_LLONG : VT_INT;
+	val = rir_bf_bin(TOK_SHL, lt, val, rir_bf_lit(VT_INT, bp));
+	ast_set_type_bf(rir_arena, d, t1, ast_type_ref(rir_arena, d), 0, 0);
+	keep = ast_dup_sub(rir_arena, d);
+	{
+		long long nm = dbt == VT_LLONG
+											 ? (long long)~(mask << bp)
+											 : (long long)(int)~((unsigned)mask << bp);
+		AstLocal k = rir_bf_bin('&', lt, keep, rir_bf_lit(lt, nm));
+		val = rir_bf_bin('|', lt, val, k);
+	}
+	ast_add_child(rir_arena, s, d);
+	ast_add_child(rir_arena, s, val);
+	rir_bf_stores++;
+}
+
+static void rir_bf_normalise(void) {
+	AstLocal n, nn;
+	unsigned char *sv;
+	if (!rir_bf_norm_on() || !rir_arena)
+		return;
+	nn = ast_count(rir_arena);
+	if (!nn)
+		return;
+	sv = mcc_mallocz(nn);
+	for (n = 0; n < nn; n++) {
+		AstLocal st;
+		if (ast_kind(rir_arena, n) != AST_StoreVal)
+			continue;
+		if (ast_parent(rir_arena, n) == AST_NONE)
+			continue;
+		st = (AstLocal)ast_ival(rir_arena, n);
+		if (st != AST_NONE && st < nn)
+			sv[st] = 1;
+	}
+	for (n = 0; n < nn; n++) {
+		uint64_t fb;
+		if (ast_kind(rir_arena, n) != AST_Store || ast_nchild(rir_arena, n) != 2)
+			continue;
+		if (sv[n] || ast_op(rir_arena, n) == AST_OP_OPASSIGN)
+			continue;
+		fb = ast_fbits(rir_arena, n);
+		if (fb & (AST_FB_STORE_BF_GV | AST_FB_STORE_ADDR_LATE |
+							AST_FB_STORE_VALUE_LIVE))
+			continue;
+		rir_bf_lower_store(n);
+	}
+	mcc_free(sv);
+	for (n = 0; n < nn; n++) {
+		if (ast_kind(rir_arena, n) != AST_Unary || !rir_bf_value_pos(n))
+			continue;
+		rir_bf_lower_load(n);
+	}
+}
+
 static void rir_to_arena(void) {
 	int i;
 	if (!rir_arena)
@@ -4803,6 +5042,7 @@ static void rir_to_arena(void) {
 	}
 	rir_ihold_flush();
 	rir_stamp_flush();
+	rir_bf_normalise();
 }
 
 static int rir_pt_addr(const RirOp *o, int fallback) {
