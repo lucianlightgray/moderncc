@@ -237,7 +237,7 @@ static const cli_case_t cli_cases[] = {
 
 
 		 "rm -rf {W}/elc {W}/el.txt && mkdir -p {W}/elc && "
-		 "XDG_CACHE_HOME={W}/elc MCC_SLICE_DUMP={W}/el.txt "
+		 "XDG_CACHE_HOME={W}/elc MCC_SLICE_DUMP={W}/el.txt MCC_DEV=1 "
 		 "{MCC} -fopt-slice -fno-divmagic -fno-tree-vrp -B{B} -I{I} -O2 -c {W}/el.c -o {W}/el.o && "
 		 "awk 'NR==1{ gv=$2; ev=$3; sub(/^g=/,\"\",gv); sub(/^e=/,\"\",ev); "
 		 "           if (index($3,\"e=\")!=1) { print \"NO_ELIGIBLE\"; exit } "
@@ -265,12 +265,12 @@ static const cli_case_t cli_cases[] = {
 
 		 "printf 'static int chunk(int v,int k){int a=v*k+3;int b=a^(v<<2);int c=b+(k*7);int d=c^(a>>1);int e=d+(b*5);int f=e^(c<<1);return (f+a+b+c+d+e)&0xffff;}static int driver(int seed){int r=seed;int i;for(i=0;i<4;i++){r=chunk(r,3)+chunk(r,5);r^=chunk(r,7)+chunk(r,9);r&=0xffff;}return r;}int main(void){return driver(17)&0x7f;}\\n' > {W}/pfi.c && "
 		 "XDG_CACHE_HOME={W}/pfic {MCC} -fno-inline-functions -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.off.o && "
-		 "XDG_CACHE_HOME={W}/pfic {MCC} -fno-inline-functions -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.on.o && "
+		 "XDG_CACHE_HOME={W}/pfic MCC_DEV=1 {MCC} -fno-inline-functions -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.on.o && "
 		 "( cmp -s {W}/pfi.off.o {W}/pfi.on.o && echo SAME || echo DIFFER ) ; "
 		 "XDG_CACHE_HOME={W}/pfic {MCC} -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.ni.off.o && "
-		 "XDG_CACHE_HOME={W}/pfic {MCC} -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.ni.on.o && "
+		 "XDG_CACHE_HOME={W}/pfic MCC_DEV=1 {MCC} -fopt-perfn-inproc -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.ni.on.o && "
 		 "( cmp -s {W}/pfi.ni.off.o {W}/pfi.ni.on.o && echo SAME || echo DIFFER ) ; "
-		 "XDG_CACHE_HOME={W}/pfic {MCC} -fno-inline-functions -fopt-perfn-inproc -B{B} -I{I} -O3 {W}/pfi.c -o {W}/pfi.on && {W}/pfi.on ; echo rc=$? ; "
+		 "XDG_CACHE_HOME={W}/pfic MCC_DEV=1 {MCC} -fno-inline-functions -fopt-perfn-inproc -B{B} -I{I} -O3 {W}/pfi.c -o {W}/pfi.on && {W}/pfi.on ; echo rc=$? ; "
 		 "XDG_CACHE_HOME={W}/pfic {MCC} -B{B} -I{I} -O0 {W}/pfi.c -o {W}/pfi.o0 && {W}/pfi.o0 ; echo rc=$?",
 		 "DIFFER\nSAME\nrc=80\nrc=80\n"},
 

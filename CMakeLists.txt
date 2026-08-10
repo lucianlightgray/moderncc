@@ -4876,7 +4876,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-narrowfix-${_gn}" --only "${_gn}")
             set_tests_properties("exec-narrowfix/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fnarrow-fix -fsethi-ullman-leaf -ftree-ccp-iterate -ftree-loop-im -fivopts -ftree-pre -ftree-dse -foptimize-sibling-calls -fgcse -ftree-vrp -fdivmagic -fif-conversion-abs -ftree-reassoc;MCC_AST_CSE_WINDOW=256;MCC_AST_CPROP_WINDOW=512")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fnarrow-fix -fsethi-ullman-leaf -ftree-ccp-iterate -ftree-loop-im -fivopts -ftree-pre -ftree-dse -foptimize-sibling-calls -fgcse -ftree-vrp -fdivmagic -fif-conversion-abs -ftree-reassoc;MCC_DEV=1;MCC_AST_CSE_WINDOW=256;MCC_AST_CPROP_WINDOW=512")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -4937,7 +4937,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-ivsrptr-${_gn}" --only "${_gn}")
             set_tests_properties("exec-ivsrptr/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fivopts-ptr")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fivopts-ptr;MCC_DEV=1")
         endforeach()
 
         if(MCC_TARGETOS STREQUAL "WIN32")
@@ -4949,7 +4949,7 @@ if(MCC_BUILD_TESTS)
                             "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                             "${CMAKE_BINARY_DIR}/exec-gatecombo-${_gn}" --only "${_gn}")
                 set_tests_properties("exec-gatecombo/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                    SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fchain-store -fpromote-incdec -fivopts-ptr")
+                    SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fchain-store -fpromote-incdec -fivopts-ptr;MCC_DEV=1")
             endforeach()
         endif()
 
@@ -4994,7 +4994,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-interchange-${_gn}" --only "${_gn}")
             set_tests_properties("exec-interchange/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -floop-interchange")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -floop-interchange;MCC_DEV=1")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -5005,7 +5005,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-fusion-${_gn}" --only "${_gn}")
             set_tests_properties("exec-fusion/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -floop-fusion")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -floop-fusion;MCC_DEV=1")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -5016,7 +5016,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-tile-${_gn}" --only "${_gn}")
             set_tests_properties("exec-tile/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -floop-block;MCC_AST_TILE_SIZE=7")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -floop-block;MCC_DEV=1;MCC_AST_TILE_SIZE=7")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -5071,7 +5071,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-search-threads-${_gn}" --only "${_gn}")
             set_tests_properties("exec-search-threads/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O13 -fopt-search -fopt-search-threads;MCC_SEARCH_WORKER=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O13 -fopt-search -fopt-search-threads;MCC_DEV=1;MCC_SEARCH_WORKER=1")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -5281,7 +5281,8 @@ if(MCC_BUILD_TESTS)
                                 add_test(NAME "optfire/${_ofcell}"
                                     COMMAND "${_of_sh}" defstate "${_mcc_exe}" "${_ofsrc}"
                                             "${CMAKE_BINARY_DIR}/optfire" "${_ofcell}"
-                                            "${_ofopt}" "${_ofarg}" "${_ofextra}")
+                                            "${_ofopt}" "${_ofarg}" "${_ofextra}"
+                                            "${_ofextra2}")
                             elseif(_ofmode STREQUAL "level")
                                 add_test(NAME "optfire/${_ofcell}"
                                     COMMAND "${_of_sh}" level "${_mcc_exe}" "${_ofsrc}"
@@ -5315,7 +5316,23 @@ if(MCC_BUILD_TESTS)
                 COMMAND "${_fs_sh}" accept "${_mcc_exe}" "${_bdir}" "${_idir}"
                         "${CMAKE_BINARY_DIR}/flagsweep/accept")
             set_tests_properties("flagsweep/accept" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS flagsweep)
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS flagsweep
+                ENVIRONMENT "MCC_DEV=1")
+
+            add_test(NAME "flagsweep/dev-gate"
+                COMMAND "${_fs_sh}" devgate "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_BINARY_DIR}/flagsweep/devgate")
+            set_tests_properties("flagsweep/dev-gate" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS flagsweep
+                ENVIRONMENT "MCC_DEV=")
+
+            add_test(NAME "flagsweep/dev-gate-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                    -DFS=${_fs_sh} -DMCC=${_mcc_exe} -DBDIR=${_bdir} -DIDIR=${_idir}
+                    -DWORK=${CMAKE_BINARY_DIR}/flagsweep/devgate-kp
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/flagsweep_devgate_mutate.cmake")
+            set_tests_properties("flagsweep/dev-gate-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT LABELS flagsweep TIMEOUT 300)
 
             set(_la_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/labeladdr.sh")
             set(_la_src "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/labeladdr.c")
@@ -5351,22 +5368,35 @@ if(MCC_BUILD_TESTS)
 
             file(READ "${_fs_tbl}" _fs_txt)
             string(REGEX MATCHALL "MCC_OPT_ROW\\([A-Z0-9_]+, *\"[a-z0-9-]+\"" _fs_rows "${_fs_txt}")
+            string(REGEX MATCHALL "MCC_OPT_ROW\\([A-Z0-9_]+, *\"[a-z0-9-]+\", *MCC_OPTD_DEV"
+                   _fs_devrows "${_fs_txt}")
             unset(_fs_txt)
             set(_fs_flags "")
             foreach(_fr IN LISTS _fs_rows)
                 string(REGEX MATCH "\"([a-z0-9-]+)\"" _ignore "${_fr}")
                 list(APPEND _fs_flags "${CMAKE_MATCH_1}")
             endforeach()
+            set(_fs_devflags "")
+            foreach(_fr IN LISTS _fs_devrows)
+                string(REGEX MATCH "\"([a-z0-9-]+)\"" _ignore "${_fr}")
+                list(APPEND _fs_devflags "${CMAKE_MATCH_1}")
+            endforeach()
             list(LENGTH _fs_flags _fs_nflag)
+            list(LENGTH _fs_devflags _fs_ndev)
             foreach(_ff IN LISTS _fs_flags)
                 add_test(NAME "flagsweep-exec/${_ff}"
                     COMMAND "${_fs_sh}" exec "${_mcc_exe}" "${_bdir}" "${_idir}"
                             "${CMAKE_BINARY_DIR}/flagsweep/exec-${_ff}" "${_ff}")
+                set(_fs_env "MCC_DEV=")
+                if(_ff IN_LIST _fs_devflags)
+                    set(_fs_env "MCC_DEV=1")
+                endif()
                 set_tests_properties("flagsweep-exec/${_ff}" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
-                    LABELS flagsweep TIMEOUT 300)
+                    LABELS flagsweep TIMEOUT 300 ENVIRONMENT "${_fs_env}")
             endforeach()
-            message(STATUS "flagsweep: ${_fs_nflag} -f flags from src/mccopt.h")
+            message(STATUS "flagsweep: ${_fs_nflag} -f flags from src/mccopt.h, "
+                           "${_fs_ndev} of them MCC_OPTD_DEV")
 
             option(MCC_FLAGSWEEP_FULL
                 "Run the whole 3-way covering array over the -f surface as ctest cells (label flagsweep-full)." OFF)
@@ -5440,7 +5470,8 @@ if(MCC_BUILD_TESTS)
                                     "${CMAKE_BINARY_DIR}/flagsweep/cover-${_fn}" "${_fn}")
                         set_tests_properties("flagsweep-cover/${_fn}" PROPERTIES
                             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
-                            LABELS "flagsweep;flagsweep-full" TIMEOUT 600)
+                            LABELS "flagsweep;flagsweep-full" TIMEOUT 600
+                            ENVIRONMENT "MCC_DEV=1")
                     else()
                         mcc_skip_test("flagsweep-cover/${_fn}"
                             "the ${_fs_nrow} covering-array rows are opt-in: cmake -DMCC_FLAGSWEEP_FULL=ON, then ctest -L flagsweep-full"
@@ -6838,7 +6869,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                                 -fchain-store -fpromote-incdec
                                 -fivopts-ptr)
                     set_tests_properties("selfhost-fixpoint-memmodel${_shopt}"
-                        PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
+                        PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300
+                        ENVIRONMENT "MCC_DEV=1")
                 endforeach()
 
                 add_test(NAME selfhost-smoke-memmodel
@@ -6847,7 +6879,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                             -fchain-store -fpromote-incdec
                             -fivopts-ptr)
                 set_tests_properties(selfhost-smoke-memmodel PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                    TIMEOUT 300)
+                    TIMEOUT 300 ENVIRONMENT "MCC_DEV=1")
             endif()
         else()
             set(_nopy_why "the selfhost/census drivers are python3 scripts and need both a python3 on PATH and an mcc that can rebuild itself (MCC_EMBED_MCCRT, or a Darwin/mingw target)")

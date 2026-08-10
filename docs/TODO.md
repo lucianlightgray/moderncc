@@ -1143,6 +1143,96 @@ worse** — so the per-translation-unit quota is not costing quality either.
    before. It is now behind `MCC_SO_RESUME=1`, default off. The *write* is kept, so the
    file is still there for tooling and for the cache-identity question above.
 
+## Landed — thirteen experimental knobs are gated behind `MCC_DEV`, and the gate is loud, 2026-08-10 (`wt/mccdev`)
+
+**The mechanism.** `src/mccopt.h` gains one default class, `MCC_OPTD_DEV(d)` (bit
+`0x200`), which *wraps* an existing class rather than replacing it, plus `MCC_OPTD_IS_DEV`
+and `MCC_OPTD_BASE`. A row reads `MCC_OPTD_DEV(MCC_OPTD_LEVEL(9))`, so the level it would
+sit at when un-gated stays written down instead of being deleted and later guessed.
+`ast_opt_defaults` forces such a row to 0 when the gate is shut, before the level and
+`o4` (search-mode) tests, so `-O13` cannot reach them either.
+
+**Why an environment variable checked at option-parse time, and not the build define.**
+`MCC_DEV` already existed in this tree, as a CMake `BOOL DEFAULT OFF` that compiles in the
+AST side-car coherence oracle (`src/mccdev.h`, `CMakeLists.txt`), and `MCC_DEV_ENV_ON(name)`
+compiles a dev env var down to a literal `0` outside such a build. That convention cannot
+be used here, for two independent reasons.
+
+1. **The loud refusal requires the rows to exist in every build.** Compiling the thirteen
+   rows out would make `-fxmm-hi` an unknown `-f`, and an unknown `-f` in this driver is
+   `mcc_warning_c(warn_unsupported_option)` with **exit 0** — and `error1`'s `driver_note`
+   logic (`src/libmcc.c`) deliberately exempts it from `-Werror`, so it can never become
+   fatal. A gate built by deletion would convert thirteen flags into no-ops that nothing,
+   not even `-Werror`, can tell from a typo. That is the filed defect this work exists to
+   avoid, reintroduced by the fix.
+2. **Overloading the build switch would arm two known miscompiles inside the one build
+   whose job is to abort on divergence.** `-DMCC_DEV=ON` is a CI instrument. If it also
+   turned on `xmm-hi` and `inline-functions-called-once`, the coherence oracle would be
+   running against a compiler that is knowingly wrong. It is left meaning exactly what it
+   meant. `mcc_dev_enabled()` (`src/mccdev.h`) is a cached `getenv("MCC_DEV")`, static
+   inline so `tools/asttool.c` — which includes `mccast.c` and links no `libmcc` — still
+   links.
+
+**The gated thirteen, with the reason each one is gated.**
+
+| flag | class | why |
+| --- | --- | --- |
+| `xmm-hi` | L5, miscompiles | wrong answer on `pr28982a.c` with `promote-leaf-xmm` + `promote-locals` |
+| `inline-functions-called-once` | L7, miscompiles | rejects a valid program; does no call-count analysis despite the name |
+| `opt-slice` | L9, dead | zero objects changed across 1,937 programs; **33.7% of `-O12` compile time**; reproduced determinism FAIL at `-O9`/`-O12` |
+| `narrow-fix` | L11, dead | zero bytes, 1.6% of compile time |
+| `opt-perfn-inproc` | L8, dead | unreachable at any shipped level — `do_inline` requires `!inline-functions`, which is L2 |
+| `ivopts-ptr` | L6, net-negative | **+6,093 B** |
+| `promote-leaf-callee` | L10, net-negative | +3,525 B |
+| `opt-cycle` | L11, net-negative | +142 B and ~4.6% of compile time |
+| `loop-block`, `loop-fusion`, `loop-interchange` | L12, **unproven, not broken** | legality-guarded by real affine dependence analysis; 0 bytes on 1,937 programs, so they are *unexercised*. Nothing here says they are wrong |
+| `opt-search-threads`, `opt-search-pthreads` | OFF, unsafe | the pool workers write the process globals `ast_cur` and every `ast_*_env`; `-fopt-search-pthreads` is 60/60 SIGSEGV. The search itself is untouched |
+
+The other ~30 knobs at level ≥ 4 are **not** gated: identical behaviour across 1,693
+programs, −3,973 B of `.text`, 1.04× compile cost.
+
+**Error behaviour.** `-f<gated>` without `MCC_DEV` is `mcc_error_noabort` naming the flag
+and `MCC_DEV`, exit 1. `-fno-<gated>` is **always accepted and silent** — it asks for the
+state the gate already guarantees, so refusing it would break defensive builds without
+telling anyone anything they did not know. `set_flag` returns a third code (`-2`) for
+"matched, gated, enabling spelling" and returns it *before* the write, so a refused flag
+does not half-apply.
+
+**`-O` levels.** L5–L9 each hold exactly one knob and all five are now gated, so `-O5`
+through `-O9` reach nothing a default build can enable. `opt_level_dev_note` computes the
+highest ungated rung at or below the requested level (4, via `promote-leaf-xmm`) and warns
+that the build compiles `-O5`..`-O9` exactly as `-O4`. It is derived from the table, not
+hard-coded, so un-gating a row silences it automatically. Nothing in the tree compiles at
+`-O5`..`-O9` today, so the notice fires in no cell.
+
+**A free consequence worth knowing.** `tools/o0_ab.sh`, `tools/c2_sweep.sh`,
+`tools/c2_equiv.sh`, `tools/selfhost-optbench.py` and `tools/optlevel-bench.py` all derive
+the shipped ladder with a regex that requires `MCC_OPTD_LEVEL(n)` to close the
+`MCC_OPT_ROW(` immediately. The wrapper form does not match, so all five now exclude the
+gated rows from the ladder they force and price — which is correct, and is why the wrapper
+was chosen over a flat `MCC_OPTD_DEV_LEVEL(n)`. `tests/optfire/levelpins.txt` and
+`leveltime.tsv` are left alone: the rung each row records is still the rung in
+`src/mccopt.h`, and the gate is a second axis, not a re-levelling.
+
+**`optfire/ident_shift` was the one real casualty, and it was informative.** It went red at
+`-O12` the moment the gate landed. Bisecting by subtraction under `MCC_DEV=1` isolates the
+cause exactly: of the thirteen, **`opt-cycle` alone** makes `ident-shift` observable at
+`-O12`; with every other gated knob on and `opt-cycle` off the objects are byte-identical.
+So a cell that read as "ident-shift fires at `-O12`" was really "ident-shift fires under
+`-fopt-cycle`", and the level was carrying a dependency nobody had written down. The row
+now names it: `ident_shift|-O12|ident-shift|-fopt-cycle MCC_DEV=1`.
+
+**Proving the gate can fail.** `flagsweep.sh` gains a `devgate` mode and two cells.
+`flagsweep/dev-gate` runs with `MCC_DEV=` and requires, per row derived from
+`src/mccopt.h`: every `MCC_OPTD_DEV` flag refused with a message naming both the flag and
+`MCC_DEV`, the same flag accepted under `MCC_DEV=1`, the `-fno-` spelling accepted either
+way, every non-dev flag unaffected, and `-O5`..`-O9` reporting the gate while `MCC_DEV=1`
+does not. It refuses to pass at all if `src/mccopt.h` has no `MCC_OPTD_DEV` row, so it
+cannot go vacuous by deletion. `flagsweep/dev-gate-known-positive`
+(`cmake/flagsweep_devgate_mutate.cmake`) asserts the clean run passes and then disarms the
+gate by exporting `MCC_DEV=1` into the refusal phase; measured, that turns up **18
+violations** — 13 flags plus 5 levels — and the twin fails if it does not.
+
 ## Landed — the lowerable ratchet is taken on bodies, not on the corpus ratio, 2026-08-10
 
 `rir-coverage` went red twice in one day on the same mechanism. On 2026-08-09 it was

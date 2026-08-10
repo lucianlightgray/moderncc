@@ -1,4 +1,4 @@
-# <name>|<olevel>|<gate flag>|<on|off>   asserts the gate's DEFAULT state
+# <name>|<olevel>|<gate flag>|<on|off>[|<env>]   asserts the gate's DEFAULT state
 # Locks the "flipped default-on at -O2" claims in the ungate campaign, which
 # differ mode cannot check because it forces the gate on both sides.
 promote|-O2|promote-locals|on
@@ -48,7 +48,12 @@ spill_share|-O12|spill-share|on
 spill_share_below|-O3|spill-share|off
 vlat|-O11|loop-vlat|on
 vlat_below|-O3|loop-vlat|off
-promo_leaf_callee|-O10|promote-leaf-callee|on
+# promote-leaf-callee is MCC_OPTD_DEV: +3,525 B of .text across 1,937 programs
+# for no measured gain, so a shipped build keeps it off at its own rung 10 and
+# the pair below reads that as the default. The _dev row is the same rung with
+# MCC_DEV=1 and is what un-gating has to restore.
+promo_leaf_callee|-O10|promote-leaf-callee|off
+promo_leaf_callee_dev|-O10|promote-leaf-callee|on|MCC_DEV=1
 promo_leaf_callee_below|-O3|promote-leaf-callee|off
 chainstore|-O11|chain-store|on
 chainstore_below|-O3|chain-store|off

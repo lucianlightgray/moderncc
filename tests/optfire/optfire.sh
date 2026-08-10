@@ -162,10 +162,12 @@ cdelta)
 defstate)
 	GATE=$7
 	WANT=$8
+	DENV=${9:-}
+	[ "$DENV" = "-" ] && DENV=
 	[ -n "$GATE" ] && [ -n "$WANT" ] || { echo "FAIL $NAME: defstate needs <flag> <on|off>"; exit 2; }
-	"$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.def.o" >/dev/null 2>&1 ||
+	env $DENV "$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.def.o" >/dev/null 2>&1 ||
 		{ echo "FAIL $NAME: default compile failed"; exit 1; }
-	"$MCC" $MCCFLAGS "$OLEVEL" "-fno-$GATE" -c "$SRC" -o "$WORK/$NAME.zero.o" >/dev/null 2>&1 ||
+	env $DENV "$MCC" $MCCFLAGS "$OLEVEL" "-fno-$GATE" -c "$SRC" -o "$WORK/$NAME.zero.o" >/dev/null 2>&1 ||
 		{ echo "FAIL $NAME: -fno-$GATE compile failed"; exit 1; }
 	if cmp -s "$WORK/$NAME.def.o" "$WORK/$NAME.zero.o"; then
 		got=off

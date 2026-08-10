@@ -11,12 +11,12 @@
 # tested before and records which row it now depends on. Two rows name a rung
 # instead, because no single parent was enough to make them fire.
 ident_conv|-O2|ident-conv|-
-ident_shift|-O12|ident-shift|-
+ident_shift|-O12|ident-shift|-fopt-cycle MCC_DEV=1
 ident_arith|-O2|ident-arith|-
 ident_bit|-O2|ident-bit|-
 ident_rel|-O2|ident-rel|-
 ident_urange|-O2|ident-urange|-
-narrow_fix|-O2|narrow-fix|-fnarrow
+narrow_fix|-O2|narrow-fix|-fnarrow MCC_DEV=1
 narrow_elim|-O11|narrow-elim|-
 narrow_class0|-O2|narrow-class0|-fnarrow
 narrow_class1|-O2|narrow-class1|-fnarrow

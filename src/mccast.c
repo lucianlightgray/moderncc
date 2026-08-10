@@ -2205,20 +2205,25 @@ static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
 	MCC_OPT_LIST(MCC_OPT_ROW)
 #undef MCC_OPT_ROW
 	for (i = 0; i < MCC_OPT_COUNT; i++) { MCC_TRACE("br\n");
-		int on;
+		int on, d;
 		if (s1->optflag[i] != MCC_OPT_UNSET)
 			{ MCC_TRACE("br\n"); continue; }
-		if (dflt[i] == MCC_OPTD_SPECIAL)
+		if (MCC_OPTD_IS_DEV(dflt[i]) && !mcc_dev_enabled()) { MCC_TRACE("br\n");
+			s1->optflag[i] = 0;
+			continue;
+		}
+		d = MCC_OPTD_BASE(dflt[i]);
+		if (d == MCC_OPTD_SPECIAL)
 			{ MCC_TRACE("br\n"); continue; }
-		if (MCC_OPTD_IS_LEVEL(dflt[i])) { MCC_TRACE("br\n");
-			int want = MCC_OPTD_LEVEL_OF(dflt[i]);
+		if (MCC_OPTD_IS_LEVEL(d)) { MCC_TRACE("br\n");
+			int want = MCC_OPTD_LEVEL_OF(d);
 			if (want >= MCC_OPT_SEARCH_LEVEL)
 				{ MCC_TRACE("br\n"); mcc_error("mccopt.h: a knob sits at -O%d, at or past "
 																			 "MCC_OPT_SEARCH_LEVEL (%d); bump it",
 																			 want, MCC_OPT_SEARCH_LEVEL); }
 			on = o4 || s1->optimize_level >= want;
 		} else { MCC_TRACE("br\n");
-			on = (dflt[i] == MCC_OPTD_ALWAYS);
+			on = (d == MCC_OPTD_ALWAYS);
 		}
 		s1->optflag[i] = (unsigned char)on;
 	}

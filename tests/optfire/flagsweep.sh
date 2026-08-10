@@ -1,7 +1,7 @@
 #!/bin/sh
 # flagsweep.sh <mode> <mcc> <bdir> <idir> <workdir> [flag|row]
 #
-# Coverage for the -f surface in src/mccopt.h. Three modes:
+# Coverage for the -f surface in src/mccopt.h. Four modes:
 #
 #   accept        every flag in the table parses in both -f and -fno- form.
 #                 Catches a rename that missed a call site, a row whose name
@@ -9,6 +9,15 @@
 #                 of which otherwise present as a flag that silently does
 #                 nothing, which is the failure mode this whole surface is most
 #                 prone to.
+#
+#   devgate       every MCC_OPTD_DEV row is REFUSED in the -f spelling without
+#                 MCC_DEV, with a message naming the flag and MCC_DEV; accepted
+#                 with MCC_DEV=1; and accepted in the -fno- spelling either way.
+#                 Every other row is unaffected. -O5..-O9 reach only gated knobs
+#                 and must say so instead of quietly compiling as -O4. Silence
+#                 is the failure this exists for: an unknown -f is a warning the
+#                 driver exits 0 on, so a gate that merely dropped the row would
+#                 turn thirteen flags into no-ops nothing could tell from typos.
 #
 #   exec <flag>   turn the flag on, and off, and check the program still
 #                 computes the right answer. -O0 with the flag untouched is the
@@ -104,6 +113,18 @@ is_known_flaky_red() {
 
 flags_from_table() {
 	sed -n 's/^	MCC_OPT_ROW([A-Z0-9_]*, *"\([a-z0-9-]*\)".*/\1/p' "$S/src/mccopt.h"
+}
+
+dev_flags_from_table() {
+	sed -n 's/^	MCC_OPT_ROW([A-Z0-9_]*, *"\([a-z0-9-]*\)", *MCC_OPTD_DEV(.*/\1/p' \
+		"$S/src/mccopt.h"
+}
+
+is_dev_flag() {
+	for df in $(dev_flags_from_table); do
+		[ "$df" = "$1" ] && return 0
+	done
+	return 1
 }
 
 # Subject binaries run on one CPU. atomic_counter is 16 threads racing a
@@ -210,6 +231,52 @@ accept)
 	[ "$bad" -eq 0 ] || { echo "FAIL flagsweep-accept: $bad spelling(s) unreachable"; exit 1; }
 	echo "PASS flagsweep-accept: $n flags accept -f and -fno-"
 	;;
+devgate)
+	printf 'int main(void){return 0;}\n' > "$WORK/a.c"
+	bad=0; ngate=0; nplain=0
+	dev=$(dev_flags_from_table)
+	[ -n "$dev" ] || { echo "FAIL flagsweep-devgate: src/mccopt.h has no MCC_OPTD_DEV row, so this cell would agree with an ungated tree"; exit 1; }
+	for f in $(flags_from_table); do
+		out=$("$MCC" -B"$BDIR" -I"$IDIR" "-f$f" -c "$WORK/a.c" -o "$WORK/a.o" 2>&1) && ok=1 || ok=0
+		if is_dev_flag "$f"; then
+			ngate=$((ngate + 1))
+			if [ "$ok" = 1 ]; then
+				echo "FAIL -f$f: accepted without MCC_DEV; a gated flag must be refused"
+				bad=$((bad + 1))
+			else
+				case "$out" in
+				*"-f$f"*MCC_DEV*) ;;
+				*) echo "FAIL -f$f: refused, but the message does not name both the flag and MCC_DEV: $out"
+				   bad=$((bad + 1)) ;;
+				esac
+			fi
+			out=$(MCC_DEV=1 "$MCC" -B"$BDIR" -I"$IDIR" "-f$f" -c "$WORK/a.c" -o "$WORK/a.o" 2>&1) ||
+				{ echo "FAIL -f$f: still refused with MCC_DEV=1: $out"; bad=$((bad + 1)); }
+			out=$("$MCC" -B"$BDIR" -I"$IDIR" "-fno-$f" -c "$WORK/a.c" -o "$WORK/a.o" 2>&1) ||
+				{ echo "FAIL -fno-$f: refused without MCC_DEV; the off spelling asks for the state the gate already guarantees: $out"; bad=$((bad + 1)); }
+		else
+			nplain=$((nplain + 1))
+			[ "$ok" = 1 ] ||
+				{ echo "FAIL -f$f: refused without MCC_DEV, but it is not an MCC_OPTD_DEV row: $out"; bad=$((bad + 1)); }
+		fi
+	done
+	# A rung whose only knobs are gated must say so rather than quietly
+	# compiling as the rung below it. -O4 is the highest ungated rung, so
+	# -O5..-O9 are the levels that become silent no-ops.
+	for lvl in 5 6 7 8 9; do
+		out=$("$MCC" -B"$BDIR" -I"$IDIR" "-O$lvl" -c "$WORK/a.c" -o "$WORK/a.o" 2>&1)
+		case "$out" in
+		*MCC_DEV*) ;;
+		*) echo "FAIL -O$lvl: reaches only gated knobs but said nothing: $out"; bad=$((bad + 1)) ;;
+		esac
+		out=$(MCC_DEV=1 "$MCC" -B"$BDIR" -I"$IDIR" "-O$lvl" -c "$WORK/a.c" -o "$WORK/a.o" 2>&1)
+		case "$out" in
+		*MCC_DEV*) echo "FAIL -O$lvl: still reported as gate-only with MCC_DEV=1: $out"; bad=$((bad + 1)) ;;
+		esac
+	done
+	[ "$bad" -eq 0 ] || { echo "FAIL flagsweep-devgate: $bad violation(s)"; exit 1; }
+	echo "PASS flagsweep-devgate: $ngate gated flags refused without MCC_DEV and accepted with it, $nplain ungated flags unaffected, -O5..-O9 report the gate"
+	;;
 exec)
 	[ -n "$ARG" ] || { echo "FAIL flagsweep-exec: no flag given"; exit 2; }
 	# All three levels, because a flag's effect is relative to the level's own
@@ -255,5 +322,5 @@ cover)
 	fi
 	echo "PASS flagsweep-cover row $ARG: $ran subject runs match the reference under $nflag forced flags at -O1 -O2 -O3"
 	;;
-*) echo "usage: flagsweep.sh accept|exec|cover <mcc> <bdir> <idir> <work> [flag|row]"; exit 2 ;;
+*) echo "usage: flagsweep.sh accept|devgate|exec|cover <mcc> <bdir> <idir> <work> [flag|row]"; exit 2 ;;
 esac
