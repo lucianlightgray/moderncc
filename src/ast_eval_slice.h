@@ -1645,11 +1645,16 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 					 ast_eval_slice_kind_ok(a, y, allow_load);
 	}
 	case AST_If: {
+		AstLocal x, y;
 		if (ast_nchild(a, n) != 3 || (ast_op(a, n) != 5 && ast_op(a, n) != 7))
 			return 0;
+		x = ast_child(a, n, 1);
+		y = ast_child(a, n, 2);
+		if (!ast_eval_slice_wtype(a, x) != !ast_eval_slice_wtype(a, y))
+			return 0;
 		return ast_eval_slice_kind_ok(a, ast_child(a, n, 0), allow_load) &&
-					 ast_eval_slice_kind_ok(a, ast_child(a, n, 1), allow_load) &&
-					 ast_eval_slice_kind_ok(a, ast_child(a, n, 2), allow_load);
+					 ast_eval_slice_kind_ok(a, x, allow_load) &&
+					 ast_eval_slice_kind_ok(a, y, allow_load);
 	}
 	default:
 		return 0;
