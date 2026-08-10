@@ -1,9 +1,10 @@
 #include "toolsupport.h"
 #include "../src/mccopt.h"
+#include "../src/mcchost.h"
 
 #include <time.h>
 
-#ifndef _WIN32
+#if !MCC_HOST_WIN32
 #include <sys/wait.h>
 #include <signal.h>
 #endif
@@ -207,7 +208,7 @@ static int died_by_fpe(int st)
 {
 	if (st == -1)
 		return 0;
-#ifndef _WIN32
+#if !MCC_HOST_WIN32
 	if (WIFSIGNALED(st))
 		return WTERMSIG(st) == SIGFPE;
 	if (WIFEXITED(st))
@@ -221,7 +222,7 @@ static int died_by_fpe(int st)
 
 static int exited_zero(int st)
 {
-#ifndef _WIN32
+#if !MCC_HOST_WIN32
 	return st != -1 && WIFEXITED(st) && WEXITSTATUS(st) == 0;
 #else
 	return st == 0;
@@ -230,7 +231,7 @@ static int exited_zero(int st)
 
 static int exit_code(int st)
 {
-#ifndef _WIN32
+#if !MCC_HOST_WIN32
 	if (st != -1 && WIFEXITED(st))
 		return WEXITSTATUS(st);
 	return -1;
@@ -426,7 +427,7 @@ static int run_subject_nocore(const char *exe, const char *args,
 															const char *out)
 {
 	char cmd[4096];
-#ifndef _WIN32
+#if !MCC_HOST_WIN32
 	snprintf(cmd, sizeof cmd,
 					 "ulimit -c 0 2>/dev/null; \"%s\" %s > \"%s\" 2>&1", exe, args, out);
 #else
