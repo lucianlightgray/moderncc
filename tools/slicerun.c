@@ -1427,6 +1427,26 @@ static AstLocal mk_store(AstArena *a, int32_t off, AstLocal val, int type) {
 	return st;
 }
 
+static AstLocal mk_member(AstArena *a, int32_t base, int32_t madd, int type) {
+	AstLocal m = ast_node(a, AST_Unary);
+	ast_set_op(a, m, AST_EVAL_OP_MEMBER);
+	ast_set_type(a, m, type, 0);
+	ast_set_ival(a, m, (uint64_t)(int64_t)madd);
+	ast_add_child(a, m, mk_ref(a, base, VT_INT));
+	return m;
+}
+
+static AstLocal mk_member_idx(AstArena *a, int32_t base, int32_t madd,
+															int32_t nbytes, int etype, int32_t ioff) {
+	AstLocal m = mk_member(a, base, madd, VT_PTR | VT_ARRAY);
+	AstLocal ld = ast_node(a, AST_Load);
+	g_obj_ext[m] = nbytes;
+	g_obj_ety[m] = etype;
+	ast_add_child(a, ld, mk_bin(a, '+', m, mk_ref(a, ioff, VT_INT), 0));
+	ast_set_type(a, ld, 0, 0);
+	return ld;
+}
+
 static void suite_frame(void) {
 	AstArena *a;
 	MccSliceFrame fr;
@@ -1540,6 +1560,65 @@ static void suite_frame(void) {
 		}
 		ast_arena_free(a);
 	}
+
+	/* An array *field* indexed at run time. `s.arr[i]` is
+	 * Load(Binary('+')(Unary(MEMBER), i)) and its base resolves to the struct's
+	 * frame offset plus the field's, so it is the same slot run a plain local
+	 * array takes and the device resolves it with the same arithmetic. The point
+	 * of comparing it here rather than trusting the predicate is that a member
+	 * base is the one shape where the base offset is *computed* rather than
+	 * read, and an off-by-one there would still agree with itself. */
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal dst, ld, st;
+		int64_t cf[8 * MCC_SLICE_MAXSLOT], gf[8 * MCC_SLICE_MAXSLOT];
+		int t, bad = 0;
+		slicerun_obj_reset(64);
+		dst = mk_member_idx(a, -64, 8, 16, VT_INT, -8);
+		ld = mk_member_idx(a, -64, 8, 16, VT_INT, -8);
+		st = ast_node(a, AST_Store);
+		ast_add_child(a, st, dst);
+		ast_add_child(a, st, mk_bin(a, '+', ld, mk_lit(a, 1, VT_INT), VT_INT));
+		ast_add_child(a, bb, st);
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1,
+					"an indexed array field is frame work");
+		CHECK(fr.nslot == 5, "four element slots and the index");
+		if (fr.nslot == 5) {
+			CHECK(fr.slot[0] == -56, "the object starts at the struct offset plus the "
+															 "field offset, not at the struct");
+			CHECK(fr.slot[3] == -44 && fr.slot[4] == -8,
+						"the element run is consecutive and the index follows it");
+		}
+		for (t = 0; t < 8 * MCC_SLICE_MAXSLOT; t++)
+			cf[t] = gf[t] = 0;
+		for (t = 0; t < 8; t++)
+			for (i = 0; i < fr.nslot; i++) {
+				int64_t v = fr.slot[i] == -8 ? (t & 3) : (t * 7 + i);
+				cf[t * fr.nslot + i] = gf[t * fr.nslot + i] = v;
+			}
+		for (t = 0; t < 8; t++)
+			CHECK(mcc_slice_frame_exec_cpu(&fr, cf + (long)t * fr.nslot) == 1,
+						"the CPU reference runs each indexed-field frame");
+		if (fr.nslot == 5) {
+			CHECK(cf[0 * 5 + 0] == 1, "frame 0 indexes element 0 and increments it");
+			CHECK(cf[1 * 5 + 1] == 9, "frame 1 indexes element 1 and increments it");
+		}
+		if (g_have_device && fr.nslot == 5) {
+			MccSliceKernel k;
+			CHECK(mcc_slice_frame_kernel_build(&fr, &k) == 1,
+						"the indexed-field run lowers to a device kernel");
+			CHECK(mcc_slice_run_frame_gpu(&fr, &k, gf, 8, NULL, NULL) == MCC_TASK_DONE,
+						"the device runs eight indexed-field frames");
+			for (t = 0; t < 8 * fr.nslot; t++)
+				if (cf[t] != gf[t])
+					bad++;
+			CHECK(bad == 0, "every slot of every indexed-field frame matches");
+			mcc_slice_kernel_free(&k);
+		}
+		slicerun_obj_reset(0);
+	}
+	ast_arena_free(a);
 
 	/* A run ending in Return: stores into the frame, value into the out slots.
 	 * This is what took corpus eligibility from 44 of 947 blocks to 255 --
@@ -4891,26 +4970,23 @@ static int memshape_ptr_why(AstArena *a, AstLocal c) {
 
 static int memshape_idx_why(AstArena *a, AstLocal n, int *pw) {
 	AstLocal x, y, base, idx;
-	int32_t extent = 0;
-	int etype = 0, r, it, esize;
+	int32_t extent = 0, bo = 0;
+	int etype = 0, it, esize;
 	*pw = 0;
 	if (n == AST_NONE || ast_kind(a, n) != AST_Binary || ast_op(a, n) != '+' ||
 			ast_nchild(a, n) != 2)
 		return MSL_ADDR_OTHER;
 	x = ast_child(a, n, 0);
 	y = ast_child(a, n, 1);
-	if (ast_kind(a, x) == AST_Ref && (ast_type_t(a, x) & VT_ARRAY)) {
+	if (ast_eval_slice_idx_base(a, x, &bo)) {
 		base = x;
 		idx = y;
-	} else if (ast_kind(a, y) == AST_Ref && (ast_type_t(a, y) & VT_ARRAY)) {
+	} else if (ast_eval_slice_idx_base(a, y, &bo)) {
 		base = y;
 		idx = x;
 	} else {
 		return MSL_IDX_NOTARRAY;
 	}
-	r = ast_op(a, base);
-	if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
-		return MSL_IDX_NOTARRAY;
 	if (!ast_eval_slice_obj_fn(a, base, &extent, &etype))
 		return MSL_IDX_NOOBJ;
 	esize = ast_eval_slice_tsize(etype);
@@ -6555,6 +6631,38 @@ static void suite_ext(void) {
 		}
 		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 0,
 					"a 32-element array of shorts is refused, not raced");
+		slicerun_obj_reset(0);
+	}
+	ast_arena_free(a);
+
+	/* An array *field* over the dense threshold. The descriptor is keyed by the
+	 * field's frame offset, so ast_eval_slice_livein_ext reserves the padded span
+	 * at the struct offset plus the field offset and the seeder has one slot to
+	 * put an address in -- exactly as for a plain local array, which is the whole
+	 * claim being checked. */
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal dst;
+		int sa = -1, i;
+		slicerun_obj_reset(64);
+		dst = mk_member_idx(a, -512, 16, 128, VT_INT, -8);
+		{
+			AstLocal st = ast_node(a, AST_Store);
+			ast_add_child(a, st, dst);
+			ast_add_child(a, st, mk_lit(a, 7, VT_INT));
+			ast_add_child(a, bb, st);
+		}
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1,
+					"a 32-element array field is frame work");
+		CHECK(fr.nslot == 2 && fr.next == 1,
+					"and costs one descriptor slot plus the index");
+		for (i = 0; i < fr.nslot; i++)
+			if (fr.slot[i] == -496)
+				sa = i;
+		CHECK(sa >= 0, "the descriptor is keyed by the field offset, not the struct");
+		if (sa >= 0)
+			CHECK(fr.sextb[sa] == 128, "and reserves the padded span of the field");
 		slicerun_obj_reset(0);
 	}
 	ast_arena_free(a);
