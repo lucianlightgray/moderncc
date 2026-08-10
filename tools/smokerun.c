@@ -446,7 +446,7 @@ static int compile_subject(int level, const char *exe, const char *log,
 	remove(tsv);
 	snprintf(cmd, sizeof cmd,
 					 "\"%s\" -w -O%d %s %s -fno-diagnostics-show-caret "
-					 "\"-I%s/tests/smoke\" \"%s/tests/smoke/%s\" -o \"%s\" "
+					 "\"-I%s/tests/smoke\" \"%s/tests/smoke/%s\" -lm -o \"%s\" "
 					 "> \"%s\" 2>&1",
 					 g_mcc, level, jit ? "--embed-jit" : "", g_extra_flags, g_srcdir,
 					 g_srcdir, g_src, exe, log);

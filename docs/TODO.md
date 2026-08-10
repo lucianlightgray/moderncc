@@ -400,6 +400,45 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
     is the right denominator, not gcc c-torture (item 6). If the duplication is small, the
     cache is `opt-slice` again.
 
+## Landed — smoke reaches every optimizer strategy, and the 22nd was invisible to the panel, 2026-08-10
+
+`optfire/<strategy>` proves each strategy *fires*; smoke proves values are *correct*. Nothing
+proved a strategy computes the right answer, and the smoke subject reached only 8 of them.
+`tests/smoke/scases.h` closed that to 20, then two things finished it:
+
+- **`bfold` needed a constant-argument libm call and a linkable one.** The earlier note here
+  said it was gated behind opt-in `-ffold-math`; that is **wrong**. The gate is `sg_templates`
+  at level 1. `bfold` folds a constant-arg libm call, and at `-O0` nothing folds, so the call
+  survives to the link — which is the whole reason the subject now links with `-lm`.
+  `__builtin_fabs` alone does not light it (it lowers to an instruction, not a folded call);
+  it takes a real `sqrt`-class call. Measured: `bfold` 0 -> 2.
+- **`cload` could not be counted at all.** `ast_strategies[]` has 22 rows but
+  `MCCSTATS_STRAT_N` was 21 and `mcc_stats_strat_hits` clamps `n` down to it, so `cload`'s
+  fires went on the floor. Extending the table shows it was firing 11 times all along — the
+  panel, not the strategy, was dark.
+
+**The subject now fires 22 of 22 at `-O4` across 100 functions**, every value checked against
+gcc-15 and clang-22.
+
+### Still open in this area
+
+- **`-O13` is dark on 13 of 21 strategies** — `ivsr, narrow, bfold, range, bf, divmagic, pre,
+  ltemp, inline, abs, tco, licm, reassoc`. That is the state the whole subject was in before
+  `scases.h`, at the one level nothing watches (open item 21). The objections to watching it
+  are gone: an `-O13` compile of the subject is ~2.7 s, it is bit-deterministic across search
+  budgets of 100/1000/5000 ms, and it already agrees with `-O0`–`-O4` on the value digest.
+  `smokerun --max-level 13` is currently a **silent no-op**: `smk_maxlevel()` returns 4
+  because 13 is `MCC_OPT_SEARCH_LEVEL`, not an `MCC_OPT_ROW`, and `main` clamps to it.
+- **The ratchet wants the opposite polarity.** Banking *dark* strategies rather than fire
+  counts fits the existing monotone-decreasing `ratchet()` with no change to it or the file
+  format: a strategy going dark becomes a new category (hard fail), one lighting up prints
+  `IMPROVED`. `--stats=4` costs nothing measurable and does not change codegen.
+- **At `-O13` the panel prints once per search phase and the last one is all zeros.** A census
+  must take the per-column max across panels or it will read every strategy as dark.
+- **The device arm computes a census and never ratchets it.** `device_probe` calls `cat_add`
+  for `dev device-refused:unavailable` and `:no-dispatch`, but the `do_dev` branch never calls
+  `ratchet()`, and `bails.txt` holds no `dev ` rows. Both categories are unmeasured.
+
 ## Landed — the two-return `if` fold dropped the return conversion, and it was miscompiling on `main`, 2026-08-10
 
 `rir_tern_normalise` folds `if (c) return A; return B;` into `return c ? A : B;`. Those are

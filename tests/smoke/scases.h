@@ -37,7 +37,11 @@ static long long sms_bfold(void)
 {
 	long long v = sms_ga;
 	long long k = (3 * 4 + 5) * (6 - 2) / 2 - (1 << 3);
-	return v * k + ((7 * 9) % 5) + (sms_gb & 0);
+	double g = (double)(sms_gb & 1023);
+	double c = __builtin_sqrt(16.0) + __builtin_fabs(-6.25) +
+						 __builtin_sqrt(2.25);
+	return v * k + ((7 * 9) % 5) + (long long)(c * 4.0) +
+				 (long long)__builtin_fabs(-g);
 }
 
 static long long sms_ident(void)
