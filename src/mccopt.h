@@ -9,6 +9,11 @@
 #define MCC_OPTD_LEVEL_OF(d) ((d) & 0xff)
 
 #define MCC_OPT_SEARCH_LEVEL 13
+#define MCC_OPT_SEARCH_TICKS 1
+#define MCC_OPT_SEARCH_TICK_LIMITS 5u
+#define MCC_OPT_SEARCH_TICK_BUDGETS 2u
+#define MCC_OPT_SEARCH_TICK_GATES 2u
+#define MCC_OPT_SEARCH_TU_EVALS 20000u
 
 #define MCC_OPT_LIST(MCC_OPT_ROW) \
 	MCC_OPT_ROW(REPLAY_FALLBACK,               "replay-fallback",              MCC_OPTD_ALWAYS) \

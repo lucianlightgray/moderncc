@@ -640,7 +640,9 @@ struct MCCState {
 	unsigned jit_max_duration;
 	unsigned jit_threads;
 	char *jit_functions;
-	unsigned optimize_search_seconds;
+	unsigned optimize_search_ticks;
+	unsigned char optimize_search_ticks_set;
+	unsigned char optimize_search_all;
 	unsigned stats;
 	signed char pie;
 	unsigned char pic;

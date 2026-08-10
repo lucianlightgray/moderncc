@@ -84,7 +84,12 @@ static const char help2[] =
 		"  -dD, -dM                      With -E: output #define directives\n"
 		"  -Wp,<arg>                     Pass the comma-separated <arg> to the preprocessor\n"
 		"  -O<n>                         Optimize: 1 = AST replay + const-fold, 2/s = + register promotion, 3 = + inlining;\n"
-		"                                n>=4 = spend n seconds searching pass configs for the smallest object\n"
+		"                                n>=13 = every level-gated pass on, plus a bounded search for the smallest object\n"
+		"  -fopt-search-ticks=<n>        Rounds the -O13 search runs (default 1; 0 = no search). A round is a fixed\n"
+		"                                candidate quota, counted in work and never in time, so the object a given\n"
+		"                                source compiles to does not depend on how fast or how busy the machine is.\n"
+		"                                Round 1 sweeps the pass-limit axis; rounds after it widen to the graft and\n"
+		"                                gate axes, which have not been measured to pay on any subject yet\n"
 		"  --embed-jit, --no-embed-jit   Bake the runtime JIT engine into a file output so it accepts --jit / MCC_JIT at its runtime (default off)\n"
 		"  --jit, --no-jit               For -run: enable/disable the in-process JIT (default from build's MCC_CONFIG_JIT); output programs read the MCC_JIT env var (0/1) at their runtime\n"
 		"  --jit-max-duration <sec>      Runtime JIT budget baked into the output (default 600; 0 = unlimited)\n"
@@ -346,8 +351,17 @@ static int so_jit_env(void) { MCC_TRACE("enter\n");
 #define SO_GATE_SPACE (16u * (SO_INLINE_LIMIT_MAX + 1))
 #define SO_BUDGET_SPACE 144u
 #define SO_LIMIT_SPACE 5u
-#define SO_SLICE_FACTOR 8u
 #define SO_CLAIM_CHUNK 64u
+#define SO_EVAL_CAP_MS 300000u
+
+static unsigned so_cap_ms(void) { MCC_TRACE("enter\n");
+	unsigned c = mcc_search_cap_ms();
+	return c ? c : SO_EVAL_CAP_MS;
+}
+
+static int so_resume_env(void) { MCC_TRACE("enter\n");
+	return mcc_env_on("MCC_SO_RESUME");
+}
 
 typedef struct {
 	uint32_t fmt;
@@ -1002,6 +1016,16 @@ static long so_eval(const char **cv, const char *cand_tmp, unsigned gate,
 	return sz;
 }
 
+static long so_eval_capped(const char **cv, const char *cand_tmp, unsigned gate,
+													 unsigned budget, unsigned limit_lvl) { MCC_TRACE("enter\n");
+	unsigned cap = so_cap_ms(), t0 = host_clock_ms(), el;
+	long r = so_eval(cv, cand_tmp, gate, budget, limit_lvl, cap);
+	el = host_clock_ms() - t0;
+	if (r < 0 && el + 50u >= cap)
+		{ MCC_TRACE("br\n"); mcc_search_cap_notice("superopt-eval", el, cap); }
+	return r;
+}
+
 static void so_ckpt_save(const char *ckpt, uint64_t key, unsigned best_gate,
 												 unsigned best_budget, unsigned best_limit,
 												 unsigned budget_cur, unsigned limit_cur,
@@ -1132,7 +1156,7 @@ static int so_fn_hashes(const char *path, struct so_fn *fns, int nf,
 
 static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 															const char *outfile) { MCC_TRACE("enter\n");
-	unsigned budget_ms = mcc_search_budget_ms(s->optimize_search_seconds);
+	unsigned nticks = s->optimize_search_ticks;
 	unsigned start = host_clock_ms();
 	char exe[1024], cand[1200], hashp[1300], *cfg;
 	const char **cv;
@@ -1205,11 +1229,10 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 			}
 		}
 	}
-	for (fi = 0; fi < nf && !so_stop && host_clock_ms() - start < budget_ms; fi++)
+	for (fi = 0; fi < nf && !so_stop && nticks; fi++)
 		{ MCC_TRACE("br\n"); for (ci = 0; ci < 3; ci++) { MCC_TRACE("br\n");
 			int m, j;
-			if (((tried[fi] >> ci) & 1) ||
-					host_clock_ms() - start >= budget_ms || so_stop)
+			if (((tried[fi] >> ci) & 1) || so_stop)
 				{ MCC_TRACE("br\n"); continue; }
 			for (p = 0, j = 0; j < nf; j++)
 				{ MCC_TRACE("br\n"); p += snprintf(cfg + p, SO_MAXFN * 96 - p, "%s=%u;", fns[j].name,
@@ -1265,11 +1288,17 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 
 static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 															 const char *outfile) { MCC_TRACE("enter\n");
-	unsigned budget_ms = mcc_search_budget_ms(s->optimize_search_seconds);
+	unsigned nticks = s->optimize_search_ticks;
 	unsigned start = host_clock_ms();
 	unsigned best_gate = 0, best_budget = 0, best_limit = 0;
 	unsigned local_claim = 0, budget_cur = 0, limit_cur = 0, round = 0, tried = 0;
-	unsigned base_ms, cap_ms;
+	unsigned tick, resume = so_resume_env();
+	unsigned q_lim = mcc_env_count("MCC_SEARCH_TICK_LIMITS",
+																 MCC_OPT_SEARCH_TICK_LIMITS);
+	unsigned q_bud = mcc_env_count("MCC_SEARCH_TICK_BUDGETS",
+																 MCC_OPT_SEARCH_TICK_BUDGETS);
+	unsigned q_gate = mcc_env_count("MCC_SEARCH_TICK_GATES",
+																	MCC_OPT_SEARCH_TICK_GATES);
 	long best;
 	char exe[1024], cand_tmp[1200], ckpt[3200];
 	const char **cv, **rv = NULL;
@@ -1300,7 +1329,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 			{ MCC_TRACE("br\n"); best_gate = SO_GATE_DEFAULT; }
 	}
 	have_ckpt = so_ckpt_path(ckpt, sizeof ckpt, key) == 0;
-	if (have_ckpt && so_ckpt_read(ckpt, key, &ck) == 0) { MCC_TRACE("br\n");
+	if (resume && have_ckpt && so_ckpt_read(ckpt, key, &ck) == 0) { MCC_TRACE("br\n");
 		best_gate = ck.best_gate;
 		best_budget = ck.best_budget;
 		best_limit = ck.best_limit;
@@ -1347,11 +1376,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	host_install_interrupt(so_on_stop);
 
 	{
-		unsigned t0 = host_clock_ms(), dt;
-		best = so_eval(cv, cand_tmp, best_gate, best_budget, best_limit, 300000u);
-		dt = host_clock_ms() - t0;
-		base_ms = (dt ? dt : 1u) * SO_SLICE_FACTOR;
-		cap_ms = dt * 4u < 2000u ? 2000u : dt * 4u;
+		best = so_eval_capped(cv, cand_tmp, best_gate, best_budget, best_limit);
 		tried++;
 		if (best < 0) { MCC_TRACE("br\n");
 			remove(cand_tmp);
@@ -1363,80 +1388,61 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 		}
 	}
 
-	while (!so_stop && host_clock_ms() - start < budget_ms) { MCC_TRACE("br\n");
-		unsigned slice = base_ms << (round < 16 ? round : 16);
-		{
-			unsigned el = host_clock_ms() - start;
-			unsigned rem = el < budget_ms ? budget_ms - el : 0u;
-			unsigned share = rem / 3u;
-			if (share && slice > share)
-				{ MCC_TRACE("br\n"); slice = share; }
-		}
-		unsigned g_dead = host_clock_ms() + slice, b_dead, l_dead;
-		unsigned gate_exhausted = 0;
-		while (!so_stop && host_clock_ms() < g_dead &&
-					 host_clock_ms() - start < budget_ms) { MCC_TRACE("br\n");
-			unsigned cstart, cend, g;
-			if (have_ckpt) { MCC_TRACE("br\n");
-				SoCkpt sh;
-				cstart = so_claim(ckpt, key, &sh);
-				if (sh.best_text >= 0 && (best < 0 || sh.best_text < best)) { MCC_TRACE("br\n");
-					best = sh.best_text;
-					best_gate = sh.best_gate;
-					best_budget = sh.best_budget;
-					best_limit = sh.best_limit;
-				}
-			} else { MCC_TRACE("br\n");
-				cstart = local_claim;
-				local_claim += SO_CLAIM_CHUNK;
-			}
-			if (cstart >= SO_GATE_SPACE) { MCC_TRACE("br\n");
-				gate_exhausted = 1;
-				break;
-			}
-			cend = cstart + SO_CLAIM_CHUNK;
-			if (cend > SO_GATE_SPACE)
-				{ MCC_TRACE("br\n"); cend = SO_GATE_SPACE; }
-			for (g = cstart; g < cend && !so_stop && host_clock_ms() < g_dead &&
-											host_clock_ms() - start < budget_ms;
-					 g++) { MCC_TRACE("br\n");
-				long sz;
-				if (so_gate_dead(g))
-					{ MCC_TRACE("br\n"); continue; }
-				sz = so_eval(cv, cand_tmp, g, best_budget, best_limit, cap_ms);
-				tried++;
-				if (sz >= 0 && sz < best) { MCC_TRACE("br\n");
-					best = sz;
-					best_gate = g;
-					if (have_ckpt)
-						{ MCC_TRACE("br\n"); so_ckpt_save(ckpt, key, best_gate, best_budget, best_limit,
-												 budget_cur, limit_cur, round, best); }
-				}
+	for (tick = 0; tick < nticks && !so_stop; tick++) { MCC_TRACE("br\n");
+		unsigned quota, gate_exhausted = 0;
+		long round_entry = best;
+		if (resume && have_ckpt) { MCC_TRACE("br\n");
+			SoCkpt sh;
+			local_claim = so_claim(ckpt, key, &sh);
+			if (sh.best_text >= 0 && (best < 0 || sh.best_text < best)) { MCC_TRACE("br\n");
+				best = sh.best_text;
+				best_gate = sh.best_gate;
+				best_budget = sh.best_budget;
+				best_limit = sh.best_limit;
 			}
 		}
-		b_dead = host_clock_ms() + slice;
-		while (!so_stop && budget_cur < SO_BUDGET_SPACE && host_clock_ms() < b_dead &&
-					 host_clock_ms() - start < budget_ms) { MCC_TRACE("br\n");
-			unsigned b = budget_cur++;
-			long sz = so_eval(cv, cand_tmp, best_gate, b, best_limit, cap_ms);
-			tried++;
-			if (sz >= 0 && sz < best) { MCC_TRACE("br\n");
-				best = sz;
-				best_budget = b;
-			}
-		}
-		l_dead = host_clock_ms() + slice;
-		while (!so_stop && limit_cur < SO_LIMIT_SPACE && host_clock_ms() < l_dead &&
-					 host_clock_ms() - start < budget_ms) { MCC_TRACE("br\n");
+		for (quota = q_lim;
+				 quota && !so_stop && limit_cur < SO_LIMIT_SPACE; quota--) { MCC_TRACE("br\n");
 			unsigned l = limit_cur++;
-			long sz = so_eval(cv, cand_tmp, best_gate, best_budget, l, cap_ms);
+			long sz = so_eval_capped(cv, cand_tmp, best_gate, best_budget, l);
 			tried++;
 			if (sz >= 0 && sz < best) { MCC_TRACE("br\n");
 				best = sz;
 				best_limit = l;
 			}
 		}
+		for (quota = tick ? q_bud : 0u;
+				 quota && !so_stop && budget_cur < SO_BUDGET_SPACE; quota--) { MCC_TRACE("br\n");
+			unsigned b = budget_cur++;
+			long sz = so_eval_capped(cv, cand_tmp, best_gate, b, best_limit);
+			tried++;
+			if (sz >= 0 && sz < best) { MCC_TRACE("br\n");
+				best = sz;
+				best_budget = b;
+			}
+		}
+		for (quota = tick ? q_gate : 0u;
+				 quota && !so_stop && local_claim < SO_GATE_SPACE;) { MCC_TRACE("br\n");
+			unsigned g = local_claim++;
+			long sz;
+			if (so_gate_dead(g))
+				{ MCC_TRACE("br\n"); continue; }
+			sz = so_eval_capped(cv, cand_tmp, g, best_budget, best_limit);
+			tried++;
+			quota--;
+			if (sz >= 0 && sz < best) { MCC_TRACE("br\n");
+				best = sz;
+				best_gate = g;
+			}
+		}
+		if (tick && local_claim >= SO_GATE_SPACE)
+			{ MCC_TRACE("br\n"); gate_exhausted = 1; }
 		round++;
+		MCC_TRACE_V(s->verbose,
+								"superopt tick %u/%u: %u evals so far, gate cursor %u/%u, "
+								"budget cursor %u/%u, limit cursor %u/%u, best %ld -> %ld\n",
+								tick + 1u, nticks, tried, local_claim, SO_GATE_SPACE, budget_cur,
+								SO_BUDGET_SPACE, limit_cur, SO_LIMIT_SPACE, round_entry, best);
 		if (have_ckpt)
 			{ MCC_TRACE("br\n"); so_ckpt_save(ckpt, key, best_gate, best_budget, best_limit, budget_cur,
 									 limit_cur, round, best); }
@@ -1446,7 +1452,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	}
 
 	cv[quiet_at] = NULL;
-	if (so_eval(cv, cand_tmp, best_gate, best_budget, best_limit, 300000u) < 0) { MCC_TRACE("br\n");
+	if (so_eval_capped(cv, cand_tmp, best_gate, best_budget, best_limit) < 0) { MCC_TRACE("br\n");
 		remove(cand_tmp);
 		mcc_free(cv);
 		mcc_free(rv);
@@ -1587,7 +1593,7 @@ redo:
 			{ MCC_TRACE("br\n"); --n; }
 	}
 
-	if (0 == ret && s->optimize_search_seconds && n == 0 &&
+	if (0 == ret && s->optimize_search_ticks && n == 0 &&
 			!mcc_env_on("MCC_SEARCH_WORKER") &&
 			(s->output_type == MCC_OUTPUT_OBJ || s->output_type == MCC_OUTPUT_EXE) &&
 			s->nb_files >= 1 && s->files[0]->name[0] && !(s->files[0]->type & AFF_TYPE_LIB)) { MCC_TRACE("br\n");
@@ -1612,7 +1618,7 @@ redo:
 			mcc_delete(s);
 			return 0;
 		}
-		s->optimize_search_seconds = 0;
+		s->optimize_search_ticks = 0;
 	}
 
 	first_file = NULL;

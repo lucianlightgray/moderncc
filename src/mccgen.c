@@ -14152,7 +14152,7 @@ static int switch_jt_env(void) { MCC_TRACE("enter\n");
 			v = (e && e[0]) ? (e[0] != '0') : -1; }
 	if (v >= 0)
 		{ MCC_TRACE("br\n"); return v; }
-	return mcc_state && mcc_state->optimize_search_seconds > 0;
+	return mcc_state && mcc_state->optimize_search_all;
 }
 static int switch_jt_dense(struct switch_t *sw) { MCC_TRACE("enter\n");
 	int64_t lo, hi, covered = 0;

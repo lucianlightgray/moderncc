@@ -122,6 +122,8 @@ rir-lowerable-classes        | registered | the lowerable-percentage floor
 rir-nofb-probe               | registered | the no-fallback miscompile probe
 opt-determinism              | registered | the byte-identity claim under a fixed (mcc, flags, env, source). Registered rather than must-run because an emulated or cross build is not running the compiler under test and skips honestly
 opt-determinism-known-positive | registered | proves that byte comparison is comparing the objects it wrote and not a file against itself
+opt-search-determinism       | registered | the search tier (-O13 and up) must produce the same bytes on an idle box and on an oversubscribed one. -O used to mean "search for <level> seconds", which made output a function of machine load; this is the cell that stops that from coming back. Registered rather than must-run because it needs os.fork and a host mcc
+opt-search-determinism-known-positive | registered | proves the idle/loaded comparison can fail: the loaded arm is given -fopt-search-ticks=0 so one arm searched and the other did not, and the gate must say so
 untyped-probe                | registered | the unknown/knownvoid denominator the equivalence-oracle work has to drive to zero. Registered rather than must-run because it needs a compile_commands.json, which is a property of the generator
 untyped-probe-known-positive | registered | proves the probe fails rather than reporting an empty census when the [rir-untyped] record it reads stops being emitted
 idiom-gate-invariant         | must-run   | the config-macro idiom invariant. It printed OK over a walk that read nothing until it was given a subject count; pure source scan, no device, so a skip here is always a bug
