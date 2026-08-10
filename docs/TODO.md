@@ -400,6 +400,58 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
     is the right denominator, not gcc c-torture (item 6). If the duplication is small, the
     cache is `opt-slice` again.
 
+## Landed — TCO sees through the ternary, and the fold's veto is gone, 2026-08-10 (open item 4)
+
+`ast_tco_run` matched a tail call only where an `AST_Return`'s first child was *directly* an
+`AST_Invoke`. The tail-recursive two-exit `if` was therefore out of reach, and
+`rir_tern_retval_ok` carried an `AST_Invoke` veto whose only purpose was to stop the ternary
+fold eating the shape TCO owned. Both are now gone: the matcher sees a `Return` whose value
+is an `AST_If` op 5 with a self-`Invoke` in either arm (or both), and the veto is removed.
+
+`ast_tco_run` is split into a pure planning phase and a mutating emission phase, so a refused
+function leaves the arena untouched — the blast radius is exactly the functions where TCO now
+fires. `ast_tco_selfcall` peels a no-op `AST_Convert` over the call, which is what lets the
+matcher still see the invoke through the return-conversion wrapper added by the fold fix
+above.
+
+**Order matters here and is not optional.** Removing the veto without the return-conversion
+fix converts a hidden miscompile into a live one, because the fold would then eat call-valued
+arms too. That fix landed first, on its own commit, for exactly this reason.
+
+### Measured
+
+`tco` fires 1 -> 2 on a two-function probe; on a generated 12,960-function type matrix,
+1,620 -> 4,770 at `-O2`. The recursion genuinely becomes a loop: 10,000,000 frames under
+`ulimit -s 512` **segfaults on baseline (rc=139)** and returns `50000005000000` after,
+matching gcc-15. gcc c-torture exercises TCO essentially not at all (1 fire, unchanged), so
+it is not a denominator for this. 7,986 cells green across `smoke`, `exec*`,
+`ast`/`rir`/`jit`/`optfire`. New cell `optfire/tco_tern` fires 0 on baseline, 2 after.
+
+### The `rir-coverage` re-bank, and what it absorbed
+
+`rir-coverage` failed on this change with **zero compiler component**, verified directly:
+running the tool with the **baseline compiler binary** against the **new sources** reproduces
+the failure byte for byte (`nodes_pct` pre-existing −0.1164 pp, corpus mix +0.1174 pp). 676
+nodes migrated out of the banked body `ast_tco_run` into the three new helpers, and the tool
+excludes bodies added since the bank from *both* sides of its pre-existing comparison — so a
+node **leaving** a banked body reads as a regression. Corpus-wide the metric rose (42.2945%
+against a banked 42.2935%).
+
+Re-banked with `tools/rir-coverage.py cmake-cross --corpus self --update-bank`. **That
+absorbed 32 bodies, and only 3 of them are this change's** (`ast_tco_selfcall`,
+`ast_tco_plan`, `ast_tco_emit`). The other 29 span `libmcc.c`, `mcc.c`, `mcc.h`, `mccasm.c`,
+`mccdev.h`, `mccgen.c`, `mcchost.h`, `mccjit_embed.c`, `mccjit_intent.c` and `mccrir.c` — they
+predate this branch and were already un-banked on `main`. Recording them here because a
+re-bank is exactly the operation that would otherwise make them disappear quietly, and the
+next person to read a green `rir-coverage` should know the bank was re-taken over a corpus
+that had already drifted.
+
+### Shapes still refused, fail-safe
+
+Nested ternaries where the outer arms are not invokes, argument permutations that form a
+write cycle (`f(n-1, y, x)`), non-integer parameters, and pointer parameters unless
+`-foptimize-sibling-calls`. All produce correct non-TCO code.
+
 ## Landed — smoke reaches every optimizer strategy, and the 22nd was invisible to the panel, 2026-08-10
 
 `optfire/<strategy>` proves each strategy *fires*; smoke proves values are *correct*. Nothing

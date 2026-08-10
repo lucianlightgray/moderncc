@@ -310,6 +310,8 @@ self	elf	src/libmcc.c	mcc_undefine_symbol	0000
 self	elf	src/libmcc.c	mcc_write_sleb128	0000
 self	elf	src/libmcc.c	mcc_write_uleb128	0000
 self	elf	src/libmcc.c	normalized_PATHCMP	0000
+self	elf	src/libmcc.c	opt_level_reject	0000
+self	elf	src/libmcc.c	opt_level_top	0000
 self	elf	src/libmcc.c	permerror_promote	6666
 self	elf	src/libmcc.c	pstrcat	0000
 self	elf	src/libmcc.c	pstrcpy	6666
@@ -330,6 +332,7 @@ self	elf	src/mcc.c	print_prog_name	0000
 self	elf	src/mcc.c	print_search_dirs	0000
 self	elf	src/mcc.c	set_environment	0000
 self	elf	src/mcc.c	so_axes_snapshot	0000
+self	elf	src/mcc.c	so_cap_ms	0000
 self	elf	src/mcc.c	so_ckpt_path	0000
 self	elf	src/mcc.c	so_ckpt_read	0000
 self	elf	src/mcc.c	so_ckpt_save	0000
@@ -340,6 +343,7 @@ self	elf	src/mcc.c	so_coff_off	0000
 self	elf	src/mcc.c	so_copy	0000
 self	elf	src/mcc.c	so_copy_args_drop_o	0000
 self	elf	src/mcc.c	so_eval	0000
+self	elf	src/mcc.c	so_eval_capped	0000
 self	elf	src/mcc.c	so_filesize	0000
 self	elf	src/mcc.c	so_fn_find	0000
 self	elf	src/mcc.c	so_fn_hashes	0000
@@ -356,6 +360,7 @@ self	elf	src/mcc.c	so_pf_path	0000
 self	elf	src/mcc.c	so_pf_read	0000
 self	elf	src/mcc.c	so_pf_write	0000
 self	elf	src/mcc.c	so_promote_floor	0000
+self	elf	src/mcc.c	so_resume_env	0000
 self	elf	src/mcc.c	so_run_score	0000
 self	elf	src/mcc.c	so_setenv_axis	0000
 self	elf	src/mcc.c	so_setenv_cfg	0000
@@ -367,6 +372,7 @@ self	elf	src/mcc.c	so_textsize	0000
 self	elf	src/mcc.c	so_unsetenv_axis	0000
 self	elf	src/mcc.h	add32le	0000
 self	elf	src/mcc.h	add64le	0000
+self	elf	src/mcc.h	c99_stmt_scopes	6666
 self	elf	src/mcc.h	dwarf_read_sleb128	6666
 self	elf	src/mcc.h	dwarf_read_uleb128	6666
 self	elf	src/mcc.h	gnu89_inline_semantics	6666
@@ -418,6 +424,7 @@ self	elf	src/mccasm.c	find_constraint	0000
 self	elf	src/mccasm.c	gen_addr64	0000
 self	elf	src/mccasm.c	gen_expr64	0000
 self	elf	src/mccasm.c	get_asm_sym	0000
+self	elf	src/mccasm.c	mcc_asm_inline_unwind	0000
 self	elf	src/mccasm.c	mcc_assemble	0000
 self	elf	src/mccasm.c	mcc_assemble_inline	0000
 self	elf	src/mccasm.c	mcc_assemble_internal	0000
@@ -647,6 +654,7 @@ self	elf	src/mccast.c	ast_ident_common	6666
 self	elf	src/mccast.c	ast_ident_convert	0000
 self	elf	src/mccast.c	ast_ident_cval	0000
 self	elf	src/mccast.c	ast_ident_etype	0000
+self	elf	src/mccast.c	ast_ident_exact_t	0000
 self	elf	src/mccast.c	ast_ident_intt	0000
 self	elf	src/mccast.c	ast_ident_iscompl	0000
 self	elf	src/mccast.c	ast_ident_islnot	0000
@@ -654,6 +662,7 @@ self	elf	src/mccast.c	ast_ident_keep	0000
 self	elf	src/mccast.c	ast_ident_leaf	0000
 self	elf	src/mccast.c	ast_ident_lnotof	0000
 self	elf	src/mccast.c	ast_ident_m1	6666
+self	elf	src/mccast.c	ast_ident_muldivk	0000
 self	elf	src/mccast.c	ast_ident_node	0000
 self	elf	src/mccast.c	ast_ident_notof	0000
 self	elf	src/mccast.c	ast_ident_pure	0000
@@ -718,6 +727,7 @@ self	elf	src/mccast.c	ast_jit_fns_parse	0000
 self	elf	src/mccast.c	ast_jit_fold_consts	0000
 self	elf	src/mccast.c	ast_jit_search_vocab	0000
 self	elf	src/mccast.c	ast_jit_selected	0000
+self	elf	src/mccast.c	ast_jit_slot_taken	0000
 self	elf	src/mccast.c	ast_jit_submit_aot	0000
 self	elf	src/mccast.c	ast_jit_type_eligible	0000
 self	elf	src/mccast.c	ast_jit_type_scalar	0000
@@ -759,6 +769,7 @@ self	elf	src/mccast.c	ast_local_is_readonly	0000
 self	elf	src/mccast.c	ast_local_is_readonly_scan	0000
 self	elf	src/mccast.c	ast_local_nonneg	0000
 self	elf	src/mccast.c	ast_locrec_skip	0000
+self	elf	src/mccast.c	ast_locrec_take	0000
 self	elf	src/mccast.c	ast_loop_analyzable	0000
 self	elf	src/mccast.c	ast_loop_ancestry	0000
 self	elf	src/mccast.c	ast_loop_bounds	0000
@@ -943,6 +954,7 @@ self	elf	src/mccast.c	ast_scratch_enter	0000
 self	elf	src/mccast.c	ast_scratch_init	0000
 self	elf	src/mccast.c	ast_scratch_measure_exit	0000
 self	elf	src/mccast.c	ast_search_axis_pick	0000
+self	elf	src/mccast.c	ast_search_axis_salt	0000
 self	elf	src/mccast.c	ast_search_cache_dir	0000
 self	elf	src/mccast.c	ast_search_combo_score	0000
 self	elf	src/mccast.c	ast_search_disk_evict	0000
@@ -953,6 +965,7 @@ self	elf	src/mccast.c	ast_search_disk_store	0000
 self	elf	src/mccast.c	ast_search_disk_usage	0000
 self	elf	src/mccast.c	ast_search_durwin_push	0000
 self	elf	src/mccast.c	ast_search_emit_size	0000
+self	elf	src/mccast.c	ast_search_evals_report	0000
 self	elf	src/mccast.c	ast_search_expect_ms	0000
 self	elf	src/mccast.c	ast_search_gates_now	0000
 self	elf	src/mccast.c	ast_search_gates_set	0000
@@ -1116,9 +1129,12 @@ self	elf	src/mccast.c	ast_subtree_span	0000
 self	elf	src/mccast.c	ast_sv_hi	0000
 self	elf	src/mccast.c	ast_sym	6666
 self	elf	src/mccast.c	ast_sym_defer	0000
+self	elf	src/mccast.c	ast_tco_emit	0000
 self	elf	src/mccast.c	ast_tco_local_addr_escapes	0000
+self	elf	src/mccast.c	ast_tco_plan	0000
 self	elf	src/mccast.c	ast_tco_reads_off	0000
 self	elf	src/mccast.c	ast_tco_run	0000
+self	elf	src/mccast.c	ast_tco_selfcall	0000
 self	elf	src/mccast.c	ast_teardown	0000
 self	elf	src/mccast.c	ast_thr_block	0000
 self	elf	src/mccast.c	ast_thr_callee	0000
@@ -1359,6 +1375,7 @@ self	elf	src/mccdbg.c	sort_eh_table	6666
 self	elf	src/mccdbg.c	stabs_struct_complete	0000
 self	elf	src/mccdbg.c	stabs_struct_find	0000
 self	elf	src/mccdbg.c	str_hash	6666
+self	elf	src/mccdev.h	mcc_dev_enabled	0000
 self	elf	src/mccdis.c	addr_cmp	6666
 self	elf	src/mccdis.c	asm_output_file	0000
 self	elf	src/mccdis.c	build_unique_names	0000
@@ -1474,6 +1491,7 @@ self	elf	src/mccgen.c	R2_RET	4444
 self	elf	src/mccgen.c	RC2_TYPE	0000
 self	elf	src/mccgen.c	R_RET	0000
 self	elf	src/mccgen.c	__sym_malloc	0000
+self	elf	src/mccgen.c	absbuiltin_try	0000
 self	elf	src/mccgen.c	add_asan_locals	0000
 self	elf	src/mccgen.c	add_local_bounds	0000
 self	elf	src/mccgen.c	adjust_bf	0000
@@ -1521,6 +1539,7 @@ self	elf	src/mccgen.c	const_ref_data	0000
 self	elf	src/mccgen.c	constexpr_ival	0000
 self	elf	src/mccgen.c	convert_parameter_type	0000
 self	elf	src/mccgen.c	cplx_const_int_div	6666
+self	elf	src/mccgen.c	cplx_const_rodata	0000
 self	elf	src/mccgen.c	cplx_extract_const	0000
 self	elf	src/mccgen.c	cplx_fold_unary_neg	0000
 self	elf	src/mccgen.c	cplx_local	0000
@@ -1538,12 +1557,15 @@ self	elf	src/mccgen.c	decl_design_blob	0000
 self	elf	src/mccgen.c	decl_design_delrels	0000
 self	elf	src/mccgen.c	decl_design_excess	0000
 self	elf	src/mccgen.c	decl_design_flex	0000
+self	elf	src/mccgen.c	decl_design_spread	0000
 self	elf	src/mccgen.c	decl_designator	0000
 self	elf	src/mccgen.c	decl_in_preamble	0000
 self	elf	src/mccgen.c	decl_initializer	0000
 self	elf	src/mccgen.c	decl_initializer_1	0000
 self	elf	src/mccgen.c	decl_initializer_alloc	0000
 self	elf	src/mccgen.c	decl_initializer_nested	0000
+self	elf	src/mccgen.c	decl_rng_claim	0000
+self	elf	src/mccgen.c	decl_rng_flush	0000
 self	elf	src/mccgen.c	do_Static_assert	0000
 self	elf	src/mccgen.c	drop_gnu_inline_body	0000
 self	elf	src/mccgen.c	elfsym	0000
@@ -1967,9 +1989,13 @@ self	elf	src/mcchost.c	host_unwind_register	4444
 self	elf	src/mcchost.c	host_unwind_unregister	4444
 self	elf	src/mcchost.h	host_sem_post	0000
 self	elf	src/mcchost.h	host_sem_wait	0000
+self	elf	src/mcchost.h	mcc_env_count	0000
 self	elf	src/mcchost.h	mcc_env_flag	0000
 self	elf	src/mcchost.h	mcc_env_num	0000
 self	elf	src/mcchost.h	mcc_env_on	0000
+self	elf	src/mcchost.h	mcc_search_cap_ms	0000
+self	elf	src/mcchost.h	mcc_search_cap_notice	0000
+self	elf	src/mcchost.h	mcc_search_ticks	0000
 self	elf	src/mccircap.c	ir_cap_arch_transfer_ret_regs	0000
 self	elf	src/mccircap.c	ir_cap_asm	0000
 self	elf	src/mccircap.c	ir_cap_asm_gen_code	0000
@@ -2066,6 +2092,7 @@ self	elf	src/mccjit_embed.c	mccjit_bench_run_pair	0000
 self	elf	src/mccjit_embed.c	mccjit_bench_sibling_run	0000
 self	elf	src/mccjit_embed.c	mccjit_bench_sibling_thread	0000
 self	elf	src/mccjit_embed.c	mccjit_bench_slow_fn	0000
+self	elf	src/mccjit_embed.c	mccjit_bind_apply	0000
 self	elf	src/mccjit_embed.c	mccjit_boot_swap	0000
 self	elf	src/mccjit_embed.c	mccjit_boot_swap_async	0000
 self	elf	src/mccjit_embed.c	mccjit_boot_swap_run	0000
@@ -2274,10 +2301,14 @@ self	elf	src/mccjit_embed.c	mccjit_vget	6666
 self	elf	src/mccjit_embed.c	mccjit_vput	6666
 self	elf	src/mccjit_embed.c	mccjit_wrap_one	0000
 self	elf	src/mccjit_embed.c	mccjit_zz	6666
+self	elf	src/mccjit_intent.c	mccjit_bake_why	0000
 self	elf	src/mccjit_intent.c	mccjit_buf_free	0000
 self	elf	src/mccjit_intent.c	mccjit_buf_init	0000
 self	elf	src/mccjit_intent.c	mccjit_buf_put	0000
 self	elf	src/mccjit_intent.c	mccjit_build_rec	0000
+self	elf	src/mccjit_intent.c	mccjit_callee_bindable	0000
+self	elf	src/mccjit_intent.c	mccjit_callee_defined	0000
+self	elf	src/mccjit_intent.c	mccjit_callee_refused	0000
 self	elf	src/mccjit_intent.c	mccjit_data_sym_info	0000
 self	elf	src/mccjit_intent.c	mccjit_emit_type_record	0000
 self	elf	src/mccjit_intent.c	mccjit_get_str	0000
@@ -2703,6 +2734,7 @@ self	elf	src/mccrir.c	rir_teardown	0000
 self	elf	src/mccrir.c	rir_tern_build	0000
 self	elf	src/mccrir.c	rir_tern_norm_on	0000
 self	elf	src/mccrir.c	rir_tern_normalise	0000
+self	elf	src/mccrir.c	rir_tern_retcast	0000
 self	elf	src/mccrir.c	rir_tern_retval_ok	0000
 self	elf	src/mccrir.c	rir_tern_sole_return	0000
 self	elf	src/mccrir.c	rir_to_arena	0000

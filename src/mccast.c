@@ -9788,6 +9788,109 @@ static int ast_tco_local_addr_escapes(AstArena *a) { MCC_TRACE("enter\n");
 	return 0;
 }
 
+typedef struct {
+	AstLocal arg[AST_TCO_MAXP];
+	int order[AST_TCO_MAXP];
+	int no;
+} AstTcoPlan;
+
+static AstLocal ast_tco_selfcall(AstArena *a, AstLocal n, Sym *fsym, int np) { MCC_TRACE("enter\n");
+	AstLocal cref;
+	if (n != AST_NONE && ast_kind(a, n) == AST_Convert &&
+			ast_nchild(a, n) == 1 && !ast_fbits(a, n)) { MCC_TRACE("br\n");
+		AstLocal in = ast_first_child(a, n);
+		if (in != AST_NONE && ast_kind(a, in) == AST_Invoke &&
+				ast_type_t(a, in) == ast_type_t(a, n) &&
+				ast_type_ref(a, in) == ast_type_ref(a, n) &&
+				ast_type_bp(a, in) == ast_type_bp(a, n) &&
+				ast_type_bs(a, in) == ast_type_bs(a, n))
+			{ MCC_TRACE("br\n"); n = in; }
+	}
+	if (n == AST_NONE || ast_kind(a, n) != AST_Invoke)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if ((int)ast_nchild(a, n) != np + 1)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	cref = ast_child(a, n, 0);
+	if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if (!(ast_op(a, cref) & VT_SYM) ||
+			(void *)(uintptr_t)ast_sym(a, cref) != (void *)fsym)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	return n;
+}
+
+static int ast_tco_plan(AstArena *a, AstLocal inv, int np, const int *poff,
+												AstTcoPlan *pl) { MCC_TRACE("enter\n");
+	int need[AST_TCO_MAXP], emitted[AST_TCO_MAXP];
+	int nwrite = 0;
+	for (int i = 0; i < np; i++) { MCC_TRACE("br\n");
+		pl->arg[i] = ast_child(a, inv, i + 1);
+		if (!ast_cprop_safe(a, pl->arg[i]))
+			{ MCC_TRACE("br\n"); return 0; }
+	}
+	for (int i = 0; i < np; i++) { MCC_TRACE("br\n");
+		need[i] = 1;
+		if (ast_kind(a, pl->arg[i]) == AST_Ref) { MCC_TRACE("br\n");
+			int rr = ast_op(a, pl->arg[i]);
+			if ((rr & VT_VALMASK) == VT_LOCAL && !(rr & VT_SYM) &&
+					(int)(int64_t)ast_ival(a, pl->arg[i]) == poff[i])
+				{ MCC_TRACE("br\n"); need[i] = 0; }
+		}
+		emitted[i] = !need[i];
+		if (need[i])
+			{ MCC_TRACE("br\n"); nwrite++; }
+	}
+	pl->no = 0;
+	while (pl->no < nwrite) { MCC_TRACE("br\n");
+		int pick = -1;
+		for (int i = 0; i < np; i++) { MCC_TRACE("br\n");
+			if (emitted[i])
+				{ MCC_TRACE("br\n"); continue; }
+			int blocked = 0;
+			for (int k = 0; k < np; k++) { MCC_TRACE("br\n");
+				if (k == i || emitted[k] || !need[k])
+					{ MCC_TRACE("br\n"); continue; }
+				if (ast_tco_reads_off(a, pl->arg[k], poff[i])) { MCC_TRACE("br\n");
+					blocked = 1;
+					break;
+				}
+			}
+			if (!blocked) { MCC_TRACE("br\n");
+				pick = i;
+				break;
+			}
+		}
+		if (pick < 0)
+			{ MCC_TRACE("br\n"); return 0; }
+		emitted[pick] = 1;
+		pl->order[pl->no++] = pick;
+	}
+	return 1;
+}
+
+static void ast_tco_emit(AstArena *a, AstLocal dst, const AstTcoPlan *pl,
+												 const int *poff, const int *ptt,
+												 const uint64_t *pref) { MCC_TRACE("enter\n");
+	for (int oi = 0; oi < pl->no; oi++) { MCC_TRACE("br\n");
+		int i = pl->order[oi];
+		AstLocal lref = ast_node(a, AST_Ref);
+		ast_set_op(a, lref, VT_LOCAL | VT_LVAL);
+		ast_set_ival(a, lref, (uint64_t)poff[i]);
+		ast_set_type(a, lref, ptt[i], pref[i]);
+		AstLocal cvt = ast_node(a, AST_Convert);
+		ast_set_type(a, cvt, ptt[i], pref[i]);
+		ast_add_child(a, cvt, pl->arg[i]);
+		AstLocal st = ast_node(a, AST_Store);
+		ast_add_child(a, st, lref);
+		ast_add_child(a, st, cvt);
+		ast_add_child(a, dst, st);
+	}
+	AstLocal jmp = ast_node(a, AST_Jump);
+	ast_set_op(a, jmp, 5);
+	ast_set_ival(a, jmp, (uint64_t)(unsigned)AST_TCO_LABEL);
+	ast_add_child(a, dst, jmp);
+}
+
 static int ast_tco_run(AstArena *a, Sym *fsym) { MCC_TRACE("enter\n");
 	ast_tco_folds = 0;
 	if (!fsym || !fsym->type.ref)
@@ -9829,91 +9932,76 @@ static int ast_tco_run(AstArena *a, Sym *fsym) { MCC_TRACE("enter\n");
 	for (AstLocal r = 0; r < nn; r++) { MCC_TRACE("br\n");
 		if (ast_kind(a, r) != AST_Return)
 			{ MCC_TRACE("br\n"); continue; }
-		AstLocal inv = ast_first_child(a, r);
-		if (inv == AST_NONE || ast_kind(a, inv) != AST_Invoke)
-			{ MCC_TRACE("br\n"); continue; }
-		if ((int)ast_nchild(a, inv) != np + 1)
-			{ MCC_TRACE("br\n"); continue; }
-		AstLocal cref = ast_child(a, inv, 0);
-		if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
-			{ MCC_TRACE("br\n"); continue; }
-		if (!(ast_op(a, cref) & VT_SYM) ||
-				(void *)(uintptr_t)ast_sym(a, cref) != (void *)fsym)
-			{ MCC_TRACE("br\n"); continue; }
-		AstLocal arg[AST_TCO_MAXP];
-		int ok = 1;
-		for (int i = 0; i < np; i++) { MCC_TRACE("br\n");
-			arg[i] = ast_child(a, inv, i + 1);
-			if (!ast_cprop_safe(a, arg[i])) { MCC_TRACE("br\n");
-				ok = 0;
-				break;
-			}
+		AstLocal top = ast_first_child(a, r);
+		AstLocal iff = AST_NONE, va = AST_NONE, vb = AST_NONE;
+		AstTcoPlan pa, pb;
+		int oka = 0, okb = 0;
+		if (top != AST_NONE && ast_kind(a, top) == AST_If) { MCC_TRACE("br\n");
+			if (ast_op(a, top) != 5 || ast_nchild(a, top) != 3 ||
+					ast_ival(a, top) || ast_fbits(a, top) ||
+					ast_nchild(a, r) != 1 || ast_fbits(a, r))
+				{ MCC_TRACE("br\n"); continue; }
+			va = ast_child(a, top, 1);
+			vb = ast_child(a, top, 2);
+			if (ast_child(a, top, 0) == AST_NONE || va == AST_NONE || vb == AST_NONE)
+				{ MCC_TRACE("br\n"); continue; }
+			AstLocal ia = ast_tco_selfcall(a, va, fsym, np);
+			AstLocal ib = ast_tco_selfcall(a, vb, fsym, np);
+			oka = ia != AST_NONE && ast_tco_plan(a, ia, np, poff, &pa);
+			okb = ib != AST_NONE && ast_tco_plan(a, ib, np, poff, &pb);
+			if (!oka && !okb)
+				{ MCC_TRACE("br\n"); continue; }
+			iff = top;
+		} else { MCC_TRACE("br\n");
+			AstLocal inv = ast_tco_selfcall(a, top, fsym, np);
+			if (inv == AST_NONE)
+				{ MCC_TRACE("br\n"); continue; }
+			if (!ast_tco_plan(a, inv, np, poff, &pa))
+				{ MCC_TRACE("br\n"); continue; }
 		}
-		if (!ok)
-			{ MCC_TRACE("br\n"); continue; }
-		int need[AST_TCO_MAXP], emitted[AST_TCO_MAXP], order[AST_TCO_MAXP];
-		int nwrite = 0;
-		for (int i = 0; i < np; i++) { MCC_TRACE("br\n");
-			need[i] = 1;
-			if (ast_kind(a, arg[i]) == AST_Ref) { MCC_TRACE("br\n");
-				int rr = ast_op(a, arg[i]);
-				if ((rr & VT_VALMASK) == VT_LOCAL && !(rr & VT_SYM) &&
-						(int)(int64_t)ast_ival(a, arg[i]) == poff[i])
-					{ MCC_TRACE("br\n"); need[i] = 0; }
+		if (iff == AST_NONE) { MCC_TRACE("br\n");
+			ast_set_kind(a, r, AST_BasicBlock);
+			ast_clear_children(a, r);
+			ast_tco_emit(a, r, &pa, poff, ptt, pref);
+		} else { MCC_TRACE("br\n");
+			AstLocal cnd = ast_child(a, iff, 0);
+			AstLocal ba = ast_node(a, AST_BasicBlock);
+			AstLocal bb = ast_node(a, AST_BasicBlock);
+			int rop = ast_op(a, r);
+			uint64_t rival = ast_ival(a, r);
+			if (oka) { MCC_TRACE("br\n");
+				ast_tco_emit(a, ba, &pa, poff, ptt, pref);
+			} else { MCC_TRACE("br\n");
+				AstLocal rt = ast_node(a, AST_Return);
+				ast_set_op(a, rt, rop);
+				ast_set_ival(a, rt, rival);
+				ast_add_child(a, rt, va);
+				ast_add_child(a, ba, rt);
 			}
-			emitted[i] = !need[i];
-			if (need[i])
-				{ MCC_TRACE("br\n"); nwrite++; }
-		}
-		int no = 0, cyc = 0;
-		while (no < nwrite) { MCC_TRACE("br\n");
-			int pick = -1;
-			for (int i = 0; i < np; i++) { MCC_TRACE("br\n");
-				if (emitted[i])
-					{ MCC_TRACE("br\n"); continue; }
-				int blocked = 0;
-				for (int k = 0; k < np; k++) { MCC_TRACE("br\n");
-					if (k == i || emitted[k] || !need[k])
-						{ MCC_TRACE("br\n"); continue; }
-					if (ast_tco_reads_off(a, arg[k], poff[i])) { MCC_TRACE("br\n");
-						blocked = 1;
-						break;
-					}
-				}
-				if (!blocked) { MCC_TRACE("br\n");
-					pick = i;
-					break;
-				}
+			if (okb) { MCC_TRACE("br\n");
+				ast_tco_emit(a, bb, &pb, poff, ptt, pref);
+			} else { MCC_TRACE("br\n");
+				AstLocal re = ast_node(a, AST_Return);
+				ast_set_op(a, re, rop);
+				ast_set_ival(a, re, rival);
+				ast_add_child(a, re, vb);
+				ast_add_child(a, bb, re);
 			}
-			if (pick < 0) { MCC_TRACE("br\n");
-				cyc = 1;
-				break;
-			}
-			emitted[pick] = 1;
-			order[no++] = pick;
+			ast_clear_children(a, iff);
+			ast_set_op(a, iff, 0);
+			ast_set_ival(a, iff, 0);
+			ast_set_fbits(a, iff, 0);
+			ast_set_type(a, iff, 0, 0);
+			ast_add_child(a, iff, cnd);
+			ast_add_child(a, iff, ba);
+			ast_add_child(a, iff, bb);
+			ast_set_kind(a, r, AST_BasicBlock);
+			ast_set_op(a, r, 0);
+			ast_set_ival(a, r, 0);
+			ast_set_fbits(a, r, 0);
+			ast_clear_children(a, r);
+			ast_add_child(a, r, iff);
 		}
-		if (cyc)
-			{ MCC_TRACE("br\n"); continue; }
-		ast_set_kind(a, r, AST_BasicBlock);
-		ast_clear_children(a, r);
-		for (int oi = 0; oi < no; oi++) { MCC_TRACE("br\n");
-			int i = order[oi];
-			AstLocal lref = ast_node(a, AST_Ref);
-			ast_set_op(a, lref, VT_LOCAL | VT_LVAL);
-			ast_set_ival(a, lref, (uint64_t)poff[i]);
-			ast_set_type(a, lref, ptt[i], pref[i]);
-			AstLocal cvt = ast_node(a, AST_Convert);
-			ast_set_type(a, cvt, ptt[i], pref[i]);
-			ast_add_child(a, cvt, arg[i]);
-			AstLocal st = ast_node(a, AST_Store);
-			ast_add_child(a, st, lref);
-			ast_add_child(a, st, cvt);
-			ast_add_child(a, r, st);
-		}
-		AstLocal jmp = ast_node(a, AST_Jump);
-		ast_set_op(a, jmp, 5);
-		ast_set_ival(a, jmp, (uint64_t)(unsigned)AST_TCO_LABEL);
-		ast_add_child(a, r, jmp);
 		converted++;
 	}
 	if (!converted)

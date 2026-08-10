@@ -25,3 +25,4 @@ reassoc|-O4|reassoc
 sethi|-O4|sethi
 tco|-O2|tco
 inline|-O2|inline
+tco_tern|-O2|tco

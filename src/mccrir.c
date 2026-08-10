@@ -4855,7 +4855,7 @@ static int rir_tern_retval_ok(AstLocal r) {
 			ast_ival(rir_arena, r) || ast_fbits(rir_arena, r))
 		return 0;
 	v = ast_child(rir_arena, r, 0);
-	if (v == AST_NONE || ast_kind(rir_arena, v) == AST_Invoke)
+	if (v == AST_NONE)
 		return 0;
 	vb = ast_type_t(rir_arena, v) & VT_BTYPE;
 	return vb != VT_STRUCT && vb != VT_QFLOAT && vb != VT_QLONG;
