@@ -311,21 +311,31 @@ static int asm_parse_reg(unsigned int *type) { MCC_TRACE("enter\n");
 	return reg;
 }
 
-#ifndef MCC_TARGET_X86_64
-
 static int asm_parse_ntpoff(void) { MCC_TRACE("enter\n");
+	const char *p;
+
 	if (tok != '@')
 		{ MCC_TRACE("br\n"); return 0; }
 	next();
-	if (tok < TOK_IDENT || strcmp(get_tok_str(tok, NULL), "ntpoff"))
+	if (tok < TOK_IDENT)
 		{ MCC_TRACE("br\n"); mcc_error("unsupported relocation operator '@%s'",
 							get_tok_str(tok, &tokc)); }
-	next();
-	return 1;
-}
+	p = get_tok_str(tok, NULL);
+#ifdef MCC_TARGET_X86_64
+	if (!strcmp(p, "PLT") || !strcmp(p, "plt")) { MCC_TRACE("br\n");
+		next();
+		return 0;
+	}
 #else
-#define asm_parse_ntpoff() 0
+	if (!strcmp(p, "ntpoff")) { MCC_TRACE("br\n");
+		next();
+		return 1;
+	}
 #endif
+	MCC_TRACE("br\n");
+	mcc_error("unsupported relocation operator '@%s'", p);
+	return 0;
+}
 
 static void parse_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 	ExprValue e;
