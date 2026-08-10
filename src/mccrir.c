@@ -1107,6 +1107,7 @@ static int rir_cfn;
 static int rir_arena_mismatch;
 static long rir_bf_loads;
 static long rir_bf_stores;
+static long rir_tern_folds;
 
 static long rir_drop_n[IR_OP_COUNT];
 
@@ -4821,6 +4822,120 @@ static void rir_bf_normalise(void) {
 	}
 }
 
+static int rir_tern_norm_on(void) {
+	static int v = -1;
+	if (v < 0) {
+		const char *e = getenv("MCC_RIR_TERN_NORM");
+		v = e ? atoi(e) : 1;
+	}
+	return v;
+}
+
+static int rir_tern_retval_ok(AstLocal r) {
+	int vb;
+	AstLocal v;
+	if (r == AST_NONE || ast_nchild(rir_arena, r) != 1 ||
+			ast_ival(rir_arena, r) || ast_fbits(rir_arena, r))
+		return 0;
+	v = ast_child(rir_arena, r, 0);
+	if (v == AST_NONE)
+		return 0;
+	vb = ast_type_t(rir_arena, v) & VT_BTYPE;
+	return vb != VT_STRUCT && vb != VT_QFLOAT && vb != VT_QLONG;
+}
+
+static AstLocal rir_tern_sole_return(AstLocal bb) {
+	AstLocal c;
+	if (bb == AST_NONE || ast_kind(rir_arena, bb) != AST_BasicBlock)
+		return AST_NONE;
+	if (ast_nchild(rir_arena, bb) != 1 || ast_fbits(rir_arena, bb))
+		return AST_NONE;
+	c = ast_first_child(rir_arena, bb);
+	if (c == AST_NONE || ast_kind(rir_arena, c) != AST_Return ||
+			!rir_tern_retval_ok(c))
+		return AST_NONE;
+	return c;
+}
+
+static void rir_tern_build(AstLocal bb, AstLocal iff, AstLocal ret, AstLocal drop,
+													 AstLocal cnd, AstLocal va, AstLocal vb) {
+	ast_clear_children(rir_arena, iff);
+	ast_set_op(rir_arena, iff, 5);
+	ast_set_ival(rir_arena, iff, 0);
+	ast_set_fbits(rir_arena, iff, 0);
+	ast_add_child(rir_arena, iff, cnd);
+	ast_add_child(rir_arena, iff, va);
+	ast_add_child(rir_arena, iff, vb);
+	ast_clear_children(rir_arena, drop);
+	ast_clear_children(rir_arena, ret);
+	ast_add_child(rir_arena, ret, iff);
+	ast_add_child(rir_arena, bb, ret);
+	rir_tern_folds++;
+}
+
+static void rir_tern_normalise(void) {
+	AstLocal n, nn;
+	if (!rir_tern_norm_on() || !rir_arena)
+		return;
+	if ((func_vt.t & VT_BTYPE) == VT_STRUCT || is_complex_type(&func_vt))
+		return;
+	nn = ast_count(rir_arena);
+	for (n = 0; n < nn; n++) {
+		AstLocal last, prev, c, iff, rt, re, cnd;
+		if (ast_kind(rir_arena, n) != AST_BasicBlock)
+			continue;
+		last = ast_last_child(rir_arena, n);
+		if (last == AST_NONE)
+			continue;
+		prev = AST_NONE;
+		for (c = ast_first_child(rir_arena, n); c != AST_NONE && c != last;
+				 c = ast_next_sib(rir_arena, c))
+			prev = c;
+		if (ast_kind(rir_arena, last) == AST_If && ast_op(rir_arena, last) == 0 &&
+				ast_nchild(rir_arena, last) == 3 && !ast_fbits(rir_arena, last)) {
+			iff = last;
+			rt = rir_tern_sole_return(ast_child(rir_arena, iff, 1));
+			re = rir_tern_sole_return(ast_child(rir_arena, iff, 2));
+			if (rt == AST_NONE || re == AST_NONE)
+				continue;
+			if (ast_op(rir_arena, rt) != ast_op(rir_arena, re))
+				continue;
+			cnd = ast_child(rir_arena, iff, 0);
+			if (cnd == AST_NONE)
+				continue;
+			if (!ast_detach_last_child(rir_arena, n, iff))
+				continue;
+			ast_clear_children(rir_arena, ast_child(rir_arena, iff, 1));
+			ast_clear_children(rir_arena, ast_child(rir_arena, iff, 2));
+			rir_tern_build(n, iff, re, rt, cnd, ast_child(rir_arena, rt, 0),
+										 ast_child(rir_arena, re, 0));
+			continue;
+		}
+		if (prev != AST_NONE && ast_kind(rir_arena, last) == AST_Return &&
+				rir_tern_retval_ok(last) &&
+				ast_kind(rir_arena, prev) == AST_If && ast_op(rir_arena, prev) == 0 &&
+				ast_nchild(rir_arena, prev) == 2 && !ast_fbits(rir_arena, prev)) {
+			iff = prev;
+			re = last;
+			rt = rir_tern_sole_return(ast_child(rir_arena, iff, 1));
+			if (rt == AST_NONE)
+				continue;
+			cnd = ast_child(rir_arena, iff, 0);
+			if (cnd == AST_NONE)
+				continue;
+			if (!ast_detach_last_child(rir_arena, n, re))
+				continue;
+			if (!ast_detach_last_child(rir_arena, n, iff)) {
+				ast_add_child(rir_arena, n, re);
+				continue;
+			}
+			ast_clear_children(rir_arena, ast_child(rir_arena, iff, 1));
+			rir_tern_build(n, iff, re, rt, cnd, ast_child(rir_arena, rt, 0),
+										 ast_child(rir_arena, re, 0));
+		}
+	}
+}
+
 static void rir_to_arena(void) {
 	int i;
 	if (!rir_arena)
@@ -5043,6 +5158,7 @@ static void rir_to_arena(void) {
 	rir_ihold_flush();
 	rir_stamp_flush();
 	rir_bf_normalise();
+	rir_tern_normalise();
 }
 
 static int rir_pt_addr(const RirOp *o, int fallback) {
