@@ -7324,6 +7324,24 @@ static void cplx_store_part(SValue *dst, int imag) { MCC_TRACE("enter\n");
 	vpop();
 }
 
+static void cplx_const_rodata(CType *ccplx, CType *cbase) { MCC_TRACE("enter\n");
+	init_params p = {.sec = rodata_section};
+	unsigned long offset;
+	int bsz, bal, csz, cal;
+
+	bsz = type_size(cbase, &bal);
+	csz = type_size(ccplx, &cal);
+	if (NODATA_WANTED) { MCC_TRACE("br\n");
+		csz = 0;
+		cal = 1;
+	}
+	offset = section_add(p.sec, csz, cal);
+	init_putv(&p, cbase, offset + bsz);
+	init_putv(&p, cbase, offset);
+	vpush_ref(ccplx, p.sec, offset, csz);
+	vtop->r |= VT_LVAL;
+}
+
 static void gen_imaginary_complex(int t) { MCC_TRACE("enter\n");
 	CType cbase, ccplx;
 	SValue r;
@@ -12303,20 +12321,7 @@ tok_next:
 		mk_complex_type(&ccplx, &cbase);
 		if ((vtop[-1].r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST && (vtop[0].r & (VT_VALMASK | VT_LVAL |
 																																										VT_SYM)) == VT_CONST) { MCC_TRACE("br\n");
-			init_params p = {.sec = rodata_section};
-			unsigned long offset;
-			int bsz, bal, csz, cal;
-			bsz = type_size(&cbase, &bal);
-			csz = type_size(&ccplx, &cal);
-			if (NODATA_WANTED) { MCC_TRACE("br\n");
-				csz = 0;
-				cal = 1;
-			}
-			offset = section_add(p.sec, csz, cal);
-			init_putv(&p, &cbase, offset + bsz);
-			init_putv(&p, &cbase, offset);
-			vpush_ref(&ccplx, p.sec, offset, csz);
-			vtop->r |= VT_LVAL;
+			cplx_const_rodata(&ccplx, &cbase);
 		} else { MCC_TRACE("br\n");
 			rir_hook_builtin_complex_lower();
 			cplx_local(&ccplx, &r);
