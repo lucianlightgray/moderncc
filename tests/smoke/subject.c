@@ -6,6 +6,7 @@
 #include "cases.h"
 #include "bcases.h"
 #include "fcases.h"
+#include "scases.h"
 
 static const char *const sm_type_name[] = {
 #define SM_TN(tag, cty, w) #tag,
@@ -445,6 +446,7 @@ int main(int argc, char **argv)
 	g_dpart[2] = g_digest;
 	nf += smf_sweep(&g_digest);
 	nf += smc_sweep(&g_digest);
+	nsweep += sms_sweep(&g_digest);
 	nmsweep = sm_msweep();
 	g_dpart[3] = g_digest;
 

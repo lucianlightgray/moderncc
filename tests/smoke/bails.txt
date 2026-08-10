@@ -28,14 +28,29 @@
 #    an infinite or NaN component. Annex G recovery is optional and gcc and
 #    clang share one libgcc implementation; C80 agrees with both.
 # 6. shl.*: pre-existing, the shift-count folder.
+# 7. O4 slice-refused:no-static-type 489 -> 505: smc_run went back to being one
+#    function with three sibling _Complex arms, which is the shape that
+#    reproduced the frame-slot overlap. Measured on both the fixed and the
+#    unfixed compiler, so the 16 are the subject's, not a refusal regression.
+# 8. 505 -> 510 and the new unsupported-op row: tests/smoke/scases.h added 22
+#    optimizer-strategy shapes to the subject. The compiler did not change
+#    across that step, so both are the subject's. The unsupported-op refusal is
+#    NOT one of the shapes -- bisecting SMS_SHAPES down to zero entries still
+#    reports it, so it belongs to the sms_sweep/sms_eval scaffolding (the
+#    indirect call through sms_fns[]). One slice refused is a coverage fact,
+#    not a wrong answer.
+# 9. O2 jit-not-baked:signature 120 -> 177: same 22 shapes; the JIT declines
+#    them by signature. They are value-checked over -O0..-O4 regardless, which
+#    is what they were added for.
 O0 replay-fallback:len 2
 O1 replay-fallback:len 2
-O2 jit-not-baked:signature 120
+O2 jit-not-baked:signature 177
 O2 replay-fallback:len 2
 O3 replay-fallback:len 2
 O4 replay-fallback:len 2
 O4 slice-refused:all-undefined 15
-O4 slice-refused:no-static-type 489
+O4 slice-refused:unsupported-op 1
+O4 slice-refused:no-static-type 510
 div diverge-both:bsweep.F16.FMULADD.fold 1
 div diverge-both:bsweep.F16.FMULADD.run 1
 div diverge-both:bsweep.F16.FSCALE.fold 1
