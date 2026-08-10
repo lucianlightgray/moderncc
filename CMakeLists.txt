@@ -7310,7 +7310,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         "${CMAKE_CURRENT_SOURCE_DIR}/examples/*.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/bounds_stress.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/floating_point.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/compile_errors.c")
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/compile_errors.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/va_start_nonsym.c")
 
     set(_x11_search "${MCC_SYSROOT}/usr/include" /usr/include /opt/X11/include
                     /usr/X11R6/include /usr/local/include /opt/homebrew/include)

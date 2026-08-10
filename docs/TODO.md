@@ -376,6 +376,51 @@ indexed access, member-based or not, has ever been in front of gcc and clang. Th
 they are green here, but the evidence for this branch is the device differential plus the
 CPU reference, which is what `frame-mismatches=0` over 1,024 compared frame runs is.
 
+## Landed — three SIGSEGVs on `SValue.sym`, one unguarded arena read, and the last parse-depth hole, 2026-08-09 (`wt/symguard`)
+
+**One root cause behind four of the five.** `SValue.sym` shares a union with
+`cmp_op`/`cmp_r`. `vset_VT_CMP` writes only `cmp_op`, so a `VT_CMP` value carries a `sym`
+that is the comparison token in its low 16 bits over whatever the vstack slot held before —
+**never null**, so `if (vtop->sym)` is not a guard. Whether it crashes depends on the
+previous occupant of that cell: if it was a real `Sym *` the stale high half still points
+into the heap and the wild read survives, and if it was a constant (`vsetc` nulls `sym`)
+the pointer is the bare token and the read is at address ~0xa7.
+
+That is why `&(a < b)` looked fine and `&(1 < a)` did not. Both are the same defect.
+
+| # | shape | crashed at | fix | cell |
+| --- | --- | --- | --- | --- |
+| 1 | `int f(int a){ return (int)(long)&(1 < a); }` | `mccgen.c` `unary()` `case '&'`, the `is_register` deref | run `test_lvalue()` first; every other arm keeps its diagnostic | `diag.dg-error.address_of_comparison` |
+| 2 | `va_start(ap, 1 < x)` | `check_va_start_register` | test `r` for `VT_SYM`/`VT_LOCAL`/`VT_LLOCAL` before `sym` | `compile.va_start_nonsym` |
+| 3 | same input, after 2 | `check_va_start_last_param` | same guard | same cell |
+| 4 | a local function pointer as an `AST_Invoke` callee | `ast_isa_key_update` (`mccast.c`) | require `VT_SYM` on the callee `Ref` | none — see below |
+| 5 | 40,000 consecutive `_Pragma("pack()")` | `next()` self-recursion (`mccpp.c`) | `tail:` label + `goto`, no budget level | `diag.parse-depth` case `pragmachain` |
+
+Verified against ASan (`cmake-sanitize/mcc_s`): `SEGV on unknown address 0x00000000000a7`
+at `mccgen.c:12042` for #1 and `mccgen.c:8999` for #2, and at `mccgen.c:9008` for #3 once
+#2 was guarded. **+2 ctest cells, 9468 → 9470.**
+
+**`VT_SYM` alone is not the guard everywhere, and the difference matters.** A local is
+pushed `VT_LOCAL | VT_LVAL` with `vtop->sym = s` and **no** `VT_SYM` bit, so gating the
+`va_start` checks on `VT_SYM` would have silently retired both diagnostics. They test
+`VT_SYM || VT_LOCAL || VT_LLOCAL`. The ISA scan is the opposite case: it only ever wants
+named global functions, which are always `VT_CONST | VT_SYM`, so `VT_SYM` is exactly right
+there and dropping locals is the correction.
+
+**#4 is the one that is not a demonstrated crash, recorded plainly.** With
+`fp p = a < b ? round : floor; p(x) + h(x) + round(x)` under
+`MCC_SEARCH_WORKER=1 mcc -O13 -fopt-search -c`, the scan dereferences three `Ref`s: two at
+`op=0x230` (the real function symbols) and one at `op=0x132` — the local variable `p`. It
+reads a *variable's* `Sym` and matches that variable's name against `ast_bfold_tab`, so a
+local named `round` would salt the search key with SSE4.1. Every callee actually shaped
+like a comparison lands under an `AST_Convert` or an `AST_If`, never a bare `Ref`, so the
+`VT_CMP` garbage could not be driven into that slot. No cell: nothing observable outside
+the search cache key changes, and a compile-succeeds cell would have passed before the fix.
+
+**`MCC_SEARCH_WORKER=1` is how to get the search under a debugger.** Without it
+`ast_search_select` forks and the breakpoints sit in the parent, which reads exactly like
+the code never running.
+
 ## Landed — `block/other` is early `return`, the funnel from acceptance to the device loses 1.24%, and the 28%/1.45% pair are not two ends of one pipe, 2026-08-09 (`wt/attrib`)
 
 **Two measurements, no lowering.** Both were unanswered and the ranking of the remaining
@@ -4968,7 +5013,7 @@ schedule.
 | **2** | ~~**`ctest -L census` runs 3 of its 6 cells and reports 6.**~~ **CLOSED on `wt/censusfix`** — all five census cells now carry their own `ENVIRONMENT` switch, and a new `census/gates-armed` cell fails if any `census`-labelled cell is gated on an opt-in switch its registration does not set. `ctest -L census` is **7/0 with nothing Skipped** and needs no exported variable at all. `MCC_RIR_CENSUS` was in the same state as the other two — named nowhere in `CMakeLists.txt` — so `rir-coverage-census` and `rir-nofb-probe` only ever ran because somebody typed it | — | **cells** |
 | **3** | **`-fopt-slice` makes object output depend on the optimizer's disk cache, and nothing watches it.** Reproduced verbatim today: `python3 tools/opt-cache-determinism.py cmake-debug/mcc src/mcc.c --opt=-O3 --from-build cmake-debug -- -fopt-slice` → `cold/self/foreign-tu = daffa4e023f9`, **`foreign-fl = 1dbdfbe1bc0c`**, `cache entries written: 2`, `FAIL`. The cell is a **permanent 77** because the flag is `MCC_OPTD_LEVEL(9)` and has no subject at any shipped level, so the defect is invisible rather than absent. Decide: own the pass, or delete it | unknown (a pass) | **correctness / determinism** |
 | **4** | **`if-conversion-abs` ships at `MCC_OPTD_LEVEL(2)` and the freshly re-run bench says it makes code worse.** `tests/optfire/levelbench.tsv:20`: moves **1 of 17** kernels, `gain_movers` **−0.0334**, `branchy` **−0.5700** — a sign flip from the `+0.1905` / `+3.1843` it was promoted on. It is bucketed `ranked`, not `cost-no-gain`, so the ladder still treats it as a win. It is filed **only** in the failed-to-reproduce table at `:685`; no row of the ranking table owns it, and `:517` asserts "row 1 is the only unmeasured row left" | small (one level decision, the measurement already exists) | **emitted code** |
-| **5** | **`MCC_MAX_UNARY_DEPTH` was mis-sized *and* it was one guard where the parser needs eight — DONE, and the eight are now watched.** `diag.parse-frames` re-prices `MCC_MAX_PARSE_DEPTH` against the frames it was sized on, every run; the per-level table it was sized from was re-derived and nine of its ten rows were low. **The two that were filed are now closed on `wt/depthholes`** — `parse_btype`'s `_Alignas` arm (SIGSEGV at **43,606**) and `mccasm.c`'s six-function `asm_expr` cycle (at **18,694**) are both charged to the shared budget, the frames bank is re-derived at **15 cycles** with the worst axis and the 532 KiB requirement unmoved, and `diag.parse-depth` carries both axes. **Newly open, filed with a crash depth:** `next()` self-recurses on `_Pragma` (`src/mccpp.c`) and SIGSEGVs at **130,794** consecutive `_Pragma` tokens; the fix is the `goto redo` the macro arm beside it already uses, not a budget level on the hottest function in the compiler. See "The parse-depth guard" below | small (one `goto`) | **correctness** |
+| **5** | **`MCC_MAX_UNARY_DEPTH` was mis-sized *and* it was one guard where the parser needs eight — DONE, and the eight are now watched.** `diag.parse-frames` re-prices `MCC_MAX_PARSE_DEPTH` against the frames it was sized on, every run; the per-level table it was sized from was re-derived and nine of its ten rows were low. **The two that were filed are now closed on `wt/depthholes`** — `parse_btype`'s `_Alignas` arm (SIGSEGV at **43,606**) and `mccasm.c`'s six-function `asm_expr` cycle (at **18,694**) are both charged to the shared budget, the frames bank is re-derived at **15 cycles** with the worst axis and the 532 KiB requirement unmoved, and `diag.parse-depth` carries both axes. **The third, `next()` self-recursing on `_Pragma` (`src/mccpp.c`, SIGSEGV at 130,794 consecutive `_Pragma` tokens), is closed on `wt/symguard`** — a `tail:` label and a `goto`, no budget level, and `diag.parse-depth` now carries a `pragmachain` case that asserts a clean compile rather than a diagnostic. **No parse-depth hole is currently open.** See "The parse-depth guard" below | done | **correctness** |
 | **6** | **Nine number-producing tools are registered nowhere — the board says four.** `:1688-1696` names `xsuite-report.py`, `gate-ledger.sh`, `strategy-ledger.sh`, `c2_sweep.sh` and closes "Four tools left on this item." Also unregistered and board-quoted: `xsuite.py`, `xoracle.py`, `c2_equiv.sh`, `selfhost-o3.py`, `arm64pe_diff.py`. **`xoracle.py` is the sharpest**: `tests/optfire/levelpins.txt:78` pins `merge-constants` at level 2 on "two xoracle cases change verdict without it" — a shipped ladder pin whose only evidence comes from a tool no cell runs | medium (five more cells) | **census trust** |
 | **7** | **`ast_env_gate` no longer exists in `src/` and four shell tools still grep for it.** `grep -rn ast_env_gate src/` is **0**; `tools/{c2_sweep,c2_equiv,gate-ledger,o0_ab}.sh` all still reference it. They fail loudly, which is the right mode, but this is the widest blocker in the file: it freezes `o0_ab.sh`'s gated half (twelve `*.gated.rir.txt` + `board.gated.txt`, uncovered by `ast/o0-baseline` and not pretending otherwise), blocks three of the four tools in row 5, and blocks the cheap "which `-O1` gate erases the 72 `len` bodies" experiment. The restoration recipe is already written down at `:9899-9906` | medium | **gate strength** |
 | **8** | **`spirv-val` and `glslc` are installed at `/usr/bin` and referenced nowhere in the build.** `grep -rn 'spirv-val\|glslc' CMakeLists.txt cmake/ tools/ src/` is empty. 152/152 modules already validate by hand at `--target-env vulkan1.1`. One `find_program` and one `add_test` arm. The cheapest open item in the file, and it survives the device freeze because it validates what the emitter already ships | small | **device correctness** |
@@ -16926,22 +16971,28 @@ parse-depth: 2 of 16 cases failed at a 1024 KiB stack
 and `diag.parse-frames` fails the same ablation on its own axis, by name:
 `asm_expr_unary_nested` *"is not in cmake-debug/mcc at all"*.
 
-#### A third hole, found by the audit and filed here: `_Pragma`
+#### A third hole, found by the audit and filed here: `_Pragma` — CLOSED on `wt/symguard`
 
-`next()` recurses into itself on the `_Pragma` operator — `src/mccpp.c:5314`, the
-`next_nomacro` path, right after `pragma_operator()` — with nothing counting the levels.
+`next()` recursed into itself on the `_Pragma` operator — the `next_nomacro` path, right
+after `pragma_operator()` — with nothing counting the levels. Fixed as filed: a `tail:`
+label above `total_toks++` and `goto tail` in place of `next(); return;`, no budget level.
+The label sits above the counter so the token census is unchanged. `parse-depth.sh` grows
+an `expect_clean` arm and a `pragmachain` case at the shared `DEPTH` of 40,000, and its
+vacuity floor moves 16 → 17; ablated against a pre-fix binary at 1024 KiB it reports
+`SIGNAL rc=139 (signal 11) on pragmachain`. The record below is what was measured.
 
 | path | shape | crashes at |
 | --- | --- | ---: |
 | `next` → `pragma_operator` → `next` (`src/mccpp.c`) | `_Pragma("pack()")` ×n then `int x;` | **130,794** (clean at 130,793) |
 
 Measured on this tree, default 8 MiB stack, `-O0` build; the backtrace is a wall of
-`next () at src/mccpp.c:5314`. The frame is thin, which is why it takes 130k tokens rather
-than 19k. **Not fixed here, deliberately**: the right fix is not a budget level on the
-hottest function in the compiler but the `goto redo` the *macro* arm eleven lines above it
-already uses — the self-call is a syntactic tail call, so it is a loop written as a
-recursion. That also means an optimised build may be immune where the `-O0` one is not,
-which is its own reason to fix the shape rather than price it.
+`next () at src/mccpp.c:5314`. The frame is thin (~64 B/level), which is why it takes 130k
+tokens rather than 19k, and why 40,000 suffices at the 1024 KiB `parse-depth` runs on. The
+fix was not a budget level on the hottest function in the compiler but the `goto` the
+*macro* arm already uses — the self-call was a syntactic tail call, so it was a loop
+written as a recursion. It could not be `goto redo` verbatim: `redo` sits inside
+`while (macro_ptr)` and this arm is reached with `macro_ptr` NULL, so the loop condition
+has to be re-tested, which is why the label went above it.
 
 **The rest of the audit — a full SCC pass over `src/**/*.c`, 3259 function bodies.** Every
 other cycle it turned up is either bounded or was not reproducible. Probed and clean on
