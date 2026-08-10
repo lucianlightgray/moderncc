@@ -33,7 +33,8 @@ enum {
 enum {
 	MCC_EFFECT_SPACE_REGION = 0,
 	MCC_EFFECT_SPACE_FD = 1,
-	MCC_EFFECT_SPACE_PORT = 2
+	MCC_EFFECT_SPACE_PORT = 2,
+	MCC_EFFECT_SPACE_CELL = 3
 };
 
 #define MCC_EFFECT_F_VOLATILE 1u
@@ -134,6 +135,8 @@ static const char *mcc_effect_space_name(uint32_t s) {
 		return "fd";
 	case MCC_EFFECT_SPACE_PORT:
 		return "port";
+	case MCC_EFFECT_SPACE_CELL:
+		return "cell";
 	default:
 		return "?";
 	}
@@ -627,57 +630,6 @@ enum {
 	MCC_PROV_ANON = 5,
 	MCC_PROV_THREAD = 6
 };
-
-enum {
-	MCC_THREAD_NONE = 0,
-	MCC_THREAD_PTHREAD = 1,
-	MCC_THREAD_C11 = 2,
-	MCC_THREAD_ATOMIC = 3,
-	MCC_THREAD_N = 4
-};
-
-static const char *mcc_thread_class_name(int c) {
-	switch (c) {
-	case MCC_THREAD_PTHREAD:
-		return "pthread";
-	case MCC_THREAD_C11:
-		return "c11-threads";
-	case MCC_THREAD_ATOMIC:
-		return "atomic-builtin";
-	default:
-		return "none";
-	}
-}
-
-static int mcc_thread_pfx(const char *s, const char *pfx) {
-	size_t n = strlen(pfx);
-	return !strncmp(s, pfx, n);
-}
-
-static int mcc_thread_sym_class(const char *name) {
-	static const char *const PTHREAD_STEM[] = {"create", "join",	 "detach",
-																						 "exit",	 "mutex",	 "cond",
-																						 "rwlock", "key",		 "once"};
-	static const char *const C11_PFX[] = {"thrd_", "mtx_", "cnd_", "tss_"};
-	size_t i;
-	if (!name || !*name)
-		return MCC_THREAD_NONE;
-	if (mcc_thread_pfx(name, "__atomic_") || mcc_thread_pfx(name, "__sync_"))
-		return MCC_THREAD_ATOMIC;
-	if (mcc_thread_pfx(name, "pthread_")) {
-		const char *t = name + 8;
-		for (i = 0; i < sizeof PTHREAD_STEM / sizeof *PTHREAD_STEM; i++)
-			if (mcc_thread_pfx(t, PTHREAD_STEM[i]))
-				return MCC_THREAD_PTHREAD;
-		return MCC_THREAD_NONE;
-	}
-	for (i = 0; i < sizeof C11_PFX / sizeof *C11_PFX; i++)
-		if (mcc_thread_pfx(name, C11_PFX[i]))
-			return MCC_THREAD_C11;
-	if (!strcmp(name, "call_once"))
-		return MCC_THREAD_C11;
-	return MCC_THREAD_NONE;
-}
 
 typedef struct MccEffectKey {
 	uint64_t slice;
