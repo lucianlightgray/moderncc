@@ -88,6 +88,13 @@ def is_pass(v):
 
 NUM = re.compile(r"(\w[\w-]*)=(-?\d+)")
 
+FUNNEL = ("funnel-seen", "funnel-refused", "funnel-extent-over-slot",
+          "funnel-no-device-region", "funnel-cpu-reference-bailed",
+          "funnel-no-device", "funnel-lower-no-live-in",
+          "funnel-lower-nothing-to-run", "funnel-lower-f64-unsupported",
+          "funnel-lower-emit-failed", "funnel-dispatch-failed",
+          "funnel-disagreed", "funnel-agreed")
+
 
 def slicerun_counts(text):
     d = {}
@@ -138,7 +145,7 @@ def one_program(idx, prog, args, root):
                      "frame-compared", "frame-mismatches", "cref-seen",
                      "cref-emitted", "cref-tuples", "cref-toobig",
                      "cref-unspellable", "cref-alldead",
-                     "cref-mixed-operand-types")})
+                     "cref-mixed-operand-types") + FUNNEL})
         rec["slicerun_rc"] = rc
         rec["device"] = 1 if "available=1" in out else 0
         rec["cref_dir"] = cref if c.get("cref-emitted", 0) else None
@@ -329,6 +336,8 @@ def main():
         "device_present": device,
         "cref": cref,
     }
+    for k in FUNNEL:
+        summary[k.replace("-", "_")] = sum(r.get(k, 0) for r in q)
     for r in classified_out:
         k = r.get("oracle_verdict", "?")
         k = k.split(":")[0] if k != "disagree" else "oracles-disagree"
@@ -356,6 +365,22 @@ def main():
     out.write("gpuconform: frame accepted=%d built=%d compared=%d mismatches=%d\n"
               % (summary["frame_accepted"], summary["frame_built"],
                  summary["frame_compared"], summary["frame_mismatches"]))
+    seen = summary["funnel_seen"]
+    out.write("gpuconform: frame-funnel %s\n"
+              % " ".join("%s=%d" % (k, summary[k.replace("-", "_")])
+                         for k in FUNNEL))
+    if seen:
+        drops = [(k, summary[k.replace("-", "_")]) for k in FUNNEL[1:]]
+        acc = seen - summary["funnel_refused"]
+        out.write("gpuconform: frame-funnel accepted=%d of %d (%.2f%%), "
+                  "agreed=%d (%.2f%% of accepted), drops-sum=%d\n"
+                  % (acc, seen, 100.0 * acc / seen, summary["funnel_agreed"],
+                     100.0 * summary["funnel_agreed"] / acc if acc else 0.0,
+                     sum(v for _, v in drops)))
+        for k, v in drops:
+            if v and k not in ("funnel-refused", "funnel-agreed"):
+                out.write("gpuconform: frame-drop %-28s n=%d share-of-accepted="
+                          "%.2f%%\n" % (k, v, 100.0 * v / acc if acc else 0.0))
     out.write("gpuconform: cref fragments=%d dedup-dropped=%d tuples=%d "
               "mixed-operand-slices=%d\n"
               % (cref["fragments"], cref["duplicates"],

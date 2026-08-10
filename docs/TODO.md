@@ -99,6 +99,215 @@ the first against real data rather than test data. That is a currency which conv
 the device differential has already caught three miscompiles that internal comparisons
 were structurally blind to — whereas device-eligible blocks never had an exchange rate.
 
+## Landed — `block/other` is early `return`, the funnel from acceptance to the device loses 1.24%, and the 28%/1.45% pair are not two ends of one pipe, 2026-08-09 (`wt/attrib`)
+
+**Two measurements, no lowering.** Both were unanswered and the ranking of the remaining
+GPU work depended on them. Six red cells on `main` had to be fixed first — see the last
+section.
+
+### 1. `block/other` is 752 blocks, 0.88% of refused blocks, and 77% of it is an early `return`
+
+`slicerun --refusals` grows `othercause:` and `otherblocker:`, built the way `condcause:`
+was: `othercause:` names the statement form the classifier could not model, split by
+whether the shared expression predicate would already accept that node **as a value**, and
+`otherblocker:` gives the deepest node inside the refused ones whose own children all pass.
+Whole gcc torture corpus at `-O1`, 1,693 programs, 15,923 bodies, 1,172,443 nodes, 119,363
+blocks, 33,653 frame-accepted, 85,710 refused:
+
+| statement form charged `block/other` | blocks | share |
+| --- | ---: | ---: |
+| `Return` — an early return **inside** an `if`/loop body | 580 | **77.13%** |
+| a `Literal` alone in statement position, value already accepted | 48 | 6.38% |
+| `Unary` `asmops` | 37 | 4.92% |
+| `Binary` `ne` in statement position, value already accepted | 28 | 3.72% |
+| `Unary` `asmgen` | 28 | 3.72% |
+| `Unary` `vla` / `vla-restore` | 7 | 0.93% |
+| a nested `BasicBlock` | 4 | 0.53% |
+| every other `Binary` in statement position | 18 | 2.39% |
+| `Convert`, `ggoto` | 2 | 0.27% |
+
+**The bucket is not a kind gap, it is the frame model's return rule seen at depth.**
+`mcc_slice_frame_from_ast` accepts a `Return` only as the last *top-level* statement of the
+block; a `return` inside an `if` body reaches `block_cause_seq` → `block_cause_stmt`, is not
+a `Store`, and falls into `block/other`. 572 of the 580 have a return **value** the
+evaluator already accepts (`otherblocker: Return` 85.50% of the 669 walked), so what is
+owed is a multi-exit frame model, not an operator. The minimal witness is three lines:
+`int f(int x, int y) { if (x > y) return x + y; return x - y; }` → `block/other n=1`,
+`othercause: Return value-refused n=1`.
+
+**83 of the 752 (11.0%) are pure classifier artifact** — a `Literal`, a comparison, a
+`Convert` standing in statement position with its value discarded, each one already
+accepted by `ast_eval_slice_kind_ok`. **66 (8.8%) are inline asm** (`asmops`, `asmgen`,
+`ggoto`), which *Total lowering* assigns to the `mccasm.c` lifting decision.
+
+**It is a partition, verified three ways, not a sample.** `blockcause: causes-sum=85710`
+reproduces `refused-blocks=85710`, which reproduces `blocks − frame-accepted-blocks` =
+119,363 − 33,653 exactly; `blockcause: unwalked=0`; `othercause: forms-sum=752` reproduces
+`blockcause: block/other`; `otherblocker: blockers-sum=669` reproduces the non-`value-ok`
+subset; and `table-overflow=0` says no key was dropped for want of a slot.
+
+### The bucket that really was unattributed was called `block/capacity`, and it contained no capacity refusals at all
+
+Fourth misread of a named bucket. `block/capacity` was **two** things summed: `depth > 8`
+in `block_cause_stmt`, and `if (r == BC_OK) r = BC_CAPACITY;` — i.e. *the classifier found
+no cause and billed it to capacity anyway*. Split, the depth arm is **0** and the
+no-cause arm is all 28.
+
+Those 28 are now attributed by `frame_fail_reason`, which mirrors
+`mcc_slice_frame_from_ast`'s own top-level loop and **shares `mcc_slice_frame_stmt_ok`
+rather than restating it**, so it names the steps the classifier structurally cannot see:
+
+| `nocause:` | blocks |
+| --- | ---: |
+| `statement-unmodelled` | 18 |
+| `return-type` | 6 |
+| `slot-table-full` (`MCC_SLICE_MAXSLOT` = 16) | 4 |
+| `unexplained` | **0** |
+
+**`unexplained=0` is the answer to the invariant question.** Every one of the 85,710
+refused blocks now carries a modelled cause, so a cell asserting full attribution would
+assert something true today rather than pinning a floor to grow into.
+
+**Recommended, not implemented** (the owner asked for the measurement first): extend
+`cmake/slicerun_refclass.cmake`, which already has the shape — it fails when
+`ref-not-local-classes-sum=` does not reproduce its bucket. Four assertions, all
+partition checks and none of them a count that moves when a predicate widens:
+`blockcause: causes-sum` == `refused-blocks`, `unwalked=0`, `table-overflow=0`,
+`othercause: forms-sum` == `blockcause: block/other`, and `nocause:` printing no
+`unexplained` row. **Do not pin a floor on `block/other` itself** — 77% of it is one
+structural rule, and the cell should go red when the *attribution* breaks, not when
+somebody fixes early `return`.
+
+### 2. The acceptance → device funnel loses 1.24%, and it is not where the two-orders-of-magnitude gap is
+
+`slicerun` grows `frame-funnel`, one counter per bail between "the engine accepts this
+block" and "a device executed it and agreed". Every drop was previously invisible: three
+of them (`extent-over-slot`, `no-device-region`, `cpu-reference-bailed`) had no counter at
+all, and `extent-over-slot` fires *before* `g_frame_slices++`, so those blocks appeared in
+no number in the tree. Whole gcc torture corpus, on an RTX 5070 Ti Laptop GPU:
+
+| stage | blocks | share of accepted | cause |
+| --- | ---: | ---: | --- |
+| blocks seen | 119,363 | — | — |
+| refused by `mcc_slice_frame_from_ast` | 85,710 | — | the `blockcause:` table above |
+| **accepted** | **33,653** | 100% | — |
+| dropped: extent wider than `FRAME_EXT_SLOT` | 7 | 0.02% | a **512-byte** constant in `tools/slicerun.c`, not a device or compiler limit |
+| dropped: needs binding 2, no region armed | 0 | 0.00% | — |
+| dropped: the CPU reference itself bailed | 62 | 0.18% | `MCC_SLICE_TRIP_MAX`, or a slot the executor cannot resolve |
+| dropped: no device | 0 | 0.00% | — |
+| dropped: kernel build, no live-in | 352 | 1.05% | `f->nslot < 1` — nothing to seed |
+| dropped: kernel build, nothing to run | 2 | 0.01% | `nstmt < 1` and no `Return` |
+| dropped: SPIR-V emit failed | 0 | 0.00% | — |
+| dropped: dispatch failed | 0 | 0.00% | — |
+| **dispatched, compared, agreed** | **33,230** | **98.76%** | — |
+| disagreed | 0 | 0.00% | — |
+
+`drops-sum=119363` reproduces `seen` exactly, so the funnel is a partition too.
+
+**28.19% of blocks are accepted and 27.84% of blocks are executed on a device and agree.**
+The gap between acceptance and device execution is **416 blocks, 1.24%**, and the largest
+named piece of it is 352 blocks with no live-in at all. There is no two-orders-of-magnitude
+loss anywhere in this funnel, and no unattributed residue in it.
+
+### Why 28% and 1.45% never reconciled: they are not two ends of one pipe
+
+They share no code path. `ast_loop_parallel_legal` has exactly two call sites
+(`ast_loop_par_census` and `ast_loopdep_dump`), both of which only `fprintf`; `src/mccslice.h`
+is included by `tools/slicerun.c` and `src/slice_inline.h` and by nothing in `src/` that
+emits code; and nothing anywhere maps an induction variable onto `gl_GlobalInvocationID`.
+The 64 lanes of a frame dispatch are 64 independent **seed tuples**, never 64 **iterations**.
+So no parallel-legal verdict can cause, gate or explain a single dispatch, and the 1.45%
+cannot be the 28% after losses. Reconciling them was never possible; what is possible is
+naming what each one measures.
+
+Measured on the numeric corpus rather than assumed. The same block funnel over the 17
+in-tree kernels: 253 blocks, 128 refused, 125 accepted (49.4%), **120 dispatched, compared
+and agreed (47.4% of blocks, 96.0% of accepted)**, 25 reaching binding 2, 0 mismatches. Not
+1.45% by any denominator.
+
+The 80.60% parallel-legal iteration-weighted ceiling reproduces
+(`--corpus runtime --levels O2`: 97.76% raw, 80.60% legal, 26 `par=1` loops), and the
+≈1.45% is `par=1` **and** device-executable — still not printed by any tool. Attributed
+against that ceiling, top-down, using the census's own concentration (the top 10 loops are
+96.8% of all iterations):
+
+| par=1 iterations | share of all | reaches the device? | named cause |
+| --- | ---: | --- | --- |
+| `matmul.c:22` | **76.92%** | no | the three arrays are `static` |
+| `loopnest.c:44` | **2.24%** | no | the six arrays are `static` |
+| `vlaloop.c:13` | 1.37% | **yes** | local `int buf[64]`; unblocked by `wt/slotmodel` |
+| `nbody.c:27`, `matmul.c:14`, `strproc.c:15`, 20 more | 0.07% | no | mixed |
+
+**79.16 of the 80.60 points are one cause: storage class.** Proved by a controlled probe
+rather than inferred — the same loop body over `double a[16], b[16], c[16]`, `static`
+versus local, one file each:
+
+| probe | refused blocks | accepted | agreed | reaching binding 2 |
+| --- | ---: | ---: | ---: | ---: |
+| `static double a[16],b[16],c[16]` | 2 (`store-dest-other`, `store-value-refused`) | 1 | 1 | **0** |
+| the same source, arrays local | 1 (`return-expr`) | 2 | 2 | **1** |
+
+`static` is the *only* difference, and it moves the loop body from refused to dispatched.
+Two further gates sit behind it and are second-order, not the current blocker: a local
+`double[128]` (1,024 bytes) is dropped at `extent-over-slot` because `FRAME_EXT_SLOT` is
+512, measured directly; and `matmul`'s real `double[600][600]` working set is 8.64 MB
+against `MCC_VK_MEM_DEFAULT`'s 1 MiB. Fixing storage class alone moves nothing on the real
+kernels until both of those move too.
+
+### Which metric should rank the work
+
+**Block acceptance, and neither of the two numbers as they stand.** The evidence:
+
+1. **28% is a real, closed, adjudicated number.** 98.76% of accepted blocks reach a device
+   and agree; every drop in between is named and the largest is 1.05%. It is denominated in
+   the unit the compiler actually processes, and it has a differential behind it.
+2. **1.45% is a projection of a capability that does not exist.** It multiplies a
+   parallel-legality verdict that no dispatch consults by a lowerability judgement made by
+   hand. Until something in `src/` maps an iteration space onto lanes it cannot rank work,
+   because no work can move it.
+3. **What 1.45% is good for is naming one lever, and it names it very sharply.** 79.16 of
+   the 80.60 available points are `static` storage on two loops. That is a single item —
+   symbol-keyed live-ins plus the host-import path already decided in *Total lowering* — and
+   it is worth ranking on the strength of that concentration, not on the 1.45%.
+4. **The next block-level item is early `return`**: 580 blocks, 77% of `block/other`, 572 of
+   them with an already-accepted return value. It is smaller than calls (55.91%) and
+   conditions (37.39%) and should stay ranked below them.
+
+### Verification
+
+* `blockcause`, `condcause`, `othercause`, `otherblocker`, `frame-funnel` and `nocause` each
+  print their own partition check and each reproduces its parent exactly, on the whole
+  torture corpus and on the numeric corpus.
+* **Emitted code cannot change**, and the argument is static rather than a sweep:
+  `tools/slicerun.c` is a source of the `slicerun` executable only
+  (`add_executable(slicerun tools/slicerun.c tools/slicerun_arena.c src/mccgpu.c)`), and no
+  target that produces `mcc` compiles it. Nothing under `src/` was touched.
+* `ctest -R "^slice/" -E cref-oracle`: **43/43**, 0 failures, including all six cells the
+  suite-list fix restores. `ctest -R census`: **17/17**. Cell count **9468**, unchanged.
+* `docref-lint.py` OK, `regstub-lint.py` OK (53 chains).
+
+### Fixed on the way: six `slice/*` cells were hard-failing on `main`
+
+The allow-list added by the "nine cells were running nothing" fix — `SUITES[]` in
+`tools/slicerun.c`, which makes an unrecognised suite name a hard error — was not updated
+when `arrow`, `effect` and `hostimport` landed on the branches merged in parallel. So
+`slice/{arrow,effect,hostimport}` and their three `-known-positive` twins exited 2 with
+*"unknown suite"* on every platform. The ratchet worked exactly as designed; the merge is
+what missed. The three names are added and all six cells pass.
+
+### Reproducing
+
+```sh
+for f in vendor/gcc-c-torture-execute/*.c; do
+    MCC_ARENA_DUMP=dump/$(basename "$f" .c).txt \
+        cmake-debug/mcc -c "$f" -o /tmp/a.o -O1 >/dev/null 2>&1
+done
+cat dump/*.txt > torture-arenas.txt
+cmake-debug/slicerun --arenas torture-arenas.txt --refusals --quiet |
+    grep -E 'blockcause|othercause|otherblocker|nocause'
+cmake-debug/slicerun --arenas torture-arenas.txt --quiet | grep frame-funnel
+```
+
 ## Landed — nine `slice/*` cells were running nothing; M1 and M4's host half, 2026-08-09
 
 Starting M1–M7 turned up something that outranks them. **Nine device cells have been

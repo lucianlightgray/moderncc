@@ -4362,6 +4362,18 @@ static const char *refuse_opname(int op) {
 	case 0x50005: return "member:float-type";
 	case 0x50006: return "member:nonint-type";
 	case 0x50007: return "member:base-not-a-frame-slot";
+	case TOK_LAND: return "land";
+	case TOK_LOR: return "lor";
+	case TOK_ULT: return "ult";
+	case TOK_UGE: return "uge";
+	case TOK_EQ: return "eq";
+	case TOK_NE: return "ne";
+	case TOK_ULE: return "ule";
+	case TOK_UGT: return "ugt";
+	case TOK_LT: return "lt";
+	case TOK_GE: return "ge";
+	case TOK_LE: return "le";
+	case TOK_GT: return "gt";
 	default: return NULL;
 	}
 }
@@ -5222,13 +5234,14 @@ enum {
 	BC_ST_VALUE,
 	BC_EXPR,
 	BC_OTHER,
+	BC_NOCAUSE,
 	BC_N
 };
 
 static const char *block_cause_name(int k) {
 	switch (k) {
 	case BC_EMPTY: return "block/empty";
-	case BC_CAPACITY: return "block/capacity";
+	case BC_CAPACITY: return "block/depth-limit";
 	case BC_INVOKE: return "block/stmt-invoke";
 	case BC_STOREVAL: return "block/stmt-storeval";
 	case BC_JUMP: return "block/stmt-jump";
@@ -5252,6 +5265,7 @@ static const char *block_cause_name(int k) {
 	case BC_ST_VALUE: return "block/store-value-refused";
 	case BC_EXPR: return "block/expr-refused";
 	case BC_OTHER: return "block/other";
+	case BC_NOCAUSE: return "block/no-cause";
 	default: return "?";
 	}
 }
@@ -5266,18 +5280,47 @@ static long g_cc_n[COND_CAUSE_CAP];
 static int g_cc_used;
 static long g_cc_blocked;
 
-static void cond_cause_add(long key) {
+static long g_cc_dropped;
+
+static void cause_tab_add(long *key, long *n, int *used, int cap, long k) {
 	int i;
-	for (i = 0; i < g_cc_used; i++)
-		if (g_cc_key[i] == key) {
-			g_cc_n[i]++;
+	for (i = 0; i < *used; i++)
+		if (key[i] == k) {
+			n[i]++;
 			return;
 		}
-	if (g_cc_used >= COND_CAUSE_CAP)
+	if (*used >= cap) {
+		g_cc_dropped++;
 		return;
-	g_cc_key[g_cc_used] = key;
-	g_cc_n[g_cc_used] = 1;
-	g_cc_used++;
+	}
+	key[*used] = k;
+	n[*used] = 1;
+	(*used)++;
+}
+
+static void cause_tab_report(const char *tag, long *key, long *n, int used,
+														 long tot,
+														 void (*label)(long, char *, size_t)) {
+	for (;;) {
+		long best = 0;
+		int bi = -1, i;
+		char lbl[96];
+		for (i = 0; i < used; i++)
+			if (n[i] > best) {
+				best = n[i];
+				bi = i;
+			}
+		if (bi < 0)
+			break;
+		label(key[bi], lbl, sizeof lbl);
+		printf("%s: %-52s n=%ld share=%.2f%%\n", tag, lbl, n[bi],
+					 tot ? 100.0 * (double)n[bi] / (double)tot : 0.0);
+		n[bi] = 0;
+	}
+}
+
+static void cond_cause_add(long key) {
+	cause_tab_add(g_cc_key, g_cc_n, &g_cc_used, COND_CAUSE_CAP, key);
 }
 
 static int cond_load_sub(AstArena *a, AstLocal n) {
@@ -5356,16 +5399,8 @@ static AstLocal cond_first_blocker(AstArena *a, AstLocal n) {
 	return n;
 }
 
-static void cond_cause_note(AstArena *a, AstLocal cond) {
-	AstLocal b;
-	int k;
-	g_cc_blocked++;
-	if (cond == AST_NONE) {
-		cond_cause_add(COND_CC_KEY(0, 0, 0));
-		return;
-	}
-	b = cond_first_blocker(a, cond);
-	k = ast_kind(a, b);
+static long blocker_key(AstArena *a, AstLocal b) {
+	int k = ast_kind(a, b);
 	if (k == AST_Ref) {
 		int cls = refuse_global_class(a, b), t = ast_type_t(a, b), sub = 0;
 		if (cls == RG_OTHER) {
@@ -5378,17 +5413,67 @@ static void cond_cause_note(AstArena *a, AstLocal cond) {
 						: !(rop & VT_LVAL)			 ? 6
 														 : 0;
 		}
-		cond_cause_add(COND_CC_KEY(k, cls, sub));
-		return;
+		return COND_CC_KEY(k, cls, sub);
 	}
 	if (k == AST_Load) {
 		AstLocal c = ast_first_child(a, b);
-		cond_cause_add(COND_CC_KEY(k, cond_load_sub(a, b),
-															 c == AST_NONE ? 0 : ast_kind(a, c)));
+		return COND_CC_KEY(k, cond_load_sub(a, b),
+											 c == AST_NONE ? 0 : ast_kind(a, c));
+	}
+	return COND_CC_KEY(
+			k, 0,
+			(k == AST_Unary || k == AST_Binary || k == AST_If) ? ast_op(a, b) : 0);
+}
+
+static void cond_cause_note(AstArena *a, AstLocal cond) {
+	g_cc_blocked++;
+	if (cond == AST_NONE) {
+		cond_cause_add(COND_CC_KEY(0, 0, 0));
 		return;
 	}
-	cond_cause_add(COND_CC_KEY(
-			k, 0, (k == AST_Unary || k == AST_Binary || k == AST_If) ? ast_op(a, b) : 0));
+	cond_cause_add(blocker_key(a, cond_first_blocker(a, cond)));
+}
+
+#define OTHER_CAUSE_CAP 256
+
+static long g_oc_key[OTHER_CAUSE_CAP];
+static long g_oc_n[OTHER_CAUSE_CAP];
+static int g_oc_used;
+static long g_oc_blocks;
+
+static long g_ob_key[OTHER_CAUSE_CAP];
+static long g_ob_n[OTHER_CAUSE_CAP];
+static int g_ob_used;
+static long g_ob_blocks;
+
+#define OTHER_KEY(k, ev, op) \
+	(((long)(k) << 40) | ((long)(ev) << 32) | (long)(op))
+
+static void other_cause_label(long key, char *buf, size_t cap) {
+	int k = (int)(key >> 40);
+	int ev = (int)((key >> 32) & 0xFF);
+	int op = (int)(key & 0xFFFFFFFF);
+	const char *s = op ? refuse_opname(op) : NULL;
+	const char *ok = ev ? "value-ok" : "value-refused";
+	if (op)
+		snprintf(buf, cap, "%s op=%s(0x%x) %s", refuse_kindname(k), s ? s : "?", op,
+						 ok);
+	else
+		snprintf(buf, cap, "%s %s", refuse_kindname(k), ok);
+}
+
+static void other_cause_note(AstArena *a, AstLocal s) {
+	int k = ast_kind(a, s);
+	int ev = ast_eval_slice_kind_ok(a, s, 1);
+	int op = (k == AST_Unary || k == AST_Binary || k == AST_If) ? ast_op(a, s) : 0;
+	g_oc_blocks++;
+	cause_tab_add(g_oc_key, g_oc_n, &g_oc_used, OTHER_CAUSE_CAP,
+								OTHER_KEY(k, ev, op));
+	if (ev)
+		return;
+	g_ob_blocks++;
+	cause_tab_add(g_ob_key, g_ob_n, &g_ob_used, OTHER_CAUSE_CAP,
+								blocker_key(a, cond_first_blocker(a, s)));
 }
 
 static int block_cause_stmt(AstArena *a, AstLocal s, int depth);
@@ -5467,8 +5552,10 @@ static int block_cause_stmt(AstArena *a, AstLocal s, int depth) {
 			return BC_INCDEC;
 		return BC_OK;
 	}
-	if (ast_kind(a, s) != AST_Store)
+	if (ast_kind(a, s) != AST_Store) {
+		other_cause_note(a, s);
 		return BC_OTHER;
+	}
 	if (ast_nchild(a, s) != 2)
 		return BC_ST_ARITY;
 	d = ast_child(a, s, 0);
@@ -5507,6 +5594,91 @@ static int block_cause_stmt(AstArena *a, AstLocal s, int depth) {
 	return ast_eval_slice_kind_ok(a, v, 1) ? BC_OK : BC_ST_VALUE;
 }
 
+enum {
+	FF_NONE,
+	FF_RET_MID,
+	FF_RET_NOVAL,
+	FF_RET_SCAN,
+	FF_RET_TYPE,
+	FF_MAXSTMT,
+	FF_SLOT,
+	FF_STMT_OTHER,
+	FF_EMPTY,
+	FF_EXT,
+	FF_N
+};
+
+static long g_ff[FF_N];
+
+static const char *ff_name(int r) {
+	switch (r) {
+	case FF_RET_MID: return "return-not-last";
+	case FF_RET_NOVAL: return "return-no-value";
+	case FF_RET_SCAN: return "return-value-refused";
+	case FF_RET_TYPE: return "return-type";
+	case FF_MAXSTMT: return "statement-budget";
+	case FF_SLOT: return "slot-table-full";
+	case FF_STMT_OTHER: return "statement-unmodelled";
+	case FF_EMPTY: return "no-statement-and-no-return";
+	case FF_EXT: return "extent-conflict";
+	default: return "unexplained";
+	}
+}
+
+static int frame_fail_reason(AstArena *a, AstLocal root) {
+	MccSliceFrame f;
+	AstLocal s;
+	int i;
+	memset(&f, 0, sizeof f);
+	f.a = a;
+	f.root = root;
+	f.ret = AST_NONE;
+	for (s = ast_first_child(a, root); s != AST_NONE; s = ast_next_sib(a, s)) {
+		if (f.ret != AST_NONE)
+			return FF_RET_MID;
+		if (ast_kind(a, s) == AST_Return) {
+			AstLocal rv = ast_first_child(a, s);
+			int rt;
+			if (rv == AST_NONE)
+				return FF_RET_NOVAL;
+			if (!mcc_slice_frame_scan(&f, rv))
+				return f.nslot >= MCC_SLICE_MAXSLOT ? FF_SLOT : FF_RET_SCAN;
+			rt = ast_type_t(a, rv);
+			if (!rt)
+				rt = ast_eval_slice_wtype(a, rv);
+			if (!rt)
+				rt = ast_eval_slice_ftype(a, rv);
+			if (!rt || ast_bad_type(rt))
+				return FF_RET_TYPE;
+			if (!ast_eval_slice_f64t(rt) &&
+					(is_float(rt) || !ast_eval_slice_intt(rt)))
+				return FF_RET_TYPE;
+			if ((ast_eval_slice_ftype(a, rv) != 0) != (ast_eval_slice_f64t(rt) != 0))
+				return FF_RET_TYPE;
+			f.rettype = rt;
+			f.ret = rv;
+			continue;
+		}
+		if (f.nstmt + f.nctrl >= MCC_SLICE_MAXSTMT)
+			return FF_MAXSTMT;
+		if (!mcc_slice_frame_stmt_ok(&f, s, 0))
+			return f.nslot >= MCC_SLICE_MAXSLOT ? FF_SLOT : FF_STMT_OTHER;
+		if (f.ntop < MCC_SLICE_MAXSTMT)
+			f.top[f.ntop++] = s;
+	}
+	if (f.ntop == 0 && f.ret == AST_NONE)
+		return FF_EMPTY;
+	for (i = 0; i < f.ntop; i++)
+		mcc_slice_frame_mark_ptr(&f, f.top[i]);
+	mcc_slice_frame_mark_ptr(&f, f.ret);
+	for (i = 0; i < f.ntop; i++)
+		if (!mcc_slice_frame_mark_ext(&f, f.top[i]))
+			return FF_EXT;
+	if (!mcc_slice_frame_mark_ext(&f, f.ret))
+		return FF_EXT;
+	return FF_NONE;
+}
+
 static void block_cause_walk(AstArena *a, AstLocal n) {
 	AstLocal s;
 	int r = BC_OK, seen = 0;
@@ -5529,41 +5701,70 @@ static void block_cause_walk(AstArena *a, AstLocal n) {
 	}
 	if (!seen)
 		r = BC_EMPTY;
-	if (r == BC_OK)
-		r = BC_CAPACITY;
+	if (r == BC_OK) {
+		r = BC_NOCAUSE;
+		g_ff[frame_fail_reason(a, n)]++;
+	}
 	g_bc[r]++;
 }
 
 static void cond_cause_report(void) {
-	int i;
 	if (!g_cc_blocked)
 		return;
 	printf("condcause: blocked-conditions=%ld\n", g_cc_blocked);
-	for (;;) {
-		long best = 0;
-		int bi = -1;
-		char lbl[96];
-		for (i = 0; i < g_cc_used; i++)
-			if (g_cc_n[i] > best) {
-				best = g_cc_n[i];
-				bi = i;
-			}
-		if (bi < 0)
-			break;
-		cond_cause_label(g_cc_key[bi], lbl, sizeof lbl);
-		printf("condcause: %-52s n=%ld share=%.2f%%\n", lbl, g_cc_n[bi],
-					 100.0 * (double)g_cc_n[bi] / (double)g_cc_blocked);
-		g_cc_n[bi] = 0;
-	}
+	cause_tab_report("condcause", g_cc_key, g_cc_n, g_cc_used, g_cc_blocked,
+									 cond_cause_label);
+}
+
+static void other_cause_report(void) {
+	int i;
+	long sum = 0;
+	if (!g_oc_blocks)
+		return;
+	printf("othercause: other-blocks=%ld blocker-walked=%ld\n", g_oc_blocks,
+				 g_ob_blocks);
+	for (i = 0; i < g_oc_used; i++)
+		sum += g_oc_n[i];
+	printf("othercause: forms-sum=%ld\n", sum);
+	cause_tab_report("othercause", g_oc_key, g_oc_n, g_oc_used, g_oc_blocks,
+									 other_cause_label);
+	if (!g_ob_blocks)
+		return;
+	sum = 0;
+	for (i = 0; i < g_ob_used; i++)
+		sum += g_ob_n[i];
+	printf("otherblocker: blockers-sum=%ld\n", sum);
+	cause_tab_report("otherblocker", g_ob_key, g_ob_n, g_ob_used, g_ob_blocks,
+									 cond_cause_label);
+}
+
+static void frame_fail_report(void) {
+	int i;
+	long sum = 0;
+	for (i = 0; i < FF_N; i++)
+		sum += g_ff[i];
+	if (!sum)
+		return;
+	printf("nocause: blocks=%ld\n", sum);
+	for (i = 0; i < FF_N; i++)
+		if (g_ff[i])
+			printf("nocause: %-30s n=%ld share=%.2f%%\n", ff_name(i), g_ff[i],
+						 100.0 * (double)g_ff[i] / (double)sum);
 }
 
 static void block_cause_report(void) {
 	int i;
-	printf("blockcause: refused-blocks=%ld\n", g_bc_blocks);
+	long sum = 0;
+	printf("blockcause: refused-blocks=%ld unwalked=%ld table-overflow=%ld\n",
+				 g_bc_blocks, g_ref_blocks - g_ref_blocks_acc - g_bc_blocks,
+				 g_cc_dropped);
 	for (i = 1; i < BC_N; i++)
-		if (g_bc[i])
+		if (g_bc[i]) {
+			sum += g_bc[i];
 			printf("blockcause: %-28s n=%ld share=%.2f%%\n", block_cause_name(i),
 						 g_bc[i], g_bc_blocks ? 100.0 * g_bc[i] / g_bc_blocks : 0.0);
+		}
+	printf("blockcause: causes-sum=%ld\n", sum);
 }
 
 static void refuse_walk(AstArena *a, AstLocal n, AstLocal parent, int idx) {
@@ -5900,6 +6101,43 @@ static int g_lax;
  * accepted with nstmt == 0 and mcc_slice_frame_kernel_build refuses it. */
 static long g_frame_slices, g_frame_stmts, g_frame_mismatch;
 static long g_frame_built, g_frame_compared, g_frame_mem;
+
+enum {
+	FD_SEEN,
+	FD_REFUSED,
+	FD_EXT_WIDE,
+	FD_NO_REGION,
+	FD_CPU_BAIL,
+	FD_NO_DEVICE,
+	FD_LOWER_SLOT,
+	FD_LOWER_EMPTY,
+	FD_LOWER_F64,
+	FD_LOWER_EMIT,
+	FD_DISPATCH,
+	FD_DISAGREE,
+	FD_AGREE,
+	FD_N
+};
+
+static long g_fd[FD_N];
+
+static const char *frame_drop_name(int i) {
+	switch (i) {
+	case FD_SEEN: return "funnel-seen";
+	case FD_REFUSED: return "funnel-refused";
+	case FD_EXT_WIDE: return "funnel-extent-over-slot";
+	case FD_NO_REGION: return "funnel-no-device-region";
+	case FD_CPU_BAIL: return "funnel-cpu-reference-bailed";
+	case FD_NO_DEVICE: return "funnel-no-device";
+	case FD_LOWER_SLOT: return "funnel-lower-no-live-in";
+	case FD_LOWER_EMPTY: return "funnel-lower-nothing-to-run";
+	case FD_LOWER_F64: return "funnel-lower-f64-unsupported";
+	case FD_LOWER_EMIT: return "funnel-lower-emit-failed";
+	case FD_DISPATCH: return "funnel-dispatch-failed";
+	case FD_DISAGREE: return "funnel-disagreed";
+	default: return "funnel-agreed";
+	}
+}
 
 #define FRAME_NT MCC_GPU_LOCAL_SIZE
 #define FRAME_PTR_BASE (128 * 1024)
@@ -6572,16 +6810,23 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 		unsupported("frame kernels", "TODO.md §5 stage M2");
 		return;
 	}
-	if (!mcc_slice_frame_from_ast(a, bb, &fr))
+	g_fd[FD_SEEN]++;
+	if (!mcc_slice_frame_from_ast(a, bb, &fr)) {
+		g_fd[FD_REFUSED]++;
 		return;
+	}
 	for (j = 0; j < fr.nslot; j++)
-		if (fr.sextb[j] > FRAME_EXT_SLOT)
+		if (fr.sextb[j] > FRAME_EXT_SLOT) {
+			g_fd[FD_EXT_WIDE]++;
 			return;
+		}
 	g_frame_slices++;
 	g_frame_stmts += fr.nstmt;
 	usemem = (fr.nptr > 0 || fr.next > 0) && g_rw != NULL;
-	if (fr.next > 0 && !usemem)
+	if (fr.next > 0 && !usemem) {
+		g_fd[FD_NO_REGION]++;
 		return;
+	}
 	flt = subtree_has_f64(a, bb, 0);
 	for (t = 0; t < FRAME_NT; t++)
 		for (j = 0; j < fr.nslot; j++)
@@ -6600,14 +6845,24 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 																	 &cdf[t])) {
 			if (usemem)
 				memcpy(g_rw, g_rw_pre, g_rwsz);
+			g_fd[FD_CPU_BAIL]++;
 			return;
 		}
 	if (usemem) {
 		memcpy(g_rw_cpu, g_rw, g_rwsz);
 		memcpy(g_rw, g_rw_pre, g_rwsz);
 	}
-	if (!g_have_device || !mcc_slice_frame_kernel_build(&fr, &k))
+	if (!g_have_device) {
+		g_fd[FD_NO_DEVICE]++;
 		return;
+	}
+	if (!mcc_slice_frame_kernel_build(&fr, &k)) {
+		g_fd[fr.nslot < 1										? FD_LOWER_SLOT
+					: fr.nstmt < 1 && fr.ret == AST_NONE ? FD_LOWER_EMPTY
+					: flt && !mcc_gpu_f64()						 ? FD_LOWER_F64
+																						 : FD_LOWER_EMIT]++;
+		return;
+	}
 	g_frame_built++;
 	if (flt)
 		g_arena_f64_frames++;
@@ -6625,6 +6880,7 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 	if (mcc_slice_run_frame_gpu(&fr, &k, gf, FRAME_NT, grv, gdf) != MCC_TASK_DONE) {
 		mcc_slice_kernel_free(&k);
 		g_frame_mismatch++;
+		g_fd[FD_DISPATCH]++;
 		return;
 	}
 	g_frame_compared++;
@@ -6699,6 +6955,7 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 		}
 		g_frame_mismatch++;
 	}
+	g_fd[bad ? FD_DISAGREE : FD_AGREE]++;
 	mcc_slice_kernel_free(&k);
 }
 
@@ -7334,8 +7591,9 @@ static int arena_mode(const char *path, long limit, int quiet) {
 		memshape_report();
 		block_cause_report();
 		cond_cause_report();
+		other_cause_report();
+		frame_fail_report();
 		return 0;
-		return refuse_report();
 	}
 
 	if (g_census) {
@@ -7387,6 +7645,17 @@ static int arena_mode(const char *path, long limit, int quiet) {
 				 "frame-stmts=%ld frame-mismatches=%ld frame-mem=%ld\n",
 				 g_frame_slices, g_frame_built, g_frame_compared, g_frame_stmts,
 				 g_frame_mismatch, g_frame_mem);
+	{
+		int i;
+		long sum = 0;
+		printf("slicerun: frame-funnel");
+		for (i = 0; i < FD_N; i++) {
+			printf(" %s=%ld", frame_drop_name(i), g_fd[i]);
+			if (i)
+				sum += g_fd[i];
+		}
+		printf(" funnel-drops-sum=%ld\n", sum);
+	}
 	printf("slicerun: invoke-seen=%ld invoke-inlined=%ld leaf-callees=%d\n",
 				 mcc_slice_inl_seen, mcc_slice_inl_n, g_leaf_n);
 	printf("slicerun: depth-guards-emitted=%ld depth-guards-hit=%ld "
@@ -8043,9 +8312,10 @@ int main(int argc, char **argv) {
 	 * nothing at all. A typo in a driver script deserves the same treatment. */
 	if (only) {
 		static const char *const SUITES[] = {
-				"task", "work",  "cpu",        "gpu",    "bytes",  "wide64", "f64",
-				"ops",  "frame", "mem",        "deref",  "fmt",    "fault",  "sched",
-				"ext",  "rwstore", "arrow", "hostimport", "effect"};
+				"task",  "work",   "cpu",	 "gpu",		"bytes",	"wide64",
+				"f64",	 "ops",		"frame", "mem",		"deref",	"fmt",
+				"fault", "sched",	"ext",	 "rwstore", "arrow",	"effect",
+				"hostimport"};
 		size_t si;
 		int known = 0;
 		for (si = 0; si < sizeof SUITES / sizeof SUITES[0]; si++)
