@@ -5,8 +5,9 @@ tile|-O2|loop-block|MCC_AST_TILE_SIZE=7 MCC_DEV=1
 vlat|-O2|loop-vlat|-fnarrow
 ivsr_ptr|-O2|ivopts-ptr|MCC_DEV=1
 # chain-store needs chain-store-live beside it on x86_64/arm64 and a
-# combination of rung-10 rows on i386/riscv64 that no single flag
-# reproduces, so this one reads at the rung rather than naming a parent.
+# combination of rows that no single flag reproduces on i386/riscv64, so this
+# one reads at -O4 -- where the whole consolidated set is on -- rather than
+# naming a parent.
 # relay() is load-bearing and must not be deleted. The flat `a = b = s` shapes
 # stopped differing on i386/riscv64 once rir_to_arena()'s unconditional
 # chained-store collapse was fixed, and that was CORRECT, not a lost pass: the
@@ -16,7 +17,7 @@ ivsr_ptr|-O2|ivopts-ptr|MCC_DEV=1
 # the flag used to be needed for. The pass is still alive there -- a chain that
 # FEEDS a second chain (relay) differs on all four -- so the row still asserts
 # a real effect and would still catch chain-store going quiet.
-chainstore|-O10|chain-store|-
+chainstore|-O4|chain-store|-
 promo_arrow|-O2|promote-arrow|-
 promo_incdec|-O2|promote-incdec|-
 spill_share|-O2|spill-share|-

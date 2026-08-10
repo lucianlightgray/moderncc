@@ -10,10 +10,10 @@ indirect_call|-O2|replay-indirect-call|on
 # in the replay-time graft path, disabled while MCC_AST_INLINE_PASS is on, which
 # it is from -O2. So toggling it changes nothing and this asserts "off" as a
 # TRIPWIRE -- if the graft-path guard is ever fixed this cell fails and should
-# be flipped to "on". arg-forward is now at rung 12, so -O2 would read "off"
+# be flipped to "on". arg-forward sits at rung 4, so -O2 would read "off"
 # for the boring reason that the row is not on the ladder; the cell reads at
-# -O12, where the gate IS on by default and the pass is still inert.
-argfwd|-O12|arg-forward|off
+# -O4, where the gate IS on by default and the pass is still inert.
+argfwd|-O4|arg-forward|off
 # The four rungs that came off the in-development ladder onto a settled level.
 optslice|-O3|opt-slice|off
 optslice_below|-O2|opt-slice|off
@@ -26,9 +26,10 @@ fmov_imm|-O1|fmov-imm|on
 #
 # Each pins BOTH sides of its new boundary, because a single row passes at any
 # level at or below the one it names: the -O3 row says the pass is gone from
-# the top of the shipped ladder, and the rung row says it is still there and
+# the top of the shipped ladder, and the -O4 row says it is still there and
 # has not been silently deleted. tests/optfire/leveltime.tsv carries the
-# measurement each move was made on.
+# measurement each move was made on; -O4 is where every one of them now lives,
+# because the rungs 10-12 they were parked on were consolidated onto it.
 #
 # Five rows carry only the "off at -O3" half. Their gate IS default-on at the
 # rung, but the object stops moving there: a rung turns on every row parked on
@@ -36,28 +37,30 @@ fmov_imm|-O1|fmov-imm|on
 # source, so -fno-<gate> emits the same bytes. The "still fires where parked"
 # half is carried for those by the counter cells in levels.txt, which read the
 # pass firing rather than the emitted bytes and are not masked -- ltemp, pre,
-# reassoc and range each assert ON at their rung there. sethi-ullman-leaf has
+# reassoc and range each assert ON at -O4 there. sethi-ullman-leaf has
 # no counter of its own and is covered by tests/optfire/differs_sub.txt.
 ltemp_below|-O3|tree-loop-im|off
 pre_below|-O3|tree-pre|off
 reassoc_below|-O3|tree-reassoc|off
 sethi_leaf_below|-O3|sethi-ullman-leaf|off
-narrow_elim|-O12|narrow-elim|on
+narrow_elim|-O4|narrow-elim|on
 narrow_elim_below|-O3|narrow-elim|off
-spill_share|-O12|spill-share|on
+spill_share|-O4|spill-share|on
 spill_share_below|-O3|spill-share|off
-vlat|-O11|loop-vlat|on
+vlat|-O4|loop-vlat|on
 vlat_below|-O3|loop-vlat|off
 # promote-leaf-callee is MCC_OPTD_DEV: +3,525 B of .text across 1,937 programs
-# for no measured gain, so a shipped build keeps it off at its own rung 10 and
-# the pair below reads that as the default. The _dev row is the same rung with
-# MCC_DEV=1 and is what un-gating has to restore.
-promo_leaf_callee|-O10|promote-leaf-callee|off
+# for no measured gain, so a shipped build keeps it off and the pair below reads
+# that as the default. Its recorded rung is still 10, but -O10 is an ERROR
+# without MCC_DEV now that nothing ungated lives above -O4, so the shipped half
+# reads at -O4 -- the highest level a shipped build has -- and the _dev row keeps
+# rung 10 under MCC_DEV=1, which is what un-gating has to restore.
+promo_leaf_callee|-O4|promote-leaf-callee|off
 promo_leaf_callee_dev|-O10|promote-leaf-callee|on|MCC_DEV=1
 promo_leaf_callee_below|-O3|promote-leaf-callee|off
-chainstore|-O11|chain-store|on
+chainstore|-O4|chain-store|on
 chainstore_below|-O3|chain-store|off
-select|-O10|if-conversion|on
+select|-O4|if-conversion|on
 select_below|-O3|if-conversion|off
 range_below|-O3|tree-vrp|off
 #

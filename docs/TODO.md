@@ -34,6 +34,15 @@ literally-named cells (`asm/reloc-suffix`; `gpu/spv-mem-binding{,-known-positive
 eight are conditional on Vulkan plus `spirv-val`, or on `objdump`, so the total is
 host-dependent — an arithmetic estimate came out 4 low.
 
+`wt/o4fold` sits unmerged on top of `main` at the `leveldiff` commit, **9535 cells on this
+host — identical to `main`**, no cell added or lost. It consolidates the 26 non-gated
+knobs at rungs 5–12 onto `-O4`, makes `-O5`–`-O12` and `-O14`+ a hard error, keeps `-O13`
+as the search entry, and retargets smoke to `-O0`–`-O4` with the float/`_Complex` tables
+deepened so the value-case total went **up** (6,308,092 → 6,772,291) rather than down.
+**Read its two open items (21 and 22 on the audit board) before reading its green cells**:
+`smoke/native` is green because the `-O13` rows it was failing on are no longer measured,
+and the deepening surfaced a real `_Float16` conformance defect.
+
 Three machines share this branch: this one (Linux/Vulkan), a Windows box and a Mac box.
 Both peers were idle through this wave.
 
@@ -972,6 +981,165 @@ per-corpus, not per-file, so it never showed. Arming it is one `-I` each — and
 byte divergences the gate is masking, not this branch's; arming the cells is a separate
 decision with three defects behind it.
 
+## Landed — `-O4` is the consolidation, `-O5`–`-O12` are an error, and smoke stops at `-O4`, 2026-08-10 (`wt/o4fold`)
+
+**The consolidation set is 26 knobs, derived from `src/mccopt.h`, not from the inventory's
+arithmetic.** Every non-`MCC_OPTD_DEV` row that sat at a level in 5–12 moved to
+`MCC_OPTD_LEVEL(4)`:
+
+| rung it left | knobs |
+| --- | --- |
+| **10** (7) | `chain-store-live`, `if-conversion`, `narrow`, `sethi-ullman`, `sethi-ullman-leaf`, `tree-reassoc`, `tree-vrp` |
+| **11** (10) | `chain-store`, `chain-store-member`, `gcse-join`, `loop-vlat`, `sethi-ullman-nary`, `tree-ccp-iterate`, `tree-const-load`, `tree-copy-prop`, `tree-loop-im`, `tree-switch-conversion` |
+| **12** (9) | `arg-forward`, `call-window`, `gcse`, `narrow-elim`, `optimize-sibling-calls`, `spill-share`, `tree-dse`, `tree-pre`, `zero-initialized-in-bss` |
+
+The **ten gated level rows keep their recorded rungs** — `xmm-hi` (5), `ivopts-ptr` (6),
+`opt-perfn-inproc` (8), `opt-slice` (9), `promote-leaf-callee` (10), `narrow-fix` and
+`opt-cycle` (11), `loop-block`, `loop-fusion` and `loop-interchange` (12) — because
+`MCC_OPTD_DEV` wraps a class rather than replacing it and `MCC_DEV=1` is what reaches
+them. `tests/optfire/levelpins.txt` independently produced the same 26/6 split from its
+own rows, which is the cross-check that the list is the table's and not a transcription.
+
+### The measurement, re-taken on the real tree
+
+3,969 subjects — 1,693 `gcc.c-torture/execute`, 1,745 `llvm-test-suite-regression-c`,
+307 `tests/exec` — compiled `-c` by a pristine `main` build and by this one, `.text`
+summed over the 3,867 that produce an object, CPU time summed over all children:
+
+| | `.text` | CPU | vs today's `-O4` |
+| --- | --- | --- | --- |
+| today's `-O4` (`main`) | 8,083,843 B | 9.70 s | — |
+| today's `-O12` (`main`) | 8,073,007 B | 9.99 s | −10,836 B, 1.030x |
+| **consolidated `-O4`** | **8,073,007 B** | **9.94 s** | **−10,836 B, 1.025x** |
+
+**The inventory's 1.04x is confirmed (1.025x here); its −3,973 B is corrected to
+−10,836 B** — the same sign and the same claim, nearly three times the size, on a corpus
+2.5x larger than the one the inventory used. Consolidated `-O4` and today's `-O12` are
+**byte-identical on 3,866 of 3,867 objects**; the single exception is
+`tests/exec/preprocessor/predefined_macros.c`, which embeds `__DATE__`/`__TIME__` and so
+differs between any two builds made minutes apart. Consolidated `-O4` *is* `-O12`.
+
+### `-O5`–`-O12` are an error, and the parse is bounded
+
+`opt_level_top()` walks `MCC_OPT_LIST` and returns the highest level an *enabled* knob is
+reached by — gated rows count only under `MCC_DEV`. `opt_level_reject()` then refuses
+anything strictly between that and `MCC_OPT_SEARCH_LEVEL`, and anything above the search
+rung. Both bounds are derived, so splitting or folding a rung moves the diagnostic with
+the table.
+
+```
+-O4   ok      -O13  ok (the search)
+-O5   error: '-O5' reaches no optimization this build can enable: every knob above -O4
+             is experimental and gated behind MCC_DEV, so -O5 would compile exactly as
+             -O4 and silently claim to be more. Use -O4, or -O13 to search; set
+             MCC_DEV=1 in the environment to reach -O5 through -O12
+-O14  error: '-O14' is not an optimization level: this build has -O0 through -O4, and
+             -O13, the optimization search
+MCC_DEV=1 -O5 .. -O12  ok      MCC_DEV=1 -O14  error
+```
+
+A warning was not enough and the reason is countable: **28 optfire assertions would have
+gone green-but-vacuous under a silent clamp** — 9 rows of `levels.txt`, 9 of
+`counters.txt`, 7 of `defstate.txt` and 3 across `differs.txt`/`differs_sub.txt` each
+assert a counter is ON at `-O10`/`-O11`/`-O12` and would have re-targeted `-O4` and kept
+passing. That is the `defstate` defect verbatim: *"cannot tell 'off by default' from
+'does not exist'"*. It also closes the old silent clamp at 255, which accepted `-O200`
+with no diagnostic at all.
+
+`flagsweep/dev-gate` now derives the band instead of spelling `5 6 7 8 9`, requires a
+**refusal** rather than a notice, and additionally pins that `-O4` and `-O13` still
+compile and that `-O14` does not — otherwise the refusal would be indistinguishable from
+a driver that rejects every numeric level. Its twin, which re-runs the refusal phase with
+`MCC_DEV=1` in the environment, goes from **17 violations to 20** (12 flags + 8 levels).
+
+### Smoke stops at `-O4`, and the case count went UP
+
+`tools/smokerun.c` derives its ceiling the same way the driver does. Levels 0–13 were
+16 compiled binaries; 0–4 are 7. **That alone cut value cases from 6,308,092 to
+2,759,779, a 56% loss, and dropping levels must not mean dropping coverage**, so the
+shallowest tables were deepened until the total came back over the old number:
+
+| | before | after |
+| --- | --- | --- |
+| `smf_corpus` (long double) | 18 | **76** |
+| `SMF_OPS` | 14 | **24** — +`FMULADD`, `FDIVSEL`, `FMIN3`, `FNEST`, `FSCALE`, `FSUBABS`, `FSELIC`, `FSELMIXB`, `FSELMIXN`, `FCMPMIX` |
+| float sweep (`F16`/`F32`/`F64`/`long double`) | 18,144 | **554,496** |
+| `_Complex` | 6 golden rows, **no sweep** | 8 ops x 2 types x 48² = **36,864**, plus the rows |
+| **total value cases** | **6,308,092** | **6,772,291** |
+
+`--min-cases` is re-banked 6,300,000 → **6,700,000**. The mixed int/float ternary family
+is where most of the new op shapes went, because it is the shape nothing in the tree
+covered before this week.
+
+**The deepening immediately found a defect.** Four new `smoke/divergence` categories,
+all `diverge-both` (mcc against *both* gcc and clang, which agree with each other):
+`fsweep.F16.FMULADD.{fold,run}` and `fsweep.F16.FSCALE.{fold,run}`. **mcc does not round a
+`_Float16` intermediate back to `_Float16` between the operations of a compound
+expression.** Reduced: `2.25f16 * 255.0f16 + 0.5f16` reads `0x607c` on both references and
+`0x607d` here, one ULP apart, on 8 of 1,728 probed triples — mcc single-rounds through
+`float` where gcc and clang round per operation. The four rows are banked in
+`tests/smoke/bails.txt` **with the finding written above them**, not trimmed away; the
+ratchet fails if they stop diverging, so they cannot outlive the fix. This is an open
+item, listed below.
+
+### The bank rows that were dropped, and why that is NOT an improvement
+
+`smoke/native` **fails on `main` on this host**: `O13 replay-fallback:len` rose 18 → 42
+and `:bytes` rose 3 → 7 when the tick redesign made one tick *finish* the search instead
+of abandoning it at 13 s, so more bodies diverge in bytes and fall back. Value digests are
+identical at every level; no answer changed.
+
+Retargeting to `0..4` **stopped measuring those categories**. Twenty rows left
+`tests/smoke/bails.txt`: `O5`–`O12 replay-fallback:{bytes,len}` (16), `O13
+replay-fallback:{bytes,len}` (2), and `O9 slice-refused:{all-undefined,no-static-type}`
+(2, re-keyed to `O4` — the slice census moved to the top shipped rung; `no-static-type`
+reads 168 rather than 164 because the subject itself grew, not because refusals rose).
+The tool printed eight `IMPROVED … fell N -> 0` lines while doing it.
+
+**Every one of those was a lie of omission and none of them is recorded as a win.**
+`smoke/native` is green in this branch because the rows it was failing on are no longer
+measured, not because the regression behind them was fixed. The regression is still
+there, at `-O13`, unmeasured. It is filed as an open item below. *A ratchet that gets
+greener because you stopped looking is the failure this tree spent the week correcting.*
+
+### Every cell and script that had to change
+
+| file | what | count |
+| --- | --- | --- |
+| `src/mccopt.h` | rows 5–12 → 4 | **26** |
+| `src/libmcc.c` | `opt_level_dev_note` → `opt_level_top` + `opt_level_reject`; the 255 clamp deleted | 1 fn replaced, 1 call site |
+| `tests/optfire/levels.txt` | `-O10`/`-O11`/`-O12` → `-O4:on`, boundary still pinned by `-O3:off` | **9 rows** |
+| `tests/optfire/counters.txt` | rung → `-O4` | **9 rows** |
+| `tests/optfire/defstate.txt` | rung → `-O4`; `promo_leaf_callee` shipped half moved to `-O4`, `_dev` half keeps `-O10` under `MCC_DEV=1` | **7 rows** |
+| `tests/optfire/differs.txt` | `chainstore` `-O10` → `-O4` | **1 row** |
+| `tests/optfire/differs_sub.txt` | `ident_shift` `-O12`, `narrow_elim` `-O11` → `-O4` | **2 rows** |
+| `tests/optfire/levelpins.txt` | rungs 10/11/12 → 4, six gated rows kept; the three section headers become "was rung N" and keep their pricing | **26 rows** |
+| `tests/optfire/leveldiff-known.txt` | `1-12` → `1-4` | **12 rows** |
+| `tests/optfire/cdelta.txt` | prose (`-O10` → `-O4`) | 1 line |
+| `tests/optfire/flagsweep.sh` | `devgate` band derived, refusal required, `-O4`/`-O13`/`-O14` pinned | 1 mode |
+| `CMakeLists.txt` | `--levels 0..12` → `0,1,2,3,4`; `exec-chainlive` `MCC_TEST_OPT=-O11` → `-O4`; `--min-cases` 6.3M → 6.7M (2 cells) | **4 sites** |
+| `tests/cli/cases.h` | `unreferenced_static_inline_is_not_emitted` `-O7`/`-O12` → `-O4`/`-O13`, expected stdout with it | **1 case** |
+| `tests/superopt/global-reload.sh` | loop `0..12` → `0..4`, PASS text | 2 lines |
+| `tools/smokerun.c` | `SMK_MAXLEVEL` → derived `smk_maxlevel()`; slice census and both device compiles `-O9` → the derived top | 6 sites |
+| `tests/smoke/{fcases.h,subject.c}` | the deepening above | 2 files |
+| `tests/smoke/bails.txt` | 20 rows dropped, 2 re-keyed, 4 `_Float16` rows banked with their finding | 215 rows |
+| `tools/leveldiff.py` | default `--levels` → `0,1,2,3,4` | 1 line |
+| `tests/must-run.txt`, `README.md`, `tools/opt-search-determinism.py` | prose | 4 lines |
+
+`tests/cli/cases.h`'s `xmm_hi_promoted_float_store_to_global` keeps `-O5` **unchanged**:
+it already runs under `MCC_DEV=1`, where `-O5` is exactly as live as it was.
+
+### Validation
+
+`cmake-cross` built before `cmake-debug` was configured. **`ctest -N` = 9535, identical to
+`main`** — no cell was added or lost.
+
+- `ctest -R "^smoke/"` — **7/7**, 6,772,291 value cases, device and divergence arms included.
+- `optlevel/torture-differential` — **0 unknown divergences, 0 stale rows**, 12 known rows over `-O1`–`-O4`. Its twin still catches a mutated `-O0` answer. 3.7 s, down from 25 s.
+- `ctest -R "optfire|flagsweep|stratsweep|cli|census"` — **920/920**.
+- `flagsweep/dev-gate` and its twin — pass; the twin reports 20 violations when disarmed.
+- `superopt|exec-chainlive|fmt/|ast/|idiom|opt-determinism|regression|fuzz/o4|leveldiff|optbench` — **165/166**. The one red is `regression/o4-aot-jit`, and it **reproduces identically on an unmodified `main`** built from the same source in the same session: `wall=2.55s evaluated=12672 range_gate_lines=35`, `Part1 FAIL: wall 2.55s outside 3..60s`, the same three numbers. It is a host-speed floor in that cell, not this branch.
+
 ## Landed — two miscompiles in the `-O4` consolidation band, and the instrument that found them, 2026-08-10 (`wt/o4bugs`, unmerged)
 
 Four commits. Both defects were live in the band being folded into `-O4`, both were
@@ -1020,18 +1188,21 @@ third item.
 
 `optlevel/torture-differential` compiles and runs all 1693 `gcc.c-torture/execute`
 programs at `-O0` to fix a reference (exit code + sha256 of stdout), drops the 85 the
-reference sweep cannot use, and repeats at `-O1`–`-O12`. **~1 s per level at `--jobs 32`,
-25 s for the cell.** `-O13` is excluded on purpose: `optimize_search_seconds` makes that
-one level a 687-second sweep. Against the two fixes reverted it reports 14 unknown
-divergences and nothing else, which is the whole of what it was built to catch.
+reference sweep cannot use, and repeats at `-O1`–`-O4`. **~1 s per level at `--jobs 32`,
+3.7 s for the cell** since `wt/o4fold` folded `-O5`–`-O12` into `-O4`; it was 25 s over
+thirteen levels. `-O13` is excluded on purpose: the search rung makes that one level a
+sweep of its own. Against the two fixes reverted it reports 14 unknown divergences and
+nothing else, which is the whole of what it was built to catch.
 
 Note what did *not* exist before it: `slice/cref-oracle-gcc-c-torture-execute` consumes
 the same corpus, but as a GPU conformance oracle against clang. Nothing compared mcc at
 `-On` against mcc at `-O0`.
 
-`tests/optfire/leveldiff-known.txt` starts at fourteen rows. Five are
-`link_error()`/`link_failure()` missed-optimization markers and are not wrong answers.
-**The other eight are, and they are the open item:**
+`tests/optfire/leveldiff-known.txt` started at fourteen rows and is now **twelve**: the
+two computed-`goto` rows went stale and were dropped, and every surviving row's range
+reads `1-4` rather than `1-12`. Five are `link_error()`/`link_failure()`
+missed-optimization markers and are not wrong answers. **The other six are, and they are
+the open item:**
 
 | program | first level | how it fails |
 | --- | --- | --- |
@@ -1041,14 +1212,13 @@ the same corpus, but as a GPU conformance oracle against clang. Nothing compared
 | `fprintf-chk-1.c` | `-O1` | same family |
 | `vprintf-chk-1.c` | `-O1` | same family |
 | `vfprintf-chk-1.c` | `-O1` | same family |
-| `920302-1.c` | `-O6` | SIGSEGV; computed `goto` over a static table of label differences |
-| `comp-goto-1.c` | `-O6` | SIGILL at `-O6`–`-O10`, SIGSEGV at `-O11`–`-O12`; computed-`goto` interpreter loop |
 
-Six of these are at `-O1`, which ships. The last two are inside the `-O4` consolidation
-band and were not in the brief that started this branch — they are additional to the two
-defects fixed above, and consolidation should decide about them before folding `-O6` in.
-`return-addr.c` is the fourteenth row and is not a defect: it prints the addresses of its
-own locals, so its stdout can never agree across levels.
+All six are at `-O1`, which ships. The two computed-`goto` rows that used to sit here
+(`920302-1.c`, `comp-goto-1.c`, both first failing at what was then `-O6`) are **gone** —
+they stopped diverging, the cell said so, and they were dropped at the `leveldiff` commit
+before consolidation folded that band away. `return-addr.c` is the twelfth row and is not
+a defect: it prints the addresses of its own locals, so its stdout can never agree across
+levels.
 
 A row that stops diverging fails the cell as loudly as a new divergence, so the table
 cannot rot into lost coverage.
@@ -10033,6 +10203,32 @@ Ordered by how much a currently-quoted number depends on it.
     `subprocess.run` calls use `check=True`. Its one hand-pinned constant, the `["-lm",
     "-ldl"]` fallback when `selfhost-link-libs.txt` is absent, produces a loud link failure
     rather than a wrong number.
+
+21. **The `-O13` `replay-fallback` regression is now UNMEASURED, and `smoke/native` went
+    green because of that and not because it was fixed.** On `main` this cell fails: `O13
+    replay-fallback:len` rose 18 → 42 and `:bytes` rose 3 → 7 when `wt/o4ticks` made one
+    tick *finish* the search instead of abandoning it at 13 s, so more bodies diverge in
+    bytes and fall back to the interpreter. Value digests are identical at every level, so
+    no answer changed — it is a fidelity regression, not a miscompile. `wt/o4fold`
+    retargeted smoke to `-O0`–`-O4`, which **stopped measuring `-O13` at all**; twenty rows
+    left `tests/smoke/bails.txt`, the tool printed eight `IMPROVED … fell N -> 0` lines,
+    and the cell is now green. **None of that is an improvement.** The defect is still
+    there, at the one level nothing now watches. Two ways out, and one of them has to be
+    taken: give the search tier its own smoke arm with its own bank (the honest fix — the
+    search rung is a different subject from the value ladder and needs its own ratchet), or
+    put `-O13` back in the main arm and re-bank the two rows red with a reason. Until then
+    the search tier has **no bail ratchet at all**.
+22. **mcc does not round `_Float16` intermediates back to `_Float16` between the operations
+    of a compound expression.** Found the day `wt/o4fold` deepened the float sweep — nothing
+    in the tree had asked a multi-step `_Float16` question before, which is exactly why the
+    deepening was spent there. `2.25f16 * 255.0f16 + 0.5f16` reads `0x607c` on gcc **and**
+    clang, which agree, and `0x607d` here: mcc single-rounds through `float` where both
+    references round per operation. 8 of 1,728 probed triples differ, always by one ULP.
+    gcc documents per-operation rounding for `_Float16` on x86 without AVX512-FP16, so mcc
+    is the outlier and this is a conformance defect, not a tolerance. Four
+    `diverge-both:fsweep.F16.{FMULADD,FSCALE}.{fold,run}` rows are banked in
+    `tests/smoke/bails.txt` with the finding written above them; the ratchet fails if they
+    stop diverging, so they cannot outlive the fix. Delete all four when it lands.
 
 #### Clean bills of health, because those are results too
 

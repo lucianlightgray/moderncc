@@ -9,9 +9,28 @@
 #include <signal.h>
 #endif
 
-#define SMK_MAXLEVEL MCC_OPT_SEARCH_LEVEL
 #define SMK_MAXCAT 4096
 #define SMK_MAXBANK 4096
+
+static int smk_maxlevel(void)
+{
+	static const int dflt[] = {
+#define MCC_OPT_ROW(id, name, d) (d),
+			MCC_OPT_LIST(MCC_OPT_ROW)
+#undef MCC_OPT_ROW
+	};
+	int i, top = 0;
+	for (i = 0; i < MCC_OPT_COUNT; i++) {
+		int d = dflt[i];
+		if (MCC_OPTD_IS_DEV(d))
+			continue;
+		if (!MCC_OPTD_IS_LEVEL(d))
+			continue;
+		if (MCC_OPTD_LEVEL_OF(d) > top)
+			top = MCC_OPTD_LEVEL_OF(d);
+	}
+	return top;
+}
 
 static const char *g_mcc;
 static const char *g_srcdir;
@@ -840,8 +859,8 @@ static int device_probe(char *devname, size_t dn, long *dispatches)
 	ts_path(out, sizeof out, g_work, "run-devcpu.txt");
 	snprintf(devname, dn, "%s", "?");
 	*dispatches = 0;
-	if (!compile_subject(9, exe, log, tsv, &ms, 0, 0, 0)) {
-		bad("device arm: the plain -O9 reference compile failed");
+	if (!compile_subject(smk_maxlevel(), exe, log, tsv, &ms, 0, 0, 0)) {
+		bad("device arm: the plain -O%d reference compile failed", smk_maxlevel());
 		return -1;
 	}
 	run_subject(exe, g_poison ? "--poison" : "", out);
@@ -858,7 +877,7 @@ static int device_probe(char *devname, size_t dn, long *dispatches)
 	ts_path(log, sizeof log, g_work, "compile-dev.log");
 	ts_path(tsv, sizeof tsv, g_work, "rir-dev.tsv");
 	ts_path(out, sizeof out, g_work, "run-dev.txt");
-	if (!compile_subject(9, exe, log, tsv, &ms, 1, 0, 0)) {
+	if (!compile_subject(smk_maxlevel(), exe, log, tsv, &ms, 1, 0, 0)) {
 		char *l = slurp(log);
 		bad("device arm: the compile failed under MCC_AST_EVAL_LADDER_GPU:\n%s", l);
 		free(l);
@@ -1099,7 +1118,7 @@ static void usage(void)
 int main(int argc, char **argv)
 {
 	char bankpath[1024] = "";
-	int maxlevel = SMK_MAXLEVEL;
+	int maxlevel = smk_maxlevel();
 	int i, do_div = 0, do_dev = 0, known_pos = 0, do_slice = 0;
 	char d0[32] = "", dn[32] = "";
 
@@ -1148,8 +1167,8 @@ int main(int argc, char **argv)
 	if (!bankpath[0])
 		snprintf(bankpath, sizeof bankpath, "%s/tests/smoke/bails.txt", g_srcdir);
 
-	if (maxlevel < 0 || maxlevel > SMK_MAXLEVEL)
-		maxlevel = SMK_MAXLEVEL;
+	if (maxlevel < 0 || maxlevel > smk_maxlevel())
+		maxlevel = smk_maxlevel();
 
 	if (do_div) {
 		bank_load(bankpath);
@@ -1163,7 +1182,7 @@ int main(int argc, char **argv)
 
 	if (do_slice) {
 		bank_load(bankpath);
-		slice_census(9);
+		slice_census(smk_maxlevel());
 		own("slice-");
 		ratchet(bankpath);
 		return g_fail ? 1 : 0;

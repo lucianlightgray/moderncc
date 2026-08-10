@@ -444,6 +444,7 @@ int main(int argc, char **argv)
 	nsweep += smb_sweep(&g_digest);
 	g_dpart[2] = g_digest;
 	nf += smf_sweep(&g_digest);
+	nf += smc_sweep(&g_digest);
 	nmsweep = sm_msweep();
 	g_dpart[3] = g_digest;
 

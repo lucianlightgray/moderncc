@@ -77,7 +77,7 @@ def main(argv):
     ap.add_argument("--mcc", required=True, help="the compiler under test")
     ap.add_argument("--corpus", required=True, help="directory of self-checking .c programs")
     ap.add_argument("--work", required=True, help="scratch directory for objects and binaries")
-    ap.add_argument("--levels", default="0,1,2,3,4,5,6,7,8,9,10,11,12",
+    ap.add_argument("--levels", default="0,1,2,3,4",
                     help="comma-separated -O levels; the first is the reference")
     ap.add_argument("--known", default="", help="table of divergences that predate this cell")
     ap.add_argument("--cflags", default="-w,-std=gnu11,-lm", help="comma-separated flags")

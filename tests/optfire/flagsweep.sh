@@ -13,12 +13,16 @@
 #   devgate       every MCC_OPTD_DEV row is REFUSED in the -f spelling without
 #                 MCC_DEV, with a message naming the flag and MCC_DEV; accepted
 #                 with MCC_DEV=1; and accepted in the -fno- spelling either way.
-#                 Every other row is unaffected. -O5..-O9 reach only gated knobs
-#                 and must say so instead of quietly compiling as -O4. Silence
-#                 is the failure this exists for: an unknown -f is a warning the
-#                 driver exits 0 on, so a gate that merely dropped the row would
-#                 turn every gated flag into a no-op nothing could tell from a
-#                 typo. The count is derived, never written down here.
+#                 Every other row is unaffected. Every level above the highest
+#                 ungated rung and below the search level reaches only gated
+#                 knobs and must be a hard ERROR naming MCC_DEV instead of
+#                 quietly compiling as that rung. Silence is the failure this
+#                 exists for: an unknown -f is a warning the driver exits 0 on,
+#                 so a gate that merely dropped the row would turn every gated
+#                 flag into a no-op nothing could tell from a typo, and a level
+#                 that clamped would make every counter assertion above the rung
+#                 green-but-vacuous. Both bounds are derived from src/mccopt.h,
+#                 never written down here.
 #
 #   exec <flag>   turn the flag on, and off, and check the program still
 #                 computes the right answer. -O0 with the flag untouched is the
@@ -119,6 +123,18 @@ flags_from_table() {
 dev_flags_from_table() {
 	sed -n 's/^	MCC_OPT_ROW([A-Z0-9_]*, *"\([a-z0-9-]*\)", *MCC_OPTD_DEV(.*/\1/p' \
 		"$S/src/mccopt.h"
+}
+
+# The highest -O an ungated knob is reached by, and the search rung. Everything
+# strictly between them is gate-only. Both come out of src/mccopt.h so this cell
+# cannot drift from the table the driver derives its own bounds from.
+top_ungated_level() {
+	sed -n 's/^	MCC_OPT_ROW([A-Z0-9_]*, *"[a-z0-9-]*", *MCC_OPTD_LEVEL(\([0-9]*\)).*/\1/p' \
+		"$S/src/mccopt.h" | sort -n | tail -1
+}
+
+search_level() {
+	sed -n 's/^#define MCC_OPT_SEARCH_LEVEL \([0-9]*\).*/\1/p' "$S/src/mccopt.h"
 }
 
 is_dev_flag() {
@@ -261,22 +277,52 @@ devgate)
 				{ echo "FAIL -f$f: refused without MCC_DEV, but it is not an MCC_OPTD_DEV row: $out"; bad=$((bad + 1)); }
 		fi
 	done
-	# A rung whose only knobs are gated must say so rather than quietly
-	# compiling as the rung below it. -O4 is the highest ungated rung, so
-	# -O5..-O9 are the levels that become silent no-ops.
-	for lvl in 5 6 7 8 9; do
-		out=$("$MCC" -B"$BDIR" -I"$IDIR" "-O$lvl" -c "$WORK/a.c" -o "$WORK/a.o" 2>&1)
-		case "$out" in
-		*MCC_DEV*) ;;
-		*) echo "FAIL -O$lvl: reaches only gated knobs but said nothing: $out"; bad=$((bad + 1)) ;;
-		esac
-		out=$(MCC_DEV=1 "$MCC" -B"$BDIR" -I"$IDIR" "-O$lvl" -c "$WORK/a.c" -o "$WORK/a.o" 2>&1)
-		case "$out" in
-		*MCC_DEV*) echo "FAIL -O$lvl: still reported as gate-only with MCC_DEV=1: $out"; bad=$((bad + 1)) ;;
-		esac
+	# A rung whose only knobs are gated must REFUSE rather than quietly
+	# compiling as the rung below it. A silent clamp is what makes a counter
+	# assertion at a level nothing reaches read as green, which is the exact
+	# defect filed against defstate: "off by default" indistinguishable from
+	# "does not exist". Bounds derived, so consolidating or splitting a rung
+	# moves this loop with the table.
+	top=$(top_ungated_level); srch=$(search_level)
+	[ -n "$top" ] && [ -n "$srch" ] ||
+		{ echo "FAIL flagsweep-devgate: could not derive the level bounds from src/mccopt.h"; exit 1; }
+	[ "$top" -lt "$srch" ] ||
+		{ echo "FAIL flagsweep-devgate: the highest ungated rung -O$top is not below the search level -O$srch, so there is no gate-only band and this loop would check nothing"; exit 1; }
+	nlvl=0; lvl=$((top + 1))
+	while [ "$lvl" -lt "$srch" ]; do
+		nlvl=$((nlvl + 1))
+		out=$("$MCC" -B"$BDIR" -I"$IDIR" "-O$lvl" -c "$WORK/a.c" -o "$WORK/a.o" 2>&1) && ok=1 || ok=0
+		if [ "$ok" = 1 ]; then
+			echo "FAIL -O$lvl: reaches only gated knobs but compiled anyway; a level that clamps makes every assertion above -O$top vacuous"
+			bad=$((bad + 1))
+		else
+			case "$out" in
+			*MCC_DEV*) ;;
+			*) echo "FAIL -O$lvl: refused, but the message does not name MCC_DEV: $out"
+			   bad=$((bad + 1)) ;;
+			esac
+		fi
+		MCC_DEV=1 "$MCC" -B"$BDIR" -I"$IDIR" "-O$lvl" -c "$WORK/a.c" -o "$WORK/a.o" >"$WORK/dg.out" 2>&1 ||
+			{ echo "FAIL -O$lvl: still refused with MCC_DEV=1: $(cat "$WORK/dg.out")"; bad=$((bad + 1)); }
+		lvl=$((lvl + 1))
 	done
+	[ "$nlvl" -gt 0 ] ||
+		{ echo "FAIL flagsweep-devgate: the gate-only band is empty, so no level was checked"; exit 1; }
+	# The search rung and the top ungated rung must both still compile, or the
+	# refusal above would be indistinguishable from a driver that rejects every
+	# numeric level.
+	for lvl in "$top" "$srch"; do
+		"$MCC" -B"$BDIR" -I"$IDIR" "-O$lvl" -c "$WORK/a.c" -o "$WORK/a.o" >"$WORK/dg.out" 2>&1 ||
+			{ echo "FAIL -O$lvl: refused, but it is not in the gate-only band: $(cat "$WORK/dg.out")"; bad=$((bad + 1)); }
+	done
+	# And one past the search rung must be refused too: an unbounded parse used
+	# to clamp silently at 255.
+	if "$MCC" -B"$BDIR" -I"$IDIR" "-O$((srch + 1))" -c "$WORK/a.c" -o "$WORK/a.o" >"$WORK/dg.out" 2>&1; then
+		echo "FAIL -O$((srch + 1)): accepted; the level parse is unbounded above the search rung"
+		bad=$((bad + 1))
+	fi
 	[ "$bad" -eq 0 ] || { echo "FAIL flagsweep-devgate: $bad violation(s)"; exit 1; }
-	echo "PASS flagsweep-devgate: $ngate gated flags refused without MCC_DEV and accepted with it, $nplain ungated flags unaffected, -O5..-O9 report the gate"
+	echo "PASS flagsweep-devgate: $ngate gated flags refused without MCC_DEV and accepted with it, $nplain ungated flags unaffected, -O$((top + 1))..-O$((srch - 1)) ($nlvl levels) error and name the gate, -O$top and -O$srch compile, -O$((srch + 1)) is refused"
 	;;
 exec)
 	[ -n "$ARG" ] || { echo "FAIL flagsweep-exec: no flag given"; exit 2; }

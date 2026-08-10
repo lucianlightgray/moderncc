@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproducibility gate for the -O search tier (-O13 and up).
+"""Reproducibility gate for the -O search tier (-O13, the one search rung).
 
 The search tier used to be driven by a wall-clock budget: MCC_OPT_SEARCH_LEVEL
 made `-O<n>` mean "search for n seconds", so the optimizer stopped wherever the

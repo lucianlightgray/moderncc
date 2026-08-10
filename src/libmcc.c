@@ -2537,31 +2537,42 @@ static int set_flag(MCCState *s, const FlagDef *flags, const char *name) { MCC_T
 	return ret;
 }
 
-static void opt_level_dev_note(MCCState *s1) { MCC_TRACE("enter\n");
+static int opt_level_top(void) { MCC_TRACE("enter\n");
 	static const int dflt[] = {
 #define MCC_OPT_ROW(id, name, d) (d),
 			MCC_OPT_LIST(MCC_OPT_ROW)
 #undef MCC_OPT_ROW
 	};
-	int i, lvl = s1->optimize_level, top = 3;
-	if (lvl <= 4 || lvl >= MCC_OPT_SEARCH_LEVEL || mcc_dev_enabled())
-		{ MCC_TRACE("br\n"); return; }
+	int i, dev = mcc_dev_enabled(), top = 0;
 	for (i = 0; i < MCC_OPT_COUNT; i++) { MCC_TRACE("br\n");
-		int n;
-		if (MCC_OPTD_IS_DEV(dflt[i]) || !MCC_OPTD_IS_LEVEL(dflt[i]))
+		int d = dflt[i];
+		if (MCC_OPTD_IS_DEV(d) && !dev)
 			{ MCC_TRACE("br\n"); continue; }
-		n = MCC_OPTD_LEVEL_OF(dflt[i]);
-		if (n <= lvl && n > top)
-			{ MCC_TRACE("br\n"); top = n; }
+		d = MCC_OPTD_BASE(d);
+		if (!MCC_OPTD_IS_LEVEL(d))
+			{ MCC_TRACE("br\n"); continue; }
+		if (MCC_OPTD_LEVEL_OF(d) > top)
+			{ MCC_TRACE("br\n"); top = MCC_OPTD_LEVEL_OF(d); }
 	}
-	if (top >= lvl)
-		{ MCC_TRACE("br\n"); return; }
-	mcc_warning_c(warn_unsupported_option)(
-			"-O%d reaches no optimization this build can enable: every knob first "
-			"reached above -O%d is experimental and gated behind MCC_DEV, so -O%d "
-			"here compiles exactly as -O%d. Set MCC_DEV=1 in the environment to "
-			"enable them",
-			lvl, top, lvl, top);
+	return top;
+}
+
+static int opt_level_reject(MCCState *s1, const char *spelling, unsigned lvl) { MCC_TRACE("enter\n");
+	int top = opt_level_top();
+	if (lvl <= (unsigned)top || lvl == MCC_OPT_SEARCH_LEVEL)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (lvl > MCC_OPT_SEARCH_LEVEL)
+		{ MCC_TRACE("br\n"); return mcc_error_noabort(
+					"'-O%s' is not an optimization level: this build has -O0 through -O%d, "
+					"and -O%d, the optimization search",
+					spelling, top, MCC_OPT_SEARCH_LEVEL); }
+	return mcc_error_noabort(
+			"'-O%s' reaches no optimization this build can enable: every knob above -O%d "
+			"is experimental and gated behind MCC_DEV, so -O%s would compile exactly as "
+			"-O%d and silently claim to be more. Use -O%d, or -O%d to search; set MCC_DEV=1 "
+			"in the environment to reach -O%d through -O%d",
+			spelling, top, spelling, top, top, MCC_OPT_SEARCH_LEVEL, top + 1,
+			MCC_OPT_SEARCH_LEVEL - 1);
 }
 
 static const char dumpmachine_str[] =
@@ -3306,9 +3317,10 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			if (optarg[0] == '\0')
 				{ MCC_TRACE("br\n"); s->optimize = 1, s->optimize_level = 1; }
 			else if (isnum(optarg[0])) { MCC_TRACE("br\n");
-				unsigned lvl = (unsigned)atoi(optarg);
-				if (lvl > 255)
-					{ MCC_TRACE("br\n"); lvl = 255; }
+				unsigned long got = strtoul(optarg, NULL, 10);
+				unsigned lvl = got > 255 ? 255u : (unsigned)got;
+				if (opt_level_reject(s, optarg, lvl) < 0)
+					{ MCC_TRACE("br\n"); return -1; }
 				s->optimize_level = (unsigned char)lvl;
 				s->optimize = (unsigned char)(lvl > 3 ? 3 : lvl);
 				if (lvl >= MCC_OPT_SEARCH_LEVEL) { MCC_TRACE("br\n");
@@ -3418,7 +3430,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		x = 0, r = 0;
 		goto extra_action;
 	}
-	opt_level_dev_note(s);
 	if (!empty)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (MCC_VTIER(s->verbose) == MCC_V2)
