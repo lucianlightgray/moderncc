@@ -1132,7 +1132,7 @@ static int so_fn_hashes(const char *path, struct so_fn *fns, int nf,
 
 static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 															const char *outfile) { MCC_TRACE("enter\n");
-	unsigned budget_ms = s->optimize_search_seconds * 1000u;
+	unsigned budget_ms = mcc_search_budget_ms(s->optimize_search_seconds);
 	unsigned start = host_clock_ms();
 	char exe[1024], cand[1200], hashp[1300], *cfg;
 	const char **cv;
@@ -1265,7 +1265,7 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 
 static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 															 const char *outfile) { MCC_TRACE("enter\n");
-	unsigned budget_ms = s->optimize_search_seconds * 1000u;
+	unsigned budget_ms = mcc_search_budget_ms(s->optimize_search_seconds);
 	unsigned start = host_clock_ms();
 	unsigned best_gate = 0, best_budget = 0, best_limit = 0;
 	unsigned local_claim = 0, budget_cur = 0, limit_cur = 0, round = 0, tried = 0;

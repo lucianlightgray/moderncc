@@ -424,4 +424,12 @@ static inline long mcc_env_num(const char *name, long dflt) {
 	return v > 0 ? v : dflt;
 }
 
+static inline unsigned mcc_search_budget_ms(unsigned seconds) {
+	unsigned cap = (unsigned)mcc_env_num("MCC_SEARCH_BUDGET_MS", 0);
+	unsigned ms = seconds * 1000u;
+	if (!cap)
+		return ms;
+	return ms && ms < cap ? ms : cap;
+}
+
 #endif

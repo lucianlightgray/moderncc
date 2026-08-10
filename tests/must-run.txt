@@ -150,3 +150,10 @@ wide256/gmp-diff             | must-run   | the only oracle-backed proof that '_
 wide256/gmp-diff-known-positive | registered | proves wide256/gmp-diff is not blind: it perturbs one corpus operand and one folded constant and requires the differential to go red
 jit/selftest-shutdown        | must-run   | the JIT pool's drain-and-join. Pure CPU, no device and no host fact excuses a skip: it is the only cell that asserts a worker is joined, that every accepted job ran, that the QSBR limbo is empty afterwards and that a dispatch racing the shutdown is refused rather than queued
 jit/selftest-shutdown-known-positive | registered | proves jit/selftest-shutdown is not blind: it re-runs the same seven checks with MCC_JIT_SHUTDOWN=0, which reinstates exactly the pre-shutdown pool, and requires all six drain checks to go red
+
+smoke/native                 | must-run   | the fast inner-loop value matrix: every -O level from 0 to the first search rung, table-driven, no device and no reference compiler needed, so a skip here is always a bug
+smoke/native-known-positive  | must-run   | proves the value matrix is not blind: it poisons a banked expectation and must go red at every level, which is the guard nine cells that passed while executing zero checks did not have
+smoke/slice-bails            | must-run   | the slice-engine refusal ratchet, carried per reason (no-static-type, all-undefined, ...); pure CPU ladder census, so a skip is always a bug
+smoke/divergence             | registered | the gcc/clang UB divergence report; skips honestly when neither reference compiler is installed, and never decides a golden
+smoke/device                 | registered | the device arm: the same value table under the GPU oracle, digest-compared against the CPU arm; skips honestly with no Vulkan or Metal device
+smoke/device-known-positive  | registered | proves the device arm is not blind

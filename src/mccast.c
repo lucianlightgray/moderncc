@@ -18610,7 +18610,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	if (!ast_search_started) { MCC_TRACE("br\n");
 		ast_search_started = 1;
 		ast_search_start_ms = ast_now_ms();
-		ast_search_budget_ms = ast_search_seconds * 1000u;
+		ast_search_budget_ms = mcc_search_budget_ms(ast_search_seconds);
 		ast_search_disk_load();
 	}
 	base = ast_search_gates_now();
