@@ -2568,5 +2568,15 @@ static const cli_case_t cli_cases[] = {
 		 "{W}/xh0; printf 'O0=%s ' $?; {W}/xhk; printf 'knobs=%s ' $?; {W}/xh5; printf 'O5=%s\\n' $?",
 		 "O0=0 knobs=0 O5=0\n"},
 
+		{"unreferenced_static_inline_is_not_emitted", "cpu=x86_64,os=linux",
+		 "printf '%s\\n' 'extern void exit(int);' "
+		 "'static inline int dead_body(void){extern int mcc_never_defined_probe;return mcc_never_defined_probe;}' "
+		 "'static inline int dead_caller(void){if(dead_body==dead_body)return 1;return dead_body();}' "
+		 "'int main(void){exit(0);}' > {W}/dsi.c && "
+		 "{MCC} -B{B} -I{I} -w -O0 {W}/dsi.c -o {W}/dsi0 && {W}/dsi0 && echo O0-ok && "
+		 "{MCC} -B{B} -I{I} -w -O7 {W}/dsi.c -o {W}/dsi7 && {W}/dsi7 && echo O7-ok && "
+		 "{MCC} -B{B} -I{I} -w -O12 {W}/dsi.c -o {W}/dsi12 && {W}/dsi12 && echo O12-ok",
+		 "O0-ok\nO7-ok\nO12-ok\n"},
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));

@@ -67,7 +67,6 @@
 	MCC_OPT_ROW(NARROW,                        "narrow",                       MCC_OPTD_LEVEL(10)) \
 	MCC_OPT_ROW(TRUNC32,                       "trunc32",                      MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(SWITCH_EXPR,                   "switch-expr",                  MCC_OPTD_ALWAYS) \
-	MCC_OPT_ROW(INLINE_FUNCTIONS_CALLED_ONCE,  "inline-functions-called-once", MCC_OPTD_LEVEL(7)) \
 	MCC_OPT_ROW(NARROW_FIX,                    "narrow-fix",                   MCC_OPTD_LEVEL(11)) \
 	MCC_OPT_ROW(NARROW_CLASS0,                 "narrow-class0",                MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(NARROW_CLASS1,                 "narrow-class1",                MCC_OPTD_ALWAYS) \

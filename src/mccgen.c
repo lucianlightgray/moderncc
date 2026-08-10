@@ -17263,9 +17263,6 @@ static int decl(int l) {
 					type.t &= ~VT_INLINE;
 					ad.a.weak = 1;
 				}
-				if (ast_inline_static_env && !gnu_ei && !pp_in_system_header() &&
-						(type.t & (VT_INLINE | VT_STATIC)) == (VT_INLINE | VT_STATIC))
-					{ MCC_TRACE("br\n"); type.t &= ~VT_INLINE; }
 			} else if (oldint) { MCC_TRACE("br\n");
 				mcc_warning("type defaults to int");
 			}
