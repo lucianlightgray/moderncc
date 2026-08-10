@@ -62,7 +62,7 @@ work until something in `src/` maps an iteration space onto lanes.
 | 1 | statement `Invoke` | **55.91%** | `if`-return→ternary is the unlock; inlining already landed and bought 0 blocks without it |
 | 2 | conditions | **37.39%** | 94.87% of blocked conditions are a global-aggregate `Ref`; `p->f` landed (+216 blocks) |
 | 3 | early `return` inside an `if`/loop body | 580 blocks | **cheap and new** — `mcc_slice_frame_from_ast` admits `Return` only as the last *top-level* statement, and 572 of 580 already have an accepted return value |
-| 4 | `s.arr[i]` as an indexed base | 58,328 nodes (4.97%) | **unowned**; needs `dynidx` to take a `Unary(MEMBER)` base plus `ast_eval_slice_livein_ext` |
+| 4 | `s.arr[i]` as an indexed base | 58,328 nodes (4.97%) | **LANDED on `wt/memberidx`, and the 58,328 was a mislabel** — `dynidx` now takes a `Unary(MEMBER)` base. 98.9% of the population is a *global* struct and needs the globals image, not indexing work. See the write-up below |
 | 5 | inline asm | 32,472 nodes | unblocked by the effect log; not started |
 | 6 | `volatile` | — | unblocked by the effect log; not started |
 | 7 | I/O calls | — | gated on one unverified fact: can mcc *compile* musl, not merely link a prebuilt sysroot |
@@ -190,6 +190,162 @@ runs on every dispatch. What it produces is a second independent implementation 
 the first against real data rather than test data. That is a currency which converts —
 the device differential has already caught three miscompiles that internal comparisons
 were structurally blind to — whereas device-eligible blocks never had an exchange rate.
+
+## Landed — `s.arr[i]` indexes like `arr[i]`, and gap #4's 58,328 was 98.9% globals, 2026-08-09 (`wt/memberidx`)
+
+**The change is one predicate helper and it is the whole of it.**
+`ast_eval_slice_dynidx` opened with `ast_kind(a, x) == AST_Ref && (ast_type_t(a, x) &
+VT_ARRAY)` for either operand of the `'+'`, then re-checked `VT_LOCAL && !VT_SYM` on the
+winner and took `ast_ival(base)` as the object's frame offset. That test and that offset are
+now one function, `ast_eval_slice_idx_base`, which returns the frame offset an indexed
+object starts at and admits two shapes: the `Ref` it always did, and a
+`Unary(AST_EVAL_OP_MEMBER)` whose own type word carries `VT_ARRAY`, resolved through
+`ast_eval_slice_frame_off` — the same constant folding `.field` already used for a scalar
+member. `o->base = bo` replaces `o->base = ast_ival(a, base)` and nothing else in the file
+moved.
+
+**Nothing else needed to move, and that is the load-bearing observation.** Every consumer of
+`AstEvalSliceIdx` — `ast_eval_slice_rec`, `ast_eval_slice_livein_obj` /
+`ast_eval_slice_livein_ext`, `ast_eval_slice_kind_ok`, `ast_eval_slice_wtype` /
+`ast_eval_slice_ftype`, `mcc_slice_store_dyn`, `mcc_slice_frame_mark_ext`,
+`mcc_slice_has_ext` and `spv_expr`/`mcc_slice_spv_stmt` on the device — reads `base` as a frame-slot
+key and never asks what syntax produced it. A struct field's offset is a frame-slot key in
+exactly the same numbering. So there is **no new slot class, no new emitter primitive, no
+ABI change and no new live-in kind**: the dense model lays the same run of per-element
+slots, and an object over `AST_EVAL_SLICE_DENSE_MAX` becomes the same one-slot descriptor
+`wt/slotmodel` built, at the field's offset instead of the local's. The extent and element
+type come from the member node's own dumped `size`/`etype` columns through
+`ast_eval_slice_obj_fn`, which needed no change either: an array member's type word is
+`VT_PTR | VT_ARRAY`, so `ast_adump_size` returns the array's bytes and `ast_adump_etype`
+returns the element type, both already correct for a member node.
+
+`tools/slicerun.c`'s `memshape_idx_why` was changed the same way, because it re-decides the
+base test for attribution and would otherwise have reported the newly-accepted shapes in
+`load/idx-base-not-array`. The partition check below is what that is for.
+
+**Two cells now pin the shape** and neither is a new ctest cell, so the count is unchanged
+at 9468. `slicerun`'s `frame` suite builds `s.arr[i] = s.arr[i] + 1` over a four-element
+field of a struct at `-64`, asserts the object is keyed at `-56` rather than `-64`, runs
+eight frames on the CPU reference and compares every slot of every frame against the
+device. `ext` builds a 32-element field and asserts it costs one descriptor slot keyed at
+the *field's* offset with the padded span reserved — the `ast_eval_slice_livein_ext` half.
+A member base is the one shape whose base offset is **computed rather than read**, so an
+off-by-one in the fold would still have agreed with itself; that is what the `-56` and
+`-496` assertions exist to catch.
+
+**The compiler cannot be affected, statically.** `ast_eval_slice_dynidx` returns 0 on its
+third line when `ast_eval_slice_obj_fn` is null, and `ast_eval_slice_obj_fn` is assigned in
+`tools/slicerun.c` and `tools/spvgate.c` and nowhere else in the tree. Re-dumping all 1,693
+`gcc.c-torture/execute` programs with the new `mcc` and diffing against the old dump gives
+226 differing lines out of 1,421,567, every one of them a `kind=5 op=48` literal whose
+`ival` is a raw pointer — ASLR, not the change. No byte-identity sweep was run because the
+static argument is stronger than one.
+
+### Measured, `gcc.c-torture/execute` — 1,693 programs, 1,560 arenas, 15,923 bodies, 1,172,443 nodes, 119,363 blocks
+
+Both columns are the *same* arena file replayed by the two `slicerun` binaries, so the
+difference is the predicate and nothing else.
+
+| figure | before | after |
+| --- | ---: | ---: |
+| nodes accepted (`ast_eval_slice_kind_ok(…, 0)`) | 378,387 | **378,387** |
+| **frame-accepted blocks** | 33,653 | **33,666** |
+| refused blocks | 85,710 | 85,697 |
+| `memshape: load/dynidx` | 517 | **707** |
+| `memshape: store/dynidx` | 221 | **286** |
+| `memshape: load/idx-base-not-array` | 43,204 | 42,987 |
+| `refusal: no-working-type` | 32,403 | 32,346 |
+
+**+13 blocks, +190 indexed loads, +65 indexed stores.** The node column does not move **and
+cannot**: the refusal census asks the *expression* predicate, `allow_load = 0`, under which
+every `AST_Load` is refused on its second line — and an array-typed member node is an
+address, never a value, so it is refused in both columns as well. The 4.97% is a label on a
+population, not on anything a node census can unblock. Rank this kind of work on
+`frame-accepted-blocks`. **Stated in the units the gap table uses — share of refused
+blocks — `s.arr[i]` was worth 13 of 85,710, or 0.015%.** The baseline column reproduces the
+33,653 the funnel section above publishes, which is what makes the 13 attributable.
+
+**The bucket table is a partition, reproduced.** Loads: 43,204 − 42,987 = 217 = 190 into
+`load/dynidx` + 25 into `load/idx-elem-type` + 2 into `load/idx-object-unknown`. Stores:
+`store/dest-load-other` 1,668 → 1,603 = the 65 that `store/dynidx` gained, and
+`store/dest-load=ptr-index` fell 313 → 248 by the same 65. `no-working-type` fell 57 and
+`child-refused` rose 57 — an untyped `AST_Load` whose width `ast_eval_slice_wtype` can now
+infer stops being *its own* cause and becomes its parent's. `blockcause: block/no-cause`
+rose 28 → 48, and the second-level `nocause:` table names all 20:
+`slot-table-full` 4 → 12, `statement-unmodelled` 18 → 28, `return-value-refused` 0 → 2. The
+slot half is the expected one — a dense member array claims `nspan` of the 16
+`MCC_SLICE_MAXSLOT` slots, so widening what is *admitted* pushes more blocks into the
+capacity wall behind it.
+
+### The 58,328 was a mislabel, and the real ceiling is 217
+
+`memshape: idx-operand-kind` counts the `Unary` bases that stand in an indexed `'+'`:
+
+| base | nodes | resolve to a frame offset | base `Ref` is `VT_SYM` |
+| --- | ---: | ---: | ---: |
+| `AST_OP_MEMBER` (`s.arr`) | 39,656 | **221** | **39,221** |
+| `AST_OP_ADDR` (`&x`) | 739 | 437 | 14 |
+| `AST_OP_MEMBER_ARROW` (`p->arr`) | 153 | 0 | 9 |
+
+**98.9% of `s.arr[i]` in this corpus is a *global* struct.** That is not indexing work and no
+change to `dynidx` can reach it: it is the same wall `wt/slotmodel` documented and
+`wt/hostimport` began dismantling — a live-in class keyed by symbol rather than by frame
+offset, and the object's bytes inside binding 2. The 217 that *are* frame-resolvable are
+what this branch converts, and it converts 217 of 217 (190 loads + 25 refused on element
+type + 2 with no dumped object). **Gap #4 is closed; what it was standing in front of is
+gap #2's globals problem wearing an indexing label.**
+
+`AST_OP_ADDR` is left refused deliberately: an `&`-node's type is `T *`, not `T[]`, so
+`ast_eval_slice_obj_fn` reports an 8-byte extent and the `extent < esize` guard refuses it.
+Admitting it would mean guessing the pointee's extent, which is the one thing the object
+hook exists not to do.
+
+### `p->arr[i]` is **out**, and not for lack of trying
+
+It does not fall out. `ast_eval_slice_frame_off` refuses `AST_OP_MEMBER_ARROW` and always
+will — its replay does `indir()` first, so the base is a pointer *loaded at run time* and
+there is no constant to fold. `p->arr[i]` is therefore a **region** access, not a frame
+offset, and the work is not a predicate line:
+
+- a descriptor carrying (pointer frame slot, member byte offset, element type, extent),
+  which cannot be a field on `AstEvalSliceIdx` — `wt/slotmodel` measured that growing that
+  struct by one `int` moves `save_regdisp_group`'s spill count and fails `rir/drop-ratchet`;
+- new arms in `ast_eval_slice_rec` *and* `spv_expr` *and* `mcc_slice_spv_stmt`, since neither the
+  dense nor the extent load applies: the address is `slot_value + madd + elem * esize`;
+- `mcc_slice_frame_mark_ptr` reserves `tsize(et)` bytes behind a marked pointer slot; it
+  would have to reserve `madd + extent`, and `MccSliceFrame.sptr` is one byte wide;
+- `ast_eval_slice_arrow` admits only scalar, non-bitfield, non-array members today, and the
+  bound check would have to be the array's rather than the field's.
+
+Against **153 nodes corpus-wide, 0 of them frame-resolvable today**. Filed, not started.
+
+### Positive control
+
+Four bodies over `struct S { int lead; int arr[8]; int tail; }`, a 64-element member array,
+a member store `s.arr[j] = i` and a nested `u.in.arr[j]`:
+
+| | before | after |
+| --- | ---: | ---: |
+| `frame-accepted` / `frame-compared` | 0 / 0 | **4 / 4** |
+| `frame-stmts` | 0 | **15** |
+| `frame-mem` (runs reaching binding 2) | 0 | **1** |
+| `frame-mismatches` | 0 | **0** |
+| `funnel-refused` / `funnel-agreed` | 4 / 0 | **0 / 4** |
+
+The 64-element member array takes the descriptor path, so `ast_eval_slice_livein_ext` is
+exercised by a member base and agrees with the device. On `tests/exec` (306 files, 1,291
+bodies, 3,379 blocks) frame-accepted blocks go 1,193 → 1,194, `load/dynidx` 161 → 192,
+`store/dynidx` 46 → 56, `frame-compared` 1,019 → 1,020 and `frame-mismatches` stays 0. The
+8 *expression* mismatches that run reports are present in both columns and predate this
+branch.
+
+**The cref oracle does not cover this shape and cannot be made to.** `cref_expr` is only
+ever reached from `mcc_slice_work_from_ast`, which gates on
+`ast_eval_slice_kind_ok(root, 0)`, and `allow_load = 0` refuses every `AST_Load` — so no
+indexed access, member-based or not, has ever been in front of gcc and clang. The four
+`slice/cref-oracle-*` cells are still the right adjudicator for the *expression* path and
+they are green here, but the evidence for this branch is the device differential plus the
+CPU reference, which is what `frame-mismatches=0` over 1,024 compared frame runs is.
 
 ## Landed — `block/other` is early `return`, the funnel from acceptance to the device loses 1.24%, and the 28%/1.45% pair are not two ends of one pipe, 2026-08-09 (`wt/attrib`)
 
