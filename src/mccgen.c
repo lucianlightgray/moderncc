@@ -9005,6 +9005,9 @@ static void check_va_start_register(void) { MCC_TRACE("enter\n");
 }
 
 static void check_va_start_last_param(void) { MCC_TRACE("enter\n");
+	int v = vtop->r & VT_VALMASK;
+	if (!(vtop->r & VT_SYM) && v != VT_LOCAL && v != VT_LLOCAL)
+		{ MCC_TRACE("br\n"); return; }
 	if ((mcc_state->warn_varargs & WARN_ON) && cur_func_last_param && vtop->sym && (vtop->sym->v & ~SYM_FIELD) != cur_func_last_param)
 		{ MCC_TRACE("br\n"); mcc_warning_c(warn_varargs)("second argument to 'va_start' is not the "
 																"last named parameter"); }
