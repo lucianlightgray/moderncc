@@ -1,6 +1,6 @@
 key=arm
 opt=-O0
-files=306
+files=307
 objects=290
 rirok=290
 rirfiles=290

@@ -1,6 +1,6 @@
 key=riscv64
 opt=-O0
-files=306
+files=307
 objects=291
 rirok=291
 rirfiles=291

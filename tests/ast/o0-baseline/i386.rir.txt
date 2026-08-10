@@ -1,6 +1,6 @@
 key=i386
 opt=-O0
-files=306
+files=307
 objects=295
 rirok=295
 rirfiles=295

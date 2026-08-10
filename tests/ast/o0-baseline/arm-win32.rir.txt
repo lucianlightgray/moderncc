@@ -1,6 +1,6 @@
 key=arm-win32
 opt=-O0
-files=306
+files=307
 objects=289
 rirok=289
 rirfiles=289
