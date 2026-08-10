@@ -11,6 +11,33 @@
 > Read this first. It is a handoff, not a board. Everything below it is detail.
 > It supersedes the 2026-08-09 handoff, which is wrong in five places, each named below.
 
+### How to validate — standing rule, 2026-08-10
+
+**Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the
+oracles.** `ctest -R "^smoke/"` is ~10 s for 6.7M value cases across `-O0`–`-O4`, plus the
+device arm and the divergence arm. Do not run the full suite to validate a change.
+
+The reasons are measured, not stylistic. The full suite is **~23 minutes and is not
+`-j`-bound** — one cell alone is 1,378 s, so the wall floor is a single cell and buying
+cores buys nothing. The top 0.1% of cells is 52% of all time; the median cell is 20 ms.
+And breadth was never what caught the defects: of the five real bugs found on 2026-08-10,
+**four are caught by nine cells in 0.47 s** and the fifth was caught by nothing at all,
+because it was a value shape — an `f64` ternary — that no cell covered.
+
+Consequences that follow, and they are not optional:
+
+- **If a check cannot be expressed in smoke, extend smoke.** Reaching for another cell is
+  how the inner loop decayed to 23 minutes in the first place.
+- **The `--min-cases` floor is the anti-vacuity guard.** With no broad sweep behind it, a
+  suite that silently runs nothing is indistinguishable from a green one — which this tree
+  has already shipped nine times.
+- **gcc and clang adjudicate wherever they can answer.** Where the result is UB or
+  implementation-defined, or where the two references disagree with each other, pin mcc's
+  answer as the golden and record the disagreement. Where mcc differs from **both**, that is
+  a `diverge-both` row and a defect until proven otherwise — report it loudly, never bank it
+  quietly. The `_Float16` intermediate-rounding bug (open item 22) was found exactly this
+  way: gcc and clang agree with each other and mcc does not.
+
 ### Where the tree is
 
 `main` at the `wt/earlyret` merge plus the two bank re-takes, **9501 cells on this host**,
