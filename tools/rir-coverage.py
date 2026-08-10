@@ -176,7 +176,7 @@ great deal -- it is what catches an arena that stopped modelling something.
 The run reports 0 when anything was gated and 77 only when a skip is genuinely
 all that is left; every skip names what it dropped and why.
 """
-import argparse, json, os, re, shlex, struct, subprocess, sys, tempfile
+import argparse, hashlib, json, os, re, shlex, struct, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_BANK = os.path.join(ROOT, "tests", "rir", "coverage-bank.json")
@@ -490,8 +490,9 @@ def read_rows(tsv):
         return rows
     for line in open(tsv, errors="replace"):
         f = line.replace("\r", "").rstrip("\n").split("\t")
-        if len(f) != 7:
+        if len(f) < 7:
             continue
+        f = f[:7]
         try:
             f[5] = int(f[5])
             f[6] = int(f[6])
@@ -629,7 +630,190 @@ def print_lowerable(low):
                  e["nodes_pct"]))
 
 
-def nofb_probe(mcc, sources, opt, verbose=True):
+def is_self_source(src):
+    return src.replace("\\", "/").endswith("src/mcc.c")
+
+
+def nofb_link_libs(bdir):
+    p = os.path.join(bdir, "selfhost-link-libs.txt")
+    if not os.path.exists(p):
+        return ["-lm", "-ldl"]
+    return [ln.strip() for ln in open(p) if ln.strip()]
+
+
+def nofb_stage1(mcc, bdir, flags, opt, obj, exe, env, env0):
+    """Compile src/mcc.c under `env` and link the result into a usable mcc."""
+    r = subprocess.run([mcc] + list(flags) +
+                       ["-" + opt, "-c", os.path.join(ROOT, "src", "mcc.c"),
+                        "-o", obj],
+                       cwd=ROOT, env=env, capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    blob = os.path.join(bdir, "CMakeFiles", "mcc.dir", "mccrt_blob.c.o")
+    link_objs, link_flags = [], []
+    if os.path.exists(blob):
+        link_objs.append(blob)
+    else:
+        for p in (os.path.join(bdir, "libmccrt.a"),
+                  os.path.join(bdir, "lib", "libmccrt.a")):
+            if os.path.exists(p):
+                link_flags += ["-B", os.path.dirname(p)]
+                break
+        else:
+            return None
+    if any(a.startswith("-DMCC_EMBED_JIT_BLOB") for a in flags):
+        jb = os.path.join(bdir, "CMakeFiles", "mcc.dir", "mccjit_blob.c.o")
+        if not os.path.exists(jb):
+            return None
+        link_objs.append(jb)
+    r = subprocess.run([mcc] + link_flags + [obj] + link_objs + ["-o", exe] +
+                       nofb_link_libs(bdir),
+                       cwd=ROOT, env=env0, capture_output=True, text=True)
+    return exe if r.returncode == 0 else None
+
+
+NOFB_WORK_N = 24
+
+
+def nofb_work_sources():
+    d = os.path.join(ROOT, "tests", "exec")
+    out = []
+    for dp, _, fns in os.walk(d):
+        for fn in sorted(fns):
+            if fn.endswith(".c") and fn != "runner.c":
+                out.append(os.path.join(dp, fn))
+    out.sort()
+    if not out:
+        return out
+    return out[::max(1, len(out) // NOFB_WORK_N)]
+
+
+def nofb_work(exe, flags, td, env0, work):
+    """What the compiler under test DOES, as a comparable signature."""
+    sig = []
+    obj = os.path.join(td, "w.o")
+    if os.path.exists(obj):
+        os.remove(obj)
+    try:
+        r = subprocess.run([exe] + list(flags) +
+                           ["-O2", "-c", os.path.join(ROOT, "src", "mcc.c"),
+                            "-o", obj],
+                           cwd=ROOT, env=env0, capture_output=True, timeout=900)
+        h = ("-" if r.returncode or not os.path.exists(obj) else
+             hashlib.sha256(open(obj, "rb").read()).hexdigest())
+        sig.append(("compile src/mcc.c", r.returncode, h))
+    except subprocess.TimeoutExpired:
+        sig.append(("compile src/mcc.c", -1, "timeout"))
+    for s in work:
+        try:
+            q = subprocess.run([exe, "-O1", "-run", s], cwd=ROOT, env=env0,
+                               capture_output=True, timeout=120)
+            sig.append((os.path.relpath(s, ROOT), q.returncode,
+                        hashlib.sha256(q.stdout).hexdigest()))
+        except subprocess.TimeoutExpired:
+            sig.append((os.path.relpath(s, ROOT), -1, "timeout"))
+    return sig
+
+
+def nofb_probe_self(mcc, bdir, flags, opt, td, env0, verbose):
+    """Benignity of the compiler's OWN byte-divergent bodies.
+
+    src/mcc.c cannot be `-run`, so the behaviour compared is what the compiler
+    built from it PRODUCES: a stage-1 mcc is linked with one divergent body's
+    replay bytes kept and every other one still falling back, and it must agree
+    with the baseline stage-1 on a fixed workload -- the object bytes of a
+    stage-2 self-compile, plus the exit status and stdout of a stride sample of
+    tests/exec run through it.
+
+    The reference is the CONTROL, which runs the same -fno-replay-fallback but
+    keeps nothing (skip = every divergent name), so a probe differs from it in
+    exactly one body.  Whether the control also reproduces a plain build is
+    reported, not assumed: MCC_FORCE_REPLAY is a no-op from -O1 up but turns
+    replay on at -O0, so at -O0 the two are not the same compiler.  A probe that
+    reproduces the control's object never kept its body at all and its verdict
+    would be vacuous.
+    """
+    tsv = os.path.join(td, "self.tsv")
+    if os.path.exists(tsv):
+        os.remove(tsv)
+    p = run_one(mcc, flags, os.path.join(ROOT, "src", "mcc.c"), opt,
+                os.path.join(td, "self.o"), tsv, env0, "arena")
+    if p.returncode != 0:
+        return None, "src/mcc.c does not compile under MCC_RIR_PROD=2"
+    names = [r[2] for r in read_rows(tsv)
+             if r[0] == "fallback" and r[4] in DISCARD]
+    if not names:
+        return {"benign": 0, "miscompile": 0, "unrunnable": 0, "inert": 0,
+                "bodies": 0, "miscompiles": []}, None
+    work = nofb_work_sources()
+    base_obj = os.path.join(td, "base.o")
+    base_exe = os.path.join(bdir, "mcc-nofb-base")
+    if not nofb_stage1(mcc, bdir, flags, opt, base_obj, base_exe, env0, env0):
+        return None, "no baseline stage-1 (no runtime blob to link?)"
+    plain_sig = nofb_work(base_exe, flags, td, env0, work)
+    plain_bytes = open(base_obj, "rb").read()
+
+    def probe_env(keep):
+        env = dict(env0)
+        env["MCC_FORCE_REPLAY"] = "1"
+        skip = [x for x in names if x != keep]
+        if skip:
+            env["MCC_RIR_NOFB_SKIP"] = ",".join(skip)
+        return env
+
+    ctl_obj = os.path.join(td, "ctl.o")
+    ctl_exe = os.path.join(bdir, "mcc-nofb-ctl")
+    if not nofb_stage1(mcc, bdir, flags + ["-fno-replay-fallback"], opt, ctl_obj,
+                       ctl_exe, probe_env(None), env0):
+        return None, "the control stage-1 does not build or link"
+    ref_bytes = open(ctl_obj, "rb").read()
+    ref_sig = nofb_work(ctl_exe, flags, td, env0, work)
+    ctl_drift = [a[0] for a, b in zip(ref_sig, plain_sig) if a != b]
+    ctl_neutral = ref_bytes == plain_bytes and not ctl_drift
+
+    benign, bad, inert = [], [], []
+    obj = os.path.join(td, "probe.o")
+    exe = os.path.join(bdir, "mcc-nofb-probe")
+    for nm in names:
+        if not nofb_stage1(mcc, bdir, flags + ["-fno-replay-fallback"], opt,
+                           obj, exe, probe_env(nm), env0):
+            bad.append((nm, "stage-1 does not build or link"))
+            continue
+        if open(obj, "rb").read() == ref_bytes:
+            inert.append(nm)
+            continue
+        sig = nofb_work(exe, flags, td, env0, work)
+        diff = [a[0] for a, b in zip(sig, ref_sig) if a != b]
+        if diff:
+            bad.append((nm, "%d of %d workload items differ, first %s"
+                        % (len(diff), len(sig), diff[0])))
+        else:
+            benign.append(nm)
+    for f in (base_exe, ctl_exe, exe):
+        if os.path.exists(f):
+            os.remove(f)
+    if verbose:
+        print("   self-host arm: %d divergent bodies in src/mcc.c; the control "
+              "keeps none of them and %s a plain build%s"
+              % (len(names), "reproduces" if ctl_neutral else "DOES NOT reproduce",
+                 "" if ctl_neutral else
+                 " (object %s, %d of %d workload items differ)"
+                 % ("differs" if ref_bytes != plain_bytes else "matches",
+                    len(ctl_drift), len(ref_sig))))
+        print("   workload: stage-2 object bytes of src/mcc.c + %d tests/exec "
+              "programs run through the stage-1" % len(work))
+        if inert:
+            print("   %d body(ies) left the stage-1 object unchanged, so their "
+                  "verdict would be vacuous: %s"
+                  % (len(inert), ", ".join(sorted(inert)[:8])))
+    return {"benign": len(benign), "miscompile": len(bad), "unrunnable": 0,
+            "inert": len(inert), "bodies": len(names),
+            "control_neutral": ctl_neutral,
+            "miscompiles": [("src/mcc.c", n) for n, _ in bad],
+            "why": [(n, w) for n, w in bad]}, None
+
+
+def nofb_probe(mcc, sources, opt, flags=(), bdir=None, verbose=True):
     """Per-body benignity split of category 2 (modelled, byte-divergent).
 
     For every body the byte compare discarded, keep THAT body's replay output
@@ -637,15 +821,37 @@ def nofb_probe(mcc, sources, opt, verbose=True):
     falling back via MCC_RIR_NOFB_SKIP) and compare the program's behaviour to
     the shipped compiler's. Same behaviour => that body's divergence is benign
     on this program; different => a real miscompile, e.g. union_cast::main.
+
+    src/mcc.c is the compiler, not a program to run, and it is where the whole
+    divergent population lives; it goes to nofb_probe_self above.
     """
     env0 = dict(os.environ)
     for k in ("MCC_RIR_PROD", "MCC_RIR_PROD_OUT", "MCC_FORCE_REPLAY",
               "MCC_REPLAY_IR", "MCC_REPLAY_IR_OUT", "MCC_RIR_NOFB_SKIP",
               "MCC_TEST_OPT"):
         env0.pop(k, None)
-    benign, bad, unrunnable, nbodies = [], [], [], 0
+    benign, bad, unrunnable, nbodies, inert = [], [], [], 0, 0
+    ctl = None
+    if verbose:
+        print("== -%s  category-2 benignity probe (-fno-replay-fallback, "
+              "per body)" % opt)
     with tempfile.TemporaryDirectory() as td:
         for src in sources:
+            if is_self_source(src):
+                if bdir is None:
+                    continue
+                r, why = nofb_probe_self(mcc, bdir, list(flags), opt, td, env0,
+                                         verbose)
+                if r is None:
+                    if verbose:
+                        print("   self-host arm SKIPPED: %s" % why)
+                    continue
+                nbodies += r["bodies"]
+                inert += r["inert"]
+                ctl = r.get("control_neutral", ctl)
+                benign += [(src, "?")] * r["benign"]
+                bad += [(src, n, w) for n, w in r.get("why", [])]
+                continue
             tsv = os.path.join(td, "p.tsv")
             if os.path.exists(tsv):
                 os.remove(tsv)
@@ -685,19 +891,18 @@ def nofb_probe(mcc, sources, opt, verbose=True):
                     bad.append((src, nm, "rc %d vs %d" % (q.returncode,
                                                           base.returncode)))
     if verbose:
-        print("== -%s  category-2 benignity probe (-fno-replay-fallback, "
-              "per body)" % opt)
-        print("   %d divergent bodies in %d runnable programs: %d benign, "
-              "%d MISCOMPILE, %d in programs that do not run standalone"
+        print("   %d divergent bodies in %d programs: %d benign, "
+              "%d MISCOMPILE, %d vacuous, %d in programs that do not run "
+              "standalone"
               % (nbodies, len(set(s for s, _ in benign)) +
-                 len(set(s for s, _, _ in bad)), len(benign), len(bad),
+                 len(set(s for s, _, _ in bad)), len(benign), len(bad), inert,
                  sum(len(n) for _, n in unrunnable)))
         for src, nm, why in bad:
             print("   MISCOMPILE %s::%s (%s)" % (os.path.relpath(src, ROOT), nm,
                                                  why))
     return {"benign": len(benign), "miscompile": len(bad),
             "unrunnable": sum(len(n) for _, n in unrunnable),
-            "bodies": nbodies,
+            "inert": inert, "bodies": nbodies, "control_neutral": ctl,
             "miscompiles": [(os.path.relpath(s, ROOT), n) for s, n, _ in bad]}
 
 
@@ -863,14 +1068,15 @@ def main():
     if a.nofb_probe:
         known = bank.get("nofb_miscompiles", {})
         for opt in a.levels.split(","):
-            r = nofb_probe(mcc, [s for s in sources
-                                 if os.path.basename(s) != "mcc.c"],
-                           opt)
+            r = nofb_probe(mcc, sources, opt, flags=flags, bdir=bdir)
             result.setdefault(opt, {})["nofb_probe"] = r
             got = sorted("%s::%s" % (f, n) for f, n in r["miscompiles"])
             was = sorted(known.get(opt, []))
             if a.update_bank:
-                known[opt] = got
+                mine = set(os.path.relpath(s, ROOT) for s in sources)
+                known[opt] = sorted(set(got) |
+                                    set(m for m in was
+                                        if m.rsplit("::", 1)[0] not in mine))
             elif not a.no_check:
                 for m in got:
                     if m not in was:
