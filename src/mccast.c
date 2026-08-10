@@ -14181,6 +14181,7 @@ static FILE *ast_adump_fp;
 static int ast_adump_on;
 
 static int ast_adump_tried;
+static unsigned ast_adump_icap_max;
 
 static void ast_adump_open(void) { MCC_TRACE("enter\n");
 	const char *p;
@@ -14194,6 +14195,13 @@ static void ast_adump_open(void) { MCC_TRACE("enter\n");
 	if (!ast_adump_fp)
 		{ MCC_TRACE("br\n"); return; }
 	setvbuf(ast_adump_fp, NULL, _IOLBF, 0);
+	p = getenv("MCC_ARENA_DUMP_ICAP");
+	if (p && p[0]) { MCC_TRACE("br\n");
+		unsigned v = (unsigned)strtoul(p, NULL, 10), q = 8;
+		while (q * 2 <= v && q < 0x40000000u)
+			q *= 2;
+		ast_adump_icap_max = v ? q : 0;
+	}
 	ast_adump_on = 1;
 }
 
@@ -14206,27 +14214,98 @@ static void ast_adump_open(void) { MCC_TRACE("enter\n");
  * for a deterministic compile, so the ids are stable across runs, and they are
  * dense small integers a rebuilt arena can actually use. */
 #define AST_ADUMP_ICAP 8192
-static uintptr_t ast_adump_ikey[AST_ADUMP_ICAP];
-static unsigned ast_adump_ival_[AST_ADUMP_ICAP];
+static uintptr_t *ast_adump_ikey;
+static unsigned *ast_adump_ival_;
+static unsigned ast_adump_icap;
 static unsigned ast_adump_in;
+static int ast_adump_ifull;
+
+static void ast_adump_ifail(void) { MCC_TRACE("enter\n");
+	if (ast_adump_ifull)
+		{ MCC_TRACE("br\n"); return; }
+	ast_adump_ifull = 1;
+	fprintf(stderr,
+					"mcc: MCC_ARENA_DUMP: the identity intern table could not grow "
+					"past %u entries after %u distinct symbols. Column 11 is an "
+					"identity a consumer names objects by, so a reused id would merge "
+					"two distinct globals into one. Truncating the dump rather than "
+					"degrading it.\n",
+					ast_adump_icap, ast_adump_in);
+	if (ast_adump_fp) { MCC_TRACE("br\n");
+		fprintf(ast_adump_fp, "[intern-overflow] n=%u cap=%u\n", ast_adump_in,
+						ast_adump_icap);
+		fflush(ast_adump_fp);
+	}
+	ast_adump_on = 0;
+}
+
+static int ast_adump_igrow(void) { MCC_TRACE("enter\n");
+	unsigned ncap = ast_adump_icap ? ast_adump_icap * 2 : AST_ADUMP_ICAP, i;
+	uintptr_t *nk;
+	unsigned *nv;
+	if (!ast_adump_icap && ast_adump_icap_max && ast_adump_icap_max < ncap)
+		{ MCC_TRACE("br\n"); ncap = ast_adump_icap_max; }
+	if (ncap <= ast_adump_icap ||
+			(ast_adump_icap_max && ncap > ast_adump_icap_max))
+		{ MCC_TRACE("br\n"); return 0; }
+	nk = (uintptr_t *)mcc_mallocz((unsigned long)ncap * sizeof *nk);
+	nv = (unsigned *)mcc_mallocz((unsigned long)ncap * sizeof *nv);
+	if (!nk || !nv) { MCC_TRACE("br\n");
+		mcc_free(nk);
+		mcc_free(nv);
+		return 0;
+	}
+	for (i = 0; i < ast_adump_icap; i++) { MCC_TRACE("br\n");
+		unsigned h, j;
+		if (!ast_adump_ikey[i])
+			continue;
+		h = (unsigned)((ast_adump_ikey[i] * 0x9e3779b1u) >> 13) & (ncap - 1);
+		for (j = 0; j < ncap; j++) { MCC_TRACE("br\n");
+			unsigned k = (h + j) & (ncap - 1);
+			if (!nk[k]) { MCC_TRACE("br\n");
+				nk[k] = ast_adump_ikey[i];
+				nv[k] = ast_adump_ival_[i];
+				break;
+			}
+		}
+	}
+	mcc_free(ast_adump_ikey);
+	mcc_free(ast_adump_ival_);
+	ast_adump_ikey = nk;
+	ast_adump_ival_ = nv;
+	ast_adump_icap = ncap;
+	return 1;
+}
 
 static unsigned ast_adump_intern(uintptr_t p) { MCC_TRACE("enter\n");
 	unsigned h, i;
-	if (!p)
+	if (!p || ast_adump_ifull)
 		{ MCC_TRACE("br\n"); return 0; }
-	h = (unsigned)((p * 0x9e3779b1u) >> 13) & (AST_ADUMP_ICAP - 1);
-	for (i = 0; i < AST_ADUMP_ICAP; i++) { MCC_TRACE("br\n");
-		unsigned k = (h + i) & (AST_ADUMP_ICAP - 1);
+	if (ast_adump_in + 1 >= ast_adump_icap / 2 && !ast_adump_igrow()) { MCC_TRACE("br\n");
+		unsigned k;
+		for (k = 0; ast_adump_icap && k < ast_adump_icap; k++) { MCC_TRACE("br\n");
+			unsigned q = (unsigned)(((p * 0x9e3779b1u) >> 13) + k) &
+									 (ast_adump_icap - 1);
+			if (ast_adump_ikey[q] == p)
+				{ MCC_TRACE("br\n"); return ast_adump_ival_[q]; }
+			if (!ast_adump_ikey[q])
+				break;
+		}
+		ast_adump_ifail();
+		return 0;
+	}
+	h = (unsigned)((p * 0x9e3779b1u) >> 13) & (ast_adump_icap - 1);
+	for (i = 0; i < ast_adump_icap; i++) { MCC_TRACE("br\n");
+		unsigned k = (h + i) & (ast_adump_icap - 1);
 		if (ast_adump_ikey[k] == p)
 			{ MCC_TRACE("br\n"); return ast_adump_ival_[k]; }
 		if (!ast_adump_ikey[k]) { MCC_TRACE("br\n");
-			if (ast_adump_in >= AST_ADUMP_ICAP / 2)
-				{ MCC_TRACE("br\n"); return 0; }
 			ast_adump_ikey[k] = p;
 			ast_adump_ival_[k] = ++ast_adump_in;
 			return ast_adump_ival_[k];
 		}
 	}
+	ast_adump_ifail();
 	return 0;
 }
 

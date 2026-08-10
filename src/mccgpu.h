@@ -859,6 +859,7 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	case AST_Ref: {
 		int r = ast_op(a, n);
 		int t = ast_type_t(a, n);
+		int32_t go;
 		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
 			int k;
 			if (!ast_eval_slice_intt(t) || is_float(t))
@@ -876,6 +877,15 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
 				return 0;
 			return msl_konst(m, a, n, t, out);
+		}
+		if (!(t & VT_ARRAY) && ast_eval_slice_globl(a, n, &go)) {
+			int k;
+			if (!msl_env_index(off, nenv, go, &k))
+				return 0;
+			*out = msl_fit_v(m, msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
+																					(t & VT_UNSIGNED) != 0),
+											 t);
+			return 1;
 		}
 		return 0;
 	}
@@ -2948,6 +2958,7 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	case AST_Ref: {
 		int r = ast_op(a, n);
 		int t = ast_type_t(a, n);
+		int32_t go;
 		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
 			int k;
 			if (!ast_bad_type(t) && ast_eval_slice_f64t(t)) {
@@ -2975,6 +2986,15 @@ static int spv_expr(SpvMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			if (!ast_eval_slice_f64t(t) && (is_float(t) || !ast_eval_slice_intt(t)))
 				return 0;
 			return spv_konst(m, a, n, t, out);
+		}
+		if (!(t & VT_ARRAY) && ast_eval_slice_globl(a, n, &go)) {
+			int k;
+			if (!spv_env_index(off, nenv, go, &k))
+				return 0;
+			*out = spv_fit_v(m, spv_load_live_v(m, base, k, ast_eval_slice_is64(t),
+																					(t & VT_UNSIGNED) != 0),
+											 t);
+			return 1;
 		}
 		return 0;
 	}
