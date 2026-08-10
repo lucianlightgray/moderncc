@@ -86,7 +86,7 @@ flagsweep_all_subjects() {
 # The list is self-cleaning -- a listed case that starts PASSING fails the cell
 # and says to delete the entry -- so it cannot rot into silent coverage loss.
 KNOWN_RED=""
-KNOWN_FLAKY_RED="jit-splice:on:random_stuff"
+KNOWN_FLAKY_RED=""
 
 is_known_red() {
 	for kr in $KNOWN_RED; do

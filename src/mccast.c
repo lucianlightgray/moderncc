@@ -19255,7 +19255,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
-				const int ast_opt_ok = faithful && !ast_fn_hole;
+				const int ast_opt_ok =
+						faithful && !ast_fn_hole && !ast_func_has_labeladdr;
 				const int ast_asm_only_hole =
 						ast_fn_hole && ast_fn_has_asm && !ast_fn_asm.unknown &&
 						!ast_arena_has_dangle(ast_cur);
