@@ -6,149 +6,191 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
-## STATE OF PLAY — written for a context switch, 2026-08-09
+## STATE OF PLAY — written for a context switch, 2026-08-10
 
 > Read this first. It is a handoff, not a board. Everything below it is detail.
+> It supersedes the 2026-08-09 handoff, which is wrong in five places, each named below.
 
 ### Where the tree is
 
-`main` at `96cacf64`, **9500 cells on this host — 9501 once `wt/globreloc` is in**, the one
-new cell being `slice/arena-intern-cap`. The jump from the 9468 of `91b6140b` is +32: seven
+`main` at the `wt/earlyret` merge plus the two bank re-takes, **9501 cells on this host**,
+pushed. Ten branches landed in one merge wave: `wt/hostimport`, `wt/muslgap`,
+`wt/memberidx`, `wt/threadname`, `wt/symguard`, `wt/gpusmall`, `wt/rirphase`,
+`wt/globreloc-int`, `wt/earlyret`, plus the earlier `wt/attrib`. `wt/rirnorm` and
+`wt/globreloc` are **superseded** — they landed through `wt/rirphase` and
+`wt/globreloc-int` respectively; do not merge the originals.
+
+**Count cells on the host rather than adding them up.** The jump from 9468 is +33: eight
 literally-named cells (`asm/reloc-suffix`; `gpu/spv-mem-binding{,-known-positive}`;
-`gpu/spv-validate{,-known-positive}`; `superopt/global-reload{,-known-positive}`) and 25
-from glob- and loop-driven registration. **Count it on the host rather than adding it up** —
-four of those seven are conditional on Vulkan headers plus `spirv-val`, and two more on
-`objdump`, so the total is host-dependent and an arithmetic estimate came out 4 low.
-The push is pending a full validation run — check it finished green before pushing, and
-fetch/merge first.
+`gpu/spv-validate{,-known-positive}`; `superopt/global-reload{,-known-positive}`;
+`slice/arena-intern-cap`) and the rest from glob- and loop-driven registration. Six of the
+eight are conditional on Vulkan plus `spirv-val`, or on `objdump`, so the total is
+host-dependent — an arithmetic estimate came out 4 low.
+
 Three machines share this branch: this one (Linux/Vulkan), a Windows box and a Mac box.
-Both peers were idle at the time of writing. The last full validated run was 9467/0 before
-the `wt/attrib` merge; a run on the current head was in flight and unfinished.
+Both peers were idle through this wave.
 
-### RED ON `main` RIGHT NOW — `ast/o0-baseline`, and it is not a code bug
+### Five corrections to the previous handoff
 
-**Four cells fail on `96cacf64` itself**: `ast/o0-baseline`, `ast/o0-baseline-gated`, and
-both `-known-positive` twins. `111d1eb2` added `tests/exec/inline_asm/asm_reloc_suffix.c`
-and did not re-bank `tests/ast/o0-baseline/`. The bank is one row short of the corpus it
-describes, so the unmutated check fails, and the known-positive twins then correctly refuse
-to report anything.
+1. **"`if`-return→ternary is the unlock for gap #1" — the diagnosis was right, the placement
+   was the bug.** The fold was reverted on `wt/rirnorm` for three reasons that all reduce to
+   byte-faithfulness, and its headline ("−82 accepted blocks against an unchanged 119,363
+   population") is a **denominator artifact**: the population falls to 119,228. ~130
+   already-accepted single-`Return` blocks are absorbed into their parent's ternary and stop
+   existing; 50 convert refused→accepted; **zero regress accepted→refused**.
+2. **Gap #3 is 264 blocks, not 580.** The 580 counted blocks whose *first classifier cause*
+   was a nested `Return`, and `block_cause_stmt` is a looser approximation of
+   `mcc_slice_frame_stmt_ok`, so 316 of them still fail on something it cannot see. Also:
+   80% of the blocks that actually landed have **no trailing `return` at all**, so "572 of
+   580 already have an accepted return value" described a different population.
+   **An attribution count is an upper bound on a fix, never its size.**
+3. **Gap #4 was never 58,328 nodes / 4.97%.** That census asks the expression predicate
+   (`allow_load = 0`), where every `Load` is refused and an array-typed member node is an
+   address, not a value. In the gap table's own units it was **13 of 85,710 refused blocks**.
+4. **Gap #7's gating fact is settled YES.** mcc compiles **1347 of musl 1.2.5's 1352**
+   x86_64 objects; `libc.a` links; output is identical to gcc-built reference musl, including
+   through an mcc-built `ld.so`. Now 1350 with `@PLT` accepted; only the 3 x87 `u`-constraint
+   TUs remain, and musl's own generic C is verified identical for those.
+5. **`slice/musl`'s "65 of 74, cause: `strchr.c` wants `__strchrnul`" was wrong twice over** —
+   `strchr.c` is not in the failing set and nothing there is link-time. The cause was include
+   order in `cmake/slicerun_musl.cmake`. Now 74 of 74.
 
-**Nothing moved.** Diffing the regenerated table against the bank gives **one line added,
-zero removed, zero hashes changed** — the added row is `asm_reloc_suffix.c` itself. No `-O0`
-object shifted a byte; the bank is simply missing a file. The remedy is to re-take
-`tests/ast/o0-baseline/*.txt` and confirm that same shape (additions only, no hash moves)
-before banking. Deliberately **not** done on `wt/globreloc-int` — that branch touches no
-file under `tests/ast/` or `tests/exec/`, and folding someone else's bank re-take into a
-merge commit is how a real object move gets banked by accident.
+### The single most important finding: the byte gate was hiding two miscompiles
 
-### Branches merged into local `main` but NOT pushed
+The `faithful` gate is not mis-designed, it was **mis-phased**. An unfaithful body runs zero
+of the 22 optimizer strategies and is excluded from the inline pool and JIT dispatch — 66 of
+3,040 bodies on `src/mcc.c` at `-O2`, **2.17% of bodies but 7.87% of body bytes**, mean
+1,826 B against 474 B, and they are the self-host hot path (`decode`, `next_nomacro`,
+`gen_cast`, `preprocess`). 95% of the divergence is *length* divergence.
 
-Everything listed under `## Landed` below, plus `wt/attrib`. Push needs a fetch/merge
-first — the peers push frequently and the merge conflicts are usually **semantic, not
-textual** (see the trap list).
+`docs/ARCHIVED.md` already stated the rule — *"any pass that changes code must be an arena
+rewrite in the post-fidelity strategy phase"* — and both normalisations were placed at the
+end of `rir_to_arena`, upstream of the fidelity check. `rir_arena_normalise` now runs from
+`ast_func_end` after `ast_fn_faithful` is computed and before `ast_slc_dump`/`ast_adump_body`.
 
-### Branches NOT merged, work sitting on them
+**Then making that code actually ship turned two `tests/exec` goldens red** —
+`wide_bitfield_arith` and `integer_promotion`, which are *exactly* the two bodies the wide
+census reported as "discarded for replaying 40 bytes shorter than the parser". They were
+shorter **and wrong**. The earlier claim that every discarded body is still correct was
+inferred from `exec/` 347/347, but those cells compile at `-O0`, **where nothing re-emits** —
+the discarded code was never run.
 
-| branch | commits | what it holds | why not merged |
-| --- | ---: | --- | --- |
-| ~~`wt/globreloc`~~ | 2 | globals resolve to real addresses; `cref_expr` spells them for the oracle; the `ast_adump_intern` 4096-pointer cap fails loudly instead of degrading | **merged** via `wt/globreloc-int`, rebased onto `96cacf64`: census bank re-taken (three times, once per rebase), headline numbers re-derived against `p->f` **and** `wt/memberidx`, `hostimport`'s obstacle list reconciled, and `ast_eval_slice_globl` folded into `wt/memberidx`'s new `ast_eval_slice_idx_base` — a resolution worth 758 indexed loads that no cell would have caught losing |
-| `wt/hostimport` | 2 | the `cref-unspellable` fix (a global used to spell as a plausible `((T)0LL)`) and comment removal | held so a 40-minute validation would not be invalidated mid-flight |
-| `wt/rirnorm` | 3 | bitfields → shift/mask at RIR; `if (c) return a; return b;` → ternary | agent still running |
-| `wt/earlyret` | 1 | multi-exit frames: an early `return` inside an `if` arm is admitted, suppressed on both executors, and phi'd into the out slots | validated here, not merged; overlaps `wt/rirnorm` — see the landed section |
+Both defects are one mistake: the lowering mirrors `gv()`, but bit-field arithmetic is
+decided by `gen_op`, which reads `VT_BITFIELD`/`bs` off the SValue. Narrow fields lost the
+integer promotion (`gen_op`'s UAC treat an `unsigned int` bit-field as *signed* unless
+`bs == 32`); wide fields (`bs > 32`) cannot be lowered at all, because `gen_op` truncates
+**every operation's result** to the field width — a property of the operation, not the
+operand — and are now refused.
 
-### Agents in flight
+**So the bar for retiring the byte gate goes up, not down. The discard set demonstrably
+contains defects.** Do not replace it with the cref oracle or the effect log: neither can run
+where `faithful` runs. The oracle is out-of-process, ctest-only, needs gcc *and* clang, and
+its unit is an integer expression subtree — never a function body, no stores, calls, globals
+or memory. `ast_eval_slice_effect_bind` has **zero callers in `src/`**.
 
-| branch | task | what to expect back |
-| --- | --- | --- |
-| `wt/rirnorm` | bitfield and if-return normalisation | bitfield semantics verified; `kept` reported as information not a veto; corpus cells green |
-| `wt/threadmap` | map `pthread_*` onto the dependency engine | inventory; **how often a mutex's protected region is derivably independent**; defined behaviour or explicit refusal for the three hard cases |
-| ~~`wt/globreloc`~~ | see above | **delivered and merged**: 670 fragments the oracle compiled that read a global, `cref-alldead` and `cref-unspellable` both unmoved |
+**The existing safety net is vacuous.** `rir-coverage.py --nofb-probe` reports 0 divergent
+bodies at every level because it is wired to `--corpus exec`, and the entire divergent
+population is in `src/mcc.c`, which that corpus excludes. "The divergent bodies are benign"
+is **unmeasured, not measured-empty**. Re-arming it is ~10 lines and is the next step.
 
-### The single most important measured fact
+### What the ten branches bought, measured
 
-**Block acceptance (28%) and device-executable parallel-legal (1.45%) are not two ends of
-one pipe, and never were.** `ast_loop_parallel_legal` has exactly two call sites, both
-`fprintf`; `src/mccslice.h` is included by no code-emitting file in `src/`; **nothing maps
-an induction variable onto a lane** — the 64 lanes of a dispatch are 64 independent seed
-tuples, never 64 iterations. Any statement that treats 1.45% as the far end of the
-acceptance funnel is wrong, including several this session made.
+| item | measured |
+| --- | --- |
+| early `return` in an `if`/loop body | **+264 blocks**, 260 dispatched and agreed, 0 mismatches |
+| globals resolve to real addresses | slices 1,905 → 2,551; cref tuples 15,240 → 20,408; **670 fragments read a global** where zero did |
+| `s.arr[i]` member base | +217 frame-resolvable, all of them; `load/dynidx` 517 → 707 |
+| global array base (`ga[i]`) | all 758, via the folded resolution |
+| bitfield → shift/mask | refused bitfield nodes 7,471 → 6,193 |
+| ternary fold | grafts `sgn`/`choose`/`clampk` **in folded form** — the unlock it was ranked for, never previously achieved |
+| thread refusal named | **124 of 121,206 refused calls (0.10%)**, 1 refused block of 67,873 |
+| `spirv-val` wired | **152 modules validated, no device required** |
+| musl | 1347 → 1350 of 1352 objects; `slice/musl` 65 → 74 of 74 |
 
-**The acceptance path converts at 98.76%**: 33,653 accepted → 33,230 dispatched, compared
-and agreed, 0 disagreements, every drop named and the largest 1.05% (`nslot < 1`, no
-live-in). Rank coverage work on **block acceptance**; 1.45% cannot be moved by any lowering
-work until something in `src/` maps an iteration space onto lanes.
+**Two deltas are owed a re-take on the merged tree, not an addition.** `wt/earlyret`'s +264
+and the restored ternary fold attack the same source shape from opposite ends; and every
+globreloc figure above was measured before `wt/rirphase` changed the arena shapes the slice
+predicates see.
 
-### Gap ranking that follows, block-level
+### The largest remaining item is one condition in one function
 
-| # | gap | share of refused blocks | state |
-| --- | --- | ---: | --- |
-| 1 | statement `Invoke` | **55.91%** | `if`-return→ternary is the unlock; inlining already landed and bought 0 blocks without it |
-| 2 | conditions | **37.39%** | 94.87% of blocked conditions are a global-aggregate `Ref`; `p->f` landed (+216 blocks) |
-| 3 | early `return` inside an `if`/loop body | **264 blocks, measured** | **landed on `wt/earlyret`**, unmerged. The 580 was a prediction of the wrong quantity; see the landed section below |
-| 4 | `s.arr[i]` as an indexed base | 58,328 nodes (4.97%) | **LANDED on `wt/memberidx`, and the 58,328 was a mislabel** — `dynidx` now takes a `Unary(MEMBER)` base. 98.9% of the population is a *global* struct and needs the globals image, not indexing work. See the write-up below |
-| 5 | inline asm | 32,472 nodes | unblocked by the effect log; not started |
-| 6 | `volatile` | — | unblocked by the effect log; not started |
-| 7 | I/O calls | — | **gate answered YES, 2026-08-09.** mcc compiles **1347 of musl 1.2.5's 1352** x86_64 objects, `libc.a` links, and binaries built against it are output-identical to gcc-built reference musl including the dynamic path through musl's own mcc-built `ld.so`. So the I/O work proceeds on the premise that `src/stdio`, `src/internal/syscall*` and `src/malloc` are **mcc-parsed arenas already**, not something to reimplement. See *musl compiles* below for the 5 refusals and the two integration facts |
+`ast_eval_slice_globl` rejects a `VT_STRUCT` base. `idx_base`'s member arm resolves
+`s.arr[i]` through `frame_off`, whose `AST_Ref` base case calls `globl` — and for
+`gs.arr[i]` that sees the base `Ref` typed `VT_STRUCT` and refuses.
+**`ref-not-local/global-aggregate` is 3,481 nodes, unmoved.** A local struct's array field is
+unlocked; a global array is unlocked; their intersection is closed by that single rejection.
 
-### Traps that have already cost time — do not rediscover these
+### Threading — decided against the earlier architecture note
 
-1. **A bucket's name is not evidence of its contents.** Four have been misread: `kind-basicblock` (100% artifact), `arity` (71,014/71,016 statement-position), `op-ternary` (100% statements, zero ternaries), `block/capacity` (summed a measured-zero with an unattributed 28). Attribute by the **deepest node whose children all pass**, never by reading the cause off the root, and prove the table is a **partition** by reproducing the parent count.
-2. **`mcc` derives its include search from `argv[0]`.** Run both binaries of a byte-identity sweep **from the same directory** or ~40 objects differ at every level including `-O0`. Two agents hit this independently.
-3. **`.gitignore`'s `/vendor/` does not match a *symlink* named `vendor`.** `git add -A` will commit it and hard-code absolute paths into every machine's tree.
-4. **Build `cmake-cross` before configuring `cmake-debug`.** The reverse order silently registers ~500 fewer cells.
-5. **Never `pkill -x ctest`.** One agent did and killed three other worktrees' runs; the resulting failures looked exactly like real regressions.
-6. **A false generator expression expands to an empty *argument*, not to nothing.** That is how nine `slice/*` cells reported `Passed` while executing zero checks. `slicerun` now has a `SUITES[]` whitelist — **add new suites to it or the cell fails at the guard rather than at what it tests.**
-7. **Device-cell failures usually mean contention**, not regression — but check whether a *non-device* cell is in the failing set before assuming. `slice/effect` runs the CPU reference on both sides; its presence is what exposed the whitelist gap.
+Measured: **0% of mutex-protected regions are derivably independent**, structurally rather
+than for want of corpus. Over 335 real lock sites in qemu and musl, **19.4% have no lexically
+matched unlock at all**, 78.1% contain a call, 21.1% have control flow leaving the region.
+Every call-free candidate reaches a field through a pointer, which `ast_dep_decode` marks
+`indirect`; `ast_dep_base_distinct` returns 1 only for distinct named global symbols. There
+is no points-to set, no read/write-set on any IR object, and `restrict` is parsed and
+discarded. The removable class is "one word, one RMW" — 8.1% — and it needs an atomic, not a
+disjointness proof.
 
-### Open decisions already taken this session
+It would be built blind: 3,662 of the compiled vendor `.c` files contain not one threading
+construct, and the two corpora with real concurrency density (musl `src/thread`, qemu) are on
+disk and **excluded from every build**.
 
-See `## Total lowering — the decided architecture` immediately below for the full set. In
-brief: terminators are body-invisible calls only; recursion dissolves into instrumented
-depth-bounded inlining; effects run once and the other side replays against a log; asm
-lifts through `mccasm.c`'s own semantics; I/O models the syscall floor over staged data;
-globals are promoted into the innermost dominating frame as a **real pass behind an `-O`
-rung**, with GET sites by value and SET sites by reference; threading is **taken over**,
-not refused; the semantic gate is the JIT-time differential already running; placement is
-per-slice promotion through `mccjit_slice_hotpatch`; and the correctness criterion is
-**input/output equivalence, not byte-faithfulness**.
+**S3 (refuse-and-diagnose, landed) now; S2 (create/join only, 1000–1300 lines) only once a
+corpus exists; S1 (full takeover, 3000–6000 lines plus renegotiating the effect log's landed
+cross-lane invariant) not on this evidence.** For each hard case — blocking on the world,
+interleaving that is load-bearing, detached threads outliving `main` — the "serialise it"
+option, which is what you get by default if nothing is decided, is the miscompile.
 
-### The largest unstarted item
+### The hazard that now has a cell
 
-**Taking threading over** (`wt/threadmap` is mapping it now). `pthread_create`/`join` are
-dependency edges, but `mutex`, condition variables and detach/join each need a meaning in a
-model where placement is a cost decision. Three cases need defined answers because an
-implied answer is a miscompile: blocking on the world rather than on work; threading that
-is load-bearing for *behaviour* rather than throughput; and detached threads outliving
-`main`.
+Thread safety held **only by accident**: `ast_cprop_is_local`, `ast_cse_regpure_compute` and
+`ast_plan_promotion` all filter on `!(r & VT_SYM)`, so a global was never a
+cprop/CSE/LICM/promotion candidate. The decided global-promotion pass is precisely the
+widening of that filter. `superopt/global-reload` now pins it — and note that **widening
+either filter by hand did not break the property**, so it is defended by more than those
+three and a filter-level tripwire would have looked trustworthy and caught nothing.
 
-#### How much threading the slicer actually walks away from — measured, `wt/threadname`
+### Traps — the list stands, with one addition and one sharpened
 
-`ast_eval_slice_kind_ok` has no `AST_Invoke` case, so until now `pthread_mutex_lock` and
-`strlen` were literally the same refusal and the compiler could not say how much threading
-it declined. `kind-invoke` now splits into `kind-invoke` + `kind-invoke-thread`, and
-`block/stmt-invoke` into `block/stmt-invoke` + `block/stmt-thread`, by a name classifier
-(`mcc_thread_sym_class` in `src/mcceffect.h`) over `pthread_{create,join,detach,exit,mutex,
-cond,rwlock,key,once}*`, the C11 `thrd_`/`mtx_`/`cnd_`/`tss_` prefixes plus `call_once`, and
-`__atomic_*`/`__sync_*`. **No behaviour changed**: the same node is refused with the same
-outcome, only under its own name. The split is a partition and slicerun proves it —
-`kind-invoke-partition-sum` and `stmt-invoke-partition-sum` are counted independently by
-node kind and the run fails if they do not reproduce the parent.
+1. **A bucket's name is not evidence of its contents.** Now **seven** confirmed misreads:
+   `kind-basicblock`, `arity`, `op-ternary`, `block/capacity`, gap #3's 580, gap #4's 58,328,
+   and `slice/musl`'s 65-of-74. Attribute by the deepest node whose children all pass and
+   prove the table is a partition by reproducing the parent count.
+2. `mcc` derives its include search from `argv[0]` — run both binaries of a byte-identity
+   sweep from the same directory.
+3. `.gitignore`'s `/vendor/` does not match a *symlink* named `vendor`. Never `git add -A`.
+4. **Build `cmake-cross` before configuring `cmake-debug`**, and know which build you are
+   measuring from: `cmake-debug` here is `MCC_ENABLE_CROSS=OFF`, so re-banking
+   `tests/ast/o0-baseline/` from it would record **eleven of twelve target keys as NOT
+   MEASURED** while turning the cells green. Bank from `cmake-cross`.
+5. **Never `pkill` ctest.** Stop your own runs with the harness, not the process table.
+6. A false generator expression expands to an empty *argument*, not to nothing — nine
+   `slice/*` cells once reported `Passed` while executing zero checks. New suites go in
+   `slicerun`'s `SUITES[]`.
+7. **Device-cell failures usually mean contention.** Confirmed repeatedly this wave at load
+   average 180–348: `gpu/ladder-gpu-parity` failed 3 of 10 concurrent and 0 of 7 serial,
+   `run-tier/i386-win32` hit *"Maximum number of clients reached"*. Always check whether a
+   **non-device** cell is also in the failing set before calling it a regression.
+8. **NEW — a clean merge is not a correct merge.** Resolving `ast_eval_slice_globl` outside
+   `ast_eval_slice_idx_base` builds, type-checks and passes **every cell**, while silently
+   losing 758 indexed loads and 346 indexed stores. The node census is identical either way,
+   because it asks the expression predicate. When two branches widen the same predicate,
+   measure the fold — do not trust green.
 
-The first honest answer, four corpora, `-O1`:
+### Open, ranked
 
-| corpus | refused Invoke | thread | pthread | c11 | atomic |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| gcc-c-torture-execute | 73,826 | 0 | 0 | 0 | 0 |
-| llvm-test-suite-regression-c | 20,647 | 0 | 0 | 0 | 0 |
-| llvm-test-suite-unittests | 26,238 | 4 | 4 | 0 | 0 |
-| compiler-rt-builtins-unit | 495 | 120 | 0 | 0 | 120 |
-| **total** | **121,206** | **124** | **4** | **0** | **120** |
-
-**0.10% of refused calls are thread primitives, and 1 refused block out of 67,873.** The C11
-`thrd_`/`mtx_`/`cnd_`/`tss_` set never appears at all; every atomic is compiler-rt testing
-its own `__atomic_*`/`__sync_*` lowering. Taking threading over cannot be justified by
-coverage on these corpora — it has to be justified by the programs the project intends to
-compile, and that argument now has a number to beat rather than an impression.
+1. **Re-arm the benignity probe** (~10 lines): point `rir-nofb-probe` at a corpus that
+   contains divergent bodies. Until then nothing checks the 66.
+2. **`ast_eval_slice_globl`'s `VT_STRUCT` rejection** — 3,481 nodes, one condition.
+3. **Re-take the two owed deltas** (earlyret × ternary; globreloc × rirphase).
+4. `ast_tco_run` cannot see through an `AST_If` op 5, so the tail-recursive two-exit `if`
+   stays out of reach and the ternary fold refuses that shape to keep TCO firing.
+5. `SR_GLOB_MAX` is 4,096 in `slicerun` with no reset between arenas and no message — the
+   same silent cap `ast_adump_intern` just made loud. Fails safe; a coverage cliff.
+6. The `rir-coverage` lowerable bank was **already stale before this wave**: 0.0414pp of the
+   0.0671pp drift accumulated over the 34 commits before it, inside the 0.05pp tolerance.
+   Dilution by less-lowerable new code is normal and will recur; the metric needs either a
+   corpus-normalised form or a scheduled re-take.
 
 ## Total lowering — the decided architecture, 2026-08-09
 
