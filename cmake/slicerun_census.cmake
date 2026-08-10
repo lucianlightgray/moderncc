@@ -63,9 +63,10 @@ endif()
 # The corpus is compiled here, so it picks up the host's system headers: same
 # arm64, `blocks` is 990 on Darwin and 1022 on Linux. Measured columns:
 #
-#   x86_64-Linux   947   -- the original bank; re-verified in Docker, unchanged
-#   arm64-Darwin   990   -- this machine
-#   arm64-Linux   1022   -- Debian bookworm in Docker
+#   x86_64-Linux   941   -- 947 until the arena ternary normalisation merged six
+#                           two-exit `if`s into one block each; re-taken here
+#   arm64-Darwin   990   -- this machine, taken before that normalisation
+#   arm64-Linux   1022   -- Debian bookworm in Docker, likewise
 #
 # An unbanked combination skips the exact half rather than comparing against a
 # foreign column; the ratchets below still run. If this list starts to feel
@@ -79,7 +80,7 @@ elseif(CENSUS_ARCH STREQUAL "arm64" AND CENSUS_OS STREQUAL "Linux")
                      "all-external=306" "mixed=83" "any-indirect=1")
 elseif(CENSUS_ARCH STREQUAL "x86_64" AND
        (CENSUS_OS STREQUAL "Linux" OR CENSUS_OS STREQUAL ""))
-    set(_census_bank "blocks=947" "inv-blocks=454" "all-internal=169"
+    set(_census_bank "blocks=941" "inv-blocks=454" "all-internal=169"
                      "all-external=197" "mixed=87" "any-indirect=1")
 else()
     message("slice/census: no banked column for ${CENSUS_ARCH}-${CENSUS_OS}; the "

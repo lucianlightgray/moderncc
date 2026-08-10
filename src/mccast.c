@@ -18629,6 +18629,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					}
 				}
 				ast_fn_faithful = faithful;
+				if (ast_rir_used)
+					{ MCC_TRACE("br\n"); rir_arena_normalise(ast_cur); }
 				if (ast_slc_on)
 					{ MCC_TRACE("br\n"); ast_slc_dump(ast_cur, funcname, (long)body_len,
 																					 (long)new_len, faithful); }

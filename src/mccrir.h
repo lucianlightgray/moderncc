@@ -51,6 +51,7 @@ void rir_low_regions(const long *regions, const long *big, const long *huge);
 
 struct AstArena;
 struct AstArena *rir_prod_take(void);
+void rir_arena_normalise(struct AstArena *a);
 void rir_teardown(void);
 void rir_prod_replay_begin(void);
 void rir_prod_replay_end(void);
@@ -281,6 +282,7 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_low_set(n, c, w, k) ((void)0)
 #define rir_low_regions(r, b, h) ((void)0)
 #define rir_prod_take() NULL
+#define rir_arena_normalise(a) ((void)0)
 #define rir_teardown() ((void)0)
 #define rir_prod_replay_begin() ((void)0)
 #define rir_prod_replay_end() ((void)0)
