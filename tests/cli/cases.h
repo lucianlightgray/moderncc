@@ -2565,5 +2565,15 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -std=c99 -O2 {W}/c90scope.c -o {W}/c90scope99 && {W}/c90scope99",
 		 "32 1\n1 1\n"},
 
+		{"no_wrapv_folds_mul_div_by_same_constant", "",
+		 "printf '%s\\n' 'extern int printf(const char *, ...);' "
+		 "'static int t(int x) { return (2 * x) / 2; }' "
+		 "'int main(void) { volatile int v = 2147483647; printf(\"%d\\n\", t(v)); return 0; }' > {W}/wrapv2.c && "
+		 "for o in -O1 -O2 -O3; do "
+		 "{MCC} -B{B} -I{I} $o -fno-wrapv {W}/wrapv2.c -o {W}/wrapv2off && {W}/wrapv2off; "
+		 "{MCC} -B{B} -I{I} $o -fwrapv {W}/wrapv2.c -o {W}/wrapv2on && {W}/wrapv2on; "
+		 "done",
+		 "2147483647\n-1\n2147483647\n-1\n2147483647\n-1\n"},
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));

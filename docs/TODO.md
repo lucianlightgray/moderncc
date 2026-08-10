@@ -18572,8 +18572,25 @@ front end — so this is not an `-O2` pipeline gap. Recurring shapes: `fabs(x) <
 #### Newly-confirmed wrong-answer defects, each reproduced by hand at `-O2`
 - ~~`__builtin_expect` discards side effects in its second operand.~~ **Fixed** — see
   the closed list above.
-- **`-fno-wrapv` does not enable signed-overflow simplification.** `fwrapv-2.c`:
-  `(2*x)/2` must fold to `x`; mcc computes the wrapped value and the test aborts.
+- ~~**`-fno-wrapv` does not enable signed-overflow simplification.**~~ **Fixed 2026-08-10
+  (`wt/o2wrong`).** `fwrapv-2.c`'s `test(INT_MAX)` returned **-1** against gcc-15's and
+  clang-22's `2147483647`. `MCCState.wrapv` was parsed into the flag table and then read
+  by nothing — grep it on `main` and the only hits are the declaration and the table row.
+  Now `ast_strict_overflow_env` (`!wrapv && optimize_level >= 1`) admits one fold,
+  `ast_ident_muldivk`: `(x * C) / C -> x` for a signed integer type at least `int` wide,
+  with the multiply, the divisor, the multiplier and the surviving operand all required to
+  carry the node's exact `VT_BTYPE|VT_UNSIGNED`. Wrong at `-O1`/`-O2`/`-O3`; **`-O0` is not
+  adjudicated** — clang-22 aborts there too, so the two oracles disagree and the cell is
+  not agnostic. It is deliberately left unfixed at `-O0`: the `ident` strategy is gated by
+  `reemit-templates`, which is `MCC_OPTD_LEVEL(1)`, so `-O0` re-emits nothing and the
+  `ast/o0-baseline` hashes cannot move.
+  **The trap, for the next fold added here:** `ast_ident_run` returns only the count of
+  `r == 2` folds, and `do_ident` -- the flag that decides whether the arena is re-emitted
+  at all -- is `idents > 0`. A fold returning 1 rewrites the arena and is then silently
+  discarded unless some *other* pass also fires. Returning 1 made this fold visible only
+  at `-O2`, where `promote-locals` happened to force the re-emit; `-O1` and
+  `-O2 -fno-promote-locals` still produced `idiv`. Return 2 from any fold that changes code.
+  Cell `cli/no_wrapv_folds_mul_div_by_same_constant`, both gates at all three levels.
 - **Builtin math folding loses to a local definition.** `20021127-1.c` defines an
   aborting `llabs` and requires the compiler to fold `llabs(-1)` to 1 regardless.
 - **GNU range designators in nested initializers produce wrong data.** `gnu99-init-1.c`

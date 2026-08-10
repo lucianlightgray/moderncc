@@ -1570,6 +1570,7 @@ static MCC_OPT_TLS int ast_ident_arith_env;
 static MCC_OPT_TLS int ast_ident_bit_env;
 static MCC_OPT_TLS int ast_ident_rel_env;
 static MCC_OPT_TLS int ast_ident_urange_env;
+static MCC_OPT_TLS int ast_strict_overflow_env;
 static MCC_OPT_TLS int ast_dse_call_env;
 static MCC_OPT_TLS int ast_tco_ptr_env;
 static MCC_OPT_TLS int ast_cse_comm_env;
@@ -2381,6 +2382,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_ident_bit_env = mcc_opt(s1, MCC_OPT_IDENT_BIT);
 	ast_ident_rel_env = mcc_opt(s1, MCC_OPT_IDENT_REL);
 	ast_ident_urange_env = mcc_opt(s1, MCC_OPT_IDENT_URANGE);
+	ast_strict_overflow_env = !s1->wrapv && s1->optimize_level >= 1;
 	ast_dse_call_env = mcc_opt(s1, MCC_OPT_TREE_DSE);
 	ast_tco_ptr_env = mcc_opt(s1, MCC_OPT_OPTIMIZE_SIBLING_CALLS);
 	ast_cse_comm_env = mcc_opt(s1, MCC_OPT_GCSE);
@@ -8159,6 +8161,38 @@ static int ast_ident_addk(AstArena *a, AstLocal s, AstLocal e) { MCC_TRACE("ente
 	return ast_ident_same(a, p, e) && ast_ident_pure(a, p);
 }
 
+static int ast_ident_exact_t(int t1, int t2) { MCC_TRACE("enter\n");
+	return ast_ident_intt(t1) && ast_ident_intt(t2) &&
+				 (t1 & (VT_BTYPE | VT_UNSIGNED)) == (t2 & (VT_BTYPE | VT_UNSIGNED));
+}
+
+static AstLocal ast_ident_muldivk(AstArena *a, AstLocal n, AstLocal x, AstLocal y) { MCC_TRACE("enter\n");
+	int nt, xt, ot, lt, mt;
+	uint64_t nref, xref, oref, lv, mv;
+	AstLocal p, q, other;
+	if (!ast_ident_cval(a, y, &lt, &lv) || lv == 0 || lv == 1)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if (ast_kind(a, x) != AST_Binary || ast_op(a, x) != '*' || ast_nchild(a, x) != 2)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if (!ast_ident_etype(a, n, &nt, &nref) || !ast_ident_etype(a, x, &xt, &xref))
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if ((nt & VT_UNSIGNED) || !ast_ident_exact_t(nt, xt) || !ast_ident_exact_t(nt, lt))
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if (ast_ii_width(nt) < 4)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	p = ast_child(a, x, 0);
+	q = ast_child(a, x, 1);
+	if (ast_ident_cval(a, q, &mt, &mv) && mv == lv && ast_ident_exact_t(nt, mt))
+		{ MCC_TRACE("br\n"); other = p; }
+	else if (ast_ident_cval(a, p, &mt, &mv) && mv == lv && ast_ident_exact_t(nt, mt))
+		{ MCC_TRACE("br\n"); other = q; }
+	else
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if (!ast_ident_etype(a, other, &ot, &oref) || !ast_ident_exact_t(nt, ot))
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	return other;
+}
+
 static int ast_ident_node(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (ast_ident_conv_env) { MCC_TRACE("br\n");
 		int cr = ast_ident_convert(a, n);
@@ -8223,6 +8257,13 @@ static int ast_ident_node(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		if (ast_ident_cval(a, y, &lt, &lv) && lv == 1 && ast_ident_keep(lt, tx)) { MCC_TRACE("br\n");
 			ast_ident_adopt(a, n, x);
 			return 1;
+		}
+		if (ast_strict_overflow_env) { MCC_TRACE("br\n");
+			AstLocal q = ast_ident_muldivk(a, n, x, y);
+			if (q != AST_NONE) { MCC_TRACE("br\n");
+				ast_ident_adopt(a, n, q);
+				return 2;
+			}
 		}
 		return 0;
 	case '*':
