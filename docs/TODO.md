@@ -155,7 +155,17 @@ the one to quote. The 6,193 that remain are the two refusals above — a non-fra
 straddling field — not bitfield-ness.
 
 `kept` on `src/mcc.c` is **bit-identical**: 83.248 / 91.917 / 91.986 / 91.986 at `-O0`–`-O3`
-with the normalisation on or off. Nothing was re-banked.
+with the normalisation on or off, so `rir-coverage` is green.
+
+**`rir-coverage-census` (the `wide` corpus) is red, and is not being re-banked.** kept falls
+0.20–0.23 points (`-O1`: 96.511 → 96.309 measured on this tree; the bank reads 96.5436, so
+0.03 of the gap predates this branch). The cause is **exactly two bodies** out of 4,547 —
+`tests/exec/expressions/integer_promotion.c:main` and
+`tests/exec/features_c99_c11/wide_bitfield_arith.c:main`, the two programs in the tree whose
+whole purpose is bitfield arithmetic — and in both the lowered replay is **40 bytes shorter**
+than the parser's (6,428 → 6,388 and 884 → 844) and is discarded for not being identical.
+Both still produce output identical to gcc-15 and clang-22 at `-O0`–`-O3`. Re-banking would
+hide the one number that says what the byte test costs; see the section below.
 
 `tests/gpu/cref/bitfield.c` is the certification, and it goes through the external oracle
 rather than through the CPU reference agreeing with the device: nine field shapes — signed,
@@ -205,8 +215,12 @@ normalisation that is not byte-preserving. That is a larger and more valuable ch
 either normalisation here, and it is now backed by a count rather than by an argument.
 
 **The bitfield lowering was built to be byte-preserving for exactly this reason**, which is
-why its `kept` is bit-identical and only three bitfield-specific test files change object
-bytes at all.
+why its `kept` on `src/mcc.c` is bit-identical and only three bitfield-specific test files
+change object bytes at all. It still could not be byte-preserving everywhere: the two bodies
+that cost `rir-coverage-census` its 0.20 points both replay to **shorter** code than the
+parser emitted and are thrown away for it. A ratchet on byte identity charges a normalisation
+for improving the output, and there is no way to write this transformation that avoids that
+without also declining to transform.
 
 ## Landed — nine `slice/*` cells were running nothing; M1 and M4's host half, 2026-08-09
 
