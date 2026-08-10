@@ -6,6 +6,96 @@
 > present-tense, open items. File:line anchors are omitted on purpose — the archived
 > ones had drifted 1000–1900 lines after merges; find code by symbol.
 
+## STATE OF PLAY — written for a context switch, 2026-08-09
+
+> Read this first. It is a handoff, not a board. Everything below it is detail.
+
+### Where the tree is
+
+`main` at `325739cd`, **9468 cells**, 19 commits ahead of `origin/main` and 0 behind.
+Three machines share this branch: this one (Linux/Vulkan), a Windows box and a Mac box.
+Both peers were idle at the time of writing. The last full validated run was 9467/0 before
+the `wt/attrib` merge; a run on the current head was in flight and unfinished.
+
+### Branches merged into local `main` but NOT pushed
+
+Everything listed under `## Landed` below, plus `wt/attrib`. Push needs a fetch/merge
+first — the peers push frequently and the merge conflicts are usually **semantic, not
+textual** (see the trap list).
+
+### Branches NOT merged, work sitting on them
+
+| branch | commits | what it holds | why not merged |
+| --- | ---: | --- | --- |
+| `wt/globreloc` | 2 | globals resolve to real addresses; `cref_expr` spells them for the oracle; the `ast_adump_intern` 4096-pointer cap fails loudly instead of degrading | agent was still running its four corpus cells when last heard from |
+| `wt/hostimport` | 2 | the `cref-unspellable` fix (a global used to spell as a plausible `((T)0LL)`) and comment removal | held so a 40-minute validation would not be invalidated mid-flight |
+| `wt/rirnorm` | 3 | bitfields → shift/mask at RIR; `if (c) return a; return b;` → ternary | agent still running |
+
+### Agents in flight
+
+| branch | task | what to expect back |
+| --- | --- | --- |
+| `wt/rirnorm` | bitfield and if-return normalisation | bitfield semantics verified; `kept` reported as information not a veto; corpus cells green |
+| `wt/threadmap` | map `pthread_*` onto the dependency engine | inventory; **how often a mutex's protected region is derivably independent**; defined behaviour or explicit refusal for the three hard cases |
+| `wt/globreloc` | see above | a fragment the oracle compiled that reads a global; `cref-alldead`/`cref-unspellable` movement |
+
+### The single most important measured fact
+
+**Block acceptance (28%) and device-executable parallel-legal (1.45%) are not two ends of
+one pipe, and never were.** `ast_loop_parallel_legal` has exactly two call sites, both
+`fprintf`; `src/mccslice.h` is included by no code-emitting file in `src/`; **nothing maps
+an induction variable onto a lane** — the 64 lanes of a dispatch are 64 independent seed
+tuples, never 64 iterations. Any statement that treats 1.45% as the far end of the
+acceptance funnel is wrong, including several this session made.
+
+**The acceptance path converts at 98.76%**: 33,653 accepted → 33,230 dispatched, compared
+and agreed, 0 disagreements, every drop named and the largest 1.05% (`nslot < 1`, no
+live-in). Rank coverage work on **block acceptance**; 1.45% cannot be moved by any lowering
+work until something in `src/` maps an iteration space onto lanes.
+
+### Gap ranking that follows, block-level
+
+| # | gap | share of refused blocks | state |
+| --- | --- | ---: | --- |
+| 1 | statement `Invoke` | **55.91%** | `if`-return→ternary is the unlock; inlining already landed and bought 0 blocks without it |
+| 2 | conditions | **37.39%** | 94.87% of blocked conditions are a global-aggregate `Ref`; `p->f` landed (+216 blocks) |
+| 3 | early `return` inside an `if`/loop body | 580 blocks | **cheap and new** — `mcc_slice_frame_from_ast` admits `Return` only as the last *top-level* statement, and 572 of 580 already have an accepted return value |
+| 4 | `s.arr[i]` as an indexed base | 58,328 nodes (4.97%) | **unowned**; needs `dynidx` to take a `Unary(MEMBER)` base plus `ast_eval_slice_livein_ext` |
+| 5 | inline asm | 32,472 nodes | unblocked by the effect log; not started |
+| 6 | `volatile` | — | unblocked by the effect log; not started |
+| 7 | I/O calls | — | gated on one unverified fact: can mcc *compile* musl, not merely link a prebuilt sysroot |
+
+### Traps that have already cost time — do not rediscover these
+
+1. **A bucket's name is not evidence of its contents.** Four have been misread: `kind-basicblock` (100% artifact), `arity` (71,014/71,016 statement-position), `op-ternary` (100% statements, zero ternaries), `block/capacity` (summed a measured-zero with an unattributed 28). Attribute by the **deepest node whose children all pass**, never by reading the cause off the root, and prove the table is a **partition** by reproducing the parent count.
+2. **`mcc` derives its include search from `argv[0]`.** Run both binaries of a byte-identity sweep **from the same directory** or ~40 objects differ at every level including `-O0`. Two agents hit this independently.
+3. **`.gitignore`'s `/vendor/` does not match a *symlink* named `vendor`.** `git add -A` will commit it and hard-code absolute paths into every machine's tree.
+4. **Build `cmake-cross` before configuring `cmake-debug`.** The reverse order silently registers ~500 fewer cells.
+5. **Never `pkill -x ctest`.** One agent did and killed three other worktrees' runs; the resulting failures looked exactly like real regressions.
+6. **A false generator expression expands to an empty *argument*, not to nothing.** That is how nine `slice/*` cells reported `Passed` while executing zero checks. `slicerun` now has a `SUITES[]` whitelist — **add new suites to it or the cell fails at the guard rather than at what it tests.**
+7. **Device-cell failures usually mean contention**, not regression — but check whether a *non-device* cell is in the failing set before assuming. `slice/effect` runs the CPU reference on both sides; its presence is what exposed the whitelist gap.
+
+### Open decisions already taken this session
+
+See `## Total lowering — the decided architecture` immediately below for the full set. In
+brief: terminators are body-invisible calls only; recursion dissolves into instrumented
+depth-bounded inlining; effects run once and the other side replays against a log; asm
+lifts through `mccasm.c`'s own semantics; I/O models the syscall floor over staged data;
+globals are promoted into the innermost dominating frame as a **real pass behind an `-O`
+rung**, with GET sites by value and SET sites by reference; threading is **taken over**,
+not refused; the semantic gate is the JIT-time differential already running; placement is
+per-slice promotion through `mccjit_slice_hotpatch`; and the correctness criterion is
+**input/output equivalence, not byte-faithfulness**.
+
+### The largest unstarted item
+
+**Taking threading over** (`wt/threadmap` is mapping it now). `pthread_create`/`join` are
+dependency edges, but `mutex`, condition variables and detach/join each need a meaning in a
+model where placement is a cost decision. Three cases need defined answers because an
+implied answer is a miscompile: blocking on the world rather than on work; threading that
+is load-bearing for *behaviour* rather than throughput; and detached threads outliving
+`main`.
+
 ## Total lowering — the decided architecture, 2026-08-09
 
 > **Bank note, 2026-08-09.** `tests/fmt/census-bank.json` was re-taken when the
