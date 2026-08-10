@@ -1,26 +1,68 @@
 # regenerate: ctest -R smoke/rebank
-# The four diverge-both:fsweep.F16.{FMULADD,FSCALE} rows are a DEFECT, not a
-# tolerance: mcc does not round a _Float16 intermediate back to _Float16
-# between the operations of a compound expression, and gcc and clang both do.
-# 2.25f16 * 255.0f16 + 0.5f16 reads 0x607c on both references and 0x607d here,
-# one ULP apart, on 8 of 1728 probed triples. They were found the day the float
-# sweep was deepened -- nothing in the tree had asked a multi-step _Float16
-# question before. Banked so the deepening lands with its finding recorded
-# rather than trimmed away; see docs/TODO.md. Delete these four rows when the
-# per-operation rounding is fixed -- the ratchet fails if they stop diverging.
-O0 replay-fallback:bytes 1
+# Every diverge-both row below is a triaged finding, not a tolerance. Re-take
+# this file with `smokerun --rebank`, then `--divergence --rebank`, then
+# `--slice-census --rebank`; this header is not generated and must be restored
+# by hand after a re-take.
+#
+# 1. fsweep.F16.{FMULADD,FSCALE} and bsweep.F16.{FMULADD,FSCALE} and the three
+#    f16.*.doubleround rows: mcc rounds every _Float16 operation back to
+#    _Float16, gcc-15 and clang-22 keep the intermediate at float precision.
+#    mcc reproduces gcc's -fexcess-precision=16 exactly and gcc's default
+#    -fexcess-precision=fast exactly reproduces gcc and clang. This is an
+#    evaluation-format choice, not a wrong answer: 2.25f16*255.0f16+0.5f16 is
+#    0x607d under per-operation rounding and 0x607c with a float intermediate,
+#    and gcc offers both under a documented flag. The 2026-08-09 reading of
+#    this defect was inverted; see docs/TODO.md item 22.
+# 2. xsweep.{F16,F32,F64,F80}.UI and x.uint.from.1e300: an out-of-range
+#    floating to unsigned int conversion is UB, but mcc leaves the 64-bit
+#    result unnarrowed when the cast is consumed in a wider expression, so the
+#    value of an `unsigned int` expression exceeds UINT_MAX. Storing to an
+#    `unsigned int` variable first narrows correctly, which is why
+#    x.uint.var.1e300 and x.uint.var.2p32 agree with both references.
+# 3. xsweep.F80.{SI,SLL} and bsweep.F80.FSELMIXN: out-of-range long double to
+#    integer conversions, UB, pinned to mcc.
+# 4. bsweep.F80.FSELMIX{L,R,B}: NOT UB. mcc converts a long double in
+#    (1-2^-64, 1) to int as 1 instead of 0; (long) of the same value truncates
+#    correctly. See docs/TODO.md.
+# 5. csweep.{C32,C64}.{CDIV,CDIVSEL,CMULADD}: complex multiply and divide with
+#    an infinite or NaN component. Annex G recovery is optional and gcc and
+#    clang share one libgcc implementation; C80 agrees with both.
+# 6. shl.*: pre-existing, the shift-count folder.
 O0 replay-fallback:len 2
-O1 replay-fallback:bytes 1
 O1 replay-fallback:len 2
-O2 jit-not-baked:signature 60
-O2 replay-fallback:bytes 1
+O2 jit-not-baked:signature 120
 O2 replay-fallback:len 2
-O3 replay-fallback:bytes 1
 O3 replay-fallback:len 2
-O4 replay-fallback:bytes 1
 O4 replay-fallback:len 2
 O4 slice-refused:all-undefined 15
-O4 slice-refused:no-static-type 168
+O4 slice-refused:no-static-type 489
+div diverge-both:bsweep.F16.FMULADD.fold 1
+div diverge-both:bsweep.F16.FMULADD.run 1
+div diverge-both:bsweep.F16.FSCALE.fold 1
+div diverge-both:bsweep.F16.FSCALE.run 1
+div diverge-both:bsweep.F80.FSELMIXB.fold 1
+div diverge-both:bsweep.F80.FSELMIXB.run 1
+div diverge-both:bsweep.F80.FSELMIXL.fold 1
+div diverge-both:bsweep.F80.FSELMIXL.run 1
+div diverge-both:bsweep.F80.FSELMIXN.fold 1
+div diverge-both:bsweep.F80.FSELMIXN.run 1
+div diverge-both:bsweep.F80.FSELMIXR.fold 1
+div diverge-both:bsweep.F80.FSELMIXR.run 1
+div diverge-both:csweep.C32.CDIV.fold 1
+div diverge-both:csweep.C32.CDIV.run 1
+div diverge-both:csweep.C32.CDIVSEL.fold 1
+div diverge-both:csweep.C32.CDIVSEL.run 1
+div diverge-both:csweep.C32.CMULADD.fold 1
+div diverge-both:csweep.C32.CMULADD.run 1
+div diverge-both:csweep.C64.CDIV.fold 1
+div diverge-both:csweep.C64.CDIV.run 1
+div diverge-both:csweep.C64.CDIVSEL.fold 1
+div diverge-both:csweep.C64.CDIVSEL.run 1
+div diverge-both:csweep.C64.CMULADD.fold 1
+div diverge-both:csweep.C64.CMULADD.run 1
+div diverge-both:f16.muladd.doubleround.den.run 1
+div diverge-both:f16.muladd.doubleround.run 1
+div diverge-both:f16.scale.doubleround.run 1
 div diverge-both:fsweep.F16.FMULADD.fold 1
 div diverge-both:fsweep.F16.FMULADD.run 1
 div diverge-both:fsweep.F16.FSCALE.fold 1
@@ -29,6 +71,20 @@ div diverge-both:shl.si.w.fold 1
 div diverge-both:shl.si.wp1.fold 1
 div diverge-both:shl.sll.w.fold 1
 div diverge-both:shl.sll.wp1.fold 1
+div diverge-both:x.uint.from.1e300.fold 1
+div diverge-both:x.uint.from.1e300.run 1
+div diverge-both:xsweep.F16.UI.fold 1
+div diverge-both:xsweep.F16.UI.run 1
+div diverge-both:xsweep.F32.UI.fold 1
+div diverge-both:xsweep.F32.UI.run 1
+div diverge-both:xsweep.F64.UI.fold 1
+div diverge-both:xsweep.F64.UI.run 1
+div diverge-both:xsweep.F80.SI.fold 1
+div diverge-both:xsweep.F80.SI.run 1
+div diverge-both:xsweep.F80.SLL.fold 1
+div diverge-both:xsweep.F80.SLL.run 1
+div diverge-both:xsweep.F80.UI.fold 1
+div diverge-both:xsweep.F80.UI.run 1
 div diverge-one:absc.si.min.run 1
 div diverge-one:add.si.maxp1.run 1
 div diverge-one:add.si.minm1.run 1
@@ -217,6 +273,20 @@ div diverge-one:bfsweep.BFU_31.MUL3.fold 1
 div diverge-one:bfsweep.BFU_31.MUL3.run 1
 div diverge-one:bfsweep.BFU_31.SELF.fold 1
 div diverge-one:bfsweep.BFU_31.SELF.run 1
+div diverge-one:bsweep.F16.FADD.fold 1
+div diverge-one:bsweep.F16.FADD.run 1
+div diverge-one:bsweep.F16.FMUL.fold 1
+div diverge-one:bsweep.F16.FMUL.run 1
+div diverge-one:bsweep.F16.FNEG.fold 1
+div diverge-one:bsweep.F16.FNEG.run 1
+div diverge-one:csweep.C32.CADD.fold 1
+div diverge-one:csweep.C32.CADD.run 1
+div diverge-one:csweep.C32.CMUL.fold 1
+div diverge-one:csweep.C32.CMUL.run 1
+div diverge-one:csweep.C64.CADD.fold 1
+div diverge-one:csweep.C64.CADD.run 1
+div diverge-one:csweep.C64.CMUL.fold 1
+div diverge-one:csweep.C64.CMUL.run 1
 div diverge-one:mul.si.max.2.run 1
 div diverge-one:mul.si.min.m1.run 1
 div diverge-one:neg.si.min.run 1
