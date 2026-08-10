@@ -4428,7 +4428,9 @@ if(MCC_BUILD_TESTS)
     # float, _Complex, long double and _Float16 tables were deepened until the
     # total came back over the old number. Fewer levels must not mean fewer
     # cases. Adding a value case means one line in tests/smoke/cases.h or
-    # tests/smoke/fcases.h and never a new cell.
+    # tests/smoke/fcases.h and never a new cell. The second float deepening
+    # (per-type IEEE boundary sweep, conversion sweep, three _Complex widths)
+    # took it 6,772,291 -> 12,875,605.
     if(NOT CMAKE_CROSSCOMPILING)
         add_executable(smokerun tools/smokerun.c tools/toolsupport.c)
         target_include_directories(smokerun PRIVATE
@@ -4438,7 +4440,7 @@ if(MCC_BUILD_TESTS)
             COMMAND smokerun --mcc "${_mcc_exe}"
                     --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
                     --work "${CMAKE_BINARY_DIR}/smoke-native"
-                    --min-cases 6700000)
+                    --min-cases 12800000 --min-passes 49)
         set_tests_properties("smoke/native" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
 
@@ -4446,7 +4448,7 @@ if(MCC_BUILD_TESTS)
             COMMAND smokerun --mcc "${_mcc_exe}"
                     --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
                     --work "${CMAKE_BINARY_DIR}/smoke-kp"
-                    --min-cases 6700000 --known-positive)
+                    --min-cases 12800000 --min-passes 49 --known-positive)
         set_tests_properties("smoke/native-known-positive" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
 

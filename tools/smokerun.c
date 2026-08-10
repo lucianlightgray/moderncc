@@ -39,6 +39,7 @@ static int g_verbose;
 static unsigned g_budget_ms = 1000;
 static unsigned g_deadline_ms = 6000;
 static long g_min_cases;
+static long g_min_passes;
 static int g_poison;
 static int g_rebank;
 static int g_rebank_req;
@@ -423,6 +424,8 @@ static int parse_summary(const char *out, long *checks, long *sweep,
 				 dn > 16;
 }
 
+static const char *g_src = "subject.c";
+
 static int compile_subject(int level, const char *exe, const char *log,
 													 const char *tsv, unsigned *ms, int gpu, int ladder,
 													 int jit)
@@ -443,10 +446,10 @@ static int compile_subject(int level, const char *exe, const char *log,
 	remove(tsv);
 	snprintf(cmd, sizeof cmd,
 					 "\"%s\" -w -O%d %s %s -fno-diagnostics-show-caret "
-					 "\"-I%s/tests/smoke\" \"%s/tests/smoke/subject.c\" -o \"%s\" "
+					 "\"-I%s/tests/smoke\" \"%s/tests/smoke/%s\" -o \"%s\" "
 					 "> \"%s\" 2>&1",
 					 g_mcc, level, jit ? "--embed-jit" : "", g_extra_flags, g_srcdir,
-					 g_srcdir, exe, log);
+					 g_srcdir, g_src, exe, log);
 	t0 = now_ms();
 	st = sm_system(cmd);
 	t1 = now_ms();
@@ -802,47 +805,6 @@ static void slice_census(int level)
 	note("  slice census at -O%d in %u ms\n", level, ms);
 }
 
-static void wrapv_pass(int level, const char *flag, const char *tag,
-											 const char *want_digest)
-{
-	char exe[1024], log[1024], tsv[1024], out[1024], dg[32] = "";
-	unsigned ms = 0;
-	long checks = 0, sweep = 0, msweep = 0, fchecks = 0, failures = 0;
-	char *txt;
-	int st;
-	ts_path(exe, sizeof exe, g_work, "subject-%s.exe", tag);
-	ts_path(log, sizeof log, g_work, "compile-%s.log", tag);
-	ts_path(tsv, sizeof tsv, g_work, "rir-%s.tsv", tag);
-	ts_path(out, sizeof out, g_work, "run-%s.txt", tag);
-	g_extra_flags = flag;
-	if (!compile_subject(level, exe, log, tsv, &ms, 0, 0, 0)) {
-		char *l = slurp(log);
-		bad("%s: the -O%d %s compile failed:\n%s", tag, level, flag, l);
-		free(l);
-		g_extra_flags = "";
-		return;
-	}
-	g_extra_flags = "";
-	st = run_subject(exe, "", out);
-	txt = slurp(out);
-	if (!parse_summary(txt, &checks, &sweep, &msweep, &fchecks, &failures, dg,
-										 sizeof dg)) {
-		bad("%s: the %s run printed no summary:\n%s", tag, flag, txt);
-		free(txt);
-		return;
-	}
-	if (failures || !exited_zero(st))
-		bad("%s: %s reported %ld failures:\n%s", tag, flag, failures, txt);
-	free(txt);
-	if (want_digest && !strcmp(want_digest, dg))
-		cat_add("wrapv wrapv-inert:digest-identical-under-%s", flag + 1);
-	else if (want_digest)
-		note("  %s changed the digest to %s (default %s)\n", flag, dg, want_digest);
-	g_checks_total += checks;
-	g_cases_total += checks + sweep + msweep + fchecks;
-	note("  %-10s %5u ms  checks=%ld digest=%s\n", flag, ms, checks, dg);
-}
-
 static int device_probe(char *devname, size_t dn, long *dispatches)
 {
 	char exe[1024], log[1024], tsv[1024], out[1024];
@@ -940,21 +902,262 @@ static int device_probe(char *devname, size_t dn, long *dispatches)
 	return available;
 }
 
-static int ref_build(const char *cc, const char *tag, const char *out)
+static int ref_build(const char *cc, const char *tag, const char *out,
+										 const char *src, const char *flags, const char *args)
 {
 	char cmd[4096], exe[1024], log[1024];
 	int st;
 	ts_path(exe, sizeof exe, g_work, "subject-%s.exe", tag);
 	ts_path(log, sizeof log, g_work, "build-%s.log", tag);
 	snprintf(cmd, sizeof cmd,
-					 "\"%s\" -w -O1 -DSM_REF_BUILD=1 \"-I%s/tests/smoke\" "
-					 "\"%s/tests/smoke/subject.c\" -o \"%s\" > \"%s\" 2>&1",
-					 cc, g_srcdir, g_srcdir, exe, log);
+					 "\"%s\" -w %s \"-I%s/tests/smoke\" "
+					 "\"%s/tests/smoke/%s\" -o \"%s\" > \"%s\" 2>&1",
+					 cc, flags, g_srcdir, g_srcdir, src, exe, log);
 	st = sm_system(cmd);
 	if (!exited_zero(st))
 		return 0;
-	st = run_subject(exe, "--dump", out);
+	st = run_subject(exe, args, out);
 	return exited_zero(st);
+}
+
+static const char *ref_gcc(void)
+{
+	const char *cc = getenv("MCC_SMOKE_GCC");
+	return cc && cc[0] ? cc : "gcc-15";
+}
+
+static const char *ref_clang(void)
+{
+	const char *cc = getenv("MCC_SMOKE_CLANG");
+	return cc && cc[0] ? cc : "clang-22";
+}
+
+typedef struct
+{
+	const char *name;
+	const char *file;
+	const char *flags;
+	const char *want;
+	const char *oracle;
+	const char *mark;
+	int lo;
+	int hi;
+} Pass;
+
+static const Pass g_pass[] = {
+		{"wrapv", NULL, "-fwrapv", NULL, NULL, NULL, 2, 2},
+		{"nowrapv", NULL, "-fno-wrapv", NULL, NULL, NULL, 2, 2},
+		{"asmreplay", "pass-asmreplay.c", "", "asmreplay 0 42 8\n", "-O0",
+		 "assembler label 'smp_asm_label' already defined", 0, -1},
+		{"c90tag", "pass-c90tag.c", "-std=iso9899:1990", "c90tag 32 16 24 1\n",
+		 "-O2 -std=iso9899:1990", NULL, 0, -1},
+		{"absshadow", "pass-absshadow.c", "-fno-builtin",
+		 "absshadow 2147483647 9223372036854775807 1 2147483647 "
+		 "9223372036854775807\n",
+		 "-O2 -fno-builtin", NULL, 0, -1},
+};
+
+#define SMK_NPASS ((int)(sizeof g_pass / sizeof g_pass[0]))
+
+static long g_pass_checks;
+static long g_pass_rowchecks[SMK_NPASS];
+static int g_pass_rows;
+static int g_pass_fails;
+
+static const char *pass_want(const Pass *p)
+{
+	static char poisoned[512];
+	if (!g_poison || !p->want)
+		return p->want;
+	snprintf(poisoned, sizeof poisoned, "%s-poisoned\n", p->want);
+	return poisoned;
+}
+
+static void pass_subject(const Pass *p, int level, const char *want_digest,
+												 int idx)
+{
+	char exe[1024], log[1024], tsv[1024], out[1024], dg[32] = "";
+	unsigned ms = 0;
+	long checks = 0, sweep = 0, msweep = 0, fchecks = 0, failures = 0;
+	char *txt;
+	int st;
+
+	ts_path(exe, sizeof exe, g_work, "subject-%s.exe", p->name);
+	ts_path(log, sizeof log, g_work, "compile-%s.log", p->name);
+	ts_path(tsv, sizeof tsv, g_work, "rir-%s.tsv", p->name);
+	ts_path(out, sizeof out, g_work, "run-%s.txt", p->name);
+	g_extra_flags = p->flags;
+	g_pass_checks++;
+	g_pass_rowchecks[idx]++;
+	if (!compile_subject(level, exe, log, tsv, &ms, 0, 0, 0)) {
+		char *l = slurp(log);
+		bad("%s: the -O%d %s compile failed:\n%s", p->name, level, p->flags, l);
+		free(l);
+		g_extra_flags = "";
+		rowlev_note(p->name, level);
+		g_pass_fails++;
+		return;
+	}
+	g_extra_flags = "";
+	st = run_subject(exe, "", out);
+	txt = slurp(out);
+	g_pass_checks++;
+	g_pass_rowchecks[idx]++;
+	if (!parse_summary(txt, &checks, &sweep, &msweep, &fchecks, &failures, dg,
+										 sizeof dg)) {
+		bad("%s: the %s run printed no summary:\n%s", p->name, p->flags, txt);
+		free(txt);
+		rowlev_note(p->name, level);
+		g_pass_fails++;
+		return;
+	}
+	if (failures || !exited_zero(st)) {
+		bad("%s: %s reported %ld failures:\n%s", p->name, p->flags, failures, txt);
+		rowlev_note(p->name, level);
+		g_pass_fails++;
+	}
+	free(txt);
+	if (want_digest && !strcmp(want_digest, dg))
+		cat_add("wrapv wrapv-inert:digest-identical-under-%s", p->flags + 1);
+	else if (want_digest)
+		note("  %s changed the digest to %s (default %s)\n", p->flags, dg,
+				 want_digest);
+	g_checks_total += checks;
+	g_cases_total += checks + sweep + msweep + fchecks;
+	note("  %-10s %5u ms  checks=%ld digest=%s\n", p->flags, ms, checks, dg);
+}
+
+static int pass_expect(const Pass *p, const char *who, const char *got,
+											 int level, int idx)
+{
+	const char *want = pass_want(p);
+	g_pass_checks++;
+	g_pass_rowchecks[idx]++;
+	if (!strcmp(want, got))
+		return 1;
+	bad("%s: %s printed \"%s\" but the pinned answer is \"%s\"", p->name, who,
+			got, want);
+	if (level >= 0)
+		rowlev_note(p->name, level);
+	g_pass_fails++;
+	return 0;
+}
+
+static void pass_fixture_level(const Pass *p, int level, int idx)
+{
+	char exe[1024], log[1024], tsv[1024], out[1024];
+	unsigned ms = 0;
+	char *txt;
+	int st;
+
+	ts_path(exe, sizeof exe, g_work, "pass-%s-O%d.exe", p->name, level);
+	ts_path(log, sizeof log, g_work, "pass-%s-O%d.log", p->name, level);
+	ts_path(tsv, sizeof tsv, g_work, "pass-%s-O%d.tsv", p->name, level);
+	ts_path(out, sizeof out, g_work, "pass-%s-O%d.txt", p->name, level);
+
+	g_src = p->file;
+	g_extra_flags = p->flags;
+	g_pass_checks++;
+	g_pass_rowchecks[idx]++;
+	st = compile_subject(level, exe, log, tsv, &ms, 0, 0, 0);
+	g_src = "subject.c";
+	g_extra_flags = "";
+	if (!st) {
+		char *l = slurp(log);
+		bad("%s: the -O%d %s compile of %s failed; the parser did not survive the "
+				"pass:\n%s",
+				p->name, level, p->flags, p->file, l);
+		free(l);
+		rowlev_note(p->name, level);
+		g_pass_fails++;
+		return;
+	}
+	txt = slurp(log);
+	g_pass_checks++;
+	g_pass_rowchecks[idx]++;
+	if (p->mark) {
+		if (!strstr(txt, p->mark)) {
+			bad("%s: the -O%d compile of %s never printed \"%s\", so the path the "
+					"pass exists to cover was not taken:\n%s",
+					p->name, level, p->file, p->mark, txt);
+			rowlev_note(p->name, level);
+			g_pass_fails++;
+		}
+	} else if (txt[0] && strstr(txt, "error")) {
+		bad("%s: the -O%d compile of %s emitted an error:\n%s", p->name, level,
+				p->file, txt);
+		rowlev_note(p->name, level);
+		g_pass_fails++;
+	}
+	free(txt);
+
+	st = run_subject(exe, "", out);
+	txt = slurp(out);
+	if (!exited_zero(st)) {
+		bad("%s: the -O%d binary exited %d:\n%s", p->name, level, exit_code(st),
+				txt);
+		rowlev_note(p->name, level);
+		g_pass_fails++;
+	}
+	pass_expect(p, "mcc", txt, level, idx);
+	if (g_verbose)
+		note("  %-10s O%-2d %5u ms  %s", p->name, level, ms, txt);
+	free(txt);
+}
+
+static void pass_oracle(const Pass *p, int idx)
+{
+	char out[1024], tag[160];
+	const char *cc[2];
+	int i, any = 0;
+
+	if (!p->oracle)
+		return;
+	cc[0] = ref_gcc();
+	cc[1] = ref_clang();
+	for (i = 0; i < 2; i++) {
+		char *txt;
+		snprintf(tag, sizeof tag, "%s-ref%d", p->name, i);
+		ts_path(out, sizeof out, g_work, "pass-%s.txt", tag);
+		if (!ref_build(cc[i], tag, out, p->file, p->oracle, ""))
+			continue;
+		any = 1;
+		txt = slurp(out);
+		pass_expect(p, cc[i], txt, -1, idx);
+		free(txt);
+	}
+	if (!any)
+		note("  %-10s no reference compiler could adjudicate (%s, %s); the pinned "
+				 "answer stands on mcc alone\n",
+				 p->name, cc[0], cc[1]);
+	else
+		note("  %-10s oracle-adjudicated by %s\n", p->name, p->oracle);
+}
+
+static void passes_run(int maxlevel, const char *want_digest)
+{
+	int i;
+	for (i = 0; i < SMK_NPASS; i++) {
+		const Pass *p = &g_pass[i];
+		int lo = p->lo, hi = p->hi < 0 ? maxlevel : p->hi, lv;
+		if (hi > maxlevel)
+			hi = maxlevel;
+		if (lo > hi)
+			lo = hi;
+		for (lv = lo; lv <= hi; lv++) {
+			if (p->want)
+				pass_fixture_level(p, lv, i);
+			else
+				pass_subject(p, lv, want_digest, i);
+		}
+		if (p->want && !g_poison)
+			pass_oracle(p, i);
+		g_pass_rows++;
+		if (g_pass_rowchecks[i] <= 0)
+			bad("pass '%s' executed zero checks, so a green run proves nothing about "
+					"it; a pass that compiles nothing must not read as a pass",
+					p->name);
+	}
 }
 
 static char *field(char *line, int idx)
@@ -988,15 +1191,10 @@ static void divergence(void)
 	char mout[1024], gout[1024], cout[1024], exe[1024], log[1024], tsv[1024];
 	char *m, *g, *c;
 	unsigned ms = 0;
-	const char *gcc = getenv("MCC_SMOKE_GCC");
-	const char *clang = getenv("MCC_SMOKE_CLANG");
+	const char *gcc = ref_gcc();
+	const char *clang = ref_clang();
 	int have_g, have_c, n3 = 0, ndis = 0, nloud = 0, nrows = 0;
 	char *pm;
-
-	if (!gcc || !gcc[0])
-		gcc = "gcc-15";
-	if (!clang || !clang[0])
-		clang = "clang-22";
 
 	ts_path(mout, sizeof mout, g_work, "dump-mcc.txt");
 	ts_path(gout, sizeof gout, g_work, "dump-gcc.txt");
@@ -1013,8 +1211,10 @@ static void divergence(void)
 		bad("divergence: the mcc subject dump failed");
 		return;
 	}
-	have_g = ref_build(gcc, "gcc", gout);
-	have_c = ref_build(clang, "clang", cout);
+	have_g = ref_build(gcc, "gcc", gout, "subject.c", "-O1 -DSM_REF_BUILD=1",
+										 "--dump");
+	have_c = ref_build(clang, "clang", cout, "subject.c", "-O1 -DSM_REF_BUILD=1",
+										 "--dump");
 	if (!have_g && !have_c) {
 		fprintf(stderr,
 						"SKIP: smokerun found no working reference compiler (tried %s and "
@@ -1110,7 +1310,8 @@ static void usage(void)
 {
 	fprintf(stderr,
 					"usage: smokerun --mcc PATH --srcdir DIR --work DIR [--min-cases N]\n"
-					"                [--max-level N] [--budget-ms N] [--deadline-ms N]\n"
+					"                [--min-passes N] [--max-level N] [--budget-ms N]\n"
+					"                [--deadline-ms N]\n"
 					"                [--bank FILE] [--rebank] [--known-positive]\n"
 					"                [--divergence] [--device] [--require-device] [-v]\n");
 }
@@ -1133,6 +1334,8 @@ int main(int argc, char **argv)
 			snprintf(bankpath, sizeof bankpath, "%s", argv[++i]);
 		else if (!strcmp(argv[i], "--min-cases") && i + 1 < argc)
 			g_min_cases = strtol(argv[++i], NULL, 10);
+		else if (!strcmp(argv[i], "--min-passes") && i + 1 < argc)
+			g_min_passes = strtol(argv[++i], NULL, 10);
 		else if (!strcmp(argv[i], "--max-level") && i + 1 < argc)
 			maxlevel = (int)strtol(argv[++i], NULL, 10);
 		else if (!strcmp(argv[i], "--budget-ms") && i + 1 < argc)
@@ -1250,8 +1453,7 @@ int main(int argc, char **argv)
 			snprintf(d0, sizeof d0, "%s", dn);
 	}
 
-	wrapv_pass(2, "-fwrapv", "wrapv", d0);
-	wrapv_pass(2, "-fno-wrapv", "nowrapv", d0);
+	passes_run(maxlevel, d0);
 	rowlev_report(maxlevel);
 
 	if (!known_pos) {
@@ -1272,6 +1474,8 @@ int main(int argc, char **argv)
 
 	note("smokerun: levels=%d checks=%ld value-cases=%ld failures=%d\n",
 			 g_levels_run, g_checks_total, g_cases_total, g_fail);
+	note("smokerun: passes=%d/%d pass-checks=%ld pass-failures=%d\n", g_pass_rows,
+			 SMK_NPASS, g_pass_checks, g_pass_fails);
 
 	if (sm_fork_retries)
 		note("smokerun: %u fork retries under host load; results are unaffected "
@@ -1290,13 +1494,41 @@ int main(int argc, char **argv)
 						g_cases_total, g_min_cases);
 		return 1;
 	}
+	if (g_pass_rows < SMK_NPASS) {
+		fprintf(stderr,
+						"smokerun: %d of %d compile passes ran; a pass that never "
+						"executed must not read as a pass\n",
+						g_pass_rows, SMK_NPASS);
+		return 1;
+	}
+	if (g_pass_checks < g_min_passes) {
+		fprintf(stderr,
+						"smokerun: compile passes executed %ld checks, below the "
+						"--min-passes %ld floor -- a silently-empty pass must not read as "
+						"a pass\n",
+						g_pass_checks, g_min_passes);
+		return 1;
+	}
 	if (known_pos) {
+		int nfix = 0, i;
+		for (i = 0; i < SMK_NPASS; i++)
+			if (g_pass[i].want)
+				nfix++;
 		if (!g_fail) {
 			fprintf(stderr, "smokerun: --known-positive poisoned an expectation and "
 											"every level still passed; the suite is blind\n");
 			return 1;
 		}
-		note("smokerun: known-positive fired %d failure(s), as it must\n", g_fail);
+		if (g_pass_fails < nfix) {
+			fprintf(stderr,
+							"smokerun: --known-positive poisoned every fixture pass but only "
+							"%d of %d reported a failure; the pass machinery is blind\n",
+							g_pass_fails, nfix);
+			return 1;
+		}
+		note("smokerun: known-positive fired %d failure(s) including %d from the "
+				 "compile passes, as it must\n",
+				 g_fail, g_pass_fails);
 		return 0;
 	}
 	return g_fail ? 1 : 0;

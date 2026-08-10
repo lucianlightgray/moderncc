@@ -11,6 +11,33 @@
 > Read this first. It is a handoff, not a board. Everything below it is detail.
 > It supersedes the 2026-08-09 handoff, which is wrong in five places, each named below.
 
+### How to validate — standing rule, 2026-08-10
+
+**Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the
+oracles.** `ctest -R "^smoke/"` is ~10 s for 6.7M value cases across `-O0`–`-O4`, plus the
+device arm and the divergence arm. Do not run the full suite to validate a change.
+
+The reasons are measured, not stylistic. The full suite is **~23 minutes and is not
+`-j`-bound** — one cell alone is 1,378 s, so the wall floor is a single cell and buying
+cores buys nothing. The top 0.1% of cells is 52% of all time; the median cell is 20 ms.
+And breadth was never what caught the defects: of the five real bugs found on 2026-08-10,
+**four are caught by nine cells in 0.47 s** and the fifth was caught by nothing at all,
+because it was a value shape — an `f64` ternary — that no cell covered.
+
+Consequences that follow, and they are not optional:
+
+- **If a check cannot be expressed in smoke, extend smoke.** Reaching for another cell is
+  how the inner loop decayed to 23 minutes in the first place.
+- **The `--min-cases` floor is the anti-vacuity guard.** With no broad sweep behind it, a
+  suite that silently runs nothing is indistinguishable from a green one — which this tree
+  has already shipped nine times.
+- **gcc and clang adjudicate wherever they can answer.** Where the result is UB or
+  implementation-defined, or where the two references disagree with each other, pin mcc's
+  answer as the golden and record the disagreement. Where mcc differs from **both**, that is
+  a `diverge-both` row and a defect until proven otherwise — report it loudly, never bank it
+  quietly. The `_Float16` intermediate-rounding bug (open item 22) was found exactly this
+  way: gcc and clang agree with each other and mcc does not.
+
 ### Where the tree is
 
 > The pre-merge branch accounting that used to sit here (9501/9503/9504 cells,
@@ -10232,17 +10259,89 @@ Ordered by how much a currently-quoted number depends on it.
     search rung is a different subject from the value ladder and needs its own ratchet), or
     put `-O13` back in the main arm and re-bank the two rows red with a reason. Until then
     the search tier has **no bail ratchet at all**.
-22. **mcc does not round `_Float16` intermediates back to `_Float16` between the operations
-    of a compound expression.** Found the day `wt/o4fold` deepened the float sweep — nothing
-    in the tree had asked a multi-step `_Float16` question before, which is exactly why the
-    deepening was spent there. `2.25f16 * 255.0f16 + 0.5f16` reads `0x607c` on gcc **and**
-    clang, which agree, and `0x607d` here: mcc single-rounds through `float` where both
-    references round per operation. 8 of 1,728 probed triples differ, always by one ULP.
-    gcc documents per-operation rounding for `_Float16` on x86 without AVX512-FP16, so mcc
-    is the outlier and this is a conformance defect, not a tolerance. Four
-    `diverge-both:fsweep.F16.{FMULADD,FSCALE}.{fold,run}` rows are banked in
-    `tests/smoke/bails.txt` with the finding written above them; the ratchet fails if they
-    stop diverging, so they cannot outlive the fix. Delete all four when it lands.
+22. **CORRECTED, and it was backwards. mcc rounds every `_Float16` operation back to
+    `_Float16`; gcc-15 and clang-22 keep the intermediate at `float` precision.** The
+    2026-08-09 entry claimed the opposite ("mcc single-rounds through `float` where both
+    references round per operation") and called it a conformance defect. `wt/smokedepth`
+    probed all 12 two-operator `_Float16` shapes over 64³ = 262,144 triples each and the
+    direction is unambiguous. Against a model that forces a rounded `_Float16` between the
+    two operators, **mcc differs on 0 of 262,144 for every shape**; gcc and clang differ on
+    3,058 (`a*b+c`), 9,508 (`(a+b)*c`), 26,183 (`a*b*c`), 27,331 (`(a*b)/c`) and so on.
+    Against a model that keeps the intermediate in `float`, the counts swap exactly.
+    **`gcc-15 -fexcess-precision=16` reproduces mcc bit for bit on all twelve shapes**, and
+    `-fexcess-precision=standard`, `-std=c23` and clang's `-ffp-eval-method=source` all
+    leave the references on the wide intermediate. `2.25f16 * 255.0f16 + 0.5f16` is
+    `0x607d` under per-operation rounding (mcc, and gcc with `-fexcess-precision=16`) and
+    `0x607c` with a `float` intermediate (gcc and clang by default); both compilers also
+    return `0x607d` the moment the intermediate is spelled with a cast or stored to a
+    variable, which is what proves the difference is the evaluation format and not the
+    arithmetic. So this is a documented, flag-selectable evaluation-format choice, not a
+    wrong answer, and mcc is on the side that matches the declared type of the operands.
+    What remains open is a **decision**, not a fix: either keep per-operation rounding and
+    say so, or add the knob. The `diverge-both:{fsweep,bsweep}.F16.{FMULADD,FSCALE}` and
+    `f16.*.doubleround` rows stay banked in `tests/smoke/bails.txt` so the choice cannot
+    change silently.
+23. **`(unsigned int)` loses its 32-bit truncation when the cast is consumed in a wider
+    expression.** `(unsigned long long)(unsigned)d` for a `volatile double d = 1e300`
+    yields `0x8000000000000000` under mcc and `0` under both gcc-15 and clang-22; the same
+    shape with `-3.0` yields `0xfffffffffffffffd` against `0x00000000fffffffd`. Assigning
+    to an `unsigned int` variable first narrows correctly in every case, so the defect is
+    in the cast expression, not the conversion. The inputs are out-of-range float to
+    unsigned conversions and therefore UB, so this is a quality-of-implementation defect
+    rather than a conformance one — but the *type* of the expression is `unsigned int` and
+    its value is outside `unsigned int`, and that leaks into anything wider that reads it.
+    Banked as `diverge-both:xsweep.{F16,F32,F64,F80}.UI` and `x.uint.from.1e300`, with
+    `x.uint.var.1e300` and `x.uint.var.2p32` next to them as the passing controls.
+24. **`long double` to `int` does not truncate toward zero for values just under 1.** Not
+    UB, no out-of-range operand:
+
+        volatile long double one = 1.0L, two = 2.0L, ep = LDBL_EPSILON;
+        volatile long double h = ep / two, x = one - h;   /* 1 - 2^-64, exact */
+        x == one   ->  0   everywhere
+        (int)x     ->  1   mcc      0   gcc-15, clang-22
+        (long)x    ->  0   mcc      0   gcc-15, clang-22
+
+    mcc is self-inconsistent: the 64-bit conversion truncates and the 32-bit one does not.
+    The observed values are consistent with the `long double` being narrowed to `double`
+    (where `1 - 2^-64` rounds to `1.0`) before the integer conversion. Found by the F80
+    boundary sweep: `bsweep.F80.FSELMIX{L,R,B}` diverge from both references on exactly the
+    corpus entry `1 - LDBL_EPSILON/2`, 62 of 4,096 cases.
+25. **`--embed-jit` loads an archive member twice when a softfloat helper is demanded in
+    both link phases.** Any translation unit large enough to reach the JIT boot path and
+    containing a single float-to-`unsigned long long` conversion fails to link:
+
+        <embedded libmccrt.a>: error: '__fixunsdfdi' defined twice
+
+    `__fixunssfdi`, `__fixunsdfdi` and `__fixunsxfdi` are each defined exactly once, in
+    `mccrt.o`, so the member itself is being pulled in twice; `mcc_error_noabort("'%s'
+    defined twice")` in `src/objfmt/mccelf.c` is the report site. Reproduced on **`main`**
+    by adding six lines to `tests/smoke/subject.c` — one `static unsigned long long
+    f(void) { volatile double d = 12.5; return (unsigned long long)d; }` called from
+    `main` — and compiling `mcc -O2 --embed-jit`; it is not caused by the new tables. A
+    small standalone with all three helpers does *not* reproduce it, so the second archive
+    scan is reached only in a larger link. **Cost while it is open: the float-to-`unsigned
+    long long` leg of `tests/smoke`'s conversion sweep cannot exist**, because the smoke
+    subject is compiled with `--embed-jit` by the jit census arm. `SMX_F2I_TYPES` in
+    `tests/smoke/fcases.h` is `{int, unsigned, long long}` for that reason alone; add
+    `unsigned long long` back the day this lands. Note that mcc and clang agree and gcc
+    differs on `(unsigned long long)1e300` (`2^63` vs `0`), so there is a real divergence
+    sitting behind this hole.
+26. **`_Complex` addition is miscompiled at `-O2` and above when same-named locals of
+    different types live in sibling blocks.** The smoke `smc_run` was one function with
+    three `if (tag == ...) { ... }` blocks, each declaring `volatile CTY vr, vi, wr, wi`
+    for `CTY` = `float`, `double`, `long double`. At `-O0` and `-O1` every row is right; at
+    `-O2`, `-O3` and `-O4` the `double` and `long double` blocks read `wr` as if it were
+    `vi`, so `c64.add` on `(1.5, -2.5) + (0.25, 4.0)` returns `-1.0 + 1.5i` — `ar + ai`
+    for the real part — instead of `1.75 + 1.5i`. The `float` block, which is first, is
+    always correct. Which rows break moves when unrelated locals are added or removed,
+    which is what a stack-slot overlap bug looks like rather than a fold bug: `volatile` on
+    the row operands does not help, and the sweep, which calls the same function with
+    runtime values, is correct at every level. Splitting the three blocks into three
+    functions (`smc_run_C32/C64/C80`) cures it completely, and that is what
+    `tests/smoke/fcases.h` now does — so **the shape is no longer covered by any cell**.
+    Reproducer: `tests/smoke/fcases.h` at `wt/smokedepth`, with the three `SMC_BODY`
+    expansions folded back into one function, plus a nine-line driver that calls
+    `smc_run(smc_rows[0].tag, ...)` and prints the result.
 
 #### Clean bills of health, because those are results too
 
