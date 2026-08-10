@@ -681,6 +681,143 @@ authoritative run belongs on merged `main`.
    is −38 measured with the env and −38 measured without it, by two independent harnesses —
    but a byte comparison cannot be used to show it, because the baseline is not stable.
 
+## Landed — two replay defects that were hidden rather than fixed (`wt/replayfix`), 2026-08-10
+
+Closes worklist rows **15** (`full_language.c` diverges at `-O0`) and **16** (the
+`jit-splice` pin). Both turned out to be larger than their row said, and neither was the
+defect its row named. Cell count **9510 → 9515**: `optfire/labeladdr{,-known-positive}`,
+`optfire/asm-replay-recover{,-known-positive}`, and one more `flagsweep-cover/*` row
+because lifting the pin took the covering array from 75 rows to 76.
+
+### Row 16 was not a `jit-splice` bug. `-O2` miscompiled computed goto, with no flags.
+
+`-fjit-splice` is not an optimizer; it is the validation harness for
+`ast_baseline_splice`, and it forces the rebase path by emitting a `jmp+0` so the body
+lands 5 bytes late. Turning it on and reproducing gave
+`tst_branch --P\x8e --` for `programs/random_stuff` and a divergence in
+`structs_unions/struct_init` — **2 of 287 exec goldens, and exactly the two that take a
+label address**.
+
+The 5 bytes are the whole story. `&&label` publishes an ELF symbol whose value is a
+`.text` offset recorded once at parse time (`label_pop` → `put_extern_sym(s,
+cur_text_section, s->jnext, 1)`; for a defined label `jnext` and `jind` are the same
+union slot). **Nothing re-records it.** The AST replay keeps its own `ast_rp_label` table
+and never writes back to the parser `Sym`; `ast_baseline_splice` rebases code bytes and
+relocation `r_offset`s and cannot touch a symbol value. So any re-emit that moves the
+label leaves `&&label` pointing at the parse-time offset, and the computed goto lands
+mid-instruction.
+
+That is not confined to the flag. **A computed goto in an optimizable body segfaults at
+`-O1`, `-O2`, `-O3` and `-Os` with no flags and no environment**, for function-scope
+labels and `__label__` alike, and it segfaults **the compiler process** under
+`mcc -run -O2` (the `ast_jit_dispatch_env == 6` slot path splices the body 6 bytes late
+through the same primitive, and `MCC_EMBED_JIT` is `ON` by default).
+
+`ast_opt_ok` now excludes `ast_func_has_labeladdr` — the guard `ast_plan_promotion`
+already carried for the same reason, and the same shape as the existing
+`ast_arena_has_hole` refusal for asm bodies.
+
+**The measured cost of that refusal, `-O2`, guard against no-guard, same tree:**
+
+| subject | `.text` guard | no guard | object | no-guard exe |
+| --- | ---: | ---: | --- | --- |
+| `tests/exec/programs/random_stuff.c` | 1295 | 1295 | **byte-identical** | ok |
+| `tests/exec/structs_unions/struct_init.c` | 6519 | 6519 | **byte-identical** | ok |
+| `tests/optfire/src/labeladdr.c` | 836 | 818 | differ | **SIGSEGV** |
+
+So across the whole `tests/exec` corpus the guard costs **0 bytes**, and on a
+hand-written worst case it costs **18 bytes (2.2%)** against a segfault. That also
+explains why the two goldens were green at `-O2` before: the optimizer's re-emit happened
+not to move their labels; the splice's `jmp+0` always does. *(Two of the four `tests/exec`
+files that `grep '&&[a-zA-Z_]'` finds — `codegen/nodata_wanted.c`,
+`features_c99_c11/atomic_misc.c` — are logical-and, not label addresses. Trap 1 again.)*
+
+**Fix, do not delete.** `ast_baseline_splice` is not optional: it is what
+`ast_jit_dispatch_env == 6` splices with on x86_64, i386 and arm64, and `MCC_EMBED_JIT`
+defaults `ON`, so every `-run` and every embed-JIT program goes through it. Deleting
+`-fjit-splice` would delete the only thing that exercises the primitive at a shifted base
+in a non-JIT build; the harness rebases **1,297 faithful bodies of 1,332** over
+`tests/exec` at `-O2`, where the JIT path reaches only the bodies `ast_jit_want` selects.
+The harness was the only reason this was found at all, and it cost one condition to make
+green. What should be deleted is the pin, and it is: `jit-splice` is out of `cover3.py`'s
+`PINS` (110 varying flags of 115, 75 → 76 rows) and `jit-splice:on:random_stuff` is out of
+`flagsweep.sh`'s `KNOWN_FLAKY_RED`, so `flagsweep-exec/jit-splice` is a real green —
+**150 subject runs at `-O1 -O2 -O3`**, and 287/287 exec programs at `-O2 -fjit-splice`
+now compute the `-O0` answer.
+
+> `cover3.txt`'s own header says **115 flags, 109 varying, 75 rows** before this change,
+> not the 113/107/74 quoted in the optfire section below. Re-read the file, not the prose.
+
+**Left open, and it is the honest cost of the refusal:** a computed-goto interpreter loop
+gets no optimization at all. Buying it back needs a *write-back*: publication of
+address-taken labels deferred to the end of `gen_function`, with the final offset taken
+from `ast_rp_label` after a replay, from `jind + delta` after a splice — and a refusal
+anyway for the guarded-deopt arm, which emits the body **twice** and where one label
+symbol cannot describe two copies. Local `__label__` makes it worse: `label_pop` runs at
+block exit, so its `Sym` is freed and its ELF symbol already published before
+`ast_func_end` is even reached. Not attempted here.
+
+### Row 15 was not a byte divergence. The compile *failed*.
+
+`tests/diff/full_language.c` needs `-I<srcdir> -DCC_NAME=...` to compile at all. Given
+those, `MCC_REPLAY_IR=1 -O0` stops at **function 135 of 303** with
+`legacy_meta.h:376: error: ';' expected (got '0')`, pointing at a closing brace. Plain
+`mcc -O2 -c` fails the same way with no environment at all.
+
+`get_asm_string` contains `asm volatile(... "some_symbol: .long 0" ... ".pushsection
+__bug_table" ... "bug_table:" ...)`. Replaying it re-runs `mcc_assemble_inline`, which
+re-runs `asm_new_label`, which **correctly** refuses: `assembler label 'some_symbol'
+already defined` (visible only under `MCC_RIR_ABORTWHY=1`; `ast_error_sink` swallows it).
+That body is simply not replayable and must fall back — the machinery for exactly that is
+`ast_func_end`'s `setjmp` + `ast_error_sink`, plus the three `rir_*` verify sites.
+
+**What was broken is the falling back.** `mcc_assemble_inline` pushes a `:asm:`
+`BufferedFile`, swaps `parse_flags` for the assembler's, reclassifies `.` as an
+identifier character and clears `macro_ptr` — and the recovery `longjmp` goes straight
+past its epilogue. The C parser then resumes **inside the dead asm buffer**, in assembler
+`parse_flags`, and reads `.long 0`'s `0` as the next token of the translation unit. A
+`.pushsection` interrupted mid-flight additionally leaves `cur_text_section` pointing at
+the wrong section, which presents as `declaration expected` instead.
+
+`mcc_asm_inline_unwind` (`src/mccasm.c`) restores exactly what `mcc_assemble_inline` owns
+— the `BufferedFile` chain, `cur_text_section`/`ind`, `tok_flags`, `parse_flags`,
+`macro_ptr`, and the `.`/`$` idnum classes — and is called from all four recovery arms.
+Two-line reproducer:
+
+```c
+int f(void) { __asm__ volatile("jmp .+6\nsome_symbol: .long 0\n"); return 0; }
+int after(int x) { return x + 1; }
+```
+
+After the fix all **303** `full_language.c` bodies compile at every level;
+`get_asm_string` is `rerror` and falls back, as designed.
+
+### Not the same defect: the `shift=bad sfop=asm@2` fact is untouched and still open
+
+`shift=bad sfop=asm@2 sdiff=1` reproduces **unchanged** after the fix: put `plt_target`
+*above* its `asm("call plt_target")` and `MCC_REPLAY_IR=3 -O1` still reports it for
+`call_plain`. Different mechanism — the integrated assembler resolves a same-TU `call` to
+a direct displacement instead of a relocation, so the emitted **bytes** are
+position-dependent; nothing to do with lexer state. It is **latent, not shipped**: an asm
+body always trips `ast_arena_has_hole`, so `ast_opt_ok` is 0 and it never reaches any
+shifted-base emit path. The real fix remains "emit a relocation for a same-TU `call`",
+still not attempted, and `tests/exec/inline_asm/asm_reloc_suffix.c` still sidesteps it by
+defining `plt_target` at the bottom of the file — **do not reorder that file**.
+
+### Found on the way, not fixed: six cells have never compiled their own `EXTRA`
+
+`ast/rir-position`, `ast/rir-parity-{O0,O1,O2,O3}` and `ast/rir-c2-{O1,O2,O3}` all pass
+`-DEXTRA=.../tests/diff/full_language.c`, and all of them invoke `mcc -w <opt> -c` with
+**no `-I` and no `-DCC_NAME`**, so the file fails at `#include INC(42test)`, `_rc` is
+non-zero, and the loop `continue`s. The EXTRA has contributed nothing to any of those
+cells for as long as they have existed, and both scripts' "compiled nothing" floors are
+per-corpus, not per-file, so it never showed. Arming it is one `-I` each — and it goes
+**red**: at `-O0` the file has 303 bodies, 299 faithful, 1 empty, and three that are not
+(`get_asm_string` `rerror`, `asm_local_statics` `runfaithful:reloc@-1`, `asm_dot_test`
+`rdiverge:asmgen@41`), against `rir_parity`'s hard 100% bar. Those three are pre-existing
+byte divergences the gate is masking, not this branch's; arming the cells is a separate
+decision with three defects behind it.
+
 ## Landed — the lowerable ratchet is taken on bodies, not on the corpus ratio, 2026-08-10
 
 `rir-coverage` went red twice in one day on the same mechanism. On 2026-08-09 it was
@@ -7403,8 +7540,8 @@ schedule.
 | **12** | ~~**W8 — `selfhost-jit` heap-UAF of a `Sym` in the AST forward-inline re-emit path.**~~ **Closed 2026-08-09.** Not a cross-function refcount bug: a plain-local leaf's captured `sym` (needed during in-function replay by `wide256_sv_is_stable_lval`) dangles at re-emit after `ast_func_end`. Fixed by `ast_reemit_scrub_leaf_syms` (`src/mccast.c`), which nulls non-`VT_SYM` non-VLA local-leaf syms before re-emit replay. Oracle byte-identical; see the Windows/macOS host-items section | medium–large | **correctness** |
 | **13** | **`run-tier/x86_64` fails `tls_threads` when `MCC_JIT=1` meets an active AST replay.** Localised to three lines: `mcc_jit_tls_slab` (`src/mcchost.c:1450`), the `mcc_run_pthread_create` binding (`src/objfmt/mccelf.c:974`) under `s1->run_tls_active`, set only on the interpreter relocate path in `tls_setup_linux` (`src/mccrun.c:451`). `--no-jit` does not suppress it. Note this contradicts `:10090`'s "the deliberate-red count is now 0", which is true only of the default configuration | small–medium | **correctness** |
 | **14** | **`ptr_unlink` for-condition-store segfault** — root-caused to `rir_cf_cond`/`rir_docond`, needs a 5-fix/34-break discriminator. Orphaned: zero references anywhere else in this file | medium | **correctness** |
-| **15** | **`full_language.c` still diverges at `-O0` on x86_64/i386** — an `AST_OP_ASM` replay defect (P4 defect 4). Contained, not closed; zero later references | medium | **replay fidelity** |
-| **16** | **The `jit-splice` pin hides a live miscompile.** `tests/optfire/cover3.py:44` pins it with the reason *"miscompiles `programs/random_stuff` at `-O2`; OFF in `mccopt.h` for that reason"*. That miscompile appears nowhere in the codegen-defect list | medium | **correctness** |
+| **15** | ~~**`full_language.c` still diverges at `-O0` on x86_64/i386** — an `AST_OP_ASM` replay defect (P4 defect 4)~~ **CLOSED on `wt/replayfix`** — and it was not a divergence, the *compile failed*. The replay of an asm that defines a symbol raises a legitimate `assembler label already defined`, and the recovery `longjmp` unwound past `mcc_assemble_inline`'s epilogue, leaving the C parser reading tokens out of the dead `:asm:` buffer. See the landed section | done | **replay fidelity** |
+| **16** | ~~**The `jit-splice` pin hides a live miscompile.**~~ **CLOSED on `wt/replayfix`** — and it was not a `jit-splice` bug. A body that takes a label address was miscompiled at `-O1`/`-O2`/`-O3`/`-Os` with no flags, and segfaulted the compiler under `mcc -run`; the pinned flag was the only thing exercising the rebase that exposed it. Pin lifted, `KNOWN_FLAKY_RED` emptied. See the landed section | done | **correctness** |
 | **17** | **`-O3` re-emission leaves the pre-inline copy in `.text`** — **27 functions / 52,022 B, ~3.6%** of `.text`. Not a correctness bug; no cell, no bank, no entry in the codegen list | medium | **emitted code** |
 | **18** | **`--mutate` is blind to `memcpy`, and the real gap is the corpus.** Four of six operator sites already perturb written memory and `g_frame_mismatch` exists; what is missing is **any `memcpy`/`memset` in the slice corpus to mutate**. Smaller than the debt as filed | small | **test strength** |
 | **19** | **Debt 6-vi — the chain-store *member* fixture was never written.** Its stated blocker (debt #6a's `-O1` vstack underflow) has been gone since 2026-08-09. `exec-chainlive/*` covers the live half; the member half of the pairing has no cell | small | **regression cover** |

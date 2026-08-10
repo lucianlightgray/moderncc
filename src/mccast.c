@@ -19278,7 +19278,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
-				const int ast_opt_ok = faithful && !ast_fn_hole;
+				const int ast_opt_ok =
+						faithful && !ast_fn_hole && !ast_func_has_labeladdr;
 				const int ast_asm_only_hole =
 						ast_fn_hole && ast_fn_has_asm && !ast_fn_asm.unknown &&
 						!ast_arena_has_dangle(ast_cur);
@@ -19823,6 +19824,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 #endif
 				}
 			} else { MCC_TRACE("br\n");
+				mcc_asm_inline_unwind();
 				if (ast_rir_used)
 					{ MCC_TRACE("br\n"); rir_prod_replay_end(); }
 				mcc_state->nb_errors = ast_saved_nberr;

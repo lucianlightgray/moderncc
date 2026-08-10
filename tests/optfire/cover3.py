@@ -41,8 +41,6 @@ DEFAULT_OUT = os.path.join(HERE, "cover3.txt")
 STRENGTH = 3
 
 PINS = {
-    "jit-splice": (
-        0, "miscompiles-programs/random_stuff-at-O2; OFF in mccopt.h for that reason"),
     "replay-cmp-materialize": (
         1, "MCC_OPTD_ALWAYS-bisection-handle; off-state-drops-the-vcheck_cmp-the-replay"
            "-owes-at-mccast.c:4548-and-two-VT_CMPs-claim-one-flags-register"),

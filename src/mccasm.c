@@ -1189,12 +1189,35 @@ ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess) { MCC_TRACE("enter\n")
 	return ret;
 }
 
+static struct AsmInlineFrame {
+	int depth;
+	BufferedFile *file;
+	Section *section;
+	int ind;
+	int tok_flags;
+	int parse_flags;
+	const int *macro_ptr;
+	int dotid;
+	int dolid;
+} asm_inline_frame;
+
 ST_FUNC void mcc_assemble_inline(MCCState *s1, const char *str, int len, int global) { MCC_TRACE("enter\n");
 	const int *saved_macro_ptr = macro_ptr;
 	int dotid = set_idnum('.', IS_ID);
+	int dolid = 0;
 #if !defined(MCC_TARGET_RISCV64) && !defined(MCC_TARGET_X86_64)
-	int dolid = set_idnum('$', 0);
+	dolid = set_idnum('$', 0);
 #endif
+	if (asm_inline_frame.depth++ == 0) { MCC_TRACE("br\n");
+		asm_inline_frame.file = file;
+		asm_inline_frame.section = cur_text_section;
+		asm_inline_frame.ind = ind;
+		asm_inline_frame.tok_flags = tok_flags;
+		asm_inline_frame.parse_flags = parse_flags;
+		asm_inline_frame.macro_ptr = saved_macro_ptr;
+		asm_inline_frame.dotid = dotid;
+		asm_inline_frame.dolid = dolid;
+	}
 
 	mcc_open_bf(s1, ":asm:", len);
 	memcpy(file->buffer, str, len);
@@ -1207,6 +1230,26 @@ ST_FUNC void mcc_assemble_inline(MCCState *s1, const char *str, int len, int glo
 #endif
 	set_idnum('.', dotid);
 	macro_ptr = saved_macro_ptr;
+	asm_inline_frame.depth--;
+}
+
+ST_FUNC void mcc_asm_inline_unwind(void) { MCC_TRACE("enter\n");
+	if (asm_inline_frame.depth <= 0)
+		{ MCC_TRACE("br\n"); return; }
+	while (file && file != asm_inline_frame.file)
+		{ MCC_TRACE("br\n"); mcc_close(); }
+	if (asm_inline_frame.section) { MCC_TRACE("br\n");
+		cur_text_section = asm_inline_frame.section;
+		ind = asm_inline_frame.ind;
+	}
+	tok_flags = asm_inline_frame.tok_flags;
+	parse_flags = asm_inline_frame.parse_flags;
+	macro_ptr = asm_inline_frame.macro_ptr;
+#if !defined(MCC_TARGET_RISCV64) && !defined(MCC_TARGET_X86_64)
+	set_idnum('$', asm_inline_frame.dolid);
+#endif
+	set_idnum('.', asm_inline_frame.dotid);
+	asm_inline_frame.depth = 0;
 }
 
 ST_FUNC const char *skip_constraint_modifiers(const char *p) { MCC_TRACE("enter\n");
