@@ -5237,6 +5237,22 @@ if(MCC_BUILD_TESTS)
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                 LABELS "flagsweep;native" TIMEOUT 300)
 
+            set(_ar_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/asmreplay.sh")
+            set(_ar_src "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/asmreplay.c")
+            add_test(NAME "optfire/asm-replay-recover"
+                COMMAND "${_ar_sh}" "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_BINARY_DIR}/asmreplay" "${_ar_src}")
+            set_tests_properties("optfire/asm-replay-recover" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                LABELS "replay;native" TIMEOUT 300)
+            add_test(NAME "optfire/asm-replay-recover-known-positive"
+                COMMAND "${_ar_sh}" "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_BINARY_DIR}/asmreplay-kp" "${_ar_src}"
+                        known-positive)
+            set_tests_properties("optfire/asm-replay-recover-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                LABELS "replay;native" TIMEOUT 300)
+
             file(READ "${_fs_tbl}" _fs_txt)
             string(REGEX MATCHALL "MCC_OPT_ROW\\([A-Z0-9_]+, *\"[a-z0-9-]+\"" _fs_rows "${_fs_txt}")
             unset(_fs_txt)

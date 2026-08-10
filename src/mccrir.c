@@ -6006,6 +6006,7 @@ void rir_verify(void) {
 																				rel_len));
 		}
 	} else {
+		mcc_asm_inline_unwind();
 		errored = 1;
 	}
 	new_len_fin = ind - rir_body_ind_sv;
@@ -6084,6 +6085,7 @@ void rir_verify(void) {
 					rir_tot_shift_bad++;
 				}
 			} else {
+				mcc_asm_inline_unwind();
 				rir_shift_verdict = "err";
 				rir_tot_shift_bad++;
 			}
@@ -6270,6 +6272,7 @@ void rir_verify(void) {
 				}
 			}
 		} else {
+			mcc_asm_inline_unwind();
 			rir_tot_c2_err++;
 			if (rir_env >= 5)
 				fprintf(stderr, "[rir-c2] %s\t%s\n", funcname,

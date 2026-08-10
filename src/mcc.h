@@ -1962,6 +1962,7 @@ ST_FUNC void asm_instr(void);
 ST_FUNC void asm_global_instr(void);
 ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess);
 ST_FUNC void mcc_assemble_inline(MCCState *s1, const char *str, int len, int global);
+ST_FUNC void mcc_asm_inline_unwind(void);
 void ir_cap_teardown(void);
 void rir_teardown(void);
 void ir_cap_asm(const char *str, int len, int global);

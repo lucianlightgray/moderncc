@@ -19799,6 +19799,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 #endif
 				}
 			} else { MCC_TRACE("br\n");
+				mcc_asm_inline_unwind();
 				if (ast_rir_used)
 					{ MCC_TRACE("br\n"); rir_prod_replay_end(); }
 				mcc_state->nb_errors = ast_saved_nberr;
