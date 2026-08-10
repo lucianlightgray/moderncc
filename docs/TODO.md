@@ -72,6 +72,142 @@ the first against real data rather than test data. That is a currency which conv
 the device differential has already caught three miscompiles that internal comparisons
 were structurally blind to — whereas device-eligible blocks never had an exchange rate.
 
+## Landed — a bitfield lowers to shift-and-mask in the arena; the ternary normalisation is a measured negative and the `faithful` gate is why, 2026-08-09 (`wt/rirnorm`)
+
+Two RIR normalisations were asked for, on the same principle: normalise the shape once at
+RIR so the slice engine, both emitters and the re-emitted C all see something they already
+handle. **One landed, one is a negative result that is worth more than the change would
+have been.**
+
+### 1. Bitfields — landed
+
+`gv()` expands a bitfield read into `adjust_bf` plus either `load_packed_bf` or a
+`SHL`/`SAR` pair, and `vstore()` expands a write into a mask-merge. Both expansions
+happened at replay time and never entered the arena, so the slice engine saw an
+`AST_Unary AST_OP_MEMBER` carrying `VT_BITFIELD` with `bp`/`bs` and refused it. Accepting
+it would have meant the same extraction rule in the CPU reference, the SPIR-V emitter, the
+MSL emitter and `cref_expr` — the shape that produced the shared-wrong-rule arithmetic
+conversion bug.
+
+`rir_bf_normalise`, at the end of `rir_to_arena`, rewrites it instead, mirroring `gv()` and
+`vstore()` rather than reinventing them:
+
+```
+load   ->  SAR(SHL(Convert(gvt, member'), bits-(bp+bs)), bits-bs)
+store  ->  Store(member', SHL(value & mask, bp) | (member'' & ~(mask << bp)))
+```
+
+**The semantics that were checked, and how.**
+
+| rule | what it turns on | evidence |
+| --- | --- | --- |
+| signed extraction sign-extends from the **field** width | `SHL bits-(bp+bs)` then `SAR bits-bs`, with `SAR` on a node whose type carries the declared signedness, so unsigned becomes a logical shift | `read_a` (`int a:5`) and `read_c` (`int c:19`) in `tests/gpu/cref/bitfield.c`, adjudicated by gcc-15 and clang-22 |
+| the extraction width follows the **adjusted** storage unit, not the declared type | `gvt` takes `VT_LLONG` only when `(t1 & VT_BTYPE) == VT_LLONG`, where `t1` is post-`auxtype`; layout retypes a `long long` field of ≤32 bits to `VT_INT`, so it extracts at 32 bits exactly as `gv()` does | `read_g` (`long long g:40`), `read_h` (`unsigned long long h:23`) |
+| `_Bool` extracts unsigned | `gvt |= VT_UNSIGNED` when the declared base type is `VT_BOOL`, or a 1-bit signed field would read as −1 | `read_i`; and `s.p = 2` yielding 1 in the differential |
+| a write preserves the surrounding bits | `(old & ~(mask << bp))` re-derives the destination as a separate subtree rather than duplicating an SValue | the whole-struct `memcpy` byte comparison in the differential below |
+| `_Bool` writes skip the mask and retype the destination to `VT_BYTE|VT_UNSIGNED` | the `(t0 & VT_BTYPE) == VT_BOOL` arm, mirroring `vstore`'s | `struct C` in the differential |
+| a field straddling every candidate storage unit | **refused.** `auxtype == VT_STRUCT` is `load_packed_bf`'s byte-at-a-time path and has no single-unit spelling. PCC/GCC layout does permit it when packed; `struct P { unsigned a:3; unsigned long long b:60; int c:17; }` under `#pragma pack(1)` produces one, and `c` stays a bitfield node | verified by reading the arena for that struct |
+| allocation order | LSB-first within the unit, `f->type.bp` already fixed up by `struct_layout` pass 2 (which moves `f->c`); there is no big-endian bit-order path in the tree, and MS mode never straddles | `struct_layout`, and the `#pragma pack` cases in the differential |
+
+**The three things that were refused rather than approximated, each because the naive version
+was wrong and was caught:**
+
+1. **Lvalue positions.** `++c.u33` is an `AST_Unary TOK_INC` over the member. A first
+   version blacklisted only store destinations, lowered it, and the replay died with
+   "lvalue expected" — 114 bodies over gcc-torture stopped being modelled at all. The rule
+   is now a **whitelist** of value positions, so a position nobody enumerated stays
+   unlowered rather than silently wrong.
+2. **Bases that are not frame slots.** Restricting to a `MEMBER`/`ADDR` chain down to a
+   non-`VT_SYM` `VT_LOCAL` `Ref` — the same chain `ast_eval_slice_frame_off` walks. Without
+   it, 5,900 more bitfield nodes lower, but every one of them is refused a line later as
+   `member:base-not-a-frame-slot`: the refusal is relabelled, not removed. It is not free —
+   `is_compatible_func` (`s1->f.func_call`) changed encoding and `kept` fell 0.07 points,
+   past the ratchet's 0.05 tolerance, to buy nothing.
+3. **Stores whose value is observed after the store** (`AST_FB_STORE_BF_GV`,
+   `AST_FB_STORE_VALUE_LIVE`, a reachable `AST_StoreVal`, `AST_OP_OPASSIGN`,
+   `AST_FB_STORE_ADDR_LATE`). The merged storage word is not the field value.
+
+**The oracle earned its keep.** The first version typed the merge's mask literals `VT_INT`
+while the destination's storage unit was `unsigned int`. C's usual arithmetic conversions
+make `unsigned int & int` unsigned, so the re-emitted C answered `4294963229` where
+`ast_eval_slice` answered `-4067`, on all four oracle arms. The stored bit pattern is the
+same either way, so **the object comparison and the exec suite were both green**; only an
+external compiler asked the question the two internal implementations were not asking each
+other. The nodes now carry `rir_bf_promo(storage unit)`, which is what `gen_op` computes at
+replay from the same operands.
+
+**Measured**, gcc.c-torture, 1,693 programs, `slicerun --refusals`, with the normalisation
+switched off and on through `MCC_RIR_BF_NORM` so both runs use one binary and one corpus:
+
+| | before | after |
+| --- | ---: | ---: |
+| refused bitfield member nodes | 7,471 | **6,193** |
+| `op-unary` | 106,819 | 105,558 |
+| `child-refused` | 133,838 | 133,730 |
+| blocks | 119,363 | 119,363 |
+| **frame-accepted blocks** | **33,437** | **33,445** |
+| bodies | 15,923 | 15,923 |
+
+**+8 blocks, of which 1,278 nodes are direct and 108 are cascade** (`child-refused`'s drop).
+The raw accepted-node delta is +9,140, but 8,112 of those are nodes the lowering itself
+creates, so node share is not a comparable number across this change and the block count is
+the one to quote. The 6,193 that remain are the two refusals above — a non-frame base or a
+straddling field — not bitfield-ness.
+
+`kept` on `src/mcc.c` is **bit-identical**: 83.248 / 91.917 / 91.986 / 91.986 at `-O0`–`-O3`
+with the normalisation on or off. Nothing was re-banked.
+
+`tests/gpu/cref/bitfield.c` is the certification, and it goes through the external oracle
+rather than through the CPU reference agreeing with the device: nine field shapes — signed,
+unsigned, `_Bool`, `signed char`, `unsigned short`, 40-bit and 23-bit `long long` — read,
+combined, negated, shifted, compared and written. Over `tests/gpu/cref` the cell goes from
+67 to **95 adjudicated slices** and 32 to **51 device-compared frames**, with
+**`cref-alldead` 0 → 0 and `cref-unspellable` 0 → 0** — nothing is being silently skipped
+instead of adjudicated — and `mismatch=0` on all four oracle arms. Under `--mutate` all four
+arms report `mismatch=2` and 26 frame mismatches, so the new coverage can fail.
+
+### 2. `if (c) return a; return b;` → ternary — implemented, measured, reverted
+
+Committed and then reverted on this branch, so `git revert` restores it. It does not pay,
+and the reason it does not pay is the finding.
+
+| | before | after |
+| --- | ---: | ---: |
+| **frame-accepted blocks** | **33,437** | **33,355** |
+| refused blocks | 85,926 | 85,867 |
+| `block/other` | 338 | 285 |
+| accepted nodes | 378,387 | 378,454 |
+| `kept` on `src/mcc.c`, `-O1` | 91.917 | 86.290 |
+
+The 53 conversions out of `block/other` are real. But the fold also deletes ~135
+single-`Return` basic blocks that `mcc_slice_frame_from_ast` was already accepting, so the
+net is **−82 blocks**.
+
+**And the unlock it was ranked for cannot fire, by construction.**
+`keep_inline = ast_fn_faithful && ast_inline_retain(...)` in `ast_gen_function`. The bodies
+this fold rewrites are exactly the ones that stop being byte-faithful, so they are freed
+instead of retained and `mcc_slice_leaf_hook` can never offer them to `mcc_slice_inline_at`.
+Normalising a leaf callee to make it graftable is what stops it being graftable.
+
+### The finding that outranks both — `faithful` is a byte test standing in for equivalence
+
+**181 of 2,990 bodies in `src/mcc.c` (85,346 body bytes, 5.6%) become unfaithful under the
+ternary fold, and every one of them is still correct** — `ctest -R '^exec/'` is 347/347 with
+the fold on. In places the replay is *shorter* than the parser's: `bitfld-3.c:main` replayed
+to 2,071 bytes against 2,287 and was discarded for not being identical.
+
+`ast_run_strat_seq` gates **every** optimizer strategy on `faithful`, `keep_inline` gates
+inline retention on it, and `keep` ships the parser's bytes without it. So a normalisation
+that is semantically correct and produces better code is punished three ways, and the test
+fails precisely when the normalisation is doing its job. Replacing that gate with an
+equivalence check the oracle corpus can adjudicate is the prerequisite for any arena
+normalisation that is not byte-preserving. That is a larger and more valuable change than
+either normalisation here, and it is now backed by a count rather than by an argument.
+
+**The bitfield lowering was built to be byte-preserving for exactly this reason**, which is
+why its `kept` is bit-identical and only three bitfield-specific test files change object
+bytes at all.
+
 ## Landed — nine `slice/*` cells were running nothing; M1 and M4's host half, 2026-08-09
 
 Starting M1–M7 turned up something that outranks them. **Nine device cells have been
