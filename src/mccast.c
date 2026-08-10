@@ -1993,6 +1993,7 @@ static int ast_fconst_i;
 int ast_replaying;
 
 static int *ast_locrec;
+static int *ast_locrec_sz, *ast_locrec_al;
 static int ast_locrec_n, ast_locrec_cap, ast_locrec_i;
 static int ast_fpert_on, ast_fpert_base, ast_fpert_scale, ast_fpert_pad;
 static int ast_fpert_dbg;
@@ -2029,6 +2030,17 @@ uint64_t ast_pinned_regs;
 int ast_func_has_asm;
 int ast_func_has_labeladdr;
 
+static int ast_locrec_take(int size, int align) { MCC_TRACE("enter\n");
+	int k = ast_locrec_i;
+	while (k < ast_locrec_n &&
+				 (ast_locrec_sz[k] < size || ast_locrec_al[k] < align))
+		{ MCC_TRACE("br\n"); k++; }
+	if (k >= ast_locrec_n)
+		{ MCC_TRACE("br\n"); return 0; }
+	ast_locrec_i = k + 1;
+	return 1;
+}
+
 int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 	if (rir_c2_active) { MCC_TRACE("br\n");
 		int rl;
@@ -2039,17 +2051,25 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 			return loc;
 		}
 	}
-	if (ast_replaying && !ir_cap_replaying && ast_locrec_i < ast_locrec_n) { MCC_TRACE("br\n");
-		int orig = ast_locrec[ast_locrec_i++];
-		if (ast_fpert_on) { MCC_TRACE("br\n");
-			loc = (loc - size - ast_fpert_pad) & -align;
-			ast_fpert_bind(orig, loc);
-		} else { MCC_TRACE("br\n");
-			loc = orig;
+	if (ast_replaying && !ir_cap_replaying) { MCC_TRACE("br\n");
+		if (ast_locrec_take(size, align)) { MCC_TRACE("br\n");
+			int orig = ast_locrec[ast_locrec_i - 1];
+			if (ast_fpert_on) { MCC_TRACE("br\n");
+				loc = (loc - size - ast_fpert_pad) & -align;
+				ast_fpert_bind(orig, loc);
+			} else { MCC_TRACE("br\n");
+				loc = orig;
+			}
+			if (loc < ast_loc_low)
+				{ MCC_TRACE("br\n"); ast_loc_low = loc; }
+			return loc;
 		}
-		if (loc < ast_loc_low)
-			{ MCC_TRACE("br\n"); ast_loc_low = loc; }
-		return loc;
+		if (ast_locrec_n) { MCC_TRACE("br\n");
+			loc = ast_alloc_temp_loc(size, align);
+			if (loc < ast_loc_low)
+				{ MCC_TRACE("br\n"); ast_loc_low = loc; }
+			return loc;
+		}
 	}
 	loc = (loc - size) & -align;
 	if (loc < ast_loc_low)
@@ -2060,7 +2080,13 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 		if (ast_locrec_n == ast_locrec_cap) { MCC_TRACE("br\n");
 			ast_locrec_cap = ast_locrec_cap ? ast_locrec_cap * 2 : 16;
 			ast_locrec = mcc_realloc(ast_locrec, ast_locrec_cap * sizeof *ast_locrec);
+			ast_locrec_sz =
+					mcc_realloc(ast_locrec_sz, ast_locrec_cap * sizeof *ast_locrec_sz);
+			ast_locrec_al =
+					mcc_realloc(ast_locrec_al, ast_locrec_cap * sizeof *ast_locrec_al);
 		}
+		ast_locrec_sz[ast_locrec_n] = size;
+		ast_locrec_al[ast_locrec_n] = align;
 		ast_locrec[ast_locrec_n++] = loc;
 		if (loc < ast_locrec_min)
 			{ MCC_TRACE("br\n"); ast_locrec_min = loc; }
@@ -4081,6 +4107,8 @@ static AstLocal ast_slc_memo_cap;
 void ast_teardown(void) { MCC_TRACE("enter\n");
 	int i;
 	mcc_free(ast_locrec);
+	mcc_free(ast_locrec_sz);
+	mcc_free(ast_locrec_al);
 #if MCC_DIAG
 	for (i = 0; i < ast_sym_deferred_n; i++)
 		{ MCC_TRACE("br\n"); mcc_free(ast_sym_deferred[i]); }
@@ -4120,6 +4148,8 @@ void ast_teardown(void) { MCC_TRACE("enter\n");
 	for (i = 0; i < AST_MEMO_PRED_COUNT; i++)
 		{ MCC_TRACE("br\n"); mcc_free(ast_memo[i]); ast_memo[i] = NULL; }
 	ast_locrec = NULL;
+	ast_locrec_sz = NULL;
+	ast_locrec_al = NULL;
 	ast_sym_deferred = NULL;
 	ast_fconst = NULL;
 	ast_fconst_cplx = NULL;

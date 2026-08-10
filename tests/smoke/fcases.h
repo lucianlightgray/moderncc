@@ -1262,8 +1262,6 @@ SMC_MKFN(C80, long double)
 	}
 
 #define SMC_BODY(TAG, CTY) \
-	static void smc_run_##TAG(int op, const double *v, long double *rr, \
-														long double *ri) \
 	{ \
 		volatile CTY vr = (CTY)(v[0]), vi = (CTY)(v[1]); \
 		volatile CTY wr = (CTY)(v[2]), wi = (CTY)(v[3]); \
@@ -1275,21 +1273,20 @@ SMC_MKFN(C80, long double)
 		*ri = (long double)__imag__ r; \
 	}
 
-SMC_BODY(C32, float)
-SMC_BODY(C64, double)
-SMC_BODY(C80, long double)
-
 static void smc_run(int tag, int op, const double *v, long double *rr,
 										long double *ri)
 {
 	*rr = 0;
 	*ri = 0;
-	if (tag == SMC_T_C32)
-		smc_run_C32(op, v, rr, ri);
-	else if (tag == SMC_T_C64)
-		smc_run_C64(op, v, rr, ri);
-	else
-		smc_run_C80(op, v, rr, ri);
+	if (tag == SMC_T_C32) {
+		SMC_BODY(C32, float)
+	}
+	if (tag == SMC_T_C64) {
+		SMC_BODY(C64, double)
+	}
+	if (tag == SMC_T_C80) {
+		SMC_BODY(C80, long double)
+	}
 }
 
 static const int smc_ftag[] = {SMF_T_F32, SMF_T_F64, SMF_T_F80};
