@@ -11656,6 +11656,64 @@ static int foldfc_try(Sym *ftype, int nb_args) { MCC_TRACE("enter\n");
 	return 1;
 }
 
+static const char *const absbuiltin_tab[] = {"abs", "labs", "llabs", "imaxabs"};
+
+static int absbuiltin_try(Sym *ftype, int nb_args) { MCC_TRACE("enter\n");
+	SValue *fsv;
+	Sym *cs;
+	const char *nm;
+	int i, n, rt, w;
+
+	if (nb_args != 1 || mcc_state->nobuiltin || mcc_state->freestanding)
+		{ MCC_TRACE("br\n"); return 0; }
+	fsv = vtop - 1;
+	if (!(fsv->r & VT_SYM))
+		{ MCC_TRACE("br\n"); return 0; }
+	cs = fsv->sym;
+	if (!cs || (cs->type.t & VT_BTYPE) != VT_FUNC || (cs->type.t & VT_STATIC))
+		{ MCC_TRACE("br\n"); return 0; }
+	nm = get_tok_str(cs->v, NULL);
+	n = (int)(sizeof absbuiltin_tab / sizeof *absbuiltin_tab);
+	for (i = 0; i < n; i++)
+		{ MCC_TRACE("br\n"); if (!strcmp(nm, absbuiltin_tab[i]))
+			{ MCC_TRACE("br\n"); break; } }
+	if (i == n)
+		{ MCC_TRACE("br\n"); return 0; }
+	rt = ftype->type.t;
+	if (rt & (VT_UNSIGNED | VT_BITFIELD | VT_VOLATILE | VT_ARRAY))
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((rt & VT_BTYPE) == VT_INT)
+		{ MCC_TRACE("br\n"); w = 32; }
+	else if ((rt & VT_BTYPE) == VT_LLONG)
+		{ MCC_TRACE("br\n"); w = 64; }
+	else
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) != (rt & (VT_BTYPE | VT_UNSIGNED)))
+		{ MCC_TRACE("br\n"); return 0; }
+	vswap();
+	vpop();
+	{
+		CType at = ftype->type;
+		int align, size = type_size(&at, &align), addr;
+		loc = ast_alloc_loc(size, align);
+		addr = loc;
+		vset(&at, VT_LOCAL | VT_LVAL, addr);
+		vswap();
+		vstore();
+		vpop();
+		vset(&at, VT_LOCAL | VT_LVAL, addr);
+		vpushi(w - 1);
+		gen_op(TOK_SAR);
+		vset(&at, VT_LOCAL | VT_LVAL, addr);
+		gen_op('^');
+		vset(&at, VT_LOCAL | VT_LVAL, addr);
+		vpushi(w - 1);
+		gen_op(TOK_SAR);
+		gen_op('-');
+	}
+	return 1;
+}
+
 static const struct {
 	const char *name;
 	unsigned char nargs;
@@ -13369,6 +13427,10 @@ tok_next:
 			vcheck_cmp();
 			if (mcc_state->fold_math &&
 					(foldmath_try(s, nb_args) || foldfc_try(s, nb_args))) { MCC_TRACE("br\n");
+				expr_has_effect = 1;
+				goto call_folded;
+			}
+			if (absbuiltin_try(s, nb_args)) { MCC_TRACE("br\n");
 				expr_has_effect = 1;
 				goto call_folded;
 			}

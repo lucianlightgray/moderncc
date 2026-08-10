@@ -18591,8 +18591,26 @@ front end — so this is not an `-O2` pipeline gap. Recurring shapes: `fabs(x) <
   at `-O2`, where `promote-locals` happened to force the re-emit; `-O1` and
   `-O2 -fno-promote-locals` still produced `idiv`. Return 2 from any fold that changes code.
   Cell `cli/no_wrapv_folds_mul_div_by_same_constant`, both gates at all three levels.
-- **Builtin math folding loses to a local definition.** `20021127-1.c` defines an
-  aborting `llabs` and requires the compiler to fold `llabs(-1)` to 1 regardless.
+- ~~**Builtin math folding loses to a local definition.**~~ **Fixed 2026-08-10
+  (`wt/o2wrong`).** The name was misleading: this is not folding and not math. gcc-15 and
+  clang-22 *expand* `llabs` inline at **`-O0`** (`negq` + `cmovns`), so the user's
+  definition is never reached; mcc called it and got **-1** where both oracles get 1.
+  Wrong at every `-O` level. `absbuiltin_try` sits beside `foldmath_try` at the call site
+  and expands `abs`/`labs`/`llabs`/`imaxabs` to `(x ^ (x >> (w-1))) - (x >> (w-1))` when
+  the callee is a non-`static` symbol of that name whose return type is a signed `int` or
+  `long long` matching the argument. Off under `-fno-builtin` and `-ffreestanding`.
+  **The musl datum is this same defect, not a second one.** Measured here: pre-fix mcc
+  linked against *reference* musl (`vendor/musl-sysroot`, `crt1.o` + `libc.a`) aborts
+  with 134; post-fix mcc against the same musl exits 0; gcc-15 against the same musl exits
+  0. The program's `llabs` is defined in its own TU, so no libc is consulted at all — a
+  result that is identical under mcc-built and reference musl is the fingerprint of a
+  compiler defect, and "aborts under both" was the evidence, not a second bug.
+  **Note for whoever writes the next vstack expansion:** `gv(RC_INT)` followed by `vdup()`
+  yields two SValues naming the *same* register, and `gv2` will not separate them — the
+  first attempt emitted `sar; xor %rax,%rax; sub %rax,%rax`. The expansion spills to one
+  `ast_alloc_loc` slot and reloads, which `promote-locals` lifts back into a register at
+  `-O2`. Cell `cli/abs_family_outranks_a_local_definition`, four levels plus the
+  `-fno-builtin` negative.
 - **GNU range designators in nested initializers produce wrong data.** `gnu99-init-1.c`
   mixes `[2 ... 4][0 ... 1][2 ... 3] = 1` with later overriding designators. Adjacent to
   the nested-member-designator item above, but a distinct bug.

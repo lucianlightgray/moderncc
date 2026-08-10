@@ -2575,5 +2575,17 @@ static const cli_case_t cli_cases[] = {
 		 "done",
 		 "2147483647\n-1\n2147483647\n-1\n2147483647\n-1\n"},
 
+		{"abs_family_outranks_a_local_definition", "",
+		 "printf '%s\\n' 'extern int printf(const char *, ...);' "
+		 "'long long a = -1;' "
+		 "'long long llabs(long long);' "
+		 "'int main(void) { printf(\"%lld\\n\", llabs(a)); return 0; }' "
+		 "'long long llabs(long long b) { return b; }' > {W}/llabs.c && "
+		 "for o in -O0 -O1 -O2 -O3; do "
+		 "{MCC} -B{B} -I{I} -w -std=c99 $o {W}/llabs.c -o {W}/llabsx && {W}/llabsx; "
+		 "done; "
+		 "{MCC} -B{B} -I{I} -w -std=c99 -O2 -fno-builtin {W}/llabs.c -o {W}/llabsnb && {W}/llabsnb",
+		 "1\n1\n1\n1\n-1\n"},
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));
