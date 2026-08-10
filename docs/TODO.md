@@ -72,12 +72,12 @@ the first against real data rather than test data. That is a currency which conv
 the device differential has already caught three miscompiles that internal comparisons
 were structurally blind to — whereas device-eligible blocks never had an exchange rate.
 
-## Landed — a bitfield lowers to shift-and-mask in the arena; the ternary normalisation is a measured negative and the `faithful` gate is why, 2026-08-09 (`wt/rirnorm`)
+## Landed — a bitfield lowers to shift-and-mask in the arena; the ternary normalisation measured negative and the `faithful` gate is why, 2026-08-09 (`wt/rirnorm`)
 
 Two RIR normalisations were asked for, on the same principle: normalise the shape once at
 RIR so the slice engine, both emitters and the re-emitted C all see something they already
-handle. **One landed, one is a negative result that is worth more than the change would
-have been.**
+handle. **One landed; the other measured negative here, and the section after this one shows
+that the negative was the placement rather than the pass.**
 
 ### 1. Bitfields — landed
 
@@ -157,15 +157,13 @@ straddling field — not bitfield-ness.
 `kept` on `src/mcc.c` is **bit-identical**: 83.248 / 91.917 / 91.986 / 91.986 at `-O0`–`-O3`
 with the normalisation on or off, so `rir-coverage` is green.
 
-**`rir-coverage-census` (the `wide` corpus) is red, and is not being re-banked.** kept falls
-0.20–0.23 points (`-O1`: 96.511 → 96.309 measured on this tree; the bank reads 96.5436, so
-0.03 of the gap predates this branch). The cause is **exactly two bodies** out of 4,547 —
-`tests/exec/expressions/integer_promotion.c:main` and
-`tests/exec/features_c99_c11/wide_bitfield_arith.c:main`, the two programs in the tree whose
-whole purpose is bitfield arithmetic — and in both the lowered replay is **40 bytes shorter**
-than the parser's (6,428 → 6,388 and 884 → 844) and is discarded for not being identical.
-Both still produce output identical to gcc-15 and clang-22 at `-O0`–`-O3`. Re-banking would
-hide the one number that says what the byte test costs; see the section below.
+`rir-coverage-census` (the `wide` corpus) was red on this branch — kept fell 0.20–0.23 points,
+caused by **exactly two bodies** out of 4,547, `tests/exec/expressions/integer_promotion.c:main`
+and `tests/exec/features_c99_c11/wide_bitfield_arith.c:main`, the two programs in the tree whose
+whole purpose is bitfield arithmetic, whose lowered replay was **40 bytes shorter** than the
+parser's and was discarded for not being identical. That was not a property of the lowering. It
+was a property of **where the lowering ran**, and `wt/rirphase` fixes it by moving the pass —
+see "the phase, not the pass" below. The cell is green without re-banking.
 
 `tests/gpu/cref/bitfield.c` is the certification, and it goes through the external oracle
 rather than through the CPU reference agreeing with the device: nine field shapes — signed,
@@ -176,10 +174,10 @@ combined, negated, shifted, compared and written. Over `tests/gpu/cref` the cell
 instead of adjudicated — and `mismatch=0` on all four oracle arms. Under `--mutate` all four
 arms report `mismatch=2` and 26 frame mismatches, so the new coverage can fail.
 
-### 2. `if (c) return a; return b;` → ternary — implemented, measured, reverted
+### 2. `if (c) return a; return b;` → ternary — implemented, measured, reverted, and restored on `wt/rirphase`
 
-Committed and then reverted on this branch, so `git revert` restores it. It does not pay,
-and the reason it does not pay is the finding.
+Committed and then reverted here (`ba146348` reverts `33c71301`). Measured **at the end of
+`rir_to_arena`** it does not pay:
 
 | | before | after |
 | --- | ---: | ---: |
@@ -189,38 +187,92 @@ and the reason it does not pay is the finding.
 | accepted nodes | 378,387 | 378,454 |
 | `kept` on `src/mcc.c`, `-O1` | 91.917 | 86.290 |
 
-The 53 conversions out of `block/other` are real. But the fold also deletes ~135
-single-`Return` basic blocks that `mcc_slice_frame_from_ast` was already accepting, so the
-net is **−82 blocks**.
+Both halves of that verdict were artifacts of the placement, and both are corrected below.
 
-**And the unlock it was ranked for cannot fire, by construction.**
-`keep_inline = ast_fn_faithful && ast_inline_retain(...)` in `ast_gen_function`. The bodies
-this fold rewrites are exactly the ones that stop being byte-faithful, so they are freed
-instead of retained and `mcc_slice_leaf_hook` can never offer them to `mcc_slice_inline_at`.
-Normalising a leaf callee to make it graftable is what stops it being graftable.
+## Landed — the phase, not the pass: both arena normalisations move behind the fidelity replay, 2026-08-09 (`wt/rirphase`)
+
+The pipeline in `ast_func_end` is already two-pass, and only the first pass is byte-verified:
+
+1. `rir_to_arena` builds the arena
+2. `ast_replay_body` re-emits it and `faithful = f_byte && f_rlen && f_rel` compares the
+   result against the parser's own bytes
+3. `ast_slc_dump` / `ast_adump_body` — the slice census and the cref oracle read the arena
+4. the strategy phase, gated on `faithful`, re-emitting the body unconditionally if any pass
+   fired
+
+`docs/ARCHIVED.md` states the rule: *"a replay that optimizes is unfaithful and the whole body
+falls back. Any pass that changes code must be an arena rewrite in the post-fidelity strategy
+phase."* **Both normalisations were in step 1.** A byte-moving rewrite there is a `faithful`
+failure by construction — the replay is compared against a parser that never saw the rewrite.
+The same rewrite after step 2 is free.
+
+`rir_arena_normalise` now runs both passes between step 2 and step 3. The slot is load-bearing
+in both directions: `faithful` must be computed on the **un-normalised** arena, because proving
+the capture hooks lost nothing is the one job the byte compare genuinely does and it has to
+survive; and the census/oracle dump must see the **normalised** arena, because that is the form
+the slice engine is being asked about.
+
+**What the move buys, one binary and one corpus, switched through `MCC_RIR_BF_NORM` and
+`MCC_RIR_TERN_NORM`.**
+
+| | normalisation off | normalisation on |
+| --- | ---: | ---: |
+| bodies failing `faithful`, `src/mcc.c` `-O0`/`-O1`/`-O2`/`-O3` | 107 / 69 / 68 / 68 | **107 / 69 / 68 / 68** |
+| their body bytes | 254,310 / 122,081 / 121,977 | **identical, byte for byte** |
+| `kept`, wide corpus | 92.868 / 96.513 / 96.565 / 96.565 | 92.868 / 96.514 / 96.566 / 96.566 |
+| `integer_promotion.c:main`, `-O1` | 5,485 B shipped | **4,873 B shipped** |
+| `wide_bitfield_arith.c:main`, `-O1` | 884 B shipped | **844 B shipped** |
+
+`faithful` is **untouched** — the same bodies fall back, carrying the same bytes, at every
+level. That is the check that the move worked: if the normalisation were still upstream of the
+replay, this row would move, and under the old placement it moved by 181 bodies. The two
+bitfield stress programs that cost `rir-coverage-census` 0.20 points are no longer discarded;
+their 40 shorter bytes are now **shipped** rather than thrown away, because the strategy phase
+re-emits from the normalised arena. At `-O0` no strategy pass runs, so both bodies emit the
+parser's 884 bytes either way — the improvement appears exactly where re-emission does.
+
+**And the block arithmetic the revert quoted was a denominator artifact.** gcc.c-torture, 1,693
+programs, `slicerun --arenas … --refusals`:
+
+| | bf only | bf + ternary |
+| --- | ---: | ---: |
+| **blocks** | **119,363** | **119,222** |
+| frame-accepted blocks | 33,445 | 33,363 |
+| refused blocks | 85,918 | 85,859 |
+| `block/other` | 338 | 285 |
+| `block/stmt-invoke` | 47,899 (55.75%) | 47,897 (55.79%) |
+
+The population is **not** a constant: it falls by 141. Solving the three deltas
+(−141 population, −82 accepted, −59 refused) gives 135 already-accepted single-`Return` blocks
+**absorbed into their parent's ternary and no longer existing**, 53 refused blocks converted to
+accepted, and 6 refused blocks likewise absorbed. **No block regressed accepted → refused.**
+Quoting −82 against "an unchanged 119,363-block population" compared a numerator that shrank
+against a denominator that shrank with it.
+
+`block/stmt-invoke` — gap #1 — is untouched at 47,897 nodes; only its *share* moves, and only
+because the denominator did.
 
 ### The finding that outranks both — `faithful` is a byte test standing in for equivalence
 
-**181 of 2,990 bodies in `src/mcc.c` (85,346 body bytes, 5.6%) become unfaithful under the
-ternary fold, and every one of them is still correct** — `ctest -R '^exec/'` is 347/347 with
-the fold on. In places the replay is *shorter* than the parser's: `bitfld-3.c:main` replayed
-to 2,071 bytes against 2,287 and was discarded for not being identical.
+**181 of 2,990 bodies in `src/mcc.c` (85,346 body bytes, 5.6%) became unfaithful under the
+ternary fold at its old placement, and every one of them was still correct** — `ctest -R
+'^exec/'` was 347/347 with the fold on. In places the replay was *shorter* than the parser's:
+`bitfld-3.c:main` replayed to 2,071 bytes against 2,287 and was discarded for not being
+identical.
 
-`ast_run_strat_seq` gates **every** optimizer strategy on `faithful`, `keep_inline` gates
-inline retention on it, and `keep` ships the parser's bytes without it. So a normalisation
-that is semantically correct and produces better code is punished three ways, and the test
-fails precisely when the normalisation is doing its job. Replacing that gate with an
-equivalence check the oracle corpus can adjudicate is the prerequisite for any arena
-normalisation that is not byte-preserving. That is a larger and more valuable change than
-either normalisation here, and it is now backed by a count rather than by an argument.
+`ast_run_strat_seq` gates **every** optimizer strategy on `faithful`, `keep_inline =
+ast_fn_faithful && ast_inline_retain(...)` gates inline retention on it, and `keep` ships the
+parser's bytes without it. So a normalisation that is semantically correct and produces better
+code was punished three ways, and the test failed precisely when the normalisation was doing
+its job.
 
-**The bitfield lowering was built to be byte-preserving for exactly this reason**, which is
-why its `kept` on `src/mcc.c` is bit-identical and only three bitfield-specific test files
-change object bytes at all. It still could not be byte-preserving everywhere: the two bodies
-that cost `rir-coverage-census` its 0.20 points both replay to **shorter** code than the
-parser emitted and are thrown away for it. A ratchet on byte identity charges a normalisation
-for improving the output, and there is no way to write this transformation that avoids that
-without also declining to transform.
+**The phase move settles this for arena normalisations specifically**: those 181 bodies are
+handed back to the optimizer and to `mcc_slice_leaf_hook`'s graft pool, because `faithful` is
+now decided before the rewrite exists. It does **not** settle the general case — a pass that
+must run before the replay, or the replay's own divergences, still answer to a byte test
+standing in for equivalence, and replacing that gate with an oracle-adjudicated equivalence
+check remains the larger change. What is no longer true is that an arena normalisation has to
+pay for it.
 
 ## Landed — nine `slice/*` cells were running nothing; M1 and M4's host half, 2026-08-09
 
