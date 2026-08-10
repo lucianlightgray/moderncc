@@ -17092,7 +17092,7 @@ static unsigned long ast_search_evals;
 static unsigned long ast_search_eval_quota;
 static int ast_search_quota_hit;
 
-static void ast_search_evals_report(void) {
+static void ast_search_evals_report(void) { MCC_TRACE("enter\n");
 	fprintf(stderr, "[search] %lu candidate evaluations, quota %lu (%s)\n",
 					ast_search_evals, ast_search_eval_quota,
 					ast_search_quota_hit ? "spent" : "not reached");
