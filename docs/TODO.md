@@ -98,6 +98,35 @@ implied answer is a miscompile: blocking on the world rather than on work; threa
 is load-bearing for *behaviour* rather than throughput; and detached threads outliving
 `main`.
 
+#### How much threading the slicer actually walks away from — measured, `wt/threadname`
+
+`ast_eval_slice_kind_ok` has no `AST_Invoke` case, so until now `pthread_mutex_lock` and
+`strlen` were literally the same refusal and the compiler could not say how much threading
+it declined. `kind-invoke` now splits into `kind-invoke` + `kind-invoke-thread`, and
+`block/stmt-invoke` into `block/stmt-invoke` + `block/stmt-thread`, by a name classifier
+(`mcc_thread_sym_class` in `src/mcceffect.h`) over `pthread_{create,join,detach,exit,mutex,
+cond,rwlock,key,once}*`, the C11 `thrd_`/`mtx_`/`cnd_`/`tss_` prefixes plus `call_once`, and
+`__atomic_*`/`__sync_*`. **No behaviour changed**: the same node is refused with the same
+outcome, only under its own name. The split is a partition and slicerun proves it —
+`kind-invoke-partition-sum` and `stmt-invoke-partition-sum` are counted independently by
+node kind and the run fails if they do not reproduce the parent.
+
+The first honest answer, four corpora, `-O1`:
+
+| corpus | refused Invoke | thread | pthread | c11 | atomic |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| gcc-c-torture-execute | 73,826 | 0 | 0 | 0 | 0 |
+| llvm-test-suite-regression-c | 20,647 | 0 | 0 | 0 | 0 |
+| llvm-test-suite-unittests | 26,238 | 4 | 4 | 0 | 0 |
+| compiler-rt-builtins-unit | 495 | 120 | 0 | 0 | 120 |
+| **total** | **121,206** | **124** | **4** | **0** | **120** |
+
+**0.10% of refused calls are thread primitives, and 1 refused block out of 67,873.** The C11
+`thrd_`/`mtx_`/`cnd_`/`tss_` set never appears at all; every atomic is compiler-rt testing
+its own `__atomic_*`/`__sync_*` lowering. Taking threading over cannot be justified by
+coverage on these corpora — it has to be justified by the programs the project intends to
+compile, and that argument now has a number to beat rather than an impression.
+
 ## Total lowering — the decided architecture, 2026-08-09
 
 > **Bank note, 2026-08-09.** `tests/fmt/census-bank.json` was re-taken when the
