@@ -130,6 +130,41 @@ untouched by the exclusion.  --rebank-config, with --update-bank[-low], is the
 deliberate way to move the recorded configuration; do not use it to bank a
 non-default build.
 
+THE LOWERABLE RATCHET IS TAKEN ON BODIES, NOT ON THE CORPUS RATIO.  Excluding
+the device layer treated one instance of a general disease: every lowerable
+percentage is a ratio whose denominator is the compiler's own source, so adding
+source that is less lowerable than the source it joins drops the ratio without
+anything having become less lowerable.  That is dilution, it is the normal
+state of a growing compiler, and between 2026-08-09 and 2026-08-10 it took this
+cell red twice -- nodes_pct_strict once and bodies_pct once -- each time costing
+a full investigation that ended in a re-bank.  A ratchet that fails on ordinary
+merges trains its readers to re-bank without looking, which is how a real
+regression gets banked.
+
+So the gate compares like with like.  MCC_RIR_LOW_BODY=1 makes the compiler emit
+one [rir-low-body] row per body -- the same arithmetic as the [rir-low]
+aggregate, one line per body instead of one per run -- and tests/rir/
+lowerable-bodies.tsv banks, beside the percentages, WHICH bodies the census saw
+and which of them were lowerable.  Two things are then enforced:
+
+  * no body that was banked lowerable may stop being lowerable.  Named, per
+    body, with no tolerance: this is what "a regression" means here.
+  * each banked percentage is recomputed over the intersection of the banked
+    body set and this run's, and compared against the bank.  Bodies added since
+    the bank are excluded from BOTH sides, so adding any amount of unlowerable
+    source moves this comparison by exactly zero.
+
+Every run prints BANK DRIFT: the movement of each percentage split into the part
+that comes from pre-existing bodies (the gated part) and the part that comes
+from the corpus having changed shape (reported, never gated).  The --tol band
+therefore now absorbs only edits to bodies the bank already knew, which is what
+a tolerance can honestly absorb; the 0.05 band used to hide dilution as well,
+and 0.0414pp of it accumulated unnoticed before the 2026-08-10 wave.
+
+A corpus with no banked inventory (wide) and an mcc too old to emit the per-body
+rows both fall back to the whole-corpus comparison, and say so in the failure
+text rather than reporting an unattributed number.
+
 Exit status is 0 when every level is at or above its banked coverage and the
 byte accounting reconciles against the objects' real .text size.
 
@@ -402,11 +437,18 @@ def parse_report(stderr):
          "cap_b_faith": 0, "cap_b_unfaith": 0, "cap_b_err": 0, "cap_n_err": 0,
          "cap_raw_fn": 0, "cap_raw_b": 0,
          "reemit": 0, "b_reemit": 0,
-         "unf": {}, "why": {}, "low": {}}
+         "unf": {}, "why": {}, "low": {}, "lowbody": []}
     for k in LOWKEYS:
         r["low_" + k] = 0
     for line in stderr.splitlines():
-        f = line.replace("\r", "").split()
+        line = line.replace("\r", "")
+        if line.startswith("[rir-low-body]\t"):
+            g = line.split("\t")
+            if len(g) >= 10:
+                r["lowbody"].append((g[1].replace("\\", "/"), g[2]) +
+                                    tuple(int(x) for x in g[3:10]))
+            continue
+        f = line.split()
         if not f:
             continue
         if f[0] == "[rir-total]":
@@ -490,7 +532,7 @@ def read_rows(tsv):
         return rows
     for line in open(tsv, errors="replace"):
         f = line.replace("\r", "").rstrip("\n").split("\t")
-        if len(f) < 7:
+        if len(f) < 7 or f[0].startswith("["):
             continue
         f = f[:7]
         try:
@@ -509,6 +551,7 @@ def census(mcc, flags, sources, opt, layer="arena", keep_rows=True):
               "MCC_TEST_OPT"):
         env0.pop(k, None)
     env0["MCC_RIR_LOW_EXCLUDE"] = LOW_EXCLUDE
+    env0["MCC_RIR_LOW_BODY"] = "1"
     agg = parse_report("")
     rows = []
     text = 0
@@ -628,6 +671,174 @@ def print_lowerable(low):
               "SOLE blocker of %7.3f%%,  %6.3f%% of nodes"
               % (name, e["bytes_pct"], e["bodies_pct"], e["sole_bytes_pct"],
                  e["nodes_pct"]))
+
+
+LB_NODES, LB_C0, LB_C1, LB_C2, LB_BYTES, LB_NMIN, LB_NBIG = range(2, 9)
+LOW_INV_NAME = "lowerable-bodies.tsv"
+
+
+def low_inventory_path(bank):
+    return os.path.join(os.path.dirname(bank) or ".", LOW_INV_NAME)
+
+
+def low_rel(p):
+    p = p.replace("\\", "/")
+    r = ROOT.replace("\\", "/") + "/"
+    return p[len(r):] if p.startswith(r) else p
+
+
+def low_body_index(c):
+    """(file, func) -> per-body lowerable row, or None if the compiler emitted none.
+
+    The rows are the same arithmetic the compiler's own [rir-low] aggregate
+    reports, one line per body instead of one line per run, so anything derived
+    from them can be recomputed over a SUBSET of the corpus.  That is the whole
+    point: a ratio over the whole corpus moves when the corpus grows, and a
+    ratio over the bodies the bank already knew about does not.
+    """
+    rows = c.get("lowbody") or []
+    if not rows:
+        return None
+    idx = {}
+    for t in rows:
+        idx[(low_rel(t[0]), t[1])] = t
+    if len(idx) != len(rows):
+        return None
+    tot = low_body_totals(rows)
+    if (tot["bodies"] != c["low_bodies"] or tot["nodes"] != c["low_nodes"] or
+            tot["clean1"] != c["low_clean1"] or tot["ok1"] != c["low_ok1"] or
+            tot["bytes"] != c["low_bytes"]):
+        return None
+    return idx
+
+
+def low_body_totals(rows):
+    t = {"bodies": len(rows), "nodes": 0, "bytes": 0, "nmin1": 0, "nbig1": 0,
+         "clean0": 0, "clean1": 0, "clean2": 0,
+         "ok0": 0, "ok1": 0, "ok2": 0, "okbytes1": 0}
+    for r in rows:
+        t["nodes"] += r[LB_NODES]
+        t["bytes"] += r[LB_BYTES]
+        t["nmin1"] += r[LB_NMIN]
+        t["nbig1"] += r[LB_NBIG]
+        for i in range(3):
+            t["clean%d" % i] += r[LB_C0 + i]
+            if r[LB_C0 + i] == r[LB_NODES]:
+                t["ok%d" % i] += 1
+                if i == 1:
+                    t["okbytes1"] += r[LB_BYTES]
+    return t
+
+
+def low_body_pcts(rows):
+    t = low_body_totals(rows)
+    nb, nn, bb = t["bodies"], t["nodes"], t["bytes"]
+    return {"bodies_pct": round(pct(t["ok1"], nb), 4),
+            "bytes_pct": round(pct(t["okbytes1"], bb), 4),
+            "nodes_pct": round(pct(t["clean1"], nn), 4),
+            "nodes_pct_strict": round(pct(t["clean0"], nn), 4),
+            "nodes_pct_loose": round(pct(t["clean2"], nn), 4),
+            "region_nodes_pct": round(pct(t["nmin1"], nn), 4),
+            "big_region_nodes_pct": round(pct(t["nbig1"], nn), 4)}
+
+
+def low_body_mask(r):
+    m = 0
+    for i in range(3):
+        if r[LB_C0 + i] == r[LB_NODES]:
+            m |= 1 << i
+    return m
+
+
+def read_low_inventory(path):
+    """-> (levels, {(corpus, fmt): {(file, func): mask-per-level}})"""
+    levels, table = [], {}
+    if not os.path.exists(path):
+        return levels, table
+    for line in open(path, errors="replace"):
+        line = line.replace("\r", "").rstrip("\n")
+        if line.startswith("#levels\t"):
+            levels = line.split("\t")[1].split(",")
+            continue
+        if not line or line.startswith("#"):
+            continue
+        f = line.split("\t")
+        if len(f) != 5:
+            continue
+        table.setdefault((f[0], f[1]), {})[(f[2], f[3])] = f[4]
+    return levels, table
+
+
+def write_low_inventory(path, levels, table):
+    out = ["# rir-coverage lowerable body inventory; see tools/rir-coverage.py",
+           "# corpus\tformat\tfile\tfunc\tone hex ok-bitmask per level, "
+           "'-' where the body is absent",
+           "#levels\t" + ",".join(levels)]
+    for corpus, fmt in sorted(table):
+        for key in sorted(table[(corpus, fmt)]):
+            out.append("%s\t%s\t%s\t%s\t%s"
+                       % (corpus, fmt, key[0], key[1],
+                          table[(corpus, fmt)][key]))
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    open(path, "w").write("\n".join(out) + "\n")
+
+
+def update_low_inventory(a, fmt, low_index):
+    """Re-take the banked body inventory for the corpus and format just run."""
+    levels = a.levels.split(",")
+    have = {opt: idx for opt, idx in low_index.items() if idx is not None}
+    if len(have) != len(levels):
+        print("rir-coverage: NOT writing %s: this mcc emitted per-body census "
+              "rows for %d of %d levels" % (low_inventory_path(a.bank),
+                                            len(have), len(levels)))
+        return
+    path = low_inventory_path(a.bank)
+    old_levels, table = read_low_inventory(path)
+    if old_levels and old_levels != levels:
+        print("rir-coverage: %s was banked on levels %s and is being rewritten "
+              "for %s; every other corpus in it is dropped and must be re-taken"
+              % (path, ",".join(old_levels), ",".join(levels)))
+        table = {}
+    table[(a.corpus, fmt)] = {}
+    keys = set()
+    for opt in levels:
+        keys |= set(have[opt])
+    for key in keys:
+        table[(a.corpus, fmt)][key] = "".join(
+            "%x" % low_body_mask(have[opt][key]) if key in have[opt] else "-"
+            for opt in levels)
+    write_low_inventory(path, levels, table)
+    print("banked %d lowerable-census bodies for %s/%s -> %s"
+          % (len(keys), a.corpus, fmt, path))
+
+
+def low_inventory_match(want, idx):
+    """Line the banked bodies up with this run's.
+
+    Exact (file, func) first; a body whose func name is unique on both sides is
+    followed across a file move rather than counted as a deletion, because a
+    header split is not a regression and must not read as one.
+    """
+    pairs, gone = [], []
+    taken = set()
+    byfunc = {}
+    for key in idx:
+        byfunc.setdefault(key[1], []).append(key)
+    for key in sorted(want):
+        if key in idx:
+            pairs.append((key, key))
+            taken.add(key)
+    for key in sorted(want):
+        if key in idx:
+            continue
+        cand = [k for k in byfunc.get(key[1], []) if k not in taken]
+        if len(cand) == 1:
+            pairs.append((key, cand[0]))
+            taken.add(cand[0])
+        else:
+            gone.append(key)
+    new = [k for k in sorted(idx) if k not in taken]
+    return pairs, gone, new
 
 
 def is_self_source(src):
@@ -1156,6 +1367,8 @@ def main():
               "need a per-format schema first); or run the whole ratchet on a "
               "banked host (elf, pe).")
 
+    inv_levels, inv_table = read_low_inventory(low_inventory_path(a.bank))
+    low_index = {}
     checked, skipped = [], []
     for opt in a.levels.split(","):
         if a.layers != "arena":
@@ -1336,12 +1549,74 @@ def main():
         elif not b and not a.update_bank and not a.no_check:
             bad.append("-%s: no banked coverage for corpus %s" % (opt, a.corpus))
         lb = low_floor(banked.get(opt, {}).get("lowerable"), fmt)
+        idx = low_body_index(c)
+        low_index[opt] = idx
+        want = {}
+        if idx is not None and opt in inv_levels:
+            col = inv_levels.index(opt)
+            for key, mask in inv_table.get((a.corpus, fmt), {}).items():
+                if col < len(mask) and mask[col] != "-":
+                    want[key] = int(mask[col], 16)
+        if lb and want:
+            pairs, gone, fresh = low_inventory_match(want, idx)
+            kept = [idx[cur] for _, cur in pairs]
+            cur_old = low_body_pcts(kept)
+            newrows = [idx[k] for k in fresh]
+            print("     BANK DRIFT: %d banked bodies, %d present, %d gone, "
+                  "%d new (%d nodes, %d lowerable = %.2f%% against %.2f%% "
+                  "banked corpus-wide)"
+                  % (len(want), len(pairs), len(gone), len(fresh),
+                     sum(r[LB_NODES] for r in newrows),
+                     sum(1 for r in newrows if low_body_mask(r) & 2),
+                     pct(sum(1 for r in newrows if low_body_mask(r) & 2),
+                         len(newrows)), lb.get("bodies_pct", 0.0)))
+            for k in LOW_BANKED:
+                print("       %-21s banked %8.4f  now %8.4f  = pre-existing "
+                      "%+7.4fpp + corpus mix %+7.4fpp"
+                      % (k, lb.get(k, 0.0), low[k], cur_old[k] - lb.get(k, 0.0),
+                         low[k] - cur_old[k]))
+            if gone:
+                print("       %d banked body(ies) no longer in the corpus: %s"
+                      % (len(gone), ", ".join("%s:%s" % g for g in gone[:8])))
         if lb and not a.no_check:
             checked.append("-%s lowerable[%s]" % (opt, fmt))
-            for k in LOW_BANKED:
-                if low[k] + a.tol < lb.get(k, 0.0):
-                    bad.append("-%s lowerable[%s]: %s regressed: %.4f%% < banked "
-                               "%.4f%%" % (opt, fmt, k, low[k], lb[k]))
+            if want:
+                lost = ["%s:%s -> %s:%s" % (b + cur) if b != cur else
+                        "%s:%s" % b
+                        for b, cur in pairs
+                        if want[b] & 2 and not (low_body_mask(idx[cur]) & 2)]
+                if lost:
+                    bad.append("-%s lowerable[%s]: %d body(ies) banked lowerable "
+                               "are NOT lowerable now: %s"
+                               % (opt, fmt, len(lost), ", ".join(lost[:8])))
+                for k in LOW_BANKED:
+                    if cur_old[k] + a.tol >= lb.get(k, 0.0):
+                        continue
+                    bad.append(
+                        "-%s lowerable[%s]: %s regressed ON PRE-EXISTING BODIES: "
+                        "%.4f%% < banked %.4f%% over the %d banked bodies still "
+                        "in the corpus (%d gone).  This is NOT dilution: the %d "
+                        "bodies added since the bank are excluded from both "
+                        "sides of this comparison.  Corpus-wide the figure is "
+                        "%.4f%%."
+                        % (opt, fmt, k, cur_old[k], lb[k], len(pairs), len(gone),
+                           len(fresh), low[k]))
+            else:
+                why = ("this mcc emitted no per-body census rows, or they do "
+                       "not key uniquely on (file, func) for this corpus"
+                       if idx is None else
+                       "no banked body inventory for %s/%s at -%s"
+                       % (a.corpus, fmt, opt))
+                for k in LOW_BANKED:
+                    if low[k] + a.tol < lb.get(k, 0.0):
+                        bad.append(
+                            "-%s lowerable[%s]: %s regressed: %.4f%% < banked "
+                            "%.4f%% over the WHOLE corpus, which also falls when "
+                            "new source is less lowerable than the source it "
+                            "joined.  Attribution is unavailable (%s), so this "
+                            "number cannot tell dilution from a real loss; see "
+                            "%s" % (opt, fmt, k, low[k], lb[k], why,
+                                    low_inventory_path(a.bank)))
         elif unbanked_host:
             skipped.append("-%s lowerable (no %s floor banked)" % (opt, fmt))
         elif (not lb and not a.update_bank and not a.update_bank_low
@@ -1371,6 +1646,7 @@ def main():
         os.makedirs(os.path.dirname(a.bank), exist_ok=True)
         json.dump(bank, open(a.bank, "w"), indent=1, sort_keys=True)
         print("banked lowerable/%s -> %s" % (a.corpus, a.bank))
+        update_low_inventory(a, fmt, low_index)
     if a.update_bank:
         out = {}
         for opt, layers in result.items():
@@ -1415,6 +1691,7 @@ def main():
         os.makedirs(os.path.dirname(a.bank), exist_ok=True)
         json.dump(bank, open(a.bank, "w"), indent=1, sort_keys=True)
         print("banked %s -> %s" % (a.corpus, a.bank))
+        update_low_inventory(a, fmt, low_index)
 
     for m in bad:
         print("FAIL " + m)

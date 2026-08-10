@@ -261,15 +261,115 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    of which **39,092 are fourteen memory-op files**. The same fix on `src/*.c` is +2.82 pp of
    accepted nodes against +0.067 pp on torture. Every remaining gap in this area needs a
    hand-written denominator — `src/`, musl, qemu — before it is ranked.
-7. The `rir-coverage` lowerable bank was **already stale before this wave**: 0.0414pp of the
+7. ~~The `rir-coverage` lowerable bank was **already stale before this wave**: 0.0414pp of the
    0.0671pp drift accumulated over the 34 commits before it, inside the 0.05pp tolerance.
    Dilution by less-lowerable new code is normal and will recur; the metric needs either a
-   corpus-normalised form or a scheduled re-take.
+   corpus-normalised form or a scheduled re-take.~~ **CLOSED, 2026-08-10** — the corpus-
+   normalised form landed after the mechanism recurred the same day. See the section below.
 7. **Cluster L's next link is `L2′(ii)`/`(iii)`, both in `src/mccgpu.c`** — clear
    `mcc_gpu.ok` on `VK_ERROR_DEVICE_LOST` and give the Vulkan quiesce something to destroy.
    The pool half landed on `wt/jitshutdown`; wiring the device into `mccjit_shutdown()`
    before (ii) is fixed makes an unbounded `vkDeviceWaitIdle` reachable from `atexit` on
    every run.
+
+## Landed — the lowerable ratchet is taken on bodies, not on the corpus ratio, 2026-08-10
+
+`rir-coverage` went red twice in one day on the same mechanism. On 2026-08-09 it was
+`nodes_pct_strict`, re-banked at `a2cd1445` after dilution was proved. On 2026-08-10 it was
+`bodies_pct`, at the `wt/globagg` merge:
+
+```
+FAIL -O0 lowerable[elf]: bodies_pct regressed: 9.7734% < banked 9.8563%
+FAIL -O1..-O3 lowerable[elf]: bodies_pct regressed: 9.8006% < banked 9.8837%
+```
+
+### The diagnosis, by the established method
+
+The 2×2 over compiler and corpus is **null on the compiler axis and carries the whole
+delta on the corpus axis**. `mcc` built at `c003a4e3` and `mcc` built at the `wt/globagg`
+merge produce byte-identical lowerable censuses on any fixed source, to four places on
+every key at `-O0` and `-O1`; today's compiler on `c003a4e3`'s source reproduces the
+committed bank **exactly** — not close, identical, including every `blockers` entry.
+So no lowering verdict changed anywhere in the wave.
+
+Per body, keyed on function name (unique across the 2,959-body corpus — checked, no
+collisions): **35 bodies added, 0 removed, and not one pre-existing body lost
+lowerability.** The three helpers that look deleted (`mcc_thread_class_name`,
+`mcc_thread_pfx`, `mcc_thread_sym_class`) moved from `src/mcceffect.h` to the new
+`src/mccthread.h`; none was lowerable on either side. Absolute lowerable bodies went
+**up**, 289 → 290. The whole fall is the denominator:
+
+| | bodies | lowerable | `bodies_pct` @ `-O1` |
+|---|---|---|---|
+| `c003a4e3` | 2,924 | 289 | 9.8837% |
+| `wt/globagg` merge | 2,959 | 290 | 9.8006% |
+
+The 35 new bodies carry 3,924 nodes and **1** lowerable body — 2.9% against the 9.88%
+corpus average — so they drag the ratio down by arithmetic. They are 23 in `src/mccast.c`
+(the thread classifier's `ast_thr_*`/`ast_rgn_*`, `ast_region_disjoint`, the
+`ast_purity_*` whitelists) from `de928597`, `c329382a`; 8 in `src/mccjit_embed.c` (the
+pool shutdown and its selftest) from `5e255d0b`; 6 in `src/mccthread.h` from `de928597`;
+and `ast_eval_slice_globl_agg` from `9fcc85c0`. Dependency-walkers over an AST arena take
+`global`, `call` and `frame` blockers on nearly every node; none of this code was ever
+going to be lowerable, and none of it should have moved a ratchet.
+
+### The fix, and why this one
+
+Three options were on the table: a corpus-normalised metric, a wider tolerance band, or a
+better failure message. **The band is the wrong answer** — the existing 0.05pp band is
+exactly what let 0.0414pp of drift accumulate unseen before the last wave, and a band that
+is wide enough to absorb a merge wave is wide enough to absorb a small real regression.
+A better message alone leaves the cell crying wolf, and **a ratchet that fails on ordinary
+merges trains its readers to re-bank without looking, which is how a real regression gets
+banked.** So the metric changed shape, and the message came along with it.
+
+`MCC_RIR_LOW_BODY=1` makes `rir_low_take` emit one `[rir-low-body]` row per body carrying
+the same arithmetic as the `[rir-low]` aggregate. The tool checks that the rows re-sum to
+the aggregate on every field before it trusts them, and banks, in
+`tests/rir/lowerable-bodies.tsv`, which bodies the census saw and which were lowerable
+(one hex ok-bitmask per `-O` level, `-` where the body is absent — 2,961 lines, 132 KB).
+Two things are enforced where one ratio used to be:
+
+* **no body that was banked lowerable may stop being lowerable** — named, per body, with
+  no tolerance;
+* **each banked percentage is recomputed over the intersection** of the banked body set
+  and the current one. Bodies added since the bank are excluded from *both* sides, so
+  adding any amount of unlowerable source moves this comparison by exactly zero. A body
+  whose function name is unique on both sides is followed across a file move rather than
+  counted as a deletion.
+
+Every run now prints `BANK DRIFT`, splitting each percentage's movement into the
+pre-existing part (gated) and the corpus-mix part (reported, never gated). The `--tol`
+band therefore now absorbs only edits to bodies the bank already knew, which is what a
+tolerance can honestly absorb.
+
+**Proved on the real failure**: the inventory taken on `c003a4e3` — whose re-taken
+percentages come out identical to the committed bank — passes at the `wt/globagg` merge,
+with `bodies_pct` reported as `pre-existing +0.0000pp + corpus mix -0.0895pp`. The cell
+would not have gone red today. (That run reports 37 new bodies, not 35: this change's own
+`rir_cur_file` and `rir_low_body_row` are two of them, which is the disease diagnosing
+itself.)
+
+**Proved to still have teeth**: forcing one banked-lowerable body unlowerable takes the
+cell red and names it. That regression is worth **-0.0338pp** of `bodies_pct`, *inside*
+the old 0.05pp band — the old metric would have stayed green on it.
+
+The `wide` corpus has no inventory and falls back to the whole-corpus comparison, which
+now says so in its failure text instead of reporting an unattributed number. Banking it
+is a `--update-bank-low --corpus wide` away and costs a much larger file; it has not been
+the recurring problem, so it was left.
+
+One claim in the tool's own docstring is stale: *"the census body total is not stable run
+to run at fixed HEAD"*. Three runs of the `self` corpus at HEAD are bit-identical on every
+`[rir-low]` and `[rir-low-region]` field. The inventory depends on that stability and is
+the reason to state it.
+
+**`tests/fmt/census-bank.json` was re-taken by running the cell**, because the one
+`fprintf` in `rir_low_body_row` is a new format site: `sites.fprintf` 393 → 394,
+`literal_fmt_sites.fprintf` 389 → 390, `per_file_sites.mccrir.c` 63 → 64. Nothing else in
+that bank moved. That census counts source shape, so it is a ratchet with the same disease
+in a milder form — but it names the file and the delta, which is the difference between a
+re-take that takes a minute and one that takes an hour.
 
 ## Landed — the JIT pool drains and joins, and the item that blocks cluster L is `L2′(i)`, not `L1`, 2026-08-10 (`wt/jitshutdown`)
 

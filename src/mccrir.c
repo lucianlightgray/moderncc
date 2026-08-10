@@ -55,6 +55,7 @@ typedef struct RirMark {
 int rir_env;
 int rir_prod_env;
 int rir_prod_low_env;
+static int rir_low_body_env;
 static long rir_low_p_nodes, rir_low_p_clean[RIR_LOW_NLEVEL];
 static long rir_low_p_why[RIR_LOW_NCLASS];
 static long rir_low_p_reg[RIR_LOW_NLEVEL], rir_low_p_big[RIR_LOW_NLEVEL];
@@ -5568,6 +5569,26 @@ static int rir_low_excluded(void) {
 	return 0;
 }
 
+static const char *rir_cur_file(void) {
+	return file && file->filename[0]
+					? file->filename
+					: (mcc_state && mcc_state->current_filename
+								 ? mcc_state->current_filename
+								 : "?");
+}
+
+static void rir_low_body_row(long nb) {
+	FILE *o = rir_prod_out ? fopen(rir_prod_out, "a") : stderr;
+	if (!o)
+		return;
+	fprintf(o, "[rir-low-body]\t%s\t%s\t%ld\t%ld\t%ld\t%ld\t%ld\t%ld\t%ld\n",
+					rir_cur_file(), funcname ? funcname : "?", rir_low_p_nodes,
+					rir_low_p_clean[0], rir_low_p_clean[1], rir_low_p_clean[2], nb,
+					rir_low_p_big[1], rir_low_p_huge[1]);
+	if (rir_prod_out)
+		fclose(o);
+}
+
 static void rir_low_take(long nb) {
 	int i, nblk = 0, only = -1;
 	if (!rir_low_p_have)
@@ -5577,6 +5598,8 @@ static void rir_low_take(long nb) {
 		return;
 	if (rir_low_excluded())
 		return;
+	if (rir_low_body_env)
+		rir_low_body_row(nb);
 	rir_tot_low_bodies++;
 	rir_tot_low_bytes += nb;
 	rir_tot_low_nodes += rir_low_p_nodes;
@@ -5650,11 +5673,7 @@ void rir_prod_note(const char *verdict) {
 	}
 	if (rir_prod_gate < 2)
 		return;
-	f = file && file->filename[0]
-					? file->filename
-					: (mcc_state && mcc_state->current_filename
-								 ? mcc_state->current_filename
-								 : "?");
+	f = rir_cur_file();
 	sb[0] = '\0';
 	if (is_fb && rir_span_blen >= 0)
 		snprintf(sb, sizeof sb, "\tfirst=%d\tend=%d\tblen=%d\tnlen=%d",
@@ -6421,6 +6440,7 @@ void rir_configure(void) {
 	rir_env = ast_env_int("MCC_REPLAY_IR", 0);
 	rir_prod_gate = ast_env_int("MCC_RIR_PROD", 0);
 	rir_prod_low_env = rir_prod_gate >= 2 || ast_env_int("MCC_RIR_LOW", 0);
+	rir_low_body_env = rir_prod_low_env && ast_env_int("MCC_RIR_LOW_BODY", 0);
 	rir_stamp_env = ast_env_int("MCC_RIR_STAMP", 0);
 	rir_prod_out = getenv("MCC_RIR_PROD_OUT");
 	rir_out = getenv("MCC_REPLAY_IR_OUT");
