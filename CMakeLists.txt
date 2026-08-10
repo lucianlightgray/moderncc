@@ -4153,7 +4153,7 @@ if(MCC_BUILD_TESTS)
 
             add_test(NAME "ast/o0-baseline-gated"
                 COMMAND "${CMAKE_COMMAND}" -E env
-                        "C2_NO_EXTRA=1" "O0_AB_CHECK=1" "O0_AB_GATES=1"
+                        "C2_NO_EXTRA=1" "O0_AB_CHECK=1" "O0_AB_GATES=1" "MCC_DEV=1"
                         "O0_AB_MIN_KEYS=${_o0ab_min}"
                         sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/o0_ab.sh"
                         "${CMAKE_BINARY_DIR}" measurable
@@ -5436,7 +5436,7 @@ if(MCC_BUILD_TESTS)
                             --jobs 32 --minprog 1200)
                 set_tests_properties("optlevel/torture-differential" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
-                    LABELS native TIMEOUT 900)
+                    LABELS native TIMEOUT 900 ENVIRONMENT "MCC_DEV=1")
                 add_test(NAME "optlevel/torture-differential-known-positive"
                     COMMAND "${CMAKE_COMMAND}"
                             -DPY=${MCC_PYTHON3}
@@ -5449,7 +5449,8 @@ if(MCC_BUILD_TESTS)
                             -DSUBJECT=20000112-1.c
                             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/leveldiff_mutate.cmake")
                 set_tests_properties("optlevel/torture-differential-known-positive" PROPERTIES
-                    FIXTURES_REQUIRED MCC_BUILT LABELS native TIMEOUT 900)
+                    FIXTURES_REQUIRED MCC_BUILT LABELS native TIMEOUT 900
+                    ENVIRONMENT "MCC_DEV=1")
             endif()
 
             set(_fs_nrow 0)

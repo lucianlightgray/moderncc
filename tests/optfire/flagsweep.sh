@@ -17,7 +17,8 @@
 #                 and must say so instead of quietly compiling as -O4. Silence
 #                 is the failure this exists for: an unknown -f is a warning the
 #                 driver exits 0 on, so a gate that merely dropped the row would
-#                 turn thirteen flags into no-ops nothing could tell from typos.
+#                 turn every gated flag into a no-op nothing could tell from a
+#                 typo. The count is derived, never written down here.
 #
 #   exec <flag>   turn the flag on, and off, and check the program still
 #                 computes the right answer. -O0 with the flag untouched is the
