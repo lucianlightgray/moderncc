@@ -99,6 +99,159 @@ the first against real data rather than test data. That is a currency which conv
 the device differential has already caught three miscompiles that internal comparisons
 were structurally blind to — whereas device-eligible blocks never had an exchange rate.
 
+## Landed — threading is translated, not implemented, and a mutex is blocked by calls rather than by aliasing, 2026-08-09 (`wt/threadmap`)
+
+Threading primitives do not need runtime implementations. Each one states a constraint on
+when work may run relative to other work, which is what the dependency graph already
+encodes. So a `pthread_*` call is **recognised at the RIR level and replaced with engine
+constructs** — the same model-substitution principle already decided for the I/O syscall
+floor: for an API with specified semantics, substitute a model for the call and it stops
+being an invisible callee.
+
+### The mapping, as built
+
+| construct | engine equivalent | where |
+|---|---|---|
+| `pthread_create` / `thrd_create` | `mcc_dep_publish` — a node with no edge from the caller's continuation | `src/mccthread.h` |
+| `pthread_join` / `thrd_join` | `mcc_dep_edge` — one dependency edge | `src/mccthread.h` |
+| `pthread_mutex_lock`/`unlock` | `mcc_dep_mutex` — an edge **only** where the regions are not derivably independent | `src/mccthread.h` |
+| `pthread_cond_wait` | `mcc_dep_pred` — a readiness predicate polled by the ready queue | `src/mccthread.h` |
+| `pthread_cond_signal`/`broadcast` | nothing: the predicate observes the state the signaller wrote | — |
+| atomic / `volatile` flag | `mcc_thread_cell_load`/`_store`/`_rmw` — an effect-log entry in a new `MCC_EFFECT_SPACE_CELL`, keyed by lane | `src/mccthread.h`, `src/mcceffect.h` |
+| `pthread_detach` | `mcc_dep_detach` — accepted only with a derivable finite bound, else refused | `src/mccthread.h` |
+| `pthread_mutex_init`, attrs, `cond_init`, … | `MCC_THR_NOP` — no engine meaning, erased | `src/mccthread.h` |
+
+`mcc_thread_classify` is the recogniser: 71 names, 49 of which have a translation. The
+remaining 22 are recognised **and reported as untranslated** (`mcc_thread_op_supported`
+returns 0) rather than passing through as an ordinary call — `pthread_barrier_wait`,
+`pthread_once`, TLS, `pthread_self`/`equal`, `trylock`, `exit`. Recognition reuses
+`ast_slc_callee_sym` and fires only when `ast_slc_invclass` returns 1 = opaque, so a
+program that defines its own `pthread_join` is not hijacked.
+
+The engine sits **on** `MccSched`, not beside it. `mcc_dep_run` admits a node to the
+existing FIFO ready queue when its predecessor count is zero and its readiness predicate
+holds; `mcc_sched_step` is unchanged; retirement decrements successors. No new threads,
+no `ucontext` — the same tick discipline `src/mcctask.h` already had.
+
+### The claim, measured: a mutex is an under-specification
+
+The programmer writes "do not overlap these" because C gives no way to say *which state*
+conflicts. The engine can see the state, so it should let both regions run wherever it
+can prove them disjoint. `ast_region_disjoint` (`src/mccast.c`, exported in
+`src/mccast.h`) is that predicate: tri-state, built on `ast_dep_collect` and
+`ast_dep_base_distinct` with `allow_indirect = 0`, plus a scalar pass for the direct
+global/local `Ref` stores the dependence collector does not model.
+
+**The scalar pass is the whole safety of it.** `ast_dep_collect` records only `AST_Load`
+and `AST_Store`-through-`Load`. `g = g + 1` on a global scalar is `Store(Ref, …)` and
+produces **no ref at all**, so a first version of this predicate answered "disjoint" for
+two sections that both increment the same global — an empty ref list is not "touches no
+memory". The kind whitelist in `ast_region_opaque` and the `!ok` base for any store whose
+destination is neither a `Ref` nor a `Load` are what make the empty case fail closed.
+
+`MCC_THREAD_CENSUS=<file>` makes the compiler emit `[throp]`, `[thrsec]` and `[thrpair]`
+records: every recognised primitive, every lock/unlock critical section, and the verdict
+for every pair of sections guarded by the same lock in the translation unit.
+
+**On real code the answer is: the question is almost never reachable, and what blocks it
+is a call, not aliasing.**
+
+| corpus | pthread files | files mcc compiles | critical sections found | pairs | independent | conflict | unknown |
+|---|---|---|---|---|---|---|---|
+| `tests/` | 12 | 10 | 3 | 3 | 0 | 0 | 3 (all `opaque-effect`) |
+| gcc.c-torture | **0** | — | 0 | 0 | — | — | — |
+| llvm-test-suite | 16 | 5 | 2 | 1 | 0 | 0 | 1 (`opaque-effect`) |
+
+The two llvm sections are ClamAV's `logg_close` and `logg`, and they exist only with
+`-DCL_THREAD_SAFE`; the default build has no mutex at all. Four pairs in total, all
+`unknown`, and **every one of them for the same reason: an `AST_Invoke` inside the
+critical section**. Not one was blocked by aliasing. That is the useful result,
+because under the governing rule an invoke is only a terminator when the callee's body is
+invisible — so this number is a direct dependent of inlining and graft reach, and it moves
+when they move.
+
+Three separate reasons the denominator is that small, all worth knowing before anyone
+tries to raise it:
+
+1. **gcc.c-torture has no threading at all.** Zero `pthread_create`, zero `<threads.h>`,
+   zero `_Atomic`. Its concurrency content is 423 `__sync_*` occurrences, which are
+   single-threaded value-semantics tests of the builtin and need no threading model.
+2. **llvm-test-suite's mutexes are mostly compiled out or wrapped.** ClamAV's are behind
+   `#ifdef CL_THREAD_SAFE`, off by default; sqlite3's are one primitive per function
+   (`sqlite3_mutex_enter` *is* the wrapper), so no critical section is syntactically
+   delimited in any TU; SMG2000's five named mutexes need `mpi.h` and do not compile
+   standalone.
+3. **The dominant real shape is create/join fan-out with no shared mutable state at all** —
+   `tests/gpu/cpu/rev64_mt.c`, `atomic_counter.c`, both llvm `tls.c`. 11 creates and 11
+   joins in `tests/` against 3 locks. Create/join is where the mass is, which is why it is
+   what landed rather than what was specified.
+
+On a corpus where the sections are call-free by construction (`tests/thread/locks.c`,
+8 sections, 13 pairs), the predicate answers: **4 independent (30.8%), 2 conflict,
+7 unknown** — of the unknown, 4 are `opaque-effect`, 3 `bases-may-alias-indirect`. So the
+elision is real when it can be reached; `ast_dep_base_distinct` proves distinctness only
+for two different global symbols reached without a pointer dereference, and returns 0 for
+every frame-local base, which is the next widening this predicate wants.
+
+### The three cases that needed defined answers
+
+1. **Blocking that is not computational.** A thread parked on `read()` waits on the world.
+   Defined: `mcc_dep_pred(..., world = 1)` marks the node's readiness as world-sourced, and
+   `mcc_dep_run` calls `mcc_dep_world_source`'s refill callback whenever the graph makes no
+   progress and at least one node is waiting on the world. That callback is the chunked
+   streaming host refill from the I/O design. A world source that supplies nothing twice in
+   a row ends the run as `MCC_DEP_STUCK` — reported, never silently completed.
+2. **Threading load-bearing for behaviour rather than throughput.**
+   **Refused, by name.** `mcc_thread_output_conflict` scans the effect log for output
+   effects outside `SPACE_REGION` and reports a conflict when two entries share a
+   `(space, chan)` — the same fd, the same port — and belong to nodes with no path between
+   them. The graph is then `MCC_DEP_REFUSED` /
+   `concurrent-output-on-one-channel`, and the program keeps its real threads. The engine
+   is free to pick any schedule for work whose interleaving is unobservable; it is not free
+   to pick one the program left open.
+3. **Detached threads outliving `main`.** Defined: **implicit join at exit**, admitted only
+   for a detached slice with a derivable finite bound. A detached thread that has not
+   started could legally never have been scheduled, and one that ran to completion is
+   equally legal, so running it is *a* legal execution — but only if it terminates. Without
+   a bound, `mcc_dep_detach` returns 0, the graph is `MCC_DEP_REFUSED` /
+   `detached-slice-not-provably-finite`, and `mcc_dep_run` refuses to run a refused graph
+   rather than hanging on a detached spin loop the real program would have exited past.
+
+### What is specified but not built
+
+- **The rewrite itself.** `ast_region_disjoint` and the census answer the question, and
+  `src/mccthread.h` is the target vocabulary, but nothing yet rewrites an `AST_Invoke` of
+  `pthread_create` into a published node. The census is deliberately read-only: the CPU
+  reference has no `AST_Invoke` case, so a differential over an arena containing one is
+  vacuous, and the emitter must land in the same commit as the reference that scores it.
+- **Section extraction is lock/unlock at one sibling level.** An unlock on an early-return
+  path, or a lock taken in one function and released in another (sqlite3's shape), is not
+  paired. Widening it is worth doing only once the `opaque-effect` mass moves.
+- **Barrier, `once`, TLS, `trylock`, rwlock reader/writer distinction.** Recognised and
+  reported untranslated. A barrier is n edges into a fan-in node and n out; `once` is a
+  node every caller edges to; TLS needs a per-node storage image, which the effect-log cell
+  space can carry but does not yet.
+- **`ast_dep_base_distinct` for frame locals.** It returns 0 for `base_kind == 2` on both
+  sides, so two different stack objects are never proven distinct. `AstDepRef` carries no
+  extent, so a sound widening needs an object-extent model first, not just an offset
+  compare.
+
+### Cells
+
+`slice/thread` (56 checks, no device: every construct is a graph property) and
+`slice/thread-known-positive`, whose mutated arm removes the edges join and a conflicting
+lock derive and requires the ordering assertions to go red — otherwise they were never
+observing the schedule, which is the shape the nine vacuous slice cells had.
+`thread-census-control` is the ground truth for the verdict: sections that share an object
+must never come back independent, with a negative control (`-O0` builds no AST, no
+verdicts) and a perturbation (make a disjoint section write the other's object, the verdict
+flips). All three are `must-run`.
+
+`tests/fmt/census-bank.json` was re-taken: `src/mccast.c` gains exactly three `fprintf`
+sites, one per census record kind (`[throp]`, `[thrsec]`, `[thrpair]`), so `mccast.c`
+145 → 148, `sites.fprintf` 384 → 387 and `literal_fmt_sites.fprintf` 380 → 383. Nothing
+else in the bank moved. Cell count 9468 → 9471.
+
 ## Landed — nine `slice/*` cells were running nothing; M1 and M4's host half, 2026-08-09
 
 Starting M1–M7 turned up something that outranks them. **Nine device cells have been

@@ -43,6 +43,9 @@ slice/frame                  | must-run   | device frame storage: Store/Load low
 slice/frame-known-positive   | registered | proves the frame differential is not blind
 slice/effect                 | must-run   | the effect record/replay representation: an executor records what it observed and performed, the other side replays effect-free against that log; needs no device, so it must never skip
 slice/effect-known-positive  | must-run   | proves the replayer can tell "the replayed side asked for a different effect" from "the same effect with a different value"; a replayer that cannot detect a perturbed log would let every effectful differential pass vacuously
+slice/thread                 | must-run   | the pthread-to-dependency mapping: create publishes, join is an edge, a lock either elides or serializes, a condvar is a readiness predicate, an atomic flag is an effect-log cell; every construct is a graph property checked on the CPU, so it must never skip
+slice/thread-known-positive  | must-run   | proves the ordering assertions observe the schedule: with the join and lock edges removed the cell must go red, or the mapping would be green with no edges in the graph at all
+thread-census-control        | must-run   | ground truth for the lock-independence verdict: sections that share an object must never be reported independent, since that verdict is what decides whether a mutex becomes a serializing edge or nothing at all
 slice/bytes                  | registered | per-width region load/store; the two-word store clobbered neighbours
 slice/bytes-known-positive   | registered | proves the per-width region differential is not blind
 slice/mem                    | registered | the shared CPU<->GPU address space: pointers, heap, printf ring

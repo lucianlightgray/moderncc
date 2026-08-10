@@ -115,6 +115,9 @@ int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k,
 void ast_ladder_gpu_setup(void);
 void ast_ladder_gpu_report(void);
 
+int ast_region_disjoint(AstArena *a, AstLocal r1, AstLocal r2);
+const char *ast_region_disjoint_why(void);
+
 #if MCC_EMBED_JIT
 typedef enum AstPurity {
 	AST_PURITY_IMPURE = 0,

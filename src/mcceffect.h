@@ -33,7 +33,8 @@ enum {
 enum {
 	MCC_EFFECT_SPACE_REGION = 0,
 	MCC_EFFECT_SPACE_FD = 1,
-	MCC_EFFECT_SPACE_PORT = 2
+	MCC_EFFECT_SPACE_PORT = 2,
+	MCC_EFFECT_SPACE_CELL = 3
 };
 
 #define MCC_EFFECT_F_VOLATILE 1u
@@ -134,6 +135,8 @@ static const char *mcc_effect_space_name(uint32_t s) {
 		return "fd";
 	case MCC_EFFECT_SPACE_PORT:
 		return "port";
+	case MCC_EFFECT_SPACE_CELL:
+		return "cell";
 	default:
 		return "?";
 	}

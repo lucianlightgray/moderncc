@@ -30,6 +30,9 @@ static int ast_bad_type(int tt) {
 #include "mccslice.h"
 #include "slice_inline.h"
 
+#define MCC_THREAD_ENGINE 1
+#include "mccthread.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -7925,6 +7928,390 @@ static void probe_device(void) {
 	ast_arena_free(a);
 }
 
+#define THR_MAXORDER 128
+
+static int g_thr_order[THR_MAXORDER];
+static int g_thr_norder;
+
+typedef struct ThrJob {
+	int id;
+	int steps;
+	int done;
+	MccDepGraph *g;
+	uint32_t lane;
+	int cell;
+	int64_t delta;
+	int fd;
+} ThrJob;
+
+static void thr_stamp(int id) {
+	if (g_thr_norder < THR_MAXORDER)
+		g_thr_order[g_thr_norder++] = id;
+}
+
+static int thr_first(int id) {
+	int i;
+	for (i = 0; i < g_thr_norder; i++)
+		if (g_thr_order[i] == id)
+			return i;
+	return -1;
+}
+
+static int thr_last(int id) {
+	int i, r = -1;
+	for (i = 0; i < g_thr_norder; i++)
+		if (g_thr_order[i] == id)
+			r = i;
+	return r;
+}
+
+static void thr_job(ThrJob *j, MccDepGraph *g, int id, int steps) {
+	memset(j, 0, sizeof *j);
+	j->id = id;
+	j->steps = steps;
+	j->g = g;
+	j->lane = (uint32_t)id;
+}
+
+static int thr_tick(MccTask *t) {
+	ThrJob *j = (ThrJob *)t->ctx;
+	thr_stamp(j->id);
+	j->done++;
+	return j->done < j->steps ? MCC_TASK_YIELDED : MCC_TASK_DONE;
+}
+
+static int thr_tick_cell(MccTask *t) {
+	ThrJob *j = (ThrJob *)t->ctx;
+	int ok = 0;
+	thr_stamp(j->id);
+	mcc_thread_cell_rmw(j->g, j->lane, j->cell, j->delta, (uint32_t)j->id, &ok);
+	j->done++;
+	if (!ok)
+		return MCC_TASK_FAILED;
+	return j->done < j->steps ? MCC_TASK_YIELDED : MCC_TASK_DONE;
+}
+
+static int thr_tick_store(MccTask *t) {
+	ThrJob *j = (ThrJob *)t->ctx;
+	thr_stamp(j->id);
+	if (!mcc_thread_cell_store(j->g, j->lane, j->cell, j->delta, (uint32_t)j->id))
+		return MCC_TASK_FAILED;
+	return MCC_TASK_DONE;
+}
+
+static int thr_tick_write(MccTask *t) {
+	ThrJob *j = (ThrJob *)t->ctx;
+	MccEffect e;
+	unsigned char b = (unsigned char)('a' + j->id);
+	thr_stamp(j->id);
+	memset(&e, 0, sizeof e);
+	e.kind = MCC_EFFECT_WRITE;
+	e.space = MCC_EFFECT_SPACE_FD;
+	e.chan = j->fd;
+	e.site = (uint32_t)j->id;
+	e.lane = j->lane;
+	e.width = 1;
+	e.flags = MCC_EFFECT_F_NOUNDO;
+	if (j->g->log && j->g->log->mode == MCC_EFFECT_RECORD)
+		mcc_effect_record(j->g->log, &e, &b, 1);
+	return MCC_TASK_DONE;
+}
+
+static int thr_cell_nonzero(void *user) {
+	ThrJob *j = (ThrJob *)user;
+	return j->g->cell[j->cell] != 0;
+}
+
+static int g_thr_world_have;
+static int g_thr_world_calls;
+
+static int thr_world_ready(void *user) {
+	(void)user;
+	return g_thr_world_have > 0;
+}
+
+static int thr_world_refill(void *user) {
+	(void)user;
+	if (++g_thr_world_calls >= 2)
+		g_thr_world_have = 1;
+	return 1;
+}
+
+static int thr_world_dry(void *user) {
+	(void)user;
+	g_thr_world_calls++;
+	return 0;
+}
+
+static int thr_supported_n(void) {
+	int i, n = 0;
+	for (i = 0; i < MCC_THREAD_TAB_N; i++)
+		if (mcc_thread_op_supported(mcc_thread_tab[i].op))
+			n++;
+	return n;
+}
+
+static void thr_classify_cells(void) {
+	CHECK(mcc_thread_classify("pthread_create") == MCC_THR_CREATE,
+				"pthread_create is recognised as publish");
+	CHECK(mcc_thread_classify("thrd_create") == MCC_THR_CREATE,
+				"the C11 spelling maps to the same construct");
+	CHECK(mcc_thread_classify("pthread_join") == MCC_THR_JOIN,
+				"pthread_join is recognised as a dependency edge");
+	CHECK(mcc_thread_classify("pthread_mutex_lock") == MCC_THR_LOCK,
+				"pthread_mutex_lock is recognised");
+	CHECK(mcc_thread_classify("pthread_cond_wait") == MCC_THR_WAIT,
+				"pthread_cond_wait is recognised as a readiness predicate");
+	CHECK(mcc_thread_classify("pthread_mutex_init") == MCC_THR_NOP,
+				"a mutex constructor has no engine meaning and is erased");
+	CHECK(mcc_thread_classify("pthread_barrier_wait") == MCC_THR_BARRIER &&
+						!mcc_thread_op_supported(MCC_THR_BARRIER),
+				"a recognised primitive with no translation says so rather than passing through");
+	CHECK(mcc_thread_classify("pthread_create_helper") == MCC_THR_NONE,
+				"a name that merely contains a primitive is not one");
+	CHECK(mcc_thread_classify("memcpy") == MCC_THR_NONE,
+				"an unrelated callee is not classified");
+	CHECK(mcc_thread_classify(NULL) == MCC_THR_NONE,
+				"an unresolved callee is not classified");
+	CHECK(thr_supported_n() > 0 && thr_supported_n() < MCC_THREAD_TAB_N,
+				"the table distinguishes translated primitives from recognised-only ones");
+}
+
+static void suite_thread(void) {
+	MccDepGraph g;
+	MccDepNode n[8];
+	ThrJob j[8];
+	MccEffectLog log;
+	int i, a, b, k;
+
+	thr_classify_cells();
+
+	g_thr_norder = 0;
+	mcc_dep_init(&g);
+	thr_job(&j[0], &g, 0, 2);
+	thr_job(&j[1], &g, 1, 3);
+	thr_job(&j[2], &g, 2, 1);
+	a = mcc_dep_publish(&g, &n[0], thr_tick, &j[0]);
+	b = mcc_dep_publish(&g, &n[1], thr_tick, &j[1]);
+	k = mcc_dep_publish(&g, &n[2], thr_tick, &j[2]);
+	CHECK(a == 0 && b == 1 && k == 2, "create publishes one node per thread");
+	CHECK(mcc_dep_concurrent(&g, a, b) == 1,
+				"two created threads carry no derived edge between them");
+	if (!g_mutate) {
+		CHECK(mcc_dep_edge(&g, a, k) == 1, "join adds an edge from the joined work");
+		CHECK(mcc_dep_edge(&g, b, k) == 1, "the second join adds its edge too");
+	}
+	CHECK(mcc_dep_run(&g, 1000) == MCC_DEP_OK, "the joined graph drains");
+	CHECK(g.admitted == 3, "every published node was admitted exactly once");
+	CHECK(thr_last(0) < thr_first(2) && thr_last(1) < thr_first(2),
+				"the continuation runs only after both joined threads finished");
+	CHECK(mcc_dep_concurrent(&g, a, b) == 1,
+				"joining to a common continuation orders neither worker before the other");
+
+	g_thr_norder = 0;
+	mcc_dep_init(&g);
+	thr_job(&j[0], &g, 0, 2);
+	thr_job(&j[1], &g, 1, 2);
+	a = mcc_dep_publish(&g, &n[0], thr_tick, &j[0]);
+	b = mcc_dep_publish(&g, &n[1], thr_tick, &j[1]);
+	CHECK(mcc_dep_mutex(&g, a, b, 1) == 0,
+				"a lock whose protected regions are derivably independent adds no edge");
+	CHECK(g.elided == 1 && g.serialized == 0 && g.edges == 0,
+				"the elided lock is counted and the graph stays edge-free");
+	CHECK(mcc_dep_concurrent(&g, a, b) == 1,
+				"both protected regions may still run concurrently");
+	CHECK(mcc_dep_run(&g, 1000) == MCC_DEP_OK, "the unserialized pair drains");
+	CHECK(thr_last(0) > thr_first(1),
+				"the independent regions really did overlap rather than run in sequence");
+
+	g_thr_norder = 0;
+	mcc_dep_init(&g);
+	thr_job(&j[0], &g, 0, 2);
+	thr_job(&j[1], &g, 1, 2);
+	a = mcc_dep_publish(&g, &n[0], thr_tick, &j[0]);
+	b = mcc_dep_publish(&g, &n[1], thr_tick, &j[1]);
+	if (!g_mutate)
+		CHECK(mcc_dep_mutex(&g, a, b, 0) == 1,
+					"a lock over a conflicting region derives a serializing edge");
+	CHECK(mcc_dep_run(&g, 1000) == MCC_DEP_OK, "the serialized pair drains");
+	CHECK(thr_last(0) < thr_first(1),
+				"the serialized region runs entirely before the region it conflicts with");
+
+	mcc_dep_init(&g);
+	thr_job(&j[0], &g, 0, 1);
+	thr_job(&j[1], &g, 1, 1);
+	a = mcc_dep_publish(&g, &n[0], thr_tick, &j[0]);
+	b = mcc_dep_publish(&g, &n[1], thr_tick, &j[1]);
+	CHECK(mcc_dep_mutex(&g, a, b, -1) == 1,
+				"a lock whose regions cannot be decided serializes rather than eliding");
+	CHECK(g.elided == 0 && g.serialized == 1,
+				"an undecided pair is never counted as independent");
+
+	memset(&log, 0, sizeof log);
+	mcc_effect_log_init(&log);
+
+	g_thr_norder = 0;
+	mcc_dep_init(&g);
+	g.log = &log;
+	thr_job(&j[0], &g, 0, 1);
+	thr_job(&j[1], &g, 1, 1);
+	j[1].delta = 1;
+	a = mcc_dep_publish(&g, &n[0], thr_tick, &j[0]);
+	b = mcc_dep_publish(&g, &n[1], thr_tick_store, &j[1]);
+	mcc_dep_pred(&g, a, thr_cell_nonzero, &j[0], 0);
+	CHECK(mcc_dep_concurrent(&g, a, b) == 1,
+				"a condvar wait adds a readiness predicate, not an edge");
+	CHECK(mcc_dep_run(&g, 1000) == MCC_DEP_OK,
+				"the waiter is admitted once the signaller made its predicate hold");
+	CHECK(g.stalls > 0, "the waiter was actually held back at least once");
+	CHECK(thr_first(1) < thr_first(0), "the signal precedes the wakeup");
+
+	mcc_dep_init(&g);
+	g.log = &log;
+	thr_job(&j[0], &g, 0, 1);
+	a = mcc_dep_publish(&g, &n[0], thr_tick, &j[0]);
+	mcc_dep_pred(&g, a, thr_cell_nonzero, &j[0], 0);
+	CHECK(mcc_dep_run(&g, 1000) == MCC_DEP_STUCK,
+				"a wait no work can satisfy is reported stuck, never silently skipped");
+
+	g_thr_world_have = 0;
+	g_thr_world_calls = 0;
+	mcc_dep_init(&g);
+	thr_job(&j[0], &g, 0, 1);
+	a = mcc_dep_publish(&g, &n[0], thr_tick, &j[0]);
+	mcc_dep_pred(&g, a, thr_world_ready, &j[0], 1);
+	mcc_dep_world_source(&g, thr_world_refill, NULL);
+	CHECK(mcc_dep_run(&g, 1000) == MCC_DEP_OK,
+				"a thread blocked on the world runs once the host refill supplies it");
+	CHECK(g.refills >= 2, "the readiness source outside the graph was polled");
+
+	g_thr_world_have = 0;
+	g_thr_world_calls = 0;
+	mcc_dep_init(&g);
+	thr_job(&j[0], &g, 0, 1);
+	a = mcc_dep_publish(&g, &n[0], thr_tick, &j[0]);
+	mcc_dep_pred(&g, a, thr_world_ready, &j[0], 1);
+	mcc_dep_world_source(&g, thr_world_dry, NULL);
+	CHECK(mcc_dep_run(&g, 1000) == MCC_DEP_STUCK,
+				"a world source that never supplies leaves the graph stuck rather than done");
+	CHECK(g_thr_world_calls > 0, "the dry world source was actually consulted");
+
+	g_thr_norder = 0;
+	mcc_dep_init(&g);
+	thr_job(&j[0], &g, 0, 1);
+	a = mcc_dep_publish(&g, &n[0], thr_tick, &j[0]);
+	CHECK(mcc_dep_detach(&g, a, 1) == 1,
+				"a detached slice with a derivable finite bound is accepted");
+	CHECK(mcc_dep_run(&g, 1000) == MCC_DEP_OK,
+				"an accepted detached slice is joined implicitly at exit");
+
+	mcc_dep_init(&g);
+	thr_job(&j[0], &g, 0, 1);
+	a = mcc_dep_publish(&g, &n[0], thr_tick, &j[0]);
+	CHECK(mcc_dep_detach(&g, a, 0) == 0,
+				"a detached slice with no derivable bound is refused");
+	CHECK(g.verdict == MCC_DEP_REFUSED &&
+						g.refusal == MCC_DEP_R_UNBOUNDED_DETACH,
+				"the refusal names the unbounded detached slice");
+	CHECK(mcc_dep_run(&g, 1000) == MCC_DEP_REFUSED,
+				"a refused graph is never run as if it had been translated");
+
+	g_thr_norder = 0;
+	mcc_effect_log_clear(&log);
+	log.mode = MCC_EFFECT_RECORD;
+	mcc_dep_init(&g);
+	g.log = &log;
+	thr_job(&j[0], &g, 0, 1);
+	thr_job(&j[1], &g, 1, 1);
+	j[0].fd = 1;
+	j[1].fd = 1;
+	a = mcc_dep_publish(&g, &n[0], thr_tick_write, &j[0]);
+	b = mcc_dep_publish(&g, &n[1], thr_tick_write, &j[1]);
+	CHECK(mcc_dep_run(&g, 1000) == MCC_DEP_OK, "both writers ran");
+	{
+		int ca = -1, cb = -1;
+		CHECK(mcc_thread_output_conflict(&g, &log, &ca, &cb) > 0,
+					"two concurrent threads writing one channel is an observable interleaving");
+		CHECK(ca >= 0 && cb >= 0 && ca != cb,
+					"the interleaving names the two nodes it found");
+		CHECK(g.verdict == MCC_DEP_REFUSED &&
+							g.refusal == MCC_DEP_R_INTERLEAVED_OUTPUT,
+					"that interleaving is refused by name rather than silently ordered");
+	}
+
+	g_thr_norder = 0;
+	mcc_effect_log_clear(&log);
+	log.mode = MCC_EFFECT_RECORD;
+	mcc_dep_init(&g);
+	g.log = &log;
+	thr_job(&j[0], &g, 0, 1);
+	thr_job(&j[1], &g, 1, 1);
+	j[0].fd = 1;
+	j[1].fd = 1;
+	a = mcc_dep_publish(&g, &n[0], thr_tick_write, &j[0]);
+	b = mcc_dep_publish(&g, &n[1], thr_tick_write, &j[1]);
+	mcc_dep_edge(&g, a, b);
+	CHECK(mcc_dep_run(&g, 1000) == MCC_DEP_OK, "the ordered writers ran");
+	CHECK(mcc_thread_output_conflict(&g, &log, NULL, NULL) == 0,
+				"writers the graph already orders are not an interleaving");
+
+	g_thr_norder = 0;
+	mcc_effect_log_clear(&log);
+	log.mode = MCC_EFFECT_RECORD;
+	mcc_dep_init(&g);
+	g.log = &log;
+	for (i = 0; i < 3; i++) {
+		thr_job(&j[i], &g, i, 2);
+		j[i].delta = 1;
+		mcc_dep_publish(&g, &n[i], thr_tick_cell, &j[i]);
+	}
+	CHECK(mcc_dep_run(&g, 1000) == MCC_DEP_OK,
+				"the lane-visible counter graph drains");
+	CHECK(g.cell[0] == 6, "every lane's increment landed on the shared cell");
+	CHECK(log.n == 12, "each increment recorded one cell load and one cell store");
+
+	{
+		int64_t after = g.cell[0];
+		log.mode = MCC_EFFECT_OFF;
+		mcc_dep_init(&g);
+		g.log = &log;
+		g.cell[0] = after;
+		for (i = 0; i < 3; i++) {
+			thr_job(&j[i], &g, i, 2);
+			j[i].delta = 1;
+			mcc_dep_publish(&g, &n[i], thr_tick_cell, &j[i]);
+		}
+		mcc_effect_replay_begin(&log);
+		CHECK(mcc_dep_run(&g, 1000) == MCC_DEP_OK, "the replayed graph drains");
+		CHECK(!mcc_effect_diverged(&log),
+					"the replay asked for exactly the recorded cell traffic");
+		CHECK(mcc_effect_replay_end(&log) == 1, "the replay consumed the whole log");
+		CHECK(g.cell[0] == after,
+					"a replayed lane-visible cell is not advanced a second time");
+	}
+
+	if (g_mutate && log.n > 2) {
+		log.e[log.n / 2].value ^= 1;
+		mcc_dep_init(&g);
+		g.log = &log;
+		for (i = 0; i < 3; i++) {
+			thr_job(&j[i], &g, i, 2);
+			j[i].delta = 1;
+			mcc_dep_publish(&g, &n[i], thr_tick_cell, &j[i]);
+		}
+		mcc_effect_replay_begin(&log);
+		mcc_dep_run(&g, 1000);
+		CHECK(mcc_effect_diverged(&log),
+					"a perturbed cell log is caught by the replay");
+	}
+	mcc_effect_log_free(&log);
+
+	fprintf(stderr,
+					"slicerun: thread map -- %d primitives classified, %d with an engine "
+					"translation\n",
+					MCC_THREAD_TAB_N, thr_supported_n());
+}
+
 int main(int argc, char **argv) {
 	const char *only = NULL;
 	const char *arenas = NULL;
@@ -8045,7 +8432,7 @@ int main(int argc, char **argv) {
 		static const char *const SUITES[] = {
 				"task", "work",  "cpu",        "gpu",    "bytes",  "wide64", "f64",
 				"ops",  "frame", "mem",        "deref",  "fmt",    "fault",  "sched",
-				"ext",  "rwstore", "arrow", "hostimport", "effect"};
+				"ext",  "rwstore", "arrow", "hostimport", "effect", "thread"};
 		size_t si;
 		int known = 0;
 		for (si = 0; si < sizeof SUITES / sizeof SUITES[0]; si++)
@@ -8102,6 +8489,8 @@ int main(int argc, char **argv) {
 		suite_sched();
 	if (!only || !strcmp(only, "effect"))
 		suite_effect();
+	if (!only || !strcmp(only, "thread"))
+		suite_thread();
 
 	fprintf(stderr, "slicerun: %d checks, %d failures, device=%s available=%d "
 									"dispatches=%ld\n",
