@@ -4686,6 +4686,36 @@ if(MCC_BUILD_TESTS)
                 LABELS native)
         endif()
 
+        find_program(MCC_OBJDUMP NAMES objdump)
+        if(UNIX AND MCC_OBJDUMP)
+            add_test(NAME superopt/global-reload
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/global-reload.sh"
+                        "${_mcc_exe}" "${_bdir}"
+                        "${CMAKE_BINARY_DIR}/global-reload"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/src/globreload.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/globreload.awk")
+            set_tests_properties(superopt/global-reload PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                TIMEOUT 600)
+            add_test(NAME superopt/global-reload-known-positive
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/global-reload.sh"
+                        "${_mcc_exe}" "${_bdir}"
+                        "${CMAKE_BINARY_DIR}/global-reload-kp"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/src/globreload-broken.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/globreload.awk"
+                        known-positive)
+            set_tests_properties(superopt/global-reload-known-positive PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                TIMEOUT 600)
+        else()
+            mcc_skip_test(superopt/global-reload
+                "the global-reload cell reads relocations out of objdump -dr on a POSIX host; no objdump on PATH, or not a POSIX host"
+                LABELS native)
+            mcc_skip_test(superopt/global-reload-known-positive
+                "the global-reload cell reads relocations out of objdump -dr on a POSIX host; no objdump on PATH, or not a POSIX host"
+                LABELS native)
+        endif()
+
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
