@@ -6682,6 +6682,119 @@ static const char *frame_drop_name(int i) {
 	}
 }
 
+/* Why an accepted block reaches mcc_slice_frame_kernel_build with nslot == 0,
+ * which is the largest named drop in the funnel above. Every slot in a frame
+ * comes from one of two places: a statement writing a
+ * destination (mcc_slice_slot_of) or an expression naming storage
+ * (ast_eval_slice_livein). So a zero-slot block wrote nothing and read nothing
+ * the collector recognised, and the question is whether there was anything to
+ * recognise. The walk therefore looks for nodes that NAME storage and reports
+ * the first one it meets in document order; a block where it meets none
+ * computes from constants and the refusal is correct. */
+enum {
+	NS_RET_LITERAL,
+	NS_RET_CONST_EXPR,
+	NS_DISCARDED,
+	NS_LOCAL,
+	NS_GLOBAL,
+	NS_MEMBER,
+	NS_ARROW,
+	NS_LOAD,
+	NS_BAILOUT,
+	NS_N
+};
+
+static long g_ns[NS_N];
+static int g_noslot;
+static char g_cur_fn[128];
+
+static const char *noslot_name(int i) {
+	switch (i) {
+	case NS_RET_LITERAL: return "noslot/return-literal";
+	case NS_RET_CONST_EXPR: return "noslot/return-const-expr";
+	case NS_DISCARDED: return "noslot/discarded-operand";
+	case NS_LOCAL: return "noslot/local-ref-unseen";
+	case NS_GLOBAL: return "noslot/global-ref-unseen";
+	case NS_MEMBER: return "noslot/member-unseen";
+	case NS_ARROW: return "noslot/arrow-unseen";
+	case NS_LOAD: return "noslot/load-unseen";
+	default: return "noslot/bailout";
+	}
+}
+
+static int noslot_node(AstArena *a, AstLocal n) {
+	int r;
+	switch (ast_kind(a, n)) {
+	case AST_Ref:
+		r = ast_op(a, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM))
+			return NS_LOCAL;
+		if (r & VT_SYM)
+			return NS_GLOBAL;
+		return -1;
+	case AST_Unary:
+		if (ast_op(a, n) == AST_EVAL_OP_MEMBER || ast_op(a, n) == AST_EVAL_OP_ADDR)
+			return NS_MEMBER;
+		if (ast_op(a, n) == AST_EVAL_OP_ARROW)
+			return NS_ARROW;
+		return -1;
+	case AST_Load: return NS_LOAD;
+	case AST_Bailout: return NS_BAILOUT;
+	default: return -1;
+	}
+}
+
+/* `disc` is a statement AST_If op 7, a ternary whose value is computed and
+ * thrown away. Both executors return 1 for it without evaluating anything
+ * (mcc_slice_frame_exec_stmt and mcc_slice_spv_stmt each have the same two
+ * lines), so an operand under it is not live-in to anything and the collector
+ * is right not to give it a slot. Naming it separately is what keeps the other
+ * classes an invariant rather than a corpus fact: storage named in a
+ * position that IS evaluated, with no slot, would be a live-in the kernel
+ * cannot read. */
+static void noslot_walk(AstArena *a, AstLocal n, int disc, int *ev, int *dc) {
+	AstLocal c;
+	int k;
+	if (n == AST_NONE || *ev >= 0)
+		return;
+	if (ast_kind(a, n) == AST_If && ast_op(a, n) == 7)
+		disc = 1;
+	k = noslot_node(a, n);
+	if (k >= 0) {
+		if (disc) {
+			if (*dc < 0)
+				*dc = k;
+		} else {
+			*ev = k;
+		}
+		return;
+	}
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		noslot_walk(a, c, disc, ev, dc);
+}
+
+static void noslot_classify(MccSliceFrame *f) {
+	int i, k, ev = -1, dc = -1;
+	for (i = 0; i < f->ntop; i++)
+		noslot_walk(f->a, f->top[i], 0, &ev, &dc);
+	noslot_walk(f->a, f->ret, 0, &ev, &dc);
+	k = ev >= 0 ? ev
+			: dc >= 0 ? NS_DISCARDED
+			: f->ntop == 0 && f->ret != AST_NONE &&
+							ast_kind(f->a, f->ret) == AST_Literal
+					? NS_RET_LITERAL
+					: NS_RET_CONST_EXPR;
+	g_ns[k]++;
+	if (g_noslot)
+		printf("noslot %s fn=%s root=%lu ntop=%d nstmt=%d nctrl=%d nloop=%d "
+					 "ret=%d neret=%d nodes=%d retkind=%d retop=%d retival=%lld\n",
+					 noslot_name(k), g_cur_fn, (unsigned long)f->root, f->ntop, f->nstmt,
+					 f->nctrl, f->nloop, f->ret != AST_NONE, f->neret, f->nodes,
+					 f->ret == AST_NONE ? -1 : (int)ast_kind(f->a, f->ret),
+					 f->ret == AST_NONE ? -1 : ast_op(f->a, f->ret),
+					 f->ret == AST_NONE ? 0LL : (long long)ast_ival(f->a, f->ret));
+}
+
 #define FRAME_NT MCC_GPU_LOCAL_SIZE
 #define FRAME_PTR_BASE (128 * 1024)
 #define FRAME_PTR_STRIDE (12 * 1024)
@@ -7413,10 +7526,21 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 		return;
 	}
 	if (!mcc_slice_frame_kernel_build(&fr, &k)) {
-		g_fd[fr.nslot < 1										? FD_LOWER_SLOT
-					: fr.nstmt < 1 && fr.ret == AST_NONE && !fr.neret ? FD_LOWER_EMPTY
-					: flt && !mcc_gpu_f64()						 ? FD_LOWER_F64
-																						 : FD_LOWER_EMIT]++;
+		/* "nothing to run" is tested first even though kernel_build tests
+		 * nslot first, because the two conditions are independent and when both
+		 * hold only one of them is informative. A run with no store, no return
+		 * and no early return has nothing for either executor to do -- both skip
+		 * a discarded ternary outright -- so its emptiness is the cause and its
+		 * lack of a live-in is a consequence. Measured over gcc c-torture the
+		 * kernel_build order put 4 such blocks under "no live-in", which is how
+		 * that bucket came to contain a block that does name a local. */
+		int d = fr.nstmt < 1 && fr.ret == AST_NONE && !fr.neret ? FD_LOWER_EMPTY
+						: fr.nslot < 1																	? FD_LOWER_SLOT
+						: flt && !mcc_gpu_f64()													? FD_LOWER_F64
+																														: FD_LOWER_EMIT;
+		if (d == FD_LOWER_SLOT)
+			noslot_classify(&fr);
+		g_fd[d]++;
 		return;
 	}
 	g_frame_built++;
@@ -8121,6 +8245,7 @@ static int arena_pass(FILE *f, int pass, long limit, int quiet) {
 			if (!a)
 				continue;
 			g_arena_bodies++;
+			snprintf(g_cur_fn, sizeof g_cur_fn, "%s", fn);
 			slicerun_obj_reset(n);
 			for (i = 0; i < n && i < g_obj_n; i++) {
 				g_obj_ext[i] = (int32_t)raw[i].size;
@@ -8244,6 +8369,22 @@ static int arena_mode(const char *path, long limit, int quiet) {
 				sum += g_fd[i];
 		}
 		printf(" funnel-drops-sum=%ld\n", sum);
+	}
+	{
+		int i;
+		long sum = 0;
+		printf("slicerun: noslot");
+		for (i = 0; i < NS_N; i++) {
+			printf(" %s=%ld", noslot_name(i), g_ns[i]);
+			sum += g_ns[i];
+		}
+		printf(" noslot-sum=%ld\n", sum);
+		if (sum != g_fd[FD_LOWER_SLOT]) {
+			printf("slicerun: FAIL (the noslot classes sum to %ld against %ld "
+						 "funnel-lower-no-live-in, so they are not a partition of it)\n",
+						 sum, g_fd[FD_LOWER_SLOT]);
+			g_arena_mismatch++;
+		}
 	}
 	printf("slicerun: invoke-seen=%ld invoke-inlined=%ld leaf-callees=%d\n",
 				 mcc_slice_inl_seen, mcc_slice_inl_n, g_leaf_n);
@@ -9221,6 +9362,8 @@ int main(int argc, char **argv) {
 			g_refusals = 1;
 		else if (!strcmp(argv[i], "--census"))
 			g_census = 1;
+		else if (!strcmp(argv[i], "--noslot"))
+			g_noslot = 1;
 		else if (!strcmp(argv[i], "--no-globals"))
 			g_noglob = 1;
 		else if (!strcmp(argv[i], "--fmt-cost-report"))
