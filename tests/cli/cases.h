@@ -2556,5 +2556,17 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -no-pie {W}/r32s.c -o {W}/r32s 2>&1 | grep -oE \"relocation .R_X86_64_32.* out of range\"",
 		 "relocation 'R_X86_64_32[S]' out of range\n"},
 
+		{"xmm_hi_promoted_float_store_to_global", "cpu=x86_64,os=linux",
+		 "printf '%s\\n' 'float gf[6];' 'double gd[6];' "
+		 "'void ff(int n){float a=gf[0],b=gf[1];while(n--){a+=gf[2];b+=a;}gf[4]=a;gf[5]=b;}' "
+		 "'void fd(int n){double a=gd[0],b=gd[1];while(n--){a+=gd[2];b+=a;}gd[4]=a;gd[5]=b;}' "
+		 "'int main(void){gf[0]=1;gf[1]=2;gf[2]=3;gd[0]=1;gd[1]=2;gd[2]=3;ff(3);fd(3);' "
+		 "'if(gf[4]!=10||gf[5]!=23)return 1;if(gd[4]!=10||gd[5]!=23)return 2;return 0;}' > {W}/xh.c && "
+		 "{MCC} -B{B} -I{I} -w -O0 {W}/xh.c -o {W}/xh0 && "
+		 "{MCC} -B{B} -I{I} -w -O1 -fpromote-locals -fpromote-leaf-xmm -fxmm-hi {W}/xh.c -o {W}/xhk && "
+		 "{MCC} -B{B} -I{I} -w -O5 {W}/xh.c -o {W}/xh5 && "
+		 "{W}/xh0; printf 'O0=%s ' $?; {W}/xhk; printf 'knobs=%s ' $?; {W}/xh5; printf 'O5=%s\\n' $?",
+		 "O0=0 knobs=0 O5=0\n"},
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));
