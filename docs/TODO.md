@@ -5496,7 +5496,7 @@ recorded a correction, and the second served it without running `foo` at all.
 | program | routed callee | what ran twice | observable |
 |---|---|---|---|
 | `20050502-1.c` | `bar(const char **x){return *(*x)++;}` | the cursor bump through a pointer-to-pointer | the string advances two per call; `strcmp` fails → `abort`, exit 134 |
-| `builtin-prefetch-4.c` | `getint`/`getptr` and the `*_glob_*` bumps | the counter increment and the global pointer/index bump | `getintcnt == 1` fails → `abort` |
+| `builtin-prefetch-4.c` | `getint`, `getptr` — the only two one-argument callees in the file that write a global, and the route loses exactly two swaps | `getintcnt++` / `getptrcnt++` | `getptrcnt == 1` and `getintcnt == 1` fail → `abort`. The `*_glob_*` functions take no arguments and never entered the route: `nparam >= 1` excludes them |
 | `loop-3.c`, `loop-3b.c` | `g(i){n++;}` | the global tally | `n != 4` → `abort` |
 | `gcc.dg/torture/pr126136.c` | `foo(signed char)` with `i++` | `i` | `foo(10) != -1` → `abort` |
 
