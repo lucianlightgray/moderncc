@@ -5506,24 +5506,53 @@ PUB_FUNC int mccjit_selftest_purity(void) { MCC_TRACE("enter\n");
 		const char *fn;
 		int nostdlib;
 		int want;
-	} cases[4] = {
-			{"int f(int x){return x*2+1;}", "f", 1, AST_PURITY_TIER0},
-			{"int g(int *p, int x){return p ? *p + x : -1;}", "g", 1,
-			 AST_PURITY_TIER1},
-			{"int s(int *p, int x){*p = x; return x;}", "s", 1, AST_PURITY_IMPURE},
-			{"int abs(int); int h(int x){return abs(x) + 1;}", "h", 1,
+		int lie;
+	} cases[12] = {
+			{"int f(int x){return x*2+1;}", "f", 1, AST_PURITY_TIER0,
 			 AST_PURITY_IMPURE},
+			{"int g(int *p, int x){return p ? *p + x : -1;}", "g", 1,
+			 AST_PURITY_TIER1, AST_PURITY_TIER0},
+			{"int s(int *p, int x){*p = x; return x;}", "s", 1, AST_PURITY_IMPURE,
+			 AST_PURITY_TIER0},
+			{"int abs(int); int h(int x){return abs(x) + 1;}", "h", 1,
+			 AST_PURITY_IMPURE, AST_PURITY_TIER0},
+			{"int gi; int inc(int x){gi++; return x;}", "inc", 1, AST_PURITY_IMPURE,
+			 AST_PURITY_TIER0},
+			{"int gi; int dec(int x){gi--; return x;}", "dec", 1, AST_PURITY_IMPURE,
+			 AST_PURITY_TIER0},
+			{"int gi; int post(int x){return gi++ + x;}", "post", 1,
+			 AST_PURITY_IMPURE, AST_PURITY_TIER0},
+			{"int bump(int *p, int x){return (*p)++ + x;}", "bump", 1,
+			 AST_PURITY_IMPURE, AST_PURITY_TIER1},
+			{"int deref(const char **x, int u){return *(*x)++ + u;}", "deref", 1,
+			 AST_PURITY_IMPURE, AST_PURITY_TIER1},
+			{"int gr; int rd(int x){return gr + x;}", "rd", 1, AST_PURITY_TIER1,
+			 AST_PURITY_TIER0},
+			{"int ga[8]; int idx(int x){return ga[x & 7];}", "idx", 1,
+			 AST_PURITY_TIER1, AST_PURITY_TIER0},
+			{"int sat(int x){return x < 0 ? 0 : (x > 99 ? 99 : x);}", "sat", 1,
+			 AST_PURITY_TIER0, AST_PURITY_IMPURE},
 	};
+	int ncases = (int)(sizeof cases / sizeof cases[0]);
+	int lying = mcc_env_on("MCC_JIT_SELFTEST_PURITY_LIE");
+	int caught = 0;
 	int fails = 0;
 	int i;
 
 	printf("mccjit-selftest-purity: begin\n");
-	printf("mccjit-selftest-purity: classify  fn  got       want      ok\n");
-	for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
+	if (lying) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-purity: known-positive: every want below is "
+					 "deliberately falsified;\n");
+		printf("mccjit-selftest-purity: known-positive: each of the %d rows must "
+					 "therefore report FAIL\n",
+					 ncases);
+	}
+	printf("mccjit-selftest-purity: classify  fn     got       want      ok\n");
+	for (i = 0; i < ncases; i++) { MCC_TRACE("br\n");
 		unsigned char *blob;
 		size_t blen;
 		MCCState *s1;
-		int got, ok;
+		int got, ok, want = lying ? cases[i].lie : cases[i].want;
 		blob = mccjit_stash_one(cases[i].src, cases[i].fn, cases[i].nostdlib, &blen,
 														&s1);
 		if (!s1 || !blob) { MCC_TRACE("br\n");
@@ -5535,14 +5564,31 @@ PUB_FUNC int mccjit_selftest_purity(void) { MCC_TRACE("enter\n");
 			continue;
 		}
 		got = mccjit_classify_blob(blob, blen);
-		ok = (got == cases[i].want);
-		printf("mccjit-selftest-purity:           %-3s %-9s %-9s %s\n", cases[i].fn,
-					 mccjit_purity_name(got), mccjit_purity_name(cases[i].want),
+		ok = (got == want);
+		printf("mccjit-selftest-purity:           %-6s %-9s %-9s %s\n",
+					 cases[i].fn, mccjit_purity_name(got), mccjit_purity_name(want),
 					 ok ? "OK" : "FAIL");
 		if (!ok)
+			{ MCC_TRACE("br\n"); caught++; }
+		if (!ok && !lying)
 			{ MCC_TRACE("br\n"); fails++; }
 		mcc_free(blob);
 		mcc_delete(s1);
+	}
+
+	if (lying) { MCC_TRACE("br\n");
+		int missed = ncases - caught;
+		printf("mccjit-selftest-purity: known-positive: %d of %d falsified rows "
+					 "reported FAIL, %d slipped through %s\n",
+					 caught, ncases, missed, missed ? "FAIL" : "OK");
+		if (missed) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-purity: known-positive: a row that passes "
+						 "against a falsified want is not comparing anything\n");
+			fails++;
+		}
+		printf("mccjit-selftest-purity: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+					 fails, fails == 1 ? "" : "s");
+		return fails ? 1 : 0;
 	}
 
 	{

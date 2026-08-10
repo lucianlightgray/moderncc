@@ -5662,6 +5662,11 @@ if(MCC_BUILD_TESTS)
             target_include_directories(jit_selftest_purity PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
             add_test(NAME jit/selftest-purity COMMAND jit_selftest_purity)
             set_tests_properties(jit/selftest-purity PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            add_test(NAME jit/selftest-purity-known-positive
+                COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SELFTEST_PURITY_LIE=1
+                        $<TARGET_FILE:jit_selftest_purity>)
+            set_tests_properties(jit/selftest-purity-known-positive PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
 
             add_executable(jit_selftest_strlit tests/embed/jit_selftest_strlit.c)
             target_link_libraries(jit_selftest_strlit PRIVATE libmcc)
@@ -5959,6 +5964,7 @@ if(MCC_BUILD_TESTS)
             mcc_skip_test(jit/selftest-kgc "${_jitoff_why}")
             mcc_skip_test(jit/selftest-nearmatch "${_jitoff_why}")
             mcc_skip_test(jit/selftest-purity "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-purity-known-positive "${_jitoff_why}")
             mcc_skip_test(jit/selftest-strlit "${_jitoff_why}")
             mcc_skip_test(jit/selftest-struct "${_jitoff_why}")
             mcc_skip_test(jit/selftest-ptrret "${_jitoff_why}")
@@ -6724,7 +6730,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                             "--gcc=${MCC_XSUITE_GCC}" ${_jitconf_ts}
                             --suite c-torture/execute --limit 400
                             "--mcc=$<TARGET_FILE:mcc>" --surface embed --label cell
-                            --min-pass 100 --max-miscompile 1)
+                            --min-pass 100 --max-miscompile 0)
                 set_tests_properties("jit/xoracle-conformance" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
             else()
@@ -7226,6 +7232,23 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                     "${_mcc_exe}" "${CMAKE_BINARY_DIR}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/jit/parity")
         set_tests_properties(jit/kgc-route-parity PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native TIMEOUT 600)
+
+        add_test(NAME jit/kgc-effect-parity
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/jit/run-kgceffect.sh"
+                    "${_mcc_exe}" "${CMAKE_BINARY_DIR}"
+                    "${CMAKE_BINARY_DIR}/kgc-effect-parity"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/jit/effects")
+        set_tests_properties(jit/kgc-effect-parity PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native TIMEOUT 600)
+
+        add_test(NAME jit/kgc-effect-parity-known-positive
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/jit/run-kgceffect.sh"
+                    "${_mcc_exe}" "${CMAKE_BINARY_DIR}"
+                    "${CMAKE_BINARY_DIR}/kgc-effect-parity-kp"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/jit/effects-broken"
+                    known-positive)
+        set_tests_properties(jit/kgc-effect-parity-known-positive PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native TIMEOUT 600)
 
         add_test(NAME run-parity-riscv64
