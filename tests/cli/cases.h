@@ -2556,5 +2556,14 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -no-pie {W}/r32s.c -o {W}/r32s 2>&1 | grep -oE \"relocation .R_X86_64_32.* out of range\"",
 		 "relocation 'R_X86_64_32[S]' out of range\n"},
 
+		{"c90_selection_stmt_tag_scope", "",
+		 "printf '%s\\n' 'extern int printf(const char *, ...);' "
+		 "'struct foo { char a; };' "
+		 "'static int sfoo(void) { if (sizeof (struct foo { int a; double b; char *c; void *d; })) (void)0; return (int)sizeof(struct foo); }' "
+		 "'int main(void) { printf(\"%d %d\\n\", sfoo(), (int)sizeof(struct foo)); return 0; }' > {W}/c90scope.c && "
+		 "{MCC} -B{B} -I{I} -std=iso9899:1990 -O2 {W}/c90scope.c -o {W}/c90scope90 && {W}/c90scope90 && "
+		 "{MCC} -B{B} -I{I} -std=c99 -O2 {W}/c90scope.c -o {W}/c90scope99 && {W}/c90scope99",
+		 "32 1\n1 1\n"},
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));

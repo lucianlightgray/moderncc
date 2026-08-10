@@ -18579,9 +18579,16 @@ front end — so this is not an `-O2` pipeline gap. Recurring shapes: `fabs(x) <
 - **GNU range designators in nested initializers produce wrong data.** `gnu99-init-1.c`
   mixes `[2 ... 4][0 ... 1][2 ... 3] = 1` with later overriding designators. Adjacent to
   the nested-member-designator item above, but a distinct bug.
-- **C90 `if`-controlling-expression scope.** `c90-scope-1.c`: under `-std=iso9899:1990` a
-  struct declared in an `if` condition belongs to the enclosing scope, not to the `if`.
-  mcc applies C99 scoping in both modes.
+- ~~**C90 `if`-controlling-expression scope.**~~ **Fixed 2026-08-10 (`wt/o2wrong`).**
+  `c90-scope-1.c` was wrong at **every** `-O` level, so it was never an `-O2` defect:
+  `block_nested` pushed `new_scope_s` around `if`/`while`/`do`/`switch` unconditionally.
+  Gated on the new `c99_stmt_scopes()` (`cversion >= 199901`). Under C90 `sfoo()` returned
+  1 where gcc-15 and clang-22 both return 32. `for` is deliberately left alone: its scope
+  carries VLA/cleanup/`bsym`/`csym` state and C90 already rejects a for-init declaration.
+  Cell `cli/c90_selection_stmt_tag_scope`, which also pins the C99 answer so the gate
+  cannot be inverted. `gcc.dg/c99-scope-2.c` is a **separate, pre-existing** failure
+  (`struct/union/enum already defined`): a non-compound `if` substatement gets no scope of
+  its own. Not fixed here, and it fails identically on `main`.
 
 Do **not** refile the rest of that bucket: the `builtin-object-size` /
 `builtin-dynamic-object-size` cells are the deliberately-declined item above, and

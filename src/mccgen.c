@@ -14731,6 +14731,7 @@ static void block(int flags) { MCC_TRACE("enter\n");
 
 static void block_nested(int flags) { MCC_TRACE("enter\n");
 	int a, b, c, d, e, t, nc_pre;
+	int sscope = c99_stmt_scopes(mcc_state);
 	struct scope o;
 	LoopCensus lcen;
 	Sym *s;
@@ -14754,7 +14755,8 @@ again:
 		{ MCC_TRACE("br\n"); mcc_tcov_check_line(mcc_state, 0), mcc_tcov_block_begin(mcc_state); }
 
 	if (t == TOK_IF) { MCC_TRACE("br\n");
-		new_scope_s(&o);
+		if (sscope)
+			{ MCC_TRACE("br\n"); new_scope_s(&o); }
 		skip('(');
 		gexpr_decl();
 		if (expr_was_assign)
@@ -14777,9 +14779,11 @@ again:
 			gsym(a);
 		}
 		rir_hook_if_end();
-		prev_scope_s(&o);
+		if (sscope)
+			{ MCC_TRACE("br\n"); prev_scope_s(&o); }
 	} else if (t == TOK_WHILE) { MCC_TRACE("br\n");
-		new_scope_s(&o);
+		if (sscope)
+			{ MCC_TRACE("br\n"); new_scope_s(&o); }
 		lcen_begin(&lcen, "while");
 		d = gind();
 		rir_hook_while_cond_start();
@@ -14801,7 +14805,8 @@ again:
 		gsym_addr(b, d);
 		gsym(a);
 		lcen_end(&lcen);
-		prev_scope_s(&o);
+		if (sscope)
+			{ MCC_TRACE("br\n"); prev_scope_s(&o); }
 	} else if (t == TOK_TRANSACTION_ATOMIC || t == TOK_TRANSACTION_RELAXED) { MCC_TRACE("br\n");
 		parse_attribute(NULL);
 		block(flags);
@@ -14961,7 +14966,8 @@ again:
 		lcen_end(&lcen);
 		prev_scope(&o, 0);
 	} else if (t == TOK_DO) { MCC_TRACE("br\n");
-		new_scope_s(&o);
+		if (sscope)
+			{ MCC_TRACE("br\n"); new_scope_s(&o); }
 		a = b = 0;
 		lcen_begin(&lcen, "do");
 		d = gind();
@@ -14986,7 +14992,8 @@ again:
 		gsym(a);
 		rir_hook_do_end();
 		lcen_end(&lcen);
-		prev_scope_s(&o);
+		if (sscope)
+			{ MCC_TRACE("br\n"); prev_scope_s(&o); }
 	} else if (t == TOK_SWITCH) { MCC_TRACE("br\n");
 		struct switch_t *sw;
 
@@ -14998,7 +15005,8 @@ again:
 		sw->vla_gpp = vla_seq;
 		cur_switch = sw;
 
-		new_scope_s(&o);
+		if (sscope)
+			{ MCC_TRACE("br\n"); new_scope_s(&o); }
 		skip('(');
 		gexpr_decl();
 		seqp_check();
@@ -15012,7 +15020,8 @@ again:
 		lblock(&a, NULL);
 		a = gjmp(a);
 		gsym(b);
-		prev_scope_s(&o);
+		if (sscope)
+			{ MCC_TRACE("br\n"); prev_scope_s(&o); }
 		if ((mcc_state->warn_switch & WARN_ON) && IS_ENUM(sw->sv.type.t) && !sw->def_sym) { MCC_TRACE("br\n");
 			Sym *ev;
 			for (ev = sw->sv.type.ref->next; ev; ev = ev->next) { MCC_TRACE("br\n");
