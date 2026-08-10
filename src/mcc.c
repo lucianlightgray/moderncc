@@ -87,7 +87,9 @@ static const char help2[] =
 		"                                n>=13 = every level-gated pass on, plus a bounded search for the smallest object\n"
 		"  -fopt-search-ticks=<n>        Rounds the -O13 search runs (default 1; 0 = no search). A round is a fixed\n"
 		"                                candidate quota, counted in work and never in time, so the object a given\n"
-		"                                source compiles to does not depend on how fast or how busy the machine is\n"
+		"                                source compiles to does not depend on how fast or how busy the machine is.\n"
+		"                                Round 1 sweeps the pass-limit axis; rounds after it widen to the graft and\n"
+		"                                gate axes, which have not been measured to pay on any subject yet\n"
 		"  --embed-jit, --no-embed-jit   Bake the runtime JIT engine into a file output so it accepts --jit / MCC_JIT at its runtime (default off)\n"
 		"  --jit, --no-jit               For -run: enable/disable the in-process JIT (default from build's MCC_CONFIG_JIT); output programs read the MCC_JIT env var (0/1) at their runtime\n"
 		"  --jit-max-duration <sec>      Runtime JIT budget baked into the output (default 600; 0 = unlimited)\n"
@@ -1409,7 +1411,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 				best_limit = l;
 			}
 		}
-		for (quota = q_bud;
+		for (quota = tick ? q_bud : 0u;
 				 quota && !so_stop && budget_cur < SO_BUDGET_SPACE; quota--) { MCC_TRACE("br\n");
 			unsigned b = budget_cur++;
 			long sz = so_eval_capped(cv, cand_tmp, best_gate, b, best_limit);
@@ -1419,7 +1421,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 				best_budget = b;
 			}
 		}
-		for (quota = q_gate;
+		for (quota = tick ? q_gate : 0u;
 				 quota && !so_stop && local_claim < SO_GATE_SPACE;) { MCC_TRACE("br\n");
 			unsigned g = local_claim++;
 			long sz;
@@ -1433,7 +1435,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 				best_gate = g;
 			}
 		}
-		if (local_claim >= SO_GATE_SPACE)
+		if (tick && local_claim >= SO_GATE_SPACE)
 			{ MCC_TRACE("br\n"); gate_exhausted = 1; }
 		round++;
 		MCC_TRACE_V(s->verbose,

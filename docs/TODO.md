@@ -294,13 +294,16 @@ object.
 | — | `MCCState.optimize_search_ticks` (+ `_ticks_set`) — how much search work. `-fopt-search-ticks=<n>`, `MCC_SEARCH_TICKS`, default `MCC_OPT_SEARCH_TICKS` = 1 |
 | `ast_search_seconds` | `ast_search_ticks` |
 | `ast_search_budget_ms = seconds * 1000` | `ast_search_budget_ms = mcc_search_cap_ms()` — `MCC_SEARCH_CAP_MS`, **0 and off by default** |
-| `slice = base_ms << round`, `g_dead`/`b_dead`/`l_dead` | per-axis candidate quotas: `MCC_OPT_SEARCH_TICK_LIMITS`/`_BUDGETS`/`_GATES` = 5/2/2 |
+| `slice = base_ms << round`, `g_dead`/`b_dead`/`l_dead` | per-axis candidate quotas: `MCC_OPT_SEARCH_TICK_LIMITS`/`_BUDGETS`/`_GATES` = 5/2/2, the last two from tick 2 on. Env: `MCC_SEARCH_TICK_LIMITS`/`_BUDGETS`/`_GATES` |
 | `cap_ms = max(2000, 4 * measured_dt)` | `so_eval_capped()` at a fixed `SO_EVAL_CAP_MS` = 300 s, and it **warns on stderr** when it fires |
 
 Two definitions, because there are two search loops:
 
-- **outer** (`mcc_superopt_search`): one tick = 5 limit ids + 2 budget ids + 2 gate ids,
-  cursors carried into the next tick, each id one child `mcc` measured on `.text`.
+- **outer** (`mcc_superopt_search`): tick 1 = the 5 pass-limit ids; every tick after it
+  adds 2 graft-budget ids and 2 gate ids, cursors carried forward, each id one child
+  `mcc` measured on `.text`. The split is measured, not guessed: on `grep.c` and on
+  `src/mccast.c` the budget and gate axes cost 2× the wall time of the limit axis and
+  changed the object on neither, so they are not in the default round.
 - **inner** (`ast_search_select`): one tick = one full sweep of the candidate enumerator
   over one function body — base score, one probe per searchable knob, up to
   `AST_SEARCH_CAND_MAX` = 64 combinations, the all-off probe — with tick *r+1* re-seeded
