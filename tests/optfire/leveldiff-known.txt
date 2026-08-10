@@ -1,0 +1,36 @@
+# <program>|<-O levels, N or LO-HI, comma separated>|<why it already diverges>
+#
+# Divergences from the -O0 answer that predate optlevel/torture-differential.
+# tools/leveldiff.py fails on any divergence NOT listed here, and equally on any
+# row here that stops diverging at a level it names. A row cannot rot into lost
+# coverage and cannot outlive its cause.
+#
+# Nothing here is exempt from being fixed. Three groups:
+#
+#  (a) link_error() / link_failure() markers. Upstream declares a function it
+#      never defines and reaches it only if a fold did not happen, so the link
+#      error IS the missed-optimization report. Not a wrong answer: -O0 and -On
+#      would agree if both linked. Each row names the fold that is missing.
+#
+#  (b) wrong answers at levels that ship. The program returns 0 at -O0 and dies
+#      on a signal at -O1 (or at -O6). These were invisible to ctest before this
+#      cell; they are filed as their own item rather than fixed alongside it.
+#
+#  (c) a subject that cannot be compared at all.
+
+20020720-1.c       | 1-12 | (a) fabs(x) < 0.0 is not folded to false
+20030216-1.c       | 1-12 | (a) a load of `const double one = 1.0` is not const-propagated, so (int) one != 1 is not folded
+20041114-1.c       | 1-12 | (a) var <= 0 || (unsigned long)(unsigned)(var - 1) < UINT_MAX is not folded to 1
+compare-3.c        | 1-12 | (a) composite comparisons that are always false, (x==y) && (x!=y) and friends, are not folded
+pure-1.c           | 1-12 | (a) repeat calls to __pure__ and __const__ functions are not CSEd
+
+990208-1.c         | 1-12 | (b) SIGABRT at -O1 and above, exit 0 at -O0: taking the address of a label inside a static inline function
+builtin-constant.c | 1-12 | (b) SIGABRT at -O1 and above: __builtin_constant_p answers 1 where it must answer 0
+fprintf-chk-1.c    | 1-12 | (b) SIGABRT at -O1 and above in __fprintf_chk, and the stdout the -O0 run prints is lost with it
+printf-chk-1.c     | 1-12 | (b) SIGABRT at -O1 and above in __printf_chk, and the stdout the -O0 run prints is lost with it
+vfprintf-chk-1.c   | 1-12 | (b) SIGABRT at -O1 and above in __vfprintf_chk, and the stdout the -O0 run prints is lost with it
+vprintf-chk-1.c    | 1-12 | (b) SIGABRT at -O1 and above in __vprintf_chk, and the stdout the -O0 run prints is lost with it
+920302-1.c         | 6-12 | (b) SIGSEGV from -O6, exit 0 at -O0..-O5: a computed goto over a static table of label differences
+comp-goto-1.c      | 6-12 | (b) SIGILL at -O6..-O10 and SIGSEGV at -O11..-O12, exit 0 at -O0..-O5: a computed-goto interpreter loop
+
+return-addr.c      | 1-12 | (c) it printf("%p")s the addresses of its own locals, so its stdout is a function of frame layout and can never agree across levels

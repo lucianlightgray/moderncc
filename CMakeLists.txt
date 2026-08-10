@@ -5256,6 +5256,44 @@ if(MCC_BUILD_TESTS)
                     LABELS flagsweep TIMEOUT 300)
             endif()
 
+            set(_ld_py "${CMAKE_CURRENT_SOURCE_DIR}/tools/leveldiff.py")
+            set(_ld_known "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/leveldiff-known.txt")
+            set(_ld_corpus "${MCC_VENDOR_DIR}/gcc-c-torture-execute")
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_ld_known}")
+            if(NOT MCC_PYTHON3)
+                mcc_skip_test("optlevel/torture-differential" "python3 not found")
+                mcc_skip_test("optlevel/torture-differential-known-positive" "python3 not found")
+            elseif(NOT EXISTS "${_ld_corpus}")
+                mcc_skip_test("optlevel/torture-differential"
+                    "no corpus at ${_ld_corpus} (symlink an upstream gcc checkout's gcc/testsuite/gcc.c-torture/execute there; it is deliberately not vendored)")
+                mcc_skip_test("optlevel/torture-differential-known-positive"
+                    "no corpus at ${_ld_corpus}; the real cell is skipped too")
+            else()
+                add_test(NAME "optlevel/torture-differential"
+                    COMMAND "${MCC_PYTHON3}" "${_ld_py}"
+                            --mcc "${_mcc_exe}" --corpus "${_ld_corpus}"
+                            --known "${_ld_known}"
+                            --work "${CMAKE_BINARY_DIR}/leveldiff"
+                            --levels 0,1,2,3,4,5,6,7,8,9,10,11,12
+                            --jobs 32 --minprog 1200)
+                set_tests_properties("optlevel/torture-differential" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                    LABELS native TIMEOUT 900)
+                add_test(NAME "optlevel/torture-differential-known-positive"
+                    COMMAND "${CMAKE_COMMAND}"
+                            -DPY=${MCC_PYTHON3}
+                            -DTOOL=${_ld_py}
+                            -DMCC=${_mcc_exe}
+                            -DCORPUS=${_ld_corpus}
+                            -DKNOWN=${_ld_known}
+                            -DWORK=${CMAKE_BINARY_DIR}/leveldiff-kp
+                            -DJOBS=32
+                            -DSUBJECT=20000112-1.c
+                            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/leveldiff_mutate.cmake")
+                set_tests_properties("optlevel/torture-differential-known-positive" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT LABELS native TIMEOUT 900)
+            endif()
+
             set(_fs_nrow 0)
             if(EXISTS "${_fs_cov}")
                 file(STRINGS "${_fs_cov}" _fs_rowline REGEX "^rows ")
