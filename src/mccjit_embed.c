@@ -1304,14 +1304,28 @@ typedef struct MccjitSwapJob {
 
 static pthread_mutex_t mccjit_swap_lock = PTHREAD_MUTEX_INITIALIZER;
 
+#define MCCJIT_POOL_MAX 64
+
 static struct {
 	MccjitSwapJob *head, *tail;
 	pthread_mutex_t qlock;
 	pthread_cond_t qcond;
 	int started;
 	int nworkers;
+	int quit;
+	int hooked;
+	int nth;
+	pthread_t th[MCCJIT_POOL_MAX];
+	unsigned long nrun;
+	unsigned long nenqueued;
+	unsigned long nrefused;
 } mccjit_pool = {NULL, NULL, PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER,
-								 0, 0};
+								 0, 0, 0, 0, 0, {0}, 0, 0, 0};
+
+static int mccjit_qsbr_register(void);
+static void mccjit_qsbr_unregister(int slot);
+static void mccjit_qsbr_quiescent(int slot);
+PUB_FUNC void mccjit_shutdown(void);
 
 static pthread_once_t mccjit_fork_once = PTHREAD_ONCE_INIT;
 
@@ -1330,6 +1344,8 @@ static void mccjit_atfork_child(void) { MCC_TRACE("enter\n");
 	mccjit_pool.head = mccjit_pool.tail = NULL;
 	mccjit_pool.started = 0;
 	mccjit_pool.nworkers = 0;
+	mccjit_pool.quit = 0;
+	mccjit_pool.nth = 0;
 	pthread_cond_init(&mccjit_pool.qcond, NULL);
 	pthread_mutex_unlock(&mccjit_swap_lock);
 	pthread_mutex_unlock(&mccjit_pool.qlock);
@@ -1347,18 +1363,29 @@ static void *mccjit_pool_worker(void *arg) { MCC_TRACE("enter\n");
 	(void)arg;
 	for (;;) { MCC_TRACE("br\n");
 		MccjitSwapJob *job;
+		int qslot;
 		pthread_mutex_lock(&mccjit_pool.qlock);
-		while (!mccjit_pool.head)
+		while (!mccjit_pool.head && !mccjit_pool.quit)
 			{ MCC_TRACE("br\n"); pthread_cond_wait(&mccjit_pool.qcond, &mccjit_pool.qlock); }
 		job = mccjit_pool.head;
+		if (!job) { MCC_TRACE("br\n");
+			pthread_mutex_unlock(&mccjit_pool.qlock);
+			break;
+		}
 		mccjit_pool.head = job->next;
 		if (!mccjit_pool.head)
 			{ MCC_TRACE("br\n"); mccjit_pool.tail = NULL; }
 		pthread_mutex_unlock(&mccjit_pool.qlock);
+		qslot = mccjit_qsbr_register();
 		pthread_mutex_lock(&mccjit_swap_lock);
 		job->run(job);
 		pthread_mutex_unlock(&mccjit_swap_lock);
+		mccjit_qsbr_quiescent(qslot);
+		mccjit_qsbr_unregister(qslot);
 		mcc_free(job);
+		pthread_mutex_lock(&mccjit_pool.qlock);
+		mccjit_pool.nrun++;
+		pthread_mutex_unlock(&mccjit_pool.qlock);
 	}
 	return NULL;
 }
@@ -1367,17 +1394,27 @@ static int mccjit_pool_start(unsigned long workers) { MCC_TRACE("enter\n");
 	int n;
 	pthread_once(&mccjit_fork_once, mccjit_fork_setup);
 	pthread_mutex_lock(&mccjit_pool.qlock);
+	if (mccjit_pool.quit) { MCC_TRACE("br\n");
+		pthread_mutex_unlock(&mccjit_pool.qlock);
+		return 0;
+	}
 	if (!mccjit_pool.started) { MCC_TRACE("br\n");
 		int want = (int)workers;
 		int i;
 		if (want < 1)
 			{ MCC_TRACE("br\n"); want = 1; }
+		if (want > MCCJIT_POOL_MAX)
+			{ MCC_TRACE("br\n"); want = MCCJIT_POOL_MAX; }
 		mccjit_pool.started = 1;
+		if (!mccjit_pool.hooked) { MCC_TRACE("br\n");
+			atexit(mccjit_shutdown);
+			mccjit_pool.hooked = 1;
+		}
 		for (i = 0; i < want; i++) { MCC_TRACE("br\n");
 			pthread_t th;
 			if (pthread_create(&th, NULL, mccjit_pool_worker, NULL) != 0)
 				{ MCC_TRACE("br\n"); break; }
-			pthread_detach(th);
+			mccjit_pool.th[mccjit_pool.nth++] = th;
 			mccjit_pool.nworkers++;
 		}
 		if (mcc_env_on("MCC_JIT_VERBOSE"))
@@ -1390,19 +1427,53 @@ static int mccjit_pool_start(unsigned long workers) { MCC_TRACE("enter\n");
 }
 
 static int mccjit_pool_ready(void) { MCC_TRACE("enter\n");
-	return mccjit_pool.nworkers > 0;
+	return mccjit_pool.nworkers > 0 && !mccjit_pool.quit;
 }
 
-static void mccjit_pool_enqueue(MccjitSwapJob *job) { MCC_TRACE("enter\n");
+static int mccjit_pool_enqueue(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 	pthread_mutex_lock(&mccjit_pool.qlock);
+	if (mccjit_pool.quit || mccjit_pool.nworkers <= 0) { MCC_TRACE("br\n");
+		mccjit_pool.nrefused++;
+		pthread_mutex_unlock(&mccjit_pool.qlock);
+		return 0;
+	}
 	job->next = NULL;
 	if (mccjit_pool.tail)
 		{ MCC_TRACE("br\n"); mccjit_pool.tail->next = job; }
 	else
 		{ MCC_TRACE("br\n"); mccjit_pool.head = job; }
 	mccjit_pool.tail = job;
+	mccjit_pool.nenqueued++;
 	pthread_cond_signal(&mccjit_pool.qcond);
 	pthread_mutex_unlock(&mccjit_pool.qlock);
+	return 1;
+}
+
+static void mccjit_pool_shutdown(void) { MCC_TRACE("enter\n");
+	pthread_t th[MCCJIT_POOL_MAX];
+	int n, i;
+	pthread_mutex_lock(&mccjit_pool.qlock);
+	if (mccjit_pool.quit) { MCC_TRACE("br\n");
+		pthread_mutex_unlock(&mccjit_pool.qlock);
+		return;
+	}
+	mccjit_pool.quit = 1;
+	n = mccjit_pool.nth;
+	for (i = 0; i < n; i++)
+		{ MCC_TRACE("br\n"); th[i] = mccjit_pool.th[i]; }
+	pthread_cond_broadcast(&mccjit_pool.qcond);
+	pthread_mutex_unlock(&mccjit_pool.qlock);
+	for (i = 0; i < n; i++)
+		{ MCC_TRACE("br\n"); pthread_join(th[i], NULL); }
+	pthread_mutex_lock(&mccjit_pool.qlock);
+	mccjit_pool.nworkers = 0;
+	mccjit_pool.nth = 0;
+	mccjit_pool.started = 0;
+	pthread_mutex_unlock(&mccjit_pool.qlock);
+	if (mcc_env_on("MCC_JIT_VERBOSE"))
+		{ MCC_TRACE("br\n"); fprintf(stderr,
+						"mccjit-pool[shutdown]: joined=%d ran=%lu enqueued=%lu refused=%lu\n",
+						n, mccjit_pool.nrun, mccjit_pool.nenqueued, mccjit_pool.nrefused); }
 }
 
 static void mccjit_job_run_eager(MccjitSwapJob *job) { MCC_TRACE("enter\n");
@@ -1471,11 +1542,14 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) { 
 				job->run = mccjit_job_run_lazy;
 				job->cst = st;
 				st->building = 1;
-				mccjit_pool_enqueue(job);
-				if (verbose)
-					{ MCC_TRACE("br\n"); fprintf(stderr,
+				if (!mccjit_pool_enqueue(job)) { MCC_TRACE("br\n");
+					st->building = 0;
+					mcc_free(job);
+				} else if (verbose) { MCC_TRACE("br\n");
+					fprintf(stderr,
 									"mccjit-lazy[promote-async]: slot=%p hot after %ld calls -> queued\n",
-									(void *)st->slot, n); }
+									(void *)st->slot, n);
+				}
 			}
 		}
 		target = st->baseline;
@@ -1887,6 +1961,13 @@ static void mccjit_qsbr_reset(void) { MCC_TRACE("enter\n");
 	pthread_mutex_unlock(&mccjit_qsbr.lock);
 }
 
+PUB_FUNC void mccjit_shutdown(void) { MCC_TRACE("enter\n");
+	if (!mcc_env_flag("MCC_JIT_SHUTDOWN", 1))
+		{ MCC_TRACE("br\n"); return; }
+	mccjit_pool_shutdown();
+	mccjit_qsbr_reclaim();
+}
+
 void mccjit_set_search_budget(unsigned long secs) { MCC_TRACE("enter\n");
 	mccjit_search_budget_baked_s = secs;
 }
@@ -1921,8 +2002,9 @@ void mccjit_boot_swap_async(void **slot, const void *blob, unsigned long len,
 		job->max_duration = max_duration;
 		job->timed =
 				(max_duration != 0) && (clock_gettime(CLOCK_MONOTONIC, &job->start) == 0);
-		mccjit_pool_enqueue(job);
-		return;
+		if (mccjit_pool_enqueue(job))
+			{ MCC_TRACE("br\n"); return; }
+		mcc_free(job);
 	}
 	{
 		struct timespec t0;
@@ -2814,6 +2896,7 @@ static void mccjit_kgc_register(MccjitKgc *k) { MCC_TRACE("enter\n");
 	if (!mccjit_kgc_reg_hooked) { MCC_TRACE("br\n");
 		atexit(mccjit_kgc_flush_all);
 		mcc_stats_set_flush_hook(mccjit_kgc_flush_all);
+		atexit(mccjit_shutdown);
 		mccjit_kgc_reg_hooked = 1;
 	}
 	r = mcc_malloc(sizeof *r);
@@ -5848,7 +5931,11 @@ PUB_FUNC int mccjit_selftest_pool(void) { MCC_TRACE("enter\n");
 			job->len = blen;
 			job->max_duration = 0;
 			job->timed = 0;
-			mccjit_pool_enqueue(job);
+			if (!mccjit_pool_enqueue(job)) { MCC_TRACE("br\n");
+				printf("mccjit-selftest-pool: eager job refused by the pool FAIL\n");
+				mcc_free(job);
+				fails++;
+			}
 			while (spins++ < 5000) { MCC_TRACE("br\n");
 				pub = (void *)(uintptr_t)__atomic_load_n(&slot_a, __ATOMIC_ACQUIRE);
 				if (pub != (void *)baseline)
@@ -7090,6 +7177,254 @@ PUB_FUNC int mccjit_selftest_qsbr(void) { MCC_TRACE("enter\n");
 	printf("mccjit-selftest-qsbr: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
+}
+
+#define MCCJIT_SD_STARTED 0
+#define MCCJIT_SD_DRAINED 1
+#define MCCJIT_SD_JOINED 2
+#define MCCJIT_SD_QUEUE 3
+#define MCCJIT_SD_QSBR 4
+#define MCCJIT_SD_REFUSED 5
+#define MCCJIT_SD_RESTART 6
+#define MCCJIT_SD_IDEMPOTENT 7
+#define MCCJIT_SD_SURVIVES 8
+#define MCCJIT_SD_NTAG 9
+#define MCCJIT_SD_JOBS 64
+#define MCCJIT_SD_RACERS 3
+
+static const char *const mccjit_sd_tag[MCCJIT_SD_NTAG] = {
+		"pool-started",   "jobs-drained",    "workers-joined", "queue-empty",
+		"qsbr-reclaimed", "enqueue-refused", "restart-refused", "shutdown-idempotent",
+		"pool-survives-flush"};
+
+static char mccjit_sd_fired[MCCJIT_SD_NTAG];
+
+static struct {
+	pthread_mutex_t lock;
+	unsigned long done;
+	const void *blob;
+	unsigned long len;
+} mccjit_sd = {PTHREAD_MUTEX_INITIALIZER, 0, NULL, 0};
+
+typedef struct {
+	int cap;
+	unsigned long accepted;
+	unsigned long refused;
+} MccjitSdRacer;
+
+static int mccjit_sd_check(int tag, int ok, const char *detail) { MCC_TRACE("enter\n");
+	printf("mccjit-selftest-shutdown: %s: %s %s\n", mccjit_sd_tag[tag], detail,
+				 ok ? "OK" : "FAIL");
+	if (!ok)
+		{ MCC_TRACE("br\n"); mccjit_sd_fired[tag] = 1; }
+	return ok ? 0 : 1;
+}
+
+static void mccjit_sd_tick(void) { MCC_TRACE("enter\n");
+	pthread_mutex_lock(&mccjit_sd.lock);
+	mccjit_sd.done++;
+	pthread_mutex_unlock(&mccjit_sd.lock);
+}
+
+static void mccjit_sd_job_heavy(MccjitSwapJob *job) { MCC_TRACE("enter\n");
+	void *pg;
+	(void)job;
+	if (mccjit_sd.blob)
+		{ MCC_TRACE("br\n"); mcc_jit_recompile_blob(mccjit_sd.blob, (size_t)mccjit_sd.len); }
+	pg = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (pg != MAP_FAILED)
+		{ MCC_TRACE("br\n"); mccjit_qsbr_retire(pg, 4096); }
+	mccjit_pool_nap();
+	mccjit_sd_tick();
+}
+
+static void mccjit_sd_job_light(MccjitSwapJob *job) { MCC_TRACE("enter\n");
+	(void)job;
+	mccjit_sd_tick();
+}
+
+static void *mccjit_sd_racer(void *arg) { MCC_TRACE("enter\n");
+	MccjitSdRacer *r = (MccjitSdRacer *)arg;
+	int i;
+	for (i = 0; i < r->cap; i++) { MCC_TRACE("br\n");
+		MccjitSwapJob *job = mcc_malloc(sizeof *job);
+		if (!job)
+			{ MCC_TRACE("br\n"); break; }
+		job->run = mccjit_sd_job_light;
+		if (!mccjit_pool_enqueue(job)) { MCC_TRACE("br\n");
+			mcc_free(job);
+			r->refused++;
+			break;
+		}
+		r->accepted++;
+		mccjit_pool_nap();
+	}
+	return NULL;
+}
+
+PUB_FUNC int mccjit_selftest_shutdown(int known_positive) { MCC_TRACE("enter\n");
+	static const char src[] = "int f(int x){return x*2+1;}";
+	static const int want[] = {MCCJIT_SD_DRAINED, MCCJIT_SD_JOINED,
+														 MCCJIT_SD_QUEUE,   MCCJIT_SD_QSBR,
+														 MCCJIT_SD_REFUSED, MCCJIT_SD_RESTART};
+	MccjitSdRacer racer[MCCJIT_SD_RACERS];
+	pthread_t rth[MCCJIT_SD_RACERS];
+	unsigned char *blob = NULL;
+	size_t blen = 0;
+	MCCState *s1 = NULL;
+	unsigned long accepted = 0, refused = 0, heavy = 0, done;
+	char msg[224];
+	int fails = 0, missing = 0, nw, i, nr = 0;
+
+	printf("mccjit-selftest-shutdown: begin%s\n",
+				 known_positive ? " (known-positive: MCC_JIT_SHUTDOWN=0)" : "");
+	if (known_positive)
+		{ MCC_TRACE("br\n"); setenv("MCC_JIT_SHUTDOWN", "0", 1); }
+
+	mccjit_qsbr_reset();
+	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
+	if (s1 && blob) { MCC_TRACE("br\n");
+		mccjit_sd.blob = blob;
+		mccjit_sd.len = (unsigned long)blen;
+	}
+	printf("mccjit-selftest-shutdown: load = %d jobs x (%s + qsbr retire + 1ms)\n",
+				 MCCJIT_SD_JOBS, mccjit_sd.blob ? "recompile" : "no-blob");
+
+	nw = mccjit_pool_start(4);
+	snprintf(msg, sizeof msg, "workers=%d", nw);
+	fails += mccjit_sd_check(MCCJIT_SD_STARTED, nw > 0, msg);
+	if (nw <= 0) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-shutdown: FAIL (pool would not start)\n");
+		return 1;
+	}
+
+	for (i = 0; i < MCCJIT_SD_JOBS; i++) { MCC_TRACE("br\n");
+		MccjitSwapJob *job = mcc_malloc(sizeof *job);
+		if (!job)
+			{ MCC_TRACE("br\n"); break; }
+		job->run = mccjit_sd_job_heavy;
+		if (!mccjit_pool_enqueue(job))
+			{ MCC_TRACE("br\n"); mcc_free(job); break; }
+		heavy++;
+	}
+	accepted = heavy;
+
+	{
+		MCCState *s2 = mcc_new();
+		int alive;
+		if (s2)
+			{ MCC_TRACE("br\n"); mcc_delete(s2); }
+		mccjit_kgc_flush_all();
+		alive = mccjit_pool_ready();
+		snprintf(msg, sizeof msg,
+						 "pool ready after a mid-run mcc_delete + kgc flush=%d", alive);
+		fails += mccjit_sd_check(MCCJIT_SD_SURVIVES, alive, msg);
+	}
+
+	for (i = 0; i < MCCJIT_SD_RACERS; i++) { MCC_TRACE("br\n");
+		racer[i].cap = known_positive ? 8 : 5000;
+		racer[i].accepted = 0;
+		racer[i].refused = 0;
+		if (pthread_create(&rth[i], NULL, mccjit_sd_racer, &racer[i]) == 0)
+			{ MCC_TRACE("br\n"); nr++; }
+	}
+
+	mccjit_pool_nap();
+	mccjit_shutdown();
+
+	for (i = 0; i < nr; i++) { MCC_TRACE("br\n");
+		pthread_join(rth[i], NULL);
+		accepted += racer[i].accepted;
+		refused += racer[i].refused;
+	}
+
+	pthread_mutex_lock(&mccjit_sd.lock);
+	done = mccjit_sd.done;
+	pthread_mutex_unlock(&mccjit_sd.lock);
+
+	snprintf(msg, sizeof msg, "ran=%lu accepted=%lu (racers=%d)", done, accepted,
+					 nr);
+	fails += mccjit_sd_check(MCCJIT_SD_DRAINED, done == accepted, msg);
+
+	snprintf(msg, sizeof msg, "nworkers=%d nth=%d started=%d",
+					 mccjit_pool.nworkers, mccjit_pool.nth, mccjit_pool.started);
+	fails += mccjit_sd_check(MCCJIT_SD_JOINED,
+													 mccjit_pool.nworkers == 0 && mccjit_pool.nth == 0 &&
+															 mccjit_pool.started == 0,
+													 msg);
+
+	snprintf(msg, sizeof msg, "head=%p tail=%p", (void *)mccjit_pool.head,
+					 (void *)mccjit_pool.tail);
+	fails += mccjit_sd_check(MCCJIT_SD_QUEUE,
+													 !mccjit_pool.head && !mccjit_pool.tail, msg);
+
+	snprintf(msg, sizeof msg, "nlimbo=%d reclaimed=%llu leaked=%llu retired=%lu",
+					 mccjit_qsbr.nlimbo, (unsigned long long)mccjit_qsbr.reclaimed,
+					 (unsigned long long)mccjit_qsbr.leaked, heavy);
+	fails += mccjit_sd_check(MCCJIT_SD_QSBR,
+													 mccjit_qsbr.nlimbo == 0 && mccjit_qsbr.leaked == 0 &&
+															 mccjit_qsbr.reclaimed == heavy,
+													 msg);
+
+	{
+		MccjitSwapJob *late = mcc_malloc(sizeof *late);
+		int taken = 0;
+		if (late) { MCC_TRACE("br\n");
+			late->run = mccjit_sd_job_light;
+			taken = mccjit_pool_enqueue(late);
+			if (!taken)
+				{ MCC_TRACE("br\n"); mcc_free(late); }
+		}
+		snprintf(msg, sizeof msg, "racer-refusals=%lu post-shutdown-accepted=%d",
+						 refused, taken);
+		fails += mccjit_sd_check(MCCJIT_SD_REFUSED, refused >= 1 && !taken, msg);
+	}
+
+	snprintf(msg, sizeof msg, "restart-workers=%d", mccjit_pool_start(2));
+	fails += mccjit_sd_check(MCCJIT_SD_RESTART, mccjit_pool.nworkers == 0, msg);
+
+	mccjit_shutdown();
+	snprintf(msg, sizeof msg, "second call returned, nworkers=%d",
+					 mccjit_pool.nworkers);
+	fails += mccjit_sd_check(MCCJIT_SD_IDEMPOTENT, mccjit_pool.nworkers == 0, msg);
+
+	if (known_positive) { MCC_TRACE("br\n");
+		setenv("MCC_JIT_SHUTDOWN", "1", 1);
+		mccjit_shutdown();
+	}
+
+	mccjit_sd.blob = NULL;
+	if (s1)
+		{ MCC_TRACE("br\n"); mcc_delete(s1); }
+	mcc_free(blob);
+	mccjit_last_state = NULL;
+
+	if (!known_positive) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-shutdown: %s (%d failure%s)\n",
+					 fails ? "FAIL" : "PASS", fails, fails == 1 ? "" : "s");
+		return fails ? 1 : 0;
+	}
+
+	if (!fails) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-shutdown: FAIL known-positive: with the drain "
+					 "disabled every check still passed. A cell that cannot fail is "
+					 "worse than no cell.\n");
+		return 1;
+	}
+	for (i = 0; i < (int)(sizeof want / sizeof want[0]); i++) { MCC_TRACE("br\n");
+		if (!mccjit_sd_fired[want[i]]) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-shutdown: FAIL known-positive: %s never fired on "
+						 "the undrained pool, so it is unproven and may be inert\n",
+						 mccjit_sd_tag[want[i]]);
+			missing++;
+		}
+	}
+	if (missing)
+		{ MCC_TRACE("br\n"); return 1; }
+	printf("mccjit-selftest-shutdown: PASS known-positive: all %d checks fired "
+				 "with the drain disabled (%d failure%s)\n",
+				 (int)(sizeof want / sizeof want[0]), fails, fails == 1 ? "" : "s");
+	return 0;
 }
 
 PUB_FUNC int mccjit_selftest_fparg(const char *libpath, const char *incpath) { MCC_TRACE("enter\n");
