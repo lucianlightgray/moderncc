@@ -262,23 +262,42 @@ the reachable ones, so it saw a bare `return;` and refused. A folded leaf became
 literal; `sgn`, `choose` and `clampk` now graft **in their folded ternary form**, which is the
 unlock the fold was ranked for and had never once achieved.
 
+**And two passes had to be given their shapes back.** Once the folded arena is the one that
+emits code, a fold that swallows a shape another pass owns silently deletes that pass:
+
+- `ast_tco_run` matches a `Return` whose first child is *directly* an `AST_Invoke` of the
+  enclosing function. `if (n <= 0) return acc; return sum_to(n-1, acc+n);` folded to a ternary
+  buries the tail call in an arm, and six `optfire*/tco*` cells went from firing to nothing.
+  An arm whose value is an `AST_Invoke` is now refused.
+- `if (1) return x*2; else return -999;` folded to `return 1 ? x*2 : -999;` costs `ast-sccp`
+  its dead-branch fold (`cli/ast_poison_lowering`). A literal condition is now refused.
+
+Together those cost three conversions over gcc.c-torture (`block/other` 285 → 288). What they
+do cost is the fold's **original** rationale: the tail-recursive two-exit `if` was the shape it
+was ranked for, and it is out of reach until `ast_tco_run` can see through an `AST_If` op 5.
+That is the follow-up this branch leaves behind.
+
 **And the block arithmetic the revert quoted was a denominator artifact.** gcc.c-torture, 1,693
 programs, `slicerun --arenas … --refusals`:
 
-| | bf only | bf + ternary |
-| --- | ---: | ---: |
-| **blocks** | **119,363** | **119,222** |
-| frame-accepted blocks | 33,445 | 33,363 |
-| refused blocks | 85,918 | 85,859 |
-| `block/other` | 338 | 285 |
-| `block/stmt-invoke` | 47,899 (55.75%) | 47,897 (55.79%) |
+| | neither | bf only | bf + ternary |
+| --- | ---: | ---: | ---: |
+| **blocks** | 119,363 | **119,363** | **119,228** |
+| frame-accepted blocks | 33,437 | 33,445 | 33,365 |
+| refused blocks | 85,926 | 85,918 | 85,863 |
+| `block/other` | 338 | 338 | 288 |
+| `block/stmt-invoke` | 47,897 (55.74%) | 47,899 (55.75%) | 47,897 (55.78%) |
 
-The population is **not** a constant: it falls by 141. Solving the three deltas
-(−141 population, −82 accepted, −59 refused) gives 135 already-accepted single-`Return` blocks
-**absorbed into their parent's ternary and no longer existing**, 53 refused blocks converted to
-accepted, and 6 refused blocks likewise absorbed. **No block regressed accepted → refused.**
-Quoting −82 against "an unchanged 119,363-block population" compared a numerator that shrank
-against a denominator that shrank with it.
+The population is **not** a constant: the fold takes 135 blocks out of it. Solving the three
+deltas against the bf-only column (−135 population, −80 accepted, −55 refused) with the 50
+`block/other` conversions gives **130 already-accepted single-`Return` blocks absorbed into
+their parent's ternary and no longer existing**, 50 refused blocks converted to accepted, and
+5 refused blocks likewise absorbed. Quoting −80 against "an unchanged 119,363-block
+population" compares a numerator that shrank against a denominator that shrank with it. (The
+arithmetic is consistent with zero accepted → refused regressions but does not prove it; what
+the per-cause table does show is that the only rows to *rise* are `return-expr` +8 and
+`store-value-refused` +1, against `ctrl-cond` −11 — a re-label of already-refused blocks, not
+a new refusal class.)
 
 `block/stmt-invoke` — gap #1 — is untouched at 47,897 nodes; only its *share* moves, and only
 because the denominator did.
