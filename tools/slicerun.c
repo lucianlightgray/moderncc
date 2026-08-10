@@ -4147,6 +4147,7 @@ enum {
 	REF_OK = 0,
 	REF_CHILD,
 	REF_KIND_INVOKE,
+	REF_KIND_INVOKE_THREAD,
 	REF_KIND_STORE,
 	REF_KIND_STOREVAL,
 	REF_KIND_BLOCK,
@@ -4173,6 +4174,7 @@ static const char *refuse_name(int r) {
 	case REF_OK: return "ok";
 	case REF_CHILD: return "child-refused";
 	case REF_KIND_INVOKE: return "kind-invoke";
+	case REF_KIND_INVOKE_THREAD: return "kind-invoke-thread";
 	case REF_KIND_STORE: return "kind-store";
 	case REF_KIND_STOREVAL: return "kind-storeval";
 	case REF_KIND_BLOCK: return "kind-basicblock";
@@ -4486,6 +4488,20 @@ static void refuse_det_label(int cause, long key, char *buf, size_t cap) {
 	snprintf(buf, cap, "key=%ld", key);
 }
 
+static signed char *g_invthr;
+static long g_invthrcap;
+static long g_thr_nodes[MCC_THREAD_N];
+static long g_thr_blocks[MCC_THREAD_N];
+static long g_ref_invoke_all;
+static long g_bc_invoke_all;
+static AstLocal g_bc_at;
+
+static int inv_thread_class(long node) {
+	if (!g_invthr || node < 0 || node >= g_invthrcap)
+		return MCC_THREAD_NONE;
+	return g_invthr[node];
+}
+
 static int refuse_local(AstArena *a, AstLocal n) {
 	int t = ast_type_t(a, n), r;
 	switch (ast_kind(a, n)) {
@@ -4595,7 +4611,7 @@ static int refuse_local(AstArena *a, AstLocal n) {
 		}
 		return REF_OK;
 	case AST_Invoke:
-		return REF_KIND_INVOKE;
+		return inv_thread_class((long)n) ? REF_KIND_INVOKE_THREAD : REF_KIND_INVOKE;
 	case AST_Store:
 		return REF_KIND_STORE;
 	case AST_StoreVal:
@@ -5212,6 +5228,7 @@ enum {
 	BC_EMPTY,
 	BC_CAPACITY,
 	BC_INVOKE,
+	BC_INVOKE_THREAD,
 	BC_STOREVAL,
 	BC_JUMP,
 	BC_POISON,
@@ -5243,6 +5260,7 @@ static const char *block_cause_name(int k) {
 	case BC_EMPTY: return "block/empty";
 	case BC_CAPACITY: return "block/depth-limit";
 	case BC_INVOKE: return "block/stmt-invoke";
+	case BC_INVOKE_THREAD: return "block/stmt-thread";
 	case BC_STOREVAL: return "block/stmt-storeval";
 	case BC_JUMP: return "block/stmt-jump";
 	case BC_POISON: return "block/stmt-poison";
@@ -5502,7 +5520,8 @@ static int block_cause_stmt(AstArena *a, AstLocal s, int depth) {
 		return BC_CAPACITY;
 	switch (ast_kind(a, s)) {
 	case AST_Invoke:
-		return BC_INVOKE;
+		g_bc_at = s;
+		return inv_thread_class((long)s) ? BC_INVOKE_THREAD : BC_INVOKE;
 	case AST_StoreVal:
 		return BC_STOREVAL;
 	case AST_Jump:
@@ -5683,6 +5702,7 @@ static void block_cause_walk(AstArena *a, AstLocal n) {
 	AstLocal s;
 	int r = BC_OK, seen = 0;
 	g_bc_blocks++;
+	g_bc_at = AST_NONE;
 	for (s = ast_first_child(a, n); s != AST_NONE; s = ast_next_sib(a, s)) {
 		seen++;
 		if (ast_kind(a, s) == AST_Return) {
@@ -5704,6 +5724,10 @@ static void block_cause_walk(AstArena *a, AstLocal n) {
 	if (r == BC_OK) {
 		r = BC_NOCAUSE;
 		g_ff[frame_fail_reason(a, n)]++;
+	}
+	if (g_bc_at != AST_NONE && ast_kind(a, g_bc_at) == AST_Invoke) {
+		g_bc_invoke_all++;
+		g_thr_blocks[inv_thread_class((long)g_bc_at)]++;
 	}
 	g_bc[r]++;
 }
@@ -5765,6 +5789,18 @@ static void block_cause_report(void) {
 						 g_bc[i], g_bc_blocks ? 100.0 * g_bc[i] / g_bc_blocks : 0.0);
 		}
 	printf("blockcause: causes-sum=%ld\n", sum);
+	for (i = 1; i < MCC_THREAD_N; i++)
+		printf("blockcause: stmt-thread/%-16s n=%ld\n", mcc_thread_class_name(i),
+					 g_thr_blocks[i]);
+	if (g_bc_invoke_all != g_bc[BC_INVOKE] + g_bc[BC_INVOKE_THREAD]) {
+		fprintf(stderr,
+						"slicerun: block/stmt-invoke %ld + block/stmt-thread %ld against "
+						"%ld blocks attributed to an Invoke statement; the thread split is "
+						"not a partition of the bucket it was carved out of\n",
+						g_bc[BC_INVOKE], g_bc[BC_INVOKE_THREAD], g_bc_invoke_all);
+		return;
+	}
+	printf("blockcause: stmt-invoke-partition-sum=%ld\n", g_bc_invoke_all);
 }
 
 static void refuse_walk(AstArena *a, AstLocal n, AstLocal parent, int idx) {
@@ -5786,6 +5822,10 @@ static void refuse_walk(AstArena *a, AstLocal n, AstLocal parent, int idx) {
 		g_ref_nodes[r]++;
 		g_ref_hit[r] = 1;
 		g_ref_pos[r][g_ref_pos_cur]++;
+		if (ast_kind(a, n) == AST_Invoke) {
+			g_ref_invoke_all++;
+			g_thr_nodes[inv_thread_class((long)n)]++;
+		}
 		if (r == REF_REF_GLOBAL) {
 			int g = refuse_global_class(a, n);
 			AstLocal p = ast_parent(a, n);
@@ -5913,6 +5953,20 @@ static int refuse_report(void) {
 		return 1;
 	}
 	printf("refusal: ref-not-local-classes-sum=%ld\n", gsum);
+	for (i = 1; i < MCC_THREAD_N; i++)
+		printf("refusal: kind-invoke-thread/%-16s nodes=%ld\n",
+					 mcc_thread_class_name(i), g_thr_nodes[i]);
+	if (g_ref_invoke_all !=
+			g_ref_nodes[REF_KIND_INVOKE] + g_ref_nodes[REF_KIND_INVOKE_THREAD]) {
+		fprintf(stderr,
+						"slicerun: kind-invoke %ld + kind-invoke-thread %ld against %ld "
+						"refused Invoke nodes; the thread split is not a partition of the "
+						"bucket it was carved out of\n",
+						g_ref_nodes[REF_KIND_INVOKE], g_ref_nodes[REF_KIND_INVOKE_THREAD],
+						g_ref_invoke_all);
+		return 1;
+	}
+	printf("refusal: kind-invoke-partition-sum=%ld\n", g_ref_invoke_all);
 	return 0;
 }
 
@@ -7141,13 +7195,17 @@ static void inv_reset(long n) {
 	if (n > g_invcap) {
 		free(g_invcls);
 		free(g_invleaf);
+		free(g_invthr);
 		g_invcls = malloc((size_t)n);
 		g_invleaf = malloc((size_t)n * sizeof *g_invleaf);
-		g_invcap = (g_invcls && g_invleaf) ? n : 0;
+		g_invthr = malloc((size_t)n);
+		g_invcap = (g_invcls && g_invleaf && g_invthr) ? n : 0;
+		g_invthrcap = g_invcap;
 	}
 	for (i = 0; i < g_invcap; i++) {
 		g_invcls[i] = -1;
 		g_invleaf[i] = -1;
+		g_invthr[i] = MCC_THREAD_NONE;
 	}
 }
 
@@ -7156,6 +7214,7 @@ static void inv_set(long node, const char *callee) {
 		return;
 	g_invcls[node] = !strcmp(callee, "?") ? 0 : defn_has(callee) ? 2 : 1;
 	g_invleaf[node] = leaf_find(callee);
+	g_invthr[node] = (signed char)mcc_thread_sym_class(callee);
 }
 
 static void leaf_pass0(const char *fn, const RawNode *raw, int n, long root) {
