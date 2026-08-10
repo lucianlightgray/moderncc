@@ -79,7 +79,7 @@ Measured, `musl/src/string` compiled by mcc at `-O1` and run through both execut
 
 | | |
 | --- | ---: |
-| TUs mcc compiles | **65 of 74** |
+| TUs mcc compiles | **74 of 74** |
 | arenas dumped | 83 |
 | expression slices lowered / mismatches | **475 / 0** |
 | frame runs accepted / built / **compared** | 120 / 94 / **94** |
@@ -92,13 +92,21 @@ runs** — they walk memory through a pointer, which needs the shared address sp
 binding 2. That zero is the measure of the remaining work, not a failure of this approach:
 the arithmetic halves of musl already run on the device, verified against the CPU.
 
-The 9 TUs mcc rejects are internal-dependency cases like `strchr.c` needing
-`__strchrnul` — an ordinary cross-TU call, not a front-end limitation.
+**Corrected 2026-08-09: mcc rejects none of them.** The 9 TUs recorded here as rejected
+were an artifact of this cell's own `-I` order, not of mcc. `cmake/slicerun_musl.cmake`
+put `vendor/musl-sysroot/include` ahead of `vendor/musl-src/src/include`, so the installed
+*public* headers shadowed musl's *internal* ones: `hidden` and `weak_alias` went
+undefined and `weak_alias(__memrchr, memrchr);` parsed as a K&R declaration (8 TUs), and
+the public `string.h` made `__strchrnul` implicit-int (`strcspn.c`). The claim that
+`strchr.c` wanted `__strchrnul` was wrong twice over — `strchr.c` was never in the failing
+set, and nothing about the 9 was link-time. With musl's own `CFLAGS_ALL` include order the
+count is **74 of 74**, with no compiler change.
 
-`slice/musl` is the standing ratchet: it requires at least 20 TUs to compile (a
-near-empty corpus would make the differential pass vacuously), requires a nonzero
-`frame-compared`, and requires the mutation arm to fail. Verified to go red when the
-compile floor is raised, so it can fail.
+`slice/musl` is the standing ratchet: **every** TU in the corpus must compile and the
+corpus must be at least 74 TUs (the old floor of 20 sat 54 below the real number and
+guarded nothing), it requires a nonzero `frame-compared` and `frame-mem`, and it requires
+the mutation arm to fail. Verified to go red when the compile floor is raised, so it can
+fail.
 
 ## Feasibility buckets
 

@@ -29,15 +29,17 @@ if(NOT EXISTS "${SRCDIR}/vendor/musl-sysroot/include/bits/alltypes.h")
 endif()
 
 set(_inc
-    -I${SRCDIR}/vendor/musl-sysroot/include
+    -I${SRCDIR}/vendor/musl-src/arch/x86_64
+    -I${SRCDIR}/vendor/musl-src/arch/generic
     -I${SRCDIR}/vendor/musl-src/src/include
     -I${SRCDIR}/vendor/musl-src/src/internal
-    -I${SRCDIR}/vendor/musl-src/arch/x86_64
-    -I${SRCDIR}/vendor/musl-src/arch/generic)
+    -I${SRCDIR}/vendor/musl-sysroot/include)
 
 file(GLOB _srcs "${_src}/*.c")
 list(SORT _srcs)
+list(LENGTH _srcs _ntu)
 set(_ok 0)
+set(_bad "")
 foreach(_f IN LISTS _srcs)
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env "MCC_ARENA_DUMP=${_dump}"
@@ -45,14 +47,24 @@ foreach(_f IN LISTS _srcs)
         RESULT_VARIABLE _rc OUTPUT_QUIET ERROR_QUIET)
     if(_rc EQUAL 0)
         math(EXPR _ok "${_ok} + 1")
+    else()
+        get_filename_component(_bn "${_f}" NAME)
+        list(APPEND _bad "${_bn}")
     endif()
 endforeach()
 
-message("slice/musl: ${_ok} musl string TUs compiled by mcc")
-if(_ok LESS 20)
-    message(FATAL_ERROR "slice/musl: only ${_ok} musl TUs compiled; the front end "
-                        "regressed or the sysroot is wrong. A near-empty corpus "
-                        "would make the differential below pass vacuously")
+message("slice/musl: ${_ok} of ${_ntu} musl string TUs compiled by mcc")
+if(_ntu LESS 74)
+    message(FATAL_ERROR "slice/musl: the corpus is only ${_ntu} TUs; musl 1.2.5's "
+                        "src/string has 74. A shrunken corpus would make the "
+                        "differential below pass vacuously")
+endif()
+if(NOT _ok EQUAL _ntu)
+    message(FATAL_ERROR "slice/musl: ${_ok} of ${_ntu} musl TUs compiled; mcc "
+                        "compiles all of musl/src/string, so any refusal is a front "
+                        "end regression or a wrong include order -- musl's internal "
+                        "src/include must precede the installed sysroot headers, or "
+                        "weak_alias/hidden go undefined. Refused: ${_bad}")
 endif()
 if(NOT EXISTS "${_dump}")
     message(FATAL_ERROR "slice/musl: no arenas dumped; MCC_ARENA_DUMP is not "

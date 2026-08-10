@@ -65,7 +65,7 @@ work until something in `src/` maps an iteration space onto lanes.
 | 4 | `s.arr[i]` as an indexed base | 58,328 nodes (4.97%) | **unowned**; needs `dynidx` to take a `Unary(MEMBER)` base plus `ast_eval_slice_livein_ext` |
 | 5 | inline asm | 32,472 nodes | unblocked by the effect log; not started |
 | 6 | `volatile` | — | unblocked by the effect log; not started |
-| 7 | I/O calls | — | gated on one unverified fact: can mcc *compile* musl, not merely link a prebuilt sysroot |
+| 7 | I/O calls | — | **gate answered YES, 2026-08-09.** mcc compiles **1347 of musl 1.2.5's 1352** x86_64 objects, `libc.a` links, and binaries built against it are output-identical to gcc-built reference musl including the dynamic path through musl's own mcc-built `ld.so`. So the I/O work proceeds on the premise that `src/stdio`, `src/internal/syscall*` and `src/malloc` are **mcc-parsed arenas already**, not something to reimplement. See *musl compiles* below for the 5 refusals and the two integration facts |
 
 ### Traps that have already cost time — do not rediscover these
 
@@ -11267,7 +11267,7 @@ not something to write in SPIR-V and re-verify against the standard.
 
 | | |
 | --- | ---: |
-| `musl/src/string` TUs mcc compiles | **65 of 74** |
+| `musl/src/string` TUs mcc compiles | **74 of 74** (was 65; the 9 were an include-order bug in the cell, not in mcc) |
 | expression slices lowered / mismatches | **475 / 0** |
 | frame runs accepted / built / **compared** | 120 / 94 / **94** |
 | frame mismatches | **0**, and 3800+40 under `--mutate` |
@@ -11275,12 +11275,106 @@ not something to write in SPIR-V and re-verify against the standard.
 Per function: `memcpy` 6 verified frame runs (86 expression slices), `memset` 7 (44),
 `strlen` 1 (3). **`memcmp`, `strcmp`, `strncmp`, `memchr` lower zero frame runs** — they
 walk memory through a pointer, which needs binding 2. That zero is the measure of the
-remaining work, not a failure of the approach. The 9 rejected TUs are internal-dependency
-cases (`strchr.c` wants `__strchrnul`), an ordinary cross-TU call.
+remaining work, not a failure of the approach.
 
-`slice/musl` ratchets it: a 20-TU compile floor so a near-empty corpus cannot pass
-vacuously, a required nonzero `frame-compared`, and a mutation arm. Verified red when the
-floor is raised.
+**Correction, 2026-08-09 — the 9 rejected TUs were nothing of the kind.** The earlier note
+here ("internal-dependency cases, `strchr.c` wants `__strchrnul`, an ordinary cross-TU
+call") is wrong twice over: `strchr.c` is not in the failing set, and **nothing about the
+9 was link-time**. All nine were refused at *parse* time, by `cmake/slicerun_musl.cmake`'s
+own `-I` order. It listed `vendor/musl-sysroot/include` **before**
+`vendor/musl-src/src/include`, so the installed *public* headers shadowed musl's
+*internal* ones:
+
+| refused TUs | what actually happened |
+| ---: | --- |
+| 8 — `memrchr` `stpcpy` `stpncpy` `strcasecmp` `strchrnul` `strerror_r` `strncasecmp` `strsignal` | `features.h`/`libc.h` came from the sysroot, so `hidden` and `weak_alias` were undefined; `weak_alias(__memrchr, memrchr);` then parses as a K&R declaration — *"return type defaults to 'int'"*, *"type defaults to 'int' in declaration"* |
+| 1 — `strcspn` | the public `string.h` shadowed the internal one, so `__strchrnul` was implicit-int |
+
+Put the internal include paths first, in musl's own `CFLAGS_ALL` order
+(`arch/$ARCH`, `arch/generic`, `src/include`, `src/internal`, then the sysroot), and the
+count is **74 of 74** with no compiler change at all. This was never evidence about mcc's
+front end.
+
+`slice/musl` ratchets it: the compile floor is now **all TUs must compile**, plus a
+74-TU corpus-size floor, a required nonzero `frame-compared`, a nonzero `frame-mem`, and a
+mutation arm. The old floor of 20 guarded nothing — it sat 54 TUs below the real number.
+The failure message names the refused files and points at the include order.
+
+### musl compiles — gap #7's gating question, answered YES
+
+Not `src/string`, the **whole libc**. mcc compiles **1347 of musl 1.2.5's 1352** x86_64
+objects, `libc.a` links, and binaries built against it are **output-identical to gcc-built
+reference musl**, including the dynamic path through musl's own mcc-built `ld.so`.
+
+So **gap #7 (I/O calls) is no longer gated.** The I/O work proceeds on the premise that
+`src/stdio`, `src/internal/syscall*` and `src/malloc` are **mcc-parsed arenas already** —
+real source that lowers, not a libc to reimplement and then re-verify against the standard.
+
+The 5 refusals partition exactly into two causes, and both are **parse-level, not
+codegen-level**: each is invariant across `-O0`–`-O3` and under `-fPIC -DSHARED`.
+
+| cause | TUs | which | state |
+| --- | ---: | --- | --- |
+| `@<reloc>` suffix on an x86_64 asm operand | 2 | `src/signal/x86_64/sigsetjmp.s` (`call setjmp@PLT`), `src/math/x86_64/expl.s` (`call exp2l@PLT`) | **fixed**, see below |
+| the x87 `u` constraint in an `asm` operand list | 3 | `src/math/x86_64/{fmodl,remainderl,remquol}.c` | **deliberately not built**, see below |
+
+Re-measured after the fix: all **32** x86_64-relevant `.s` files under `src/`, `crt/` and
+`ldso/` assemble, and of the 1366 x86_64-relevant `.c` files only the 3 x87 ones are
+refused by mcc and not by gcc. (`src/internal/version.c` wants the build's generated
+`version.h`; `src/stdio/{__stdio_seek,freopen,pclose}.c` and `src/time/__tz.c` fail
+**identically under gcc** when handed a bare `-I` set instead of the real build's
+`CFLAGS_ALL` — they are sweep artifacts, not refusals. Check any future count against gcc
+the same way before recording it.)
+
+**The `@PLT` fix.** `asm_parse_ntpoff()` in `src/arch/i386/i386-asm.c` was
+`#define asm_parse_ntpoff() 0` under `MCC_TARGET_X86_64`, i.e. **no `@suffix` parser
+existed on that target at all** — every `@` in an operand died at *"end of line expected"*.
+It is now one function on both targets: i386 keeps `@ntpoff`, x86_64 accepts `@PLT`
+(consume and ignore), and anything else on either target raises
+*"unsupported relocation operator '@X'"*. Ignoring `@PLT` is sound and measured, not
+assumed: `readelf -r` shows mcc already emits **`R_X86_64_PLT32`** for a plain `call g`,
+at the same offset and with the same addend as for `call g@PLT`, and the same for
+`jmp h`/`jmp h@PLT`. gcc emits `R_X86_64_PLT32` for the same source. The suffix was a
+semantic no-op mcc merely refused to parse.
+
+**`@GOTPCREL` is a separate and larger job** — it needs a real GOT-indirect relocation, not
+a suffix to swallow — and **no musl TU needs it**. It is deliberately left diagnosing:
+silently ignoring it would emit a direct reference where an indirection through the GOT was
+written. `asm/reloc-suffix` asserts that refusal, so the shortcut cannot be widened by
+accident.
+
+Cells: **`asm/reloc-suffix`** (`cmake/asm_reloc_suffix.cmake`) compares the relocation
+lists of `call g` / `call g@PLT` and `jmp h` / `jmp h@PLT` and requires them equal *and*
+requires `R_X86_64_PLT32` to be present — if the plain form ever stops carrying PLT32 the
+premise of ignoring the suffix has evaporated and the cell says so — then requires
+`@GOTPCREL` and an unknown `@suffix` to fail *with the relocation-operator diagnostic*, so
+an incidental parse error cannot be mistaken for a deliberate refusal. Plus the
+`asm_reloc_suffix` golden, which runs `call plt_target@PLT` for real across every `exec-*`
+rung and `diff3` against gcc.
+
+**Found while writing that golden, still open: a `call` in inline asm to a symbol already
+defined earlier in the same TU is position-dependent under RIR replay.** The integrated
+assembler resolves it to a direct displacement rather than a relocation, so
+`ast/rir-position` reports `shift=bad sfop=asm@2 sdiff=1` — one byte moves when the body
+is re-emitted at a shifted base. Nothing in `tests/exec` had that shape before, which is
+why it had never fired. `asm_reloc_suffix.c` sidesteps it by defining `plt_target` at the
+*bottom* of the file, so the assembler sees an undefined symbol and emits a relocation;
+**do not reorder that file** without re-running `ast/rir-position`. The real fix is for the
+asm path to emit a relocation for a same-TU `call` as well, and it is not attempted here.
+
+**Priced, not built: the x87 `u` constraint** (3 TUs). It needs x87 stack bookkeeping in
+the register allocator, and musl's own generic C for those three is **verified identical**,
+so the corpus loses nothing by taking the C path. Take it only if something outside musl
+demands the constraint; it is not on the critical path for anything currently planned.
+
+**Two integration facts, non-blocking but they will cost an hour each if rediscovered:**
+
+1. **mcc's driver cannot link `-shared` against musl** — `error: '__init_array_start'
+   defined twice`. GNU `ld` links the same objects fine, so this is mcc's linker, not the
+   objects. Use `ld` for the shared case until it is fixed.
+2. **musl's `configure` picks `-lgcc`, which is the wrong runtime for mcc.** `libgcc`
+   has no `__fixxfdi`, which mcc emits for `long double` → `int64`. Use
+   `cmake-cross/libmccrt.a`.
 
 ### The shared CPU<->GPU address space (binding 2)
 

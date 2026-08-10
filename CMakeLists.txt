@@ -6755,6 +6755,16 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
     mcc_skip_test(asm-gas-directives
         "blocked: integrated assembler lacks sgdtq/sidtq/swapgs encodings (gas_directives.S:811)")
 
+    add_test(NAME "asm/reloc-suffix"
+        COMMAND "${CMAKE_COMMAND}"
+                -DMCC=$<TARGET_FILE:mcc>
+                -DBINDIR=${CMAKE_BINARY_DIR}
+                -DCPU=${MCC_CPU}
+                -DTARGETOS=${MCC_TARGETOS}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/asm_reloc_suffix.cmake")
+    set_tests_properties("asm/reloc-suffix" PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+
     set(MCC_GCCTESTSUITE_PATH "" CACHE PATH
         "gcc.c-torture directory for the `gcctestsuite` target")
     set(MCC_ARM_CROSS_COMPILE "" CACHE STRING
