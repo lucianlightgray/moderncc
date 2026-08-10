@@ -81,15 +81,7 @@ int mcc_gpu_alive(void);
  * heap, and the printf ring. Offset 0 is reserved as NULL. Valid between
  * dispatches only. */
 int mcc_gpu_mem(void **base, unsigned long *size);
-/* Required alignment for a host range that mcc_gpu_mem_import may adopt, or 0
- * if this device cannot import host pages at all -- in which case *why is set
- * to a printable reason and a caller must skip rather than pass vacuously. */
 unsigned long mcc_gpu_host_import_align(const char **why);
-/* Adopt [base, base+size) as binding 2 instead of allocating device memory and
- * handing back the driver's mapping. Both must be multiples of
- * mcc_gpu_host_import_align(). Afterwards mcc_gpu_mem() reports this range, so
- * an object already living in it is addressable by the kernel at the address
- * the host knows it by. Returns 0 if the import was refused. */
 int mcc_gpu_mem_import(void *base, unsigned long size);
 /* How many dispatches have been abandoned with resources deliberately leaked
  * rather than freed under a live command buffer. */

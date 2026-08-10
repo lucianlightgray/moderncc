@@ -2939,14 +2939,107 @@ window is **one** range: a program whose globals do not fit in one 2 GiB span, o
 needs the heap and the printf ring in a range disjoint from `.data`, would need a second
 binding, and nothing here provides one.
 
+### Why the predicate still cannot be widened, and it is not the device's fault
+
+`wt/condlower` re-attributed blocked conditions to the *deepest* node whose children all
+pass and found that **30,875 of 32,545 blocked conditions — 94.87% — are first-blocked by a
+`Ref` to a global aggregate**, the `if (g.field != K) abort();` idiom, which counted through
+conditions makes `ref-not-local/global-aggregate` **35.9% of all refused blocks, the largest
+non-call item in the census**. That raises the prize far above the +1.46 pp the table below
+prices for `global-array` plus `global-scalar-int`. It does not make widening safe yet, and
+this section records exactly what is in the way, because three of the four obstacles are
+invisible from the device side and one of them is a booby trap.
+
+**Obstacle 1 — a global `Ref`'s `ival` is 0, not an address.** `unary()` in `src/mccgen.c`
+does `if (r & VT_SYM) { vtop->c.i = 0; }`, and `ast_finalize_leaf` copies `c.i` into the
+node's `ival`. So a widened predicate would hand `ast_eval_slice_rw_addr` the value **0**,
+which is outside any window, so every tuple poisons, so `cdef[t]` is 0 for all eight, so
+`cref_emit` counts the slice as `cref-alldead` and writes **no fragment at all**. The
+device poisons identically. **Nothing goes red. The acceptance figure rises and the
+differential sees nothing** — the precise failure this file already warns about one section
+down, arrived at by a different road. Host-pointer import does not fix this: it makes a
+*real* address valid, and 0 is not one.
+
+**Obstacle 2 — the corpus path has no storage to point at.** A dumped arena is compile-time
+data; the globals it references have no runtime bytes anywhere. Making a global read
+*mean* something requires a relocation step: give each distinct global a slot in the
+imported window, seed it, and make the evaluator resolve the `Ref` to that slot. The
+information needed for this all exists and is worth banking:
+
+| needed | available? | where |
+| --- | --- | --- |
+| identity — is this the same global twice? | **yes** | dump column 11, `ast_adump_intern(ast_sym(...))`, a dense deterministic id, carried into the rebuilt arena by `ast_set_sym` |
+| byte extent of the object | **yes** | dump column 13 → `g_obj_ext` |
+| element type | **yes** | dump column 14 → `g_obj_ety` |
+| storage class and type word | **yes** | columns 3 and 4; `refuse_global_class` already classifies from these two alone, which is why it works on rebuilt arenas |
+| **the symbol's name** | **no** | only the `[inv]` records carry a name, and only for Invoke callees. The dump writer has `get_tok_str(cs->v, NULL)` in hand there, so adding a name column is small — but it is a dump format change |
+| real `Sym *` / `CType *` | **no** | `rebuild_arena` installs the interned ids into pointer-shaped slots; dereferencing one segfaults |
+
+Two caveats on the identity column: `ast_adump_intern` has capacity 8192 and **returns 0
+once more than 4096 distinct pointers are seen**, so on a large TU symbol identity silently
+degrades to "unknown"; and a name is not required for correctness, only for legibility —
+`g_<tag>_<symid>` is a perfectly good name for a re-emitted global.
+
+**Obstacle 3 — the aggregate case needs a new arm, not a wider predicate.**
+`ast_eval_slice_frame_off` folds a `.field` chain to a constant frame offset, and its base
+case accepts **only** a local `Ref`; `AST_EVAL_OP_MEMBER` carries the field's byte offset in
+`ival` and the field's type in `type_t`, with no name and no member `Sym`. So the 94.87%
+shape cannot resolve today by construction, and both `msl_expr` and `spv_expr` consume a
+resolved member as an ordinary env-slot load at the folded offset. Rooting that recursion at
+a global means giving it a second base case that yields a window address rather than a frame
+offset — which is a different kind of answer, and every caller has to be told which it got.
+
+**Obstacle 4 — the re-emitted C must carry the global too, and the batching constrains how.**
+`cref_expr` spells a slice back out as standalone C for gcc and clang to adjudicate; a global
+that is not in the spelled-back program cannot be adjudicated. The shape of that emission is
+tightly boxed in by `tools/gpuconform.py`, and anyone writing it should know the box first:
+
+- **150 fragments are concatenated into one translation unit.** Every file-scope name must
+  be `static` and tag-unique, so a global becomes `static ... g_<tag>_<symid>`.
+- **The only header is `#include <stdio.h>`**, prepended once by the batcher. So **no
+  `memcpy`** is available for a type-punned read.
+- **The compile line is `-w -fwrapv -fno-strict-overflow` at `-O0` and `-O2`** — note there
+  is **no `-fno-strict-aliasing`**, so reading a `unsigned char[]` global through a cast
+  `int *` is UB the oracle is entitled to exploit at `-O2`. The portable spelling is an
+  explicit little-endian byte reassembly in a `static` helper, which needs no header and
+  breaks no aliasing rule.
+- Fragments are deduplicated by SHA-256 of their whole text, and the tag is in the text, so
+  per-tuple variation in a global's seeded value does not collide.
+- A global is **read-only inside a frame slice** — a frame slice cannot call and cannot store
+  to a global — so "declare it and initialise it to the value observed at slice entry" is
+  sufficient for the whole read case. Per-tuple variation is still worth having: `chk_`
+  already emits per-tuple assignments to `a0..aN` and one more assignment per tuple is the
+  same shape.
+
+**The down payment taken here.** `cref_expr`'s `AST_Ref` arm now refuses a `VT_SYM` ref
+instead of falling through to its literal spelling. That fallback would have emitted
+`((T)0LL)` for every global — see obstacle 1 — and the arm is unreachable only for as long
+as the predicate stays closed. It now counts as `cref-unspellable`, which is a number
+someone reads, rather than a zero nobody questions.
+
 ### What is now owed
 
-1. **Widen `ast_eval_slice_kind_ok` for `global-array` and `global-scalar-int`**, the two
-   classes the table below prices at +1.46 pp. The addressability objection is discharged;
-   what remains is arranging that the run being sliced has actually imported the range its
-   globals live in, which is a `-run`/JIT-path question and not a predicate question.
-2. **The Darwin one-liner** above, when there is a caller.
-3. **`mcc_vk_bind_mem`'s grow path is still unreachable** for the non-imported window: both
+In dependency order. **1 and 2 are prerequisites for 3; widening before them reproduces the
+silent-agreement failure exactly**, and the `condlower` finding raises the prize rather than
+shortening the path.
+
+1. **Relocation.** Give each distinct global — keyed on the interned `sym` id — a slot in the
+   imported window, seed it, and resolve a `VT_SYM` `Ref` to that address instead of to its
+   `ival` of 0. Everything this needs is already in the dump except a name, which is not
+   required.
+2. **cref spelling.** Emit `static ... g_<tag>_<symid>` at file scope with a per-tuple
+   seeded value and read it through an explicitly little-endian `static` helper, under the
+   four batching constraints listed above. Without this a widened predicate is unverifiable
+   rather than wrong.
+3. **Widen `ast_eval_slice_kind_ok`** for `global-scalar-int` and `global-array` first
+   (priced at +1.46 pp below), then the aggregate case, which additionally needs a global
+   base case in `ast_eval_slice_frame_off` and a decision about what that function returns
+   when the answer is a window address rather than a frame offset.
+4. **A name column in the arena dump**, optional but cheap — the writer already calls
+   `get_tok_str` for `[inv]` records — and the thing that makes a re-emitted global legible
+   in a failure report instead of an opaque id.
+5. **The Darwin one-liner** above, when there is a caller.
+6. **`mcc_vk_bind_mem`'s grow path is still unreachable** for the non-imported window: both
    callers pass the literal `MCC_VK_MEM_DEFAULT`. Import does not fix that; it sidesteps it.
 
 ## Landed — `ref-not-local` is four causes wearing one label, and 91.7% of it cascades nowhere, 2026-08-09 (`wt/refwiden`)
