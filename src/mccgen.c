@@ -347,6 +347,8 @@ ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
 #define loop_scope (mcc_state->loop_scope)
 #define root_scope (mcc_state->root_scope)
 
+#define MCC_INIT_RNG_MAX 8
+
 typedef struct
 {
 	Section *sec;
@@ -356,6 +358,17 @@ typedef struct
 	char flex_warned;
 	char excess_warned;
 	int llocal;
+	int rng_depth;
+	int rng_flushed;
+	int rng_pend;
+	unsigned long rng_pend_base;
+	int rng_pend_es, rng_pend_nb;
+	CType rng_pend_type;
+	unsigned long rng_base[MCC_INIT_RNG_MAX];
+	unsigned long rng_pre[MCC_INIT_RNG_MAX + 1];
+	int rng_es[MCC_INIT_RNG_MAX], rng_nb[MCC_INIT_RNG_MAX];
+	char rng_done[MCC_INIT_RNG_MAX];
+	CType rng_type[MCC_INIT_RNG_MAX];
 } init_params;
 
 static void init_prec(void);
@@ -15475,6 +15488,65 @@ static Sym *decl_design_blob(int elem_size) { MCC_TRACE("enter\n");
 	return &decl_design_blob_pool[i];
 }
 
+static void decl_design_spread(init_params *p, CType *type, unsigned long c,
+															 int elem_size, int nb_elems) { MCC_TRACE("enter\n");
+	Sym aref = {0};
+	CType t1;
+	if (p->sec || (type->t & VT_ARRAY)) { MCC_TRACE("br\n");
+		Sym *blob = decl_design_blob(elem_size);
+		if (blob) { MCC_TRACE("br\n");
+			t1.t = VT_STRUCT, t1.ref = blob;
+		} else { MCC_TRACE("br\n");
+			aref.c = elem_size;
+			t1.t = VT_STRUCT, t1.ref = &aref;
+			rir_hook_bail();
+		}
+		type = &t1;
+	}
+	if (p->sec)
+		{ MCC_TRACE("br\n"); vpush_ref(type, p->sec, c, elem_size); }
+	else
+		{ MCC_TRACE("br\n"); vset(type, VT_LOCAL | VT_LVAL, c); }
+	for (int i = 1; i < nb_elems; i++) { MCC_TRACE("br\n");
+		vdup();
+		init_putv(p, type, c + (unsigned long)elem_size * i);
+	}
+	vpop();
+}
+
+static int decl_rng_claim(init_params *p) { MCC_TRACE("enter\n");
+	int d;
+	if (!p->rng_pend)
+		{ MCC_TRACE("br\n"); return -1; }
+	d = p->rng_depth;
+	if (d >= MCC_INIT_RNG_MAX)
+		{ MCC_TRACE("br\n"); return -1; }
+	p->rng_pend = 0;
+	p->rng_base[d] = p->rng_pend_base;
+	p->rng_es[d] = p->rng_pend_es;
+	p->rng_nb[d] = p->rng_pend_nb;
+	p->rng_type[d] = p->rng_pend_type;
+	p->rng_done[d] = 0;
+	p->rng_depth = d + 1;
+	return d;
+}
+
+static void decl_rng_flush(init_params *p) { MCC_TRACE("enter\n");
+	int i;
+	for (i = p->rng_depth - 1; i >= 0; i--) { MCC_TRACE("br\n");
+		if (!p->rng_done[i]) { MCC_TRACE("br\n");
+			decl_design_spread(p, &p->rng_type[i], p->rng_base[i], p->rng_es[i],
+												 p->rng_nb[i]);
+			p->rng_done[i] = 1;
+		}
+	}
+	p->rng_pre[0] = 0;
+	for (i = 0; i < p->rng_depth; i++)
+		{ MCC_TRACE("br\n"); p->rng_pre[i + 1] =
+					p->rng_pre[i] + (unsigned long)p->rng_es[i] * (p->rng_nb[i] - 1); }
+	p->rng_flushed = 1;
+}
+
 static int decl_designator(init_params *p, CType *type, unsigned long c,
 													 Sym **cur_field, int flags, int al) { MCC_TRACE("enter\n");
 	Sym *s, *f;
@@ -15583,36 +15655,34 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 		if (routed) { MCC_TRACE("br\n");
 			flags |= DIF_OVERWRITE;
 		} else { MCC_TRACE("br\n");
+			int aggr = (type->t & VT_ARRAY) || (type->t & VT_BTYPE) == VT_STRUCT;
 			decl_design_delrels(p->sec, c, elem_size * nb_elems);
-			flags &= ~DIF_CLEAR;
+			if (tok == '{' || !aggr || (flags & DIF_HAVE_ELEM))
+				{ MCC_TRACE("br\n"); flags &= ~DIF_CLEAR; }
 		}
 	}
 
-	decl_initializer(p, type, c, flags & ~DIF_FIRST);
-
-	if (!(flags & DIF_SIZE_ONLY) && nb_elems > 1) { MCC_TRACE("br\n");
-		Sym aref = {0};
-		CType t1;
-		if (p->sec || (type->t & VT_ARRAY)) { MCC_TRACE("br\n");
-			Sym *blob = decl_design_blob(elem_size);
-			if (blob) { MCC_TRACE("br\n");
-				t1.t = VT_STRUCT, t1.ref = blob;
-			} else { MCC_TRACE("br\n");
-				aref.c = elem_size;
-				t1.t = VT_STRUCT, t1.ref = &aref;
-				rir_hook_bail();
-			}
-			type = &t1;
+	if (routed && nb_elems > 1 && !(flags & DIF_SIZE_ONLY)) { MCC_TRACE("br\n");
+		int sv_depth = p->rng_depth;
+		p->rng_pend = 1;
+		p->rng_pend_base = c;
+		p->rng_pend_es = elem_size;
+		p->rng_pend_nb = nb_elems;
+		p->rng_pend_type = *type;
+		if (sv_depth == 0)
+			{ MCC_TRACE("br\n"); p->rng_flushed = 0; }
+		decl_initializer(p, type, c, flags & ~DIF_FIRST);
+		if (p->rng_pend) { MCC_TRACE("br\n");
+			p->rng_pend = 0;
+			decl_design_spread(p, type, c, elem_size, nb_elems);
 		}
-		if (p->sec)
-			{ MCC_TRACE("br\n"); vpush_ref(type, p->sec, c, elem_size); }
-		else
-			{ MCC_TRACE("br\n"); vset(type, VT_LOCAL | VT_LVAL, c); }
-		for (int i = 1; i < nb_elems; i++) { MCC_TRACE("br\n");
-			vdup();
-			init_putv(p, type, c + elem_size * i);
-		}
-		vpop();
+		p->rng_depth = sv_depth;
+		if (sv_depth == 0)
+			{ MCC_TRACE("br\n"); p->rng_flushed = 0; }
+	} else { MCC_TRACE("br\n");
+		decl_initializer(p, type, c, flags & ~DIF_FIRST);
+		if (!(flags & DIF_SIZE_ONLY) && nb_elems > 1)
+			{ MCC_TRACE("br\n"); decl_design_spread(p, type, c, elem_size, nb_elems); }
 	}
 
 	c += nb_elems * elem_size;
@@ -16045,12 +16115,21 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 			decl_design_flex(p, s, len - 1);
 			{
 				int sublist_comma = 0;
+				int my_rng = decl_rng_claim(p);
+				int my_depth = p->rng_depth, shifted = 0, nitem = 0;
 				while (tok != '}' || (flags & DIF_HAVE_ELEM)) { MCC_TRACE("br\n");
 					if (no_oblock && sublist_comma && !(flags & DIF_HAVE_ELEM) &&
 							(tok == '[' || tok == '.')) { MCC_TRACE("br\n");
 						unget_tok(',');
 						break;
 					}
+					if (nitem && my_depth && !shifted) { MCC_TRACE("br\n");
+						if (!p->rng_flushed)
+							{ MCC_TRACE("br\n"); decl_rng_flush(p); }
+						c += p->rng_pre[my_depth];
+						shifted = 1;
+					}
+					++nitem;
 					len = decl_designator(p, type, c, &f, flags, len);
 					flags &= ~DIF_HAVE_ELEM;
 					if (type->t & VT_ARRAY) { MCC_TRACE("br\n");
@@ -16071,6 +16150,11 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 					skip(',');
 					sublist_comma = 1;
 					seqp_flush();
+				}
+				if (my_rng >= 0 && !p->rng_done[my_rng]) { MCC_TRACE("br\n");
+					decl_design_spread(p, &p->rng_type[my_rng], p->rng_base[my_rng],
+														 p->rng_es[my_rng], p->rng_nb[my_rng]);
+					p->rng_done[my_rng] = 1;
 				}
 			}
 		}

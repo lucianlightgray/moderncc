@@ -2587,5 +2587,25 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -w -std=c99 -O2 -fno-builtin {W}/llabs.c -o {W}/llabsnb && {W}/llabsnb",
 		 "1\n1\n1\n1\n-1\n"},
 
+		{"gnu_range_designator_nested_and_partial_override", "",
+		 "printf '%s\\n' 'extern int printf(const char *, ...);' "
+		 "'int a[][2][4] = {[2 ... 4][0 ... 1][2 ... 3] = 1, [2] = 2, [2][0][2] = 3};' "
+		 "'struct I { int J; int K[3]; int L; };' "
+		 "'struct M { int N; struct I O[3]; int P; };' "
+		 "'struct M n[] = {[0 ... 5].O[1 ... 2].K[0 ... 1] = 4, 5, 6, 7};' "
+		 "'struct M o[] = {[0 ... 5].O = {[1 ... 2].K[0 ... 1] = 4}, [5].O[2].K[2] = 5, 6, 7};' "
+		 "'int main(void) { unsigned i, d = 0;' "
+		 "'  unsigned char *pn = (unsigned char *)n, *po = (unsigned char *)o;' "
+		 "'  for (i = 0; i < sizeof n; i++) if (pn[i] != po[i]) d++;' "
+		 "'  printf(\"%d %d %d %d %d %d %d %d %d %d %d %d %u %u\\n\", a[2][0][0], a[2][0][2],' "
+		 "'    a[2][0][3], a[2][1][2], a[4][1][3], n[0].P, n[0].O[1].K[2], n[0].O[2].L,' "
+		 "'    n[3].O[2].K[1], n[5].O[2].K[2], n[5].O[2].L, n[5].P,' "
+		 "'    (unsigned)(sizeof n / sizeof n[0]), d);' "
+		 "'  return 0; }' > {W}/gnurng.c && "
+		 "for o in -O0 -O2; do "
+		 "{MCC} -B{B} -I{I} -w -std=gnu99 $o {W}/gnurng.c -o {W}/gnurngx && {W}/gnurngx; "
+		 "done",
+		 "2 3 1 1 1 0 0 0 4 5 6 7 6 0\n2 3 1 1 1 0 0 0 4 5 6 7 6 0\n"},
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));

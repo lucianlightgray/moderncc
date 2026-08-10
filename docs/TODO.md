@@ -18611,9 +18611,39 @@ front end — so this is not an `-O2` pipeline gap. Recurring shapes: `fabs(x) <
   `ast_alloc_loc` slot and reloads, which `promote-locals` lifts back into a register at
   `-O2`. Cell `cli/abs_family_outranks_a_local_definition`, four levels plus the
   `-fno-builtin` negative.
-- **GNU range designators in nested initializers produce wrong data.** `gnu99-init-1.c`
-  mixes `[2 ... 4][0 ... 1][2 ... 3] = 1` with later overriding designators. Adjacent to
-  the nested-member-designator item above, but a distinct bug.
+- ~~**GNU range designators in nested initializers produce wrong data.**~~ **Fixed
+  2026-08-10 (`wt/o2wrong`).** It was **two** independent defects on one line, both wrong
+  at every `-O` level:
+  1. **A brace-less designator re-entering an already-written aggregate re-zeroed it.**
+     `decl_designator`'s non-routed overwrite branch dropped `DIF_CLEAR`, and
+     `do_init_list` then `init_putz`-ed the whole subobject. Measured rule, from gcc-15 and
+     clang-22 which agree on all seven probes: `[0] = 9` after `[0][0 ... 3] = 1` leaves the
+     rest of `a[0]` **alone**; `[0] = {9}` (braced) clears it; `.x = 9` and `[0][1] = 9`
+     leave it alone. So the clear is now conditional on `tok == '{'`, a scalar target, or
+     `DIF_HAVE_ELEM`. `decl_design_delrels` is unchanged.
+  2. **A range designator's trailing initializers were replicated to every element.**
+     `[0 ... 5].O[1 ... 2].K[0 ... 1] = 4, 5, 6, 7` must put `4` in all six elements and
+     `5, 6, 7` **only in `n[5]`**; mcc parsed everything into element 0 and byte-copied it
+     forward, so every element got `K[2]=5, L=6, P=7`. The continuation is consumed by the
+     *innermost* routed sub-list, which is two frames below the range that owns it, so a
+     local fix at the range does not reach it. `init_params` now carries a small stack
+     (`MCC_INIT_RNG_MAX = 8`) of pending ranges: a routed range parks its base/extent, the
+     sub-list claims it, and the first frame to reach a *continuation* item flushes the
+     whole stack innermost-first (`decl_rng_flush`), replicating each range's element, and
+     computes `rng_pre[]`. Every frame then lazily shifts its own base by
+     `rng_pre[its depth]` — the sum of the deltas of the ranges enclosing it — so each
+     frame lands on the last element of its own range while the outer frames land on
+     theirs. Unflushed ranges are replicated at frame exit; depth over 8 falls back to the
+     old copy-forward.
+  **Evidence.** All 1,693 `vendor/gcc-c-torture-execute` programs at `-O0` and `-O2`
+  (3,386 cells) A/B'd against the pre-fix binary: **one behavioural change, `20021127-1`
+  going from abort to 0** (the `llabs` fix above), and `return-addr` which prints raw stack
+  addresses and differs run to run under ASLR. Zero initializer regressions. A nine-shape
+  probe covering braced ranges, `p`-style `.K = { [0 ... 1] = 4 }`, ranges over structs,
+  ranges with trailing plain initializers, string-pointer relocations and a **stack-local**
+  range initializer is byte-identical to gcc-15 and clang-22.
+  Cell `cli/gnu_range_designator_nested_and_partial_override`; the pre-fix binary answers
+  `2 3 0 0 1 7 5 6 4 5 6 7 6 27` instead of `2 3 1 1 1 0 0 0 4 5 6 7 6 0`.
 - ~~**C90 `if`-controlling-expression scope.**~~ **Fixed 2026-08-10 (`wt/o2wrong`).**
   `c90-scope-1.c` was wrong at **every** `-O` level, so it was never an `-O2` defect:
   `block_nested` pushed `new_scope_s` around `if`/`while`/`do`/`switch` unconditionally.
