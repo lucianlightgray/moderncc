@@ -4854,7 +4854,7 @@ static int rir_tern_retval_ok(AstLocal r) {
 			ast_ival(rir_arena, r) || ast_fbits(rir_arena, r))
 		return 0;
 	v = ast_child(rir_arena, r, 0);
-	if (v == AST_NONE)
+	if (v == AST_NONE || ast_kind(rir_arena, v) == AST_Invoke)
 		return 0;
 	vb = ast_type_t(rir_arena, v) & VT_BTYPE;
 	return vb != VT_STRUCT && vb != VT_QFLOAT && vb != VT_QLONG;
@@ -4922,7 +4922,7 @@ static void rir_tern_normalise(void) {
 			if (ast_op(rir_arena, rt) != ast_op(rir_arena, re))
 				continue;
 			cnd = ast_child(rir_arena, iff, 0);
-			if (cnd == AST_NONE)
+			if (cnd == AST_NONE || ast_kind(rir_arena, cnd) == AST_Literal)
 				continue;
 			if (!ast_detach_last_child(rir_arena, n, iff))
 				continue;
@@ -4942,7 +4942,7 @@ static void rir_tern_normalise(void) {
 			if (rt == AST_NONE)
 				continue;
 			cnd = ast_child(rir_arena, iff, 0);
-			if (cnd == AST_NONE)
+			if (cnd == AST_NONE || ast_kind(rir_arena, cnd) == AST_Literal)
 				continue;
 			if (!ast_detach_last_child(rir_arena, n, re))
 				continue;
