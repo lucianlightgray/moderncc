@@ -161,3 +161,9 @@ smoke/slice-bails            | must-run   | the slice-engine refusal ratchet, ca
 smoke/divergence             | registered | the gcc/clang UB divergence report; skips honestly when neither reference compiler is installed, and never decides a golden
 smoke/device                 | registered | the device arm: the same value table under the GPU oracle, digest-compared against the CPU arm; skips honestly with no Vulkan or Metal device
 smoke/device-known-positive  | registered | proves the device arm is not blind
+
+
+optlevel/torture-differential | registered | the only cell that compiles and RUNS a corpus at every -O level and diffs exit code and stdout against the same program's -O0 answer. Two miscompiles shipped in the -O5..-O13 band because nothing asked this question. Registered rather than must-run because the corpus is a symlink into an upstream gcc checkout, which is a property of the host
+optlevel/torture-differential-known-positive | registered | proves optlevel/torture-differential is not blind: it perturbs one recorded -O0 answer and requires that program to be named as an unknown divergence
+cli/xmm_hi_promoted_float_store_to_global | registered | the -fxmm-hi + -fpromote-leaf-xmm + -fpromote-locals miscompile: a float promoted into XMM8-15 was stored from XMM0-7 because the GOT-indirect store dropped REX.R
+cli/unreferenced_static_inline_is_not_emitted | registered | a never-called `static inline` whose body names an undefined symbol must not be forced out of line. This is what -finline-functions-called-once did at -O7 and above before it was deleted

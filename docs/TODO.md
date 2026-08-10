@@ -929,6 +929,87 @@ per-corpus, not per-file, so it never showed. Arming it is one `-I` each — and
 byte divergences the gate is masking, not this branch's; arming the cells is a separate
 decision with three defects behind it.
 
+## Landed — two miscompiles in the `-O4` consolidation band, and the instrument that found them, 2026-08-10 (`wt/o4bugs`, unmerged)
+
+Four commits. Both defects were live in the band being folded into `-O4`, both were
+invisible to every one of the ~9500 cells, and the reason they were invisible is the
+third item.
+
+1. **`store()` dropped `REX.R` on the GOT-indirect path**, so a `float` or `double`
+   held in `XMM8`–`XMM15` was encoded with a three-bit register field and stored from
+   `XMM0`–`XMM7`. `gcc.c-torture/execute/pr28982a.c` returned 1 instead of 0 at
+   `-O5`–`-O13`. Reachable only with `-fpromote-locals -fpromote-leaf-xmm -fxmm-hi`
+   together, and **`-fxmm-hi` is the knob that carries it**: `reg_classes[]`
+   deliberately withholds `MCC_RC_INT`/`MCC_RC_FLOAT` from every register any promotion
+   pool hands out — `XMM6`, `XMM7`, `RBX`, `R8`–`R10`, `R12`–`R15` all lack it — and
+   `-fxmm-hi` is the one knob that gives the generic float class to registers
+   `ast_promo_xmm_leaf[]` also uses. That is what lets `gv()` keep a promoted value in a
+   high XMM instead of copying it down first, so `store()` finally sees one. Fixed in
+   the encoder, not in the knob. Cell:
+   `cli/xmm_hi_promoted_float_store_to_global`.
+2. **`-finline-functions-called-once` deleted.** It performed no call-count analysis and
+   could not: its only reader ran mid-parse in `decl()`, where mcc has no call graph, no
+   caller count and no reference count. It stripped `VT_INLINE` from every non-system-
+   header `static inline`, forcing dead bodies out of line, and
+   `gcc.c-torture/execute/20011115-1.c` failed to link at `-O7`–`-O13` because one such
+   body names a symbol nobody defines. Narrowing it to "emit only when referenced" is
+   exactly the analysis that is unavailable there, and performed later it is a no-op,
+   because the point of stripping the flag is to generate the body *before* its callers
+   are parsed. Measured cost over the torture corpus at `-O7`: `.text` 4196079 on vs
+   4195660 off, **+419 bytes across 1629 objects**, changing `.text` in 11 of them, nine
+   bigger and two smaller. Its author had measured the same (+755 on mcc's own TU) and
+   parked it OFF pending a dead-static-elimination pass that still does not exist;
+   `a55c0a07` gave it `MCC_OPTD_LEVEL(7)` in a mass env-gate conversion, which switched
+   it on at `-O7` and above without a `levelpins.txt` line or a `leveltime.tsv` row.
+   Cell: `cli/unreferenced_static_inline_is_not_emitted`.
+3. **`ast/o0-baseline-gated` had to be repaired, and that is a finding.** Its vacuity
+   check required the forced-`-O0` Replay_IR census to differ from the ungated bank.
+   Deleting the knob made the two byte-identical on all twelve keys — the census moved
+   by exactly `fn 1312 → 1310`, `empty 37 → 35`, i.e. two dead `static inline` bodies
+   over a 307-file corpus. That was the *entire* signal: the only level knob that ever
+   moved that census at `-O0` was the one that changes which bodies exist, and it did so
+   by the same mechanism that made mcc reject `20011115-1.c`. The check now asks the
+   same question of the object board (21 of 58 `tests/exec` objects move), and the
+   `O0_AB_NOGATES` twin still fires.
+4. **`optlevel/torture-differential`** — see the open item below.
+
+## Open — the level differential, and the eight wrong answers it surfaces
+
+`optlevel/torture-differential` compiles and runs all 1693 `gcc.c-torture/execute`
+programs at `-O0` to fix a reference (exit code + sha256 of stdout), drops the 85 the
+reference sweep cannot use, and repeats at `-O1`–`-O12`. **~1 s per level at `--jobs 32`,
+25 s for the cell.** `-O13` is excluded on purpose: `optimize_search_seconds` makes that
+one level a 687-second sweep. Against the two fixes reverted it reports 14 unknown
+divergences and nothing else, which is the whole of what it was built to catch.
+
+Note what did *not* exist before it: `slice/cref-oracle-gcc-c-torture-execute` consumes
+the same corpus, but as a GPU conformance oracle against clang. Nothing compared mcc at
+`-On` against mcc at `-O0`.
+
+`tests/optfire/leveldiff-known.txt` starts at fourteen rows. Five are
+`link_error()`/`link_failure()` missed-optimization markers and are not wrong answers.
+**The other eight are, and they are the open item:**
+
+| program | first level | how it fails |
+| --- | --- | --- |
+| `990208-1.c` | `-O1` | SIGABRT; address of a label inside a `static inline` |
+| `builtin-constant.c` | `-O1` | SIGABRT; `__builtin_constant_p` answers 1 where it must answer 0 |
+| `printf-chk-1.c` | `-O1` | SIGABRT in `__printf_chk`, and the `-O0` stdout is lost with it |
+| `fprintf-chk-1.c` | `-O1` | same family |
+| `vprintf-chk-1.c` | `-O1` | same family |
+| `vfprintf-chk-1.c` | `-O1` | same family |
+| `920302-1.c` | `-O6` | SIGSEGV; computed `goto` over a static table of label differences |
+| `comp-goto-1.c` | `-O6` | SIGILL at `-O6`–`-O10`, SIGSEGV at `-O11`–`-O12`; computed-`goto` interpreter loop |
+
+Six of these are at `-O1`, which ships. The last two are inside the `-O4` consolidation
+band and were not in the brief that started this branch — they are additional to the two
+defects fixed above, and consolidation should decide about them before folding `-O6` in.
+`return-addr.c` is the fourteenth row and is not a defect: it prints the addresses of its
+own locals, so its stdout can never agree across levels.
+
+A row that stops diverging fails the cell as loudly as a new divergence, so the table
+cannot rot into lost coverage.
+
 ## Landed — the lowerable ratchet is taken on bodies, not on the corpus ratio, 2026-08-10
 
 `rir-coverage` went red twice in one day on the same mechanism. On 2026-08-09 it was

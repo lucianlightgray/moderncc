@@ -590,7 +590,7 @@ void store(int r, SValue *v) { MCC_TRACE("enter\n");
 	if (bt == VT_FLOAT) { MCC_TRACE("br\n");
 		o(0x66);
 		if (pic)
-			{ MCC_TRACE("br\n"); o(pic); }
+			{ MCC_TRACE("br\n"); o(pic | (REX_BASE(r) << 2)); }
 		else
 			{ MCC_TRACE("br\n"); orex(0, v->r, r, 0); }
 		o(0x7e0f);
@@ -598,7 +598,7 @@ void store(int r, SValue *v) { MCC_TRACE("enter\n");
 	} else if (bt == VT_DOUBLE) { MCC_TRACE("br\n");
 		o(0x66);
 		if (pic)
-			{ MCC_TRACE("br\n"); o(pic); }
+			{ MCC_TRACE("br\n"); o(pic | (REX_BASE(r) << 2)); }
 		else
 			{ MCC_TRACE("br\n"); orex(0, v->r, r, 0); }
 		o(0xd60f);
