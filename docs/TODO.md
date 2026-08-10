@@ -312,13 +312,27 @@ Two definitions, because there are two search loops:
   evaluations. That bound is counted in *work*, so it truncates identically on every
   machine.
 
+### What it costs, and what the old level was actually doing
+
+| subject | `-O12` | old `-O13` (13 s) | new `-O13` ticks=1 |
+| --- | --- | --- | --- |
+| `tests/exec/programs/grep.c`, 513 lines | 0.01 s, 19 953 B | 13.03 s, 20 671 B | **0.28 s, 20 671 B** |
+| `src/mccast.c`, 20 128 lines | 0.07 s, `.text` 60 863 | 19.70 s, `.text` 59 820 | 68.29 s, **`.text` 56 834** |
+| `src/mcc.c`, the real TU | 2.42 s, `.text` 1 640 882 | 29.54 s, `.text` 1 559 131 | 327.26 s, **`.text` 1 504 974** |
+
+On the small subject the new level reproduces the old exhaustive winner **byte for byte in
+1/47th the time**. On the two large ones it is slower and *better*, and that is the honest
+reading of what 13 seconds bought: the old level did not finish, it stopped. It got
+`src/mcc.c` to −5.0% of `-O12`'s `.text`; a single tick gets −8.3%. Anyone who wants the
+old cost back has `-fopt-search-ticks=0` (all knobs, no search) or a smaller
+`MCC_SEARCH_TU_EVALS` — both counted in work, so both still reproducible.
+
 ### Round 2 buys nothing, measured twice
 
-`grep.c` at ticks 1/2/3/4 and `src/mcc.c` at ticks 1/2/3 are byte-identical to each other
-and, on `grep.c`, byte-identical to the old exhaustive 13-second run — in 0.6 s instead of
-13.0 s. On `src/mcc.c` the inner search reaches `.text` 1 589 853 at 20 000 evaluations and
-1 590 265 at 50 000, i.e. **more search made it very slightly worse**; the quota is not
-costing quality.
+`grep.c` at ticks 1/2/3/4, `src/mccast.c` at ticks 1/2 and `src/mcc.c` at ticks 1/2/3 are
+byte-identical to each other. On `src/mcc.c` the inner search reaches `.text` 1 589 853 at
+20 000 candidate evaluations and 1 590 265 at 50 000 — **more search made it very slightly
+worse** — so the per-translation-unit quota is not costing quality either.
 
 ### One bank re-taken
 
