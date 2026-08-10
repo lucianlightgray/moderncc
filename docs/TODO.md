@@ -124,13 +124,21 @@ and the restored ternary fold attack the same source shape from opposite ends; a
 globreloc figure above was measured before `wt/rirphase` changed the arena shapes the slice
 predicates see.
 
-### The largest remaining item is one condition in one function
+### The largest remaining item is one condition in one function — LANDED (`wt/globagg`)
 
-`ast_eval_slice_globl` rejects a `VT_STRUCT` base. `idx_base`'s member arm resolves
-`s.arr[i]` through `frame_off`, whose `AST_Ref` base case calls `globl` — and for
-`gs.arr[i]` that sees the base `Ref` typed `VT_STRUCT` and refuses.
-**`ref-not-local/global-aggregate` is 3,481 nodes, unmoved.** A local struct's array field is
-unlocked; a global array is unlocked; their intersection is closed by that single rejection.
+The diagnosis was right and the *number attached to it was the wrong quantity*; see
+**Landed — a global aggregate resolves as an address** below. The rejection is gone.
+`ref-not-local/global-aggregate` is **62,228 before and 62,228 after** on gcc torture — that
+bucket is a node census asking the expression predicate, where the base `Ref` of a member
+fold is an address and can never be accepted as a value. Trap 1, an eighth time.
+
+**And the corpus mattered more than the fix.** On gcc torture the fix reads
+−405 refused blocks and +39,203 indexed loads, but **94.8% of the blocks are four files and
+99.7% of the loads are fourteen**, all macro-generated or unrolled. On mcc's own
+`src/*.c` — 327 bodies of hand-written code — the same fix is **−12 refused blocks of 1,085
+(+2.7% of frame-accepted) and +803 accepted nodes of 28,469 (+2.82 pp)**, which is 42× the
+percentage-point gain the million-node torture corpus reports. **gcc c-torture is the wrong
+denominator for anything global-data-shaped**; re-price the remaining gaps on real code.
 
 ### Threading — decided against the earlier architecture note
 
@@ -175,10 +183,15 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
 
 ### Traps — the list stands, with three additions and one sharpened
 
-1. **A bucket's name is not evidence of its contents.** Now **seven** confirmed misreads:
+1. **A bucket's name is not evidence of its contents.** Now **eight** confirmed misreads:
    `kind-basicblock`, `arity`, `op-ternary`, `block/capacity`, gap #3's 580, gap #4's 58,328,
-   and `slice/musl`'s 65-of-74. Attribute by the deepest node whose children all pass and
-   prove the table is a partition by reproducing the parent count.
+   `slice/musl`'s 65-of-74, and `ref-not-local/global-aggregate`'s 3,481 — a class the fix
+   it was cited for **cannot** move, because it is a node census asking the expression
+   predicate and the node in it is an address. Attribute by the deepest node whose children
+   all pass and prove the table is a partition by reproducing the parent count.
+   **And check the attribution helper itself**: `refuse_parent_blocked` asked
+   `refuse_local`, which refuses every member fold unconditionally, so its `parent-open`
+   column could not report the one shape it was being read for.
 2. `mcc` derives its include search from `argv[0]` — run both binaries of a byte-identity
    sweep from the same directory.
 3. `.gitignore`'s `/vendor/` does not match a *symlink* named `vendor`. Never `git add -A`.
@@ -198,7 +211,12 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    `ast_eval_slice_idx_base` builds, type-checks and passes **every cell**, while silently
    losing 758 indexed loads and 346 indexed stores. The node census is identical either way,
    because it asks the expression predicate. When two branches widen the same predicate,
-   measure the fold — do not trust green.
+   measure the fold — do not trust green. **Its mirror image, from `wt/globagg`:** widening
+   `ast_eval_slice_globl` to admit a `VT_STRUCT` base — instead of resolving it in an
+   address-only helper — also builds, type-checks and passes every cell, moves **62,228
+   nodes into `accepted`**, and makes five value contexts read a live-in word at a struct's
+   base offset as a value of struct type. The census can be moved by a change that computes
+   nothing as easily as it can be left still by a change that computes everything.
 9. **NEW — an empty ref list is not "touches no memory", and a predicate that fails open is
    a miscompile generator.** `ast_dep_collect` records only `Load` and `Store`-through-`Load`,
    so `g = g + 1` on a global produces **no ref at all**. `ast_region_disjoint`'s first
@@ -212,15 +230,16 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    collector declines to record — and put a cell on the empty case, not the busy one.**
 10. **NEW — the compiler's own runtime headers are part of every corpus.** The two nodes
    the merged thread classifier gained come from `runtime/include/threads.h`, not from any
-   corpus source; a name-based census that only greps the corpus measures the files it was
-   handed, not the code that compiles.
+   corpus source; a name-based census that only greps the corpus measures the files it
+   was handed, not the code that compiles.
 
 ### Open, ranked
 
 1. ~~Re-arm the benignity probe~~ **DONE, 2026-08-10** — see the section below. The
    answer exists: at `-O1`/`-O2`/`-O3` every keepable divergent body is benign; at `-O0`
    one is a miscompile that segfaults the compiler.
-2. **`ast_eval_slice_globl`'s `VT_STRUCT` rejection** — 3,481 nodes, one condition.
+2. ~~**`ast_eval_slice_globl`'s `VT_STRUCT` rejection**~~ **DONE, 2026-08-10** (`wt/globagg`),
+   and the 3,481 was never the size of it — see the landed section.
 3. ~~Re-take the two owed deltas~~ **DONE, 2026-08-10** — see the section below.
    `cleanup_symbols`'s `-O0` arena is the first named defect in the discard set that the
    byte gate is catching; finding out why it is wrong is the new open item here.
@@ -228,7 +247,21 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    stays out of reach and the ternary fold refuses that shape to keep TCO firing.
 5. `SR_GLOB_MAX` is 4,096 in `slicerun` with no reset between arenas and no message — the
    same silent cap `ast_adump_intern` just made loud. Fails safe; a coverage cliff.
-6. The `rir-coverage` lowerable bank was **already stale before this wave**: 0.0414pp of the
+   **Measured, and it is not binding today**: raising it to 65,536 leaves the whole gcc
+   torture census byte-identical, so fewer than 4,096 distinct global symbols reach
+   `slicerun_reloc` over all 15,923 bodies. Its sibling `SR_GLOB_STRIDE` (4 KiB per symbol,
+   with no check that an object fits) is the one that would fail *wrong* rather than safe —
+   a field or element past 4 KiB lands in the next symbol's key range and two distinct
+   locations collapse to one live-in slot, which both executors and the oracle would then
+   share and agree on. Raising the stride to 64 KiB is also byte-identical over gcc torture,
+   so that hazard is unexercised there; it is not proven absent elsewhere, and the honest
+   fix is a per-symbol range sized from the dumped extent rather than a fixed stride.
+6. **Stop pricing global-data work on gcc c-torture.** `wt/globagg` measured −405 refused
+   blocks there of which **384 are four macro-generated files**, and +39,203 indexed loads
+   of which **39,092 are fourteen memory-op files**. The same fix on `src/*.c` is +2.82 pp of
+   accepted nodes against +0.067 pp on torture. Every remaining gap in this area needs a
+   hand-written denominator — `src/`, musl, qemu — before it is ranked.
+7. The `rir-coverage` lowerable bank was **already stale before this wave**: 0.0414pp of the
    0.0671pp drift accumulated over the 34 commits before it, inside the 0.05pp tolerance.
    Dilution by less-lowerable new code is normal and will recur; the metric needs either a
    corpus-normalised form or a scheduled re-take.
@@ -721,6 +754,184 @@ runs on every dispatch. What it produces is a second independent implementation 
 the first against real data rather than test data. That is a currency which converts —
 the device differential has already caught three miscompiles that internal comparisons
 were structurally blind to — whereas device-eligible blocks never had an exchange rate.
+
+## Landed — a global aggregate resolves as an address, and the bucket named for it does not move, 2026-08-10 (`wt/globagg`)
+
+**The change is one new predicate and one call site.** `ast_eval_slice_globl_agg` accepts the
+one `Ref` shape `ast_eval_slice_globl` refuses on purpose — `VT_CONST | VT_LVAL | VT_SYM`
+whose type word is `VT_STRUCT` and not `VT_ARRAY` — relocates it through
+`ast_eval_slice_reloc_fn` and returns `base + ival`. Its only caller is
+`ast_eval_slice_frame_off`'s `AST_EVAL_OP_MEMBER` / `AST_EVAL_OP_ADDR` arm, which now tries
+it when the recursive `frame_off` on the base fails. Nothing else in the tree changed.
+
+**Widening `ast_eval_slice_globl` itself would have been the trap-8 shape, and it looks
+better on the census.** Five value contexts read that function's verdict directly — the
+`AST_Ref` arms of `ast_eval_slice_kind_ok`, `ast_eval_slice_rec`, `spv_expr`, `msl_expr` and
+`cref_expr` — and every one of them is guarded only by `!(t & VT_ARRAY)`. A `VT_STRUCT`
+`Ref` passes that guard, so widening `globl` would make all five load a live-in word *at the
+struct's base offset* and hand it back as a value of struct type. It would also have read as
+a triumph: **62,228 `ref-not-local/global-aggregate` nodes turn accepted over gcc torture**,
+which is 45.7% of the largest refusal class in the corpus. The offset resolved here is only
+ever folded into a field key by the caller; the base itself never survives as an operand.
+
+One gotcha cost a build cycle and is worth stating: `slicerun.c` and `spvgate.c` define
+`ast_bad_type(tt)` as *"`VT_STRUCT` or `VT_FUNC` or `VT_VOID`"*, so the customary
+`ast_bad_type(t) ||` guard silently rejects the entire class this function exists to admit.
+
+### Measured — gcc c-torture, 1,693 programs, 15,923 bodies, `--no-inline` so the tree is fixed
+
+| | before | after | delta |
+| --- | ---: | ---: | ---: |
+| **refused blocks** (`blockcause: refused-blocks`) | 85,307 | **84,902** | **−405** |
+| frame-accepted blocks | 33,921 | **34,326** | **+405** |
+| blocks walked | 119,228 | 119,228 | 0 |
+| accepted nodes (**expression** predicate, `allow_load = 0`) | 393,401 | 394,191 | +790 (+0.067 pp of 1,179,839) |
+| `ref-not-local` | 136,639 | 136,639 | **0** |
+| `ref-not-local/global-aggregate` | 62,228 | **62,228** | **0** |
+| `op-unary` | 105,568 | 105,073 | −495 |
+| `no-working-type` | 32,158 | **1,299** | −30,859 |
+| `child-refused` | 131,548 | 162,112 | +30,564 (re-attribution) |
+| memshape `load/dynidx` (**frame** predicate) | 2,084 | **41,287** | **+39,203** |
+| memshape `load/idx-base-not-array` | 41,080 | 1,864 | −39,216 |
+| memshape `store/dynidx` | 748 | 758 | +10 |
+| memshape `store/dest-other=frame-off` | 693 | 2,619 | +1,926 |
+| memshape `store/dest-other=global-base` | 1,986 | 60 | −1,926 |
+| `idx-operand-kind 17` (member base is a `VT_SYM` `Ref`, unresolved) | 39,221 | 5 | −39,216 |
+
+Both sides are a partition: `blockcause: causes-sum` equals `refused-blocks` on each
+(85,307 and 84,902), `frame-accepted + refused` reproduces 119,228 on each, and
+`ref-not-local-classes-sum` reproduces `ref-not-local` on each.
+
+**Which predicate produced which number matters more than any of them.**
+`ref-not-local/global-aggregate` is a *node census asking the expression predicate*, where
+`allow_load = 0` refuses every `AST_Load` and where the base `Ref` of `gs.arr[i]` is an
+address rather than a value. That class **cannot** move for this fix, and it did not: 62,228
+before, 62,228 after. The handoff's headline — *"`ref-not-local/global-aggregate` is 3,481
+nodes, unmoved"* — was the right shape attached to the wrong quantity, and the 3,481 does
+not reproduce on either corpus measured here (233 on the `slice/refusal-classes` corpus,
+62,228 on gcc torture). Where the fix does land is the **frame** predicate: 39,203 more
+indexed loads resolve, and 405 more blocks are frame work.
+
+`no-working-type` collapsing by 30,859 and `child-refused` growing by 30,564 are the same
+nodes changing their reported cause, not new refusals: `ast_eval_slice_wtype` now resolves a
+type through a member fold on a global, so the node is refused for its children instead of
+for having no working type. The same shift runs through the block table —
+`block/ctrl-cond` 31,871 → 1,025, `block/stmt-invoke` 48,039 → 78,912, and `condcause
+Ref/global-aggregate` 30,875 → 19 — because a condition that used to die on the aggregate
+now reaches the call in the block below it.
+
+### The distribution, which matters more than the sum
+
+Both headline figures are concentrated in a handful of generated programs. Measured per
+file, `mcc -c … -O1` into its own dump, the same two binaries as above:
+
+| | corpus total | in the named files | share | rest of the corpus |
+| --- | ---: | ---: | ---: | ---: |
+| refused blocks recovered | 405 | **384** in 4 files | **94.8%** | 21 over 1,689 programs |
+| `load/dynidx` gained | 39,203 | **39,092** in 14 files | **99.7%** | 111 over 1,679 programs |
+
+The block gain is `20040629-1.c` and its two siblings that `#include` it
+(`20040705-1.c`, `20040705-2.c`) at **+126 each**, plus `990326-1.c` at +6. That file is a
+macro generator: three file-scope bit-field structs and a `T(n, pre, post, op)` macro
+expanded ~130 times into one-statement functions of the form `b.i op= x`. It is exactly the
+shape this fix unlocks, and one source file produces 126 near-identical blocks of it.
+
+The load gain is the `memcpy-ax.h` family — `memcpy-a1/a2/a4/a8.c` at **8,192 each** — plus
+`memclr.c` at 6,144; 38,912 of 39,203 (**99.3%**) from those five. They are a global struct
+holding a large `char` array, copied element by element in unrolled code, which is why
+39,412 of the new `load/dynidx` entries have a one-byte element width.
+
+**So on gcc torture this is not a broad widening.** Sampling every sixth program (262
+dumped) finds 3 files with any block gain, 126 of the 128 blocks in one of them; sampling
+every twelfth (133 dumped) finds 2 files with any load gain.
+
+### The same fix on non-generated code, which is the useful number
+
+`mcc`'s own `src/*.c`, 327 bodies / 28,469 nodes / 1,535 blocks, same two binaries:
+
+| | before | after | delta |
+| --- | ---: | ---: | ---: |
+| refused blocks | 1,085 | 1,073 | **−12 (−1.11%)** |
+| frame-accepted blocks | 450 | 462 | **+12 (+2.67%)** |
+| accepted nodes (expression predicate) | 13,984 | 14,787 | **+803, +2.82 pp** |
+| `ref-not-local/global-aggregate` | 545 | 545 | 0 |
+| …of which `parent-open` | 0 | **515** | +515 (94.5% of the class) |
+| `load/dynidx` | 149 | 159 | +10 |
+| `load/idx-base-not-array` | 687 | 667 | −20 |
+
+**+2.82 pp of accepted nodes here against +0.067 pp on gcc torture** — 42× — because mcc is
+written in file-scope structs and the torture corpus is not. The one number that is *larger*
+on real code than on the million-node corpus is the one to keep: this fix is worth roughly a
+tenth of `src/`'s remaining refused blocks' worth of nodes, spread across the tree rather
+than piled in four generated files.
+
+One small attribution debt comes with that: `block/no-cause` goes 66 → 85 and its
+`nocause: statement-unmodelled` sub-bucket 31 → 50, so 19 blocks are still refused with no
+cause the walker can name. `block_cause_stmt` is a looser approximation of
+`mcc_slice_frame_stmt_ok` (the same gap correction 2 of the 2026-08-10 handoff records), and
+these 19 are on the far side of it. They are not new refusals — the total fell by 405.
+
+With leaf inlining left on (the default) the same run reads **85,259 → 84,854 refused
+blocks, the same −405**, and the walked tree *grows by 98 nodes* because seven more callees
+become inlinable (`leaf-callees` 386 → 393, `inline-grafts` 563 → 570). That is why the
+table above is taken with `--no-inline`: with inlining on, the denominator moves.
+
+### `mcc` itself is untouched, and that bounds the blast radius
+
+`ast_eval_slice_reloc_fn` has no setter anywhere in `src/` — only `tools/slicerun.c` installs
+one — so `ast_eval_slice_globl` and `ast_eval_slice_globl_agg` both return 0 inside the
+compiler and `frame_off` behaves exactly as before. Checked rather than argued: the arena
+dump over the 61-file `slice/refusal-classes` corpus is identical before and after except
+for two `AST_Literal` nodes carrying a raw pointer value, and **the same binary run twice
+differs in exactly those two nodes**, so it is ASLR and not the change.
+
+### Two attribution defects found while measuring, both fixed here
+
+1. **`refuse_parent_blocked` asked the wrong predicate.** It called `refuse_local` on the
+   parent, whose `AST_Unary` arm *always* returns `REF_OP_UNARY` for an
+   `AST_EVAL_OP_MEMBER` node — so a member fold could never be reported as an open parent
+   and `parent-open` for `global-aggregate` was pinned at 3 **by construction**. It now asks
+   `ast_eval_slice_kind_ok` first, exactly as `refuse_walk` does. On the pre-change
+   predicate this is a no-op (the whole census is byte-identical); after the widening
+   `global-aggregate` reads **parent-open = 396**, i.e. 393 global struct bases whose scalar
+   member fold is now an accepted expression. The 2026-08-09 `wt/refwiden` verdict — *"3
+   nodes corpus-wide have an open parent, so widening only the `Ref` half buys 3 nodes"* —
+   was measured with the broken probe. Its *conclusion* survives (the `Ref` half is still
+   not where the value is; the member fold is), but the 3 was not evidence for it.
+2. **`refuse_det` was polluted by the parent probe.** Because `refuse_parent_blocked` called
+   `refuse_local`, nodes examined only as somebody else's parent were writing into the
+   detail histogram: 393 phantom `op-unary member (0x40001) in base-of-an-address` records
+   that no walked node produced. They are gone with the fix.
+
+### Validation
+
+`ctest -R "^slice/"` is **49 of 49, 0 failures**, and that includes all four
+`slice/cref-oracle-*` corpus cells — gcc c-torture (1,394 s), llvm-test-suite regression-c
+(1,170 s), llvm-test-suite unittests (727 s), compiler-rt builtins-unit (414 s) — each of
+which adjudicates the CPU reference against gcc *and* clang and then re-runs the whole corpus
+mutated to prove the differential is not blind. `slice/census` and `slice/refusal-classes`
+pass unchanged: their corpus is the 60-file `tests/exec` prefix, where this fix moves
+nothing at all (the whole `--refusals` output is byte-identical there). No full `ctest` was
+run in this worktree; that belongs on merged `main` on a quiet box, and this one was at load
+average 250–350 from concurrent agents throughout.
+
+### What pins it
+
+`suite_frame` in `tools/slicerun.c` gains two blocks built on `mk_gref` / `mk_gmember` /
+`mk_gmember_idx`, so the shape is exercised through a real `VT_SYM` `Ref` and the real
+relocation table rather than through the dump: an indexed global array field
+(`gs.arr[i] = gs.arr[i] + 1`, four element slots plus the index, CPU and device compared over
+eight frames) and a scalar global field (`l = gs.b + 100`). Both assert the key through
+`slicerun_glob_of`, which is the map `cref_expr` spells a global with — if the evaluator's
+slot numbering and the oracle's `g_<tag>_<id>_<delta>` name ever disagree about which object
+a key is, that assertion is what says so. No new ctest cell; `frame` is already in
+`slicerun`'s `SUITES[]`.
+
+**Honest gap in the coverage.** The cref oracle adjudicates *expression* slices, so it
+covers the newly-accepted scalar field reads (`gs.b`) and not the indexed ones — `allow_load`
+is 0 in the expression slicer, so `gs.arr[i]` never becomes an oracle fragment. The 39,203
+indexed loads are covered by the CPU/device differential (`slice/frame`, `slice/mem` and the
+pin above), not by gcc-and-clang.
 
 ## Landed — `s.arr[i]` indexes like `arr[i]`, and gap #4's 58,328 was 98.9% globals, 2026-08-09 (`wt/memberidx`)
 
