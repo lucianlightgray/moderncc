@@ -8996,6 +8996,9 @@ ST_FUNC void indir(void) { MCC_TRACE("enter\n");
 
 #if defined MCC_TARGET_RISCV64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_X86_64
 static void check_va_start_register(void) { MCC_TRACE("enter\n");
+	int v = vtop->r & VT_VALMASK;
+	if (!(vtop->r & VT_SYM) && v != VT_LOCAL && v != VT_LLOCAL)
+		{ MCC_TRACE("br\n"); return; }
 	if (vtop->sym && vtop->sym->a.is_register)
 		{ MCC_TRACE("br\n"); mcc_warning("undefined behavior when the second parameter of 'va_start' "
 								"is declared with 'register' storage"); }
