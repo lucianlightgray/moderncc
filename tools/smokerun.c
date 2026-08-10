@@ -197,9 +197,29 @@ static unsigned now_ms(void)
 	return host_clock_ms();
 }
 
+#define SMK_FORK_TRIES 6
+#define SMK_FORK_BACKOFF_MS 120
+
+static unsigned sm_fork_retries;
+
 static int sm_system(const char *cmd)
 {
-	return system(cmd);
+	int st = -1;
+	int i;
+
+	for (i = 0; i < SMK_FORK_TRIES; i++) {
+		st = system(cmd);
+		if (st != -1)
+			return st;
+		sm_fork_retries++;
+		if (i + 1 < SMK_FORK_TRIES) {
+			unsigned t0 = now_ms();
+			while (now_ms() - t0 < SMK_FORK_BACKOFF_MS * (unsigned)(i + 1))
+				;
+		}
+	}
+	fprintf(stderr, "smoke: fork failed %d times for: %s\n", SMK_FORK_TRIES, cmd);
+	return st;
 }
 
 #define SMK_TRAP_EXIT 97
@@ -1233,6 +1253,11 @@ int main(int argc, char **argv)
 
 	note("smokerun: levels=%d checks=%ld value-cases=%ld failures=%d\n",
 			 g_levels_run, g_checks_total, g_cases_total, g_fail);
+
+	if (sm_fork_retries)
+		note("smokerun: %u fork retries under host load; results are unaffected "
+				 "but the box was contended\n",
+				 sm_fork_retries);
 
 	if (g_levels_run == 0) {
 		fprintf(stderr, "smokerun: zero levels ran; a suite that executed nothing "
