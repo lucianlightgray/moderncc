@@ -6578,6 +6578,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600
                 ENVIRONMENT "MCC_RIR_CENSUS=1")
 
+            add_test(NAME rir-nofb-probe-self
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
+                        "${CMAKE_BINARY_DIR}" --corpus self --levels O0,O1,O2,O3
+                        --nofb-probe --opt-in)
+            set_tests_properties(rir-nofb-probe-self PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 7200
+                ENVIRONMENT "MCC_RIR_CENSUS=1")
+
             add_test(NAME "census/gates-armed"
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/census-armed.py"
                         "${CMAKE_BINARY_DIR}" --min-cells 5)
@@ -6679,6 +6687,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             mcc_skip_test("loop-census" "${_nopy_why}" LABELS census)
             mcc_skip_test("loop-census-numeric" "${_nopy_why}" LABELS census)
             mcc_skip_test("rir-nofb-probe" "${_nopy_why}" LABELS census)
+            mcc_skip_test("rir-nofb-probe-self" "${_nopy_why}" LABELS census)
             mcc_skip_test("census/gates-armed" "${_nopy_why}" LABELS census)
             foreach(_op -O2 -O3)
                 string(REPLACE "-" "" _optag "${_op}")

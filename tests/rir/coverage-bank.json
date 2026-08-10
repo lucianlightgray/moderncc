@@ -5,7 +5,9 @@
   "MCC_EMBED_JIT": "1"
  },
  "nofb_miscompiles": {
-  "O0": [],
+  "O0": [
+   "src/mcc.c::cleanup_symbols"
+  ],
   "O1": [],
   "O2": [],
   "O3": []

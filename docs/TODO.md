@@ -94,6 +94,11 @@ bodies at every level because it is wired to `--corpus exec`, and the entire div
 population is in `src/mcc.c`, which that corpus excludes. "The divergent bodies are benign"
 is **unmeasured, not measured-empty**. Re-arming it is ~10 lines and is the next step.
 
+> **Superseded 2026-08-10** by "The benignity probe, re-armed" below. The corpus was the
+> smaller of two causes; `read_rows` rejected every divergent row on every corpus. Now
+> measured: 62 of 67 keepable bodies benign and 0 miscompiles at `-O2`, 1 miscompile at
+> `-O0`, 5 bodies that no switch can keep.
+
 ### What the ten branches bought, measured
 
 | item | measured |
@@ -180,10 +185,13 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
 
 ### Open, ranked
 
-1. **Re-arm the benignity probe** (~10 lines): point `rir-nofb-probe` at a corpus that
-   contains divergent bodies. Until then nothing checks the 66.
+1. ~~Re-arm the benignity probe~~ **DONE, 2026-08-10** — see the section below. The
+   answer exists: at `-O1`/`-O2`/`-O3` every keepable divergent body is benign; at `-O0`
+   one is a miscompile that segfaults the compiler.
 2. **`ast_eval_slice_globl`'s `VT_STRUCT` rejection** — 3,481 nodes, one condition.
-3. **Re-take the two owed deltas** (earlyret × ternary; globreloc × rirphase).
+3. ~~Re-take the two owed deltas~~ **DONE, 2026-08-10** — see the section below.
+   `cleanup_symbols`'s `-O0` arena is the first named defect in the discard set that the
+   byte gate is catching; finding out why it is wrong is the new open item here.
 4. `ast_tco_run` cannot see through an `AST_If` op 5, so the tail-recursive two-exit `if`
    stays out of reach and the ternary fold refuses that shape to keep TCO firing.
 5. `SR_GLOB_MAX` is 4,096 in `slicerun` with no reset between arenas and no message — the
@@ -436,6 +444,158 @@ host fact excuses a skip) and its twin as `registered`.
 4. `mcc_gpu_quiesce`'s unbounded `vkDeviceWaitIdle` becomes reachable from `atexit` the
    moment `L2` wires the device into `mccjit_shutdown`. Clear `mcc_gpu.ok` on
    `VK_ERROR_DEVICE_LOST` **before** that wiring, not after.
+
+## The benignity probe, re-armed — the first real answer, 2026-08-10
+
+> Branch `wt/probearm`. This section replaces open items 1 and 3 above. Every figure was
+> taken on this host (Linux, elf/x86-64) from `cmake-debug`, built after `cmake-cross`.
+
+### The probe was dead for two reasons, and the corpus was the smaller one
+
+`rir-coverage.py --nofb-probe` reported 0 divergent bodies at every level. The handoff
+named the wiring — `--corpus exec`, which excludes `src/mcc.c` where the whole divergent
+population lives, and `nofb_probe` also filtered `mcc.c` out of the source list by hand.
+That is real, but on its own it would still have found the exec corpus's own 12–24
+divergent bodies. It found none, because of a second defect:
+
+**`read_rows` required a row of exactly 7 fields, and every byte-divergent row has 11.**
+`rir_prod_note` appends `first=/end=/blen=/nlen=` to a `fallback` row whose span is known
+(`src/mccrir.c`, the `is_fb && rir_span_blen >= 0` arm, added by `a6a9758b`). The probe
+selects exactly `verdict == fallback && unfaithful in DISCARD` — precisely the rows that
+carry the extra columns — so from that commit onward the probe's input was **empty by
+construction on every corpus**. `--top` and `--classify` were silently dropping the same
+rows. Fixed by accepting `>= 7` and truncating.
+
+That is the shape of trap 1 again: the cell was green, the number was 0, and 0 meant "the
+parser of the evidence rejected all of it".
+
+### What the compiler's own divergent bodies do when their code is allowed to ship
+
+`src/mcc.c` is not a program to `-run`, so the comparison is a self-host-and-compare.
+For each divergent body: link a stage-1 `mcc` with **that** body's replay bytes kept
+(`-fno-replay-fallback` plus `MCC_RIR_NOFB_SKIP` naming every other divergent body) and
+require it to agree with a **control** stage-1 — same flags, keeping *nothing* — on a
+fixed workload: the object bytes of a stage-2 self-compile of `src/mcc.c`, plus exit
+status and stdout of 26 `tests/exec` programs run through the stage-1. The stage-1 binaries
+are linked into the build directory, because `mcc` derives its include search from
+`argv[0]` (trap 2) and a stage-1 in a temp dir cannot find its own headers.
+
+Two arming checks, because a probe that changes nothing reports everything benign:
+
+- the **control** must reproduce a plain build. It does at `-O1`/`-O2`/`-O3`. At `-O0` its
+  object differs — `MCC_FORCE_REPLAY` turns replay on where production has it off — but
+  **0 of 27 workload items differ**, so it is still a sound reference.
+- each **probe** must *not* reproduce the control's object, or that body was never kept.
+
+| level | divergent bodies | body bytes | benign | MISCOMPILE | unkeepable |
+| --- | --- | --- | --- | --- | --- |
+| `-O0` | 107 | 254,289 | 101 | **1** | 5 |
+| `-O1` | 69 | 122,060 | 64 | 0 | 5 |
+| `-O2` | 67 | 121,489 | 62 | 0 | 5 |
+| `-O3` | 67 | 121,489 | 62 | 0 | 5 |
+
+**The `-O0` miscompile is `cleanup_symbols` (`src/mccrun.c`, 356 B, `why=len`).** A stage-1
+that ships its replay bytes **segfaults** — `mcc -O1 -run tests/exec/arch/arm64.c` returns
+`-11` against the control's clean run; 24 of 27 workload items differ. It is divergent at
+`-O1`/`-O2`/`-O3` too, and benign at all three: the same body's arena is wrong only at
+`-O0`. Banked in `tests/rir/coverage-bank.json` under `nofb_miscompiles.O0`, which is what
+that field is for — it held `structs_unions/union_cast.c::main` before. **It is not banked
+to make a cell green; it is banked so the next new one fails.**
+
+**The five "unkeepable" bodies are not benign, they are unmeasurable** — and they are the
+same five at every level: `cplx_extract_const`, `gen_cast`, `merge_funcattr`,
+`merge_symattr`, `update_gnu_hash` (9,941 B at `-O2`, 8.2% of the divergent bytes).
+`-fno-replay-fallback` does not keep them, because `keep` also requires `!ast_fn_hole` and
+`ast_arena_has_hole` is true for a body containing inline asm or a dangling register ref.
+Their replay bytes cannot be installed by any switch, so nothing can say whether they are
+correct. Reporting them as "benign" is exactly the failure this probe exists to avoid, so
+they are counted apart.
+
+The exec corpus, armed by the same fix, is clean: **24/24 benign at `-O0`, 12 of 13 at
+`-O1` (one in a program that does not run standalone), 12/12 at `-O2` and `-O3`.**
+
+### What this says about the `faithful` gate
+
+The gate is doing real work — the discard set contains at least one body whose code
+crashes the compiler — but the defect density at the levels that ship is **0 of 62
+keepable bodies at `-O2`**, three levels running. So the evidence now reads: the discard
+set is *not* uniformly benign, and it is *not* uniformly suspect either. The honest
+statement is per level, and `-O0` is the only level with a defect.
+
+What is **not** established, and should not be claimed: this probes one workload. A body
+benign on "compile `src/mcc.c` and run 26 programs" is benign *on that*, not proven
+equivalent. The five unkeepable bodies are unprobed at any level.
+
+**New cell `rir-nofb-probe-self`** (`--corpus self --levels O0,O1,O2,O3`), label `census`,
+opt-in behind `MCC_RIR_CENSUS=1`, ~10 min. Cell count 9501 → **9502**. `rir-nofb-probe`
+keeps the exec corpus; the bank merge now keeps entries whose source another corpus owns,
+so re-banking one arm no longer erases the other's.
+
+## The two owed deltas, re-taken on merged `main`, 2026-08-10
+
+### `wt/earlyret` × the ternary fold — the 2×2, on one dump and one binary
+
+1,693 `vendor/gcc-c-torture-execute` programs at `-O1`, one arena dump per axis, one
+`slicerun`. The fold axis is `MCC_RIR_TERN_NORM=0` at dump time; the early-return axis was
+a **temporary, uncommitted** env gate on the `AST_Return` arm of
+`mcc_slice_frame_stmt_ok`, reverted and the binary rebuilt and re-verified to reproduce
+33,969 before anything was committed. `--refusals` counts are pure arena replay and are
+deterministic under load.
+
+| `frame-accepted-blocks` | early-return OFF | early-return ON | early-return buys |
+| --- | --- | --- | --- |
+| fold OFF, population **119,363** | 33,825 | 34,094 | **+269** |
+| fold ON, population **119,228** | 33,749 | 33,969 | **+220** |
+| fold changes | **−76** | **−125** | |
+
+**Early-return admission is worth +269 alone and +220 in the fold's presence — the fold
+absorbs 49 of it, 18%.** The original `wt/earlyret` figure was +264 (33,646 → 33,910) on a
+tree without the fold and before nine other branches landed; the axis reproduces at +269
+today, so the branch's own claim stands and the number to carry forward is **+220**.
+
+**The fold's effect on this metric is negative, and that is not a defect.** It removes 135
+blocks from the population by absorbing them into their parents, and 125 of those were
+already accepted. Both figures reproduce the handoff's account exactly: the population is
+119,363 without the fold and 119,228 with it, which is where the reverted branch's
+"−82 against an unchanged 119,363" came from. **State the population every time.** The
+acceptance rate moves 28.34% → 28.31% (early-return off) and 28.56% → 28.49% (on). The
+fold was never ranked for block admission — it was ranked for grafting `sgn`/`choose`/
+`clampk` in folded form — so this table is not its scorecard, it is the correction to a
+number that was read as one.
+
+Both together against neither: **+144 accepted blocks on a population 135 smaller.**
+
+Device side, one run, **measured at load average ~286 and so reported as indicative**:
+`frame-earlyret-accepted=220` (deterministic, agrees with the table),
+`frame-earlyret-built=217`, `frame-earlyret-compared=217`, `funnel-agreed=33,586`,
+`frame-mismatches=0`, `mismatches=0`.
+
+### `wt/globreloc-int` × `wt/rirphase`
+
+First 400 `vendor/gcc-c-torture-execute` programs at `-O1`, **one** dump, one `slicerun`
+binary, `--no-globals` for the baseline (the only difference is the relocation hook).
+2,183 bodies. Slice, tuple and cref counts are deterministic; `dispatches` and
+`funnel-agreed` are device figures taken under the same contention.
+
+| figure | as measured on `wt/globreloc-int` | merged `main`, no-globals → globals |
+| --- | --- | --- |
+| slices | 1,905 → 2,551 (+646) | **2,727 → 3,374 (+647)** |
+| tuples | 15,240 → 20,408 (+5,168) | **21,816 → 26,992 (+5,176)** |
+| cref-emitted | 1,901 → 2,551 | **2,720 → 3,367** |
+| cref-tuples | 15,065 → 19,986 | **21,610 → 26,507** |
+| dispatches (device) | 2,872 → 3,535 | **3,327 → 3,987** |
+| frame-accepted | — | 660 → 674 |
+| fragments reading a global | 670 | **652** |
+| mismatches | 0 | **0** |
+
+**The delta survived `rirphase` almost exactly (+646 → +647 slices, +5,168 → +5,176
+tuples) while every absolute figure moved by ~800 slices and ~6,600 tuples.** So the
+branch's *claim* is intact and its *numbers* were all stale — which is the general lesson:
+a difference measured on one tree can survive a rebase that invalidates both of its
+endpoints. The one figure that genuinely moved is the fragment count, 670 → **652**: it is
+derived by grepping the emitted cref directory for the `static volatile long long g_`
+declaration, not printed by any tool, and it is the only one of these that is a count of
+*files* rather than of arena objects.
 
 ## Total lowering — the decided architecture, 2026-08-09
 
