@@ -87,8 +87,14 @@ regression; item 22 is since **corrected** by `wt/smokedepth` — mcc rounds eve
 a flag-selectable evaluation format, so what remains there is a decision, not a fix —
 and the same sweeps filed items 23–26: the `(unsigned int)` cast losing its truncation
 in wider expressions, the `long double`→`int` truncation inconsistency, the `--embed-jit`
-double archive load that blocks the `unsigned long long` conversion leg, and the
-`_Complex` sibling-block miscompile whose shape is now uncovered.
+double archive load that blocks the `unsigned long long` conversion leg — **item 25 is
+diagnosed as of 2026-08-10 and nothing is loaded twice**; host `libgcc.a` and mcc's
+`libmccrt.a` are both in the `--embed-jit` link and define 68 symbols strong in both, and
+the one-line weak-symbol fix is *wrong* for a reason smoke catches — and the
+`_Complex` sibling-block miscompile — **item 26 is fixed as of 2026-08-10**, and it was
+neither a stack-slot overlap nor anything to do with the locals sharing names; the arena
+replay was handing out a recorded frame slot too small for the object about to go in it.
+Its shape is covered by `smoke/native` again. Items 21, 23, 24 and 25 stand.
 
 Three machines share this tree: this one (Linux/Vulkan), a Windows box and a Mac box.
 Both peers were idle through this wave.
@@ -288,6 +294,16 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    the merged thread classifier gained come from `runtime/include/threads.h`, not from any
    corpus source; a name-based census that only greps the corpus measures the files it
    was handed, not the code that compiles.
+11. **NEW — a positional replay stream is a correctness contract, and nothing was checking
+   it.** `ast_alloc_loc` replays recorded frame offsets by position on the assumption that
+   the arena replay makes the same sequence of requests the parser made. It does not — any
+   optimizer that folds a call away deletes that call's staging slot — and the entry handed
+   back was never checked against the size or alignment of the object about to be stored in
+   it. A 16-byte `_Complex double` on an 8-byte `_Complex float` slot overlapped its
+   neighbour by a word and computed `x.re + x.im`. **When one pass replays another pass's
+   decisions by index, the index is not the contract; record what the entry was *for* and
+   check it on the way out.** Its sibling `rir_loc_replay` resyncs by output position and
+   still does not check size — see the landed section.
 
 ### Open, ranked
 
@@ -383,6 +399,116 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
     equivalent to another, and how much optimizer work is duplicated across them? `src/*.c`
     is the right denominator, not gcc c-torture (item 6). If the duplication is small, the
     cache is `opt-slice` again.
+
+## Landed — item 26 was not a stack-slot overlap, it was the replay frame record handing out a slot too small for what it was about to hold, 2026-08-10
+
+`ast_alloc_loc` records every frame offset the parser allocates and the arena replay consumes
+that record **positionally**, with no check that the entry it hands back is large enough for
+the object about to be stored in it. The replay does not make the parser's sequence of
+requests — an optimizer that folds a call away removes that call's return-staging slot — so
+after the first dropped request, every later one reads its predecessor's entry.
+
+### What the board had wrong
+
+Two of item 26's four characterising claims do not survive the reproducer, and a third is
+right for a reason it did not give:
+
+1. **"same-named locals of different types in sibling blocks"** — the names are irrelevant.
+   Renaming all twelve locals apart (`vr_C32`, `vr_C64`, …) reproduces it unchanged.
+2. **"what a stack-slot overlap bug looks like rather than a fold bug"** — right symptom,
+   wrong layer. The frame *allocator* is fine; nothing in it overlaps two live objects. It is
+   the *replay of a recorded allocation* that puts a 16-byte object on an 8-byte slot.
+3. **"which rows break moves when unrelated locals are added or removed"** — true, and now
+   explained: adding a local shifts where the record and the replay stop agreeing. In the
+   minimized case the shape is monotone, not chaotic — switch arms 0..8 are correct and
+   adding arm 9 breaks it, because that is where the replay's request count first falls
+   behind the record's.
+
+The fourth claim, that `-O0` and `-O1` are right and `-O2`+ are wrong, holds — and the reason
+is that the AST replay pass runs only when promotion is planned. `-O2 -fno-promote-locals` is
+correct at every arm count, which is what localised this to `ast_alloc_loc`'s replay branch
+rather than to any of the 26 strategies.
+
+### The arithmetic, exactly
+
+On the minimized reproducer the parser allocates **26** frame requests per arm (8 B/align 4
+for `_Complex float`, 16/8 for `_Complex double`, 32/16 for `_Complex long double`); the
+replay makes **22**. Replay request 23 asks for 16/8 and is handed record entry 23, an 8/4
+slot at `-268`; request 24 gets `-276`. Two 16-byte complex objects land 8 bytes apart, so
+`x`'s imaginary half and `y`'s real half are the same word:
+
+    r.re = x.re + y.re  ->  reads x.re + x.im  ->  1.5 + (-2.5) = -1
+
+which is the `-1 + 1.5i` for `(1.5,-2.5) + (0.25,4.0)` the board recorded, and the reason it
+read as "`ar + ai` for the real part". The offsets are also `4 mod 8`, i.e. an `align 8`
+object on an `align 4` slot — the alignment was as wrong as the size.
+
+### The fix, and why skipping forward is safe
+
+`ast_locrec` now carries `size` and `align` beside each offset, and the replay skips forward
+to the first entry that still fits (`size >=`, `align >=`) rather than taking the next one
+blindly. This cannot alias: the record is a strictly descending bump allocation, so its
+entries are pairwise disjoint and handing them out in order — with gaps — is always safe.
+Accepting an over-large or over-aligned entry keeps every case that already worked
+byte-identical, so the change is confined to the cases that were previously corrupt.
+
+### Blast radius, measured
+
+1,693 gcc c-torture programs compiled at `-O2` with the old and new compilers from the same
+directory (trap 2): **1,626 compile, 1,624 byte-identical, 2 differ** — `20070614-1` and
+`complex-6`, both complex-typed, both passing under both compilers, so the old layout was
+overlapping-but-benign for their inputs. The forward skip fires **3 times in the whole
+corpus** and **8 times on the smoke subject** (`smc_run`, 4 at size 16 and 4 at size 32, at
+each of `-O2`/`-O3`/`-O4`).
+
+**The no-entry-fits fallback is unexercised.** When no remaining record entry is large enough
+the request is served from `ast_alloc_temp_loc`'s frontier, which sits below every recorded
+offset — safer than the previous behaviour, which descended `loc` toward the temporary
+region. It did not fire once across gcc torture or the smoke subject, and two hand-built
+probes aimed at starving the record — mixed `_Complex` widths in sibling arms, and
+complex-returning callees offered to the inliner at `-O3` — failed to reach it. It is a
+fail-closed guard with no cell on it; trap 9 applies.
+
+### The shape is covered again, and the cell is proven to fail
+
+`tests/smoke/fcases.h`'s `smc_run` is one function with three sibling `_Complex` arms again,
+which is what item 26 said no cell covered. On the unfixed compiler `smoke/native` fails at
+`-O2`, `-O3`, `-O4`, `-fwrapv` and `-fno-wrapv` with exactly
+
+    FAIL crun c64.add got=bff0000000000000:3ff8000000000000 want=3ffc000000000000:3ff8000000000000
+    FAIL crun c80.add got=8000000000000000:c000000000000000 want=e000000000000000:c000000000000000
+
+and passes on the fixed one. Note what does **not** move: the value digest is
+`d2f8dafc495a5f31` at every level either way, because the `_Complex` sweep calls the same
+function with runtime values and is correct. **Only the named rows catch this** — the case
+for `wt/smokefix`'s named-row table, restated by a defect that a digest cannot see.
+
+`O4 slice-refused:no-static-type` re-banked 489 → 505. The 16 are the subject's, not a
+refusal regression: the same 505 is measured on the *unfixed* compiler with the folded
+subject.
+
+### Still open in this area
+
+`ast_locrec_skip` is the third site that assumes the stream is positional: the inline graft
+of a struct-returning callee burns one recorded entry to stay in step and then allocates its
+return slot fresh, without reading the entry it consumed. Now that the cursor can skip
+forward, a blind skip can eat an entry a later request would have matched. That is a
+fidelity effect and not a correctness one — the later request skips forward or falls back —
+and the byte-identity sweeps above show it is not causing drift today. It should still be
+made to consume by fit rather than by count.
+
+`rir_loc_replay` is the same shape with a better resync — it records the output position
+`ind` at each allocation and advances the cursor past entries left behind by the emitted
+code — and it **still never checks the size or alignment of the entry it returns**. It was
+measured rather than assumed: a report-only probe on the entry the resync actually settles
+on, after the cursor advance, fired **620 times on the smoke subject across `-O0`–`-O4` and
+1,013 times over gcc c-torture at `-O2`, with zero undersized or under-aligned** — every
+one an exact fit. So the position resync is holding, and the probe was reverted rather than
+banked: it is a negative result about a hazard, not a ratchet. **Re-take it before trusting
+that**, because nothing pins it: record `size`/`align` beside `rir_locrec[]`, compare them
+against the request inside `rir_loc_replay` just before `*loc_out = rir_locrec[i++]`, and
+count both firings and mismatches — the firing count is the anti-vacuity half and must be
+reported with the mismatch count, or zero mismatches means nothing.
 
 ## Landed — the parse-depth budget prices again, and the 320 bytes were a `__builtin_complex` local riding every `unary` level, 2026-08-10 (`wt/parseframe`)
 
@@ -10318,7 +10444,41 @@ Ordered by how much a currently-quoted number depends on it.
     (where `1 - 2^-64` rounds to `1.0`) before the integer conversion. Found by the F80
     boundary sweep: `bsweep.F80.FSELMIX{L,R,B}` diverge from both references on exactly the
     corpus entry `1 - LDBL_EPSILON/2`, 62 of 4,096 cases.
-25. **`--embed-jit` loads an archive member twice when a softfloat helper is demanded in
+25. **DIAGNOSED 2026-08-10, and the title below is wrong: nothing is loaded twice.**
+    `mccrt.o` is pulled exactly once. The duplicate is between **two different runtimes**:
+    `--embed-jit` adds the host `libgcc.a` (via `MCC_EMBED_JIT_GCC_LIBDIR` in
+    `mcc_add_jit_engine_embedded`, so the gcc-built engine blob can resolve its own helper
+    references) and mcc's own `libmccrt.a` into the same link, and **68 symbols are defined
+    strong in both**. Traced member by member on the reproducer: libgcc supplies
+    `__lshrti3`, `__ashlti3`, `__ashrti3` and `__fixunsdfdi`; later the embedded archive is
+    scanned, `__floatundisf` is still undefined and only mcc has it, so `mccrt.o` is pulled —
+    and `mccrt.o` also defines `__fixunsdfdi`. Strong vs strong, hence the error. This is
+    why a small standalone does not reproduce: it only demands helpers libgcc also has, so
+    `mccrt.o` is never pulled. The overlap by member is `int128.o` 35, `float128.o` 24,
+    `complexabi.o` 6, `mccrt.o` 3 (`__fixunssfdi`, `__fixunsdfdi`, `__fixunsxfdi`).
+    **A plain `-O2` link never scans libgcc at all**, which is why only `--embed-jit` fails.
+
+    **The obvious fix is wrong, and smoke caught it.** Marking those three weak in
+    `runtime/lib/mccrt.c` makes the link succeed and the subject run — but mcc's own
+    `__fixxfdi` *calls* `__fixunsxfdi`, so the weak symbol rebinds to libgcc underneath it
+    and the result is a hybrid runtime that matches neither: `smoke/native` on that build
+    reports `FAIL xrun x.sll.from.ldbl.1e300 got=0000000000000000 want=8000000000000000`
+    and a changed digest, against `failures=0` for the plain link. In-range conversions were
+    identical across mcc-plain, mcc-embed-jit and gcc-15 (`i25-conv 8a5c06b28f6b2a4a`), so
+    the divergence is confined to the out-of-range UB cases the two runtimes answer
+    differently. **Any fix here has to decide which runtime owns a shared helper and keep
+    mcc's internal callers on one side of that line**; weak binding alone does not, because
+    it silently splits a helper from its own wrapper. Note also that the hybrid already
+    exists today for the symbols libgcc happens to supply first (`__ashlti3` and friends) —
+    it is only invisible because those links do not error.
+
+    Three candidate directions, none taken: give each shared helper a private
+    `__mcc_`-prefixed definition that internal callers bind to plus a weak public alias;
+    split `int128.o`/`float128.o`/`complexabi.o`/`mccrt.o` to per-helper members so a pull
+    never drags an overlapping symbol; or stop adding host `libgcc.a` to the embed-jit link
+    and serve the engine's helper references from `libmccrt.a`, which keeps one runtime and
+    one set of answers if it covers what the gcc-built engine needs. Original entry:
+    **`--embed-jit` loads an archive member twice when a softfloat helper is demanded in
     both link phases.** Any translation unit large enough to reach the JIT boot path and
     containing a single float-to-`unsigned long long` conversion fails to link:
 
@@ -10338,7 +10498,15 @@ Ordered by how much a currently-quoted number depends on it.
     `unsigned long long` back the day this lands. Note that mcc and clang agree and gcc
     differs on `(unsigned long long)1e300` (`2^63` vs `0`), so there is a real divergence
     sitting behind this hole.
-26. **`_Complex` addition is miscompiled at `-O2` and above when same-named locals of
+26. **FIXED, 2026-08-10, and the diagnosis below is wrong in three places.** The cause is
+    not a stack-slot overlap and has nothing to do with the locals sharing names: the arena
+    replay consumes `ast_alloc_loc`'s recorded frame offsets positionally without checking
+    that the entry fits, so once an optimizer drops a request the next `_Complex double`
+    lands on an eight-byte `_Complex float` slot. See the landed section near the top of
+    this file for the arithmetic, the blast radius and the one guard left unexercised. The
+    folded `smc_run` is back in `tests/smoke/fcases.h`, so the shape is covered again and
+    the cell is proven to fail without the fix. Original entry, kept for the record:
+    **`_Complex` addition is miscompiled at `-O2` and above when same-named locals of
     different types live in sibling blocks.** The smoke `smc_run` was one function with
     three `if (tag == ...) { ... }` blocks, each declaring `volatile CTY vr, vi, wr, wi`
     for `CTY` = `float`, `double`, `long double`. At `-O0` and `-O1` every row is right; at
