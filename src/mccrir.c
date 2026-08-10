@@ -4653,7 +4653,7 @@ static int rir_bf_shape(AstLocal n, int *pt0, int *pt1, int *pgvt, int *pbits) {
 	tt = ast_type_t(rir_arena, n);
 	bp = ast_type_bp(rir_arena, n);
 	bs = ast_type_bs(rir_arena, n);
-	if (!(tt & VT_BITFIELD) || bs <= 0)
+	if (!(tt & VT_BITFIELD) || bs <= 0 || bs > 32)
 		return 0;
 	if (!rir_bf_frame_base(ast_first_child(rir_arena, n), 0))
 		return 0;
@@ -4722,22 +4722,37 @@ static int rir_bf_value_pos(AstLocal n) {
 	}
 }
 
+static int rir_bf_uac(int gvt, int bs) {
+	if ((gvt & VT_BTYPE) != VT_INT || !(gvt & VT_UNSIGNED) || bs == 32)
+		return gvt;
+	return VT_INT;
+}
+
 static void rir_bf_lower_load(AstLocal n) {
-	int t0, t1, gvt, bits, bp, bs;
+	int t0, t1, gvt, bits, bp, bs, pt;
 	AstLocal m, e;
 	if (!rir_bf_shape(n, &t0, &t1, &gvt, &bits))
 		return;
 	bp = ast_type_bp(rir_arena, n);
 	bs = ast_type_bs(rir_arena, n);
+	pt = rir_bf_uac(gvt, bs);
 	m = rir_bf_plain(n, t1);
 	e = rir_bf_cvt(gvt, m);
 	e = rir_bf_bin(TOK_SHL, gvt, e, rir_bf_lit(VT_INT, bits - (bp + bs)));
-	ast_set_kind(rir_arena, n, AST_Binary);
-	ast_set_op(rir_arena, n, TOK_SAR);
-	ast_set_type(rir_arena, n, gvt, 0);
 	ast_set_ival(rir_arena, n, 0);
 	ast_set_fbits(rir_arena, n, 0);
 	ast_set_sym(rir_arena, n, 0);
+	if (pt != gvt) {
+		e = rir_bf_bin(TOK_SAR, gvt, e, rir_bf_lit(VT_INT, bits - bs));
+		ast_set_kind(rir_arena, n, AST_Convert);
+		ast_set_op(rir_arena, n, 0);
+		ast_set_type(rir_arena, n, pt, 0);
+		ast_add_child(rir_arena, n, e);
+		return;
+	}
+	ast_set_kind(rir_arena, n, AST_Binary);
+	ast_set_op(rir_arena, n, TOK_SAR);
+	ast_set_type(rir_arena, n, gvt, 0);
 	ast_add_child(rir_arena, n, e);
 	ast_add_child(rir_arena, n, rir_bf_lit(VT_INT, bits - bs));
 }
@@ -4868,6 +4883,12 @@ static void rir_tern_build(AstLocal bb, AstLocal iff, AstLocal ret, AstLocal dro
 	ast_add_child(rir_arena, iff, va);
 	ast_add_child(rir_arena, iff, vb);
 	ast_clear_children(rir_arena, drop);
+	ast_set_kind(rir_arena, drop, AST_Literal);
+	ast_set_op(rir_arena, drop, VT_CONST);
+	ast_set_type(rir_arena, drop, VT_INT, 0);
+	ast_set_ival(rir_arena, drop, 0);
+	ast_set_fbits(rir_arena, drop, 0);
+	ast_set_sym(rir_arena, drop, 0);
 	ast_clear_children(rir_arena, ret);
 	ast_add_child(rir_arena, ret, iff);
 	ast_add_child(rir_arena, bb, ret);
