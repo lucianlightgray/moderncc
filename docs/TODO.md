@@ -285,6 +285,53 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    before (ii) is fixed makes an unbounded `vkDeviceWaitIdle` reachable from `atexit` on
    every run.
 
+## Landed — the parse-depth budget prices again, and the 320 bytes were a `__builtin_complex` local riding every `unary` level, 2026-08-10 (`wt/parseframe`)
+
+`diag.parse-frames` went red on `main` after the `wt/o2wrong` merge: `unary_nested`
+848 → 1168 B, `decl_initializer_nested` 304 → 320 B, worst axis `sizeofchain`
+1024 → 1344 B/level, so `MCC_MAX_PARSE_DEPTH` 512 needed **692 KiB** against a 532 KiB
+bank — 1.48x over the 1024 KiB stack it was sized for, not the 1.92x a reader who did not
+run the cell would assume.
+
+**Neither named suspect was the cost.** `absbuiltin_try` is its own function, so at `-O0`
+its locals are not on the `unary` cycle at all, and the `if (absbuiltin_try(...))` call
+site adds no slot. The 320 bytes are `init_params`, which the range-designator fix grew by
+exactly 320 (`rng_base`, `rng_pre`, `rng_es`, `rng_nb`, `rng_done`, `rng_type` at
+`MCC_INIT_RNG_MAX` 8, plus the `rng_pend*` scratch) — and `unary_nested` holds one **by
+value**, in the `__builtin_complex` constant-folding arm, where only `p.sec` is ever read.
+Every level of `cast`, `derefchain`, `paren` and `sizeofchain` was carrying an
+initializer-parser struct those axes never touch.
+
+`cplx_const_rodata` takes that arm, and the `init_params` with it, out of the recursion. It
+is called from `unary_nested`, calls `init_putv`/`section_add`/`vpush_ref` and never
+re-enters `unary`, so it is on no cycle in `AXES`. `unary_nested` 1168 → **816 B**, below
+the 848 it was banked at; `sizeofchain` 1344 → **992 B/level**; 512 levels need **516
+KiB**, a **1.98x** margin. The bank is untouched — it is a ratchet, and this comes in
+under it rather than moving it.
+
+`decl_initializer_nested` keeps its +16, deliberately. It is four `int`s (`my_rng`,
+`my_depth`, `shifted`, `nitem`) and gcc rounds the frame to 16, so **cutting them to two
+does not move it** — measured, 0x130 either way. `initbraces` is 432 B/level against 416
+banked; it is not the worst axis, `need_bytes` is the worst axis alone, and the cell prints
+it as a moved frame and stays green. Reclaiming it needs *zero* extra locals in that block,
+which means packing state into `init_params` or reusing a dead local of
+`decl_initializer_nested`; neither is worth 8 KiB of a 516 KiB budget, and both are
+unreadable without comments.
+
+Nothing moved to file scope, so this does not touch the constraint that `ast_replay_bb`'s
+`SValue sv_stack[]` stay non-`static`, nor the recovery `longjmp`s in `ast_func_end` and
+`mcc_asm_inline_unwind`.
+
+### Validation
+
+`ctest -R "diag|parse"` 49/49 including `diag.parse-frames` and `diag.parse-depth`;
+`smoke/native` (6.3M value cases) passes; all 194 `complex|cplx|imag` cells pass, which is
+the blast radius of the moved arm; and the four wrong-answer cells the merged front-end
+fixes own — `cli/no_wrapv_folds_mul_div_by_same_constant`,
+`cli/abs_family_outranks_a_local_definition`,
+`cli/gnu_range_designator_nested_and_partial_override`, `cli/c90_selection_stmt_tag_scope`
+— all pass. `ctest -N` reports **9529**.
+
 ## Landed — the funnel's largest named drop is `return <constant>`, and there is no live-in to find, 2026-08-10 (`wt/noslot`)
 
 The board ranked `nslot < 1` at **352 blocks / 1.05% of accepted**, the largest single named
