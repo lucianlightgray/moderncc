@@ -1767,6 +1767,174 @@ static void suite_frame(void) {
 	}
 	ast_arena_free(a);
 
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal iff = ast_node(a, AST_If);
+		AstLocal thn = ast_node(a, AST_BasicBlock);
+		AstLocal er = ast_node(a, AST_Return);
+		AstLocal tr = ast_node(a, AST_Return);
+		MccSliceKernel k;
+		int64_t cf[6 * MCC_SLICE_MAXSLOT], gf[6 * MCC_SLICE_MAXSLOT];
+		int64_t crv[6], grv[6];
+		int cdf[6];
+		unsigned char gdf[6];
+		int t, sy = -1;
+		ast_set_op(a, iff, 0);
+		ast_add_child(a, iff,
+									mk_bin(a, TOK_LT, mk_ref(a, -8, VT_INT),
+												 mk_lit(a, 0, VT_INT), VT_INT));
+		ast_add_child(a, thn, mk_store(a, -16, mk_lit(a, 111, VT_INT), VT_INT));
+		ast_add_child(a, er,
+									mk_bin(a, '+', mk_ref(a, -8, VT_INT),
+												 mk_lit(a, 1, VT_INT), VT_INT));
+		ast_add_child(a, thn, er);
+		ast_add_child(a, iff, thn);
+		ast_add_child(a, bb, iff);
+		ast_add_child(a, bb, mk_store(a, -16, mk_lit(a, 222, VT_INT), VT_INT));
+		ast_add_child(a, tr,
+									mk_bin(a, '*', mk_ref(a, -8, VT_INT),
+												 mk_lit(a, 2, VT_INT), VT_INT));
+		ast_add_child(a, bb, tr);
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1,
+					"an early return inside an if arm is frame work");
+		CHECK(fr.neret == 1, "the early exit is recorded");
+		CHECK(fr.ret != AST_NONE, "and the trailing Return still is too");
+		for (i = 0; i < fr.nslot; i++)
+			if (fr.slot[i] == -16)
+				sy = i;
+		CHECK(sy >= 0, "the stored-to slot is mapped");
+		for (t = 0; t < 6; t++)
+			for (i = 0; i < fr.nslot; i++)
+				cf[t * fr.nslot + i] = gf[t * fr.nslot + i] =
+						fr.slot[i] == -8 ? (int64_t)(t - 3) : 0;
+		for (t = 0; t < 6; t++)
+			CHECK(mcc_slice_frame_exec_cpu2(&fr, cf + (long)t * fr.nslot, &crv[t],
+																			&cdf[t]) == 1,
+						"the CPU reference runs the early-exit frame");
+		for (t = 0; t < 6; t++) {
+			int64_t x = (int64_t)(t - 3);
+			CHECK(crv[t] == (x < 0 ? x + 1 : x * 2),
+						"the value returned is the one the taken exit computed");
+			CHECK(cf[t * fr.nslot + sy] == (x < 0 ? 111 : 222),
+						"and the statements after the exit did not run on the taken path");
+		}
+		if (g_have_device && mcc_slice_frame_kernel_build(&fr, &k)) {
+			int bad = 0;
+			CHECK(mcc_slice_run_frame_gpu(&fr, &k, gf, 6, grv, gdf) == MCC_TASK_DONE,
+						"the device runs the early-exit frame");
+			for (t = 0; t < 6; t++) {
+				CHECK(grv[t] == crv[t], "device and CPU agree on the returned value");
+				CHECK((int)gdf[t] == cdf[t], "and on its definedness");
+			}
+			for (t = 0; t < 6 * fr.nslot; t++)
+				if (cf[t] != gf[t])
+					bad++;
+			CHECK(bad == 0, "and on every frame slot across the early exit");
+			mcc_slice_kernel_free(&k);
+		}
+	}
+	ast_arena_free(a);
+
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal iff = ast_node(a, AST_If);
+		AstLocal thn = ast_node(a, AST_BasicBlock);
+		AstLocal er = ast_node(a, AST_Return);
+		MccSliceKernel k;
+		int64_t cf[6 * MCC_SLICE_MAXSLOT], gf[6 * MCC_SLICE_MAXSLOT];
+		int64_t crv[6], grv[6];
+		int cdf[6];
+		unsigned char gdf[6];
+		int t, sy = -1;
+		ast_set_op(a, iff, 0);
+		ast_add_child(a, iff,
+									mk_bin(a, TOK_LT, mk_ref(a, -8, VT_INT),
+												 mk_lit(a, 0, VT_INT), VT_INT));
+		ast_add_child(a, er, mk_lit(a, 7, VT_INT));
+		ast_add_child(a, thn, er);
+		ast_add_child(a, iff, thn);
+		ast_add_child(a, bb, iff);
+		ast_add_child(a, bb, mk_store(a, -16, mk_lit(a, 5, VT_INT), VT_INT));
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1,
+					"an early return with nothing behind it is frame work");
+		CHECK(fr.ret == AST_NONE && fr.neret == 1,
+					"the run has an exit value but no terminating Return");
+		for (i = 0; i < fr.nslot; i++)
+			if (fr.slot[i] == -16)
+				sy = i;
+		CHECK(sy >= 0, "the stored-to slot is mapped");
+		for (t = 0; t < 6; t++)
+			for (i = 0; i < fr.nslot; i++)
+				cf[t * fr.nslot + i] = gf[t * fr.nslot + i] =
+						fr.slot[i] == -8 ? (int64_t)(t - 3) : 0;
+		for (t = 0; t < 6; t++)
+			CHECK(mcc_slice_frame_exec_cpu2(&fr, cf + (long)t * fr.nslot, &crv[t],
+																			&cdf[t]) == 1,
+						"the CPU reference runs the exit-only frame");
+		for (t = 0; t < 6; t++) {
+			int64_t x = (int64_t)(t - 3);
+			CHECK(crv[t] == (x < 0 ? 7 : 0), "7 on the exit, 0 on the fallthrough");
+			CHECK(cf[t * fr.nslot + sy] == (x < 0 ? 0 : 5),
+						"and the store behind the exit runs only on the fallthrough");
+		}
+		if (g_have_device && mcc_slice_frame_kernel_build(&fr, &k)) {
+			int bad = 0;
+			CHECK(mcc_slice_run_frame_gpu(&fr, &k, gf, 6, grv, gdf) == MCC_TASK_DONE,
+						"the device runs the exit-only frame");
+			for (t = 0; t < 6; t++) {
+				CHECK(grv[t] == crv[t], "device and CPU agree on the returned value");
+				CHECK((int)gdf[t] == cdf[t], "and on its definedness");
+			}
+			for (t = 0; t < 6 * fr.nslot; t++)
+				if (cf[t] != gf[t])
+					bad++;
+			CHECK(bad == 0, "and on every frame slot");
+			mcc_slice_kernel_free(&k);
+		}
+	}
+	ast_arena_free(a);
+
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal iff = ast_node(a, AST_If);
+		AstLocal thn = ast_node(a, AST_BasicBlock);
+		AstLocal er = ast_node(a, AST_Return);
+		ast_set_op(a, iff, 0);
+		ast_add_child(a, iff,
+									mk_bin(a, TOK_LT, mk_ref(a, -8, VT_INT),
+												 mk_lit(a, 0, VT_INT), VT_INT));
+		ast_add_child(a, er, mk_lit(a, 7, VT_INT));
+		ast_add_child(a, thn, er);
+		ast_add_child(a, thn, mk_store(a, -16, mk_lit(a, 1, VT_INT), VT_INT));
+		ast_add_child(a, iff, thn);
+		ast_add_child(a, bb, iff);
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 0,
+					"a return with a statement behind it in its own arm is refused");
+	}
+	ast_arena_free(a);
+
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		AstLocal lp = ast_node(a, AST_If);
+		AstLocal body = ast_node(a, AST_BasicBlock);
+		AstLocal er = ast_node(a, AST_Return);
+		ast_set_op(a, lp, 2);
+		ast_add_child(a, lp,
+									mk_bin(a, TOK_LT, mk_ref(a, -8, VT_INT),
+												 mk_ref(a, -24, VT_INT), VT_INT));
+		ast_add_child(a, er, mk_lit(a, 7, VT_INT));
+		ast_add_child(a, body, er);
+		ast_add_child(a, lp, body);
+		ast_add_child(a, bb, lp);
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 0,
+					"a return inside a loop body is refused");
+	}
+	ast_arena_free(a);
+
 	/* A while loop. Loop-carried state lives in the frame, so the SPIR-V header
 	 * needs phis only for the trip counter and the definedness flag -- never for
 	 * the values. sum(-16) = 0; while (i(-8) < n(-24)) { sum += i; i += 1; } */
@@ -5375,6 +5543,10 @@ enum {
 	BC_RET_NOVAL,
 	BC_RET_TYPE,
 	BC_RET_EXPR,
+	BC_RET_EARLY_MID,
+	BC_RET_EARLY_LOOP,
+	BC_RET_EARLY_NOVAL,
+	BC_RET_EARLY_EXPR,
 	BC_SWITCH,
 	BC_IF_OTHER,
 	BC_CTRL_COND,
@@ -5407,6 +5579,10 @@ static const char *block_cause_name(int k) {
 	case BC_RET_NOVAL: return "block/return-no-value";
 	case BC_RET_TYPE: return "block/return-type";
 	case BC_RET_EXPR: return "block/return-expr";
+	case BC_RET_EARLY_MID: return "block/early-return-not-last";
+	case BC_RET_EARLY_LOOP: return "block/early-return-in-loop";
+	case BC_RET_EARLY_NOVAL: return "block/early-return-no-value";
+	case BC_RET_EARLY_EXPR: return "block/early-return-expr";
 	case BC_SWITCH: return "block/switch";
 	case BC_IF_OTHER: return "block/if-other-op";
 	case BC_CTRL_COND: return "block/ctrl-cond";
@@ -5670,6 +5846,14 @@ static int block_cause_stmt(AstArena *a, AstLocal s, int depth) {
 	default:
 		break;
 	}
+	if (ast_kind(a, s) == AST_Return) {
+		AstLocal rv = ast_first_child(a, s);
+		if (ast_next_sib(a, s) != AST_NONE)
+			return BC_RET_EARLY_MID;
+		if (rv == AST_NONE)
+			return BC_RET_EARLY_NOVAL;
+		return ast_eval_slice_kind_ok(a, rv, 1) ? BC_OK : BC_RET_EARLY_EXPR;
+	}
 	if (ast_kind(a, s) == AST_If) {
 		int op = ast_op(a, s);
 		if (op == 6)
@@ -5682,6 +5866,8 @@ static int block_cause_stmt(AstArena *a, AstLocal s, int depth) {
 											: op == 4	 ? ast_child(a, s, 0)
 											: op == 3	 ? ast_child(a, s, 2)
 																 : ast_child(a, s, 1);
+			if (op != 0 && mcc_slice_may_ret(a, s))
+				return BC_RET_EARLY_LOOP;
 			if (!ast_eval_slice_kind_ok(a, cond, 1)) {
 				cond_cause_note(a, cond);
 				return BC_CTRL_COND;
@@ -5812,6 +5998,8 @@ static int frame_fail_reason(AstArena *a, AstLocal root) {
 					(is_float(rt) || !ast_eval_slice_intt(rt)))
 				return FF_RET_TYPE;
 			if ((ast_eval_slice_ftype(a, rv) != 0) != (ast_eval_slice_f64t(rt) != 0))
+				return FF_RET_TYPE;
+			if (f.rettype && f.rettype != rt)
 				return FF_RET_TYPE;
 			f.rettype = rt;
 			f.ret = rv;
@@ -6336,6 +6524,7 @@ static int g_lax;
  * accepted with nstmt == 0 and mcc_slice_frame_kernel_build refuses it. */
 static long g_frame_slices, g_frame_stmts, g_frame_mismatch;
 static long g_frame_built, g_frame_compared, g_frame_mem;
+static long g_frame_er, g_frame_er_built, g_frame_er_cmp;
 
 enum {
 	FD_SEEN,
@@ -7049,7 +7238,7 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 	int64_t crv[FRAME_NT], grv[FRAME_NT];
 	int cdf[FRAME_NT];
 	unsigned char gdf[FRAME_NT];
-	int t, j, bad = 0, membad = 0, usemem, flt;
+	int t, j, bad = 0, membad = 0, usemem, flt, rethas;
 
 	if (!backend_has_frame_kernels()) {
 		unsupported("frame kernels", "TODO.md §5 stage M2");
@@ -7066,12 +7255,15 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 			return;
 		}
 	g_frame_slices++;
+	if (fr.neret)
+		g_frame_er++;
 	g_frame_stmts += fr.nstmt;
 	usemem = (fr.nptr > 0 || fr.next > 0) && g_rw != NULL;
 	if (fr.next > 0 && !usemem) {
 		g_fd[FD_NO_REGION]++;
 		return;
 	}
+	rethas = fr.ret != AST_NONE || fr.neret;
 	flt = subtree_has_f64(a, bb, 0);
 	for (t = 0; t < FRAME_NT; t++)
 		for (j = 0; j < fr.nslot; j++)
@@ -7103,12 +7295,14 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 	}
 	if (!mcc_slice_frame_kernel_build(&fr, &k)) {
 		g_fd[fr.nslot < 1										? FD_LOWER_SLOT
-					: fr.nstmt < 1 && fr.ret == AST_NONE ? FD_LOWER_EMPTY
+					: fr.nstmt < 1 && fr.ret == AST_NONE && !fr.neret ? FD_LOWER_EMPTY
 					: flt && !mcc_gpu_f64()						 ? FD_LOWER_F64
 																						 : FD_LOWER_EMIT]++;
 		return;
 	}
 	g_frame_built++;
+	if (fr.neret)
+		g_frame_er_built++;
 	if (flt)
 		g_arena_f64_frames++;
 	if (getenv("MCC_SLICE_SPV_DUMP")) {
@@ -7129,6 +7323,8 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 		return;
 	}
 	g_frame_compared++;
+	if (fr.neret)
+		g_frame_er_cmp++;
 	if (usemem) {
 		g_frame_mem++;
 		if (memcmp(g_rw_cpu, g_rw, g_rwsz)) {
@@ -7142,13 +7338,13 @@ static void run_real_frame(AstArena *a, AstLocal bb, int quiet) {
 		 * flag there is a dummy, not a verdict -- unless the run resolves an
 		 * address at run time, in which case the flag carries the index bound and
 		 * both executors have committed to the same verdict for it. */
-		if (fr.ret != AST_NONE && (int)gdf[t] == cdf[t] && cdf[t] &&
+		if (rethas && (int)gdf[t] == cdf[t] && cdf[t] &&
 				arena_nan_tie(flt, crv[t], grv[t]))
 			g_arena_nantie++;
-		else if (fr.ret != AST_NONE &&
+		else if (rethas &&
 						 ((int)gdf[t] != cdf[t] || (cdf[t] && grv[t] != crv[t])))
 			bad++;
-		if (fr.ret == AST_NONE && fr.nidx && (int)gdf[t] != cdf[t])
+		if (!rethas && fr.nidx && (int)gdf[t] != cdf[t])
 			bad++;
 		for (j = 0; j < fr.nslot; j++)
 			if (cf[t * fr.nslot + j] != gf[t * fr.nslot + j]) {
@@ -7916,6 +8112,9 @@ static int arena_mode(const char *path, long limit, int quiet) {
 				 "frame-stmts=%ld frame-mismatches=%ld frame-mem=%ld\n",
 				 g_frame_slices, g_frame_built, g_frame_compared, g_frame_stmts,
 				 g_frame_mismatch, g_frame_mem);
+	printf("slicerun: frame-earlyret-accepted=%ld frame-earlyret-built=%ld "
+				 "frame-earlyret-compared=%ld\n",
+				 g_frame_er, g_frame_er_built, g_frame_er_cmp);
 	{
 		int i;
 		long sum = 0;

@@ -228,6 +228,7 @@ static int mcc_slice_run_cpu(MccSliceWork *w, int budget) {
 #define MCC_SLICE_TRIP_MAX (1 << 16)
 #define MCC_SLICE_MAXSLOT 16
 #define MCC_SLICE_MAXSTMT 64
+#define MCC_SLICE_MAXRET 8
 
 typedef struct MccSliceFrame {
 	AstArena *a;
@@ -246,6 +247,12 @@ typedef struct MccSliceFrame {
 	 * own, more than Invoke's 294 or If's 238. */
 	AstLocal ret;
 	int rettype;
+	int neret;
+	int r_hit;
+	int r_def;
+	int64_t r_val;
+	uint32_t s_nret;
+	uint32_t s_rv;
 	int nodes;
 	unsigned char sptr[MCC_SLICE_MAXSLOT];
 	int nptr;
@@ -381,6 +388,43 @@ static int mcc_slice_store_dyn(AstArena *a, AstLocal d, AstEvalSliceIdx *ix) {
 	return ast_eval_slice_dynidx(a, ast_first_child(a, d), ix);
 }
 
+static int mcc_slice_may_ret(AstArena *a, AstLocal n) {
+	AstLocal c;
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Return)
+		return 1;
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (mcc_slice_may_ret(a, c))
+			return 1;
+	return 0;
+}
+
+static int mcc_slice_ret_ok(MccSliceFrame *f, AstLocal s) {
+	AstArena *a = f->a;
+	AstLocal rv = ast_first_child(a, s);
+	int rt;
+	if (rv == AST_NONE)
+		return 0;
+	if (!mcc_slice_frame_scan(f, rv))
+		return 0;
+	rt = ast_type_t(a, rv);
+	if (!rt)
+		rt = ast_eval_slice_wtype(a, rv);
+	if (!rt)
+		rt = ast_eval_slice_ftype(a, rv);
+	if (!rt || ast_bad_type(rt))
+		return 0;
+	if (!ast_eval_slice_f64t(rt) && (is_float(rt) || !ast_eval_slice_intt(rt)))
+		return 0;
+	if ((ast_eval_slice_ftype(a, rv) != 0) != (ast_eval_slice_f64t(rt) != 0))
+		return 0;
+	if (f->rettype && f->rettype != rt)
+		return 0;
+	f->rettype = rt;
+	return 1;
+}
+
 /* A statement-if is `AST_If` with op 0 and two or three children: condition,
  * then, and optionally else. It is tractable here for one specific reason --
  * the run's outputs are frame stores, i.e. memory, so the two arms need no
@@ -409,6 +453,18 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 	int dt;
 	if (depth > 8)
 		return 0;
+	if (ast_kind(a, s) == AST_Return) {
+		if (depth < 1 || ast_next_sib(a, s) != AST_NONE)
+			return 0;
+		if (f->neret >= MCC_SLICE_MAXRET)
+			return 0;
+		if (!mcc_slice_ret_ok(f, s))
+			return 0;
+		f->neret++;
+		f->nctrl++;
+		f->nodes += mcc_slice_nodes(a, s);
+		return 1;
+	}
 	if (ast_kind(a, s) == AST_If &&
 			(ast_op(a, s) == 2 || ast_op(a, s) == 3 || ast_op(a, s) == 4)) {
 		/* while {cond, body} | for {cond, incr, body} | do {body, cond}.
@@ -430,6 +486,8 @@ static int mcc_slice_frame_stmt_ok(MccSliceFrame *f, AstLocal s, int depth) {
 		if (op == 3 && nc != 3)
 			return 0;
 		if (op == 4 && nc != 2)
+			return 0;
+		if (mcc_slice_may_ret(a, s))
 			return 0;
 		if (!mcc_slice_frame_scan(f, cond))
 			return 0;
@@ -656,25 +714,9 @@ static int mcc_slice_frame_from_ast(AstArena *a, AstLocal root,
 		if (f->ret != AST_NONE)
 			return 0; /* a Return is only a terminator, never mid-run */
 		if (ast_kind(a, s) == AST_Return) {
-			AstLocal rv = ast_first_child(a, s);
-			if (rv == AST_NONE)
-				return 0; /* a bare return carries no value to compare */
-			if (!mcc_slice_frame_scan(f, rv))
+			if (!mcc_slice_ret_ok(f, s))
 				return 0;
-			f->rettype = ast_type_t(a, rv);
-			if (!f->rettype)
-				f->rettype = ast_eval_slice_wtype(a, rv);
-			if (!f->rettype)
-				f->rettype = ast_eval_slice_ftype(a, rv);
-			if (!f->rettype || ast_bad_type(f->rettype))
-				return 0;
-			if (!ast_eval_slice_f64t(f->rettype) &&
-					(is_float(f->rettype) || !ast_eval_slice_intt(f->rettype)))
-				return 0;
-			if ((ast_eval_slice_ftype(a, rv) != 0) !=
-					(ast_eval_slice_f64t(f->rettype) != 0))
-				return 0;
-			f->ret = rv;
+			f->ret = ast_first_child(a, s);
 			f->nodes += mcc_slice_nodes(a, s);
 			continue;
 		}
@@ -720,9 +762,12 @@ static int mcc_slice_frame_exec_seq(MccSliceFrame *f, int64_t *frame,
 		return 1;
 	if (ast_kind(f->a, n) != AST_BasicBlock)
 		return mcc_slice_frame_exec_stmt(f, frame, n);
-	for (c = ast_first_child(f->a, n); c != AST_NONE; c = ast_next_sib(f->a, c))
+	for (c = ast_first_child(f->a, n); c != AST_NONE; c = ast_next_sib(f->a, c)) {
 		if (!mcc_slice_frame_exec_stmt(f, frame, c))
 			return 0;
+		if (f->r_hit)
+			return 1;
+	}
 	return 1;
 }
 
@@ -732,6 +777,20 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 	int64_t val = 0;
 	int32_t off = 0;
 	int k, dt;
+	if (ast_kind(f->a, s) == AST_Return) {
+		int64_t rv = 0;
+		int d = ast_eval_slice_rec(f->a, ast_first_child(f->a, s), f->slot, frame,
+															 f->nslot, &rv) &&
+						!ast_eval_slice_undef;
+		f->r_hit = 1;
+		f->r_def = d;
+		f->r_val = d ? ast_eval_narrow(rv,
+																	 ast_eval_slice_is64(f->rettype) ||
+																			 ast_eval_slice_f64t(f->rettype),
+																	 (f->rettype & VT_UNSIGNED) != 0)
+									 : 0;
+		return 1;
+	}
 	if (ast_kind(f->a, s) == AST_If &&
 			(ast_op(f->a, s) == 2 || ast_op(f->a, s) == 3 || ast_op(f->a, s) == 4)) {
 		int op = ast_op(f->a, s);
@@ -752,6 +811,8 @@ static int mcc_slice_frame_exec_stmt(MccSliceFrame *f, int64_t *frame,
 				return 0; /* over budget: the whole run is undefined */
 			if (!mcc_slice_frame_exec_seq(f, frame, body))
 				return 0;
+			if (f->r_hit)
+				return 1;
 			if (op == 3 &&
 					!mcc_slice_frame_exec_seq(f, frame, ast_child(f->a, s, 1)))
 				return 0;
@@ -897,13 +958,23 @@ static int mcc_slice_frame_exec_cpu2(MccSliceFrame *f, int64_t *frame,
 	if (!f || !frame)
 		return 0;
 	ast_eval_slice_undef = 0;
-	for (i = 0; i < f->ntop; i++)
+	f->r_hit = 0;
+	f->r_def = 0;
+	f->r_val = 0;
+	for (i = 0; i < f->ntop && !f->r_hit; i++)
 		if (!mcc_slice_frame_exec_stmt(f, frame, f->top[i]))
 			return 0;
 	/* The run's own verdict, distinct from the returned value's. An index that
 	 * left its object poisons the whole run on both executors, so it has to
 	 * survive past the statement that caused it. */
 	live = !ast_eval_slice_undef;
+	if (f->r_hit) {
+		if (retdef)
+			*retdef = f->r_def;
+		if (retval)
+			*retval = f->r_val;
+		return 1;
+	}
 	if (f->ret != AST_NONE) {
 		int64_t rv = 0;
 		int d = ast_eval_slice_rec(f->a, f->ret, f->slot, frame, f->nslot, &rv) &&
@@ -1145,6 +1216,92 @@ static int mcc_slice_run_gpu(MccSliceWork *w, MccSliceKernel *k, int budget) {
 static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 															AstLocal s);
 
+static int mcc_slice_spv_run(SpvMod *m, MccSliceFrame *f, uint32_t base,
+														 AstLocal s, int i, int top);
+
+static int mcc_slice_spv_guard(SpvMod *m, MccSliceFrame *f, uint32_t base,
+															 AstLocal s, int i, int top) {
+	uint32_t l_then = spv_id(m), l_merge = spv_id(m);
+	uint32_t def_in = m->def, nret_in = f->s_nret, rv_in = f->s_rv;
+	uint32_t from_pre = m->cur_label, from_then;
+	uint32_t dphi = spv_id(m), nphi = spv_id(m), rphi = spv_id(m);
+	spvw_op(&m->body, SpvOpSelectionMerge, 3);
+	spvw_put(&m->body, l_merge);
+	spvw_put(&m->body, 0);
+	spvw_op(&m->body, SpvOpBranchConditional, 4);
+	spvw_put(&m->body, nret_in);
+	spvw_put(&m->body, l_then);
+	spvw_put(&m->body, l_merge);
+
+	spv_label_at(m, l_then);
+	if (!mcc_slice_spv_run(m, f, base, s, i, top))
+		return 0;
+	from_then = m->cur_label;
+	spvw_op(&m->body, SpvOpBranch, 2);
+	spvw_put(&m->body, l_merge);
+
+	spv_label_at(m, l_merge);
+	spvw_op(&m->body, SpvOpPhi, 7);
+	spvw_put(&m->body, m->id_bool);
+	spvw_put(&m->body, dphi);
+	spvw_put(&m->body, m->def);
+	spvw_put(&m->body, from_then);
+	spvw_put(&m->body, def_in);
+	spvw_put(&m->body, from_pre);
+	spvw_op(&m->body, SpvOpPhi, 7);
+	spvw_put(&m->body, m->id_bool);
+	spvw_put(&m->body, nphi);
+	spvw_put(&m->body, f->s_nret);
+	spvw_put(&m->body, from_then);
+	spvw_put(&m->body, nret_in);
+	spvw_put(&m->body, from_pre);
+	spvw_op(&m->body, SpvOpPhi, 7);
+	spvw_put(&m->body, m->id_u2);
+	spvw_put(&m->body, rphi);
+	spvw_put(&m->body, f->s_rv);
+	spvw_put(&m->body, from_then);
+	spvw_put(&m->body, rv_in);
+	spvw_put(&m->body, from_pre);
+	m->def = dphi;
+	f->s_nret = nphi;
+	f->s_rv = rphi;
+	return 1;
+}
+
+static int mcc_slice_spv_run(SpvMod *m, MccSliceFrame *f, uint32_t base,
+														 AstLocal s, int i, int top) {
+	if (!top) {
+		for (; s != AST_NONE; s = ast_next_sib(f->a, s)) {
+			AstLocal nx = ast_next_sib(f->a, s);
+			if (!mcc_slice_spv_stmt(m, f, base, s))
+				return 0;
+			if (f->neret && nx != AST_NONE && mcc_slice_may_ret(f->a, s))
+				return mcc_slice_spv_guard(m, f, base, nx, 0, 0);
+		}
+		return 1;
+	}
+	for (; i <= f->ntop; i++) {
+		AstLocal st = i < f->ntop ? f->top[i] : f->ret;
+		if (st == AST_NONE)
+			break;
+		if (i < f->ntop) {
+			if (!mcc_slice_spv_stmt(m, f, base, st) || m->failed)
+				return 0;
+		} else {
+			SpvV rv;
+			if (!spv_expr(m, f->a, st, f->slot, f->nslot, base, &rv) || m->failed)
+				return 0;
+			f->s_rv = spv_pair(m, rv);
+			f->s_nret = spv_not(m, spv_true(m));
+			return 1;
+		}
+		if (f->neret && mcc_slice_may_ret(f->a, st) &&
+				(i + 1 < f->ntop || f->ret != AST_NONE))
+			return mcc_slice_spv_guard(m, f, base, AST_NONE, i + 1, 1);
+	}
+	return 1;
+}
+
 static int mcc_slice_spv_seq(SpvMod *m, MccSliceFrame *f, uint32_t base,
 														 AstLocal n) {
 	AstLocal c;
@@ -1152,10 +1309,10 @@ static int mcc_slice_spv_seq(SpvMod *m, MccSliceFrame *f, uint32_t base,
 		return 1;
 	if (ast_kind(f->a, n) != AST_BasicBlock)
 		return mcc_slice_spv_stmt(m, f, base, n);
-	for (c = ast_first_child(f->a, n); c != AST_NONE; c = ast_next_sib(f->a, c))
-		if (!mcc_slice_spv_stmt(m, f, base, c))
-			return 0;
-	return 1;
+	c = ast_first_child(f->a, n);
+	if (c == AST_NONE)
+		return 1;
+	return mcc_slice_spv_run(m, f, base, c, 0, 0);
 }
 
 static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
@@ -1165,6 +1322,17 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 	SpvV val;
 	int j, dt;
 
+	if (ast_kind(f->a, s) == AST_Return) {
+		SpvV rv;
+		if (!f->neret)
+			return 0;
+		if (!spv_expr(m, f->a, ast_first_child(f->a, s), f->slot, f->nslot, base,
+									&rv))
+			return 0;
+		f->s_rv = spv_pair(m, rv);
+		f->s_nret = spv_not(m, spv_true(m));
+		return 1;
+	}
 	if (ast_kind(f->a, s) == AST_If &&
 			(ast_op(f->a, s) == 2 || ast_op(f->a, s) == 3 || ast_op(f->a, s) == 4)) {
 		/* A structured SPIR-V loop. The frame is what makes this emittable at all:
@@ -1289,6 +1457,7 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 		SpvV cv;
 		uint32_t cb, l_then, l_else, l_merge, def_in, def_then, def_else;
 		uint32_t from_then, from_else, dphi;
+		uint32_t nret_in, nret_then, nret_else, rv_in, rv_then, rv_else;
 		if (!spv_expr(m, f->a, ast_child(f->a, s, 0), f->slot, f->nslot, base, &cv))
 			return 0;
 		cb = spv_bool_of_v(m, cv);
@@ -1304,21 +1473,29 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 		spvw_put(&m->body, l_else);
 
 		def_in = m->def;
+		nret_in = f->s_nret;
+		rv_in = f->s_rv;
 		spv_label_at(m, l_then);
 		m->def = def_in;
 		if (!mcc_slice_spv_seq(m, f, base, ast_child(f->a, s, 1)))
 			return 0;
 		def_then = m->def;
+		nret_then = f->s_nret;
+		rv_then = f->s_rv;
 		from_then = m->cur_label;
 		spvw_op(&m->body, SpvOpBranch, 2);
 		spvw_put(&m->body, l_merge);
 
 		spv_label_at(m, l_else);
 		m->def = def_in;
+		f->s_nret = nret_in;
+		f->s_rv = rv_in;
 		if (ast_nchild(f->a, s) == 3 &&
 				!mcc_slice_spv_seq(m, f, base, ast_child(f->a, s, 2)))
 			return 0;
 		def_else = m->def;
+		nret_else = f->s_nret;
+		rv_else = f->s_rv;
 		from_else = m->cur_label;
 		spvw_op(&m->body, SpvOpBranch, 2);
 		spvw_put(&m->body, l_merge);
@@ -1333,6 +1510,25 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 		spvw_put(&m->body, def_else);
 		spvw_put(&m->body, from_else);
 		m->def = dphi;
+		if (f->neret && mcc_slice_may_ret(f->a, s)) {
+			uint32_t nphi = spv_id(m), rphi = spv_id(m);
+			spvw_op(&m->body, SpvOpPhi, 7);
+			spvw_put(&m->body, m->id_bool);
+			spvw_put(&m->body, nphi);
+			spvw_put(&m->body, nret_then);
+			spvw_put(&m->body, from_then);
+			spvw_put(&m->body, nret_else);
+			spvw_put(&m->body, from_else);
+			spvw_op(&m->body, SpvOpPhi, 7);
+			spvw_put(&m->body, m->id_u2);
+			spvw_put(&m->body, rphi);
+			spvw_put(&m->body, rv_then);
+			spvw_put(&m->body, from_then);
+			spvw_put(&m->body, rv_else);
+			spvw_put(&m->body, from_else);
+			f->s_nret = nphi;
+			f->s_rv = rphi;
+		}
 		return 1;
 	}
 
@@ -1497,7 +1693,7 @@ static int mcc_slice_frame_kernel_build(MccSliceFrame *f, MccSliceKernel *k) {
 	 * figure 2.4x. */
 	if (!f || !k || f->nslot < 1)
 		return 0;
-	if (f->nstmt < 1 && f->ret == AST_NONE)
+	if (f->nstmt < 1 && f->ret == AST_NONE && !f->neret)
 		return 0;
 	memset(k, 0, sizeof *k);
 	for (i = 0; i < f->nslot; i++)
@@ -1516,26 +1712,39 @@ static int mcc_slice_frame_kernel_build(MccSliceFrame *f, MccSliceKernel *k) {
 		m.mem_base = ast_eval_slice_rw_base;
 		m.mem_nbyte = (uint32_t)ast_eval_slice_rw_nbyte;
 		base = spv_main_begin(&m, f->nslot);
-		for (i = 0; i < f->ntop; i++)
-			if (!mcc_slice_spv_stmt(&m, f, base, f->top[i]) || m.failed) {
-				spv_module_free(&m);
-				return 0;
-			}
 		(void)j;
 		/* The frame carries the stores; the out slots carry the Return value, if
 		 * the run has one. spv_main_end already writes the defined flag, and
 		 * spv_expr's own guards set it to 0 for a UB operand, so an undefined
 		 * return reaches the host as undefined rather than as a plausible zero. */
-		if (f->ret != AST_NONE) {
-			SpvV rv;
-			if (!spv_expr(&m, f->a, f->ret, f->slot, f->nslot, base, &rv) ||
-					m.failed) {
+		if (f->neret) {
+			uint32_t lo, hi;
+			f->s_nret = spv_true(&m);
+			f->s_rv = spv_u2(&m, spv_uintc(&m, 0), spv_uintc(&m, 0));
+			if (!mcc_slice_spv_run(&m, f, base, AST_NONE, 0, 1) || m.failed) {
 				spv_module_free(&m);
 				return 0;
 			}
-			spv_main_end(&m, m.lane, rv);
+			lo = spv_usel(&m, f->s_nret, spv_uintc(&m, 0), spv_lo(&m, f->s_rv));
+			hi = spv_usel(&m, f->s_nret, spv_uintc(&m, 0), spv_hi(&m, f->s_rv));
+			spv_main_end(&m, m.lane, spv_mk(spv_u2(&m, lo, hi), 1, 0));
 		} else {
-			spv_main_end(&m, m.lane, spv_mk(spv_const(&m, 0), 0, 0));
+			for (i = 0; i < f->ntop; i++)
+				if (!mcc_slice_spv_stmt(&m, f, base, f->top[i]) || m.failed) {
+					spv_module_free(&m);
+					return 0;
+				}
+			if (f->ret != AST_NONE) {
+				SpvV rv;
+				if (!spv_expr(&m, f->a, f->ret, f->slot, f->nslot, base, &rv) ||
+						m.failed) {
+					spv_module_free(&m);
+					return 0;
+				}
+				spv_main_end(&m, m.lane, rv);
+			} else {
+				spv_main_end(&m, m.lane, spv_mk(spv_const(&m, 0), 0, 0));
+			}
 		}
 		k->usemem = m.mem_used;
 		if (m.used_f64 && !mcc_gpu_f64()) {
