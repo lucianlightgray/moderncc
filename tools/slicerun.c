@@ -965,6 +965,51 @@ static void f64_exclusions(void) {
 		}
 	}
 	{
+		int order;
+		for (order = 0; order < 2; order++) {
+			AstArena *a = ast_arena_new();
+			AstLocal iff = ast_node(a, AST_If);
+			AstLocal dbl = mk_bin(a, '-', mk_ref(a, -8, VT_DBL),
+														mk_ref(a, -16, VT_DBL), 0);
+			MccSliceWork w;
+			ast_set_op(a, iff, 5);
+			ast_add_child(a, iff, mk_bin(a, TOK_GT, mk_ref(a, -8, VT_DBL),
+																	 mk_ref(a, -16, VT_DBL), 0));
+			ast_add_child(a, iff, order ? mk_lit(a, 0, VT_INT) : dbl);
+			ast_add_child(a, iff, order ? dbl : mk_lit(a, 0, VT_INT));
+			g_checks++;
+			if (mcc_slice_work_from_ast(a, iff, &w)) {
+				fprintf(stderr,
+								"FAIL %s: a ternary with one double arm and one integer arm "
+								"became work (double %s). Its wtype is uac(0, VT_INT) = "
+								"VT_INT, so the device result is narrowed to 32 bits and "
+								"every double whose low word is zero reads back as 0\n",
+								__func__, order ? "second" : "first");
+				g_failures++;
+			}
+			ast_arena_free(a);
+		}
+	}
+	{
+		AstArena *a = ast_arena_new();
+		AstLocal iff = ast_node(a, AST_If);
+		MccSliceWork w;
+		ast_set_op(a, iff, 5);
+		ast_add_child(a, iff, mk_bin(a, TOK_GT, mk_ref(a, -8, VT_DBL),
+																 mk_ref(a, -16, VT_DBL), 0));
+		ast_add_child(a, iff, mk_ref(a, -8, VT_DBL));
+		ast_add_child(a, iff, mk_ref(a, -16, VT_DBL));
+		g_checks++;
+		if (!mcc_slice_work_from_ast(a, iff, &w)) {
+			fprintf(stderr, "FAIL %s: a ternary whose two arms are both double no "
+											"longer becomes work; the mixed-arm refusal above has "
+											"been widened past the shape it exists for\n",
+							__func__);
+			g_failures++;
+		}
+		ast_arena_free(a);
+	}
+	{
 		AstArena *a = ast_arena_new();
 		AstLocal cvt = ast_node(a, AST_Convert);
 		MccSliceWork w;

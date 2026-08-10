@@ -412,7 +412,7 @@ Each tooth was made to fire:
 | a `return <literal>` is classified `NS_LOCAL` | *"62 blocks are in `noslot/local-ref-unseen`"* |
 | one block is skipped by the classifier | `slicerun` itself prints *"the noslot classes sum to 0 against 63"* and exits 1 |
 
-### Found on the way, not fixed here: `src/mccast.c` disagrees with the device
+### Found on the way, not fixed here: `src/mccast.c` disagrees with the device — RESOLVED on `wt/f64tern`
 
 Reproduced on **unmodified `9fe32126`**, with the branch's `slicerun` stashed: dumping
 `src/*.c` and running the arenas gives **23 expression-slice mismatches and 1 frame
@@ -433,6 +433,70 @@ for f in src/*.c; do
 done
 cmake-debug/slicerun --arenas dumpsrc/mccast.txt
 ```
+
+**The 23 are one defect and they are fixed; the 1 frame mismatch is a different defect and
+is still open.** Two corrections to the paragraph above, both of which cost time to unwind:
+`wtype=0x3` is `VT_INT`, not f64 — f64 is `VT_DOUBLE = 0x9` — and the `Binary` in child 0 is
+the *condition*, a double comparison, which is correct and is not what breaks.
+
+**The shape**, reduced to one line and the exact source it came from
+(`src/mccforecast.h:220-221` and `:235-236`, `ph[2] = t > k1 ? t - k1 : 0;`):
+
+```c
+double t1(double a, double b) { return a > b ? a - b : 0; }   /* mismatches */
+double t2(double a, double b) { return a > b ? a - b : 0.0; } /* agrees */
+```
+
+**Root cause.** `ast_eval_slice_wtype`'s `AST_If` arm returns `uac(wtype(then), wtype(else))`.
+A double-valued arm has `wtype == 0` and `ast_eval_slice_uac(0, VT_INT)` returns `VT_INT`, so
+a ternary that is a `double` by the usual arithmetic conversions reports itself as a 32-bit
+int. `mcc_slice_work_from_ast`'s width ladder takes `wtype` *before* `ftype`, so `w->wtype`
+becomes `VT_INT`, and `mcc_slice_run_gpu` then narrows the device's correct 64-bit result
+with `ast_eval_narrow(x, is64 = 0, 0)`. Every one of the 23 CPU values is a round double —
+3.0, 2.0, 998.0, 12344.0 — whose low 32 bits are zero, which is why `gpu=0` every time and
+why the tuples where the else-arm won agreed. The SPIR-V is fine: `spv_branch_pair` sees
+`ft != 0`, forces `w64`, and `spv_pair`/`spv_f64_unpack` carry the double bit-exactly.
+
+**Refused rather than lowered**, in `ast_eval_slice_kind_ok`'s `AST_If` arm: the two value
+arms must agree on whether they have an integer `wtype`. The `AST_Binary` arm three cases
+above already enforces exactly this for `double + int`, and `AST_Convert` refuses int↔double
+outright — the ternary was the one arm that forgot. Lowering it properly needs three things
+this backend does not have: an `OpConvertSToF`/`OpConvertUToF` in `src/mccgpu.h` (there is no
+int↔float conversion instruction anywhere in the emitter today), the matching conversion in
+`ast_eval_slice_rec`'s `AST_If`, which today returns the taken arm's raw word, and a `wtype`
+that reports `VT_DOUBLE` so the readback stops narrowing. Refusing costs nothing measurable:
+`src/` goes from 1717 to **1721** schedulable slices, because the subtrees below a refused
+ternary become slices in their own right.
+
+**Still open — the frame mismatch is not this defect.** It survives the fix, it is in
+`combo_memo_init` (`src/mcccombo.h`), and it contains no floating point at all:
+
+```c
+typedef struct M { unsigned char pad[1058816]; int n; u64 bytes; u64 cap_bytes; } M;
+void m1(M *m, u64 cap) { m->n = 0; m->bytes = 0; m->cap_bytes = cap; }
+```
+
+The member sits 1,058,832 bytes past the pointer and the shared read-write region is one
+1 MiB window (`MCC_VK_MEM_DEFAULT`), so the store is out of region and
+`ast_eval_slice_addr_fix` clamps it to **offset 0** — as designed, and on both executors. The
+window is shared by all 64 lanes, so all 64 write the same byte. The CPU runs them in order
+and lane 63 wins (`seed_value(63,1) = -1`, low byte `ff`); the device does not, and lane 0
+won this run (`seed_value(0,1) = -3`, low byte `fd`). That is the whole of `cpu=ff gpu=fd`.
+It is a real hazard — clamping into a *shared* region corrupts a neighbour, which
+`ast_eval_slice_addr_ok`'s own comment says is strictly worse than corrupting yourself — but
+it is a lane-order race, not a wrong value, so a cell that fails on it would be flaky. Fixing
+it means making an out-of-range store a no-op on both sides: `ast_eval_slice_bytes_store`
+returns early when `addr_ok` is false, and the device selects the current word instead of the
+new one. Until then `slice/src` passes `--no-ptr`, and the pointer arm stays covered
+deterministically by `slice/real`.
+
+**The cell that would have caught it.** `slice/src` (`cmake/slicerun_src.cmake`) dumps arenas
+for every `src/*.c` and runs the differential over all 333 bodies / 1721 slices in **~4 s**,
+with a `--mutate` known-positive and a `f64-slices=[1-9]` floor so a run that compared no f64
+slice cannot report success. Against a `slicerun` built without the refusal it fails with the
+original 23. `slice/f64`'s `f64_exclusions` gained the same shape in both arm orders plus a
+positive check that a both-arms-double ternary is still accepted, so the refusal cannot be
+widened past what it is for without a cell saying so.
 
 ### Reproducing the classification
 
