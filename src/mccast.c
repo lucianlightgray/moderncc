@@ -16656,9 +16656,7 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 			seq++;
 		}
 	}
-	if (!mcc_gpu_run(&ca, tin, ntuple, n, oa))
-		goto bail;
-	if (!mcc_gpu_run(&cb, tin, ntuple, n, ob))
+	if (!mcc_gpu_run2(&ca, &cb, tin, ntuple, n, oa, ob))
 		goto bail;
 
 	for (code = 0; code < space; code++) { MCC_TRACE("br\n");
