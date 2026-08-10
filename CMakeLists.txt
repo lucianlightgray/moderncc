@@ -3756,7 +3756,7 @@ if(MCC_BUILD_TESTS)
             # SKIP_RETURN_CODE covers `frame`, whose kernel builder has no Metal
             # arm (TODO.md §5 stage M2): there the suite exits 77 rather than
             # asserting that lowering succeeded. The other four never return 77.
-            foreach(_sr task work cpu sched frame effect)
+            foreach(_sr task work cpu sched frame effect thread)
                 add_test(NAME "slice/${_sr}" COMMAND slicerun "${_sr}")
                 set_tests_properties("slice/${_sr}" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
@@ -3766,6 +3766,12 @@ if(MCC_BUILD_TESTS)
                         -DRUNNER=$<TARGET_FILE:slicerun>
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_effect_mutate.cmake")
             set_tests_properties("slice/effect-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
+            add_test(NAME "slice/thread-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DRUNNER=$<TARGET_FILE:slicerun>
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_thread_mutate.cmake")
+            set_tests_properties("slice/thread-known-positive" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
             foreach(_sg gpu wide64 f64 ops mem bytes deref ext arrow fmt hostimport rwstore)
                 set(_sg_args "${_sg}")
@@ -6548,6 +6554,20 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(loop-census-parallel PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
 
+            # The lock-independence verdict has ground truth the same way: the
+            # sections in tests/thread/locks.c are disjoint or conflicting by
+            # construction. The cell that matters is the unsoundness one -- a
+            # pair that shares an object must never come back independent,
+            # because that verdict is what decides whether the mutex becomes a
+            # serializing edge or nothing at all -- plus a negative control
+            # (-O0 builds no AST, no verdicts) and a perturbation (make one
+            # disjoint section write the other's object, the verdict flips).
+            add_test(NAME thread-census-control
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/thread-census.py"
+                        "${CMAKE_BINARY_DIR}" --selftest)
+            set_tests_properties(thread-census-control PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
+
             add_test(NAME loop-census
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/loop-census.py"
                         "${CMAKE_BINARY_DIR}" --levels O2 --top 20 --opt-in)
@@ -6677,6 +6697,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             mcc_skip_test("slice-enum" "${_nopy_why}")
             mcc_skip_test("loop-census-control" "${_nopy_why}")
             mcc_skip_test("loop-census-parallel" "${_nopy_why}")
+            mcc_skip_test("thread-census-control" "${_nopy_why}")
             mcc_skip_test("selfhost-fixpoint" "${_nopy_why}")
             mcc_skip_test("selfhost-fixpoint-O3" "${_nopy_why}")
             mcc_skip_test("selfhost-fixpoint-O1" "${_nopy_why}")
