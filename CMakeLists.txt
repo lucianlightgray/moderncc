@@ -5953,6 +5953,7 @@ if(MCC_BUILD_TESTS)
             mcc_skip_test(jit/selftest-kgc "${_jitoff_why}")
             mcc_skip_test(jit/selftest-nearmatch "${_jitoff_why}")
             mcc_skip_test(jit/selftest-purity "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-purity-known-positive "${_jitoff_why}")
             mcc_skip_test(jit/selftest-strlit "${_jitoff_why}")
             mcc_skip_test(jit/selftest-struct "${_jitoff_why}")
             mcc_skip_test(jit/selftest-ptrret "${_jitoff_why}")
@@ -6716,7 +6717,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                             "--gcc=${MCC_XSUITE_GCC}" ${_jitconf_ts}
                             --suite c-torture/execute --limit 400
                             "--mcc=$<TARGET_FILE:mcc>" --surface embed --label cell
-                            --min-pass 100 --max-miscompile 1)
+                            --min-pass 100 --max-miscompile 0)
                 set_tests_properties("jit/xoracle-conformance" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
             else()

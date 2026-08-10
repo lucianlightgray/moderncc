@@ -5442,16 +5442,65 @@ on the embed surface, **five are not KGC at all** — `970217-1.c`, `pr17377.c`,
 with the route switched off — and the other five are a second, distinct KGC defect,
 described next.
 
-### OPEN — the KGC route admits callees that have side effects
+### LANDED — the KGC route admitted callees that have side effects, 2026-08-10 (`wt/kgcpure`)
 
 `20050502-1.c`, `builtin-prefetch-4.c`, `loop-3.c`, `loop-3b.c` and
-`gcc.dg/torture/pr126136.c` are each cured by `MCC_JIT_KGC=0` and each untouched by the
-extension fix. The route's premise is that the callee is a function of its arguments: it
-invokes the variant *and* the baseline to compare them, and under `memoize_ok` it later
-serves a repeated argument tuple from one side alone. Both are unsound for a callee with
-side effects, and the admission test — `mccjit_last_purity != AST_PURITY_IMPURE` in
-`src/mccjit_embed.c` — lets one through on the `--embed-jit` surface. Reduced, showing
-both halves of the damage:
+`gcc.dg/torture/pr126136.c` were each cured by `MCC_JIT_KGC=0` and each untouched by the
+extension fix. All five reproduced on this tree at `c003a4e3` and all five are fixed.
+
+**The item as filed was wrong about the guard, and being wrong about it is the whole
+story.** It read the defect as `mccjit_last_purity != AST_PURITY_IMPURE` admitting an
+*unknown* purity — the classic third-state bug. `AstPurity` has no third state:
+`AST_PURITY_IMPURE`/`TIER1`/`TIER0` are total, and `TIER1` means "reads memory, writes
+none", which the route may legitimately admit. The five programs were not admitted as
+*unknown*. They were **positively classified `TIER0`, the strongest tier** — and one of
+them, `20050502-1.c`'s `bar`, as `TIER1`.
+
+**Root cause, one line.** `ast_fn_purity` classified by node *kind* and treated only
+`AST_Store` and `AST_Invoke` as impure, but an increment or decrement of an lvalue is
+emitted as an `AST_Unary` carrying `TOK_INC`/`TOK_DEC` with no `AST_Store` node anywhere
+in the arena — so a callee whose entire body is `g++` classified `TIER0`.
+
+Verified against the arena the classifier actually sees. For the reduced witness's `foo`,
+`MCC_ARENA_DUMP=-` prints fifteen nodes and the only mutation is node 2, kind 8
+(`AST_Unary`) op `0x82` (`TOK_INC`), over node 1, an `AST_Ref` with op `0x330` =
+`VT_CONST|VT_LVAL|VT_SYM`. There is no kind 7. Over `vendor/gcc-c-torture-execute` the
+arena census counts **33,160 `TOK_INC` and 402 `TOK_DEC` unary nodes**, none of which the
+old blacklist named, beside 13 `AST_OP_VLA`, 8 `AST_OP_VLA_RESTORE` and 17
+`AST_OP_GGOTO`, which it also did not name.
+
+**`has_load` had a second hole of the same shape.** A read of a global is a bare
+`AST_Ref` carrying `VT_LVAL|VT_SYM` — the load is implicit in the flag, there is no
+`AST_Load` node — so `int G; int rd(int x){return G + x;}` also reached `TIER0`. `TIER0`
+is exactly `memoize_ok`.
+
+**`memoize_ok` is not a second defect; it is the same misclassification reaching a second
+consumer.** Both damages flow from one wrong tier:
+
+| consumer | gate | damage |
+|---|---|---|
+| `mccjit_last_kgc_ok` (`src/mccjit_embed.c`) | `!= AST_PURITY_IMPURE` | the stub calls the variant **and** the baseline to compare them, so the write runs twice |
+| `memoize_ok` → `mccjit_nearmatch_active` | `== AST_PURITY_TIER0` | arms `mccjit_corr_find`, which serves a repeated argument tuple a **cached value with no call at all** |
+| `ast_slice_wrap_kernel` (`src/mccjit_embed.c`) | `== AST_PURITY_TIER0` | certifies a slice kernel for a body that is not a function of its arguments |
+
+Note what the memo actually does on a plain hit: `mccjit_kgc_call1` still calls the
+variant and skips only the baseline, so the *hit* path recomputes. The stale answer comes
+from the near-match correction cache, which `mccjit_nearmatch_active` gates on
+`nearmatch_on && memoize_ok` and which `MCC_JIT_NEARMATCH` defaults **on**. That is why
+the reduced witness with a repeated tuple prints `a=10 b=10 i=4`: the first call missed,
+recorded a correction, and the second served it without running `foo` at all.
+
+**What each of the five did**, measured, `MCC_JIT=1` against `MCC_JIT=0` on the
+`--embed-jit` surface (`-std=gnu89` for the two `loop-3` programs, which are K&R):
+
+| program | routed callee | what ran twice | observable |
+|---|---|---|---|
+| `20050502-1.c` | `bar(const char **x){return *(*x)++;}` | the cursor bump through a pointer-to-pointer | the string advances two per call; `strcmp` fails → `abort`, exit 134 |
+| `builtin-prefetch-4.c` | `getint`/`getptr` and the `*_glob_*` bumps | the counter increment and the global pointer/index bump | `getintcnt == 1` fails → `abort` |
+| `loop-3.c`, `loop-3b.c` | `g(i){n++;}` | the global tally | `n != 4` → `abort` |
+| `gcc.dg/torture/pr126136.c` | `foo(signed char)` with `i++` | `i` | `foo(10) != -1` → `abort` |
+
+Reduced, both halves, exactly as they reproduce:
 
 ```c
 int printf(const char *, ...);
@@ -5462,15 +5511,121 @@ int main(void) { int a, b; i = 0; a = foo(10); i += 2; b = foo(11); printf("a=%d
 
 ```
 mcc -O2 --embed-jit t.c -o t
-MCC_JIT=0 ./t   ->  a=10 b=-1 i=4     (gcc agrees)
+MCC_JIT=0 ./t   ->  a=10 b=-1 i=4     (gcc 15.3.0 and clang 22.1.8 agree)
 MCC_JIT=1 ./t   ->  a=10 b=-1 i=6     the side effect ran twice
 ```
 
-Change the second call to `foo(10)` so the argument tuple repeats and the memo serves the
-stale answer instead: `a=10 b=10 i=4` against a correct `a=10 b=-1 i=4`. The same source
-under `-run` is refused, so this is a purity disagreement between the two surfaces rather
-than a universal one. It is the highest-priority JIT item now, and it belongs with whoever
-owns `ast_fn_purity`.
+With the second call changed to `foo(10)` the tuple repeats and the correction cache
+serves the stale answer instead: `a=10 b=10 i=4` against a correct `a=10 b=-1 i=4`.
+
+**Why `-run` looked innocent.** It is not a purity disagreement between the surfaces.
+Measured on the unfixed binary, `-run` takes the KGC route **zero times** on this source
+— `route=kgc` never appears — so the surface simply never reached the defect. The
+classifier answers identically on both.
+
+**The fix, by symbol.** `ast_fn_purity` and `ast_fn_purity_noescape` in `src/mccast.c` are
+now whitelists that default to `AST_PURITY_IMPURE`. A node is effect-free only if its kind
+is one of `AST_BasicBlock`/`If`/`Jump`/`Return`/`Literal`/`Convert`/`Load`/`Ref`, or an
+`AST_Unary`/`AST_Binary` whose op passes the new `ast_purity_op_effectfree` — which lists
+the twenty-four pure `AST_OP_*` intrinsics and the arithmetic, shift and comparison
+tokens, and refuses everything else in the `0x40000` namespace by construction. That
+catches `TOK_INC`/`TOK_DEC`, `AST_OP_OPASSIGN`, `AST_OP_VLA`/`VLA_RESTORE`, the four
+atomic read-modify-writes, `AST_OP_GGOTO` and `AST_OP_VAARG`/`VASTART`, none of which the
+old blacklist named, and `AST_Poison`/`AST_Bailout` fall out of the default. An lvalue
+`AST_Ref` whose value class is not `VT_LOCAL` now sets `has_load`, capping a global reader
+at `TIER1`. `AST_StoreVal` stays effect-free only while its `ival` still points at a live
+`AST_Store` — it is a vstack-ordering marker, not a store of its own, and the store it
+marks is checked on its own row. `ast_fn_purity_noescape` keeps its escape-aware
+exemption and extends it to `TOK_INC`/`TOK_DEC` on a plain local slot, matching the rule
+it already had for a store to one.
+
+**The cost of the stricter guard, measured, not assumed.** All 1,693
+`vendor/gcc-c-torture-execute` programs at `-std=gnu89 -O2 -w --embed-jit`, **1,636 of
+which build**, each run under `MCC_JIT=1 MCC_JIT_VERBOSE=1`, counting
+`route=kgc ... swapped`. The KGC route is entered **697 times against 707**, across **271
+programs against 279** — **10 dispatches, 1.41%**. Nine programs change count, and they
+are named because the aggregate is not the finding:
+
+| program | swaps | what it was |
+|---|---|---|
+| `builtin-prefetch-4` | 2 → 0 | miscompile, filed |
+| `20050502-1` | 2 → 1 | miscompile, filed; `bar` refused, the genuinely pure `baz` still routes |
+| `loop-3`, `loop-3b` | 1 → 0 each | miscompile, filed |
+| `pr17377` | 1 → 0 | **not a KGC defect** — see below |
+| `20040805-1`, `20041112-1`, `920612-1`, `920711-1` | 1 → 0 each | agreed before and after; genuine coverage loss |
+
+**So the honest cost is 4 sound dispatches out of 707, 0.57%.** Five of the ten were
+miscompiles and one is `pr17377`, which the `wt/kgcfix` handoff correctly filed as *not*
+KGC: on the unfixed binary it aborts under `MCC_JIT=1` **and** under
+`MCC_JIT=1 MCC_JIT_KGC=0`, so the defect is in the recompiled variant, not the stub. It
+now passes at the default only because the callee is no longer admitted and the AOT body
+is kept — **masked, not fixed**, and it still aborts under `MCC_JIT_KGC=0` on this tree.
+That is worth stating plainly, because `MCC_JIT_KGC=0` does not switch the JIT off: in
+`mccjit_boot_swap_run`, `no_kgc` installs a bare trampoline to the variant with **no
+differential check at all**, while a refused callee keeps the AOT body. The two are
+opposite ends, not on/off.
+
+At 0.57% no coverage-preserving alternative shape was needed. The strict guard is close to
+free because admission already required `scalar_ok` and because any store to a local was
+already `IMPURE`; the class that changes is single-expression bodies that mutate through
+`++`/`--` or read a global — which is exactly the bug.
+
+The `TIER0` → `TIER1` demotion of global readers costs **zero** route entries, since
+admission tests `!= IMPURE`. It costs memo hits only, and a memo hit is a saved baseline
+call, not coverage.
+
+`jit/xoracle-conformance` had `--max-miscompile 1` banking `20050502-1.c` as a known bug.
+Measured after the fix, `JIT_MISCOMPILE` is **0** and all 5 remaining `DIFFER` records
+carry `aot_agrees: false` — the JIT and the AOT path agree and both differ from the
+oracle, so they are language gaps, not JIT defects. The pin is tightened to
+`--max-miscompile 0`.
+
+**Three cells, each shown red against the unfixed classifier.**
+
+- **`jit/selftest-purity`** — `mccjit_selftest_purity`'s classification table grows from 4
+  rows to 12. The new rows pin `gi++`/`gi--`/`return gi++ + x` as `IMPURE`, `(*p)++` and
+  `*(*x)++` as `IMPURE`, `return gr + x` and `return ga[x & 7]` as `TIER1`, and a nested
+  ternary as `TIER0` so the whitelist cannot pass by refusing everything. Against the
+  unfixed `src/mccast.c` with the rest of the branch in place it reports **`FAIL (6
+  failures)`**: `inc`, `dec`, `post` come back `TIER0` where `IMPURE` is wanted, `bump`
+  and `deref` come back `TIER1`, and `rd` comes back `TIER0` where `TIER1` is wanted.
+- **`jit/selftest-purity-known-positive`** — the same binary under
+  `MCC_JIT_SELFTEST_PURITY_LIE=1`, which falsifies every want and requires all 12 rows to
+  report `FAIL`. It is registered beside its twin and carries a matching `mcc_skip_test`
+  stub on the JIT-off branch. It is itself sensitive: on the unfixed classifier only 6 of
+  12 falsified rows fire and the cell fails.
+- **`jit/kgc-effect-parity`** ([`tests/jit/run-kgceffect.sh`](../tests/jit/run-kgceffect.sh))
+  — an end-to-end `MCC_JIT=0` vs `MCC_JIT=1` vs `MCC_JIT_KGC=0` differential over
+  [`tests/jit/effects/`](../tests/jit/effects), five programs, on the `--embed-jit`
+  surface, which is where the defect lives. It must use `--embed-jit` and not `-run`:
+  `-run` never enters the route on this source. Two checks are separated on purpose —
+  `kgc0-differs` says the recompiled variant is wrong and the route is a red herring,
+  `jit1-differs` says the route is at fault. The third check is the anti-regression guard
+  `jit/kgc-route-parity` established: the corpus must still enter the route at least once,
+  so narrowing admission until the route stops firing fails here rather than passing
+  quietly. Against the unfixed binary **4 of 5 are red**, with `pure_probe` green and
+  routing, which is the guard working. The four:
+
+```
+FAIL [jit1-differs] eff_global_inc     jit0: a=10 b=-1 i=4   jit1: a=10 b=-1 i=6
+FAIL [jit1-differs] eff_memo_stale     jit0: a=10 b=-1 i=4   jit1: a=10 b=10 i=4
+FAIL [jit1-differs] eff_ptr_bump       jit0: c=abc rest=def  jit1: c=ace rest=
+FAIL [jit1-differs] eff_glob_bump_arg  jit0: a=4 b=4 cnt=2 c=4 d=5 idx=6
+                                       jit1: a=4 b=4 cnt=3 c=4 d=4 idx=6
+```
+
+- **`jit/kgc-effect-parity-known-positive`** — the same script over
+  [`tests/jit/effects-broken/`](../tests/jit/effects-broken) with the `known-positive`
+  argument, following `superopt/global-reload`'s convention exactly: a deliberately-broken
+  subject and a mode that fails unless the detector fires. The two subjects read
+  `MCC_JIT` and `MCC_JIT_KGC` out of the environment so their answers differ by
+  construction, and neither contains a bakeable callee, so all three checks —
+  `jit1-differs`, `kgc0-differs` and `no-route` — fire and are individually named. A run
+  where any one of them stays silent fails the cell as unproven.
+
+The five corpus programs are pinned against a second vendor, not only against
+`MCC_JIT=0`: gcc 15.3.0, clang 22.1.8, `MCC_JIT=0` and `MCC_JIT=1` agree byte for byte on
+every line of output of all five.
 
 ### The cell that could not see it, and what it carries now
 
@@ -5482,8 +5637,9 @@ enters the KGC route at all**. `jit/xoracle-conformance` could not see it either
 different reason: its `--limit 400` slice contains **none** of the four programs that
 close, checked by name against `<build>/jitconform-cell/jit-cell.jsonl`. Its miscompile
 count is 1 before the fix and 1 after, and the one it pins, `20050502-1.c`, is the
-side-effect defect above — so `--max-miscompile 1` still pins a real bug and is left
-alone.
+side-effect defect above — so at the time `--max-miscompile 1` still pinned a real bug and
+was left alone. **Superseded on `wt/kgcpure`**: with the side-effect defect closed that
+count is 0 and the pin is `--max-miscompile 0`.
 
 `tests/jit/parity/` goes from 5 programs to **11** and `tests/jit/known-bad/` is deleted:
 the reproducer parked one directory outside the glob now sits inside it. Counting that
@@ -5589,11 +5745,14 @@ corpus pins the C answer and not merely mcc's self-consistency.
 - **`jit/xoracle-conformance`** — qualifies and checks a deterministic slice of at most
   400 programs per suite from `gcc.c-torture/execute` (clang as oracle) and
   `llvm-test-suite/SingleSource/UnitTests` (gcc as oracle), so the cell itself runs both
-  oracle directions. `--min-pass 100 --max-miscompile 1`, ~35 s. Current measurement:
-  493 oracle-qualified, 6 DIFFER of which **1 is a JIT miscompile** — that is what
-  `--max-miscompile 1` banks. A second miscompile fails the cell. That count is 1 both
-  before and after `wt/kgcfix`: the slice holds none of the four programs that branch
-  closed, and the one it does pin is `20050502-1.c`, the side-effect admission defect.
+  oracle directions. `--min-pass 100 --max-miscompile 0`, ~35 s. Measurement on
+  `wt/kgcfix` was 493 oracle-qualified, 6 DIFFER of which **1 was a JIT miscompile**, and
+  `--max-miscompile 1` banked it: the slice held none of the four programs that branch
+  closed, and the one it pinned was `20050502-1.c`, the side-effect admission defect.
+  **Re-measured on `wt/kgcpure`**, which closes that defect: 493 oracle-qualified, 168
+  PASS, **5 DIFFER and 0 JIT miscompiles**, and all 5 carry `aot_agrees: false`, so they
+  are language gaps rather than JIT defects. The pin is now `--max-miscompile 0` and any
+  miscompile fails the cell.
   `MCC_XSUITE_GCC` and `MCC_XSUITE_LLVMTS` are cache PATHs defaulting to
   `$ENV{HOME}/Projects/{gcc,llvm-test-suite}`; without the gcc corpus the cell registers
   as a *skip with the reason*, never as a silent pass, and without llvm-test-suite it
@@ -5629,9 +5788,17 @@ The per-record verdicts are in `<build>/jitconform-all/jit-embed-O2.jsonl`; each
 
 1. ~~**The KGC zero-extension miscompile above.**~~ FIXED on `wt/kgcfix`; the
    return-register convention section above records what it actually was and what it
-   closed. What replaces it at the top of this list is the **side-effect admission
+   closed. ~~What replaces it at the top of this list is the **side-effect admission
    defect** in the same route — five distinct corpus programs, wrong answers reachable
-   from ordinary C, and the reduced case is in this file.
+   from ordinary C, and the reduced case is in this file.~~ Also FIXED, on `wt/kgcpure`:
+   `ast_fn_purity` never saw `++`/`--` because they are `AST_Unary`, not `AST_Store`. The
+   landed section above records the measurement, the 8-of-475 dispatch cost and the four
+   cells. **Open residue, one line:** `ast_fn_purity` is now sound over the arena it is
+   given, and nothing checks that the arena is the whole callee. `ast_arena_has_hole`
+   covers inline asm and dangling register refs; whether `mccjit_intent_serialize` can
+   hand the classifier a body with a *silently* elided statement is unmeasured. The
+   whitelist makes an omission fail safe only if the omitted node would have been in the
+   arena.
 2. **47.1% of programs cannot be baked at all.** The single largest lever on JIT
    coverage is the `VT_STATIC | VT_INLINE` callee refusal in `mccjit_intent_serialize` —
    a static helper called from the JIT'd function disqualifies the whole function, and
