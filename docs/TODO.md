@@ -266,11 +266,198 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    Dilution by less-lowerable new code is normal and will recur; the metric needs either a
    corpus-normalised form or a scheduled re-take.~~ **CLOSED, 2026-08-10** — the corpus-
    normalised form landed after the mechanism recurred the same day. See the section below.
-7. **Cluster L's next link is `L2′(ii)`/`(iii)`, both in `src/mccgpu.c`** — clear
+7. ~~**The funnel's largest named drop, `nslot < 1` at 352 blocks / 1.05%.**~~ **CLOSED,
+   2026-08-10 (`wt/noslot`)** — and it was 242 / 0.70% once re-taken on merged `main`, not
+   352. All 242 are `return <constant>`; **zero** are an unrecognised live-in and **zero**
+   are a slot-model casualty. Nothing to fix, and the reason is now pinned by
+   `slice/noslot-classes`. See the landed section below. **New and outranking most of this
+   list: `src/mccast.c` gives 23 expression-slice mismatches and 1 frame mismatch against
+   the device on unmodified `main`**, all on the `f64` ternary, and no committed cell runs
+   `slicerun` over `src/` arenas so nothing catches it.
+8. **Cluster L's next link is `L2′(ii)`/`(iii)`, both in `src/mccgpu.c`** — clear
    `mcc_gpu.ok` on `VK_ERROR_DEVICE_LOST` and give the Vulkan quiesce something to destroy.
    The pool half landed on `wt/jitshutdown`; wiring the device into `mccjit_shutdown()`
    before (ii) is fixed makes an unbounded `vkDeviceWaitIdle` reachable from `atexit` on
    every run.
+
+## Landed — the funnel's largest named drop is `return <constant>`, and there is no live-in to find, 2026-08-10 (`wt/noslot`)
+
+The board ranked `nslot < 1` at **352 blocks / 1.05% of accepted**, the largest single named
+drop between acceptance and a device that agrees. Re-taken on merged `main` at `9fe32126`
+it is **242 / 0.70%**, and **every one of them is a block whose only work is returning a
+constant**. There is no unrecognised live-in in it and no slot-model casualty. The bucket is
+closed, not narrowed.
+
+### The funnel, re-taken — the old figures are stale in six places
+
+Whole `gcc.c-torture/execute` corpus, 1,693 programs, 1,560 arenas, 15,923 bodies, RTX 5070
+Ti Laptop GPU, `cmake-debug` built after `cmake-cross`:
+
+| stage | 2026-08-09 | now | why it moved |
+| --- | ---: | ---: | --- |
+| blocks seen | 119,363 | **119,228** | the ternary fold absorbs ~130 single-`Return` blocks into their parent; this is the denominator artifact correction #1 already named |
+| refused | 85,710 | **84,854** | the wave |
+| **accepted** | 33,653 | **34,374** | +721 |
+| extent wider than `FRAME_EXT_SLOT` | 7 | **64** | `s.arr[i]` and `ga[i]` reach the extent path that 512 bytes then caps |
+| needs binding 2, no region armed | 0 | **0** | |
+| the CPU reference bailed | 62 | **126** | |
+| no device | 0 | **0** | |
+| **kernel build, no live-in** | **352** | **242** | see below — and 4 of the difference is an attribution fix, not a coverage gain |
+| kernel build, nothing to run | 2 | **6** | +4, moved out of the row above |
+| SPIR-V emit failed / dispatch failed | 0 / 0 | **0 / 0** | |
+| **dispatched, compared, agreed** | 33,230 | **33,936** | |
+| disagreed | 0 | **0** | |
+
+`funnel-drops-sum=119228` reproduces `funnel-seen` exactly, so the funnel is still a
+partition. **98.73% of accepted blocks reach a device and agree** — 98.76% before, on a
+denominator 721 blocks larger. Do not read the 0.03 pp as a regression; both the numerator
+and the denominator moved and the gap in blocks went from 416 to 438 while acceptance grew.
+
+### The 242, classified as a proven partition
+
+`slicerun` grows a `noslot:` sub-attribution under `frame-funnel`, on the same rule the
+refusal table uses: one class per block, and the classes must sum to the bucket or the
+runner prints `FAIL` itself. A zero-slot block wrote nothing and read nothing the collector
+recognised, so the walk looks for the nodes that *name storage* — a local `Ref`, a global
+`Ref`, a member, an arrow, a `Load`, a `Bailout` — and reports the first one it meets.
+
+| class | blocks | what it is |
+| --- | ---: | --- |
+| `noslot/return-literal` | **229** | the block is one `AST_Return` whose value is an `AST_Literal` with `VT_CONST`. `return 0;` |
+| `noslot/return-const-expr` | **13** | the same, one level up: 7 are `AST_Convert` over a literal, 5 carry a discarded statement beside the return, 1 is an early `return` of a literal |
+| `noslot/discarded-operand` | 0 | |
+| `noslot/local-ref-unseen` | **0** | |
+| `noslot/global-ref-unseen` | **0** | |
+| `noslot/member-unseen` | **0** | |
+| `noslot/arrow-unseen` | **0** | |
+| `noslot/load-unseen` | **0** | |
+| `noslot/bailout` | **0** | |
+| `noslot-sum` | **242** | reproduces `funnel-lower-no-live-in` exactly |
+
+**All 242 are correctly refused, and the reason is not a limitation.** A kernel for `return
+0;` would have `nlive = 0`, allocate nothing per lane, seed nothing, and dispatch 64 lanes to
+compute the same constant. Building it would add +242 to `funnel-agreed` and take the funnel
+to 99.44%, and it would prove nothing whatsoever — it is the exact shape of a green that
+computes nothing. Deliberately not built.
+
+Nor is there anything to constant-fold. 229 of the 242 already *are* a single literal node in
+the arena at `-O1`; `f->nodes == 2` means `Return` plus one child. The host emits `mov eax,0;
+ret` for them today. Folding is not a win here because there is nothing left to fold.
+
+Confirmed on two further corpora, because a bucket measured on one corpus is a corpus fact:
+
+| corpus | blocks seen | no-live-in | classes |
+| --- | ---: | ---: | --- |
+| `gcc.c-torture/execute` | 119,228 | 242 | 229 + 13, six bug classes **0** |
+| `src/*.c` (6 of 18 self-compile) | 1,558 | 137 | 137 `return-literal`, six bug classes **0** |
+| `tests/runtime` (the 17 numeric kernels) | 253 | 1 | 1 `return-literal`, six bug classes **0** |
+| `tests/exec`, first 60 | 950 | 63 | 62 + 1, six bug classes **0** |
+
+And it is not an artefact of leaf grafting: `--no-inline` over gcc c-torture gives the
+identical `242 = 229 + 13` with all six bug classes 0, against `funnel-agreed` 33,936 →
+33,888. The bucket does not move when the pool the inliner draws from does.
+
+### The one block that did name a local, and why it belongs in the other bucket
+
+Before the attribution fix the bucket held **246**, and one of them — `foo` in
+`gcc.c-torture/execute/pr84169.c` — contains two local `Ref`s at frame offsets −56 and −49
+and still has `nslot == 0`. It is not a collector hole. Both statements are `AST_If` op 7, a
+ternary in statement position whose value is computed and thrown away, and **both executors
+skip it without evaluating anything**: `mcc_slice_frame_exec_stmt` and `mcc_slice_spv_stmt`
+each contain the identical two lines returning 1 for op 7. An operand under a statement
+neither executor evaluates is not live-in to anything, so not giving it a slot is correct.
+
+That block also has `nstmt == 0`, no `ret` and no `neret` — **it has nothing to run at all**,
+which is `funnel-lower-nothing-to-run`'s condition, not this one's. It landed here only
+because `mcc_slice_frame_kernel_build` happens to test `nslot < 1` first and `slicerun`
+mirrored that order. The two conditions are independent and only one of them is informative:
+a run with no store, no return and no early return has nothing for either executor to do, and
+its lack of a live-in is a consequence of that, not a cause. `slicerun` now tests "nothing to
+run" first. **4 blocks move; `funnel-lower-nothing-to-run` goes 2 → 6 and `no-live-in` 246 →
+242. No block is created, destroyed, or newly dispatched by this.** It is an attribution fix
+and it is reported as one.
+
+The classifier keeps `noslot/discarded-operand` as a named class rather than folding it into
+the constant classes, so the five `*-unseen` classes state an **invariant** — storage named
+in a position an executor evaluates, with no slot — instead of a corpus fact.
+
+### What was deliberately left refused
+
+* **242 `return <constant>` blocks.** Dispatching them is measurable and worthless; see above.
+* **6 blocks with nothing to run.** Two of them have a live-in and still nothing to do.
+* **The `nslot == 0` path in `mcc_slice_frame_kernel_build`.** `src/` is untouched by this
+  branch. Widening the acceptance predicate to *refuse* `return <constant>` would move
+  `frame-accepted` down by 242 and lift the funnel's percentage without changing one dispatch
+  — the denominator artifact this file already has a correction about. Not done.
+
+### The cell, and the proof it can fail
+
+`slice/noslot-classes` (`cmake/slicerun_noslot.cmake`), over `tests/exec`'s first 60 sources,
+skipping 77 with no device — without one every block stops at `funnel-no-device`, upstream of
+the kernel builder, and every assertion below would be green having classified nothing.
+Five teeth: `funnel-drops-sum == funnel-seen`; `noslot-sum == funnel-lower-no-live-in`;
+the bucket is at least 10 blocks; the six classes that would name an unrecognised live-in are
+**0**; and a positive control — `int noslot_probe(int x, int y) { x ? y : 1; return 7; }` —
+must produce `noslot/discarded-operand ≥ 1`, because the six empty-class assertions are
+satisfiable by a classifier that never enters a statement at all.
+
+No count is banked. A floor on the bucket would go red when somebody narrows the acceptance
+predicate, which is a fix.
+
+Each tooth was made to fire:
+
+| mutation | result |
+| --- | --- |
+| `noslot_classify` walks only `f->ret`, not `f->top[]` | *"the positive control produced no `noslot/discarded-operand`"* |
+| a `return <literal>` is classified `NS_LOCAL` | *"62 blocks are in `noslot/local-ref-unseen`"* |
+| one block is skipped by the classifier | `slicerun` itself prints *"the noslot classes sum to 0 against 63"* and exits 1 |
+
+### Found on the way, not fixed here: `src/mccast.c` disagrees with the device
+
+Reproduced on **unmodified `9fe32126`**, with the branch's `slicerun` stashed: dumping
+`src/*.c` and running the arenas gives **23 expression-slice mismatches and 1 frame
+mismatch**, all of them in `src/mccast.c`. Every mismatch is the same shape — `kind=1 op=0x5`,
+an `f64` ternary with `wtype=0x3` and a `Binary` in condition position, `cpu=` a real double
+bit pattern and `gpu=0` on every tuple. The frame one is a memory divergence, `mem byte 0
+cpu=ff gpu=fd`. `gcc.c-torture` is clean (0 mismatches over 42,852 slices, 120 `f64` slices),
+so nothing committed exercises it: no cell runs `slicerun` over `src/` arenas.
+
+This is `funnel-disagreed=1` on a corpus, which is the one counter in the funnel that is
+supposed to be structurally zero. It is not S7 and it is not touched here, but it outranks
+most of the open list. Reproduce with:
+
+```sh
+for f in src/*.c; do
+    MCC_ARENA_DUMP=dumpsrc/$(basename "$f" .c).txt \
+        cmake-debug/mcc -c "$f" -o /tmp/a.o -O1 -Isrc -Iinclude >/dev/null 2>&1
+done
+cmake-debug/slicerun --arenas dumpsrc/mccast.txt
+```
+
+### Reproducing the classification
+
+```sh
+cmake-debug/slicerun --arenas torture-arenas.txt --quiet | grep -E 'frame-funnel|noslot'
+cmake-debug/slicerun --arenas torture-arenas.txt --quiet --noslot | grep '^noslot '
+```
+
+`--noslot` adds one line per block: class, function, block root, and the shape counters
+(`ntop`/`nstmt`/`nctrl`/`nloop`/`ret`/`neret`/`nodes`) plus the return node's kind, op and
+`ival`, which is what establishes that 229 of them are a literal.
+
+### Validation
+
+`ctest -R "^slice/"` **52/52, 0 failures**, including all four `slice/cref-oracle-*` corpus
+cells (they adjudicate against gcc *and* clang; `gcc-c-torture-execute` 1,607 s,
+`llvm-test-suite-regression-c` 1,366 s, `llvm-test-suite-unittests` 780 s,
+`compiler-rt-builtins-unit` 435 s). `ctest -R census` **18/18, 0 failures**. `ctest -N`
+**9511** = 9510 + `slice/noslot-classes`, counted on the host rather than added up.
+`docref-lint.py` OK, `regstub-lint.py` OK (54 chains, was 53).
+
+**Emitted code cannot have changed**, and the argument is static rather than a sweep:
+`tools/slicerun.c` is a source of the `slicerun` executable only
+(`add_executable(slicerun tools/slicerun.c tools/slicerun_arena.c src/mccgpu.c)`), no target
+that produces `mcc` compiles it, and nothing under `src/` was touched by this branch.
 
 ## Landed — the lowerable ratchet is taken on bodies, not on the corpus ratio, 2026-08-10
 

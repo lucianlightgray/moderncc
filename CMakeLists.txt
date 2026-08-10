@@ -3999,6 +3999,16 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_refclass.cmake")
             set_tests_properties("slice/refusal-classes" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            add_test(NAME "slice/noslot-classes"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DRUNNER=$<TARGET_FILE:slicerun>
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_noslot.cmake")
+            set_tests_properties("slice/noslot-classes" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             add_test(NAME "slice/arena-intern-cap"
                 COMMAND "${CMAKE_COMMAND}"
                         -DRUNNER=$<TARGET_FILE:slicerun>
