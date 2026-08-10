@@ -16519,22 +16519,27 @@ typedef struct AstSearchMemo {
 	uint64_t order_n;
 } AstSearchMemo;
 
+#define AST_ORDER_BITS 5
+#define AST_ORDER_MASK ((1u << AST_ORDER_BITS) - 1u)
+#define AST_ORDER_MAXN (64 / AST_ORDER_BITS)
+typedef char ast_order_bits_fit[AST_STRAT_COUNT <= (int)AST_ORDER_MASK + 1 ? 1 : -1];
+
 static uint64_t ast_order_pack(const int *seq, int n) { MCC_TRACE("enter\n");
 	uint64_t p = 0;
 	int i;
-	if (n > AST_STRAT_COUNT_MAX)
-		{ MCC_TRACE("br\n"); n = AST_STRAT_COUNT_MAX; }
+	if (n > AST_ORDER_MAXN)
+		{ MCC_TRACE("br\n"); return 0; }
 	for (i = 0; i < n; i++)
-		{ MCC_TRACE("br\n"); p |= (uint64_t)(seq[i] & 0xf) << (i * 4); }
+		{ MCC_TRACE("br\n"); p |= (uint64_t)(seq[i] & AST_ORDER_MASK) << (i * AST_ORDER_BITS); }
 	return p;
 }
 
 static void ast_order_unpack(uint64_t p, int n, int *seq) { MCC_TRACE("enter\n");
 	int i;
-	if (n > AST_STRAT_COUNT_MAX)
-		{ MCC_TRACE("br\n"); n = AST_STRAT_COUNT_MAX; }
+	if (n > AST_ORDER_MAXN)
+		{ MCC_TRACE("br\n"); n = AST_ORDER_MAXN; }
 	for (i = 0; i < n; i++)
-		{ MCC_TRACE("br\n"); seq[i] = (int)((p >> (i * 4)) & 0xf); }
+		{ MCC_TRACE("br\n"); seq[i] = (int)((p >> (i * AST_ORDER_BITS)) & AST_ORDER_MASK); }
 }
 
 #define AST_SEARCH_MEMO_CAP 4096
@@ -16543,7 +16548,7 @@ static void ast_order_unpack(uint64_t p, int n, int *seq) { MCC_TRACE("enter\n")
 static AstSearchMemo ast_search_memo[AST_SEARCH_MEMO_CAP];
 static int ast_search_memo_n;
 
-#define AST_SEARCH_MEMO_MAGIC 0x4646u
+#define AST_SEARCH_MEMO_MAGIC 0x4647u
 #define AST_GATE_BITS 48
 #define AST_GATE_DISK_MASK ((uint64_t)(((uint64_t)1 << AST_GATE_BITS) - 1))
 #define AST_SEARCH_DISK_MAX (10ull << 30)
@@ -18624,7 +18629,8 @@ static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
 		MCC_TRACE("memo store order %s hash=%016llx n=%d seq=%s score=%ld\n", funcname,
 							(unsigned long long)h, best_k, sq, best_score);
 		ast_search_disk_store(h, ast_search_gates_now(), 1, best_score, 0,
-													ast_order_pack(best_seq, best_k), (uint64_t)best_k);
+													ast_order_pack(best_seq, best_k),
+													best_k <= AST_ORDER_MAXN ? (uint64_t)best_k : 0);
 	}
 	ast_arena_free(pristine);
 }
