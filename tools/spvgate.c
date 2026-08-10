@@ -308,12 +308,29 @@ static void make_buffer(VkDeviceSize size, VkBuffer *buf, VkDeviceMemory *mem,
 	VK(vkMapMemory(g_dev, *mem, 0, size, 0, map));
 }
 
+#define SPVGATE_MEM_BYTES (1u << 20)
+
+static VkBuffer g_membuf;
+static VkDeviceMemory g_memmem;
+static void *g_memmap;
+
+static void *mem_window(unsigned long *size) {
+	if (!g_memmap) {
+		make_buffer((VkDeviceSize)SPVGATE_MEM_BYTES, &g_membuf, &g_memmem,
+								&g_memmap);
+		memset(g_memmap, 0, SPVGATE_MEM_BYTES);
+	}
+	if (size)
+		*size = SPVGATE_MEM_BYTES;
+	return g_memmap;
+}
+
 static int gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 									 int ntuple, int nlive, int32_t *out) {
 	VkBuffer bin, bout;
 	VkDeviceMemory min_, mout;
 	void *pin, *pout;
-	VkDescriptorSetLayoutBinding dslb[2];
+	VkDescriptorSetLayoutBinding dslb[3];
 	VkDescriptorSetLayoutCreateInfo dslci;
 	VkDescriptorSetLayout dsl;
 	VkDescriptorPoolSize dps;
@@ -321,8 +338,8 @@ static int gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 	VkDescriptorPool dpool;
 	VkDescriptorSetAllocateInfo dsai;
 	VkDescriptorSet dset;
-	VkDescriptorBufferInfo dbi[2];
-	VkWriteDescriptorSet wds[2];
+	VkDescriptorBufferInfo dbi[3];
+	VkWriteDescriptorSet wds[3];
 	VkShaderModuleCreateInfo smci;
 	VkShaderModule sm;
 	VkPipelineLayoutCreateInfo plci;
@@ -348,8 +365,10 @@ static int gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 	memcpy(pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
 	memset(pout, 0, (size_t)cap * MCC_GPU_OUT_SLOTS * 4);
 
+	mem_window(NULL);
+
 	memset(dslb, 0, sizeof dslb);
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < 3; i++) {
 		dslb[i].binding = (unsigned)i;
 		dslb[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		dslb[i].descriptorCount = 1;
@@ -357,13 +376,13 @@ static int gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 	}
 	memset(&dslci, 0, sizeof dslci);
 	dslci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	dslci.bindingCount = 2;
+	dslci.bindingCount = 3;
 	dslci.pBindings = dslb;
 	VK(vkCreateDescriptorSetLayout(g_dev, &dslci, 0, &dsl));
 
 	memset(&dps, 0, sizeof dps);
 	dps.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	dps.descriptorCount = 2;
+	dps.descriptorCount = 3;
 	memset(&dpci, 0, sizeof dpci);
 	dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	dpci.maxSets = 1;
@@ -382,8 +401,10 @@ static int gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 	dbi[0].range = VK_WHOLE_SIZE;
 	dbi[1].buffer = bout;
 	dbi[1].range = VK_WHOLE_SIZE;
+	dbi[2].buffer = g_membuf;
+	dbi[2].range = VK_WHOLE_SIZE;
 	memset(wds, 0, sizeof wds);
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < 3; i++) {
 		wds[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		wds[i].dstSet = dset;
 		wds[i].dstBinding = (unsigned)i;
@@ -391,7 +412,7 @@ static int gpu_run(const uint32_t *code, int nwords, const int32_t *in,
 		wds[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		wds[i].pBufferInfo = &dbi[i];
 	}
-	vkUpdateDescriptorSets(g_dev, 2, wds, 0, 0);
+	vkUpdateDescriptorSets(g_dev, 3, wds, 0, 0);
 
 	memset(&smci, 0, sizeof smci);
 	smci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -1214,6 +1235,100 @@ static int64_t fit_rung_v(int64_t pat, int w) { return fit_rung(pat, w); }
 
 static int corrupt_at = -1;
 
+#define MEM_LANES 64
+
+#if MCC_GPU_LANG_MSL
+static int mem_case(void) {
+	printf(GATE_NAME ": the binding-2 case has no Metal arm\n");
+	return 77;
+}
+#else
+static int mem_case(void) {
+	SpvMod m;
+	SpvRegion r;
+	SpvV v, p;
+	uint32_t base;
+	uint32_t *code = NULL;
+	int nw = 0, t, bad = 0;
+	unsigned long msz = 0;
+	unsigned char *win = (unsigned char *)mem_window(&msz);
+	int32_t *in = (int32_t *)calloc((size_t)MEM_LANES * MCC_GPU_IN_SLOTS,
+																	sizeof *in);
+	int32_t *ob = (int32_t *)calloc((size_t)MEM_LANES * MCC_GPU_OUT_SLOTS,
+																	sizeof *ob);
+	int64_t want[MEM_LANES];
+
+	if (!win || !in || !ob) {
+		printf(GATE_NAME ": mem case out of memory\n");
+		free(in);
+		free(ob);
+		return 1;
+	}
+	spv_module_begin(&m, 1);
+	m.mem_base = (int64_t)(intptr_t)win;
+	m.mem_nbyte = (uint32_t)msz;
+	base = spv_main_begin(&m, 1);
+	if (!spv_mem_region(&m, &r)) {
+		printf(GATE_NAME ": mem case could not open the binding-2 region\n");
+		spv_module_free(&m);
+		free(in);
+		free(ob);
+		return 1;
+	}
+	p = spv_load_live_v(&m, base, 0, 1, 1);
+	v = spv_load_region(&m, &r, spv_mem_off(&m, p), VT_LLONG);
+	if (mutate)
+		v = spv_mutate(&m, v);
+	spv_main_end(&m, m.lane, v);
+	code = spv_module_finish(&m, &nw);
+	spv_module_free(&m);
+	if (!code || nw <= 0) {
+		printf(GATE_NAME ": mem case emitted no module\n");
+		free(code);
+		free(in);
+		free(ob);
+		return 1;
+	}
+	if (corrupt_at >= 0 && corrupt_at < nw)
+		code[corrupt_at] ^= 1u;
+
+	for (t = 0; t < MEM_LANES; t++) {
+		int64_t a = (int64_t)(intptr_t)(win + (size_t)t * 8);
+		want[t] = (int64_t)(0x0123456789ABCDEFLL ^ ((int64_t)(t + 1) * 0x9E3779B9LL));
+		memcpy(win + (size_t)t * 8, &want[t], 8);
+		put_in(in, t, a);
+	}
+	if (gpu_run(code, nw, in, MEM_LANES, 1, ob) != 0) {
+		printf(GATE_NAME ": mem case GPU REJECTED MODULE\n");
+		free(code);
+		free(in);
+		free(ob);
+		return 1;
+	}
+	for (t = 0; t < MEM_LANES; t++) {
+		if (!get_def(ob, t)) {
+			if (bad < 4)
+				printf("  mem lane %d UNDEFINED (the address fell outside binding 2)\n",
+							 t);
+			bad++;
+			continue;
+		}
+		if (get_out(ob, t) != want[t]) {
+			if (bad < 4)
+				printf("  mem lane %d MISMATCH want=%lld got=%lld\n", t,
+							 (long long)want[t], (long long)get_out(ob, t));
+			bad++;
+		}
+	}
+	free(code);
+	free(in);
+	free(ob);
+	printf(GATE_NAME ": mem lanes=%d through binding 2, %d bad\n", MEM_LANES,
+				 bad);
+	printf(GATE_NAME ": %s\n", bad ? "FAIL" : "OK");
+	return bad ? 1 : 0;
+}
+#endif
 
 int main(int argc, char **argv) {
 	int only = -1, i, r, ci;
@@ -1221,6 +1336,7 @@ int main(int argc, char **argv) {
 	const char *arenas = NULL;
 	const char *emit_only = NULL;
 	long emitted = 0;
+	int do_mem = 0;
 	int minnodes = 3, quiet = 0;
 	long limit = 0;
 	int32_t *in =
@@ -1243,6 +1359,8 @@ int main(int argc, char **argv) {
 			arenas = argv[++i];
 		else if (!strcmp(argv[i], "--emit-only") && i + 1 < argc)
 			emit_only = argv[++i];
+		else if (!strcmp(argv[i], "--mem"))
+			do_mem = 1;
 		else if (!strcmp(argv[i], "--min-nodes") && i + 1 < argc)
 			minnodes = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "--limit") && i + 1 < argc)
@@ -1276,6 +1394,10 @@ int main(int argc, char **argv) {
 							 (long long)get_out(gout, 0), get_def(gout, 0));
 				return rc2 == 0 ? 0 : 1;
 			}
+	}
+	if (do_mem) {
+		printf(GATE_NAME ": device %s\n", g_devname);
+		return mem_case();
 	}
 	if (arenas) {
 		printf(GATE_NAME ": device %s\n", g_devname);

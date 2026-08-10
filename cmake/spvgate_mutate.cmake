@@ -1,6 +1,9 @@
 get_filename_component(_tag "${CMD}" NAME_WE)
-execute_process(COMMAND "${CMD}" --mutate RESULT_VARIABLE rc OUTPUT_VARIABLE out
-                ERROR_VARIABLE out)
+if(GATEARGS)
+    set(_tag "${_tag}${GATEARGS}")
+endif()
+execute_process(COMMAND "${CMD}" ${GATEARGS} --mutate RESULT_VARIABLE rc
+                OUTPUT_VARIABLE out ERROR_VARIABLE out)
 message("${out}")
 if(rc EQUAL 77)
     if(MCC_GPU_REQUIRED)

@@ -3643,6 +3643,18 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("gpu/spv-slice-real" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
 
+            add_test(NAME "gpu/spv-mem-binding" COMMAND spvgate --mem)
+            set_tests_properties("gpu/spv-mem-binding" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            add_test(NAME "gpu/spv-mem-binding-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DCMD=$<TARGET_FILE:spvgate>
+                        -DGATEARGS=--mem
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_mutate.cmake")
+            set_tests_properties("gpu/spv-mem-binding-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+
             find_program(MCC_SPIRV_VAL NAMES spirv-val)
             if(MCC_SPIRV_VAL)
                 message(STATUS "mcc: spirv-val = ${MCC_SPIRV_VAL}")
@@ -3675,6 +3687,8 @@ if(MCC_BUILD_TESTS)
             mcc_skip_test("gpu/spv-slice-real" "${_spv_why}")
             mcc_skip_test("gpu/spv-validate" "${_spv_why}")
             mcc_skip_test("gpu/spv-validate-known-positive" "${_spv_why}")
+            mcc_skip_test("gpu/spv-mem-binding" "${_spv_why}")
+            mcc_skip_test("gpu/spv-mem-binding-known-positive" "${_spv_why}")
         endif()
 
         if(APPLE AND MCC_GPU_LANG_MSL_VALUE)
