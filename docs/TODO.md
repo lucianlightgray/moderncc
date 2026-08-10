@@ -317,6 +317,13 @@ and, on `grep.c`, byte-identical to the old exhaustive 13-second run — in 0.6 
 1 590 265 at 50 000, i.e. **more search made it very slightly worse**; the quota is not
 costing quality.
 
+### One bank re-taken
+
+`fmt/census-bank` moved by exactly the two `fprintf` calls this branch adds to
+`src/mccast.c` — the tick-quota notice and the end-of-run candidate count, both behind
+`-fdump-opt-search`. `literal_fmt_sites.fprintf` 390 → 392, `sites.fprintf` 394 → 396,
+`per_file_sites.mccast.c` 150 → 152. Nothing else in the census moved.
+
 ### Three things this exposed that are still open
 
 1. **The search memo was keyed without the axis configuration.** `ast_search_key_salt`
