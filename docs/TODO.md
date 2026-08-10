@@ -32,6 +32,7 @@ textual** (see the trap list).
 | `wt/globreloc` | 2 | globals resolve to real addresses; `cref_expr` spells them for the oracle; the `ast_adump_intern` 4096-pointer cap fails loudly instead of degrading | agent was still running its four corpus cells when last heard from |
 | `wt/hostimport` | 2 | the `cref-unspellable` fix (a global used to spell as a plausible `((T)0LL)`) and comment removal | held so a 40-minute validation would not be invalidated mid-flight |
 | `wt/rirnorm` | 3 | bitfields → shift/mask at RIR; `if (c) return a; return b;` → ternary | agent still running |
+| `wt/earlyret` | 1 | multi-exit frames: an early `return` inside an `if` arm is admitted, suppressed on both executors, and phi'd into the out slots | validated here, not merged; overlaps `wt/rirnorm` — see the landed section |
 
 ### Agents in flight
 
@@ -61,7 +62,7 @@ work until something in `src/` maps an iteration space onto lanes.
 | --- | --- | ---: | --- |
 | 1 | statement `Invoke` | **55.91%** | `if`-return→ternary is the unlock; inlining already landed and bought 0 blocks without it |
 | 2 | conditions | **37.39%** | 94.87% of blocked conditions are a global-aggregate `Ref`; `p->f` landed (+216 blocks) |
-| 3 | early `return` inside an `if`/loop body | 580 blocks | **cheap and new** — `mcc_slice_frame_from_ast` admits `Return` only as the last *top-level* statement, and 572 of 580 already have an accepted return value |
+| 3 | early `return` inside an `if`/loop body | **264 blocks, measured** | **landed on `wt/earlyret`**, unmerged. The 580 was a prediction of the wrong quantity; see the landed section below |
 | 4 | `s.arr[i]` as an indexed base | 58,328 nodes (4.97%) | **unowned**; needs `dynidx` to take a `Unary(MEMBER)` base plus `ast_eval_slice_livein_ext` |
 | 5 | inline asm | 32,472 nodes | unblocked by the effect log; not started |
 | 6 | `volatile` | — | unblocked by the effect log; not started |
@@ -190,6 +191,87 @@ runs on every dispatch. What it produces is a second independent implementation 
 the first against real data rather than test data. That is a currency which converts —
 the device differential has already caught three miscompiles that internal comparisons
 were structurally blind to — whereas device-eligible blocks never had an exchange rate.
+
+## Landed — early `return` is a multi-exit frame, and it is worth 264 blocks rather than 580, 2026-08-09 (`wt/earlyret`, unmerged)
+
+`mcc_slice_frame_from_ast` admitted a `Return` only as the block's last top-level
+statement. It now also admits one nested inside a statement-`if`, and both executors carry
+the exit through: the CPU reference stops the run at the exit and reports that exit's
+value, and the SPIR-V emitter threads a "not yet returned" bool and the exit value as a
+`u2` beside the definedness flag that already had exactly this shape, guarding the
+statements behind each exit under a SelectionMerge.
+
+### The 580 was a prediction of a different quantity, and the measured delta is 264
+
+Whole gcc torture corpus at `-O1`, 1,693 programs, 15,923 bodies, 119,363 blocks, on an
+RTX 5070 Ti Laptop GPU. Before and after on the same dump, same binary path:
+
+| | before | after | delta |
+| --- | ---: | ---: | ---: |
+| frame-accepted blocks | 33,646 | 33,910 | **+264** |
+| refused blocks | 85,710 | 85,446 | −264 |
+| built, dispatched, **agreed** | 33,230 | 33,490 | **+260** |
+| frame-mismatches | 0 | 0 | — |
+
+**The 580 counted blocks whose *first* classifier cause was a nested `Return`, not blocks
+that become acceptable once it is admitted.** `block_cause_stmt` is a looser
+approximation of `mcc_slice_frame_stmt_ok` — it tests a value with
+`ast_eval_slice_kind_ok` and never allocates a slot — so 316 of the 580 still fail on
+something the classifier cannot see. That is the fourth time a bucket's headline has
+meant something other than its name, and the general lesson stands: **an attribution
+count is an upper bound on a fix, never its size.**
+
+The 264 that did land convert at **98.5%**: 260 reach a device and agree, 3 bail in the
+CPU reference and 1 has no live-in. `funnel-lower-emit-failed` and
+`funnel-disagreed` are both still 0, so nothing was accepted that the emitter then
+refused — the failure mode that once inflated coverage 2.4x.
+
+### The shape that made it affordable, and the shape that was refused
+
+Over the 881 refused blocks that contained a nested `Return`, **not one exit had a
+following statement in its own sequence** — every one is the last statement of the `if`
+arm it sits in. That is what lets the guard suppress only the statements *after* the
+enclosing `if`, and it is why no value has to be rescued out of a half-run sequence.
+
+An exit inside a **loop** is refused rather than lowered. It would have to reach the trip
+phi and the exit test as well, and of the blocks whose every other statement already
+passes, **zero** have one — the 37 loop-carried exits in the corpus are all blocked on
+something else too. `slice/frame` pins both refusals.
+
+Two smaller rules, both measured rather than assumed: at most `MCC_SLICE_MAXRET` exits per
+block, and every exit in a block must agree with the trailing `return` on type, because
+the frame has one set of out slots to narrow against. The type rule is what 8 of the
+newly-`unexplained` blocks turned out to be.
+
+### The attribution was moved with the predicate, not left behind
+
+`block_cause_stmt` now mirrors the new rule, or `block/other`'s `Return` row would have
+gone on naming a cause that is no longer a cause. `block/other` falls 752 → 172, the
+`Return` row leaves `othercause` entirely, and four named buckets replace it:
+`block/early-return-in-loop` 20, `block/early-return-no-value` 18,
+`block/early-return-expr` 8. `frame_fail_reason` grew the exit-type check for the same
+reason; without it `nocause: unexplained` went 0 → 8. **Every partition invariant
+`slice/refusal-classes` checks still holds**: `causes-sum` reproduces `refused-blocks`,
+`unwalked=0`, `table-overflow=0`, `othercause: forms-sum` reproduces `block/other`, and
+`nocause` prints no `unexplained` row.
+
+### What is left, and the overlap nobody should pay for twice
+
+617 refused blocks still contain a nested `Return` — 324 at the tail of a top-level `if`
+arm, 256 deeper, 37 in a loop — and every one of them is refused for a *different*
+reason, so this gap is no longer the thing to fix in them. **`wt/rirnorm` is normalising
+`if (c) return a; return b;` into a ternary at RIR**, which is the same source shape from
+the other end. Whichever lands second buys less than its own measurement predicts; take
+the delta again on the merged tree rather than adding the two figures.
+
+**Honest cost.** This was ranked "cheap". The acceptance and CPU halves are: about forty
+lines each, and the reference falls out of a single early-exit flag. The SPIR-V half is
+not — it is the guard, three phis at every merge that can carry an exit, and one real
+dominance bug found in review: phi-ing the two threaded ids at *every* `if` merge defines
+them inside a loop body whenever a loop contains an `if`, and the id is then used past a
+loop merge the body does not dominate. That emits invalid SPIR-V. The fix is to phi them
+only where the `if` actually holds an exit, which is also why an exit in a loop had to be
+refused rather than merely unimplemented.
 
 ## Landed — `block/other` is early `return`, the funnel from acceptance to the device loses 1.24%, and the 28%/1.45% pair are not two ends of one pipe, 2026-08-09 (`wt/attrib`)
 
@@ -361,7 +443,8 @@ kernels until both of those move too.
    the 80.60 available points are `static` storage on two loops. That is a single item —
    symbol-keyed live-ins plus the host-import path already decided in *Total lowering* — and
    it is worth ranking on the strength of that concentration, not on the 1.45%.
-4. **The next block-level item is early `return`**: 580 blocks, 77% of `block/other`, 572 of
+4. **Superseded by `wt/earlyret` above, which measured the real figure at 264.** As
+   written at the time: 580 blocks, 77% of `block/other`, 572 of
    them with an already-accepted return value. It is smaller than calls (55.91%) and
    conditions (37.39%) and should stay ranked below them.
 
