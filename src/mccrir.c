@@ -4623,6 +4623,13 @@ static int rir_bf_intbt(int t) {
 				 bt == VT_BOOL;
 }
 
+static int rir_bf_promo(int t) {
+	int bt = t & VT_BTYPE;
+	if (bt == VT_LLONG || bt == VT_INT)
+		return bt | (t & VT_UNSIGNED);
+	return VT_INT;
+}
+
 static int rir_bf_frame_base(AstLocal n, int depth) {
 	int op;
 	if (n == AST_NONE || depth > 6)
@@ -4758,15 +4765,14 @@ static void rir_bf_lower_store(AstLocal s) {
 		ast_clear_children(rir_arena, s);
 		val = rir_bf_cvt(t0, v);
 		t1 = (f && aux != -1 && aux > 0) ? ((td & ~(VT_BTYPE | VT_LONG)) | aux) : td;
-		dbt = VT_BOOL;
+		lt = rir_bf_promo(t1);
 	} else {
 		ast_clear_children(rir_arena, s);
-		dbt = t1 & VT_BTYPE;
-		lt = dbt == VT_LLONG ? VT_LLONG : VT_INT;
+		lt = rir_bf_promo(t1);
 		val = rir_bf_cvt(t1, v);
 		val = rir_bf_bin('&', lt, val, rir_bf_lit(lt, (long long)mask));
 	}
-	lt = dbt == VT_LLONG ? VT_LLONG : VT_INT;
+	dbt = lt & VT_BTYPE;
 	val = rir_bf_bin(TOK_SHL, lt, val, rir_bf_lit(VT_INT, bp));
 	ast_set_type_bf(rir_arena, d, t1, ast_type_ref(rir_arena, d), 0, 0);
 	keep = ast_dup_sub(rir_arena, d);
