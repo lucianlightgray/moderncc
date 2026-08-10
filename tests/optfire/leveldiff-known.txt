@@ -30,7 +30,5 @@ fprintf-chk-1.c    | 1-12 | (b) SIGABRT at -O1 and above in __fprintf_chk, and t
 printf-chk-1.c     | 1-12 | (b) SIGABRT at -O1 and above in __printf_chk, and the stdout the -O0 run prints is lost with it
 vfprintf-chk-1.c   | 1-12 | (b) SIGABRT at -O1 and above in __vfprintf_chk, and the stdout the -O0 run prints is lost with it
 vprintf-chk-1.c    | 1-12 | (b) SIGABRT at -O1 and above in __vprintf_chk, and the stdout the -O0 run prints is lost with it
-920302-1.c         | 6-12 | (b) SIGSEGV from -O6, exit 0 at -O0..-O5: a computed goto over a static table of label differences
-comp-goto-1.c      | 6-12 | (b) SIGILL at -O6..-O10 and SIGSEGV at -O11..-O12, exit 0 at -O0..-O5: a computed-goto interpreter loop
 
 return-addr.c      | 1-12 | (c) it printf("%p")s the addresses of its own locals, so its stdout is a function of frame layout and can never agree across levels

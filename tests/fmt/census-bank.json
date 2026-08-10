@@ -2,7 +2,7 @@
  "accepted": 156,
  "accepted_with_s": 102,
  "literal_fmt_sites": {
-  "fprintf": 394,
+  "fprintf": 396,
   "printf": 457,
   "snprintf": 174,
   "sprintf": 2
@@ -12,7 +12,7 @@
   "libmcc.c": 37,
   "mcc.c": 39,
   "mccasm.c": 10,
-  "mccast.c": 151,
+  "mccast.c": 153,
   "mcccst.c": 10,
   "mccdbg.c": 0,
   "mccdis.c": 45,
@@ -33,7 +33,7 @@
  "refused_float": 1,
  "refused_ptr": 1,
  "sites": {
-  "fprintf": 398,
+  "fprintf": 400,
   "printf": 459,
   "snprintf": 184,
   "sprintf": 2,
