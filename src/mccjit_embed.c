@@ -573,6 +573,34 @@ done:
 	return spliced;
 }
 
+static int mccjit_bind_apply(MCCState *js, const MccjitIntent *it) { MCC_TRACE("enter\n");
+	ElfSym *es;
+	Section *st = js->symtab;
+	uint32_t bi;
+	int bound = 0;
+	if (!st || !st->link)
+		{ MCC_TRACE("br\n"); return 0; }
+	for_each_elem(st, 1, es, ElfSym) {
+		const char *nm;
+		if (es->st_shndx != SHN_UNDEF)
+			{ MCC_TRACE("br\n"); continue; }
+		nm = (const char *)st->link->data + es->st_name;
+		for (bi = 0; bi < it->nbind; bi++) { MCC_TRACE("br\n");
+			if (strcmp(nm, it->bind_name[bi]))
+				{ MCC_TRACE("br\n"); continue; }
+			es->st_shndx = SHN_ABS;
+			es->st_value = (addr_t)(uintptr_t)it->bind_addr[bi];
+			bound++;
+			if (mcc_env_on("MCC_JIT_VERBOSE"))
+				{ MCC_TRACE("br\n"); fprintf(stderr, "mccjit-bind[%s]: %s -> %p\n",
+										it->fn_name ? it->fn_name : "?", nm,
+										(void *)(uintptr_t)it->bind_addr[bi]); }
+			break;
+		}
+	}
+	return bound;
+}
+
 static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 																		 int param_index, int64_t const_val) { MCC_TRACE("enter\n");
 	MccjitIntent it;
@@ -717,6 +745,8 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	sym_pop(&global_stack, sav_global, 0);
 	mcc_exit_state(js);
 
+	if (reemit_ok && it.nbind)
+		{ MCC_TRACE("br\n"); mccjit_bind_apply(js, &it); }
 	mccjit_error_quiet = 1;
 	if (reemit_ok && mcc_relocate(js) == 0)
 		{ MCC_TRACE("br\n"); entry = mcc_get_symbol(js, it.fn_name); }
@@ -811,6 +841,9 @@ typedef struct MccjitEmbedFn {
 	char *name;
 	unsigned char *blob;
 	size_t len;
+	int bind_n;
+	int bind_elfsym[MCCJIT_BIND_MAX];
+	size_t bind_off[MCCJIT_BIND_MAX];
 	struct MccjitEmbedFn *next;
 } MccjitEmbedFn;
 
@@ -857,10 +890,15 @@ void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym, uint64_t warm_
 		{ MCC_TRACE("br\n"); if (!strcmp(e->name, name))
 			{ MCC_TRACE("br\n"); return; } }
 	mccjit_buf_init(&b);
+	b.bind_allow = 1;
 	if (mccjit_intent_serialize(ast, sym, &b, warm_gates) != 0) { MCC_TRACE("br\n");
+		if (mcc_env_on("MCC_JIT_BAKE_WHY"))
+			{ MCC_TRACE("br\n"); fprintf(stderr, "mccjit-site[%s]: refused\n", name); }
 		mccjit_buf_free(&b);
 		return;
 	}
+	if (mcc_env_on("MCC_JIT_BAKE_WHY"))
+		{ MCC_TRACE("br\n"); fprintf(stderr, "mccjit-site[%s]: baked\n", name); }
 	e = mcc_mallocz(sizeof *e);
 	if (!e) { MCC_TRACE("br\n");
 		mccjit_buf_free(&b);
@@ -869,6 +907,9 @@ void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym, uint64_t warm_
 	e->name = mcc_strdup(name);
 	e->blob = b.data;
 	e->len = b.len;
+	e->bind_n = b.bind_n;
+	memcpy(e->bind_elfsym, b.bind_elfsym, sizeof e->bind_elfsym);
+	memcpy(e->bind_off, b.bind_off, sizeof e->bind_off);
 	e->next = mccjit_embed_fns;
 	mccjit_embed_fns = e;
 	if (mcc_stats_mask)
@@ -2077,6 +2118,13 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 		char blobname[256];
 		if (e->len)
 			{ MCC_TRACE("br\n"); memcpy(p, e->blob, e->len); }
+		{
+			int bi;
+			for (bi = 0; bi < e->bind_n; bi++)
+				{ MCC_TRACE("br\n"); put_elf_reloca(symtab_section, data_section,
+															 (unsigned long)off + e->bind_off[bi], R_DATA_PTR,
+															 e->bind_elfsym[bi], 0); }
+		}
 		snprintf(blobname, sizeof blobname, "%s__mccjit_blob_%s",
 						 s1->leading_underscore ? "_" : "", e->name);
 		set_global_sym(s1, blobname, data_section, off);
