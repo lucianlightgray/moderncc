@@ -12039,14 +12039,14 @@ tok_next:
 		unary();
 		if (vtop->type.t & VT_BITFIELD)
 			{ MCC_TRACE("br\n"); mcc_error("cannot take address of bit-field"); }
+		if ((vtop->type.t & VT_BTYPE) != VT_FUNC &&
+				!(vtop->type.t & (VT_ARRAY | VT_VLA)))
+			{ MCC_TRACE("br\n"); test_lvalue(); }
 		if (vtop->sym && vtop->sym->a.is_register &&
 				((vtop->r & VT_VALMASK) == VT_LOCAL ||
 				 (vtop->sym->type.t & (VT_ARRAY | VT_VLA))))
 			{ MCC_TRACE("br\n"); mcc_error("address of register variable '%s' requested",
 								get_tok_str(vtop->sym->v, NULL)); }
-		if ((vtop->type.t & VT_BTYPE) != VT_FUNC &&
-				!(vtop->type.t & (VT_ARRAY | VT_VLA)))
-			{ MCC_TRACE("br\n"); test_lvalue(); }
 		if (vtop->r & VT_NONLVAL)
 			{ MCC_TRACE("br\n"); mcc_error("cannot take the address of a function-call result"); }
 		if (vtop->sym)
