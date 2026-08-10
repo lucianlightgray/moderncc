@@ -5436,7 +5436,7 @@ if(MCC_BUILD_TESTS)
                             --jobs 32 --minprog 1200)
                 set_tests_properties("optlevel/torture-differential" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
-                    LABELS native TIMEOUT 900 ENVIRONMENT "MCC_DEV=1")
+                    LABELS native TIMEOUT 900)
                 add_test(NAME "optlevel/torture-differential-known-positive"
                     COMMAND "${CMAKE_COMMAND}"
                             -DPY=${MCC_PYTHON3}
@@ -5449,8 +5449,7 @@ if(MCC_BUILD_TESTS)
                             -DSUBJECT=20000112-1.c
                             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/leveldiff_mutate.cmake")
                 set_tests_properties("optlevel/torture-differential-known-positive" PROPERTIES
-                    FIXTURES_REQUIRED MCC_BUILT LABELS native TIMEOUT 900
-                    ENVIRONMENT "MCC_DEV=1")
+                    FIXTURES_REQUIRED MCC_BUILT LABELS native TIMEOUT 900)
             endif()
 
             set(_fs_nrow 0)

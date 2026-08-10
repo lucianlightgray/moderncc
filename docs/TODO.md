@@ -1053,7 +1053,6 @@ own locals, so its stdout can never agree across levels.
 A row that stops diverging fails the cell as loudly as a new divergence, so the table
 cannot rot into lost coverage.
 
-<<<<<<< HEAD
 ## Landed — the search tier counts work, not seconds, 2026-08-10 (`wt/o4ticks`)
 
 `MCC_OPT_SEARCH_LEVEL` is 13 and `-O<n>` at or above it used to set
@@ -1144,10 +1143,7 @@ worse** — so the per-translation-unit quota is not costing quality either.
    before. It is now behind `MCC_SO_RESUME=1`, default off. The *write* is kept, so the
    file is still there for tooling and for the cache-identity question above.
 
-## Landed — thirteen experimental knobs are gated behind `MCC_DEV`, and the gate is loud, 2026-08-10 (`wt/mccdev`)
-=======
 ## Landed — twelve experimental knobs are gated behind `MCC_DEV`, and the gate is loud, 2026-08-10 (`wt/mccdev`)
->>>>>>> ea8bea8e (fix(mccdev): reconcile the gate with wt/o4bugs, and un-blind o0_ab)
 
 **The mechanism.** `src/mccopt.h` gains one default class, `MCC_OPTD_DEV(d)` (bit
 `0x200`), which *wraps* an existing class rather than replacing it, plus `MCC_OPTD_IS_DEV`
@@ -1224,11 +1220,17 @@ via `promote-leaf-xmm`) and warns that the build compiles `-O5`..`-O9` exactly a
 It is derived from the table, not hard-coded, so un-gating a row silences it automatically.
 Nothing in the tree compiles at `-O5`..`-O9` today, so the notice fires in no cell.
 
-That band is also where the two open computed-`goto` divergences live —
+That band is also where the two open computed-`goto` divergences were filed —
 `920302-1.c` SIGSEGVs from `-O6`, and `comp-goto-1.c` SIGILLs at `-O6`–`-O10` and then
-SIGSEGVs at `-O11`–`-O12`, both in `optlevel/torture-differential`'s known list and neither
-fixed. Gating is what makes the `-O6`+ band unreachable by default, so it takes two live
-defects off the shipped surface as a side effect. It does not fix them.
+SIGSEGVs at `-O11`–`-O12`, both rows in `tests/optfire/leveldiff-known.txt`. Gating makes
+the `-O6`+ band unreachable by default, which would take them off the shipped surface —
+but **measure before claiming that**: both rows are already STALE on `main` itself, at
+`a79cb2ce`, with `MCC_DEV` set and unset alike. `optlevel/torture-differential` is red on
+`main` for exactly the two rows it is red for here, so this branch neither caused that nor
+can take credit for it, and `leveldiff-known.txt` is deliberately left untouched for the
+branch that owns it. What this branch's gating adds to that cell is **zero** additional
+stale rows and zero unknown divergences, which is the thing worth recording: reducing what
+`-O5`..`-O12` reaches did not silence a single divergence the differential was watching.
 
 **A free consequence worth knowing.** `tools/c2_sweep.sh`, `tools/c2_equiv.sh`,
 `tools/selfhost-optbench.py` and `tools/optlevel-bench.py` all derive the shipped ladder
