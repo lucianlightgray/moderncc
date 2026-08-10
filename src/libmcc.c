@@ -2992,6 +2992,13 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			const char *vis = optarg;
 			if (strstart("max-errors=", &vis)) { MCC_TRACE("br\n");
 				s->max_errors = atoi(vis);
+			} else if (strstart("opt-search-ticks=", &vis)) { MCC_TRACE("br\n");
+				int t = atoi(vis);
+				if (t < 0)
+					{ MCC_TRACE("br\n"); mcc_warning("-fopt-search-ticks=%s: negative tick "
+																					 "count, using 0", vis); t = 0; }
+				s->optimize_search_ticks = (unsigned)t;
+				s->optimize_search_ticks_set = 1;
 			} else if (strstart("visibility=", &vis)) { MCC_TRACE("br\n");
 				if (!strcmp(vis, "default"))
 					{ MCC_TRACE("br\n"); s->visibility = STV_DEFAULT; }
@@ -3250,7 +3257,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			break;
 		case MCC_OPTION_O:
 			s->optimize_size = 0;
-			s->optimize_search_seconds = 0;
+			if (!s->optimize_search_ticks_set)
+				{ MCC_TRACE("br\n"); s->optimize_search_ticks = 0; }
+			s->optimize_search_all = 0;
 			s->optimize_level = 0;
 			if (optarg[0] == '\0')
 				{ MCC_TRACE("br\n"); s->optimize = 1, s->optimize_level = 1; }
@@ -3260,8 +3269,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 					{ MCC_TRACE("br\n"); lvl = 255; }
 				s->optimize_level = (unsigned char)lvl;
 				s->optimize = (unsigned char)(lvl > 3 ? 3 : lvl);
-				if (lvl >= MCC_OPT_SEARCH_LEVEL)
-					{ MCC_TRACE("br\n"); s->optimize_search_seconds = lvl; }
+				if (lvl >= MCC_OPT_SEARCH_LEVEL) { MCC_TRACE("br\n");
+					s->optimize_search_all = 1;
+					if (!s->optimize_search_ticks_set)
+						{ MCC_TRACE("br\n"); s->optimize_search_ticks =
+									mcc_search_ticks(MCC_OPT_SEARCH_TICKS); }
+				}
 			} else if (!strcmp(optarg, "s") || !strcmp(optarg, "z")) { MCC_TRACE("br\n");
 				s->optimize = 2;
 				s->optimize_level = 2;

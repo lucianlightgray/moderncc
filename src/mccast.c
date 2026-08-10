@@ -1838,7 +1838,7 @@ static int ast_search_pthreads_env;
 static int ast_search_ordered_env;
 static int ast_search_verbose_env;
 static int ast_search_walk_env;
-static unsigned ast_search_seconds;
+static unsigned ast_search_ticks;
 
 static int ast_search_walk_from_env(void) { MCC_TRACE("enter\n");
 	const char *v = getenv("MCC_AST_SEARCH_WALK");
@@ -2175,7 +2175,7 @@ static void ast_inline_index_reset(void);
 
 static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_ladder_gpu_setup();
-	int o4 = s1->optimize_search_seconds > 0;
+	int o4 = s1->optimize_search_all != 0;
 	int i, dflt[MCC_OPT_COUNT];
 	int n = 0;
 #define MCC_OPT_ROW(id, name, d) dflt[n++] = (d);
@@ -2219,7 +2219,7 @@ ST_FUNC int ast_math_errno_folds(MCCState *s1) { MCC_TRACE("enter\n");
 void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	int opt_promote = 0;
 	mcc_isa_init(s1);
-	int o4 = s1->optimize_search_seconds > 0;
+	int o4 = s1->optimize_search_all != 0;
 	ast_reemit_n = 0;
 	ast_inline_n = 0;
 	ast_inline_index_reset();
@@ -2293,7 +2293,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 		ast_order_seq_str(ast_strat_order, ast_strat_order_n, sq);
 		MCC_TRACE("strat order forced n=%d seq=%s\n", ast_strat_order_n, sq);
 	}
-	ast_search_seconds = s1->optimize_search_seconds;
+	ast_search_ticks = s1->optimize_search_ticks;
 	ast_promote_env = mcc_opt(s1, MCC_OPT_PROMOTE_LOCALS);
 	ast_promo_arrow_env = mcc_opt(s1, MCC_OPT_PROMOTE_ARROW);
 	ast_promo_incdec_env = mcc_opt(s1, MCC_OPT_PROMOTE_INCDEC);
@@ -16512,8 +16512,27 @@ static uint64_t ast_search_key_salt_ex(uint64_t h, int per_triple) { MCC_TRACE("
 	return h;
 }
 
+static const char *const ast_search_axis_env[] = {
+		"MCC_AST_TEMPLATES",   "MCC_AST_PROMOTE",		 "MCC_AST_INLINE",
+		"MCC_AST_NO_CALLFUL",  "MCC_AST_INLINE_LIMIT", "MCC_AST_INLINE_NODES",
+		"MCC_AST_GRAFT",			 "MCC_AST_BITFLAG",			 "MCC_AST_CPROP_JOIN",
+		"MCC_AST_CSE_JOIN",		 "MCC_AST_PROMOTE_LIMIT", "MCC_AST_OPT_LIMIT",
+		"MCC_AST_FN_CONFIG"};
+
+static uint64_t ast_search_axis_salt(uint64_t h) { MCC_TRACE("enter\n");
+	unsigned i;
+	for (i = 0; i < sizeof ast_search_axis_env / sizeof *ast_search_axis_env; i++) { MCC_TRACE("br\n");
+		const char *v = getenv(ast_search_axis_env[i]);
+		const char *s;
+		h = (h ^ (uint64_t)(i + 1)) * 0x100000001b3ull;
+		for (s = v ? v : ""; *s; s++)
+			{ MCC_TRACE("br\n"); h = (h ^ (unsigned char)*s) * 0x100000001b3ull; }
+	}
+	return h;
+}
+
 static uint64_t ast_search_key_salt(uint64_t h) { MCC_TRACE("enter\n");
-	return ast_search_key_salt_ex(h, 1);
+	return ast_search_axis_salt(ast_search_key_salt_ex(h, 1));
 }
 
 static uint64_t ast_slice_key_salt(uint64_t h) { MCC_TRACE("enter\n");
@@ -16994,18 +17013,52 @@ static unsigned ast_search_expect_ms(void) { MCC_TRACE("enter\n");
 }
 
 static unsigned ast_search_remaining_ms(void) { MCC_TRACE("enter\n");
-	unsigned el = ast_now_ms() - ast_search_start_ms;
+	unsigned el;
+	if (!ast_search_budget_ms)
+		{ MCC_TRACE("br\n"); return ~0u; }
+	el = ast_now_ms() - ast_search_start_ms;
 	return el >= ast_search_budget_ms ? 0 : ast_search_budget_ms - el;
 }
 
+static int ast_search_cap_fired;
+static unsigned long ast_search_evals;
+static unsigned long ast_search_eval_quota;
+static int ast_search_quota_hit;
+
+static void ast_search_evals_report(void) {
+	fprintf(stderr, "[search] %lu candidate evaluations, quota %lu (%s)\n",
+					ast_search_evals, ast_search_eval_quota,
+					ast_search_quota_hit ? "spent" : "not reached");
+}
+
 static int ast_search_should_stop(void) { MCC_TRACE("enter\n");
-	unsigned rem;
 	if (ast_search_abort)
 		{ MCC_TRACE("br\n"); return 1; }
-	rem = ast_search_remaining_ms();
-	if (rem == 0)
-		{ MCC_TRACE("br\n"); return 1; }
-	return ast_search_expect_ms() > rem;
+	if (ast_search_eval_quota && ast_search_evals >= ast_search_eval_quota) { MCC_TRACE("br\n");
+		if (!ast_search_quota_hit) { MCC_TRACE("br\n");
+			ast_search_quota_hit = 1;
+			if (ast_search_verbose_env)
+				{ MCC_TRACE("br\n"); fprintf(stderr,
+					"[search] tick quota spent: %lu candidate evaluations; every function "
+					"after this one keeps its default gates. This bound is counted in "
+					"work, not in time, so the object stays reproducible -- raise it with "
+					"-fopt-search-ticks or MCC_SEARCH_TU_EVALS\n",
+					ast_search_eval_quota); }
+			MCC_TRACE("search quota %lu candidate evaluations spent\n",
+								ast_search_eval_quota);
+		}
+		return 1;
+	}
+	if (!ast_search_budget_ms)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_search_remaining_ms())
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ast_search_cap_fired) { MCC_TRACE("br\n");
+		ast_search_cap_fired = 1;
+		mcc_search_cap_notice("ast-search", ast_now_ms() - ast_search_start_ms,
+													ast_search_budget_ms);
+	}
+	return 1;
 }
 
 #define MCC_EFFECT_MALLOC mcc_malloc
@@ -18083,6 +18136,7 @@ static long ast_search_score_one(AstArena *pristine, Sym *sym, int faithful,
 																 AstGateMask gates, int saved_loc, int saved_anon) { MCC_TRACE("enter\n");
 	AstArena *saved_cur, *trial;
 	long sc, hits;
+	ast_search_evals++;
 	if (ast_search_emitsize_env)
 		{ MCC_TRACE("br\n"); return ast_search_score_emitsize(pristine, sym, faithful, gates, saved_loc,
 																		 saved_anon); }
@@ -18218,6 +18272,7 @@ static int ast_search_pool(AstArena *pristine, Sym *sym, int faithful,
 	pid_t pids[64];
 	AstGateMask best = gatelist[0];
 	long best_score = -1;
+	long *results;
 	AstScoreRec rec;
 	if (nw < 2)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -18225,8 +18280,13 @@ static int ast_search_pool(AstArena *pristine, Sym *sym, int faithful,
 		{ MCC_TRACE("br\n"); nw = nc; }
 	if (nw > 64)
 		{ MCC_TRACE("br\n"); nw = 64; }
-	if (pipe(pipefd) != 0)
+	results = mcc_malloc((size_t)nc * sizeof *results);
+	if (!results)
 		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < nc; i++)
+		{ MCC_TRACE("br\n"); results[i] = -1; }
+	if (pipe(pipefd) != 0)
+		{ MCC_TRACE("br\n"); mcc_free(results); return 0; }
 	for (w = 0; w < nw; w++) { MCC_TRACE("br\n");
 		pid_t pid = fork();
 		if (pid == 0) { MCC_TRACE("br\n");
@@ -18246,11 +18306,10 @@ static int ast_search_pool(AstArena *pristine, Sym *sym, int faithful,
 	}
 	close(pipefd[1]);
 	while (read(pipefd[0], &rec, sizeof rec) == (ssize_t)sizeof rec) { MCC_TRACE("br\n");
+		if (rec.idx < 0 || rec.idx >= nc)
+			{ MCC_TRACE("br\n"); continue; }
 		done++;
-		if (rec.score >= 0 && (best_score < 0 || rec.score < best_score)) { MCC_TRACE("br\n");
-			best_score = rec.score;
-			best = gatelist[rec.idx];
-		}
+		results[rec.idx] = rec.score;
 	}
 	close(pipefd[0]);
 	for (w = 0; w < nw; w++)
@@ -18258,7 +18317,20 @@ static int ast_search_pool(AstArena *pristine, Sym *sym, int faithful,
 			int st;
 			waitpid(pids[w], &st, 0);
 		} }
-	if (!done)
+	if (done != nc) { MCC_TRACE("br\n");
+		MCC_TRACE("fork pool: %d of %d candidates reported, refusing a partial "
+							"result that would depend on which worker won the race\n",
+							done, nc);
+		mcc_free(results);
+		return 0;
+	}
+	for (i = 0; i < nc; i++)
+		{ MCC_TRACE("br\n"); if (results[i] >= 0 && (best_score < 0 || results[i] < best_score)) { MCC_TRACE("br\n");
+			best_score = results[i];
+			best = gatelist[i];
+		} }
+	mcc_free(results);
+	if (best_score < 0)
 		{ MCC_TRACE("br\n"); return 0; }
 	*best_out = best;
 	*best_score_out = best_score;
@@ -18609,8 +18681,13 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 		{ MCC_TRACE("br\n"); mcc_stats_search_enter(); }
 	if (!ast_search_started) { MCC_TRACE("br\n");
 		ast_search_started = 1;
+		if (ast_search_verbose_env)
+			{ MCC_TRACE("br\n"); atexit(ast_search_evals_report); }
 		ast_search_start_ms = ast_now_ms();
-		ast_search_budget_ms = ast_search_seconds * 1000u;
+		ast_search_budget_ms = mcc_search_cap_ms();
+		ast_search_eval_quota =
+				(unsigned long)ast_search_ticks *
+				mcc_env_count("MCC_SEARCH_TU_EVALS", MCC_OPT_SEARCH_TU_EVALS);
 		ast_search_disk_load();
 	}
 	base = ast_search_gates_now();
@@ -18727,11 +18804,18 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 			cx.faithful = faithful;
 			cx.saved_loc = saved_loc;
 			cx.saved_anon = saved_anon;
+			unsigned tick, nticks = ast_search_ticks ? ast_search_ticks : 1u;
+			AstGateMask round_base;
+			int all_rounds_exhausted = 1;
 			cx.items = items;
 			cx.tried = 0;
 			cx.skip = resume_active ? resume_skip : 0;
 			cx.ord = 0;
 			cx.best_score = -1;
+			cbest.k = 0;
+			cbest.score = 0;
+			cbest.evaluated = 0;
+			cbest.exhausted = 1;
 			spec.nitems = nitems;
 			spec.min_k = 1;
 			spec.max_k = nitems;
@@ -18754,11 +18838,18 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 					best_score = rs;
 				}
 			}
-			if (((AstGateMask)1 << nitems) > AST_SEARCH_CAND_MAX) { MCC_TRACE("br\n");
+			round_base = best;
+			for (tick = 0; tick < nticks; tick++) { MCC_TRACE("br\n");
+			long round_entry_score = best_score;
+			cx.tried = 0;
+			cx.skip = (tick == 0 && resume_active) ? resume_skip : 0;
+			cx.ord = 0;
+			cx.best_score = -1;
+			if (nitems > 6) { MCC_TRACE("br\n");
 				long idelta[64];
 				int i, j;
 				for (i = 0; i < nitems; i++) { MCC_TRACE("br\n");
-					AstGateMask cand = base ^ items[i];
+					AstGateMask cand = round_base ^ items[i];
 					long sc;
 					if (ast_search_should_stop()) { MCC_TRACE("br\n");
 						idelta[i] = LONG_MAX;
@@ -18798,6 +18889,20 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 					best_score = cbest.score;
 				}
 			}
+			tried_mask = cx.tried;
+			if (!cbest.exhausted)
+				{ MCC_TRACE("br\n"); all_rounds_exhausted = 0; }
+			MCC_TRACE("search tick %u/%u %s base=%llx best=%llx score=%ld->%ld "
+								"evaluated=%ld exhausted=%d\n",
+								tick + 1u, nticks, funcname, (unsigned long long)round_base,
+								(unsigned long long)best, round_entry_score, best_score,
+								cbest.evaluated, cbest.exhausted);
+			if (nitems <= 6 && cbest.exhausted)
+				{ MCC_TRACE("br\n"); break; }
+			if (best_score < 0 || (round_entry_score >= 0 && best_score >= round_entry_score))
+				{ MCC_TRACE("br\n"); break; }
+			round_base = best;
+			}
 			{
 				long z = ast_search_score_one(pristine, sym, faithful, 0, saved_loc,
 																			saved_anon);
@@ -18806,8 +18911,8 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 					best_score = z;
 				}
 			}
-			tried_mask = cx.tried;
-			search_complete = (cbest.exhausted || cbest.evaluated >= spec.budget) &&
+			search_complete = (all_rounds_exhausted ||
+												 cbest.evaluated >= spec.budget) &&
 												!ast_search_should_stop();
 			MCC_TRACE("combo winner gates=%llx base=%llx searchable=%llx score=%ld "
 								"ordered=%d nitems=%d tried=%llx\n",
@@ -19293,7 +19398,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				AstGateMask ast_search_sv_gates = ast_search_gates_now();
 				if (!ast_strat_order_forced)
 					{ MCC_TRACE("br\n"); ast_strat_order_reset(); }
-				if (ast_opt_ok && ast_search_env && ast_search_seconds > 0) { MCC_TRACE("br\n");
+				if (ast_opt_ok && ast_search_env && ast_search_ticks > 0) { MCC_TRACE("br\n");
 					ast_search_select(sym, ast_opt_ok, saved_loc, saved_anon);
 					ast_search_axis_pick(sym, ast_opt_ok, saved_loc, saved_anon);
 				}

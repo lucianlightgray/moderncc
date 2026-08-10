@@ -424,4 +424,37 @@ static inline long mcc_env_num(const char *name, long dflt) {
 	return v > 0 ? v : dflt;
 }
 
+static inline unsigned mcc_env_count(const char *name, unsigned dflt) {
+	const char *e = getenv(name);
+	long v;
+	if (!e || !e[0])
+		return dflt;
+	v = strtol(e, NULL, 10);
+	if (v < 0)
+		return dflt;
+	return (unsigned)v;
+}
+
+static inline unsigned mcc_search_ticks(unsigned dflt) {
+	return mcc_env_count("MCC_SEARCH_TICKS", dflt);
+}
+
+static inline unsigned mcc_search_cap_ms(void) {
+	return mcc_env_count("MCC_SEARCH_CAP_MS", 0u);
+}
+
+static inline void mcc_search_cap_notice(const char *where, unsigned elapsed_ms,
+																				 unsigned cap_ms) {
+	static int said;
+	if (said)
+		return;
+	said = 1;
+	fprintf(stderr,
+					"mcc: warning: opt-search wall-clock cap fired in %s after %u ms "
+					"(MCC_SEARCH_CAP_MS=%u); the search was cut where the clock landed, so "
+					"this object is not reproducible. Raise or clear MCC_SEARCH_CAP_MS to "
+					"get deterministic output.\n",
+					where, elapsed_ms, cap_ms);
+}
+
 #endif

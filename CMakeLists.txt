@@ -7132,6 +7132,28 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(opt-determinism-known-positive PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 1800)
 
+            add_test(NAME opt-search-determinism
+                COMMAND "${MCC_PYTHON3}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/opt-search-determinism.py"
+                    "$<TARGET_FILE:mcc>"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/programs/grep.c"
+                    --opt=-O13)
+            set_tests_properties(opt-search-determinism PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900
+                RUN_SERIAL TRUE)
+
+            add_test(NAME opt-search-determinism-known-positive
+                COMMAND "${CMAKE_COMMAND}"
+                    -DPY=${MCC_PYTHON3}
+                    -DTOOL=${CMAKE_CURRENT_SOURCE_DIR}/tools/opt-search-determinism.py
+                    -DMCC=$<TARGET_FILE:mcc>
+                    -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/programs/grep.c
+                    -DOPT=-O13
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/opt_search_determinism_mutate.cmake")
+            set_tests_properties(opt-search-determinism-known-positive PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 1800
+                RUN_SERIAL TRUE)
+
             add_test(NAME untyped-probe
                 COMMAND "${MCC_PYTHON3}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tools/untyped-probe.py"
@@ -7153,6 +7175,10 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 "the determinism gate recompiles src/mcc.c with the host mcc; an emulated or cross build is not running the compiler under test")
             mcc_skip_test(opt-determinism-known-positive
                 "the determinism gate recompiles src/mcc.c with the host mcc; an emulated or cross build is not running the compiler under test")
+            mcc_skip_test(opt-search-determinism
+                "the search-tier reproducibility gate compiles a subject twice with the host mcc, once against an oversubscribed box; an emulated or cross build is not running the compiler under test")
+            mcc_skip_test(opt-search-determinism-known-positive
+                "the search-tier reproducibility gate compiles a subject twice with the host mcc, once against an oversubscribed box; an emulated or cross build is not running the compiler under test")
             mcc_skip_test(untyped-probe
                 "the untyped census reads a report the host mcc emits while compiling src/mcc.c; an emulated or cross build is not running the compiler under test")
             mcc_skip_test(untyped-probe-known-positive
@@ -7231,6 +7257,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         mcc_skip_test("fmt/census-bank-known-positive" "${_nopy2_why}")
         mcc_skip_test("opt-determinism" "${_nopy2_why}")
         mcc_skip_test("opt-determinism-known-positive" "${_nopy2_why}")
+        mcc_skip_test("opt-search-determinism" "${_nopy2_why}")
+        mcc_skip_test("opt-search-determinism-known-positive" "${_nopy2_why}")
         mcc_skip_test("untyped-probe" "${_nopy2_why}")
         mcc_skip_test("untyped-probe-known-positive" "${_nopy2_why}")
         mcc_skip_test("runtime-bench-gatewin" "${_nopy2_why}")

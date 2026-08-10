@@ -272,6 +272,72 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    before (ii) is fixed makes an unbounded `vkDeviceWaitIdle` reachable from `atexit` on
    every run.
 
+## Landed — the search tier counts work, not seconds, 2026-08-10 (`wt/o4ticks`)
+
+`MCC_OPT_SEARCH_LEVEL` is 13 and `-O<n>` at or above it used to set
+`optimize_search_seconds = n`. The budget **was** the level number, in seconds, and it was
+also the flag that meant "every level-gated knob on" — `ast_opt_defaults` computed
+`o4 = optimize_search_seconds > 0`. One variable did two unrelated jobs, and one of them
+made object output a function of how busy the box was.
+
+Measured on this host, old binary, `src/mcc.c` with the build's own `-D`/`-I`, each arm
+given an empty `XDG_CACHE_HOME`: unloaded **3 396 639 bytes in 28.50 s**, the same command
+against 192 spinners **3 397 087 bytes in 136.51 s**. Same source, same flags, different
+object.
+
+### What replaced it, by symbol
+
+| was | is |
+| --- | --- |
+| `MCCState.optimize_search_seconds` | **deleted**; split into the two below |
+| — | `MCCState.optimize_search_all` — "every level-gated knob on". The only thing `o4` and `switch_jt_env` now read |
+| — | `MCCState.optimize_search_ticks` (+ `_ticks_set`) — how much search work. `-fopt-search-ticks=<n>`, `MCC_SEARCH_TICKS`, default `MCC_OPT_SEARCH_TICKS` = 1 |
+| `ast_search_seconds` | `ast_search_ticks` |
+| `ast_search_budget_ms = seconds * 1000` | `ast_search_budget_ms = mcc_search_cap_ms()` — `MCC_SEARCH_CAP_MS`, **0 and off by default** |
+| `slice = base_ms << round`, `g_dead`/`b_dead`/`l_dead` | per-axis candidate quotas: `MCC_OPT_SEARCH_TICK_LIMITS`/`_BUDGETS`/`_GATES` = 5/2/2 |
+| `cap_ms = max(2000, 4 * measured_dt)` | `so_eval_capped()` at a fixed `SO_EVAL_CAP_MS` = 300 s, and it **warns on stderr** when it fires |
+
+Two definitions, because there are two search loops:
+
+- **outer** (`mcc_superopt_search`): one tick = 5 limit ids + 2 budget ids + 2 gate ids,
+  cursors carried into the next tick, each id one child `mcc` measured on `.text`.
+- **inner** (`ast_search_select`): one tick = one full sweep of the candidate enumerator
+  over one function body — base score, one probe per searchable knob, up to
+  `AST_SEARCH_CAND_MAX` = 64 combinations, the all-off probe — with tick *r+1* re-seeded
+  from tick *r*'s winner and stopped at the first round that improves nothing. Capped
+  per translation unit at `ticks * MCC_OPT_SEARCH_TU_EVALS` = 20 000 candidate
+  evaluations. That bound is counted in *work*, so it truncates identically on every
+  machine.
+
+### Round 2 buys nothing, measured twice
+
+`grep.c` at ticks 1/2/3/4 and `src/mcc.c` at ticks 1/2/3 are byte-identical to each other
+and, on `grep.c`, byte-identical to the old exhaustive 13-second run — in 0.6 s instead of
+13.0 s. On `src/mcc.c` the inner search reaches `.text` 1 589 853 at 20 000 evaluations and
+1 590 265 at 50 000, i.e. **more search made it very slightly worse**; the quota is not
+costing quality.
+
+### Three things this exposed that are still open
+
+1. **The search memo was keyed without the axis configuration.** `ast_search_key_salt`
+   folded version, triplet and ISA, so an entry recorded under one `(gate, budget, limit)`
+   was reused under another and warm-cache output drifted from cold-cache output. Fixed
+   here by salting with the twelve `so_axes[]` names plus `MCC_AST_FN_CONFIG`, and
+   `opt-search-determinism` now compares a warm-cache run against the cold one so the
+   class stays covered. **This is the sibling of `opt-cache-determinism`, and it means
+   that cell's subject is no longer purely hypothetical**: with `-O13` writing 5 entries
+   under `XDG_CACHE_HOME`, a four-state cache-identity claim at the search tier now has
+   something to measure. `-fopt-slice`'s `sl-<salt>.ck` is a separate cache and was
+   deliberately not touched.
+2. **`-fopt-search-pthreads` faults.** The workers call `ast_search_score_one`, which
+   writes the process globals `ast_cur` and the whole `ast_*_env` set. Fix or delete it;
+   it is `MCC_OPTD_OFF` so nothing reaches it today.
+3. **The superopt checkpoint is a resume, and a resume is not reproducible.**
+   `so_ckpt_read` used to seed `best_gate` and all three cursors from
+   `$XDG_CACHE_HOME/mcc/so-<key>.ck`, so the object depended on what the box had compiled
+   before. It is now behind `MCC_SO_RESUME=1`, default off. The *write* is kept, so the
+   file is still there for tooling and for the cache-identity question above.
+
 ## Landed — the lowerable ratchet is taken on bodies, not on the corpus ratio, 2026-08-10
 
 `rir-coverage` went red twice in one day on the same mechanism. On 2026-08-09 it was
