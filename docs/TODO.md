@@ -13,37 +13,45 @@
 
 ### Where the tree is
 
-`main` at the `wt/earlyret` merge plus the two bank re-takes, **9501 cells on this host**,
-pushed. `wt/jitshutdown` is unmerged on top of it at **9503** (+2, both named in its
-write-up below). Ten branches landed in one merge wave: `wt/hostimport`, `wt/muslgap`,
-`wt/memberidx`, `wt/threadname`, `wt/symguard`, `wt/gpusmall`, `wt/rirphase`,
-`wt/globreloc-int`, `wt/earlyret`, plus the earlier `wt/attrib`. `wt/rirnorm` and
-`wt/globreloc` are **superseded** — they landed through `wt/rirphase` and
-`wt/globreloc-int` respectively; do not merge the originals.
+> The pre-merge branch accounting that used to sit here (9501/9503/9504 cells,
+> `wt/jitshutdown`/`wt/threadmap-int`/`wt/o4fold` unmerged) moved to `docs/ARCHIVED.md`
+> on 2026-08-10 — every branch it tracked has merged.
 
-`wt/threadmap-int` sits on top of that, unmerged: `wt/threadmap` reconciled against
-`wt/threadname`, **9504 cells**, +3 named (`slice/thread`,
-`slice/thread-known-positive`, `thread-census-control`). `wt/threadmap` itself is
-**superseded** — do not merge `de928597` directly, it carries the second classifier and a
-bank re-taken against a stale base.
+`main` at `afa4e0d5`, pushed, **9535 cells on this host** (`ctest -N` identical before
+and after the `wt/o4fold` merge — no cell added or lost). The whole wave is in:
+`wt/earlyret`, `wt/jitshutdown`, `wt/kgcpure`, `wt/probearm`, `wt/threadmap-int`,
+`wt/globagg`, `wt/noslot`, `wt/bakewiden`, `wt/replayfix`, `wt/o2wrong`, `wt/f64tern`,
+`wt/smoke`, `wt/parseframe`, `wt/o4bugs`, `wt/o4ticks`, `wt/mccdev` and `wt/o4fold`
+(merged at `074a92d7`). `wt/rirnorm`, `wt/globreloc` and `wt/threadmap` are
+**superseded** — they landed through `wt/rirphase`, `wt/globreloc-int` and
+`wt/threadmap-int` respectively; do not merge the originals (`wt/threadmap`'s `de928597`
+carries the second classifier and a bank re-taken against a stale base). **Count cells on
+the host rather than adding them up** — registration is glob-, loop- and
+capability-driven (Vulkan + `spirv-val`, `objdump`), so the total is host-dependent.
 
-**Count cells on the host rather than adding them up.** The jump from 9468 is +33: eight
-literally-named cells (`asm/reloc-suffix`; `gpu/spv-mem-binding{,-known-positive}`;
-`gpu/spv-validate{,-known-positive}`; `superopt/global-reload{,-known-positive}`;
-`slice/arena-intern-cap`) and the rest from glob- and loop-driven registration. Six of the
-eight are conditional on Vulkan plus `spirv-val`, or on `objdump`, so the total is
-host-dependent — an arithmetic estimate came out 4 low.
+`-O4` is now the consolidation of all 26 validated knobs, `-O5`–`-O12` and `-O14`+ are a
+hard error, `-O13` is the search entry, and smoke covers `-O0`–`-O4` at 6,772,291 value
+cases. Two fixes sit on top of the merge:
 
-`wt/o4fold` sits unmerged on top of `main` at the `leveldiff` commit, **9535 cells on this
-host — identical to `main`**, no cell added or lost. It consolidates the 26 non-gated
-knobs at rungs 5–12 onto `-O4`, makes `-O5`–`-O12` and `-O14`+ a hard error, keeps `-O13`
-as the search entry, and retargets smoke to `-O0`–`-O4` with the float/`_Complex` tables
-deepened so the value-case total went **up** (6,308,092 → 6,772,291) rather than down.
-**Read its two open items (21 and 22 on the audit board) before reading its green cells**:
-`smoke/native` is green because the `-O13` rows it was failing on are no longer measured,
-and the deepening surfaced a real `_Float16` conformance defect.
+- `c61d1aa5` — `ast_search_evals_report` (new with the tick redesign) opened without
+  `MCC_TRACE("enter\n")`; caught by `trace-gate-invariant`, not by a reviewer.
+- `afa4e0d5` — `regression/o4-aot-jit`, the one red in `wt/o4fold`'s validation, asserted
+  a wall-clock contract that no longer exists: Part 1 required the `-O13` search to take
+  3–60 s, and the work-bounded search finishes that subject in 2.5 s **by design**. The
+  lower bound is removed — engagement is proven by the candidate count (12,672 against a
+  floor of 1,000) and the active range gate — and the upper bound is kept, widened,
+  purely as a runaway guard.
 
-Three machines share this branch: this one (Linux/Vulkan), a Windows box and a Mac box.
+With those two, the four reds that predated `wt/mccdev` are all resolved:
+`optlevel/torture-differential` and `fmt/census-bank` (+ twin) at `93cc8b07` — the two
+stale computed-goto rows dropped, the census re-banked 151 → 153 for the two
+`-fdump-opt-search` prints — and `smoke/native` green since the `wt/o4fold` retarget,
+**by omission, not by fix**. **Read open items 21 and 22 on the audit board before
+reading green cells in those areas**: item 21 owns the unmeasured `-O13`
+replay-fallback regression, item 22 the `_Float16` per-operation rounding defect the
+smoke deepening surfaced.
+
+Three machines share this tree: this one (Linux/Vulkan), a Windows box and a Mac box.
 Both peers were idle through this wave.
 
 ### Five corrections to the previous handoff
@@ -1084,7 +1092,8 @@ item, listed below.
 
 ### The bank rows that were dropped, and why that is NOT an improvement
 
-`smoke/native` **fails on `main` on this host**: `O13 replay-fallback:len` rose 18 → 42
+`smoke/native` **failed on pre-`wt/o4fold` `main` on this host** (since the merge this
+branch *is* `main`): `O13 replay-fallback:len` rose 18 → 42
 and `:bytes` rose 3 → 7 when the tick redesign made one tick *finish* the search instead
 of abandoning it at 13 s, so more bodies diverge in bytes and fall back. Value digests are
 identical at every level; no answer changed.
@@ -1138,9 +1147,9 @@ it already runs under `MCC_DEV=1`, where `-O5` is exactly as live as it was.
 - `optlevel/torture-differential` — **0 unknown divergences, 0 stale rows**, 12 known rows over `-O1`–`-O4`. Its twin still catches a mutated `-O0` answer. 3.7 s, down from 25 s.
 - `ctest -R "optfire|flagsweep|stratsweep|cli|census"` — **920/920**.
 - `flagsweep/dev-gate` and its twin — pass; the twin reports 20 violations when disarmed.
-- `superopt|exec-chainlive|fmt/|ast/|idiom|opt-determinism|regression|fuzz/o4|leveldiff|optbench` — **165/166**. The one red is `regression/o4-aot-jit`, and it **reproduces identically on an unmodified `main`** built from the same source in the same session: `wall=2.55s evaluated=12672 range_gate_lines=35`, `Part1 FAIL: wall 2.55s outside 3..60s`, the same three numbers. It is a host-speed floor in that cell, not this branch.
+- `superopt|exec-chainlive|fmt/|ast/|idiom|opt-determinism|regression|fuzz/o4|leveldiff|optbench` — **165/166**. The one red was `regression/o4-aot-jit`, reproducing identically on an unmodified `main` built from the same source in the same session (`wall=2.55s evaluated=12672 range_gate_lines=35`). **Resolved at `afa4e0d5`, and the first diagnosis — "a host-speed floor in that cell" — was wrong** (the original wording is in `docs/ARCHIVED.md`): Part 1's 3–60 s band was a contract from the seconds-budget era, and the work-bounded search finishes this subject in 2.5 s *by design*. The lower bound is removed — engagement is proven by the candidate count, 12,672 against a floor of 1,000, and the active range gate, both of which the cell already checked — and the upper bound is kept, widened, purely as a runaway guard.
 
-## Landed — two miscompiles in the `-O4` consolidation band, and the instrument that found them, 2026-08-10 (`wt/o4bugs`, unmerged)
+## Landed — two miscompiles in the `-O4` consolidation band, and the instrument that found them, 2026-08-10 (`wt/o4bugs`, merged at `786467c7`)
 
 Four commits. Both defects were live in the band being folded into `-O4`, both were
 invisible to every one of the ~9500 cells, and the reason they were invisible is the
@@ -1184,7 +1193,7 @@ third item.
    `O0_AB_NOGATES` twin still fires.
 4. **`optlevel/torture-differential`** — see the open item below.
 
-## Open — the level differential, and the eight wrong answers it surfaces
+## Open — the level differential, and the six wrong answers it surfaces
 
 `optlevel/torture-differential` compiles and runs all 1693 `gcc.c-torture/execute`
 programs at `-O0` to fix a reference (exit code + sha256 of stdout), drops the 85 the
@@ -1390,17 +1399,16 @@ via `promote-leaf-xmm`) and warns that the build compiles `-O5`..`-O9` exactly a
 It is derived from the table, not hard-coded, so un-gating a row silences it automatically.
 Nothing in the tree compiles at `-O5`..`-O9` today, so the notice fires in no cell.
 
-That band is also where the two open computed-`goto` divergences were filed —
-`920302-1.c` SIGSEGVs from `-O6`, and `comp-goto-1.c` SIGILLs at `-O6`–`-O10` and then
-SIGSEGVs at `-O11`–`-O12`, both rows in `tests/optfire/leveldiff-known.txt`. Gating makes
-the `-O6`+ band unreachable by default, which would take them off the shipped surface —
-but **measure before claiming that**: both rows are already STALE on `main` itself, at
-`a79cb2ce`, with `MCC_DEV` set and unset alike. `optlevel/torture-differential` is red on
-`main` for exactly the two rows it is red for here, so this branch neither caused that nor
-can take credit for it, and `leveldiff-known.txt` is deliberately left untouched for the
-branch that owns it. What this branch's gating adds to that cell is **zero** additional
-stale rows and zero unknown divergences, which is the thing worth recording: reducing what
-`-O5`..`-O12` reaches did not silence a single divergence the differential was watching.
+That band is also where the two computed-`goto` divergences used to live — `920302-1.c`
+SIGSEGV'd from `-O6`, and `comp-goto-1.c` SIGILL'd at `-O6`–`-O10` then SIGSEGV'd at
+`-O11`–`-O12`. **Resolved at `93cc8b07`** (this paragraph's "open ... deliberately left
+untouched for the branch that owns it" wording is in `docs/ARCHIVED.md`): with the
+responsible knobs behind `MCC_DEV`, neither program diverges at any level any more,
+`optlevel/torture-differential` reported both rows stale, and they were dropped from
+`tests/optfire/leveldiff-known.txt`. Gating experimental strategies removed two crashes
+at the levels a default build reaches — the case for gating stated in measurements rather
+than in principle. What this branch's gating itself added to that cell was **zero**
+additional stale rows and zero unknown divergences.
 
 **A free consequence worth knowing.** `tools/c2_sweep.sh`, `tools/c2_equiv.sh`,
 `tools/selfhost-optbench.py` and `tools/optlevel-bench.py` all derive the shipped ladder
@@ -1446,6 +1454,11 @@ identical there), `optlevel/torture-differential` (the two computed-`goto` rows,
 there), and `fmt/census-bank` with its twin (`src/mccast.c` measures 153 printf-family
 sites against a banked 151; this branch adds none — `git diff main -- src/` contains zero
 added format calls). None of the four is touched here.
+
+> **All four are since resolved on `main`.** `optlevel/torture-differential`'s two stale
+> computed-goto rows were dropped and `fmt/census-bank` (+ twin) re-banked 151 → 153 at
+> `93cc8b07`; `smoke/native` went green when `wt/o4fold` retargeted smoke to `-O0`–`-O4`
+> — by omission, not by fix; the `-O13` replay-fallback regression is open item 21.
 
 
 ## Landed — the lowerable ratchet is taken on bodies, not on the corpus ratio, 2026-08-10
@@ -2409,7 +2422,7 @@ the search cache key changes, and a compile-succeeds cell would have passed befo
 **`MCC_SEARCH_WORKER=1` is how to get the search under a debugger.** Without it
 `ast_search_select` forks and the breakpoints sit in the parent, which reads exactly like
 the code never running.
-## Landed — early `return` is a multi-exit frame, and it is worth 264 blocks rather than 580, 2026-08-09 (`wt/earlyret`, unmerged)
+## Landed — early `return` is a multi-exit frame, and it is worth 264 blocks rather than 580, 2026-08-09 (`wt/earlyret`, merged at `d6b10896`)
 
 `mcc_slice_frame_from_ast` admitted a `Return` only as the block's last top-level
 statement. It now also admits one nested inside a statement-`if`, and both executors carry
@@ -10205,7 +10218,8 @@ Ordered by how much a currently-quoted number depends on it.
     rather than a wrong number.
 
 21. **The `-O13` `replay-fallback` regression is now UNMEASURED, and `smoke/native` went
-    green because of that and not because it was fixed.** On `main` this cell fails: `O13
+    green because of that and not because it was fixed.** On pre-`wt/o4fold` `main` this
+    cell failed: `O13
     replay-fallback:len` rose 18 → 42 and `:bytes` rose 3 → 7 when `wt/o4ticks` made one
     tick *finish* the search instead of abandoning it at 13 s, so more bodies diverge in
     bytes and fall back to the interpreter. Value digests are identical at every level, so

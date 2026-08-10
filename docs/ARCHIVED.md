@@ -5482,6 +5482,93 @@ lookups -- the silent-wrong-answer mode, not a loud one.
 | `fold_const_lval` gated on `global_expr` | 2 | 1 line | widens folding into every constant context; wants its own full sweep |
 | vector casts never constant | 1 | medium | |
 | `_Complex long double`, complex `==`/`!=` folding | 3 | small | |
+
+---
+
+# Migrated from TODO.md on 2026-08-10 — statements superseded by commits through `afa4e0d5`
+
+Statements moved out of `docs/TODO.md` because the most recent commit messages on the
+same subject contradict them. Each entry names the superseding commit(s). The TODO
+sections they left carry the corrected statement in place.
+
+## "Where the tree is" (STATE OF PLAY) — superseded by the merge wave through `074a92d7`
+
+Everything below described branch state that no longer exists: `wt/jitshutdown` (merged
+at `0a0fd1d6`), `wt/threadmap-int` (merged at `103e9a10`) and `wt/o4fold` (merged at
+`074a92d7`) were all unmerged when it was written, and the 9501/9503/9504 cell counts
+predate the current 9535 (`b5177317`: "ctest -N is 9535 on both, identical to main").
+The superseded-branch warnings (`wt/rirnorm`, `wt/globreloc`, `wt/threadmap`) and the
+count-cells-on-the-host lesson were kept in TODO.md; the rest is history:
+
+> `main` at the `wt/earlyret` merge plus the two bank re-takes, **9501 cells on this host**,
+> pushed. `wt/jitshutdown` is unmerged on top of it at **9503** (+2, both named in its
+> write-up below). Ten branches landed in one merge wave: `wt/hostimport`, `wt/muslgap`,
+> `wt/memberidx`, `wt/threadname`, `wt/symguard`, `wt/gpusmall`, `wt/rirphase`,
+> `wt/globreloc-int`, `wt/earlyret`, plus the earlier `wt/attrib`.
+>
+> `wt/threadmap-int` sits on top of that, unmerged: `wt/threadmap` reconciled against
+> `wt/threadname`, **9504 cells**, +3 named (`slice/thread`,
+> `slice/thread-known-positive`, `thread-census-control`).
+>
+> **Count cells on the host rather than adding them up.** The jump from 9468 is +33: eight
+> literally-named cells (`asm/reloc-suffix`; `gpu/spv-mem-binding{,-known-positive}`;
+> `gpu/spv-validate{,-known-positive}`; `superopt/global-reload{,-known-positive}`;
+> `slice/arena-intern-cap`) and the rest from glob- and loop-driven registration. Six of the
+> eight are conditional on Vulkan plus `spirv-val`, or on `objdump`, so the total is
+> host-dependent — an arithmetic estimate came out 4 low.
+>
+> `wt/o4fold` sits unmerged on top of `main` at the `leveldiff` commit, **9535 cells on this
+> host — identical to `main`**, no cell added or lost.
+
+## `regression/o4-aot-jit` "is a host-speed floor" (wt/o4fold validation) — superseded by `afa4e0d5`
+
+> The one red is `regression/o4-aot-jit`, and it **reproduces identically on an unmodified
+> `main`** built from the same source in the same session: `wall=2.55s evaluated=12672
+> range_gate_lines=35`, `Part1 FAIL: wall 2.55s outside 3..60s`, the same three numbers. It
+> is a host-speed floor in that cell, not this branch.
+
+The reproduction was right; the diagnosis was not. `afa4e0d5`: Part 1's 3–60 s band was a
+contract from the seconds-budget era — the tick redesign made the search work-bounded, so
+it finishes this subject in 2.5 s *by design* and the cell failed for doing the right
+thing. Not host speed. The lower bound is removed (engagement is proven by the candidate
+count, 12,672 against a floor of 1,000, and the active range gate, both already checked);
+the upper bound is kept, widened, purely as a runaway guard.
+
+## The two computed-goto divergences "open, and `leveldiff-known.txt` left untouched" (wt/mccdev) — superseded by `93cc8b07`
+
+> That band is also where the two open computed-`goto` divergences were filed —
+> `920302-1.c` SIGSEGVs from `-O6`, and `comp-goto-1.c` SIGILLs at `-O6`–`-O10` and then
+> SIGSEGVs at `-O11`–`-O12`, both rows in `tests/optfire/leveldiff-known.txt`. Gating makes
+> the `-O6`+ band unreachable by default, which would take them off the shipped surface —
+> but **measure before claiming that**: both rows are already STALE on `main` itself, at
+> `a79cb2ce`, with `MCC_DEV` set and unset alike. `optlevel/torture-differential` is red on
+> `main` for exactly the two rows it is red for here, so this branch neither caused that nor
+> can take credit for it, and `leveldiff-known.txt` is deliberately left untouched for the
+> branch that owns it. What this branch's gating adds to that cell is **zero** additional
+> stale rows and zero unknown divergences, which is the thing worth recording: reducing what
+> `-O5`..`-O12` reaches did not silence a single divergence the differential was watching.
+
+`93cc8b07` closed it: with the responsible knobs behind `MCC_DEV`, neither program
+diverges at any level any more, the cell reported both rows stale, and they were dropped
+from `tests/optfire/leveldiff-known.txt` — "gating experimental strategies removed two
+crashes at the levels a default build reaches, which is the case for gating stated in
+measurements rather than in principle." The same commit re-banked `fmt/census-bank`
+151 → 153 for the two `-fdump-opt-search` diagnostics from the tick redesign.
+
+## "The eight wrong answers" (level-differential section header) — six since `93cc8b07`
+
+The section header read "the eight wrong answers it surfaces" (its count at filing,
+`1558d831`: six aborting at `-O1` plus the two computed-goto crashes from `-O6`). The two
+computed-goto rows were dropped as stale at `93cc8b07`, so six remain and the header now
+says six. The body already recorded the drop.
+
+## "unmerged" branch markers — merges happened
+
+- "`wt/o4bugs`, unmerged" — merged at `786467c7`.
+- "`wt/earlyret`, unmerged" — merged at `d6b10896`.
+- "`smoke/native` **fails on `main` on this host**" (wt/o4fold write-up) — true of
+  pre-merge `main`; since `074a92d7` that branch *is* `main` and the cell is green by
+  omission (open item 21 owns the still-unmeasured `-O13` replay-fallback regression).
 | block-scope prototype not dropped by file-scope unprototyped redeclaration | 1 | medium | new `Sym` bit plus a downgrade branch in `patch_type` |
 
 ### Process note, again
