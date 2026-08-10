@@ -19123,18 +19123,105 @@ front end — so this is not an `-O2` pipeline gap. Recurring shapes: `fabs(x) <
 `__builtin_constant_p` chains, and signed-overflow reasoning.
 
 #### Newly-confirmed wrong-answer defects, each reproduced by hand at `-O2`
+
+> **All five are now closed** (`wt/o2wrong`, 2026-08-10, four commits, one per defect).
+> **The header is wrong and worth remembering as a shape.** They were *reproduced* at
+> `-O2`, which is not the same as being `-O2` defects: only `fwrapv-2` is a pass, and it is
+> wrong at `-O1`/`-O2`/`-O3`. The other three are wrong at **every** level including `-O0`
+> and are all front-end. The level range is the cheapest thing to measure and it localises
+> the cause before any code is read — measure it first, and label the item with it.
+> Method for all four: build and run under gcc-15 and clang-22 at `-O0`/`-O1`/`-O2`/`-O3`
+> and compare exit status and stdout, which is `tools/gpuconform.py`'s `build_and_run`
+> qualification reused by hand. It also showed that `fwrapv-2` at `-O0` is **not
+> adjudicable** — clang aborts there too, so the oracles disagree and no verdict is owed.
+> Cells: `cli/{c90_selection_stmt_tag_scope, no_wrapv_folds_mul_div_by_same_constant,
+> abs_family_outranks_a_local_definition, gnu_range_designator_nested_and_partial_override}`,
+> +4 on this host, 9510 → 9514.
+
 - ~~`__builtin_expect` discards side effects in its second operand.~~ **Fixed** — see
   the closed list above.
-- **`-fno-wrapv` does not enable signed-overflow simplification.** `fwrapv-2.c`:
-  `(2*x)/2` must fold to `x`; mcc computes the wrapped value and the test aborts.
-- **Builtin math folding loses to a local definition.** `20021127-1.c` defines an
-  aborting `llabs` and requires the compiler to fold `llabs(-1)` to 1 regardless.
-- **GNU range designators in nested initializers produce wrong data.** `gnu99-init-1.c`
-  mixes `[2 ... 4][0 ... 1][2 ... 3] = 1` with later overriding designators. Adjacent to
-  the nested-member-designator item above, but a distinct bug.
-- **C90 `if`-controlling-expression scope.** `c90-scope-1.c`: under `-std=iso9899:1990` a
-  struct declared in an `if` condition belongs to the enclosing scope, not to the `if`.
-  mcc applies C99 scoping in both modes.
+- ~~**`-fno-wrapv` does not enable signed-overflow simplification.**~~ **Fixed 2026-08-10
+  (`wt/o2wrong`).** `fwrapv-2.c`'s `test(INT_MAX)` returned **-1** against gcc-15's and
+  clang-22's `2147483647`. `MCCState.wrapv` was parsed into the flag table and then read
+  by nothing — grep it on `main` and the only hits are the declaration and the table row.
+  Now `ast_strict_overflow_env` (`!wrapv && optimize_level >= 1`) admits one fold,
+  `ast_ident_muldivk`: `(x * C) / C -> x` for a signed integer type at least `int` wide,
+  with the multiply, the divisor, the multiplier and the surviving operand all required to
+  carry the node's exact `VT_BTYPE|VT_UNSIGNED`. Wrong at `-O1`/`-O2`/`-O3`; **`-O0` is not
+  adjudicated** — clang-22 aborts there too, so the two oracles disagree and the cell is
+  not agnostic. It is deliberately left unfixed at `-O0`: the `ident` strategy is gated by
+  `reemit-templates`, which is `MCC_OPTD_LEVEL(1)`, so `-O0` re-emits nothing and the
+  `ast/o0-baseline` hashes cannot move.
+  **The trap, for the next fold added here:** `ast_ident_run` returns only the count of
+  `r == 2` folds, and `do_ident` -- the flag that decides whether the arena is re-emitted
+  at all -- is `idents > 0`. A fold returning 1 rewrites the arena and is then silently
+  discarded unless some *other* pass also fires. Returning 1 made this fold visible only
+  at `-O2`, where `promote-locals` happened to force the re-emit; `-O1` and
+  `-O2 -fno-promote-locals` still produced `idiv`. Return 2 from any fold that changes code.
+  Cell `cli/no_wrapv_folds_mul_div_by_same_constant`, both gates at all three levels.
+- ~~**Builtin math folding loses to a local definition.**~~ **Fixed 2026-08-10
+  (`wt/o2wrong`).** The name was misleading: this is not folding and not math. gcc-15 and
+  clang-22 *expand* `llabs` inline at **`-O0`** (`negq` + `cmovns`), so the user's
+  definition is never reached; mcc called it and got **-1** where both oracles get 1.
+  Wrong at every `-O` level. `absbuiltin_try` sits beside `foldmath_try` at the call site
+  and expands `abs`/`labs`/`llabs`/`imaxabs` to `(x ^ (x >> (w-1))) - (x >> (w-1))` when
+  the callee is a non-`static` symbol of that name whose return type is a signed `int` or
+  `long long` matching the argument. Off under `-fno-builtin` and `-ffreestanding`.
+  **The musl datum is this same defect, not a second one.** Measured here: pre-fix mcc
+  linked against *reference* musl (`vendor/musl-sysroot`, `crt1.o` + `libc.a`) aborts
+  with 134; post-fix mcc against the same musl exits 0; gcc-15 against the same musl exits
+  0. The program's `llabs` is defined in its own TU, so no libc is consulted at all — a
+  result that is identical under mcc-built and reference musl is the fingerprint of a
+  compiler defect, and "aborts under both" was the evidence, not a second bug.
+  **Note for whoever writes the next vstack expansion:** `gv(RC_INT)` followed by `vdup()`
+  yields two SValues naming the *same* register, and `gv2` will not separate them — the
+  first attempt emitted `sar; xor %rax,%rax; sub %rax,%rax`. The expansion spills to one
+  `ast_alloc_loc` slot and reloads, which `promote-locals` lifts back into a register at
+  `-O2`. Cell `cli/abs_family_outranks_a_local_definition`, four levels plus the
+  `-fno-builtin` negative.
+- ~~**GNU range designators in nested initializers produce wrong data.**~~ **Fixed
+  2026-08-10 (`wt/o2wrong`).** It was **two** independent defects on one line, both wrong
+  at every `-O` level:
+  1. **A brace-less designator re-entering an already-written aggregate re-zeroed it.**
+     `decl_designator`'s non-routed overwrite branch dropped `DIF_CLEAR`, and
+     `do_init_list` then `init_putz`-ed the whole subobject. Measured rule, from gcc-15 and
+     clang-22 which agree on all seven probes: `[0] = 9` after `[0][0 ... 3] = 1` leaves the
+     rest of `a[0]` **alone**; `[0] = {9}` (braced) clears it; `.x = 9` and `[0][1] = 9`
+     leave it alone. So the clear is now conditional on `tok == '{'`, a scalar target, or
+     `DIF_HAVE_ELEM`. `decl_design_delrels` is unchanged.
+  2. **A range designator's trailing initializers were replicated to every element.**
+     `[0 ... 5].O[1 ... 2].K[0 ... 1] = 4, 5, 6, 7` must put `4` in all six elements and
+     `5, 6, 7` **only in `n[5]`**; mcc parsed everything into element 0 and byte-copied it
+     forward, so every element got `K[2]=5, L=6, P=7`. The continuation is consumed by the
+     *innermost* routed sub-list, which is two frames below the range that owns it, so a
+     local fix at the range does not reach it. `init_params` now carries a small stack
+     (`MCC_INIT_RNG_MAX = 8`) of pending ranges: a routed range parks its base/extent, the
+     sub-list claims it, and the first frame to reach a *continuation* item flushes the
+     whole stack innermost-first (`decl_rng_flush`), replicating each range's element, and
+     computes `rng_pre[]`. Every frame then lazily shifts its own base by
+     `rng_pre[its depth]` — the sum of the deltas of the ranges enclosing it — so each
+     frame lands on the last element of its own range while the outer frames land on
+     theirs. Unflushed ranges are replicated at frame exit; depth over 8 falls back to the
+     old copy-forward.
+  **Evidence.** All 1,693 `vendor/gcc-c-torture-execute` programs at `-O0` and `-O2`
+  (3,386 cells) A/B'd against the pre-fix binary: **one behavioural change, `20021127-1`
+  going from abort to 0** (the `llabs` fix above), and `return-addr` which prints raw stack
+  addresses and differs run to run under ASLR. Zero initializer regressions. A nine-shape
+  probe covering braced ranges, `p`-style `.K = { [0 ... 1] = 4 }`, ranges over structs,
+  ranges with trailing plain initializers, string-pointer relocations and a **stack-local**
+  range initializer is byte-identical to gcc-15 and clang-22.
+  Cell `cli/gnu_range_designator_nested_and_partial_override`; the pre-fix binary answers
+  `2 3 0 0 1 7 5 6 4 5 6 7 6 27` instead of `2 3 1 1 1 0 0 0 4 5 6 7 6 0`.
+- ~~**C90 `if`-controlling-expression scope.**~~ **Fixed 2026-08-10 (`wt/o2wrong`).**
+  `c90-scope-1.c` was wrong at **every** `-O` level, so it was never an `-O2` defect:
+  `block_nested` pushed `new_scope_s` around `if`/`while`/`do`/`switch` unconditionally.
+  Gated on the new `c99_stmt_scopes()` (`cversion >= 199901`). Under C90 `sfoo()` returned
+  1 where gcc-15 and clang-22 both return 32. `for` is deliberately left alone: its scope
+  carries VLA/cleanup/`bsym`/`csym` state and C90 already rejects a for-init declaration.
+  Cell `cli/c90_selection_stmt_tag_scope`, which also pins the C99 answer so the gate
+  cannot be inverted. `gcc.dg/c99-scope-2.c` is a **separate, pre-existing** failure
+  (`struct/union/enum already defined`): a non-compound `if` substatement gets no scope of
+  its own. Not fixed here, and it fails identically on `main`.
 
 Do **not** refile the rest of that bucket: the `builtin-object-size` /
 `builtin-dynamic-object-size` cells are the deliberately-declined item above, and

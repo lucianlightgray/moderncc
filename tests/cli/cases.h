@@ -2556,5 +2556,56 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -no-pie {W}/r32s.c -o {W}/r32s 2>&1 | grep -oE \"relocation .R_X86_64_32.* out of range\"",
 		 "relocation 'R_X86_64_32[S]' out of range\n"},
 
+		{"c90_selection_stmt_tag_scope", "",
+		 "printf '%s\\n' 'extern int printf(const char *, ...);' "
+		 "'struct foo { char a; };' "
+		 "'static int sfoo(void) { if (sizeof (struct foo { int a; double b; char *c; void *d; })) (void)0; return (int)sizeof(struct foo); }' "
+		 "'int main(void) { printf(\"%d %d\\n\", sfoo(), (int)sizeof(struct foo)); return 0; }' > {W}/c90scope.c && "
+		 "{MCC} -B{B} -I{I} -std=iso9899:1990 -O2 {W}/c90scope.c -o {W}/c90scope90 && {W}/c90scope90 && "
+		 "{MCC} -B{B} -I{I} -std=c99 -O2 {W}/c90scope.c -o {W}/c90scope99 && {W}/c90scope99",
+		 "32 1\n1 1\n"},
+
+		{"no_wrapv_folds_mul_div_by_same_constant", "",
+		 "printf '%s\\n' 'extern int printf(const char *, ...);' "
+		 "'static int t(int x) { return (2 * x) / 2; }' "
+		 "'int main(void) { volatile int v = 2147483647; printf(\"%d\\n\", t(v)); return 0; }' > {W}/wrapv2.c && "
+		 "for o in -O1 -O2 -O3; do "
+		 "{MCC} -B{B} -I{I} $o -fno-wrapv {W}/wrapv2.c -o {W}/wrapv2off && {W}/wrapv2off; "
+		 "{MCC} -B{B} -I{I} $o -fwrapv {W}/wrapv2.c -o {W}/wrapv2on && {W}/wrapv2on; "
+		 "done",
+		 "2147483647\n-1\n2147483647\n-1\n2147483647\n-1\n"},
+
+		{"abs_family_outranks_a_local_definition", "",
+		 "printf '%s\\n' 'extern int printf(const char *, ...);' "
+		 "'long long a = -1;' "
+		 "'long long llabs(long long);' "
+		 "'int main(void) { printf(\"%lld\\n\", llabs(a)); return 0; }' "
+		 "'long long llabs(long long b) { return b; }' > {W}/llabs.c && "
+		 "for o in -O0 -O1 -O2 -O3; do "
+		 "{MCC} -B{B} -I{I} -w -std=c99 $o {W}/llabs.c -o {W}/llabsx && {W}/llabsx; "
+		 "done; "
+		 "{MCC} -B{B} -I{I} -w -std=c99 -O2 -fno-builtin {W}/llabs.c -o {W}/llabsnb && {W}/llabsnb",
+		 "1\n1\n1\n1\n-1\n"},
+
+		{"gnu_range_designator_nested_and_partial_override", "",
+		 "printf '%s\\n' 'extern int printf(const char *, ...);' "
+		 "'int a[][2][4] = {[2 ... 4][0 ... 1][2 ... 3] = 1, [2] = 2, [2][0][2] = 3};' "
+		 "'struct I { int J; int K[3]; int L; };' "
+		 "'struct M { int N; struct I O[3]; int P; };' "
+		 "'struct M n[] = {[0 ... 5].O[1 ... 2].K[0 ... 1] = 4, 5, 6, 7};' "
+		 "'struct M o[] = {[0 ... 5].O = {[1 ... 2].K[0 ... 1] = 4}, [5].O[2].K[2] = 5, 6, 7};' "
+		 "'int main(void) { unsigned i, d = 0;' "
+		 "'  unsigned char *pn = (unsigned char *)n, *po = (unsigned char *)o;' "
+		 "'  for (i = 0; i < sizeof n; i++) if (pn[i] != po[i]) d++;' "
+		 "'  printf(\"%d %d %d %d %d %d %d %d %d %d %d %d %u %u\\n\", a[2][0][0], a[2][0][2],' "
+		 "'    a[2][0][3], a[2][1][2], a[4][1][3], n[0].P, n[0].O[1].K[2], n[0].O[2].L,' "
+		 "'    n[3].O[2].K[1], n[5].O[2].K[2], n[5].O[2].L, n[5].P,' "
+		 "'    (unsigned)(sizeof n / sizeof n[0]), d);' "
+		 "'  return 0; }' > {W}/gnurng.c && "
+		 "for o in -O0 -O2; do "
+		 "{MCC} -B{B} -I{I} -w -std=gnu99 $o {W}/gnurng.c -o {W}/gnurngx && {W}/gnurngx; "
+		 "done",
+		 "2 3 1 1 1 0 0 0 4 5 6 7 6 0\n2 3 1 1 1 0 0 0 4 5 6 7 6 0\n"},
+
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));
