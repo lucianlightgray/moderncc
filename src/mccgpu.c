@@ -625,8 +625,9 @@ static id mtl_buffer(unsigned long len, void **map) {
  * serialises everything else here. */
 static int32_t *mcc_gpu_rw_back;
 
-static int mcc_gpu_dispatch_locked(const char *src, int len, const int32_t *in,
-																	 int ntuple, int nlive, int32_t *out) {
+static int mcc_gpu_dispatch_locked2(const char *src, int len, const int32_t *in,
+																		int ntuple, int nlive, int32_t *out,
+																		int reuse_in) {
 	id pool, pso, bin, bout, cb, enc;
 	void *pin, *pout;
 	MtlSize grid, tg;
@@ -635,6 +636,7 @@ static int mcc_gpu_dispatch_locked(const char *src, int len, const int32_t *in,
 	unsigned long outlen = (unsigned long)cap * MCC_GPU_OUT_SLOTS * 4;
 	int rc = 0;
 
+	(void)reuse_in;
 	if (!mcc_gpu_init())
 		return 0;
 	if (inlen > mcc_gpu.maxbuf || outlen > mcc_gpu.maxbuf) {
@@ -724,6 +726,7 @@ done:
 static int mcc_gpu_backend_load(void) { return mcc_mtl_load(); }
 
 #define MCC_GPU_CODE_PTR(p) ((const char *)(p))
+#define MCC_GPU_IN_IS_RESIDENT 0
 
 static int mcc_gpu_rw_supported(void) { return 1; }
 
@@ -2669,9 +2672,9 @@ static void mcc_vk_release(void) {
  * serialises everything else here. */
 static int32_t *mcc_gpu_rw_back;
 
-static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
-																	 const int32_t *in, int ntuple, int nlive,
-																	 int32_t *out) {
+static int mcc_gpu_dispatch_locked2(const uint32_t *code, int nwords,
+																		const int32_t *in, int ntuple, int nlive,
+																		int32_t *out, int reuse_in) {
 	VkCommandBufferBeginInfo bi;
 	VkSubmitInfo si;
 	VkResult wr;
@@ -2697,11 +2700,13 @@ static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
 	 * whole of pin was 32 B/lane of duplicated work, since the memcpy immediately
 	 * overwrites the [0, ntuple) prefix. The mapping is write-combined, so these
 	 * stores are not free. */
-	memcpy(mcc_vkr.pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
-	if (cap > ntuple)
-		memset((char *)mcc_vkr.pin +
-							 (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4,
-					 0, (size_t)(cap - ntuple) * nlive * MCC_GPU_IN_SLOTS * 4);
+	if (!reuse_in) {
+		memcpy(mcc_vkr.pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
+		if (cap > ntuple)
+			memset((char *)mcc_vkr.pin +
+								 (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4,
+						 0, (size_t)(cap - ntuple) * nlive * MCC_GPU_IN_SLOTS * 4);
+	}
 
 	if (vkResetFences(mcc_gpu.dev, 1, &mcc_vkr.fence) != VK_SUCCESS)
 		return 0;
@@ -2758,6 +2763,7 @@ static int mcc_gpu_dispatch_locked(const uint32_t *code, int nwords,
 static int mcc_gpu_backend_load(void) { return mcc_vk_load(); }
 
 #define MCC_GPU_CODE_PTR(p) ((const uint32_t *)(p))
+#define MCC_GPU_IN_IS_RESIDENT 1
 
 static int mcc_gpu_rw_supported(void) { return 1; }
 
@@ -2819,8 +2825,8 @@ int mcc_gpu_dispatch_rw2(const void *code, int n, int32_t *inout, int ntuple,
 		return 0;
 	}
 	mcc_gpu_rw_arm(inout);
-	rc = mcc_gpu_dispatch_locked(MCC_GPU_CODE_PTR(code), n, inout, ntuple, nslot,
-															 out);
+	rc = mcc_gpu_dispatch_locked2(MCC_GPU_CODE_PTR(code), n, inout, ntuple, nslot,
+																out, 0);
 	mcc_gpu_rw_arm(NULL);
 	MCC_GPU_UNLOCK();
 	return rc;
@@ -2899,8 +2905,34 @@ int mcc_gpu_dispatch(const void *code, int n, const int32_t *in, int ntuple,
 	mcc_gpu_fe_ok = (mcc_fe_get(&mcc_gpu_fe) == 0);
 	MCC_GPU_LOCK();
 	rc = mcc_gpu_closing ? 0
-											 : mcc_gpu_dispatch_locked(MCC_GPU_CODE_PTR(code), n, in,
-																								 ntuple, nlive, out);
+											 : mcc_gpu_dispatch_locked2(MCC_GPU_CODE_PTR(code), n, in,
+																									ntuple, nlive, out, 0);
+	MCC_GPU_UNLOCK();
+	if (mcc_gpu_fe_ok)
+		mcc_fe_set(&mcc_gpu_fe);
+	return rc;
+}
+
+int mcc_gpu_dispatch2_ro_in(const void *ca, int na, const void *cb, int nb,
+														const int32_t *in, int ntuple, int nlive,
+														int32_t *oa, int32_t *ob) {
+	int rc, ready;
+	fenv_t mcc_gpu_fe;
+	int mcc_gpu_fe_ok;
+	MCC_GPU_LOCK();
+	ready = mcc_gpu_backend_load();
+	MCC_GPU_UNLOCK();
+	if (!ready)
+		return 0;
+	mcc_gpu_fe_ok = (mcc_fe_get(&mcc_gpu_fe) == 0);
+	MCC_GPU_LOCK();
+	rc = mcc_gpu_closing
+					 ? 0
+					 : mcc_gpu_dispatch_locked2(MCC_GPU_CODE_PTR(ca), na, in, ntuple,
+																			nlive, oa, 0);
+	if (rc)
+		rc = mcc_gpu_dispatch_locked2(MCC_GPU_CODE_PTR(cb), nb, in, ntuple, nlive,
+																	ob, MCC_GPU_IN_IS_RESIDENT);
 	MCC_GPU_UNLOCK();
 	if (mcc_gpu_fe_ok)
 		mcc_fe_set(&mcc_gpu_fe);
