@@ -180,6 +180,44 @@ static void slicerun_obj_reset(long n) {
 	g_obj_n = (g_obj_ext && g_obj_ety) ? n : 0;
 }
 
+#define SR_GLOB_BASE 0x40000000
+#define SR_GLOB_STRIDE 0x1000
+#define SR_GLOB_MAX 4096
+
+static unsigned g_glob_id[SR_GLOB_MAX];
+static int g_glob_n;
+
+static int slicerun_reloc(AstArena *a, AstLocal n, int32_t *base) {
+	uint64_t s = ast_sym(a, n);
+	int i;
+	if (!s || s > 0xFFFFFFFFu)
+		return 0;
+	for (i = 0; i < g_glob_n; i++)
+		if (g_glob_id[i] == (unsigned)s)
+			break;
+	if (i == g_glob_n) {
+		if (g_glob_n >= SR_GLOB_MAX)
+			return 0;
+		g_glob_id[g_glob_n++] = (unsigned)s;
+	}
+	*base = (int32_t)((uint32_t)SR_GLOB_BASE + (uint32_t)i * SR_GLOB_STRIDE);
+	return 1;
+}
+
+static int slicerun_glob_of(int32_t off, unsigned *id, int32_t *delta) {
+	uint32_t d;
+	int i;
+	if (off < SR_GLOB_BASE)
+		return 0;
+	d = (uint32_t)off - (uint32_t)SR_GLOB_BASE;
+	i = (int)(d / SR_GLOB_STRIDE);
+	if (i >= g_glob_n)
+		return 0;
+	*id = g_glob_id[i];
+	*delta = (int32_t)(d % SR_GLOB_STRIDE);
+	return 1;
+}
+
 static AstLocal mk_lit(AstArena *a, int64_t v, int type) {
 	AstLocal n = ast_node(a, AST_Literal);
 	ast_set_op(a, n, VT_CONST);
@@ -3960,6 +3998,32 @@ static void cref_lit(FILE *f, int64_t v) {
 		fprintf(f, "%lldLL", (long long)v);
 }
 
+static void cref_glob_name(FILE *f, unsigned id, int32_t d) {
+	if (d)
+		fprintf(f, "g_%s_%u_%ld", g_cref_tag, id, (long)d);
+	else
+		fprintf(f, "g_%s_%u", g_cref_tag, id);
+}
+
+static int cref_slot(FILE *f, const char *ct, const int32_t *off, int nlive,
+										 int32_t o) {
+	unsigned id = 0;
+	int32_t d = 0;
+	int j;
+	for (j = 0; j < nlive; j++)
+		if (off[j] == o)
+			break;
+	if (j == nlive)
+		return 0;
+	fprintf(f, "((%s)", ct);
+	if (slicerun_glob_of(o, &id, &d))
+		cref_glob_name(f, id, d);
+	else
+		fprintf(f, "e%d", j);
+	fprintf(f, ")");
+	return 1;
+}
+
 static int cref_expr(FILE *f, AstArena *a, AstLocal n, const int32_t *off,
 										 int nlive) {
 	const char *ct;
@@ -3977,22 +4041,15 @@ static int cref_expr(FILE *f, AstArena *a, AstLocal n, const int32_t *off,
 		return 1;
 	case AST_Ref: {
 		int r = ast_op(a, n);
-		int j;
+		int32_t o;
 		ct = cref_ctype(ast_type_t(a, n));
 		if (!ct)
 			return 0;
-		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
-			int32_t o = (int32_t)(int64_t)ast_ival(a, n);
-			for (j = 0; j < nlive; j++)
-				if (off[j] == o)
-					break;
-			if (j == nlive)
-				return 0;
-			fprintf(f, "((%s)e%d)", ct, j);
-			return 1;
-		}
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM))
+			return cref_slot(f, ct, off, nlive, (int32_t)(int64_t)ast_ival(a, n));
 		if (r & VT_SYM)
-			return 0;
+			return ast_eval_slice_globl(a, n, &o) &&
+						 cref_slot(f, ct, off, nlive, o);
 		fprintf(f, "((%s)", ct);
 		cref_lit(f, (int64_t)ast_ival(a, n));
 		fprintf(f, ")");
@@ -4012,17 +4069,10 @@ static int cref_expr(FILE *f, AstArena *a, AstLocal n, const int32_t *off,
 		const char *s = uop == '~' ? "~" : uop == '!' ? "!" : "-";
 		int32_t mo;
 		if (ast_eval_slice_member_off(a, n, &mo)) {
-			int j;
 			ct = cref_ctype(ast_type_t(a, n));
 			if (!ct)
 				return 0;
-			for (j = 0; j < nlive; j++)
-				if (off[j] == mo)
-					break;
-			if (j == nlive)
-				return 0;
-			fprintf(f, "((%s)e%d)", ct, j);
-			return 1;
+			return cref_slot(f, ct, off, nlive, mo);
 		}
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
@@ -4677,13 +4727,21 @@ static int refuse_parent_blocked(AstArena *a, AstLocal n) {
 	return refuse_local(a, p) != REF_OK;
 }
 
-enum { RA_LOCAL_LVAL = 0, RA_LOCAL_SCALAR, RA_LOCAL_ARRAY, RA_CONST, RA_N };
+enum {
+	RA_LOCAL_LVAL = 0,
+	RA_LOCAL_SCALAR,
+	RA_LOCAL_ARRAY,
+	RA_GLOBAL_SCALAR,
+	RA_CONST,
+	RA_N
+};
 
 static const char *refuse_accept_name(int k) {
 	switch (k) {
 	case RA_LOCAL_LVAL: return "local-lvalue";
 	case RA_LOCAL_SCALAR: return "local-address-scalar";
 	case RA_LOCAL_ARRAY: return "local-address-array";
+	case RA_GLOBAL_SCALAR: return "global-scalar-int";
 	default: return "constant";
 	}
 }
@@ -4708,6 +4766,7 @@ static int refuse_base_consumed(AstArena *a, AstLocal n) {
 
 static void refuse_accepted_ref(AstArena *a, AstLocal n) {
 	int rop, t, k;
+	int32_t go;
 	if (ast_kind(a, n) != AST_Ref)
 		return;
 	rop = ast_op(a, n);
@@ -4715,6 +4774,8 @@ static void refuse_accepted_ref(AstArena *a, AstLocal n) {
 	if ((rop & VT_VALMASK) == VT_LOCAL && !(rop & VT_SYM))
 		k = (rop & VT_LVAL) ? RA_LOCAL_LVAL
 											: ((t & VT_ARRAY) ? RA_LOCAL_ARRAY : RA_LOCAL_SCALAR);
+	else if ((rop & VT_SYM) && ast_eval_slice_globl(a, n, &go))
+		k = RA_GLOBAL_SCALAR;
 	else
 		k = RA_CONST;
 	g_ref_a_nodes[k]++;
@@ -5954,7 +6015,9 @@ static void cref_emit(AstArena *a, AstLocal root, MccSliceWork *w,
 	char path[1024];
 	FILE *f;
 	long id = g_cref_emitted;
-	int t, j, nd, any = 0;
+	unsigned gid[MCC_SLICE_MAXLIVE];
+	int32_t gdel[MCC_SLICE_MAXLIVE];
+	int t, j, nd, any = 0, npar = 0;
 
 	g_cref_seen++;
 	if (w->nodes > CREF_MAXNODES) {
@@ -5972,13 +6035,37 @@ static void cref_emit(AstArena *a, AstLocal root, MccSliceWork *w,
 		g_cref_mixed++;
 	snprintf(g_cref_tag, sizeof g_cref_tag, "%s%06ld", g_cref_pfx, id);
 
+	for (j = 0; j < w->nlive; j++) {
+		gid[j] = 0;
+		gdel[j] = 0;
+		if (!slicerun_glob_of(w->off[j], &gid[j], &gdel[j])) {
+			gid[j] = 0;
+			npar++;
+		}
+	}
+
 	snprintf(path, sizeof path, "%s/s%06ld.c", g_cref_dir, id);
 	f = fopen(path, "w");
 	if (!f)
 		return;
-	fprintf(f, "static long long fn_%s(", g_cref_tag);
 	for (j = 0; j < w->nlive; j++)
-		fprintf(f, "%slong long e%d", j ? ", " : "", j);
+		if (gid[j]) {
+			fprintf(f, "static volatile long long ");
+			cref_glob_name(f, gid[j], gdel[j]);
+			fprintf(f, ";\n");
+		}
+	fprintf(f, "static long long fn_%s(", g_cref_tag);
+	if (!npar) {
+		fprintf(f, "void");
+	} else {
+		int first = 1;
+		for (j = 0; j < w->nlive; j++) {
+			if (gid[j])
+				continue;
+			fprintf(f, "%slong long e%d", first ? "" : ", ", j);
+			first = 0;
+		}
+	}
 	fprintf(f, ") {\n\treturn (long long)(");
 	if (!cref_expr(f, a, root, w->off, w->nlive)) {
 		fclose(f);
@@ -5989,25 +6076,41 @@ static void cref_emit(AstArena *a, AstLocal root, MccSliceWork *w,
 	fprintf(f, ")%s;\n}\n", g_cref_mutate ? " ^ 1" : "");
 	fprintf(f, "static int chk_%s(void) {\n\tint bad = 0;\n\tlong long v;\n",
 					g_cref_tag);
-	if (w->nlive > 0) {
-		fprintf(f, "\tvolatile long long ");
-		for (j = 0; j < w->nlive; j++)
-			fprintf(f, "%sa%d", j ? ", " : "", j);
-		fprintf(f, ";\n");
+	{
+		int first = 1;
+		for (j = 0; j < w->nlive; j++) {
+			if (gid[j])
+				continue;
+			fprintf(f, "%sa%d", first ? "\tvolatile long long " : ", ", j);
+			first = 0;
+		}
+		if (!first)
+			fprintf(f, ";\n");
 	}
 	nd = 0;
 	for (t = 0; t < 8; t++) {
+		int first;
 		if (!cdef[t])
 			continue;
 		nd++;
 		for (j = 0; j < w->nlive; j++) {
-			fprintf(f, "\ta%d = ", j);
+			fprintf(f, "\t");
+			if (gid[j])
+				cref_glob_name(f, gid[j], gdel[j]);
+			else
+				fprintf(f, "a%d", j);
+			fprintf(f, " = ");
 			cref_lit(f, in[t * w->nlive + j]);
 			fprintf(f, ";\n");
 		}
 		fprintf(f, "\tv = fn_%s(", g_cref_tag);
-		for (j = 0; j < w->nlive; j++)
-			fprintf(f, "%sa%d", j ? ", " : "", j);
+		first = 1;
+		for (j = 0; j < w->nlive; j++) {
+			if (gid[j])
+				continue;
+			fprintf(f, "%sa%d", first ? "" : ", ", j);
+			first = 0;
+		}
 		fprintf(f, ");\n\tif (v != ");
 		cref_lit(f, cout[t]);
 		fprintf(f, ") { printf(\"MISMATCH %s t%d got %%lld want %lld\\n\", v);"
@@ -6966,6 +7069,7 @@ static void scan_subtree(AstArena *a, AstLocal n, int quiet, long limit) {
 
 static int g_census;
 static int g_refusals;
+static int g_noglob;
 static int g_inline = 1;
 static long g_cn_blocks, g_cn_elig, g_cn_op8n, g_cn_op9n, g_cn_op6n;
 static long g_cn_op8b, g_cn_op9b, g_cn_op6b;
@@ -7435,6 +7539,18 @@ static void census_arena(AstArena *a, int n) {
  * one of two same-named statics, and neither fact is available until the whole
  * file has been read -- so pass 0 builds the name set and the leaf table, and
  * pass 1 does the work. */
+static int arena_intern_overflow(const char *line) {
+	if (strncmp(line, "[intern-overflow]", 17))
+		return 0;
+	fprintf(stderr,
+					"slicerun: the arena dump reports %s"
+					"slicerun: column 11 is the identity a global is relocated and named "
+					"by, so past that point the dump cannot distinguish two objects. "
+					"Refusing the run\n",
+					line + 18);
+	return 1;
+}
+
 static int arena_pass(FILE *f, int pass, long limit, int quiet) {
 	char line[512];
 	RawNode *raw = NULL;
@@ -7444,6 +7560,10 @@ static int arena_pass(FILE *f, int pass, long limit, int quiet) {
 		char fn[INV_NAMEMAX];
 		long n, root;
 		int i;
+		if (arena_intern_overflow(line)) {
+			free(raw);
+			return 1;
+		}
 		if (sscanf(line, "[arena] fn=%127s n=%ld root=%ld", fn, &n, &root) != 3)
 			continue;
 		if (n <= 0 || n > RAW_MAX)
@@ -7458,6 +7578,10 @@ static int arena_pass(FILE *f, int pass, long limit, int quiet) {
 			long id, fc, ns;
 			if (!fgets(line, sizeof line, f))
 				break;
+			if (arena_intern_overflow(line)) {
+				free(raw);
+				return 1;
+			}
 			int nf = sscanf(line,
 											"%ld %d %d %d %lld %ld %ld %llu %u %u %llu %llu %d %d",
 											&id, &raw[i].kind, &raw[i].op, &raw[i].type_t,
@@ -8208,6 +8332,8 @@ int main(int argc, char **argv) {
 			g_refusals = 1;
 		else if (!strcmp(argv[i], "--census"))
 			g_census = 1;
+		else if (!strcmp(argv[i], "--no-globals"))
+			g_noglob = 1;
 		else if (!strcmp(argv[i], "--fmt-cost-report"))
 			g_fmt_report = 1;
 		else if (!strcmp(argv[i], "--no-inline"))
@@ -8237,6 +8363,8 @@ int main(int argc, char **argv) {
 	}
 	mcc_slice_set_mutate(g_mutate);
 	ast_eval_slice_obj_fn = slicerun_obj;
+	if (!g_noglob)
+		ast_eval_slice_reloc_fn = slicerun_reloc;
 	frame_ptr_arm();
 	(void)g_lax;
 

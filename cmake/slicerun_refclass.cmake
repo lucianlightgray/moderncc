@@ -48,7 +48,7 @@ if(NOT CMAKE_MATCH_1 EQUAL _bucket)
                         "against a bucket of ${_bucket}")
 endif()
 
-foreach(_cls "func-symbol" "global-aggregate" "global-array" "global-scalar-int")
+foreach(_cls "func-symbol" "global-aggregate" "global-array")
     if(NOT _out MATCHES "ref-not-local/${_cls} +nodes=([1-9][0-9]*)")
         message(FATAL_ERROR "slice/refusal-classes: class ${_cls} is empty over "
                             "this corpus; either the classifier stopped firing or "
@@ -67,6 +67,14 @@ if(CMAKE_MATCH_2 LESS 1)
                         "position, which contradicts the finding that made the "
                         "bucket worth splitting -- 47% of it is the callee Ref of "
                         "an Invoke that kind-invoke refuses regardless")
+endif()
+
+if(NOT _out MATCHES "ref-accepted/global-scalar-int +nodes=([1-9][0-9]*)")
+    message(FATAL_ERROR "slice/refusal-classes: no accepted global scalar Refs. "
+                        "Either the relocation table stopped placing globals, or "
+                        "the corpus stopped containing one; both make the "
+                        "refused-side table below a description of a predicate "
+                        "that is not the one running")
 endif()
 
 if(NOT _out MATCHES "ref-accepted/local-lvalue +nodes=([1-9][0-9]*)")

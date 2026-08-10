@@ -657,6 +657,36 @@ static uint32_t ast_eval_slice_qual(AstArena *a, AstLocal n) {
 	return (t & VT_VOLATILE) ? MCC_EFFECT_F_VOLATILE : 0u;
 }
 
+static int (*ast_eval_slice_reloc_fn)(AstArena *a, AstLocal n, int32_t *base);
+
+static int ast_eval_slice_globl(AstArena *a, AstLocal n, int32_t *off) {
+	int r, t;
+	int32_t base = 0;
+	if (n == AST_NONE || !ast_eval_slice_reloc_fn)
+		return 0;
+	if (ast_kind(a, n) != AST_Ref)
+		return 0;
+	r = ast_op(a, n);
+	t = ast_type_t(a, n);
+	if ((r & VT_VALMASK) != VT_CONST || !(r & VT_SYM))
+		return 0;
+	if (!t || ast_bad_type(t) || (t & VT_BTYPE) == VT_FUNC ||
+			(t & VT_BTYPE) == VT_STRUCT || is_float(t))
+		return 0;
+	if (t & VT_ARRAY) {
+		if (r & VT_LVAL)
+			return 0;
+	} else {
+		if (!(r & VT_LVAL) || !ast_eval_slice_intt(t) ||
+				!ast_eval_slice_tsize(t))
+			return 0;
+	}
+	if (!ast_eval_slice_reloc_fn(a, n, &base))
+		return 0;
+	*off = base + (int32_t)(int64_t)ast_ival(a, n);
+	return 1;
+}
+
 static int ast_eval_slice_ptr_et(AstArena *a, AstLocal n) {
 	int32_t extent = 0;
 	int et = 0, r, t;
@@ -718,7 +748,7 @@ static int ast_eval_slice_ext(const AstEvalSliceIdx *o) {
  * flag was cleared by the same comparison that produced the mask. */
 static int ast_eval_slice_dynidx(AstArena *a, AstLocal n, AstEvalSliceIdx *o) {
 	AstLocal x, y, base, idx;
-	int32_t extent = 0;
+	int32_t extent = 0, gb = 0;
 	int etype = 0, r, it;
 	if (n == AST_NONE || !ast_eval_slice_obj_fn)
 		return 0;
@@ -737,8 +767,12 @@ static int ast_eval_slice_dynidx(AstArena *a, AstLocal n, AstEvalSliceIdx *o) {
 		return 0;
 	}
 	r = ast_op(a, base);
-	if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
-		return 0;
+	if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM)) {
+		if (!ast_eval_slice_globl(a, base, &gb))
+			return 0;
+	} else {
+		gb = (int32_t)(int64_t)ast_ival(a, base);
+	}
 	if (!ast_eval_slice_obj_fn(a, base, &extent, &etype))
 		return 0;
 	o->esize = ast_eval_slice_tsize(etype);
@@ -755,7 +789,7 @@ static int ast_eval_slice_dynidx(AstArena *a, AstLocal n, AstEvalSliceIdx *o) {
 	if (!it || is_float(it) || !ast_eval_slice_intt(it) ||
 			ast_eval_slice_is64(it))
 		return 0;
-	o->base = (int32_t)(int64_t)ast_ival(a, base);
+	o->base = gb;
 	o->etype = etype;
 	o->nelem = (int)(extent / o->esize);
 	o->nspan = 1;
@@ -898,7 +932,7 @@ static int ast_eval_slice_frame_off(AstArena *a, AstLocal n, int32_t *off,
 	if (ast_kind(a, n) == AST_Ref) {
 		r = ast_op(a, n);
 		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
-			return 0;
+			return ast_eval_slice_globl(a, n, off);
 		*off = (int32_t)(int64_t)ast_ival(a, n);
 		return 1;
 	}
@@ -1061,6 +1095,7 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 	case AST_Ref: {
 		int r = ast_op(a, n);
 		int t = ast_type_t(a, n);
+		int32_t go;
 		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
 			int64_t v;
 			if (!ast_eval_slice_env(off, val, nenv,
@@ -1092,6 +1127,13 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 			if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
 				return 0;
 			*out = ast_eval_slice_fit((int64_t)ast_ival(a, n), t);
+			return 1;
+		}
+		if (!(t & VT_ARRAY) && ast_eval_slice_globl(a, n, &go)) {
+			int64_t v;
+			if (!ast_eval_slice_env(off, val, nenv, go, &v))
+				return 0;
+			*out = ast_eval_slice_fit(v, t);
 			return 1;
 		}
 		return 0;
@@ -1465,6 +1507,7 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 	}
 	case AST_Ref: {
 		int r = ast_op(a, n), t = ast_type_t(a, n);
+		int32_t go;
 		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM))
 			return (!ast_bad_type(t) && ast_eval_slice_f64t(t)) ||
 						 (ast_eval_slice_intt(t) && !is_float(t));
@@ -1472,7 +1515,7 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 			return !ast_bad_type(t) &&
 						 (ast_eval_slice_f64t(t) ||
 							(!is_float(t) && ast_eval_slice_intt(t)));
-		return 0;
+		return !(t & VT_ARRAY) && ast_eval_slice_globl(a, n, &go);
 	}
 	case AST_Load: {
 		AstLocal c = ast_first_child(a, n);
@@ -1631,9 +1674,16 @@ static int ast_eval_slice_livein(AstArena *a, AstLocal n, int32_t *offs, int *cn
 	if (n == AST_NONE)
 		return 1;
 	if (ast_kind(a, n) == AST_Ref) {
+		int have;
 		r = ast_op(a, n);
 		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
 			o = (int32_t)(int64_t)ast_ival(a, n);
+			have = 1;
+		} else {
+			have = !(ast_type_t(a, n) & VT_ARRAY) &&
+						 ast_eval_slice_globl(a, n, &o);
+		}
+		if (have) {
 			for (i = 0; i < *cnt; i++)
 				if (offs[i] == o)
 					return 1;
