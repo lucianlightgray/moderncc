@@ -35,7 +35,7 @@
 # Environment:
 #   C2_NO_EXTRA=1   drop tests/diff/full_language.c, so a board is like-for-like
 #                   with a c2_sweep.sh board taken the same way.
-#   O0_AB_GATES=1   additionally force on, for measurement B, every optimizer
+#   O0_AB_GATES=1   additionally force on, for both measurements, every optimizer
 #                   knob that some -O level would turn on and -O0 leaves off:
 #                   each MCC_OPTD_LEVEL(n) row of src/mccopt.h, passed as
 #                   -f<name>.  Until a55c0a07 these were environment variables
@@ -48,7 +48,12 @@
 #                   unknown -f silently, so a derivation that still yields
 #                   names but the wrong ones cannot be caught that way -- see
 #                   the vacuity check in run_key, which requires the gated
-#                   counters to differ from the ungated bank's.
+#                   object board to differ from the ungated bank's.  It used to
+#                   require the gated Replay_IR counters to differ instead; the
+#                   only level knob that ever moved that census at -O0 was
+#                   inline-functions-called-once, which changed which bodies
+#                   exist rather than what they compile to, and which was
+#                   deleted for rejecting valid programs at -O7 and above.
 #   O0_AB_BANK=1    write the result into tests/ast/o0-baseline/ as well as
 #                   into <outdir>.
 #   O0_AB_CHECK=1   diff the result against tests/ast/o0-baseline/ and fail on
@@ -86,8 +91,9 @@
 #   board.txt            one summary line per key, written by "all"
 #   board.gated.txt      same, with the level knobs forced on
 #
-# Measurement A does not depend on O0_AB_GATES -- it runs with an empty
-# MCC_* environment either way -- so only measurement B is banked twice.
+# Only measurement B is banked twice.  Under O0_AB_GATES measurement A is also
+# taken with the knobs on, but that board is never banked and never checked for
+# drift: it exists only so the vacuity check has something that still moves.
 #
 # Paths are passed to mcc relative to the repo root on purpose: mcc embeds the
 # source file name it was given into the object, so an absolute path would
@@ -235,7 +241,7 @@ run_key() {
 		return 1
 	fi
 
-	objtxt=$OUT/$k.obj.txt
+	objtxt=$OUT/$k$SUF.obj.txt
 	rirtxt=$OUT/$k$SUF.rir.txt
 	log=$OUT/$k$SUF.rir.log
 	: > "$objtxt"
@@ -255,7 +261,7 @@ run_key() {
 		*/full_language.c) xflags="-I $S -DCC_NAME=CC_gcc" ;;
 		esac
 
-		if "$MCC" -w $AOPT $FLAGS $xflags -c -o "$OUT/o-$k.o" "$f" \
+		if "$MCC" -w $AOPT $FLAGS $GATE_FLAGS $xflags -c -o "$OUT/o-$k.o" "$f" \
 				> "$OUT/o-$k.err" 2>&1; then
 			nobj=$((nobj + 1))
 			h=$(sha256 "$OUT/o-$k.o" | cut -d' ' -f1)
@@ -341,16 +347,16 @@ run_key() {
 	' "$log" > "$rirtxt"
 
 	if [ -n "$SUF" ]; then
-		if [ ! -f "$BANKDIR/$k.rir.txt" ]; then
-			echo "$k: no $BANKDIR/$k.rir.txt to compare against -- the gated run" \
+		if [ ! -f "$BANKDIR/$k.obj.txt" ]; then
+			echo "$k: no $BANKDIR/$k.obj.txt to compare against -- the gated run" \
 				"cannot show that forcing the knobs on changed anything, and mcc" \
 				"ignores an unknown -f silently, so bank the ungated board first" >&2
 			return 1
 		fi
-		if cmp -s "$BANKDIR/$k.rir.txt" "$rirtxt"; then
-			echo "$k: the gated counters are identical to the ungated bank's." \
-				"$ngates knob(s) were passed as -f and not one body changed" \
-				"shape, which is what a silently-ignored flag name looks like." \
+		if cmp -s "$BANKDIR/$k.obj.txt" "$objtxt"; then
+			echo "$k: the gated objects are identical to the ungated bank's." \
+				"$ngates knob(s) were passed as -f and not one byte of one object" \
+				"moved, which is what a silently-ignored flag name looks like." \
 				"Either the derivation in derive_gates no longer names anything" \
 				"mcc parses, or this half of the bank is a second copy of the" \
 				"other half and should be retired rather than re-banked." >&2
@@ -409,8 +415,8 @@ twin_check() {
 		diff -u "$OUT/twin.a" "$OUT/twin.b" >&2 || true
 		return 1
 	fi
-	cut -f2,3 "$OUT/arm-win32.obj.txt" > "$OUT/twin.oa"
-	cut -f2,3 "$OUT/arm-wince.obj.txt" > "$OUT/twin.ob"
+	cut -f2,3 "$OUT/arm-win32$SUF.obj.txt" > "$OUT/twin.oa"
+	cut -f2,3 "$OUT/arm-wince$SUF.obj.txt" > "$OUT/twin.ob"
 	if cmp -s "$OUT/twin.oa" "$OUT/twin.ob"; then
 		echo "o0_ab: arm-win32 == arm-wince (counters and object sha256 both)"
 	else
