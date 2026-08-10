@@ -1,10 +1,10 @@
 {
- "accepted": 149,
+ "accepted": 155,
  "accepted_with_s": 101,
  "literal_fmt_sites": {
-  "fprintf": 385,
-  "printf": 443,
-  "snprintf": 163,
+  "fprintf": 386,
+  "printf": 452,
+  "snprintf": 172,
   "sprintf": 2
  },
  "max_accepted_cost": 16184,
@@ -20,7 +20,7 @@
   "mccgpu.c": 36,
   "mcchost.c": 26,
   "mccircap.c": 2,
-  "mccjit_embed.c": 456,
+  "mccjit_embed.c": 475,
   "mccjit_intent.c": 0,
   "mccpp.c": 59,
   "mccrir.c": 63,
@@ -28,25 +28,25 @@
   "mccstats.c": 18,
   "mcctools.c": 30
  },
- "refused_budget": 9,
+ "refused_budget": 11,
  "refused_flag": 4,
  "refused_float": 1,
- "refused_ptr": 0,
+ "refused_ptr": 1,
  "sites": {
-  "fprintf": 389,
-  "printf": 445,
-  "snprintf": 173,
+  "fprintf": 390,
+  "printf": 454,
+  "snprintf": 182,
   "sprintf": 2,
   "vfprintf": 2,
   "vsnprintf": 4
  },
  "snprintf_return_consumed": 26,
  "snprintf_site_class": {
-  "blocked-on-pointer": 110,
+  "blocked-on-pointer": 111,
   "float-out-of-scope": 1,
   "literal-only": 8,
-  "tranche1": 44
+  "tranche1": 52
  },
- "snprintf_specifiers_total": 231,
+ "snprintf_specifiers_total": 249,
  "tus": 16
 }

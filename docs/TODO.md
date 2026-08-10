@@ -14,7 +14,8 @@
 ### Where the tree is
 
 `main` at the `wt/earlyret` merge plus the two bank re-takes, **9501 cells on this host**,
-pushed. Ten branches landed in one merge wave: `wt/hostimport`, `wt/muslgap`,
+pushed. `wt/jitshutdown` is unmerged on top of it at **9503** (+2, both named in its
+write-up below). Ten branches landed in one merge wave: `wt/hostimport`, `wt/muslgap`,
 `wt/memberidx`, `wt/threadname`, `wt/symguard`, `wt/gpusmall`, `wt/rirphase`,
 `wt/globreloc-int`, `wt/earlyret`, plus the earlier `wt/attrib`. `wt/rirnorm` and
 `wt/globreloc` are **superseded** — they landed through `wt/rirphase` and
@@ -191,6 +192,250 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    0.0671pp drift accumulated over the 34 commits before it, inside the 0.05pp tolerance.
    Dilution by less-lowerable new code is normal and will recur; the metric needs either a
    corpus-normalised form or a scheduled re-take.
+7. **Cluster L's next link is `L2′(ii)`/`(iii)`, both in `src/mccgpu.c`** — clear
+   `mcc_gpu.ok` on `VK_ERROR_DEVICE_LOST` and give the Vulkan quiesce something to destroy.
+   The pool half landed on `wt/jitshutdown`; wiring the device into `mccjit_shutdown()`
+   before (ii) is fixed makes an unbounded `vkDeviceWaitIdle` reachable from `atexit` on
+   every run.
+
+## Landed — the JIT pool drains and joins, and the item that blocks cluster L is `L2′(i)`, not `L1`, 2026-08-10 (`wt/jitshutdown`)
+
+> Read the corrections first. The board says *"four rows naming one blocker"*, and the
+> sentence those four rows share misnames the row, over-counts what it blocks, and
+> over-states what a fix costs. All three are corrected below with the grep that settles
+> each.
+
+### Three corrections to the board, before the fix
+
+1. **The shutdown is `L2′(i)`, not `L1`.** Debt row 26 opens *"`L1` — give the JIT a
+   shutdown"*. `PLAN.md:918`'s `L1` is **"When is the device brought up?"** — a bring-up
+   row. The teardown precondition is `L2′(i)` at `PLAN.md:920`, and `PLAN.md:1197` spells
+   the sequencing out as *"**L2′ before L2**"*. Row 26 conflated the first row of the
+   cluster with the first row of *work*.
+2. **There is no `L9`.** Row 26 says `L1` blocks `L2`/`L3`/`L4`/`L6`/`L7`/`L8`/`L9`.
+   Cluster L is `L1`–`L8` plus `L2′`. Before this write-up, `grep -n '\bL9\b'` over `docs/`
+   returned exactly one hit — row 26 itself. The list is one item too long, and it cites a
+   stale anchor (`:8044`) as the authority for it.
+3. **QSBR is not wired to anything.** Before this branch `mccjit_qsbr_retire` had **three
+   call sites and all three were inside `mccjit_selftest_qsbr`**; `mccjit_qsbr_register`
+   was called only from `mccjit_qsbr_thread`, that selftest's own helper. No JIT code path
+   retires a code
+   blob — the engine does not reclaim emitted code at all. So *"no use-after-free of a
+   reclaimed blob"* is not a hazard the shutdown had to close; it is a hazard the shutdown
+   had to make **closeable**, because `L4b` puts device work on these workers.
+
+### What the pool was
+
+`mccjit_pool` is an intrusive FIFO of `MccjitSwapJob` (`run`/`slot`/`blob`/`len`/`cst`),
+one `qlock`, one `qcond`, `started` and `nworkers`. `mccjit_pool_worker` looped forever:
+`cond_wait` until `head`, pop, take the process-global `mccjit_swap_lock`, `job->run(job)`,
+release, free the job. Workers were created in `mccjit_pool_start` and immediately
+`pthread_detach`ed with the `pthread_t` left in a dead local. Started from
+`mccjit_boot_swap_async` — i.e. from the emitted `__mccjit_boot_all` constructor, before
+`main` — and from four selftests with `mccjit_pool_start(2)`.
+
+**`pthread_detach` was not load-bearing.** It was there because nobody had decided who
+joins: the file's only other joins are `mccjit_bench_sibling_thread` and the QSBR
+selftest's three threads, and neither is a pool worker. Nothing ordered anything on the
+detach, and removing it changes no teardown order — there was no teardown.
+
+**The 54 `pthread_mutex_unlock` sites are seven unrelated locks**, not one, and the
+distribution is the point: **31 of the 54 are the per-map `MccjitKgc.lock`**, then 5 each
+on `mccjit_qsbr.lock` and `mccjit_pool.qlock`, 5 on `MccjitCounterState.lock`, 3 each on
+`mccjit_swap_lock` and `mccjit_kgc_reg_lock`, 2 on `mccjit_override_lock`. Only `qlock`
+and `mccjit_swap_lock` are anywhere near the shutdown path, and the shutdown holds neither
+across a join. `mccjit_swap_lock` in particular has **three** unlock sites: the two atfork
+handlers and the worker — nothing else in the file takes it, so no thread can hold it and
+then wait on the pool.
+
+### What shutdown now guarantees
+
+`mccjit_shutdown()` — the name `PLAN.md:919` L2b asks for — registered `atexit` and
+idempotent. It guarantees, in this order:
+
+- **every worker is joined.** `mccjit_pool.th[MCCJIT_POOL_MAX]` retains the handles;
+  `quit` + `pthread_cond_broadcast` wakes the condvar; the worker's wait predicate became
+  `while (!head && !quit)` and it breaks out only when the queue is *empty*, so a join is a
+  **drain**, not a cancel. `nworkers`/`nth`/`started` are zero afterwards.
+- **no job is lost and none is leaked.** `mccjit_pool_enqueue` returns int and refuses once
+  `quit` is set, so a dispatch racing the teardown is **refused, not queued**: the caller
+  frees its own job and degrades. `mccjit_counter_tick` clears `st->building` on refusal
+  (leaving it set would wedge that slot on the baseline forever) and
+  `mccjit_boot_swap_async` falls through to its existing `sync-fallback`.
+- **a QSBR quiesce point exists.** A worker now registers a QSBR slot for exactly the
+  duration of `job->run` and goes offline (`quiescent` + `unregister`) before returning to
+  the condvar — online while it could hold a reference, offline while idle, which is the
+  only discipline under which a blocked worker cannot pin the epoch forever. After the
+  join no slot is registered, so `mccjit_shutdown`'s final `mccjit_qsbr_reclaim()` sees
+  `min_local == global` and the limbo list empties by construction.
+- **the drain precedes the KGC flush** without depending on `atexit` order.
+  `mccjit_kgc_register` now registers `atexit(mccjit_shutdown)` **after**
+  `atexit(mccjit_kgc_flush_all)`, and `atexit` is LIFO, so the drain runs first whichever
+  hook was installed first.
+- **`fork` stays coherent.** `mccjit_atfork_child` resets `quit` and `nth` alongside the
+  fields it already reset, so the child's pool is startable rather than permanently quit.
+
+**Escape hatch: `MCC_JIT_SHUTDOWN=0`** makes `mccjit_shutdown()` return immediately. An
+`atexit` join is unbounded above by whatever the current job costs; the knob restores the
+pre-fix behaviour exactly, and it is what the known-positive twin uses.
+
+### The trap this branch fell into and climbed out of, because it is the shape L2 will hit again
+
+The first version put the drain at the head of `mccjit_kgc_flush_all`, reasoning that this
+gets drain-before-flush regardless of `atexit` order. It does — and it also **tears the
+pool down in the middle of a live run**, because `mccjit_kgc_flush_all` is not only an
+`atexit` hook: it is installed as `mcc_stats_set_flush_hook`, and `mcc_stats_finish` is
+called from **`mcc_delete`** (`src/libmcc.c:1240`), which the JIT itself calls on every
+recompile. The whole `jit` suite stayed green through it, because a prematurely shut pool
+degrades to synchronous compilation and every cell still gets the right answer, slower.
+`jit/selftest-shutdown` now pins it as `pool-survives-flush`, and that check was verified
+to go red against the version that had the bug.
+
+### Does this need the `MccTask`/`tick()` model (S7b, the coroutine task)? No — and here is the split
+
+The board's claim is *"a quit flag against an opaque `job->run(job)` that holds the
+process-global `mccjit_swap_lock` across an entire compile is a redesign"*
+(`PLAN.md:262` S7b(i), and the coroutine task's item 1). **That is true of a cancel and
+false of a drain.** `MccjitSwapJob` is run-to-completion and carries no resume state;
+draining needs the flag checked only where the worker is *already* suspended (the condvar)
+and where it is *already* between jobs. Nothing is checked inside `job->run`, so nothing
+about the job's opacity or its lock is in the way.
+
+What still needs the tick, stated so it is not rediscovered:
+
+- **a bounded teardown.** Shutdown costs the queue plus one job per worker. `L4b`'s own
+  worst case is a 15–25k-word module build, *"plausibly seconds on MoltenVK"*; that would
+  sit inside one `job->run` with no way to abandon it. Only a tick makes the teardown
+  bounded.
+- **`L4b`'s hard constraint** — a device dispatch or pipeline build must never hold
+  `mccjit_swap_lock`. The worker still holds it across the whole job. Narrowing it to the
+  codegen is the tick, and it is `S7b`, not this branch.
+
+### What is actually unblocked, row by row
+
+| row | before | now |
+| --- | --- | --- |
+| **L2** what owns teardown | blocked on `L2′(i)` | **`L2′(i)` closed.** `mccjit_shutdown()` exists, is `atexit`-registered once and is ordered ahead of the KGC flush. `L2` still cannot land: `L2′(ii)` (`mcc_gpu.ok` never cleared after `VK_ERROR_DEVICE_LOST`, so `vkDeviceWaitIdle` deadlocks from `atexit`) and `L2′(iii)` (Vulkan quiesce destroys nothing) are `src/mccgpu.c` and untouched |
+| **L3** residency | listed as blocked | **it never was, and it already landed** (32× on fixed cost). Making objects resident needs no teardown; *destroying* them is `L2′(iii)` |
+| **L4** who dispatches | blocked | **unblocked on the lifetime axis.** The pool now has a definite end (not a bounded *duration* — see above), joinable workers, a per-job QSBR slot and an enqueue that refuses after teardown. Its remaining blocker is its own stated constraint — no `mccjit_swap_lock` across a dispatch — which is `S7b` |
+| **L6** eligibility | listed as blocked | **it never was.** `ast_gpu_want` is a predicate in `src/mccast.c` with no mechanical dependency on a shutdown; it is sequenced behind `L4`/`L5`, not blocked by a `pthread_t` |
+| **L7** fork/threads/Windows | blocked | **(i) advanced** — the child handler now resets `quit`/`nth`; marking the device dead is still owed. **(ii) and (iii) untouched** — `MCC_GPU_LOCK` is still `((void)0)` on Win32 and `mcc_gpu_stats` still reads unlocked |
+| **L8** `--embed-jit` | blocked | **unblocked on the pool axis.** The leak-clean exit an `--embed-jit` program needs now exists: a constructor-started pool is joined before the program returns. The `dlopen`-at-boot half is `src/mccgpu.c` |
+| **L9** | — | **does not exist** |
+
+### Windows
+
+No Windows-specific work was needed, and this was checked rather than assumed.
+`src/mccjit_win32.h` types `pthread_t` as a `uintptr_t` holding the `_beginthreadex`
+HANDLE; `pthread_detach` is `CloseHandle`, and `pthread_join` is
+`WaitForSingleObject(h, INFINITE)` + `CloseHandle` — correct, and correct **only** if
+exactly one of detach-or-join happens per thread, which is now the case. `pthread_cond_broadcast`
+is `WakeAllConditionVariable` and exists. `pthread_atfork` does **not** exist in the shim
+at all; the call site is `#if !MCC_HOST_WIN32`, so the atfork edit compiles out there.
+Two shim facts worth knowing before anything else leans on it: the thread return value is
+discarded (`pthread_join` always writes `NULL`), and `pthread_cond_timedwait` is absent —
+a bounded teardown on Windows would have to add it. Windows is also where the join matters
+most: the CRT terminates other threads at process exit, so an undrained pool there is a
+worker killed mid-compile.
+
+### The cells, and the proof they can fail
+
+`jit/selftest-shutdown` (`mccjit_selftest_shutdown`, wrapper
+`tests/embed/jit_selftest_shutdown.c`). It starts 4 workers, enqueues 64 jobs that each do
+a real `mcc_jit_recompile_blob`, retire a page into QSBR limbo and sleep 1 ms, launches 3
+racer threads that keep enqueueing until they are refused, calls `mccjit_shutdown()` from
+under that load, and then asserts nine named checks:
+
+| tag | assertion |
+| --- | --- |
+| `pool-started` | 4 workers |
+| `pool-survives-flush` | a mid-run `mcc_delete` + `mccjit_kgc_flush_all` does **not** tear the pool down |
+| `jobs-drained` | jobs run == jobs accepted, counting the racers' |
+| `workers-joined` | `nworkers == nth == started == 0` |
+| `queue-empty` | `head == tail == NULL` |
+| `qsbr-reclaimed` | `nlimbo == 0`, `leaked == 0`, `reclaimed == 64` — the leak assertion, in the tree's own ledger idiom rather than LSAN, which `tests/sanitize/run_selfcheck.cmake` disables |
+| `enqueue-refused` | ≥1 racer refusal, and a post-shutdown enqueue is refused |
+| `restart-refused` | `mccjit_pool_start` after shutdown returns 0 rather than spawning workers that exit at once |
+| `shutdown-idempotent` | the second `mccjit_shutdown()` returns |
+
+`jit/selftest-shutdown-known-positive` runs the same binary with `MCC_JIT_SHUTDOWN=0`,
+which reinstates the pre-fix pool exactly, and inverts: it fails if nothing went red, and
+it fails if any of the six drain checks did not fire — the `$TAGS`/`$WANT` discipline
+`tests/superopt/global-reload.sh` established, moved into C because the subject is the
+engine and not a source file. Measured: **all six fire**, with
+`ran=6 accepted=88`, `nworkers=4`, a non-empty queue, `nlimbo=7 reclaimed=0`,
+`racer-refusals=0 post-shutdown-accepted=1`, `restart-workers=4`.
+
+**Proved against a genuinely unfixed binary as well**, not only against the knob: with
+`mccjit_pool_shutdown`'s body replaced by an immediate `return`, the *clean* cell exits 1
+with `workers-joined`, `qsbr-reclaimed`, `enqueue-refused`, `restart-refused` and
+`shutdown-idempotent` red. And `pool-survives-flush` was proved separately by
+re-introducing the `mccjit_kgc_flush_all` bug described above and watching it go red.
+
+### Demonstrated end to end on a real `--embed-jit` program, which is what `L8` asks for
+
+`mcc -O1 --embed-jit --jit-threads 4 --jit-functions f ej.c -o ej4`, then
+`MCC_JIT_VERBOSE=1 ./ej4`:
+
+```
+mccjit-pool[start]: requested=4 live=4
+mccjit-boot[async]: ... route=kgc np=1 ... swapped
+mccjit-pool[shutdown]: joined=4 ran=1 enqueued=1 refused=0
+r=100000 f(11)=40
+```
+
+The constructor-started pool is joined before the program's exit completes, with the job
+ledger balanced. With `MCC_JIT_SHUTDOWN=0` the `shutdown` line is absent and the program
+exits with four live workers, exactly as it did before this branch. Note `--jit-threads N`
+is what selects the async constructor at all (`async = s1->jit_threads > 0`); without it
+the pool never starts and the hook reports `joined=0`.
+
+### Verification
+
+`cmake-cross` built before `cmake-debug` was configured (trap 4), `vendor/` symlinked in.
+
+**No full `ctest` was run from this branch, deliberately.** Five agents shared this box at
+load average ~286 with 19 concurrent `ctest` processes; a red device or timing cell there
+says nothing, and for *this* branch it is worse than usual — a loaded box perturbs exactly
+the timing a shutdown race lives in. The authoritative full run belongs on merged `main`
+on a quiet box. What was run here, at `-j4` or below:
+
+| run | result |
+| --- | --- |
+| `ctest -R jit --repeat until-fail:5` | **69 cells, 0 failures**, run to completion twice |
+| `ctest -R selfhost` | **23 cells, 0 failures** |
+| the six shutdown/pool/QSBR/fork/search-live-pool cells, `--repeat until-fail:40` | **0 failures** |
+| `ci/registration-stubs`, `ci/must-run-registered`, `docs/refs{,-known-positive}`, `fmt/census-bank{,-known-positive}`, `trace-gate-invariant`, `schema-gate-invariant` | **9 cells, 0 failures** |
+
+Repetition rather than breadth is the point: a shutdown bug is a race and a single green
+run of a teardown path proves close to nothing.
+
+**Cell count 9501 → 9503 by `ctest -N`, +2, and both are named**: `jit/selftest-shutdown`
+and `jit/selftest-shutdown-known-positive`. Both counts were taken by `ctest -N` on this
+host, on this tree, before and after the change — not estimated. `ci/registration-stubs`
+is green, so the two new names are registered on the `MCC_EMBED_JIT=OFF` branch as skip
+stubs too, which is what keeps the count host-independent.
+
+**`tests/fmt/census-bank.json` was re-taken**, and it failed first and named every figure
+that moved, which is what it is for. Cause is diagnostics, not formatting work:
+`src/mccjit_embed.c` 456 → 475 printf-family sites (the new cell prints one line per check
+and builds each with `snprintf`), `printf` 445 → 454, `snprintf` 173 → 182, `fprintf`
+389 → 390, `snprintf_specifiers_total` 231 → 249, `snprintf_site_class` `tranche1`
+44 → 52, `accepted` 149 → 155, `refused_budget` 9 → 11, `refused_ptr` 0 → 1. `tus` and
+every other per-file count are unmoved.
+
+`tests/must-run.txt` gained two rows: `jit/selftest-shutdown` as `must-run` (pure CPU, no
+host fact excuses a skip) and its twin as `registered`.
+
+### Still open in this area
+
+1. **The teardown is unbounded above.** See the tick split above.
+2. **`MCCJIT_POOL_MAX` is 64** and `mccjit_pool_start` now clamps to it silently. The
+   baked constructor passes a literal; nothing today asks for more than 2.
+3. `L2′(ii)` and `L2′(iii)` are unchanged and are what `L2` is now waiting on.
+4. `mcc_gpu_quiesce`'s unbounded `vkDeviceWaitIdle` becomes reachable from `atexit` the
+   moment `L2` wires the device into `mccjit_shutdown`. Clear `mcc_gpu.ok` on
+   `VK_ERROR_DEVICE_LOST` **before** that wiring, not after.
 
 ## Total lowering — the decided architecture, 2026-08-09
 
@@ -5718,7 +5963,7 @@ schedule.
 | **23** | **`rir-nofb-probe`, `--check-gap-dir` and `--check-low-dir` all pass over an empty input.** The bank already holds four empty `nofb_miscompiles` lists; gap fixtures cover **3 of 18** `UNF`+`WHY` classes | small per guard, medium for fixtures | **gate strength** |
 | **24** | **`stratsweep.sh` and `flagsweep.sh` drop subjects silently.** `$WORK/skipped` is written and never counted; the only floor is `n > 0`, so a miscompile breaking 30 of 31 subjects prints `PASS stratsweep-iso all: 22 strategy/ies x 1 subjects`. Both already print the survivor count — pin it | small | **gate strength** |
 | **25** | **The non-LVAL local `Ref` question is now answerable, not open** (`src/mccslice.h:264`, `:5685`). `wt/decaytype` fixed the identical defect in `ast_dep_decode` on 2026-08-09 — an `AST_Ref` accepted as a base address without checking `VT_LVAL` — with cell `id=25 dp_gptr_alias`. That answers the semantics in favour of "address" but did not touch `ast_eval_slice.h`'s `Ref` arm, `kind_ok` or `livein`. Blast radius **93 of 3994 accepted slices (2.3%)**; one directed test settles it | small | **reference correctness** |
-| **26** | **Cluster L is a dependency chain and its first link is unbuilt.** `L1` — give the JIT a shutdown — blocks `L2`/`L3`/`L4`/`L6`/`L7`/`L8`/`L9` by construction (`:8044` says so). Workers are `pthread_detach`ed at `src/mccjit_embed.c:1375` into an unbounded `pthread_cond_wait` at `:1341`/`:1347` with no `pthread_t` retained. `L5` landed as L3 residency (**32×** on fixed cost); nothing else in the cluster has. It is the same defect as open item 4 at `:8657`, `PLAN.md:916`, and the coroutine task's item 1 — **four rows naming one blocker** | redesign | **device lifetime** |
+| **26** | ~~**Cluster L is a dependency chain and its first link is unbuilt.** `L1` — give the JIT a shutdown — blocks `L2`/`L3`/`L4`/`L6`/`L7`/`L8`/`L9` by construction~~ — **CLOSED 2026-08-10 (`wt/jitshutdown`), and the row was wrong three ways.** The shutdown is `L2′(i)`, not `L1` (`L1` is device bring-up; `PLAN.md:1197` says *"L2′ before L2"*). **There is no `L9`** — cluster L is `L1`–`L8` plus `L2′`, and this row is the only place in `docs/` the token appears. `L3` and `L6` were never blocked by a `pthread_t`: `L3` residency already landed, and `L6` is a predicate in `src/mccast.c`. What was real: workers `pthread_detach`ed with no handle retained. Now retained and joined; `mccjit_shutdown()` exists, drains, and is `atexit`-ordered ahead of the KGC flush. Genuinely unblocked: **`L2`'s precondition (i)**, **`L4`** on the lifetime axis, **`L8`** on the pool axis, **`L7(i)`**. Still blocking `L2`: `L2′(ii)`/`(iii)`, both `src/mccgpu.c`. Still blocking `L4b`: its own no-`mccjit_swap_lock` constraint, which is `S7b` | landed | **device lifetime** |
 | **27** | **The gate-mask gap.** `ast_math_inline_env`, `ast_interchange`, `ast_fusion`, `ast_tile` and `loop-vlat` mutate the arena before the JIT's mask snapshot and carry no `AST_SG_*` bit, so the JIT cannot know what shaped the tree it is handed. Stated at `:8650` and again at `:7756`; no later mention. This is the same class of defect as row 1 of the board's own ranking (a predicate reaching emitted code without its guard) | design | **correctness** |
 | **28** | **`storeval-callstore` is at `MCC_OPTD_LEVEL(2)` and was never ranked in either direction** (`src/mccopt.h:39`). The ICE that made its off-state unmeasurable was fixed at `:7629`; nobody has run the bench since. Adjacent and larger: **32 of the 34 demoted rows on rungs 10/11/12 are still unpriced** — only `narrow` and `tree-copy-prop` were measured, and rung 12 remains a deletion-candidate list nobody has read | one bench, then 32 | **emitted code** |
 | **29** | **The `MCC_OPT_REPLAY_FALLBACK` flip is an untaken decision, and the fallback is silent either way.** No known defect blocks it (`:9126`), the backstop landed at `705f0b0f`, all four delta-debugged flag sets closed, and `rir-nofb-probe` banks zero miscompiles. Keeping the gate costs **2.0% of bodies but 10.2% of body bytes** getting no optimization at all at `-O1`. **Recommended under either decision and not done: make the divergence visible** — `rir_prod_note` only reports at `MCC_RIR_PROD>=2`, so in a default build a fallback leaves no trace | small (visibility), then a decision | **emitted code** |
@@ -12998,12 +13243,18 @@ did not settle it.
 **The claim.** Four separate open problems in this tree are the same object wearing four
 names, and one task representation closes all of them:
 
-1. **The JIT pool has no shutdown** (L2′, `docs/PLAN.md` cluster L). Workers sit in an
-   unbounded `pthread_cond_wait` (`src/mccjit_embed.c:1347`) and are `pthread_detach`ed
-   at `:1375`, so no `pthread_t` is retained and joining is structurally impossible. A
-   quit flag checked *between ticks* is a few lines. A quit flag against an opaque
-   `job->run(job)` that holds the process-global `mccjit_swap_lock` across an entire
-   compile (`:1353-1355`) is a redesign.
+1. ~~**The JIT pool has no shutdown** (L2′, `docs/PLAN.md` cluster L)~~ — **AMENDED
+   2026-08-10, and this item overstated its own claim.** The pool now drains and joins
+   (`mccjit_shutdown`, `wt/jitshutdown`) **without** a task representation. The claim that
+   *"a quit flag against an opaque `job->run(job)` that holds the process-global
+   `mccjit_swap_lock` across an entire compile is a redesign"* is true of a **cancel** and
+   false of a **drain**: `MccjitSwapJob` is run-to-completion with no resume state, so the
+   flag is only ever checked where the worker is already suspended on the condvar and
+   already between jobs. Nothing is checked inside `job->run`. What survives, and is the
+   real S7b claim here: the teardown is **unbounded above** (one `job->run` per worker,
+   and `L4b`'s own worst case is a multi-second module build), and **`L4b`'s hard
+   constraint** — no `mccjit_swap_lock` across a device dispatch — still needs the lock
+   narrowed to the codegen inside a tick.
 2. **D1e is already a coroutine, on the device side.** The measured-and-winning boundary
    mechanism is a pre-enqueued self-skipping resume chain: each command buffer loads the
    state vector, checks for a host reply, and exits immediately if absent. That is a
@@ -15116,16 +15367,26 @@ signalled or joined, and `mcc_gpu_quiesce`'s single caller is registered only un
 `MCC_AST_EVAL_LADDER_GPU` (`src/mccast.c:15881`). So **"torn down once with the JIT" is
 a construction, not a move.**
 
-1. **Give the JIT a shutdown. Nothing else in cluster L can land first.**
-   `mccjit_pool` (`src/mccjit_embed.c:1302-1309`) needs a quit flag, a
+1. **Give the JIT a shutdown. Nothing else in cluster L can land first.** — **LANDED
+   2026-08-10 (`wt/jitshutdown`); see the write-up at the head of this file. The
+   `atexit` ordering was solved differently from the sketch below: rather than relying on
+   registration order, `mccjit_kgc_register` registers `atexit(mccjit_shutdown)` after
+   `atexit(mccjit_kgc_flush_all)` and lets LIFO do it. Putting the drain *inside*
+   `mccjit_kgc_flush_all` — the obvious alternative — is a live-run bug, because that
+   function is also `mcc_stats_set_flush_hook` and `mcc_delete` calls it.**
+   ~~`mccjit_pool` (`src/mccjit_embed.c:1302-1309`) needs a quit flag, a
    `pthread_cond_broadcast`, and either a join or a counted in-flight barrier; the
    workers are detached today so there is nothing to join. Then a single
    `mccjit_shutdown()` registered `atexit` once, ordered **ahead of**
    `mcc_stats_finish`'s hook (`src/mccstats.c:541-546`), which drains the pool, then
    quiesces the device, then flushes KGC. Note this also closes an existing hole the
-   board already records: the atexit stats report can race a live detached worker.
+   board already records: the atexit stats report can race a live detached worker.~~
+   **The device half of that sentence — quiesce — is deliberately NOT wired yet; see
+   step 2, which now gates it.**
 
-2. **Clear `mcc_gpu.ok` on `VK_ERROR_DEVICE_LOST` before step 1 ships.**
+2. **Clear `mcc_gpu.ok` on `VK_ERROR_DEVICE_LOST` before the device is wired into
+   `mccjit_shutdown()`.** (Was: "before step 1 ships". Step 1 shipped without touching the
+   device precisely so this ordering is still available.)
    `mcc_gpu_quiesce` does an unbounded `vkDeviceWaitIdle` (`src/mccgpu.c:1303`). Today
    that is unreachable in a normal build because nothing registers the hook. Step 1
    makes it run on **every** exit, which converts a latent deadlock into a live one.

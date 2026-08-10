@@ -5783,6 +5783,17 @@ if(MCC_BUILD_TESTS)
             add_test(NAME jit/selftest-qsbr COMMAND jit_selftest_qsbr)
             set_tests_properties(jit/selftest-qsbr PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            add_executable(jit_selftest_shutdown tests/embed/jit_selftest_shutdown.c)
+            target_link_libraries(jit_selftest_shutdown PRIVATE libmcc)
+            target_include_directories(jit_selftest_shutdown PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-shutdown COMMAND jit_selftest_shutdown)
+            set_tests_properties(jit/selftest-shutdown PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
+            add_test(NAME jit/selftest-shutdown-known-positive
+                COMMAND jit_selftest_shutdown known-positive)
+            set_tests_properties(jit/selftest-shutdown-known-positive PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
+
             add_executable(jit_selftest_patch tests/embed/jit_selftest_patch.c)
             target_link_libraries(jit_selftest_patch PRIVATE libmcc)
             target_include_directories(jit_selftest_patch PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -5965,6 +5976,8 @@ if(MCC_BUILD_TESTS)
             mcc_skip_test(jit/selftest-fparg "${_jitoff_why}")
             mcc_skip_test(jit/selftest-mixed "${_jitoff_why}")
             mcc_skip_test(jit/selftest-qsbr "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-shutdown "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-shutdown-known-positive "${_jitoff_why}")
             mcc_skip_test(jit/selftest-patch "${_jitoff_why}")
             mcc_skip_test(jit/selftest-slice "${_jitoff_why}")
             mcc_skip_test(jit/selftest-sliceextract "${_jitoff_why}")
