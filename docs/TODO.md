@@ -284,6 +284,49 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    The pool half landed on `wt/jitshutdown`; wiring the device into `mccjit_shutdown()`
    before (ii) is fixed makes an unbounded `vkDeviceWaitIdle` reachable from `atexit` on
    every run.
+10. **Inlining should consult a semantic-equivalence cache over a rolling window, not
+    re-derive every graft.** Today a callee is grafted or not on a per-body yes/no
+    (`ast_inline_graftable`, `mcc_slice_leaf_hook`, `keep_inline = ast_fn_faithful &&
+    ast_inline_retain(...)`), and every optimization of the grafted body is recomputed from
+    scratch at each site. The proposal: slide a **rolling window** across the arena, and for
+    each window look up a cache of already-optimized slices keyed on a **semantic**
+    signature; on a hit, reuse the optimized form instead of re-deriving it. That makes
+    inlining incremental rather than all-or-nothing — a callee too large to graft whole can
+    still contribute the windows that match — and it turns repeated shapes across a TU into
+    one optimization each.
+
+    What already exists to build on, and what each one teaches:
+    - **A memo keyed by intention already exists.** `ast_search_key_salt(ast_intention_hash(...))`
+      backs `mcc-search.memo`, and `wt/o4ticks` had to salt it with the twelve `so_axes[]`
+      names because an entry created under one axis configuration was being reused under
+      another. **A cache key that omits part of the context it was derived under is a
+      miscompile generator**; that lesson transfers directly and is the first hazard here.
+    - **`opt-slice` is the cautionary version of this idea.** It memoised *other knobs' gate
+      bits* across processes via `$XDG_CACHE_HOME/mcc/sl-<salt>.ck`, changed **zero objects
+      across 1,937 programs**, cost **33.7% of `-O12` compile time**, and made output
+      irreproducible (`tools/opt-cache-determinism.py` FAILs at `-O9`/`-O12`). It is gated
+      behind `MCC_DEV`. Any new cache has to beat that bar on all three axes: measurable
+      win, bounded cost, and byte-reproducible output.
+    - **The key must be semantic, not byte-identity.** That is the whole lesson of the
+      `faithful` gate: byte-identity fails exactly when a normalisation is doing its job,
+      and 2.17% of bodies / 7.87% of body bytes at `-O2` run zero optimizer strategies
+      because of it. Two windows that compute the same function must hit the same entry
+      even when their bytes differ.
+    - **Equivalence has an adjudicator already.** The four `slice/cref-oracle-*` cells
+      re-spell a slice as standalone C and require gcc **and** clang to agree with the CPU
+      reference over real argument tuples. It is the right instrument to *validate* the
+      key's equivalence classes offline, though it cannot run inline (out-of-process,
+      ctest-only, and its unit is an integer expression subtree — no stores, calls, globals
+      or memory).
+    - **The window has a natural unit.** `ast_eval_slice`'s frame/expression slices are
+      already a windowing of the arena with a live-in model and a device differential;
+      `mcc_slice_frame_from_ast` and `ast_eval_slice_livein_ext` are where a window's
+      boundary and its inputs are already computed.
+
+    Sequence it as measurement first: how many windows in a real TU are semantically
+    equivalent to another, and how much optimizer work is duplicated across them? `src/*.c`
+    is the right denominator, not gcc c-torture (item 6). If the duplication is small, the
+    cache is `opt-slice` again.
 
 ## Landed — the parse-depth budget prices again, and the 320 bytes were a `__builtin_complex` local riding every `unary` level, 2026-08-10 (`wt/parseframe`)
 
