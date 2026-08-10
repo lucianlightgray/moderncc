@@ -1801,6 +1801,29 @@ static int ast_jit_eligible(Sym *sym) { MCC_TRACE("enter\n");
 
 static int ast_jit_body_has_vla(void);
 
+static int ast_jit_slot_taken(const char *fn) { MCC_TRACE("enter\n");
+	MCCState *s1 = mcc_state;
+	Section *st;
+	char nm[256];
+	unsigned long merged, i;
+	if (!s1 || !symtab_section || !fn || !fn[0])
+		{ MCC_TRACE("br\n"); return 0; }
+	st = symtab_section;
+	if (!st->link)
+		{ MCC_TRACE("br\n"); return 0; }
+	merged = (unsigned long)st->sh_offset / sizeof(ElfSym);
+	if (merged <= 1)
+		{ MCC_TRACE("br\n"); return 0; }
+	snprintf(nm, sizeof nm, "%s__mccjit_slot_%s", s1->leading_underscore ? "_" : "",
+					 fn);
+	for (i = 1; i < merged; i++) { MCC_TRACE("br\n");
+		ElfSym *es = (ElfSym *)st->data + i;
+		if (!strcmp((const char *)st->link->data + es->st_name, nm))
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
+
 static int ast_jit_want(const char *fn, Sym *sym) { MCC_TRACE("enter\n");
 	if (!ast_jit_selected(fn))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -19497,7 +19520,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						memset(slotp, 0, MCC_PTR_SIZE);
 #ifdef MCC_EMBED_JIT
 						if (mcc_state && (mcc_state->embed_jit ||
-															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
+															mcc_state->output_type == MCC_OUTPUT_MEMORY) &&
+								!ast_jit_slot_taken(funcname)) { MCC_TRACE("br\n");
 							char slotname[256];
 							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
 											 mcc_state->leading_underscore ? "_" : "", funcname);
@@ -19537,7 +19561,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						memset(slotp, 0, MCC_PTR_SIZE);
 #ifdef MCC_EMBED_JIT
 						if (mcc_state && (mcc_state->embed_jit ||
-															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
+															mcc_state->output_type == MCC_OUTPUT_MEMORY) &&
+								!ast_jit_slot_taken(funcname)) { MCC_TRACE("br\n");
 							char slotname[256];
 							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
 											 mcc_state->leading_underscore ? "_" : "", funcname);
@@ -19579,20 +19604,20 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						unsigned char *slotp = data_section->data + slot_off;
 						Sym *slot_sym, *body_sym;
 						memset(slotp, 0, MCC_PTR_SIZE);
-						{ MCC_TRACE("br\n");
+						if (!ast_jit_slot_taken(funcname)) { MCC_TRACE("br\n");
 							char slotname[256];
 							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
 											 mcc_state->leading_underscore ? "_" : "", funcname);
 							set_global_sym(mcc_state, slotname, data_section, slot_off);
-						}
 #ifdef MCC_EMBED_JIT
-						if (mcc_state && (mcc_state->embed_jit ||
-															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
-							mccjit_embed_note(funcname, ast_cur, sym,
-																(uint64_t)ast_search_gates_now());
-							ast_jit_submit_aot(sym);
-						}
+							if (mcc_state && (mcc_state->embed_jit ||
+																mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
+								mccjit_embed_note(funcname, ast_cur, sym,
+																	(uint64_t)ast_search_gates_now());
+								ast_jit_submit_aot(sym);
+							}
 #endif
+						}
 						ind = aot_base;
 						rsym = 0;
 						if (rs)

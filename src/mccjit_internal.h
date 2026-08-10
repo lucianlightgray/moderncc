@@ -12,7 +12,9 @@
 
 #define MCCJIT_INTENT_MAGIC 0x314a434dul
 #define MCCJIT_INTENT_FORMAT                                                   \
-	13u
+	14u
+
+#define MCCJIT_BIND_MAX 64u
 
 #define MCCJIT_UNIT_WHOLE 0u
 #define MCCJIT_UNIT_KERNEL 1u
@@ -31,6 +33,11 @@ typedef struct MccjitBuf {
 	size_t len;
 	size_t cap;
 	int oom;
+	int bind_allow;
+	int bind_n;
+	int bind_elfsym[MCCJIT_BIND_MAX];
+	int bind_tokv[MCCJIT_BIND_MAX];
+	size_t bind_off[MCCJIT_BIND_MAX];
 } MccjitBuf;
 
 typedef struct MccjitTypeRec {
@@ -73,6 +80,9 @@ typedef struct MccjitIntent {
 	char **param_name;
 	uint64_t warm_gates;
 	uint8_t unit_kind;
+	uint32_t nbind;
+	char **bind_name;
+	uint64_t *bind_addr;
 } MccjitIntent;
 
 MCCJIT_LOCAL unsigned mccjit_role_for_base(int t);

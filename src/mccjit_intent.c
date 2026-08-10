@@ -13,6 +13,8 @@ MCCJIT_LOCAL void mccjit_buf_init(MccjitBuf *b) { MCC_TRACE("enter\n");
 	b->len = 0;
 	b->cap = 0;
 	b->oom = 0;
+	b->bind_allow = 0;
+	b->bind_n = 0;
 }
 
 MCCJIT_LOCAL void mccjit_buf_free(MccjitBuf *b) { MCC_TRACE("enter\n");
@@ -349,6 +351,73 @@ static int mccjit_sym_positional(int32_t op) { MCC_TRACE("enter\n");
 	return (op & VT_VALMASK) == VT_LOCAL && !(op & VT_SYM);
 }
 
+static int mccjit_callee_defined(Sym *s) { MCC_TRACE("enter\n");
+	MCCState *s1 = mcc_state;
+	ElfSym *es;
+	if (!s1 || !s || !(s->r & VT_SYM) || !s->c || !text_section)
+		{ MCC_TRACE("br\n"); return 0; }
+	es = elfsym(s);
+	if (!es || es->st_shndx != text_section->sh_num)
+		{ MCC_TRACE("br\n"); return 0; }
+	return 1;
+}
+
+static int mccjit_callee_bindable(Sym *s) { MCC_TRACE("enter\n");
+	MCCState *s1 = mcc_state;
+	ElfSym *es;
+	if (!s1 || !s || !text_section || !symtab_section)
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((s->type.t & VT_BTYPE) != VT_FUNC)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!(s->type.t & VT_STATIC))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (s->a.weak)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!(s->r & VT_SYM) || !s->c)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!(s->v >= TOK_IDENT && s->v < SYM_FIRST_ANOM))
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((unsigned long)s->c * sizeof(ElfSym) >= symtab_section->data_offset)
+		{ MCC_TRACE("br\n"); return 0; }
+	es = elfsym(s);
+	if (!es || es->st_shndx != text_section->sh_num)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ELFW(ST_BIND)(es->st_info) != STB_LOCAL)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ELFW(ST_TYPE)(es->st_info) != STT_FUNC)
+		{ MCC_TRACE("br\n"); return 0; }
+	return 1;
+}
+
+static int mccjit_callee_refused(MccjitBuf *buf, Sym *s) { MCC_TRACE("enter\n");
+	int i;
+	if (buf->bind_allow && mcc_env_on("MCC_JIT_BAKE_UNSAFE_LOCALS"))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!buf->bind_allow || !mccjit_callee_bindable(s))
+		{ MCC_TRACE("br\n"); return 1; }
+	for (i = 0; i < buf->bind_n; i++)
+		{ MCC_TRACE("br\n"); if (buf->bind_elfsym[i] == s->c)
+			{ MCC_TRACE("br\n"); return 0; } }
+	if (buf->bind_n >= (int)MCCJIT_BIND_MAX)
+		{ MCC_TRACE("br\n"); return 1; }
+	buf->bind_elfsym[buf->bind_n] = s->c;
+	buf->bind_tokv[buf->bind_n] = (int)s->v;
+	buf->bind_off[buf->bind_n] = 0;
+	buf->bind_n++;
+	return 0;
+}
+
+static void mccjit_bake_why(Sym *sym, const char *reason, const char *detail) { MCC_TRACE("enter\n");
+	const char *fn;
+	if (!mcc_env_on("MCC_JIT_BAKE_WHY"))
+		{ MCC_TRACE("br\n"); return; }
+	fn = (sym && sym->v >= TOK_IDENT && sym->v < SYM_FIRST_ANOM)
+					 ? get_tok_str(sym->v, NULL)
+					 : "?";
+	fprintf(stderr, "mccjit-bake[%s]: %s%s%s\n", fn, reason, detail ? " " : "",
+					detail ? detail : "");
+}
+
 MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf *buf,
 																				 uint64_t warm_gates) { MCC_TRACE("enter\n");
 	MccjitHandles handles;
@@ -357,8 +426,10 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 	uint32_t ret_ref_id = 0;
 	if (!a || !buf)
 		{ MCC_TRACE("br\n"); return -1; }
-	if (ast_arena_has_asm(a))
-		{ MCC_TRACE("br\n"); return -1; }
+	if (ast_arena_has_asm(a)) { MCC_TRACE("br\n");
+		mccjit_bake_why(sym, "refused arena-has-asm", NULL);
+		return -1;
+	}
 	count = ast_count(a);
 	mccjit_handles_init(&handles);
 
@@ -383,27 +454,55 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 	for (k = 0; k < handles.count; k++)
 		{ MCC_TRACE("br\n"); mccjit_handles_expand(&handles, k); }
 	if (handles.oom) { MCC_TRACE("br\n");
+		mccjit_bake_why(sym, "refused handles-oom", NULL);
 		mccjit_handles_free(&handles);
 		return -1;
 	}
 
-	for (k = 0; k < handles.count; k++) { MCC_TRACE("br\n");
-		int64_t tv = handles.token_v[k];
-		Sym *s;
-		if (handles.role[k] != MCCJIT_ROLE_NAMED)
-			{ MCC_TRACE("br\n"); continue; }
-		s = (Sym *)(uintptr_t)handles.raw[k];
-		if (!(tv >= TOK_IDENT && tv < SYM_FIRST_ANOM)) { MCC_TRACE("br\n");
-			unsigned long off, sz;
-			if (mccjit_data_sym_info(s, &off, &sz)) { MCC_TRACE("br\n");
-				handles.role[k] = (uint8_t)MCCJIT_ROLE_DATA;
+	{
+		int why = mcc_env_on("MCC_JIT_BAKE_WHY");
+		int refuse = 0;
+		for (k = 0; k < handles.count; k++) { MCC_TRACE("br\n");
+			int64_t tv = handles.token_v[k];
+			Sym *s;
+			if (handles.role[k] != MCCJIT_ROLE_NAMED)
+				{ MCC_TRACE("br\n"); continue; }
+			s = (Sym *)(uintptr_t)handles.raw[k];
+			if (!(tv >= TOK_IDENT && tv < SYM_FIRST_ANOM)) { MCC_TRACE("br\n");
+				unsigned long off, sz;
+				if (mccjit_data_sym_info(s, &off, &sz)) { MCC_TRACE("br\n");
+					handles.role[k] = (uint8_t)MCCJIT_ROLE_DATA;
+					continue;
+				}
+				mccjit_bake_why(sym, "refused named-nondata", NULL);
+				if (!why) { MCC_TRACE("br\n");
+					mccjit_handles_free(&handles);
+					return -1;
+				}
+				refuse = 1;
 				continue;
 			}
-			mccjit_handles_free(&handles);
-			return -1;
+			if (s && s != sym && (s->type.t & VT_BTYPE) == VT_FUNC &&
+					(s->type.t & (VT_STATIC | VT_INLINE))) { MCC_TRACE("br\n");
+				char det[256];
+				int callee_refused = mccjit_callee_refused(buf, s);
+				if (why) { MCC_TRACE("br\n");
+					snprintf(det, sizeof det, "%s static=%d inline=%d extern=%d weak=%d defined=%d admitted=%d",
+									 get_tok_str((int)tv, NULL), !!(s->type.t & VT_STATIC),
+									 !!(s->type.t & VT_INLINE), !!(s->type.t & VT_EXTERN),
+									 !!s->a.weak, mccjit_callee_defined(s), !callee_refused);
+					mccjit_bake_why(sym, "callee-static-inline", det);
+				}
+				if (!callee_refused)
+					{ MCC_TRACE("br\n"); continue; }
+				if (!why) { MCC_TRACE("br\n");
+					mccjit_handles_free(&handles);
+					return -1;
+				}
+				refuse = 1;
+			}
 		}
-		if (s && s != sym && (s->type.t & VT_BTYPE) == VT_FUNC &&
-				(s->type.t & (VT_STATIC | VT_INLINE))) { MCC_TRACE("br\n");
+		if (refuse) { MCC_TRACE("br\n");
 			mccjit_handles_free(&handles);
 			return -1;
 		}
@@ -500,6 +599,16 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 		}
 	}
 
+	{
+		int bi;
+		mccjit_put_u32(buf, (uint32_t)buf->bind_n);
+		for (bi = 0; bi < buf->bind_n; bi++) { MCC_TRACE("br\n");
+			mccjit_put_str(buf, get_tok_str(buf->bind_tokv[bi], NULL));
+			buf->bind_off[bi] = buf->len;
+			mccjit_put_u64(buf, 0);
+		}
+	}
+
 	mccjit_handles_free(&handles);
 	return buf->oom ? -1 : 0;
 }
@@ -517,6 +626,9 @@ MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it) { MCC_TRACE("enter\n")
 	if (it->param_name)
 		{ MCC_TRACE("br\n"); for (i = 0; i < it->nparam; i++)
 			{ MCC_TRACE("br\n"); mcc_free(it->param_name[i]); } }
+	if (it->bind_name)
+		{ MCC_TRACE("br\n"); for (i = 0; i < it->nbind; i++)
+			{ MCC_TRACE("br\n"); mcc_free(it->bind_name[i]); } }
 	if (it->recs)
 		{ MCC_TRACE("br\n"); for (i = 0; i < it->handle_count; i++) { MCC_TRACE("br\n");
 			uint32_t j;
@@ -538,6 +650,11 @@ MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it) { MCC_TRACE("enter\n")
 	mcc_free(it->param_type_t);
 	mcc_free(it->param_off);
 	mcc_free(it->param_name);
+	mcc_free(it->bind_name);
+	mcc_free(it->bind_addr);
+	it->bind_name = NULL;
+	it->bind_addr = NULL;
+	it->nbind = 0;
 	it->arena = NULL;
 	it->handle_raw = NULL;
 	it->handle_token_v = NULL;
@@ -921,6 +1038,25 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 		out->param_off[i] = (int64_t)mccjit_get_u64(&r);
 		out->param_name[i] = mccjit_get_str(&r);
 		if (r.err)
+			{ MCC_TRACE("br\n"); goto done; }
+	}
+
+	out->nbind = mccjit_get_u32(&r);
+	if (r.err)
+		{ MCC_TRACE("br\n"); goto done; }
+	if (out->nbind > MCCJIT_BIND_MAX)
+		{ MCC_TRACE("br\n"); goto done; }
+	if (out->nbind) { MCC_TRACE("br\n");
+		out->bind_name = mcc_mallocz(out->nbind * sizeof *out->bind_name);
+		out->bind_addr = mcc_mallocz(out->nbind * sizeof *out->bind_addr);
+		if (!out->bind_name || !out->bind_addr)
+			{ MCC_TRACE("br\n"); goto done; }
+	}
+	for (i = 0; i < out->nbind; i++) { MCC_TRACE("br\n");
+		out->bind_name[i] = mccjit_get_str(&r);
+		out->bind_addr[i] = mccjit_get_u64(&r);
+		if (r.err || !out->bind_name[i] || !out->bind_name[i][0] ||
+				!out->bind_addr[i])
 			{ MCC_TRACE("br\n"); goto done; }
 	}
 	rc = 0;

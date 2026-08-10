@@ -274,7 +274,12 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    list: `src/mccast.c` gives 23 expression-slice mismatches and 1 frame mismatch against
    the device on unmodified `main`**, all on the `f64` ternary, and no committed cell runs
    `slicerun` over `src/` arenas so nothing catches it.
-8. **Cluster L's next link is `L2′(ii)`/`(iii)`, both in `src/mccgpu.c`** — clear
+8. **The JIT's 47.1% `NOT_BAKED` is not the callee refusal — 3110 of 3118 programs never
+   reach a bake site.** `wt/bakewiden` closed the refusal half (−140 refused sites, −38
+   programs, 0 new DIFFER) and proved the rest is upstream in `ast_func_end`. Attributing
+   those 3110 across `rir_try_active`, `ast_replay_ok`, `faithful && !ast_fn_hole` and
+   `ast_jit_want` is the measurement that ranks every remaining JIT-coverage item.
+9. **Cluster L's next link is `L2′(ii)`/`(iii)`, both in `src/mccgpu.c`** — clear
    `mcc_gpu.ok` on `VK_ERROR_DEVICE_LOST` and give the Vulkan quiesce something to destroy.
    The pool half landed on `wt/jitshutdown`; wiring the device into `mccjit_shutdown()`
    before (ii) is fixed makes an unbounded `vkDeviceWaitIdle` reachable from `atexit` on
@@ -458,6 +463,223 @@ cells (they adjudicate against gcc *and* clang; `gcc-c-torture-execute` 1,607 s,
 `tools/slicerun.c` is a source of the `slicerun` executable only
 (`add_executable(slicerun tools/slicerun.c tools/slicerun_arena.c src/mccgpu.c)`), no target
 that produces `mcc` compiles it, and nothing under `src/` was touched by this branch.
+
+## Landed — the 47.1% is real but it is not this refusal's; a local callee is bound by address, 2026-08-10 (`wt/bakewiden`)
+
+Worklist item J3 said *"47.1% of programs cannot be baked at all. The single largest lever on
+JIT coverage is the `VT_STATIC | VT_INLINE` callee refusal in `mccjit_intent_serialize`."*
+The first sentence reproduces exactly. **The second is wrong, and by two orders of
+magnitude.** The refusal is worth 60 programs, not 3118.
+
+### What "baked" means, and what the refusal was protecting
+
+A bake site is one call to `mccjit_embed_note` from `ast_func_end`. It serialises the
+function's arena into a blob that `mccjit_embed_finalize` plants in `.data` and registers
+with a constructor. At runtime the engine deserialises the blob into a fresh `MCCState`,
+re-emits it, and calls `mcc_relocate`, which resolves every remaining `SHN_UNDEF` symbol
+with **`dlsym(RTLD_DEFAULT, name)`** (`relocate_syms`, `src/objfmt/mccelf.c`). If nothing
+in a program serialises, `--embed-jit` links no engine and the program is `NOT_BAKED`.
+
+A `static` (or non-emitted `inline`) callee is `STB_LOCAL`, so it is not in `.dynsym` and
+`dlsym` cannot see it. Two outcomes follow, and only one of them is safe:
+
+- the name exists nowhere in the process — the recompile fails, `mcc_relocate` returns −1
+  under `mccjit_error_quiet`, the variant is NULL and the slot keeps the AOT baseline.
+  Silent lost coverage, no wrong answer;
+- **the name exists in libc or another loaded object — `dlsym` returns *that* function.**
+  The variant then calls a different entity than the AOT code calls. That is a
+  miscompile, and it is reachable from ordinary C.
+
+So the refusal is a **real hazard, not an over-approximation** — but it is the *hazard of
+resolving a local callee by name*, and the guard was drawn around the wrong thing. The
+fix is to stop resolving by name.
+
+`tests/jit/bindlocal/collide_libc.c` is the reduced case: a program with its own
+`static long random(void)`. With the refusal replaced by plain admission
+(`MCC_JIT_BAKE_UNSAFE_LOCALS=1`) and the KGC differential out of the way
+(`MCC_JIT_KGC=0`, which installs the variant behind a bare trampoline and compares
+nothing), it prints `45314` where the AOT path prints `58700` — glibc's `random()`.
+
+### The re-derivation, in all three units
+
+Corpus and denominator reproduce bit for bit: 7759 run-mode programs collected, **6627 into
+the oracle set**, 1088 `ORACLE_NOBUILD`, 35 `UB_SENSITIVE`, 7 `NONDET`, 1 timeout, 1 bad
+flag — the recorded classify-out counts to the unit.
+
+`--embed-jit` at `-O2`, x86_64 Linux, against those 6627:
+
+| | recorded | re-measured (before) |
+|---|---|---|
+| AGREE | 3251 | 3268 |
+| UNSUPPORTED | 3118 (47.1%) | **3118 (47.05%)** |
+| MCC-REJECTED | 145 | 145 |
+| DIFFER | 113 | 96 |
+
+The AGREE/DIFFER shift of 17 is `wt/kgcfix` + `wt/kgcpure`, which landed after that table.
+**`UNSUPPORTED` is 3118 `NOT_BAKED` and zero `NO_ENGINE`,** so for once the headline means
+what its name says: those programs really do link no engine.
+
+What it does *not* mean is that `mccjit_intent_serialize` refused them. A compile-time
+census over the same 6627 (`MCC_JIT_BAKE_WHY=1`, 6491 of them build):
+
+| unit | population | touched by the callee refusal |
+|---|---|---|
+| programs `NOT_BAKED` | 3170 | **60** |
+| bake sites (`mccjit_embed_note` calls) | 17,267 | **378 refused (2.19%)** |
+| static/inline callee occurrences | 712, over 301 distinct names | 712 |
+
+**3110 of the 3170 have no bake site at all** — `ast_func_end` never offered a single
+function to the serialiser, so the refusal cannot be their cause. A further 208 programs
+lose *some* functions to it and still bake; only 60 lose all of them. Every one of the 378
+site refusals names a static/inline callee: `ast_arena_has_asm` and the named-non-data
+condition refuse nothing on this corpus.
+
+**Which of the three numbers moves is what decides the work, and the answer is: the site
+number moves, the program number barely does.**
+
+### The widening, by symbol
+
+`mccjit_callee_bindable` (`src/mccjit_intent.c`) is a whitelist. A callee is admitted only
+when *all* hold:
+
+| condition | why |
+|---|---|
+| `(type.t & VT_BTYPE) == VT_FUNC` and the token is an identifier | it is a named function, not an asm label or an anonymous sym |
+| `type.t & VT_STATIC` | only internal linkage is provably non-preemptible |
+| `!a.weak` | a weak definition can be replaced at link time, so its link-time address is not the one that runs |
+| `elfsym(s)->st_shndx == text_section->sh_num` | the body was actually emitted **in this output**; a `static inline` that was never emitted has no address to bind |
+| `ST_BIND == STB_LOCAL` and `ST_TYPE == STT_FUNC` | agrees with the ELF the linker will write, not just with the parser's flags |
+| `buf->bind_allow` | only `mccjit_embed_note`'s blob gets relocated, so only it may bind |
+| fewer than `MCCJIT_BIND_MAX` (64) distinct callees so far | the table is fixed-size and overflow must refuse, not truncate |
+
+Admission does not resolve anything by name. The serialiser appends a bind table to the
+blob — one `(name, u64)` pair per admitted callee — and `mccjit_embed_finalize` emits an
+`R_DATA_PTR` relocation into each `u64`, against the callee's own ELF symbol index. The
+address that lands there is the same address the AOT code calls, produced by the same
+relocation machinery that a file-scope `int (*p)(void) = f;` uses. At runtime
+`mccjit_bind_apply` walks the re-emitted unit's symtab and turns every `SHN_UNDEF` entry
+whose name is in the table into an `SHN_ABS` definition at that address, *before*
+`mcc_relocate` — so `dlsym` is never consulted for a local callee.
+
+Two fail-safes: a bind whose address is still 0 (a blob that was never relocated) makes
+`mccjit_intent_deserialize` reject the whole blob, so a mis-plumbed bind loses the variant
+rather than resolving by name; and the non-embed serialisers (`mcc_jit_submit_ast`,
+`mccjit_embed_stash_leaf`, the selftest re-emitters) leave `bind_allow` at 0 and keep
+refusing exactly as before, because their blobs never pass through a relocation.
+
+Because the bound address is the function symbol, and `ast_func_end` has already replaced
+that symbol's first bytes with `jmp *__mccjit_slot_<fn>`, a bound call still goes **through
+the callee's own dispatch slot** — the JIT'd caller reaches whatever the JIT installed for
+the callee, exactly as the AOT caller does.
+
+`MCCJIT_INTENT_FORMAT` goes 13 → 14.
+
+### What it admits, and what the differential says about it
+
+Of the 712 callee occurrences, **437 (61.4%) are admitted**: 430 plain `static` with an
+emitted body and 7 `static inline` that were emitted because they were referenced. The 275
+still refused are 270 `static inline` with no out-of-line body at all and 5 `static` with
+no body in `.text`; the corpus contains no weak callee, and no non-static callee is ever
+admitted.
+
+| | before | after | delta |
+|---|---|---|---|
+| refused bake sites | 378 | **238** | **−140** |
+| programs `NOT_BAKED` (oracle table) | 3118 | **3080** | **−38** |
+| AGREE | 3268 | **3306** | **+38** |
+| DIFFER | 96 | 96 | 0 |
+| `JIT_MISCOMPILE` | 5 | 5 | 0, and the same five records |
+| MCC-REJECTED | 145 | 145 | 0 |
+
+**Exactly 38 records changed and every one of them is `NOT_BAKED` → `PASS`.** Nothing moved
+in any other direction. `PASS` on this harness is the conjunction of two independent
+oracles: the program's stdout and exit match the *other vendor's* compiler, and
+`MCC_JIT=1` matches `MCC_JIT=0` in the same binary. The newly admitted 38 satisfy both.
+
+Two further records read `NOT_BAKED` → `MCC_TIMEOUT` on the final run
+(`sse.expandfft.c`, `sse.stepfft.c`); a re-run of that suite on a quiet host puts both back
+at `NOT_BAKED`, so they are harness load and not a verdict. They were never coverage in
+either column. The `-j` runs on this host overlapped another agent's `ctest`, which is why
+`MCC_TIMEOUT` is the one bucket that is not stable to the unit.
+
+Priced honestly, that is **1.22% of the refused population and 0.57 pp of the corpus** —
+worth landing because it is provably safe and because the site number moves 37%, but it is
+not the lever the board said it was.
+
+### Cells, and the proof that they can fail
+
+`jit/bind-local` and `jit/bind-local-known-positive` (`tests/jit/run-bindlocal.sh`, corpus
+`tests/jit/bindlocal/`, +2 cells). Six programs, each compiled `--embed-jit` and run three
+ways — `MCC_JIT=0`, `MCC_JIT=1`, and `MCC_JIT=1 MCC_JIT_KGC=0`. The third arm is the one
+that matters: it installs the variant with **no differential check**, so it is where a
+callee resolved to the wrong entity becomes visible. Under plain `MCC_JIT=1` the KGC
+comparison and the direct route's verification gate both mask it.
+
+The twin runs the identical corpus with `MCC_JIT_BAKE_UNSAFE_LOCALS=1`, which admits every
+local callee and binds none — the guard-less compiler. All five checks fire on it:
+
+| tag | fires on | hazard it pins |
+|---|---|---|
+| `kgc0-differs` | `collide_libc.c` prints 45314 against 58700 | a local callee resolved by name reaches libc's `random` |
+| `bound-not-static` | `plain_inline.c` | a callee with external linkage was admitted |
+| `bound-undefined` | `plain_inline.c` | a callee with no emitted body was admitted |
+| `bound-weak` | `weak_static.c` | a weak callee's link-time address is not final |
+| `no-bind` | zero binds across the corpus | **the no-route check**: narrowing the whitelist until nothing is admitted must fail here, not pass quietly |
+
+`capacity.c` (70 static callees) exercises the 64-entry cap: exactly 64 admitted, then the
+site is refused, and the program still agrees on all three arms. `dup_name.c` links two
+translation units that each define a *different* `static dup_helper` and checks that each
+caller binds its own.
+
+### Found and fixed on the way: `--embed-jit` could not compile two same-named statics
+
+`mcc --embed-jit a.c b.c` where both files define a `static` function of the same name
+failed outright with `error: '__mccjit_slot_dup_helper' defined twice`. `ast_func_end`
+creates a **global** `__mccjit_slot_<funcname>` per baked function, and two internal-linkage
+functions may legitimately share a name. This is not new — `cmake-debug/mcc-before`
+reproduces it — but the widening's whole subject matter is static callees, so the corpus
+found it immediately. `ast_jit_slot_taken` now skips the slot, the note and the AOT submit
+when a slot of that name already came in from an earlier TU; the function keeps its own
+slot initialised to its own body by the existing `R_DATA_PTR` and simply never gets a
+variant. `find_elf_sym` is useless here — during a TU `symtab->hash` is parked in
+`symtab->reloc` by `mccelf_begin_file`, so the check scans the already-merged range only,
+and only when there is one (`sh_offset > 1` entry), which costs nothing for a single-file
+compile.
+
+### Validation
+
+`cmake-cross` built before `cmake-debug` was configured, `vendor/` symlinked.
+`ctest -R "jit|kgc" -j6 --repeat until-fail:10` — **74 cells, 740 runs, 0 failures**.
+`ctest -R census -j4` — 18 cells, 0 failures, after re-taking `tests/fmt/census-bank.json`:
+the new `MCC_JIT_BAKE_WHY` diagnostics add `printf`-family call sites, so `sites` moves
+`fprintf` 394 → 398 and `snprintf` 182 → 184, `tus` 16 → 17 and `mccjit_intent.c` enters the
+per-file table at 2. Nothing about the format work changed; the bank counts call sites.
+`ctest -N` **9510 → 9512** (+2, both named above). The full suite was not run here — one
+authoritative run belongs on merged `main`.
+
+### What contradicts the board
+
+1. **J3's "single largest lever" is wrong.** The refusal is 60 of 3118 programs. The lever
+   is upstream: **3110 of the 3118 never reach a bake site at all**, so they are lost in
+   `ast_func_end`'s gate chain — `rir_try_active`, `ast_replay_ok`,
+   `ast_opt_ok = faithful && !ast_fn_hole`, `ast_jit_want`'s signature/VLA filter — not in
+   `mccjit_intent_serialize`. Sub-attributing those four gates is the next measurement and
+   it is where the 47.1% actually lives.
+2. **The largest single class of refused callee is `static inline` with no emitted body**
+   (270 of 712 occurrences, 38% of them). No widening can bind an address that does not
+   exist; closing that class means emitting the body, which is a different decision in
+   `gen_inline_functions`, not a JIT one.
+3. **A non-static callee defined in this same output is admitted today and resolved by
+   `dlsym` at runtime.** It is not exported unless `MCC_JIT_EXPORT_INTERNALS` sets
+   `rdynamic`, so it usually just fails and the slot keeps AOT — that is a large part of
+   the `kept-aot` bucket. When the name *does* exist in libc, the already-admitted path has
+   the same collision defect this branch just fixed for statics. The same bind table would
+   fix it, but a `STB_GLOBAL` symbol is preemptible and interposable, so freezing its
+   link-time address is **not** provably safe and is deliberately not landed here.
+4. **`--embed-jit` output is not byte-reproducible.** Two identical invocations differ in
+   ~30 bytes. `MCC_JIT_BAKE_WHY=1` changes no bake outcome — the before/after program delta
+   is −38 measured with the env and −38 measured without it, by two independent harnesses —
+   but a byte comparison cannot be used to show it, because the baseline is not stable.
 
 ## Landed — the lowerable ratchet is taken on bodies, not on the corpus ratio, 2026-08-10
 
@@ -7099,10 +7321,17 @@ The per-record verdicts are in `<build>/jitconform-all/jit-embed-O2.jsonl`; each
    hand the classifier a body with a *silently* elided statement is unmeasured. The
    whitelist makes an omission fail safe only if the omitted node would have been in the
    arena.
-2. **47.1% of programs cannot be baked at all.** The single largest lever on JIT
+2. ~~**47.1% of programs cannot be baked at all.** The single largest lever on JIT
    coverage is the `VT_STATIC | VT_INLINE` callee refusal in `mccjit_intent_serialize` —
    a static helper called from the JIT'd function disqualifies the whole function, and
-   that is the commonest shape in the corpus.
+   that is the commonest shape in the corpus.~~ **The 47.1% reproduces; the attribution
+   does not.** Measured on `wt/bakewiden` (see the landed section at the head of this
+   file): the refusal costs **60** of those 3118 programs, and **3110 of them have no bake
+   site at all** — they never reach `mccjit_intent_serialize`, so they are lost in
+   `ast_func_end`'s gate chain. The refusal itself is now widened to bind a local callee by
+   address (−140 refused bake sites, −38 `NOT_BAKED` programs, 0 new DIFFER). **What is
+   still open here is the real lever: attributing the 3110 across `rir_try_active`,
+   `ast_replay_ok`, `ast_opt_ok = faithful && !ast_fn_hole` and `ast_jit_want`.**
 3. **`--embed-jit` suppresses its own no-bake warning under `-w`.** `mcc_warning` is
    routed through the warning machinery, so `mcc -w --embed-jit` silently produces an
    engine-less binary. `tools/jitconform.py` had to detect the bake by searching the
