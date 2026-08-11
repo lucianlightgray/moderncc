@@ -197,7 +197,20 @@ addition.
    actually carries. This is the most important gap in the file: the *fixes* are in the tree
    and the *lessons* were never written down.
 
-**The systemic one: the surviving `file:line` anchors have rotted, and they rot silently.**
+**RESOLVED 2026-08-11 — 241 rotted anchors stripped, and the check that depended on them was
+preserved rather than sacrificed.** Line anchors on source citations went **443 → 108**. The
+naive version of this cleanup is a net loss, and the measurement is why: `docref-lint`'s
+*symbol* rule only fires on a symbol quoted **beside a location carrying a line anchor** — its
+own docstring says the anchor "is what separates a claim from its negation", because this file
+is full of true sentences of the form "`NAME` has zero hits in `src/f.c`". Stripping every
+anchor takes symbol-at-a-location claims from **68 to 54**: fourteen working checks switched
+off silently, which is the same failure this file keeps cataloguing. Re-running the strip with
+the lint's own `SITE` regex as the protection rule holds it at **68 — unchanged — while still
+removing 241 anchors**. The rule going forward: **an anchor that a cell verifies may stay; an
+anchor nothing verifies is deleted, and the symbol name carries the citation.** The
+description of the problem is kept below because it recurs.
+
+
 The header says anchors were dropped on purpose in the 2026-08-05 sweep after drifting
 1000–1900 lines. **313 of them are still here**, and of ~200 whose content was checked,
 **~95 are wrong** — including 34 of 40 `CMakeLists.txt` anchors (everything below ~line 3300
@@ -940,8 +953,8 @@ Written down because a reader sweeping for finished work will mis-file all three
 had a *neighbouring* half land, which is what makes them look done.
 
 1. **`tls_threads` under `MCC_JIT=1`.** All three cited lines are unchanged:
-   `src/objfmt/mccelf.c:970` still gates on `s1->run_tls_active`, which is set only at
-   `src/mccrun.c:476,579`. Nothing about this was fixed.
+   `src/objfmt/mccelf.c` still gates on `s1->run_tls_active`, which is set only at
+   `src/mccrun.c`. Nothing about this was fixed.
 2. **The Vulkan use-after-free (`E2`).** Commit `747709bc` fixed the device-lost and
    quiesce halves — `mcc_gpu.ok = 0` at `src/mccgpu.c:1810`, the fault injector at
    `:1799`, `vkDeviceWaitIdle` gone from the quiesce at `:2677-2691` — and it is easy to
@@ -963,10 +976,10 @@ measurement tool reports success over an empty or truncated subject:
   `xsuite-report.py`, `gate-ledger.sh`, `strategy-ledger.sh`, `c2_sweep.sh` have zero
   hits in `CMakeLists.txt` and `cmake/`.
 - **`vendor/plb` does not exist**, so `runtime-bench.py` filters its corpus by
-  `os.path.exists` and silently measures nothing; `tests/must-run.txt:106-107` records
+  `os.path.exists` and silently measures nothing; `tests/must-run.txt` records
   the resulting skip as permanent rather than fixing it. `opt-cache-determinism` is a
   permanent 77 for the same class of reason.
-- **`tools/shadow-iv-sweep.sh:66` documents its own blindness in the source**: *"There is
+- **`tools/shadow-iv-sweep.sh` documents its own blindness in the source**: *"There is
   still no floor on this count, so a regression that stops 500 of 610 subjects building
   would report divergences=0 and PASS"*.
 - ~~The `22 of 22` strategy coverage quoted under *How to validate* is **measured, not
@@ -982,7 +995,7 @@ measurement tool reports success over an empty or truncated subject:
   all. Still read the count as a coverage floor, exactly as N1 says — it proves each
   strategy *fires*, not that each affects output.
 - **`src/wide256_slice.h`'s I-6 is a live compiler segfault with a two-line fix and
-  nothing watching it**: `src/mccrir.c:1239-1249` still tests only `if (!sv->sym …)`,
+  nothing watching it**: `src/mccrir.c` still tests only `if (!sv->sym …)`,
   with no `sv->r != VT_CMP` check, and `gv` still leaves `sym` stale. It is filed at the
   bottom of the 256-bit section, which is where it will be missed.
 
@@ -1034,7 +1047,7 @@ shrinkage do.
 Two more, both found 2026-08-11 in the second wave:
 
 - **`jit/xoracle-conformance` drops its second corpus silently.** The CMake arm at
-  `CMakeLists.txt:7038` adds `--testsuite`/`--suite ts-unittests` only under
+  `CMakeLists.txt` adds `--testsuite`/`--suite ts-unittests` only under
   `if(EXISTS ${MCC_XSUITE_LLVMTS}/SingleSource/UnitTests)` and has **no `else()`** — no skip,
   no message. `--limit` is per-suite, so losing the arm halves the corpus, and the companion
   `jit/xoracle-coverage` then fails `--min-cross 400` against a single-suite denominator that
@@ -1552,8 +1565,8 @@ were structurally blind to — whereas device-eligible blocks never had an excha
 
 > **Retitled 2026-08-10.** The format itself landed and its measurement narrative is in
 > [`docs/ARCHIVED.md`](ARCHIVED.md); `src/mcceffect.h` is 894 lines and bound at
-> `src/ast_eval_slice.h:296,526-529`. What is kept here is the part that is **not** done:
-> the consumers. `volatile` is still a slice refusal (`src/mccast.c:5066,7143`) and there
+> `src/ast_eval_slice.h`. What is kept here is the part that is **not** done:
+> the consumers. `volatile` is still a slice refusal (`src/mccast.c`) and there
 > is no asm lifting, so the two subsections below are live constraints on work not yet
 > written, not a record of work finished.
 
@@ -1657,7 +1670,7 @@ Written down rather than implemented, as the task required:
 file, no `enable_language(OBJC)`, no `-fobjc-*` flag, no `@interface`, no bridging header —
 verified by tree-wide search on 2026-08-09. The whole Metal backend is plain C that
 `dlopen`s the frameworks and hand-casts a `dlsym`'d `objc_msgSend` per call site. The two
-`#include`s at `src/mccgpu.c:44-45` (`<objc/message.h>`, `<objc/runtime.h>`) supply the `id`
+`#include`s at `src/mccgpu.c` (`<objc/message.h>`, `<objc/runtime.h>`) supply the `id`
 and `SEL` typedefs and nothing more. Executed on an M1 Pro on 2026-08-08 and recorded below
 in *The Darwin path was executed*: `otool -L` on the Metal build shows **`libSystem.B.dylib`
 and `libobjc.A.dylib`, nothing else**, and `Foundation` plus `Metal` appear only under
@@ -1665,23 +1678,23 @@ and `libobjc.A.dylib`, nothing else**, and `Foundation` plus `Metal` appear only
 nothing else" is also banked below; `libSystem` is the accurate reading and the two are the
 same claim about frameworks.)
 
-**The block.** `#if MCC_GPU_LANG_MSL` at `src/mccgpu.c:42`, `#else` at `:697`, `#endif` at
+**The block.** `#if MCC_GPU_LANG_MSL` at `src/mccgpu.c`, `#else` at `:697`, `#endif` at
 `:2229`. MSL arm 654 body lines against the Vulkan arm's 1,523 by the arm-counting pass
 described in §3. The backend-agnostic public API is the tail at `:2231-2306`, shared.
 
 | what | where | note |
 | --- | --- | --- |
-| framework candidates | `src/mccgpu.c:95-101` | Foundation and Metal, absolute path first then bare framework path; `MCC_METAL_LIB` overrides (`:204-205`) |
+| framework candidates | `src/mccgpu.c` | Foundation and Metal, absolute path first then bare framework path; `MCC_METAL_LIB` overrides (`:204-205`) |
 | loader | `mcc_mtl_load` (`src/mccgpu.c:196-253`) | resolves `MTLCreateSystemDefaultDevice` (`:211`), optional `MTLCopyAllDevices` (`:218`) and `MTLCommandBufferEncoderInfoErrorKey` (`:219`) |
-| ObjC runtime | `src/mccgpu.c:221-229` | exactly three symbols — `objc_getClass`, `sel_registerName`, `objc_msgSend` — from the process first, then `/usr/lib/libobjc.A.dylib` |
-| FP environment | `src/mccgpu.c:237-243` | `fegetenv`/`fesetenv`, process then `libSystem.B.dylib` |
-| message helpers | `src/mccgpu.c:139-186` | `mtl_send`, `mtl_send_v`, `mtl_release`, `mtl_str`, `mtl_utf8`, `mtl_responds`, `mtl_ulong`, `mtl_bool` — the whole bridging layer, 48 lines |
-| device selection | `mtl_score` (`src/mccgpu.c:351-362`), `mtl_pick_device` (`:364-411`) | |
+| ObjC runtime | `src/mccgpu.c` | exactly three symbols — `objc_getClass`, `sel_registerName`, `objc_msgSend` — from the process first, then `/usr/lib/libobjc.A.dylib` |
+| FP environment | `src/mccgpu.c` | `fegetenv`/`fesetenv`, process then `libSystem.B.dylib` |
+| message helpers | `src/mccgpu.c` | `mtl_send`, `mtl_send_v`, `mtl_release`, `mtl_str`, `mtl_utf8`, `mtl_responds`, `mtl_ulong`, `mtl_bool` — the whole bridging layer, 48 lines |
+| device selection | `mtl_score` (`src/mccgpu.c`), `mtl_pick_device` (`:364-411`) | |
 | init | `mcc_gpu_init` (`src/mccgpu.c:413-501`) | `MTLCompileOptions` at `:469`, `setMathMode:` pinned to `MCC_MTL_MATH_SAFE` at `:475` |
-| pipeline cache | `MtlPipe` (`src/mccgpu.c:127-131`), array `:135`, `MCC_MTL_CACHE_MAX` 64 at `:59`, FNV-1a `mtl_key` `:513-521`, lookup/insert `mtl_pipeline` `:523-585` | compiles from source text via `newLibraryWithSource:options:error:` (`:536`) |
-| buffers | `mtl_buffer` (`src/mccgpu.c:587-598`) | `newBufferWithLength:options:` with options 0 (shared storage), host pointer from `contents` at `:592` |
+| pipeline cache | `MtlPipe` (`src/mccgpu.c`), array `:135`, `MCC_MTL_CACHE_MAX` 64 at `:59`, FNV-1a `mtl_key` `:513-521`, lookup/insert `mtl_pipeline` `:523-585` | compiles from source text via `newLibraryWithSource:options:error:` (`:536`) |
+| buffers | `mtl_buffer` (`src/mccgpu.c`) | `newBufferWithLength:options:` with options 0 (shared storage), host pointer from `contents` at `:592` |
 | dispatch | `mcc_gpu_dispatch_locked` (`src/mccgpu.c:600-681`) | two buffers created at `:621`/`:624`, bound at index 0 and 1 at `:647-650`, `dispatchThreadgroups:` `:657-659`, `waitUntilCompleted` `:662` |
-| fault taxonomy | names `src/mccgpu.c:81-84`, `mtl_classify` `:262-289`, `mtl_encoder_state` `:291-315`, `mtl_fault` `:317-335` | eleven classes, six description substrings and five numeric codes |
+| fault taxonomy | names `src/mccgpu.c`, `mtl_classify` `:262-289`, `mtl_encoder_state` `:291-315`, `mtl_fault` `:317-335` | eleven classes, six description substrings and five numeric codes |
 | fault query API | `mcc_gpu_fault` (`src/mccgpu.c:337-345`), `mcc_gpu_fault_count` (`:347-349`) | **MSL-only** — neither symbol exists on the Vulkan arm, and neither is declared in `src/mccgpu.h` |
 
 **The claim that the fault reporting is better than the Vulkan arm's holds, and here is the
@@ -1692,7 +1705,7 @@ fault, keeps a per-class histogram, and reads the per-encoder error state so it 
 "our kernel faulted" from "innocent victim of another process". `mcc_gpu_dispatch_locked`
 on the Vulkan arm returns 0 with no message at nine distinct points. The Vulkan arm has one
 thing Metal does not: a bounded fence timeout and a stranding protocol. `waitUntilCompleted`
-at `src/mccgpu.c:662` blocks forever with no timeout, so `mcc_gpu_stranded` (`:2277`) is
+at `src/mccgpu.c` blocks forever with no timeout, so `mcc_gpu_stranded` (`:2277`) is
 permanently 0 under Metal — **a hung kernel hangs `ctest`, it does not fail it.**
 
 **~~Correction to a description that is circulating: the two "missing" functions are not
@@ -1712,13 +1725,13 @@ body, and add the third buffer they need.**~~ **and as of 2026-08-11 it is not t
 the bodies are written. What is left is the third buffer.** That third `MTLBuffer` is the only genuinely new
 object: a persistent shared-storage allocation bound at index 2, whose `contents` pointer
 `mcc_gpu_mem_backend` hands back with its length. The mechanism already exists —
-`mtl_buffer` (`src/mccgpu.c:587-598`) already asks for `contents` at `:592` — what is absent
+`mtl_buffer` (`src/mccgpu.c`) already asks for `contents` at `:592` — what is absent
 is *persistence*, because today both buffers are created and released per dispatch where the
 Vulkan arm keeps resident ones. That, plus the emitter side the spec section stages, is the
 ~200 lines.
 
 `mcc_gpu.f64` is declared on the MSL arm and **never assigned** anywhere in `:43-696`; the
-Vulkan arm sets it from `shaderFloat64` at `src/mccgpu.c:1692`. `mcc_gpu_f64` (`:2275`) is
+Vulkan arm sets it from `shaderFloat64` at `src/mccgpu.c`. `mcc_gpu_f64` (`:2275`) is
 therefore 0 on Metal unconditionally, which is the "gate it off" behaviour the spec section
 describes — not a bug.
 
@@ -1759,7 +1772,7 @@ path; do not read those as guards you have to mirror.
 
 **Trap 2 — a baseline `mcc` run from the wrong directory fabricates ~40 object diffs at
 every optimisation level, `-O0` included.** `mcc_auto_mccdir` (`src/libmcc.c:940-961`)
-derives the include search from `host_exe_path` (`src/mcchost.c:101`), falling back to
+derives the include search from `host_exe_path` (`src/mcchost.c`), falling back to
 `argv[0]`. A baseline binary copied to `/tmp` therefore picks `/usr/include/stdint.h` where
 the in-tree one picks `cmake-debug/include/stdint.h`; the anonymous-symbol counter then
 differs by one on **every TU that includes a header**, and a byte-comparison sweep reports
@@ -1768,16 +1781,16 @@ baseline binary from *inside* its build directory. This will bite anyone doing a
 "did my emitter change touch codegen?" sweep, which is exactly what Metal work needs.
 
 **Trap 3 — `prec` is a macro with the whole amalgamation as its blast radius.**
-`src/mccgen.c:13492` is `#define prec (mcc_state->gen_prec)`, there is no `#undef` anywhere
-in `src/`, and `src/libmcc.c:9` includes `mccgen.c` fourth — *before* `mccast.c`,
+`src/mccgen.c` is `#define prec (mcc_state->gen_prec)`, there is no `#undef` anywhere
+in `src/`, and `src/libmcc.c` includes `mccgen.c` fourth — *before* `mccast.c`,
 `mccgpu.c`, `mccrir.c` and the rest. In the default `MCC_AMALGAMATED` build the macro is
 live for every file included after it. No collision exists today, which is exactly why it is
 a trap: a local named `prec` in new GPU code compiles fine in a multi-TU build
-(`MCC_SINGLE_SOURCE=OFF`) and breaks the default one. `precedence` (`src/mccgen.c:13499`) is
+(`MCC_SINGLE_SOURCE=OFF`) and breaks the default one. `precedence` (`src/mccgen.c`) is
 the same shape.
 
 **Trap 4 — build `cmake-cross` before you configure `cmake-debug`.** `mcc_cross_cc`
-(`CMakeLists.txt:3350`) falls back to an `EXISTS` test on the cross build directory, which
+(`CMakeLists.txt`) falls back to an `EXISTS` test on the cross build directory, which
 CMake evaluates at *configure* time. Configuring `cmake-debug` on a tree with no
 `cmake-cross` present registers ~164 fewer cells — the `optfire-{arm64,i386,riscv64}` and
 `*-docker` families — **and reports no skips**, so the loss is silent. Any cell count taken
@@ -1786,19 +1799,19 @@ in *What is actually still open* below; it is repeated here because a Metal impl
 first act on a new Mac is a fresh configure.
 
 **Trap 5 — the Metal arm's `objc_msgSend` casting is silently arm64-only.**
-`src/mccgpu.c:438-439` sends `maxThreadsPerThreadgroup` through plain `objc_msgSend` cast to
+`src/mccgpu.c` sends `maxThreadsPerThreadgroup` through plain `objc_msgSend` cast to
 return an `MtlSize`, which is three `unsigned long` — 24 bytes. On arm64 that is correct: a
 large struct returns indirectly through `x8` and the same entry point handles it. On x86_64
 macOS a 24-byte struct return requires `objc_msgSend_stret`, which **does not appear
 anywhere in this tree**. There are no `objc_msgSend_fpret` or `_stret` variants resolved at
-`src/mccgpu.c:221-229` either. The backend has only ever been executed on Apple silicon, so
+`src/mccgpu.c` either. The backend has only ever been executed on Apple silicon, so
 this has never fired. If anyone tries the Metal arm on an Intel Mac, `maxthreads` is the
 first thing that will be garbage — and `mcc_gpu_init` refuses the device on it (`:441-448`),
 so the symptom is "no usable Metal device" rather than a crash. **Not a defect to fix
 blindly**; it is a documented restriction to make explicit, or a `stret` path to add.
 
 **Trap 6 — the pipeline cache keys on a hash, not on the source.** `mtl_key`
-(`src/mccgpu.c:513-521`) is FNV-1a over the source bytes and `mtl_pipeline` (`:523-585`)
+(`src/mccgpu.c`) is FNV-1a over the source bytes and `mtl_pipeline` (`:523-585`)
 matches on `(key, len)` only; the text itself is never compared. A collision at equal length
 returns the wrong compiled pipeline. The Vulkan cache has the same shape. Worth knowing
 before you debug a "kernel produced someone else's answer" report.
@@ -1809,7 +1822,7 @@ Arm sizes, counted 2026-08-09 by an uncommitted pass over the `#if MCC_GPU_LANG_
 boundaries (lines strictly between directives, directives excluded): `src/mccgpu.h` 1,009
 MSL against 2,005 SPIR-V; `src/mccgpu.c` 654 against 1,523; `src/mccslice.h` 27 against 73;
 `tools/spvgate.c` 66 against 354. Four-file ratio **2.25:1**, and the format engine at
-`src/mccfmt.h:453` is gated `!MCC_GPU_LANG_MSL`, i.e. SPIR-V-only by construction, which
+`src/mccfmt.h` is gated `!MCC_GPU_LANG_MSL`, i.e. SPIR-V-only by construction, which
 pushes it further. These reproduce `## Metal parity` §1's table to within eight lines on the
 largest cell; that section's table is the one to quote, and this is an independent check on
 it rather than a replacement.
@@ -1817,7 +1830,7 @@ it rather than a replacement.
 **At parity, and it is more than the size ratio suggests.** The MSL arm is a faithful mirror
 for the *entire scalar-integer expression language*: 32- and 64-bit, signed and unsigned,
 the full arithmetic/bitwise/shift/compare operator set (`msl_binop_code`
-`src/mccgpu.h:616-650` against `spv_binop_code` `:2551-2585`), short-circuit `&&`/`||`,
+`src/mccgpu.h` against `spv_binop_code` `:2551-2585`), short-circuit `&&`/`||`,
 ternary, and identical UB-definedness propagation. Integer division is **guarded, not
 excluded**, on both arms. Soft-int64 lives in `msl_prelude` where SPIR-V emits real
 `OpFunction`s. `## Metal parity` §1's "145 byte-for-byte mirrored lines once the `msl_`/`spv_`
@@ -1827,8 +1840,8 @@ note that `msl_expr` is 225 lines and `spv_expr` 321 today against the 224/320 i
 **SPIR-V-only, and each one is unwritten work rather than a language limit**: fp64; the
 third binding and the byte-addressed region layer; dynamic indexing; pointer deref
 load/store; the format engine; and frame kernels — statements, stores and loops — which are
-`return 0` at `src/mccslice.h:1306-1308` and unsupported at the device layer too
-(`src/mccgpu.c:687`).
+`return 0` at `src/mccslice.h` and unsupported at the device layer too
+(`src/mccgpu.c`).
 
 **Neither arm has any cross-lane structure at all** — no reductions, no subgroup ops, no
 atomics. Every lane is independent and the only shared shape is the per-lane output triple.
@@ -1836,12 +1849,12 @@ Do not plan a Metal feature around `simd_sum`; there is nothing on the other sid
 differentiate it against.
 
 **`double`.** `double` landed on the SPIR-V arm at `15b60365` and is real: `spv_f64_type`
-(`src/mccgpu.h:1318-1329`) emits `OpCapability Float64` and `OpTypeFloat … 64`, with
+(`src/mccgpu.h`) emits `OpCapability Float64` and `OpTypeFloat … 64`, with
 `NoContraction` on every arithmetic result. **MSL has no 64-bit floating-point type at all**
 — a property of the shading language, not of this tree — and the MSL arm reflects that
-honestly: an `awk` pass over `src/mccgpu.h:163-1143` for `f64|double|Float64` returns **zero
+honestly: an `awk` pass over `src/mccgpu.h` for `f64|double|Float64` returns **zero
 lines**. `MslV` has no `f64` member and `MslMod` no `used_f64`. A `double` node fails both
-halves of the guard at `src/mccgpu.h:771` and the host falls back to the CPU oracle.
+halves of the guard at `src/mccgpu.h` and the host falls back to the CPU oracle.
 
 **What is mirrorable in soft-f64, and why.** The certified set is not a taste judgement; it
 is three allow-lists that agree, and every one of them is a **deterministic integer
@@ -1854,7 +1867,7 @@ construction — subnormals, both zeros and both infinities included.
 | `ast_eval_slice_f64_op` (`src/ast_eval_slice.h:1169-1186`) | the same, plus `TOK_LAND`/`TOK_LOR` |
 | `ast_eval_binop_f64` (`src/ast_eval_slice.h:91-130`) | the same eleven cases — the CPU reference refuses too, so no arm can silently diverge |
 
-Unary `-` and `!` are handled one level up (`src/mccgpu.h:2906-2914`); `~` on an fp64 operand
+Unary `-` and `!` are handled one level up (`src/mccgpu.h`); `~` on an fp64 operand
 is explicitly barred. `&&`/`||` never reach the binop table because `spv_expr` routes them to
 `spv_logical` first. **Division is excluded on both arms and in the CPU reference** — six
 independent sites — because `OpFDiv` is 2.5 ULP by spec and bit-exactness is unattainable on
@@ -1884,7 +1897,7 @@ note beside it.
 
 **Three probes worth running on a real Mac, all cheap, and the shape they take.** Because
 the driver is `dlopen`-only, a probe needs **no Objective-C compiler and no Xcode project**
-— roughly 60 lines of C that copy the plumbing from `src/mccgpu.c:139-194` and `:196-253`,
+— roughly 60 lines of C that copy the plumbing from `src/mccgpu.c` and `:196-253`,
 compile one hard-coded MSL string through `newLibraryWithSource:options:error:`, allocate
 one shared `MTLBuffer`, dispatch a single lane, and print the result bits as hex. Values
 must be read from the input buffer, never written as literals, or the Metal compiler folds
@@ -1904,7 +1917,7 @@ them.
    if it takes the first, the divergence is per-vendor and the soft-f64 must be written to
    the *host* convention on Darwin and the device convention elsewhere.
 3. **fp32 denormal flush, re-confirmed under this driver.** `FLT_MIN*0.5` through the
-   dispatch path in `src/mccgpu.c:600-681` rather than through a hand-built pipeline. The
+   dispatch path in `src/mccgpu.c` rather than through a hand-built pipeline. The
    2026-08-08 reading was taken outside this driver; confirming it *inside* it costs one
    dispatch and removes an inherited assumption.
 
@@ -1918,26 +1931,26 @@ everything green is cross-compile-and-inspect.**
 
 | family | registered | executes arm64 code? |
 | --- | --- | --- |
-| `macho-structural` (`CMakeLists.txt:7305`) | always | **no** — covers `arm64-osx` but the verdicts are object-structure checks |
-| `macho-reloc-arm64` (`CMakeLists.txt:7397`) | `if(UNIX)` | **no** — `clang`, `llvm-objdump`, `llvm-nm`; greps for `PAGE21`/`PAGOF12`/`BR26` |
-| `macho-got-sub-arm64` (`CMakeLists.txt:7418`) | `if(UNIX)` | **no** — `llvm-nm`/`llvm-objdump` |
-| `macho-embedjit-arm64-osx` (`CMakeLists.txt:7429`) | `if(UNIX)` | would, but its script exits 77 on any non-Darwin host |
-| `jit/arm64-{dispatch,counter,kgc,kgcfp}` (`CMakeLists.txt:5828`) | Linux only | yes under qemu — **but the programs are clang-built aarch64 validators with zero `mcc` involvement**. They prove the platform's icache/slot-swap/FP-KGC mechanics, not this compiler's codegen |
-| `qemu-arm64-{glibc,musl}[-O2/-O3/-Os]`, `-exec` (`CMakeLists.txt:7623`, `:7632`, `:7650`) | **opt-in only** — `MCC_QEMU_TESTS` defaults OFF at `CMakeLists.txt:7540` | yes, genuinely, plus a stage3 rootfs download |
-| `qemu-arm64-osx` (`CMakeLists.txt:7673`) | same opt-in gate | **yes — the single cell that executes mcc's arm64 Mach-O codegen**, ELF-linked against a glibc sysroot and run under `qemu-aarch64` |
-| `run-parity-arm64` (`CMakeLists.txt:7048`) | `if(UNIX)` | yes when it gets there — compares `-run` output at `MCC_JIT=0` against `MCC_JIT=1` against a golden. Skips 77 on a non-aarch64 host without both `mcc-arm64` and a vendored sysroot |
-| `jit/xoracle-conformance` (`CMakeLists.txt:6535`) | gated `MCC_PYTHON3 AND MCC_EMBED_JIT AND MCC_TARGET_IS_HOST AND UNIX AND (x86_64 OR arm64)` (`:6516`) | **arm64 is in scope** — but the differential runs in-process and cannot be emulated, so it needs a real arm64 host and the gcc torture corpus |
-| `arm64-win32` — `cross/no-compiler-abort-arm64-win32` (`:4385`), `ast/rir-parity-arm64-win32[-Ox]`, the `ast/o0-baseline` bank | always | **zero programs, ever.** `run-tier/arm64-win32` is a hardcoded skip stub at `CMakeLists.txt:4531-4534`. Same for `arm-win32` and `arm-wince` |
+| `macho-structural` (`CMakeLists.txt`) | always | **no** — covers `arm64-osx` but the verdicts are object-structure checks |
+| `macho-reloc-arm64` (`CMakeLists.txt`) | `if(UNIX)` | **no** — `clang`, `llvm-objdump`, `llvm-nm`; greps for `PAGE21`/`PAGOF12`/`BR26` |
+| `macho-got-sub-arm64` (`CMakeLists.txt`) | `if(UNIX)` | **no** — `llvm-nm`/`llvm-objdump` |
+| `macho-embedjit-arm64-osx` (`CMakeLists.txt`) | `if(UNIX)` | would, but its script exits 77 on any non-Darwin host |
+| `jit/arm64-{dispatch,counter,kgc,kgcfp}` (`CMakeLists.txt`) | Linux only | yes under qemu — **but the programs are clang-built aarch64 validators with zero `mcc` involvement**. They prove the platform's icache/slot-swap/FP-KGC mechanics, not this compiler's codegen |
+| `qemu-arm64-{glibc,musl}[-O2/-O3/-Os]`, `-exec` (`CMakeLists.txt`, `:7632`, `:7650`) | **opt-in only** — `MCC_QEMU_TESTS` defaults OFF at `CMakeLists.txt:7540` | yes, genuinely, plus a stage3 rootfs download |
+| `qemu-arm64-osx` (`CMakeLists.txt`) | same opt-in gate | **yes — the single cell that executes mcc's arm64 Mach-O codegen**, ELF-linked against a glibc sysroot and run under `qemu-aarch64` |
+| `run-parity-arm64` (`CMakeLists.txt`) | `if(UNIX)` | yes when it gets there — compares `-run` output at `MCC_JIT=0` against `MCC_JIT=1` against a golden. Skips 77 on a non-aarch64 host without both `mcc-arm64` and a vendored sysroot |
+| `jit/xoracle-conformance` (`CMakeLists.txt`) | gated `MCC_PYTHON3 AND MCC_EMBED_JIT AND MCC_TARGET_IS_HOST AND UNIX AND (x86_64 OR arm64)` (`:6516`) | **arm64 is in scope** — but the differential runs in-process and cannot be emulated, so it needs a real arm64 host and the gcc torture corpus |
+| `arm64-win32` — `cross/no-compiler-abort-arm64-win32` (`:4385`), `ast/rir-parity-arm64-win32[-Ox]`, the `ast/o0-baseline` bank | always | **zero programs, ever.** `run-tier/arm64-win32` is a hardcoded skip stub at `CMakeLists.txt`. Same for `arm-win32` and `arm-wince` |
 
 **`jit/arm64-*` were reporting Passed on every skip path, and their history is therefore not
 evidence.** Fixed at `0e5b5cf0`, which needed both halves: the four cells were registered
 with no ctest skip property *and* their scripts returned `exit 0` on every bail. Current
-state is `SKIP_RETURN_CODE 77` at `CMakeLists.txt:5832` and `exit 77` at
-`tests/qemu/jit_arm64_dispatch.sh:18` and its three siblings. Anyone reading a green
+state is `SKIP_RETURN_CODE 77` at `CMakeLists.txt` and `exit 77` at
+`tests/qemu/jit_arm64_dispatch.sh` and its three siblings. Anyone reading a green
 `jit/arm64-kgc` from before that commit is reading nothing.
 
 **One live contradiction worth knowing.** The `run-tier/arm64-win32` skip reason at
-`CMakeLists.txt:4532-4533` says no host here can execute an arm64 PE — and
+`CMakeLists.txt` says no host here can execute an arm64 PE — and
 `tools/arm64pe-wine-docker.sh` is a complete, working executor that builds a hello and a
 hand-written arm64-PE JIT-dispatch validator with `mcc-arm64-win32` and runs both under wine
 in a `linux/arm64` container. It is registered nowhere. That is the single highest-yield
@@ -1956,7 +1969,7 @@ software Metal comparable to lavapipe, and none exists to be installed; and ther
 offline SPIR-V or MSL validator in this tree at all** — zero hits for `spirv-val`,
 SPIRV-Tools, `spirv-as`, `spirv-opt`, `glslang` or `metal-shaderconverter` anywhere in
 `CMakeLists.txt`, `cmake/`, `tools/`, `src/` or `.github/`, re-confirmed 2026-08-09. The one
-`glslc` reference is `tests/gpu/run.sh:27`, and that script is wired into no ctest cell and
+`glslc` reference is `tests/gpu/run.sh`, and that script is wired into no ctest cell and
 no workflow. Every `xcrun` hit in the tree is `--show-sdk-path`. So there is not even a
 "does it compile" backstop to fall back on.
 
@@ -1964,13 +1977,13 @@ no workflow. Every `xcrun` hit in the tree is `--show-sdk-path`. So there is not
 reviewer's machine, a golden that a validator produced, or a CI run to catch its own decay.
 The pattern the existing GPU cells already use is the one to copy: exit 77 for "no device"
 with `SKIP_RETURN_CODE 77` and a matching `mcc_skip_test` stub on the dead branch (the three
-`gpu/msl-slice-*` registrations at `CMakeLists.txt:3604-3642` are the model, and
+`gpu/msl-slice-*` registrations at `CMakeLists.txt` are the model, and
 `tools/regstub-lint.py` enforces that both branches register the same names); a mutation
 mode that must report failure, so a cell that has gone blind is detectable; and a floor on
 the row count, so a corpus that silently emptied fails rather than passes.
 
 **One asymmetry to know about before you copy a registration.**
-`gpu/spv-slice-differential` (`CMakeLists.txt:3577`) runs its gate directly with only
+`gpu/spv-slice-differential` (`CMakeLists.txt`) runs its gate directly with only
 `SKIP_RETURN_CODE 77`, so it **skips even under `MCC_GPU_REQUIRED=ON`**, where its
 `-known-positive` and `-real` siblings go through `cmake/spvgate_mutate.cmake` and
 `cmake/spvgate_real.cmake`, which turn 77 into a `FATAL_ERROR`. The `gpu/msl-slice-*` trio
@@ -1981,13 +1994,13 @@ the wrapper, not the bare registration.
 molten-vk` is in both workflows (`.github/workflows/ci.yml:186-190`,
 `.github/workflows/matrix.yml:125-129`), and it supplies a **loader only** — neither macOS
 job passes `-DVulkan_INCLUDE_DIR`, so `find_package(Vulkan QUIET)`
-(`CMakeLists.txt:3549`) fails, the Darwin fallback at `:3550-3558` never fires, `spvgate` is
+(`CMakeLists.txt`) fails, the Darwin fallback at `:3550-3558` never fires, `spvgate` is
 never built, and the three `gpu/spv-slice-*` names stay `mcc_skip_test` stubs on macOS. Two
 things follow. On a **developer's** Mac, passing the headers makes the entire SPIR-V arm —
 regions, binding 2, the format engine, frame kernels, dynamic indexing — run over Metal
 today, with no MSL written. In **CI** it changes nothing, because MoltenVK still needs a
 Metal device the runner does not have; the cells would build and then exit 77. The only
-macOS gate cell is `{"macos-arm64-clang", "gpu-vulkan"}` (`tools/ci.c:696`), it sets
+macOS gate cell is `{"macos-arm64-clang", "gpu-vulkan"}` (`tools/ci.c`), it sets
 `MCC_GPU_REQUIRED=ON` itself, and no CI cell anywhere sets `-DMCC_GPU_BACKEND=metal` — so
 the `gpu/msl-slice-*` trio has never been built by CI, not once. There are no self-hosted
 runners; every `runs-on` in this repo is a GitHub-hosted image.
@@ -2037,7 +2050,7 @@ executed only under wine on a Linux host and only on 33 distinct programs.**
 | native Windows host | `pe-native-conformance` — CI only, `windows-latest`, MSVC-bootstrapped self-host | Skipped on every non-Windows host |
 
 **The wine tier is trustworthy under parallel load, measured today.** The historic flake
-was diagnosed and fixed (the wineserver-writeback race, `tools/run-tier.sh:112-131`), and
+was diagnosed and fixed (the wineserver-writeback race, `tools/run-tier.sh`), and
 this session could not reproduce it: **two** full `ctest --test-dir cmake-debug -j32`
 sweeps returned **9456 cells, 0 failures** (229.95 s and 213.12 s wall, 625 Skipped), and a targeted
 `ctest -R "run-tier/.*-win32|run-tier/arm-wince|pe-wine-conformance" -j32 --repeat
@@ -2069,16 +2082,16 @@ external programs through cross-vendor adjudication. That asymmetry is the findi
 
 **The target list is five, and the board proves it.** `tests/ast/o0-baseline/board.txt`
 carries twelve keys, of which the Windows five are `x86_64-win32`, `i386-win32`,
-`arm64-win32`, `arm-win32`, `arm-wince`. The authoritative table is `CMakeLists.txt:3070-3071`.
+`arm64-win32`, `arm-win32`, `arm-wince`. The authoritative table is `CMakeLists.txt`.
 `cmake-cross/` builds five separate binaries — `mcc-x86_64-win32`, `mcc-i386-win32`,
 `mcc-arm64-win32`, `mcc-arm-win32`, `mcc-arm-wince` — because **`MCC_TARGET_PE`
-(`src/mcc.h:55`) is a compile-time macro**: one binary is a PE compiler or an ELF one,
+(`src/mcc.h`) is a compile-time macro**: one binary is a PE compiler or an ELF one,
 never both.
 
 **`arm-wince` is not a target. It is a byte-identical alias of `arm-win32`.** The two
-define sets at `CMakeLists.txt:3115-3118` and `:3119-3122` are identical token for token,
+define sets at `CMakeLists.txt` and `:3119-3122` are identical token for token,
 there is no `MCC_TARGET_WINCE` anywhere in `src/`, and the only "wince" string in the
-compiler is the subsystem-name alias in `pe_setsubsy` (`src/objfmt/mccpe.c:2826`), which
+compiler is the subsystem-name alias in `pe_setsubsy` (`src/objfmt/mccpe.c`), which
 any `MCC_TARGET_ARM` PE build can reach. The `-O0` bank's twin check
 (`tests/ast/o0-baseline/arm-win32.obj.txt` against `arm-wince.obj.txt`) is not a
 coincidence that needs guarding — it is a tautology, and the cell that checks it is
@@ -2091,7 +2104,7 @@ src/arch/arm/arm-gen.c` is **0**. Consequences, each verified: no PE TLS sequenc
 `coff_map_reloc` switch in `src/objfmt/mccpe.c` has AMD64/I386/ARM64 cases and falls
 through to `return 0` for ARM32), and `runtime/win32/lib/chkstk.c` has no ARM32 branch —
 its bare `#else` emits x86-64 assembly, and the build avoids that only by not adding
-`chkstk` for `cpu == arm` (`CMakeLists.txt:2563-2565`). The PE machine id used is `0x01C0`
+`chkstk` for `cpu == arm` (`CMakeLists.txt`). The PE machine id used is `0x01C0`
 (legacy WinCE ARM), not `0x01C4` (`ARMNT`).
 
 **The code, measured.**
@@ -2108,7 +2121,7 @@ its bare `#else` emits x86-64 assembly, and the build avoids that only by not ad
 `#ifdef` noise: `src/mccgen.c` 23, `src/arch/x86_64/x86_64-gen.c` 22,
 `src/arch/arm64/arm64-gen.c` 22, `src/arch/i386/i386-gen.c` 20, `src/libmcc.c` 17,
 `src/mcc.h` 16, `src/objfmt/mccelf.c` 14. The x86_64 count is understated by that metric:
-`#ifdef MCC_TARGET_PE` at `src/arch/x86_64/x86_64-gen.c:805` opens a **whole-ABI fork** —
+`#ifdef MCC_TARGET_PE` at `src/arch/x86_64/x86_64-gen.c` opens a **whole-ABI fork** —
 `gfunc_sret`/`gfunc_call`/`gfunc_prolog`/`gfunc_epilog` are separate function bodies for
 Win64 and SysV, not shared code with branches.
 
@@ -2117,7 +2130,7 @@ token, and **35** of them reported Skipped in today's `-j32` sweep:
 
 | family | cells | skipped here | why |
 | --- | ---: | ---: | --- |
-| `exec*/winarm64_interlocked` | 23 | **23** | golden carries `req: cpu=arm64,os=WIN32` (`tests/exec/goldens.h:108`) — unrunnable on *any* host this tree can produce |
+| `exec*/winarm64_interlocked` | 23 | **23** | golden carries `req: cpu=arm64,os=WIN32` (`tests/exec/goldens.h`) — unrunnable on *any* host this tree can produce |
 | `ast/rir-parity-<pe>`, `ast/rir-c2-<pe>` | 25 | 5 | the `rir-c2` five are the `MCC_REPLAY_IR_C2`-defaults-OFF permanent 77, not a Windows fact |
 | `exec*/fastcall` | 23 | 0 | i386 **ELF** `__attribute__((fastcall))`; Windows-adjacent by name only |
 | `cross/no-compiler-abort-<pe>` | 5 | 0 | compile-only, all five targets |
@@ -2129,14 +2142,14 @@ token, and **35** of them reported Skipped in today's `-j32` sweep:
 **The skip audit's "5 Windows cells in environmental, legitimate" reproduces exactly**:
 `run-tier/{arm64-win32,arm-win32,arm-wince}`, `compile.win32`, `pe-native-conformance`.
 A **sixth** belongs in that bucket and was not in it: `embed-jit-smoke`, gated
-`if(MCC_PYTHON3 AND MCC_EMBED_JIT AND WIN32 AND NOT MSVC)` (`CMakeLists.txt:6556`) — the
+`if(MCC_PYTHON3 AND MCC_EMBED_JIT AND WIN32 AND NOT MSVC)` (`CMakeLists.txt`) — the
 only cell in the tree gated on raw `WIN32 AND NOT MSVC`, and therefore the only cell that
 requires a *mingw-hosted* Windows build to run at all. It runs in exactly one CI cell
 family and nowhere else.
 
 **`i386-fastcall-abi` is green here, and the configure-time probe is why.**
 `mcc_mingw_resolve()` (`CMakeLists.txt:565`) composes `.exe` paths and performs **no
-existence and no executability check**; the fix at `CMakeLists.txt:6674-6694` prefers the
+existence and no executability check**; the fix at `CMakeLists.txt` prefers the
 i686 winlibs gcc, falls back to the multilib one with `-m32`, and then runs
 `execute_process(COMMAND "${_fc_gcc}" --version)` — because a PE `gcc.exe` in a shared
 `vendor/` satisfies `EXISTS` on Linux while being unrunnable. It works. The residual is
@@ -2146,11 +2159,11 @@ reporting: the cell's verdict does not distinguish "measured against mingw gcc" 
 
 **`runtime-bench-gatewin` is misnamed and doubly dead.** "gatewin" is *gate wins*, not
 Windows: the cell is registered under `NOT MCC_TARGETOS STREQUAL "WIN32"`
-(`CMakeLists.txt:6931-6941`), i.e. it is deliberately **excluded** on Windows. Its subject
+(`CMakeLists.txt`), i.e. it is deliberately **excluded** on Windows. Its subject
 is `vendor/plb/bench/algorithm/spectral-norm/3.c` via `GATE_WINS`
-(`tools/runtime-bench.py:92`); `vendor/plb` does not exist in this checkout, both
+(`tools/runtime-bench.py`); `vendor/plb` does not exist in this checkout, both
 measurement paths filter the entry out, and `--assert-gate-wins` returns 77
-unconditionally on every host. `tests/must-run.txt:94` records the missing-subject half
+unconditionally on every host. `tests/must-run.txt` records the missing-subject half
 and not the WIN32-exclusion half — so on a native Windows build the row would be a
 permanent 77 **for a reason the manifest does not state**. Two independent causes, one
 recorded.
@@ -2158,13 +2171,13 @@ recorded.
 **Registration asymmetries found while enumerating, each a live defect of the shape
 `ci/registration-stubs` exists to catch:**
 
-1. `pe/short-import` (`CMakeLists.txt:6037-6060`) has **no `else()`**. On every non-Windows
+1. `pe/short-import` (`CMakeLists.txt`) has **no `else()`**. On every non-Windows
    build the cell is absent from `ctest -N` entirely. Its inner skip message still says
    "x86_64/arm64 PE host only" although i386 was added.
-2. `exec-gatecombo/*` (`CMakeLists.txt:4636-4647`) is registered **only** under
+2. `exec-gatecombo/*` (`CMakeLists.txt`) is registered **only** under
    `if(MCC_TARGETOS STREQUAL "WIN32")`, with no `else()` — a whole cell family that exists
    on Windows and nowhere else. It is the exact mirror of the omission
-   `tests/must-run.txt:121-126` puts on the record.
+   `tests/must-run.txt` puts on the record.
 3. `compile.win32` registers `compile.win32.<name>` per example on Windows and the bare
    literal `compile.win32` on its skip branch, so **no `must-run.txt` row can ever name
    both states** — `tools/must-run.py` matches by exact string.
@@ -2173,21 +2186,21 @@ recorded.
    not `def-verify`, not `pe/short-import`.
 5. **There is no `MCC_WINE*` cache variable of any kind** and no `MCC_WINE_REQUIRED`
    analogue to `MCC_CROSS_REQUIRED`. Wine is discovered by hardcoded name lists
-   (`tools/run-tier.sh:219-226`, `tools/mccharness.c:2314-2315`). A wine-less host
+   (`tools/run-tier.sh`, `tools/mccharness.c`). A wine-less host
    green-skips the entire PE runtime surface and nothing reports the loss.
 6. `tools/i386win32-soak.sh` and `tools/arm64pe-wine-docker.sh` are **registered nowhere**.
    The second matters: it is the only arm64-PE *execution* path in the repo, and it
-   contradicts the permanent-skip reason at `CMakeLists.txt:4533` that says no host can
-   run arm64 PE. `tools/i386win32-soak.sh:7` also hardcodes a personal absolute path as
+   contradicts the permanent-skip reason at `CMakeLists.txt` that says no host can
+   run arm64 PE. `tools/i386win32-soak.sh` also hardcodes a personal absolute path as
    its default mingw prefix.
-7. `tools/build.c`'s `CROSS[]` table (`tools/build.c:271-283`) **omits `arm-win32`**, which
-   `CMakeLists.txt:3070-3071` has. Two target tables, out of sync.
+7. `tools/build.c`'s `CROSS[]` table (`tools/build.c`) **omits `arm-win32`**, which
+   `CMakeLists.txt` has. Two target tables, out of sync.
 
 **`MCC_CONFIG_MINGW` confirmed as a pure input.** Declared `CMakeLists.txt:1311`, read at
-exactly one site — `CMakeLists.txt:1391`, `if(WIN32 OR CMAKE_SYSTEM_NAME MATCHES ... OR
+exactly one site — `CMakeLists.txt`, `if(WIN32 OR CMAKE_SYSTEM_NAME MATCHES ... OR
 MCC_CONFIG_MINGW)` → `set(MCC_TARGETOS "WIN32")`. Never emitted as a `-D`; asserted by
-`tools/idiomgate.c:89`; injected as `-DMCC_CONFIG_MINGW=ON` only by the `pe` CI feature
-(`tools/ci.c:655`). The idiom-gate audit's finding reproduces exactly.
+`tools/idiomgate.c`; injected as `-DMCC_CONFIG_MINGW=ON` only by the `pe` CI feature
+(`tools/ci.c`). The idiom-gate audit's finding reproduces exactly.
 
 ### 2. The parity matrix against Linux/ELF
 
@@ -2197,30 +2210,30 @@ others academic for anyone who wants to link mcc's Windows output into anything 
 
 | capability | Linux / ELF | Windows / PE | verdict |
 | --- | --- | --- | --- |
-| **object emission (`-c`)** | `elf_output_obj` (`src/objfmt/mccelf.c:3333`) | **the same call.** `mcc_output_file` (`src/objfmt/mccelf.c:3325`) dispatches `MCC_OUTPUT_OBJ` to `elf_output_obj` *before* the `#ifdef MCC_TARGET_PE` arm at `:3336` | **lacks it — `mcc -c` on every Windows target emits an ELF object.** Measured: `file` reports `ELF 64-bit LSB relocatable` for `x86_64-win32`, `ELF 32-bit` for `i386-win32`, `ELF aarch64` for `arm64-win32`, `ELF ARM EABI5` for `arm-wince`. There is **no `coff_output_file` symbol in the tree** |
+| **object emission (`-c`)** | `elf_output_obj` (`src/objfmt/mccelf.c`) | **the same call.** `mcc_output_file` (`src/objfmt/mccelf.c:3325`) dispatches `MCC_OUTPUT_OBJ` to `elf_output_obj` *before* the `#ifdef MCC_TARGET_PE` arm at `:3336` | **lacks it — `mcc -c` on every Windows target emits an ELF object.** Measured: `file` reports `ELF 64-bit LSB relocatable` for `x86_64-win32`, `ELF 32-bit` for `i386-win32`, `ELF aarch64` for `arm64-win32`, `ELF ARM EABI5` for `arm-wince`. There is **no `coff_output_file` symbol in the tree** |
 | **object interoperability** | `.o` links with gcc/clang/lld | **does not link.** `x86_64-w64-mingw32-gcc` on a one-line leaf `int addup(int,int)` object: `relocation ".uw_base+0x0 (type R_X86_64_RELATIVE)" goes out of range; final link failed`. `link.exe`/`lld-link` cannot read ELF at all | **lacks it** — one-way. mcc *reads* COFF fine (`coff_load_object_file`, short-import members, COMDAT dedup); nothing reads mcc's |
-| final image | `elf_output_file` | `pe_output_file` (`src/mcc.h:2004`), 2,932 lines: sections, imports, exports, base relocs, subsystem, entry selection, DLL, `.def` in **and out** | **has it, and it works** — measured `PE32+ executable for MS Windows (console), 4 sections`, runs under wine |
-| linking / archives | ELF `.a`, ld scripts | `.def` first, then `.dll` (`src/libmcc.c:1849-1851`); COFF `.lib` incl. short-import members; `#pragma comment(lib,…)` (`src/mccpp.c:2538-2558`) | **has it** |
-| **debug info** | DWARF 2–5 + stabs (`src/mccdbg.c`) | **the same DWARF**, emitted into the PE as `sec_debug`, marked `IMAGE_SCN_MEM_DISCARDABLE`; plus a COFF symbol table under `-g` (`pe_add_coffsym`) | **partial** — **no CodeView, no `.debug$S`/`.debug$T`, no PDB writer.** `-g.pdb` shells out to an external `cv2pdb.exe` (`pe_run_cv2pdb`, `src/objfmt/mccpe.c:556`). No Microsoft debugger reads mcc output natively |
-| **EH / unwind** | DWARF `.eh_frame` (`MCC_EH_FRAME`, `src/mcc.h:2060`) | `.eh_frame` is **force-disabled** for PE (`src/objfmt/mccelf.c:87-91`); replaced by `.pdata`/`.xdata` via `pe_add_unwind_data` — x86_64 `src/objfmt/mccpe.c:2572`, arm64 `:2615`, called from `src/arch/x86_64/x86_64-gen.c:1071` and `src/arch/arm64/arm64-gen.c:1854` | **partial, two ways.** x86_64's `UNWIND_INFO` is **one hardcoded 8-byte blob shared by every function** — walkable, not handler-capable. **i386-win32, arm-win32 and arm-wince emit no unwind data at all** |
+| final image | `elf_output_file` | `pe_output_file` (`src/mcc.h`), 2,932 lines: sections, imports, exports, base relocs, subsystem, entry selection, DLL, `.def` in **and out** | **has it, and it works** — measured `PE32+ executable for MS Windows (console), 4 sections`, runs under wine |
+| linking / archives | ELF `.a`, ld scripts | `.def` first, then `.dll` (`src/libmcc.c`); COFF `.lib` incl. short-import members; `#pragma comment(lib,…)` (`src/mccpp.c`) | **has it** |
+| **debug info** | DWARF 2–5 + stabs (`src/mccdbg.c`) | **the same DWARF**, emitted into the PE as `sec_debug`, marked `IMAGE_SCN_MEM_DISCARDABLE`; plus a COFF symbol table under `-g` (`pe_add_coffsym`) | **partial** — **no CodeView, no `.debug$S`/`.debug$T`, no PDB writer.** `-g.pdb` shells out to an external `cv2pdb.exe` (`pe_run_cv2pdb`, `src/objfmt/mccpe.c`). No Microsoft debugger reads mcc output natively |
+| **EH / unwind** | DWARF `.eh_frame` (`MCC_EH_FRAME`, `src/mcc.h:2060`) | `.eh_frame` is **force-disabled** for PE (`src/objfmt/mccelf.c`); replaced by `.pdata`/`.xdata` via `pe_add_unwind_data` — x86_64 `src/objfmt/mccpe.c`, arm64 `:2615`, called from `src/arch/x86_64/x86_64-gen.c` and `src/arch/arm64/arm64-gen.c` | **partial, two ways.** x86_64's `UNWIND_INFO` is **one hardcoded 8-byte blob shared by every function** — walkable, not handler-capable. **i386-win32, arm-win32 and arm-wince emit no unwind data at all** |
 | **SEH (`__try`/`__except`/`__finally`)** | n/a | **absent.** No tokens, no parser, no codegen. `runtime/win32/include/excpt.h` declares the runtime pieces; nothing consumes them. The `__try` in `src/mcchost.c` is mcc's *own* crash handler on a Windows host | **lacks it** |
-| TLS | ELF GD/LD/IE/LE + TLSDESC | ELF `.tdata`/`.tbss` synthesised into an `IMAGE_TLS_DIRECTORY`: `pe_add_tls` (`src/objfmt/mccpe.c:2665`), `pe_set_tls` (`:422`). Access via TEB — x86_64 `gs:[0x58]`, i386 `fs:[0x2c]`, arm64 `x18+0x58` (x18 removed from the allocatable set) | **has it on 3 of 4** — nothing on arm-win32. Verified executing under wine on both x86 targets, and `run-tier` covers `tls` and `tls_threads` |
+| TLS | ELF GD/LD/IE/LE + TLSDESC | ELF `.tdata`/`.tbss` synthesised into an `IMAGE_TLS_DIRECTORY`: `pe_add_tls` (`src/objfmt/mccpe.c`), `pe_set_tls` (`:422`). Access via TEB — x86_64 `gs:[0x58]`, i386 `fs:[0x2c]`, arm64 `x18+0x58` (x18 removed from the allocatable set) | **has it on 3 of 4** — nothing on arm-win32. Verified executing under wine on both x86 targets, and `run-tier` covers `tls` and `tls_threads` |
 | `__declspec(thread)` | n/a | **unsupported** — `runtime/win32/include/_mingw.h` rewrites `__declspec(x)` to `__attribute__((x))` and there is no `thread` attribute, so it hits the unknown-attribute warning. `__thread` and `_Thread_local` work | **lacks it** |
-| calling convention | SysV eightbyte classifier | Win64: 4-register `RCX/RDX/R8/R9`, 32-byte home area, non-1/2/4/8 aggregates by reference, first two args mirrored into both GPR and XMM for varargs (`src/arch/x86_64/x86_64-gen.c:805-1088`) | **has it** — a genuine second ABI |
-| `__stdcall`/`__fastcall`/`__thiscall` | n/a | parsed for all targets, **honoured only under `#if defined(MCC_TARGET_I386)`** (`src/mccgen.c:5793-5821`). `_name@N` decoration in `put_extern_sym2` | **has it where it means something** |
+| calling convention | SysV eightbyte classifier | Win64: 4-register `RCX/RDX/R8/R9`, 32-byte home area, non-1/2/4/8 aggregates by reference, first two args mirrored into both GPR and XMM for varargs (`src/arch/x86_64/x86_64-gen.c`) | **has it** — a genuine second ABI |
+| `__stdcall`/`__fastcall`/`__thiscall` | n/a | parsed for all targets, **honoured only under `#if defined(MCC_TARGET_I386)`** (`src/mccgen.c`). `_name@N` decoration in `put_extern_sym2` | **has it where it means something** |
 | **JIT — `--embed-jit`, `-run --jit`** | full | full. `MCC_HOST_WIN32` arms throughout `src/mccjit_embed.c` plus `src/mccjit_win32.h` (393 lines). Measured today: `run-tier/x86_64-win32` reports **15/15 programs OK under both JIT tiers**, same for i386 | **has it** |
 | **JIT conformance measurement** | `jit/xoracle-conformance`, ≤400 programs per suite | **none.** Guard is `MCC_PYTHON3 AND MCC_EMBED_JIT AND MCC_TARGET_IS_HOST AND UNIX AND MCC_CPU ∈ {x86_64, arm64}` (`CMakeLists.txt:6515-6516`) | **lacks it entirely** — see §4 |
 | slice cross-oracle | `slice/cref-oracle-*`, 4 corpora | gated `if(NOT CMAKE_CROSSCOMPILING)` — never reached for a PE triple | **lacks it** |
-| **GPU / Vulkan** | `libvulkan.so.1` | **the loader has a full Windows arm**: `vulkan-1.dll` in the soname list (`src/mccgpu.c:1520-1526`), `#define VKAPI_PTR __stdcall` (`src/mccgpu.c:699-703`), `ucrtbase.dll`/`msvcrt.dll` for the libm fallbacks | **has the code, has never executed it.** CI installs `vulkan-headers` on `windows-latest` so it *builds*; the `gpu-vulkan` feature is skipped on every Windows host. **UNMEASURED** whether a Windows Vulkan dispatch has ever run |
+| **GPU / Vulkan** | `libvulkan.so.1` | **the loader has a full Windows arm**: `vulkan-1.dll` in the soname list (`src/mccgpu.c`), `#define VKAPI_PTR __stdcall` (`src/mccgpu.c`), `ucrtbase.dll`/`msvcrt.dll` for the libm fallbacks | **has the code, has never executed it.** CI installs `vulkan-headers` on `windows-latest` so it *builds*; the `gpu-vulkan` feature is skipped on every Windows host. **UNMEASURED** whether a Windows Vulkan dispatch has ever run |
 | `_Complex` | full | **compiles on all five targets**, executes correctly under wine: `(1+2i)*(3+4i)` → `-5.000000 10.000000` on both x86 PE targets | **has it** |
-| `__int256` / `unsigned __int256` | full, `wide256/gmp-diff` 9,402 rows | **compiles on all five targets**, executes correctly under wine (`1<<200` × 3 → 3). Passed by memory on Win64 like any >8-byte aggregate — the `using_regs` rule at `src/arch/x86_64/x86_64-gen.c:829-831` sends anything not 1/2/4/8 bytes to memory, which is the correct Win64 treatment | **has it — but see below.** `wide256/gmp-diff`, the only proof `__int256` is *correct*, is a native-host cell. **UNMEASURED on any PE target** |
-| `__int128` | `MCC_HAVE_INT128` | **0 on PE** (`src/mcc.h:1115-1119`). `LONG_SIZE` is forced to 4 on PE even at 64 bits (`src/mcc.h:166-170`) | **lacks it, deliberately** |
-| stack probing | not needed | `__chkstk` at frames ≥ 4096 — x86_64 `src/arch/x86_64/x86_64-gen.c:1074-1084`, i386 `src/arch/i386/i386-gen.c:840-846`, arm64 `src/arch/arm64/arm64-gen.c:1201-1214`. Runtime in `runtime/win32/lib/chkstk.c`. VLA forced through the call path on PE. Measured: a 200,000-byte frame compiles on all five and runs under wine on both x86 targets | **has it on 3 of 4** — **arm-win32/arm-wince frames > 4 KiB never touch a guard page** |
-| DLL import/export | `-shared`, visibility | `__declspec(dllimport/dllexport)` via `_mingw.h`'s attribute rewrite, `pe_check_linkage` (`src/mccgen.c`), `ST_PE_IMPORT`/`ST_PE_EXPORT` (`src/mcc.h:2014-2016`), `pe_build_exports` writes a companion `.def`, `-impdef` via `mcc_get_dllexports` (`src/objfmt/mccpe.c:2531`), `-rdynamic` exports everything | **has it** |
+| `__int256` / `unsigned __int256` | full, `wide256/gmp-diff` 9,402 rows | **compiles on all five targets**, executes correctly under wine (`1<<200` × 3 → 3). Passed by memory on Win64 like any >8-byte aggregate — the `using_regs` rule at `src/arch/x86_64/x86_64-gen.c` sends anything not 1/2/4/8 bytes to memory, which is the correct Win64 treatment | **has it — but see below.** `wide256/gmp-diff`, the only proof `__int256` is *correct*, is a native-host cell. **UNMEASURED on any PE target** |
+| `__int128` | `MCC_HAVE_INT128` | **0 on PE** (`src/mcc.h:1115-1119`). `LONG_SIZE` is forced to 4 on PE even at 64 bits (`src/mcc.h`) | **lacks it, deliberately** |
+| stack probing | not needed | `__chkstk` at frames ≥ 4096 — x86_64 `src/arch/x86_64/x86_64-gen.c`, i386 `src/arch/i386/i386-gen.c`, arm64 `src/arch/arm64/arm64-gen.c`. Runtime in `runtime/win32/lib/chkstk.c`. VLA forced through the call path on PE. Measured: a 200,000-byte frame compiles on all five and runs under wine on both x86 targets | **has it on 3 of 4** — **arm-win32/arm-wince frames > 4 KiB never touch a guard page** |
+| DLL import/export | `-shared`, visibility | `__declspec(dllimport/dllexport)` via `_mingw.h`'s attribute rewrite, `pe_check_linkage` (`src/mccgen.c`), `ST_PE_IMPORT`/`ST_PE_EXPORT` (`src/mcc.h`), `pe_build_exports` writes a companion `.def`, `-impdef` via `mcc_get_dllexports` (`src/objfmt/mccpe.c:2531`), `-rdynamic` exports everything | **has it** |
 | resources (`.rc`) | n/a | `pe_load_res` ingests a **pre-compiled** `.res`. No `.rc` compiler, no `windres` invocation anywhere | **partial** |
-| `_MSC_VER` emulation | n/a | **none.** Predefines are `_WIN32` (+`_WIN64` at 64 bits) only (`src/mccpp.c:5364-5370`); `_mingw.h` supplies `__MSVCRT__`, `_M_IX86`/`_M_X64`/`_M_ARM64`. `-fms-extensions` exists but only affects anonymous struct/union acceptance | **lacks it** — mcc is a mingw-flavoured Windows compiler, not an MSVC-compatible one |
-| CRT / libc | glibc/musl, `mcc_add_runtime` | `msvcrt.dll` via `.def`; entries `_start`/`_wstart`/`__winstart`/`__wwinstart`/`__dllstart` selected by `pe_add_runtime`. **No `mainCRTStartup`.** `mcc_add_runtime` is compiled out entirely under `#ifndef MCC_TARGET_PE` (`src/objfmt/mccelf.c:1707-1708`); `-lm` is a no-op | **has its own, by a different construction.** musl is Linux-only and always will be |
-| leading underscore | n/a | **0 by default on PE** — `s->leading_underscore` is set only under `#if defined MCC_TARGET_MACHO` (`src/libmcc.c:1223-1225`). A deliberate divergence from tcc's i386-win32 | **has it, differently** — settable with `-fleading-underscore` |
+| `_MSC_VER` emulation | n/a | **none.** Predefines are `_WIN32` (+`_WIN64` at 64 bits) only (`src/mccpp.c`); `_mingw.h` supplies `__MSVCRT__`, `_M_IX86`/`_M_X64`/`_M_ARM64`. `-fms-extensions` exists but only affects anonymous struct/union acceptance | **lacks it** — mcc is a mingw-flavoured Windows compiler, not an MSVC-compatible one |
+| CRT / libc | glibc/musl, `mcc_add_runtime` | `msvcrt.dll` via `.def`; entries `_start`/`_wstart`/`__winstart`/`__wwinstart`/`__dllstart` selected by `pe_add_runtime`. **No `mainCRTStartup`.** `mcc_add_runtime` is compiled out entirely under `#ifndef MCC_TARGET_PE` (`src/objfmt/mccelf.c`); `-lm` is a no-op | **has its own, by a different construction.** musl is Linux-only and always will be |
+| leading underscore | n/a | **0 by default on PE** — `s->leading_underscore` is set only under `#if defined MCC_TARGET_MACHO` (`src/libmcc.c`). A deliberate divergence from tcc's i386-win32 | **has it, differently** — settable with `-fleading-underscore` |
 | bounds checking | `-b`/`-bt`/`-fsanitize=bounds` | skipped: "unsupported on the PE/msvcrt target (faults in msvcrt callbacks/library calls)" | **lacks it** |
 | `tests/diff/parts/*` | full | skipped: "the PE/msvcrt target has no msvcrt equivalent for the parts' complex/tgmath/libm surface" | **lacks it** |
 
@@ -2305,7 +2318,7 @@ produced binary directly. A tree-wide grep for `MCC_RUN_WRAPPER` / `MCC_EXEC_WRA
 
 The work is: thread an optional wrapper list through the three execute sites and the build
 sites, add `--target-mcc`/`--wrapper` arguments, and relax the `UNIX AND MCC_CPU
-x86_64|arm64` guard at `CMakeLists.txt:6515-6516` so a PE triple with a wine on PATH
+x86_64|arm64` guard at `CMakeLists.txt` so a PE triple with a wine on PATH
 qualifies. Nothing structural resists it. The runner in §3 is 60 lines and already proves
 the shape works end to end.
 
@@ -2363,7 +2376,7 @@ same four-way shape `tools/i386fastcall-docker.sh` already uses for the i386 ELF
 This is the largest genuine gap and the one with the clearest user-visible payoff.
 
 **Stage W4 — per-function `UNWIND_INFO`, and unwind for i386/arm. ~500–800 lines.**
-Replace the single shared 8-byte blob at `src/objfmt/mccpe.c:2549-2558` with real prologue
+Replace the single shared 8-byte blob at `src/objfmt/mccpe.c` with real prologue
 opcodes derived from the frame the epilog already knows, so a Windows debugger and
 `RtlUnwind` can walk mcc frames truthfully. Extend `.pdata` to arm-win32 (which today has
 none) and add the i386 `FS:[0]` chain. Differential: a `CaptureStackBackTrace` /
@@ -2388,7 +2401,7 @@ and `20101011-1`'s divide-by-zero. **Requires W4** — a handler needs a truthfu
 backend at all. The choice is: give ARM32 PE TLS, `__chkstk`, unwind and COFF relocations
 (~600–900) and accept a target nobody can execute, or delete `arm-wince` and demote
 `arm-win32` to an explicitly-compile-only target with the bank cells labelled as such
-(~50 lines, mostly CMake and `tools/build.c:271-283`). **The second is correct.** Windows
+(~50 lines, mostly CMake and `tools/build.c`). **The second is correct.** Windows
 CE has been end-of-life since 2013 and `arm-win32` targets a machine id (`0x01C0`) that
 modern Windows does not load. Two of the twelve `-O0` bank keys are currently spending
 budget proving that two identical configurations produce identical bytes.
@@ -2399,8 +2412,8 @@ budget proving that two identical configurations produce identical bytes.
 structural hazard in §0 stops being structural; add `MCC_WINE` and `MCC_WINE_REQUIRED`
 cache variables so a wine-less host can be made to fail rather than green-skip; add
 `pe-wine-conformance` and `run-tier/{x86_64,i386}-win32` to `tests/must-run.txt`; correct
-`tests/must-run.txt:94` to state both of `runtime-bench-gatewin`'s causes; add `arm-win32`
-to `tools/build.c:271-283`; fix the stale i386 message at `CMakeLists.txt:6058`.
+`tests/must-run.txt` to state both of `runtime-bench-gatewin`'s causes; add `arm-win32`
+to `tools/build.c`; fix the stale i386 message at `CMakeLists.txt`.
 
 ### 6. The verdict, and the sequencing
 
@@ -2492,13 +2505,13 @@ Metal; three of the anchors and one of the symbol counts have drifted and are co
    capability gate. The banked anchor has drifted; the current one is in §1.
 3. **Zero `msl_region*` symbols.** Reproduces exactly: `grep -rn msl_region src/ tools/` is
    **0**. So is `msl_mem`, `msl_store` and `msl_f64`.
-4. **The format engine is SPIR-V-only by construction** (`src/mccfmt.h:453`). Unchanged.
+4. **The format engine is SPIR-V-only by construction** (`src/mccfmt.h`). Unchanged.
 5. **`tools/slicerun.c` carries no backend `#if`**, so the frame runner cannot compile
    against the Metal arm even in principle. Unchanged.
 
 **What the refusal did not say, and what makes the reversal cheaper than "multi-week
 rewrite" implies: the Metal *runtime* is already written and already works.**
-`src/mccgpu.c:43-696` is a complete `dlopen`-only Metal driver — 654 lines, no framework on
+`src/mccgpu.c` is a complete `dlopen`-only Metal driver — 654 lines, no framework on
 the link line, device selection, a 64-entry pipeline-state cache, two-buffer dispatch and an
 eleven-class fault taxonomy. It has been executed: `## The Metal per-value differential, and
 N6 on Darwin` records **151.9 M points compared, zero mismatches** on an M1 Pro. The gap is
@@ -2511,8 +2524,8 @@ in the *emitter*, not the driver. §5 is priced on that basis and lands well und
 attributable.** Lines strictly *between* `#if MCC_GPU_LANG_MSL` / `#else` / `#endif`, the
 directive lines themselves excluded, nested directives counted as body. **No committed
 tool** — an uncommitted Python pass over the six guard sites, which are
-`src/mccgpu.h:43`, `:173`, `:3138`, `src/mccgpu.c:42`, `src/mccslice.h:807` and `:1306`,
-plus the negated forms in `tools/spvgate.c` and `src/mccfmt.h:453`.
+`src/mccgpu.h`, `:173`, `:3138`, `src/mccgpu.c`, `src/mccslice.h` and `:1306`,
+plus the negated forms in `tools/spvgate.c` and `src/mccfmt.h`.
 
 | file | MSL arm | SPIR-V arm | banked | delta |
 | --- | ---: | ---: | ---: | --- |
@@ -2539,17 +2552,17 @@ distinct `spv_*` — the banked "31 `spv_*` reached from `src/mccslice.h`" reads
 conflates them.**
 
 - The *expression* arm is real. `mcc_slice_kernel_build`'s MSL side
-  (`src/mccslice.h:808-832`, 25 lines) drives `msl_module_begin` / `msl_main_begin` /
+  (`src/mccslice.h`, 25 lines) drives `msl_module_begin` / `msl_main_begin` /
   `msl_expr` / `msl_main_end` / `msl_module_finish` and produces a compilable Metal module.
 - The *frame* arm is the two-line one. `mcc_slice_frame_kernel_build`'s Metal arm is
-  `src/mccslice.h:1307-1308` — a `(void)` pair and `return 0` — against a **43-line** SPIR-V
-  arm at `src/mccslice.h:1310-1352` that emits statement stores, binds the shared region and
-  checks the f64 capability. **The banked anchor `src/mccslice.h:1282-1285` has drifted; it
+  `src/mccslice.h` — a `(void)` pair and `return 0` — against a **43-line** SPIR-V
+  arm at `src/mccslice.h` that emits statement stores, binds the shared region and
+  checks the f64 capability. **The banked anchor `src/mccslice.h` has drifted; it
   now lands inside `mcc_slice_spv_stmt` (`src/mccslice.h:1001`), on the mutation hook of the
   *SPIR-V* store path — i.e. the citation for "the Metal arm" now points at SPIR-V code.**
   The count itself is still two.
 - The emitted Metal entry point is three source lines at the tail of `msl_prelude`
-  (`src/mccgpu.h:1115-1117`): `kernel void mcc_main` taking `buffer(0)` and `buffer(1)` and
+  (`src/mccgpu.h`): `kernel void mcc_main` taking `buffer(0)` and `buffer(1)` and
   `thread_position_in_grid`. **Two bindings. There is no third.**
 
 **The mirroring claim — confirmed, and both of its banked line ranges are wrong.**
@@ -2557,7 +2570,7 @@ conflates them.**
 804, 817, 832, 899**; the banked 780/791/803/816/831/898 are off by one. The SPIR-V six are
 **2789, 2805, 2820, 2844, 2884, 2990**; the banked 2640/2651/2664/2681/2719/2786 are off by
 **+149 to +204** — `15b60365` moved them. **Three of the six pairs are byte-identical**
-(MSL `src/mccgpu.h:792`/`:832`/`:899` against `:2805`/`:2884`/`:2990`); two differ *only* by
+(MSL `src/mccgpu.h`/`:832`/`:899` against `:2805`/`:2884`/`:2990`); two differ *only* by
 an `ast_eval_slice_f64t` escape the MSL side has no equivalent of (`:781` against `:2789`,
 `:804` against `:2820`); one is genuinely restructured (`:817` against `:2844`). Normalising
 the `msl_`/`spv_` prefixes away, **145 of `msl_expr`'s 224 lines are a byte-for-byte mirror
@@ -2569,7 +2582,7 @@ the banked SPIR-V range quotes `spv_branch_pair` instead of the guard.**
 tree, and it is recorded as closed at `docs/ARCHIVED.md:22583`. In the emitter it shows up as six
 refusals and nothing else: the MSL arm of `src/mccgpu.h` contains no float type, no float
 constant and no float operation. `MslV` has no `f64` field where `SpvV` has one
-(`src/mccgpu.h:1217`); `MslMod` has no `used_f64` where `SpvMod` has one (`:1241`).
+(`src/mccgpu.h`); `MslMod` has no `used_f64` where `SpvMod` has one (`:1241`).
 `mcc_gpu_f64` (`src/mccgpu.c:2275`) reads `mcc_gpu.f64`, which the Vulkan arm sets from
 `shaderFloat64` and the Metal arm never assigns — so it is 0 on Metal unconditionally.
 
@@ -2586,20 +2599,20 @@ language rather than by unwritten code.**
 | control flow (`?:`, `&&`, `\|\|`) | `spv_branch_pair` (`src/mccgpu.h:2632`) | `msl_branch_pair` (`src/mccgpu.h:675`) | **has it** — phi nodes on one side, real `if`/`else` on the other |
 | dynamic element index | `spv_dyn_elem` (`src/mccgpu.h:2162`), `spv_load_live_dv` (`:2172`), `spv_store_live_dv` (`:2185`) | **none** | **lacks it** |
 | live-slot store-back | `spv_store_live_v` (`src/mccgpu.h:2119`), `spv_store_at_in` (`:1806`) | **none** — the MSL kernel writes only the out buffer, from `msl_main_end` (`src/mccgpu.h:418`) | **lacks it** |
-| frame kernel | `mcc_slice_frame_kernel_build` SPIR-V arm (`src/mccslice.h:1310-1352`) | two lines returning 0 (`src/mccslice.h:1307-1308`) | **lacks it** |
+| frame kernel | `mcc_slice_frame_kernel_build` SPIR-V arm (`src/mccslice.h:1310-1352`) | two lines returning 0 (`src/mccslice.h`) | **lacks it** |
 | region addressing | `spv_region_addr` (`src/mccgpu.h:2278`), `spv_load_region` (`:2310`), `spv_store_region` (`:2336`) | **none** | **lacks it** |
 | host-pointer mapping | `spv_mem_off` (`src/mccgpu.h:2387`), `spv_mem_region` (`:2378`) | **none** | **lacks it** |
-| binding-2 shared space | `id_mem` declared at `src/mccgpu.h:1649`, decorated `:1702-1709`, variable `:1758` | **none** — the emitted kernel binds 0 and 1 only | **lacks it** |
+| binding-2 shared space | `id_mem` declared at `src/mccgpu.h`, decorated `:1702-1709`, variable `:1758` | **none** — the emitted kernel binds 0 and 1 only | **lacks it** |
 | host view of that space | `mcc_gpu_mem` (`src/mccgpu.c:2261`) over `mcc_gpu_mem_backend` (`:2218`) | `mcc_gpu_mem_backend` returns 0 (`src/mccgpu.c:691-696`) | **lacks it** |
 | read-write dispatch | `mcc_gpu_dispatch_rw2` (`src/mccgpu.c:2231`), `mcc_gpu_rw_supported` returns 1 (`:2214`) | `mcc_gpu_rw_supported` returns 0 (`src/mccgpu.c:687`), `mcc_gpu_rw_arm` is a no-op (`:689`) | **lacks it** |
-| buffer binding | 3 storage buffers, one set, no push constants (`src/mccgpu.c:1883-1893`) | 2 `MTLBuffer`s bound at index 0 and 1 (`src/mccgpu.c:647-650`) | **partial** — 2 of 3 |
-| dispatch | `vkCmdDispatch` (`src/mccgpu.c:2170`) | `dispatchThreadgroups:threadsPerThreadgroup:` (`src/mccgpu.c:657-659`) | **has it** |
+| buffer binding | 3 storage buffers, one set, no push constants (`src/mccgpu.c`) | 2 `MTLBuffer`s bound at index 0 and 1 (`src/mccgpu.c`) | **partial** — 2 of 3 |
+| dispatch | `vkCmdDispatch` (`src/mccgpu.c`) | `dispatchThreadgroups:threadsPerThreadgroup:` (`src/mccgpu.c`) | **has it** |
 | pipeline cache | `MCC_VK_CACHE_MAX` 64 (`src/mccgpu.c:1830`) | `MCC_MTL_CACHE_MAX` 64 (`src/mccgpu.c:59`) | **has it** |
-| device loss / faults | fence timeout and strand (`src/mccgpu.c:2182-2198`) | eleven-class taxonomy, `mcc_gpu_fault` (`src/mccgpu.c:337`) | **has it — and it is better than the Vulkan side** |
-| format engine | `spv_fmt_emit` (`src/mccfmt.h:653`) and 6 siblings, 244 lines | **structurally excluded** by the `!MCC_GPU_LANG_MSL` gate at `src/mccfmt.h:453` | **lacks it** |
+| device loss / faults | fence timeout and strand (`src/mccgpu.c`) | eleven-class taxonomy, `mcc_gpu_fault` (`src/mccgpu.c:337`) | **has it — and it is better than the Vulkan side** |
+| format engine | `spv_fmt_emit` (`src/mccfmt.h:653`) and 6 siblings, 244 lines | **structurally excluded** by the `!MCC_GPU_LANG_MSL` gate at `src/mccfmt.h` | **lacks it** |
 | `double` | `spv_f64_type` (`src/mccgpu.h:1327`), `OpCapability Float64` (`:1331-1332`), `NoContraction` on every arithmetic op (`:1481-1483`, `:1490-1492`), `OpFOrd*` with `!=` as `OpFUnordNotEqual` (`:2603-2613`) | **none, and none is possible natively** | **lacks it — see below** |
 | frame executor host path | `mcc_slice_run_frame_gpu` (`src/mccslice.h:1364`) | the same, backend-agnostic function — but its kernel builder returns 0 on Metal, so it is never entered | **partial** — shared code, unreachable arm |
-| differential gate | `spvgate`, its own Vulkan stack (`tools/spvgate.c:200-490`) | `mslgate`, same source under `SPVGATE_MSL=1` (`CMakeLists.txt:3605`) | **has it**, and it has run |
+| differential gate | `spvgate`, its own Vulkan stack (`tools/spvgate.c`) | `mslgate`, same source under `SPVGATE_MSL=1` (`CMakeLists.txt`) | **has it**, and it has run |
 
 **What `double` means for parity, precisely.** MSL has no 64-bit float type, so no MSL
 kernel can hold an IEEE-754 double in a register. The parity question is therefore not "can
@@ -2624,35 +2637,35 @@ on *both* arms with a cell that fails if the exclusion lapses: `/` and `%` at an
   Mark that **UNMEASURED**.
 - **The cheap alternative, already taken:** gate it off. `mcc_gpu_f64` already returns 0 on
   the Metal arm, so an f64 work item is admitted, refused by the emitter at
-  `src/mccgpu.h:781`, and falls back to the CPU oracle. No crash, no wrong answer, no
+  `src/mccgpu.h`, and falls back to the CPU oracle. No crash, no wrong answer, no
   coverage. **This is parity of behaviour, not parity of capability**, and §5 stage M6
   prices both.
 
 ### 3. The runtime story — mostly already written, and it needs no Objective-C compiler
 
 **The Vulkan shape, for comparison.** `src/mccgpu.c` vendors the whole Vulkan ABI, `dlopen`s
-the loader from a soname list (`src/mccgpu.c:1519-1528`, `libMoltenVK.dylib` and both
-Homebrew prefixes among them), and binds **45** entry points (`src/mccgpu.c:1431-1476`).
+the loader from a soname list (`src/mccgpu.c`, `libMoltenVK.dylib` and both
+Homebrew prefixes among them), and binds **45** entry points (`src/mccgpu.c`).
 Nothing is on the link line. Separately, `tools/spvgate.c` includes the real
 `vulkan/vulkan.h` and links `${Vulkan_LIBRARIES}`, re-implementing `gpu_init`, `mem_index`,
-`make_buffer` and `gpu_run` a second time (`tools/spvgate.c:206`, `:276`, `:290`, `:311`) —
+`make_buffer` and `gpu_run` a second time (`tools/spvgate.c`, `:276`, `:290`, `:311`) —
 **that is the "duplicated stack"**, and it is not equivalent to the production one: it
 declares **two** descriptor bindings, not three, so `spvgate` cannot exercise binding 2 at
 all.
 
-**The Metal equivalent exists and is the same shape.** `src/mccgpu.c:43-696`:
+**The Metal equivalent exists and is the same shape.** `src/mccgpu.c`:
 
-- `#include <objc/message.h>` and `<objc/runtime.h>` (`src/mccgpu.c:44-45`), but the three
+- `#include <objc/message.h>` and `<objc/runtime.h>` (`src/mccgpu.c`), but the three
   runtime entry points are resolved dynamically, not linked: `objc_getClass`,
   `sel_registerName` and `objc_msgSend` are looked up in the process first and then in
-  `/usr/lib/libobjc.A.dylib` (`src/mccgpu.c:221-231`).
+  `/usr/lib/libobjc.A.dylib` (`src/mccgpu.c`).
 - Metal itself is `dlopen`ed from `/System/Library/Frameworks/Metal.framework/Metal`
-  (`src/mccgpu.c:99-101`), and only two C symbols are taken from it:
-  `MTLCreateSystemDefaultDevice` (`src/mccgpu.c:212`) and `MTLCopyAllDevices` (`:218`).
+  (`src/mccgpu.c`), and only two C symbols are taken from it:
+  `MTLCreateSystemDefaultDevice` (`src/mccgpu.c`) and `MTLCopyAllDevices` (`:218`).
   Everything else is `objc_msgSend` through hand-cast function pointers — `mtl_send`
-  (`src/mccgpu.c:139`), `mtl_str` (`:152`), `mtl_ulong` (`:176`), `mtl_bool` (`:182`).
+  (`src/mccgpu.c`), `mtl_str` (`:152`), `mtl_ulong` (`:176`), `mtl_bool` (`:182`).
 - Command queue, pipeline state, buffers and encoding are all present:
-  `mtl_pipeline` with a 64-entry FNV-1a cache (`src/mccgpu.c:513`, `:523`), `mtl_buffer`
+  `mtl_pipeline` with a 64-entry FNV-1a cache (`src/mccgpu.c`, `:523`), `mtl_buffer`
   (`:587`), and `mcc_gpu_dispatch_locked` (`:600-681`) which opens an
   `NSAutoreleasePool`, binds two buffers and dispatches threadgroups.
 - **Nothing is linked.** `## The Darwin path was executed` records `otool -L mcc` showing
@@ -2666,7 +2679,7 @@ host can seed and drain around a command buffer.
 
 **What the Mach-O work provides, and what it does not.** `src/objfmt/mccmacho.c` is a full
 emitter and reader, 3316 lines: `MH_OBJECT`, `MH_EXECUTE` and `MH_DYLIB` filetypes,
-`LC_LOAD_DYLIB` emitted by `add_dylib` (`src/objfmt/mccmacho.c:504-514`), chained fixups
+`LC_LOAD_DYLIB` emitted by `add_dylib` (`src/objfmt/mccmacho.c`), chained fixups
 under `MCC_CONFIG_NEW_MACHO`, native `.tbd` stub parsing (`:2656-2663`) and SDK framework
 search paths seeded at `:2621-2631`. `-framework` is a real driver option resolved by
 `mcc_add_framework` (`src/libmcc.c:1882-1900`). **This is relevant to compiling C that calls
@@ -2674,7 +2687,7 @@ Metal, and irrelevant to the backend**, because the backend deliberately links n
 which is why the Metal arm works today on a host with no Xcode. The one place it matters is
 `tests/darwin/libsystem_objc.c`, which is the only in-tree proof that mcc can compile and
 link Objective-C-runtime calls, and **it never runs in CI**: it sits behind
-`option(MCC_DARWIN_HOST ...)`, OFF by default (`CMakeLists.txt:7509-7510`).
+`option(MCC_DARWIN_HOST ...)`, OFF by default (`CMakeLists.txt`).
 
 **What is missing on the Metal runtime side, and it is small:** a third `MTLBuffer` bound at
 index 2, `mcc_gpu_rw_supported` returning 1, `mcc_gpu_rw_arm` recording the copy-back
@@ -2696,12 +2709,12 @@ machine, not a build failure here. Nothing in this tree pins the MSL language ve
 
 | | Linux (Vulkan) | macOS (Metal) |
 | --- | --- | --- |
-| gate cell | every Linux stage2 cell, `-DMCC_GPU_REQUIRED=ON` (`.github/workflows/ci.yml:152`) | `{"macos-arm64-clang", "gpu-vulkan"}` only (`tools/ci.c:696`) |
+| gate cell | every Linux stage2 cell, `-DMCC_GPU_REQUIRED=ON` (`.github/workflows/ci.yml:152`) | `{"macos-arm64-clang", "gpu-vulkan"}` only (`tools/ci.c`) |
 | ICD installed | `mesa-vulkan-drivers` — lavapipe (`.github/workflows/ci.yml:116`) | `brew install molten-vk` (`.github/workflows/ci.yml:189`, `.github/workflows/matrix.yml:128`) |
 | software rasteriser | **yes**, lavapipe executes real compute | **no software Metal exists at all** |
 | device present in CI | yes | **no** |
-| MSL cells | — | `gpu/msl-slice-differential`, `-known-positive`, `-real` (`CMakeLists.txt:3618`, `:3621`, `:3628`) |
-| are they ever built? | — | **no** — gated `if(APPLE AND MCC_GPU_LANG_MSL_VALUE)` (`CMakeLists.txt:3604`) and skipped otherwise (`:3639-3642`); no CI cell sets `-DMCC_GPU_BACKEND=metal` |
+| MSL cells | — | `gpu/msl-slice-differential`, `-known-positive`, `-real` (`CMakeLists.txt`, `:3621`, `:3628`) |
+| are they ever built? | — | **no** — gated `if(APPLE AND MCC_GPU_LANG_MSL_VALUE)` (`CMakeLists.txt`) and skipped otherwise (`:3639-3642`); no CI cell sets `-DMCC_GPU_BACKEND=metal` |
 
 **The deciding external fact: `MTLCreateSystemDefaultDevice` returns nil inside a
 GitHub-hosted macOS runner.** It is the subject of `actions/runner-images` issues 1779 and
@@ -2739,7 +2752,7 @@ deleted."*
 
 | | MoltenVK route | native Metal parity |
 | --- | --- | ---: |
-| what it changes | pass `-DVulkan_INCLUDE_DIR` (and headers) to the macOS `gpu-vulkan` cell so `find_package(Vulkan QUIET)` (`CMakeLists.txt:3549`) succeeds and `spvgate` builds | §5, stages M1–M7 |
+| what it changes | pass `-DVulkan_INCLUDE_DIR` (and headers) to the macOS `gpu-vulkan` cell so `find_package(Vulkan QUIET)` (`CMakeLists.txt`) succeeds and `spvgate` builds | §5, stages M1–M7 |
 | size | **~10 lines of workflow/CMake**, plus one `brew` formula for the headers. Banked as *"One install turns 3 dead ctest names live"* (`docs/ARCHIVED.md:22690`) | **1,530–2,360** lines, **2,200–3,400** with soft-f64 |
 | what macOS gains | the **entire** SPIR-V arm — regions, binding 2, the format engine, frame kernels, dynamic indexing: ~4,200 lines of capability | the same capability, rewritten |
 | `double` | **not available** — MoltenVK reports `shaderFloat64 = 0` and does not emulate | available only if soft-f64 is written (700–1,100 lines) |
@@ -2759,7 +2772,7 @@ executed` already refuted the SPIRV-Cross hypothesis and concluded in as many wo
 **And there is a third route nobody has priced, which is the only one that could give macOS
 a real CI differential: lavapipe on macOS.** Mesa's software Vulkan ICD builds for macOS,
 and the Linux cells already prove the SPIR-V arm runs correctly on it. An `MCC_VULKAN_LIB`
-override already exists to point the loader at an arbitrary ICD (`src/mccgpu.c:1535-1540`),
+override already exists to point the loader at an arbitrary ICD (`src/mccgpu.c`),
 so no code change is needed — only a build of the driver on the runner. **Whether a lavapipe
 ICD can be obtained on a `macos-15` GitHub runner in reasonable time is UNMEASURED, and it
 is the single highest-value experiment in this section**: it would make the macOS
@@ -2915,16 +2928,16 @@ schedule.
 | **1** | ~~**`slice-census` is RED on this tree and no documented invocation runs it.**~~ **CLOSED on `wt/censusfix`** — both halves. The 9 `src_fail` sources were a corpus defect, not compiler defects: the walk handed `tests/exec/*.c` to a bare `mcc -c`, ignoring the flags and the `req` each source's row in `tests/exec/goldens.h` declares. The two `--verify` overruns were a denominator defect: slice extents are measured on the *replay* and were being compared against the *parser's* body length, which only coincide when the body is faithful, and neither of those two is. See the Landed section below for both readings | — | **cells** |
 | **2** | ~~**`ctest -L census` runs 3 of its 6 cells and reports 6.**~~ **CLOSED on `wt/censusfix`** — all five census cells now carry their own `ENVIRONMENT` switch, and a new `census/gates-armed` cell fails if any `census`-labelled cell is gated on an opt-in switch its registration does not set. `ctest -L census` is **7/0 with nothing Skipped** and needs no exported variable at all. `MCC_RIR_CENSUS` was in the same state as the other two — named nowhere in `CMakeLists.txt` — so `rir-coverage-census` and `rir-nofb-probe` only ever ran because somebody typed it | — | **cells** |
 | **3** | **`-fopt-slice` makes object output depend on the optimizer's disk cache, and nothing watches it.** Reproduced verbatim today: `python3 tools/opt-cache-determinism.py cmake-debug/mcc src/mcc.c --opt=-O3 --from-build cmake-debug -- -fopt-slice` → `cold/self/foreign-tu = daffa4e023f9`, **`foreign-fl = 1dbdfbe1bc0c`**, `cache entries written: 2`, `FAIL`. The cell is a **permanent 77** because the flag is `MCC_OPTD_LEVEL(9)` and has no subject at any shipped level, so the defect is invisible rather than absent. Decide: own the pass, or delete it | unknown (a pass) | **correctness / determinism** |
-| **4** | **`if-conversion-abs` ships at `MCC_OPTD_LEVEL(2)` and the freshly re-run bench says it makes code worse.** `tests/optfire/levelbench.tsv:20`: moves **1 of 17** kernels, `gain_movers` **−0.0334**, `branchy` **−0.5700** — a sign flip from the `+0.1905` / `+3.1843` it was promoted on. It is bucketed `ranked`, not `cost-no-gain`, so the ladder still treats it as a win. It is filed **only** in the failed-to-reproduce table at `:685`; no row of the ranking table owns it, and `:517` asserts "row 1 is the only unmeasured row left" | small (one level decision, the measurement already exists) | **emitted code** |
+| **4** | **`if-conversion-abs` ships at `MCC_OPTD_LEVEL(2)` and the freshly re-run bench says it makes code worse.** `tests/optfire/levelbench.tsv`: moves **1 of 17** kernels, `gain_movers` **−0.0334**, `branchy` **−0.5700** — a sign flip from the `+0.1905` / `+3.1843` it was promoted on. It is bucketed `ranked`, not `cost-no-gain`, so the ladder still treats it as a win. It is filed **only** in the failed-to-reproduce table at `:685`; no row of the ranking table owns it, and `:517` asserts "row 1 is the only unmeasured row left" | small (one level decision, the measurement already exists) | **emitted code** |
 | **5** | **`MCC_MAX_UNARY_DEPTH` was mis-sized *and* it was one guard where the parser needs eight — DONE, and the eight are now watched.** `diag.parse-frames` re-prices `MCC_MAX_PARSE_DEPTH` against the frames it was sized on, every run; the per-level table it was sized from was re-derived and nine of its ten rows were low. **The two that were filed are now closed on `wt/depthholes`** — `parse_btype`'s `_Alignas` arm (SIGSEGV at **43,606**) and `mccasm.c`'s six-function `asm_expr` cycle (at **18,694**) are both charged to the shared budget, the frames bank is re-derived at **15 cycles** with the worst axis and the 532 KiB requirement unmoved, and `diag.parse-depth` carries both axes. **The third, `next()` self-recursing on `_Pragma` (`src/mccpp.c`, SIGSEGV at 130,794 consecutive `_Pragma` tokens), is closed on `wt/symguard`** — a `tail:` label and a `goto`, no budget level, and `diag.parse-depth` now carries a `pragmachain` case that asserts a clean compile rather than a diagnostic. **No parse-depth hole is currently open.** See "The parse-depth guard" below | done | **correctness** |
-| **6** | **Nine number-producing tools are registered nowhere — the board says four.** `:1688-1696` names `xsuite-report.py`, `gate-ledger.sh`, `strategy-ledger.sh`, `c2_sweep.sh` and closes "Four tools left on this item." Also unregistered and board-quoted: `xsuite.py`, `xoracle.py`, `c2_equiv.sh`, `selfhost-o3.py`, `arm64pe_diff.py`. **~~`xoracle.py` is the sharpest~~ — `xoracle.py` WAS REGISTERED by `f797074b` (`jit/xoracle-coverage`, plus `tests/must-run.txt:155`); the four tools named in the audit residue are still unregistered, so that list is right and this row's nine is not (2026-08-11 sweep)**: `tests/optfire/levelpins.txt:78` pins `merge-constants` at level 2 on "two xoracle cases change verdict without it" — a shipped ladder pin whose only evidence comes from a tool no cell runs | medium (five more cells) | **census trust** |
+| **6** | **Nine number-producing tools are registered nowhere — the board says four.** `:1688-1696` names `xsuite-report.py`, `gate-ledger.sh`, `strategy-ledger.sh`, `c2_sweep.sh` and closes "Four tools left on this item." Also unregistered and board-quoted: `xsuite.py`, `xoracle.py`, `c2_equiv.sh`, `selfhost-o3.py`, `arm64pe_diff.py`. **~~`xoracle.py` is the sharpest~~ — `xoracle.py` WAS REGISTERED by `f797074b` (`jit/xoracle-coverage`, plus `tests/must-run.txt`); the four tools named in the audit residue are still unregistered, so that list is right and this row's nine is not (2026-08-11 sweep)**: `tests/optfire/levelpins.txt` pins `merge-constants` at level 2 on "two xoracle cases change verdict without it" — a shipped ladder pin whose only evidence comes from a tool no cell runs | medium (five more cells) | **census trust** |
 | **7** | **`ast_env_gate` no longer exists in `src/` and four shell tools still grep for it.** `grep -rn ast_env_gate src/` is **0**; `tools/{c2_sweep,c2_equiv,gate-ledger,o0_ab}.sh` all still reference it. They fail loudly, which is the right mode, but this is the widest blocker in the file: it freezes `o0_ab.sh`'s gated half (twelve `*.gated.rir.txt` + `board.gated.txt`, uncovered by `ast/o0-baseline` and not pretending otherwise), blocks three of the four tools in row 5, and blocks the cheap "which `-O1` gate erases the 72 `len` bodies" experiment. The restoration recipe is already written down at `:9899-9906` | medium | **gate strength** |
 | **8** | ~~**`spirv-val` and `glslc` are installed at `/usr/bin` and referenced nowhere in the build.** `grep -rn 'spirv-val\|glslc' CMakeLists.txt cmake/ tools/ src/` is empty.~~ **FALSE, and it was false when written (2026-08-11 sweep): `cmake/spvval.cmake` is a whole validator cell with a corruption known-positive, and `CMakeLists.txt` does `find_program(MCC_SPIRV_VAL NAMES spirv-val)`. This file's own "`spirv-val` wired | 152 modules validated" row already contradicted it.** 152/152 modules already validate by hand at `--target-env vulkan1.1`. One `find_program` and one `add_test` arm. The cheapest open item in the file, and it survives the device freeze because it validates what the emitter already ships | small | **device correctness** |
 | **9** | **A stage-2 build dir does not rebuild when a header changes.** The stale binary is silent and plausible: it runs, it self-hosts, it passes. Workaround only (`rm cmake-<dir>/CMakeFiles/mcc.dir/src/mcc.c.o`); the fix is for `mcc` to emit a depfile for `CMAKE_DEPFILE_FLAGS_C`. This poisons **any** measurement taken from a stage-2 dir, which is most of the ladder work | medium | **measurement validity** |
 | **10** | **D6 — `scalar_storage_order` / `ms_abi` are not implemented at all** (`grep -rn 'scalar_storage_order\|ms_abi' src/*.c src/*.h` → **0**), and mcc objects link against gcc's, so a mismatch is *silent* wrong codegen across a linker boundary. The only item in the codegen list with that property | large | **correctness** |
 | **11** | **`selfhost-optbench.py --check` can pass over zero derivations.** `derive_levels` assigns `levels[f] = levels_now[f]`, so an all-`inert` run prints *"src/mccopt.h matches the ladder"* having derived nothing; the docstring says **48** level-assignable flags in five places and `flag_table()` yields **16**; no floor on `len(names)`; an empty sample list classifies `inert`. The board already carries "`selfhost-optbench --check` was not re-run" as a caveat, which is the same hole one level up | medium (several floors) | **census trust** |
 | **12** | ~~**W8 — `selfhost-jit` heap-UAF of a `Sym` in the AST forward-inline re-emit path.**~~ **Closed 2026-08-09.** Not a cross-function refcount bug: a plain-local leaf's captured `sym` (needed during in-function replay by `wide256_sv_is_stable_lval`) dangles at re-emit after `ast_func_end`. Fixed by `ast_reemit_scrub_leaf_syms` (`src/mccast.c`), which nulls non-`VT_SYM` non-VLA local-leaf syms before re-emit replay. Oracle byte-identical; see the Windows/macOS host-items section | medium–large | **correctness** |
-| **13** | **`run-tier/x86_64` fails `tls_threads` when `MCC_JIT=1` meets an active AST replay.** Localised to three lines: `mcc_jit_tls_slab` (`src/mcchost.c:1450`), the `mcc_run_pthread_create` binding (`src/objfmt/mccelf.c:974`) under `s1->run_tls_active`, set only on the interpreter relocate path in `tls_setup_linux` (`src/mccrun.c:451`). `--no-jit` does not suppress it. Note this contradicts `:10090`'s "the deliberate-red count is now 0", which is true only of the default configuration | small–medium | **correctness** |
+| **13** | **`run-tier/x86_64` fails `tls_threads` when `MCC_JIT=1` meets an active AST replay.** Localised to three lines: `mcc_jit_tls_slab` (`src/mcchost.c:1450`), the `mcc_run_pthread_create` binding (`src/objfmt/mccelf.c:974`) under `s1->run_tls_active`, set only on the interpreter relocate path in `tls_setup_linux` (`src/mccrun.c`). `--no-jit` does not suppress it. Note this contradicts `:10090`'s "the deliberate-red count is now 0", which is true only of the default configuration | small–medium | **correctness** |
 | **14** | **`ptr_unlink` for-condition-store segfault** — root-caused to `rir_cf_cond`/`rir_docond`, needs a 5-fix/34-break discriminator. Orphaned: zero references anywhere else in this file | medium | **correctness** |
 | **15** | ~~**`full_language.c` still diverges at `-O0` on x86_64/i386** — an `AST_OP_ASM` replay defect (P4 defect 4)~~ **CLOSED on `wt/replayfix`** — and it was not a divergence, the *compile failed*. The replay of an asm that defines a symbol raises a legitimate `assembler label already defined`, and the recovery `longjmp` unwound past `mcc_assemble_inline`'s epilogue, leaving the C parser reading tokens out of the dead `:asm:` buffer. See the landed section | done | **replay fidelity** |
 | **16** | ~~**The `jit-splice` pin hides a live miscompile.**~~ **CLOSED on `wt/replayfix`** — and it was not a `jit-splice` bug. A body that takes a label address was miscompiled at `-O1`/`-O2`/`-O3`/`-Os` with no flags, and segfaulted the compiler under `mcc -run`; the pinned flag was the only thing exercising the rebase that exposed it. Pin lifted, `KNOWN_FLAKY_RED` emptied. See the landed section | done | **correctness** |
@@ -2932,17 +2945,17 @@ schedule.
 | **18** | **`--mutate` is blind to `memcpy`, and the real gap is the corpus.** Four of six operator sites already perturb written memory and `g_frame_mismatch` exists; what is missing is **any `memcpy`/`memset` in the slice corpus to mutate**. Smaller than the debt as filed | small | **test strength** |
 | **19** | **Debt 6-vi — the chain-store *member* fixture was never written.** Its stated blocker (debt #6a's `-O1` vstack underflow) has been gone since 2026-08-09. `exec-chainlive/*` covers the live half; the member half of the pairing has no cell | small | **regression cover** |
 | **20** | **`flagsweep-cover` and `asm-gas-directives` are `mcc_skip_test` stubs — `cmake -E echo`, structurally incapable of failing.** `flagsweep-cover` hides 75 covering-array rows behind an opt-in that nothing runs; `asm-gas-directives` parks a real unimplemented feature (*"integrated assembler lacks sgdtq/sidtq/swapgs encodings"*) as an always-green cell. Neither is in `tests/must-run.txt`. There are **74** `mcc_skip_test` call sites, 17 live in this configuration | small each | **cells** |
-| **21** | **Hazard 1 is still live: `BREAKEVEN` is a hand-pinned literal** at `tools/loop-census.py:125`, duplicated as `lc_thr[]` in C, and it cannot be gated (`--cost-synth` 77s with no device, `slice/cost` carries `SKIP_RETURN_CODE 77`). The provenance banner landed; the constant did not. **Un-pinning is ~15 lines of C + ~25 of Python**, and it is what the entire remaining integer lane source (`vlaloop`'s 64 trips against a frozen `8`) is adjudicated against | ~40 lines | **ns / lanes** |
+| **21** | **Hazard 1 is still live: `BREAKEVEN` is a hand-pinned literal** at `tools/loop-census.py`, duplicated as `lc_thr[]` in C, and it cannot be gated (`--cost-synth` 77s with no device, `slice/cost` carries `SKIP_RETURN_CODE 77`). The provenance banner landed; the constant did not. **Un-pinning is ~15 lines of C + ~25 of Python**, and it is what the entire remaining integer lane source (`vlaloop`'s 64 trips against a frozen `8`) is adjudicated against | ~40 lines | **ns / lanes** |
 | **22** | **`rir-coverage.py`'s `wide` denominator is "the files that happened to compile"** — an `os.walk` of seven directories with no manifest, so a source dropping out silently shrinks the ratchet. Cheap first step already named: bank `sources=N` and fail when it moves. Adjacent: `LOW_EXCLUDE` is a **filename suffix match with no count**, so renaming `mccgpu.c` produces a fake regression with no diagnostic | small (the floor) | **census trust** |
 | **23** | **`rir-nofb-probe`, `--check-gap-dir` and `--check-low-dir` all pass over an empty input.** The bank already holds four empty `nofb_miscompiles` lists; gap fixtures cover **3 of 18** `UNF`+`WHY` classes | small per guard, medium for fixtures | **gate strength** |
 | **24** | **`stratsweep.sh` and `flagsweep.sh` drop subjects silently.** `$WORK/skipped` is written and never counted; the only floor is `n > 0`, so a miscompile breaking 30 of 31 subjects prints `PASS stratsweep-iso all: 22 strategy/ies x 1 subjects`. Both already print the survivor count — pin it | small | **gate strength** |
-| **25** | **The non-LVAL local `Ref` question is now answerable, not open** (`src/mccslice.h:264`, `:5685`). `wt/decaytype` fixed the identical defect in `ast_dep_decode` on 2026-08-09 — an `AST_Ref` accepted as a base address without checking `VT_LVAL` — with cell `id=25 dp_gptr_alias`. That answers the semantics in favour of "address" but did not touch `ast_eval_slice.h`'s `Ref` arm, `kind_ok` or `livein`. Blast radius **93 of 3994 accepted slices (2.3%)**; one directed test settles it | small | **reference correctness** |
+| **25** | **The non-LVAL local `Ref` question is now answerable, not open** (`src/mccslice.h`, `:5685`). `wt/decaytype` fixed the identical defect in `ast_dep_decode` on 2026-08-09 — an `AST_Ref` accepted as a base address without checking `VT_LVAL` — with cell `id=25 dp_gptr_alias`. That answers the semantics in favour of "address" but did not touch `ast_eval_slice.h`'s `Ref` arm, `kind_ok` or `livein`. Blast radius **93 of 3994 accepted slices (2.3%)**; one directed test settles it | small | **reference correctness** |
 | **26** | ~~**Cluster L is a dependency chain and its first link is unbuilt.** `L1` — give the JIT a shutdown — blocks `L2`/`L3`/`L4`/`L6`/`L7`/`L8`/`L9` by construction~~ — **CLOSED 2026-08-10 (`wt/jitshutdown`), and the row was wrong three ways.** The shutdown is `L2′(i)`, not `L1` (`L1` is device bring-up; `ARCHIVED.md:23151` says *"L2′ before L2"*). **There is no `L9`** — cluster L is `L1`–`L8` plus `L2′`, and this row is the only place in `docs/` the token appears. `L3` and `L6` were never blocked by a `pthread_t`: `L3` residency already landed, and `L6` is a predicate in `src/mccast.c`. What was real: workers `pthread_detach`ed with no handle retained. Now retained and joined; `mccjit_shutdown()` exists, drains, and is `atexit`-ordered ahead of the KGC flush. Genuinely unblocked: **`L2`'s precondition (i)**, **`L4`** on the lifetime axis, **`L8`** on the pool axis, **`L7(i)`**. Still blocking `L2`: `L2′(ii)`/`(iii)`, both `src/mccgpu.c`. Still blocking `L4b`: its own no-`mccjit_swap_lock` constraint, which is `S7b` | landed | **device lifetime** |
 | **27** | **The gate-mask gap.** `ast_math_inline_env`, `ast_interchange`, `ast_fusion`, `ast_tile` and `loop-vlat` mutate the arena before the JIT's mask snapshot and carry no `AST_SG_*` bit, so the JIT cannot know what shaped the tree it is handed. Stated at `:8650` and again at `:7756`; no later mention. This is the same class of defect as row 1 of the board's own ranking (a predicate reaching emitted code without its guard) | design | **correctness** |
 | **28** | **`storeval-callstore` is at `MCC_OPTD_LEVEL(2)` and was never ranked in either direction** (`src/mccopt.h:39`). The ICE that made its off-state unmeasurable was fixed at `:7629`; nobody has run the bench since. Adjacent and larger: **32 of the 34 demoted rows on rungs 10/11/12 are still unpriced** — only `narrow` and `tree-copy-prop` were measured, and rung 12 remains a deletion-candidate list nobody has read | one bench, then 32 | **emitted code** |
 | **29** | **The `MCC_OPT_REPLAY_FALLBACK` flip is an untaken decision, and the fallback is silent either way.** No known defect blocks it (`:9126`), the backstop landed at `705f0b0f`, all four delta-debugged flag sets closed, and `rir-nofb-probe` banks zero miscompiles. Keeping the gate costs **2.0% of bodies but 10.2% of body bytes** getting no optimization at all at `-O1`. **Recommended under either decision and not done: make the divergence visible** — `rir_prod_note` only reports at `MCC_RIR_PROD>=2`, so in a default build a fallback leaves no trace | small (visibility), then a decision | **emitted code** |
-| **30** | **No tree-recursion exec golden exists, and the failure mode is a GPU hang.** MSL compiles `fib(n)=fib(n-1)+fib(n-2)` and then **hangs the device at n=5** (`kIOGPUCommandBufferCallbackErrorHang`), taking sibling command buffers with it. Recorded as `ARCHIVED.md:22429` (C4); the golden was never written. Partly defused by the Metal drop, but the golden is a CPU-side conformance test and is still missing. Two more unused-as-conformance shapes named beside it: computed `goto` **into** a `for` body (`tests/diff/parts/legacy_expr.h:60-95`) and label arithmetic (`tests/exec/codegen/nodata_wanted.c:48,76`) | one golden | **conformance** |
-| **31** | **Two device residuals nothing owns.** N11's duplicated upload in `ast_ladder_gpu_run` (the identical `tin` uploaded twice per rung) is untouched — `ARCHIVED.md:23013` says so. N10 picks `devs[0]` with no scoring while `VkPhysicalDeviceLimits` is fully transcribed at `src/mccgpu.c:604-711` and only `deviceName` is read — `ARCHIVED.md:23012`, "the `devs[0]` half of I2(D) is still open". Both are frozen with the device path; both are cheap and neither is written down as a row | ~10 lines / ~60 lines | **device correctness** |
+| **30** | **No tree-recursion exec golden exists, and the failure mode is a GPU hang.** MSL compiles `fib(n)=fib(n-1)+fib(n-2)` and then **hangs the device at n=5** (`kIOGPUCommandBufferCallbackErrorHang`), taking sibling command buffers with it. Recorded as `ARCHIVED.md:22429` (C4); the golden was never written. Partly defused by the Metal drop, but the golden is a CPU-side conformance test and is still missing. Two more unused-as-conformance shapes named beside it: computed `goto` **into** a `for` body (`tests/diff/parts/legacy_expr.h`) and label arithmetic (`tests/exec/codegen/nodata_wanted.c`) | one golden | **conformance** |
+| **31** | **Two device residuals nothing owns.** N11's duplicated upload in `ast_ladder_gpu_run` (the identical `tin` uploaded twice per rung) is untouched — `ARCHIVED.md:23013` says so. N10 picks `devs[0]` with no scoring while `VkPhysicalDeviceLimits` is fully transcribed at `src/mccgpu.c` and only `deviceName` is read — `ARCHIVED.md:23012`, "the `devs[0]` half of I2(D) is still open". Both are frozen with the device path; both are cheap and neither is written down as a row | ~10 lines / ~60 lines | **device correctness** |
 
 Below the line, and deliberately: the device path's own open rows — float (**LANDED 2026-08-09 on `wt/fpwidth`: `double` only, `+ − *` and comparisons, bit-exact; `float`, division and int↔float excluded with cells. It moved the numeric corpus's device-executable fraction by ≈0.0 iteration-weighted points — the 79.2 were gated by `static` storage and `MCC_SLICE_MAXSLOT = 16`, not by `is_float`. See row 6 and the M6 section**), the dispatcher (three subsystems, priced nowhere), 115 indirect blocks, recursion (no data), the `pe` lowerable floors (stale-low, so they under-gate rather than false-fail), and debt #3's descriptor staleness (fixed, unreachable until binding 2 grows). All are frozen by the 2026-08-09 decision and none should be scheduled while that stands.
 
@@ -2963,11 +2976,11 @@ on a single hand-run, or on a cell that cannot reach it.
 
 ### Written as live, actually superseded
 
-1. **Board row 1 and still-open row 1** (`:497`, `:507-514`, `:3015`) call the missing `indirect` guard on `ast_dep_base_distinct` **"UNMEASURED, and it is the top of the board."** It landed at **`adf08e3b`**. Verified in the tree: the parameter is `src/mccast.c:13347`, the guard `:13350`, both emitting callers pass `0` (`:13516`, `:13566`), only the census site passes `ast_dep_alias_oracle_env` (`:13949`) — and the **22 `exec-{interchange,fusion,tile,search*}/loop_*` cells are registered and green**. *The board's number-one open row is closed.* Its own body says so at `:2104`.
+1. **Board row 1 and still-open row 1** (`:497`, `:507-514`, `:3015`) call the missing `indirect` guard on `ast_dep_base_distinct` **"UNMEASURED, and it is the top of the board."** It landed at **`adf08e3b`**. Verified in the tree: the parameter is `src/mccast.c`, the guard `:13350`, both emitting callers pass `0` (`:13516`, `:13566`), only the census site passes `ast_dep_alias_oracle_env` (`:13949`) — and the **22 `exec-{interchange,fusion,tile,search*}/loop_*` cells are registered and green**. *The board's number-one open row is closed.* Its own body says so at `:2104`.
 2. **The registration figure is two generations stale.** `:16-17` say **9136**; `:624` and `:2656` say 9136 *"today"*; `:985` says **9149**; the tree says **9151** in both dirs. The `wt/gatefin` write-up raised it to 9149 and never propagated to the head; the merge with `wt/idiomcov` added the last two and nothing recorded it. Hazard 5's "164 low" delta is quoted against the stale pair.
 3. ~~**Three counts of one list.** `:521` "**Twelve** have now failed to reproduce", `:670` "**The nine** figures that have failed to reproduce", `:697` "**Seven** headline figures" — and the table at `:675-687` has **thirteen** rows.~~ **CLOSED on `wt/docsync`.** The table is now the only place the count is stated; every other site points at it instead of restating it, and the two historical ordinals ("the seventh", "the thirteenth") are date-stamped as counts-at-the-time rather than current. `docs/refs` (`tools/docref-lint.py`) counts the table's rows and fails if the stated count moves off them, so this cannot drift again silently.
-4. **`SKIP_RETURN_CODE` count.** `tests/must-run.txt:3` says **141**, `docs/ARCHIVED.md:22965` says **138**, `CMakeLists.txt` has **149**.
-5. **`:9598` — "Deliberately not banked: byte faithfulness."** False at HEAD. `kept_coverage` is banked on all eight rows of `tests/rir/coverage-bank.json` **and enforced** (`tools/rir-coverage.py:1105-1109`, skipped only on an unbanked host format). The reversal is recorded at `:7886`; the C2 paragraph was never rewritten.
+4. **`SKIP_RETURN_CODE` count.** `tests/must-run.txt` says **141**, `docs/ARCHIVED.md:22965` says **138**, `CMakeLists.txt` has **149**.
+5. **`:9598` — "Deliberately not banked: byte faithfulness."** False at HEAD. `kept_coverage` is banked on all eight rows of `tests/rir/coverage-bank.json` **and enforced** (`tools/rir-coverage.py`, skipped only on an unbanked host format). The reversal is recorded at `:7886`; the C2 paragraph was never rewritten.
 6. **`:9600-9602`** — "modelled 99.59% / 99.56%, capture 100.00%" is stale; the bank reads **100.0 / 100.0 / 99.9681 / 99.9681**.
 7. **`:9584-9590`** — the lowerable floors are **three re-bankings** stale (`MCC_RIR_LOW_EXCLUDE`, the leaf graft, and the fourth re-bank).
 8. **`:9624-9626`** — "do not turn `-fno-replay-fallback` on by default… ≥4 fallback bodies are genuinely wrong" is contradicted by the **newer** decision at `:9124-9154` (no known defect blocks it; suite green; `nofb_miscompiles` empty). The prohibition predates the `union_cast` / `transparent_union` / `chained_assign` fixes and has no subject.
@@ -2977,7 +2990,7 @@ on a single hand-run, or on a cell that cannot reach it.
 12. ~~**`docs/ARCHIVED.md:22579`** marks E6 **"NEW 2026-08-08, OPEN"** while `ARCHIVED.md:22989` and `:6238` of this file both say E6 is closed permanently. It is also the line carrying the uncited lavapipe assertion.~~ **CLOSED on `wt/docsync`**: the E6 row now reads *"CLOSED 2026-08-09 — REFUSE permanently"*, carries the Mesa citation inline, and points at the closure below it; the retired plan's I2 row records that the `shaderFloat64` floor rests on a *source* reading of lavapipe, not a device one. Still open, same class: `docs/ARCHIVED.md:22452`/`:22465` "Vulkan — LIVE" vs `docs/ARCHIVED.md:23006` "CLOSED"; `docs/ARCHIVED.md:22708` "half-landed" vs `docs/ARCHIVED.md:23014` "CLOSED"; `docs/ARCHIVED.md:22965` N13 open vs `docs/ARCHIVED.md:23015` N13 closed. Those three are status contradictions in prose, which `docs/refs` cannot see — it checks that a citation resolves, not that two sentences agree.
 13. **`:10011` duplicates `:10039`** (32-byte vector alignment), **`:9282` duplicates `:10076`**, **`:9759` duplicates `:10078`**, **`:10051`** sends a reader at a capture path that measures **100.000%**, and **`:10182`** still lists `__builtin_powi`/`powif` as missing after `:9303` closed them.
 14. **E1's refusal-site count has now been stated three incompatible ways** and every one was written as current: `:7810` "**eight** separate sites", corrected at `:7851` to "**16**, not 8" with the sites enumerated, corrected again at `:100-113` to "**36 lines, 43 occurrences**, not the 1 + 4 + 6 = 11 this paragraph claims". Only the last is right — verified this sweep: `slice_inline.h:2`, `mccslice.h:4`, `mccgpu.h:12`, `ast_eval_slice.h:18`, because `mccgpu.h`'s block is mirrored across the two emitters and `ast_eval_slice.h`'s eighteen were never counted. `ARCHIVED.md:22574` still carries the "16 refusal sites, not 8" figure.
-15. ~~**Seven `TODO` markers in the tree name sections of this file that do not exist**~~ **CLOSED on `wt/docsync`, and the item as filed was itself wrong on two counts.** It said "seven markers in `tests/`"; there are **five markers in four files** under `tests/`, and the count of seven only reaches seven by including two markers in `tools/` and by counting `macro-nesting.cmake`'s two separately. It also cited `tests/superopt/promote-floor.sh:39`; the marker is at **`:41`**. What each named and what was done: `tests/cst/macro-nesting.cmake` and `tests/cst/symref-shadow.cmake` cited `'CST slice-J'` / `'CST slice-I'`, which **never lived in this file** — they were sections of `docs/NOTES.md`, deleted wholesale at `bb2469bd` and not migrated, so the boundary each test pins is now stated in the test's own failure message and the dead pointer says where it went; `tests/jit/run-parity.sh` cited a "TODO KGC section" purged at `4ab363ce`, and now names `MCC_JIT_NEARMATCH` and `src/mccjit_embed.c` directly, with a note that the nearest live prose does **not** cover near-match parity; `tests/superopt/promote-floor.sh` cited `'Floor the search'`, pruned at `71f3330b`, and now names `so_unsetenv_axis` / `MCC_SO_PROMOTE_FLOOR` in `src/mcc.c`; `tools/embed-jit-smoke.py` cited "P0 step 5" and a "gcc-engine startup residual", **neither of which any row of this file owns**, and now says so rather than implying they are tracked. The three that pointed at the wrong row — `tools/fmt-census.py`, `tests/optfire/levelpins.txt` and `cmake/slicerun_census.cmake` — now cite section headings or the tool to re-run, not board ordinals, because board ordinals renumber.
+15. ~~**Seven `TODO` markers in the tree name sections of this file that do not exist**~~ **CLOSED on `wt/docsync`, and the item as filed was itself wrong on two counts.** It said "seven markers in `tests/`"; there are **five markers in four files** under `tests/`, and the count of seven only reaches seven by including two markers in `tools/` and by counting `macro-nesting.cmake`'s two separately. It also cited `tests/superopt/promote-floor.sh`; the marker is at **`:41`**. What each named and what was done: `tests/cst/macro-nesting.cmake` and `tests/cst/symref-shadow.cmake` cited `'CST slice-J'` / `'CST slice-I'`, which **never lived in this file** — they were sections of `docs/NOTES.md`, deleted wholesale at `bb2469bd` and not migrated, so the boundary each test pins is now stated in the test's own failure message and the dead pointer says where it went; `tests/jit/run-parity.sh` cited a "TODO KGC section" purged at `4ab363ce`, and now names `MCC_JIT_NEARMATCH` and `src/mccjit_embed.c` directly, with a note that the nearest live prose does **not** cover near-match parity; `tests/superopt/promote-floor.sh` cited `'Floor the search'`, pruned at `71f3330b`, and now names `so_unsetenv_axis` / `MCC_SO_PROMOTE_FLOOR` in `src/mcc.c`; `tools/embed-jit-smoke.py` cited "P0 step 5" and a "gcc-engine startup residual", **neither of which any row of this file owns**, and now says so rather than implying they are tracked. The three that pointed at the wrong row — `tools/fmt-census.py`, `tests/optfire/levelpins.txt` and `cmake/slicerun_census.cmake` — now cite section headings or the tool to re-run, not board ordinals, because board ordinals renumber.
 
 ### The lavapipe citation, now sourced — COPIED ACROSS on `wt/docsync`
 
@@ -3121,7 +3134,7 @@ Splitting the 80.66 points of `par=1` iterations by that column:
 > `slices=2 gpu-slices=2 ... OK` for the `double` body. See the M6 section further down.
 
 **The slice engine and both of its executors refuse floating point by construction.**
-`mcc_slice_work_from_ast` rejects any slice whose root type `is_float` (`src/mccslice.h:133`),
+`mcc_slice_work_from_ast` rejects any slice whose root type `is_float` (`src/mccslice.h`),
 and there are four more `is_float` refusals in `src/mccslice.h` and six in `src/mccgpu.h`.
 The SPIR-V emitter has no float support to refuse *with*: `grep -c Float src/mccgpu.h
 src/mccgpu.c src/mccslice.h` is **0, 0, 0** — no `OpTypeFloat`, no `OpFAdd`, no `OpFMul`,
@@ -3171,28 +3184,28 @@ number.
 
 Verified by inspection today, not inherited:
 
-- `MccSliceWork` (`src/mccslice.h:15-29`) does run a block over `ntuple` argument tuples:
+- `MccSliceWork` (`src/mccslice.h`) does run a block over `ntuple` argument tuples:
   `mcc_slice_work_bind` sets `ntuple`, `mcc_slice_run_cpu` loops `while (w->done <
   w->ntuple)` gathering `w->in[done * nlive + j]`, and `mcc_slice_frame_run_gpu` is "one
   dispatch, `ntuple` independent frames".
 - **No file in `src/` constructs an `MccSliceWork`.** `src/mccslice.h` has exactly one
-  includer in the whole tree, `tools/slicerun.c:30`, and that binary does not link
-  `libmcc` (`CMakeLists.txt:3611` — it compiles `tools/slicerun_arena.c` and `src/mccgpu.c`
+  includer in the whole tree, `tools/slicerun.c`, and that binary does not link
+  `libmcc` (`CMakeLists.txt` — it compiles `tools/slicerun_arena.c` and `src/mccgpu.c`
   and brings its own arena).
 - `mcc_slice_frame_from_ast` is defined once (`src/mccslice.h:521`) and called **16 times,
   all in `tools/slicerun.c`**. Zero call sites in `src/`.
 - The compiler's only two slice-evaluation sites are `ast_jit_const_fn`
-  (`src/mccast.c:16636`) and `ast_jit_fold_consts` (`:16685`). Both pass `NULL` offsets,
+  (`src/mccast.c`) and `ast_jit_fold_consts` (`:16685`). Both pass `NULL` offsets,
   `NULL` values, **`nlive = 0`**, and evaluate **one** tuple. The surrounding loop in the
   second walks *nodes*, not argument tuples.
-- And `mcc_slice_work_from_ast` **rejects `cnt < 1`** (`src/mccslice.h:119`). The batching
+- And `mcc_slice_work_from_ast` **rejects `cnt < 1`** (`src/mccslice.h`). The batching
   machinery refuses precisely the zero-live-in shape the compiler produces, and the
   compiler never produces the shape the batching machinery wants. **The two halves have
   disjoint input domains.** This is stronger than "the caller is missing": the caller
   cannot be written by connecting what exists.
 
 `ast_loop_parallel_legal` — the analysis that would have to nominate the batch — is
-declaration `src/mccast.h:218`, definition `src/mccast.c:13891`, and **two call sites, both
+declaration `src/mccast.h`, definition `src/mccast.c`, and **two call sites, both
 `fprintf`** (`ast_loop_par_census:14034`, `ast_loopdep_dump:14053`). It cannot reach
 emitted code, which is also why `-fdep-alias-oracle` is safe to ship.
 
@@ -3304,7 +3317,7 @@ and the CPU reference. If it comes back cheap, this verdict is wrong.
 > the head section carries the corrections: the MSL side is **1755** not 1754 and the
 > SPIR-V side is **3960** not 3612 over the same four files (**+286** real growth, **+62** a
 > miscount of `tools/spvgate.c`, whose SPIR-V arm was never 292); the kernel-arm anchor
-> `src/mccslice.h:1282-1285` has drifted and is now `:1307-1308`; and the "31 `spv_*`
+> `src/mccslice.h` has drifted and is now `:1307-1308`; and the "31 `spv_*`
 > reached from `src/mccslice.h`" reads **29**. The reversal is a decision, not a
 > refutation, and the head section's §6 says so.
 
@@ -3314,8 +3327,8 @@ The last board said "decide it, do not pay it down" and left it undecided. Decid
 653/1461, `mccgpu.h` 1008/1794, `mccslice.h` 27/65, `spvgate.c` 66/292); the board's 3578
 was stale by commit `99e043c1` and the MSL side matched to the line *because nothing has
 been added to it*. `mcc_slice_frame_kernel_build`'s Metal arm is two lines returning 0
-(`src/mccslice.h:1282-1285`); `grep -rn msl_region src/ tools/` is **0** against 31 distinct
-`spv_*` symbols reached from `mccslice.h` alone; `src/mccfmt.h:453` gates the whole format
+(`src/mccslice.h`); `grep -rn msl_region src/ tools/` is **0** against 31 distinct
+`spv_*` symbols reached from `mccslice.h` alone; `src/mccfmt.h` gates the whole format
 emitter `!MCC_GPU_LANG_MSL`; and `tools/slicerun.c` carries exactly one `#if`, for
 `AST_EVAL_SLICE_PROVIDED`, so it cannot compile against the Metal arm even in principle.
 Keep the `#if MCC_GPU_LANG_MSL` arms only where they already compile; add no more. This is
@@ -3385,13 +3398,13 @@ tool and the corpus that produces it, or is marked **PROSE-ONLY** / **UNMEASURED
 | 19,454 blocks, **10,238** Invoke-blocked, 7,524 (73.49%) all-internal, 4,029 eligible, **803** sole-blocker | `slicerun --arenas <dump> --census` | `mcc -O2 -c src/mcc.c`, `MCC_RIR_PROD=2` |
 | break-even lanes 322 / 108 / 48 / 24 / 23 / 8 | `slicerun --cost-synth` | synthetic, this host — **and see hazard 1** |
 | 143 corpus `frame-compared`, `*p` 0 → **159**, pointer `++`/`--` 0 → **168** | `slicerun` with and without `--no-ptr` | 440-block musl/string corpus |
-| ~~**1754** MSL lines against **3612** SPIR-V~~ · **RE-DERIVED 2026-08-09 (`wt/metalspec`): 1755 against 3960** over the same four files, **4204** counting `src/mccfmt.h`. The MSL side reproduces to within one line; **+62** of the SPIR-V delta is a miscount of `tools/spvgate.c` (banked 292, actual 354, and it was never 292), **+286** is growth. 2-line Metal kernel arm reproduces, at `src/mccslice.h:1307-1308`, not the banked `:1282-1285`. **0** `msl_region*` reproduces; the SPIR-V side reads **29**, not 31, symbols reached from `src/mccslice.h` | `grep` + a nesting-aware pass over the `#if MCC_GPU_LANG_MSL` arms — **no committed tool** | `src/mccgpu.{c,h}`, `src/mccslice.h`, `src/mccfmt.h`, `tools/spvgate.c` |
+| ~~**1754** MSL lines against **3612** SPIR-V~~ · **RE-DERIVED 2026-08-09 (`wt/metalspec`): 1755 against 3960** over the same four files, **4204** counting `src/mccfmt.h`. The MSL side reproduces to within one line; **+62** of the SPIR-V delta is a miscount of `tools/spvgate.c` (banked 292, actual 354, and it was never 292), **+286** is growth. 2-line Metal kernel arm reproduces, at `src/mccslice.h`, not the banked `:1282-1285`. **0** `msl_region*` reproduces; the SPIR-V side reads **29**, not 31, symbols reached from `src/mccslice.h` | `grep` + a nesting-aware pass over the `#if MCC_GPU_LANG_MSL` arms — **no committed tool** | `src/mccgpu.{c,h}`, `src/mccslice.h`, `src/mccfmt.h`, `tools/spvgate.c` |
 | ~~25.3M entries, 162.7M iterations, 85.45% / **65.75%** / **1.88%**~~ | — | **STALE.** Pre-`pvokclear`. Do not quote; the parallel-legal figure is 0.01% |
 | ~~corpus **1.39%** parallel-legal, **79.35%** `bases-may-alias-indirect`~~ | — | **STALE.** Pre-`wt/decaytype`. The predicate answers 80.60% on its own and that reason row no longer exists |
 
 **Ten hazards, stated rather than buried.**
 
-1. **The break-even lanes are pinned by hand** in `tools/loop-census.py:125` —
+1. **The break-even lanes are pinned by hand** in `tools/loop-census.py` —
    `BREAKEVEN = [(3, 322), (7, 108), (15, 48), (31, 24), (63, 23), (127, 8)]` — a literal,
    read back from no run. If the bench moves, every fraction scored against it moves and
    nothing notices. Worse, only the 3-, 7- and 15-node rows of that bench were ever signal:
@@ -3591,7 +3604,7 @@ audit gets to make. Two things follow and neither is done here:
    live bug in it.
 2. ~~`opt-cache-determinism` should be a `registered` row in `tests/must-run.txt` **and** a
    permanent 77 should be visible as such. Right now the tree reads it as green.~~
-   **DONE since `e98fab0a` (2026-08-09)** — `tests/must-run.txt:106` carries the registered
+   **DONE since `e98fab0a` (2026-08-09)** — `tests/must-run.txt` carries the registered
    row with the PERMANENT-77 disclosure, and this file acknowledges it elsewhere.
    *(2026-08-11 validation sweep.)*
 
@@ -4463,10 +4476,10 @@ Two hazards this section introduces, stated rather than buried:
 > kept and still reproduces; the *decision* it supports no longer holds. Corrections the
 > head section carries: **1755 / 3960** over the four files, not 1754 / 3612 — of which
 > **+62 is a miscount** of `tools/spvgate.c`'s SPIR-V arm, not growth; the kernel-arm
-> anchor has drifted to `src/mccslice.h:1307-1308`; **29**, not 31, `spv_*` symbols are
+> anchor has drifted to `src/mccslice.h`; **29**, not 31, `spv_*` symbols are
 > reached from `src/mccslice.h`. The phrase "multi-week rewrite" is the one claim below
 > that the re-derivation contradicts on its own terms — the Metal **runtime** already
-> exists (`src/mccgpu.c:43-696`, `dlopen`-only, no framework on the link line) and the
+> exists (`src/mccgpu.c`, `dlopen`-only, no framework on the link line) and the
 > priced spec is **1,530–2,360** lines.
 
 **The decision is taken at the head of this file (`#### Metal — settled`): Metal is not a
@@ -4475,11 +4488,11 @@ device target.** Everything below is the evidence it was taken on, with today's 
 Debt #4 quantified the divergence and the answer is that this is a multi-week rewrite, not
 a debt: **1754 MSL lines against 3612 SPIR-V** (`mccgpu.c` 653/1461, `mccgpu.h` 1008/1794,
 `mccslice.h` 27/65, `spvgate.c` 66/292), `mcc_slice_frame_kernel_build`'s Metal arm is
-**two lines returning 0** (`src/mccslice.h:1282-1285`), there are **zero `msl_region*`
+**two lines returning 0** (`src/mccslice.h`), there are **zero `msl_region*`
 symbols in `src/`** (re-verified 2026-08-09, 0 grep hits) against **31** distinct `spv_*`
 symbols reached from `mccslice.h` alone, and `tools/slicerun.c` carries no backend `#if` at
 all — its single conditional is `AST_EVAL_SLICE_PROVIDED` — so it cannot compile against the
-Metal arm even in principle. `src/mccfmt.h:453` gates the whole device format emitter
+Metal arm even in principle. `src/mccfmt.h` gates the whole device format emitter
 `!MCC_GPU_LANG_MSL`, so that feature was already SPIR-V-only by construction.
 
 **Three of those figures were stale and the direction of the error is the point.** The
@@ -5086,11 +5099,11 @@ the top because three of them are the only rows here in a currency that converts
 
 | row | size, and the tool that produced it | currency |
 | --- | --- | --- |
-| ~~`ast_loop_interchange_legal` / `ast_dep_fusion_pair_illegal` call `ast_dep_base_distinct` with **no `indirect` guard**~~ | **CLOSED 2026-08-10, and the row was wrong twice over.** The guard was moved *into the callee* by `adf08e3b` (2026-08-09) and is now `src/mccast.c:13721`: `if ((r1->indirect \|\| r2->indirect) && !allow_indirect) return 0;`. **The row also stated the polarity backwards.** `allow_indirect` is the *permissive* parameter, so the three emitting callers — `ast_loop_interchange_legal` (`src/mccast.c:13890`), `ast_dep_fusion_pair_illegal` (`:13940`) and `ast_rgn_pair` (`:14544`) — all pass `0` and are the *guarded* ones; the permissive caller is the **census** predicate `ast_loop_parallel_legal` (`:14321`), which passes `ast_dep_alias_oracle_env`. That is the inverse of "unlike the census predicate they reach emitted code". Second-order: the prescribed measurement ("a fuzz corpus of `p[i]`/`q[i]` nests at `-O12`") is **unrunnable on a stock build** — `-O5`–`-O12` are a hard error without `MCC_DEV` (`src/libmcc.c:2534`), and all three flags are `MCC_OPTD_DEV(MCC_OPTD_LEVEL(12))` (`src/mccopt.h:116-118`), so they are unreachable anyway | **correctness** |
+| ~~`ast_loop_interchange_legal` / `ast_dep_fusion_pair_illegal` call `ast_dep_base_distinct` with **no `indirect` guard**~~ | **CLOSED 2026-08-10, and the row was wrong twice over.** The guard was moved *into the callee* by `adf08e3b` (2026-08-09) and is now `src/mccast.c`: `if ((r1->indirect \|\| r2->indirect) && !allow_indirect) return 0;`. **The row also stated the polarity backwards.** `allow_indirect` is the *permissive* parameter, so the three emitting callers — `ast_loop_interchange_legal` (`src/mccast.c:13890`), `ast_dep_fusion_pair_illegal` (`:13940`) and `ast_rgn_pair` (`:14544`) — all pass `0` and are the *guarded* ones; the permissive caller is the **census** predicate `ast_loop_parallel_legal` (`:14321`), which passes `ast_dep_alias_oracle_env`. That is the inverse of "unlike the census predicate they reach emitted code". Second-order: the prescribed measurement ("a fuzz corpus of `p[i]`/`q[i]` nests at `-O12`") is **unrunnable on a stock build** — `-O5`–`-O12` are a hard error without `MCC_DEV` (`src/libmcc.c:2534`), and all three flags are `MCC_OPTD_DEV(MCC_OPTD_LEVEL(12))` (`src/mccopt.h:116-118`), so they are unreachable anyway | **correctness** |
 | ~~`tests/optfire/levelbench.tsv` is stale by a generation and has no `--check`~~ | **CLOSED 2026-08-09 (`wt/ladder2` then `wt/gatefin`).** `wt/ladder2` re-measured it: the banked table is a fresh 16-row run matching `src/mccopt.h`'s 16 `LEVEL(1..3)` rows, with `gain_movers_pct`/`eff_movers` beside the diluted columns and a signed efficiency (`inline-functions`, `gain_movers` −1.96, fell from rank 4 to rank 9). `wt/gatefin` closed the fourth defect **in both its halves**: `--check` exists with `optbench/levelbench-bank` + a known-positive, and the `optlevel-bench` cell now compares its build-dir TSV back to `tests/optfire/`. See the audit section | **census trust** |
 | the ~17× dilution of `gain_pct` (filed, not fixed, on `wt/benchtrap`) | **CLOSED 2026-08-09 by re-running the bench.** Measured dilution up to **17.4×** (`builtin-math-prepass` 0.3007 all-kernel vs **5.2372** over its one mover). `trunc32` moves 17/17 and its two gain columns agree to the digit, which is the control. It also **flipped a bucket** — `builtin-copysign`'s real **1.0076%** win read 0.0590% and was filed `cost-no-gain`, the bucket asserting no gain was found | **census trust** |
 | `narrow` / `tree-copy-prop` "ranked on nothing" | **THE PREMISE WAS FALSE, and the measurement was taken anyway.** Both were already priced on the self-host axis in `levelpins.txt:196,227`; the `n/a` in `levelbench.tsv` was a **stale row for a flag that table no longer sweeps** (levels 10 and 11 against a `<= 3` filter). Re-taken n=25 paired: `narrow` +0.876% stage-1 for −0.0088% stage-2 (**100:1 against**, 25/25 reps), `tree-copy-prop` +0.799% for −0.0048% (**166:1**, 24/25). `rir-coverage` clear for both. **Levels unchanged** | emitted code |
-| ~~float in the slice engine and the SPIR-V emitter~~ | **CLOSED 2026-08-10 — this row was stale and contradicted row 6 of the ranking table above it, which has said LANDED (`wt/fpwidth`) since 2026-08-09.** The code sides with the ranking table: `grep -c Float src/mccgpu.{h,c}` is **5** and **4**, not `0/0/0` — `SpvOpTypeFloat` (`src/mccgpu.h:1277`), `SpvCapFloat64` (`:1316`), both emitted at `:1445-1446`, and `shaderFloat64` queried and enabled at `src/mccgpu.c:2117-2118`. Read row 6 above for what actually shipped and what stayed excluded | device-executable lanes |
+| ~~float in the slice engine and the SPIR-V emitter~~ | **CLOSED 2026-08-10 — this row was stale and contradicted row 6 of the ranking table above it, which has said LANDED (`wt/fpwidth`) since 2026-08-09.** The code sides with the ranking table: `grep -c Float src/mccgpu.{h,c}` is **5** and **4**, not `0/0/0` — `SpvOpTypeFloat` (`src/mccgpu.h`), `SpvCapFloat64` (`:1316`), both emitted at `:1445-1446`, and `shaderFloat64` queried and enabled at `src/mccgpu.c`. Read row 6 above for what actually shipped and what stayed excluded | device-executable lanes |
 | the device dispatcher | **Not merely absent — unwritable from what exists.** The compiler's two slice sites pass `nlive = 0` / one tuple; `mcc_slice_work_from_ast` refuses `cnt < 1`. Plus a write-back (`MCC_SLICE_MAXSLOT` = 16 dense 8-byte slots; a 600×600 tile does not fit one) and a per-compile correctness gate. Three subsystems, priced nowhere | device-eligible blocks |
 | chain-store re-promotion (row 2) | **MEASURED 2026-08-09, and the answer is no.** The `kept` prize is **+2.60** points, not ~4.3 (`tools/rir-coverage.py`, `self`, `-O1`/`-O2`/`-O3`); the emitted-code half is stage-2 **−0.079%** and sieve **−1.97%** `instructions:u`, for **+1.50%** of stage-1. Pins unchanged | emitted code |
 | `-O11` ICE, `vstack leak (1)` | **FIXED 2026-08-08**; it also silently miscompiled (6 wrong answers / 500 at `-O11`). Cell `exec-chainlive/*`, fuzz 900 programs 0/0 | correctness |
@@ -5183,7 +5196,7 @@ item now says what was measured, not what was assumed.
    ~~**1754 MSL lines against 3578 SPIR-V**, split
    `mccgpu.c` 653/1461, `mccgpu.h` 1008/1763, `mccslice.h` 27/62, `spvgate.c` 66/292.~~
    `mcc_slice_frame_kernel_build`'s Metal arm is ~~three~~ **two** lines returning 0
-   (`src/mccslice.h:1282-1285`). There are
+   (`src/mccslice.h`). There are
    **no `msl_region*` symbols at all**, against ~~25~~ **31** distinct `spv_*` symbols
    reached from
    `mccslice.h` alone. `tools/slicerun.c` carries one `#if` (`AST_EVAL_SLICE_PROVIDED`)
@@ -5576,7 +5589,7 @@ item now says what was measured, not what was assumed.
    one cell: the `gain_pct` column of the `storeval-rot` row of
    `tests/optfire/levelbench.tsv` — cited here as `:47` when the file had 47 lines, and
    **that anchor is dead: the file is 30 lines / 16 data rows today and the row is at
-   `tests/optfire/levelbench.tsv:26`**. Banked by `1ad3f1aa` and quoted in `893c1e84`'s commit message and
+   `tests/optfire/levelbench.tsv`**. Banked by `1ad3f1aa` and quoted in `893c1e84`'s commit message and
    at the ladder write-up below. `tools/optlevel-bench.py`'s `gain` is a **geometric mean
    of dynamic `instructions:u` over the 17 `tests/runtime` kernels** — not a static count,
    and not `src/mcc.c`. The same row's `fires_kernels` column is **empty**: the flag
@@ -5618,7 +5631,7 @@ item now says what was measured, not what was assumed.
 
    **(b) The 1.69% is the inliner, and it is cold.** `-O3` differs from `-O2` by exactly
    one thing — `grep -c "MCC_OPTD_LEVEL(3)" src/mccopt.h` is **0**, and
-   `src/mccast.c:2235` turns `MCC_OPT_INLINE` on at `optimize >= 3`. Reproduced on this
+   `src/mccast.c` turns `MCC_OPT_INLINE` on at `optimize >= 3`. Reproduced on this
    tree (`70b92fb3`, so slightly different absolutes): `-O1` 366,000 vs 366,020 (−20, on
    better), `-O2` 379,404 vs 379,280 (+124), `-O3` 401,236 vs 394,404 (+6,832, 1.73%).
    Add `-fno-inline` at `-O3` and the gap collapses to **+124** — identical to `-O2` —
@@ -5667,7 +5680,7 @@ item now says what was measured, not what was assumed.
    1,237,966 `used` bytes. Demoting the row therefore means banking an **8.7-point
    coverage regression** — twice what board row 2 was trying to win — to buy 2.31% of
    compile time and 0.23% of stage-2. That is not a trade this tree should take, so
-   `src/mccopt.h:40` stays at `MCC_OPTD_LEVEL(1)` and no pin moved.
+   `src/mccopt.h` stays at `MCC_OPTD_LEVEL(1)` and no pin moved.
 
    The residue is a genuine open question, and it is not about this flag: for these 37
    bodies the strategy suite makes the hot code **larger and slower**. `kept` counts
@@ -5758,9 +5771,9 @@ the discriminating input already exists and is already green in a sibling harnes
 | `-O12`, default inliner on | 2262 B | **2262 B — SAME** |
 | `-O0` / `-O1` / `-O2` / `-O3` / `-O8`, flag added to the default | — | **SAME at every one** |
 
-The mechanism: `do_inline` requires `!ast_inline_pass_env` (`src/mccast.c:17993`).
+The mechanism: `do_inline` requires `!ast_inline_pass_env` (`src/mccast.c`).
 `INLINE_FUNCTIONS` is `MCC_OPTD_LEVEL(2)` and `OPT_PERFN_INPROC` is `MCC_OPTD_LEVEL(8)`
-(`src/mccopt.h:108`, `:124`) — so the flag's own level is **six rungs above the level that
+(`src/mccopt.h`, `:124`) — so the flag's own level is **six rungs above the level that
 disables it**, and at -O0/-O1 the other half of the gate (`ast_has_graftable_call` needing
 `ast_inline_env`) is off instead. There is no tier at which adding the flag changes a byte.
 
@@ -5798,7 +5811,7 @@ metric does not predict object size: grafting can keep a callee alive that would
 be dropped, and it moves reloc and section content the body length never sees. So the
 correct item is not "which tier" but **"the selection metric measures the wrong thing"**,
 and the out-of-process variant already demonstrates the fix — `mcc_superopt_perfn`
-(`src/mcc.c:1133`) scores on `so_fn_sizes`, the real emitted per-symbol size. Until the
+(`src/mcc.c`) scores on `so_fn_sizes`, the real emitted per-symbol size. Until the
 in-process trial scores on something that predicts the object, no tier is justified.
 Recorded so the next attempt starts from the metric, not from `levelpins.txt`.
 
@@ -5810,9 +5823,9 @@ banked ratios of the same census in opposite directions. Neither direction is a 
 
 Two findings the items did not contain:
 
-- **`corpus_config` has a hole.** `CORPUS_DEFS = ["MCC_DIAG"]` (`tools/rir-coverage.py:203`)
+- **`corpus_config` has a hole.** `CORPUS_DEFS = ["MCC_DIAG"]` (`tools/rir-coverage.py`)
   is one entry, but `MCC_EMBED_JIT` (a user-visible CMake option, default ON) gates two
-  whole translation units into `src/mcc.c` (`src/libmcc.c:20-23`). The guard that exists
+  whole translation units into `src/mcc.c` (`src/libmcc.c`). The guard that exists
   to catch corpus-shape changes cannot see the largest one.
 - **Item 4 is probably a real bug, not host sensitivity.** The documented host-sensitive
   case is elf/x86-64 vs darwin/aarch64 — *different arch*. gcc-hosted vs stage2 is the
@@ -5934,7 +5947,7 @@ Three things the item did not know:
    paths fixes the class for all 123 optfire cells, not just this one.
 
 The local cross loop already runs this cell for arm64 but forces `OPTFIRE_NORUN=1`
-(`CMakeLists.txt:4526`), so it covers exactly one of the eight modes and none of the
+(`CMakeLists.txt`), so it covers exactly one of the eight modes and none of the
 run-side ones — which is precisely why "objects differ under all five target compilers"
 did not settle it.
 
@@ -5984,23 +5997,23 @@ names, and one task representation closes all of them:
   section.** `src/mcctask.h` now defines exactly the "Recommended shape" this section
   goes on to propose: `MccTask{tick, ctx, state, resume, ticks, next}`, `MccSched`,
   `mcc_task_init`, `mcc_sched_step`/`_run` — a switch-on-resume state machine, not
-  `ucontext`. It already has consumers: `src/mccthread.h:265,332,340`, and
-  `mcc_slice_tick_gpu`/`_cpu` at `src/mccslice.h:1850-1871`, driven from
-  `tools/slicerun.c:268,1458,9174`. **The representation is built and proven adequate
+  `ucontext`. It already has consumers: `src/mccthread.h`, and
+  `mcc_slice_tick_gpu`/`_cpu` at `src/mccslice.h`, driven from
+  `tools/slicerun.c`. **The representation is built and proven adequate
   where it was built.** What remains open is only the *conversion* work below — items
-  C3/C4/C5: `MccjitSwapJob.run` is still `job->run(job)` (`src/mccjit_embed.c:1422`),
+  C3/C4/C5: `MccjitSwapJob.run` is still `job->run(job)` (`src/mccjit_embed.c`),
   `runtime/include/threads.h` still has no single-threaded backend and `mtx_timedlock`
   is still the 1 ms `nanosleep` spin (`:144`), and `tools/mcchv.c` still uses
   `thrd_create`/`thrd_sleep` (`:281,314,946`). Note also the anchor below has drifted:
-  `MccjitSwapJob` is at `src/mccjit_embed.c:1334-1344`, not `:1288-1298`.
+  `MccjitSwapJob` is at `src/mccjit_embed.c`, not `:1288-1298`.
 - The only *pre-existing* task-like construct was `MccjitSwapJob`: a `void (*run)(job)`
   on an intrusive FIFO, run to completion, no resume state.
 - `setjmp`/`longjmp` exists but is **only** error unwinding (`mcc.h:32`, `libmcc.c:863`)
-  and the public entry for running JIT'd `main` (`include/libmcc.h:73`). Every `longjmp`
+  and the public entry for running JIT'd `main` (`include/libmcc.h`). Every `longjmp`
   unwinds outward and discards; none is a continuation.
 - Threading in the compiler proper is **pthreads only, no `<threads.h>`**: 139 tokens in
   `mccjit_embed.c`, 17 in `mccrun.c`, 6 in `mccast.c` (`ast_search_pool_pthreads`), 4 in
-  `mccgpu.c`. Windows is a pthread-shaped shim (`src/mccjit_win32.h:272-372`, SRWLOCK /
+  `mccgpu.c`. Windows is a pthread-shaped shim (`src/mccjit_win32.h`, SRWLOCK /
   CONDITION_VARIABLE / INIT_ONCE / `_beginthreadex`).
 - Atomics are GCC `__atomic_*` builtins with explicit ordering, not `<stdatomic.h>`. The
   ordering that matters is QSBR epoch publication (`:1813-1854`) and the three
@@ -6011,10 +6024,10 @@ worker threads today:
 
 | worker | site | what blocks |
 | --- | --- | --- |
-| `mccjit_pool_worker` | `src/mccjit_embed.c:1341` | unbounded `pthread_cond_wait` (`:1347`), then `mccjit_swap_lock` held across the whole job |
+| `mccjit_pool_worker` | `src/mccjit_embed.c` | unbounded `pthread_cond_wait` (`:1347`), then `mccjit_swap_lock` held across the whole job |
 | `ast_search_thread_fn` | `src/mccast.c:16877` | full AST re-optimization per candidate; can reach `flock(LOCK_EX)` at `:15546` and file I/O |
 | `mccjit_qsbr_thread` | `:6976` | `nanosleep` 1 ms via `mccjit_pool_nap` (`:5731`) |
-| `hv_optimizer` | `tools/mcchv.c:252` | `thrd_sleep` 5 ms (`:281`), `thrd_yield` (`:279`), `flock` (`:487`), `fsync` (`:503`) |
+| `hv_optimizer` | `tools/mcchv.c` | `thrd_sleep` 5 ms (`:281`), `thrd_yield` (`:279`), `flock` (`:487`), `fsync` (`:503`) |
 | `mccjit_bench_sibling_thread` | `:3338` | pure CPU, joined at `:3384` — the only joined threads in the file |
 
 **Recommended shape.**
@@ -6127,10 +6140,10 @@ stated, and they do not always match the M1's — the re-measured allocation cen
    `int32_t pin[64 * MCC_GPU_IN_SLOTS], pout[64 * MCC_GPU_OUT_SLOTS]` — exactly the fix
    prescribed below. It sat here unstruck for three days as the top memory-safety row of this
    list. *(2026-08-11 validation sweep.)* Original text:
-   `src/mccast.c:15892` declares `int32_t pin[64], pout[128]` — 256 B and 512 B, sized
+   `src/mccast.c` declares `int32_t pin[64], pout[128]` — 256 B and 512 B, sized
    for the pre-`989e4b3b` ABI of 1 in-slot / 2 out-slots. `MCC_GPU_IN_SLOTS` is now 2
    and `MCC_GPU_OUT_SLOTS` is 3, so the warm-up dispatch **reads 512 B from the 256 B
-   buffer** (`src/mccgpu.c:1403`, Metal `:352`) and **writes 768 B into the 512 B one**
+   buffer** (`src/mccgpu.c`, Metal `:352`) and **writes 768 B into the 512 B one**
    (`:1510`, Metal `:388`). Under glibc's stack protector that is a hard SIGABRT, so
    **zero dispatches happen on any Linux host with a real ICD**; on Darwin it is a silent
    256-byte stack overwrite that happens to survive. `gpu/ladder-gpu-parity` fails
@@ -6139,7 +6152,7 @@ stated, and they do not always match the M1's — the re-measured allocation cen
    Fix: `int32_t pin[64 * MCC_GPU_IN_SLOTS], pout[64 * MCC_GPU_OUT_SLOTS];`
 
 2. **The Vulkan dispatch frees resources under a live command buffer.**
-   `src/mccgpu.c:1507-1509` waits 30 s; on any non-`VK_SUCCESS` it falls to `done:` at
+   `src/mccgpu.c` waits 30 s; on any non-`VK_SUCCESS` it falls to `done:` at
    `:1515-1535` and destroys the fence, command pool, pipeline, pipeline layout, shader
    module, descriptor pool, descriptor set layout, mappings, memory and buffers. On
    `VK_TIMEOUT` the command buffer is still **pending**. Because buffers are created
@@ -6157,14 +6170,14 @@ stated, and they do not always match the M1's — the re-measured allocation cen
    — leaking one dispatch's resources at a terminal error is strictly safer than a UAF
    against the GPU, and it is bounded because no further dispatch can occur.
    **Note the Metal half of this is already fixed** (`c6814625`); `docs/ARCHIVED.md`'s old
-   "`src/mccgpu.c:352-356`" paragraph was stale and has been corrected.
+   "`src/mccgpu.c`" paragraph was stale and has been corrected.
    **Neither bug is reachable by any existing test** — `src/mccgpu.c`'s Vulkan path has
    zero direct coverage, since `gpu/spv-slice-*` use `spvgate`'s own duplicated Vulkan
    code. Cheapest regression test: make the hardcoded 30 s fence a named tunable and run
    one cell at 1 ns with validation layers on. Works here and on lavapipe, needs no fault.
 
 3. **`ast_replay_bb`'s 35 KB frame is 93% one array. One declaration, 9.1× less stack.**
-   `SValue sv_stack[VSTACK_SIZE + 1]` (`src/mccast.c:5823`) is 32,832 B — `VSTACK_SIZE`
+   `SValue sv_stack[VSTACK_SIZE + 1]` (`src/mccast.c`) is 32,832 B — `VSTACK_SIZE`
    is 512 and `sizeof(SValue)` is 64 because `CValue` carries a `long double` — declared
    unconditionally in the prologue of a recursive function, for an `AST_OP_ASMGEN` arm
    that only fires on inline asm. Measured by building two control trees in scratchpad:
@@ -6182,13 +6195,13 @@ stated, and they do not always match the M1's — the re-measured allocation cen
    arm (`src/mccgpu.h`), a SPIR-V arm and a CPU-reference arm in `ast_eval_binop`, at 32
    **and** 64 bits, and nothing exercises them. (`TOK_SHR` and `TOK_ULT` have exactly one
    synthetic case each.) They are **structurally unreachable from harvested arenas**:
-   `gen_op` rewrites `TOK_GE`→`TOK_UGE` at `src/mccgen.c:4455` *after* the arena records
+   `gen_op` rewrites `TOK_GE`→`TOK_UGE` at `src/mccgen.c` *after* the arena records
    the token — the same mechanism behind `ee1fa9e0`. Measured 0 occurrences across
    24,562 harvested nodes. This is 23% of the binary-op axis, findable by **enumeration
    alone**, no fuzzing needed.
 
 5. **`spvgate` reports `OK` for a case that lowered nothing.**
-   `tools/spvgate.c:1250-1254` prints `SKIP (not lowerable)` and `continue`s; `:1335`
+   `tools/spvgate.c` prints `SKIP (not lowerable)` and `continue`s; `:1335`
    then prints `OK` because `case_bad` is still 0. That is the
    `cmake/ladder_gpu_parity.cmake` "zero dispatches, so identical verdicts prove nothing"
    failure mode, un-closed one level down. It matters beyond hygiene: it means the claim
@@ -6202,8 +6215,8 @@ stated, and they do not always match the M1's — the re-measured allocation cen
    `nf < 7 / 12 / 13 / 14` fallbacks, and the dump interns pointers through
    `ast_adump_intern` (landed `1b54c26e`), so the ASLR non-determinism is gone. Original
    text:
-   The dump emits 12 fields plus `[inv]` callee lines (`src/mccast.c:13580`), but
-   `rebuild_arena` still does `sscanf(...) != 7` (`tools/spvgate.c:1083`) — the five new
+   The dump emits 12 fields plus `[inv]` callee lines (`src/mccast.c`), but
+   `rebuild_arena` still does `sscanf(...) != 7` (`tools/spvgate.c`) — the five new
    fields have **no consumer**. Worse, two of them are raw `(uintptr_t)Sym*`, so two
    identical self-compiles now differ under ASLR (identical under `setarch -R`; the
    7-field prefix is still identical). **That invalidates the H4′ evidence** in
@@ -6222,7 +6235,7 @@ stated, and they do not always match the M1's — the re-measured allocation cen
    produce **byte-identical objects** — verified `cmp`-clean at 3,302,415 bytes.
 
 8. **Two dead memsets and a duplicated upload in the dispatch path.**
-   `memset(pout, …)` (`src/mccgpu.c:1404`, Metal `:353`) is **100% dead** — every lane
+   `memset(pout, …)` (`src/mccgpu.c`, Metal `:353`) is **100% dead** — every lane
    `< cap` writes all three out slots unconditionally and `out` is read only for
    `t < ntuple`. `memset(pin, …)` is needed only for the `[ntuple, cap)` tail, whose
    outputs are discarded and whose divisions are already guarded. And
@@ -6235,7 +6248,7 @@ stated, and they do not always match the M1's — the re-measured allocation cen
    2.1 munmap **per dispatch** — buffers are created *and destroyed* every time.
 
 9. **`mcc_gpu_mem_index` picks the worst memory type on this machine.**
-   `src/mccgpu.c:1307-1320` takes the **first** type matching
+   `src/mccgpu.c` takes the **first** type matching
    `HOST_VISIBLE|HOST_COHERENT`. Here that is `memoryTypes[2]`, on the 46.5 GiB
    **system-RAM** heap and **not** `HOST_CACHED`. `memoryTypes[3]` adds `HOST_CACHED`;
    `memoryTypes[4]` is `DEVICE_LOCAL|HOST_VISIBLE|HOST_COHERENT` on the 11.94 GiB ReBAR
@@ -6308,7 +6321,7 @@ named, tested, tunable element rather than an implementation detail.
 
    `op == 5 && nchild == 3` is exactly what `ast_abs_try` (`src/mccast.c:11515`) keys on
    for the ternary; `op == 0` is the statement-if checked at `:9028`, `:9256`, `:9888`;
-   `op == 2` increments loop depth (`:4136`). So `src/mccgpu.h:1526`'s `nchild == 3`
+   `op == 2` increments loop depth (`:4136`). So `src/mccgpu.h`'s `nchild == 3`
    gate is **refusing statements, correctly** — the honest figure is that only **11.5%
    of `AST_If` nodes are ternaries at all**, not that 66% are wrongly refused.
 
@@ -6320,7 +6333,7 @@ named, tested, tunable element rather than an implementation detail.
    Cheap, zero-risk, and it makes every later claim interpretable. The dynamic half
    does **not** need an interpreter, contrary to what the plan first assumed:
    `mcc -ftest-coverage` self-build (0.5 s) then a self-compile (0.93 s, 10× baseline)
-   emits a 4.7 MB gcov-format `.tcov` (`src/objfmt/mccelf.c:1614-1646`) —
+   emits a 4.7 MB gcov-format `.tcov` (`src/objfmt/mccelf.c`) —
    **789,238,394 block executions** over 48,909 blocks, joining to 2380/2452 bodies
    (98.9% of nodes). Bank: the per-kind histogram both ways, the internal/external
    invoke split, and the dead-node fraction. **Why it matters:** 58.4% of bodies
@@ -6340,7 +6353,7 @@ named, tested, tunable element rather than an implementation detail.
    `ast_eval_binop` compared `TOK_LT/LE/GT/GE` as signed regardless of operand
    signedness. Invisible at 32 bits (narrowing makes signed and unsigned agree),
    divergent at 64. Reachable because `gen_op` rewrites `TOK_GE`→`TOK_UGE` at
-   `src/mccgen.c:4455` but **the arena records the pre-rewrite token** — `unsigned
+   `src/mccgen.c` but **the arena records the pre-rewrite token** — `unsigned
    long long a >= b` and `long long a >= b` both come back as op `0x9d`. Measured with
    the emitters unsigned-aware and the evaluator left signed: **1,382,356 mismatches
    over 42.2M points**; 0 with both fixed. Latent, not an active miscompile —
@@ -6381,8 +6394,8 @@ named, tested, tunable element rather than an implementation detail.
    query, no feature-floor plumbing, and works on both backends unmodified. This
    unblocks `930921-1.c`, the one program in 600 known to have reached the ladder.
 
-   **Sites verified 2026-08-07** — `src/mccgpu.h:500,512,522,539,552,564,601` (MSL),
-   `:1382,1394,1404,1419,1432,1444,1479` (SPIR-V), `src/mccast.c:15774,15781` (ladder
+   **Sites verified 2026-08-07** — `src/mccgpu.h` (MSL),
+   `:1382,1394,1404,1419,1432,1444,1479` (SPIR-V), `src/mccast.c` (ladder
    hook). **Not started, and deliberately so:** this is not a matter of deleting 16
    predicates. Each emitter needs 64-bit `add/sub/mul/div/mod/shift/cmp` with the same
    overflow-and-definedness modelling `ast_eval_binop` already does at 64 bits, *and*
@@ -6408,19 +6421,19 @@ named, tested, tunable element rather than an implementation detail.
 
    **`IR_OP_LOAD` cannot be unblocked, established two ways.** It wraps the backend
    `load(r, sv)` (register materialization); the AST-level dereference is already
-   modelled by the `RIR_M_LOAD` mark. And the `continue` at `src/mccrir.c:4678` is not
+   modelled by the `RIR_M_LOAD` mark. And the `continue` at `src/mccrir.c` is not
    LOAD-specific — removing it runs `rir_reconcile` mid-region and truncates the
    shadow stack: **used 2657 → 1833, 882 bodies mismatching, kept 84.3% → 34.2%.**
 
 3b. ~~original item 3 text~~ — superseded. Add a **per-opcode histogram** at
-   `src/mccrir.c:3264`, excluding `JMP`/`JMPCOND`/`JMPADDR`/`JMPAPPEND`/`GSYMADDR`
+   `src/mccrir.c`, excluding `JMP`/`JMPCOND`/`JMPADDR`/`JMPAPPEND`/`GSYMADDR`
    (which are handled in other switches and are 68% of that arm's traffic). Then handle
    `RETVAL`, `MKPTR`, `VPUSHSYM`, and unblock `LOAD` from the `continue` at
-   `src/mccrir.c:4678-4681`. **Four features, not 25** — 21 of the 25 fire zero times on
+   `src/mccrir.c`. **Four features, not 25** — 21 of the 25 fire zero times on
    this target and five are `#ifdef`-ed out on arm64.
 
 4. ~~**Quote `kept_coverage`, not `modelled`.**~~ **DONE, and the diagnosis was
-   half-wrong.** The tool already *printed* both (`tools/rir-coverage.py:943-945`); what
+   half-wrong.** The tool already *printed* both (`tools/rir-coverage.py`); what
    it did not do was **ratchet** `kept_coverage` — banked at `:925`, never enforced, so
    the number meaning "body bytes that ship optimized" could regress freely. A gate now
    sits beside the modelled check. Also corrected: the honest whole-corpus kept figure
@@ -6446,7 +6459,7 @@ named, tested, tunable element rather than an implementation detail.
    cell red; flipping it *knowingly* is the entire point. Run it once and see.
 
 5b. **Original finding, retained.** Measured: **CI would stay green if both device backends
-   were deleted.** `cmake/ladder_gpu_parity.cmake:27-30` matches `available=0` and
+   were deleted.** `cmake/ladder_gpu_parity.cmake` matches `available=0` and
    returns exit 0; `spvgate_real.cmake:27` and `spvgate_mutate.cmake:4` skip and
    succeed; Linux CI installs `libvulkan-dev` (loader + headers, **no ICD**) and Windows
    installs headers only. The `gpu-vulkan` cell is macOS + MoltenVK, and nothing asserts
@@ -6478,7 +6491,7 @@ named, tested, tunable element rather than an implementation detail.
    macOS 12.0, the project targets 11.0.)
 
 7. **Raise the emitter caps, and fix the one that binds first.** `SPV_MAX_CONST`/
-   `MSL_MAX_CONST` = 512 distinct constants (`src/mccgpu.h:764`, `:105`) — a 2049-node
+   `MSL_MAX_CONST` = 512 distinct constants (`src/mccgpu.h`, `:105`) — a 2049-node
    arithmetic chain fails on the **constant cache**, not on module size. Measured
    emitter cost is 11.7–20.4 SPIR-V words per node, so `MCC_GPU_CODE_MAX`'s 8192 words
    is ~400–700 nodes; the largest real invoke-free region is 1114 nodes. Neither cap is
@@ -6544,7 +6557,7 @@ named, tested, tunable element rather than an implementation detail.
     only a tree-recursive golden will catch it. Also already in tree and unused as
     conformance: `tests/diff/parts/legacy_expr.h:60-95 goto_test()` — computed goto
     through a label table **jumping into a `for`-loop body**, the unstructured-entry
-    case; and `tests/exec/codegen/nodata_wanted.c:48,76` label *arithmetic*
+    case; and `tests/exec/codegen/nodata_wanted.c` label *arithmetic*
     (`&&te0 - &&ts0`), which no device model handles.
 
 ## The lowerable ratchet is self-referential — read before re-banking
@@ -6598,7 +6611,7 @@ Translation for the ones this file uses most:
 | `MCC_AST_NARROW_FIX=1` | `-fnarrow-fix` |
 
 > **Corrected 2026-08-10.** `MCC_AST_BITFLAG` used to sit in this table as the retired
-> spelling of `-ftree-switch-conversion`. It is **not retired**: `src/mccast.c:2417`
+> spelling of `-ftree-switch-conversion`. It is **not retired**: `src/mccast.c`
 > reads it as `ast_bitflag_min = ast_env_int("MCC_AST_BITFLAG", 5)`, repurposed from a
 > boolean gate into a numeric threshold (clamped up to 5 below 3). `MCC_AST_BITFLAG=8`
 > changes behaviour today, so it belongs in the paragraph below, not here. The other six
@@ -6620,10 +6633,10 @@ places (the `wt/o4fold` and `wt/o4ticks` write-ups, both now in
 
 - **The shipped levels are 1, 2 and 4.** `src/mccopt.h` carries non-dev
   `MCC_OPTD_LEVEL` rows for those three classes only; **3 and 7 have no rows at all**.
-  `-O4` is the top shipped rung — `opt_level_top()` (`src/libmcc.c:2517`) returns 4
+  `-O4` is the top shipped rung — `opt_level_top()` (`src/libmcc.c`) returns 4
   without `MCC_DEV` and 12 with it.
 - **`-O5`–`-O12` are `MCC_DEV`-only and are a hard error otherwise**, not an
-  in-development ladder anyone can climb: `opt_level_reject()` (`src/libmcc.c:2534`)
+  in-development ladder anyone can climb: `opt_level_reject()` (`src/libmcc.c`)
   rejects them ungated and names `MCC_DEV=1` as the escape.
 - **Only `-O13` runs the strategy search, and its budget is ticks, not seconds.**
   `MCC_OPT_SEARCH_LEVEL` is 13 (`src/mccopt.h:14`) and the budget knob is
@@ -6667,7 +6680,7 @@ and explain the difference as a doc comment at `mccopt.h:63` plus the `#define` 
 `:181`. Both citations were wrong — `src/mccopt.h` is 144 lines long, so there is no
 `:181`, and `:63` is a real `MCC_OPT_ROW(REG_DISP, …)` row rather than a comment.
 `grep -c 'MCC_OPT_ROW(' src/mccopt.h` is 115; subtracting the one `#define` at `:138`
-leaves 114. `tests/optfire/cover3.txt:1` states the same figure independently as
+leaves 114. `tests/optfire/cover3.txt` states the same figure independently as
 `flags=114`.*
 
 > **RED ON `main`, found 2026-08-11 in the validation sweep — the newest wave broke a
@@ -6704,7 +6717,7 @@ guarantee at all for one needing four. **108, not 114: six flags are pinned, so 
 needs one of them at its non-default setting is outside the guarantee by construction.**
 *Corrected 2026-08-10: the base was stated as 113 and the varying count as 107, and a
 later paragraph in this same section said the array "pins two flags", contradicting the
-"six pinned" here. `tests/optfire/cover3.txt:1` settles all three — its header reads
+"six pinned" here. `tests/optfire/cover3.txt` settles all three — its header reads
 `flags=114 vary=108 rows=74`, so six are pinned.* It is built by deterministic IPOG (`cover3.py gen`, no RNG, byte-identical
 on any host) and **`flagsweep/cover3-verify` re-proves the property on every ctest run**
 rather than trusting the generator: it re-derives the flag list from `mccopt.h`, so a new
@@ -6864,7 +6877,7 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
     and `%f` CRT rounding — not a portability bug).
 - ~~**W8** — fix the `selfhost-jit` heap corruption.~~ **Closed 2026-08-09 on the
   native x86_64 Windows host, via the MSVC-ASan `mcc_s` oracle.** The deterministic
-  crash is a heap-use-after-free of a `Sym` at `gaddrof` (`src/mccgen.c:2175`, the
+  crash is a heap-use-after-free of a `Sym` at `gaddrof` (`src/mccgen.c`, the
   `vtop->sym->type.t & VT_VLA` probe) during `ast_reemit` of `embed_resolve`.
   **Root cause, corrected from the 2026-08-05 note:** a leaf's captured `sym` is the
   *referencing frame's own local `Sym`*, stored verbatim by `rir_leaf_slot`
@@ -7074,10 +7087,10 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
   real comparison. Audit anything that ever passed a `-fno-opt-search-*` flag.
 - **`jit/xoracle-conformance` drops its second corpus silently.** **Promoted into N5's
   green-by-omission list in *Open, ranked*.** The CMake arm at
-  `CMakeLists.txt:7038` adds `--testsuite`/`--suite ts-unittests` only
+  `CMakeLists.txt` adds `--testsuite`/`--suite ts-unittests` only
   `if(EXISTS ${MCC_XSUITE_LLVMTS}/SingleSource/UnitTests)` and has **no `else()`** — no
   skip, no message, the suite just is not there. `--limit` is per-suite
-  (`tools/jitconform.py:311-317`), so losing the arm halves the corpus, and the companion
+  (`tools/jitconform.py`), so losing the arm halves the corpus, and the companion
   `jit/xoracle-coverage` cell then fails its `--min-cross 400` floor against a
   single-suite denominator that tops out at 379. On this host the cache pointed
   `MCC_XSUITE_LLVMTS` at a path that does not exist, so the cell was **red for a
@@ -7262,12 +7275,12 @@ defining `plt_target` at the bottom of the file — **do not reorder that file**
 > then lists are *eight*; and the registry expands those names to **63 cells** —
 > `ast/rir-position` (1) + `ast/rir-parity-*` (48) + `ast/rir-c2-*` (14). The blast radius
 > is also wider than the eight names suggest: `-DEXTRA=` appears at **8** registration
-> sites (`CMakeLists.txt:4578, 4592, 4604, 4620, 4754, 4776, 4792, 4808`), and the four
+> sites (`CMakeLists.txt`), and the four
 > cross sites at `:4754+` pass an `MCCFLAGS` carrying only sysroot/runtime `-I`s
-> (`CMakeLists.txt:4741-4748, 4762-4767`) — never the repo root — so they fail the same
+> (`CMakeLists.txt`) — never the repo root — so they fail the same
 > way. The silent `continue` on non-zero `_rc` is confirmed at
-> `tests/ast/rir_parity.cmake:51-53`, `tests/ast/rir_position.cmake:38-40` and
-> `tests/ast/rir_c2.cmake:53-56`. The defect below is otherwise exactly as described.
+> `tests/ast/rir_parity.cmake`, `tests/ast/rir_position.cmake` and
+> `tests/ast/rir_c2.cmake`. The defect below is otherwise exactly as described.
 
 `ast/rir-position`, `ast/rir-parity-{O0,O1,O2,O3}` and `ast/rir-c2-{O1,O2,O3}` all pass
 `-DEXTRA=.../tests/diff/full_language.c`, and all of them invoke `mcc -w <opt> -c` with
