@@ -7042,6 +7042,17 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set(_jitconf_ts "")
             if(EXISTS "${MCC_XSUITE_LLVMTS}/SingleSource/UnitTests")
                 set(_jitconf_ts "--testsuite=${MCC_XSUITE_LLVMTS}" --suite ts-unittests)
+            else()
+                # A corpus that vanishes must say so. --limit is per-suite, so losing this
+                # arm halves jit/xoracle-conformance's subject and takes jit/xoracle-coverage
+                # below its --min-cross 400 floor against a single-suite denominator that
+                # tops out at 379 -- i.e. the cell then fails for what reads as a coverage
+                # reason when the cause is a path that does not exist.
+                message(STATUS
+                    "jit/xoracle-conformance: llvm-test-suite absent at "
+                    "'${MCC_XSUITE_LLVMTS}' (no SingleSource/UnitTests) -- running "
+                    "c-torture only. jit/xoracle-coverage will not reach --min-cross 400 "
+                    "on one suite; set -DMCC_XSUITE_LLVMTS=<path> to restore it")
             endif()
             if(EXISTS "${MCC_XSUITE_GCC}/gcc/testsuite/gcc.c-torture/execute")
                 add_test(NAME "jit/xoracle-conformance"

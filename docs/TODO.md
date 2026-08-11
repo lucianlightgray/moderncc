@@ -663,7 +663,10 @@ shrinkage do.
 
 Two more, both found 2026-08-11 in the second wave:
 
-- **`jit/xoracle-conformance` drops its second corpus silently.** The CMake arm at
+- ~~**`jit/xoracle-conformance` drops its second corpus silently.**~~ **CLOSED 2026-08-11 —
+  the arm has an `else()` that names the missing path, says the run is c-torture only, and
+  says `jit/xoracle-coverage` will not reach `--min-cross 400` on one suite. Verified by
+  configuring with a bogus `MCC_XSUITE_LLVMTS` and reading the message back.** The CMake arm at
   `CMakeLists.txt` adds `--testsuite`/`--suite ts-unittests` only under
   `if(EXISTS ${MCC_XSUITE_LLVMTS}/SingleSource/UnitTests)` and has **no `else()`** — no skip,
   no message. `--limit` is per-suite, so losing the arm halves the corpus, and the companion
@@ -4384,7 +4387,7 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
   sub-knob measured "search off" instead and would have read as "this knob is worth
   nothing". The A/B in `69296b85` had to go through the `MCC_SEARCH_PREDICT` env to get a
   real comparison. Audit anything that ever passed a `-fno-opt-search-*` flag.
-- **`jit/xoracle-conformance` drops its second corpus silently.** **Promoted into N5's
+- ~~**`jit/xoracle-conformance` drops its second corpus silently.**~~ **CLOSED 2026-08-11 (`else()` added).** **Promoted into N5's
   green-by-omission list in *Open, ranked*.** The CMake arm at
   `CMakeLists.txt` adds `--testsuite`/`--suite ts-unittests` only
   `if(EXISTS ${MCC_XSUITE_LLVMTS}/SingleSource/UnitTests)` and has **no `else()`** — no
