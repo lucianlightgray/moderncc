@@ -36,6 +36,7 @@
 	MCC_OPT_ROW(OPT_SEARCH_ORDERED,            "opt-search-ordered",           MCC_OPTD_OFF) \
 	MCC_OPT_ROW(OPT_SEARCH_ORDER,              "opt-search-order",             MCC_OPTD_OFF) \
 	MCC_OPT_ROW(OPT_SEARCH_FULLSET,            "opt-search-fullset",           MCC_OPTD_ALWAYS) \
+	MCC_OPT_ROW(OPT_SEARCH_PREDICT,            "opt-search-predict",           MCC_OPTD_OFF) \
 	MCC_OPT_ROW(OPT_ROI,                       "opt-roi",                      MCC_OPTD_SPECIAL) \
 	MCC_OPT_ROW(DUMP_OPT_ROI,                  "dump-opt-roi",                 MCC_OPTD_OFF) \
 	MCC_OPT_ROW(OPT_CYCLE,                     "opt-cycle",                    MCC_OPTD_DEV(MCC_OPTD_LEVEL(11))) \

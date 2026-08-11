@@ -29,6 +29,7 @@ void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym, uint64_t warm_
 int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 #endif
 #include "mcccombo.h"
+#include "mccsurro.h"
 #include "mccmagic.h"
 #include "mccthread.h"
 
@@ -1859,6 +1860,7 @@ static int ast_search_pick_inline;
 static int ast_search_threads_env;
 static int ast_search_pthreads_env;
 static int ast_search_ordered_env;
+static int ast_search_predict_env;
 static int ast_search_verbose_env;
 static int ast_search_walk_env;
 static unsigned ast_search_ticks;
@@ -2335,6 +2337,9 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_search_threads_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH_THREADS);
 	ast_search_pthreads_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH_PTHREADS);
 	ast_search_ordered_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH_ORDERED);
+	ast_search_predict_env = (int)mcc_env_count(
+			"MCC_SEARCH_PREDICT",
+			(unsigned)(mcc_opt(s1, MCC_OPT_OPT_SEARCH_PREDICT) ? 1 : 0));
 	ast_search_order_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH_ORDER);
 	ast_search_fullset_env = mcc_opt(s1, MCC_OPT_OPT_SEARCH_FULLSET);
 	ast_roi_env = mcc_opt(s1, MCC_OPT_OPT_ROI);
@@ -17595,6 +17600,8 @@ static unsigned ast_search_remaining_ms(void) { MCC_TRACE("enter\n");
 }
 
 static int ast_search_cap_fired;
+static long ast_search_predict_hits;
+static long ast_search_predict_tries;
 static unsigned long ast_search_evals;
 static unsigned long ast_search_eval_quota;
 static int ast_search_quota_hit;
@@ -17603,6 +17610,9 @@ static void ast_search_evals_report(void) { MCC_TRACE("enter\n");
 	fprintf(stderr, "[search] %lu candidate evaluations, quota %lu (%s)\n",
 					ast_search_evals, ast_search_eval_quota,
 					ast_search_quota_hit ? "spent" : "not reached");
+	fprintf(stderr, "[search] predicted %ld candidate(s), %ld improved on the "
+									"incumbent\n",
+					ast_search_predict_tries, ast_search_predict_hits);
 }
 
 static int ast_search_should_stop(void) { MCC_TRACE("enter\n");
@@ -19238,6 +19248,147 @@ static void ast_search_roi_order(Sym *sym, int faithful, int saved_loc,
 	ast_arena_free(pristine);
 }
 
+#define AST_SEARCH_PREDICT_TOP 4
+#define AST_SEARCH_PREDICT_WANT 4
+
+static void ast_search_predict_round(AstArena *pristine, Sym *sym, int faithful,
+																		 int saved_loc, int saved_anon,
+																		 AstGateMask round_base,
+																		 long round_base_score,
+																		 const AstGateMask *items,
+																		 const long *idelta, int nitems,
+																		 AstGateMask *best,
+																		 long *best_score) { MCC_TRACE("enter\n");
+	SurroObs obs[1 + SURRO_MAXN + (AST_SEARCH_PREDICT_TOP *
+																 (AST_SEARCH_PREDICT_TOP - 1)) / 2];
+	SurroFit fit;
+	SurroProp prop;
+	int top[AST_SEARCH_PREDICT_TOP];
+	int n = nitems > SURRO_MAXN ? SURRO_MAXN : nitems;
+	int nobs = 0, ntop = 0, i, j;
+
+	if (!ast_search_predict_env || n < 3 || round_base_score < 0)
+		{ MCC_TRACE("br\n"); return; }
+	obs[nobs].mask = 0u;
+	obs[nobs].score = round_base_score;
+	nobs++;
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		if (idelta[i] == LONG_MAX)
+			{ MCC_TRACE("br\n"); continue; }
+		obs[nobs].mask = (uint32_t)1 << i;
+		obs[nobs].score = idelta[i];
+		nobs++;
+	}
+	if (nobs < 4)
+		{ MCC_TRACE("br\n"); return; }
+
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		long mi = idelta[i] - round_base_score;
+		if (idelta[i] == LONG_MAX)
+			{ MCC_TRACE("br\n"); continue; }
+		if (mi < 0)
+			{ MCC_TRACE("br\n"); mi = -mi; }
+		if (mi == 0)
+			{ MCC_TRACE("br\n"); continue; }
+		if (ntop < AST_SEARCH_PREDICT_TOP)
+			{ MCC_TRACE("br\n"); top[ntop++] = i; }
+		else { MCC_TRACE("br\n");
+			int w = 0;
+			long mw;
+			for (j = 1; j < ntop; j++) { MCC_TRACE("br\n");
+				long ma = idelta[top[j]] - round_base_score;
+				long mb = idelta[top[w]] - round_base_score;
+				if (ma < 0)
+					{ MCC_TRACE("br\n"); ma = -ma; }
+				if (mb < 0)
+					{ MCC_TRACE("br\n"); mb = -mb; }
+				if (ma < mb)
+					{ MCC_TRACE("br\n"); w = j; }
+			}
+			mw = idelta[top[w]] - round_base_score;
+			if (mw < 0)
+				{ MCC_TRACE("br\n"); mw = -mw; }
+			if (mi > mw)
+				{ MCC_TRACE("br\n"); top[w] = i; }
+		}
+	}
+	if (ntop < 2)
+		{ MCC_TRACE("br\n"); return; }
+	for (i = 1; i < ntop; i++) { MCC_TRACE("br\n");
+		int k = top[i];
+		for (j = i - 1; j >= 0 && top[j] > k; j--)
+			{ MCC_TRACE("br\n"); top[j + 1] = top[j]; }
+		top[j + 1] = k;
+	}
+
+	for (i = 0; i < ntop; i++)
+		{ MCC_TRACE("br\n"); for (j = i + 1; j < ntop; j++) { MCC_TRACE("br\n");
+			AstGateMask cand;
+			long sc;
+			if (ast_search_should_stop())
+				{ MCC_TRACE("br\n"); goto fit_now; }
+			cand = round_base ^ items[top[i]] ^ items[top[j]];
+			sc = ast_search_score_one(pristine, sym, faithful, cand, saved_loc,
+																saved_anon);
+			if (sc < 0)
+				{ MCC_TRACE("br\n"); continue; }
+			obs[nobs].mask = ((uint32_t)1 << top[i]) | ((uint32_t)1 << top[j]);
+			obs[nobs].score = sc;
+			nobs++;
+			if (*best_score < 0 || sc < *best_score) { MCC_TRACE("br\n");
+				*best = cand;
+				*best_score = sc;
+			}
+		} }
+
+fit_now:
+	surro_fit(obs, nobs, n, 0u, &fit);
+	if (ast_search_verbose_env) { MCC_TRACE("br\n");
+		int64_t maxd = 0, maxg = 0;
+		int a, b;
+		for (a = 0; a < n; a++) { MCC_TRACE("br\n");
+			int64_t v = fit.d1[a] < 0 ? -fit.d1[a] : fit.d1[a];
+			if (fit.have1[a] && v > maxd)
+				{ MCC_TRACE("br\n"); maxd = v; }
+			for (b = a + 1; b < n; b++) { MCC_TRACE("br\n");
+				int64_t w = fit.d2[a][b] < 0 ? -fit.d2[a][b] : fit.d2[a][b];
+				if (fit.have2[a][b] && w > maxg)
+					{ MCC_TRACE("br\n"); maxg = w; }
+			}
+		}
+		fprintf(stderr,
+						"[search] anova n=%d obs=%d main=%d pair=%d max|d|=%lld "
+						"max|g|=%lld\n",
+						n, nobs, fit.known1, fit.known2, (long long)maxd, (long long)maxg);
+	}
+	if (!fit.have_base || fit.known2 == 0)
+		{ MCC_TRACE("br\n"); return; }
+	if (!surro_propose(&fit, obs, nobs, (uint32_t)((1u << n) - 1u), &prop,
+										 AST_SEARCH_PREDICT_WANT))
+		{ MCC_TRACE("br\n"); return; }
+	for (i = 0; i < prop.n; i++) { MCC_TRACE("br\n");
+		AstGateMask cand = round_base;
+		long sc;
+		if (ast_search_should_stop())
+			{ MCC_TRACE("br\n"); return; }
+		for (j = 0; j < n; j++)
+			{ MCC_TRACE("br\n"); if ((prop.mask[i] >> j) & 1u)
+				{ MCC_TRACE("br\n"); cand ^= items[j]; } }
+		sc = ast_search_score_one(pristine, sym, faithful, cand, saved_loc,
+															saved_anon);
+		ast_search_predict_tries++;
+		if (sc < 0)
+			{ MCC_TRACE("br\n"); continue; }
+		if (*best_score < 0 || sc < *best_score) { MCC_TRACE("br\n");
+			ast_search_predict_hits++;
+			MCC_TRACE("predict hit mask=%x pred=%lld actual=%ld prev=%ld\n",
+								prop.mask[i], (long long)prop.pred[i], sc, *best_score);
+			*best = cand;
+			*best_score = sc;
+		}
+	}
+}
+
 static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 															int saved_anon) { MCC_TRACE("enter\n");
 	AstArena *pristine;
@@ -19438,6 +19589,9 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 						best_score = sc;
 					}
 				}
+				ast_search_predict_round(pristine, sym, faithful, saved_loc, saved_anon,
+																round_base, round_entry_score, items, idelta,
+																nitems, &best, &best_score);
 				for (i = 1; i < nitems; i++) { MCC_TRACE("br\n");
 					AstGateMask ki = items[i];
 					long kd = idelta[i];
