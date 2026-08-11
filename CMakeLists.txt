@@ -4483,6 +4483,51 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("smoke/native-known-positive" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
 
+        # The engine-parity arm. Every other smoke cell compiles with
+        # MCC_FORCE_REPLAY=1, so until this arm existed the AST constant
+        # evaluator with no RIR replay under it -- which is what -O0 actually
+        # ships -- was never run by smoke at all, the slice ladder was measured
+        # only as a refusal histogram, and the --embed-jit binary was built and
+        # thrown away without ever being executed. This arm builds the one
+        # subject under six evaluation engines (ast, rir at -O0, rir at -O4,
+        # the CPU slice ladder, the same ladder dispatching to the device, and
+        # the embedded JIT re-baking at run time) and compares all 1782 dumped
+        # rows plus the sweep digest against the ast baseline, so a divergence
+        # names the engine and the row rather than a whole-file digest.
+        #
+        # Each engine must also prove it is the engine it claims to be: the ast
+        # arm fails if the RIR census recorded any replay, the ladder arms fail
+        # if the ladder certified nothing or disagreed with the tree on a self
+        # pair, and the jit arm fails if the binary never swapped a function.
+        # Without those guards six agreeing engines can be one engine run six
+        # times. smoke/engines-identity mutates the environment to prove each
+        # guard reads what it claims to; see cmake/smoke_engines_mutate.cmake.
+        add_test(NAME "smoke/engines"
+            COMMAND smokerun --mcc "${_mcc_exe}"
+                    --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
+                    --work "${CMAKE_BINARY_DIR}/smoke-engines"
+                    --engines --min-engines 5 --min-cases 9000000)
+        set_tests_properties("smoke/engines" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+        add_test(NAME "smoke/engines-known-positive"
+            COMMAND smokerun --mcc "${_mcc_exe}"
+                    --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
+                    --work "${CMAKE_BINARY_DIR}/smoke-engines-kp"
+                    --engines --min-engines 5 --known-positive)
+        set_tests_properties("smoke/engines-known-positive" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+        add_test(NAME "smoke/engines-identity"
+            COMMAND "${CMAKE_COMMAND}"
+                -DSMOKERUN=$<TARGET_FILE:smokerun>
+                -DMCC=${_mcc_exe}
+                -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DWORK=${CMAKE_BINARY_DIR}/smoke-engines-id
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/smoke_engines_mutate.cmake")
+        set_tests_properties("smoke/engines-identity" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT TIMEOUT 1800)
+
         add_test(NAME "smoke/slice-bails"
             COMMAND smokerun --mcc "${_mcc_exe}"
                     --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -4525,6 +4570,9 @@ if(MCC_BUILD_TESTS)
         set(_smoke_why "smokerun drives a native mcc and runs what it builds, so it cannot run in a cross build")
         mcc_skip_test("smoke/native" "${_smoke_why}")
         mcc_skip_test("smoke/native-known-positive" "${_smoke_why}")
+        mcc_skip_test("smoke/engines" "${_smoke_why}")
+        mcc_skip_test("smoke/engines-known-positive" "${_smoke_why}")
+        mcc_skip_test("smoke/engines-identity" "${_smoke_why}")
         mcc_skip_test("smoke/slice-bails" "${_smoke_why}")
         mcc_skip_test("smoke/divergence" "${_smoke_why}")
         mcc_skip_test("smoke/device" "${_smoke_why}")

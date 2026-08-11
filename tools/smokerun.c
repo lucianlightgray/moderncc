@@ -48,6 +48,7 @@ static int g_rebank;
 static int g_rebank_req;
 static int g_require_device;
 static int g_skip;
+static int g_force_replay = 1;
 static const char *g_extra_flags = "";
 
 static long g_checks_total;
@@ -302,7 +303,10 @@ static void set_census_env(int level, const char *tsv)
 	host_setenv("MCC_RIR_PROD_OUT", tsv);
 	host_setenv("MCC_JIT_VERBOSE", "1");
 	host_setenv("MCC_RIR_ABORTWHY", "1");
-	host_setenv("MCC_FORCE_REPLAY", "1");
+	if (g_force_replay)
+		host_setenv("MCC_FORCE_REPLAY", "1");
+	else
+		host_unsetenv("MCC_FORCE_REPLAY");
 	host_unsetenv("MCC_REPLAY_IR");
 	snprintf(b, sizeof b, "%u", g_budget_ms);
 	host_setenv("MCC_SEARCH_BUDGET_MS", b);
@@ -466,6 +470,14 @@ static int run_subject(const char *exe, const char *args, const char *out)
 {
 	char cmd[4096];
 	snprintf(cmd, sizeof cmd, "\"%s\" %s > \"%s\" 2>&1", exe, args, out);
+	return sm_system(cmd);
+}
+
+static int run_subject_err(const char *exe, const char *args, const char *out,
+													 const char *err)
+{
+	char cmd[4096];
+	snprintf(cmd, sizeof cmd, "\"%s\" %s > \"%s\" 2> \"%s\"", exe, args, out, err);
 	return sm_system(cmd);
 }
 
@@ -1376,6 +1388,349 @@ static void divergence(void)
 	free(c);
 }
 
+typedef struct
+{
+	const char *name;
+	int level;
+	int replay;
+	int ladder;
+	int gpu;
+	int jit;
+	int optional;
+	const char *what;
+} Engine;
+
+static const Engine g_engine[] = {
+		{"ast", 0, 0, 0, 0, 0, 0,
+		 "the AST constant evaluator, with no RIR replay under it"},
+		{"rir", 0, 1, 0, 0, 0, 0,
+		 "the RIR build-and-replay evaluator at the same -O0 the ast arm uses"},
+		{"rir-o4", 4, 0, 0, 0, 0, 0,
+		 "the RIR evaluator as -O4 reaches it, through the whole optimizer"},
+		{"slice", 4, 0, 1, 0, 0, 0,
+		 "the slice ladder, compiling and executing slices on the CPU"},
+		{"gpu", 4, 0, 1, 1, 0, 1,
+		 "the slice ladder, dispatching those slices to the device"},
+		{"jit", 4, 0, 0, 0, 1, 0,
+		 "the embedded JIT, re-baking the subject's own functions at run time"},
+};
+
+#define SMK_NENGINE ((int)(sizeof g_engine / sizeof g_engine[0]))
+
+static int g_eng_ran;
+static long g_eng_rowcmp;
+static int g_eng_kp_fired;
+static int g_eng_kp_want;
+
+static long tsv_used_rows(const char *path)
+{
+	char *txt = slurp(path);
+	char *p = txt;
+	long n = 0;
+	while (p && *p) {
+		char *eol = strchr(p, '\n');
+		if (!strncmp(p, "used\t", 5))
+			n++;
+		if (!eol)
+			break;
+		p = eol + 1;
+	}
+	free(txt);
+	return n;
+}
+
+static int eng_gpu_ready(const char *log, char *dev, size_t dn, long *disp)
+{
+	char *txt = slurp(log);
+	const char *p = strstr(txt, "[ladder-gpu] tried=");
+	int avail = 0;
+	snprintf(dev, dn, "%s", "?");
+	*disp = 0;
+	if (!p) {
+		free(txt);
+		return 0;
+	}
+	sscanf(p, "[ladder-gpu] tried=%*d available=%d", &avail);
+	{
+		const char *d = strstr(p, "device=");
+		const char *e = d ? strstr(d, " rungs=") : NULL;
+		if (d && e) {
+			size_t n = (size_t)(e - (d + 7));
+			if (n >= dn)
+				n = dn - 1;
+			memcpy(dev, d + 7, n);
+			dev[n] = 0;
+		}
+	}
+	{
+		const char *d = strstr(p, "dispatches=");
+		if (d)
+			*disp = strtol(d + 11, NULL, 10);
+	}
+	free(txt);
+	return avail;
+}
+
+static int eng_prove(const Engine *e, const char *log, const char *tsv)
+{
+	char *txt = slurp(log);
+	long used = tsv_used_rows(tsv);
+	int ok = 1;
+
+	if (!e->ladder) {
+		int want_replay = e->replay || e->jit || e->level >= 1;
+		if (want_replay && used <= 0) {
+			bad("engine %s: the RIR census recorded no replayed evaluation at all, so "
+					"this arm never reached %s and its agreement with the baseline is "
+					"agreement with the baseline against itself",
+					e->name, e->what);
+			ok = 0;
+		}
+		if (!want_replay && used > 0) {
+			bad("engine %s: the RIR census recorded %ld replayed evaluations, but this "
+					"arm exists to measure %s; with replay leaking in it is a second copy "
+					"of the rir arm and the AST evaluator stays unmeasured",
+					e->name, used, e->what);
+			ok = 0;
+		}
+	}
+	if (e->ladder) {
+		const char *p = strstr(txt, "[ladder-self] pairs=");
+		long pairs = 0, cert = 0, differ = -1;
+		if (!p) {
+			bad("engine %s: the compile emitted no [ladder-self] census, so %s never "
+					"ran and every row below was compared against the AST evaluator by "
+					"the AST evaluator",
+					e->name, e->what);
+			ok = 0;
+		} else {
+			sscanf(p, "[ladder-self] pairs=%ld certified=%ld differ=%ld", &pairs, &cert,
+						 &differ);
+			if (cert <= 0) {
+				bad("engine %s: the ladder certified 0 of %ld pairs, so no slice was "
+						"executed and the arm measured nothing",
+						e->name, pairs);
+				ok = 0;
+			}
+			if (differ != 0) {
+				bad("engine %s: the ladder disagreed with the AST evaluator on %ld of "
+						"%ld self pairs; a slice that computes a different value from the "
+						"tree it was cut from is a miscompile in waiting",
+						e->name, differ, pairs);
+				ok = 0;
+			}
+		}
+	}
+	free(txt);
+	return ok;
+}
+
+static long eng_dump_diff(const char *ename, const char *bpath,
+													const char *gpath, long *rows)
+{
+	char *b = slurp(bpath), *g = slurp(gpath);
+	char *pb = b, *pg = g;
+	long n = 0, r = 0, shown = 0;
+
+	*rows = 0;
+	while (*pb && *pg) {
+		char *eb = strchr(pb, '\n'), *eg = strchr(pg, '\n');
+		size_t lb = eb ? (size_t)(eb - pb) : strlen(pb);
+		size_t lg = eg ? (size_t)(eg - pg) : strlen(pg);
+		r++;
+		if (lb != lg || memcmp(pb, pg, lb)) {
+			n++;
+			if (shown < 12) {
+				shown++;
+				bad("engine %s: dumped row %ld differs from the ast baseline\n"
+						"       ast %.*s\n  %10s %.*s",
+						ename, r, (int)lb, pb, ename, (int)lg, pg);
+			}
+		}
+		if (!eb || !eg)
+			break;
+		pb = eb + 1;
+		pg = eg + 1;
+	}
+	if (*pb || *pg) {
+		n++;
+		bad("engine %s: dumped %s rows than the ast baseline after %ld matching "
+				"rows; a truncated dump compares only the prefix it managed to print",
+				ename, *pg ? "more" : "fewer", r);
+	}
+	*rows = r;
+	free(b);
+	free(g);
+	return n;
+}
+
+static void eng_no_baseline(void)
+{
+	bad("engine ast is the baseline every other engine is compared against, and "
+			"it did not produce one; the arm stops here rather than reporting "
+			"agreement against an empty file");
+}
+
+static void engines_run(int known_pos)
+{
+	char bdump[1024] = "", bdigest[32] = "";
+	long brows = 0;
+	int i;
+
+	note("smokerun: engine parity, %d engines, ast at -O0 is the baseline\n",
+			 SMK_NENGINE);
+
+	for (i = 0; i < SMK_NENGINE; i++) {
+		const Engine *e = &g_engine[i];
+		char exe[1024], log[1024], tsv[1024], dump[1024], out[1024], err[1024];
+		char dg[32] = "";
+		long checks = 0, sweep = 0, msweep = 0, fchecks = 0, failures = 0;
+		long ndiff = 0, rows = 0;
+		unsigned ms = 0;
+		char *txt;
+		int st;
+
+		ts_path(exe, sizeof exe, g_work, "eng-%s.exe", e->name);
+		ts_path(log, sizeof log, g_work, "eng-%s.log", e->name);
+		ts_path(tsv, sizeof tsv, g_work, "eng-%s.tsv", e->name);
+		ts_path(dump, sizeof dump, g_work, "eng-%s.dump", e->name);
+		ts_path(out, sizeof out, g_work, "eng-%s.out", e->name);
+		ts_path(err, sizeof err, g_work, "eng-%s.err", e->name);
+
+		g_force_replay = e->replay;
+		st = compile_subject(e->level, exe, log, tsv, &ms, e->gpu, e->ladder,
+												 e->jit);
+		g_force_replay = 1;
+		if (!st) {
+			char *l = slurp(log);
+			bad("engine %s: the -O%d compile failed, so %s is unmeasured:\n%s", e->name,
+					e->level, e->what, l);
+			free(l);
+			if (i == 0) {
+				eng_no_baseline();
+				return;
+			}
+			continue;
+		}
+
+		if (e->gpu) {
+			char dev[128];
+			long disp = 0;
+			int avail = eng_gpu_ready(log, dev, sizeof dev, &disp);
+			if (!avail || disp <= 0) {
+				if (g_require_device) {
+					bad("engine %s: --require-device, but the ladder reports available=%d "
+							"dispatches=%ld (device=%s)",
+							e->name, avail, disp, dev);
+					continue;
+				}
+				note("  %-7s SKIP no usable device (available=%d dispatches=%ld "
+						 "device=%s)\n",
+						 e->name, avail, disp, dev);
+				continue;
+			}
+			note("  %-7s device=%s dispatches=%ld\n", e->name, dev, disp);
+		}
+
+		if (!eng_prove(e, log, tsv)) {
+			if (i == 0) {
+				eng_no_baseline();
+				return;
+			}
+			continue;
+		}
+
+		if (e->jit) {
+			host_setenv("MCC_JIT_VERBOSE", "1");
+			host_setenv("MCC_JIT_HOT_CALLS", "1");
+		}
+		run_subject_err(exe, known_pos && i ? "--dump --poison" : "--dump", dump,
+										err);
+		st = run_subject_err(exe, "", out, err);
+		if (e->jit) {
+			host_unsetenv("MCC_JIT_VERBOSE");
+			host_unsetenv("MCC_JIT_HOT_CALLS");
+			txt = slurp(err);
+			if (!strstr(txt, "swapped")) {
+				bad("engine %s: the --embed-jit binary ran without swapping a single "
+						"function to JIT-baked code, so it is an AOT run wearing the jit "
+						"arm's name and %s stayed unmeasured",
+						e->name, e->what);
+				free(txt);
+				continue;
+			}
+			free(txt);
+		}
+
+		txt = slurp(out);
+		if (!parse_summary(txt, &checks, &sweep, &msweep, &fchecks, &failures, dg,
+											 sizeof dg)) {
+			bad("engine %s: the run printed no summary line:\n%s", e->name, txt);
+			free(txt);
+			if (i == 0) {
+				eng_no_baseline();
+				return;
+			}
+			continue;
+		}
+		if (failures || !exited_zero(st)) {
+			bad("engine %s: the run reported %ld failures (exit %d):\n%s", e->name,
+					failures, exit_code(st), txt);
+		}
+		free(txt);
+
+		g_eng_ran++;
+		g_checks_total += checks;
+		g_cases_total += checks + sweep + msweep + fchecks;
+
+		if (i == 0) {
+			snprintf(bdump, sizeof bdump, "%s", dump);
+			snprintf(bdigest, sizeof bdigest, "%s", dg);
+			{
+				char *bt = slurp(dump);
+				char *p = bt;
+				while (*p) {
+					if (*p == '\n')
+						brows++;
+					p++;
+				}
+				free(bt);
+			}
+			if (brows <= 0) {
+				bad("engine %s: the baseline dumped %ld rows, so every engine below "
+						"would be compared against nothing",
+						e->name, brows);
+				return;
+			}
+			note("  %-7s -O%d %5u ms  baseline rows=%ld digest=%s\n", e->name, e->level,
+					 ms, brows, dg);
+			continue;
+		}
+
+		ndiff = eng_dump_diff(e->name, bdump, dump, &rows);
+		g_eng_rowcmp += rows;
+		if (rows < brows)
+			bad("engine %s: only %ld of the baseline's %ld rows were comparable",
+					e->name, rows, brows);
+		if (strcmp(bdigest, dg))
+			bad("engine %s: sweep digest %s differs from the ast baseline's %s; %s "
+					"computes a different value somewhere the row dump does not reach",
+					e->name, dg, bdigest, e->what);
+		if (known_pos) {
+			g_eng_kp_want++;
+			if (ndiff > 0)
+				g_eng_kp_fired++;
+			else
+				bad("engine %s: --known-positive poisoned its dump and the row "
+						"comparison still reported agreement; this engine's rows are not "
+						"being compared at all",
+						e->name);
+		}
+		note("  %-7s -O%d %5u ms  rows=%ld differing=%ld digest=%s\n", e->name,
+				 e->level, ms, rows, ndiff, dg);
+	}
+}
+
 static void usage(void)
 {
 	fprintf(stderr,
@@ -1384,14 +1739,16 @@ static void usage(void)
 					"                [--budget-ms N]\n"
 					"                [--deadline-ms N]\n"
 					"                [--bank FILE] [--rebank] [--known-positive]\n"
-					"                [--divergence] [--device] [--require-device] [-v]\n");
+					"                [--divergence] [--device] [--require-device]\n"
+					"                [--engines] [--min-engines N] [-v]\n");
 }
 
 int main(int argc, char **argv)
 {
 	char bankpath[1024] = "";
 	int maxlevel = smk_maxlevel();
-	int i, do_div = 0, do_dev = 0, known_pos = 0, do_slice = 0;
+	int i, do_div = 0, do_dev = 0, known_pos = 0, do_slice = 0, do_eng = 0;
+	long min_engines = 0;
 	char d0[32] = "", dn[32] = "";
 
 	for (i = 1; i < argc; i++) {
@@ -1423,6 +1780,10 @@ int main(int argc, char **argv)
 			do_div = 1;
 		else if (!strcmp(argv[i], "--slice-census"))
 			do_slice = 1;
+		else if (!strcmp(argv[i], "--engines"))
+			do_eng = 1;
+		else if (!strcmp(argv[i], "--min-engines") && i + 1 < argc)
+			min_engines = strtol(argv[++i], NULL, 10);
 		else if (!strcmp(argv[i], "--device"))
 			do_dev = 1;
 		else if (!strcmp(argv[i], "--require-device"))
@@ -1453,6 +1814,52 @@ int main(int argc, char **argv)
 			return TS_SKIP_CODE;
 		own("diverge-");
 		ratchet(bankpath);
+		return g_fail ? 1 : 0;
+	}
+
+	if (do_eng) {
+		engines_run(known_pos);
+		note("smokerun: engines ran=%d of %d, row comparisons=%ld, value-cases=%ld, "
+				 "failures=%d\n",
+				 g_eng_ran, SMK_NENGINE, g_eng_rowcmp, g_cases_total, g_fail);
+		if (g_eng_ran < min_engines) {
+			fprintf(stderr,
+							"smokerun: %d engine(s) ran, below the --min-engines %ld floor -- "
+							"an arm that silently stops reaching an engine reads exactly like "
+							"one that agrees with it\n",
+							g_eng_ran, min_engines);
+			return 1;
+		}
+		if (g_eng_rowcmp <= 0) {
+			fprintf(stderr, "smokerun: the engine arm compared zero rows, so agreement "
+											"between engines was never established\n");
+			return 1;
+		}
+		if (known_pos) {
+			if (!g_eng_kp_want) {
+				fprintf(stderr, "smokerun: --known-positive had no non-baseline engine "
+												"to poison, so it proved nothing\n");
+				return 1;
+			}
+			if (g_eng_kp_fired < g_eng_kp_want) {
+				fprintf(stderr,
+								"smokerun: --known-positive poisoned %d engine dump(s) and only "
+								"%d reported a differing row; the row comparison is blind\n",
+								g_eng_kp_want, g_eng_kp_fired);
+				return 1;
+			}
+			note("smokerun: engine known-positive fired on %d of %d compared engines, "
+					 "as it must\n",
+					 g_eng_kp_fired, g_eng_kp_want);
+			return 0;
+		}
+		if (g_cases_total < g_min_cases) {
+			fprintf(stderr,
+							"smokerun: the engine arm examined %ld value cases, below the "
+							"--min-cases %ld floor\n",
+							g_cases_total, g_min_cases);
+			return 1;
+		}
 		return g_fail ? 1 : 0;
 	}
 

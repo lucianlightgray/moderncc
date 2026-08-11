@@ -340,9 +340,11 @@ static void sm_row_dump(void)
 	int i;
 	for (i = 0; i < sm_rows_count; i++) {
 		const SmRow *r = &sm_rows[i];
+		SmBits got = sm_run(r->tag, r->op, r->a, r->b, r->c);
+		if (g_poison && i == 0)
+			got ^= 1ull;
 		printf("R %s %d %016llx %016llx %016llx\n", r->name, (int)r->foldable,
-					 (unsigned long long)r->fold,
-					 (unsigned long long)sm_run(r->tag, r->op, r->a, r->b, r->c),
+					 (unsigned long long)r->fold, (unsigned long long)got,
 					 (unsigned long long)r->want);
 	}
 	for (i = 0; i < sm_init_rows_count; i++) {
