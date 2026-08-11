@@ -420,10 +420,65 @@ evaluation is caught rather than only a crash. It is oracle-adjudicated against 
 clang at every level, and it is what found defect 2 — the direct compile was already
 green when the harness, which compiles under `MCC_FORCE_REPLAY=1`, still crashed.
 
-**Still open on this axis:** the four remaining cross-oracle failures are three
-`ms_struct` layout tests (`ms_struct_pack_layout.c`, `ms_struct-bitfield.c`,
-`ms_struct-bitfield-init.c`, plus `ms_struct-bitfield-init-1.c` which does not build) and
-one timeout (`build2.c`). `ms_struct` is a real missing feature, not a defect.
+### `__attribute__((ms_struct))` is implemented, and zero-width bitfields have three rules — 2026-08-11
+
+The four `ms_struct` cross-oracle failures were the last defect-shaped gap in the
+cross-adjudicable set. mcc had `-fms-bitfields` as a whole-translation-unit switch and no
+per-struct attribute, which is what every one of those tests uses. Added
+`ms_struct`/`__ms_struct__` and `gcc_struct`/`__gcc_struct__` (two `SymAttr` bits — the
+struct had exactly two free, 30 of 32 used), and `struct_layout` now picks its layout per
+struct: `ms_struct` forces MS, `gcc_struct` forces PCC, otherwise the global flag decides.
+
+The layout work was not the attribute. **A zero-width bitfield under MS layout obeys three
+different rules and the tests distinguish all three**, which is why two intermediate
+versions of this fix each passed one test and regressed another:
+
+1. **Prior field is not a bitfield → entirely ignored.** `{char a; int :0; char b;}` is
+   **2** bytes, not 8: no alignment contribution and no advance. `ms_struct-bitfield-init.c`
+   turns on this case, and consecutive `:0`s do not chain — after an ignored one, the
+   "prior field" is still not a bitfield, so `{char foo; long:0; char:0; int:0; char bar;}`
+   is 2 as well.
+2. **Prior field is a bitfield → closes the unit, advances `c` to the zero-width type's
+   alignment, and contributes that alignment to the struct.** `{char a:8; int :0; char b;
+   char c;}` is **8**. `ms_struct_pack_layout.c`'s `struct four` and `struct six` turn on
+   this, and its own comments state the rule.
+3. **Either way the next field opens a new storage unit**, even at the same type. Handled
+   by setting `prevbt = VT_STRUCT`, which is what the old
+   `(bit_size > 0) == (bt != prevbt)` condition could not express — for a zero-width whose
+   type matched the previous field it allocated a *second* unit (`struct_8` of
+   `ms_struct-bitfield.c` came out 24 instead of 20), and for one whose type differed it
+   did nothing at all.
+
+**The trap worth writing down: `char a:8` is not a bitfield by the time `struct_layout`
+sees it.** A bitfield filling its declared type exactly is normalised to a plain field
+during parsing and remembered only in `a.full_bitfield`, which is then *cleared* before
+layout and re-marked only when the struct is `packed`. So rule 2 above silently never
+fired — `prev_bit_size` was 0 — and `{char a:8; int:0; char b; char c;}` measured 3 while
+`#pragma pack(8)` made the identical struct measure 8. The re-marking condition now
+includes ms-layout structs. Anything else that reasons about "was the previous field a
+bitfield" has the same hole.
+
+Verified field-by-field against gcc and clang, not just by exit status: all ten structs of
+`ms_struct-bitfield.c`, all ten of `ms_struct_pack_layout.c`, and a five-case zero-width
+matrix. All four suite tests pass, including `ms_struct-bitfield-init-1.c`, which had been
+failing to *build* on a `static int a2[(sizeof(t2) == 4) - 1];` compile-time assertion.
+
+**A second latent defect, exposed rather than caused by the above: MS layout ignored
+`packed`.** The `align = packed = 1` assignment was gated on `pcc`, so under MS layout a
+`__attribute__((ms_struct, packed))` aggregate kept its natural alignment. Nothing noticed
+while `ms_struct` was itself ignored — the two bugs cancelled — and honouring the attribute
+turned `ms_struct_pack_layout-1.c` from passing to failing. That test is one line:
+`union u { int a; } __attribute__((__ms_struct__, __packed__));` inside a struct, expecting
+`1 + 4`. The gate is removed; PCC behaviour is unchanged because the condition only ever
+suppressed the MS arm.
+
+Regression-tested by `tests/smoke/pass-msstruct.c`, which pins nine sizes covering all
+three zero-width rules, the full-width-bitfield trap, `gcc_struct` overriding, the
+`ms_struct`+`packed` union above, and a plain non-attributed struct as the control.
+
+**Still open on this axis:** one timeout (`build2.c`) and two gcc c-torture programs mcc
+cannot build (`20020720-1.c`, `20041114-1.c`). Neither is an `ms_struct` defect; both are
+unexamined.
 
 **Observed flake, not diagnosed: `slice/quiesce` fails intermittently under `-j`.**
 Seen twice on 2026-08-10 — once beside a GPU cross-oracle run saturating the device from

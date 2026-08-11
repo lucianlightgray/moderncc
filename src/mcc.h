@@ -289,7 +289,9 @@ struct SymAttr {
 			inited : 1,
 			has_vla_member : 1,
 			gnu_inline_body : 1,
-			full_bitfield : 1;
+			full_bitfield : 1,
+			ms_struct : 1,
+			gcc_struct : 1;
 };
 
 struct FuncAttr {

@@ -5745,6 +5745,16 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 		case TOK_PACKED2:
 			ad->a.packed = 1;
 			break;
+		case TOK_MS_STRUCT1:
+		case TOK_MS_STRUCT2:
+			ad->a.ms_struct = 1;
+			ad->a.gcc_struct = 0;
+			break;
+		case TOK_GCC_STRUCT1:
+		case TOK_GCC_STRUCT2:
+			ad->a.gcc_struct = 1;
+			ad->a.ms_struct = 0;
+			break;
 		case TOK_TRANSPARENT_UNION1:
 		case TOK_TRANSPARENT_UNION2:
 			ad->a.transp_union = 1;
@@ -6069,7 +6079,9 @@ static void check_fields(CType *type, int check) { MCC_TRACE("enter\n");
 static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 	int size, align, maxalign, offset, c, bit_pos, bit_size;
 	int packed, a, bt, prevbt, prev_bit_size;
-	int pcc = !mcc_state->ms_bitfields;
+	int pcc = ad->a.ms_struct ? 0
+						: ad->a.gcc_struct ? 1
+															 : !mcc_state->ms_bitfields;
 	int pragma_pack = *mcc_state->pack_stack_ptr;
 	Sym *f;
 
@@ -6091,7 +6103,7 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 
 		if (pcc && bit_size == 0) { MCC_TRACE("br\n");
 		} else { MCC_TRACE("br\n");
-			if (pcc && (f->a.packed || ad->a.packed))
+			if (f->a.packed || ad->a.packed)
 				{ MCC_TRACE("br\n"); align = packed = 1; }
 
 			if (pragma_pack) { MCC_TRACE("br\n");
@@ -6150,17 +6162,25 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); align = 1; }
 			} else { MCC_TRACE("br\n");
 				bt = f->type.t & VT_BTYPE;
-				if ((bit_pos + bit_size > size * 8) || (bit_size > 0) == (bt != prevbt)) { MCC_TRACE("br\n");
-					c = (c + align - 1) & -align;
+				if (bit_size == 0) { MCC_TRACE("br\n");
+					if (prev_bit_size > 0) { MCC_TRACE("br\n");
+						c = (c + align - 1) & -align;
+						bit_pos = 0;
+						prevbt = VT_STRUCT;
+					} else
+						{ MCC_TRACE("br\n"); align = 1; }
 					offset = c;
-					bit_pos = 0;
-					if (bit_size || prev_bit_size)
-						{ MCC_TRACE("br\n"); c += size; }
+					prev_bit_size = 0;
+				} else { MCC_TRACE("br\n");
+					if ((bit_pos + bit_size > size * 8) || bt != prevbt) { MCC_TRACE("br\n");
+						c = (c + align - 1) & -align;
+						offset = c;
+						bit_pos = 0;
+						c += size;
+					}
+					prevbt = bt;
+					prev_bit_size = bit_size;
 				}
-				if (bit_size == 0 && prevbt != bt)
-					{ MCC_TRACE("br\n"); align = 1; }
-				prevbt = bt;
-				prev_bit_size = bit_size;
 			}
 
 			f->type.bp = (unsigned char)bit_pos;
@@ -6780,7 +6800,9 @@ do_decl:
 				if (!ss->a.full_bitfield)
 					{ MCC_TRACE("br\n"); continue; }
 				ss->a.full_bitfield = 0;
-				if (!ad.a.packed)
+				if (!ad.a.packed &&
+						!(ad.a.ms_struct ||
+							(mcc_state->ms_bitfields && !ad.a.gcc_struct)))
 					{ MCC_TRACE("br\n"); continue; }
 				bsize = type_size(&ss->type, &align) * 8;
 				ss->type.t = (ss->type.t & ~VT_STRUCT_MASK) | VT_BITFIELD;
