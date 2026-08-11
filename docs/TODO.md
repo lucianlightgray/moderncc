@@ -2491,129 +2491,16 @@ real absences and none is on the critical path of anything above.
 > **§4's MoltenVK column, which buys a superset of the user-visible outcome for roughly
 > 1/300th of the code.**
 
-### 0. What the refusal rested on, and where each ground stands today
 
-Five grounds were stated. **All five re-derive.** One number moved, and it moved *against*
-Metal; three of the anchors and one of the symbol counts have drifted and are corrected in
-§1. None of the corrections changes a conclusion.
+> **§§0–5 archived 2026-08-11** to [`docs/ARCHIVED.md`](ARCHIVED.md) — the refusal grounds,
+> the measured gap, the parity matrix, the runtime story and the testability section were an
+> 2026-08-09 snapshot and several of their tree claims had gone stale (§0 ground 3 and §1's
+> `is_float` count are both refuted by the tree today). **§6, the verdict, is kept below**, and
+> so are the four things §6 depends on:
 
-1. **Line divergence.** Banked **1754 MSL / 3612 SPIR-V**. Today **1755 / 3960** over the
-   same four files — the MSL side reproduces to within one line *because nothing has been
-   added to it*, and the SPIR-V side is +348. See §1 for the split between real growth and
-   a counting error in the banked pass.
-2. **A two-line kernel arm.** Still exactly two lines. The SPIR-V arm it faces is **43**
-   lines of frame emission, and since the count was taken it also acquired an f64
-   capability gate. The banked anchor has drifted; the current one is in §1.
-3. **Zero `msl_region*` symbols.** Reproduces exactly: `grep -rn msl_region src/ tools/` is
-   **0**. So is `msl_mem`, `msl_store` and `msl_f64`.
-4. **The format engine is SPIR-V-only by construction** (`src/mccfmt.h`). Unchanged.
-5. **`tools/slicerun.c` carries no backend `#if`**, so the frame runner cannot compile
-   against the Metal arm even in principle. Unchanged.
+#### Residues kept from §§2–5
 
-**What the refusal did not say, and what makes the reversal cheaper than "multi-week
-rewrite" implies: the Metal *runtime* is already written and already works.**
-`src/mccgpu.c` is a complete `dlopen`-only Metal driver — 654 lines, no framework on
-the link line, device selection, a 64-entry pipeline-state cache, two-buffer dispatch and an
-eleven-class fault taxonomy. It has been executed: `## The Metal per-value differential, and
-N6 on Darwin` records **151.9 M points compared, zero mismatches** on an M1 Pro. The gap is
-in the *emitter*, not the driver. §5 is priced on that basis and lands well under the
-"multi-week rewrite" the refusal assumed.
-
-### 1. The measured gap, re-derived 2026-08-09 — nothing inherited
-
-**Method, stated so it can be repeated and so the disagreement with the banked pass is
-attributable.** Lines strictly *between* `#if MCC_GPU_LANG_MSL` / `#else` / `#endif`, the
-directive lines themselves excluded, nested directives counted as body. **No committed
-tool** — an uncommitted Python pass over the six guard sites, which are
-`src/mccgpu.h`, `:173`, `:3138`, `src/mccgpu.c`, `src/mccslice.h` and `:1306`,
-plus the negated forms in `tools/spvgate.c` and `src/mccfmt.h`.
-
-| file | MSL arm | SPIR-V arm | banked | delta |
-| --- | ---: | ---: | ---: | --- |
-| `src/mccgpu.h` | **1008** | **2002** | 1008 / 1794 | SPIR-V **+208**, real growth |
-| `src/mccgpu.c` | **654** | **1531** | 653 / 1461 | SPIR-V **+70**, real growth |
-| `src/mccslice.h` | **27** | **73** | 27 / 65 | SPIR-V **+8**, real growth |
-| `tools/spvgate.c` | **66** | **354** | 66 / 292 | **+62 is a counting error**, not growth |
-| four-file total | **1755** | **3960** | 1754 / 3612 | ratio **2.06:1 → 2.26:1** |
-| `src/mccfmt.h` | **0** | **244** | not counted | SPIR-V-only by construction |
-| five-file total | **1755** | **4204** | — | ratio **2.40:1** |
-
-**The `tools/spvgate.c` correction matters and is the kind of thing this file exists to
-catch.** The banked pass counted only the large `#else` arm and missed four `#if
-!MCC_GPU_LANG_MSL` blocks. The banked 292 should have been 354 *at the time it was taken*;
-the SPIR-V arm of that file was never 292. Of the +348 on the SPIR-V side, **+286 is real
-growth since the count and +62 is the correction.**
-
-**Symbols, re-derived.** `src/` carries **50** distinct `msl_*` names against **105**
-distinct `spv_*` — the banked "31 `spv_*` reached from `src/mccslice.h`" reads **29** today
-(two were folded away, not added), against **9** `msl_*` reached from the same file.
-`grep -rn "msl_region\|msl_mem\|msl_store\|msl_f64" src/ tools/` is **0 hits**, as banked.
-
-**What the kernel arm actually emits — two different objects, and the banked phrase
-conflates them.**
-
-- The *expression* arm is real. `mcc_slice_kernel_build`'s MSL side
-  (`src/mccslice.h`, 25 lines) drives `msl_module_begin` / `msl_main_begin` /
-  `msl_expr` / `msl_main_end` / `msl_module_finish` and produces a compilable Metal module.
-- The *frame* arm is the two-line one. `mcc_slice_frame_kernel_build`'s Metal arm is
-  `src/mccslice.h` — a `(void)` pair and `return 0` — against a **43-line** SPIR-V
-  arm at `src/mccslice.h` that emits statement stores, binds the shared region and
-  checks the f64 capability. **The banked anchor `src/mccslice.h` has drifted; it
-  now lands inside `mcc_slice_spv_stmt` (`src/mccslice.h:1001`), on the mutation hook of the
-  *SPIR-V* store path — i.e. the citation for "the Metal arm" now points at SPIR-V code.**
-  The count itself is still two.
-- The emitted Metal entry point is three source lines at the tail of `msl_prelude`
-  (`src/mccgpu.h`): `kernel void mcc_main` taking `buffer(0)` and `buffer(1)` and
-  `thread_position_in_grid`. **Two bindings. There is no third.**
-
-**The mirroring claim — confirmed, and both of its banked line ranges are wrong.**
-`grep -c is_float src/mccgpu.h` is **12**, exactly six and six. The MSL six are **781, 792,
-804, 817, 832, 899**; the banked 780/791/803/816/831/898 are off by one. The SPIR-V six are
-**2789, 2805, 2820, 2844, 2884, 2990**; the banked 2640/2651/2664/2681/2719/2786 are off by
-**+149 to +204** — `15b60365` moved them. **Three of the six pairs are byte-identical**
-(MSL `src/mccgpu.h`/`:832`/`:899` against `:2805`/`:2884`/`:2990`); two differ *only* by
-an `ast_eval_slice_f64t` escape the MSL side has no equivalent of (`:781` against `:2789`,
-`:804` against `:2820`); one is genuinely restructured (`:817` against `:2844`). Normalising
-the `msl_`/`spv_` prefixes away, **145 of `msl_expr`'s 224 lines are a byte-for-byte mirror
-of `spv_expr`'s 320 — 64.7%** — and every one of the SPIR-V side's extra hunks in the guard
-region is f64 or region code. **Anyone counting one emitter counts half, and anyone quoting
-the banked SPIR-V range quotes `spv_branch_pair` instead of the guard.**
-
-**`double`.** MSL has no `double` type — this is a property of the language, not of this
-tree, and it is recorded as closed at `docs/ARCHIVED.md:22583`. In the emitter it shows up as six
-refusals and nothing else: the MSL arm of `src/mccgpu.h` contains no float type, no float
-constant and no float operation. `MslV` has no `f64` field where `SpvV` has one
-(`src/mccgpu.h`); `MslMod` has no `used_f64` where `SpvMod` has one (`:1241`).
-`mcc_gpu_f64` (`src/mccgpu.c:2275`) reads `mcc_gpu.f64`, which the Vulkan arm sets from
-`shaderFloat64` and the Metal arm never assigns — so it is 0 on Metal unconditionally.
-
-### 2. The parity matrix
-
-**Read the `double` row first: it is the only row where parity is bounded by the shading
-language rather than by unwritten code.**
-
-| capability | Vulkan / SPIR-V | Metal / MSL | verdict |
-| --- | --- | --- | --- |
-| expression kernel | `spv_expr` (`src/mccgpu.h:2778`) | `msl_expr` (`src/mccgpu.h:774`) | **has it** — 41 of the MSL emitter's 51 definitions have a same-stem SPIR-V twin; the 10 that do not are all text plumbing |
-| 64-bit integer | `spv_add64` (`src/mccgpu.h:1898`) and 14 siblings | soft-int64 in `msl_prelude` (`src/mccgpu.h:999`) | **has it**, by a different construction |
-| UB / definedness | `spv_guard_div` (`src/mccgpu.h:2528`) | `msl_guard_div` (`src/mccgpu.h:451`) | **has it** |
-| control flow (`?:`, `&&`, `\|\|`) | `spv_branch_pair` (`src/mccgpu.h:2632`) | `msl_branch_pair` (`src/mccgpu.h:675`) | **has it** — phi nodes on one side, real `if`/`else` on the other |
-| dynamic element index | `spv_dyn_elem` (`src/mccgpu.h:2162`), `spv_load_live_dv` (`:2172`), `spv_store_live_dv` (`:2185`) | **none** | **lacks it** |
-| live-slot store-back | `spv_store_live_v` (`src/mccgpu.h:2119`), `spv_store_at_in` (`:1806`) | **none** — the MSL kernel writes only the out buffer, from `msl_main_end` (`src/mccgpu.h:418`) | **lacks it** |
-| frame kernel | `mcc_slice_frame_kernel_build` SPIR-V arm (`src/mccslice.h:1310-1352`) | two lines returning 0 (`src/mccslice.h`) | **lacks it** |
-| region addressing | `spv_region_addr` (`src/mccgpu.h:2278`), `spv_load_region` (`:2310`), `spv_store_region` (`:2336`) | **none** | **lacks it** |
-| host-pointer mapping | `spv_mem_off` (`src/mccgpu.h:2387`), `spv_mem_region` (`:2378`) | **none** | **lacks it** |
-| binding-2 shared space | `id_mem` declared at `src/mccgpu.h`, decorated `:1702-1709`, variable `:1758` | **none** — the emitted kernel binds 0 and 1 only | **lacks it** |
-| host view of that space | `mcc_gpu_mem` over `mcc_gpu_mem_backend` | ~~`mcc_gpu_mem_backend` returns 0~~ **STALE 2026-08-11: it is a real body using `mtl_bind_mem`** | ~~**lacks it**~~ **has it** |
-| read-write dispatch | `mcc_gpu_dispatch_rw2`, `mcc_gpu_rw_supported` returns 1 | ~~returns 0, `mcc_gpu_rw_arm` is a no-op~~ **STALE 2026-08-11: `mcc_gpu_rw_supported` returns 1 and `mcc_gpu_rw_arm` records the copy-back pointer** | ~~**lacks it**~~ **has it** |
-| buffer binding | 3 storage buffers, one set, no push constants (`src/mccgpu.c`) | 2 `MTLBuffer`s bound at index 0 and 1 (`src/mccgpu.c`) | **partial** — 2 of 3 |
-| dispatch | `vkCmdDispatch` (`src/mccgpu.c`) | `dispatchThreadgroups:threadsPerThreadgroup:` (`src/mccgpu.c`) | **has it** |
-| pipeline cache | `MCC_VK_CACHE_MAX` 64 (`src/mccgpu.c:1830`) | `MCC_MTL_CACHE_MAX` 64 (`src/mccgpu.c:59`) | **has it** |
-| device loss / faults | fence timeout and strand (`src/mccgpu.c`) | eleven-class taxonomy, `mcc_gpu_fault` (`src/mccgpu.c:337`) | **has it — and it is better than the Vulkan side** |
-| format engine | `spv_fmt_emit` (`src/mccfmt.h:653`) and 6 siblings, 244 lines | **structurally excluded** by the `!MCC_GPU_LANG_MSL` gate at `src/mccfmt.h` | **lacks it** |
-| `double` | `spv_f64_type` (`src/mccgpu.h:1327`), `OpCapability Float64` (`:1331-1332`), `NoContraction` on every arithmetic op (`:1481-1483`, `:1490-1492`), `OpFOrd*` with `!=` as `OpFUnordNotEqual` (`:2603-2613`) | **none, and none is possible natively** | **lacks it — see below** |
-| frame executor host path | `mcc_slice_run_frame_gpu` (`src/mccslice.h:1364`) | the same, backend-agnostic function — but its kernel builder returns 0 on Metal, so it is never entered | **partial** — shared code, unreachable arm |
-| differential gate | `spvgate`, its own Vulkan stack (`tools/spvgate.c`) | `mslgate`, same source under `SPVGATE_MSL=1` (`CMakeLists.txt`) | **has it**, and it has run |
+**the certified-set mirroring rules for a soft-f64 (Metal §2)**
 
 **What `double` means for parity, precisely.** MSL has no 64-bit float type, so no MSL
 kernel can hold an IEEE-754 double in a register. The parity question is therefore not "can
@@ -2642,59 +2529,8 @@ on *both* arms with a cell that fails if the exclusion lapses: `/` and `%` at an
   coverage. **This is parity of behaviour, not parity of capability**, and §5 stage M6
   prices both.
 
-### 3. The runtime story — mostly already written, and it needs no Objective-C compiler
 
-**The Vulkan shape, for comparison.** `src/mccgpu.c` vendors the whole Vulkan ABI, `dlopen`s
-the loader from a soname list (`src/mccgpu.c`, `libMoltenVK.dylib` and both
-Homebrew prefixes among them), and binds **45** entry points (`src/mccgpu.c`).
-Nothing is on the link line. Separately, `tools/spvgate.c` includes the real
-`vulkan/vulkan.h` and links `${Vulkan_LIBRARIES}`, re-implementing `gpu_init`, `mem_index`,
-`make_buffer` and `gpu_run` a second time (`tools/spvgate.c`, `:276`, `:290`, `:311`) —
-**that is the "duplicated stack"**, and it is not equivalent to the production one: it
-declares **two** descriptor bindings, not three, so `spvgate` cannot exercise binding 2 at
-all.
-
-**The Metal equivalent exists and is the same shape.** `src/mccgpu.c`:
-
-- `#include <objc/message.h>` and `<objc/runtime.h>` (`src/mccgpu.c`), but the three
-  runtime entry points are resolved dynamically, not linked: `objc_getClass`,
-  `sel_registerName` and `objc_msgSend` are looked up in the process first and then in
-  `/usr/lib/libobjc.A.dylib` (`src/mccgpu.c`).
-- Metal itself is `dlopen`ed from `/System/Library/Frameworks/Metal.framework/Metal`
-  (`src/mccgpu.c`), and only two C symbols are taken from it:
-  `MTLCreateSystemDefaultDevice` (`src/mccgpu.c`) and `MTLCopyAllDevices` (`:218`).
-  Everything else is `objc_msgSend` through hand-cast function pointers — `mtl_send`
-  (`src/mccgpu.c`), `mtl_str` (`:152`), `mtl_ulong` (`:176`), `mtl_bool` (`:182`).
-- Command queue, pipeline state, buffers and encoding are all present:
-  `mtl_pipeline` with a 64-entry FNV-1a cache (`src/mccgpu.c`, `:523`), `mtl_buffer`
-  (`:587`), and `mcc_gpu_dispatch_locked` (`:600-681`) which opens an
-  `NSAutoreleasePool`, binds two buffers and dispatches threadgroups.
-- **Nothing is linked.** `## The Darwin path was executed` records `otool -L mcc` showing
-  `libobjc.A.dylib` **and nothing else** — no Metal.framework, no libvulkan.
-
-**So: is Metal reachable from C without Objective-C? Yes, and it already is.** No `.m` file,
-no bridging layer, no `clang -ObjC`. The minimum bridging layer is the one in the tree.
-`MTLBuffer` is created with the default (shared) storage mode via `newBufferWithLength:`,
-which is exactly what binding 2 needs — a host-mapped region whose `contents` pointer the
-host can seed and drain around a command buffer.
-
-**What the Mach-O work provides, and what it does not.** `src/objfmt/mccmacho.c` is a full
-emitter and reader, 3316 lines: `MH_OBJECT`, `MH_EXECUTE` and `MH_DYLIB` filetypes,
-`LC_LOAD_DYLIB` emitted by `add_dylib` (`src/objfmt/mccmacho.c`), chained fixups
-under `MCC_CONFIG_NEW_MACHO`, native `.tbd` stub parsing (`:2656-2663`) and SDK framework
-search paths seeded at `:2621-2631`. `-framework` is a real driver option resolved by
-`mcc_add_framework` (`src/libmcc.c:1882-1900`). **This is relevant to compiling C that calls
-Metal, and irrelevant to the backend**, because the backend deliberately links nothing —
-which is why the Metal arm works today on a host with no Xcode. The one place it matters is
-`tests/darwin/libsystem_objc.c`, which is the only in-tree proof that mcc can compile and
-link Objective-C-runtime calls, and **it never runs in CI**: it sits behind
-`option(MCC_DARWIN_HOST ...)`, OFF by default (`CMakeLists.txt`).
-
-**What is missing on the Metal runtime side, and it is small:** a third `MTLBuffer` bound at
-index 2, `mcc_gpu_rw_supported` returning 1, `mcc_gpu_rw_arm` recording the copy-back
-pointer, and `mcc_gpu_mem_backend` returning the shared buffer's `contents` and length. The
-Vulkan twins are `mcc_gpu_mem_backend` (`src/mccgpu.c:2218`) and `mcc_vk_bind_mem` (`:1953`).
-Estimate in §5, stage M4.
+**the macOS Metal-toolchain hazard (Metal §3)**
 
 **One Metal-specific hazard the Vulkan arm does not have.** On recent macOS the Metal
 shader compiler is a separately downloadable toolchain component rather than part of Xcode,
@@ -2704,71 +2540,8 @@ absent or a standard library that renamed a symbol is a *runtime* failure on the
 machine, not a build failure here. Nothing in this tree pins the MSL language version.
 **External, not re-derivable in this tree; mark UNMEASURED.**
 
-### 4. Testability — read this before writing any code
 
-**The Vulkan arm has a real CI differential. The Metal arm cannot have one.**
-
-| | Linux (Vulkan) | macOS (Metal) |
-| --- | --- | --- |
-| gate cell | every Linux stage2 cell, `-DMCC_GPU_REQUIRED=ON` (`.github/workflows/ci.yml:152`) | `{"macos-arm64-clang", "gpu-vulkan"}` only (`tools/ci.c`) |
-| ICD installed | `mesa-vulkan-drivers` — lavapipe (`.github/workflows/ci.yml:116`) | `brew install molten-vk` (`.github/workflows/ci.yml:189`, `.github/workflows/matrix.yml:128`) |
-| software rasteriser | **yes**, lavapipe executes real compute | **no software Metal exists at all** |
-| device present in CI | yes | **no** |
-| MSL cells | — | `gpu/msl-slice-differential`, `-known-positive`, `-real` (`CMakeLists.txt`, `:3621`, `:3628`) |
-| are they ever built? | — | **no** — gated `if(APPLE AND MCC_GPU_LANG_MSL_VALUE)` (`CMakeLists.txt`) and skipped otherwise (`:3639-3642`); no CI cell sets `-DMCC_GPU_BACKEND=metal` |
-
-**The deciding external fact: `MTLCreateSystemDefaultDevice` returns nil inside a
-GitHub-hosted macOS runner.** It is the subject of `actions/runner-images` issues 1779 and
-7085 and discussion 6138, and it is still the state of the world; where a paravirtual Metal
-device does exist under Apple's Virtualization.framework it advertises an Apple5-class GPU
-with its own gaps. **External, not re-derivable in this tree.** The consequence in this
-repo is immediate: `mcc_mtl_load` would resolve the symbol and `mtl_pick_device` would
-return nothing, so every Metal cell reports "no usable device" and **skips green**. This
-tree's own audit already says the general form of it — `docs/ARCHIVED.md:22777-22788`: *"No CI cell
-is proven to have a real GPU"* and *"CI would stay green if both device backends were
-deleted."*
-
-> **Say it once, plainly: a native Metal backend cannot be given a CI differential on any
-> runner this project has access to.** Every stage in §5 would land with its cell registered
-> and skipped, and would be verified only on the owner's own M1 Pro, by hand, once. That is
-> a second large emitter — 1,530 to 3,400 lines by §5 — with no automated differential.
-> This project's recurring failure mode is agreement over nothing; an untested second
-> backend is the largest available instance of it.
-
-**Three things partially blunt that, and none of them closes it.**
-
-1. The `mslgate` binary already exists and has already run a real differential against the
-   CPU reference — 151.9 M points, zero mismatches, recorded in `## The Metal per-value
-   differential, and N6 on Darwin`. So the *harness* is not the missing piece; the *runner*
-   is.
-2. `gpu/msl-slice-*` would become live on any self-hosted Apple-silicon runner. That is a
-   procurement decision, not a code change, and it is the only thing that makes §5's
-   differentials real.
-3. There is no offline SPIR-V or MSL validation path to fall back on: **zero** hits for
-   `spirv-val` or SPIRV-Tools anywhere in the tree, no golden `.spvasm`, no `--emit-only`
-   mode in either gate. Metal is worse — MSL golden text would pin the emitter's *output*,
-   not its *meaning*, and nothing would compile it.
-
-**The MoltenVK alternative, priced honestly beside native Metal.**
-
-| | MoltenVK route | native Metal parity |
-| --- | --- | ---: |
-| what it changes | pass `-DVulkan_INCLUDE_DIR` (and headers) to the macOS `gpu-vulkan` cell so `find_package(Vulkan QUIET)` (`CMakeLists.txt`) succeeds and `spvgate` builds | §5, stages M1–M7 |
-| size | **~10 lines of workflow/CMake**, plus one `brew` formula for the headers. Banked as *"One install turns 3 dead ctest names live"* (`docs/ARCHIVED.md:22690`) | **1,530–2,360** lines, **2,200–3,400** with soft-f64 |
-| what macOS gains | the **entire** SPIR-V arm — regions, binding 2, the format engine, frame kernels, dynamic indexing: ~4,200 lines of capability | the same capability, rewritten |
-| `double` | **not available** — MoltenVK reports `shaderFloat64 = 0` and does not emulate | available only if soft-f64 is written (700–1,100 lines) |
-| pipeline compile time | 5–20% slower than native Metal, and the share *shrinks* with module size | 5–20% faster |
-| dispatch latency | p50 181 µs | p50 150 µs |
-| runs in GitHub CI | **no** — MoltenVK still needs a Metal device, which the runner does not have | **no** |
-| runs on the owner's Mac | **yes, today**, with a build-config change | yes, after §5 |
-
-**That table is the honest comparison and it is lopsided.** MoltenVK delivers a superset of
-the capability for roughly 1/300th of the code, loses only fp64 — which the numeric corpus
-says is worth **+0.0 device-executable points** — and costs 5–20% of pipeline compile time,
-which is not a currency this file has ever ranked anything in. `## The Darwin path was
-executed` already refuted the SPIRV-Cross hypothesis and concluded in as many words that
-*choosing the Metal arm over MoltenVK buys 5–20% of compile time and nothing else*.
-**Neither route is CI-testable.** The difference is entirely in the price.
+**lavapipe on macOS — the highest-value experiment, still UNMEASURED (Metal §4)**
 
 **And there is a third route nobody has priced, which is the only one that could give macOS
 a real CI differential: lavapipe on macOS.** Mesa's software Vulkan ICD builds for macOS,
@@ -2782,6 +2555,9 @@ it would do so for the arm that has 4,200 lines of capability rather than the on
 1,755. Note also that `docs/ARCHIVED.md:22777-22788` is now stale on its own terms — it says Linux
 CI installs "no lavapipe, no SwiftShader", and `.github/workflows/ci.yml:116` installs
 `mesa-vulkan-drivers` today.
+
+
+**the M1–M8 stage table (Metal §5) — §6 sequences by these labels, so they cannot leave**
 
 ### 5. The staged plan
 
@@ -2812,6 +2588,7 @@ M4 before M5 because every `spv_fmt_*` addresses a region. M3 is independent and
 cheapest real gain. **M6b is last and should probably never be reached**: it is the largest
 stage, it buys a type the corpus values at +0.0 device-executable points, and it is the only
 stage whose correctness depends on an unmeasured device property.
+
 
 ### 6. The verdict, and the sequencing advice
 
@@ -2868,19 +2645,6 @@ works on my Mac", spend ten lines on MoltenVK instead of two thousand on MSL.**
 
 Deferring it, in the stated order, is not the same as refusing it. The refusal below is
 superseded; the sequencing is not a veto, it is the price list.
-
-### Verification, this tree
-
-`cmake-cross` built before `cmake-debug` was configured (hazard 5), `vendor/` symlinked from
-the primary checkout. `ctest --test-dir cmake-debug -N` registers **9455**, unchanged — this
-branch is docs-only and adds no cell. Full `ctest -j16`: **9455 cells, 0 failures**.
-`python3 tools/docref-lint.py` OK, `python3 tools/selfhost-smoke.py cmake-debug` OK from the
-repo root. `tests/optfire/*` untouched; no code changed.
-
-**One cost this section imposes on the rest of the file:** inserting it at the top shifts
-every bare `` `:NNNN` `` self-reference below it. The file already declares those
-approximate and tells the reader to confirm by content; this section makes that advice
-worth about 410 lines more than it was.
 
 ## What is actually still open — swept and verified 2026-08-09 (`wt/sweep`)
 
