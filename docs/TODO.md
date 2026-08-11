@@ -203,7 +203,13 @@ addition.
 > during the archive migration: moving ~2,900 lines to `docs/ARCHIVED.md` took the resolvable
 > citation count from 760 to **469**, because the citations went with the prose. `ARCHIVED.md`
 > is out of the linter's scope by design, so those citations are now checked by nothing. Two
-> honest consequences: the floor is a *coverage* guard whose subject legitimately shrank, and
+> **The floor is now the binding constraint on further archiving: the count is 456 against a
+> floor of 440, so the next section moved will breach it.** Migration stopped there on
+> purpose. What is still queued to move — the four 2026-08-08 sections, the 2026-08-07
+> GPU-execution study and the struck half of *Present-tense open items* — is verified and
+> listed in the commit history, but moving it requires deciding the floor question first.
+> Two honest consequences of the change already made: the floor is a *coverage* guard whose
+> subject legitimately shrank, and
 > the count of symbol-at-a-location claims over `TODO.md` fell **68 → 23** for the same
 > reason. If TODO.md shrinks much further the floor stops being meaningful and the real fix is
 > to bring `ARCHIVED.md` into scope, not to keep lowering the number.
@@ -352,34 +358,6 @@ fix — and see the new finding that mcc is arguably the conforming one), **23**
 Three machines share this tree: this one (Linux/Vulkan), a Windows box and a Mac box.
 Both peers were idle through this wave.
 
-### Five corrections to the previous handoff
-
-1. **"`if`-return→ternary is the unlock for gap #1" — the diagnosis was right, the placement
-   was the bug.** *(And there was a third thing wrong with it, found 2026-08-10: the fold
-   dropped the per-return conversion and was miscompiling mixed-signedness returns on `main`.
-   See the landed section. The byte-faithfulness objection below was real but was not the
-   whole story.)* The fold was reverted on `wt/rirnorm` for three reasons that all reduce to
-   byte-faithfulness, and its headline ("−82 accepted blocks against an unchanged 119,363
-   population") is a **denominator artifact**: the population falls to 119,228. ~130
-   already-accepted single-`Return` blocks are absorbed into their parent's ternary and stop
-   existing; 50 convert refused→accepted; **zero regress accepted→refused**.
-2. **Gap #3 is 264 blocks, not 580.** The 580 counted blocks whose *first classifier cause*
-   was a nested `Return`, and `block_cause_stmt` is a looser approximation of
-   `mcc_slice_frame_stmt_ok`, so 316 of them still fail on something it cannot see. Also:
-   80% of the blocks that actually landed have **no trailing `return` at all**, so "572 of
-   580 already have an accepted return value" described a different population.
-   **An attribution count is an upper bound on a fix, never its size.**
-3. **Gap #4 was never 58,328 nodes / 4.97%.** That census asks the expression predicate
-   (`allow_load = 0`), where every `Load` is refused and an array-typed member node is an
-   address, not a value. In the gap table's own units it was **13 of 85,710 refused blocks**.
-4. **Gap #7's gating fact is settled YES.** mcc compiles **1347 of musl 1.2.5's 1352**
-   x86_64 objects; `libc.a` links; output is identical to gcc-built reference musl, including
-   through an mcc-built `ld.so`. Now 1350 with `@PLT` accepted; only the 3 x87 `u`-constraint
-   TUs remain, and musl's own generic C is verified identical for those.
-5. **`slice/musl`'s "65 of 74, cause: `strchr.c` wants `__strchrnul`" was wrong twice over** —
-   `strchr.c` is not in the failing set and nothing there is link-time. The cause was include
-   order in `cmake/slicerun_musl.cmake`. Now 74 of 74.
-
 ### The single most important finding: the byte gate was hiding two miscompiles
 
 The `faithful` gate is not mis-designed, it was **mis-phased**. An unfaithful body runs zero
@@ -423,41 +401,6 @@ is **unmeasured, not measured-empty**. Re-arming it is ~10 lines and is the next
 > measured: 62 of 67 keepable bodies benign and 0 miscompiles at `-O2`, 1 miscompile at
 > `-O0`, 5 bodies that no switch can keep.
 
-### What the ten branches bought, measured
-
-| item | measured |
-| --- | --- |
-| early `return` in an `if`/loop body | **+264 blocks**, 260 dispatched and agreed, 0 mismatches |
-| globals resolve to real addresses | slices 1,905 → 2,551; cref tuples 15,240 → 20,408; **670 fragments read a global** where zero did |
-| `s.arr[i]` member base | +217 frame-resolvable, all of them; `load/dynidx` 517 → 707 |
-| global array base (`ga[i]`) | all 758, via the folded resolution |
-| bitfield → shift/mask | refused bitfield nodes 7,471 → 6,193 |
-| ternary fold | grafts `sgn`/`choose`/`clampk` **in folded form** — the unlock it was ranked for, never previously achieved |
-| thread refusal named | **185 of 163,413 refused calls (0.11%)**, 32 refused blocks of 105,493 — re-taken over a *recorded* corpus by `wt/threadmap-int`; the earlier `124 of 121,206` named no corpus and is not comparable |
-| `spirv-val` wired | **152 modules validated, no device required** |
-| musl | 1347 → 1350 of 1352 objects; `slice/musl` 65 → 74 of 74 |
-
-**Two deltas are owed a re-take on the merged tree, not an addition.** `wt/earlyret`'s +264
-and the restored ternary fold attack the same source shape from opposite ends; and every
-globreloc figure above was measured before `wt/rirphase` changed the arena shapes the slice
-predicates see.
-
-### The largest remaining item is one condition in one function — LANDED (`wt/globagg`)
-
-The diagnosis was right and the *number attached to it was the wrong quantity*; see
-**Landed — a global aggregate resolves as an address** below. The rejection is gone.
-`ref-not-local/global-aggregate` is **62,228 before and 62,228 after** on gcc torture — that
-bucket is a node census asking the expression predicate, where the base `Ref` of a member
-fold is an address and can never be accepted as a value. Trap 1, an eighth time.
-
-**And the corpus mattered more than the fix.** On gcc torture the fix reads
-−405 refused blocks and +39,203 indexed loads, but **94.8% of the blocks are four files and
-99.7% of the loads are fourteen**, all macro-generated or unrolled. On mcc's own
-`src/*.c` — 327 bodies of hand-written code — the same fix is **−12 refused blocks of 1,085
-(+2.7% of frame-accepted) and +803 accepted nodes of 28,469 (+2.82 pp)**, which is 42× the
-percentage-point gain the million-node torture corpus reports. **gcc c-torture is the wrong
-denominator for anything global-data-shaped**; re-price the remaining gaps on real code.
-
 ### Threading — decided against the earlier architecture note
 
 > **The 0% below and `wt/threadmap`'s 30.8% are the same finding, not a disagreement.**
@@ -489,15 +432,6 @@ option, which is what you get by default if nothing is decided, is the miscompil
 `wt/threadmap-int` gives S2 its target vocabulary and a measured predicate and stops there,
 deliberately: **nothing rewrites an `AST_Invoke` of `pthread_create` into a published node,
 and its "specified, not built" list stays specified.**
-
-### The hazard that now has a cell
-
-Thread safety held **only by accident**: `ast_cprop_is_local`, `ast_cse_regpure_compute` and
-`ast_plan_promotion` all filter on `!(r & VT_SYM)`, so a global was never a
-cprop/CSE/LICM/promotion candidate. The decided global-promotion pass is precisely the
-widening of that filter. `superopt/global-reload` now pins it — and note that **widening
-either filter by hand did not break the property**, so it is defended by more than those
-three and a filter-level tripwire would have looked trustworthy and caught nothing.
 
 ### Traps — the list stands, with three additions and one sharpened
 
@@ -577,157 +511,22 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    **A cross-pass veto is load-bearing in ways its comment does not say; measure what it
    blocks before lifting it, and land the fix underneath it first.**
 
-### Cross-vendor coverage now has a denominator, and the exclusive set is real — 2026-08-10 (superseded by the 100% row above; the denominator analysis still stands)
 
-The goal is complete coverage of every test each vendor can run in the other. That
-quantity had **no tool, no output file and no cell**: `tools/xoracle.py` recorded
-`ORACLE_NOBUILD` per test in an uncommitted `oracle.jsonl` and nothing ever aggregated
-it. `--phase report` now does, registered as `jit/xoracle-coverage`.
+### Residues kept from the archived 2026-08-10/11 landed write-ups
 
-Measured on this host, 400 programs per suite:
+> The write-ups themselves (the five corrections, what the ten branches bought, the
+> `wt/globagg` landing, the 2026-08-10 cross-vendor denominator, the 493-test GPU run,
+> `ms_struct`, the four folds, 493-of-493, the tautology fold and the six-engines arm) are in
+> [`docs/ARCHIVED.md`](ARCHIVED.md). Their lessons are already carried by the traps list and
+> *Open, ranked* above. These three were verified open and are restated nowhere else.
 
-| suite | tests | cross-adjudicable | vendor-exclusive | exclusive to |
-| --- | ---: | ---: | ---: | --- |
-| `gcc:c-torture/execute` | 400 | 379 | 20 | gcc |
-| `llvm:ts-unittests` | 400 | 114 | 286 | clang |
-| **total** | **800** | **493 (61.62%)** | **306** | |
-
-**493 of 800 is the only honest denominator for a coverage percentage**, and the report
-refuses to print one over a collapsed set (`--min-cross`) or an empty exclusive set
-(`--min-exclusive`) — an empty exclusive set means the oracle builds were never
-attempted, not that the vendors agree.
-
-**The 286-program asymmetry was investigated and it is not a harness artifact.** Three
-hypotheses were tested and all three failed:
-
-- **197 are `Vector/LASX`** — LoongArch SIMD. They report a `-std=gnu89` C99 diagnostic
-  first, which reads like a harness flag bug; under `-std=gnu17` they fail on
-  `lasxintrin.h`, which does not exist on x86. Genuinely target-exclusive.
-- **60 are AVX-512** needing `m512_test_util.h`, which lives one directory *above* the
-  test, and the harness put only the test's own directory on the include path. That
-  **is** a real harness defect and is fixed (`tools/jitconform.py` now walks ancestors
-  up to the suite root) — but it rescues **zero** tests: the header does
-  `typedef __int64 I64;` unguarded, and **neither gcc nor clang accepts `__int64` on
-  Linux**. Excluded for a third reason again.
-- **25 are `altivec.h`** (PowerPC) and 1 `hexagon_types.h` — target headers absent from
-  the suite entirely.
-
-So the ceiling is genuine: **282 of the 286 are target- or MSVC-exclusive by
-construction.** Closing the remaining gap means growing the *cross-adjudicable* set, not
-reclassifying the exclusive one. Do not re-litigate the 286 — the three cheap
-explanations are all disproved above.
-
-### The GPU ran 493 gcc and clang tests, and the cross-oracle found two `_Complex` bugs — 2026-08-10
-
-**The external suites now run through the in-compiler GPU path.** `ast_ladder_gpu_run` →
-`mcc_gpu_run2` was reachable only from `cmake/ladder_gpu_parity.cmake` and
-`tools/smokerun.c`, both over internal corpora; no external-suite test had ever been
-compiled through it. Compiling the oracle set with `MCC_AST_EVAL_LADDER=1
-MCC_AST_EVAL_LADDER_GPU=1` dispatches for real — a single `gcc.c-torture` program gives
-`[ladder-gpu] tried=1 available=1 device=NVIDIA GeForce RTX 5070 Ti Laptop GPU rungs=5
-dispatches=11 lanes=131692`.
-
-**Result: 493 cross-adjudicable gcc and clang tests, GPU ladder on, agree with the CPU
-baseline on every one.** `--max-config-divergence` (default 0) now fails the report if any
-test passes in one mcc configuration and fails in another over the same fixed oracle bank,
-and writes `config-divergence.jsonl`. A configuration that changes the verdict changed the
-answer.
+**`tools/xoracle.py` advertises `MCC_JIT_GPU`, a knob that exists nowhere else in the tree**
 
 Note the knob the tooling advertised does not exist: `tools/xoracle.py`'s usage string
 offers `--mcc-env MCC_JIT_GPU=1`, and **`MCC_JIT_GPU` appears nowhere else in the tree**.
 The working spelling is the two `MCC_AST_EVAL_LADDER*` variables above.
 
-**Two `_Complex` defects, found by the cross-oracle and fixed here.** Both are the GNU
-omitted-middle conditional (`a ? : b`) applied to a `_Complex` operand, which is
-`VT_STRUCT` with `ref->a.is_complex`:
-
-1. **`gv_dup()` on a complex condition.** Both the direct path
-   (`expr_cond_nested`, `src/mccgen.c`) and the arena replay path (`AST_If` with
-   `ast_op == 9`, `src/mccast.c`) duplicated the condition with `gv_dup()`, whose
-   fallthrough is `gv(MCC_RC_TYPE(t))` — a struct cannot go in a register. Now
-   materialised into a temp local with `cplx_materialize()` and pushed twice, which also
-   preserves the once-only evaluation the GNU form requires.
-2. **`move_reg(r2, r1, type.t)` with a struct type, replay path only.** `move_reg` sets
-   `sv.type.ref = NULL` unconditionally, so `load()` → `type_size()` read `s->r` off a
-   null `ref` and segfaulted the compiler. The direct path had always guarded this with
-   `islv = VT_STRUCT == (type.t & VT_BTYPE)` and passed `VT_PTR`; the replay path's
-   two-arm case at `:5606` had the guard and its omitted-middle case did not. Added,
-   including the `indir()` + `VT_NONLVAL` epilogue.
-
-Symptom before the fix: `MCC_FORCE_REPLAY=1` **segfaulted mcc itself**; without it the
-binary compiled and segfaulted at run time. `conditional-gnu-ext.c` moved from
-`DIFF_EXIT` to `PASS`, taking the CPU baseline from **485/493 (98.38%) to 486/493
-(98.58%)**.
-
-Regression-tested by a new smoke pass, `tests/smoke/pass-cplxcond.c`, which covers both
-the `_Complex int` and `_Complex double` forms, the imaginary-only truth case (`0+7i` is
-true), the false case, and asserts the evaluation count so a re-introduced double
-evaluation is caught rather than only a crash. It is oracle-adjudicated against gcc and
-clang at every level, and it is what found defect 2 — the direct compile was already
-green when the harness, which compiles under `MCC_FORCE_REPLAY=1`, still crashed.
-
-### `__attribute__((ms_struct))` is implemented, and zero-width bitfields have three rules — 2026-08-11
-
-The four `ms_struct` cross-oracle failures were the last defect-shaped gap in the
-cross-adjudicable set. mcc had `-fms-bitfields` as a whole-translation-unit switch and no
-per-struct attribute, which is what every one of those tests uses. Added
-`ms_struct`/`__ms_struct__` and `gcc_struct`/`__gcc_struct__` (two `SymAttr` bits — the
-struct had exactly two free, 30 of 32 used), and `struct_layout` now picks its layout per
-struct: `ms_struct` forces MS, `gcc_struct` forces PCC, otherwise the global flag decides.
-
-The layout work was not the attribute. **A zero-width bitfield under MS layout obeys three
-different rules and the tests distinguish all three**, which is why two intermediate
-versions of this fix each passed one test and regressed another:
-
-1. **Prior field is not a bitfield → entirely ignored.** `{char a; int :0; char b;}` is
-   **2** bytes, not 8: no alignment contribution and no advance. `ms_struct-bitfield-init.c`
-   turns on this case, and consecutive `:0`s do not chain — after an ignored one, the
-   "prior field" is still not a bitfield, so `{char foo; long:0; char:0; int:0; char bar;}`
-   is 2 as well.
-2. **Prior field is a bitfield → closes the unit, advances `c` to the zero-width type's
-   alignment, and contributes that alignment to the struct.** `{char a:8; int :0; char b;
-   char c;}` is **8**. `ms_struct_pack_layout.c`'s `struct four` and `struct six` turn on
-   this, and its own comments state the rule.
-3. **Either way the next field opens a new storage unit**, even at the same type. Handled
-   by setting `prevbt = VT_STRUCT`, which is what the old
-   `(bit_size > 0) == (bt != prevbt)` condition could not express — for a zero-width whose
-   type matched the previous field it allocated a *second* unit (`struct_8` of
-   `ms_struct-bitfield.c` came out 24 instead of 20), and for one whose type differed it
-   did nothing at all.
-
-**The trap worth writing down: `char a:8` is not a bitfield by the time `struct_layout`
-sees it.** A bitfield filling its declared type exactly is normalised to a plain field
-during parsing and remembered only in `a.full_bitfield`, which is then *cleared* before
-layout and re-marked only when the struct is `packed`. So rule 2 above silently never
-fired — `prev_bit_size` was 0 — and `{char a:8; int:0; char b; char c;}` measured 3 while
-`#pragma pack(8)` made the identical struct measure 8. The re-marking condition now
-includes ms-layout structs. Anything else that reasons about "was the previous field a
-bitfield" has the same hole.
-
-Verified field-by-field against gcc and clang, not just by exit status: all ten structs of
-`ms_struct-bitfield.c`, all ten of `ms_struct_pack_layout.c`, and a five-case zero-width
-matrix. All four suite tests pass, including `ms_struct-bitfield-init-1.c`, which had been
-failing to *build* on a `static int a2[(sizeof(t2) == 4) - 1];` compile-time assertion.
-
-**A second latent defect, exposed rather than caused by the above: MS layout ignored
-`packed`.** The `align = packed = 1` assignment was gated on `pcc`, so under MS layout a
-`__attribute__((ms_struct, packed))` aggregate kept its natural alignment. Nothing noticed
-while `ms_struct` was itself ignored — the two bugs cancelled — and honouring the attribute
-turned `ms_struct_pack_layout-1.c` from passing to failing. That test is one line:
-`union u { int a; } __attribute__((__ms_struct__, __packed__));` inside a struct, expecting
-`1 + 4`. The gate is removed; PCC behaviour is unchanged because the condition only ever
-suppressed the MS arm.
-
-Regression-tested by `tests/smoke/pass-msstruct.c`, which pins nine sizes covering all
-three zero-width rules, the full-width-bitfield trap, `gcc_struct` overriding, the
-`ms_struct`+`packed` union above, and a plain non-attributed struct as the control.
-
-~~**Still open on this axis:** one timeout (`build2.c`) and two gcc c-torture programs mcc
-cannot build (`20020720-1.c`, `20041114-1.c`). Neither is an `ms_struct` defect; both are
-unexamined.~~ **ALL THREE CLOSED the same day, 2026-08-11** — `92fddfdf` (`ast_local_def_value`
-takes `20020720-1.c`; `build2.c` was never a defect, it was a 15 s `--rtimeout`) and
-`bc60a3be` (`20041114-1.c`). This paragraph is 60 lines above the two sections that say so
-and reached 493/493; it was simply never struck. *(Found by the 2026-08-11 validation sweep.)*
+**`slice/quiesce` fails intermittently under `-j`, undiagnosed — and the obvious fix is wrong**
 
 **Observed flake, not diagnosed: `slice/quiesce` fails intermittently under `-j`.**
 Seen twice on 2026-08-10 — once beside a GPU cross-oracle run saturating the device from
@@ -743,169 +542,7 @@ unable to order two ctest processes, and **`RESOURCE_LOCK` is used zero times in
 reproducer: a `RESOURCE_LOCK` that makes an unexplained flake disappear buys silence, not
 a fix.
 
-### Four folds added: `fabs(x) < 0.0`, constant-condition branches, tautologies, and conversion-aware operands — 2026-08-11
-
-The last two cross-oracle failures that are not a timeout are gcc c-torture
-*fold-or-link-error* tests: they call `link_error()` in a branch the optimizer is
-expected to delete, so the link fails when it is not deleted. Two pieces were missing.
-
-**1. `X < 0.0` folds to 0 when `X` is provably non-negative** (`ast_cmp_nonneg_lt_zero`,
-run from `bfold`). `ast_expr_nonneg` already recognised `AST_OP_FABS`, so the predicate
-existed and nothing consumed it. The fold is safe for **every** input including NaN,
-because any comparison involving NaN is false, and including `-0.0` on either side.
-
-**The symmetric fold is not safe and is deliberately absent.** `fabs(x) >= 0.0` looks like
-it should fold to 1 and does not: `fabs(NaN) >= 0.0` is **false**.
-`tests/smoke/pass-fabscmp.c` pins that asymmetry — NaN, ±inf, `-0.0`, a `float` variant,
-and the `>=` case whose answer is 0 — verified identical across gcc, clang and mcc at
-every level and under replay.
-
-**2. A literal condition now deletes the dead arm** (`ast_jt_run`). It pruned arms that
-were empty or identical but never looked at the condition, so folding a condition to a
-constant could not remove anything. `if (0)` appeared to work only because the *front end*
-folds it before the arena ever exists; nothing did so at AST level. Guarded with
-`ast_sccp_has_label` on the arm being dropped, so a labelled block that something jumps to
-is never removed.
-
-**Both folds are placed in strategies from the read set on purpose.** The obvious home for
-the first by name is `abs` — and `ABS` is one of the seven write-only strategies in open
-item N1, whose fire count never reaches the re-emit disjunction, so a fold placed there can
-be computed and then discarded. `bfold` and `jt` are both read. **This is the first
-concrete cost of N1: it constrains where a new fold may live.**
-
-Two defects in this work, both caught rather than reasoned out, and both worth the warning:
-
-- `ast_bfold_emit` was given `ast_type_t(a, n) & VT_BTYPE` as the result type. For a
-  comparison feeding a `return` that type is **`VT_VOID`**, and the replay path failed
-  with *"cannot convert 'void' to 'int'"*. A C comparison is always `int`. The smoke
-  fixture caught this within seconds of being registered; the direct compile was green.
-- The branch fold read `ast_ival(a, cond)` to decide the arm. On a *float* literal that is
-  the **bit pattern**, so `if (-0.0)` — falsy in C, bit pattern `0x8000…` — would have
-  taken the wrong arm. Unreachable from the `fabs` fold, which always emits `VT_INT`, but
-  reachable by any future float-producing fold. The condition now refuses float and struct
-  literals.
-
-**3. The operands are resolved through their defining store** (`ast_local_def_value`).
-`20020720-1.c` writes `p = fabs(x); q = 0.0; if (p < q)`, so neither operand is syntactically
-what the fold wants. `ast_expr_nonneg` already resolved the *left* through
-`ast_local_nonneg` — a local with exactly one defining `AST_Store` and no address taken.
-The right needed the mirror, factored out of the same guards. **`20020720-1.c` passes.**
-
-### Cross-vendor coverage: 493 of 493, and the denominator that qualifies it — 2026-08-11
-
-| status | count | |
-| --- | ---: | --- |
-| PASS | **493** | **100.00%** |
-| DIFF_EXIT / NOBUILD / TIMEOUT | **0** | |
-
-Both configurations agree: the CPU baseline and the GPU ladder each pass 493 of 493, with
-**zero** configuration divergence. The denominator is unchanged and remains the honest one
-— 493 of 800 cross-adjudicable, the other 306 vendor-exclusive by construction.
-
-**`build2.c` was never a defect, and the harness was measuring the wrong thing.** It was
-reported `MCC_TIMEOUT` under a 15 s run cap. mcc compiles it in 0.00 s and the binary
-prints output **byte-identical to gcc's** — it just takes 75 s, because the program is
-200 million iterations of a loop gcc folds away and mcc does not. A cross-oracle exists to
-compare *behaviour*; failing a program for being slow answers a question it was not asked.
-`--rtimeout` now defaults to 120 s, which still bounds a genuine hang. The 5× gap is a
-real performance finding and belongs in a benchmark, not in a conformance verdict.
-
-### The tautology fold, and the flag that made it miscompile — 2026-08-11
-
-`a || b` and `a && b` are **not** control flow in the arena — they are a single
-`AST_Binary` with `TOK_LOR` (`0x91`) / `TOK_LAND` (`0x90`) whose two children are the
-relational tests. That makes the fold look easy: recognise two relational tests against
-integer literals on the same pure operand, turn each into an interval set over the type's
-range, and fold `||` to 1 when the union covers the range, `&&` to 0 when the negated
-union does. That was written, it compiled, and **it is a miscompile**:
-
-```
-volatile int v = 7;  int var = v;
-if (!(var > 10 && var < 3)) A(); else B();   /* gcc: A   mcc -O0: A   mcc -O2: B */
-if (!(var <= 0 || var != 0)) E(); else F();  /* gcc: F   mcc -O0: F   mcc -O2: E */
-```
-
-**The cause was one flag, and the interval arithmetic was never the problem.** A negated
-condition does **not** produce an `AST_Unary` NOT above the node. It sets
-**`AST_FB_LANDOR_INVERT`** (`8u`) on the `TOK_LOR`/`TOK_LAND` node itself. Dumping the
-negated and non-negated programs side by side, the two arenas are byte-identical except
-that one field. The fold emitted the raw truth value and ignored the flag, so every
-`!`-wrapped form came out backwards; honouring it makes mcc match gcc at every level.
-
-Reading the source three times pointed at the interval code, which was correct. Diffing
-two `MCC_ARENA_DUMP`s found it in one shot — the same lesson as the `ms_struct` layout
-bug earlier the same day. **When a fold is right at `-O0` and wrong at `-O2`, diff the
-arenas before re-reading the analysis.**
-
-`ast_rel_operand` also refuses any operand carrying flag bits at all, and the fold refuses
-any `LANDOR` flags outside `INVERT`/`MATERIAL`, so an unrecognised flag disables the fold
-rather than being silently dropped.
-
-Note also that the value tested is `volatile`, deliberately: without that, the front end
-constant-folds the whole condition and the arena never sees the shape.
-
-**The last failure is closed, by three general folds rather than a pattern match.**
-`20041114-1.c` asked that
-`var <= 0 || (unsigned long)(unsigned)(var - 1) < UINT_MAX` fold to 1. The chain is:
-`var <= 0 || (unsigned long)(unsigned)(var - 1) < UINT_MAX` fold to 1. Three steps, each
-sound and general, implemented as *interpretation* inside `ast_rel_operand` rather than as
-AST rewriting — so an error misfires this one fold instead of corrupting the tree:
-
-1. **Zero-extend range narrowing.** A widened N-bit unsigned value lies in `[0, 2^N-1]`,
-   so `< 2^N-1` is equivalent to `!= 2^N-1`.
-2. **Same-width signedness bijection.** `(unsigned)E != C` ⟺ `E != (int)C`, because that
-   conversion is injective. Equality and inequality only.
-3. **Offset normalisation.** `E - K != C` ⟺ `E != C + K`, sign-extended back to the
-   operand's width.
-
-That leaves `var != 0`, which with `var <= 0` covers the range and folds to 1.
-
-One obstacle worth recording: **`AST_Binary` nodes carry type 0 in the arena**, so the
-width check on `Convert(var - 1, unsigned)` failed and the chain stopped. `ast_eff_bits`
-falls back to the first child's type for an untyped binary.
-
-Validation is weighted at the dangerous direction, because tautologies passing proves
-little — the risk is folding something that is *not* one. `tests/smoke/pass-tautconv.c`
-carries four tautologies and **four negative controls** — a shifted gap, a comparison
-against `UINT_MAX-1`, an offset that moves the gap, and a contradiction that must fold to
-0 — over ten inputs including `INT_MIN`, `INT_MAX` and zero. 84 bits of output, identical
-across gcc, clang and mcc at `-O0`–`-O4` and under replay. Unsigned operands are refused.
-
-### Smoke now compares six evaluation engines, and one of them had never run — 2026-08-11
-
-**The finding, first.** `tools/smokerun.c` sets `MCC_FORCE_REPLAY=1` in `set_census_env`,
-which every compile it makes passes through — the `-O0`–`-O4` level sweep, the compile
-passes, the device arm and the divergence arm alike. In `src/mccast.c`,
-`ast_replay_env` is `s1->optimize >= 1 || s1->embed_jit || MCC_FORCE_REPLAY ||
-MCC_RIR_FORCE`, so `-O1`+ replays regardless and the variable only decides `-O0`. The
-consequence is that **`-O0` with replay off — the plain AST constant evaluator, which is
-what `-O0` actually ships — was executed by no cell in the smoke suite.** Measured on the
-new arm: `-O0` with the variable set records 97 `used` rows in the RIR census, and `-O0`
-with it clear records **0**. The suite had been running the second configuration zero
-times and the first one five times.
-
-**What the arm does.** `smokerun --engines` builds `tests/smoke/subject.c` under six
-engines and compares every one of the 1782 rows `--dump` prints, plus the sweep digest,
-against the `ast` baseline:
-
-| engine | how it is reached | what it proves it is |
-| --- | --- | --- |
-| `ast` | `-O0`, no `MCC_FORCE_REPLAY` | RIR census recorded **0** replayed evaluations |
-| `rir` | `-O0`, `MCC_FORCE_REPLAY=1` | 97 replayed evaluations |
-| `rir-o4` | `-O4`, replay implicit | 98 replayed evaluations |
-| `slice` | `-O4`, `MCC_AST_EVAL_LADDER=1` | `[ladder-self] pairs=624 certified=532 differ=0` |
-| `gpu` | the same ladder, `..._GPU=1` | `available=1 dispatches=10687` |
-| `jit` | `--embed-jit`, run with `MCC_JIT_HOT_CALLS=1` | 5 of 36 boot sites reported `swapped` |
-
-**Nine engines as of the second 2026-08-11 wave (`04f12187`), and the three new ones are
-levels, not mechanisms.** `jit-o1`, `jit-o2` and `jit-o3` join `jit` (which is `-O4`), so the
-arm is 14,256 row comparisons over 16,761,861 value cases, all four JIT levels byte-identical
-to the `ast` `-O0` baseline (digest `c90ce3e2d4dd982c`). The gap it closed: **`-O2` is what
-every JIT cell defaults to and what most callers get, and no cell in this suite had ever
-value-checked the engine there** — one level was standing in for four. `-O0` is deliberately
-absent and is not an oversight: `ast_replay_env` needs `optimize >= 1`, so `mcc -O0 -run
---jit` boots no engine (`MCC_JIT_VERBOSE=1` prints no `mccjit-boot` line) and a row there
-would measure the AOT path twice under a name that claims otherwise.
+**`--min-engines 5` against nine engines, with the prescription for fixing it**
 
 **The `--min-engines` floor did not move with it, and that is now a live gap.**
 `cmake/smoke_engines_mutate.cmake` and `CMakeLists.txt` still pass `--min-engines 5` (4 on
@@ -916,48 +553,6 @@ refuse. Raising it needs the same care the 5 was chosen with — the device engi
 own — so the honest form is a floor on the non-device engines plus the device counted
 separately, not a bare `--min-engines 8`.
 
-Three of the original six were previously unmeasured as *values*. The slice ladder was carried only
-as a refusal histogram (`smoke/slice-bails`), which counts what the ladder declined and
-says nothing about what it answered. The `--embed-jit` binary was built by `jit_census`
-and **thrown away without ever being executed**, so the whole embedded-JIT runtime path
-was covered by a compile and a grep. And the device arm compares a single whole-file
-digest at `-O4`; the engine arm compares the device's answer row by row, so a divergence
-names the row and not the file.
-
-**The `differ=0` assertion is new, and it is weaker than it reads — measured, not assumed.**
-`[ladder-self] differ` counts pairs where a slice computed a different value from the tree
-it was cut from, and nothing had asserted it was zero. But both sides of that comparison go
-through the same evaluator, so it cancels a *shared* arithmetic fault and only catches an
-asymmetric one. Proven by injection, and the result is item **N7** below: `r = s + 1` in
-the 32-bit signed `+` arm of `ast_eval_binop` (`src/ast_eval_slice.h`) leaves every counter
-of both ladder censuses, every one of the 1782 rows, the digest, and all eleven smoke cells
-untouched. Do not read `differ=0` as "the slice evaluator computes correctly".
-
-**Why the identity checks carry the arm.** Six engines that agree are worth nothing if
-they are one engine run six times, and that is the *default* failure mode here: every one
-of these engines is selected by an environment variable, and a variable that stops taking
-effect makes the arm greener, not redder. So each engine must prove it ran — the counts in
-the table above are assertions, not diagnostics — and `smoke/engines-identity`
-(`cmake/smoke_engines_mutate.cmake`) mutates the environment to prove those assertions
-read what they claim:
-
-- `MCC_RIR_FORCE=1` puts replay underneath the `ast` arm. Refused, naming the RIR census.
-  This is exactly the state the suite was in before this arm existed.
-- `MCC_JIT_LAZY=1` stops the embedded engine swapping anything at boot, so the `jit` arm
-  runs the AOT code it exists to replace. Refused, naming the swap check.
-
-`smoke/engines-known-positive` is the separate question of whether the *comparison* is
-live: it poisons one dumped row in each non-baseline engine and requires all five to be
-named. Both were confirmed red before the arm was wired in.
-
-**Cost and floors.** 8.5 s for the arm, 9.5 s for the known-positive, 18.6 s for the
-identity gate; `ctest -R "^smoke/"` goes 8 cells / ~53 s to 11 cells / ~85 s on this host.
-`--min-engines 5` is the anti-vacuity floor and 5 was deliberate **when the arm had six
-engines; it is now a hole — see the retraction above and N5, and do not read the rest of this
-paragraph as current**: the device engine skips
-on its own on a host without one, and skipping it must not skip the cell. Confirmed by
-running the arm with `MCC_GPU_DEVICE=99` — 5 engines, 9,312,145 value cases, green; with
-the device it is 6 engines and 11,174,574.
 
 ### Three items that read as closed and are not — checked 2026-08-10
 
