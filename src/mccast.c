@@ -7240,9 +7240,35 @@ static int ast_local_nonneg(AstArena *a, AstLocal ref, int depth) { MCC_TRACE("e
 	return ast_expr_nonneg(a, ast_child(a, def, 1), depth - 1);
 }
 
+static int ast_cmp_nonneg_lt_zero(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	AstLocal l, r;
+	uint64_t v;
+	int bt;
+	if (ast_kind(a, n) != AST_Binary || ast_op(a, n) != TOK_LT ||
+			ast_nchild(a, n) != 2)
+		{ MCC_TRACE("br\n"); return 0; }
+	l = ast_child(a, n, 0);
+	r = ast_child(a, n, 1);
+	bt = ast_type_t(a, l) & VT_BTYPE;
+	if (bt != VT_FLOAT && bt != VT_DOUBLE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((ast_type_t(a, r) & VT_BTYPE) != bt || ast_kind(a, r) != AST_Literal)
+		{ MCC_TRACE("br\n"); return 0; }
+	v = ast_ival(a, r);
+	v &= bt == VT_FLOAT ? 0x7fffffffull : 0x7fffffffffffffffull;
+	if (v != 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ast_expr_nonneg(a, l, 24) || !ast_expr_pure(a, l, 24))
+		{ MCC_TRACE("br\n"); return 0; }
+	ast_bfold_emit(a, n, VT_INT, 0);
+	return 1;
+}
+
 static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 	int folds = 0;
 	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++)
+		{ MCC_TRACE("br\n"); folds += ast_cmp_nonneg_lt_zero(a, n); }
 	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		int rbt;
 		if (ast_kind(a, n) != AST_Invoke)
@@ -9746,6 +9772,24 @@ static int ast_jt_run(AstArena *a) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); continue; }
 		AstLocal thenbb = ast_child(a, n, 1);
 		AstLocal elsebb = ast_child(a, n, 2);
+		int cbt = ast_type_t(a, cond) & VT_BTYPE;
+		if (ast_kind(a, cond) == AST_Literal && cbt != VT_FLOAT &&
+				cbt != VT_DOUBLE && cbt != VT_LDOUBLE && cbt != VT_STRUCT) { MCC_TRACE("br\n");
+			int taken = ast_ival(a, cond) != 0;
+			AstLocal keep = taken ? thenbb : elsebb;
+			AstLocal drop = taken ? elsebb : thenbb;
+			if (drop == AST_NONE || !ast_sccp_has_label(a, drop)) { MCC_TRACE("br\n");
+				ast_clear_children(a, n);
+				if (keep == AST_NONE) { MCC_TRACE("br\n");
+					ast_set_kind(a, n, AST_Poison);
+				} else { MCC_TRACE("br\n");
+					ast_set_kind(a, n, AST_BasicBlock);
+					ast_add_child(a, n, keep);
+				}
+				ast_jt_folds++;
+				continue;
+			}
+		}
 		if (ast_jt_arm_empty(a, thenbb) && ast_jt_arm_empty(a, elsebb)) { MCC_TRACE("br\n");
 			ast_set_kind(a, n, AST_Poison);
 			ast_clear_children(a, n);

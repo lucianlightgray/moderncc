@@ -494,6 +494,54 @@ unable to order two ctest processes, and **`RESOURCE_LOCK` is used zero times in
 reproducer: a `RESOURCE_LOCK` that makes an unexplained flake disappear buys silence, not
 a fix.
 
+### Two folds added: `fabs(x) < 0.0` and constant-condition branches — 2026-08-11
+
+The last two cross-oracle failures that are not a timeout are gcc c-torture
+*fold-or-link-error* tests: they call `link_error()` in a branch the optimizer is
+expected to delete, so the link fails when it is not deleted. Two pieces were missing.
+
+**1. `X < 0.0` folds to 0 when `X` is provably non-negative** (`ast_cmp_nonneg_lt_zero`,
+run from `bfold`). `ast_expr_nonneg` already recognised `AST_OP_FABS`, so the predicate
+existed and nothing consumed it. The fold is safe for **every** input including NaN,
+because any comparison involving NaN is false, and including `-0.0` on either side.
+
+**The symmetric fold is not safe and is deliberately absent.** `fabs(x) >= 0.0` looks like
+it should fold to 1 and does not: `fabs(NaN) >= 0.0` is **false**.
+`tests/smoke/pass-fabscmp.c` pins that asymmetry — NaN, ±inf, `-0.0`, a `float` variant,
+and the `>=` case whose answer is 0 — verified identical across gcc, clang and mcc at
+every level and under replay.
+
+**2. A literal condition now deletes the dead arm** (`ast_jt_run`). It pruned arms that
+were empty or identical but never looked at the condition, so folding a condition to a
+constant could not remove anything. `if (0)` appeared to work only because the *front end*
+folds it before the arena ever exists; nothing did so at AST level. Guarded with
+`ast_sccp_has_label` on the arm being dropped, so a labelled block that something jumps to
+is never removed.
+
+**Both folds are placed in strategies from the read set on purpose.** The obvious home for
+the first by name is `abs` — and `ABS` is one of the seven write-only strategies in open
+item N1, whose fire count never reaches the re-emit disjunction, so a fold placed there can
+be computed and then discarded. `bfold` and `jt` are both read. **This is the first
+concrete cost of N1: it constrains where a new fold may live.**
+
+Two defects in this work, both caught rather than reasoned out, and both worth the warning:
+
+- `ast_bfold_emit` was given `ast_type_t(a, n) & VT_BTYPE` as the result type. For a
+  comparison feeding a `return` that type is **`VT_VOID`**, and the replay path failed
+  with *"cannot convert 'void' to 'int'"*. A C comparison is always `int`. The smoke
+  fixture caught this within seconds of being registered; the direct compile was green.
+- The branch fold read `ast_ival(a, cond)` to decide the arm. On a *float* literal that is
+  the **bit pattern**, so `if (-0.0)` — falsy in C, bit pattern `0x8000…` — would have
+  taken the wrong arm. Unreachable from the `fabs` fold, which always emits `VT_INT`, but
+  reachable by any future float-producing fold. The condition now refuses float and struct
+  literals.
+
+**What this does and does not close.** `if (fabs(x) < 0.0) link_error();` now links.
+`20020720-1.c` still does **not**: it writes `p = fabs(x); q = 0.0; if (p < q)`, so the
+operands only meet after copy propagation. The fold is real and the test is still red —
+closing it needs cprop to bring `fabs(x)` and the literal together, which is the next step
+on this axis and is not done.
+
 ### Three items that read as closed and are not — checked 2026-08-10
 
 Written down because a reader sweeping for finished work will mis-file all three. Each
