@@ -14,9 +14,13 @@
 ### How to validate — standing rule, 2026-08-10
 
 **Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the
-oracles.** `ctest -R "^smoke/"` is ~40 s for 12.9M value cases across `-O0`–`-O4` (was
-~10 s / 6.7M before `wt/smokedepth` deepened the float tables), plus the device arm and
-the divergence arm. Do not run the full suite to validate a change.
+oracles.** `ctest -R "^smoke/"` is ~15–90 s for 13.0M value cases across `-O0`–`-O4`, plus
+the device arm and the divergence arm. Do not run the full suite to validate a change.
+
+**As of 2026-08-10 smoke also reaches every optimizer strategy**: the subject fires 22 of 22
+at `-O4` (it reached 8 before `tests/smoke/scases.h`), and every one of those shapes is
+value-checked against both oracles. Read that as a coverage floor, not as proof each strategy
+affects output — see open item N1, where seven of them are write-only.
 
 The reasons are measured, not stylistic. The full suite is **~23 minutes and is not
 `-j`-bound** — one cell alone is 1,378 s, so the wall floor is a single cell and buying
@@ -44,57 +48,34 @@ Consequences that follow, and they are not optional:
 
 ### Where the tree is
 
-> The pre-merge branch accounting that used to sit here (9501/9503/9504 cells,
-> `wt/jitshutdown`/`wt/threadmap-int`/`wt/o4fold` unmerged) moved to `docs/ARCHIVED.md`
-> on 2026-08-10 — every branch it tracked has merged.
+`main` at `747709bc`, **9538 cells on this host** (9535 before this wave; `slice/device-lost`,
+`slice/quiesce` and `optfire/tco_tern` are the three new ones). Count cells on the host rather
+than adding them up — registration is glob-, loop- and capability-driven (Vulkan +
+`spirv-val`, `objdump`), so the total is host-dependent. The pre-merge branch accounting that
+used to sit here moved to `docs/ARCHIVED.md`; every branch it tracked has merged.
 
-`main` past the `wt/smokedepth` merge (`3150681f`), **9535 cells on this host**
-(`ctest -N` unchanged through the `wt/o4fold`, `wt/smokefix` and `wt/smokedepth` merges —
-no cell added or lost). The whole wave is in: `wt/earlyret`, `wt/jitshutdown`,
-`wt/kgcpure`, `wt/probearm`, `wt/threadmap-int`, `wt/globagg`, `wt/noslot`,
-`wt/bakewiden`, `wt/replayfix`, `wt/o2wrong`, `wt/f64tern`, `wt/smoke`, `wt/parseframe`,
-`wt/o4bugs`, `wt/o4ticks`, `wt/mccdev`, `wt/o4fold` (merged at `074a92d7`), then
-`wt/smokefix` (named compile-pass rows) and `wt/smokedepth` (the IEEE boundary and
-conversion sweeps). `wt/rirnorm`, `wt/globreloc` and `wt/threadmap` are
-**superseded** — they landed through `wt/rirphase`, `wt/globreloc-int` and
-`wt/threadmap-int` respectively; do not merge the originals (`wt/threadmap`'s `de928597`
-carries the second classifier and a bank re-taken against a stale base). **Count cells on
-the host rather than adding them up** — registration is glob-, loop- and
-capability-driven (Vulkan + `spirv-val`, `objdump`), so the total is host-dependent.
+`-O4` is the consolidation of all 26 validated knobs, `-O5`–`-O12` and `-O14`+ are a hard
+error, `-O13` is the search entry. Smoke covers `-O0`–`-O4`.
 
-`-O4` is now the consolidation of all 26 validated knobs, `-O5`–`-O12` and `-O14`+ are a
-hard error, `-O13` is the search entry, and smoke covers `-O0`–`-O4` at 12,875,605 value
-cases (6,772,291 at the `wt/o4fold` merge; `wt/smokedepth` deepened the float tables to
-the IEEE boundaries). Two fixes sit on top of the `wt/o4fold` merge:
+**The 2026-08-10 wave, nine commits `dd80e4fa..747709bc`, closed five defects and two board
+items. Four of the five had a *wrong diagnosis on the board*, so read the landed sections
+before trusting any summary of them:**
 
-- `c61d1aa5` — `ast_search_evals_report` (new with the tick redesign) opened without
-  `MCC_TRACE("enter\n")`; caught by `trace-gate-invariant`, not by a reviewer.
-- `afa4e0d5` — `regression/o4-aot-jit`, the one red in `wt/o4fold`'s validation, asserted
-  a wall-clock contract that no longer exists: Part 1 required the `-O13` search to take
-  3–60 s, and the work-bounded search finishes that subject in 2.5 s **by design**. The
-  lower bound is removed — engagement is proven by the candidate count (12,672 against a
-  floor of 1,000) and the active range gate — and the upper bound is kept, widened,
-  purely as a runaway guard.
+| what | was on the board as | actually |
+| --- | --- | --- |
+| item 26 | a stack-slot overlap, triggered by same-named locals | the arena replay handing out a recorded frame slot **too small** for the object going into it. Names irrelevant; the allocator is fine |
+| item 25 | an archive member loaded twice | **two runtimes in one link.** `mccrt.o` is pulled once; host `libgcc.a` and `libmccrt.a` define 68 symbols strong in both |
+| the ternary fold | not on the board at all | **a live miscompile on `main`** — the two-return `if` fold dropped the per-return conversion, `diverge-both` at `-O2`+ |
+| the `-O13` order memo | not on the board at all | 4-bit packing for 22 strategies: six were **silently rewritten** into different strategies, and persisted to disk that way |
+| strategy coverage | not on the board at all | smoke reached **8 of 22** strategies. Now 22 of 22 |
 
-With those two, the four reds that predated `wt/mccdev` are all resolved:
-`optlevel/torture-differential` and `fmt/census-bank` (+ twin) at `93cc8b07` — the two
-stale computed-goto rows dropped, the census re-banked 151 → 153 for the two
-`-fdump-opt-search` prints — and `smoke/native` green since the `wt/o4fold` retarget,
-**by omission, not by fix**. **Read open items 21–26 on the audit board before reading
-green cells in those areas**: item 21 owns the unmeasured `-O13` replay-fallback
-regression; item 22 is since **corrected** by `wt/smokedepth` — mcc rounds every
-`_Float16` operation back to `_Float16` and the references keep a `float` intermediate,
-a flag-selectable evaluation format, so what remains there is a decision, not a fix —
-and the same sweeps filed items 23–26: the `(unsigned int)` cast losing its truncation
-in wider expressions, the `long double`→`int` truncation inconsistency, the `--embed-jit`
-double archive load that blocks the `unsigned long long` conversion leg — **item 25 is
-diagnosed as of 2026-08-10 and nothing is loaded twice**; host `libgcc.a` and mcc's
-`libmccrt.a` are both in the `--embed-jit` link and define 68 symbols strong in both, and
-the one-line weak-symbol fix is *wrong* for a reason smoke catches — and the
-`_Complex` sibling-block miscompile — **item 26 is fixed as of 2026-08-10**, and it was
-neither a stack-slot overlap nor anything to do with the locals sharing names; the arena
-replay was handing out a recorded frame slot too small for the object about to go in it.
-Its shape is covered by `smoke/native` again. Items 21, 23, 24 and 25 stand.
+Items 4 (TCO through `AST_If` op 5) and 9 (`L2′(ii)`/`(iii)`, the GPU device-lost and quiesce)
+are both **landed**. `L2` itself — wiring the device into `mccjit_shutdown()` — is
+deliberately not done; its two preconditions are in the GPU landed section, and one of them
+is a hazard *this wave created*.
+
+Still open on the audit board: **21** (the `-O13` bail ratchet), **22** (a decision, not a
+fix — and see the new finding that mcc is arguably the conforming one), **23** and **24**.
 
 Three machines share this tree: this one (Linux/Vulkan), a Windows box and a Mac box.
 Both peers were idle through this wave.
@@ -102,7 +83,10 @@ Both peers were idle through this wave.
 ### Five corrections to the previous handoff
 
 1. **"`if`-return→ternary is the unlock for gap #1" — the diagnosis was right, the placement
-   was the bug.** The fold was reverted on `wt/rirnorm` for three reasons that all reduce to
+   was the bug.** *(And there was a third thing wrong with it, found 2026-08-10: the fold
+   dropped the per-return conversion and was miscompiling mixed-signedness returns on `main`.
+   See the landed section. The byte-faithfulness objection below was real but was not the
+   whole story.)* The fold was reverted on `wt/rirnorm` for three reasons that all reduce to
    byte-faithfulness, and its headline ("−82 accepted blocks against an unchanged 119,363
    population") is a **denominator artifact**: the population falls to 119,228. ~130
    already-accepted single-`Return` blocks are absorbed into their parent's ternary and stop
@@ -304,8 +288,68 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    decisions by index, the index is not the contract; record what the entry was *for* and
    check it on the way out.** Its sibling `rir_loc_replay` resyncs by output position and
    still does not check size — see the landed section.
+12. **NEW — a fold is not a rewrite unless it preserves what the original spelling
+   converted.** `rir_tern_normalise` turned `if (c) return A; return B;` into
+   `return c ? A : B;`. Each `return` converts to the return type *independently*; a ternary
+   first applies the usual arithmetic conversions *between the arms*. With mixed signedness
+   those are different programs, and mcc gave `4294967295` where gcc and clang both gave
+   `-1`. The control that makes it unarguable: writing the ternary **by hand** gives
+   `4294967295` on all three, because that spelling really does carry the conversion.
+   **When a normalisation rewrites one syntactic form into another, enumerate what the
+   source form implied and the target form does not.**
+13. **NEW — a veto in one pass to protect another pass hides whatever else it was
+   catching.** The ternary fold refused `AST_Invoke` arms for no reason except keeping TCO
+   firing. That veto was also, accidentally, the only thing stopping the conversion defect
+   above from reaching call-valued arms — so removing it turned a hidden miscompile into a
+   live one. Both of the fold's refusals are of this shape (the other protects SCCP).
+   **A cross-pass veto is load-bearing in ways its comment does not say; measure what it
+   blocks before lifting it, and land the fix underneath it first.**
 
 ### Open, ranked
+
+> **New this wave, and the first three outrank everything below them.** Numbering continues
+> from the existing list rather than renumbering it; N1–N6 are the 2026-08-10 additions.
+
+**N1. Seven of 22 strategies are write-only.** `LTEMP, IVSR, PRE, RANGE, ABS, REASSOC,
+INLINE` mutate the arena but their fire count never reaches the `do_*` disjunction that
+triggers the re-emit, so their work is discarded unless something else fires. Measured:
+`reassoc` alone on a leaf function at `-O4 -fno-promote-locals` is byte-identical while the
+rewrite demonstrably happened. **This is a prerequisite for any mix-and-match work** and it
+means the new 22-of-22 smoke coverage is a floor, not proof those seven affect output. The
+fix is to let `ast_run_strat_cycle`'s return value drive the disjunction. See the research
+section.
+
+**N2. `rir_tvar_replay` and `rir_slot_replay` repeat the bug `dd80e4fa` fixed, unchecked.**
+`rir_tvar_replay` is the *first* statement of `get_temp_local_var`, so it bypasses the
+`size >= && align >=` invariant the same function enforces sixteen lines later, on the same
+object class, in a function that already has the sizes. Neither was on the board.
+`rir_loc_replay` is the same shape but measured clean (0 undersized over 620 smoke firings
+and 1,013 torture firings) — that probe was reverted, not banked, so nothing pins it.
+
+**N3. Item 24 is the real conformance defect of the 22/23/24 trio, and 23/24 share one
+predicate.** Both are `t != VT_INT` in `gen_cvt_ftoi` on opposite arms; 24 is in-range, not
+UB, and also hits `(short)`; 23 has no non-UB reproducer on x86-64. arm64/riscv64 are already
+correct and are the reference. 24 needs an x87 `fistpl` sequence, **not** a wider convert —
+the naive shared fix regresses a case where mcc currently matches both references. Item 22
+may be no defect at all: mcc predefines `__FLT_EVAL_METHOD__ 0` and its per-operation
+rounding is what that macro promises.
+
+**N4. `-O13` is dark on 13 of 21 strategies**, at the one level with no bail ratchet (item
+21). ~2.7 s, bit-deterministic, already digest-clean. `smokerun --max-level 13` is a silent
+no-op. Bank *dark* strategies rather than fire counts and the existing `ratchet()` needs no
+change. See the research section for the two traps.
+
+**N5. Two more green-by-omission hazards.** The device arm computes two refusal categories and
+never calls `ratchet()` (`bails.txt` holds no `dev ` rows). Twelve `optfire/*.txt` tables drive
+ctest registration by row count with no `list(LENGTH)` guard — delete a row and the cell
+silently stops existing. The durable shape is re-deriving a bank's expected row set from
+`src/mccopt.h` and failing on `missing-row`, which is what the four banks that resisted
+shrinkage do.
+
+**N6. `L2` — wire the device into `mccjit_shutdown()`.** Unblocked as of 2026-08-10, with two
+preconditions in the GPU landed section. One is a hazard *this wave created*: the quiesce now
+unmaps the shared address space, so nothing may retain a `mcc_gpu_mem()` pointer across
+shutdown. That hazard did not exist while the quiesce destroyed nothing.
 
 1. ~~Re-arm the benignity probe~~ **DONE, 2026-08-10** — see the section below. The
    answer exists: at `-O1`/`-O2`/`-O3` every keepable divergent body is benign; at `-O0`
@@ -315,8 +359,11 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
 3. ~~Re-take the two owed deltas~~ **DONE, 2026-08-10** — see the section below.
    `cleanup_symbols`'s `-O0` arena is the first named defect in the discard set that the
    byte gate is catching; finding out why it is wrong is the new open item here.
-4. `ast_tco_run` cannot see through an `AST_If` op 5, so the tail-recursive two-exit `if`
-   stays out of reach and the ternary fold refuses that shape to keep TCO firing.
+4. ~~`ast_tco_run` cannot see through an `AST_If` op 5, so the tail-recursive two-exit `if`
+   stays out of reach and the ternary fold refuses that shape to keep TCO firing.~~
+   **DONE, 2026-08-10** — and it could not land alone: the fold's `AST_Invoke` veto was
+   hiding a live miscompile, so the return-conversion fix had to land first. See both landed
+   sections.
 5. `SR_GLOB_MAX` is 4,096 in `slicerun` with no reset between arenas and no message — the
    same silent cap `ast_adump_intern` just made loud. Fails safe; a coverage cliff.
    **Measured, and it is not binding today**: raising it to 65,536 leaves the whole gcc
@@ -351,6 +398,16 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    programs, 0 new DIFFER) and proved the rest is upstream in `ast_func_end`. Attributing
    those 3110 across `rir_try_active`, `ast_replay_ok`, `faithful && !ast_fn_hole` and
    `ast_jit_want` is the measurement that ranks every remaining JIT-coverage item.
+   **Sharpened 2026-08-10**: the funnel is *six* predicates, not four — the plan omits
+   `!ast_func_has_labeladdr` (a term of `ast_opt_ok`) and the `embed_jit || OUTPUT_MEMORY`
+   plus `!ast_jit_slot_taken` gate. **The 47.1% is not computed in the compiler at all**;
+   `NOT_BAKED` is assigned in `tools/jitconform.py` and there is no bake counter in `mcc`.
+   Build one modelled on `rir_prod_why_name[]` — named reason, parallel count *and bytes*,
+   `atexit` report — and split `ast_opt_ok` and `ast_jit_want` into their sub-terms or the
+   largest bucket will be uninterpretable. Predicates 1, 3 and 5 have no signal today, which
+   is why the measurement cannot be taken. Do **not** reuse `MCC_JIT_BAKE_WHY` (it already
+   means per-site free text) and do not gate it with `ast_env_int`, which returns the default
+   for any value ≤ 0.
 9. ~~**Cluster L's next link is `L2′(ii)`/`(iii)`, both in `src/mccgpu.c`** — clear
    `mcc_gpu.ok` on `VK_ERROR_DEVICE_LOST` and give the Vulkan quiesce something to destroy.~~
    **DONE, 2026-08-10** — see the landed section. `L2` is unblocked on the hang axis, with
@@ -401,6 +458,158 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
     equivalent to another, and how much optimizer work is duplicated across them? `src/*.c`
     is the right denominator, not gcc c-torture (item 6). If the duplication is small, the
     cache is `opt-slice` again.
+
+## Research — five horizontal slices over the open board, 2026-08-10
+
+Five parallel read-only sweeps, one per cross-cutting layer, run to find where one
+implementation serves several open items. Everything below is **unbuilt** unless it names a
+commit. Claims I re-verified myself are marked; the rest are the sweep's, and a sweep that
+reasons from source alone has been wrong on this board before.
+
+### The single largest finding: 7 of 22 strategies are write-only
+
+`ast_run_strat_cycle` returns a per-strategy fire array, but `src/mccast.c` unpacks it into
+`do_*` flags for only **15** indices. Never read: **`LTEMP`, `IVSR`, `PRE`, `RANGE`, `ABS`,
+`REASSOC`, `INLINE`**. That `do_*` disjunction is the *sole* trigger for the re-emit that
+turns a mutated arena into bytes — so a strategy in the unread set mutates `ast_cur` and, if
+nothing else fires, **the mutation is discarded**.
+
+Measured by the sweep: `reassoc` alone, on a leaf function, at `-O4 -fno-promote-locals`,
+produces byte-identical output while `-fdump-replay` shows the rewrite did happen. With
+promotion on (the `-O4` default) it does land — but only because `do_promote`, computed
+independently, forces the re-emit. **Six knobs are riding on someone else's re-emit**, and
+every ROI number the search computes for them is measuring a benefit the compiler then throws
+away.
+
+This is the prerequisite for any mix-and-match work: until the cycle's return value drives the
+re-emit, an A/B over strategy subsets measures "did some *other* strategy fire", not the
+subset. It also means **the 22-of-22 fire counts now in smoke are a coverage floor, not proof
+those seven strategies affect output** — they fire, and on the default ladder they land, but
+the mechanism that makes them land is not their own.
+
+### Couplings that make the registry less of a registry than it looks
+
+- **`LICM` is a sensor, not a transform.** `ast_strat_licm` ignores both arguments and returns
+  a global that **`ast_cse_run` zeroes**. Scheduling LICM before CSE reports a stale count;
+  scheduling LTEMP before CSE has its contribution wiped before LICM can report it.
+- **A strategy's precondition lives in five unlinked places** — the `sg_*` thunk, the
+  `ast_*_env` global it reads, a 36-term OR in `ast_search_gates_now`, the matching assignment
+  in `ast_search_gates_set`, and `so_axes[]` in `src/mcc.c` (12 entries, which does not even
+  match `ast_search_axis_env[]`'s 13). Adding a strategy means editing five tables correctly.
+- **The ROI model assumes independence by construction** — it clones the pristine arena once
+  per strategy and scores each alone, so composition effects (reassoc → bfold, ltemp → cse)
+  are structurally invisible.
+- **Two inline paths are mutually exclusive by hand**: `AST_STRAT_INLINE` is gated on
+  `ast_inline_pass_env` while the `do_inline` path requires `!ast_inline_pass_env`. One of the
+  22 slots is dead whenever the other is live.
+- **`opt-slice` changed zero objects for a mechanical reason.** The window seam
+  (`ast_slice_enum` + `AstSliceVisitFn`) has two registered visitors and **both are pure
+  observers**; there is no visitor that rewrites anything, and the single call in the compiler
+  discards its result. It was a scan with disk persistence and no apply — which is also why it
+  cost 33.7% of `-O12` and made output irreproducible.
+
+### The record/replay family has nine consumers, not one
+
+`dd80e4fa` fixed `ast_alloc_loc`. The same shape appears eight more times, ranked by how much
+the consumer checks:
+
+- **Full validation** (the two to copy): `mcc_effect_record`/`_replay`, and
+  `ast_inline_cap_off[]` → `mcc_slice_leaf_scan_rec`, whose comment says it *replaced* a
+  positional assumption. `ast_fconst_reuse` and `rir_hook_fconst_reuse` key on a `memcmp` and
+  fail closed.
+- **No validation**: `rir_loc_replay`, `rir_slot_replay`, `rir_tvar_replay`, `ir_cap_fconst_take`,
+  `ir_cap_pred`, `cst_inc_tmpl`.
+
+**`rir_tvar_replay` is the worst and is not on the board.** It is the *first* statement of
+`get_temp_local_var`, so it bypasses the `size >= && align >=` invariant that the same
+function enforces sixteen lines later — the exact bug `dd80e4fa` fixed, on the same object
+class, in the function that already knows the sizes. `rir_slot_replay` likewise discards the
+`size`/`align` its caller computed.
+
+**One inferred hazard I measured and did not reproduce:** `ast_reemit` sets `ast_locrec_i = 0`
+but never `ast_locrec_n`, which is zeroed only in `ast_func_begin` — so in principle a re-emit
+replays the *last-parsed function's* record. I stamped the record with its owner and counted:
+**278 takes across mcc's three largest TUs at `-O3`, plus the whole torture corpus, zero
+foreign**. Real in shape, absent in fact, unpinned.
+
+The proposed unification is one entry type carrying `{kind, size, align, pos, nc, owner}` and
+one `mcc_rec_take` that skips by fit, resyncs by position where the stream wants it, and fails
+closed — with `owner` closing the `ast_reemit` hazard for about three lines. `SR_GLOB_STRIDE`
+is **not** served by it and should not be forced in: that one is an address-space partition,
+and it is the only member of this family that can fail *wrong* rather than *safe*, because
+both the executor and the C oracle decode into the same wrong symbol and agree.
+
+### Items 23 and 24 are two defects sharing one predicate
+
+Both are `t != VT_INT` in `gen_cvt_ftoi` (`src/arch/x86_64/x86_64-gen.c`) standing in for a
+two-dimensional decision — destination width × signedness — and they bite on **opposite
+arms**:
+
+- **23** bites where `t != VT_INT` and spares `(int)`: the emitted convert is 64-bit and
+  nothing narrows it. `(unsigned long long)(unsigned)d` for `d = 1e300` gives `2^63` against
+  `0` from both references. **No non-UB reproducer exists on x86-64** — the 64-bit convert is
+  exact whenever the value fits — so this is quality-of-implementation.
+- **24** bites where `t == VT_INT` and spares `(unsigned)`: `long double` is narrowed through
+  `double` by an `fstpl` before truncation, so `1 − 2⁻⁶⁴` rounds to `1.0`. **Not UB, in-range
+  operand, and it also hits `(short)`** — a datum the board did not have, since `gen_cast`
+  rewrites every sub-`int` destination to `VT_INT`. gcc emits a real 80-bit truncating
+  `fistpl` sequence instead.
+
+**arm64 and riscv64 are already correct** and are the reference implementation — they decode
+width and signedness independently and dispatch `long double` to a 32-bit-destination helper.
+This is an x86_64-only pair. Naively applying one fix to both regresses a currently-passing
+case: converting `long double` at 64-bit then narrowing turns `(int)(long double)1e300` from
+`-2147483648`, where mcc currently matches **both** references, into `0`. 24 needs `fistpl`,
+not a wider convert — and note that adding a `__fixxfsi`-style helper would collide with the
+libgcc overlap in item 25's territory. Emit the instructions, do not add the helper.
+
+**Item 22 may not be a defect at all.** mcc predefines `__FLT_EVAL_METHOD__ 0`, and per C23
+`0` means "evaluate to the range and precision of the type" — so mcc's per-operation `_Float16`
+rounding matches its own advertised macro and gcc's default does not match gcc's. The one line
+that implements the policy is the `gen_cast_s(VT_FLOAT16)` round-back in `gen_op`; but deleting
+it alone is wrong, because the line above has already set the expression's *type* to `float`,
+which `_Generic`/`sizeof`/`typeof` would see. An honest `=fast` needs an excess-precision bit
+on `SValue` that does not exist.
+
+### The `-O13` tier is dark on 13 of 21 strategies
+
+Measured per level on the smoke subject: `-O0` 21 dark (no strategy runs at `-O0` at all),
+`-O1` 12, `-O2`/`-O3` 9, `-O4` **1** (before the `bfold` shape landed; now 0 of 22), and
+**`-O13` 13** — `ivsr, narrow, bfold, range, bf, divmagic, pre, ltemp, inline, abs, tco, licm,
+reassoc`. That is the state the whole subject was in before `scases.h`, at the one level
+nothing watches.
+
+Every objection to watching it is gone: an `-O13` compile of the subject is **~2.7 s**, it is
+**bit-deterministic** (882 TSV rows and 112 `fallback` rows across search budgets of 100, 1000
+and 5000 ms and three repeats), and it already agrees with `-O0`–`-O4` on the value digest with
+`failures=0`. **`smokerun --max-level 13` is currently a silent no-op**: `smk_maxlevel()` walks
+`MCC_OPT_LIST` and returns 4, because 13 is `MCC_OPT_SEARCH_LEVEL`, not an `MCC_OPT_ROW`, and
+`main` clamps to it.
+
+**The ratchet wants inverted polarity.** A fire count must not fall, which is the wrong
+direction for a monotone-decreasing bank. Bank the strategies that are **dark** instead: a
+strategy going dark becomes a *new category* (hard fail), one lighting up prints `IMPROVED`,
+and `ratchet()`, `bank_load`, `bank_write` and the file format need **no change at all**.
+`--stats=4` costs nothing measurable, does not change codegen, and its text is already slurped
+by the level pass. Two traps for whoever builds it: at `-O13` the panel prints once per search
+phase and **the last one reads all zeros**, so the census must take the per-column max; and
+`cload` was invisible until `52d8b66b` widened `MCCSTATS_STRAT_N`.
+
+### Two more green-by-omission hazards
+
+- **The device arm computes a census and never ratchets it.** `device_probe` calls `cat_add`
+  for `dev device-refused:unavailable` and `:no-dispatch`, `main` calls `bank_load`, but the
+  `do_dev` branch never calls `ratchet()` and `bails.txt` holds no `dev ` rows. Both categories
+  are unmeasured; the arm could start refusing every dispatch and stay green.
+- **Row-count-driven ctest registration.** Twelve `tests/optfire/*.txt` tables are read with
+  `file(STRINGS …)` and turned into one cell per row, with no `list(LENGTH)` guard. Delete a
+  row and the cell is never registered — ctest reports the same `N/N` with a smaller `N`.
+
+**The generalisable rule**, and it is the one `bails.txt` lacked: the tree has eight `--min-*`
+floors and **every one floors a number produced at runtime; not one floors the row set of a
+committed bank**. The four banks that resisted shrinkage did so by re-deriving their expected
+row set from `src/mccopt.h` and failing on `missing-row`. That, not a `--min-rows N`, is the
+durable shape.
 
 ## Landed — the Vulkan quiesce destroys something, and a lost device stops dispatch, 2026-08-10 (open item 9, `L2′(ii)`/`(iii)`)
 
@@ -10642,7 +10851,15 @@ Ordered by how much a currently-quoted number depends on it.
     (where `1 - 2^-64` rounds to `1.0`) before the integer conversion. Found by the F80
     boundary sweep: `bsweep.F80.FSELMIX{L,R,B}` diverge from both references on exactly the
     corpus entry `1 - LDBL_EPSILON/2`, 62 of 4,096 cases.
-25. **DIAGNOSED 2026-08-10, and the title below is wrong: nothing is loaded twice.**
+25. **FIXED 2026-08-10 (`4d8e03c4`), and the title below is wrong: nothing is loaded twice.**
+    The fix is none of the three candidate directions listed further down — it is simpler.
+    The embedded JIT engine blob references **zero** libgcc symbols (all 145 of its undefined
+    symbols are libc/pthread/dl), so host `libgcc.a` was dead weight on the ELF embed-jit
+    path and dropping it removes the conflict instead of arbitrating it. That also closed a
+    silent divergence: because libgcc always preceded libmccrt, `--embed-jit` binaries had
+    been using **libgcc's** semantics for all 68 shared helpers. The two link modes now
+    agree. Scope is ELF only; the PE/mingw block is untouched and unmeasured. Original
+    diagnosis, kept because the mechanism is still worth reading:
     `mccrt.o` is pulled exactly once. The duplicate is between **two different runtimes**:
     `--embed-jit` adds the host `libgcc.a` (via `MCC_EMBED_JIT_GCC_LIBDIR` in
     `mcc_add_jit_engine_embedded`, so the gcc-built engine blob can resolve its own helper
