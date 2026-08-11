@@ -536,11 +536,38 @@ Two defects in this work, both caught rather than reasoned out, and both worth t
   reachable by any future float-producing fold. The condition now refuses float and struct
   literals.
 
-**What this does and does not close.** `if (fabs(x) < 0.0) link_error();` now links.
-`20020720-1.c` still does **not**: it writes `p = fabs(x); q = 0.0; if (p < q)`, so the
-operands only meet after copy propagation. The fold is real and the test is still red —
-closing it needs cprop to bring `fabs(x)` and the literal together, which is the next step
-on this axis and is not done.
+**3. The operands are resolved through their defining store** (`ast_local_def_value`).
+`20020720-1.c` writes `p = fabs(x); q = 0.0; if (p < q)`, so neither operand is syntactically
+what the fold wants. `ast_expr_nonneg` already resolved the *left* through
+`ast_local_nonneg` — a local with exactly one defining `AST_Store` and no address taken.
+The right needed the mirror, factored out of the same guards. **`20020720-1.c` passes.**
+
+### Cross-vendor coverage: 492 of 493, and what the last one needs — 2026-08-11
+
+| status | count | |
+| --- | ---: | --- |
+| PASS | **492** | 99.80% |
+| MCC_NOBUILD | 1 | `20041114-1.c` |
+| DIFF_EXIT | **0** | no wrong answer remains |
+| MCC_TIMEOUT | **0** | see below |
+
+**`build2.c` was never a defect, and the harness was measuring the wrong thing.** It was
+reported `MCC_TIMEOUT` under a 15 s run cap. mcc compiles it in 0.00 s and the binary
+prints output **byte-identical to gcc's** — it just takes 75 s, because the program is
+200 million iterations of a loop gcc folds away and mcc does not. A cross-oracle exists to
+compare *behaviour*; failing a program for being slow answers a question it was not asked.
+`--rtimeout` now defaults to 120 s, which still bounds a genuine hang. The 5× gap is a
+real performance finding and belongs in a benchmark, not in a conformance verdict.
+
+**The one remaining failure needs value-range propagation, and was deliberately not
+pattern-matched.** `20041114-1.c` asks that
+`var <= 0 || (unsigned long)(unsigned)(var - 1) < UINT_MAX` fold to 1. The chain is:
+`(unsigned long)(unsigned)E < UINT_MAX` → `(unsigned)E != UINT_MAX` → `E != -1`;
+then `var - 1 != -1` → `var != 0`; then `var <= 0 || var != 0` is a tautology. The last
+step is symbolic reasoning across a disjunction — VRP, which this tree does not have. The
+`range` strategy exists but is one of N1's seven write-only strategies, so it is not a
+usable home for it either. Matching this expression shape specifically would close the
+test without implementing anything; that is worth refusing.
 
 ### Three items that read as closed and are not — checked 2026-08-10
 

@@ -45,6 +45,15 @@ Usage:
 
 `--opt` and `--mcc-env` must be attached with `=` when the value begins with a
 dash, for the same argparse reason xsuite.py documents.
+
+`--rtimeout` bounds a run so a genuine hang cannot stall the sweep, and nothing
+else. It must stay well above the slowest *correct* program in the corpus or it
+stops measuring behaviour and starts measuring speed: at the former 15s,
+SingleSource/UnitTests/Vector/build2.c -- 200 million iterations of a loop gcc
+folds away and mcc does not -- was reported as a failure while printing output
+byte-identical to the oracle's, in 75s. A cross-oracle that fails a program for
+being slow is answering a question it was not asked; rank compile-time and
+run-time separately if they need ranking.
 """
 import argparse, hashlib, json, os, subprocess, sys, threading
 from concurrent.futures import ThreadPoolExecutor
@@ -470,7 +479,7 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--suite", action="append", default=[])
     ap.add_argument("--ctimeout", type=float, default=25.0)
-    ap.add_argument("--rtimeout", type=float, default=15.0)
+    ap.add_argument("--rtimeout", type=float, default=120.0)
     args = ap.parse_args()
     args.out = os.path.abspath(args.out)
     os.makedirs(args.out, exist_ok=True)

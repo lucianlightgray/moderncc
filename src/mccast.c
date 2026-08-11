@@ -7240,6 +7240,39 @@ static int ast_local_nonneg(AstArena *a, AstLocal ref, int depth) { MCC_TRACE("e
 	return ast_expr_nonneg(a, ast_child(a, def, 1), depth - 1);
 }
 
+static AstLocal ast_local_def_value(AstArena *a, AstLocal ref) { MCC_TRACE("enter\n");
+	if (ast_kind(a, ref) != AST_Ref)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	int rop = ast_op(a, ref);
+	if ((rop & VT_VALMASK) != VT_LOCAL || (rop & VT_SYM))
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	int64_t off = (int64_t)ast_ival(a, ref);
+	AstLocal nn = ast_count(a), def = AST_NONE;
+	int ndefs = 0;
+	for (AstLocal m = 0; m < nn; m++) { MCC_TRACE("br\n");
+		int mk = ast_kind(a, m);
+		if (mk == AST_Unary && ast_op(a, m) == AST_OP_ADDR) { MCC_TRACE("br\n");
+			AstLocal c = ast_first_child(a, m);
+			if (c != AST_NONE && ast_kind(a, c) == AST_Ref &&
+					(ast_op(a, c) & VT_VALMASK) == VT_LOCAL && !(ast_op(a, c) & VT_SYM) &&
+					(int64_t)ast_ival(a, c) == off)
+				{ MCC_TRACE("br\n"); return AST_NONE; }
+		}
+		if (mk == AST_Store) { MCC_TRACE("br\n");
+			AstLocal tgt = ast_child(a, m, 0);
+			if (tgt != AST_NONE && ast_kind(a, tgt) == AST_Ref &&
+					(ast_op(a, tgt) & VT_VALMASK) == VT_LOCAL && !(ast_op(a, tgt) & VT_SYM) &&
+					(int64_t)ast_ival(a, tgt) == off) { MCC_TRACE("br\n");
+				ndefs++;
+				def = m;
+			}
+		}
+	}
+	if (ndefs != 1 || def == AST_NONE)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	return ast_child(a, def, 1);
+}
+
 static int ast_cmp_nonneg_lt_zero(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal l, r;
 	uint64_t v;
@@ -7252,7 +7285,14 @@ static int ast_cmp_nonneg_lt_zero(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 	bt = ast_type_t(a, l) & VT_BTYPE;
 	if (bt != VT_FLOAT && bt != VT_DOUBLE)
 		{ MCC_TRACE("br\n"); return 0; }
-	if ((ast_type_t(a, r) & VT_BTYPE) != bt || ast_kind(a, r) != AST_Literal)
+	if ((ast_type_t(a, r) & VT_BTYPE) != bt)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, r) != AST_Literal && ast_math_inline_prepass_env) { MCC_TRACE("br\n");
+		AstLocal rv = ast_local_def_value(a, r);
+		if (rv != AST_NONE && (ast_type_t(a, rv) & VT_BTYPE) == bt)
+			{ MCC_TRACE("br\n"); r = rv; }
+	}
+	if (ast_kind(a, r) != AST_Literal)
 		{ MCC_TRACE("br\n"); return 0; }
 	v = ast_ival(a, r);
 	v &= bt == VT_FLOAT ? 0x7fffffffull : 0x7fffffffffffffffull;
