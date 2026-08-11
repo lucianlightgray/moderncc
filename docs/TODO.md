@@ -39,6 +39,14 @@
 > otherwise reworked** — an open row is still open unless it says otherwise, and N1 is
 > still open.
 >
+> **JIT/debug wave, 2026-08-11 — `-g` bakes, and two reds diagnosed.** Three commits,
+> `957169fa..a404d8c9`. `--embed-jit` is now the only gate on baking, so a `-g` build
+> hot-swaps (`boot=1254 swapped=191`, was `0/0`); `jit/gdb-debuggable` and `jit/selfhost-opt`
+> pin what that buys and where it stops; and the four red `ast/o0-baseline*` cells were a
+> **stale bank, not an `-O0` bug** — all five are green. Two new ranked items came out of it,
+> **N15** (a live `-g -run` SIGSEGV) and **N16** (`85bf6a3d` moves `-O0` objects while
+> claiming otherwise). Sections dated 2026-08-11 inside *STATE OF PLAY*.
+>
 > **Board-work wave, 2026-08-11 — N5, N4 and F7.** Six commits, `2d04a308..a6f46ff2`, working
 > the open board easiest-first. **N5 is closed in full** (all four green-by-omission hazards),
 > **N4 is closed** (`smoke/strat-dark` banks the strategies `-O13` leaves dark), and **F7 is
@@ -497,7 +505,8 @@ Consequences that follow, and they are not optional:
 
 ### Where the tree is
 
-`main` at `a6f46ff2`, **9546 cells in `cmake-def` on this host** — counted 2026-08-11 with
+`main` at `a404d8c9`, **9548 cells in `cmake-def` on this host** (`jit/selfhost-opt` and
+`jit/gdb-debuggable` are the two new ones) — counted 2026-08-11 with
 `ctest -N`, not added up. It was 9538 at `747709bc` and 9545 before `smoke/strat-dark`.
 
 > **Corrected 2026-08-11 (validation sweep).** This paragraph said "the two 2026-08-11 waves
@@ -818,8 +827,11 @@ measurement tool reports success over an empty or truncated subject:
 
 ### Open, ranked
 
-> **Status after the 2026-08-11 board-work wave: N4, N5 and N9 are closed and struck in
-> place; N1, N2, N3, N6, N7 and N8 are open.** Numbering continues rather than renumbering —
+> **Status after the 2026-08-11 JIT/debug wave: N4, N5 and N9 are closed and struck in place;
+> N1, N2, N3, N6, N7, N8 are open, and N15/N16 are new.** The numbering skips N10–N14 on
+> purpose: those tokens are already in use in this file for the archived device cluster, and
+> reusing them would make "N13" mean two unrelated things. Numbering continues rather than
+> renumbering —
 > N1–N6 are the 2026-08-10 additions, N7 came with the engine-parity arm on 2026-08-11, and
 > N8–N9 with the JIT/AOT differential the same afternoon. Order here is rank, not number, and
 > closed rows stay in place so a reader following a cross-reference lands on the closure
@@ -985,6 +997,31 @@ positively does work (it reports `predicted N candidate(s)`). So the open questi
 "are the `no-` forms inert?", not "are they a kill switch", and nothing measured so far is
 invalidated. **The lesson is the durable part: this item was filed from a commit message and
 ranked without anyone re-running it, and it took one `strcmp` and one A/B to fall over.**
+
+**N15. `-g -run` SIGSEGVs the moment the JIT is allowed to bake.** New 2026-08-11, and it
+outranks N6 because it is a crash on a command a person debugging their own program actually
+types. Letting `debug_modes` record in `MCC_OUTPUT_MEMORY` mode makes run mode bake —
+`mccjit-site[hot]: baked` — and then fault:
+
+    mcc -O1 -g -run --jit prog.c   ->  RUNTIME ERROR: invalid memory access, SIGSEGV (139)
+    MCC_JIT=0 mcc -O1 -g -run ...  ->  correct output
+
+**The fault is latent in the run-mode JIT, not caused by the gate** — reverting the gate makes
+run mode bake nothing, so nothing crashes, which is why it has never fired. It is held out of
+the shipped gate for that reason (`--embed-jit` alone enables baking; `-run` does not), with
+the reproducer in a comment at `rir_hook_body_begin`. Already localised: recording,
+faithfulness (`fn=2 faithful=2`, identical to non-`-g`), the dispatch gate (`opt_ok=1`) and the
+stash gate all behave the same with and without `-g`; **the divergence is after the bake, on
+the swap.** Fixing it is what unblocks `-g -run`.
+
+**N16. `85bf6a3d` moves `-O0` objects, and its commit message says it does not.** Found
+2026-08-11 while attributing the `o0-baseline` drift. Reverting that commit's single source
+file and re-running `o0_ab.sh` reports *"an `-O0` object moved"* — so the fix does change
+emitted bytes at `-O0`, against its own claim of *"without moving a single instruction"*. It is
+**not** the cause of the `fn` drift (that was `931f3137`'s four fixtures, and `fn` stayed 1314
+with `85bf6a3d` reverted), so this is a separate, unexamined discrepancy. Small, and worth
+settling before the next person trusts that sentence: either the claim is wrong or the revert
+perturbs something else.
 
 **N6. `L2` — wire the device into `mccjit_shutdown()`.** Unblocked as of 2026-08-10, with two
 preconditions in the GPU landed section. One is a hazard *this wave created*: the quiesce now
@@ -3082,7 +3119,9 @@ finding that only exists because a bank got read for the first time in six days.
 
 #### THE FINDING — 28 `-O0` objects moved and nothing noticed for 426 commits
 
-`tests/ast/o0-baseline/` was last taken at `bc85ce70` (2026-08-03). `tools/o0_ab.sh` has
+`tests/ast/o0-baseline/` was last taken at `bc85ce70` (2026-08-03) when this was written;
+**re-taken 2026-08-11 at `a404d8c9`, all twelve rows** — see *The four red `ast/o0-baseline`
+cells* above. `tools/o0_ab.sh` has
 never been a ctest cell, so between then and `a2733199` — **426 commits, 209 of them
 touching `src/`** — nothing compared anything against it.
 
