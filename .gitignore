@@ -20,3 +20,6 @@ qemu_*.core
 
 /Testing/
 __pycache__/
+
+/vendor
+/.claude/settings.local.json
