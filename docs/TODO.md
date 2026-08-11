@@ -656,8 +656,12 @@ change. See the research section for the two traps.
 
 **N5. Four green-by-omission hazards.** The device arm computes two refusal categories and
 never calls `ratchet()` (`bails.txt` holds no `dev ` rows). Twelve `optfire/*.txt` tables drive
-ctest registration by row count with no `list(LENGTH)` guard — delete a row and the cell
-silently stops existing. The durable shape is re-deriving a bank's expected row set from
+ctest registration by row count ~~with no `list(LENGTH)` guard — delete a row and the cell
+silently stops existing~~ **— CLOSED 2026-08-11: both glob-driven loops now count the rows
+they register and hard-error below a floor (52 for `differs*`/`cdelta*`, 125 for the
+`counters*`/`levels*`/`defstate*` set). Proven by deleting one row and reading back
+`registered 51 rows, below the floor of 52`. A ratchet, not an equality: adding rows is fine
+and the floor is meant to be raised with them.** The durable shape is re-deriving a bank's expected row set from
 `src/mccopt.h` and failing on `missing-row`, which is what the four banks that resisted
 shrinkage do.
 
@@ -1033,7 +1037,8 @@ earlier verdict on a search sub-knob obtained with one of those flags is void.
   for `dev device-refused:unavailable` and `:no-dispatch`, `main` calls `bank_load`, but the
   `do_dev` branch never calls `ratchet()` and `bails.txt` holds no `dev ` rows. Both categories
   are unmeasured; the arm could start refusing every dispatch and stay green.
-- **Row-count-driven ctest registration.** Twelve `tests/optfire/*.txt` tables are read with
+- ~~**Row-count-driven ctest registration.**~~ **CLOSED 2026-08-11 — row-count ratchets on
+  both loops, verified by deletion.** Twelve `tests/optfire/*.txt` tables are read with
   `file(STRINGS …)` and turned into one cell per row, with no `list(LENGTH)` guard. Delete a
   row and the cell is never registered — ctest reports the same `N/N` with a smaller `N`.
 

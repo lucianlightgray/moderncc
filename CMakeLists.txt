@@ -5234,6 +5234,7 @@ if(MCC_BUILD_TESTS)
             file(GLOB _ofx_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
             file(GLOB _ofx_xfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/cdelta*.txt")
             set(_ofx_seen "")
+            set(_ofx_rows 0)
             foreach(_offile IN LISTS _ofx_dfiles _ofx_xfiles)
                 set(_ofxmode "differ")
                 if(_offile MATCHES "/cdelta[^/]*\\.txt$")
@@ -5242,6 +5243,7 @@ if(MCC_BUILD_TESTS)
                 file(STRINGS "${_offile}" _oflines)
                 foreach(_ol IN LISTS _oflines)
                     if(NOT _ol MATCHES "^#" AND NOT _ol STREQUAL "")
+                        math(EXPR _ofx_rows "${_ofx_rows} + 1")
                         string(REPLACE "|" ";" _of "${_ol}")
                         list(GET _of 0 _ofname)
                         list(GET _of 1 _ofopt)
@@ -5294,11 +5296,24 @@ if(MCC_BUILD_TESTS)
             endforeach()
             endforeach()
 
+            # Row-count ratchet. These cells are registered one-per-row from globbed
+            # tables, so deleting a row deletes a cell and ctest reports the same N/N
+            # with a smaller N. A drop is a hard error; adding rows is fine, and the
+            # floor is meant to be raised when you add them.
+            if(_ofx_rows LESS 52)
+                message(FATAL_ERROR
+                    "optfire differs/cdelta tables registered ${_ofx_rows} rows, below the "
+                    "floor of 52. A row that disappears takes its ctest cell with it and "
+                    "nothing else reports the loss. If the removal was deliberate, lower "
+                    "the floor in the same commit and say why")
+            endif()
+
             file(GLOB _of_cfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/counters*.txt")
             file(GLOB _of_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
             file(GLOB _of_lfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/levels*.txt")
             file(GLOB _of_sfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/defstate*.txt")
             file(GLOB _of_xfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/cdelta*.txt")
+            set(_of_rows 0)
             foreach(_offile IN LISTS _of_cfiles _of_dfiles _of_lfiles _of_sfiles _of_xfiles)
                 set(_ofmode "differ")
                 if(_offile MATCHES "/counters[^/]*\\.txt$")
@@ -5313,6 +5328,7 @@ if(MCC_BUILD_TESTS)
                 file(STRINGS "${_offile}" _oflines)
                 foreach(_ol IN LISTS _oflines)
                     if(NOT _ol MATCHES "^#" AND NOT _ol STREQUAL "")
+                        math(EXPR _of_rows "${_of_rows} + 1")
                         string(REPLACE "|" ";" _of "${_ol}")
                         list(GET _of 0 _ofname)
                         list(GET _of 1 _ofopt)
@@ -5393,6 +5409,14 @@ if(MCC_BUILD_TESTS)
                     endif()
                 endforeach()
             endforeach()
+
+            if(_of_rows LESS 125)
+                message(FATAL_ERROR
+                    "optfire counters/differs/levels/defstate/cdelta tables registered "
+                    "${_of_rows} rows, below the floor of 125. Same reason as the differs "
+                    "ratchet above: row count drives cell count, so a silent deletion is "
+                    "indistinguishable from a smaller suite")
+            endif()
 
             set(_fs_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/flagsweep.sh")
             set(_fs_py "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/cover3.py")
