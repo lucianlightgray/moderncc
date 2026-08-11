@@ -371,6 +371,74 @@ construction.** Closing the remaining gap means growing the *cross-adjudicable* 
 reclassifying the exclusive one. Do not re-litigate the 286 — the three cheap
 explanations are all disproved above.
 
+### The GPU ran 493 gcc and clang tests, and the cross-oracle found two `_Complex` bugs — 2026-08-10
+
+**The external suites now run through the in-compiler GPU path.** `ast_ladder_gpu_run` →
+`mcc_gpu_run2` was reachable only from `cmake/ladder_gpu_parity.cmake` and
+`tools/smokerun.c`, both over internal corpora; no external-suite test had ever been
+compiled through it. Compiling the oracle set with `MCC_AST_EVAL_LADDER=1
+MCC_AST_EVAL_LADDER_GPU=1` dispatches for real — a single `gcc.c-torture` program gives
+`[ladder-gpu] tried=1 available=1 device=NVIDIA GeForce RTX 5070 Ti Laptop GPU rungs=5
+dispatches=11 lanes=131692`.
+
+**Result: 493 cross-adjudicable gcc and clang tests, GPU ladder on, agree with the CPU
+baseline on every one.** `--max-config-divergence` (default 0) now fails the report if any
+test passes in one mcc configuration and fails in another over the same fixed oracle bank,
+and writes `config-divergence.jsonl`. A configuration that changes the verdict changed the
+answer.
+
+Note the knob the tooling advertised does not exist: `tools/xoracle.py`'s usage string
+offers `--mcc-env MCC_JIT_GPU=1`, and **`MCC_JIT_GPU` appears nowhere else in the tree**.
+The working spelling is the two `MCC_AST_EVAL_LADDER*` variables above.
+
+**Two `_Complex` defects, found by the cross-oracle and fixed here.** Both are the GNU
+omitted-middle conditional (`a ? : b`) applied to a `_Complex` operand, which is
+`VT_STRUCT` with `ref->a.is_complex`:
+
+1. **`gv_dup()` on a complex condition.** Both the direct path
+   (`expr_cond_nested`, `src/mccgen.c`) and the arena replay path (`AST_If` with
+   `ast_op == 9`, `src/mccast.c`) duplicated the condition with `gv_dup()`, whose
+   fallthrough is `gv(MCC_RC_TYPE(t))` — a struct cannot go in a register. Now
+   materialised into a temp local with `cplx_materialize()` and pushed twice, which also
+   preserves the once-only evaluation the GNU form requires.
+2. **`move_reg(r2, r1, type.t)` with a struct type, replay path only.** `move_reg` sets
+   `sv.type.ref = NULL` unconditionally, so `load()` → `type_size()` read `s->r` off a
+   null `ref` and segfaulted the compiler. The direct path had always guarded this with
+   `islv = VT_STRUCT == (type.t & VT_BTYPE)` and passed `VT_PTR`; the replay path's
+   two-arm case at `:5606` had the guard and its omitted-middle case did not. Added,
+   including the `indir()` + `VT_NONLVAL` epilogue.
+
+Symptom before the fix: `MCC_FORCE_REPLAY=1` **segfaulted mcc itself**; without it the
+binary compiled and segfaulted at run time. `conditional-gnu-ext.c` moved from
+`DIFF_EXIT` to `PASS`, taking the CPU baseline from **485/493 (98.38%) to 486/493
+(98.58%)**.
+
+Regression-tested by a new smoke pass, `tests/smoke/pass-cplxcond.c`, which covers both
+the `_Complex int` and `_Complex double` forms, the imaginary-only truth case (`0+7i` is
+true), the false case, and asserts the evaluation count so a re-introduced double
+evaluation is caught rather than only a crash. It is oracle-adjudicated against gcc and
+clang at every level, and it is what found defect 2 — the direct compile was already
+green when the harness, which compiles under `MCC_FORCE_REPLAY=1`, still crashed.
+
+**Still open on this axis:** the four remaining cross-oracle failures are three
+`ms_struct` layout tests (`ms_struct_pack_layout.c`, `ms_struct-bitfield.c`,
+`ms_struct-bitfield-init.c`, plus `ms_struct-bitfield-init-1.c` which does not build) and
+one timeout (`build2.c`). `ms_struct` is a real missing feature, not a defect.
+
+**Observed flake, not diagnosed: `slice/quiesce` fails intermittently under `-j`.**
+Seen twice on 2026-08-10 — once beside a GPU cross-oracle run saturating the device from
+24 threads, and once in a `-j6` ctest sweep with no external GPU consumer. It passes in
+isolation every time, passes on `--rerun-failed`, and a targeted `-j8` loop over the four
+device cells did **not** reproduce it, so "contention" is a hypothesis and not a
+diagnosis. Nothing in that wave touched the device path, so it is not a regression from
+it. Recorded rather than fixed, with the caveat that the obvious next step is cheap to
+get wrong: the serialisation a contention theory would want does not exist at either
+level — `MCC_GPU_LOCK` (`src/mccgpu.c:32`) is a `pthread_mutex`, hence per-process and
+unable to order two ctest processes, and **`RESOURCE_LOCK` is used zero times in
+`CMakeLists.txt`**, so no device cell excludes any other. Before adding one, get a
+reproducer: a `RESOURCE_LOCK` that makes an unexplained flake disappear buys silence, not
+a fix.
+
 ### Three items that read as closed and are not — checked 2026-08-10
 
 Written down because a reader sweeping for finished work will mis-file all three. Each

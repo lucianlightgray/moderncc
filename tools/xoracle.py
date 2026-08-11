@@ -267,7 +267,8 @@ def load_tests(args):
 NATIVE_OF = {"clang": "gcc", "gcc": "clang"}
 
 
-def coverage_report(out, suites, min_cross, min_exclusive, bank):
+def coverage_report(out, suites, min_cross, min_exclusive, bank,
+                    max_divergence):
     src = os.path.join(out, "oracle.jsonl")
     if not os.path.exists(src):
         sys.exit(f"xoracle: no oracle set at {src}; run --phase qualify first")
@@ -299,6 +300,7 @@ def coverage_report(out, suites, min_cross, min_exclusive, bank):
             s["other"] += 1
 
     checks = {}
+    per_test = {}
     for fn in sorted(os.listdir(out)):
         if not (fn.startswith("check-") and fn.endswith(".jsonl")):
             continue
@@ -309,6 +311,7 @@ def coverage_report(out, suites, min_cross, min_exclusive, bank):
             if suites and not any(x in r["suite"] for x in suites):
                 continue
             t[r["status"]] = t.get(r["status"], 0) + 1
+            per_test.setdefault((r["suite"], r["file"]), {})[label] = r
         if t:
             checks[label] = t
 
@@ -351,6 +354,38 @@ def coverage_report(out, suites, min_cross, min_exclusive, bank):
             if k != "PASS":
                 print(f"    {k:<20}{t[k]:>7}")
 
+    diverged = []
+    for (suite, f), byl in sorted(per_test.items()):
+        if len(byl) < 2:
+            continue
+        st = {l: r["status"] for l, r in byl.items()}
+        if len(set(st.values())) == 1:
+            continue
+        passing = sorted(l for l in st if st[l] == "PASS")
+        failing = sorted(l for l in st if st[l] != "PASS")
+        if not (passing and failing):
+            continue
+        diverged.append({"suite": suite, "file": f, "agree": passing,
+                         "differ": {l: st[l] for l in failing},
+                         "detail": {l: byl[l].get("detail", "")
+                                    for l in failing}})
+
+    if len(checks) >= 2:
+        print(f"\n  configuration differential over {len(checks)} labels "
+              f"({', '.join(sorted(checks))}): {len(diverged)} test(s) pass in "
+              f"one configuration and not another")
+        for d in diverged[:20]:
+            print(f"    {os.path.basename(d['file'])}: PASS in "
+                  f"{','.join(d['agree'])} -> "
+                  f"{', '.join('%s=%s' % (k, v) for k, v in d['differ'].items())}")
+        if len(diverged) > 20:
+            print(f"    ... and {len(diverged) - 20} more")
+        dpath = os.path.join(out, "config-divergence.jsonl")
+        with open(dpath, "w") as f:
+            for d in diverged:
+                f.write(json.dumps(d) + "\n")
+        print(f"  wrote {dpath}")
+
     xpath = os.path.join(out, "vendor-exclusive.jsonl")
     with open(xpath, "w") as f:
         for r in sorted(exclusive, key=lambda r: (r["suite"], r["file"])):
@@ -362,6 +397,14 @@ def coverage_report(out, suites, min_cross, min_exclusive, bank):
     print(f"\nxoracle: wrote {xpath}")
 
     rc = 0
+    if len(diverged) > max_divergence:
+        sys.stderr.write(
+            f"xoracle: {len(diverged)} test(s) pass in one mcc configuration "
+            f"and fail in another over the same oracle bank, above the "
+            f"--max-config-divergence {max_divergence} ceiling. The oracle is "
+            f"fixed, so a configuration that changes the verdict changed the "
+            f"answer: see {os.path.join(out, 'config-divergence.jsonl')}\n")
+        rc = 1
     if tot["cross"] < min_cross:
         sys.stderr.write(
             f"xoracle: {tot['cross']} cross-adjudicable cases, below the "
@@ -412,6 +455,7 @@ def main():
     ap.add_argument("--min-cross", type=int, default=0)
     ap.add_argument("--min-exclusive", type=int, default=0)
     ap.add_argument("--bank", default="")
+    ap.add_argument("--max-config-divergence", type=int, default=0)
     ap.add_argument("--out", required=True)
     ap.add_argument("--gcc", default="")
     ap.add_argument("--llvm", default="")
@@ -433,7 +477,8 @@ def main():
 
     if args.phase == "report":
         sys.exit(coverage_report(args.out, args.suite, args.min_cross,
-                                 args.min_exclusive, args.bank))
+                                 args.min_exclusive, args.bank,
+                                 args.max_config_divergence))
 
     if args.phase == "qualify":
         if not (args.gcc or args.llvm):

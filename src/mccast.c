@@ -5547,15 +5547,28 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		}
 #endif
 		if (ast_op(a, n) == 9) { MCC_TRACE("br\n");
+			int islv;
 			ast_replay_value(a, ast_child(a, n, 0));
 			save_regs(1);
-			gv_dup();
+			if (is_complex_type(&vtop->type)) { MCC_TRACE("br\n");
+				CType ct = vtop->type, cbase = ct.ref->next->type;
+				SValue ctmp;
+				cplx_materialize(&ct, &cbase, &ctmp);
+				vpushv(&ctmp);
+				vpushv(&ctmp);
+			} else
+				{ MCC_TRACE("br\n"); gv_dup(); }
 			u = gvtst(0, 0);
 			sv = *vtop;
 			vtop--;
 			ast_replay_value(a, ast_child(a, n, 1));
 			combine_types(&type, &sv, vtop, '?');
+			islv = VT_STRUCT == (type.t & VT_BTYPE);
 			gen_cast(&type);
+			if (islv) { MCC_TRACE("br\n");
+				mk_pointer(&vtop->type);
+				gaddrof();
+			}
 			rc = MCC_RC_TYPE(type.t);
 			if (USING_TWO_WORDS(type.t))
 				{ MCC_TRACE("br\n"); rc = MCC_RC_RET(type.t); }
@@ -5564,10 +5577,18 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 			gsym(u);
 			*vtop = sv;
 			gen_cast(&type);
+			if (islv) { MCC_TRACE("br\n");
+				mk_pointer(&vtop->type);
+				gaddrof();
+			}
 			r1 = gv(rc);
-			move_reg(r2, r1, type.t);
+			move_reg(r2, r1, islv ? VT_PTR : type.t);
 			vtop->r = r2;
 			gsym(tt);
+			if (islv) { MCC_TRACE("br\n");
+				indir();
+				vtop->r |= VT_NONLVAL;
+			}
 			break;
 		}
 		ast_replay_value(a, ast_child(a, n, 0));

@@ -13769,7 +13769,14 @@ static void expr_cond_nested(void) { MCC_TRACE("enter\n");
 			}
 		} else if (c < 0) { MCC_TRACE("br\n");
 			save_regs(1);
-			gv_dup();
+			if (is_complex_type(&vtop->type)) { MCC_TRACE("br\n");
+				CType ct = vtop->type, cbase = ct.ref->next->type;
+				SValue ctmp;
+				cplx_materialize(&ct, &cbase, &ctmp);
+				vpushv(&ctmp);
+				vpushv(&ctmp);
+			} else
+				{ MCC_TRACE("br\n"); gv_dup(); }
 			tt = gvtst(0, 0);
 		}
 
