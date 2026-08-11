@@ -31,11 +31,50 @@
 > - **Factual corrections are marked inline** with the date and the code citation that
 >   settles them. The largest is the `-O` ladder description under *The configuration
 >   surface moved*, which was wrong on all three of its clauses.
+>
+> **Compiler wave, 2026-08-11.** Cross-vendor conformance went 485 → **493 of 493
+> (100.00%)** on both the CPU baseline and the GPU ladder. Six defects fixed, one language
+> feature added, four folds, five smoke fixtures. Summarised at the top of *STATE OF PLAY*;
+> the detail sections are dated 2026-08-11 and sit inside it. **The board below was not
+> otherwise reworked** — an open row is still open unless it says otherwise, and N1 is
+> still open.
 
-## STATE OF PLAY — written for a context switch, 2026-08-10
+## STATE OF PLAY — written for a context switch, 2026-08-11
 
 > Read this first. It is a handoff, not a board. Everything below it is detail.
 > It supersedes the 2026-08-09 handoff, which is wrong in five places, each named below.
+> The 2026-08-10 handoff below it still stands; the 2026-08-11 wave is summarised next
+> and did not invalidate any of it.
+
+### The 2026-08-11 wave, in one place
+
+**Cross-vendor conformance is at 493 of 493 (100.00%), on the CPU baseline and the GPU
+ladder alike, with zero configuration divergence.** It was 485 when the wave opened.
+Read the percentage with its denominator: 493 of the 800 sampled programs are
+cross-adjudicable at all, and the other 306 are vendor-exclusive by construction, not by
+omission. `jit/xoracle-coverage` prints both and refuses a collapsed denominator.
+
+| landed this wave | where |
+| --- | --- |
+| `_Complex` GNU `?:` — two defects, one of them a compiler crash | `src/mccgen.c`, `src/mccast.c` |
+| `__attribute__((ms_struct))` / `gcc_struct`, three zero-width-bitfield rules | `src/mccgen.c` |
+| MS layout ignored `packed` — exposed by the above, not caused by it | `src/mccgen.c` |
+| `fabs(x) < 0.0` → 0, and a literal condition deletes its dead arm | `src/mccast.c` |
+| tautological `\|\|` / contradictory `&&` over one operand | `src/mccast.c` |
+| zero-extend, signedness and offset seen through in relational operands | `src/mccast.c` |
+| the strategy floor is enforced, not merely printed (`--min-strats`) | `tools/smokerun.c` |
+| five new smoke fixtures, all oracle-adjudicated at every level and under replay | `tests/smoke/` |
+
+**Two results that matter more than the number.** One is that a fold which looked correct
+shipped a miscompile and had to be reverted — see *The tautology fold, and the flag that
+made it miscompile*, whose one-paragraph lesson is worth more than the fold. The other is
+that `build2.c` was never a defect: it sat in the failure column for two rounds as a
+timeout while printing output byte-identical to gcc's. That one was fixed in the harness,
+and the 5x runtime gap it exposed is a real and unbanked performance finding.
+
+**Nothing on the open board below was closed by this wave** except where a row says so.
+N1 in particular is still open and acquired a concrete cost: two new folds had to avoid
+their natural homes (`abs`, `range`) because those are write-only strategies.
 
 ### How to validate — standing rule, 2026-08-10
 
@@ -331,7 +370,7 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    **A cross-pass veto is load-bearing in ways its comment does not say; measure what it
    blocks before lifting it, and land the fix underneath it first.**
 
-### Cross-vendor coverage now has a denominator, and the exclusive set is real — 2026-08-10
+### Cross-vendor coverage now has a denominator, and the exclusive set is real — 2026-08-10 (superseded by the 100% row above; the denominator analysis still stands)
 
 The goal is complete coverage of every test each vendor can run in the other. That
 quantity had **no tool, no output file and no cell**: `tools/xoracle.py` recorded
@@ -494,7 +533,7 @@ unable to order two ctest processes, and **`RESOURCE_LOCK` is used zero times in
 reproducer: a `RESOURCE_LOCK` that makes an unexplained flake disappear buys silence, not
 a fix.
 
-### Two folds added: `fabs(x) < 0.0` and constant-condition branches — 2026-08-11
+### Four folds added: `fabs(x) < 0.0`, constant-condition branches, tautologies, and conversion-aware operands — 2026-08-11
 
 The last two cross-oracle failures that are not a timeout are gcc c-torture
 *fold-or-link-error* tests: they call `link_error()` in a branch the optimizer is
@@ -542,7 +581,7 @@ what the fold wants. `ast_expr_nonneg` already resolved the *left* through
 `ast_local_nonneg` — a local with exactly one defining `AST_Store` and no address taken.
 The right needed the mirror, factored out of the same guards. **`20020720-1.c` passes.**
 
-### Cross-vendor coverage: 492 of 493, and what the last one needs — 2026-08-11
+### Cross-vendor coverage: 493 of 493, and the denominator that qualifies it — 2026-08-11
 
 | status | count | |
 | --- | ---: | --- |
@@ -657,10 +696,18 @@ measurement tool reports success over an empty or truncated subject:
 - **`tools/shadow-iv-sweep.sh:66` documents its own blindness in the source**: *"There is
   still no floor on this count, so a regression that stops 500 of 610 subjects building
   would report divergences=0 and PASS"*.
-- The `22 of 22` strategy coverage quoted under *How to validate* is **measured, not
+- ~~The `22 of 22` strategy coverage quoted under *How to validate* is **measured, not
   enforced**: `tools/smokerun.c` has no strategy-fire assertion at all, only the
   `--min-cases`/`--min-passes` floors, so a silent drop back to 8 firing strategies
-  would keep the suite green. Read it as a coverage floor, exactly as N1 says.
+  would keep the suite green.~~ **CLOSED 2026-08-11.** `smokerun --min-strats 22` now
+  fails the run, fed by a `[strategy]` record `src/mccstats.c` emits and a census pass
+  that refuses to floor nothing. `smoke/strats-known-positive` proves the floor reads the
+  table it floors — 22 accepted, 23 refused, and the refusal must name `--min-strats`.
+  Closing it also fixed the reason it had never been possible: `mcc_stats_env_init()` was
+  linked into `mcc` and **never called**, so `MCC_STATS` was reachable only from the baked
+  JIT engine and the STRATEGY category could not be turned on for an ordinary compile at
+  all. Still read the count as a coverage floor, exactly as N1 says — it proves each
+  strategy *fires*, not that each affects output.
 - **`src/wide256_slice.h`'s I-6 is a live compiler segfault with a two-line fix and
   nothing watching it**: `src/mccrir.c:1239-1249` still tests only `if (!sv->sym …)`,
   with no `sv->r != VT_CMP` check, and `gv` still leaves `sym` stale. It is filed at the
