@@ -25,6 +25,15 @@ numbers quoted below.
 
 ## The configuration surface moved: read this before running any recipe below
 
+> **SUPERSEDED — do not read this section as current (banner added 2026-08-11).** A live
+> copy of this section is maintained in [`docs/TODO.md`](TODO.md) under the same heading, and
+> **this archived copy is refuted in at least three places**: it says 113 flags (there are
+> **115**, counted from `MCC_OPT_ROW(` in `src/mccopt.h`); its table lists `MCC_AST_BITFLAG`
+> as a retired boolean mapping to `-ftree-switch-conversion`, when it is **live** as a numeric
+> threshold (`ast_bitflag_min = ast_env_int("MCC_AST_BITFLAG", 5)`); and its `-O` ladder
+> paragraph is the one `docs/TODO.md` records as "wrong on all three of its clauses".
+> It is kept for the conversion history around it. **Use the `docs/TODO.md` copy.**
+
 **Every `MCC_AST_*` and `MCC_RIR_*` gate is now a `-f` flag.** 113 of them, generated
 from one list in `src/mccopt.h`, which also generates the driver's option table so the
 two cannot drift. `-fno-<name>` turns a knob off, `-f<name>` on.

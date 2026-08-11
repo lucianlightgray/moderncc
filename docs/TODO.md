@@ -86,6 +86,35 @@ and the 5x runtime gap it exposed is a real and unbanked performance finding.
 N1 in particular is still open and acquired a concrete cost: two new folds had to avoid
 their natural homes (`abs`, `range`) because those are write-only strategies.
 
+### The unrecorded wave, 2026-08-11 — three shipped-level miscompiles, written up here late
+
+`88b74abf..4e62dae8` landed between the two waves this file does describe, and **nothing in
+this file recorded it** until the 2026-08-11 validation sweep found the gap. Three miscompiles
+that affected shipped optimization levels, all three caught by the smoke oracles, all three
+with fixtures. Written up now because the *lessons* are the part that was lost:
+
+| commit | the defect | level |
+| --- | --- | --- |
+| `6772f701` | narrow-elim dropped the conversion and kept the wide type | `-O4` |
+| `e9aa3783` | a statically-false `if` arm was deleted **with the `case` labels inside it**; also, XMM6–XMM15 were promoted unsaved on Win64 | `-O1` |
+| `931f3137` | `ast_dep_direction` derived `<`/`=`/`>` in **index** space and handed it to callers reading **iteration** order — inverted for every down-counting loop, and fusion *and* interchange both believed it | `-O1`+ |
+
+**`931f3137` is the one to read.** For an ascending loop index order and iteration order
+coincide, so the bug is invisible until a loop counts down; then interchange turns a `(<,>)`
+dependence into `(>,<)` and runs it backwards, and fusion hoists a read above the write it
+depends on. gcc-15 and clang agree with each other and with the fixed compiler on both
+reducers. It also closed three latent traps in the same two functions: a single `int64_t`
+shared between two `ast_loop_iv` calls, so the outer loop's stride was overwritten by the
+inner's before anything read it; both return values discarded, so an uninitialised stride was
+used when a loop had no induction variable; and fusion never refused a pair with differing
+strides, which the shared-variable bug had made unobservable. **A guard that cannot be
+observed to be missing is the recurring shape on this board** — it is N1, N7 and this, three
+times in one week.
+
+Consequence for the counts above: *"six defects fixed … four folds, five smoke fixtures"* in
+the file header **undercounts**. The tree carries seven `pass-*` fixtures from that day and
+`--min-passes 150`.
+
 ### The second 2026-08-11 wave — the JIT/AOT differential and the search surrogate
 
 Five commits, `0dd6ea55..04f12187`, on two subjects that turned out to be independent.
@@ -117,7 +146,7 @@ programs with a fresh `XDG_CACHE_HOME` per run, cost 1065495942 on against 10654
 **+1.8% evaluations**, 1 better / 0 worse / 14 identical, and the direct diagnostic is
 **0 of 200 predicted candidates improved on the incumbent**. Left in, off, with the flag
 and the env so the measurement reproduces. Two things learned are worth more than the
-feature and are recorded under *The `-O13` tier is dark on 13 of 21 strategies*: the
+feature and are recorded under *The `-O13` tier is dark on 13 of 22 strategies*: the
 interactions are real and the first selection rule could not see them, and `combo_run`
 already reaches those optima anyway.
 
@@ -128,13 +157,93 @@ evidence for the general shape N1 and N7 both circle — *a mechanism nobody dif
 compares is a mechanism nobody has tested*. The embedded JIT had been covered by a compile
 and a grep until 2026-08-11; two commits later it had a real miscompile to its name.
 
+### The validation sweep, 2026-08-11 — what this file got wrong about itself
+
+Every statement in this file was checked against the tree and against the commit messages
+since `2993f8fb`, in four passes: named artifacts (symbols, paths, cells, flags, `file:line`
+citations), open-vs-closed against git, internal contradictions, and what is history. The
+headline is not any single row below — it is that **three of the errors were introduced by
+the two most recent documentation commits, including one item that was ranked on the open
+board hours after being invented.** This file's failure mode is not decay, it is confident
+addition.
+
+**Corrected in place by this sweep** (each verified against the tree, not against prose):
+
+| was | is | how it was settled |
+| --- | --- | --- |
+| `-fno-opt-search-*` is a kill switch (**N9**, ranked) | **refuted** — `set_flag` matches by exact `strcmp`; baseline and `-fno-opt-search-fullset` both give 101 evaluations | ran it; read the parser |
+| "13 of **21** strategies", "`-O0` 21 dark" (5 places) | **22** | `MCCSTATS_STRAT_N 22`, and the name table lists 22 (`bfold`…`cload`) |
+| "**114** `-f` flags" | **115** | 115 distinct names extracted from `MCC_OPT_ROW(` in `src/mccopt.h`, no duplicates |
+| "`wt/o4fold` folded `-O5`–`-O12` into `-O4`" | **hard error**; `MCC_DEV=1` makes them compile | ran `-O5/-O8/-O12/-O14`, and again under `MCC_DEV=1` |
+| "9538 cells", "9151 cells" (3 places) | **9545** in `cmake-def` | `ctest -N` |
+| "~85 s" / "~115 s" for `^smoke/` | **70.7 s**, 11/11 green | ran it |
+| "the two 2026-08-11 waves added no cells" | **wrong**, ≥4 added | `ctest -N -R`; `CMakeLists.txt` diff |
+| N8's "not duplicated there" | it is duplicated | read both copies |
+| "`--min-engines 5` … 5 is deliberate" | retracted 45 lines above it | same section |
+
+**Two live defects the sweep found that are not documentation problems at all:**
+
+1. **`flagsweep/cover3-verify` is RED on `main`** — `69296b85` added a flag row and left the
+   committed covering array at `flags=114`. Written up under *The configuration surface
+   moved*. A wave landed a red cell and no one noticed for a day.
+2. **Three shipped-level miscompile fixes are absent from this file entirely.** `6772f701`
+   (narrow-elim dropped the conversion, `-O4`), `e9aa3783` (a dead `if`-arm took its `case`
+   labels with it, `-O1`, plus XMM6–XMM15 promoted unsaved on Win64) and `931f3137` (a
+   down-counting loop reversed its dependence directions and *both* fusion and interchange
+   believed them). `grep` for the first two hashes returns nothing. They sit between
+   `88b74abf` and `0dd6ea55` — **an entire unrecorded wave between the two that are
+   recorded** — which also makes the 2026-08-11 header's "six defects, four folds, five smoke
+   fixtures" an undercount against the seven `pass-*` fixtures and `--min-passes 150` the tree
+   actually carries. This is the most important gap in the file: the *fixes* are in the tree
+   and the *lessons* were never written down.
+
+**The systemic one: the surviving `file:line` anchors have rotted, and they rot silently.**
+The header says anchors were dropped on purpose in the 2026-08-05 sweep after drifting
+1000–1900 lines. **313 of them are still here**, and of ~200 whose content was checked,
+**~95 are wrong** — including 34 of 40 `CMakeLists.txt` anchors (everything below ~line 3300
+has shifted), and essentially the whole `src/mccgpu.c` Metal block, which now points into
+unrelated code. Two consequences worth acting on rather than lamenting: an anchor that lands
+on `int i;` or a bare `}` is *indistinguishable from a correct one* to a reader who does not
+open the file, and `docs/refs` (747 citations, green) does not check them — it validates
+cross-document references, not `path:line` claims. **Prefer a symbol name; if a line number
+is genuinely needed, it needs a cell that fails when it drifts.**
+
+**Nine items were open on this board and are already fixed** — struck through in place below,
+each with the commit: the `MCC_AST_EVAL_LADDER_GPU` stack smash (`1f7f6257`), `mcc_gpu.ok`
+after `VK_ERROR_DEVICE_LOST` (`747709bc`), `rebuild_arena`'s `sscanf` and pointer interning
+(`1b54c26e`), board row 1's missing `indirect` guard (`adf08e3b`, stated closed in two other
+places already), `xoracle.py`'s registration (`f797074b`), the `spirv-val`/`glslc` "referenced
+nowhere" row (`cmake/spvval.cmake` exists), `opt-cache-determinism`'s manifest row
+(`e98fab0a`), `ast_env_gate`'s remaining greppers, and the three cross-vendor stragglers
+`build2.c`/`20020720-1.c`/`20041114-1.c` (`92fddfdf`, `bc60a3be`).
+
+**One substantive claim is false about today's tree**, beyond drifted anchors: the Metal
+*"the two 'missing' functions are not missing, they are present and inert"* table says
+`mcc_gpu_rw_supported`, `mcc_gpu_rw_arm` and `mcc_gpu_mem_backend` are stubs returning 0 on
+the MSL arm. **All three are implemented** — `src/mccgpu.c` has `mcc_gpu_rw_supported`
+returning **1** on the MSL arm (identical to the Vulkan arm), `mcc_gpu_rw_arm` recording
+`mcc_gpu_rw_back = p`, and a real multi-line `mcc_gpu_mem_backend` using `mtl_bind_mem`. A
+comment three lines above the first one even says *"which now returns 1"*. The whole table's
+premise is stale, and it is load-bearing for the Metal parity estimate.
+
+*(A second candidate was investigated and **rejected**: the sweep flagged
+`ast_interchange` / `ast_fusion` / `ast_tile` as naming non-existent passes. They exist —
+`ast_interchange_run`, `ast_fusion_run` and `ast_tile_run` are all real arena mutators in
+`src/mccast.c`, called from the driver. The file is using the bare stem as shorthand, which is
+fine. Recorded here because "symbol not found" from a grep of the exact string is a false
+positive generator on this codebase's `_run` convention.)*
+
 ### How to validate — standing rule, 2026-08-10
 
 **Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the
 oracles.** `ctest -R "^smoke/"` is ~15–90 s for 13.0M value cases across `-O0`–`-O4`, plus
 the device arm and the divergence arm. Do not run the full suite to validate a change.
 
-**As of 2026-08-11 it is eleven cells, not eight, and ~115 s on this host.** The three new
+**As of 2026-08-11 it is eleven cells, not eight, and ~71 s in `cmake-def` on this host.**
+*(Re-measured 2026-08-11 in the validation sweep: `ctest -R "^smoke/"` is **70.7 s**, 11/11
+green. The "~85 s" and "~115 s" that stood here before were both wrong. Neither named a
+build directory, which is why they were never reconcilable — quote the build dir with the
+number or it is not a measurement.)* The three new
 ones are the engine-parity arm — see *Smoke now compares six evaluation engines* below. It
 adds ~32 s and is worth it: until it existed, `smokerun` set `MCC_FORCE_REPLAY=1` on every
 compile it made, so the AST constant evaluator `-O0` actually ships was executed by no cell
@@ -173,13 +282,21 @@ Consequences that follow, and they are not optional:
 
 ### Where the tree is
 
-`main` at `04f12187`, **9538 cells on this host as last counted at `747709bc`** (9535 before
-that wave; `slice/device-lost`, `slice/quiesce` and `optfire/tco_tern` were the three new
-ones). **The two 2026-08-11 waves added no cells** — every fixture they shipped is a case
-inside a cell that already existed. `tests/jit/parity/vla_param_effect.c` in particular is
-*not* a cell: `jit/run-parity-host` and `jit/kgc-route-parity` are each passed the
-`tests/jit/parity` directory and walk it, so a file added there widens two existing cells and
-the ctest total does not move. Count cells on the host rather
+`main` at `3b225e3f`, **9545 cells in `cmake-def` on this host** — counted 2026-08-11 with
+`ctest -N`, not added up. It was 9538 at `747709bc`.
+
+> **Corrected 2026-08-11 (validation sweep).** This paragraph said "the two 2026-08-11 waves
+> added no cells", which was wrong and contradicted *How to validate* eight lines above it,
+> where the same file says the suite went from eight cells to eleven. The waves added at
+> least four: `smoke/engines`, `smoke/engines-known-positive` and `smoke/engines-identity`
+> (`3b84d616`), and `opt/selftest-surrogate` (`0dd6ea55`, `CMakeLists.txt` +4 lines). What is
+> true is the narrower claim it was reaching for: **`tests/jit/parity/vla_param_effect.c` is
+> not a cell** — `jit/run-parity-host` and `jit/kgc-route-parity` are each handed the
+> `tests/jit/parity` *directory* and walk it, so a file added there widens two existing cells
+> and the ctest total does not move. Do not generalise from a walked-directory fixture to the
+> wave.
+
+Count cells on the host rather
 than adding them up — registration is glob-, loop- and capability-driven (Vulkan +
 `spirv-val`, `objdump`), so the total is host-dependent. The pre-merge branch accounting that
 used to sit here moved to `docs/ARCHIVED.md`; every branch it tracked has merged.
@@ -580,9 +697,12 @@ Regression-tested by `tests/smoke/pass-msstruct.c`, which pins nine sizes coveri
 three zero-width rules, the full-width-bitfield trap, `gcc_struct` overriding, the
 `ms_struct`+`packed` union above, and a plain non-attributed struct as the control.
 
-**Still open on this axis:** one timeout (`build2.c`) and two gcc c-torture programs mcc
+~~**Still open on this axis:** one timeout (`build2.c`) and two gcc c-torture programs mcc
 cannot build (`20020720-1.c`, `20041114-1.c`). Neither is an `ms_struct` defect; both are
-unexamined.
+unexamined.~~ **ALL THREE CLOSED the same day, 2026-08-11** — `92fddfdf` (`ast_local_def_value`
+takes `20020720-1.c`; `build2.c` was never a defect, it was a 15 s `--rtimeout`) and
+`bc60a3be` (`20041114-1.c`). This paragraph is 60 lines above the two sections that say so
+and reached 493/493; it was simply never struck. *(Found by the 2026-08-11 validation sweep.)*
 
 **Observed flake, not diagnosed: `slice/quiesce` fails intermittently under `-j`.**
 Seen twice on 2026-08-10 — once beside a GPU cross-oracle run saturating the device from
@@ -807,7 +927,9 @@ named. Both were confirmed red before the arm was wired in.
 
 **Cost and floors.** 8.5 s for the arm, 9.5 s for the known-positive, 18.6 s for the
 identity gate; `ctest -R "^smoke/"` goes 8 cells / ~53 s to 11 cells / ~85 s on this host.
-`--min-engines 5` is the anti-vacuity floor and 5 is deliberate: the device engine skips
+`--min-engines 5` is the anti-vacuity floor and 5 was deliberate **when the arm had six
+engines; it is now a hole — see the retraction above and N5, and do not read the rest of this
+paragraph as current**: the device engine skips
 on its own on a host without one, and skipping it must not skip the cell. Confirmed by
 running the arm with `MCC_GPU_DEVICE=99` — 5 engines, 9,312,145 value cases, green; with
 the device it is 6 engines and 11,174,574.
@@ -897,7 +1019,7 @@ the naive shared fix regresses a case where mcc currently matches both reference
 may be no defect at all: mcc predefines `__FLT_EVAL_METHOD__ 0` and its per-operation
 rounding is what that macro promises.
 
-**N4. `-O13` is dark on 13 of 21 strategies**, at the one level with no bail ratchet (item
+**N4. `-O13` is dark on 13 of 22 strategies**, at the one level with no bail ratchet (item
 21). ~2.7 s, bit-deterministic, already digest-clean. `smokerun --max-level 13` is a silent
 no-op. Bank *dark* strategies rather than fire counts and the existing `ratchet()` needs no
 change. See the research section for the two traps.
@@ -968,14 +1090,31 @@ Behind them, unexamined: ~80 `differ` and ~150 `refused` rows per level, where `
 front-end gap list and not a JIT one. Full detail in the residues section at the end of this
 file.
 
-**N9. `-fno-opt-search-<anything>` disables the whole search, not the sub-knob it names.**
-`-fno-opt-search-fullset`, `-fno-opt-search-ordered` and `-fno-opt-search-predict` each take
-`-O13` to **`0 candidate evaluations`**; the parser matches the `opt-search` prefix and turns
-off the master row. **The measurement consequence is the reason this is ranked and not filed:
-any A/B that used one of these to isolate a sub-knob measured "search off", and would have
-read as "this knob is worth nothing" — the exact conclusion the flag was reached for.** The
-`69296b85` A/B had to go through `MCC_SEARCH_PREDICT` to get a real comparison. Fix the
-prefix match, then audit anything that ever passed a `-fno-opt-search-*` flag.
+**~~N9. `-fno-opt-search-<anything>` disables the whole search, not the sub-knob it names.~~
+REFUTED 2026-08-11, the same day it was filed. There is no prefix match and no kill switch.**
+The claim came from `69296b85`'s commit message, was promoted to this board in `3b225e3f`,
+and does not survive contact with either the binary or the parser:
+
+- **The parser cannot do what the item says.** `set_flag` (`src/libmcc.c`) matches with
+  `strcmp(r, p->name)` — exact string equality against the generated table, with no prefix
+  logic anywhere in the loop. A flag named `opt-search-fullset` cannot reach the row named
+  `opt-search`.
+- **It does not reproduce.** On `tests/smoke/subject.c` at `-O13`, baseline and
+  `-fno-opt-search-fullset` both report **101 candidate evaluations** — identical, not zero.
+  (Independently re-run on a second build with a third subject: 808/8383/303 evaluations,
+  unchanged by all three sub-knobs.)
+- **The likely origin, reproduced.** `0 candidate evaluations` is simply what `-O13` prints
+  when the subject is too small to search: a two-line `int f(int,int)` reports **0 at
+  baseline**, with no flag at all. Measure a sub-knob on a subject like that and the flag
+  gets the credit for a zero it did not cause.
+
+**What is left of it, and it is smaller and unranked:** whether the three sub-knobs do
+anything at all in the *negative* direction is still unestablished — the counts are identical
+with and without them, which is equally consistent with "inert". `-fopt-search-predict`
+positively does work (it reports `predicted N candidate(s)`). So the open question is
+"are the `no-` forms inert?", not "are they a kill switch", and nothing measured so far is
+invalidated. **The lesson is the durable part: this item was filed from a commit message and
+ranked without anyone re-running it, and it took one `strcmp` and one A/B to fall over.**
 
 **N6. `L2` — wire the device into `mccjit_shutdown()`.** Unblocked as of 2026-08-10, with two
 preconditions in the GPU landed section. One is a hazard *this wave created*: the quiesce now
@@ -1205,9 +1344,9 @@ it alone is wrong, because the line above has already set the expression's *type
 which `_Generic`/`sizeof`/`typeof` would see. An honest `=fast` needs an excess-precision bit
 on `SValue` that does not exist.
 
-### The `-O13` tier is dark on 13 of 21 strategies
+### The `-O13` tier is dark on 13 of 22 strategies
 
-Measured per level on the smoke subject: `-O0` 21 dark (no strategy runs at `-O0` at all),
+Measured per level on the smoke subject: `-O0` 22 dark (no strategy runs at `-O0` at all),
 `-O1` 12, `-O2`/`-O3` 9, `-O4` **1** (before the `bfold` shape landed; now 0 of 22), and
 **`-O13` 13** — `ivsr, narrow, bfold, range, bf, divmagic, pre, ltemp, inline, abs, tco, licm,
 reassoc`. That is the state the whole subject was in before `scases.h`, at the one level
@@ -1279,7 +1418,10 @@ durable shape.
 `optlevel/torture-differential` compiles and runs all 1693 `gcc.c-torture/execute`
 programs at `-O0` to fix a reference (exit code + sha256 of stdout), drops the 85 the
 reference sweep cannot use, and repeats at `-O1`–`-O4`. **~1 s per level at `--jobs 32`,
-3.7 s for the cell** since `wt/o4fold` folded `-O5`–`-O12` into `-O4`; it was 25 s over
+3.7 s for the cell** since `wt/o4fold` made `-O5`–`-O12` a **hard error** *(corrected
+2026-08-11: this said "folded into `-O4`", which is not what the tree does — `mcc -O8` exits
+non-zero with "reaches no optimization this build can enable", and only `MCC_DEV=1` compiles
+it)*; it was 25 s over
 thirteen levels. `-O13` is excluded on purpose: the search rung makes that one level a
 sweep of its own. Against the two fixes reverted it reports 14 unknown divergences and
 nothing else, which is the whole of what it was built to catch.
@@ -1553,17 +1695,21 @@ thing Metal does not: a bounded fence timeout and a stranding protocol. `waitUnt
 at `src/mccgpu.c:662` blocks forever with no timeout, so `mcc_gpu_stranded` (`:2277`) is
 permanently 0 under Metal — **a hung kernel hangs `ctest`, it does not fail it.**
 
-**Correction to a description that is circulating: the two "missing" functions are not
-missing, they are present and inert.** Both arms define both symbols.
+**~~Correction to a description that is circulating: the two "missing" functions are not
+missing, they are present and inert.~~ SUPERSEDED 2026-08-11 — they are no longer inert
+either.** Both arms define all three symbols, and on the MSL arm all three now have real
+bodies (verified in `src/mccgpu.c`; a comment beside the first says *"which now returns 1"*).
+The struck row contents below are what this table claimed.
 
 | symbol | Vulkan | MSL | effect |
 | --- | --- | --- | --- |
-| `mcc_gpu_rw_supported` | `src/mccgpu.c:2214`, `return 1` | `src/mccgpu.c:687`, `return 0` | `mcc_gpu_dispatch_rw2` (`:2231`) and `mcc_gpu_dispatch_rw` (`:2253`) return 0 without touching the device |
-| `mcc_gpu_rw_arm` | `src/mccgpu.c:2216` | `src/mccgpu.c:689`, `(void)p` | no copy-back pointer is recorded |
-| `mcc_gpu_mem_backend` | `src/mccgpu.c:2218-2228` | `src/mccgpu.c:691-695`, `return 0` | `mcc_gpu_mem` (`:2261`) always returns 0 |
+| ~~`mcc_gpu_rw_supported`~~ | `return 1` | **`return 1` — NOT a stub** | ~~returns 0 without touching the device~~ |
+| ~~`mcc_gpu_rw_arm`~~ | records `p` | **`mcc_gpu_rw_back = p` — NOT a stub** | ~~no copy-back pointer is recorded~~ |
+| ~~`mcc_gpu_mem_backend`~~ | real | **real multi-line implementation using `mtl_bind_mem` — NOT a stub** | ~~always returns 0~~ |
 
-So the runtime-side work is not "write three functions"; it is **give three existing stubs a
-body, and add the third buffer they need.** That third `MTLBuffer` is the only genuinely new
+So the runtime-side work is not "write three functions"; ~~it is **give three existing stubs a
+body, and add the third buffer they need.**~~ **and as of 2026-08-11 it is not that either —
+the bodies are written. What is left is the third buffer.** That third `MTLBuffer` is the only genuinely new
 object: a persistent shared-storage allocation bound at index 2, whose `contents` pointer
 `mcc_gpu_mem_backend` hands back with its length. The mechanism already exists —
 `mtl_buffer` (`src/mccgpu.c:587-598`) already asks for `contents` at `:592` — what is absent
@@ -2771,9 +2917,9 @@ schedule.
 | **3** | **`-fopt-slice` makes object output depend on the optimizer's disk cache, and nothing watches it.** Reproduced verbatim today: `python3 tools/opt-cache-determinism.py cmake-debug/mcc src/mcc.c --opt=-O3 --from-build cmake-debug -- -fopt-slice` → `cold/self/foreign-tu = daffa4e023f9`, **`foreign-fl = 1dbdfbe1bc0c`**, `cache entries written: 2`, `FAIL`. The cell is a **permanent 77** because the flag is `MCC_OPTD_LEVEL(9)` and has no subject at any shipped level, so the defect is invisible rather than absent. Decide: own the pass, or delete it | unknown (a pass) | **correctness / determinism** |
 | **4** | **`if-conversion-abs` ships at `MCC_OPTD_LEVEL(2)` and the freshly re-run bench says it makes code worse.** `tests/optfire/levelbench.tsv:20`: moves **1 of 17** kernels, `gain_movers` **−0.0334**, `branchy` **−0.5700** — a sign flip from the `+0.1905` / `+3.1843` it was promoted on. It is bucketed `ranked`, not `cost-no-gain`, so the ladder still treats it as a win. It is filed **only** in the failed-to-reproduce table at `:685`; no row of the ranking table owns it, and `:517` asserts "row 1 is the only unmeasured row left" | small (one level decision, the measurement already exists) | **emitted code** |
 | **5** | **`MCC_MAX_UNARY_DEPTH` was mis-sized *and* it was one guard where the parser needs eight — DONE, and the eight are now watched.** `diag.parse-frames` re-prices `MCC_MAX_PARSE_DEPTH` against the frames it was sized on, every run; the per-level table it was sized from was re-derived and nine of its ten rows were low. **The two that were filed are now closed on `wt/depthholes`** — `parse_btype`'s `_Alignas` arm (SIGSEGV at **43,606**) and `mccasm.c`'s six-function `asm_expr` cycle (at **18,694**) are both charged to the shared budget, the frames bank is re-derived at **15 cycles** with the worst axis and the 532 KiB requirement unmoved, and `diag.parse-depth` carries both axes. **The third, `next()` self-recursing on `_Pragma` (`src/mccpp.c`, SIGSEGV at 130,794 consecutive `_Pragma` tokens), is closed on `wt/symguard`** — a `tail:` label and a `goto`, no budget level, and `diag.parse-depth` now carries a `pragmachain` case that asserts a clean compile rather than a diagnostic. **No parse-depth hole is currently open.** See "The parse-depth guard" below | done | **correctness** |
-| **6** | **Nine number-producing tools are registered nowhere — the board says four.** `:1688-1696` names `xsuite-report.py`, `gate-ledger.sh`, `strategy-ledger.sh`, `c2_sweep.sh` and closes "Four tools left on this item." Also unregistered and board-quoted: `xsuite.py`, `xoracle.py`, `c2_equiv.sh`, `selfhost-o3.py`, `arm64pe_diff.py`. **`xoracle.py` is the sharpest**: `tests/optfire/levelpins.txt:78` pins `merge-constants` at level 2 on "two xoracle cases change verdict without it" — a shipped ladder pin whose only evidence comes from a tool no cell runs | medium (five more cells) | **census trust** |
+| **6** | **Nine number-producing tools are registered nowhere — the board says four.** `:1688-1696` names `xsuite-report.py`, `gate-ledger.sh`, `strategy-ledger.sh`, `c2_sweep.sh` and closes "Four tools left on this item." Also unregistered and board-quoted: `xsuite.py`, `xoracle.py`, `c2_equiv.sh`, `selfhost-o3.py`, `arm64pe_diff.py`. **~~`xoracle.py` is the sharpest~~ — `xoracle.py` WAS REGISTERED by `f797074b` (`jit/xoracle-coverage`, plus `tests/must-run.txt:155`); the four tools named in the audit residue are still unregistered, so that list is right and this row's nine is not (2026-08-11 sweep)**: `tests/optfire/levelpins.txt:78` pins `merge-constants` at level 2 on "two xoracle cases change verdict without it" — a shipped ladder pin whose only evidence comes from a tool no cell runs | medium (five more cells) | **census trust** |
 | **7** | **`ast_env_gate` no longer exists in `src/` and four shell tools still grep for it.** `grep -rn ast_env_gate src/` is **0**; `tools/{c2_sweep,c2_equiv,gate-ledger,o0_ab}.sh` all still reference it. They fail loudly, which is the right mode, but this is the widest blocker in the file: it freezes `o0_ab.sh`'s gated half (twelve `*.gated.rir.txt` + `board.gated.txt`, uncovered by `ast/o0-baseline` and not pretending otherwise), blocks three of the four tools in row 5, and blocks the cheap "which `-O1` gate erases the 72 `len` bodies" experiment. The restoration recipe is already written down at `:9899-9906` | medium | **gate strength** |
-| **8** | **`spirv-val` and `glslc` are installed at `/usr/bin` and referenced nowhere in the build.** `grep -rn 'spirv-val\|glslc' CMakeLists.txt cmake/ tools/ src/` is empty. 152/152 modules already validate by hand at `--target-env vulkan1.1`. One `find_program` and one `add_test` arm. The cheapest open item in the file, and it survives the device freeze because it validates what the emitter already ships | small | **device correctness** |
+| **8** | ~~**`spirv-val` and `glslc` are installed at `/usr/bin` and referenced nowhere in the build.** `grep -rn 'spirv-val\|glslc' CMakeLists.txt cmake/ tools/ src/` is empty.~~ **FALSE, and it was false when written (2026-08-11 sweep): `cmake/spvval.cmake` is a whole validator cell with a corruption known-positive, and `CMakeLists.txt` does `find_program(MCC_SPIRV_VAL NAMES spirv-val)`. This file's own "`spirv-val` wired | 152 modules validated" row already contradicted it.** 152/152 modules already validate by hand at `--target-env vulkan1.1`. One `find_program` and one `add_test` arm. The cheapest open item in the file, and it survives the device freeze because it validates what the emitter already ships | small | **device correctness** |
 | **9** | **A stage-2 build dir does not rebuild when a header changes.** The stale binary is silent and plausible: it runs, it self-hosts, it passes. Workaround only (`rm cmake-<dir>/CMakeFiles/mcc.dir/src/mcc.c.o`); the fix is for `mcc` to emit a depfile for `CMAKE_DEPFILE_FLAGS_C`. This poisons **any** measurement taken from a stage-2 dir, which is most of the ladder work | medium | **measurement validity** |
 | **10** | **D6 — `scalar_storage_order` / `ms_abi` are not implemented at all** (`grep -rn 'scalar_storage_order\|ms_abi' src/*.c src/*.h` → **0**), and mcc objects link against gcc's, so a mismatch is *silent* wrong codegen across a linker boundary. The only item in the codegen list with that property | large | **correctness** |
 | **11** | **`selfhost-optbench.py --check` can pass over zero derivations.** `derive_levels` assigns `levels[f] = levels_now[f]`, so an all-`inert` run prints *"src/mccopt.h matches the ladder"* having derived nothing; the docstring says **48** level-assignable flags in five places and `flag_table()` yields **16**; no floor on `len(names)`; an empty sample list classifies `inert`. The board already carries "`selfhost-optbench --check` was not re-run" as a caveat, which is the same hole one level up | medium (several floors) | **census trust** |
@@ -3186,7 +3332,7 @@ row denominated in it ranks below every row that is not: *device-eligible blocks
 
 | # | row | currency | expected payoff |
 | ---: | --- | --- | --- |
-| 1 | `ast_loop_interchange_legal` / `ast_dep_fusion_pair_illegal` consult `ast_dep_base_distinct` with **no `indirect` guard**, and unlike the census predicate they reach emitted code | **correctness** | UNMEASURED, and it is the same defect class that produced two miscompiles this month |
+| ~~1~~ | ~~`ast_loop_interchange_legal` / `ast_dep_fusion_pair_illegal` consult `ast_dep_base_distinct` with **no `indirect` guard**~~ **CLOSED `adf08e3b`; the row also had the polarity backwards — see the struck row in the debts table below** | **correctness** | ~~UNMEASURED~~ **closed, and this table's top row was the last place still saying otherwise (2026-08-11 sweep)** |
 | 2 | ~~`tests/optfire/levelbench.tsv` is a generation stale and has no `--check`~~ | **census trust** — every future ladder decision is priced off it | ~~32 of 47 rows name flags no longer at levels 1–3~~ — **LANDED 2026-08-09 (`wt/gatefin`).** The stale generation was re-measured by `wt/ladder2`; `--check` now exists, has a ctest cell and a known-positive, and the build-dir TSV is compared back to `tests/optfire/`. See the audit section |
 | 3 | Metal | **a decision** | ~~free to make, grows with every SPIR-V landing. **Decided above: dropped**~~ — **REVERSED BY DECISION 2026-08-09 (`wt/metalspec`), and the row is now priced rather than open.** Behavioural parity **1,530–2,360** lines, capability parity including fp64 **2,200–3,400** — the `ymm` band, lower than "multi-week rewrite" implied because the Metal *runtime* was already written and has already run 151.9 M differential points. The decisive cost is not lines: **no runner this project has can execute a Metal kernel**, so every stage lands with its differential skipped. See the spec at the head of this file, and note its §4 — MoltenVK gives macOS the whole SPIR-V arm for ~10 lines of build config |
 | 4 | the device path | **device-eligible blocks** — no exchange rate | **Frozen above, and the freeze now rests on a different reason than the one it was taken for.** ≈1.45% device-executable lanes on the best corpus anyone has found — **still ≈1.45% after row 6 landed `double` (`wt/fpwidth`, 2026-08-09).** The 79.21 float points were never gated by `is_float`. They are gated by **`static` storage and by `MCC_SLICE_MAXSLOT = 16`**: `matmul.c:22` (76.92% of all corpus iterations) and `loopnest.c:44` (2.24%) index `static double [600][600]` and `[256][256]`, the live-in model addresses frame **locals** only, and it gives every array element its own slot. Measured three ways on this tree — a 4-element **local** `double` array lowers and dispatches; the same source with `static` arrays does not; a 64-element **local** array does not. Float was necessary, and nowhere near sufficient |
@@ -3206,7 +3352,7 @@ spelled `-floop-block`, **not** `-floop-tile`, which does not exist), all three 
 nests through two global pointers at `-O12` is the measurement.
 
 Row 2 is second because it is the instrument every other ranking uses. See hazard 2. It is
-now **landed**, so row 1 is the only unmeasured row left above the priced ones.
+now **landed**. ~~so row 1 is the only unmeasured row left above the priced ones.~~ **Row 1 is closed too (`adf08e3b`); there is no unmeasured row left above the priced ones (2026-08-11 sweep).**
 
 ### Where every number on this board comes from
 
@@ -3443,8 +3589,11 @@ audit gets to make. Two things follow and neither is done here:
 1. Someone owns `-fopt-slice`'s cache-state dependence, or the pass is deleted. A rung-9
    flag whose off-state is the only tested state is not a demotion, it is a dead pass with a
    live bug in it.
-2. `opt-cache-determinism` should be a `registered` row in `tests/must-run.txt` **and** a
-   permanent 77 should be visible as such. Right now the tree reads it as green.
+2. ~~`opt-cache-determinism` should be a `registered` row in `tests/must-run.txt` **and** a
+   permanent 77 should be visible as such. Right now the tree reads it as green.~~
+   **DONE since `e98fab0a` (2026-08-09)** — `tests/must-run.txt:106` carries the registered
+   row with the PERMANENT-77 disclosure, and this file acknowledges it elsewhere.
+   *(2026-08-11 validation sweep.)*
 
 #### FILED — found, not fixed, with what a reader would wrongly conclude
 
@@ -5973,7 +6122,11 @@ validation layers, `spirv-val` and `glslc`. Numbers below are from this host unl
 stated, and they do not always match the M1's — the re-measured allocation census is
 **2.45×** the M1 figure.
 
-1. **`MCC_AST_EVAL_LADDER_GPU=1` smashes the stack. One-line fix.**
+1. ~~**`MCC_AST_EVAL_LADDER_GPU=1` smashes the stack. One-line fix.**~~ **FIXED `1f7f6257`
+   (2026-08-08).** `src/mccast.c` now declares
+   `int32_t pin[64 * MCC_GPU_IN_SLOTS], pout[64 * MCC_GPU_OUT_SLOTS]` — exactly the fix
+   prescribed below. It sat here unstruck for three days as the top memory-safety row of this
+   list. *(2026-08-11 validation sweep.)* Original text:
    `src/mccast.c:15892` declares `int32_t pin[64], pout[128]` — 256 B and 512 B, sized
    for the pre-`989e4b3b` ABI of 1 in-slot / 2 out-slots. `MCC_GPU_IN_SLOTS` is now 2
    and `MCC_GPU_OUT_SLOTS` is 3, so the warm-up dispatch **reads 512 B from the 256 B
@@ -5993,8 +6146,13 @@ stated, and they do not always match the M1's — the re-measured allocation cen
    fresh per dispatch, the driver recycles the freed allocation into the next dispatch's
    `bin`/`bout` while a zombie kernel writes into it — **a timeout in dispatch N silently
    corrupts dispatch N+1**. Alongside: all ~13 Vulkan failure exits are diagnostically
-   mute, and `mcc_gpu.ok` is never cleared after `VK_ERROR_DEVICE_LOST`, so
-   `mcc_gpu_quiesce`'s unbounded `vkDeviceWaitIdle` from `atexit` deadlocks after a hang.
+   mute, and ~~`mcc_gpu.ok` is never cleared after `VK_ERROR_DEVICE_LOST`, so
+   `mcc_gpu_quiesce`'s unbounded `vkDeviceWaitIdle` from `atexit` deadlocks after a hang.~~
+   **That clause is CLOSED by `747709bc`** — `src/mccgpu.c` sets `mcc_gpu.lost = 1;
+   mcc_gpu.ok = 0;` on device-lost and the quiesce no longer waits. **The `submitted`-flag
+   half below is the part that is still open** (`grep -c submitted src/mccgpu.c` = 0), which
+   is exactly the split *Three items that read as closed and are not* warns about.
+   *(2026-08-11 sweep.)*
    The restructure needs a `submitted` flag and a second label that **destroys nothing**
    — leaking one dispatch's resources at a terminal error is strictly safer than a UAF
    against the GPU, and it is bounded because no further dispatch can occur.
@@ -6039,7 +6197,11 @@ stated, and they do not always match the M1's — the re-measured allocation cen
    and `b_ll_cmpu` does build the discriminating shape. ~10 lines: print per-case
    `compared=` and fail a case at 0. Do this before trusting any generator's yield.
 
-6. **`354e96f6` is half-landed, and it broke dump reproducibility.**
+6. ~~**`354e96f6` is half-landed, and it broke dump reproducibility.**~~ **BOTH HALVES
+   CLOSED (2026-08-11 sweep):** `tools/spvgate.c` now `sscanf`s 14 fields with graded
+   `nf < 7 / 12 / 13 / 14` fallbacks, and the dump interns pointers through
+   `ast_adump_intern` (landed `1b54c26e`), so the ASLR non-determinism is gone. Original
+   text:
    The dump emits 12 fields plus `[inv]` callee lines (`src/mccast.c:13580`), but
    `rebuild_arena` still does `sscanf(...) != 7` (`tools/spvgate.c:1083`) — the five new
    fields have **no consumer**. Worse, two of them are raw `(uintptr_t)Sym*`, so two
@@ -6411,7 +6573,7 @@ modelled to emitted bytes, so new code lands on both sides.
 
 ## The configuration surface moved: read this before running any recipe below
 
-**Every `MCC_AST_*` and `MCC_RIR_*` gate is now a `-f` flag.** 114 of them, generated
+**Every `MCC_AST_*` and `MCC_RIR_*` gate is now a `-f` flag.** 115 of them, generated
 from one list in `src/mccopt.h`, which also generates the driver's option table so the
 two cannot drift. `-fno-<name>` turns a knob off, `-f<name>` on.
 
@@ -6499,13 +6661,33 @@ turns the flag on and off at `-O2` and checks twelve exec goldens still compute 
 array**, opt-in behind `-DMCC_FLAGSWEEP_FULL=ON` and the `flagsweep-full` label.
 Together they cost **4.2s wall at `-j32`** and the covering array another 6.6s.
 
-The table has **114 rows**. *Corrected 2026-08-10: this used to read "113 rows, not 115"
+The table has **115 rows**, and **`flagsweep/cover3-verify` is RED on `main` right now
+because of it — see the box below.** *Corrected 2026-08-10: this used to read "113 rows, not 115"
 and explain the difference as a doc comment at `mccopt.h:63` plus the `#define` at
 `:181`. Both citations were wrong — `src/mccopt.h` is 144 lines long, so there is no
 `:181`, and `:63` is a real `MCC_OPT_ROW(REG_DISP, …)` row rather than a comment.
 `grep -c 'MCC_OPT_ROW(' src/mccopt.h` is 115; subtracting the one `#define` at `:138`
 leaves 114. `tests/optfire/cover3.txt:1` states the same figure independently as
-`flags=114`.* **34** flags were referenced nowhere in
+`flags=114`.*
+
+> **RED ON `main`, found 2026-08-11 in the validation sweep — the newest wave broke a
+> committed bank and nothing said so.** `69296b85` added `MCC_OPT_ROW(OPT_SEARCH_PREDICT,
+> "opt-search-predict", …)` to `src/mccopt.h` and did **not** regenerate
+> `tests/optfire/cover3.txt`, which still says `flags=114`. `cover3.py verify` compares the
+> committed array against `table_flags()` and fails:
+> `FAIL cover3: the array does not match src/mccopt.h / flags in the table, absent from the
+> array: opt-search-predict`. Confirmed by running the cell: **`flagsweep/cover3-verify`
+> fails, rc=1.** The count is now **115** `MCC_OPT_ROW(` rows minus the one `#define`… which
+> is 115 distinct flag *names* by direct extraction, so this paragraph's "115 − 1 = 114"
+> arithmetic no longer holds either and both numbers moved for the same reason.
+>
+> **Do not blind-regenerate it.** `cover3.py gen` will make the cell green in one command,
+> but this file's own standing rule is that a bank is a claim, not a cache: re-banking
+> without saying what changed is how `ast/rir-c2-*` got mis-filed as a stale bank when it was
+> a regression. The new row is a genuinely new flag, so regeneration is very probably right —
+> it just has to be a deliberate commit that says so, not a side effect.
+
+**34** flags were referenced nowhere in
 `tests/`/`tools/`/`CMakeLists.txt` before this, counting a reference as the name on a
 token boundary anywhere — `-f<name>`, `-fno-<name>`, or a bare `|`-field in the optfire
 data files. Reading it strictly as "something passes this spelling" (`-f`/`-fno-` only)
@@ -6851,7 +7033,10 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
   **do not use `-fdump-loopdep` to confirm a legality fix** — instrument the `_apply`
   function or diff the executable's output instead, which is what actually settled it.
 - **Three JIT-only miscompiles survive the -O0…-O4 embed-JIT ladder, 2026-08-11.**
-  **Promoted to N8 in *Open, ranked*; the detail stays here and is not duplicated there.** The
+  **Promoted to N8 in *Open, ranked*.** *(That row claimed the detail was "not duplicated
+  there"; it is — N8 restates the counts, the reduction and the two exclusion arguments.
+  The two copies agree today. Corrected 2026-08-11 rather than deduplicated, because the
+  ranked board and this residue list have different readers.)* The
   corpora named in the goal (gcc, llvm-project, llvm-test-suite) were qualified into 6,623
   oracle-adjudicated run-mode programs and driven through the embed JIT at every level with
   `tools/jitconform.py --phase check --surface embed`. **Five `JIT_MISCOMPILE` rows at
@@ -6875,8 +7060,11 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
   - `gcc.dg/fastmath-1.c` — `-ffast-math` sign-of-float comparisons. Not reduced.
   - Unexamined and larger: **~80 `differ` and ~150 `refused` rows per level.** `refused` is
     mcc declining to compile at all, which is a front-end gap list, not a JIT one.
-- **`-fno-opt-search-<anything>` disables the whole search, not the sub-knob it names.**
-  **Promoted to N9 in *Open, ranked*.** Found 2026-08-11 while trying to A/B `-fopt-search-predict`. `-fno-opt-search-fullset`,
+- ~~**`-fno-opt-search-<anything>` disables the whole search, not the sub-knob it names.**~~
+  **REFUTED 2026-08-11 — see N9 in *Open, ranked* for the disproof. `set_flag` matches by
+  exact `strcmp`, and the counts are identical with and without the flags.** The original
+  text is kept below because the *way* it was wrong is worth more than the claim.
+  Found 2026-08-11 while trying to A/B `-fopt-search-predict`. `-fno-opt-search-fullset`,
   `-fno-opt-search-ordered` and `-fno-opt-search-predict` each take `-O13` from its normal
   candidate count to **`0 candidate evaluations`** — the parser is matching the `opt-search`
   prefix and turning off the master row. Every one of these flags is documented as a
@@ -7007,7 +7195,7 @@ changed the finding, the correction is marked inline.
 
 #### Still open in this area
 
-- **`-O13` is dark on 13 of 21 strategies** — `ivsr, narrow, bfold, range, bf, divmagic, pre,
+- **`-O13` is dark on 13 of 22 strategies** — `ivsr, narrow, bfold, range, bf, divmagic, pre,
   ltemp, inline, abs, tco, licm, reassoc`. That is the state the whole subject was in before
   `scases.h`, at the one level nothing watches (open item 21). The objections to watching it
   are gone: an `-O13` compile of the subject is ~2.7 s, it is bit-deterministic across search
