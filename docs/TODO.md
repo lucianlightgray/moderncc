@@ -6688,6 +6688,18 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
 - Nested member designator `{.a.a=1, .a.b=2}`.
 - **D6** — scalar_storage_order / ms_abi is the most dangerous open item: mcc objects
   link against gcc's, so a mismatch is *silent* wrong codegen.
+- **`-fdump-loopdep` answers a different question than the transforms do, and it is the
+  question nobody asked.** Found 2026-08-11 while reducing the down-counting dependence
+  bug (`931f3137`). The dump runs at the top of the AST driver; `ast_interchange_run` and
+  `ast_fusion_run` run near the bottom, after the tree has been rewritten. On the two-loop
+  reducer the dump printed `fusion(#7,#30): ILLEGAL` and fusion then *fired on that exact
+  pair* in the same compile — `ast_dep_same_trip` bails early at dump time and succeeds by
+  the time the transform asks. So the dump does not say what any transform will do, and it
+  reads as if it does; a wrong verdict there is indistinguishable from a right one. It cost
+  ~40 minutes of chasing a phantom third bug. Either run the dump from the same point the
+  transforms do, or label each line with the pipeline position it was taken at. Until then
+  **do not use `-fdump-loopdep` to confirm a legality fix** — instrument the `_apply`
+  function or diff the executable's output instead, which is what actually settled it.
 - Declined upstream `7f7845cd` (VT_VOID); i386 `R_386_TLS_GOTIE` gap.
 - Raise arena fidelity / finish the capture path (Phase F).
 - Four hand-reproduced wrong-answer defects from the three-compiler board are written up
