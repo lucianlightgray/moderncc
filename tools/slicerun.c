@@ -4055,6 +4055,163 @@ static void suite_fault(void) {
 				"a dispatch after a strand fails rather than reusing pending memory");
 	CHECK(mcc_gpu_stranded() == 1, "and it does not strand a second time");
 
+	/* L2'(iii). The teardown now runs on a device with a command buffer that is
+	 * pending forever, which is exactly the state the old one could not survive:
+	 * it called vkDeviceWaitIdle, which takes no timeout, from a path that is
+	 * reached out of an atexit handler. It must return, and it must not hand the
+	 * stranded objects back to the driver -- so the release is skipped and a
+	 * second call is still a no-op. */
+	{
+		double t0 = mcc_slice_now();
+		mcc_gpu_quiesce();
+		CHECK(mcc_slice_now() - t0 < 5e9,
+					"quiesce returns on a device with a permanently pending submission");
+		mcc_gpu_quiesce();
+		CHECK(mcc_gpu_stranded() == 1,
+					"and it strands nothing further, having destroyed nothing");
+	}
+
+	mcc_slice_kernel_free(&k);
+	ast_arena_free(a);
+}
+
+/* ------------------------------------------------------- L2'(ii): lost -- */
+
+/* VK_ERROR_DEVICE_LOST was a declared constant that nothing compared against.
+ * Every handle derived from a lost device is unusable, so the only correct
+ * response is to stop -- and before this the return code became a bare
+ * `return 0`, mcc_gpu.ok stayed set, and the next dispatch called back into a
+ * driver whose device no longer exists.
+ *
+ * This runs in its own process for the same reason suite_fault does: the
+ * device is deliberately destroyed for the rest of it. The loss is injected at
+ * vkQueueSubmit, after a healthy dispatch has proved the device works, so what
+ * is under test is the transition and not a device that never came up. */
+static void suite_lost(void) {
+	AstArena *a;
+	AstLocal root;
+	MccSliceWork w;
+	MccSliceKernel k;
+	int64_t out[AFFINE_N];
+	unsigned char def[AFFINE_N];
+	int st;
+
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr, "FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+	if (!backend_has_fence_timeout()) {
+		fprintf(stderr, "slicerun: device-loss injection is Vulkan-only "
+										"(MCC_GPU_FORCE_DEVICE_LOST); suite_lost is not "
+										"applicable to this backend\n");
+		return;
+	}
+
+	a = ast_arena_new();
+	root = build_affine(a);
+	CHECK(mcc_slice_work_from_ast(a, root, &w) == 1, "affine slice yields work");
+	CHECK(mcc_slice_kernel_build(&w, &k) == 1, "the slice lowers");
+
+	mcc_slice_work_bind(&w, AFFINE_IN, AFFINE_N, out, def);
+	CHECK(mcc_slice_run_gpu(&w, &k, 0) == MCC_TASK_DONE, "a healthy dispatch runs");
+	CHECK(mcc_gpu_alive() == 1, "and the device is alive before the loss");
+
+	setenv("MCC_GPU_FORCE_DEVICE_LOST", "vkQueueSubmit", 1);
+	memset(out, 0xA5, sizeof out);
+	memset(def, 0xA5, sizeof def);
+	mcc_slice_work_bind(&w, AFFINE_IN, AFFINE_N, out, def);
+	st = mcc_slice_run_gpu(&w, &k, 0);
+	CHECK(st == MCC_TASK_FAILED, "a dispatch onto a lost device reports failure");
+	CHECK(w.done == 0, "and consumes no tuple");
+	CHECK(mcc_gpu_alive() == 0, "VK_ERROR_DEVICE_LOST clears mcc_gpu.ok");
+
+	/* Un-arming must not resurrect it. The flag is a property of the device,
+	 * not of the last call. */
+	unsetenv("MCC_GPU_FORCE_DEVICE_LOST");
+	memset(out, 0xA5, sizeof out);
+	mcc_slice_work_bind(&w, AFFINE_IN, AFFINE_N, out, def);
+	st = mcc_slice_run_gpu(&w, &k, 0);
+	CHECK(st == MCC_TASK_FAILED, "a dispatch after the loss still fails");
+	CHECK(mcc_gpu_alive() == 0, "and the device stays dead");
+
+	/* L2'(iii) on the loss path: no wait at all is legitimate here, and an
+	 * unbounded one is not. This is the call that cluster L wants to reach from
+	 * mccjit_shutdown on every run. */
+	{
+		double t0 = mcc_slice_now();
+		mcc_gpu_quiesce();
+		CHECK(mcc_slice_now() - t0 < 5e9, "quiesce returns on a lost device");
+		mcc_gpu_quiesce();
+		CHECK(mcc_gpu_alive() == 0, "and a second quiesce is a no-op");
+	}
+
+	mcc_slice_kernel_free(&k);
+	ast_arena_free(a);
+}
+
+/* ---------------------------------------------------- L2'(iii): teardown -- */
+
+/* The healthy half of the teardown, which the two suites above cannot reach:
+ * both of them quiesce a device that is lost or stranded, where destroying
+ * nothing is the correct answer. Here everything the device owns is genuinely
+ * released, so this is the cell to run under VK_LAYER_KHRONOS_validation --
+ * an object left behind is reported at vkDestroyInstance, and before this
+ * there was no vkDestroyInstance to report it.
+ *
+ * Its own process: the device is gone afterwards. */
+static void suite_quiesce(void) {
+	AstArena *a;
+	AstLocal root;
+	MccSliceWork w;
+	MccSliceKernel k;
+	int64_t out[AFFINE_N];
+	unsigned char def[AFFINE_N];
+	double t0;
+	int i;
+
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr, "FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+
+	a = ast_arena_new();
+	root = build_affine(a);
+	CHECK(mcc_slice_work_from_ast(a, root, &w) == 1, "affine slice yields work");
+	CHECK(mcc_slice_kernel_build(&w, &k) == 1, "the slice lowers");
+	mcc_slice_work_bind(&w, AFFINE_IN, AFFINE_N, out, def);
+	CHECK(mcc_slice_run_gpu(&w, &k, 0) == MCC_TASK_DONE, "a healthy dispatch runs");
+	for (i = 0; i < AFFINE_N; i++)
+		CHECK(out[i] == AFFINE_EXPECT[i], "and returns the expected values");
+
+	t0 = mcc_slice_now();
+	mcc_gpu_quiesce();
+	CHECK(mcc_slice_now() - t0 < 5e9, "quiesce returns on a healthy device");
+
+	/* The invariant the old quiesce got for free by doing nothing, and that a
+	 * teardown must not break: the door is shut against dispatch, but the
+	 * question "did a device come up" still answers yes. ast_ladder_gpu_report
+	 * quiesces and then prints mcc_gpu_stats, cmake/ladder_gpu_parity.cmake
+	 * skips the whole cell on available=0, and tools/smokerun.c fails the run
+	 * on it -- so clearing mcc_gpu.ok here would disarm the device suite rather
+	 * than break it. */
+	CHECK(mcc_gpu_alive() == 1, "quiesce does not retract the device's existence");
+
+	memset(out, 0xA5, sizeof out);
+	mcc_slice_work_bind(&w, AFFINE_IN, AFFINE_N, out, def);
+	CHECK(mcc_slice_run_gpu(&w, &k, 0) == MCC_TASK_FAILED,
+				"but no dispatch can start once the device has been torn down");
+	CHECK(w.done == 0, "and it consumes no tuple");
+
+	mcc_gpu_quiesce();
+	CHECK(mcc_gpu_stranded() == 0,
+				"a second quiesce strands nothing and destroys nothing twice");
+
 	mcc_slice_kernel_free(&k);
 	ast_arena_free(a);
 }
@@ -9500,7 +9657,7 @@ int main(int argc, char **argv) {
 				"task",  "work",   "cpu",	 "gpu",		"bytes",	"wide64",
 				"f64",	 "ops",		"frame", "mem",		"deref",	"fmt",
 				"fault", "sched",	"ext",	 "rwstore", "arrow",	"effect",
-				"hostimport", "thread"};
+				"hostimport", "thread", "lost", "quiesce"};
 		size_t si;
 		int known = 0;
 		for (si = 0; si < sizeof SUITES / sizeof SUITES[0]; si++)
@@ -9548,6 +9705,10 @@ int main(int argc, char **argv) {
 		suite_rwstore();
 	if (only && !strcmp(only, "fault"))
 		suite_fault();
+	if (only && !strcmp(only, "lost"))
+		suite_lost();
+	if (only && !strcmp(only, "quiesce"))
+		suite_quiesce();
 	if (only && !strcmp(only, "hostimport"))
 		suite_hostimport();
 	if (!only || !strcmp(only, "sched"))

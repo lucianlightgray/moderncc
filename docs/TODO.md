@@ -351,8 +351,10 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    programs, 0 new DIFFER) and proved the rest is upstream in `ast_func_end`. Attributing
    those 3110 across `rir_try_active`, `ast_replay_ok`, `faithful && !ast_fn_hole` and
    `ast_jit_want` is the measurement that ranks every remaining JIT-coverage item.
-9. **Cluster L's next link is `L2′(ii)`/`(iii)`, both in `src/mccgpu.c`** — clear
-   `mcc_gpu.ok` on `VK_ERROR_DEVICE_LOST` and give the Vulkan quiesce something to destroy.
+9. ~~**Cluster L's next link is `L2′(ii)`/`(iii)`, both in `src/mccgpu.c`** — clear
+   `mcc_gpu.ok` on `VK_ERROR_DEVICE_LOST` and give the Vulkan quiesce something to destroy.~~
+   **DONE, 2026-08-10** — see the landed section. `L2` is unblocked on the hang axis, with
+   two named preconditions.
    The pool half landed on `wt/jitshutdown`; wiring the device into `mccjit_shutdown()`
    before (ii) is fixed makes an unbounded `vkDeviceWaitIdle` reachable from `atexit` on
    every run.
@@ -399,6 +401,74 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
     equivalent to another, and how much optimizer work is duplicated across them? `src/*.c`
     is the right denominator, not gcc c-torture (item 6). If the duplication is small, the
     cache is `opt-slice` again.
+
+## Landed — the Vulkan quiesce destroys something, and a lost device stops dispatch, 2026-08-10 (open item 9, `L2′(ii)`/`(iii)`)
+
+**(ii)** `VK_ERROR_DEVICE_LOST` was *declared* at `src/mccgpu.c` and compared against
+**nowhere** in the Vulkan path — the only device-loss handling in the file was Metal's.
+There was no central `VkResult` check either; every site was an inline
+`!= VK_SUCCESS → return 0`. `mcc_vk_chk(VkResult, const char *what)` is that check: it
+returns its argument so it wraps a call in place, and on `VK_ERROR_DEVICE_LOST` sets
+`mcc_gpu.lost` and clears `mcc_gpu.ok`. Six sites are wrapped — `vkQueueSubmit`,
+`vkWaitForFences` (dispatch and quiesce), `vkMapMemory`, and both `vkCreateDevice` calls —
+chosen against the spec's own `DEVICE_LOST` lists. `vkAllocateMemory`,
+`vkCreateComputePipelines` and `vkBindBufferMemory` are deliberately *not* wrapped: the spec
+does not list `DEVICE_LOST` for them. Clearing `ok` is sufficient to stop dispatch because
+`mcc_gpu_dispatch_locked2` opens with `mcc_gpu_init()`, which returns `mcc_gpu.ok` once
+`tried` is set.
+
+**(iii)** `mcc_vk_release` was defined and called by nobody — the quiesce destroying nothing
+was literal dead code. The quiesce now releases the resident objects and destroys the device
+and the instance (both destructors soft-bound, so a loader missing them costs a teardown
+rather than the GPU).
+
+**The wait is not bounded, it is gone.** `vkDeviceWaitIdle` no longer appears in the path at
+all; it survives only in a comment. The argument: every submit is on `mcc_gpu.q` under
+`mcc_gpu_lock` and is followed by a finite `vkWaitForFences` before the lock drops, so the
+only submission that can still be in flight when quiesce takes the lock is one whose fence
+wait already failed — which `mcc_vkr.pending` now records. The residual worst case is a
+single `MCC_GPU_FENCE_NS`-bounded fence wait.
+
+**The quiesce deliberately does NOT clear `mcc_gpu.ok`.** `ast_ladder_gpu_report` quiesces
+and *then* prints `mcc_gpu_stats`; `cmake/ladder_gpu_parity.cmake` skips on `available=0` and
+`tools/smokerun.c` fails on it. Clearing `ok` would have silently disarmed the device suite
+rather than breaking it — trap 1 in a new costume.
+
+### Evidence
+
+`MCC_GPU_FORCE_DEVICE_LOST=<call-name>|*` injects the loss at a named site, read at point of
+use so a cell can arm it after the device it means to lose has come up — the same trick
+`MCC_GPU_FENCE_NS` plays on the fence timeout. Verified on this host's RTX 5070 Ti:
+
+    healthy      -> quiesce: released the resident objects and destroyed the device
+                    and the instance ... available=1 dispatches=1
+    forced loss  -> vkQueueSubmit reported VK_ERROR_DEVICE_LOST ... available=0
+                    dispatches=0, process exits in 7.0 s
+
+With the flag-clearing temporarily disabled the new `slice/device-lost` cell gives four
+failures, including *"a dispatch after the loss still fails"* with `dispatches=3` instead of
+`2` — pre-fix, the dispatch after the loss went straight back into the driver. Teardown under
+`VK_LAYER_KHRONOS_validation` produces zero validation messages and no leaked-object report,
+which was previously unreachable because there was no `vkDestroyInstance` to report at.
+
+### `L2` is unblocked, with two preconditions
+
+Wiring the device into `mccjit_shutdown()` is **not** done here and is now safe on the hang
+axis. Two conditions it must honour:
+
+1. **Order it after `mccjit_pool_shutdown()`** — either order is correct under the lock plus
+   `mcc_gpu_closing`, but joining the workers first means no thread is inside a dispatch when
+   the device is destroyed.
+2. **Nothing may retain a pointer from `mcc_gpu_mem()` across shutdown.** This hazard is new:
+   the quiesce now unmaps and frees the shared address space. Today only `tools/slicerun.c`
+   calls `mcc_gpu_mem` and never quiesces mid-run, so nothing is affected — but if the B1
+   address-space work has the JIT holding a base pointer, tearing down inside
+   `mccjit_shutdown` turns it into an unmapped page. **That hazard did not exist while the
+   quiesce destroyed nothing**, which is the price of fixing (iii).
+
+One cosmetic leftover: `vkDeviceWaitIdle` is still in the hard-required `MCC_VK_FNS` bind
+list although nothing calls it. Harmless, but a reader may take its presence as evidence the
+wait survives.
 
 ## Landed — TCO sees through the ternary, and the fold's veto is gone, 2026-08-10 (open item 4)
 
@@ -1969,7 +2039,7 @@ What still needs the tick, stated so it is not rediscovered:
 
 | row | before | now |
 | --- | --- | --- |
-| **L2** what owns teardown | blocked on `L2′(i)` | **`L2′(i)` closed.** `mccjit_shutdown()` exists, is `atexit`-registered once and is ordered ahead of the KGC flush. `L2` still cannot land: `L2′(ii)` (`mcc_gpu.ok` never cleared after `VK_ERROR_DEVICE_LOST`, so `vkDeviceWaitIdle` deadlocks from `atexit`) and `L2′(iii)` (Vulkan quiesce destroys nothing) are `src/mccgpu.c` and untouched |
+| **L2** what owns teardown | blocked on `L2′(i)` | **`L2′(i)`, `(ii)` and `(iii)` all closed, 2026-08-10.** `mccjit_shutdown()` exists, is `atexit`-registered once and is ordered ahead of the KGC flush. `(ii)`: `mcc_vk_chk` now clears `mcc_gpu.ok` on `VK_ERROR_DEVICE_LOST`. `(iii)`: the quiesce destroys the device and instance, and `vkDeviceWaitIdle` is gone from the path entirely. **`L2` itself — wiring the device into `mccjit_shutdown()` — is deliberately NOT done**, see the two preconditions in the landed section |
 | **L3** residency | listed as blocked | **it never was, and it already landed** (32× on fixed cost). Making objects resident needs no teardown; *destroying* them is `L2′(iii)` |
 | **L4** who dispatches | blocked | **unblocked on the lifetime axis.** The pool now has a definite end (not a bounded *duration* — see above), joinable workers, a per-job QSBR slot and an enqueue that refuses after teardown. Its remaining blocker is its own stated constraint — no `mccjit_swap_lock` across a dispatch — which is `S7b` |
 | **L6** eligibility | listed as blocked | **it never was.** `ast_gpu_want` is a predicate in `src/mccast.c` with no mechanical dependency on a shutdown; it is sequenced behind `L4`/`L5`, not blocked by a `pthread_t` |
@@ -2086,10 +2156,11 @@ host fact excuses a skip) and its twin as `registered`.
 1. **The teardown is unbounded above.** See the tick split above.
 2. **`MCCJIT_POOL_MAX` is 64** and `mccjit_pool_start` now clamps to it silently. The
    baked constructor passes a literal; nothing today asks for more than 2.
-3. `L2′(ii)` and `L2′(iii)` are unchanged and are what `L2` is now waiting on.
-4. `mcc_gpu_quiesce`'s unbounded `vkDeviceWaitIdle` becomes reachable from `atexit` the
+3. ~~`L2′(ii)` and `L2′(iii)` are unchanged and are what `L2` is now waiting on.~~ **Both closed 2026-08-10.**
+4. ~~`mcc_gpu_quiesce`'s unbounded `vkDeviceWaitIdle` becomes reachable from `atexit` the
    moment `L2` wires the device into `mccjit_shutdown`. Clear `mcc_gpu.ok` on
-   `VK_ERROR_DEVICE_LOST` **before** that wiring, not after.
+   `VK_ERROR_DEVICE_LOST` **before** that wiring, not after.~~ **Done in that order,
+   2026-08-10.** The wait is not merely bounded, it is gone.
 
 ## The benignity probe, re-armed — the first real answer, 2026-08-10
 

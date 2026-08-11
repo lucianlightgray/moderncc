@@ -1454,6 +1454,10 @@ typedef VkResult(VKAPI_PTR *PFN_vkGetMemoryHostPointerPropertiesEXT)(
 typedef VkResult(VKAPI_PTR *PFN_vkCreateDevice)(
 		VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
 		const VkAllocationCallbacks *pAllocator, VkDevice *pDevice);
+typedef void(VKAPI_PTR *PFN_vkDestroyDevice)(
+		VkDevice device, const VkAllocationCallbacks *pAllocator);
+typedef void(VKAPI_PTR *PFN_vkDestroyInstance)(
+		VkInstance instance, const VkAllocationCallbacks *pAllocator);
 typedef void(VKAPI_PTR *PFN_vkGetDeviceQueue)(VkDevice device,
 																							uint32_t queueFamilyIndex,
 																							uint32_t queueIndex,
@@ -1628,10 +1632,17 @@ typedef VkResult(VKAPI_PTR *PFN_vkWaitForFences)(VkDevice device,
 	X(vkResetFences)                                                             \
 	X(vkResetCommandBuffer)
 
+/* vkDestroyDevice and vkDestroyInstance are core 1.0 and every loader has
+ * them, but MCC_VK_FNS is a hard requirement -- one missing symbol there
+ * disables the device outright. A loader that somehow lacks a destructor
+ * should cost us a teardown, not the GPU, so bind them softly and null-check
+ * at the one site that calls them. */
 #define MCC_VK_OPT_FNS(X)                                                      \
 	X(vkGetPhysicalDeviceProperties2)                                            \
 	X(vkEnumerateDeviceExtensionProperties)                                      \
-	X(vkGetDeviceProcAddr)
+	X(vkGetDeviceProcAddr)                                                       \
+	X(vkDestroyDevice)                                                           \
+	X(vkDestroyInstance)
 
 #define MCC_VK_DECL(n) static PFN_##n n;
 MCC_VK_FNS(MCC_VK_DECL)
@@ -1728,6 +1739,7 @@ static int mcc_vk_load(void) {
 typedef struct MccGpu {
 	int tried;
 	int ok;
+	int lost;
 	VkInstance inst;
 	VkPhysicalDevice phys;
 	VkDevice dev;
@@ -1762,6 +1774,42 @@ static uint64_t mcc_vk_fence_ns(void) {
 			return (uint64_t)v;
 	}
 	return 30ULL * 1000000000ULL;
+}
+
+/* --- L2'(ii): device loss ------------------------------------------------ *
+ * VK_ERROR_DEVICE_LOST was declared here and compared against nowhere. It is
+ * not one failure among many: it is the one after which every handle derived
+ * from the device is unusable and every subsequent call has undefined
+ * behaviour, so a return code that was only ever turned into `return 0` left
+ * mcc_gpu.ok set and the next dispatch walked straight back into the driver.
+ *
+ * The spec lists it for a small, fixed set of calls -- queue submission,
+ * fence and idle waits, and memory mapping -- so rather than sprinkling
+ * comparisons, every one of those goes through this function and nothing
+ * else needs to know the code exists. It returns its argument so it wraps a
+ * call in place.
+ *
+ * MCC_GPU_FORCE_DEVICE_LOST names one of those call sites (or "*" for all) and
+ * makes it report the loss. Device loss cannot be provoked on a healthy
+ * device, and the path that matters is precisely the one that only runs when
+ * the device is gone; this is the same trick MCC_GPU_FENCE_NS plays on the
+ * fence timeout, read at the point of use for the same reason -- a cell has to
+ * be able to arm it after the device it means to lose has come up. */
+static VkResult mcc_vk_chk(VkResult r, const char *what) {
+	const char *lose = getenv("MCC_GPU_FORCE_DEVICE_LOST");
+	if (lose && lose[0] && (!strcmp(lose, what) || !strcmp(lose, "*")))
+		r = VK_ERROR_DEVICE_LOST;
+	if (r == VK_ERROR_DEVICE_LOST) {
+		if (!mcc_gpu.lost && mcc_vk_diag())
+			fprintf(stderr,
+							"[gpu-vk] %s reported VK_ERROR_DEVICE_LOST; the device is dead, "
+							"no further dispatch will be attempted and the resident objects "
+							"are stranded\n",
+							what);
+		mcc_gpu.lost = 1;
+		mcc_gpu.ok = 0;
+	}
+	return r;
 }
 
 #define MCC_VK_EXT_HOSTMEM "VK_EXT_external_memory_host"
@@ -2075,12 +2123,14 @@ static int mcc_gpu_init(void) {
 		dci.ppEnabledExtensionNames = &mcc_vk_hostmem_ext;
 	}
 	{
-		VkResult _r = vkCreateDevice(mcc_gpu.phys, &dci, 0, &mcc_gpu.dev);
+		VkResult _r = mcc_vk_chk(vkCreateDevice(mcc_gpu.phys, &dci, 0, &mcc_gpu.dev),
+														 "vkCreateDevice");
 		if (_r != VK_SUCCESS && mcc_gpu.hostimp) {
 			mcc_vk_hostimp_no("vkCreateDevice refused " MCC_VK_EXT_HOSTMEM);
 			dci.enabledExtensionCount = 0;
 			dci.ppEnabledExtensionNames = 0;
-			_r = vkCreateDevice(mcc_gpu.phys, &dci, 0, &mcc_gpu.dev);
+			_r = mcc_vk_chk(vkCreateDevice(mcc_gpu.phys, &dci, 0, &mcc_gpu.dev),
+											"vkCreateDevice");
 		}
 		if (_r != VK_SUCCESS) {
 			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
@@ -2101,16 +2151,13 @@ static int mcc_gpu_init(void) {
 		fprintf(stderr, "[gpu-vk] host-pointer import %s align=%lu%s%s\n",
 						mcc_gpu.hostimp ? "yes" : "no", mcc_gpu.hostimp_align,
 						mcc_gpu.hostimp ? "" : " -- ", mcc_gpu.hostimp_why);
+	/* The first vkCreateDevice above is allowed to fail and be retried without
+	 * the host-import extension. If it failed with device loss, that verdict was
+	 * about a device that now does not exist; the one this call created is the
+	 * only device this process will use and nothing has happened to it yet. */
+	mcc_gpu.lost = 0;
 	mcc_gpu.ok = 1;
 	return 1;
-}
-
-void mcc_gpu_quiesce(void) {
-	MCC_GPU_LOCK();
-	mcc_gpu_closing = 1;
-	if (mcc_gpu.ok && mcc_gpu.dev)
-		vkDeviceWaitIdle(mcc_gpu.dev);
-	MCC_GPU_UNLOCK();
 }
 
 /* Taking the *first* HOST_VISIBLE|HOST_COHERENT type is what the spec permits
@@ -2207,7 +2254,8 @@ static int mcc_gpu_buffer(VkDeviceSize size, VkBuffer *buf, VkDeviceMemory *mem,
 		return 0;
 	}
 	if (vkBindBufferMemory(mcc_gpu.dev, *buf, *mem, 0) != VK_SUCCESS ||
-			vkMapMemory(mcc_gpu.dev, *mem, 0, size, 0, map) != VK_SUCCESS) {
+			mcc_vk_chk(vkMapMemory(mcc_gpu.dev, *mem, 0, size, 0, map),
+								 "vkMapMemory") != VK_SUCCESS) {
 		vkFreeMemory(mcc_gpu.dev, *mem, 0);
 		vkDestroyBuffer(mcc_gpu.dev, *buf, 0);
 		return 0;
@@ -2250,6 +2298,11 @@ static struct {
 	VkDeviceSize binsz, boutsz, bmemsz;
 	int dsdirty;
 	int memimported;
+	/* Raised between a successful submit and the fence wait that proves the
+	 * submit completed. It stays raised exactly when a command buffer is still
+	 * referencing every object below, which is the one state in which the
+	 * teardown must not touch them and must not wait for them forever. */
+	int pending;
 	MccVkPipe cache[MCC_VK_CACHE_MAX];
 	int ncache, next;
 } mcc_vkr;
@@ -2620,6 +2673,72 @@ static void mcc_vk_release(void) {
 	memset(&mcc_vkr, 0, sizeof mcc_vkr);
 }
 
+/* --- L2'(iii): the teardown --------------------------------------------- *
+ * This used to be `closing = 1; if (ok && dev) vkDeviceWaitIdle(dev);` -- an
+ * unbounded wait that destroyed nothing. Both halves were wrong in the same
+ * direction: vkDeviceWaitIdle takes no timeout, so on a device that will never
+ * go idle it does not return, and it is reached from an atexit handler
+ * (ast_ladder_gpu_report), which is where cluster L wants to hang the JIT's
+ * shutdown too.
+ *
+ * Bounding it does not need a timeout, it needs the wait to be unnecessary.
+ * Every submission this module makes is on mcc_gpu.q, under mcc_gpu_lock, and
+ * is followed before the lock is dropped by a fence wait with a finite,
+ * caller-nameable timeout. So when quiesce takes the lock, the only submission
+ * that can still be in flight is one whose fence wait did not succeed -- and
+ * mcc_vkr.pending is raised exactly then. In every other case the fence has
+ * already proved the queue idle and there is nothing left to wait for, which
+ * is why vkDeviceWaitIdle is gone rather than merely guarded.
+ *
+ * What is destroyed is everything mcc_vk_resident and mcc_vk_bind_buffers
+ * created, then the device and the instance. What is not destroyed is any of
+ * that on a lost or stranded device, for the reason given at the fence-wait
+ * failure in mcc_gpu_dispatch_locked2: a command buffer that will never
+ * complete still references those objects, and handing them back to the driver
+ * is worse than leaking them into process exit.
+ *
+ * mcc_gpu.ok is deliberately left alone. It is the answer to "did a device
+ * come up", which is what mcc_gpu_stats reports -- and ast_ladder_gpu_report
+ * calls this and then prints that. mcc_gpu_closing is what closes the door,
+ * and it closes it for mcc_gpu_init too, so no path can reach a destroyed
+ * handle. */
+void mcc_gpu_quiesce(void) {
+	MCC_GPU_LOCK();
+	mcc_gpu_closing = 1;
+	if (mcc_gpu.dev && mcc_gpu.ok && !mcc_gpu.lost && !mcc_gpu.stranded) {
+		int idle = 1;
+		if (mcc_vkr.pending) {
+			idle = mcc_vk_chk(vkWaitForFences(mcc_gpu.dev, 1, &mcc_vkr.fence, VK_TRUE,
+																				mcc_vk_fence_ns()),
+												"vkWaitForFences") == VK_SUCCESS;
+			if (idle)
+				mcc_vkr.pending = 0;
+			else
+				mcc_gpu.stranded++;
+		}
+		if (idle) {
+			mcc_vk_release();
+			if (vkDestroyDevice)
+				vkDestroyDevice(mcc_gpu.dev, 0);
+			mcc_gpu.dev = 0;
+			mcc_gpu.q = 0;
+			if (mcc_gpu.inst && vkDestroyInstance)
+				vkDestroyInstance(mcc_gpu.inst, 0);
+			mcc_gpu.inst = 0;
+			mcc_gpu.phys = 0;
+			if (mcc_vk_diag())
+				fprintf(stderr, "[gpu-vk] quiesce: released the resident objects and "
+												"destroyed the device and the instance\n");
+		} else if (mcc_vk_diag()) {
+			fprintf(stderr, "[gpu-vk] quiesce: a submission is still pending after "
+											"%llu ns; stranding the resident objects rather than "
+											"waiting for a device that is not coming back\n",
+							(unsigned long long)mcc_vk_fence_ns());
+		}
+	}
+	MCC_GPU_UNLOCK();
+}
+
 /* Set only for the duration of a frame dispatch, under the same lock that
  * serialises everything else here. */
 static int32_t *mcc_gpu_rw_back;
@@ -2631,7 +2750,6 @@ static int mcc_gpu_dispatch_locked2(const uint32_t *code, int nwords,
 	VkSubmitInfo si;
 	VkResult wr;
 	MccVkPipe *pl;
-	int submitted = 0;
 	int cap = ((ntuple + MCC_GPU_LOCAL_SIZE - 1) / MCC_GPU_LOCAL_SIZE) *
 						MCC_GPU_LOCAL_SIZE;
 
@@ -2679,18 +2797,21 @@ static int mcc_gpu_dispatch_locked2(const uint32_t *code, int nwords,
 	si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	si.commandBufferCount = 1;
 	si.pCommandBuffers = &mcc_vkr.cb;
-	if (vkQueueSubmit(mcc_gpu.q, 1, &si, mcc_vkr.fence) != VK_SUCCESS)
+	if (mcc_vk_chk(vkQueueSubmit(mcc_gpu.q, 1, &si, mcc_vkr.fence),
+								 "vkQueueSubmit") != VK_SUCCESS)
 		return 0;
-	submitted = 1;
-	wr = vkWaitForFences(mcc_gpu.dev, 1, &mcc_vkr.fence, VK_TRUE,
-											 mcc_vk_fence_ns());
+	mcc_vkr.pending = 1;
+	wr = mcc_vk_chk(vkWaitForFences(mcc_gpu.dev, 1, &mcc_vkr.fence, VK_TRUE,
+																	mcc_vk_fence_ns()),
+									"vkWaitForFences");
 	if (wr != VK_SUCCESS) {
 		/* The command buffer is still pending and every resident object is
 		 * referenced by it. Touching any of them hands the driver memory a zombie
 		 * kernel is still writing to, which is how a timeout in dispatch N used to
 		 * silently corrupt dispatch N+1. Strand instead: the device is marked dead
 		 * here, so the leak is bounded at one process's worth of objects and no
-		 * further dispatch can occur. */
+		 * further dispatch can occur. mcc_vkr.pending stays raised, which is what
+		 * stops mcc_gpu_quiesce from destroying them or waiting on them at exit. */
 		if (mcc_vk_diag())
 			fprintf(stderr,
 							"[gpu-vk] fence wait failed rc=%d after %llu ns; stranding the "
@@ -2698,9 +2819,9 @@ static int mcc_gpu_dispatch_locked2(const uint32_t *code, int nwords,
 							(int)wr, (unsigned long long)mcc_vk_fence_ns());
 		mcc_gpu.ok = 0;
 		mcc_gpu.stranded++;
-		(void)submitted;
 		return 0;
 	}
+	mcc_vkr.pending = 0;
 	if (out)
 		memcpy(out, mcc_vkr.pout, (size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
 	if (mcc_gpu_rw_back)

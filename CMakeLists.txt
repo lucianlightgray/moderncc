@@ -3819,6 +3819,27 @@ if(MCC_BUILD_TESTS)
             add_test(NAME "slice/fault" COMMAND slicerun ${_fault_args})
             set_tests_properties("slice/fault" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            # L2'(ii)/(iii). Also runs alone, and for a stronger reason than
+            # slice/fault: it loses the device on purpose and then tears it
+            # down, so nothing else in the process has a device afterwards.
+            set(_lost_args lost)
+            if(MCC_GPU_REQUIRED)
+                list(APPEND _lost_args --require-device)
+            endif()
+            add_test(NAME "slice/device-lost" COMMAND slicerun ${_lost_args})
+            set_tests_properties("slice/device-lost" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            # The healthy teardown, which the two cells above cannot reach:
+            # they quiesce a device that is lost or stranded, where destroying
+            # nothing is correct. Alone for the same reason -- the device is
+            # destroyed on purpose.
+            set(_quiesce_args quiesce)
+            if(MCC_GPU_REQUIRED)
+                list(APPEND _quiesce_args --require-device)
+            endif()
+            add_test(NAME "slice/quiesce" COMMAND slicerun ${_quiesce_args})
+            set_tests_properties("slice/quiesce" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             # H6, Phase 0a: the cost table. Informational, but it must produce
             # rows and at least one slice size at which the device wins, or the
             # measurement silently stopped measuring.
