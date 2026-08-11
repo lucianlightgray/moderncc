@@ -4536,6 +4536,21 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("smoke/slice-bails" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
 
+        # -O13 is the search tier and the level sweep cannot walk to it, because
+        # -O5..-O12 are a hard error. It was the one level nothing watched. This banks
+        # the strategies that stay DARK rather than their fire counts: a fire count must
+        # not fall, which is the wrong direction for a monotone-decreasing bank, whereas
+        # a strategy going dark is a new category (hard fail) and one lighting up is a
+        # row that fell to zero (IMPROVED). Costs ~45 s -- the -O13 compile of the smoke
+        # subject, measured, not the "~2.7 s" the board carried from before scases.h.
+        add_test(NAME "smoke/strat-dark"
+            COMMAND smokerun --mcc "${_mcc_exe}"
+                    --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
+                    --work "${CMAKE_BINARY_DIR}/smoke-dark"
+                    --strat-dark)
+        set_tests_properties("smoke/strat-dark" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+
         find_program(MCC_SMOKE_GCC NAMES gcc-15 gcc)
         find_program(MCC_SMOKE_CLANG NAMES clang-22 clang)
         add_test(NAME "smoke/divergence"
@@ -4574,6 +4589,7 @@ if(MCC_BUILD_TESTS)
         mcc_skip_test("smoke/engines-known-positive" "${_smoke_why}")
         mcc_skip_test("smoke/engines-identity" "${_smoke_why}")
         mcc_skip_test("smoke/slice-bails" "${_smoke_why}")
+        mcc_skip_test("smoke/strat-dark" "${_smoke_why}")
         mcc_skip_test("smoke/divergence" "${_smoke_why}")
         mcc_skip_test("smoke/device" "${_smoke_why}")
         mcc_skip_test("smoke/device-known-positive" "${_smoke_why}")

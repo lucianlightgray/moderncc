@@ -41,6 +41,8 @@ static unsigned g_deadline_ms = 6000;
 static long g_min_cases;
 static long g_min_passes;
 static long g_min_strats;
+#define SMK_MAXSTRAT 64
+
 static int g_strat_total;
 static int g_strat_fired;
 static int g_poison;
@@ -878,6 +880,97 @@ static void strat_census(int level)
 	free(txt);
 	note("  strategy census at -O%d: %d of %d fired, in %u ms\n", level, fired,
 			 total, ms);
+}
+
+/* The -O13 tier prints one [strategy] panel per search phase and the last one
+   reads all zeros, so a census that takes the first or the last record is
+   measuring a phase rather than the compile.  Take the per-column max.  Bank
+   the strategies that stayed dark, not the fire counts: a fire count must not
+   fall, which is the wrong direction for a monotone-decreasing bank, whereas a
+   strategy going dark is a new category (hard fail) and one lighting up is a
+   row that fell to zero (IMPROVED).  ratchet() needs no change for either. */
+static void strat_dark_census(void)
+{
+	char exe[1024], log[1024], tsv[1024];
+	unsigned ms = 0;
+	char *txt, *p;
+	char names[SMK_MAXSTRAT][32];
+	long best[SMK_MAXSTRAT];
+	int n = 0, i, recs = 0, dark = 0;
+
+	ts_path(exe, sizeof exe, g_work, "subject-o13.exe");
+	ts_path(log, sizeof log, g_work, "compile-o13.log");
+	ts_path(tsv, sizeof tsv, g_work, "rir-o13.tsv");
+	host_setenv("MCC_STATS", "4");
+	if (!compile_subject(MCC_OPT_SEARCH_LEVEL, exe, log, tsv, &ms, 0, 0, 0)) {
+		char *l = slurp(log);
+		bad("-O%d strategy census: the compile failed:\n%s", MCC_OPT_SEARCH_LEVEL,
+				l);
+		free(l);
+		return;
+	}
+	txt = slurp(log);
+	p = txt;
+	while ((p = strstr(p, "[strategy] ")) != NULL) {
+		char line[2048];
+		char *eol, *t;
+		size_t len;
+		p += strlen("[strategy] ");
+		eol = strchr(p, '\n');
+		len = eol ? (size_t)(eol - p) : strlen(p);
+		if (len >= sizeof line)
+			len = sizeof line - 1;
+		memcpy(line, p, len);
+		line[len] = '\0';
+		recs++;
+		for (t = strtok(line, " "); t; t = strtok(NULL, " ")) {
+			char *eq = strchr(t, '=');
+			long v;
+			if (!eq)
+				continue;
+			*eq = '\0';
+			v = strtol(eq + 1, NULL, 10);
+			if (!strcmp(t, "calls"))
+				continue;
+			for (i = 0; i < n; i++)
+				if (!strcmp(names[i], t))
+					break;
+			if (i == n) {
+				if (n >= SMK_MAXSTRAT) {
+					bad("-O%d strategy census: more than %d strategies in the panel, so "
+							"the census silently stopped counting",
+							MCC_OPT_SEARCH_LEVEL, SMK_MAXSTRAT);
+					free(txt);
+					return;
+				}
+				snprintf(names[n], sizeof names[n], "%s", t);
+				best[n] = 0;
+				n++;
+			}
+			if (v > best[i])
+				best[i] = v;
+		}
+		p = eol ? eol : p + len;
+	}
+	if (!recs) {
+		bad("-O%d strategy census: the compile emitted no [strategy] record, so "
+				"the dark-strategy bank would measure nothing",
+				MCC_OPT_SEARCH_LEVEL);
+		free(txt);
+		return;
+	}
+	for (i = 0; i < n; i++)
+		if (best[i] == 0) {
+			dark++;
+			cat_add("O%d strat-dark:%s", MCC_OPT_SEARCH_LEVEL, names[i]);
+		}
+	note("  strategy census at -O%d: %d of %d fired, %d dark, over %d panel(s), "
+			 "in %u ms\n",
+			 MCC_OPT_SEARCH_LEVEL, n - dark, n, dark, recs, ms);
+	if (n == 0)
+		bad("-O%d strategy census: the panel named no strategies at all",
+				MCC_OPT_SEARCH_LEVEL);
+	free(txt);
 }
 
 static int device_probe(char *devname, size_t dn, long *dispatches)
@@ -1774,6 +1867,7 @@ static void usage(void)
 	fprintf(stderr,
 					"usage: smokerun --mcc PATH --srcdir DIR --work DIR [--min-cases N]\n"
 					"                [--min-passes N] [--min-strats N] [--max-level N]\n"
+					"                [--strat-dark]\n"
 					"                [--budget-ms N]\n"
 					"                [--deadline-ms N]\n"
 					"                [--bank FILE] [--rebank] [--known-positive]\n"
@@ -1787,6 +1881,7 @@ int main(int argc, char **argv)
 	char bankpath[1024] = "";
 	int maxlevel = smk_maxlevel();
 	int i, do_div = 0, do_dev = 0, known_pos = 0, do_slice = 0, do_eng = 0;
+	int do_dark = 0;
 	long min_engines = 0;
 	char d0[32] = "", dn[32] = "";
 
@@ -1807,6 +1902,8 @@ int main(int argc, char **argv)
 			g_min_strats = strtol(argv[++i], NULL, 10);
 		else if (!strcmp(argv[i], "--max-level") && i + 1 < argc)
 			maxlevel = (int)strtol(argv[++i], NULL, 10);
+		else if (!strcmp(argv[i], "--strat-dark"))
+			do_dark = 1;
 		else if (!strcmp(argv[i], "--budget-ms") && i + 1 < argc)
 			g_budget_ms = (unsigned)strtoul(argv[++i], NULL, 10);
 		else if (!strcmp(argv[i], "--deadline-ms") && i + 1 < argc)
@@ -1845,8 +1942,23 @@ int main(int argc, char **argv)
 	if (!bankpath[0])
 		snprintf(bankpath, sizeof bankpath, "%s/tests/smoke/bails.txt", g_srcdir);
 
-	if (maxlevel < 0 || maxlevel > smk_maxlevel())
+	if (maxlevel < 0 || maxlevel > smk_maxlevel()) {
+		if (maxlevel == MCC_OPT_SEARCH_LEVEL) {
+			fprintf(stderr,
+							"smokerun: --max-level %d is the search tier, not a rung of the "
+							"-O0..-O%d ladder, and -O5..-O%d are a hard error -- the level "
+							"sweep cannot walk to it. Use --strat-dark, which compiles the "
+							"subject once at -O%d and banks the strategies that stay dark\n",
+							MCC_OPT_SEARCH_LEVEL, smk_maxlevel(), MCC_OPT_SEARCH_LEVEL - 1,
+							MCC_OPT_SEARCH_LEVEL);
+			return 1;
+		}
+		if (maxlevel > smk_maxlevel())
+			fprintf(stderr,
+							"smokerun: --max-level %d clamped to %d, the top of the ladder\n",
+							maxlevel, smk_maxlevel());
 		maxlevel = smk_maxlevel();
+	}
 
 	if (do_div) {
 		bank_load(bankpath);
@@ -1907,6 +2019,14 @@ int main(int argc, char **argv)
 							g_cases_total, g_min_cases);
 			return 1;
 		}
+		return g_fail ? 1 : 0;
+	}
+
+	if (do_dark) {
+		bank_load(bankpath);
+		strat_dark_census();
+		own("strat-dark");
+		ratchet(bankpath);
 		return g_fail ? 1 : 0;
 	}
 

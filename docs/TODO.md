@@ -649,10 +649,27 @@ the naive shared fix regresses a case where mcc currently matches both reference
 may be no defect at all: mcc predefines `__FLT_EVAL_METHOD__ 0` and its per-operation
 rounding is what that macro promises.
 
-**N4. `-O13` is dark on 13 of 22 strategies**, at the one level with no bail ratchet (item
-21). ~2.7 s, bit-deterministic, already digest-clean. `smokerun --max-level 13` is a silent
-no-op. Bank *dark* strategies rather than fire counts and the existing `ratchet()` needs no
-change. See the research section for the two traps.
+**~~N4. `-O13` is dark on 13 of 22 strategies~~ CLOSED 2026-08-11 — and it is **12**, not 13,
+and it costs **~45 s**, not ~2.7 s.** `smoke/strat-dark` now compiles the subject at `-O13`
+with `MCC_STATS=4` and banks the strategies that stay dark, exactly as the inverted-polarity
+plan below prescribed: `ratchet()`, `bank_load`, `bank_write` and the file format needed no
+change. Three corrections the implementation forced:
+
+- **12 dark, not 13.** `abs, bf, divmagic, inline, ivsr, licm, ltemp, narrow, pre, range,
+  reassoc, tco` — the board's list minus `bfold`, which now fires. 10 of 22 fire at `-O13`.
+- **~45 s, not ~2.7 s.** A bare `-O13 -c` of `tests/smoke/subject.c` is **47 s**, and
+  `MCC_STATS=4` costs nothing on top. The 2.7 s predates `scases.h`, which grew the subject
+  to reach 22 strategies. The cost is real and the cell is worth it, but "every objection to
+  watching it is gone" was resting on a number that had moved by 17x.
+- **`--max-level 13` was silent because `main` clamped it.** It now errors, names `-O5`–`-O12`
+  as a hard error, and points at `--strat-dark`. A flag that silently does nothing is worse
+  than one that refuses.
+
+Both traps below were real: the panel prints **8 times** at `-O13` and the census takes the
+per-column max (the last panel reads all zeros), and the 22-wide table needed
+`MCCSTATS_STRAT_N`. Teeth proven by removing one row from the bank — the census reports
+`new bail category O13 strat-dark:abs`, which is the newly-dark case the polarity exists to
+catch.
 
 **~~N5. Four green-by-omission hazards.~~ ALL FOUR CLOSED 2026-08-11.** ~~The device arm
 computes two refusal categories and never calls `ratchet()` (`bails.txt` holds no `dev `
@@ -999,10 +1016,12 @@ Measured per level on the smoke subject: `-O0` 22 dark (no strategy runs at `-O0
 reassoc`. That is the state the whole subject was in before `scases.h`, at the one level
 nothing watches.
 
-Every objection to watching it is gone: an `-O13` compile of the subject is **~2.7 s**, it is
+Every objection to watching it is gone: an `-O13` compile of the subject is ~~**~2.7 s**~~
+**47 s as re-measured 2026-08-11 — the 2.7 s predates `scases.h`**, it is
 **bit-deterministic** (882 TSV rows and 112 `fallback` rows across search budgets of 100, 1000
 and 5000 ms and three repeats), and it already agrees with `-O0`–`-O4` on the value digest with
-`failures=0`. **`smokerun --max-level 13` is currently a silent no-op**: `smk_maxlevel()` walks
+`failures=0`. **~~`smokerun --max-level 13` is currently a silent no-op~~ — fixed 2026-08-11, it now
+refuses and names `--strat-dark`**: `smk_maxlevel()` walks
 `MCC_OPT_LIST` and returns 4, because 13 is `MCC_OPT_SEARCH_LEVEL`, not an `MCC_OPT_ROW`, and
 `main` clamps to it.
 
