@@ -20087,6 +20087,12 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); ast_verify_dump_diff(funcname, orig, body_len,
 															 cur_text_section->data + ast_body_ind_sv, new_len); }
 
+				mcc_inv_add("ast.body", 1);
+				mcc_inv_add("ast.arena", ast_cur ? 1 : 0);
+				mcc_inv_add("ast.faithful", faithful ? 1 : 0);
+				mcc_inv_add("ast.parser_bytes", (long long)body_len);
+				mcc_inv_add("ast.replay_bytes", (long long)new_len);
+
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
 				const int ast_opt_ok =
@@ -20749,7 +20755,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 #ifdef MCC_EMBED_JIT
 		if ((ast_jit_dispatch_env || ast_jit_fns_n > 0) && ast_fn_faithful &&
 				ast_cur && ast_jit_want(funcname, sym) && !ast_arena_has_hole(ast_cur))
-			{ MCC_TRACE("br\n"); mccjit_embed_stash_leaf(ast_cur, sym); }
+			{ MCC_TRACE("br\n"); mcc_inv_add("jit.baked", 1);
+				mccjit_embed_stash_leaf(ast_cur, sym); }
 #endif
 		int keep_inline = ast_fn_faithful && ast_inline_retain(ast_cur, sym);
 		int keep_reemit = ast_fn_faithful && ast_reemit_retain(ast_cur, sym);

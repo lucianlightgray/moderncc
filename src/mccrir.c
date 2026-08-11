@@ -596,6 +596,8 @@ void rir_hook_body_begin(void) {
 		const int jit_wanted = mcc_state && mcc_state->embed_jit;
 		rir_try_active = (rir_env || rir_prod_env) &&
 										 (!debug_modes || jit_wanted) && !cur_func_inline_extern;
+		mcc_inv_add("rir.body", 1);
+		mcc_inv_add("rir.rec", rir_try_active ? 1 : 0);
 	}
 	rir_body_loc_sv = loc;
 	rir_body_ind_sv = ind;

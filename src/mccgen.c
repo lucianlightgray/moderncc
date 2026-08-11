@@ -1,5 +1,6 @@
 #define USING_GLOBALS
 #include "mcc.h"
+#include "mccinv.h"
 #include "mccrir.h"
 
 #include "mccforecast.h"
@@ -17023,6 +17024,9 @@ static void gen_function(Sym *sym) {
 	gfunc_epilog();
 
 	mcc_debug_funcend(mcc_state, ind - func_ind);
+
+	mcc_inv_add("aot.fn", 1);
+	mcc_inv_add("aot.bytes", (long long)(ind - func_ind));
 
 	rir_prod_fn_end((long)(ind - func_ind));
 	elfsym(sym)->st_size = ind - func_ind;
