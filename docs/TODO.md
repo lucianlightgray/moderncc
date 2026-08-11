@@ -654,8 +654,17 @@ rounding is what that macro promises.
 no-op. Bank *dark* strategies rather than fire counts and the existing `ratchet()` needs no
 change. See the research section for the two traps.
 
-**N5. Four green-by-omission hazards.** The device arm computes two refusal categories and
-never calls `ratchet()` (`bails.txt` holds no `dev ` rows). Twelve `optfire/*.txt` tables drive
+**~~N5. Four green-by-omission hazards.~~ ALL FOUR CLOSED 2026-08-11.** ~~The device arm
+computes two refusal categories and never calls `ratchet()` (`bails.txt` holds no `dev `
+rows).~~ **The device arm now owns the `dev-` scope and ratchets it. The gap was bigger than
+the two categories this row named: `device_probe` also ran the ladder census
+(`scan_ladder(txt, 9)`) and threw away **531 refusals** — `no-static-type` 515,
+`all-undefined` 15, `unsupported-op` 1 — all now banked. It needed a scope of its own first,
+because `scope_match` matches on the text after the first space, so the obvious `own("slice-")`
+would have matched the CPU arm's `O0`–`O4` rows and reported every one of them as an
+IMPROVED-to-zero. The ladder census now takes a tag (`""` for the CPU arm, so its category
+names are byte-identical, and `dev-` for the device), and the two `device-refused:*`
+categories were renamed `dev-refused:*` so one scope owns all five.** Twelve `optfire/*.txt` tables drive
 ctest registration by row count ~~with no `list(LENGTH)` guard — delete a row and the cell
 silently stops existing~~ **— CLOSED 2026-08-11: both glob-driven loops now count the rows
 they register and hard-error below a floor (52 for `differs*`/`cdelta*`, 125 for the
@@ -1033,7 +1042,7 @@ earlier verdict on a search sub-knob obtained with one of those flags is void.
 
 ### Two more green-by-omission hazards
 
-- **The device arm computes a census and never ratchets it.** `device_probe` calls `cat_add`
+- ~~**The device arm computes a census and never ratchets it.**~~ **CLOSED 2026-08-11 — `own("dev-")` + `ratchet()`, 531 previously-discarded refusals now banked.** `device_probe` calls `cat_add`
   for `dev device-refused:unavailable` and `:no-dispatch`, `main` calls `bank_load`, but the
   `do_dev` branch never calls `ratchet()` and `bails.txt` holds no `dev ` rows. Both categories
   are unmeasured; the arm could start refusing every dispatch and stay green.
@@ -4528,7 +4537,7 @@ changed the finding, the correction is marked inline.
   `IMPROVED`. `--stats=4` costs nothing measurable and does not change codegen.
 - **At `-O13` the panel prints once per search phase and the last one is all zeros.** A census
   must take the per-column max across panels or it will read every strategy as dark.
-- **The device arm computes a census and never ratchets it.** `device_probe` calls `cat_add`
+- ~~**The device arm computes a census and never ratchets it.**~~ **CLOSED 2026-08-11 — `own("dev-")` + `ratchet()`, 531 previously-discarded refusals now banked.** `device_probe` calls `cat_add`
   for `dev device-refused:unavailable` and `:no-dispatch`, but the `do_dev` branch never calls
   `ratchet()`, and `bails.txt` holds no `dev ` rows. Both categories are unmeasured.
 

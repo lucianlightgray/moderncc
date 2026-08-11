@@ -330,7 +330,7 @@ static const char *const kLadderReasons[] = {
 		"no-static-type", "unsupported-node", "unsupported-op",
 		"too-many-live-ins", "no-observed", "over-budget", "all-undefined", NULL};
 
-static void scan_ladder(const char *text, int level)
+static void scan_ladder_tagged(const char *text, int level, const char *tag)
 {
 	const char *p = text;
 	while ((p = strstr(p, "] refuse ")) != NULL) {
@@ -349,11 +349,16 @@ static void scan_ladder(const char *text, int level)
 			off = (size_t)(q - line);
 			if (off >= len)
 				continue;
-			cat_addn(strtol(q + strlen(pat), NULL, 10), "O%d slice-refused:%s", level,
-							 kLadderReasons[i]);
+			cat_addn(strtol(q + strlen(pat), NULL, 10), "O%d %sslice-refused:%s", level,
+							 tag, kLadderReasons[i]);
 		}
 		p = eol ? eol : line + len;
 	}
+}
+
+static void scan_ladder(const char *text, int level)
+{
+	scan_ladder_tagged(text, level, "");
 }
 
 static int memmem_len(const char *hay, size_t n, const char *needle)
@@ -939,14 +944,14 @@ static int device_probe(char *devname, size_t dn, long *dispatches)
 		if (d)
 			*dispatches = strtol(d + 11, NULL, 10);
 	}
-	scan_ladder(txt, 9);
+	scan_ladder_tagged(txt, 9, "dev-");
 	free(txt);
 	if (!available) {
-		cat_add("dev device-refused:unavailable");
+		cat_add("dev dev-refused:unavailable");
 		return 0;
 	}
 	if (*dispatches == 0)
-		cat_add("dev device-refused:no-dispatch");
+		cat_add("dev dev-refused:no-dispatch");
 
 	{
 		long c2 = 0, s2 = 0, m2 = 0, f2 = 0, x2 = 0;
@@ -1960,6 +1965,8 @@ int main(int argc, char **argv)
 					 g_fail);
 			return 0;
 		}
+		own("dev-");
+		ratchet(bankpath);
 		return g_fail ? 1 : 0;
 	}
 
