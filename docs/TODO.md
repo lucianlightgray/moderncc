@@ -64,6 +64,7 @@ omission. `jit/xoracle-coverage` prints both and refuses a collapsed denominator
 | zero-extend, signedness and offset seen through in relational operands | `src/mccast.c` |
 | the strategy floor is enforced, not merely printed (`--min-strats`) | `tools/smokerun.c` |
 | five new smoke fixtures, all oracle-adjudicated at every level and under replay | `tests/smoke/` |
+| smoke compares six evaluation engines row by row, and the AST evaluator is measured at all for the first time | `tools/smokerun.c`, `cmake/smoke_engines_mutate.cmake` |
 
 **Two results that matter more than the number.** One is that a fold which looked correct
 shipped a miscompile and had to be reverted — see *The tautology fold, and the flag that
@@ -81,6 +82,12 @@ their natural homes (`abs`, `range`) because those are write-only strategies.
 **Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the
 oracles.** `ctest -R "^smoke/"` is ~15–90 s for 13.0M value cases across `-O0`–`-O4`, plus
 the device arm and the divergence arm. Do not run the full suite to validate a change.
+
+**As of 2026-08-11 it is eleven cells, not eight, and ~85 s on this host.** The three new
+ones are the engine-parity arm — see *Smoke now compares six evaluation engines* below. It
+adds ~32 s and is worth it: until it existed, `smokerun` set `MCC_FORCE_REPLAY=1` on every
+compile it made, so the AST constant evaluator `-O0` actually ships was executed by no cell
+in this suite.
 
 **As of 2026-08-10 smoke also reaches every optimizer strategy**: the subject fires 22 of 22
 at `-O4` (it reached 8 before `tests/smoke/scases.h`), and every one of those shapes is
@@ -660,6 +667,68 @@ carries four tautologies and **four negative controls** — a shifted gap, a com
 against `UINT_MAX-1`, an offset that moves the gap, and a contradiction that must fold to
 0 — over ten inputs including `INT_MIN`, `INT_MAX` and zero. 84 bits of output, identical
 across gcc, clang and mcc at `-O0`–`-O4` and under replay. Unsigned operands are refused.
+
+### Smoke now compares six evaluation engines, and one of them had never run — 2026-08-11
+
+**The finding, first.** `tools/smokerun.c` sets `MCC_FORCE_REPLAY=1` in `set_census_env`,
+which every compile it makes passes through — the `-O0`–`-O4` level sweep, the compile
+passes, the device arm and the divergence arm alike. In `src/mccast.c`,
+`ast_replay_env` is `s1->optimize >= 1 || s1->embed_jit || MCC_FORCE_REPLAY ||
+MCC_RIR_FORCE`, so `-O1`+ replays regardless and the variable only decides `-O0`. The
+consequence is that **`-O0` with replay off — the plain AST constant evaluator, which is
+what `-O0` actually ships — was executed by no cell in the smoke suite.** Measured on the
+new arm: `-O0` with the variable set records 97 `used` rows in the RIR census, and `-O0`
+with it clear records **0**. The suite had been running the second configuration zero
+times and the first one five times.
+
+**What the arm does.** `smokerun --engines` builds `tests/smoke/subject.c` under six
+engines and compares every one of the 1782 rows `--dump` prints, plus the sweep digest,
+against the `ast` baseline:
+
+| engine | how it is reached | what it proves it is |
+| --- | --- | --- |
+| `ast` | `-O0`, no `MCC_FORCE_REPLAY` | RIR census recorded **0** replayed evaluations |
+| `rir` | `-O0`, `MCC_FORCE_REPLAY=1` | 97 replayed evaluations |
+| `rir-o4` | `-O4`, replay implicit | 98 replayed evaluations |
+| `slice` | `-O4`, `MCC_AST_EVAL_LADDER=1` | `[ladder-self] pairs=624 certified=532 differ=0` |
+| `gpu` | the same ladder, `..._GPU=1` | `available=1 dispatches=10687` |
+| `jit` | `--embed-jit`, run with `MCC_JIT_HOT_CALLS=1` | 5 of 36 boot sites reported `swapped` |
+
+Three of those were previously unmeasured as *values*. The slice ladder was carried only
+as a refusal histogram (`smoke/slice-bails`), which counts what the ladder declined and
+says nothing about what it answered. The `--embed-jit` binary was built by `jit_census`
+and **thrown away without ever being executed**, so the whole embedded-JIT runtime path
+was covered by a compile and a grep. And the device arm compares a single whole-file
+digest at `-O4`; the engine arm compares the device's answer row by row, so a divergence
+names the row and not the file.
+
+**The `differ=0` assertion is new and is not a coverage floor.** `[ladder-self] differ` is
+the count of pairs where a slice computed a different value from the tree it was cut from.
+Nothing had ever asserted it was zero.
+
+**Why the identity checks carry the arm.** Six engines that agree are worth nothing if
+they are one engine run six times, and that is the *default* failure mode here: every one
+of these engines is selected by an environment variable, and a variable that stops taking
+effect makes the arm greener, not redder. So each engine must prove it ran — the counts in
+the table above are assertions, not diagnostics — and `smoke/engines-identity`
+(`cmake/smoke_engines_mutate.cmake`) mutates the environment to prove those assertions
+read what they claim:
+
+- `MCC_RIR_FORCE=1` puts replay underneath the `ast` arm. Refused, naming the RIR census.
+  This is exactly the state the suite was in before this arm existed.
+- `MCC_JIT_LAZY=1` stops the embedded engine swapping anything at boot, so the `jit` arm
+  runs the AOT code it exists to replace. Refused, naming the swap check.
+
+`smoke/engines-known-positive` is the separate question of whether the *comparison* is
+live: it poisons one dumped row in each non-baseline engine and requires all five to be
+named. Both were confirmed red before the arm was wired in.
+
+**Cost and floors.** 8.5 s for the arm, 9.5 s for the known-positive, 18.6 s for the
+identity gate; `ctest -R "^smoke/"` goes 8 cells / ~53 s to 11 cells / ~85 s on this host.
+`--min-engines 5` is the anti-vacuity floor and 5 is deliberate: the device engine skips
+on its own on a host without one, and skipping it must not skip the cell. Confirmed by
+running the arm with `MCC_GPU_DEVICE=99` — 5 engines, 9,312,145 value cases, green; with
+the device it is 6 engines and 11,174,574.
 
 ### Three items that read as closed and are not — checked 2026-08-10
 
