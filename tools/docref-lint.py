@@ -2,7 +2,7 @@
 """Every citation in the live docs resolves against the tree it cites.
 
 The recurring failure this closes is a doc that names a symbol, a file or a
-line that used to exist.  `docs/PLAN.md` named `MCC_MAX_UNARY_DEPTH` at
+line that used to exist.  The retired `docs/PLAN.md` named `MCC_MAX_UNARY_DEPTH` at
 `src/mccgen.c:241` for a full round after `wt/unarydepth` replaced it with
 `MCC_MAX_PARSE_DEPTH`; `README.md` advertised four `-DMCC_CONFIG_*` build
 options the build had not had since `a55c0a07`, so passing one left an ignored
@@ -62,7 +62,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-DOCS = ["docs/PLAN.md", "docs/TODO.md", "docs/DEVICE-LIBC.md", "README.md"]
+DOCS = ["docs/TODO.md", "README.md"]
 ARCHIVED = "docs/ARCHIVED.md"
 
 ROOTED = ("src/", "tools/", "tests/", "cmake/", "include/", "runtime/",
@@ -251,7 +251,7 @@ def main():
     cited = set()
     for doc in docs:
         s, b = check_doc(root, doc, files, dirs, cache, allow, cited,
-                         a.mutate and doc == "docs/PLAN.md")
+                         a.mutate and doc == "docs/TODO.md")
         for k in seen:
             seen[k] += s[k]
         bad += b

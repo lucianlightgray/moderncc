@@ -3,8 +3,8 @@
 
 Regenerates the numbers docs/TODO.md quotes under "Where every number on this
 board comes from" (this tool's rows name it). Default corpus is
-src/*.c, matching docs/DEVICE-LIBC.md's rule that tests/exec must not be used
-for the libc phase.
+src/*.c, matching the device-libc study's rule (now in docs/ARCHIVED.md) that
+tests/exec must not be used for the libc phase.
 
   tools/fmt-census.py                 # site census over src/*.c
   tools/fmt-census.py --json          # machine-readable

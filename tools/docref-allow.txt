@@ -7,8 +7,5 @@
 #   (b) a paragraph whose subject is that the named file was deleted.
 # A stale citation is not one of these.  Fix it instead.
 
-tests/gpu/exec-bank.json      # (a) PLAN.md row H4a proposes it; unwritten
 cmake/rir_parity.cmake        # (b) TODO.md says in the same sentence that c2_sweep.sh's claim of parity with it is gone
-src/mccspv.h                  # (b) folded into src/mccgpu.c by 8680bfc6; the paragraph is the record of that
-src/mccvk.h                   # (b) same commit, same paragraph
 docs/NOTES.md                 # (b) deleted at bb2469bd; item 15 exists to say where the CST slice-I/J sections went

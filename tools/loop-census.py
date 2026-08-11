@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """S5' -- the dynamic per-loop trip-count census over a self-compile.
 
-`docs/PLAN.md` calls the iteration distribution "the single measurement that
+The retired plan (now in `docs/ARCHIVED.md`) calls the iteration distribution
+"the single measurement that
 decides whether the project has a subject", and nothing in this tree computes a
 static trip count.  So the measurement is dynamic: mcc compiles its own source
 with `-floop-census`, which
