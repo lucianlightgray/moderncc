@@ -702,9 +702,14 @@ was covered by a compile and a grep. And the device arm compares a single whole-
 digest at `-O4`; the engine arm compares the device's answer row by row, so a divergence
 names the row and not the file.
 
-**The `differ=0` assertion is new and is not a coverage floor.** `[ladder-self] differ` is
-the count of pairs where a slice computed a different value from the tree it was cut from.
-Nothing had ever asserted it was zero.
+**The `differ=0` assertion is new, and it is weaker than it reads — measured, not assumed.**
+`[ladder-self] differ` counts pairs where a slice computed a different value from the tree
+it was cut from, and nothing had asserted it was zero. But both sides of that comparison go
+through the same evaluator, so it cancels a *shared* arithmetic fault and only catches an
+asymmetric one. Proven by injection, and the result is item **N7** below: `r = s + 1` in
+the 32-bit signed `+` arm of `ast_eval_binop` (`src/ast_eval_slice.h`) leaves every counter
+of both ladder censuses, every one of the 1782 rows, the digest, and all eleven smoke cells
+untouched. Do not read `differ=0` as "the slice evaluator computes correctly".
 
 **Why the identity checks carry the arm.** Six engines that agree are worth nothing if
 they are one engine run six times, and that is the *default* failure mode here: every one
@@ -822,6 +827,30 @@ ctest registration by row count with no `list(LENGTH)` guard — delete a row an
 silently stops existing. The durable shape is re-deriving a bank's expected row set from
 `src/mccopt.h` and failing on `missing-row`, which is what the four banks that resisted
 shrinkage do.
+
+**N7. The slice evaluator's arithmetic is unobservable: a wrong answer 66 million times per
+compile changes nothing.** Found on 2026-08-11 while trying to demonstrate that the new
+engine-parity arm has teeth, and it is the arm's own limit as much as the ladder's.
+`ast_eval_binop` in `src/ast_eval_slice.h` is reached **66,436,580 times** compiling
+`tests/smoke/subject.c` at `-O4 -DMCC_AST_EVAL_LADDER=1` (counted with an `fprintf` probe at
+its head). Injecting `r = s + 1` into its 32-bit signed `+` arm and rebuilding leaves *all*
+of the following byte-identical: `[ladder-self] pairs=624 certified=532 differ=0 refused=92
+exact=86`, the whole `[ladder-cross]` line set, all 1782 rows of `--dump` on every one of
+the six engines, the sweep digest, and `ctest -R "^smoke/"` — eleven cells, still green.
+Only `[ladder-cross] points` moves, by 194 out of 13.6M, and nothing asserts on it. The
+unsigned `+` arm behaves the same way.
+
+Two distinct causes, and they need separating before either is fixed. **First**, `differ`
+compares two arenas that are both evaluated by `ast_eval_binop`, so a shared fault cancels
+by construction — self-comparison cannot detect it, and this is the "one engine compared
+with itself" shape the engine arm exists to refuse, one level below where the arm looks.
+**Second**, the injection did not even change *which* 532 pairs certified, so the
+certifications this evaluator produces are not reaching codegen on this subject; if they
+were, the engine arm's row comparison would have caught it, because that comparison is
+against the AST evaluator and is genuinely independent. The fix for the first is an
+independent oracle for the tree side. The fix for the second is a subject that makes a
+certified equivalence change the emitted code — which is the same question N1 asks about
+the seven write-only strategies, and is probably the same answer.
 
 **N6. `L2` — wire the device into `mccjit_shutdown()`.** Unblocked as of 2026-08-10, with two
 preconditions in the GPU landed section. One is a hazard *this wave created*: the quiesce now
