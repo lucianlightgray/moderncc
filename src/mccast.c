@@ -14097,7 +14097,7 @@ static int ast_dep_base_distinct(const AstDepRef *r1, const AstDepRef *r2,
 }
 
 static int ast_dep_direction(const AstDepRef *r1, const AstDepRef *r2, int niv,
-														 char *dir) { MCC_TRACE("enter\n");
+														 char *dir, const int64_t *stride) { MCC_TRACE("enter\n");
 	for (int k = 0; k < niv; k++)
 		{ MCC_TRACE("br\n"); dir[k] = '*'; }
 	if (!r1->ok || !r2->ok || r1->ndim != r2->ndim)
@@ -14140,8 +14140,12 @@ static int ast_dep_direction(const AstDepRef *r1, const AstDepRef *r2, int niv,
 		D[u1] = dk;
 		Dset[u1] = 1;
 	}
-	for (int k = 0; k < niv; k++)
-		{ MCC_TRACE("br\n"); dir[k] = Dset[k] ? (D[k] > 0 ? '<' : (D[k] < 0 ? '>' : '=')) : '*'; }
+	for (int k = 0; k < niv; k++) { MCC_TRACE("br\n");
+		int64_t dk = D[k];
+		if (stride && stride[k] < 0)
+			{ MCC_TRACE("br\n"); dk = -dk; }
+		dir[k] = Dset[k] ? (dk > 0 ? '<' : (dk < 0 ? '>' : '=')) : '*';
+	}
 	return AST_DEP_YES;
 }
 
@@ -14242,11 +14246,14 @@ int ast_loop_interchange_legal(AstArena *a, AstLocal outer, AstLocal inner) { MC
 	if (!ast_dep_perfect_nest(a, outer, inner))
 		{ MCC_TRACE("br\n"); return 0; }
 	int ivo, ivi, t;
-	int64_t st;
-	if (!ast_loop_iv(a, outer, &ivo, &t, &st) ||
-			!ast_loop_iv(a, inner, &ivi, &t, &st))
+	int64_t sto = 0, sti = 0;
+	if (!ast_loop_iv(a, outer, &ivo, &t, &sto) ||
+			!ast_loop_iv(a, inner, &ivi, &t, &sti))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (sto == 0 || sti == 0)
 		{ MCC_TRACE("br\n"); return 0; }
 	int ivs[2] = {ivo, ivi};
+	int64_t ivstride[2] = {sto, sti};
 	AstLocal body, incr;
 	ast_loop_parts(a, inner, ast_op(a, inner), &body, &incr);
 	int nref, overflow;
@@ -14265,7 +14272,7 @@ int ast_loop_interchange_legal(AstArena *a, AstLocal outer, AstLocal inner) { MC
 				break;
 			}
 			char dir[2];
-			int dep = ast_dep_direction(&refs[i], &refs[j], 2, dir);
+			int dep = ast_dep_direction(&refs[i], &refs[j], 2, dir, ivstride);
 			if (dep == AST_DEP_INDEP)
 				{ MCC_TRACE("br\n"); continue; }
 			if (dep == AST_DEP_CONSERV) { MCC_TRACE("br\n");
@@ -14305,7 +14312,8 @@ int ast_loop_interchange_legal(AstArena *a, AstLocal outer, AstLocal inner) { MC
 }
 
 static int ast_dep_fusion_pair_illegal(const AstDepRef *r1,
-																			 const AstDepRef *r2) { MCC_TRACE("enter\n");
+																			 const AstDepRef *r2,
+																			 int64_t stride) { MCC_TRACE("enter\n");
 	if (!r1->ok || !r2->ok)
 		{ MCC_TRACE("br\n"); return 1; }
 	if (ast_dep_base_distinct(r1, r2, 0))
@@ -14340,6 +14348,8 @@ static int ast_dep_fusion_pair_illegal(const AstDepRef *r1,
 	}
 	if (!Dset)
 		{ MCC_TRACE("br\n"); return 1; }
+	if (stride < 0)
+		{ MCC_TRACE("br\n"); D = -D; }
 	return D > 0 ? 1 : 0;
 }
 
@@ -14352,9 +14362,12 @@ int ast_loop_fusion_legal(AstArena *a, AstLocal loop1, AstLocal loop2) { MCC_TRA
 	if (!ast_dep_same_trip(a, loop1, loop2))
 		{ MCC_TRACE("br\n"); return 0; }
 	int o1, o2, t;
-	int64_t s;
-	ast_loop_iv(a, loop1, &o1, &t, &s);
-	ast_loop_iv(a, loop2, &o2, &t, &s);
+	int64_t s1 = 0, s2 = 0;
+	if (!ast_loop_iv(a, loop1, &o1, &t, &s1) ||
+			!ast_loop_iv(a, loop2, &o2, &t, &s2))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (s1 == 0 || s1 != s2)
+		{ MCC_TRACE("br\n"); return 0; }
 	int iv1[1] = {o1}, iv2[1] = {o2};
 	AstLocal b1, b2, incr;
 	ast_loop_parts(a, loop1, ast_op(a, loop1), &b1, &incr);
@@ -14369,7 +14382,7 @@ int ast_loop_fusion_legal(AstArena *a, AstLocal loop1, AstLocal loop2) { MCC_TRA
 		{ MCC_TRACE("br\n"); for (int j = 0; j < n2 && legal; j++) { MCC_TRACE("br\n");
 			if (!(r1[i].is_store || r2[j].is_store))
 				{ MCC_TRACE("br\n"); continue; }
-			if (ast_dep_fusion_pair_illegal(&r1[i], &r2[j])) { MCC_TRACE("br\n");
+			if (ast_dep_fusion_pair_illegal(&r1[i], &r2[j], s1)) { MCC_TRACE("br\n");
 				legal = 0;
 				break;
 			}
@@ -14704,7 +14717,7 @@ int ast_loop_parallel_legal(AstArena *a, AstLocal loop) { MCC_TRACE("enter\n");
 				break;
 			}
 			char dir[AST_DEP_MAXIV];
-			int dep = ast_dep_direction(&refs[i], &refs[j], niv, dir);
+			int dep = ast_dep_direction(&refs[i], &refs[j], niv, dir, NULL);
 			if (dep == AST_DEP_INDEP)
 				{ MCC_TRACE("br\n"); continue; }
 			if (dep == AST_DEP_CONSERV) { MCC_TRACE("br\n");

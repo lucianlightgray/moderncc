@@ -2,7 +2,7 @@
 
 #define N 40
 
-static int a[N], b[N], c[N], d[N];
+static int a[N], b[N], c[N], d[N], e[N], f[N];
 
 static unsigned long long hh;
 static void mix(long long v) { hh = hh * 1099511628211ULL ^ (unsigned long long)v; }
@@ -42,19 +42,42 @@ static void aliased_ptr_backward_dep(void) {
 		d[i] = gq[i + 1] - 3;
 }
 
+static void desc_backward_dep(void) {
+	for (int i = N - 1; i >= 1; i--)
+		e[i] = i + 7;
+	for (int i = N - 1; i >= 1; i--)
+		f[i] = e[i - 1] - 1;
+}
+
+
+static void desc_forward_dep(void) {
+	for (int i = N - 2; i >= 0; i--)
+		e[i] = e[i] * 3 + 1;
+	for (int i = N - 2; i >= 0; i--)
+		f[i] = f[i] + e[i + 1] - 1;
+}
+
 int main(void) {
 	hh = 1469598103934665603ULL;
+	for (int i = 0; i < N; i++) {
+		e[i] = (i * 19 + 3) % 71;
+		f[i] = (i * 7 + 5) % 67;
+	}
 	distinct_iv();
 	forward_dep();
 	backward_dep();
 	gp = c;
 	gq = c;
 	aliased_ptr_backward_dep();
+	desc_backward_dep();
+	desc_forward_dep();
 	for (int i = 0; i < N; i++) {
 		mix(a[i]);
 		mix(b[i]);
 		mix(c[i]);
 		mix(d[i]);
+		mix(e[i]);
+		mix(f[i]);
 	}
 	printf("%llu\n", hh);
 	return 0;
