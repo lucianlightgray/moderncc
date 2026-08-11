@@ -202,7 +202,8 @@ preserved rather than sacrificed.** Line anchors on source citations went **443 
 naive version of this cleanup is a net loss, and the measurement is why: `docref-lint`'s
 *symbol* rule only fires on a symbol quoted **beside a location carrying a line anchor** — its
 own docstring says the anchor "is what separates a claim from its negation", because this file
-is full of true sentences of the form "`NAME` has zero hits in `src/f.c`". Stripping every
+is full of true sentences of the form "*NAME* has zero hits in *some source file*", where
+naming the file is not a claim that the symbol is in it. Stripping every
 anchor takes symbol-at-a-location claims from **68 to 54**: fourteen working checks switched
 off silently, which is the same failure this file keeps cataloguing. Re-running the strip with
 the lint's own `SITE` regex as the protection rule holds it at **68 — unchanged — while still
