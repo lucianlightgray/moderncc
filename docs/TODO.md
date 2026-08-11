@@ -559,8 +559,7 @@ compare *behaviour*; failing a program for being slow answers a question it was 
 `--rtimeout` now defaults to 120 s, which still bounds a genuine hang. The 5× gap is a
 real performance finding and belongs in a benchmark, not in a conformance verdict.
 
-**LANDMINE — the obvious tautology fold miscompiles. Attempted 2026-08-11, reverted.**
-Before implementing this, read the whole item.
+### The tautology fold, and the flag that made it miscompile — 2026-08-11
 
 `a || b` and `a && b` are **not** control flow in the arena — they are a single
 `AST_Binary` with `TOK_LOR` (`0x91`) / `TOK_LAND` (`0x90`) whose two children are the
@@ -575,14 +574,21 @@ if (!(var > 10 && var < 3)) A(); else B();   /* gcc: A   mcc -O0: A   mcc -O2: B
 if (!(var <= 0 || var != 0)) E(); else F();  /* gcc: F   mcc -O0: F   mcc -O2: E */
 ```
 
-The interval arithmetic is right — the *unnegated* forms
-(`if (var > 10 && var < 3) C(); else D();`) fold correctly, and `-O0` is correct
-throughout. **Only the `!`-wrapped forms invert**, so whatever the front end does with a
-negated condition is not a plain `AST_Unary` NOT sitting above the `TOK_LOR` node, and the
-fold's literal reaches the `AST_If` through a path that flips the arm selection. Find out
-exactly how `if (!X)` is represented before rewriting this; the two-line experiment above
-is the whole test, and it is cheaper than the four hours of interval reasoning that is
-*not* where the bug is.
+**The cause was one flag, and the interval arithmetic was never the problem.** A negated
+condition does **not** produce an `AST_Unary` NOT above the node. It sets
+**`AST_FB_LANDOR_INVERT`** (`8u`) on the `TOK_LOR`/`TOK_LAND` node itself. Dumping the
+negated and non-negated programs side by side, the two arenas are byte-identical except
+that one field. The fold emitted the raw truth value and ignored the flag, so every
+`!`-wrapped form came out backwards; honouring it makes mcc match gcc at every level.
+
+Reading the source three times pointed at the interval code, which was correct. Diffing
+two `MCC_ARENA_DUMP`s found it in one shot — the same lesson as the `ms_struct` layout
+bug earlier the same day. **When a fold is right at `-O0` and wrong at `-O2`, diff the
+arenas before re-reading the analysis.**
+
+`ast_rel_operand` also refuses any operand carrying flag bits at all, and the fold refuses
+any `LANDOR` flags outside `INVERT`/`MATERIAL`, so an unrecognised flag disables the fold
+rather than being silently dropped.
 
 Note also that the value tested is `volatile`, deliberately: without that, the front end
 constant-folds the whole condition and the arena never sees the shape.

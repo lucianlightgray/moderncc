@@ -1019,6 +1019,8 @@ static const Pass g_pass[] = {
 		 "msstruct 20 2 8 3 8 4 8 4 5\n", "-O2", NULL, 0, -1},
 		{"fabscmp", "pass-fabscmp.c", "",
 		 "fabscmp 0 0 0 0 0 0 0 0 1 0 0\n", "-O2", NULL, 0, -1},
+		{"taut", "pass-taut.c", "",
+		 "taut 111 000 111 000 111 111 100\n", "-O2", NULL, 0, -1},
 };
 
 #define SMK_NPASS ((int)(sizeof g_pass / sizeof g_pass[0]))
