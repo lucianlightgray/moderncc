@@ -2379,7 +2379,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 #else
 	ast_regdisp_env = 0;
 #endif
-#ifdef MCC_TARGET_X86_64
+#if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
 	ast_xmm_hi_env = mcc_opt(s1, MCC_OPT_XMM_HI);
 	for (int hr = MCC_TREG_XMM8; hr <= MCC_TREG_XMM15; hr++) { MCC_TRACE("br\n");
 		if (ast_xmm_hi_env)
@@ -2749,10 +2749,16 @@ static const int ast_promo_xmm[1] = {0};
 #define AST_PROMO_XMM_N 2
 static const int ast_promo_caller[AST_PROMO_CALLER_N] = {10, 9, 8};
 static const int ast_promo_callee[AST_PROMO_CALLEE_N] = {3, 12, 13, 14, 15};
+#ifdef MCC_TARGET_PE
+static const int ast_promo_xmm[AST_PROMO_XMM_N] = {21, 20};
+#define AST_PROMO_XMM_LEAF_N 4
+static const int ast_promo_xmm_leaf[AST_PROMO_XMM_LEAF_N] = {21, 20, 19, 18};
+#else
 static const int ast_promo_xmm[AST_PROMO_XMM_N] = {22, 23};
 #define AST_PROMO_XMM_LEAF_N 14
 static const int ast_promo_xmm_leaf[AST_PROMO_XMM_LEAF_N] = {24, 25, 26, 27, 28, 29, 30, 31,
 			22, 23, 21, 20, 19, 18};
+#endif
 #else
 #define AST_PROMO_CALLER_N 7
 #define AST_PROMO_CALLEE_N 10
@@ -10077,7 +10083,8 @@ static int ast_jt_run(AstArena *a) { MCC_TRACE("enter\n");
 			int taken = ast_ival(a, cond) != 0;
 			AstLocal keep = taken ? thenbb : elsebb;
 			AstLocal drop = taken ? elsebb : thenbb;
-			if (drop == AST_NONE || !ast_sccp_has_label(a, drop)) { MCC_TRACE("br\n");
+			if (drop == AST_NONE || (!ast_sccp_has_label(a, drop) &&
+															 !ast_sccp_has_case(a, drop))) { MCC_TRACE("br\n");
 				ast_clear_children(a, n);
 				if (keep == AST_NONE) { MCC_TRACE("br\n");
 					ast_set_kind(a, n, AST_Poison);

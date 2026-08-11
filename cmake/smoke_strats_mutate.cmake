@@ -1,6 +1,6 @@
 execute_process(COMMAND "${SMOKERUN}" --mcc "${MCC}" --srcdir "${SRCDIR}"
                         --work "${WORK}-clean"
-                        --min-cases 12800000 --min-passes 135 --min-strats 22
+                        --min-cases 12800000 --min-passes 150 --min-strats 22
                 RESULT_VARIABLE _clean OUTPUT_VARIABLE _out ERROR_VARIABLE _out)
 message("${_out}")
 if(NOT _clean EQUAL 0)
@@ -12,7 +12,7 @@ endif()
 
 execute_process(COMMAND "${SMOKERUN}" --mcc "${MCC}" --srcdir "${SRCDIR}"
                         --work "${WORK}-high"
-                        --min-cases 12800000 --min-passes 135 --min-strats 23
+                        --min-cases 12800000 --min-passes 150 --min-strats 23
                 RESULT_VARIABLE _high OUTPUT_VARIABLE _hout ERROR_VARIABLE _hout)
 message("${_hout}")
 if(_high EQUAL 0)
