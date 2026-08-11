@@ -313,6 +313,43 @@ answerable, but it is now a 44 s cell rather than a free one.
   still correctly described as latent; do not "fix" it without a repro.
 - **The archive migration is still blocked** on the `--min-refs` floor, unchanged by this wave.
 
+### What a zero-AOT `--embed-jit` self-host actually runs — measured 2026-08-11
+
+Asked directly: *does building `mcc -O0 --embed-jit` and self-hosting make the embedded JIT
+run the `-O3+` optimized/hotpatched compiler?* Four answers, all measured, and **three of them
+are negative** — which is why they are pinned by `jit/selfhost-opt` (`tools/jit-selfhost-opt.py`,
+8 s) rather than written down here and forgotten.
+
+1. **Yes, a zero-AOT build still hot-swaps at runtime.** A stage2 `mcc` compiled at
+   `-O0 --embed-jit` boots **1254 JIT sites and swaps 191 functions** while compiling. Zero
+   AOT optimization does not mean zero runtime optimization, and the intuition that `-O0`
+   leaves the JIT idle is wrong.
+2. **No, it is not `-O3+`. The bake is `optimize = 1`, hardcoded.** `mccjit_stash_one` sets
+   `s1->optimize = 1`; every other JIT path in `src/mccjit_embed.c` — `recompile_common`,
+   `graduate_slices_blob`, `search_one`, `kernel_from_blob` and eleven more — sets `0`. The
+   only other `1`s are the two selftests. So relative to a `-O0` AOT baseline the JIT does run
+   **more** optimized code, and it is bounded at `-O1`. There is no `-O3`, `-O4` or `-O13`
+   anywhere in the JIT path, and the level is **not observable from the binary**, so the source
+   pin is the only thing standing between "the JIT runs `-O1`" and nobody knowing.
+3. **No, the `-O4+`/`-O13` search does not fire from such a build, and repeated runs
+   accumulate nothing.** Three consecutive runs of the `-O0` stage2 write **zero** files under
+   `XDG_CACHE_HOME`.
+4. **The resumable cache is real but belongs to the `-O13` tier alone.** One `-O13` compile
+   writes `mcc-search.memo` and `so-<hash>.ck`. *"All AOT/JIT optimization paths check the
+   cache and pick up where the last run left off"* is **not true of this tree** — exactly one
+   tier does, and `selfhost-jit.py` already says the neighbouring half out loud: the `-O13`
+   search is what graduates functions into the embed registry, and `-O1` "leaves it empty and
+   exercises nothing".
+
+**The trap that makes this easy to measure backwards, and it cost an hour.**
+`mccjit_embed_finalize` runs from `mcc_add_runtime`, which runs at **link** time. Compiling
+with `--embed-jit` and then linking in a separate invocation *without* it produces a binary
+with **no JIT engine at all and no diagnostic** — boot lines are simply `0`, which reads
+exactly like "the JIT does not work at `-O0`". That is the first measurement this investigation
+took, and it was wrong. Build in one invocation. mcc does warn in the neighbouring case
+(*"--embed-jit: no functions were JIT-baked … baking needs -O1+ and is disabled by
+`-g`/`-ftest-coverage`"*), which is worth knowing separately: **a `-g` build bakes nothing.**
+
 ### How to validate — standing rule, 2026-08-10
 
 **Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the

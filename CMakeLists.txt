@@ -7059,6 +7059,18 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         "${CMAKE_BINARY_DIR}" "${MCC_CPU}")
             set_tests_properties(selfhost-jit PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 TIMEOUT 300)
+
+            # What a zero-AOT `mcc -O0 --embed-jit` self-host runs at RUNTIME. It
+            # hot-swaps ~190 functions, so zero AOT optimization is not zero runtime
+            # optimization -- but the swapped code is optimize=1, not -O3+, and neither
+            # the -O13 search nor any resumable cache is involved. Three of those four
+            # are negative results, which is exactly why they need an assertion.
+            add_test(NAME jit/selfhost-opt
+                COMMAND "${MCC_PYTHON3}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tools/jit-selfhost-opt.py"
+                        "${CMAKE_BINARY_DIR}")
+            set_tests_properties(jit/selfhost-opt PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 TIMEOUT 600)
         else()
             mcc_skip_test(selfhost-jit
                 "tools/selfhost-jit.py needs a python3 on PATH and -DMCC_EMBED_JIT=ON")
