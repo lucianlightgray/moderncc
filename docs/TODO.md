@@ -546,10 +546,12 @@ The right needed the mirror, factored out of the same guards. **`20020720-1.c` p
 
 | status | count | |
 | --- | ---: | --- |
-| PASS | **492** | 99.80% |
-| MCC_NOBUILD | 1 | `20041114-1.c` |
-| DIFF_EXIT | **0** | no wrong answer remains |
-| MCC_TIMEOUT | **0** | see below |
+| PASS | **493** | **100.00%** |
+| DIFF_EXIT / NOBUILD / TIMEOUT | **0** | |
+
+Both configurations agree: the CPU baseline and the GPU ladder each pass 493 of 493, with
+**zero** configuration divergence. The denominator is unchanged and remains the honest one
+— 493 of 800 cross-adjudicable, the other 306 vendor-exclusive by construction.
 
 **`build2.c` was never a defect, and the harness was measuring the wrong thing.** It was
 reported `MCC_TIMEOUT` under a 15 s run cap. mcc compiles it in 0.00 s and the binary
@@ -593,15 +595,32 @@ rather than being silently dropped.
 Note also that the value tested is `volatile`, deliberately: without that, the front end
 constant-folds the whole condition and the arena never sees the shape.
 
-**The remaining failure needs value-range propagation, and was deliberately not
-pattern-matched.** `20041114-1.c` asks that
+**The last failure is closed, by three general folds rather than a pattern match.**
+`20041114-1.c` asked that
 `var <= 0 || (unsigned long)(unsigned)(var - 1) < UINT_MAX` fold to 1. The chain is:
-`(unsigned long)(unsigned)E < UINT_MAX` → `(unsigned)E != UINT_MAX` → `E != -1`;
-then `var - 1 != -1` → `var != 0`; then `var <= 0 || var != 0` is a tautology. The last
-step is symbolic reasoning across a disjunction — VRP, which this tree does not have. The
-`range` strategy exists but is one of N1's seven write-only strategies, so it is not a
-usable home for it either. Matching this expression shape specifically would close the
-test without implementing anything; that is worth refusing.
+`var <= 0 || (unsigned long)(unsigned)(var - 1) < UINT_MAX` fold to 1. Three steps, each
+sound and general, implemented as *interpretation* inside `ast_rel_operand` rather than as
+AST rewriting — so an error misfires this one fold instead of corrupting the tree:
+
+1. **Zero-extend range narrowing.** A widened N-bit unsigned value lies in `[0, 2^N-1]`,
+   so `< 2^N-1` is equivalent to `!= 2^N-1`.
+2. **Same-width signedness bijection.** `(unsigned)E != C` ⟺ `E != (int)C`, because that
+   conversion is injective. Equality and inequality only.
+3. **Offset normalisation.** `E - K != C` ⟺ `E != C + K`, sign-extended back to the
+   operand's width.
+
+That leaves `var != 0`, which with `var <= 0` covers the range and folds to 1.
+
+One obstacle worth recording: **`AST_Binary` nodes carry type 0 in the arena**, so the
+width check on `Convert(var - 1, unsigned)` failed and the chain stopped. `ast_eff_bits`
+falls back to the first child's type for an untyped binary.
+
+Validation is weighted at the dangerous direction, because tautologies passing proves
+little — the risk is folding something that is *not* one. `tests/smoke/pass-tautconv.c`
+carries four tautologies and **four negative controls** — a shifted gap, a comparison
+against `UINT_MAX-1`, an offset that moves the gap, and a contradiction that must fold to
+0 — over ten inputs including `INT_MIN`, `INT_MAX` and zero. 84 bits of output, identical
+across gcc, clang and mcc at `-O0`–`-O4` and under replay. Unsigned operands are refused.
 
 ### Three items that read as closed and are not — checked 2026-08-10
 

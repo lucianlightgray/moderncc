@@ -7358,6 +7358,26 @@ static int ast_rel_negate(int op) { MCC_TRACE("enter\n");
 	return -1;
 }
 
+static int ast_bt_bits(int t) { MCC_TRACE("enter\n");
+	switch (t & VT_BTYPE) { MCC_TRACE("br\n");
+	case VT_BYTE: return 8;
+	case VT_SHORT: return 16;
+	case VT_INT: return 32;
+	case VT_LLONG: return 64;
+	}
+	return 0;
+}
+
+static int ast_eff_bits(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	int b = ast_bt_bits(ast_type_t(a, n));
+	if (b)
+		{ MCC_TRACE("br\n"); return b; }
+	if (ast_kind(a, n) == AST_Binary && ast_nchild(a, n) == 2 &&
+			!ast_type_t(a, n))
+		{ MCC_TRACE("br\n"); return ast_bt_bits(ast_type_t(a, ast_child(a, n, 0))); }
+	return 0;
+}
+
 static int ast_rel_operand(AstArena *a, AstLocal n, AstLocal *x, int64_t *c,
 													 int *op) { MCC_TRACE("enter\n");
 	AstLocal l, r;
@@ -7377,6 +7397,70 @@ static int ast_rel_operand(AstArena *a, AstLocal n, AstLocal *x, int64_t *c,
 	l = ast_child(a, n, 0), r = ast_child(a, n, 1);
 	if (ast_kind(a, r) != AST_Literal)
 		{ MCC_TRACE("br\n"); return 0; }
+
+	if (*op == TOK_LT && ast_kind(a, l) == AST_Convert &&
+			ast_nchild(a, l) == 1 && !ast_fbits(a, l)) { MCC_TRACE("br\n");
+		AstLocal inner = ast_first_child(a, l);
+		int it = ast_type_t(a, inner), ibt = it & VT_BTYPE;
+		int ibits = ibt == VT_BYTE ? 8 : ibt == VT_SHORT ? 16
+								: ibt == VT_INT ? 32 : ibt == VT_LLONG ? 64 : 0;
+		int obits = (ast_type_t(a, l) & VT_BTYPE) == VT_LLONG ? 64 : 32;
+		if (ibits && (it & VT_UNSIGNED) && ibits < obits &&
+				(ast_type_t(a, l) & VT_UNSIGNED)) { MCC_TRACE("br\n");
+			uint64_t umax = ibits >= 64 ? ~(uint64_t)0
+																	: (((uint64_t)1 << ibits) - 1);
+			if ((uint64_t)ast_ival(a, r) == umax) { MCC_TRACE("br\n");
+				*op = TOK_NE;
+				l = inner;
+			}
+		}
+	}
+
+	if (*op == TOK_EQ || *op == TOK_NE) { MCC_TRACE("br\n");
+		uint64_t cc = ast_ival(a, r);
+		int guard = 0;
+		while (guard++ < 8) { MCC_TRACE("br\n");
+			if (ast_kind(a, l) == AST_Convert && ast_nchild(a, l) == 1 &&
+					!ast_fbits(a, l)) { MCC_TRACE("br\n");
+				AstLocal inner = ast_first_child(a, l);
+				int ib = ast_eff_bits(a, inner), ob = ast_eff_bits(a, l);
+				if (!ib || ib != ob)
+					{ MCC_TRACE("br\n"); break; }
+				l = inner;
+				continue;
+			}
+			if (ast_kind(a, l) == AST_Binary && ast_nchild(a, l) == 2 &&
+					!ast_fbits(a, l) &&
+					(ast_op(a, l) == '+' || ast_op(a, l) == '-')) { MCC_TRACE("br\n");
+				AstLocal bl = ast_child(a, l, 0), brr = ast_child(a, l, 1);
+				int lb = ast_type_t(a, bl) & VT_BTYPE;
+				if (ast_kind(a, brr) != AST_Literal ||
+						(ast_type_t(a, bl) & (VT_UNSIGNED | VT_BITFIELD)) ||
+						(lb != VT_INT && lb != VT_LLONG))
+					{ MCC_TRACE("br\n"); break; }
+				if (ast_op(a, l) == '-')
+					{ MCC_TRACE("br\n"); cc = cc + ast_ival(a, brr); }
+				else
+					{ MCC_TRACE("br\n"); cc = cc - ast_ival(a, brr); }
+				l = bl;
+				continue;
+			}
+			break;
+		}
+		if (l != ast_child(a, n, 0)) { MCC_TRACE("br\n");
+			int nb = ast_type_t(a, l) & VT_BTYPE;
+			int nbits = nb == VT_BYTE ? 8 : nb == VT_SHORT ? 16
+									: nb == VT_INT ? 32 : nb == VT_LLONG ? 64 : 0;
+			if (!nbits || (ast_type_t(a, l) & (VT_UNSIGNED | VT_BITFIELD)))
+				{ MCC_TRACE("br\n"); return 0; }
+			*c = (int64_t)cc;
+			if (nbits < 64)
+				{ MCC_TRACE("br\n"); *c = (*c << (64 - nbits)) >> (64 - nbits); }
+			*x = l;
+			return nbits;
+		}
+	}
+
 	t = ast_type_t(a, l);
 	bt = t & VT_BTYPE;
 	if (t & (VT_UNSIGNED | VT_BITFIELD))
