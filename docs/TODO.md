@@ -6700,6 +6700,49 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
   transforms do, or label each line with the pipeline position it was taken at. Until then
   **do not use `-fdump-loopdep` to confirm a legality fix** — instrument the `_apply`
   function or diff the executable's output instead, which is what actually settled it.
+- **Three JIT-only miscompiles survive the -O0…-O4 embed-JIT ladder, 2026-08-11.** The
+  corpora named in the goal (gcc, llvm-project, llvm-test-suite) were qualified into 6,623
+  oracle-adjudicated run-mode programs and driven through the embed JIT at every level with
+  `tools/jitconform.py --phase check --surface embed`. **Five `JIT_MISCOMPILE` rows at
+  every level before `85bf6a3d`, three at every level after** — both `970217-1.c` rows (the
+  gcc copy and its llvm-test-suite duplicate) are the VLA-parameter bug and are closed.
+  Each survivor aborts under `MCC_JIT=1` and exits 0 under `MCC_JIT=0` **from the same
+  binary**, which is what rules the AOT compiler out; and each is level-independent, which
+  rules the optimizer out.
+  - `gcc.dg/torture/pr45830.c` — **reduced, and the reduction is six lines**:
+    `int bar(int x){ if (x==5 || x==19 || x==23 | x==26 || x==65) return 1; return 3; }`
+    over `x` in `[0,70)`. gcc-15, clang and mcc's AOT path all answer 1 at `x==23`; the JIT
+    answers 3, i.e. it drops the **left operand of the bitwise `|`** where that `|` sits
+    between two comparisons inside a `||` chain (the `|` is a deliberate typo in the
+    upstream test and is exactly what makes it interesting). AOT is correct at `-O0`–`-O4`
+    **and at `-O13`**, so this is not a gate the search turns on. `MCC_JIT_SEARCH=0/1`
+    makes no difference; **`MCC_JIT_LAZY=1` makes it correct**, so the defect is on the
+    eager install path only. Start at the `||`/`&&` operand folds `815d2001` and the
+    relational see-through `bc60a3be`, both landed the same day, and at whatever the eager
+    path does that the lazy path does not.
+  - `gcc.dg/pr96674.c` — `-fwrapv` signed-overflow predicates. Not reduced.
+  - `gcc.dg/fastmath-1.c` — `-ffast-math` sign-of-float comparisons. Not reduced.
+  - Unexamined and larger: **~80 `differ` and ~150 `refused` rows per level.** `refused` is
+    mcc declining to compile at all, which is a front-end gap list, not a JIT one.
+- **`-fno-opt-search-<anything>` disables the whole search, not the sub-knob it names.**
+  Found 2026-08-11 while trying to A/B `-fopt-search-predict`. `-fno-opt-search-fullset`,
+  `-fno-opt-search-ordered` and `-fno-opt-search-predict` each take `-O13` from its normal
+  candidate count to **`0 candidate evaluations`** — the parser is matching the `opt-search`
+  prefix and turning off the master row. Every one of these flags is documented as a
+  sub-knob and behaves as a kill switch, so any measurement that used one to isolate a
+  sub-knob measured "search off" instead and would have read as "this knob is worth
+  nothing". The A/B in `69296b85` had to go through the `MCC_SEARCH_PREDICT` env to get a
+  real comparison. Audit anything that ever passed a `-fno-opt-search-*` flag.
+- **`jit/xoracle-conformance` drops its second corpus silently.** The CMake arm at
+  `CMakeLists.txt:7038` adds `--testsuite`/`--suite ts-unittests` only
+  `if(EXISTS ${MCC_XSUITE_LLVMTS}/SingleSource/UnitTests)` and has **no `else()`** — no
+  skip, no message, the suite just is not there. `--limit` is per-suite
+  (`tools/jitconform.py:311-317`), so losing the arm halves the corpus, and the companion
+  `jit/xoracle-coverage` cell then fails its `--min-cross 400` floor against a
+  single-suite denominator that tops out at 379. On this host the cache pointed
+  `MCC_XSUITE_LLVMTS` at a path that does not exist, so the cell was **red for a
+  configuration reason that it reported as a coverage reason**. Repointed locally; the
+  missing `else()` is still a defect — a corpus that vanishes must say so.
 - Declined upstream `7f7845cd` (VT_VOID); i386 `R_386_TLS_GOTIE` gap.
 - Raise arena fidelity / finish the capture path (Phase F).
 - Four hand-reproduced wrong-answer defects from the three-compiler board are written up
