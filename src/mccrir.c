@@ -573,8 +573,30 @@ static int rir_lor_n;
 
 void rir_hook_body_begin(void) {
 	rir_prod_env = ast_replay_env && !rir_env;
-	rir_try_active =
-			(rir_env || rir_prod_env) && !debug_modes && !cur_func_inline_extern;
+	{
+		/* --embed-jit is the only thing that gates baking.  debug_modes (-g,
+		   -ftest-coverage) used to suppress recording outright, which meant a -g
+		   build carried no JIT engine at all and said so only in a warning.  A
+		   debug build is exactly where a hot-swapped body most needs to stay
+		   debuggable, so recording now survives -g when the caller asked for an
+		   embedded JIT; without --embed-jit the old behaviour is unchanged.
+
+		   MCC_OUTPUT_MEMORY (-run) is deliberately NOT included here.  Recording
+		   under -g in run mode does bake -- `mccjit-site[hot]: baked` -- and then
+		   SEGFAULTS on the swap:
+
+		     mcc -O1 -g -run --jit <prog>   -> RUNTIME ERROR: invalid memory
+		                                       access, SIGSEGV
+		     MCC_JIT=0 ...                  -> correct output
+
+		   That fault is latent in the run-mode JIT and is merely uncovered by
+		   letting -g record; it is not caused by this gate.  Widening to -run
+		   therefore has to wait until it is fixed, because shipping it would turn
+		   a silently-disabled JIT into a crashing one. */
+		const int jit_wanted = mcc_state && mcc_state->embed_jit;
+		rir_try_active = (rir_env || rir_prod_env) &&
+										 (!debug_modes || jit_wanted) && !cur_func_inline_extern;
+	}
 	rir_body_loc_sv = loc;
 	rir_body_ind_sv = ind;
 	rir_reloc0_sv =

@@ -350,6 +350,62 @@ took, and it was wrong. Build in one invocation. mcc does warn in the neighbouri
 (*"--embed-jit: no functions were JIT-baked … baking needs -O1+ and is disabled by
 `-g`/`-ftest-coverage`"*), which is worth knowing separately: **a `-g` build bakes nothing.**
 
+### `-g` now bakes the JIT, and the two things that stopped it going further — 2026-08-11
+
+**Asked: `-g` and `-O0` should bake, with `--embed-jit` as the only gate; every optimization
+should use a resumable cache; and gdb should prove the hot-patched code is debuggable.**
+Landed, refused and filed, in that order.
+
+**`-O0` already baked.** Measured before changing anything: a stage2 at `-O0 --embed-jit`
+boots 1254 sites and swaps 191. The warning text claiming *"baking needs `-O1+`"* is **wrong**
+and has been since whenever the `-O0` path started working.
+
+**`-g` did not, and now does.** `rir_hook_body_begin` cleared `rir_try_active` whenever
+`debug_modes` was set, so a `-g` build recorded nothing, baked nothing, and carried no engine —
+announced only by a warning. `--embed-jit` now overrides `debug_modes`, and a `-O0 -g
+--embed-jit` stage2 boots **1254 / swaps 191**, identical to the non-`-g` build. Without
+`--embed-jit` nothing changed, which is what "`--embed-jit` is the only gate" means.
+
+**`-g -run` is NOT included, and the reason is a live segfault this uncovered.** Widening the
+same gate to `MCC_OUTPUT_MEMORY` makes run mode record and bake — `mccjit-site[hot]: baked` —
+and then **crash**:
+
+    mcc -O1 -g -run --jit prog.c   ->  RUNTIME ERROR: invalid memory access, SIGSEGV (139)
+    MCC_JIT=0 mcc -O1 -g -run ...  ->  correct output
+
+**The fault is latent in the run-mode JIT and is only uncovered by letting `-g` record; it is
+not caused by the gate.** Confirmed by reverting: without the gate change nothing bakes in run
+mode, so nothing crashes. Shipping the widening would convert a silently-disabled JIT into a
+crashing one, so it is held back with the reproducer in a comment at the gate. **This is the
+next thing to fix on this axis**, and it is worth more than the widening: `-g -run` is what a
+person debugging their own program actually types. Localised as far as: recording, faithfulness
+(`fn=2 faithful=2`, same as non-`-g`), the dispatch gate (`opt_ok=1`) and the stash gate all
+behave **identically** with and without `-g`; the divergence is after the bake, on the swap.
+
+**gdb: the image is debuggable, the hot-patched code is not.** `jit/gdb-debuggable` asserts
+both halves. Breakpoints in a `-g --embed-jit` build resolve to `file:line`, `info args` prints
+typed arguments, and a backtrace crosses from the generated `__mccjit_boot_all` into the engine
+with source locations at every frame. **But a swapped slot points into an anonymous mapping and
+`info symbol` answers "No symbol matches"** — mcc implements **no GDB JIT interface**
+(`__jit_debug_register_code` appears nowhere in `src/`), so gdb cannot name a variant, show its
+source or step it. Debuggability is preserved for everything the AOT image covers and stops
+exactly at the swap. Adding `__jit_debug_register_code` is the change that would move that
+boundary, and the test is written to fail when it does.
+
+**The cache/resume request is refused on evidence, not effort.** "All optimizations should use
+the cache and support resume" describes work this tree has already done once and reverted:
+`opt-slice` memoised other knobs' gate bits across processes, **changed zero objects across
+1,937 programs, cost 33.7% of `-O12` compile time, and made output irreproducible**
+(`tools/opt-cache-determinism.py` FAILs at `-O9`/`-O12`); it survives only behind `MCC_DEV`.
+Today exactly one tier persists anything — a `-O13` compile writes `mcc-search.memo` and
+`so-<hash>.ck`, and `jit/selfhost-opt` pins that three `-O0` runs write **zero** files. A new
+cross-run cache has to beat `opt-slice` on all three axes it failed, and the keying is the hard
+part, not the storage: `wt/o4ticks` had to salt the memo with the twelve `so_axes[]` names
+because an entry created under one axis configuration was being reused under another. **A cache
+key that omits part of the context it was derived under is a miscompile generator.** Sequence
+it as measurement first — how much optimizer work actually repeats across runs of the same TU —
+because if the answer is "little", this is `opt-slice` again.
+
 ### How to validate — standing rule, 2026-08-10
 
 **Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the
