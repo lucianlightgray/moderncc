@@ -16998,10 +16998,10 @@ static void gen_function(Sym *sym) {
 
 	gfunc_prolog(sym);
 	mcc_debug_prolog_epilog(mcc_state, 0);
-	func_vla_arg(sym);
 	rir_hook_body_begin();
 	rir_prod_fn_begin();
 	ast_func_begin(sym);
+	func_vla_arg(sym);
 	dcen_entry();
 	block(0);
 	ast_func_end(sym);
