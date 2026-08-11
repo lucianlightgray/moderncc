@@ -39,6 +39,15 @@
 > otherwise reworked** — an open row is still open unless it says otherwise, and N1 is
 > still open.
 >
+> **Emit-coverage inventory, 2026-08-11.** The four layers were instrumented at their own
+> decision points (`src/mccinv.h`, `MCC_INV=1`, non-perturbing and validated as such) and
+> `-O0` catalogued against `-O1` over 300 torture programs. Headline: **at `-O0` the RIR and
+> AST layers are absent, not idle** (0 of 1932 bodies recorded, no `ast.*` counter at all);
+> **`--embed-jit` rather than the `-O` level is what turns the pipeline on at `-O0`**; and
+> **`-O1` emits byte-identical objects to `-O0` for 185 of 284 programs**. Full catalog in
+> [`docs/EMIT-COVERAGE.md`](EMIT-COVERAGE.md), summary and reconciliations in *STATE OF PLAY*.
+> It also supplies the bake counter item 8 said `mcc` did not have.
+>
 > **JIT/debug wave, 2026-08-11 — `-g` bakes, and two reds diagnosed.** Three commits,
 > `957169fa..a404d8c9`. `--embed-jit` is now the only gate on baking, so a `-g` build
 > hot-swaps (`boot=1254 swapped=191`, was `0/0`); `jit/gdb-debuggable` and `jit/selfhost-opt`
@@ -449,6 +458,51 @@ The re-take command, for the next person:
     C2_NO_EXTRA=1 O0_AB_BANK=1 sh tools/o0_ab.sh <cross-build> all <outdir>
     C2_NO_EXTRA=1 O0_AB_BANK=1 O0_AB_GATES=1 MCC_DEV=1 sh tools/o0_ab.sh <cross-build> all <outdir-g>
 
+### Emit coverage, `-O0` against `-O1` — instrumented and measured 2026-08-11
+
+Taken fresh by wiring counters into the four layers at the point where each makes its own
+decision (`src/mccinv.h`, `MCC_INV=1`), not derived from any existing census, so a
+disagreement with one is a finding. Full catalog in
+[`docs/EMIT-COVERAGE.md`](EMIT-COVERAGE.md). 300 `gcc.c-torture/execute` programs, 284
+compiling on every arm.
+
+| arm | `rir.body` | `rir.rec` | `ast.body` | `ast.faithful` | `jit.baked` | `aot.bytes` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `-O0` | 1932 | **0** | **0** | **0** | 0 | 317,694 |
+| `-O1` | 1933 | 1930 | 1894 | 1885 | 0 | 316,619 |
+| `-O0 --embed-jit` | 1932 | 1929 | 1894 | 1883 | 587 | 321,216 |
+| `-O1 --embed-jit` | 1933 | 1930 | 1894 | 1885 | 589 | 320,153 |
+
+**The instrument was validated before the numbers were believed**: an object compiled with
+`MCC_INV=1` is byte-identical to one without (`cmp`), so it is not measuring itself; it is
+inert when off (40 compiles in 0.08 s), and `ast/o0-baseline` — object sha256 across twelve
+targets — plus the whole smoke suite pass unchanged.
+
+Four results, two of which the level names actively mislead about:
+
+1. **At `-O0` the RIR and AST layers are absent, not idle.** 1932 bodies offered, **0**
+   recorded, and not one `ast.*` counter increments. `-O0` emit coverage is exactly one layer.
+   It is a cliff, not a slope: `-O1` is the first level to record anything, not one that
+   records more. This independently confirms the three places in this file that say so from
+   other directions — `o0_ab`'s *"The AST recorder does not run at -O0"*, *"those cells compile
+   at `-O0`, where nothing re-emits"*, and *"`-O0` 22 dark"*.
+2. **`--embed-jit`, not the `-O` level, is what turns the pipeline on at `-O0`.** `-O0
+   --embed-jit` records 1929 and builds 1894 arenas — the same coverage as `-O1` with the
+   optimizer level still zero.
+3. **`-O1` usually emits the same bytes as `-O0`.** Per-program object comparison:
+   **identical 185, differ 99, of 284.** Two thirds are byte-identical *despite* the whole
+   pipeline running, and total emitted size moves **−0.34%**. Pipeline active and pipeline
+   changing the output are far apart, and every claim in this file of the form "the optimizer
+   reaches N% of bodies" should be read against that gap.
+4. **Replay tracks the parser to −9 bytes over ~268 KB at `-O1`, but runs +12 bytes at `-O0
+   --embed-jit`**, where faithful also drops 1885 → 1883. Those two bodies are the lead if that
+   arm is ever made to matter.
+
+**Two structural gaps the counters localise but do not explain**: `rir.rec` 1930 → `ast.body`
+1894 loses **36 bodies**, and `aot.fn` 1922 → `ast.body` 1894 means **28 are emitted by AOT but
+never reach the AST verdict**. Both are stable across all three pipeline arms, so they are
+structural rather than incidental. The counters say *where*, not *why*.
+
 ### How to validate — standing rule, 2026-08-10
 
 **Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the
@@ -505,7 +559,8 @@ Consequences that follow, and they are not optional:
 
 ### Where the tree is
 
-`main` at `a404d8c9`, **9548 cells in `cmake-def` on this host** (`jit/selfhost-opt` and
+`main` at `a43b422a`, **9548 cells in `cmake-def` on this host** — unchanged by the
+emit-coverage instrument, which adds counters rather than cells (`jit/selfhost-opt` and
 `jit/gdb-debuggable` are the two new ones) — counted 2026-08-11 with
 `ctest -N`, not added up. It was 9538 at `747709bc` and 9545 before `smoke/strat-dark`.
 
@@ -557,7 +612,10 @@ The `faithful` gate is not mis-designed, it was **mis-phased**. An unfaithful bo
 of the 22 optimizer strategies and is excluded from the inline pool and JIT dispatch — 66 of
 3,040 bodies on `src/mcc.c` at `-O2`, **2.17% of bodies but 7.87% of body bytes**, mean
 1,826 B against 474 B, and they are the self-host hot path (`decode`, `next_nomacro`,
-`gen_cast`, `preprocess`). 95% of the divergence is *length* divergence.
+`gen_cast`, `preprocess`). 95% of the divergence is *length* divergence. *(This is `-O2` on
+`src/mcc.c`. The independent 2026-08-11 count on gcc torture at `-O1` is 0.47% of bodies —
+a different corpus and a different level, so it neither confirms nor refutes this; see the
+emit-coverage section.)*
 
 `docs/ARCHIVED.md` already stated the rule — *"any pass that changes code must be an arena
 rewrite in the post-fidelity strategy phase"* — and both normalisations were placed at the
@@ -568,7 +626,9 @@ end of `rir_to_arena`, upstream of the fidelity check. `rir_arena_normalise` now
 `wide_bitfield_arith` and `integer_promotion`, which are *exactly* the two bodies the wide
 census reported as "discarded for replaying 40 bytes shorter than the parser". They were
 shorter **and wrong**. The earlier claim that every discarded body is still correct was
-inferred from `exec/` 347/347, but those cells compile at `-O0`, **where nothing re-emits** —
+inferred from `exec/` 347/347, but those cells compile at `-O0`, **where nothing re-emits**
+*(measured directly 2026-08-11: `-O0` records 0 of 1932 bodies and builds no arena — see the
+emit-coverage section)* —
 the discarded code was never run.
 
 Both defects are one mistake: the lowering mirrors `gv()`, but bit-field arithmetic is
@@ -1078,9 +1138,14 @@ shutdown. That hazard did not exist while the quiesce destroyed nothing.
    **Sharpened 2026-08-10**: the funnel is *six* predicates, not four — the plan omits
    `!ast_func_has_labeladdr` (a term of `ast_opt_ok`) and the `embed_jit || OUTPUT_MEMORY`
    plus `!ast_jit_slot_taken` gate. **The 47.1% is not computed in the compiler at all**;
-   `NOT_BAKED` is assigned in `tools/jitconform.py` and there is no bake counter in `mcc`.
-   Build one modelled on `rir_prod_why_name[]` — named reason, parallel count *and bytes*,
-   `atexit` report — and split `ast_opt_ok` and `ast_jit_want` into their sub-terms or the
+   `NOT_BAKED` is assigned in `tools/jitconform.py` and ~~there is no bake counter in `mcc`~~
+   **— there is one as of 2026-08-11: `jit.baked` in `src/mccinv.h`, an `atexit` counter wired
+   at the embed stash. It is not yet the *attributed* counter this item asks for (no named
+   reason, no bytes), but it settles the raw figure: over 300 torture programs, `--embed-jit`
+   bakes 587 of 1894 verdicted bodies at `-O0` and 589 at `-O1` — about 31%, measured in the
+   compiler rather than inferred from a harness. See the emit-coverage section above.**
+   Build the attributed version modelled on `rir_prod_why_name[]` — named reason, parallel
+   count *and bytes*, `atexit` report — and split `ast_opt_ok` and `ast_jit_want` into their sub-terms or the
    largest bucket will be uninterpretable. Predicates 1, 3 and 5 have no signal today, which
    is why the measurement cannot be taken. Do **not** reuse `MCC_JIT_BAKE_WHY` (it already
    means per-site free text) and do not gate it with `ast_env_int`, which returns the default
@@ -1253,7 +1318,10 @@ on `SValue` that does not exist.
 
 ### The `-O13` tier is dark on 13 of 22 strategies
 
-Measured per level on the smoke subject: `-O0` 22 dark (no strategy runs at `-O0` at all),
+Measured per level on the smoke subject: `-O0` 22 dark (no strategy runs at `-O0` at all —
+**independently confirmed 2026-08-11 from the other side: `MCC_INV=1` shows `-O0` records 0 of
+1932 bodies and increments no `ast.*` counter at all, so there is no arena for a strategy to
+run on**),
 `-O1` 12, `-O2`/`-O3` 9, `-O4` **1** (before the `bfold` shape landed; now 0 of 22), and
 **`-O13` 13** — `ivsr, narrow, bfold, range, bf, divmagic, pre, ltemp, inline, abs, tco, licm,
 reassoc`. That is the state the whole subject was in before `scases.h`, at the one level
@@ -4358,6 +4426,14 @@ strategies on `faithful`, so a byte-divergent body receives *no* optimization at
 `-O1` that is 2.0% of bodies but **10.2% of body bytes**, because a discarded body averages
 2585 bytes against 470 for a kept one — the gate is withholding the optimizer from the
 largest functions in the program. That is a capability cost, not a correctness one.
+
+> **Re-measured independently 2026-08-11, on a different corpus, and the two do not
+> transfer.** `src/mccinv.h` counts **9 unfaithful of 1894 verdicted bodies at `-O1` — 0.47%**
+> over 300 `gcc.c-torture/execute` programs, against the 2.0% above on `src/mcc.c`. **Both can
+> be true**: the figures differ by corpus, not by date, and this file's own standing rule is
+> that a gap in this area needs a hand-written denominator rather than torture's. Quote the
+> 2.0% for the self-host hot path and the 0.47% for torture, never one for the other. See the
+> emit-coverage section in *STATE OF PLAY*.
 
 **What it still buys.** It converts a replay defect into a missed optimization rather than
 a wrong program, and it is nearly free (the `orig` buffer is already copied for the restore
