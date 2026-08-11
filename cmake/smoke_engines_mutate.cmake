@@ -1,6 +1,6 @@
 execute_process(COMMAND "${SMOKERUN}" --mcc "${MCC}" --srcdir "${SRCDIR}"
                         --work "${WORK}-clean"
-                        --engines --min-engines 5 --min-cases 9000000
+                        --engines --min-engines 8 --min-cases 9000000
                 RESULT_VARIABLE _clean OUTPUT_VARIABLE _out ERROR_VARIABLE _out)
 message("${_out}")
 if(NOT _clean EQUAL 0)
@@ -53,5 +53,28 @@ if(NOT _jout MATCHES "without swapping a single function")
                         "identity")
 endif()
 
+execute_process(COMMAND "${SMOKERUN}" --mcc "${MCC}" --srcdir "${SRCDIR}"
+                        --work "${WORK}-drop"
+                        --engines --min-engines 8 --engines-drop rir-o4
+                RESULT_VARIABLE _drop OUTPUT_VARIABLE _dout ERROR_VARIABLE _dout)
+message("${_dout}")
+if(_drop EQUAL 0)
+    message(FATAL_ERROR "smoke/engines-identity: one non-device engine (rir-o4) "
+                        "was dropped and the arm still reported OK. This is the "
+                        "defect the floor exists to catch, and it is the state "
+                        "the tree was in while --min-engines was 5 against nine "
+                        "registered engines: three non-device engines could stop "
+                        "running and a present device kept the count above the "
+                        "floor. The floor must count only engines that cannot "
+                        "skip on their own")
+endif()
+if(NOT _dout MATCHES "--min-engines")
+    message(FATAL_ERROR "smoke/engines-identity: the dropped-engine run did fail, "
+                        "but not with the --min-engines diagnostic, so the "
+                        "failure cannot be attributed to the floor noticing a "
+                        "missing required engine")
+endif()
+
 message("smoke/engines-identity: the clean arm passed, a replay leak under the "
-        "ast arm was refused, and a jit arm that never swapped was refused")
+        "ast arm was refused, a jit arm that never swapped was refused, and a "
+        "dropped non-device engine was caught by the required-engine floor")

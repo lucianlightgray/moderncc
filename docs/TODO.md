@@ -542,9 +542,19 @@ unable to order two ctest processes, and **`RESOURCE_LOCK` is used zero times in
 reproducer: a `RESOURCE_LOCK` that makes an unexplained flake disappear buys silence, not
 a fix.
 
-**`--min-engines 5` against nine engines, with the prescription for fixing it**
+**~~`--min-engines 5` against nine engines~~ — CLOSED 2026-08-11**
 
-**The `--min-engines` floor did not move with it, and that is now a live gap.**
+**The floor now counts only engines that cannot skip on their own.** `smokerun` tracks
+required and optional engines separately (`optional` was a declared-but-never-read field on
+the engine table; only `e->gpu` drove the skip, which is why the floor could not tell them
+apart), the floors are `--min-engines 8` against the 8 non-device engines, and the summary
+line reports `required N of 8, optional N`. **A bare `--min-engines 8` over the total would
+not have worked, and the known-positive proves it**: `smoke/engines-identity` gained a fourth
+arm that drops one non-device engine with the new `--engines-drop`, and the run reports
+`ran=8 of 9 (required 7 of 8, optional 1)` — 8 total, which a floor over the total accepts,
+and 7 required, which this floor refuses. Original text:
+
+**~~The `--min-engines` floor did not move with it, and that is now a live gap.~~**
 `cmake/smoke_engines_mutate.cmake` and `CMakeLists.txt` still pass `--min-engines 5` (4 on
 the third arm) against nine registered engines, eight of which need no device. The floor was
 sized when 5-of-6 was "everything but the device"; at 5-of-9 **three engines can stop running
@@ -662,7 +672,8 @@ Two more, both found 2026-08-11 in the second wave:
   was **red for a configuration reason it reported as a coverage reason** — the worse failure,
   because it sends the reader to the wrong file. Repointed locally; the missing `else()` is
   the defect. Detail in the residues section at the end of this file.
-- **`--min-engines 5` against nine engines.** See *Smoke now compares six evaluation engines*
+- ~~**`--min-engines 5` against nine engines.**~~ **CLOSED 2026-08-11 — the floor counts
+  required (non-device) engines and a known-positive drops one to prove it.** See *Smoke now compares six evaluation engines*
   above: the floor was sized for 5-of-6 and the arm is now 9, so three engines can go dark
   green. Same family, and it is the arm's own floor that has the hole.
 

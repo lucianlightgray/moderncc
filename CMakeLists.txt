@@ -4506,7 +4506,7 @@ if(MCC_BUILD_TESTS)
             COMMAND smokerun --mcc "${_mcc_exe}"
                     --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
                     --work "${CMAKE_BINARY_DIR}/smoke-engines"
-                    --engines --min-engines 5 --min-cases 9000000)
+                    --engines --min-engines 8 --min-cases 9000000)
         set_tests_properties("smoke/engines" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
 
@@ -4514,7 +4514,7 @@ if(MCC_BUILD_TESTS)
             COMMAND smokerun --mcc "${_mcc_exe}"
                     --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
                     --work "${CMAKE_BINARY_DIR}/smoke-engines-kp"
-                    --engines --min-engines 5 --known-positive)
+                    --engines --min-engines 8 --known-positive)
         set_tests_properties("smoke/engines-known-positive" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
 

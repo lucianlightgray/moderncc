@@ -1429,7 +1429,19 @@ static const Engine g_engine[] = {
 
 #define SMK_NENGINE ((int)(sizeof g_engine / sizeof g_engine[0]))
 
+static int smk_nengine_req(void)
+{
+	int i, n = 0;
+	for (i = 0; i < SMK_NENGINE; i++)
+		if (!g_engine[i].optional)
+			n++;
+	return n;
+}
+
 static int g_eng_ran;
+static int g_eng_ran_req;
+static int g_eng_ran_opt;
+static const char *g_eng_drop;
 static long g_eng_rowcmp;
 static int g_eng_kp_fired;
 static int g_eng_kp_want;
@@ -1602,6 +1614,11 @@ static void engines_run(int known_pos)
 		char *txt;
 		int st;
 
+		if (g_eng_drop && !strcmp(g_eng_drop, e->name)) {
+			note("  %-7s DROPPED by --engines-drop\n", e->name);
+			continue;
+		}
+
 		ts_path(exe, sizeof exe, g_work, "eng-%s.exe", e->name);
 		ts_path(log, sizeof log, g_work, "eng-%s.log", e->name);
 		ts_path(tsv, sizeof tsv, g_work, "eng-%s.tsv", e->name);
@@ -1692,6 +1709,10 @@ static void engines_run(int known_pos)
 		free(txt);
 
 		g_eng_ran++;
+		if (e->optional)
+			g_eng_ran_opt++;
+		else
+			g_eng_ran_req++;
 		g_checks_total += checks;
 		g_cases_total += checks + sweep + msweep + fchecks;
 
@@ -1752,7 +1773,8 @@ static void usage(void)
 					"                [--deadline-ms N]\n"
 					"                [--bank FILE] [--rebank] [--known-positive]\n"
 					"                [--divergence] [--device] [--require-device]\n"
-					"                [--engines] [--min-engines N] [-v]\n");
+					"                [--engines] [--min-engines N] [--engines-drop NAME]\n"
+					"                [-v]\n");
 }
 
 int main(int argc, char **argv)
@@ -1796,6 +1818,8 @@ int main(int argc, char **argv)
 			do_eng = 1;
 		else if (!strcmp(argv[i], "--min-engines") && i + 1 < argc)
 			min_engines = strtol(argv[++i], NULL, 10);
+		else if (!strcmp(argv[i], "--engines-drop") && i + 1 < argc)
+			g_eng_drop = argv[++i];
 		else if (!strcmp(argv[i], "--device"))
 			do_dev = 1;
 		else if (!strcmp(argv[i], "--require-device"))
@@ -1831,15 +1855,21 @@ int main(int argc, char **argv)
 
 	if (do_eng) {
 		engines_run(known_pos);
-		note("smokerun: engines ran=%d of %d, row comparisons=%ld, value-cases=%ld, "
-				 "failures=%d\n",
-				 g_eng_ran, SMK_NENGINE, g_eng_rowcmp, g_cases_total, g_fail);
-		if (g_eng_ran < min_engines) {
+		note("smokerun: engines ran=%d of %d (required %d of %d, optional %d), row "
+				 "comparisons=%ld, value-cases=%ld, failures=%d\n",
+				 g_eng_ran, SMK_NENGINE, g_eng_ran_req, smk_nengine_req(), g_eng_ran_opt,
+				 g_eng_rowcmp, g_cases_total, g_fail);
+		if (g_eng_ran_req < min_engines) {
 			fprintf(stderr,
-							"smokerun: %d engine(s) ran, below the --min-engines %ld floor -- "
-							"an arm that silently stops reaching an engine reads exactly like "
-							"one that agrees with it\n",
-							g_eng_ran, min_engines);
+							"smokerun: %d required engine(s) ran, below the --min-engines %ld "
+							"floor -- an arm that silently stops reaching an engine reads "
+							"exactly like one that agrees with it. The floor counts only "
+							"engines that cannot skip on their own (%d of %d registered); the "
+							"device engine is reported separately as optional=%d, because a "
+							"floor over the total lets a present device mask a missing "
+							"non-device engine\n",
+							g_eng_ran_req, min_engines, smk_nengine_req(), SMK_NENGINE,
+							g_eng_ran_opt);
 			return 1;
 		}
 		if (g_eng_rowcmp <= 0) {
