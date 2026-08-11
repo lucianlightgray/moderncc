@@ -578,10 +578,26 @@ had a *neighbouring* half land, which is what makes them look done.
    read that as closing the row. It does not: **`grep submitted src/mccgpu.c` is 0**, so
    the `VK_TIMEOUT`-destroys-a-still-pending-command-buffer path has no `submitted` flag
    and no destroy-nothing label. That half is untouched.
-3. **The emitter caps (`F7`).** `MCC_GPU_CODE_MAX` *was* raised (`src/mccgpu.h:44,48`),
-   which reads as done. But the item's own point was that the **constant cache** binds
-   first, and `SPV_MAX_CONST` (`src/mccgpu.h:1319`) and `MSL_MAX_CONST` (`:187`) are both
-   still **512**.
+3. ~~**The emitter caps (`F7`).**~~ **CLOSED 2026-08-11 as NOT BINDING — measured, and the
+   caps were deliberately left at 512.** `MCC_GPU_CODE_MAX` was raised, which reads as done,
+   and the item's own point was that the **constant cache** binds first — `SPV_MAX_CONST` and
+   `MSL_MAX_CONST` are both still 512. **That premise is false on every corpus this tree
+   measures.** A/B: raise both to 4096, rebuild, re-run. `gpu/spv-slice-real` is
+   byte-identical either way —
+
+       arenas=161 slices=646 dispatches=3012 lanes=48110082 rejected-modules=0
+
+   — as is the device arm (`dispatches=10687`, same digest, same three `dev-slice-refused`
+   categories). **`rejected-modules` is 0 at 512**, so the cap is not merely non-binding, it
+   has never once been reached here. Reverted to 512 rather than raised on principle: an
+   8x allocation for a limit nothing reaches is cost without evidence.
+
+   **What is worth doing instead, and it is the reason this looked open for so long:** when
+   the cache does fill, `msl_const`/`spv_const` set `m->failed = 1` and the module is
+   dropped with **no distinct reason** — a const-cap refusal is indistinguishable from any
+   other emitter refusal, which is why "does it bind?" could not be answered from the
+   existing counters and had to be answered by rebuilding twice. Give it a named refusal
+   category before anyone raises it.
 
 ### The audit residue this handoff does not mention — read before planning a wave
 
