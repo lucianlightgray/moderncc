@@ -4461,9 +4461,19 @@ if(MCC_BUILD_TESTS)
             COMMAND smokerun --mcc "${_mcc_exe}"
                     --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
                     --work "${CMAKE_BINARY_DIR}/smoke-native"
-                    --min-cases 12800000 --min-passes 49)
+                    --min-cases 12800000 --min-passes 49 --min-strats 22)
         set_tests_properties("smoke/native" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+        add_test(NAME "smoke/strats-known-positive"
+            COMMAND "${CMAKE_COMMAND}"
+                -DSMOKERUN=$<TARGET_FILE:smokerun>
+                -DMCC=${_mcc_exe}
+                -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DWORK=${CMAKE_BINARY_DIR}/smoke-strats
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/smoke_strats_mutate.cmake")
+        set_tests_properties("smoke/strats-known-positive" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900)
 
         add_test(NAME "smoke/native-known-positive"
             COMMAND smokerun --mcc "${_mcc_exe}"
@@ -6992,6 +7002,15 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                             --min-pass 100 --max-miscompile 0)
                 set_tests_properties("jit/xoracle-conformance" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+                add_test(NAME "jit/xoracle-coverage"
+                    COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/xoracle.py"
+                            --phase report
+                            "--out=${CMAKE_BINARY_DIR}/jitconform-cell"
+                            --min-cross 400 --min-exclusive 1)
+                set_tests_properties("jit/xoracle-coverage" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300
+                    DEPENDS "jit/xoracle-conformance")
             else()
                 mcc_skip_test("jit/xoracle-conformance"
                     "no gcc.c-torture/execute corpus at ${MCC_XSUITE_GCC} -- point -DMCC_XSUITE_GCC=<gcc checkout> at one to measure the JIT against clang as cross oracle")

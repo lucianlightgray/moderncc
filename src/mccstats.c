@@ -553,6 +553,14 @@ void mcc_stats_finish(void) { MCC_TRACE("enter\n");
 #endif
 	finished = 1;
 	mccstats_paint(1);
+	if (mcc_stats_on(MCC_STATS_STRATEGY)) { MCC_TRACE("br\n");
+		int i;
+		fprintf(stderr, "[strategy] calls=%lu", mcs.strat_calls);
+		for (i = 0; i < MCCSTATS_STRAT_N; i++)
+			{ MCC_TRACE("br\n"); fprintf(stderr, " %s=%lu", mccstats_strat_name[i],
+																	 mcs.strat_hits[i]); }
+		fprintf(stderr, "\n");
+	}
 	if (mcs.tty)
 		{ MCC_TRACE("br\n"); fprintf(stderr, "\n"); }
 	fflush(stderr);

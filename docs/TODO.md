@@ -331,6 +331,46 @@ three and a filter-level tripwire would have looked trustworthy and caught nothi
    **A cross-pass veto is load-bearing in ways its comment does not say; measure what it
    blocks before lifting it, and land the fix underneath it first.**
 
+### Cross-vendor coverage now has a denominator, and the exclusive set is real — 2026-08-10
+
+The goal is complete coverage of every test each vendor can run in the other. That
+quantity had **no tool, no output file and no cell**: `tools/xoracle.py` recorded
+`ORACLE_NOBUILD` per test in an uncommitted `oracle.jsonl` and nothing ever aggregated
+it. `--phase report` now does, registered as `jit/xoracle-coverage`.
+
+Measured on this host, 400 programs per suite:
+
+| suite | tests | cross-adjudicable | vendor-exclusive | exclusive to |
+| --- | ---: | ---: | ---: | --- |
+| `gcc:c-torture/execute` | 400 | 379 | 20 | gcc |
+| `llvm:ts-unittests` | 400 | 114 | 286 | clang |
+| **total** | **800** | **493 (61.62%)** | **306** | |
+
+**493 of 800 is the only honest denominator for a coverage percentage**, and the report
+refuses to print one over a collapsed set (`--min-cross`) or an empty exclusive set
+(`--min-exclusive`) — an empty exclusive set means the oracle builds were never
+attempted, not that the vendors agree.
+
+**The 286-program asymmetry was investigated and it is not a harness artifact.** Three
+hypotheses were tested and all three failed:
+
+- **197 are `Vector/LASX`** — LoongArch SIMD. They report a `-std=gnu89` C99 diagnostic
+  first, which reads like a harness flag bug; under `-std=gnu17` they fail on
+  `lasxintrin.h`, which does not exist on x86. Genuinely target-exclusive.
+- **60 are AVX-512** needing `m512_test_util.h`, which lives one directory *above* the
+  test, and the harness put only the test's own directory on the include path. That
+  **is** a real harness defect and is fixed (`tools/jitconform.py` now walks ancestors
+  up to the suite root) — but it rescues **zero** tests: the header does
+  `typedef __int64 I64;` unguarded, and **neither gcc nor clang accepts `__int64` on
+  Linux**. Excluded for a third reason again.
+- **25 are `altivec.h`** (PowerPC) and 1 `hexagon_types.h` — target headers absent from
+  the suite entirely.
+
+So the ceiling is genuine: **282 of the 286 are target- or MSVC-exclusive by
+construction.** Closing the remaining gap means growing the *cross-adjudicable* set, not
+reclassifying the exclusive one. Do not re-litigate the 286 — the three cheap
+explanations are all disproved above.
+
 ### Three items that read as closed and are not — checked 2026-08-10
 
 Written down because a reader sweeping for finished work will mis-file all three. Each

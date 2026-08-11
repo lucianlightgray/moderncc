@@ -282,13 +282,20 @@ def collect_testsuite(root):
             continue
         for dirpath, dirnames, files in os.walk(base):
             dirnames[:] = [d for d in dirnames if d not in ("Inputs", "CMakeFiles")]
+            inc, d = [], dirpath
+            while len(d) >= len(base):
+                inc.append(d)
+                nd = os.path.dirname(d)
+                if nd == d:
+                    break
+                d = nd
             for f in sorted(files):
                 if not f.endswith(".c"):
                     continue
                 out.append({"suite": name, "file": os.path.join(dirpath, f),
                             "mode": "run", "expect": "ok",
                             "flags": ["-w", "-std=gnu89", "-fcommon"],
-                            "extra": [], "inc": [dirpath]})
+                            "extra": [], "inc": list(inc)})
     return out
 
 

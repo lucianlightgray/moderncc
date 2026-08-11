@@ -1492,6 +1492,8 @@ int main(int argc, char **argv) { MCC_TRACE("enter\n");
 	char **argv0 = argv;
 	FILE *ppfp = NULL;
 
+	mcc_stats_env_init();
+
 redo:
 	argc = argc0, argv = argv0;
 	s = s1 = mcc_new();

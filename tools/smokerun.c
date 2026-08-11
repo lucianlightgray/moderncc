@@ -40,6 +40,9 @@ static unsigned g_budget_ms = 1000;
 static unsigned g_deadline_ms = 6000;
 static long g_min_cases;
 static long g_min_passes;
+static long g_min_strats;
+static int g_strat_total;
+static int g_strat_fired;
 static int g_poison;
 static int g_rebank;
 static int g_rebank_req;
@@ -316,6 +319,7 @@ static void clear_census_env(void)
 	host_unsetenv("MCC_AST_EVAL_LADDER_CENSUS");
 	host_unsetenv("MCC_AST_EVAL_LADDER_GPU");
 	host_unsetenv("MCC_FORCE_REPLAY");
+	host_unsetenv("MCC_STATS");
 }
 
 static const char *const kLadderReasons[] = {
@@ -803,6 +807,60 @@ static void slice_census(int level)
 	scan_ladder(txt, level);
 	free(txt);
 	note("  slice census at -O%d in %u ms\n", level, ms);
+}
+
+static void strat_census(int level)
+{
+	char exe[1024], log[1024], tsv[1024];
+	unsigned ms = 0;
+	char *txt, *p, *q;
+	int total = 0, fired = 0;
+	ts_path(exe, sizeof exe, g_work, "subject-strat.exe");
+	ts_path(log, sizeof log, g_work, "compile-strat.log");
+	ts_path(tsv, sizeof tsv, g_work, "rir-strat.tsv");
+	host_setenv("MCC_STATS", "4");
+	if (!compile_subject(level, exe, log, tsv, &ms, 0, 0, 0)) {
+		char *l = slurp(log);
+		bad("strategy census: the -O%d compile failed:\n%s", level, l);
+		free(l);
+		return;
+	}
+	txt = slurp(log);
+	p = strstr(txt, "[strategy] ");
+	if (!p) {
+		bad("strategy census: the -O%d compile emitted no [strategy] record, so "
+				"the --min-strats floor would measure nothing",
+				level);
+		free(txt);
+		return;
+	}
+	q = strchr(p, '\n');
+	if (q)
+		*q = '\0';
+	p += strlen("[strategy] ");
+	while (*p) {
+		char *eq;
+		while (*p == ' ')
+			p++;
+		if (!*p)
+			break;
+		eq = strchr(p, '=');
+		if (!eq)
+			break;
+		if (strncmp(p, "calls=", 6) != 0) {
+			total++;
+			if (strtoul(eq + 1, NULL, 10) > 0)
+				fired++;
+		}
+		p = eq + 1;
+		while (*p && *p != ' ')
+			p++;
+	}
+	g_strat_total = total;
+	g_strat_fired = fired;
+	free(txt);
+	note("  strategy census at -O%d: %d of %d fired, in %u ms\n", level, fired,
+			 total, ms);
 }
 
 static int device_probe(char *devname, size_t dn, long *dispatches)
@@ -1310,7 +1368,8 @@ static void usage(void)
 {
 	fprintf(stderr,
 					"usage: smokerun --mcc PATH --srcdir DIR --work DIR [--min-cases N]\n"
-					"                [--min-passes N] [--max-level N] [--budget-ms N]\n"
+					"                [--min-passes N] [--min-strats N] [--max-level N]\n"
+					"                [--budget-ms N]\n"
 					"                [--deadline-ms N]\n"
 					"                [--bank FILE] [--rebank] [--known-positive]\n"
 					"                [--divergence] [--device] [--require-device] [-v]\n");
@@ -1336,6 +1395,8 @@ int main(int argc, char **argv)
 			g_min_cases = strtol(argv[++i], NULL, 10);
 		else if (!strcmp(argv[i], "--min-passes") && i + 1 < argc)
 			g_min_passes = strtol(argv[++i], NULL, 10);
+		else if (!strcmp(argv[i], "--min-strats") && i + 1 < argc)
+			g_min_strats = strtol(argv[++i], NULL, 10);
 		else if (!strcmp(argv[i], "--max-level") && i + 1 < argc)
 			maxlevel = (int)strtol(argv[++i], NULL, 10);
 		else if (!strcmp(argv[i], "--budget-ms") && i + 1 < argc)
@@ -1455,6 +1516,8 @@ int main(int argc, char **argv)
 
 	passes_run(maxlevel, d0);
 	rowlev_report(maxlevel);
+	if (g_min_strats > 0)
+		strat_census(maxlevel);
 
 	if (!known_pos) {
 		int rb = g_rebank;
@@ -1509,6 +1572,28 @@ int main(int argc, char **argv)
 						g_pass_checks, g_min_passes);
 		return 1;
 	}
+	if (g_min_strats > 0 && !known_pos) {
+		if (g_strat_total < g_min_strats) {
+			fprintf(stderr,
+							"smokerun: the [strategy] record names %d strategies, below the "
+							"--min-strats %ld floor -- the table shrank and the coverage "
+							"claim shrank silently with it\n",
+							g_strat_total, g_min_strats);
+			return 1;
+		}
+		if (g_strat_fired < g_min_strats) {
+			fprintf(stderr,
+							"smokerun: %d of %d strategies fired at -O%d, below the "
+							"--min-strats %ld floor -- a subject that stops reaching a "
+							"strategy must not read as coverage\n",
+							g_strat_fired, g_strat_total, maxlevel, g_min_strats);
+			return 1;
+		}
+		note("smokerun: %d of %d strategies fired, at or above the --min-strats "
+				 "%ld floor\n",
+				 g_strat_fired, g_strat_total, g_min_strats);
+	}
+
 	if (known_pos) {
 		int nfix = 0, i;
 		for (i = 0; i < SMK_NPASS; i++)

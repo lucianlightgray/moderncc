@@ -21,6 +21,19 @@ Two phases, because oracle qualification is expensive and mcc is not.
            so it can be run once per configuration (CPU baseline, GPU replay
            on, ...) and the per-test verdicts diffed against each other.
 
+  report   Aggregate <out>/oracle.jsonl into the two numbers a coverage claim
+           needs and neither phase above states: how many tests are
+           cross-adjudicable at all, and which tests only one vendor can build.
+           The second set is the ceiling -- a test the foreign oracle cannot
+           build is outside cross-vendor coverage by construction, not by
+           omission, and quoting a percentage without separating the two
+           silently credits the compiler for tests nothing could have judged.
+           Writes <out>/vendor-exclusive.jsonl, one record per excluded test
+           naming the vendor that can run it. `--min-cross` refuses a collapsed
+           denominator; `--min-exclusive` refuses an empty exclusive set, which
+           means the oracle builds were never attempted rather than that the
+           two vendors agree.
+
 Usage:
   tools/xoracle.py --phase qualify --out cmake-release/xoracle \
                    --gcc ~/Projects/gcc --llvm ~/Projects/llvm \
@@ -251,6 +264,138 @@ def load_tests(args):
     return tests
 
 
+NATIVE_OF = {"clang": "gcc", "gcc": "clang"}
+
+
+def coverage_report(out, suites, min_cross, min_exclusive, bank):
+    src = os.path.join(out, "oracle.jsonl")
+    if not os.path.exists(src):
+        sys.exit(f"xoracle: no oracle set at {src}; run --phase qualify first")
+    recs = [json.loads(l) for l in open(src)]
+    if suites:
+        recs = [r for r in recs if any(x in r["suite"] for x in suites)]
+    if not recs:
+        sys.exit("xoracle: the oracle set is empty, so a coverage report over "
+                 "it would state 100% of nothing")
+
+    per = {}
+    exclusive = []
+    for r in recs:
+        s = per.setdefault(r["suite"], {"total": 0, "cross": 0, "exclusive": 0,
+                                        "nondet": 0, "ubsens": 0, "other": 0,
+                                        "oracle": r.get("oracle", "")})
+        s["total"] += 1
+        st = r["status"]
+        if st == "OK":
+            s["cross"] += 1
+        elif st in ("ORACLE_NOBUILD", "ORACLE_BADFLAG"):
+            s["exclusive"] += 1
+            exclusive.append(r)
+        elif st == "NONDET":
+            s["nondet"] += 1
+        elif st == "UB_SENSITIVE":
+            s["ubsens"] += 1
+        else:
+            s["other"] += 1
+
+    checks = {}
+    for fn in sorted(os.listdir(out)):
+        if not (fn.startswith("check-") and fn.endswith(".jsonl")):
+            continue
+        label = fn[len("check-"):-len(".jsonl")]
+        t = {}
+        for l in open(os.path.join(out, fn)):
+            r = json.loads(l)
+            if suites and not any(x in r["suite"] for x in suites):
+                continue
+            t[r["status"]] = t.get(r["status"], 0) + 1
+        if t:
+            checks[label] = t
+
+    tot = {k: sum(v[k] for v in per.values())
+           for k in ("total", "cross", "exclusive", "nondet", "ubsens", "other")}
+
+    print("\ncross-vendor runnability")
+    print("-" * 78)
+    print(f"  {'suite':<26}{'tests':>7}{'cross':>8}{'excl':>7}"
+          f"{'nondet':>8}{'ub':>5}  exclusive to")
+    for name in sorted(per):
+        s = per[name]
+        print(f"  {name:<26}{s['total']:>7}{s['cross']:>8}{s['exclusive']:>7}"
+              f"{s['nondet']:>8}{s['ubsens']:>5}  "
+              f"{NATIVE_OF.get(s['oracle'], '?')}")
+    print("-" * 78)
+    print(f"  {'total':<26}{tot['total']:>7}{tot['cross']:>8}"
+          f"{tot['exclusive']:>7}{tot['nondet']:>8}{tot['ubsens']:>5}")
+    pct = 100.0 * tot["cross"] / tot["total"]
+    print(f"\n  cross-adjudicable: {tot['cross']} of {tot['total']} ({pct:.2f}%)"
+          f" -- the denominator any coverage claim may use")
+    print(f"  vendor-exclusive:  {tot['exclusive']} -- no foreign oracle can "
+          f"build these, so they are outside cross-vendor coverage by "
+          f"construction, not by omission")
+
+    by_vendor = {}
+    for r in exclusive:
+        v = NATIVE_OF.get(r.get("oracle", ""), "?")
+        by_vendor[v] = by_vendor.get(v, 0) + 1
+    for v in sorted(by_vendor):
+        print(f"    runnable only by {v}: {by_vendor[v]}")
+
+    for label in sorted(checks):
+        t = checks[label]
+        n = sum(t.values())
+        p = t.get("PASS", 0)
+        print(f"\n  check '{label}': {p} of {n} cross-adjudicable cases agree "
+              f"({100.0 * p / n if n else 0.0:.2f}%)")
+        for k in sorted(t, key=lambda k: -t[k]):
+            if k != "PASS":
+                print(f"    {k:<20}{t[k]:>7}")
+
+    xpath = os.path.join(out, "vendor-exclusive.jsonl")
+    with open(xpath, "w") as f:
+        for r in sorted(exclusive, key=lambda r: (r["suite"], r["file"])):
+            f.write(json.dumps({"suite": r["suite"],
+                                "file": r["file"],
+                                "runnable_only_by":
+                                    NATIVE_OF.get(r.get("oracle", ""), "?"),
+                                "why": r.get("why", "")}) + "\n")
+    print(f"\nxoracle: wrote {xpath}")
+
+    rc = 0
+    if tot["cross"] < min_cross:
+        sys.stderr.write(
+            f"xoracle: {tot['cross']} cross-adjudicable cases, below the "
+            f"--min-cross {min_cross} floor. A coverage percentage over a "
+            f"collapsed denominator reads the same as one over a whole "
+            f"suite\n")
+        rc = 1
+    if min_exclusive and tot["exclusive"] < min_exclusive:
+        sys.stderr.write(
+            f"xoracle: {tot['exclusive']} vendor-exclusive cases, below the "
+            f"--min-exclusive {min_exclusive} floor. The exclusive set is the "
+            f"measurement this report exists to produce; an empty one means "
+            f"the oracle builds were not attempted, not that the vendors "
+            f"agree\n")
+        rc = 1
+
+    if bank:
+        cur = {"cross": tot["cross"], "exclusive": tot["exclusive"],
+               "total": tot["total"]}
+        if os.path.exists(bank):
+            old = json.load(open(bank))
+            if cur["cross"] < old.get("cross", 0):
+                sys.stderr.write(
+                    f"xoracle: cross-adjudicable fell {old['cross']} -> "
+                    f"{cur['cross']}. The denominator may not shrink without "
+                    f"a re-bank; a smaller denominator raises every coverage "
+                    f"percentage computed from it\n")
+                rc = 1
+        else:
+            json.dump(cur, open(bank, "w"), indent=1, sort_keys=True)
+            print(f"xoracle: banked {bank}")
+    return rc
+
+
 def report(tally, total, title):
     print(f"\n{title}")
     print("-" * 56)
@@ -262,7 +407,11 @@ def report(tally, total, title):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--phase", choices=("qualify", "check"), required=True)
+    ap.add_argument("--phase", choices=("qualify", "check", "report"),
+                    required=True)
+    ap.add_argument("--min-cross", type=int, default=0)
+    ap.add_argument("--min-exclusive", type=int, default=0)
+    ap.add_argument("--bank", default="")
     ap.add_argument("--out", required=True)
     ap.add_argument("--gcc", default="")
     ap.add_argument("--llvm", default="")
@@ -281,6 +430,10 @@ def main():
     args = ap.parse_args()
     args.out = os.path.abspath(args.out)
     os.makedirs(args.out, exist_ok=True)
+
+    if args.phase == "report":
+        sys.exit(coverage_report(args.out, args.suite, args.min_cross,
+                                 args.min_exclusive, args.bank))
 
     if args.phase == "qualify":
         if not (args.gcc or args.llvm):
