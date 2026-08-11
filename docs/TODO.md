@@ -406,6 +406,41 @@ key that omits part of the context it was derived under is a miscompile generato
 it as measurement first — how much optimizer work actually repeats across runs of the same TU —
 because if the answer is "little", this is `opt-slice` again.
 
+### The four red `ast/o0-baseline` cells were a stale bank, not an `-O0` bug — 2026-08-11
+
+Four of the five `ast/o0-baseline*` cells were red on `main`. They are green. **Nothing in the
+compiler was wrong**, and the diagnosis is worth more than the fix because the failure text
+points at a codegen bug that did not exist:
+
+    o0_ab: x86_64 -- an -O0 object moved. The AST recorder does not run at -O0,
+    so nothing in the cut had any business touching these bytes.
+
+The bytes moved because **the source moved**. `931f3137` added four functions to two fixtures
+— `desc_backward_dep` and `desc_forward_dep` in `tests/exec/optimizer/loop_fusion.c`, and the
+matching pair in `loop_interchange.c` — and did not re-take the bank. Every number is consistent
+with exactly that and nothing else: `fn` and `faithful` each **+4 on all twelve targets**, with
+`files=307`, `objects`, `empty=35`, `unfaithful=0` and `diverge=0` unchanged, and the object
+hash delta confined to those two files on every target.
+
+**Two things this cost, both worth remembering.**
+
+1. **A plausible attribution was wrong and had to be tested.** `85bf6a3d` (the VLA-parameter
+   bake fix) looked like the obvious cause — it changes what the AST records. Reverting its one
+   source file and re-running left `fn` at **1314**, so it was not the cause; it also made an
+   `-O0` object move, which means its commit-message claim of *"without moving a single
+   instruction"* does not hold at `-O0` and is worth a second look on its own.
+2. **`O0_AB_BANK=1` from `measurable` is refused, and the refusal is right.** The board is a
+   twelve-row artefact; banking from a host that reaches one row rewrites the other eleven to
+   `NOT MEASURED` and freezes a hole. That is exactly what happened on the first attempt here —
+   caught, reverted, and redone from a build with all twelve cross compilers. **Re-taking this
+   bank requires `MCC_CROSS_TARGETS` covering all twelve**, which `cmake-cross` was not
+   configured for (it had seven); it is now.
+
+The re-take command, for the next person:
+
+    C2_NO_EXTRA=1 O0_AB_BANK=1 sh tools/o0_ab.sh <cross-build> all <outdir>
+    C2_NO_EXTRA=1 O0_AB_BANK=1 O0_AB_GATES=1 MCC_DEV=1 sh tools/o0_ab.sh <cross-build> all <outdir-g>
+
 ### How to validate — standing rule, 2026-08-10
 
 **Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the
