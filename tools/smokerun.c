@@ -1419,6 +1419,12 @@ static const Engine g_engine[] = {
 		 "the slice ladder, dispatching those slices to the device"},
 		{"jit", 4, 0, 0, 0, 1, 0,
 		 "the embedded JIT, re-baking the subject's own functions at run time"},
+		{"jit-o1", 1, 0, 0, 0, 1, 0,
+		 "the embedded JIT at -O1, the lowest level at which its engine boots"},
+		{"jit-o2", 2, 0, 0, 0, 1, 0,
+		 "the embedded JIT at -O2, the level the JIT cells default to"},
+		{"jit-o3", 3, 0, 0, 0, 1, 0,
+		 "the embedded JIT at -O3, one rung below the consolidated level"},
 };
 
 #define SMK_NENGINE ((int)(sizeof g_engine / sizeof g_engine[0]))
