@@ -25826,3 +25826,320 @@ every bare `` `:NNNN` `` self-reference below it. The file already declares thos
 approximate and tells the reader to confirm by content; this section makes that advice
 worth about 410 lines more than it was.
 
+
+---
+
+## Archived 2026-08-11 from TODO.md — arm64/Metal §§1,3,4 and Windows §§1,2,4
+
+Moved by the validation sweep; residues were lifted into TODO.md first. Size and count
+claims in this text were stale when moved (MSL/Vulkan arm line counts, the `fprintf`
+census, the twelve-`is_float` figure) and are corrected in TODO.md, not here.
+
+### 1. What already exists on the Metal side, precisely
+
+**There is no Objective-C in this project, and there never was.** Not one `.m` or `.mm`
+file, no `enable_language(OBJC)`, no `-fobjc-*` flag, no `@interface`, no bridging header —
+verified by tree-wide search on 2026-08-09. The whole Metal backend is plain C that
+`dlopen`s the frameworks and hand-casts a `dlsym`'d `objc_msgSend` per call site. The two
+`#include`s at `src/mccgpu.c` (`<objc/message.h>`, `<objc/runtime.h>`) supply the `id`
+and `SEL` typedefs and nothing more. Executed on an M1 Pro on 2026-08-08 and recorded below
+in *The Darwin path was executed*: `otool -L` on the Metal build shows **`libSystem.B.dylib`
+and `libobjc.A.dylib`, nothing else**, and `Foundation` plus `Metal` appear only under
+`DYLD_PRINT_LIBRARIES`, i.e. at runtime. (The shorter phrasing "`libobjc.A.dylib` and
+nothing else" is also banked below; `libSystem` is the accurate reading and the two are the
+same claim about frameworks.)
+
+**The block.** `#if MCC_GPU_LANG_MSL` at `src/mccgpu.c`, `#else` at `:697`, `#endif` at
+`:2229`. MSL arm 654 body lines against the Vulkan arm's 1,523 by the arm-counting pass
+described in §3. The backend-agnostic public API is the tail at `:2231-2306`, shared.
+
+| what | where | note |
+| --- | --- | --- |
+| framework candidates | `src/mccgpu.c` | Foundation and Metal, absolute path first then bare framework path; `MCC_METAL_LIB` overrides (`:204-205`) |
+| loader | `mcc_mtl_load` (`src/mccgpu.c:196-253`) | resolves `MTLCreateSystemDefaultDevice` (`:211`), optional `MTLCopyAllDevices` (`:218`) and `MTLCommandBufferEncoderInfoErrorKey` (`:219`) |
+| ObjC runtime | `src/mccgpu.c` | exactly three symbols — `objc_getClass`, `sel_registerName`, `objc_msgSend` — from the process first, then `/usr/lib/libobjc.A.dylib` |
+| FP environment | `src/mccgpu.c` | `fegetenv`/`fesetenv`, process then `libSystem.B.dylib` |
+| message helpers | `src/mccgpu.c` | `mtl_send`, `mtl_send_v`, `mtl_release`, `mtl_str`, `mtl_utf8`, `mtl_responds`, `mtl_ulong`, `mtl_bool` — the whole bridging layer, 48 lines |
+| device selection | `mtl_score` (`src/mccgpu.c`), `mtl_pick_device` (`:364-411`) | |
+| init | `mcc_gpu_init` (`src/mccgpu.c:413-501`) | `MTLCompileOptions` at `:469`, `setMathMode:` pinned to `MCC_MTL_MATH_SAFE` at `:475` |
+| pipeline cache | `MtlPipe` (`src/mccgpu.c`), array `:135`, `MCC_MTL_CACHE_MAX` 64 at `:59`, FNV-1a `mtl_key` `:513-521`, lookup/insert `mtl_pipeline` `:523-585` | compiles from source text via `newLibraryWithSource:options:error:` (`:536`) |
+| buffers | `mtl_buffer` (`src/mccgpu.c`) | `newBufferWithLength:options:` with options 0 (shared storage), host pointer from `contents` at `:592` |
+| dispatch | `mcc_gpu_dispatch_locked` (`src/mccgpu.c:600-681`) | two buffers created at `:621`/`:624`, bound at index 0 and 1 at `:647-650`, `dispatchThreadgroups:` `:657-659`, `waitUntilCompleted` `:662` |
+| fault taxonomy | names `src/mccgpu.c`, `mtl_classify` `:262-289`, `mtl_encoder_state` `:291-315`, `mtl_fault` `:317-335` | eleven classes, six description substrings and five numeric codes |
+| fault query API | `mcc_gpu_fault` (`src/mccgpu.c:337-345`), `mcc_gpu_fault_count` (`:347-349`) | **MSL-only** — neither symbol exists on the Vulkan arm, and neither is declared in `src/mccgpu.h` |
+
+**The claim that the fault reporting is better than the Vulkan arm's holds, and here is the
+measurement.** The MSL arm has 16 `fprintf(stderr, …)` sites in 654 lines against the
+Vulkan arm's 12 in 1,523 — 2.4 per 100 lines against 0.78 — and six of the Metal ones fire
+*unconditionally* where every Vulkan one is behind a diagnostic env gate. Metal names the
+fault, keeps a per-class histogram, and reads the per-encoder error state so it can tell
+"our kernel faulted" from "innocent victim of another process". `mcc_gpu_dispatch_locked`
+on the Vulkan arm returns 0 with no message at nine distinct points. The Vulkan arm has one
+**~~Correction to a description that is circulating: the two "missing" functions are not
+missing, they are present and inert.~~ SUPERSEDED 2026-08-11 — they are no longer inert
+either.** Both arms define all three symbols, and on the MSL arm all three now have real
+bodies (verified in `src/mccgpu.c`; a comment beside the first says *"which now returns 1"*).
+The struck row contents below are what this table claimed.
+
+| symbol | Vulkan | MSL | effect |
+| --- | --- | --- | --- |
+| ~~`mcc_gpu_rw_supported`~~ | `return 1` | **`return 1` — NOT a stub** | ~~returns 0 without touching the device~~ |
+| ~~`mcc_gpu_rw_arm`~~ | records `p` | **`mcc_gpu_rw_back = p` — NOT a stub** | ~~no copy-back pointer is recorded~~ |
+| ~~`mcc_gpu_mem_backend`~~ | real | **real multi-line implementation using `mtl_bind_mem` — NOT a stub** | ~~always returns 0~~ |
+
+`mcc_gpu.f64` is declared on the MSL arm and **never assigned** anywhere in `:43-696`; the
+Vulkan arm sets it from `shaderFloat64` at `src/mccgpu.c`. `mcc_gpu_f64` (`:2275`) is
+therefore 0 on Metal unconditionally, which is the "gate it off" behaviour the spec section
+describes — not a bug.
+
+### 3. What MSL has, lacks, and cannot have — re-derived
+
+Arm sizes, counted 2026-08-09 by an uncommitted pass over the `#if MCC_GPU_LANG_MSL`
+boundaries (lines strictly between directives, directives excluded): `src/mccgpu.h` 1,009
+MSL against 2,005 SPIR-V; `src/mccgpu.c` 654 against 1,523; `src/mccslice.h` 27 against 73;
+`tools/spvgate.c` 66 against 354. Four-file ratio **2.25:1**, and the format engine at
+`src/mccfmt.h` is gated `!MCC_GPU_LANG_MSL`, i.e. SPIR-V-only by construction, which
+pushes it further. These reproduce `## Metal parity` §1's table to within eight lines on the
+largest cell; that section's table is the one to quote, and this is an independent check on
+it rather than a replacement.
+
+**At parity, and it is more than the size ratio suggests.** The MSL arm is a faithful mirror
+for the *entire scalar-integer expression language*: 32- and 64-bit, signed and unsigned,
+the full arithmetic/bitwise/shift/compare operator set (`msl_binop_code`
+`src/mccgpu.h` against `spv_binop_code` `:2551-2585`), short-circuit `&&`/`||`,
+ternary, and identical UB-definedness propagation. Integer division is **guarded, not
+excluded**, on both arms. Soft-int64 lives in `msl_prelude` where SPIR-V emits real
+`OpFunction`s. `## Metal parity` §1's "145 byte-for-byte mirrored lines once the `msl_`/`spv_`
+prefixes are normalised" was **not re-derived here** — treat it as that section's figure, and
+note that `msl_expr` is 225 lines and `spv_expr` 321 today against the 224/320 it counted.
+
+**SPIR-V-only, and each one is unwritten work rather than a language limit**: fp64; the
+third binding and the byte-addressed region layer; dynamic indexing; pointer deref
+load/store; the format engine; and frame kernels — statements, stores and loops — which are
+`return 0` at `src/mccslice.h` and unsupported at the device layer too
+(`src/mccgpu.c`).
+
+**Neither arm has any cross-lane structure at all** — no reductions, no subgroup ops, no
+atomics. Every lane is independent and the only shared shape is the per-lane output triple.
+Do not plan a Metal feature around `simd_sum`; there is nothing on the other side to
+differentiate it against.
+
+**`double`.** `double` landed on the SPIR-V arm at `15b60365` and is real: `spv_f64_type`
+(`src/mccgpu.h`) emits `OpCapability Float64` and `OpTypeFloat … 64`, with
+`NoContraction` on every arithmetic result. **MSL has no 64-bit floating-point type at all**
+— a property of the shading language, not of this tree — and the MSL arm reflects that
+honestly: an `awk` pass over `src/mccgpu.h` for `f64|double|Float64` returns **zero
+lines**. `MslV` has no `f64` member and `MslMod` no `used_f64`. A `double` node fails both
+halves of the guard at `src/mccgpu.h` and the host falls back to the CPU oracle.
+
+**What is mirrorable in soft-f64, and why.** The certified set is not a taste judgement; it
+is three allow-lists that agree, and every one of them is a **deterministic integer
+algorithm** when implemented in software, so a correct implementation is bit-exact by
+construction — subnormals, both zeros and both infinities included.
+
+| where | what it admits |
+| --- | --- |
+| `spv_f64_binop_code` (`src/mccgpu.h:2587-2610`) | `+` `-` `*`, and the six ordered comparisons; `default: return 0` |
+| `ast_eval_slice_f64_op` (`src/ast_eval_slice.h:1169-1186`) | the same, plus `TOK_LAND`/`TOK_LOR` |
+| `ast_eval_binop_f64` (`src/ast_eval_slice.h:91-130`) | the same eleven cases — the CPU reference refuses too, so no arm can silently diverge |
+
+Unary `-` and `!` are handled one level up (`src/mccgpu.h`); `~` on an fp64 operand
+is explicitly barred. `&&`/`||` never reach the binop table because `spv_expr` routes them to
+
+### 4. Device facts — what was measured on which hardware, and what only a Mac can settle
+
+**Read this table before designing any float probe.** Two independent measurement campaigns
+exist and they were taken on *different* hardware; several statements in this file inherit
+the wrong one.
+
+| fact | NVIDIA RTX 5070 Ti, Vulkan | Apple silicon, Metal |
+| --- | --- | --- |
+| fp64 denormals | **preserved**, 373 denormal-touching tuples compared bit-exactly | **not applicable** — MSL has no `double`. The question only exists for a soft-f64, where the answer is whatever the algorithm computes |
+| fp32 denormals | **flushed**, and *unpinnable*: both `shaderDenormPreserveFloat32` and `shaderDenormFlushToZeroFloat32` are false, so no execution mode can declare either behaviour | **flushed unconditionally** — measured 2026-08-08 on an M1 Pro, in `MTLMathModeSafe`, `Relaxed` and MSL 3.2 alike; it is the FPU, not the compiler. `denorm + 0.0 → 0.0`, `denorm / 0.0 → NaN` where IEEE says `Inf` |
+| contraction | **no `NoContraction` in emitted modules** until it was added; the two observed non-contractions were driver discretion, not a guarantee | **UNMEASURED.** `setMathMode:` is pinned to `MCC_MTL_MATH_SAFE` at `src/mccgpu.c:475`, and under safe math `+ - * /` were measured correctly-rounded RNE with zero residual — but *whether an emitted `a*b+c` contracts to an FMA under that mode was never separately probed*, and nothing in this tree pins the MSL language version |
+| two-NaN payload tie-break | **diverges**: x86-64 SSE returns the **first** operand's payload, the device returns the **second**. 18 tuples. Every single-NaN tuple matches exactly, so this is one specific tie-break, not "NaNs are unreliable" | **UNMEASURED**, and it is the one that decides how a soft-f64 must be written |
+
+The Vulkan readings came from a **standalone, uncommitted probe** — `glslc` plus
+`vkQueueSubmit`, device created with `shaderFloat64 = VK_TRUE`, values passed through an
+SSBO so nothing constant-folds. It is not in the tree and cannot be re-run from here. Mark
+its artefact **PROSE-ONLY**; the readings themselves are banked under *The price, measured
+2026-08-09 (`wt/spvfloat`)* below, and the two-NaN finding under the `wt/spvfloat` landing
+note beside it.
+
+### Verification, this tree
+
+`cmake-cross` built before `cmake-debug` was configured (trap 4). Docs-only: no cell added
+or removed, no `src/` change, `tests/optfire/*` untouched. `ctest --test-dir cmake-debug -N`
+registers **9456**, matching the baseline. `python3 tools/docref-lint.py` OK,
+`python3 tools/regstub-lint.py` OK, `python3 tools/selfhost-smoke.py cmake-debug` OK, all
+from the repo root.
+
+### 1. The inventory, re-derived today
+
+**The target list is five, and the board proves it.** `tests/ast/o0-baseline/board.txt`
+carries twelve keys, of which the Windows five are `x86_64-win32`, `i386-win32`,
+`arm64-win32`, `arm-win32`, `arm-wince`. The authoritative table is `CMakeLists.txt`.
+`cmake-cross/` builds five separate binaries — `mcc-x86_64-win32`, `mcc-i386-win32`,
+`mcc-arm64-win32`, `mcc-arm-win32`, `mcc-arm-wince` — because **`MCC_TARGET_PE`
+(`src/mcc.h`) is a compile-time macro**: one binary is a PE compiler or an ELF one,
+never both.
+
+**`arm-wince` is not a target. It is a byte-identical alias of `arm-win32`.** The two
+define sets at `CMakeLists.txt` and `:3119-3122` are identical token for token,
+there is no `MCC_TARGET_WINCE` anywhere in `src/`, and the only "wince" string in the
+compiler is the subsystem-name alias in `pe_setsubsy` (`src/objfmt/mccpe.c`), which
+any `MCC_TARGET_ARM` PE build can reach. The `-O0` bank's twin check
+(`tests/ast/o0-baseline/arm-win32.obj.txt` against `arm-wince.obj.txt`) is not a
+coincidence that needs guarding — it is a tautology, and the cell that checks it is
+measuring the build system, not the compiler. That is worth saying plainly: **one of the
+five targets is free**, and the parity matrix below has four rows, not five.
+
+**`arm-win32`/`arm-wince` have no ARM-side PE backend at all.** `grep -c MCC_TARGET_PE
+src/arch/arm/arm-gen.c` is **0**. Consequences, each verified: no PE TLS sequence, no
+`__chkstk` stack probe, no `.pdata`/`.xdata`, no COFF ARM32 relocation mapping (the
+`coff_map_reloc` switch in `src/objfmt/mccpe.c` has AMD64/I386/ARM64 cases and falls
+through to `return 0` for ARM32), and `runtime/win32/lib/chkstk.c` has no ARM32 branch —
+its bare `#else` emits x86-64 assembly, and the build avoids that only by not adding
+`chkstk` for `cpu == arm` (`CMakeLists.txt`). The PE machine id used is `0x01C0`
+(legacy WinCE ARM), not `0x01C4` (`ARMNT`).
+
+**The code, measured.**
+
+| file | lines | what it is |
+| --- | ---: | --- |
+| `src/objfmt/mccelf.c` | **4411** | ELF writer **and** the shared object/archive loader for every format |
+| `src/objfmt/mccmacho.c` | **3316** | Mach-O writer |
+| `src/objfmt/mccpe.c` | **2932** | PE image writer **plus** a read-only COFF/import-library loader |
+| `src/mccjit_win32.h` | **393** | Windows-host JIT support (SRWLOCK, `_Interlocked*64`) |
+| `runtime/win32/` | **112 files** | 87 headers (39 CRT + 9 `sys/` + 13 `sec_api/` + 25 `winapi/`), 21 lib sources incl. **7 `.def`**, 4 examples |
+
+`MCC_TARGET_PE` guards **182 sites across 24 files**. The concentration is real work, not
+`#ifdef` noise: `src/mccgen.c` 23, `src/arch/x86_64/x86_64-gen.c` 22,
+`src/arch/arm64/arm64-gen.c` 22, `src/arch/i386/i386-gen.c` 20, `src/libmcc.c` 17,
+`src/mcc.h` 16, `src/objfmt/mccelf.c` 14. The x86_64 count is understated by that metric:
+`#ifdef MCC_TARGET_PE` at `src/arch/x86_64/x86_64-gen.c` opens a **whole-ABI fork** —
+`gfunc_sret`/`gfunc_call`/`gfunc_prolog`/`gfunc_epilog` are separate function bodies for
+Win64 and SysV, not shared code with branches.
+
+**The registered cells.** `ctest -N` lists **89** cells whose name carries a Windows
+token, and **35** of them reported Skipped in today's `-j32` sweep:
+
+| family | cells | skipped here | why |
+| --- | ---: | ---: | --- |
+| `exec*/winarm64_interlocked` | 23 | **23** | golden carries `req: cpu=arm64,os=WIN32` (`tests/exec/goldens.h`) — unrunnable on *any* host this tree can produce |
+| `ast/rir-parity-<pe>`, `ast/rir-c2-<pe>` | 25 | 5 | the `rir-c2` five are the `MCC_REPLAY_IR_C2`-defaults-OFF permanent 77, not a Windows fact |
+| `exec*/fastcall` | 23 | 0 | i386 **ELF** `__attribute__((fastcall))`; Windows-adjacent by name only |
+| `cross/no-compiler-abort-<pe>` | 5 | 0 | compile-only, all five targets |
+| `run-tier/<pe>` | 5 | 3 | `arm64-win32`, `arm-win32`, `arm-wince` permanently skipped |
+| `pe-wine-conformance`, `pe-native-conformance` | 2 | 1 | native needs a WIN32 host |
+| `compile.win32`, `embed-jit-smoke`, `runtime-bench-gatewin` | 3 | 3 | see below |
+| `i386-fastcall-abi{,-docker}` | 2 | 0 | **passes here** — see the probe below |
+
+**The skip audit's "5 Windows cells in environmental, legitimate" reproduces exactly**:
+`run-tier/{arm64-win32,arm-win32,arm-wince}`, `compile.win32`, `pe-native-conformance`.
+A **sixth** belongs in that bucket and was not in it: `embed-jit-smoke`, gated
+`if(MCC_PYTHON3 AND MCC_EMBED_JIT AND WIN32 AND NOT MSVC)` (`CMakeLists.txt`) — the
+only cell in the tree gated on raw `WIN32 AND NOT MSVC`, and therefore the only cell that
+requires a *mingw-hosted* Windows build to run at all. It runs in exactly one CI cell
+family and nowhere else.
+
+**`runtime-bench-gatewin` is misnamed and doubly dead.** "gatewin" is *gate wins*, not
+Windows: the cell is registered under `NOT MCC_TARGETOS STREQUAL "WIN32"`
+(`CMakeLists.txt`), i.e. it is deliberately **excluded** on Windows. Its subject
+is `vendor/plb/bench/algorithm/spectral-norm/3.c` via `GATE_WINS`
+(`tools/runtime-bench.py`); `vendor/plb` does not exist in this checkout, both
+measurement paths filter the entry out, and `--assert-gate-wins` returns 77
+unconditionally on every host. `tests/must-run.txt` records the missing-subject half
+and not the WIN32-exclusion half — so on a native Windows build the row would be a
+permanent 77 **for a reason the manifest does not state**. Two independent causes, one
+recorded.
+
+**Registration asymmetries found while enumerating, each a live defect of the shape
+`ci/registration-stubs` exists to catch:**
+
+1. `pe/short-import` (`CMakeLists.txt`) has **no `else()`**. On every non-Windows
+   build the cell is absent from `ctest -N` entirely. Its inner skip message still says
+   "x86_64/arm64 PE host only" although i386 was added.
+2. `exec-gatecombo/*` (`CMakeLists.txt`) is registered **only** under
+   `if(MCC_TARGETOS STREQUAL "WIN32")`, with no `else()` — a whole cell family that exists
+   on Windows and nowhere else. It is the exact mirror of the omission
+   `tests/must-run.txt` puts on the record.
+5. **There is no `MCC_WINE*` cache variable of any kind** and no `MCC_WINE_REQUIRED`
+   analogue to `MCC_CROSS_REQUIRED`. Wine is discovered by hardcoded name lists
+   (`tools/run-tier.sh`, `tools/mccharness.c`). A wine-less host
+   green-skips the entire PE runtime surface and nothing reports the loss.
+7. `tools/build.c`'s `CROSS[]` table (`tools/build.c`) **omits `arm-win32`**, which
+   `CMakeLists.txt` has. Two target tables, out of sync.
+
+**`MCC_CONFIG_MINGW` confirmed as a pure input.** Declared `CMakeLists.txt:1311`, read at
+exactly one site — `CMakeLists.txt`, `if(WIN32 OR CMAKE_SYSTEM_NAME MATCHES ... OR
+MCC_CONFIG_MINGW)` → `set(MCC_TARGETOS "WIN32")`. Never emitted as a `-D`; asserted by
+`tools/idiomgate.c`; injected as `-DMCC_CONFIG_MINGW=ON` only by the `pe` CI feature
+(`tools/ci.c`). The idiom-gate audit's finding reproduces exactly.
+
+### 2. The parity matrix against Linux/ELF
+
+Method: for each capability the ELF path has, the Windows status with the file and symbol,
+re-derived today. **Read the object-emission row first: it is the only row that makes the
+others academic for anyone who wants to link mcc's Windows output into anything else.**
+
+| capability | Linux / ELF | Windows / PE | verdict |
+| --- | --- | --- | --- |
+| **object emission (`-c`)** | `elf_output_obj` (`src/objfmt/mccelf.c`) | **the same call.** `mcc_output_file` (`src/objfmt/mccelf.c:3325`) dispatches `MCC_OUTPUT_OBJ` to `elf_output_obj` *before* the `#ifdef MCC_TARGET_PE` arm at `:3336` | **lacks it — `mcc -c` on every Windows target emits an ELF object.** Measured: `file` reports `ELF 64-bit LSB relocatable` for `x86_64-win32`, `ELF 32-bit` for `i386-win32`, `ELF aarch64` for `arm64-win32`, `ELF ARM EABI5` for `arm-wince`. There is **no `coff_output_file` symbol in the tree** |
+| **object interoperability** | `.o` links with gcc/clang/lld | **does not link.** `x86_64-w64-mingw32-gcc` on a one-line leaf `int addup(int,int)` object: `relocation ".uw_base+0x0 (type R_X86_64_RELATIVE)" goes out of range; final link failed`. `link.exe`/`lld-link` cannot read ELF at all | **lacks it** — one-way. mcc *reads* COFF fine (`coff_load_object_file`, short-import members, COMDAT dedup); nothing reads mcc's |
+| final image | `elf_output_file` | `pe_output_file` (`src/mcc.h`), 2,932 lines: sections, imports, exports, base relocs, subsystem, entry selection, DLL, `.def` in **and out** | **has it, and it works** — measured `PE32+ executable for MS Windows (console), 4 sections`, runs under wine |
+| linking / archives | ELF `.a`, ld scripts | `.def` first, then `.dll` (`src/libmcc.c`); COFF `.lib` incl. short-import members; `#pragma comment(lib,…)` (`src/mccpp.c`) | **has it** |
+| **debug info** | DWARF 2–5 + stabs (`src/mccdbg.c`) | **the same DWARF**, emitted into the PE as `sec_debug`, marked `IMAGE_SCN_MEM_DISCARDABLE`; plus a COFF symbol table under `-g` (`pe_add_coffsym`) | **partial** — **no CodeView, no `.debug$S`/`.debug$T`, no PDB writer.** `-g.pdb` shells out to an external `cv2pdb.exe` (`pe_run_cv2pdb`, `src/objfmt/mccpe.c`). No Microsoft debugger reads mcc output natively |
+| **EH / unwind** | DWARF `.eh_frame` (`MCC_EH_FRAME`, `src/mcc.h:2060`) | `.eh_frame` is **force-disabled** for PE (`src/objfmt/mccelf.c`); replaced by `.pdata`/`.xdata` via `pe_add_unwind_data` — x86_64 `src/objfmt/mccpe.c`, arm64 `:2615`, called from `src/arch/x86_64/x86_64-gen.c` and `src/arch/arm64/arm64-gen.c` | **partial, two ways.** x86_64's `UNWIND_INFO` is **one hardcoded 8-byte blob shared by every function** — walkable, not handler-capable. **i386-win32, arm-win32 and arm-wince emit no unwind data at all** |
+| **SEH (`__try`/`__except`/`__finally`)** | n/a | **absent.** No tokens, no parser, no codegen. `runtime/win32/include/excpt.h` declares the runtime pieces; nothing consumes them. The `__try` in `src/mcchost.c` is mcc's *own* crash handler on a Windows host | **lacks it** |
+| TLS | ELF GD/LD/IE/LE + TLSDESC | ELF `.tdata`/`.tbss` synthesised into an `IMAGE_TLS_DIRECTORY`: `pe_add_tls` (`src/objfmt/mccpe.c`), `pe_set_tls` (`:422`). Access via TEB — x86_64 `gs:[0x58]`, i386 `fs:[0x2c]`, arm64 `x18+0x58` (x18 removed from the allocatable set) | **has it on 3 of 4** — nothing on arm-win32. Verified executing under wine on both x86 targets, and `run-tier` covers `tls` and `tls_threads` |
+| `__declspec(thread)` | n/a | **unsupported** — `runtime/win32/include/_mingw.h` rewrites `__declspec(x)` to `__attribute__((x))` and there is no `thread` attribute, so it hits the unknown-attribute warning. `__thread` and `_Thread_local` work | **lacks it** |
+| calling convention | SysV eightbyte classifier | Win64: 4-register `RCX/RDX/R8/R9`, 32-byte home area, non-1/2/4/8 aggregates by reference, first two args mirrored into both GPR and XMM for varargs (`src/arch/x86_64/x86_64-gen.c`) | **has it** — a genuine second ABI |
+| `__stdcall`/`__fastcall`/`__thiscall` | n/a | parsed for all targets, **honoured only under `#if defined(MCC_TARGET_I386)`** (`src/mccgen.c`). `_name@N` decoration in `put_extern_sym2` | **has it where it means something** |
+| **JIT — `--embed-jit`, `-run --jit`** | full | full. `MCC_HOST_WIN32` arms throughout `src/mccjit_embed.c` plus `src/mccjit_win32.h` (393 lines). Measured today: `run-tier/x86_64-win32` reports **15/15 programs OK under both JIT tiers**, same for i386 | **has it** |
+| **JIT conformance measurement** | `jit/xoracle-conformance`, ≤400 programs per suite | **none.** Guard is `MCC_PYTHON3 AND MCC_EMBED_JIT AND MCC_TARGET_IS_HOST AND UNIX AND MCC_CPU ∈ {x86_64, arm64}` (`CMakeLists.txt:6515-6516`) | **lacks it entirely** — see §4 |
+| slice cross-oracle | `slice/cref-oracle-*`, 4 corpora | gated `if(NOT CMAKE_CROSSCOMPILING)` — never reached for a PE triple | **lacks it** |
+| `_Complex` | full | **compiles on all five targets**, executes correctly under wine: `(1+2i)*(3+4i)` → `-5.000000 10.000000` on both x86 PE targets | **has it** |
+| `__int128` | `MCC_HAVE_INT128` | **0 on PE** (`src/mcc.h:1115-1119`). `LONG_SIZE` is forced to 4 on PE even at 64 bits (`src/mcc.h`) | **lacks it, deliberately** |
+| stack probing | not needed | `__chkstk` at frames ≥ 4096 — x86_64 `src/arch/x86_64/x86_64-gen.c`, i386 `src/arch/i386/i386-gen.c`, arm64 `src/arch/arm64/arm64-gen.c`. Runtime in `runtime/win32/lib/chkstk.c`. VLA forced through the call path on PE. Measured: a 200,000-byte frame compiles on all five and runs under wine on both x86 targets | **has it on 3 of 4** — **arm-win32/arm-wince frames > 4 KiB never touch a guard page** |
+| DLL import/export | `-shared`, visibility | `__declspec(dllimport/dllexport)` via `_mingw.h`'s attribute rewrite, `pe_check_linkage` (`src/mccgen.c`), `ST_PE_IMPORT`/`ST_PE_EXPORT` (`src/mcc.h`), `pe_build_exports` writes a companion `.def`, `-impdef` via `mcc_get_dllexports` (`src/objfmt/mccpe.c:2531`), `-rdynamic` exports everything | **has it** |
+| resources (`.rc`) | n/a | `pe_load_res` ingests a **pre-compiled** `.res`. No `.rc` compiler, no `windres` invocation anywhere | **partial** |
+| `_MSC_VER` emulation | n/a | **none.** Predefines are `_WIN32` (+`_WIN64` at 64 bits) only (`src/mccpp.c`); `_mingw.h` supplies `__MSVCRT__`, `_M_IX86`/`_M_X64`/`_M_ARM64`. `-fms-extensions` exists but only affects anonymous struct/union acceptance | **lacks it** — mcc is a mingw-flavoured Windows compiler, not an MSVC-compatible one |
+| CRT / libc | glibc/musl, `mcc_add_runtime` | `msvcrt.dll` via `.def`; entries `_start`/`_wstart`/`__winstart`/`__wwinstart`/`__dllstart` selected by `pe_add_runtime`. **No `mainCRTStartup`.** `mcc_add_runtime` is compiled out entirely under `#ifndef MCC_TARGET_PE` (`src/objfmt/mccelf.c`); `-lm` is a no-op | **has its own, by a different construction.** musl is Linux-only and always will be |
+| leading underscore | n/a | **0 by default on PE** — `s->leading_underscore` is set only under `#if defined MCC_TARGET_MACHO` (`src/libmcc.c`). A deliberate divergence from tcc's i386-win32 | **has it, differently** — settable with `-fleading-underscore` |
+| bounds checking | `-b`/`-bt`/`-fsanitize=bounds` | skipped: "unsupported on the PE/msvcrt target (faults in msvcrt callbacks/library calls)" | **lacks it** |
+| `tests/diff/parts/*` | full | skipped: "the PE/msvcrt target has no msvcrt equivalent for the parts' complex/tgmath/libm surface" | **lacks it** |
+
+**What the matrix says when you stand back.** Windows is not thin. It has a real second
+ABI, a real second unwind format, a real second TLS mechanism, a real second CRT, and a
+working JIT. What it lacks clusters into exactly three shapes: **(a) it cannot write the
+platform's object format**, **(b) it cannot describe itself to the platform's debugger**,
+and **(c) nothing on it is measured against an external oracle**. Every remaining cell in
+the "lacks it" column is downstream of one of those three.
+
+### 4. Cross-oracle under wine — priced, with the pilot already run
+
+**Both external corpora can be run for the two x86 Windows targets under wine. This is the
+single largest coverage gain available in this tree, and it is cheap.**
+
+
+
+**Price.**
+
+| | |
+| --- | --- |
+| wrapper plumbing across the four tools | ~120–200 lines |
+| a `--pe-target` mode: `-B` staging, win32 include paths, CRLF normalisation | ~120–180 lines |
+| oracle selection + a clang-mingw probe, with a hard skip when no cross-vendor pair exists | ~80–140 lines |
+| cell registration, guard relaxation, floors, known-positive arm | ~80–120 lines |
+| **total** | **~400–640 lines** |
+| wall cost per cell at `--limit 400` | **~4 s**, extrapolated from 9.95 s for 1,693 at `-O0` on 16 threads |
+
+Compare: `double` on the SPIR-V side was ~1,100–1,700 lines; Metal parity 1,530–2,360;
+256-bit `ymm` codegen 2,000–3,000. **This is a quarter of the cheapest of those and it
+buys the first external measurement of a platform that has none.**
+
+**What it cannot buy.** Nothing for `arm64-win32`, `arm-win32` or `arm-wince` — wine
+emulates x86 PE only. `tools/arm64pe-wine-docker.sh` is the one existing counter-example
+and it is registered nowhere; whether it still works is **UNMEASURED**.
+

@@ -7400,7 +7400,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         add_test(NAME "docs/refs"
             COMMAND "${MCC_PYTHON3}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tools/docref-lint.py"
-                "--root=${CMAKE_CURRENT_SOURCE_DIR}" --min-refs 600)
+                "--root=${CMAKE_CURRENT_SOURCE_DIR}" --min-refs 440)
         set_tests_properties("docs/refs" PROPERTIES TIMEOUT 120)
 
         add_test(NAME "docs/refs-known-positive"

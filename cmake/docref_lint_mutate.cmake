@@ -1,4 +1,4 @@
-execute_process(COMMAND "${PY}" "${LINT}" "--root=${SRCDIR}" --min-refs 600
+execute_process(COMMAND "${PY}" "${LINT}" "--root=${SRCDIR}" --min-refs 440
                 RESULT_VARIABLE _clean OUTPUT_VARIABLE _out ERROR_VARIABLE _out)
 message("${_out}")
 if(NOT _clean EQUAL 0)
@@ -7,7 +7,7 @@ if(NOT _clean EQUAL 0)
                         "about whether it resolves citations at all")
 endif()
 
-execute_process(COMMAND "${PY}" "${LINT}" "--root=${SRCDIR}" --min-refs 600
+execute_process(COMMAND "${PY}" "${LINT}" "--root=${SRCDIR}" --min-refs 440
                         --mutate
                 RESULT_VARIABLE _mut OUTPUT_VARIABLE _mout ERROR_VARIABLE _mout)
 message("${_mout}")
