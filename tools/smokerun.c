@@ -1033,6 +1033,10 @@ static const Pass g_pass[] = {
 		 "fabscmp 0 0 0 0 0 0 0 0 1 0 0\n", "-O2", NULL, 0, -1},
 		{"taut", "pass-taut.c", "",
 		 "taut 111 000 111 000 111 111 100\n", "-O2", NULL, 0, -1},
+		{"narrowelim", "pass-narrowelim.c", "",
+		 "narrowelim -199 -199 -101 -7 0 -993 -7000 99 -199 -101 0 -993 -199 -993 "
+		 "-199 -7\n",
+		 "-O2", NULL, 0, -1},
 		{"tautconv", "pass-tautconv.c", "",
 		 "tautconv 111110101111110011111110111101101111011011110110"
 		 "11111010111111101111111011111110 1111\n",

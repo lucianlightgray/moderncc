@@ -9164,6 +9164,8 @@ static int ast_narrow_elim(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (ast_ii_width(tt) < 1 || ast_ii_width(ct) > 4 ||
 			ast_ii_width(ct) <= ast_ii_width(tt))
 		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_ii_width(ct) >= 4 && (ct & VT_UNSIGNED))
+		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_narrow_elim_fits(a, c, tt))
 		{ MCC_TRACE("br\n"); return 0; }
 	MCC_TRACE("narrow elim ct=%d tt=%d\n", ct, tt);
