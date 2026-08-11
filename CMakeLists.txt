@@ -6324,6 +6324,10 @@ if(MCC_BUILD_TESTS)
                     "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
         set_tests_properties(libtest-extra PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+        add_executable(mcc_selftest_surrogate tests/embed/mcc_selftest_surrogate.c)
+        target_include_directories(mcc_selftest_surrogate PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+        add_test(NAME opt/selftest-surrogate COMMAND mcc_selftest_surrogate)
+
         # api_threaded.c drives mcc_setjmp/mcc_set_backtrace_func, which
         # mccrun.c only compiles when the C-level MCC_TARGET_IS_HOST holds.
         # The pointer-size check above cannot see an x86_64 compiler
