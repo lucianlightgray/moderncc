@@ -559,7 +559,35 @@ compare *behaviour*; failing a program for being slow answers a question it was 
 `--rtimeout` now defaults to 120 s, which still bounds a genuine hang. The 5× gap is a
 real performance finding and belongs in a benchmark, not in a conformance verdict.
 
-**The one remaining failure needs value-range propagation, and was deliberately not
+**LANDMINE — the obvious tautology fold miscompiles. Attempted 2026-08-11, reverted.**
+Before implementing this, read the whole item.
+
+`a || b` and `a && b` are **not** control flow in the arena — they are a single
+`AST_Binary` with `TOK_LOR` (`0x91`) / `TOK_LAND` (`0x90`) whose two children are the
+relational tests. That makes the fold look easy: recognise two relational tests against
+integer literals on the same pure operand, turn each into an interval set over the type's
+range, and fold `||` to 1 when the union covers the range, `&&` to 0 when the negated
+union does. That was written, it compiled, and **it is a miscompile**:
+
+```
+volatile int v = 7;  int var = v;
+if (!(var > 10 && var < 3)) A(); else B();   /* gcc: A   mcc -O0: A   mcc -O2: B */
+if (!(var <= 0 || var != 0)) E(); else F();  /* gcc: F   mcc -O0: F   mcc -O2: E */
+```
+
+The interval arithmetic is right — the *unnegated* forms
+(`if (var > 10 && var < 3) C(); else D();`) fold correctly, and `-O0` is correct
+throughout. **Only the `!`-wrapped forms invert**, so whatever the front end does with a
+negated condition is not a plain `AST_Unary` NOT sitting above the `TOK_LOR` node, and the
+fold's literal reaches the `AST_If` through a path that flips the arm selection. Find out
+exactly how `if (!X)` is represented before rewriting this; the two-line experiment above
+is the whole test, and it is cheaper than the four hours of interval reasoning that is
+*not* where the bug is.
+
+Note also that the value tested is `volatile`, deliberately: without that, the front end
+constant-folds the whole condition and the arena never sees the shape.
+
+**The remaining failure needs value-range propagation, and was deliberately not
 pattern-matched.** `20041114-1.c` asks that
 `var <= 0 || (unsigned long)(unsigned)(var - 1) < UINT_MAX` fold to 1. The chain is:
 `(unsigned long)(unsigned)E < UINT_MAX` → `(unsigned)E != UINT_MAX` → `E != -1`;
