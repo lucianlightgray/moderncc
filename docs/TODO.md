@@ -39,6 +39,14 @@
 > otherwise reworked** — an open row is still open unless it says otherwise, and N1 is
 > still open.
 >
+> **Board-work wave, 2026-08-11 — N5, N4 and F7.** Six commits, `2d04a308..a6f46ff2`, working
+> the open board easiest-first. **N5 is closed in full** (all four green-by-omission hazards),
+> **N4 is closed** (`smoke/strat-dark` banks the strategies `-O13` leaves dark), and **F7 is
+> closed as *not binding*** — the constant caps were A/B'd at 512 and 4096, found
+> byte-identical with `rejected-modules=0`, and left at 512. Summarised under *The board-work
+> wave* in *STATE OF PLAY*, including what each closure left behind. Smoke is now twelve cells
+> and ~117 s.
+>
 > **Second wave, 2026-08-11 afternoon — JIT/AOT differential and the search surrogate.**
 > Five commits, `0dd6ea55..04f12187`. The embed-JIT surface was run against gcc,
 > llvm-project and llvm-test-suite at every level it boots, which found a JIT-only
@@ -264,13 +272,61 @@ premise is stale, and it is load-bearing for the Metal parity estimate.
 fine. Recorded here because "symbol not found" from a grep of the exact string is a false
 positive generator on this codebase's `_run` convention.)*
 
+### The board-work wave, 2026-08-11 — N5, N4 and F7 closed against the tree
+
+Six commits, `2d04a308..a6f46ff2`, working the open board easiest-first. All four of **N5**'s
+green-by-omission hazards are closed, **N4** is closed, and **F7** is closed as *not binding*
+after measurement rather than by paying it down.
+
+| closed | how it was proven, not asserted |
+| --- | --- |
+| `--min-engines 5` against nine engines | the floor counts **required** engines; dropping one non-device engine gives `ran=8 of 9 (required 7 of 8)` — a floor over the *total* accepts 8, this refuses 7 |
+| `optfire/*.txt` row counts drive cell counts | row-count ratchet on both glob loops; deleting a row reports `registered 51 rows, below the floor of 52` |
+| `jit/xoracle-conformance` drops a corpus silently | an `else()` naming the missing path; verified by configuring with a bogus `MCC_XSUITE_LLVMTS` |
+| the device arm never ratcheted its census | `own("dev-")` + `ratchet()`; **531 refusals** were being computed and discarded every run |
+| **N4** — `-O13` dark on 13 of 22 | `smoke/strat-dark` banks dark strategies; teeth proven by removing one banked row |
+| **F7** — the emitter constant caps | A/B at 512 and 4096: byte-identical, `rejected-modules=0`. Caps left at 512 |
+
+**Three of these had a wrong naive fix, and that is the transferable part.** A bare
+`--min-engines 8` over the total still lets a present device stand in for a missing non-device
+engine. `own("slice-")` for the device census would have matched the CPU arm's `O0`–`O4` rows,
+because `scope_match` compares the text *after* the first space, and reported every one of them
+as IMPROVED-fell-to-zero — the ladder census needed a `dev-` tag before it could have a
+ratchet. And F7's premise was simply false: the constant cache has never been reached.
+
+**Numbers on the board that this wave found stale**, all corrected in place: `-O13` is dark on
+**12** strategies, not 13 (`bfold` now fires, 10 of 22 fire); an `-O13` compile of the subject
+is **47 s**, not ~2.7 s, because `scases.h` grew the subject — so N4's "every objection to
+watching it is gone" was resting on a figure that had moved by 17x. The objection is still
+answerable, but it is now a 44 s cell rather than a free one.
+
+**What each closure left behind, because none of them is entirely finished:**
+
+- **F7's real defect is unfixed.** `msl_const`/`spv_const` set `m->failed = 1` with **no
+  distinct reason**, so a const-cap refusal is indistinguishable from any other emitter
+  refusal. That is why "does the cap bind?" needed two compiler rebuilds instead of a counter
+  lookup. Give it a named refusal category before anyone raises the number.
+- **`I-6` was examined and deliberately not taken.** `rir_decayed_array`'s guards return 0
+  early for a raw `VT_CMP` — `0x33` matches neither `as_sym` nor `as_loc` — so the "two-line
+  fix" is not reachable that way. The hazard needs a **stale** `sym` on a `VT_LOCAL` snapshot,
+  which has no reproducer, and a defensive edit with no reproducer is unverifiable. Still open,
+  still correctly described as latent; do not "fix" it without a repro.
+- **The archive migration is still blocked** on the `--min-refs` floor, unchanged by this wave.
+
 ### How to validate — standing rule, 2026-08-10
 
 **Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the
 oracles.** `ctest -R "^smoke/"` is ~15–90 s for 13.0M value cases across `-O0`–`-O4`, plus
 the device arm and the divergence arm. Do not run the full suite to validate a change.
 
-**As of 2026-08-11 it is eleven cells, not eight, and ~71 s in `cmake-def` on this host.**
+**As of the 2026-08-11 board-work wave it is twelve cells and ~117 s in `cmake-def` on this
+host** — `smoke/strat-dark` is 44 s of that on its own, which is the honest price of watching
+`-O13` and is called out where the cell is registered. It nearly doubled the suite; if it ever
+stops being affordable, drop that cell rather than the rule, because it is the only one whose
+subject is a level the sweep cannot reach. The eleven-cell figure below still describes
+everything else:
+
+**As of 2026-08-11 it was eleven cells, not eight, and ~71 s in `cmake-def` on this host.**
 *(Re-measured 2026-08-11 in the validation sweep: `ctest -R "^smoke/"` is **70.7 s**, 11/11
 green. The "~85 s" and "~115 s" that stood here before were both wrong. Neither named a
 build directory, which is why they were never reconcilable — quote the build dir with the
@@ -313,8 +369,8 @@ Consequences that follow, and they are not optional:
 
 ### Where the tree is
 
-`main` at `3b225e3f`, **9545 cells in `cmake-def` on this host** — counted 2026-08-11 with
-`ctest -N`, not added up. It was 9538 at `747709bc`.
+`main` at `a6f46ff2`, **9546 cells in `cmake-def` on this host** — counted 2026-08-11 with
+`ctest -N`, not added up. It was 9538 at `747709bc` and 9545 before `smoke/strat-dark`.
 
 > **Corrected 2026-08-11 (validation sweep).** This paragraph said "the two 2026-08-11 waves
 > added no cells", which was wrong and contradicted *How to validate* eight lines above it,
@@ -634,12 +690,18 @@ measurement tool reports success over an empty or truncated subject:
 
 ### Open, ranked
 
-> **New this wave, and the first three outrank everything below them.** Numbering continues
-> from the existing list rather than renumbering it; N1–N6 are the 2026-08-10 additions,
-> N7 came with the engine-parity arm on 2026-08-11, and **N8–N9 with the JIT/AOT differential
-> the same afternoon**. Order here is rank, not number — N8 and N9 sit above N6 because one
-> is a wrong answer with a six-line reproducer and the other invalidates any measurement that
-> used it.
+> **Status after the 2026-08-11 board-work wave: N4, N5 and N9 are closed and struck in
+> place; N1, N2, N3, N6, N7 and N8 are open.** Numbering continues rather than renumbering —
+> N1–N6 are the 2026-08-10 additions, N7 came with the engine-parity arm on 2026-08-11, and
+> N8–N9 with the JIT/AOT differential the same afternoon. Order here is rank, not number, and
+> closed rows stay in place so a reader following a cross-reference lands on the closure
+> rather than on nothing.
+>
+> **The live ranking is now N8, then N1, then N7.** N8 is three wrong answers with a six-line
+> reproducer for one of them. N1 and N7 are the same question asked twice — work that a
+> mechanism performs and nothing observes — and the wave just closed four more instances of
+> exactly that shape, which is the argument for treating it as structural rather than as six
+> separate rows. N2, N3 and N6 are unchanged and unstarted.
 
 **N1. Seven of 22 strategies are write-only.** `LTEMP, IVSR, PRE, RANGE, ABS, REASSOC,
 INLINE` mutate the arena but their fire count never reaches the `do_*` disjunction that
