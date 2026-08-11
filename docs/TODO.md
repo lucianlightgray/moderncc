@@ -38,6 +38,15 @@
 > the detail sections are dated 2026-08-11 and sit inside it. **The board below was not
 > otherwise reworked** — an open row is still open unless it says otherwise, and N1 is
 > still open.
+>
+> **Second wave, 2026-08-11 afternoon — JIT/AOT differential and the search surrogate.**
+> Five commits, `0dd6ea55..04f12187`. The embed-JIT surface was run against gcc,
+> llvm-project and llvm-test-suite at every level it boots, which found a JIT-only
+> miscompile and left three more open (**N8**); a degree-2 surrogate was fitted over the
+> `-O13` gate cube, measured, and left off; and the smoke engine arm went six engines to
+> nine. Summarised under *The second 2026-08-11 wave* in *STATE OF PLAY*. The new open
+> items are **N8** (the three surviving JIT miscompiles) and **N9** (`-fno-opt-search-*`
+> is a kill switch, not a sub-knob); **N5** went from two green-by-omission hazards to four.
 
 ## STATE OF PLAY — written for a context switch, 2026-08-11
 
@@ -77,17 +86,61 @@ and the 5x runtime gap it exposed is a real and unbanked performance finding.
 N1 in particular is still open and acquired a concrete cost: two new folds had to avoid
 their natural homes (`abs`, `range`) because those are write-only strategies.
 
+### The second 2026-08-11 wave — the JIT/AOT differential and the search surrogate
+
+Five commits, `0dd6ea55..04f12187`, on two subjects that turned out to be independent.
+
+| landed | where |
+| --- | --- |
+| a parameter's array bound was evaluated outside the AST, so **every re-baked function dropped its side effects** | `src/mccgen.c`, `tests/jit/parity/vla_param_effect.c` |
+| the `-O0`–`-O4` embed-JIT ladder over three external corpora, 6,623 programs per level | `tools/jitconform.py` (driver already existed; this is the measurement) |
+| a degree-2 ANOVA/Walsh surrogate over the gate cube, exact int64, proved test-first | `src/mccsurro.h` |
+| the surrogate wired into the `-O13` search behind `-fopt-search-predict`, **default off** | `src/mccast.c`, `src/mcc.c` |
+| the smoke engine arm drives the JIT at every level it boots, not only `-O4` | `tools/smokerun.c` |
+
+**The JIT half. The differential is the whole finding, and the fix fell out of it.** Running
+the *same binary* under `MCC_JIT=1` and `MCC_JIT=0` at five levels separates three suspects
+that no single-level run can: a divergence that is level-independent is not the optimizer,
+and one that reverses between the two runs of one binary is not the AOT compiler. It
+reported **five `JIT_MISCOMPILE` rows at every level**; `970217-1.c` reduced to
+`static int bump(int i, int a[i++]) { return i; }` — AOT, gcc and clang all 11, JIT 10.
+`func_vla_arg()` ran *before* `ast_func_begin()`, which is what opens the arena the AST
+records into, so the bound's increment was emitted into the object and never into the AST.
+Moving one call fixed it without moving an instruction. **Three rows survive and are
+N8.**
+
+**The search half, and it is a negative result banked on purpose.** The `-O13` pre-pass
+already scores every single-bit toggle of the incumbent and then throws the numbers away.
+`src/mccsurro.h` keeps them and fits the degree-≤2 expansion; `-fopt-search-predict` spends
+that fit on four predicted masks. **It does not pay for itself** — over fifteen torture
+programs with a fresh `XDG_CACHE_HOME` per run, cost 1065495942 on against 1065496244 off,
+**+1.8% evaluations**, 1 better / 0 worse / 14 identical, and the direct diagnostic is
+**0 of 200 predicted candidates improved on the incumbent**. Left in, off, with the flag
+and the env so the measurement reproduces. Two things learned are worth more than the
+feature and are recorded under *The `-O13` tier is dark on 13 of 21 strategies*: the
+interactions are real and the first selection rule could not see them, and `combo_run`
+already reaches those optima anyway.
+
+**What this wave says about the board.** Nothing below was closed by it except where a row
+says so. It added **N8** and **N9**, took **N5** from two green-by-omission hazards to four,
+and it is the first
+evidence for the general shape N1 and N7 both circle — *a mechanism nobody differentially
+compares is a mechanism nobody has tested*. The embedded JIT had been covered by a compile
+and a grep until 2026-08-11; two commits later it had a real miscompile to its name.
+
 ### How to validate — standing rule, 2026-08-10
 
 **Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the
 oracles.** `ctest -R "^smoke/"` is ~15–90 s for 13.0M value cases across `-O0`–`-O4`, plus
 the device arm and the divergence arm. Do not run the full suite to validate a change.
 
-**As of 2026-08-11 it is eleven cells, not eight, and ~85 s on this host.** The three new
+**As of 2026-08-11 it is eleven cells, not eight, and ~115 s on this host.** The three new
 ones are the engine-parity arm — see *Smoke now compares six evaluation engines* below. It
 adds ~32 s and is worth it: until it existed, `smokerun` set `MCC_FORCE_REPLAY=1` on every
 compile it made, so the AST constant evaluator `-O0` actually ships was executed by no cell
-in this suite.
+in this suite. **The second 2026-08-11 wave added ~29 s to the same three cells** by driving
+the JIT at `-O1`, `-O2` and `-O3` as well as `-O4` (`smoke/engines` 8.5 → 18 s,
+`engines-identity` 36 → 65 s). No new cells; nine engines inside the existing three.
 
 **As of 2026-08-10 smoke also reaches every optimizer strategy**: the subject fires 22 of 22
 at `-O4` (it reached 8 before `tests/smoke/scases.h`), and every one of those shapes is
@@ -120,8 +173,13 @@ Consequences that follow, and they are not optional:
 
 ### Where the tree is
 
-`main` at `747709bc`, **9538 cells on this host** (9535 before this wave; `slice/device-lost`,
-`slice/quiesce` and `optfire/tco_tern` are the three new ones). Count cells on the host rather
+`main` at `04f12187`, **9538 cells on this host as last counted at `747709bc`** (9535 before
+that wave; `slice/device-lost`, `slice/quiesce` and `optfire/tco_tern` were the three new
+ones). **The two 2026-08-11 waves added no cells** — every fixture they shipped is a case
+inside a cell that already existed. `tests/jit/parity/vla_param_effect.c` in particular is
+*not* a cell: `jit/run-parity-host` and `jit/kgc-route-parity` are each passed the
+`tests/jit/parity` directory and walk it, so a file added there widens two existing cells and
+the ctest total does not move. Count cells on the host rather
 than adding them up — registration is glob-, loop- and capability-driven (Vulkan +
 `spirv-val`, `objdump`), so the total is host-dependent. The pre-merge branch accounting that
 used to sit here moved to `docs/ARCHIVED.md`; every branch it tracked has merged.
@@ -694,7 +752,26 @@ against the `ast` baseline:
 | `gpu` | the same ladder, `..._GPU=1` | `available=1 dispatches=10687` |
 | `jit` | `--embed-jit`, run with `MCC_JIT_HOT_CALLS=1` | 5 of 36 boot sites reported `swapped` |
 
-Three of those were previously unmeasured as *values*. The slice ladder was carried only
+**Nine engines as of the second 2026-08-11 wave (`04f12187`), and the three new ones are
+levels, not mechanisms.** `jit-o1`, `jit-o2` and `jit-o3` join `jit` (which is `-O4`), so the
+arm is 14,256 row comparisons over 16,761,861 value cases, all four JIT levels byte-identical
+to the `ast` `-O0` baseline (digest `c90ce3e2d4dd982c`). The gap it closed: **`-O2` is what
+every JIT cell defaults to and what most callers get, and no cell in this suite had ever
+value-checked the engine there** — one level was standing in for four. `-O0` is deliberately
+absent and is not an oversight: `ast_replay_env` needs `optimize >= 1`, so `mcc -O0 -run
+--jit` boots no engine (`MCC_JIT_VERBOSE=1` prints no `mccjit-boot` line) and a row there
+would measure the AOT path twice under a name that claims otherwise.
+
+**The `--min-engines` floor did not move with it, and that is now a live gap.**
+`cmake/smoke_engines_mutate.cmake` and `CMakeLists.txt` still pass `--min-engines 5` (4 on
+the third arm) against nine registered engines, eight of which need no device. The floor was
+sized when 5-of-6 was "everything but the device"; at 5-of-9 **three engines can stop running
+and the cell stays green**, which is the exact green-by-omission shape the arm exists to
+refuse. Raising it needs the same care the 5 was chosen with — the device engine skips on its
+own — so the honest form is a floor on the non-device engines plus the device counted
+separately, not a bare `--min-engines 8`.
+
+Three of the original six were previously unmeasured as *values*. The slice ladder was carried only
 as a refusal histogram (`smoke/slice-bails`), which counts what the ladder declined and
 says nothing about what it answered. The `--embed-jit` binary was built by `jit_census`
 and **thrown away without ever being executed**, so the whole embedded-JIT runtime path
@@ -790,7 +867,11 @@ measurement tool reports success over an empty or truncated subject:
 ### Open, ranked
 
 > **New this wave, and the first three outrank everything below them.** Numbering continues
-> from the existing list rather than renumbering it; N1–N6 are the 2026-08-10 additions.
+> from the existing list rather than renumbering it; N1–N6 are the 2026-08-10 additions,
+> N7 came with the engine-parity arm on 2026-08-11, and **N8–N9 with the JIT/AOT differential
+> the same afternoon**. Order here is rank, not number — N8 and N9 sit above N6 because one
+> is a wrong answer with a six-line reproducer and the other invalidates any measurement that
+> used it.
 
 **N1. Seven of 22 strategies are write-only.** `LTEMP, IVSR, PRE, RANGE, ABS, REASSOC,
 INLINE` mutate the arena but their fire count never reaches the `do_*` disjunction that
@@ -821,12 +902,27 @@ rounding is what that macro promises.
 no-op. Bank *dark* strategies rather than fire counts and the existing `ratchet()` needs no
 change. See the research section for the two traps.
 
-**N5. Two more green-by-omission hazards.** The device arm computes two refusal categories and
+**N5. Four green-by-omission hazards.** The device arm computes two refusal categories and
 never calls `ratchet()` (`bails.txt` holds no `dev ` rows). Twelve `optfire/*.txt` tables drive
 ctest registration by row count with no `list(LENGTH)` guard — delete a row and the cell
 silently stops existing. The durable shape is re-deriving a bank's expected row set from
 `src/mccopt.h` and failing on `missing-row`, which is what the four banks that resisted
 shrinkage do.
+
+Two more, both found 2026-08-11 in the second wave:
+
+- **`jit/xoracle-conformance` drops its second corpus silently.** The CMake arm at
+  `CMakeLists.txt:7038` adds `--testsuite`/`--suite ts-unittests` only under
+  `if(EXISTS ${MCC_XSUITE_LLVMTS}/SingleSource/UnitTests)` and has **no `else()`** — no skip,
+  no message. `--limit` is per-suite, so losing the arm halves the corpus, and the companion
+  `jit/xoracle-coverage` then fails `--min-cross 400` against a single-suite denominator that
+  tops out at 379. On this host the cache pointed at a path that does not exist, so the cell
+  was **red for a configuration reason it reported as a coverage reason** — the worse failure,
+  because it sends the reader to the wrong file. Repointed locally; the missing `else()` is
+  the defect. Detail in the residues section at the end of this file.
+- **`--min-engines 5` against nine engines.** See *Smoke now compares six evaluation engines*
+  above: the floor was sized for 5-of-6 and the arm is now 9, so three engines can go dark
+  green. Same family, and it is the arm's own floor that has the hole.
 
 **N7. The slice evaluator's arithmetic is unobservable: a wrong answer 66 million times per
 compile changes nothing.** Found on 2026-08-11 while trying to demonstrate that the new
@@ -851,6 +947,35 @@ against the AST evaluator and is genuinely independent. The fix for the first is
 independent oracle for the tree side. The fix for the second is a subject that makes a
 certified equivalence change the emitted code — which is the same question N1 asks about
 the seven write-only strategies, and is probably the same answer.
+
+**N8. Three JIT-only miscompiles survive the `-O0`–`-O4` embed-JIT ladder.** New 2026-08-11,
+and they outrank most of the numbered list below because each is a wrong answer with a
+reproducer, not a coverage gap. Five `JIT_MISCOMPILE` rows at every level before `85bf6a3d`,
+three after; each survivor **aborts under `MCC_JIT=1` and exits 0 under `MCC_JIT=0` from the
+same binary** (rules the AOT compiler out) and is **level-independent** (rules the optimizer
+out). The lead is `gcc.dg/torture/pr45830.c`, **reduced to six lines**:
+
+    int bar(int x){ if (x==5 || x==19 || x==23 | x==26 || x==65) return 1; return 3; }
+
+over `x` in `[0,70)`. gcc-15, clang and mcc's AOT path answer 1 at `x==23`; the JIT answers
+3 — it drops the **left operand of the bitwise `|`** where that `|` sits between two
+comparisons inside a `||` chain. AOT is correct at `-O0`–`-O4` **and `-O13`**, so no search
+gate is involved, and **`MCC_JIT_LAZY=1` makes it correct**, so the defect is on the eager
+install path only. Start at `815d2001` (the `||`/`&&` operand folds), `bc60a3be` (relational
+see-through), and at whatever the eager path does that the lazy path does not. The other two
+are `gcc.dg/pr96674.c` (`-fwrapv`) and `gcc.dg/fastmath-1.c` (`-ffast-math`), neither reduced.
+Behind them, unexamined: ~80 `differ` and ~150 `refused` rows per level, where `refused` is a
+front-end gap list and not a JIT one. Full detail in the residues section at the end of this
+file.
+
+**N9. `-fno-opt-search-<anything>` disables the whole search, not the sub-knob it names.**
+`-fno-opt-search-fullset`, `-fno-opt-search-ordered` and `-fno-opt-search-predict` each take
+`-O13` to **`0 candidate evaluations`**; the parser matches the `opt-search` prefix and turns
+off the master row. **The measurement consequence is the reason this is ranked and not filed:
+any A/B that used one of these to isolate a sub-knob measured "search off", and would have
+read as "this knob is worth nothing" — the exact conclusion the flag was reached for.** The
+`69296b85` A/B had to go through `MCC_SEARCH_PREDICT` to get a real comparison. Fix the
+prefix match, then audit anything that ever passed a `-fno-opt-search-*` flag.
 
 **N6. `L2` — wire the device into `mccjit_shutdown()`.** Unblocked as of 2026-08-10, with two
 preconditions in the GPU landed section. One is a hazard *this wave created*: the quiesce now
@@ -1103,6 +1228,31 @@ and `ratchet()`, `bank_load`, `bank_write` and the file format need **no change 
 by the level pass. Two traps for whoever builds it: at `-O13` the panel prints once per search
 phase and **the last one reads all zeros**, so the census must take the per-column max; and
 `cload` was invisible until `52d8b66b` widened `MCCSTATS_STRAT_N`.
+
+**The search is not limited by where it looks — measured 2026-08-11, do not re-derive it.**
+A degree-2 surrogate over the gate cube (`src/mccsurro.h`, and `-fopt-search-predict` /
+`MCC_SEARCH_PREDICT`, default off) was built, wired in and measured: **0 of 200 predicted
+candidates improved on the incumbent**, +1.8% evaluations, 1 better / 0 worse / 14 identical
+over fifteen torture programs with a fresh `XDG_CACHE_HOME` per run. Three things it
+established, in the order they matter:
+
+- **`combo_run` already finds the interactions a better proposal distribution would aim at.**
+  Exhaustive subsets over an improvement-sorted item list, 64 candidates deep, reaches those
+  optima without being told where they are. So a smarter *proposal* has nothing to win here;
+  the untested question is whether it buys a smaller *budget* — hold total evaluations fixed
+  and cut `AST_SEARCH_CAND_MAX` in exchange. That is the experiment, and it was not run.
+- **The interactions are real; the first selection rule could not see them.** Ranking
+  candidate pairs by lowest score picks the gates that did nothing — most single toggles score
+  exactly at the incumbent, so "best" is a field of ties — and every interaction measured 0.
+  Ranking by |effect| instead (sparsity-of-effects) shows `max|g|` up to 344064 against
+  `max|d|` of 2293759: roughly **15% of the main-effect scale sits in pairwise terms**.
+  **A predictor that reports "no signal" may be reporting on its own sampling.**
+- **The single-toggle scores the `nitems > 6` pre-pass computes are still thrown away**
+  apart from sorting the item list. That is a first-order model, measured and discarded, and
+  it remains the cheapest unspent information in the search.
+
+Read this beside N9: the same work found that `-fno-opt-search-*` is a kill switch, so any
+earlier verdict on a search sub-knob obtained with one of those flags is void.
 
 ### Two more green-by-omission hazards
 
@@ -6700,7 +6850,8 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
   transforms do, or label each line with the pipeline position it was taken at. Until then
   **do not use `-fdump-loopdep` to confirm a legality fix** — instrument the `_apply`
   function or diff the executable's output instead, which is what actually settled it.
-- **Three JIT-only miscompiles survive the -O0…-O4 embed-JIT ladder, 2026-08-11.** The
+- **Three JIT-only miscompiles survive the -O0…-O4 embed-JIT ladder, 2026-08-11.**
+  **Promoted to N8 in *Open, ranked*; the detail stays here and is not duplicated there.** The
   corpora named in the goal (gcc, llvm-project, llvm-test-suite) were qualified into 6,623
   oracle-adjudicated run-mode programs and driven through the embed JIT at every level with
   `tools/jitconform.py --phase check --surface embed`. **Five `JIT_MISCOMPILE` rows at
@@ -6725,7 +6876,7 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
   - Unexamined and larger: **~80 `differ` and ~150 `refused` rows per level.** `refused` is
     mcc declining to compile at all, which is a front-end gap list, not a JIT one.
 - **`-fno-opt-search-<anything>` disables the whole search, not the sub-knob it names.**
-  Found 2026-08-11 while trying to A/B `-fopt-search-predict`. `-fno-opt-search-fullset`,
+  **Promoted to N9 in *Open, ranked*.** Found 2026-08-11 while trying to A/B `-fopt-search-predict`. `-fno-opt-search-fullset`,
   `-fno-opt-search-ordered` and `-fno-opt-search-predict` each take `-O13` from its normal
   candidate count to **`0 candidate evaluations`** — the parser is matching the `opt-search`
   prefix and turning off the master row. Every one of these flags is documented as a
@@ -6733,7 +6884,8 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
   sub-knob measured "search off" instead and would have read as "this knob is worth
   nothing". The A/B in `69296b85` had to go through the `MCC_SEARCH_PREDICT` env to get a
   real comparison. Audit anything that ever passed a `-fno-opt-search-*` flag.
-- **`jit/xoracle-conformance` drops its second corpus silently.** The CMake arm at
+- **`jit/xoracle-conformance` drops its second corpus silently.** **Promoted into N5's
+  green-by-omission list in *Open, ranked*.** The CMake arm at
   `CMakeLists.txt:7038` adds `--testsuite`/`--suite ts-unittests` only
   `if(EXISTS ${MCC_XSUITE_LLVMTS}/SingleSource/UnitTests)` and has **no `else()`** — no
   skip, no message, the suite just is not there. `--limit` is per-suite
