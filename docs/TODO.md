@@ -48,6 +48,43 @@
 > [`docs/EMIT-COVERAGE.md`](EMIT-COVERAGE.md), summary and reconciliations in *STATE OF PLAY*.
 > It also supplies the bake counter item 8 said `mcc` did not have.
 >
+> **Emit map, 2026-08-11 — the RIR layer was invisible, and the gap is now named.** The trace map
+> of a compile was missing a tenth of itself: `src/mccrir.c` contained no `MCC_TRACE`, so
+> `tools/tracegate.c` exempted it and the layer that makes the record/skip decision emitted **zero**
+> events. 637 sites were added (line count unchanged at 6,492, objects byte-identical, 72/72
+> regression cells green), and RIR now shows as **9.99% of an 18.2M-event compile**. Two findings.
+> **(1)** `g()` writes every machine-code byte **1.0000×** at `-O0` self-host (an exact identity),
+> **1.95×** under `-O0 --embed-jit` (parser pass + exactly one replay) and **2.71×** at `-O1` — so
+> the extra passes at `-O1` are the optimizer trying more than one candidate, not the record/replay
+> pipeline, and *any* instrument counting emit calls over-reports surviving bytes by up to 2.71×.
+> **(2)** The recorded-but-not-verdicted gap `EMIT-COVERAGE.md` could not explain **closes exactly
+> on all four pipeline arms**, via two distinct mechanisms — replay aborting into `ast_func_end`'s
+> `setjmp` else-arm (which sits outside the counters), and `ast_replay_ok()` false. Which one
+> dominates is target-dependent, so a corpus average hides it. Full map in
+> [`docs/EMIT-MAP.md`](EMIT-MAP.md); banked as `emit-map-full-language` / `emit-map-selfhost`.
+> **Third sweep, 2026-08-11 — this file is now open items only.** Everything finished moved to
+> [`docs/ARCHIVED.md`](ARCHIVED.md): the ten dated 2026-08-11 write-ups and measurement boards
+> (including the emit-coverage catalog and the emit map), the four closed board rows
+> (**N4**, **N5**, **N9**, **N20**) and **57 closed sub-items** lifted out of sections that are
+> still live. **5,309 → 4,102 lines.** Nothing was deleted. Every migrated row and item is left
+> here as a one-line struck stub under its original number or list marker, because rows are
+> cross-referenced by number across these documents and a reader following "N5" or "item 7" must
+> land on the closure rather than on nothing. **Inline corrections were deliberately not moved** —
+> a `~~wrong~~ right` inside a live sentence is not a finished item, it is how this file records
+> that a live claim was repaired, and lifting it would leave the sentence meaningless. The live
+> rows that cite migrated evidence — N15, N16, N17, N18, N19 — each restate the number they turn
+> on, so the board still argues from evidence with the derivations one file away.
+>
+> It leaves three ranked items — **N17** (an aborted replay increments nothing, so every `ast.*`
+> number here is a lower bound; now the top of the live ranking, one line to fix), **N18** (the
+> `-O0 --embed-jit` arm is the least faithful on both targets and no cell watches it), **N19** (the
+> byte census is x86_64-only, since arm/arm64/riscv64 `o()` bypasses `g()`) — and two notes too
+> small to rank: the 31-byte `full_language.c -O0` residual is unattributed (self-host has none),
+> and `ir_cap`'s trace sites fire ~375k times at `-O0` where the layer is inactive, because the
+> macro shims log entry before the `ir_cap_active` early-out. It also **confirms** rather than
+> revises the self-host/torture faithfulness split this file already records: 2.21% on `src/mcc.c`
+> at `-O1` against the 2.17% previously measured at `-O2`.
+>
 > **JIT/debug wave, 2026-08-11 — `-g` bakes, and two reds diagnosed.** Three commits,
 > `957169fa..a404d8c9`. `--embed-jit` is now the only gate on baking, so a `-g` build
 > hot-swaps (`boot=1254 swapped=191`, was `0/0`); `jit/gdb-debuggable` and `jit/selfhost-opt`
@@ -80,428 +117,35 @@
 > The 2026-08-10 handoff below it still stands; the 2026-08-11 wave is summarised next
 > and did not invalidate any of it.
 
-### The 2026-08-11 wave, in one place
+> **The 2026-08-11 wave write-ups and measurement boards moved to**
+> [`docs/ARCHIVED.md`](ARCHIVED.md) **on 2026-08-11**, when this file was reduced to open
+> items only. That is where the emit-coverage catalog, the emit map, the `-g`-bakes and
+> `o0-baseline` write-ups, the zero-AOT `--embed-jit` self-host measurement and the three
+> 2026-08-11 wave summaries now live. **The open rows they produced stayed here** — N15 and
+> N16 from the JIT/debug wave, N17, N18 and N19 from the emit map, and N20 struck in place.
+> Each of those rows restates the number it depends on, so this file still argues from
+> evidence; the full derivations are one file away.
 
-**Cross-vendor conformance is at 493 of 493 (100.00%), on the CPU baseline and the GPU
-ladder alike, with zero configuration divergence.** It was 485 when the wave opened.
-Read the percentage with its denominator: 493 of the 800 sampled programs are
-cross-adjudicable at all, and the other 306 are vendor-exclusive by construction, not by
-omission. `jit/xoracle-coverage` prints both and refuses a collapsed denominator.
+### The suite's standing reds — whole-suite run, 2026-08-11
 
-| landed this wave | where |
-| --- | --- |
-| `_Complex` GNU `?:` — two defects, one of them a compiler crash | `src/mccgen.c`, `src/mccast.c` |
-| `__attribute__((ms_struct))` / `gcc_struct`, three zero-width-bitfield rules | `src/mccgen.c` |
-| MS layout ignored `packed` — exposed by the above, not caused by it | `src/mccgen.c` |
-| `fabs(x) < 0.0` → 0, and a literal condition deletes its dead arm | `src/mccast.c` |
-| tautological `\|\|` / contradictory `&&` over one operand | `src/mccast.c` |
-| zero-extend, signedness and offset seen through in relational operands | `src/mccast.c` |
-| the strategy floor is enforced, not merely printed (`--min-strats`) | `tools/smokerun.c` |
-| five new smoke fixtures, all oracle-adjudicated at every level and under replay | `tests/smoke/` |
-| smoke compares six evaluation engines row by row, and the AST evaluator is measured at all for the first time | `tools/smokerun.c`, `cmake/smoke_engines_mutate.cmake` |
+A full `ctest` over `cmake-def` (19k cells) leaves **7 red**. All seven were verified
+pre-existing by reverting `src/mccrir.c` and `src/mccjit_embed.c` to `HEAD`, rebuilding and
+re-running: they fail identically without this wave's changes. **None is a compiler defect** —
+four are banks or tables that the tree moved out from under, and each names its own fix.
+Listed because a whole-suite run is expensive and this list did not exist anywhere.
 
-**Two results that matter more than the number.** One is that a fold which looked correct
-shipped a miscompile and had to be reverted — see *The tautology fold, and the flag that
-made it miscompile*, whose one-paragraph lesson is worth more than the fold. The other is
-that `build2.c` was never a defect: it sat in the failure column for two rounds as a
-timeout while printing output byte-identical to gcc's. That one was fixed in the harness,
-and the 5x runtime gap it exposed is a real and unbanked performance finding.
-
-**Nothing on the open board below was closed by this wave** except where a row says so.
-N1 in particular is still open and acquired a concrete cost: two new folds had to avoid
-their natural homes (`abs`, `range`) because those are write-only strategies.
-
-### The unrecorded wave, 2026-08-11 — three shipped-level miscompiles, written up here late
-
-`88b74abf..4e62dae8` landed between the two waves this file does describe, and **nothing in
-this file recorded it** until the 2026-08-11 validation sweep found the gap. Three miscompiles
-that affected shipped optimization levels, all three caught by the smoke oracles, all three
-with fixtures. Written up now because the *lessons* are the part that was lost:
-
-| commit | the defect | level |
+| cell | why | fix |
 | --- | --- | --- |
-| `6772f701` | narrow-elim dropped the conversion and kept the wide type | `-O4` |
-| `e9aa3783` | a statically-false `if` arm was deleted **with the `case` labels inside it**; also, XMM6–XMM15 were promoted unsaved on Win64 | `-O1` |
-| `931f3137` | `ast_dep_direction` derived `<`/`=`/`>` in **index** space and handed it to callers reading **iteration** order — inverted for every down-counting loop, and fusion *and* interchange both believed it | `-O1`+ |
+| `flagsweep/cover3-verify` | `opt-search-predict` is in `src/mccopt.h` and absent from `tests/optfire/cover3.py`'s array — a flag was added without regenerating | `tests/optfire/cover3.py gen` (pure derivation from `mccopt.h`) |
+| `optlevel/torture-differential` (+`-known-positive`) | **0 unknown divergences.** It fails on *staleness*: `20020720-1.c` and `20041114-1.c` no longer diverge at `-O1`–`-O4`, so the known table over-claims. **This is the ratchet working** — two known divergences were fixed and nobody dropped the rows | drop those levels from the known table |
+| `fmt/census-bank` (+`-known-positive`) | the printf-site census moved: `fprintf` 400→408, `snprintf` 184→182, `mccgpu.c` 36→39, `mccstats.c` 18→21, `libmcc.c` 37→35, `mccast.c` 153→155, `accepted` 156→155 | re-take with `--update-bank` **and say which figure moved and why** — the tool asks for the reason because every one of these is quoted on the board |
+| `cross/shadow-iv-x86_64` | `attempts=616 clean=0 failed=616 divergences=0` — **nothing compiled at all**, so the sweep is vacuous and its own guard fires | the sweep compiles nothing on this tree; find out why before trusting any shadow-IV number |
+| `ci/registration-stubs` | two capability gates drop cells instead of skipping them: `jit/gdb-debuggable`/`jit/selfhost-opt` under `MCC_EMBED_JIT`, and `jit/xoracle-coverage` under the `MCC_XSUITE_GCC` path | add the two `else()` stubs |
 
-**`931f3137` is the one to read.** For an ascending loop index order and iteration order
-coincide, so the bug is invisible until a loop counts down; then interchange turns a `(<,>)`
-dependence into `(>,<)` and runs it backwards, and fusion hoists a read above the write it
-depends on. gcc-15 and clang agree with each other and with the fixed compiler on both
-reducers. It also closed three latent traps in the same two functions: a single `int64_t`
-shared between two `ast_loop_iv` calls, so the outer loop's stride was overwritten by the
-inner's before anything read it; both return values discarded, so an uninitialised stride was
-used when a loop had no induction variable; and fusion never refused a pair with differing
-strides, which the shared-variable bug had made unobservable. **A guard that cannot be
-observed to be missing is the recurring shape on this board** — it is N1, N7 and this, three
-times in one week.
-
-Consequence for the counts above: *"six defects fixed … four folds, five smoke fixtures"* in
-the file header **undercounts**. The tree carries seven `pass-*` fixtures from that day and
-`--min-passes 150`.
-
-### The second 2026-08-11 wave — the JIT/AOT differential and the search surrogate
-
-Five commits, `0dd6ea55..04f12187`, on two subjects that turned out to be independent.
-
-| landed | where |
-| --- | --- |
-| a parameter's array bound was evaluated outside the AST, so **every re-baked function dropped its side effects** | `src/mccgen.c`, `tests/jit/parity/vla_param_effect.c` |
-| the `-O0`–`-O4` embed-JIT ladder over three external corpora, 6,623 programs per level | `tools/jitconform.py` (driver already existed; this is the measurement) |
-| a degree-2 ANOVA/Walsh surrogate over the gate cube, exact int64, proved test-first | `src/mccsurro.h` |
-| the surrogate wired into the `-O13` search behind `-fopt-search-predict`, **default off** | `src/mccast.c`, `src/mcc.c` |
-| the smoke engine arm drives the JIT at every level it boots, not only `-O4` | `tools/smokerun.c` |
-
-**The JIT half. The differential is the whole finding, and the fix fell out of it.** Running
-the *same binary* under `MCC_JIT=1` and `MCC_JIT=0` at five levels separates three suspects
-that no single-level run can: a divergence that is level-independent is not the optimizer,
-and one that reverses between the two runs of one binary is not the AOT compiler. It
-reported **five `JIT_MISCOMPILE` rows at every level**; `970217-1.c` reduced to
-`static int bump(int i, int a[i++]) { return i; }` — AOT, gcc and clang all 11, JIT 10.
-`func_vla_arg()` ran *before* `ast_func_begin()`, which is what opens the arena the AST
-records into, so the bound's increment was emitted into the object and never into the AST.
-Moving one call fixed it without moving an instruction. **Three rows survive and are
-N8.**
-
-**The search half, and it is a negative result banked on purpose.** The `-O13` pre-pass
-already scores every single-bit toggle of the incumbent and then throws the numbers away.
-`src/mccsurro.h` keeps them and fits the degree-≤2 expansion; `-fopt-search-predict` spends
-that fit on four predicted masks. **It does not pay for itself** — over fifteen torture
-programs with a fresh `XDG_CACHE_HOME` per run, cost 1065495942 on against 1065496244 off,
-**+1.8% evaluations**, 1 better / 0 worse / 14 identical, and the direct diagnostic is
-**0 of 200 predicted candidates improved on the incumbent**. Left in, off, with the flag
-and the env so the measurement reproduces. Two things learned are worth more than the
-feature and are recorded under *The `-O13` tier is dark on 13 of 22 strategies*: the
-interactions are real and the first selection rule could not see them, and `combo_run`
-already reaches those optima anyway.
-
-**What this wave says about the board.** Nothing below was closed by it except where a row
-says so. It added **N8** and **N9**, took **N5** from two green-by-omission hazards to four,
-and it is the first
-evidence for the general shape N1 and N7 both circle — *a mechanism nobody differentially
-compares is a mechanism nobody has tested*. The embedded JIT had been covered by a compile
-and a grep until 2026-08-11; two commits later it had a real miscompile to its name.
-
-### The validation sweep, 2026-08-11 — what this file got wrong about itself
-
-Every statement in this file was checked against the tree and against the commit messages
-since `2993f8fb`, in four passes: named artifacts (symbols, paths, cells, flags, `file:line`
-citations), open-vs-closed against git, internal contradictions, and what is history. The
-headline is not any single row below — it is that **three of the errors were introduced by
-the two most recent documentation commits, including one item that was ranked on the open
-board hours after being invented.** This file's failure mode is not decay, it is confident
-addition.
-
-**Corrected in place by this sweep** (each verified against the tree, not against prose):
-
-| was | is | how it was settled |
-| --- | --- | --- |
-| `-fno-opt-search-*` is a kill switch (**N9**, ranked) | **refuted** — `set_flag` matches by exact `strcmp`; baseline and `-fno-opt-search-fullset` both give 101 evaluations | ran it; read the parser |
-| "13 of **21** strategies", "`-O0` 21 dark" (5 places) | **22** | `MCCSTATS_STRAT_N 22`, and the name table lists 22 (`bfold`…`cload`) |
-| "**114** `-f` flags" | **115** | 115 distinct names extracted from `MCC_OPT_ROW(` in `src/mccopt.h`, no duplicates |
-| "`wt/o4fold` folded `-O5`–`-O12` into `-O4`" | **hard error**; `MCC_DEV=1` makes them compile | ran `-O5/-O8/-O12/-O14`, and again under `MCC_DEV=1` |
-| "9538 cells", "9151 cells" (3 places) | **9545** in `cmake-def` | `ctest -N` |
-| "~85 s" / "~115 s" for `^smoke/` | **70.7 s**, 11/11 green | ran it |
-| "the two 2026-08-11 waves added no cells" | **wrong**, ≥4 added | `ctest -N -R`; `CMakeLists.txt` diff |
-| N8's "not duplicated there" | it is duplicated | read both copies |
-| "`--min-engines 5` … 5 is deliberate" | retracted 45 lines above it | same section |
-
-**Two live defects the sweep found that are not documentation problems at all:**
-
-1. **`flagsweep/cover3-verify` is RED on `main`** — `69296b85` added a flag row and left the
-   committed covering array at `flags=114`. Written up under *The configuration surface
-   moved*. A wave landed a red cell and no one noticed for a day.
-2. **Three shipped-level miscompile fixes are absent from this file entirely.** `6772f701`
-   (narrow-elim dropped the conversion, `-O4`), `e9aa3783` (a dead `if`-arm took its `case`
-   labels with it, `-O1`, plus XMM6–XMM15 promoted unsaved on Win64) and `931f3137` (a
-   down-counting loop reversed its dependence directions and *both* fusion and interchange
-   believed them). `grep` for the first two hashes returns nothing. They sit between
-   `88b74abf` and `0dd6ea55` — **an entire unrecorded wave between the two that are
-   recorded** — which also makes the 2026-08-11 header's "six defects, four folds, five smoke
-   fixtures" an undercount against the seven `pass-*` fixtures and `--min-passes 150` the tree
-   actually carries. This is the most important gap in the file: the *fixes* are in the tree
-   and the *lessons* were never written down.
-
-> **`docs/refs`'s `--min-refs` floor was lowered 600 → 440 on 2026-08-11, and that is a
-> weakening — read the reason before raising it back or trusting it.** The floor exists so a
-> linter that resolves *nothing* cannot render identically to a clean tree, and it **fired**
-> during the archive migration: moving ~2,900 lines to `docs/ARCHIVED.md` took the resolvable
-> citation count from 760 to **469**, because the citations went with the prose. `ARCHIVED.md`
-> is out of the linter's scope by design, so those citations are now checked by nothing. Two
-> **The floor is now the binding constraint on further archiving: the count is 456 against a
-> floor of 440, so the next section moved will breach it.** Migration stopped there on
-> purpose. What is still queued to move — the four 2026-08-08 sections, the 2026-08-07
-> GPU-execution study and the struck half of *Present-tense open items* — is verified and
-> listed in the commit history, but moving it requires deciding the floor question first.
-> Two honest consequences of the change already made: the floor is a *coverage* guard whose
-> subject legitimately shrank, and
-> the count of symbol-at-a-location claims over `TODO.md` fell **68 → 23** for the same
-> reason. If TODO.md shrinks much further the floor stops being meaningful and the real fix is
-> to bring `ARCHIVED.md` into scope, not to keep lowering the number.
-
-**RESOLVED 2026-08-11 — 241 rotted anchors stripped, and the check that depended on them was
-preserved rather than sacrificed.** Line anchors on source citations went **443 → 108**. The
-naive version of this cleanup is a net loss, and the measurement is why: `docref-lint`'s
-*symbol* rule only fires on a symbol quoted **beside a location carrying a line anchor** — its
-own docstring says the anchor "is what separates a claim from its negation", because this file
-is full of true sentences of the form "*NAME* has zero hits in *some source file*", where
-naming the file is not a claim that the symbol is in it. Stripping every
-anchor takes symbol-at-a-location claims from **68 to 54**: fourteen working checks switched
-off silently, which is the same failure this file keeps cataloguing. Re-running the strip with
-the lint's own `SITE` regex as the protection rule holds it at **68 — unchanged — while still
-removing 241 anchors**. The rule going forward: **an anchor that a cell verifies may stay; an
-anchor nothing verifies is deleted, and the symbol name carries the citation.** The
-description of the problem is kept below because it recurs.
-
-
-The header says anchors were dropped on purpose in the 2026-08-05 sweep after drifting
-1000–1900 lines. **313 of them are still here**, and of ~200 whose content was checked,
-**~95 are wrong** — including 34 of 40 `CMakeLists.txt` anchors (everything below ~line 3300
-has shifted), and essentially the whole `src/mccgpu.c` Metal block, which now points into
-unrelated code. Two consequences worth acting on rather than lamenting: an anchor that lands
-on `int i;` or a bare `}` is *indistinguishable from a correct one* to a reader who does not
-open the file, and `docs/refs` (747 citations, green) does not check them — it validates
-cross-document references, not `path:line` claims. **Prefer a symbol name; if a line number
-is genuinely needed, it needs a cell that fails when it drifts.**
-
-**Nine items were open on this board and are already fixed** — struck through in place below,
-each with the commit: the `MCC_AST_EVAL_LADDER_GPU` stack smash (`1f7f6257`), `mcc_gpu.ok`
-after `VK_ERROR_DEVICE_LOST` (`747709bc`), `rebuild_arena`'s `sscanf` and pointer interning
-(`1b54c26e`), board row 1's missing `indirect` guard (`adf08e3b`, stated closed in two other
-places already), `xoracle.py`'s registration (`f797074b`), the `spirv-val`/`glslc` "referenced
-nowhere" row (`cmake/spvval.cmake` exists), `opt-cache-determinism`'s manifest row
-(`e98fab0a`), `ast_env_gate`'s remaining greppers, and the three cross-vendor stragglers
-`build2.c`/`20020720-1.c`/`20041114-1.c` (`92fddfdf`, `bc60a3be`).
-
-**One substantive claim is false about today's tree**, beyond drifted anchors: the Metal
-*"the two 'missing' functions are not missing, they are present and inert"* table says
-`mcc_gpu_rw_supported`, `mcc_gpu_rw_arm` and `mcc_gpu_mem_backend` are stubs returning 0 on
-the MSL arm. **All three are implemented** — `src/mccgpu.c` has `mcc_gpu_rw_supported`
-returning **1** on the MSL arm (identical to the Vulkan arm), `mcc_gpu_rw_arm` recording
-`mcc_gpu_rw_back = p`, and a real multi-line `mcc_gpu_mem_backend` using `mtl_bind_mem`. A
-comment three lines above the first one even says *"which now returns 1"*. The whole table's
-premise is stale, and it is load-bearing for the Metal parity estimate.
-
-*(A second candidate was investigated and **rejected**: the sweep flagged
-`ast_interchange` / `ast_fusion` / `ast_tile` as naming non-existent passes. They exist —
-`ast_interchange_run`, `ast_fusion_run` and `ast_tile_run` are all real arena mutators in
-`src/mccast.c`, called from the driver. The file is using the bare stem as shorthand, which is
-fine. Recorded here because "symbol not found" from a grep of the exact string is a false
-positive generator on this codebase's `_run` convention.)*
-
-### The board-work wave, 2026-08-11 — N5, N4 and F7 closed against the tree
-
-Six commits, `2d04a308..a6f46ff2`, working the open board easiest-first. All four of **N5**'s
-green-by-omission hazards are closed, **N4** is closed, and **F7** is closed as *not binding*
-after measurement rather than by paying it down.
-
-| closed | how it was proven, not asserted |
-| --- | --- |
-| `--min-engines 5` against nine engines | the floor counts **required** engines; dropping one non-device engine gives `ran=8 of 9 (required 7 of 8)` — a floor over the *total* accepts 8, this refuses 7 |
-| `optfire/*.txt` row counts drive cell counts | row-count ratchet on both glob loops; deleting a row reports `registered 51 rows, below the floor of 52` |
-| `jit/xoracle-conformance` drops a corpus silently | an `else()` naming the missing path; verified by configuring with a bogus `MCC_XSUITE_LLVMTS` |
-| the device arm never ratcheted its census | `own("dev-")` + `ratchet()`; **531 refusals** were being computed and discarded every run |
-| **N4** — `-O13` dark on 13 of 22 | `smoke/strat-dark` banks dark strategies; teeth proven by removing one banked row |
-| **F7** — the emitter constant caps | A/B at 512 and 4096: byte-identical, `rejected-modules=0`. Caps left at 512 |
-
-**Three of these had a wrong naive fix, and that is the transferable part.** A bare
-`--min-engines 8` over the total still lets a present device stand in for a missing non-device
-engine. `own("slice-")` for the device census would have matched the CPU arm's `O0`–`O4` rows,
-because `scope_match` compares the text *after* the first space, and reported every one of them
-as IMPROVED-fell-to-zero — the ladder census needed a `dev-` tag before it could have a
-ratchet. And F7's premise was simply false: the constant cache has never been reached.
-
-**Numbers on the board that this wave found stale**, all corrected in place: `-O13` is dark on
-**12** strategies, not 13 (`bfold` now fires, 10 of 22 fire); an `-O13` compile of the subject
-is **47 s**, not ~2.7 s, because `scases.h` grew the subject — so N4's "every objection to
-watching it is gone" was resting on a figure that had moved by 17x. The objection is still
-answerable, but it is now a 44 s cell rather than a free one.
-
-**What each closure left behind, because none of them is entirely finished:**
-
-- **F7's real defect is unfixed.** `msl_const`/`spv_const` set `m->failed = 1` with **no
-  distinct reason**, so a const-cap refusal is indistinguishable from any other emitter
-  refusal. That is why "does the cap bind?" needed two compiler rebuilds instead of a counter
-  lookup. Give it a named refusal category before anyone raises the number.
-- **`I-6` was examined and deliberately not taken.** `rir_decayed_array`'s guards return 0
-  early for a raw `VT_CMP` — `0x33` matches neither `as_sym` nor `as_loc` — so the "two-line
-  fix" is not reachable that way. The hazard needs a **stale** `sym` on a `VT_LOCAL` snapshot,
-  which has no reproducer, and a defensive edit with no reproducer is unverifiable. Still open,
-  still correctly described as latent; do not "fix" it without a repro.
-- **The archive migration is still blocked** on the `--min-refs` floor, unchanged by this wave.
-
-### What a zero-AOT `--embed-jit` self-host actually runs — measured 2026-08-11
-
-Asked directly: *does building `mcc -O0 --embed-jit` and self-hosting make the embedded JIT
-run the `-O3+` optimized/hotpatched compiler?* Four answers, all measured, and **three of them
-are negative** — which is why they are pinned by `jit/selfhost-opt` (`tools/jit-selfhost-opt.py`,
-8 s) rather than written down here and forgotten.
-
-1. **Yes, a zero-AOT build still hot-swaps at runtime.** A stage2 `mcc` compiled at
-   `-O0 --embed-jit` boots **1254 JIT sites and swaps 191 functions** while compiling. Zero
-   AOT optimization does not mean zero runtime optimization, and the intuition that `-O0`
-   leaves the JIT idle is wrong.
-2. **No, it is not `-O3+`. The bake is `optimize = 1`, hardcoded.** `mccjit_stash_one` sets
-   `s1->optimize = 1`; every other JIT path in `src/mccjit_embed.c` — `recompile_common`,
-   `graduate_slices_blob`, `search_one`, `kernel_from_blob` and eleven more — sets `0`. The
-   only other `1`s are the two selftests. So relative to a `-O0` AOT baseline the JIT does run
-   **more** optimized code, and it is bounded at `-O1`. There is no `-O3`, `-O4` or `-O13`
-   anywhere in the JIT path, and the level is **not observable from the binary**, so the source
-   pin is the only thing standing between "the JIT runs `-O1`" and nobody knowing.
-3. **No, the `-O4+`/`-O13` search does not fire from such a build, and repeated runs
-   accumulate nothing.** Three consecutive runs of the `-O0` stage2 write **zero** files under
-   `XDG_CACHE_HOME`.
-4. **The resumable cache is real but belongs to the `-O13` tier alone.** One `-O13` compile
-   writes `mcc-search.memo` and `so-<hash>.ck`. *"All AOT/JIT optimization paths check the
-   cache and pick up where the last run left off"* is **not true of this tree** — exactly one
-   tier does, and `selfhost-jit.py` already says the neighbouring half out loud: the `-O13`
-   search is what graduates functions into the embed registry, and `-O1` "leaves it empty and
-   exercises nothing".
-
-**The trap that makes this easy to measure backwards, and it cost an hour.**
-`mccjit_embed_finalize` runs from `mcc_add_runtime`, which runs at **link** time. Compiling
-with `--embed-jit` and then linking in a separate invocation *without* it produces a binary
-with **no JIT engine at all and no diagnostic** — boot lines are simply `0`, which reads
-exactly like "the JIT does not work at `-O0`". That is the first measurement this investigation
-took, and it was wrong. Build in one invocation. mcc does warn in the neighbouring case
-(*"--embed-jit: no functions were JIT-baked … baking needs -O1+ and is disabled by
-`-g`/`-ftest-coverage`"*), which is worth knowing separately: **a `-g` build bakes nothing.**
-
-### `-g` now bakes the JIT, and the two things that stopped it going further — 2026-08-11
-
-**Asked: `-g` and `-O0` should bake, with `--embed-jit` as the only gate; every optimization
-should use a resumable cache; and gdb should prove the hot-patched code is debuggable.**
-Landed, refused and filed, in that order.
-
-**`-O0` already baked.** Measured before changing anything: a stage2 at `-O0 --embed-jit`
-boots 1254 sites and swaps 191. The warning text claiming *"baking needs `-O1+`"* is **wrong**
-and has been since whenever the `-O0` path started working.
-
-**`-g` did not, and now does.** `rir_hook_body_begin` cleared `rir_try_active` whenever
-`debug_modes` was set, so a `-g` build recorded nothing, baked nothing, and carried no engine —
-announced only by a warning. `--embed-jit` now overrides `debug_modes`, and a `-O0 -g
---embed-jit` stage2 boots **1254 / swaps 191**, identical to the non-`-g` build. Without
-`--embed-jit` nothing changed, which is what "`--embed-jit` is the only gate" means.
-
-**`-g -run` is NOT included, and the reason is a live segfault this uncovered.** Widening the
-same gate to `MCC_OUTPUT_MEMORY` makes run mode record and bake — `mccjit-site[hot]: baked` —
-and then **crash**:
-
-    mcc -O1 -g -run --jit prog.c   ->  RUNTIME ERROR: invalid memory access, SIGSEGV (139)
-    MCC_JIT=0 mcc -O1 -g -run ...  ->  correct output
-
-**The fault is latent in the run-mode JIT and is only uncovered by letting `-g` record; it is
-not caused by the gate.** Confirmed by reverting: without the gate change nothing bakes in run
-mode, so nothing crashes. Shipping the widening would convert a silently-disabled JIT into a
-crashing one, so it is held back with the reproducer in a comment at the gate. **This is the
-next thing to fix on this axis**, and it is worth more than the widening: `-g -run` is what a
-person debugging their own program actually types. Localised as far as: recording, faithfulness
-(`fn=2 faithful=2`, same as non-`-g`), the dispatch gate (`opt_ok=1`) and the stash gate all
-behave **identically** with and without `-g`; the divergence is after the bake, on the swap.
-
-**gdb: the image is debuggable, the hot-patched code is not.** `jit/gdb-debuggable` asserts
-both halves. Breakpoints in a `-g --embed-jit` build resolve to `file:line`, `info args` prints
-typed arguments, and a backtrace crosses from the generated `__mccjit_boot_all` into the engine
-with source locations at every frame. **But a swapped slot points into an anonymous mapping and
-`info symbol` answers "No symbol matches"** — mcc implements **no GDB JIT interface**
-(`__jit_debug_register_code` appears nowhere in `src/`), so gdb cannot name a variant, show its
-source or step it. Debuggability is preserved for everything the AOT image covers and stops
-exactly at the swap. Adding `__jit_debug_register_code` is the change that would move that
-boundary, and the test is written to fail when it does.
-
-**The cache/resume request is refused on evidence, not effort.** "All optimizations should use
-the cache and support resume" describes work this tree has already done once and reverted:
-`opt-slice` memoised other knobs' gate bits across processes, **changed zero objects across
-1,937 programs, cost 33.7% of `-O12` compile time, and made output irreproducible**
-(`tools/opt-cache-determinism.py` FAILs at `-O9`/`-O12`); it survives only behind `MCC_DEV`.
-Today exactly one tier persists anything — a `-O13` compile writes `mcc-search.memo` and
-`so-<hash>.ck`, and `jit/selfhost-opt` pins that three `-O0` runs write **zero** files. A new
-cross-run cache has to beat `opt-slice` on all three axes it failed, and the keying is the hard
-part, not the storage: `wt/o4ticks` had to salt the memo with the twelve `so_axes[]` names
-because an entry created under one axis configuration was being reused under another. **A cache
-key that omits part of the context it was derived under is a miscompile generator.** Sequence
-it as measurement first — how much optimizer work actually repeats across runs of the same TU —
-because if the answer is "little", this is `opt-slice` again.
-
-### The four red `ast/o0-baseline` cells were a stale bank, not an `-O0` bug — 2026-08-11
-
-Four of the five `ast/o0-baseline*` cells were red on `main`. They are green. **Nothing in the
-compiler was wrong**, and the diagnosis is worth more than the fix because the failure text
-points at a codegen bug that did not exist:
-
-    o0_ab: x86_64 -- an -O0 object moved. The AST recorder does not run at -O0,
-    so nothing in the cut had any business touching these bytes.
-
-The bytes moved because **the source moved**. `931f3137` added four functions to two fixtures
-— `desc_backward_dep` and `desc_forward_dep` in `tests/exec/optimizer/loop_fusion.c`, and the
-matching pair in `loop_interchange.c` — and did not re-take the bank. Every number is consistent
-with exactly that and nothing else: `fn` and `faithful` each **+4 on all twelve targets**, with
-`files=307`, `objects`, `empty=35`, `unfaithful=0` and `diverge=0` unchanged, and the object
-hash delta confined to those two files on every target.
-
-**Two things this cost, both worth remembering.**
-
-1. **A plausible attribution was wrong and had to be tested.** `85bf6a3d` (the VLA-parameter
-   bake fix) looked like the obvious cause — it changes what the AST records. Reverting its one
-   source file and re-running left `fn` at **1314**, so it was not the cause; it also made an
-   `-O0` object move, which means its commit-message claim of *"without moving a single
-   instruction"* does not hold at `-O0` and is worth a second look on its own.
-2. **`O0_AB_BANK=1` from `measurable` is refused, and the refusal is right.** The board is a
-   twelve-row artefact; banking from a host that reaches one row rewrites the other eleven to
-   `NOT MEASURED` and freezes a hole. That is exactly what happened on the first attempt here —
-   caught, reverted, and redone from a build with all twelve cross compilers. **Re-taking this
-   bank requires `MCC_CROSS_TARGETS` covering all twelve**, which `cmake-cross` was not
-   configured for (it had seven); it is now.
-
-The re-take command, for the next person:
-
-    C2_NO_EXTRA=1 O0_AB_BANK=1 sh tools/o0_ab.sh <cross-build> all <outdir>
-    C2_NO_EXTRA=1 O0_AB_BANK=1 O0_AB_GATES=1 MCC_DEV=1 sh tools/o0_ab.sh <cross-build> all <outdir-g>
-
-### Emit coverage, `-O0` against `-O1` — instrumented and measured 2026-08-11
-
-Taken fresh by wiring counters into the four layers at the point where each makes its own
-decision (`src/mccinv.h`, `MCC_INV=1`), not derived from any existing census, so a
-disagreement with one is a finding. Full catalog in
-[`docs/EMIT-COVERAGE.md`](EMIT-COVERAGE.md). 300 `gcc.c-torture/execute` programs, 284
-compiling on every arm.
-
-| arm | `rir.body` | `rir.rec` | `ast.body` | `ast.faithful` | `jit.baked` | `aot.bytes` |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `-O0` | 1932 | **0** | **0** | **0** | 0 | 317,694 |
-| `-O1` | 1933 | 1930 | 1894 | 1885 | 0 | 316,619 |
-| `-O0 --embed-jit` | 1932 | 1929 | 1894 | 1883 | 587 | 321,216 |
-| `-O1 --embed-jit` | 1933 | 1930 | 1894 | 1885 | 589 | 320,153 |
-
-**The instrument was validated before the numbers were believed**: an object compiled with
-`MCC_INV=1` is byte-identical to one without (`cmp`), so it is not measuring itself; it is
-inert when off (40 compiles in 0.08 s), and `ast/o0-baseline` — object sha256 across twelve
-targets — plus the whole smoke suite pass unchanged.
-
-Four results, two of which the level names actively mislead about:
-
-1. **At `-O0` the RIR and AST layers are absent, not idle.** 1932 bodies offered, **0**
-   recorded, and not one `ast.*` counter increments. `-O0` emit coverage is exactly one layer.
-   It is a cliff, not a slope: `-O1` is the first level to record anything, not one that
-   records more. This independently confirms the three places in this file that say so from
-   other directions — `o0_ab`'s *"The AST recorder does not run at -O0"*, *"those cells compile
-   at `-O0`, where nothing re-emits"*, and *"`-O0` 22 dark"*.
-2. **`--embed-jit`, not the `-O` level, is what turns the pipeline on at `-O0`.** `-O0
-   --embed-jit` records 1929 and builds 1894 arenas — the same coverage as `-O1` with the
-   optimizer level still zero.
-3. **`-O1` usually emits the same bytes as `-O0`.** Per-program object comparison:
-   **identical 185, differ 99, of 284.** Two thirds are byte-identical *despite* the whole
-   pipeline running, and total emitted size moves **−0.34%**. Pipeline active and pipeline
-   changing the output are far apart, and every claim in this file of the form "the optimizer
-   reaches N% of bodies" should be read against that gap.
-4. **Replay tracks the parser to −9 bytes over ~268 KB at `-O1`, but runs +12 bytes at `-O0
-   --embed-jit`**, where faithful also drops 1885 → 1883. Those two bodies are the lead if that
-   arm is ever made to matter.
-
-**Two structural gaps the counters localise but do not explain**: `rir.rec` 1930 → `ast.body`
-1894 loses **36 bodies**, and `aot.fn` 1922 → `ast.body` 1894 means **28 are emitted by AOT but
-never reach the AST verdict**. Both are stable across all three pipeline arms, so they are
-structural rather than incidental. The counters say *where*, not *why*.
+The banks are deliberately **not** re-taken here. This file's own rule is that a ratchet which
+gets re-banked without a reason trains its readers to re-bank without looking, and the figures
+above moved because of somebody else's change — re-taking them now would erase the evidence of
+what moved rather than record it.
 
 ### How to validate — standing rule, 2026-08-10
 
@@ -615,7 +259,9 @@ of the 22 optimizer strategies and is excluded from the inline pool and JIT disp
 `gen_cast`, `preprocess`). 95% of the divergence is *length* divergence. *(This is `-O2` on
 `src/mcc.c`. The independent 2026-08-11 count on gcc torture at `-O1` is 0.47% of bodies —
 a different corpus and a different level, so it neither confirms nor refutes this; see the
-emit-coverage section.)*
+emit-coverage section. **The emit map then measured `src/mcc.c` directly at `-O1`: 70 of 3165,
+2.21%, against the 2.17% here — so this figure is confirmed by a second instrument at a second
+level, and the gap to torture is a corpus difference, not a measurement error. See N18.**)*
 
 `docs/ARCHIVED.md` already stated the rule — *"any pass that changes code must be an arena
 rewrite in the post-fidelity strategy phase"* — and both normalisations were placed at the
@@ -628,7 +274,8 @@ census reported as "discarded for replaying 40 bytes shorter than the parser". T
 shorter **and wrong**. The earlier claim that every discarded body is still correct was
 inferred from `exec/` 347/347, but those cells compile at `-O0`, **where nothing re-emits**
 *(measured directly 2026-08-11: `-O0` records 0 of 1932 bodies and builds no arena — see the
-emit-coverage section)* —
+emit-coverage section, and again on two named targets, 0 of 3165 self-host and 0 of 303 on
+`full_language.c`, in the emit map)* —
 the discarded code was never run.
 
 Both defects are one mistake: the lowering mirrors `gv()`, but bit-field arithmetic is
@@ -831,26 +478,7 @@ had a *neighbouring* half land, which is what makes them look done.
    read that as closing the row. It does not: **`grep submitted src/mccgpu.c` is 0**, so
    the `VK_TIMEOUT`-destroys-a-still-pending-command-buffer path has no `submitted` flag
    and no destroy-nothing label. That half is untouched.
-3. ~~**The emitter caps (`F7`).**~~ **CLOSED 2026-08-11 as NOT BINDING — measured, and the
-   caps were deliberately left at 512.** `MCC_GPU_CODE_MAX` was raised, which reads as done,
-   and the item's own point was that the **constant cache** binds first — `SPV_MAX_CONST` and
-   `MSL_MAX_CONST` are both still 512. **That premise is false on every corpus this tree
-   measures.** A/B: raise both to 4096, rebuild, re-run. `gpu/spv-slice-real` is
-   byte-identical either way —
-
-       arenas=161 slices=646 dispatches=3012 lanes=48110082 rejected-modules=0
-
-   — as is the device arm (`dispatches=10687`, same digest, same three `dev-slice-refused`
-   categories). **`rejected-modules` is 0 at 512**, so the cap is not merely non-binding, it
-   has never once been reached here. Reverted to 512 rather than raised on principle: an
-   8x allocation for a limit nothing reaches is cost without evidence.
-
-   **What is worth doing instead, and it is the reason this looked open for so long:** when
-   the cache does fill, `msl_const`/`spv_const` set `m->failed = 1` and the module is
-   dropped with **no distinct reason** — a const-cap refusal is indistinguishable from any
-   other emitter refusal, which is why "does it bind?" could not be answered from the
-   existing counters and had to be answered by rebuilding twice. Give it a named refusal
-   category before anyone raises it.
+3. ~~The emitter caps (`F7`).~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 ### The audit residue this handoff does not mention — read before planning a wave
 
@@ -868,18 +496,7 @@ measurement tool reports success over an empty or truncated subject:
 - **`tools/shadow-iv-sweep.sh` documents its own blindness in the source**: *"There is
   still no floor on this count, so a regression that stops 500 of 610 subjects building
   would report divergences=0 and PASS"*.
-- ~~The `22 of 22` strategy coverage quoted under *How to validate* is **measured, not
-  enforced**: `tools/smokerun.c` has no strategy-fire assertion at all, only the
-  `--min-cases`/`--min-passes` floors, so a silent drop back to 8 firing strategies
-  would keep the suite green.~~ **CLOSED 2026-08-11.** `smokerun --min-strats 22` now
-  fails the run, fed by a `[strategy]` record `src/mccstats.c` emits and a census pass
-  that refuses to floor nothing. `smoke/strats-known-positive` proves the floor reads the
-  table it floors — 22 accepted, 23 refused, and the refusal must name `--min-strats`.
-  Closing it also fixed the reason it had never been possible: `mcc_stats_env_init()` was
-  linked into `mcc` and **never called**, so `MCC_STATS` was reachable only from the baked
-  JIT engine and the STRATEGY category could not be turned on for an ordinary compile at
-  all. Still read the count as a coverage floor, exactly as N1 says — it proves each
-  strategy *fires*, not that each affects output.
+- ~~The `22 of 22` strategy coverage quoted under *How to validate* is measured, not enforced: `tools/smokerun.c`…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 - **`src/wide256_slice.h`'s I-6 is a live compiler segfault with a two-line fix and
   nothing watching it**: `src/mccrir.c` still tests only `if (!sv->sym …)`,
   with no `sv->r != VT_CMP` check, and `gv` still leaves `sym` stale. It is filed at the
@@ -887,8 +504,9 @@ measurement tool reports success over an empty or truncated subject:
 
 ### Open, ranked
 
-> **Status after the 2026-08-11 JIT/debug wave: N4, N5 and N9 are closed and struck in place;
-> N1, N2, N3, N6, N7, N8 are open, and N15/N16 are new.** The numbering skips N10–N14 on
+> **Status after the 2026-08-11 emit-map wave: N4, N5 and N9 are closed and struck in place;
+> N1, N2, N3, N6, N7, N8 are open, N15/N16 came from the JIT/debug wave, and N17/N18/N19 are
+> new.** The numbering skips N10–N14 on
 > purpose: those tokens are already in use in this file for the archived device cluster, and
 > reusing them would make "N13" mean two unrelated things. Numbering continues rather than
 > renumbering —
@@ -897,11 +515,23 @@ measurement tool reports success over an empty or truncated subject:
 > closed rows stay in place so a reader following a cross-reference lands on the closure
 > rather than on nothing.
 >
-> **The live ranking is now N8, then N1, then N7.** N8 is three wrong answers with a six-line
-> reproducer for one of them. N1 and N7 are the same question asked twice — work that a
-> mechanism performs and nothing observes — and the wave just closed four more instances of
-> exactly that shape, which is the argument for treating it as structural rather than as six
-> separate rows. N2, N3 and N6 are unchanged and unstarted.
+> **N20 was found and fixed on 2026-08-11** — a silent `--embed-jit` miscompile, root-caused to
+> `ast_configure()` never running inside the JIT, so every ALWAYS-class replay-correctness flag
+> was off during the runtime re-emit. Two cells now guard it. It is struck in place below, and
+> it closes the coverage half of N18. The general lesson is worth more than the fix: **a
+> correctness gate that only runs on the AOT path is not a correctness gate**, because the JIT
+> re-emits the same arenas with no faithfulness comparison to fall back on.
+>
+> **The live ranking is now N17, then N8, then N1, then N7.** N17 goes first because it is
+> cheap (one counter, in an arm that is already braced) and because it is a *measurement*
+> defect: until it lands, every coverage and faithfulness percentage in this file — including
+> the ones the two sections above are built on — is a lower bound by an unreported amount, and
+> N18 is unquotable without it. N8 is three wrong answers with a six-line reproducer for one of
+> them. N1 and N7 are the same question asked twice — work that a mechanism performs and
+> nothing observes — and N17 is a third instance of exactly that shape, now on the instruments
+> themselves, which strengthens the argument for treating it as structural rather than as
+> separate rows. N2, N3 and N6 are unchanged and unstarted; N19 is small and can wait for
+> whoever next needs a non-x86_64 byte number.
 
 **N1. Seven of 22 strategies are write-only.** `LTEMP, IVSR, PRE, RANGE, ABS, REASSOC,
 INLINE` mutate the arena but their fire count never reaches the `do_*` disjunction that
@@ -927,66 +557,9 @@ the naive shared fix regresses a case where mcc currently matches both reference
 may be no defect at all: mcc predefines `__FLT_EVAL_METHOD__ 0` and its per-operation
 rounding is what that macro promises.
 
-**~~N4. `-O13` is dark on 13 of 22 strategies~~ CLOSED 2026-08-11 — and it is **12**, not 13,
-and it costs **~45 s**, not ~2.7 s.** `smoke/strat-dark` now compiles the subject at `-O13`
-with `MCC_STATS=4` and banks the strategies that stay dark, exactly as the inverted-polarity
-plan below prescribed: `ratchet()`, `bank_load`, `bank_write` and the file format needed no
-change. Three corrections the implementation forced:
+**~~N4. `-O13` is dark on 13 of 22 strategies~~ — CLOSED 2026-08-11** (and it is 12, not 13). Write-up moved to [`docs/ARCHIVED.md`](ARCHIVED.md).
 
-- **12 dark, not 13.** `abs, bf, divmagic, inline, ivsr, licm, ltemp, narrow, pre, range,
-  reassoc, tco` — the board's list minus `bfold`, which now fires. 10 of 22 fire at `-O13`.
-- **~45 s, not ~2.7 s.** A bare `-O13 -c` of `tests/smoke/subject.c` is **47 s**, and
-  `MCC_STATS=4` costs nothing on top. The 2.7 s predates `scases.h`, which grew the subject
-  to reach 22 strategies. The cost is real and the cell is worth it, but "every objection to
-  watching it is gone" was resting on a number that had moved by 17x.
-- **`--max-level 13` was silent because `main` clamped it.** It now errors, names `-O5`–`-O12`
-  as a hard error, and points at `--strat-dark`. A flag that silently does nothing is worse
-  than one that refuses.
-
-Both traps below were real: the panel prints **8 times** at `-O13` and the census takes the
-per-column max (the last panel reads all zeros), and the 22-wide table needed
-`MCCSTATS_STRAT_N`. Teeth proven by removing one row from the bank — the census reports
-`new bail category O13 strat-dark:abs`, which is the newly-dark case the polarity exists to
-catch.
-
-**~~N5. Four green-by-omission hazards.~~ ALL FOUR CLOSED 2026-08-11.** ~~The device arm
-computes two refusal categories and never calls `ratchet()` (`bails.txt` holds no `dev `
-rows).~~ **The device arm now owns the `dev-` scope and ratchets it. The gap was bigger than
-the two categories this row named: `device_probe` also ran the ladder census
-(`scan_ladder(txt, 9)`) and threw away **531 refusals** — `no-static-type` 515,
-`all-undefined` 15, `unsupported-op` 1 — all now banked. It needed a scope of its own first,
-because `scope_match` matches on the text after the first space, so the obvious `own("slice-")`
-would have matched the CPU arm's `O0`–`O4` rows and reported every one of them as an
-IMPROVED-to-zero. The ladder census now takes a tag (`""` for the CPU arm, so its category
-names are byte-identical, and `dev-` for the device), and the two `device-refused:*`
-categories were renamed `dev-refused:*` so one scope owns all five.** Twelve `optfire/*.txt` tables drive
-ctest registration by row count ~~with no `list(LENGTH)` guard — delete a row and the cell
-silently stops existing~~ **— CLOSED 2026-08-11: both glob-driven loops now count the rows
-they register and hard-error below a floor (52 for `differs*`/`cdelta*`, 125 for the
-`counters*`/`levels*`/`defstate*` set). Proven by deleting one row and reading back
-`registered 51 rows, below the floor of 52`. A ratchet, not an equality: adding rows is fine
-and the floor is meant to be raised with them.** The durable shape is re-deriving a bank's expected row set from
-`src/mccopt.h` and failing on `missing-row`, which is what the four banks that resisted
-shrinkage do.
-
-Two more, both found 2026-08-11 in the second wave:
-
-- ~~**`jit/xoracle-conformance` drops its second corpus silently.**~~ **CLOSED 2026-08-11 —
-  the arm has an `else()` that names the missing path, says the run is c-torture only, and
-  says `jit/xoracle-coverage` will not reach `--min-cross 400` on one suite. Verified by
-  configuring with a bogus `MCC_XSUITE_LLVMTS` and reading the message back.** The CMake arm at
-  `CMakeLists.txt` adds `--testsuite`/`--suite ts-unittests` only under
-  `if(EXISTS ${MCC_XSUITE_LLVMTS}/SingleSource/UnitTests)` and has **no `else()`** — no skip,
-  no message. `--limit` is per-suite, so losing the arm halves the corpus, and the companion
-  `jit/xoracle-coverage` then fails `--min-cross 400` against a single-suite denominator that
-  tops out at 379. On this host the cache pointed at a path that does not exist, so the cell
-  was **red for a configuration reason it reported as a coverage reason** — the worse failure,
-  because it sends the reader to the wrong file. Repointed locally; the missing `else()` is
-  the defect. Detail in the residues section at the end of this file.
-- ~~**`--min-engines 5` against nine engines.**~~ **CLOSED 2026-08-11 — the floor counts
-  required (non-device) engines and a known-positive drops one to prove it.** See *Smoke now compares six evaluation engines*
-  above: the floor was sized for 5-of-6 and the arm is now 9, so three engines can go dark
-  green. Same family, and it is the arm's own floor that has the hole.
+**~~N5. Four green-by-omission hazards.~~ — ALL FOUR CLOSED 2026-08-11.** Write-up moved to [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 **N7. The slice evaluator's arithmetic is unobservable: a wrong answer 66 million times per
 compile changes nothing.** Found on 2026-08-11 while trying to demonstrate that the new
@@ -1032,31 +605,7 @@ Behind them, unexamined: ~80 `differ` and ~150 `refused` rows per level, where `
 front-end gap list and not a JIT one. Full detail in the residues section at the end of this
 file.
 
-**~~N9. `-fno-opt-search-<anything>` disables the whole search, not the sub-knob it names.~~
-REFUTED 2026-08-11, the same day it was filed. There is no prefix match and no kill switch.**
-The claim came from `69296b85`'s commit message, was promoted to this board in `3b225e3f`,
-and does not survive contact with either the binary or the parser:
-
-- **The parser cannot do what the item says.** `set_flag` (`src/libmcc.c`) matches with
-  `strcmp(r, p->name)` — exact string equality against the generated table, with no prefix
-  logic anywhere in the loop. A flag named `opt-search-fullset` cannot reach the row named
-  `opt-search`.
-- **It does not reproduce.** On `tests/smoke/subject.c` at `-O13`, baseline and
-  `-fno-opt-search-fullset` both report **101 candidate evaluations** — identical, not zero.
-  (Independently re-run on a second build with a third subject: 808/8383/303 evaluations,
-  unchanged by all three sub-knobs.)
-- **The likely origin, reproduced.** `0 candidate evaluations` is simply what `-O13` prints
-  when the subject is too small to search: a two-line `int f(int,int)` reports **0 at
-  baseline**, with no flag at all. Measure a sub-knob on a subject like that and the flag
-  gets the credit for a zero it did not cause.
-
-**What is left of it, and it is smaller and unranked:** whether the three sub-knobs do
-anything at all in the *negative* direction is still unestablished — the counts are identical
-with and without them, which is equally consistent with "inert". `-fopt-search-predict`
-positively does work (it reports `predicted N candidate(s)`). So the open question is
-"are the `no-` forms inert?", not "are they a kill switch", and nothing measured so far is
-invalidated. **The lesson is the durable part: this item was filed from a commit message and
-ranked without anyone re-running it, and it took one `strcmp` and one A/B to fall over.**
+**~~N9. `-fno-opt-search-<anything>` disables the whole search, not the sub-knob it names.~~ — CLOSED 2026-08-11.** Write-up moved to [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 **N15. `-g -run` SIGSEGVs the moment the JIT is allowed to bake.** New 2026-08-11, and it
 outranks N6 because it is a crash on a command a person debugging their own program actually
@@ -1083,24 +632,66 @@ with `85bf6a3d` reverted), so this is a separate, unexamined discrepancy. Small,
 settling before the next person trusts that sentence: either the claim is wrong or the revert
 perturbs something else.
 
+**~~N20. `--embed-jit` silently miscompiles a binary operator over two comparisons.~~ — FOUND AND FIXED 2026-08-11**, root-caused to `ast_configure()` never running inside the JIT; guarded by `jit/replay-parity` and `mcctest-embedjit`. Write-up moved to [`docs/ARCHIVED.md`](ARCHIVED.md).
+
+**N17. An aborted replay increments nothing, so every `ast.*` number in this file is a lower
+bound.** New 2026-08-11 from the emit map. `ast_func_end` wraps its replay in its own `setjmp`;
+the `mcc_inv_add("ast.body"/"ast.faithful"/…)` calls sit **inside the success arm**, so a body
+whose replay raises a diagnostic is recorded by RIR, is replayed, does produce
+`rir_prod_note("fallback")` — and is invisible to every counter, including the ones the section
+above is built on. Measured: **3 of 305 bodies** on `full_language.c` at `-O1`, 0 self-host. The
+consequence is not the three bodies, it is the direction of the error: `ast.body` and
+`ast.faithful` under-count by an amount nothing currently reports, and the 36-body gap that
+looked structural is partly this. The fix is one counter in the else arm at the `posterr`
+assignment — the arm is already `MCC_TRACE`-braced, so the shape is settled and the cost is a
+line. **Do this before quoting any coverage or faithfulness percentage again.**
+
+**N18. Nothing watches the `-O0 --embed-jit` arm, and it is the least faithful one on both
+targets.** New 2026-08-11. First, the part that is *confirmation, not news*: this file's standing
+rule — quote 2.0% for the self-host hot path and 0.47% for torture, never one for the other — is
+now backed by a third instrument and a second level. The emit map measures **70 unfaithful of
+3165 verdicted on `src/mcc.c` at `-O1` — 2.21%**, against the 2.17% previously measured at `-O2`
+on the same source. Two levels, two instruments, 0.04 points apart: the self-host figure is real
+and the corpus/self-host split is not an artefact.
+
+The open part is the fourth row:
+
+| target | arm | verdicted | unfaithful |
+| --- | --- | ---: | ---: |
+| self-host | `-O1` | 3165 | 70 — 2.21% |
+| `full_language.c` | `-O1` | 301 | 10 — 3.32% |
+| self-host | `-O0 --embed-jit` | 3163 | **108 — 3.41%** |
+| `full_language.c` | `-O0 --embed-jit` | 299 | **14 — 4.68%** |
+
+**`-O0 --embed-jit` is less faithful than `-O1` on both targets** — +1.20 and +1.36 points, the
+same direction `EMIT-COVERAGE.md` result 4 saw as +12 bytes and a 1885 → 1883 faithful drop, now
+reproduced at 10× the sample on named inputs. **The coverage half of this row is closed by
+`mcctest-embedjit` (see N20), which runs the `full_language.c` differential with `--embed-jit`;
+what remains open is the faithfulness gap itself.** It matters more than it did: since `3e0f1e8d` made
+`--embed-jit` the only gate on baking, this is the arm a `-g --embed-jit` build takes, and it
+bakes **1550 of 3163** bodies self-host — so its unfaithful bodies are the ones silently excluded
+from dispatch in a debug configuration. (`-run` is deliberately *not* in this arm; that exclusion
+is **N15**.) No cell watches it: `tests/ast/rir_parity.cmake` compiles with `-w ${OPT} -c` and
+never passes `--embed-jit`, so the banked `ast/rir-parity` cells cover `-O0`–`-O3` on the
+non-baking path only. Interacts with **N17** — every row here is a lower bound.
+
+**N19. The byte census exists only for x86_64.** Small, and a limitation rather than a defect.
+The amplification in the section above works because `g()` is the single byte primitive on
+x86_64 — `o()`, `gen_le16/32/64` and every encoder bottom out in it. On arm, arm64 and riscv64
+each `o()` writes `cur_text_section->data` directly and **bypasses `g()` entirely**, and the
+arm/arm64 assemblers add a second independent cursor writer each; PLT/GOT/veneer/JIT-stub bytes
+reach the section through `section_ptr_add` on every target. So a byte census on any non-x86_64
+arch needs a different primitive set, and no arch other than x86_64 currently has one.
+
 **N6. `L2` — wire the device into `mccjit_shutdown()`.** Unblocked as of 2026-08-10, with two
 preconditions in the GPU landed section. One is a hazard *this wave created*: the quiesce now
 unmaps the shared address space, so nothing may retain a `mcc_gpu_mem()` pointer across
 shutdown. That hazard did not exist while the quiesce destroyed nothing.
 
-1. ~~Re-arm the benignity probe~~ **DONE, 2026-08-10** — see the section below. The
-   answer exists: at `-O1`/`-O2`/`-O3` every keepable divergent body is benign; at `-O0`
-   one is a miscompile that segfaults the compiler.
-2. ~~**`ast_eval_slice_globl`'s `VT_STRUCT` rejection**~~ **DONE, 2026-08-10** (`wt/globagg`),
-   and the 3,481 was never the size of it — see the landed section.
-3. ~~Re-take the two owed deltas~~ **DONE, 2026-08-10** — see the section below.
-   `cleanup_symbols`'s `-O0` arena is the first named defect in the discard set that the
-   byte gate is catching; finding out why it is wrong is the new open item here.
-4. ~~`ast_tco_run` cannot see through an `AST_If` op 5, so the tail-recursive two-exit `if`
-   stays out of reach and the ternary fold refuses that shape to keep TCO firing.~~
-   **DONE, 2026-08-10** — and it could not land alone: the fold's `AST_Invoke` veto was
-   hiding a live miscompile, so the return-conversion fix had to land first. See both landed
-   sections.
+1. ~~Re-arm the benignity probe~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+2. ~~`ast_eval_slice_globl`'s `VT_STRUCT` rejection~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+3. ~~Re-take the two owed deltas~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+4. ~~`ast_tco_run` cannot see through an `AST_If` op 5, so the tail-recursive two-exit `if` stays out of reach and…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 5. `SR_GLOB_MAX` is 4,096 in `slicerun` with no reset between arenas and no message — the
    same silent cap `ast_adump_intern` just made loud. Fails safe; a coverage cliff.
    **Measured, and it is not binding today**: raising it to 65,536 leaves the whole gcc
@@ -1117,19 +708,8 @@ shutdown. That hazard did not exist while the quiesce destroyed nothing.
    of which **39,092 are fourteen memory-op files**. The same fix on `src/*.c` is +2.82 pp of
    accepted nodes against +0.067 pp on torture. Every remaining gap in this area needs a
    hand-written denominator — `src/`, musl, qemu — before it is ranked.
-7. ~~The `rir-coverage` lowerable bank was **already stale before this wave**: 0.0414pp of the
-   0.0671pp drift accumulated over the 34 commits before it, inside the 0.05pp tolerance.
-   Dilution by less-lowerable new code is normal and will recur; the metric needs either a
-   corpus-normalised form or a scheduled re-take.~~ **CLOSED, 2026-08-10** — the corpus-
-   normalised form landed after the mechanism recurred the same day. See the section below.
-7. ~~**The funnel's largest named drop, `nslot < 1` at 352 blocks / 1.05%.**~~ **CLOSED,
-   2026-08-10 (`wt/noslot`)** — and it was 242 / 0.70% once re-taken on merged `main`, not
-   352. All 242 are `return <constant>`; **zero** are an unrecognised live-in and **zero**
-   are a slot-model casualty. Nothing to fix, and the reason is now pinned by
-   `slice/noslot-classes`. See the landed section below. **New and outranking most of this
-   list: `src/mccast.c` gives 23 expression-slice mismatches and 1 frame mismatch against
-   the device on unmodified `main`**, all on the `f64` ternary, and no committed cell runs
-   `slicerun` over `src/` arenas so nothing catches it.
+7. ~~The `rir-coverage` lowerable bank was already stale before this wave: 0.0414pp of the 0.0671pp drift…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+7. ~~The funnel's largest named drop, `nslot < 1` at 352 blocks / 1.05%.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 8. **The JIT's 47.1% `NOT_BAKED` is not the callee refusal — 3110 of 3118 programs never
    reach a bake site.** `wt/bakewiden` closed the refusal half (−140 refused sites, −38
    programs, 0 new DIFFER) and proved the rest is upstream in `ast_func_end`. Attributing
@@ -1143,20 +723,18 @@ shutdown. That hazard did not exist while the quiesce destroyed nothing.
    at the embed stash. It is not yet the *attributed* counter this item asks for (no named
    reason, no bytes), but it settles the raw figure: over 300 torture programs, `--embed-jit`
    bakes 587 of 1894 verdicted bodies at `-O0` and 589 at `-O1` — about 31%, measured in the
-   compiler rather than inferred from a harness. See the emit-coverage section above.**
+   compiler rather than inferred from a harness. See the emit-coverage section above.
+   **The bake rate is strongly input-dependent and 31% is not a general figure**: the emit map
+   puts it at **1550 of 3163 (49%)** on `src/mcc.c` and **41 of 299 (14%)** on
+   `full_language.c`, both at `-O0 --embed-jit` — a 3.5× spread across three corpora, so this
+   item's percentage must be quoted with its input attached.**
    Build the attributed version modelled on `rir_prod_why_name[]` — named reason, parallel
    count *and bytes*, `atexit` report — and split `ast_opt_ok` and `ast_jit_want` into their sub-terms or the
    largest bucket will be uninterpretable. Predicates 1, 3 and 5 have no signal today, which
    is why the measurement cannot be taken. Do **not** reuse `MCC_JIT_BAKE_WHY` (it already
    means per-site free text) and do not gate it with `ast_env_int`, which returns the default
    for any value ≤ 0.
-9. ~~**Cluster L's next link is `L2′(ii)`/`(iii)`, both in `src/mccgpu.c`** — clear
-   `mcc_gpu.ok` on `VK_ERROR_DEVICE_LOST` and give the Vulkan quiesce something to destroy.~~
-   **DONE, 2026-08-10** — see the landed section. `L2` is unblocked on the hang axis, with
-   two named preconditions.
-   The pool half landed on `wt/jitshutdown`; wiring the device into `mccjit_shutdown()`
-   before (ii) is fixed makes an unbounded `vkDeviceWaitIdle` reachable from `atexit` on
-   every run.
+9. ~~Cluster L's next link is `L2′(ii)`/`(iii)`, both in `src/mccgpu.c` — clear `mcc_gpu.ok` on…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 10. **Inlining should consult a semantic-equivalence cache over a rolling window, not
     re-derive every graft.** Today a callee is grafted or not on a per-body yes/no
     (`ast_inline_graftable`, `mcc_slice_leaf_hook`, `keep_inline = ast_fn_faithful &&
@@ -1321,7 +899,8 @@ on `SValue` that does not exist.
 Measured per level on the smoke subject: `-O0` 22 dark (no strategy runs at `-O0` at all —
 **independently confirmed 2026-08-11 from the other side: `MCC_INV=1` shows `-O0` records 0 of
 1932 bodies and increments no `ast.*` counter at all, so there is no arena for a strategy to
-run on**),
+run on** — and a third time by the emit map, where `-O0` writes each byte exactly once,
+1,662,057 emitted for 1,662,057 surviving on `src/mcc.c`, against 2.71× at `-O1`),
 `-O1` 12, `-O2`/`-O3` 9, `-O4` **1** (before the `bfold` shape landed; now 0 of 22), and
 **`-O13` 13** — `ivsr, narrow, bfold, range, bf, divmagic, pre, ltemp, inline, abs, tco, licm,
 reassoc`. That is the state the whole subject was in before `scases.h`, at the one level
@@ -1372,14 +951,8 @@ earlier verdict on a search sub-knob obtained with one of those flags is void.
 
 ### Two more green-by-omission hazards
 
-- ~~**The device arm computes a census and never ratchets it.**~~ **CLOSED 2026-08-11 — `own("dev-")` + `ratchet()`, 531 previously-discarded refusals now banked.** `device_probe` calls `cat_add`
-  for `dev device-refused:unavailable` and `:no-dispatch`, `main` calls `bank_load`, but the
-  `do_dev` branch never calls `ratchet()` and `bails.txt` holds no `dev ` rows. Both categories
-  are unmeasured; the arm could start refusing every dispatch and stay green.
-- ~~**Row-count-driven ctest registration.**~~ **CLOSED 2026-08-11 — row-count ratchets on
-  both loops, verified by deletion.** Twelve `tests/optfire/*.txt` tables are read with
-  `file(STRINGS …)` and turned into one cell per row, with no `list(LENGTH)` guard. Delete a
-  row and the cell is never registered — ctest reports the same `N/N` with a smaller `N`.
+- ~~The device arm computes a census and never ratchets it.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+- ~~Row-count-driven ctest registration.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 **The generalisable rule**, and it is the one `bails.txt` lacked: the tree has **eleven**
 `--min-*` floors (re-counted 2026-08-10; this said eight — they are `--min-adjudicated`,
@@ -2438,7 +2011,7 @@ on a single hand-run, or on a cell that cannot reach it.
 2. **`opt-cache-determinism` and `runtime-bench-gatewin`** — both permanent 77s. The manifest discloses this honestly, which is the right thing; nothing ratchets them back to live, and for the first the underlying defect still reproduces. Row 3.
 3. **Debt #3, `mcc_vk_bind_mem` descriptor staleness** — the fix is in the tree (`dsdirty`, `src/mccgpu.c:1781/1894/1933`) and the debt states plainly that it is *"not test-covered, and cannot be"*, because both callers pass the constant `MCC_VK_MEM_DEFAULT`. A debt marked paid whose payment is unreachable by construction.
 4. **Debt #7, "464 skipped cells"** — closes with *"`cmake-debug` now registers 9106, the same as `cmake-cross`"* (`:3693`). Hazard 5 measures exactly that claim as **false** (8972 vs 9136 by configure order) and says the fix *"did not close the gap — it moved it"*. The debt and the hazard contradict each other and both are written as current.
-5. ~~**The Metal freeze** — *"Keep the `#if MCC_GPU_LANG_MSL` arms only where they already compile; add no more"* (`:483`) is enforced by nothing: no cell, no lint. The decision is right; it has no ratchet.~~ **MOOT 2026-08-09 (`wt/metalspec`): the freeze was reversed by decision.** There is nothing left to ratchet, because the arms are now meant to grow. The gap that replaces it is that **no runner this project has can execute a Metal kernel**, so the growth would land untested — see §4 of the spec at the head of this file.
+5. ~~The Metal freeze — *"Keep the `#if MCC_GPU_LANG_MSL` arms only where they already compile; add no more"*…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 6. **W3's 3-way-concurrent closure** — the best-evidenced result in the file (399 chains / 0 non-identical against a reverse-applied negative control, Fisher p = 0.0015) and no cell holds it. A regression reappears only as flake.
 7. **The `mslgate` arm** (`:4033`) — compiles clean and links 51 `msl_*` refs. ~~Now moot under the Metal drop, but still written as an open verification gap.~~ **RE-OPENED 2026-08-09 (`wt/metalspec`) and it is no longer accurate to call it unexecuted**: `## The Metal per-value differential, and N6 on Darwin` records it running 151.9 M points with zero mismatches on an M1 Pro. It is unexecuted *in CI*, and cannot be executed there — see §4 of the spec at the head of this file. It is the harness every stage of that spec is differentiated against.
 8. **`ast_eval_slice()`'s poison-flag fix** (debt row 2) — fixed in code and correct; no cell is named for it. Coverage is incidental via `slice/deref` / `slice/real` / `slice/musl`.
@@ -2448,7 +2021,7 @@ on a single hand-run, or on a cell that cannot reach it.
 
 1. **Board row 1 and still-open row 1** (`:497`, `:507-514`, `:3015`) call the missing `indirect` guard on `ast_dep_base_distinct` **"UNMEASURED, and it is the top of the board."** It landed at **`adf08e3b`**. Verified in the tree: the parameter is `src/mccast.c`, the guard `:13350`, both emitting callers pass `0` (`:13516`, `:13566`), only the census site passes `ast_dep_alias_oracle_env` (`:13949`) — and the **22 `exec-{interchange,fusion,tile,search*}/loop_*` cells are registered and green**. *The board's number-one open row is closed.* Its own body says so at `:2104`.
 2. **The registration figure is two generations stale.** `:16-17` say **9136**; `:624` and `:2656` say 9136 *"today"*; `:985` says **9149**; the tree says **9151** in both dirs. The `wt/gatefin` write-up raised it to 9149 and never propagated to the head; the merge with `wt/idiomcov` added the last two and nothing recorded it. Hazard 5's "164 low" delta is quoted against the stale pair.
-3. ~~**Three counts of one list.** `:521` "**Twelve** have now failed to reproduce", `:670` "**The nine** figures that have failed to reproduce", `:697` "**Seven** headline figures" — and the table at `:675-687` has **thirteen** rows.~~ **CLOSED on `wt/docsync`.** The table is now the only place the count is stated; every other site points at it instead of restating it, and the two historical ordinals ("the seventh", "the thirteenth") are date-stamped as counts-at-the-time rather than current. `docs/refs` (`tools/docref-lint.py`) counts the table's rows and fails if the stated count moves off them, so this cannot drift again silently.
+3. ~~Three counts of one list. `:521` "Twelve have now failed to reproduce", `:670` "The nine figures that have…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 4. **`SKIP_RETURN_CODE` count.** `tests/must-run.txt` says **141**, `docs/ARCHIVED.md:22965` says **138**, `CMakeLists.txt` has **149**.
 5. **`:9598` — "Deliberately not banked: byte faithfulness."** False at HEAD. `kept_coverage` is banked on all eight rows of `tests/rir/coverage-bank.json` **and enforced** (`tools/rir-coverage.py`, skipped only on an unbanked host format). The reversal is recorded at `:7886`; the C2 paragraph was never rewritten.
 6. **`:9600-9602`** — "modelled 99.59% / 99.56%, capture 100.00%" is stale; the bank reads **100.0 / 100.0 / 99.9681 / 99.9681**.
@@ -2457,10 +2030,10 @@ on a single hand-run, or on a cell that cannot reach it.
 9. **`:3116`** — "Five of the eight landed" over a list that holds **nine** items (0–7 plus 6a).
 10. **`:3597`** — "`levelbench.tsv:47` is now line 51". The file is **29 lines / 16 data rows**; neither line exists. The same applies to every "24 of 47" / "32 of the 47" count in hazard 2.
 11. **`:353-357`** — "turns a lavapipe/NVIDIA denormal disagreement into a hard CI failure no code change can fix" is refuted at `:404-408` and never struck; `:439` still lists the retracted reason as load-bearing in the recommendation.
-12. ~~**`docs/ARCHIVED.md:22579`** marks E6 **"NEW 2026-08-08, OPEN"** while `ARCHIVED.md:22989` and `:6238` of this file both say E6 is closed permanently. It is also the line carrying the uncited lavapipe assertion.~~ **CLOSED on `wt/docsync`**: the E6 row now reads *"CLOSED 2026-08-09 — REFUSE permanently"*, carries the Mesa citation inline, and points at the closure below it; the retired plan's I2 row records that the `shaderFloat64` floor rests on a *source* reading of lavapipe, not a device one. Still open, same class: `docs/ARCHIVED.md:22452`/`:22465` "Vulkan — LIVE" vs `docs/ARCHIVED.md:23006` "CLOSED"; `docs/ARCHIVED.md:22708` "half-landed" vs `docs/ARCHIVED.md:23014` "CLOSED"; `docs/ARCHIVED.md:22965` N13 open vs `docs/ARCHIVED.md:23015` N13 closed. Those three are status contradictions in prose, which `docs/refs` cannot see — it checks that a citation resolves, not that two sentences agree.
+12. ~~`docs/ARCHIVED.md:22579` marks E6 "NEW 2026-08-08, OPEN" while `ARCHIVED.md:22989` and `:6238` of this file…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 13. **`:10011` duplicates `:10039`** (32-byte vector alignment), **`:9282` duplicates `:10076`**, **`:9759` duplicates `:10078`**, **`:10051`** sends a reader at a capture path that measures **100.000%**, and **`:10182`** still lists `__builtin_powi`/`powif` as missing after `:9303` closed them.
 14. **E1's refusal-site count has now been stated three incompatible ways** and every one was written as current: `:7810` "**eight** separate sites", corrected at `:7851` to "**16**, not 8" with the sites enumerated, corrected again at `:100-113` to "**36 lines, 43 occurrences**, not the 1 + 4 + 6 = 11 this paragraph claims". Only the last is right — verified this sweep: `slice_inline.h:2`, `mccslice.h:4`, `mccgpu.h:12`, `ast_eval_slice.h:18`, because `mccgpu.h`'s block is mirrored across the two emitters and `ast_eval_slice.h`'s eighteen were never counted. `ARCHIVED.md:22574` still carries the "16 refusal sites, not 8" figure.
-15. ~~**Seven `TODO` markers in the tree name sections of this file that do not exist**~~ **CLOSED on `wt/docsync`, and the item as filed was itself wrong on two counts.** It said "seven markers in `tests/`"; there are **five markers in four files** under `tests/`, and the count of seven only reaches seven by including two markers in `tools/` and by counting `macro-nesting.cmake`'s two separately. It also cited `tests/superopt/promote-floor.sh`; the marker is at **`:41`**. What each named and what was done: `tests/cst/macro-nesting.cmake` and `tests/cst/symref-shadow.cmake` cited `'CST slice-J'` / `'CST slice-I'`, which **never lived in this file** — they were sections of `docs/NOTES.md`, deleted wholesale at `bb2469bd` and not migrated, so the boundary each test pins is now stated in the test's own failure message and the dead pointer says where it went; `tests/jit/run-parity.sh` cited a "TODO KGC section" purged at `4ab363ce`, and now names `MCC_JIT_NEARMATCH` and `src/mccjit_embed.c` directly, with a note that the nearest live prose does **not** cover near-match parity; `tests/superopt/promote-floor.sh` cited `'Floor the search'`, pruned at `71f3330b`, and now names `so_unsetenv_axis` / `MCC_SO_PROMOTE_FLOOR` in `src/mcc.c`; `tools/embed-jit-smoke.py` cited "P0 step 5" and a "gcc-engine startup residual", **neither of which any row of this file owns**, and now says so rather than implying they are tracked. The three that pointed at the wrong row — `tools/fmt-census.py`, `tests/optfire/levelpins.txt` and `cmake/slicerun_census.cmake` — now cite section headings or the tool to re-run, not board ordinals, because board ordinals renumber.
+15. ~~Seven `TODO` markers in the tree name sections of this file that do not exist~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 ### The lavapipe citation, now sourced — COPIED ACROSS on `wt/docsync`
 
@@ -2571,45 +2144,7 @@ the compiler nothing it emits — it feeds diagnostics and the ladder oracle, be
    body to 8 trips where `--cost-synth` measured 7/5/3/2, so the fractions are biased
    *downward* by an unknown amount. The constant itself is still pinned; see the audit
    section below for the cost of un-pinning it.
-2. **~~`tests/optfire/levelbench.tsv` is a null-experiment factory, and it is also a
-   generation stale.~~ ALL FOUR DEFECTS CLOSED — three on `wt/benchtrap` and `wt/ladder2`,
-   the fourth by re-running the bench 2026-08-09.** The table is now a fresh measurement of
-   the **16** flags `src/mccopt.h` actually has at levels 1–3, with `gain_movers_pct` /
-   `eff_movers` beside the diluted columns and a signed efficiency. Kept below as the
-   statement of what was wrong, because three of the four are live traps in any table of
-   this shape. Per-defect status is inline. Four separate defects, all verified today:
-   - **24 of its 47 rows have an empty `fires_kernels`** — the flag changes no kernel object
-     at all — and **11 of those carry a `gain_pct` of `-0.0000`**, a geometric mean of
-     `instructions:u` over binaries that are bit-identical. A `-0.0000` is not a rounded
-     zero: it requires a *timing difference between two identical objects*, which
-     `tools/optlevel-bench.py` collects because the timed executable lives in a
-     `tempfile.mkdtemp` path whose length changes the loader's work. **Any of the eleven can
-     be quoted as "measured no effect" the way `storeval-rot`'s was.**
-   - The tool's only null guard is `bucket = "inert"`, which requires the flag to change
-     nothing in the corpus *and* the self-compile *and* all 17 kernels. **Zero rows in the
-     shipped file are `inert`.** The real guard — "changes no kernel object; nothing to
-     adjudicate" — exists at `optlevel-bench.py:302-306` but runs only under
-     `--cycles --from-json` and never touches the TSV.
-   - `efficiency` is `gain / cost` when `cost > 0.005` and `inf` otherwise, and `has_gain`
-     tests `abs(gain)`, **not its sign**. So a flag that makes emitted code *worse* at
-     near-zero cost is awarded `+inf` and sorted to the top: `promote-leaf-callee`
-     (`gain=-0.3360`) sits at **rank 2 of the whole table**. **FIXED 2026-08-09
-     (`wt/ladder2`)** — and it was still live: in the fresh run `inline-functions`
-     (`gain_movers` **−1.9557**) sorted to **rank 4** before the fix and sits at **rank 9**
-     with `-inf` after it. Efficiency now carries the sign of the gain; `--selfcheck`'s
-     `worseflag` row fails if it stops doing so.
-   - **32 of the 47 rows name flags that are no longer at levels 1–3.** The file was written
-     at `1ad3f1aa`; `893c1e84` moved 34 rows. `src/mccopt.h` has **16** `LEVEL(1..3)` rows
-     today, `builtin-math-fabs` has no row at all, and `optlevel-bench.py` has no `--check`
-     arm (`selfhost-optbench.py` does). CMake writes the TSV to the *build* dir, never back
-     to `tests/optfire/`, so nothing compares them. **CLOSED 2026-08-09 by re-running the
-     bench**: the banked table is 16 rows against `src/mccopt.h`'s 16, `builtin-math-fabs`
-     has a row, and the stale-row trap is now itself documented — reading a stale row's
-     `n/a` as "this flag is unpriced" is what produced the false `narrow` /
-     `tree-copy-prop` claim in the audit section below. ~~There is still **no `--check`
-     arm**, so nothing stops the file going stale again; that is the remaining debt.~~
-     **`--check` LANDED 2026-08-09 (`wt/gatefin`), both halves** — the arm itself and the
-     CMake half that wrote to the build dir and never compared back. See the audit section.
+2. ~~`tests/optfire/levelbench.tsv` is a null-experiment factory, and it is also a generation stale.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 3. **A per-flag sweep cannot price a family, and the failure reads like a win.**
    `optlevel-bench.py` builds jobs as `[("__base__", []), ("__noise__", [])] + [(n,
    ["-fno-"+n])]` against an `-O3` base, so it can only ever take a shipped flag *out* —
@@ -2652,16 +2187,7 @@ the compiler nothing it emits — it feeds diagnostics and the ladder oracle, be
    the `140 → 142` correction filed elsewhere on this board. The oracle verifies the
    *port*; nothing verifies the *doc row*, and this is a re-run, not a measurement.
 
-8. ~~**`tools/fmt-census.py`'s site census is unguarded.**~~ **CLOSED 2026-08-09,
-   `wt/gateall`** — see the registration sweep. `fmt/census-bank` pins all fourteen figures
-   of row 4 against `tests/fmt/census-bank.json`, `fmt/census-bank-known-positive` proves
-   the comparison is live, both are in `tests/must-run.txt`, and `CORPUS` is now an explicit
-   roster that fails in both directions rather than a glob. **The figures did not move**:
-   the site census scans each file's own text and never follows an `#include`, so the
-   amalgamation never double-counted it. What the amalgamation *does* inflate is the
-   `--arenas=` row below, and that one was re-taken on `wt/arenaretake`: the factor is
-   **2.8636**, the counts deflate by it, the share does not move, and
-   `fmt/arena-census-bank` now fails on a double-counted dump.
+8. ~~`tools/fmt-census.py`'s site census is unguarded.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 9. **The self-compile census total is not deterministic.** Three runs of the identical
    command gave `iterations` = 52,152,515 / 52,152,453 / 52,152,533. Every loop count, every
    `par=` column and every printed percentage is stable; the drift is a few dozen iterations
@@ -2756,11 +2282,7 @@ audit gets to make. Two things follow and neither is done here:
 1. Someone owns `-fopt-slice`'s cache-state dependence, or the pass is deleted. A rung-9
    flag whose off-state is the only tested state is not a demotion, it is a dead pass with a
    live bug in it.
-2. ~~`opt-cache-determinism` should be a `registered` row in `tests/must-run.txt` **and** a
-   permanent 77 should be visible as such. Right now the tree reads it as green.~~
-   **DONE since `e98fab0a` (2026-08-09)** — `tests/must-run.txt` carries the registered
-   row with the PERMANENT-77 disclosure, and this file acknowledges it elsewhere.
-   *(2026-08-11 validation sweep.)*
+2. ~~`opt-cache-determinism` should be a `registered` row in `tests/must-run.txt` and a permanent 77 should be…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 #### FILED — found, not fixed, with what a reader would wrongly conclude
 
@@ -2885,12 +2407,7 @@ Ordered by how much a currently-quoted number depends on it.
     measurement and itself. Also `pct(a, 0)` returns `0.0`, and a flag with an empty sample
     list gets `gain = 0.0` and classifies **`inert`** — "this flag changes nothing" is the
     recorded verdict for "this flag was never sampled".
-13. ~~**`tools/idiomgate.c`'s invariant covers 17 of 37 config macros, from two hand-typed
-    lists.**~~ **CLOSED 2026-08-09 on `wt/idiomcov`.** Coverage **17/37 → 29/37**; the
-    remaining 8 are refused by name in the tool. See *LANDED — `tools/idiomgate.c`'s
-    denominator* below for the derivation, the corrected reading of the `4`, the five
-    idiom violations the widened check found in the tree, and what each newly covered
-    macro now guarantees.
+13. ~~`tools/idiomgate.c`'s invariant covers 17 of 37 config macros, from two hand-typed lists.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 14. **`tests/optfire/optfire.sh defstate` cannot tell "off by default" from "does not
     exist".** An unrecognised option is a *warning* in `src/libmcc.c`, not an error, so a
     deleted or renamed flag compiles fine, the two objects match, and `got=off`. Thirteen
@@ -2918,21 +2435,7 @@ Ordered by how much a currently-quoted number depends on it.
     flags the sweep does not pass, but nothing pins the number, so a regression that stopped
     500 of 610 building would still print `divergences=0` and PASS. Pin it or classify the
     20.
-17. ~~**Four shell tools grep for `ast_env_gate`, which no longer exists in `src/`.**~~
-    **CLOSED 2026-08-09 (`wt/envgate`).** All four are repointed at `src/mccopt.h`, and the
-    thirteen stranded `*.gated.*` bank files are regenerated and registered. See *LANDED —
-    the gated half of `ast/o0-baseline`* below for the history, the option taken and the
-    cell. In short: the gates were not renamed, they were **converted** — `a55c0a07` turned
-    112 `MCC_AST_*`/`MCC_RIR_*` environment gates into `-f` flags generated from one table,
-    so the successor of `ast_env_gate("MCC_AST_…", o4 || s1->optimize >= 1)` is *"every
-    `MCC_OPTD_LEVEL(n)` row of `src/mccopt.h`, spelled `-f<name>`"* — **54** rows on this
-    tree. The derivation now reads the table that *defines* the knobs rather than a second
-    copy of it, so it cannot go stale the way the old regex did. The old residues, resolved:
-    the all-or-nothing guard is no longer the only guard (`o0_ab.sh` additionally requires
-    the gated counters to differ from the ungated bank's, because **mcc ignores an unknown
-    `-f` silently** and a zero-count check cannot see a wrong-but-nonempty list); and
-    `c2_sweep.sh`'s claim of parity with a non-existent `cmake/rir_parity.cmake` is gone
-    with the comment that made it.
+17. ~~Four shell tools grep for `ast_env_gate`, which no longer exists in `src/`.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 18. **`tools/spvgate.c --arenas` lacks the zero-comparison guard its built-in-case mode
     has.** The case mode gained `FAIL (0 defined points compared -- proves nothing)` after
     exactly this incident; `arena_mode` prints `compared=` and gates only on `dispatches`,
@@ -3144,20 +2647,8 @@ re-running all 424 cells under `ctest -V`. **`mcc_skip_test` does report why** (
    consensus cells lost to a toolchain default drifting under a hard-coded command line —
    the same shape as the `-O0` bank, one layer down. `alignas`, `builtin_inf_nan` and
    `asm_lvalue_cast` are genuinely non-portable and should stay skipped.
-3. ~~**`MCC_SLICE_CENSUS_RUN` is undocumented** and `-L census` reports green while three of
-   its six cells 77. Either document the two missing switches next to `MCC_RIR_CENSUS`, or
-   give the label one arming variable.~~ **Done on `wt/censusfix`, by the third option this
-   line did not consider: the label arms its own cells, so there is no switch left for a
-   reader to know about.**
-4. ~~**Registration gates with no `else()` skip stub** — cells that *vanish* rather than skip,
-   which is the class `tests/must-run.txt` was built for and still cannot see: 86
-   `stratsweep/isofull-*` and `stratsweep/perm3-*` under `MCC_STRATSWEEP_FULL`, the whole
-   `qemu-*` block under `MCC_QEMU_TESTS`, `selfhost-jit` and `embed-jit-smoke` under
-   `MCC_PYTHON3`/`MCC_EMBED_JIT`, and the seven `macho-libsystem/*` cells whose OFF-branch
-   stub is registered under the *unrelated* name `macho-libsystem-kernel-fused`, so no
-   manifest row can name both states.~~ **CLOSED on `wt/regstub`.** See the section below;
-   the list above was a quarter of it, and the 164 the class is named after were **still
-   vanishing** when this branch started.
+3. ~~`MCC_SLICE_CENSUS_RUN` is undocumented and `-L census` reports green while three of its six cells 77. Either…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+4. ~~Registration gates with no `else()` skip stub — cells that *vanish* rather than skip, which is the class…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 5. **The 24 in-container `apt-get … || exit 77` sites** in `tools/*-docker.sh`. A transient
    network failure silently converts a real differential test into a skip. They are honest
    about *what* failed; nothing distinguishes "no docker on this host" from "the mirror was
@@ -3233,24 +2724,9 @@ the commit that causes it.
 
 #### Filed by this sweep, not fixed
 
-1. ~~**The `--arenas=` figure needs re-taking against one TU.**~~ **CLOSED 2026-08-09,
-   `wt/arenaretake`.** The recorder is armed by the tool itself now
-   (`--arena-check=<build-dir>`), the factor is 2.8636, and the corrected
-   `10,423 / 86 (0.825%)` has a cell.
-2. ~~**`idiomgate`'s subject is four.**~~ **WITHDRAWN 2026-08-09 — the claim did not
-   reproduce.** The `4` counts rule-*firings*, not macros reached: `g_tests++` only ran where
-   a violation was possible, so `src/objfmt/mccmacho.c`'s fourteen correct
-   `#if MCC_CONFIG_MACHO_CHAINED_FIXUPS` scored zero. All 17 named macros were reached, and
-   *"4 of 37 config macros have their idiom checked"* was never true; **17 of 37** was.
-   Coverage is now **29 of 37** with the other 8 refused by name. See *LANDED —
-   `tools/idiomgate.c`'s denominator* above. This was the thirteenth headline figure in this
-   project to fail to reproduce **as the list stood when this was written**, and the third
-   whose cause was a count taken once and read as something it did not measure. For the
-   current count, read the failed-to-reproduce table, not this ordinal.
-3. ~~**`tools/o0_ab.sh`'s gated half stays frozen**~~ **CLOSED 2026-08-09 (`wt/envgate`).**
-   The thirteen files are regenerated against `src/mccopt.h` and `ast/o0-baseline-gated`
-   covers them, with a known-positive that the committed thirteen would have failed. See
-   *LANDED — the gated half of `ast/o0-baseline`*.
+1. ~~The `--arenas=` figure needs re-taking against one TU.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+2. ~~`idiomgate`'s subject is four.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+3. ~~`tools/o0_ab.sh`'s gated half stays frozen~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 4. **The remaining not-a-cell tools.** ~~`tools/opt-determinism.py`,
    `tools/untyped-probe.py`,~~ `tools/xsuite-report.py`, `tools/gate-ledger.sh`,
    `tools/strategy-ledger.sh` and `tools/c2_sweep.sh` all publish or feed a board figure and
@@ -3613,18 +3089,7 @@ did not settle it.
 **The claim.** Four separate open problems in this tree are the same object wearing four
 names, and one task representation closes all of them:
 
-1. ~~**The JIT pool has no shutdown** (L2′, `docs/ARCHIVED.md` cluster L)~~ — **AMENDED
-   2026-08-10, and this item overstated its own claim.** The pool now drains and joins
-   (`mccjit_shutdown`, `wt/jitshutdown`) **without** a task representation. The claim that
-   *"a quit flag against an opaque `job->run(job)` that holds the process-global
-   `mccjit_swap_lock` across an entire compile is a redesign"* is true of a **cancel** and
-   false of a **drain**: `MccjitSwapJob` is run-to-completion with no resume state, so the
-   flag is only ever checked where the worker is already suspended on the condvar and
-   already between jobs. Nothing is checked inside `job->run`. What survives, and is the
-   real S7b claim here: the teardown is **unbounded above** (one `job->run` per worker,
-   and `L4b`'s own worst case is a multi-second module build), and **`L4b`'s hard
-   constraint** — no `mccjit_swap_lock` across a device dispatch — still needs the lock
-   narrowed to the codegen inside a tick.
+1. ~~The JIT pool has no shutdown (L2′, `docs/ARCHIVED.md` cluster L)~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 2. **D1e is already a coroutine, on the device side.** The measured-and-winning boundary
    mechanism is a pre-enqueued self-skipping resume chain: each command buffer loads the
    state vector, checks for a host reply, and exits immediately if absent. That is a
@@ -3639,21 +3104,7 @@ names, and one task representation closes all of them:
 **What exists today, so the scope is honest.** A census over `src/`, `runtime/`,
 `tools/`, `include/` (excluding `vendor/`) found:
 
-- ~~**No coroutine, fiber, `ucontext`, `makecontext`/`swapcontext`, generator,
-  continuation, scheduler, event-loop or ticking-task abstraction. Zero hits, all
-  spellings.**~~ **This census is FALSE as of 2026-08-10 and is the stale half of this
-  section.** `src/mcctask.h` now defines exactly the "Recommended shape" this section
-  goes on to propose: `MccTask{tick, ctx, state, resume, ticks, next}`, `MccSched`,
-  `mcc_task_init`, `mcc_sched_step`/`_run` — a switch-on-resume state machine, not
-  `ucontext`. It already has consumers: `src/mccthread.h`, and
-  `mcc_slice_tick_gpu`/`_cpu` at `src/mccslice.h`, driven from
-  `tools/slicerun.c`. **The representation is built and proven adequate
-  where it was built.** What remains open is only the *conversion* work below — items
-  C3/C4/C5: `MccjitSwapJob.run` is still `job->run(job)` (`src/mccjit_embed.c`),
-  `runtime/include/threads.h` still has no single-threaded backend and `mtx_timedlock`
-  is still the 1 ms `nanosleep` spin (`:144`), and `tools/mcchv.c` still uses
-  `thrd_create`/`thrd_sleep` (`:281,314,946`). Note also the anchor below has drifted:
-  `MccjitSwapJob` is at `src/mccjit_embed.c`, not `:1288-1298`.
+- ~~No coroutine, fiber, `ucontext`, `makecontext`/`swapcontext`, generator, continuation, scheduler, event-loop or…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 - The only *pre-existing* task-like construct was `MccjitSwapJob`: a `void (*run)(job)`
   on an intrusive FIFO, run to completion, no resume state.
 - `setjmp`/`longjmp` exists but is **only** error unwinding (`mcc.h:32`, `libmcc.c:863`)
@@ -3783,21 +3234,7 @@ validation layers, `spirv-val` and `glslc`. Numbers below are from this host unl
 stated, and they do not always match the M1's — the re-measured allocation census is
 **2.45×** the M1 figure.
 
-1. ~~**`MCC_AST_EVAL_LADDER_GPU=1` smashes the stack. One-line fix.**~~ **FIXED `1f7f6257`
-   (2026-08-08).** `src/mccast.c` now declares
-   `int32_t pin[64 * MCC_GPU_IN_SLOTS], pout[64 * MCC_GPU_OUT_SLOTS]` — exactly the fix
-   prescribed below. It sat here unstruck for three days as the top memory-safety row of this
-   list. *(2026-08-11 validation sweep.)* Original text:
-   `src/mccast.c` declares `int32_t pin[64], pout[128]` — 256 B and 512 B, sized
-   for the pre-`989e4b3b` ABI of 1 in-slot / 2 out-slots. `MCC_GPU_IN_SLOTS` is now 2
-   and `MCC_GPU_OUT_SLOTS` is 3, so the warm-up dispatch **reads 512 B from the 256 B
-   buffer** (`src/mccgpu.c`, Metal `:352`) and **writes 768 B into the 512 B one**
-   (`:1510`, Metal `:388`). Under glibc's stack protector that is a hard SIGABRT, so
-   **zero dispatches happen on any Linux host with a real ICD**; on Darwin it is a silent
-   256-byte stack overwrite that happens to survive. `gpu/ladder-gpu-parity` fails
-   correctly here via its `_disp EQUAL 0` `FATAL_ERROR`. **CI cannot see it**: the Linux
-   cell installs `libvulkan-dev` — loader and headers, no ICD — so the cell green-skips.
-   Fix: `int32_t pin[64 * MCC_GPU_IN_SLOTS], pout[64 * MCC_GPU_OUT_SLOTS];`
+1. ~~`MCC_AST_EVAL_LADDER_GPU=1` smashes the stack. One-line fix.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 2. **The Vulkan dispatch frees resources under a live command buffer.**
    `src/mccgpu.c` waits 30 s; on any non-`VK_SUCCESS` it falls to `done:` at
@@ -3858,19 +3295,7 @@ stated, and they do not always match the M1's — the re-measured allocation cen
    and `b_ll_cmpu` does build the discriminating shape. ~10 lines: print per-case
    `compared=` and fail a case at 0. Do this before trusting any generator's yield.
 
-6. ~~**`354e96f6` is half-landed, and it broke dump reproducibility.**~~ **BOTH HALVES
-   CLOSED (2026-08-11 sweep):** `tools/spvgate.c` now `sscanf`s 14 fields with graded
-   `nf < 7 / 12 / 13 / 14` fallbacks, and the dump interns pointers through
-   `ast_adump_intern` (landed `1b54c26e`), so the ASLR non-determinism is gone. Original
-   text:
-   The dump emits 12 fields plus `[inv]` callee lines (`src/mccast.c`), but
-   `rebuild_arena` still does `sscanf(...) != 7` (`tools/spvgate.c`) — the five new
-   fields have **no consumer**. Worse, two of them are raw `(uintptr_t)Sym*`, so two
-   identical self-compiles now differ under ASLR (identical under `setarch -R`; the
-   7-field prefix is still identical). **That invalidates the H4′ evidence** in
-   `docs/ARCHIVED.md` — "three `MCC_ARENA_DUMP` self-compiles byte-identical across all
-   374,310 node records" was measured before this commit. Any bank keyed on the dump is
-   unbankable until the pointers are interned.
+6. ~~`354e96f6` is half-landed, and it broke dump reproducibility.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 7. **The untyped-readback diagnosis was wrong, and the fix is free.**
    The claim that types are missing because they live in the `st_*` side table is half
@@ -3952,30 +3377,7 @@ per poll**. Below that threshold it fails **silently as a hang** — 12 KB ran 5
 then stopped. That constant is hardware-specific and spec-unsanctioned, and must be a
 named, tested, tunable element rather than an implementation detail.
 
-0. ~~**Accept two-child `AST_If` in both emitters.**~~ **Withdrawn — it was a category
-   error, and the measurement that produced it was mis-framed.** The emitters are
-   *expression* evaluators; a two-child `AST_If` is a statement-if, which has no value
-   for them to produce. Cross-tabulating a real arena dump (2746 bodies / 419,936
-   nodes, `MCC_ARENA_DUMP` with the build's own `-D`/`-I` set) by child count **and
-   `op`**:
-
-   | nchild | op | count | share of `AST_If` | what it is |
-   | --- | --- | --- | --- | --- |
-   | 2 | 0 | 8755 | 60.2% | statement `if`, no `else` — **no value** |
-   | 3 | 0 | 1887 | 13.0% | statement `if`/`else` — **no value** |
-   | 3 | 5 | **1678** | **11.5%** | **the ternary — the only value-producing form** |
-   | 3 | 3 | 1402 | 9.6% | loop region — no value |
-   | 2 | 2/6/4/8 | 778 | 5.4% | loop/region forms — no value |
-
-   `op == 5 && nchild == 3` is exactly what `ast_abs_try` (`src/mccast.c:11515`) keys on
-   for the ternary; `op == 0` is the statement-if checked at `:9028`, `:9256`, `:9888`;
-   `op == 2` increments loop depth (`:4136`). So `src/mccgpu.h`'s `nchild == 3`
-   gate is **refusing statements, correctly** — the honest figure is that only **11.5%
-   of `AST_If` nodes are ternaries at all**, not that 66% are wrongly refused.
-
-   The datum is still valuable, but it argues for something else: **73% of `AST_If`
-   nodes are statement control flow**, and reaching them needs the control-flow machine
-   (cluster C in `docs/ARCHIVED.md`), not a wider expression emitter. Re-file it there.
+0. ~~Accept two-child `AST_If` in both emitters.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 1. **Bank the baseline node census — static and dynamic — before any device work.**
    Cheap, zero-risk, and it makes every later claim interpretable. The dynamic half
@@ -3989,154 +3391,15 @@ named, tested, tunable element rather than an implementation detail.
    — 27% of static nodes — carry **97% of dynamic weight**. Any static-only percentage
    is half-vacuous without this.
 
-2. ~~**int64 in the emitters, as a `uint2` pair.**~~ **DONE — `989e4b3b`.** Both
-   emitters handle 64-bit as an emulated pair; ABI widened to `MCC_GPU_IN_SLOTS 2` /
-   `MCC_GPU_OUT_SLOTS 3`. `spvgate` went 18 cases / 1.18M points → **38 cases /
-   2,500,856 points**, plus 889 real slices at 58.2M points, ladder parity at 1767
-   dispatches on both backends, and the `930921-1.c` shape from 0 dispatches to 11.
-   `MCC_GPU_CODE_MAX` 8192 → 16384 words (SPIR-V only) for the ~500-word udiv64
-   helper. No refusal was added anywhere.
+2. ~~int64 in the emitters, as a `uint2` pair.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
-   **It also exposed a latent bug in the reference evaluator, fixed in `ee1fa9e0`.**
-   `ast_eval_binop` compared `TOK_LT/LE/GT/GE` as signed regardless of operand
-   signedness. Invisible at 32 bits (narrowing makes signed and unsigned agree),
-   divergent at 64. Reachable because `gen_op` rewrites `TOK_GE`→`TOK_UGE` at
-   `src/mccgen.c` but **the arena records the pre-rewrite token** — `unsigned
-   long long a >= b` and `long long a >= b` both come back as op `0x9d`. Measured with
-   the emitters unsigned-aware and the evaluator left signed: **1,382,356 mismatches
-   over 42.2M points**; 0 with both fixed. Latent, not an active miscompile —
-   compilers with and without the fix emit byte-identical objects for `src/mcc.c` at
-   `-O0`/`-O2`/`-O3`. The oracle certifies slice equivalence, so a wrong verdict is a
-   licence to rewrite incorrectly; it just had not been cashed in. **Note the
-   synthetic suite showed 0 mismatches either way — only real arenas discriminate.**
+3. ~~The four RIR opcodes that actually fire.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
-2b. ~~**OPEN: the MSL emitter has no per-value differential in-tree.**~~ **DONE —
-   `f716cf8d`.** `tools/spvgate.c` is dual-backend from one source (`SPVGATE_MSL`),
-   registering `gpu/msl-slice-{differential,known-positive,real}`. Both arms report
-   identical counters (38 cases / 2,500,856 points / 0 mismatches; 646 real slices /
-   42.2M points / 0 mismatches) and both fail under `--mutate`. `gpu/` is now 8 cells.
-   Two details worth keeping: the Metal arm drives `msl_*` directly rather than
-   `mcc_gpu_emit`, because `--mutate` must splice between `msl_expr` and
-   `msl_main_end` and `mcc_gpu_emit` has no such hook — an earlier scratch harness
-   built on it **accepted `--mutate` and silently did nothing**, i.e. a gate that could
-   not fail. And the cells are guarded on `APPLE AND MCC_GPU_LANG_MSL_VALUE`, not bare
-   `APPLE`, because `mccgpu.c` compiles one device layer per `MCC_GPU_BACKEND` and a
-   Darwin vulkan tree has no Metal layer to dispatch through.
+4. ~~Quote `kept_coverage`, not `modelled`.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
-2c. **OPEN, superseded framing: the old 2b text.** SPIR-V has
-   `spvgate` (38 cases, bit-exact per point); Metal has only `gpu/ladder-gpu-parity`,
-   which compares *verdicts*. The int64 MSL half was verified with a scratch harness
-   that is not checked in, so today Metal's arithmetic is gated only by "the two
-   oracles reached the same conclusion", not "every lane produced the same bits".
-   The fix is **not** to check in the 879-line near-duplicate: make `tools/spvgate.c`
-   itself dual-backend (only ~117 of its 1244 lines are Vulkan-specific) and add a
-   second CMake target from the same source, mirroring how `src/mccgpu.h` already
-   selects emitters from one file.
+5. ~~Give the GPU cells teeth.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
-2c. ~~int64 site list~~ — superseded by the above. 16 refusal sites (7 MSL, 7 SPIR-V, 2 in
-   the ladder hook), *not* the eight previously recorded. The CPU evaluator already
-   handles int64, so this is emitter-and-ABI work only: the SPIR-V module declares just
-   `SpvCapShader` and the storage buffer is a runtime array of 32-bit ints with
-   `ArrayStride 4`, so the two-slot layout is needed either way. Prefer the emulated
-   pair over the native `Int64` capability for the first rung — it needs no capability
-   query, no feature-floor plumbing, and works on both backends unmodified. This
-   unblocks `930921-1.c`, the one program in 600 known to have reached the ladder.
-
-   **Sites verified 2026-08-07** — `src/mccgpu.h` (MSL),
-   `:1382,1394,1404,1419,1432,1444,1479` (SPIR-V), `src/mccast.c` (ladder
-   hook). **Not started, and deliberately so:** this is not a matter of deleting 16
-   predicates. Each emitter needs 64-bit `add/sub/mul/div/mod/shift/cmp` with the same
-   overflow-and-definedness modelling `ast_eval_binop` already does at 64 bits, *and*
-   the dispatch ABI must widen from one `int32` slot per live-in and two per result to
-   a two-slot encoding, which changes `mcc_gpu_dispatch`, the tuple packing in
-   `ast_ladder_gpu_run`, and every existing emitter test. It is the largest item on
-   this board by a wide margin and it touches the only GPU path that currently works
-   and is guarded by five green cells. It should land as its own series with the
-   differential harness extended first, not folded into an unrelated batch.
-
-3. ~~**The four RIR opcodes that actually fire.**~~ **DONE — `5cffb874` (histogram)
-   and `8da21c5e` (handlers).** The histogram is now empty. Output is bit-for-bit
-   unchanged: the `src/mcc.c` object is byte-identical across 3,685,254 bytes.
-
-   **The honest result is that the payoff is zero, not small.** These opcodes are
-   information-free with respect to the arena — the reconcile/stamp machinery already
-   reconstructs their effect from the captured vstack, which is exactly what the 95.6%
-   figure in the audit corrections was measuring. What it bought: a clean histogram so
-   any *future* dropped opcode is visible, **3607 corrected stale pointer types**
-   (`rir_stamp_sv`'s retype loop bails on `VT_PTR`), a closed provenance hazard, and
-   two checked invariants. If the board expected coverage here, it will not come from
-   here — the 254,424 lost bytes are 88 bodies failing on replay *length*.
-
-   **`IR_OP_LOAD` cannot be unblocked, established two ways.** It wraps the backend
-   `load(r, sv)` (register materialization); the AST-level dereference is already
-   modelled by the `RIR_M_LOAD` mark. And the `continue` at `src/mccrir.c` is not
-   LOAD-specific — removing it runs `rir_reconcile` mid-region and truncates the
-   shadow stack: **used 2657 → 1833, 882 bodies mismatching, kept 84.3% → 34.2%.**
-
-3b. ~~original item 3 text~~ — superseded. Add a **per-opcode histogram** at
-   `src/mccrir.c`, excluding `JMP`/`JMPCOND`/`JMPADDR`/`JMPAPPEND`/`GSYMADDR`
-   (which are handled in other switches and are 68% of that arm's traffic). Then handle
-   `RETVAL`, `MKPTR`, `VPUSHSYM`, and unblock `LOAD` from the `continue` at
-   `src/mccrir.c`. **Four features, not 25** — 21 of the 25 fire zero times on
-   this target and five are `#ifdef`-ed out on arm64.
-
-4. ~~**Quote `kept_coverage`, not `modelled`.**~~ **DONE, and the diagnosis was
-   half-wrong.** The tool already *printed* both (`tools/rir-coverage.py`); what
-   it did not do was **ratchet** `kept_coverage` — banked at `:925`, never enforced, so
-   the number meaning "body bytes that ship optimized" could regress freely. A gate now
-   sits beside the modelled check. Also corrected: the honest whole-corpus kept figure
-   is **96–98%**, not the 81.4% I quoted — that was `src/mcc.c` alone, which is an
-   outlier. **Remaining work:** `rir-coverage` skips entirely on Darwin
-   (`:836-848`, no banked lowerable floors for macho), so this gate is enforced only on
-   elf/pe. Decide whether to bank macho floors.
-
-5. ~~**Give the GPU cells teeth.**~~ **DONE (mechanism); one CI flip left, deliberately
-   not made blind.** Added `MCC_GPU_REQUIRED` (a `mcc_config_node` BOOL, default OFF)
-   which turns the three "no usable device, skipping" early-returns into
-   `FATAL_ERROR`s — `cmake/ladder_gpu_parity.cmake`, `cmake/spvgate_real.cmake`,
-   `cmake/spvgate_mutate.cmake`, threaded through their `add_test` invocations.
-   Verified all three directions: **device + `ON` → 5/5 pass**; **no device + `ON` →
-   fails with the explanatory message**; **no device + `OFF` → skips and passes**, so a
-   developer machine without a GPU is unaffected. Portable to the declared CMake 3.22
-   minimum (`cmake_language(EXIT)` would need 3.29).
-
-   **Left open on purpose:** setting `MCC_GPU_REQUIRED=ON` on the `gpu-vulkan` CI cell
-   (`tools/ci.c`) is a one-line change, but whether the GitHub `macos-15` runner
-   actually exposes a usable device is unknown from here — the "1413 dispatches"
-   evidence in commit e3882880 is local, not CI. Flipping it blind could turn a green
-   cell red; flipping it *knowingly* is the entire point. Run it once and see.
-
-5b. **Original finding, retained.** Measured: **CI would stay green if both device backends
-   were deleted.** `cmake/ladder_gpu_parity.cmake` matches `available=0` and
-   returns exit 0; `spvgate_real.cmake:27` and `spvgate_mutate.cmake:4` skip and
-   succeed; Linux CI installs `libvulkan-dev` (loader + headers, **no ICD**) and Windows
-   installs headers only. The `gpu-vulkan` cell is macOS + MoltenVK, and nothing asserts
-   its device is real. Fix: every GPU cell emits a dispatch count and `FATAL_ERROR`s at
-   zero — the tooth `ladder_gpu_parity.cmake:47-50` already has — and add
-   `mesa-vulkan-drivers` (lavapipe) to a Linux cell, one apt package that makes the
-   Vulkan arm tested on the only OS where Vulkan is the default backend.
-
-6. ~~**Build `spvgate` locally.**~~ **DONE — and the diagnosis was wrong.** It is not
-   the headers: `/opt/homebrew/opt/vulkan-headers/include/vulkan/vulkan.h` **exists**
-   (keg-only, unlinked). What is missing is the **loader** — there is no
-   `/opt/homebrew/lib/libvulkan*`. `spvgate` calls `vkCreateInstance` directly and
-   deliberately avoids `mccgpu.c`'s dlopen path, so it needs something to link against;
-   MoltenVK exports the Vulkan entry points and serves. Recipe:
-
-   ```
-   cmake -S . -B <build> \
-     -DVulkan_INCLUDE_DIR=/opt/homebrew/opt/vulkan-headers/include \
-     -DVulkan_LIBRARY=/opt/homebrew/lib/libMoltenVK.dylib
-   ```
-
-   Result: `spvgate` builds and runs on the M1 Pro — **18 cases, 72 dispatches,
-   1,184,616 lanes, 1,126,578 compared, 58,038 vacuous, 0 mismatches** — and all three
-   previously-unbuilt cells go live. Full local GPU suite now **5/5 passing**:
-   `ladder-gpu-parity`, `spv-slice-differential`, `spv-slice-known-positive`,
-   `spv-slice-real`. **Worth landing as a CMake hint** so Darwin developers get the
-   SPIR-V gate without knowing this incantation — currently a Darwin checkout silently
-   tests one GPU cell instead of four. (Harmless link warning: MoltenVK is built for
-   macOS 12.0, the project targets 11.0.)
+6. ~~Build `spvgate` locally.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 7. **Raise the emitter caps, and fix the one that binds first.** `SPV_MAX_CONST`/
    `MSL_MAX_CONST` = 512 distinct constants (`src/mccgpu.h`, `:105`) — a 2049-node
@@ -4145,56 +3408,11 @@ named, tested, tunable element rather than an implementation detail.
    is ~400–700 nodes; the largest real invoke-free region is 1114 nodes. Neither cap is
    a device limit — Vulkan sets no module-size bound.
 
-8. ~~**Measure the Metal/Vulkan dispatch round-trip.**~~ **DONE — and it refutes the
-   plan's central assumption by 7.5×.** Measured on the M1 Pro, separate processes,
-   fresh buffers, magic-token-verified, N=2000–3000 after warm-up:
+8. ~~Measure the Metal/Vulkan dispatch round-trip.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
-   | mechanism | median | p99 |
-   | --- | ---: | ---: |
-   | dispatch-per-region (`waitUntilCompleted`) | **144–180 µs** | 224–240 |
-   | same, spin-poll shared memory | 101–105 µs | 159–169 |
-   | **persistent kernel + doorbell** | **24 µs** | 56 |
-   | pipelined submit, never waiting | 19.5 µs/CB (throughput, not latency) | |
+9. ~~The Metal path reports device failures as success.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
-   Against 944,327 crossings and a 0.093 s baseline, dispatch-per-region is **141.7 s =
-   1523× slower**, not the 203× the 20 µs assumption predicted. Even with device
-   `str*`/`mem*` **and** a device allocator it is **1.45 s = 16×**. Only
-   doorbell + device str/mem + device allocator + file staging — **all four** — gets
-   under the baseline (0.068 s). **Crossing reduction is a ~100× lever; the doorbell is
-   a 6× lever. Reduce first.**
-
-9. ~~**The Metal path reports device failures as success.**~~ **DONE, fixed.**
-   `src/mccgpu.c` called `waitUntilCompleted` and then unconditionally `memcpy`d the
-   output and set `rc = 1`, never reading `[cb status]` or `[cb error]` — so a watchdog
-   kill, page fault or hang was reported as **a successful dispatch with garbage
-   output**. Now checks status against `MTLCommandBufferStatusCompleted` and refuses via
-   the existing `mtl_report_err`. Verified: dispatch still succeeds
-   (`dispatches=1 lanes=64`) and `gpu/ladder-gpu-parity` passes. This mattered because
-   the failure surfaces are real and were being swallowed: `…ErrorImpactingInteractivity`
-   (occupancy kill), `…ErrorPageFault` (OOB device write), `…ErrorHang`, and
-   `…ErrorInnocentVictim` — an unrelated command buffer discarded because another faulted.
-
-10. ~~**Stop destroying device buffers per dispatch — free performance.**~~
-    **WITHDRAWN — the premise does not reproduce.** The claim was +56 µs per dispatch
-    (39% of the round-trip) for allocating fresh buffers. Implemented buffer holding
-    (grow-on-demand, released at quiesce), verified correct across a 64→512→64→4096→
-    128→16384→64 size sequence with every lane checked, then **A/B'd it against
-    fresh-per-dispatch in the same binary**:
-
-    | ntuple | in/out bytes | fresh | held |
-    | ---: | --- | ---: | ---: |
-    | 64 | 256 B / 512 B | 192 / 190 µs | 193 / 188 µs |
-    | 1024 | 4 KB / 8 KB | 193 µs | 202 µs |
-    | 16384 | 64 KB / 128 KB | 226 µs | 226 µs |
-    | 262144 | 1 MB / 2 MB | 342 µs | 346 µs |
-
-    **No benefit at any size**, including the 4 KB case the original measurement used —
-    `newBufferWithLength:` is cheap on unified memory, and the ~190 µs floor is
-    dominated by fixed dispatch cost. The change was reverted rather than shipped on a
-    refuted rationale. When Phase 1 builds a device-resident address space the buffer
-    lifetime will be driven by *that* design, not by this stub. The untested half of the
-    original item — spin-polling a result word instead of `waitUntilCompleted`, claimed
-    at −45 µs — remains open and is the more promising of the two.
+10. ~~Stop destroying device buffers per dispatch — free performance.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 11. **Add a tree-recursion exec golden.** `tests/exec/functions_abi/recursion.c` is
     *linear* `factorial`, which MSL silently linearizes into a loop — it passes without
@@ -4434,6 +3652,13 @@ largest functions in the program. That is a capability cost, not a correctness o
 > that a gap in this area needs a hand-written denominator rather than torture's. Quote the
 > 2.0% for the self-host hot path and the 0.47% for torture, never one for the other. See the
 > emit-coverage section in *STATE OF PLAY*.
+>
+> **Settled 2026-08-11 by a third instrument.** The emit map measured `src/mcc.c` at `-O1`
+> directly: **70 unfaithful of 3165 verdicted, 2.21%**, against the 2.17% at `-O2` above. Two
+> levels, two instruments, 0.04 points apart — the self-host figure is not a level artefact and
+> not an instrument artefact, and the "quote by corpus" rule above is now the measured answer
+> rather than a caution. The map also puts `full_language.c` at 3.32% and both targets' `-O0
+> --embed-jit` arm worse still; see **N18**.
 
 **What it still buys.** It converts a replay defect into a missed optimization rather than
 a wrong program, and it is nearly free (the `orig` buffer is already copied for the restore
@@ -4503,71 +3728,10 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
 - **W5** — mcc cannot self-host on Windows arm64: stage1 takes `0xC0000005` on
   `lib/atomic.c`, `lib/alloca.S`, `lib/alloca-bt.S`, `lib/builtin.c` (host ABI: varargs,
   alloca, stack probe). Needs Windows-on-ARM hardware.
-- ~~**`stage2 / windows / dynamic` CI was red (40 cells).**~~ **Closed 2026-08-09 down
-  to a residual four.** The bulk were Windows-portability defects, now fixed and pushed:
-  - `exec/fabs_edge` (×24): `mccmath.c` gated the single-precision math shims on
-    `__i386__`, so x86_64/arm64 Windows had no `fabsf`/`hypotf` (the UCRT does not export
-    them) — unresolved at link. It also imported the UCRT `fabs`, which returns a negative
-    NaN with the sign bit set; the bit-exact golden rejects it. Now `fabs`/`fabsf` route
-    through the sign-clear intrinsic and `hypotf` through `_hypot` for non-i386 Windows.
-  - `fmt/census-*`, `docs/refs` (×6): `fmt-census.py` and `docref-lint.py` compared
-    POSIX-style paths against native (backslash) `os.path.relpath`/`glob` output, so on
-    Windows every source/citation read as missing. Normalised both sides.
-  - `fmt/arena-census`, `slice-census`, `opt-determinism` (×5): these extract the build's
-    `-D/-I` flags for `src/mcc.c` from `compile_commands.json` with `shlex.split`. On
-    Windows the command carries backslash paths (`-IC:\...`) and POSIX `shlex` eats them
-    as escapes, so every `-I` collapses and the stage2 compile fails with
-    `libmcc.h not found`. Decode the path backslashes first, as `loop-census`/`rir-coverage`
-    already did. `fmt/arena-census` also skips cleanly on the VS generator, which emits no
-    `compile_commands.json`.
-  - `loop-census` (×1): the temp-linked instrumented compiler missed its bundled headers;
-    the PE self-compile now gets the same `-Bruntime/win32` the link step uses, so it finds
-    `stdlib.h` (which on PE lives in `runtime/win32/include`).
-  - **Residual four, each an owner call rather than a portability bug:** `rir-coverage`
-    (PE `lowerable` floor is stale-high — a re-bank, once confirmed to be codegen evolution
-    not a real regression); `ci/must-run-registered` (`ast/o0-baseline` is gated
-    `UNIX AND NOT WIN32` yet `must-run.txt` requires it everywhere; `wide256/gmp-diff` needs
-    libgmp — register-on-Windows vs. exempt is a coverage-policy decision); `cross/shadow-iv-x86_64`
-    (the bash sweep reports 614/614 attempts failed — a deeper Windows-run issue); and
-    `runtime-bench-check` (mcc-vs-reference divergence on signed-overflow UB in `branchy`
-    and `%f` CRT rounding — not a portability bug).
-- ~~**W8** — fix the `selfhost-jit` heap corruption.~~ **Closed 2026-08-09 on the
-  native x86_64 Windows host, via the MSVC-ASan `mcc_s` oracle.** The deterministic
-  crash is a heap-use-after-free of a `Sym` at `gaddrof` (`src/mccgen.c`, the
-  `vtop->sym->type.t & VT_VLA` probe) during `ast_reemit` of `embed_resolve`.
-  **Root cause, corrected from the 2026-08-05 note:** a leaf's captured `sym` is the
-  *referencing frame's own local `Sym`*, stored verbatim by `rir_leaf_slot`
-  (`src/mccrir.c`). That sym is required during in-function RIR replay —
-  `wide256_sv_is_stable_lval` (`src/wide256_slice.h`) branches on it, so dropping it at
-  capture regresses `exec-replay/int256` `test_convert` — but it dangles at re-emit,
-  which runs at end-of-translation after `ast_func_end` has torn the frame down. It is
-  not the cross-function refcount problem the old note guessed; there is no graft of the
-  freed sym's owner. **Fix:** `ast_reemit_scrub_leaf_syms` (`src/mccast.c`) nulls the
-  `sym` on plain-local leaves (`VT_LOCAL` without `VT_SYM`, and not VLA — detected off
-  the node type, never by dereferencing the possibly-dangling pointer) before replay,
-  for the re-emit root arena and for each callee arena grafted while `ast_in_reemit` is
-  set. This matches AOT semantics, which carry no sym on a plain local lvalue and NULL
-  on a wide256 local. Verified: the `mcc_s` + `tools/selfhost-jit.py` oracle passes with
-  in-memory output **byte-identical to the AOT reference**, and the full native ctest
-  suite shows every `int256` cell (all replay/reemit variants) green with no new reds.
-- ~~**Windows build broken by `tools/slicerun.c`.**~~ **Closed 2026-08-09.** A merge
-  landed `slicerun.c` including POSIX `<dlfcn.h>` and calling `setenv`/`unsetenv`
-  unconditionally, so the whole MSVC build failed to compile/link (it supplies its own
-  `host_dl*` because it does not link `mcchost.c`). Ported its `host_dl*` shims to
-  `LoadLibrary`/`GetProcAddress` and added a `_putenv_s` `setenv`/`unsetenv` shim, both
-  under `MCC_HOST_WIN32` (not raw `_WIN32`, which `host-gate-invariant` rejects). Full
-  sanitize-msvc build is green; `host-gate-invariant` passes.
-- ~~**W3 residual** — the 3-way-concurrent stress re-run.~~ **Closed 2026-08-05 on a
-  macOS arm64 host, with a negative control.** 399 chains at the fix, 0 non-identical,
-  over default `-O`, `-O1`, `-Os`, `-O3`, the 12-flag gates set and
-  `memmodel-{O2,O3,Os}`, at concurrency 3, 6 and 10. A zero alone would prove nothing if
-  the stress never reached the condition here, so it was paired with a twin built from
-  `git archive HEAD` with `5aa66d88`'s `src/mccast.c` hunk reverse-applied — only the
-  `ast_divmagic_invalidate` hook differing. **The defect reproduces on macOS arm64**:
-  5 non-identical in 150 chains, 2 of them in 30 at exactly the Windows-matching cell,
-  strictly bimodal at a constant −336, never serial. Rule of three bounds the fixed side
-  at 0.75% (1 in 133); Fisher exact one-sided p = 0.0015. The claim is that the original
-  failure mode at its actual rate is gone, not that the compiler is proven deterministic.
+- ~~`stage2 / windows / dynamic` CI was red (40 cells).~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+- ~~W8 — fix the `selfhost-jit` heap corruption.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+- ~~Windows build broken by `tools/slicerun.c`.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+- ~~W3 residual — the 3-way-concurrent stress re-run.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 - **One-off, unexplained**: `selfhost-fixpoint-memmodel-{O3,Os}` SIGSEGV'd once in stage2
   (mcc1 compiling `src/mcc.c`) during a `macos-cross` run, mid-compile at ~2.5 s against
   a normal ~5.5 s. It survived 38 clean re-runs (4/4, then until-fail:10 over both cells,
@@ -4581,27 +3745,9 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
 > Moved to [`docs/ARCHIVED.md`](ARCHIVED.md) 2026-08-10, validated complete against the tree: *Closed 2026-08-05*.
 
 ### Flag-sweep coverage
-- ~~Wire `tests/optfire/flagsweep.sh`'s exec half as ctest cells.~~ **Closed** — 113
-  `flagsweep-exec/<flag>` cells, one per `MCC_OPT_ROW`, plus a 74-row 3-way covering
-  array behind `-DMCC_FLAGSWEEP_FULL=ON`. See "Coverage, as wired" above.
-- ~~Unpin `replay-fallback` from `tests/optfire/cover3.py`.~~ **Closed** — the array
-  varies it and the five bisection-only knobs are pinned in its place. Delete the
-  `jit-splice` pin and the one `KNOWN_RED` entry when that pass is fixed.
-- ~~Root-cause the two masked-by-the-gate replay defects.~~ **Closed in `a4d28f03`.**
-  `transparent_union`/`union_byval`: `ast_inline_graft` bound by-value parameters with a
-  plain `vstore()`, whose assignment conversion does not exist for a `transparent_union`
-  parameter — the parser never performs it either, since `gfunc_param_typed` consults
-  `transparent_union_member` and casts to the *member* type. The graft raised
-  `cannot convert 'struct A *' to 'union <anonymous>'` and longjmp'd out of the
-  post-optimization emit. Fixing the cast then exposed a frame overlap underneath it,
-  unreachable while the error aborted the graft first: the graft takes its frame base from
-  `loc`, but during replay `ast_alloc_loc` *assigns* `loc` from the recorded list rather
-  than decrementing, so `loc` can come back shallower than the caller's own locals. Hence
-  `ast_graft_base`, set once per emit to the parser's frame bottom. `ast_loc_low` is not a
-  usable floor — it drifts down per graft and broke `exec/struct_packed_indirect`.
-  `chained_assign`: `rir_hook_fconst_reuse` matched only on the complex/scalar kind and
-  never on the value, unlike its ast-side twin `ast_fconst_reuse`, so a drifted cursor
-  handed the `0.5` multiply the label belonging to `1.0f`.
+- ~~Wire `tests/optfire/flagsweep.sh`'s exec half as ctest cells.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+- ~~Unpin `replay-fallback` from `tests/optfire/cover3.py`.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+- ~~Root-cause the two masked-by-the-gate replay defects.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 - **The per-flag cells cannot see a two-flag bug and the array cannot see a four-flag
   one.** `flagsweep-exec/inline` was green on the `const_member_copy` miscompile because
   that one needs `-fno-reg-disp` too; only `flagsweep-cover` found it. When a fix lands
@@ -4645,7 +3791,7 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
 - **P6** — split the monolithic `src/mccast.c` (~17k lines) and rename `ast_*` → `ir_*`.
   Precondition still false: the `ir_` namespace already collides (~850 occurrences) and
   `targetgate` still whitelists `mccast.c`.
-- ~~Land the held `fix-imaginary` branch.~~ **Closed** — redundant with `38508d54`; see the branch section above.
+- ~~Land the held `fix-imaginary` branch.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 ### Open codegen / front-end defects
 - `__bf16`: finish encode/decode + ABI now that `VT_BTYPE` is 5 bits. **Do not alias
@@ -4653,31 +3799,8 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
 - 32-byte vectors are laid at 16-byte alignment (`MCC_MAX_ALIGN` cap) — open ABI
   decision; cross-TU to gcc is currently incompatible (struct-ABI, not SysV vector).
 - `aligned(N)` bitfields: ~139 survivors.
-- ~~`expr_type()`'s unconditional `nocode_wanted++`.~~ Already fixed: `expr_type_vm`
-  re-parses and evaluates a variably-modified operand. Of the 8 tests once attributed to
-  it only `vla-14`, `vla-24` and `vla-stexp-1` still fail, each for a different reason.
-- ~~`selfhost-qemu-{i386,arm}-O2`~~ **Fixed 2026-08-06.** Both targets now reach a
-  byte-identical `s2 == s3` fixpoint at `-O1` and `-O2`. Two things are worth keeping:
-  - **The `MCC_MAX_ALIGN` diagnosis was wrong.** The `alignment of 16 is larger than
-    implemented` error at `mccdefs.h:528` was a *symptom*; `MCC_MAX_ALIGN` is not on
-    that path at all. `parse_one_attribute` errors when `n != 1 << (ad->a.aligned - 1)`,
-    i.e. when the `aligned : 5` bitfield fails to round-trip — and it failed because
-    **every** bitfield store in the stage-2 compiler was writing 0.
-  - **Root cause: `-fif-conversion` marked ternaries whose arms are two-word types.**
-    `ast_sel_gpr` accepted `VT_LLONG`, which is a register *pair* on a 32-bit target —
-    which is exactly why only the two 32-bit ELF targets failed. The marked body in
-    `mcc.c` was `vstore`'s bitfield mask, `bits >= 64 ? ~0ULL : (1ULL << bits) - 1`. The
-    replay path materialises the condition into a GPR *before* evaluating both arms;
-    the arms need `r0:r1` and call `__aeabi_llsl`, so the condition is spilled and then
-    reloaded into `r0` — on top of the mask's low word. The mask came out 0, so every
-    bitfield store wrote 0. `gen_select` already refuses two-word types and falls back
-    to `gen_select_branch`, so marking them bought nothing and only took the riskier
-    both-arms-first path; the fix is one guard in `ast_sel_gpr` and is a no-op on
-    64-bit, where `long long` is a single word.
-  - Regression test: `tests/exec/codegen/select_two_word.c`. Verified to fail (`mask 62`
-    and `mask 63` come back with a corrupted low word) on both arm and i386 at `-O2`
-    with the guard disabled, and to pass at `-O0`..`-O3` on x86_64, arm and i386 with it.
-    It only bites at `-O2`+, so keep it in a corpus the optfire/exec-search cells run.
+- ~~`expr_type()`'s unconditional `nocode_wanted++`.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+- ~~`selfhost-qemu-{i386,arm}-O2`~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 - 32-byte vectors are laid at 16-byte alignment (`MCC_MAX_ALIGN` cap on i386/arm is 8,
   16 elsewhere) — open ABI decision, and a real constraint, but it was **not** the cause
   of the self-host failure above.
@@ -4729,29 +3852,8 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
   - `gcc.dg/fastmath-1.c` — `-ffast-math` sign-of-float comparisons. Not reduced.
   - Unexamined and larger: **~80 `differ` and ~150 `refused` rows per level.** `refused` is
     mcc declining to compile at all, which is a front-end gap list, not a JIT one.
-- ~~**`-fno-opt-search-<anything>` disables the whole search, not the sub-knob it names.**~~
-  **REFUTED 2026-08-11 — see N9 in *Open, ranked* for the disproof. `set_flag` matches by
-  exact `strcmp`, and the counts are identical with and without the flags.** The original
-  text is kept below because the *way* it was wrong is worth more than the claim.
-  Found 2026-08-11 while trying to A/B `-fopt-search-predict`. `-fno-opt-search-fullset`,
-  `-fno-opt-search-ordered` and `-fno-opt-search-predict` each take `-O13` from its normal
-  candidate count to **`0 candidate evaluations`** — the parser is matching the `opt-search`
-  prefix and turning off the master row. Every one of these flags is documented as a
-  sub-knob and behaves as a kill switch, so any measurement that used one to isolate a
-  sub-knob measured "search off" instead and would have read as "this knob is worth
-  nothing". The A/B in `69296b85` had to go through the `MCC_SEARCH_PREDICT` env to get a
-  real comparison. Audit anything that ever passed a `-fno-opt-search-*` flag.
-- ~~**`jit/xoracle-conformance` drops its second corpus silently.**~~ **CLOSED 2026-08-11 (`else()` added).** **Promoted into N5's
-  green-by-omission list in *Open, ranked*.** The CMake arm at
-  `CMakeLists.txt` adds `--testsuite`/`--suite ts-unittests` only
-  `if(EXISTS ${MCC_XSUITE_LLVMTS}/SingleSource/UnitTests)` and has **no `else()`** — no
-  skip, no message, the suite just is not there. `--limit` is per-suite
-  (`tools/jitconform.py`), so losing the arm halves the corpus, and the companion
-  `jit/xoracle-coverage` cell then fails its `--min-cross 400` floor against a
-  single-suite denominator that tops out at 379. On this host the cache pointed
-  `MCC_XSUITE_LLVMTS` at a path that does not exist, so the cell was **red for a
-  configuration reason that it reported as a coverage reason**. Repointed locally; the
-  missing `else()` is still a defect — a corpus that vanishes must say so.
+- ~~`-fno-opt-search-<anything>` disables the whole search, not the sub-knob it names.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+- ~~`jit/xoracle-conformance` drops its second corpus silently.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 - Declined upstream `7f7845cd` (VT_VOID); i386 `R_386_TLS_GOTIE` gap.
 - Raise arena fidelity / finish the capture path (Phase F).
 - Four hand-reproduced wrong-answer defects from the three-compiler board are written up
@@ -4780,27 +3882,8 @@ between shell invocations, so a build launched from the wrong directory fails wh
   were concurrent with other agents.
 - `selfhost-fixpoint-memmodel-{O3,Os}` SIGSEGV'd once under heavy parallel load and
   never reproduced. Same suspicion, now much better founded.
-- ~~The two win32 `-run` cells are an intermittent wine flake.~~ **Not wine, and not a
-  flake in the tree — fixed in `36e20b30`.** `tools/run-tier.sh` tore its work tree down
-  with `trap 'rm -rf "$work"' EXIT`. The wineserver outlives its last client and flushes
-  `user.reg`/`userdef.reg` back into the prefix as it exits, so `rm` emptied
-  `.wineprefix`, the departing server recreated a registry file in it, and the closing
-  `rmdir` failed `ENOTEMPTY`. That `rm` was the last command the shell ran, so under
-  `set -e` **its status became the cell's status** — the cells passed 15/15 programs and
-  then died in their own cleanup. ~17% per cell run under load, 7 red in 40 before, 0 in
-  40 after, and 0 red across 11 full sweeps. Every lost race abandoned a
-  `/tmp/tmp.*/.wineprefix`; 47 had accumulated at one or two per hour, matching "red in
-  nearly every gate all day", and post-fix sweeps create none. Teardown now shuts down
-  that prefix's own wineserver and can no longer decide the cell's exit status.
-- ~~Reconcile the deliberate-red count.~~ **Settled 2026-08-05 by running them.** It was
-  7; then **2**, both PE (`run-tier/{x86_64-win32,i386-win32}`, `tls` and `tls_threads`
-  each); it is now **0** — the PE `-run` TLS defect is fixed (see the fix write-up above),
-  so all four cells pass and `KNOWN_RED` is empty. x86_64-native, i386, arm and riscv64
-  were closed earlier by the archive's `-run` TLS fixes. Any deliberate-red `-run` TLS
-  cell reappearing is a regression. Two *further* cells became red only because the qemu
-  sysroots now exist, `selfhost-qemu-{i386,arm}-O2` — **both fixed 2026-08-06**; the
-  `MCC_MAX_ALIGN` attribution was wrong and the cause was `-fif-conversion` selecting
-  two-word arms on 32-bit targets. See "Open codegen / front-end defects".
+- ~~The two win32 `-run` cells are an intermittent wine flake.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+- ~~Reconcile the deliberate-red count.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 > Moved to [`docs/ARCHIVED.md`](ARCHIVED.md) 2026-08-10, validated complete against the tree: *External suites — three-compiler board taken 2026-08-05 at `030fb4aa`*.
 
@@ -4877,9 +3960,7 @@ changed the finding, the correction is marked inline.
   `IMPROVED`. `--stats=4` costs nothing measurable and does not change codegen.
 - **At `-O13` the panel prints once per search phase and the last one is all zeros.** A census
   must take the per-column max across panels or it will read every strategy as dark.
-- ~~**The device arm computes a census and never ratchets it.**~~ **CLOSED 2026-08-11 — `own("dev-")` + `ratchet()`, 531 previously-discarded refusals now banked.** `device_probe` calls `cat_add`
-  for `dev device-refused:unavailable` and `:no-dispatch`, but the `do_dev` branch never calls
-  `ratchet()`, and `bails.txt` holds no `dev ` rows. Both categories are unmeasured.
+- ~~The device arm computes a census and never ratchets it.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 
 > From the archived section *Landed — item 26 was not a stack-slot overlap, it was the replay frame record handing out a slot too small for what it was about to hold, 2026-08-10*.
@@ -4982,11 +4063,8 @@ decision with three defects behind it.
 1. **The teardown is unbounded above.** See the tick split above.
 2. **`MCCJIT_POOL_MAX` is 64** and `mccjit_pool_start` now clamps to it silently. The
    baked constructor passes a literal; nothing today asks for more than 2.
-3. ~~`L2′(ii)` and `L2′(iii)` are unchanged and are what `L2` is now waiting on.~~ **Both closed 2026-08-10.**
-4. ~~`mcc_gpu_quiesce`'s unbounded `vkDeviceWaitIdle` becomes reachable from `atexit` the
-   moment `L2` wires the device into `mccjit_shutdown`. Clear `mcc_gpu.ok` on
-   `VK_ERROR_DEVICE_LOST` **before** that wiring, not after.~~ **Done in that order,
-   2026-08-10.** The wait is not merely bounded, it is gone.
+3. ~~`L2′(ii)` and `L2′(iii)` are unchanged and are what `L2` is now waiting on.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+4. ~~`mcc_gpu_quiesce`'s unbounded `vkDeviceWaitIdle` becomes reachable from `atexit` the moment `L2` wires the…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 
 > From the archived section *Landed — recursion lowers by depth-bounded expansion behind a bailout guard, and the wavefront has no candidate on this corpus, 2026-08-09 (`wt/depthinline`)*.
@@ -5040,30 +4118,8 @@ reader-side guards above are each a one-line change and carry none of that risk.
 
 #### Still open on the JIT after this branch
 
-1. ~~**The KGC zero-extension miscompile above.**~~ FIXED on `wt/kgcfix`; the
-   return-register convention section above records what it actually was and what it
-   closed. ~~What replaces it at the top of this list is the **side-effect admission
-   defect** in the same route — five distinct corpus programs, wrong answers reachable
-   from ordinary C, and the reduced case is in this file.~~ Also FIXED, on `wt/kgcpure`:
-   `ast_fn_purity` never saw `++`/`--` because they are `AST_Unary`, not `AST_Store`. The
-   landed section above records the measurement, the 8-of-475 dispatch cost and the four
-   cells. **Open residue, one line:** `ast_fn_purity` is now sound over the arena it is
-   given, and nothing checks that the arena is the whole callee. `ast_arena_has_hole`
-   covers inline asm and dangling register refs; whether `mccjit_intent_serialize` can
-   hand the classifier a body with a *silently* elided statement is unmeasured. The
-   whitelist makes an omission fail safe only if the omitted node would have been in the
-   arena.
-2. ~~**47.1% of programs cannot be baked at all.** The single largest lever on JIT
-   coverage is the `VT_STATIC | VT_INLINE` callee refusal in `mccjit_intent_serialize` —
-   a static helper called from the JIT'd function disqualifies the whole function, and
-   that is the commonest shape in the corpus.~~ **The 47.1% reproduces; the attribution
-   does not.** Measured on `wt/bakewiden` (see the landed section at the head of this
-   file): the refusal costs **60** of those 3118 programs, and **3110 of them have no bake
-   site at all** — they never reach `mccjit_intent_serialize`, so they are lost in
-   `ast_func_end`'s gate chain. The refusal itself is now widened to bind a local callee by
-   address (−140 refused bake sites, −38 `NOT_BAKED` programs, 0 new DIFFER). **What is
-   still open here is the real lever: attributing the 3110 across `rir_try_active`,
-   `ast_replay_ok`, `ast_opt_ok = faithful && !ast_fn_hole` and `ast_jit_want`.**
+1. ~~The KGC zero-extension miscompile above.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+2. ~~47.1% of programs cannot be baked at all. The single largest lever on JIT coverage is the `VT_STATIC |…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 3. **`--embed-jit` suppresses its own no-bake warning under `-w`.** `mcc_warning` is
    routed through the warning machinery, so `mcc -w --embed-jit` silently produces an
    engine-less binary. `tools/jitconform.py` had to detect the bake by searching the
