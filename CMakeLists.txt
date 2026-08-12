@@ -6281,6 +6281,19 @@ if(MCC_BUILD_TESTS)
                     "links libmcc.a into a standalone JIT host: needs -DMCC_BUILD_STATIC_LIB=ON on a Linux target")
             endif()
 
+            # The JIT must not change what a program computes. Each case runs the
+            # same --embed-jit binary twice, MCC_JIT=1 against MCC_JIT=0, so the
+            # AOT body is the control. Catches the class where the runtime
+            # re-emit and the parser disagree -- at compile time the faithfulness
+            # gate hides that by falling back, at runtime nothing does.
+            add_test(NAME jit/replay-parity
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/jit_replay_parity.sh"
+                        "$<TARGET_FILE:mcc>" "${CMAKE_BINARY_DIR}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include"
+                        "${CMAKE_BINARY_DIR}")
+            set_tests_properties(jit/replay-parity PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                LABELS "smoke" TIMEOUT 600)
+
             if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" AND MCC_CPU STREQUAL "arm64")
                 foreach(_jt leaf-int kgc purity struct liverun poison fparg
                             reemit-gates fold-consts search-live search-live-kgc
@@ -6290,6 +6303,7 @@ if(MCC_BUILD_TESTS)
             endif()
         else()
             set(_jitoff_why "the Tier-B runtime-JIT engine is not linked into this build; configure with -DMCC_EMBED_JIT=ON")
+            mcc_skip_test(jit/replay-parity "${_jitoff_why}")
             mcc_skip_test(jit/selftest-leaf-int "${_jitoff_why}")
             mcc_skip_test(jit/selftest-reemit-gates "${_jitoff_why}")
             mcc_skip_test(jit/selftest-stage2 "${_jitoff_why}")
@@ -6655,15 +6669,19 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
     if(NOT _ref_cc)
         mcc_skip_test(mcctest "needs a GCC-compatible reference cc (host cc is ${CMAKE_C_COMPILER_ID}; set MCC_REF_CC or put gcc on PATH)")
         mcc_skip_test(mcctest-bcheck "needs a GCC-compatible reference cc (host cc is ${CMAKE_C_COMPILER_ID}; set MCC_REF_CC or put gcc on PATH)")
+        mcc_skip_test(mcctest-embedjit "needs a GCC-compatible reference cc (host cc is ${CMAKE_C_COMPILER_ID}; set MCC_REF_CC or put gcc on PATH)")
     elseif(_ref_cc_name STREQUAL "gcc" AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 
         mcc_skip_test(mcctest
             "GNU gcc reference on Darwin/arm64 diverges from clang on impl-defined/UB ABI corners (covered by the Apple-clang mcctest + diff3-suite)")
         mcc_skip_test(mcctest-bcheck
             "GNU gcc reference on Darwin/arm64 diverges from clang on impl-defined/UB ABI corners (covered by the Apple-clang mcctest + diff3-suite)")
+        mcc_skip_test(mcctest-embedjit
+            "GNU gcc reference on Darwin/arm64 diverges from clang on impl-defined/UB ABI corners (covered by the Apple-clang mcctest + diff3-suite)")
     elseif(MCC_TARGETOS STREQUAL "WIN32" AND MCC_CPU STREQUAL "arm64")
         mcc_skip_test(mcctest "no arm64-Windows gcc reference matches the PE differential: the only reference is an emulated x86_64 mingw (UCRT printf + x86-only asm_test), which cannot be byte-identical to native arm64 mcc on legacy msvcrt (mcc arm64 codegen is covered by the exec/* goldens + pe-native-conformance; full_language differential runs on x86/x64 Windows)")
         mcc_skip_test(mcctest-bcheck "no arm64-Windows gcc reference matches the PE differential (emulated x86_64 mingw vs native arm64 mcc; see mcctest)")
+        mcc_skip_test(mcctest-embedjit "no arm64-Windows gcc reference matches the PE differential (emulated x86_64 mingw vs native arm64 mcc; see mcctest)")
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c")
         add_test(NAME mcctest COMMAND "$<TARGET_FILE:mccharness>" mcctest
             --cc ${_ref_cc} --mcc ${_mcc_exe}
@@ -6675,6 +6693,25 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             --emu "${MCC_EMULATOR}")
         set_tests_properties(mcctest PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
+        # The same differential, built with --embed-jit, so the runtime hot-swap
+        # is in the loop. mcctest above builds without it and therefore cannot
+        # see a defect that only the JIT's re-emit introduces -- isid() in
+        # full_language.c is exactly that shape.
+        if(MCC_EMBED_JIT)
+            file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/embedjit")
+            add_test(NAME mcctest-embedjit COMMAND "$<TARGET_FILE:mccharness>" mcctest
+                --cc ${_ref_cc} --mcc ${_mcc_exe}
+                --src ${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c
+                --srcdir ${CMAKE_CURRENT_SOURCE_DIR} --bdir ${_bdir} --idir ${_idir}
+                --work ${CMAKE_BINARY_DIR}/embedjit
+                --refflags "${_mcctest_refflags}"
+                --testdefs "-DCC_NAME=CC_${_ref_cc_name} -DGCC_MAJOR=${_ref_cc_major}"
+                --mccargs --embed-jit --emu "${MCC_EMULATOR}")
+            set_tests_properties(mcctest-embedjit PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77)
+        else()
+            mcc_skip_test(mcctest-embedjit "the embedded JIT is not built into this configuration (needs -DMCC_EMBED_JIT=ON)")
+        endif()
         if(MCC_TARGETOS STREQUAL "WIN32")
             mcc_skip_test(mcctest-bcheck "mcc bounds-checking is unsupported on the PE/msvcrt target (faults in msvcrt callbacks/library calls)")
         else()
@@ -6693,6 +6730,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
     else()
         mcc_skip_test(mcctest "tests/diff/full_language.c is missing from this tree")
         mcc_skip_test(mcctest-bcheck "tests/diff/full_language.c is missing from this tree")
+        mcc_skip_test(mcctest-embedjit "tests/diff/full_language.c is missing from this tree")
     endif()
 
     if(MCC_CPU MATCHES "^(i386|x86_64)$"
@@ -6936,6 +6974,28 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 7200
                 ENVIRONMENT "MCC_RIR_CENSUS=1")
 
+            # The emit map: what each of the four layers (AOT/RIR/AST/JRN) does
+            # for every body, and the machine-code emit calls reconciled against
+            # the bytes that survive. Needs MCC_CONFIG_TRACE=ON to say anything;
+            # on a build without it the tool reports 77 rather than a green zero.
+            add_test(NAME emit-map-full-language
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/emit-map.py"
+                        "${CMAKE_BINARY_DIR}" --target full_language.c --opt=-O1
+                        --bank "${CMAKE_CURRENT_SOURCE_DIR}/tests/emitmap/bank.json"
+                        --opt-in)
+            set_tests_properties(emit-map-full-language PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600
+                ENVIRONMENT "MCC_EMIT_MAP=1")
+
+            add_test(NAME emit-map-selfhost
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/emit-map.py"
+                        "${CMAKE_BINARY_DIR}" --target selfhost --opt=-O1
+                        --bank "${CMAKE_CURRENT_SOURCE_DIR}/tests/emitmap/bank.json"
+                        --opt-in)
+            set_tests_properties(emit-map-selfhost PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 7200
+                ENVIRONMENT "MCC_EMIT_MAP=1")
+
             add_test(NAME "census/gates-armed"
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/census-armed.py"
                         "${CMAKE_BINARY_DIR}" --min-cells 5)
@@ -7040,6 +7100,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             mcc_skip_test("loop-census-numeric" "${_nopy_why}" LABELS census)
             mcc_skip_test("rir-nofb-probe" "${_nopy_why}" LABELS census)
             mcc_skip_test("rir-nofb-probe-self" "${_nopy_why}" LABELS census)
+            mcc_skip_test("emit-map-full-language" "${_nopy_why}" LABELS census)
+            mcc_skip_test("emit-map-selfhost" "${_nopy_why}" LABELS census)
             mcc_skip_test("census/gates-armed" "${_nopy_why}" LABELS census)
             foreach(_op -O2 -O3)
                 string(REPLACE "-" "" _optag "${_op}")
