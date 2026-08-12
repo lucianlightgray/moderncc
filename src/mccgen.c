@@ -2172,6 +2172,16 @@ static void move_reg(int r, int s, int t) { MCC_TRACE("enter\n");
 	}
 }
 
+static void vunpin_reg(int rc, int t) { MCC_TRACE("enter\n");
+	int r = vtop->r & VT_VALMASK;
+	if (r < VT_CONST && !(vtop->r & VT_LVAL) && !USING_TWO_WORDS(t) &&
+			(ast_pinned_regs & ((uint64_t)1 << r))) { MCC_TRACE("br\n");
+		int rtmp = get_reg(rc);
+		move_reg(rtmp, r, t);
+		vtop->r = (vtop->r & ~(uint32_t)VT_VALMASK) | rtmp;
+	}
+}
+
 ST_FUNC void (gaddrof)(void) { MCC_TRACE("enter\n");
 	wide256_deconst();
 	if ((vtop->r & VT_REGDISP) && (vtop->r & VT_LVAL)) { MCC_TRACE("br\n");
@@ -5057,6 +5067,7 @@ again:
 				goto done;
 #endif
 			} else { MCC_TRACE("br\n");
+				vunpin_reg(MCC_RC_INT, vtop->type.t);
 				gen_cvt_sxtw();
 				goto done;
 			}
@@ -5074,12 +5085,14 @@ again:
 			{ MCC_TRACE("br\n"); goto done; }
 #if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
 		if (ss == 4) { MCC_TRACE("br\n");
+			vunpin_reg(MCC_RC_INT, vtop->type.t);
 			gen_cvt_csti(dbt);
 			goto done;
 		}
 #endif
 #if defined MCC_TARGET_X86_64
 		if (ss == 8 && ds == 4 && trunc == 32 && ast_trunc32_env) { MCC_TRACE("br\n");
+			vunpin_reg(MCC_RC_INT, vtop->type.t);
 			vtop->type.t = VT_INT | (dbt & VT_UNSIGNED);
 			gen_cvt_trunc32();
 			goto done;
@@ -13671,6 +13684,12 @@ static void expr_landor(int op) { MCC_TRACE("enter\n");
 	rir_hook_landor_end((cc || f) ? (2 | (i ^ f)) : 0);
 }
 
+static int gv_unpinned(int rc, int t) { MCC_TRACE("enter\n");
+	gv(rc);
+	vunpin_reg(rc, t);
+	return vtop->r & VT_VALMASK;
+}
+
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
 		defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386) ||                 \
 		defined(MCC_TARGET_ARM)
@@ -13694,7 +13713,7 @@ static void gen_select_branch(CType *type) { MCC_TRACE("enter\n");
 	gsym(tt);
 	vpushv(&vf);
 	gen_cast(type);
-	r2 = gv(rc);
+	r2 = gv_unpinned(rc, type->t);
 	tt = gjmp(0);
 	gsym(u);
 	*vtop = sv;
@@ -13868,7 +13887,7 @@ static void expr_cond_nested(void) { MCC_TRACE("enter\n");
 		tt = r2 = 0;
 		if (c < 0) { MCC_TRACE("br\n");
 			if (type.t != VT_VOID)
-				{ MCC_TRACE("br\n"); r2 = gv(rc); }
+				{ MCC_TRACE("br\n"); r2 = gv_unpinned(rc, islv ? VT_PTR : type.t); }
 			tt = gjmp(0);
 		}
 		gsym(u);

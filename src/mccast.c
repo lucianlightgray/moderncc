@@ -5587,7 +5587,7 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 			rc = MCC_RC_TYPE(type.t);
 			if (USING_TWO_WORDS(type.t))
 				{ MCC_TRACE("br\n"); rc = MCC_RC_RET(type.t); }
-			r2 = gv(rc);
+			r2 = gv_unpinned(rc, islv ? VT_PTR : type.t);
 			tt = gjmp(0);
 			gsym(u);
 			*vtop = sv;
@@ -5629,7 +5629,7 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		rc = MCC_RC_TYPE(type.t);
 		if (USING_TWO_WORDS(type.t))
 			{ MCC_TRACE("br\n"); rc = MCC_RC_RET(type.t); }
-		r2 = gv(rc);
+		r2 = gv_unpinned(rc, islv ? VT_PTR : type.t);
 		tt = gjmp(0);
 		gsym(u);
 		*vtop = sv;
