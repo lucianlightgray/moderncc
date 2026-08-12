@@ -1048,6 +1048,118 @@ shutdown. That hazard did not exist while the quiesce destroyed nothing.
     is the right denominator, not gcc c-torture (item 6). If the duplication is small, the
     cache is `opt-slice` again.
 
+## Implementation order by shared surface — indexed 2026-08-12
+
+> Four read-only sweeps indexed every open item in this file and reported, per item, the
+> files and symbols it must touch. This section is the synthesis: **clusters ordered by how
+> much implementation surface they share**, so that the work amortises instead of being paid
+> once per row. It is an index, not a verdict — **two of the first three entries I spot-checked
+> were wrong**, and both corrections are recorded below. Verify a row against the tree before
+> starting it.
+>
+> **Corrections found while checking:** the 35 KB `ast_replay_bb` frame is **already fixed** —
+> hoisted into `ast_replay_asmgen`, a `noinline` callee, honouring the "must not be file-scope,
+> `mcc_error` longjmps through here" caveat. And the two surviving `vtop->sym` dereferences in
+> `check_va_start_register`/`check_va_start_last_param` **appear unreachable**: both early-out
+> on `!(r & VT_SYM) && v != VT_LOCAL && v != VT_LLOCAL`, and a `VT_CMP` SValue has neither, so
+> the deref is guarded. That needs a reachability probe before it is "fixed".
+
+**Rank 1 — `src/mccast.c`, eight items.** The largest shared file in the tree and the one where
+a single change touches the most rows: sweep rows 17 (the pre-inline copy left in `.text`, 27
+functions / 52 KB), 25 (the non-LVAL local `Ref` question `wt/decaytype` answered for
+`ast_dep_decode` and did not carry into `ast_eval_slice.h`) and 27 (five arena mutators with no
+`AST_SG_*` bit, so the JIT cannot know what shaped the tree it is handed); `rf-1`
+(`cli/perfn_inproc` selects on `ind - ast_body_ind_sv`, which does not predict object size);
+the four depth-inline rows; `res-d4b`. Doing any one of these means reading the same 400 lines
+of `ast_func_end` that N6.8 also needs.
+
+**Rank 2 — the counter substrate: `mcc_inv_add` names + `tools/emit-map.py`, three items.**
+**N6.8** (an attributed bake counter, modelled on `rir_prod_why_name[]`), **N18** (the
+`-O0 --embed-jit` faithfulness gap, whose table that tool produces) and **N19** (the byte census
+is x86_64-only because `g()` is the sole primitive there). N19's fix forces the multi-anchor
+refactor of `emit-map.py` that N6.8 wants anyway, and N18's table is the output of both.
+**N17 is closed, so N18's "every row is a lower bound" caveat is discharged** and the table
+should be re-taken before it is quoted again.
+
+**Rank 3 — `tools/rir-coverage.py` + `tests/rir/coverage-bank.json`, five items.** Sweep 22
+(the `wide` denominator is an unmanifested `os.walk`; the bank has no `sources` key), sweep 23
+(`--nofb-probe` and both `--check-*-dir` modes pass over empty input; gap fixtures cover 3 of
+18 classes), `ci-4` (`kept_coverage` is host-sensitive by 0.06 pp against a `--tol` of 0.05),
+`rf-4/5` (two of 2765 bodies replay byte-identically under one build and not another — a
+divergence between two builds of the same program, and `selfhost-fixpoint` is structurally
+blind to it), and the `pe` floors. **Constraint that crosses two of them:** `rf-4/5` says do not
+raise `--tol` until `--classify` has named the two bodies, which forecloses one of `ci-4`'s
+three options.
+
+**Rank 4 — `tests/optfire/*`, seven items.** Sweep 4 (`if-conversion-abs` ships at level 2 and
+its own bench says `-0.0334`, a sign flip from the `+0.1905` it was promoted on — a one-line
+level change with the measurement already in hand), sweep 6, sweep 24 / filed-15 (`$WORK/skipped`
+is written at five sites and never read), filed-14 (`defstate` cannot tell "off by default" from
+"does not exist"; 13 rows stay green if their flag is deleted), `rf-2`, `cc-9`, and the three
+flag-sweep coverage rows. One `sed` in `flagsweep.sh` requires a literal leading tab in
+`mccopt.h` — reindent that file and three cells go vacuously green.
+
+**Rank 5 — `src/mccjit_embed.c`, six items.** `jit-teardown-unbounded`, `jit-poolmax-64` (a
+silent clamp, one line to make loud), `embedjit-warn-under-w` (the no-bake warning routes
+through `mcc_warning`, so `mcc -w --embed-jit` silently ships an engine-less binary — one line),
+`jit-lazy-build-fail`, `jit-offx86-unmeasured`, and **N24**. `jit-lazy-build-fail` is the most
+reachable: `tools/embed-jit-smoke.py` reproduces it with no external corpus.
+
+**Rank 6 — the replay positional streams, four items.** **N2** (`rir_tvar_replay`/
+`rir_slot_replay` hand back a recorded offset with no size/align fit check),
+`rir-locreplay-sizecheck`, `rir-locrec-skip-byfit` and `phase-f-arena-fidelity`. `rir_fcrec[]`
+already carries a key array — that is the consume-by-fit pattern the other three lack, so the
+shape is settled and only the record widening is new work. **N2 shares `get_temp_local_var`
+with the `ast_ltemp_overlaps` change**, so it is cheapest immediately after this wave.
+
+**Rank 7 — `parse_btype` in `src/mccgen.c`, seven items.** `bf16-abi`,
+`types-complex-float16`, `types-float128`, `types-m512-avx`, `types-bitint`,
+`int128-signedness`, `int256-literal-suffix`. One switch, one `VT_BTYPE` field with **5 bits**,
+and `types-bitint` is C23-mandatory. The wide256 kernel (`mcc_w256_*`) and its memory-backed
+representation are the two pieces a fixed-width `_BitInt` would reuse, which ties this to
+rank 8.
+
+**Rank 8 — wide256, five items.** `int256-float-conv` (a hard error in both directions;
+`tests/wide256/` is self-oracled so it needs no external corpus), `int256-literal-suffix`,
+`int256-dwarf`, `int256-inline-arith`, and `vec32-align` via `MCC_MAX_ALIGN`.
+
+**Rank 9 — `tests/smoke/bails.txt`, four items.** **Items 21, 22, 23, 24** share only the bank
+they are recorded in — which is why fixing **21** (an `-O13` bail arm) mechanically adds `-O13`
+rows for the other three's shapes.
+
+**Rank 10 — `gen_cvt_ftoi`, two items, and deliberately last of the code clusters.**
+**Items 23 and 24 are opposite arms of one `t != VT_INT` in a 36-line function** and must be
+fixed as two changes, not one: the naive shared fix regresses `(int)(long double)1e300`, which
+currently matches both references. **24 is the real conformance defect of the trio** — `1 - 2⁻⁶⁴`
+converts to `1` as `int` and `0` as `long` — and needs an emitted `fistpl` sequence, not a wider
+convert, and not a helper (that collides with the libgcc-overlap territory). **Isolated surface:
+this cluster shares nothing with anything else**, so it is last by the ordering rule and first
+by severity. It is also x86_64-only and not runnable from the Mac.
+
+**Standing off the ranking, because they are decisions rather than surface:** item 22
+(`_Float16` evaluation format — keep per-operation rounding and document it, or implement
+`-fexcess-precision=`, which needs an `SValue` bit that does not exist), sweep row 29 (the
+`MCC_OPT_REPLAY_FALLBACK` flip; **recommended under either answer and not done: make the
+fallback visible**, since `rir_prod_note` only reports at `MCC_RIR_PROD>=2`), and the coroutine
+task S7b (large, host-neutral, and explicitly staged — convert `tools/mcchv.c` first as the
+cheapest proof the representation is adequate).
+
+**Two unblocked items with the best measured value per line, neither in a cluster:**
+`bl-7` — `MCC_RIR_STAMP` defaults off, so **39,640 of 39,643 `Binary` nodes reach the emitters
+untyped**; typed coverage goes 65.8% → 100.0% at `=2` and all three settings produce
+byte-identical objects, so it is a default flip. And `bl-4` — **six binary opcodes
+(`TOK_UDIV`, `TOK_UMOD`, `TOK_PDIV`, `TOK_UGE`, `TOK_ULE`, `TOK_UGT`) have zero test coverage
+of any kind**, 23% of the binary-op axis, structurally unreachable from harvested arenas because
+`gen_op` rewrites `TOK_GE`→`TOK_UGE` *after* the arena records the token. Findable by
+enumeration, no fuzzing needed.
+
+**Host-blocked on the Mac and belonging to the Linux box:** N8's two survivors, items 23/24's
+runtime half, `run-tier/x86_64`'s `tls_threads`, every `diff3/*` cell (both references here are
+the same clang), `d6-sso-msabi`'s silent-mismatch claim, and all Vulkan device work.
+**Uniquely enabled here:** the Metal/MSL arm has no differential cell at all
+(`msl_region*` is absent against a live `spv_*` family), and this is the only host that can run
+one.
+
 ## Research — five horizontal slices over the open board, 2026-08-10
 
 Five parallel read-only sweeps, one per cross-cutting layer, run to find where one
