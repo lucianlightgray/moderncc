@@ -573,6 +573,18 @@ done:
 	return spliced;
 }
 
+static int mccjit_bind_name_eq(MCCState *js, const char *sym_name,
+															 const char *bind_name) { MCC_TRACE("enter\n");
+	if (js->leading_underscore
+#ifdef MCC_TARGET_PE
+			&& !strchr(bind_name, '@')
+#endif
+	) { MCC_TRACE("br\n");
+		return sym_name[0] == '_' && !strcmp(sym_name + 1, bind_name);
+	}
+	return !strcmp(sym_name, bind_name);
+}
+
 static int mccjit_bind_apply(MCCState *js, const MccjitIntent *it) { MCC_TRACE("enter\n");
 	ElfSym *es;
 	Section *st = js->symtab;
@@ -586,7 +598,7 @@ static int mccjit_bind_apply(MCCState *js, const MccjitIntent *it) { MCC_TRACE("
 			{ MCC_TRACE("br\n"); continue; }
 		nm = (const char *)st->link->data + es->st_name;
 		for (bi = 0; bi < it->nbind; bi++) { MCC_TRACE("br\n");
-			if (strcmp(nm, it->bind_name[bi]))
+			if (!mccjit_bind_name_eq(js, nm, it->bind_name[bi]))
 				{ MCC_TRACE("br\n"); continue; }
 			es->st_shndx = SHN_ABS;
 			es->st_value = (addr_t)(uintptr_t)it->bind_addr[bi];
