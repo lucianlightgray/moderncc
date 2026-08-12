@@ -1369,8 +1369,15 @@ static void pass_oracle(const Pass *p, int idx)
 		return;
 	cc[0] = ref_gcc();
 	cc[1] = ref_clang();
+	{
+		int fg = ref_is_clang(cc[0]), fc = ref_is_clang(cc[1]);
+		if (fg >= 0 && fg == fc)
+			cc[1] = NULL;
+	}
 	for (i = 0; i < 2; i++) {
 		char *txt;
+		if (!cc[i])
+			continue;
 		snprintf(tag, sizeof tag, "%s-ref%d", p->name, i);
 		ts_path(out, sizeof out, g_work, "pass-%s.txt", tag);
 		if (!ref_build(cc[i], tag, out, p->file, p->oracle, ""))
@@ -1383,9 +1390,11 @@ static void pass_oracle(const Pass *p, int idx)
 	if (!any)
 		note("  %-10s no reference compiler could adjudicate (%s, %s); the pinned "
 				 "answer stands on mcc alone\n",
-				 p->name, cc[0], cc[1]);
+				 p->name, cc[0], cc[1] ? cc[1] : "same family as the first");
 	else
-		note("  %-10s oracle-adjudicated by %s\n", p->name, p->oracle);
+		note("  %-10s oracle-adjudicated by %s (%s)\n", p->name, p->oracle,
+				 cc[1] ? "two independent references"
+							 : "one reference; the pair is one implementation family");
 }
 
 static void passes_run(int maxlevel, const char *want_digest)

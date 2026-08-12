@@ -815,15 +815,20 @@ arm that sees what the variant actually computes. **A JIT-vs-AOT value disagreem
 program**, and it is only visible on that host because that host is where the bind route is
 dark. Take it with `MCC_JIT_KGC=0` and a single program.
 
-**N25. `smokerun`'s reference pair is unchecked everywhere except the divergence arm.** New
-2026-08-12 and small. `divergence()` now probes both references for `__clang__`/`__GNUC__` and
-drops the duplicate when the families match, because on macOS `/usr/bin/gcc` is a clang shim
-and the arm was reporting `diverge-both` — its loudest verdict — from one compiler compared
-with itself. **`pass_oracle()` takes the same pair and was not fixed**: it adjudicates a pinned
-answer with `cc[0]` and `cc[1]` and prints `oracle-adjudicated by ...` after either succeeds,
-so on that host a pass is "adjudicated" twice by the same compiler. Same one-line probe, same
-argument; it was left out because no cell currently disagrees under it and a change there moves
-what the pass rows assert.
+**~~N25. `smokerun`'s reference pair is unchecked everywhere except the divergence arm.~~ —
+CLOSED 2026-08-12, same day it was opened.** `pass_oracle()` now runs the same
+`__clang__`/`__GNUC__` probe and drops the duplicate, and the per-pass line says which it got:
+*"oracle-adjudicated by -O2 (one reference; the pair is one implementation family)"* on this
+host against *"(two independent references)"* where a real gcc is installed. No pass row
+changed answer, which is the expected result and not evidence the fix was unnecessary — the
+point is that the line no longer claims two adjudicators when there is one.
+
+**The cost of a single-reference host is larger than this row, and it is not fixable in the
+harness.** See the correction on **N23**: where `mcc-differs-from-both` cannot be computed,
+*"mcc is wrong"* and *"the two references disagree and mcc picked one"* are indistinguishable,
+and the first is the reading a reader reaches for. Installing a real gcc-15 on the Mac is the
+only thing that restores the distinction; until then every divergence measured there is a
+one-sided observation and the bank header says so.
 
 **N21. The ladder census makes compilation non-deterministic, so anything measured under it on
 an affected subject is unattributable.** Found 2026-08-11 while proving `--jit-always-gpu`
