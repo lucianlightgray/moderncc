@@ -202,16 +202,22 @@ Listed because a whole-suite run is expensive and this list did not exist anywhe
 
 | cell | why | fix |
 | --- | --- | --- |
-| `flagsweep/cover3-verify` | `opt-search-predict` is in `src/mccopt.h` and absent from `tests/optfire/cover3.py`'s array — a flag was added without regenerating | `tests/optfire/cover3.py gen` (pure derivation from `mccopt.h`) |
+| ~~`flagsweep/cover3-verify`~~ **CLOSED 2026-08-12** | two flags had accumulated, `opt-search-predict` and `tree-sra` | regenerated: 76 rows covering all 1,774,520 3-way settings of 111 varying flags, same 5 pinned flags uncovered |
 | `optlevel/torture-differential` (+`-known-positive`) | **0 unknown divergences.** It fails on *staleness*: `20020720-1.c` and `20041114-1.c` no longer diverge at `-O1`–`-O4`, so the known table over-claims. **This is the ratchet working** — two known divergences were fixed and nobody dropped the rows | drop those levels from the known table |
-| `fmt/census-bank` (+`-known-positive`) | the printf-site census moved: `fprintf` 400→408, `snprintf` 184→182, `mccgpu.c` 36→39, `mccstats.c` 18→21, `libmcc.c` 37→35, `mccast.c` 153→155, `accepted` 156→155 | re-take with `--update-bank` **and say which figure moved and why** — the tool asks for the reason because every one of these is quoted on the board |
+| ~~`fmt/census-bank` (+`-known-positive`)~~ **CLOSED 2026-08-12** | the drift is now attributed commit by commit, which is what the tool was asking for. `libmcc.c` 37→35 is `4d8e03c4` (stopped linking host `libgcc.a`), `mccgpu.c` 36→39 is `747709bc` (device-lost + quiesce), `mccstats.c` 18→21 is `f797074b` (the strategy floor), `mccast.c` 153→155 is `69296b85` (the `-O13` surrogate) and 155→166 is `890a822c` (`--jit-always-gpu`), which also moved `mccjit_embed.c`. The `fprintf` total is **419**, not the 408 this row used to claim, and `accepted` 156→155 and `snprintf` 184→182 both follow from the `libmcc.c` drop. Re-taken; **this session added zero printf sites**, verified by counting `src/*.c` at `7c2d3305` and at HEAD (424 both) | re-taken with `--update-bank` |
 | `cross/shadow-iv-x86_64` | `attempts=616 clean=0 failed=616 divergences=0` — **nothing compiled at all**, so the sweep is vacuous and its own guard fires | the sweep compiles nothing on this tree; find out why before trusting any shadow-IV number |
-| `ci/registration-stubs` | two capability gates drop cells instead of skipping them: `jit/gdb-debuggable`/`jit/selfhost-opt` under `MCC_EMBED_JIT`, and `jit/xoracle-coverage` under the `MCC_XSUITE_GCC` path | add the two `else()` stubs |
+| ~~`ci/registration-stubs`~~ **CLOSED 2026-08-12** | it was **three** cells and **three** `else()` branches, not two and two: `jit/xoracle-coverage` is dropped by the corpus-exists test *and* by the outer python3/embed-jit/host-arch gate, so the lint had to be re-run twice before it went quiet | stubs added |
 
-The banks are deliberately **not** re-taken here. This file's own rule is that a ratchet which
-gets re-banked without a reason trains its readers to re-bank without looking, and the figures
-above moved because of somebody else's change — re-taking them now would erase the evidence of
-what moved rather than record it.
+**Three of the seven closed on 2026-08-12; the standing four are `optlevel/torture-differential`
+(+`-known-positive`), `cross/shadow-iv-x86_64` and `runtime-bench-check`.** The rule this file
+states — that a ratchet re-banked without a reason trains its readers to re-bank without
+looking — is why `fmt/census-bank` was left red for a day and not why it should stay red: the
+tool asks for the attribution, and once every moved figure has a commit against it the
+attribution exists and re-taking *records* the movement instead of erasing it. Getting it
+required checking that this session moved nothing, which it did not.
+
+`jit/bind-local` is an eighth red on the arm64 host and is **N24**; it is not in the table
+above because that table was taken on x86_64-linux, where the cell passes.
 
 ### How to validate — standing rule, 2026-08-10
 
