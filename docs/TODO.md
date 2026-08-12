@@ -865,23 +865,34 @@ and the first is the reading a reader reaches for. Installing a real gcc-15 on t
 only thing that restores the distinction; until then every divergence measured there is a
 one-sided observation and the bank header says so.
 
-**N21. The ladder census makes compilation non-deterministic, so anything measured under it on
-an affected subject is unattributable.** Found 2026-08-11 while proving `--jit-always-gpu`
-parity. Compiling `tests/diff/full_language.c` twice at `-O1` under
-`MCC_AST_EVAL_LADDER=1 MCC_AST_EVAL_LADDER_CENSUS=1` produces **two different objects**. Without
-the census the same compile is byte-stable, and `tests/smoke/subject.c` is stable *with* it, so
-it is subject-dependent rather than universal.
+**~~N21. The ladder census makes compilation non-deterministic.~~ — NOT A DEFECT, closed
+2026-08-12, and the cell it was blocking gets its assertion back.** The census is
+deterministic. What moves is `__TIME__`.
 
-**Pre-existing and nothing to do with the device**: it reproduces on a compiler binary saved
-before `--jit-always-gpu` existed, and with no GPU involved on either run. That is what makes it
-worth a row — the census is the instrument several claims in this file are taken with, and on an
-affected subject it cannot support an object-level comparison at all. `gpu/always-gpu-parity`
-detects the condition (it compiles the CPU arm twice) and downgrades its object assertion to a
-NOTE rather than blaming the device, which is the right behaviour for that cell but leaves the
-underlying defect open.
+Reproduced first: three compiles of `tests/diff/full_language.c` at `-O1` under
+`MCC_AST_EVAL_LADDER_CENSUS=1` give three different objects, and without the census the same
+compile is byte-stable. Then diffed instead of assumed. **Six bytes differ, the disassembly is
+identical, and the six bytes are `13:34:54` against `13:35:23`** — the `__TIME__` literal from
+`tests/diff/parts/s6_10_4.h`, which the corpus prints the shape of. The census does nothing to
+codegen; it makes the compile slow enough that two consecutive runs land in different seconds.
+With `SOURCE_DATE_EPOCH=1000000000` exported, three census runs give **one** object.
 
-Worth knowing before it is chased: the verdict panels are **identical** across runs even when the
-objects are not, so whatever moves is downstream of the ladder's answers, not in them.
+That also explains the "subject-dependent" observation the row rested on: `tests/smoke/subject.c`
+has no `__TIME__` and was stable *with* the census, `full_language.c` has one and was not.
+
+`tests/gpu/always_gpu_parity.sh` had downgraded its object assertion to a NOTE on account of this
+row — the strongest thing that cell asserts, skipped. It now pins `SOURCE_DATE_EPOCH`, *requires*
+two CPU-arm compiles to agree (a reproducibility failure is now a failure, not a skip), and then
+compares against the device. Both cells pass on this host with **objects byte-identical**, over
+667 pairs / 28.6M points and 1199 pairs / 47.4M points.
+
+**STANDING TRAP, and it caught three separate claims today.** `__DATE__` and `__TIME__` are in
+both object corpora — `tests/exec/preprocessor/predefined_macros.c` and
+`tests/diff/parts/s6_10_4.h`. **Any object-identity comparison over either corpus must export
+`SOURCE_DATE_EPOCH` or it will report a spurious mover.** `tools/o0_ab.sh` and
+`tools/c2_sweep.sh` already do; `tests/gpu/always_gpu_parity.sh` now does. A hand-rolled A/B does
+not, and that is what N21 was, what the first attempt at N16 was, and what the original N16
+report most likely was.
 
 **N6. `L2` — wire the device into `mccjit_shutdown()`.** Unblocked as of 2026-08-10, with two
 preconditions in the GPU landed section. One is a hazard *this wave created*: the quiesce now

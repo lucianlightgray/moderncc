@@ -23,6 +23,13 @@ OPT="${5:--O4}"
 shift 5 2>/dev/null || true
 EXTRA="$*"
 
+# __DATE__/__TIME__ are in the corpus (tests/diff/parts/s6_10_4.h), so two
+# compiles that straddle a second boundary differ in .data with identical code.
+# The census is slow enough to make that routine, which is what used to read as
+# "the census is non-deterministic". Pin the clock and the comparison is real.
+SOURCE_DATE_EPOCH=1000000000
+export SOURCE_DATE_EPOCH
+
 mkdir -p "$WORK"
 CPUO="$WORK/agp_cpu.o"
 GPUO="$WORK/agp_gpu.o"
@@ -65,19 +72,19 @@ if ! diff -u "$WORK/agp_cpu.panel" "$WORK/agp_gpu.panel" > "$WORK/agp.diff"; the
 	exit 1
 fi
 
-# The object check only discriminates when the census is itself deterministic
-# on this subject. It is not, on some: the ladder census perturbs codegen run to
-# run (pre-existing, reproduces without --jit-always-gpu and on a compiler built
-# before it existed). Where that happens the comparison cannot attribute a
-# difference to the device, so it is reported and skipped rather than blamed.
+# The object check discriminates only if the CPU arm is reproducible, so prove
+# it here rather than assuming it: compile the CPU arm a second time and require
+# the two to agree before comparing against the device.
 CPUO2="$WORK/agp_cpu2.o"
 MCC_AST_EVAL_LADDER=1 MCC_AST_EVAL_LADDER_CENSUS=1 \
 	"$MCC" -B"$BD" $EXTRA "$OPT" -w -c "$SUBJ" -o "$CPUO2" 2>/dev/null || true
 if ! cmp -s "$CPUO" "$CPUO2"; then
-	echo "NOTE: the census is non-deterministic on this subject, so the object"
-	echo "      comparison cannot attribute a difference to the device; skipped."
-	echo "      (reproduces with no --jit-always-gpu; the verdict parity above still holds)"
-elif ! cmp -s "$CPUO" "$GPUO"; then
+	echo "FAIL: two CPU-arm compiles of the same subject differ, with"
+	echo "      SOURCE_DATE_EPOCH pinned. That is a reproducibility defect in its"
+	echo "      own right and it makes the device object comparison unattributable."
+	exit 1
+fi
+if ! cmp -s "$CPUO" "$GPUO"; then
 	echo "FAIL: --jit-always-gpu changed the emitted object"
 	exit 1
 fi
