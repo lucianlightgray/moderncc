@@ -13,10 +13,16 @@
 #define SMF_HAVE_I256 0
 #endif
 
-#if defined __SIZEOF_INT128__ || defined __MCC__
+#if defined __SIZEOF_INT128__
 #define SMF_HAVE_I128 1
 #else
 #define SMF_HAVE_I128 0
+#endif
+
+#if defined __i386__ || defined __x86_64__
+#define SMF_FTOI_INDEFINITE 1
+#else
+#define SMF_FTOI_INDEFINITE 0
 #endif
 
 #define SMF_FTYPES(X) \
@@ -469,6 +475,7 @@ enum { SMW_O_ADD, SMW_O_SUB, SMW_O_MUL, SMW_O_NEG, SMW_O_SHL, SMW_O_SHR,
 
 static const SmWRow smw_rows[] = {
 
+#if SMF_HAVE_I128
 		SMW_ROW("i128.neg.min", S128, NEG, 0x8000000000000000ull, 0ull, 0ull, 0ull,
 						0x8000000000000000ull, 0ull)
 		SMW_ROW("i128.neg.one", S128, NEG, 0ull, 1ull, 0ull, 0ull,
@@ -490,6 +497,7 @@ static const SmWRow smw_rows[] = {
 						127ull, 0ull, 1ull)
 		SMW_ROW("i128.sub.min.1", S128, SUB, 0x8000000000000000ull, 0ull, 0ull, 1ull,
 						0x7fffffffffffffffull, 0xffffffffffffffffull)
+#endif
 
 #if SMF_HAVE_I256
 		SMW_ROW("i256.neg.one", S256, NEG, 0ull, 1ull, 0ull, 0ull,
@@ -1166,12 +1174,21 @@ static const SmXRow smx_rows[] = {
 		{"x.llong.roundtrip.dbl", 6, 0x8000000000000000ull},
 		{"x.llong.roundtrip.ldbl", 7, 0x8000000000000000ull},
 		{"x.sll.roundtrip.ldbl.m1", 8, 0xffffffffffffffffull},
+#if SMF_FTOI_INDEFINITE
 		{"x.sll.from.ldbl.1e300", 9, 0x8000000000000000ull},
 		{"x.uint.from.1e300", 10, 0x8000000000000000ull},
 		{"x.uint.var.1e300", 18, 0ull},
 		{"x.uint.from.sll", 19, 0x89abcdefull},
 		{"x.uint.var.2p32", 20, 0ull},
 		{"x.int.from.1e300", 11, 0xffffffff80000000ull},
+#else
+		{"x.sll.from.ldbl.1e300", 9, 0x7fffffffffffffffull},
+		{"x.uint.from.1e300", 10, 0x00000000ffffffffull},
+		{"x.uint.var.1e300", 18, 0x00000000ffffffffull},
+		{"x.uint.from.sll", 19, 0x89abcdefull},
+		{"x.uint.var.2p32", 20, 0x00000000ffffffffull},
+		{"x.int.from.1e300", 11, 0x000000007fffffffull},
+#endif
 		{"x.f16.from.1e300", 12, 0x7c00ull},
 		{"x.f16.from.65520", 13, 0x7c00ull},
 		{"x.f16.from.65519", 14, 0x7bffull},

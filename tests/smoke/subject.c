@@ -157,7 +157,7 @@ static int sm_mix_zero_divisor(int op, SmBits b)
 }
 
 static SmBits g_digest;
-static SmBits g_dpart[4];
+static SmBits g_dpart[7];
 
 static void sm_mix_digest(SmBits v)
 {
@@ -418,7 +418,11 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--trapnames")) {
 			int k;
 			for (k = 0; k < sm_trap_rows_count; k++)
-				printf("%s\n", sm_trap_rows[k].name);
+				if (SM_DIV_TRAPS)
+					printf("%s\tfault\n", sm_trap_rows[k].name);
+				else
+					printf("%s\t%016llx\n", sm_trap_rows[k].name,
+								 (unsigned long long)sm_trap_rows[k].nofault);
 			return 0;
 		} else {
 			fprintf(stderr, "smoke subject: unknown argument '%s'\n", argv[i]);
@@ -447,10 +451,13 @@ int main(int argc, char **argv)
 	nsweep += smb_sweep(&g_digest);
 	g_dpart[2] = g_digest;
 	nf += smf_sweep(&g_digest);
-	nf += smc_sweep(&g_digest);
-	nsweep += sms_sweep(&g_digest);
-	nmsweep = sm_msweep();
 	g_dpart[3] = g_digest;
+	nf += smc_sweep(&g_digest);
+	g_dpart[4] = g_digest;
+	nsweep += sms_sweep(&g_digest);
+	g_dpart[5] = g_digest;
+	nmsweep = sm_msweep();
+	g_dpart[6] = g_digest;
 
 	if (mode_digest) {
 		sm_digest_dump();
@@ -462,9 +469,12 @@ int main(int argc, char **argv)
 				 g_checks, nsweep, nmsweep, nf, g_failures,
 				 (unsigned long long)g_digest);
 	if (g_verbose)
-		printf("smoke: parts=%016llx %016llx %016llx %016llx\n",
+		printf("smoke: parts=%016llx %016llx %016llx %016llx %016llx %016llx "
+					 "%016llx\n",
 					 (unsigned long long)g_dpart[0], (unsigned long long)g_dpart[1],
-					 (unsigned long long)g_dpart[2], (unsigned long long)g_dpart[3]);
+					 (unsigned long long)g_dpart[2], (unsigned long long)g_dpart[3],
+					 (unsigned long long)g_dpart[4], (unsigned long long)g_dpart[5],
+					 (unsigned long long)g_dpart[6]);
 	if (g_verbose)
 		printf("smoke: types=%d ops=%d pairs=%d mixops=%d corpus=%d rows=%d "
 					 "mixrows=%d traprows=%d frows=%d\n",

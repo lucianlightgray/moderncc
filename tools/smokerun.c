@@ -675,8 +675,8 @@ static void run_traps(const char *exe, int level)
 		if (*p == '\n')
 			n++;
 	if (n <= 0) {
-		bad("O%d subject listed %d trap rows; the idiv fault case would not be "
-				"exercised at all",
+		bad("O%d subject listed %d trap rows; the divide-by-zero and MIN/-1 cases "
+				"would not be exercised at all",
 				level, n);
 		return;
 	}
@@ -684,16 +684,38 @@ static void run_traps(const char *exe, int level)
 	for (i = 0; i < n; i++) {
 		int st;
 		char *eol = strchr(p, '\n');
+		char *want = strchr(p, '\t');
 		if (eol)
 			*eol = 0;
+		if (!want) {
+			bad("O%d trap row %d ('%s') carries no expectation; --trapnames must "
+					"emit 'name<TAB>fault' or 'name<TAB><hex>'",
+					level, i, p);
+			if (!eol)
+				break;
+			p = eol + 1;
+			continue;
+		}
+		*want++ = 0;
 		snprintf(cmd, sizeof cmd, "--trap %d", i);
 		st = run_subject_nocore(exe, cmd, out);
 		g_checks_total++;
 		g_cases_total++;
-		if (!died_by_fpe(st)) {
+		if (!strcmp(want, "fault")) {
+			if (!died_by_fpe(st)) {
+				char *o = slurp(out);
+				bad("O%d trap row %s did not fault (status=%d): %s", level, p,
+						exit_code(st), o);
+				free(o);
+			}
+		} else {
 			char *o = slurp(out);
-			bad("O%d trap row %s did not fault (status=%d): %s", level, p,
-					exit_code(st), o);
+			char wnt[128];
+			snprintf(wnt, sizeof wnt, "NOTRAP %s %s\n", p, want);
+			if (died_by_fpe(st) || exit_code(st) != 0 || strcmp(o, wnt))
+				bad("O%d trap row %s: this target does not fault on the divide, so "
+						"the row must return %s; got status=%d output '%s'",
+						level, p, want, exit_code(st), o);
 			free(o);
 		}
 		if (!eol)
@@ -701,7 +723,7 @@ static void run_traps(const char *exe, int level)
 		p = eol + 1;
 	}
 	if (g_verbose)
-		note("  O%-2d traps=%d all faulted\n", level, n);
+		note("  O%-2d traps=%d checked\n", level, n);
 }
 
 static int level_pass(int level, const char *want_digest, char *got_digest,

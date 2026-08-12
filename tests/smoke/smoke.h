@@ -11,6 +11,12 @@ typedef enum { SM_E_A = 0, SM_E_B = 1, SM_E_MAX = 2147483647 } SmEnum;
 
 #define SM_SIGFPE 8
 
+#if defined __i386__ || defined __x86_64__
+#define SM_DIV_TRAPS 1
+#else
+#define SM_DIV_TRAPS 0
+#endif
+
 #define SM_ENC_INT(v) ((SmBits)(long long)(int)(v))
 
 #define SM_ITYPES(X) \
@@ -210,6 +216,7 @@ typedef struct
 	unsigned short op;
 	SmBits a, b, c;
 	int sig;
+	SmBits nofault;
 } SmTrapRow;
 
 #define SM_ROW(nm, TY, OP, A, B, C, WANT) \
@@ -233,9 +240,10 @@ typedef struct
 	{ nm, SM_T_##TY, SM_S_##OP, SM_FOLD_SKIP, \
 		SM_ENC_##TY(A), SM_ENC_##TY(B), 0, (SmBits)(WANT), (SmBits)(WANT) },
 
-#define SM_TRAP(nm, TY, OP, A, B, C) \
+#define SM_TRAP(nm, TY, OP, A, B, C, NF) \
 	{ nm, SM_T_##TY, SM_O_##OP, \
-		SM_ENC_##TY(A), SM_ENC_##TY(B), SM_ENC_##TY(C), SM_SIGFPE },
+		SM_ENC_##TY(A), SM_ENC_##TY(B), SM_ENC_##TY(C), SM_SIGFPE, \
+		SM_ENC_##TY(NF) },
 
 #define SM_LTY_SI_UI int
 #define SM_RTY_SI_UI unsigned int

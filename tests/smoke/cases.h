@@ -173,16 +173,16 @@ static const SmMixRow sm_mix_rows[] = {
 
 static const SmTrapRow sm_trap_rows[] = {
 
-		SM_TRAP("trap.div.si.min.m1", SI, DIV, INT_MIN, -1, 0)
-		SM_TRAP("trap.rem.si.min.m1", SI, REM, INT_MIN, -1, 0)
-		SM_TRAP("trap.div.sll.min.m1", SLL, DIV, LLONG_MIN, -1ll, 0)
-		SM_TRAP("trap.rem.sll.min.m1", SLL, REM, LLONG_MIN, -1ll, 0)
-		SM_TRAP("trap.div.sl.min.m1", SL, DIV, LONG_MIN, -1l, 0)
-		SM_TRAP("trap.div.si.zero", SI, DIV, 1, 0, 0)
-		SM_TRAP("trap.rem.si.zero", SI, REM, 1, 0, 0)
-		SM_TRAP("trap.div.ui.zero", UI, DIV, 1u, 0u, 0)
-		SM_TRAP("trap.div.ull.zero", ULL, DIV, 1ull, 0ull, 0)
-		SM_TRAP("trap.div.sll.zero", SLL, DIV, 1ll, 0ll, 0)
+		SM_TRAP("trap.div.si.min.m1", SI, DIV, INT_MIN, -1, 0, INT_MIN)
+		SM_TRAP("trap.rem.si.min.m1", SI, REM, INT_MIN, -1, 0, 0)
+		SM_TRAP("trap.div.sll.min.m1", SLL, DIV, LLONG_MIN, -1ll, 0, LLONG_MIN)
+		SM_TRAP("trap.rem.sll.min.m1", SLL, REM, LLONG_MIN, -1ll, 0, 0ll)
+		SM_TRAP("trap.div.sl.min.m1", SL, DIV, LONG_MIN, -1l, 0, LONG_MIN)
+		SM_TRAP("trap.div.si.zero", SI, DIV, 1, 0, 0, 0)
+		SM_TRAP("trap.rem.si.zero", SI, REM, 1, 0, 0, 1)
+		SM_TRAP("trap.div.ui.zero", UI, DIV, 1u, 0u, 0, 0u)
+		SM_TRAP("trap.div.ull.zero", ULL, DIV, 1ull, 0ull, 0, 0ull)
+		SM_TRAP("trap.div.sll.zero", SLL, DIV, 1ll, 0ll, 0, 0ll)
 };
 
 typedef struct { int x, y, z; } SmPt;
