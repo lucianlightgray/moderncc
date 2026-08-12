@@ -28063,12 +28063,23 @@ hardware. `smokerun` derives `SMK_TARGET_KEY` from its own build and prefers
 `tests/smoke/bails-<arch>-<os>.txt`, falling back to `bails.txt` when no keyed bank exists —
 so x86_64-linux and Windows keep exactly the file and the numbers they have.
 
-The arm64 bank triages its 253 divergence rows into six classes. The largest, **168 rows of
-wide bit-field arithmetic**, is the `bf_trunc` defect this board already records under the
-byte gate: mcc truncates *every* operation on a bit-field to the field width, so with
-`unsigned long f : 40` at max, `f + 1` is 0 in mcc and 2^40 in both references. It is
-target-independent and surfaces there rather than on x86_64 only because gcc-15 and clang-22
-disagree with each other about it, which demotes the same rows to `diverge-one` against a
-two-reference panel. The smallest, **4 rows of `bsweep.{F32,F64}.FSCALE`**, turned out on
-point-by-point replay to be 28 sweep points that are quiet NaNs differing in the sign bit
-alone, which IEEE 754 leaves unspecified.
+The arm64 bank triages its 253 divergence rows into six classes. The smallest, **4 rows of
+`bsweep.{F32,F64}.FSCALE`**, turned out on point-by-point replay to be 28 sweep points that
+are quiet NaNs differing in the sign bit alone, which IEEE 754 leaves unspecified.
+
+The largest, **168 rows of wide bit-field arithmetic**, was written up here and on the board
+as a conformance defect and is not one — the correction is worth more than the row. mcc
+reduces the result of every binary op on a field wider than 32 bits to the field width, so
+`unsigned long long f : 33` at max gives `f + 1 == 0` against clang's 2^33. But C11 6.7.2.1p5
+admits a bit-field of *"some other implementation-defined type"*, gcc and clang answer
+differently (gcc gives the declared type a `TYPE_PRECISION` of the field width and wraps),
+and `b3c660f1` chose gcc's answer on purpose, fixing four gcc c-torture tests by doing it.
+**The evidence was already in the x86_64 bank and was not read**: the same rows are banked
+there as `diverge-ONE`, which means mcc agrees with exactly one of two independent references
+— and since it truncates and clang does not, that one is gcc.
+
+The durable finding is the shape of the mistake, not the bit-fields. **On a host with one
+reference family, "mcc is wrong" and "the two references disagree and mcc picked one" are the
+same observation**, and the first reading is the one a reader reaches for. Every
+`mcc-differs-from-both=0` measurement is unfalsifiable in that specific way until a second
+implementation family is installed; see N25.

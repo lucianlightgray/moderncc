@@ -104,7 +104,10 @@
 > one compiler whether it agreed with itself. `smokerun` now detects the shared family and
 > refuses. **And `tests/smoke/bails.txt` was a single-target bank in a three-machine tree**;
 > it is now keyed by target, with x86_64-linux and Windows keeping exactly the file and the
-> numbers they have. New rows: **N23**, **N24**, **N25**. Detail in
+> numbers they have. New rows: **N24** and **N25**, plus **N23**, which was opened as a
+> conformance defect and corrected to a gcc/clang disagreement the same day — the correction
+> is kept because a one-reference host cannot tell those two apart, and that is the durable
+> finding. Detail in
 > [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 > **`--jit-always-gpu`, 2026-08-11 — the device is at verdict parity with the CPU, and the
@@ -594,11 +597,11 @@ measurement tool reports success over an empty or truncated subject:
 > correctness gate that only runs on the AOT path is not a correctness gate**, because the JIT
 > re-emits the same arenas with no faithfulness comparison to fall back on.
 >
-> **Ranking as of 2026-08-12: N22, then N7, then N23, then N8.** N17 and N1 are closed and
+> **Ranking as of 2026-08-12: N22, then N7, then N8.** N17 and N1 are closed and
 > struck in place; N8 lost its lead to N20 and its two survivors need the Linux box. N22 is
-> first because it is a known-cause fix with a written-and-backed-out prototype behind it. N23
-> is new to the board and is the largest conformance defect on it with a named site, but it is
-> unpriced, so it sits under N7 rather than above it.
+> first because it is a known-cause fix with a written-and-backed-out prototype behind it. N23 was
+> opened as a conformance defect and closed the same day as a gcc/clang disagreement mcc
+> resolves on purpose; the correction is left in place because the mistake is instructive.
 >
 > **The previous ranking, for context: N17, then N8, then N22, then N1, then N7.** N22 is placed high
 > because it is a known-cause fix with a written-and-backed-out prototype behind it, not an
@@ -761,18 +764,33 @@ member of another width breaks; and `AST_LTEMP_MAX` is 32, which caps how many m
 split per function. Do this before widening the legality rule — the rule is not what is limiting
 the win.
 
-**N23. Wide bit-field arithmetic is truncated at every operation, and it is 168 rows of the
-arm64 divergence set.** New 2026-08-12, though the defect is not new — this file already
-records it under the byte gate, where it is the reason a `bs > 32` field cannot be lowered at
-all. `gen_op` computes `bf_trunc` from the *field width* and applies it to the result of every
-operation; C converts the operand to the promoted type and does not truncate the result. With
-`struct { unsigned long f : 40; }` at max, `f + 1` is **0** in mcc and **2^40** in gcc and
-clang, and `~f` is 0 against `0xffffff0000000000`. It is target-independent. It shows as
-`diverge-one` on x86_64 only because gcc-15 and clang-22 disagree with each other about wide
-bit-field promotion there, which a two-reference panel demotes; on a one-reference host it is
-the single largest class in the bank. **This is the largest known conformance defect with a
-named site**, and it is not ranked below because it is hard — it is unranked because nobody has
-priced the fix, which is to promote the operand once and truncate only on store.
+**~~N23. Wide bit-field arithmetic is truncated at every operation.~~ — NOT A DEFECT,
+corrected 2026-08-12 before it was worked.** It is a gcc/clang disagreement and mcc
+deliberately follows gcc. Filed here anyway, because the wrong version of this row was
+written into the board and into `tests/smoke/bails-arm64-macos.txt` first and the correction
+is the useful part.
+
+The observation is real: `gen_op` computes `bf_trunc` from the field width and reduces the
+result of every binary op, so with `unsigned long long f : 33` at max, `f + 1` is **0** in mcc
+and **2^33** in clang. What was wrong was the conclusion. C11 6.7.2.1p5 admits a bit-field of
+`_Bool`, `signed int`, `unsigned int` *"or some other implementation-defined type"*, so the
+arithmetic semantics of an over-wide field are implementation-defined and **gcc and clang
+answer differently**: gcc gives the bit-field's declared type a `TYPE_PRECISION` of the field
+width and wraps; clang converts to the full declared type and does not. `b3c660f1` added
+`bf_trunc` deliberately, to follow gcc, and it fixed four gcc c-torture tests doing so
+(`bitfld-3`, `bitfld-5`, `pr32244-1`, `pr34971`).
+
+**The evidence that settles it is already in the x86_64 bank**: those rows are banked there as
+`diverge-ONE`, not `diverge-both` — mcc agrees with exactly one of two independent references,
+and since it truncates and clang does not, the one it agrees with is gcc. They appear as the
+largest class in the arm64 bank only because that host has no second reference (**N25**), so a
+one-reference panel cannot express "agrees with gcc, differs from clang".
+
+**The general lesson is the row, not the bit-fields.** A single-reference host cannot
+distinguish *"mcc is wrong"* from *"the two references disagree and mcc picked one"*, and the
+first reading is the one a reader reaches for. Any divergence measured where
+`mcc-differs-from-both=0` is unfalsifiable in exactly that way until a second implementation
+family is installed.
 
 **N24. The local-callee bind route fires zero times on arm64, and `jit/bind-local` has been red
 there since before this session.** New 2026-08-12, verified pre-existing by rebuilding at

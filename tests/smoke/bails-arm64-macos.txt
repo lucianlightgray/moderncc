@@ -30,15 +30,23 @@
 # The 253 divergence rows are seven classes, all pre-existing, none of them
 # discovered by this bank:
 #
-# 1. bfsweep.* and bf.* -- 168 rows.  Wide bit-field arithmetic.  mcc
-#    truncates EVERY operation on a bit-field to the field width (`bf_trunc`
-#    in gen_op); C converts the operand to the promoted type and does not
-#    truncate the result, so with `unsigned long f : 40` at max, `f + 1` is 0
-#    in mcc and 2^40 in the reference.  Same defect docs/TODO.md records under
-#    the byte gate, where it is why a `bs > 32` field cannot be lowered at
-#    all.  It is target-independent; it surfaces here rather than on x86_64
-#    because gcc-15 and clang-22 disagree with each other about it there,
-#    which makes the same rows diverge-one against a two-reference panel.
+# 1. bfsweep.* and bf.* -- 168 rows.  Wide bit-field arithmetic, and NOT a
+#    defect -- read this before "fixing" it.  mcc reduces the result of every
+#    binary op on a bit-field wider than 32 bits to the field width
+#    (`bf_trunc` in gen_op), so with `unsigned long long f : 33` at max,
+#    `f + 1` is 0 in mcc and 2^33 in clang.  C11 6.7.2.1p5 admits a bit-field
+#    of "some other implementation-defined type", so the semantics of an
+#    over-wide field are implementation-defined and gcc and clang answer
+#    differently: gcc gives the field's declared type a TYPE_PRECISION of the
+#    field width and wraps, clang converts to the full declared type and does
+#    not.  b3c660f1 added bf_trunc deliberately to follow gcc and fixed four
+#    gcc c-torture tests doing it (bitfld-3, bitfld-5, pr32244-1, pr34971).
+#    The proof is in the x86_64 bank: the same rows are banked there as
+#    diverge-ONE, so mcc agrees with exactly one of two independent
+#    references, and since it truncates and clang does not, that one is gcc.
+#    They dominate this file only because this host has no second reference
+#    and a one-reference panel cannot say "agrees with gcc, differs from
+#    clang".  See docs/TODO.md N23.
 #
 # 2. bsweep.F16.* and fsweep.F16.* -- 38 rows.  _Float16 per-operation
 #    rounding, note 1 of bails.txt.  arm64 has native fp16, so the reference
