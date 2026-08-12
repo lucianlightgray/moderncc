@@ -238,7 +238,7 @@ x86_64-linux where all three pass:
 | cell | what it says |
 | --- | --- |
 | `jit/bind-local` | **N24** — zero local binds across 6 programs, plus `collide_libc` giving 45314 under `MCC_JIT_KGC=0` against 58700 under `MCC_JIT=0` |
-| `slice/census` | `blocks` is 983 against the banked 990 for the `arm64`/`Darwin` column. The bank is already per-arch *and* per-OS, so this is that column having drifted, not a missing column |
+| `slice/census` | `blocks` is 983 against the banked 990 for the `arm64`/`Darwin` column. **Not the corpus**: the column was set at `10a78fe8` (2026-08-09) and the only two `tests/exec` changes since are `optimizer/loop_{fusion,interchange}.c` and a new `inline_asm/asm_reloc_suffix.c`, all of which sort *past* the 60-file window the census uses (it ends at `features_c99_c11/attribs_position.c`). So it is 102 `src/` commits of drift on a column **no host has measured since it was banked** — the Linux box runs the `x86_64`/`Linux` column and the Mac does not run the suite. Attribution needs a bisect over those 102; re-banking without one is the thing this file tells you not to do |
 | ~~`superopt/global-reload` (+`-known-positive`)~~ **CLOSED 2026-08-12** | **not a compiler defect** — `tests/superopt/globreload.awk` was written against GNU binutils objdump on ELF and four of its assumptions are format, not fact |
 
 **`superopt/global-reload` looked like the one real defect of the three and was not.** Four
