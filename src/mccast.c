@@ -20233,7 +20233,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			int tcos = 0;
 			int narrows = 0;
 			int divmagics = 0;
-			int cloads = 0, sras = 0;
+			int cloads = 0, sras = 0, unread = 0;
 			int selects = 0;
 			int interchanged = 0;
 			int fused = 0;
@@ -20470,6 +20470,10 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					cloads = sf[AST_STRAT_CLOAD];
 					sras = sf[AST_STRAT_SRA];
 					selects = sf[AST_STRAT_SELECT];
+					unread = sf[AST_STRAT_LTEMP] + sf[AST_STRAT_IVSR] +
+									 sf[AST_STRAT_PRE] + sf[AST_STRAT_RANGE] +
+									 sf[AST_STRAT_ABS] + sf[AST_STRAT_REASSOC] +
+									 sf[AST_STRAT_INLINE];
 				}
 				ast_search_gates_set(ast_search_sv_gates);
 				int do_divmagic = divmagics > 0;
@@ -20488,6 +20492,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				int do_sethi = sethis > 0;
 				int do_tco = tcos > 0;
 				int do_select = selects > 0;
+			int do_unread = unread > 0;
 				int do_inline = ast_opt_ok && !do_tco && !ast_inline_pass_env &&
 												ast_has_graftable_call(ast_cur);
 				if (ast_search_axis_ran && !ast_search_pick_inline)
@@ -20512,19 +20517,20 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					do_select = 0;
 					do_cload = 0;
 					do_sra = 0;
+					do_unread = 0;
 					ast_promo_n = 0;
 				}
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
 						do_tco || do_narrow || do_divmagic || do_select || do_cload ||
-						do_sra ||
+						do_sra || do_unread ||
 						interchanged || fused || tiled || math_inlined)
 					{ MCC_TRACE("br\n"); ast_opt_total++; }
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
 						!do_bf && !do_sethi && !do_tco && !do_narrow && !do_divmagic && !do_select &&
-						!do_cload && !do_sra && !interchanged && !fused && !tiled &&
-						!math_inlined)
+						!do_cload && !do_sra && !do_unread && !interchanged && !fused &&
+						!tiled && !math_inlined)
 					{ MCC_TRACE("br\n"); loc = saved_loc; }
 				if (ast_jit_splice_env && ast_opt_ok) { MCC_TRACE("br\n");
 					ast_promo_n = 0;
@@ -20544,7 +20550,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				} else if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
 						do_tco || do_narrow || do_divmagic || do_select || do_cload ||
-						do_sra ||
+						do_sra || do_unread ||
 						interchanged || fused || tiled || math_inlined) { MCC_TRACE("br\n");
 #define AST_PF_EMIT(ui)                                                          \
 	do {                                                                           \
