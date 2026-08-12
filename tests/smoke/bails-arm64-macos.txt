@@ -1,0 +1,351 @@
+# arm64-macos bail bank.  tools/smokerun.c picks it automatically from
+# SMK_TARGET_KEY; a host with no keyed bank of its own falls back to
+# tests/smoke/bails.txt, which is the x86_64-linux bank and stays untouched.
+#
+# Regenerate in this order, then restore this header by hand:
+#   smokerun --bank tests/smoke/bails-arm64-macos.txt --rebank
+#   smokerun ... --divergence   --rebank
+#   smokerun ... --slice-census --rebank
+#   smokerun ... --device --min-cases 500000 --rebank
+#   smokerun ... --strat-dark   --rebank
+#
+# Every row is a triaged finding, not a tolerance.  Taken 2026-08-12 against
+# mcc at 115deb5f on Darwin 25.5 / Apple M1 Max, reference Apple clang 21.
+#
+# WHY THIS FILE EXISTS.  bails.txt was banked on x86_64-linux, and two of its
+# three kinds of row do not survive a change of target: the coverage counters
+# count this target's bodies, and the divergence rows answer questions whose
+# answer depends on the hardware.  One bank for three machines could only ever
+# be right on one of them, and here it was red on every cell -- which is the
+# same as having no ratchet at all.
+#
+# THE TWO REFERENCES ON THIS HOST ARE ONE COMPILER.  /usr/bin/gcc on macOS is
+# a clang shim, so `gcc` and `clang` are the same binary and cannot adjudicate
+# each other.  smokerun now detects that and drops the duplicate, so every
+# `div diverge-` row below is diverge-ONE against a single reference and the
+# run reports mcc-differs-from-both=0.  Do not read the absence of
+# diverge-both as agreement: it means the question was not asked.  Install a
+# real gcc-15 here and the two-reference split becomes meaningful again.
+#
+# The 253 divergence rows are seven classes, all pre-existing, none of them
+# discovered by this bank:
+#
+# 1. bfsweep.* and bf.* -- 168 rows.  Wide bit-field arithmetic.  mcc
+#    truncates EVERY operation on a bit-field to the field width (`bf_trunc`
+#    in gen_op); C converts the operand to the promoted type and does not
+#    truncate the result, so with `unsigned long f : 40` at max, `f + 1` is 0
+#    in mcc and 2^40 in the reference.  Same defect docs/TODO.md records under
+#    the byte gate, where it is why a `bs > 32` field cannot be lowered at
+#    all.  It is target-independent; it surfaces here rather than on x86_64
+#    because gcc-15 and clang-22 disagree with each other about it there,
+#    which makes the same rows diverge-one against a two-reference panel.
+#
+# 2. bsweep.F16.* and fsweep.F16.* -- 38 rows.  _Float16 per-operation
+#    rounding, note 1 of bails.txt.  arm64 has native fp16, so the reference
+#    keeps far more intermediates at half precision than the x86_64 emulation
+#    does.  That widens the same disagreement; it does not change its kind.
+#
+# 3. csweep.* and the F80 columns -- 32 rows.  `long double` is `double` on
+#    arm64-macOS, so F80/C80 is a second copy of F64/C64 and the Annex G
+#    complex multiply/divide recovery of note 5 lands on three widths instead
+#    of one.
+#
+# 4. shl.* -- 4 rows.  The shift-count folder, note 6 of bails.txt.
+#
+# 5. add.si.*, sub.si.*, mul.si.*, neg.si.min, absc.si.min -- 7 rows.  Signed
+#    overflow, UB.  The reference folds the case in 64 bits and keeps the
+#    untruncated result; mcc wraps to `int`, which is the defensible answer
+#    and is what it gives at every level.
+#
+# 6. bsweep.{F32,F64}.FSCALE -- 4 rows.  NOT a value difference: 28 of the
+#    8192 sweep points produce a NaN and mcc gives 0x7fc00000 where the
+#    reference gives 0xffc00000 (and vice versa).  IEEE 754 leaves the sign of
+#    a NaN result of an arithmetic operation unspecified.  Verified by
+#    replaying smf_brun(F32/F64, FSCALE) point by point: every differing point
+#    is a quiet NaN and differs in the sign bit alone.
+#
+# THE COVERAGE COUNTERS ARE THIS TARGET'S, NOT A REGRESSION.
+# `replay-fallback:len 3` against x86_64's 2, `slice-refused:no-static-type
+# 855` against 515, `jit-not-baked:signature 174` against 183: each counts
+# bodies in an arm64 compile of the same subject.  `strat-dark` is 13 of 23
+# at -O13 here.
+O0 replay-fallback:len 3
+O1 replay-fallback:len 3
+O13 strat-dark:abs 1
+O13 strat-dark:bf 1
+O13 strat-dark:divmagic 1
+O13 strat-dark:inline 1
+O13 strat-dark:ivsr 1
+O13 strat-dark:licm 1
+O13 strat-dark:ltemp 1
+O13 strat-dark:narrow 1
+O13 strat-dark:pre 1
+O13 strat-dark:range 1
+O13 strat-dark:reassoc 1
+O13 strat-dark:sra 1
+O13 strat-dark:tco 1
+O2 jit-not-baked:signature 174
+O2 replay-fallback:len 3
+O3 replay-fallback:len 3
+O4 replay-fallback:len 3
+O4 slice-refused:all-undefined 15
+O4 slice-refused:no-static-type 855
+O4 slice-refused:unsupported-op 1
+O9 dev-slice-refused:all-undefined 15
+O9 dev-slice-refused:no-static-type 855
+O9 dev-slice-refused:unsupported-op 1
+div diverge-one:absc.si.min.run 1
+div diverge-one:add.si.maxp1.run 1
+div diverge-one:add.si.minm1.run 1
+div diverge-one:bf.sl40.min.neg.run 1
+div diverge-one:bf.ul33.max.add1.run 1
+div diverge-one:bf.ul33.max.com.run 1
+div diverge-one:bf.ul40.max.add1.run 1
+div diverge-one:bf.ul40.max.com.run 1
+div diverge-one:bf.ul40.max.shl1.run 1
+div diverge-one:bf.ul48.max.add1.run 1
+div diverge-one:bf.ul63.max.add1.run 1
+div diverge-one:bfsweep.BFSL_32.ADD1.fold 1
+div diverge-one:bfsweep.BFSL_32.ADD1.run 1
+div diverge-one:bfsweep.BFSL_32.MUL3.fold 1
+div diverge-one:bfsweep.BFSL_32.MUL3.run 1
+div diverge-one:bfsweep.BFSL_32.NEG.fold 1
+div diverge-one:bfsweep.BFSL_32.NEG.run 1
+div diverge-one:bfsweep.BFSL_32.SELF.fold 1
+div diverge-one:bfsweep.BFSL_32.SELF.run 1
+div diverge-one:bfsweep.BFSL_32.SUB1.fold 1
+div diverge-one:bfsweep.BFSL_32.SUB1.run 1
+div diverge-one:bfsweep.BFSL_33.ADD1.fold 1
+div diverge-one:bfsweep.BFSL_33.ADD1.run 1
+div diverge-one:bfsweep.BFSL_33.MUL3.fold 1
+div diverge-one:bfsweep.BFSL_33.MUL3.run 1
+div diverge-one:bfsweep.BFSL_33.SELF.fold 1
+div diverge-one:bfsweep.BFSL_33.SELF.run 1
+div diverge-one:bfsweep.BFSL_33.SHL1.fold 1
+div diverge-one:bfsweep.BFSL_33.SHL1.run 1
+div diverge-one:bfsweep.BFSL_39.MUL3.fold 1
+div diverge-one:bfsweep.BFSL_39.MUL3.run 1
+div diverge-one:bfsweep.BFSL_39.SHL1.fold 1
+div diverge-one:bfsweep.BFSL_39.SHL1.run 1
+div diverge-one:bfsweep.BFSL_40.ADD1.fold 1
+div diverge-one:bfsweep.BFSL_40.ADD1.run 1
+div diverge-one:bfsweep.BFSL_40.MUL3.fold 1
+div diverge-one:bfsweep.BFSL_40.MUL3.run 1
+div diverge-one:bfsweep.BFSL_40.NEG.fold 1
+div diverge-one:bfsweep.BFSL_40.NEG.run 1
+div diverge-one:bfsweep.BFSL_40.SELF.fold 1
+div diverge-one:bfsweep.BFSL_40.SELF.run 1
+div diverge-one:bfsweep.BFSL_40.SHL1.fold 1
+div diverge-one:bfsweep.BFSL_40.SHL1.run 1
+div diverge-one:bfsweep.BFSL_40.SUB1.fold 1
+div diverge-one:bfsweep.BFSL_40.SUB1.run 1
+div diverge-one:bfsweep.BFSL_41.ADD1.fold 1
+div diverge-one:bfsweep.BFSL_41.ADD1.run 1
+div diverge-one:bfsweep.BFSL_41.MUL3.fold 1
+div diverge-one:bfsweep.BFSL_41.MUL3.run 1
+div diverge-one:bfsweep.BFSL_41.SELF.fold 1
+div diverge-one:bfsweep.BFSL_41.SELF.run 1
+div diverge-one:bfsweep.BFSL_41.SHL1.fold 1
+div diverge-one:bfsweep.BFSL_41.SHL1.run 1
+div diverge-one:bfsweep.BFSL_47.MUL3.fold 1
+div diverge-one:bfsweep.BFSL_47.MUL3.run 1
+div diverge-one:bfsweep.BFSL_47.SHL1.fold 1
+div diverge-one:bfsweep.BFSL_47.SHL1.run 1
+div diverge-one:bfsweep.BFSL_48.MUL3.fold 1
+div diverge-one:bfsweep.BFSL_48.MUL3.run 1
+div diverge-one:bfsweep.BFSL_48.SHL1.fold 1
+div diverge-one:bfsweep.BFSL_48.SHL1.run 1
+div diverge-one:bfsweep.BFS_32.ADD1.fold 1
+div diverge-one:bfsweep.BFS_32.ADD1.run 1
+div diverge-one:bfsweep.BFS_32.MUL3.fold 1
+div diverge-one:bfsweep.BFS_32.MUL3.run 1
+div diverge-one:bfsweep.BFS_32.NEG.fold 1
+div diverge-one:bfsweep.BFS_32.NEG.run 1
+div diverge-one:bfsweep.BFS_32.SELF.fold 1
+div diverge-one:bfsweep.BFS_32.SELF.run 1
+div diverge-one:bfsweep.BFS_32.SUB1.fold 1
+div diverge-one:bfsweep.BFS_32.SUB1.run 1
+div diverge-one:bfsweep.BFUL_31.ADD1.fold 1
+div diverge-one:bfsweep.BFUL_31.ADD1.run 1
+div diverge-one:bfsweep.BFUL_31.MUL3.fold 1
+div diverge-one:bfsweep.BFUL_31.MUL3.run 1
+div diverge-one:bfsweep.BFUL_31.SELF.fold 1
+div diverge-one:bfsweep.BFUL_31.SELF.run 1
+div diverge-one:bfsweep.BFUL_33.ADD1.fold 1
+div diverge-one:bfsweep.BFUL_33.ADD1.run 1
+div diverge-one:bfsweep.BFUL_33.COM.fold 1
+div diverge-one:bfsweep.BFUL_33.COM.run 1
+div diverge-one:bfsweep.BFUL_33.MUL3.fold 1
+div diverge-one:bfsweep.BFUL_33.MUL3.run 1
+div diverge-one:bfsweep.BFUL_33.NEG.fold 1
+div diverge-one:bfsweep.BFUL_33.NEG.run 1
+div diverge-one:bfsweep.BFUL_33.SELF.fold 1
+div diverge-one:bfsweep.BFUL_33.SELF.run 1
+div diverge-one:bfsweep.BFUL_33.SHL1.fold 1
+div diverge-one:bfsweep.BFUL_33.SHL1.run 1
+div diverge-one:bfsweep.BFUL_33.SUB1.fold 1
+div diverge-one:bfsweep.BFUL_33.SUB1.run 1
+div diverge-one:bfsweep.BFUL_39.ADD1.fold 1
+div diverge-one:bfsweep.BFUL_39.ADD1.run 1
+div diverge-one:bfsweep.BFUL_39.COM.fold 1
+div diverge-one:bfsweep.BFUL_39.COM.run 1
+div diverge-one:bfsweep.BFUL_39.MUL3.fold 1
+div diverge-one:bfsweep.BFUL_39.MUL3.run 1
+div diverge-one:bfsweep.BFUL_39.NEG.fold 1
+div diverge-one:bfsweep.BFUL_39.NEG.run 1
+div diverge-one:bfsweep.BFUL_39.SELF.fold 1
+div diverge-one:bfsweep.BFUL_39.SELF.run 1
+div diverge-one:bfsweep.BFUL_39.SHL1.fold 1
+div diverge-one:bfsweep.BFUL_39.SHL1.run 1
+div diverge-one:bfsweep.BFUL_39.SUB1.fold 1
+div diverge-one:bfsweep.BFUL_39.SUB1.run 1
+div diverge-one:bfsweep.BFUL_40.ADD1.fold 1
+div diverge-one:bfsweep.BFUL_40.ADD1.run 1
+div diverge-one:bfsweep.BFUL_40.COM.fold 1
+div diverge-one:bfsweep.BFUL_40.COM.run 1
+div diverge-one:bfsweep.BFUL_40.MUL3.fold 1
+div diverge-one:bfsweep.BFUL_40.MUL3.run 1
+div diverge-one:bfsweep.BFUL_40.NEG.fold 1
+div diverge-one:bfsweep.BFUL_40.NEG.run 1
+div diverge-one:bfsweep.BFUL_40.SELF.fold 1
+div diverge-one:bfsweep.BFUL_40.SELF.run 1
+div diverge-one:bfsweep.BFUL_40.SHL1.fold 1
+div diverge-one:bfsweep.BFUL_40.SHL1.run 1
+div diverge-one:bfsweep.BFUL_40.SUB1.fold 1
+div diverge-one:bfsweep.BFUL_40.SUB1.run 1
+div diverge-one:bfsweep.BFUL_41.ADD1.fold 1
+div diverge-one:bfsweep.BFUL_41.ADD1.run 1
+div diverge-one:bfsweep.BFUL_41.COM.fold 1
+div diverge-one:bfsweep.BFUL_41.COM.run 1
+div diverge-one:bfsweep.BFUL_41.MUL3.fold 1
+div diverge-one:bfsweep.BFUL_41.MUL3.run 1
+div diverge-one:bfsweep.BFUL_41.NEG.fold 1
+div diverge-one:bfsweep.BFUL_41.NEG.run 1
+div diverge-one:bfsweep.BFUL_41.SELF.fold 1
+div diverge-one:bfsweep.BFUL_41.SELF.run 1
+div diverge-one:bfsweep.BFUL_41.SHL1.fold 1
+div diverge-one:bfsweep.BFUL_41.SHL1.run 1
+div diverge-one:bfsweep.BFUL_41.SUB1.fold 1
+div diverge-one:bfsweep.BFUL_41.SUB1.run 1
+div diverge-one:bfsweep.BFUL_47.ADD1.fold 1
+div diverge-one:bfsweep.BFUL_47.ADD1.run 1
+div diverge-one:bfsweep.BFUL_47.COM.fold 1
+div diverge-one:bfsweep.BFUL_47.COM.run 1
+div diverge-one:bfsweep.BFUL_47.MUL3.fold 1
+div diverge-one:bfsweep.BFUL_47.MUL3.run 1
+div diverge-one:bfsweep.BFUL_47.NEG.fold 1
+div diverge-one:bfsweep.BFUL_47.NEG.run 1
+div diverge-one:bfsweep.BFUL_47.SELF.fold 1
+div diverge-one:bfsweep.BFUL_47.SELF.run 1
+div diverge-one:bfsweep.BFUL_47.SHL1.fold 1
+div diverge-one:bfsweep.BFUL_47.SHL1.run 1
+div diverge-one:bfsweep.BFUL_47.SUB1.fold 1
+div diverge-one:bfsweep.BFUL_47.SUB1.run 1
+div diverge-one:bfsweep.BFUL_48.ADD1.fold 1
+div diverge-one:bfsweep.BFUL_48.ADD1.run 1
+div diverge-one:bfsweep.BFUL_48.COM.fold 1
+div diverge-one:bfsweep.BFUL_48.COM.run 1
+div diverge-one:bfsweep.BFUL_48.MUL3.fold 1
+div diverge-one:bfsweep.BFUL_48.MUL3.run 1
+div diverge-one:bfsweep.BFUL_48.NEG.fold 1
+div diverge-one:bfsweep.BFUL_48.NEG.run 1
+div diverge-one:bfsweep.BFUL_48.SELF.fold 1
+div diverge-one:bfsweep.BFUL_48.SELF.run 1
+div diverge-one:bfsweep.BFUL_48.SHL1.fold 1
+div diverge-one:bfsweep.BFUL_48.SHL1.run 1
+div diverge-one:bfsweep.BFUL_48.SUB1.fold 1
+div diverge-one:bfsweep.BFUL_48.SUB1.run 1
+div diverge-one:bfsweep.BFUL_63.MUL3.fold 1
+div diverge-one:bfsweep.BFUL_63.MUL3.run 1
+div diverge-one:bfsweep.BFUL_63.SHL1.fold 1
+div diverge-one:bfsweep.BFUL_63.SHL1.run 1
+div diverge-one:bfsweep.BFU_31.ADD1.fold 1
+div diverge-one:bfsweep.BFU_31.ADD1.run 1
+div diverge-one:bfsweep.BFU_31.MUL3.fold 1
+div diverge-one:bfsweep.BFU_31.MUL3.run 1
+div diverge-one:bfsweep.BFU_31.SELF.fold 1
+div diverge-one:bfsweep.BFU_31.SELF.run 1
+div diverge-one:bsweep.F16.FADD.fold 1
+div diverge-one:bsweep.F16.FADD.run 1
+div diverge-one:bsweep.F16.FDIV.fold 1
+div diverge-one:bsweep.F16.FDIV.run 1
+div diverge-one:bsweep.F16.FDIVSEL.fold 1
+div diverge-one:bsweep.F16.FDIVSEL.run 1
+div diverge-one:bsweep.F16.FMUL.fold 1
+div diverge-one:bsweep.F16.FMUL.run 1
+div diverge-one:bsweep.F16.FMULADD.fold 1
+div diverge-one:bsweep.F16.FMULADD.run 1
+div diverge-one:bsweep.F16.FNEG.fold 1
+div diverge-one:bsweep.F16.FNEG.run 1
+div diverge-one:bsweep.F16.FSCALE.fold 1
+div diverge-one:bsweep.F16.FSCALE.run 1
+div diverge-one:bsweep.F16.FSELIL.fold 1
+div diverge-one:bsweep.F16.FSELIL.run 1
+div diverge-one:bsweep.F16.FSELIR.fold 1
+div diverge-one:bsweep.F16.FSELIR.run 1
+div diverge-one:bsweep.F16.FSELMIXB.fold 1
+div diverge-one:bsweep.F16.FSELMIXB.run 1
+div diverge-one:bsweep.F16.FSELMIXL.fold 1
+div diverge-one:bsweep.F16.FSELMIXL.run 1
+div diverge-one:bsweep.F16.FSELMIXR.fold 1
+div diverge-one:bsweep.F16.FSELMIXR.run 1
+div diverge-one:bsweep.F16.FSELZL.fold 1
+div diverge-one:bsweep.F16.FSELZL.run 1
+div diverge-one:bsweep.F16.FSELZR.fold 1
+div diverge-one:bsweep.F16.FSELZR.run 1
+div diverge-one:bsweep.F16.FSUB.fold 1
+div diverge-one:bsweep.F16.FSUB.run 1
+div diverge-one:bsweep.F16.FSUBABS.fold 1
+div diverge-one:bsweep.F16.FSUBABS.run 1
+div diverge-one:bsweep.F32.FSCALE.fold 1
+div diverge-one:bsweep.F32.FSCALE.run 1
+div diverge-one:bsweep.F64.FSCALE.fold 1
+div diverge-one:bsweep.F64.FSCALE.run 1
+div diverge-one:bsweep.F80.FSCALE.fold 1
+div diverge-one:bsweep.F80.FSCALE.run 1
+div diverge-one:csweep.C32.CABS2.fold 1
+div diverge-one:csweep.C32.CABS2.run 1
+div diverge-one:csweep.C32.CDIV.fold 1
+div diverge-one:csweep.C32.CDIV.run 1
+div diverge-one:csweep.C32.CDIVSEL.fold 1
+div diverge-one:csweep.C32.CDIVSEL.run 1
+div diverge-one:csweep.C32.CMUL.fold 1
+div diverge-one:csweep.C32.CMUL.run 1
+div diverge-one:csweep.C32.CMULADD.fold 1
+div diverge-one:csweep.C32.CMULADD.run 1
+div diverge-one:csweep.C64.CABS2.fold 1
+div diverge-one:csweep.C64.CABS2.run 1
+div diverge-one:csweep.C64.CDIV.fold 1
+div diverge-one:csweep.C64.CDIV.run 1
+div diverge-one:csweep.C64.CDIVSEL.fold 1
+div diverge-one:csweep.C64.CDIVSEL.run 1
+div diverge-one:csweep.C64.CMUL.fold 1
+div diverge-one:csweep.C64.CMUL.run 1
+div diverge-one:csweep.C64.CMULADD.fold 1
+div diverge-one:csweep.C64.CMULADD.run 1
+div diverge-one:csweep.C80.CABS2.fold 1
+div diverge-one:csweep.C80.CABS2.run 1
+div diverge-one:csweep.C80.CDIV.fold 1
+div diverge-one:csweep.C80.CDIV.run 1
+div diverge-one:csweep.C80.CDIVSEL.fold 1
+div diverge-one:csweep.C80.CDIVSEL.run 1
+div diverge-one:csweep.C80.CMUL.fold 1
+div diverge-one:csweep.C80.CMUL.run 1
+div diverge-one:csweep.C80.CMULADD.fold 1
+div diverge-one:csweep.C80.CMULADD.run 1
+div diverge-one:fsweep.F16.FSELMIXB.fold 1
+div diverge-one:fsweep.F16.FSELMIXB.run 1
+div diverge-one:fsweep.F16.FSELMIXL.fold 1
+div diverge-one:fsweep.F16.FSELMIXL.run 1
+div diverge-one:fsweep.F16.FSELMIXR.fold 1
+div diverge-one:fsweep.F16.FSELMIXR.run 1
+div diverge-one:mul.si.max.2.run 1
+div diverge-one:mul.si.min.m1.run 1
+div diverge-one:neg.si.min.run 1
+div diverge-one:shl.si.w.fold 1
+div diverge-one:shl.si.wp1.fold 1
+div diverge-one:shl.sll.w.fold 1
+div diverge-one:shl.sll.wp1.fold 1
+div diverge-one:sub.si.min1.run 1
+wrapv wrapv-inert:digest-identical-under-fno-wrapv 1
+wrapv wrapv-inert:digest-identical-under-fwrapv 1
