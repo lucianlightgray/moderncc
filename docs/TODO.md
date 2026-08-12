@@ -62,6 +62,24 @@
 > `setjmp` else-arm (which sits outside the counters), and `ast_replay_ok()` false. Which one
 > dominates is target-dependent, so a corpus average hides it. Full map in
 > [`docs/EMIT-MAP.md`](EMIT-MAP.md); banked as `emit-map-full-language` / `emit-map-selfhost`.
+> **`--jit-always-gpu`, 2026-08-11 — the device is at verdict parity with the CPU, and the
+> boundary is not what it was thought to be.** The flag arms the ladder equivalence oracle
+> unconditionally (in this compiler and baked into the output's JIT via the generated
+> constructor, env override `MCC_JIT_ALWAYS_GPU`), arms the pair census that feeds it, and
+> counts every refusal instead of falling back silently. Measured on an RTX 5070 Ti:
+> **self-hosting `src/mcc.c` runs 249,556 rungs, 499,113 dispatches and 4,768,438,116 lanes on
+> the device with `refused=0`**, and the `[ladder-self]` and `[ladder-cross]` panels are
+> identical to the CPU arm across **24,307 pairs and 2,357,085,080 evaluated points, differ=0**,
+> with the emitted object byte-identical. **The boundary is struct member access, not anonymous
+> link-time functions**: on `tests/smoke/subject.c` all 81 emitter refusals are `AST_Unary` with
+> `AST_OP_MEMBER` (`emitter-refused=81 by-node Unary=81 / by-op member=81`) — the refusal
+> reasons are newly attributable, since a `spv_expr` refusal previously carried no reason at
+> all. No refusal was attributable to a link-time or anonymous symbol on either subject. The
+> cost is real and points the other way from the name: the device arm is **2.5–2.7× slower**
+> (self-host 124.3 s against 49.1 s), which is the lane-economics result the break-even table
+> already predicted. Cells `gpu/always-gpu-parity` and `gpu/always-gpu-parity-full-language`;
+> **N21** is the one defect the exercise turned up.
+>
 > **Third sweep, 2026-08-11 — this file is now open items only.** Everything finished moved to
 > [`docs/ARCHIVED.md`](ARCHIVED.md): the ten dated 2026-08-11 write-ups and measurement boards
 > (including the emit-coverage catalog and the emit map), the four closed board rows
@@ -682,6 +700,24 @@ each `o()` writes `cur_text_section->data` directly and **bypasses `g()` entirel
 arm/arm64 assemblers add a second independent cursor writer each; PLT/GOT/veneer/JIT-stub bytes
 reach the section through `section_ptr_add` on every target. So a byte census on any non-x86_64
 arch needs a different primitive set, and no arch other than x86_64 currently has one.
+
+**N21. The ladder census makes compilation non-deterministic, so anything measured under it on
+an affected subject is unattributable.** Found 2026-08-11 while proving `--jit-always-gpu`
+parity. Compiling `tests/diff/full_language.c` twice at `-O1` under
+`MCC_AST_EVAL_LADDER=1 MCC_AST_EVAL_LADDER_CENSUS=1` produces **two different objects**. Without
+the census the same compile is byte-stable, and `tests/smoke/subject.c` is stable *with* it, so
+it is subject-dependent rather than universal.
+
+**Pre-existing and nothing to do with the device**: it reproduces on a compiler binary saved
+before `--jit-always-gpu` existed, and with no GPU involved on either run. That is what makes it
+worth a row — the census is the instrument several claims in this file are taken with, and on an
+affected subject it cannot support an object-level comparison at all. `gpu/always-gpu-parity`
+detects the condition (it compiles the CPU arm twice) and downgrades its object assertion to a
+NOTE rather than blaming the device, which is the right behaviour for that cell but leaves the
+underlying defect open.
+
+Worth knowing before it is chased: the verdict panels are **identical** across runs even when the
+objects are not, so whatever moves is downstream of the ladder's answers, not in them.
 
 **N6. `L2` — wire the device into `mccjit_shutdown()`.** Unblocked as of 2026-08-10, with two
 preconditions in the GPU landed section. One is a hazard *this wave created*: the quiesce now
