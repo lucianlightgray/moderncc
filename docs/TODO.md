@@ -205,11 +205,11 @@ Listed because a whole-suite run is expensive and this list did not exist anywhe
 | ~~`flagsweep/cover3-verify`~~ **CLOSED 2026-08-12** | two flags had accumulated, `opt-search-predict` and `tree-sra` | regenerated: 76 rows covering all 1,774,520 3-way settings of 111 varying flags, same 5 pinned flags uncovered |
 | `optlevel/torture-differential` (+`-known-positive`) | **0 unknown divergences.** It fails on *staleness*: `20020720-1.c` and `20041114-1.c` no longer diverge at `-O1`–`-O4`, so the known table over-claims. **This is the ratchet working** — two known divergences were fixed and nobody dropped the rows | drop those levels from the known table |
 | ~~`fmt/census-bank` (+`-known-positive`)~~ **CLOSED 2026-08-12** | the drift is now attributed commit by commit, which is what the tool was asking for. `libmcc.c` 37→35 is `4d8e03c4` (stopped linking host `libgcc.a`), `mccgpu.c` 36→39 is `747709bc` (device-lost + quiesce), `mccstats.c` 18→21 is `f797074b` (the strategy floor), `mccast.c` 153→155 is `69296b85` (the `-O13` surrogate) and 155→166 is `890a822c` (`--jit-always-gpu`), which also moved `mccjit_embed.c`. The `fprintf` total is **419**, not the 408 this row used to claim, and `accepted` 156→155 and `snprintf` 184→182 both follow from the `libmcc.c` drop. Re-taken; **this session added zero printf sites**, verified by counting `src/*.c` at `7c2d3305` and at HEAD (424 both) | re-taken with `--update-bank` |
-| `cross/shadow-iv-x86_64` | `attempts=616 clean=0 failed=616 divergences=0` — **nothing compiled at all**, so the sweep is vacuous and its own guard fires | the sweep compiles nothing on this tree; find out why before trusting any shadow-IV number |
+| ~~`cross/shadow-iv-x86_64`~~ **CLOSED 2026-08-12** | three bugs, none of them in the compiler. `tools/shadow-iv-sweep.sh` hardcoded `-B $REPO/cmake-debug`, a build directory that exists in neither tree; it named the sweep's arch by CPU only, so on Darwin the shadow compiler was built without `MCC_TARGET_MACHO` and could not find `stdio.h`; and it prefixed every attempt with `timeout`, which macOS does not have. It now takes `MCC_BUILD_DIR` from ctest, inherits the build's own `config-defines.txt` for the native arm, skips (77) with a reason when the arch is neither native nor sysrooted, and uses `gtimeout` or nothing where `timeout` is absent | fixed, plus the floor below |
 | ~~`ci/registration-stubs`~~ **CLOSED 2026-08-12** | it was **three** cells and **three** `else()` branches, not two and two: `jit/xoracle-coverage` is dropped by the corpus-exists test *and* by the outer python3/embed-jit/host-arch gate, so the lint had to be re-run twice before it went quiet | stubs added |
 
-**Three of the seven closed on 2026-08-12; the standing four are `optlevel/torture-differential`
-(+`-known-positive`), `cross/shadow-iv-x86_64` and `runtime-bench-check`.** The rule this file
+**Four of the seven closed on 2026-08-12; the standing three are `optlevel/torture-differential`
+(+`-known-positive`) and `runtime-bench-check`.** The rule this file
 states — that a ratchet re-banked without a reason trains its readers to re-bank without
 looking — is why `fmt/census-bank` was left red for a day and not why it should stay red: the
 tool asks for the attribution, and once every moved figure has a commit against it the
@@ -574,9 +574,13 @@ measurement tool reports success over an empty or truncated subject:
   `os.path.exists` and silently measures nothing; `tests/must-run.txt` records
   the resulting skip as permanent rather than fixing it. `opt-cache-determinism` is a
   permanent 77 for the same class of reason.
-- **`tools/shadow-iv-sweep.sh` documents its own blindness in the source**: *"There is
+- ~~**`tools/shadow-iv-sweep.sh` documents its own blindness in the source**: *"There is
   still no floor on this count, so a regression that stops 500 of 610 subjects building
-  would report divergences=0 and PASS"*.
+  would report divergences=0 and PASS"*.~~ **CLOSED 2026-08-12.** There is a floor now:
+  `MCC_SHADOW_MIN_CLEAN_PCT`, default 80, compared against `clean * 100 < n * pct`, and the
+  failure message says how many subjects `divergences=0` is actually a statement about.
+  Measured on arm64: **292 of 308 compile at `-O1`**, so 80 is a real floor with headroom
+  and not a number chosen to pass. Teeth proven by running at 99, which fails.
 - ~~The `22 of 22` strategy coverage quoted under *How to validate* is measured, not enforced: `tools/smokerun.c`…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 - **`src/wide256_slice.h`'s I-6 is a live compiler segfault with a two-line fix and
   nothing watching it**: `src/mccrir.c` still tests only `if (!sv->sym …)`,

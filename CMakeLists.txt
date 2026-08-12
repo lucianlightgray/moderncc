@@ -4764,7 +4764,9 @@ if(MCC_BUILD_TESTS)
                     COMMAND "${_shadow_bash}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/shadow-iv-sweep.sh" "${_sv}")
                 set_tests_properties(cross/shadow-iv-${_sv} PROPERTIES
                     FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
-                    LABELS "cross" TIMEOUT 3600 ENVIRONMENT "MCC_CROSS_DIR=${MCC_CROSS_DIR}" ${_shadow_pathmod})
+                    LABELS "cross" TIMEOUT 3600
+                    ENVIRONMENT "MCC_CROSS_DIR=${MCC_CROSS_DIR};MCC_BUILD_DIR=${CMAKE_BINARY_DIR}"
+                    ${_shadow_pathmod})
             endif()
         endforeach()
 
