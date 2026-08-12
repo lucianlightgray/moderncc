@@ -98,6 +98,20 @@
 > costs 224/448/16 bytes of self-host at `-O1`/`-O2`/`-O4`, on purpose). **N8**'s lead was
 > already closed by N20 and is now pinned by a parity fixture.
 >
+> **The wave then kept going, and most of what it found was instrumentation rather than
+> compiler.** **N15** closed — `-g -run` SIGSEGVing the moment the JIT bakes is one misordered
+> line in `mcc_tcov_block_begin`, which read `s1->dState->tcov_data` above its own
+> `test_coverage == 0` early-out; harmless on the AOT path where `dState` exists, fatal in the
+> JIT's re-emit where it does not. `MCC_OUTPUT_MEMORY` is now in the bake gate, checked by
+> differential over all 310 `tests/exec` programs at `-O1 -g -run --jit`. **N21** closed as
+> *not a defect*: the ladder census is deterministic and the six bytes that moved were
+> `__TIME__`. **N16** does not reproduce — 294 objects, zero moved — and the same `__TIME__`
+> landmine most likely explains the original report. **N25** closed the day it opened. And
+> **five of the seven standing reds** closed: `flagsweep/cover3-verify`,
+> `ci/registration-stubs`, `fmt/census-bank`, `cross/shadow-iv-x86_64` and
+> `runtime-bench-check`, of which the last three were harness bugs that had been reported as
+> compiler-adjacent facts.
+>
 > Two harness findings outlive the port. **The two "independent" references on that host were
 > one compiler**: `/usr/bin/gcc` on macOS is a clang shim, so every `diverge-one` was being
 > reported as a `diverge-both` — 271 rows of this suite's loudest verdict, produced by asking
