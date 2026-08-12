@@ -2102,6 +2102,24 @@ static void ast_locrec_skip(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); ast_locrec_i++; }
 }
 
+typedef struct {
+	int off[AST_LTEMP_MAX];
+	int n;
+	int cur;
+} AstLtempSave;
+
+static void ast_ltemp_save(AstLtempSave *s) { MCC_TRACE("enter\n");
+	s->n = ast_ltemp_n;
+	s->cur = ast_ltemp_cur;
+	memcpy(s->off, ast_ltemp_off, sizeof s->off);
+}
+
+static void ast_ltemp_restore(const AstLtempSave *s) { MCC_TRACE("enter\n");
+	ast_ltemp_n = s->n;
+	ast_ltemp_cur = s->cur;
+	memcpy(ast_ltemp_off, s->off, sizeof ast_ltemp_off);
+}
+
 int ast_ltemp_overlaps(int lo, int sz) { MCC_TRACE("enter\n");
 	for (int t = 0; t < ast_ltemp_n; t++) { MCC_TRACE("br\n");
 		int a = ast_ltemp_off[t];
@@ -19002,9 +19020,12 @@ static long ast_search_score_emitsize(AstArena *pristine, Sym *sym, int faithful
 		{ MCC_TRACE("br\n"); return -1; }
 	ast_search_gates_set(gates);
 	ast_cur = trial;
+	AstLtempSave ltsv;
+	ast_ltemp_save(&ltsv);
 	hits = ast_run_strat_cycle(trial, sym, faithful, ast_strat_order,
 														 ast_strat_order_n, NULL);
 	size = ast_search_emit_size(trial, saved_loc, saved_anon);
+	ast_ltemp_restore(&ltsv);
 	ast_cur = saved_cur;
 	ast_arena_free(trial);
 	return ast_search_pack_score(size, hits);
@@ -19024,9 +19045,12 @@ static long ast_search_score_one(AstArena *pristine, Sym *sym, int faithful,
 		{ MCC_TRACE("br\n"); return -1; }
 	ast_search_gates_set(gates);
 	ast_cur = trial;
+	AstLtempSave ltsv;
+	ast_ltemp_save(&ltsv);
 	hits = ast_run_strat_cycle(trial, sym, faithful, ast_strat_order,
 														 ast_strat_order_n, NULL);
 	sc = ast_cost_score(trial);
+	ast_ltemp_restore(&ltsv);
 	ast_cur = saved_cur;
 	ast_arena_free(trial);
 	return ast_search_pack_score(sc, hits);
@@ -19042,9 +19066,12 @@ static long ast_search_score_order(AstArena *pristine, Sym *sym, int faithful,
 		{ MCC_TRACE("br\n"); return -1; }
 	saved_cur = ast_cur;
 	ast_cur = trial;
+	AstLtempSave ltsv;
+	ast_ltemp_save(&ltsv);
 	hits = ast_run_strat_cycle(trial, sym, faithful, seq, k, NULL);
 	sc = ast_search_emitsize_env ? ast_search_emit_size(trial, saved_loc, saved_anon)
 															 : ast_cost_score(trial);
+	ast_ltemp_restore(&ltsv);
 	ast_cur = saved_cur;
 	ast_arena_free(trial);
 	return ast_search_pack_score(sc, hits);
@@ -19424,6 +19451,8 @@ static void ast_search_axis_pick(Sym *sym, int faithful, int saved_loc,
 		{ MCC_TRACE("br\n"); return; }
 	saved_cur = ast_cur;
 	ast_cur = trial;
+	AstLtempSave ltsv;
+	ast_ltemp_save(&ltsv);
 	ast_run_strat_cycle(trial, sym, faithful, ast_strat_order, ast_strat_order_n,
 											NULL);
 	for (ci = 1; ci >= 0; ci--) { MCC_TRACE("br\n");
@@ -19438,6 +19467,7 @@ static void ast_search_axis_pick(Sym *sym, int faithful, int saved_loc,
 		}
 	}
 	ast_search_want_inline = 0;
+	ast_ltemp_restore(&ltsv);
 	ast_cur = saved_cur;
 	ast_arena_free(trial);
 	ast_search_pick_inline = bi;
