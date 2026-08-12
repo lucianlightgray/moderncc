@@ -239,10 +239,29 @@ x86_64-linux where all three pass:
 | --- | --- |
 | `jit/bind-local` | **N24** — zero local binds across 6 programs, plus `collide_libc` giving 45314 under `MCC_JIT_KGC=0` against 58700 under `MCC_JIT=0` |
 | `slice/census` | `blocks` is 983 against the banked 990 for the `arm64`/`Darwin` column. The bank is already per-arch *and* per-OS, so this is that column having drifted, not a missing column |
-| `superopt/global-reload` (+`-known-positive`) | at `-O0`, `spin_wait`, `spin` and `spin_cached` have **no backward branch at all** — their loops were deleted, so "did the load stay in the loop" is not a question the cell can ask — and `the g_flag load left the 'while (!g_flag) {}' loop`. A `volatile`-adjacent reload question answered wrongly at `-O0` on this target |
+| ~~`superopt/global-reload` (+`-known-positive`)~~ **CLOSED 2026-08-12** | **not a compiler defect** — `tests/superopt/globreload.awk` was written against GNU binutils objdump on ELF and four of its assumptions are format, not fact |
 
-`superopt/global-reload` is the one of the three that looks like a compiler defect rather than
-a bank; it is unexamined.
+**`superopt/global-reload` looked like the one real defect of the three and was not.** Four
+assumptions in the fact extractor are objdump-format, not compiler behaviour: Mach-O's leading
+underscore (`_spin_wait` never matched `spin_wait`); LLVM objdump printing branch targets as
+`0x148` where GNU prints `148`; LLVM objdump printing relocation offsets zero-padded to 16
+digits where `pad()` pads to 8, so **every** in-loop test compared a 16-char string against an
+8-char one and answered no; and `adrp x30, 0x0 <_spin_wait>` being read as a backward branch,
+because the matcher never looked at the mnemonic. One more is a real ABI difference rather than
+a format one: an arm64 GOT access is a `ADR_GOT_PAGE`/`LD64_GOT_LO12_NC` pair at consecutive
+instructions, so `across_call` showed 4 relocations where the cell expects 2 accesses.
+
+The extractor now unmangles one leading underscore, accepts an optional `0x`, normalises
+offsets by stripping leading zeros before padding, requires the token before the target to be a
+branch mnemonic (`b`, `b.cc`, `cb[n]z`, `tb[n]z`, `j*`, `loop*` — **not** `call`/`bl`, which
+would make a backward call a loop), and collapses a relocation pair to the same symbol four
+bytes apart into one access. Both cells pass on arm64/Mach-O.
+
+**It was also already broken on ELF, silently.** Run against an x86_64 ELF object with LLVM's
+objdump, the old extractor emits **zero** `LOOP` rows — so every loop check on that toolchain
+was passing by measuring nothing. The `REL` rows are identical before and after; only the
+offsets are normalised. Not re-verified against GNU binutils objdump, which is what the Linux
+box has and what the extractor was written for; the changes are shaped to be no-ops there.
 
 ### How to validate — standing rule, 2026-08-10
 
