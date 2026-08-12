@@ -231,8 +231,18 @@ tool asks for the attribution, and once every moved figure has a commit against 
 attribution exists and re-taking *records* the movement instead of erasing it. Getting it
 required checking that this session moved nothing, which it did not.
 
-`jit/bind-local` is an eighth red on the arm64 host and is **N24**; it is not in the table
-above because that table was taken on x86_64-linux, where the cell passes.
+**The arm64/macOS host has three standing reds of its own**, all verified pre-existing by
+rebuilding at `7c2d3305`, none of them in the table above because that table was taken on
+x86_64-linux where all three pass:
+
+| cell | what it says |
+| --- | --- |
+| `jit/bind-local` | **N24** — zero local binds across 6 programs, plus `collide_libc` giving 45314 under `MCC_JIT_KGC=0` against 58700 under `MCC_JIT=0` |
+| `slice/census` | `blocks` is 983 against the banked 990 for the `arm64`/`Darwin` column. The bank is already per-arch *and* per-OS, so this is that column having drifted, not a missing column |
+| `superopt/global-reload` (+`-known-positive`) | at `-O0`, `spin_wait`, `spin` and `spin_cached` have **no backward branch at all** — their loops were deleted, so "did the load stay in the loop" is not a question the cell can ask — and `the g_flag load left the 'while (!g_flag) {}' loop`. A `volatile`-adjacent reload question answered wrongly at `-O0` on this target |
+
+`superopt/global-reload` is the one of the three that looks like a compiler defect rather than
+a bank; it is unexamined.
 
 ### How to validate — standing rule, 2026-08-10
 

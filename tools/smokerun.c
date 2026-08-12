@@ -26,11 +26,11 @@
 #define SMK_TARGET_ARCH "unknown"
 #endif
 
-#if defined _WIN32
+#if MCC_HOST_WIN32
 #define SMK_TARGET_OS "windows"
-#elif defined __APPLE__
+#elif MCC_HOST_DARWIN
 #define SMK_TARGET_OS "macos"
-#elif defined __linux__
+#elif MCC_HOST_LINUX
 #define SMK_TARGET_OS "linux"
 #else
 #define SMK_TARGET_OS "unix"
