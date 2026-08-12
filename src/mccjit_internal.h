@@ -10,7 +10,7 @@
 
 #define MCCJIT_KGC_MAXARG 6
 
-#define MCCJIT_INTENT_MAGIC 0x314a434dul
+#define MCCJIT_INTENT_MAGIC 0x324a434dul
 #define MCCJIT_INTENT_FORMAT                                                   \
 	14u
 

@@ -2124,8 +2124,8 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); cstr_printf(&cs,
 								"extern void mccjit_boot_swap(void**, const void*, unsigned long);\n"); }
 	for (e = mccjit_embed_fns; e; e = e->next) { MCC_TRACE("br\n");
-		int off = data_section->data_offset;
-		unsigned char *p = section_ptr_add(data_section, e->len ? e->len : 1);
+		int off = (int)section_add(data_section, e->len ? e->len : 1, MCC_PTR_SIZE);
+		unsigned char *p = data_section->data + off;
 		char blobname[256];
 		if (e->len)
 			{ MCC_TRACE("br\n"); memcpy(p, e->blob, e->len); }

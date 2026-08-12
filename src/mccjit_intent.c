@@ -64,6 +64,12 @@ static void mccjit_put_u64(MccjitBuf *b, uint64_t v) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); t[i] = (unsigned char)(v >> (i * 8)); }
 	mccjit_buf_put(b, t, 8);
 }
+static void mccjit_put_align8(MccjitBuf *b) { MCC_TRACE("enter\n");
+	static const unsigned char z[8] = {0};
+	size_t pad = (8 - (b->len & 7)) & 7;
+	if (pad)
+		{ MCC_TRACE("br\n"); mccjit_buf_put(b, z, pad); }
+}
 static void mccjit_put_str(MccjitBuf *b, const char *s) { MCC_TRACE("enter\n");
 	uint32_t n = s ? (uint32_t)strlen(s) : 0;
 	mccjit_put_u32(b, n);
@@ -120,6 +126,11 @@ static uint64_t mccjit_get_u64(MccjitReader *r) { MCC_TRACE("enter\n");
 		r->pos += 8;
 	}
 	return v;
+}
+static void mccjit_get_align8(MccjitReader *r) { MCC_TRACE("enter\n");
+	size_t pad = (8 - (r->pos & 7)) & 7;
+	if (pad && mccjit_have(r, pad))
+		{ MCC_TRACE("br\n"); r->pos += pad; }
 }
 static char *mccjit_get_str(MccjitReader *r) { MCC_TRACE("enter\n");
 	uint32_t n = mccjit_get_u32(r);
@@ -604,6 +615,7 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 		mccjit_put_u32(buf, (uint32_t)buf->bind_n);
 		for (bi = 0; bi < buf->bind_n; bi++) { MCC_TRACE("br\n");
 			mccjit_put_str(buf, get_tok_str(buf->bind_tokv[bi], NULL));
+			mccjit_put_align8(buf);
 			buf->bind_off[bi] = buf->len;
 			mccjit_put_u64(buf, 0);
 		}
@@ -1054,6 +1066,7 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 	}
 	for (i = 0; i < out->nbind; i++) { MCC_TRACE("br\n");
 		out->bind_name[i] = mccjit_get_str(&r);
+		mccjit_get_align8(&r);
 		out->bind_addr[i] = mccjit_get_u64(&r);
 		if (r.err || !out->bind_name[i] || !out->bind_name[i][0] ||
 				!out->bind_addr[i])
