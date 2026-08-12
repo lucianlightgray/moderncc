@@ -682,21 +682,30 @@ Still open: `gcc.dg/pr96674.c` (`-fwrapv`) and `gcc.dg/fastmath-1.c` (`-ffast-ma
 
 **~~N9. `-fno-opt-search-<anything>` disables the whole search, not the sub-knob it names.~~ — CLOSED 2026-08-11.** Write-up moved to [`docs/ARCHIVED.md`](ARCHIVED.md).
 
-**N15. `-g -run` SIGSEGVs the moment the JIT is allowed to bake.** New 2026-08-11, and it
-outranks N6 because it is a crash on a command a person debugging their own program actually
-types. Letting `debug_modes` record in `MCC_OUTPUT_MEMORY` mode makes run mode bake —
-`mccjit-site[hot]: baked` — and then fault:
+**~~N15. `-g -run` SIGSEGVs the moment the JIT is allowed to bake.~~ — CLOSED 2026-08-12, and
+the gate is widened.** It is one misordered line, and it was never about `-run`.
 
-    mcc -O1 -g -run --jit prog.c   ->  RUNTIME ERROR: invalid memory access, SIGSEGV (139)
-    MCC_JIT=0 mcc -O1 -g -run ...  ->  correct output
+`gind()` calls `mcc_tcov_block_begin()` whenever `debug_modes` is non-zero, and `debug_modes`
+is `do_debug | (test_coverage << 1)` — so plain `-g` reaches it with coverage off.
+`mcc_tcov_block_begin` read `tcov_data.offset` — that is `s1->dState->tcov_data.offset` —
+**before** its `test_coverage == 0` early-out. On the AOT path `mcc_debug_start` has already
+allocated `dState`, so the pointless read is harmless. Inside the JIT's in-process re-emit
+nothing calls `mcc_debug_start`, `dState` is NULL, and the read faults at `NULL + 0x10e8`:
 
-**The fault is latent in the run-mode JIT, not caused by the gate** — reverting the gate makes
-run mode bake nothing, so nothing crashes, which is why it has never fired. It is held out of
-the shipped gate for that reason (`--embed-jit` alone enables baking; `-run` does not), with
-the reproducer in a comment at `rir_hook_body_begin`. Already localised: recording,
-faithfulness (`fn=2 faithful=2`, identical to non-`-g`), the dispatch gate (`opt_ok=1`) and the
-stash gate all behave the same with and without `-g`; **the divergence is after the bake, on
-the swap.** Fixing it is what unblocks `-g -run`.
+    frame #0  mcc_tcov_block_begin  mccdbg.c:2370   <- unsigned long last_offset = tcov_data.offset
+    frame #1  gind                  mccgen.c:621
+    frame #2  ast_replay_bb  ...  ast_reemit_extern  ...  mccjit_boot_swap
+
+`mcc_tcov_block_begin` now takes its early-out first (and also on `!s1->dState`), and
+`mccjit_recompile_common` clears `debug_modes` around the re-emit and restores it — the JIT
+emits no line table and mcc implements no GDB JIT interface, so there is nothing for the whole
+`debug_modes` family to do there and this removes the class rather than the instance.
+
+**`MCC_OUTPUT_MEMORY` is now in `jit_wanted`**, so `-g -run` bakes and swaps like every other
+arm. Verified by differential rather than by absence of a crash: over all **310 `tests/exec`
+programs at `-O1 -g -run --jit`, `MCC_JIT=1` and `MCC_JIT=0` produce identical output and exit
+status, 0 differing**. Twelve smoke cells, 412 `jit/`+`exec/` cells and all 328
+`cli/`+debug+coverage+dwarf cells green; `-ftest-coverage` still writes its `.tcov`.
 
 **~~N16. `85bf6a3d` moves `-O0` objects, and its commit message says it does not.~~ —
 SETTLED 2026-08-12 on arm64-osx: it does not.** A/B'd through `tools/o0_ab.sh` itself, the

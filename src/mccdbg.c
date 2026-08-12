@@ -2367,10 +2367,13 @@ ST_FUNC void mcc_tcov_block_end(MCCState *s1, int line);
 ST_FUNC void mcc_tcov_block_begin(MCCState *s1) { MCC_TRACE("enter\n");
 	SValue sv;
 	void *ptr;
-	unsigned long last_offset = tcov_data.offset;
+	unsigned long last_offset;
 
+	if (s1->test_coverage == 0 || !s1->dState)
+		{ MCC_TRACE("br\n"); return; }
+	last_offset = tcov_data.offset;
 	mcc_tcov_block_end(mcc_state, 0);
-	if (s1->test_coverage == 0 || nocode_wanted)
+	if (nocode_wanted)
 		{ MCC_TRACE("br\n"); return; }
 
 	if (tcov_data.last_file_name == 0 ||

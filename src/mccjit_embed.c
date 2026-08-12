@@ -716,6 +716,8 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	sym = mccjit_rebuild_sym(&it);
 	mccjit_internal_compile = 1;
 	volatile int reemit_ok = 0;
+	char sv_debug_modes = debug_modes;
+	debug_modes = 0;
 	int sv_stk_floor = stk_data_floor;
 	stk_data_floor = nb_stk_data;
 	js->error_set_jmp_enabled = 1;
@@ -738,6 +740,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		}
 	}
 	js->error_set_jmp_enabled = 0;
+	debug_modes = sv_debug_modes;
 	stk_data_floor = sv_stk_floor;
 	ast_fconst_reuse_disable(0);
 	if (!reemit_ok)
