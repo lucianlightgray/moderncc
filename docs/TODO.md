@@ -62,6 +62,25 @@
 > `setjmp` else-arm (which sits outside the counters), and `ast_replay_ok()` false. Which one
 > dominates is target-dependent, so a corpus average hides it. Full map in
 > [`docs/EMIT-MAP.md`](EMIT-MAP.md); banked as `emit-map-full-language` / `emit-map-selfhost`.
+> **SRA, 2026-08-12 — landed off by default, because the measurement says it does nothing yet.**
+> `-ftree-sra` is strategy 23, `ast_sra_run`, with a `--stats=4` counter and — unlike the seven
+> N1 names — wired into all five `do_*` sites so its work actually reaches `AST_PF_EMIT`. The
+> legality rule is one test rather than a checklist: **a candidate dies unless every `Ref` at its
+> frame offset is child 0 of a member access**, which subsumes address-taken, pass- and
+> return-by-value and whole-struct assignment (the last has no node of its own — the copy is
+> generated inside `vstore()` at replay). **It is off by default because it is byte-neutral**:
+> across 291 exec programs at `-O4` it fires on 21 files and changes **1 object**, and the reason
+> is structural — `Unary(MEMBER, Ref base)` and a plain `Ref` at `base+k` emit identical code in
+> this compiler, so an in-place decomposition has no headroom. Neither hoped-for payoff appears:
+> promotion will not take the decomposed scalars (byte-identical across `-fpromote-locals`
+> crossed with `-ftree-sra` four ways, with and without preserving `sym`), and it does not help
+> the device either — SRA fires **0** times on `tests/smoke/subject.c`, whose 81 member refusals
+> are on structs it cannot legally touch. **N22** is where the real optimization is. Two defects
+> were found and fixed on the way: `ast_promo_size_unknown` is inside an arch-conditional block
+> and its use broke all five cross targets, and `stratsweep.sh`'s registry mirror plus its
+> `STRAT_NONE` sentinel had to move for a 23rd strategy to exist at all. `strat-dark:sra` is
+> banked deliberately — a strategy that is off by default is dark at every level by construction.
+>
 > **`--jit-always-gpu`, 2026-08-11 — the device is at verdict parity with the CPU, and the
 > boundary is not what it was thought to be.** The flag arms the ladder equivalence oracle
 > unconditionally (in this compiler and baked into the output's JIT via the generated
@@ -540,7 +559,12 @@ measurement tool reports success over an empty or truncated subject:
 > correctness gate that only runs on the AOT path is not a correctness gate**, because the JIT
 > re-emits the same arenas with no faithfulness comparison to fall back on.
 >
-> **The live ranking is now N17, then N8, then N1, then N7.** N17 goes first because it is
+> **The live ranking is now N17, then N8, then N22, then N1, then N7.** N22 is placed high
+> because it is a known-cause fix with a written-and-backed-out prototype behind it, not an
+> investigation: the rewrite worked, the allocator state leaking through discarded scoring runs
+> is what broke it, and that is a bounded change.
+>
+> **The earlier ranking, for context: N17, then N8, then N1, then N7.** N17 goes first because it is
 > cheap (one counter, in an arm that is already braced) and because it is a *measurement*
 > defect: until it lands, every coverage and faithfulness percentage in this file — including
 > the ones the two sections above are built on — is a lower bound by an unreported amount, and
@@ -700,6 +724,34 @@ each `o()` writes `cur_text_section->data` directly and **bypasses `g()` entirel
 arm/arm64 assemblers add a second independent cursor writer each; PLT/GOT/veneer/JIT-stub bytes
 reach the section through `section_ptr_add` on every target. So a byte census on any non-x86_64
 arch needs a different primitive set, and no arch other than x86_64 currently has one.
+
+**N22. SRA's real optimization is the separate-slot variant, and it needs the ltemp allocator
+snapshotted around speculative scoring runs.** New 2026-08-12. `-ftree-sra` landed off by
+default as a canonicalization (see the wave note): it rewrites `Unary(MEMBER, Ref base)` into a
+plain `Ref` at `base+k`, which is **provably byte-neutral** — 291 exec programs at `-O4`, fires
+on 21 files, **1 object changed**. That is not a defect in the pass, it is the finding: in this
+compiler a member access already lowers to a direct frame access, so decomposing the aggregate
+*in place* has no headroom at all.
+
+**The headroom is in giving each member its own frame slot**, so that promotion can register
+allocate members independently and so a slice's live-in collector sees one offset per member
+instead of one per struct. That variant was written and it worked — it changed objects and fired
+8 times on a two-struct subject — and then it **segfaulted the `-O4` self-host**, so it was
+backed out rather than shipped.
+
+The cause is known and is not in the rewrite. At `-O4` the strategy cycle also runs on **clones**
+during search scoring (`ast_search_score_emitsize` and the cost/ordered-sequence scorers call
+`ast_run_strat_cycle` with `sf = NULL`), and slot minting mutates the *global* allocator state
+`ast_ltemp_cur` / `ast_ltemp_n` / `ast_ltemp_off[]`. Every speculative scoring run therefore
+leaks slots that no `AST_PF_EMIT` ever claims, and the frame the emitter is finally handed does
+not match the frame the arena was rewritten against.
+
+**The fix is to snapshot and restore that allocator around any run whose result is discarded**,
+which is exactly the runs with `sf == NULL`. Two further constraints for whoever takes it:
+`ast_ltemp_overlaps` hardcodes `a + 8` and so assumes every reserved slot is 8 bytes, which a
+member of another width breaks; and `AST_LTEMP_MAX` is 32, which caps how many members can be
+split per function. Do this before widening the legality rule — the rule is not what is limiting
+the win.
 
 **N21. The ladder census makes compilation non-deterministic, so anything measured under it on
 an affected subject is unattributable.** Found 2026-08-11 while proving `--jit-always-gpu`
