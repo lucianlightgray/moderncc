@@ -28083,3 +28083,238 @@ reference family, "mcc is wrong" and "the two references disagree and mcc picked
 same observation**, and the first reading is the one a reader reaches for. Every
 `mcc-differs-from-both=0` measurement is unfalsifiable in that specific way until a second
 implementation family is installed; see N25.
+
+
+## Archived 2026-08-12 — the arm64/macOS wave's second half: five closed rows and a landed strategy
+
+> Moved out of [`docs/TODO.md`](TODO.md) on 2026-08-12, when the migration this session owed was
+> paid. Each row is left there as a one-line struck stub under its original number, because rows
+> are cross-referenced by number across these documents and a reader following "N21" must land on
+> the closure rather than on nothing. Three of the six closed as **not defects**, which is the
+> most useful thing in this section: the instruments were wrong, not the compiler.
+
+**~~N15. `-g -run` SIGSEGVs the moment the JIT is allowed to bake.~~ — CLOSED 2026-08-12, and
+the gate is widened.** It is one misordered line, and it was never about `-run`.
+
+`gind()` calls `mcc_tcov_block_begin()` whenever `debug_modes` is non-zero, and `debug_modes`
+is `do_debug | (test_coverage << 1)` — so plain `-g` reaches it with coverage off.
+`mcc_tcov_block_begin` read `tcov_data.offset` — that is `s1->dState->tcov_data.offset` —
+**before** its `test_coverage == 0` early-out. On the AOT path `mcc_debug_start` has already
+allocated `dState`, so the pointless read is harmless. Inside the JIT's in-process re-emit
+nothing calls `mcc_debug_start`, `dState` is NULL, and the read faults at `NULL + 0x10e8`:
+
+    frame #0  mcc_tcov_block_begin  mccdbg.c:2370   <- unsigned long last_offset = tcov_data.offset
+    frame #1  gind                  mccgen.c:621
+    frame #2  ast_replay_bb  ...  ast_reemit_extern  ...  mccjit_boot_swap
+
+`mcc_tcov_block_begin` now takes its early-out first (and also on `!s1->dState`), and
+`mccjit_recompile_common` clears `debug_modes` around the re-emit and restores it — the JIT
+emits no line table and mcc implements no GDB JIT interface, so there is nothing for the whole
+`debug_modes` family to do there and this removes the class rather than the instance.
+
+**`MCC_OUTPUT_MEMORY` is now in `jit_wanted`**, so `-g -run` bakes and swaps like every other
+arm. Verified by differential rather than by absence of a crash: over all **310 `tests/exec`
+programs at `-O1 -g -run --jit`, `MCC_JIT=1` and `MCC_JIT=0` produce identical output and exit
+status, 0 differing**. Twelve smoke cells, 412 `jit/`+`exec/` cells and all 328
+`cli/`+debug+coverage+dwarf cells green; `-ftest-coverage` still writes its `.tcov`.
+
+**~~N16. `85bf6a3d` moves `-O0` objects, and its commit message says it does not.~~ —
+SETTLED 2026-08-12 on arm64-osx: it does not.** A/B'd through `tools/o0_ab.sh` itself, the
+harness the row cites: with the hunk applied and with it reverted, **294 objects, zero rows
+different**. The commit's reasoning holds — `ast_func_begin` records `ind` and opens the arena
+and emits nothing, so moving `func_vla_arg` after it changes the recorded span and not the
+emission order.
+
+**The likely explanation for the original report, and it is worth more than the row.** The
+`-O0` object corpus contains one file whose bytes are not a function of the source:
+`tests/exec/preprocessor/predefined_macros.c` expands `__DATE__` and `__TIME__`, and two runs
+of the *same* compiler one second apart produce different objects. `o0_ab.sh` pins
+`SOURCE_DATE_EPOCH=1000000000` and is therefore immune; **an A/B done by hand is not**, and
+the first attempt at this measurement here reported exactly one moved object — that file — until
+the epoch was pinned. Any hand-rolled `-O0` byte comparison over `tests/exec` must export
+`SOURCE_DATE_EPOCH` or it will report a spurious mover every time.
+
+Not reproduced on x86_64, which is where the row was raised; if it survives there it is a
+different fact from the one this row states.
+
+**Found on the way: `o0_ab.sh` dropped its own native key on any host that is not
+x86_64-Linux.** `key_flags` had a native fallback for the `x86_64` key alone and asked for
+`$BUILD/mcc-<key>` for every other, so on this Mac all twelve keys read as unmeasurable and the
+run failed its own floor with *"0 measurable key(s)"* — the same drop-instead-of-skip shape
+`ci/registration-stubs` exists to catch, one layer down. Every key now falls back to
+`$BUILD/mcc` when the cross binary is absent and the version banner matches the key's target,
+and the per-key summary names the compiler it used so a bank diff is attributable. `arm64-osx`
+measures 294 objects with `unfaithful=0 diverge=0`.
+
+**It is still not a registered cell on Darwin** — `ast/o0-baseline` is gated on
+`NOT MCC_TARGETOS STREQUAL "Darwin"` — and lifting that gate needs its own bank first: the
+committed `tests/ast/o0-baseline/arm64-osx.obj.txt` was taken with the *cross* `mcc-arm64-osx`
+and 40-odd of its rows differ from a native compile, which is a configuration difference and
+not a defect. `tests/must-run.txt` says a skip of the native key is always a bug, so this is a
+live gap on that host.
+
+**~~N20. `--embed-jit` silently miscompiles a binary operator over two comparisons.~~ — FOUND AND FIXED 2026-08-11**, root-caused to `ast_configure()` never running inside the JIT; guarded by `jit/replay-parity` and `mcctest-embedjit`. Write-up moved to [`docs/ARCHIVED.md`](ARCHIVED.md).
+
+**N22. SRA's real optimization is the separate-slot variant, and it needs the ltemp allocator
+snapshotted around speculative scoring runs.** New 2026-08-12. `-ftree-sra` landed off by
+default as a canonicalization (see the wave note): it rewrites `Unary(MEMBER, Ref base)` into a
+plain `Ref` at `base+k`, which is **provably byte-neutral** — 291 exec programs at `-O4`, fires
+on 21 files, **1 object changed**. That is not a defect in the pass, it is the finding: in this
+compiler a member access already lowers to a direct frame access, so decomposing the aggregate
+*in place* has no headroom at all.
+
+**The headroom is in giving each member its own frame slot**, so that promotion can register
+allocate members independently and so a slice's live-in collector sees one offset per member
+instead of one per struct. That variant was written and it worked — it changed objects and fired
+8 times on a two-struct subject — and then it **segfaulted the `-O4` self-host**, so it was
+backed out rather than shipped.
+
+The cause is known and is not in the rewrite. At `-O4` the strategy cycle also runs on **clones**
+during search scoring (`ast_search_score_emitsize` and the cost/ordered-sequence scorers call
+`ast_run_strat_cycle` with `sf = NULL`), and slot minting mutates the *global* allocator state
+`ast_ltemp_cur` / `ast_ltemp_n` / `ast_ltemp_off[]`. Every speculative scoring run therefore
+leaks slots that no `AST_PF_EMIT` ever claims, and the frame the emitter is finally handed does
+not match the frame the arena was rewritten against.
+
+~~**The fix is to snapshot and restore that allocator around any run whose result is
+discarded**~~ — **DONE 2026-08-12.** `ast_ltemp_save`/`ast_ltemp_restore` bracket the four
+`sf == NULL` runs whose trial arena is thrown away. The fifth such call, in
+`ast_reemit_with_gates`, is deliberately left alone: its trial *is* what gets emitted, so its
+slots are real. **Byte-neutral today** — 77 `tests/exec` objects at `-O4` and the 24
+`scases.h` strategy shapes at `-O4` and `-O13`, all identical — which is the wanted result:
+nothing currently leaks a slot that survives to emission, and the point is that nothing has
+to, for the next pass to be safe.
+
+**What is left is the rewrite itself**, plus two constraints it will hit:
+`ast_ltemp_overlaps` hardcodes `a + 8` and so assumes every reserved slot is 8 bytes, which a
+member of another width breaks; and `AST_LTEMP_MAX` is 32, which caps how many members can be
+split per function. Do those before widening the legality rule — the rule is not what is
+limiting the win.
+
+**~~N23. Wide bit-field arithmetic is truncated at every operation.~~ — NOT A DEFECT,
+corrected 2026-08-12 before it was worked.** It is a gcc/clang disagreement and mcc
+deliberately follows gcc. Filed here anyway, because the wrong version of this row was
+written into the board and into `tests/smoke/bails-arm64-macos.txt` first and the correction
+is the useful part.
+
+The observation is real: `gen_op` computes `bf_trunc` from the field width and reduces the
+result of every binary op, so with `unsigned long long f : 33` at max, `f + 1` is **0** in mcc
+and **2^33** in clang. What was wrong was the conclusion. C11 6.7.2.1p5 admits a bit-field of
+`_Bool`, `signed int`, `unsigned int` *"or some other implementation-defined type"*, so the
+arithmetic semantics of an over-wide field are implementation-defined and **gcc and clang
+answer differently**: gcc gives the bit-field's declared type a `TYPE_PRECISION` of the field
+width and wraps; clang converts to the full declared type and does not. `b3c660f1` added
+`bf_trunc` deliberately, to follow gcc, and it fixed four gcc c-torture tests doing so
+(`bitfld-3`, `bitfld-5`, `pr32244-1`, `pr34971`).
+
+**The evidence that settles it is already in the x86_64 bank**: those rows are banked there as
+`diverge-ONE`, not `diverge-both` — mcc agrees with exactly one of two independent references,
+and since it truncates and clang does not, the one it agrees with is gcc. They appear as the
+largest class in the arm64 bank only because that host has no second reference (**N25**), so a
+one-reference panel cannot express "agrees with gcc, differs from clang".
+
+**The general lesson is the row, not the bit-fields.** A single-reference host cannot
+distinguish *"mcc is wrong"* from *"the two references disagree and mcc picked one"*, and the
+first reading is the one a reader reaches for. Any divergence measured where
+`mcc-differs-from-both=0` is unfalsifiable in exactly that way until a second implementation
+family is installed.
+
+**~~N25. `smokerun`'s reference pair is unchecked everywhere except the divergence arm.~~ —
+CLOSED 2026-08-12, same day it was opened.** `pass_oracle()` now runs the same
+`__clang__`/`__GNUC__` probe and drops the duplicate, and the per-pass line says which it got:
+*"oracle-adjudicated by -O2 (one reference; the pair is one implementation family)"* on this
+host against *"(two independent references)"* where a real gcc is installed. No pass row
+changed answer, which is the expected result and not evidence the fix was unnecessary — the
+point is that the line no longer claims two adjudicators when there is one.
+
+**The cost of a single-reference host is larger than this row, and it is not fixable in the
+harness.** See the correction on **N23**: where `mcc-differs-from-both` cannot be computed,
+*"mcc is wrong"* and *"the two references disagree and mcc picked one"* are indistinguishable,
+and the first is the reading a reader reaches for. Installing a real gcc-15 on the Mac is the
+only thing that restores the distinction; until then every divergence measured there is a
+one-sided observation and the bank header says so.
+
+**~~N21. The ladder census makes compilation non-deterministic.~~ — NOT A DEFECT, closed
+2026-08-12, and the cell it was blocking gets its assertion back.** The census is
+deterministic. What moves is `__TIME__`.
+
+Reproduced first: three compiles of `tests/diff/full_language.c` at `-O1` under
+`MCC_AST_EVAL_LADDER_CENSUS=1` give three different objects, and without the census the same
+compile is byte-stable. Then diffed instead of assumed. **Six bytes differ, the disassembly is
+identical, and the six bytes are `13:34:54` against `13:35:23`** — the `__TIME__` literal from
+`tests/diff/parts/s6_10_4.h`, which the corpus prints the shape of. The census does nothing to
+codegen; it makes the compile slow enough that two consecutive runs land in different seconds.
+With `SOURCE_DATE_EPOCH=1000000000` exported, three census runs give **one** object.
+
+That also explains the "subject-dependent" observation the row rested on: `tests/smoke/subject.c`
+has no `__TIME__` and was stable *with* the census, `full_language.c` has one and was not.
+
+`tests/gpu/always_gpu_parity.sh` had downgraded its object assertion to a NOTE on account of this
+row — the strongest thing that cell asserts, skipped. It now pins `SOURCE_DATE_EPOCH`, *requires*
+two CPU-arm compiles to agree (a reproducibility failure is now a failure, not a skip), and then
+compares against the device. Both cells pass on this host with **objects byte-identical**, over
+667 pairs / 28.6M points and 1199 pairs / 47.4M points.
+
+**STANDING TRAP, and it caught three separate claims today.** `__DATE__` and `__TIME__` are in
+both object corpora — `tests/exec/preprocessor/predefined_macros.c` and
+`tests/diff/parts/s6_10_4.h`. **Any object-identity comparison over either corpus must export
+`SOURCE_DATE_EPOCH` or it will report a spurious mover.** `tools/o0_ab.sh` and
+`tools/c2_sweep.sh` already do; `tests/gpu/always_gpu_parity.sh` now does. A hand-rolled A/B does
+not, and that is what N21 was, what the first attempt at N16 was, and what the original N16
+report most likely was.
+
+### The five standing reds closed on 2026-08-12, in full
+
+`flagsweep/cover3-verify` — two flags had accumulated in `src/mccopt.h` without regenerating
+the covering array, `opt-search-predict` and `tree-sra`. `tests/optfire/cover3.py gen` is a pure
+derivation from that header: 76 rows covering all 1,774,520 3-way settings of 111 varying flags,
+with the same 5 pinned flags uncovered as before.
+
+`ci/registration-stubs` — it was **three** cells and **three** `else()` branches, not the two
+and two the board recorded. `jit/xoracle-coverage` is dropped by the corpus-exists test *and*
+by the outer python3/embed-jit/host-arch gate, so the lint had to be re-run twice before it
+went quiet. `jit/gdb-debuggable` and `jit/selfhost-opt` were the other two.
+
+`fmt/census-bank` — red since `93cc8b07`, and this file's own rule kept it that way: a ratchet
+re-banked without a reason trains its readers to re-bank without looking. The rule asks for an
+attribution, not for the red to be permanent. Every figure that moved, against the commit that
+moved it: `libmcc.c` 37→35 is `4d8e03c4` (stopped linking host `libgcc.a`), `mccgpu.c` 36→39 is
+`747709bc` (device-lost and quiesce), `mccstats.c` 18→21 is `f797074b` (the strategy floor),
+`mccast.c` 153→155 is `69296b85` (the `-O13` surrogate) and 155→166 is `890a822c`
+(`--jit-always-gpu`, which also moved `mccjit_embed.c`). `accepted` 156→155 and `snprintf`
+184→182 both follow from the `libmcc.c` drop. **The board's row claimed the `fprintf` total went
+400→408; it is 419**, because the row was written before `890a822c`. This session moved none of
+it: `src/*.c` has 424 textual printf sites at `7c2d3305` and 424 at HEAD.
+
+`cross/shadow-iv-x86_64` — reported `attempts=616 clean=0 failed=616 divergences=0`, its own
+vacuity guard firing, which is the guard working. Three separate causes, all harness:
+`tools/shadow-iv-sweep.sh` passed `-B $REPO/cmake-debug` for the native arm and no tree has a
+`cmake-debug` (Linux builds in `cmake-def`, the Mac in `cmake-macos`); the arch table names a
+CPU and nothing else, which is enough only where the host is ELF/Linux, so on Darwin the shadow
+compiler was built without `MCC_TARGET_MACHO` and could not find `stdio.h`; and every attempt
+was prefixed with `timeout`, which macOS does not ship. It now takes `MCC_BUILD_DIR` from
+ctest, inherits the build's own `config-defines.txt` for the native arm, skips (77) with a
+reason when the arch is neither native nor sysrooted, and uses `gtimeout` or nothing. **The
+floor the script documented the absence of in its own NOTE now exists**:
+`MCC_SHADOW_MIN_CLEAN_PCT`, default 80, with a message that says how many subjects
+`divergences=0` is a statement about. arm64 compiles 292 of 308 at `-O1`, so 80 has headroom;
+raising it to 99 fails, which is the teeth.
+
+`runtime-bench-check` — not a bank and not a compiler defect. `tests/runtime/branchy.c` seeded
+its data with `i * 1103515245 + 12345` in `int`, which overflows, and the cell's oracle is a
+*fresh reference build of the same source*. clang exploits the overflow from `-O1` and mcc wraps
+at every level, so the two disagreed about the input data before a single branch was measured;
+mcc matches `clang -O0` and `clang -fwrapv` to the digit. Computing the LCG in `unsigned` makes
+the seed well-defined without changing what a wrapping implementation produces: mcc, `clang -O0`,
+`clang -O2` and `gcc -O2` now all print `branchy 20309155 5095611.875000`.
+
+`superopt/global-reload` — the sixth, and the one that looked most like a compiler defect. Four
+assumptions in `tests/superopt/globreload.awk` are objdump output format, not compiler
+behaviour: Mach-O's leading underscore, LLVM objdump printing branch targets as `0x148` where
+GNU prints `148`, LLVM zero-padding relocation offsets to 16 digits against a `pad()` that pads
+to 8 and never trims, and `adrp x30, 0x0 <_spin_wait>` read as a backward branch because the
+matcher never looked at the mnemonic. A fifth is a real ABI difference: an arm64 GOT access is
+an `ADR_GOT_PAGE`/`LD64_GOT_LO12_NC` pair, so `across_call` showed 4 relocations where the cell
+counts 2 accesses. **It was also already broken on ELF, silently** — against an x86_64 ELF
+object with LLVM's objdump the old extractor emits **zero** `LOOP` rows, so every loop check on
+that toolchain was passing by measuring nothing.
