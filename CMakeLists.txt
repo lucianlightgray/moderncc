@@ -7168,6 +7168,10 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         else()
             mcc_skip_test(selfhost-jit
                 "tools/selfhost-jit.py needs a python3 on PATH and -DMCC_EMBED_JIT=ON")
+            mcc_skip_test(jit/gdb-debuggable
+                "tools/jit-gdb-debuggable.py needs a python3 on PATH and -DMCC_EMBED_JIT=ON; with no bake there is no hot-swapped code to ask gdb about")
+            mcc_skip_test(jit/selfhost-opt
+                "tools/jit-selfhost-opt.py needs a python3 on PATH and -DMCC_EMBED_JIT=ON; it measures what a zero-AOT --embed-jit self-host optimizes at runtime")
         endif()
 
         if(MCC_PYTHON3 AND MCC_EMBED_JIT AND MCC_TARGET_IS_HOST AND UNIX
@@ -7223,12 +7227,16 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             else()
                 mcc_skip_test("jit/xoracle-conformance"
                     "no gcc.c-torture/execute corpus at ${MCC_XSUITE_GCC} -- point -DMCC_XSUITE_GCC=<gcc checkout> at one to measure the JIT against clang as cross oracle")
+                mcc_skip_test("jit/xoracle-coverage"
+                    "no gcc.c-torture/execute corpus at ${MCC_XSUITE_GCC} -- the coverage report reads jit/xoracle-conformance's output and there is none to read")
             endif()
         else()
             mcc_skip_test("jit/xoracle-conformance"
                 "needs python3, -DMCC_EMBED_JIT=ON and a host x86_64/arm64 target; the JIT cross-oracle differential runs the engine in-process and cannot be emulated")
             mcc_skip_test("jit/xoracle-known-positive"
                 "needs python3, -DMCC_EMBED_JIT=ON and a host x86_64/arm64 target; without them the selfcheck has no engine to prove the differential against")
+            mcc_skip_test("jit/xoracle-coverage"
+                "needs python3, -DMCC_EMBED_JIT=ON and a host x86_64/arm64 target; the coverage report reads jit/xoracle-conformance's output and there is none to read")
         endif()
 
         if(MCC_PYTHON3 AND MCC_EMBED_JIT AND WIN32 AND NOT MSVC)
