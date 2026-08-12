@@ -28318,3 +28318,215 @@ an `ADR_GOT_PAGE`/`LD64_GOT_LO12_NC` pair, so `across_call` showed 4 relocations
 counts 2 accesses. **It was also already broken on ELF, silently** — against an x86_64 ELF
 object with LLVM's objdump the old extractor emits **zero** `LOOP` rows, so every loop check on
 that toolchain was passing by measuring nothing.
+
+## Archived 2026-08-12 — N26 closed, and the superseded first-pass surface index
+
+Migrated from [`docs/TODO.md`](TODO.md) on 2026-08-12. Both are struck stubs there.
+
+### N26 — the closure, in full
+
+**~~N26. `flagsweep-exec` self-contends under `-j`, so which of its 140 cells pass is a function
+of machine speed.~~ — CLOSED 2026-08-12. The contention diagnosis was wrong; the cause is that
+`PIN` is a Linux-only mechanism and Darwin ran the subject unpinned.**
+
+The original row blamed `ctest -j` oversubscription and prescribed a `PROCESSORS` property. **The
+decisive measurement refutes it**: `ctest -R '^flagsweep-exec/spill-share$'` with nothing else
+running still hit `TIMEOUT 300` at 518% CPU, while the same cell invoked directly finished in
+**58.95 s**. Contention between cells cannot explain a cell that times out alone.
+
+The spread is one subject. Timing `atomic_counter.ref` 24 times back-to-back on an idle machine
+gives a **bimodal** distribution with nothing in between:
+
+| arm | 24 consecutive runs, idle machine |
+| --- | --- |
+| unpinned | 0.45 0.74 0.78 0.79 0.80 0.93 1.00 1.04 1.08 1.11 1.16 1.25 1.40 1.51 1.70 1.90 1.93 2.83 **51.29 61.58 64.53 69.18 70.32 120.90** |
+| `taskpolicy -b` | 0.94 1.34 1.57 1.90 1.96 1.99 2.04 2.04 2.17 2.22 2.41 2.52 2.59 2.68 2.69 2.69 2.81 2.85 3.01 3.23 3.51 3.61 3.70 **4.10** |
+
+**6 of 24 unpinned runs (25%) land in a 51–121 s slow mode.** Each cell drew from that
+distribution 12 times, so ~97% of cells hit it at least once and ~3 times on average at ~70 s
+each — the whole 300 s budget, drawn randomly per run. That, not `-j`, is why "which 13 cells
+time out depends on the machine".
+
+**The harness already had the fix and it was silently inert here.** `flagsweep.sh` pins subject
+binaries precisely because this subject is 16 threads on a test-and-set spinlock and CAS retry
+loops, and its own comment measures the pin at 1.97 s → 0.02 s. The pin is `taskset`, which does
+not exist on macOS, so `PIN=""` and the mechanism was a no-op on this host. `docs/ARCHIVED.md`
+had already reached this hypothesis on an earlier pass and recorded that the deciding
+measurement — one cell, standalone, on an idle machine — **was not taken**. It is now.
+
+Fixed by using `taskpolicy -b` as the Darwin pin, which confines the process to the efficiency
+cluster and removes the slow mode outright (max observed 4.10 s over 24 runs). `stratsweep.sh`
+had the identical Linux-only gap on the same subject and got the same fix; it backs
+`smoke/strat-dark`, which the standing validation rule depends on. Separately, the `-O0`
+reference is the same command in all six configurations, so it is now built and run **once** per
+subject instead of six times, with the cache cleared at startup so a rebuilt `mcc` is never
+compared against a stale answer.
+
+**Validated: `ctest -R '^flagsweep-exec/' -j4` is 119 of 119 green in 2694 s, zero timeouts.**
+Slowest cell 91.5 s against the 300 s budget, most in the 60–90 s band — real headroom, where
+before the closure this file recorded neighbours at 137–255 s with none. The run was taken
+**under load** (eight read-only tree sweeps were running concurrently for most of it), so it is a
+conservative number rather than a best case.
+
+**No `PROCESSORS` property was added.** The solo timeout proves it was never sufficient, and with
+the pin restored each cell is single-cluster again, which is the state the Linux box has always
+been in. Adding one would have recorded a fix for a mechanism that was not the cause.
+
+**Standing lesson, and it is the second instance this session:** a mechanism that exists to
+enforce a property, but is gated on a tool only one platform has, is indistinguishable from the
+property holding. `PIN` and `smokerun`'s reference pair are the same shape.
+
+**N24. The local-callee bind route fires zero times on Mach-O — root-caused 2026-08-12 to one
+`strcmp`, and it is not an arm64 defect.** Two failures in one cell: `not one static callee was
+address-bound across 6 programs`, and `collide_libc` giving `45314` under `MCC_JIT_KGC=0` against
+`58700` under `MCC_JIT=0`. **They are one cause.**
+
+The bake side is correct and the blob is correct. In the built artifact `_random` is
+`STB_LOCAL` at `0x100001000`, and the bind record inside `__mccjit_blob_mix` carries the string
+`random` followed by exactly those eight address bytes. **The blob carries the right address
+under the wrong key.** `mccjit_bind_apply` compares `it->bind_name[bi]` — serialized as
+`get_tok_str(...)`, the C identifier — against `nm`, read from the re-emit `MCCState`'s symtab,
+which `put_extern_sym_2` prefixes with `_` whenever `leading_underscore` (set unconditionally
+under `MCC_TARGET_MACHO`). `strcmp("_random", "random")` never matches, `bound` stays 0, the
+symbol stays `SHN_UNDEF`, and `mcc_relocate` — running under `mccjit_error_quiet` — resolves it
+through the host resolver to **libc's `random()`**. The arithmetic confirms it: the static
+`random()` returns 1730 constantly, `1730 & 0xff == 194`, and `200*194 + Σ(0..199) = 58700`; the
+45314 answer implies uniform bytes, i.e. libc.
+
+**Every other name lookup on this path compensates** — `mcc_get_symbol`/`get_sym_addr` and
+`mcc_add_symbol` all build the `_`-prefixed buffer. `mccjit_bind_apply` is the only raw
+comparison against a Mach-O symtab in the JIT path. Introduced by `b4e2d273`, which never ran on
+Mach-O.
+
+**Fix the comparison side, not the serialization side** — the blob format is written by ELF
+hosts too and must stay target-neutral. Small, 3–6 lines. **Correction to this row's original
+framing: the trigger is `MCC_TARGET_MACHO`, not arm64**, so an x86_64 macOS host would be equally
+red; it is uniquely reachable here only because this is the fleet's only Mach-O box. **Second
+half of the work, unproven:** the fix makes `st_shndx = SHN_ABS` fire on Mach-O for the first
+time, and that the Mach-O relocator honours it the way the ELF one does is not established by
+reading.
+
+
+### The superseded first-pass shared-surface index
+
+Superseded the same day by the re-verified ranking in [`docs/TODO.md`](TODO.md), which
+refutes four of this index's couplings by name. Kept because its per-item file and symbol
+lists are still the fastest way to find the code, and because the corrections are only
+legible against what they correct.
+
+## Implementation order by shared surface — SUPERSEDED, indexed 2026-08-12 (first pass)
+
+> **Superseded by the re-verified ranking above**, which refutes four of this section's
+> couplings by name. Kept because its per-item file/symbol lists are still the fastest way to
+> find code, and because the corrections are only legible against what they correct.
+>
+> Four read-only sweeps indexed every open item in this file and reported, per item, the
+> files and symbols it must touch. This section is the synthesis: **clusters ordered by how
+> much implementation surface they share**, so that the work amortises instead of being paid
+> once per row. It is an index, not a verdict — **two of the first three entries I spot-checked
+> were wrong**, and both corrections are recorded below. Verify a row against the tree before
+> starting it.
+>
+> **Corrections found while checking:** the 35 KB `ast_replay_bb` frame is **already fixed** —
+> hoisted into `ast_replay_asmgen`, a `noinline` callee, honouring the "must not be file-scope,
+> `mcc_error` longjmps through here" caveat. And the two surviving `vtop->sym` dereferences in
+> `check_va_start_register`/`check_va_start_last_param` **appear unreachable**: both early-out
+> on `!(r & VT_SYM) && v != VT_LOCAL && v != VT_LLOCAL`, and a `VT_CMP` SValue has neither, so
+> the deref is guarded. That needs a reachability probe before it is "fixed".
+
+**Rank 1 — `src/mccast.c`, eight items.** The largest shared file in the tree and the one where
+a single change touches the most rows: sweep rows 17 (the pre-inline copy left in `.text`, 27
+functions / 52 KB), 25 (the non-LVAL local `Ref` question `wt/decaytype` answered for
+`ast_dep_decode` and did not carry into `ast_eval_slice.h`) and 27 (five arena mutators with no
+`AST_SG_*` bit, so the JIT cannot know what shaped the tree it is handed); `rf-1`
+(`cli/perfn_inproc` selects on `ind - ast_body_ind_sv`, which does not predict object size);
+the four depth-inline rows; `res-d4b`. Doing any one of these means reading the same 400 lines
+of `ast_func_end` that N6.8 also needs.
+
+**Rank 2 — the counter substrate: `mcc_inv_add` names + `tools/emit-map.py`, three items.**
+**N6.8** (an attributed bake counter, modelled on `rir_prod_why_name[]`), **N18** (the
+`-O0 --embed-jit` faithfulness gap, whose table that tool produces) and **N19** (the byte census
+is x86_64-only because `g()` is the sole primitive there). N19's fix forces the multi-anchor
+refactor of `emit-map.py` that N6.8 wants anyway, and N18's table is the output of both.
+**N17 is closed, so N18's "every row is a lower bound" caveat is discharged** and the table
+should be re-taken before it is quoted again.
+
+**Rank 3 — `tools/rir-coverage.py` + `tests/rir/coverage-bank.json`, five items.** Sweep 22
+(the `wide` denominator is an unmanifested `os.walk`; the bank has no `sources` key), sweep 23
+(`--nofb-probe` and both `--check-*-dir` modes pass over empty input; gap fixtures cover 3 of
+18 classes), `ci-4` (`kept_coverage` is host-sensitive by 0.06 pp against a `--tol` of 0.05),
+`rf-4/5` (two of 2765 bodies replay byte-identically under one build and not another — a
+divergence between two builds of the same program, and `selfhost-fixpoint` is structurally
+blind to it), and the `pe` floors. **Constraint that crosses two of them:** `rf-4/5` says do not
+raise `--tol` until `--classify` has named the two bodies, which forecloses one of `ci-4`'s
+three options.
+
+**Rank 4 — `tests/optfire/*`, seven items.** Sweep 4 (`if-conversion-abs` ships at level 2 and
+its own bench says `-0.0334`, a sign flip from the `+0.1905` it was promoted on — a one-line
+level change with the measurement already in hand), sweep 6, sweep 24 / filed-15 (`$WORK/skipped`
+is written at five sites and never read), filed-14 (`defstate` cannot tell "off by default" from
+"does not exist"; 13 rows stay green if their flag is deleted), `rf-2`, `cc-9`, and the three
+flag-sweep coverage rows. One `sed` in `flagsweep.sh` requires a literal leading tab in
+`mccopt.h` — reindent that file and three cells go vacuously green.
+
+**Rank 5 — `src/mccjit_embed.c`, six items.** `jit-teardown-unbounded`, `jit-poolmax-64` (a
+silent clamp, one line to make loud), `embedjit-warn-under-w` (the no-bake warning routes
+through `mcc_warning`, so `mcc -w --embed-jit` silently ships an engine-less binary — one line),
+`jit-lazy-build-fail`, `jit-offx86-unmeasured`, and **N24**. `jit-lazy-build-fail` is the most
+reachable: `tools/embed-jit-smoke.py` reproduces it with no external corpus.
+
+**Rank 6 — the replay positional streams, four items.** **N2** (`rir_tvar_replay`/
+`rir_slot_replay` hand back a recorded offset with no size/align fit check),
+`rir-locreplay-sizecheck`, `rir-locrec-skip-byfit` and `phase-f-arena-fidelity`. `rir_fcrec[]`
+already carries a key array — that is the consume-by-fit pattern the other three lack, so the
+shape is settled and only the record widening is new work. **N2 shares `get_temp_local_var`
+with the `ast_ltemp_overlaps` change**, so it is cheapest immediately after this wave.
+
+**Rank 7 — `parse_btype` in `src/mccgen.c`, seven items.** `bf16-abi`,
+`types-complex-float16`, `types-float128`, `types-m512-avx`, `types-bitint`,
+`int128-signedness`, `int256-literal-suffix`. One switch, one `VT_BTYPE` field with **5 bits**,
+and `types-bitint` is C23-mandatory. The wide256 kernel (`mcc_w256_*`) and its memory-backed
+representation are the two pieces a fixed-width `_BitInt` would reuse, which ties this to
+rank 8.
+
+**Rank 8 — wide256, five items.** `int256-float-conv` (a hard error in both directions;
+`tests/wide256/` is self-oracled so it needs no external corpus), `int256-literal-suffix`,
+`int256-dwarf`, `int256-inline-arith`, and `vec32-align` via `MCC_MAX_ALIGN`.
+
+**Rank 9 — `tests/smoke/bails.txt`, four items.** **Items 21, 22, 23, 24** share only the bank
+they are recorded in — which is why fixing **21** (an `-O13` bail arm) mechanically adds `-O13`
+rows for the other three's shapes.
+
+**Rank 10 — `gen_cvt_ftoi`, two items, and deliberately last of the code clusters.**
+**Items 23 and 24 are opposite arms of one `t != VT_INT` in a 36-line function** and must be
+fixed as two changes, not one: the naive shared fix regresses `(int)(long double)1e300`, which
+currently matches both references. **24 is the real conformance defect of the trio** — `1 - 2⁻⁶⁴`
+converts to `1` as `int` and `0` as `long` — and needs an emitted `fistpl` sequence, not a wider
+convert, and not a helper (that collides with the libgcc-overlap territory). **Isolated surface:
+this cluster shares nothing with anything else**, so it is last by the ordering rule and first
+by severity. It is also x86_64-only and not runnable from the Mac.
+
+**Standing off the ranking, because they are decisions rather than surface:** item 22
+(`_Float16` evaluation format — keep per-operation rounding and document it, or implement
+`-fexcess-precision=`, which needs an `SValue` bit that does not exist), sweep row 29 (the
+`MCC_OPT_REPLAY_FALLBACK` flip; **recommended under either answer and not done: make the
+fallback visible**, since `rir_prod_note` only reports at `MCC_RIR_PROD>=2`), and the coroutine
+task S7b (large, host-neutral, and explicitly staged — convert `tools/mcchv.c` first as the
+cheapest proof the representation is adequate).
+
+**Two unblocked items with the best measured value per line, neither in a cluster:**
+`bl-7` — `MCC_RIR_STAMP` defaults off, so **39,640 of 39,643 `Binary` nodes reach the emitters
+untyped**; typed coverage goes 65.8% → 100.0% at `=2` and all three settings produce
+byte-identical objects, so it is a default flip. And `bl-4` — **six binary opcodes
+(`TOK_UDIV`, `TOK_UMOD`, `TOK_PDIV`, `TOK_UGE`, `TOK_ULE`, `TOK_UGT`) have zero test coverage
+of any kind**, 23% of the binary-op axis, structurally unreachable from harvested arenas because
+`gen_op` rewrites `TOK_GE`→`TOK_UGE` *after* the arena records the token. Findable by
+enumeration, no fuzzing needed.
+
+**Host-blocked on the Mac and belonging to the Linux box:** N8's two survivors, items 23/24's
+runtime half, `run-tier/x86_64`'s `tls_threads`, every `diff3/*` cell (both references here are
+the same clang), `d6-sso-msabi`'s silent-mismatch claim, and all Vulkan device work.
+**Uniquely enabled here:** the Metal/MSL arm has no differential cell at all
+(`msl_region*` is absent against a live `spv_*` family), and this is the only host that can run
+one.
+
