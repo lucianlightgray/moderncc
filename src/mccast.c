@@ -20194,6 +20194,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			int saved_loc = loc, saved_anon = anon_sym;
 			Section *rsec2 = cur_text_section->reloc;
 			volatile int faithful = 0;
+			volatile int ast_inv_verdict = 0;
 			volatile int ast_replay_completed = 0;
 			const char *volatile ast_unf_why = "abort";
 			const int ast_fn_hole = ast_arena_has_hole(ast_cur);
@@ -20381,6 +20382,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); ast_verify_dump_diff(funcname, orig, body_len,
 															 cur_text_section->data + ast_body_ind_sv, new_len); }
 
+				ast_inv_verdict = 1;
 				mcc_inv_add("ast.body", 1);
 				mcc_inv_add("ast.arena", ast_cur ? 1 : 0);
 				mcc_inv_add("ast.faithful", faithful ? 1 : 0);
@@ -20956,6 +20958,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				faithful = 0;
 				ast_replay_completed = 0;
 				ast_unf_why = "posterr";
+				mcc_inv_add(ast_inv_verdict ? "ast.abort_post" : "ast.abort", 1);
 			}
 			memcpy(mcc_state->error_jmp_buf, ast_outer_jmp, sizeof(jmp_buf));
 			mcc_state->error_set_jmp_enabled = ast_outer_en;
@@ -21043,10 +21046,13 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 																						ast_reloc0_sv, rsym); }
 			mcc_free(orig);
 			mcc_free(orig_rel);
-		} else if (ast_rir_used) { MCC_TRACE("br\n");
-			rir_prod_why_set("replayok");
-			rir_prod_body_set((long)(ind - ast_body_ind_sv));
-			rir_prod_note("nomodel");
+		} else { MCC_TRACE("br\n");
+			mcc_inv_add("ast.noreplay", 1);
+			if (ast_rir_used) { MCC_TRACE("br\n");
+				rir_prod_why_set("replayok");
+				rir_prod_body_set((long)(ind - ast_body_ind_sv));
+				rir_prod_note("nomodel");
+			}
 		}
 #if defined(AST_EVAL_SLICE_PROVIDED) && MCC_EMBED_JIT
 		if (ast_cur)
