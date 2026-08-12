@@ -189,12 +189,34 @@ if [ -n "$O0_AB_GATES" ]; then
 	fi
 fi
 
+key_banner() {
+	case "$1" in
+	x86_64)       echo '(x86_64 Linux)' ;;
+	i386)         echo '(i386 Linux)' ;;
+	arm64)        echo '(AArch64 Linux)' ;;
+	riscv64)      echo '(riscv64 Linux)' ;;
+	x86_64-osx)   echo '(x86_64 Darwin)' ;;
+	arm64-osx)    echo '(AArch64 Darwin)' ;;
+	x86_64-win32) echo '(x86_64 Windows)' ;;
+	i386-win32)   echo '(i386 Windows)' ;;
+	arm64-win32)  echo '(AArch64 Windows)' ;;
+	*)            echo '' ;;
+	esac
+}
+
+key_is_native() {
+	b=$(key_banner "$1")
+	[ -n "$b" ] || return 1
+	[ -x "$BUILD/mcc" ] || return 1
+	"$BUILD/mcc" -v 2>&1 | head -1 | grep -qF "$b"
+}
+
 key_flags() {
 	SYSROOT=
 	case "$1" in
 	x86_64)
 		MCC=$BUILD/mcc; FLAGS=""
-		if ! "$MCC" -v 2>&1 | head -1 | grep -q '(x86_64 Linux)'; then
+		if ! key_is_native x86_64; then
 			MCC=$BUILD/mcc-x86_64
 			SYSROOT=$S/vendor/gentoo-stage3-x86_64-glibc
 			FLAGS="-B $BUILD -I $S/runtime/include --sysroot=$SYSROOT -I$SYSROOT/usr/include"
@@ -204,7 +226,10 @@ key_flags() {
 		FLAGS="-B $S/runtime/win32 -B $S/runtime -I $S/runtime/include" ;;
 	*osx)
 		MCC=$BUILD/mcc-$1
-		FLAGS="-B $S/runtime -I $S/runtime/include" ;;
+		FLAGS="-B $S/runtime -I $S/runtime/include"
+		if [ ! -x "$MCC" ] && key_is_native "$1"; then
+			MCC=$BUILD/mcc; FLAGS="-B $BUILD"
+		fi ;;
 	arm)
 		MCC=$BUILD/mcc-arm
 		SYSROOT=$S/vendor/gentoo-stage3-arm-glibc
@@ -212,7 +237,10 @@ key_flags() {
 	*)
 		MCC=$BUILD/mcc-$1
 		SYSROOT=$S/vendor/gentoo-stage3-$1-glibc
-		FLAGS="-B $BUILD -I $S/runtime/include --sysroot=$SYSROOT -I$SYSROOT/usr/include" ;;
+		FLAGS="-B $BUILD -I $S/runtime/include --sysroot=$SYSROOT -I$SYSROOT/usr/include"
+		if [ ! -x "$MCC" ] && key_is_native "$1"; then
+			MCC=$BUILD/mcc; SYSROOT=; FLAGS=""
+		fi ;;
 	esac
 }
 
@@ -377,11 +405,11 @@ run_key() {
 		cp "$rirtxt" "$BANKDIR/$k$SUF.rir.txt"
 	fi
 
-	awk -F= -v key="$k" '
+	awk -F= -v key="$k" -v cc="$MCC" '
 	{ v[$1] = $2 }
 	END {
-		printf "%-14s -O0 files=%s objects=%s rirok=%s extra=%s/%s rirfiles=%s fn=%s faithful=%s empty=%s unfaithful=%s diverge=%s rewind=%s error=%s unbal=%s ovf=%s %s\n",
-			key, v["files"], v["objects"], v["rirok"], v["extra"], v["rirextra"], v["rirfiles"],
+		printf "%-14s -O0 cc=%s files=%s objects=%s rirok=%s extra=%s/%s rirfiles=%s fn=%s faithful=%s empty=%s unfaithful=%s diverge=%s rewind=%s error=%s unbal=%s ovf=%s %s\n",
+			key, cc, v["files"], v["objects"], v["rirok"], v["extra"], v["rirextra"], v["rirfiles"],
 			v["fn"], v["faithful"], v["empty"], v["unfaithful"], v["diverge"],
 			v["rewind"], v["error"], v["unbal"], v["ovf"], v["bar"]
 	}

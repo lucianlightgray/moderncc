@@ -698,14 +698,40 @@ faithfulness (`fn=2 faithful=2`, identical to non-`-g`), the dispatch gate (`opt
 stash gate all behave the same with and without `-g`; **the divergence is after the bake, on
 the swap.** Fixing it is what unblocks `-g -run`.
 
-**N16. `85bf6a3d` moves `-O0` objects, and its commit message says it does not.** Found
-2026-08-11 while attributing the `o0-baseline` drift. Reverting that commit's single source
-file and re-running `o0_ab.sh` reports *"an `-O0` object moved"* — so the fix does change
-emitted bytes at `-O0`, against its own claim of *"without moving a single instruction"*. It is
-**not** the cause of the `fn` drift (that was `931f3137`'s four fixtures, and `fn` stayed 1314
-with `85bf6a3d` reverted), so this is a separate, unexamined discrepancy. Small, and worth
-settling before the next person trusts that sentence: either the claim is wrong or the revert
-perturbs something else.
+**~~N16. `85bf6a3d` moves `-O0` objects, and its commit message says it does not.~~ —
+SETTLED 2026-08-12 on arm64-osx: it does not.** A/B'd through `tools/o0_ab.sh` itself, the
+harness the row cites: with the hunk applied and with it reverted, **294 objects, zero rows
+different**. The commit's reasoning holds — `ast_func_begin` records `ind` and opens the arena
+and emits nothing, so moving `func_vla_arg` after it changes the recorded span and not the
+emission order.
+
+**The likely explanation for the original report, and it is worth more than the row.** The
+`-O0` object corpus contains one file whose bytes are not a function of the source:
+`tests/exec/preprocessor/predefined_macros.c` expands `__DATE__` and `__TIME__`, and two runs
+of the *same* compiler one second apart produce different objects. `o0_ab.sh` pins
+`SOURCE_DATE_EPOCH=1000000000` and is therefore immune; **an A/B done by hand is not**, and
+the first attempt at this measurement here reported exactly one moved object — that file — until
+the epoch was pinned. Any hand-rolled `-O0` byte comparison over `tests/exec` must export
+`SOURCE_DATE_EPOCH` or it will report a spurious mover every time.
+
+Not reproduced on x86_64, which is where the row was raised; if it survives there it is a
+different fact from the one this row states.
+
+**Found on the way: `o0_ab.sh` dropped its own native key on any host that is not
+x86_64-Linux.** `key_flags` had a native fallback for the `x86_64` key alone and asked for
+`$BUILD/mcc-<key>` for every other, so on this Mac all twelve keys read as unmeasurable and the
+run failed its own floor with *"0 measurable key(s)"* — the same drop-instead-of-skip shape
+`ci/registration-stubs` exists to catch, one layer down. Every key now falls back to
+`$BUILD/mcc` when the cross binary is absent and the version banner matches the key's target,
+and the per-key summary names the compiler it used so a bank diff is attributable. `arm64-osx`
+measures 294 objects with `unfaithful=0 diverge=0`.
+
+**It is still not a registered cell on Darwin** — `ast/o0-baseline` is gated on
+`NOT MCC_TARGETOS STREQUAL "Darwin"` — and lifting that gate needs its own bank first: the
+committed `tests/ast/o0-baseline/arm64-osx.obj.txt` was taken with the *cross* `mcc-arm64-osx`
+and 40-odd of its rows differ from a native compile, which is a configuration difference and
+not a defect. `tests/must-run.txt` says a skip of the native key is always a bug, so this is a
+live gap on that host.
 
 **~~N20. `--embed-jit` silently miscompiles a binary operator over two comparisons.~~ — FOUND AND FIXED 2026-08-11**, root-caused to `ast_configure()` never running inside the JIT; guarded by `jit/replay-parity` and `mcctest-embedjit`. Write-up moved to [`docs/ARCHIVED.md`](ARCHIVED.md).
 
