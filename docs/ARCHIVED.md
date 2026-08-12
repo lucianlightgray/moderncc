@@ -27949,3 +27949,126 @@ controls in the first to pass in both directions):
    address (−140 refused bake sites, −38 `NOT_BAKED` programs, 0 new DIFFER). **What is
    still open here is the real lever: attributing the 3110 across `rir_try_active`,
    `ast_replay_ok`, `ast_opt_ok = faithful && !ast_fn_hole` and `ast_jit_want`.**
+
+## Archived 2026-08-12 — the arm64/macOS wave: two closed board rows and the smoke port
+
+> Moved out of [`docs/TODO.md`](TODO.md) on 2026-08-12. **N17** and **N1** are closed and
+> struck in place there; **N8**'s lead is closed and its two survivors are unreachable from
+> this host. The wave began by trying to obey this file's own standing rule — validate with
+> smoke — on the Mac, and finding that every cell of it was red there and had been for as
+> long as the suite had existed on that machine.
+
+### N17 — CLOSED. The inventory now reconciles exactly, and it named an event that had none
+
+`ast.body` and `ast.faithful` are incremented inside the success arm of `ast_func_end`'s own
+`setjmp`, so a body whose replay raised a diagnostic was recorded by RIR, was replayed, did
+produce `rir_prod_note("fallback")` — and was invisible to every counter. Three counters
+close it, not one:
+
+| counter | event |
+| --- | --- |
+| `ast.abort` | replay aborted **before** the faithfulness verdict |
+| `ast.abort_post` | verdict taken, then a later phase raised a diagnostic |
+| `ast.noreplay` | `ast_replay_ok()` said no, so no verdict was attempted |
+
+**`rir.rec == ast.body + ast.abort + ast.noreplay` now holds with no residual on every arm
+measured**: `tests/diff/full_language.c` is 276 = 271 + 2 + 3 at `-O1`, `-O2`, `-O3`, `-O4`
+and at `-O0 --embed-jit`; self-hosting `src/mcc.c` is 3141 = 3140 + 0 + 1 at `-O1` and `-O4`.
+The emit map's unexplained recorded-but-not-verdicted gap closes.
+
+Two things worth carrying forward. **`ast.noreplay` was the larger of the two mechanisms and
+had to be counted outside the `ast_rir_used` guard** — the first attempt put it inside the
+existing `else if (ast_rir_used)` arm and it never fired, because a body whose
+`rir_prod_take()` returned NULL has `ast_rir_used == 0` and was falling through both arms.
+**`ast.abort_post` is a genuinely new observation**: at `-O4` exactly one body on
+`full_language.c` and one self-host reach the verdict and *then* longjmp out of the optimizer
+strategy phase. Before the split it was double-counted as an aborted replay and made the
+reconciliation over-shoot by one, which is how it was found.
+
+### N1 — CLOSED. Seven strategies mutated the arena and nothing re-emitted it
+
+`ast_run_strat_cycle` fills a 23-entry fire array; `ast_func_end` unpacked 16 of them into
+`do_*` flags, and that disjunction is the *sole* trigger for the re-emit that turns a mutated
+arena into bytes. `LTEMP`, `IVSR`, `PRE`, `RANGE`, `ABS`, `REASSOC` and `INLINE` could
+therefore rewrite `ast_cur` and have the rewrite discarded, with the strategy's own counter
+still reporting the fire. `unread` sums the seven and joins all three spellings of the
+disjunction, including the `loc = saved_loc` arm.
+
+**Witnessed on the exact case the row named.** `((a + 3) + 5) & 0xff` at
+`-O4 -fno-promote-locals` with `reassoc` firing three times: byte-identical across
+`-freassoc-assoc`/`-fno-reassoc-assoc` before, different after. Same for `-ftree-vrp` on a
+subject where `RANGE` fires once. **The other five cannot witness it either way** — their
+command-line flags gate more than their strategy, so the A/B already differed for other
+reasons. Say that rather than claiming seven.
+
+**It costs bytes and is meant to.** Self-hosting `src/mcc.c` moves at every level and grows
+224 B at `-O1`, 448 B at `-O2`, 16 B at `-O4`. The row's point was that the 22-of-22 strategy
+coverage smoke reports is a floor, not evidence that any of the seven affects output; making
+their work reach `AST_PF_EMIT` is what converts the floor into a measurement.
+
+### N8 — the lead is closed by N20 and the write-up predated it
+
+`gcc.dg/torture/pr45830.c` reduced to one line — a bitwise `|` between two comparisons inside
+a `||` chain — no longer reproduces at any level, with or without `MCC_JIT_LAZY`. N20's fix
+(`ast_configure()` never ran inside the JIT, so every ALWAYS-class replay-correctness flag was
+off during the runtime re-emit) closed it; N8's text was written before that. Nothing pinned
+the shape, so `tests/jit/parity/relop_bitor_chain.c` now carries it plus the two neighbours
+the same fold family reaches (`&&` with a `&`; relational operands of `|`, `^`, `&` used for
+their value). `jit/run-parity-host` and `jit/kgc-route-parity` each walk that directory.
+
+### The smoke port — three x86 facts the subject asserted as properties of C
+
+Every cell of `ctest -R "^smoke/"` was red on arm64/macOS, and none of it was a compiler
+defect:
+
+- **`__int128` exists.** `#if defined __SIZEOF_INT128__ || defined __MCC__` declared the type
+  for any mcc; mcc only has it on x86_64 SysV, so `fcases.h` failed to compile and the suite
+  ran *nothing at all* while reporting twelve results. The cause underneath is that mcc never
+  predefined `__SIZEOF_INT128__` on any target, even where the type works — so the test
+  header had no honest way to ask.
+- **Integer division faults.** `run_traps` required `SIGFPE` from all ten trap rows. AArch64
+  `SDIV`/`UDIV` never fault: `x/0` is 0, `INT_MIN/-1` is `INT_MIN`, `x%0` is `x`.
+  `--trapnames` now emits the target's contract per row and the harness demands a fault *or*
+  that exact non-faulting value, so the rows keep their teeth rather than being dropped.
+- **Out-of-range float→int yields the x86 indefinite value.** Six `xrun` rows banked
+  `0x8000000000000000` and friends; AArch64 saturates, and both references agree with mcc to
+  the bit, so by this suite's own adjudication rule the goldens were the x86 arm of a two-arm
+  fact.
+
+With those separated the suite reached its real subjects and immediately found **two live
+`diverge-both` miscompiles and an `--embed-jit` link failure** — see the landed write-ups.
+
+### The oracle on that host was one compiler compared with itself
+
+`/usr/bin/gcc` on macOS is a clang shim, so `find_program(NAMES gcc-15 gcc)` handed `smokerun`
+clang twice. Every `diverge-one` became a `diverge-both` — 271 rows of this suite's loudest
+verdict, produced by asking one compiler whether it agreed with itself. `smokerun` now probes
+each reference for `__clang__`/`__GNUC__`, drops the duplicate when the families match, and
+says so; the run reports `mcc-differs-from-both=0` **because the question is no longer being
+asked**, and the bank header says exactly that so nobody reads it as agreement.
+
+The references are also built with `-ffp-contract=off` now. mcc never contracts; arm64
+gcc/clang contract by default; both reproduce mcc bit for bit with the flag. 18 rows of
+`FMULADD` "divergence" were the oracle being asked a different question. On x86_64 the
+baseline ISA has no FMA, so the flag changes nothing there.
+
+### Why the bail bank had to become target-keyed
+
+`tests/smoke/bails.txt` was banked on x86_64-linux and shared with a Windows box and a Mac.
+Two of its three kinds of row cannot survive a change of target: the coverage counters count
+bodies in a compile *of this target* (`replay-fallback:len` 3 against 2,
+`slice-refused:no-static-type` 855 against 515, `jit-not-baked:signature` 174 against 183,
+`strat-dark` 13 of 23), and the divergence rows answer questions whose answer depends on the
+hardware. `smokerun` derives `SMK_TARGET_KEY` from its own build and prefers
+`tests/smoke/bails-<arch>-<os>.txt`, falling back to `bails.txt` when no keyed bank exists —
+so x86_64-linux and Windows keep exactly the file and the numbers they have.
+
+The arm64 bank triages its 253 divergence rows into six classes. The largest, **168 rows of
+wide bit-field arithmetic**, is the `bf_trunc` defect this board already records under the
+byte gate: mcc truncates *every* operation on a bit-field to the field width, so with
+`unsigned long f : 40` at max, `f + 1` is 0 in mcc and 2^40 in both references. It is
+target-independent and surfaces there rather than on x86_64 only because gcc-15 and clang-22
+disagree with each other about it, which demotes the same rows to `diverge-one` against a
+two-reference panel. The smallest, **4 rows of `bsweep.{F32,F64}.FSCALE`**, turned out on
+point-by-point replay to be 28 sweep points that are quiet NaNs differing in the sign bit
+alone, which IEEE 754 leaves unspecified.

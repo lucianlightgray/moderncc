@@ -81,6 +81,32 @@
 > `STRAT_NONE` sentinel had to move for a 23rd strategy to exist at all. `strat-dark:sra` is
 > banked deliberately — a strategy that is off by default is dark at every level by construction.
 >
+> **arm64/macOS wave, 2026-08-12 — the inner loop did not exist on one of the three machines,
+> and turning it on found two miscompiles.** `ctest -R "^smoke/"` was **12 of 12 red on the Mac**
+> and had been for as long as the suite existed there. None of it was a compiler defect: the
+> subject asserted three x86 hardware facts as though they were properties of C — that
+> `__int128` exists (so `fcases.h` did not compile and the suite **ran nothing while reporting
+> twelve results**), that integer division faults, and that an out-of-range float→int conversion
+> yields the x86 indefinite value. Separating each into its two arms let the value sweep reach
+> its real subjects, and it immediately produced **two live `diverge-both` miscompiles** — a
+> ternary merge and an in-place `gen_cast` each writing the register of a *promoted local*,
+> which `get_reg` protects and nothing protected against in-place writes — plus an
+> `--embed-jit` link failure on Mach-O (baked blobs and their bind slots were placed at
+> alignment 1, which chained fixups refuse and ELF tolerates). Two board rows closed on the
+> way: **N17** (three counters, and `rir.rec == ast.body + ast.abort + ast.noreplay` now holds
+> with no residual) and **N1** (the seven write-only strategies now reach `AST_PF_EMIT`; it
+> costs 224/448/16 bytes of self-host at `-O1`/`-O2`/`-O4`, on purpose). **N8**'s lead was
+> already closed by N20 and is now pinned by a parity fixture.
+>
+> Two harness findings outlive the port. **The two "independent" references on that host were
+> one compiler**: `/usr/bin/gcc` on macOS is a clang shim, so every `diverge-one` was being
+> reported as a `diverge-both` — 271 rows of this suite's loudest verdict, produced by asking
+> one compiler whether it agreed with itself. `smokerun` now detects the shared family and
+> refuses. **And `tests/smoke/bails.txt` was a single-target bank in a three-machine tree**;
+> it is now keyed by target, with x86_64-linux and Windows keeping exactly the file and the
+> numbers they have. New rows: **N23**, **N24**, **N25**. Detail in
+> [`docs/ARCHIVED.md`](ARCHIVED.md).
+
 > **`--jit-always-gpu`, 2026-08-11 — the device is at verdict parity with the CPU, and the
 > boundary is not what it was thought to be.** The flag arms the ladder equivalence oracle
 > unconditionally (in this compiler and baked into the output's JIT via the generated
@@ -189,6 +215,15 @@ what moved rather than record it.
 **Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the
 oracles.** `ctest -R "^smoke/"` is ~15–90 s for 13.0M value cases across `-O0`–`-O4`, plus
 the device arm and the divergence arm. Do not run the full suite to validate a change.
+
+> **This rule was only executable on one of the three machines until 2026-08-12.** On the Mac
+> the suite was 12 of 12 red and had been since it existed there — see the wave note above.
+> It is now **12 of 12 green in 108 s on arm64/macOS**, against a target-keyed bank
+> (`tests/smoke/bails-arm64-macos.txt`; x86_64-linux and Windows still read `bails.txt`
+> unchanged). Two standing reds on that host are outside smoke and predate the wave:
+> `flagsweep/cover3-verify`, which wants `tests/optfire/cover3.py gen`, and `jit/bind-local`,
+> which is **N24**. **Nobody has run this rule on the Windows box**; assume the same class of
+> breakage there until someone does.
 
 **As of the 2026-08-11 board-work wave it is twelve cells and ~117 s in `cmake-def` on this
 host** — `smoke/strat-dark` is 44 s of that on its own, which is the honest price of watching
@@ -559,7 +594,13 @@ measurement tool reports success over an empty or truncated subject:
 > correctness gate that only runs on the AOT path is not a correctness gate**, because the JIT
 > re-emits the same arenas with no faithfulness comparison to fall back on.
 >
-> **The live ranking is now N17, then N8, then N22, then N1, then N7.** N22 is placed high
+> **Ranking as of 2026-08-12: N22, then N7, then N23, then N8.** N17 and N1 are closed and
+> struck in place; N8 lost its lead to N20 and its two survivors need the Linux box. N22 is
+> first because it is a known-cause fix with a written-and-backed-out prototype behind it. N23
+> is new to the board and is the largest conformance defect on it with a named site, but it is
+> unpriced, so it sits under N7 rather than above it.
+>
+> **The previous ranking, for context: N17, then N8, then N22, then N1, then N7.** N22 is placed high
 > because it is a known-cause fix with a written-and-backed-out prototype behind it, not an
 > investigation: the rewrite worked, the allocator state leaking through discarded scoring runs
 > is what broke it, and that is a bounded change.
@@ -575,14 +616,7 @@ measurement tool reports success over an empty or truncated subject:
 > separate rows. N2, N3 and N6 are unchanged and unstarted; N19 is small and can wait for
 > whoever next needs a non-x86_64 byte number.
 
-**N1. Seven of 22 strategies are write-only.** `LTEMP, IVSR, PRE, RANGE, ABS, REASSOC,
-INLINE` mutate the arena but their fire count never reaches the `do_*` disjunction that
-triggers the re-emit, so their work is discarded unless something else fires. Measured:
-`reassoc` alone on a leaf function at `-O4 -fno-promote-locals` is byte-identical while the
-rewrite demonstrably happened. **This is a prerequisite for any mix-and-match work** and it
-means the new 22-of-22 smoke coverage is a floor, not proof those seven affect output. The
-fix is to let `ast_run_strat_cycle`'s return value drive the disjunction. See the research
-section.
+**~~N1. Seven of 22 strategies are write-only.~~ — CLOSED 2026-08-12.** `unread` sums `sf[]` for `LTEMP, IVSR, PRE, RANGE, ABS, REASSOC, INLINE` and joins all three spellings of the `do_*` disjunction. Witnessed on the exact case this row named — `reassoc` alone at `-O4 -fno-promote-locals` was byte-identical across `-freassoc-assoc`/`-fno-` before and differs after; same for `-ftree-vrp`. **The other five cannot witness it either way**, because their flags gate more than their strategy. It costs bytes on purpose: self-host moves at every level and grows 224 B at `-O1`, 448 B at `-O2`, 16 B at `-O4`. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 **N2. `rir_tvar_replay` and `rir_slot_replay` repeat the bug `dd80e4fa` fixed, unchecked.**
 `rir_tvar_replay` is the *first* statement of `get_temp_local_var`, so it bypasses the
@@ -627,25 +661,9 @@ independent oracle for the tree side. The fix for the second is a subject that m
 certified equivalence change the emitted code — which is the same question N1 asks about
 the seven write-only strategies, and is probably the same answer.
 
-**N8. Three JIT-only miscompiles survive the `-O0`–`-O4` embed-JIT ladder.** New 2026-08-11,
-and they outrank most of the numbered list below because each is a wrong answer with a
-reproducer, not a coverage gap. Five `JIT_MISCOMPILE` rows at every level before `85bf6a3d`,
-three after; each survivor **aborts under `MCC_JIT=1` and exits 0 under `MCC_JIT=0` from the
-same binary** (rules the AOT compiler out) and is **level-independent** (rules the optimizer
-out). The lead is `gcc.dg/torture/pr45830.c`, **reduced to six lines**:
+**N8. Two unreduced JIT-only miscompiles remain; the lead is closed.** **~~`gcc.dg/torture/pr45830.c`~~ — CLOSED 2026-08-12**: the one-line reduction (a bitwise `|` between two comparisons inside a `||` chain) no longer reproduces at any level with or without `MCC_JIT_LAZY`. **N20 closed it and this row predated the fix** — `ast_configure()` never ran inside the JIT, so every ALWAYS-class replay-correctness flag was off during the runtime re-emit. The shape is now pinned by `tests/jit/parity/relop_bitor_chain.c`, which `jit/run-parity-host` and `jit/kgc-route-parity` both walk.
 
-    int bar(int x){ if (x==5 || x==19 || x==23 | x==26 || x==65) return 1; return 3; }
-
-over `x` in `[0,70)`. gcc-15, clang and mcc's AOT path answer 1 at `x==23`; the JIT answers
-3 — it drops the **left operand of the bitwise `|`** where that `|` sits between two
-comparisons inside a `||` chain. AOT is correct at `-O0`–`-O4` **and `-O13`**, so no search
-gate is involved, and **`MCC_JIT_LAZY=1` makes it correct**, so the defect is on the eager
-install path only. Start at `815d2001` (the `||`/`&&` operand folds), `bc60a3be` (relational
-see-through), and at whatever the eager path does that the lazy path does not. The other two
-are `gcc.dg/pr96674.c` (`-fwrapv`) and `gcc.dg/fastmath-1.c` (`-ffast-math`), neither reduced.
-Behind them, unexamined: ~80 `differ` and ~150 `refused` rows per level, where `refused` is a
-front-end gap list and not a JIT one. Full detail in the residues section at the end of this
-file.
+Still open: `gcc.dg/pr96674.c` (`-fwrapv`) and `gcc.dg/fastmath-1.c` (`-ffast-math`), neither reduced. **Neither is reachable from the Mac** — the differential needs `MCC_XSUITE_GCC` pointed at a gcc checkout and there is none on that host; take them on the Linux box. Behind them, unexamined: ~80 `differ` and ~150 `refused` rows per level, where `refused` is a front-end gap list and not a JIT one.
 
 **~~N9. `-fno-opt-search-<anything>` disables the whole search, not the sub-knob it names.~~ — CLOSED 2026-08-11.** Write-up moved to [`docs/ARCHIVED.md`](ARCHIVED.md).
 
@@ -676,17 +694,7 @@ perturbs something else.
 
 **~~N20. `--embed-jit` silently miscompiles a binary operator over two comparisons.~~ — FOUND AND FIXED 2026-08-11**, root-caused to `ast_configure()` never running inside the JIT; guarded by `jit/replay-parity` and `mcctest-embedjit`. Write-up moved to [`docs/ARCHIVED.md`](ARCHIVED.md).
 
-**N17. An aborted replay increments nothing, so every `ast.*` number in this file is a lower
-bound.** New 2026-08-11 from the emit map. `ast_func_end` wraps its replay in its own `setjmp`;
-the `mcc_inv_add("ast.body"/"ast.faithful"/…)` calls sit **inside the success arm**, so a body
-whose replay raises a diagnostic is recorded by RIR, is replayed, does produce
-`rir_prod_note("fallback")` — and is invisible to every counter, including the ones the section
-above is built on. Measured: **3 of 305 bodies** on `full_language.c` at `-O1`, 0 self-host. The
-consequence is not the three bodies, it is the direction of the error: `ast.body` and
-`ast.faithful` under-count by an amount nothing currently reports, and the 36-body gap that
-looked structural is partly this. The fix is one counter in the else arm at the `posterr`
-assignment — the arm is already `MCC_TRACE`-braced, so the shape is settled and the cost is a
-line. **Do this before quoting any coverage or faithfulness percentage again.**
+**~~N17. An aborted replay increments nothing, so every `ast.*` number in this file is a lower bound.~~ — CLOSED 2026-08-12.** Three counters, not one: `ast.abort`, `ast.abort_post` and `ast.noreplay`. `rir.rec == ast.body + ast.abort + ast.noreplay` now holds with no residual on `full_language.c` at `-O1`/`-O2`/`-O3`/`-O4` and at `-O0 --embed-jit` (276 = 271 + 2 + 3) and on self-host at `-O1` and `-O4` (3141 = 3140 + 0 + 1), so the recorded-but-not-verdicted gap closes. **Coverage and faithfulness percentages in this file are quotable again**, and `ast.abort_post` names an event that had none: a body that takes the verdict and *then* longjmps out of the optimizer strategy phase. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 **N18. Nothing watches the `-O0 --embed-jit` arm, and it is the least faithful one on both
 targets.** New 2026-08-11. First, the part that is *confirmation, not news*: this file's standing
@@ -752,6 +760,40 @@ which is exactly the runs with `sf == NULL`. Two further constraints for whoever
 member of another width breaks; and `AST_LTEMP_MAX` is 32, which caps how many members can be
 split per function. Do this before widening the legality rule — the rule is not what is limiting
 the win.
+
+**N23. Wide bit-field arithmetic is truncated at every operation, and it is 168 rows of the
+arm64 divergence set.** New 2026-08-12, though the defect is not new — this file already
+records it under the byte gate, where it is the reason a `bs > 32` field cannot be lowered at
+all. `gen_op` computes `bf_trunc` from the *field width* and applies it to the result of every
+operation; C converts the operand to the promoted type and does not truncate the result. With
+`struct { unsigned long f : 40; }` at max, `f + 1` is **0** in mcc and **2^40** in gcc and
+clang, and `~f` is 0 against `0xffffff0000000000`. It is target-independent. It shows as
+`diverge-one` on x86_64 only because gcc-15 and clang-22 disagree with each other about wide
+bit-field promotion there, which a two-reference panel demotes; on a one-reference host it is
+the single largest class in the bank. **This is the largest known conformance defect with a
+named site**, and it is not ranked below because it is hard — it is unranked because nobody has
+priced the fix, which is to promote the operand once and truncate only on store.
+
+**N24. The local-callee bind route fires zero times on arm64, and `jit/bind-local` has been red
+there since before this session.** New 2026-08-12, verified pre-existing by rebuilding at
+`7c2d3305`. Two failures in one cell: `not one static callee was address-bound across 6
+programs`, which the cell's own text says must fail rather than pass quietly because narrowing
+the whitelist until the route stops firing is the obvious wrong fix; and `collide_libc` giving
+`45314` under `MCC_JIT_KGC=0` against `58700` under `MCC_JIT=0`, which is the arm that installs
+the recompiled variant behind a bare trampoline with no differential check — so it is the only
+arm that sees what the variant actually computes. **A JIT-vs-AOT value disagreement on a real
+program**, and it is only visible on that host because that host is where the bind route is
+dark. Take it with `MCC_JIT_KGC=0` and a single program.
+
+**N25. `smokerun`'s reference pair is unchecked everywhere except the divergence arm.** New
+2026-08-12 and small. `divergence()` now probes both references for `__clang__`/`__GNUC__` and
+drops the duplicate when the families match, because on macOS `/usr/bin/gcc` is a clang shim
+and the arm was reporting `diverge-both` — its loudest verdict — from one compiler compared
+with itself. **`pass_oracle()` takes the same pair and was not fixed**: it adjudicates a pinned
+answer with `cc[0]` and `cc[1]` and prints `oracle-adjudicated by ...` after either succeeds,
+so on that host a pass is "adjudicated" twice by the same compiler. Same one-line probe, same
+argument; it was left out because no cell currently disagrees under it and a change there moves
+what the pass rows assert.
 
 **N21. The ladder census makes compilation non-deterministic, so anything measured under it on
 an affected subject is unattributable.** Found 2026-08-11 while proving `--jit-always-gpu`
