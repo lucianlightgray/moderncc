@@ -263,6 +263,92 @@ was passing by measuring nothing. The `REL` rows are identical before and after;
 offsets are normalised. Not re-verified against GNU binutils objdump, which is what the Linux
 box has and what the extractor was written for; the changes are shaped to be no-ops there.
 
+### Next steps, prioritised — 2026-08-12
+
+> Read this before picking anything up. Ordering rule: **cheapest-with-teeth first, then by
+> shared implementation surface, then by severity.** Host is stated on every entry, because
+> roughly half this board is not reachable from the arm64/macOS box. The cluster numbers refer
+> to *Implementation order by shared surface*, which is the same work grouped rather than
+> sequenced.
+
+**1. N26 — `flagsweep-exec` self-contention.** *One CMake property. Any host.* It is first not
+because it matters most but because **it is what stops a full-suite run being evidence** — 13
+cells time out on scheduling alone and which 13 depends on the machine. Everything below is
+harder to trust until it is fixed.
+
+**2. `MCC_RIR_STAMP` defaults off, so 39,640 of 39,643 `Binary` nodes reach the emitters
+untyped.** *A default flip. Any host.* Typed-node coverage goes **65.8% → 100.0%** at `=2`, and
+`=0`/`=1`/`=2` produce **byte-identical objects** — so the change is free and the current default
+is simply the wrong one. Best measured value per line on the board.
+
+**3. Six binary opcodes have zero test coverage of any kind.** *Enumeration, no fuzzing. Any
+host.* `TOK_UDIV`, `TOK_UMOD`, `TOK_PDIV`, `TOK_UGE`, `TOK_ULE`, `TOK_UGT` — **23% of the
+binary-op axis**, each with an MSL arm, a SPIR-V arm and a CPU reference arm, and structurally
+unreachable from harvested arenas because `gen_op` rewrites `TOK_GE`→`TOK_UGE` *after* the arena
+records the token.
+
+**4. `if-conversion-abs` ships at level 2 and its own bench says it makes code worse.** *A
+one-line level change. Re-measure here first.* `levelbench.tsv` has it at `gain_movers -0.0334`
+and `branchy -0.5700`, a sign flip from the `+0.1905`/`+3.1843` it was promoted on, and it is
+still bucketed `ranked`. **The bench was taken on x86_64 and there is no arm64 re-take** — take
+one before moving the level.
+
+**5. N7 — the slice evaluator's arithmetic is unobservable.** *Medium. Any host.* First of the
+ranked rows. **Read N1's closure in [`docs/ARCHIVED.md`](ARCHIVED.md) first**: N7's second cause
+is the same question N1 answered — work a mechanism performs that nothing observes — one level
+down, and the row itself says "probably the same answer". Its first cause needs an independent
+oracle for the tree side and is the larger half.
+
+**6. Cluster 1 — `src/mccast.c`, eight items.** *Any host.* Sweep rows 17, 25 and 27, `rf-1`, the
+four depth-inline rows and `res-d4b` all read the same region of `ast_func_end`. Doing them
+together is the difference between reading it once and reading it eight times.
+
+**7. Cluster 2 — the counter substrate: N6.8, N18, N19.** *Any host for the code; the torture
+figures need the Linux box.* **N17's closure discharges N18's "every row is a lower bound"
+caveat**, so the four-row faithfulness table should be re-taken before it is quoted again. N19's
+multi-primitive byte census forces the same `tools/emit-map.py` refactor N6.8's attributed bake
+counter wants, and N18's table is that tool's output.
+
+**8. N2 — the two unchecked replay slot streams.** *Small. Any host.* Cheapest immediately after
+this wave, because it shares `get_temp_local_var` with the `ast_ltemp_overlaps` change that just
+landed, and `rir_fcrec[]` already carries the key array that is the consume-by-fit pattern the
+other three streams lack.
+
+**9. `slice/census`.** *Investigation. This host.* A bisect over 102 `src/` commits. Worth doing
+only when someone runs the suite here regularly — otherwise it will drift again by the same
+amount for the same reason.
+
+**Belongs to the Linux box, do not start here:** N8's two unreduced survivors, items 23 and 24
+(`gen_cvt_ftoi`, and **24 is the real conformance defect of that trio**), `run-tier/x86_64`'s
+`tls_threads`, every `diff3/*` cell, and `d6-sso-msabi`'s silent-mismatch claim. All need a real
+gcc, an x86_64 runtime, or both.
+
+**Only this host can do it:** the Metal/MSL arm has **no differential cell at all** — `msl_region*`
+is absent against a live `spv_*` family — and arm64/macOS is the only machine that can run one.
+
+**Not code, decide first:** item 22 (`_Float16` evaluation format — keep per-operation rounding
+and document it, or implement `-fexcess-precision=`, which needs an `SValue` bit that does not
+exist), sweep row 29 (the `MCC_OPT_REPLAY_FALLBACK` flip — and **under either answer, make the
+fallback visible**, since `rir_prod_note` only reports at `MCC_RIR_PROD>=2`), and the coroutine
+task S7b (staged: convert `tools/mcchv.c` first as the cheapest proof the representation works).
+
+### The whole-suite state on arm64/macOS — measured 2026-08-12
+
+A full `ctest -j4` over `cmake-macos` reached **8975 of 9548** before it was stopped for the
+machine. What it establishes, and what it does not:
+
+- **`runtime-bench-check`, `superopt/global-reload` and `-known-positive` all pass**, and
+  `cross/shadow-iv-x86_64` now **skips with a reason** instead of reporting a vacuous sweep —
+  the four closures verified in place rather than by assertion.
+- **`slice/census` is the one real red**, and it is a drifted column, not a defect. See the
+  arm64 standing-reds table.
+- **13 timeouts, all `flagsweep-exec`, all contention** — that is **N26**, and until it is fixed
+  a full run on this host cannot distinguish a regression from a scheduling artefact.
+- **`jit/bind-local` (N24), `flagsweep/cover3-verify`, `ci/registration-stubs` and
+  `fmt/census-bank` were not reached.** The first is a known red; the other three were fixed
+  earlier in the same session and are verified only by targeted runs. **A clean full-suite number
+  for this host does not yet exist** — do not quote one.
+
 ### How to validate — standing rule, 2026-08-10
 
 **Validate new code with the smoke/fast tests only, using gcc-15 and clang-22 as the
@@ -660,7 +746,9 @@ measurement tool reports success over an empty or truncated subject:
 > re-emits the same arenas with no faithfulness comparison to fall back on.
 >
 > **Ranking as of 2026-08-12, after the migration: the live rows are N2, N3, N6, N7, N8, N18,
-> N19 and N24 — eight of twenty-five.** N22 landed as strategy 24 with one part open (the ABI
+> N19, N24 and N26 — nine of twenty-six.** The board's own order is superseded by
+> *Next steps, prioritised* above, which merges these rows with the items outside the ranked
+> board and states the host constraint on each; what follows here is the per-row detail.** N22 landed as strategy 24 with one part open (the ABI
 > gather/scatter); N15, N16, N17, N21, N23, N25 and N1 all closed, and their write-ups moved to
 > [`docs/ARCHIVED.md`](ARCHIVED.md). **N7 is now first**: it is the same question N1 answered —
 > work a mechanism performs that nothing observes — one level down, on the slice evaluator, and
@@ -787,6 +875,26 @@ arch needs a different primitive set, and no arch other than x86_64 currently ha
 **~~N22. SRA's real optimization is the separate-slot variant.~~ — LANDED 2026-08-12 as strategy 24.** `ast_sroa_run`, `-ftree-sroa` and `-ftree-sroa-params`, off by default. It keys on the frame range rather than the node shape, because the front end folds most member accesses to a raw `Ref` at `base+k` before the arena exists — which is why the in-place form was both byte-neutral *and* rare. Fires on 9 of 280 exec files against `sra`'s 3, and self-hosts at `-O4`, which the backed-out prototype could not. The allocator constraints this row named are both discharged. **Still open: the ABI-temp gather/scatter for whole-struct uses** — 145 refusals, attributed by `MCC_SROA_WHY`. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 **~~N23. Wide bit-field arithmetic is truncated at every operation.~~ — NOT A DEFECT, corrected 2026-08-12 the same day it was filed.** It is a gcc/clang disagreement and mcc follows gcc deliberately (`b3c660f1`, four gcc c-torture tests). The evidence was already in the x86_64 bank as `diverge-one` and had not been read. **The durable finding is the shape of the mistake**: on a single-reference host, *"mcc is wrong"* and *"the references disagree and mcc picked one"* are the same observation. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+
+**N26. `flagsweep-exec` self-contends under `-j`, so which of its 140 cells pass is a function
+of machine speed.** New 2026-08-12, measured, and it is why no full-suite run on this host can be
+trusted as it stands. Every `flagsweep-exec/<flag>` cell compiles and runs the whole `tests/exec`
+corpus with one flag toggled, and that corpus contains
+`tests/exec/features_c99_c11/atomic_counter.c`, which hardcodes **`NR_THREADS 16`** each doing
+65,535 iterations of four atomic RMWs on shared cache lines. At `ctest -j4` that is **64 threads
+contending on 10 cores**: one `.ref` binary was observed at **687% CPU** with the machine at load
+average 20, and **13 of 140 cells hit `TIMEOUT 300`** — intermittently, in whichever window four
+heavy cells align. Neighbours in the same family pass at 137–255 s, so the limit has no headroom
+and the family is right against it.
+
+It is **not** a slow host, not the other session, and not N1's extra re-emits: only one `ctest`
+was running, and the top process was the corpus's own subject. Under a contended run the same
+family produced **18** consecutive timeouts, so the count scales with load exactly as contention
+does and not as a fixed cost would.
+
+The fix is a `PROCESSORS` property on the family so ctest stops oversubscribing — not raising
+`TIMEOUT`, which hides it, and not editing `atomic_counter.c`'s thread count, which is a golden
+subject on every target. Verify by running one of the timing-out cells alone.
 
 **N24. The local-callee bind route fires zero times on arm64, and `jit/bind-local` has been red
 there since before this session.** New 2026-08-12, verified pre-existing by rebuilding at
