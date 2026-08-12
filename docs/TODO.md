@@ -835,12 +835,20 @@ during search scoring (`ast_search_score_emitsize` and the cost/ordered-sequence
 leaks slots that no `AST_PF_EMIT` ever claims, and the frame the emitter is finally handed does
 not match the frame the arena was rewritten against.
 
-**The fix is to snapshot and restore that allocator around any run whose result is discarded**,
-which is exactly the runs with `sf == NULL`. Two further constraints for whoever takes it:
+~~**The fix is to snapshot and restore that allocator around any run whose result is
+discarded**~~ — **DONE 2026-08-12.** `ast_ltemp_save`/`ast_ltemp_restore` bracket the four
+`sf == NULL` runs whose trial arena is thrown away. The fifth such call, in
+`ast_reemit_with_gates`, is deliberately left alone: its trial *is* what gets emitted, so its
+slots are real. **Byte-neutral today** — 77 `tests/exec` objects at `-O4` and the 24
+`scases.h` strategy shapes at `-O4` and `-O13`, all identical — which is the wanted result:
+nothing currently leaks a slot that survives to emission, and the point is that nothing has
+to, for the next pass to be safe.
+
+**What is left is the rewrite itself**, plus two constraints it will hit:
 `ast_ltemp_overlaps` hardcodes `a + 8` and so assumes every reserved slot is 8 bytes, which a
 member of another width breaks; and `AST_LTEMP_MAX` is 32, which caps how many members can be
-split per function. Do this before widening the legality rule — the rule is not what is limiting
-the win.
+split per function. Do those before widening the legality rule — the rule is not what is
+limiting the win.
 
 **~~N23. Wide bit-field arithmetic is truncated at every operation.~~ — NOT A DEFECT,
 corrected 2026-08-12 before it was worked.** It is a gcc/clang disagreement and mcc
