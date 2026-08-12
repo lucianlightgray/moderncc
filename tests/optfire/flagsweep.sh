@@ -121,6 +121,10 @@ flags_from_table() {
 	sed -n 's/^	MCC_OPT_ROW([A-Z0-9_]*, *"\([a-z0-9-]*\)".*/\1/p' "$S/src/mccopt.h"
 }
 
+flag_rows_in_table() {
+	grep -cE '^[[:space:]]+MCC_OPT_ROW\([A-Z0-9_]+, *"' "$S/src/mccopt.h"
+}
+
 dev_flags_from_table() {
 	sed -n 's/^	MCC_OPT_ROW([A-Z0-9_]*, *"\([a-z0-9-]*\)", *MCC_OPTD_DEV(.*/\1/p' \
 		"$S/src/mccopt.h"
@@ -189,6 +193,7 @@ fi
 ran=0
 rc=0
 stale=0
+missing=""
 corpus_run() {
 	lvl=$1
 	label=$2
@@ -200,7 +205,13 @@ corpus_run() {
 	fi
 	for sub in $subjects; do
 		src="$S/tests/exec/$sub.c"
-		[ -f "$src" ] || continue
+		if [ ! -f "$src" ]; then
+			case " $missing " in
+			*" $sub "*) ;;
+			*) missing="$missing $sub" ;;
+			esac
+			continue
+		fi
 		nm=$(basename "$sub")
 		if [ -f "$WORK/$nm.refunbuildable" ]; then
 			continue
@@ -261,7 +272,10 @@ accept)
 		done
 	done
 	[ "$bad" -eq 0 ] || { echo "FAIL flagsweep-accept: $bad spelling(s) unreachable"; exit 1; }
-	echo "PASS flagsweep-accept: $n flags accept -f and -fno-"
+	nrow=$(flag_rows_in_table)
+	[ "$n" -eq "$nrow" ] ||
+		{ echo "FAIL flagsweep-accept: derived $n flag(s) from src/mccopt.h but the file has $nrow MCC_OPT_ROW row(s); flags_from_table anchors on a literal leading tab, so this sweep just checked $n of $nrow flags"; exit 1; }
+	echo "PASS flagsweep-accept: $n flags accept -f and -fno-, matching the $nrow MCC_OPT_ROW rows in src/mccopt.h"
 	;;
 devgate)
 	printf 'int main(void){return 0;}\n' > "$WORK/a.c"
@@ -351,6 +365,8 @@ exec)
 		corpus_run "$lvl" "$ARG:on" "-f$ARG"
 		corpus_run "$lvl" "$ARG:off" "-fno-$ARG"
 	done
+	[ -z "$missing" ] ||
+		{ echo "FAIL flagsweep-exec $ARG: named subject(s) absent from tests/exec, so the sweep silently shrank:$missing"; exit 1; }
 	[ "$ran" -gt 0 ] || { echo "SKIP flagsweep-exec $ARG: no subject built"; exit 77; }
 	[ "$stale" -eq 0 ] ||
 		{ echo "FAIL flagsweep-exec $ARG: $stale KNOWN_RED case(s) now pass -- drop them from KNOWN_RED in $0"; exit 1; }
@@ -376,6 +392,8 @@ cover)
 	for lvl in -O1 -O2 -O3; do
 		corpus_run "$lvl" "row$ARG" "$@"
 	done
+	[ -z "$missing" ] ||
+		{ echo "FAIL flagsweep-cover $ARG: named subject(s) absent from tests/exec, so the sweep silently shrank:$missing"; exit 1; }
 	[ "$ran" -gt 0 ] || { echo "SKIP flagsweep-cover $ARG: no subject built"; exit 77; }
 	if [ "$rc" -ne 0 ]; then
 		echo "FAIL flagsweep-cover row $ARG: the configuration is"

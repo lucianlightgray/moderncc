@@ -227,6 +227,12 @@ runit() {
 	printf '%s|%s\n' "$rc" "$(printf '%s' "$out" | tr '\n' '\036')"
 }
 
+missing_named_subjects() {
+	for sub in $SUBJECTS; do
+		[ -f "$S/tests/exec/$sub.c" ] || printf ' %s' "$sub"
+	done
+}
+
 collect_corpus() {
 	case "$1" in
 	subjects)
@@ -302,6 +308,9 @@ case "$MODE" in
 iso)
 	WHICH=${1:-all}; CORPUS=${2:-full}
 	n=$(admit "$CORPUS")
+	miss=$(missing_named_subjects)
+	[ -z "$miss" ] ||
+		{ echo "FAIL stratsweep-iso: named subject(s) absent from tests/exec, so the sweep silently shrank:$miss"; exit 1; }
 	[ "$n" -gt 0 ] || { echo "SKIP stratsweep-iso: no subject admitted"; exit 77; }
 	if [ "$WHICH" = all ]; then
 		lo=$STRAT_FIRST; hi=$STRAT_LAST
@@ -322,6 +331,9 @@ iso)
 seq)
 	ORDER=$1; CORPUS=${2:-subjects}
 	n=$(admit "$CORPUS")
+	miss=$(missing_named_subjects)
+	[ -z "$miss" ] ||
+		{ echo "FAIL stratsweep-seq: named subject(s) absent from tests/exec, so the sweep silently shrank:$miss"; exit 1; }
 	[ "$n" -gt 0 ] || { echo "SKIP stratsweep-seq: no subject admitted"; exit 77; }
 	check_seq "$ORDER" || { echo "FAIL stratsweep-seq $ORDER"; exit 1; }
 	echo "PASS stratsweep-seq $ORDER: $n subjects match the -O0 reference ($flakes non-recurring)"
@@ -330,6 +342,9 @@ perm3)
 	SH=$1; NSH=$2; CORPUS=${3:-subjects}; PFX=${4:--}
 	[ "$PFX" = - ] && PFX="" || PFX="$PFX,"
 	n=$(admit "$CORPUS")
+	miss=$(missing_named_subjects)
+	[ -z "$miss" ] ||
+		{ echo "FAIL stratsweep-perm3: named subject(s) absent from tests/exec, so the sweep silently shrank:$miss"; exit 1; }
 	[ "$n" -gt 0 ] || { echo "SKIP stratsweep-perm3: no subject admitted"; exit 77; }
 	rc=0; k=0; ran=0
 	a=$STRAT_FIRST
