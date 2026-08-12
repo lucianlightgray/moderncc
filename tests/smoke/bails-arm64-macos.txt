@@ -72,6 +72,10 @@
 #    replaying smf_brun(F32/F64, FSCALE) point by point: every differing point
 #    is a quiet NaN and differs in the sign bit alone.
 #
+# `O13 strat-dark:sroa` is banked deliberately, for the same reason
+# `strat-dark:sra` is: a strategy that is MCC_OPTD_OFF is dark at every level
+# by construction, so the row is correct rather than a regression.
+#
 # THE COVERAGE COUNTERS ARE THIS TARGET'S, NOT A REGRESSION.
 # `replay-fallback:len 3` against x86_64's 2, `slice-refused:no-static-type
 # 855` against 515, `jit-not-baked:signature 174` against 183: each counts
@@ -91,6 +95,7 @@ O13 strat-dark:pre 1
 O13 strat-dark:range 1
 O13 strat-dark:reassoc 1
 O13 strat-dark:sra 1
+O13 strat-dark:sroa 1
 O13 strat-dark:tco 1
 O2 jit-not-baked:signature 174
 O2 replay-fallback:len 3
