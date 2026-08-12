@@ -1581,6 +1581,8 @@ static int ast_select_env;
 #define AST_SEL_MARK ((uint64_t)0x5E1EC7)
 static MCC_OPT_TLS int ast_reassoc_env;
 static MCC_OPT_TLS int ast_sra_env;
+static MCC_OPT_TLS int ast_sroa_env;
+static MCC_OPT_TLS int ast_sroa_param_env;
 static MCC_OPT_TLS int ast_reassoc_assoc_env;
 static MCC_OPT_TLS int ast_reassoc_shlshr_env;
 static MCC_OPT_TLS int ast_reassoc_shrshl_env;
@@ -1631,9 +1633,10 @@ static int ast_dep_alias_oracle_env;
 static int ast_perfn_inproc_env;
 static int ast_argfwd_env;
 
-#define AST_LTEMP_MAX 32
+#define AST_LTEMP_MAX 128
 #define AST_LTEMP_PER_LOOP 8
 static int ast_ltemp_off[AST_LTEMP_MAX];
+static int ast_ltemp_sz[AST_LTEMP_MAX];
 static MCC_OPT_TLS int ast_ltemp_n;
 static MCC_OPT_TLS int ast_ltemp_cur;
 static int ast_color_env;
@@ -2104,6 +2107,7 @@ static void ast_locrec_skip(void) { MCC_TRACE("enter\n");
 
 typedef struct {
 	int off[AST_LTEMP_MAX];
+	int sz[AST_LTEMP_MAX];
 	int n;
 	int cur;
 } AstLtempSave;
@@ -2112,18 +2116,44 @@ static void ast_ltemp_save(AstLtempSave *s) { MCC_TRACE("enter\n");
 	s->n = ast_ltemp_n;
 	s->cur = ast_ltemp_cur;
 	memcpy(s->off, ast_ltemp_off, sizeof s->off);
+	memcpy(s->sz, ast_ltemp_sz, sizeof s->sz);
 }
 
 static void ast_ltemp_restore(const AstLtempSave *s) { MCC_TRACE("enter\n");
 	ast_ltemp_n = s->n;
 	ast_ltemp_cur = s->cur;
 	memcpy(ast_ltemp_off, s->off, sizeof ast_ltemp_off);
+	memcpy(ast_ltemp_sz, s->sz, sizeof ast_ltemp_sz);
+}
+
+static int ast_ltemp_add(int off, int sz) { MCC_TRACE("enter\n");
+	if (ast_ltemp_n >= AST_LTEMP_MAX)
+		{ MCC_TRACE("br\n"); return 0; }
+	ast_ltemp_off[ast_ltemp_n] = off;
+	ast_ltemp_sz[ast_ltemp_n] = sz > 0 ? sz : 8;
+	ast_ltemp_n++;
+	return 1;
+}
+
+static int ast_ltemp_mint(int size, int align) { MCC_TRACE("enter\n");
+	int off;
+	if (size <= 0)
+		{ MCC_TRACE("br\n"); size = 8; }
+	if (align <= 0)
+		{ MCC_TRACE("br\n"); align = 8; }
+	if (ast_ltemp_n >= AST_LTEMP_MAX)
+		{ MCC_TRACE("br\n"); return 0; }
+	off = (ast_ltemp_cur - size) & -align;
+	if (!ast_ltemp_add(off, size))
+		{ MCC_TRACE("br\n"); return 0; }
+	ast_ltemp_cur = off;
+	return off;
 }
 
 int ast_ltemp_overlaps(int lo, int sz) { MCC_TRACE("enter\n");
 	for (int t = 0; t < ast_ltemp_n; t++) { MCC_TRACE("br\n");
-		int a = ast_ltemp_off[t];
-		if (lo < a + 8 && a < lo + sz)
+		int a = ast_ltemp_off[t], as = ast_ltemp_sz[t] > 0 ? ast_ltemp_sz[t] : 8;
+		if (lo < a + as && a < lo + sz)
 			{ MCC_TRACE("br\n"); return 1; }
 	}
 	return 0;
@@ -2470,6 +2500,8 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_select_env = mcc_opt(s1, MCC_OPT_IF_CONVERSION);
 	ast_reassoc_env = mcc_opt(s1, MCC_OPT_TREE_REASSOC);
 	ast_sra_env = mcc_opt(s1, MCC_OPT_TREE_SRA);
+	ast_sroa_env = mcc_opt(s1, MCC_OPT_TREE_SROA);
+	ast_sroa_param_env = mcc_opt(s1, MCC_OPT_TREE_SROA_PARAMS);
 	ast_reassoc_assoc_env = mcc_opt(s1, MCC_OPT_REASSOC_ASSOC);
 	ast_reassoc_shlshr_env = mcc_opt(s1, MCC_OPT_REASSOC_SHLSHR);
 	ast_reassoc_shrshl_env = mcc_opt(s1, MCC_OPT_REASSOC_SHRSHL);
@@ -12085,7 +12117,7 @@ static int ast_divmagic_materialize(AstArena *a, AstLocal n, AstLocal x, int xt,
 	if (!ast_ltemp_insert_before(a, bb, stmt, st))
 		{ MCC_TRACE("br\n"); return 0; }
 	ast_ltemp_cur = off;
-	ast_ltemp_off[ast_ltemp_n++] = off;
+	ast_ltemp_add(off, 8);
 	*off_out = off;
 	return 1;
 }
@@ -13149,7 +13181,7 @@ static int ast_ltemp_materialize(AstArena *a, AstLocal loop, AstLocal e) { MCC_T
 	ast_cse_setref(a, e, tref);
 	ast_licm_folds++;
 	ast_ltemp_cur = off;
-	ast_ltemp_off[ast_ltemp_n++] = off;
+	ast_ltemp_add(off, 8);
 	return 1;
 }
 
@@ -13389,7 +13421,7 @@ static int ast_ivsr_run(AstArena *a) { MCC_TRACE("enter\n");
 		ast_cse_setref(a, mul, uref);
 		ast_licm_folds++;
 		ast_ltemp_cur = off;
-		ast_ltemp_off[ast_ltemp_n++] = off;
+		ast_ltemp_add(off, 8);
 		did++;
 	}
 	return did;
@@ -13557,7 +13589,7 @@ static int ast_ivsr_ptr_run(AstArena *a) { MCC_TRACE("enter\n");
 		ast_ivsr_ptr_subst(a, body, padd, uref);
 		ast_licm_folds++;
 		ast_ltemp_cur = off;
-		ast_ltemp_off[ast_ltemp_n++] = off;
+		ast_ltemp_add(off, 8);
 		did++;
 	}
 	return did;
@@ -16120,7 +16152,7 @@ static int ast_tile_apply(AstArena *a, AstLocal outer, AstLocal inner) { MCC_TRA
 
 	int jjoff = (ast_ltemp_cur - 8) & -8;
 	ast_ltemp_cur = jjoff;
-	ast_ltemp_off[ast_ltemp_n++] = jjoff;
+	ast_ltemp_add(jjoff, 8);
 
 	AstLocal jj_init = ast_node(a, AST_Store);
 	ast_add_child(a, jj_init, ast_tile_local_ref(a, jjoff, jop, jtt, jtr));
@@ -16294,7 +16326,7 @@ static int ast_pre_run(AstArena *a) { MCC_TRACE("enter\n");
 		ast_cse_setref(a, e, tref);
 		ast_licm_folds++;
 		ast_ltemp_cur = off;
-		ast_ltemp_off[ast_ltemp_n++] = off;
+		ast_ltemp_add(off, 8);
 		did++;
 	}
 	return did;
@@ -16873,6 +16905,7 @@ typedef struct {
 	int32_t moff[AST_SRA_MAX];
 	int mtype[AST_SRA_MAX];
 	uint64_t mref[AST_SRA_MAX];
+	int slot[AST_SRA_MAX];
 } AstSraCand;
 
 static MCC_OPT_TLS int ast_sra_folds;
@@ -16958,7 +16991,7 @@ static AstSraCand *ast_sra_find(AstSraCand *c, int n, uint64_t base) { MCC_TRACE
  * refused because their mask/shift is generated at replay from `bp`/`bs` on the
  * member node, which a plain `Ref` cannot carry; unions because two fields can
  * share bytes; nested aggregates and arrays because a slot is not a region. */
-static int ast_sra_run(AstArena *a) { MCC_TRACE("enter\n");
+static int ast_sra_run(AstArena *a, int separate) { MCC_TRACE("enter\n");
 	AstSraCand cand[AST_SRA_MAX];
 	int ncand = 0, i, j;
 	AstLocal nn = ast_count(a);
@@ -16979,6 +17012,8 @@ static int ast_sra_run(AstArena *a) { MCC_TRACE("enter\n");
 			c->sym = ast_sym(a, n);
 			c->ok = 1;
 			c->nmem = 0;
+			for (j = 0; j < AST_SRA_MAX; j++)
+				{ MCC_TRACE("br\n"); c->slot[j] = 0; }
 			ct.t = ast_type_t(a, n);
 			ct.bp = 0;
 			ct.bs = 0;
@@ -17041,6 +17076,24 @@ static int ast_sra_run(AstArena *a) { MCC_TRACE("enter\n");
 	}
 	for (i = 0; i < ncand; i++)
 		{ MCC_TRACE("br\n"); if (cand[i].nmem < 1) { MCC_TRACE("br\n"); cand[i].ok = 0; } }
+	/* A member gets its own frame slot only in `separate` mode.  Rewriting in
+	 * place to base+k is byte-neutral in this compiler -- Unary(MEMBER, Ref) and
+	 * a plain Ref at base+k emit the same code -- so the decomposition only buys
+	 * anything once the members stop being one object to every later pass.  Mint
+	 * before the rewrite and abandon the whole candidate if the allocator is
+	 * full, because a half-slotted struct is a miscompile. */
+	if (separate) { MCC_TRACE("br\n");
+		for (i = 0; i < ncand; i++) { MCC_TRACE("br\n");
+			if (!cand[i].ok)
+				{ MCC_TRACE("br\n"); continue; }
+			for (j = 0; j < cand[i].nmem; j++) { MCC_TRACE("br\n");
+				int msz = ast_sra_scalar_size(cand[i].mtype[j]);
+				int off = ast_ltemp_mint(msz, msz > 0 && msz <= 8 ? msz : 8);
+				if (!off) { MCC_TRACE("br\n"); cand[i].ok = 0; break; }
+				cand[i].slot[j] = off;
+			}
+		}
+	}
 	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		AstSraCand *c;
 		AstLocal base;
@@ -17061,15 +17114,448 @@ static int ast_sra_run(AstArena *a) { MCC_TRACE("enter\n");
 		ast_clear_children(a, n);
 		a->kind[n] = AST_Ref;
 		ast_set_op(a, n, VT_LOCAL | VT_LVAL);
-		ast_set_ival(a, n, (uint64_t)((int64_t)c->base + (int64_t)mo));
+		ast_set_ival(a, n, separate
+												 ? (uint64_t)(int64_t)c->slot[j]
+												 : (uint64_t)((int64_t)c->base + (int64_t)mo));
 		ast_set_type(a, n, c->mtype[j], c->mref[j]);
-		ast_set_sym(a, n, c->sym);
+		ast_set_sym(a, n, separate ? 0 : c->sym);
 		ast_set_fbits(a, n, 0);
 		ast_sra_folds++;
 	}
 	if (ast_sra_folds)
 		{ MCC_TRACE("br\n"); a->epoch++; }
 	return ast_sra_folds;
+}
+
+
+#define AST_SROA_CAND 8
+#define AST_SROA_MEM 24
+
+typedef struct {
+	uint64_t base;
+	int size;
+	int ok;
+	int nmem;
+	int nused;
+	int32_t moff[AST_SROA_MEM];
+	int mtype[AST_SROA_MEM];
+	uint64_t mref[AST_SROA_MEM];
+	int msz[AST_SROA_MEM];
+	int slot[AST_SROA_MEM];
+	int used[AST_SROA_MEM];
+	int stored[AST_SROA_MEM];
+	int movable[AST_SROA_MEM];
+	int isparam;
+} AstSroaCand;
+
+static MCC_OPT_TLS int ast_sroa_folds;
+
+enum {
+	AST_SROA_W_PARAM = 0,
+	AST_SROA_W_CPLX,
+	AST_SROA_W_MEMBERS,
+	AST_SROA_W_M_BITFIELD,
+	AST_SROA_W_M_NESTED,
+	AST_SROA_W_M_ARRAY,
+	AST_SROA_W_M_WIDE,
+	AST_SROA_W_M_MANY,
+	AST_SROA_W_M_NOREF,
+	AST_SROA_W_ADDR,
+	AST_SROA_W_WHOLE,
+	AST_SROA_W_STRADDLE,
+	AST_SROA_W_CLASS,
+	AST_SROA_W_NOSTORE,
+	AST_SROA_W_SLOTS,
+	AST_SROA_W_DEAD,
+	AST_SROA_W_OK,
+	AST_SROA_W_COUNT
+};
+static const char *const ast_sroa_why_name[AST_SROA_W_COUNT] = {
+		"param", "complex", "members", "m:bitfield", "m:nested", "m:array",
+		"m:wide", "m:many", "m:noref", "addr-taken", "whole-struct",
+		"straddle", "type-class", "no-store", "slots", "dead", "ok"};
+static long ast_sroa_why[AST_SROA_W_COUNT];
+static int ast_sroa_why_on = -1;
+
+static void ast_sroa_why_dump(void) { MCC_TRACE("enter\n");
+	int i;
+	fprintf(stderr, "[sroa]");
+	for (i = 0; i < AST_SROA_W_COUNT; i++)
+		fprintf(stderr, " %s=%ld", ast_sroa_why_name[i], ast_sroa_why[i]);
+	fprintf(stderr, "\n");
+}
+
+static void ast_sroa_note(int w) { MCC_TRACE("enter\n");
+	if (ast_sroa_why_on < 0) { MCC_TRACE("br\n");
+		ast_sroa_why_on = mcc_env_on("MCC_SROA_WHY");
+		if (ast_sroa_why_on)
+			{ MCC_TRACE("br\n"); atexit(ast_sroa_why_dump); }
+	}
+	if (ast_sroa_why_on)
+		{ MCC_TRACE("br\n"); ast_sroa_why[w]++; }
+}
+
+static int ast_sroa_members(AstArena *a, AstLocal n, AstSroaCand *c) { MCC_TRACE("enter\n");
+	CType ct;
+	Sym *f;
+	int al;
+	ct.t = ast_type_t(a, n);
+	ct.bp = 0;
+	ct.bs = 0;
+	ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+	if (!ct.ref)
+		{ MCC_TRACE("br\n"); ast_sroa_note(AST_SROA_W_M_NOREF); return 0; }
+	c->size = type_size(&ct, &al);
+	if (c->size <= 0)
+		{ MCC_TRACE("br\n"); ast_sroa_note(AST_SROA_W_M_NOREF); return 0; }
+	c->nmem = 0;
+	c->nused = 0;
+	/* A member this pass cannot move is pinned, not fatal.  Refusing the whole
+	 * object because one field is a bitfield throws away every other field with
+	 * it, and over tests/exec that single rule accounted for 212 of 387 member
+	 * refusals.  A pinned member keeps its bytes at base+moff and every access
+	 * to it is left exactly as it was; only movable members change address, so
+	 * each byte still has exactly one home. */
+	for (f = ct.ref->next; f; f = f->next) { MCC_TRACE("br\n");
+		int mt = f->type.t, msz, mv = 1, al2;
+		CType mct;
+		if (c->nmem >= AST_SROA_MEM)
+			{ MCC_TRACE("br\n"); ast_sroa_note(AST_SROA_W_M_MANY); return 0; }
+		mct.t = mt;
+		mct.bp = f->type.bp;
+		mct.bs = f->type.bs;
+		mct.ref = f->type.ref;
+		msz = ast_sra_scalar_size(mt);
+		if ((mt & VT_BITFIELD) || f->type.bp || f->type.bs)
+			{ MCC_TRACE("br\n"); mv = 0; ast_sroa_note(AST_SROA_W_M_BITFIELD); }
+		else if (mt & VT_VOLATILE)
+			{ MCC_TRACE("br\n"); mv = 0; ast_sroa_note(AST_SROA_W_M_WIDE); }
+		else if ((mt & VT_BTYPE) == VT_STRUCT)
+			{ MCC_TRACE("br\n"); mv = 0; ast_sroa_note(AST_SROA_W_M_NESTED); }
+		else if (mt & VT_ARRAY)
+			{ MCC_TRACE("br\n"); mv = 0; ast_sroa_note(AST_SROA_W_M_ARRAY); }
+		else if (msz <= 0 || msz > 8)
+			{ MCC_TRACE("br\n"); mv = 0; ast_sroa_note(AST_SROA_W_M_WIDE); }
+		if (!mv) { MCC_TRACE("br\n");
+			/* A pinned member needs a byte extent so a Ref can be attributed to
+			 * it.  For a bitfield that is its storage unit, which several
+			 * bitfields share -- member_covering takes the latest start that
+			 * covers, so the unit is attributed to the last one declared in it and
+			 * every access inside it is left alone either way. */
+			mct.bp = 0;
+			mct.bs = 0;
+			mct.t = mt & ~VT_BITFIELD;
+			msz = type_size(&mct, &al2);
+			if (msz <= 0)
+				{ MCC_TRACE("br\n"); ast_sroa_note(AST_SROA_W_M_NOREF); return 0; }
+		}
+		c->moff[c->nmem] = (int32_t)f->c;
+		c->mtype[c->nmem] = mt;
+		c->mref[c->nmem] = (uint64_t)(uintptr_t)f->type.ref;
+		c->msz[c->nmem] = msz;
+		c->movable[c->nmem] = mv;
+		c->slot[c->nmem] = 0;
+		c->used[c->nmem] = 0;
+		c->stored[c->nmem] = 0;
+		c->nmem++;
+	}
+	return c->nmem > 0;
+}
+
+static int ast_sroa_member_at(AstSroaCand *c, int32_t d) { MCC_TRACE("enter\n");
+	int j;
+	for (j = 0; j < c->nmem; j++)
+		{ MCC_TRACE("br\n"); if (c->moff[j] == d) { MCC_TRACE("br\n"); return j; } }
+	return -1;
+}
+
+/* A bitfield member has no byte extent of its own -- several share a storage
+ * unit -- so `covers` treats any offset at or after a pinned bitfield's start,
+ * up to the next member, as belonging to it. */
+static int ast_sroa_member_covering(AstSroaCand *c, int32_t d, int rsz) { MCC_TRACE("enter\n");
+	int j, best = -1;
+	for (j = 0; j < c->nmem; j++) { MCC_TRACE("br\n");
+		int32_t lo = c->moff[j];
+		int32_t hi = lo + (c->msz[j] > 0 ? c->msz[j] : 8);
+		if (d >= lo && d + (rsz > 0 ? rsz : 1) <= hi)
+			{ MCC_TRACE("br\n"); if (best < 0 || c->moff[j] > c->moff[best]) { MCC_TRACE("br\n"); best = j; } }
+	}
+	return best;
+}
+
+static AstSroaCand *ast_sroa_find(AstSroaCand *c, int n, uint64_t base) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 0; i < n; i++)
+		{ MCC_TRACE("br\n"); if (c[i].base == base) { MCC_TRACE("br\n"); return &c[i]; } }
+	return NULL;
+}
+
+static int ast_sroa_is_store_dest(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	AstLocal p = ast_parent(a, n);
+	if (p == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, p) != AST_Store && ast_kind(a, p) != AST_StoreVal)
+		{ MCC_TRACE("br\n"); return 0; }
+	return ast_first_child(a, p) == n;
+}
+
+static int ast_sroa_insert_head(AstArena *a, AstLocal bb, AstLocal node) { MCC_TRACE("enter\n");
+	a->epoch++;
+	a->parent[node] = bb;
+	a->next_sib[node] = a->first_child[bb];
+	a->first_child[bb] = node;
+	a->nchild[bb]++;
+	return 1;
+}
+
+static int ast_sroa_scatter(AstArena *a, AstSroaCand *c, int j) { MCC_TRACE("enter\n");
+	AstLocal bb = ast_root(a), src, dst, st;
+	if (bb == AST_NONE || ast_kind(a, bb) != AST_BasicBlock)
+		{ MCC_TRACE("br\n"); return 0; }
+	src = ast_node(a, AST_Ref);
+	ast_set_op(a, src, VT_LOCAL | VT_LVAL);
+	ast_set_ival(a, src, (uint64_t)((int64_t)c->base + (int64_t)c->moff[j]));
+	ast_set_type(a, src, c->mtype[j], c->mref[j]);
+	dst = ast_node(a, AST_Ref);
+	ast_set_op(a, dst, VT_LOCAL | VT_LVAL);
+	ast_set_ival(a, dst, (uint64_t)(int64_t)c->slot[j]);
+	ast_set_type(a, dst, c->mtype[j], c->mref[j]);
+	st = ast_node(a, AST_Store);
+	ast_add_child(a, st, dst);
+	ast_add_child(a, st, src);
+	return ast_sroa_insert_head(a, bb, st);
+}
+
+static AstSroaCand *ast_sroa_covering(AstSroaCand *c, int n, int64_t off,
+																			int32_t *dout) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		int64_t d = off - (int64_t)c[i].base;
+		if (d >= 0 && d < c[i].size) { MCC_TRACE("br\n");
+			*dout = (int32_t)d;
+			return &c[i];
+		}
+	}
+	return NULL;
+}
+
+/* Aggressive scalar replacement.
+ *
+ * The in-place form (ast_sra_run) rewrites Unary(MEMBER, Ref base) to a Ref at
+ * base+k and is byte-neutral, because in this compiler those two emit the same
+ * code.  The reason it is *also* rare is sharper than that: the front end has
+ * already folded most member accesses into a raw Ref at base+k before the arena
+ * exists, so the MEMBER node the pass keys on is only present where folding was
+ * not possible -- and the in-place check treats every one of those folded refs
+ * as an escape and kills the candidate.  `p.z += p.x` alone is enough to lose a
+ * whole struct.
+ *
+ * This pass keys on the frame range instead of on the node shape.  Members come
+ * from the type, so the map is complete rather than whatever the function
+ * happened to spell; every Ref landing in [base, base+size) must resolve to
+ * exactly one member start with a size that fits, and anything else -- a
+ * whole-struct read, an interior address, a straddling access -- kills the
+ * candidate.  Survivors get one fresh frame slot per member, so the members
+ * stop being one object to promotion, to the slice live-in collector and to
+ * every later pass.
+ */
+static int ast_sroa_run(AstArena *a) { MCC_TRACE("enter\n");
+	AstSroaCand cand[AST_SROA_CAND];
+	AstLocal nn = ast_count(a);
+	int ncand = 0, i, j;
+	ast_sroa_folds = 0;
+	if (!a || ast_func_has_asm || ast_func_has_labeladdr)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		if (!ast_sra_struct_ref(a, n))
+			{ MCC_TRACE("br\n"); continue; }
+		if (ast_sroa_find(cand, ncand, ast_ival(a, n)))
+			{ MCC_TRACE("br\n"); continue; }
+		if (ncand >= AST_SROA_CAND)
+			{ MCC_TRACE("br\n"); continue; }
+		/* Incoming parameters live above the frame pointer and their bytes are
+		 * written by the calling convention, not by any node in this arena.
+		 * Moving a member of one to a fresh slot reads whatever the slot happened
+		 * to hold -- `take_by_value(Section s) { return s.value; }` returns
+		 * garbage.  A compiler-allocated local is below the frame pointer and has
+		 * no writer this pass cannot see. */
+		/* An incoming parameter's bytes are written by the calling convention
+		 * before any statement in this arena runs, so its members cannot simply be
+		 * re-addressed -- but they can be *copied out* once, at the head of the
+		 * entry block, and every later access redirected to the copies.  That is
+		 * the only place the ABI and the decomposition have to agree. */
+		if ((int64_t)ast_ival(a, n) >= 0 && !ast_sroa_param_env)
+			{ MCC_TRACE("br\n"); ast_sroa_note(AST_SROA_W_PARAM); continue; }
+		{
+			CType ck;
+			ck.t = ast_type_t(a, n);
+			ck.bp = 0;
+			ck.bs = 0;
+			ck.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			if (is_complex_type(&ck))
+				{ MCC_TRACE("br\n"); ast_sroa_note(AST_SROA_W_CPLX); continue; }
+		}
+		cand[ncand].base = ast_ival(a, n);
+		cand[ncand].ok = 1;
+		cand[ncand].isparam = (int64_t)ast_ival(a, n) >= 0;
+		if (!ast_sroa_members(a, n, &cand[ncand]))
+			{ MCC_TRACE("br\n"); ast_sroa_note(AST_SROA_W_MEMBERS); continue; }
+		ncand++;
+	}
+	if (!ncand)
+		{ MCC_TRACE("br\n"); return 0; }
+	/* One pass over every local Ref.  A ref at the base is legal only as the
+	 * subject of a member access; a ref inside the range is legal only when it
+	 * lands on a member start and fits.  Everything else is an observation of
+	 * the object as an object, which a decomposition cannot preserve. */
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		AstSroaCand *c;
+		int32_t d = 0;
+		int t, rsz;
+		if (!ast_sra_ref_local(a, n))
+			{ MCC_TRACE("br\n"); continue; }
+		c = ast_sroa_covering(cand, ncand, (int64_t)ast_ival(a, n), &d);
+		if (!c || !c->ok)
+			{ MCC_TRACE("br\n"); continue; }
+		t = ast_type_t(a, n);
+		{
+			/* &s and &s.m hand the object's address to something this pass cannot
+			 * follow, and the node carrying it is a pointer-typed Ref that would
+			 * otherwise pass for an access to whatever member sits at that offset:
+			 * `testc(&s, 10)` on `struct { double average; int count; }` reads as
+			 * an 8-byte access to member 0. */
+			AstLocal p = ast_parent(a, n);
+			if (p != AST_NONE && ast_kind(a, p) == AST_Unary &&
+					(ast_op(a, p) == AST_OP_ADDR || ast_op(a, p) == AST_OP_VLA))
+				{ MCC_TRACE("br\n"); c->ok = 0; ast_sroa_note(AST_SROA_W_ADDR); continue; }
+			if (!(ast_op(a, n) & VT_LVAL))
+				{ MCC_TRACE("br\n"); c->ok = 0; ast_sroa_note(AST_SROA_W_ADDR); continue; }
+		}
+		if ((t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
+			AstLocal p = ast_parent(a, n);
+			int32_t mo;
+			if (d != 0 || p == AST_NONE || ast_kind(a, p) != AST_Unary ||
+					ast_op(a, p) != AST_OP_MEMBER || ast_first_child(a, p) != n)
+				{ MCC_TRACE("br\n"); c->ok = 0; ast_sroa_note(AST_SROA_W_WHOLE); continue; }
+			mo = (int32_t)ast_ival(a, p);
+			j = ast_sroa_member_covering(c, mo,
+																	 ast_sra_scalar_size(ast_type_t(a, p)));
+			if (j < 0)
+				{ MCC_TRACE("br\n"); c->ok = 0; ast_sroa_note(AST_SROA_W_STRADDLE); continue; }
+			if (c->movable[j] &&
+					(c->moff[j] != mo || ast_type_bp(a, p) || ast_type_bs(a, p) ||
+					 ast_sra_scalar_size(ast_type_t(a, p)) != c->msz[j] ||
+					 (ast_type_t(a, p) & VT_VOLATILE)))
+				{ MCC_TRACE("br\n"); c->ok = 0; ast_sroa_note(AST_SROA_W_STRADDLE); continue; }
+			if (!c->movable[j])
+				{ MCC_TRACE("br\n"); continue; }
+			c->used[j] = 1;
+			if (ast_sroa_is_store_dest(a, p))
+				{ MCC_TRACE("br\n"); c->stored[j] = 1; }
+			continue;
+		}
+		rsz = ast_sra_scalar_size(t);
+		j = ast_sroa_member_covering(c, d, rsz);
+		if (j < 0)
+			{ MCC_TRACE("br\n"); c->ok = 0; ast_sroa_note(AST_SROA_W_STRADDLE); continue; }
+		if (!c->movable[j])
+			{ MCC_TRACE("br\n"); continue; }
+		if (c->moff[j] != d || rsz <= 0 || rsz > c->msz[j] || (t & VT_VOLATILE))
+			{ MCC_TRACE("br\n"); c->ok = 0; ast_sroa_note(AST_SROA_W_STRADDLE); continue; }
+		/* Same size is not the same thing: a pointer-typed access at a double
+		 * member, or an integer one at a float member, is not an access to that
+		 * member and the two do not even live in the same register file. */
+		if (is_float(t) != is_float(c->mtype[j]) ||
+				((t & VT_BTYPE) == VT_PTR) != ((c->mtype[j] & VT_BTYPE) == VT_PTR))
+			{ MCC_TRACE("br\n"); c->ok = 0; ast_sroa_note(AST_SROA_W_CLASS); continue; }
+		c->used[j] = 1;
+		if (ast_sroa_is_store_dest(a, n))
+			{ MCC_TRACE("br\n"); c->stored[j] = 1; }
+	}
+	for (i = 0; i < ncand; i++) { MCC_TRACE("br\n");
+		if (!cand[i].ok)
+			{ MCC_TRACE("br\n"); continue; }
+		cand[i].nused = 0;
+		for (j = 0; j < cand[i].nmem; j++) { MCC_TRACE("br\n");
+			if (!cand[i].used[j])
+				{ MCC_TRACE("br\n"); continue; }
+			/* A member that is read but never stored in this arena got its value
+			 * from something the arena does not show -- the block clear an
+			 * `= {0}` or a designated initializer leaves behind for the members it
+			 * does not name.  Moving that member reads a slot nobody wrote. */
+			if (!cand[i].stored[j] && !cand[i].isparam)
+				{ MCC_TRACE("br\n"); cand[i].ok = 0; ast_sroa_note(AST_SROA_W_NOSTORE); break; }
+			cand[i].nused++;
+		}
+		if (!cand[i].nused)
+			{ MCC_TRACE("br\n"); if (cand[i].ok) ast_sroa_note(AST_SROA_W_DEAD); cand[i].ok = 0; }
+	}
+	/* Mint every slot before rewriting anything: a struct that runs the
+	 * allocator out half way through would be left with some members moved and
+	 * some not, which is a miscompile rather than a missed optimization. */
+	for (i = 0; i < ncand; i++) { MCC_TRACE("br\n");
+		if (!cand[i].ok)
+			{ MCC_TRACE("br\n"); continue; }
+		for (j = 0; j < cand[i].nmem; j++) { MCC_TRACE("br\n");
+			int off;
+			if (!cand[i].used[j] || !cand[i].movable[j])
+				{ MCC_TRACE("br\n"); continue; }
+			off = ast_ltemp_mint(cand[i].msz[j], cand[i].msz[j]);
+			if (!off) { MCC_TRACE("br\n"); cand[i].ok = 0; ast_sroa_note(AST_SROA_W_SLOTS); break; }
+			cand[i].slot[j] = off;
+		}
+	}
+	/* Every scatter goes in before any of them, and in declaration order, so the
+	 * copies are established before the first statement that can read one. */
+	for (i = ncand - 1; i >= 0; i--) { MCC_TRACE("br\n");
+		if (!cand[i].ok || !cand[i].isparam)
+			{ MCC_TRACE("br\n"); continue; }
+		for (j = cand[i].nmem - 1; j >= 0; j--) { MCC_TRACE("br\n");
+			if (!cand[i].slot[j])
+				{ MCC_TRACE("br\n"); continue; }
+			if (!ast_sroa_scatter(a, &cand[i], j))
+				{ MCC_TRACE("br\n"); cand[i].ok = 0; break; }
+		}
+	}
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		AstSroaCand *c;
+		int32_t d = 0;
+		int t;
+		if (!ast_sra_ref_local(a, n))
+			{ MCC_TRACE("br\n"); continue; }
+		c = ast_sroa_covering(cand, ncand, (int64_t)ast_ival(a, n), &d);
+		if (!c || !c->ok)
+			{ MCC_TRACE("br\n"); continue; }
+		t = ast_type_t(a, n);
+		if ((t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
+			AstLocal p = ast_parent(a, n);
+			int32_t mo = (int32_t)ast_ival(a, p);
+			j = ast_sroa_member_covering(c, mo,
+																	 ast_sra_scalar_size(ast_type_t(a, p)));
+			if (j < 0 || !c->slot[j])
+				{ MCC_TRACE("br\n"); continue; }
+			ast_clear_children(a, p);
+			a->kind[p] = AST_Ref;
+			ast_set_op(a, p, VT_LOCAL | VT_LVAL);
+			ast_set_ival(a, p, (uint64_t)(int64_t)c->slot[j]);
+			ast_set_type(a, p, c->mtype[j], c->mref[j]);
+			ast_set_sym(a, p, 0);
+			ast_set_fbits(a, p, 0);
+			ast_sroa_folds++;
+			continue;
+		}
+		j = ast_sroa_member_covering(c, d, ast_sra_scalar_size(t));
+		if (j < 0 || !c->slot[j])
+			{ MCC_TRACE("br\n"); continue; }
+		ast_set_ival(a, n, (uint64_t)(int64_t)c->slot[j]);
+		ast_set_sym(a, n, 0);
+		ast_sroa_folds++;
+	}
+	for (i = 0; i < ncand; i++)
+		{ MCC_TRACE("br\n"); if (cand[i].ok) { MCC_TRACE("br\n"); ast_sroa_note(AST_SROA_W_OK); } }
+	if (ast_sroa_folds)
+		{ MCC_TRACE("br\n"); a->epoch++; }
+	return ast_sroa_folds;
 }
 
 static int sg_templates(void) { MCC_TRACE("enter\n"); return ast_templates_env; }
@@ -17086,8 +17572,10 @@ static int sg_reassoc(void) { MCC_TRACE("enter\n"); return ast_reassoc_env; }
 static int sg_sethi(void) { MCC_TRACE("enter\n"); return ast_sethi_env; }
 static int sg_inline(void) { MCC_TRACE("enter\n"); return ast_inline_pass_env; }
 static int sg_sra(void) { MCC_TRACE("enter\n"); return ast_sra_env; }
+static int sg_sroa(void) { MCC_TRACE("enter\n"); return ast_sroa_env; }
 
-static int ast_strat_sra(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_sra_run(a); }
+static int ast_strat_sra(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_sra_run(a, 0); }
+static int ast_strat_sroa(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_sroa_run(a); }
 static int ast_strat_bfold(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_bfold_run(a); }
 static int ast_strat_ident(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_ident_run(a); }
 static int ast_strat_narrow(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_narrow_run(a); }
@@ -17139,6 +17627,7 @@ enum {
 	AST_STRAT_INLINE,
 	AST_STRAT_CLOAD,
 	AST_STRAT_SRA,
+	AST_STRAT_SROA,
 	AST_STRAT_COUNT
 };
 typedef char ast_strat_count_fits[AST_STRAT_COUNT <= AST_STRAT_COUNT_MAX ? 1 : -1];
@@ -17167,6 +17656,7 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 	{"inline", sg_inline, ast_strat_inline},
 	{"cload", sg_templates, ast_strat_cload},
 	{"sra", sg_sra, ast_strat_sra},
+	{"sroa", sg_sroa, ast_strat_sroa},
 };
 
 static uint32_t ast_strat_admit = 0xffffffffu;
@@ -20498,7 +20988,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					tcos = sf[AST_STRAT_TCO];
 					divmagics = sf[AST_STRAT_DIVMAGIC];
 					cloads = sf[AST_STRAT_CLOAD];
-					sras = sf[AST_STRAT_SRA];
+					sras = sf[AST_STRAT_SRA] + sf[AST_STRAT_SROA];
 					selects = sf[AST_STRAT_SELECT];
 					unread = sf[AST_STRAT_LTEMP] + sf[AST_STRAT_IVSR] +
 									 sf[AST_STRAT_PRE] + sf[AST_STRAT_RANGE] +
