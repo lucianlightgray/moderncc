@@ -42,6 +42,7 @@ MODE=$1; MCC=$2; BDIR=$3; IDIR=$4; WORK=$5; ARG=${6:-}
 S="$(cd "$(dirname "$0")/../.." && pwd)"
 COVER="$(dirname "$0")/cover3.txt"
 mkdir -p "$WORK"
+rm -f "$WORK"/*.refanswer "$WORK"/*.refunbuildable
 
 # Subjects. These are real exec goldens, not synthetic programs, and that is
 # deliberate: an earlier version of this harness used two hand-written programs
@@ -153,7 +154,9 @@ is_dev_flag() {
 # that is checking codegen, not race windows -- every atomic instruction still
 # executes, and tests/exec runs these same goldens unpinned anyway. The CPU is
 # picked from the cell name so concurrent ctest cells do not stack up on one
-# core, and the whole thing is skipped where taskset does not exist.
+# core. Darwin has no taskset; there the equivalent is taskpolicy -b, which
+# confines the process to the efficiency cluster, and the whole thing is
+# skipped where neither exists.
 PIN=""
 if command -v taskset >/dev/null 2>&1; then
 	NCPU=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 0)
@@ -161,6 +164,8 @@ if command -v taskset >/dev/null 2>&1; then
 		slot=$(printf '%s' "$MODE-$ARG" | cksum | cut -d' ' -f1)
 		PIN="taskset -c $((slot % NCPU))"
 	fi
+elif command -v taskpolicy >/dev/null 2>&1; then
+	PIN="taskpolicy -b"
 fi
 
 # corpus_run <level> <label> <flagword>... -- build every subject at <level> with
@@ -197,9 +202,19 @@ corpus_run() {
 		src="$S/tests/exec/$sub.c"
 		[ -f "$src" ] || continue
 		nm=$(basename "$sub")
-		"$MCC" -B"$BDIR" -I"$IDIR" -w -O0 "$src" -o "$WORK/$nm.ref" -lm -lpthread \
-			>/dev/null 2>&1 || continue
-		ref=$(set +e; $PIN "$WORK/$nm.ref" 2>&1; printf '[rc=%s]' "$?")
+		if [ -f "$WORK/$nm.refunbuildable" ]; then
+			continue
+		elif [ -f "$WORK/$nm.refanswer" ]; then
+			ref=$(cat "$WORK/$nm.refanswer")
+		else
+			if "$MCC" -B"$BDIR" -I"$IDIR" -w -O0 "$src" -o "$WORK/$nm.ref" -lm -lpthread \
+				>/dev/null 2>&1; then :; else
+				: > "$WORK/$nm.refunbuildable"
+				continue
+			fi
+			ref=$(set +e; $PIN "$WORK/$nm.ref" 2>&1; printf '[rc=%s]' "$?")
+			printf '%s' "$ref" > "$WORK/$nm.refanswer"
+		fi
 		ran=$((ran + 1))
 		red="$label:$nm"
 		if "$MCC" -B"$BDIR" -I"$IDIR" -w "$lvl" "$@" "$src" -o "$WORK/$nm.t" -lm -lpthread \

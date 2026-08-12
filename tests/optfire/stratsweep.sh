@@ -200,11 +200,15 @@ fi
 # 95% of a pass, pinned it is 0.05s. Every atomic instruction still executes
 # and the answer is still checked -- what is lost is true simultaneity, and
 # tests/exec still runs these goldens unpinned. The CPU is picked from the pid
-# so parallel shards do not pile onto one core. Both the reference and the
-# subject run are pinned the same way, so the comparison is unaffected.
+# so parallel shards do not pile onto one core. Darwin has no taskset; there
+# the equivalent is taskpolicy -b, which confines the process to the efficiency
+# cluster. Both the reference and the subject run are pinned the same way, so
+# the comparison is unaffected.
 PIN=""
 if command -v taskset >/dev/null 2>&1 && command -v nproc >/dev/null 2>&1; then
 	PIN="taskset -c $(( $$ % $(nproc) ))"
+elif command -v taskpolicy >/dev/null 2>&1; then
+	PIN="taskpolicy -b"
 fi
 
 build() {
