@@ -314,6 +314,13 @@ emit-coverage instrument, which adds counters rather than cells (`jit/selfhost-o
 `jit/gdb-debuggable` are the two new ones) — counted 2026-08-11 with
 `ctest -N`, not added up. It was 9538 at `747709bc` and 9545 before `smoke/strat-dark`.
 
+> **2026-08-12, and the number is a coincidence worth not misreading.** The arm64/macOS host
+> counted **9545** before this wave and **9548** after, which is the same total as `cmake-def`'s
+> and is not the same set. The three added are the cells `ci/registration-stubs` was flagging as
+> dropped rather than skipped (`jit/gdb-debuggable`, `jit/selfhost-opt`, `jit/xoracle-coverage`);
+> they now register as skips with a reason, which is the whole point of that lint — the total
+> stops depending on what the host happens to have. **Count on the host you are standing on.**
+
 > **Corrected 2026-08-11 (validation sweep).** This paragraph said "the two 2026-08-11 waves
 > added no cells", which was wrong and contradicted *How to validate* eight lines above it,
 > where the same file says the suite went from eight cells to eleven. The waves added at
