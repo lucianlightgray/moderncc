@@ -628,6 +628,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	mcc_enter_state(js);
 	mccpp_new(js);
 	mccgen_init(js);
+	ast_configure(js);
 	anon_sym = SYM_FIRST_ANOM;
 	funcname = "";
 	func_ind = -1;
@@ -1081,6 +1082,7 @@ static void mccjit_graduate_slices_blob(const void *blob, size_t len,
 	mcc_enter_state(js);
 	mccpp_new(js);
 	mccgen_init(js);
+	ast_configure(js);
 	anon_sym = SYM_FIRST_ANOM;
 	funcname = "";
 	func_ind = -1;
@@ -5277,6 +5279,7 @@ static int mccjit_classify_blob(const void *buf, size_t len) { MCC_TRACE("enter\
 	mcc_enter_state(js);
 	mccpp_new(js);
 	mccgen_init(js);
+	ast_configure(js);
 	anon_sym = SYM_FIRST_ANOM;
 	funcname = "";
 	func_ind = -1;
@@ -5305,6 +5308,7 @@ static int mccjit_slice_profile_blob(const void *buf, size_t len,
 	mcc_enter_state(js);
 	mccpp_new(js);
 	mccgen_init(js);
+	ast_configure(js);
 	anon_sym = SYM_FIRST_ANOM;
 	funcname = "";
 	func_ind = -1;
@@ -8546,6 +8550,7 @@ static int mccjit_slice_extract_blob(const void *buf, size_t len,
 	mcc_enter_state(js);
 	mccpp_new(js);
 	mccgen_init(js);
+	ast_configure(js);
 	anon_sym = SYM_FIRST_ANOM;
 	funcname = "";
 	func_ind = -1;
@@ -8668,6 +8673,7 @@ static AstArena *mccjit_extract_ret_slice(const char *src,
 	mcc_enter_state(js);
 	mccpp_new(js);
 	mccgen_init(js);
+	ast_configure(js);
 	anon_sym = SYM_FIRST_ANOM;
 	funcname = "";
 	func_ind = -1;
@@ -8707,6 +8713,7 @@ static int mccjit_certify_one(const char *src, const char *fn, int want,
 		mcc_enter_state(js);
 		mccpp_new(js);
 		mccgen_init(js);
+		ast_configure(js);
 		anon_sym = SYM_FIRST_ANOM;
 		funcname = "";
 		func_ind = -1;
@@ -8769,6 +8776,7 @@ static int mccjit_consteval_one(const char *src, const char *fn, int want_ok,
 		mcc_enter_state(js);
 		mccpp_new(js);
 		mccgen_init(js);
+		ast_configure(js);
 		anon_sym = SYM_FIRST_ANOM;
 		funcname = "";
 		func_ind = -1;
@@ -8813,6 +8821,7 @@ static int mccjit_foldcheck_one(const char *src, const char *fn, int want_min) {
 		mcc_enter_state(js);
 		mccpp_new(js);
 		mccgen_init(js);
+		ast_configure(js);
 		anon_sym = SYM_FIRST_ANOM;
 		funcname = "";
 		func_ind = -1;
@@ -9061,6 +9070,7 @@ static int mccjit_livein_one(const char *src, const char *fn, int want_n,
 		mcc_enter_state(js);
 		mccpp_new(js);
 		mccgen_init(js);
+		ast_configure(js);
 		anon_sym = SYM_FIRST_ANOM;
 		funcname = "";
 		func_ind = -1;
@@ -9110,6 +9120,7 @@ static int mccjit_wrap_one(const char *src, const char *fn) { MCC_TRACE("enter\n
 		mcc_enter_state(js);
 		mccpp_new(js);
 		mccgen_init(js);
+		ast_configure(js);
 		anon_sym = SYM_FIRST_ANOM;
 		funcname = "";
 		func_ind = -1;
@@ -9188,6 +9199,7 @@ static void *mccjit_reemit_arena_blob(const void *buf, size_t len, AstArena *are
 	mcc_enter_state(js);
 	mccpp_new(js);
 	mccgen_init(js);
+	ast_configure(js);
 	anon_sym = SYM_FIRST_ANOM;
 	funcname = "";
 	func_ind = -1;
@@ -9232,6 +9244,7 @@ static AstArena *mccjit_kernel_from_blob(const void *buf, size_t len) { MCC_TRAC
 	mcc_enter_state(js);
 	mccpp_new(js);
 	mccgen_init(js);
+	ast_configure(js);
 	anon_sym = SYM_FIRST_ANOM;
 	funcname = "";
 	func_ind = -1;
@@ -9304,6 +9317,7 @@ static AstArena *mccjit_kernel_search_from_blob(const void *buf, size_t len,
 	mcc_enter_state(js);
 	mccpp_new(js);
 	mccgen_init(js);
+	ast_configure(js);
 	anon_sym = SYM_FIRST_ANOM;
 	funcname = "";
 	func_ind = -1;
@@ -9601,6 +9615,7 @@ static int mccjit_search_one(const char *src, const char *fn, int budget,
 		mcc_enter_state(js);
 		mccpp_new(js);
 		mccgen_init(js);
+		ast_configure(js);
 		anon_sym = SYM_FIRST_ANOM;
 		funcname = "";
 		func_ind = -1;
@@ -9667,6 +9682,7 @@ static int mccjit_noescape_one(const char *src, const char *fn,
 		mcc_enter_state(js);
 		mccpp_new(js);
 		mccgen_init(js);
+		ast_configure(js);
 		anon_sym = SYM_FIRST_ANOM;
 		funcname = "";
 		func_ind = -1;
