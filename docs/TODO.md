@@ -1308,6 +1308,145 @@ independently and are the reference. **x86_64-only, and this host cannot tell `d
 the `cover3` regeneration, the three vacuity floors, the ladder points/secs split, Metal's
 `mcc_gpu_mem()` failing closed, and `slice/cref-oracle`'s single-family fallback.
 
+## Implementation plans — derived and part-executed 2026-08-12
+
+> Three read-only sweeps turned the top clusters into ordered edit lists. What follows is the
+> executable form: **each row is a task**, smallest-first within its cluster, with the
+> dependency and the host constraint stated. Rows marked **DONE** landed in this wave.
+>
+> **Two rows below were investigated and deliberately NOT changed.** Both looked like cheap
+> wins and both have a hazard that only shows up in the code. They are written up as tasks
+> rather than as fixes because doing them blind is worse than leaving them.
+
+### Cluster A — record/replay entry unification (was Rank 4)
+
+**The priority changed once `rir_c2_active` was traced.** It is *not* dev-build-only. Besides
+the `#if MCC_REPLAY_IR_C2` arm (off in every build dir here), `rir_prod_replay_begin()` sets it,
+and that is called from `ast_func_end` under `if (ast_rir_used)` with **no compile gate**. Since
+`ast_replay_env` is `optimize >= 1 || embed_jit || …`, **every `-O1`+ compile in a stock build
+runs with `rir_c2_active == 1`**, takes `ast_alloc_loc`'s `rir_loc_replay` early return, and
+never reaches `ast_locrec_take`. And when `rir_prod_env` is on the parser's own arena is freed,
+so the C2 arm is the *only* first replay at `-O1`+. **The `dd80e4fa` bypass is the live defect;
+N2's record widening is its prerequisite**, not the other way round.
+
+| # | edit | size | depends | host |
+| --- | --- | --- | --- | --- |
+| A1 | `ast_locrec_skip` takes `(size, align)` and calls `ast_locrec_take`; its one call site already computed `rsz`/`ral` three lines above | small | — | any |
+| A2 | hoist `ast_locrec_n = 0; ast_locrec_min = 0;` out of `ast_func_begin`'s `rir_try_active` block | 2 lines | — | any |
+| A3 | widen `rir_locrec` with `sz`/`al` + `rir_locrec_min`; resync **then** fit, never the reverse | small | — | any |
+| A4 | the C2-bypass fix — **reordering is wrong**, see below | small | A3 | any (fires at every `-O1`+ here) |
+| A5 | widen `rir_slotrec`; `rir_hook_slot_replay/_record` take `(size, align)` | small | — | arm64 site is `#if !defined(MCC_TARGET_MACHO)` — **Linux** |
+| A6 | widen `rir_tvrec` **and** add its missing `nc[]` resync — **land these as two commits**, the fit skip is byte-neutral and the `nc` resync is not | small | A5 shape | any |
+| A7 | the actual `MccRec`/`mcc_rec_take` unification — de-duplication only, all defects already fixed by A1–A6 | medium | A3/A5/A6 | any |
+
+**A4 in detail, because the obvious fix is wrong.** The two arms of `ast_alloc_loc` consume two
+*different* streams with two *different* cursors: `rir_locrec` (resynced against `ind`) and
+`ast_locrec` (cursor order). Running `ast_locrec_take` first under `rir_c2_active` would consume
+`ast_locrec` entries while `rir_locrec_i` never advances, desynchronising every later
+`ast_alloc_loc` in the body. The arms are not even mutually reachable: `rir_prod_replay_begin`
+sets `ast_replaying = 0; ir_cap_replaying = 1;`, so the second arm is dead on that path — swapping
+the tests would switch streams, not reorder them. **The replay must feed the fit check**, and the
+fallback must be the frontier allocator, not a bare bump: on the replay path `loc` is assigned
+from the record, so the record's unconsumed remainder lies *below* it and a bare bump allocates
+into an offset the replay is about to hand out. `ast_alloc_temp_loc`'s guard is false during the
+C2 replay, so extract its frontier body into an unguarded helper and call that.
+
+**Regression subject:** extend `tests/exec/structs_unions/inline_sret_locrec.c` rather than
+adding a file — its golden and per-target `o0-baseline` hashes already exist. It needs all four
+of: a dropped allocation request, a size cliff right after it, a live neighbour the overlap
+corrupts, and `-O1`+ with a graftable inline. **Land the subject red first**; a cell that has
+never failed is the thing this whole cluster is about.
+
+### Cluster B — `ast_func_end` (was Rank 2)
+
+| # | edit | size | depends | host |
+| --- | --- | --- | --- | --- |
+| B1 | **`ast_search_emit_size` leaks `.data`/`.rodata` — see the hazard below. NOT a 6-line fix.** | — | — | — |
+| B2 | `struct AstReemitFn` gains `body_ind/body_len/reloc0/rel_len`, copied from `AstBaselineFn` | small | — | any |
+| B3 | five `AST_SG_*` bits at 42–46 | small | — | any |
+| B4 | `ast_jit_submit_aot` passes `ast_search_gates_now()` instead of a literal `0` | 3 lines | — | reachable on arm64 |
+| B5 | add the five to `ast_search_gates_now`/`_set`; **deliberately not** to `ast_search_searchable` | small | B3 | any |
+| B6 | orphan report from B2's fields: `ast.orphan_fn`/`_bytes`/`_relocs` | small | B2 | any |
+| B7 | **`ast_reemit` emits no `mcc_debug_funcend` and no FDE**, so after a forward-inline re-emit `-g` and `.eh_frame` describe the *dead* range and the live body has neither | medium | B6 | assert on Linux |
+| B8 | `so_fn_sizes` has no Mach-O arm, so the entire per-fn superopt size-feedback loop is **dead on macOS** — this is the gate on `rf-1` ever being measurable here | medium | — | **macOS only** |
+
+**Row 27's real question, answered: the JIT should refuse, never re-run.** The five mutators
+rewrite `ast_cur` **in place**, and both JIT ingestion points run downstream of that and pass the
+same `ast_cur` — so re-running would double-apply, and none of the five is idempotent on its own
+output. What is actually missing is env state, not transforms: `ast_search_gates_set` writes 34
+flags and the five mutator envs are outside it, and `ast_vlat_env` is read on the *replay* path,
+so a recompile with it in a different state emits different code from the same tree. Also
+`ast_math_inline_prepass_env` is `MCC_OPT_TLS`, so route the mask through the intent blob's
+existing `warm_gates` rather than ambient statics. **Bit 47 is the last disk-safe bit** — the memo
+packs its magic above `AST_GATE_BITS`, so a bit at 48+ silently collides two gate sets on one
+disk key with no diagnostic.
+
+**Also found: the literal zero mask is not inert.** `mccjit_embed.c`'s dispatch tests
+`have_override && override_mask`, which is **false** for 0, so an AOT submission recompiles under
+*ambient* gates via `ast_reemit_extern`, and `warm_gates == 0` means the warm-start path never
+fires for AOT-submitted functions at all. B4 turns two silent no-ops back on.
+
+### Cluster C — `tools/rir-coverage.py` (was Rank 3)
+
+| # | edit | size | depends | host |
+| --- | --- | --- | --- | --- |
+| C1 | **the loud-skip question — a policy call, see below** | — | — | — |
+| C2 | `sources` manifest floor: bank `{n, sha}` of the walked list, fail with the symmetric difference | small | — | any |
+| C3 | gap-dir floor: `pairs_run > 0` **and** `== pairs_expected` recomputed from the listing × levels | small | — | any |
+| C4 | low-dir floor + `low_classes_missing`, plus LOWCLS↔compiler parity (the C side self-checks, Python does not) | small | — | any |
+| ~~C5~~ | ~~write `tests/rir/low/reg.c`~~ **DONE 2026-08-12** — low fixtures are now **7 of 7** classes. See the caveat below | ~8 lines | — | any |
+| C6 | nofb floor keyed `(corpus, fmt, opt)`; also fix `--update-bank`'s union merge, which can only grow the list | medium | — | values need ELF |
+| C7 | `pe` staleness marker — `pe` floors frozen at `c954b223` while `elf` moved ~0.58 pp, and nothing says so | small | — | values need PE |
+
+**C5's caveat, and it is a real weakness of the fixture that landed.** `reg` could not be
+isolated. Every shape that reproduces it here is a VLA — `int f(int n){ int v[n]; return n; }`
+reports `[blockers opaque,reg]`, and that is the *fewest* classes any candidate produced. The
+obvious spellings do **not** reach it: `(a<b)&&(b<c)`, `a<b ? a : b`, `int t=(a<b)`, a `register`
+variable and a `setjmp` return all lower cleanly with no blocker at all, because the comparison
+is materialised before the arena records it. So `reg.c` and `opaque.c` now share one mechanism —
+**a change to VLA lowering breaks both fixtures at once, and neither would isolate which class
+regressed.** The class is real and occurs naturally (`bounds/bound_signal.c` `reg=3`,
+`bounds/bound_setjmp.c` `reg=2`, `vla/basic.c` `reg=2`), so a non-VLA reduction exists in the
+corpus; finding it is the follow-up. Until then the honest reading of "7 of 7 classes covered" is
+**6 mechanisms, not 7**.
+
+**Two corrections to fold in:** `CORPUS_DEFS` is already `["MCC_DIAG","MCC_EMBED_JIT"]` — closed,
+do not re-file. And **`asm` and `regdangle` have no producing site anywhere in `src/`** — they
+exist only in the name table, so the honest gap denominator is **16, not 18**, and the headline
+is *3 of 16*. `reg`, `posterr`, `bytes`/`len` are the cheap fixtures; `ovf`/`unbal`/`invalid`/
+`unsafe` should be deferred (capacity constants and "needs a bug" respectively).
+
+### The two rows that were investigated and deliberately left alone
+
+**B1 — `ast_search_emit_size` never restores `data_section->data_offset` /
+`rodata_section->data_offset`.** It saves both, computes `ddelta`/`rodelta`, traces them, and
+returns — so every superopt trial that materialises a float constant or string literal
+permanently grows the real object, and `ast_scratch_measure_exit` asserts isolation for the
+*text* section only. **The restore is not safe on its own.** `ast_fconst[]` stores section
+offsets, and the trial sets `ast_fconst_i = ast_fconst_n` so new constants are *appended*.
+Rewinding rodata without also rewinding `ast_fconst_n` would leave pool entries pointing at
+space the next constant reuses — **two distinct constants aliasing one offset, i.e. a miscompile
+generator**, which is strictly worse than the wasted bytes. Any fix must rewind the pool and the
+section together, and needs the fconst-reuse interaction worked out first.
+**Could not be demonstrated firing on arm64/macOS**: the objects are byte-identical across
+`-O2`/`-O9`/`-O12`/`-O13` with `-fopt-search-emit-size` on and off, so the search is not reaching
+the subject here. Reachability is the first thing to establish, and B8 may be why it does not
+(the per-fn size loop is dead on this host).
+
+**C1 — `rir-coverage` reports Passed on this host while skipping its three most valuable
+comparisons.** Verified live: 12 skips (`kept_coverage`, `.text` residual and the whole lowerable
+ratchet, at each of `-O0`–`-O3`), and the cell still returns 0 because `checked` is non-empty —
+capture and modelled coverage are enforced everywhere. **This is a disclosed partial, not a
+silent green**: the PASS line itself prints `N skipped as host-specific`, and the `SKIP` lines
+name every one. So flipping it to `return 77` is a *policy* decision about whether partial
+enforcement counts as a pass, and it would discard the checks that do run. **The substantive fix
+is different**: give `arena` a per-format schema for `residual` and `kept_coverage` (reusing
+`low_floor`'s "legacy flat reads as elf" rule), then bank `macho` — at which point the ratchet
+arms here for real. Banking `macho` *before* that schema exists would arm two comparisons against
+ELF's values and produce a **false red** — `residual` is banked 0 while this host legitimately
+measures 120, because `mcc_tlv_thunk` is 120 bytes of raw asm with no C body on Darwin.
+
+
 ## Implementation order by shared surface — SUPERSEDED, indexed 2026-08-12 (first pass)
 
 > ~~The first-pass index.~~ **Superseded the same day by the re-verified ranking above**, which
