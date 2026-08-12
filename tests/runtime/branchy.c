@@ -12,7 +12,7 @@ int main(int argc, char **argv)
 	long acc = 0;
 	double facc = 0.0;
 	for (i = 0; i < (1 << 16); i++) {
-		data[i] = ((i * 1103515245 + 12345) >> 5) % 2001 - 1000;
+		data[i] = (int)(((unsigned)i * 1103515245u + 12345u) >> 5) % 2001 - 1000;
 		fdata[i] = data[i] * 0.125;
 	}
 	for (r = 0; r < n; r++) {
