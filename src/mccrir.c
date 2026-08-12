@@ -93,7 +93,7 @@ static int rir_locrec_pos[RIR_LOCREC_MAX];
 static int rir_locrec_nc[RIR_LOCREC_MAX];
 static int rir_locrec_n, rir_locrec_i;
 
-void rir_loc_record(int loc_in) {
+void rir_loc_record(int loc_in) { MCC_TRACE("enter\n");
 	if (rir_locrec_n >= RIR_LOCREC_MAX)
 		return;
 	rir_locrec_pos[rir_locrec_n] = ind;
@@ -101,7 +101,7 @@ void rir_loc_record(int loc_in) {
 	rir_locrec[rir_locrec_n++] = loc_in;
 }
 
-int rir_loc_replay(int *loc_out) {
+int rir_loc_replay(int *loc_out) { MCC_TRACE("enter\n");
 	while (rir_locrec_i + 1 < rir_locrec_n && rir_locrec_pos[rir_locrec_i + 1] <= ind &&
 	       ((rir_locrec_nc[rir_locrec_i] & RIR_NOEVAL_MASK) ||
 	        rir_locrec_pos[rir_locrec_i + 1] > rir_locrec_pos[rir_locrec_i]))
@@ -119,7 +119,7 @@ static unsigned char rir_fcrec_cplx[RIR_LOCREC_MAX];
 static unsigned char rir_fcrec_key[RIR_LOCREC_MAX][AST_FCONST_KEY];
 static int rir_fcrec_n, rir_fcrec_i;
 
-void rir_hook_fconst_record(int c, int cplx, const unsigned char *key) {
+void rir_hook_fconst_record(int c, int cplx, const unsigned char *key) { MCC_TRACE("enter\n");
 	if (rir_fcrec_n < RIR_LOCREC_MAX)
 		rir_fcrec_cplx[rir_fcrec_n] = (unsigned char)cplx;
 	if (!rir_capture_live() || rir_fcrec_n >= RIR_LOCREC_MAX)
@@ -130,7 +130,7 @@ void rir_hook_fconst_record(int c, int cplx, const unsigned char *key) {
 	rir_fcrec[rir_fcrec_n++] = c;
 }
 
-int rir_hook_fconst_reuse(int cplx, const unsigned char *key) {
+int rir_hook_fconst_reuse(int cplx, const unsigned char *key) { MCC_TRACE("enter\n");
 	if (!rir_c2_active)
 		return -1;
 	while (rir_fcrec_i + 1 < rir_fcrec_n && rir_fcrec_pos[rir_fcrec_i + 1] <= ind &&
@@ -152,7 +152,7 @@ static int rir_slotrec_pos[RIR_LOCREC_MAX];
 static int rir_slotrec_nc[RIR_LOCREC_MAX];
 static int rir_slotrec_n, rir_slotrec_i;
 
-void rir_slot_record(int loc_in) {
+void rir_slot_record(int loc_in) { MCC_TRACE("enter\n");
 	if (rir_slotrec_n >= RIR_LOCREC_MAX)
 		return;
 	rir_slotrec_pos[rir_slotrec_n] = ind;
@@ -160,7 +160,7 @@ void rir_slot_record(int loc_in) {
 	rir_slotrec[rir_slotrec_n++] = loc_in;
 }
 
-int rir_slot_replay(int *loc_out) {
+int rir_slot_replay(int *loc_out) { MCC_TRACE("enter\n");
 	while (rir_slotrec_i + 1 < rir_slotrec_n &&
 				 rir_slotrec_pos[rir_slotrec_i + 1] <= ind &&
 				 ((rir_slotrec_nc[rir_slotrec_i] & RIR_NOEVAL_MASK) ||
@@ -176,7 +176,7 @@ static int rir_tvrec[RIR_LOCREC_MAX], rir_tvrec_r2[RIR_LOCREC_MAX];
 static int rir_tvrec_pos[RIR_LOCREC_MAX];
 static int rir_tvrec_n, rir_tvrec_i;
 
-void rir_tvar_record(int loc_in, int r2) {
+void rir_tvar_record(int loc_in, int r2) { MCC_TRACE("enter\n");
 	if (rir_tvrec_n >= RIR_LOCREC_MAX)
 		return;
 	rir_tvrec_pos[rir_tvrec_n] = ind;
@@ -184,7 +184,7 @@ void rir_tvar_record(int loc_in, int r2) {
 	rir_tvrec[rir_tvrec_n++] = loc_in;
 }
 
-int rir_tvar_replay(int *loc_out, int *r2_out) {
+int rir_tvar_replay(int *loc_out, int *r2_out) { MCC_TRACE("enter\n");
 	while (rir_tvrec_i + 1 < rir_tvrec_n && rir_tvrec_pos[rir_tvrec_i + 1] <= ind)
 		rir_tvrec_i++;
 	if (rir_tvrec_i >= rir_tvrec_n)
@@ -244,7 +244,7 @@ static long rir_tot_shift_open;
 static int rir_shift_failop, rir_shift_failkind, rir_shift_diff;
 static long rir_reghist[RIR_R_COUNT];
 
-static const char *rir_region_name(int k) {
+static const char *rir_region_name(int k) { MCC_TRACE("enter\n");
 	static const char *const n[RIR_R_COUNT] = {
 			"none",	 "if",		"then",		"else", "while", "do",
 			"for",	 "switch", "ternary", "landor", "call", "cond",
@@ -253,9 +253,9 @@ static const char *rir_region_name(int k) {
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
-static RirOp *rir_new(int tag) {
+static RirOp *rir_new(int tag) { MCC_TRACE("enter\n");
 	RirOp *o;
-	if (rir_n >= rir_cap) {
+	if (rir_n >= rir_cap) { MCC_TRACE("br\n");
 		rir_cap = rir_cap ? rir_cap * 2 : 256;
 		rir_ops = mcc_realloc(rir_ops, (size_t)rir_cap * sizeof *rir_ops);
 	}
@@ -267,13 +267,13 @@ static RirOp *rir_new(int tag) {
 
 static void rir_mark_v2(int tag, int kind, int val, long long a, long long b);
 
-static void rir_mark_v(int tag, int kind, int val) {
+static void rir_mark_v(int tag, int kind, int val) { MCC_TRACE("enter\n");
 	rir_mark_v2(tag, kind, val, 0, 0);
 }
 
-static void rir_mark_v2(int tag, int kind, int val, long long a, long long b) {
+static void rir_mark_v2(int tag, int kind, int val, long long a, long long b) { MCC_TRACE("enter\n");
 	RirMark *m;
-	if (rir_markn >= rir_markcap) {
+	if (rir_markn >= rir_markcap) { MCC_TRACE("br\n");
 		rir_markcap = rir_markcap ? rir_markcap * 2 : 128;
 		rir_marks = mcc_realloc(rir_marks, (size_t)rir_markcap * sizeof *rir_marks);
 	}
@@ -293,7 +293,7 @@ static void rir_mark_v2(int tag, int kind, int val, long long a, long long b) {
 			n = 0;
 		if (n > VSTACK_SIZE)
 			n = VSTACK_SIZE;
-		if (rir_mvsn + n > rir_mvscap) {
+		if (rir_mvsn + n > rir_mvscap) { MCC_TRACE("br\n");
 			int ncap = rir_mvscap ? rir_mvscap * 2 : 1024;
 			while (ncap < rir_mvsn + n)
 				ncap *= 2;
@@ -311,12 +311,12 @@ static void rir_mark_v2(int tag, int kind, int val, long long a, long long b) {
 		rir_reghist[kind]++;
 }
 
-static void rir_mark(int tag, int kind) { rir_mark_v(tag, kind, 0); }
+static void rir_mark(int tag, int kind) { MCC_TRACE("enter\n"); rir_mark_v(tag, kind, 0); }
 
-void rir_rbegin_val(int kind, int val) {
+void rir_rbegin_val(int kind, int val) { MCC_TRACE("enter\n");
 	if (!rir_active)
 		return;
-	if (rir_stackn >= (int)(sizeof rir_stack / sizeof rir_stack[0])) {
+	if (rir_stackn >= (int)(sizeof rir_stack / sizeof rir_stack[0])) { MCC_TRACE("br\n");
 		rir_ovf = 1;
 		return;
 	}
@@ -324,22 +324,22 @@ void rir_rbegin_val(int kind, int val) {
 	rir_mark_v(RIR_T_RBEGIN, kind, val);
 }
 
-void rir_rbegin(int kind) { rir_rbegin_val(kind, 0); }
+void rir_rbegin(int kind) { MCC_TRACE("enter\n"); rir_rbegin_val(kind, 0); }
 
-void rir_rend_to_val(int kind, int val) {
+void rir_rend_to_val(int kind, int val) { MCC_TRACE("enter\n");
 	int i, found = 0;
 	if (!rir_active)
 		return;
 	for (i = rir_stackn - 1; i >= 0; i--)
-		if (rir_stack[i] == kind) {
+		if (rir_stack[i] == kind) { MCC_TRACE("br\n");
 			found = 1;
 			break;
 		}
-	if (!found) {
+	if (!found) { MCC_TRACE("br\n");
 		rir_unbal = 1;
 		return;
 	}
-	while (rir_stackn > 0) {
+	while (rir_stackn > 0) { MCC_TRACE("br\n");
 		int k = rir_stack[--rir_stackn];
 		rir_mark_v(RIR_T_REND, k, k == kind ? val : 0);
 		if (k == kind)
@@ -347,14 +347,14 @@ void rir_rend_to_val(int kind, int val) {
 	}
 }
 
-void rir_rend_to(int kind) { rir_rend_to_val(kind, 0); }
+void rir_rend_to(int kind) { MCC_TRACE("enter\n"); rir_rend_to_val(kind, 0); }
 
-void rir_rcond_done(void) {
+void rir_rcond_done(void) { MCC_TRACE("enter\n");
 	int i, open = 0;
 	if (!rir_active)
 		return;
 	for (i = rir_stackn - 1; i >= 0; i--)
-		if (rir_stack[i] == RIR_R_COND) {
+		if (rir_stack[i] == RIR_R_COND) { MCC_TRACE("br\n");
 			open = 1;
 			break;
 		}
@@ -369,26 +369,26 @@ void rir_rcond_done(void) {
 		rir_rbegin(RIR_R_BODY);
 }
 
-void rir_mark_pt(int kind) {
+void rir_mark_pt(int kind) { MCC_TRACE("enter\n");
 	if (!rir_active)
 		return;
 	rir_mark(RIR_T_MARK, kind);
 }
 
-void rir_mark_val(int kind, int val) {
+void rir_mark_val(int kind, int val) { MCC_TRACE("enter\n");
 	if (!rir_active)
 		return;
 	rir_mark_v(RIR_T_MARK, kind, val);
 }
 
-void rir_mark_val2(int kind, long long a, long long b) {
+void rir_mark_val2(int kind, long long a, long long b) { MCC_TRACE("enter\n");
 	if (!rir_active)
 		return;
 	rir_mark_v2(RIR_T_MARK, kind, 0, a, b);
 }
 
 void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig,
-									int align, int result) {
+									int align, int result) { MCC_TRACE("enter\n");
 	RirMark *m;
 	if (!rir_active)
 		return;
@@ -401,132 +401,132 @@ void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig,
 											((unsigned long long)(unsigned)locorig << 32));
 }
 
-void rir_vla_begin(void) {
+void rir_vla_begin(void) { MCC_TRACE("enter\n");
 	if (!rir_active)
 		return;
 	rir_rbegin(RIR_R_VLA);
 }
 
-void rir_hook_if_begin(void) {
+void rir_hook_if_begin(void) { MCC_TRACE("enter\n");
 	rir_rbegin(RIR_R_IF);
 	rir_rbegin(RIR_R_COND);
 }
 
-void rir_hook_if_gvtst_done(void) { rir_rcond_done(); }
+void rir_hook_if_gvtst_done(void) { MCC_TRACE("enter\n"); rir_rcond_done(); }
 
-void rir_hook_if_else(void) {
+void rir_hook_if_else(void) { MCC_TRACE("enter\n");
 	rir_rend_to(RIR_R_THEN);
 	rir_rbegin(RIR_R_ELSE);
 }
 
-void rir_hook_if_end(void) { rir_rend_to(RIR_R_IF); }
+void rir_hook_if_end(void) { MCC_TRACE("enter\n"); rir_rend_to(RIR_R_IF); }
 
-void rir_hook_while_cond_start(void) { rir_mark_pt(RIR_M_WHILECOND); }
+void rir_hook_while_cond_start(void) { MCC_TRACE("enter\n"); rir_mark_pt(RIR_M_WHILECOND); }
 
-void rir_hook_while_begin(void) {
+void rir_hook_while_begin(void) { MCC_TRACE("enter\n");
 	rir_rbegin(RIR_R_WHILE);
 	rir_rbegin(RIR_R_COND);
 }
 
-void rir_hook_while_end(void) { rir_rend_to(RIR_R_WHILE); }
+void rir_hook_while_end(void) { MCC_TRACE("enter\n"); rir_rend_to(RIR_R_WHILE); }
 
-void rir_hook_do_begin(void) {
+void rir_hook_do_begin(void) { MCC_TRACE("enter\n");
 	rir_rbegin(RIR_R_DO);
 	rir_rbegin(RIR_R_BODY);
 }
 
-void rir_hook_do_body_end(void) { rir_rend_to(RIR_R_BODY); }
+void rir_hook_do_body_end(void) { MCC_TRACE("enter\n"); rir_rend_to(RIR_R_BODY); }
 
-void rir_hook_do_cond(void) { rir_rbegin(RIR_R_COND); }
+void rir_hook_do_cond(void) { MCC_TRACE("enter\n"); rir_rbegin(RIR_R_COND); }
 
-void rir_hook_do_end(void) { rir_rend_to(RIR_R_DO); }
+void rir_hook_do_end(void) { MCC_TRACE("enter\n"); rir_rend_to(RIR_R_DO); }
 
-void rir_hook_for_begin(void) { rir_rbegin(RIR_R_FOR); }
+void rir_hook_for_begin(void) { MCC_TRACE("enter\n"); rir_rbegin(RIR_R_FOR); }
 
-void rir_hook_for_cond(void) { rir_rbegin(RIR_R_COND); }
+void rir_hook_for_cond(void) { MCC_TRACE("enter\n"); rir_rbegin(RIR_R_COND); }
 
-void rir_hook_for_incr_begin(void) { rir_rbegin_val(RIR_R_INCR, 1); }
+void rir_hook_for_incr_begin(void) { MCC_TRACE("enter\n"); rir_rbegin_val(RIR_R_INCR, 1); }
 
-void rir_hook_for_incr_end(void) { rir_rend_to(RIR_R_INCR); }
+void rir_hook_for_incr_end(void) { MCC_TRACE("enter\n"); rir_rend_to(RIR_R_INCR); }
 
-void rir_hook_for_no_incr(void) {
+void rir_hook_for_no_incr(void) { MCC_TRACE("enter\n");
 	rir_rbegin(RIR_R_INCR);
 	rir_rend_to(RIR_R_INCR);
 }
 
-void rir_hook_for_body_begin(void) { rir_rbegin(RIR_R_BODY); }
+void rir_hook_for_body_begin(void) { MCC_TRACE("enter\n"); rir_rbegin(RIR_R_BODY); }
 
-void rir_hook_for_end(void) { rir_rend_to(RIR_R_FOR); }
+void rir_hook_for_end(void) { MCC_TRACE("enter\n"); rir_rend_to(RIR_R_FOR); }
 
-void rir_hook_switch_begin(void) {
+void rir_hook_switch_begin(void) { MCC_TRACE("enter\n");
 	rir_rbegin(RIR_R_SWITCH);
 	rir_rbegin(RIR_R_BODY);
 }
 
-void rir_hook_switch_end(void) { rir_rend_to(RIR_R_SWITCH); }
+void rir_hook_switch_end(void) { MCC_TRACE("enter\n"); rir_rend_to(RIR_R_SWITCH); }
 
-void rir_hook_case(long long v1, long long v2) {
+void rir_hook_case(long long v1, long long v2) { MCC_TRACE("enter\n");
 	rir_mark_val2(RIR_M_CASE, v1, v2);
 }
 
-void rir_hook_default(void) { rir_mark_pt(RIR_M_DEFAULT); }
+void rir_hook_default(void) { MCC_TRACE("enter\n"); rir_mark_pt(RIR_M_DEFAULT); }
 
-void rir_hook_label(int v) { rir_mark_val(RIR_M_LABEL, v); }
+void rir_hook_label(int v) { MCC_TRACE("enter\n"); rir_mark_val(RIR_M_LABEL, v); }
 
-void rir_hook_goto(int v) { rir_mark_val(RIR_M_GOTO, v); }
+void rir_hook_goto(int v) { MCC_TRACE("enter\n"); rir_mark_val(RIR_M_GOTO, v); }
 
-void rir_hook_break_continue(int is_continue, int nc_pre) {
+void rir_hook_break_continue(int is_continue, int nc_pre) { MCC_TRACE("enter\n");
 	if (nc_pre)
 		return;
 	rir_mark_val(RIR_M_JUMP, is_continue);
 }
 
-void rir_hook_call_begin(void) { rir_rbegin(RIR_R_CALL); }
+void rir_hook_call_begin(void) { MCC_TRACE("enter\n"); rir_rbegin(RIR_R_CALL); }
 
-void rir_hook_call_end(void) { rir_rend_to(RIR_R_CALL); }
+void rir_hook_call_end(void) { MCC_TRACE("enter\n"); rir_rend_to(RIR_R_CALL); }
 
 int rir_cast_seq;
 
-void rir_hook_convert(void) { rir_cast_seq++; }
+void rir_hook_convert(void) { MCC_TRACE("enter\n"); rir_cast_seq++; }
 
-void rir_hook_call_argcast(int pre_seq) {
+void rir_hook_call_argcast(int pre_seq) { MCC_TRACE("enter\n");
 	rir_mark_val(RIR_M_ARGCAST, rir_cast_seq != pre_seq);
 }
 
-void rir_hook_call_noreturn(void) { rir_mark_pt(RIR_M_NORETURN); }
+void rir_hook_call_noreturn(void) { MCC_TRACE("enter\n"); rir_mark_pt(RIR_M_NORETURN); }
 
-void rir_hook_call_effect_end(void) { rir_rend_to_val(RIR_R_CALL, 1); }
+void rir_hook_call_effect_end(void) { MCC_TRACE("enter\n"); rir_rend_to_val(RIR_R_CALL, 1); }
 
-void rir_hook_vstore(void) { rir_rbegin(RIR_R_VSTORE); }
+void rir_hook_vstore(void) { MCC_TRACE("enter\n"); rir_rbegin(RIR_R_VSTORE); }
 
-void rir_hook_vstore_end(void) { rir_rend_to(RIR_R_VSTORE); }
+void rir_hook_vstore_end(void) { MCC_TRACE("enter\n"); rir_rend_to(RIR_R_VSTORE); }
 
-void rir_hook_ret_expr_done(void) { rir_mark_val(RIR_M_RETEXPR, 0); }
+void rir_hook_ret_expr_done(void) { MCC_TRACE("enter\n"); rir_mark_val(RIR_M_RETEXPR, 0); }
 
-void rir_hook_return(int has_val) { rir_mark_val(RIR_M_RETURN, has_val); }
+void rir_hook_return(int has_val) { MCC_TRACE("enter\n"); rir_mark_val(RIR_M_RETURN, has_val); }
 
-void rir_hook_return_jmp(int jumps) { rir_mark_val(RIR_M_RETJMP, jumps); }
+void rir_hook_return_jmp(int jumps) { MCC_TRACE("enter\n"); rir_mark_val(RIR_M_RETJMP, jumps); }
 
-void rir_hook_implicit_return(void) { rir_mark_pt(RIR_M_IRETURN); }
+void rir_hook_implicit_return(void) { MCC_TRACE("enter\n"); rir_mark_pt(RIR_M_IRETURN); }
 
-void rir_hook_synth_begin(void) { rir_rbegin(RIR_R_SYNTH); }
+void rir_hook_synth_begin(void) { MCC_TRACE("enter\n"); rir_rbegin(RIR_R_SYNTH); }
 
-void rir_hook_synth_end(void) { rir_rend_to(RIR_R_SYNTH); }
+void rir_hook_synth_end(void) { MCC_TRACE("enter\n"); rir_rend_to(RIR_R_SYNTH); }
 
-void rir_hook_castsynth_end(struct CType *type, int ds, int ss) {
+void rir_hook_castsynth_end(struct CType *type, int ds, int ss) { MCC_TRACE("enter\n");
 	int t = type->t;
 	if ((ds != 8 && !(ss == 8 && ds >= 4)) || (t & VT_BTYPE) == VT_PTR)
 		t = 0;
 	rir_rend_to_val(RIR_R_SYNTH, t);
 }
 
-void rir_hook_castlower_begin(struct CType *type) {
+void rir_hook_castlower_begin(struct CType *type) { MCC_TRACE("enter\n");
 	rir_rbegin_val(RIR_R_CVT, type->t);
 }
 
-void rir_hook_castlower_end(void) { rir_rend_to(RIR_R_CVT); }
+void rir_hook_castlower_end(void) { MCC_TRACE("enter\n"); rir_rend_to(RIR_R_CVT); }
 
-void rir_hook_cast_type(struct CType *type, int src_t) {
+void rir_hook_cast_type(struct CType *type, int src_t) { MCC_TRACE("enter\n");
 	if (!rir_active)
 		return;
 	rir_mark_v2(RIR_T_MARK, RIR_M_CASTT,
@@ -541,24 +541,24 @@ void rir_hook_cast_type(struct CType *type, int src_t) {
 static int rir_member_arrow;
 static int rir_bcplx_low;
 
-void rir_hook_member_begin(int is_arrow) {
+void rir_hook_member_begin(int is_arrow) { MCC_TRACE("enter\n");
 	rir_rbegin(RIR_R_MEMBER);
 	rir_member_arrow = is_arrow;
 }
 
-void rir_hook_member_end(int cumofs, int nonlval) {
+void rir_hook_member_end(int cumofs, int nonlval) { MCC_TRACE("enter\n");
 	rir_rend_to_val(RIR_R_MEMBER, ((int)((unsigned)cumofs << 2)) |
 																		(rir_member_arrow ? 2 : 0) |
 																		(nonlval ? 1 : 0));
 }
 
-void rir_hook_builtin_complex_lower(void) {
+void rir_hook_builtin_complex_lower(void) { MCC_TRACE("enter\n");
 	rir_bcplx_low = 1;
 	rir_rbegin(RIR_R_CPLXB);
 }
 
-void rir_hook_builtin_complex_end(void) {
-	if (rir_bcplx_low) {
+void rir_hook_builtin_complex_end(void) { MCC_TRACE("enter\n");
+	if (rir_bcplx_low) { MCC_TRACE("br\n");
 		rir_bcplx_low = 0;
 		rir_rend_to(RIR_R_CPLXB);
 	}
@@ -571,7 +571,7 @@ static unsigned char rir_lor_on[16];
 static unsigned char rir_lor_late[16];
 static int rir_lor_n;
 
-void rir_hook_body_begin(void) {
+void rir_hook_body_begin(void) { MCC_TRACE("enter\n");
 	rir_prod_env = ast_replay_env && !rir_env;
 	{
 		/* --embed-jit is the only thing that gates baking.  debug_modes (-g,
@@ -611,9 +611,9 @@ void rir_hook_body_begin(void) {
 	rir_lor_n = 0;
 }
 
-void rir_hook_bail(void) { rir_prod_bail = 1; }
+void rir_hook_bail(void) { MCC_TRACE("enter\n"); rir_prod_bail = 1; }
 
-void rir_hook_cleanup_call_begin(void) {
+void rir_hook_cleanup_call_begin(void) { MCC_TRACE("enter\n");
 	int d = (int)(vtop - vstack + 1);
 	rir_cleanup_depth_sv = -1;
 	if (d < rir_base_depth)
@@ -622,41 +622,41 @@ void rir_hook_cleanup_call_begin(void) {
 	rir_base_depth = d;
 }
 
-void rir_hook_cleanup_call_end(void) {
+void rir_hook_cleanup_call_end(void) { MCC_TRACE("enter\n");
 	if (rir_cleanup_depth_sv < 0)
 		return;
 	rir_base_depth = rir_cleanup_depth_sv;
 	rir_cleanup_depth_sv = -1;
 }
 
-int rir_dbg_on(void) {
+int rir_dbg_on(void) { MCC_TRACE("enter\n");
 	const char *e = getenv("RIRDBG");
 	return e && funcname && !strcmp(e, funcname);
 }
 
-int rir_capture_live(void) {
+int rir_capture_live(void) { MCC_TRACE("enter\n");
 	return rir_active && !ast_replaying && !ir_cap_replaying;
 }
 
-int rir_hook_slot_replay(void) {
+int rir_hook_slot_replay(void) { MCC_TRACE("enter\n");
 	int rl;
-	if (rir_c2_active && rir_slot_replay(&rl)) {
+	if (rir_c2_active && rir_slot_replay(&rl)) { MCC_TRACE("br\n");
 		loc = rl;
 		return 1;
 	}
 	return 0;
 }
 
-void rir_hook_slot_record(void) {
+void rir_hook_slot_record(void) { MCC_TRACE("enter\n");
 	if (rir_capture_live())
 		rir_slot_record(loc);
 }
 
-void rir_hook_ternary_begin(int c, int g) {
-	if (rir_tern_n < 16) {
+void rir_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
+	if (rir_tern_n < 16) { MCC_TRACE("br\n");
 		rir_tern_on[rir_tern_n] = (unsigned char)(c < 0 ? (g ? 2 : 1) : 0);
 		rir_tern_live1[rir_tern_n] = (unsigned char)(c == 1 && !g);
-		if (rir_tern_on[rir_tern_n]) {
+		if (rir_tern_on[rir_tern_n]) { MCC_TRACE("br\n");
 			rir_rbegin_val(RIR_R_TERNARY, rir_tern_on[rir_tern_n] == 2);
 			rir_rbegin(RIR_R_COND);
 		}
@@ -664,17 +664,17 @@ void rir_hook_ternary_begin(int c, int g) {
 	}
 }
 
-void rir_hook_ternary_branch(int which) {
+void rir_hook_ternary_branch(int which) { MCC_TRACE("enter\n");
 	if (rir_tern_n && rir_tern_on[rir_tern_n - 1] &&
-			(rir_tern_on[rir_tern_n - 1] == 1 || which == 1)) {
+			(rir_tern_on[rir_tern_n - 1] == 1 || which == 1)) { MCC_TRACE("br\n");
 		rir_rend_to(RIR_R_COND);
 		rir_rbegin(RIR_R_TARM);
 	}
 }
 
-void rir_hook_ternary_branch_done(int which) {
+void rir_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
 	if (rir_tern_n && rir_tern_on[rir_tern_n - 1] &&
-			(rir_tern_on[rir_tern_n - 1] == 1 || which == 1)) {
+			(rir_tern_on[rir_tern_n - 1] == 1 || which == 1)) { MCC_TRACE("br\n");
 		rir_rend_to_val(RIR_R_TARM, which);
 		rir_rbegin(RIR_R_COND);
 	}
@@ -682,22 +682,22 @@ void rir_hook_ternary_branch_done(int which) {
 		rir_mark_pt(RIR_M_TERNHOLD);
 }
 
-void rir_hook_ternary_pick(void) {
+void rir_hook_ternary_pick(void) { MCC_TRACE("enter\n");
 	if (rir_tern_n && rir_tern_live1[rir_tern_n - 1])
 		rir_mark_pt(RIR_M_TERNPICK);
 }
 
-void rir_hook_ternary_end(void) {
-	if (rir_tern_n) {
+void rir_hook_ternary_end(void) { MCC_TRACE("enter\n");
+	if (rir_tern_n) { MCC_TRACE("br\n");
 		rir_tern_n--;
 		if (rir_tern_on[rir_tern_n])
 			rir_rend_to(RIR_R_TERNARY);
 	}
 }
 
-void rir_hook_landor_operand(int op, int c, int first) {
-	if (first) {
-		if (rir_lor_n < 16) {
+void rir_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
+	if (first) { MCC_TRACE("br\n");
+		if (rir_lor_n < 16) { MCC_TRACE("br\n");
 			rir_lor_on[rir_lor_n] = (unsigned char)(c < 0 ? 1
 					: (c == (op == TOK_LAND) && tok == op) ? 2 : 0);
 			rir_lor_late[rir_lor_n] = 0;
@@ -706,25 +706,25 @@ void rir_hook_landor_operand(int op, int c, int first) {
 			rir_lor_n++;
 		}
 	} else if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 2 && c < 0 &&
-			tok == op) {
+			tok == op) { MCC_TRACE("br\n");
 		rir_lor_on[rir_lor_n - 1] = 1;
 		rir_lor_late[rir_lor_n - 1] = 1;
 		rir_rbegin_val(RIR_R_LANDOR, op);
 	}
-	if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 1) {
+	if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 1) { MCC_TRACE("br\n");
 		rir_rbegin(RIR_R_LOPND);
 		rir_rend_to_val(RIR_R_LOPND, 0);
 		rir_rbegin(RIR_R_LSUP);
 	}
 }
 
-void rir_hook_landor_next(void) {
+void rir_hook_landor_next(void) { MCC_TRACE("enter\n");
 	if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 1)
 		rir_rend_to(RIR_R_LSUP);
 }
 
-void rir_hook_landor_end(int materialized) {
-	if (rir_lor_n) {
+void rir_hook_landor_end(int materialized) { MCC_TRACE("enter\n");
+	if (rir_lor_n) { MCC_TRACE("br\n");
 		rir_lor_n--;
 		if (rir_lor_on[rir_lor_n] == 1)
 			rir_rend_to_val(RIR_R_LANDOR,
@@ -733,53 +733,53 @@ void rir_hook_landor_end(int materialized) {
 	}
 }
 
-void rir_hook_cplx_begin(void) { rir_rbegin(RIR_R_CPLX); }
+void rir_hook_cplx_begin(void) { MCC_TRACE("enter\n"); rir_rbegin(RIR_R_CPLX); }
 
-void rir_hook_cplx_end(void) { rir_rend_to(RIR_R_CPLX); }
+void rir_hook_cplx_end(void) { MCC_TRACE("enter\n"); rir_rend_to(RIR_R_CPLX); }
 
-void rir_hook_acas_begin(int val) { rir_rbegin_val(RIR_R_ACAS, val); }
+void rir_hook_acas_begin(int val) { MCC_TRACE("enter\n"); rir_rbegin_val(RIR_R_ACAS, val); }
 
-void rir_hook_acas_end(int val) { rir_rend_to_val(RIR_R_ACAS, val); }
+void rir_hook_acas_end(int val) { MCC_TRACE("enter\n"); rir_rend_to_val(RIR_R_ACAS, val); }
 
-void rir_hook_vla_alloc_begin(void) { rir_vla_begin(); }
+void rir_hook_vla_alloc_begin(void) { MCC_TRACE("enter\n"); rir_vla_begin(); }
 
 void rir_hook_vla_alloc_end(struct CType *type, int addr, int new_save,
-														int locorig, int align, int result) {
+														int locorig, int align, int result) { MCC_TRACE("enter\n");
 	rir_rend_to(RIR_R_VLA);
 	rir_mark_vla(type->t, (uint64_t)(uintptr_t)type->ref, addr, new_save,
 							 locorig, align, result);
 }
 
-void rir_hook_vla_restore(int loc) { rir_mark_val(RIR_M_VLARESTORE, loc); }
+void rir_hook_vla_restore(int loc) { MCC_TRACE("enter\n"); rir_mark_val(RIR_M_VLARESTORE, loc); }
 
-void rir_hook_store_addr_late(void) { rir_mark_pt(RIR_M_ADDRLATE); }
+void rir_hook_store_addr_late(void) { MCC_TRACE("enter\n"); rir_mark_pt(RIR_M_ADDRLATE); }
 
-void rir_hook_asm_operands(int nb_operands, uint64_t gvmask) {
+void rir_hook_asm_operands(int nb_operands, uint64_t gvmask) { MCC_TRACE("enter\n");
 	rir_mark_val2(RIR_M_ASMOPS, nb_operands, (long long)gvmask);
 }
 
-void rir_hook_inc(int post, int c) {
+void rir_hook_inc(int post, int c) { MCC_TRACE("enter\n");
 	rir_rbegin_val(RIR_R_INC, (c << 1) | (post ? 1 : 0));
 }
 
-void rir_hook_inc_end(void) { rir_rend_to(RIR_R_INC); }
+void rir_hook_inc_end(void) { MCC_TRACE("enter\n"); rir_rend_to(RIR_R_INC); }
 
-void rir_hook_vdup(void) { rir_mark_pt(RIR_M_OPASSIGN); }
+void rir_hook_vdup(void) { MCC_TRACE("enter\n"); rir_mark_pt(RIR_M_OPASSIGN); }
 
-void rir_hook_indir(void) { rir_mark_pt(RIR_M_LOAD); }
+void rir_hook_indir(void) { MCC_TRACE("enter\n"); rir_mark_pt(RIR_M_LOAD); }
 
-void rir_hook_bfgv(int tt) { rir_mark_val(RIR_M_BFGV, tt); }
+void rir_hook_bfgv(int tt) { MCC_TRACE("enter\n"); rir_mark_val(RIR_M_BFGV, tt); }
 
-void rir_hook_cmp_invert(void) { rir_mark_pt(RIR_M_CMPINV); }
+void rir_hook_cmp_invert(void) { MCC_TRACE("enter\n"); rir_mark_pt(RIR_M_CMPINV); }
 
-void rir_hook_cast_gv(void) { rir_mark_pt(RIR_M_CASTGV); }
+void rir_hook_cast_gv(void) { MCC_TRACE("enter\n"); rir_mark_pt(RIR_M_CASTGV); }
 
-void rir_hook_cast_const(int dbt, int sbt, uint64_t pre, uint64_t post) {
+void rir_hook_cast_const(int dbt, int sbt, uint64_t pre, uint64_t post) { MCC_TRACE("enter\n");
 	int bt = sbt & VT_BTYPE;
 	uint64_t sb, sv;
 	if (!rir_active)
 		return;
-	if (pre == post) {
+	if (pre == post) { MCC_TRACE("br\n");
 		if (!((dbt ^ sbt) & VT_UNSIGNED) || (dbt & VT_BTYPE) != bt)
 			return;
 		if (bt == VT_BYTE)
@@ -801,11 +801,11 @@ void rir_hook_cast_const(int dbt, int sbt, uint64_t pre, uint64_t post) {
 	vtop->c.i = sv;
 }
 
-void rir_hook_cleanup_goto(void *pcl) {
+void rir_hook_cleanup_goto(void *pcl) { MCC_TRACE("enter\n");
 	rir_mark_val2(RIR_M_CLGOTO, (long long)(uintptr_t)pcl, 0);
 }
 
-void rir_hook_cleanup_thunk(void *pcl, int v, int end) {
+void rir_hook_cleanup_thunk(void *pcl, int v, int end) { MCC_TRACE("enter\n");
 	rir_mark_val2(end ? RIR_M_CLJMP : RIR_M_CLTHUNK, (long long)(uintptr_t)pcl,
 								(long long)v);
 }
@@ -826,7 +826,7 @@ static int rir_xtn;
 static Sym rir_pt[RIR_PT_MAX];
 static int rir_ptn;
 
-static Sym *rir_ptr_sym(const CType *t) {
+static Sym *rir_ptr_sym(const CType *t) { MCC_TRACE("enter\n");
 	Sym *s;
 	int k;
 	for (k = 0; k < rir_ptn; k++)
@@ -843,7 +843,7 @@ static Sym *rir_ptr_sym(const CType *t) {
 }
 
 
-void rir_reset(void) {
+void rir_reset(void) { MCC_TRACE("enter\n");
 	rir_locrec_n = 0;
 	rir_locrec_i = 0;
 	rir_slotrec_n = 0;
@@ -866,7 +866,7 @@ void rir_reset(void) {
 	rir_nlbl = 0;
 }
 
-static int rir_cmap_find(int addr) {
+static int rir_cmap_find(int addr) { MCC_TRACE("enter\n");
 	int i;
 	if (!addr)
 		return -1;
@@ -876,22 +876,22 @@ static int rir_cmap_find(int addr) {
 	return -1;
 }
 
-static void rir_cmap_drop(int addr) {
+static void rir_cmap_drop(int addr) { MCC_TRACE("enter\n");
 	int i;
 	if (!addr)
 		return;
 	for (i = 0; i < rir_cmapn; i++)
-		if (rir_cmap[i].addr == addr) {
+		if (rir_cmap[i].addr == addr) { MCC_TRACE("br\n");
 			rir_cmap[i] = rir_cmap[--rir_cmapn];
 			return;
 		}
 }
 
-static void rir_cmap_bind(int addr, int label) {
+static void rir_cmap_bind(int addr, int label) { MCC_TRACE("enter\n");
 	if (!addr || label < 0)
 		return;
 	rir_cmap_drop(addr);
-	if (rir_cmapn >= rir_cmapcap) {
+	if (rir_cmapn >= rir_cmapcap) { MCC_TRACE("br\n");
 		rir_cmapcap = rir_cmapcap ? rir_cmapcap * 2 : 64;
 		rir_cmap = mcc_realloc(rir_cmap, (size_t)rir_cmapcap * sizeof *rir_cmap);
 	}
@@ -901,7 +901,7 @@ static void rir_cmap_bind(int addr, int label) {
 }
 
 static int rir_chain_adopt(int addr, int opi, unsigned char *fl,
-													 unsigned char bit) {
+													 unsigned char bit) { MCC_TRACE("enter\n");
 	int L;
 	if (!addr)
 		return -1;
@@ -914,9 +914,9 @@ static int rir_chain_adopt(int addr, int opi, unsigned char *fl,
 	return L;
 }
 
-static int rir_point_of(int addr) {
+static int rir_point_of(int addr) { MCC_TRACE("enter\n");
 	int lo = 0, hi = ir_cap_n - 1;
-	while (lo <= hi) {
+	while (lo <= hi) { MCC_TRACE("br\n");
 		int mid = lo + (hi - lo) / 2;
 		if (ir_cap_ops[mid].ind_pre == addr)
 			return mid;
@@ -928,16 +928,16 @@ static int rir_point_of(int addr) {
 	return RIR_PT_NONE;
 }
 
-static void rir_resolve(void) {
+static void rir_resolve(void) { MCC_TRACE("enter\n");
 	int i;
-	if (ir_cap_n > rir_jcap) {
+	if (ir_cap_n > rir_jcap) { MCC_TRACE("br\n");
 		rir_jcap = ir_cap_n;
 		rir_jlbl = mcc_realloc(rir_jlbl, (size_t)rir_jcap * sizeof *rir_jlbl);
 		rir_jlbl2 = mcc_realloc(rir_jlbl2, (size_t)rir_jcap * sizeof *rir_jlbl2);
 		rir_jpt = mcc_realloc(rir_jpt, (size_t)rir_jcap * sizeof *rir_jpt);
 		rir_jsvlbl = mcc_realloc(rir_jsvlbl, (size_t)rir_jcap * sizeof *rir_jsvlbl);
 	}
-	if (ir_cap_vsn > rir_vscap) {
+	if (ir_cap_vsn > rir_vscap) { MCC_TRACE("br\n");
 		rir_vscap = ir_cap_vsn;
 		rir_vslbl = mcc_realloc(rir_vslbl, (size_t)rir_vscap * sizeof *rir_vslbl);
 		rir_vslbl2 = mcc_realloc(rir_vslbl2, (size_t)rir_vscap * sizeof *rir_vslbl2);
@@ -947,46 +947,46 @@ static void rir_resolve(void) {
 	rir_nlbl = 0;
 	rir_fallback = 0;
 	rir_jmpsv_fb = 0;
-	for (i = 0; i < ir_cap_vsn; i++) {
+	for (i = 0; i < ir_cap_vsn; i++) { MCC_TRACE("br\n");
 		rir_vslbl[i] = rir_vslbl2[i] = -1;
 		rir_vscapt[i] = 0;
 	}
-	for (i = 0; i < ir_cap_n; i++) {
+	for (i = 0; i < ir_cap_n; i++) { MCC_TRACE("br\n");
 		IrCapOp *o = &ir_cap_ops[i];
 		int in = 0, out = 0, L = -1, k;
 		rir_jlbl[i] = -1;
 		rir_jlbl2[i] = -1;
 		rir_jpt[i] = RIR_PT_NONE;
 		rir_jsvlbl[i] = -1;
-		for (k = 0; k < o->vs_n; k++) {
+		for (k = 0; k < o->vs_n; k++) { MCC_TRACE("br\n");
 			SValue *v = &ir_cap_vs[o->vs_off + k];
 			int vv = v->r & VT_VALMASK;
 			unsigned char *fl = &rir_vscapt[o->vs_off + k];
-			if (vv == VT_JMP || vv == VT_JMPI) {
+			if (vv == VT_JMP || vv == VT_JMPI) { MCC_TRACE("br\n");
 				rir_tot_jmpsv++;
 				rir_vslbl[o->vs_off + k] = rir_chain_adopt((int)v->c.i, i, fl, 1);
-				if (v->c.i && rir_vslbl[o->vs_off + k] < 0) {
+				if (v->c.i && rir_vslbl[o->vs_off + k] < 0) { MCC_TRACE("br\n");
 					rir_jmpsv_fb++;
 					rir_tot_jmpsv_fb++;
 				}
-			} else if (v->r == VT_CMP) {
+			} else if (v->r == VT_CMP) { MCC_TRACE("br\n");
 				rir_tot_jmpsv++;
 				rir_vslbl[o->vs_off + k] = rir_chain_adopt(v->jtrue, i, fl, 1);
 				rir_vslbl2[o->vs_off + k] = rir_chain_adopt(v->jfalse, i, fl, 2);
 				if ((v->jtrue && rir_vslbl[o->vs_off + k] < 0) ||
-						(v->jfalse && rir_vslbl2[o->vs_off + k] < 0)) {
+						(v->jfalse && rir_vslbl2[o->vs_off + k] < 0)) { MCC_TRACE("br\n");
 					rir_jmpsv_fb++;
 					rir_tot_jmpsv_fb++;
 				}
 			}
 		}
-		if (o->sv_slot < 0) {
+		if (o->sv_slot < 0) { MCC_TRACE("br\n");
 			int vv = o->svarg.r & VT_VALMASK;
 			if (((vv == VT_JMP || vv == VT_JMPI) && o->svarg.c.i) ||
 					(o->svarg.r == VT_CMP && (o->svarg.jtrue || o->svarg.jfalse)))
 				rir_jmpsv_fb++;
 		}
-		switch (o->kind) {
+		switch (o->kind) { MCC_TRACE("br\n");
 		case IR_OP_JMP:
 			in = o->a0;
 			out = o->ret;
@@ -998,7 +998,7 @@ static void rir_resolve(void) {
 		chain:
 			rir_tot_jumps++;
 			L = in ? rir_cmap_find(in) : -1;
-			if (in && L < 0) {
+			if (in && L < 0) { MCC_TRACE("br\n");
 				rir_fallback++;
 				rir_tot_fb_chain++;
 				break;
@@ -1014,16 +1014,16 @@ static void rir_resolve(void) {
 			rir_tot_jumps++;
 			Ln = o->a0 ? rir_cmap_find(o->a0) : -1;
 			Lt = o->a1 ? rir_cmap_find(o->a1) : -1;
-			if ((o->a0 && Ln < 0) || (o->a1 && Lt < 0)) {
+			if ((o->a0 && Ln < 0) || (o->a1 && Lt < 0)) { MCC_TRACE("br\n");
 				rir_fallback++;
 				rir_tot_fb_chain++;
 				break;
 			}
-			if (o->a0) {
+			if (o->a0) { MCC_TRACE("br\n");
 				if (Ln < 0)
 					Ln = rir_nlbl++;
 				L = Ln;
-			} else {
+			} else { MCC_TRACE("br\n");
 				if (Lt < 0)
 					Lt = rir_nlbl++;
 				L = Lt;
@@ -1038,7 +1038,7 @@ static void rir_resolve(void) {
 		case IR_OP_GSYMADDR:
 			rir_tot_jumps++;
 			L = o->a0 ? rir_cmap_find(o->a0) : -1;
-			if (o->a0 && L < 0) {
+			if (o->a0 && L < 0) { MCC_TRACE("br\n");
 				rir_fallback++;
 				rir_tot_fb_chain++;
 				break;
@@ -1046,7 +1046,7 @@ static void rir_resolve(void) {
 			rir_jlbl[i] = L;
 			rir_cmap_drop(o->a0);
 			rir_jpt[i] = o->a1 == o->ind_pre ? RIR_PT_HERE : rir_point_of(o->a1);
-			if (rir_jpt[i] == RIR_PT_NONE) {
+			if (rir_jpt[i] == RIR_PT_NONE) { MCC_TRACE("br\n");
 				rir_fallback++;
 				rir_tot_fb_point++;
 			}
@@ -1054,7 +1054,7 @@ static void rir_resolve(void) {
 		case IR_OP_JMPADDR:
 			rir_tot_jumps++;
 			rir_jpt[i] = o->a0 == o->ind_pre ? RIR_PT_HERE : rir_point_of(o->a0);
-			if (rir_jpt[i] == RIR_PT_NONE) {
+			if (rir_jpt[i] == RIR_PT_NONE) { MCC_TRACE("br\n");
 				rir_fallback++;
 				rir_tot_fb_point++;
 			}
@@ -1067,22 +1067,22 @@ static void rir_resolve(void) {
 	rir_tot_fallback += rir_fallback;
 	if (rir_fallback)
 		rir_tot_fallback_fn++;
-	if (rir_nlbl > rir_lblcap) {
+	if (rir_nlbl > rir_lblcap) { MCC_TRACE("br\n");
 		rir_lblcap = rir_nlbl < 64 ? 64 : rir_nlbl;
 		rir_lblhead = mcc_realloc(rir_lblhead, (size_t)rir_lblcap * sizeof *rir_lblhead);
 	}
-	if (ir_cap_n > rir_ptcap) {
+	if (ir_cap_n > rir_ptcap) { MCC_TRACE("br\n");
 		rir_ptcap = ir_cap_n;
 		rir_ptaddr = mcc_realloc(rir_ptaddr, (size_t)rir_ptcap * sizeof *rir_ptaddr);
 	}
 }
 
-static void rir_build(void) {
+static void rir_build(void) { MCC_TRACE("enter\n");
 	int i, m = 0;
 	rir_n = 0;
 	rir_resolve();
-	for (i = 0; i <= ir_cap_n; i++) {
-		while (m < rir_markn && rir_marks[m].at <= i) {
+	for (i = 0; i <= ir_cap_n; i++) { MCC_TRACE("br\n");
+		while (m < rir_markn && rir_marks[m].at <= i) { MCC_TRACE("br\n");
 			RirOp *o = rir_new(rir_marks[m].tag);
 			o->rkind = rir_marks[m].kind;
 			o->rval = rir_marks[m].val;
@@ -1100,7 +1100,7 @@ static void rir_build(void) {
 			o->pt = RIR_PT_NONE;
 			m++;
 		}
-		if (i < ir_cap_n) {
+		if (i < ir_cap_n) { MCC_TRACE("br\n");
 			RirOp *o = rir_new(RIR_T_OP);
 			o->p = ir_cap_ops[i];
 			o->jidx = i;
@@ -1133,12 +1133,12 @@ static int rir_arena_mismatch;
 
 static long rir_drop_n[IR_OP_COUNT];
 
-static int rir_drop_elsewhere(int kind) {
+static int rir_drop_elsewhere(int kind) { MCC_TRACE("enter\n");
 	return kind == IR_OP_JMP || kind == IR_OP_JMPCOND || kind == IR_OP_JMPADDR ||
 				 kind == IR_OP_JMPAPPEND || kind == IR_OP_GSYMADDR;
 }
 
-static void rir_drop_note(int kind) {
+static void rir_drop_note(int kind) { MCC_TRACE("enter\n");
 	if (kind < 0 || kind >= IR_OP_COUNT || rir_drop_elsewhere(kind))
 		return;
 	rir_drop_n[kind]++;
@@ -1177,17 +1177,17 @@ static long rir_tot_c3_try, rir_tot_c3_ran, rir_tot_c3_folds, rir_tot_c3_broke;
 static long rir_tot_c3_pair, rir_tot_c3_same_folds, rir_tot_c3_same_hash;
 static long rir_tot_c3_pair_fired;
 
-static void rir_c2_sink(void *opaque, const char *msg) {
+static void rir_c2_sink(void *opaque, const char *msg) { MCC_TRACE("enter\n");
 	(void)opaque;
 	snprintf(rir_c2_msg, sizeof rir_c2_msg, "%s", msg ? msg : "?");
 }
 static long rir_kindhist[AST_KIND_COUNT];
 
-static int rir_xt_chain(int t) {
+static int rir_xt_chain(int t) { MCC_TRACE("enter\n");
 	return (t & VT_BTYPE) == VT_STRUCT || (t & VT_BTYPE) == VT_FUNC;
 }
 
-static Sym *rir_xtype_ref(Sym *s, int depth, int chain) {
+static Sym *rir_xtype_ref(Sym *s, int depth, int chain) { MCC_TRACE("enter\n");
 	int k;
 	Sym *c;
 	if (!s || depth > 64 || (s->type.t & VT_VLA))
@@ -1217,7 +1217,7 @@ static Sym *rir_xtype_ref(Sym *s, int depth, int chain) {
 	return c;
 }
 
-void rir_snap_types(SValue *sv, int n) {
+void rir_snap_types(SValue *sv, int n) { MCC_TRACE("enter\n");
 	int i;
 	if (!rir_env)
 		return;
@@ -1226,17 +1226,17 @@ void rir_snap_types(SValue *sv, int n) {
 			sv[i].type.ref = rir_xtype_ref(sv[i].type.ref, 0, 1);
 }
 
-static int rir_tcore(int t) {
+static int rir_tcore(int t) { MCC_TRACE("enter\n");
 	return t & ~(unsigned)(VT_DEFSIGN | VT_LONG | VT_STORAGE);
 }
 
-static int rir_same_width(const CType *a, const CType *b) {
+static int rir_same_width(const CType *a, const CType *b) { MCC_TRACE("enter\n");
 	int al, bl;
 	CType x = *a, y = *b;
 	return type_size(&x, &al) == type_size(&y, &bl);
 }
 
-static int rir_prov_ok(int slot, const SValue *sv) {
+static int rir_prov_ok(int slot, const SValue *sv) { MCC_TRACE("enter\n");
 	int pt, st;
 	if (slot < 0 || slot > VSTACK_SIZE || !rir_pvok[slot])
 		return 0;
@@ -1260,7 +1260,7 @@ static int rir_prov_ok(int slot, const SValue *sv) {
 	return 1;
 }
 
-static int rir_decayed_array(const SValue *sv) {
+static int rir_decayed_array(const SValue *sv) { MCC_TRACE("enter\n");
 	int as_sym = (sv->r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM);
 	int as_loc = (sv->r & (VT_VALMASK | VT_SYM | VT_LVAL)) == VT_LOCAL;
 	if (!as_sym && !as_loc)
@@ -1273,7 +1273,7 @@ static int rir_decayed_array(const SValue *sv) {
 	return as_sym || sv->c.i == (uint64_t)(int64_t)sv->sym->c;
 }
 
-static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
+static AstLocal rir_leaf_slot(const SValue *sv, int slot) { MCC_TRACE("enter\n");
 	int is_const = (sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	AstLocal n = ast_node(rir_arena, is_const ? AST_Literal : AST_Ref);
 	int prov = rir_prov_ok(slot, sv);
@@ -1299,7 +1299,7 @@ static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
 			is_float(sv->sym->type.t) == is_float(sv->type.t) &&
 			(sv->sym->type.t != sv->type.t ||
 			 sv->sym->type.ref != sv->type.ref) &&
-			rir_same_width(&sv->sym->type, &sv->type)) {
+			rir_same_width(&sv->sym->type, &sv->type)) { MCC_TRACE("br\n");
 		AstLocal cv;
 		ast_set_type_bf(rir_arena, n, sv->sym->type.t,
 								 (uint64_t)(uintptr_t)sv->sym->type.ref, sv->sym->type.bp, sv->sym->type.bs);
@@ -1310,7 +1310,7 @@ static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
 			rir_pvok[slot] = 0;
 		return cv;
 	}
-	if (prov) {
+	if (prov) { MCC_TRACE("br\n");
 		AstLocal cv;
 		ast_set_type_bf(rir_arena, n, rir_pvt[slot].t,
 								 (uint64_t)(uintptr_t)rir_pvt[slot].ref, rir_pvt[slot].bp, rir_pvt[slot].bs);
@@ -1323,10 +1323,10 @@ static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
 	return n;
 }
 
-static AstLocal rir_leaf(const SValue *sv) { return rir_leaf_slot(sv, -1); }
+static AstLocal rir_leaf(const SValue *sv) { MCC_TRACE("enter\n"); return rir_leaf_slot(sv, -1); }
 
 #ifdef MCC_IR_HAVE_X86_PRIMS
-static int rir_has_atomic(AstLocal n, int depth) {
+static int rir_has_atomic(AstLocal n, int depth) { MCC_TRACE("enter\n");
 	int i, nc, op;
 	if (n == AST_NONE || depth > 8)
 		return 0;
@@ -1342,7 +1342,7 @@ static int rir_has_atomic(AstLocal n, int depth) {
 }
 #endif
 
-static int rir_reads_loc(AstLocal n, int vm, int64_t off) {
+static int rir_reads_loc(AstLocal n, int vm, int64_t off) { MCC_TRACE("enter\n");
 	AstLocal c;
 	uint16_t k;
 	if (n == AST_NONE)
@@ -1352,14 +1352,14 @@ static int rir_reads_loc(AstLocal n, int vm, int64_t off) {
 		return 1;
 	if (k == AST_Unary && ast_op(rir_arena, n) == AST_OP_ADDR)
 		return 1;
-	if (k == AST_Ref || k == AST_Literal) {
+	if (k == AST_Ref || k == AST_Literal) { MCC_TRACE("br\n");
 		int r = (int)ast_op(rir_arena, n);
-		if (vm < 0) {
+		if (vm < 0) { MCC_TRACE("br\n");
 			if (r & (VT_LVAL | VT_SYM))
 				return 1;
 		} else if (!(r & VT_SYM) &&
 							 ((r & VT_VALMASK) == vm || (r & VT_VALMASK) == VT_LLOCAL) &&
-							 (int64_t)ast_ival(rir_arena, n) == off) {
+							 (int64_t)ast_ival(rir_arena, n) == off) { MCC_TRACE("br\n");
 			return 1;
 		}
 	}
@@ -1370,7 +1370,7 @@ static int rir_reads_loc(AstLocal n, int vm, int64_t off) {
 	return 0;
 }
 
-static int rir_chain_dup_ok(AstLocal tgt, AstLocal val) {
+static int rir_chain_dup_ok(AstLocal tgt, AstLocal val) { MCC_TRACE("enter\n");
 	int r;
 	if (tgt == AST_NONE || val == AST_NONE)
 		return 0;
@@ -1382,14 +1382,14 @@ static int rir_chain_dup_ok(AstLocal tgt, AstLocal val) {
 	return !rir_reads_loc(val, r & VT_VALMASK, (int64_t)ast_ival(rir_arena, tgt));
 }
 
-static int rir_effectful(AstLocal n) {
+static int rir_effectful(AstLocal n) { MCC_TRACE("enter\n");
 	uint16_t k;
 	if (n == AST_NONE)
 		return 0;
 	k = ast_kind(rir_arena, n);
 	if (k == AST_Store || k == AST_Invoke)
 		return 1;
-	if (k == AST_BasicBlock) {
+	if (k == AST_BasicBlock) { MCC_TRACE("br\n");
 		AstLocal c;
 		for (c = ast_first_child(rir_arena, n); c != AST_NONE;
 				 c = ast_next_sib(rir_arena, c))
@@ -1413,7 +1413,7 @@ static int rir_effectful(AstLocal n) {
 	return k == AST_Unary && ast_op(rir_arena, n) < AST_OP_ADDR;
 }
 
-static int rir_c3_pipeline(AstArena *a) {
+static int rir_c3_pipeline(AstArena *a) { MCC_TRACE("enter\n");
 	int n = 0;
 	n += ast_sccp_run(a);
 	n += ast_dse_run(a);
@@ -1431,10 +1431,10 @@ static int rir_clg_n;
 static void *rir_clg_pending;
 static int rir_clg_syn;
 
-static void rir_clg_bind(void *k, AstLocal n) {
+static void rir_clg_bind(void *k, AstLocal n) { MCC_TRACE("enter\n");
 	int i;
 	for (i = 0; i < rir_clg_n; i++)
-		if (rir_clg_key[i] == k) {
+		if (rir_clg_key[i] == k) { MCC_TRACE("br\n");
 			rir_clg_node[i] = n;
 			return;
 		}
@@ -1444,7 +1444,7 @@ static void rir_clg_bind(void *k, AstLocal n) {
 	rir_clg_node[rir_clg_n++] = n;
 }
 
-static AstLocal rir_clg_get(void *k) {
+static AstLocal rir_clg_get(void *k) { MCC_TRACE("enter\n");
 	int i;
 	for (i = 0; i < rir_clg_n; i++)
 		if (rir_clg_key[i] == k)
@@ -1460,7 +1460,7 @@ static void rir_stmt(AstLocal n);
 
 static int rir_ihold_off;
 
-static void rir_ihold_flush(void) {
+static void rir_ihold_flush(void) { MCC_TRACE("enter\n");
 	int q, k = rir_iholdn;
 	rir_iholdn = 0;
 	rir_ihold_off++;
@@ -1472,7 +1472,7 @@ static void rir_ihold_flush(void) {
 static int rir_ihold_arm;
 static int rir_lorn;
 
-static int rir_callee_pending(void) {
+static int rir_callee_pending(void) { MCC_TRACE("enter\n");
 	int k;
 	for (k = 0; k < rir_shn; k++)
 		if (rir_sh[k] != AST_NONE &&
@@ -1481,7 +1481,7 @@ static int rir_callee_pending(void) {
 	return 0;
 }
 
-static int rir_hold_inline(AstLocal n) {
+static int rir_hold_inline(AstLocal n) { MCC_TRACE("enter\n");
 	uint16_t k;
 	if (n == AST_NONE || rir_shn <= 0 || !rir_bbn || rir_ihold_off ||
 			rir_iholdn >= RIR_IHOLD_MAX || rir_pending_ret != AST_NONE || rir_lorn)
@@ -1489,13 +1489,13 @@ static int rir_hold_inline(AstLocal n) {
 	if (!rir_iholdn && !rir_callee_pending())
 		return 0;
 	k = ast_kind(rir_arena, n);
-	if (k == AST_Invoke) {
+	if (k == AST_Invoke) { MCC_TRACE("br\n");
 		if (!rir_ihold_arm)
 			return 0;
-	} else if (k == AST_Store) {
+	} else if (k == AST_Store) { MCC_TRACE("br\n");
 		if (!rir_iholdn || rir_shn < rir_iholdd[rir_iholdn - 1])
 			return 0;
-	} else {
+	} else { MCC_TRACE("br\n");
 		return 0;
 	}
 	rir_iholdd[rir_iholdn] = (short)rir_shn;
@@ -1503,7 +1503,7 @@ static int rir_hold_inline(AstLocal n) {
 	return 1;
 }
 
-static AstLocal rir_ihold_bind(AstLocal n) {
+static AstLocal rir_ihold_bind(AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal bb;
 	int q, i, r;
 	if (!rir_iholdn || n == AST_NONE)
@@ -1514,7 +1514,7 @@ static AstLocal rir_ihold_bind(AstLocal n) {
 	if (i == rir_iholdn)
 		return n;
 	if (i == rir_iholdn - 1 &&
-			ast_kind(rir_arena, rir_ihold[i]) == AST_Invoke) {
+			ast_kind(rir_arena, rir_ihold[i]) == AST_Invoke) { MCC_TRACE("br\n");
 		rir_iholdn = i;
 		rir_ihold_off++;
 		rir_stmt(rir_ihold[i]);
@@ -1532,7 +1532,7 @@ static AstLocal rir_ihold_bind(AstLocal n) {
 #if MCC_DIAG
 static int rir_dbg_ent;
 #endif
-static void rir_stmt(AstLocal n) {
+static void rir_stmt(AstLocal n) { MCC_TRACE("enter\n");
 	if (n == AST_NONE || !rir_bbn)
 		return;
 #if MCC_DIAG
@@ -1548,7 +1548,7 @@ static void rir_stmt(AstLocal n) {
 	if (rir_iholdn && (rir_shn <= 0 || rir_shn < rir_iholdd[rir_iholdn - 1]))
 		rir_ihold_flush();
 	if (rir_pending_ret != AST_NONE && n != rir_pending_ret &&
-			ast_kind(rir_arena, n) == AST_Jump) {
+			ast_kind(rir_arena, n) == AST_Jump) { MCC_TRACE("br\n");
 		AstLocal held = rir_pending_ret;
 		rir_pending_ret = AST_NONE;
 		rir_stmt(held);
@@ -1571,13 +1571,13 @@ static int rir_docond;
 static AstLocal rir_dheld[RIR_DHELD_MAX];
 static int rir_dheldn;
 
-static void rir_drop(AstLocal d) {
+static void rir_drop(AstLocal d) { MCC_TRACE("enter\n");
 	if (!rir_effectful(d))
 		return;
 	if (rir_lorn && rir_lheldn < RIR_LHELD_MAX &&
 			((ast_kind(rir_arena, d) == AST_Store && ast_nchild(rir_arena, d) == 2 &&
 				ast_fbits(rir_arena, d) == 0 && ast_op(rir_arena, d) == 0) ||
-			 ast_kind(rir_arena, d) == AST_Invoke)) {
+			 ast_kind(rir_arena, d) == AST_Invoke)) { MCC_TRACE("br\n");
 		rir_lheld[rir_lheldn++] = d;
 		return;
 	}
@@ -1585,14 +1585,14 @@ static void rir_drop(AstLocal d) {
 			((ast_kind(rir_arena, d) == AST_Store && ast_nchild(rir_arena, d) == 2 &&
 				ast_fbits(rir_arena, d) == 0 && ast_op(rir_arena, d) == 0) ||
 			 ast_kind(rir_arena, d) == AST_Unary ||
-			 ast_kind(rir_arena, d) == AST_Invoke)) {
+			 ast_kind(rir_arena, d) == AST_Invoke)) { MCC_TRACE("br\n");
 		rir_dheld[rir_dheldn++] = d;
 		return;
 	}
 	rir_stmt(d);
 }
 
-static void rir_dheld_flush(void) {
+static void rir_dheld_flush(void) { MCC_TRACE("enter\n");
 	int q;
 	for (q = 0; q < rir_dheldn; q++)
 		rir_stmt(rir_dheld[q]);
@@ -1601,7 +1601,7 @@ static void rir_dheld_flush(void) {
 
 static int rir_ret_spilled;
 
-static void rir_ret_follow_spill(AstLocal t, AstLocal v) {
+static void rir_ret_follow_spill(AstLocal t, AstLocal v) { MCC_TRACE("enter\n");
 	AstLocal rv;
 	if (rir_pending_ret == AST_NONE || rir_ret_spilled ||
 			ast_nchild(rir_arena, rir_pending_ret) != 1)
@@ -1625,7 +1625,7 @@ static void rir_ret_follow_spill(AstLocal t, AstLocal v) {
 	rir_ret_spilled = 1;
 }
 
-static void rir_spill_follow_sh(AstLocal t, AstLocal v) {
+static void rir_spill_follow_sh(AstLocal t, AstLocal v) { MCC_TRACE("enter\n");
 	int k, hit = -1;
 	if (rir_pending_ret != AST_NONE || t == AST_NONE || v == AST_NONE ||
 			ast_nchild(rir_arena, t) != 0 || ast_nchild(rir_arena, v) != 0 ||
@@ -1633,7 +1633,7 @@ static void rir_spill_follow_sh(AstLocal t, AstLocal v) {
 			ast_sym(rir_arena, t) != 0 ||
 			ast_ival(rir_arena, t) == ast_ival(rir_arena, v))
 		return;
-	for (k = 0; k < rir_shn; k++) {
+	for (k = 0; k < rir_shn; k++) { MCC_TRACE("br\n");
 		AstLocal s = rir_sh[k];
 		if (s == AST_NONE || ast_nchild(rir_arena, s) != 0 ||
 				ast_parent(rir_arena, s) != AST_NONE)
@@ -1641,7 +1641,7 @@ static void rir_spill_follow_sh(AstLocal t, AstLocal v) {
 		if (ast_kind(rir_arena, s) == ast_kind(rir_arena, v) &&
 				ast_op(rir_arena, s) == ast_op(rir_arena, v) &&
 				ast_ival(rir_arena, s) == ast_ival(rir_arena, v) &&
-				ast_sym(rir_arena, s) == ast_sym(rir_arena, v)) {
+				ast_sym(rir_arena, s) == ast_sym(rir_arena, v)) { MCC_TRACE("br\n");
 			if (hit >= 0)
 				return;
 			hit = k;
@@ -1655,20 +1655,20 @@ static void rir_spill_follow_sh(AstLocal t, AstLocal v) {
 	ast_set_sym(rir_arena, rir_sh[hit], ast_sym(rir_arena, t));
 }
 
-static AstLocal rir_pop(void) {
+static AstLocal rir_pop(void) { MCC_TRACE("enter\n");
 	if (rir_shn <= 0)
 		return AST_NONE;
 	return rir_sh[--rir_shn];
 }
 
-static void rir_push(AstLocal n) {
+static void rir_push(AstLocal n) { MCC_TRACE("enter\n");
 	if (rir_shn > VSTACK_SIZE)
 		return;
 	rir_shtype[rir_shn] = 0;
 	rir_sh[rir_shn++] = n;
 }
 
-static void rir_push_typed(AstLocal n) {
+static void rir_push_typed(AstLocal n) { MCC_TRACE("enter\n");
 	if (rir_shn > VSTACK_SIZE)
 		return;
 	n = rir_ihold_bind(n);
@@ -1676,7 +1676,7 @@ static void rir_push_typed(AstLocal n) {
 	rir_sh[rir_shn++] = n;
 }
 
-static void rir_push_typed_addr(AstLocal n) {
+static void rir_push_typed_addr(AstLocal n) { MCC_TRACE("enter\n");
 	if (rir_shn > VSTACK_SIZE)
 		return;
 	rir_shtype[rir_shn] = 3;
@@ -1705,7 +1705,7 @@ static int rir_vstn;
 static AstLocal rir_spill_node = AST_NONE;
 static long long rir_spill_addr;
 
-static void rir_flush_pending_call(void) {
+static void rir_flush_pending_call(void) { MCC_TRACE("enter\n");
 	if (rir_pending_call == AST_NONE)
 		return;
 	rir_stmt(rir_pending_call);
@@ -1720,8 +1720,8 @@ static unsigned char rir_castgv_bp;
 static unsigned char rir_castgv_bs;
 static uint64_t rir_castgv_ref;
 
-static int rir_is_cvt(int kind) {
-	switch (kind) {
+static int rir_is_cvt(int kind) { MCC_TRACE("enter\n");
+	switch (kind) { MCC_TRACE("br\n");
 	case IR_OP_CVT_ITOF:
 	case IR_OP_CVT_FTOF:
 	case IR_OP_CVT_FTOI:
@@ -1734,10 +1734,10 @@ static int rir_is_cvt(int kind) {
 	}
 }
 
-static int rir_is_cmp_binary(AstLocal n) {
+static int rir_is_cmp_binary(AstLocal n) { MCC_TRACE("enter\n");
 	if (n == AST_NONE || ast_kind(rir_arena, n) != AST_Binary)
 		return 0;
-	switch (ast_op(rir_arena, n)) {
+	switch (ast_op(rir_arena, n)) { MCC_TRACE("br\n");
 	case TOK_ULT: case TOK_UGE: case TOK_EQ: case TOK_NE:
 	case TOK_ULE: case TOK_UGT: case TOK_LT: case TOK_GE:
 	case TOK_LE: case TOK_GT:
@@ -1747,11 +1747,11 @@ static int rir_is_cmp_binary(AstLocal n) {
 	}
 }
 
-static int rir_const_subtree(AstLocal n, int depth) {
+static int rir_const_subtree(AstLocal n, int depth) { MCC_TRACE("enter\n");
 	int i, nc;
 	if (n == AST_NONE || depth > 8)
 		return 0;
-	switch (ast_kind(rir_arena, n)) {
+	switch (ast_kind(rir_arena, n)) { MCC_TRACE("br\n");
 	case AST_Literal:
 		return (ast_op(rir_arena, n) & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	case AST_Binary:
@@ -1770,9 +1770,9 @@ static int rir_const_subtree(AstLocal n, int depth) {
 	return 1;
 }
 
-static int rir_child_has_type(AstLocal n, int st) {
+static int rir_child_has_type(AstLocal n, int st) { MCC_TRACE("enter\n");
 	int i, nc = ast_nchild(rir_arena, n);
-	for (i = 0; i < nc; i++) {
+	for (i = 0; i < nc; i++) { MCC_TRACE("br\n");
 		AstLocal c = ast_child(rir_arena, n, i);
 		if (c == AST_NONE)
 			continue;
@@ -1782,13 +1782,13 @@ static int rir_child_has_type(AstLocal n, int st) {
 	return 0;
 }
 
-static int rir_eff_size(AstLocal n, int depth) {
+static int rir_eff_size(AstLocal n, int depth) { MCC_TRACE("enter\n");
 	int i, nc, best = 0, al, t;
 	CType a1;
 	if (n == AST_NONE || depth > 8)
 		return 0;
 	t = ast_type_t(rir_arena, n);
-	if (t != 0) {
+	if (t != 0) { MCC_TRACE("br\n");
 		if ((t & VT_BTYPE) == VT_STRUCT || (t & VT_BTYPE) == VT_FUNC)
 			return 0;
 		a1.t = t;
@@ -1799,7 +1799,7 @@ static int rir_eff_size(AstLocal n, int depth) {
 			ast_kind(rir_arena, n) != AST_Unary)
 		return 0;
 	nc = (int)ast_nchild(rir_arena, n);
-	for (i = 0; i < nc; i++) {
+	for (i = 0; i < nc; i++) { MCC_TRACE("br\n");
 		int w = rir_eff_size(ast_child(rir_arena, n, i), depth + 1);
 		if (w > best)
 			best = w;
@@ -1807,7 +1807,7 @@ static int rir_eff_size(AstLocal n, int depth) {
 	return best;
 }
 
-static int rir_type_size(int st, uint64_t ref) {
+static int rir_type_size(int st, uint64_t ref) { MCC_TRACE("enter\n");
 	int al;
 	CType b1;
 	b1.t = st;
@@ -1817,13 +1817,13 @@ static int rir_type_size(int st, uint64_t ref) {
 	return type_size(&b1, &al);
 }
 
-static int rir_int_kind(int t) {
+static int rir_int_kind(int t) { MCC_TRACE("enter\n");
 	int bt = t & VT_BTYPE;
 	return !is_float(t) && bt != VT_PTR && bt != VT_STRUCT && bt != VT_FUNC &&
 				 bt != VT_VOID;
 }
 
-static int rir_eff_unsigned(AstLocal n, int depth) {
+static int rir_eff_unsigned(AstLocal n, int depth) { MCC_TRACE("enter\n");
 	int i, nc, best = -1, t;
 	if (n == AST_NONE || depth > 8)
 		return -1;
@@ -1834,7 +1834,7 @@ static int rir_eff_unsigned(AstLocal n, int depth) {
 			ast_kind(rir_arena, n) != AST_Unary)
 		return -1;
 	nc = (int)ast_nchild(rir_arena, n);
-	for (i = 0; i < nc; i++) {
+	for (i = 0; i < nc; i++) { MCC_TRACE("br\n");
 		int u = rir_eff_unsigned(ast_child(rir_arena, n, i), depth + 1);
 		if (u > best)
 			best = u;
@@ -1842,12 +1842,12 @@ static int rir_eff_unsigned(AstLocal n, int depth) {
 	return best;
 }
 
-static int rir_child_uns_to_signed(AstLocal n, int st, uint64_t ref) {
+static int rir_child_uns_to_signed(AstLocal n, int st, uint64_t ref) { MCC_TRACE("enter\n");
 	int i, nc = ast_nchild(rir_arena, n), ss;
 	if (!rir_int_kind(st) || (st & VT_UNSIGNED))
 		return 0;
 	ss = rir_type_size(st, ref);
-	for (i = 0; i < nc; i++) {
+	for (i = 0; i < nc; i++) { MCC_TRACE("br\n");
 		AstLocal c = ast_child(rir_arena, n, i);
 		if (rir_eff_unsigned(c, 0) == 1 && rir_eff_size(c, 0) == ss)
 			return 1;
@@ -1855,12 +1855,12 @@ static int rir_child_uns_to_signed(AstLocal n, int st, uint64_t ref) {
 	return 0;
 }
 
-static int rir_child_signed_to_uns(AstLocal n, int st, uint64_t ref) {
+static int rir_child_signed_to_uns(AstLocal n, int st, uint64_t ref) { MCC_TRACE("enter\n");
 	int i, nc = ast_nchild(rir_arena, n), ss;
 	if (!rir_int_kind(st) || !(st & VT_UNSIGNED))
 		return 0;
 	ss = rir_type_size(st, ref);
-	for (i = 0; i < nc; i++) {
+	for (i = 0; i < nc; i++) { MCC_TRACE("br\n");
 		AstLocal c = ast_child(rir_arena, n, i);
 		if (rir_eff_unsigned(c, 0) == 0 && rir_eff_size(c, 0) == ss)
 			return 1;
@@ -1868,14 +1868,14 @@ static int rir_child_signed_to_uns(AstLocal n, int st, uint64_t ref) {
 	return 0;
 }
 
-static int rir_const_eval(AstLocal n, long long *out, int depth) {
+static int rir_const_eval(AstLocal n, long long *out, int depth) { MCC_TRACE("enter\n");
 	long long a, b;
 	int op;
 	if (n == AST_NONE || depth > 8)
 		return 0;
 	if (is_float(ast_type_t(rir_arena, n)))
 		return 0;
-	switch (ast_kind(rir_arena, n)) {
+	switch (ast_kind(rir_arena, n)) { MCC_TRACE("br\n");
 	case AST_Literal:
 		*out = (long long)ast_ival(rir_arena, n);
 		return 1;
@@ -1910,12 +1910,12 @@ static int rir_const_eval(AstLocal n, long long *out, int depth) {
 	return 1;
 }
 
-static int rir_const_val_differs(AstLocal n, long long want) {
+static int rir_const_val_differs(AstLocal n, long long want) { MCC_TRACE("enter\n");
 	long long v;
 	return rir_const_eval(n, &v, 0) && v != want;
 }
 
-static int rir_ptr_elem_size(int t, uint64_t ref) {
+static int rir_ptr_elem_size(int t, uint64_t ref) { MCC_TRACE("enter\n");
 	Sym *r = (Sym *)(uintptr_t)ref;
 	CType pt;
 	int al;
@@ -1927,12 +1927,12 @@ static int rir_ptr_elem_size(int t, uint64_t ref) {
 	return type_size(&pt, &al);
 }
 
-static int rir_eff_ptr_type(AstLocal n, int *t, uint64_t *ref, int depth) {
+static int rir_eff_ptr_type(AstLocal n, int *t, uint64_t *ref, int depth) { MCC_TRACE("enter\n");
 	int op, lt, rt;
 	uint64_t lref, rref;
 	if (n == AST_NONE || depth > 8)
 		return 0;
-	if (ast_type_t(rir_arena, n)) {
+	if (ast_type_t(rir_arena, n)) { MCC_TRACE("br\n");
 		*t = ast_type_t(rir_arena, n);
 		*ref = ast_type_ref(rir_arena, n);
 		return 1;
@@ -1946,12 +1946,12 @@ static int rir_eff_ptr_type(AstLocal n, int *t, uint64_t *ref, int depth) {
 		return 0;
 	if (!rir_eff_ptr_type(ast_child(rir_arena, n, 1), &rt, &rref, depth + 1))
 		return 0;
-	if ((lt & VT_BTYPE) == VT_PTR && (rt & VT_BTYPE) != VT_PTR) {
+	if ((lt & VT_BTYPE) == VT_PTR && (rt & VT_BTYPE) != VT_PTR) { MCC_TRACE("br\n");
 		*t = lt;
 		*ref = lref;
 		return 1;
 	}
-	if (op == '+' && (rt & VT_BTYPE) == VT_PTR && (lt & VT_BTYPE) != VT_PTR) {
+	if (op == '+' && (rt & VT_BTYPE) == VT_PTR && (lt & VT_BTYPE) != VT_PTR) { MCC_TRACE("br\n");
 		*t = rt;
 		*ref = rref;
 		return 1;
@@ -1959,11 +1959,11 @@ static int rir_eff_ptr_type(AstLocal n, int *t, uint64_t *ref, int depth) {
 	return 0;
 }
 
-static int rir_node_wider(AstLocal n, int st, uint64_t ref) {
+static int rir_node_wider(AstLocal n, int st, uint64_t ref) { MCC_TRACE("enter\n");
 	return rir_eff_size(n, 0) > rir_type_size(st, ref);
 }
 
-static int rir_child_wider(AstLocal n, int st, uint64_t ref) {
+static int rir_child_wider(AstLocal n, int st, uint64_t ref) { MCC_TRACE("enter\n");
 	int i, nc = ast_nchild(rir_arena, n), ss = rir_type_size(st, ref);
 	for (i = 0; i < nc; i++)
 		if (rir_eff_size(ast_child(rir_arena, n, i), 0) > ss)
@@ -1971,9 +1971,9 @@ static int rir_child_wider(AstLocal n, int st, uint64_t ref) {
 	return 0;
 }
 
-static int rir_child_width_differs(AstLocal n, int st, uint64_t ref) {
+static int rir_child_width_differs(AstLocal n, int st, uint64_t ref) { MCC_TRACE("enter\n");
 	int i, nc = ast_nchild(rir_arena, n), al, ss = rir_type_size(st, ref);
-	for (i = 0; i < nc; i++) {
+	for (i = 0; i < nc; i++) { MCC_TRACE("br\n");
 		AstLocal c = ast_child(rir_arena, n, i);
 		CType a1;
 		if (c == AST_NONE)
@@ -1991,7 +1991,7 @@ static int rir_child_width_differs(AstLocal n, int st, uint64_t ref) {
 	return 0;
 }
 
-static int rir_sh_unbound_invoke(void) {
+static int rir_sh_unbound_invoke(void) { MCC_TRACE("enter\n");
 	int k;
 	for (k = 0; k < rir_shn; k++)
 		if (rir_sh[k] != AST_NONE &&
@@ -2001,7 +2001,7 @@ static int rir_sh_unbound_invoke(void) {
 	return 0;
 }
 
-static AstLocal rir_val_node(AstLocal n) {
+static AstLocal rir_val_node(AstLocal n) { MCC_TRACE("enter\n");
 	int guard = 0;
 	while (n != AST_NONE && ast_kind(rir_arena, n) == AST_BasicBlock &&
 				 ast_nchild(rir_arena, n) > 0 && ++guard < 16)
@@ -2009,7 +2009,7 @@ static AstLocal rir_val_node(AstLocal n) {
 	return n;
 }
 
-static int rir_flt_fold_expr(AstLocal n, int depth) {
+static int rir_flt_fold_expr(AstLocal n, int depth) { MCC_TRACE("enter\n");
 	uint16_t k;
 	int op;
 	if (n == AST_NONE || depth > 16)
@@ -2023,14 +2023,14 @@ static int rir_flt_fold_expr(AstLocal n, int depth) {
 	if (k == AST_Convert)
 		return ast_nchild(rir_arena, n) == 1 &&
 					 rir_flt_fold_expr(ast_first_child(rir_arena, n), depth + 1);
-	if (k == AST_Unary) {
+	if (k == AST_Unary) { MCC_TRACE("br\n");
 		op = ast_op(rir_arena, n);
 		if (op != AST_OP_FNEG)
 			return 0;
 		return ast_nchild(rir_arena, n) == 1 &&
 					 rir_flt_fold_expr(ast_first_child(rir_arena, n), depth + 1);
 	}
-	if (k == AST_Binary) {
+	if (k == AST_Binary) { MCC_TRACE("br\n");
 		op = ast_op(rir_arena, n);
 		if (op != '+' && op != '-' && op != '*' && op != '/')
 			return 0;
@@ -2041,9 +2041,9 @@ static int rir_flt_fold_expr(AstLocal n, int depth) {
 	return 0;
 }
 
-static void rir_stamp_flt_fold(const SValue *base, int n) {
+static void rir_stamp_flt_fold(const SValue *base, int n) { MCC_TRACE("enter\n");
 	int k, want = n - rir_base_depth;
-	for (k = 0; k < rir_shn && k < want; k++) {
+	for (k = 0; k < rir_shn && k < want; k++) { MCC_TRACE("br\n");
 		const SValue *v = &base[rir_base_depth + k];
 		AstLocal cur = rir_sh[k], lit;
 		if (cur == AST_NONE || rir_shtype[k] || cur == rir_fcs_node ||
@@ -2071,12 +2071,12 @@ static void rir_stamp_flt_fold(const SValue *base, int n) {
 	}
 }
 
-static int rir_subtype_bt(int t) {
+static int rir_subtype_bt(int t) { MCC_TRACE("enter\n");
 	int bt = t & VT_BTYPE;
 	return bt == VT_BYTE || bt == VT_SHORT || bt == VT_INT || bt == VT_LLONG;
 }
 
-static int rir_lval_shape(AstLocal n) {
+static int rir_lval_shape(AstLocal n) { MCC_TRACE("enter\n");
 	uint16_t k;
 	if (n == AST_NONE)
 		return 0;
@@ -2085,7 +2085,7 @@ static int rir_lval_shape(AstLocal n) {
 		return 1;
 	if (k == AST_Ref)
 		return (ast_op(rir_arena, n) & VT_LVAL) != 0;
-	if (k == AST_Unary) {
+	if (k == AST_Unary) { MCC_TRACE("br\n");
 		int op = ast_op(rir_arena, n);
 		return op == AST_OP_MEMBER || op == AST_OP_MEMBER_ARROW;
 	}
@@ -2103,13 +2103,13 @@ typedef struct RirStamp {
 static RirStamp *rir_stampv;
 static int rir_stampn, rir_stampcap;
 
-static void rir_stamp_defer(AstLocal n, const CType *ct) {
+static void rir_stamp_defer(AstLocal n, const CType *ct) { MCC_TRACE("enter\n");
 	RirStamp *s;
 	if (n == AST_NONE)
 		return;
 	if (ast_stype_known(rir_arena, n))
 		return;
-	if (rir_stampn >= rir_stampcap) {
+	if (rir_stampn >= rir_stampcap) { MCC_TRACE("br\n");
 		rir_stampcap = rir_stampcap ? rir_stampcap * 2 : 256;
 		rir_stampv =
 				mcc_realloc(rir_stampv, (size_t)rir_stampcap * sizeof *rir_stampv);
@@ -2123,12 +2123,12 @@ static void rir_stamp_defer(AstLocal n, const CType *ct) {
 	s->bs = (unsigned char)ct->bs;
 }
 
-static void rir_stamp_deep(const SValue *base, int n) {
+static void rir_stamp_deep(const SValue *base, int n) { MCC_TRACE("enter\n");
 	int k, want;
 	if (n < 0)
 		return;
 	want = n - rir_base_depth;
-	for (k = 0; k < rir_shn && k < want; k++) {
+	for (k = 0; k < rir_shn && k < want; k++) { MCC_TRACE("br\n");
 		AstLocal cur = rir_sh[k];
 		if (cur == AST_NONE || rir_shtype[k])
 			continue;
@@ -2136,13 +2136,13 @@ static void rir_stamp_deep(const SValue *base, int n) {
 	}
 }
 
-static void rir_stamp_ptr_arith(AstLocal n) {
+static void rir_stamp_ptr_arith(AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal c;
 	int op = ast_op(rir_arena, n);
 	if (op != '+' && op != '-')
 		return;
 	for (c = ast_first_child(rir_arena, n); c != AST_NONE;
-			 c = ast_next_sib(rir_arena, c)) {
+			 c = ast_next_sib(rir_arena, c)) { MCC_TRACE("br\n");
 		int ct = ast_stype_t(rir_arena, c);
 		if ((ct & VT_BTYPE) != VT_PTR)
 			continue;
@@ -2154,7 +2154,7 @@ static void rir_stamp_ptr_arith(AstLocal n) {
 	}
 }
 
-static void rir_stamp_deref(AstLocal n) {
+static void rir_stamp_deref(AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal c = ast_first_child(rir_arena, n);
 	const Sym *ps;
 	int ct;
@@ -2170,27 +2170,27 @@ static void rir_stamp_deref(AstLocal n) {
 								ps->type.bp, ps->type.bs);
 }
 
-static void rir_stamp_derive(void) {
+static void rir_stamp_derive(void) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(rir_arena), n;
 	int pass;
-	for (pass = 0; pass < 4; pass++) {
-		for (n = 0; n < nn; n++) {
+	for (pass = 0; pass < 4; pass++) { MCC_TRACE("br\n");
+		for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 			uint16_t k = ast_kind(rir_arena, n);
 			AstLocal c;
 			if (ast_stype_known(rir_arena, n))
 				continue;
-			if (k == AST_Binary) {
+			if (k == AST_Binary) { MCC_TRACE("br\n");
 				rir_stamp_ptr_arith(n);
 				continue;
 			}
-			if (k == AST_Load) {
+			if (k == AST_Load) { MCC_TRACE("br\n");
 				rir_stamp_deref(n);
 				continue;
 			}
 			if (k != AST_Store && k != AST_StoreVal && k != AST_Return)
 				continue;
 			c = ast_first_child(rir_arena, n);
-			if (c == AST_NONE && k == AST_StoreVal) {
+			if (c == AST_NONE && k == AST_StoreVal) { MCC_TRACE("br\n");
 				AstLocal src = (AstLocal)ast_ival(rir_arena, n);
 				if (src < nn && ast_kind(rir_arena, src) == AST_Store)
 					c = src;
@@ -2206,7 +2206,7 @@ static void rir_stamp_derive(void) {
 										ast_stype_bs(rir_arena, c));
 		}
 	}
-	for (n = 0; n < nn; n++) {
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		AstLocal c;
 		const Sym *fs;
 		int ct;
@@ -2217,7 +2217,7 @@ static void rir_stamp_derive(void) {
 			continue;
 		ct = ast_stype_t(rir_arena, c);
 		fs = (const Sym *)(uintptr_t)ast_stype_ref(rir_arena, c);
-		while (fs && (ct & VT_BTYPE) == VT_PTR) {
+		while (fs && (ct & VT_BTYPE) == VT_PTR) { MCC_TRACE("br\n");
 			ct = fs->type.t;
 			fs = fs->type.ref;
 		}
@@ -2226,7 +2226,7 @@ static void rir_stamp_derive(void) {
 		ast_set_stype(rir_arena, n, fs->type.t, (uint64_t)(uintptr_t)fs->type.ref,
 									fs->type.bp, fs->type.bs);
 	}
-	for (n = 0; n < nn; n++) {
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		uint16_t k = ast_kind(rir_arena, n);
 		if (ast_stype_known(rir_arena, n))
 			continue;
@@ -2236,15 +2236,15 @@ static void rir_stamp_derive(void) {
 	}
 }
 
-static void rir_stamp_flush(void) {
+static void rir_stamp_flush(void) { MCC_TRACE("enter\n");
 	int i;
 	AstLocal nn;
-	if (!rir_stamp_env || !rir_arena) {
+	if (!rir_stamp_env || !rir_arena) { MCC_TRACE("br\n");
 		rir_stampn = 0;
 		return;
 	}
 	nn = ast_count(rir_arena);
-	for (i = 0; i < rir_stampn; i++) {
+	for (i = 0; i < rir_stampn; i++) { MCC_TRACE("br\n");
 		const RirStamp *s = &rir_stampv[i];
 		if (s->n >= nn || ast_kind(rir_arena, s->n) != s->kind)
 			continue;
@@ -2257,14 +2257,14 @@ static void rir_stamp_flush(void) {
 		rir_stamp_derive();
 }
 
-static void rir_stamp_sv(const SValue *base, int n) {
+static void rir_stamp_sv(const SValue *base, int n) { MCC_TRACE("enter\n");
 	int k, want;
 	if (n < 0)
 		return;
 	want = n - rir_base_depth;
 	if (rir_stamp_env)
 		rir_stamp_deep(base, n);
-	for (k = 0; k < rir_shn && k < want; k++) {
+	for (k = 0; k < rir_shn && k < want; k++) { MCC_TRACE("br\n");
 		const SValue *v;
 		AstLocal sk;
 		if (!rir_shtype[k])
@@ -2273,22 +2273,22 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		sk = rir_val_node(rir_sh[k]);
 		ast_set_type_bf(rir_arena, sk, v->type.t,
 								 (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
-		if (rir_sh[k] == rir_fcs_node) {
+		if (rir_sh[k] == rir_fcs_node) { MCC_TRACE("br\n");
 			rir_fcs_node = AST_NONE;
-			if ((v->type.t & VT_BTYPE) == VT_BOOL) {
+			if ((v->type.t & VT_BTYPE) == VT_BOOL) { MCC_TRACE("br\n");
 				ast_set_type(rir_arena, rir_sh[k], VT_BYTE | VT_UNSIGNED, 0);
 				ast_set_fbits(rir_arena, rir_sh[k],
 											ast_fbits(rir_arena, rir_sh[k]) | AST_FB_CONVERT_FCS);
 			}
 		}
-		if (rir_shtype[k] == 3) {
+		if (rir_shtype[k] == 3) { MCC_TRACE("br\n");
 			AstLocal c = ast_first_child(rir_arena, sk);
 			uint16_t ck = c == AST_NONE ? 0 : ast_kind(rir_arena, c);
 			if (ck == AST_Ref || ck == AST_Literal)
 				ast_set_type_bf(rir_arena, c, v->type.t,
 										 (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
 		}
-		if (rir_shtype[k] == 2) {
+		if (rir_shtype[k] == 2) { MCC_TRACE("br\n");
 			ast_set_op(rir_arena, sk, v->r);
 			ast_set_ival(rir_arena, sk, (uint64_t)v->c.i);
 			ast_set_sym(rir_arena, sk, (uint64_t)(uintptr_t)v->sym);
@@ -2300,7 +2300,7 @@ static void rir_stamp_sv(const SValue *base, int n) {
 	rir_stamp_flt_fold(base, n);
 	if (rir_cvt_next)
 		return;
-	for (k = 0; k < rir_shn && k < want; k++) {
+	for (k = 0; k < rir_shn && k < want; k++) { MCC_TRACE("br\n");
 		const SValue *v = &base[rir_base_depth + k];
 		AstLocal cur = rir_sh[k];
 		int ct, cs, vs2, al;
@@ -2326,7 +2326,7 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		b1.ref = v->type.ref;
 		cs = type_size(&a1, &al);
 		vs2 = type_size(&b1, &al);
-		if (cs >= vs2) {
+		if (cs >= vs2) { MCC_TRACE("br\n");
 #ifdef MCC_IR_HAVE_X86_PRIMS
 			int bop = ast_op(rir_arena, cur);
 			if (cs > vs2 && ast_kind(rir_arena, cur) == AST_Binary &&
@@ -2338,7 +2338,7 @@ static void rir_stamp_sv(const SValue *base, int n) {
 			if (cs > vs2 && (v->r & VT_LVAL) && rir_subtype_bt(ct) &&
 					rir_subtype_bt(v->type.t) && !((ct | v->type.t) & VT_BITFIELD) &&
 					rir_lval_shape(cur))
-				{
+				{ MCC_TRACE("br\n");
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
 					ast_set_type_bf(rir_arena, cv, v->type.t,
 											 (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
@@ -2355,7 +2355,7 @@ static void rir_stamp_sv(const SValue *base, int n) {
 			rir_sh[k] = cv;
 		}
 	}
-	for (k = 0; k < rir_shn && k < want; k++) {
+	for (k = 0; k < rir_shn && k < want; k++) { MCC_TRACE("br\n");
 		const SValue *v = &base[rir_base_depth + k];
 		AstLocal cur = rir_sh[k], cv, ld;
 		int ct;
@@ -2381,7 +2381,7 @@ static void rir_stamp_sv(const SValue *base, int n) {
 			continue;
 		if (ct == 0 && ck != AST_Binary)
 			continue;
-		if (ct != 0) {
+		if (ct != 0) { MCC_TRACE("br\n");
 			const Sym *pr = (const Sym *)(uintptr_t)ast_type_ref(rir_arena, cur);
 			if (pr && pr->type.t == v->type.t && pr->type.ref == v->type.ref)
 				continue;
@@ -2400,7 +2400,7 @@ static void rir_stamp_sv(const SValue *base, int n) {
 	}
 }
 
-static void rir_stamp_call_top(const SValue *base, int n) {
+static void rir_stamp_call_top(const SValue *base, int n) { MCC_TRACE("enter\n");
 	int k = n - rir_base_depth - 1;
 	const SValue *v;
 	AstLocal sk;
@@ -2420,7 +2420,7 @@ static void rir_stamp_call_top(const SValue *base, int n) {
 	rir_shtype[k] = 0;
 }
 
-static AstLocal rir_spill_take(const SValue *sv) {
+static AstLocal rir_spill_take(const SValue *sv) { MCC_TRACE("enter\n");
 	AstLocal n;
 	int al, sz;
 	CType st2;
@@ -2448,7 +2448,7 @@ static AstLocal rir_spill_take(const SValue *sv) {
 	return n;
 }
 
-static void rir_reconcile_sv(const SValue *base, int n) {
+static void rir_reconcile_sv(const SValue *base, int n) { MCC_TRACE("enter\n");
 	int want, k;
 	if (n < 0)
 		return;
@@ -2458,7 +2458,7 @@ static void rir_reconcile_sv(const SValue *base, int n) {
 		want = 0;
 	if (want > VSTACK_SIZE)
 		want = VSTACK_SIZE;
-	while (rir_shn > want) {
+	while (rir_shn > want) { MCC_TRACE("br\n");
 		AstLocal d = rir_pop();
 		if (rir_effectful(d))
 			rir_stmt(d);
@@ -2467,7 +2467,7 @@ static void rir_reconcile_sv(const SValue *base, int n) {
 		return;
 	if (rir_shn < want)
 		rir_tot_refill++;
-	for (k = rir_shn; k < want; k++) {
+	for (k = rir_shn; k < want; k++) { MCC_TRACE("br\n");
 		const SValue *sv3 = &base[rir_base_depth + k];
 		AstLocal sp = rir_spill_take(sv3);
 		rir_tot_leaf++;
@@ -2477,19 +2477,19 @@ static void rir_reconcile_sv(const SValue *base, int n) {
 	}
 }
 
-static void rir_stamp_types(const IrCapOp *o) {
+static void rir_stamp_types(const IrCapOp *o) { MCC_TRACE("enter\n");
 	if (o->vs_n < 0)
 		return;
 	rir_stamp_sv(ir_cap_vs + o->vs_off, o->vs_n);
 }
 
-static void rir_reconcile(const IrCapOp *o) {
+static void rir_reconcile(const IrCapOp *o) { MCC_TRACE("enter\n");
 	if (o->vs_n < 0)
 		return;
 	rir_reconcile_sv(ir_cap_vs + o->vs_off, o->vs_n);
 }
 
-static int rir_addr_pure(AstLocal n, int depth) {
+static int rir_addr_pure(AstLocal n, int depth) { MCC_TRACE("enter\n");
 	uint16_t k;
 	if (n == AST_NONE || depth > 8)
 		return 0;
@@ -2503,14 +2503,14 @@ static int rir_addr_pure(AstLocal n, int depth) {
 	if (k == AST_Load || k == AST_Convert)
 		return ast_nchild(rir_arena, n) == 1 &&
 					 rir_addr_pure(ast_first_child(rir_arena, n), depth + 1);
-	if (k == AST_Unary) {
+	if (k == AST_Unary) { MCC_TRACE("br\n");
 		int op = ast_op(rir_arena, n);
 		if (op != AST_OP_MEMBER && op != AST_OP_MEMBER_ARROW && op != AST_OP_ADDR)
 			return 0;
 		return ast_nchild(rir_arena, n) == 1 &&
 					 rir_addr_pure(ast_first_child(rir_arena, n), depth + 1);
 	}
-	if (k == AST_Binary) {
+	if (k == AST_Binary) { MCC_TRACE("br\n");
 		int op = ast_op(rir_arena, n);
 		if (op != '+' && op != '-' && op != '*' && op != '&' && op != '|' &&
 				op != '^' && op != TOK_SHL && op != TOK_SHR && op != TOK_SAR)
@@ -2522,7 +2522,7 @@ static int rir_addr_pure(AstLocal n, int depth) {
 	return 0;
 }
 
-static int rir_lvalue_shape(AstLocal n) {
+static int rir_lvalue_shape(AstLocal n) { MCC_TRACE("enter\n");
 	int op;
 	uint16_t k;
 	if (n == AST_NONE)
@@ -2551,7 +2551,7 @@ static int rir_lorn;
 
 static AstLocal rir_callargs[VSTACK_SIZE];
 
-static void rir_op_effect(const RirOp *ro) {
+static void rir_op_effect(const RirOp *ro) { MCC_TRACE("enter\n");
 	const IrCapOp *o = &ro->p;
 	int k;
 	int dupwant = rir_opassign_dup;
@@ -2560,7 +2560,7 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_flush_pending_call();
 	if (o->nocode)
 		return;
-	switch (o->kind) {
+	switch (o->kind) { MCC_TRACE("br\n");
 	case IR_OP_GENOP:
 	case IR_OP_OPI:
 	case IR_OP_OPL:
@@ -2568,9 +2568,9 @@ static void rir_op_effect(const RirOp *ro) {
 		AstLocal b, a, n;
 		if (rir_after_ret && rir_shn == 0)
 			break;
-		if (o->kind == IR_OP_OPF && o->a0 == TOK_NEG) {
+		if (o->kind == IR_OP_OPF && o->a0 == TOK_NEG) { MCC_TRACE("br\n");
 			a = rir_pop();
-			if (a == AST_NONE) {
+			if (a == AST_NONE) { MCC_TRACE("br\n");
 				rir_arena_mismatch++;
 				break;
 			}
@@ -2580,9 +2580,9 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_push_typed(n);
 			break;
 		}
-		if (o->vs_n - rir_base_depth >= 2 && rir_shn >= 2) {
+		if (o->vs_n - rir_base_depth >= 2 && rir_shn >= 2) { MCC_TRACE("br\n");
 			int q;
-			for (q = 0; q < 2; q++) {
+			for (q = 0; q < 2; q++) { MCC_TRACE("br\n");
 				AstLocal cur = rir_sh[rir_shn - 1 - q], ch;
 				if (cur == AST_NONE || rir_shtype[rir_shn - 1 - q] ||
 						ast_kind(rir_arena, cur) != AST_Convert ||
@@ -2602,10 +2602,10 @@ static void rir_op_effect(const RirOp *ro) {
 				}
 			}
 		}
-		if (o->vs_n - rir_base_depth >= 2 && rir_shn >= 2) {
+		if (o->vs_n - rir_base_depth >= 2 && rir_shn >= 2) { MCC_TRACE("br\n");
 			int q, opdiff = rir_tcore(ir_cap_vs[o->vs_off + o->vs_n - 1].type.t) !=
 											rir_tcore(ir_cap_vs[o->vs_off + o->vs_n - 2].type.t);
-			for (q = 0; q < 2; q++) {
+			for (q = 0; q < 2; q++) { MCC_TRACE("br\n");
 				AstLocal cur = rir_sh[rir_shn - 1 - q];
 				const SValue *sv2 = &ir_cap_vs[o->vs_off + o->vs_n - 1 - q];
 				int st = sv2->type.t;
@@ -2652,9 +2652,9 @@ static void rir_op_effect(const RirOp *ro) {
 			}
 		}
 		if ((o->a0 == '+' || o->a0 == '-') &&
-				o->vs_n - rir_base_depth >= 2 && rir_shn >= 2) {
+				o->vs_n - rir_base_depth >= 2 && rir_shn >= 2) { MCC_TRACE("br\n");
 			int q;
-			for (q = 0; q < 2; q++) {
+			for (q = 0; q < 2; q++) { MCC_TRACE("br\n");
 				int si = rir_shn - 1 - q, ct;
 				uint64_t cref;
 				AstLocal cur = rir_sh[si];
@@ -2679,14 +2679,14 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		b = rir_pop();
 		a = rir_pop();
-		if (a == AST_NONE || b == AST_NONE) {
+		if (a == AST_NONE || b == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			rir_push(ast_node(rir_arena, AST_Poison));
 			break;
 		}
 		n = ast_node(rir_arena, AST_Binary);
 		ast_set_op(rir_arena, n, o->a0);
-		if (o->vs_n - rir_base_depth >= 2) {
+		if (o->vs_n - rir_base_depth >= 2) { MCC_TRACE("br\n");
 			const SValue *rs = &ir_cap_vs[o->vs_off + o->vs_n - 1];
 			const SValue *ls = &ir_cap_vs[o->vs_off + o->vs_n - 2];
 			if ((rs->r & VT_VALMASK) < VT_CONST && !(rs->r & VT_LVAL) &&
@@ -2703,7 +2703,7 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case IR_OP_VSTORE: {
 		AstLocal v = rir_pop(), t = rir_pop(), n;
-		if (v == AST_NONE || t == AST_NONE) {
+		if (v == AST_NONE || t == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -2724,14 +2724,14 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 #endif
 		if (rir_call_depth && ast_parent(rir_arena, v) == AST_NONE &&
-				o->vs_n - rir_base_depth >= 2) {
+				o->vs_n - rir_base_depth >= 2) { MCC_TRACE("br\n");
 			const SValue *ts = &ir_cap_vs[o->vs_off + o->vs_n - 2];
 			int isinv = ast_kind(rir_arena, rir_val_node(v)) == AST_Invoke;
 			int istail = !isinv && ast_kind(rir_arena, v) == AST_Ref &&
 									 ast_nchild(rir_arena, v) == 0 && rir_sh_unbound_invoke();
 			if ((isinv || istail) && !ts->sym &&
-					(ts->r & VT_VALMASK) == VT_LOCAL && (ts->r & VT_LVAL)) {
-				if (isinv) {
+					(ts->r & VT_VALMASK) == VT_LOCAL && (ts->r & VT_LVAL)) { MCC_TRACE("br\n");
+				if (isinv) { MCC_TRACE("br\n");
 					rir_spill_node = v;
 					rir_spill_addr = (long long)ts->c.i;
 				}
@@ -2741,7 +2741,7 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		if (ast_kind(rir_arena, t) == AST_Binary &&
 				ast_op(rir_arena, t) == '+' && ast_nchild(rir_arena, t) == 2 &&
-				o->vs_n - rir_base_depth >= 2) {
+				o->vs_n - rir_base_depth >= 2) { MCC_TRACE("br\n");
 			AstLocal ad = ast_child(rir_arena, t, 0);
 			AstLocal lt = ast_child(rir_arena, t, 1);
 			if (ad != AST_NONE && lt != AST_NONE &&
@@ -2749,7 +2749,7 @@ static void rir_op_effect(const RirOp *ro) {
 					ast_op(rir_arena, ad) == AST_OP_ADDR &&
 					ast_nchild(rir_arena, ad) == 1 &&
 					ast_kind(rir_arena, lt) == AST_Literal &&
-					(ast_op(rir_arena, lt) & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
+					(ast_op(rir_arena, lt) & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) { MCC_TRACE("br\n");
 				const SValue *tsv = &ir_cap_vs[o->vs_off + o->vs_n - 2];
 				AstLocal mb = ast_node(rir_arena, AST_Unary);
 				ast_set_op(rir_arena, mb, AST_OP_MEMBER);
@@ -2764,18 +2764,18 @@ static void rir_op_effect(const RirOp *ro) {
 		{
 			int chained = 0;
 			if (ast_kind(rir_arena, v) == AST_StoreVal &&
-					ast_nchild(rir_arena, v) == 0) {
+					ast_nchild(rir_arena, v) == 0) { MCC_TRACE("br\n");
 				AstLocal src = (AstLocal)ast_ival(rir_arena, v);
 				if (src < ast_count(rir_arena) &&
 						ast_kind(rir_arena, src) == AST_Store &&
-						ast_nchild(rir_arena, src) == 2) {
+						ast_nchild(rir_arena, src) == 2) { MCC_TRACE("br\n");
 					AstLocal iv = ast_child(rir_arena, src, 1);
 					if (rir_effectful(iv) && rir_bbn &&
-							ast_detach_last_child(rir_arena, rir_bb[rir_bbn - 1], src)) {
+							ast_detach_last_child(rir_arena, rir_bb[rir_bbn - 1], src)) { MCC_TRACE("br\n");
 						v = src;
 						chained = 1;
 					} else if (ast_chainstore_env &&
-										 rir_chain_dup_ok(ast_child(rir_arena, src, 0), iv)) {
+										 rir_chain_dup_ok(ast_child(rir_arena, src, 0), iv)) { MCC_TRACE("br\n");
 						v = ast_dup_sub(rir_arena, iv);
 						chained = 1;
 					}
@@ -2795,7 +2795,7 @@ static void rir_op_effect(const RirOp *ro) {
 											ast_fbits(rir_arena, n) | AST_FB_STORE_ADDR_LATE);
 		}
 		rir_addr_late = 0;
-		if (rir_lorn || rir_ternn || rir_docond) {
+		if (rir_lorn || rir_ternn || rir_docond) { MCC_TRACE("br\n");
 			ast_add_child(rir_arena, n, t);
 			ast_add_child(rir_arena, n, v);
 			rir_push(n);
@@ -2826,7 +2826,7 @@ static void rir_op_effect(const RirOp *ro) {
 	case IR_OP_BSWAP: {
 		AstLocal v = rir_shn ? rir_pop() : AST_NONE;
 		AstLocal n;
-		if (v == AST_NONE) {
+		if (v == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -2847,7 +2847,7 @@ static void rir_op_effect(const RirOp *ro) {
 	case IR_OP_FABS: {
 		AstLocal v = rir_shn ? rir_pop() : AST_NONE;
 		AstLocal n;
-		if (v == AST_NONE) {
+		if (v == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -2865,16 +2865,16 @@ static void rir_op_effect(const RirOp *ro) {
 		int na = o->kind == IR_OP_ATOMIC_CMPXCHG ? 3 : 2;
 		AstLocal aops[3], n;
 		int q, bad = 0;
-		if (rir_shn < na) {
+		if (rir_shn < na) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
-		for (q = na - 1; q >= 0; q--) {
+		for (q = na - 1; q >= 0; q--) { MCC_TRACE("br\n");
 			aops[q] = rir_pop();
 			if (aops[q] == AST_NONE)
 				bad = 1;
 		}
-		if (bad) {
+		if (bad) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -2896,7 +2896,7 @@ static void rir_op_effect(const RirOp *ro) {
 	case IR_OP_BITBUILTIN: {
 		AstLocal v = rir_shn ? rir_pop() : AST_NONE;
 		AstLocal n;
-		if (v == AST_NONE) {
+		if (v == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -2913,11 +2913,11 @@ static void rir_op_effect(const RirOp *ro) {
 		int na = o->a0;
 		AstLocal *args = rir_callargs;
 		int nfixed = -1;
-		if (na < 0 || na > (int)(sizeof rir_callargs / sizeof rir_callargs[0])) {
+		if (na < 0 || na > (int)(sizeof rir_callargs / sizeof rir_callargs[0])) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			na = 0;
 		}
-		if (o->vs_n - rir_base_depth >= na + 1 && rir_shn >= na + 1) {
+		if (o->vs_n - rir_base_depth >= na + 1 && rir_shn >= na + 1) { MCC_TRACE("br\n");
 			int q;
 			int hidden = -1;
 			{
@@ -2926,7 +2926,7 @@ static void rir_op_effect(const RirOp *ro) {
 				if (fs && (cs->type.t & VT_BTYPE) == VT_PTR)
 					fs = fs->type.ref;
 				nfixed = -1;
-				if (fs) {
+				if (fs) { MCC_TRACE("br\n");
 					const Sym *pa;
 					int nparam = 0;
 					for (pa = fs->next; pa; pa = pa->next)
@@ -2937,7 +2937,7 @@ static void rir_op_effect(const RirOp *ro) {
 						hidden = na - 1;
 				}
 			}
-			for (q = 0; q <= na && rir_argcast_n; q++) {
+			for (q = 0; q <= na && rir_argcast_n; q++) { MCC_TRACE("br\n");
 				int si = rir_shn - 1 - q;
 				if (q == hidden)
 					continue;
@@ -2986,7 +2986,7 @@ static void rir_op_effect(const RirOp *ro) {
 				if ((sv2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
 						rir_const_subtree(cur, 0) &&
 						(((st & VT_BTYPE) == VT_INT128 || (st & VT_BTYPE) == VT_QLONG) ||
-						 (!is_float(st) && rir_const_val_differs(cur, sv2->c.i)))) {
+						 (!is_float(st) && rir_const_val_differs(cur, sv2->c.i)))) { MCC_TRACE("br\n");
 					rir_sh[si] = rir_leaf(sv2);
 					continue;
 				}
@@ -3000,7 +3000,7 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		rir_argcast_n = 0;
 		n = ast_node(rir_arena, AST_Invoke);
-		for (k = na - 1; k >= 0; k--) {
+		for (k = na - 1; k >= 0; k--) { MCC_TRACE("br\n");
 			args[k] = rir_pop();
 			if (args[k] == AST_NONE)
 				rir_arena_mismatch++;
@@ -3020,7 +3020,7 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case IR_OP_PUSHLIT:
 	case IR_OP_VSETC:
-		if (o->vs_n >= 0 && o->vs_n <= VSTACK_SIZE) {
+		if (o->vs_n >= 0 && o->vs_n <= VSTACK_SIZE) { MCC_TRACE("br\n");
 			rir_pvt[o->vs_n] = o->ctype;
 			rir_pvr[o->vs_n] = o->a0;
 			rir_pvc[o->vs_n] = o->cval;
@@ -3030,15 +3030,15 @@ static void rir_op_effect(const RirOp *ro) {
 							 (size_t)(rir_pvhw - o->vs_n));
 			rir_pvhw = o->vs_n;
 		}
-		if (rir_pending_call != AST_NONE) {
+		if (rir_pending_call != AST_NONE) { MCC_TRACE("br\n");
 			if (o->kind == IR_OP_PUSHLIT || (o->a0 & VT_VALMASK) < VT_CONST ||
 					((o->ctype.t & VT_BTYPE) == VT_STRUCT &&
-					 (o->a0 & VT_VALMASK) == VT_LOCAL && (o->a0 & VT_LVAL))) {
+					 (o->a0 & VT_VALMASK) == VT_LOCAL && (o->a0 & VT_LVAL))) { MCC_TRACE("br\n");
 				rir_push_typed(rir_pending_call);
 				if (rir_shn > 0)
 					rir_shtype[rir_shn - 1] = 2;
 				rir_pending_call = AST_NONE;
-			} else {
+			} else { MCC_TRACE("br\n");
 				rir_flush_pending_call();
 			}
 		}
@@ -3055,9 +3055,9 @@ static void rir_op_effect(const RirOp *ro) {
 						(VT_LOCAL | VT_LVAL) ||
 				o->svarg.sym)
 			break;
-		for (q = 0; q <= o->vs_n - 1 - rir_base_depth; q++) {
+		for (q = 0; q <= o->vs_n - 1 - rir_base_depth; q++) { MCC_TRACE("br\n");
 			const SValue *sv4 = &ir_cap_vs[o->vs_off + rir_base_depth + q];
-			if ((sv4->r & VT_VALMASK) == (o->a0 & VT_VALMASK)) {
+			if ((sv4->r & VT_VALMASK) == (o->a0 & VT_VALMASK)) { MCC_TRACE("br\n");
 				slot = q;
 				lv = (sv4->r & VT_LVAL) != 0;
 				spv = sv4;
@@ -3075,7 +3075,7 @@ static void rir_op_effect(const RirOp *ro) {
 			break;
 		tsv = o->svarg;
 		tsv.r2 = VT_CONST;
-		if (!lv) {
+		if (!lv) { MCC_TRACE("br\n");
 			if (!is_float(tsv.type.t))
 				break;
 			n = ast_node(rir_arena, AST_Store);
@@ -3135,7 +3135,7 @@ static void rir_op_effect(const RirOp *ro) {
 #endif
 		if (d != AST_NONE && rir_shn == 0 &&
 				ast_parent(rir_arena, d) == AST_NONE &&
-				ast_kind(rir_arena, d) == AST_Binary) {
+				ast_kind(rir_arena, d) == AST_Binary) { MCC_TRACE("br\n");
 			ast_set_fbits(rir_arena, d,
 										ast_fbits(rir_arena, d) | AST_FB_STMT_DISCARD);
 			rir_stmt(d);
@@ -3146,7 +3146,7 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case IR_OP_VROTB: {
 		int m = o->a0 - 1;
-		if (m >= 1 && rir_shn > m) {
+		if (m >= 1 && rir_shn > m) { MCC_TRACE("br\n");
 			AstLocal tmp = rir_sh[rir_shn - 1 - m];
 			memmove(&rir_sh[rir_shn - 1 - m], &rir_sh[rir_shn - m],
 							sizeof(AstLocal) * (size_t)m);
@@ -3159,7 +3159,7 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case IR_OP_VROTT: {
 		int m = o->a0 - 1;
-		if (m >= 1 && rir_shn > m) {
+		if (m >= 1 && rir_shn > m) { MCC_TRACE("br\n");
 			AstLocal tmp = rir_sh[rir_shn - 1];
 			memmove(&rir_sh[rir_shn - m], &rir_sh[rir_shn - 1 - m],
 							sizeof(AstLocal) * (size_t)m);
@@ -3172,8 +3172,8 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case IR_OP_VREV: {
 		int i, j;
-		if (o->a0 >= 2 && rir_shn >= o->a0) {
-			for (i = rir_shn - o->a0, j = rir_shn - 1; i < j; i++, j--) {
+		if (o->a0 >= 2 && rir_shn >= o->a0) { MCC_TRACE("br\n");
+			for (i = rir_shn - o->a0, j = rir_shn - 1; i < j; i++, j--) { MCC_TRACE("br\n");
 				AstLocal t2 = rir_sh[i];
 				unsigned char c2 = rir_shtype[i];
 				rir_sh[i] = rir_sh[j];
@@ -3186,7 +3186,7 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case IR_OP_GV: {
 		AstLocal top;
-		if (rir_shn >= 1 && o->vs_n > 0) {
+		if (rir_shn >= 1 && o->vs_n > 0) { MCC_TRACE("br\n");
 			const SValue *tv = &ir_cap_vs[o->vs_off + o->vs_n - 1];
 			int bt = tv->type.t & VT_BTYPE;
 			AstLocal t2 = rir_sh[rir_shn - 1];
@@ -3194,14 +3194,14 @@ static void rir_op_effect(const RirOp *ro) {
 					(bt == VT_BYTE || bt == VT_SHORT || bt == VT_BOOL ||
 					 bt == VT_INT) &&
 					t2 != AST_NONE && ast_kind(rir_arena, t2) == AST_Load &&
-					ast_parent(rir_arena, t2) == AST_NONE) {
+					ast_parent(rir_arena, t2) == AST_NONE) { MCC_TRACE("br\n");
 				int nt = (int)ast_type_t(rir_arena, t2);
 				int want = -1;
 				if (!nt && ((tv->type.t & VT_UNSIGNED) || bt == VT_INT))
 					want = tv->type.t;
 				else if (rir_ternn)
 					want = VT_INT;
-				if (want >= 0) {
+				if (want >= 0) { MCC_TRACE("br\n");
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
 					ast_set_type_bf(rir_arena, cv, want,
 											 want == VT_INT
@@ -3225,7 +3225,7 @@ static void rir_op_effect(const RirOp *ro) {
 			break;
 		if (ast_kind(rir_arena, top) == AST_Ref &&
 				!(ast_type_t(rir_arena, top) & (VT_BITFIELD | VT_ARRAY)) &&
-				(ast_type_t(rir_arena, top) & VT_BTYPE) == VT_PTR) {
+				(ast_type_t(rir_arena, top) & VT_BTYPE) == VT_PTR) { MCC_TRACE("br\n");
 			AstLocal cv = ast_node(rir_arena, AST_Convert);
 			ast_copy_type(rir_arena, cv, rir_arena, top);
 			ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
@@ -3235,7 +3235,7 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 	case IR_OP_VSWAP:
-		if (rir_shn >= 2) {
+		if (rir_shn >= 2) { MCC_TRACE("br\n");
 			AstLocal t = rir_sh[rir_shn - 1];
 			rir_sh[rir_shn - 1] = rir_sh[rir_shn - 2];
 			rir_sh[rir_shn - 2] = t;
@@ -3248,7 +3248,7 @@ static void rir_op_effect(const RirOp *ro) {
 	case IR_OP_CVT_TRUNC32:
 	case IR_OP_CVT_CSTI: {
 		AstLocal a = rir_pop(), n;
-		if (a == AST_NONE) {
+		if (a == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -3278,7 +3278,7 @@ static void rir_op_effect(const RirOp *ro) {
 #ifdef MCC_IR_VA_START_VOID
 	case IR_OP_VA_START: {
 		AstLocal b = rir_pop(), a2 = rir_pop(), n;
-		if (a2 == AST_NONE || b == AST_NONE) {
+		if (a2 == AST_NONE || b == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -3293,7 +3293,7 @@ static void rir_op_effect(const RirOp *ro) {
 #if defined(MCC_IR_HAVE_VA_START) && !defined(MCC_IR_VA_START_VOID)
 	case IR_OP_VA_START: {
 		AstLocal b = rir_pop(), n;
-		if (b == AST_NONE) {
+		if (b == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -3307,7 +3307,7 @@ static void rir_op_effect(const RirOp *ro) {
 #ifdef MCC_IR_HAVE_VA_ARG
 	case IR_OP_VA_ARG: {
 		AstLocal a = rir_pop(), n;
-		if (a == AST_NONE) {
+		if (a == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -3321,7 +3321,7 @@ static void rir_op_effect(const RirOp *ro) {
 #endif
 	case IR_OP_GGOTO: {
 		AstLocal a = rir_pop(), n;
-		if (a == AST_NONE) {
+		if (a == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -3337,7 +3337,7 @@ static void rir_op_effect(const RirOp *ro) {
 		if (rir_after_ret && rir_shn == 0)
 			break;
 		a = rir_pop();
-		if (a == AST_NONE) {
+		if (a == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -3348,7 +3348,7 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 	case IR_OP_VPUSHSYM:
-		if (o->vs_n >= 0 && o->vs_n <= VSTACK_SIZE) {
+		if (o->vs_n >= 0 && o->vs_n <= VSTACK_SIZE) { MCC_TRACE("br\n");
 			rir_pvt[o->vs_n] = o->ctype;
 			rir_pvr[o->vs_n] = VT_CONST | VT_SYM;
 			rir_pvc[o->vs_n].i = 0;
@@ -3365,7 +3365,7 @@ static void rir_op_effect(const RirOp *ro) {
 		if (rir_after_ret && rir_shn == 0)
 			break;
 		if (o->vs_n - rir_base_depth < 1 ||
-				o->vs_n - rir_base_depth != rir_shn) {
+				o->vs_n - rir_base_depth != rir_shn) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -3407,9 +3407,9 @@ static AstLocal rir_lor[16];
 	(~(unsigned)(VT_ARRAY | VT_CONSTANT | VT_VOLATILE | VT_NONCONST |            \
 							 VT_NONLVAL | VT_DEFSIGN))
 
-static int rir_ptr_arith(AstLocal n, const SValue *pv) {
+static int rir_ptr_arith(AstLocal n, const SValue *pv) { MCC_TRACE("enter\n");
 	int i, nc = ast_nchild(rir_arena, n);
-	for (i = 0; i < nc; i++) {
+	for (i = 0; i < nc; i++) { MCC_TRACE("br\n");
 		AstLocal c = ast_child(rir_arena, n, i);
 		if (c != AST_NONE &&
 				(ast_type_t(rir_arena, c) & RIR_TMASK) ==
@@ -3427,7 +3427,7 @@ static AstLocal rir_retexpr = AST_NONE;
 static int rir_retexpr_depth;
 static int rir_retexpr_pending;
 
-static void rir_flush_effect_top(void) {
+static void rir_flush_effect_top(void) { MCC_TRACE("enter\n");
 	AstLocal t;
 	if (rir_shn <= 0 || rir_call_depth || rir_cond_depth || rir_lorn ||
 			rir_ternn || rir_iholdn)
@@ -3441,18 +3441,18 @@ static void rir_flush_effect_top(void) {
 	rir_shtype[rir_shn - 1] = 0;
 }
 
-static int rir_castt_opaque(int t) {
+static int rir_castt_opaque(int t) { MCC_TRACE("enter\n");
 	int bt = t & VT_BTYPE;
 	return (t & (VT_ARRAY | VT_VLA | VT_BITFIELD)) != 0 || bt == VT_VOID ||
 				 bt == VT_STRUCT || bt == VT_FUNC || bt == VT_LDOUBLE ||
 				 bt == VT_QLONG || bt == VT_QFLOAT || bt == VT_INT128;
 }
 
-static void rir_mark_apply(const RirOp *ro) {
+static void rir_mark_apply(const RirOp *ro) { MCC_TRACE("enter\n");
 	AstLocal a, n;
-	switch (ro->rkind) {
+	switch (ro->rkind) { MCC_TRACE("br\n");
 	case RIR_M_RETEXPR:
-		if (rir_shn > 0) {
+		if (rir_shn > 0) { MCC_TRACE("br\n");
 			rir_retexpr = rir_sh[rir_shn - 1];
 			rir_retexpr_depth = rir_shn;
 			rir_retexpr_pending = 1;
@@ -3460,7 +3460,7 @@ static void rir_mark_apply(const RirOp *ro) {
 		break;
 	case RIR_M_WHILECOND:
 		rir_while_pfx = AST_NONE;
-		if (rir_bbn && rir_bbn < 64) {
+		if (rir_bbn && rir_bbn < 64) { MCC_TRACE("br\n");
 			AstLocal pfx = ast_node(rir_arena, AST_BasicBlock);
 			rir_while_pfx = pfx;
 			rir_bb[rir_bbn++] = pfx;
@@ -3469,21 +3469,21 @@ static void rir_mark_apply(const RirOp *ro) {
 	case RIR_M_RETURN:
 		rir_ret_spilled = 0;
 		n = ast_node(rir_arena, AST_Return);
-		if (rir_retexpr_pending && ro->rval && rir_retexpr != AST_NONE) {
+		if (rir_retexpr_pending && ro->rval && rir_retexpr != AST_NONE) { MCC_TRACE("br\n");
 			rir_shn = rir_retexpr_depth - 1;
 			a = rir_retexpr;
-		} else {
+		} else { MCC_TRACE("br\n");
 			a = rir_shn ? rir_pop() : AST_NONE;
 		}
 		rir_retexpr_pending = 0;
 		rir_retexpr = AST_NONE;
 		if (a != AST_NONE)
 			ast_add_child(rir_arena, n, a);
-		if (rir_bbn == 1) {
+		if (rir_bbn == 1) { MCC_TRACE("br\n");
 			if (rir_pending_ret != AST_NONE)
 				rir_stmt(rir_pending_ret);
 			rir_pending_ret = n;
-		} else {
+		} else { MCC_TRACE("br\n");
 			rir_stmt(n);
 		}
 		rir_last_return = n;
@@ -3503,16 +3503,16 @@ static void rir_mark_apply(const RirOp *ro) {
 		break;
 	}
 	case RIR_M_CMPINV:
-		if (rir_shn > 0) {
+		if (rir_shn > 0) { MCC_TRACE("br\n");
 			AstLocal top = rir_sh[rir_shn - 1];
-			if (top != AST_NONE && ast_kind(rir_arena, top) == AST_Binary) {
+			if (top != AST_NONE && ast_kind(rir_arena, top) == AST_Binary) { MCC_TRACE("br\n");
 				int bop = ast_op(rir_arena, top);
 				int inflags = ro->mvs_n > 0 &&
 						(rir_mvs[ro->mvs_off + ro->mvs_n - 1].r & VT_VALMASK) == VT_CMP;
 				if (bop == TOK_LAND || bop == TOK_LOR)
 					ast_set_fbits(rir_arena, top,
 												ast_fbits(rir_arena, top) ^ AST_FB_LANDOR_INVERT);
-				else {
+				else { MCC_TRACE("br\n");
 
 					ast_set_op(rir_arena, top, bop ^ 1);
 					if (inflags || ast_cmp_invert_late(rir_arena, top, bop))
@@ -3543,7 +3543,7 @@ static void rir_mark_apply(const RirOp *ro) {
 		ast_set_op(rir_arena, n, 5);
 		ast_set_ival(rir_arena, n, (uint64_t)(unsigned)ro->rval);
 		rir_stmt(n);
-		if (rir_clg_pending) {
+		if (rir_clg_pending) { MCC_TRACE("br\n");
 			rir_clg_bind(rir_clg_pending, n);
 			rir_clg_pending = NULL;
 		}
@@ -3592,17 +3592,17 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_stmt(n);
 		break;
 	case RIR_M_BFGV:
-		if (rir_shn > 0) {
+		if (rir_shn > 0) { MCC_TRACE("br\n");
 			AstLocal top = rir_sh[rir_shn - 1];
 			if (top != AST_NONE && (ast_type_t(rir_arena, top) & VT_BITFIELD) &&
-					ast_parent(rir_arena, top) == AST_NONE) {
+					ast_parent(rir_arena, top) == AST_NONE) { MCC_TRACE("br\n");
 				AstLocal cv = ast_node(rir_arena, AST_Convert);
 				ast_set_type(rir_arena, cv, ro->rval, 0);
 				ast_add_child(rir_arena, cv, top);
 				rir_sh[rir_shn - 1] = cv;
 				rir_shtype[rir_shn - 1] = 0;
 			} else if (top != AST_NONE &&
-								 ast_kind(rir_arena, top) == AST_StoreVal) {
+								 ast_kind(rir_arena, top) == AST_StoreVal) { MCC_TRACE("br\n");
 				AstLocal st = (AstLocal)ast_ival(rir_arena, top);
 				AstLocal tgt = st == AST_NONE ? AST_NONE
 																			: ast_child(rir_arena, st, 0);
@@ -3616,13 +3616,13 @@ static void rir_mark_apply(const RirOp *ro) {
 	case RIR_M_LOAD:
 		if (rir_after_ret && rir_shn == 0)
 			break;
-		if (rir_shn > 0 && ro->mvs_n - rir_base_depth > 0) {
+		if (rir_shn > 0 && ro->mvs_n - rir_base_depth > 0) { MCC_TRACE("br\n");
 			const SValue *pv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 			AstLocal top = rir_sh[rir_shn - 1];
 			if (top != AST_NONE && ast_type_t(rir_arena, top) == 0 &&
 					ast_kind(rir_arena, top) == AST_Binary &&
 					(pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
-					!rir_ptr_arith(top, pv)) {
+					!rir_ptr_arith(top, pv)) { MCC_TRACE("br\n");
 				AstLocal cv = ast_node(rir_arena, AST_Convert);
 				ast_set_type_bf(rir_arena, cv, pv->type.t,
 										 (uint64_t)(uintptr_t)pv->type.ref, pv->type.bp, pv->type.bs);
@@ -3634,7 +3634,7 @@ static void rir_mark_apply(const RirOp *ro) {
 							 (ast_type_t(rir_arena, top) & (VT_BTYPE | VT_ARRAY)) != VT_PTR &&
 							 !is_float(ast_type_t(rir_arena, top)) &&
 							 (ast_type_t(rir_arena, top) & VT_BTYPE) != VT_STRUCT &&
-							 (pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR) {
+							 (pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR) { MCC_TRACE("br\n");
 				AstLocal cv = ast_node(rir_arena, AST_Convert);
 				ast_set_type_bf(rir_arena, cv, pv->type.t,
 										 (uint64_t)(uintptr_t)pv->type.ref, pv->type.bp, pv->type.bs);
@@ -3646,7 +3646,7 @@ static void rir_mark_apply(const RirOp *ro) {
 							 (ast_type_t(rir_arena, top) & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
 							 (pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
 							 ast_type_ref(rir_arena, top) !=
-									 (uint64_t)(uintptr_t)pv->type.ref) {
+									 (uint64_t)(uintptr_t)pv->type.ref) { MCC_TRACE("br\n");
 				const Sym *ps = (const Sym *)(uintptr_t)ast_type_ref(rir_arena, top);
 				if (ps && (ps->type.t & VT_BTYPE) == VT_VOID)
 					ast_set_type_bf(rir_arena, top, pv->type.t,
@@ -3656,14 +3656,14 @@ static void rir_mark_apply(const RirOp *ro) {
 							 (ast_type_t(rir_arena, top) & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
 							 (pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
 							 ast_type_ref(rir_arena, top) !=
-									 (uint64_t)(uintptr_t)pv->type.ref) {
+									 (uint64_t)(uintptr_t)pv->type.ref) { MCC_TRACE("br\n");
 				const Sym *ps = (const Sym *)(uintptr_t)ast_type_ref(rir_arena, top);
-				if (ps && (ps->type.t & VT_BTYPE) == VT_VOID) {
+				if (ps && (ps->type.t & VT_BTYPE) == VT_VOID) { MCC_TRACE("br\n");
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
 					ast_set_type_bf(rir_arena, cv, pv->type.t,
 											 (uint64_t)(uintptr_t)pv->type.ref, pv->type.bp, pv->type.bs);
 					if (rir_castgv_pend && rir_castgv_t == pv->type.t &&
-							rir_castgv_ref == (uint64_t)(uintptr_t)pv->type.ref) {
+							rir_castgv_ref == (uint64_t)(uintptr_t)pv->type.ref) { MCC_TRACE("br\n");
 						ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
 						rir_castgv_pend = 0;
 					}
@@ -3674,13 +3674,13 @@ static void rir_mark_apply(const RirOp *ro) {
 			}
 		}
 		a = rir_pop();
-		if (a == AST_NONE) {
+		if (a == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
 		n = ast_node(rir_arena, AST_Load);
 		ast_add_child(rir_arena, n, a);
-		if (ro->mvs_n - rir_base_depth > 0) {
+		if (ro->mvs_n - rir_base_depth > 0) { MCC_TRACE("br\n");
 			const SValue *pv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 			const Sym *pd = (const Sym *)(uintptr_t)pv->type.ref;
 			if (pv->r & VT_LVAL)
@@ -3725,11 +3725,11 @@ static void rir_mark_apply(const RirOp *ro) {
 		AstLocal u;
 		if (!ro->rval)
 			break;
-		if (rir_pending_ret != AST_NONE) {
+		if (rir_pending_ret != AST_NONE) { MCC_TRACE("br\n");
 			ast_set_ival(rir_arena, rir_pending_ret, (uint64_t)(int64_t)ro->rval);
 			break;
 		}
-		if (rir_last_return != AST_NONE) {
+		if (rir_last_return != AST_NONE) { MCC_TRACE("br\n");
 			ast_set_ival(rir_arena, rir_last_return, (uint64_t)(int64_t)ro->rval);
 			break;
 		}
@@ -3778,19 +3778,19 @@ static void rir_mark_apply(const RirOp *ro) {
 		break;
 	}
 	case RIR_M_CASTGV:
-		if (rir_shn > 0) {
+		if (rir_shn > 0) { MCC_TRACE("br\n");
 			AstLocal top = rir_sh[rir_shn - 1];
 			if (top != AST_NONE && ast_kind(rir_arena, top) == AST_Convert)
 				ast_set_fbits(rir_arena, top,
 											ast_fbits(rir_arena, top) | AST_FB_CONVERT_GV);
-			else if (ro->mvs_n - rir_base_depth > 0) {
+			else if (ro->mvs_n - rir_base_depth > 0) { MCC_TRACE("br\n");
 				const SValue *pv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 				if (top != AST_NONE && !rir_shtype[rir_shn - 1] &&
 						ast_parent(rir_arena, top) == AST_NONE &&
 						(ast_kind(rir_arena, top) == AST_Ref ||
 						 ast_kind(rir_arena, top) == AST_Literal) &&
 						ast_type_t(rir_arena, top) == (int)pv->type.t &&
-						ast_type_ref(rir_arena, top) == (uint64_t)(uintptr_t)pv->type.ref) {
+						ast_type_ref(rir_arena, top) == (uint64_t)(uintptr_t)pv->type.ref) { MCC_TRACE("br\n");
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
 					ast_set_type_bf(rir_arena, cv, pv->type.t,
 											 (uint64_t)(uintptr_t)pv->type.ref, pv->type.bp, pv->type.bs);
@@ -3810,12 +3810,12 @@ static void rir_mark_apply(const RirOp *ro) {
 		break;
 	case RIR_M_CONVERT:
 		rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
-		if (rir_shn <= 0 || rir_shtype[rir_shn - 1]) {
+		if (rir_shn <= 0 || rir_shtype[rir_shn - 1]) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
 		a = rir_pop();
-		if (a == AST_NONE) {
+		if (a == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -3829,7 +3829,7 @@ static void rir_mark_apply(const RirOp *ro) {
 			rir_thold[rir_tholdn++] = rir_pop();
 		break;
 	case RIR_M_TERNPICK:
-		if (rir_tholdn > 0) {
+		if (rir_tholdn > 0) { MCC_TRACE("br\n");
 			AstLocal keep = rir_thold[--rir_tholdn];
 			AstLocal drop = rir_pop();
 			(void)drop;
@@ -3847,7 +3847,7 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 		if (nb <= 0 || nb > rir_shn)
 			break;
-		for (q = rir_shn - nb; q < rir_shn; q++) {
+		for (q = rir_shn - nb; q < rir_shn; q++) { MCC_TRACE("br\n");
 			a = rir_sh[q];
 			if (a == AST_NONE || ast_parent(rir_arena, a) != AST_NONE)
 				return;
@@ -3865,8 +3865,8 @@ static void rir_mark_apply(const RirOp *ro) {
 	}
 }
 
-static int rir_cf_op(int rkind) {
-	switch (rkind) {
+static int rir_cf_op(int rkind) { MCC_TRACE("enter\n");
+	switch (rkind) { MCC_TRACE("br\n");
 	case RIR_R_WHILE:
 		return 2;
 	case RIR_R_FOR:
@@ -3880,7 +3880,7 @@ static int rir_cf_op(int rkind) {
 	}
 }
 
-static void rir_cf_cond(void) {
+static void rir_cf_cond(void) { MCC_TRACE("enter\n");
 	AstLocal cond;
 	if (!rir_cfn || rir_cfcond[rir_cfn - 1])
 		return;
@@ -3891,7 +3891,7 @@ static void rir_cf_cond(void) {
 			(rir_cfkind[rir_cfn - 1] == RIR_R_DO ||
 			 rir_cfkind[rir_cfn - 1] == RIR_R_WHILE ||
 			 rir_cfkind[rir_cfn - 1] == RIR_R_FOR) &&
-			rir_cfpfx[rir_cfn - 1] == AST_NONE) {
+			rir_cfpfx[rir_cfn - 1] == AST_NONE) { MCC_TRACE("br\n");
 		AstLocal bb = ast_node(rir_arena, AST_BasicBlock);
 		int q;
 		for (q = 0; q < rir_dheldn; q++)
@@ -3904,11 +3904,11 @@ static void rir_cf_cond(void) {
 	rir_cfcond[rir_cfn - 1] = 1;
 }
 
-static void rir_region(const RirOp *ro) {
+static void rir_region(const RirOp *ro) { MCC_TRACE("enter\n");
 	int after_ret = rir_after_ret;
 	rir_after_ret = 0;
-	if (ro->tag == RIR_T_RBEGIN) {
-		switch (ro->rkind) {
+	if (ro->tag == RIR_T_RBEGIN) { MCC_TRACE("br\n");
+		switch (ro->rkind) { MCC_TRACE("br\n");
 		case RIR_R_IF:
 		case RIR_R_WHILE:
 		case RIR_R_DO:
@@ -3916,7 +3916,7 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_SWITCH: {
 			AstLocal n;
 			AstLocal pfx = AST_NONE;
-			if (ro->rkind == RIR_R_WHILE && rir_while_pfx != AST_NONE) {
+			if (ro->rkind == RIR_R_WHILE && rir_while_pfx != AST_NONE) { MCC_TRACE("br\n");
 				pfx = rir_while_pfx;
 				rir_while_pfx = AST_NONE;
 				if (rir_bbn > 1 && rir_bb[rir_bbn - 1] == pfx)
@@ -3927,7 +3927,7 @@ static void rir_region(const RirOp *ro) {
 			n = ast_node(rir_arena, AST_If);
 			ast_set_op(rir_arena, n, rir_cf_op(ro->rkind));
 			rir_stmt(n);
-			if (rir_cfn < 64) {
+			if (rir_cfn < 64) { MCC_TRACE("br\n");
 				rir_cf[rir_cfn] = n;
 				rir_cfkind[rir_cfn] = ro->rkind;
 				rir_cfind[rir_cfn] = ro->rind;
@@ -3945,7 +3945,7 @@ static void rir_region(const RirOp *ro) {
 			rir_cond_depth++;
 			if (rir_cfn && (rir_cfkind[rir_cfn - 1] == RIR_R_FOR ||
 											rir_cfkind[rir_cfn - 1] == RIR_R_DO) &&
-					!(rir_ternn && rir_tern_cf[rir_ternn - 1] == rir_cfn)) {
+					!(rir_ternn && rir_tern_cf[rir_ternn - 1] == rir_cfn)) { MCC_TRACE("br\n");
 				rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 				rir_cf_cond();
 			}
@@ -3959,7 +3959,7 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_INC: {
 			AstLocal a = rir_pop(), u;
 			rir_inc_depth++;
-			if (a == AST_NONE) {
+			if (a == AST_NONE) { MCC_TRACE("br\n");
 				rir_arena_mismatch++;
 				break;
 			}
@@ -3979,7 +3979,7 @@ static void rir_region(const RirOp *ro) {
 					!rir_member_depth && !rir_retexpr_pending && !rir_vstruct_depth &&
 					!rir_vla_depth && rir_cvt_n < RIR_CVT_MAX && rir_shn > 0 &&
 					rir_sh[rir_shn - 1] != AST_NONE &&
-					ast_parent(rir_arena, rir_sh[rir_shn - 1]) == AST_NONE) {
+					ast_parent(rir_arena, rir_sh[rir_shn - 1]) == AST_NONE) { MCC_TRACE("br\n");
 				AstLocal a = rir_pop();
 				AstLocal cv = ast_node(rir_arena, AST_Convert);
 				ast_set_type(rir_arena, cv, ro->rval, 0);
@@ -4001,7 +4001,7 @@ static void rir_region(const RirOp *ro) {
 			rir_cond_depth++;
 			break;
 		case RIR_R_VSTORE:
-			if (rir_vstn < 16) {
+			if (rir_vstn < 16) { MCC_TRACE("br\n");
 				int n2 = ro->mvs_n - rir_base_depth;
 				int allow = 0, fit;
 				rir_vst_tc[rir_vstn] = 0;
@@ -4022,7 +4022,7 @@ static void rir_region(const RirOp *ro) {
 						(rir_mvs[ro->mvs_off + ro->mvs_n - 1].type.t & VT_BTYPE) ==
 								VT_STRUCT &&
 						(rir_mvs[ro->mvs_off + ro->mvs_n - 2].type.t & VT_BTYPE) ==
-								VT_STRUCT) {
+								VT_STRUCT) { MCC_TRACE("br\n");
 					rir_stamp_call_top(rir_mvs + ro->mvs_off, ro->mvs_n);
 					rir_vstruct_depth++;
 					rir_vst_sup[rir_vstn] = 1;
@@ -4030,7 +4030,7 @@ static void rir_region(const RirOp *ro) {
 							(long long)rir_mvs[ro->mvs_off + ro->mvs_n - 2].c.i;
 					rir_vst_vc[rir_vstn] =
 							(long long)rir_mvs[ro->mvs_off + ro->mvs_n - 1].c.i;
-				} else {
+				} else { MCC_TRACE("br\n");
 					rir_vst_sup[rir_vstn] = 0;
 				}
 				rir_vst_bf[rir_vstn] = 0;
@@ -4038,13 +4038,13 @@ static void rir_region(const RirOp *ro) {
 						!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
 						!rir_inc_depth && !rir_member_depth && !rir_vstruct_depth &&
 						!rir_vbf_depth && !rir_vla_depth && !rir_retexpr_pending &&
-						rir_pending_ret == AST_NONE) {
+						rir_pending_ret == AST_NONE) { MCC_TRACE("br\n");
 					const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 					const SValue *t = &rir_mvs[ro->mvs_off + ro->mvs_n - 2];
 					if ((t->type.t & VT_BITFIELD) &&
 							(t->type.t & VT_BTYPE) != VT_STRUCT &&
 							!((v->type.t & VT_BTYPE) == VT_STRUCT ||
-								(v->type.t & VT_ARRAY) || (v->type.t & VT_BITFIELD))) {
+								(v->type.t & VT_ARRAY) || (v->type.t & VT_BITFIELD))) { MCC_TRACE("br\n");
 						rir_vst_bf[rir_vstn] = 1;
 						rir_vbf_depth++;
 						rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
@@ -4056,19 +4056,19 @@ static void rir_region(const RirOp *ro) {
 						rir_pending_call == AST_NONE && !rir_cond_depth &&
 						!rir_synth_depth && !rir_call_depth && !rir_inc_depth &&
 						!rir_member_depth && !rir_vstruct_depth && !rir_vbf_depth &&
-						!rir_cx_depth && !rir_vla_depth && !rir_retexpr_pending) {
+						!rir_cx_depth && !rir_vla_depth && !rir_retexpr_pending) { MCC_TRACE("br\n");
 					SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 					SValue *t = &rir_mvs[ro->mvs_off + ro->mvs_n - 2];
 					int ct = is_complex_type(&t->type), cv = is_complex_type(&v->type);
 					if (ct != cv &&
 							((ct ? v : t)->type.t & VT_BTYPE) != VT_STRUCT &&
-							!((v->type.t | t->type.t) & (VT_ARRAY | VT_BITFIELD))) {
+							!((v->type.t | t->type.t) & (VT_ARRAY | VT_BITFIELD))) { MCC_TRACE("br\n");
 						rir_vst_cx[rir_vstn] = 1;
 						rir_cx_depth++;
 						rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 					}
 				}
-				if (n2 >= 2) {
+				if (n2 >= 2) { MCC_TRACE("br\n");
 					const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 					const SValue *t = &rir_mvs[ro->mvs_off + ro->mvs_n - 2];
 					allow = (((v->type.t & VT_ARRAY) != 0 &&
@@ -4087,7 +4087,7 @@ static void rir_region(const RirOp *ro) {
 				rir_vst_ok[rir_vstn] = (unsigned char)allow;
 				rir_vst_shn[rir_vstn] = (short)rir_shn;
 				rir_vst_seen[rir_vstn++] = 0;
-				if (rir_vst_sup[rir_vstn - 1] || rir_vst_cx[rir_vstn - 1]) {
+				if (rir_vst_sup[rir_vstn - 1] || rir_vst_cx[rir_vstn - 1]) { MCC_TRACE("br\n");
 					rir_vsup_depth = 1;
 					rir_vsup_nest = 0;
 				}
@@ -4108,7 +4108,7 @@ static void rir_region(const RirOp *ro) {
 				ast_add_child(rir_arena, n, cond);
 			else
 				rir_arena_mismatch++;
-			if (rir_ternn < 16) {
+			if (rir_ternn < 16) { MCC_TRACE("br\n");
 				rir_tern_cf[rir_ternn] = rir_cfn;
 				rir_tern[rir_ternn++] = n;
 			}
@@ -4125,7 +4125,7 @@ static void rir_region(const RirOp *ro) {
 				ast_add_child(rir_arena, rir_cf[rir_cfn - 1], bb);
 			if (rir_bbn < 64)
 				rir_bb[rir_bbn++] = bb;
-			if (ro->rkind == RIR_R_INCR) {
+			if (ro->rkind == RIR_R_INCR) { MCC_TRACE("br\n");
 				rir_incr_bb = bb;
 				rir_incr_live = ro->rval;
 			}
@@ -4136,7 +4136,7 @@ static void rir_region(const RirOp *ro) {
 		}
 		return;
 	}
-	switch (ro->rkind) {
+	switch (ro->rkind) { MCC_TRACE("br\n");
 	case RIR_R_COND:
 		if (rir_cond_depth)
 			rir_cond_depth--;
@@ -4149,7 +4149,7 @@ static void rir_region(const RirOp *ro) {
 				!rir_retexpr_pending && !rir_vstruct_depth && !rir_vla_depth &&
 				rir_shn > 0 && rir_sh[rir_shn - 1] != AST_NONE &&
 				!rir_shtype[rir_shn - 1] &&
-				ast_parent(rir_arena, rir_sh[rir_shn - 1]) == AST_NONE) {
+				ast_parent(rir_arena, rir_sh[rir_shn - 1]) == AST_NONE) { MCC_TRACE("br\n");
 			AstLocal a = rir_pop();
 			AstLocal cv = ast_node(rir_arena, AST_Convert);
 			ast_set_type(rir_arena, cv, ro->rval, 0);
@@ -4158,7 +4158,7 @@ static void rir_region(const RirOp *ro) {
 		}
 		break;
 	case RIR_R_CVT:
-		if (rir_cvt_n > 0) {
+		if (rir_cvt_n > 0) { MCC_TRACE("br\n");
 			rir_cvt_n--;
 			if (rir_cvt_n < RIR_CVT_MAX && rir_cvt_on[rir_cvt_n] && rir_cvt_depth)
 				rir_cvt_depth--;
@@ -4167,14 +4167,14 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_CALL:
 		if (rir_call_depth)
 			rir_call_depth--;
-		if (ro->rval && !rir_call_depth) {
+		if (ro->rval && !rir_call_depth) { MCC_TRACE("br\n");
 			AstLocal inv = rir_pending_call;
 			if (inv == AST_NONE && rir_shn > 0 &&
 					ast_kind(rir_arena, rir_val_node(rir_sh[rir_shn - 1])) == AST_Invoke)
 				inv = rir_pop();
 			else if (inv != AST_NONE)
 				rir_pending_call = AST_NONE;
-			if (inv != AST_NONE) {
+			if (inv != AST_NONE) { MCC_TRACE("br\n");
 				ast_set_type(rir_arena, rir_val_node(inv), VT_VOID, 0);
 				rir_ihold_arm = 1;
 				rir_stmt(inv);
@@ -4193,7 +4193,7 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_VSTORE:
 		if (!rir_vstn && rir_vstruct_depth)
 			rir_vstruct_depth--;
-		if (rir_vstn) {
+		if (rir_vstn) { MCC_TRACE("br\n");
 			int seen = rir_vst_seen[--rir_vstn];
 			int allow = rir_vst_ok[rir_vstn];
 			if (rir_vst_sup[rir_vstn] || rir_vst_cx[rir_vstn])
@@ -4211,25 +4211,25 @@ static void rir_region(const RirOp *ro) {
 					 (ast_kind(rir_arena, rir_sh[rir_shn - 1]) == AST_Unary &&
 						ast_op(rir_arena, rir_sh[rir_shn - 1]) == AST_OP_ADDR) ||
 					 (ast_kind(rir_arena, rir_sh[rir_shn - 2]) == AST_Unary &&
-						ast_op(rir_arena, rir_sh[rir_shn - 2]) == AST_OP_ADDR))) {
+						ast_op(rir_arena, rir_sh[rir_shn - 2]) == AST_OP_ADDR))) { MCC_TRACE("br\n");
 				if (rir_vst_shn[rir_vstn] >= 0 && rir_shn > rir_vst_shn[rir_vstn])
 					rir_shn = rir_vst_shn[rir_vstn];
 				break;
 			}
 			if (rir_vst_shn[rir_vstn] >= 2 && rir_shn > rir_vst_shn[rir_vstn])
 				rir_shn = rir_vst_shn[rir_vstn];
-			if (!seen && allow && rir_shn >= 2) {
+			if (!seen && allow && rir_shn >= 2) { MCC_TRACE("br\n");
 				AstLocal t = rir_pop(), v = rir_pop(), n;
 				if (rir_vst_bf[rir_vstn] || rir_vst_cx[rir_vstn] ||
-						rir_vst_nc[rir_vstn]) {
+						rir_vst_nc[rir_vstn]) { MCC_TRACE("br\n");
 					AstLocal sw = t;
 					t = v;
 					v = sw;
-				} else if (rir_vst_sup[rir_vstn]) {
+				} else if (rir_vst_sup[rir_vstn]) { MCC_TRACE("br\n");
 					long long tc = rir_vst_tc[rir_vstn], vc = rir_vst_vc[rir_vstn];
 					long long ti = (long long)ast_ival(rir_arena, t);
 					long long vi = (long long)ast_ival(rir_arena, v);
-					if (!(tc != vc && ti == tc && vi == vc)) {
+					if (!(tc != vc && ti == tc && vi == vc)) { MCC_TRACE("br\n");
 						AstLocal sw = t;
 						t = v;
 						v = sw;
@@ -4255,12 +4255,12 @@ static void rir_region(const RirOp *ro) {
 			break;
 		rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 		v = rir_shn ? rir_pop() : AST_NONE;
-		if (v == AST_NONE) {
+		if (v == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			rir_lheldn = 0;
 			break;
 		}
-		if (rir_lheldn) {
+		if (rir_lheldn) { MCC_TRACE("br\n");
 			AstLocal bb = ast_node(rir_arena, AST_BasicBlock);
 			int q;
 			for (q = 0; q < rir_lheldn; q++)
@@ -4274,9 +4274,9 @@ static void rir_region(const RirOp *ro) {
 	}
 	case RIR_R_LANDOR:
 		rir_lheldn = 0;
-		if (rir_lorn) {
+		if (rir_lorn) { MCC_TRACE("br\n");
 			AstLocal n = rir_lor[--rir_lorn];
-			if ((ro->rval & 1) && ast_nchild(rir_arena, n) >= 1) {
+			if ((ro->rval & 1) && ast_nchild(rir_arena, n) >= 1) { MCC_TRACE("br\n");
 				ast_set_fbits(rir_arena, n,
 											ast_fbits(rir_arena, n) | AST_FB_LANDOR_MATERIAL);
 				ast_set_ival(rir_arena, n, (uint64_t)((ro->rval >> 2) & 1));
@@ -4297,7 +4297,7 @@ static void rir_region(const RirOp *ro) {
 			break;
 		rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 		v = rir_shn ? rir_pop() : AST_NONE;
-		if (v == AST_NONE) {
+		if (v == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -4305,7 +4305,7 @@ static void rir_region(const RirOp *ro) {
 		break;
 	}
 	case RIR_R_TERNARY:
-		if (rir_ternn) {
+		if (rir_ternn) { MCC_TRACE("br\n");
 			AstLocal n = rir_tern[--rir_ternn];
 			if (ast_nchild(rir_arena, n) !=
 					(ast_op(rir_arena, n) == 9 ? 2u : 3u))
@@ -4322,7 +4322,7 @@ static void rir_region(const RirOp *ro) {
 		if (rir_member_depth)
 			rir_member_depth--;
 		base = rir_pop();
-		if (base == AST_NONE) {
+		if (base == AST_NONE) { MCC_TRACE("br\n");
 			rir_arena_mismatch++;
 			break;
 		}
@@ -4332,12 +4332,12 @@ static void rir_region(const RirOp *ro) {
 		ast_set_ival(rir_arena, m, (uint64_t)(unsigned)(ro->rval >> 2));
 		ast_set_fbits(rir_arena, m, (ro->rval & 1) ? (uint64_t)VT_NONLVAL : 0);
 		ast_add_child(rir_arena, m, base);
-		if (ro->mvs_n - rir_base_depth > 0) {
+		if (ro->mvs_n - rir_base_depth > 0) { MCC_TRACE("br\n");
 			const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 			ast_set_type_bf(rir_arena, m, v->type.t,
 									 (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
 			rir_push(m);
-		} else {
+		} else { MCC_TRACE("br\n");
 			rir_push_typed(m);
 		}
 		break;
@@ -4369,7 +4369,7 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_SWITCH:
 		rir_docond = 0;
 		rir_dheld_flush();
-		if (rir_cfn) {
+		if (rir_cfn) { MCC_TRACE("br\n");
 			rir_cfn--;
 			if (ro->rind == rir_cfind[rir_cfn])
 				ast_set_fbits(rir_arena, rir_cf[rir_cfn],
@@ -4389,13 +4389,13 @@ static void rir_region(const RirOp *ro) {
 	}
 }
 
-static int rir_unsafe(const char *why, AstLocal n, uint32_t nc) {
+static int rir_unsafe(const char *why, AstLocal n, uint32_t nc) { MCC_TRACE("enter\n");
 	snprintf(rir_c2_msg, sizeof rir_c2_msg, "arity %s n=%u nc=%u op=%d", why,
 					 (unsigned)n, (unsigned)nc, ast_op(rir_arena, n));
 	return 0;
 }
 
-static int rir_bb_slot(AstLocal n, uint32_t i, uint32_t nc) {
+static int rir_bb_slot(AstLocal n, uint32_t i, uint32_t nc) { MCC_TRACE("enter\n");
 	AstLocal c;
 	if (i >= nc)
 		return 0;
@@ -4403,8 +4403,8 @@ static int rir_bb_slot(AstLocal n, uint32_t i, uint32_t nc) {
 	return c != AST_NONE && ast_kind(rir_arena, c) == AST_BasicBlock;
 }
 
-static int rir_if_safe(AstLocal n, uint32_t nc) {
-	switch (ast_op(rir_arena, n)) {
+static int rir_if_safe(AstLocal n, uint32_t nc) { MCC_TRACE("enter\n");
+	switch (ast_op(rir_arena, n)) { MCC_TRACE("br\n");
 	case 0:
 		return nc >= 2 && rir_bb_slot(n, 1, nc) && (nc < 3 || rir_bb_slot(n, 2, nc));
 	case 2:
@@ -4433,7 +4433,7 @@ static int rir_if_safe(AstLocal n, uint32_t nc) {
 	}
 }
 
-static int rir_leaf_reg_ok(AstLocal n) {
+static int rir_leaf_reg_ok(AstLocal n) { MCC_TRACE("enter\n");
 	int r = ast_op(rir_arena, n), v;
 	if (r & VT_LVAL)
 		return 1;
@@ -4450,11 +4450,11 @@ static int rir_leaf_reg_ok(AstLocal n) {
 	}
 }
 
-static int rir_emit_safe(void) {
+static int rir_emit_safe(void) { MCC_TRACE("enter\n");
 	AstLocal n;
-	for (n = 0; n < ast_count(rir_arena); n++) {
+	for (n = 0; n < ast_count(rir_arena); n++) { MCC_TRACE("br\n");
 		uint32_t nc = ast_nchild(rir_arena, n);
-		switch (ast_kind(rir_arena, n)) {
+		switch (ast_kind(rir_arena, n)) { MCC_TRACE("br\n");
 		case AST_Literal:
 		case AST_Ref:
 			if (!rir_leaf_reg_ok(n))
@@ -4472,21 +4472,21 @@ static int rir_emit_safe(void) {
 			break;
 		case AST_Binary: {
 			int bop = ast_op(rir_arena, n);
-			if (bop == TOK_LAND || bop == TOK_LOR) {
+			if (bop == TOK_LAND || bop == TOK_LOR) { MCC_TRACE("br\n");
 				if (nc < (ast_fbits(rir_arena, n) & AST_FB_LANDOR_MATERIAL ? 1u : 2u))
 					return rir_unsafe("Binary-landor", n, nc);
 #ifdef MCC_IR_HAVE_X86_PRIMS
 			} else if (bop == AST_OP_AXADD || bop == AST_OP_AXCHG ||
-								 bop == AST_OP_ACMPXCHG) {
+								 bop == AST_OP_ACMPXCHG) { MCC_TRACE("br\n");
 				if (nc != (bop == AST_OP_ACMPXCHG ? 3u : 2u))
 					return rir_unsafe("Binary-atomic", n, nc);
 #endif
-			} else if (bop == AST_OP_CPLXBUILD) {
+			} else if (bop == AST_OP_CPLXBUILD) { MCC_TRACE("br\n");
 				Sym *cr = (Sym *)(uintptr_t)ast_type_ref(rir_arena, n);
 				if (nc != 2 || (ast_type_t(rir_arena, n) & VT_BTYPE) != VT_STRUCT ||
 						!cr || !cr->a.is_complex || !cr->next)
 					return rir_unsafe("Binary-cplxbuild", n, nc);
-			} else if (nc != 2) {
+			} else if (nc != 2) { MCC_TRACE("br\n");
 				return rir_unsafe("Binary", n, nc);
 			}
 			break;
@@ -4522,7 +4522,7 @@ static int rir_emit_safe(void) {
 			callee = ast_child(rir_arena, n, 0);
 			if (callee != AST_NONE && ast_type_t(rir_arena, callee) == 0 &&
 				ast_kind(rir_arena, callee) == AST_Load &&
-				ast_nchild(rir_arena, callee) == 1) {
+				ast_nchild(rir_arena, callee) == 1) { MCC_TRACE("br\n");
 				callee = ast_child(rir_arena, callee, 0);
 				via_load = 1;
 			}
@@ -4537,7 +4537,7 @@ static int rir_emit_safe(void) {
 				return rir_unsafe("Invoke-callee-untyped", n, nc);
 			if (!via_load && ast_type_ref(rir_arena, callee) == 0)
 				return rir_unsafe("Invoke-callee-noref", n, nc);
-			if ((ast_type_t(rir_arena, callee) & VT_BTYPE) != VT_FUNC) {
+			if ((ast_type_t(rir_arena, callee) & VT_BTYPE) != VT_FUNC) { MCC_TRACE("br\n");
 				const Sym *r =
 						(const Sym *)(uintptr_t)ast_type_ref(rir_arena, callee);
 				if (!via_load &&
@@ -4577,7 +4577,7 @@ static int rir_emit_safe(void) {
 	return 1;
 }
 
-static void rir_castgv_apply(void) {
+static void rir_castgv_apply(void) { MCC_TRACE("enter\n");
 	AstLocal top, cv;
 	if (!rir_castgv_pend || --rir_castgv_pend)
 		return;
@@ -4586,7 +4586,7 @@ static void rir_castgv_apply(void) {
 	top = rir_sh[rir_shn - 1];
 	if (top == AST_NONE || rir_shtype[rir_shn - 1])
 		return;
-	if (ast_kind(rir_arena, top) == AST_Convert) {
+	if (ast_kind(rir_arena, top) == AST_Convert) { MCC_TRACE("br\n");
 		ast_set_fbits(rir_arena, top,
 									ast_fbits(rir_arena, top) | AST_FB_CONVERT_GV);
 		return;
@@ -4607,16 +4607,16 @@ static void rir_castgv_apply(void) {
 		rir_pending_call = cv;
 }
 
-static int rir_bf_norm_on(void) {
+static int rir_bf_norm_on(void) { MCC_TRACE("enter\n");
 	static int v = -1;
-	if (v < 0) {
+	if (v < 0) { MCC_TRACE("br\n");
 		const char *e = getenv("MCC_RIR_BF_NORM");
 		v = e ? atoi(e) : 1;
 	}
 	return v;
 }
 
-static AstLocal rir_bf_lit(int t, long long v) {
+static AstLocal rir_bf_lit(int t, long long v) { MCC_TRACE("enter\n");
 	AstLocal n = ast_node(rir_arena, AST_Literal);
 	ast_set_op(rir_arena, n, VT_CONST);
 	ast_set_type(rir_arena, n, t, 0);
@@ -4624,7 +4624,7 @@ static AstLocal rir_bf_lit(int t, long long v) {
 	return n;
 }
 
-static AstLocal rir_bf_bin(int op, int t, AstLocal l, AstLocal r) {
+static AstLocal rir_bf_bin(int op, int t, AstLocal l, AstLocal r) { MCC_TRACE("enter\n");
 	AstLocal n = ast_node(rir_arena, AST_Binary);
 	ast_set_op(rir_arena, n, op);
 	ast_set_type(rir_arena, n, t, 0);
@@ -4633,35 +4633,35 @@ static AstLocal rir_bf_bin(int op, int t, AstLocal l, AstLocal r) {
 	return n;
 }
 
-static AstLocal rir_bf_cvt(int t, AstLocal c) {
+static AstLocal rir_bf_cvt(int t, AstLocal c) { MCC_TRACE("enter\n");
 	AstLocal n = ast_node(rir_arena, AST_Convert);
 	ast_set_type(rir_arena, n, t, 0);
 	ast_add_child(rir_arena, n, c);
 	return n;
 }
 
-static int rir_bf_intbt(int t) {
+static int rir_bf_intbt(int t) { MCC_TRACE("enter\n");
 	int bt = t & VT_BTYPE;
 	return bt == VT_BYTE || bt == VT_SHORT || bt == VT_INT || bt == VT_LLONG ||
 				 bt == VT_BOOL;
 }
 
-static int rir_bf_promo(int t) {
+static int rir_bf_promo(int t) { MCC_TRACE("enter\n");
 	int bt = t & VT_BTYPE;
 	if (bt == VT_LLONG || bt == VT_INT)
 		return bt | (t & VT_UNSIGNED);
 	return VT_INT;
 }
 
-static int rir_bf_frame_base(AstLocal n, int depth) {
+static int rir_bf_frame_base(AstLocal n, int depth) { MCC_TRACE("enter\n");
 	int op;
 	if (n == AST_NONE || depth > 6)
 		return 0;
-	if (ast_kind(rir_arena, n) == AST_Ref) {
+	if (ast_kind(rir_arena, n) == AST_Ref) { MCC_TRACE("br\n");
 		op = ast_op(rir_arena, n);
 		return (op & VT_VALMASK) == VT_LOCAL && !(op & VT_SYM);
 	}
-	if (ast_kind(rir_arena, n) == AST_Unary) {
+	if (ast_kind(rir_arena, n) == AST_Unary) { MCC_TRACE("br\n");
 		op = ast_op(rir_arena, n);
 		if (op == AST_OP_MEMBER || op == AST_OP_ADDR)
 			return rir_bf_frame_base(ast_first_child(rir_arena, n), depth + 1);
@@ -4669,7 +4669,7 @@ static int rir_bf_frame_base(AstLocal n, int depth) {
 	return 0;
 }
 
-static int rir_bf_shape(AstLocal n, int *pt0, int *pt1, int *pgvt, int *pbits) {
+static int rir_bf_shape(AstLocal n, int *pt0, int *pt1, int *pgvt, int *pbits) { MCC_TRACE("enter\n");
 	int tt, t0, t1, gvt, bits, aux, bp, bs;
 	Sym *f;
 	if (n == AST_NONE || ast_kind(rir_arena, n) != AST_Unary ||
@@ -4704,7 +4704,7 @@ static int rir_bf_shape(AstLocal n, int *pt0, int *pt1, int *pgvt, int *pbits) {
 	return 1;
 }
 
-static AstLocal rir_bf_plain(AstLocal n, int t1) {
+static AstLocal rir_bf_plain(AstLocal n, int t1) { MCC_TRACE("enter\n");
 	AstLocal kids[8], c;
 	int nk = 0, i;
 	AstLocal m = ast_node(rir_arena, AST_Unary);
@@ -4722,13 +4722,13 @@ static AstLocal rir_bf_plain(AstLocal n, int t1) {
 	return m;
 }
 
-static int rir_bf_value_pos(AstLocal n) {
+static int rir_bf_value_pos(AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal p = ast_parent(rir_arena, n);
 	int pop;
 	if (p == AST_NONE)
 		return 0;
 	pop = ast_op(rir_arena, p);
-	switch (ast_kind(rir_arena, p)) {
+	switch (ast_kind(rir_arena, p)) { MCC_TRACE("br\n");
 	case AST_Convert:
 	case AST_Return:
 		return 1;
@@ -4747,13 +4747,13 @@ static int rir_bf_value_pos(AstLocal n) {
 	}
 }
 
-static int rir_bf_uac(int gvt, int bs) {
+static int rir_bf_uac(int gvt, int bs) { MCC_TRACE("enter\n");
 	if ((gvt & VT_BTYPE) != VT_INT || !(gvt & VT_UNSIGNED) || bs == 32)
 		return gvt;
 	return VT_INT;
 }
 
-static void rir_bf_lower_load(AstLocal n) {
+static void rir_bf_lower_load(AstLocal n) { MCC_TRACE("enter\n");
 	int t0, t1, gvt, bits, bp, bs, pt;
 	AstLocal m, e;
 	if (!rir_bf_shape(n, &t0, &t1, &gvt, &bits))
@@ -4767,7 +4767,7 @@ static void rir_bf_lower_load(AstLocal n) {
 	ast_set_ival(rir_arena, n, 0);
 	ast_set_fbits(rir_arena, n, 0);
 	ast_set_sym(rir_arena, n, 0);
-	if (pt != gvt) {
+	if (pt != gvt) { MCC_TRACE("br\n");
 		e = rir_bf_bin(TOK_SAR, gvt, e, rir_bf_lit(VT_INT, bits - bs));
 		ast_set_kind(rir_arena, n, AST_Convert);
 		ast_set_op(rir_arena, n, 0);
@@ -4782,7 +4782,7 @@ static void rir_bf_lower_load(AstLocal n) {
 	ast_add_child(rir_arena, n, rir_bf_lit(VT_INT, bits - bs));
 }
 
-static void rir_bf_lower_store(AstLocal s) {
+static void rir_bf_lower_store(AstLocal s) { MCC_TRACE("enter\n");
 	int t0, t1, gvt, bits, bp, bs, dbt, lt;
 	unsigned long long mask;
 	AstLocal d, v, keep, val;
@@ -4795,7 +4795,7 @@ static void rir_bf_lower_store(AstLocal s) {
 	bp = ast_type_bp(rir_arena, d);
 	bs = ast_type_bs(rir_arena, d);
 	mask = bs >= 64 ? ~0ULL : ((1ULL << bs) - 1);
-	if ((t0 & VT_BTYPE) == VT_BOOL) {
+	if ((t0 & VT_BTYPE) == VT_BOOL) { MCC_TRACE("br\n");
 		int td = (t0 & ~(VT_BTYPE | VT_LONG)) | VT_BYTE | VT_UNSIGNED;
 		Sym *f = (Sym *)(uintptr_t)ast_type_ref(rir_arena, d);
 		int aux = f ? f->auxtype : -1;
@@ -4803,7 +4803,7 @@ static void rir_bf_lower_store(AstLocal s) {
 		val = rir_bf_cvt(t0, v);
 		t1 = (f && aux != -1 && aux > 0) ? ((td & ~(VT_BTYPE | VT_LONG)) | aux) : td;
 		lt = rir_bf_promo(t1);
-	} else {
+	} else { MCC_TRACE("br\n");
 		ast_clear_children(rir_arena, s);
 		lt = rir_bf_promo(t1);
 		val = rir_bf_cvt(t1, v);
@@ -4824,7 +4824,7 @@ static void rir_bf_lower_store(AstLocal s) {
 	ast_add_child(rir_arena, s, val);
 }
 
-static void rir_bf_normalise(void) {
+static void rir_bf_normalise(void) { MCC_TRACE("enter\n");
 	AstLocal n, nn;
 	unsigned char *sv;
 	if (!rir_bf_norm_on() || !rir_arena)
@@ -4833,7 +4833,7 @@ static void rir_bf_normalise(void) {
 	if (!nn)
 		return;
 	sv = mcc_mallocz(nn);
-	for (n = 0; n < nn; n++) {
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		AstLocal st;
 		if (ast_kind(rir_arena, n) != AST_StoreVal)
 			continue;
@@ -4843,7 +4843,7 @@ static void rir_bf_normalise(void) {
 		if (st != AST_NONE && st < nn)
 			sv[st] = 1;
 	}
-	for (n = 0; n < nn; n++) {
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		uint64_t fb;
 		if (ast_kind(rir_arena, n) != AST_Store || ast_nchild(rir_arena, n) != 2)
 			continue;
@@ -4856,23 +4856,23 @@ static void rir_bf_normalise(void) {
 		rir_bf_lower_store(n);
 	}
 	mcc_free(sv);
-	for (n = 0; n < nn; n++) {
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		if (ast_kind(rir_arena, n) != AST_Unary || !rir_bf_value_pos(n))
 			continue;
 		rir_bf_lower_load(n);
 	}
 }
 
-static int rir_tern_norm_on(void) {
+static int rir_tern_norm_on(void) { MCC_TRACE("enter\n");
 	static int v = -1;
-	if (v < 0) {
+	if (v < 0) { MCC_TRACE("br\n");
 		const char *e = getenv("MCC_RIR_TERN_NORM");
 		v = e ? atoi(e) : 1;
 	}
 	return v;
 }
 
-static int rir_tern_retval_ok(AstLocal r) {
+static int rir_tern_retval_ok(AstLocal r) { MCC_TRACE("enter\n");
 	int vb;
 	AstLocal v;
 	if (r == AST_NONE || ast_nchild(rir_arena, r) != 1 ||
@@ -4885,7 +4885,7 @@ static int rir_tern_retval_ok(AstLocal r) {
 	return vb != VT_STRUCT && vb != VT_QFLOAT && vb != VT_QLONG;
 }
 
-static AstLocal rir_tern_sole_return(AstLocal bb) {
+static AstLocal rir_tern_sole_return(AstLocal bb) { MCC_TRACE("enter\n");
 	AstLocal c;
 	if (bb == AST_NONE || ast_kind(rir_arena, bb) != AST_BasicBlock)
 		return AST_NONE;
@@ -4898,7 +4898,7 @@ static AstLocal rir_tern_sole_return(AstLocal bb) {
 	return c;
 }
 
-static AstLocal rir_tern_retcast(AstLocal v) {
+static AstLocal rir_tern_retcast(AstLocal v) { MCC_TRACE("enter\n");
 	AstLocal c;
 	if (v == AST_NONE)
 		return v;
@@ -4909,7 +4909,7 @@ static AstLocal rir_tern_retcast(AstLocal v) {
 }
 
 static void rir_tern_build(AstLocal bb, AstLocal iff, AstLocal ret, AstLocal drop,
-													 AstLocal cnd, AstLocal va, AstLocal vb) {
+													 AstLocal cnd, AstLocal va, AstLocal vb) { MCC_TRACE("enter\n");
 	va = rir_tern_retcast(va);
 	vb = rir_tern_retcast(vb);
 	ast_clear_children(rir_arena, iff);
@@ -4931,14 +4931,14 @@ static void rir_tern_build(AstLocal bb, AstLocal iff, AstLocal ret, AstLocal dro
 	ast_add_child(rir_arena, bb, ret);
 }
 
-static void rir_tern_normalise(void) {
+static void rir_tern_normalise(void) { MCC_TRACE("enter\n");
 	AstLocal n, nn;
 	if (!rir_tern_norm_on() || !rir_arena)
 		return;
 	if ((func_vt.t & VT_BTYPE) == VT_STRUCT || is_complex_type(&func_vt))
 		return;
 	nn = ast_count(rir_arena);
-	for (n = 0; n < nn; n++) {
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		AstLocal last, prev, c, iff, rt, re, cnd;
 		if (ast_kind(rir_arena, n) != AST_BasicBlock)
 			continue;
@@ -4950,7 +4950,7 @@ static void rir_tern_normalise(void) {
 				 c = ast_next_sib(rir_arena, c))
 			prev = c;
 		if (ast_kind(rir_arena, last) == AST_If && ast_op(rir_arena, last) == 0 &&
-				ast_nchild(rir_arena, last) == 3 && !ast_fbits(rir_arena, last)) {
+				ast_nchild(rir_arena, last) == 3 && !ast_fbits(rir_arena, last)) { MCC_TRACE("br\n");
 			iff = last;
 			rt = rir_tern_sole_return(ast_child(rir_arena, iff, 1));
 			re = rir_tern_sole_return(ast_child(rir_arena, iff, 2));
@@ -4972,7 +4972,7 @@ static void rir_tern_normalise(void) {
 		if (prev != AST_NONE && ast_kind(rir_arena, last) == AST_Return &&
 				rir_tern_retval_ok(last) &&
 				ast_kind(rir_arena, prev) == AST_If && ast_op(rir_arena, prev) == 0 &&
-				ast_nchild(rir_arena, prev) == 2 && !ast_fbits(rir_arena, prev)) {
+				ast_nchild(rir_arena, prev) == 2 && !ast_fbits(rir_arena, prev)) { MCC_TRACE("br\n");
 			iff = prev;
 			re = last;
 			rt = rir_tern_sole_return(ast_child(rir_arena, iff, 1));
@@ -4983,7 +4983,7 @@ static void rir_tern_normalise(void) {
 				continue;
 			if (!ast_detach_last_child(rir_arena, n, re))
 				continue;
-			if (!ast_detach_last_child(rir_arena, n, iff)) {
+			if (!ast_detach_last_child(rir_arena, n, iff)) { MCC_TRACE("br\n");
 				ast_add_child(rir_arena, n, re);
 				continue;
 			}
@@ -4994,7 +4994,7 @@ static void rir_tern_normalise(void) {
 	}
 }
 
-void rir_arena_normalise(struct AstArena *a) {
+void rir_arena_normalise(struct AstArena *a) { MCC_TRACE("enter\n");
 	AstArena *sv = rir_arena;
 	if (!a)
 		return;
@@ -5004,7 +5004,7 @@ void rir_arena_normalise(struct AstArena *a) {
 	rir_arena = sv;
 }
 
-static void rir_to_arena(void) {
+static void rir_to_arena(void) { MCC_TRACE("enter\n");
 	int i;
 	if (!rir_arena)
 		rir_arena = ast_arena_new();
@@ -5064,10 +5064,10 @@ static void rir_to_arena(void) {
 	rir_clg_syn = 0;
 	rir_stampn = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
-	for (i = 0; i < rir_n; i++) {
+	for (i = 0; i < rir_n; i++) { MCC_TRACE("br\n");
 		RirOp *ro = &rir_ops[i];
 		if ((ro->tag == RIR_T_RBEGIN || ro->tag == RIR_T_REND) &&
-				ro->rkind == RIR_R_CPLX) {
+				ro->rkind == RIR_R_CPLX) { MCC_TRACE("br\n");
 			if (ro->tag == RIR_T_RBEGIN)
 				rir_cplx_depth++;
 			else if (rir_cplx_depth)
@@ -5077,18 +5077,18 @@ static void rir_to_arena(void) {
 		if (rir_cplx_depth)
 			continue;
 		if ((ro->tag == RIR_T_RBEGIN || ro->tag == RIR_T_REND) &&
-				ro->rkind == RIR_R_ACAS) {
-			if (ro->tag == RIR_T_RBEGIN) {
-				if (!rir_acas_depth) {
+				ro->rkind == RIR_R_ACAS) { MCC_TRACE("br\n");
+			if (ro->tag == RIR_T_RBEGIN) { MCC_TRACE("br\n");
+				if (!rir_acas_depth) { MCC_TRACE("br\n");
 					rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 					rir_acas_val = ro->rval;
 				}
 				rir_acas_depth++;
-			} else if (rir_acas_depth && !--rir_acas_depth) {
+			} else if (rir_acas_depth && !--rir_acas_depth) { MCC_TRACE("br\n");
 				AstLocal rb = rir_pop(), ra = rir_pop(), rn;
-				if (ra == AST_NONE || rb == AST_NONE) {
+				if (ra == AST_NONE || rb == AST_NONE) { MCC_TRACE("br\n");
 					rir_arena_mismatch++;
-				} else {
+				} else { MCC_TRACE("br\n");
 					rn = ast_node(rir_arena, AST_Binary);
 					ast_set_op(rir_arena, rn, AST_OP_ACASRMW);
 					ast_set_ival(rir_arena, rn,
@@ -5103,18 +5103,18 @@ static void rir_to_arena(void) {
 		}
 		if (rir_acas_depth)
 			continue;
-		if (rir_vsup_depth) {
+		if (rir_vsup_depth) { MCC_TRACE("br\n");
 			if ((ro->tag == RIR_T_RBEGIN || ro->tag == RIR_T_REND) &&
-					ro->rkind == RIR_R_VSTORE) {
-				if (ro->tag == RIR_T_RBEGIN) {
+					ro->rkind == RIR_R_VSTORE) { MCC_TRACE("br\n");
+				if (ro->tag == RIR_T_RBEGIN) { MCC_TRACE("br\n");
 					rir_vsup_nest++;
 					continue;
 				}
-				if (rir_vsup_nest) {
+				if (rir_vsup_nest) { MCC_TRACE("br\n");
 					rir_vsup_nest--;
 					continue;
 				}
-			} else {
+			} else { MCC_TRACE("br\n");
 				continue;
 			}
 		}
@@ -5137,9 +5137,9 @@ static void rir_to_arena(void) {
 				(ro->rnocode & (RIR_NOEVAL_MASK | RIR_DATA_ONLY_MASK)))
 			continue;
 		if ((ro->tag == RIR_T_RBEGIN || ro->tag == RIR_T_REND) &&
-				ro->rkind == RIR_R_CPLXB) {
-			if (ro->tag == RIR_T_RBEGIN) {
-				if (!rir_cplxb_depth) {
+				ro->rkind == RIR_R_CPLXB) { MCC_TRACE("br\n");
+			if (ro->tag == RIR_T_RBEGIN) { MCC_TRACE("br\n");
+				if (!rir_cplxb_depth) { MCC_TRACE("br\n");
 					if (!rir_cond_depth && !rir_inc_depth && !rir_member_depth &&
 							!rir_retexpr_pending && !rir_vstruct_depth && !rir_vbf_depth &&
 							!rir_cx_depth && !rir_vla_depth && !rir_cvt_depth)
@@ -5148,12 +5148,12 @@ static void rir_to_arena(void) {
 							(rir_shn >= 2 && rir_shn == ro->mvs_n - rir_base_depth);
 				}
 				rir_cplxb_depth++;
-			} else if (rir_cplxb_depth && !--rir_cplxb_depth && rir_cplxb_on) {
+			} else if (rir_cplxb_depth && !--rir_cplxb_depth && rir_cplxb_on) { MCC_TRACE("br\n");
 				AstLocal ci = rir_pop(), cr = rir_pop(), cn;
 				if (cr == AST_NONE || ci == AST_NONE ||
-						ro->mvs_n - rir_base_depth <= 0) {
+						ro->mvs_n - rir_base_depth <= 0) { MCC_TRACE("br\n");
 					rir_arena_mismatch++;
-				} else {
+				} else { MCC_TRACE("br\n");
 					const SValue *cv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 					cn = ast_node(rir_arena, AST_Binary);
 					ast_set_op(rir_arena, cn, AST_OP_CPLXBUILD);
@@ -5171,14 +5171,14 @@ static void rir_to_arena(void) {
 		if (ro->tag != RIR_T_MARK ||
 				(ro->rkind != RIR_M_CASTGV && ro->rkind != RIR_M_CASTT))
 			rir_castgv_apply();
-		if (ro->tag == RIR_T_MARK) {
+		if (ro->tag == RIR_T_MARK) { MCC_TRACE("br\n");
 			int bound = rir_retexpr_pending && ro->rkind == RIR_M_RETURN && ro->rval;
 			if ((ro->rkind == RIR_M_NORETURN ||
 					 (!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
 						!rir_inc_depth && !rir_member_depth && !rir_vstruct_depth &&
 						!rir_vbf_depth && !rir_vla_depth)) &&
 					(!rir_retexpr_pending || ro->rkind == RIR_M_RETURN ||
-					 ro->rkind == RIR_M_NORETURN)) {
+					 ro->rkind == RIR_M_NORETURN)) { MCC_TRACE("br\n");
 				if (bound || ro->rkind == RIR_M_NORETURN)
 					;
 				else if (ro->rkind == RIR_M_BFGV)
@@ -5193,7 +5193,7 @@ static void rir_to_arena(void) {
 			}
 			continue;
 		}
-		if (ro->tag != RIR_T_OP) {
+		if (ro->tag != RIR_T_OP) { MCC_TRACE("br\n");
 			if (ro->tag == RIR_T_RBEGIN && !rir_synth_depth && !rir_call_depth &&
 					!rir_inc_depth && !rir_member_depth &&
 					(ro->rkind == RIR_R_IF || ro->rkind == RIR_R_WHILE ||
@@ -5214,11 +5214,11 @@ static void rir_to_arena(void) {
 		rir_op_effect(ro);
 	}
 	rir_flush_pending_call();
-	if (rir_pending_ret != AST_NONE) {
+	if (rir_pending_ret != AST_NONE) { MCC_TRACE("br\n");
 		rir_stmt(rir_pending_ret);
 		rir_pending_ret = AST_NONE;
 	}
-	while (rir_shn > 0) {
+	while (rir_shn > 0) { MCC_TRACE("br\n");
 		AstLocal d = rir_pop();
 		if (rir_effectful(d))
 			rir_stmt(d);
@@ -5227,7 +5227,7 @@ static void rir_to_arena(void) {
 	rir_stamp_flush();
 }
 
-static int rir_pt_addr(const RirOp *o, int fallback) {
+static int rir_pt_addr(const RirOp *o, int fallback) { MCC_TRACE("enter\n");
 	if (o->pt == RIR_PT_HERE)
 		return ind;
 	if (o->pt >= 0 && rir_ptaddr[o->pt] >= 0)
@@ -5235,9 +5235,9 @@ static int rir_pt_addr(const RirOp *o, int fallback) {
 	return fallback;
 }
 
-static int rir_issue_jump(RirOp *o) {
+static int rir_issue_jump(RirOp *o) { MCC_TRACE("enter\n");
 	int t, nh;
-	switch (o->p.kind) {
+	switch (o->p.kind) { MCC_TRACE("br\n");
 	case IR_OP_JMP:
 		if (o->lbl < 0)
 			return 0;
@@ -5256,12 +5256,12 @@ static int rir_issue_jump(RirOp *o) {
 		if ((o->p.a0 && o->lbl < 0) || (o->p.a1 && o->lbl2 < 0))
 			return 0;
 		nh = (gjmp_append)(n, tt);
-		if (o->p.a0) {
+		if (o->p.a0) { MCC_TRACE("br\n");
 			if (o->lbl >= 0)
 				rir_lblhead[o->lbl] = nh;
 			if (o->lbl2 >= 0)
 				rir_lblhead[o->lbl2] = 0;
-		} else if (o->lbl2 >= 0) {
+		} else if (o->lbl2 >= 0) { MCC_TRACE("br\n");
 			rir_lblhead[o->lbl2] = nh;
 		}
 		return 1;
@@ -5286,7 +5286,7 @@ static int rir_issue_jump(RirOp *o) {
 	}
 }
 
-static void rir_run(void) {
+static void rir_run(void) { MCC_TRACE("enter\n");
 	int i;
 	rir_fail_op = -1;
 	rir_fail_kind = -1;
@@ -5294,18 +5294,18 @@ static void rir_run(void) {
 		rir_lblhead[i] = 0;
 	for (i = 0; i < ir_cap_n; i++)
 		rir_ptaddr[i] = -1;
-	for (i = 0; i < rir_n; i++) {
+	for (i = 0; i < rir_n; i++) { MCC_TRACE("br\n");
 		RirOp *o = &rir_ops[i];
 		if (o->tag != RIR_T_OP)
 			continue;
 		nocode_wanted = o->p.nocode;
 		loc = o->p.loc_pre;
 		nb_temp_local_vars = o->p.ntlv_pre;
-		if (o->p.vs_n >= 0) {
-			if (o->p.vs_n) {
+		if (o->p.vs_n >= 0) { MCC_TRACE("br\n");
+			if (o->p.vs_n) { MCC_TRACE("br\n");
 				int k;
 				int live = (int)(vtop - vstack);
-				for (k = 0; k < o->p.vs_n && k <= live; k++) {
+				for (k = 0; k < o->p.vs_n && k <= live; k++) { MCC_TRACE("br\n");
 					unsigned char fl = rir_vscapt[o->p.vs_off + k];
 					int L = rir_vslbl[o->p.vs_off + k];
 					int L2 = rir_vslbl2[o->p.vs_off + k];
@@ -5320,22 +5320,22 @@ static void rir_run(void) {
 				memcpy(vstack, ir_cap_vs + o->p.vs_off,
 							 (size_t)o->p.vs_n * sizeof(SValue));
 				if (rir_delta)
-					for (k = 0; k < o->p.vs_n; k++) {
+					for (k = 0; k < o->p.vs_n; k++) { MCC_TRACE("br\n");
 						int L = rir_vslbl[o->p.vs_off + k];
 						int L2 = rir_vslbl2[o->p.vs_off + k];
-						if (vstack[k].r == VT_CMP) {
+						if (vstack[k].r == VT_CMP) { MCC_TRACE("br\n");
 							if (L >= 0)
 								vstack[k].jtrue = rir_lblhead[L];
 							if (L2 >= 0)
 								vstack[k].jfalse = rir_lblhead[L2];
-						} else if (L >= 0) {
+						} else if (L >= 0) { MCC_TRACE("br\n");
 							vstack[k].c.i = rir_lblhead[L];
 						}
 					}
 			}
 			vtop = vstack + o->p.vs_n - 1;
 		}
-		if (ind != o->p.ind_pre + rir_delta) {
+		if (ind != o->p.ind_pre + rir_delta) { MCC_TRACE("br\n");
 			rir_fail_op = i;
 			rir_fail_kind = o->p.kind;
 			return;
@@ -5346,7 +5346,7 @@ static void rir_run(void) {
 		ir_cap_pred_cur = o->p.swpred - 1;
 		if (o->jidx >= 0)
 			rir_ptaddr[o->jidx] = ind;
-		if (!rir_issue_jump(o)) {
+		if (!rir_issue_jump(o)) { MCC_TRACE("br\n");
 			ir_cap_issue(&o->p);
 		}
 		if (rir_env >= 2)
@@ -5356,20 +5356,20 @@ static void rir_run(void) {
 	}
 }
 
-static void rir_emit_line(const char *verdict, int ops, int regions) {
+static void rir_emit_line(const char *verdict, int ops, int regions) { MCC_TRACE("enter\n");
 	const char *vf = mcc_state && mcc_state->current_filename
 											 ? mcc_state->current_filename
 											 : "?";
-	if (rir_out && rir_out[0]) {
+	if (rir_out && rir_out[0]) { MCC_TRACE("br\n");
 		FILE *f = fopen(rir_out, "a");
-		if (f) {
+		if (f) { MCC_TRACE("br\n");
 			fprintf(f,
 							"%s\t%s\t%s\tops=%d\tregions=%d\tlbl=%d\tfb=%d\tunbal=%d\tovf=%d\n",
 							verdict, vf, funcname, ops, regions, rir_nlbl, rir_fallback,
 							rir_unbal, rir_ovf);
 			fclose(f);
 		}
-	} else {
+	} else { MCC_TRACE("br\n");
 		fprintf(stderr,
 						"[rir-verify] %s\t%s\t%s\tops=%d\tregions=%d\tlbl=%d\tfb=%d\tunbal=%d\t"
 						"ovf=%d\tshift=%s\tsfop=%s@%d\tsdiff=%d\topen=%d\n",
@@ -5380,10 +5380,10 @@ static void rir_emit_line(const char *verdict, int ops, int regions) {
 	}
 }
 
-static int rir_blame(int diff_off) {
+static int rir_blame(int diff_off) { MCC_TRACE("enter\n");
 	int i;
 	int at = rir_body_ind_sv + diff_off;
-	for (i = 0; i < rir_n; i++) {
+	for (i = 0; i < rir_n; i++) { MCC_TRACE("br\n");
 		if (rir_ops[i].tag != RIR_T_OP)
 			continue;
 		if (at >= rir_ops[i].p.ind_pre && at < rir_ops[i].p.ind_post)
@@ -5392,14 +5392,14 @@ static int rir_blame(int diff_off) {
 	return -1;
 }
 
-static int rir_c2_equiv_proven(void) {
+static int rir_c2_equiv_proven(void) { MCC_TRACE("enter\n");
 	const char *e = getenv("RIREQUIV");
 	const char *p;
 	size_t n;
 	if (!e || !funcname)
 		return 0;
 	n = strlen(funcname);
-	for (p = e; *p;) {
+	for (p = e; *p;) { MCC_TRACE("br\n");
 		const char *q = p;
 		while (*q && *q != ',')
 			q++;
@@ -5413,7 +5413,7 @@ static int rir_c2_equiv_proven(void) {
 const char *rir_prod_why = "";
 const char *rir_unfaithful_why = "";
 
-void rir_teardown(void) {
+void rir_teardown(void) { MCC_TRACE("enter\n");
 	mcc_free(rir_ops);
 	mcc_free(rir_marks);
 	mcc_free(rir_mvs);
@@ -5455,17 +5455,17 @@ void rir_teardown(void) {
 	ir_cap_teardown();
 }
 
-struct AstArena *rir_prod_take(void) {
+struct AstArena *rir_prod_take(void) { MCC_TRACE("enter\n");
 	char msg[256];
 	AstArena *a;
 	int i, nops = 0;
 	rir_prod_why = "";
 	rir_prod_nraw = 0;
-	if (!rir_prod_env || rir_env || rir_prod_bail) {
+	if (!rir_prod_env || rir_env || rir_prod_bail) { MCC_TRACE("br\n");
 		rir_prod_why = "bail";
 		return NULL;
 	}
-	if (mcc_state->reverse_funcargs) {
+	if (mcc_state->reverse_funcargs) { MCC_TRACE("br\n");
 		rir_prod_why = "revargs";
 		return NULL;
 	}
@@ -5476,33 +5476,33 @@ struct AstArena *rir_prod_take(void) {
 	for (i = 0; i < rir_n; i++)
 		if (rir_ops[i].tag == RIR_T_OP)
 			nops++;
-	if (!nops) {
+	if (!nops) { MCC_TRACE("br\n");
 		rir_prod_why = "noops";
 		return NULL;
 	}
-	if (ir_cap_bad) {
+	if (ir_cap_bad) { MCC_TRACE("br\n");
 		rir_prod_why = "capbad";
 		return NULL;
 	}
-	if (rir_unbal) {
+	if (rir_unbal) { MCC_TRACE("br\n");
 		rir_prod_why = "unbal";
 		return NULL;
 	}
-	if (rir_ovf) {
+	if (rir_ovf) { MCC_TRACE("br\n");
 		rir_prod_why = "ovf";
 		return NULL;
 	}
 	rir_to_arena();
-	if (rir_arena_mismatch) {
+	if (rir_arena_mismatch) { MCC_TRACE("br\n");
 		rir_prod_why = "mismatch";
 		return NULL;
 	}
 	msg[0] = 0;
-	if (ast_validate(rir_arena, msg, sizeof msg) != 0) {
+	if (ast_validate(rir_arena, msg, sizeof msg) != 0) { MCC_TRACE("br\n");
 		rir_prod_why = "invalid";
 		return NULL;
 	}
-	if (!rir_emit_safe()) {
+	if (!rir_emit_safe()) { MCC_TRACE("br\n");
 		rir_prod_why = "unsafe";
 		return NULL;
 	}
@@ -5512,7 +5512,7 @@ struct AstArena *rir_prod_take(void) {
 		if (dump_cached == (const char *)-1)
 			dump_cached = getenv("RIRPRODDUMP");
 		e = dump_cached;
-		if (e && funcname && !strcmp(e, funcname)) {
+		if (e && funcname && !strcmp(e, funcname)) { MCC_TRACE("br\n");
 			static char pdb[8192];
 			ast_dump(rir_arena, ast_root(rir_arena), pdb, sizeof pdb);
 			fprintf(stderr, "[rir-proddump] %s:\n%s\n", funcname, pdb);
@@ -5523,7 +5523,7 @@ struct AstArena *rir_prod_take(void) {
 	return a;
 }
 
-void rir_prod_replay_begin(void) {
+void rir_prod_replay_begin(void) { MCC_TRACE("enter\n");
 	rir_locrec_i = 0;
 	rir_slotrec_i = 0;
 	rir_tvrec_i = 0;
@@ -5545,17 +5545,17 @@ void rir_prod_replay_begin(void) {
 static int rir_span_first = -1, rir_span_end = -1;
 static int rir_span_blen = -1, rir_span_nlen = -1;
 
-void rir_prod_span(int first, int end, int body_len, int new_len) {
+void rir_prod_span(int first, int end, int body_len, int new_len) { MCC_TRACE("enter\n");
 	rir_span_first = first;
 	rir_span_end = end;
 	rir_span_blen = body_len;
 	rir_span_nlen = new_len;
 }
 
-void rir_low_set(long nodes, const long *clean, const long *why, int nwhy) {
+void rir_low_set(long nodes, const long *clean, const long *why, int nwhy) { MCC_TRACE("enter\n");
 	int i;
 	rir_low_p_nodes = nodes;
-	for (i = 0; i < RIR_LOW_NLEVEL; i++) {
+	for (i = 0; i < RIR_LOW_NLEVEL; i++) { MCC_TRACE("br\n");
 		rir_low_p_clean[i] = clean[i];
 		rir_low_p_reg[i] = rir_low_p_big[i] = rir_low_p_huge[i] = 0;
 	}
@@ -5564,9 +5564,9 @@ void rir_low_set(long nodes, const long *clean, const long *why, int nwhy) {
 	rir_low_p_have = 1;
 }
 
-void rir_low_regions(const long *regions, const long *big, const long *huge) {
+void rir_low_regions(const long *regions, const long *big, const long *huge) { MCC_TRACE("enter\n");
 	int i;
-	for (i = 0; i < RIR_LOW_NLEVEL; i++) {
+	for (i = 0; i < RIR_LOW_NLEVEL; i++) { MCC_TRACE("br\n");
 		rir_low_p_reg[i] = regions[i];
 		rir_low_p_big[i] = big[i];
 		rir_low_p_huge[i] = huge[i];
@@ -5576,10 +5576,10 @@ void rir_low_regions(const long *regions, const long *big, const long *huge) {
 static const char *rir_low_excl;
 static int rir_low_excl_read;
 
-static int rir_low_excluded(void) {
+static int rir_low_excluded(void) { MCC_TRACE("enter\n");
 	const char *f, *p, *e;
 	size_t n, lf;
-	if (!rir_low_excl_read) {
+	if (!rir_low_excl_read) { MCC_TRACE("br\n");
 		rir_low_excl = getenv("MCC_RIR_LOW_EXCLUDE");
 		rir_low_excl_read = 1;
 	}
@@ -5593,7 +5593,7 @@ static int rir_low_excluded(void) {
 	if (!*f)
 		return 0;
 	lf = strlen(f);
-	for (p = rir_low_excl; *p; p = *e ? e + 1 : e) {
+	for (p = rir_low_excl; *p; p = *e ? e + 1 : e) { MCC_TRACE("br\n");
 		e = strchr(p, ',');
 		if (!e)
 			e = p + strlen(p);
@@ -5605,7 +5605,7 @@ static int rir_low_excluded(void) {
 	return 0;
 }
 
-static const char *rir_cur_file(void) {
+static const char *rir_cur_file(void) { MCC_TRACE("enter\n");
 	return file && file->filename[0]
 					? file->filename
 					: (mcc_state && mcc_state->current_filename
@@ -5613,7 +5613,7 @@ static const char *rir_cur_file(void) {
 								 : "?");
 }
 
-static void rir_low_body_row(long nb) {
+static void rir_low_body_row(long nb) { MCC_TRACE("enter\n");
 	FILE *o = rir_prod_out ? fopen(rir_prod_out, "a") : stderr;
 	if (!o)
 		return;
@@ -5625,7 +5625,7 @@ static void rir_low_body_row(long nb) {
 		fclose(o);
 }
 
-static void rir_low_take(long nb) {
+static void rir_low_take(long nb) { MCC_TRACE("enter\n");
 	int i, nblk = 0, only = -1;
 	if (!rir_low_p_have)
 		return;
@@ -5639,32 +5639,32 @@ static void rir_low_take(long nb) {
 	rir_tot_low_bodies++;
 	rir_tot_low_bytes += nb;
 	rir_tot_low_nodes += rir_low_p_nodes;
-	for (i = 0; i < RIR_LOW_NLEVEL; i++) {
+	for (i = 0; i < RIR_LOW_NLEVEL; i++) { MCC_TRACE("br\n");
 		rir_tot_low_clean[i] += rir_low_p_clean[i];
 		rir_tot_low_reg[i] += rir_low_p_reg[i];
 		rir_tot_low_big[i] += rir_low_p_big[i];
 		rir_tot_low_huge[i] += rir_low_p_huge[i];
-		if (rir_low_p_clean[i] == rir_low_p_nodes) {
+		if (rir_low_p_clean[i] == rir_low_p_nodes) { MCC_TRACE("br\n");
 			rir_tot_low_ok[i]++;
 			rir_tot_low_okb[i] += nb;
 		}
 	}
-	for (i = 1; i < RIR_LOW_NCLASS; i++) {
+	for (i = 1; i < RIR_LOW_NCLASS; i++) { MCC_TRACE("br\n");
 		rir_low_why_nodes[i] += rir_low_p_why[i];
-		if (rir_low_p_why[i]) {
+		if (rir_low_p_why[i]) { MCC_TRACE("br\n");
 			nblk++;
 			only = i;
 			rir_low_block_n[i]++;
 			rir_low_block_b[i] += nb;
 		}
 	}
-	if (nblk == 1) {
+	if (nblk == 1) { MCC_TRACE("br\n");
 		rir_low_sole_n[only]++;
 		rir_low_sole_b[only] += nb;
 	}
 }
 
-void rir_prod_note(const char *verdict) {
+void rir_prod_note(const char *verdict) { MCC_TRACE("enter\n");
 	const char *f, *unf;
 	char sb[96];
 	int i;
@@ -5673,35 +5673,35 @@ void rir_prod_note(const char *verdict) {
 	unf = is_fb ? rir_unfaithful_why : "";
 	rir_low_take(nb);
 	rir_prod_fn_notes++;
-	if (!strcmp(verdict, "used")) {
+	if (!strcmp(verdict, "used")) { MCC_TRACE("br\n");
 		rir_tot_prod_used++;
 		rir_tot_bytes_used += nb;
-		if (rir_prod_nraw) {
+		if (rir_prod_nraw) { MCC_TRACE("br\n");
 			rir_tot_raw_used++;
 			rir_tot_rawb_used += nb;
 		}
-	} else if (is_fb) {
+	} else if (is_fb) { MCC_TRACE("br\n");
 		rir_tot_prod_fb++;
 		rir_tot_bytes_fb += nb;
-		if (rir_prod_nraw) {
+		if (rir_prod_nraw) { MCC_TRACE("br\n");
 			rir_tot_raw_fb++;
 			rir_tot_rawb_fb += nb;
 		}
 		for (i = 0; i < RIR_PROD_NUNF; i++)
-			if (!strcmp(rir_unfaithful_name[i], unf)) {
+			if (!strcmp(rir_unfaithful_name[i], unf)) { MCC_TRACE("br\n");
 				rir_unfaithful_n[i]++;
 				rir_unfaithful_b[i] += nb;
 				break;
 			}
-	} else {
+	} else { MCC_TRACE("br\n");
 		rir_tot_prod_skip++;
 		rir_tot_bytes_skip += nb;
-		if (rir_prod_nraw) {
+		if (rir_prod_nraw) { MCC_TRACE("br\n");
 			rir_tot_raw_skip++;
 			rir_tot_rawb_skip += nb;
 		}
 		for (i = 0; i < RIR_PROD_NWHY; i++)
-			if (!strcmp(rir_prod_why_name[i], rir_prod_why)) {
+			if (!strcmp(rir_prod_why_name[i], rir_prod_why)) { MCC_TRACE("br\n");
 				rir_prod_why_n[i]++;
 				rir_prod_why_b[i] += nb;
 				break;
@@ -5714,9 +5714,9 @@ void rir_prod_note(const char *verdict) {
 	if (is_fb && rir_span_blen >= 0)
 		snprintf(sb, sizeof sb, "\tfirst=%d\tend=%d\tblen=%d\tnlen=%d",
 						 rir_span_first, rir_span_end, rir_span_blen, rir_span_nlen);
-	if (rir_prod_out) {
+	if (rir_prod_out) { MCC_TRACE("br\n");
 		FILE *o = fopen(rir_prod_out, "a");
-		if (o) {
+		if (o) { MCC_TRACE("br\n");
 			fprintf(o, "%s\t%s\t%s\t%s\t%s\t%ld\t%d%s\n", verdict, f,
 							funcname ? funcname : "?", rir_prod_why, unf, nb, rir_prod_nraw, sb);
 			fclose(o);
@@ -5727,35 +5727,35 @@ void rir_prod_note(const char *verdict) {
 					funcname ? funcname : "?", rir_prod_why, unf, nb, rir_prod_nraw, sb);
 }
 
-void rir_prod_body_set(long bytes) { rir_prod_body_bytes = bytes; }
+void rir_prod_body_set(long bytes) { MCC_TRACE("enter\n"); rir_prod_body_bytes = bytes; }
 
-void rir_prod_why_set(const char *why) { rir_prod_why = why; }
+void rir_prod_why_set(const char *why) { MCC_TRACE("enter\n"); rir_prod_why = why; }
 
-void rir_prod_reemit(long bytes) {
+void rir_prod_reemit(long bytes) { MCC_TRACE("enter\n");
 	rir_tot_reemit_n++;
 	rir_tot_reemit_bytes += bytes;
 }
 
-void rir_prod_fn_begin(void) {
+void rir_prod_fn_begin(void) { MCC_TRACE("enter\n");
 	rir_prod_fn_notes = 0;
 	rir_low_p_have = 0;
 }
 
-void rir_prod_fn_end(long bytes) {
+void rir_prod_fn_end(long bytes) { MCC_TRACE("enter\n");
 	rir_tot_fn_n++;
 	rir_tot_fn_bytes += bytes;
-	if (!rir_prod_fn_notes) {
+	if (!rir_prod_fn_notes) { MCC_TRACE("br\n");
 		rir_tot_fn_unnoted++;
 		rir_tot_fn_unnoted_bytes += bytes;
 	}
 	rir_prod_fn_notes = 0;
 }
 
-static void rir_prod_report(void) {
+static void rir_prod_report(void) { MCC_TRACE("enter\n");
 	int i;
 	long body = rir_tot_bytes_used + rir_tot_bytes_fb + rir_tot_bytes_skip;
 	FILE *f = stderr;
-	if (rir_prod_out && rir_prod_out[0]) {
+	if (rir_prod_out && rir_prod_out[0]) { MCC_TRACE("br\n");
 		f = fopen(rir_prod_out, "a");
 		if (!f)
 			f = stderr;
@@ -5797,7 +5797,7 @@ static void rir_prod_report(void) {
 					"fallbackbytes=%ld skip=%ld skipbytes=%ld\n",
 					rir_tot_raw_used, rir_tot_rawb_used, rir_tot_raw_fb,
 					rir_tot_rawb_fb, rir_tot_raw_skip, rir_tot_rawb_skip);
-	if (rir_prod_low_env) {
+	if (rir_prod_low_env) { MCC_TRACE("br\n");
 		fprintf(f,
 						"[rir-low] bodies=%ld bytes=%ld nodes=%ld clean0=%ld clean1=%ld "
 						"clean2=%ld ok0=%ld ok1=%ld ok2=%ld okbytes0=%ld okbytes1=%ld "
@@ -5819,7 +5819,7 @@ static void rir_prod_report(void) {
 			const long *ku = ast_low_kind_untyped();
 			const long *kv = ast_low_kind_void();
 			long tn = 0, tu = 0, tv = 0;
-			for (i = 0; i < AST_KIND_COUNT; i++) {
+			for (i = 0; i < AST_KIND_COUNT; i++) { MCC_TRACE("br\n");
 				tn += kn[i];
 				tu += ku[i];
 				tv += kv[i];
@@ -5842,7 +5842,7 @@ static void rir_prod_report(void) {
 		fclose(f);
 }
 
-void rir_prod_replay_end(void) {
+void rir_prod_replay_end(void) { MCC_TRACE("enter\n");
 	rir_c2_active = 0;
 	ir_cap_replaying = 0;
 	ast_replaying = 0;
@@ -5850,7 +5850,7 @@ void rir_prod_replay_end(void) {
 	ast_locrec_i = 0;
 }
 
-void rir_verify(void) {
+void rir_verify(void) { MCC_TRACE("enter\n");
 	Section *rsec = cur_text_section->reloc;
 	int rel1 = rsec ? (int)rsec->data_offset : 0;
 	int orig_ind = ind, orig_rsym = rsym;
@@ -5891,7 +5891,7 @@ void rir_verify(void) {
 	{
 		int rawn = 0, rawb = 0;
 		for (i = 0; i < ir_cap_n; i++)
-			if (ir_cap_ops[i].kind == IR_OP_RAW) {
+			if (ir_cap_ops[i].kind == IR_OP_RAW) { MCC_TRACE("br\n");
 				rawn++;
 				rawb += ir_cap_ops[i].raw_len;
 			}
@@ -5900,19 +5900,19 @@ void rir_verify(void) {
 		if (rawn)
 			rir_tot_raw_fn++;
 	}
-	if (rir_env >= 4) {
+	if (rir_env >= 4) { MCC_TRACE("br\n");
 		rir_to_arena();
 		rir_tot_arena_fn++;
 		rir_tot_arena_nodes += ast_count(rir_arena);
-		if (rir_env >= 6) {
+		if (rir_env >= 6) { MCC_TRACE("br\n");
 			static char db[8192];
 			ast_dump(rir_arena, ast_root(rir_arena), db, sizeof db);
 			fprintf(stderr, "[rir-dump] %s RIR:\n%s\n", funcname, db);
-			if (ast_cur && ast_replay_ok(ast_cur)) {
+			if (ast_cur && ast_replay_ok(ast_cur)) { MCC_TRACE("br\n");
 				AstLocal q;
 				ast_dump(ast_cur, ast_root(ast_cur), db, sizeof db);
 				fprintf(stderr, "[rir-dump] %s TREE:\n%s\n", funcname, db);
-				for (q = 0; q < ast_count(rir_arena) && q < ast_count(ast_cur); q++) {
+				for (q = 0; q < ast_count(rir_arena) && q < ast_count(ast_cur); q++) { MCC_TRACE("br\n");
 					if (ast_kind(rir_arena, q) == ast_kind(ast_cur, q) &&
 							ast_op(rir_arena, q) == ast_op(ast_cur, q) &&
 							ast_type_t(rir_arena, q) == ast_type_t(ast_cur, q) &&
@@ -5952,7 +5952,7 @@ void rir_verify(void) {
 		}
 		if (rir_env >= 6 && rir_started && ast_cur && ast_replay_ok(ast_cur) &&
 				ast_intention_hash(rir_arena, ast_root(rir_arena)) ==
-						ast_intention_hash(ast_cur, ast_root(ast_cur))) {
+						ast_intention_hash(ast_cur, ast_root(ast_cur))) { MCC_TRACE("br\n");
 			AstArena *pa = ast_arena_clone(rir_arena);
 			AstArena *pb = ast_arena_clone(ast_cur);
 			int fa, fb;
@@ -5978,7 +5978,7 @@ void rir_verify(void) {
 			ast_arena_free(pb);
 		}
 	}
-	for (i = 0; i < rir_n; i++) {
+	for (i = 0; i < rir_n; i++) { MCC_TRACE("br\n");
 		if (rir_ops[i].tag == RIR_T_OP)
 			nops++;
 		else
@@ -5989,11 +5989,11 @@ void rir_verify(void) {
 		rir_tot_unbal++;
 	if (rir_ovf)
 		rir_tot_ovf++;
-	if (nops == 0) {
+	if (nops == 0) { MCC_TRACE("br\n");
 		rir_emit_line("rempty", 0, nregions);
 		return;
 	}
-	if (ir_cap_bad) {
+	if (ir_cap_bad) { MCC_TRACE("br\n");
 		rir_emit_line("rrewind", nops, nregions);
 		return;
 	}
@@ -6027,10 +6027,10 @@ void rir_verify(void) {
 	memcpy(outer, mcc_state->error_jmp_buf, sizeof(jmp_buf));
 	mcc_state->error_func = ast_error_sink;
 	stk_data_floor = nb_stk_data;
-	if (setjmp(mcc_state->error_jmp_buf) == 0) {
+	if (setjmp(mcc_state->error_jmp_buf) == 0) { MCC_TRACE("br\n");
 		mcc_state->error_set_jmp_enabled = 1;
 		rir_run();
-		if (rir_fail_op < 0) {
+		if (rir_fail_op < 0) { MCC_TRACE("br\n");
 			int new_rel = rsec ? (int)rsec->data_offset : 0;
 			int new_len = ind - rir_body_ind_sv;
 			faithful = new_len == body_len &&
@@ -6041,17 +6041,17 @@ void rir_verify(void) {
 									ast_reloc_range_equiv(rsec->data + rir_reloc0_sv, orig_rel,
 																				rel_len));
 		}
-	} else {
+	} else { MCC_TRACE("br\n");
 		mcc_asm_inline_unwind();
 		errored = 1;
 	}
 	new_len_fin = ind - rir_body_ind_sv;
-	if (new_len_fin > 0 && !faithful && !errored) {
+	if (new_len_fin > 0 && !faithful && !errored) { MCC_TRACE("br\n");
 		repl = mcc_malloc((size_t)new_len_fin);
 		memcpy(repl, cur_text_section->data + rir_body_ind_sv, (size_t)new_len_fin);
 	}
 
-	if (rir_env >= 3 && faithful && body_len > 0) {
+	if (rir_env >= 3 && faithful && body_len > 0) { MCC_TRACE("br\n");
 		int nraw = 0;
 		for (i = 0; i < ir_cap_n; i++)
 			if (ir_cap_ops[i].kind == IR_OP_RAW)
@@ -6059,10 +6059,10 @@ void rir_verify(void) {
 		rir_shift_failop = -1;
 		rir_shift_failkind = -1;
 		rir_shift_diff = -1;
-		if (nraw || rir_fallback || rir_jmpsv_fb) {
+		if (nraw || rir_fallback || rir_jmpsv_fb) { MCC_TRACE("br\n");
 			rir_shift_verdict = "skip";
 			rir_tot_shift_skip++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			int shift = RIR_SHIFT;
 			int base2 = rir_body_ind_sv + shift;
 			section_realloc(cur_text_section, base2 + body_len + 64);
@@ -6075,7 +6075,7 @@ void rir_verify(void) {
 			nocode_wanted = 0;
 			mcc_state->cg_func_alloca = 0;
 			rir_delta = shift;
-			if (setjmp(mcc_state->error_jmp_buf) == 0) {
+			if (setjmp(mcc_state->error_jmp_buf) == 0) { MCC_TRACE("br\n");
 				rir_run();
 				rir_open_chains = 0;
 				for (i = 0; i < rir_nlbl; i++)
@@ -6083,7 +6083,7 @@ void rir_verify(void) {
 						rir_open_chains++;
 				{
 					int L = mcc_state->cg_func_alloca;
-					while (L >= base2 && L + 4 <= ind) {
+					while (L >= base2 && L + 4 <= ind) { MCC_TRACE("br\n");
 						int nx = (int)read32le(cur_text_section->data + L);
 						write32le(cur_text_section->data + L,
 											nx ? (uint32_t)(nx - shift) : 0);
@@ -6092,27 +6092,27 @@ void rir_verify(void) {
 				}
 				if (rir_fail_op < 0 && ind - base2 == body_len &&
 						memcmp(cur_text_section->data + base2, orig, (size_t)body_len) == 0 &&
-						(rsec ? (int)rsec->data_offset - (int)rir_reloc0_sv : 0) == rel_len) {
+						(rsec ? (int)rsec->data_offset - (int)rir_reloc0_sv : 0) == rel_len) { MCC_TRACE("br\n");
 					rir_shift_verdict = "ok";
 					rir_tot_shift_ok++;
-				} else {
+				} else { MCC_TRACE("br\n");
 					int k;
 					rir_shift_verdict = rir_open_chains ? "open" : "bad";
-					if (rir_open_chains) {
+					if (rir_open_chains) { MCC_TRACE("br\n");
 						rir_tot_shift_open++;
 						rir_tot_shift_bad--;
 					}
 					rir_shift_failop = rir_fail_op;
 					rir_shift_failkind = rir_fail_kind;
-					if (rir_fail_op < 0 && ind - base2 == body_len) {
+					if (rir_fail_op < 0 && ind - base2 == body_len) { MCC_TRACE("br\n");
 						for (k = 0; k < body_len; k++)
-							if (cur_text_section->data[base2 + k] != orig[k]) {
+							if (cur_text_section->data[base2 + k] != orig[k]) { MCC_TRACE("br\n");
 								rir_shift_diff = k;
 								break;
 							}
-						if (rir_shift_diff >= 0) {
+						if (rir_shift_diff >= 0) { MCC_TRACE("br\n");
 							int bi = rir_blame(rir_shift_diff);
-							if (bi >= 0) {
+							if (bi >= 0) { MCC_TRACE("br\n");
 								rir_shift_failop = bi;
 								rir_shift_failkind = rir_ops[bi].p.kind;
 							}
@@ -6120,7 +6120,7 @@ void rir_verify(void) {
 					}
 					rir_tot_shift_bad++;
 				}
-			} else {
+			} else { MCC_TRACE("br\n");
 				mcc_asm_inline_unwind();
 				rir_shift_verdict = "err";
 				rir_tot_shift_bad++;
@@ -6131,12 +6131,12 @@ void rir_verify(void) {
 	}
 
 #if MCC_REPLAY_IR_C2
-	if (rir_env >= 5 && faithful && body_len > 0 && rir_arena_mismatch) {
+	if (rir_env >= 5 && faithful && body_len > 0 && rir_arena_mismatch) { MCC_TRACE("br\n");
 		rir_tot_c2_skip++;
 		if (getenv("RIRSKIP"))
 			fprintf(stderr, "[rir-c2skip] %s mism=%d\n", funcname, rir_arena_mismatch);
 	}
-	if (rir_env >= 5 && faithful && body_len > 0 && !rir_arena_mismatch) {
+	if (rir_env >= 5 && faithful && body_len > 0 && !rir_arena_mismatch) { MCC_TRACE("br\n");
 		rir_tot_c2_try++;
 		ind = rir_body_ind_sv;
 		rsym = 0;
@@ -6176,12 +6176,12 @@ void rir_verify(void) {
 		ast_temp_frontier = 1;
 		mcc_state->error_func = rir_c2_sink;
 		if (ast_validate(rir_arena, rir_c2_msg, sizeof rir_c2_msg) != 0 ||
-				!rir_emit_safe()) {
+				!rir_emit_safe()) { MCC_TRACE("br\n");
 			rir_tot_c2_invalid++;
 			if (rir_env >= 5)
 				fprintf(stderr, "[rir-c2] %s\tINVALID %s\n", funcname, rir_c2_msg);
-		} else if (setjmp(mcc_state->error_jmp_buf) == 0) {
-			if (rir_env >= 6) {
+		} else if (setjmp(mcc_state->error_jmp_buf) == 0) { MCC_TRACE("br\n");
+			if (rir_env >= 6) { MCC_TRACE("br\n");
 				AstArena *c3 = ast_arena_clone(rir_arena);
 				char c3msg[256];
 				int folds;
@@ -6192,7 +6192,7 @@ void rir_verify(void) {
 				rir_tot_c3_ran++;
 				rir_tot_c3_folds += folds;
 				c3msg[0] = 0;
-				if (ast_validate(c3, c3msg, sizeof c3msg) != 0) {
+				if (ast_validate(c3, c3msg, sizeof c3msg) != 0) { MCC_TRACE("br\n");
 					rir_tot_c3_broke++;
 					fprintf(stderr, "[rir-c3] %s\tINVALID-AFTER-PASSES %s\n",
 									funcname, c3msg);
@@ -6216,16 +6216,16 @@ void rir_verify(void) {
 					memcmp(cur_text_section->data + rir_body_ind_sv, orig,
 								 (size_t)body_len) == 0)
 				rir_tot_c2_ok++;
-			else if (ind - rir_body_ind_sv == body_len) {
+			else if (ind - rir_body_ind_sv == body_len) { MCC_TRACE("br\n");
 				rir_tot_c2_bytes++;
 				if (rir_c2_equiv_proven())
 					rir_tot_c2_equiv++;
 				else
 					rir_tot_c2_unproven++;
-				if (rir_env >= 5) {
+				if (rir_env >= 5) { MCC_TRACE("br\n");
 					int q, d = -1;
 					for (q = 0; q < body_len; q++)
-						if (cur_text_section->data[rir_body_ind_sv + q] != orig[q]) {
+						if (cur_text_section->data[rir_body_ind_sv + q] != orig[q]) { MCC_TRACE("br\n");
 							d = q;
 							break;
 						}
@@ -6250,23 +6250,23 @@ void rir_verify(void) {
 										cur_text_section->data[rir_body_ind_sv + q]);
 					fprintf(stderr, "\n");
 				}
-			} else {
+			} else { MCC_TRACE("br\n");
 				rir_tot_c2_len++;
 				if (rir_c2_equiv_proven())
 					rir_tot_c2_equiv++;
 				else
 					rir_tot_c2_unproven++;
-				if (rir_env >= 5) {
+				if (rir_env >= 5) { MCC_TRACE("br\n");
 					int q, gl = ind - rir_body_ind_sv;
 					int lim = gl < body_len ? gl : body_len, fd = -1, from, run = 0,
 							fb = -1;
 					for (q = 0; q < lim; q++)
-						if (cur_text_section->data[rir_body_ind_sv + q] != orig[q]) {
+						if (cur_text_section->data[rir_body_ind_sv + q] != orig[q]) { MCC_TRACE("br\n");
 							if (fd < 0)
 								fd = q;
 							if (++run >= 3 && fb < 0)
 								fb = q - 2;
-						} else {
+						} else { MCC_TRACE("br\n");
 							run = 0;
 						}
 					if (fd < 0)
@@ -6276,7 +6276,7 @@ void rir_verify(void) {
 					from = fb > 16 ? fb - 16 : 0;
 					{
 						int bi = rir_blame(fb);
-						if (getenv("RIRDUMP")) {
+						if (getenv("RIRDUMP")) { MCC_TRACE("br\n");
 							int z;
 							for (z = (bi > 6 ? bi - 6 : 0); z < bi + 3 && z < rir_n; z++)
 								fprintf(stderr, "    [%d] tag=%d kind=%s win=[%d,%d)\n", z,
@@ -6307,7 +6307,7 @@ void rir_verify(void) {
 					fprintf(stderr, "\n");
 				}
 			}
-		} else {
+		} else { MCC_TRACE("br\n");
 			mcc_asm_inline_unwind();
 			rir_tot_c2_err++;
 			if (rir_env >= 5)
@@ -6369,32 +6369,32 @@ void rir_verify(void) {
 		for (i = 0; i < ir_cap_n; i++)
 			if (ir_cap_ops[i].kind == IR_OP_RAW)
 				nraw2++;
-		if (nraw2) {
+		if (nraw2) { MCC_TRACE("br\n");
 			rir_cap_raw_fn++;
 			rir_cap_raw_b += body_len;
 		}
 	}
-	if (errored) {
+	if (errored) { MCC_TRACE("br\n");
 		rir_cap_b_err += body_len;
 		rir_cap_n_err++;
 	} else if (rir_fail_op < 0 && faithful)
 		rir_cap_b_faith += body_len;
 	else
 		rir_cap_b_unfaith += body_len;
-	if (errored) {
+	if (errored) { MCC_TRACE("br\n");
 		verdict = "rerror";
-	} else if (rir_fail_op >= 0) {
+	} else if (rir_fail_op >= 0) { MCC_TRACE("br\n");
 		snprintf(vbuf, sizeof vbuf, "rdiverge:%s@%d", ir_cap_op_name(rir_fail_kind),
 						 rir_fail_op);
 		verdict = vbuf;
-	} else if (faithful) {
+	} else if (faithful) { MCC_TRACE("br\n");
 		verdict = "rfaithful";
 		rir_tot_faithful++;
-	} else {
+	} else { MCC_TRACE("br\n");
 		int k, lim = new_len_fin < body_len ? new_len_fin : body_len;
 		int d = -1, bi;
-		for (k = 0; repl && k < lim; k++) {
-			if (repl[k] != orig[k]) {
+		for (k = 0; repl && k < lim; k++) { MCC_TRACE("br\n");
+			if (repl[k] != orig[k]) { MCC_TRACE("br\n");
 				d = k;
 				break;
 			}
@@ -6414,10 +6414,10 @@ void rir_verify(void) {
 	mcc_free(repl);
 }
 
-static void rir_report(void) {
+static void rir_report(void) { MCC_TRACE("enter\n");
 	int k;
 	FILE *f = stderr;
-	if (rir_out && rir_out[0]) {
+	if (rir_out && rir_out[0]) { MCC_TRACE("br\n");
 		f = fopen(rir_out, "a");
 		if (!f)
 			f = stderr;
@@ -6471,7 +6471,7 @@ static void rir_report(void) {
 		fclose(f);
 }
 
-void rir_configure(void) {
+void rir_configure(void) { MCC_TRACE("enter\n");
 	static int done;
 	if (done)
 		return;
