@@ -2225,6 +2225,8 @@ static int ast_inline_n;
 static void ast_inline_index_reset(void);
 
 static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
+	if (s1->jit_always_gpu)
+		{ MCC_TRACE("br\n"); ast_ladder_gpu_force(); }
 	ast_ladder_gpu_setup();
 	int o4 = s1->optimize_search_all != 0;
 	int i, dflt[MCC_OPT_COUNT];
@@ -17788,6 +17790,30 @@ static AstArena *ast_slice_leaf_inline(AstArena *a) { MCC_TRACE("enter\n");
 static long ast_ladder_gpu_budget;
 static long ast_ladder_gpu_rungs;
 
+enum {
+	AST_LGR_ARITY = 0, AST_LGR_BUDGET, AST_LGR_LIVEIN, AST_LGR_RESULT,
+	AST_LGR_EMIT_LHS, AST_LGR_EMIT_RHS, AST_LGR_OOM, AST_LGR_DISPATCH,
+	AST_LGR_N
+};
+
+static const char *const ast_ladder_gpu_reason[AST_LGR_N] = {
+	"arity-or-space", "budget", "livein-type", "result-type",
+	"emit-lhs", "emit-rhs", "host-oom", "dispatch"
+};
+
+static long ast_ladder_gpu_refused[AST_LGR_N];
+static int ast_ladder_gpu_forced;
+
+static int ast_ladder_gpu_refuse(int why) { MCC_TRACE("enter\n");
+	ast_ladder_gpu_refused[why]++;
+	return -1;
+}
+
+void ast_ladder_gpu_force(void) { MCC_TRACE("enter\n");
+	ast_ladder_gpu_forced = 1;
+	ast_eval_ladder_set(1);
+}
+
 static int64_t ast_ladder_gpu_word(const int32_t *p, uint64_t i) { MCC_TRACE("enter\n");
 	uint64_t lo = (uint32_t)p[i];
 	uint64_t hi = (uint32_t)p[i + 1];
@@ -17809,31 +17835,33 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 
 	ast_ladder_gpu_rungs++;
 	if (n < 1 || n > AST_EVAL_LADDER_MAXIN || space > AST_LADDER_GPU_MAX)
-		return -1;
+		return ast_ladder_gpu_refuse(AST_LGR_ARITY);
 	mcc_gpu_stats(&gs);
 	if (ast_ladder_gpu_budget && gs.dispatches >= ast_ladder_gpu_budget)
-		return -1;
+		return ast_ladder_gpu_refuse(AST_LGR_BUDGET);
 	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		if (is_float(in[i].type) || !ast_eval_slice_intt(in[i].type) ||
 				in[i].bits > 64)
-			{ MCC_TRACE("br\n"); return -1; }
+			{ MCC_TRACE("br\n"); return ast_ladder_gpu_refuse(AST_LGR_LIVEIN); }
 		off[i] = in[i].off;
 	}
 	rta = ast_eval_slice_wtype(a, ar);
 	rtb = ast_eval_slice_wtype(b, br);
 	if (!rta || !rtb || is_float(rta) || is_float(rtb))
-		return -1;
+		return ast_ladder_gpu_refuse(AST_LGR_RESULT);
 	if (!mcc_gpu_emit(a, ar, off, n, &ca))
-		return -1;
+		return ast_ladder_gpu_refuse(AST_LGR_EMIT_LHS);
 	if (!mcc_gpu_emit(b, br, off, n, &cb)) { MCC_TRACE("br\n");
 		mcc_gpu_code_free(&ca);
-		return -1;
+		return ast_ladder_gpu_refuse(AST_LGR_EMIT_RHS);
 	}
 	tin = mcc_malloc((size_t)ntuple * n * MCC_GPU_IN_SLOTS * 4);
 	oa = mcc_malloc((size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
 	ob = mcc_malloc((size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
-	if (!tin || !oa || !ob)
+	if (!tin || !oa || !ob) { MCC_TRACE("br\n");
+		ast_ladder_gpu_refused[AST_LGR_OOM]++;
 		goto bail;
+	}
 	for (code = 0; code < space; code++)
 		for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 			int64_t tv = ast_eval_slice_fit(
@@ -17854,8 +17882,10 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 			seq++;
 		}
 	}
-	if (!mcc_gpu_run2(&ca, &cb, tin, ntuple, n, oa, ob))
+	if (!mcc_gpu_run2(&ca, &cb, tin, ntuple, n, oa, ob)) { MCC_TRACE("br\n");
+		ast_ladder_gpu_refused[AST_LGR_DISPATCH]++;
 		goto bail;
+	}
 
 	for (code = 0; code < space; code++) { MCC_TRACE("br\n");
 		int adef = oa[code * MCC_GPU_OUT_SLOTS + 2] != 0;
@@ -17910,7 +17940,7 @@ void ast_ladder_gpu_setup(void) { MCC_TRACE("enter\n");
 	if (done)
 		{ MCC_TRACE("br\n"); return; }
 	done = 1;
-	if (!mcc_env_on("MCC_AST_EVAL_LADDER_GPU"))
+	if (!ast_ladder_gpu_forced && !mcc_env_on("MCC_AST_EVAL_LADDER_GPU"))
 		{ MCC_TRACE("br\n"); return; }
 	ast_ladder_gpu_budget = mcc_env_num("MCC_AST_EVAL_LADDER_GPU_MAX", 0);
 	ast_ladder_gpu_hook = ast_ladder_gpu_run;
@@ -17949,6 +17979,53 @@ void ast_ladder_gpu_report(void) { MCC_TRACE("enter\n");
 					"lanes=%ld\n",
 					gs.tried, gs.ok, gs.name, ast_ladder_gpu_rungs, gs.dispatches,
 					gs.lanes);
+	{ MCC_TRACE("br\n");
+		int i;
+		long tot = 0;
+		for (i = 0; i < AST_LGR_N; i++)
+			{ MCC_TRACE("br\n"); tot += ast_ladder_gpu_refused[i]; }
+		fprintf(stderr, "[ladder-gpu] forced=%d refused=%ld", ast_ladder_gpu_forced,
+						tot);
+		for (i = 0; i < AST_LGR_N; i++)
+			{ MCC_TRACE("br\n"); fprintf(stderr, " %s=%ld", ast_ladder_gpu_reason[i],
+																	 ast_ladder_gpu_refused[i]); }
+		fprintf(stderr, "\n");
+	}
+#ifdef MCC_GPU_REFUSE_KINDS
+	if (mcc_gpu_refuse_total) { MCC_TRACE("br\n");
+		int i;
+		fprintf(stderr, "[ladder-gpu] emitter-refused=%ld by-node", mcc_gpu_refuse_total);
+		for (i = 0; i < MCC_GPU_REFUSE_KINDS; i++)
+			if (mcc_gpu_refuse_kind[i])
+				{ MCC_TRACE("br\n"); fprintf(stderr, " %s=%ld",
+																		 ast_kind_name((uint16_t)i),
+																		 mcc_gpu_refuse_kind[i]); }
+		fprintf(stderr, "\n");
+		fprintf(stderr, "[ladder-gpu] emitter-refused by-op");
+		for (i = 0; i < mcc_gpu_refuse_opn; i++) { MCC_TRACE("br\n");
+			int ov = mcc_gpu_refuse_opv[i];
+			const char *on = NULL;
+			if (ov == AST_OP_ADDR)
+				{ MCC_TRACE("br\n"); on = "addr-of"; }
+			else if (ov == AST_OP_MEMBER)
+				{ MCC_TRACE("br\n"); on = "member"; }
+			else if (ov == AST_OP_MEMBER_ARROW)
+				{ MCC_TRACE("br\n"); on = "member-arrow"; }
+			else if (ov == AST_OP_IMAG)
+				{ MCC_TRACE("br\n"); on = "imag"; }
+			if (on)
+				{ MCC_TRACE("br\n"); fprintf(stderr, " %s=%ld", on,
+																		 mcc_gpu_refuse_op[i]); }
+			else if (ov > 32 && ov < 127)
+				{ MCC_TRACE("br\n"); fprintf(stderr, " '%c'=%ld", (char)ov,
+																		 mcc_gpu_refuse_op[i]); }
+			else
+				{ MCC_TRACE("br\n"); fprintf(stderr, " op%d=%ld", ov,
+																		 mcc_gpu_refuse_op[i]); }
+		}
+		fprintf(stderr, "\n");
+	}
+#endif
 }
 
 #if MCC_EMBED_JIT
@@ -18438,7 +18515,8 @@ static void ast_ladder_census(AstArena *a) { MCC_TRACE("enter\n");
 	AstArena *g;
 	int cnt = 0, i, j, pairs = 0;
 	if (ast_ladder_census_env < 0) { MCC_TRACE("br\n");
-		ast_ladder_census_env = mcc_env_on("MCC_AST_EVAL_LADDER_CENSUS");
+		ast_ladder_census_env =
+				ast_ladder_gpu_forced || mcc_env_on("MCC_AST_EVAL_LADDER_CENSUS");
 		if (ast_ladder_census_env)
 			{ MCC_TRACE("br\n"); atexit(ast_slice_ladder_stats_dump); }
 	}

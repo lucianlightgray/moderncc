@@ -1213,6 +1213,7 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 	s->jit = -1;
 	s->jit_max_duration = 600;
 	s->jit_threads = 0;
+	s->jit_always_gpu = 0;
 
 #ifdef MCC_CHAR_IS_UNSIGNED
 	s->char_is_unsigned = 1;
@@ -2121,6 +2122,8 @@ enum {
 	MCC_OPTION_jit_max_duration,
 	MCC_OPTION_jit_threads,
 	MCC_OPTION_jit_functions,
+	MCC_OPTION_jit_always_gpu,
+	MCC_OPTION_no_jit_always_gpu,
 	MCC_OPTION_clear_cache,
 	MCC_OPTION_stats,
 	MCC_OPTION_c,
@@ -2222,6 +2225,8 @@ static const MCCOption mcc_options[] = {
 		{"-jit-max-duration", MCC_OPTION_jit_max_duration, MCC_OPTION_HAS_ARG},
 		{"-jit-threads", MCC_OPTION_jit_threads, MCC_OPTION_HAS_ARG},
 		{"-jit-functions", MCC_OPTION_jit_functions, MCC_OPTION_HAS_ARG},
+		{"-jit-always-gpu", MCC_OPTION_jit_always_gpu, 0},
+		{"-no-jit-always-gpu", MCC_OPTION_no_jit_always_gpu, 0},
 		{"-clear-cache", MCC_OPTION_clear_cache, 0},
 		{"-stats", MCC_OPTION_stats, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"g", MCC_OPTION_g, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
@@ -2774,6 +2779,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			if (optarg[0] == '=')
 				{ MCC_TRACE("br\n"); optarg++; }
 			mcc_set_str(&s->jit_functions, optarg);
+			break;
+		case MCC_OPTION_jit_always_gpu:
+			s->jit_always_gpu = 1;
+			break;
+		case MCC_OPTION_no_jit_always_gpu:
+			s->jit_always_gpu = 0;
 			break;
 		case MCC_OPTION_clear_cache:
 			s->clear_cache = 1;

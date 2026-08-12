@@ -2162,6 +2162,28 @@ add_test(NAME "gpu/ladder-gpu-parity"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ladder_gpu_parity.cmake")
 set_tests_properties("gpu/ladder-gpu-parity" PROPERTIES
     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+# --jit-always-gpu moves the equivalence sweep onto the device. The device may
+# be faster or may refuse; it may never answer differently. Both arms run the
+# same census over the same subject and every semantic panel field must match,
+# with the emitted object byte-identical. 77 when there is no device, because
+# then the GPU arm is the CPU arm and the comparison proves nothing.
+add_test(NAME "gpu/always-gpu-parity"
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu/always_gpu_parity.sh"
+            "$<TARGET_FILE:mcc>" "${CMAKE_BINARY_DIR}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke/subject.c"
+            "${CMAKE_BINARY_DIR}/always-gpu-parity" -O4)
+set_tests_properties("gpu/always-gpu-parity" PROPERTIES
+    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 1800)
+add_test(NAME "gpu/always-gpu-parity-full-language"
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu/always_gpu_parity.sh"
+            "$<TARGET_FILE:mcc>" "${CMAKE_BINARY_DIR}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+            "${CMAKE_BINARY_DIR}/always-gpu-parity-fl" -O1
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include"
+            "-I${CMAKE_CURRENT_SOURCE_DIR}" "-I${CMAKE_BINARY_DIR}"
+            -DCC_NAME=CC_gcc -DGCC_MAJOR=15)
+set_tests_properties("gpu/always-gpu-parity-full-language" PROPERTIES
+    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 1800)
 if(TARGET mcc_mccdefs)
     add_dependencies(mcc mcc_mccdefs)
 endif()

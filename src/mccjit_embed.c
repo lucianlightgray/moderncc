@@ -2015,6 +2015,14 @@ void mccjit_set_search_budget(unsigned long secs) { MCC_TRACE("enter\n");
 	mccjit_search_budget_baked_s = secs;
 }
 
+void mccjit_set_always_gpu(int on) { MCC_TRACE("enter\n");
+	const char *e = getenv("MCC_JIT_ALWAYS_GPU");
+	if (e && *e)
+		{ MCC_TRACE("br\n"); on = (*e != '0'); }
+	if (on)
+		{ MCC_TRACE("br\n"); ast_ladder_gpu_force(); }
+}
+
 void mccjit_boot_swap(void **slot, const void *blob, unsigned long len) { MCC_TRACE("enter\n");
 	mcc_stats_env_init();
 	if (!mccjit_feasible())
@@ -2096,6 +2104,7 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 	if (s1->output_type == MCC_OUTPUT_MEMORY) { MCC_TRACE("br\n");
 		mcc_add_symbol(s1, "mccjit_boot_swap", (void *)mccjit_boot_swap);
 		mcc_add_symbol(s1, "mccjit_set_search_budget", (void *)mccjit_set_search_budget);
+		mcc_add_symbol(s1, "mccjit_set_always_gpu", (void *)mccjit_set_always_gpu);
 		mcc_add_symbol(s1, "mccjit_boot_swap_async",
 									 (void *)mccjit_boot_swap_async);
 #if MCC_HOST_WIN32
@@ -2147,6 +2156,7 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 										 : (MCC_JIT_DEFAULT ? 1 : 0);
 		cstr_printf(&cs, "extern char *getenv(const char*);\n");
 		cstr_printf(&cs, "extern void mccjit_set_search_budget(unsigned long);\n");
+		cstr_printf(&cs, "extern void mccjit_set_always_gpu(int);\n");
 		cstr_printf(
 				&cs,
 				"__attribute__((constructor)) static void __mccjit_boot_all(void){\n"
@@ -2155,8 +2165,10 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 				"int __i;\n"
 				"if(!__on) return;\n"
 				"mccjit_set_search_budget(%luUL);\n"
+				"mccjit_set_always_gpu(%d);\n"
 				"for(__i=0;__i<%d;__i++)\n",
-				def_on, (unsigned long)s1->jit_max_duration, n);
+				def_on, (unsigned long)s1->jit_max_duration,
+				s1->jit_always_gpu ? 1 : 0, n);
 	}
 	if (async)
 		{ MCC_TRACE("br\n"); cstr_printf(&cs,

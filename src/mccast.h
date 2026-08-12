@@ -113,6 +113,7 @@ int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k,
 										int *color);
 
 void ast_ladder_gpu_setup(void);
+void ast_ladder_gpu_force(void);
 void ast_ladder_gpu_report(void);
 
 int ast_region_disjoint(AstArena *a, AstLocal r1, AstLocal r2);
