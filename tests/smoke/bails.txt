@@ -64,6 +64,7 @@ O13 strat-dark:narrow 1
 O13 strat-dark:pre 1
 O13 strat-dark:range 1
 O13 strat-dark:reassoc 1
+O13 strat-dark:sra 1
 O13 strat-dark:tco 1
 O2 jit-not-baked:signature 183
 O2 replay-fallback:len 2

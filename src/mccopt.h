@@ -96,6 +96,7 @@
 	MCC_OPT_ROW(DIVMAGIC,                      "divmagic",                     MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(IF_CONVERSION_ABS,             "if-conversion-abs",            MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(IF_CONVERSION,                 "if-conversion",                MCC_OPTD_LEVEL(4)) \
+	MCC_OPT_ROW(TREE_SRA,                      "tree-sra",                     MCC_OPTD_OFF) \
 	MCC_OPT_ROW(TREE_REASSOC,                  "tree-reassoc",                 MCC_OPTD_LEVEL(4)) \
 	MCC_OPT_ROW(REASSOC_ASSOC,                 "reassoc-assoc",                MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(REASSOC_SHLSHR,                "reassoc-shlshr",               MCC_OPTD_ALWAYS) \

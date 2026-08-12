@@ -61,7 +61,7 @@ names|check) ;;
 esac
 S="$(cd "$(dirname "$0")/../.." && pwd)"
 
-STRAT_NAMES="bfold ident narrow cprop cse ltemp ivsr pre licm dse sccp jt bf range divmagic abs select reassoc sethi tco inline cload"
+STRAT_NAMES="bfold ident narrow cprop cse ltemp ivsr pre licm dse sccp jt bf range divmagic abs select reassoc sethi tco inline cload sra"
 # Every row of the registry is under test, 0..21. An earlier cut of this sweep
 # started at 4 on the theory that bfold/ident/narrow/cprop are always-on folders
 # and so not worth isolating. They isolate fine -- each of the four is green
@@ -74,7 +74,7 @@ STRAT_LAST=$(($(echo $STRAT_NAMES | wc -w) - 1))
 # but past AST_STRAT_COUNT, so the runner skips it: this is how "no strategy at
 # all" is spelled. It stops working the moment the registry reaches 24 rows, so
 # check mode asserts the gap is still there.
-STRAT_NONE=23
+STRAT_NONE=24
 
 # The flagsweep subject list, verbatim and for its stated reason: an earlier
 # sweep built from hand-written programs passed -fjit-splice, a pass that

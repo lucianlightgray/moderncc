@@ -1580,6 +1580,7 @@ static MCC_OPT_TLS int ast_abs_env;
 static int ast_select_env;
 #define AST_SEL_MARK ((uint64_t)0x5E1EC7)
 static MCC_OPT_TLS int ast_reassoc_env;
+static MCC_OPT_TLS int ast_sra_env;
 static MCC_OPT_TLS int ast_reassoc_assoc_env;
 static MCC_OPT_TLS int ast_reassoc_shlshr_env;
 static MCC_OPT_TLS int ast_reassoc_shrshl_env;
@@ -1889,7 +1890,7 @@ static void ast_search_walk_trace(const int *sel, int k, int depth, int walk,
 	MCC_TRACE("combo walk=%s depth=%d k=%d seq=%s\n", combo_walk_name(walk), depth, k,
 						seq);
 }
-#define AST_STRAT_COUNT_MAX 24
+#define AST_STRAT_COUNT_MAX 25
 #define AST_CYCLE_MAX 8
 static int ast_search_order_env;
 static int ast_search_fullset_env;
@@ -2450,6 +2451,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_abs_env = mcc_opt(s1, MCC_OPT_IF_CONVERSION_ABS);
 	ast_select_env = mcc_opt(s1, MCC_OPT_IF_CONVERSION);
 	ast_reassoc_env = mcc_opt(s1, MCC_OPT_TREE_REASSOC);
+	ast_sra_env = mcc_opt(s1, MCC_OPT_TREE_SRA);
 	ast_reassoc_assoc_env = mcc_opt(s1, MCC_OPT_REASSOC_ASSOC);
 	ast_reassoc_shlshr_env = mcc_opt(s1, MCC_OPT_REASSOC_SHLSHR);
 	ast_reassoc_shrshl_env = mcc_opt(s1, MCC_OPT_REASSOC_SHRSHL);
@@ -16842,6 +16844,216 @@ static int ast_cload_run(AstArena *a) { MCC_TRACE("enter\n");
 	return hits;
 }
 
+#define AST_SRA_MAX 16
+
+typedef struct {
+	uint64_t base;
+	uint64_t sym;
+	int size;
+	int ok;
+	int nmem;
+	int32_t moff[AST_SRA_MAX];
+	int mtype[AST_SRA_MAX];
+	uint64_t mref[AST_SRA_MAX];
+} AstSraCand;
+
+static MCC_OPT_TLS int ast_sra_folds;
+
+static int ast_sra_scalar_size(int t) { MCC_TRACE("enter\n");
+	if (t & VT_ARRAY)
+		{ MCC_TRACE("br\n"); return 0; }
+	switch (t & VT_BTYPE) { MCC_TRACE("br\n");
+	case VT_BOOL:
+	case VT_BYTE:
+		return 1;
+	case VT_SHORT:
+		return 2;
+	case VT_INT:
+	case VT_FLOAT:
+		return 4;
+	case VT_LLONG:
+	case VT_DOUBLE:
+		return 8;
+	case VT_PTR:
+		return MCC_PTR_SIZE;
+	}
+	return 0;
+}
+
+static int ast_sra_ref_local(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	return n != AST_NONE && ast_kind(a, n) == AST_Ref &&
+				 (ast_op(a, n) & VT_VALMASK) == VT_LOCAL && !(ast_op(a, n) & VT_SYM);
+}
+
+static int ast_sra_struct_ref(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	int t;
+	if (!ast_sra_ref_local(a, n))
+		{ MCC_TRACE("br\n"); return 0; }
+	t = ast_type_t(a, n);
+	if ((t & VT_BTYPE) != VT_STRUCT || (t & VT_ARRAY) || (t & VT_VOLATILE))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (IS_UNION(t))
+		{ MCC_TRACE("br\n"); return 0; }
+	return ast_type_ref(a, n) != 0;
+}
+
+static int ast_sra_member_use(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	AstLocal p = ast_parent(a, n);
+	if (p == AST_NONE || ast_kind(a, p) != AST_Unary ||
+			ast_op(a, p) != AST_OP_MEMBER)
+		{ MCC_TRACE("br\n"); return 0; }
+	return ast_first_child(a, p) == n;
+}
+
+static int ast_sra_member_ok(AstArena *a, AstLocal m) { MCC_TRACE("enter\n");
+	int t = ast_type_t(a, m);
+	if (ast_type_bp(a, m) || ast_type_bs(a, m))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!t || ast_bad_type(t) || (t & VT_ARRAY) || (t & VT_VOLATILE))
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((t & VT_BTYPE) == VT_STRUCT)
+		{ MCC_TRACE("br\n"); return 0; }
+	return ast_sra_scalar_size(t) > 0 && ast_sra_scalar_size(t) <= 8;
+}
+
+static AstSraCand *ast_sra_find(AstSraCand *c, int n, uint64_t base) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 0; i < n; i++)
+		{ MCC_TRACE("br\n"); if (c[i].base == base) { MCC_TRACE("br\n"); return &c[i]; } }
+	return NULL;
+}
+
+/* Scalar replacement of aggregates.
+ *
+ * A struct local whose every appearance is the base of a `.member` access is
+ * not really an aggregate: it is a fixed set of independent scalars that happen
+ * to share one frame slot. Rewriting each `Unary(MEMBER, Ref base)` into a
+ * plain `Ref` at its own slot is a pure renaming, so it needs no initialiser
+ * and no copy -- the stores that wrote the members now write the new slots.
+ *
+ * The legality rule is deliberately one rule rather than a list: a candidate
+ * dies unless EVERY `Ref` at its frame offset is child 0 of a member access.
+ * That single test subsumes address-taken, pass- and return-by-value, whole
+ * struct assignment (which is an `AST_Store` whose child 0 is the struct `Ref`,
+ * with the copy generated inside vstore() at replay and no node of its own),
+ * and anything else that could observe the object as a unit. Bitfields are
+ * refused because their mask/shift is generated at replay from `bp`/`bs` on the
+ * member node, which a plain `Ref` cannot carry; unions because two fields can
+ * share bytes; nested aggregates and arrays because a slot is not a region. */
+static int ast_sra_run(AstArena *a) { MCC_TRACE("enter\n");
+	AstSraCand cand[AST_SRA_MAX];
+	int ncand = 0, i, j;
+	AstLocal nn = ast_count(a);
+	ast_sra_folds = 0;
+	if (!a || ast_func_has_asm || ast_func_has_labeladdr)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		AstSraCand *c;
+		CType ct;
+		if (!ast_sra_struct_ref(a, n))
+			{ MCC_TRACE("br\n"); continue; }
+		c = ast_sra_find(cand, ncand, ast_ival(a, n));
+		if (!c) { MCC_TRACE("br\n");
+			if (ncand >= AST_SRA_MAX)
+				{ MCC_TRACE("br\n"); continue; }
+			c = &cand[ncand++];
+			c->base = ast_ival(a, n);
+			c->sym = ast_sym(a, n);
+			c->ok = 1;
+			c->nmem = 0;
+			ct.t = ast_type_t(a, n);
+			ct.bp = 0;
+			ct.bs = 0;
+			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			{ MCC_TRACE("br\n");
+				int al = 0;
+				c->size = (!ct.ref) ? -1 : type_size(&ct, &al);
+			}
+			if (c->size <= 0)
+				{ MCC_TRACE("br\n"); c->ok = 0; }
+		}
+		if (c->sym != ast_sym(a, n))
+			{ MCC_TRACE("br\n"); c->ok = 0; }
+		if (!ast_sra_member_use(a, n))
+			{ MCC_TRACE("br\n"); c->ok = 0; }
+	}
+	if (!ncand)
+		{ MCC_TRACE("br\n"); return 0; }
+	/* Any reference landing inside a candidate's byte range that is not one of
+	 * its own member accesses means the frame slot is observed some other way. */
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		if (!ast_sra_ref_local(a, n))
+			{ MCC_TRACE("br\n"); continue; }
+		for (i = 0; i < ncand; i++) { MCC_TRACE("br\n");
+			int64_t d;
+			if (!cand[i].ok || cand[i].size <= 0)
+				{ MCC_TRACE("br\n"); continue; }
+			d = (int64_t)ast_ival(a, n) - (int64_t)cand[i].base;
+			if (d > 0 && d < cand[i].size)
+				{ MCC_TRACE("br\n"); cand[i].ok = 0; }
+		}
+	}
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		AstSraCand *c;
+		AstLocal base;
+		int32_t mo;
+		if (ast_kind(a, n) != AST_Unary || ast_op(a, n) != AST_OP_MEMBER)
+			{ MCC_TRACE("br\n"); continue; }
+		base = ast_first_child(a, n);
+		if (!ast_sra_struct_ref(a, base))
+			{ MCC_TRACE("br\n"); continue; }
+		c = ast_sra_find(cand, ncand, ast_ival(a, base));
+		if (!c || !c->ok)
+			{ MCC_TRACE("br\n"); continue; }
+		if (!ast_sra_member_ok(a, n))
+			{ MCC_TRACE("br\n"); c->ok = 0; continue; }
+		mo = (int32_t)ast_ival(a, n);
+		for (j = 0; j < c->nmem; j++)
+			{ MCC_TRACE("br\n"); if (c->moff[j] == mo) { MCC_TRACE("br\n"); break; } }
+		if (j == c->nmem) { MCC_TRACE("br\n");
+			if (c->nmem >= AST_SRA_MAX)
+				{ MCC_TRACE("br\n"); c->ok = 0; continue; }
+			c->moff[c->nmem] = mo;
+			c->mtype[c->nmem] = ast_type_t(a, n);
+			c->mref[c->nmem] = ast_type_ref(a, n);
+			c->nmem++;
+		} else if (c->mtype[j] != ast_type_t(a, n)) { MCC_TRACE("br\n");
+			c->ok = 0;
+		}
+	}
+	for (i = 0; i < ncand; i++)
+		{ MCC_TRACE("br\n"); if (cand[i].nmem < 1) { MCC_TRACE("br\n"); cand[i].ok = 0; } }
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		AstSraCand *c;
+		AstLocal base;
+		int32_t mo;
+		if (ast_kind(a, n) != AST_Unary || ast_op(a, n) != AST_OP_MEMBER)
+			{ MCC_TRACE("br\n"); continue; }
+		base = ast_first_child(a, n);
+		if (!ast_sra_struct_ref(a, base))
+			{ MCC_TRACE("br\n"); continue; }
+		c = ast_sra_find(cand, ncand, ast_ival(a, base));
+		if (!c || !c->ok)
+			{ MCC_TRACE("br\n"); continue; }
+		mo = (int32_t)ast_ival(a, n);
+		for (j = 0; j < c->nmem; j++)
+			{ MCC_TRACE("br\n"); if (c->moff[j] == mo) { MCC_TRACE("br\n"); break; } }
+		if (j == c->nmem)
+			{ MCC_TRACE("br\n"); continue; }
+		ast_clear_children(a, n);
+		a->kind[n] = AST_Ref;
+		ast_set_op(a, n, VT_LOCAL | VT_LVAL);
+		ast_set_ival(a, n, (uint64_t)((int64_t)c->base + (int64_t)mo));
+		ast_set_type(a, n, c->mtype[j], c->mref[j]);
+		ast_set_sym(a, n, c->sym);
+		ast_set_fbits(a, n, 0);
+		ast_sra_folds++;
+	}
+	if (ast_sra_folds)
+		{ MCC_TRACE("br\n"); a->epoch++; }
+	return ast_sra_folds;
+}
+
 static int sg_templates(void) { MCC_TRACE("enter\n"); return ast_templates_env; }
 static int sg_narrow(void) { MCC_TRACE("enter\n"); return ast_narrow_env; }
 static int sg_ltemp(void) { MCC_TRACE("enter\n"); return ast_licm_temp_env; }
@@ -16855,7 +17067,9 @@ static int sg_select(void) { MCC_TRACE("enter\n"); return ast_select_env; }
 static int sg_reassoc(void) { MCC_TRACE("enter\n"); return ast_reassoc_env; }
 static int sg_sethi(void) { MCC_TRACE("enter\n"); return ast_sethi_env; }
 static int sg_inline(void) { MCC_TRACE("enter\n"); return ast_inline_pass_env; }
+static int sg_sra(void) { MCC_TRACE("enter\n"); return ast_sra_env; }
 
+static int ast_strat_sra(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_sra_run(a); }
 static int ast_strat_bfold(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_bfold_run(a); }
 static int ast_strat_ident(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_ident_run(a); }
 static int ast_strat_narrow(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_narrow_run(a); }
@@ -16906,6 +17120,7 @@ enum {
 	AST_STRAT_TCO,
 	AST_STRAT_INLINE,
 	AST_STRAT_CLOAD,
+	AST_STRAT_SRA,
 	AST_STRAT_COUNT
 };
 typedef char ast_strat_count_fits[AST_STRAT_COUNT <= AST_STRAT_COUNT_MAX ? 1 : -1];
@@ -16933,6 +17148,7 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 	{"tco", sg_templates, ast_strat_tco},
 	{"inline", sg_inline, ast_strat_inline},
 	{"cload", sg_templates, ast_strat_cload},
+	{"sra", sg_sra, ast_strat_sra},
 };
 
 static uint32_t ast_strat_admit = 0xffffffffu;
@@ -20016,7 +20232,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			int tcos = 0;
 			int narrows = 0;
 			int divmagics = 0;
-			int cloads = 0;
+			int cloads = 0, sras = 0;
 			int selects = 0;
 			int interchanged = 0;
 			int fused = 0;
@@ -20250,11 +20466,13 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					tcos = sf[AST_STRAT_TCO];
 					divmagics = sf[AST_STRAT_DIVMAGIC];
 					cloads = sf[AST_STRAT_CLOAD];
+					sras = sf[AST_STRAT_SRA];
 					selects = sf[AST_STRAT_SELECT];
 				}
 				ast_search_gates_set(ast_search_sv_gates);
 				int do_divmagic = divmagics > 0;
 				int do_cload = cloads > 0;
+				int do_sra = sras > 0;
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
 				int do_narrow = narrows > 0;
@@ -20291,17 +20509,20 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					do_divmagic = 0;
 					do_select = 0;
 					do_cload = 0;
+					do_sra = 0;
 					ast_promo_n = 0;
 				}
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
 						do_tco || do_narrow || do_divmagic || do_select || do_cload ||
+						do_sra ||
 						interchanged || fused || tiled || math_inlined)
 					{ MCC_TRACE("br\n"); ast_opt_total++; }
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
 						!do_bf && !do_sethi && !do_tco && !do_narrow && !do_divmagic && !do_select &&
-						!do_cload && !interchanged && !fused && !tiled && !math_inlined)
+						!do_cload && !do_sra && !interchanged && !fused && !tiled &&
+						!math_inlined)
 					{ MCC_TRACE("br\n"); loc = saved_loc; }
 				if (ast_jit_splice_env && ast_opt_ok) { MCC_TRACE("br\n");
 					ast_promo_n = 0;
@@ -20321,6 +20542,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				} else if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
 						do_tco || do_narrow || do_divmagic || do_select || do_cload ||
+						do_sra ||
 						interchanged || fused || tiled || math_inlined) { MCC_TRACE("br\n");
 #define AST_PF_EMIT(ui)                                                          \
 	do {                                                                           \
@@ -20336,7 +20558,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm ||     \
 										do_dse || do_sccp || do_jt || do_bf || do_sethi ||           \
 										do_tco || do_narrow || do_divmagic || do_select ||          \
-										do_cload || interchanged || fused || tiled ||               \
+										do_cload || do_sra || interchanged || fused || tiled ||     \
 										math_inlined || (ui))                                        \
 											 ? ast_fconst_n                                            \
 											 : 0;                                                      \
