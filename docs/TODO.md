@@ -523,7 +523,9 @@ worktree *before* the wave, so nothing in it turned a red green.
 **The one red is not a red.** `rir-nofb-probe-self` fails under `-j` and passes alone — measured
 four times now: fails at 20.6 s and 84.2 s contended, passes at 539.7 s and 726.9 s alone. It does
 not hit its `TIMEOUT`; it exits early with a failure, so it reads as an ordinary defect. N26's
-shape on a different cell.
+shape on a different cell. **Read the sixth measurement below before quoting that sentence** — it
+passed under `-j6` at 472.01 s, the fastest passing run on record, which the two-state story does
+not predict.
 
 > **Fifth measurement, 2026-08-13 evening — and it is recorded here rather than added to that
 > series, because it does not belong to it.** The cell **passed at 1032.74 s** inside a
@@ -536,6 +538,25 @@ shape on a different cell.
 > series keeps its meaning: **the four figures above were taken deliberately, this one was
 > observed.** Whoever settles this cell should fix the experiment before adding runs to it —
 > `RESOURCE_LOCK`, a stated load, or both.
+
+> **Sixth measurement, 2026-08-13 later the same evening — and this one DOES belong to the series,
+> because the load was stated before the run rather than after it.** The cell **passed at 472.01 s**
+> inside a `-j6` `ctest -R "^rir|rir/|^jit/|^ast/|optlevel|diff3/"` — **509 of 509 green, zero
+> failures**. The machine was quiet in the sense the series means: `uptime` 1.54 during the run and
+> the only non-trivial process on the box was the probe itself at 100% of one core, checked while it
+> ran. It was the last cell left for most of its life, so it was effectively solo.
+>
+> **This is the fastest passing run on record — 472.01 s against solo passes of 539.7 s and
+> 726.9 s — and it was nominally the most contended.** That is the wrong way round for "fails under
+> `-j`, passes alone", and it is now two runs in a row that decline to fail under `-j`. **What it
+> establishes is narrow and worth being precise about:** the cell passed, under `-j6`, on a quiet
+> box, at a time no earlier run has beaten. What it does **not** establish is that the two contended
+> failures at 20.6 s and 84.2 s were artefacts — nothing here reproduces those, and a cell that
+> exits *early* with a failure is not explained by being given more room. The honest reading is that
+> `-j` is not the variable, or not the only one, and the two-state story ("fails contended, passes
+> alone") no longer fits five of its six data points cleanly. The experiment still wants fixing
+> before anyone declares this settled; the difference is that the next person now has a passing
+> `-j` run taken under a *recorded* load to compare against.
 
 **Two prerequisites this host is missing, both of which silently shrink coverage rather than
 failing:**
