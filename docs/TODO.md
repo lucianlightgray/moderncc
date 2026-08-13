@@ -1268,7 +1268,7 @@ the now-authoritative `ast.abort`/`ast.abort_post`/`ast.noreplay` keys, despite 
 claiming `MCC_INV=1` supplies the authoritative totals — adding them plus a cross-check is a few
 lines and turns that residual into a watched quantity.
 
-**N19. The byte census exists only for x86_64.** Small, and a limitation rather than a defect.
+**~~N19. The byte census exists only for x86_64.~~ — the hazard is CLOSED 2026-08-13; the limitation stands and is now enforced.** Small, and a limitation rather than a defect.
 The amplification in the section above works because `g()` is the single byte primitive on
 x86_64 — `o()`, `gen_le16/32/64` and every encoder bottom out in it. On arm, arm64 and riscv64
 each `o()` writes `cur_text_section->data` directly and **bypasses `g()` entirely**, and the
@@ -1284,11 +1284,22 @@ writer in each of the arm and arm64 assemblers. **Correction: "x86_64-only" desc
 measurement taken, not the reachable set — i386 shares the same single primitive** and would
 work today. **New hazard: there is no arch guard, so the tool does not skip on arm64** — `g()` is
 still reached through `mccgen.c`'s shared paths, so it would print and bank a small nonzero
-`emit_amplification` under a host-less key. **A silently-wrong green, not a red**, and it
+`emit_amplification` under a host-less key. ~~**A silently-wrong green, not a red**, and it
 compounds with the missing host term in the bank key described under N18. The honest interim is
-one line (detect a non-x86 target and `return 77`); the real fix is arch anchors plus a per-tag
-byte weight, since `g_bytes_written` hardcodes one byte per event. The tool is live, not
-bit-rotted: all five anchors still resolve against the current tree.
+one line (detect a non-x86 target and `return 77`)~~ — **both taken 2026-08-13.**
+`emit-map.py` now probes the *target under test* rather than the host (`-dM -E` on `/dev/null`,
+matching `__x86_64__`/`__i386__`/`__aarch64__`/`__arm__`/`__riscv`) and returns 77 with the reason
+on anything else. Verified on real cross compilers, not simulated: `mcc-arm64` and `mcc-riscv64`
+each skip with the arch named, and `mcc-i386` is correctly admitted — which is this row's own
+correction, that i386 shares the single primitive and would work today.
+
+**And the bank key carries the arch**, which closes the coupling N18 called *"the real N18↔N19
+coupling"*: `bkey` went `target|opt|jit` to `arch|target|opt|jit`, and the two existing rows were
+migrated to `x86_64|…` rather than orphaned, because that is the host they were taken on. Banking
+an emit-map cell from another machine can no longer overwrite the x86_64 numbers. **The real fix
+is still open**: arch anchors plus a per-tag byte weight, since `g_bytes_written` hardcodes one
+byte per event. The tool is live, not bit-rotted: all five anchors still resolve against the
+current tree.
 
 **~~N22. SRA's real optimization is the separate-slot variant.~~ — LANDED 2026-08-12 as strategy 24.** `ast_sroa_run`, `-ftree-sroa` and `-ftree-sroa-params`, off by default. It keys on the frame range rather than the node shape, because the front end folds most member accesses to a raw `Ref` at `base+k` before the arena exists — which is why the in-place form was both byte-neutral *and* rare. Fires on 9 of 280 exec files against `sra`'s 3, and self-hosts at `-O4`, which the backed-out prototype could not. The allocator constraints this row named are both discharged. **Still open: the ABI-temp gather/scatter for whole-struct uses** — 145 refusals, attributed by `MCC_SROA_WHY`. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 

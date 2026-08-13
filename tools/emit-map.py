@@ -66,6 +66,27 @@ def find_anchors(srcdir):
     return a
 
 
+def run_capture(cmd):
+    try:
+        p = subprocess.run(cmd, stdout=subprocess.PIPE,
+                           stderr=subprocess.DEVNULL, timeout=60)
+        return p.returncode, p.stdout.decode("utf8", "replace")
+    except (OSError, subprocess.TimeoutExpired):
+        return 1, ""
+
+
+def target_arch(mcc):
+    rc, out = run_capture([mcc, "-dM", "-E", "-x", "c", os.devnull])
+    if rc != 0:
+        return None
+    for tok, name in (("__x86_64__", "x86_64"), ("__i386__", "i386"),
+                      ("__aarch64__", "arm64"), ("__arm__", "arm"),
+                      ("__riscv", "riscv64")):
+        if ("#define %s " % tok) in out:
+            return name
+    return None
+
+
 def build_cmd(mcc, root, bdir, target, opt, embed_jit, extra):
     if target == "selfhost":
         cc = os.path.join(bdir, "compile_commands.json")
@@ -248,6 +269,15 @@ def main():
         print("SKIP: no mcc in %s" % bdir)
         return 77
 
+    arch = target_arch(mcc)
+    if arch not in ("x86_64", "i386"):
+        print("SKIP: the byte census needs g() as the single emit primitive, which is "
+              "true on x86_64 and i386 only -- on %s each o() writes "
+              "cur_text_section->data directly and the arm/arm64 assemblers add a second "
+              "cursor writer each, so emit_amplification would be a small nonzero number "
+              "measured over the wrong denominator" % (arch or "an unrecognised target"))
+        return 77
+
     srcdir = os.path.join(root, "src")
     anchors = find_anchors(srcdir)
 
@@ -278,8 +308,8 @@ def main():
             print("  %-26s %s" % (k, s[k]))
 
     if args.bank:
-        bkey = "%s|%s|%s" % (args.target, args.opt,
-                             "jit" if args.embed_jit else "nojit")
+        bkey = "%s|%s|%s|%s" % (arch, args.target, args.opt,
+                                "jit" if args.embed_jit else "nojit")
         bank = {}
         if os.path.exists(args.bank):
             with open(args.bank, encoding="utf8") as f:
