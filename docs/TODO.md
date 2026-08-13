@@ -916,6 +916,14 @@ does **not** settle N30 — that needs the fold/run class. **Two changes, this o
 > line: its instrument half is closed and watched, and what remains of it is a defect, tracked in
 > the row rather than as a next step. N6.8 is closed in full.
 >
+> **Update, later on 2026-08-13: N18's defect half is closed too, and it was never a JIT defect** —
+> `--embed-jit` moves faithfulness by `+0.00`, and the 1.2–1.9 points were two replay-shape knobs
+> gated at `MCC_OPTD_LEVEL(1)` that the `-O0` replay arm therefore ran without. **Sweep row 25 is
+> closed** (an array-typed local `Ref` is an address; the guard is `VT_ARRAY`, and the row's
+> predicted 2.3% blast radius measured **zero**), **sweep row 27 was already closed** on 2026-08-12
+> — the day before rank 6 called it "Unchanged" — and **`int128-signedness` is closed in full**.
+> What is left of Cluster 1 is row 17 and `rf-1`, which are one defect at two altitudes.
+>
 > **New, from doing the work rather than from planning it:** `tests/emitmap/bank.json`'s
 > tolerances are wide enough to be unfalsifiable (`TOL` 1.0 on every percentage, and the selfhost
 > cell is *already* drifted inside them); and `rir-coverage.py`'s `wide` corpus reports **9
@@ -1050,10 +1058,16 @@ are required, so a dropout is a diagnosis rather than a zero. And the gap has a 
 `ast/inv-faithful` (+ known-positive) reproduces `full_language.c` **3.32% → 4.68% (+1.36)** and
 self-host **2.18% → 3.37% (+1.19)** from two `MCC_INV=1` compiles, in **1.7 s on an ordinary
 build** — which is why the "do not bank from this one" caution no longer applies to it: its bank
-key carries the arch and it needs no trace build to be re-taken anywhere. **What is still open is
+key carries the arch and it needs no trace build to be re-taken anywhere. ~~**What is still open is
 the defect, not the instrument**: why the `--embed-jit` re-emit is 1.2–1.9 points less faithful
-than `-O1` on every target and both architectures measured. The emit-map cells stay opt-in and
-trace-only; nothing about them changed except that they can now fail.
+than `-O1` on every target and both architectures measured.~~ **— CLOSED 2026-08-13 on
+x86_64-linux, and the defect was not where the instrument pointed.** `--embed-jit` moves it by
+**+0.00**; the cause is `storeval-rot` and `storeval-calllast` being `MCC_OPTD_LEVEL(1)` when they
+are replay-shape recognizers rather than optimizations, so the shipped `-O0` replay arm ran without
+them. Promoted to `MCC_OPTD_ALWAYS`, byte-neutral at `-O1`–`-O4`, gap −0.31/+0.04. **The
+instrument's own two-factor design is what hid it** and now carries a third arm. Full argument in
+the N18 row. The emit-map cells stay opt-in and trace-only; nothing about them changed except that
+they can now fail.
 
 **9. N3's residue — items 23 and 22.** *x86_64-only; this host.* Item 24 is fixed. **23** is
 quality-of-implementation with no non-UB reproducer on x86-64, so it is genuinely low. **22**
@@ -2013,9 +2027,52 @@ recorded below, and it needs neither `MCC_CONFIG_TRACE=ON` nor an opt-in, so the
 this host" caution does not apply to it — the key carries the arch and any host can re-take it.
 **Also corrected from this row: its bake figures are the wrong counter.** 1550 of 3163 and 41 of
 299 are `jit.baked`, i.e. leaf-stash attempts; the bodies that actually reach `mccjit_embed_fns`
-are **1278 of 3202 (39.91%)** and **39 of 299 (13.04%)** — see N6.8. **What is open is the defect:**
-why the `--embed-jit` re-emit is 1.2–1.9 points less faithful than `-O1` on every target and both
-architectures measured. Nobody has looked at a single one of the unfaithful bodies.
+are **1278 of 3202 (39.91%)** and **39 of 299 (13.04%)** — see N6.8. ~~**What is open is the
+defect:** why the `--embed-jit` re-emit is 1.2–1.9 points less faithful than `-O1` on every target
+and both architectures measured. Nobody has looked at a single one of the unfaithful bodies.~~
+
+**N18 CLOSED 2026-08-13, and its title was false in one more way than this row had noticed:
+`--embed-jit` contributes EXACTLY ZERO.** The whole gap is an `-O0`-vs-`-O1` effect wearing a JIT
+name. The 2×2 that settles it, on both targets — `-O1` and `-O1 --embed-jit` are **bit-identical**
+(`full_language.c` 291/301 faithful both ways, self-host 3134/3204 both ways), and `-O0` with
+`MCC_FORCE_REPLAY=1` and no JIT at all reproduces the `-O0 --embed-jit` figure exactly. Every
+candidate this row would have chased is refuted by that one control: not the section cursor, not
+`nocode_wanted`, not `-g` state, not symbol binding, not a skipped strategy-restore — any of them
+would have made `-O1 --embed-jit` differ, and it does not. **N20's fix is fully effective and
+nothing is left on that axis.** The arm is called `-O0 --embed-jit` only because
+`ast_replay_env = s1->optimize >= 1 || s1->embed_jit || …` makes `--embed-jit` the one *shipping*
+way to switch replay on at `-O0`; the flag was mistaken for the independent variable.
+
+**The cause is two `LEVEL(1)` rows that are not optimizations.** `storeval-rot` and
+`storeval-calllast` are pure replay-shape recognizers inside the `AST_StoreVal` parent walk — their
+two siblings in the *same* walk, `storeval-call` and `storeval-callup`, have been `MCC_OPTD_ALWAYS`
+all along, as has every `replay-*` knob. Bidirectional proof on `full_language.c`: baseline
+`-O0 --embed-jit` 285/299, **+the two knobs 290/299**, `-O1` 291/301, **`-O1 -fno-`both 286/301** —
+adding them at `-O0` closes the gap and removing them at `-O1` *reproduces* it. Nine other
+`LEVEL(1)` knobs plus `reg-disp` and `ivopts` were swept and move nothing. **Fixed by promoting
+both to `MCC_OPTD_ALWAYS`**: the gap goes +1.36 → **−0.31** and +1.19 → **+0.04**.
+
+**It is byte-neutral where it could have cost, and that is measured, not asserted:** 1192 of 1192
+comparable `tests/exec` objects are identical across `-O1`–`-O4`. The 4 that differ are all
+`preprocessor/predefined_macros.c`, **N21's `__TIME__` landmine, which differs against itself** on
+two runs of the unmodified compiler a second apart. In a default `-O0` build `ast_replay_env` is 0,
+so the two knobs are inert there; the entire blast radius is the replay-at-`-O0` arm this row is
+about.
+
+**The instrument was the reason nobody could see it, and it is fixed in the same change.**
+`inv-faithful.py`'s `ARMS = (("-O1", False), ("-O0", True))` varied **two factors at once** and
+could not separate them — it named an opt-level effect after the JIT for as long as it existed. It
+now carries `-O1 --embed-jit` as a third arm and banks `jit_gap_pt` beside `embedjit_gap_pt`; that
+one extra compile, about a second, is what turns the misattribution into a printed `+0.00`. The
+known-positive perturbs both figures. **The general lesson is this file's own thesis again**: a
+two-factor instrument does not measure a defect, it names one.
+
+**Left open deliberately, and it is small.** `storeval-constl` is `LEVEL(1)` with word-for-word the
+same pin text ("its off-state is an incomplete path, not a lowering") and is very likely mis-filed
+the same way — but it moves **nothing** on the faithfulness axis, so promoting it would be symmetry
+rather than evidence. The arm64/macOS figures (+1.85/+1.29) are almost certainly the same
+mechanism, since neither knob is arch-gated, but **that host has not re-taken them** and this
+closure is x86_64-linux only.
 
 As originally filed:
 **N18. Nothing watches the `-O0 --embed-jit` arm, and it is the least faithful one on both

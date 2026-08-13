@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """N18: the -O0 --embed-jit arm is the least faithful one, and nothing watched it.
 
-Two compiles and a subtraction.  That is the whole measurement, and it is the
-point: docs/TODO.md priced this row against tools/emit-map.py, which needs
+Three compiles and two subtractions.  That is the whole measurement, and it is
+the point: docs/TODO.md priced this row against tools/emit-map.py, which needs
 MCC_CONFIG_TRACE=ON, runs for up to 7200 s and is opt-in -- so no ordinary
 build watched the arm at all.  The same table reproduces from MCC_INV=1 on the
 build everyone already has, in about a second per target, because the
@@ -15,12 +15,26 @@ What it measures, per target:
   ast.faithful  of those, the ones whose replay emitted the parser's bytes
   unfaithful%   the complement, which is the number this row is about
   gap           unfaithful% at -O0 --embed-jit MINUS unfaithful% at -O1
+  jit_gap       unfaithful% at -O1 --embed-jit MINUS unfaithful% at -O1
 
-The gap is the finding: +1.20 and +1.36 points on x86_64 (2026-08-11), +1.29
-and +1.85 on arm64/macOS (2026-08-12).  Since 3e0f1e8d made --embed-jit the
-only gate on baking, this is the arm a `-g --embed-jit` build takes, so its
-unfaithful bodies are the ones silently excluded from dispatch in a debug
-configuration.
+THE THIRD ARM IS THE WHOLE LESSON OF THIS FILE, and it was missing until
+2026-08-13.  ARMS was (-O1, -O0 --embed-jit): two factors moving at once, so a
+non-zero gap could be read as either, and this file's own name and docstring
+read it as the JIT for as long as they existed.  It is not the JIT.  With -O1
+held fixed, turning --embed-jit ON moves faithfulness by EXACTLY ZERO on both
+targets; the entire published gap was the -O level.  The control costs about a
+second and it is the difference between naming a defect and measuring one.
+
+The gap WAS +1.20 and +1.36 points on x86_64 (2026-08-11), +1.29 and +1.85 on
+arm64/macOS (2026-08-12).  Root cause: storeval-rot and storeval-calllast are
+replay-shape recognizers, not optimizations, and were MCC_OPTD_LEVEL(1) -- so
+the -O0 replay arm (reachable in shipping builds only through --embed-jit, via
+ast_replay_env) ran without them.  Both are MCC_OPTD_ALWAYS as of that date and
+the gap is -0.31 and +0.04 here.  arm64/macOS has not re-taken it.
+
+Since 3e0f1e8d made --embed-jit the only gate on baking, this is the arm a
+`-g --embed-jit` build takes, so its unfaithful bodies are the ones silently
+excluded from dispatch in a debug configuration.
 
 Also banked, because N6.8 established the published bake rate was the wrong
 counter: jit.baked counts CALLS to a single-slot stash that the callee may
@@ -44,7 +58,7 @@ from importlib import import_module
 
 emit_map = import_module("emit-map")
 
-ARMS = (("-O1", False), ("-O0", True))
+ARMS = (("-O1", False), ("-O1", True), ("-O0", True))
 TOL = 0.35
 
 
@@ -130,27 +144,35 @@ def main():
                       "MCC_INV instrumentation" % (t, name))
                 return 77
             arms[name] = f
-        base, jitarm = arms["-O1"], arms["-O0 --embed-jit"]
+        base = arms["-O1"]
+        jitarm = arms["-O0 --embed-jit"]
+        ctrl = arms["-O1 --embed-jit"]
         gap = round(jitarm["unfaithful_pct"] - base["unfaithful_pct"], 2)
+        jit_gap = round(ctrl["unfaithful_pct"] - base["unfaithful_pct"], 2)
         out["%s|%s" % (arch, t)] = {
             "unfaithful_pct_O1": base["unfaithful_pct"],
+            "unfaithful_pct_O1_embedjit": ctrl["unfaithful_pct"],
             "unfaithful_pct_embedjit": jitarm["unfaithful_pct"],
             "embedjit_gap_pt": gap,
+            "jit_gap_pt": jit_gap,
             "baked_pct": jitarm["baked_pct"]}
-        report.append((t, arms, gap))
+        report.append((t, arms, gap, jit_gap))
 
     if a.json:
         print(json.dumps(out, indent=1, sort_keys=True))
     else:
-        for t, arms, gap in report:
+        for t, arms, gap, jit_gap in report:
             print("inv-faithful %s [%s]" % (t, arch))
-            for name in ("-O1", "-O0 --embed-jit"):
+            for name in ("-O1", "-O1 --embed-jit", "-O0 --embed-jit"):
                 f = arms[name]
                 print("  %-16s %5d verdicted  %5d unfaithful = %5.2f%%"
                       % (name, f["verdicted"], f["unfaithful"],
                          f["unfaithful_pct"]))
             j = arms["-O0 --embed-jit"]
-            print("  %-16s %+5.2f points less faithful than -O1" % ("GAP", gap))
+            print("  %-16s %+5.2f points, and it is the -O LEVEL that moves it"
+                  % ("GAP", gap))
+            print("  %-16s %+5.2f points -- the JIT axis alone, -O1 held fixed"
+                  % ("JIT GAP", jit_gap))
             print("  %-16s %d of %d bodies (%.2f%%) reached mccjit_embed_fns; "
                   "%d stash attempts"
                   % ("baked", j["baked"], j["verdicted"], j["baked_pct"],
@@ -159,6 +181,7 @@ def main():
     if a.known_positive:
         for cell in out.values():
             cell["embedjit_gap_pt"] = round(cell["embedjit_gap_pt"] + 5.0, 2)
+            cell["jit_gap_pt"] = round(cell["jit_gap_pt"] + 5.0, 2)
 
     if not a.bank:
         return 0

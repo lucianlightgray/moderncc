@@ -46,8 +46,8 @@
 	MCC_OPT_ROW(CHAIN_STORE,                   "chain-store",                  MCC_OPTD_LEVEL(4)) \
 	MCC_OPT_ROW(STOREVAL_CONSTL,               "storeval-constl",              MCC_OPTD_LEVEL(1)) \
 	MCC_OPT_ROW(STOREVAL_CALLSTORE,            "storeval-callstore",           MCC_OPTD_LEVEL(2)) \
-	MCC_OPT_ROW(STOREVAL_ROT,                  "storeval-rot",                 MCC_OPTD_LEVEL(1)) \
-	MCC_OPT_ROW(STOREVAL_CALLLAST,             "storeval-calllast",            MCC_OPTD_LEVEL(1)) \
+	MCC_OPT_ROW(STOREVAL_ROT,                  "storeval-rot",                 MCC_OPTD_ALWAYS) \
+	MCC_OPT_ROW(STOREVAL_CALLLAST,             "storeval-calllast",            MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(CHAIN_STORE_LIVE,              "chain-store-live",             MCC_OPTD_LEVEL(4)) \
 	MCC_OPT_ROW(CHAIN_STORE_MEMBER,            "chain-store-member",           MCC_OPTD_LEVEL(4)) \
 	MCC_OPT_ROW(STOREVAL_CALL,                 "storeval-call",                MCC_OPTD_ALWAYS) \

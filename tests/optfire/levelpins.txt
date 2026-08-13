@@ -133,9 +133,33 @@ fmov-imm|1|ast_fmov_imm_env is compiled out off arm64, so this host cannot measu
 # inline-functions, same fix, and tests/optfire/src/storeval_callstore.c now
 # holds both shapes. Both states of the row build clean; it is measurable and
 # has not been re-measured, so the level stands where the last sweep left it.
+# storeval-rot and storeval-calllast HELD PINS HERE UNTIL 2026-08-13 and no
+# longer do, because they left the ladder entirely: both are MCC_OPTD_ALWAYS as
+# of the N18 fix. The pins are deleted rather than retargeted, because
+# derive_levels skips any pin naming a flag that is not in levels_now -- leaving
+# them would have left two claims nothing reads, which is the failure mode this
+# whole file exists to prevent.
+#
+# The promotion is what these two pins were already arguing for and nobody had
+# drawn the conclusion. "Its off-state is an incomplete path, not a lowering" is
+# the ALWAYS-class sentence; storeval-call and storeval-callup, consumed in the
+# same parent walk, have been ALWAYS all along. What forced it was N18: the
+# LEVEL(1) gate made the two knobs off at -O0, and -O0 is reachable WITH replay
+# through --embed-jit, so the shipped -O0 --embed-jit arm was 1.19-1.36 points
+# less faithful than -O1 for no reason but this level. Bidirectional proof on
+# full_language.c: -O0 --embed-jit 285/299 faithful, +the two knobs 290/299,
+# -O1 291/301, -O1 -fno-both 286/301.
+#
+# The 2026-08-09 measurement above is NOT invalidated and is why the promotion
+# is safe: off costs 8.7 points of kept and takes rir-coverage red, i.e. the
+# on-state was already the right answer at every level that had an opinion. The
+# demotion argument it survived is now moot in the other direction.
+#
+# storeval-constl stays at 1 deliberately. Its pin text is word-for-word the
+# same argument, and it is very likely mis-filed the same way -- but it moves
+# NOTHING on the faithfulness axis (measured with the other six LEVEL(1) knobs
+# while root-causing N18), so promoting it would be symmetry, not evidence.
 storeval-constl|1|replay-fidelity bisection handle; its off-state is an incomplete path, not a lowering
-storeval-rot|1|replay-fidelity bisection handle; its off-state is an incomplete path, not a lowering -- MEASURED 2026-08-09: off costs 8.7 points of kept and takes rir-coverage red at -O1/-O2/-O3, so the row stays at 1 despite losing on every time axis (2.31% of stage-1, 0.232% of stage-2)
-storeval-calllast|1|replay-fidelity bisection handle; inert here, stage-1 object byte identical to the base
 storeval-callstore|2|replay-fidelity bisection handle; the -O3 ICE is fixed and both states now build, so the row is measurable and the level simply awaits a re-measurement
 #
 # --- rung 1: the math rows, promoted back after the lowering was fixed
