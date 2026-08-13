@@ -4603,8 +4603,16 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("smoke/strat-dark" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
 
-        find_program(MCC_SMOKE_GCC NAMES gcc-15 gcc)
-        find_program(MCC_SMOKE_CLANG NAMES clang-22 clang)
+        if(DIFF3_GCC)
+            set(MCC_SMOKE_GCC "${DIFF3_GCC}")
+        else()
+            find_program(MCC_SMOKE_GCC NAMES gcc-15 gcc)
+        endif()
+        if(DIFF3_CLANG)
+            set(MCC_SMOKE_CLANG "${DIFF3_CLANG}")
+        else()
+            find_program(MCC_SMOKE_CLANG NAMES clang-22 clang)
+        endif()
         add_test(NAME "smoke/divergence"
             COMMAND smokerun --mcc "${_mcc_exe}"
                     --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
