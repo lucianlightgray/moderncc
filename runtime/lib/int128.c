@@ -592,64 +592,6 @@ static int __mcc_mulo_ti_impl(mcc_int128 a, mcc_int128 b, mcc_int128 *r) {
 	return !int128_is_equal(__divti3(product, a), b);
 }
 
-static int __mcc_addo_uti_impl(mcc_int128 a, mcc_int128 b, mcc_int128 *r) {
-	mcc_int128 sum = int128_add(a, b);
-	*r = sum;
-	return int128_is_below(sum, a);
-}
-
-static int __mcc_subo_uti_impl(mcc_int128 a, mcc_int128 b, mcc_int128 *r) {
-	*r = int128_subtract(a, b);
-	return int128_is_below(a, b);
-}
-
-static int __mcc_mulo_uti_impl(mcc_int128 a, mcc_int128 b, mcc_int128 *r) {
-	mcc_int128 product = __multi3(a, b);
-	*r = product;
-	if (int128_is_zero(a))
-		return 0;
-	return !int128_is_equal(__udivti3(product, a), b);
-}
-
-
-#ifdef __SIZEOF_INT128__
-typedef __int128 mcc_ov_sint128;
-typedef unsigned __int128 mcc_ov_uint128;
-
-static mcc_int128 mcc_ov_from_abi(mcc_ov_uint128 value) {
-	return int128_from_halves((unsigned long long)(value >> MCC_INT128_HALF_BITS),
-														(unsigned long long)value);
-}
-
-static mcc_ov_uint128 mcc_ov_to_abi(mcc_int128 value) {
-	return ((mcc_ov_uint128)value.high << MCC_INT128_HALF_BITS) |
-				 (mcc_ov_uint128)value.low;
-}
-
-#define MCC_OV_WRAP(name, abi_t)                                              \
-	int name(abi_t abi_a, abi_t abi_b, abi_t *abi_r) {                          \
-		mcc_int128 result;                                                        \
-		int overflow = name##_impl(mcc_ov_from_abi((mcc_ov_uint128)abi_a),        \
-															 mcc_ov_from_abi((mcc_ov_uint128)abi_b), &result); \
-		*abi_r = (abi_t)mcc_ov_to_abi(result);                                    \
-		return overflow;                                                          \
-	}
-#else
-#define MCC_OV_WRAP(name, abi_t)                                              \
-	int name(mcc_int128 a, mcc_int128 b, mcc_int128 *r) {                       \
-		return name##_impl(a, b, r);                                              \
-	}
-#define mcc_ov_sint128 mcc_int128
-#define mcc_ov_uint128 mcc_int128
-#endif
-
-MCC_OV_WRAP(__mcc_addo_ti, mcc_ov_sint128)
-MCC_OV_WRAP(__mcc_subo_ti, mcc_ov_sint128)
-MCC_OV_WRAP(__mcc_mulo_ti, mcc_ov_sint128)
-MCC_OV_WRAP(__mcc_addo_uti, mcc_ov_uint128)
-MCC_OV_WRAP(__mcc_subo_uti, mcc_ov_uint128)
-MCC_OV_WRAP(__mcc_mulo_uti, mcc_ov_uint128)
-
 mcc_int128 __divmodti4(mcc_int128 a, mcc_int128 b, mcc_int128 *remainder) {
 	int quotient_is_negative = int128_is_negative(a) ^ int128_is_negative(b);
 	int remainder_is_negative = int128_is_negative(a);

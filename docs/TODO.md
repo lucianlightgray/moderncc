@@ -723,14 +723,39 @@ model was already in this file** under *"Couplings deleted, because verification
 established for the wide256 cluster and never connected here. The real cost is breadth — 838
 `VT_BTYPE` uses to audit — which is mechanical and greppable, a very different estimate.
 
-**~~`int128-signedness` — settled; delete it.~~ — DONE 2026-08-13, header half only.** The 44 lines
-below are gone from `runtime/include/mccdefs.h`; `nm -u` was re-run here first and still shows zero
-undefined `__mcc_*o_*`, and 391 overflow/int128/builtin cells are green after. **The two
-`runtime/lib/` halves were deliberately not taken** — `runtime/lib/int128.c`'s
-`__mcc_{add,sub,mul}o_ti_impl` are live (`__addvti3`/`__subvti3`/`__mulvti3` call them); only the
-`MCC_OV_WRAP` exports around them are orphaned, and those are exported runtime symbols, which is
-the decision this row correctly refused to take on a sweep. The header declarations were never that
-decision: they are *declarations*, injected into every TU, of symbols that remain defined.
+**~~`int128-signedness` — settled; delete it.~~ — CLOSED IN FULL 2026-08-13.** The header half
+landed first: the 44 lines below are gone from `runtime/include/mccdefs.h`; `nm -u` was re-run here
+first and still shows zero undefined `__mcc_*o_*`, and 391 overflow/int128/builtin cells are green
+after. **The two `runtime/lib/` halves were then taken as well, as the decision they were, on
+x86_64-linux the same day.** `runtime/lib/builtin.c` loses `MCC_OV_SMALL_{S,U}` /
+`MCC_OV_BIG_{S,U}` and their 14 instantiations, `runtime/lib/int128.c` loses `MCC_OV_WRAP` and its
+6, plus `mcc_ov_{from,to}_abi`, the `mcc_ov_{s,u}int128` ABI typedefs and the three
+`__mcc_{add,sub,mul}o_uti_impl` that only the wrappers reached. `libmccrt.a` goes from **20
+exported `__mcc_*o_*` symbols to none**; the three `__mcc_{add,sub,mul}o_ti_impl` survive as file
+statics, and `__addvti3`/`__subvti3`/`__mulvti3` are still `T`. 391 overflow/int128/builtin cells
+green, `ctest -R "^smoke/"` 12 of 12 in 227.4 s.
+
+**What made it safe to take rather than a sweep, restated as the argument and not the conclusion:**
+with the declarations already gone, no TU this compiler preprocesses can *name* the symbols —
+`__builtin_{add,sub,mul}_overflow` expand to `__mcc_ov_gen`, whose `__mcc_ov_calc`/`_w` path is
+`static __inline` and handles `__int128` inline, verified here by compiling all four widths and
+reading `nm -u`: **zero** undefined `__mcc_*o_*`, at `-O2` and with `MCC_CONFIG_PREDEFS=0`. The
+skew the row feared cannot occur inside a prefix (`runtime/include/` and the archive install into
+the same `_mccdir`), there is no runtime ABI to break (a static archive), and no symbol/ABI
+baseline test exists to contradict.
+
+**Found on the way, and it is a compiler-side residue this file had no row for.**
+`src/arch/x86_64/x86_64-gen.c::gen_ovf_addsub` — with `ovf_inline_on()`, i.e. `MCC_OVERFLOW_INLINE`
+— exists to intercept a *call* to a symbol named `__mcc_{add,sub,mul}o_*` and emit the
+add/sub/imul-plus-`seto` inline instead. Nothing can make that call any more: the header half
+already removed the only declarations, so the interceptor has been unreachable from any
+mcc-compiled TU since that commit, and this half removes the definitions it would otherwise have
+fallen back to. **It is deliberately left in place** — it is the one thing that still makes a
+hand-written `extern int __mcc_addo_i(long long, long long, int *);` work now that the library
+symbol is gone, and deleting emitted-code paths on a dead-declaration argument is a second
+decision, not this one. Its two bodies are banked in `tests/rir/lowerable-bodies.tsv`
+(`gen_ovf_addsub`, `ovf_inline_on`) and **no cell exercises the path** — worth knowing before
+anyone reads that inventory as coverage.
 
 As originally settled:
 `nm -u` on a program using all four
@@ -965,11 +990,14 @@ and its per-operation rounding is what that macro promises, so the honest readin
 
 **Not code, decide first:** sweep row 29 (the `MCC_OPT_REPLAY_FALLBACK` flip — **make the fallback
 visible under either answer**, and note one of its four legs is falsified: `nofb_miscompiles` is no
-longer empty) and the coroutine task S7b. `int128-signedness` **leaves this list 2026-08-13**: the
-44 header lines were declarations, not exports, and are deleted; what remains of the row *is* a
-decision about exported runtime symbols, and it is now the `runtime/lib/` half alone — smaller than
-the row implies, because `__mcc_{add,sub,mul}o_ti_impl` are live and only the `MCC_OV_WRAP`
-wrappers around them are orphaned.
+longer empty) and the coroutine task S7b. `int128-signedness` **leaves this list 2026-08-13 by
+being finished, not by being re-scoped.** It left once already that morning, when the 44 header
+lines turned out to be declarations rather than exports; the `runtime/lib/` half that remained
+*was* a decision about exported runtime symbols, and it was taken the same day — 20 exported
+`__mcc_*o_*` symbols gone from `libmccrt.a`, the three live `_ti_impl` kept as statics. The row
+above carries the argument. **The one thing it left behind is a compiler-side residue, not a
+runtime one:** `x86_64-gen.c::gen_ovf_addsub` intercepts calls that nothing can now make, and is
+kept on purpose.
 
 **Belongs to the Mac:** N29 (above), the Metal region differential — do **MoltenVK first**, ~10
 lines and already half-built — and `slice/census`'s `arm64`/`Darwin` column, now bisected to
@@ -1153,9 +1181,13 @@ control.
   their 14 instantiations plus `__mcc_ov_disp{,_ti}` from `runtime/include/mccdefs.h`, the
   `MCC_OV_SMALL_S/U` and `BIG_S/U` macros and their 14 instantiations from `runtime/lib/builtin.c`,
   and `__mcc_{add,sub,mul}o_{ti,uti}_impl` plus `MCC_OV_WRAP` and `mcc_ov_{from,to}_abi` from
-  `runtime/lib/int128.c`. **Not deleted here**: these are exported runtime symbols, and nothing
+  `runtime/lib/int128.c`. ~~**Not deleted here**: these are exported runtime symbols, and nothing
   in-tree links them, but an out-of-tree consumer or an older `mccdefs.h` would. It is a decision,
-  not a sweep.
+  not a sweep.~~ **All three files are now done — the decision was taken 2026-08-13 rather than
+  deferred again**, and the row above states the argument. One correction to the list as written:
+  `__mcc_{add,sub,mul}o_ti_impl` are **not** deleted from `runtime/lib/int128.c`, because
+  `__addvti3`/`__subvti3`/`__mulvti3` call them; only the `_uti_impl` three, which nothing but the
+  wrappers reached, go with the wrappers.
 
 **Belongs to the Linux box, do not start here:** ~~N8's two unreduced survivors~~ (**closed
 2026-08-13 on that box — see N8**), items 23 and 24
@@ -2933,12 +2965,13 @@ chase), `types-float128` (**cheapest of the group by substrate**: `runtime/lib/f
 complete soft-quad already in tree and `default_debug[19]` holds a reserved sentinel, so the work
 is front-end only — but decide first whether it collides with `long double`, which is already
 16 bytes on arm64/riscv64), `types-bitint` (C23-mandatory, large, and needs a per-declaration
-width that no bit field can carry), `int128-signedness` (**now dead-code cleanup only, verified 2026-08-13**: `__mcc_ov_disp` is
-defined and has zero call sites in `src/`, `runtime/`, `tests/` or `tools/`, because
+width that no bit field can carry), ~~`int128-signedness`~~ (**CLOSED 2026-08-13** — it was
+dead-code cleanup only, and all three files are done: `__mcc_ov_disp` had zero call sites because
 `__builtin_*_overflow` expands to `__mcc_ov_gen`'s inline path and never reaches the out-of-line
-helpers — the deletion list is enumerated in the *Newly found* block above, and it is a decision
-about exported runtime symbols rather than a sweep). The switch is shared; the bit budget is not
-scarce.
+helpers, so the header declarations, the `runtime/lib/builtin.c` macros and the
+`runtime/lib/int128.c` wrappers all went. It **leaves this rank** — the switch it was grouped
+under is shared, but this row no longer has a switch arm to add). The switch is shared; the bit
+budget is not scarce.
 
 **Rank 9 — wide256.** `int256-float-conv`, `int256-literal-suffix` (`CValue.q` already carries
 four limbs, so the work is confined to the lexer's accumulator), `int256-dwarf`,
