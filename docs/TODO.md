@@ -4435,7 +4435,27 @@ Each stage lands independently and each carries a differential that fails if the
 nothing. Line estimates are for compiler/harness code, comments excluded per the standing
 instruction.
 
-**Stage W1 — the wine cross-oracle. ~400–640 lines.**
+**Stage W1 — the wine cross-oracle. ~~~400–640 lines.~~ — a native first cut LANDED
+2026-08-13.** The plan called this "blocked here" for want of a mingw oracle and a way to run
+PE without wine. On the *actual Windows box* both are false: mingw-w64 is vendored and PE runs
+natively. So W1 landed as `pe/x-oracle` (`tests/cross/pe-xoracle.sh`) — for every run-mode
+`tests/exec` golden it compiles and runs the program with **mcc** and with the vendored
+**`x86_64-w64-mingw32-gcc`** natively and requires exit+stdout to agree. Measured: **254
+cross-vendor agreements** (floored at 250 so the corpus cannot silently shrink), **0 new
+divergences, 0 new mcc-nocompile** outside a banked exclusion list, and a `pe/x-oracle-mutate`
+arm that injects a mismatch and **requires the oracle to go red** (the `gpuconform_cref
+--mutate` shape) so it cannot pass by adjudicating nothing. This is cross-*vendor* clean by
+construction (mcc ≠ gcc), so it does **not** carry the pilot's §4 same-vendor caveat — it is a
+cleaner oracle than the pilot was, just over a smaller corpus. **What it is NOT:** it is not the
+1,693-program gcc-c-torture run. That corpus (`vendor/gcc-c-torture-execute`) is still absent, so
+the five §3 divergences are unreachable and **W2 stays blocked** until it is symlinked in (same
+mechanism as `slice/cref-oracle`); once present, pointing this oracle at it needs no new code. The
+15 banked exclusions (`tests/cross/pe-xoracle-exclude.txt`) are the internal-corpus analogue of
+W2's triage: long double 80-vs-64-bit, MS bitfields, `_Complex`, `__cleanup__`, atomics,
+freestanding-header env, data-model macros, fenv rounding, an arch-specific golden, and four
+mcc-nocompile — each an implementation-defined / references-disagree class, none a confirmed
+miscompile. Original plan text follows.
+
 As priced in §4. Differential: a `--mutate` arm in the same shape as
 `cmake/gpuconform_cref.cmake`'s — perturb one emitted constant and require the cell to go
 red, so the oracle cannot pass by adjudicating nothing. Floors `--min-pass` and

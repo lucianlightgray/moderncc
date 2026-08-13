@@ -1,0 +1,43 @@
+# pe/x-oracle known-divergence list (W1). One tests/-relative source path per line.
+# These run-mode goldens do NOT agree between mcc-PE and the vendored mingw-w64 gcc
+# on a native x86_64 Windows host, measured 2026-08-13. Each is an
+# implementation-defined / reference-disagreement class, not a confirmed mcc
+# miscompile; per-program triage is W2. The oracle counts these but does not fail
+# on them. A program that starts agreeing can be removed; a NEW disagreement outside
+# this list fails the cell.
+
+# long double: 80-bit (mcc) vs 64-bit (Win64 mingw) representation and conversions
+exec/types/floating_point.c
+exec/types/floating_point_literals.c
+exec/types/ldouble_to_signed.c
+
+# _Complex: mcc's complex support / conversions differ from mingw
+exec/features_c99_c11/c11_complex_convert.c
+
+# MS struct bitfield layout edges
+exec/structs_unions/bitfields_ms.c
+exec/structs_unions/bitfield_width64.c
+
+# __cleanup__ attribute: mcc ignores it (warns), mingw runs the cleanup
+exec/features_c99_c11/cleanup.c
+
+# <stdatomic.h> pointer atomics: sequencing/result differs
+exec/features_c99_c11/atomic_ptr.c
+
+# freestanding header availability differs between the two toolchains' env
+exec/features_c99_c11/c11_freestanding_headers.c
+
+# predefined data-model macros (__LP64__/__LLP64__ etc.) differ
+exec/codegen/memory_model.c
+
+# fenv access / FP rounding fold: result depends on FP environment, not stable cross-vendor
+exec/features_c99_c11/fenv_access_fold.c
+
+# arch-specific golden (arm64) whose output is not target-neutral on x86_64
+exec/arch/arm64.c
+
+# mcc does not compile these on this target (triage pending)
+exec/features_c99_c11/versym.c
+exec/features_c99_c11/complex_cmplx_special.c
+exec/features_c99_c11/tgmath_dispatch.c
+exec/types/int128.c

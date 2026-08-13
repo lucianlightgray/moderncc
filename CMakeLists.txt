@@ -8232,6 +8232,25 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(pe/unwind-backtrace PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                 LABELS "pe" TIMEOUT 300)
+
+            set(_pe_xoracle_floor 250)
+            add_test(NAME pe/x-oracle
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-xoracle.sh"
+                        "$<TARGET_FILE:mcc>" "${_MCC_MINGW_X86_64_GCC}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}"
+                        "${CMAKE_BINARY_DIR}/pe-xoracle-work" "${_pe_xoracle_floor}")
+            set_tests_properties(pe/x-oracle PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                LABELS "pe" TIMEOUT 900)
+            add_test(NAME pe/x-oracle-mutate
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-xoracle.sh"
+                        "$<TARGET_FILE:mcc>" "${_MCC_MINGW_X86_64_GCC}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}"
+                        "${CMAKE_BINARY_DIR}/pe-xoracle-mutate-work" "${_pe_xoracle_floor}"
+                        --mutate)
+            set_tests_properties(pe/x-oracle-mutate PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                LABELS "pe" TIMEOUT 900)
         else()
             mcc_skip_test(pe/coff-obj-diff
                 "COFF object writer differential (needs vendored mingw-w64 x86_64 gcc)")
