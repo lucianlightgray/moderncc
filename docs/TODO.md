@@ -1709,8 +1709,10 @@ finish inside `ladder_gpu_parity.cmake`'s `TIMEOUT 120`, which is exactly what w
 completed, so this is a regression or a configuration difference, not a permanent property of the
 host — **do not read that write-up as evidence the arm works today.**
 
-**N35. Four reds arrived from the arm64 host's last two waves, all verified pre-existing.** Three
-at `c7df5209` and one more at `5825d894`, which landed mid-wave. Found by running the whole `jit/ ast/ rir optlevel diff3/ superopt/
+**N35. Five reds arrived from the arm64 host's last two waves, all verified pre-existing.** Three
+at `c7df5209` and two more at `5825d894`, which landed mid-wave. **Three of the five are now
+closed**; the two that remain are the ones that need a compiler attribution rather than a harness
+fix. Found by running the whole `jit/ ast/ rir optlevel diff3/ superopt/
 fmt/ docs/ ci/` family — 526 cells — on x86_64-linux, and confirmed by building `c7df5209` into a
 scratch tree and re-running there.
 
@@ -1718,7 +1720,8 @@ scratch tree and re-running there.
 | --- | --- | --- |
 | `rir-coverage-census` | `-O0 lowerable[elf] bodies_pct regressed: 15.4134% < banked 15.4642% over the WHOLE corpus` | **the ELF floor moved and only macho was re-banked.** `eee6c1f2` added per-format arena floors and banked macho *"so the ratchet arms here"*; the ELF side was left at its old number and this host is the one that measures it |
 | `rir-lowerable-classes` | `reg.c -O1/-O2/-O3: lowerable class reg no longer reproduces` (`-O0` still does) | **C5's own caveat coming true.** That fixture is a VLA, and the C5 write-up already warned that `reg.c` and `opaque.c` share one mechanism so *"a change to VLA lowering breaks both fixtures at once, and neither would isolate which class regressed"*. It cannot say what moved, by construction |
-| `jit/xoracle-coverage` | cannot reach `--min-cross 400` on one suite | **a missing prerequisite reported as a failure.** `MCC_XSUITE_LLVMTS` has no checkout here; configure already prints the explanation, and then the cell registers and fails instead of skipping with it. That is the shape `ci/registration-stubs` exists to prevent |
+| ~~`jit/xoracle-coverage`~~ **CLOSED 2026-08-13** | cannot reach `--min-cross 400` on one suite | **a missing prerequisite reported as a failure.** `MCC_XSUITE_LLVMTS` has no checkout here, and the `else()` branch that handles it already carried a comment saying *exactly* what would happen — *"the cell then fails for what reads as a coverage reason when the cause is a path that does not exist"* — printed a `STATUS` line, and then registered the cell anyway. It now skips with that reason. **`--min-cross 400` is a two-suite floor and one suite tops out at 379, so the cell could only ever fail**; `jit/xoracle-conformance` is unaffected because its floor is `--min-pass 100` |
+| ~~`ci/registration-stubs`~~ **CLOSED 2026-08-13** | `1 of 57 capability-gated registration chain(s) drop cells instead of skipping them` | **the same commit that added `rir/rec-miss` did not add its skip stub.** The lint names the branch and the line; one `mcc_skip_test` closes it. Worth noting the lint found this *after* the cell was made runnable — a cell that cannot execute and a cell that is missing from a gate's `else()` are two different reds from one commit, and only the second is something a sweep can find |
 | ~~`rir/rec-miss`~~ **CLOSED 2026-08-13** | `execute_process given unknown argument "ENVIRONMENT"` | **the cell could never run.** `execute_process` has no `ENVIRONMENT` option — that belongs to `set_tests_properties` — so `5825d894`'s new cell died on its first CMake statement, at both of its two injection sites. Rewritten as `${CMAKE_COMMAND} -E env MCC_RIR_REC_FORCE_MISS=1 …`. **It is a good cell**: 6 subjects, both floors present (`_ran < 4` and `_moved == 0`), and it reports *"the injection moved 3 object(s), so the frontier fallback is the code under test and not a no-op"* |
 
 **`rir-coverage-census` has a second, smaller cause that is this wave's**, and the two must not be

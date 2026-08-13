@@ -7164,6 +7164,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             mcc_skip_test("ci/must-run-registered" "${_nopy_why}")
             mcc_skip_test("ci/registration-stubs" "${_nopy_why}")
             mcc_skip_test("rir/drop-ratchet" "${_nopy_why}")
+            mcc_skip_test("rir/rec-miss" "${_nopy_why}")
             mcc_skip_test("rir-coverage" "${_nopy_why}")
             mcc_skip_test("node-census" "${_nopy_why}")
             mcc_skip_test("rir-gap-classes" "${_nopy_why}")
@@ -7277,14 +7278,19 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 set_tests_properties("jit/xoracle-conformance" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
 
-                add_test(NAME "jit/xoracle-coverage"
-                    COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/xoracle.py"
-                            --phase report
-                            "--out=${CMAKE_BINARY_DIR}/jitconform-cell"
-                            --min-cross 400 --min-exclusive 1)
-                set_tests_properties("jit/xoracle-coverage" PROPERTIES
-                    FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300
-                    DEPENDS "jit/xoracle-conformance")
+                if(_jitconf_ts)
+                    add_test(NAME "jit/xoracle-coverage"
+                        COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/xoracle.py"
+                                --phase report
+                                "--out=${CMAKE_BINARY_DIR}/jitconform-cell"
+                                --min-cross 400 --min-exclusive 1)
+                    set_tests_properties("jit/xoracle-coverage" PROPERTIES
+                        FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300
+                        DEPENDS "jit/xoracle-conformance")
+                else()
+                    mcc_skip_test("jit/xoracle-coverage"
+                        "no llvm-test-suite at ${MCC_XSUITE_LLVMTS} -- --min-cross 400 is a two-suite floor and one suite tops out at 379, so this cell can only fail, and it would fail naming a coverage number when the cause is an absent path; set -DMCC_XSUITE_LLVMTS=<path>")
+                endif()
             else()
                 mcc_skip_test("jit/xoracle-conformance"
                     "no gcc.c-torture/execute corpus at ${MCC_XSUITE_GCC} -- point -DMCC_XSUITE_GCC=<gcc checkout> at one to measure the JIT against clang as cross oracle")
