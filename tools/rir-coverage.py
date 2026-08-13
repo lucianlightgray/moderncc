@@ -399,6 +399,21 @@ def host_objfmt(mcc):
     return fmt
 
 
+def arena_floor(entry, key, fmt):
+    """A per-format arena scalar, with a legacy flat value reading as elf.
+
+    residual and kept_coverage are host-format properties, not portable ones:
+    src/mccrun.c's mcc_tlv_thunk is 120 bytes of raw asm with no C body on
+    Darwin, so a macho residual is legitimately nonzero where the banked elf
+    value is 0.  Banking them flat is what forced the whole lowerable cluster
+    to partial-skip on any host that is not the one they were taken on.
+    """
+    v = entry.get(key)
+    if isinstance(v, dict):
+        return v.get(fmt)
+    return v if fmt == "elf" else None
+
+
 def low_floor(entry, fmt):
     """The lowerable floor for host format `fmt` in a bank's per-opt entry.
 
@@ -1579,25 +1594,25 @@ def main():
                            "%.4f%% (the gap grew)"
                            % (opt, mc, b["modelled_coverage"]))
             kc = pct(used, body)
-            if unbanked_host:
-                skipped.append("-%s arena kept_coverage (this host %.4f%%, "
-                               "banked %.4f%% on another host format)"
-                               % (opt, kc, b.get("kept_coverage", 0.0)))
+            kc_floor = arena_floor(b, "kept_coverage", fmt)
+            if kc_floor is None:
+                skipped.append("-%s arena kept_coverage (this host %.4f%%, no "
+                               "%s floor banked)" % (opt, kc, fmt))
             else:
                 checked.append("-%s kept_coverage" % opt)
-                if kc + a.tol < b.get("kept_coverage", 0.0):
+                if kc + a.tol < kc_floor:
                     bad.append("-%s: kept coverage regressed: %.4f%% < banked "
                                "%.4f%% (fewer body bytes ship optimized)"
-                               % (opt, kc, b["kept_coverage"]))
-            if unbanked_host:
-                skipped.append("-%s arena residual (this host %d, banked %d on "
-                               "another host format)"
-                               % (opt, resid, b.get("residual", 0)))
+                               % (opt, kc, kc_floor))
+            resid_floor = arena_floor(b, "residual", fmt)
+            if resid_floor is None:
+                skipped.append("-%s arena residual (this host %d, no %s floor "
+                               "banked)" % (opt, resid, fmt))
             else:
                 checked.append("-%s residual" % opt)
-                if abs(resid) > abs(b.get("residual", 0)):
+                if abs(resid) > abs(resid_floor):
                     bad.append("-%s: unattributed .text grew: residual %d, "
-                               "banked %d" % (opt, resid, b.get("residual", 0)))
+                               "banked %d" % (opt, resid, resid_floor))
         elif not b and not a.update_bank and not a.no_check:
             bad.append("-%s: no banked coverage for corpus %s" % (opt, a.corpus))
         lb = low_floor(banked.get(opt, {}).get("lowerable"), fmt)
@@ -1737,6 +1752,15 @@ def main():
                     cur.update(v)
                     dst["lowerable"] = cur
                 else:
+                    keep = dst.get(lname, {})
+                    for k in ("residual", "kept_coverage"):
+                        if k not in v:
+                            continue
+                        cur = keep.get(k)
+                        if not isinstance(cur, dict):
+                            cur = {"elf": cur} if cur is not None else {}
+                        cur[fmt] = v[k]
+                        v[k] = cur
                     dst[lname] = v
         bank[a.corpus] = prev
         bank.setdefault("corpus_config", have_cfg)

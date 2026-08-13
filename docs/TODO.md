@@ -1603,7 +1603,7 @@ fires for AOT-submitted functions at all. B4 turns two silent no-ops back on.
 
 | # | edit | size | depends | host |
 | --- | --- | --- | --- | --- |
-| C1 | **the loud-skip question — a policy call, see below** | — | — | — |
+| ~~C1~~ | ~~the loud-skip question~~ **RESOLVED 2026-08-12 by removing the question.** Gave `residual` and `kept_coverage` a per-format schema (reader *and* writer), then banked `macho`. The cell went **2 enforced / 3 skipped → 20 enforced / 0 skipped** on this host. No policy call needed: the skips existed because the values were banked flat, not because partial enforcement was intended | small | — | any |
 | ~~C2~~ | ~~`sources` manifest floor~~ **DONE 2026-08-12.** Banked as `sources_{self,exec,wide}` = `{n, sha}` — **host-independent, it is the tree not the host**, so unlike the lowerable floors it needs no per-format schema. Verified by hiding one `tests/exec` file: fails naming 307→306 and the sha change. **Trap hit while doing it:** running `--update-bank` to produce the manifest also wrote a whole new `exec` ratchet entry with macho-derived coverage into the host-less schema; reverted, and the manifests computed directly instead | small | — | any |
 | ~~C3~~ | ~~gap-dir floor~~ **DONE 2026-08-12.** Fails on empty input (verified both directions) and now prints the honest denominator: *3 class(es) of 18 covered* | small | — | any |
 | ~~C4~~ | ~~low-dir floor~~ **DONE 2026-08-12.** Same shape; prints *7 blocker class(es) of 7 covered* and names any class lacking a fixture. The LOWCLS↔compiler parity check is **not** done and stays open | small | — | any |
