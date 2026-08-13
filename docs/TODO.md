@@ -277,7 +277,11 @@ Listed because a whole-suite run is expensive and this list did not exist anywhe
 | ~~`ci/registration-stubs`~~ **CLOSED 2026-08-12** | it was **three** cells and **three** `else()` branches, not two and two: `jit/xoracle-coverage` is dropped by the corpus-exists test *and* by the outer python3/embed-jit/host-arch gate, so the lint had to be re-run twice before it went quiet | stubs added |
 
 **All seven are closed as of 2026-08-13** — five on 2026-08-12, the last two with the
-known-table drop above. The rule this file
+known-table drop above. **`fmt/census-bank` then went red again inside the same session**, when
+`ca4ed540` added one `snprintf` in `so_fn_sizes`' Mach-O arm; re-taken with that attribution. The
+lesson is not that the cell is noisy — it is that this bank moves with *any* commit that adds a
+format call anywhere in `src/`, so it is red on a merge more often than on a mistake, and the
+attribution step is the whole value. The rule this file
 states — that a ratchet re-banked without a reason trains its readers to re-bank without
 looking — is why `fmt/census-bank` was left red for a day and not why it should stay red: the
 tool asks for the attribution, and once every moved figure has a commit against it the
@@ -1412,9 +1416,13 @@ and compare against `bits ^ 0x8000`. gcc-16 and clang give 0 mismatches; mcc giv
 **Mechanism confirmed in the code, and the x86_64 arm re-measured 2026-08-13 — the fix is a
 decision, not a sweep.** `unary()`'s `'-'` case in `src/mccgen.c` does exactly what the row
 predicts for `is_float16`: `gen_cast_s(VT_FLOAT)`, then `TOK_NEG`, then `gen_cast_s(VT_FLOAT16)`.
-The in-place fix is cheap and portable because `_Float16` is **not** held in a float register —
-`R_RET` and `MCC_RC_TYPE` both route `VT_FLOAT16` to `REG_IRET`/`MCC_RC_INT`, so the value is a
-16-bit pattern in a GPR and the correction is a single `^ 0x8000`.
+**This is the same conclusion the backed-out arm64 attempt above reached, arrived at from the
+other side, and the two together name the cheap route.** That attempt tried the *native* `fneg h0`
+and hit `load`'s missing `VT_FLOAT16` case — the register layer cannot hold a half in an FP
+register. It does not have to: `R_RET` and `MCC_RC_TYPE` both route `VT_FLOAT16` to
+`REG_IRET`/`MCC_RC_INT`, so the value is already a 16-bit pattern in a **general** register on
+every target, and the sign flip is an integer `^ 0x8000` that needs no FP path at all. That is the
+form to try next; it is untested, and it is not what was backed out.
 
 **What stops it being obvious is that the references do not agree with each other across hosts,
 or with themselves across levels.** Full 65536-pattern sweep on x86_64-linux, gcc 15.3.0 and

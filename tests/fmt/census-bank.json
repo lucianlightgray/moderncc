@@ -1,16 +1,16 @@
 {
- "accepted": 155,
- "accepted_with_s": 101,
+ "accepted": 156,
+ "accepted_with_s": 102,
  "literal_fmt_sites": {
   "fprintf": 419,
   "printf": 457,
-  "snprintf": 173,
+  "snprintf": 174,
   "sprintf": 2
  },
  "max_accepted_cost": 16184,
  "per_file_sites": {
   "libmcc.c": 35,
-  "mcc.c": 39,
+  "mcc.c": 40,
   "mccasm.c": 10,
   "mccast.c": 170,
   "mcccst.c": 10,
@@ -35,18 +35,18 @@
  "sites": {
   "fprintf": 423,
   "printf": 459,
-  "snprintf": 182,
+  "snprintf": 183,
   "sprintf": 2,
   "vfprintf": 2,
   "vsnprintf": 4
  },
  "snprintf_return_consumed": 26,
  "snprintf_site_class": {
-  "blocked-on-pointer": 112,
+  "blocked-on-pointer": 113,
   "float-out-of-scope": 1,
   "literal-only": 8,
   "tranche1": 52
  },
- "snprintf_specifiers_total": 257,
+ "snprintf_specifiers_total": 258,
  "tus": 17
 }
