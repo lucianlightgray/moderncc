@@ -1339,6 +1339,21 @@ def main():
         for m in bad:
             print("FAIL " + m)
         return 1 if bad else 0
+    src_rel = sorted(os.path.relpath(x, ROOT).replace("\\", "/") for x in sources)
+    src_manifest = {"n": len(src_rel),
+                    "sha": hashlib.sha256("\n".join(src_rel).encode()).hexdigest()[:16]}
+    src_key = "sources_" + a.corpus
+    if a.update_bank:
+        bank[src_key] = src_manifest
+    elif not a.no_check and src_key in bank:
+        wantm = bank[src_key]
+        if wantm.get("sha") != src_manifest["sha"]:
+            bad.append("corpus %s drifted: banked %d file(s) sha %s, this run walked "
+                       "%d sha %s -- the denominator every percentage below is over "
+                       "is not the one that was banked; re-bank deliberately or find "
+                       "what moved"
+                       % (a.corpus, wantm.get("n", -1), wantm.get("sha", "?"),
+                          src_manifest["n"], src_manifest["sha"]))
     self_corpus = any(s.replace("\\", "/").endswith("src/mcc.c") for s in sources)
     want_cfg = bank.get("corpus_config")
     have_cfg = corpus_config(flags)
