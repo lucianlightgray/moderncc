@@ -1945,10 +1945,25 @@ neither the sentinel nor anything else on that branch is exercised.
 **That has a consequence beyond A7: A4's frontier fallback is on the same branch.** The
 `rir_loc_replay` failure arm — where the C2 path now allocates below `rir_locrec_min` instead of
 bare-bumping into an offset the replay is about to hand out — is reached exactly when a take
-misses, which is never, here. So the *fix* is validated by 840/0 but the *interesting branch of
-it* is not validated by anything. **A subject that exhausts a location record, or requests a size
-no recorded entry can hold, is the missing fixture** — and it would cover A4, A5, A6 and A7's
-sentinel at once.
+misses.
+
+**CLOSED 2026-08-13, and the fixture is an injection rather than a subject.** Eight candidates
+built to force a miss — a large inlined array, an inlined `sret` struct, nested inlines, complex
+temporaries, a VLA mixed with fixed locals, an `sret` chain, six graft sites, and `-O1 -finline` —
+produced **0 misses between them**. The branch looks structurally unreachable on the prod path:
+the record is built by the same `ast_alloc_loc` sequence the replay re-walks, so a fitting entry
+is always there. Hunting harder for a natural subject is the wrong instrument.
+
+`MCC_RIR_REC_FORCE_MISS=1` forces every take to miss, and **the whole corpus still computes the
+right answers** — 102 of 102 programs agree with `-O0` at `-O2` with it on. That is the fallback
+under test, and `rir/rec-miss` now pins it: six subjects, each compared against `-O0`, plus an
+anti-vacuity check that the injection **moved at least one object**, because a hook that changes
+nothing would make the cell green while testing the same path as every other run. It currently
+reports 6 subjects and 2 objects moved.
+
+**The honest reading is that A4/A5/A6's failure arm is fail-safe defensive code**, not a live
+path — but it is now correct-by-test rather than correct-by-argument, and A7's `return 0`
+sentinel bug would have been caught by this cell.
 
 ### Cluster B — `ast_func_end` (was Rank 2)
 

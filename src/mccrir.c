@@ -96,6 +96,8 @@ static int rir_locrec_al[RIR_LOCREC_MAX];
 static int rir_locrec_n, rir_locrec_i;
 int rir_locrec_min;
 
+static int rir_rec_force_miss;
+
 static int rir_rec_take(const int *val, const int *pos, const int *nc,
 												const int *sz, const int *al, int n, int *cur,
 												int size, int align, int *out) { MCC_TRACE("enter\n");
@@ -104,7 +106,7 @@ static int rir_rec_take(const int *val, const int *pos, const int *nc,
 		while (i + 1 < n && pos[i + 1] <= ind &&
 					 (!nc || (nc[i] & RIR_NOEVAL_MASK) || pos[i + 1] > pos[i]))
 			{ MCC_TRACE("br\n"); i++; }
-	k = i;
+	k = rir_rec_force_miss ? n : i;
 	while (k < n && (sz[k] < size || al[k] < align))
 		{ MCC_TRACE("br\n"); k++; }
 	if (k >= n)
@@ -6481,6 +6483,7 @@ void rir_configure(void) { MCC_TRACE("enter\n");
 		return;
 	done = 1;
 	rir_env = ast_env_int("MCC_REPLAY_IR", 0);
+	rir_rec_force_miss = ast_env_int("MCC_RIR_REC_FORCE_MISS", 0) > 0;
 	rir_prod_gate = ast_env_int("MCC_RIR_PROD", 0);
 	rir_prod_low_env = rir_prod_gate >= 2 || ast_env_int("MCC_RIR_LOW", 0);
 	rir_low_body_env = rir_prod_low_env && ast_env_int("MCC_RIR_LOW_BODY", 0);

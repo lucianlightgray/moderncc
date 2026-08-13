@@ -6904,6 +6904,15 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties("ci/must-run-registered" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
             # Phase -1: the drop histogram exists; this gives it teeth.
+            add_test(NAME "rir/rec-miss"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/rir_recmiss.cmake")
+            set_tests_properties("rir/rec-miss" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
+
             add_test(NAME "rir/drop-ratchet"
                 COMMAND "${CMAKE_COMMAND}"
                         -DMCC=$<TARGET_FILE:mcc>
