@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
 
 execute_process(COMMAND "${CMAKE_COMMAND}" -DMCC=${MCC} -DSRCDIR=${SRCDIR}
-                        -DBINDIR=${BINDIR} -DHOSTCC=${HOSTCC} -P "${SCRIPT}"
+                        -DBINDIR=${BINDIR} -DHOSTCC=${HOSTCC}
+                        -DGMP_INC=${GMP_INC} -DGMP_LIBDIR=${GMP_LIBDIR}
+                        -P "${SCRIPT}"
                 RESULT_VARIABLE _clean OUTPUT_VARIABLE _out ERROR_VARIABLE _out)
 message("${_out}")
 if(_clean EQUAL 77)
@@ -17,6 +19,7 @@ endif()
 
 execute_process(COMMAND "${CMAKE_COMMAND}" -DMCC=${MCC} -DSRCDIR=${SRCDIR}
                         -DBINDIR=${BINDIR} -DHOSTCC=${HOSTCC} -DMUTATE=1
+                        -DGMP_INC=${GMP_INC} -DGMP_LIBDIR=${GMP_LIBDIR}
                         -P "${SCRIPT}"
                 RESULT_VARIABLE _mut OUTPUT_VARIABLE _mout ERROR_VARIABLE _mout)
 if(_mut EQUAL 0)

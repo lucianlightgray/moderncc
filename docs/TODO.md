@@ -2255,6 +2255,62 @@ to pin mcc's and record the disagreement. What is *not* defensible is being inte
 inconsistent about which implementation is being followed, so the row stays open as a decision
 rather than a bug. Size: the comparison path, not `bf_trunc`.
 
+**N38. Eight cells vanished on Darwin behind a copy-pasted predicate, and `must-run.txt` was the
+only thing that noticed.** New 2026-08-13, **partly closed the same day**. `CMakeLists.txt` had one
+`if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR AND NOT MCC_TARGETOS STREQUAL "WIN32"
+AND NOT MCC_TARGETOS STREQUAL "Darwin")` covering eight cells **with no `else()` arm at all**, so on
+this host they were not registered, not skipped, and not counted. `git log -L` on those two lines
+terminates at `e98fab0a`, whose message never says the words Darwin, macOS, Mach-O or Apple — the
+predicate tail is byte-identical to a `cc -dumpmachine` musl probe at `CMakeLists.txt` from
+`ce45b08e`, five weeks earlier, where excluding Darwin is correct and irrelevant here. **It is a
+copy-pasted predicate, not a decision.** `tools/regstub-lint.py` cannot catch it: `MCC_TARGETOS` is
+in its `IDENTITY` exemption set, so a chain gated on it is treated as a different suite. Four of
+the eight were in `tests/must-run.txt`, so `ci/must-run-registered` was red here — **a fifth
+standing red on this host that no table in this file listed**, which is now the third instance of
+that shape in three days after N31, N32 and N33.
+
+**`wide256/gmp-diff` and its known-positive are now registered for real and pass here**: 9402
+oracle rows against libgmp at `-O0 -O1 -O2 -O3 -Os`, in 4.2 s. Nothing in that cell was ever
+Linux-only — `__int256` is memory-backed precisely so it is not, and `cefd0017` banked arm64 under
+qemu. The single obstacle was that `cmake/wide256_diff.cmake` probes GMP with a bare `-lgmp` and
+Homebrew's prefix is not on Apple clang's default search path, so the cell would have skipped
+honestly rather than run. `find_path`/`find_library` on the Vulkan pattern, forwarded as
+`GMP_INC`/`GMP_LIBDIR`. **This is the only oracle-backed proof `__int256` is right and it had never
+run on an arm64 host natively.**
+
+**The `ast/o0-baseline` quartet is a visible skip with a stated reason, and the reason is the
+interesting part.** The `arm64-osx` key already exists, needs no sysroot, and `o0_ab.sh` already
+falls back to the native `mcc` when `key_is_native` matches the banner — which it does here. But
+the banked column was taken by the *Linux* cross compiler, so it carries that host's system
+headers: re-deriving all 294 rows natively gives **96 matching and 198 differing, 0 failing to
+compile**, and the split is diagnostic — the no-`#include` files match byte for byte while 211 of
+the 294 pull a system header. **mcc's codegen is host-invariant for this key; the header set is
+not.** Registering the cell against that column would go red for a reason that is not an mcc
+defect, which is the one thing this harness exists to avoid. The two `must-run` rows are demoted
+to `registered` with that written into the manifest, because "the native key needs no sysroot and
+no cross compiler, so a skip here is always a bug" is true on Linux and false here.
+
+**What closes it properly, and why it is not cheap.** Either pin the header set for the `*osx`
+keys (a macOS SDK sysroot under `vendor/`, mirroring `vendor/gentoo-stage3-*`; nothing like it
+exists), or bank a distinct native key — but `o0_ab.sh` refuses `O0_AB_BANK` with `measurable`
+("the board is an eleven-row artefact and `all` is the only spelling that demands all eleven"), so
+a new key needs a host that can reach every key, which is the Linux cross box, which by
+construction cannot take the native Darwin column. **That circularity is the real cost.**
+
+**N39. `build/fragments-are-not-tus` has a host-compiler-dependent pin.** New 2026-08-13, found by
+running the cell on Darwin for the first time. The check itself is portable — it reads the build's
+own `-D`/`-I` back out of `compile_commands.json` and compiles each `src/*.c` standalone — and it
+runs here. But the standalone-failure set is **four** on this host against the pinned **three**:
+`mccjit_embed.c` joins `mccast.c`, `mccircap.c` and `mccrir.c` because Apple clang 21 rejects its
+call to an undeclared `mcc_inv_add` as an error where the Linux host compiler does not. The three
+pinned files fail for a structural reason the cell's own message explains (their whole body sits
+behind `#if (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))` without including `src/mcc.h`);
+`mccjit_embed.c` fails for a diagnostic-strictness reason, which is a different thing and should
+not be pinned as though it were the same. **Two fixes, and the smaller one is better**: declare
+`mcc_inv_add` where `mccjit_embed.c` can see it standalone, which makes the set three everywhere
+and needs no per-host pin. It is registered as a visible skip here meanwhile, which is what it
+should have been all along.
+
 **N37. The refs-disagree class is a property of a whole digest, so a category containing one
 reference disagreement is cleared for every other point in it.** New 2026-08-13, and it is N29's
 own finding one level down. N29 established that `diverge-both` conflated "mcc contradicts a

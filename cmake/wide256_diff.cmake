@@ -7,9 +7,17 @@ endif()
 set(_dir "${BINDIR}/wide256-diff")
 file(MAKE_DIRECTORY "${_dir}")
 
+set(_gmpflags "")
+if(GMP_INC)
+    list(APPEND _gmpflags "-I${GMP_INC}")
+endif()
+if(GMP_LIBDIR)
+    list(APPEND _gmpflags "-L${GMP_LIBDIR}")
+endif()
+
 set(_probe "${_dir}/probe.c")
 file(WRITE "${_probe}" "#include <gmp.h>\nint main(void){mpz_t a;mpz_init(a);mpz_clear(a);return 0;}\n")
-execute_process(COMMAND "${HOSTCC}" "${_probe}" -o "${_dir}/probe" -lgmp
+execute_process(COMMAND "${HOSTCC}" "${_probe}" -o "${_dir}/probe" ${_gmpflags} -lgmp
                 RESULT_VARIABLE _probe_rc OUTPUT_QUIET ERROR_QUIET)
 if(NOT _probe_rc EQUAL 0)
     message(STATUS "wide256/gmp-diff: no GMP for the host compiler '${HOSTCC}'; "
@@ -19,7 +27,7 @@ if(NOT _probe_rc EQUAL 0)
 endif()
 
 set(_oracle "${_dir}/oracle")
-execute_process(COMMAND "${HOSTCC}" -O2 "-I${SRCDIR}/tests/wide256"
+execute_process(COMMAND "${HOSTCC}" -O2 "-I${SRCDIR}/tests/wide256" ${_gmpflags}
                         "${SRCDIR}/tests/wide256/oracle.c" -o "${_oracle}" -lgmp
                 RESULT_VARIABLE _orc OUTPUT_VARIABLE _oout ERROR_VARIABLE _oout)
 if(NOT _orc EQUAL 0)
