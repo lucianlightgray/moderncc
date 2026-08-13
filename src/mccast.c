@@ -2891,10 +2891,17 @@ static int ast_inline_pool_cap;
 static int ast_inline_hi;
 static int ast_inline_n;
 
+static int ast_body_ind_sv;
+static addr_t ast_reloc0_sv;
+
 static struct AstReemitFn {
 	Sym *sym;
 	AstArena *ast;
 	int inline_n_at_gen;
+	int body_ind;
+	int body_len;
+	addr_t reloc0;
+	int rel_len;
 } ast_reemit_pool[AST_INLINE_MAX];
 static int ast_reemit_n;
 
@@ -3740,6 +3747,13 @@ static int ast_reemit_retain(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 	ast_reemit_pool[ast_reemit_n].sym = sym;
 	ast_reemit_pool[ast_reemit_n].ast = a;
 	ast_reemit_pool[ast_reemit_n].inline_n_at_gen = ast_inline_n;
+	ast_reemit_pool[ast_reemit_n].body_ind = ast_body_ind_sv;
+	ast_reemit_pool[ast_reemit_n].body_len = ind - ast_body_ind_sv;
+	ast_reemit_pool[ast_reemit_n].reloc0 = ast_reloc0_sv;
+	ast_reemit_pool[ast_reemit_n].rel_len =
+			cur_text_section->reloc
+					? (int)(cur_text_section->reloc->data_offset - ast_reloc0_sv)
+					: 0;
 	ast_reemit_n++;
 	return 1;
 }
@@ -16567,8 +16581,6 @@ static int ast_replay_ok(AstArena *a) { MCC_TRACE("enter\n");
 	return ast_first_child(a, ast_root(a)) != AST_NONE;
 }
 
-static int ast_body_ind_sv;
-static addr_t ast_reloc0_sv;
 
 static int ast_reloc_sym_equiv(unsigned s1, unsigned s2) { MCC_TRACE("enter\n");
 	ElfSym *e1, *e2;
@@ -21782,8 +21794,14 @@ static void ast_reemit(Sym *sym, AstArena *ast) { MCC_TRACE("enter\n");
 
 void ast_reemit_forward_inlines(void) { MCC_TRACE("enter\n");
 	for (int i = 0; i < ast_reemit_n; i++)
-		{ MCC_TRACE("br\n"); if (ast_reemit_has_forward(&ast_reemit_pool[i]))
-			{ MCC_TRACE("br\n"); ast_reemit(ast_reemit_pool[i].sym, ast_reemit_pool[i].ast); } }
+		{ MCC_TRACE("br\n"); if (ast_reemit_has_forward(&ast_reemit_pool[i])) { MCC_TRACE("br\n");
+			mcc_inv_add("ast.orphan_fn", 1);
+			mcc_inv_add("ast.orphan_bytes", ast_reemit_pool[i].body_len);
+			mcc_inv_add("ast.orphan_relbytes", ast_reemit_pool[i].rel_len);
+			MCC_TRACE("reemit orphan at +%d len=%d rel0=%ld rellen=%d\n",
+								ast_reemit_pool[i].body_ind, ast_reemit_pool[i].body_len,
+								(long)ast_reemit_pool[i].reloc0, ast_reemit_pool[i].rel_len);
+			ast_reemit(ast_reemit_pool[i].sym, ast_reemit_pool[i].ast); } }
 }
 
 #ifdef MCC_EMBED_JIT

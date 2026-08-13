@@ -1043,6 +1043,35 @@ bit-rotted: all five anchors still resolve against the current tree.
 
 **~~N23. Wide bit-field arithmetic is truncated at every operation.~~ — NOT A DEFECT, corrected 2026-08-12 the same day it was filed.** It is a gcc/clang disagreement and mcc follows gcc deliberately (`b3c660f1`, four gcc c-torture tests). The evidence was already in the x86_64 bank as `diverge-one` and had not been read. **The durable finding is the shape of the mistake**: on a single-reference host, *"mcc is wrong"* and *"the references disagree and mcc picked one"* are the same observation. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
+**N31. `rir-nofb-probe-self` is flaky, and the mechanism is not known.** New 2026-08-12. Observed
+**fail, fail, pass, pass on identical code**: it failed inside a 212-cell `-j4` sweep, failed
+again running alone under `ctest` (786 s), then passed run directly (exit 0) and passed again
+under `ctest` (746 s). The runs that failed were both taken while this machine was saturated by
+other jobs of mine; the two that passed were quieter. **That is correlation, not a mechanism**,
+and no failing output was captured, so what it actually reported is unknown.
+
+**What it is not: `__TIME__`.** N21's standing trap was the obvious suspect — the probe compares
+stage-2 object bytes and neither `tools/rir-coverage.py` nor its registration sets
+`SOURCE_DATE_EPOCH`, and `mcc` does honour that variable. But **nothing under `src/` uses
+`__DATE__` or `__TIME__`** — `src/mcctok.h` defines the tokens and `src/mccpp.c` implements them,
+and there is no user — so compiling `src/mcc.c` embeds no timestamp and the trap does not apply
+here. Recorded because it is a convincing dead end that costs an hour to walk down twice.
+
+**What it exonerates.** The probe was suspected of catching a real fidelity regression from the
+slot/tvar record widening. It does not: with that change in the tree it reports **0 MISCOMPILE at
+every level** — 103 divergent bodies at `-O0` (101 benign, 2 vacuous), 64 at `-O1`, 62 at `-O2`
+and `-O3`, all benign — on two separate clean runs.
+
+**One constant worth separating from the flake:** at `-O0` the control *"DOES NOT reproduce a
+plain build (object differs, 0 of 27 workload items differ)"*, while `-O1`/`-O2`/`-O3` all
+reproduce. That line is present in the **passing** runs too, so it is a standing property of the
+`-O0` arm and not the failure. An object that differs while every workload item agrees is its own
+small open question.
+
+**Before treating this cell as evidence either way, capture a failing run's output** — every
+observation so far is a bare pass/fail from `ctest`, which is exactly the shape this file warns
+about elsewhere.
+
 **~~N26. `flagsweep-exec` self-contends under `-j`, so which of its 140 cells pass is a function of machine speed.~~ — CLOSED 2026-08-12, and the contention diagnosis was wrong.** A cell times out *alone*, so `-j` cannot be the cause. `atomic_counter` run 24× on an idle machine is **bimodal** — 18 runs at 0.45–2.83 s and 6 (25%) at 51–121 s — and each cell drew from it 12 times. The mechanism is that `PIN` is `taskset`, which macOS lacks, so the pin that exists to stop exactly this was a silent no-op on Darwin. Fixed with `taskpolicy -b`; `stratsweep.sh` had the identical gap. **No `PROCESSORS` property was added.** Validated 119/119 green at `-j4`, zero timeouts, slowest cell 91.5 s. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 **~~N27. Metal's `mcc_gpu_mem()` succeeds and returns a pointer no kernel can address.~~ —
@@ -1484,11 +1513,11 @@ never failed is the thing this whole cluster is about.
 | # | edit | size | depends | host |
 | --- | --- | --- | --- | --- |
 | B1 | **`ast_search_emit_size` leaks `.data`/`.rodata` — see the hazard below. NOT a 6-line fix.** | — | — | — |
-| B2 | `struct AstReemitFn` gains `body_ind/body_len/reloc0/rel_len`, copied from `AstBaselineFn` | small | — | any |
+| ~~B2~~ | ~~`struct AstReemitFn` gains `body_ind/body_len/reloc0/rel_len`~~ **DONE 2026-08-12.** Needed `ast_body_ind_sv`/`ast_reloc0_sv` hoisted above their first use — they were declared ~13k lines below `ast_reemit_retain` in the fragment's translation order | small | — | any |
 | ~~B3~~ | ~~five `AST_SG_*` bits at 42–46~~ **DONE 2026-08-12**. Bit **47 is now the last disk-safe one** — `AST_GATE_BITS` is 48 and the memo packs its magic above it | small | — | any |
 | ~~B4~~ | ~~`ast_jit_submit_aot` passes `ast_search_gates_now()`~~ **DONE 2026-08-12**. The zero was **not inert** — `have_override && override_mask` is false for 0, so AOT submissions were recompiled by `ast_reemit_extern` under ambient gates and `warm_gates` stayed 0, disabling warm start for them. Two no-ops from one literal | 3 lines | — | arm64 |
 | ~~B5~~ | ~~add the five to `ast_search_gates_now`/`_set`~~ **DONE 2026-08-12**, and **B6 with it**: they are deliberately absent from `ast_search_searchable`, because none of the five is idempotent on its own output and the strat cycle never invokes them, so letting the search flip them would ask it to re-run non-idempotent transforms | small | B3 | any |
-| B6 | orphan report from B2's fields: `ast.orphan_fn`/`_bytes`/`_relocs` | small | B2 | any |
+| ~~B6~~ | ~~orphan report~~ **DONE 2026-08-12** as `ast.orphan_fn` / `_bytes` / **`_relbytes`** — the third was renamed from `_relocs` on noticing it holds reloc *bytes*, not a count. **First measurement: 1 orphaned body / 48 bytes across 150 `tests/exec` files at `-O2`**, so row 17's 27-function 52 KB figure is a self-host property, not a corpus one | small | B2 | any |
 | B7 | **`ast_reemit` emits no `mcc_debug_funcend` and no FDE**, so after a forward-inline re-emit `-g` and `.eh_frame` describe the *dead* range and the live body has neither | medium | B6 | assert on Linux |
 | B8 | `so_fn_sizes` has no Mach-O arm, so the entire per-fn superopt size-feedback loop is **dead on macOS** — this is the gate on `rf-1` ever being measurable here | medium | — | **macOS only** |
 
