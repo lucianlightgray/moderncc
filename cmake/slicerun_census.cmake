@@ -55,7 +55,9 @@ endif()
 # banked column was x86-64's; on arm64 the same corpus yields different block
 # and callee-class counts, and comparing against x86-64's numbers failed for a
 # reason that says nothing about drift. One column per architecture, re-taken
-# with tools/slice-census.py as the message below instructs.
+# with `slicerun --census` as the message below instructs. Not
+# tools/slice-census.py, which is a different instrument and prints none of
+# these keys.
 # `=` rather than `;` between key and value: a ;-joined pair is indistinguishable
 # from two list elements once foreach(... IN LISTS ...) flattens it.
 #
@@ -109,7 +111,8 @@ foreach(_entry IN LISTS _census_bank)
     if(NOT CMAKE_MATCH_1 EQUAL _v)
         message(FATAL_ERROR "slice/census: ${_k} is ${CMAKE_MATCH_1}, banked ${_v}. "
                             "The corpus or the callee classifier moved; re-take the "
-                            "numbers with tools/slice-census.py before re-banking.")
+                            "numbers by re-running this cell (it prints them) or with "
+                            "`slicerun --arenas <dump> --census` before re-banking.")
     endif()
 endforeach()
 

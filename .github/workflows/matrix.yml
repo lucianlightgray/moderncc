@@ -125,8 +125,9 @@ jobs:
       - name: install MoltenVK (macos gpu-vulkan cell sets MCC_GPU_REQUIRED=ON)
         if: ${{ startsWith(matrix.runner, 'macos') && matrix.feature == 'gpu-vulkan' && !matrix.skip }}
         run: |
-          brew install molten-vk
+          brew install molten-vk vulkan-headers
           ls -l "$(brew --prefix)/lib/libMoltenVK.dylib"
+          ls -l "$(brew --prefix)/include/vulkan/vulkan.h"
       - name: install Rosetta 2 + wine (macos pe cell drives pe-wine-conformance)
         if: ${{ startsWith(matrix.runner, 'macos') && matrix.feature == 'pe' && !matrix.skip }}
         run: |

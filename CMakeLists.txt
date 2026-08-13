@@ -3643,7 +3643,19 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("ast/${_an}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
 
+        if(MCC_GPU_REQUIRED)
+            set(_gpu_skip77 "")
+        else()
+            set(_gpu_skip77 SKIP_RETURN_CODE 77)
+        endif()
+
         find_package(Vulkan QUIET)
+        if(NOT Vulkan_FOUND AND APPLE AND NOT Vulkan_INCLUDE_DIR)
+            find_path(Vulkan_INCLUDE_DIR vulkan/vulkan.h
+                PATHS /opt/homebrew/include /usr/local/include
+                      /opt/homebrew/opt/vulkan-headers/include
+                      /usr/local/opt/vulkan-headers/include)
+        endif()
         if(NOT Vulkan_FOUND AND APPLE AND Vulkan_INCLUDE_DIR)
             find_library(MCC_MOLTENVK_LIB MoltenVK
                 PATHS /opt/homebrew/lib /usr/local/lib
@@ -3673,7 +3685,7 @@ if(MCC_BUILD_TESTS)
             target_link_libraries(spvgate ${Vulkan_LIBRARIES})
             add_test(NAME "gpu/spv-slice-differential" COMMAND spvgate)
             set_tests_properties("gpu/spv-slice-differential" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+                FIXTURES_REQUIRED MCC_BUILT ${_gpu_skip77})
             add_test(NAME "gpu/spv-slice-known-positive"
                 COMMAND "${CMAKE_COMMAND}"
                         -DCMD=$<TARGET_FILE:spvgate>
@@ -3694,7 +3706,7 @@ if(MCC_BUILD_TESTS)
 
             add_test(NAME "gpu/spv-mem-binding" COMMAND spvgate --mem)
             set_tests_properties("gpu/spv-mem-binding" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+                FIXTURES_REQUIRED MCC_BUILT ${_gpu_skip77})
             add_test(NAME "gpu/spv-mem-binding-known-positive"
                 COMMAND "${CMAKE_COMMAND}"
                         -DCMD=$<TARGET_FILE:spvgate>
@@ -3756,7 +3768,7 @@ if(MCC_BUILD_TESTS)
             target_link_libraries(mslgate ${MCC_COMPUTE_BACKEND_LIBS})
             add_test(NAME "gpu/msl-slice-differential" COMMAND mslgate)
             set_tests_properties("gpu/msl-slice-differential" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+                FIXTURES_REQUIRED MCC_BUILT ${_gpu_skip77})
             add_test(NAME "gpu/msl-slice-known-positive"
                 COMMAND "${CMAKE_COMMAND}"
                         -DCMD=$<TARGET_FILE:mslgate>

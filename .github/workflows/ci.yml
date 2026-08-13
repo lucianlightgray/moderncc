@@ -186,8 +186,9 @@ jobs:
       - name: install MoltenVK (gpu-vulkan cell drives Vulkan over Metal)
         if: ${{ matrix.feature == 'gpu-vulkan' }}
         run: |
-          brew install molten-vk
+          brew install molten-vk vulkan-headers
           ls -l "$(brew --prefix)/lib/libMoltenVK.dylib"
+          ls -l "$(brew --prefix)/include/vulkan/vulkan.h"
       - uses: ./.github/actions/ci
       - uses: actions/download-artifact@v7
         with:
