@@ -8251,6 +8251,22 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(pe/x-oracle-mutate PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                 LABELS "pe" TIMEOUT 900)
+
+            get_filename_component(_mingw_bin "${_MCC_MINGW_X86_64_GCC}" DIRECTORY)
+            if(EXISTS "${_mingw_bin}/objdump.exe" AND EXISTS "${_mingw_bin}/addr2line.exe")
+                add_test(NAME pe/dwarf-lines
+                    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-dwarf-lines.sh"
+                            "$<TARGET_FILE:mcc>" "${_mingw_bin}/objdump.exe"
+                            "${_mingw_bin}/addr2line.exe"
+                            "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-dwarf-lines.c"
+                            "${CMAKE_BINARY_DIR}/pe-dwarf-lines-work")
+                set_tests_properties(pe/dwarf-lines PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                    LABELS "pe" TIMEOUT 300)
+            else()
+                mcc_skip_test(pe/dwarf-lines
+                    "PE DWARF line-table conformance (needs vendored mingw objdump+addr2line)")
+            endif()
         else()
             mcc_skip_test(pe/coff-obj-diff
                 "COFF object writer differential (needs vendored mingw-w64 x86_64 gcc)")

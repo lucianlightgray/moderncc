@@ -4680,7 +4680,22 @@ under `-O0`/`-O2`/`-O3`. Note this stage is **partly blocked on W3** for i386, s
 i386 SEH chain is meaningless without objects anyone can link.
 
 **Stage W5 — CodeView `.debug$S`/`.debug$T`. ~1,200–1,800 lines.**
-Line tables and symbol records to start; types after. Removes the `cv2pdb.exe` dependency
+**Measured 2026-08-13 and the premise narrows: mcc already ships working, debugger-consumable
+line info for PE — just in DWARF, not CodeView.** `mcc -gdwarf-4` (or `-gdwarf-2`) on a PE target
+emits a correct `.debug_line`: `addr2line` resolves every function's entry to the right
+`name:decl-line` (`square:1`, `cube:6`, `main:11`), banked as `pe/dwarf-lines`
+(`tests/cross/pe-dwarf-lines.{c,sh}`, native, mingw objdump+addr2line). So mcc PE output **is**
+source-debuggable **today** with the GNU tools (gdb/addr2line/lldb) — the plain `-g` default is the
+old stabs format, `-gdwarf` is the one that works. The genuine residual W5 gap is therefore
+narrower than "no debug info": it is **CodeView/PDB specifically**, the format Microsoft debuggers
+(WinDbg, Visual Studio) read, which today requires the external `cv2pdb.exe` (absent on this box) to
+transcode the DWARF. A native `.debug$S`/`.debug$T` emitter removes that dependency. It is now
+*unblocked* by W3 (COFF sections exist to carry `.debug$S`), and verifiable here without a Microsoft
+debugger via `llvm-pdbutil` / `llvm-readobj --codeview` (both present); clang's
+`-gcodeview` output (`LF_ARGLIST`/`LF_PROCEDURE`/`LF_FUNC_ID` in `.debug$T`, `S_COMPILE3`/`S_GPROC32_ID`
++ `DEBUG_S_LINES`/`DEBUG_S_FILECHKSMS` subsections in `.debug$S`) is the reference target. It remains
+the large item the estimate says — the finding just means it is a *debugger-interop* gap, not a
+*debuggability* gap. Removes the `cv2pdb.exe` dependency
 and makes mcc output debuggable by WinDbg/Visual Studio. Differential: the same shape
 `dwarfgdb-docker.sh` uses on the ELF side — set a breakpoint at a named line, check the
 reported frame and one local. **Requires W3**, because CodeView lives in COFF sections.
