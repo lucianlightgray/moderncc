@@ -2100,9 +2100,9 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 	return loc;
 }
 
-static void ast_locrec_skip(void) { MCC_TRACE("enter\n");
-	if (ast_replaying && !ir_cap_replaying && ast_locrec_i < ast_locrec_n)
-		{ MCC_TRACE("br\n"); ast_locrec_i++; }
+static void ast_locrec_skip(int size, int align) { MCC_TRACE("enter\n");
+	if (ast_replaying && !ir_cap_replaying)
+		{ MCC_TRACE("br\n"); (void)ast_locrec_take(size, align); }
 }
 
 typedef struct {
@@ -3615,7 +3615,7 @@ static int ast_inline_graft(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (rsz < 1)
 		{ MCC_TRACE("br\n"); rsz = 8; }
 	if ((ast_type_t(a, n) & VT_BTYPE) == VT_STRUCT)
-		{ MCC_TRACE("br\n"); ast_locrec_skip(); }
+		{ MCC_TRACE("br\n"); ast_locrec_skip(rsz, ral > 0 ? ral : 1); }
 	loc = (loc - rsz) & -(ral > 0 ? ral : 1);
 	ast_inline_bias = bias;
 	ast_in_graft = 1;
