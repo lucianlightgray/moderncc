@@ -18690,7 +18690,6 @@ void ast_ladder_gpu_setup(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	ast_ladder_gpu_budget = mcc_env_num("MCC_AST_EVAL_LADDER_GPU_MAX", 0);
 	ast_ladder_gpu_hook = ast_ladder_gpu_run;
-	atexit(ast_ladder_gpu_report);
 	{ MCC_TRACE("br\n");
 		AstArena *pa = ast_arena_new();
 		AstLocal r = ast_node(pa, AST_Literal);
@@ -18712,6 +18711,7 @@ void ast_ladder_gpu_setup(void) { MCC_TRACE("enter\n");
 		}
 		ast_arena_free(pa);
 	}
+	atexit(ast_ladder_gpu_report);
 }
 
 void ast_ladder_gpu_report(void) { MCC_TRACE("enter\n");
