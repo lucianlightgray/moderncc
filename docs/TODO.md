@@ -2147,6 +2147,32 @@ re-measured**: the self-host denominator was 2959 and is 3166, and the bake rate
 can refuse to the append that makes the bake true. The x86_64 row moved the same way (49% → 39.91%)
 and for the same reason. The +1.2 to +1.9 point gap is the one quantity that did not move.
 
+**THE TABLE ABOVE IS PRE-FIX AND IS KEPT AS THE BEFORE HALF. `a7706a3e` CLOSED N18 ON THE LINUX
+BOX, AND arm64 CONFIRMS IT INDEPENDENTLY — measured here 2026-08-13, after the fix, on a second
+architecture and a second object format:**
+
+| target | `-O1` | `-O1 --embed-jit` | `-O0 --embed-jit` | level gap | **JIT gap** |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `full_language.c` | 2.21% | 2.21% | 2.21% | +0.00 pt | **+0.00 pt** |
+| self-host | 2.02% | 2.02% | 2.05% | +0.03 pt | **+0.00 pt** |
+
+**The JIT axis is exactly zero on both targets here, as it is on x86_64** — the control the
+original instrument never ran, because its two arms varied two factors at once and called the
+result "the `--embed-jit` gap". The arm64 gap went **+1.85 → +0.00** and **+1.23 → +0.03**
+against x86_64's +1.36 → −0.31 and +1.19 → +0.04. Same fix, same direction, same magnitude,
+different backend and different object format: **promoting `storeval-rot` and `storeval-calllast`
+from `MCC_OPTD_LEVEL(1)` to ALWAYS is not an x86 accident.** Re-banked; `ast/inv-faithful` is
+green on both hosts.
+
+**What this costs the row, and it is worth saying plainly**: N18's title claim was false for as
+long as the row existed, and the instrument built to watch it could not have shown that, because
+a two-arm comparison that moves two variables cannot attribute anything. The arm was named for
+`--embed-jit` only because `ast_replay_env` is `optimize >= 1 || embed_jit || MCC_FORCE_REPLAY`,
+so the flag is the one shipping way to switch replay on at `-O0`. **The flag was mistaken for the
+independent variable** — which is the same error as N6.8's counter at the call site of a function
+that can refuse, and N37's verdict computed on a digest rather than a point. Three instances in
+one file, all found within two days of each other.
+
 **The "do not bank from this host" caution is discharged, and the reason is worth keeping.** It
 applied to `tools/emit-map.py`, which has no arch term anywhere and carries `emit_amplification`
 — an x86-only-meaningful quantity — in `BANK_KEYS`, so banking *that* here would overwrite the
