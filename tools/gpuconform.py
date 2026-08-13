@@ -291,7 +291,8 @@ def main():
                          % a.corpus)
         return 1
 
-    root = a.work or tempfile.mkdtemp(prefix="gpuconform-")
+    root = (os.path.abspath(a.work) if a.work
+            else tempfile.mkdtemp(prefix="gpuconform-"))
     os.makedirs(root, exist_ok=True)
 
     with ThreadPoolExecutor(max_workers=a.jobs) as ex:
@@ -309,6 +310,8 @@ def main():
     withdisp = [r for r in q if r.get("dispatches", 0) > 0]
     withmis = [r for r in q if r.get("mismatches", 0) > 0]
     device = any(r.get("device") for r in records)
+    stalled = [r for r in records
+               if r.get("slicerun_rc") in ("timeout", "oserror")]
 
     summary = {
         "corpus": a.corpus,
@@ -334,6 +337,7 @@ def main():
         "frame_compared": sum(r.get("frame-compared", 0) for r in q),
         "frame_mismatches": sum(r.get("frame-mismatches", 0) for r in q),
         "device_present": device,
+        "slicerun_stalled": len(stalled),
         "cref": cref,
     }
     for k in FUNNEL:
@@ -360,6 +364,12 @@ def main():
               "with-dispatch=%d\n"
               % (summary["with_bodies"], len(withslice), len(withgpu),
                  len(withdisp)))
+    if stalled:
+        out.write("gpuconform: slicerun did not finish on %d of %d program(s), "
+                  "so every counter for them is zero because the tool never "
+                  "reported and not because the funnel emitted nothing: %s\n"
+                  % (len(stalled), len(progs),
+                     " ".join(sorted(r["prog"] for r in stalled))[:400]))
     out.write("gpuconform: device present=%d dispatches=%d\n"
               % (1 if device else 0, summary["dispatches_total"]))
     out.write("gpuconform: frame accepted=%d built=%d compared=%d mismatches=%d\n"
@@ -414,6 +424,10 @@ def main():
                   % nmis)
         return 0
 
+    if stalled:
+        bad.append("slicerun timed out or failed to run on %d program(s); every "
+                   "funnel counter below is zero because the tool never reported"
+                   % len(stalled))
     if len(q) < a.min_adjudicated:
         bad.append("adjudicated %d program(s) against both oracles, expected at "
                    "least %d; a harness whose corpus quietly stopped resolving "

@@ -8578,6 +8578,26 @@ foreach(_t IN LISTS _mcc_all_tests)
     endif()
 endforeach()
 unset(_mcc_emu)
+
+set(_mcc_headless 0)
+foreach(_t IN LISTS _mcc_all_tests)
+    get_property(_hl TEST "${_t}" PROPERTY LABELS)
+    if(NOT "wine" IN_LIST _hl)
+        set_property(TEST "${_t}" APPEND PROPERTY
+            ENVIRONMENT_MODIFICATION "DISPLAY=unset:;WAYLAND_DISPLAY=unset:")
+        math(EXPR _mcc_headless "${_mcc_headless} + 1")
+    endif()
+endforeach()
+if(MCC_BUILD_TESTS AND _mcc_headless LESS 9000)
+    message(FATAL_ERROR
+        "only ${_mcc_headless} cell(s) were scrubbed of DISPLAY, below the floor of 9000. "
+        "Any cell that brings a Vulkan instance up reaches an ICD whose X11 connection has no "
+        "timeout, so one unresponsive display server wedges it for as long as ctest will wait, "
+        "and slicerun reports that as an empty funnel rather than as a hang. mcc requests zero "
+        "instance extensions and never needs a display; only the wine cells do")
+endif()
+unset(_mcc_headless)
+unset(_hl)
 unset(_mcc_all_tests)
 
 file(GLOB_RECURSE MCC_TAGFILES
