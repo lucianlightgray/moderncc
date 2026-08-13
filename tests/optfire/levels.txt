@@ -19,7 +19,7 @@ jt|jt|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 bf|bf|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O4:on
 range|range|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O4:on
 divmagic|divmagic|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
-abs|abs|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
+abs|abs|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O4:on
 select|select|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O4:on
 reassoc|reassoc|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O4:on
 sethi|sethi|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O4:on

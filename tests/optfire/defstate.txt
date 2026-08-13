@@ -64,6 +64,14 @@ select|-O4|if-conversion|on
 select_below|-O3|if-conversion|off
 range_below|-O3|tree-vrp|off
 #
+# if-conversion-abs joined this block 2026-08-13, and it is the first row here
+# moved on an INSTRUCTION-COUNT argument rather than a CPU-time one, so read the
+# note in levelpins.txt before treating it as one of the rungs above. The pair
+# is the standard both-sides shape: -O4 says the pass is still there and has not
+# been silently deleted, -O3 says it is gone from the top of the shipped ladder.
+abs|-O4|if-conversion-abs|on
+abs_below|-O3|if-conversion-abs|off
+#
 # --- the three math rows, back on the shipped ladder at -O1
 #
 # builtin-math was demoted to rung 10 because one knob carried two lowerings

@@ -60,11 +60,48 @@ trunc32|1|pays on both workloads and costs nothing: divmod +23.2% cpu, stage-2 +
 # kernel's 0.51% layout floor, with the counter agreeing (+1.00%). Free and
 # positive, so it stays.
 builtin-copysign|1|mathfun +3.73% cpu against a 0.51% layout floor, counter agrees, and zero stage-1 cost
-# if-conversion-abs earns -O2 on branchy: +2.13% cpu against branchy's 1.76%
+# if-conversion-abs ~~earns -O2 on branchy: +2.13% cpu against branchy's 1.76%
 # layout floor with the counter agreeing (+3.18%). Thin, and it is the one
 # shipped row whose margin is close enough to its floor to be worth re-reading
-# if branchy changes.
-if-conversion-abs|2|branchy +2.13% cpu against a 1.76% layout floor; the thinnest margin left on the ladder
+# if branchy changes.~~ -- THE RE-READ HAPPENED, 2026-08-13, and the row moved
+# to -O4. This pin was right that the margin was the thinnest on the ladder and
+# right about what would settle it; it was wrong about the sign, and it stayed
+# at 2 for four days after the sign flipped because nobody re-read it.
+#
+# Measured on a QUIET box, which is stated because this is the one row on the
+# board whose deliverable IS a measurement: uptime 0.44 recorded before the run,
+# nothing else on the machine. branchy, the 1 kernel of 17 the flag moves:
+#
+#   instructions  -1.119%   (ON retires MORE), reproduced to three digits
+#                           across two independent runs and a third build
+#   cycles        -0.007% and -0.015% over two paired n=21 interleaved runs
+#                           -- ZERO to within their own spread
+#   text          -0.0688%  (ON is very slightly SMALLER)
+#   compile cost  +0.2123% self, +0.0711% corpus
+#   reach         1 of 299 corpus files
+#
+# READ THE CYCLES LINE BEFORE QUOTING THIS ROW. The board's entry says the
+# flag "makes code worse" and that is true only on instructions. On TIME it is
+# inert: two paired 21-read interleaved runs put it at zero, and the pin it
+# replaces was itself a cpu-time claim (+2.13%), so this is the same axis
+# answering differently rather than a new axis disagreeing. The honest reason
+# for the demotion is NOT that the flag harms the program -- it is that it pays
+# nothing at -O2 while costing a fifth of a percent of compile time, and the
+# ladder ranks on gain_movers/eff_movers where it scores -5.22, the worst row
+# in the table.
+#
+# The one thing demotion costs, recorded so it is not discovered later: the
+# flag makes text marginally SMALLER, and -Os sets optimize_level 2, so -Os
+# output grows by ~0.07% on the shapes it fires on. That is well inside noise
+# for a size flag and was judged not worth keeping a time-inert transform at
+# -O2 for; if -Os size ever gets a floor of its own, this is a row to re-read.
+#
+# The sign history is now three generations and stable in direction:
+# +0.1905 (1ad3f1aa) -> -0.0334 (a2733199) -> -1.1071 (2026-08-13). It has
+# roughly doubled in magnitude each re-take. Nothing here suggests it is
+# converging, so a fourth re-take is worth taking before anyone promotes it
+# back.
+if-conversion-abs|4|MOVED FROM 2 on 2026-08-13: branchy instructions -1.119% (ON is worse), cycles ZERO over two paired n=21 runs, text -0.0688%, compile cost 0.2123% self. Time-inert rather than harmful; demoted for paying nothing at -O2, not for making code slower
 #
 # --- kept because the row is not a performance decision
 #

@@ -931,9 +931,19 @@ does **not** settle N30 — that needs the fold/run class. **Two changes, this o
 > It has been the strongest *measured* item on the board across three consecutive passes and it has
 > been skipped each time, which is a fact about the ranking rather than about the item: it is the
 > only entry whose cost is a **bench run on a quiet host** rather than a code change, and every
-> pass has preferred the code change. **This host is not quiet** — an unrelated process held ~6
+> pass has preferred the code change. ~~**This host is not quiet** — an unrelated process held ~6
 > cores through the 2026-08-13 evening run — so whoever takes it must say what the machine was
-> doing, or the n≥20 pairing buys nothing.
+> doing, or the n≥20 pairing buys nothing.~~
+>
+> **— TAKEN AND CLOSED later on 2026-08-13, on a box that was quiet and said so (`uptime` 0.44).**
+> The demotion landed. **The instruction reading held and roughly doubled** (`gain_movers` −1.1071,
+> `branchy` −1.1195) — **and the paired n≥20 run this entry insisted on is what changed the
+> answer**: cycles are **zero** (−0.007% and −0.015% over two 21-read interleaved runs) while
+> instructions reproduce at −1.119%. The flag is **time-inert**, not harmful, so it was demoted for
+> paying nothing at `-O2` rather than for making code worse. **Three passes of ranking pressure
+> would have shipped the right change with the wrong reason on the record**, and the only thing
+> that separated them was the pairing. That is the argument for this entry's own rule, now with a
+> case behind it.
 >
 > **Live board rows: N3 (items 22 and 23), N6, N7, N29 — four of thirty-five.** N18 leaves this
 > line: its instrument half is closed and watched, and what remains of it is a defect, tracked in
@@ -986,26 +996,57 @@ each arm `TIMEOUT 120` and the device arm is 2.5–2.7× slower by design. Resid
 cannot see even then: the `n == 0` const case, the corner sweep, the observed rung, and every rung
 the GPU refuses.
 
-**3. `if-conversion-abs` ships at level 2 and its own bench says it makes code worse. — NOW FIRST
-on x86_64-linux, 2026-08-13, by everything above it closing or belonging to the Mac.** *Any host;
-an arm64 re-take is meaningful.* Unmoved through three passes and still the strongest *measured*
-item on the board. **Two things to settle before starting, both learned the hard way this
-evening.** *(a) The machine.* This is the only entry on the list whose deliverable is a
-measurement, so it is the only one contention can silently corrupt — and this host had an
-unrelated ~6-core process running through the evening. `rir-nofb-probe-self` **passed at 1032.74 s
-under that load**, which is worth exactly one sentence and no bank row: it neither confirms nor
-refutes the "fails under `-j`, passes alone" note, because the load was not the `-j` and was not
-measured. Take the bench on a quiet box and say so. *(b) The table re-take is the larger half.*
-Demoting the flag breaks `levelbench.tsv`'s assertion that its 16 rows match `src/mccopt.h`'s 16
-`LEVEL(1..3)` rows, and the fan-out is already recorded here: `cover3.txt`, `defstate.txt` and a
-tab-anchored `sed`. Budget for the fan-out, not for the one-line level change.
+**~~3. `if-conversion-abs` ships at level 2 and its own bench says it makes code worse.~~ — CLOSED
+2026-08-13 on x86_64-linux, after being first on this list for three passes. The demotion landed;
+the row's stated REASON did not survive the measurement it asked for.** *An arm64 re-take is still
+meaningful and has not been done.*
 
-Original entry: `gain_movers −0.5668`, `gain_pct −0.0334`, `branchy −0.5700`, reproduced to the
-printed digit across two runs, plus a compile-time dividend the row never quotes (`cost_self
-0.2109`, `cost_corpus 0.0716`). It is arch-neutral — `ast_abs_env` is an AST rewrite with no
-`arch.txt` row. Two caveats: the flag moves **1 of 17 kernels**, so budget a paired n≥20 run; and
-demoting it breaks `levelbench.tsv`'s assertion that its 16 rows match `src/mccopt.h`'s 16
-`LEVEL(1..3)` rows.
+**The machine, stated because this row demanded it.** `uptime` **0.44** recorded before the run,
+nothing else on the box — the ~6-core process that contaminated the evening was gone. Two paired
+n=21 interleaved runs plus the row re-take, all on that box.
+
+**What the bench says now, and the sign has roughly doubled again:**
+
+| column | banked `a2733199` | 2026-08-13 |
+| --- | --- | --- |
+| `gain_movers_pct` | −0.5668 | **−1.1071** |
+| `branchy` (`best_kernel_pct`) | −0.5700 | **−1.1195** |
+| `cost_self_pct` | 0.2109 | 0.2123 |
+| `cost_corpus_pct` | 0.0716 | 0.0711 |
+| `fires_corpus` | 2 of 295 | 1 of 299 |
+
+Three generations, direction stable, magnitude roughly doubling each time:
+**+0.1905 → −0.0334 → −1.1071.** Nothing suggests it is converging.
+
+**But the paired run refutes the row's own sentence, and this is the finding.** `cycles_adjudicate`
+at `--cycle-reads 21`, run twice: `cyc%` **−0.007** and **−0.015**, `insn%` **−1.119** both times.
+Instructions reproduce to three digits across two paired runs *and* the independent row re-take;
+**cycles are zero to within their own spread.** The flag does **not** make code slower. It retires
+1.12% more instructions for no time change, and it makes `.text` marginally *smaller*
+(`text_kernels_pct` −0.0688). The harness documents exactly this hazard — `perf_pair`'s docstring
+says the two counters "routinely disagree in SIGN" on this compiler and that ranking on
+instructions alone would demote `divmagic`, the most valuable integer transform in the table.
+**This row was one measurement away from being that mistake in the other direction.**
+
+**So the demotion stands on a different argument than the one that ranked it.** Not "makes code
+worse" — *pays nothing at `-O2` while costing 0.21% of compile time*, on 1 of 299 corpus files,
+scoring `eff_movers` **−5.22**, the worst row in the table on the ladder's own stated ranking
+metric. **One cost recorded so it is not rediscovered:** `-Os` sets `optimize_level = 2`, so
+turning the flag off there grows `-Os` text by ~0.07% on the shapes it fires. Judged not worth
+keeping a time-inert transform at `-O2` for; a row to re-read if `-Os` size ever gets a floor.
+
+**The fan-out was the larger half, as this row predicted, and one of its four items was wrong.**
+`src/mccopt.h` → `LEVEL(4)`; `levels.txt` and `counters.txt` retargeted to `-O4`; `levelpins.txt`
+rewritten with the new measurement; the `levelbench.tsv` row **deleted** (13 rows and 13 ladder
+rows, after N18 took two others the same day). **`cover3.txt` does not move** — `cover3.py verify`
+re-derives names and order only and never reads the default word, so a level-only edit is invisible
+to it; the recorded fan-out inherited a warning written for adding or reordering a row. The
+tab-anchored `sed` (`top_ungated_level`) also does not move, because `LEVEL(4)` keeps `top` at 4 —
+it would have bitten at `LEVEL(5..8)`. **The `PINS` decision was taken and is a no-op**: both of the
+flag's states are legal lowerings, so it is not the class `cover3` pins hold. **New cells**:
+`optfire/default-abs` and `optfire/default-abs_below` pin both sides of the new boundary, with
+`tests/optfire/src/abs_below.c` added — a missing source makes that cell *silently skip*, which
+would have bought a vacuous green.
 
 **~~4. Cluster 2 — the counter substrate, with N6.8 first.~~ — CLOSED 2026-08-13.** All three
 hazards discharged, and the figure the row existed to correct moved further than it predicted.
@@ -4876,7 +4917,7 @@ schedule.
 | **1** | ~~**`slice-census` is RED on this tree and no documented invocation runs it.**~~ **CLOSED on `wt/censusfix`** — both halves. The 9 `src_fail` sources were a corpus defect, not compiler defects: the walk handed `tests/exec/*.c` to a bare `mcc -c`, ignoring the flags and the `req` each source's row in `tests/exec/goldens.h` declares. The two `--verify` overruns were a denominator defect: slice extents are measured on the *replay* and were being compared against the *parser's* body length, which only coincide when the body is faithful, and neither of those two is. See the Landed section below for both readings | — | **cells** |
 | **2** | ~~**`ctest -L census` runs 3 of its 6 cells and reports 6.**~~ **CLOSED on `wt/censusfix`** — all five census cells now carry their own `ENVIRONMENT` switch, and a new `census/gates-armed` cell fails if any `census`-labelled cell is gated on an opt-in switch its registration does not set. `ctest -L census` is **7/0 with nothing Skipped** and needs no exported variable at all. `MCC_RIR_CENSUS` was in the same state as the other two — named nowhere in `CMakeLists.txt` — so `rir-coverage-census` and `rir-nofb-probe` only ever ran because somebody typed it | — | **cells** |
 | **3** | **`-fopt-slice` makes object output depend on the optimizer's disk cache, and nothing watches it.** Reproduced verbatim today: `python3 tools/opt-cache-determinism.py cmake-debug/mcc src/mcc.c --opt=-O3 --from-build cmake-debug -- -fopt-slice` → `cold/self/foreign-tu = daffa4e023f9`, **`foreign-fl = 1dbdfbe1bc0c`**, `cache entries written: 2`, `FAIL`. The cell is a **permanent 77** because the flag is `MCC_OPTD_LEVEL(9)` and has no subject at any shipped level, so the defect is invisible rather than absent. Decide: own the pass, or delete it | unknown (a pass) | **correctness / determinism** |
-| **4** | **`if-conversion-abs` ships at `MCC_OPTD_LEVEL(2)` and the freshly re-run bench says it makes code worse.** `tests/optfire/levelbench.tsv`: moves **1 of 17** kernels, `gain_movers` **−0.0334**, `branchy` **−0.5700** — a sign flip from the `+0.1905` / `+3.1843` it was promoted on. It is bucketed `ranked`, not `cost-no-gain`, so the ladder still treats it as a win. It is filed **only** in the failed-to-reproduce table at `:685`; no row of the ranking table owns it, and `:517` asserts "row 1 is the only unmeasured row left" | small (one level decision, the measurement already exists) | **emitted code** |
+| ~~**4**~~ **CLOSED 2026-08-13 — demoted to `MCC_OPTD_LEVEL(4)`, but read the cycles line: the flag is TIME-INERT, not harmful. Two paired n=21 runs put cycles at −0.007% and −0.015% while instructions reproduce at −1.119%. It was demoted for paying nothing at `-O2`, not for making code slower.** | **`if-conversion-abs` ships at `MCC_OPTD_LEVEL(2)` and the freshly re-run bench says it makes code worse.** `tests/optfire/levelbench.tsv`: moves **1 of 17** kernels, `gain_movers` **−0.0334**, `branchy` **−0.5700** — a sign flip from the `+0.1905` / `+3.1843` it was promoted on. It is bucketed `ranked`, not `cost-no-gain`, so the ladder still treats it as a win. It is filed **only** in the failed-to-reproduce table at `:685`; no row of the ranking table owns it, and `:517` asserts "row 1 is the only unmeasured row left" | small (one level decision, the measurement already exists) | **emitted code** |
 | **5** | **`MCC_MAX_UNARY_DEPTH` was mis-sized *and* it was one guard where the parser needs eight — DONE, and the eight are now watched.** `diag.parse-frames` re-prices `MCC_MAX_PARSE_DEPTH` against the frames it was sized on, every run; the per-level table it was sized from was re-derived and nine of its ten rows were low. **The two that were filed are now closed on `wt/depthholes`** — `parse_btype`'s `_Alignas` arm (SIGSEGV at **43,606**) and `mccasm.c`'s six-function `asm_expr` cycle (at **18,694**) are both charged to the shared budget, the frames bank is re-derived at **15 cycles** with the worst axis and the 532 KiB requirement unmoved, and `diag.parse-depth` carries both axes. **The third, `next()` self-recursing on `_Pragma` (`src/mccpp.c`, SIGSEGV at 130,794 consecutive `_Pragma` tokens), is closed on `wt/symguard`** — a `tail:` label and a `goto`, no budget level, and `diag.parse-depth` now carries a `pragmachain` case that asserts a clean compile rather than a diagnostic. **No parse-depth hole is currently open.** See "The parse-depth guard" below | done | **correctness** |
 | **6** | **Nine number-producing tools are registered nowhere — the board says four.** `:1688-1696` names `xsuite-report.py`, `gate-ledger.sh`, `strategy-ledger.sh`, `c2_sweep.sh` and closes "Four tools left on this item." Also unregistered and board-quoted: `xsuite.py`, `xoracle.py`, `c2_equiv.sh`, `selfhost-o3.py`, `arm64pe_diff.py`. **~~`xoracle.py` is the sharpest~~ — `xoracle.py` WAS REGISTERED by `f797074b` (`jit/xoracle-coverage`, plus `tests/must-run.txt`); the four tools named in the audit residue are still unregistered, so that list is right and this row's nine is not (2026-08-11 sweep)**: `tests/optfire/levelpins.txt` pins `merge-constants` at level 2 on "two xoracle cases change verdict without it" — a shipped ladder pin whose only evidence comes from a tool no cell runs | medium (five more cells) | **census trust** |
 | **7** | **`ast_env_gate` no longer exists in `src/` and four shell tools still grep for it.** `grep -rn ast_env_gate src/` is **0**; `tools/{c2_sweep,c2_equiv,gate-ledger,o0_ab}.sh` all still reference it. They fail loudly, which is the right mode, but this is the widest blocker in the file: it freezes `o0_ab.sh`'s gated half (twelve `*.gated.rir.txt` + `board.gated.txt`, uncovered by `ast/o0-baseline` and not pretending otherwise), blocks three of the four tools in row 5, and blocks the cheap "which `-O1` gate erases the 72 `len` bodies" experiment. The restoration recipe is already written down at `:9899-9906` | medium | **gate strength** |
@@ -5122,7 +5163,7 @@ if the two disagree — so the count moves when a row is added, or the cell goes
 | `25,700` Invoke-blocked / `246` = 0.96% | **10,423 / 86 = 0.825%** | re-taken twice: the ratio moved at the first re-take and the ranking survived; the second re-take de-duplicated the corpus, and **only the counts moved** |
 | `cmake-debug` registers `9106`, same as `cmake-cross` | **8972 vs 9136** unless cross is built first | configure-order dependence, hazard 5 |
 | `reg-color` `gain 0.1796`, ranked on `interp` +1.9263 | **0.0017**, `gain_movers` **0.0019**, `cost-no-gain` | re-run 2026-08-09; the tree moved since `1ad3f1aa`, not a tool defect |
-| `if-conversion-abs` `gain +0.1905`, `branchy` +3.1843 | **−0.0334**, `branchy` **−0.5700** | a **sign flip** — the flag now makes `branchy` worse. Same cause |
+| `if-conversion-abs` `gain +0.1905`, `branchy` +3.1843 | **−0.0334**, `branchy` **−0.5700**; re-taken 2026-08-13 on a quiet box at **−1.1071** / **−1.1195** | a **sign flip** — the flag now makes `branchy` worse. Same cause. **Three generations on, the direction is stable and the magnitude has roughly doubled each re-take, but "worse" is an INSTRUCTIONS claim only**: two paired n=21 interleaved runs put cycles at −0.007% and −0.015%, i.e. zero. The flag is time-inert. Demoted to `LEVEL(4)` on that basis |
 | `narrow` / `tree-copy-prop` are "ranked on nothing" | both priced in `levelpins.txt` on the self-host axis | a **stale** `levelbench.tsv` row read as an **unmeasured** one; see the correction below |
 | `idiomgate` covers "4 of 37 config macros" | **17 of 37**, now **29 of 37** | the `4` counted rule-*firings*, not macros reached; fourteen correct `#if MCC_CONFIG_MACHO_CHAINED_FIXUPS` scored zero |
 
