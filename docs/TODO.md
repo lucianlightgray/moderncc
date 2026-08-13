@@ -1198,22 +1198,41 @@ implementation-defined**, so this is IDB and not a defect — and mcc's payload 
 otherwise correct: `sNaN*2`, `qNaN*2` (payload 5), `sNaN+2` and the scalar complex case are all
 byte-identical across the three compilers.
 
-**The reduction does NOT clear these ten, and saying so would be wrong.** Once `smokerun` grew
-the third verdict class the arithmetic settled at **12 diverge-both and 22 refs-disagree**, which
-means that *on the harness's own 64-value corpus the two references produce byte-identical
-digests for all ten complex categories* — they agree on every one of 4096 pairs — while mcc
-differs. So these are genuine consensus disagreements, and the 30-value reduction above simply
-failed to reproduce them: the one row it did find (`NaN × sNaN` payload selection) is IDB and is
-**not** the row the harness is catching. **Ten reductions are still owed**, and the denominator
-must be the harness corpus, not a hand-built one.
+**REDUCED 2026-08-12, on the harness's own corpus this time — and they are not defects.**
 
-**So of the original 34: one confirmed defect (N30), 22 correctly reclassified as
-references-disagree, and 10 still to reduce.**
+The instrument to use was `tests/smoke/subject.c --dump`, which emits per-`(type, op)` `V csweep`
+rows built from the same `smf_bfill_F64` corpus the digests are taken over. Built with mcc,
+gcc-16 and clang at the harness's own `-O1 -ffp-contract=off -DSM_REF_BUILD=1`, it reproduces the
+five categories exactly: `C32.CMULADD`, `C64.CMUL`, `C64.CMULADD`, `C80.CMUL`, `C80.CMULADD` —
+5 of 48 rows where the references agree and mcc differs.
 
-**Method note worth keeping:** a hand-built corpus that "covers the same classes" is not a
-substitute for the corpus the instrument actually uses. Here it inverted the answer — it made ten
-consensus disagreements look like implementation-defined latitude, which is the exact mistake
-N23 records in the other direction.
+Reducing per pair over all 4096 `(i, j)` combinations of that corpus, in every one of the five:
+
+| category | divergent pairs | both sides NaN | non-NaN |
+| --- | ---: | ---: | ---: |
+| `C32.CMULADD` | 32 | 32 | **0** |
+| `C64.CMUL` | 16 | 16 | **0** |
+| `C64.CMULADD` | 19 | 19 | **0** |
+| `C80.CMUL` | 16 | 16 | **0** |
+| `C80.CMULADD` | 19 | 19 | **0** |
+
+**102 divergences, every one NaN-against-NaN, none touching a finite value.** They differ only in
+the NaN's sign bit (`fff8…` vs `7ff8…`) or its payload (`7ffc…` vs `7ff8…`), and all of them are
+in the *imaginary* component. IEEE 754 leaves both open: §6.2.3 makes the propagated payload
+implementation-defined and the sign of a NaN result unspecified. **So these ten categories are
+IDB and should be pinned, not fixed** — which is what this file's own rule prescribes for a case
+the references cannot adjudicate.
+
+**Trap that nearly produced a false result, worth more than the finding.** A first pass reported
+*32 real defects* in `C32.CMULADD`. It was the classifier, not the compiler: `smf_enc` encodes
+per type, so C32 rows carry **float** bit patterns in a 64-bit field, and `0x7fc00000` — a float
+quiet NaN — does not parse as a double NaN. Testing double exponent bits against float-encoded
+values turned 32 implementation-defined NaNs into 32 fabricated defects. **A NaN classifier must
+know the width of what it is classifying.**
+
+**Consequence for the flip.** The original 34 now decompose completely: 22 references-disagree,
+10 implementation-defined NaN selection, and **2 real — N30's `bsweep.F16.FNEG`**. Fix or
+deliberately bank N30 and the oracle flip has nothing left blocking it.
 
 **~~N25. `smokerun`'s reference pair is unchecked everywhere except the divergence arm.~~ — CLOSED 2026-08-12, same day it was opened.** `pass_oracle()` runs the same `__clang__`/`__GNUC__` probe and says which it got. No pass row changed answer, which is the expected result — the defect was in what the line claimed. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
