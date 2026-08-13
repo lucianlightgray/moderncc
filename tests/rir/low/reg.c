@@ -1,4 +1,7 @@
-int f(int n) {
-	int v[n];
-	return n;
+int f(int x) {
+	switch (x) {
+	case 1:
+		return 1;
+	}
+	return 0;
 }
