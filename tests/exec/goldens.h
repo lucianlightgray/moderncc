@@ -94,6 +94,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"bound_test", "run", "exec/bounds/bound_test.c", "42000\n8\n", "", "", ""},
 		{"old_func", "run", "exec/functions_abi/old_func.c", "4 30\n4 30\n1\n", "", "", ""},
 		{"double_to_signed", "run", "exec/types/double_to_signed.c", "-1\n-1\n-2147483648\n-2147483648\n10000000000000000000\n", "", "", ""},
+		{"ldouble_to_signed", "run", "exec/types/ldouble_to_signed.c", "0\n0\n0\n0\n0\n2 -2\n-2147483648\n-2147483648\n-2147483648\n", "", "", "cpu=x86_64:80-bit long double, and the out-of-range rows pin the x87 integer indefinite that a widened convert would turn into 0"},
 		{"func_arg_struct_compare", "run", "exec/structs_unions/func_arg_struct_compare.c", "done\n", "", "", ""},
 		{"atomic_gcc_style", "run", "exec/features_c99_c11/atomic_gcc_style.c", "assert \"loaded == 42\" : yes\nassert \"success\" : yes\nassert \"atomic_var == 200\" : yes\nassert \"expected == 100\" : yes\nassert \"!success\" : yes\nassert \"atomic_var == 100\" : yes\nassert \"expected == 100\" : yes\nassert \"atomic_var == 60\" : yes\nassert \"loaded_ptr == NULL\" : yes\nassert \"__atomic_load_n(&atomic_var, __ATOMIC_RELAXED) == 10\" : yes\nAll atomic tests passed!\n", "", "", ""},
 		{"funcall_struct_args", "run", "exec/structs_unions/funcall_struct_args.c", "x=999.500000\ny=999.500000\n", "", "", ""},

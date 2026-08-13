@@ -3104,8 +3104,30 @@ void gen_cvt_ftoi(int t) { MCC_TRACE("enter\n");
 			vtop->r2 = REG_IRE2;
 			return;
 		}
-		gen_cvt_ftof(VT_DOUBLE);
-		bt = VT_DOUBLE;
+		{ MCC_TRACE("br\n");
+			int slot;
+			gv(MCC_RC_ST0);
+			slot = (loc = ast_alloc_loc(8, 8));
+			o(0xd9);
+			gen_modrm(7, VT_LOCAL, NULL, slot + 4);
+			o(0xd9);
+			gen_modrm(7, VT_LOCAL, NULL, slot + 6);
+			o(0x66);
+			o(0x81);
+			gen_modrm(1, VT_LOCAL, NULL, slot + 6);
+			gen_le16(0x0c00);
+			o(0xd9);
+			gen_modrm(5, VT_LOCAL, NULL, slot + 6);
+			o(0xdb);
+			gen_modrm(3, VT_LOCAL, NULL, slot);
+			o(0xd9);
+			gen_modrm(5, VT_LOCAL, NULL, slot + 4);
+			r = get_reg(MCC_RC_INT);
+			orex(0, VT_LOCAL, r, 0x8b);
+			gen_modrm(r, VT_LOCAL, NULL, slot);
+			vtop->r = r;
+			return;
+		}
 	}
 
 	gv(MCC_RC_FLOAT);

@@ -1,12 +1,12 @@
-x86_64         -O0 files=307 objects=298 rirok=298 extra=0/0 rirfiles=298 fn=1314 faithful=1279 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
-i386           -O0 files=307 objects=295 rirok=295 extra=0/0 rirfiles=295 fn=1310 faithful=1275 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
-arm            -O0 files=307 objects=290 rirok=290 extra=0/0 rirfiles=290 fn=1288 faithful=1253 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
-arm64          -O0 files=307 objects=293 rirok=293 extra=0/0 rirfiles=293 fn=1357 faithful=1322 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
-riscv64        -O0 files=307 objects=291 rirok=291 extra=0/0 rirfiles=291 fn=1314 faithful=1279 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
-x86_64-win32   -O0 files=307 objects=296 rirok=296 extra=0/0 rirfiles=296 fn=1402 faithful=1367 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
-i386-win32     -O0 files=307 objects=294 rirok=294 extra=0/0 rirfiles=294 fn=1418 faithful=1383 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
-arm64-win32    -O0 files=307 objects=292 rirok=292 extra=0/0 rirfiles=292 fn=1458 faithful=1423 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
-arm-win32      -O0 files=307 objects=289 rirok=289 extra=0/0 rirfiles=289 fn=1396 faithful=1361 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
-arm-wince      -O0 files=307 objects=289 rirok=289 extra=0/0 rirfiles=289 fn=1396 faithful=1361 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
-x86_64-osx     -O0 files=307 objects=295 rirok=295 extra=0/0 rirfiles=295 fn=1308 faithful=1273 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
-arm64-osx      -O0 files=307 objects=293 rirok=293 extra=0/0 rirfiles=293 fn=1381 faithful=1346 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
+x86_64         -O0 cc=/home/lucianlightgray/Projects/moderncc/cmake-cross/mcc files=308 objects=299 rirok=299 extra=0/0 rirfiles=299 fn=1315 faithful=1280 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
+i386 NOT MEASURED
+arm NOT MEASURED
+arm64 NOT MEASURED
+riscv64 NOT MEASURED
+x86_64-win32   -O0 cc=/home/lucianlightgray/Projects/moderncc/cmake-cross/mcc-x86_64-win32 files=308 objects=297 rirok=297 extra=0/0 rirfiles=297 fn=1403 faithful=1368 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
+i386-win32     -O0 cc=/home/lucianlightgray/Projects/moderncc/cmake-cross/mcc-i386-win32 files=308 objects=295 rirok=295 extra=0/0 rirfiles=295 fn=1419 faithful=1384 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
+arm64-win32    -O0 cc=/home/lucianlightgray/Projects/moderncc/cmake-cross/mcc-arm64-win32 files=308 objects=293 rirok=293 extra=0/0 rirfiles=293 fn=1459 faithful=1424 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
+arm-win32      -O0 cc=/home/lucianlightgray/Projects/moderncc/cmake-cross/mcc-arm-win32 files=308 objects=290 rirok=290 extra=0/0 rirfiles=290 fn=1397 faithful=1362 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
+arm-wince      -O0 cc=/home/lucianlightgray/Projects/moderncc/cmake-cross/mcc-arm-wince files=308 objects=290 rirok=290 extra=0/0 rirfiles=290 fn=1397 faithful=1362 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
+x86_64-osx     -O0 cc=/home/lucianlightgray/Projects/moderncc/cmake-cross/mcc-x86_64-osx files=308 objects=296 rirok=296 extra=0/0 rirfiles=296 fn=1309 faithful=1274 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
+arm64-osx      -O0 cc=/home/lucianlightgray/Projects/moderncc/cmake-cross/mcc-arm64-osx files=308 objects=294 rirok=294 extra=0/0 rirfiles=294 fn=1382 faithful=1347 empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0 OK
