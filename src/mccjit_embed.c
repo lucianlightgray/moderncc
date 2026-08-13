@@ -5,6 +5,7 @@
 #include "mccgate.h"
 #include "algorithms/jit.h"
 #include "mccjit_internal.h"
+#include "mccinv.h"
 #include "mccstats.h"
 
 #if MCC_HOST_WIN32

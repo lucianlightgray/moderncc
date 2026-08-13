@@ -83,7 +83,7 @@ ast/o0-baseline              | registered | the -O0 per-key object sha256 bank. 
 ast/o0-baseline-known-positive | registered | proves that check is diffing real objects and not an empty corpus against an empty bank. Demoted with its subject, same reason
 ast/o0-baseline-gated        | registered | the same bank under MCC_DEV=1 gates; registered-only for the same reason as ast/o0-baseline. Added 2026-08-13 -- it was in the same NOT-Darwin chain and vanished on this host with nothing reporting it
 ast/o0-baseline-gated-known-positive | registered | proves the gated arm is diffing real objects. Added 2026-08-13 with its subject
-build/fragments-are-not-tus  | registered | asserts the *.c fragments included into a TU are not themselves compilable TUs. Added 2026-08-13: it shared the NOT-Darwin chain with ast/o0-baseline and was lost silently on every Darwin, WIN32, cross and emulated build
+build/fragments-are-not-tus  | registered | asserts the *.c fragments included into a TU are not themselves compilable TUs. Added 2026-08-13: it shared the NOT-Darwin chain with ast/o0-baseline and was lost silently on every Darwin, WIN32, cross and emulated build. It runs on Darwin now, and did all along -- the chain excluded it for no stated reason
 build/fragments-are-not-tus-known-positive | registered | proves that check can still go red. Added 2026-08-13 with its subject
 optbench/null-subject        | must-run   | tools/optlevel-bench.py must not report a gain over kernels it did not change. Needs no perf and no mcc, so a skip here is always a bug
 optbench/null-subject-known-positive | must-run | proves that guard can still detect a null experiment being reported as a number

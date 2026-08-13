@@ -4195,26 +4195,6 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("ast/o0-baseline-known-positive" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 3600)
 
-            add_test(NAME "build/fragments-are-not-tus"
-                COMMAND "${CMAKE_COMMAND}"
-                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
-                        -DBINDIR=${CMAKE_BINARY_DIR}
-                        "-DPINNED=mccast.c;mccircap.c;mccrir.c"
-                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu.cmake")
-            set_tests_properties("build/fragments-are-not-tus" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900 SKIP_RETURN_CODE 77)
-
-            add_test(NAME "build/fragments-are-not-tus-known-positive"
-                COMMAND "${CMAKE_COMMAND}"
-                        -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu.cmake
-                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
-                        -DBINDIR=${CMAKE_BINARY_DIR}
-                        "-DPINNED=mccast.c;mccircap.c;mccrir.c"
-                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu_mutate.cmake")
-            set_tests_properties("build/fragments-are-not-tus-known-positive"
-                PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900
-                SKIP_RETURN_CODE 77)
-
             add_test(NAME "ast/o0-baseline-gated"
                 COMMAND "${CMAKE_COMMAND}" -E env
                         "C2_NO_EXTRA=1" "O0_AB_CHECK=1" "O0_AB_GATES=1" "MCC_DEV=1"
@@ -4244,13 +4224,6 @@ if(MCC_BUILD_TESTS)
             mcc_skip_test("ast/o0-baseline-known-positive" "${_o0ab_why}")
             mcc_skip_test("ast/o0-baseline-gated" "${_o0ab_why}")
             mcc_skip_test("ast/o0-baseline-gated-known-positive" "${_o0ab_why}")
-            if(MCC_TARGETOS STREQUAL "Darwin")
-                set(_frag_why "the check itself runs here, but its PINNED set is host-compiler-dependent: Apple clang rejects mccjit_embed.c's undeclared mcc_inv_add as an error where the Linux host compiler does not, so the standalone-failure set is four here against the pinned three. Re-pin per host or declare the symbol -- see docs/TODO.md N39")
-            else()
-                set(_frag_why "${_o0ab_why}")
-            endif()
-            mcc_skip_test("build/fragments-are-not-tus" "${_frag_why}")
-            mcc_skip_test("build/fragments-are-not-tus-known-positive" "${_frag_why}")
         endif()
 
         if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR
@@ -4269,6 +4242,26 @@ if(MCC_BUILD_TESTS)
                     message(STATUS "mcc: gmp = ${MCC_GMP_LIB} (${MCC_GMP_INC})")
                 endif()
             endif()
+
+            add_test(NAME "build/fragments-are-not-tus"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_BINARY_DIR}
+                        "-DPINNED=mccast.c;mccircap.c;mccrir.c"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu.cmake")
+            set_tests_properties("build/fragments-are-not-tus" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900 SKIP_RETURN_CODE 77)
+
+            add_test(NAME "build/fragments-are-not-tus-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu.cmake
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DBINDIR=${CMAKE_BINARY_DIR}
+                        "-DPINNED=mccast.c;mccircap.c;mccrir.c"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu_mutate.cmake")
+            set_tests_properties("build/fragments-are-not-tus-known-positive"
+                PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900
+                SKIP_RETURN_CODE 77)
 
             add_test(NAME "wide256/gmp-diff"
                 COMMAND "${CMAKE_COMMAND}"
@@ -4293,9 +4286,11 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("wide256/gmp-diff-known-positive" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 1800 SKIP_RETURN_CODE 77)
         else()
-            set(_w256_why "the GMP differential needs a native UNIX host: the oracle is libgmp built by the host C compiler")
+            set(_w256_why "the GMP differential and the fragment check both need a native UNIX host: the oracle is libgmp built by the host C compiler, and the fragment check reads the build's own flags back out of compile_commands.json")
             mcc_skip_test("wide256/gmp-diff" "${_w256_why}")
             mcc_skip_test("wide256/gmp-diff-known-positive" "${_w256_why}")
+            mcc_skip_test("build/fragments-are-not-tus" "${_w256_why}")
+            mcc_skip_test("build/fragments-are-not-tus-known-positive" "${_w256_why}")
         endif()
 
         if(NOT CMAKE_CROSSCOMPILING AND NOT MCC_TARGETOS STREQUAL "WIN32")

@@ -2328,6 +2328,17 @@ exists), or bank a distinct native key — but `o0_ab.sh` refuses `O0_AB_BANK` w
 a new key needs a host that can reach every key, which is the Linux cross box, which by
 construction cannot take the native Darwin column. **That circularity is the real cost.**
 
+**~~N39. `build/fragments-are-not-tus` has a host-compiler-dependent pin.~~ — FOUND AND CLOSED
+2026-08-13, and the cell is registered for real on Darwin as a result.** `mccjit_embed.c` now
+includes `mccinv.h`, which it always used and never included. The header is self-contained
+(`stdio`/`stdlib`/`string`) and guarded, and `mcc` is a unity build where `mccgen.c` already pulls
+it in, so the fix is **byte-neutral by construction and measured as such**: `src/mcc.c.o` has the
+same sha256 before and after, from a rebuild that did recompile it. The standalone-failure set is
+now `mccast.c mccircap.c mccrir.c` on this host — the pinned three, no per-host pin needed — and
+`build/fragments-are-not-tus` and its known-positive run green here in 11.2 s.
+
+**As found:**
+
 **N39. `build/fragments-are-not-tus` has a host-compiler-dependent pin.** New 2026-08-13, found by
 running the cell on Darwin for the first time. The check itself is portable — it reads the build's
 own `-D`/`-I` back out of `compile_commands.json` and compiles each `src/*.c` standalone — and it
@@ -2339,8 +2350,8 @@ behind `#if (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))` without includ
 `mccjit_embed.c` fails for a diagnostic-strictness reason, which is a different thing and should
 not be pinned as though it were the same. **Two fixes, and the smaller one is better**: declare
 `mcc_inv_add` where `mccjit_embed.c` can see it standalone, which makes the set three everywhere
-and needs no per-host pin. It is registered as a visible skip here meanwhile, which is what it
-should have been all along.
+and needs no per-host pin. It was registered as a visible skip on the way to this, which is
+what it should have been all along.
 
 **N37. The refs-disagree class is a property of a whole digest, so a category containing one
 reference disagreement is cleared for every other point in it.** New 2026-08-13, and it is N29's
