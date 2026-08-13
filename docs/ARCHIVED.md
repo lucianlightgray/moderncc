@@ -29124,3 +29124,40 @@ worked on. It surfaced here only because the rebase was followed by a re-run of 
 `ast/ rir` family rather than by a targeted check of the files that changed. A cell that cannot
 execute reports as a plain red, indistinguishable at a glance from the two genuine ratchet reds
 sitting next to it in the same output.
+
+### N2 / Cluster A — closed to one residue, and the arm64 arm verified where it actually lives
+
+A1–A7 landed across two hosts and two days: `ast_locrec_skip` takes `(size, align)`; the record
+reset is hoisted out of `rir_try_active`; `rir_locrec`, `rir_slotrec` and `rir_tvrec` all carry
+`sz`/`al`; the C2 bypass is fixed so the replay feeds the fit check and falls back to the frontier
+allocator; and the three streams now share one `rir_rec_take`. `rir_fcrec` is deliberately outside
+it — its key is a `memcmp` equality relation, not a `>=` fit relation, which is what the earlier
+refutation of *"copy `rir_fcrec[]`"* said.
+
+**What this host added, and it is the half the closure could not have.** A5's arm64 slot site sits
+in `src/arch/arm64/arm64-gen.c` inside `#if !defined(MCC_TARGET_MACHO)` — the ELF arm64 `va_arg`
+HFA path. On the machine A5 was written on, that block is compiled out, so the widening had never
+been compiled where it lives, let alone exercised. A cross build here compiles it, and upstream's
+own new injection settles reachability without needing to run anything:
+
+```
+mcc-arm64  -O2 -c hfa.c  vs  MCC_RIR_REC_FORCE_MISS=1 mcc-arm64  -O2 -c hfa.c   -> objects MOVED
+mcc-x86_64 -O2 -c hfa.c  vs  MCC_RIR_REC_FORCE_MISS=1 mcc-x86_64 -O2 -c hfa.c   -> identical
+```
+
+The subject is four variadic functions taking `struct HFA2/HFA3/HFA4` and a five-`long` `Big` by
+`va_arg`, written against `__builtin_va_list` so it needs no headers and compiles for every cross
+target. The asymmetry is the point: the same source reaches a record take on arm64 and reaches
+none on x86_64, which is exactly what a site guarded out on Mach-O and absent from the x86_64
+backend should look like.
+
+**Execution is still owed and the blocker is named.** `qemu-aarch64`, `qemu-arm` and
+`qemu-riscv64` are all installed here; `vendor/gentoo-stage3-arm64-glibc` is not, so nothing arm64
+can be linked or run. That is the same missing prerequisite that makes four of the thirteen
+`ast/o0-baseline` keys unmeasurable, and it is now the single thing standing between this host and
+execution-level coverage of three cross targets.
+
+**The one residue is A6's second half.** `rir_tvrec` still has no `nc[]` array. A7 made that
+*visible* — it appears as a literal `NULL` at the shared call instead of being buried in a fourth
+copy of the loop — but did not close it, and the row's own advice stands: land it separately,
+because the fit skip was byte-neutral and the `nc` resync will not be.

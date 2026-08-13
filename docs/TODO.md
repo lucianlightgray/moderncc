@@ -1014,8 +1014,8 @@ measurement tool reports success over an empty or truncated subject:
 >
 > **Ranking as of 2026-08-13, after the second pass: N2, N3, N6, N7, N18, N19, N24, N29 and N30
 > — nine of thirty-four.** N33 and N34 closed the day they were filed, and N3 lost item 24, so
-> the live rows are **N2, N3 (items 23 and 22 only), N6, N7, N18, N19, N24, N29, N30 and
-> N35** — ten of thirty-five. **N35 is three reds this file had no row for**, all
+> the live rows are **N3 (items 23 and 22 only), N6, N7, N18, N19, N24, N29, N30 and N35** —
+> nine of thirty-five, after N2 closed on 2026-08-13 down to A6's `nc[]` resync. **N35 is three reds this file had no row for**, all
 > pre-existing at `c7df5209` and all found by running the 526-cell
 > `jit/ ast/ rir optlevel diff3/ superopt/ fmt/ docs/ ci/` family rather than by sweeping. N8 closed in full on the Linux box (N20 closed all three of its programs,
 > and the pre-fix A/B proves it), N26 and N27 and N28 are struck, and **N31** is new — a defect
@@ -1060,7 +1060,11 @@ measurement tool reports success over an empty or truncated subject:
 
 **~~N1. Seven of 22 strategies are write-only.~~ — CLOSED 2026-08-12.** `unread` sums `sf[]` for `LTEMP, IVSR, PRE, RANGE, ABS, REASSOC, INLINE` and joins all three spellings of the `do_*` disjunction. Witnessed on the exact case this row named — `reassoc` alone at `-O4 -fno-promote-locals` was byte-identical across `-freassoc-assoc`/`-fno-` before and differs after; same for `-ftree-vrp`. **The other five cannot witness it either way**, because their flags gate more than their strategy. It costs bytes on purpose: self-host moves at every level and grows 224 B at `-O1`, 448 B at `-O2`, 16 B at `-O4`. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
-**N2. `rir_tvar_replay` and `rir_slot_replay` repeat the bug `dd80e4fa` fixed, unchecked.**
+**~~N2. `rir_tvar_replay` and `rir_slot_replay` repeat the bug `dd80e4fa` fixed, unchecked.~~ — CLOSED 2026-08-13 except for `rir_tvrec`'s `nc[]` resync.** All three streams carry `sz`/`al` and share one `rir_rec_take` (A1–A7); the C2 bypass is fixed; and
+`rir/rec-miss` pins the failure arm with a forced-miss injection that moves 3 objects over 6 subjects. **Two things this host added that the closure did not have.** *(1)* A5's arm64 slot site is compiled out on Mach-O, so it had never been compiled where it lives; a cross build here compiles it and the force-miss injection proves an HFA `va_arg` subject **reaches** it on `mcc-arm64` and does not on `mcc-x86_64`. Execution is still owed — `qemu-aarch64` is present, the arm64 sysroot is not. *(2)* `rir/rec-miss` could not run at all as landed; see N35.
+**What remains open is A6's second half**, the missing `rir_tvrec` `nc[]` resync, which A7 made visible as a `NULL` at the shared call rather than closing.
+
+As originally filed:
 `rir_tvar_replay` is the *first* statement of `get_temp_local_var`, so it bypasses the
 `size >= && align >=` invariant the same function enforces sixteen lines later, on the same
 object class, in a function that already has the sizes. Neither was on the board.
@@ -2120,8 +2124,8 @@ N2's record widening is its prerequisite**, not the other way round.
 | ~~A2~~ | ~~hoist the record reset out of `rir_try_active`~~ **DONE 2026-08-12**. The hazard was held shut by three separate gates rather than by the reset | 2 lines | — | any |
 | ~~A3~~ | ~~widen `rir_locrec` with `sz`/`al` + `rir_locrec_min`~~ **DONE 2026-08-12**, resync then fit | small | — | any |
 | ~~A4~~ | ~~the C2-bypass fix~~ **DONE 2026-08-12.** The replay now feeds the fit check and falls back to the frontier allocator below `rir_locrec_min`, not a bare bump. Validated on the **whole exec corpus: 840 pass / 0 fail** over 280 programs at `-O1`/`-O2`/`-O3`, plus ast+smoke 141/141 | small | A3 | any |
-| A5 | widen `rir_slotrec`; `rir_hook_slot_replay/_record` take `(size, align)` | small | — | arm64 site is `#if !defined(MCC_TARGET_MACHO)` — **Linux** |
-| A6 | widen `rir_tvrec` **and** add its missing `nc[]` resync — **land these as two commits**, the fit skip is byte-neutral and the `nc` resync is not | small | A5 shape | any |
+| ~~A5~~ | ~~widen `rir_slotrec`; `rir_hook_slot_replay/_record` take `(size, align)`~~ **DONE, and verified reachable on Linux 2026-08-13.** Both hooks take `(size, align)` and `rir_slotrec_sz/_al` exist. **The host annotation was right and is now discharged in part**: the arm64 site at `src/arch/arm64/arm64-gen.c` is inside `#if !defined(MCC_TARGET_MACHO)`, so it is compiled out on the machine A5 was written on. A cross build here compiles it, and upstream's own `MCC_RIR_REC_FORCE_MISS=1` injection proves it is *reached*: an HFA `va_arg` subject compiled with `mcc-arm64` moves its object under the injection and the identical subject on `mcc-x86_64` does **not**. **Still owed: execution.** `qemu-aarch64` is installed but `vendor/gentoo-stage3-arm64-glibc` is not, so nothing arm64 can be linked or run here | small | — | arm64 site is `#if !defined(MCC_TARGET_MACHO)` — **Linux** |
+| A6 | ~~widen `rir_tvrec`~~ **DONE** (`rir_tvrec_sz`/`_al` exist and `rir_tvar_replay` takes `(size, align)`) **— the second half is still open**: `rir_tvrec` has no `nc[]` array, which A7 made *visible* as a literal `NULL` at the shared call rather than fixing. The row's own advice holds: land it separately, because the fit skip was byte-neutral and the `nc` resync will not be | small | A5 shape | any |
 | ~~A7~~ | ~~the `mcc_rec_take` unification~~ **DONE 2026-08-13**, scoped to the three streams that share semantics; `rir_fcrec` stays separate because its key is a `memcmp` equality relation, not a `>=` fit relation. `rir_tvrec`'s missing `nc` array is now visible as a `NULL` at the call rather than buried in a fourth copy of the loop. **840/0 on the full exec corpus.** See the coverage hole it exposed, below | medium | A3/A5/A6 | any |
 
 **A4 in detail, because the obvious fix is wrong.** The two arms of `ast_alloc_loc` consume two
