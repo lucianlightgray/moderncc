@@ -96,6 +96,24 @@ static int rir_locrec_al[RIR_LOCREC_MAX];
 static int rir_locrec_n, rir_locrec_i;
 int rir_locrec_min;
 
+static int rir_rec_take(const int *val, const int *pos, const int *nc,
+												const int *sz, const int *al, int n, int *cur,
+												int size, int align, int *out) { MCC_TRACE("enter\n");
+	int i = *cur, k;
+	if (pos)
+		while (i + 1 < n && pos[i + 1] <= ind &&
+					 (!nc || (nc[i] & RIR_NOEVAL_MASK) || pos[i + 1] > pos[i]))
+			{ MCC_TRACE("br\n"); i++; }
+	k = i;
+	while (k < n && (sz[k] < size || al[k] < align))
+		{ MCC_TRACE("br\n"); k++; }
+	if (k >= n)
+		{ MCC_TRACE("br\n"); *cur = i; return -1; }
+	*cur = k + 1;
+	*out = val[k];
+	return k;
+}
+
 void rir_loc_record(int loc_in, int size, int align) { MCC_TRACE("enter\n");
 	if (loc_in < rir_locrec_min)
 		{ MCC_TRACE("br\n"); rir_locrec_min = loc_in; }
@@ -109,20 +127,9 @@ void rir_loc_record(int loc_in, int size, int align) { MCC_TRACE("enter\n");
 }
 
 int rir_loc_replay(int *loc_out, int size, int align) { MCC_TRACE("enter\n");
-	int k;
-	while (rir_locrec_i + 1 < rir_locrec_n && rir_locrec_pos[rir_locrec_i + 1] <= ind &&
-	       ((rir_locrec_nc[rir_locrec_i] & RIR_NOEVAL_MASK) ||
-	        rir_locrec_pos[rir_locrec_i + 1] > rir_locrec_pos[rir_locrec_i]))
-		rir_locrec_i++;
-	k = rir_locrec_i;
-	while (k < rir_locrec_n &&
-	       (rir_locrec_sz[k] < size || rir_locrec_al[k] < align))
-		k++;
-	if (k >= rir_locrec_n)
-		return 0;
-	rir_locrec_i = k + 1;
-	*loc_out = rir_locrec[k];
-	return 1;
+	return rir_rec_take(rir_locrec, rir_locrec_pos, rir_locrec_nc, rir_locrec_sz,
+											rir_locrec_al, rir_locrec_n, &rir_locrec_i, size, align,
+											loc_out) >= 0;
 }
 
 static int rir_fcrec[RIR_LOCREC_MAX];
@@ -177,22 +184,9 @@ void rir_slot_record(int loc_in, int size, int align) { MCC_TRACE("enter\n");
 }
 
 int rir_slot_replay(int *loc_out, int size, int align) { MCC_TRACE("enter\n");
-	while (rir_slotrec_i + 1 < rir_slotrec_n &&
-				 rir_slotrec_pos[rir_slotrec_i + 1] <= ind &&
-				 ((rir_slotrec_nc[rir_slotrec_i] & RIR_NOEVAL_MASK) ||
-					rir_slotrec_pos[rir_slotrec_i + 1] > rir_slotrec_pos[rir_slotrec_i]))
-		rir_slotrec_i++;
-	{
-		int k = rir_slotrec_i;
-		while (k < rir_slotrec_n &&
-		       (rir_slotrec_sz[k] < size || rir_slotrec_al[k] < align))
-			k++;
-		if (k >= rir_slotrec_n)
-			return 0;
-		rir_slotrec_i = k + 1;
-		*loc_out = rir_slotrec[k];
-	}
-	return 1;
+	return rir_rec_take(rir_slotrec, rir_slotrec_pos, rir_slotrec_nc,
+											rir_slotrec_sz, rir_slotrec_al, rir_slotrec_n,
+											&rir_slotrec_i, size, align, loc_out) >= 0;
 }
 
 static int rir_tvrec[RIR_LOCREC_MAX], rir_tvrec_r2[RIR_LOCREC_MAX];
@@ -211,18 +205,12 @@ void rir_tvar_record(int loc_in, int r2, int size, int align) { MCC_TRACE("enter
 }
 
 int rir_tvar_replay(int *loc_out, int *r2_out, int size, int align) { MCC_TRACE("enter\n");
-	int k;
-	while (rir_tvrec_i + 1 < rir_tvrec_n && rir_tvrec_pos[rir_tvrec_i + 1] <= ind)
-		rir_tvrec_i++;
-	k = rir_tvrec_i;
-	while (k < rir_tvrec_n &&
-	       (rir_tvrec_sz[k] < size || rir_tvrec_al[k] < align))
-		k++;
-	if (k >= rir_tvrec_n)
-		return 0;
-	rir_tvrec_i = k + 1;
+	int k = rir_rec_take(rir_tvrec, rir_tvrec_pos, NULL, rir_tvrec_sz,
+											 rir_tvrec_al, rir_tvrec_n, &rir_tvrec_i, size, align,
+											 loc_out);
+	if (k < 0)
+		{ MCC_TRACE("br\n"); return 0; }
 	*r2_out = rir_tvrec_r2[k];
-	*loc_out = rir_tvrec[k];
 	return 1;
 }
 int rir_c2_active;

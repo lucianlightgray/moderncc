@@ -1910,7 +1910,7 @@ N2's record widening is its prerequisite**, not the other way round.
 | ~~A4~~ | ~~the C2-bypass fix~~ **DONE 2026-08-12.** The replay now feeds the fit check and falls back to the frontier allocator below `rir_locrec_min`, not a bare bump. Validated on the **whole exec corpus: 840 pass / 0 fail** over 280 programs at `-O1`/`-O2`/`-O3`, plus ast+smoke 141/141 | small | A3 | any |
 | A5 | widen `rir_slotrec`; `rir_hook_slot_replay/_record` take `(size, align)` | small | — | arm64 site is `#if !defined(MCC_TARGET_MACHO)` — **Linux** |
 | A6 | widen `rir_tvrec` **and** add its missing `nc[]` resync — **land these as two commits**, the fit skip is byte-neutral and the `nc` resync is not | small | A5 shape | any |
-| A7 | the actual `MccRec`/`mcc_rec_take` unification — de-duplication only, all defects already fixed by A1–A6 | medium | A3/A5/A6 | any |
+| ~~A7~~ | ~~the `mcc_rec_take` unification~~ **DONE 2026-08-13**, scoped to the three streams that share semantics; `rir_fcrec` stays separate because its key is a `memcmp` equality relation, not a `>=` fit relation. `rir_tvrec`'s missing `nc` array is now visible as a `NULL` at the call rather than buried in a fourth copy of the loop. **840/0 on the full exec corpus.** See the coverage hole it exposed, below | medium | A3/A5/A6 | any |
 
 **A4 in detail, because the obvious fix is wrong.** The two arms of `ast_alloc_loc` consume two
 *different* streams with two *different* cursors: `rir_locrec` (resynced against `ind`) and
@@ -1929,6 +1929,26 @@ adding a file — its golden and per-target `o0-baseline` hashes already exist. 
 of: a dropped allocation request, a size cliff right after it, a live neighbour the overlap
 corrupts, and `-O1`+ with a graftable inline. **Land the subject red first**; a cell that has
 never failed is the thing this whole cluster is about.
+
+**The coverage hole A7 exposed, which is worth more than the de-duplication.**
+
+Writing the shared helper I gave it an index return and made failure `return 0` — but index 0 is
+a legitimate hit, so a *failed* take handed back `val[0]`, the wrong frame offset, whenever the
+record was exhausted or nothing fit. **Nothing caught it.** ast + smoke stayed 141/141 and 102
+`tests/exec` programs stayed green with the bug in place. I found it by re-reading the code, not
+by running anything.
+
+The reason is measurable: instrumenting the take with a hit/miss counter gives **811 takes and
+0 misses over 42 `tests/exec` files at `-O2`**. The no-fit path never fires on this corpus, so
+neither the sentinel nor anything else on that branch is exercised.
+
+**That has a consequence beyond A7: A4's frontier fallback is on the same branch.** The
+`rir_loc_replay` failure arm — where the C2 path now allocates below `rir_locrec_min` instead of
+bare-bumping into an offset the replay is about to hand out — is reached exactly when a take
+misses, which is never, here. So the *fix* is validated by 840/0 but the *interesting branch of
+it* is not validated by anything. **A subject that exhausts a location record, or requests a size
+no recorded entry can hold, is the missing fixture** — and it would cover A4, A5, A6 and A7's
+sentinel at once.
 
 ### Cluster B — `ast_func_end` (was Rank 2)
 
