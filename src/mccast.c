@@ -20488,7 +20488,8 @@ search_done:
 static void ast_jit_submit_aot(Sym *sym) { MCC_TRACE("enter\n");
 	if (!sym || !ast_cur || !mcc_env_on("MCC_JIT_SUBMIT_AOT"))
 		{ MCC_TRACE("br\n"); return; }
-	if (mcc_jit_submit_ast(sym, ast_cur, 0, 0) == 0 && mcc_env_on("MCC_JIT_VERBOSE"))
+	if (mcc_jit_submit_ast(sym, ast_cur, (uint64_t)ast_search_gates_now(), 0) == 0 &&
+			mcc_env_on("MCC_JIT_VERBOSE"))
 		{ MCC_TRACE("br\n"); fprintf(stderr, "mccjit-aot-submit[%s]: submitted sym->v=%ld\n",
 						funcname, (long)sym->v); }
 }
