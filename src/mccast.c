@@ -19233,8 +19233,8 @@ static void ast_ladder_dump_one(const char *tag, const AstLadderStat *st) { MCC_
 	fprintf(stderr,
 					"[ladder-%s] inferred-width-nodes=%lu pairs-with-inferred-width=%lu\n",
 					tag, st->inferred, st->inferred_pairs);
-	fprintf(stderr, "[ladder-%s] points=%lu secs=%.4f us-per-pair=%.2f\n", tag,
-					st->points, st->secs,
+	fprintf(stderr, "[ladder-%s] points=%lu\n", tag, st->points);
+	fprintf(stderr, "[ladder-%s] secs=%.4f us-per-pair=%.2f\n", tag, st->secs,
 					st->pairs ? st->secs * 1e6 / (double)st->pairs : 0.0);
 }
 
