@@ -4659,9 +4659,23 @@ combinations, link with both linkers, run under wine, require all outputs identi
 same four-way shape `tools/i386fastcall-docker.sh` already uses for the i386 ELF ABI.
 This is the largest genuine gap and the one with the clearest user-visible payoff.
 
-**Stage W4 — per-function `UNWIND_INFO`, and unwind for i386/arm. ~500–800 lines.**
-**Measured 2026-08-13 on the native Windows box, and the premise needs correcting:
-x86_64 stack unwinding is already correct — the shared blob is not a live bug.** A
+**Stage W4 — per-function `UNWIND_INFO`, and unwind for i386/arm. ~~~500–800 lines.~~ — x86_64
+per-function `UNWIND_INFO` LANDED 2026-08-13.** `pe_add_unwind_data` (x86_64, `src/objfmt/mccpe.c`)
+no longer shares one hardcoded blob across all functions: each function now gets its **own**
+`UNWIND_INFO` record in `.xdata` (modelled on the arm64 arm, with `.uw_text_base`/`.uw_base`
+symbols), so `.pdata` holds N `RUNTIME_FUNCTION`s pointing at N distinct records. Verified with
+`llvm-readobj --unwind` (each record: `Version 1`, `PrologSize 4`, `FrameRegister RBP`, codes
+`SET_FPREG`+`PUSH_NONVOL rbp`, a per-function `Flags` field) and structurally pinned by
+`pe/unwind-backtrace` (5-function subject ⇒ `.pdata`=60 B, `.xdata`=40 B = 5×8, not one shared
+8-byte blob). **This is the concrete W6 prerequisite**: a `__try` function can now be given its own
+`UNW_FLAG_EHANDLER` + handler RVA without perturbing any other function, which the shared blob made
+impossible. The proven codes were kept unchanged (see below) so unwinding did not regress — the
+same backtrace test still reaches every frame at `-O0`/`-O2`/`-O3`. **Still open:** truthful
+per-function `SizeOfProlog`/explicit `ALLOC` (the `__chkstk` prolog byte layout must be
+characterised first — `big()` uses `rbp` via a custom `__chkstk` with no visible `push rbp` in the
+reserved prolog), and i386 (`FS:[0]`, none today) / arm-win32 (`.pdata`, none today). The measured
+finding that justified keeping the codes:
+x86_64 stack unwinding is already correct — the shared blob was not a live bug. A
 `RtlCaptureStackBackTrace` walk driven from the bottom of a `main → frame_small → frame_mid →
 frame_big → deepest` chain reaches **every** mcc frame — including `frame_big`'s 16 KB
 `__chkstk` frame — at `-O0`/`-O2`/`-O3` (banked as `pe/unwind-backtrace`,

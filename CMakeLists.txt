@@ -8224,11 +8224,13 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(pe/coff-obj-diff PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                 LABELS "pe" TIMEOUT 300)
+            get_filename_component(_mingw_bin0 "${_MCC_MINGW_X86_64_GCC}" DIRECTORY)
             add_test(NAME pe/unwind-backtrace
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-unwind-backtrace.sh"
                         "$<TARGET_FILE:mcc>" "${_MCC_MINGW_X86_64_GCC}"
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-unwind-backtrace.c"
-                        "${CMAKE_BINARY_DIR}/pe-unwind-work")
+                        "${CMAKE_BINARY_DIR}/pe-unwind-work"
+                        "${_mingw_bin0}/objdump.exe")
             set_tests_properties(pe/unwind-backtrace PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                 LABELS "pe" TIMEOUT 300)

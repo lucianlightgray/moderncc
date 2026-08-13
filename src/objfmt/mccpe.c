@@ -2861,41 +2861,28 @@ PUB_FUNC int mcc_get_dllexports(const char *filename, char **pp) { MCC_TRACE("en
 }
 
 #ifdef MCC_TARGET_X86_64
-static unsigned pe_add_unwind_info(MCCState *s1) { MCC_TRACE("enter\n");
+static Section *pe_add_unwind_info(MCCState *s1) { MCC_TRACE("enter\n");
+	Section *xd;
 	if (NULL == s1->uw_pdata) { MCC_TRACE("br\n");
 		s1->uw_pdata = find_section(s1, ".pdata");
 		s1->uw_pdata->sh_addralign = 4;
 	}
+	xd = find_section(s1, ".xdata");
+	xd->sh_addralign = 4;
 	if (0 == s1->uw_sym)
-		{ MCC_TRACE("br\n"); s1->uw_sym = put_elf_sym(symtab_section, 0, 0, 0, 0, text_section->sh_num, ".uw_base"); }
-	if (0 == s1->uw_offs) { MCC_TRACE("br\n");
-		static const unsigned char uw_info[] = {
-				0x01,
-				0x04,
-				0x02,
-				0x05,
-				0x04,
-				0x03,
-				0x01,
-				0x50,
-		};
-
-		Section *s = text_section;
-		unsigned char *p;
-
-		section_ptr_add(s, -s->data_offset & 3);
-		s1->uw_offs = s->data_offset;
-		p = section_ptr_add(s, sizeof uw_info);
-		memcpy(p, uw_info, sizeof uw_info);
-	}
-
-	return s1->uw_offs;
+		{ MCC_TRACE("br\n"); s1->uw_sym = put_elf_sym(symtab_section, 0, 0, 0, 0,
+														 text_section->sh_num, ".uw_text_base"); }
+	if (0 == s1->uw_xsym)
+		{ MCC_TRACE("br\n"); s1->uw_xsym = put_elf_sym(symtab_section, 0, 0, 0, 0,
+															xd->sh_num, ".uw_base"); }
+	return xd;
 }
 
 ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { MCC_TRACE("enter\n");
 	MCCState *s1 = mcc_state;
-	Section *pd;
-	unsigned o, n, d;
+	Section *pd, *xd;
+	unsigned o, d;
+	unsigned char *q;
 	struct
 	{
 		DWORD BeginAddress;
@@ -2903,17 +2890,35 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { 
 		DWORD UnwindData;
 	} *p;
 
-	d = pe_add_unwind_info(s1);
+	/* One UNWIND_INFO per function in .xdata, so a function can carry its own
+	   exception handler (needed for SEH). mcc frames are always rbp-based:
+	   `push rbp` (prolog offset 1) then `mov rbp,rsp` (offset 4), so the two
+	   proven unwind codes UWOP_PUSH_NONVOL(rbp) and UWOP_SET_FPREG describe the
+	   frame for every prolog shape (small `sub rsp,N` and the __chkstk path):
+	   SET_FPREG recovers rsp from rbp regardless of the allocation. */
+	(void)stack;
+	xd = pe_add_unwind_info(s1);
+	section_ptr_add(xd, -xd->data_offset & 3);
+	d = xd->data_offset;
+	q = section_ptr_add(xd, 8);
+	q[0] = 0x01; /* Version 1, Flags 0 */
+	q[1] = 0x04; /* SizeOfProlog = 4 (rbp established by offset 4) */
+	q[2] = 0x02; /* CountOfCodes = 2 */
+	q[3] = 0x05; /* FrameRegister = rbp(5), FrameOffset = 0 */
+	q[4] = 0x04; /* code[0] CodeOffset = 4 */
+	q[5] = 0x03; /*         UWOP_SET_FPREG (op 3, info 0) */
+	q[6] = 0x01; /* code[1] CodeOffset = 1 */
+	q[7] = 0x50; /*         UWOP_PUSH_NONVOL (op 0), info 5 = rbp */
+
 	pd = s1->uw_pdata;
 	o = pd->data_offset;
 	p = section_ptr_add(pd, sizeof *p);
-
 	p->BeginAddress = start;
 	p->EndAddress = end;
 	p->UnwindData = d;
-
-	for (n = o + sizeof *p; o < n; o += sizeof p->BeginAddress)
-		{ MCC_TRACE("br\n"); put_elf_reloc(symtab_section, pd, o, R_XXX_RELATIVE, s1->uw_sym); }
+	put_elf_reloc(symtab_section, pd, o, R_XXX_RELATIVE, s1->uw_sym);
+	put_elf_reloc(symtab_section, pd, o + 4, R_XXX_RELATIVE, s1->uw_sym);
+	put_elf_reloc(symtab_section, pd, o + 8, R_XXX_RELATIVE, s1->uw_xsym);
 }
 
 #elif defined(MCC_TARGET_ARM64)
