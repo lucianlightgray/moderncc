@@ -51,6 +51,24 @@
 #    subject now links with -lm, which is what lets bfold fire at -O0..-O4:
 #    bfold folds a constant-arg libm call, and at -O0 nothing folds, so the
 #    call has to be linkable.
+# 13. bsweep.{F32,F64}.FSCALE -- 4 rows, new to this bank on 2026-08-13 and
+#    already triaged on the arm64 bank as note 6 there. NOT a value
+#    difference: of the 8192 sweep points, the ones that differ all produce a
+#    NaN and differ in the sign bit alone -- mcc gives 0x7fc00000 where clang
+#    gives 0xffc00000 and vice versa. IEEE 754 leaves the sign of a NaN result
+#    of an arithmetic operation unspecified. mcc agrees with gcc-15 on every
+#    row, so this is diverge-one and a reference disagreement.
+# 14. Ten rows moved from diverge-both to refs-disagree with no change of
+#    value: bsweep.F16.FSCALE, csweep.{C32,C64}.CMULADD and the four shl.*
+#    rows. `5c71bc20` gave smokerun a third verdict class for the case where
+#    the two references disagree with EACH OTHER, which this file's own rule
+#    says is UB or implementation-defined and not a defect. The rows are the
+#    same rows; only the class is new. That commit landed on the arm64 host
+#    and banked only bails-arm64-macos.txt, which left this bank describing a
+#    classifier that no longer exists and made smoke/divergence red on
+#    x86_64-linux -- the standing inner-loop gate, red on the host the rule
+#    was written for.
+
 O0 replay-fallback:len 2
 O1 replay-fallback:len 2
 O13 strat-dark:abs 1
@@ -79,8 +97,6 @@ O9 dev-slice-refused:no-static-type 515
 O9 dev-slice-refused:unsupported-op 1
 div diverge-both:bsweep.F16.FMULADD.fold 1
 div diverge-both:bsweep.F16.FMULADD.run 1
-div diverge-both:bsweep.F16.FSCALE.fold 1
-div diverge-both:bsweep.F16.FSCALE.run 1
 div diverge-both:bsweep.F80.FSELMIXB.fold 1
 div diverge-both:bsweep.F80.FSELMIXB.run 1
 div diverge-both:bsweep.F80.FSELMIXL.fold 1
@@ -93,14 +109,10 @@ div diverge-both:csweep.C32.CDIV.fold 1
 div diverge-both:csweep.C32.CDIV.run 1
 div diverge-both:csweep.C32.CDIVSEL.fold 1
 div diverge-both:csweep.C32.CDIVSEL.run 1
-div diverge-both:csweep.C32.CMULADD.fold 1
-div diverge-both:csweep.C32.CMULADD.run 1
 div diverge-both:csweep.C64.CDIV.fold 1
 div diverge-both:csweep.C64.CDIV.run 1
 div diverge-both:csweep.C64.CDIVSEL.fold 1
 div diverge-both:csweep.C64.CDIVSEL.run 1
-div diverge-both:csweep.C64.CMULADD.fold 1
-div diverge-both:csweep.C64.CMULADD.run 1
 div diverge-both:f16.muladd.doubleround.den.run 1
 div diverge-both:f16.muladd.doubleround.run 1
 div diverge-both:f16.scale.doubleround.run 1
@@ -108,10 +120,6 @@ div diverge-both:fsweep.F16.FMULADD.fold 1
 div diverge-both:fsweep.F16.FMULADD.run 1
 div diverge-both:fsweep.F16.FSCALE.fold 1
 div diverge-both:fsweep.F16.FSCALE.run 1
-div diverge-both:shl.si.w.fold 1
-div diverge-both:shl.si.wp1.fold 1
-div diverge-both:shl.sll.w.fold 1
-div diverge-both:shl.sll.wp1.fold 1
 div diverge-both:x.uint.from.1e300.fold 1
 div diverge-both:x.uint.from.1e300.run 1
 div diverge-both:xsweep.F16.UI.fold 1
@@ -320,6 +328,10 @@ div diverge-one:bsweep.F16.FMUL.fold 1
 div diverge-one:bsweep.F16.FMUL.run 1
 div diverge-one:bsweep.F16.FNEG.fold 1
 div diverge-one:bsweep.F16.FNEG.run 1
+div diverge-one:bsweep.F32.FSCALE.fold 1
+div diverge-one:bsweep.F32.FSCALE.run 1
+div diverge-one:bsweep.F64.FSCALE.fold 1
+div diverge-one:bsweep.F64.FSCALE.run 1
 div diverge-one:csweep.C32.CADD.fold 1
 div diverge-one:csweep.C32.CADD.run 1
 div diverge-one:csweep.C32.CMUL.fold 1
@@ -332,5 +344,15 @@ div diverge-one:mul.si.max.2.run 1
 div diverge-one:mul.si.min.m1.run 1
 div diverge-one:neg.si.min.run 1
 div diverge-one:sub.si.min1.run 1
+div refs-disagree:bsweep.F16.FSCALE.fold 1
+div refs-disagree:bsweep.F16.FSCALE.run 1
+div refs-disagree:csweep.C32.CMULADD.fold 1
+div refs-disagree:csweep.C32.CMULADD.run 1
+div refs-disagree:csweep.C64.CMULADD.fold 1
+div refs-disagree:csweep.C64.CMULADD.run 1
+div refs-disagree:shl.si.w.fold 1
+div refs-disagree:shl.si.wp1.fold 1
+div refs-disagree:shl.sll.w.fold 1
+div refs-disagree:shl.sll.wp1.fold 1
 wrapv wrapv-inert:digest-identical-under-fno-wrapv 1
 wrapv wrapv-inert:digest-identical-under-fwrapv 1
