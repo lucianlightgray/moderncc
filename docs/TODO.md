@@ -1166,12 +1166,41 @@ that must neither signal nor quiet.
 
 **It is `_Float16`-specific**, which names the mechanism: the identical sNaN through `float`
 (`7f800001 → ff800001`) and `double` (`7ff0…01 → fff0…01`) is correct in mcc, so f32/f64 negate
-natively while **f16 negation is lowered through a promotion to `float` and back, and the
-`f16→f32→f16` round-trip quiets the payload**. Fix the lowering to flip the sign bit in place.
-Reproducer is four lines and needs no corpus. Note this row was *already banked* as
-`div diverge-one:bsweep.F16.FNEG.{fold,run}` in **both** `bails.txt` and
-`bails-arm64-macos.txt` — it has been visible as a single-reference disagreement the whole time
-and nobody could tell which side was wrong.
+natively while f16 negation is lowered through a promotion to `float` and back.
+
+**The exact lowering, located 2026-08-12** — `unary()`'s `case '-'` in `src/mccgen.c`:
+
+```
+} else if (is_float16(vtop->type.t)) {
+        gen_cast_s(VT_FLOAT);
+        if (!gen_negf_const_ref())
+                gen_opif(TOK_NEG);
+        gen_cast_s(VT_FLOAT16);
+}
+```
+
+The `f16 → f32 → f16` round-trip is the quieting: a conversion is an arithmetic operation and
+signals on an sNaN, returning a quiet one, where negation must do neither.
+
+**The fix has more substrate than expected, and this is the actionable part.**
+`gen_negf_const_ref` **already flips the sign byte in place** — it copies the constant to
+`rodata`, computes the sign byte via `float_sign_byte(bt, size)` and inverts it — which is
+precisely the operation `_Float16` needs. It simply excludes the type:
+`if (bt != VT_FLOAT && bt != VT_DOUBLE && bt != VT_LDOUBLE) return 0;`. Admitting `VT_FLOAT16`
+there, and calling it **before** the promotion rather than between the two casts, fixes the
+constant path with no new codegen.
+
+**Do not fix only that half.** Today `.fold` and `.run` produce the *same* wrong digest
+(`a2b76db693d8cd25`), so they agree with each other; fixing the constant path alone would make
+them disagree, converting one conformance defect into a fold/run inconsistency, which this file
+treats as the more serious class. The runtime half needs either a native half-precision negate in
+the backend or a sign-bit XOR on the 16-bit pattern through a GP register, and neither exists
+today — `VT_FLOAT16` appears only 14 times across all `src/arch/*/*.c`, none of them arithmetic.
+
+**Reproducer, four lines and no corpus:** negate every one of the 65536 `_Float16` bit patterns
+and compare against `bits ^ 0x8000`. gcc-16 and clang give 0 mismatches; mcc gives 1022.
+
+
 
 **The 10 complex categories — partly triaged 2026-08-12, and still open.**
 
