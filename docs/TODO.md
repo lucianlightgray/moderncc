@@ -1193,9 +1193,23 @@ constant path with no new codegen.
 **Do not fix only that half.** Today `.fold` and `.run` produce the *same* wrong digest
 (`a2b76db693d8cd25`), so they agree with each other; fixing the constant path alone would make
 them disagree, converting one conformance defect into a fold/run inconsistency, which this file
-treats as the more serious class. The runtime half needs either a native half-precision negate in
-the backend or a sign-bit XOR on the 16-bit pattern through a GP register, and neither exists
-today — `VT_FLOAT16` appears only 14 times across all `src/arch/*/*.c`, none of them arithmetic.
+treats as the more serious class.
+
+**The runtime half was attempted 2026-08-12 and backed out; the blocker is one level below where
+it looks.** arm64 has a native half-precision negate and `gen_opf`'s `TOK_NEG` arm is *two
+characters* from emitting it: it does `o(0x1e214000 | dbl << 22 | …)`, where bits 23-22 are the
+FP type field, and `dbl` yields 0 for single and 1 for double. **Half is ftype 3.** Verified
+against clang's own output — `fneg h0,h0` assembles to **`0x1ee14000`**, against `0x1e214000`
+single and `0x1e614000` double — and clang emits exactly one instruction with no promotion, which
+is precisely why it preserves the sNaN.
+
+Making that change plus dropping the frontend's promote/demote **compiles and then aborts**:
+`Assertion failed: (0), function load, file arm64-gen.c, line 720`. The backend cannot hold a
+`_Float16` in an FP register at all — `load`'s register-to-register arm has no `VT_FLOAT16` case
+and falls to `assert(0)`. **So the promote/demote is not laziness, it is the only lowering the
+register layer currently supports**, and the real work is `load`/`store`/`gv` learning the type,
+not the negate. Reverted; the tree is back to 1022 mismatches. `VT_FLOAT16` appears 14 times
+across all `src/arch/*/*.c` and none is arithmetic, which is consistent with that reading.
 
 **Reproducer, four lines and no corpus:** negate every one of the 65536 `_Float16` bit patterns
 and compare against `bits ^ 0x8000`. gcc-16 and clang give 0 mismatches; mcc gives 1022.
