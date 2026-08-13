@@ -1445,8 +1445,8 @@ N2's record widening is its prerequisite**, not the other way round.
 
 | # | edit | size | depends | host |
 | --- | --- | --- | --- | --- |
-| A1 | `ast_locrec_skip` takes `(size, align)` and calls `ast_locrec_take`; its one call site already computed `rsz`/`ral` three lines above | small | — | any |
-| A2 | hoist `ast_locrec_n = 0; ast_locrec_min = 0;` out of `ast_func_begin`'s `rir_try_active` block | 2 lines | — | any |
+| ~~A1~~ | ~~`ast_locrec_skip` takes `(size, align)`~~ **DONE 2026-08-12** (`8a92ee01`) | small | — | any |
+| ~~A2~~ | ~~hoist the record reset out of `rir_try_active`~~ **DONE 2026-08-12**. The hazard was held shut by three separate gates rather than by the reset | 2 lines | — | any |
 | A3 | widen `rir_locrec` with `sz`/`al` + `rir_locrec_min`; resync **then** fit, never the reverse | small | — | any |
 | A4 | the C2-bypass fix — **reordering is wrong**, see below | small | A3 | any (fires at every `-O1`+ here) |
 | A5 | widen `rir_slotrec`; `rir_hook_slot_replay/_record` take `(size, align)` | small | — | arm64 site is `#if !defined(MCC_TARGET_MACHO)` — **Linux** |
@@ -1478,7 +1478,7 @@ never failed is the thing this whole cluster is about.
 | B1 | **`ast_search_emit_size` leaks `.data`/`.rodata` — see the hazard below. NOT a 6-line fix.** | — | — | — |
 | B2 | `struct AstReemitFn` gains `body_ind/body_len/reloc0/rel_len`, copied from `AstBaselineFn` | small | — | any |
 | B3 | five `AST_SG_*` bits at 42–46 | small | — | any |
-| B4 | `ast_jit_submit_aot` passes `ast_search_gates_now()` instead of a literal `0` | 3 lines | — | reachable on arm64 |
+| ~~B4~~ | ~~`ast_jit_submit_aot` passes `ast_search_gates_now()`~~ **DONE 2026-08-12**. The zero was **not inert** — `have_override && override_mask` is false for 0, so AOT submissions were recompiled by `ast_reemit_extern` under ambient gates and `warm_gates` stayed 0, disabling warm start for them. Two no-ops from one literal | 3 lines | — | arm64 |
 | B5 | add the five to `ast_search_gates_now`/`_set`; **deliberately not** to `ast_search_searchable` | small | B3 | any |
 | B6 | orphan report from B2's fields: `ast.orphan_fn`/`_bytes`/`_relocs` | small | B2 | any |
 | B7 | **`ast_reemit` emits no `mcc_debug_funcend` and no FDE**, so after a forward-inline re-emit `-g` and `.eh_frame` describe the *dead* range and the live body has neither | medium | B6 | assert on Linux |
