@@ -1449,21 +1449,36 @@ constant path with no new codegen.
 them disagree, converting one conformance defect into a fold/run inconsistency, which this file
 treats as the more serious class.
 
-**The runtime half was attempted 2026-08-12 and backed out; the blocker is one level below where
-it looks.** arm64 has a native half-precision negate and `gen_opf`'s `TOK_NEG` arm is *two
-characters* from emitting it: it does `o(0x1e214000 | dbl << 22 | …)`, where bits 23-22 are the
-FP type field, and `dbl` yields 0 for single and 1 for double. **Half is ftype 3.** Verified
-against clang's own output — `fneg h0,h0` assembles to **`0x1ee14000`**, against `0x1e214000`
-single and `0x1e614000` double — and clang emits exactly one instruction with no promotion, which
-is precisely why it preserves the sNaN.
+**Attempted twice, backed out twice, and the route is now fully specified — 2026-08-13.**
 
-Making that change plus dropping the frontend's promote/demote **compiles and then aborts**:
-`Assertion failed: (0), function load, file arm64-gen.c, line 720`. The backend cannot hold a
-`_Float16` in an FP register at all — `load`'s register-to-register arm has no `VT_FLOAT16` case
-and falls to `assert(0)`. **So the promote/demote is not laziness, it is the only lowering the
-register layer currently supports**, and the real work is `load`/`store`/`gv` learning the type,
-not the negate. Reverted; the tree is back to 1022 mismatches. `VT_FLOAT16` appears 14 times
-across all `src/arch/*/*.c` and none is arithmetic, which is consistent with that reading.
+**Attempt 1 was the wrong target.** arm64's native `fneg h0` is `0x1ee14000` (ftype 3, verified
+against clang's own output), and `gen_opf`'s `TOK_NEG` arm is two characters from emitting it.
+It aborts: `Assertion failed: (0), function load, file arm64-gen.c, line 720` — `load`'s
+register-to-register arm has no `VT_FLOAT16` case. **But that is irrelevant**, because the value
+is never in an FP register: `R_RET` returns **`REG_IRET`** for `VT_FLOAT16`, so a half already
+lives in a *general* register. Generalising from that failed approach to "needs FP register
+support" was wrong.
+
+**Attempt 2 found the right operation and two real constraints.** Retype the vstack entry to
+`unsigned short`, `gen_op('^')` with `0x8000`, retype back — no promotion, so the payload
+survives. It **works**: the exhaustive sweep over all 65536 half patterns goes 1022 mismatches to
+**0**, mcc/gcc-16/clang all digest `6d24f705d63b0383`, and `bsweep.F16.FNEG` leaves the
+divergence arm's diverge-both list (12 → 10). It is backed out only because of *where* it breaks:
+
+1. **A bare retype breaks non-scalar contexts** — `tests/smoke/fcases.h` fails to compile with
+   `invalid operand types for binary operation`.
+2. **Forcing the value to a register first (`gv(MCC_RC_INT)`) fixes that and breaks the other
+   end** — `'_Float16' conversion is not a load-time constant`, because a static initializer
+   needs the negation folded, not emitted.
+
+**So the finished shape is a constant/runtime split**: fold the sign bit in the `SValue` for a
+compile-time constant (`gen_negf_const_ref` already does the rodata case and merely excludes
+`VT_FLOAT16`), and do the `^ 0x8000` retype for the runtime case. Both halves must land together
+— fixing only the constant path makes `.fold` and `.run` disagree.
+
+**Nothing else blocks the oracle flip.** With this fixed the divergence arm is 10 diverge-both,
+all of them the implementation-defined complex NaN selection reduced above, and 22
+references-disagree.
 
 **Reproducer, four lines and no corpus:** negate every one of the 65536 `_Float16` bit patterns
 and compare against `bits ^ 0x8000`. gcc-16 and clang give 0 mismatches; mcc gives 1022.
