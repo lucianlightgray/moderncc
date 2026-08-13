@@ -4733,10 +4733,21 @@ mcc-vs-`cl`, not mcc-vs-mingw. And W6 stays **blocked on W4**: a handler is only
 truthful per-function `UNWIND_INFO` with `UNW_FLAG_EHANDLER`, which is exactly the metadata-fidelity
 work the W4 note says is still open (the current shared blob unwinds correctly but carries no handler
 slot). So the dependency is not bookkeeping — W6 cannot be built until W4's real per-function
-`UNWIND_INFO` exists. It remains the largest, most-deferred item: a from-scratch EH backend (three
-keywords + statement forms, scope tables, `__C_specific_handler` on x64, the `FS:[0]` chain on i386)
-whose only verification path is MSVC. Correctly below the GPU/optimizer work and last in the
-W4→W6 chain. Parser, scope tables, `__C_specific_handler` on x64 and the FS:[0] chain on i386.
+`UNWIND_INFO` exists. **W4's per-function `UNWIND_INFO` now exists (landed above), so that specific
+blocker is cleared** — a function can now carry its own `UNW_FLAG_EHANDLER`. **But dumping MSVC
+`cl`'s own SEH output (2026-08-13) shows the remaining work is larger than "attach a handler": it
+needs funclet generation.** For `int f(int*p){int r=0; __try{r=*p;} __except(1){r=-1;} return r;}`,
+`cl` emits a `.xdata` of 0x28 bytes containing **two** `UNWIND_INFO` records — the main body
+*and a separate out-of-line handler funclet* — followed by the C scope table
+(`Count=1; {BeginAddress, EndAddress, HandlerAddress(filter), JumpTarget(__except body)}`) and the
+`__C_specific_handler` RVA, with 5 relocations. The main record has `Flags=EHANDLER(1)`. So a
+correct x64 SEH implementation requires mcc to (a) parse the three keywords, (b) **emit the
+`__except`/`__finally` bodies as out-of-line funclets with their own `UNWIND_INFO`** — a structural
+change to mcc's linear one-pass emitter — (c) build the per-function `SCOPE_TABLE` as the
+`UNWIND_INFO` language-specific data with `ADDR32NB` relocs, (d) set `EHANDLER` and point at
+`__C_specific_handler` (present in the CRT import libs). The funclet codegen is the hard part and the
+reason this stays the largest, last item; its only verification path is MSVC (mingw-gcc lacks
+`__try`). `__C_specific_handler` on x64, the `FS:[0]` chain on i386. Parser, scope tables, `__C_specific_handler` on x64 and the FS:[0] chain on i386.
 Differential: filter-expression ordering, `__finally` on both normal and unwinding exit,
 and `20101011-1`'s divide-by-zero. **Requires W4** — a handler needs a truthful
 `UNWIND_INFO` to be reached at all.
