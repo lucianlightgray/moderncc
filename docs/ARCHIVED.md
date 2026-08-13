@@ -29257,10 +29257,21 @@ the canonical CI box, which never measures them because it lacks those sysroots.
   and `runtime-bench-gatewin`'s row now states **both** of its 77 causes (the absent
   `vendor/plb` subject *and* the native-only gating), correcting a row that named only the first.
 - **`tools/build.c`** now lists `arm-win32` (folded into W7 above).
+- **`MCC_WINE` / `MCC_WINE_REQUIRED` cache variables.** A wine-less host green-skipped the PE
+  tiers; `MCC_WINE_REQUIRED=ON` now makes that a hard failure instead, and `MCC_WINE` pins the
+  wine binary. Threaded through the CMake cell env, `run-tier.sh`, and `suite_pewine`. Verified:
+  with no wine on PATH, `MCC_WINE_REQUIRED=1` → `FAIL` exit 1, `=0` → `SKIP` exit 77; the win32
+  wine cells stay green at the default (`OFF`).
 
 `pe/short-import` already had its `else()` arm by the time this landed, so that item of the
-plan's housekeeping list was a no-op. Left open deliberately: the `MCC_WINE` / `MCC_WINE_REQUIRED`
-cache variables (a wine-less host still green-skips rather than failing on demand — a multi-file
-change threaded through the shell/harness skip paths), and the "stale i386 message" the plan
-mentions without a locator (no message could be identified with confidence, and guess-editing a
-diagnostic is worse than leaving it).
+plan's housekeeping list was a no-op. The one housekeeping item left open is the "stale i386
+message" the plan mentions without a locator — every i386 message in `CMakeLists.txt` was checked
+and none reads as stale, so there is nothing to fix without inventing one.
+
+**W1 (the wine cross-oracle) is blocked on absent vendor prerequisites, not just the missing
+mingw host oracle.** The corpus the pilot adjudicated — `vendor/gcc-c-torture-execute` — is not
+in this checkout (vendor/ carries only the `gentoo-stage3-*` sysroots and `musl-*`), and there is
+no Linux-hosted mingw compiler to serve as the oracle (no `x86_64-w64-mingw32-gcc`, and no
+passwordless sudo to install one). Both are the same class of missing vendor/ prerequisite that
+leaves four `o0-baseline` keys unmeasured here. W3/W4/W5/W6 remain the large backend gaps, open
+in `docs/TODO.md`.

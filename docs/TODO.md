@@ -3303,13 +3303,18 @@ target, the `o0_ab.sh` twin check is retired, the three `arm-wince.*` banks are 
 landed 2026-08-13; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md):* ~~give `pe/short-import` and~~
 `exec-gatecombo/*` ~~`else()` arms~~ (done; `pe/short-import` already had one); ~~give
 `pe-wine-conformance` the `run-tier.sh` wineserver teardown~~ (done, in `suite_pewine`); ~~add
-`RESOURCE_LOCK "wine"` to the wine cells~~ (done); **still open:** add `MCC_WINE` and
+`RESOURCE_LOCK "wine"` to the wine cells~~ (done); ~~add `MCC_WINE` and
 `MCC_WINE_REQUIRED` cache variables so a wine-less host can be made to fail rather than
-green-skip; ~~add `pe-wine-conformance` and `run-tier/{x86_64,i386}-win32` to
-`tests/must-run.txt`~~ (done); ~~correct `tests/must-run.txt` to state both of
-`runtime-bench-gatewin`'s causes~~ (done); ~~add `arm-win32` to `tools/build.c`~~ (done, folded
-into W7); **still open (unlocated):** fix the stale i386 message at `CMakeLists.txt` — no such
-message could be pinned down with confidence.
+green-skip~~ (done — `MCC_WINE_REQUIRED=ON` → FAIL exit 1, verified); ~~add `pe-wine-conformance`
+and `run-tier/{x86_64,i386}-win32` to `tests/must-run.txt`~~ (done); ~~correct
+`tests/must-run.txt` to state both of `runtime-bench-gatewin`'s causes~~ (done); ~~add `arm-win32`
+to `tools/build.c`~~ (done, folded into W7); **still open (unlocated):** fix the stale i386 message
+at `CMakeLists.txt` — every i386 message was checked and none reads as stale, so nothing to fix.
+
+**W1–W6 remain open.** W1 (wine cross-oracle) is blocked here on absent vendor prerequisites: the
+`vendor/gcc-c-torture-execute` corpus is not in this checkout and there is no Linux-hosted mingw
+oracle (no passwordless sudo to install one). W3 (COFF writer), W4 (per-function `UNWIND_INFO`),
+W5 (CodeView) and W6 (SEH) are the large backend gaps and are unchanged.
 
 ### 6. The verdict, and the sequencing
 

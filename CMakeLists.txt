@@ -4943,6 +4943,10 @@ if(MCC_BUILD_TESTS)
             endforeach()
         endforeach()
 
+        set(MCC_WINE "" CACHE STRING
+            "wine binary the PE test tiers should prefer (empty: auto-detect wine64/wine/...)")
+        set(MCC_WINE_REQUIRED OFF CACHE BOOL
+            "fail (rather than skip) the PE wine tiers when no wine is found on this host")
         foreach(_rt x86_64 i386 arm arm64 riscv64
                     x86_64-win32 i386-win32 x86_64-osx arm64-osx)
             set(_rtfixreq "MCC_BUILT;MCC_CROSS_BUILT")
@@ -4964,6 +4968,10 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(run-tier/${_rt} PROPERTIES
                 FIXTURES_REQUIRED "${_rtfixreq}" SKIP_RETURN_CODE 77
                 ${_rtlock} ${_rtlabels} TIMEOUT 1800)
+            if(_rt MATCHES "win32$")
+                set_tests_properties(run-tier/${_rt} PROPERTIES
+                    ENVIRONMENT "MCC_WINE=${MCC_WINE};MCC_WINE_REQUIRED=${MCC_WINE_REQUIRED}")
+            endif()
         endforeach()
         foreach(_rt arm64-win32 arm-win32)
             mcc_skip_test(run-tier/${_rt}
@@ -8109,7 +8117,9 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 --work "${CMAKE_BINARY_DIR}/pe-wine-work")
     set_tests_properties(pe-wine-conformance PROPERTIES
         FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "wine" SKIP_RETURN_CODE 77
-        RESOURCE_LOCK "wine" TIMEOUT 600)
+        RESOURCE_LOCK "wine"
+        ENVIRONMENT "MCC_WINE=${MCC_WINE};MCC_WINE_REQUIRED=${MCC_WINE_REQUIRED}"
+        TIMEOUT 600)
 
     if(MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
 

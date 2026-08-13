@@ -217,14 +217,21 @@ elf)
 	;;
 pe)
 	case "$triple" in
-	i386-win32) for w in wine wine32 wine-proton-10.0.4; do
-			command -v "$w" >/dev/null 2>&1 && { WINE=$w; break; }
-		done ;;
-	*) for w in wine64 wine wine64-proton-10.0.4; do
-			command -v "$w" >/dev/null 2>&1 && { WINE=$w; break; }
-		done ;;
+	i386-win32) _wl="wine wine32 wine-proton-10.0.4" ;;
+	*) _wl="wine64 wine wine64-proton-10.0.4" ;;
 	esac
-	[ -n "$WINE" ] || skip "no wine for $triple"
+	[ -n "$MCC_WINE" ] && _wl="$MCC_WINE $_wl"
+	for w in $_wl; do
+		command -v "$w" >/dev/null 2>&1 && { WINE=$w; break; }
+	done
+	if [ -z "$WINE" ]; then
+		case "${MCC_WINE_REQUIRED:-}" in
+		"" | 0 | OFF | off | FALSE | false | NO | no)
+			skip "no wine for $triple" ;;
+		*)
+			fail "MCC_WINE_REQUIRED is set but no wine for $triple was found" ;;
+		esac
+	fi
 	# The wineserver that goes with the wine picked above, so cleanup() can shut
 	# down this prefix's server without touching any other one: a suffixed build
 	# (wine64-proton-10.0.4) carries the same suffix on its server.

@@ -2323,10 +2323,28 @@ static int suite_pewine(int argc, char **argv) {
 		fprintf(stderr, "usage: mccharness pewine --src --xb --work\n");
 		return 2;
 	}
-	have64 = host_find_tool_any(W64, NULL, wine64, sizeof wine64);
-	have32 = host_find_tool_any(W32, NULL, wine32, sizeof wine32);
-	if (!have64 && !have32)
+	{
+		const char *pin = getenv("MCC_WINE");
+		if (pin && *pin) {
+			const char *only[] = {pin, 0};
+			have64 = host_find_tool_any(only, NULL, wine64, sizeof wine64);
+			have32 = host_find_tool_any(only, NULL, wine32, sizeof wine32);
+		} else {
+			have64 = host_find_tool_any(W64, NULL, wine64, sizeof wine64);
+			have32 = host_find_tool_any(W32, NULL, wine32, sizeof wine32);
+		}
+	}
+	if (!have64 && !have32) {
+		const char *req = getenv("MCC_WINE_REQUIRED");
+		if (req && *req && strcmp(req, "0") && strcmp(req, "OFF")
+				&& strcmp(req, "off") && strcmp(req, "FALSE")
+				&& strcmp(req, "false") && strcmp(req, "NO")
+				&& strcmp(req, "no")) {
+			fprintf(stderr, "FAIL: MCC_WINE_REQUIRED is set but no wine was found\n");
+			return 1;
+		}
 		ts_skip("no wine found");
+	}
 
 	ts_path(conf, sizeof conf, src, "tests/qemu/conformance");
 	ts_path(prefix, sizeof prefix, work, ".wineprefix");
