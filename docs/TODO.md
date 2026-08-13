@@ -1099,6 +1099,48 @@ until the 34 are triaged, which is a scheduling decision and not one to take sil
 one `find_program` line (prefer the already-resolved real-GNU `DIFF3_GCC` rather than a version
 ladder that rots). **Do it together with triaging the 34**, not before.
 
+**Triage, 2026-08-12 — and the first thing it found is that `diverge-both` is two verdicts
+wearing one name.** Splitting the 34 on whether the two references agree with each other:
+
+| class | n | meaning |
+| --- | ---: | --- |
+| **references AGREE, mcc differs** | **12** | a real consensus disagreement — defect until proven otherwise |
+| references disagree, mcc differs from both | 22 | UB or implementation-defined; this file's own rule says **pin mcc's answer and record the disagreement**, which is the opposite of treating it as a regression |
+
+So **22 of the 34 are not defects at all**, and the harness cannot say so: `diverge-both` fires
+whenever mcc matches neither reference, without asking whether the references matched *each
+other*. `shl.si.w.fold` is the clean illustration — `mcc=1 gcc=0 clang=0x80000000`, a shift by the
+full width, i.e. textbook UB where all three are entitled to differ. **This is N23's lesson one
+level up**: N23 recorded that a *one*-reference host cannot separate "mcc is wrong" from "the
+references disagree"; it turns out the *two*-reference verdict does not separate them either.
+`smokerun` needs a third class (references-disagree) before the flip, or 22 false regressions
+land with the 12 real ones.
+
+**The 12 candidates:** `bsweep.F16.FNEG.{fold,run}`, `csweep.C32.CMULADD.{fold,run}`,
+`csweep.C64.{CMUL,CMULADD}.{fold,run}`, `csweep.C80.{CMUL,CMULADD}.{fold,run}`.
+
+**N30. `_Float16` negation quiets signaling NaNs. Root-caused 2026-08-12; a real defect, and the
+first one the second oracle paid for.** Sweeping all 65536 `_Float16` bit patterns through `-v`:
+gcc-16 and clang produce identical results, mcc differs on **1022** of them. 1022 is exactly the
+number of signaling `_Float16` NaNs — 2 signs × 511 nonzero mantissas with the quiet bit clear.
+Every one is the same error: `7c01 → fe01` where the answer is `fc01`, i.e. **mcc sets the quiet
+bit (0x0200) while flipping the sign**. IEEE 754 makes negation a non-arithmetic sign-bit flip
+that must neither signal nor quiet.
+
+**It is `_Float16`-specific**, which names the mechanism: the identical sNaN through `float`
+(`7f800001 → ff800001`) and `double` (`7ff0…01 → fff0…01`) is correct in mcc, so f32/f64 negate
+natively while **f16 negation is lowered through a promotion to `float` and back, and the
+`f16→f32→f16` round-trip quiets the payload**. Fix the lowering to flip the sign bit in place.
+Reproducer is four lines and needs no corpus. Note this row was *already banked* as
+`div diverge-one:bsweep.F16.FNEG.{fold,run}` in **both** `bails.txt` and
+`bails-arm64-macos.txt` — it has been visible as a single-reference disagreement the whole time
+and nobody could tell which side was wrong.
+
+**Still to triage: the 10 complex categories** (`C32.CMULADD`, `C64.CMUL/CMULADD`,
+`C80.CMUL/CMULADD`). Complex multiply and multiply-add have real gcc/clang latitude around
+infinities and NaN components, so expect a mix; do them the same way — exhaustive over the
+interesting quadrants, references first.
+
 **~~N25. `smokerun`'s reference pair is unchecked everywhere except the divergence arm.~~ — CLOSED 2026-08-12, same day it was opened.** `pass_oracle()` runs the same `__clang__`/`__GNUC__` probe and says which it got. No pass row changed answer, which is the expected result — the defect was in what the line claimed. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 **~~N21. The ladder census makes compilation non-deterministic.~~ — NOT A DEFECT, closed 2026-08-12.** Six bytes differ, the disassembly is identical, and the six bytes are `__TIME__`. The census only makes the compile slow enough for two runs to straddle a second. **STANDING TRAP: any object-identity comparison over `tests/exec` or `tests/diff` must export `SOURCE_DATE_EPOCH`** — it accounted for three separate claims in one day. `tests/gpu/always_gpu_parity.sh` got its object assertion back. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
