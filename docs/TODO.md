@@ -1497,12 +1497,26 @@ with and without `-DSM_REF_BUILD=1`, and the load-time-constant error is gone. *
 configuration `smokerun` uses that a direct `-O1 -Itests/smoke` build does **not** reproduce.
 Reverted; smoke is 12/12 again.
 
-**The next step is therefore not the fix, it is isolating smokerun's compile.** Read the exact
-argv it uses for its `compile-dump` arm (the log lands at `<work>/compile-dump.log`) and
-reproduce the error standalone first. `fcases.h:570` and `:803` are both function *closing*
-lines, so the reported line is a boundary rather than the offending expression — the real
-operand is somewhere in the `SMF_ARM` macro expansion above it, most likely a context where the
-negated value is neither a plain `VT_CONST` nor a loadable rvalue.
+**ISOLATED 2026-08-13. The failing configuration is `MCC_RIR_PROD=2` together with
+`MCC_RIR_ABORTWHY=1`** — `smokerun`'s `set_census_env` sets both. Neither reproduces alone, and
+`MCC_FORCE_REPLAY`, `MCC_AST_EVAL_LADDER` and linking-versus-`-c` are all **irrelevant**, which
+is what made this look configuration-shaped rather than code-shaped. Standalone reproducer:
+
+```
+MCC_RIR_PROD=2 MCC_RIR_ABORTWHY=1 mcc -w -O1 -Itests/smoke tests/smoke/subject.c -lm -o /tmp/x
+  -> tests/smoke/fcases.h:570: error: invalid operand types for binary operation
+  -> tests/smoke/fcases.h:803: error: invalid operand types for binary operation
+```
+
+So the defect is **in the RIR production-replay path, not in the negation**: the arena records
+the retyped `unsigned short` operand and the replay rebuilds it as something `gen_op` then
+rejects. Both cited lines are function *closing* braces, so the reported line is a boundary and
+the offending operand is inside the `SMF_ARM` expansion above it.
+
+**That reframes the remaining work.** Either the retype must be invisible to the arena — do the
+XOR without changing `vtop->type.t`, or restore the type before the node is recorded — or the
+capture must carry the original `VT_FLOAT16` type across the round trip. The first is the
+smaller change and is where to start.
 
 **Nothing else blocks the oracle flip.** With this fixed the divergence arm is 10 diverge-both,
 all of them the implementation-defined complex NaN selection reduced above, and 22
