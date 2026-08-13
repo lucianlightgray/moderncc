@@ -30,10 +30,10 @@ foreach(_s IN LISTS _subjects)
     execute_process(COMMAND "${_work}/${_nm}.ref"
                     RESULT_VARIABLE _refrc OUTPUT_VARIABLE _refout ERROR_QUIET)
 
-    execute_process(COMMAND "${MCC}" -B "${BINDIR}" -I "${SRCDIR}/runtime/include"
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E env MCC_RIR_REC_FORCE_MISS=1
+                            "${MCC}" -B "${BINDIR}" -I "${SRCDIR}/runtime/include"
                             -w -O2 "${_src}" -o "${_work}/${_nm}.miss" -lm -lpthread
-                    RESULT_VARIABLE _rc2 OUTPUT_QUIET ERROR_QUIET
-                    ENVIRONMENT MCC_RIR_REC_FORCE_MISS=1)
+                    RESULT_VARIABLE _rc2 OUTPUT_QUIET ERROR_QUIET)
     if(NOT _rc2 EQUAL 0)
         list(APPEND _bad "${_s}: build failed with MCC_RIR_REC_FORCE_MISS=1")
         continue()
@@ -49,10 +49,10 @@ foreach(_s IN LISTS _subjects)
     execute_process(COMMAND "${MCC}" -B "${BINDIR}" -I "${SRCDIR}/runtime/include"
                             -w -O2 -c "${_src}" -o "${_work}/${_nm}.plain.o"
                     RESULT_VARIABLE _rc3 OUTPUT_QUIET ERROR_QUIET)
-    execute_process(COMMAND "${MCC}" -B "${BINDIR}" -I "${SRCDIR}/runtime/include"
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E env MCC_RIR_REC_FORCE_MISS=1
+                            "${MCC}" -B "${BINDIR}" -I "${SRCDIR}/runtime/include"
                             -w -O2 -c "${_src}" -o "${_work}/${_nm}.miss.o"
-                    RESULT_VARIABLE _rc4 OUTPUT_QUIET ERROR_QUIET
-                    ENVIRONMENT MCC_RIR_REC_FORCE_MISS=1)
+                    RESULT_VARIABLE _rc4 OUTPUT_QUIET ERROR_QUIET)
     if(_rc3 EQUAL 0 AND _rc4 EQUAL 0)
         execute_process(COMMAND "${CMAKE_COMMAND}" -E compare_files
                                 "${_work}/${_nm}.plain.o" "${_work}/${_nm}.miss.o"

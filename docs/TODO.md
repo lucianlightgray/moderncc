@@ -1691,8 +1691,8 @@ finish inside `ladder_gpu_parity.cmake`'s `TIMEOUT 120`, which is exactly what w
 completed, so this is a regression or a configuration difference, not a permanent property of the
 host — **do not read that write-up as evidence the arm works today.**
 
-**N35. Three reds arrived from the arm64 host's last wave and one prerequisite, all verified
-pre-existing at `c7df5209`.** Found by running the whole `jit/ ast/ rir optlevel diff3/ superopt/
+**N35. Four reds arrived from the arm64 host's last two waves, all verified pre-existing.** Three
+at `c7df5209` and one more at `5825d894`, which landed mid-wave. Found by running the whole `jit/ ast/ rir optlevel diff3/ superopt/
 fmt/ docs/ ci/` family — 526 cells — on x86_64-linux, and confirmed by building `c7df5209` into a
 scratch tree and re-running there.
 
@@ -1701,6 +1701,7 @@ scratch tree and re-running there.
 | `rir-coverage-census` | `-O0 lowerable[elf] bodies_pct regressed: 15.4134% < banked 15.4642% over the WHOLE corpus` | **the ELF floor moved and only macho was re-banked.** `eee6c1f2` added per-format arena floors and banked macho *"so the ratchet arms here"*; the ELF side was left at its old number and this host is the one that measures it |
 | `rir-lowerable-classes` | `reg.c -O1/-O2/-O3: lowerable class reg no longer reproduces` (`-O0` still does) | **C5's own caveat coming true.** That fixture is a VLA, and the C5 write-up already warned that `reg.c` and `opaque.c` share one mechanism so *"a change to VLA lowering breaks both fixtures at once, and neither would isolate which class regressed"*. It cannot say what moved, by construction |
 | `jit/xoracle-coverage` | cannot reach `--min-cross 400` on one suite | **a missing prerequisite reported as a failure.** `MCC_XSUITE_LLVMTS` has no checkout here; configure already prints the explanation, and then the cell registers and fails instead of skipping with it. That is the shape `ci/registration-stubs` exists to prevent |
+| ~~`rir/rec-miss`~~ **CLOSED 2026-08-13** | `execute_process given unknown argument "ENVIRONMENT"` | **the cell could never run.** `execute_process` has no `ENVIRONMENT` option — that belongs to `set_tests_properties` — so `5825d894`'s new cell died on its first CMake statement, at both of its two injection sites. Rewritten as `${CMAKE_COMMAND} -E env MCC_RIR_REC_FORCE_MISS=1 …`. **It is a good cell**: 6 subjects, both floors present (`_ran < 4` and `_moved == 0`), and it reports *"the injection moved 3 object(s), so the frontier fallback is the code under test and not a no-op"* |
 
 **`rir-coverage-census` has a second, smaller cause that is this wave's**, and the two must not be
 conflated: `corpus wide drifted: banked 383 file(s) … this run walked 384`, because
