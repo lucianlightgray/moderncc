@@ -6986,6 +6986,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         -DMCC=$<TARGET_FILE:mcc>
                         -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
                         -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -DCPU=${MCC_CPU}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/rir_drop_ratchet.cmake")
             set_tests_properties("rir/drop-ratchet" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
