@@ -1,4 +1,16 @@
 {
+ "arm64|full_language.c": {
+  "baked_pct": 16.61,
+  "embedjit_gap_pt": 1.85,
+  "unfaithful_pct_O1": 2.21,
+  "unfaithful_pct_embedjit": 4.06
+ },
+ "arm64|selfhost": {
+  "baked_pct": 40.24,
+  "embedjit_gap_pt": 1.23,
+  "unfaithful_pct_O1": 2.02,
+  "unfaithful_pct_embedjit": 3.25
+ },
  "x86_64|full_language.c": {
   "baked_pct": 13.04,
   "embedjit_gap_pt": 1.36,

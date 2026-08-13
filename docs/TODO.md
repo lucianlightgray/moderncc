@@ -2047,28 +2047,35 @@ is **N15**.) No cell watches it: `tests/ast/rir_parity.cmake` compiles with `-w 
 never passes `--embed-jit`, so the banked `ast/rir-parity` cells cover `-O0`–`-O3` on the
 non-baking path only. Interacts with **N17** — every row here is a lower bound.
 
-**N18 reproduces on arm64/macOS, on a second object format, with `MCC_INV` alone** — measured
-2026-08-12, no trace build needed:
+**N18 reproduces on arm64/macOS, on a second object format, with `MCC_INV` alone — and as of
+2026-08-13 it is WATCHED there, not merely measured.** `ast/inv-faithful` and its known-positive
+went from Skipped to green on this host in 1.4 s each, because the arm64 column simply did not
+exist and the cell says so rather than passing vacuously (`SKIP: no banked figures for
+arm64|full_language.c`). Both columns are now banked:
 
-| target | arm | verdicted | unfaithful | |
-| --- | --- | ---: | ---: | --- |
-| `full_language.c` | `-O1` | 271 | 6 — 2.21% | |
-| `full_language.c` | `-O0 --embed-jit` | 271 | 11 — **4.06%** | +1.85 pt |
-| self-host | `-O1` | 2959 | 61 — 2.06% | |
-| self-host | `-O0 --embed-jit` | 2959 | 99 — **3.35%** | +1.29 pt |
+| target | arm | verdicted | unfaithful | | baked |
+| --- | --- | ---: | ---: | --- | ---: |
+| `full_language.c` | `-O1` | 271 | 6 — 2.21% | | |
+| `full_language.c` | `-O0 --embed-jit` | 271 | 11 — **4.06%** | +1.85 pt | 45 of 271 — 16.61% |
+| self-host | `-O1` | 3166 | 64 — 2.02% | | |
+| self-host | `-O0 --embed-jit` | 3166 | 103 — **3.25%** | +1.23 pt | 1274 of 3166 — 40.24% |
 
-Same direction and magnitude as the x86_64 table (+1.36 / +1.20), so the finding is
-architecture-independent. Bake rate here is 46/271 (17%) and 1436/2959 (48.5%) against 41/299
-(14%) and 1550/3163 (49%) on x86_64 — the input-dependence claim now has an arch dimension too.
+Same direction and magnitude as the x86_64 table (+1.36 / +1.19), so the finding is
+architecture-independent. **Two of the 2026-08-12 figures above were superseded rather than
+re-measured**: the self-host denominator was 2959 and is 3166, and the bake rate was quoted as
+48.5% and is 40.24% — both because N6.8 moved `jit.embed` from the call site of a function that
+can refuse to the append that makes the bake true. The x86_64 row moved the same way (49% → 39.91%)
+and for the same reason. The +1.2 to +1.9 point gap is the one quantity that did not move.
 
-**The coverage half needs no tool change**: the bank key is already
-`"%s|%s|%s" % (target, opt, "jit" if embed_jit else "nojit")`, so two `add_test` blocks mirroring
-the existing `-O1` pair with `--embed-jit` plus `--update-bank` closes it. **But do not bank it
-from this host until the key carries one**: `tools/emit-map.py` has **no host or arch term
-anywhere**, while `tools/rir-coverage.py` keys its floors by `MCC_HOST_*` for exactly this
-reason, and `emit_amplification` — an x86-only-meaningful quantity — is in `BANK_KEYS`. Banking
-here would overwrite the x86_64 numbers. **That is the real N18↔N19 coupling**; the
-`emit-map.py`-refactor coupling this file asserted between N19 and N6.8 does not exist.
+**The "do not bank from this host" caution is discharged, and the reason is worth keeping.** It
+applied to `tools/emit-map.py`, which has no arch term anywhere and carries `emit_amplification`
+— an x86-only-meaningful quantity — in `BANK_KEYS`, so banking *that* here would overwrite the
+x86_64 numbers. `tools/inv-faithful.py` is the other tool: its key is `"%s|%s" % (arch, target)`,
+it needs no trace build, and it takes 1.4 s. **Two tools measuring one property, one of which can
+be re-taken anywhere and one of which cannot** — the emit-map cells stay opt-in, trace-only and
+x86-gated (`emit-map.py` still `return 77`s on any non-x86 target, by design and with its reason
+printed). **That is the real N18↔N19 coupling**; the `emit-map.py`-refactor coupling this file
+asserted between N19 and N6.8 does not exist.
 
 **Also verified: N17's closure does not fully reproduce here.** `rir.rec == ast.body + ast.abort
 + ast.noreplay` holds exactly on `full_language.c` (276 = 271 + 2 + 3) at both `-O1` and
