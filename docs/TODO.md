@@ -1874,6 +1874,15 @@ force-replay, and the fixture was banking the leak. Harmless as far as anything 
 after the swap **nothing in the suite depends on it** — which is the argument for writing it down
 rather than chasing it.
 
+**`rir-nofb-probe-self` fails under `-j` and passes alone — measured three times, 2026-08-13.**
+Not a red and not filed as one, but it will waste somebody's afternoon. Contended in a `-j4`/`-j6`
+sweep it **fails** at 20.6 s and at 84.2 s; run by itself it **passes** at 539.7 s and at 726.9 s.
+It is not hitting a `TIMEOUT` — it exits early with a failure — so the symptom is a red cell and
+not a timeout row, which is what makes it look like a real defect. This is **N26's shape on a
+different cell**: whether it passes is a function of what else is running. Anything this file says
+about `rir-nofb-probe-self` must state what shared the machine, and the honest way to check it is
+alone.
+
 **N35. Five reds arrived from the arm64 host's last two waves, all verified pre-existing.** Three
 at `c7df5209` and two more at `5825d894`, which landed mid-wave. **Three of the five are now
 closed**; the two that remain are the ones that need a compiler attribution rather than a harness
