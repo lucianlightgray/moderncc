@@ -195,6 +195,22 @@ function(mcc_gnu_gcc_links_static cc outvar)
     endif()
 endfunction()
 
+function(mcc_compiler_family _exe outvar)
+    set(_probe "${CMAKE_BINARY_DIR}/CMakeFiles/mcc_family_probe.c")
+    file(WRITE "${_probe}" "int main(void){return 0;}\n")
+    execute_process(COMMAND "${_exe}" -dM -E "${_probe}"
+        OUTPUT_VARIABLE _defs ERROR_QUIET RESULT_VARIABLE _rc)
+    if(NOT _rc EQUAL 0)
+        set(${outvar} "unknown" PARENT_SCOPE)
+    elseif(_defs MATCHES "__clang__")
+        set(${outvar} "clang" PARENT_SCOPE)
+    elseif(_defs MATCHES "__GNUC__")
+        set(${outvar} "gnu-gcc" PARENT_SCOPE)
+    else()
+        set(${outvar} "unknown" PARENT_SCOPE)
+    endif()
+endfunction()
+
 function(mcc_find_gnu_gcc outvar)
     if(MCC_GNU_GCC)
         set(${outvar} "${MCC_GNU_GCC}" PARENT_SCOPE)
@@ -3408,8 +3424,23 @@ if(MCC_BUILD_TESTS)
             endif()
         endif()
     endif()
+    set(MCC_DIFF3_SAME_FAMILY OFF)
     if(DIFF3_GCC AND DIFF3_CLANG)
-        message(STATUS "mcc diff3 oracles: gcc=${DIFF3_GCC} clang=${DIFF3_CLANG}")
+        mcc_compiler_family("${DIFF3_GCC}" _diff3_gcc_family)
+        mcc_compiler_family("${DIFF3_CLANG}" _diff3_clang_family)
+        if(_diff3_gcc_family STREQUAL _diff3_clang_family)
+            set(MCC_DIFF3_SAME_FAMILY ON)
+            message(STATUS
+                "mcc diff3 oracles: ${DIFF3_GCC} and ${DIFF3_CLANG} are BOTH "
+                "${_diff3_gcc_family} -- these two references are one compiler, so a "
+                "three-way cell here cannot tell 'mcc is wrong' from 'the references "
+                "disagree and mcc picked one'. Every diff3/cref-oracle verdict on this "
+                "host is mcc-vs-${_diff3_gcc_family}, not a cross oracle. Set "
+                "MCC_DIFF3_GCC to a real GNU gcc to restore it.")
+        else()
+            message(STATUS "mcc diff3 oracles: gcc=${DIFF3_GCC} (${_diff3_gcc_family}) "
+                           "clang=${DIFF3_CLANG} (${_diff3_clang_family})")
+        endif()
     endif()
 
     function(mcc_skip_test _name _reason)

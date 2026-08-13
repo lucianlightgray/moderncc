@@ -1055,14 +1055,49 @@ the missing region cell** — a silent wrong answer rather than an absent one. *
 (~20 lines: return 0 on Metal until binding 2 exists, and correct the reason string) before
 anyone builds M4 on top of it.**
 
-**N28. `slice/cref-oracle` adjudicates clang with clang on this host — N25's shape, unfiled.**
-New 2026-08-12. The registration prefers a real GNU gcc, then falls back to
-`find_program(DIFF3_GCC NAMES gcc cc)`. Its own comment says *"on macOS those two are Apple
-clang, and clang adjudicating clang is not a cross oracle"* — **and it falls back anyway**, with
-no probe and no message. Checked: no `gcc-1x` on this machine, `/usr/bin/gcc` is Apple clang 21.
-This is exactly what N25 closed for `smokerun`, one instrument over. ~15 lines: reuse
-`pass_oracle()`'s `__clang__`/`__GNUC__` probe and skip with a reason. **It matters more than its
-size** — `cref-oracle` is the independent oracle both N7 and N6.10 are told to lean on.
+**~~N28. `slice/cref-oracle` adjudicates clang with clang on this host.~~ — WRONG AS FILED,
+corrected 2026-08-12 the same day, and the correction is much larger than the row.**
+
+The row asserted "no `gcc-1x` on this machine". **False. Homebrew GCC 16.1.0 is installed at
+`/opt/homebrew/bin/gcc-16`** (`__GNUC__ 16`, no `__clang__`). `mcc_find_gnu_gcc` finds it and
+`DIFF3_GCC` resolves to it, so `slice/cref-oracle` and the `diff3/*` family have had a genuine
+cross oracle here all along. The stale `DIFF3_GCC:FILEPATH=/usr/bin/gcc` in `cmake-macos`'s cache
+is a leftover, shadowed by the normal variable — which is exactly what the comment above that
+`find_program` says it is there to prevent.
+
+**A compiler-family probe was added anyway** (`mcc_compiler_family`, `__clang__` vs `__GNUC__`),
+because the fallback to `find_program(NAMES gcc cc)` is still live for hosts without a real gcc,
+and a same-family pair is now named at configure time instead of being silently registered as a
+cross oracle.
+
+**N29. The smoke oracle resolution misses the real gcc, so this host has been validating against
+one compiler when two were installed.** New 2026-08-12, and it supersedes N28. `CMakeLists.txt`
+does `find_program(MCC_SMOKE_GCC NAMES gcc-15 gcc)` — **`gcc-16` is not in that list**, `gcc-15`
+is absent here, so it falls through to `/usr/bin/gcc`, i.e. Apple clang. `smokerun` then does the
+right thing (N25's guard fires: *"are the same implementation family (clang) … dropping the
+second and reporting every difference as diverge-one"*), so the loudest verdict class in the
+suite has been **structurally unreachable on this host**, not merely unused.
+
+Re-run with `MCC_SMOKE_GCC=/opt/homebrew/bin/gcc-16`, the arm behaves completely differently:
+all 277 `DIVERGE` rows gain a real `clang=` column, 34 categories get **better**, 58 are new, and
+**34 `diverge-both` categories appear** — mcc differing from *both* independent references. They
+are not scattered. They fall in exactly two families:
+
+| family | what it is |
+| --- | --- |
+| `bsweep.F16.*` (`FMULADD`, `FNEG`, `FSCALE`, …) | `_Float16` — **this is item 22's subject**, which this file currently files as "may be no defect at all" |
+| `csweep.C32/C64/C80.*` (`CMUL`, `CMULADD`, `CDIV`, `CDIVSEL`) | `_Complex` at all three widths |
+
+Both land on areas this file already suspects, which is corroboration rather than noise. Per this
+file's own standing rule a `diverge-both` is **a defect until proven otherwise and must never be
+banked**, so the 34 are candidate defects and item 22's "no defect at all" reading now has
+evidence against it.
+
+**Deliberately not flipped.** Pointing `MCC_SMOKE_GCC` at `gcc-16` makes `smoke/divergence` exit
+1, and smoke is the standing inner-loop gate — turning it red blocks every subsequent validation
+until the 34 are triaged, which is a scheduling decision and not one to take silently. The fix is
+one `find_program` line (prefer the already-resolved real-GNU `DIFF3_GCC` rather than a version
+ladder that rots). **Do it together with triaging the 34**, not before.
 
 **~~N25. `smokerun`'s reference pair is unchecked everywhere except the divergence arm.~~ — CLOSED 2026-08-12, same day it was opened.** `pass_oracle()` runs the same `__clang__`/`__GNUC__` probe and says which it got. No pass row changed answer, which is the expected result — the defect was in what the line claimed. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
