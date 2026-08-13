@@ -1512,7 +1512,7 @@ fires for AOT-submitted functions at all. B4 turns two silent no-ops back on.
 | # | edit | size | depends | host |
 | --- | --- | --- | --- | --- |
 | C1 | **the loud-skip question — a policy call, see below** | — | — | — |
-| C2 | `sources` manifest floor: bank `{n, sha}` of the walked list, fail with the symmetric difference | small | — | any |
+| ~~C2~~ | ~~`sources` manifest floor~~ **DONE 2026-08-12.** Banked as `sources_{self,exec,wide}` = `{n, sha}` — **host-independent, it is the tree not the host**, so unlike the lowerable floors it needs no per-format schema. Verified by hiding one `tests/exec` file: fails naming 307→306 and the sha change. **Trap hit while doing it:** running `--update-bank` to produce the manifest also wrote a whole new `exec` ratchet entry with macho-derived coverage into the host-less schema; reverted, and the manifests computed directly instead | small | — | any |
 | ~~C3~~ | ~~gap-dir floor~~ **DONE 2026-08-12.** Fails on empty input (verified both directions) and now prints the honest denominator: *3 class(es) of 18 covered* | small | — | any |
 | ~~C4~~ | ~~low-dir floor~~ **DONE 2026-08-12.** Same shape; prints *7 blocker class(es) of 7 covered* and names any class lacking a fixture. The LOWCLS↔compiler parity check is **not** done and stays open | small | — | any |
 | ~~C5~~ | ~~write `tests/rir/low/reg.c`~~ **DONE 2026-08-12** — low fixtures are now **7 of 7** classes. See the caveat below | ~8 lines | — | any |
