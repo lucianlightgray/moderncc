@@ -492,6 +492,18 @@ four times now: fails at 20.6 s and 84.2 s contended, passes at 539.7 s and 726.
 not hit its `TIMEOUT`; it exits early with a failure, so it reads as an ordinary defect. N26's
 shape on a different cell.
 
+> **Fifth measurement, 2026-08-13 evening — and it is recorded here rather than added to that
+> series, because it does not belong to it.** The cell **passed at 1032.74 s** inside a
+> `-j8` run of its own 577-cell family. That is neither of the two states above: contended *and*
+> passing, at 1.4× the slowest solo time. **It is not evidence either way**, because the machine
+> was not quiet in the sense the series means — an unrelated process held roughly six cores for the
+> whole run, and by the time this cell was the last one left it had the box nearly to itself. Two
+> uncontrolled variables moving at once is one measurement of nothing. It is written down so the
+> next person does not read `577/577` as a fifth data point for "fails under `-j`", and so the
+> series keeps its meaning: **the four figures above were taken deliberately, this one was
+> observed.** Whoever settles this cell should fix the experiment before adding runs to it —
+> `RESOURCE_LOCK`, a stated load, or both.
+
 **Two prerequisites this host is missing, both of which silently shrink coverage rather than
 failing:**
 
@@ -825,15 +837,32 @@ through the already-audited `DIFF3_*` path, and have `bank_write` emit the resol
 plus the two-ladder split, plus the audit gap, plus retiring smokerun's private family probe. It
 does **not** settle N30 — that needs the fold/run class. **Two changes, this one first.**
 
-### Next steps, prioritised — re-ranked 2026-08-13 (third pass)
+### Next steps, prioritised — re-ranked 2026-08-13 (FOURTH pass, after the instrument wave)
 
-> **Six of the second pass's ten entries are now closed**, including three of its top five, so the
-> ordering below is new rather than a re-check. The rule is unchanged: cheapest-with-teeth first,
-> then by shared surface, then by severity, with the host stated on every entry. The second pass is
-> kept below in full because its *refutations* are still load-bearing — several of them are the
-> reason an entry is not on this list.
+> **The third pass's ranks 4, 5 and half of 8 are closed**, and the wave that closed them changed
+> what should come next, so this is a re-rank and not a re-check. The rule is unchanged:
+> cheapest-with-teeth first, then by shared surface, then by severity, with the host stated on
+> every entry. **The third pass is kept below in full, struck where it is closed**, because its
+> refutations are still load-bearing.
 >
-> **Live board rows: N3 (items 22 and 23), N6, N7, N18, N29.** Five of thirty-five.
+> **What is now first on THIS host is rank 3 of the third pass, unmoved and unclaimed:
+> `if-conversion-abs`.** Every entry above it in that list has either closed or belongs to the Mac.
+> It has been the strongest *measured* item on the board across three consecutive passes and it has
+> been skipped each time, which is a fact about the ranking rather than about the item: it is the
+> only entry whose cost is a **bench run on a quiet host** rather than a code change, and every
+> pass has preferred the code change. **This host is not quiet** — an unrelated process held ~6
+> cores through the 2026-08-13 evening run — so whoever takes it must say what the machine was
+> doing, or the n≥20 pairing buys nothing.
+>
+> **Live board rows: N3 (items 22 and 23), N6, N7, N29 — four of thirty-five.** N18 leaves this
+> line: its instrument half is closed and watched, and what remains of it is a defect, tracked in
+> the row rather than as a next step. N6.8 is closed in full.
+>
+> **New, from doing the work rather than from planning it:** `tests/emitmap/bank.json`'s
+> tolerances are wide enough to be unfalsifiable (`TOL` 1.0 on every percentage, and the selfhost
+> cell is *already* drifted inside them); and `rir-coverage.py`'s `wide` corpus reports **9
+> source(s) failed to compile** and computes every percentage over the remainder. Both are the
+> cluster thesis one level up — a number that is present, and cannot fail.
 
 **1. N29 — flip the smoke oracle, and take the 12 candidates with it.** *The Mac.* This is the
 largest single piece of unclaimed evidence on the board: pointing `MCC_SMOKE_GCC` at the real
@@ -852,9 +881,21 @@ each arm `TIMEOUT 120` and the device arm is 2.5–2.7× slower by design. Resid
 cannot see even then: the `n == 0` const case, the corner sweep, the observed rung, and every rung
 the GPU refuses.
 
-**3. `if-conversion-abs` ships at level 2 and its own bench says it makes code worse.** *Any host;
-an arm64 re-take is meaningful.* Unmoved from the second pass and still the strongest *measured*
-item on the board: `gain_movers −0.5668`, `gain_pct −0.0334`, `branchy −0.5700`, reproduced to the
+**3. `if-conversion-abs` ships at level 2 and its own bench says it makes code worse. — NOW FIRST
+on x86_64-linux, 2026-08-13, by everything above it closing or belonging to the Mac.** *Any host;
+an arm64 re-take is meaningful.* Unmoved through three passes and still the strongest *measured*
+item on the board. **Two things to settle before starting, both learned the hard way this
+evening.** *(a) The machine.* This is the only entry on the list whose deliverable is a
+measurement, so it is the only one contention can silently corrupt — and this host had an
+unrelated ~6-core process running through the evening. `rir-nofb-probe-self` **passed at 1032.74 s
+under that load**, which is worth exactly one sentence and no bank row: it neither confirms nor
+refutes the "fails under `-j`, passes alone" note, because the load was not the `-j` and was not
+measured. Take the bench on a quiet box and say so. *(b) The table re-take is the larger half.*
+Demoting the flag breaks `levelbench.tsv`'s assertion that its 16 rows match `src/mccopt.h`'s 16
+`LEVEL(1..3)` rows, and the fan-out is already recorded here: `cover3.txt`, `defstate.txt` and a
+tab-anchored `sed`. Budget for the fan-out, not for the one-line level change.
+
+Original entry: `gain_movers −0.5668`, `gain_pct −0.0334`, `branchy −0.5700`, reproduced to the
 printed digit across two runs, plus a compile-time dividend the row never quotes (`cost_self
 0.2109`, `cost_corpus 0.0716`). It is arch-neutral — `ast_abs_env` is an AST rewrite with no
 `arch.txt` row. Two caveats: the flag moves **1 of 17 kernels**, so budget a paired n≥20 run; and
@@ -1610,7 +1651,16 @@ measurement tool reports success over an empty or truncated subject:
 > correctness gate that only runs on the AOT path is not a correctness gate**, because the JIT
 > re-emits the same arenas with no faithfulness comparison to fall back on.
 >
-> **Ranking as of 2026-08-13, after the second pass: N2, N3, N6, N7, N18, N19, N24, N29 and N30
+> **Ranking as of 2026-08-13, after the instrument wave: N3 (items 22 and 23), N6, N7 and N29 —
+> four of thirty-five.** N18's instrument half closed and it leaves the live list; what is left of
+> it is a defect nobody has looked at, stated in its own row. **N6.8 closed in full**, and it is the
+> row worth reading before filing another counter: the figure it corrected was wrong in the
+> direction predicted and by more than estimated, because the counter was at the *call site* of a
+> function that can refuse. **The rule it yields:** count where the thing becomes true, not where
+> it is attempted — the two differ by 299 bodies on this tree and nobody noticed for as long as the
+> counter existed.
+>
+> **Superseded, for context — after the second pass: N2, N3, N6, N7, N18, N19, N24, N29 and N30
 > — nine of thirty-four.** N33 and N34 closed the day they were filed, and N3 lost item 24, so
 > the live rows are **N3 (items 23 and 22 only), N6, N7, N18 and N29** — five of
 > thirty-five. **N2 closed in full on 2026-08-13** when A6's `nc[]` resync landed, and **N19**
@@ -1817,6 +1867,19 @@ Behind them, still unexamined: ~80 `differ` and ~150 `refused` rows per level, w
 
 **~~N17. An aborted replay increments nothing, so every `ast.*` number in this file is a lower bound.~~ — CLOSED 2026-08-12.** Three counters, not one: `ast.abort`, `ast.abort_post` and `ast.noreplay`. `rir.rec == ast.body + ast.abort + ast.noreplay` now holds with no residual on `full_language.c` at `-O1`/`-O2`/`-O3`/`-O4` and at `-O0 --embed-jit` (276 = 271 + 2 + 3) and on self-host at `-O1` and `-O4` (3141 = 3140 + 0 + 1), so the recorded-but-not-verdicted gap closes. **Coverage and faithfulness percentages in this file are quotable again**, and `ast.abort_post` names an event that had none: a body that takes the verdict and *then* longjmps out of the optimizer strategy phase. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
+**N18 — the title is now false, and the row stays open for the half it was never about.**
+Something watches the arm: `ast/inv-faithful` (+ known-positive), `must-run`, 1.7 s, two `MCC_INV=1`
+compiles and a subtraction, banked in `tests/emitmap/faithful.json`. It reproduces this row's table
+on this host at **+1.36** (`full_language.c`) and **+1.19** (self-host) against the +1.36/+1.20
+recorded below, and it needs neither `MCC_CONFIG_TRACE=ON` nor an opt-in, so the "do not bank from
+this host" caution does not apply to it — the key carries the arch and any host can re-take it.
+**Also corrected from this row: its bake figures are the wrong counter.** 1550 of 3163 and 41 of
+299 are `jit.baked`, i.e. leaf-stash attempts; the bodies that actually reach `mccjit_embed_fns`
+are **1278 of 3202 (39.91%)** and **39 of 299 (13.04%)** — see N6.8. **What is open is the defect:**
+why the `--embed-jit` re-emit is 1.2–1.9 points less faithful than `-O1` on every target and both
+architectures measured. Nobody has looked at a single one of the unfaithful bodies.
+
+As originally filed:
 **N18. Nothing watches the `-O0 --embed-jit` arm, and it is the least faithful one on both
 targets.** New 2026-08-11. First, the part that is *confirmation, not news*: this file's standing
 rule — quote 2.0% for the self-host hot path and 0.47% for torture, never one for the other — is
@@ -5109,6 +5172,8 @@ the top because three of them are the only rows here in a currency that converts
 
 | row | size, and the tool that produced it | currency |
 | --- | --- | --- |
+| **`tests/emitmap/bank.json`'s tolerances cannot fail** — new 2026-08-13, found while banking. `TOL` is 0.05 on `emit_amplification` and **1.0 on every percentage**, and the `selfhost` cell is *already* drifted inside them: banked 2.7112 / 97.79 / 1.6205, measured **2.712 / 97.82 / 1.6214** on a trace build, and **identical at `HEAD` in a clean worktree**, so the drift predates the wave that found it and has no attribution. The figures were **restored, not re-banked**. Two jobs, in this order: bisect the drift, then tighten `TOL` — re-banking first destroys the only evidence of when it moved. Same shape as the cluster thesis with the sign flipped: not an absent number read as zero, but a **present number wide enough to be unfalsifiable** | census trust |
+| **`rir-coverage.py`'s `wide` corpus silently drops 9 sources** — new 2026-08-13, and it is sweep row 22 with a count finally attached. The run prints `9 source(s) failed to compile` and computes every percentage over the remainder; identical at `HEAD` and after, so pre-existing. The denominator is still "the files that happened to compile", and the cheap first step named there — bank `sources=N` and fail when it moves — is still unclaimed. **Now cheaper than when it was filed**, because the per-body inventory landed: 4574 named bodies is a manifest, so a source dropping out is a diff rather than a percentage | census trust |
 | ~~`ast_loop_interchange_legal` / `ast_dep_fusion_pair_illegal` call `ast_dep_base_distinct` with **no `indirect` guard**~~ | **CLOSED 2026-08-10, and the row was wrong twice over.** The guard was moved *into the callee* by `adf08e3b` (2026-08-09) and is now `src/mccast.c`: `if ((r1->indirect \|\| r2->indirect) && !allow_indirect) return 0;`. **The row also stated the polarity backwards.** `allow_indirect` is the *permissive* parameter, so the three emitting callers — `ast_loop_interchange_legal` (`src/mccast.c:13890`), `ast_dep_fusion_pair_illegal` (`:13940`) and `ast_rgn_pair` (`:14544`) — all pass `0` and are the *guarded* ones; the permissive caller is the **census** predicate `ast_loop_parallel_legal` (`:14321`), which passes `ast_dep_alias_oracle_env`. That is the inverse of "unlike the census predicate they reach emitted code". Second-order: the prescribed measurement ("a fuzz corpus of `p[i]`/`q[i]` nests at `-O12`") is **unrunnable on a stock build** — `-O5`–`-O12` are a hard error without `MCC_DEV` (`src/libmcc.c:2534`), and all three flags are `MCC_OPTD_DEV(MCC_OPTD_LEVEL(12))` (`src/mccopt.h:116-118`), so they are unreachable anyway | **correctness** |
 | ~~`tests/optfire/levelbench.tsv` is stale by a generation and has no `--check`~~ | **CLOSED 2026-08-09 (`wt/ladder2` then `wt/gatefin`).** `wt/ladder2` re-measured it: the banked table is a fresh 16-row run matching `src/mccopt.h`'s 16 `LEVEL(1..3)` rows, with `gain_movers_pct`/`eff_movers` beside the diluted columns and a signed efficiency (`inline-functions`, `gain_movers` −1.96, fell from rank 4 to rank 9). `wt/gatefin` closed the fourth defect **in both its halves**: `--check` exists with `optbench/levelbench-bank` + a known-positive, and the `optlevel-bench` cell now compares its build-dir TSV back to `tests/optfire/`. See the audit section | **census trust** |
 | the ~17× dilution of `gain_pct` (filed, not fixed, on `wt/benchtrap`) | **CLOSED 2026-08-09 by re-running the bench.** Measured dilution up to **17.4×** (`builtin-math-prepass` 0.3007 all-kernel vs **5.2372** over its one mover). `trunc32` moves 17/17 and its two gain columns agree to the digit, which is the control. It also **flipped a bucket** — `builtin-copysign`'s real **1.0076%** win read 0.0590% and was filed `cost-no-gain`, the bucket asserting no gain was found | **census trust** |
