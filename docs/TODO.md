@@ -162,13 +162,22 @@
 > *vendored* `x86_64-w64-mingw32-gcc` — the mingw oracle the Linux-written plan called absent is
 > present here, and PE runs natively, so W3's four-way differential runs with no wine and is enforced
 > by `pe/coff-obj-diff`. Default `-c` still emits ELF (banks + `arm64pe_diff.py` untouched; the
-> default-flip + re-bank is the follow-up). **W1, W2, W4–W6 remain open:** W1's external corpus
-> (`vendor/gcc-c-torture-execute`) is genuinely absent (the mingw-oracle half of its blocker was
-> not); W4
-> (`UNWIND_INFO`), W5 (CodeView) and W6 (SEH) are the large object-format/debug/exception backends,
-> each needing a differential loop this host cannot run. The `arm64-win32`/`arm-win32` execution
-> host items still need Windows-on-ARM hardware this box does not have. The "stale i386 message"
-> the plan cited has no locatable subject — every i386 message was checked and none is stale.
+> default-flip + re-bank is the follow-up). **The same day, W1, W4 and W5 were driven forward on the
+> box the Linux plan could not use** — the recurring finding being that "blocked here" was written
+> from WSL and several blockers evaporate on native Windows (mingw is vendored; PE runs without wine).
+> **W1 landed** as `pe/x-oracle`: mcc-vs-vendored-mingw over the run-mode `tests/exec` corpus, **254
+> cross-vendor agreements** floored, 15 impl-defined divergences banked, a `--mutate` red-check arm.
+> **W4's premise was corrected**: `RtlCaptureStackBackTrace` already reaches every mcc frame including
+> the 16 KB `__chkstk` frame (`pe/unwind-backtrace`) — the shared blob is not a live unwind bug; its
+> residual is metadata fidelity coupled to W6. **W5's premise narrowed**: `mcc -gdwarf-4` PE output is
+> already source-debuggable via addr2line/gdb (`pe/dwarf-lines`); the real gap is CodeView for
+> Microsoft debuggers specifically. **Still genuinely open: W2** (needs the absent
+> `vendor/gcc-c-torture-execute` corpus — `pe/x-oracle` points at it with no new code once symlinked),
+> **W5's CodeView emitter** (large, now unblocked by W3, verifiable via `llvm-pdbutil`) and **W6 (SEH)**
+> (largest; gated on W4's real `UNWIND_INFO`, and oracle-only against MSVC since mingw lacks `__try`).
+> The `arm64-win32`/`arm-win32` execution host items still need Windows-on-ARM hardware this box does
+> not have. The "stale i386 message" the plan cited has no locatable subject — every i386 message was
+> checked and none is stale.
 > **arm64/macOS wave, 2026-08-12 — the inner loop did not exist on one of the three machines,
 > and turning it on found two miscompiles.** `ctest -R "^smoke/"` was **12 of 12 red on the Mac**
 > and had been for as long as the suite existed there. None of it was a compiler defect: the
@@ -4701,7 +4710,19 @@ and makes mcc output debuggable by WinDbg/Visual Studio. Differential: the same 
 reported frame and one local. **Requires W3**, because CodeView lives in COFF sections.
 
 **Stage W6 — SEH statements (`__try`/`__except`/`__finally`). ~800–1,300 lines.**
-Parser, scope tables, `__C_specific_handler` on x64 and the FS:[0] chain on i386.
+**Measured 2026-08-13: the oracle situation is worse than the other W-stages and the W4 coupling
+is real.** mcc rejects `__try` (`'__try' undeclared`) — and so does the **vendored mingw-gcc**
+(`__try` is undeclared there too; GCC does not implement MSVC SEH statements). So unlike W1/W3/W5,
+**mingw is not a usable reference for W6** — only MSVC `cl.exe` compiles `__try/__except` (verified:
+a null-deref caught, `caught=1`, on this box's `cl`). Any W6 differential must therefore be
+mcc-vs-`cl`, not mcc-vs-mingw. And W6 stays **blocked on W4**: a handler is only reached through a
+truthful per-function `UNWIND_INFO` with `UNW_FLAG_EHANDLER`, which is exactly the metadata-fidelity
+work the W4 note says is still open (the current shared blob unwinds correctly but carries no handler
+slot). So the dependency is not bookkeeping — W6 cannot be built until W4's real per-function
+`UNWIND_INFO` exists. It remains the largest, most-deferred item: a from-scratch EH backend (three
+keywords + statement forms, scope tables, `__C_specific_handler` on x64, the `FS:[0]` chain on i386)
+whose only verification path is MSVC. Correctly below the GPU/optimizer work and last in the
+W4→W6 chain. Parser, scope tables, `__C_specific_handler` on x64 and the FS:[0] chain on i386.
 Differential: filter-expression ordering, `__finally` on both normal and unwinding exit,
 and `20101011-1`'s divide-by-zero. **Requires W4** — a handler needs a truthful
 `UNWIND_INFO` to be reached at all.
