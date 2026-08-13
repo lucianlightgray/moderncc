@@ -2427,6 +2427,22 @@ static int suite_pewine(int argc, char **argv) {
 			free(files[i]);
 		}
 	}
+	if (any) {
+		char wsrv[4096];
+		static const char *WSRV[] = {"wineserver", "wineserver64", 0};
+		if (host_find_tool_any(WSRV, NULL, wsrv, sizeof wsrv)) {
+			const char *k[] = {wsrv, "-k", 0};
+			const char *w[] = {wsrv, "-w", 0};
+			HostSpawnOpts o;
+			memset(&o, 0, sizeof o);
+			o.env = env;
+			o.stdout_file = runout;
+			o.stderr_file = runout;
+			o.timeout_ms = 30000;
+			host_spawn_ex(k, &o);
+			host_spawn_ex(w, &o);
+		}
+	}
 	if (!any)
 		ts_skip("no win32 cross-mcc for any target");
 	return status ? 1 : 0;

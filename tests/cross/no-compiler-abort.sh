@@ -15,10 +15,10 @@ OPTS="$*"
 
 EXTRA=""
 case "$ARCH" in
-arm|arm-win32|arm-wince) EXTRA="-mfloat-abi hard" ;;
+arm|arm-win32) EXTRA="-mfloat-abi hard" ;;
 esac
 case "$ARCH" in
-*-win32|*-wince)
+*-win32)
 	R=$(dirname "$CROSS")
 	EXTRA="$EXTRA -I$R/runtime/include -I$R/runtime/win32/include -I$R/runtime/win32/include/winapi"
 	;;

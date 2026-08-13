@@ -277,7 +277,7 @@ static const struct CrossTarget CROSS[] = {
 		{"arm", "arm", "Linux", "MCC_TARGET_ARM MCC_ARM_VFP MCC_ARM_EABI MCC_ARM_HARDFLOAT", "arm-linux-gnueabihf"},
 		{"arm64", "arm64", "Linux", "MCC_TARGET_ARM64", "aarch64-linux-gnu"},
 		{"arm64-win32", "arm64", "WIN32", "MCC_TARGET_ARM64 MCC_TARGET_PE", ""},
-		{"arm-wince", "arm", "WIN32", "MCC_TARGET_ARM MCC_ARM_VFP MCC_ARM_EABI MCC_ARM_HARDFLOAT MCC_TARGET_PE", ""},
+		{"arm-win32", "arm", "WIN32", "MCC_TARGET_ARM MCC_ARM_VFP MCC_ARM_EABI MCC_ARM_HARDFLOAT MCC_TARGET_PE", ""},
 		{"riscv64", "riscv64", "Linux", "MCC_TARGET_RISCV64", "riscv64-linux-gnu"},
 		{"arm64-osx", "arm64", "Darwin", "MCC_TARGET_ARM64 MCC_TARGET_MACHO", ""},
 		{0, 0, 0, 0, 0}};

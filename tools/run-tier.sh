@@ -91,7 +91,7 @@ arm64-osx)
 	BUILDDEFS="-DMCC_TARGET_ARM64 -DMCC_TARGET_MACHO"
 	IDENT="(AArch64 Darwin)"
 	;;
-arm64-win32|arm-win32|arm-wince)
+arm64-win32|arm-win32)
 	skip "no runner for $triple on any host available here: -run needs a $triple-hosted mcc, and there is no Windows-on-ARM emulator (wine is x86-only, qemu-user cannot load PE)"
 	;;
 *)

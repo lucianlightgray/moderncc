@@ -16,12 +16,12 @@
 #
 # Usage:
 #   tools/o0_ab.sh <builddir> <key>        [outdir]   one key
-#   tools/o0_ab.sh <builddir> all          [outdir]   all twelve keys + gates
+#   tools/o0_ab.sh <builddir> all          [outdir]   all eleven keys + gates
 #   tools/o0_ab.sh <builddir> measurable   [outdir]   every key this host and
 #                                                     build can actually measure
 #
 # Keys: x86_64 i386 arm arm64 riscv64
-#       x86_64-win32 i386-win32 arm64-win32 arm-win32 arm-wince
+#       x86_64-win32 i386-win32 arm64-win32 arm-win32
 #       x86_64-osx arm64-osx
 #
 # "all" is the re-bank spelling and demands every key: a missing cross compiler
@@ -60,7 +60,7 @@
 #                   any drift.  This is the gate every phase of the cut has to
 #                   pass.
 #   O0_AB_MIN_KEYS  floor on the number of keys "measurable" must have measured
-#                   (default 1).  Set it to 12 where every cross compiler is
+#                   (default 1).  Set it to 11 where every cross compiler is
 #                   expected, so that losing one is a failure rather than a
 #                   quieter pass.
 #   O0_AB_MIN_FILES floor on the corpus size, default 64.  A find(1) that
@@ -109,9 +109,6 @@
 #     differ: it compiles at plain -O0 and fails to compile the moment
 #     MCC_REPLAY_IR=1 meets an armed recorder, so the board prints
 #     extra=<in A>/<in B> rather than one flag.
-#   * arm-win32 and arm-wince share a define set and must read identically.
-#     The "all" driver checks that itself and fails loudly, because it is the
-#     cheapest available proof that a run measured what it thinks it did.
 
 set -e
 
@@ -133,7 +130,7 @@ export LC_ALL
 SOURCE_DATE_EPOCH=1000000000
 export SOURCE_DATE_EPOCH
 
-KEYS="x86_64 i386 arm arm64 riscv64 x86_64-win32 i386-win32 arm64-win32 arm-win32 arm-wince x86_64-osx arm64-osx"
+KEYS="x86_64 i386 arm arm64 riscv64 x86_64-win32 i386-win32 arm64-win32 arm-win32 x86_64-osx arm64-osx"
 
 if command -v sha256sum > /dev/null 2>&1; then
 	sha256() { sha256sum "$1"; }
@@ -221,7 +218,7 @@ key_flags() {
 			SYSROOT=$S/vendor/gentoo-stage3-x86_64-glibc
 			FLAGS="-B $BUILD -I $S/runtime/include --sysroot=$SYSROOT -I$SYSROOT/usr/include"
 		fi ;;
-	*win32 | *wince)
+	*win32)
 		MCC=$BUILD/mcc-$1
 		FLAGS="-B $S/runtime/win32 -B $S/runtime -I $S/runtime/include" ;;
 	*osx)
@@ -431,33 +428,6 @@ run_key() {
 	fi
 }
 
-twin_check() {
-	a=$OUT/arm-win32$SUF.rir.txt
-	b=$OUT/arm-wince$SUF.rir.txt
-	if [ ! -f "$a" ] || [ ! -f "$b" ]; then
-		echo "o0_ab: arm-win32/arm-wince twin check SKIPPED (a row is missing)" >&2
-		return 0
-	fi
-	if grep -v '^key=' "$a" > "$OUT/twin.a" \
-			&& grep -v '^key=' "$b" > "$OUT/twin.b" \
-			&& cmp -s "$OUT/twin.a" "$OUT/twin.b"; then
-		:
-	else
-		echo "o0_ab: FAIL -- arm-win32 and arm-wince share a define set and must" \
-			"read identically, but their forced-O0 counters differ:" >&2
-		diff -u "$OUT/twin.a" "$OUT/twin.b" >&2 || true
-		return 1
-	fi
-	cut -f2,3 "$OUT/arm-win32$SUF.obj.txt" > "$OUT/twin.oa"
-	cut -f2,3 "$OUT/arm-wince$SUF.obj.txt" > "$OUT/twin.ob"
-	if cmp -s "$OUT/twin.oa" "$OUT/twin.ob"; then
-		echo "o0_ab: arm-win32 == arm-wince (counters and object sha256 both)"
-	else
-		echo "o0_ab: arm-win32 == arm-wince (counters); object sha256 differ on" \
-			"$(diff "$OUT/twin.oa" "$OUT/twin.ob" | grep -c '^<' || true) file(s)"
-	fi
-}
-
 RUNKEYS=$KEYS
 SKIPPED=
 case "$KEY" in
@@ -481,9 +451,9 @@ nkeys=$(echo $KEYS | wc -w | tr -d ' ')
 nrun=$(echo $RUNKEYS | wc -w | tr -d ' ')
 minkeys=${O0_AB_MIN_KEYS:-1}
 if [ -n "$O0_AB_BANK" ] && [ "$KEY" = "measurable" ]; then
-	echo "o0_ab: FAIL -- refusing to bank from 'measurable'. The board is a" \
-		"twelve-row artefact and 'all' is the only spelling that demands all" \
-		"twelve; banking whichever rows this host happened to reach would" \
+	echo "o0_ab: FAIL -- refusing to bank from 'measurable'. The board is an" \
+		"eleven-row artefact and 'all' is the only spelling that demands all" \
+		"eleven; banking whichever rows this host happened to reach would" \
 		"freeze a hole into the baseline. Use 'all'." >&2
 	exit 1
 fi
@@ -513,14 +483,13 @@ cat "$board"
 if grep -q ' FAIL$' "$board"; then
 	rc=1
 fi
-twin_check || rc=1
 if [ -n "$O0_AB_BANK" ]; then
 	mkdir -p "$BANKDIR"
 	cp "$board" "$BANKDIR/board$SUF.txt"
 fi
 if [ -n "$O0_AB_CHECK" ] && [ "$KEY" = "all" ] \
 		&& ! diff -u "$BANKDIR/board$SUF.txt" "$board" >&2; then
-	echo "o0_ab: the twelve-key board moved." >&2
+	echo "o0_ab: the eleven-key board moved." >&2
 	rc=1
 fi
 exit $rc

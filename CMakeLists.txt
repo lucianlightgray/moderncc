@@ -1251,7 +1251,7 @@ mcc_config_node(MCC_CROSS_OPTIMIZER TYPE BOOL DEFAULT ON GROUP "Build targets" A
     HELP "Build the cross compilers (mcc-<arch>) with the optimizer. ON (default) makes the cross reemit/JIT parity axes (divmagic/select/promotion/replay-inline/embed-jit) real on every triple, matching native; also appends MCC_EMBED_JIT=1. OFF builds the cross compilers without the AST reemit optimizer (smaller/faster cross build, byte-identical to the pre-ungate cross output) but leaves those per-triple parity axes compiled out so they silently no-op.")
 mcc_config_node(MCC_CROSS_TARGETS TYPE STRING DEFAULT "" GROUP "Build targets" ADVANCED
     EMPTY_OK VISIBLE_WHEN "MCC_ENABLE_CROSS"
-    HELP "Subset of cross triples to build under MCC_ENABLE_CROSS, comma- or semicolon-separated (e.g. x86_64-osx,arm64-osx). Empty (default) builds every triple. Each entry must name one of: i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64 arm64-win32 arm-win32 arm-wince riscv64 arm64-osx. Narrowing it lets a CI cell build only the object-format compilers its validators need instead of all twelve.")
+    HELP "Subset of cross triples to build under MCC_ENABLE_CROSS, comma- or semicolon-separated (e.g. x86_64-osx,arm64-osx). Empty (default) builds every triple. Each entry must name one of: i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64 arm64-win32 arm-win32 riscv64 arm64-osx. Narrowing it lets a CI cell build only the object-format compilers its validators need instead of all eleven.")
 
 mcc_config_node(MCC_BUILD_STATIC_LIB TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build libmcc.a (ON) instead of shared libmcc (OFF)")
@@ -3106,7 +3106,7 @@ if(MCC_ENABLE_CROSS)
     endif()
 
     set(MCC_X i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64
-              arm64-win32 arm-win32 arm-wince riscv64 arm64-osx)
+              arm64-win32 arm-win32 riscv64 arm64-osx)
     if(NOT "${MCC_CROSS_TARGETS}" STREQUAL "")
         string(REPLACE "," ";" _xwant "${MCC_CROSS_TARGETS}")
         foreach(_w IN LISTS _xwant)
@@ -3151,10 +3151,6 @@ if(MCC_ENABLE_CROSS)
             set(_cos WIN32)
             set(_cdefs MCC_TARGET_ARM64 MCC_TARGET_PE)
         elseif(_t STREQUAL "arm-win32")
-            set(_ccpu arm)
-            set(_cos WIN32)
-            set(_cdefs MCC_TARGET_ARM MCC_ARM_VFP MCC_ARM_EABI MCC_ARM_HARDFLOAT MCC_TARGET_PE)
-        elseif(_t STREQUAL "arm-wince")
             set(_ccpu arm)
             set(_cos WIN32)
             set(_cdefs MCC_TARGET_ARM MCC_ARM_VFP MCC_ARM_EABI MCC_ARM_HARDFLOAT MCC_TARGET_PE)
@@ -4163,7 +4159,7 @@ if(MCC_BUILD_TESTS)
         if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR
            AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_TARGETOS STREQUAL "Darwin")
             if(MCC_ENABLE_CROSS)
-                set(_o0ab_min 8)
+                set(_o0ab_min 7)
             else()
                 set(_o0ab_min 1)
             endif()
@@ -4816,7 +4812,7 @@ if(MCC_BUILD_TESTS)
         endforeach()
 
         foreach(_na riscv64 arm arm64 i386
-                    x86_64-win32 i386-win32 arm64-win32 arm-win32 arm-wince
+                    x86_64-win32 i386-win32 arm64-win32 arm-win32
                     x86_64-osx arm64-osx)
             set(_na_sr "-")
             if(_na MATCHES "^(riscv64|arm|arm64|i386)$")
@@ -4862,12 +4858,11 @@ if(MCC_BUILD_TESTS)
         set(_c2bank_i386-win32 "1;0;1258")
         set(_c2bank_arm64-win32 "1;0;1298")
         set(_c2bank_arm-win32 "1;0;1236")
-        set(_c2bank_arm-wince "1;0;1236")
         set(_c2bank_x86_64-osx "0;0;1143")
         set(_c2bank_arm64-osx "1;0;1225")
 
         foreach(_rp riscv64 arm arm64 i386
-                    x86_64-win32 i386-win32 arm64-win32 arm-win32 arm-wince
+                    x86_64-win32 i386-win32 arm64-win32 arm-win32
                     x86_64-osx arm64-osx)
             set(_rpsr "${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-${_rp}-glibc")
             if(_rp MATCHES "(win32|wince)$")
@@ -4951,8 +4946,10 @@ if(MCC_BUILD_TESTS)
         foreach(_rt x86_64 i386 arm arm64 riscv64
                     x86_64-win32 i386-win32 x86_64-osx arm64-osx)
             set(_rtfixreq "MCC_BUILT;MCC_CROSS_BUILT")
-            if(_rt MATCHES "(win32|wince)$")
+            set(_rtlock "")
+            if(_rt MATCHES "win32$")
                 set(_rtlabels LABELS "wine")
+                set(_rtlock RESOURCE_LOCK "wine")
             elseif(_rt MATCHES "osx$")
                 set(_rtlabels LABELS "macho")
             elseif(_rt STREQUAL "x86_64")
@@ -4966,9 +4963,9 @@ if(MCC_BUILD_TESTS)
                         "${_rt}" "${CMAKE_BINARY_DIR}" "${MCC_CROSS_DIR}")
             set_tests_properties(run-tier/${_rt} PROPERTIES
                 FIXTURES_REQUIRED "${_rtfixreq}" SKIP_RETURN_CODE 77
-                ${_rtlabels} TIMEOUT 1800)
+                ${_rtlock} ${_rtlabels} TIMEOUT 1800)
         endforeach()
-        foreach(_rt arm64-win32 arm-win32 arm-wince)
+        foreach(_rt arm64-win32 arm-win32)
             mcc_skip_test(run-tier/${_rt}
                 "${_rt} -run needs a ${_rt}-hosted mcc, and no host here can execute one: wine emulates x86 PE only and qemu-user cannot load PE"
                 LABELS "wine" TIMEOUT 1800)
@@ -5113,6 +5110,13 @@ if(MCC_BUILD_TESTS)
                             "${CMAKE_BINARY_DIR}/exec-gatecombo-${_gn}" --only "${_gn}")
                 set_tests_properties("exec-gatecombo/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                     SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2 -fchain-store -fpromote-incdec -fivopts-ptr;MCC_DEV=1")
+            endforeach()
+        else()
+            foreach(_gl IN LISTS _exec_glines)
+                string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+                set(_gn "${CMAKE_MATCH_1}")
+                mcc_skip_test("exec-gatecombo/${_gn}"
+                    "the -fchain-store+-fpromote-incdec+-fivopts-ptr combined gate is registered on a WIN32 target build only")
             endforeach()
         endif()
 
@@ -8105,7 +8109,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 --work "${CMAKE_BINARY_DIR}/pe-wine-work")
     set_tests_properties(pe-wine-conformance PROPERTIES
         FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "wine" SKIP_RETURN_CODE 77
-        TIMEOUT 600)
+        RESOURCE_LOCK "wine" TIMEOUT 600)
 
     if(MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
 
