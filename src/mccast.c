@@ -16661,14 +16661,14 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 	ast_body_ind_sv = ind;
 	ast_reloc0_sv =
 			cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
+	ast_locrec_n = 0;
+	ast_locrec_min = 0;
 	if (rir_try_active) { MCC_TRACE("br\n");
 		ast_cur = ast_arena_new();
 		ast_cur_bb = ast_node(ast_cur, AST_BasicBlock);
 		ast_reemit_poison = 0;
 		ast_base_depth = (int)(vtop - vstack + 1);
 		ast_fconst_n = 0;
-		ast_locrec_n = 0;
-		ast_locrec_min = 0;
 		ast_replaying = 0;
 		ast_switch_node = AST_NONE;
 		ast_func_has_asm = 0;
