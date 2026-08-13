@@ -2082,6 +2082,9 @@ static DWORD coff_section_characteristics(Section *s) { MCC_TRACE("enter\n");
 	if (s->sh_flags & SHF_WRITE) { MCC_TRACE("br\n");
 		ch |= IMAGE_SCN_MEM_WRITE;
 	}
+	if (0 == memcmp(s->name, ".debug", 6)) { MCC_TRACE("br\n");
+		ch |= IMAGE_SCN_MEM_DISCARDABLE;
+	}
 	a = s->sh_addralign ? s->sh_addralign : 1;
 	lg = 0;
 	while ((1 << lg) < a) { MCC_TRACE("br\n");
@@ -2100,6 +2103,7 @@ static int coff_emit_reloc(int etype, unsigned char *fld, addr_t addend) { MCC_T
 	case R_X86_64_32S: write32le(fld, (uint32_t)addend); return IMAGE_REL_AMD64_ADDR32;
 	case R_X86_64_RELATIVE: write32le(fld, (uint32_t)addend); return IMAGE_REL_AMD64_ADDR32NB;
 	case R_X86_64_TPOFF32: write32le(fld, (uint32_t)addend); return IMAGE_REL_AMD64_SECREL;
+	case R_X86_64_16: write16le(fld, (uint16_t)addend); return IMAGE_REL_AMD64_SECTION;
 	case R_X86_64_PC32:
 	case R_X86_64_PLT32: write32le(fld, (uint32_t)(addend + 4)); return IMAGE_REL_AMD64_REL32;
 	default: return -1;
@@ -2146,8 +2150,10 @@ ST_FUNC int coff_output_obj(MCCState *s1, const char *filename) { MCC_TRACE("ent
 	elf2coff = mcc_mallocz(nb_orig * sizeof(int));
 	nsec = 0;
 	for (i = 1; i < nb_orig; i++) { MCC_TRACE("br\n");
+		int is_debug;
 		s = s1->sections[i];
-		if (!(s->sh_flags & SHF_ALLOC))
+		is_debug = 0 == memcmp(s->name, ".debug$", 7);
+		if (!(s->sh_flags & SHF_ALLOC) && !is_debug)
 			continue;
 		if (s->sh_type != SHT_PROGBITS && s->sh_type != SHT_NOBITS)
 			continue;

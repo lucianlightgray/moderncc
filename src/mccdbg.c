@@ -512,6 +512,221 @@ static int dwarf_get_section_sym(Section *s) { MCC_TRACE("enter\n");
 										 s->sh_num, NULL);
 }
 
+#ifdef MCC_TARGET_PE
+/* ---- CodeView .debug$S line + symbol emitter (W5) ----
+   Records (offset,line) pairs and function extents while the DWARF path runs,
+   then serialises a CV_SIGNATURE_C13 .debug$S section that WinDbg / Visual
+   Studio (and llvm-pdbutil) read. Addresses use SECREL (reused via
+   R_X86_64_TPOFF32) + SECTION (R_X86_64_16) relocs, which the COFF writer maps
+   to IMAGE_REL_AMD64_SECREL / _SECTION. */
+#define CV_SIG_C13 4
+#define CV_SUB_SYMBOLS 0xF1
+#define CV_SUB_LINES 0xF2
+#define CV_SUB_STRINGTABLE 0xF3
+#define CV_SUB_FILECHKSMS 0xF4
+#define CV_S_END 0x0006
+#define CV_S_GPROC32 0x1110
+#define CV_S_COMPILE3 0x113C
+#define CV_LINE_STMT 0x80000000u
+
+typedef struct CvLn { unsigned off, line; } CvLn;
+typedef struct CvFn {
+	int sym;
+	unsigned start, size;
+	char *name;
+	CvLn *ln;
+	int nln, maxln;
+} CvFn;
+
+static CvFn *cv_fns;
+static int cv_nfn, cv_maxfn;
+static CvFn *cv_cur;
+static char *cv_filename;
+
+static void cv_reset(void) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 0; i < cv_nfn; i++) { MCC_TRACE("br\n");
+		mcc_free(cv_fns[i].name);
+		mcc_free(cv_fns[i].ln);
+	}
+	mcc_free(cv_fns);
+	mcc_free(cv_filename);
+	cv_fns = NULL;
+	cv_filename = NULL;
+	cv_cur = NULL;
+	cv_nfn = cv_maxfn = 0;
+}
+
+ST_FUNC void mcc_cv_funcstart(MCCState *s1, Sym *sym) { MCC_TRACE("enter\n");
+	CvFn *fn;
+	if (!s1->cv_debug)
+		{ MCC_TRACE("br\n"); return; }
+	if (cv_nfn >= cv_maxfn) { MCC_TRACE("br\n");
+		cv_maxfn = cv_maxfn ? cv_maxfn * 2 : 16;
+		cv_fns = mcc_realloc(cv_fns, cv_maxfn * sizeof *cv_fns);
+	}
+	fn = &cv_fns[cv_nfn++];
+	memset(fn, 0, sizeof *fn);
+	fn->sym = sym->c;
+	fn->start = func_ind;
+	fn->name = mcc_strdup(funcname);
+	cv_cur = fn;
+	if (!cv_filename && file)
+		{ MCC_TRACE("br\n"); cv_filename = mcc_strdup(file->filename); }
+}
+
+ST_FUNC void mcc_cv_line(MCCState *s1, int line) { MCC_TRACE("enter\n");
+	CvFn *fn = cv_cur;
+	if (!s1->cv_debug || !fn || cur_text_section != text_section)
+		{ MCC_TRACE("br\n"); return; }
+	if (fn->nln && fn->ln[fn->nln - 1].off == (unsigned)(ind - fn->start))
+		{ MCC_TRACE("br\n"); return; }
+	if (fn->nln >= fn->maxln) { MCC_TRACE("br\n");
+		fn->maxln = fn->maxln ? fn->maxln * 2 : 32;
+		fn->ln = mcc_realloc(fn->ln, fn->maxln * sizeof *fn->ln);
+	}
+	fn->ln[fn->nln].off = ind - fn->start;
+	fn->ln[fn->nln].line = line;
+	fn->nln++;
+}
+
+ST_FUNC void mcc_cv_funcend(MCCState *s1, int size) { MCC_TRACE("enter\n");
+	if (!s1->cv_debug || !cv_cur)
+		{ MCC_TRACE("br\n"); return; }
+	cv_cur->size = size;
+	cv_cur = NULL;
+}
+
+static void cv_align(Section *s) { MCC_TRACE("enter\n");
+	while (s->data_offset & 3)
+		{ MCC_TRACE("br\n"); *(char *)section_ptr_add(s, 1) = 0; }
+}
+
+/* open a subsection; returns the byte offset of its length field to patch */
+static unsigned cv_sub_open(Section *s, unsigned kind) { MCC_TRACE("enter\n");
+	unsigned lenpos;
+	write32le(section_ptr_add(s, 4), kind);
+	lenpos = s->data_offset;
+	write32le(section_ptr_add(s, 4), 0);
+	return lenpos;
+}
+
+static void cv_sub_close(Section *s, unsigned lenpos) { MCC_TRACE("enter\n");
+	write32le(s->data + lenpos, s->data_offset - (lenpos + 4));
+	cv_align(s);
+}
+
+ST_FUNC void mcc_cv_emit(MCCState *s1) { MCC_TRACE("enter\n");
+	Section *cvs;
+	unsigned lenpos, sub, fname_off, i, j;
+	/* CodeView .debug$S is only meaningful in a COFF object that a real linker
+	   (lld-link / link.exe) turns into a PDB; mcc's own linker does not build
+	   PDBs and cannot apply the SECTION reloc, so skip every other output. */
+	if (!s1->cv_debug || cv_nfn == 0 ||
+			s1->output_type != MCC_OUTPUT_OBJ ||
+			s1->output_format != MCC_OUTPUT_FORMAT_COFF)
+		{ MCC_TRACE("br\n"); cv_reset(); return; }
+	if (!cv_filename)
+		{ MCC_TRACE("br\n"); cv_filename = mcc_strdup("mcc.c"); }
+
+	cvs = new_section(s1, ".debug$S", SHT_PROGBITS, 0);
+	cvs->sh_addralign = 4;
+	write32le(section_ptr_add(cvs, 4), CV_SIG_C13);
+
+	/* STRINGTABLE: offset 0 is the empty string, then the source file name */
+	lenpos = cv_sub_open(cvs, CV_SUB_STRINGTABLE);
+	sub = cvs->data_offset;
+	*(char *)section_ptr_add(cvs, 1) = 0;
+	fname_off = cvs->data_offset - sub;
+	{
+		unsigned n = strlen(cv_filename) + 1;
+		memcpy(section_ptr_add(cvs, n), cv_filename, n);
+	}
+	cv_sub_close(cvs, lenpos);
+
+	/* FILECHKSMS: a single entry (checksum kind None) at offset 0 */
+	lenpos = cv_sub_open(cvs, CV_SUB_FILECHKSMS);
+	write32le(section_ptr_add(cvs, 4), fname_off);
+	*(char *)section_ptr_add(cvs, 1) = 0;
+	*(char *)section_ptr_add(cvs, 1) = 0;
+	write16le(section_ptr_add(cvs, 2), 0);
+	cv_sub_close(cvs, lenpos);
+
+	/* LINES: one fragment per function */
+	for (i = 0; i < (unsigned)cv_nfn; i++) { MCC_TRACE("br\n");
+		CvFn *fn = &cv_fns[i];
+		unsigned reloff, relseg;
+		lenpos = cv_sub_open(cvs, CV_SUB_LINES);
+		reloff = cvs->data_offset;
+		write32le(section_ptr_add(cvs, 4), 0);
+		relseg = cvs->data_offset;
+		write16le(section_ptr_add(cvs, 2), 0);
+		write16le(section_ptr_add(cvs, 2), 0);
+		write32le(section_ptr_add(cvs, 4), fn->size);
+		put_elf_reloc(symtab_section, cvs, reloff, R_X86_64_TPOFF32, fn->sym);
+		put_elf_reloc(symtab_section, cvs, relseg, R_X86_64_16, fn->sym);
+		write32le(section_ptr_add(cvs, 4), 0);
+		write32le(section_ptr_add(cvs, 4), fn->nln);
+		write32le(section_ptr_add(cvs, 4), 12 + fn->nln * 8);
+		for (j = 0; j < (unsigned)fn->nln; j++) { MCC_TRACE("br\n");
+			write32le(section_ptr_add(cvs, 4), fn->ln[j].off);
+			write32le(section_ptr_add(cvs, 4), (fn->ln[j].line & 0xffffff) | CV_LINE_STMT);
+		}
+		cv_sub_close(cvs, lenpos);
+	}
+
+	/* SYMBOLS: S_COMPILE3 then S_GPROC32/S_END per function */
+	lenpos = cv_sub_open(cvs, CV_SUB_SYMBOLS);
+	{
+		unsigned rl = cvs->data_offset;
+		const char *ver = "mcc";
+		unsigned vn = strlen(ver) + 1;
+		write16le(section_ptr_add(cvs, 2), 0);
+		write16le(section_ptr_add(cvs, 2), CV_S_COMPILE3);
+		write32le(section_ptr_add(cvs, 4), 0);       /* Flags: language C = 0 */
+		write16le(section_ptr_add(cvs, 2), 0x00D0);  /* Machine = CV_CFL_X64 */
+		write16le(section_ptr_add(cvs, 2), 0);
+		write16le(section_ptr_add(cvs, 2), 0);
+		write16le(section_ptr_add(cvs, 2), 0);
+		write16le(section_ptr_add(cvs, 2), 0);
+		write16le(section_ptr_add(cvs, 2), 0);
+		write16le(section_ptr_add(cvs, 2), 0);
+		write16le(section_ptr_add(cvs, 2), 0);
+		write16le(section_ptr_add(cvs, 2), 0);
+		memcpy(section_ptr_add(cvs, vn), ver, vn);
+		write16le(cvs->data + rl, cvs->data_offset - rl - 2);
+	}
+	for (i = 0; i < (unsigned)cv_nfn; i++) { MCC_TRACE("br\n");
+		CvFn *fn = &cv_fns[i];
+		unsigned rl, coff, cseg, nn = strlen(fn->name) + 1;
+		rl = cvs->data_offset;
+		write16le(section_ptr_add(cvs, 2), 0);
+		write16le(section_ptr_add(cvs, 2), CV_S_GPROC32);
+		write32le(section_ptr_add(cvs, 4), 0); /* PtrParent */
+		write32le(section_ptr_add(cvs, 4), 0); /* PtrEnd */
+		write32le(section_ptr_add(cvs, 4), 0); /* PtrNext */
+		write32le(section_ptr_add(cvs, 4), fn->size);
+		write32le(section_ptr_add(cvs, 4), 0);        /* DbgStart */
+		write32le(section_ptr_add(cvs, 4), fn->size); /* DbgEnd */
+		write32le(section_ptr_add(cvs, 4), 0);        /* FunctionType = T_NOTYPE */
+		coff = cvs->data_offset;
+		write32le(section_ptr_add(cvs, 4), 0);
+		cseg = cvs->data_offset;
+		write16le(section_ptr_add(cvs, 2), 0);
+		*(char *)section_ptr_add(cvs, 1) = 0; /* Flags */
+		memcpy(section_ptr_add(cvs, nn), fn->name, nn);
+		write16le(cvs->data + rl, cvs->data_offset - rl - 2);
+		put_elf_reloc(symtab_section, cvs, coff, R_X86_64_TPOFF32, fn->sym);
+		put_elf_reloc(symtab_section, cvs, cseg, R_X86_64_16, fn->sym);
+		/* S_END */
+		write16le(section_ptr_add(cvs, 2), 2);
+		write16le(section_ptr_add(cvs, 2), CV_S_END);
+	}
+	cv_sub_close(cvs, lenpos);
+	cv_reset();
+}
+#endif
+
 static void dwarf_reloc(Section *s, int sym, int rel) { MCC_TRACE("enter\n");
 	MCCState *s1 = s->s1;
 	put_elf_reloca(symtab_section, s, s->data_offset, rel, sym, 0);
@@ -1212,6 +1427,11 @@ ST_FUNC void mcc_debug_end(MCCState *s1) { MCC_TRACE("enter\n");
 	if (debug_info_root)
 		{ MCC_TRACE("br\n"); mcc_debug_funcend(s1, 0); }
 
+#ifdef MCC_TARGET_PE
+	if (s1->cv_debug)
+		{ MCC_TRACE("br\n"); mcc_cv_emit(s1); }
+#endif
+
 	if (s1->dwarf) { MCC_TRACE("br\n");
 		int i;
 		int start_aranges;
@@ -1386,6 +1606,11 @@ ST_FUNC void mcc_debug_line(MCCState *s1) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	last_line_num = f->line_num;
 	dwarf_line.prologue_end = 0;
+
+#ifdef MCC_TARGET_PE
+	if (s1->cv_debug)
+		{ MCC_TRACE("br\n"); mcc_cv_line(s1, f->line_num); }
+#endif
 
 	if (s1->dwarf) { MCC_TRACE("br\n");
 		int len_pc = (ind - dwarf_line.last_pc) / DWARF_MIN_INSTR_LEN;
@@ -2176,6 +2401,10 @@ ST_FUNC void mcc_debug_funcstart(MCCState *s1, Sym *sym) { MCC_TRACE("enter\n");
 
 	if (!s1->do_debug)
 		{ MCC_TRACE("br\n"); return; }
+#ifdef MCC_TARGET_PE
+	if (s1->cv_debug)
+		{ MCC_TRACE("br\n"); mcc_cv_funcstart(s1, sym); }
+#endif
 	debug_info_root = NULL;
 	debug_info = NULL;
 	mcc_debug_stabn(s1, N_LBRAC, ind - func_ind);
@@ -2227,6 +2456,10 @@ ST_FUNC void mcc_debug_funcend(MCCState *s1, int size) { MCC_TRACE("enter\n");
 #endif
 	if (!s1->do_debug)
 		{ MCC_TRACE("br\n"); return; }
+#ifdef MCC_TARGET_PE
+	if (s1->cv_debug)
+		{ MCC_TRACE("br\n"); mcc_cv_funcend(s1, size); }
+#endif
 	min_instr_len = dwarf_line.last_pc == ind ? 0 : DWARF_MIN_INSTR_LEN;
 	ind -= min_instr_len;
 	mcc_debug_line(s1);

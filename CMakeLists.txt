@@ -8269,6 +8269,24 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 mcc_skip_test(pe/dwarf-lines
                     "PE DWARF line-table conformance (needs vendored mingw objdump+addr2line)")
             endif()
+
+            find_program(MCC_LLVM_READOBJ NAMES llvm-readobj)
+            find_program(MCC_LLD_LINK NAMES lld-link)
+            find_program(MCC_LLVM_PDBUTIL NAMES llvm-pdbutil)
+            if(MCC_LLVM_READOBJ)
+                add_test(NAME pe/codeview
+                    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-codeview.sh"
+                            "$<TARGET_FILE:mcc>" "${MCC_LLVM_READOBJ}"
+                            "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-dwarf-lines.c"
+                            "${CMAKE_BINARY_DIR}/pe-codeview-work"
+                            "${MCC_LLD_LINK}" "${MCC_LLVM_PDBUTIL}")
+                set_tests_properties(pe/codeview PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                    LABELS "pe" TIMEOUT 300)
+            else()
+                mcc_skip_test(pe/codeview
+                    "CodeView .debug$S conformance (needs llvm-readobj)")
+            endif()
         else()
             mcc_skip_test(pe/coff-obj-diff
                 "COFF object writer differential (needs vendored mingw-w64 x86_64 gcc)")

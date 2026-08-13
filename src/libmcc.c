@@ -2835,6 +2835,10 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 #ifdef MCC_TARGET_PE
 			} else if (0 == strcmp(".pdb", optarg)) { MCC_TRACE("br\n");
 				s->dwarf = 5, s->do_debug |= 16;
+			} else if (0 == strcmp("codeview", optarg)) { MCC_TRACE("br\n");
+				s->cv_debug = 1;
+				if (s->dwarf == 0)
+					{ MCC_TRACE("br\n"); s->dwarf = DEFAULT_DWARF_VERSION; }
 #endif
 			} else if (*optarg)
 				{ MCC_TRACE("br\n"); goto unsupported_option; }

@@ -741,6 +741,7 @@ struct MCCState {
 
 	unsigned char do_debug;
 	unsigned char dwarf;
+	unsigned char cv_debug;
 	unsigned char do_backtrace;
 	unsigned char do_bounds_check;
 	unsigned char test_coverage;
@@ -2061,6 +2062,12 @@ ST_FUNC void mcc_add_debug_info(MCCState *s1, Sym *s, Sym *e);
 ST_FUNC void mcc_debug_funcstart(MCCState *s1, Sym *sym);
 ST_FUNC void mcc_debug_prolog_epilog(MCCState *s1, int value);
 ST_FUNC void mcc_debug_funcend(MCCState *s1, int size);
+#ifdef MCC_TARGET_PE
+ST_FUNC void mcc_cv_funcstart(MCCState *s1, Sym *sym);
+ST_FUNC void mcc_cv_line(MCCState *s1, int line);
+ST_FUNC void mcc_cv_funcend(MCCState *s1, int size);
+ST_FUNC void mcc_cv_emit(MCCState *s1);
+#endif
 ST_FUNC void mcc_debug_extern_sym(MCCState *s1, Sym *sym, int sh_num, int sym_bind, int sym_type);
 ST_FUNC void mcc_debug_typedef(MCCState *s1, Sym *sym);
 ST_FUNC void mcc_debug_stabn(MCCState *s1, int type, int value);

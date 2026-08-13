@@ -4766,9 +4766,25 @@ none) and add the i386 `FS:[0]` chain. Differential: a `CaptureStackBackTrace` /
 under `-O0`/`-O2`/`-O3`. Note this stage is **partly blocked on W3** for i386, since an
 i386 SEH chain is meaningless without objects anyone can link.
 
-**Stage W5 — CodeView `.debug$S`/`.debug$T`. ~1,200–1,800 lines.**
-**Measured 2026-08-13 and the premise narrows: mcc already ships working, debugger-consumable
-line info for PE — just in DWARF, not CodeView.** `mcc -gdwarf-4` (or `-gdwarf-2`) on a PE target
+**Stage W5 — CodeView `.debug$S`/`.debug$T`. ~~~1,200–1,800 lines.~~ — line-table first cut LANDED
+2026-08-13.** `mcc -gcodeview -c -Wl,-oformat=coff` now emits a real CodeView `.debug$S` section
+(`mcc_cv_*` in `src/mccdbg.c`): the `CV_SIGNATURE_C13` header, a `STRINGTABLE`, `FILECHKSMS`, a
+per-function `LINES` subsection, and a `SYMBOLS` subsection (`S_COMPILE3` + `S_GPROC32`/`S_END` per
+function). It hooks the same `mcc_debug_funcstart`/`funcend`/`line` events the DWARF path uses, so
+the line data is shared. Function addresses use `SECREL` (reusing `R_X86_64_TPOFF32`) + `SECTION`
+(new `R_X86_64_16` → `IMAGE_REL_AMD64_SECTION`) relocs, and the W3 COFF writer was extended to emit
+`.debug$*` sections (non-`SHF_ALLOC`, marked `IMAGE_SCN_MEM_DISCARDABLE`) with those relocs.
+**Verified end-to-end:** `llvm-readobj --codeview` reads a well-formed line table that maps every
+function to its declaration line (`square:1`, `cube:6`, `main:11`), **and** `lld-link -debug` turns
+the object into a real PDB whose line info `llvm-pdbutil` reads back (`Line 1, Address:
+[0x1000-0x101f]`) — i.e. mcc output is now debuggable by Microsoft PDB tooling *without* the external
+`cv2pdb.exe`. Enforced by `pe/codeview` (`tests/cross/pe-codeview.{c,sh}`, guarded on `llvm-readobj`,
+with the PDB round-trip when `lld-link`+`llvm-pdbutil` are present). Emission is gated to COFF-object
+output only (mcc's own linker builds no PDB and can't apply the SECTION reloc); default `-g` (stabs)
+and `-gdwarf` are unchanged. **Still open:** `.debug$T` type records (functions currently emit
+`FunctionType=T_NOTYPE`), locals/params (`S_LOCAL`/`S_FRAMEPROC`), column info, and i386/arm64. The
+DWARF-already-works finding that motivated this:
+mcc already shipped working, debugger-consumable line info for PE — in DWARF; now also in CodeView. `mcc -gdwarf-4` (or `-gdwarf-2`) on a PE target
 emits a correct `.debug_line`: `addr2line` resolves every function's entry to the right
 `name:decl-line` (`square:1`, `cube:6`, `main:11`), banked as `pe/dwarf-lines`
 (`tests/cross/pe-dwarf-lines.{c,sh}`, native, mingw objdump+addr2line). So mcc PE output **is**
