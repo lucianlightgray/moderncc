@@ -566,6 +566,15 @@ not predict.
 > alone") no longer fits five of its six data points cleanly. The experiment still wants fixing
 > before anyone declares this settled; the difference is that the next person now has a passing
 > `-j` run taken under a *recorded* load to compare against.
+>
+> **Seventh, 2026-08-13, same conditions: passed at 715.86 s under `-j6`, 160-cell family, quiet
+> box.** Three passing `-j` runs in a row now — 1032.74 s, 472.01 s, 715.86 s — against two
+> contended failures at 20.6 s and 84.2 s that nothing since has reproduced. **The spread among the
+> passes is the interesting part: 472 to 1033 s is 2.2×, on a machine that was quiet each time.**
+> Whatever this cell's runtime depends on, it is not captured by "contended or not", and the two
+> fast failures look less like the same phenomenon as the slow passes every time it is re-run. The
+> standing advice is unchanged and now better supported: fix the experiment — `RESOURCE_LOCK`, a
+> stated load, or both — before adding runs to it.
 
 **Two prerequisites this host is missing, both of which silently shrink coverage rather than
 failing:**
@@ -1176,7 +1185,78 @@ ingestion points and is serialized as `warm_gates`. Two things this file also ha
 in `src/ast_eval_slice.h`, not `src/mccast.c`; rank 6 of the *second* pass files it correctly. See
 its own entry below.
 
-**What is actually left of this cluster is one defect at two altitudes: sweep row 17 and `rf-1`.**
+**Sweep row 17's severity call was wrong, and the correctness half is closed — 2026-08-13.**
+"Not a correctness bug" does not survive contact with the object. `ast_reemit` appends the new body,
+re-points the symbol and sets `st_size`, but **never called `mcc_debug_funcend`**, so the
+`.eh_frame` FDE still described the orphan and **the re-emitted function shipped with no CFI**. The
+unwinder stops dead there. Measured on one program whose only variable is declaration order:
+
+| build | `ast.orphan_fn` | `backtrace()` depth |
+| --- | --- | --- |
+| helper defined **after** caller, `-O3` | 1 | **1** |
+| helper defined **before** caller, `-O3` (control) | 0 | 15 |
+| same forward file at `-O0` (no re-emit) | 0 | 15 |
+| gcc-15 `-O3` | — | 4 |
+
+On the `-O3` self-compile it is **45 functions with no FDE** — `mcc_debug_frame_end` is now called
+from `ast_reemit` between `gfunc_epilog()` and `put_extern_sym`, where `func_ind` is already the new
+base, so the FDE is exact and no state has to be restored. FUNC symbols 2892, FDEs 2892 → **2937**:
+every function gains its own and **the 45 orphan FDEs are kept on purpose**, because under
+`--embed-jit`/`-run` the dispatch slot still points into the orphan range and that code still needs
+its CFI. `^exec` **8023 of 8023**.
+
+**New cell `ast/reemit-cfi`, and it needs no separate known-positive** — it fails at every commit
+before the fix, naming each re-emitted function (`outer_a`, `outer_b`, `outer_c` at their own
+`.text` offsets), and passes after. It is structural rather than a `backtrace()`, so it needs no
+glibc and no execution: every `FUNC` symbol must have an FDE at its own `st_value`. Its anti-vacuity
+guard is an `ast.orphan_fn >= 1` floor, because a subject that stops triggering the re-emit would
+otherwise make it pass by testing nothing — which is the exact failure mode row 17 is filed under.
+
+**The byte-reclamation half is NOT tractable at this point in the pipeline, and the row's premise
+for it is false.** The orphan is **not** unreferenced: under `--embed-jit`/`-run`
+(`ast_jit_dispatch_env` defaults on there) the JIT slot's `body_sym` is a `.data` relocation
+pointing *into* the orphan range. Of the obvious approaches, **rewinding when the orphan is last in
+`.text` is empty by construction** — the re-emit only fires when a callee was completed *after* this
+body, so the callee's bytes always sit past the orphan and it can never be the tail (confirmed: all
+45 orphans are in the low third of `.text`); **overwriting in place fits 0 of 45**, because grafting
+grows bodies ~24%; and **full compaction** would have to fix 47,784 `.rela.text` offsets, 3,207
+symbol values, 3,207 `.rela.eh_frame` addends and the JIT slot, with silent catastrophic failure as
+the error mode, for 4.3% of `.text`. **The one design that would work is deferral**: rewind at
+*retain* time in `ast_func_end`, where the body genuinely is the tail of `.text`, `.rela.text` and
+`.eh_frame` at once, and where that exact rewind idiom already exists — then splice or re-emit at
+end of TU. Medium-sized and layout-visible. **Written down rather than attempted**, so the next pass
+does not re-derive it.
+
+**`rir-coverage-census` went red on this and it is worth reading why, because the cause is a test
+fixture and not the compiler.** The `wide` corpus walks `tests/ast/**.c`, so adding
+`tests/ast/reemit_cfi_subject.c` moved the denominator: **384 → 385 files**, sha
+`e466c8706d3f5c26` → `c3714c0c00f6ddc8`, and the cell refuses to compare percentages taken over a
+denominator that is not the banked one. Re-banked deliberately, with the decomposition the tool
+prints for exactly this purpose — **in every row the pre-existing component dominates the corpus
+mix, and this session's contribution is NEGATIVE on four of the seven**:
+
+| figure | banked | now | pre-existing | corpus mix |
+| --- | --- | --- | --- | --- |
+| `bodies_pct` | 15.4242 | 15.4299 | +0.0327 | −0.0270 |
+| `bytes_pct` | 1.2765 | 1.3878 | +0.1116 | −0.0003 |
+| `nodes_pct` | 35.4133 | 35.7923 | +0.3777 | +0.0013 |
+| `nodes_pct_strict` | 27.0161 | 26.9932 | −0.0220 | −0.0009 |
+| `nodes_pct_loose` | 64.4624 | 64.6388 | +0.1795 | −0.0031 |
+| `region_nodes_pct` | 10.2897 | 10.6621 | +0.3703 | +0.0021 |
+| `big_region_nodes_pct` | 3.0732 | 3.2538 | +0.1811 | −0.0005 |
+
+Per-body inventory **4574 → 4582**, 0 gone. **The pre-existing half is a day of other machines'
+commits that nobody had re-banked**, which this re-take absorbs and attributes rather than hides —
+and it is the argument for the decomposition existing at all: without it, a fixture worth 0.003
+points and a real drift worth 0.38 would have been one indistinguishable number.
+
+**One instrument correction:** `ast.orphan_bytes` **undercounts by ~2.4%** (77,914 against a true
+79,845 B span), because `body_len` is captured in `ast_func_end` *before* `gsym`/`gfunc_epilog`/
+`mcc_debug_funcend` run in `gen_function`. `ast.orphan_relbytes` is exact. Fix that before banking
+the byte figure, or the bank enshrines a number below the truth.
+
+**What is actually left of this cluster is one defect at two altitudes: sweep row 17's BYTES and
+`rf-1`.**
 Both are "bytes that reach `.text` that no size metric attributes", and both measure with the same
 expression, `ind - ast_body_ind_sv`. Row 17 is **worse than its own row says on this tree**:
 re-measured 2026-08-13 at `-O3` on a self-compile it is **45 functions / 77,914 B ≈ 5.05% of
@@ -5155,7 +5235,7 @@ schedule.
 | **14** | **`ptr_unlink` for-condition-store segfault** — root-caused to `rir_cf_cond`/`rir_docond`, needs a 5-fix/34-break discriminator. Orphaned: zero references anywhere else in this file | medium | **correctness** |
 | **15** | ~~**`full_language.c` still diverges at `-O0` on x86_64/i386** — an `AST_OP_ASM` replay defect (P4 defect 4)~~ **CLOSED on `wt/replayfix`** — and it was not a divergence, the *compile failed*. The replay of an asm that defines a symbol raises a legitimate `assembler label already defined`, and the recovery `longjmp` unwound past `mcc_assemble_inline`'s epilogue, leaving the C parser reading tokens out of the dead `:asm:` buffer. See the landed section | done | **replay fidelity** |
 | **16** | ~~**The `jit-splice` pin hides a live miscompile.**~~ **CLOSED on `wt/replayfix`** — and it was not a `jit-splice` bug. A body that takes a label address was miscompiled at `-O1`/`-O2`/`-O3`/`-Os` with no flags, and segfaulted the compiler under `mcc -run`; the pinned flag was the only thing exercising the rebase that exposed it. Pin lifted, `KNOWN_FLAKY_RED` emptied. See the landed section | done | **correctness** |
-| **17** | **`-O3` re-emission leaves the pre-inline copy in `.text`** — ~~**27 functions / 52,022 B, ~3.6%** of `.text`~~ **re-measured 2026-08-13 on an `-O3` self-compile: 45 functions / 77,914 B ≈ 5.05% of emitted body bytes.** `ast_reemit` appends at the current end of `.text` and re-points the symbol at the new copy; nothing rewinds to `AstReemitFn.body_ind` and no later pass compacts, so the old body and its relocations stay in the object unreferenced. Not a correctness bug. **The counters now exist** — `ast.orphan_fn`, `ast.orphan_bytes`, `ast.orphan_relbytes` under `MCC_INV=1` — but no cell, no bank and no entry in the codegen list reads them, so the clause survives the instrument | medium | **emitted code** |
+| **17** | **`-O3` re-emission leaves the pre-inline copy in `.text`** — ~~**27 functions / 52,022 B, ~3.6%** of `.text`~~ **re-measured 2026-08-13 on an `-O3` self-compile: 45 functions / 77,914 B ≈ 5.05% of emitted body bytes.** `ast_reemit` appends at the current end of `.text` and re-points the symbol at the new copy; nothing rewinds to `AstReemitFn.body_ind` and no later pass compacts, so the old body and its relocations stay in the object unreferenced. ~~Not a correctness bug.~~ **IT IS A CORRECTNESS BUG, and that half is FIXED 2026-08-13 — see the row below.** `ast_reemit` never emitted an FDE for the body it re-points the symbol at, so the CFI still described the ORPHAN and an unwinder stopped dead at the first re-emitted frame. **The byte-reclamation half is NOT fixed and is not tractable here** — also below. **The counters now exist** — `ast.orphan_fn`, `ast.orphan_bytes`, `ast.orphan_relbytes` under `MCC_INV=1` — and `ast/reemit-cfi` is the first cell to read one | medium | **emitted code + correctness** |
 | **18** | **`--mutate` is blind to `memcpy`, and the real gap is the corpus.** Four of six operator sites already perturb written memory and `g_frame_mismatch` exists; what is missing is **any `memcpy`/`memset` in the slice corpus to mutate**. Smaller than the debt as filed | small | **test strength** |
 | **19** | **Debt 6-vi — the chain-store *member* fixture was never written.** Its stated blocker (debt #6a's `-O1` vstack underflow) has been gone since 2026-08-09. `exec-chainlive/*` covers the live half; the member half of the pairing has no cell | small | **regression cover** |
 | **20** | **`flagsweep-cover` and `asm-gas-directives` are `mcc_skip_test` stubs — `cmake -E echo`, structurally incapable of failing.** `flagsweep-cover` hides 75 covering-array rows behind an opt-in that nothing runs; `asm-gas-directives` parks a real unimplemented feature (*"integrated assembler lacks sgdtq/sidtq/swapgs encodings"*) as an always-green cell. Neither is in `tests/must-run.txt`. There are **74** `mcc_skip_test` call sites, 17 live in this configuration | small each | **cells** |

@@ -1065,7 +1065,7 @@ ST_FUNC void mcc_eh_frame_fde(MCCState *s1, Section *code_sec,
 						eh_frame_section->data_offset - fde_start - 4);
 }
 
-static void mcc_debug_frame_end(MCCState *s1, int size) { MCC_TRACE("enter\n");
+ST_FUNC void mcc_debug_frame_end(MCCState *s1, int size) { MCC_TRACE("enter\n");
 	unsigned char cfi[64];
 	int n = 0, range = size;
 

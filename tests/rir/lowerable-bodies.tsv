@@ -5834,6 +5834,7 @@ wide	elf	src/mccrir.c	rir_prod_body_set	src/mcc.c	0000
 wide	elf	src/mccrir.c	rir_prod_fn_begin	src/mcc.c	0000
 wide	elf	src/mccrir.c	rir_prod_fn_end	src/mcc.c	0000
 wide	elf	src/mccrir.c	rir_prod_note	src/mcc.c	0000
+wide	elf	src/mccrir.c	rir_prod_notice	src/mcc.c	0000
 wide	elf	src/mccrir.c	rir_prod_reemit	src/mcc.c	0000
 wide	elf	src/mccrir.c	rir_prod_replay_begin	src/mcc.c	0000
 wide	elf	src/mccrir.c	rir_prod_replay_end	src/mcc.c	0000
@@ -6185,6 +6186,13 @@ wide	elf	tests/asm/dash_s_roundtrip/prog.c	neg	tests/asm/dash_s_roundtrip/prog.c
 wide	elf	tests/asm/dash_s_roundtrip/prog.c	quantize	tests/asm/dash_s_roundtrip/prog.c	6666
 wide	elf	tests/asm/dash_s_roundtrip/prog.c	sumarr	tests/asm/dash_s_roundtrip/prog.c	6666
 wide	elf	tests/asm/dash_s_roundtrip/prog.c	weight	tests/asm/dash_s_roundtrip/prog.c	6666
+wide	elf	tests/ast/reemit_cfi_subject.c	inner_a	tests/ast/reemit_cfi_subject.c	0000
+wide	elf	tests/ast/reemit_cfi_subject.c	inner_b	tests/ast/reemit_cfi_subject.c	0000
+wide	elf	tests/ast/reemit_cfi_subject.c	inner_c	tests/ast/reemit_cfi_subject.c	0000
+wide	elf	tests/ast/reemit_cfi_subject.c	main	tests/ast/reemit_cfi_subject.c	0000
+wide	elf	tests/ast/reemit_cfi_subject.c	outer_a	tests/ast/reemit_cfi_subject.c	0000
+wide	elf	tests/ast/reemit_cfi_subject.c	outer_b	tests/ast/reemit_cfi_subject.c	0000
+wide	elf	tests/ast/reemit_cfi_subject.c	outer_c	tests/ast/reemit_cfi_subject.c	0000
 wide	elf	tests/ast/replay/argc_expr.c	main	tests/ast/replay/argc_expr.c	6666
 wide	elf	tests/ast/replay/array_init.c	main	tests/ast/replay/array_init.c	0000
 wide	elf	tests/ast/replay/array_sum.c	main	tests/ast/replay/array_sum.c	4444

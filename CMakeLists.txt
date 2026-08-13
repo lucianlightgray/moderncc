@@ -4168,6 +4168,22 @@ if(MCC_BUILD_TESTS)
             endif()
         endif()
 
+        # Sweep row 17's correctness half. The cell carries its own
+        # known-positive rather than needing a second one: it fails at any
+        # commit before the ast_reemit FDE emit, naming each re-emitted
+        # function, and its ast.orphan_fn floor is what stops it passing
+        # vacuously if the subject ever stops triggering the re-emit.
+        if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR
+           AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_TARGETOS STREQUAL "Darwin")
+            add_test(NAME "ast/reemit-cfi"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/reemit-cfi.sh"
+                        "$<TARGET_FILE:mcc>"
+                        "${CMAKE_CURRENT_SOURCE_DIR}"
+                        "${CMAKE_CURRENT_BINARY_DIR}/reemit-cfi")
+            set_tests_properties("ast/reemit-cfi" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 120)
+        endif()
+
         if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR
            AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_TARGETOS STREQUAL "Darwin")
             if(MCC_ENABLE_CROSS)

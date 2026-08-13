@@ -2076,6 +2076,7 @@ ST_FUNC void mcc_debug_fix_forw(MCCState *s1, CType *t);
 #if MCC_TARGET_UNIX && !defined MCC_TARGET_ARM && !defined MCC_TARGETOS_BSD
 ST_FUNC void mcc_eh_frame_start(MCCState *s1);
 ST_FUNC void mcc_eh_frame_end(MCCState *s1);
+ST_FUNC void mcc_debug_frame_end(MCCState *s1, int size);
 ST_FUNC void mcc_eh_frame_hdr(MCCState *s1, int final);
 #define MCC_EH_FRAME 1
 #endif

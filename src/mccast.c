@@ -21775,6 +21775,9 @@ static void ast_reemit(Sym *sym, AstArena *ast) { MCC_TRACE("enter\n");
 	ast_promo_n = 0;
 	nocode_wanted = 0;
 	gfunc_epilog();
+#if MCC_EH_FRAME
+	mcc_debug_frame_end(mcc_state, ind - new_ind);
+#endif
 	put_extern_sym(sym, cur_text_section, new_ind, ind - new_ind);
 	rir_prod_reemit((long)(ind - new_ind));
 	elfsym(sym)->st_size = ind - new_ind;
