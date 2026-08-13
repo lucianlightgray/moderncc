@@ -81,6 +81,42 @@
 > `STRAT_NONE` sentinel had to move for a 23rd strategy to exist at all. `strat-dark:sra` is
 > banked deliberately — a strategy that is off by default is dark at every level by construction.
 >
+> **arm64/macOS wave, 2026-08-13 — the inner loop was measuring a distribution, and five of six
+> "blocked" rows were not.** Cluster A closed in full (A1–A7), cluster B to 7 of 8, cluster C to
+> 5 of 7. **N26 closed and its diagnosis was wrong**: `flagsweep-exec` was not `-j` contention —
+> a cell times out *alone*, and `atomic_counter` run 24× on an idle machine is **bimodal**, 18
+> runs at 0.45–2.83 s and 6 at 51–121 s. The cause is that `PIN` is `taskset`, which macOS lacks,
+> so the mechanism built to prevent exactly this was a silent no-op here; `taskpolicy -b` fixes
+> it and the family is **119/119 in 2694 s at `-j4`, zero timeouts**. **N24 closed**: one
+> `strcmp` in `mccjit_bind_apply` compared the blob's undecorated key against a `_`-prefixed
+> Mach-O symtab, so no bind ever applied and the host resolver silently bound libc's `random()` —
+> a Mach-O defect, not an arm64 one. **N30 found and root-caused**: `_Float16` negation quiets
+> signaling NaNs, 1022 of 65536 patterns, because it lowers through a promote-to-`float` round
+> trip; the fix is written and verified (0 mismatches, digests match gcc-16 and clang) but backed
+> out — it fails under `MCC_RIR_PROD=2` + `MCC_RIR_ABORTWHY=1`, which places the remaining defect
+> in the RIR replay path rather than the negation.
+>
+> **The board's own top four did not survive checking.** Rank 3 (six binary opcodes with "zero
+> coverage") had been closed eight days earlier. Rank 2 (`MCC_RIR_STAMP`) does not do what it
+> advertises — no emitter *or* dump reads `ast_stype_*`. Four claimed couplings were refuted by
+> name. **The 34 `diverge-both` categories decompose completely**: 22 references-disagree, 10
+> implementation-defined NaN sign/payload, 2 real (N30) — established on the harness's own corpus
+> after a hand-built one inverted the answer.
+>
+> **Instrument findings outlast most of the fixes.** `diverge-both` conflated "mcc contradicts a
+> consensus" with "all three differ", so `smokerun` grew a third verdict class. This host has a
+> **real GNU gcc** (`/opt/homebrew/bin/gcc-16`) that the smoke oracle never looked for, so
+> `diverge-both` was structurally unreachable here rather than merely unused. `rir-coverage`
+> enforced 2 comparisons and skipped 3 because `residual`/`kept_coverage` were banked flat; a
+> per-format schema takes it to **20 enforced, 0 skipped**. Three gates that could not fail were
+> floored, two fixture directories that passed empty were floored, and `slice/census` was
+> **bisected** to `82f39935` — a deliberate priced change, not drift.
+>
+> **The pattern worth carrying: a failed approach is evidence about the approach, not the
+> problem.** B8 was a file-format parser, C1 a bank schema, `slice/census` a bisect, B1 a guard
+> that made the hazard impossible, and N30's premise was wrong because `R_RET` returns `REG_IRET`
+> for `VT_FLOAT16` — a half never sits in an FP register. Corrections to this file's own rows are
+> recorded inline: **N27 and N28 were filed wrong and struck.**
 > **arm64/macOS wave, 2026-08-12 — the inner loop did not exist on one of the three machines,
 > and turning it on found two miscompiles.** `ctest -R "^smoke/"` was **12 of 12 red on the Mac**
 > and had been for as long as the suite existed there. None of it was a compiler defect: the
