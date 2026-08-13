@@ -96,6 +96,33 @@
 > out — it fails under `MCC_RIR_PROD=2` + `MCC_RIR_ABORTWHY=1`, which places the remaining defect
 > in the RIR replay path rather than the negation.
 >
+> **arm64/macOS wave, 2026-08-13 (second) — the Mac's whole "belongs to the Mac" list closed, and
+> two of the three were already done before the list was written.** **N29 closed**: the smoke
+> oracle now takes the already-resolved `DIFF3_GCC`, so this host adjudicates with Homebrew GCC
+> 16.1.0 against Apple clang 21.0.0 and `diverge-both` is live — `differing=275`, split 243
+> diverge-one / 22 refs-disagree / 10 diverge-both, smoke **12/12 in 209.5 s**. **All ten
+> diverge-both are NaN sign or payload**, established by replaying `smc_hash` point by point with
+> a harness whose digests reproduce the subject's byte for byte on all three compilers: 112 points
+> where the references agree and mcc differs, 46 sign-bit-only, 66 payload, **zero finite**. The
+> board's "2 real" was one defect (N30) counted twice. **N30 re-verified where it was first found
+> and backed out**: 0 mismatches over all 65536 `_Float16` patterns at every level `-O0`–`-O4`, 0
+> errors under the `MCC_RIR_PROD=2 MCC_RIR_ABORTWHY=1` configuration that defeated attempt 3, and
+> the predicted `mov w30, #0x8000 / eor w0, w0, w30` read out of the Mach-O object.
+> **`slice/census` and the Metal region differential were both already closed in the tree** —
+> re-banked with its bisect at `ac69a0fd`, and the MoltenVK step landed at `2eee6c41` — so the
+> twelve `gpu/spv-*`/`gpu/msl-*` cells including the binding-2 region arm are green here in 74.8 s.
+>
+> **What the wave actually bought is three new rows, all of them about instruments.** **N36**:
+> mcc's over-wide bit-field semantics are split between the references — 168 of 185 `bf*` rows
+> match gcc, the 17 `*.EQM1` rows match clang, and one reference showed both as the same verdict.
+> **N37**: the refs-disagree class introduced *to fix N29's own triage* is computed per digest, so
+> a category with one reference disagreement clears every other point in it — `csweep.C64/C80.CDIV`
+> and `CDIVSEL` each hide 283 refs-agree points, 44 finite, three of them a 53%-relative-error
+> complex divide rather than rounding. And **`ci/must-run-registered` is red on this host**, four
+> must-run cells unregistered on Darwin, which is the third time in three days a red was found on
+> a machine because someone ran the cell rather than read the table. Three green-by-omission GPU
+> registrations were armed on the way (`SKIP_RETURN_CODE 77` under `MCC_GPU_REQUIRED=ON`).
+>
 > **The board's own top four did not survive checking.** Rank 3 (six binary opcodes with "zero
 > coverage") had been closed eight days earlier. Rank 2 (`MCC_RIR_STAMP`) does not do what it
 > advertises — no emitter *or* dump reads `ast_stype_*`. Four claimed couplings were refuted by
@@ -564,7 +591,7 @@ x86_64-linux where all three pass:
 | cell | what it says |
 | --- | --- |
 | ~~`jit/bind-local`~~ **CLOSED 2026-08-12** | was **N24** — zero local binds across 6 programs, plus `collide_libc` giving 45314 under `MCC_JIT_KGC=0` against 58700 under `MCC_JIT=0`. Root cause was one `strcmp` in `mccjit_bind_apply` comparing the blob's undecorated bind key against a Mach-O symtab's `_`-prefixed names; both cells green and the JIT family is 65/65 |
-| `slice/census` | `blocks` is 983 against the banked 990 for the `arm64`/`Darwin` column. **Not the corpus**: the column was set at `10a78fe8` (2026-08-09) and the only two `tests/exec` changes since are `optimizer/loop_{fusion,interchange}.c` and a new `inline_asm/asm_reloc_suffix.c`, all of which sort *past* the 60-file window the census uses (it ends at `features_c99_c11/attribs_position.c`). So it is 102 `src/` commits of drift on a column **no host has measured since it was banked** — the Linux box runs the `x86_64`/`Linux` column and the Mac does not run the suite. Attribution needs a bisect over those 102; re-banking without one is the thing this file tells you not to do |
+| ~~`slice/census`~~ **CLOSED 2026-08-13** | was `blocks` 983 against a banked 990 on the `arm64`/`Darwin` column. The bisect this row demanded was done and the column re-banked with attribution at `ac69a0fd`: the mover is `82f39935`, a deliberate priced change (the ternary fold must not hide a tail call or a constant condition), which published its own cost on gcc.c-torture in its commit message and landed **46 minutes after** the column was set on a host that does not run this suite. Only `blocks` moved; the other five keys still match exactly. **Re-verified green here 2026-08-13, 1.33 s.** The re-bank instruction in the cell's own `FATAL_ERROR` was wrong and is fixed — it named `tools/slice-census.py`, a different instrument that prints none of these keys; the producer is `slicerun --census` |
 | `rir/drop-ratchet` | **New to this table 2026-08-12, and pre-existing** — verified by rebuilding `src/` at `6c09fb7a` and re-running: it fails identically without this session's changes. `regaddi` is banked as a dropping reason but **does not appear in the report at all**, which the cell itself says is either a measurement that did not run or a reason that genuinely stopped dropping. It was missing from this table because every earlier sweep here filtered on `^rir-` (hyphen), which does not match `rir/drop-ratchet` (slash) — a reminder that a regex-selected sweep is only as complete as its regex |
 | ~~`superopt/global-reload` (+`-known-positive`)~~ **CLOSED 2026-08-12** | **not a compiler defect** — `tests/superopt/globreload.awk` was written against GNU binutils objdump on ELF and four of its assumptions are format, not fact |
 
@@ -889,13 +916,29 @@ does **not** settle N30 — that needs the fold/run class. **Two changes, this o
 > source(s) failed to compile** and computes every percentage over the remainder. Both are the
 > cluster thesis one level up — a number that is present, and cannot fail.
 
-**1. N29 — flip the smoke oracle, and take the 12 candidates with it.** *The Mac.* This is the
-largest single piece of unclaimed evidence on the board: pointing `MCC_SMOKE_GCC` at the real
-`gcc-16` turns `diverge-both` from structurally unreachable into a live verdict on that host, and
-the triage is already done — 22 references-disagree, 10 IDB NaN sign/payload, **2 real**, of which
-N30 was one and is now fixed. The fix is one `find_program` line preferring the already-resolved
-`DIFF3_GCC` over a version ladder that rots. **Do it together with re-triaging the remaining 11**,
-not before, because it turns the inner-loop gate red until they are classified.
+**~~1. N29 — flip the smoke oracle, and take the 12 candidates with it.~~ — CLOSED 2026-08-13 on
+the Mac, both halves in one commit.** The flip is the one line the entry priced. The triage that
+gated it went further than the entry's estimate in both directions: the candidates are **10, not
+11** (the entry's arithmetic; the row's own enumeration is 12 and N30 closed two of them), and
+**all ten are NaN sign or payload — none is real**, against the entry's "2 real, of which N30 was
+one". The other survivor the earlier triage counted was `bsweep.F16.FNEG`, i.e. N30 again under a
+second name, so the "2 real" was one defect double-counted.
+
+**What makes the closure stick is the method, not the verdict.** The ten were replayed point by
+point with a harness extracted from `smc_hash` **whose digests reproduce the subject's byte for
+byte on all three compilers** — without that check a per-case replay is a different program from
+the cell and proves nothing about it. 112 points where the references agree and mcc differs, all
+112 a quiet NaN in both answers, 46 sign-bit-only and 66 payload, zero finite. smoke is 12/12 in
+209.5 s at `-j2` with the flip in.
+
+**It cost two new rows, and they are worth more than the closure.** **N36**: mcc's over-wide
+bit-field semantics are split — 168 of 185 `bf*` rows match gcc, the 17 `*.EQM1` rows match
+clang, and a one-reference panel showed both arms as the same `diverge-one`. **N37**: the
+refs-disagree class this file introduced *to fix N29's own triage* is computed per digest, so
+`csweep.C64/C80.CDIV` and `CDIVSEL` are cleared while each holds 283 points where the references
+agree and mcc differs, 44 of them finite and three of them not rounding at all. The lesson the
+entry was already carrying one level up holds one level down: **a verdict class is only as good
+as the granularity it is computed at.**
 
 **2. N7 — re-run the injection under the GPU arm.** *Any host with a working device; this one.*
 The instrument this row needed now exists: the `[ladder-*]` panel prints `points=` on its own line,
@@ -999,9 +1042,14 @@ above carries the argument. **The one thing it left behind is a compiler-side re
 runtime one:** `x86_64-gen.c::gen_ovf_addsub` intercepts calls that nothing can now make, and is
 kept on purpose.
 
-**Belongs to the Mac:** N29 (above), the Metal region differential — do **MoltenVK first**, ~10
-lines and already half-built — and `slice/census`'s `arm64`/`Darwin` column, now bisected to
-`82f39935` and understood as a priced change.
+**~~Belongs to the Mac:~~ — ALL THREE CLOSED 2026-08-13, and two of the three were already done
+when this line was written.** N29 is closed above and cost N36 and N37. `slice/census`'s
+`arm64`/`Darwin` column was re-banked with its bisect at `ac69a0fd` and is green here in 1.33 s.
+The Metal region differential's MoltenVK step landed at `2eee6c41` and the whole SPIR-V arm —
+including `gpu/spv-mem-binding`, the binding-2 region cell — is green on this host in 74.8 s; the
+real gap was that CI installs `molten-vk` without `vulkan-headers`, which is now fixed. What is
+left on the Mac is new: **N36**, **N37**, and `ci/must-run-registered`, which is red here and
+which no table in this file listed.
 
 ### Next steps, prioritised — SUPERSEDED, re-verified against the tree 2026-08-12 (second pass)
 
@@ -1201,13 +1249,37 @@ host change available anywhere on this board. *(2026-08-13: the checkout is ther
 board never named**: `vendor/gcc-c-torture-execute` must be symlinked at that checkout or
 `optlevel/torture-differential` silently skips.)*
 
-**Only this host can do it:** N24 (above). And the Metal region differential — but **the
-"no differential cell at all" headline is wrong**: `gpu/msl-slice-differential`,
-`-known-positive` and `-real` all exist and are the default config here. What is missing is the
-*region* arm — `msl_region*` against a live `spv_region*` family, and `mem_case()` is stubbed
-with a literal "no Metal arm" message. Priced honestly that is M1→M2→M4→M7, ~1,100–1,650 lines;
-this file's own sequencing says do **MoltenVK first** (~10 lines, already half-built), which
-gives macOS the whole SPIR-V arm including regions.
+**Only this host can do it:** ~~N24~~ (closed). ~~And the Metal region differential.~~
+**MEASURED AND LARGELY WRONG, 2026-08-13 — the region differential already runs on this host and
+has since 2026-08-07.** Three corrections, in the order they matter.
+
+*(a) The MoltenVK step is not "half-built", it landed.* `2eee6c41` (2026-08-08, 14 lines of
+`CMakeLists.txt`) added the `find_library(MCC_MOLTENVK_LIB MoltenVK)` fallback, and
+`ARCHIVED.md` has recorded since then that this row is stale. What made the row *look* live is a
+second false premise: it says the fallback "never fires" because no macOS job passes
+`-DVulkan_INCLUDE_DIR`. But `find_package(Vulkan QUIET)` sets `Vulkan_INCLUDE_DIR` **even when it
+fails** — `FOUND=FALSE INC=/opt/homebrew/include LIB=NOTFOUND` on this box — so with
+`vulkan-headers` installed the fallback fires with no `-D` flags at all.
+
+*(b) So the SPIR-V arm, regions included, is green here.* Twelve `gpu/spv-*` and `gpu/msl-*`
+cells in **74.8 s**, and the one the region item is actually about — `gpu/spv-mem-binding`,
+which is the only cell that reaches binding 2 — reports `mem lanes=64 through binding 2, 0 bad`
+on an Apple M1 Pro. `a918f003` already closed the M7 defect this file still records (two
+descriptors, not three): `gpu_run` builds and writes three.
+
+*(c) What was really missing was in CI, and it is failure mode 1 of `must-run.txt` verbatim.*
+`brew deps molten-vk` is empty — the formula ships no Vulkan headers — and neither macOS
+workflow installed any, so on a GitHub runner `Vulkan_INCLUDE_DIR` is NOTFOUND, the fallback
+cannot fire, and all seven `gpu/spv-*` names silently become stubs. **Fixed 2026-08-13**: both
+workflows install `vulkan-headers` and assert the header exists, and `CMakeLists.txt` finds its
+own headers on Darwin when `find_package` leaves the variable empty.
+
+**What is genuinely left is the native MSL region arm, unchanged and unstarted** — `MslRegion`,
+an MSL `mem_case()` (still the literal `"the binding-2 case has no Metal arm"` stub at
+`tools/spvgate.c`), a third `MTLBuffer` at index 2, and a `gpu/msl-mem-binding` pair. M4 + M7,
+550–850 lines. No stub name is reserved for it, so `tools/regstub-lint.py` enforces nothing
+there. **It is no longer the only way to get regions on a Mac, which is the whole point of the
+sequencing advice** — that advice was right and has already been taken.
 
 **Not code, decide first:** item 22 (`_Float16` evaluation format — and note the premise needs
 fixing: mcc does **not** predefine `__FLT_EVAL_METHOD__`, its headers define it, so the "document
@@ -1227,7 +1299,10 @@ machine. What it establishes, and what it does not:
   `cross/shadow-iv-x86_64` now **skips with a reason** instead of reporting a vacuous sweep —
   the four closures verified in place rather than by assertion.
 - **`slice/census` is the one real red**, and it is a drifted column, not a defect. See the
-  arm64 standing-reds table.
+  arm64 standing-reds table. *(Closed 2026-08-13 — bisected to `82f39935` and re-banked at
+  `ac69a0fd`; green here in 1.33 s. **But "the one real red" did not survive 2026-08-13**:
+  `ci/must-run-registered` is red on this host too and no table in this file listed it. See the
+  standing-reds table.)*
 - **13 timeouts, all `flagsweep-exec`, all contention** — that is **N26**, and until it is fixed
   a full run on this host cannot distinguish a regression from a scheduling artefact.
 - **`jit/bind-local` (N24), `flagsweep/cover3-verify`, `ci/registration-stubs` and
@@ -2076,6 +2151,33 @@ because the fallback to `find_program(NAMES gcc cc)` is still live for hosts wit
 and a same-family pair is now named at configure time instead of being silently registered as a
 cross oracle.
 
+**~~N29. The smoke oracle resolution misses the real gcc.~~ — CLOSED 2026-08-13, both halves, and
+the triage found two things the row did not predict.** The fix is the one line the row named:
+`CMakeLists.txt` hands the smoke arm the already-resolved `DIFF3_GCC` instead of a version
+ladder, so the oracle is Homebrew GCC 16.1.0 against Apple clang 21.0.0 and `diverge-both` is a
+live verdict here. `rows=1772 comparable=1766 differing=275`, split **243 diverge-one / 22
+refs-disagree / 10 diverge-both**; smoke is **12 of 12 in 209.5 s at `-j2`** in `cmake-macos`
+with the flip in place, and the bank is re-taken with the classification written into its header.
+
+**The candidates are 10, not the 11 the next-steps entry says** — the row's own enumeration is
+12 and N30 closed `bsweep.F16.FNEG.{fold,run}`, which falls to zero on the same take.
+
+**All ten are NaN sign or payload, and this is established per case rather than per digest.**
+The five subjects — `csweep.{C32.CMULADD, C64.CMUL, C64.CMULADD, C80.CMUL, C80.CMULADD}` in
+their fold and run columns — were replayed point by point with a harness extracted from
+`smc_hash`, **whose csweep digests reproduce the subject's byte for byte on all three
+compilers**, which is what makes the per-case rows admissible as evidence about the cell. 112
+points where the two references agree and mcc differs; every one of the 112 is a quiet NaN in
+both answers, **46 differing in the sign bit alone and 66 in the payload, zero in a finite
+value**. IEEE 754 leaves both unspecified. Banked, not fixed.
+
+**Two findings the second reference paid for that the row did not anticipate, filed as N36 and
+N37.** The first is that mcc's over-wide bit-field semantics are split between the two
+references; the second is that the refs-disagree class this file introduced to fix N29's own
+triage has the same defect one level down. Both are below.
+
+**As originally filed:**
+
 **N29. The smoke oracle resolution misses the real gcc, so this host has been validating against
 one compiler when two were installed.** New 2026-08-12, and it supersedes N28. `CMakeLists.txt`
 does `find_program(MCC_SMOKE_GCC NAMES gcc-15 gcc)` — **`gcc-16` is not in that list**, `gcc-15`
@@ -2131,6 +2233,53 @@ land with the 12 real ones.
 
 **The 12 candidates:** `bsweep.F16.FNEG.{fold,run}`, `csweep.C32.CMULADD.{fold,run}`,
 `csweep.C64.{CMUL,CMULADD}.{fold,run}`, `csweep.C80.{CMUL,CMULADD}.{fold,run}`.
+
+**N36. mcc's over-wide bit-field semantics are split between the two references, and one
+reference could not see it.** New 2026-08-13, from N29's flip. This file already records that
+mcc follows **gcc** on wide bit-fields: `bf_trunc` in `gen_op` reduces the result of every binary
+op on a field wider than 32 bits to the field width, which is gcc's `TYPE_PRECISION` reading of
+C11 6.7.2.1p5 and not clang's convert-to-declared-type, and `b3c660f1` did it deliberately to fix
+four gcc c-torture tests. With a real gcc in place that is now proved on this host rather than
+inferred from the x86_64 bank: **168 of the 185 `bf*` rows match gcc exactly**.
+
+**The other 17 match clang.** Every `*.EQM1` / `*.eqm1` row — `f == -1` on an over-wide unsigned
+field at its maximum — has gcc answering 1 and mcc and clang answering 0. So the compiler takes
+gcc's field-width precision for the arithmetic and clang's declared-type conversion for the
+comparison, and **no single reference can be cited for the pair**. A one-reference panel reported
+both arms as the same undifferentiated `diverge-one`, which is exactly why this went unseen: the
+verdict class was right and the evidence behind it was one compiler.
+
+Left banked rather than fixed, deliberately. Which half to move is a semantics decision — the
+whole area is implementation-defined and this file's rule for implementation-defined answers is
+to pin mcc's and record the disagreement. What is *not* defensible is being internally
+inconsistent about which implementation is being followed, so the row stays open as a decision
+rather than a bug. Size: the comparison path, not `bf_trunc`.
+
+**N37. The refs-disagree class is a property of a whole digest, so a category containing one
+reference disagreement is cleared for every other point in it.** New 2026-08-13, and it is N29's
+own finding one level down. N29 established that `diverge-both` conflated "mcc contradicts a
+consensus" with "the references disagree and mcc picked neither", and `smokerun` grew a third
+verdict class to separate them. That class is computed on the **category digest**: if the two
+references differ anywhere in a category, the whole category is `refs-disagree` and every point
+in it is cleared.
+
+**Measured, on the same per-case replay that triaged N29.** `csweep.C64.CDIV`, its C80 twin and
+both `CDIVSEL` columns are classified refs-disagree and therefore banked as
+implementation-defined. Each holds **283 points where the references DO agree and mcc differs**,
+and **44 of those are finite values rather than NaNs**. Of C64.CDIV's 60 differing finite
+components, 52 are 1 ulp and 5 are 2 ulps — but **three are not rounding at all**. The worst is a
+real part of `-1.694065894339194e-21` against a consensus `-1.1102230245141343e-21`, a **53%
+relative error**, on a complex divide whose real part cancels catastrophically. Complex division
+accuracy is not specified by C outside Annex G, so this is quality-of-implementation rather than
+a conformance defect — but it is exactly the class the harness exists to surface, and the harness
+currently reports it as cleared.
+
+**Two separable items.** The instrument one is the real row: a category should carry its own
+per-point split, so `refs-disagree` means "every differing point had disagreeing references" and
+not "at least one did". Cheap, and it is the only way any of the numbers above can be re-taken by
+a cell rather than by hand. The compiler one is the complex-divide accuracy — gcc and clang both
+route through the `__divdc3` lineage (Smith's algorithm with scaling) and mcc does not; whether
+to follow them is a decision, not a bug report.
 
 **~~N30. `_Float16` negation quiets signaling NaNs.~~ — CLOSED 2026-08-13 on x86_64-linux, and
 the arena problem attempt 3 hit is closed with it.** The finished fix is not a constant/runtime
