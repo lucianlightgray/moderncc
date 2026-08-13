@@ -18,9 +18,7 @@
 #
 #  (c) a subject that cannot be compared at all.
 
-20020720-1.c       | 1-4  | (a) fabs(x) < 0.0 is not folded to false
 20030216-1.c       | 1-4  | (a) a load of `const double one = 1.0` is not const-propagated, so (int) one != 1 is not folded
-20041114-1.c       | 1-4  | (a) var <= 0 || (unsigned long)(unsigned)(var - 1) < UINT_MAX is not folded to 1
 compare-3.c        | 1-4  | (a) composite comparisons that are always false, (x==y) && (x!=y) and friends, are not folded
 pure-1.c           | 1-4  | (a) repeat calls to __pure__ and __const__ functions are not CSEd
 
