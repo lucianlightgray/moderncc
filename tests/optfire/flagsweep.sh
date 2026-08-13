@@ -260,6 +260,13 @@ corpus_run() {
 case "$MODE" in
 accept)
 	printf 'int main(void){return 0;}\n' > "$WORK/a.c"
+	ctl=$("$MCC" -B"$BDIR" -I"$IDIR" -fnot-a-flag-xyzzy -c "$WORK/a.c" -o "$WORK/a.o" 2>&1) || true
+	case "$ctl" in
+	*"unsupported option"*|*"invalid option"*) ;;
+	*)
+		echo "FAIL flagsweep-accept: the driver did not report -fnot-a-flag-xyzzy as unsupported, so nothing below can tell an accepted flag from a driver that says nothing at all: $ctl"
+		exit 1 ;;
+	esac
 	bad=0; n=0
 	for f in $(flags_from_table); do
 		n=$((n + 1))
@@ -367,7 +374,8 @@ exec)
 	done
 	[ -z "$missing" ] ||
 		{ echo "FAIL flagsweep-exec $ARG: named subject(s) absent from tests/exec, so the sweep silently shrank:$missing"; exit 1; }
-	[ "$ran" -gt 0 ] || { echo "SKIP flagsweep-exec $ARG: no subject built"; exit 77; }
+	[ "$ran" -gt 0 ] ||
+		{ echo "FAIL flagsweep-exec $ARG: no subject built, though every named subject is present -- the -O0 reference build failed for all of them, which is a red and not an absent prerequisite"; exit 1; }
 	[ "$stale" -eq 0 ] ||
 		{ echo "FAIL flagsweep-exec $ARG: $stale KNOWN_RED case(s) now pass -- drop them from KNOWN_RED in $0"; exit 1; }
 	[ "$rc" -eq 0 ] || exit 1
@@ -394,7 +402,8 @@ cover)
 	done
 	[ -z "$missing" ] ||
 		{ echo "FAIL flagsweep-cover $ARG: named subject(s) absent from tests/exec, so the sweep silently shrank:$missing"; exit 1; }
-	[ "$ran" -gt 0 ] || { echo "SKIP flagsweep-cover $ARG: no subject built"; exit 77; }
+	[ "$ran" -gt 0 ] ||
+		{ echo "FAIL flagsweep-cover $ARG: no subject built, though every named subject is present -- the -O0 reference build failed for all of them, which is a red and not an absent prerequisite"; exit 1; }
 	if [ "$rc" -ne 0 ]; then
 		echo "FAIL flagsweep-cover row $ARG: the configuration is"
 		echo "  $*"

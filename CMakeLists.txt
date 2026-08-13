@@ -3946,7 +3946,12 @@ if(MCC_BUILD_TESTS)
                     "llvm-test-suite-regression-c@GCC@CLANG@700@10000@-w,-std=gnu11,-fpermissive,-lm"
                     "llvm-test-suite-unittests@GCC@CLANG@120@4000@-w,-std=gnu11,-fpermissive,-lm"
                     "compiler-rt-builtins-unit@GCC@CLANG@100@40@-w,-std=gnu11,-Ivendor/compiler-rt-builtins-unit,-Ivendor/compiler-rt-lib-builtins,-lm")
-            if(MCC_PYTHON3 AND DIFF3_GCC AND DIFF3_CLANG)
+            if(MCC_DIFF3_SAME_FAMILY)
+                set(_cref_why "${DIFF3_GCC} and ${DIFF3_CLANG} are the same compiler family, so these cells would adjudicate one implementation against itself; set MCC_DIFF3_GCC to a real GNU gcc")
+            else()
+                set(_cref_why "needs python3 plus both gcc and clang as independent oracles; a single-compiler run would not be a cross oracle")
+            endif()
+            if(MCC_PYTHON3 AND DIFF3_GCC AND DIFF3_CLANG AND NOT MCC_DIFF3_SAME_FAMILY)
                 add_test(NAME "slice/cref-oracle"
                     COMMAND "${CMAKE_COMMAND}"
                             -DPY=${MCC_PYTHON3}
@@ -4007,13 +4012,11 @@ if(MCC_BUILD_TESTS)
                     endif()
                 endforeach()
             else()
-                mcc_skip_test("slice/cref-oracle"
-                    "needs python3 plus both gcc and clang as independent oracles; a single-compiler run would not be a cross oracle")
+                mcc_skip_test("slice/cref-oracle" "${_cref_why}")
                 foreach(_spec IN LISTS _corpora)
                     string(REPLACE "@" ";" _f "${_spec}")
                     list(GET _f 0 _cc)
-                    mcc_skip_test("slice/cref-oracle-${_cc}"
-                        "needs python3 plus both gcc and clang as independent oracles; a single-compiler run would not be a cross oracle"
+                    mcc_skip_test("slice/cref-oracle-${_cc}" "${_cref_why}"
                         LABELS "crefcorpus")
                 endforeach()
             endif()
@@ -5695,9 +5698,25 @@ if(MCC_BUILD_TESTS)
             # ctest run with no -C matches every configuration, so the cells
             # would land in the default gate anyway.
             set(_ss_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/stratsweep.sh")
-            set(_ss_rows bfold ident narrow cprop cse ltemp ivsr pre licm dse
-                         sccp jt bf range divmagic abs select reassoc sethi tco
-                         inline cload)
+            execute_process(COMMAND "${_ss_sh}" names
+                OUTPUT_VARIABLE _ss_names OUTPUT_STRIP_TRAILING_WHITESPACE
+                RESULT_VARIABLE _ss_names_rc)
+            string(REPLACE "\n" ";" _ss_names "${_ss_names}")
+            set(_ss_rows "")
+            foreach(_ss_line IN LISTS _ss_names)
+                string(REGEX REPLACE "^[0-9]+:" "" _ss_line "${_ss_line}")
+                if(_ss_line)
+                    list(APPEND _ss_rows "${_ss_line}")
+                endif()
+            endforeach()
+            list(LENGTH _ss_rows _ss_nrow)
+            if(NOT _ss_names_rc EQUAL 0 OR _ss_nrow LESS 24)
+                message(FATAL_ERROR
+                    "stratsweep.sh names returned '${_ss_names_rc}' and ${_ss_nrow} strategy "
+                    "row(s), below the floor of 24. This list used to be a hand-written mirror "
+                    "of STRAT_NAMES and had drifted two rows -- sra and sroa had no "
+                    "stratsweep/iso-* cell at all -- so it is derived now and floored here")
+            endif()
             set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
                 "${_ss_sh}")
             add_test(NAME "stratsweep/check" COMMAND "${_ss_sh}" check)

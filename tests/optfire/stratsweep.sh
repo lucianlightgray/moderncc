@@ -62,7 +62,7 @@ esac
 S="$(cd "$(dirname "$0")/../.." && pwd)"
 
 STRAT_NAMES="bfold ident narrow cprop cse ltemp ivsr pre licm dse sccp jt bf range divmagic abs select reassoc sethi tco inline cload sra sroa"
-# Every row of the registry is under test, 0..21. An earlier cut of this sweep
+# Every row of the registry is under test, 0..23. An earlier cut of this sweep
 # started at 4 on the theory that bfold/ident/narrow/cprop are always-on folders
 # and so not worth isolating. They isolate fine -- each of the four is green
 # alone over the whole admitted corpus -- and "always on" is not a reason to
@@ -311,7 +311,8 @@ iso)
 	miss=$(missing_named_subjects)
 	[ -z "$miss" ] ||
 		{ echo "FAIL stratsweep-iso: named subject(s) absent from tests/exec, so the sweep silently shrank:$miss"; exit 1; }
-	[ "$n" -gt 0 ] || { echo "SKIP stratsweep-iso: no subject admitted"; exit 77; }
+	[ "$n" -gt 0 ] ||
+		{ echo "FAIL stratsweep-iso: no subject admitted, though every named subject is present -- all $(wc -l < "$WORK/skipped") dropped in admission, which is a -O0/-O2 failure and not an absent corpus:"; cat "$WORK/skipped"; exit 1; }
 	if [ "$WHICH" = all ]; then
 		lo=$STRAT_FIRST; hi=$STRAT_LAST
 	else
@@ -334,7 +335,8 @@ seq)
 	miss=$(missing_named_subjects)
 	[ -z "$miss" ] ||
 		{ echo "FAIL stratsweep-seq: named subject(s) absent from tests/exec, so the sweep silently shrank:$miss"; exit 1; }
-	[ "$n" -gt 0 ] || { echo "SKIP stratsweep-seq: no subject admitted"; exit 77; }
+	[ "$n" -gt 0 ] ||
+		{ echo "FAIL stratsweep-seq: no subject admitted, though every named subject is present -- all $(wc -l < "$WORK/skipped") dropped in admission, which is a -O0/-O2 failure and not an absent corpus:"; cat "$WORK/skipped"; exit 1; }
 	check_seq "$ORDER" || { echo "FAIL stratsweep-seq $ORDER"; exit 1; }
 	echo "PASS stratsweep-seq $ORDER: $n subjects match the -O0 reference ($flakes non-recurring)"
 	;;
@@ -345,7 +347,8 @@ perm3)
 	miss=$(missing_named_subjects)
 	[ -z "$miss" ] ||
 		{ echo "FAIL stratsweep-perm3: named subject(s) absent from tests/exec, so the sweep silently shrank:$miss"; exit 1; }
-	[ "$n" -gt 0 ] || { echo "SKIP stratsweep-perm3: no subject admitted"; exit 77; }
+	[ "$n" -gt 0 ] ||
+		{ echo "FAIL stratsweep-perm3: no subject admitted, though every named subject is present -- all $(wc -l < "$WORK/skipped") dropped in admission, which is a -O0/-O2 failure and not an absent corpus:"; cat "$WORK/skipped"; exit 1; }
 	rc=0; k=0; ran=0
 	a=$STRAT_FIRST
 	while [ "$a" -le "$STRAT_LAST" ]; do
