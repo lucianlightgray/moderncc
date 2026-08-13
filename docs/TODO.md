@@ -957,6 +957,21 @@ does **not** settle N30 — that needs the fold/run class. **Two changes, this o
 > — the day before rank 6 called it "Unchanged" — and **`int128-signedness` is closed in full**.
 > What is left of Cluster 1 is row 17 and `rf-1`, which are one defect at two altitudes.
 >
+> **And N3 closes in full the same day**, so the live board rows are **N6, N7, N29 — three of
+> thirty-five**, of which N29 and the Metal work belong to the Mac. Item 23 turned out not to be
+> "low priority" but *structurally incapable of being wrong* — narrow destinations are normalised
+> to `VT_INT` before `gen_cvt_ftoi` ever sees them — and item 22's disagreement was already banked
+> in `tests/smoke/bails.txt`. **Neither needed a line of code.**
+>
+> **The pattern across this whole day is worth stating once, because it is now five for five.**
+> Every row taken today was wrong about *why*, while mostly right about *what*: N18 blamed the JIT
+> for an `-O` level, row 25 predicted a 2.3% blast radius that measured zero, row 27 was already
+> closed, row 17's figure was stale by 44%, and `if-conversion-abs` was demoted for the wrong
+> reason ("makes code worse") when the paired run says it is time-inert. **In four of the five the
+> board's conclusion survived and its argument did not.** The lesson for whoever reads this next is
+> not that the board is unreliable — it is that these rows were filed from one instrument each, and
+> the second instrument is what moved them. Budget the control run.
+>
 > **New, from doing the work rather than from planning it:** `tests/emitmap/bank.json`'s
 > tolerances are wide enough to be unfalsifiable (`TOL` 1.0 on every percentage, and the selfhost
 > cell is *already* drifted inside them); and `rir-coverage.py`'s `wide` corpus reports **9
@@ -1133,12 +1148,18 @@ instrument's own two-factor design is what hid it** and now carries a third arm.
 the N18 row. The emit-map cells stay opt-in and trace-only; nothing about them changed except that
 they can now fail.
 
-**9. N3's residue — items 23 and 22.** *x86_64-only; this host.* Item 24 is fixed. **23** is
-quality-of-implementation with no non-UB reproducer on x86-64, so it is genuinely low. **22**
-(`_Float16` evaluation format) is *not code, decide first*: mcc predefines `__FLT_EVAL_METHOD__ 0`
-and its per-operation rounding is what that macro promises, so the honest reading is that the
-"defect" is a documented choice — and the fix is written against
-`runtime/include/{mccdefs,float.h}`, not the compiler.
+**~~9. N3's residue — items 23 and 22.~~ — CLOSED 2026-08-13; neither is a defect and no code
+changed.** *x86_64-only; this host.* Item 24 is fixed. **23** ~~is quality-of-implementation with
+no non-UB reproducer on x86-64, so it is genuinely low~~ — **stronger than that: the SSE arm's
+`t != VT_INT` is correct on every input that can reach it.** `gen_cast` normalises every narrow
+destination to `VT_INT` before the call and `gen_cvt_ftoi1` diverts `VT_LLONG | VT_UNSIGNED` to a
+helper, so the reachable set is three values and `size = 8` is right for two and wrong for none —
+confirmed on emitted code, where `(short)` and `(signed char)` get the 32-bit `cvttsd2si`, so there
+is not even a wasted REX prefix. **22** (`_Float16` evaluation format) ~~is *not code, decide
+first*~~ — **decided by witness, and the disagreement is already pinned**: mcc `607d` against
+gcc-15 and clang `607c` with all four advertising `__FLT_EVAL_METHOD__ 0`, so mcc is the conformant
+side; `tests/smoke/bails.txt` item 1 banks all seven rows with the reasoning, and both headers
+already state the promise the compiler keeps. Full argument in the N3 row.
 
 **Not code, decide first:** sweep row 29 (the `MCC_OPT_REPLAY_FALLBACK` flip — **make the fallback
 visible under either answer**, and note one of its four legs is falsified: `nofb_miscompiles` is no
@@ -1986,9 +2007,49 @@ Routing the same allocation through `ast_alloc_loc(8, 8)` makes all of it disapp
 allocation made outside the recorded channel is *silently* a replay-fidelity regression, the bail
 ratchet is what notices, and that is a concrete instance of the hazard Cluster A is about.
 
-Still open: **23** (quality-of-implementation, no non-UB reproducer) and **22**, which may be no
+~~Still open: **23** (quality-of-implementation, no non-UB reproducer) and **22**, which may be no
 defect at all — mcc predefines `__FLT_EVAL_METHOD__ 0` and its per-operation
-rounding is what that macro promises.
+rounding is what that macro promises.~~
+
+**N3 CLOSES IN FULL 2026-08-13. Neither 23 nor 22 is a defect, and 23 is a stronger closure than
+"no reproducer found" — it is structurally unable to be wrong.**
+
+**Item 23 — the SSE arm's `t != VT_INT` is exactly correct on every input that can reach it.**
+The row treats it as the twin of 24 and it is not, because the two arms do not receive the same
+`t`. `gen_cast` normalises first (`src/mccgen.c`, the `else` arm that computes `sbt`): `sbt = dbt`,
+then **`if (dbt_bt != VT_LLONG && dbt_bt != VT_INT) sbt = VT_INT;`** — so every narrow destination
+becomes `VT_INT` before the call and is narrowed afterwards by the `goto again`. And
+`gen_cvt_ftoi1` diverts `VT_LLONG | VT_UNSIGNED` to `__fixunsdfdi`/`__fixunssfdi`/`__fixunsxfdi`
+before `gen_cvt_ftoi` is entered at all. The reachable set is therefore exactly three values, and
+`size = 8` is right for two of them and wrong for none:
+
+| `t` at `gen_cvt_ftoi` | size chosen | correct? |
+| --- | --- | --- |
+| `VT_INT` | 4 | yes |
+| `VT_INT \| VT_UNSIGNED` | 8 | yes — there is no direct unsigned convert, so the 64-bit signed one and a truncation *is* the lowering |
+| `VT_LLONG` | 8 | yes |
+| `VT_LLONG \| VT_UNSIGNED` | — | never arrives; diverted to a helper |
+
+Verified on emitted code, not only by reading: `(int)`, `(short)` and `(signed char)` from `double`
+each emit the 32-bit `f2 0f 2c c0 cvttsd2si %xmm0,%eax`, while `(unsigned)` and `(long long)` emit
+the REX.W form. **So there is no wasted prefix either** — the quality-of-implementation concern the
+row records does not exist. Four independent non-UB probe shapes were tried first and all agree
+with gcc-15 and clang: `unsigned long long` above 2^63 from `double` and `float` (in range, *not*
+UB — this was the most promising candidate and it is correct), `unsigned` above `INT_MAX` both
+directly and consumed in a wider expression, and narrowing casts to `short`/`signed char`.
+
+**Item 22 — the witness reproduces and mcc is the conformant side.** Re-run here 2026-08-13:
+`2.25f16*255.0f16+0.5f16` gives mcc **`607d`**, gcc-15 **`607c`**, gcc-15 `-fexcess-precision=16`
+**`607d`**, clang **`607c`** — and **all four advertise `__FLT_EVAL_METHOD__ 0`**. Per-operation
+rounding to `_Float16` is what that macro promises, so gcc's default contradicts its own macro and
+mcc's behaviour is the one that matches it. **The "record the disagreement" half is already done
+and needs nothing further**: `tests/smoke/bails.txt` item 1 pins all seven rows
+(`fsweep`/`bsweep.F16.{FMULADD,FSCALE}` and the three `f16.*.doubleround`) with the reasoning and
+the flag that reproduces it, so the choice cannot change silently — the ratchet exists and works.
+**No code change is called for.** The row's own note that "the fix is written against
+`runtime/include/{mccdefs,float.h}`" describes where the *promise* lives, not an outstanding edit:
+both headers already say 0 (and 2 on `__i386__` without SSE2 math), which is what the compiler
+does.
 
 **~~N4. `-O13` is dark on 13 of 22 strategies~~ — CLOSED 2026-08-11** (and it is 12, not 13). Write-up moved to [`docs/ARCHIVED.md`](ARCHIVED.md).
 
