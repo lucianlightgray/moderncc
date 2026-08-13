@@ -339,6 +339,42 @@
 > categories that fell to zero are **item 24's** `fistpl` fix, not N30's; the cell never flagged
 > them because "better" is not a ratchet violation.
 
+> **Cross-cutting wave, 2026-08-13 — the open items were read four at a time for shared surfaces,
+> and the overlaps mattered more than the items.** Full detail under *Cross-cutting research* inside
+> *STATE OF PLAY*; two commits, `8a70f8b7` and `5fceb897`. **Three of the four remaining "decisions"
+> are measurements, not decisions** — sweep row 29 (bodies 2.18% but bytes **7.65%, not the recorded
+> 10.2%**, and never a byte upside on any corpus), item 22 (mcc is the conformant side; gcc's
+> default contradicts its own `__FLT_EVAL_METHOD__ 0`) and `int128-signedness` (the dispatcher and
+> all 39 declarations are orphaned in the header, and are injected into every TU mcc compiles).
+> **S7b is the only one that really is a decision**, and the only item bound by others.
+>
+> **N7's central question is answered**: the GPU arm *does* catch an injection into the 32-bit
+> signed `+` arm, `[ladder-cross] points` moving by **exactly 194 — N7's own recorded figure** — and
+> the short-circuit on `hr >= 0` makes it a genuine independent evaluator for the rungs it accepts.
+> Read the qualification before closing the row: `pairs`, `certified`, `differ`, `refused`, `exact`
+> and every histogram stay **byte-identical**, so the arm notices without classifying, and the teeth
+> are a coverage-index artefact. The recorded obstruction was also wrong — `TIMEOUT 120` is per
+> `execute_process`, and `gpu/ladder-gpu-parity` carries no ctest timeout at all.
+>
+> **Six asserted couplings were tested and refuted; one this file never named is real** —
+> `src/mccast.c::ast_func_end` holds every Cluster-A counter site *and* N7's census entry within 110
+> lines. **The instrument thesis is confirmed, with one shared mechanism: absent reads as zero, and
+> nothing fails** — `inv.get(k, 0)`, a silent truncation past `MCC_INV_MAX`, two optional anchors,
+> and `low_body_index()` returning `None` to degrade a per-body ratchet into the corpus-wide
+> percentage it exists to replace. Making those loud is the highest-value change in the cluster and
+> is small in each.
+>
+> **Two landed on the spot.** `smokerun`'s triage printed 128-bit digests through `%.16s`, so all
+> three arms read as identical zeros and the print destroyed item 22's own evidence — the thesis
+> with a *literal* zero. And `slicerun_reloc` aliased an over-stride global onto its neighbour's
+> slot and returned a confident wrong answer; it now refuses, which the ladder already handles as
+> no-result. **Corrections to this file's own figures**: `sizeof(SValue)` is 80 (not 64), `sv_stack`
+> 41,040 B (not 32,832), and the `MCC_INV_MAX` hazard is real but mis-sized — 16 keys are
+> registered, not 12, so it lands at **28 of 32, under the cap**. **`slice/quiesce`'s red is
+> structural**: two runs of the same binary on the same commit gave 55/55 and 54/55.
+> **Left open deliberately**: `tools/node-census.py` is an unrecorded third `[inv]`-prefix consumer
+> that **silently appends garbage** — a wrong number with no signal, the worst of the three modes.
+
 ## STATE OF PLAY — written for a context switch, 2026-08-11
 
 > Read this first. It is a handoff, not a board. Everything below it is detail.
@@ -553,6 +589,16 @@ predefine it" correction is half right — mcc *does* predefine it, but from
 `runtime/include/mccdefs.h`, so the correction's operational conclusion (the fix is written against
 the headers, not the compiler) stands.
 
+**And the instrument that should have shown this was printing zeros — fixed (`8a70f8b7`).**
+`smokerun`'s divergence triage formatted 128-bit F-row digests through a **`%.16s`** field. Every
+F-row digest shares a leading run, so all three arms printed as the same zeros and the line carried
+**no information at all** — the one print whose subject is this item destroyed this item's own
+evidence, on all three verdict classes (`REFS-DISAGREE`, `DIVERGE-BOTH`, `DIVERGE`). Widened to
+`%.32s`; `f16.muladd.doubleround.run` now reads `mcc=…607d gcc=…607c clang=…607c`, which is the
+witness above, printed by the harness rather than reconstructed by hand. **This is the cluster
+thesis in its purest form** — *absent reads as zero, and nothing fails* — and it is the only
+instance found so far where the zero was **literal**.
+
 **And item 22's cost model is attached to the wrong mechanism.** `sizeof(SValue)` is **80, not 64**,
 with a **12-byte interior hole and 8 bytes of tail padding** — a new field costs zero size and zero
 offset change. The bulk copies are all `sizeof`-driven (nine `memcpy` + two `memmove` across seven
@@ -625,7 +671,9 @@ ports N6/L2 and N34 to a platform that has never had them, on a host nobody can 
 **Order: `atexit(mcc_gpu_quiesce)` in `mcc_gpu_init` → L2 → MoltenVK, never MoltenVK first.**
 `SR_GLOB_STRIDE` is **genuinely independent** — pure arithmetic, no device lifetime — and its
 honest fix is smaller than the row implies, because `slicerun_obj` already returns a per-object
-extent indexed by the same pair `slicerun_reloc` receives.
+extent indexed by the same pair `slicerun_reloc` receives. **Acted on the same day** (`8a70f8b7`):
+that extent is exactly what the new guard compares against the stride, so the correctness half cost
+two lines and the row is now a coverage item. See item 5 under the funnel list.
 
 #### The oracle cluster — one amendment covers every case
 
@@ -2470,12 +2518,17 @@ shutdown. That hazard did not exist while the quiesce destroyed nothing.
    **Measured, and it is not binding today**: raising it to 65,536 leaves the whole gcc
    torture census byte-identical, so fewer than 4,096 distinct global symbols reach
    `slicerun_reloc` over all 15,923 bodies. Its sibling `SR_GLOB_STRIDE` (4 KiB per symbol,
-   with no check that an object fits) is the one that would fail *wrong* rather than safe —
+   ~~with no check that an object fits~~) ~~is the one that would fail *wrong* rather than safe~~ —
    a field or element past 4 KiB lands in the next symbol's key range and two distinct
    locations collapse to one live-in slot, which both executors and the oracle would then
-   share and agree on. Raising the stride to 64 KiB is also byte-identical over gcc torture,
-   so that hazard is unexercised there; it is not proven absent elsewhere, and the honest
-   fix is a per-symbol range sized from the dumped extent rather than a fixed stride.
+   share and agree on. **The fail-wrong half is closed** (`8a70f8b7`): `slicerun_reloc` now
+   compares the dumped extent against the stride and **refuses the slice** when it does not
+   fit, which is the disposition the ladder already handles — a refusal is no result, not
+   agreement. Raising the stride to 64 KiB is also byte-identical over gcc torture,
+   so the hazard is unexercised there; it is not proven absent elsewhere. What remains is
+   only the *coverage* half — a per-symbol range sized from the dumped extent would accept
+   the over-wide symbols the guard now declines rather than merely failing safe on them —
+   and it is no longer a correctness item. Slice family 55/55 with the guard in.
 6. **Stop pricing global-data work on gcc c-torture.** `wt/globagg` measured −405 refused
    blocks there of which **384 are four macro-generated files**, and +39,203 indexed loads
    of which **39,092 are fourteen memory-op files**. The same fix on `src/*.c` is +2.82 pp of
