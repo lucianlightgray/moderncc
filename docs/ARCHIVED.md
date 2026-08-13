@@ -29161,3 +29161,41 @@ execution-level coverage of three cross targets.
 *visible* — it appears as a literal `NULL` at the shared call instead of being buried in a fourth
 copy of the loop — but did not close it, and the row's own advice stands: land it separately,
 because the fit skip was byte-neutral and the `nc` resync will not be.
+
+### A6's second half — the `rir_tvrec` `nc[]` resync, and a prediction the measurement refuted
+
+The last residue of N2 / Cluster A. `rir_tvrec` was the only one of the four size/align record
+streams with no `nc[]` array: it never recorded `nocode_wanted`, and A7's unification made that
+visible as a literal `NULL` at the shared `rir_rec_take` call rather than closing it. Three lines
+close it — declare the array, populate it in `rir_tvar_record`, pass it in `rir_tvar_replay` — and
+all four streams now gate their cursor advance identically.
+
+**The A6 row predicted this would move bytes and it does not.** Its exact words were *"land these
+as two commits, the fit skip is byte-neutral and the `nc` resync is not"*. The first half of that
+advice was right and was followed; the second half is false. A/B'd against a clean-HEAD control
+built from `git archive`:
+
+| arm | pairs compared | moved |
+| --- | ---: | ---: |
+| `tests/exec` at `-O1` and `-O2` | 598 | **0** |
+| `tests/exec` at `-O0` and `-O4` | 598 | **0** |
+| the `src/*.c` TUs that compile standalone, `-O0`/`-O2`/`-O4` | 3 | **0** |
+| `tests/exec` at `-O1`/`-O2` with `MCC_RIR_REC_FORCE_MISS=1` **on both sides** | 598 | **0** |
+
+Smoke 12/12 in 112.8 s with no bail-bank movement; `rir/rec-miss`, `rir/drop-ratchet` and
+`ast/o0-baseline` green.
+
+**Why it is still worth landing.** Byte-neutral is not inert. The `nc` term is what stops the
+cursor advancing past an entry recorded under `nocode_wanted`, and the other three streams have
+gated on it since A3. What the measurement establishes is that **no reachable input currently
+distinguishes the two** — a latent divergence closed, not a bug fixed. The practical payoff is
+that the next reader of `rir_rec_take` no longer has to work out why one of its four callers
+passed `NULL`.
+
+**Method note worth keeping.** The A/B control has to be built from `git archive HEAD` into a
+directory outside the scratchpad. An earlier attempt used `tar` from the working tree with
+`--exclude` for `cmake-def`, `cmake-cross` and `.git` — but not `.claude/worktrees`, which holds
+another agent's build tree. That copied roughly 100 GB into `/tmp`, which on this host is a **31 GB
+tmpfs**, filling it completely and blocking every tool call in the session (each one creates an
+output file before it runs) until the directory was removed by hand. `/tmp` here is RAM, not disk;
+`df -h /home` looking healthy says nothing about it.

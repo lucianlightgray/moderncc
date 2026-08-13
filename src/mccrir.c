@@ -193,6 +193,7 @@ int rir_slot_replay(int *loc_out, int size, int align) { MCC_TRACE("enter\n");
 
 static int rir_tvrec[RIR_LOCREC_MAX], rir_tvrec_r2[RIR_LOCREC_MAX];
 static int rir_tvrec_pos[RIR_LOCREC_MAX];
+static int rir_tvrec_nc[RIR_LOCREC_MAX];
 static int rir_tvrec_sz[RIR_LOCREC_MAX], rir_tvrec_al[RIR_LOCREC_MAX];
 static int rir_tvrec_n, rir_tvrec_i;
 
@@ -200,6 +201,7 @@ void rir_tvar_record(int loc_in, int r2, int size, int align) { MCC_TRACE("enter
 	if (rir_tvrec_n >= RIR_LOCREC_MAX)
 		return;
 	rir_tvrec_pos[rir_tvrec_n] = ind;
+	rir_tvrec_nc[rir_tvrec_n] = nocode_wanted;
 	rir_tvrec_r2[rir_tvrec_n] = r2;
 	rir_tvrec_sz[rir_tvrec_n] = size;
 	rir_tvrec_al[rir_tvrec_n] = align;
@@ -207,7 +209,7 @@ void rir_tvar_record(int loc_in, int r2, int size, int align) { MCC_TRACE("enter
 }
 
 int rir_tvar_replay(int *loc_out, int *r2_out, int size, int align) { MCC_TRACE("enter\n");
-	int k = rir_rec_take(rir_tvrec, rir_tvrec_pos, NULL, rir_tvrec_sz,
+	int k = rir_rec_take(rir_tvrec, rir_tvrec_pos, rir_tvrec_nc, rir_tvrec_sz,
 											 rir_tvrec_al, rir_tvrec_n, &rir_tvrec_i, size, align,
 											 loc_out);
 	if (k < 0)

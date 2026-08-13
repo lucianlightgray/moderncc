@@ -1050,8 +1050,9 @@ measurement tool reports success over an empty or truncated subject:
 >
 > **Ranking as of 2026-08-13, after the second pass: N2, N3, N6, N7, N18, N19, N24, N29 and N30
 > — nine of thirty-four.** N33 and N34 closed the day they were filed, and N3 lost item 24, so
-> the live rows are **N3 (items 23 and 22 only), N6, N7, N18, N19, N24, N29, N30 and N35** —
-> nine of thirty-five, after N2 closed on 2026-08-13 down to A6's `nc[]` resync. **N35 is three reds this file had no row for**, all
+> the live rows are **N3 (items 23 and 22 only), N6, N7, N18, N24, N29, N30 and N35** — eight of
+> thirty-five. **N2 closed in full on 2026-08-13** when A6's `nc[]` resync landed, and **N19**
+> closed the same day. **N35 is three reds this file had no row for**, all
 > pre-existing at `c7df5209` and all found by running the 526-cell
 > `jit/ ast/ rir optlevel diff3/ superopt/ fmt/ docs/ ci/` family rather than by sweeping. N8 closed in full on the Linux box (N20 closed all three of its programs,
 > and the pre-fix A/B proves it), N26 and N27 and N28 are struck, and **N31** is new — a defect
@@ -1098,7 +1099,13 @@ measurement tool reports success over an empty or truncated subject:
 
 **~~N2. `rir_tvar_replay` and `rir_slot_replay` repeat the bug `dd80e4fa` fixed, unchecked.~~ — CLOSED 2026-08-13 except for `rir_tvrec`'s `nc[]` resync.** All three streams carry `sz`/`al` and share one `rir_rec_take` (A1–A7); the C2 bypass is fixed; and
 `rir/rec-miss` pins the failure arm with a forced-miss injection that moves 3 objects over 6 subjects. **Two things this host added that the closure did not have.** *(1)* A5's arm64 slot site is compiled out on Mach-O, so it had never been compiled where it lives; a cross build here compiles it and the force-miss injection proves an HFA `va_arg` subject **reaches** it on `mcc-arm64` and does not on `mcc-x86_64`. Execution is still owed — `qemu-aarch64` is present, the arm64 sysroot is not. *(2)* `rir/rec-miss` could not run at all as landed; see N35.
-**What remains open is A6's second half**, the missing `rir_tvrec` `nc[]` resync, which A7 made visible as a `NULL` at the shared call rather than closing.
+**N2 is now closed in full.** A6's second half — the missing `rir_tvrec` `nc[]` resync — landed
+2026-08-13, so all four record streams gate their cursor advance identically and no caller of
+`rir_rec_take` passes `NULL` any more. **It is byte-neutral, which the A6 row predicted it would
+not be**: 1,199 object pairs against a clean-HEAD control over the whole `tests/exec` corpus at
+all four levels plus the standalone `src/*.c` TUs, 0 moved, and 598 more under
+`MCC_RIR_REC_FORCE_MISS=1` on both sides, 0 moved. A latent divergence closed rather than a bug
+fixed.
 
 As originally filed:
 `rir_tvar_replay` is the *first* statement of `get_temp_local_var`, so it bypasses the
@@ -2189,8 +2196,25 @@ N2's record widening is its prerequisite**, not the other way round.
 | ~~A3~~ | ~~widen `rir_locrec` with `sz`/`al` + `rir_locrec_min`~~ **DONE 2026-08-12**, resync then fit | small | — | any |
 | ~~A4~~ | ~~the C2-bypass fix~~ **DONE 2026-08-12.** The replay now feeds the fit check and falls back to the frontier allocator below `rir_locrec_min`, not a bare bump. Validated on the **whole exec corpus: 840 pass / 0 fail** over 280 programs at `-O1`/`-O2`/`-O3`, plus ast+smoke 141/141 | small | A3 | any |
 | ~~A5~~ | ~~widen `rir_slotrec`; `rir_hook_slot_replay/_record` take `(size, align)`~~ **DONE, and verified reachable on Linux 2026-08-13.** Both hooks take `(size, align)` and `rir_slotrec_sz/_al` exist. **The host annotation was right and is now discharged in part**: the arm64 site at `src/arch/arm64/arm64-gen.c` is inside `#if !defined(MCC_TARGET_MACHO)`, so it is compiled out on the machine A5 was written on. A cross build here compiles it, and upstream's own `MCC_RIR_REC_FORCE_MISS=1` injection proves it is *reached*: an HFA `va_arg` subject compiled with `mcc-arm64` moves its object under the injection and the identical subject on `mcc-x86_64` does **not**. **Still owed: execution.** `qemu-aarch64` is installed but `vendor/gentoo-stage3-arm64-glibc` is not, so nothing arm64 can be linked or run here | small | — | arm64 site is `#if !defined(MCC_TARGET_MACHO)` — **Linux** |
-| A6 | ~~widen `rir_tvrec`~~ **DONE** (`rir_tvrec_sz`/`_al` exist and `rir_tvar_replay` takes `(size, align)`) **— the second half is still open**: `rir_tvrec` has no `nc[]` array, which A7 made *visible* as a literal `NULL` at the shared call rather than fixing. The row's own advice holds: land it separately, because the fit skip was byte-neutral and the `nc` resync will not be | small | A5 shape | any |
+| ~~A6~~ | ~~widen `rir_tvrec` **and** add its missing `nc[]` resync~~ **BOTH DONE**; the widening earlier, the `nc[]` resync 2026-08-13. `rir_tvrec` now records `nocode_wanted` like the other three streams and passes it to `rir_rec_take`, so the literal `NULL` A7 exposed at the shared call is gone and all four streams gate their cursor advance the same way. **The row's prediction is refuted and that is the interesting part** — see below | small | A5 shape | any |
 | ~~A7~~ | ~~the `mcc_rec_take` unification~~ **DONE 2026-08-13**, scoped to the three streams that share semantics; `rir_fcrec` stays separate because its key is a `memcmp` equality relation, not a `>=` fit relation. `rir_tvrec`'s missing `nc` array is now visible as a `NULL` at the call rather than buried in a fourth copy of the loop. **840/0 on the full exec corpus.** See the coverage hole it exposed, below | medium | A3/A5/A6 | any |
+
+**A6's second half is byte-neutral, and the row said it would not be.** The advice to land it
+separately was taken and the measurement was worth taking: *"the fit skip is byte-neutral and the
+`nc` resync is not"* is **false**. A/B'd against a clean-HEAD control build over the whole
+`tests/exec` corpus — **1,199 object pairs, 0 moved**: 598 at `-O1`/`-O2`, 598 at `-O0`/`-O4`, and
+the three `src/*.c` TUs that compile standalone at `-O0`/`-O2`/`-O4`. It is byte-neutral **under
+the failure arm too**: 598 more pairs with `MCC_RIR_REC_FORCE_MISS=1` on both sides, 0 moved.
+Smoke is 12/12 with no bail-bank movement, and `rir/rec-miss`, `rir/drop-ratchet` and
+`ast/o0-baseline` are green.
+
+**So why land it.** Byte-neutral is not the same as inert: the `nc` term is what stops the cursor
+advancing past an entry recorded under `nocode_wanted`, and the other three streams have gated on
+it since A3. What the measurement establishes is that **no reachable input currently distinguishes
+the two**, which makes this a latent divergence closed rather than a bug fixed — and it means the
+next reader of `rir_rec_take` no longer has to explain why one of its four callers passes `NULL`.
+The honest summary is that the row was right to demand a separate commit and wrong about what the
+commit would show.
 
 **A4 in detail, because the obvious fix is wrong.** The two arms of `ast_alloc_loc` consume two
 *different* streams with two *different* cursors: `rir_locrec` (resynced against `ind`) and
