@@ -415,6 +415,17 @@ int main(int argc, char **argv)
 			g_poison = 1;
 		else if (!strcmp(argv[i], "--trap") && i + 1 < argc)
 			trap = atoi(argv[++i]);
+		else if (!strcmp(argv[i], "--points") && i + 1 < argc) {
+			int n = smf_point_dump(argv[++i]);
+			if (!n) {
+				fprintf(stderr,
+								"smoke subject: no per-point mode for category '%s'; a "
+								"digest verdict for it cannot be decomposed\n",
+								argv[i]);
+				return 3;
+			}
+			return 0;
+		}
 		else if (!strcmp(argv[i], "--trapnames")) {
 			int k;
 			for (k = 0; k < sm_trap_rows_count; k++)

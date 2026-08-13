@@ -9,11 +9,11 @@
 #   smokerun ... --device --min-cases 500000 --rebank
 #   smokerun ... --strat-dark   --rebank
 #
-# Every row is a triaged finding, not a tolerance.  The 275 divergence rows
-# were retaken 2026-08-13 against mcc at eccbec19 on Darwin 26.5.2 / Apple M1
-# Pro, with two independent references: Homebrew GCC 16.1.0 and Apple clang
-# 21.0.0.  The 28 coverage, strat-dark and device rows are unchanged from the
-# 2026-08-12 take at 115deb5f.
+# Every row is a triaged finding, not a tolerance.  The 282 divergence rows
+# were retaken 2026-08-13 against mcc on Darwin 26.5.2 / Apple M1 Pro, with two
+# independent references: Homebrew GCC 16.1.0 and Apple clang 21.0.0.  The 28
+# coverage, strat-dark and device rows are unchanged from the 2026-08-12 take
+# at 115deb5f.
 #
 # WHY THIS FILE EXISTS.  bails.txt was banked on x86_64-linux, and two of its
 # three kinds of row do not survive a change of target: the coverage counters
@@ -30,14 +30,26 @@
 # arm the already-resolved DIFF3_GCC, which prefers a real GNU gcc, so the
 # three-way verdict is live here.  That is docs/TODO.md N29.
 #
-# WHAT THE SECOND REFERENCE BOUGHT, in the three classes smokerun emits:
+# WHAT THE SECOND REFERENCE BOUGHT, in the four classes smokerun emits:
 #
 #   243 diverge-one     mcc matches exactly one reference: 219 gcc, 24 clang.
-#    22 refs-disagree   the two references disagree with each other, so mcc
+#    22 diverge-refs    the two references disagree with each other, so mcc
 #                       matching neither is implementation-defined and this
 #                       file's rule is to pin mcc's answer, not to fix it.
 #    10 diverge-both    mcc differs from a consensus.  All ten are triaged
 #                       below and none is a value difference.
+#     7 diverge-masked  a diverge-refs category re-run point by point, counting
+#                       the points inside it where the references DO agree and
+#                       mcc differs.  The VALUE is that count, so this row is a
+#                       monotone-decreasing ratchet on the number of points the
+#                       category's own verdict is clearing.  See note 3.
+#
+# All four keys share the `diverge-` prefix on purpose: the bank's scope match
+# compares the text after the first space, so a class outside that prefix is
+# neither ratcheted nor owned -- and an unowned row is COPIED from the old bank
+# on every --rebank while also being written from the run, i.e. duplicated.
+# `refs-disagree` was exactly that until 2026-08-13 and one re-bank took its 22
+# rows to 44.
 #
 # 1. bfsweep.* and bf.* -- 185 rows.  Wide bit-field arithmetic, and NOT a
 #    defect -- read this before "fixing" it.  mcc reduces the result of every
@@ -68,7 +80,7 @@
 #    rounding, note 1 of bails.txt.  arm64 has native fp16, so the reference
 #    keeps far more intermediates at half precision than the x86_64 emulation
 #    does.  That widens the same disagreement; it does not change its kind.
-#    The four bsweep.F16.{FMULADD,FSCALE} rows are refs-disagree: gcc
+#    The four bsweep.F16.{FMULADD,FSCALE} rows are diverge-refs: gcc
 #    contracts the multiply-add at half precision and clang does not, which is
 #    the excess-precision question item 22 records.  bsweep.F16.FNEG is GONE
 #    from this bank -- that was N30, fixed, and the category fell to zero on
@@ -87,21 +99,31 @@
 #    the payload.  Zero are a finite value.  IEEE 754 leaves both the sign and
 #    the payload of a NaN result unspecified.
 #
-#    WHAT THE SAME REPLAY FOUND THAT THE DIGEST HIDES.  csweep.C64.CDIV and
-#    its C80 twin, and both CDIVSEL columns, are classified refs-disagree and
-#    therefore cleared -- yet each holds 283 points where the references DO
-#    agree and mcc differs, and 44 of those are finite values rather than
-#    NaNs.  Of C64.CDIV's 60 differing finite components, 52 are 1 ulp and 5
-#    are 2 ulp, but three are not rounding at all: the worst is a real part of
+#    WHAT THE DIGEST HIDES, AND WHAT NOW COUNTS IT.  A verdict class is a
+#    property of a whole digest, so one reference disagreement anywhere in a
+#    category clears every other point in it -- N29's own finding one level
+#    down.  smokerun now re-runs each diverge-refs category through the
+#    subject's `--points` mode and banks the masked count, which is where the
+#    seven diverge-masked rows come from.  csweep.C64.CDIV, its C80 twin and
+#    both CDIVSEL columns hold 283 such points each; C32.CDIV and CDIVSEL hold
+#    587; C32.CMUL holds 10.
+#
+#    THE COUNTS ARE NOT ALL NaN, WHICH IS WHY THE ROW IS A RATCHET AND NOT A
+#    NOTE.  Of C64.CDIV's 283, 44 are finite values rather than NaNs, and of
+#    its 60 differing finite components 52 are 1 ulp and 5 are 2 ulp -- but
+#    three are not rounding at all: the worst is a real part of
 #    -1.694065894339194e-21 against a consensus -1.1102230245141343e-21, a 53%
-#    relative error on a catastrophically cancelling complex divide.  A class
-#    is a property of a whole digest, so one refs-disagreement anywhere in a
-#    category clears every other point in it.  That is N29's own finding one
-#    level down.  See docs/TODO.md N37.
+#    relative error on a catastrophically cancelling complex divide.  Complex
+#    division accuracy is unspecified by C outside Annex G, so this is
+#    quality-of-implementation and is banked rather than fixed -- but it is
+#    banked as a number that cannot rise.  See docs/TODO.md N37.
 #
 # 4. shl.* -- 4 rows.  The shift-count folder, note 6 of bails.txt.  All four
-#    are refs-disagree with the real gcc in place: a shift by the full width
-#    is UB and all three answers are permitted.
+#    are diverge-refs with the real gcc in place: a shift by the full width is
+#    UB and all three answers are permitted.  They have no diverge-masked row
+#    and cannot: each is a single named case rather than a sweep, so the digest
+#    IS the point and the verdict is already exact.  smokerun says so on the
+#    run rather than leaving it to be assumed.
 #
 # 5. add.si.*, sub.si.*, mul.si.*, neg.si.min, absc.si.min -- 7 rows.  Signed
 #    overflow, UB.  The reference folds the case in 64 bits and keeps the
@@ -162,6 +184,13 @@ div diverge-both:csweep.C80.CMUL.fold 1
 div diverge-both:csweep.C80.CMUL.run 1
 div diverge-both:csweep.C80.CMULADD.fold 1
 div diverge-both:csweep.C80.CMULADD.run 1
+div diverge-masked:csweep.C32.CDIV 587
+div diverge-masked:csweep.C32.CDIVSEL 587
+div diverge-masked:csweep.C32.CMUL 10
+div diverge-masked:csweep.C64.CDIV 283
+div diverge-masked:csweep.C64.CDIVSEL 283
+div diverge-masked:csweep.C80.CDIV 283
+div diverge-masked:csweep.C80.CDIVSEL 283
 div diverge-one:absc.si.min.run 1
 div diverge-one:add.si.maxp1.run 1
 div diverge-one:add.si.minm1.run 1
@@ -405,27 +434,27 @@ div diverge-one:mul.si.max.2.run 1
 div diverge-one:mul.si.min.m1.run 1
 div diverge-one:neg.si.min.run 1
 div diverge-one:sub.si.min1.run 1
-div refs-disagree:bsweep.F16.FMULADD.fold 1
-div refs-disagree:bsweep.F16.FMULADD.run 1
-div refs-disagree:bsweep.F16.FSCALE.fold 1
-div refs-disagree:bsweep.F16.FSCALE.run 1
-div refs-disagree:csweep.C32.CDIV.fold 1
-div refs-disagree:csweep.C32.CDIV.run 1
-div refs-disagree:csweep.C32.CDIVSEL.fold 1
-div refs-disagree:csweep.C32.CDIVSEL.run 1
-div refs-disagree:csweep.C32.CMUL.fold 1
-div refs-disagree:csweep.C32.CMUL.run 1
-div refs-disagree:csweep.C64.CDIV.fold 1
-div refs-disagree:csweep.C64.CDIV.run 1
-div refs-disagree:csweep.C64.CDIVSEL.fold 1
-div refs-disagree:csweep.C64.CDIVSEL.run 1
-div refs-disagree:csweep.C80.CDIV.fold 1
-div refs-disagree:csweep.C80.CDIV.run 1
-div refs-disagree:csweep.C80.CDIVSEL.fold 1
-div refs-disagree:csweep.C80.CDIVSEL.run 1
-div refs-disagree:shl.si.w.fold 1
-div refs-disagree:shl.si.wp1.fold 1
-div refs-disagree:shl.sll.w.fold 1
-div refs-disagree:shl.sll.wp1.fold 1
+div diverge-refs:bsweep.F16.FMULADD.fold 1
+div diverge-refs:bsweep.F16.FMULADD.run 1
+div diverge-refs:bsweep.F16.FSCALE.fold 1
+div diverge-refs:bsweep.F16.FSCALE.run 1
+div diverge-refs:csweep.C32.CDIV.fold 1
+div diverge-refs:csweep.C32.CDIV.run 1
+div diverge-refs:csweep.C32.CDIVSEL.fold 1
+div diverge-refs:csweep.C32.CDIVSEL.run 1
+div diverge-refs:csweep.C32.CMUL.fold 1
+div diverge-refs:csweep.C32.CMUL.run 1
+div diverge-refs:csweep.C64.CDIV.fold 1
+div diverge-refs:csweep.C64.CDIV.run 1
+div diverge-refs:csweep.C64.CDIVSEL.fold 1
+div diverge-refs:csweep.C64.CDIVSEL.run 1
+div diverge-refs:csweep.C80.CDIV.fold 1
+div diverge-refs:csweep.C80.CDIV.run 1
+div diverge-refs:csweep.C80.CDIVSEL.fold 1
+div diverge-refs:csweep.C80.CDIVSEL.run 1
+div diverge-refs:shl.si.w.fold 1
+div diverge-refs:shl.si.wp1.fold 1
+div diverge-refs:shl.sll.w.fold 1
+div diverge-refs:shl.sll.wp1.fold 1
 wrapv wrapv-inert:digest-identical-under-fno-wrapv 1
 wrapv wrapv-inert:digest-identical-under-fwrapv 1

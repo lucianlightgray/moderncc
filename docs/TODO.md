@@ -2354,7 +2354,30 @@ and needs no per-host pin. It was registered as a visible skip on the way to thi
 what it should have been all along.
 
 **N37. The refs-disagree class is a property of a whole digest, so a category containing one
-reference disagreement is cleared for every other point in it.** New 2026-08-13, and it is N29's
+reference disagreement is cleared for every other point in it.** New 2026-08-13, **and its
+instrument half is CLOSED the same day; what is left is the compiler half.** `smokerun` now
+re-runs every `diverge-refs` category through a new `--points <category>` mode on the smoke
+subject and banks `div diverge-masked:<category>` **valued at the number of points inside it where
+the two references agree and mcc differs** — a monotone-decreasing ratchet on exactly the quantity
+the digest verdict was clearing, not a note. Seven rows on this host: 587 each for
+`csweep.C32.{CDIV,CDIVSEL}`, 283 each for the C64 and C80 twins, 10 for `csweep.C32.CMUL`. **It
+reproduces the hand triage below to the point**, which is what made it worth landing rather than
+recording. Known-positive taken by hand: perturbing one banked count 283 → 282 gives
+`FAIL bail ratchet div diverge-masked:csweep.C64.CDIV rose 282 -> 283`.
+
+**A second defect fell out of building it, and it was the more serious one.** The bank's scope
+match compares the text after the first space in a key, and the arm owns `diverge-`, so
+`refs-disagree` rows were **outside the scope entirely**: never ratcheted, and — because
+`bank_write` copies every *unowned* bank row forward while also writing the run's own categories —
+**duplicated on every re-bank**. Measured: one extra `--divergence --rebank` took the 22 rows to
+44. All four classes are now `diverge-one` / `diverge-both` / `diverge-refs` / `diverge-masked`,
+one prefix, and a second re-bank is byte-idempotent. Both banks were renamed in place.
+
+**`tests/smoke/bails.txt` needs one re-bank on x86_64-linux and that cell is red there until it
+gets one** — the `diverge-masked` rows for that host cannot be measured from here, and they are
+meant to be read before they are banked. The header says so at the top of the file.
+
+**As filed, and the hand triage still stands as the evidence:** it is N29's
 own finding one level down. N29 established that `diverge-both` conflated "mcc contradicts a
 consensus" with "the references disagree and mcc picked neither", and `smokerun` grew a third
 verdict class to separate them. That class is computed on the **category digest**: if the two

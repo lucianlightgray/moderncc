@@ -1562,6 +1562,67 @@ static long smf_rows_run(long *checks, long *failures, long *reported,
 	return n;
 }
 
+static int smf_point_dump(const char *cat)
+{
+	int t, op, i, j, n = 0;
+	char name[64];
+	smf_binit();
+	for (t = 0; t < SMF_T_COUNT; t++)
+		for (op = 0; op < SMF_O_COUNT; op++) {
+			SmBits lo, hi;
+			sprintf(name, "fsweep.%s.%s", smf_type_name[t], smf_op_name[op]);
+			if (strcmp(name, cat))
+				continue;
+			for (i = 0; i < SMF_CORPUS_N; i++)
+				for (j = 0; j < SMF_CORPUS_N; j++) {
+					smf_enc(t, smf_run(t, op, smf_corpus[i], smf_corpus[j],
+														 smf_corpus[(i + j + 1) % SMF_CORPUS_N]),
+									&lo, &hi);
+					printf("P %s %d %d %016llx%016llx\n", name, i, j,
+								 (unsigned long long)hi, (unsigned long long)lo);
+					n++;
+				}
+		}
+	for (t = 0; t < SMF_T_COUNT; t++)
+		for (op = 0; op < SMF_O_COUNT; op++) {
+			SmBits lo, hi;
+			sprintf(name, "bsweep.%s.%s", smf_type_name[t], smf_op_name[op]);
+			if (strcmp(name, cat))
+				continue;
+			for (i = 0; i < SMF_B_N; i++)
+				for (j = 0; j < SMF_B_N; j++) {
+					smf_brun(t, op, i, j, (i + j + 1) % SMF_B_N, &lo, &hi);
+					printf("P %s %d %d %016llx%016llx\n", name, i, j,
+								 (unsigned long long)hi, (unsigned long long)lo);
+					n++;
+				}
+		}
+	for (t = 0; t < SMC_T_COUNT; t++)
+		for (op = 0; op < SMC_O_COUNT; op++) {
+			SmBits a1, a2, b1, b2;
+			sprintf(name, "csweep.%s.%s", smc_type_name[t], smc_op_name[op]);
+			if (strcmp(name, cat))
+				continue;
+			for (i = 0; i < SMC_CORPUS_N; i++)
+				for (j = 0; j < SMC_CORPUS_N; j++) {
+					long double gr = 0, gi = 0;
+					double cv[4];
+					cv[0] = smc_at(i);
+					cv[1] = smc_at(j);
+					cv[2] = smc_at(j);
+					cv[3] = smc_at((i + j + 1) % SMC_CORPUS_N);
+					smc_run(t, op, cv, &gr, &gi);
+					smf_enc(smc_ftag[t], gr, &a1, &a2);
+					smf_enc(smc_ftag[t], gi, &b1, &b2);
+					printf("P %s %d %d %016llx%016llx%016llx%016llx\n", name, i, j,
+								 (unsigned long long)a2, (unsigned long long)a1,
+								 (unsigned long long)b2, (unsigned long long)b1);
+					n++;
+				}
+		}
+	return n;
+}
+
 static void smf_row_dump(void)
 {
 	int i;

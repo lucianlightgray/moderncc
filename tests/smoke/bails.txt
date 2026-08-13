@@ -1,4 +1,21 @@
 # regenerate: ctest -R smoke/rebank
+#
+# THIS FILE NEEDS ONE RE-BANK ON x86_64-linux, 2026-08-13, and the divergence
+# cell will be red there until it gets one. Two changes landed from the Mac and
+# neither could be measured here. (1) The four divergence classes now share a
+# `diverge-` prefix so the bank's scope match owns all of them: `refs-disagree`
+# was outside it, which meant those rows were never ratcheted AND were copied
+# from the old bank on every --rebank while also being written from the run --
+# one re-bank took 22 rows to 44. The 20 rows below were renamed in place, so
+# that half needs nothing. (2) smokerun now re-runs every `diverge-refs`
+# category through the subject's `--points` mode and banks the count of points
+# inside it where the two references AGREE and mcc differs, as
+# `div diverge-masked:<category>`. Those rows do not exist here yet, so each one
+# this host produces will arrive as a `new bail category` failure. Read the
+# MASKED lines, triage them, and re-bank -- do not bank them without reading,
+# which is the whole point of the class. arm64-macos has seven of them, six on
+# complex divide.
+#
 # Every diverge-both row below is a triaged finding, not a tolerance. Re-take
 # this file with `smokerun --rebank`, then `--divergence --rebank`, then
 # `--slice-census --rebank`; this header is not generated and must be restored
@@ -350,25 +367,25 @@ div diverge-one:mul.si.max.2.run 1
 div diverge-one:mul.si.min.m1.run 1
 div diverge-one:neg.si.min.run 1
 div diverge-one:sub.si.min1.run 1
-div refs-disagree:bsweep.F16.FSCALE.fold 1
-div refs-disagree:bsweep.F16.FSCALE.fold 1
-div refs-disagree:bsweep.F16.FSCALE.run 1
-div refs-disagree:bsweep.F16.FSCALE.run 1
-div refs-disagree:csweep.C32.CMULADD.fold 1
-div refs-disagree:csweep.C32.CMULADD.fold 1
-div refs-disagree:csweep.C32.CMULADD.run 1
-div refs-disagree:csweep.C32.CMULADD.run 1
-div refs-disagree:csweep.C64.CMULADD.fold 1
-div refs-disagree:csweep.C64.CMULADD.fold 1
-div refs-disagree:csweep.C64.CMULADD.run 1
-div refs-disagree:csweep.C64.CMULADD.run 1
-div refs-disagree:shl.si.w.fold 1
-div refs-disagree:shl.si.w.fold 1
-div refs-disagree:shl.si.wp1.fold 1
-div refs-disagree:shl.si.wp1.fold 1
-div refs-disagree:shl.sll.w.fold 1
-div refs-disagree:shl.sll.w.fold 1
-div refs-disagree:shl.sll.wp1.fold 1
-div refs-disagree:shl.sll.wp1.fold 1
+div diverge-refs:bsweep.F16.FSCALE.fold 1
+div diverge-refs:bsweep.F16.FSCALE.fold 1
+div diverge-refs:bsweep.F16.FSCALE.run 1
+div diverge-refs:bsweep.F16.FSCALE.run 1
+div diverge-refs:csweep.C32.CMULADD.fold 1
+div diverge-refs:csweep.C32.CMULADD.fold 1
+div diverge-refs:csweep.C32.CMULADD.run 1
+div diverge-refs:csweep.C32.CMULADD.run 1
+div diverge-refs:csweep.C64.CMULADD.fold 1
+div diverge-refs:csweep.C64.CMULADD.fold 1
+div diverge-refs:csweep.C64.CMULADD.run 1
+div diverge-refs:csweep.C64.CMULADD.run 1
+div diverge-refs:shl.si.w.fold 1
+div diverge-refs:shl.si.w.fold 1
+div diverge-refs:shl.si.wp1.fold 1
+div diverge-refs:shl.si.wp1.fold 1
+div diverge-refs:shl.sll.w.fold 1
+div diverge-refs:shl.sll.w.fold 1
+div diverge-refs:shl.sll.wp1.fold 1
+div diverge-refs:shl.sll.wp1.fold 1
 wrapv wrapv-inert:digest-identical-under-fno-wrapv 1
 wrapv wrapv-inert:digest-identical-under-fwrapv 1

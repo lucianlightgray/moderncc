@@ -1449,6 +1449,95 @@ static int same_word(const char *a, const char *b)
 	return (!*a || *a == ' ' || *a == '\n') && (!*b || *b == ' ' || *b == '\n');
 }
 
+static char *points_of(const char *exe, const char *cat, const char *tag)
+{
+	char out[1024], args[256];
+	snprintf(args, sizeof args, "--points %s", cat);
+	ts_path(out, sizeof out, g_work, "points-%s.txt", tag);
+	if (!exited_zero(run_subject(exe, args, out)))
+		return NULL;
+	return slurp(out);
+}
+
+static const char *line_at(const char *txt, long n)
+{
+	long i = 0;
+	if (!txt)
+		return NULL;
+	while (*txt && i < n) {
+		const char *e = strchr(txt, '\n');
+		if (!e)
+			return NULL;
+		txt = e + 1;
+		i++;
+	}
+	return *txt ? txt : NULL;
+}
+
+static int line_eq(const char *a, const char *b)
+{
+	if (!a || !b)
+		return 0;
+	while (*a && *a != '\n' && *b && *b != '\n') {
+		if (*a != *b)
+			return 0;
+		a++;
+		b++;
+	}
+	return (!*a || *a == '\n') && (!*b || *b == '\n');
+}
+
+/* A verdict class computed on a category digest says "at least one point in
+ * this category behaved like this".  refs-disagree then clears every other
+ * point in the category, including points where the references DO agree and
+ * mcc differs -- which is the exact defect this class was added to fix, one
+ * level down.  This re-runs the three subjects over the category's own points
+ * and reports how many of them the digest verdict is hiding. */
+static void decompose(const char *mexe, const char *gexe, const char *cexe,
+											const char *cat)
+{
+	char *pm = points_of(mexe, cat, "mcc");
+	char *pg = gexe ? points_of(gexe, cat, "gcc") : NULL;
+	char *pc = cexe ? points_of(cexe, cat, "clang") : NULL;
+	long i, agree_mcc_differs = 0, n = 0;
+	if (!pm || !pg || !pc) {
+		if (strstr(cat, "sweep."))
+			bad("divergence: %s is a sweep with no --points mode, so its digest "
+					"verdict cannot be decomposed and may be clearing points it does not "
+					"describe",
+					cat);
+		else
+			note("smokerun: %s is a single named case, not a sweep, so its digest "
+					 "is its only point and the verdict is already exact\n",
+					 cat);
+		free(pm);
+		free(pg);
+		free(pc);
+		return;
+	}
+	for (i = 0;; i++) {
+		const char *lm = line_at(pm, i), *lg = line_at(pg, i), *lc = line_at(pc, i);
+		if (!lm || !lg || !lc)
+			break;
+		n++;
+		if (line_eq(lg, lc) && !line_eq(lm, lg))
+			agree_mcc_differs++;
+	}
+	if (n == 0)
+		bad("divergence: %s decomposed to zero points, so the decomposition "
+				"measured nothing",
+				cat);
+	else if (agree_mcc_differs) {
+		cat_addn(agree_mcc_differs, "div diverge-masked:%s", cat);
+		note("MASKED       %s %ld of %ld points have the references AGREEING and "
+				 "mcc differing, which the category's refs-disagree verdict clears\n",
+				 cat, agree_mcc_differs, n);
+	}
+	free(pm);
+	free(pg);
+	free(pc);
+}
+
 static void divergence(void)
 {
 	char mout[1024], gout[1024], cout[1024], exe[1024], log[1024], tsv[1024];
@@ -1458,6 +1547,8 @@ static void divergence(void)
 	const char *clang = ref_clang();
 	int have_g, have_c, n3 = 0, ndis = 0, nloud = 0, nrows = 0, nrefdis = 0;
 	char *pm;
+	char rdcat[32][192];
+	int nrdcat = 0;
 
 	ts_path(mout, sizeof mout, g_work, "dump-mcc.txt");
 	ts_path(gout, sizeof gout, g_work, "dump-gcc.txt");
@@ -1549,7 +1640,15 @@ static void divergence(void)
 					ndis++;
 					if (dg && dc && !same_word(gv, cv)) {
 						nrefdis++;
-						cat_add("div refs-disagree:%s.%s", name, colname[ci]);
+						cat_add("div diverge-refs:%s.%s", name, colname[ci]);
+						{
+							int q, seen = 0;
+							for (q = 0; q < nrdcat; q++)
+								if (!strcmp(rdcat[q], name))
+									seen = 1;
+							if (!seen && nrdcat < 32)
+								snprintf(rdcat[nrdcat++], sizeof rdcat[0], "%s", name);
+						}
 						note("REFS-DISAGREE %s.%s mcc=%.32s gcc=%.32s clang=%.32s\n", name,
 								 colname[ci], mv, gv, cv);
 					} else if (dg && dc) {
@@ -1569,6 +1668,14 @@ static void divergence(void)
 		if (!eol)
 			break;
 		pm = eol + 1;
+	}
+	if (nrdcat && have_g && have_c) {
+		char gexe[1024], cexe[1024];
+		int q;
+		ts_path(gexe, sizeof gexe, g_work, "subject-gcc.exe");
+		ts_path(cexe, sizeof cexe, g_work, "subject-clang.exe");
+		for (q = 0; q < nrdcat; q++)
+			decompose(exe, gexe, cexe, rdcat[q]);
 	}
 	note("smokerun: divergence rows=%d comparable=%d differing=%d "
 			 "mcc-differs-from-both=%d refs-disagree=%d\n",
