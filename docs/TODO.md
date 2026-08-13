@@ -2243,7 +2243,10 @@ rather than chasing it.
 **Two cells fail under `-j` and pass alone — and `slice/quiesce`'s reason is structural.**
 `slice/quiesce` **destroys the device** (that is its whole subject), so running it concurrently
 with the other device-touching `slice/*` cells is inherently racy: 54 of 55 green at `-j4` with
-`quiesce` the only failure, and **17.8 s green alone**. It is not a flake to be re-run until it
+`quiesce` the only failure, and **17.8 s green alone**. Demonstrated rather than inferred: two runs
+of the *same* guarded `slicerun` binary, back to back on `8a70f8b7`, returned **55/55 and 54/55**,
+`quiesce` the only cell that moved. Same code, same commit, both verdicts — so the variable is what
+shared the machine and nothing else. It is not a flake to be re-run until it
 passes — it is a cell that cannot share a machine with its own family, and the honest fix is a
 ctest `RESOURCE_LOCK` on the device rather than a retry.
 
