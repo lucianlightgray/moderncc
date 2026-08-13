@@ -65,7 +65,18 @@ endif()
 #
 #   x86_64-Linux   941   -- 947 until the arena ternary normalisation merged six
 #                           two-exit `if`s into one block each; re-taken here
-#   arm64-Darwin   990   -- this machine, taken before that normalisation
+#   arm64-Darwin   983   -- this machine. Was 990; bisected 2026-08-12 to
+#                           82f39935 "the ternary fold must not hide a tail call
+#                           or a constant condition", which refuses to fold a
+#                           ternary whose arm is an AST_Invoke or whose condition
+#                           is an AST_Literal. Fewer folds, fewer merged blocks.
+#                           That commit measured its own cost on gcc.c-torture
+#                           (block/other 285 -> 288) and this column was not
+#                           re-taken with it, so the 7 is a deliberate, priced
+#                           change and not drift. Every other figure in this
+#                           column is unmoved -- inv-blocks 517 and all-internal
+#                           165 still match exactly, which is what makes the
+#                           attribution safe to act on
 #   arm64-Linux   1022   -- Debian bookworm in Docker, likewise
 #
 # An unbanked combination skips the exact half rather than comparing against a
@@ -73,7 +84,7 @@ endif()
 # unmanageable the real fix is to give the census a corpus that does not include
 # system headers, which would make one column serve everywhere.
 if(CENSUS_ARCH STREQUAL "arm64" AND CENSUS_OS STREQUAL "Darwin")
-    set(_census_bank "blocks=990" "inv-blocks=517" "all-internal=165"
+    set(_census_bank "blocks=983" "inv-blocks=517" "all-internal=165"
                      "all-external=265" "mixed=85" "any-indirect=2")
 elseif(CENSUS_ARCH STREQUAL "arm64" AND CENSUS_OS STREQUAL "Linux")
     set(_census_bank "blocks=1022" "inv-blocks=554" "all-internal=164"

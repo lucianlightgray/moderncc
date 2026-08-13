@@ -1574,7 +1574,7 @@ never failed is the thing this whole cluster is about.
 
 | # | edit | size | depends | host |
 | --- | --- | --- | --- | --- |
-| B1 | **`ast_search_emit_size` leaks `.data`/`.rodata` — see the hazard below. NOT a 6-line fix.** | — | — | — |
+| ~~B1~~ | ~~`ast_search_emit_size` leaks `.data`/`.rodata`~~ **DONE 2026-08-13, and the hazard I filed against it was wrong** — see below | 4 lines | — | any |
 | ~~B2~~ | ~~`struct AstReemitFn` gains `body_ind/body_len/reloc0/rel_len`~~ **DONE 2026-08-12.** Needed `ast_body_ind_sv`/`ast_reloc0_sv` hoisted above their first use — they were declared ~13k lines below `ast_reemit_retain` in the fragment's translation order | small | — | any |
 | ~~B3~~ | ~~five `AST_SG_*` bits at 42–46~~ **DONE 2026-08-12**. Bit **47 is now the last disk-safe one** — `AST_GATE_BITS` is 48 and the memo packs its magic above it | small | — | any |
 | ~~B4~~ | ~~`ast_jit_submit_aot` passes `ast_search_gates_now()`~~ **DONE 2026-08-12**. The zero was **not inert** — `have_override && override_mask` is false for 0, so AOT submissions were recompiled by `ast_reemit_extern` under ambient gates and `warm_gates` stayed 0, disabling warm start for them. Two no-ops from one literal | 3 lines | — | arm64 |
@@ -1631,20 +1631,33 @@ is *3 of 16*. `reg`, `posterr`, `bytes`/`len` are the cheap fixtures; `ovf`/`unb
 
 ### The two rows that were investigated and deliberately left alone
 
-**B1 — `ast_search_emit_size` never restores `data_section->data_offset` /
-`rodata_section->data_offset`.** It saves both, computes `ddelta`/`rodelta`, traces them, and
-returns — so every superopt trial that materialises a float constant or string literal
-permanently grows the real object, and `ast_scratch_measure_exit` asserts isolation for the
-*text* section only. **The restore is not safe on its own.** `ast_fconst[]` stores section
-offsets, and the trial sets `ast_fconst_i = ast_fconst_n` so new constants are *appended*.
-Rewinding rodata without also rewinding `ast_fconst_n` would leave pool entries pointing at
-space the next constant reuses — **two distinct constants aliasing one offset, i.e. a miscompile
-generator**, which is strictly worse than the wasted bytes. Any fix must rewind the pool and the
-section together, and needs the fconst-reuse interaction worked out first.
-**Could not be demonstrated firing on arm64/macOS**: the objects are byte-identical across
-`-O2`/`-O9`/`-O12`/`-O13` with `-fopt-search-emit-size` on and off, so the search is not reaching
-the subject here. Reachability is the first thing to establish, and B8 may be why it does not
-(the per-fn size loop is dead on this host).
+**~~B1 — the `ast_fconst_n` aliasing hazard.~~ — REFUTED 2026-08-13, and the restore landed.**
+The row claimed rewinding `.rodata` without also rewinding `ast_fconst_n` would leave pool
+entries pointing at space the next constant reuses — two constants on one offset, a miscompile
+generator. **That cannot happen.** `ast_fconst_record` opens with
+
+```
+if (!ast_active || ast_replaying)
+        return;
+```
+
+and `ast_search_emit_size` sets `ast_replaying = 1` before `ast_replay_body`, so **the pool does
+not grow during a trial at all**. The two recorders called ahead of that guard are covered too:
+`rir_hook_fconst_record` gates on `rir_capture_live()`, which is
+`rir_active && !ast_replaying && !ir_cap_replaying`, and advances `rir_fcrec_n` only inside it.
+Nothing retains an offset into the bytes a trial allocates, so restoring both section cursors is
+safe.
+
+Fixed: `data_section->data_offset` and `rodata_section->data_offset` are restored beside
+`ast_cur`, before `ast_scratch_measure_exit`. 270/270 on ast + smoke + optfire.
+
+**Landed as correctness-by-construction, not as a measured win, and that distinction is the
+honest one.** A save-then-never-restore is a leak by inspection, but it could not be shown
+firing: with `-fopt-search-emit-size` on at `-O13`, objects are **byte-identical** before and
+after on a subject built to materialise several distinct float constants. So either the trial
+replay reuses the pool rather than allocating, or this subject does not reach the path. **The
+open question is now reachability, not safety** — and note `ast_search_emit_size` runs only under
+`-fopt-search-emit-size`, which is `MCC_OPTD_OFF`, so nothing ships through it today.
 
 **C1 — `rir-coverage` reports Passed on this host while skipping its three most valuable
 comparisons.** Verified live: 12 skips (`kept_coverage`, `.text` residual and the whole lowerable

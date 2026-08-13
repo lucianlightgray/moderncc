@@ -19519,6 +19519,10 @@ static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) { MC
 		{ MCC_TRACE("br\n"); MCC_TRACE("emit-size data delta text=%d data=%lld rodata=%lld\n", size,
 							(long long)ddelta, (long long)rodelta); }
 	ast_cur = save_cur;
+	if (data_section)
+		{ MCC_TRACE("br\n"); data_section->data_offset = save_doff; }
+	if (rodata_section)
+		{ MCC_TRACE("br\n"); rodata_section->data_offset = save_roff; }
 	size = ast_scratch_measure_exit(&scr);
 	return size;
 }
