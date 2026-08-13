@@ -1550,16 +1550,16 @@ static void divergence(void)
 					if (dg && dc && !same_word(gv, cv)) {
 						nrefdis++;
 						cat_add("div refs-disagree:%s.%s", name, colname[ci]);
-						note("REFS-DISAGREE %s.%s mcc=%.16s gcc=%.16s clang=%.16s\n", name,
+						note("REFS-DISAGREE %s.%s mcc=%.32s gcc=%.32s clang=%.32s\n", name,
 								 colname[ci], mv, gv, cv);
 					} else if (dg && dc) {
 						nloud++;
 						cat_add("div diverge-both:%s.%s", name, colname[ci]);
-						note("DIVERGE-BOTH %s.%s mcc=%.16s gcc=%.16s clang=%.16s\n", name,
+						note("DIVERGE-BOTH %s.%s mcc=%.32s gcc=%.32s clang=%.32s\n", name,
 								 colname[ci], mv, gv ? gv : "-", cv ? cv : "-");
 					} else {
 						cat_add("div diverge-one:%s.%s", name, colname[ci]);
-						note("DIVERGE      %s.%s mcc=%.16s gcc=%.16s clang=%.16s\n", name,
+						note("DIVERGE      %s.%s mcc=%.32s gcc=%.32s clang=%.32s\n", name,
 								 colname[ci], mv, gv ? gv : "=", cv ? cv : "=");
 					}
 				}

@@ -461,6 +461,211 @@ was passing by measuring nothing. The `REL` rows are identical before and after;
 offsets are normalised. Not re-verified against GNU binutils objdump, which is what the Linux
 box has and what the extractor was written for; the changes are shaped to be no-ops there.
 
+### Cross-cutting research, 2026-08-13 — four clusters read together, and what it changed
+
+> Four read-only investigations over deliberately **overlapping** slices — the measurement
+> instruments, the "decide first" items, the device cluster and the oracle cluster — asked for
+> shared surfaces, ordering and contradictions rather than per-row detail. The headline is that
+> **three of the four "decisions" are measurements**, one open row's central question is **now
+> answered**, and several couplings this file asserts are refuted while one it never named is real.
+
+**N7's central question is answered — the GPU arm catches the injection.** Run on this host after
+the `points=` split: baseline `differing-files=0`, and with `r = s + 1` injected into
+`ast_eval_slice.h`'s 32-bit signed `+` arm, `differing-files=4` and
+`always_gpu_parity.sh` fails with `[ladder-cross] points=13663924 → 13664118`. **The delta is
+exactly 194 — N7's own recorded figure.** The mechanism is confirmed in code: on `hr >= 0` the hook
+short-circuits the rung and `ast_eval_binop` is never called, so the arm is a genuine independent
+evaluator for the rungs it accepts.
+
+**But read the qualification before closing N7.** In all four differing files, `pairs`,
+`certified`, `differ`, `refused`, `exact` and every histogram are **byte-identical**; only `points`
+moves, and not even consistently in one direction (one file's GPU count is *lower*). `points` is a
+how-far-did-the-sweep-get counter, not a verdict, so the teeth are an incidental coverage-index
+artefact. **What closed is the narrower claim that the arm is blind. N7's real work — an
+independent oracle for the tree side — stands.**
+
+**And the obstruction this file recorded was wrong.** `TIMEOUT 120` in `ladder_gpu_parity.cmake` is
+**per `execute_process`**, i.e. per single-file compile (~0.5 s measured), and
+`gpu/ladder-gpu-parity` carries **no ctest `TIMEOUT` property at all**. All four device cells are
+green here in 145 s together. The "cannot finish inside `TIMEOUT 120`" note is struck.
+
+#### The couplings, tested rather than asserted
+
+This file has a bad record here — it recorded four refuted couplings on 2026-08-12 — so each was
+checked against the code.
+
+| claim | verdict |
+| --- | --- |
+| N7, N18, N6.8, the lowerable ratchet and N6.10 share machinery (`mccinv.h`, `emit-map.py`) | **refuted.** They are **two disjoint clusters plus a loner**: N18+N6.8 on `src/mccinv.h`/`emit-map.py`; N7+N6.10 on `src/ast_eval_slice.h`; the ratchet on `rir-coverage.py`/`mccrir.c`, sharing nothing with either |
+| the ratchet needs a compiler change to `[rir-low-body]`'s row format | **refuted.** `census()` already holds `src` per row-batch — the fix is pure Python, no format change, no invalidated captures |
+| N6.8's counter should be wired at the `mccjit_embed_note` gate | **refuted.** There are **five early returns after that gate**, including the `mccjit_intent_serialize` failure N6.8 blames `stash_leaf` for. It must go after the `e->next = mccjit_embed_fns` append |
+| `emit-map.py` unblocks N18 | **refuted.** The whole N18 table reproduces **in 0.75 s** with `MCC_INV=1` on the ordinary build — no trace build, no `emit-map.py`. A cell watching N18 needs two compiles and a subtraction, not the 7200 s opt-in trace cell |
+| item 22 and sweep row 29 share a policy | **refuted.** Both are settled by measurement, for unrelated reasons. What they *do* share is a file: `tests/smoke/bails.txt`, which is where both "say so" arms already live |
+| item 22's `SValue` cost couples to another row | **refuted.** No other row names those `memcpy` sites; they cost nothing and couple to nothing |
+| **`ast_func_end` is where three of the five actually meet** | **real, and this file never named it.** `src/mccast.c::ast_func_end` contains every Cluster-A counter site *and* N7's census entry within 110 lines — `mcc_inv_add ast.body`, the `ast_jit_dispatch_env` gate, three `mccjit_embed_note` calls, `ast.abort`/`ast.noreplay`, `ast_ladder_census`, and `jit.baked` |
+
+#### One failure mode under three instruments — the thesis, confirmed
+
+The working hypothesis was *an instrument that measures something adjacent to the thing it names*.
+It holds, and the mechanism is the same in all three: **absent reads as zero, and nothing fails.**
+`emit-map.py` uses `inv.get(k, 0)` throughout; `mcc_inv_add` truncates silently past `MCC_INV_MAX`;
+`find_anchors` makes two of five anchors optional, so if they stop resolving both dropout counters
+read 0 and `gap_explained` reads 0 with no diagnostic; `low_body_index()` returns `None` and the
+whole per-body ratchet degrades **to the corpus-wide percentage it exists to replace**. **Making
+those three loud is the single highest-value change across the cluster**, and it is small in every
+one of them.
+
+**One correction to this file's own arithmetic while there:** the `MCC_INV_MAX` hazard is real but
+mis-sized. The tree registers **16** keys, not the 12 recorded here, so six reasons × (count+bytes)
+lands at **28 of 32** — *under* the cap. The conclusion (own table, own report line) survives; the
+stated reason does not, and anyone sizing the work from that sentence over-builds.
+
+**The `[inv]` prefix collision has three consumers, not one.** `fmt-census.py` raises an uncaught
+`ValueError`; **`tools/node-census.py` silently appends garbage** — a wrong number with no signal,
+the worst mode, and a consumer this file does not record; `tools/slicerun.c` silently truncates.
+And `emit-map.py`'s `[inv]` channel is generic **only for integers** — `run()` does `int(v)`
+unconditionally, so the moment a reason *name* goes on that line it dies. That is the argument for
+a new prefix that actually bites, because unlike the collision it needs no unusual env var.
+
+#### The three "decisions" that are measurements
+
+**Sweep row 29 — settled three ways; keep the gate.** Its whole case rested on *"2.0% of bodies but
+10.2% of body bytes getting no optimization at all"*, and none of that argument survives.
+*(a) Structurally the flag does not gate the optimizer at all*: `ast_rir_nofb_env` has exactly one
+consumer and it feeds `keep` — whether to restore `orig` — while the strategy admission gate reads
+`faithful`, computed earlier by byte-comparing the replay. Flipping it does not hand those bodies
+the optimizer; it retains an unoptimized, byte-divergent replay body. *(b) Empirically the flip
+costs bytes on every corpus*: `src/mcc.c` **+840** at `-O1` and **+830** at `-O2`,
+`tools/slicerun.c` **+517** at both, `tools/mcchv.c` unchanged. **Never negative — there is no byte
+upside at all.** *(c) The figure itself has moved*: re-measured, bodies 2.18% (three instruments
+agree) but bytes **7.65%, not 10.2%**, and the average discarded body is 1,764 B against a kept
+476 B, not "2585 against 470". And leg 2 is worse than "one entry is banked": `nofb_miscompiles` is
+a **known-bad allowlist**, so `O0: src/mcc.c::cleanup_symbols` is a *known miscompile of the
+compiler's own source under the flip*. **The visibility half is confirmed cheap** — `rir_prod_gate
+< 2` returns *after* all the counter accumulation, so "make it visible" is a print, not a
+computation. The only decision left is the shape of the notice.
+
+**Item 22 — settled by witness; mcc is the conformant side.** `2.25f16*255.0f16+0.5f16` gives mcc
+`607d`, gcc-15 and clang `607c`, and gcc-15 `-fexcess-precision=16` `607d`. Decisively:
+**gcc advertises `__FLT_EVAL_METHOD__ 0` in both modes**, so gcc's default contradicts its own
+macro and mcc's behaviour is the one that matches it. Not a conformance defect. The "does not
+predefine it" correction is half right — mcc *does* predefine it, but from
+`runtime/include/mccdefs.h`, so the correction's operational conclusion (the fix is written against
+the headers, not the compiler) stands.
+
+**And item 22's cost model is attached to the wrong mechanism.** `sizeof(SValue)` is **80, not 64**,
+with a **12-byte interior hole and 8 bytes of tail padding** — a new field costs zero size and zero
+offset change. The bulk copies are all `sizeof`-driven (nine `memcpy` + two `memmove` across seven
+functions, not "eight places") and need **zero edits**; `SValue` is never `memcmp`'d and never
+serialized, so "a new field joins the RIR replay record" is not a correctness hazard. **`CType.t`
+is genuinely full, but `VT_BTYPE` is not** — it is `0x1f` with 16 of 32 encodings used, so a
+`VT_FLOAT16_WIDE` costs no new bits and never touches `SValue`. **The fact that refutes this cost
+model was already in this file** under *"Couplings deleted, because verification refuted them"*,
+established for the wide256 cluster and never connected here. The real cost is breadth — 838
+`VT_BTYPE` uses to audit — which is mechanical and greppable, a very different estimate.
+
+**`int128-signedness` — settled; delete it.** `nm -u` on a program using all four
+`__builtin_*_overflow` widths shows **zero** `__mcc_*o_*` references: `__mcc_ov_gen` never mentions
+`__mcc_ov_disp` at all, so the dispatcher and all 39 declarations are orphaned *in the header*.
+Three facts shrink the decision to nothing: **no symbol/ABI baseline test exists** anywhere in the
+tree; `runtime/include/` and the archive **install into the same `_mccdir`**, so the "new `.a` +
+old header" skew the row worries about cannot occur within a prefix; and it is a **static
+archive** — no runtime ABI, and any rebuild takes the new header too. **Free win the row does not
+name:** those 44 dead lines are injected into **every TU mcc compiles** under the default
+`MCC_CONFIG_PREDEFS=1`.
+
+**S7b is the one that really is a decision** — and the only item bound by others: `L4b` and
+`jit-teardown-unbounded` both wait on it, which is the strongest "deciding one settles another"
+link on the board. Its census has drifted: the pthread counts are now `mccjit_embed.c` **159**
+(was 139), `mccrun.c` 23, `mccast.c` 4, `mccgpu.c` 3; there are **four** in-tree consumers of
+`threads.h`, not one; workers are **not** `pthread_detach`ed any more (L2′ landed); and every line
+number in its suspension-point table is stale by 200–1,300 lines. Its own argument is *stronger*
+than written — `sv_stack` is 41,040 B, not the 32,832 B recorded.
+
+**Two numbers to correct regardless of any decision:** row 29's 10.2% (now 7.65%, and attributed to
+the wrong predicate), and `sizeof(SValue)`/`sv_stack` — **80 / 41,040**, not 64 / 32,832, which is
+a 25% undercount on an N8 stack-frame row.
+
+#### The device cluster — N34's rule generalises, and it names the order
+
+**Wiring the device into `mccjit_shutdown()` is the correct fix for N6/`L2`, and its acceptance
+test already exists and already passes.** `slicerun --only quiesce` is green here, and its own
+comment names the target: *"the call that cluster L wants to reach from `mccjit_shutdown`"*.
+`mcc_gpu_quiesce` is idempotent — it clears `mcc_gpu.dev` and guards everything on it — so a second
+call issues no Vulkan at all.
+
+**But it is safe today by accident, not by rule.** `atexit(mccjit_shutdown)` is registered at two
+sites: one after `ast_ladder_gpu_setup` (safe by construction) and one in `mccjit_kgc_register`
+that **nothing sequences against the device coming up**. That is N34's exact geometry; it survives
+only because `ast_ladder_gpu_report` quiesced first.
+
+**So N34's declined belt-and-braces fix becomes correct the moment L2 lands.** N34 rejected
+`atexit(mcc_gpu_quiesce)` in `mcc_gpu_init` because it moves teardown ahead of `mccjit_shutdown`,
+`mcc_stats_finish` and `rir_report` — **that objection dissolves once `mccjit_shutdown` quiesces
+anyway**, because the second quiesce is a proven no-op. And it is the only registration correct *by
+construction*, since `mcc_gpu_init` is what calls `vkCreateInstance`. It also closes N34's stated
+residual, which L2 alone does not: `atexit(ast_ladder_gpu_report)` sits **outside** the
+`if (mcc_gpu_emit(...))` guard, so if the warmup ever fails to dispatch, N34 returns.
+
+**The `mcc_gpu_mem()` retention hazard is real and it is in `slicerun`, not the JIT.**
+`src/mccjit_embed.c` never calls `mcc_gpu_mem`. `frame_ptr_arm` stores the base into the
+file-static `ast_eval_slice_rw`/`_rw_base`/`_rw_nbyte` and is called unconditionally before every
+suite — **including `suite_quiesce`**, which then unmaps the region while those globals still point
+into it. Not currently dereferenced afterwards, so it has never fired: **the invariant is
+unenforced, not satisfied.** Nulling them in the release path turns a silent use-after-unmap into a
+null deref.
+
+**MoltenVK imports the whole hazard class onto macOS, and that is not written down.** Darwin's
+Metal `mcc_gpu_quiesce` destroys neither device nor instance and never clears `mcc_gpu.dev` — the
+"quiesce destroys nothing" shape that predates the hazard. MoltenVK moves macOS onto the
+destroy-everything Vulkan path with MoltenVK itself as a `dlopen`'d ICD registering its own
+teardown. **"~10 lines, half-built" is accurate for the build config and wrong for the risk**: it
+ports N6/L2 and N34 to a platform that has never had them, on a host nobody can reproduce them on.
+
+**Order: `atexit(mcc_gpu_quiesce)` in `mcc_gpu_init` → L2 → MoltenVK, never MoltenVK first.**
+`SR_GLOB_STRIDE` is **genuinely independent** — pure arithmetic, no device lifetime — and its
+honest fix is smaller than the row implies, because `slicerun_obj` already returns a per-object
+extent indexed by the same pair `slicerun_reloc` receives.
+
+#### The oracle cluster — one amendment covers every case
+
+This file's rule treats *the reference's answer* as a scalar. It is a function of five variables,
+and each open case is a different one going plural: implementation (covered), **implementation
+count = 1** (N23, N29), **version** (N29's two hosts), **documented flag** (item 22), and **`-O`
+level / fold-vs-run** (N30). The smallest amendment:
+
+> …or where **any** reference fails to give one answer. A reference adjudicates only where its
+> answer is invariant across the axes we vary it on — implementation, version, `-O` level,
+> documented flag, and fold-versus-run. Where a reference is multi-valued on any axis, the case is
+> latitude: pin mcc's answer, record the disagreement, and **name the axis**. Two references are
+> two only if they are two implementations.
+
+**Live proof, at the harness's own level.** `SMK_REF_FLAGS` is `-O1`, and on N30's `0x7c01`:
+gcc-15 gives `fold=fc01 run=fe01` at `-O1` — **the reference contradicts itself, at the one level
+the harness looks at**, and the harness books the two columns as independent verdicts without ever
+asking whether they agree. **A fourth class on the fold/run axis is free** — both columns are
+already parsed, zero extra compiles. A class keyed on `-O` level is structural (one `ref_build` per
+reference) and should wait.
+
+**There are three independent reference resolvers with different ladders**, and this is not
+Mac-specific: `mcc_find_gnu_gcc` prefers **gcc-16** and is `--version`-validated; `MCC_SMOKE_GCC`
+prefers **gcc-15** and is validated by nothing; `smokerun`'s own default is bare `gcc-15`. **On any
+host with both installed, `slice/cref-oracle` adjudicates against gcc-16 while `smoke/divergence`
+adjudicates against gcc-15, in the same tree, at the same time, with no record of either.**
+
+**No bank records a reference version anywhere.** Rows are `<scope> <key> <count>`; the only
+provenance is hand-written prose that the documented re-bank procedure destroys. **The landmine:**
+a reference upgrade moves ratchet counts with zero signal in the diff, reported as a regression or
+an `IMPROVED`. **It has already fired and the bank shows it for free** — `bails-arm64-macos.txt`
+has 253 `diverge-one` and **zero** of the two classes that require a second implementation. That
+histogram *is* N29's fingerprint, and a three-line assertion catches the whole class.
+
+**The overlap that matters: one change settles four items.** Resolve `MCC_SMOKE_GCC`/`_CLANG`
+through the already-audited `DIFF3_*` path, and have `bank_write` emit the resolved pair's
+`--version` as a machine-readable line the ratchet checks. That is N29's prescribed fix verbatim,
+plus the two-ladder split, plus the audit gap, plus retiring smokerun's private family probe. It
+does **not** settle N30 — that needs the fold/run class. **Two changes, this one first.**
+
 ### Next steps, prioritised — re-ranked 2026-08-13 (third pass)
 
 > **Six of the second pass's ten entries are now closed**, including three of its top five, so the
@@ -1377,7 +1582,14 @@ Verification refutes both halves:
   are on JIT bake paths a plain `-c` compile never enters. Essentially all 66,436,580 hits are
   the instrument measuring itself.
 
-**Cheapest real progress, and it needs no new oracle:** the GPU arm already *is* an independent
+**~~Cheapest real progress, and it needs no new oracle~~ — TAKEN 2026-08-13, and it worked.** The
+GPU arm now catches the `r = s + 1` injection: `differing-files=0` clean, `4` injected, and
+`[ladder-cross] points` moves **by exactly 194**, this row's own figure. **But only `points` moves**
+— every verdict field is byte-identical, so the teeth are a coverage-index artefact rather than an
+oracle. What closed is "the arm is blind"; the independent tree-side oracle is still the work. See
+*Cross-cutting research* for the run and the timing correction.
+
+**The original text:** the GPU arm already *is* an independent
 evaluator — with `MCC_AST_EVAL_LADDER_GPU=1` the hook short-circuits the rung and
 `ast_eval_binop` is never called for those points — and `gpu/ladder-gpu-parity` diffs the two
 censuses textually. It missed the injection because it drops the one line that moved:
@@ -2027,6 +2239,13 @@ byte-identical. So VLA lowering leaks a live-register `Ref` into the arena at `-
 force-replay, and the fixture was banking the leak. Harmless as far as anything measures, and
 after the swap **nothing in the suite depends on it** — which is the argument for writing it down
 rather than chasing it.
+
+**Two cells fail under `-j` and pass alone — and `slice/quiesce`'s reason is structural.**
+`slice/quiesce` **destroys the device** (that is its whole subject), so running it concurrently
+with the other device-touching `slice/*` cells is inherently racy: 54 of 55 green at `-j4` with
+`quiesce` the only failure, and **17.8 s green alone**. It is not a flake to be re-run until it
+passes — it is a cell that cannot share a machine with its own family, and the honest fix is a
+ctest `RESOURCE_LOCK` on the device rather than a retry.
 
 **`rir-nofb-probe-self` fails under `-j` and passes alone — measured three times, 2026-08-13.**
 Not a red and not filed as one, but it will waste somebody's afternoon. Contended in a `-j4`/`-j6`
@@ -3936,7 +4155,7 @@ schedule.
 | **26** | ~~**Cluster L is a dependency chain and its first link is unbuilt.** `L1` — give the JIT a shutdown — blocks `L2`/`L3`/`L4`/`L6`/`L7`/`L8`/`L9` by construction~~ — **CLOSED 2026-08-10 (`wt/jitshutdown`), and the row was wrong three ways.** The shutdown is `L2′(i)`, not `L1` (`L1` is device bring-up; `ARCHIVED.md:23151` says *"L2′ before L2"*). **There is no `L9`** — cluster L is `L1`–`L8` plus `L2′`, and this row is the only place in `docs/` the token appears. `L3` and `L6` were never blocked by a `pthread_t`: `L3` residency already landed, and `L6` is a predicate in `src/mccast.c`. What was real: workers `pthread_detach`ed with no handle retained. Now retained and joined; `mccjit_shutdown()` exists, drains, and is `atexit`-ordered ahead of the KGC flush. Genuinely unblocked: **`L2`'s precondition (i)**, **`L4`** on the lifetime axis, **`L8`** on the pool axis, **`L7(i)`**. Still blocking `L2`: `L2′(ii)`/`(iii)`, both `src/mccgpu.c`. Still blocking `L4b`: its own no-`mccjit_swap_lock` constraint, which is `S7b` | landed | **device lifetime** |
 | **27** | **The gate-mask gap.** `ast_math_inline_env`, `ast_interchange`, `ast_fusion`, `ast_tile` and `loop-vlat` mutate the arena before the JIT's mask snapshot and carry no `AST_SG_*` bit, so the JIT cannot know what shaped the tree it is handed. Stated at `:8650` and again at `:7756`; no later mention. This is the same class of defect as row 1 of the board's own ranking (a predicate reaching emitted code without its guard) | design | **correctness** |
 | **28** | **`storeval-callstore` is at `MCC_OPTD_LEVEL(2)` and was never ranked in either direction** (`src/mccopt.h:39`). The ICE that made its off-state unmeasurable was fixed at `:7629`; nobody has run the bench since. Adjacent and larger: **32 of the 34 demoted rows on rungs 10/11/12 are still unpriced** — only `narrow` and `tree-copy-prop` were measured, and rung 12 remains a deletion-candidate list nobody has read | one bench, then 32 | **emitted code** |
-| **29** | **The `MCC_OPT_REPLAY_FALLBACK` flip is an untaken decision, and the fallback is silent either way.** No known defect blocks it (`:9126`), the backstop landed at `705f0b0f`, all four delta-debugged flag sets closed, and ~~`rir-nofb-probe` banks zero miscompiles~~ — **false since `5d75acd8`: `O0` banks `src/mcc.c::cleanup_symbols`, so one of this recommendation's four legs is gone; re-check the other three before acting on it**. Keeping the gate costs **2.0% of bodies but 10.2% of body bytes** getting no optimization at all at `-O1`. **Recommended under either decision and not done: make the divergence visible** — `rir_prod_note` only reports at `MCC_RIR_PROD>=2`, so in a default build a fallback leaves no trace | small (visibility), then a decision | **emitted code** |
+| **29** | **The `MCC_OPT_REPLAY_FALLBACK` flip is an untaken decision, and the fallback is silent either way.** No known defect blocks it (`:9126`), the backstop landed at `705f0b0f`, all four delta-debugged flag sets closed, and ~~`rir-nofb-probe` banks zero miscompiles~~ — **false since `5d75acd8`: `O0` banks `src/mcc.c::cleanup_symbols`, so one of this recommendation's four legs is gone; re-check the other three before acting on it**. ~~Keeping the gate costs **2.0% of bodies but 10.2% of body bytes** getting no optimization at all at `-O1`.~~ — **re-measured 2026-08-13: 2.18% of bodies (three instruments agree) but 7.65% of bytes, and the capability claim is structurally wrong** — `ast_rir_nofb_env` feeds `keep`, not the strategy gate, which reads `faithful`. Flipping it hands nobody the optimizer, and costs +840/+830/+517 bytes on the three corpora that move. **Keep the gate.** **Recommended under either decision and not done: make the divergence visible** — `rir_prod_note` only reports at `MCC_RIR_PROD>=2`, so in a default build a fallback leaves no trace | small (visibility), then a decision | **emitted code** |
 | **30** | **No tree-recursion exec golden exists, and the failure mode is a GPU hang.** MSL compiles `fib(n)=fib(n-1)+fib(n-2)` and then **hangs the device at n=5** (`kIOGPUCommandBufferCallbackErrorHang`), taking sibling command buffers with it. Recorded as `ARCHIVED.md:22429` (C4); the golden was never written. Partly defused by the Metal drop, but the golden is a CPU-side conformance test and is still missing. Two more unused-as-conformance shapes named beside it: computed `goto` **into** a `for` body (`tests/diff/parts/legacy_expr.h`) and label arithmetic (`tests/exec/codegen/nodata_wanted.c`) | one golden | **conformance** |
 | **31** | **Two device residuals nothing owns.** N11's duplicated upload in `ast_ladder_gpu_run` (the identical `tin` uploaded twice per rung) is untouched — `ARCHIVED.md:23013` says so. N10 picks `devs[0]` with no scoring while `VkPhysicalDeviceLimits` is fully transcribed at `src/mccgpu.c` and only `deviceName` is read — `ARCHIVED.md:23012`, "the `devs[0]` half of I2(D) is still open". Both are frozen with the device path; both are cheap and neither is written down as a row | ~10 lines / ~60 lines | **device correctness** |
 
@@ -5202,8 +5421,9 @@ stated, and they do not always match the M1's — the re-measured allocation cen
    one cell at 1 ns with validation layers on. Works here and on lavapipe, needs no fault.
 
 3. **`ast_replay_bb`'s 35 KB frame is 93% one array. One declaration, 9.1× less stack.**
-   `SValue sv_stack[VSTACK_SIZE + 1]` (`src/mccast.c`) is 32,832 B — `VSTACK_SIZE`
-   is 512 and `sizeof(SValue)` is 64 because `CValue` carries a `long double` — declared
+   `SValue sv_stack[VSTACK_SIZE + 1]` (`src/mccast.c`) is ~~32,832~~ **41,040** B — `VSTACK_SIZE`
+   is 512 and `sizeof(SValue)` is ~~64~~ **80** (measured 2026-08-13; the 64 was a 25% undercount)
+   because `CValue` carries a `long double` — declared
    unconditionally in the prologue of a recursive function, for an `AST_OP_ASMGEN` arm
    that only fires on inline asm. Measured by building two control trees in scratchpad:
    frame **35,424 → 2,592 B**, self-compile peak stack **1024 KiB → 112 KiB**, and the
@@ -5581,7 +5801,7 @@ arm already clears `faithful` and `keep` is `faithful` alone.
 
 **What the gate costs while it stays on.** `ast_run_strat_seq` gates every one of the 22
 strategies on `faithful`, so a byte-divergent body receives *no* optimization at all. At
-`-O1` that is 2.0% of bodies but **10.2% of body bytes**, because a discarded body averages
+`-O1` that is 2.18% of bodies but ~~**10.2%**~~ **7.65%** of body bytes (re-measured 2026-08-13), because a discarded body averages
 2585 bytes against 470 for a kept one — the gate is withholding the optimizer from the
 largest functions in the program. That is a capability cost, not a correctness one.
 

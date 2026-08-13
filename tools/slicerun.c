@@ -195,6 +195,8 @@ static int slicerun_reloc(AstArena *a, AstLocal n, int32_t *base) {
 	int i;
 	if (!s || s > 0xFFFFFFFFu)
 		return 0;
+	if (g_obj_ext && (long)n < g_obj_n && g_obj_ext[n] > SR_GLOB_STRIDE)
+		return 0;
 	for (i = 0; i < g_glob_n; i++)
 		if (g_glob_id[i] == (unsigned)s)
 			break;
