@@ -19326,7 +19326,12 @@ static unsigned long ast_search_gates_now(void) { MCC_TRACE("enter\n");
 				 (ast_narrow_c0_env ? AST_SG_NARROW_C0 : 0) |
 				 (ast_narrow_c1_env ? AST_SG_NARROW_C1 : 0) |
 				 (ast_narrow_c2_env ? AST_SG_NARROW_C2 : 0) |
-				 (ast_narrow_c3_env ? AST_SG_NARROW_C3 : 0);
+				 (ast_narrow_c3_env ? AST_SG_NARROW_C3 : 0) |
+				 (ast_vlat_env ? AST_SG_VLAT : 0) |
+				 (ast_math_inline_prepass_env ? AST_SG_MATHPRE : 0) |
+				 (ast_interchange_env ? AST_SG_INTERCHANGE : 0) |
+				 (ast_fusion_env ? AST_SG_FUSION : 0) |
+				 (ast_tile_env ? AST_SG_TILE : 0);
 }
 
 static void ast_search_gates_set(AstGateMask g) { MCC_TRACE("enter\n");
@@ -19366,6 +19371,11 @@ static void ast_search_gates_set(AstGateMask g) { MCC_TRACE("enter\n");
 	ast_narrow_c1_env = (g & AST_SG_NARROW_C1) != 0;
 	ast_narrow_c2_env = (g & AST_SG_NARROW_C2) != 0;
 	ast_narrow_c3_env = (g & AST_SG_NARROW_C3) != 0;
+	ast_vlat_env = (g & AST_SG_VLAT) != 0;
+	ast_math_inline_prepass_env = (g & AST_SG_MATHPRE) != 0;
+	ast_interchange_env = (g & AST_SG_INTERCHANGE) != 0;
+	ast_fusion_env = (g & AST_SG_FUSION) != 0;
+	ast_tile_env = (g & AST_SG_TILE) != 0;
 }
 
 #ifndef SHF_PRIVATE

@@ -1484,9 +1484,9 @@ never failed is the thing this whole cluster is about.
 | --- | --- | --- | --- | --- |
 | B1 | **`ast_search_emit_size` leaks `.data`/`.rodata` — see the hazard below. NOT a 6-line fix.** | — | — | — |
 | B2 | `struct AstReemitFn` gains `body_ind/body_len/reloc0/rel_len`, copied from `AstBaselineFn` | small | — | any |
-| B3 | five `AST_SG_*` bits at 42–46 | small | — | any |
+| ~~B3~~ | ~~five `AST_SG_*` bits at 42–46~~ **DONE 2026-08-12**. Bit **47 is now the last disk-safe one** — `AST_GATE_BITS` is 48 and the memo packs its magic above it | small | — | any |
 | ~~B4~~ | ~~`ast_jit_submit_aot` passes `ast_search_gates_now()`~~ **DONE 2026-08-12**. The zero was **not inert** — `have_override && override_mask` is false for 0, so AOT submissions were recompiled by `ast_reemit_extern` under ambient gates and `warm_gates` stayed 0, disabling warm start for them. Two no-ops from one literal | 3 lines | — | arm64 |
-| B5 | add the five to `ast_search_gates_now`/`_set`; **deliberately not** to `ast_search_searchable` | small | B3 | any |
+| ~~B5~~ | ~~add the five to `ast_search_gates_now`/`_set`~~ **DONE 2026-08-12**, and **B6 with it**: they are deliberately absent from `ast_search_searchable`, because none of the five is idempotent on its own output and the strat cycle never invokes them, so letting the search flip them would ask it to re-run non-idempotent transforms | small | B3 | any |
 | B6 | orphan report from B2's fields: `ast.orphan_fn`/`_bytes`/`_relocs` | small | B2 | any |
 | B7 | **`ast_reemit` emits no `mcc_debug_funcend` and no FDE**, so after a forward-inline re-emit `-g` and `.eh_frame` describe the *dead* range and the live body has neither | medium | B6 | assert on Linux |
 | B8 | `so_fn_sizes` has no Mach-O arm, so the entire per-fn superopt size-feedback loop is **dead on macOS** — this is the gate on `rf-1` ever being measurable here | medium | — | **macOS only** |
