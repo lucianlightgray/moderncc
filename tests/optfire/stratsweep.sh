@@ -70,11 +70,13 @@ STRAT_NAMES="bfold ident narrow cprop cse ltemp ivsr pre licm dse sccp jt bf ran
 # the check mode below is what keeps it that way.
 STRAT_FIRST=0
 STRAT_LAST=$(($(echo $STRAT_NAMES | wc -w) - 1))
-# 23 is a valid slot in MCC_AST_STRAT_ORDER's range (< AST_STRAT_COUNT_MAX, 24)
+# 24 is a valid slot in MCC_AST_STRAT_ORDER's range (< AST_STRAT_COUNT_MAX, 25)
 # but past AST_STRAT_COUNT, so the runner skips it: this is how "no strategy at
-# all" is spelled. It stops working the moment the registry reaches 25 rows, so
-# check mode asserts the gap is still there.
-STRAT_NONE=25
+# all" is spelled. A value at or past AST_STRAT_COUNT_MAX is rejected by the
+# parser instead, which leaves the whole default order in place -- that is not a
+# disabled baseline, it is an ordinary -O2, and it is what 25 silently became
+# when sroa took row 23. Check mode asserts the gap is still there.
+STRAT_NONE=24
 
 # The flagsweep subject list, verbatim and for its stated reason: an earlier
 # sweep built from hand-written programs passed -fjit-splice, a pass that
