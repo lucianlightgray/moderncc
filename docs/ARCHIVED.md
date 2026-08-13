@@ -28530,3 +28530,364 @@ the same clang), `d6-sso-msabi`'s silent-mismatch claim, and all Vulkan device w
 (`msl_region*` is absent against a live `spv_*` family), and this is the only host that can run
 one.
 
+
+## Archived 2026-08-13 — the x86_64-linux wave: N8 closed in full, N31 found, and four stale blocks retired
+
+> Migrated out of [`docs/TODO.md`](TODO.md) on 2026-08-13. Every item below is closed; the
+> one-line struck stubs left behind in that file point here. Host is x86_64-linux (gcc 15.3.0,
+> clang 22.1.8, 32 cores), `cmake-def`, 9565 cells after this wave's registrations.
+
+### N8 — both remaining JIT-only miscompiles were closed by N20, and the A/B proves it
+
+The row carried `gcc.dg/pr96674.c` (`-fwrapv`) and `gcc.dg/fastmath-1.c` (`-ffast-math`) as
+unreduced survivors, reachable only from a host with `MCC_XSUITE_GCC` pointed at a gcc checkout.
+That host is this one. Neither reproduces at `52e7e850`, across `-O0`–`-O4` × {eager, lazy} ×
+{`--embed-jit`, `-run`} × {the harness's dg flags, `-fwrapv` alone, no flags, real `-ffast-math`},
+driven both by `tools/jitconform.py --phase check` over a hand-built two-program oracle and by
+hand.
+
+**The control is what makes this a closure rather than a shrug.** The compiler was rebuilt from
+`git archive 2aa3e599^` and `2aa3e599` into a scratch tree:
+
+| binary | `pr45830` reduction | `pr96674` | `fastmath-1` |
+| --- | --- | --- | --- |
+| `2aa3e599^` (pre-N20) | JIT 202 / AOT 200, all levels | JIT `rc=134` / AOT `rc=0`, all levels | JIT `rc=134` / AOT `rc=0`, all levels |
+| `2aa3e599` (N20 fix) | SAME | SAME | SAME |
+| HEAD `52e7e850` | SAME | SAME | SAME |
+
+So `2aa3e599` — *"`ast_configure` never ran in the runtime re-emit"* — closes all three rows, not
+the one it was credited with. The mechanism is N20's: `ast_configure()` is called from
+`mccgen_compile()`, which the JIT's runtime path never enters, so `replay-cmp-materialize` was off
+during the re-emit and **any binary operator with two pending `VT_CMP` operands** was miscompiled.
+Both programs are exactly that: `(b == 0) | (a < b)` in `pr96674`, `(d[0] > 0) == (d[1] > 0)` in
+`fastmath-1`.
+
+**Reducers, and the coverage gap they fill.** `tests/embed/jit_replay_parity.sh` (added by N20)
+enumerates `& | ^ + *` of two `int` compares against **one** parameter `c`. It covers neither
+`==` as the combining operator, nor two different parameters, nor `unsigned` operands, nor float
+compare operands. `tests/jit/parity/relop_eq_pair.c` adds all four in one fixture;
+`jit/run-parity-host` and `jit/kgc-route-parity` walk the directory, so no registration was
+needed. The three minimal shapes, each DIFFER at `2aa3e599^` and SAME at HEAD with no flags
+beyond `--embed-jit`:
+
+```c
+int f(unsigned a, unsigned b){ return (b == 0) | (a < b); }        /* pr96674, 1 vs 0 */
+int f(float *d, int k){ if ((d[0] > 0) == (d[1] > 0)) return k; return 0; }   /* fastmath-1 */
+int f(int x, int y){ return (x > 0) == (y > 0); }                  /* integer distillation */
+```
+
+The float form **must** go through a pointer: the scalar `int f(float x, float y){ return
+(x>0)==(y>0); }` did not reproduce even pre-N20.
+
+**Harness landmine found on the way.** `-ffast-math` is not in `xsuite.KEEP_OPT_RE`, so
+`gcc.dg/fastmath-1.c` has never been run with the flag it exists to test. The oracle loses the
+flag too, so the comparison stayed valid — but do not read `-ffast-math` in a jitconform row as
+meaning the flag was passed. Same for `-fdump-tree-optimized` on `pr96674`, harmless there.
+
+**A second prerequisite the board never named.** `optlevel/torture-differential` wants
+`vendor/gcc-c-torture-execute`, which is deliberately not vendored and is separate from
+`MCC_XSUITE_GCC`. Until it is symlinked at a gcc checkout the cell skips silently — so the red
+this file recorded from another tree was not watchable here at all. `llvm-test-suite` is still
+absent, so `jit/xoracle-coverage` cannot reach `--min-cross 400` on one suite.
+
+### N31 — `stratsweep`'s "registry-disabled" baseline had silently stopped disabling anything
+
+`STRAT_NONE` is the sentinel every `stratsweep` mode compares against: a slot inside
+`MCC_AST_STRAT_ORDER`'s range but past `AST_STRAT_COUNT`, so the runner skips it and the compile
+runs no optimizer strategy at all. It was **25**, and `AST_STRAT_COUNT_MAX` is **25**.
+`ast_strat_order`'s parser requires `val < AST_STRAT_COUNT_MAX`, so 25 was rejected outright, the
+default order stayed in place, and the "disabled" baseline was an ordinary `-O2`.
+
+Measured rather than inferred, on `tests/exec/optimizer/loop_fusion.c` and
+`loop_interchange.c`:
+
+| arm | object |
+| --- | --- |
+| `MCC_AST_STRAT_ORDER=25 -O2` | byte-identical to plain `-O2` |
+| `MCC_AST_STRAT_ORDER=24 -O2` | differs |
+| `MCC_AST_STRAT_ORDER=25 -O4` | byte-identical to plain `-O4` |
+| `MCC_AST_STRAT_ORDER=24 -O4` | differs |
+
+`sroa` taking row 23 is what broke it: the SRA/SROA wave moved the sentinel once, for strategy 23,
+and the second landing walked past the same edge. Fixed by `STRAT_NONE=24`; all 120 stratsweep
+cells are green against the corrected baseline. **The gap is now one slot wide** — a 25th strategy
+re-breaks it, `stratsweep/check` says so, and `AST_STRAT_COUNT_MAX` must move with the next row.
+
+**The cell that caught it was itself red and invisible**, and that is the transferable part.
+`stratsweep/check` was failing at `52e7e850` on this host and appears in no standing-reds table,
+because it matches none of the regexes the earlier sweeps selected on (`^rir-`, `^flagsweep`,
+`^smoke/`) — the same regex-completeness failure that hid `rir/drop-ratchet` on arm64. It was
+found by running the family.
+
+### The five vacuous `exit 77` floors, and the negative control that was the real hole
+
+The board filed three floors; there are five. `tests/optfire/stratsweep.sh` has one per mode
+(`iso`, `seq`, `perm3`) and `tests/optfire/flagsweep.sh` one each for `exec` and `cover`. All five
+now `exit 1` and print the drop list. This is correct *because* each sits after a
+`missing`/`missing_named_subjects` guard landed by `7be4fba5`: once every named subject is known
+present, a zero count can only mean the `-O0` reference build or the admission run failed for all
+of them, and no legitimate skip remains on that path. `flagsweep.sh`'s `[ -f "$COVER" ]` skip and
+the `mcc_skip_test` python3/corpus branches in `CMakeLists.txt` are genuine absent-prerequisite
+skips and were left alone. Verified with `MCC=/nonexistent/mcc`: all five green before, red after.
+
+**The tab-anchoring story the board told was already fixed and the entry did not know it.**
+`7be4fba5` added the row-count cross-check (`flags_from_table`, tab-anchored, against
+`flag_rows_in_table`, whitespace-anchored), so reindenting `src/mccopt.h` fails loudly today —
+simulated with `expand -t 8`, which yields 0 against 118 and exits 1. **The residual hole was
+larger than the one described**: `flagsweep/accept` discards the driver's exit status (`|| true`)
+and only grep-matches the message, so under `MCC=/nonexistent/mcc` it printed
+`PASS flagsweep-accept: 118 flags accept -f and -fno-` and returned 0 — green for a compiler that
+does not exist. That, and not the row count, is the guard `dev-gate` has (`&& ok=1 || ok=0`) and
+`accept` lacked. Closed with a negative control: a bogus `-fnot-a-flag-xyzzy` must be reported as
+unsupported before the sweep is believed.
+
+**Found in CMake, where no script-level entry could have seen it.** `_ss_rows` was a hand-written
+mirror of `STRAT_NAMES` and had drifted two rows, so **`sra` and `sroa` had no `stratsweep/iso-*`
+cell at all** — they were reached only through `perm3`, which loops to `STRAT_LAST`.
+`stratsweep/check` cannot catch this because it compares the *script's* list to the registry, never
+CMake's list to either. `_ss_rows` is now derived from `stratsweep.sh names` and floored at 24;
++4 cells, 9561 → 9565.
+
+### `optlevel/torture-differential` — the last of the seven standing reds
+
+`20020720-1.c` and `20041114-1.c` were dropped from `tests/optfire/leveldiff-known.txt` **in
+full**, not trimmed: re-running the differential over all 1693 programs at `-O0`–`-O4` shows no
+level divergent for either, and `parse_known` does `int(chunk)` per comma chunk and raises on an
+empty level spec. The three sibling group-(a) rows (`20030216-1.c`, `compare-3.c`, `pure-1.c`) are
+still legitimately divergent at all four levels and were left. Table 14 rows → 10; both
+`optlevel/torture-differential` and its `-known-positive` are green.
+
+**Four rows have now gone stale the same way and the pattern is the finding.** Two computed-`goto`
+rows earlier, these two now — all four group (a), *missed optimizations mcc later learned*, all
+four left in place after the optimizer improved. Dropping does not weaken the ratchet:
+`leveldiff.py` fails on any divergence not in the table, so a regression returns as a `NEW`
+unknown.
+
+### `fmt/census-bank` — re-taken with the attribution the rule demands
+
+Red at `52e7e850` on this host despite being recorded closed on 2026-08-12 (that closure was taken
+on the Mac, before the drift). `src/mccast.c` moved 166 → 169 printf-family sites, attributed by
+`git log`-per-commit to **`42cfc8ac`** (*SROA as strategy 24*), which added the three
+`MCC_SROA_WHY` refusal-report sites — `fprintf(stderr, "[sroa]")`, the per-reason
+`" %s=%ld"` line, and the trailing newline. This wave's `[ladder-*]` printf split adds the fourth,
+169 → 170. Re-taken with `--update-bank` only after every moved figure had a commit against it,
+which is the standing rule and the reason the cell exists.
+
+### The ladder panel — `points` was on the `secs=` line, and two gates were blind, not one
+
+`ast_ladder_dump_one` printed `points=`, `secs=` and `us-per-pair=` on one line.
+`cmake/ladder_gpu_parity.cmake` drops rows matching `secs=` to suppress timing noise, and
+`tests/gpu/always_gpu_parity.sh:60` does the same with `grep -v 'secs='` — the second consumer
+the board did not name, and the one that also covers `[ladder-self]`. Both therefore dropped the
+only line carrying the field N7's injection moves. Census confirms the premise: 8 lines per tag,
+exactly one carries `secs=`, and it is the only one carrying `points=`.
+
+Fixed by splitting the printf rather than by filtering the field, for three reasons: one edit
+repairs both consumers where a CMake field filter repairs one; a field filter would also have to
+strip `us-per-pair=`, which is derived from `secs`; and after the split the invariant is
+structural — **any panel line without `secs=` is semantic**. No consumer needed the fields on one
+line (`tools/smokerun.c` reads `[ladder-self] pairs=`; `always_gpu_parity.sh` reads `points=`
+line-agnostically).
+
+**Consequence that must not be re-masked.** This file's `--jit-always-gpu` headline —
+*"the panels are identical to the CPU arm across 24,307 pairs and 2,357,085,080 evaluated
+points"* — was produced by `always_gpu_parity.sh`, which masked the `points` line out of its own
+diff. That figure was read from the GPU arm and never compared. If a GPU cell goes red now, that
+is the measurement N7 asked for.
+
+### Four stale blocks retired from TODO.md, verbatim, with the verification that closed each
+
+**Retired: *Latent defect found on the way, not fixed here* (the `rir_decayed_array` residue).**
+The block described `rir_decayed_array` dereferencing `sv->sym` after only a `!sv->sym` null test,
+with `wide256_settle` as a side-step because `src/mccrir.c` was under concurrent edit. Fixed by
+`81a81f1b`: the function now decides both `r` shapes before touching `sym` —
+
+```c
+int as_sym = (sv->r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM);
+int as_loc = (sv->r & (VT_VALMASK | VT_SYM | VT_LVAL)) == VT_LOCAL;
+if (!as_sym && !as_loc)
+        return 0;
+```
+
+`wide256_settle` is gone from `src/` and `tests/exec/types/int256.c`'s `test_replay_cmp` pins the
+shape. **The block's second clause survives and was kept in TODO.md**: `gv` does still leave `sym`
+stale, so the hazard is live for any future reader that does not test `r` first.
+
+**Retired: *Still open — three unguarded `sym` dereferences, filed with their reachability*.**
+Reproduced verbatim, because the reachability analysis is worth keeping:
+
+> 1. **`src/mccgen.c`, `unary()` case `'&'`.** `vtop->sym && vtop->sym->a.is_register` runs
+>    *before* the `test_lvalue()` that would reject a comparison, so `&(a < b)` reads
+>    `a.is_register` through the corrupted pointer. It does not fault today because the
+>    operand slot last held a real `Sym *`, so the pointer is mapped and the bit reads as
+>    zero — the `lvalue expected` diagnostic that follows is right by accident. The cheap
+>    fix is to move the register check after `test_lvalue()`.
+> 2. **`src/mccgen.c`, `check_va_start_register` and `check_va_start_last_param`.** Both
+>    dereference `vtop->sym` under a bare null test, and the `va_start` argument reaches
+>    them through `parse_builtin_params`' `'e'` case, which does not coerce. `va_start(ap,
+>    a < b)` compiles clean today for the same accidental reason as (1).
+> 3. **`src/mccast.c`, the builtin-fold ISA scan.** `((Sym *)(uintptr_t)a->sym[c])->v` on
+>    the first child of an `AST_Invoke`, guarded only by a null test and an `AST_Ref` kind
+>    test, with no `VT_SYM` test on the node's op. An indirect call through a local function
+>    pointer reaches it with the *variable's* `Sym`, a valid pointer, so the read is benign —
+>    but nothing enforces that.
+>
+> The root-cause fix that would close all three at once is to make `vset_VT_CMP` write the
+> whole union and to have `gv` clear `sym` when it drops `VT_SYM` from `r`. Neither was
+> taken here: `vset_VT_CMP` is on the hot path of every comparison, `gv`'s surviving `sym`
+> is read as an identity key by `seqp_key` and is the target of the `addrtaken` write in
+> `unary()`, and this branch's contract was that emitted code must not change. The three
+> reader-side guards above are each a one-line change and carry none of that risk.
+
+All three landed on 2026-08-09, between 21:44 and 21:48 — hours after the block was written
+inside `81a81f1b` at 10:30 the same morning, and `2993f8fb` carried it forward on 2026-08-10
+without re-checking. `unary()`'s `'&'` arm now runs `test_lvalue()` first (`3fe04727`, pinned by
+`tests/diagnostics/dg-error/address_of_comparison.c`); both `check_va_start_*` arms open with
+`if (!(vtop->r & VT_SYM) && v != VT_LOCAL && v != VT_LLOCAL) return;` (`7a9a8e9b`, `0e9ac0fd`);
+and the builtin-fold ISA scan tests `ast_op(a, c) & VT_SYM` (`0cfe71a7`) — the item TODO.md
+referred to by the bare, undefined identifier `res-d4b`. **The preferred root-cause fix was not
+taken and still is not**: `vset_VT_CMP` writes only `cmp_op`/`jfalse`/`jtrue`. That is deliberate,
+by the block's own argument.
+
+**Retired: the `slice/cref-oracle` "no probe" bullet.** Refuted — there are two probes.
+`mcc_find_gnu_gcc` runs `--version` and requires `Free Software Foundation` while rejecting
+`clang`; `mcc_compiler_family` (`__clang__` vs `__GNUC__` via `-dM -E`, added by `c319bdef`) is
+applied to the resolved `DIFF3_GCC`/`DIFF3_CLANG` pair. The bullet was a duplicate of the
+already-struck **N28**. **One real residual survives and stays in TODO.md**:
+`MCC_DIFF3_SAME_FAMILY` is set and read by nothing, so a same-family pair is named at configure
+time and still registered as a cross oracle.
+
+**Retired: the four `nofb_miscompiles` "empty list" claims.** `tests/rir/coverage-bank.json` has
+held `"O0": ["src/mcc.c::cleanup_symbols"]` since `5d75acd8` (2026-08-10) — three empty lists and
+one entry, banked because a stage-1 shipping its replay bytes segfaults. Five sentences in
+TODO.md asserted "four empty" or "banks zero miscompiles"; all five are now marked at their sites,
+including the one that was a load-bearing leg of sweep row 29's recommendation.
+
+### `int128-signedness` — verified dead, and left undeleted on purpose
+
+`__mcc_ov_disp` is defined at `runtime/include/mccdefs.h` and has **zero call sites** in `src/`,
+`runtime/`, `tests/` or `tools/`. `__builtin_{add,sub,mul}_overflow` expand to `__mcc_ov_gen`,
+whose inline `__mcc_ov_calc_w`/`__mcc_ov_calc` path handles `__int128` through `__mcc_ov_is_wide`
+(`_Generic` on `__mcc_int128_t`/`__mcc_uint128_t`) and never reaches the out-of-line
+`__mcc_addo_*` helpers. The compiler emits no references either. The deletion list — the
+`__MCC_OV_DECL`/`_W` prototypes and their 14 instantiations, `__mcc_ov_disp{,_ti}`, the
+`MCC_OV_SMALL_S/U` and `BIG_S/U` macros in `runtime/lib/builtin.c`, and
+`__mcc_{add,sub,mul}o_{ti,uti}_impl` plus `MCC_OV_WRAP` and `mcc_ov_{from,to}_abi` in
+`runtime/lib/int128.c` — is enumerated in TODO.md. **Not taken here**: these are exported runtime
+symbols and nothing in-tree links them, but an out-of-tree consumer or an older `mccdefs.h` would.
+That is a decision, not a sweep.
+
+### N32 — the x86_64 smoke bank and the smoke classifier had stopped agreeing
+
+`ctest -R "^smoke/"` on x86_64-linux at `52e7e850`: `smoke/divergence` FAILs. Verified
+pre-existing by building a clean worktree at HEAD and re-running there. No value changed and no
+compiler defect is involved; the bank and the classifier diverged.
+
+```
+smokerun: divergence rows=1782 comparable=1776 differing=259 mcc-differs-from-both=39 refs-disagree=10
+FAIL new bail category div diverge-one:bsweep.F32.FSCALE.fold = 1
+FAIL new bail category div diverge-one:bsweep.F32.FSCALE.run  = 1
+FAIL new bail category div diverge-one:bsweep.F64.FSCALE.fold = 1
+FAIL new bail category div diverge-one:bsweep.F64.FSCALE.run  = 1
+IMPROVED div diverge-both:bsweep.F16.FSCALE.{fold,run}   fell 1 -> 0
+IMPROVED div diverge-both:csweep.C32.CMULADD.{fold,run}  fell 1 -> 0
+IMPROVED div diverge-both:csweep.C64.CMULADD.{fold,run}  fell 1 -> 0
+IMPROVED div diverge-both:shl.si.w.fold                  fell 1 -> 0
+IMPROVED div diverge-both:shl.si.wp1.fold                fell 1 -> 0
+IMPROVED div diverge-both:shl.sll.w.fold                 fell 1 -> 0
+IMPROVED div diverge-both:shl.sll.wp1.fold               fell 1 -> 0
+smokerun: bail census scope='diverge-' 249 categories (0 worse, 10 better, 4 new)
+```
+
+Both halves attribute cleanly. The ten `IMPROVED` rows are `5c71bc20` *"separate 'references
+disagree' from 'mcc differs from both'"*, which added the third verdict class — the diff is
+literally `if (dg && dc && !same_word(gv, cv))` ahead of the old `diverge-both` arm. Same rows,
+same values, new class. The four new `diverge-one` rows are `bsweep.{F32,F64}.FSCALE`, which the
+arm64 bank had **already triaged as its own note 6**: of the 8192 sweep points the differing ones
+all produce a NaN and differ in the sign bit alone, which IEEE 754 leaves unspecified, and mcc
+agrees with gcc-15 on every row.
+
+**The transferable finding.** The arm64/macOS wave landed a classifier change and banked only
+`bails-arm64-macos.txt`, on the explicit principle that *"x86_64-linux and Windows keep exactly
+the file and the numbers they have"*. That principle is correct for **values** and wrong for
+**classes** — keeping the numbers is exactly what left this bank describing a classifier that no
+longer exists. **Keying a bank by target does not make a harness change target-local**, and
+nobody ran smoke on this host in between, so the gate the standing validation rule points at was
+red on the one machine that rule was written for.
+
+Re-banked with `smokerun --rebank`, `--divergence --rebank` and `--slice-census --rebank`, in that
+order, per the bank's own header — which also warns that the hand-written triage header is not
+generated and must be restored by hand, and it was, with two new notes (13 and 14). The data-row
+diff against the pre-take file is exactly the fourteen lines above and nothing else.
+
+### N33 — `slice/cref-oracle` emits nothing on x86_64-linux, and the wrong lead is recorded
+
+Pre-existing at `52e7e850`, verified in a clean worktree build. The cell qualifies all 10 programs
+against both oracles and then reports `funnel bodies=0 slices=0 tuples=0 gpu-slices=0
+dispatches=0`, so `cmake/gpuconform_cref.cmake` aborts on *"no oracle compiled a single emitted
+slice, so the CPU reference was compared against nothing"* and on the 300-tuple floor. **The
+floors are working exactly as designed** — the cell refuses to report OK over nothing — so the
+open question is why the funnel emits nothing here.
+
+**One wrong lead, recorded so it is not re-walked.** Running `tools/gpuconform.py` by hand with a
+*relative* `--work` classifies all 10 programs out as `norun` and produces the same zeros for a
+completely different reason: `build_and_run` writes the executable to `<work>/o_<tag>` and then
+runs it with `cwd=work`, so a relative path is resolved twice and the exec fails with OSError. The
+ctest cell passes an absolute `-DWORK=${CMAKE_BINARY_DIR}/cref-oracle` and never hits it.
+Reproduce with an absolute `--work` or the failure mode changes under you. Worth fixing anyway —
+`os.path.abspath` on `--work` — because a relative path silently converts the whole corpus to
+`norun` and the cell then fails for a reason it states confidently and wrongly.
+
+### N34 — the ladder GPU arm's exit-time segfault, and the bisection that isolates it
+
+Filed 2026-08-13 from x86_64-linux. Pre-existing. It is the reason five of the twelve smoke cells
+cannot complete on this host, and it took an hour of misattribution to see, so the dead ends are
+recorded with the result.
+
+```
+$ echo 'int x;' > e.c
+$ MCC_AST_EVAL_LADDER=1 MCC_AST_EVAL_LADDER_GPU=1 mcc -w -O1 -c e.c -o e.o
+[gpu-vk] device 0 "AMD Radeon 610M (RADV RAPHAEL_MENDOCINO)" type=1 f64=1 score=4564
+[gpu-vk] device 1 "NVIDIA GeForce RTX 5070 Ti Laptop GPU" type=2 f64=1 score=5564
+[ladder-gpu] init ok dev=NVIDIA GeForce RTX 5070 Ti Laptop GPU qfam=0 score=5564
+[gpu-vk] host-pointer import yes align=4096
+[ladder-gpu] warmup rc=1 (582 units)
+Segmentation fault (core dumped)
+```
+
+**The object is written and correct.** `e.o` is 1052 bytes and byte-identical to the CPU arm's, so
+the compile completes and only the exit path dies. `ast_ladder_gpu_report`'s own
+`[ladder-gpu] tried= … rungs=` line is never reached, and the first statement of that `atexit`
+handler is `mcc_gpu_quiesce()`.
+
+| varied | result |
+| --- | --- |
+| input | `int x;` — no functions at all — behaves exactly like `tests/smoke/subject.c` |
+| level | `-O1` and `-O4` identical |
+| device | `MCC_GPU_DEVICE=0` (RADV) and `=1` (NVIDIA) identical — not a driver quirk |
+| host import | `MCC_GPU_NO_HOST_IMPORT=1` identical — not the imported-window path |
+| harness | reproduces standalone; the same compile without the two env vars is clean |
+| sandbox | reproduces with the tool sandbox disabled — not an environment artefact |
+
+**Two failure modes, one bug.** With `DISPLAY=:1.0` set the process does not crash; it blocks in
+`poll` at **0% CPU**, with no `/dev/dri/*` descriptor open, one socket fd, and `libxcb-dri3`
+mapped alongside both `libvulkan_radeon.so` and the NVIDIA stack. That is a display-server
+round-trip inside the same teardown that segfaults when nothing answers it. The hang is what a
+`ctest` run sees, which is why the symptom reported first was five `TIMEOUT`s rather than five
+crashes.
+
+**Dead ends worth not re-walking.** The first reading was "the GPU arm is slow on this host" — it
+is not slow, it is stopped, and `pcpu` is the cheapest way to tell those apart. The second was
+"the sandbox blocks device access" — the tool sandbox is irrelevant, and `dangerouslyDisableSandbox`
+settles it in one run. The third was "the RTX and the RADV device disagree" — both crash
+identically.
+
+**It connects to an already-filed hazard.** N6.1 records that the quiesce *"now unmaps the shared
+address space, so nothing may retain a `mcc_gpu_mem()` pointer across shutdown"*, and notes that
+this hazard did not exist while the quiesce destroyed nothing. That is the same teardown.
+
+**It also puts an asterisk on a headline.** The `--jit-always-gpu` write-up was measured on an RTX
+5070 Ti and completed 249,556 rungs with `refused=0`, so the arm did work on this class of
+hardware. Whatever this is, it is a regression or a configuration difference — do not read that
+write-up as evidence the arm works today, and do not read the five smoke timeouts as evidence the
+device is absent.
