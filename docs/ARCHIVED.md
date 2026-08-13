@@ -28891,3 +28891,208 @@ this hazard did not exist while the quiesce destroyed nothing. That is the same 
 hardware. Whatever this is, it is a regression or a configuration difference — do not read that
 write-up as evidence the arm works today, and do not read the five smoke timeouts as evidence the
 device is absent.
+
+## Archived 2026-08-13 (second pass) — N33 and N34 closed the day they were filed, and item 24 with them
+
+### N34 — `atexit` ordering against the Vulkan ICD's own handler
+
+`ast_ladder_gpu_setup` registered `atexit(ast_ladder_gpu_report)` **before** the warmup dispatch
+that first brings the device up. That warmup is what makes the Vulkan loader `dlopen` the NVIDIA
+ICD, whose `DT_INIT` chain pulls in `libEGL_nvidia.so.0` and lets it register an `atexit` handler
+at that moment. `atexit` runs LIFO, so the ICD's later registration runs *first*: it tears down
+its EGL state, drops the last reference on `libnvidia-eglcore`, `libnvidia-glvkspirv`,
+`libnvidia-rtcore` and `libnvidia-allocator`, and the loader unmaps roughly 36 MB. mcc's handler
+then runs `mcc_gpu_quiesce()`, whose first Vulkan call — `vkDestroyPipeline` — tail-jumps through
+the device dispatch table into a now-unmapped page.
+
+Evidence, in the order it settled the question:
+
+```
+#0  0x00007fffe023ef40 in ?? ()      <- no symbol, no mapping
+#1  mcc_vk_release ()                 src/mccgpu.c
+#2  mcc_gpu_quiesce ()                src/mccgpu.c
+#3  ast_ladder_gpu_report ()          src/mccast.c
+#4  __run_exit_handlers / exit ()     libc
+```
+
+`info proc mappings` at a breakpoint on `mcc_gpu_quiesce` shows a 36 MB hole containing the fault
+address. `LD_DEBUG=files` names the four NVIDIA modules destroyed between the `[ladder-gpu] warmup`
+line and the crash. A breakpoint on `dlclose` puts the caller inside `libEGL_nvidia.so.0`, reached
+from `__run_exit_handlers`.
+
+**Fix: move the `atexit` to after the warmup**, so mcc's registration is the later one and
+therefore the earlier to run. One line. Neither lead the row offered was implicated — nothing
+retains a `mcc_gpu_mem()` pointer (N6.1), and mcc does not `dlclose` libvulkan itself.
+`src/mccast.c` already carried a note stating exactly this ordering rule for the *slice-inline*
+handler; the ladder's own registration violated it.
+
+Verified: `int x;` at `-O1` with `DISPLAY` unset exits 0 and finally prints
+`[ladder-gpu] tried=1 available=1 device=NVIDIA … rungs=0 dispatches=1 lanes=64`; the same under
+`DISPLAY=:0` with a 90 s timeout exits 0 and does not hang; `MCC_GPU_DEVICE=0` (RADV) on
+`tests/smoke/subject.c` at `-O4` exits 0; and the five cells the row was timing out are 6/6 green
+in 146 s (`smoke/engines` 27.6 s, `-known-positive` 25.9 s, `engines-identity` 77.6 s,
+`smoke/device` 7.4 s, `device-known-positive` 7.3 s).
+
+**Residual, deliberately not taken.** The fix depends on the warmup reaching `mcc_gpu_run`, which
+is guarded by `if (mcc_gpu_emit(...))`. `mcc_gpu_emit` is pure codegen and cannot fail for a device
+reason, but if it ever did the ICD would load at the first real dispatch — after the `atexit` —
+and the hazard would return. The belt-and-braces variant is `atexit(mcc_gpu_quiesce)` at the end of
+`mcc_gpu_init`, which is idempotent and would make the later call a no-op; it was not taken because
+it also moves the teardown ahead of `mccjit_shutdown`, `mcc_stats_finish` and `rir_report`, and the
+design note in `src/mccgpu.c` says the single exit-time teardown hangs off `ast_ladder_gpu_report`
+on purpose.
+
+### N33 — a wedged X server, and an instrument that described it as an empty funnel
+
+`slice/cref-oracle` reported `funnel bodies=0 slices=0 tuples=0` with all ten programs qualified,
+and failed its 300-tuple floor. Both halves of the funnel were healthy the whole time:
+`MCC_ARENA_DUMP` produces a 6551-byte `arena.txt` for `tests/gpu/cref/arith.c` at `-O1`, and
+`slicerun --arenas` on that same file reports `bodies=3 slices=7 tuples=56`.
+
+The failing step was `slicerun` never returning. `gpuconform.py` runs it with `timeout=180`;
+`run()` returns `("timeout", "")`, `slicerun_counts("")` yields `{}`, and every counter defaults to
+zero. The cell's 180 s was ten programs timing out in parallel.
+
+`slicerun` hangs in `probe_device()` → `mcc_gpu_init` → `vkCreateInstance`, at **0% CPU**, in
+`poll` on a unix socket, with `libGLX_nvidia` and `libX11-xcb` mapped. The host has `DISPLAY=:1.0`
+while `XDG_SESSION_TYPE=tty`: `/tmp/.X11-unix/X1` accepts connections and never answers — a raw
+11-byte X11 connection setup times out after 8 s — and the NVIDIA ICD opens X inside instance
+creation with no timeout. `timeout 40 vulkaninfo --summary` hangs identically with no mcc code
+involved; `VK_DRIVER_FILES=…/radeon_icd.x86_64.json vulkaninfo` returns instantly, and
+`env -u DISPLAY vulkaninfo` returns instantly with all ICDs. mcc requests **zero** instance
+extensions — `ici` is memset to 0 — so the path is pure compute and has no use for a display.
+
+**Two fixes, and the blast radius was wider than the row.** All **18** `slice/*` cells drive
+`slicerun` and every one brings a Vulkan instance up, so one unresponsive display server wedges the
+whole family; `slice/census` was found hung at 90 minutes on this exact probe, which is the other
+half of a mystery this file has been carrying. Those cells now run with `DISPLAY` and
+`WAYLAND_DISPLAY` scrubbed from their ctest environment. **Scrubbing only `slice/*` was not
+enough** — `smoke/engines*` and `smoke/device*` bring the same Vulkan instance up through
+`eng-gpu` and went on hanging until the scrub reached them, which is what kept the smoke gate at
+7 of 12 after N34 was already fixed. The scrub now covers every cell except the `wine`-labelled
+ones and is floored at 9000, on the principle the diagnosis established: mcc requests zero
+instance extensions, so no cell here has any use for a display. And `gpuconform.py` already recorded `slicerun_rc == "timeout"` per program and
+threw it away, so a total tool hang was reported in the exact vocabulary of an empty funnel; it now
+names the stalled programs and fails on them explicitly. The `--work` path is absolutised at the
+same time, because `build_and_run` writes `<work>/o_<tag>` and then execs it with `cwd=work`, so a
+relative `--work` resolves twice and misclassifies every program as `norun` — a second way to reach
+the same zeros for a different reason.
+
+Headless, the cell is emphatic: `funnel bodies=65 slices=93 tuples=744 gpu-slices=93
+dispatches=152`, `cref fragments=93 tuples=726`, `mismatch=0`, and it passes in **8.4 s** against
+180 s failing.
+
+**The durable rule: a gate that an unrelated daemon can wedge is a gate whose colour is a property
+of the machine.** Same shape as N26's `taskset`, N25's reference pair and N32's bank. What made
+this one expensive is that the instrument reported the symptom in the vocabulary of a different
+fault.
+
+### Item 24 — `(int)(long double)` was rounded through `double` before being truncated
+
+The `VT_LDOUBLE` arm of `gen_cvt_ftoi` split on `t != VT_INT`: the 64-bit destination called
+`__fixxfdi` and was correct, while the 32-bit destination did `gen_cvt_ftof(VT_DOUBLE)` followed by
+a 32-bit `cvttsd2si`. So an 80-bit value was **rounded** to `double` and only then **truncated**.
+`(int)(1 − 2⁻⁶⁴)` gave 1 where both references give 0, at every level, and the same for `(short)`
+and `(signed char)` because `gen_cast` rewrites every sub-`int` destination to `VT_INT`.
+
+Fixed with the x87 sequence the board prescribed, against an 8-byte frame slot:
+
+```
+d9 7d bc   fnstcw -0x44(%rbp)
+d9 7d be   fnstcw -0x42(%rbp)
+66 81 4d be 00 0c   orw $0xc00,-0x42(%rbp)
+d9 6d be   fldcw  -0x42(%rbp)
+db 5d b8   fistpl -0x48(%rbp)
+d9 6d bc   fldcw  -0x44(%rbp)
+8b 45 b8   mov    -0x48(%rbp),%eax
+```
+
+The control word is copied and modified **in memory**, which is why no scratch GPR is needed before
+the final load. **The board's warning is now pinned rather than argued**: `(int)1e300L`,
+`(int)-1e300L` and `(int)NaN` still give `-2147483648`, the x87 integer indefinite, which the naive
+64-bit-convert-then-narrow would have turned into 0. `tests/exec/types/ldouble_to_signed.c` banks
+all nine rows and registers 23 cells including `diff3`, gated `cpu=x86_64`.
+
+**One finding on the way that belongs to Cluster A.** The first version took its scratch slot with
+a raw `loc = (loc - 8) & -8`, which is what the surrounding backend prolog code does. Smoke came
+back with `replay-fallback:len` risen 2 → 4 and a **new** `replay-fallback:bytes` category at every
+one of the five levels, with **zero** value failures. Routing the same allocation through
+`ast_alloc_loc(8, 8)` makes all of it disappear. A frame allocation made outside the recorded
+channel is silently a replay-fidelity regression, and the bail ratchet is the only thing that
+notices — a concrete instance of exactly what Cluster A is about.
+
+### The `-O0` baseline re-bank, and two traps in the tool that does it
+
+Adding any file to `tests/exec` moves `ast/o0-baseline` on every target key, and this wave's
+`gen_cvt_ftoi` fix moves object hashes as well, so both halves of the bank were re-taken from a
+cross-enabled build. The diff is exactly attributable:
+
+- `tests/exec/structs_unions/aggregate_perm.c` — line 34 is `return s.a + (int)s.ld + s.b;` —
+  moves on **`x86_64` and `x86_64-osx` and nowhere else**. That is the precise footprint of the
+  fix: the two keys that have both an 80-bit `long double` and the x86_64 backend.
+  `x86_64-win32` and `i386-win32` carry the same file and correctly do **not** move, because
+  Windows `long double` is 64 bits and the `VT_LDOUBLE` arm is never taken there.
+- one new `tests/exec/types/ldouble_to_signed.c` row per key.
+
+**Trap 1: the documented re-bank command does not work.** `tools/o0_ab.sh`'s header gives
+
+```
+C2_NO_EXTRA=1 O0_AB_BANK=1 O0_AB_GATES=1 tools/o0_ab.sh b all /tmp/o0ab-g
+```
+
+and every key comes back `0 of 308 corpus files produced an object -- an empty …gated.obj.txt
+diffs clean against an empty bank, which is the whole failure mode this harness exists to catch`.
+The harness is right to refuse. The cause is that `-fopt-slice` is dev-gated and **refused rather
+than ignored** (`mcc: error: -fopt-slice is an experimental optimization and is gated off in this
+build. It is refused rather than ignored so that it cannot be mistaken for a flag that does not
+exist`), so the whole 53-knob command line fails. The gated half needs **`MCC_DEV=1`**, which the
+`ast/o0-baseline-gated` cell passes and the documented bank command omits.
+
+**Trap 2: four of the thirteen keys cannot be measured on this host.** `i386`, `arm`, `arm64` and
+`riscv64` need `vendor/gentoo-stage3-<arch>-glibc` sysroots that are absent, and the tool refuses
+them explicitly — *"with no system headers this key still exits 0 on a fifth of the corpus and
+reports a plausible board, so it is measured as unmeasurable rather than measured"*. They were
+left untouched, so those four keys are now **one row short** and must be re-banked on a host with
+the sysroots. `ast/o0-baseline` runs the `measurable` spelling and will not notice here. Related
+guard worth knowing: `o0_ab.sh` **refuses to bank from `measurable`** — *"banking whichever rows
+this host happened to reach would freeze a hole into the baseline"* — so the partial state cannot
+be reached by accident, only by `all` reporting the gap and exiting 1.
+
+### N35 — three reds that arrived with the arm64 wave, and one missing prerequisite
+
+Found by running the 526-cell `jit/ ast/ rir optlevel diff3/ superopt/ fmt/ docs/ ci/` family and
+confirmed pre-existing by building `c7df5209` into a scratch tree and re-running there.
+
+`rir-coverage-census`: `-O0 lowerable[elf]: bodies_pct regressed: 15.4134% < banked 15.4642% over
+the WHOLE corpus`. `eee6c1f2` added per-format arena floors and banked macho *"so the ratchet arms
+here"*; the ELF number was left at its old value, and x86_64-linux is the host that measures it.
+The cell also reports a second, smaller drift that belongs to this wave — `corpus wide drifted:
+banked 383 file(s) … this run walked 384`, because the new regression fixture joins the `wide`
+corpus. **Neither half was re-banked**: the manifest half would be a legitimate attributed
+re-take, but the ELF-floor half is a regression the ratchet exists to catch, and re-banking it
+would erase what moved before anyone has said what moved in the compiler.
+
+`rir-lowerable-classes`: `reg.c -O1/-O2/-O3: lowerable class reg no longer reproduces`, `-O0`
+still does. This is C5's own caveat arriving on schedule — the `reg` fixture is a VLA, and the C5
+write-up already recorded that `reg.c` and `opaque.c` share one mechanism, so *"a change to VLA
+lowering breaks both fixtures at once, and neither would isolate which class regressed"*. The cell
+cannot say what moved, by construction, which is the argument for finding the non-VLA reduction
+that write-up says exists in the corpus.
+
+`jit/xoracle-coverage`: cannot reach `--min-cross 400` on one suite because `MCC_XSUITE_LLVMTS`
+has no checkout here. Configure already prints the explanation and then the cell registers and
+fails instead of skipping with it — the shape `ci/registration-stubs` exists to prevent, on a cell
+that lint does not reach because it is gated on a corpus rather than on a tool.
+
+### Gate results for the wave, on a quiet machine
+
+`smoke` **12 of 12 in 115.15 s** — the first clean run on x86_64-linux. `exec` **7675 of 7675**
+(7653 before the new fixture's 22 cells). `slice` **55 of 55**, including
+`slice/cref-oracle-gcc-c-torture-execute` over all 1693 c-torture programs, which had never run on
+this host at all: it needed the `vendor/gcc-c-torture-execute` symlink *and* the `DISPLAY` scrub.
+`slice/census`, which was found wedged at 90 minutes, passes in **5.70 s**.
+
+**Contention is not a neutral observer here, and two runs were thrown away learning it.** The
+twelve smoke cells and the 55 slice cells both queue on one GPU; run together, five smoke cells
+hit their 900 s `TIMEOUT` and report exactly like the N34 hang they no longer are. Any timing or
+pass/fail claim about the device arm must say what else was running.

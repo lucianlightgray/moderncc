@@ -235,6 +235,22 @@
 > cells. **Seven of twelve are green here and five are unrunnable**, so quote the rule with that
 > attached until it is fixed.
 >
+> **Second pass, later the same day: N33, N34 and item 24 all closed, the two harness ones were
+> never compiler defects, and running the rest of the suite found three more reds (N35).** **N34** is `atexit` ordering — the ladder registered its exit
+> handler *before* the warmup that makes the loader `dlopen` the NVIDIA ICD, so the ICD's own
+> later-registered handler ran first, unmapped 36 MB, and mcc's quiesce dispatched into the hole.
+> One line moved; the five device/engines cells go from `TIMEOUT` to 146 s green and the smoke
+> gate is **12 of 12** here for the first time. **N33** is a wedged X server: `DISPLAY=:1.0` with
+> `XDG_SESSION_TYPE=tty`, an X socket that accepts and never answers, and an ICD that opens a
+> display inside `vkCreateInstance` with no timeout — `vulkaninfo` hangs the same way with no mcc
+> involved. All **18** `slice/*` cells now run with `DISPLAY` scrubbed, floored at 18, and
+> `slice/cref-oracle` goes from failing at 180 s to passing at 8.4 s. `gpuconform.py` was
+> *reporting a total tool hang in the exact words of an empty funnel*, which is what sent an hour
+> of investigation at arena capture; it now names the stalled programs. **Item 24** — the real
+> conformance defect of the 22/23/24 trio — is fixed with the x87 `fistpl` sequence the board
+> prescribed, and the board's warning is pinned: the out-of-range rows still give the x87 integer
+> indefinite that a 64-bit-convert-then-narrow would have turned into 0.
+>
 > **N30 was re-measured here and the fix is now a decision rather than a sweep.** The mechanism is
 > confirmed in `unary()` and the correction is one `^ 0x8000` (`_Float16` lives in a GPR, not an
 > SSE register) — but on x86_64 **mcc matches gcc at every level and clang only at `-O0`**, and
@@ -457,7 +473,13 @@ the `[inv]` prefix is already taken by an incompatible grammar in `tools/sliceru
 `fmt-census.py` would raise on. **The real N18↔N19 coupling is the bank key**, which has no host
 or arch term — banking emit-map cells here would overwrite the x86_64 numbers.
 
-**10. `slice/census`.** *Investigation. This host.* Unchanged: a bisect over 102 `src/` commits.
+**10. `slice/census`.** *Investigation. The Mac.* Unchanged there: a bisect over 102 `src/`
+commits on the `arm64`/`Darwin` column. **New datum from x86_64-linux, 2026-08-13: the
+`x86_64`/`Linux` column is green in 5.70 s** — and it had been *unmeasurable* here, not
+passing, because the cell hung indefinitely in the Vulkan device probe until N33's `DISPLAY`
+scrub landed. It was found wedged at **90 minutes**. So the two columns are independent and
+the arm64 red really is column drift; whoever takes the bisect can use this column as the
+control.
 
 **Newly found, unfiled, and each cheap enough to take on sight:**
 - **Metal's `mcc_gpu_mem()` succeeds and hands back a pointer no kernel can address** — the
@@ -555,17 +577,28 @@ machine. What it establishes, and what it does not:
 oracles.** `ctest -R "^smoke/"` is ~15–90 s for 13.0M value cases across `-O0`–`-O4`, plus
 the device arm and the divergence arm. Do not run the full suite to validate a change.
 
-> **2026-08-13: it is still executable on only one of the three machines, and the machine has
-> changed.** On x86_64-linux `ctest -R "^smoke/"` is **7 of 12 green and 5 unrunnable**. One of
-> the five reds was a stale bank and is fixed — `smoke/divergence`, **N32**, now `0 worse,
-> 0 better, 0 new` over 1782 rows. The other five are one defect: **N34**, an exit-time segfault
-> in `mcc_gpu_quiesce()` under `MCC_AST_EVAL_LADDER_GPU=1`, which times out `smoke/engines`,
-> `-known-positive`, `engines-identity`, `smoke/device` and `device-known-positive`. Timings
-> measured here, `cmake-def`, quoted with the build dir as this file's own rule demands:
-> `smoke/strat-dark` **21.4 s** (against 44 s claimed for `cmake-def` and 193 s on the Mac), and
-> the five device cells never finish. **Until N34 is fixed, "validate with smoke" means seven
-> cells on this host** — say so when you use it, because five unrunnable cells and five passing
-> ones are indistinguishable in a `-R "^smoke/"` summary read carelessly.
+> **2026-08-13: `ctest -R "^smoke/"` is 12 of 12 green on x86_64-linux for the first time, in
+> 115.15 s wall in `cmake-def` — and it took three fixes to get there.**
+> `smoke/engines-identity` 80.0 s, `smoke/strat-dark` 47.1 s, `smoke/engines-known-positive`
+> 30.2 s, `smoke/engines` 28.6 s, `smoke/device` 12.9 s, `smoke/slice-bails` 12.9 s,
+> `device-known-positive` 7.5 s, everything else under 5 s. **Do not quote a contended number**:
+> the same twelve cells run alongside the `slice/*` family time out at 900 s, because both
+> families queue on one device.
+>
+> **The three fixes, in the order they were needed.** It arrived at **7 of 12 green and 5 unrunnable**: `smoke/divergence` was a stale
+> bank (**N32**, now `0 worse, 0 better, 0 new` over 1782 rows), and the other five were one
+> defect — **N34**, an exit-time segfault in `mcc_gpu_quiesce()` under
+> `MCC_AST_EVAL_LADDER_GPU=1`, caused by `atexit` ordering against the NVIDIA ICD's own handler.
+> Both are closed. **The third is N33's**: the five device cells hang on an unresponsive X server
+> because the Vulkan ICD opens a display inside `vkCreateInstance`, and N34's fix alone does not
+> reach that — every cell now runs with `DISPLAY` and `WAYLAND_DISPLAY` scrubbed, floored at 9000
+> so the scrub cannot silently shrink, and only the `wine` cells are exempt.
+>
+> **The trap this leaves behind is worth more than the timings.** Five unrunnable cells and five
+> passing ones read the same in a `-R "^smoke/"` summary skimmed for the pass count, and that is
+> how a hung device arm survived here. See also **N33**: eighteen `slice/*` cells hang on an
+> unresponsive X server because the Vulkan ICD opens a display inside instance creation, and the
+> cell reports it as an empty funnel. Those cells now run with `DISPLAY` scrubbed.
 >
 > **This rule was only executable on one of the three machines until 2026-08-12.** On the Mac
 > the suite was 12 of 12 red and had been since it existed there — see the wave note above.
@@ -979,8 +1012,12 @@ measurement tool reports success over an empty or truncated subject:
 > correctness gate that only runs on the AOT path is not a correctness gate**, because the JIT
 > re-emits the same arenas with no faithfulness comparison to fall back on.
 >
-> **Ranking as of 2026-08-13: the live rows are N2, N3, N6, N7, N18, N19, N24, N29, N30 and N33
-> and N34 — eleven of thirty-four.** N8 closed in full on the Linux box (N20 closed all three of its programs,
+> **Ranking as of 2026-08-13, after the second pass: N2, N3, N6, N7, N18, N19, N24, N29 and N30
+> — nine of thirty-four.** N33 and N34 closed the day they were filed, and N3 lost item 24, so
+> the live rows are **N2, N3 (items 23 and 22 only), N6, N7, N18, N19, N24, N29, N30 and
+> N35** — ten of thirty-five. **N35 is three reds this file had no row for**, all
+> pre-existing at `c7df5209` and all found by running the 526-cell
+> `jit/ ast/ rir optlevel diff3/ superopt/ fmt/ docs/ ci/` family rather than by sweeping. N8 closed in full on the Linux box (N20 closed all three of its programs,
 > and the pre-fix A/B proves it), N26 and N27 and N28 are struck, and **N31** is new — a defect
 > the board had no row for and no red for, because the cell that caught it matched none of the
 > sweep regexes. **N32** and **N33** are the same story twice more — two cells red at `52e7e850`
@@ -1050,12 +1087,32 @@ shared-surface ranking. Smallest member of the family is `rir-locrec-skip-byfit`
 only call site. **Host:** neutral to write; the arm64 slot site is inside
 `#if !defined(MCC_TARGET_MACHO)` and so is compiled out here.
 
-**N3. Item 24 is the real conformance defect of the 22/23/24 trio, and 23/24 share one
-predicate.** Both are `t != VT_INT` in `gen_cvt_ftoi` on opposite arms; 24 is in-range, not
-UB, and also hits `(short)`; 23 has no non-UB reproducer on x86-64. arm64/riscv64 are already
-correct and are the reference. 24 needs an x87 `fistpl` sequence, **not** a wider convert —
-the naive shared fix regresses a case where mcc currently matches both references. Item 22
-may be no defect at all: mcc predefines `__FLT_EVAL_METHOD__ 0` and its per-operation
+**N3. ~~Item 24 is the real conformance defect of the 22/23/24 trio~~ — ITEM 24 CLOSED
+2026-08-13; 23 and 22 remain.** Both were `t != VT_INT` in `gen_cvt_ftoi` on opposite arms; 24 was
+in-range, not UB, and also hit `(short)`; 23 has no non-UB reproducer on x86-64.
+arm64/riscv64 are already correct and are the reference.
+
+**24 is fixed exactly as this row prescribed — the x87 sequence, not a wider convert.** The
+`VT_LDOUBLE`/`t == VT_INT` arm was `gen_cvt_ftof(VT_DOUBLE)` followed by a 32-bit `cvttsd2si`, so
+an 80-bit value was *rounded* to `double` before being *truncated*: `(int)(1 − 2⁻⁶⁴)` gave **1**
+where both references give 0, and the same for `(short)` and `(signed char)`, at every level.
+It now emits `fnstcw`/`fnstcw`/`orw $0xc00`/`fldcw`/`fistpl`/`fldcw` against an 8-byte frame slot
+— the control word is copied and modified *in memory*, so the sequence needs no scratch GPR
+before the final load. **The row's warning was right and is now pinned**: `(int)1e300L`,
+`(int)-1e300L` and `(int)NaN` all still give `-2147483648`, the x87 integer indefinite, which a
+64-bit-convert-then-narrow would have turned into 0. `tests/exec/types/ldouble_to_signed.c` banks
+all nine rows across 23 cells including `diff3`.
+
+**One finding on the way that belongs to Cluster A rather than here.** The first version took its
+scratch slot with a raw `loc = (loc - 8) & -8`, which is what the surrounding backend code does in
+the prolog paths — and smoke came back with `replay-fallback:len` risen 2 → 4 and a new
+`replay-fallback:bytes` category **at every one of the five levels**, with zero value failures.
+Routing the same allocation through `ast_alloc_loc(8, 8)` makes all of it disappear. So a frame
+allocation made outside the recorded channel is *silently* a replay-fidelity regression, the bail
+ratchet is what notices, and that is a concrete instance of the hazard Cluster A is about.
+
+Still open: **23** (quality-of-implementation, no non-UB reproducer) and **22**, which may be no
+defect at all — mcc predefines `__FLT_EVAL_METHOD__ 0` and its per-operation
 rounding is what that macro promises.
 
 **~~N4. `-O13` is dark on 13 of 22 strategies~~ — CLOSED 2026-08-11** (and it is 12, not 13). Write-up moved to [`docs/ARCHIVED.md`](ARCHIVED.md).
@@ -1518,9 +1575,38 @@ deliberately bank N30 and the oracle flip has nothing left blocking it.
 
 **~~N21. The ladder census makes compilation non-deterministic.~~ — NOT A DEFECT, closed 2026-08-12.** Six bytes differ, the disassembly is identical, and the six bytes are `__TIME__`. The census only makes the compile slow enough for two runs to straddle a second. **STANDING TRAP: any object-identity comparison over `tests/exec` or `tests/diff` must export `SOURCE_DATE_EPOCH`** — it accounted for three separate claims in one day. `tests/gpu/always_gpu_parity.sh` got its object assertion back. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
-**N34. The ladder's GPU arm crashes the compiler at exit, on any input, at any level, on either
-device.** New 2026-08-13, pre-existing, and it is why five of the twelve smoke cells cannot
-complete on x86_64-linux. One line reproduces it:
+**~~N34. The ladder's GPU arm crashes the compiler at exit, on any input, at any level, on either
+device.~~ — CLOSED 2026-08-13, the same day, and the cause is `atexit` ordering.**
+`ast_ladder_gpu_setup` registered `atexit(ast_ladder_gpu_report)` **before** the warmup dispatch
+that first brings the device up. That warmup is what makes the Vulkan loader `dlopen` the NVIDIA
+ICD, which pulls in `libEGL_nvidia.so.0` and lets it register an `atexit` handler of its own — and
+`atexit` runs LIFO, so the ICD's later-registered handler runs *first*, tears down its EGL state,
+drops the last reference on `libnvidia-eglcore` and friends, and the loader unmaps 36 MB. mcc's
+handler then calls `mcc_gpu_quiesce()`, whose first Vulkan call dispatches into a now-unmapped
+page. Moving the `atexit` to *after* the warmup makes mcc's handler the later registration and
+therefore the earlier to run. **One line moved.**
+
+Confirmed by backtrace (`mcc_vk_release` → `mcc_gpu_quiesce` → `ast_ladder_gpu_report` →
+`__run_exit_handlers`, faulting in a hole `info proc mappings` shows is unmapped), by
+`LD_DEBUG=files` naming the four NVIDIA modules destroyed between the warmup line and the crash,
+and by a breakpoint on `dlclose` whose caller is an atexit handler inside `libEGL_nvidia.so.0`.
+**Neither of the two leads this row offered was implicated**: nothing retains a `mcc_gpu_mem()`
+pointer (N6.1), and mcc does not `dlclose` libvulkan itself. **The hazard was already written down
+in this tree** — `src/mccast.c` carries a note describing exactly this ordering rule for the
+*slice-inline* handler, and the ladder's own registration violated it.
+
+**It closes the smoke gate on this host**: `smoke/engines` 27.6 s, `-known-positive` 25.9 s,
+`engines-identity` 77.6 s, `smoke/device` 7.4 s, `device-known-positive` 7.3 s — the five cells
+that were timing out, now 6/6 in 146 s. **Residual, deliberately not taken:** the fix depends on
+the warmup reaching `mcc_gpu_run`, which is guarded by `if (mcc_gpu_emit(...))`. `mcc_gpu_emit` is
+pure codegen and cannot touch Vulkan, so the guard cannot fail for a device reason — but if it
+ever did, the ICD would load at the first real dispatch, after the `atexit`, and the hazard would
+return. The belt-and-braces variant is `atexit(mcc_gpu_quiesce)` at the end of `mcc_gpu_init`
+(idempotent, so the later call becomes a no-op); it was not taken because it also moves the
+teardown ahead of `mccjit_shutdown`, `mcc_stats_finish` and `rir_report`, and the design note in
+`src/mccgpu.c` says the single exit-time teardown hangs off `ast_ladder_gpu_report` on purpose.
+
+The report as filed, kept because the bisection is the transferable part:
 
 ```
 $ echo 'int x;' > e.c
@@ -1566,6 +1652,47 @@ finish inside `ladder_gpu_parity.cmake`'s `TIMEOUT 120`, which is exactly what w
 completed, so this is a regression or a configuration difference, not a permanent property of the
 host — **do not read that write-up as evidence the arm works today.**
 
+**N35. Three reds arrived from the arm64 host's last wave and one prerequisite, all verified
+pre-existing at `c7df5209`.** Found by running the whole `jit/ ast/ rir optlevel diff3/ superopt/
+fmt/ docs/ ci/` family — 526 cells — on x86_64-linux, and confirmed by building `c7df5209` into a
+scratch tree and re-running there.
+
+| cell | what it says | reading |
+| --- | --- | --- |
+| `rir-coverage-census` | `-O0 lowerable[elf] bodies_pct regressed: 15.4134% < banked 15.4642% over the WHOLE corpus` | **the ELF floor moved and only macho was re-banked.** `eee6c1f2` added per-format arena floors and banked macho *"so the ratchet arms here"*; the ELF side was left at its old number and this host is the one that measures it |
+| `rir-lowerable-classes` | `reg.c -O1/-O2/-O3: lowerable class reg no longer reproduces` (`-O0` still does) | **C5's own caveat coming true.** That fixture is a VLA, and the C5 write-up already warned that `reg.c` and `opaque.c` share one mechanism so *"a change to VLA lowering breaks both fixtures at once, and neither would isolate which class regressed"*. It cannot say what moved, by construction |
+| `jit/xoracle-coverage` | cannot reach `--min-cross 400` on one suite | **a missing prerequisite reported as a failure.** `MCC_XSUITE_LLVMTS` has no checkout here; configure already prints the explanation, and then the cell registers and fails instead of skipping with it. That is the shape `ci/registration-stubs` exists to prevent |
+
+**`rir-coverage-census` has a second, smaller cause that is this wave's**, and the two must not be
+conflated: `corpus wide drifted: banked 383 file(s) … this run walked 384`, because
+`tests/exec/types/ldouble_to_signed.c` joins the `wide` corpus. **Neither half was re-banked.**
+The manifest half would be a legitimate attributed re-take; the ELF-floor half is a *regression*
+the ratchet is there to catch, and re-banking it would erase what `eee6c1f2` moved before anyone
+has said what moved in the compiler. This file's own rule — a ratchet re-banked without a reason
+trains its readers to re-bank without looking — applies to the pair, so the pair stays red until
+the ELF half is attributed.
+
+**The `-O0` baseline was re-banked, and that one *is* fully attributed.** Adding any file to
+`tests/exec` moves `ast/o0-baseline` on every target key, and this wave's `gen_cvt_ftoi` fix moves
+object hashes as well. Re-taken across all thirteen keys from a cross build; the diff is exactly
+(a) `aggregate_perm.c`'s hash on **`x86_64` and `x86_64-osx` only** — the two keys that have both
+an 80-bit `long double` and the x86_64 backend, which is the precise footprint of the fix, and
+`x86_64-win32`/`i386-win32` correctly do **not** move because Windows `long double` is 64-bit —
+and (b) one new `ldouble_to_signed.c` row per key.
+
+**Two traps found while doing it, both worth more than the re-bank.** *(1)* `tools/o0_ab.sh`'s
+own header gives the re-bank command as
+`C2_NO_EXTRA=1 O0_AB_BANK=1 O0_AB_GATES=1 tools/o0_ab.sh b all <dir>` and **it does not work** —
+`-fopt-slice` is dev-gated and *refused rather than ignored*, so every key reports
+`0 of 308 corpus files produced an object` and the harness correctly refuses to bank an empty
+board. The gated half needs **`MCC_DEV=1`**, which the check cell passes and the documented bank
+command omits. *(2)* **Four of the thirteen keys — `i386`, `arm`, `arm64`, `riscv64` — cannot be
+measured on this host at all**: they need `vendor/gentoo-stage3-<arch>-glibc` sysroots that are
+absent, and the tool refuses to measure them rather than reporting a plausible board from a fifth
+of the corpus. They were left untouched, so **those four keys are now one row short** and must be
+re-banked on a host that has the sysroots. `ast/o0-baseline` runs `measurable` and will not notice
+here; a host with the sysroots will.
+
 **~~N32. The standing inner-loop gate was red on the host its own rule was written for.~~ —
 FOUND AND CLOSED 2026-08-13.** `ctest -R "^smoke/"` on x86_64-linux at `52e7e850`:
 **`smoke/divergence` FAILs**, verified pre-existing by rebuilding a clean worktree at HEAD. Not a
@@ -1590,8 +1717,53 @@ header restored by hand with two new notes (13 and 14) — `smokerun --rebank` r
 rows and destroys the triage header, which the header itself warns about. Nothing else in the
 bank moved: the data-row diff is exactly those 14 lines.
 
-**N33. `slice/cref-oracle` produces zero bodies, zero slices and zero tuples on x86_64-linux.**
-New 2026-08-13, and **pre-existing** — verified by building a clean worktree at `52e7e850` and
+**~~N33. `slice/cref-oracle` produces zero bodies, zero slices and zero tuples on x86_64-linux.~~
+— CLOSED 2026-08-13, and it is not a compiler defect. It is a wedged X server, and the cell said
+"empty funnel" when it meant "the tool never returned".**
+
+Both halves of the funnel are healthy. `MCC_ARENA_DUMP` produces a 6551-byte `arena.txt` for
+`tests/gpu/cref/arith.c` at `-O1`, and `slicerun --arenas` on that same file reports
+`bodies=3 slices=7 tuples=56`. The failing step is `slicerun` **never returning**:
+`gpuconform.py` runs it with `timeout=180`, `run()` returns `("timeout", "")`, `slicerun_counts("")`
+yields `{}`, and every counter defaults to zero. The 180 s the cell took was ten programs timing
+out in parallel.
+
+`slicerun` hangs in `probe_device()` → `mcc_gpu_init` → `vkCreateInstance`, at **0% CPU**, in
+`poll` on a unix socket, with `libGLX_nvidia` and `libX11-xcb` mapped. **The host has
+`DISPLAY=:1.0` while `XDG_SESSION_TYPE=tty`**: `/tmp/.X11-unix/X1` accepts connections and never
+answers, and the NVIDIA ICD opens X inside instance creation with no timeout. `timeout 40
+vulkaninfo --summary` hangs identically with no mcc code involved, and `env -u DISPLAY vulkaninfo`
+returns instantly. mcc requests **zero** instance extensions — the path is pure compute and has no
+use for a display at all.
+
+**Two fixes landed, and the blast radius was wider than the row — twice.** *(1)* All **18**
+`slice/*` cells drive `slicerun` and every one of them brings a Vulkan instance up, so one
+unresponsive display server wedges the whole family — `slice/census` was found hung at 90 minutes
+on this exact probe, which is also the *other* half of the `slice/census` mystery this file has
+been carrying. **Scrubbing only `slice/*` was not enough**: `smoke/engines*` and `smoke/device*`
+bring the same instance up through `eng-gpu`, and they went on hanging until the scrub covered
+them too. It now covers **every** cell except the `wine`-labelled ones, floored at 9000, on the
+principle the diagnosis established — mcc requests zero Vulkan instance extensions, so no cell in
+this suite has any use for a display, and any cell that can be wedged by one is a cell whose
+colour is a property of the machine. `slice/cref-oracle` goes from failing at 180 s to
+passing at **8.4 s**. *(2)* `gpuconform.py` recorded `slicerun_rc == "timeout"` per program and
+threw it away, so a total tool hang was reported in the exact words of an empty funnel — that is
+what sent this investigation at arena capture for an hour. It now names the stalled programs and
+fails on them explicitly. The `--work` path is absolutised at the same time, because
+`build_and_run` writes `<work>/o_<tag>` and then execs it with `cwd=work`, so a relative `--work`
+resolves twice and misclassifies every program as `norun`.
+
+**The durable rule: a gate that can be wedged by an unrelated daemon is a gate whose colour is a
+property of the machine.** The same shape as N26's `taskset`, N25's reference pair and N32's bank
+— and the reason it took so long here is that the instrument reported the symptom in the
+vocabulary of a different fault.
+
+Headless, the cell is emphatic: `funnel bodies=65 slices=93 tuples=744 gpu-slices=93
+dispatches=152`, `cref fragments=93 tuples=726`, `mismatch=0`.
+
+The report as filed:
+
+**~~N33 as originally filed.~~** New 2026-08-13, and **pre-existing** — verified by building a clean worktree at `52e7e850` and
 re-running, where it fails identically. The cell qualifies all 10 programs against both oracles
 and then reports `funnel bodies=0 slices=0 tuples=0 gpu-slices=0 dispatches=0`, so
 `gpuconform_cref.cmake` fails on *"no oracle compiled a single emitted slice, so the CPU reference
