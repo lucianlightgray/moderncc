@@ -117,6 +117,25 @@
 > that made the hazard impossible, and N30's premise was wrong because `R_RET` returns `REG_IRET`
 > for `VT_FLOAT16` — a half never sits in an FP register. Corrections to this file's own rows are
 > recorded inline: **N27 and N28 were filed wrong and struck.**
+>
+> **Windows wave, 2026-08-13 — W7 landed as a deletion and the wt/winspec housekeeping bundle
+> closed.** `arm-wince` is gone: a byte-identical alias of `arm-win32` (same cdefs, same `-O0`
+> object sha256s and forced-Replay_IR counters), so the target, its three `arm-wince.*` banks, the
+> `o0_ab.sh` twin check and both board rows were deleted and the `o0-baseline` measurable floor
+> dropped **8 → 7**. `arm-win32` stays an explicitly compile-only target and `tools/build.c`
+> gained the `arm-win32` entry it had been missing. The housekeeping bundle landed with it:
+> `exec-gatecombo/*` got its `else()` arm (348 visible Skips off-WIN32 instead of vanishing),
+> `pe-wine-conformance` now tears its wineserver down (0 leftover servers, measured),
+> `RESOURCE_LOCK "wine"` on the wine cells, three PE/wine rows added to `tests/must-run.txt` with
+> `runtime-bench-gatewin`'s dual 77-cause corrected, and `MCC_WINE` / `MCC_WINE_REQUIRED` so a
+> wine-less host fails loudly rather than green-skipping (verified: required + no wine → FAIL, else
+> SKIP). Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md). **W1–W6 remain open and are blocked here,
+> not deferred by choice:** W1's external corpus (`vendor/gcc-c-torture-execute`) and a
+> Linux-hosted mingw oracle are both absent (no root to install one); W3 (COFF writer), W4
+> (`UNWIND_INFO`), W5 (CodeView) and W6 (SEH) are the large object-format/debug/exception backends,
+> each needing a differential loop this host cannot run. The `arm64-win32`/`arm-win32` execution
+> host items still need Windows-on-ARM hardware this box does not have. The "stale i386 message"
+> the plan cited has no locatable subject — every i386 message was checked and none is stale.
 > **arm64/macOS wave, 2026-08-12 — the inner loop did not exist on one of the three machines,
 > and turning it on found two miscompiles.** `ctest -R "^smoke/"` was **12 of 12 red on the Mac**
 > and had been for as long as the suite existed there. None of it was a compiler defect: the
