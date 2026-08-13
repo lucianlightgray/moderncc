@@ -156,9 +156,15 @@
 > `RESOURCE_LOCK "wine"` on the wine cells, three PE/wine rows added to `tests/must-run.txt` with
 > `runtime-bench-gatewin`'s dual 77-cause corrected, and `MCC_WINE` / `MCC_WINE_REQUIRED` so a
 > wine-less host fails loudly rather than green-skipping (verified: required + no wine → FAIL, else
-> SKIP). Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md). **W1–W6 remain open and are blocked here,
-> not deferred by choice:** W1's external corpus (`vendor/gcc-c-torture-execute`) and a
-> Linux-hosted mingw oracle are both absent (no root to install one); W3 (COFF writer), W4
+> SKIP). Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md). **W3 (COFF object writer) landed
+> flag-gated on the actual Windows box, 2026-08-13.** `mcc -c -Wl,-oformat=coff` now emits a real
+> Microsoft COFF object (`coff_output_obj`, `src/objfmt/mccpe.c`) that links bidirectionally with the
+> *vendored* `x86_64-w64-mingw32-gcc` — the mingw oracle the Linux-written plan called absent is
+> present here, and PE runs natively, so W3's four-way differential runs with no wine and is enforced
+> by `pe/coff-obj-diff`. Default `-c` still emits ELF (banks + `arm64pe_diff.py` untouched; the
+> default-flip + re-bank is the follow-up). **W1, W2, W4–W6 remain open:** W1's external corpus
+> (`vendor/gcc-c-torture-execute`) is genuinely absent (the mingw-oracle half of its blocker was
+> not); W4
 > (`UNWIND_INFO`), W5 (CodeView) and W6 (SEH) are the large object-format/debug/exception backends,
 > each needing a differential loop this host cannot run. The `arm64-win32`/`arm-win32` execution
 > host items still need Windows-on-ARM hardware this box does not have. The "stale i386 message"
@@ -4300,7 +4306,23 @@ each finding gets an `tests/exec` golden with a `req: os=WIN32` line, so it is c
 every Windows build forever. **Do not schedule W2 before W1** — triaging five programs by
 hand when a cell could triage 1,693 is the wrong order.
 
-**Stage W3 — a COFF object writer. ~900–1,400 lines.**
+**Stage W3 — a COFF object writer. ~~~900–1,400 lines.~~ — first cut LANDED 2026-08-13,
+flag-gated.** `coff_output_obj` now exists in `src/objfmt/mccpe.c` and emits a Microsoft COFF
+object (`IMAGE_FILE_HEADER` + section table + section-definition AUX symbols + `MccCoffRel`
+records) when `-c` is given `-Wl,-oformat=coff` on a PE target (`MCC_OUTPUT_FORMAT_COFF`, wired
+through `mcc_set_linker`'s `oformat=` arm and preserved past `mcc_set_output_type`'s OBJ→ELF
+reset). It is the inverse of `coff_map_reloc`: x86_64 fully (`REL32`/`ADDR32`/`ADDR64`/`ADDR32NB`/
+`SECREL`, RELA addends materialised into the section field), i386 and arm64 arms mirrored from the
+reader, arm32 unsupported. **Default `-c` still emits ELF** — deliberately, so the `*-win32.obj.txt`
+o0-baseline banks and `tools/arm64pe_diff.py`'s ELF-vs-ELF codegen diff are untouched; flipping the
+default to COFF and re-banking those is the remaining follow-up. Verified on the native Windows box
+against the vendored `x86_64-w64-mingw32-gcc` 16.1.0 (no wine needed): the four-way
+mcc×mingw compile/link matrix all print identically and exit 0, `-O0`/`-O2`, over data/bss/rodata/
+float programs; enforced forever by `pe/coff-obj-diff` (`tests/cross/coff-obj-diff.sh`, native WIN32
++ mingw, `SKIP_RETURN_CODE 77`) whose ELF negative-control arm makes it fail if the writer did
+nothing. Not yet done here: per-function COMDAT/weak-external aux records, `.debug$*` (that is W5),
+and the arm32 reloc arm. The original plan text follows.
+
 `coff_output_obj` alongside `elf_output_obj`, reusing the section/symbol/reloc model the
 PE image writer already has, plus the inverse of `coff_map_reloc` (which already exists for
 AMD64/I386/ARM64 in the read direction) and an ARM32 arm. This is what makes mcc a
@@ -4351,19 +4373,28 @@ and `run-tier/{x86_64,i386}-win32` to `tests/must-run.txt`~~ (done); ~~correct
 to `tools/build.c`~~ (done, folded into W7); **still open (unlocated):** fix the stale i386 message
 at `CMakeLists.txt` — every i386 message was checked and none reads as stale, so nothing to fix.
 
-**W1–W6 remain open.** W1 (wine cross-oracle) is blocked here on absent vendor prerequisites: the
-`vendor/gcc-c-torture-execute` corpus is not in this checkout and there is no Linux-hosted mingw
-oracle (no passwordless sudo to install one). W3 (COFF writer), W4 (per-function `UNWIND_INFO`),
-W5 (CodeView) and W6 (SEH) are the large backend gaps and are unchanged.
+**W3 landed flag-gated 2026-08-13 on the Windows box; W1, W2, W4–W6 remain open.** The "blocked
+here" framing above was written from the Linux/WSL host and is partly false on the actual Windows
+checkout: the mingw oracle it calls absent is *vendored*
+(`vendor/winlibs-mingw-w64-16.1.0-ucrt-x86_64/.../x86_64-w64-mingw32-gcc.exe`) and PE runs
+natively, so W3's differential loop — "this host cannot run" — runs here in ~1 s with no wine.
+W3's COFF writer is in and enforced (see the Stage W3 note). W1 (cross-oracle) is still genuinely
+short its *corpus*: `vendor/gcc-c-torture-execute` is not in this checkout, so a native W1 cell could
+only run the internal `tests/exec`/`gpu/cref` corpora (written to pass mcc — low information), and
+it cannot reproduce the five §3 divergences or unblock W2. W4 (per-function `UNWIND_INFO`), W5
+(CodeView) and W6 (SEH) are the large backend gaps and are unchanged; W5 is unblocked by W3's COFF
+sections.
 
 ### 6. The verdict, and the sequencing
 
 **What is a real gap.**
 
-1. **No COFF object writer.** This is the one. It is not a cell that skips; it is a
-   capability the platform requires and the compiler does not have, and it was invisible
-   because every Windows cell in the tree drives mcc all the way to a linked `.exe`, where
-   the format is right. Measured today, in both directions, on a one-line function.
+1. **~~No COFF object writer.~~ — first cut landed 2026-08-13 (flag-gated).** This was the one:
+   a capability the platform requires and the compiler did not have, invisible because every Windows
+   cell in the tree drives mcc all the way to a linked `.exe`, where the format is right. `mcc -c`
+   now emits COFF under `-Wl,-oformat=coff` and links both directions against mingw (proven on the
+   native box, `pe/coff-obj-diff`); default `-c` still ELF pending the re-bank. What is still missing:
+   COMDAT/weak aux records, the arm32 reloc arm, and making it the default.
 2. **No external oracle on any Windows target**, while Linux has four corpora and 4,335
    external programs. §3 shows the cost of that absence is not hypothetical: **five
    divergences, none previously known, in under ten seconds.**

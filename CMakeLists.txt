@@ -8217,6 +8217,26 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             "native PE runtime conformance (only on a native WIN32 host)")
     endif()
 
+    if(MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING
+            AND MCC_CPU STREQUAL "x86_64" AND COMMAND mcc_mingw_resolve)
+        mcc_mingw_resolve()
+        if(_MCC_MINGW_X86_64_GCC AND EXISTS "${_MCC_MINGW_X86_64_GCC}")
+            add_test(NAME pe/coff-obj-diff
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/coff-obj-diff.sh"
+                        "$<TARGET_FILE:mcc>" "${_MCC_MINGW_X86_64_GCC}"
+                        "${CMAKE_BINARY_DIR}/coff-obj-diff-work")
+            set_tests_properties(pe/coff-obj-diff PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                LABELS "pe" TIMEOUT 300)
+        else()
+            mcc_skip_test(pe/coff-obj-diff
+                "COFF object writer differential (needs vendored mingw-w64 x86_64 gcc)")
+        endif()
+    else()
+        mcc_skip_test(pe/coff-obj-diff
+            "COFF object writer differential (native x86_64 WIN32 host with mingw only)")
+    endif()
+
     set(_macho_struct_native "")
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         set(_macho_struct_native

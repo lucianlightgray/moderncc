@@ -2069,6 +2069,329 @@ static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend
 #endif
 }
 
+static DWORD coff_section_characteristics(Section *s) { MCC_TRACE("enter\n");
+	DWORD ch;
+	int a, lg;
+	if (s->sh_flags & SHF_EXECINSTR) { MCC_TRACE("br\n");
+		ch = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ;
+	} else if (s->sh_type == SHT_NOBITS) { MCC_TRACE("br\n");
+		ch = IMAGE_SCN_CNT_UNINITIALIZED_DATA | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE;
+	} else { MCC_TRACE("br\n");
+		ch = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ;
+	}
+	if (s->sh_flags & SHF_WRITE) { MCC_TRACE("br\n");
+		ch |= IMAGE_SCN_MEM_WRITE;
+	}
+	a = s->sh_addralign ? s->sh_addralign : 1;
+	lg = 0;
+	while ((1 << lg) < a) { MCC_TRACE("br\n");
+		++lg;
+	}
+	if (lg > 13) { MCC_TRACE("br\n"); lg = 13; }
+	ch |= ((DWORD)(lg + 1) << 20) & COFF_SCN_ALIGN_MASK;
+	return ch;
+}
+
+static int coff_emit_reloc(int etype, unsigned char *fld, addr_t addend) { MCC_TRACE("enter\n");
+#if defined MCC_TARGET_X86_64
+	switch (etype) { MCC_TRACE("br\n");
+	case R_X86_64_64: write64le(fld, (uint64_t)addend); return IMAGE_REL_AMD64_ADDR64;
+	case R_X86_64_32:
+	case R_X86_64_32S: write32le(fld, (uint32_t)addend); return IMAGE_REL_AMD64_ADDR32;
+	case R_X86_64_RELATIVE: write32le(fld, (uint32_t)addend); return IMAGE_REL_AMD64_ADDR32NB;
+	case R_X86_64_TPOFF32: write32le(fld, (uint32_t)addend); return IMAGE_REL_AMD64_SECREL;
+	case R_X86_64_PC32:
+	case R_X86_64_PLT32: write32le(fld, (uint32_t)(addend + 4)); return IMAGE_REL_AMD64_REL32;
+	default: return -1;
+	}
+#elif defined MCC_TARGET_I386
+	(void)addend;
+	switch (etype) { MCC_TRACE("br\n");
+	case R_386_32: return IMAGE_REL_I386_DIR32;
+	case R_386_PC32: write32le(fld, read32le(fld) + 4); return IMAGE_REL_I386_REL32;
+	case R_386_TLS_LE: return IMAGE_REL_I386_SECREL;
+	default: return -1;
+	}
+#elif defined MCC_TARGET_ARM64
+	switch (etype) { MCC_TRACE("br\n");
+	case R_AARCH64_ABS64: write64le(fld, (uint64_t)addend); return IMAGE_REL_ARM64_ADDR64;
+	case R_AARCH64_ABS32: write32le(fld, (uint32_t)addend); return IMAGE_REL_ARM64_ADDR32;
+	case R_AARCH64_RELATIVE: write32le(fld, (uint32_t)addend); return IMAGE_REL_ARM64_ADDR32NB;
+	case R_AARCH64_CALL26:
+	case R_AARCH64_JUMP26: return IMAGE_REL_ARM64_BRANCH26;
+	case R_AARCH64_ADR_PREL_PG_HI21: return IMAGE_REL_ARM64_PAGEBASE_REL21;
+	case R_AARCH64_ADD_ABS_LO12_NC: return IMAGE_REL_ARM64_PAGEOFFSET_12A;
+	case R_AARCH64_LDST64_ABS_LO12_NC: return IMAGE_REL_ARM64_PAGEOFFSET_12L;
+	default: return -1;
+	}
+#else
+	(void)etype;
+	(void)fld;
+	(void)addend;
+	return -1;
+#endif
+}
+
+ST_FUNC int coff_output_obj(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
+	Section *symsec, *strsec, *relsec, *s, *sr;
+	ElfSym *syms;
+	char *symstr;
+	int *emit, *elf2coff, *relcount, *relptr, *rawptr, *secnameoff, *old_to_new;
+	int nb_orig, nsec, nsym, coffidx, symptr, off, relcur, i, k, j, fd;
+	FILE *f;
+	IMAGE_FILE_HEADER fh;
+
+	nb_orig = s1->nb_sections;
+	emit = mcc_mallocz(nb_orig * sizeof(int));
+	elf2coff = mcc_mallocz(nb_orig * sizeof(int));
+	nsec = 0;
+	for (i = 1; i < nb_orig; i++) { MCC_TRACE("br\n");
+		s = s1->sections[i];
+		if (!(s->sh_flags & SHF_ALLOC))
+			continue;
+		if (s->sh_type != SHT_PROGBITS && s->sh_type != SHT_NOBITS)
+			continue;
+		if (s->data_offset == 0)
+			continue;
+		emit[nsec] = i;
+		elf2coff[i] = nsec + 1;
+		nsec++;
+	}
+
+	symsec = new_section(s1, ".coffwsym", SHT_PROGBITS, SHF_PRIVATE);
+	strsec = new_section(s1, ".coffwstr", SHT_PROGBITS, SHF_PRIVATE);
+	relsec = new_section(s1, ".coffwrel", SHT_PROGBITS, SHF_PRIVATE);
+	section_ptr_add(strsec, 4);
+
+	syms = (ElfSym *)s1->symtab->data;
+	symstr = (char *)s1->symtab->link->data;
+	nsym = s1->symtab->data_offset / sizeof(ElfSym);
+	old_to_new = mcc_mallocz((nsym > 0 ? nsym : 1) * sizeof(int));
+	relcount = mcc_mallocz((nsec > 0 ? nsec : 1) * sizeof(int));
+	rawptr = mcc_mallocz((nsec > 0 ? nsec : 1) * sizeof(int));
+	relptr = mcc_mallocz((nsec > 0 ? nsec : 1) * sizeof(int));
+	secnameoff = mcc_mallocz((nsec > 0 ? nsec : 1) * sizeof(int));
+	coffidx = 0;
+
+	for (k = 0; k < nsec; k++) { MCC_TRACE("br\n");
+		struct syment *se;
+		unsigned char *aux;
+		int nl;
+		s = s1->sections[emit[k]];
+		nl = strlen(s->name);
+		se = section_ptr_add(symsec, COFF_SIZEOF_SYMBOL);
+		memset(se, 0, COFF_SIZEOF_SYMBOL);
+		if (nl <= 8) { MCC_TRACE("br\n");
+			memcpy(se->n_name, s->name, nl);
+			secnameoff[k] = -1;
+		} else { MCC_TRACE("br\n");
+			secnameoff[k] = put_elf_str(strsec, s->name);
+			se->n_zeroes = 0;
+			se->n_offset = secnameoff[k];
+		}
+		se->n_value = 0;
+		se->n_scnum = k + 1;
+		se->n_sclass = IMAGE_SYM_CLASS_STATIC;
+		se->n_numaux = 1;
+		coffidx++;
+		aux = section_ptr_add(symsec, COFF_SIZEOF_SYMBOL);
+		memset(aux, 0, COFF_SIZEOF_SYMBOL);
+		write32le(aux, s->data_offset);
+		coffidx++;
+	}
+
+	for (i = 1; i < nsym; i++) { MCC_TRACE("br\n");
+		ElfSym *es = &syms[i];
+		int bind = ELFW(ST_BIND)(es->st_info);
+		int type = ELFW(ST_TYPE)(es->st_info);
+		int shndx = es->st_shndx;
+		const char *name = symstr + es->st_name;
+		struct syment *se;
+		int scnum, nl;
+		addr_t value;
+#ifdef MCC_TARGET_I386
+		char ubuf[512];
+#endif
+		if (type == STT_FILE)
+			continue;
+		if (name[0] == 0)
+			continue;
+		if (shndx == SHN_UNDEF) { MCC_TRACE("br\n");
+			scnum = 0;
+			value = 0;
+		} else if (shndx == SHN_ABS) { MCC_TRACE("br\n");
+			scnum = IMAGE_SYM_ABSOLUTE;
+			value = es->st_value;
+		} else if (shndx == SHN_COMMON) { MCC_TRACE("br\n");
+			scnum = 0;
+			value = es->st_size;
+		} else if (shndx >= 1 && shndx < nb_orig && elf2coff[shndx]) { MCC_TRACE("br\n");
+			scnum = elf2coff[shndx];
+			value = es->st_value - s1->sections[shndx]->sh_addr;
+		} else { MCC_TRACE("br\n");
+			continue;
+		}
+#ifdef MCC_TARGET_I386
+		if (name[0] != '_' && !strchr(name, '@') && strlen(name) + 1 < sizeof(ubuf)) { MCC_TRACE("br\n");
+			ubuf[0] = '_';
+			strcpy(ubuf + 1, name);
+			name = ubuf;
+		}
+#endif
+		nl = strlen(name);
+		se = section_ptr_add(symsec, COFF_SIZEOF_SYMBOL);
+		memset(se, 0, COFF_SIZEOF_SYMBOL);
+		if (nl <= 8) { MCC_TRACE("br\n");
+			memcpy(se->n_name, name, nl);
+		} else { MCC_TRACE("br\n");
+			se->n_zeroes = 0;
+			se->n_offset = put_elf_str(strsec, name);
+		}
+		se->n_value = value;
+		se->n_scnum = scnum;
+		se->n_type = (type == STT_FUNC) ? (COFF_DTYPE_FUNCTION << 4) : 0;
+		se->n_sclass = (bind == STB_LOCAL) ? IMAGE_SYM_CLASS_STATIC : IMAGE_SYM_CLASS_EXTERNAL;
+		se->n_numaux = 0;
+		old_to_new[i] = coffidx;
+		coffidx++;
+	}
+
+	relcur = 0;
+	for (k = 0; k < nsec; k++) { MCC_TRACE("br\n");
+		int n = 0;
+		s = s1->sections[emit[k]];
+		sr = s->reloc;
+		if (sr) { MCC_TRACE("br\n");
+			int nr = sr->data_offset / sizeof(ElfW_Rel);
+			for (j = 0; j < nr; j++) { MCC_TRACE("br\n");
+				ElfW_Rel *rel = (ElfW_Rel *)sr->data + j;
+				int rtype = ELFW(R_TYPE)(rel->r_info);
+				int rsym = ELFW(R_SYM)(rel->r_info);
+				addr_t addend = ELFW_R_ADDEND(rel);
+				unsigned char *fld = s->data + rel->r_offset;
+				unsigned char *p;
+				int ct = coff_emit_reloc(rtype, fld, addend);
+				if (ct < 0) { MCC_TRACE("br\n");
+					return mcc_error_noabort("coff: unsupported relocation type %d in section %s", rtype, s->name);
+				}
+				p = section_ptr_add(relsec, COFF_SIZEOF_RELOC);
+				write32le(p, rel->r_offset);
+				write32le(p + 4, old_to_new[rsym]);
+				write16le(p + 8, (uint16_t)ct);
+				n++;
+			}
+		}
+		relcount[k] = n;
+	}
+	(void)relcur;
+
+	write32le(strsec->data, strsec->data_offset);
+
+	off = IMAGE_SIZEOF_FILE_HEADER + nsec * IMAGE_SIZEOF_SECTION_HEADER;
+	for (k = 0; k < nsec; k++) { MCC_TRACE("br\n");
+		s = s1->sections[emit[k]];
+		off = (off + 3) & -4;
+		if (s->sh_type == SHT_NOBITS) { MCC_TRACE("br\n");
+			rawptr[k] = 0;
+		} else { MCC_TRACE("br\n");
+			rawptr[k] = off;
+			off += s->data_offset;
+		}
+	}
+	for (k = 0; k < nsec; k++) { MCC_TRACE("br\n");
+		if (relcount[k]) { MCC_TRACE("br\n");
+			relptr[k] = off;
+			off += relcount[k] * COFF_SIZEOF_RELOC;
+		} else { MCC_TRACE("br\n");
+			relptr[k] = 0;
+		}
+	}
+	off = (off + 3) & -4;
+	symptr = off;
+
+	unlink(filename);
+	fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0666);
+	if (fd < 0 || (f = fdopen(fd, "wb")) == NULL) { MCC_TRACE("br\n");
+		return mcc_error_noabort("could not write '%s': %s", filename, strerror(errno));
+	}
+
+	memset(&fh, 0, sizeof fh);
+	fh.Machine = (WORD)IMAGE_FILE_MACHINE;
+	fh.NumberOfSections = nsec;
+	fh.TimeDateStamp = 0;
+	fh.PointerToSymbolTable = symptr;
+	fh.NumberOfSymbols = coffidx;
+	fh.SizeOfOptionalHeader = 0;
+	fh.Characteristics = 0;
+	off = fwrite(&fh, 1, IMAGE_SIZEOF_FILE_HEADER, f);
+
+	for (k = 0; k < nsec; k++) { MCC_TRACE("br\n");
+		IMAGE_SECTION_HEADER sh;
+		char nb[16];
+		s = s1->sections[emit[k]];
+		memset(&sh, 0, sizeof sh);
+		if (secnameoff[k] < 0) { MCC_TRACE("br\n");
+			memcpy(sh.Name, s->name, strlen(s->name));
+		} else { MCC_TRACE("br\n");
+			int ln;
+			nb[0] = '/';
+			snprintf(nb + 1, sizeof nb - 1, "%d", secnameoff[k]);
+			ln = strlen(nb);
+			memcpy(sh.Name, nb, ln < 8 ? ln : 8);
+		}
+		sh.SizeOfRawData = s->data_offset;
+		sh.PointerToRawData = rawptr[k];
+		sh.PointerToRelocations = relptr[k];
+		sh.NumberOfRelocations = (WORD)relcount[k];
+		sh.Characteristics = coff_section_characteristics(s);
+		off += fwrite(&sh, 1, IMAGE_SIZEOF_SECTION_HEADER, f);
+	}
+
+	for (k = 0; k < nsec; k++) { MCC_TRACE("br\n");
+		s = s1->sections[emit[k]];
+		if (s->sh_type == SHT_NOBITS)
+			continue;
+		while (off < rawptr[k]) { MCC_TRACE("br\n");
+			fputc(0, f);
+			off++;
+		}
+		if (s->data_offset) { MCC_TRACE("br\n");
+			off += fwrite(s->data, 1, s->data_offset, f);
+		}
+	}
+
+	relcur = 0;
+	for (k = 0; k < nsec; k++) { MCC_TRACE("br\n");
+		int bytes;
+		if (!relcount[k])
+			continue;
+		while (off < relptr[k]) { MCC_TRACE("br\n");
+			fputc(0, f);
+			off++;
+		}
+		bytes = relcount[k] * COFF_SIZEOF_RELOC;
+		off += fwrite(relsec->data + relcur, 1, bytes, f);
+		relcur += bytes;
+	}
+
+	while (off < symptr) { MCC_TRACE("br\n");
+		fputc(0, f);
+		off++;
+	}
+	off += fwrite(symsec->data, 1, symsec->data_offset, f);
+	off += fwrite(strsec->data, 1, strsec->data_offset, f);
+	fclose(f);
+
+	mcc_free(emit);
+	mcc_free(elf2coff);
+	mcc_free(old_to_new);
+	mcc_free(relcount);
+	mcc_free(rawptr);
+	mcc_free(relptr);
+	mcc_free(secnameoff);
+	return 0;
+}
+
 ST_FUNC int coff_object_type(int fd, unsigned long file_offset) { MCC_TRACE("enter\n");
 	WORD machine = 0;
 	lseek(fd, file_offset, SEEK_SET);

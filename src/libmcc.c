@@ -1322,6 +1322,10 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) { MCC_TRACE("ent
 	mccelf_new(s);
 
 	if (output_type == MCC_OUTPUT_OBJ || output_type == MCC_OUTPUT_ASM) { MCC_TRACE("br\n");
+#ifdef MCC_TARGET_PE
+		if (output_type == MCC_OUTPUT_OBJ && s->output_format == MCC_OUTPUT_FORMAT_COFF)
+			{ MCC_TRACE("br\n"); return 0; }
+#endif
 		s->output_format = MCC_OUTPUT_FORMAT_ELF;
 		return 0;
 	}
@@ -2000,6 +2004,10 @@ static int mcc_set_linker(MCCState *s, const char *optarg) { MCC_TRACE("enter\n"
 				s->output_format = MCC_OUTPUT_FORMAT_ELF;
 			else if (0 == strcmp("binary", o.arg))
 				{ MCC_TRACE("br\n"); s->output_format = MCC_OUTPUT_FORMAT_BINARY; }
+#if defined MCC_TARGET_PE
+			else if (0 == strcmp("coff", o.arg))
+				{ MCC_TRACE("br\n"); s->output_format = MCC_OUTPUT_FORMAT_COFF; }
+#endif
 			else
 				{ MCC_TRACE("br\n"); goto err; }
 		} else if (link_option(&o, "export-all-symbols|export-dynamic|E")) { MCC_TRACE("br\n");

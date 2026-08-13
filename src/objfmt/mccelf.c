@@ -3330,8 +3330,13 @@ LIBMCCAPI int mcc_output_file(MCCState *s, const char *filename) { MCC_TRACE("en
 		{ MCC_TRACE("br\n"); mcc_tcov_add_file(s, filename); }
 	if (s->output_type == MCC_OUTPUT_ASM)
 		{ MCC_TRACE("br\n"); return asm_output_file(s, filename); }
-	if (s->output_type == MCC_OUTPUT_OBJ)
-		{ MCC_TRACE("br\n"); return elf_output_obj(s, filename); }
+	if (s->output_type == MCC_OUTPUT_OBJ) { MCC_TRACE("br\n");
+#ifdef MCC_TARGET_PE
+		if (s->output_format == MCC_OUTPUT_FORMAT_COFF)
+			{ MCC_TRACE("br\n"); return coff_output_obj(s, filename); }
+#endif
+		return elf_output_obj(s, filename);
+	}
 #ifdef MCC_TARGET_PE
 	return pe_output_file(s, filename);
 #elif defined MCC_TARGET_MACHO
