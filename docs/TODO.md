@@ -1136,10 +1136,47 @@ Reproducer is four lines and needs no corpus. Note this row was *already banked*
 `bails-arm64-macos.txt` — it has been visible as a single-reference disagreement the whole time
 and nobody could tell which side was wrong.
 
-**Still to triage: the 10 complex categories** (`C32.CMULADD`, `C64.CMUL/CMULADD`,
-`C80.CMUL/CMULADD`). Complex multiply and multiply-add have real gcc/clang latitude around
-infinities and NaN components, so expect a mix; do them the same way — exhaustive over the
-interesting quadrants, references first.
+**The 10 complex categories — partly triaged 2026-08-12, and still open.**
+
+First, **`C80` is `C64` on this host.** Their digests are byte-identical for both mcc and the
+references, because arm64/macOS `long double` *is* `double`. So the ten categories are really
+three computations, and any `C80` finding here is a duplicate — a `C80`-specific defect is not
+observable on this machine at all.
+
+Sweeping complex `*` and `*`+ over 900 pairs built from the same corpus classes the harness uses
+(min/max normals, subnormals, ±0, ±inf, default NaN, **sNaN**, and the ordinary ratios):
+
+| comparison | rows differing of 900 |
+| --- | ---: |
+| **gcc-16 vs clang** | **167** |
+| mcc vs gcc | 10 |
+| **references agree AND mcc differs** | **1** |
+
+**The references disagree with each other on 167 of 900 rows** — complex multiply with extreme
+operands is largely latitude, not consensus, which is why this whole family reads as loud and
+means little. The single consensus row is `NaN × sNaN`: mcc yields the default quiet NaN
+`7ff8000000000000` where both references yield `7ff8000000000001`, i.e. they propagate the sNaN
+operand's payload and mcc does not. **IEEE 754 §6.2.3 leaves which input NaN is propagated
+implementation-defined**, so this is IDB and not a defect — and mcc's payload handling is
+otherwise correct: `sNaN*2`, `qNaN*2` (payload 5), `sNaN+2` and the scalar complex case are all
+byte-identical across the three compilers.
+
+**The reduction does NOT clear these ten, and saying so would be wrong.** Once `smokerun` grew
+the third verdict class the arithmetic settled at **12 diverge-both and 22 refs-disagree**, which
+means that *on the harness's own 64-value corpus the two references produce byte-identical
+digests for all ten complex categories* — they agree on every one of 4096 pairs — while mcc
+differs. So these are genuine consensus disagreements, and the 30-value reduction above simply
+failed to reproduce them: the one row it did find (`NaN × sNaN` payload selection) is IDB and is
+**not** the row the harness is catching. **Ten reductions are still owed**, and the denominator
+must be the harness corpus, not a hand-built one.
+
+**So of the original 34: one confirmed defect (N30), 22 correctly reclassified as
+references-disagree, and 10 still to reduce.**
+
+**Method note worth keeping:** a hand-built corpus that "covers the same classes" is not a
+substitute for the corpus the instrument actually uses. Here it inverted the answer — it made ten
+consensus disagreements look like implementation-defined latitude, which is the exact mistake
+N23 records in the other direction.
 
 **~~N25. `smokerun`'s reference pair is unchecked everywhere except the divergence arm.~~ — CLOSED 2026-08-12, same day it was opened.** `pass_oracle()` runs the same `__clang__`/`__GNUC__` probe and says which it got. No pass row changed answer, which is the expected result — the defect was in what the line claimed. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 

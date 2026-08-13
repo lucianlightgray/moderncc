@@ -1456,7 +1456,7 @@ static void divergence(void)
 	unsigned ms = 0;
 	const char *gcc = ref_gcc();
 	const char *clang = ref_clang();
-	int have_g, have_c, n3 = 0, ndis = 0, nloud = 0, nrows = 0;
+	int have_g, have_c, n3 = 0, ndis = 0, nloud = 0, nrows = 0, nrefdis = 0;
 	char *pm;
 
 	ts_path(mout, sizeof mout, g_work, "dump-mcc.txt");
@@ -1547,7 +1547,12 @@ static void divergence(void)
 					if (!dg && !dc)
 						continue;
 					ndis++;
-					if (dg && dc) {
+					if (dg && dc && !same_word(gv, cv)) {
+						nrefdis++;
+						cat_add("div refs-disagree:%s.%s", name, colname[ci]);
+						note("REFS-DISAGREE %s.%s mcc=%.16s gcc=%.16s clang=%.16s\n", name,
+								 colname[ci], mv, gv, cv);
+					} else if (dg && dc) {
 						nloud++;
 						cat_add("div diverge-both:%s.%s", name, colname[ci]);
 						note("DIVERGE-BOTH %s.%s mcc=%.16s gcc=%.16s clang=%.16s\n", name,
@@ -1566,8 +1571,13 @@ static void divergence(void)
 		pm = eol + 1;
 	}
 	note("smokerun: divergence rows=%d comparable=%d differing=%d "
-			 "mcc-differs-from-both=%d\n",
-			 nrows, n3, ndis, nloud);
+			 "mcc-differs-from-both=%d refs-disagree=%d\n",
+			 nrows, n3, ndis, nloud, nrefdis);
+	if (nrefdis)
+		note("smokerun: %d case(s) where the two references disagree with each "
+				 "other, so mcc matching neither is UB or implementation-defined, not a "
+				 "defect -- pin mcc's answer and record the disagreement\n",
+				 nrefdis);
 	if (nloud)
 		note("smokerun: %d case(s) where mcc differs from BOTH references -- these "
 				 "are defects to triage, not consensus to bank\n",
