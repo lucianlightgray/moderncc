@@ -9,7 +9,8 @@
  *   aot.*   gen_function() completed a body and advanced ind
  *   rir.*   rir_hook_body_begin() decided whether to record this body
  *   ast.*   ast_func_end() computed faithfulness and knows both byte lengths
- *   jit.*   the embed stash accepted a body
+ *   jit.baked   ast_func_end() called mccjit_embed_stash_leaf: an attempt
+ *   jit.embed   mccjit_embed_note() appended to mccjit_embed_fns: a bake
  *
  * Deliberately NOT derived from any existing census: the point is a fresh
  * count taken at the site, so a disagreement with another counter is a finding
@@ -32,15 +33,18 @@ static MccInvRow mcc_inv_rows[MCC_INV_MAX];
 static int mcc_inv_n;
 static int mcc_inv_on = -1;
 static int mcc_inv_hooked;
+static long long mcc_inv_dropped;
 
 static void mcc_inv_dump(void)
 {
 	int i;
 	if (!mcc_inv_n)
 		return;
-	fprintf(stderr, "[inv]");
+	fprintf(stderr, "[invcount]");
 	for (i = 0; i < mcc_inv_n; i++)
 		fprintf(stderr, " %s=%lld", mcc_inv_rows[i].k, mcc_inv_rows[i].v);
+	if (mcc_inv_dropped)
+		fprintf(stderr, " inv.dropped=%lld", mcc_inv_dropped);
 	fprintf(stderr, "\n");
 }
 
@@ -62,8 +66,10 @@ static void mcc_inv_add(const char *k, long long d)
 			mcc_inv_rows[i].v += d;
 			return;
 		}
-	if (mcc_inv_n >= MCC_INV_MAX)
+	if (mcc_inv_n >= MCC_INV_MAX) {
+		mcc_inv_dropped += d;
 		return;
+	}
 	mcc_inv_rows[mcc_inv_n].k = k;
 	mcc_inv_rows[mcc_inv_n].v = d;
 	mcc_inv_n++;

@@ -166,6 +166,16 @@ Reproduced on both named targets: `-O0 --embed-jit` records 3165 of 3165 bodies 
 builds 3163 arenas — the same coverage as `-O1` with the optimizer still at zero — and bakes
 **1550 bodies**, 49% of those verdicted. On `full_language.c` it bakes 41 of 299, 14%.
 
+> **Corrected 2026-08-13 (N6.8): those are stash attempts, not bakes.** `jit.baked` is
+> incremented before `mccjit_embed_stash_leaf`, which is a single-slot stash that refuses on a
+> serialize failure and is overwritten by the next body; the path that reaches the binary,
+> `mccjit_embed_note`, was uncounted. With `jit.embed` counting the append to
+> `mccjit_embed_fns`, self-host is **1278 of 3202 = 39.91%** against 1577 attempts, and
+> `full_language.c` is **39 of 299 = 13.04%** against 41. The direction of this section's
+> claim is unaffected — `--embed-jit` still turns the pipeline on — but the rate is nine
+> points lower than published. `tools/inv-faithful.py` banks both, and reproduces the
+> faithfulness table above from `MCC_INV=1` alone with no trace build.
+
 ## What this does not establish
 
 - **Why** the 3 `full_language.c` bodies abort during replay. The map names the arm they exit

@@ -7,8 +7,12 @@ against the bytes that actually survive into the object.
 
 The four layers are AOT codegen (mccgen.c + arch), RIR (mccrir.c), AST
 (mccast.c) and JRN/ir_cap (mccircap.c).  MCC_INV=1 supplies the authoritative
-per-layer totals in the same run, so the trace-derived numbers can be checked
-against a counter that was validated as non-perturbing.
+per-layer totals in the same run on the [invcount] channel, so the
+trace-derived numbers can be checked against a counter that was validated as
+non-perturbing.  That check is check_inv_against_anchors() and it is enforced:
+until 2026-08-13 the docstring claimed it and no code did it, while two of the
+five anchors were optional, so an anchor that stopped resolving reported both
+dropout counters as 0 and nothing failed.
 """
 
 import argparse
@@ -60,9 +64,18 @@ def find_anchors(srcdir):
                 if re.match(r"\s*\} else \{", lines[j]) and "MCC_TRACE" in lines[j]:
                     a["ast_abort"] = j + 1
                     break
-    missing = [k for k in ("g_enter", "g_nocode", "body") if k not in a]
+    missing = [k for k in ("g_enter", "g_nocode", "body", "ast_abort",
+                           "ast_replayok") if k not in a]
     if missing:
-        die("could not resolve anchors by symbol: %s" % ", ".join(missing))
+        die("could not resolve anchors by symbol: %s.\n"
+            "  ast_abort and ast_replayok were optional until 2026-08-13, and "
+            "that is how this tool\n"
+            "  reported both dropout counters as 0 and inflated gap_unexplained "
+            "by exactly the\n"
+            "  aborts it had stopped seeing.  An anchor that stops resolving is "
+            "a source move, not\n"
+            "  a measurement: re-point it rather than making it optional again."
+            % ", ".join(missing))
     return a
 
 
@@ -118,10 +131,9 @@ def run(cmd, anchors, root, per_body):
     """Stream the trace through grep, then segment it by compiled body."""
     gen = os.path.join(root, "src", "mccgen.c")
     ast = os.path.join(root, "src", "mccast.c")
-    astpat = "|".join(str(anchors[k]) for k in ("ast_abort", "ast_replayok")
-                      if k in anchors) or "0"
+    astpat = "|".join(str(anchors[k]) for k in ("ast_abort", "ast_replayok"))
     pat = (r"mccgen\.c:(%d|%d|%d) |mccast\.c:(%s) |ast_replay_body: enter|"
-           r"/mccrir\.c:|/mccircap\.c:|^\[inv\]"
+           r"/mccrir\.c:|/mccircap\.c:|^\[invcount\]"
            % (anchors["g_enter"], anchors["g_nocode"], anchors["body"], astpat))
     env = dict(os.environ, MCC_LOG="128", MCC_INV="1")
     p1 = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
@@ -134,8 +146,8 @@ def run(cmd, anchors, root, per_body):
     g_enter_tag = "%s:%d " % (gen, anchors["g_enter"])
     g_nocode_tag = "%s:%d " % (gen, anchors["g_nocode"])
 
-    abort_tag = "%s:%d " % (ast, anchors["ast_abort"]) if "ast_abort" in anchors else None
-    replayok_tag = "%s:%d " % (ast, anchors["ast_replayok"]) if "ast_replayok" in anchors else None
+    abort_tag = "%s:%d " % (ast, anchors["ast_abort"])
+    replayok_tag = "%s:%d " % (ast, anchors["ast_replayok"])
 
     bodies, cur, inv = [], None, {}
     tot = dict(g_enter=0, g_nocode=0, replay=0, rir=0, ircap=0, bodies=0,
@@ -147,9 +159,13 @@ def run(cmd, anchors, root, per_body):
 
     for raw in p2.stdout:
         ln = raw.decode("utf8", "replace")
-        if ln.startswith("[inv]"):
+        if ln.startswith("[invcount]"):
             for kv in ln.split()[1:]:
-                k, _, v = kv.partition("=")
+                k, eq, v = kv.partition("=")
+                if not eq or not re.fullmatch(r"-?\d+", v):
+                    die("unparsable [invcount] token %r.  The counter channel is "
+                        "key=integer only; a\n  reason NAME on that line needs a "
+                        "channel of its own." % kv)
                 inv[k] = int(v)
             continue
         if body_tag in ln:
@@ -225,8 +241,14 @@ def summarise(tot, inv, bodies):
                                  if b["take"] > 0 and b["replay"] == 0),
     }
     for k in ("rir.body", "rir.rec", "ast.body", "ast.arena", "ast.faithful",
-              "jit.baked", "aot.fn", "ast.parser_bytes", "ast.replay_bytes"):
+              "jit.baked", "jit.embed", "jit.embed_bytes", "aot.fn",
+              "ast.parser_bytes", "ast.replay_bytes", "ast.abort",
+              "ast.abort_post", "ast.noreplay"):
         s[k] = inv.get(k, 0)
+    s["inv_abort"] = inv.get("ast.abort", 0) + inv.get("ast.abort_post", 0)
+    s["inv_noreplay"] = inv.get("ast.noreplay", 0)
+    s["anchor_abort_matches_inv"] = tot["ast_abort"] == s["inv_abort"]
+    s["bake_attempts_wasted"] = inv.get("jit.baked", 0) - inv.get("jit.embed", 0)
     s["pct_recorded"] = round(100.0 * inv.get("rir.rec", 0) / rir_body, 2) if rir_body else None
     s["pct_verdicted"] = round(100.0 * verdict / rir_body, 2) if rir_body else None
     s["pct_faithful"] = round(100.0 * inv.get("ast.faithful", 0) / verdict, 2) if verdict else None
@@ -237,8 +259,26 @@ def summarise(tot, inv, bodies):
     return s
 
 
+def check_inv_against_anchors(s):
+    """The cross-check this tool's docstring has always claimed to perform.
+
+    dropout_abort is counted by walking the trace to a line number resolved from
+    a source pattern; ast.abort/ast.abort_post are counted by the compiler at
+    the site.  They measure the same event, so a disagreement is either an
+    anchor that has drifted onto a line that traces something else or a counter
+    that is not where it says it is.  Both are findings.  Silence was the bug.
+    """
+    if s["anchor_abort_matches_inv"]:
+        return []
+    return ["dropout_abort %d (trace anchor) != ast.abort+ast.abort_post %d "
+            "(MCC_INV counters at the site).  gap_explained and "
+            "gap_unexplained are derived from the first, so both are wrong by "
+            "the difference." % (s["dropout_abort"], s["inv_abort"])]
+
+
 BANK_KEYS = ("emit_amplification", "replay_per_verdict", "pct_recorded",
-             "pct_verdicted", "pct_faithful", "rir_layer_traced")
+             "pct_verdicted", "pct_faithful", "rir_layer_traced",
+             "anchor_abort_matches_inv")
 TOL = {"emit_amplification": 0.05, "replay_per_verdict": 0.05,
        "pct_recorded": 1.0, "pct_verdicted": 1.0, "pct_faithful": 1.0}
 
@@ -289,8 +329,12 @@ def main():
                     args.flag)
     tot, inv, bodies = run(cmd, anchors, root, args.per_body)
     if not inv:
-        print("SKIP: no [inv] line - build lacks MCC_INV instrumentation")
+        print("SKIP: no [invcount] line - build lacks MCC_INV instrumentation")
         return 77
+    if inv.get("inv.dropped"):
+        die("the compiler's inventory table overflowed MCC_INV_MAX and dropped "
+            "%d increment(s).\n  Every key it lost reads as a genuine zero here."
+            % inv["inv.dropped"])
     if tot["bodies"] == 0:
         print("SKIP: no trace output - build lacks MCC_CONFIG_TRACE=ON")
         return 77
@@ -306,6 +350,12 @@ def main():
         print("emit-map %s" % key)
         for k in sorted(s):
             print("  %-26s %s" % (k, s[k]))
+
+    drift = check_inv_against_anchors(s)
+    if drift:
+        for d in drift:
+            print("FAIL: %s" % d)
+        return 1
 
     if args.bank:
         bkey = "%s|%s|%s|%s" % (arch, args.target, args.opt,

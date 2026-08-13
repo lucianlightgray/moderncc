@@ -928,6 +928,8 @@ void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym, uint64_t warm_
 	memcpy(e->bind_off, b.bind_off, sizeof e->bind_off);
 	e->next = mccjit_embed_fns;
 	mccjit_embed_fns = e;
+	mcc_inv_add("jit.embed", 1);
+	mcc_inv_add("jit.embed_bytes", (long long)e->len);
 	if (mcc_stats_mask)
 		{ MCC_TRACE("br\n"); mcc_stats_jit_capture((unsigned long)e->len); }
 }

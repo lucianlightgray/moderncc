@@ -375,6 +375,79 @@
 > **Left open deliberately**: `tools/node-census.py` is an unrecorded third `[inv]`-prefix consumer
 > that **silently appends garbage** — a wrong number with no signal, the worst of the three modes.
 
+> **Instrument wave, 2026-08-13 — the cluster thesis was acted on, and acting on it moved a
+> published number by nine points.** Every "absent reads as zero" the cross-cutting research named
+> is now loud, and the two rows that depended on them are closed. **N6.8 closed, and the figure it
+> underpins was wrong in the direction the row predicted and by more than it estimated.**
+> `jit.embed`/`jit.embed_bytes` count the append to `mccjit_embed_fns` — the list that is actually
+> baked — placed after that append rather than at the `mccjit_embed_note` gate, which has five early
+> returns behind it. Measured immediately: self-host `-O0 --embed-jit` is **1278 bakes against 1577
+> stash attempts of 3202 verdicted**, so the **49%** bake rate published in `EMIT-MAP.md` and
+> `EMIT-COVERAGE.md` is **39.91%**; `full_language.c` is 39 against 41 of 299, so 14% is **13.04%**.
+> Both documents are corrected in place rather than re-banked silently.
+>
+> **N18 is now watched, and the cell cost 1.7 s rather than the 7200 s the row was priced at.** The
+> refutation that `emit-map.py` does not unblock N18 was correct and is now executable:
+> `tools/inv-faithful.py` takes two `MCC_INV=1` compiles and subtracts, needs **no trace build and
+> no opt-in**, and reproduces the whole N18 table on this host — `full_language.c` **3.32% → 4.68%,
+> +1.36 pt**, self-host **2.18% → 3.37%, +1.19 pt**, against the +1.36/+1.20 the row recorded.
+> Registered as `ast/inv-faithful` with a known-positive that injects a +5.00 pt gap and requires
+> the bank to catch it; both are `must-run`, because a cell with no host prerequisite has no honest
+> reason to skip.
+>
+> **The per-body lowerable ratchet was disarmed and is now armed, with teeth.** `low_body_index()`
+> keys on the **translation unit** as well as `(file, func)` — the compiler reports the lexer's
+> current file, so a header body is reported once per TU that includes it, and that is not something
+> the compiler can fix. `tests/rir/lowerable-bodies.tsv` grew a `tu` column (legacy 5-column rows
+> still read, so the 3060 banked `self`/`macho` bodies were not retired by the schema change) and a
+> **`wide`/`elf` inventory of 4574 bodies** was taken — the branch of the hedge this file said would
+> have fired too. `rir-coverage-census` now attributes **4550 bodies at `-O0`, 0 gone, 0 new**
+> instead of printing "attribution is unavailable". Proved with a known-positive: perturbing two
+> banked masks makes it name **`<command line>:__mcc_ov_calc [in …/overflow_inline.c]`** and its
+> `overflow_narrow.c` twin — the exact pair whose collision disarmed it. That probe also found a
+> defect in this wave's own change (three format strings not widened with the key), which is the
+> argument for building the known-positive before believing the green.
+>
+> **`--update-bodies` is a new switch, and the split is the point.** `--update-bank-low` wrote the
+> body inventory *and* the percentage floors. Adding bodies to the inventory cannot hide a
+> regression — the comparison is over the intersection of banked and present bodies — while moving a
+> floor can and needs an attribution first. They are two decisions and are now two flags. **No floor
+> was moved by this wave and `tests/rir/coverage-bank.json` is byte-identical.**
+>
+> **The three silent degradations are loud.** `emit-map.py`'s two optional anchors are **required**
+> (a dropout used to report both counters as 0 and inflate `gap_unexplained` by exactly the aborts
+> it stopped seeing); it now **cross-checks `dropout_abort` against `ast.abort + ast.abort_post`**,
+> which is the check its own docstring has always claimed and never performed, and fails on a
+> mismatch; `int(v)` on the counter channel is guarded; and `MCC_INV_MAX` truncation reports
+> `inv.dropped=N` on the dump line instead of dropping in silence, which both tools treat as fatal.
+> **The `[inv]` prefix collision is retired rather than documented**: the counter channel is
+> `[invcount]`, so the three consumers of `MCC_ARENA_DUMP`'s `[inv] <node> <callee>` grammar —
+> including `node-census.py`, the silent-garbage one left open above — can no longer meet it.
+>
+> **`int128-signedness` deleted, as the research said.** 44 lines: `__mcc_ov_disp`, its `_ti` arm and
+> all 39 `__mcc_*o_*` declarations, orphaned in `runtime/include/mccdefs.h` because `__mcc_ov_gen`
+> never mentions the dispatcher. Re-verified here before deleting — `nm -u` on a program using all
+> four `__builtin_*_overflow` widths shows **zero** undefined `__mcc_*o_*` — and they were injected
+> into **every TU** under the default `MCC_CONFIG_PREDEFS=1`. 391 overflow/int128/builtin cells green
+> after.
+>
+> **A correction to the research this wave implemented**: `gap_explained` does **not** read 0 when an
+> anchor drops out. Only `dropout_abort` does; `dropout_no_replay` is derived from per-body trace
+> counts that need neither optional anchor, so it degrades to that term alone. The conclusion is
+> unchanged and the fix is the same one.
+>
+> **Found while banking, NOT fixed, and left red-adjacent on purpose: `tests/emitmap/bank.json`'s
+> `selfhost` cell is stale against its own tree and cannot say so.** Banked `emit_amplification`
+> 2.7112 / `pct_faithful` 97.79 / `replay_per_verdict` 1.6205; measured on a trace build **2.712 /
+> 97.82 / 1.6214**. **Measured again at `HEAD` in a clean worktree and the answer is identical**, so
+> this predates this wave and none of it is attributable to it — which is why the three figures were
+> **restored to their banked values** rather than taken with the new key. Only
+> `anchor_abort_matches_inv` was added. The mechanism is the tolerances: `TOL` allows 0.05 on
+> amplification and **1.0 on every percentage**, so a bank can drift from the tree indefinitely and
+> report `bank OK` the whole way. **This is the cluster thesis again, one level up** — not an absent
+> number read as zero, but a present number wide enough to be unfalsifiable. Whoever attributes the
+> drift should tighten `TOL` in the same change, or the next drift is invisible too.
+
 ## STATE OF PLAY — written for a context switch, 2026-08-11
 
 > Read this first. It is a handoff, not a board. Everything below it is detail.
@@ -405,6 +478,14 @@
 | `^exec` | **7675 of 7675** |
 | `^slice/` | **55 of 55**, including the 1693-program `cref-oracle-gcc-c-torture-execute` |
 | `jit/ ast/ rir optlevel diff3/ superopt/ fmt/ docs/ ci/` — 235 cells | **234 of 235** |
+
+**Re-taken end of 2026-08-13 after the instrument wave: 9932 cells** — the two new ones are
+`ast/inv-faithful` and its known-positive, both `must-run` and 1.7 s each. `^exec` re-run whole
+because the wave deletes 44 lines from the text injected into every TU: **8023 of 8023**, zero
+failures. `rir-coverage-census` **passes here**, which corrects this file in two places: the
+2026-08-13 note that "the pair stays red until the ELF half is attributed" is stale — both figures
+were banked with attribution on the same day — and the cell was verified green at `HEAD` in a
+worktree *before* the wave, so nothing in it turned a red green.
 
 **The one red is not a red.** `rir-nofb-probe-self` fails under `-j` and passes alone — measured
 four times now: fails at 20.6 s and 84.2 s contended, passes at 539.7 s and 726.9 s alone. It does
@@ -551,6 +632,17 @@ whole per-body ratchet degrades **to the corpus-wide percentage it exists to rep
 those three loud is the single highest-value change across the cluster**, and it is small in every
 one of them.
 
+**~~Making those three loud~~ — DONE 2026-08-13, and it was small in every one of them as
+predicted.** Both optional anchors are required and `die()` naming what stopped resolving; the
+truncation reports `inv.dropped=N` on the dump line and both consumers treat it as fatal;
+`low_body_index()` keys on the TU and returns *which* of its three causes fired. Added on top,
+because it was the one thing the thesis implied and nobody had written: **`emit-map.py` now
+cross-checks `dropout_abort` against `ast.abort + ast.abort_post` and fails on a mismatch**, which
+is the check its docstring has claimed since the file was created. **One correction to the thesis
+as stated:** `gap_explained` does not read 0 when an anchor drops out — `dropout_no_replay` comes
+from per-body trace counts that need no optional anchor, so it degrades to that term alone. Same
+fix, same conclusion; the number in the sentence was wrong.
+
 **One correction to this file's own arithmetic while there:** the `MCC_INV_MAX` hazard is real but
 mis-sized. The tree registers **16** keys, not the 12 recorded here, so six reasons × (count+bytes)
 lands at **28 of 32** — *under* the cap. The conclusion (own table, own report line) survives; the
@@ -562,6 +654,15 @@ the worst mode, and a consumer this file does not record; `tools/slicerun.c` sil
 And `emit-map.py`'s `[inv]` channel is generic **only for integers** — `run()` does `int(v)`
 unconditionally, so the moment a reason *name* goes on that line it dies. That is the argument for
 a new prefix that actually bites, because unlike the collision it needs no unusual env var.
+
+**~~The collision~~ — RETIRED 2026-08-13, by taking the prefix rather than documenting it.** The
+counter channel is `[invcount]`; `MCC_ARENA_DUMP`'s `[inv] <node> <callee>` keeps `[inv]`, and its
+three consumers can no longer meet the counter grammar under `MCC_ARENA_DUMP=-`. It cost one
+`fprintf` and two lines in `emit-map.py` — the only consumer the counter channel ever had, which is
+why this was cheap and why it should not have waited. `int(v)` is now guarded and names the
+offending token, so a reason *name* on that line is a diagnosis rather than a traceback. The
+argument the research made for a distinct prefix stands and is the reason it was done this way
+rather than by hardening three parsers.
 
 #### The three "decisions" that are measurements
 
@@ -610,7 +711,17 @@ model was already in this file** under *"Couplings deleted, because verification
 established for the wide256 cluster and never connected here. The real cost is breadth — 838
 `VT_BTYPE` uses to audit — which is mechanical and greppable, a very different estimate.
 
-**`int128-signedness` — settled; delete it.** `nm -u` on a program using all four
+**~~`int128-signedness` — settled; delete it.~~ — DONE 2026-08-13, header half only.** The 44 lines
+below are gone from `runtime/include/mccdefs.h`; `nm -u` was re-run here first and still shows zero
+undefined `__mcc_*o_*`, and 391 overflow/int128/builtin cells are green after. **The two
+`runtime/lib/` halves were deliberately not taken** — `runtime/lib/int128.c`'s
+`__mcc_{add,sub,mul}o_ti_impl` are live (`__addvti3`/`__subvti3`/`__mulvti3` call them); only the
+`MCC_OV_WRAP` exports around them are orphaned, and those are exported runtime symbols, which is
+the decision this row correctly refused to take on a sweep. The header declarations were never that
+decision: they are *declarations*, injected into every TU, of symbols that remain defined.
+
+As originally settled:
+`nm -u` on a program using all four
 `__builtin_*_overflow` widths shows **zero** `__mcc_*o_*` references: `__mcc_ov_gen` never mentions
 `__mcc_ov_disp` at all, so the dispatcher and all 39 declarations are orphaned *in the header*.
 Three facts shrink the decision to nothing: **no symbol/ABI baseline test exists** anywhere in the
@@ -750,21 +861,34 @@ printed digit across two runs, plus a compile-time dividend the row never quotes
 demoting it breaks `levelbench.tsv`'s assertion that its 16 rows match `src/mccopt.h`'s 16
 `LEVEL(1..3)` rows.
 
-**4. Cluster 2 — the counter substrate, with N6.8 first.** *Any host.* Unchanged and still correctly
-ordered: `jit.baked` **counts attempts, not acceptances**, the stash is single-slot so it counts
-overwrites, and the path that actually bakes — `mccjit_embed_note` — is uncounted, so 587/1894 and
-1550/3163 are all the leaf-stash path. Two hazards before writing it: `MCC_INV_MAX` is **32** and
-`mcc_inv_add` truncates silently, and the `[inv]` prefix is taken by an incompatible grammar in
-`tools/slicerun.c` that `fmt-census.py` parses positionally.
+**~~4. Cluster 2 — the counter substrate, with N6.8 first.~~ — CLOSED 2026-08-13.** All three
+hazards discharged, and the figure the row existed to correct moved further than it predicted.
+`jit.embed`/`jit.embed_bytes` count the append to `mccjit_embed_fns`, placed **after** the append
+rather than at the `mccjit_embed_note` gate (five early returns behind it, including the
+`mccjit_intent_serialize` refusal). Self-host `-O0 --embed-jit`: **1278 bakes, 1577 stash attempts,
+3202 verdicted — 39.91%, not the published 49%**; `full_language.c` 39/41 of 299 — **13.04%, not
+14%**. `EMIT-MAP.md` and `EMIT-COVERAGE.md` corrected in place. `MCC_INV_MAX` truncation now
+reports `inv.dropped=N` on the dump line, and **the `[inv]` collision is retired rather than
+worked around** — the counter channel is `[invcount]`, which the three consumers of
+`MCC_ARENA_DUMP`'s grammar cannot meet. Banked by `ast/inv-faithful`.
 
-**5. The per-body lowerable ratchet is disarmed and nobody noticed.** *Any host; new 2026-08-13.*
-`rir-coverage-census` says "attribution is unavailable" whenever it fails, and the reason is that
-4550 `[rir-low-body]` rows collapse to **4538 keys** — twelve duplicates across five keys
-(`<command line>` helpers emitted once per TU, and `bitfields_ms.c` `#include`ing `bitfields.c`) —
-so `low_body_index()` returns `None` for the whole corpus. Key it on the TU as well as
-`(file, func)`, then take a `wide`/`elf` inventory with `--update-bank-low`;
-`lowerable-bodies.tsv` holds only `self`/`macho` today, so the *other* branch of that hedge would
-have fired too. **Until this lands, every future census failure needs the hand-diff this one did.**
+**~~5. The per-body lowerable ratchet is disarmed and nobody noticed.~~ — CLOSED 2026-08-13.**
+`low_body_index()` keys on the TU as well as `(file, func)`; `lowerable-bodies.tsv` gained a `tu`
+column that still reads the 3060 legacy 5-column rows, so the schema change retired no banked body;
+and a **`wide`/`elf` inventory of 4574 bodies** was taken — the other branch of the hedge, which
+would indeed have fired. `rir-coverage-census` now attributes **4550 bodies at `-O0`, 0 gone, 0
+new**. **The known-positive is the part worth copying**: perturbing two banked masks makes the cell
+name `<command line>:__mcc_ov_calc` in each of its two TUs — the exact collision that disarmed it —
+and building that probe is what caught three format strings in this wave's own change that had not
+been widened with the key. **New switch `--update-bodies`** writes only the inventory;
+`--update-bank-low` still writes the floors with it. Adding bodies cannot hide a regression, moving
+a floor can, so they are two decisions and now two flags. No floor moved and
+`tests/rir/coverage-bank.json` is byte-identical.
+
+**Not closed by the above, and re-filed here because the run surfaced it:** the `wide` census
+reports **9 source(s) failed to compile** and computes every percentage over the rest. Identical at
+`HEAD` and after, so pre-existing — it is sweep row 22's "denominator is the files that happened to
+compile", now with a count attached. A source dropping out still shrinks the ratchet silently.
 
 **6. Cluster 1 — `src/mccast.c`, three items, not eight.** *Any host to write; both `rf-1` cells are
 x86_64-gated.* Unchanged. Sweep rows 17 and 27 and `rf-1` genuinely share `ast_func_end`; rows 17
@@ -777,13 +901,19 @@ so nothing may retain a `mcc_gpu_mem()` pointer across shutdown. **N34 is the ca
 precedent**: the same teardown, reached in the wrong `atexit` order, segfaulted every compile that
 touched the device.
 
-**8. N18 — the `-O0 --embed-jit` faithfulness gap.** *Any host to measure; do not bank from this
-one.* The coverage half is closed by `mcctest-embedjit`; what remains is the gap itself, +1.20 and
-+1.36 points on two targets and reproduced on arm64 at +1.29/+1.85. **`tools/emit-map.py`'s bank key
-now carries the arch** (2026-08-13), so the overwrite hazard this row named is gone — but the
-cheapest item in the cluster is still unclaimed: `emit-map.py` derives its dropout numbers from
-trace anchors and never reads the now-authoritative `ast.abort`/`ast.abort_post`/`ast.noreplay`
-keys, despite its docstring claiming `MCC_INV=1` supplies them.
+**8. N18 — the `-O0 --embed-jit` faithfulness gap. — WATCHED 2026-08-13; the gap itself is what is
+left.** *Any host; nothing here is arch-gated any more.* The row is no longer unobserved: the
+**cheapest item in the cluster is done in both halves**. `emit-map.py` now reads
+`ast.abort`/`ast.abort_post`/`ast.noreplay` and **fails** when `dropout_abort` disagrees with them —
+the check its docstring claimed for as long as the docstring existed — and its two optional anchors
+are required, so a dropout is a diagnosis rather than a zero. And the gap has a cell:
+`ast/inv-faithful` (+ known-positive) reproduces `full_language.c` **3.32% → 4.68% (+1.36)** and
+self-host **2.18% → 3.37% (+1.19)** from two `MCC_INV=1` compiles, in **1.7 s on an ordinary
+build** — which is why the "do not bank from this one" caution no longer applies to it: its bank
+key carries the arch and it needs no trace build to be re-taken anywhere. **What is still open is
+the defect, not the instrument**: why the `--embed-jit` re-emit is 1.2–1.9 points less faithful
+than `-O1` on every target and both architectures measured. The emit-map cells stay opt-in and
+trace-only; nothing about them changed except that they can now fail.
 
 **9. N3's residue — items 23 and 22.** *x86_64-only; this host.* Item 24 is fixed. **23** is
 quality-of-implementation with no non-UB reproducer on x86-64, so it is genuinely low. **22**
@@ -794,8 +924,11 @@ and its per-operation rounding is what that macro promises, so the honest readin
 
 **Not code, decide first:** sweep row 29 (the `MCC_OPT_REPLAY_FALLBACK` flip — **make the fallback
 visible under either answer**, and note one of its four legs is falsified: `nofb_miscompiles` is no
-longer empty), the coroutine task S7b, and `int128-signedness`'s dead-code deletion, which is a
-decision about exported runtime symbols rather than a sweep.
+longer empty) and the coroutine task S7b. `int128-signedness` **leaves this list 2026-08-13**: the
+44 header lines were declarations, not exports, and are deleted; what remains of the row *is* a
+decision about exported runtime symbols, and it is now the `runtime/lib/` half alone — smaller than
+the row implies, because `__mcc_{add,sub,mul}o_ti_impl` are live and only the `MCC_OV_WRAP`
+wrappers around them are orphaned.
 
 **Belongs to the Mac:** N29 (above), the Metal region differential — do **MoltenVK first**, ~10
 lines and already half-built — and `slice/census`'s `arm64`/`Darwin` column, now bisected to
@@ -1134,6 +1267,9 @@ emit-coverage instrument, which adds counters rather than cells (`jit/selfhost-o
 > **2026-08-13, end of day: 9930 on x86_64-linux.** It was 9561 at `52e7e850` and 9565 after this
 > file's first wave of the day; the rest arrived with the Windows/wine tiers from the other host.
 > The count is host- and prerequisite-dependent — see *where this host actually stands*, above.
+> **9932 after the instrument wave**: `ast/inv-faithful` and its known-positive, which are the
+> first cells on this board to watch N18 at all and cost 1.7 s each because they read counters
+> rather than a trace.
 >
 > **2026-08-13, x86_64-linux: 9561 at `52e7e850`, 9565 after this wave.** The +4 is
 > `stratsweep/iso-{sra,sroa}` and their `isofull` skip stubs, which appeared the moment
@@ -2346,7 +2482,17 @@ went red while `O1`–`O3` sit at 15.4570 against a 15.4242 floor.
 re-bank.** But for those five bodies HEAD would be 15.5165%, above the red line; dilution alone
 would also have cleared it. The loss is the larger and the binding half.
 
-**Two follow-ups so this never needs a hand-diff again.** The cell said *"attribution is
+**~~Two follow-ups so this never needs a hand-diff again.~~ — BOTH DONE 2026-08-13.** *(1)* the key
+carries the TU; *(2)* the `wide`/`elf` inventory is taken — **4574 bodies**, and the cell now
+attributes 4550 at `-O0` with 0 gone and 0 new. Two amendments to the plan as written below. The
+first option was taken and the second was **rejected on inspection**: dropping `<command line>`
+rows loses real bodies from the attribution set and leaves the `bitfields.c` pair colliding, so it
+fixes neither half. And the inventory was taken with a **new `--update-bodies`**, not
+`--update-bank-low`, because the latter also rewrites the percentage floors — which is the blind
+re-bank this very section warns about, arriving as a convenience. The floors are untouched.
+
+As originally filed:
+The cell said *"attribution is
 unavailable"*, and the second half of that hedge is the true one: 4550 `[rir-low-body]` rows are
 emitted and reconcile exactly with the aggregate, but they collapse to **4538 keys**, so
 `low_body_index()` returns `None` and the per-body ratchet is disarmed for the whole corpus. The

@@ -7091,6 +7091,24 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 7200
                 ENVIRONMENT "MCC_EMIT_MAP=1")
 
+            # N18: the -O0 --embed-jit arm is the least faithful one and
+            # nothing watched it. Two compiles and a subtraction off MCC_INV=1,
+            # so unlike emit-map above it needs no trace build, no opt-in and
+            # about a second per target -- which is why it is an ordinary cell.
+            add_test(NAME "ast/inv-faithful"
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/inv-faithful.py"
+                        "${CMAKE_BINARY_DIR}"
+                        --bank "${CMAKE_CURRENT_SOURCE_DIR}/tests/emitmap/faithful.json")
+            set_tests_properties("ast/inv-faithful" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+            add_test(NAME "ast/inv-faithful-known-positive"
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/inv-faithful.py"
+                        "${CMAKE_BINARY_DIR}" --known-positive
+                        --bank "${CMAKE_CURRENT_SOURCE_DIR}/tests/emitmap/faithful.json")
+            set_tests_properties("ast/inv-faithful-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+
             add_test(NAME "census/gates-armed"
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/census-armed.py"
                         "${CMAKE_BINARY_DIR}" --min-cells 5)
@@ -7198,6 +7216,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             mcc_skip_test("rir-nofb-probe-self" "${_nopy_why}" LABELS census)
             mcc_skip_test("emit-map-full-language" "${_nopy_why}" LABELS census)
             mcc_skip_test("emit-map-selfhost" "${_nopy_why}" LABELS census)
+            mcc_skip_test("ast/inv-faithful" "${_nopy_why}")
+            mcc_skip_test("ast/inv-faithful-known-positive" "${_nopy_why}")
             mcc_skip_test("census/gates-armed" "${_nopy_why}" LABELS census)
             foreach(_op -O2 -O3)
                 string(REPLACE "-" "" _optag "${_op}")

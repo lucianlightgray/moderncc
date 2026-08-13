@@ -111,8 +111,18 @@ Usage:
   tools/rir-coverage.py <build-dir> [--levels O0,O1,O2,O3]
                         [--corpus self|wide|exec] [--layers both|arena|capture]
                         [--bank FILE] [--update-bank] [--update-bank-low]
+                        [--update-bodies]
                         [--top N] [--json FILE] [--classify] [--check-gap-dir]
                         [--check-low-dir] [--nofb-probe] [--rebank-config]
+
+--update-bodies writes ONLY tests/rir/lowerable-bodies.tsv, the per-body
+inventory the ratchet attributes with.  --update-bank-low writes that AND the
+percentage floors in the bank, which is a different decision: adding bodies to
+the inventory cannot hide a regression (the comparison is over the intersection
+of banked and present bodies), while moving a floor can and needs an
+attribution first.  They were one switch until 2026-08-13, and this file's own
+warning -- that a blind re-bank arrives as a convenience rather than as a
+mistake -- is why they are two.
 
 The `self` and `wide` corpora are the compiler's own source, so the banked
 percentages are only comparable across builds that compile the same source into
@@ -442,8 +452,8 @@ def run_one(mcc, flags, src, opt, out_o, tsv, env0, layer):
     return p
 
 
-def parse_report(stderr):
-    r = {"used": 0, "fallback": 0, "skip": 0,
+def parse_report(stderr, tu=""):
+    r = {"used": 0, "fallback": 0, "skip": 0, "lowbody_short": 0,
          "b_used": 0, "b_fallback": 0, "b_skip": 0, "b_body": 0,
          "fn_n": 0, "fn_bytes": 0, "unnoted": 0, "b_unnoted": 0, "b_nonbody": 0,
          "raw_used": 0, "raw_fallback": 0, "raw_skip": 0,
@@ -461,7 +471,9 @@ def parse_report(stderr):
             g = line.split("\t")
             if len(g) >= 10:
                 r["lowbody"].append((g[1].replace("\\", "/"), g[2]) +
-                                    tuple(int(x) for x in g[3:10]))
+                                    tuple(int(x) for x in g[3:10]) + (tu,))
+            else:
+                r["lowbody_short"] += 1
             continue
         f = line.split()
         if not f:
@@ -582,9 +594,10 @@ def census(mcc, flags, sources, opt, layer="arena", keep_rows=True):
             if p.returncode != 0:
                 fails.append((src, p.stderr.strip().splitlines()[-1:] or [""]))
                 continue
-            merge(agg, parse_report(p.stderr))
+            merge(agg, parse_report(p.stderr, low_rel(src)))
             if layer != "capture" and os.path.exists(tsv):
-                merge(agg, parse_report(open(tsv, errors="replace").read()))
+                merge(agg, parse_report(open(tsv, errors="replace").read(),
+                                        low_rel(src)))
                 if keep_rows:
                     rows.extend(read_rows(tsv))
             t = text_size(out_o)
@@ -689,6 +702,7 @@ def print_lowerable(low):
 
 
 LB_NODES, LB_C0, LB_C1, LB_C2, LB_BYTES, LB_NMIN, LB_NBIG = range(2, 9)
+LB_TU = 9
 LOW_INV_NAME = "lowerable-bodies.tsv"
 
 
@@ -702,29 +716,69 @@ def low_rel(p):
     return p[len(r):] if p.startswith(r) else p
 
 
-def low_body_index(c):
-    """(file, func) -> per-body lowerable row, or None if the compiler emitted none.
+def low_body_index(c, why=None):
+    """(file, func, tu) -> per-body lowerable row, or None with a reason.
 
     The rows are the same arithmetic the compiler's own [rir-low] aggregate
     reports, one line per body instead of one line per run, so anything derived
     from them can be recomputed over a SUBSET of the corpus.  That is the whole
     point: a ratio over the whole corpus moves when the corpus grows, and a
     ratio over the bodies the bank already knew about does not.
+
+    The key carries the translation unit because (file, func) is not unique and
+    the compiler cannot make it so: [rir-low-body] reports the lexer's current
+    file, so a header body is reported once per TU that includes it.  Keying on
+    (file, func) alone collapsed 4550 rows to 4538 and disarmed the whole
+    per-body ratchet for the whole corpus -- silently, because the corpus-wide
+    fallback below it still passed.  Five keys did that: `<command line>`
+    helpers emitted once per TU, and bitfields_ms.c #including bitfields.c.
+
+    `why` collects the reason a None is returned, so the caller can say which
+    of the three causes fired instead of naming all three.
     """
+    def no(reason):
+        if why is not None:
+            why.append(reason)
+        return None
+
     rows = c.get("lowbody") or []
     if not rows:
-        return None
+        return no("this mcc emitted no [rir-low-body] rows (needs "
+                  "MCC_RIR_LOW_BODY=1 and a build that honours it)")
+    if c.get("lowbody_short"):
+        return no("%d [rir-low-body] row(s) had fewer than 10 fields, so the "
+                  "row format moved under this tool" % c["lowbody_short"])
     idx = {}
     for t in rows:
-        idx[(low_rel(t[0]), t[1])] = t
+        idx[(low_rel(t[0]), t[1], t[LB_TU])] = t
     if len(idx) != len(rows):
-        return None
+        dup = {}
+        for t in rows:
+            dup.setdefault((low_rel(t[0]), t[1], t[LB_TU]), []).append(t)
+        names = sorted(k for k, v in dup.items() if len(v) > 1)
+        return no("%d of %d rows share a (file, func, tu) key, so no per-body "
+                  "attribution is possible: %s"
+                  % (len(rows) - len(idx), len(rows),
+                     ", ".join("%s::%s in %s" % k for k in names[:5])))
     tot = low_body_totals(rows)
-    if (tot["bodies"] != c["low_bodies"] or tot["nodes"] != c["low_nodes"] or
-            tot["clean1"] != c["low_clean1"] or tot["ok1"] != c["low_ok1"] or
-            tot["bytes"] != c["low_bytes"]):
-        return None
+    for k, agg in (("bodies", "low_bodies"), ("nodes", "low_nodes"),
+                   ("clean1", "low_clean1"), ("ok1", "low_ok1"),
+                   ("bytes", "low_bytes")):
+        if tot[k] != c[agg]:
+            return no("per-body rows do not reconcile with the [rir-low] "
+                      "aggregate: %s is %d by row and %d in aggregate"
+                      % (k, tot[k], c[agg]))
     return idx
+
+
+def low_body_name(key):
+    """A (file, func, tu) key, printed so the tu is visible only when it adds.
+
+    The tu disambiguates a body reported once per TU that includes it; naming
+    it on every body would bury the ones where it is the whole point.
+    """
+    return ("%s:%s" % (key[0], key[1]) if not key[2] or key[2] == key[0]
+            else "%s:%s [in %s]" % (key[0], key[1], key[2]))
 
 
 def low_body_totals(rows):
@@ -766,10 +820,16 @@ def low_body_mask(r):
 
 
 def read_low_inventory(path):
-    """-> (levels, {(corpus, fmt): {(file, func): mask-per-level}})"""
-    levels, table = [], {}
+    """-> (levels, {(corpus, fmt): {(file, func, tu): mask-per-level}}, dropped)
+
+    Rows banked before 2026-08-13 have no tu column.  They are read with tu ""
+    and matched by low_inventory_match's legacy arm rather than dropped, so a
+    schema change does not silently retire every body the bank already knew.
+    A row that is neither width IS a finding, so it is counted and reported.
+    """
+    levels, table, dropped = [], {}, 0
     if not os.path.exists(path):
-        return levels, table
+        return levels, table, dropped
     for line in open(path, errors="replace"):
         line = line.replace("\r", "").rstrip("\n")
         if line.startswith("#levels\t"):
@@ -778,21 +838,27 @@ def read_low_inventory(path):
         if not line or line.startswith("#"):
             continue
         f = line.split("\t")
-        if len(f) != 5:
-            continue
-        table.setdefault((f[0], f[1]), {})[(f[2], f[3])] = f[4]
-    return levels, table
+        if len(f) == 5:
+            table.setdefault((f[0], f[1]), {})[(f[2], f[3], "")] = f[4]
+        elif len(f) == 6:
+            table.setdefault((f[0], f[1]), {})[(f[2], f[3], f[4])] = f[5]
+        else:
+            dropped += 1
+    return levels, table, dropped
 
 
 def write_low_inventory(path, levels, table):
     out = ["# rir-coverage lowerable body inventory; see tools/rir-coverage.py",
-           "# corpus\tformat\tfile\tfunc\tone hex ok-bitmask per level, "
+           "# corpus\tformat\tfile\tfunc\ttu\tone hex ok-bitmask per level, "
            "'-' where the body is absent",
+           "# tu is the translation unit the body was compiled in: file+func is "
+           "not unique,",
+           "# because a header body is reported once per TU that includes it",
            "#levels\t" + ",".join(levels)]
     for corpus, fmt in sorted(table):
         for key in sorted(table[(corpus, fmt)]):
-            out.append("%s\t%s\t%s\t%s\t%s"
-                       % (corpus, fmt, key[0], key[1],
+            out.append("%s\t%s\t%s\t%s\t%s\t%s"
+                       % (corpus, fmt, key[0], key[1], key[2],
                           table[(corpus, fmt)][key]))
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     open(path, "w").write("\n".join(out) + "\n")
@@ -808,7 +874,12 @@ def update_low_inventory(a, fmt, low_index):
                                             len(have), len(levels)))
         return
     path = low_inventory_path(a.bank)
-    old_levels, table = read_low_inventory(path)
+    old_levels, table, dropped = read_low_inventory(path)
+    if dropped:
+        print("rir-coverage: NOT writing %s: %d row(s) parse as neither the "
+              "5-column nor the 6-column schema, and rewriting would erase them"
+              % (path, dropped))
+        return
     if old_levels and old_levels != levels:
         print("rir-coverage: %s was banked on levels %s and is being rewritten "
               "for %s; every other corpus in it is dropped and must be re-taken"
@@ -830,15 +901,20 @@ def update_low_inventory(a, fmt, low_index):
 def low_inventory_match(want, idx):
     """Line the banked bodies up with this run's.
 
-    Exact (file, func) first; a body whose func name is unique on both sides is
-    followed across a file move rather than counted as a deletion, because a
-    header split is not a regression and must not read as one.
+    Exact (file, func, tu) first.  Then the legacy arm: a row banked before the
+    tu column existed carries tu "", and pairs with this run's row for the same
+    (file, func) when there is exactly one -- which is every body except the
+    handful the tu column was added to disambiguate.  Then a body whose func
+    name is unique on both sides is followed across a file move rather than
+    counted as a deletion, because a header split is not a regression and must
+    not read as one.
     """
     pairs, gone = [], []
     taken = set()
-    byfunc = {}
+    byfunc, byfilefunc = {}, {}
     for key in idx:
         byfunc.setdefault(key[1], []).append(key)
+        byfilefunc.setdefault((key[0], key[1]), []).append(key)
     for key in sorted(want):
         if key in idx:
             pairs.append((key, key))
@@ -846,7 +922,12 @@ def low_inventory_match(want, idx):
     for key in sorted(want):
         if key in idx:
             continue
-        cand = [k for k in byfunc.get(key[1], []) if k not in taken]
+        cand = []
+        if not key[2]:
+            cand = [k for k in byfilefunc.get((key[0], key[1]), [])
+                    if k not in taken]
+        if len(cand) != 1:
+            cand = [k for k in byfunc.get(key[1], []) if k not in taken]
         if len(cand) == 1:
             pairs.append((key, cand[0]))
             taken.add(cand[0])
@@ -1142,6 +1223,7 @@ def main():
     ap.add_argument("--bank", default=DEFAULT_BANK)
     ap.add_argument("--update-bank", action="store_true")
     ap.add_argument("--update-bank-low", action="store_true")
+    ap.add_argument("--update-bodies", action="store_true")
     ap.add_argument("--check-low-dir", action="store_true")
     ap.add_argument("--no-check", action="store_true")
     ap.add_argument("--top", type=int, default=0)
@@ -1434,7 +1516,11 @@ def main():
               "need a per-format schema first); or run the whole ratchet on a "
               "banked host (elf, pe).")
 
-    inv_levels, inv_table = read_low_inventory(low_inventory_path(a.bank))
+    inv_levels, inv_table, inv_dropped = read_low_inventory(
+        low_inventory_path(a.bank))
+    if inv_dropped:
+        print("rir-coverage: %s has %d unparsable row(s); they are NOT bodies "
+              "this run will gate" % (low_inventory_path(a.bank), inv_dropped))
     low_index = {}
     checked, skipped = [], []
     for opt in a.levels.split(","):
@@ -1616,7 +1702,8 @@ def main():
         elif not b and not a.update_bank and not a.no_check:
             bad.append("-%s: no banked coverage for corpus %s" % (opt, a.corpus))
         lb = low_floor(banked.get(opt, {}).get("lowerable"), fmt)
-        idx = low_body_index(c)
+        idx_why = []
+        idx = low_body_index(c, idx_why)
         low_index[opt] = idx
         want = {}
         if idx is not None and opt in inv_levels:
@@ -1644,12 +1731,14 @@ def main():
                          low[k] - cur_old[k]))
             if gone:
                 print("       %d banked body(ies) no longer in the corpus: %s"
-                      % (len(gone), ", ".join("%s:%s" % g for g in gone[:8])))
+                      % (len(gone), ", ".join(low_body_name(g)
+                                              for g in gone[:8])))
         if lb and not a.no_check:
-            checked.append("-%s lowerable[%s]" % (opt, fmt))
+            checked.append("-%s lowerable[%s]%s"
+                           % (opt, fmt, "" if want else " (corpus-wide only)"))
             if want:
-                lost = ["%s:%s -> %s:%s" % (b + cur) if b != cur else
-                        "%s:%s" % b
+                lost = ["%s -> %s" % (low_body_name(b), low_body_name(cur))
+                        if b != cur else low_body_name(b)
                         for b, cur in pairs
                         if want[b] & 2 and not (low_body_mask(idx[cur]) & 2)]
                 if lost:
@@ -1669,10 +1758,9 @@ def main():
                         % (opt, fmt, k, cur_old[k], lb[k], len(pairs), len(gone),
                            len(fresh), low[k]))
             else:
-                why = ("this mcc emitted no per-body census rows, or they do "
-                       "not key uniquely on (file, func) for this corpus"
-                       if idx is None else
-                       "no banked body inventory for %s/%s at -%s"
+                why = (idx_why[0] if idx is None else
+                       "no banked body inventory for %s/%s at -%s; take one "
+                       "with --update-bodies, which moves no floor"
                        % (a.corpus, fmt, opt))
                 for k in LOW_BANKED:
                     if low[k] + a.tol < lb.get(k, 0.0):
@@ -1694,6 +1782,8 @@ def main():
     if a.json:
         json.dump(result, open(a.json, "w"), indent=1, sort_keys=True)
 
+    if a.update_bodies:
+        update_low_inventory(a, fmt, low_index)
     if a.update_bank_low:
         prev = bank.get(a.corpus, {})
         for opt, layers in result.items():

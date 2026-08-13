@@ -1,5 +1,6 @@
 {
  "x86_64|full_language.c|-O1|nojit": {
+  "anchor_abort_matches_inv": true,
   "emit_amplification": 2.5549,
   "pct_faithful": 96.68,
   "pct_recorded": 100.0,
@@ -8,6 +9,7 @@
   "rir_layer_traced": true
  },
  "x86_64|selfhost|-O1|nojit": {
+  "anchor_abort_matches_inv": true,
   "emit_amplification": 2.7112,
   "pct_faithful": 97.79,
   "pct_recorded": 100.0,

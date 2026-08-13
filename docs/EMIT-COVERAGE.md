@@ -8,14 +8,19 @@ rather than a copy.
 ## How it was taken
 
 `src/mccinv.h` is an env-gated counter set (`MCC_INV=1`), wired at four sites chosen because
-the numbers are *local* there:
+the numbers are *local* there. It dumps one line at exit, `key=integer` pairs, on stderr.
+**That line is prefixed `[invcount]` since 2026-08-13, not `[inv]`** — `MCC_ARENA_DUMP`'s
+per-node `[inv] <node-id> <callee>` grammar owns `[inv]`, and three tools parse it
+positionally. A `inv.dropped=N` field appears only when the table overflowed `MCC_INV_MAX`
+(32); every consumer must treat it as fatal, because the keys it lost read as genuine zeros.
 
 | counter | site | what it means |
 | --- | --- | --- |
 | `aot.fn`, `aot.bytes` | `gen_function()` completion, `src/mccgen.c` | a body finished codegen; `ind - func_ind` is what it emitted |
 | `rir.body`, `rir.rec` | `rir_hook_body_begin()`, `src/mccrir.c` | RIR saw a body / decided to record it |
 | `ast.body`, `ast.arena`, `ast.faithful`, `ast.parser_bytes`, `ast.replay_bytes` | `ast_func_end()` at the faithfulness decision, `src/mccast.c` | the AST layer reached its verdict, and both byte lengths are in scope |
-| `jit.baked` | the embed stash, `src/mccast.c` | a body was accepted for JIT baking |
+| `jit.baked` | the embed stash, `src/mccast.c` | `mccjit_embed_stash_leaf` was CALLED — an attempt on a single-slot stash the callee may refuse and the next body overwrites. **Not an acceptance**; corrected 2026-08-13, see `jit.embed` |
+| `jit.embed`, `jit.embed_bytes` | the list append in `mccjit_embed_note`, `src/mccjit_embed.c` | a body reached `mccjit_embed_fns`, the list that is actually baked into the binary |
 
 **Two properties of the instrument, both checked rather than assumed.** It is
 **non-perturbing** — an object compiled with `MCC_INV=1` is byte-identical to one compiled
@@ -91,6 +96,17 @@ margin here: 100% of bodies go through it, ~35% of programs come out different.
 `aot.bytes` rises +3,522 at `-O0` and +3,534 at `-O1` (≈ +1.1%) with 587–589 bodies baked —
 the dispatch and blob material. Worth stating because the baking is otherwise invisible in
 these counters: `jit.baked` counts acceptances, not the bytes they cost.
+
+> **Corrected 2026-08-13 (N6.8).** `jit.baked` counts neither acceptances nor bytes. It is
+> incremented *before* `mccjit_embed_stash_leaf` is called, so it counts calls to a
+> single-slot stash — including the ones the callee refuses on a `mccjit_intent_serialize`
+> failure, and including the ones the next body immediately overwrites. The path that
+> actually bakes, `mccjit_embed_note`, was uncounted, so **every bake figure in this document
+> and in `EMIT-MAP.md` is the leaf-stash path**. `jit.embed` now counts the append to
+> `mccjit_embed_fns` and `jit.embed_bytes` the intent bytes with it. Measured the day it
+> landed: self-host `-O0 --embed-jit` is `jit.baked` **1577** against `jit.embed` **1278** of
+> 3202 verdicted, so the published **49%** bake rate is **39.91%**; `full_language.c` is 41
+> against 39 of 299, so 14% is **13.04%**. Both are banked by `ast/inv-faithful`.
 
 ## What this inventory does not establish
 

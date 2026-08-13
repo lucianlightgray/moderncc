@@ -1,0 +1,14 @@
+{
+ "x86_64|full_language.c": {
+  "baked_pct": 13.04,
+  "embedjit_gap_pt": 1.36,
+  "unfaithful_pct_O1": 3.32,
+  "unfaithful_pct_embedjit": 4.68
+ },
+ "x86_64|selfhost": {
+  "baked_pct": 39.91,
+  "embedjit_gap_pt": 1.19,
+  "unfaithful_pct_O1": 2.18,
+  "unfaithful_pct_embedjit": 3.37
+ }
+}

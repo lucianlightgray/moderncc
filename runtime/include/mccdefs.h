@@ -914,50 +914,6 @@
 	return r;
 	}
 
-	#define __MCC_OV_DECL(T, NM)			\
-	int __mcc_addo_##NM(T, T, T*);		\
-	int __mcc_subo_##NM(T, T, T*);		\
-	int __mcc_mulo_##NM(T, T, T*);
-	#define __MCC_OV_DECL_W(T, W, NM)		\
-	int __mcc_addo_##NM(W, W, T*);		\
-	int __mcc_subo_##NM(W, W, T*);		\
-	int __mcc_mulo_##NM(W, W, T*);
-	__MCC_OV_DECL_W(signed char, long long, sc)
-	__MCC_OV_DECL_W(char, long long, c)
-	__MCC_OV_DECL_W(short, long long, s)
-	__MCC_OV_DECL_W(int, long long, i)
-	__MCC_OV_DECL_W(unsigned char, unsigned long long, uc)
-	__MCC_OV_DECL_W(unsigned short, unsigned long long, us)
-	__MCC_OV_DECL_W(unsigned int, unsigned long long, u)
-	#if __SIZEOF_LONG__ == 8
-	__MCC_OV_DECL(long, l)
-	__MCC_OV_DECL(unsigned long, ul)
-	#else
-	__MCC_OV_DECL_W(long, long long, l)
-	__MCC_OV_DECL_W(unsigned long, unsigned long long, ul)
-	#endif
-	__MCC_OV_DECL(long long, ll)
-	__MCC_OV_DECL(unsigned long long, ull)
-	#ifdef __SIZEOF_INT128__
-	__MCC_OV_DECL(__mcc_int128_t, ti)
-	__MCC_OV_DECL(__mcc_uint128_t, uti)
-	#endif
-	#undef __MCC_OV_DECL
-	#undef __MCC_OV_DECL_W
-	#ifdef __SIZEOF_INT128__
-	#define __mcc_ov_disp_ti(op) __mcc_int128_t: __mcc_##op##o_ti,	\
-	__mcc_uint128_t: __mcc_##op##o_uti,
-	#else
-	#define __mcc_ov_disp_ti(op)
-	#endif
-	#define __mcc_ov_disp(op, res) _Generic((res),			\
-	__mcc_ov_disp_ti(op)						\
-	__mcc_schar_t: __mcc_##op##o_sc, __mcc_char_t: __mcc_##op##o_c,	\
-	__mcc_short_t: __mcc_##op##o_s, __mcc_int_t: __mcc_##op##o_i,	\
-	__mcc_long_t: __mcc_##op##o_l, __mcc_llong_t: __mcc_##op##o_ll,	\
-	__mcc_uchar_t: __mcc_##op##o_uc, __mcc_ushort_t: __mcc_##op##o_us, \
-	__mcc_uint_t: __mcc_##op##o_u, __mcc_ulong_t: __mcc_##op##o_ul,	\
-	__mcc_ullong_t: __mcc_##op##o_ull)
 	static __inline __mcc_ullong_t __mcc_ov_lo32(__mcc_ullong_t __v) {
 	return __v & (__mcc_ullong_t)0xffffffffu;
 	}
