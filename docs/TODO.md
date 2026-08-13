@@ -314,6 +314,31 @@
 > `diverge-both` against this host's pair. Not landed. Detail under N30 and in
 > [`docs/ARCHIVED.md`](ARCHIVED.md).
 
+> **Second x86_64-linux wave, 2026-08-13 — three board rows closed, and two of my own claims in
+> this file corrected.** **N30** is fixed: the negation itself was understood, but three attempts
+> at a constant/runtime split in `unary()` all died under `MCC_RIR_PROD=2 MCC_RIR_ABORTWHY=1`,
+> because the AST replay rebuilds a Binop's children with their *recorded* types and a parse-time
+> retype is invisible to the arena. The fix is one arm on `gen_opf`'s `TOK_NEG` case — the
+> primitive the IR layer already captures as `AST_OP_FNEG`, which `mccast.c` already special-cases
+> for `VT_FLOAT16` — so parse and replay perform one identical atomic operation. **"Restore the
+> type before the node is recorded", the route this file called the smaller of the two and where
+> to start, is refuted by experiment.** All five targets checked; **arm was silently wrong** (its
+> `gen_negf` is `0 - x`, an arithmetic op that quiets a signaling NaN) and riscv64 needed nothing.
+> 0 mismatches over 65536 patterns; `mcc-differs-from-both` **39 → 31**.
+>
+> **N35 closed in full** — all five of its reds. Three were harness (a cell that could not execute,
+> a cell missing from a gate's `else()`, a two-suite floor on a one-suite host); two needed a
+> compiler attribution and now have one. **`eee6c1f2` is exonerated for the census drop** — it never
+> touched the `wide` block. The cause is `85bf6a3d`, and the drop splits per body into **−0.1127pp
+> real loss** (five named VLA-parameter bodies) and −0.0578pp dilution. Only two figures were
+> banked; a plain `--update-bank` would have rewritten fifteen and was reverted.
+>
+> **Two corrections to what I wrote here earlier in the day.** I predicted N30's fix would make
+> `bsweep.F16.FNEG` a `diverge-both` on x86_64 — it does not: the category stays `diverge-one` and
+> changes sides, because clang-22 already did the IEEE-correct thing. And eight `diverge-both`
+> categories that fell to zero are **item 24's** `fistpl` fix, not N30's; the cell never flagged
+> them because "better" is not a ratchet violation.
+
 ## STATE OF PLAY — written for a context switch, 2026-08-11
 
 > Read this first. It is a handoff, not a board. Everything below it is detail.
@@ -329,6 +354,40 @@
 > N16 from the JIT/debug wave, N17, N18 and N19 from the emit map, and N20 struck in place.
 > Each of those rows restates the number it depends on, so this file still argues from
 > evidence; the full derivations are one file away.
+
+### x86_64-linux, end of 2026-08-13 — where this host actually stands
+
+> Written after the day's three waves, because every number in the sections below it is older
+> than the tree. **Count on the host you are standing on** is this file's own rule and this is
+> that count.
+
+**9930 cells in `cmake-def`.** The gate families, each run on a quiet machine:
+
+| family | result |
+| --- | --- |
+| `ctest -R "^smoke/"` | **12 of 12**, ~112 s — the standing rule is executable here for the first time |
+| `^exec` | **7675 of 7675** |
+| `^slice/` | **55 of 55**, including the 1693-program `cref-oracle-gcc-c-torture-execute` |
+| `jit/ ast/ rir optlevel diff3/ superopt/ fmt/ docs/ ci/` — 235 cells | **234 of 235** |
+
+**The one red is not a red.** `rir-nofb-probe-self` fails under `-j` and passes alone — measured
+four times now: fails at 20.6 s and 84.2 s contended, passes at 539.7 s and 726.9 s alone. It does
+not hit its `TIMEOUT`; it exits early with a failure, so it reads as an ordinary defect. N26's
+shape on a different cell.
+
+**Two prerequisites this host is missing, both of which silently shrink coverage rather than
+failing:**
+
+- `vendor/gentoo-stage3-{i386,arm,arm64,riscv64}-glibc` — four of the thirteen `ast/o0-baseline`
+  keys cannot be measured, so they are **one row short** until a host with the sysroots re-banks.
+  `qemu-aarch64`, `qemu-arm` and `qemu-riscv64` *are* installed, so the sysroots are the only
+  thing between this box and execution-level coverage of three cross targets.
+- `MCC_XSUITE_LLVMTS` — `jit/xoracle-coverage` skips rather than failing now, but `--min-cross 400`
+  is a two-suite floor and one suite tops out at 379.
+
+**And one that was missing and is not any more:** `vendor/gcc-c-torture-execute`, symlinked at
+`~/Projects/gcc`. Until it was, `optlevel/torture-differential` skipped silently — a red recorded
+from another tree is not a red you can watch from this one until its prerequisite exists locally.
 
 ### The suite's standing reds — whole-suite run, 2026-08-11
 
@@ -402,7 +461,94 @@ was passing by measuring nothing. The `REL` rows are identical before and after;
 offsets are normalised. Not re-verified against GNU binutils objdump, which is what the Linux
 box has and what the extractor was written for; the changes are shaped to be no-ops there.
 
-### Next steps, prioritised — re-verified against the tree 2026-08-12 (second pass)
+### Next steps, prioritised — re-ranked 2026-08-13 (third pass)
+
+> **Six of the second pass's ten entries are now closed**, including three of its top five, so the
+> ordering below is new rather than a re-check. The rule is unchanged: cheapest-with-teeth first,
+> then by shared surface, then by severity, with the host stated on every entry. The second pass is
+> kept below in full because its *refutations* are still load-bearing — several of them are the
+> reason an entry is not on this list.
+>
+> **Live board rows: N3 (items 22 and 23), N6, N7, N18, N29.** Five of thirty-five.
+
+**1. N29 — flip the smoke oracle, and take the 12 candidates with it.** *The Mac.* This is the
+largest single piece of unclaimed evidence on the board: pointing `MCC_SMOKE_GCC` at the real
+`gcc-16` turns `diverge-both` from structurally unreachable into a live verdict on that host, and
+the triage is already done — 22 references-disagree, 10 IDB NaN sign/payload, **2 real**, of which
+N30 was one and is now fixed. The fix is one `find_program` line preferring the already-resolved
+`DIFF3_GCC` over a version ladder that rots. **Do it together with re-triaging the remaining 11**,
+not before, because it turns the inner-loop gate red until they are classified.
+
+**2. N7 — re-run the injection under the GPU arm.** *Any host with a working device; this one.*
+The instrument this row needed now exists: the `[ladder-*]` panel prints `points=` on its own line,
+so both `ladder_gpu_parity.cmake` and `always_gpu_parity.sh` can see the one field N7's `r = s + 1`
+injection moves. **This is the cheapest remaining step on the board and it is the one that turns
+N7 from a story into a measurement.** Budget an unsandboxed run: `ladder_gpu_parity.cmake` gives
+each arm `TIMEOUT 120` and the device arm is 2.5–2.7× slower by design. Residual the arm still
+cannot see even then: the `n == 0` const case, the corner sweep, the observed rung, and every rung
+the GPU refuses.
+
+**3. `if-conversion-abs` ships at level 2 and its own bench says it makes code worse.** *Any host;
+an arm64 re-take is meaningful.* Unmoved from the second pass and still the strongest *measured*
+item on the board: `gain_movers −0.5668`, `gain_pct −0.0334`, `branchy −0.5700`, reproduced to the
+printed digit across two runs, plus a compile-time dividend the row never quotes (`cost_self
+0.2109`, `cost_corpus 0.0716`). It is arch-neutral — `ast_abs_env` is an AST rewrite with no
+`arch.txt` row. Two caveats: the flag moves **1 of 17 kernels**, so budget a paired n≥20 run; and
+demoting it breaks `levelbench.tsv`'s assertion that its 16 rows match `src/mccopt.h`'s 16
+`LEVEL(1..3)` rows.
+
+**4. Cluster 2 — the counter substrate, with N6.8 first.** *Any host.* Unchanged and still correctly
+ordered: `jit.baked` **counts attempts, not acceptances**, the stash is single-slot so it counts
+overwrites, and the path that actually bakes — `mccjit_embed_note` — is uncounted, so 587/1894 and
+1550/3163 are all the leaf-stash path. Two hazards before writing it: `MCC_INV_MAX` is **32** and
+`mcc_inv_add` truncates silently, and the `[inv]` prefix is taken by an incompatible grammar in
+`tools/slicerun.c` that `fmt-census.py` parses positionally.
+
+**5. The per-body lowerable ratchet is disarmed and nobody noticed.** *Any host; new 2026-08-13.*
+`rir-coverage-census` says "attribution is unavailable" whenever it fails, and the reason is that
+4550 `[rir-low-body]` rows collapse to **4538 keys** — twelve duplicates across five keys
+(`<command line>` helpers emitted once per TU, and `bitfields_ms.c` `#include`ing `bitfields.c`) —
+so `low_body_index()` returns `None` for the whole corpus. Key it on the TU as well as
+`(file, func)`, then take a `wide`/`elf` inventory with `--update-bank-low`;
+`lowerable-bodies.tsv` holds only `self`/`macho` today, so the *other* branch of that hedge would
+have fired too. **Until this lands, every future census failure needs the hand-diff this one did.**
+
+**6. Cluster 1 — `src/mccast.c`, three items, not eight.** *Any host to write; both `rf-1` cells are
+x86_64-gated.* Unchanged. Sweep rows 17 and 27 and `rf-1` genuinely share `ast_func_end`; rows 17
+and `rf-1` are the same defect at two altitudes. Do **sweep row 25 before N7**: a wrong non-LVAL
+`Ref` decode is exactly the fault class N7 proves the current differential cannot see.
+
+**7. N6 — `L2`, wire the device into `mccjit_shutdown()`.** *Any host with a device.* Its two
+preconditions are discharged; the live hazard is that the quiesce unmaps the shared address space,
+so nothing may retain a `mcc_gpu_mem()` pointer across shutdown. **N34 is the cautionary
+precedent**: the same teardown, reached in the wrong `atexit` order, segfaulted every compile that
+touched the device.
+
+**8. N18 — the `-O0 --embed-jit` faithfulness gap.** *Any host to measure; do not bank from this
+one.* The coverage half is closed by `mcctest-embedjit`; what remains is the gap itself, +1.20 and
++1.36 points on two targets and reproduced on arm64 at +1.29/+1.85. **`tools/emit-map.py`'s bank key
+now carries the arch** (2026-08-13), so the overwrite hazard this row named is gone — but the
+cheapest item in the cluster is still unclaimed: `emit-map.py` derives its dropout numbers from
+trace anchors and never reads the now-authoritative `ast.abort`/`ast.abort_post`/`ast.noreplay`
+keys, despite its docstring claiming `MCC_INV=1` supplies them.
+
+**9. N3's residue — items 23 and 22.** *x86_64-only; this host.* Item 24 is fixed. **23** is
+quality-of-implementation with no non-UB reproducer on x86-64, so it is genuinely low. **22**
+(`_Float16` evaluation format) is *not code, decide first*: mcc predefines `__FLT_EVAL_METHOD__ 0`
+and its per-operation rounding is what that macro promises, so the honest reading is that the
+"defect" is a documented choice — and the fix is written against
+`runtime/include/{mccdefs,float.h}`, not the compiler.
+
+**Not code, decide first:** sweep row 29 (the `MCC_OPT_REPLAY_FALLBACK` flip — **make the fallback
+visible under either answer**, and note one of its four legs is falsified: `nofb_miscompiles` is no
+longer empty), the coroutine task S7b, and `int128-signedness`'s dead-code deletion, which is a
+decision about exported runtime symbols rather than a sweep.
+
+**Belongs to the Mac:** N29 (above), the Metal region differential — do **MoltenVK first**, ~10
+lines and already half-built — and `slice/census`'s `arm64`/`Darwin` column, now bisected to
+`82f39935` and understood as a priced change.
+
+### Next steps, prioritised — SUPERSEDED, re-verified against the tree 2026-08-12 (second pass)
 
 > **Every entry below was checked against the code by a read-only sweep before it was ranked,
 > and the previous ranking did not survive it.** Two of its top four are gone: rank 3 was
@@ -452,8 +598,10 @@ before the sweep is believed.
 compares the *script's* list to the registry, never CMake's list to either. `_ss_rows` is now
 derived from `stratsweep.sh names` and floored at 24. +4 cells (9561 → 9565).
 
-**3. N24 is root-caused, and it is a Mach-O defect, not an arm64 one.** *Small, and only this
-host can do it.* The bind blob is *correct* — it carries `_random`'s real link-time address under
+**~~3. N24 is root-caused, and it is a Mach-O defect, not an arm64 one.~~ — DONE on the Mac,
+2026-08-12.** The prescription below was right: fix the comparison side, not the serialization
+side. *Small, and only that
+host could do it.* The bind blob is *correct* — it carries `_random`'s real link-time address under
 the key `random` — and `mccjit_bind_apply` compares that key against a symtab whose names carry
 Mach-O's leading underscore. `strcmp("_random", "random")` never matches, so no bind is applied,
 the symbol stays undefined, and the host resolver silently binds libc's `random()` instead. That
@@ -502,7 +650,8 @@ evidence is *entailed* by the first cause: the self-pair compares `E` against a 
 row is one line: **the ladder has no independent oracle.** Rank 5 is its cheapest partial answer;
 N6.10 is where "does a certification reach codegen" gets a real one.
 
-**7. N2 — the two unchecked replay slot streams.** *Small. Any host to write.* Understated
+**~~7. N2 — the two unchecked replay slot streams.~~ — CLOSED IN FULL 2026-08-13**, A1 through A7
+plus A6's `nc[]` resync. *Small. Any host to write.* Understated
 rather than overstated: the streams do not skip the check, they have **nowhere to put the data** —
 no `sz`/`al` arrays exist on either. And a defect fell out of verifying it: **`dd80e4fa`'s fix is
 bypassed entirely on the C2 path**, because `ast_alloc_loc` runs `rir_loc_replay` before
@@ -528,7 +677,8 @@ the `[inv]` prefix is already taken by an incompatible grammar in `tools/sliceru
 `fmt-census.py` would raise on. **The real N18↔N19 coupling is the bank key**, which has no host
 or arch term — banking emit-map cells here would overwrite the x86_64 numbers.
 
-**10. `slice/census`.** *Investigation. The Mac.* Unchanged there: a bisect over 102 `src/`
+**~~10. `slice/census`.~~ — DONE.** Bisected on the Mac to `82f39935`, a deliberate priced change
+rather than drift. *Investigation. The Mac.* It was a bisect over 102 `src/`
 commits on the `arm64`/`Darwin` column. **New datum from x86_64-linux, 2026-08-13: the
 `x86_64`/`Linux` column is green in 5.70 s** — and it had been *unmeasurable* here, not
 passing, because the cell hung indefinitely in the Vulkan device probe until N33's `DISPLAY`
@@ -728,6 +878,10 @@ emit-coverage instrument, which adds counters rather than cells (`jit/selfhost-o
 `jit/gdb-debuggable` are the two new ones) — counted 2026-08-11 with
 `ctest -N`, not added up. It was 9538 at `747709bc` and 9545 before `smoke/strat-dark`.
 
+> **2026-08-13, end of day: 9930 on x86_64-linux.** It was 9561 at `52e7e850` and 9565 after this
+> file's first wave of the day; the rest arrived with the Windows/wine tiers from the other host.
+> The count is host- and prerequisite-dependent — see *where this host actually stands*, above.
+>
 > **2026-08-13, x86_64-linux: 9561 at `52e7e850`, 9565 after this wave.** The +4 is
 > `stratsweep/iso-{sra,sroa}` and their `isofull` skip stubs, which appeared the moment
 > `_ss_rows` stopped being a hand-written mirror. **The count is host- and prerequisite-dependent
@@ -1069,7 +1223,7 @@ measurement tool reports success over an empty or truncated subject:
 >
 > **Ranking as of 2026-08-13, after the second pass: N2, N3, N6, N7, N18, N19, N24, N29 and N30
 > — nine of thirty-four.** N33 and N34 closed the day they were filed, and N3 lost item 24, so
-> the live rows are **N3 (items 23 and 22 only), N6, N7, N18, N24, N29 and N35** — seven of
+> the live rows are **N3 (items 23 and 22 only), N6, N7, N18 and N29** — five of
 > thirty-five. **N2 closed in full on 2026-08-13** when A6's `nc[]` resync landed, and **N19**
 > closed the same day. **N35 is three reds this file had no row for**, all
 > pre-existing at `c7df5209` and all found by running the 526-cell
@@ -1883,10 +2037,11 @@ different cell**: whether it passes is a function of what else is running. Anyth
 about `rir-nofb-probe-self` must state what shared the machine, and the honest way to check it is
 alone.
 
-**N35. Five reds arrived from the arm64 host's last two waves, all verified pre-existing.** Three
-at `c7df5209` and two more at `5825d894`, which landed mid-wave. **Three of the five are now
-closed**; the two that remain are the ones that need a compiler attribution rather than a harness
-fix. Found by running the whole `jit/ ast/ rir optlevel diff3/ superopt/
+**~~N35. Five reds arrived from the arm64 host's last two waves, all verified pre-existing.~~ —
+ALL FIVE CLOSED 2026-08-13.** Three
+at `c7df5209` and two more at `5825d894`, which landed mid-wave. Three were harness — a cell that
+could not execute, a cell missing from a gate's `else()`, and a two-suite floor on a one-suite
+host — and two needed a compiler attribution, which they now have. Found by running the whole `jit/ ast/ rir optlevel diff3/ superopt/
 fmt/ docs/ ci/` family — 526 cells — on x86_64-linux, and confirmed by building `c7df5209` into a
 scratch tree and re-running there.
 
