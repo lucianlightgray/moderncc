@@ -29096,3 +29096,31 @@ this host at all: it needed the `vendor/gcc-c-torture-execute` symlink *and* the
 twelve smoke cells and the 55 slice cells both queue on one GPU; run together, five smoke cells
 hit their 900 s `TIMEOUT` and report exactly like the N34 hang they no longer are. Any timing or
 pass/fail claim about the device arm must say what else was running.
+
+### `rir/rec-miss` — a cell that could never run, and the reason it matters
+
+`5825d894` added `cmake/rir_recmiss.cmake` with
+
+```cmake
+execute_process(COMMAND "${MCC}" … -o "${_work}/${_nm}.miss" …
+                RESULT_VARIABLE _rc2 OUTPUT_QUIET ERROR_QUIET
+                ENVIRONMENT MCC_RIR_REC_FORCE_MISS=1)
+```
+
+`execute_process` has no `ENVIRONMENT` option — that belongs to
+`set_tests_properties` — so the cell died on its first statement with
+`execute_process given unknown argument "ENVIRONMENT"`, at both of its two injection sites.
+Rewritten as `${CMAKE_COMMAND} -E env MCC_RIR_REC_FORCE_MISS=1 …`.
+
+**The cell is a good one and that is why this is a fix and not a revert.** It runs six subjects,
+carries both floors this file keeps asking for — fewer than four subjects, or an injection that
+moves no object, are each a `FATAL_ERROR` — and now reports *"6 subject(s) agree with -O0 while
+every record take is forced to miss; the injection moved 3 object(s), so the frontier fallback is
+the code under test and not a no-op"*.
+
+**The transferable part is how it was found.** It landed on the arm64 host mid-wave and was
+pushed; nothing there ran it, because the same wave's `slice`/device family was the thing being
+worked on. It surfaced here only because the rebase was followed by a re-run of the whole
+`ast/ rir` family rather than by a targeted check of the files that changed. A cell that cannot
+execute reports as a plain red, indistinguishable at a glance from the two genuine ratchet reds
+sitting next to it in the same output.
