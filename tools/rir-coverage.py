@@ -1192,6 +1192,9 @@ def main():
                   "MCC_REPLAY_IR", "MCC_TEST_OPT"):
             env0.pop(k, None)
         gdir = os.path.join(ROOT, "tests", "rir", "gap")
+        pairs_run = 0
+        pairs_expected = 0
+        covered = []
         with tempfile.TemporaryDirectory() as td:
             for fn in sorted(os.listdir(gdir)):
                 if not fn.endswith(".c"):
@@ -1203,6 +1206,7 @@ def main():
                 for opt in a.levels.split(","):
                     if only and opt not in only:
                         continue
+                    pairs_expected += 1
                     tsv = os.path.join(td, "g.tsv")
                     if os.path.exists(tsv):
                         os.remove(tsv)
@@ -1216,22 +1220,40 @@ def main():
                         got.add("used" if r[0] == "used" else
                                 r[4] if r[0] == "fallback" else "skip:" + r[3])
                     ok = want in got
+                    pairs_run += 1
+                    if ok:
+                        covered.append(want)
                     print("%-14s -%-3s %-16s %s"
                           % (fn, opt, want, "ok" if ok else
                              "MISSING, got " + ",".join(sorted(got))))
                     if not ok:
                         bad.append("%s -%s: class %s no longer reproduces (got %s)"
                                    % (fn, opt, want, ",".join(sorted(got))))
+        if not pairs_run:
+            bad.append("check-gap-dir ran no fixture/level pair at all; an empty "
+                       "tests/rir/gap or a level filter that excludes every "
+                       "--levels entry makes this mode pass by measuring nothing")
+        elif pairs_run != pairs_expected:
+            bad.append("check-gap-dir ran %d fixture/level pair(s), expected %d "
+                       "from the directory listing crossed with --levels"
+                       % (pairs_run, pairs_expected))
+        else:
+            print("gap floor: %d fixture/level pair(s) run, %d class(es) of %d "
+                  "covered" % (pairs_run, len(set(covered)), len(UNF) + len(WHY)))
         for m in bad:
             print("FAIL " + m)
         return 1 if bad else 0
     if a.check_low_dir:
         ldir = os.path.join(ROOT, "tests", "rir", "low")
+        low_run = 0
+        low_expected = 0
+        low_seen = set()
         for fn in sorted(os.listdir(ldir)):
             if not fn.endswith(".c"):
                 continue
             want = fn[:-2]
             for opt in a.levels.split(","):
+                low_expected += 1
                 c = census(mcc, [], [os.path.join(ldir, fn)], opt,
                            keep_rows=False)
                 if c["failed"]:
@@ -1248,9 +1270,24 @@ def main():
                     print("%-12s -%-3s %-8s %s   [blockers %s]"
                           % (fn, opt, want, "ok" if ok else "MISSING",
                              ",".join(got) or "-"))
+                low_run += 1
+                if want != "ok":
+                    low_seen.add(want)
                 if not ok:
                     bad.append("%s -%s: lowerable class %s no longer "
                                "reproduces" % (fn, opt, want))
+        if not low_run:
+            bad.append("check-low-dir ran no fixture/level pair at all; an empty "
+                       "tests/rir/low makes this mode pass by measuring nothing")
+        elif low_run != low_expected:
+            bad.append("check-low-dir ran %d fixture/level pair(s), expected %d"
+                       % (low_run, low_expected))
+        else:
+            missing = sorted(set(LOWCLS) - low_seen)
+            print("low floor: %d fixture/level pair(s) run, %d blocker class(es) "
+                  "of %d covered%s"
+                  % (low_run, len(low_seen), len(LOWCLS),
+                     "; no fixture for " + ",".join(missing) if missing else ""))
         for m in bad:
             print("FAIL " + m)
         return 1 if bad else 0
