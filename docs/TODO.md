@@ -1472,9 +1472,33 @@ divergence arm's diverge-both list (12 → 10). It is backed out only because of
    needs the negation folded, not emitted.
 
 **So the finished shape is a constant/runtime split**: fold the sign bit in the `SValue` for a
-compile-time constant (`gen_negf_const_ref` already does the rodata case and merely excludes
-`VT_FLOAT16`), and do the `^ 0x8000` retype for the runtime case. Both halves must land together
-— fixing only the constant path makes `.fold` and `.run` disagree.
+compile-time constant, and do the `^ 0x8000` retype for the runtime case. Both halves must land
+together — fixing only the constant path makes `.fold` and `.run` disagree.
+
+**Attempt 3 built exactly that and still fails one configuration — 2026-08-13.** The split is
+written and the representation facts behind it are confirmed: `_Float16` constants are stored in
+`cv->i` as the 16-bit pattern (`write16le(d, (uint16_t)cv->i)`), and `MCC_RC_TYPE` returns
+`MCC_RC_INT` for `VT_FLOAT16`, so both halves are expressible.
+
+```
+if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST)
+        vtop->c.i ^= 0x8000;
+else    /* retype to unsigned short, gen_op('^') 0x8000, retype back */
+```
+
+With it: the exhaustive sweep is **0 mismatches**, `tests/smoke/subject.c` compiles clean both
+with and without `-DSM_REF_BUILD=1`, and the load-time-constant error is gone. **But
+`smoke/native` and `smoke/strats-known-positive` still fail**, with
+`fcases.h:570` / `:803 invalid operand types for binary operation` — under a compile
+configuration `smokerun` uses that a direct `-O1 -Itests/smoke` build does **not** reproduce.
+Reverted; smoke is 12/12 again.
+
+**The next step is therefore not the fix, it is isolating smokerun's compile.** Read the exact
+argv it uses for its `compile-dump` arm (the log lands at `<work>/compile-dump.log`) and
+reproduce the error standalone first. `fcases.h:570` and `:803` are both function *closing*
+lines, so the reported line is a boundary rather than the offending expression — the real
+operand is somewhere in the `SMF_ARM` macro expansion above it, most likely a context where the
+negated value is neither a plain `VT_CONST` nor a loadable rvalue.
 
 **Nothing else blocks the oracle flip.** With this fixed the divergence arm is 10 diverge-both,
 all of them the implementation-defined complex NaN selection reduced above, and 22
