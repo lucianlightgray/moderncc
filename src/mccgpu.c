@@ -771,8 +771,9 @@ static int mcc_gpu_mem_backend(void **base, unsigned long *size) {
 
 static unsigned long mcc_gpu_host_import_align_backend(const char **why) {
 	if (why)
-		*why = "the Metal arm has no shared window to import into "
-					 "(mcc_gpu_mem_backend returns 0 there)";
+		*why = "the Metal arm cannot import a host pointer: the encoder binds "
+					 "buffers 0 and 1 only and both MSL kernels declare two, so there is "
+					 "no binding for an imported region to arrive on";
 	return 0;
 }
 

@@ -65,8 +65,9 @@ void rir_prod_span(int first, int end, int body_len, int new_len);
 extern const char *rir_unfaithful_why;
 
 void rir_snap_types(SValue *sv, int n);
-void rir_loc_record(int loc_in);
-int rir_loc_replay(int *loc_out);
+void rir_loc_record(int loc_in, int size, int align);
+int rir_loc_replay(int *loc_out, int size, int align);
+extern int rir_locrec_min;
 void rir_slot_record(int loc_in);
 int rir_slot_replay(int *loc_out);
 void rir_tvar_record(int loc_in, int r2);
@@ -294,8 +295,8 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_prod_reemit(n) ((void)0)
 #define rir_prod_span(a, b, c, d) ((void)0)
 #define rir_snap_types(sv, n) ((void)0)
-#define rir_loc_record(l) ((void)0)
-#define rir_loc_replay(p) 0
+#define rir_loc_record(l, s, a) ((void)0)
+#define rir_loc_replay(p, s, a) 0
 #define rir_slot_record(l) ((void)0)
 #define rir_slot_replay(p) 0
 #define rir_tvar_record(l, r) ((void)0)

@@ -1044,16 +1044,23 @@ bit-rotted: all five anchors still resolve against the current tree.
 
 **~~N26. `flagsweep-exec` self-contends under `-j`, so which of its 140 cells pass is a function of machine speed.~~ — CLOSED 2026-08-12, and the contention diagnosis was wrong.** A cell times out *alone*, so `-j` cannot be the cause. `atomic_counter` run 24× on an idle machine is **bimodal** — 18 runs at 0.45–2.83 s and 6 (25%) at 51–121 s — and each cell drew from it 12 times. The mechanism is that `PIN` is `taskset`, which macOS lacks, so the pin that exists to stop exactly this was a silent no-op on Darwin. Fixed with `taskpolicy -b`; `stratsweep.sh` had the identical gap. **No `PROCESSORS` property was added.** Validated 119/119 green at `-j4`, zero timeouts, slowest cell 91.5 s. Write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
-**N27. Metal's `mcc_gpu_mem()` succeeds and returns a pointer no kernel can address.** New
-2026-08-12. `mcc_gpu_mem_backend` on the Metal arm allocates and returns a real shared window via
-`mtl_bind_mem`, but the encoder binds **only** buffer 0 and buffer 1, and both MSL kernel
-signatures declare exactly two buffers. So a caller gets a valid pointer, writes into it, and no
-lane ever reads it. Adjacent and now false: `mcc_gpu_host_import_align_backend` returns the reason
-string *"the Metal arm has no shared window to import into (`mcc_gpu_mem_backend` returns 0
-there)"*, which stopped being true when that function started returning 1. **This is worse than
-the missing region cell** — a silent wrong answer rather than an absent one. **Fail closed
-(~20 lines: return 0 on Metal until binding 2 exists, and correct the reason string) before
-anyone builds M4 on top of it.**
+**~~N27. Metal's `mcc_gpu_mem()` succeeds and returns a pointer no kernel can address.~~ —
+OVERSTATED AS FILED, corrected 2026-08-12.** The three facts are right: Metal's
+`mcc_gpu_mem_backend` returns a real shared window, the encoder binds **only** buffers 0 and 1,
+and both MSL kernel signatures declare exactly two. **The prescription was wrong.** Failing the
+function closed was tried and it turns `slice/mem` red, because that suite asserts the capability
+exists — and its own comment says the omission is deliberate: *"Deliberately NOT gated on
+`backend_has_regions()`: this suite tests the host mapping only ... No kernel addresses it, so it
+is live on a backend whose emitter has no region layer yet."* So `mcc_gpu_mem`'s contract is *is
+there a host-visible shared window*, not *can a kernel read it*, and returning 1 on Metal is
+correct under it. Reverted.
+
+**What was genuinely false is the neighbouring reason string, and that is fixed.**
+`mcc_gpu_host_import_align_backend` claimed *"the Metal arm has no shared window to import into
+(`mcc_gpu_mem_backend` returns 0 there)"* — untrue since that function returns 1. It now names the
+real obstruction: there is no binding for an imported region to arrive on. **The lesson is one
+this file keeps relearning** — a test's stated rationale is evidence about intent, and a "silent
+wrong answer" reading that contradicts it is usually the reading that is wrong.
 
 **~~N28. `slice/cref-oracle` adjudicates clang with clang on this host.~~ — WRONG AS FILED,
 corrected 2026-08-12 the same day, and the correction is much larger than the row.**
@@ -1447,8 +1454,8 @@ N2's record widening is its prerequisite**, not the other way round.
 | --- | --- | --- | --- | --- |
 | ~~A1~~ | ~~`ast_locrec_skip` takes `(size, align)`~~ **DONE 2026-08-12** (`8a92ee01`) | small | — | any |
 | ~~A2~~ | ~~hoist the record reset out of `rir_try_active`~~ **DONE 2026-08-12**. The hazard was held shut by three separate gates rather than by the reset | 2 lines | — | any |
-| A3 | widen `rir_locrec` with `sz`/`al` + `rir_locrec_min`; resync **then** fit, never the reverse | small | — | any |
-| A4 | the C2-bypass fix — **reordering is wrong**, see below | small | A3 | any (fires at every `-O1`+ here) |
+| ~~A3~~ | ~~widen `rir_locrec` with `sz`/`al` + `rir_locrec_min`~~ **DONE 2026-08-12**, resync then fit | small | — | any |
+| ~~A4~~ | ~~the C2-bypass fix~~ **DONE 2026-08-12.** The replay now feeds the fit check and falls back to the frontier allocator below `rir_locrec_min`, not a bare bump. Validated on the **whole exec corpus: 840 pass / 0 fail** over 280 programs at `-O1`/`-O2`/`-O3`, plus ast+smoke 141/141 | small | A3 | any |
 | A5 | widen `rir_slotrec`; `rir_hook_slot_replay/_record` take `(size, align)` | small | — | arm64 site is `#if !defined(MCC_TARGET_MACHO)` — **Linux** |
 | A6 | widen `rir_tvrec` **and** add its missing `nc[]` resync — **land these as two commits**, the fit skip is byte-neutral and the `nc` resync is not | small | A5 shape | any |
 | A7 | the actual `MccRec`/`mcc_rec_take` unification — de-duplication only, all defects already fixed by A1–A6 | medium | A3/A5/A6 | any |

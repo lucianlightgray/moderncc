@@ -2036,6 +2036,8 @@ uint64_t ast_pinned_regs;
 int ast_func_has_asm;
 int ast_func_has_labeladdr;
 
+static int ast_alloc_frontier_loc(int size, int align, int floor);
+
 static int ast_locrec_take(int size, int align) { MCC_TRACE("enter\n");
 	int k = ast_locrec_i;
 	while (k < ast_locrec_n &&
@@ -2050,12 +2052,16 @@ static int ast_locrec_take(int size, int align) { MCC_TRACE("enter\n");
 int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 	if (rir_c2_active) { MCC_TRACE("br\n");
 		int rl;
-		if (rir_loc_replay(&rl)) { MCC_TRACE("br\n");
+		if (rir_loc_replay(&rl, size, align)) { MCC_TRACE("br\n");
 			loc = rl;
 			if (loc < ast_loc_low)
 				{ MCC_TRACE("br\n"); ast_loc_low = loc; }
 			return loc;
 		}
+		loc = ast_alloc_frontier_loc(size, align, rir_locrec_min);
+		if (loc < ast_loc_low)
+			{ MCC_TRACE("br\n"); ast_loc_low = loc; }
+		return loc;
 	}
 	if (ast_replaying && !ir_cap_replaying) { MCC_TRACE("br\n");
 		if (ast_locrec_take(size, align)) { MCC_TRACE("br\n");
@@ -2081,7 +2087,7 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 	if (loc < ast_loc_low)
 		{ MCC_TRACE("br\n"); ast_loc_low = loc; }
 	if (rir_active && !ast_replaying && !ir_cap_replaying)
-		{ MCC_TRACE("br\n"); rir_loc_record(loc); }
+		{ MCC_TRACE("br\n"); rir_loc_record(loc, size, align); }
 	if (ast_active && !ast_replaying) { MCC_TRACE("br\n");
 		if (ast_locrec_n == ast_locrec_cap) { MCC_TRACE("br\n");
 			ast_locrec_cap = ast_locrec_cap ? ast_locrec_cap * 2 : 16;
@@ -2159,14 +2165,18 @@ int ast_ltemp_overlaps(int lo, int sz) { MCC_TRACE("enter\n");
 	return 0;
 }
 
+static int ast_alloc_frontier_loc(int size, int align, int floor) { MCC_TRACE("enter\n");
+	if (ast_temp_frontier > 0)
+		{ MCC_TRACE("br\n"); ast_temp_frontier = floor < loc ? floor : loc; }
+	ast_temp_frontier = (ast_temp_frontier - size) & -align;
+	if (ast_temp_frontier < ast_loc_low)
+		{ MCC_TRACE("br\n"); ast_loc_low = ast_temp_frontier; }
+	return ast_temp_frontier;
+}
+
 int ast_alloc_temp_loc(int size, int align) { MCC_TRACE("enter\n");
 	if (ast_replaying && !ir_cap_replaying) { MCC_TRACE("br\n");
-		if (ast_temp_frontier > 0)
-			{ MCC_TRACE("br\n"); ast_temp_frontier = ast_locrec_min < loc ? ast_locrec_min : loc; }
-		ast_temp_frontier = (ast_temp_frontier - size) & -align;
-		if (ast_temp_frontier < ast_loc_low)
-			{ MCC_TRACE("br\n"); ast_loc_low = ast_temp_frontier; }
-		return ast_temp_frontier;
+		return ast_alloc_frontier_loc(size, align, ast_locrec_min);
 	}
 	loc = (loc - size) & -align;
 	return loc;

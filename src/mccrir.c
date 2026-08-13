@@ -91,24 +91,37 @@ int rir_active;
 static int rir_locrec[RIR_LOCREC_MAX];
 static int rir_locrec_pos[RIR_LOCREC_MAX];
 static int rir_locrec_nc[RIR_LOCREC_MAX];
+static int rir_locrec_sz[RIR_LOCREC_MAX];
+static int rir_locrec_al[RIR_LOCREC_MAX];
 static int rir_locrec_n, rir_locrec_i;
+int rir_locrec_min;
 
-void rir_loc_record(int loc_in) { MCC_TRACE("enter\n");
+void rir_loc_record(int loc_in, int size, int align) { MCC_TRACE("enter\n");
+	if (loc_in < rir_locrec_min)
+		{ MCC_TRACE("br\n"); rir_locrec_min = loc_in; }
 	if (rir_locrec_n >= RIR_LOCREC_MAX)
 		return;
 	rir_locrec_pos[rir_locrec_n] = ind;
 	rir_locrec_nc[rir_locrec_n] = nocode_wanted;
+	rir_locrec_sz[rir_locrec_n] = size;
+	rir_locrec_al[rir_locrec_n] = align;
 	rir_locrec[rir_locrec_n++] = loc_in;
 }
 
-int rir_loc_replay(int *loc_out) { MCC_TRACE("enter\n");
+int rir_loc_replay(int *loc_out, int size, int align) { MCC_TRACE("enter\n");
+	int k;
 	while (rir_locrec_i + 1 < rir_locrec_n && rir_locrec_pos[rir_locrec_i + 1] <= ind &&
 	       ((rir_locrec_nc[rir_locrec_i] & RIR_NOEVAL_MASK) ||
 	        rir_locrec_pos[rir_locrec_i + 1] > rir_locrec_pos[rir_locrec_i]))
 		rir_locrec_i++;
-	if (rir_locrec_i >= rir_locrec_n)
+	k = rir_locrec_i;
+	while (k < rir_locrec_n &&
+	       (rir_locrec_sz[k] < size || rir_locrec_al[k] < align))
+		k++;
+	if (k >= rir_locrec_n)
 		return 0;
-	*loc_out = rir_locrec[rir_locrec_i++];
+	rir_locrec_i = k + 1;
+	*loc_out = rir_locrec[k];
 	return 1;
 }
 
@@ -829,6 +842,7 @@ static Sym *rir_ptr_sym(const CType *t) { MCC_TRACE("enter\n");
 void rir_reset(void) { MCC_TRACE("enter\n");
 	rir_locrec_n = 0;
 	rir_locrec_i = 0;
+	rir_locrec_min = 0;
 	rir_slotrec_n = 0;
 	rir_slotrec_i = 0;
 	rir_tvrec_n = 0;
