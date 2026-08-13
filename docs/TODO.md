@@ -4393,6 +4393,26 @@ same four-way shape `tools/i386fastcall-docker.sh` already uses for the i386 ELF
 This is the largest genuine gap and the one with the clearest user-visible payoff.
 
 **Stage W4 — per-function `UNWIND_INFO`, and unwind for i386/arm. ~500–800 lines.**
+**Measured 2026-08-13 on the native Windows box, and the premise needs correcting:
+x86_64 stack unwinding is already correct — the shared blob is not a live bug.** A
+`RtlCaptureStackBackTrace` walk driven from the bottom of a `main → frame_small → frame_mid →
+frame_big → deepest` chain reaches **every** mcc frame — including `frame_big`'s 16 KB
+`__chkstk` frame — at `-O0`/`-O2`/`-O3` (banked as `pe/unwind-backtrace`,
+`tests/cross/pe-unwind-backtrace.{c,sh}`, native WIN32 + mingw). The reason: mcc's prolog is
+uniform (`push rbp; mov rbp,rsp; …`), it saves **only** rbp, and the shared blob's two codes
+(`UWOP_PUSH_NONVOL rbp`@1, `UWOP_SET_FPREG`@4 with FrameReg=rbp/offset 0) describe that exactly;
+`SET_FPREG` recovers RSP from RBP regardless of the per-function `sub rsp,N` / `__chkstk` size, so
+the missing `ALLOC` code and the wrong `SizeOfProlog=4` (real prolog is 11+ bytes) **do not affect
+the unwind result** — even `SizeOfProlog` 4-vs-11 processes the same codes for any PC≥4. So the
+real W4 work is **metadata fidelity + a W6 prerequisite**, not a stack-walk correctness fix:
+truthful per-function `SizeOfProlog`/`ALLOC` (which genuinely differ between the small and
+`__chkstk` prologs, so cannot be one shared blob) and the `UNW_FLAG_EHANDLER` + handler/scope slots
+that `__try/__except` needs. **It should be built together with W6, not standalone** — done alone it
+changes no observable behaviour and risks regressing a currently-correct emitter. The `__chkstk`
+prolog's exact byte layout must be characterised first (its `.text` label appears offset from the
+`push rbp` in a raw objdump). i386 has no unwind at all and arm-win32 no `.pdata` — those remain,
+i386 still partly blocked on W3. Original plan text follows.
+
 Replace the single shared 8-byte blob at `src/objfmt/mccpe.c` with real prologue
 opcodes derived from the frame the epilog already knows, so a Windows debugger and
 `RtlUnwind` can walk mcc frames truthfully. Extend `.pdata` to arm-win32 (which today has

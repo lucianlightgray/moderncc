@@ -8223,13 +8223,25 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(pe/coff-obj-diff PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                 LABELS "pe" TIMEOUT 300)
+            add_test(NAME pe/unwind-backtrace
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-unwind-backtrace.sh"
+                        "$<TARGET_FILE:mcc>" "${_MCC_MINGW_X86_64_GCC}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-unwind-backtrace.c"
+                        "${CMAKE_BINARY_DIR}/pe-unwind-work")
+            set_tests_properties(pe/unwind-backtrace PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                LABELS "pe" TIMEOUT 300)
         else()
             mcc_skip_test(pe/coff-obj-diff
                 "COFF object writer differential (needs vendored mingw-w64 x86_64 gcc)")
+            mcc_skip_test(pe/unwind-backtrace
+                "native RtlVirtualUnwind conformance (needs vendored mingw-w64 x86_64 gcc)")
         endif()
     else()
         mcc_skip_test(pe/coff-obj-diff
             "COFF object writer differential (native x86_64 WIN32 host with mingw only)")
+        mcc_skip_test(pe/unwind-backtrace
+            "native RtlVirtualUnwind conformance (native x86_64 WIN32 host with mingw only)")
     endif()
 
     set(_macho_struct_native "")
