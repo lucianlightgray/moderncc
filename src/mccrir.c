@@ -163,47 +163,66 @@ int rir_hook_fconst_reuse(int cplx, const unsigned char *key) { MCC_TRACE("enter
 static int rir_slotrec[RIR_LOCREC_MAX];
 static int rir_slotrec_pos[RIR_LOCREC_MAX];
 static int rir_slotrec_nc[RIR_LOCREC_MAX];
+static int rir_slotrec_sz[RIR_LOCREC_MAX], rir_slotrec_al[RIR_LOCREC_MAX];
 static int rir_slotrec_n, rir_slotrec_i;
 
-void rir_slot_record(int loc_in) { MCC_TRACE("enter\n");
+void rir_slot_record(int loc_in, int size, int align) { MCC_TRACE("enter\n");
 	if (rir_slotrec_n >= RIR_LOCREC_MAX)
 		return;
 	rir_slotrec_pos[rir_slotrec_n] = ind;
 	rir_slotrec_nc[rir_slotrec_n] = nocode_wanted;
+	rir_slotrec_sz[rir_slotrec_n] = size;
+	rir_slotrec_al[rir_slotrec_n] = align;
 	rir_slotrec[rir_slotrec_n++] = loc_in;
 }
 
-int rir_slot_replay(int *loc_out) { MCC_TRACE("enter\n");
+int rir_slot_replay(int *loc_out, int size, int align) { MCC_TRACE("enter\n");
 	while (rir_slotrec_i + 1 < rir_slotrec_n &&
 				 rir_slotrec_pos[rir_slotrec_i + 1] <= ind &&
 				 ((rir_slotrec_nc[rir_slotrec_i] & RIR_NOEVAL_MASK) ||
 					rir_slotrec_pos[rir_slotrec_i + 1] > rir_slotrec_pos[rir_slotrec_i]))
 		rir_slotrec_i++;
-	if (rir_slotrec_i >= rir_slotrec_n)
-		return 0;
-	*loc_out = rir_slotrec[rir_slotrec_i++];
+	{
+		int k = rir_slotrec_i;
+		while (k < rir_slotrec_n &&
+		       (rir_slotrec_sz[k] < size || rir_slotrec_al[k] < align))
+			k++;
+		if (k >= rir_slotrec_n)
+			return 0;
+		rir_slotrec_i = k + 1;
+		*loc_out = rir_slotrec[k];
+	}
 	return 1;
 }
 
 static int rir_tvrec[RIR_LOCREC_MAX], rir_tvrec_r2[RIR_LOCREC_MAX];
 static int rir_tvrec_pos[RIR_LOCREC_MAX];
+static int rir_tvrec_sz[RIR_LOCREC_MAX], rir_tvrec_al[RIR_LOCREC_MAX];
 static int rir_tvrec_n, rir_tvrec_i;
 
-void rir_tvar_record(int loc_in, int r2) { MCC_TRACE("enter\n");
+void rir_tvar_record(int loc_in, int r2, int size, int align) { MCC_TRACE("enter\n");
 	if (rir_tvrec_n >= RIR_LOCREC_MAX)
 		return;
 	rir_tvrec_pos[rir_tvrec_n] = ind;
 	rir_tvrec_r2[rir_tvrec_n] = r2;
+	rir_tvrec_sz[rir_tvrec_n] = size;
+	rir_tvrec_al[rir_tvrec_n] = align;
 	rir_tvrec[rir_tvrec_n++] = loc_in;
 }
 
-int rir_tvar_replay(int *loc_out, int *r2_out) { MCC_TRACE("enter\n");
+int rir_tvar_replay(int *loc_out, int *r2_out, int size, int align) { MCC_TRACE("enter\n");
+	int k;
 	while (rir_tvrec_i + 1 < rir_tvrec_n && rir_tvrec_pos[rir_tvrec_i + 1] <= ind)
 		rir_tvrec_i++;
-	if (rir_tvrec_i >= rir_tvrec_n)
+	k = rir_tvrec_i;
+	while (k < rir_tvrec_n &&
+	       (rir_tvrec_sz[k] < size || rir_tvrec_al[k] < align))
+		k++;
+	if (k >= rir_tvrec_n)
 		return 0;
-	*r2_out = rir_tvrec_r2[rir_tvrec_i];
-	*loc_out = rir_tvrec[rir_tvrec_i++];
+	rir_tvrec_i = k + 1;
+	*r2_out = rir_tvrec_r2[k];
+	*loc_out = rir_tvrec[k];
 	return 1;
 }
 int rir_c2_active;
@@ -634,18 +653,18 @@ int rir_capture_live(void) { MCC_TRACE("enter\n");
 	return rir_active && !ast_replaying && !ir_cap_replaying;
 }
 
-int rir_hook_slot_replay(void) { MCC_TRACE("enter\n");
+int rir_hook_slot_replay(int size, int align) { MCC_TRACE("enter\n");
 	int rl;
-	if (rir_c2_active && rir_slot_replay(&rl)) { MCC_TRACE("br\n");
+	if (rir_c2_active && rir_slot_replay(&rl, size, align)) { MCC_TRACE("br\n");
 		loc = rl;
 		return 1;
 	}
 	return 0;
 }
 
-void rir_hook_slot_record(void) { MCC_TRACE("enter\n");
+void rir_hook_slot_record(int size, int align) { MCC_TRACE("enter\n");
 	if (rir_capture_live())
-		rir_slot_record(loc);
+		rir_slot_record(loc, size, align);
 }
 
 void rir_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");

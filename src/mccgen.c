@@ -2108,7 +2108,7 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 
 	{
 		int rl, rr;
-		if (rir_c2_active && rir_tvar_replay(&rl, &rr)) { MCC_TRACE("br\n");
+		if (rir_c2_active && rir_tvar_replay(&rl, &rr, size, align)) { MCC_TRACE("br\n");
 			*r2 = rr;
 			return rl;
 		}
@@ -2128,7 +2128,7 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 		ret_tmp:
 			*r2 = (VT_CONST + 1) + i;
 			if (rir_capture_live())
-				{ MCC_TRACE("br\n"); rir_tvar_record(temp_var->location, *r2); }
+				{ MCC_TRACE("br\n"); rir_tvar_record(temp_var->location, *r2, temp_var->size, temp_var->align); }
 			return temp_var->location;
 		}
 	}
@@ -2155,7 +2155,7 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 	}
 	*r2 = VT_CONST;
 	if (rir_capture_live())
-		{ MCC_TRACE("br\n"); rir_tvar_record(tmploc, *r2); }
+		{ MCC_TRACE("br\n"); rir_tvar_record(tmploc, *r2, size, align); }
 	return tmploc;
 }
 
@@ -9606,10 +9606,10 @@ static void gen_atomic_rmw(int op, int ret_new) { MCC_TRACE("enter\n");
 }
 
 static int alloc_local_slot(int size, int align) { MCC_TRACE("enter\n");
-	if (rir_hook_slot_replay())
+	if (rir_hook_slot_replay(size, align))
 		{ MCC_TRACE("br\n"); return loc; }
 	loc = (loc - size) & -align;
-	rir_hook_slot_record();
+	rir_hook_slot_record(size, align);
 	return loc;
 }
 

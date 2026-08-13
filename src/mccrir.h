@@ -68,10 +68,10 @@ void rir_snap_types(SValue *sv, int n);
 void rir_loc_record(int loc_in, int size, int align);
 int rir_loc_replay(int *loc_out, int size, int align);
 extern int rir_locrec_min;
-void rir_slot_record(int loc_in);
-int rir_slot_replay(int *loc_out);
-void rir_tvar_record(int loc_in, int r2);
-int rir_tvar_replay(int *loc_out, int *r2_out);
+void rir_slot_record(int loc_in, int size, int align);
+int rir_slot_replay(int *loc_out, int size, int align);
+void rir_tvar_record(int loc_in, int r2, int size, int align);
+int rir_tvar_replay(int *loc_out, int *r2_out, int size, int align);
 void rir_configure(void);
 void rir_reset(void);
 void rir_verify(void);
@@ -173,8 +173,8 @@ void rir_hook_cleanup_call_begin(void);
 void rir_hook_cleanup_call_end(void);
 int rir_dbg_on(void);
 int rir_capture_live(void);
-int rir_hook_slot_replay(void);
-void rir_hook_slot_record(void);
+int rir_hook_slot_replay(int size, int align);
+void rir_hook_slot_record(int size, int align);
 void rir_hook_fconst_record(int c, int cplx, const unsigned char *key);
 int rir_hook_fconst_reuse(int cplx, const unsigned char *key);
 void rir_hook_ternary_begin(int c, int g);
@@ -297,10 +297,10 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_snap_types(sv, n) ((void)0)
 #define rir_loc_record(l, s, a) ((void)0)
 #define rir_loc_replay(p, s, a) 0
-#define rir_slot_record(l) ((void)0)
-#define rir_slot_replay(p) 0
-#define rir_tvar_record(l, r) ((void)0)
-#define rir_tvar_replay(p, q) 0
+#define rir_slot_record(l, s, a) ((void)0)
+#define rir_slot_replay(p, s, a) 0
+#define rir_tvar_record(l, r, s, a) ((void)0)
+#define rir_tvar_replay(p, q, s, a) 0
 #define rir_hook_if_begin() ((void)0)
 #define rir_hook_if_gvtst_done() ((void)0)
 #define rir_hook_if_else() ((void)0)
@@ -355,8 +355,8 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_hook_cleanup_call_end() ((void)0)
 #define rir_dbg_on() 0
 #define rir_capture_live() 0
-#define rir_hook_slot_replay() 0
-#define rir_hook_slot_record() ((void)0)
+#define rir_hook_slot_replay(s, a) 0
+#define rir_hook_slot_record(s, a) ((void)0)
 #define rir_hook_fconst_record(c, cplx, key) ((void)0)
 #define rir_hook_fconst_reuse(cplx, key) (-1)
 #define rir_configure() ((void)0)
