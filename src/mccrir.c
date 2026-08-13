@@ -72,6 +72,8 @@ static long rir_tot_low_huge[RIR_LOW_NLEVEL];
 static const char *const rir_low_class_name[RIR_LOW_NCLASS] = {
 		"ok", "asm", "reg", "opaque", "call", "type", "frame", "global"};
 static int rir_prod_gate;
+static int rir_prod_quiet;
+static int rir_prod_note_force;
 static const char *rir_prod_out;
 static long rir_tot_prod_used, rir_tot_prod_fb, rir_tot_prod_skip;
 static long rir_tot_bytes_used, rir_tot_bytes_fb, rir_tot_bytes_skip;
@@ -5759,10 +5761,33 @@ void rir_prod_fn_end(long bytes) { MCC_TRACE("enter\n");
 	rir_prod_fn_notes = 0;
 }
 
+static void rir_prod_notice(void) { MCC_TRACE("enter\n");
+	int i, shown = 0;
+	if (!rir_tot_prod_fb || rir_prod_quiet)
+		return;
+	if (!rir_prod_note_force && !host_stderr_isatty())
+		return;
+	fprintf(stderr,
+					"mcc: note: %ld function bod%s (%ld bytes) kept an unoptimized replay "
+					"because the optimized one did not reproduce the parser's bytes",
+					rir_tot_prod_fb, rir_tot_prod_fb == 1 ? "y" : "ies",
+					rir_tot_bytes_fb);
+	for (i = 0; i < RIR_PROD_NUNF; i++)
+		if (rir_unfaithful_n[i]) { MCC_TRACE("br\n");
+			fprintf(stderr, "%s%s=%ld", shown++ ? " " : "; ",
+							rir_unfaithful_name[i], rir_unfaithful_n[i]);
+		}
+	fprintf(stderr, "; MCC_RIR_PROD=2 lists them, MCC_RIR_QUIET=1 silences this\n");
+}
+
 static void rir_prod_report(void) { MCC_TRACE("enter\n");
 	int i;
 	long body = rir_tot_bytes_used + rir_tot_bytes_fb + rir_tot_bytes_skip;
 	FILE *f = stderr;
+	if (rir_prod_gate < 2 && !rir_prod_low_env) { MCC_TRACE("br\n");
+		rir_prod_notice();
+		return;
+	}
 	if (rir_prod_out && rir_prod_out[0]) { MCC_TRACE("br\n");
 		f = fopen(rir_prod_out, "a");
 		if (!f)
@@ -6492,10 +6517,11 @@ void rir_configure(void) { MCC_TRACE("enter\n");
 	rir_stamp_env = ast_env_int("MCC_RIR_STAMP", 0);
 	rir_prod_out = getenv("MCC_RIR_PROD_OUT");
 	rir_out = getenv("MCC_REPLAY_IR_OUT");
+	rir_prod_quiet = ast_env_int("MCC_RIR_QUIET", 0);
+	rir_prod_note_force = ast_env_int("MCC_RIR_NOTE", 0);
 	if (rir_env)
 		atexit(rir_report);
-	if (rir_prod_gate >= 2 || rir_prod_low_env)
-		atexit(rir_prod_report);
+	atexit(rir_prod_report);
 }
 
 #endif

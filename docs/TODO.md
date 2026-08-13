@@ -755,9 +755,58 @@ upside at all.** *(c) The figure itself has moved*: re-measured, bodies 2.18% (t
 agree) but bytes **7.65%, not 10.2%**, and the average discarded body is 1,764 B against a kept
 476 B, not "2585 against 470". And leg 2 is worse than "one entry is banked": `nofb_miscompiles` is
 a **known-bad allowlist**, so `O0: src/mcc.c::cleanup_symbols` is a *known miscompile of the
-compiler's own source under the flip*. **The visibility half is confirmed cheap** — `rir_prod_gate
+compiler's own source under the flip*. ~~**The visibility half is confirmed cheap** — `rir_prod_gate
 < 2` returns *after* all the counter accumulation, so "make it visible" is a print, not a
-computation. The only decision left is the shape of the notice.
+computation. The only decision left is the shape of the notice.~~
+
+**DONE 2026-08-13. The gate is kept, and the notice is TTY-gated — which was not the shape anyone
+would have picked from the armchair, and the reason is worth more than the change.**
+`rir_prod_report` is now registered with `atexit` unconditionally; below `MCC_RIR_PROD=2` it prints
+one line and returns. The line names the count, the bytes and the per-reason breakdown, and says
+how to list the bodies and how to silence itself:
+
+```
+mcc: note: 11 function bodies (1223 bytes) kept an unoptimized replay because the optimized
+one did not reproduce the parser's bytes; len=11; MCC_RIR_PROD=2 lists them, MCC_RIR_QUIET=1
+silences this
+```
+
+**The first shape was default-on and it was wrong, which the suite said within one run.** The
+measurement taken to justify it — **2 of 308 `tests/exec` TUs emit any fallback at `-O2`** — is
+true and answered the wrong question: the exec runner **merges compiler stderr into the output it
+compares**, and the suite compiles every TU across many levels and replay configurations, so
+**150 of 8023 cells went red**, all `exec-replay*`, all on the diff and not on a value. A per-TU
+frequency does not predict a per-cell one.
+
+**So the notice fires when `host_stderr_isatty()`, or when `MCC_RIR_NOTE=1` forces it.** That is
+not a workaround for the harness — it is the right split. A human at a terminal is the audience
+that can act on "this body got no optimization"; a harness with a pipe already has the aggregate
+ratchets (`discarded_bytes` and `nofb_miscompiles` in `tests/rir/coverage-bank.json`, plus
+`rir-nofb-probe-self` per body), and `MCC_RIR_NOTE=1` is there for a CI run that wants it anyway.
+`host_stderr_isatty()` was already in the tree and already used for exactly this kind of decision,
+so the convention is not new. `^exec` back to **8023 of 8023**.
+
+**`fmt/census-bank` moved and is re-banked with the attribution, which is the whole value of that
+cell.** `mccrir.c` **64 → 67** literal format sites and `fprintf` **419 → 422** / **423 → 426**;
+every one of the three is in `rir_prod_notice` and nothing else in `src/` gained a call. This is the
+cell behaving exactly as its own write-up predicts — it moves on any commit that adds a format call
+anywhere in `src/`, so it is red on a merge more often than on a mistake, and the attribution step
+is the point.
+
+**Two reds this change did NOT cause, both verified by reverting `src/mccrir.c`, rebuilding and
+re-running.** `smoke/divergence` is N29's new gcc oracle surfacing three unbanked `diverge-masked`
+categories. **`rir/drop-ratchet` is newly red on x86_64-linux and is not a ratchet failure at all**
+— it cannot compile `src/mcc.c`, dying on `mcctok.h`'s `#include "i386-tok.h"`, so the cell's own
+compile command is missing `src/arch/i386` from its include path and any histogram it read would
+describe a compile that did not happen. It **passed in a 509-cell run earlier the same day**, so it
+is recent and it is in the harness, not the compiler. Filed here rather than fixed because it is a
+third thing and this row is not it.
+
+**One correction to this row's framing while here.** "In a default build a fallback is silent" was
+true of a *compile*, but the divergence was never unwatched: the aggregate is banked and ratcheted
+and the per-body miscompile probe exists. What was missing is only the interactive signal, which is
+what this adds — so the `union_cast` story ("wrong for as long as it existed and nobody knew") is
+an argument for the notice, not evidence that nothing watches the gate today.
 
 **Item 22 — settled by witness; mcc is the conformant side.** `2.25f16*255.0f16+0.5f16` gives mcc
 `607d`, gcc-15 and clang `607c`, and gcc-15 `-fexcess-precision=16` `607d`. Decisively:
@@ -1170,9 +1219,13 @@ gcc-15 and clang `607c` with all four advertising `__FLT_EVAL_METHOD__ 0`, so mc
 side; `tests/smoke/bails.txt` item 1 banks all seven rows with the reasoning, and both headers
 already state the promise the compiler keeps. Full argument in the N3 row.
 
-**Not code, decide first:** sweep row 29 (the `MCC_OPT_REPLAY_FALLBACK` flip — **make the fallback
+**Not code, decide first:** ~~sweep row 29 (the `MCC_OPT_REPLAY_FALLBACK` flip — **make the fallback
 visible under either answer**, and note one of its four legs is falsified: `nofb_miscompiles` is no
-longer empty) and the coroutine task S7b. `int128-signedness` **leaves this list 2026-08-13 by
+longer empty)~~ **— DONE 2026-08-13: the gate is kept and the notice is TTY-gated. It turned out to
+be code after all, and the deciding was the cheap half.** The shape the armchair picks
+(default-on stderr) took **150 of 8023 `exec` cells red** because the exec runner merges compiler
+stderr into what it diffs — and the frequency measurement that justified it (2 of 308 TUs) was true
+and irrelevant. See the row for the full argument. **and** the coroutine task S7b. `int128-signedness` **leaves this list 2026-08-13 by
 being finished, not by being re-scoped.** It left once already that morning, when the 44 header
 lines turned out to be declarations rather than exports; the `runtime/lib/` half that remained
 *was* a decision about exported runtime symbols, and it was taken the same day — 20 exported
