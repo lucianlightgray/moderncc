@@ -849,6 +849,96 @@ static int so_coff_fn_sizes(FILE *f, const unsigned char *h, struct so_fn *out,
 	return n;
 }
 
+static int so_macho_fn_sizes(FILE *f, const unsigned char *h, struct so_fn *out,
+														 int max) { MCC_TRACE("enter\n");
+	uint32_t ncmds, i, symoff = 0, nsyms = 0, stroff = 0;
+	uint64_t text_addr = 0, text_size = 0;
+	int text_sect = 0, sect_seen = 0, n = 0, a, b;
+	long lc = 32;
+
+	memcpy(&ncmds, h + 16, 4);
+	for (i = 0; i < ncmds; i++) { MCC_TRACE("br\n");
+		unsigned char c[24];
+		uint32_t cmd, cmdsize, nsects, k;
+		if (fseek(f, lc, SEEK_SET) != 0 || fread(c, 1, 24, f) < 24)
+			{ MCC_TRACE("br\n"); return -1; }
+		memcpy(&cmd, c, 4);
+		memcpy(&cmdsize, c + 4, 4);
+		if (cmd == 0x2) { MCC_TRACE("br\n");
+			memcpy(&symoff, c + 8, 4);
+			memcpy(&nsyms, c + 12, 4);
+			memcpy(&stroff, c + 16, 4);
+		} else if (cmd == 0x19) { MCC_TRACE("br\n");
+			unsigned char sc[80];
+			if (fseek(f, lc + 64, SEEK_SET) != 0 || fread(sc, 1, 4, f) < 4)
+				{ MCC_TRACE("br\n"); return -1; }
+			memcpy(&nsects, sc, 4);
+			for (k = 0; k < nsects; k++) { MCC_TRACE("br\n");
+				if (fseek(f, lc + 72 + (long)k * 80, SEEK_SET) != 0 ||
+						fread(sc, 1, 80, f) < 80)
+					{ MCC_TRACE("br\n"); return -1; }
+				sect_seen++;
+				if (!memcmp(sc, "__text", 7)) { MCC_TRACE("br\n");
+					memcpy(&text_addr, sc + 32, 8);
+					memcpy(&text_size, sc + 40, 8);
+					text_sect = sect_seen;
+				}
+			}
+		}
+		if (cmdsize == 0)
+			{ MCC_TRACE("br\n"); return -1; }
+		lc += (long)cmdsize;
+	}
+	if (!symoff || !nsyms || !text_sect)
+		{ MCC_TRACE("br\n"); return -1; }
+
+	for (i = 0; i < nsyms && n < max; i++) { MCC_TRACE("br\n");
+		unsigned char sym[16];
+		uint32_t strx;
+		uint64_t val;
+		char nm[80];
+		int k = 0, c;
+		if (fseek(f, (long)symoff + (long)i * 16, SEEK_SET) != 0 ||
+				fread(sym, 1, 16, f) < 16)
+			{ MCC_TRACE("br\n"); break; }
+		memcpy(&strx, sym, 4);
+		memcpy(&val, sym + 8, 8);
+		if ((sym[4] & 0x0e) != 0x0e || sym[5] != text_sect || !strx ||
+				val < text_addr)
+			{ MCC_TRACE("br\n"); continue; }
+		if (fseek(f, (long)stroff + (long)strx, SEEK_SET) != 0)
+			{ MCC_TRACE("br\n"); continue; }
+		while (k < 79 && (c = fgetc(f)) > 0)
+			{ MCC_TRACE("br\n"); nm[k++] = (char)c; }
+		nm[k] = 0;
+		if (!nm[0])
+			{ MCC_TRACE("br\n"); continue; }
+		snprintf(out[n].name, sizeof out[n].name, "%s", nm[0] == '_' ? nm + 1 : nm);
+		out[n].size = (long)val;
+		out[n].cfg = 0;
+		n++;
+	}
+
+	for (a = 0; a < n; a++)
+		for (b = a + 1; b < n; b++)
+			if (out[b].size < out[a].size) { MCC_TRACE("br\n");
+				struct so_fn t = out[a];
+				out[a] = out[b];
+				out[b] = t;
+			}
+	for (a = 0; a < n; a++) { MCC_TRACE("br\n");
+		long end = a + 1 < n ? out[a + 1].size : (long)(text_addr + text_size);
+		out[a].size = end - out[a].size;
+	}
+	for (a = 0, b = 0; a < n; a++)
+		if (out[a].size > 0) { MCC_TRACE("br\n");
+			if (b != a)
+				{ MCC_TRACE("br\n"); out[b] = out[a]; }
+			b++;
+		}
+	return b;
+}
+
 static int so_fn_sizes(const char *path, struct so_fn *out, int max) { MCC_TRACE("enter\n");
 	FILE *f = host_fopen(path, "rb");
 	unsigned char h[64], sh[64];
@@ -862,6 +952,11 @@ static int so_fn_sizes(const char *path, struct so_fn *out, int max) { MCC_TRACE
 	if (fread(h, 1, 64, f) < 64) { MCC_TRACE("br\n");
 		fclose(f);
 		return -1;
+	}
+	if (h[0] == 0xcf && h[1] == 0xfa && h[2] == 0xed && h[3] == 0xfe) { MCC_TRACE("br\n");
+		n = so_macho_fn_sizes(f, h, out, max);
+		fclose(f);
+		return n;
 	}
 	if (!(h[0] == 0x7f && h[1] == 'E' && h[2] == 'L' && h[3] == 'F' &&
 				h[4] == 2)) { MCC_TRACE("br\n");
