@@ -2521,6 +2521,12 @@ ST_FUNC void gen_opf(int op) { MCC_TRACE("enter\n");
 	uint32_t x, a, b, dbl;
 	int bt = vtop[0].type.t & VT_BTYPE;
 
+	if (op == TOK_NEG && bt == VT_FLOAT16) { MCC_TRACE("br\n");
+		int nr = intr(gv(MCC_RC_INT));
+		arm64_movimm(30, 0x8000);
+		o(0x4a000000 | 30 << 16 | nr << 5 | nr);
+		return;
+	}
 	if (op == TOK_NEG) { MCC_TRACE("br\n");
 		if (bt == VT_LDOUBLE) { MCC_TRACE("br\n");
 			vpush_helper_func(TOK___negtf2);

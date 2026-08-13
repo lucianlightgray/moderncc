@@ -1123,6 +1123,13 @@ ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
 ST_FUNC void gen_opf(int op) {
 	int a, ft, fc, swapped, r;
 
+	if (op == TOK_NEG && (vtop->type.t & VT_BTYPE) == VT_FLOAT16) { MCC_TRACE("br\n");
+		int nr = gv(MCC_RC_INT);
+		o(0x81);
+		o(0xf0 + nr);
+		gen_le32(0x8000);
+		return;
+	}
 	if (op == TOK_NEG) { MCC_TRACE("br\n");
 		gv(MCC_RC_FLOAT);
 		o(0xe0d9);

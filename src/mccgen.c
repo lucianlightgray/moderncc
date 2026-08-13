@@ -3711,8 +3711,28 @@ static void gen_opic(int op) { MCC_TRACE("enter\n");
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_I386 || defined MCC_TARGET_ARM64
 #define gen_negf gen_opf
 #elif defined MCC_TARGET_ARM
+static void gen_negf_bits(void);
 void gen_negf(int op) { MCC_TRACE("enter\n");
+	if ((vtop->type.t & VT_BTYPE) == VT_FLOAT16)
+		{ MCC_TRACE("br\n"); gen_negf_bits(); return; }
 	vpushi(0), vswap(), gen_op('-');
+}
+static void gen_negf_bits(void) { MCC_TRACE("enter\n");
+	int align, size, bt;
+	size = type_size(&vtop->type, &align);
+	bt = vtop->type.t & VT_BTYPE;
+	if (nocode_wanted)
+		{ MCC_TRACE("br\n"); goto gv2; }
+	save_reg(gv(MCC_RC_TYPE(bt)));
+	vdup();
+	incr_bf_adr(size - 1);
+	vdup();
+	vpushi(0x80);
+	gen_op('^');
+	vstore();
+	vpop();
+gv2:
+	gv(MCC_RC_TYPE(bt));
 }
 #else
 void gen_negf(int op) { MCC_TRACE("enter\n");
@@ -3757,6 +3777,10 @@ static void gen_opif(int op) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); ice_float_op = 1; }
 	if (c1 && c2 && !CONST_WANTED && stdc_fenv_access(mcc_state) && (op == '+' || op == '-' || op == '*' || op == '/'))
 		{ MCC_TRACE("br\n"); goto general_case; }
+	if (op == TOK_NEG && bt == VT_FLOAT16 && c1) { MCC_TRACE("br\n");
+		v1->c.i ^= 0x8000;
+		return;
+	}
 	if (c1 && c2) { MCC_TRACE("br\n");
 		if (bt == VT_FLOAT) { MCC_TRACE("br\n");
 			f1 = v1->c.f;
@@ -13040,10 +13064,7 @@ tok_next:
 		if (is_complex_type(&vtop->type)) { MCC_TRACE("br\n");
 			gen_complex_neg();
 		} else if (is_float16(vtop->type.t)) { MCC_TRACE("br\n");
-			gen_cast_s(VT_FLOAT);
-			if (!gen_negf_const_ref())
-				{ MCC_TRACE("br\n"); gen_opif(TOK_NEG); }
-			gen_cast_s(VT_FLOAT16);
+			gen_opif(TOK_NEG);
 		} else if (is_float(vtop->type.t)) { MCC_TRACE("br\n");
 			if (!gen_negf_const_ref())
 				{ MCC_TRACE("br\n"); gen_opif(TOK_NEG); }

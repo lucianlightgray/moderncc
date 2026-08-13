@@ -2738,6 +2738,13 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 	int bt = vtop->type.t & VT_BTYPE;
 	int float_type = bt == VT_LDOUBLE ? MCC_RC_ST0 : MCC_RC_FLOAT;
 
+	if (op == TOK_NEG && bt == VT_FLOAT16) { MCC_TRACE("br\n");
+		int nr = gv(MCC_RC_INT);
+		orex(0, nr, 0, 0x81);
+		o(0xf0 + REG_VALUE(nr));
+		gen_le32(0x8000);
+		return;
+	}
 	if (op == TOK_NEG) { MCC_TRACE("br\n");
 		gv(float_type);
 		if (float_type == MCC_RC_ST0) { MCC_TRACE("br\n");

@@ -68,6 +68,20 @@
 #    classifier that no longer exists and made smoke/divergence red on
 #    x86_64-linux -- the standing inner-loop gate, red on the host the rule
 #    was written for.
+# 15. Eight diverge-both categories fell to 0 on 2026-08-13 and are gone from this
+#    file: bsweep.F80.FSELMIX{B,L,R}.{fold,run} and xsweep.F80.SI.{fold,run}. They
+#    are the `long double` -> 32-bit-signed conversions that item 24 fixed by
+#    emitting the x87 fistpl sequence instead of rounding through double first.
+#    mcc now agrees with both references on all eight; before, it agreed with
+#    neither. The cell did not fail on them at the time because "better" is not a
+#    ratchet violation, which is why they are only being recorded now.
+# 16. bsweep.F16.FNEG stays diverge-one across N30's negation fix, but it has
+#    changed sides: mcc used to match gcc-15 and differ from clang-22, and now
+#    matches clang-22 and differs from gcc-15. The fix makes negation a sign-bit
+#    flip, which IEEE 754 5.5.1 requires and which clang -O2 already did; gcc-15
+#    still lowers through a promote-to-float round trip that quiets signaling
+#    NaNs. Same category, opposite reference -- worth knowing before anyone reads
+#    the row as unchanged.
 
 O0 replay-fallback:len 2
 O1 replay-fallback:len 2
@@ -97,14 +111,8 @@ O9 dev-slice-refused:no-static-type 515
 O9 dev-slice-refused:unsupported-op 1
 div diverge-both:bsweep.F16.FMULADD.fold 1
 div diverge-both:bsweep.F16.FMULADD.run 1
-div diverge-both:bsweep.F80.FSELMIXB.fold 1
-div diverge-both:bsweep.F80.FSELMIXB.run 1
-div diverge-both:bsweep.F80.FSELMIXL.fold 1
-div diverge-both:bsweep.F80.FSELMIXL.run 1
 div diverge-both:bsweep.F80.FSELMIXN.fold 1
 div diverge-both:bsweep.F80.FSELMIXN.run 1
-div diverge-both:bsweep.F80.FSELMIXR.fold 1
-div diverge-both:bsweep.F80.FSELMIXR.run 1
 div diverge-both:csweep.C32.CDIV.fold 1
 div diverge-both:csweep.C32.CDIV.run 1
 div diverge-both:csweep.C32.CDIVSEL.fold 1
@@ -128,8 +136,6 @@ div diverge-both:xsweep.F32.UI.fold 1
 div diverge-both:xsweep.F32.UI.run 1
 div diverge-both:xsweep.F64.UI.fold 1
 div diverge-both:xsweep.F64.UI.run 1
-div diverge-both:xsweep.F80.SI.fold 1
-div diverge-both:xsweep.F80.SI.run 1
 div diverge-both:xsweep.F80.SLL.fold 1
 div diverge-both:xsweep.F80.SLL.run 1
 div diverge-both:xsweep.F80.UI.fold 1
@@ -345,14 +351,24 @@ div diverge-one:mul.si.min.m1.run 1
 div diverge-one:neg.si.min.run 1
 div diverge-one:sub.si.min1.run 1
 div refs-disagree:bsweep.F16.FSCALE.fold 1
+div refs-disagree:bsweep.F16.FSCALE.fold 1
+div refs-disagree:bsweep.F16.FSCALE.run 1
 div refs-disagree:bsweep.F16.FSCALE.run 1
 div refs-disagree:csweep.C32.CMULADD.fold 1
+div refs-disagree:csweep.C32.CMULADD.fold 1
+div refs-disagree:csweep.C32.CMULADD.run 1
 div refs-disagree:csweep.C32.CMULADD.run 1
 div refs-disagree:csweep.C64.CMULADD.fold 1
+div refs-disagree:csweep.C64.CMULADD.fold 1
+div refs-disagree:csweep.C64.CMULADD.run 1
 div refs-disagree:csweep.C64.CMULADD.run 1
 div refs-disagree:shl.si.w.fold 1
+div refs-disagree:shl.si.w.fold 1
+div refs-disagree:shl.si.wp1.fold 1
 div refs-disagree:shl.si.wp1.fold 1
 div refs-disagree:shl.sll.w.fold 1
+div refs-disagree:shl.sll.w.fold 1
+div refs-disagree:shl.sll.wp1.fold 1
 div refs-disagree:shl.sll.wp1.fold 1
 wrapv wrapv-inert:digest-identical-under-fno-wrapv 1
 wrapv wrapv-inert:digest-identical-under-fwrapv 1
