@@ -1069,7 +1069,7 @@ measurement tool reports success over an empty or truncated subject:
 >
 > **Ranking as of 2026-08-13, after the second pass: N2, N3, N6, N7, N18, N19, N24, N29 and N30
 > — nine of thirty-four.** N33 and N34 closed the day they were filed, and N3 lost item 24, so
-> the live rows are **N3 (items 23 and 22 only), N6, N7, N18, N24, N29, N30 and N35** — eight of
+> the live rows are **N3 (items 23 and 22 only), N6, N7, N18, N24, N29 and N35** — seven of
 > thirty-five. **N2 closed in full on 2026-08-13** when A6's `nc[]` resync landed, and **N19**
 > closed the same day. **N35 is three reds this file had no row for**, all
 > pre-existing at `c7df5209` and all found by running the 526-cell
@@ -1487,6 +1487,59 @@ land with the 12 real ones.
 **The 12 candidates:** `bsweep.F16.FNEG.{fold,run}`, `csweep.C32.CMULADD.{fold,run}`,
 `csweep.C64.{CMUL,CMULADD}.{fold,run}`, `csweep.C80.{CMUL,CMULADD}.{fold,run}`.
 
+**~~N30. `_Float16` negation quiets signaling NaNs.~~ — CLOSED 2026-08-13 on x86_64-linux, and
+the arena problem attempt 3 hit is closed with it.** The finished fix is not a constant/runtime
+split in `unary()` at all: it is **one line removed and one arm added to a primitive that was
+already captured**.
+
+`unary()`'s `'-'` case now calls plain `gen_opif(TOK_NEG)` for `_Float16` — the promote/negate/
+demote round trip is gone — and the f16 sign flip lives in `gen_opf`'s `TOK_NEG` arm, which is the
+*captured* primitive (`IR_CAP_W1(gen_opf, IR_OP_OPF)`). That is what makes it arena-invisible:
+the RIR turns `IR_OP_OPF(TOK_NEG)` into an `AST_OP_FNEG` node, `mccast.c` **already** special-cases
+`AST_OP_FNEG` on `VT_FLOAT16`, and the replay re-invokes the same primitive. Parse and replay do
+one identical atomic thing.
+
+**Why attempt 3 could not work, established by experiment rather than argument.** The AST replay
+of a Binop is `ast_replay_value(child0); ast_replay_value(child1); gen_op(bop)` — the children are
+rebuilt with their **recorded** types. Attempt 3 retyped `vtop` to `unsigned short` at parse time,
+which the arena never saw, so replay reconstructed an f16 operand and handed it to `gen_op('^')`.
+Removing the type *restore* changes nothing — tested, still 2 errors — so "restore the type before
+the node is recorded", the smaller of the two routes this file proposed, is **refuted**; only the
+atomic route works. `ir_cap_depth` suppresses nested capture, which is why the arm has to sit
+inside `gen_opf` and not in `gen_opif` or `unary()`.
+
+**A four-line reproducer, replacing the whole-smoke-subject one:**
+
+```c
+long double f(long double a){ volatile _Float16 va = (_Float16)(a); return (long double)(-(_Float16)(va)); }
+```
+under `MCC_RIR_PROD=2 MCC_RIR_ABORTWHY=1`. `volatile` is the ingredient — it keeps the operand an
+lvalue the arena records.
+
+**All five targets, and only one of them needed thought.** `gen_negf` is `#define`d to the backend
+`gen_opf` on x86_64/i386/arm64, so each got an f16 arm: x86_64 and i386 emit a single
+`xor $0x8000, %eax`, arm64 `mov w30, #0x8000; eor w0, w0, w30`. **riscv64 needed nothing** — its
+generic `gen_negf` already flips the top bit of the high byte in memory, which is correct for a
+2-byte half. **arm was the one that was wrong**: its `gen_negf` is `0 - x`, an *arithmetic*
+operation that quiets a signaling NaN, so it now routes f16 through the same generic bit flip.
+Verified by relocation census on all five cross compilers: `extendhf`/`truncsf` helper calls went
+2 → 0 on arm and are 0 everywhere else, and the emitted instruction was read out of the object on
+each target.
+
+**Results.** Exhaustive 65536-pattern sweep: **0 mismatches**. The `MCC_RIR_PROD=2
+MCC_RIR_ABORTWHY=1` configuration that defeated attempt 3: **0 errors**. smoke **12/12**, exec
+**7675/7675**. The divergence arm improves: `differing` 259 → 251 and **`mcc-differs-from-both`
+39 → 31**. The `-O0` baseline moves exactly one object on each of the eight measurable target
+keys — `tests/exec/types/float16.c`, the only `_Float16` subject — re-banked from the cross build.
+
+**Eight of those improvements are not N30's and the bank now says so.** `bsweep.F80.FSELMIX{B,L,R}`
+and `xsweep.F80.SI` fell to zero because of **item 24's `fistpl` fix** earlier in this session,
+which the divergence cell never flagged because "better" is not a ratchet violation. Recorded as
+note 15 in `bails.txt`. N30's own category, `bsweep.F16.FNEG`, does **not** change class — see the
+correction below.
+
+**As originally filed:**
+
 **N30. `_Float16` negation quiets signaling NaNs. Root-caused 2026-08-12; a real defect, and the
 first one the second oracle paid for.** Sweeping all 65536 `_Float16` bit patterns through `-v`:
 gcc-16 and clang produce identical results, mcc differs on **1022** of them. 1022 is exactly the
@@ -1630,15 +1683,17 @@ splits them again: gcc-15 folds `-(_Float16)0x7c01` to `fc01` while its runtime 
 **IEEE 754 §5.5.1 is unambiguous — negate is non-arithmetic and must not quiet — so `fc01` is
 right and every `fe01` is a softfp-lowering non-conformance**, mcc's included.
 
-**The decision the fix forces, stated so it is not taken by accident.** Landing the sign flip
-makes mcc IEEE-correct and agree with arm64's two references and with clang `-O2`; it also makes
-mcc differ from **both** x86_64 references at the levels where they both quiet, which this file's
-own standing rule reads as a `diverge-both` and therefore as a defect. It is the same trap N23
-and the 22-of-34 reclassification record, one level further out: **a `diverge-both` verdict is
-only as good as the reference pair's own agreement, and here the pair does not even agree with
-itself across `-O`.** Not landed. What is owed first is a third verdict class keyed on
-*references-disagree-across-level*, or an explicit pin recording that mcc follows IEEE and not
-the x86_64 softfp lowering.
+**~~The decision the fix forces, stated so it is not taken by accident.~~ — I predicted this
+would make `F16.FNEG` a `diverge-both` on x86_64, and it does not. Measured 2026-08-13 after
+landing:** the category stays `diverge-one` and simply **changes sides** —
+`mcc=7dd4c179… gcc=e2a741a1… clang=7dd4c179…`, where before it was `mcc=e2a741a1… gcc=e2a741a1…
+clang=7dd4c179…`. mcc used to agree with gcc-15 and now agrees with clang-22. So there was no
+decision to force: the harness's clang reference already did the IEEE-correct thing, and the fix
+moves mcc onto it. The reasoning that produced the wrong prediction is still worth keeping,
+because the *shape* of it recurs — **a `diverge-both` verdict is only as good as the reference
+pair's own agreement, and this pair does not agree with itself across `-O`** — it just did not
+bind here. Banked as note 16 in `bails.txt` so nobody reads the unchanged category as an unchanged
+answer.
 
 **The 10 complex categories — partly triaged 2026-08-12, and still open.**
 
@@ -1782,6 +1837,43 @@ finish inside `ladder_gpu_parity.cmake`'s `TIMEOUT 120`, which is exactly what w
 completed, so this is a regression or a configuration difference, not a permanent property of the
 host — **do not read that write-up as evidence the arm works today.**
 
+**The `reg` fixture swap, and two corrections to C5's caveat.** The caveat asked for a non-VLA
+reduction and asserted one existed in the corpus, citing `bounds/bound_signal.c` (`reg=3`),
+`bounds/bound_setjmp.c` (`reg=2`) and `vla/basic.c` (`reg=2`). **Two of those three are VLAs
+too** — `bound_signal.c` has `int arr[n]` and `bound_setjmp.c`'s `stack()` has two `int a[n_x]` —
+so the evidence offered for the claim was not evidence. The claim was nonetheless right: a sweep
+of all 841 `tests/**/*.c` at `-O1` finds **62 files still emitting `reg`**, among them
+`tests/exec/statements/switch.c`, `goto.c`, `ternary_op.c` and `codegen/cmp_invert.c`.
+
+**The replacement is a `switch` with at least one `case`:**
+
+```c
+int f(int x) { switch (x) { case 1: return 1; } return 0; }
+```
+
+`reg` at `-O0`, `-O1`, `-O2` and `-O3`, with an empty blocker set otherwise. The mechanism is
+`mccgen.c`'s switch epilogue: the control value is stashed in `sw->sv` *before* the body is
+parsed and re-pushed and `gv`'d after it, so every `gcase` comparison has an operand that is
+already a machine register when the arena records it, and `ast_low_node` classifies
+`v < VT_CONST` as `AST_LOW_REG`. That is precisely the escape the caveat kept missing with
+`a<b`, `a<b ? a : b` and friends — those materialise *into* the arena; the switch value is
+materialised *out of band*. Measured negatives, all `blockers=-`: `default:` alone, an empty
+`switch(x){}`, `if`/`goto`, `(a<b)&&(b<a)`, `x?y:0`, a `while` loop. Robust across 1 case, 8
+dense cases (the `gcase_jumptable` path) and a `long` control value; `gcase` is in
+target-independent `mccgen.c` and the class comes from `VT_VALMASK`, so it should hold on
+PE/cross.
+
+**A second finding, now unpinned by anything.** The `reg` the old fixture still showed at `-O0`
+was a harness artefact, not a level effect: `rir-coverage.py`'s `run_one` sets
+`MCC_FORCE_REPLAY=1` **only** at `-O0`. Holding that constant, `-O0` gives `opaque,reg` and `-O1`
+gives `opaque`, and with force-replay off `-O0` records no body at all. `MCC_RIR_LOW_DUMP='*'`
+shows exactly what differs: the VLA body records a trailing orphan root `Ref op=0 t=0x1024 -> reg`
+(VALMASK 0 = hardware register 0) at `-O0` and never at `-O1`, with every other node
+byte-identical. So VLA lowering leaks a live-register `Ref` into the arena at `-O0` under
+force-replay, and the fixture was banking the leak. Harmless as far as anything measures, and
+after the swap **nothing in the suite depends on it** — which is the argument for writing it down
+rather than chasing it.
+
 **N35. Five reds arrived from the arm64 host's last two waves, all verified pre-existing.** Three
 at `c7df5209` and two more at `5825d894`, which landed mid-wave. **Three of the five are now
 closed**; the two that remain are the ones that need a compiler attribution rather than a harness
@@ -1791,13 +1883,56 @@ scratch tree and re-running there.
 
 | cell | what it says | reading |
 | --- | --- | --- |
-| `rir-coverage-census` | `-O0 lowerable[elf] bodies_pct regressed: 15.4134% < banked 15.4642% over the WHOLE corpus` | **the ELF floor moved and only macho was re-banked.** `eee6c1f2` added per-format arena floors and banked macho *"so the ratchet arms here"*; the ELF side was left at its old number and this host is the one that measures it |
-| `rir-lowerable-classes` | `reg.c -O1/-O2/-O3: lowerable class reg no longer reproduces` (`-O0` still does) | **C5's own caveat coming true.** That fixture is a VLA, and the C5 write-up already warned that `reg.c` and `opaque.c` share one mechanism so *"a change to VLA lowering breaks both fixtures at once, and neither would isolate which class regressed"*. It cannot say what moved, by construction |
+| ~~`rir-coverage-census`~~ **CLOSED 2026-08-13, and my attribution of it was wrong** | `-O0 lowerable[elf] bodies_pct regressed: 15.4134% < banked 15.4642%` | **`eee6c1f2` is exonerated** — it never touched the `wide` block, which is the corpus the failing cell measures; `bank['wide']` is byte-identical across `eee6c1f2~1 → eee6c1f2`. The real cause is **`85bf6a3d`**, and the drop is two things at once. Re-banked with the attribution, per the standing rule. Detail below |
+| ~~`rir-lowerable-classes`~~ **CLOSED 2026-08-13** | `reg.c -O1/-O2/-O3: lowerable class reg no longer reproduces` (`-O0` still did) | **C5's caveat came true, and the follow-up it asked for is done.** The `reg` class was never in trouble — **62 of 841 sources still emit it at `-O1`**; only the VLA fixture stopped. Replaced with a non-VLA `switch` shape that yields `reg` **and nothing else** at all four levels, so the fixture is single-class now and the shared-VLA coupling with `opaque.c` is severed. Detail below |
 | ~~`jit/xoracle-coverage`~~ **CLOSED 2026-08-13** | cannot reach `--min-cross 400` on one suite | **a missing prerequisite reported as a failure.** `MCC_XSUITE_LLVMTS` has no checkout here, and the `else()` branch that handles it already carried a comment saying *exactly* what would happen — *"the cell then fails for what reads as a coverage reason when the cause is a path that does not exist"* — printed a `STATUS` line, and then registered the cell anyway. It now skips with that reason. **`--min-cross 400` is a two-suite floor and one suite tops out at 379, so the cell could only ever fail**; `jit/xoracle-conformance` is unaffected because its floor is `--min-pass 100` |
 | ~~`ci/registration-stubs`~~ **CLOSED 2026-08-13** | `1 of 57 capability-gated registration chain(s) drop cells instead of skipping them` | **the same commit that added `rir/rec-miss` did not add its skip stub.** The lint names the branch and the line; one `mcc_skip_test` closes it. Worth noting the lint found this *after* the cell was made runnable — a cell that cannot execute and a cell that is missing from a gate's `else()` are two different reds from one commit, and only the second is something a sweep can find |
 | ~~`rir/rec-miss`~~ **CLOSED 2026-08-13** | `execute_process given unknown argument "ENVIRONMENT"` | **the cell could never run.** `execute_process` has no `ENVIRONMENT` option — that belongs to `set_tests_properties` — so `5825d894`'s new cell died on its first CMake statement, at both of its two injection sites. Rewritten as `${CMAKE_COMMAND} -E env MCC_RIR_REC_FORCE_MISS=1 …`. **It is a good cell**: 6 subjects, both floors present (`_ran < 4` and `_moved == 0`), and it reports *"the injection moved 3 object(s), so the frontier fallback is the code under test and not a no-op"* |
 
-**`rir-coverage-census` has a second, smaller cause that is this wave's**, and the two must not be
+**The census drop, attributed per body — and it is a real loss, not just dilution.** Bisected on
+this host over the `wide` corpus at `-O0`: `17ac9ab4` reproduces the banked 15.4642 to four
+places, `0176c562` is the last passing commit, `890a822c` the first failing, and HEAD is 15.4066.
+Diffing the per-body inventory `9fe32126 → HEAD`, matched on `(file, func)`:
+
+| | bodies | lowerable | pct |
+| --- | ---: | ---: | ---: |
+| pre-existing bodies, then | 4436 | 691 | 15.5771% |
+| pre-existing bodies, now | 4436 | 686 | **15.4644%** — a real loss of −0.1127pp |
+| the 97 bodies that joined | 97 | 12 | 12.3711% — dilution of −0.0578pp |
+
+`gone = 0`, `gained = 0` beyond those five. **The five that stopped being lowerable are all
+VLA-parameter shapes** — `vla/basic.c::grid_trace`, `star_vla_prototype.c::{inner,both}_star`,
+`array_qual_params.c::diag`, `vla_param_side_effects.c::nested` — and they were lost at
+**`85bf6a3d`**, which moved `func_vla_arg()` *inside* the recorded arena (`src/mccgen.c`) so the
+JIT would stop dropping the bound's side effects. Each gains exactly one `reg`-class `Ref` for the
+bound left in a hardware register. **Four of the five recover at `-O1`**, which is why only `-O0`
+went red while `O1`–`O3` sit at 15.4570 against a 15.4242 floor.
+
+**So this is a correctness fix being paid for in a coverage number, and the right action is to
+re-bank.** But for those five bodies HEAD would be 15.5165%, above the red line; dilution alone
+would also have cleared it. The loss is the larger and the binding half.
+
+**Two follow-ups so this never needs a hand-diff again.** The cell said *"attribution is
+unavailable"*, and the second half of that hedge is the true one: 4550 `[rir-low-body]` rows are
+emitted and reconcile exactly with the aggregate, but they collapse to **4538 keys**, so
+`low_body_index()` returns `None` and the per-body ratchet is disarmed for the whole corpus. The
+12 duplicates are five keys — `<command line>::__va_arg_inline` ×7 and two `__mcc_ov_*` helpers,
+one row per TU, plus `bitfields.c::{dump,main}` ×2 because `bitfields_ms.c` `#include`s
+`bitfields.c`. **(1)** key `low_body_index()` on the compiled TU as well as `(file, func)`, or drop
+`<command line>` rows and dedupe. **(2)** then take a `wide`/`elf` inventory with
+`--update-bank-low`: `tests/rir/lowerable-bodies.tsv` holds **only `self`/`macho`** today, so even
+the *other* branch of the hedge would have fired.
+
+**What was actually banked, and what was deliberately not.** Two figures moved, both attributed:
+`wide.O0.lowerable.elf.bodies_pct` 15.4642 → 15.4066, and `sources_wide` 383 → 384 files with its
+sha. **Nothing else.** A plain `--update-bank` was tried first and reverted: it rewrites the whole
+`wide` block — `bodies` 4400 → 4738, `coverage`, `kept_coverage` and `residual` migrating to the
+per-format schema, fifteen or so figures at once — of which exactly two had an attribution. That
+is the blind re-bank this file warns about, arriving as a *convenience* rather than as a mistake,
+which is the form it usually takes. `O1`–`O3` needed no change: they measure 15.457 against a
+15.4242 floor, because four of the five lost bodies recover at `-O1`.
+
+**`rir-coverage-census` also has a second, smaller cause that is this wave's**, and the two must not be
 conflated: `corpus wide drifted: banked 383 file(s) … this run walked 384`, because
 `tests/exec/types/ldouble_to_signed.c` joins the `wide` corpus. **Neither half was re-banked.**
 The manifest half would be a legitimate attributed re-take; the ELF-floor half is a *regression*

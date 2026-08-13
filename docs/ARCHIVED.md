@@ -29275,3 +29275,117 @@ no Linux-hosted mingw compiler to serve as the oracle (no `x86_64-w64-mingw32-gc
 passwordless sudo to install one). Both are the same class of missing vendor/ prerequisite that
 leaves four `o0-baseline` keys unmeasured here. W3/W4/W5/W6 remain the large backend gaps, open
 in `docs/TODO.md`.
+## Archived 2026-08-13 — N30 closed, and N35 down to nothing on this host
+
+### N30 — the fix was one arm on a primitive that was already captured
+
+Three attempts had gone into a constant/runtime split inside `unary()`. The finished fix does not
+live there. `unary()`'s `'-'` case now calls plain `gen_opif(TOK_NEG)` for `_Float16` — the
+promote/negate/demote round trip deleted — and the sign flip is an arm on `gen_opf`'s `TOK_NEG`
+case. `gen_opf` is the **captured** primitive (`IR_CAP_W1(gen_opf, IR_OP_OPF)`), the RIR turns
+`IR_OP_OPF(TOK_NEG)` into an `AST_OP_FNEG` node, `mccast.c` already special-cases `AST_OP_FNEG` on
+`VT_FLOAT16`, and replay re-invokes the same primitive. Parse and replay perform one identical
+atomic operation, which is what "invisible to the arena" actually required.
+
+**Why the previously-preferred route cannot work.** The AST replay of a Binop is
+`ast_replay_value(child0); ast_replay_value(child1); gen_op(bop)` — children are rebuilt with their
+**recorded** types. Attempt 3 retyped `vtop` to `unsigned short` at parse time; the arena never saw
+it, so replay reconstructed an f16 operand and handed it to `gen_op('^')`. This file proposed two
+routes and called the type-restore one "the smaller change and where to start". It is **refuted by
+experiment**: deleting the restore leaves the same two errors. Only the atomic route works, and
+`ir_cap_depth` suppressing nested capture is why the arm must sit inside `gen_opf` rather than in
+`gen_opif` or `unary()`.
+
+**Reproducer, four lines instead of the whole smoke subject:**
+
+```c
+long double f(long double a){ volatile _Float16 va = (_Float16)(a); return (long double)(-(_Float16)(va)); }
+```
+
+under `MCC_RIR_PROD=2 MCC_RIR_ABORTWHY=1`. `volatile` is the necessary ingredient — it keeps the
+operand an lvalue the arena records. Without it the shape does not reproduce at all, which is what
+made the original report look configuration-shaped.
+
+**Per target, and only one needed thought.** `gen_negf` is `#define`d to the backend `gen_opf` on
+x86_64, i386 and arm64, so each got an f16 arm — x86_64 and i386 emit a single
+`xor $0x8000, %eax`; arm64 emits `mov w30, #0x8000` then `eor w0, w0, w30`. **riscv64 needed
+nothing**: its generic `gen_negf` already flips the top bit of the high byte in memory, correct for
+a 2-byte half. **arm was wrong and is fixed**: its `gen_negf` is `0 - x`, an arithmetic operation
+that quiets a signaling NaN, and it now routes `_Float16` through the same generic bit flip.
+Verified by relocation census across all five cross compilers — `extendhf`/`truncsf` helper calls
+2 → 0 on arm, 0 everywhere else — and by reading the emitted instruction out of each object.
+
+**Results.** Exhaustive 65536-pattern sweep 0 mismatches; the configuration that defeated attempt 3
+0 errors; smoke 12/12; exec 7675/7675; divergence `differing` 259 → 251 and
+`mcc-differs-from-both` **39 → 31**. The `-O0` baseline moves exactly one object per key,
+`tests/exec/types/float16.c`.
+
+**Two corrections this closure forces.**
+
+*(1) The `diverge-both` prediction was wrong.* This file recorded that landing the sign flip would
+make mcc differ from both x86_64 references and therefore register as a defect. It does not.
+`bsweep.F16.FNEG` stays `diverge-one` and changes sides: `mcc=7dd4c179… gcc=e2a741a1…
+clang=7dd4c179…` where it was `mcc=e2a741a1… gcc=e2a741a1… clang=7dd4c179…`. mcc agreed with gcc-15
+and now agrees with clang-22, because clang already did the IEEE-correct thing. The underlying
+caution — a `diverge-both` verdict is only as good as the reference pair's own agreement — is
+sound and simply did not bind here.
+
+*(2) Eight of the improvements are item 24's, not N30's.* `bsweep.F80.FSELMIX{B,L,R}` and
+`xsweep.F80.SI` fell to zero because of the `fistpl` fix earlier the same day. The divergence cell
+never flagged them because "better" is not a ratchet violation, so they sat unbanked. Both facts
+are now notes 15 and 16 in `tests/smoke/bails.txt`.
+
+### N35 — the census drop attributed, and the `reg` fixture freed from VLA lowering
+
+**`rir-coverage-census`.** My own attribution in this file was wrong and is corrected: `eee6c1f2`
+never touched the `wide` block — `bank['wide']` is byte-identical across it — and the failing cell
+measures `wide`. The cause is **`85bf6a3d`**, which moved `func_vla_arg()` inside the recorded
+arena so the JIT would stop dropping a VLA parameter bound's side effects. Five bodies stopped
+being lowerable, all VLA-parameter shapes, each gaining one `reg`-class `Ref` for the bound left in
+a register; four of the five recover at `-O1`, which is why only `-O0` crossed its floor. Split per
+body against `9fe32126`: **−0.1127pp real loss** (5 bodies, 0 gone, 0 gained) and **−0.0578pp
+dilution** (97 bodies joined at 12.37% against a 15.58% corpus). But for the five, HEAD would read
+15.5165% and the cell would be green — so the loss is the binding half, and it is the price of a
+correctness fix.
+
+**Only two figures were banked**: `wide.O0.lowerable.elf.bodies_pct` 15.4642 → 15.4066, and
+`sources_wide` 383 → 384. A plain `--update-bank` was tried first and **reverted** — it rewrites
+the whole `wide` block, some fifteen figures including a schema migration of `kept_coverage` and
+`residual`, of which exactly two had an attribution. That is the blind re-bank this file warns
+about, arriving as a convenience rather than as a mistake, which is the form it usually takes.
+`O1`–`O3` needed nothing: 15.457 against a 15.4242 floor.
+
+**Owed, so this never needs a hand-diff again.** The cell says "attribution is unavailable", and
+the second half of that hedge is the true one: 4550 `[rir-low-body]` rows are emitted and reconcile
+exactly with the aggregate, but they collapse to 4538 keys, so `low_body_index()` returns `None`
+and the per-body ratchet is disarmed for the whole corpus. The 12 duplicates are five keys —
+`<command line>::__va_arg_inline` ×7 and two `__mcc_ov_*` helpers, one row per TU, plus
+`bitfields.c::{dump,main}` ×2 because `bitfields_ms.c` `#include`s `bitfields.c`. Key it on the TU
+as well as `(file, func)`, then take a `wide`/`elf` inventory with `--update-bank-low` —
+`lowerable-bodies.tsv` holds only `self`/`macho` today, so the *other* branch of the hedge would
+have fired too.
+
+**`rir-lowerable-classes`.** The `reg` class was never in trouble: 62 of 841 sources still emit it
+at `-O1`. Only the VLA fixture stopped. Replaced with
+
+```c
+int f(int x) { switch (x) { case 1: return 1; } return 0; }
+```
+
+which yields `reg` and **nothing else** at `-O0`–`-O3`, so the fixture is single-class and the
+shared-VLA coupling with `opaque.c` that C5 complained about is severed. The mechanism is the
+switch epilogue: the control value is stashed in `sw->sv` before the body is parsed and re-pushed
+and `gv`'d after, so every `gcase` comparison has an operand already in a machine register when the
+arena records it, and `ast_low_node` classifies `v < VT_CONST` as `AST_LOW_REG`. That is exactly the
+escape the C5 caveat kept missing with `a<b`, `a<b ? a : b` and friends — those materialise *into*
+the arena; the switch value is materialised out of band. At least one `case` is required; `default:`
+alone, an empty switch, `if`/`goto`, `(a<b)&&(b<a)`, `x?y:0` and a `while` loop all give
+`blockers=-`.
+
+**Two corrections to C5's caveat.** It cited `bounds/bound_signal.c` and `bounds/bound_setjmp.c` as
+evidence that a non-VLA reduction existed — **both are VLAs** (`int arr[n]`, and two `int a[n_x]`),
+so the evidence was not evidence, though the conclusion was right. And the `reg` the old fixture
+still showed at `-O0` was a harness artefact: `rir-coverage.py` sets `MCC_FORCE_REPLAY=1` only at
+`-O0`, and under it the VLA body records a trailing orphan root `Ref op=0 t=0x1024 -> reg` that
+`-O1` never records, every other node byte-identical. The fixture was banking a leak. Nothing in
+the suite depends on it now.
