@@ -1600,6 +1600,33 @@ static void suite_frame(void) {
 	}
 	ast_arena_free(a);
 
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		ast_add_child(a, bb,
+									mk_store(a, -8, mk_ref(a, -32, VT_INT | VT_ARRAY), VT_INT));
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 0,
+					"an array-typed local Ref in a value position is the array's "
+					"ADDRESS, not a frame slot, and the frame is refused rather than "
+					"reading slot -32 as if it held the value");
+	}
+	ast_arena_free(a);
+
+	a = ast_arena_new();
+	{
+		AstLocal bb = ast_node(a, AST_BasicBlock);
+		ast_add_child(a, bb,
+									mk_store(a, -8,
+													 mk_bin(a, '+', mk_ref(a, -16, VT_INT),
+																	mk_lit(a, 1, VT_INT), VT_INT),
+													 VT_INT));
+		CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1,
+					"and the refusal is on VT_ARRAY alone -- a scalar local Ref with no "
+					"VT_LVAL is still a value, which is the convention the harnesses and "
+					"the compiler both write");
+	}
+	ast_arena_free(a);
+
 	/* Two statements, second reading what the first wrote -- the property a
 	 * per-expression kernel cannot express at all. */
 	a = ast_arena_new();

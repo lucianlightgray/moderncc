@@ -1135,7 +1135,7 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 		int r = ast_op(a, n);
 		int t = ast_type_t(a, n);
 		int32_t go;
-		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM) && !(t & VT_ARRAY)) {
 			int64_t v;
 			if (!ast_eval_slice_env(off, val, nenv,
 															(int32_t)(int64_t)ast_ival(a, n), &v))
@@ -1547,7 +1547,7 @@ static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
 	case AST_Ref: {
 		int r = ast_op(a, n), t = ast_type_t(a, n);
 		int32_t go;
-		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM))
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM) && !(t & VT_ARRAY))
 			return (!ast_bad_type(t) && ast_eval_slice_f64t(t)) ||
 						 (ast_eval_slice_intt(t) && !is_float(t));
 		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST)
@@ -1720,7 +1720,8 @@ static int ast_eval_slice_livein(AstArena *a, AstLocal n, int32_t *offs, int *cn
 	if (ast_kind(a, n) == AST_Ref) {
 		int have;
 		r = ast_op(a, n);
-		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM) &&
+				!(ast_type_t(a, n) & VT_ARRAY)) {
 			o = (int32_t)(int64_t)ast_ival(a, n);
 			have = 1;
 		} else {
