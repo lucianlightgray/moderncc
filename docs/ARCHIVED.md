@@ -29199,3 +29199,68 @@ another agent's build tree. That copied roughly 100 GB into `/tmp`, which on thi
 tmpfs**, filling it completely and blocking every tool call in the session (each one creates an
 output file before it runs) until the directory was removed by hand. `/tmp` here is RAM, not disk;
 `df -h /home` looking healthy says nothing about it.
+
+## Archived 2026-08-13 — the Windows surface: W7 landed as a deletion, and the wt/winspec housekeeping bundle
+
+Closed against the tree from the *Windows — the whole surface* section's staged plan. Two
+things landed: **W7 as a deletion** — the sequencing advice's explicit recommendation ("take
+it as a deletion, now, independent of everything else") — and the cheap housekeeping the plan
+said should ride along with W1. The five real backend gaps the section names — **W1** (the wine
+cross-oracle), **W3** (a COFF object writer), **W4** (per-function `UNWIND_INFO`), **W5**
+(CodeView) and **W6** (SEH statements) — are untouched and remain open in `docs/TODO.md`; they
+are large, and W1 is additionally blocked on a mingw oracle this host does not have.
+
+### W7 — `arm-wince` deleted, `arm-win32` kept as an explicitly compile-only target
+
+`arm-wince` was a byte-identical alias of `arm-win32`: the same cdefs (`MCC_TARGET_ARM
+MCC_ARM_VFP MCC_ARM_EABI MCC_ARM_HARDFLOAT MCC_TARGET_PE`), the same `-O0` object sha256s and
+the same forced-Replay_IR counters on every corpus file. `o0_ab.sh`'s `twin_check` existed only
+to prove that tautology, and two of the twelve `-O0` bank keys were spent proving that two
+identical configurations produce identical bytes. Windows CE has been end-of-life since 2013 and
+`arm-win32`/`arm-wince` target the `0x01C0` machine id modern Windows does not load; the second
+target carried cost for no coverage.
+
+Removed from every tracked site: the `MCC_X` list, the `MCC_CROSS_TARGETS` help text and the
+cdefs branch (`CMakeLists.txt`); `tools/build.c`'s `CROSS[]` table, where the `arm-wince` entry
+was **replaced by `arm-win32`** — the table had been missing `arm-win32` entirely, so the
+housekeeping "add arm-win32 to tools/build.c" folded in here; the `_c2bank`,
+`cross/no-compiler-abort`, `ast/rir-parity` and `run-tier` foreaches; `tools/o0_ab.sh` (the
+`KEYS` list, the `*win32 | *wince` case, and the whole `twin_check` function and its call);
+`tools/run-tier.sh` and `tests/cross/no-compiler-abort.sh`; both `o0-baseline/board*.txt`; and
+the three `arm-wince.*` bank files (328 lines). The `o0-baseline` measurable floor dropped
+**8 → 7** to match the one fewer key. `so_pe_is_machine` keeps `0x01c0` — `arm-win32` still
+emits it.
+
+Verified in the `cross` preset under wine: reconfigure and build clean; `arm-win32` reproduces
+its `-O0` bank byte-for-byte (no drift); the win32 wine cells (`run-tier/{x86_64,i386}-win32`,
+`pe-wine-conformance`) stay green; `run-tier/{arm64,arm}-win32` still skip with the accurate
+no-emulator reason; and `arm-wince` no longer appears in the test list at all. (The four
+ELF-cross `o0-baseline` keys — i386/arm/arm64/riscv64 — drift on any host that *has* the gentoo
+sysroots this checkout ships, which is the pre-existing "four unmeasurable keys" staleness,
+unrelated to this change and left alone: re-banking them from a non-canonical host would redden
+the canonical CI box, which never measures them because it lacks those sysroots.)
+
+### The wt/winspec housekeeping bundle
+
+- **`exec-gatecombo/*` got its `else()` arm.** The combined
+  `-fchain-store + -fpromote-incdec + -fivopts-ptr` gate registered only on a WIN32 target
+  build; on every other host the cells were *absent*, which reads as coverage. They now register
+  as visible Skips (348 of them) on a non-WIN32 build.
+- **`pe-wine-conformance` now shuts its wineserver down.** `suite_pewine` created a `WINEPREFIX`
+  under `pe-wine-work/.wineprefix` and left a live server holding it after the cell reported —
+  the one leak `run-tier.sh`'s teardown already handled. It now runs `wineserver -k` then `-w`
+  under the same prefix; measured **0** leftover servers after the cell.
+- **`RESOURCE_LOCK "wine"`** added to `run-tier/{x86_64,i386}-win32` and `pe-wine-conformance`,
+  so the by-construction per-cell `mktemp` WINEPREFIX isolation is now also enforced by ctest.
+- **`tests/must-run.txt`** gained rows for `pe-wine-conformance` and
+  `run-tier/{x86_64,i386}-win32` — not one PE or wine cell had ever been named in the manifest —
+  and `runtime-bench-gatewin`'s row now states **both** of its 77 causes (the absent
+  `vendor/plb` subject *and* the native-only gating), correcting a row that named only the first.
+- **`tools/build.c`** now lists `arm-win32` (folded into W7 above).
+
+`pe/short-import` already had its `else()` arm by the time this landed, so that item of the
+plan's housekeeping list was a no-op. Left open deliberately: the `MCC_WINE` / `MCC_WINE_REQUIRED`
+cache variables (a wine-less host still green-skips rather than failing on demand — a multi-file
+change threaded through the shell/harness skip paths), and the "stale i386 message" the plan
+mentions without a locator (no message could be identified with confidence, and guess-editing a
+diagnostic is worse than leaving it).

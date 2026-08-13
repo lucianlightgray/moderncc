@@ -3292,24 +3292,24 @@ Differential: filter-expression ordering, `__finally` on both normal and unwindi
 and `20101011-1`'s divide-by-zero. **Requires W4** — a handler needs a truthful
 `UNWIND_INFO` to be reached at all.
 
-**Stage W7 — arm-win32/arm-wince, or delete them. ~600–900 lines, or ~50.**
-`arm-wince` is a byte-identical alias of `arm-win32` (§1) and `arm-win32` has no ARM PE
-backend at all. The choice is: give ARM32 PE TLS, `__chkstk`, unwind and COFF relocations
-(~600–900) and accept a target nobody can execute, or delete `arm-wince` and demote
-`arm-win32` to an explicitly-compile-only target with the bank cells labelled as such
-(~50 lines, mostly CMake and `tools/build.c`). **The second is correct.** Windows
-CE has been end-of-life since 2013 and `arm-win32` targets a machine id (`0x01C0`) that
-modern Windows does not load. Two of the twelve `-O0` bank keys are currently spending
-budget proving that two identical configurations produce identical bytes.
+**~~Stage W7 — arm-win32/arm-wince, or delete them. ~600–900 lines, or ~50.~~ — CLOSED
+2026-08-13 as the deletion; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).** `arm-wince` was a
+byte-identical alias of `arm-win32`; it is gone, `arm-win32` stays as an explicitly compile-only
+target, the `o0_ab.sh` twin check is retired, the three `arm-wince.*` banks are deleted and the
+`-O0` measurable floor dropped 8 → 7. `arm-win32` keeping no ARM PE *execution* backend is fine
+— nothing here can execute an ARM PE anyway.
 
-**Housekeeping that is cheap and should ride along with W1, ~60–100 lines total:** give
-`pe/short-import` and `exec-gatecombo/*` `else()` arms; give `pe-wine-conformance` the
-`run-tier.sh` wineserver teardown; add `RESOURCE_LOCK "wine"` to the wine cells so the
-structural hazard in §0 stops being structural; add `MCC_WINE` and `MCC_WINE_REQUIRED`
-cache variables so a wine-less host can be made to fail rather than green-skip; add
-`pe-wine-conformance` and `run-tier/{x86_64,i386}-win32` to `tests/must-run.txt`; correct
-`tests/must-run.txt` to state both of `runtime-bench-gatewin`'s causes; add `arm-win32`
-to `tools/build.c`; fix the stale i386 message at `CMakeLists.txt`.
+**Housekeeping that is cheap and should ride along with W1, ~60–100 lines total** — *mostly
+landed 2026-08-13; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md):* ~~give `pe/short-import` and~~
+`exec-gatecombo/*` ~~`else()` arms~~ (done; `pe/short-import` already had one); ~~give
+`pe-wine-conformance` the `run-tier.sh` wineserver teardown~~ (done, in `suite_pewine`); ~~add
+`RESOURCE_LOCK "wine"` to the wine cells~~ (done); **still open:** add `MCC_WINE` and
+`MCC_WINE_REQUIRED` cache variables so a wine-less host can be made to fail rather than
+green-skip; ~~add `pe-wine-conformance` and `run-tier/{x86_64,i386}-win32` to
+`tests/must-run.txt`~~ (done); ~~correct `tests/must-run.txt` to state both of
+`runtime-bench-gatewin`'s causes~~ (done); ~~add `arm-win32` to `tools/build.c`~~ (done, folded
+into W7); **still open (unlocated):** fix the stale i386 message at `CMakeLists.txt` — no such
+message could be pinned down with confidence.
 
 ### 6. The verdict, and the sequencing
 
@@ -3364,9 +3364,9 @@ five unmeasured divergences would be shipping the divergences to more people.
 large, they are blocked on W3 and W4, and neither is a correctness gap — they are
 integration gaps. They belong on the ladder, not at the top of it.
 
-**W7 should be taken as a deletion, now, independent of everything else.** It is ~50 lines,
-it removes a target that duplicates another byte for byte, and it stops two `-O0` bank keys
-from spending budget proving a tautology.
+**~~W7 should be taken as a deletion, now, independent of everything else.~~ — DONE 2026-08-13.**
+It removed a target that duplicated another byte for byte and stopped two `-O0` bank keys from
+spending budget proving a tautology; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
 **Below the line and deliberately:** anything requiring Windows-on-ARM hardware, a real
 Windows CI runner beyond what `matrix.yml` already has, or a `.rc` compiler. All three are
