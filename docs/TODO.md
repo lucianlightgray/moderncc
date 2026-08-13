@@ -2039,6 +2039,29 @@ GPU arm now catches the `r = s + 1` injection: `differing-files=0` clean, `4` in
 oracle. What closed is "the arm is blind"; the independent tree-side oracle is still the work. See
 *Cross-cutting research* for the run and the timing correction.
 
+**REPRODUCED ON METAL, 2026-08-13 — a second device API, and it says the same thing twice over.**
+The above was measured on Vulkan/RTX. Re-run here against `MCC_AST_EVAL_LADDER_GPU=1` on an Apple
+M1 Pro (`gpu dispatches=1621`, the Metal backend): clean is `differing-files=0`, injected is
+**`differing-files=4` of 9 corpus files**, and the cell goes red. So the arm's teeth are not a
+property of one device, one ICD or one driver.
+
+**Two things this run adds that the Vulkan one could not.**
+
+*(a) The "only `points` moves" finding is confirmed field by field, and it is total.* Across all
+four differing files every one of `pairs`, `certified`, `differ`, `refused`, `exact`, the `rung`
+line, the `diff` line, the `refuse` line, both `seed-*` lines and `inferred-width-nodes` is
+**byte-identical between the arms**. The injected miscompile is loud enough to move a coverage
+index and invisible to every verdict the ladder actually publishes. That is this row's thesis
+stated as a measurement rather than an argument.
+
+*(b) `points` moves in BOTH directions, and the aggregate nearly cancels.* Per file, CPU against
+GPU: the probe 41 vs 48, `compound_assignment.c` 63 vs 64, `const_expr.c` 15 vs 17 — but
+`div_mod_shift.c` **93 vs 85**, the other way. Summed, the injection moves the corpus by **−2
+points out of 268**. **Had the cell compared a total instead of comparing per file, it would have
+missed this** — and a total is the more natural thing to write. Worth carrying to the tree-side
+oracle when it is built: the granularity at which a differential compares is a design decision
+with teeth, which is N37's finding in a third place.
+
 **The original text:** the GPU arm already *is* an independent
 evaluator — with `MCC_AST_EVAL_LADDER_GPU=1` the hook short-circuits the rung and
 `ast_eval_binop` is never called for those points — and `gpu/ladder-gpu-parity` diffs the two
