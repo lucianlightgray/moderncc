@@ -28,6 +28,19 @@ if(NOT CPU)
                         "and the compile would fail into an empty histogram.")
 endif()
 
+# x86_64 needs src/arch/i386 as well, and it is not a second backend: mcctok.h
+# includes "i386-tok.h" under MCC_TARGET_X86_64 as much as under
+# MCC_TARGET_I386, and the file lives in src/arch/i386/. Narrowing the -I list
+# to src/arch/${CPU} is right for arm64 and riscv64 and wrong here, which is
+# why this cell went red on x86_64-linux the moment the rc check landed. The
+# rc check is what made it visible rather than what broke it: before it, the
+# failed compile produced a real MCC_RIR_PROD_OUT file holding an empty
+# histogram, which reads identically to "nothing dropped".
+set(_arch_extra_inc "")
+if(CPU STREQUAL "x86_64")
+    set(_arch_extra_inc "-I${SRCDIR}/src/arch/i386")
+endif()
+
 set(ALLOWED_regaddi 4)
 set(_allowed regaddi)
 
@@ -40,7 +53,7 @@ function(rir_drop_report _flags _tag _outvar)
                 "${MCC}" ${_flags} -c "${SRCDIR}/src/mcc.c"
                 -o "${BINDIR}/rir-drop-ratchet${_tag}.o" -O1
                 -I${SRCDIR}/include -I${SRCDIR}/src -I${SRCDIR}/src/arch
-                -I${SRCDIR}/src/arch/${CPU}
+                -I${SRCDIR}/src/arch/${CPU} ${_arch_extra_inc}
                 -I${SRCDIR}/src/objfmt -I${SRCDIR}/src/formats
                 -I${SRCDIR}/src/algorithms
         RESULT_VARIABLE _rc OUTPUT_QUIET ERROR_VARIABLE _err)

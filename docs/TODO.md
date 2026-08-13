@@ -795,12 +795,23 @@ is the point.
 
 **Two reds this change did NOT cause, both verified by reverting `src/mccrir.c`, rebuilding and
 re-running.** `smoke/divergence` is N29's new gcc oracle surfacing three unbanked `diverge-masked`
-categories. **`rir/drop-ratchet` is newly red on x86_64-linux and is not a ratchet failure at all**
-— it cannot compile `src/mcc.c`, dying on `mcctok.h`'s `#include "i386-tok.h"`, so the cell's own
-compile command is missing `src/arch/i386` from its include path and any histogram it read would
-describe a compile that did not happen. It **passed in a 509-cell run earlier the same day**, so it
-is recent and it is in the harness, not the compiler. Filed here rather than fixed because it is a
-third thing and this row is not it.
+categories. **`rir/drop-ratchet` was newly red on x86_64-linux and was not a ratchet failure at
+all** — it could not compile `src/mcc.c`, dying on `mcctok.h`'s `#include "i386-tok.h"`, so the
+cell's own compile command was missing `src/arch/i386` from its include path and any histogram it
+read would have described a compile that did not happen. **FIXED the same day**; the cell now
+reports *"1 opcode kind(s) dropped in a default build, 1 under `-freg-disp`, all within the bank"*.
+
+**The cause is `9e66be70`, the commit that fixed this cell's arm64 red, and the interesting part is
+that it did not break anything — it revealed.** That commit narrowed the `-I` list to
+`src/arch/${CPU}` *and* added an exit-status check. The narrowing is right for arm64 and riscv64
+and wrong for x86_64, because `mcctok.h` includes `i386-tok.h` under `MCC_TARGET_X86_64` as much as
+under `MCC_TARGET_I386` and that header lives in `src/arch/i386/` — x86_64 needs two backend
+directories, not one. **But the compile was going to fail either way; before the rc check it failed
+into a real `MCC_RIR_PROD_OUT` file holding an empty histogram, which reads exactly like "nothing
+dropped".** So the same commit that introduced the narrowing is the one that made its own
+consequence loud, on a host it could not run on. That is this file's green-by-omission thesis
+landing in its favour for once, and it is the argument for checking `rc` even when a report file
+exists.
 
 **One correction to this row's framing while here.** "In a default build a fallback is silent" was
 true of a *compile*, but the divergence was never unwatched: the aggregate is banked and ratcheted
