@@ -4895,6 +4895,30 @@ hand-written arm64-PE JIT-dispatch validator with `mcc-arm64-win32` and runs bot
 in a `linux/arm64` container. It is registered nowhere. That is the single highest-yield
 change in this table and it is not Metal work.
 
+> **RE-PRICED 2026-08-13 on the Mac, and it needs more than a registration.** "Registered
+> nowhere" reads as though `add_test` were the whole gap. It is not, and the pattern to copy
+> already exists — five sibling cells (`extlink-arm64-docker`, `arm64-inline-docker`,
+> `arm64-divmagic-soak-docker`, `i386-{fastcall-abi,tls}-docker`) are registered through
+> `mcc_cross_cc` + `dockergate.sh` with `SKIP_RETURN_CODE 77`, so the registration itself is
+> about six lines. **What is missing is a host that can reach the passing path**, and there are
+> two independent gates, not one:
+>
+> 1. **A container runtime.** `dg_need_docker` wants a live daemon. This Mac has the `docker`
+>    CLI and `colima` installed and **no daemon running** (`colima is not running`), so the cell
+>    would skip here at the first gate.
+> 2. **A Windows sysroot, which is the gate the row does not mention at all.** The script links
+>    on the *host* (`"$MCC" -B"$MCCDIR" -o hello.exe hello.c`) before anything enters the
+>    container, and an `arm64-win32` link needs `msvcrt`. Measured here with the real cross
+>    compiler: `mcc-arm64-win32 -B cmake-cross -o h.exe h.c` → **`mcc: error: library 'msvcrt'
+>    not found`**, and the same against `cmake-macos-cross`. There is no mingw sysroot on this
+>    box. So even with a daemon the cell could not pass.
+>
+> **The consequence for ranking.** Registering it from here would add a cell that skips on
+> "docker daemon not available" while *also* being unable to link — one visible reason masking a
+> second, which is the green-by-omission shape N5 and N38 both turn on. **Register it on a host
+> that has both, or register it with a reason naming both gates.** It stays the highest-yield row
+> in this table; it is not a six-line change on this machine.
+
 > Moved to [`docs/ARCHIVED.md`](ARCHIVED.md) 2026-08-10, validated complete against the tree: *6. arm64 ABI facts that recently landed and touch this work*.
 
 ### 7. CI reality — what you validate on your Mac, CI cannot re-validate
