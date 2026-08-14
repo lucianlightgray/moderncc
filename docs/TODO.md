@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:47Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:55Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10363   | 2026-08-14T21:20Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50001   | 2026-08-14T21:44Z |
 
@@ -19,9 +19,6 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
-- [ ] T-lin-10021 [S] `ast_locrec_skip` consumes by count, and it should consume by fit
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T21:47Z
-      REF: DETAILS.md#t-lin-10021-ast-locrec-skip-consumes-by-count | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
@@ -81,6 +78,9 @@
 - [ ] T-lin-10020 [S] i386 `R_386_TLS_GOTIE` gap, and the declined upstream `7f7845cd` (VT_VOID)
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10020-i386-r-386-tls-gotie-gap | DEPS: —
+- [ ] T-lin-10021 [S] `ast_locrec_skip` consumes by count, and it should consume by fit
+      OWNER: — | STATE: OPEN | SHA: 8a92ee01 | TS: 2026-08-14T12:40Z
+      REF: DETAILS.md#t-lin-10021-ast-locrec-skip-consumes-by-count | DEPS: — | NOTE: logic already by-fit (8a92ee01); owed probe's firing subject not in tests/exec — see DETAILS#t-lin-10021-investigation-logic-stale-fixed-probe-trigger-unfound
 - [ ] T-lin-10023 [S] `-O3` re-emission leaves the pre-inline body in `.text`, and only deferral can reclaim it
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10023-o3-re-emission-leaves-the-pre | DEPS: —

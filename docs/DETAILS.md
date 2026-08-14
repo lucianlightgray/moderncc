@@ -41832,3 +41832,14 @@ Record + compare were already done: `rir_loc_replay` threads `size`/`align` (mcc
 **Verification.** `-DMCC_REPLAY_IR_C2=1` build, `MCC_REPLAY_IR=5 mcc -O1..-O4 -c <subject>`; `[rir-locfit]` must show `skip=0 inexact=0`. `ctest -L treegate` 12/12 and the rir/emitmap cells green.
 
 **Source.** mac-arm64, 2026-08-14T21:41Z, at 3de9d04e.
+
+
+<a id="t-lin-10021-investigation-logic-stale-fixed-probe-trigger-unfound"></a>
+
+## T-lin-10021 investigation — logic already by-fit; the probe's firing trigger is not in tests/exec
+
+The "consumes by count" is **stale**: commit `8a92ee01` ("ast_locrec_skip takes the slot by fit instead of bumping blind") already replaced the blind `ast_locrec_i++` with a call to the fit-based `ast_locrec_take` (which skips any entry where `sz<size || al<align`), so `ast_locrec_skip` consumes by fit today. What is owed is the report-only probe (firing + mismatch counts), exactly the T-lin-10022 shape.
+
+**Blocker for a non-vacuous probe: the skip path does not fire on the corpus.** `ast_locrec_skip` is called only from `ast_inline_graft` (mccast.c:3490 ← the AST replay walk at :5775) for a `VT_STRUCT`-returning graftable callee during replay. A prototype probe (fire/skip/inexact on the skip's `ast_locrec_take`, emitted as `[ast-locfit]` from `rir_report`; compiles clean, reverted) measured **fire=0 over all 312 `tests/exec` files** at `-O2 -finline-functions` under a `-DMCC_REPLAY_IR_C2=1` build with `MCC_REPLAY_IR=5 MCC_FORCE_REPLAY=1` — and c2 replay was confirmed active there (`[rir-locfit]` fired). Constructed small- and large-`sret` struct-return inlines did not fire it either. So the struct-return-graft-during-replay path is not exercised by the standard corpus, and a probe banked over it would be vacuous (its own DETAILS: "zero mismatches means nothing without the firings beside it"). Next attempt: find a firing subject before banking — likely a `--embed-jit`/selfhost replay or a fixture crafted against `ast_inline_graftable`'s exact conditions — then re-add the (working) prototype and confirm skip=0/inexact=0. Byte-identity is not at risk (the probe is additive counters, no logic change).
+
+**Source.** mac-arm64, 2026-08-14T21:55Z, at a88be4d5 (investigation only; probe prototyped and reverted).
