@@ -41509,3 +41509,12 @@ Fixed at `740e4f54`. `mccjit_embed_finalize` emitted its "no functions were JIT-
 **Full-suite note.** A clean full native suite is not obtainable on this host at this HEAD for reasons unrelated to this change: `ci/registration-stubs` is red from T-lin-10002 residue (lin-x64's T-lin-10360, in flight) and `ci/gate-contract` reports 5 pre-existing Darwin host mismatches (the `ast/o0-baseline` quartet skips — T-lin-10089; `optlevel/torture-differential`'s floor; `gpu/msl-slice-known-positive` unclaimed). None is introduced by this diagnostic-only change, whose inputs to both gates are unchanged.
 
 **Source.** mac-arm64, 2026-08-14T20:37Z, at `740e4f54`.
+
+
+<a id="t-lin-10050-investigation-where-the-memcpymemset-shapes-must-go"></a>
+
+## T-lin-10050 investigation — where the memcpy/memset shapes must go
+
+Investigation only (no code change). The `--mutate` bite sites live in `tools/slicerun.c`'s SPIR-V device emitter, not the CPU reference: under `mcc_slice_mutate` the device path XORs bit 0 of a region store/load/format-write (the `if (mcc_slice_mutate)` blocks at the `spv_store_region` / `spv_load_region` / `spv_fmt_emit` sites, ~lines 2594/2919/3277). The frame differential compares the CPU reference against the device kernel and counts a disagreement in `g_frame_mismatch` (declared ~6876); a mutant "survives" when no corpus scenario exercises a perturbed site. The corpus is the hand-built `CHECK`-based frame scenarios inside slicerun.c (e.g. the global-indexed-field / scalar-field frame builds ~1784-1841), not an external directory. The gap the row names: no scenario lowers a bulk memory write (`memcpy`/`memset`) to a device region store, so the region-store mutate site is unproven for that shape. Next slice: add a frame scenario whose block `memcpy`/`memset`s into a device-resident region, assert it lowers and CPU/device agree unmutated, then assert `mcc_slice_mutate` makes them disagree (`g_frame_mismatch` increments) — the "must fail before the pairing exists" the verification wants. Confirmed the four existing operator sites and `g_frame_mismatch` exist as the row states.
+
+**Source.** mac-arm64, 2026-08-14T20:48Z, at `bbcedeea` (investigation only).
