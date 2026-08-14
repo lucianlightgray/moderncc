@@ -42,6 +42,13 @@
 # seconds and is what to run BEFORE a DONE commit, not after: T-lin-10360,
 # T-lin-10361 and T-lin-10362 were each a task archived with one of them red
 # behind it, by a session that had correctly verified its own slice.
+#
+# `treegate` is bounded at ~5 s a cell so it is always worth running, and that
+# bound is why it cannot see a corpus change: anything that notices a file
+# appearing under tests/ must walk the corpus, which costs minutes. Those are
+# `ctest -L corpusgate`, 5 cells and about 4 minutes -- run it when you add or
+# remove a file under tests/ or change codegen. T-lin-10363 is the fixture that
+# moved two banked censuses with -L treegate green over both.
 
 gpu/spv-slice-differential | unfloored | gpu/spv-slice-known-positive | modules the SPIR-V emitter lowered and the differential then compared
 gpu/spv-slice-real | unfloored | unproved | harvested arenas the emitters were run over

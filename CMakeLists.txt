@@ -9148,6 +9148,18 @@ set(MCC_TREEGATE_CELLS
     "ci/registration-stubs" "census/gates-armed" "trace-gate-invariant"
     "fmt/census-bank" "fmt/census-bank-known-positive" "fmt/census-oracle"
     "docs/refs" "docs/refs-known-positive")
+# The second tier. `treegate` is bounded at ~5 s a cell so that it is always
+# worth running, and that bound is exactly why it cannot catch a corpus change:
+# every cell that would notice a file appearing under tests/ has to walk the
+# corpus, and walking the corpus costs minutes. T-lin-10363 is that gap arriving
+# in practice -- one new exec fixture moved ast/o0-baseline from files=311 to
+# 312 and left rir-coverage-census with 43 unnoted functions, and `-L treegate`
+# was green over both. Run this one when you add or remove a file under tests/,
+# or when you change codegen: `ctest -L corpusgate`, about four minutes.
+set(MCC_CORPUSGATE_CELLS
+    "ast/o0-baseline" "ast/o0-baseline-known-positive"
+    "ast/o0-baseline-gated" "ast/o0-baseline-gated-known-positive"
+    "rir-coverage-census")
 set(_mcc_treegate_seen "")
 foreach(_tg IN LISTS MCC_TREEGATE_CELLS)
     if(TEST "${_tg}")
@@ -9161,6 +9173,19 @@ foreach(_tg IN LISTS MCC_TREEGATE_CELLS)
         list(APPEND _mcc_treegate_seen "${_tg}")
     endif()
 endforeach()
+set(_mcc_corpusgate_seen "")
+foreach(_cg IN LISTS MCC_CORPUSGATE_CELLS)
+    if(TEST "${_cg}")
+        get_test_property("${_cg}" LABELS _cg_labels)
+        if(NOT _cg_labels)
+            set(_cg_labels "")
+        endif()
+        list(APPEND _cg_labels corpusgate)
+        list(REMOVE_DUPLICATES _cg_labels)
+        set_tests_properties("${_cg}" PROPERTIES LABELS "${_cg_labels}")
+        list(APPEND _mcc_corpusgate_seen "${_cg}")
+    endif()
+endforeach()
 list(LENGTH _mcc_treegate_seen _mcc_ntreegate)
 list(LENGTH MCC_TREEGATE_CELLS _mcc_ntreegate_want)
 if(_mcc_ntreegate LESS _mcc_ntreegate_want)
@@ -9170,6 +9195,14 @@ if(_mcc_ntreegate LESS _mcc_ntreegate_want)
         "branch registers is a typo or a deleted cell, and letting it pass would "
         "make `ctest -L treegate` quietly check less than it says")
 endif()
-message(STATUS "mcc tests: ${_mcc_ntreegate} tree-wide gate cell(s) labelled treegate")
+list(LENGTH _mcc_corpusgate_seen _mcc_ncorpusgate)
+list(LENGTH MCC_CORPUSGATE_CELLS _mcc_ncorpusgate_want)
+if(_mcc_ncorpusgate LESS _mcc_ncorpusgate_want)
+    message(FATAL_ERROR "mcc tests: the corpusgate label covers "
+        "${_mcc_ncorpusgate} of ${_mcc_ncorpusgate_want} named cells, for the "
+        "same reason the treegate list must be whole")
+endif()
+message(STATUS "mcc tests: ${_mcc_ntreegate} tree-wide gate cell(s) labelled "
+    "treegate, ${_mcc_ncorpusgate} corpus-sensitive labelled corpusgate")
 
 include(CPack)
