@@ -2101,7 +2101,7 @@ static int coff_emit_reloc(int etype, unsigned char *fld, addr_t addend) { MCC_T
 	case R_X86_64_64: write64le(fld, (uint64_t)addend); return IMAGE_REL_AMD64_ADDR64;
 	case R_X86_64_32:
 	case R_X86_64_32S: write32le(fld, (uint32_t)addend); return IMAGE_REL_AMD64_ADDR32;
-	case R_X86_64_RELATIVE: write32le(fld, (uint32_t)addend); return IMAGE_REL_AMD64_ADDR32NB;
+	case R_X86_64_RELATIVE: write32le(fld, read32le(fld) + (uint32_t)addend); return IMAGE_REL_AMD64_ADDR32NB;
 	case R_X86_64_TPOFF32: write32le(fld, (uint32_t)addend); return IMAGE_REL_AMD64_SECREL;
 	case R_X86_64_16: write16le(fld, (uint16_t)addend); return IMAGE_REL_AMD64_SECTION;
 	case R_X86_64_PC32:
@@ -2867,6 +2867,32 @@ PUB_FUNC int mcc_get_dllexports(const char *filename, char **pp) { MCC_TRACE("en
 }
 
 #ifdef MCC_TARGET_X86_64
+/* SEH (__try/__except) scope records for the current function, filled by the
+   parser and consumed by pe_add_unwind_data. Each address is a text-section
+   offset (relocated ADDR32NB against .uw_text_base); filter is a constant
+   (1 = EXCEPTION_EXECUTE_HANDLER, 0 = CONTINUE_SEARCH, ~0 = CONTINUE_EXECUTION). */
+typedef struct SehScope {
+	unsigned begin, end, filter, handler;
+} SehScope;
+#define SEH_MAX_SCOPES 256
+static SehScope seh_scopes[SEH_MAX_SCOPES];
+static int seh_nscope;
+
+ST_FUNC void pe_seh_reset(void) { MCC_TRACE("enter\n");
+	seh_nscope = 0;
+}
+
+ST_FUNC void pe_seh_scope(unsigned begin, unsigned end, unsigned filter,
+													unsigned handler) { MCC_TRACE("enter\n");
+	if (seh_nscope >= SEH_MAX_SCOPES)
+		{ MCC_TRACE("br\n"); return; }
+	seh_scopes[seh_nscope].begin = begin;
+	seh_scopes[seh_nscope].end = end;
+	seh_scopes[seh_nscope].filter = filter;
+	seh_scopes[seh_nscope].handler = handler;
+	seh_nscope++;
+}
+
 static Section *pe_add_unwind_info(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *xd;
 	if (NULL == s1->uw_pdata) { MCC_TRACE("br\n");
@@ -2907,7 +2933,7 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { 
 	section_ptr_add(xd, -xd->data_offset & 3);
 	d = xd->data_offset;
 	q = section_ptr_add(xd, 8);
-	q[0] = 0x01; /* Version 1, Flags 0 */
+	q[0] = seh_nscope ? 0x09 : 0x01; /* Version 1; Flags UNW_FLAG_EHANDLER if SEH */
 	q[1] = 0x04; /* SizeOfProlog = 4 (rbp established by offset 4) */
 	q[2] = 0x02; /* CountOfCodes = 2 */
 	q[3] = 0x05; /* FrameRegister = rbp(5), FrameOffset = 0 */
@@ -2915,6 +2941,34 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { 
 	q[5] = 0x03; /*         UWOP_SET_FPREG (op 3, info 0) */
 	q[6] = 0x01; /* code[1] CodeOffset = 1 */
 	q[7] = 0x50; /*         UWOP_PUSH_NONVOL (op 0), info 5 = rbp */
+
+	if (seh_nscope) { MCC_TRACE("br\n");
+		/* language-specific data: __C_specific_handler RVA + a C SCOPE_TABLE.
+		   Handler/scope addresses are text offsets, relocated ADDR32NB against
+		   .uw_text_base; the constant filter is a raw DWORD (no reloc). */
+		int i, hsym;
+		unsigned ho;
+		hsym = find_elf_sym(symtab_section, "__C_specific_handler");
+		if (0 == hsym)
+			{ MCC_TRACE("br\n"); hsym = put_elf_sym(symtab_section, 0, 0,
+									ELFW(ST_INFO)(STB_GLOBAL, STT_NOTYPE), 0, SHN_UNDEF,
+									"__C_specific_handler"); }
+		ho = xd->data_offset;
+		section_ptr_add(xd, 4);
+		put_elf_reloc(symtab_section, xd, ho, R_XXX_RELATIVE, hsym);
+		write32le(section_ptr_add(xd, 4), seh_nscope);
+		for (i = 0; i < seh_nscope; i++) { MCC_TRACE("br\n");
+			unsigned base = xd->data_offset;
+			unsigned char *r = section_ptr_add(xd, 16);
+			write32le(r, seh_scopes[i].begin);
+			write32le(r + 4, seh_scopes[i].end);
+			write32le(r + 8, seh_scopes[i].filter);
+			write32le(r + 12, seh_scopes[i].handler);
+			put_elf_reloc(symtab_section, xd, base, R_XXX_RELATIVE, s1->uw_sym);
+			put_elf_reloc(symtab_section, xd, base + 4, R_XXX_RELATIVE, s1->uw_sym);
+			put_elf_reloc(symtab_section, xd, base + 12, R_XXX_RELATIVE, s1->uw_sym);
+		}
+	}
 
 	pd = s1->uw_pdata;
 	o = pd->data_offset;
@@ -2925,6 +2979,7 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { 
 	put_elf_reloc(symtab_section, pd, o, R_XXX_RELATIVE, s1->uw_sym);
 	put_elf_reloc(symtab_section, pd, o + 4, R_XXX_RELATIVE, s1->uw_sym);
 	put_elf_reloc(symtab_section, pd, o + 8, R_XXX_RELATIVE, s1->uw_xsym);
+	pe_seh_reset();
 }
 
 #elif defined(MCC_TARGET_ARM64)

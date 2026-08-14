@@ -2024,6 +2024,10 @@ ST_FUNC Sym *pe_tls_index_sym(void);
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack);
 #endif
+#ifdef MCC_TARGET_X86_64
+ST_FUNC void pe_seh_reset(void);
+ST_FUNC void pe_seh_scope(unsigned begin, unsigned end, unsigned filter, unsigned handler);
+#endif
 PUB_FUNC int mcc_get_dllexports(const char *filename, char **pp);
 #define ST_PE_EXPORT 0x10
 #define ST_PE_IMPORT 0x20

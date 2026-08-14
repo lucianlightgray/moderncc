@@ -4883,9 +4883,30 @@ and makes mcc output debuggable by WinDbg/Visual Studio. Differential: the same 
 `dwarfgdb-docker.sh` uses on the ELF side — set a breakpoint at a named line, check the
 reported frame and one local. **Requires W3**, because CodeView lives in COFF sections.
 
-**Stage W6 — SEH statements (`__try`/`__except`/`__finally`). ~800–1,300 lines.**
-**Measured 2026-08-13: the oracle situation is worse than the other W-stages and the W4 coupling
-is real.** mcc rejects `__try` (`'__try' undeclared`) — and so does the **vendored mingw-gcc**
+**Stage W6 — SEH statements (`__try`/`__except`/`__finally`). ~~~800–1,300 lines.~~ —
+`__try`/`__except(constant)` LANDED 2026-08-13, and the funclet premise was wrong for this case.**
+mcc now parses `__try`/`__except`/`__finally` (three new keywords, `src/mcctok.h`) and compiles a
+working x64 `__try { … } __except(FILTER) { … }` when FILTER is a constant: `mcc` lays the guarded
+body then a jump over an **inline** handler, records a `SehScope`, and `pe_add_unwind_data`
+(`src/objfmt/mccpe.c`) sets `UNW_FLAG_EHANDLER` on the function's (W4) `UNWIND_INFO` and appends the
+`__C_specific_handler` RVA + a C `SCOPE_TABLE` (`{Begin, End, Filter, JumpTarget}`, `ADDR32NB`
+relocs). **The funclet analysis was right about what `cl` emits but wrong that it is *required*:** a
+hand-written probe proved `__C_specific_handler` accepts a **constant filter (=1)** with an
+**inline** handler — no filter funclet, no out-of-line handler funclet — so the whole construct fits
+mcc's linear emitter. The one non-obvious bug was that the jump-over turns the CFG-unreachable
+handler into dead code (`nocode_wanted`); a `CODE_ON()` before the handler body fixes it. **Verified
+against MSVC:** `pe/seh` (`tests/cross/pe-seh.{c,sh}`) catches a null-store access violation *and* an
+integer divide-by-zero and runs the no-fault paths, printing `av=7 ok=100 x=42 div=9 divok=5` exit 0
+identically on mcc-full-link, mcc-COFF→mingw, and `cl`. A latent COFF bug was fixed on the way:
+`.pdata`/`.xdata` `ADDR32NB` relocs carried their value in the field with a zero addend (fine for
+mcc's own linker, which reads the field), so the COFF writer's `RELATIVE` case now adds the field
+value instead of overwriting — the object path's unwind/scope addresses were previously all collapsing
+to the section base. **Still open:** non-constant `__except` filters (need a filter funclet),
+`__finally` termination handlers (errors cleanly today), `GetExceptionCode`/`GetExceptionInformation`,
+and i386 `FS:[0]`. The remaining detail below is the original plan.
+
+The earlier (superseded) analysis, kept for the funclet detail: mcc rejects `__try`
+(`'__try' undeclared`) — and so does the **vendored mingw-gcc**
 (`__try` is undeclared there too; GCC does not implement MSVC SEH statements). So unlike W1/W3/W5,
 **mingw is not a usable reference for W6** — only MSVC `cl.exe` compiles `__try/__except` (verified:
 a null-deref caught, `caught=1`, on this box's `cl`). Any W6 differential must therefore be

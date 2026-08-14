@@ -14931,6 +14931,36 @@ again:
 		rir_hook_if_end();
 		if (sscope)
 			{ MCC_TRACE("br\n"); prev_scope_s(&o); }
+	} else if (t == TOK___try) { MCC_TRACE("br\n");
+#if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
+		unsigned tb, te, hb;
+		int jover;
+		tb = ind;
+		block(0);
+		te = ind;
+		jover = gjmp(0);
+		if (tok == TOK___except) { MCC_TRACE("br\n");
+			int64_t filt;
+			next();
+			skip('(');
+			filt = expr_const64();
+			skip(')');
+			/* the handler is only reached through the SEH dispatcher, so it is
+			   invisible to the normal control-flow graph; re-enable code emission
+			   (the jump over it above turned it off) so its body is emitted. */
+			CODE_ON();
+			hb = ind;
+			block(0);
+			pe_seh_scope(tb, te, (unsigned)filt, hb);
+		} else if (tok == TOK___finally) { MCC_TRACE("br\n");
+			mcc_error("__finally is not supported yet");
+		} else { MCC_TRACE("br\n");
+			expect("__except or __finally");
+		}
+		gsym(jover);
+#else
+		mcc_error("SEH (__try) is only supported on the x86_64 Windows target");
+#endif
 	} else if (t == TOK_WHILE) { MCC_TRACE("br\n");
 		if (sscope)
 			{ MCC_TRACE("br\n"); new_scope_s(&o); }
