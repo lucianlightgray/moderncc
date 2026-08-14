@@ -221,6 +221,18 @@ static void sub_self(const char *in, const char *src, char *out, size_t n) {
 	*w = 0;
 }
 
+/* Appended after the object on the reference link line. libatomic carries the
+ * out-of-line __atomic_* calls gcc emits for aggregates wider than a machine
+ * word; without it atomic_aggregate and atomic_inlang_rmw fail at link and the
+ * cell reports "fewer than 2 reference compilers" rather than a link error. */
+#ifndef DIFF3_REF_LIBS
+#if defined __linux__
+#define DIFF3_REF_LIBS "-latomic"
+#else
+#define DIFF3_REF_LIBS ""
+#endif
+#endif
+
 static int build_run(const char *label, const char *cc, const char *mcc,
 										 const char *bdir, const char *idir, const char *sup,
 										 const char *work, const char *src, const char *flags,
@@ -229,9 +241,23 @@ static int build_run(const char *label, const char *cc, const char *mcc,
 	snprintf(exe, sizeof exe, "%s/%s%s", work, label, EXE_SFX);
 	remove(exe);
 	if (cc)
+		/* The reference command line is pinned, not defaulted. gcc 15 defaults
+		 * to -std=gnu23, where a K&R `()` declares (void) -- which turns
+		 * old_func, grep and types from consensus cells into build failures --
+		 * and gcc 14 promoted -Wint-conversion and friends from warnings to
+		 * errors, which -w does not undo because they are no longer warnings.
+		 * Five three-way cells were being lost to a toolchain default drifting
+		 * under a hard-coded command line, which is the same shape as a stale
+		 * bank one layer down. -latomic is appended for the same reason: the
+		 * two atomic aggregate cells fail at LINK without it on glibc. A
+		 * reference that stops building is indistinguishable from a reference
+		 * that disagrees, and both read as "fewer than 2 references". */
 		snprintf(cmd, sizeof cmd,
-						 "\"%s\" -w -O0 \"-I%s\" %s \"%s\" -o \"%s\" >/dev/null 2>&1",
-						 cc, sup, flags, src, exe);
+						 "\"%s\" -w -O0 -std=gnu17 -Wno-error=int-conversion "
+						 "-Wno-error=implicit-function-declaration "
+						 "-Wno-error=incompatible-pointer-types "
+						 "\"-I%s\" %s \"%s\" -o \"%s\" %s >/dev/null 2>&1",
+						 cc, sup, flags, src, exe, DIFF3_REF_LIBS);
 	else
 		snprintf(cmd, sizeof cmd,
 						 "\"%s\" \"-B%s\" \"-I%s\" \"-I%s\" %s \"%s\" -o \"%s\" >/dev/null 2>&1",

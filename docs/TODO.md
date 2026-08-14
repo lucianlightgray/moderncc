@@ -6218,6 +6218,21 @@ re-running all 424 cells under `ctest -V`. **`mcc_skip_test` does report why** (
    consensus cells lost to a toolchain default drifting under a hard-coded command line —
    the same shape as the `-O0` bank, one layer down. `alignas`, `builtin_inf_nan` and
    `asm_lvalue_cast` are genuinely non-portable and should stay skipped.
+   **— FIXED 2026-08-13, and it recovered SEVEN cells rather than five.** The reference
+   command line in `tests/diff3/runner.c` is now pinned instead of defaulted:
+   `-std=gnu17` (gcc 15 defaults to `gnu23`, where a K&R `()` declares `(void)`),
+   `-Wno-error=int-conversion` and two siblings (gcc 14 promoted these from warnings to
+   errors, which `-w` does **not** undo because they are no longer warnings), and
+   `-latomic` appended on Linux for the two atomic-aggregate cells, which failed at
+   *link*. Verified against the full-suite log rather than assumed: `old_func`, `grep`,
+   `types`, `ternary_op`, `atomic_aggregate`, `atomic_inlang_rmw` **and `alignas`** were
+   all `(Skipped)` in that run and all seven now pass. They adjudicate rather than pass
+   vacuously — `diff3/old_func` reports *"1 agree, 0 ref-cant-build"*. The whole family is
+   299 of 299.
+   **The lesson generalises past this cell**: a reference that stops *building* is
+   indistinguishable from a reference that *disagrees*, and both surface as "fewer than 2
+   reference compilers". Pinning the standard is what keeps a three-way oracle three-way
+   as the toolchain moves under it.
 3. ~~`MCC_SLICE_CENSUS_RUN` is undocumented and `-L census` reports green while three of its six cells 77. Either…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 4. ~~Registration gates with no `else()` skip stub — cells that *vanish* rather than skip, which is the class…~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 5. **The 24 in-container `apt-get … || exit 77` sites** in `tools/*-docker.sh`. A transient
