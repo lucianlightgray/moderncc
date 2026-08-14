@@ -1220,6 +1220,17 @@ static int arena_mode(const char *path, int minnodes, long limit, int quiet) {
 		printf(GATE_NAME ": FAIL (no GPU dispatch happened)\n");
 		return 1;
 	}
+	/* Dispatching is not comparing. Every point can be vacuous -- refused by
+	 * the lane, or poisoned -- and this arm would still print mismatches=0 and
+	 * OK, because the only floor was on dispatches. A generator whose yield
+	 * silently went to zero reads exactly like a clean run. */
+	if (!tot_cmp) {
+		printf(GATE_NAME ": FAIL (%ld dispatch(es) and %ld point(s), but 0 "
+										 "compared -- every point was vacuous, so this run "
+										 "adjudicated nothing)\n",
+					 g_dispatches, tot_pts);
+		return 1;
+	}
 	printf(GATE_NAME ": %s\n", (tot_bad || tot_reject) ? "FAIL" : "OK");
 	return (tot_bad || tot_reject) ? 1 : 0;
 }
@@ -1596,6 +1607,13 @@ int main(int argc, char **argv) {
 				 g_dispatches, g_lanes, total_pts, total_cmp, total_vac, mismatch);
 	if (g_dispatches == 0) {
 		printf(GATE_NAME ": FAIL (no GPU dispatch happened)\n");
+		return 1;
+	}
+	if (total_cmp == 0) {
+		printf(GATE_NAME ": FAIL (%ld dispatch(es) and %ld point(s), but 0 "
+										 "compared -- every point was vacuous, so this run "
+										 "adjudicated nothing)\n",
+					 g_dispatches, total_pts);
 		return 1;
 	}
 	printf(GATE_NAME ": %s\n", mismatch ? "FAIL" : "OK");

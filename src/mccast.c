@@ -5935,7 +5935,9 @@ static void ast_sattr_note(const AstArena *a, AstLocal s, int bytes) { MCC_TRACE
 }
 
 /* Hoisted out of ast_replay_bb, which is recursive: SValue
- * sv_stack[VSTACK_SIZE + 1] is 32,832 of that function's 35,424-byte frame,
+ * sv_stack[VSTACK_SIZE + 1] is 41,040 bytes -- measured, 80 * 513, not the
+ * 32,832 recorded here until 2026-08-13, which was a 64-byte SValue two
+ * growths ago -- of that function's frame,
  * and C allocates the whole frame at entry even though this arm is the only
  * user, so every level of the recursion paid for the inline-asm path. A
  * separate noinline callee pays it once, and only when ASMGEN actually

@@ -225,7 +225,12 @@ def check_table(root, mutate):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=ROOT)
-    ap.add_argument("--min-refs", type=int, default=600)
+    # Match the floor docs/refs registers. A default ABOVE the real count made
+    # the tool fail by hand on a tree whose own gate was green -- it defaulted
+    # to 600 while the cell passed 440 and the tree resolved 510, then 584. An
+    # anti-vacuity floor that only the gate gets right teaches its readers that
+    # the tool is broken rather than that the docs are.
+    ap.add_argument("--min-refs", type=int, default=440)
     ap.add_argument("--include-archived", action="store_true")
     ap.add_argument("--mutate", action="store_true",
                     help="plant one defect of every shape this lint claims to "

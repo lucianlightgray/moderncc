@@ -634,6 +634,56 @@ failing:**
 `~/Projects/gcc`. Until it was, `optlevel/torture-differential` skipped silently — a red recorded
 from another tree is not a red you can watch from this one until its prerequisite exists locally.
 
+### The clean full-suite number for x86_64-linux — 2026-08-13, and it is 3 of 9937
+
+> This file has said for days that *"a clean full-suite number for this host does not yet
+> exist — do not quote one."* It exists now. `ctest -j6` over `cmake-def`: **9937 cells, 3
+> failures**, and all three are closed below. Quote this one.
+
+**None of the three was in any table in this file, and none was a compiler defect.** That is the
+fourth and fifth time in three days a red was found by *running the family rather than reading the
+table*, after N31, N32, N33 and N38.
+
+| cell | what it was | whose |
+| --- | --- | --- |
+| `target-gate-invariant` | `src/mccjit_embed.c:580` grew an `#ifdef MCC_TARGET_PE` — a target conditional outside `src/arch/` and the frozen allowlist | `8fc24990`, the **arm64 host's N24 fix**, 2026-08-12. Red here for a day |
+| `ci/registration-stubs` | the mingw capability gate registers **8** `pe/*` cells and its two `else()` arms stub only **2**, so 6 vanish from `ctest -N` on any host without mingw | today's Windows CodeView wave |
+| `smoke/divergence` | three new `diverge-masked` categories, unbanked | N29's real-gcc oracle, working as designed |
+
+**The `#ifdef` did not need to exist.** `mccjit_bind_name_eq` guards a `!strchr(bind_name, '@')`
+test on `MCC_TARGET_PE`, and the guard is a no-op on both other targets: `leading_underscore` is 0
+on ELF so the `&&` short-circuits before `strchr` ever runs, and a Mach-O C bind name carries no
+`@` either. Only PE's stdcall decoration does, which is the case the test was written for. Deleting
+the conditional gives the same answer on all three targets and restores the invariant — **the
+alternative was widening the allowlist, which would have retired the invariant to keep one line.**
+
+**The registration-stub gap is the green-by-omission shape this file is built around**, arriving
+from the other direction for once: a Windows wave added cells on a Windows-capable host, and on
+every host without mingw six of them simply were not there. `ctest -N` counted differently per
+host, which is exactly what `mcc_skip_test` exists to prevent. Six stubs added to each arm.
+
+**The three `diverge-masked` rows were decomposed before they were banked, and the decomposition is
+complete: 180 points, zero defects.**
+
+| category | masked | evaluation-format | NaN sign/payload |
+| --- | --- | --- | --- |
+| `bsweep.F16.FSCALE` | 160 | **140** | 20 |
+| `csweep.C32.CMULADD` | 10 | — | 10 |
+| `csweep.C64.CMULADD` | 10 | — | 10 |
+
+The 140 are **item 22 at point granularity**, and this is a measurement rather than an inference:
+the subject rebuilt with `gcc-15 -fexcess-precision=16` reproduces mcc **bit-exactly on all 140,
+and on none of the other 20**. `FSCALE` is `(T)((T)((T)a * (T)2) - (T)((T)b / (T)2) + (T)c)` with
+every subexpression cast to `_Float16`, so per-operation rounding is what the source asks for and
+what `__FLT_EVAL_METHOD__ 0` promises; the visible shapes are mcc answering `+0` where the
+references answer a subnormal, and 1-ulp gaps like `3e00` against `3e01`. The other 40 points
+differ only in a quiet NaN's sign bit or payload, which C leaves unspecified.
+
+> **The methodological warning is worth more than the result.** The first four points of each
+> category read as pure NaN differences, and that reading was **wrong** for `F16.FSCALE`, where 140
+> of 160 are finite. The sampled answer and the exhaustive answer disagreed. Check every point or
+> check none — a component-wise pass over all 180 is what produced the table above.
+
 ### The suite's standing reds — whole-suite run, 2026-08-11
 
 A full `ctest` over `cmake-def` (19k cells) leaves **7 red**. All seven were verified

@@ -8333,12 +8333,36 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 "COFF object writer differential (needs vendored mingw-w64 x86_64 gcc)")
             mcc_skip_test(pe/unwind-backtrace
                 "native RtlVirtualUnwind conformance (needs vendored mingw-w64 x86_64 gcc)")
+            mcc_skip_test(pe/seh
+                "needs vendored mingw-w64 x86_64 gcc")
+            mcc_skip_test(pe/torture-classes
+                "needs vendored mingw-w64 x86_64 gcc")
+            mcc_skip_test(pe/x-oracle
+                "needs vendored mingw-w64 x86_64 gcc")
+            mcc_skip_test(pe/x-oracle-mutate
+                "needs vendored mingw-w64 x86_64 gcc")
+            mcc_skip_test(pe/dwarf-lines
+                "needs vendored mingw-w64 x86_64 gcc")
+            mcc_skip_test(pe/codeview
+                "needs vendored mingw-w64 x86_64 gcc")
         endif()
     else()
         mcc_skip_test(pe/coff-obj-diff
             "COFF object writer differential (native x86_64 WIN32 host with mingw only)")
         mcc_skip_test(pe/unwind-backtrace
             "native RtlVirtualUnwind conformance (native x86_64 WIN32 host with mingw only)")
+        mcc_skip_test(pe/seh
+            "native x86_64 WIN32 host with mingw only")
+        mcc_skip_test(pe/torture-classes
+            "native x86_64 WIN32 host with mingw only")
+        mcc_skip_test(pe/x-oracle
+            "native x86_64 WIN32 host with mingw only")
+        mcc_skip_test(pe/x-oracle-mutate
+            "native x86_64 WIN32 host with mingw only")
+        mcc_skip_test(pe/dwarf-lines
+            "native x86_64 WIN32 host with mingw only")
+        mcc_skip_test(pe/codeview
+            "native x86_64 WIN32 host with mingw only")
     endif()
 
     set(_macho_struct_native "")

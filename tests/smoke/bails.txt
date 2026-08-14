@@ -99,6 +99,49 @@
 #    still lowers through a promote-to-float round trip that quiets signaling
 #    NaNs. Same category, opposite reference -- worth knowing before anyone reads
 #    the row as unchanged.
+#
+# 17. THREE diverge-masked rows, new on x86_64-linux 2026-08-13, and they were
+#    decomposed before they were banked rather than after.
+#
+#    WHAT THE CLASS IS. A verdict is a property of a whole category digest, so
+#    one reference disagreement anywhere in a category clears every other point
+#    in it -- N37, and N29's own finding one level down. smokerun re-runs each
+#    diverge-refs category through the subject's `--points` mode and counts the
+#    points where the references AGREE and mcc differs. Those counts are these
+#    rows. A count here is NOT a defect count; it is the size of what the digest
+#    was hiding, and it has to be read before it is banked.
+#
+#    THE DECOMPOSITION, AND IT IS COMPLETE. All 180 points are accounted for and
+#    none of them is a wrong answer:
+#
+#      bsweep.F16.FSCALE  160 = 140 evaluation-format + 20 NaN sign/payload
+#      csweep.C32.CMULADD  10 =                          10 NaN sign/payload
+#      csweep.C64.CMULADD  10 =                          10 NaN sign/payload
+#
+#    The 140 are item 22 at point granularity, and this is the measurement that
+#    says so rather than an inference from it: the subject rebuilt with
+#    `gcc-15 -fexcess-precision=16` reproduces mcc BIT-EXACTLY on all 140, and
+#    on none of the other 20. FSCALE is
+#    `(T)((T)((T)a * (T)2) - (T)((T)b / (T)2) + (T)c)`, every subexpression cast
+#    to _Float16, so per-operation rounding is what the source asks for and what
+#    __FLT_EVAL_METHOD__ 0 promises. The visible shapes are mcc answering +0
+#    where the references answer a subnormal, and 1-ulp gaps such as 3e00
+#    against 3e01 -- both are underflow and rounding differences produced by
+#    keeping the intermediate at _Float16 instead of float.
+#
+#    The remaining 20, and all 20 of the CMULADD points, differ only in the sign
+#    bit or the payload of a quiet NaN (7e00/fe00, 7fc00000/ffc00000,
+#    7ff8../fff8.., and payload variants 7f00, 7fe00000, 7ffc..). C leaves both
+#    unspecified. Verified component-wise over every masked point, not sampled:
+#    the first four points of each category read as pure NaN differences and
+#    that reading was WRONG for F16.FSCALE, where 140 of the 160 are finite.
+#    Check all of them or check none.
+#
+#    WHY THEY ARE BANKED AS NUMBERS THAT CANNOT RISE. Neither cause can grow
+#    without something changing: the evaluation format is a documented choice
+#    pinned by note 1, and a NaN sign flip is what N30's fix already moved once.
+#    A rise here means a new category started masking points, which is the event
+#    this row exists to catch.
 
 O0 replay-fallback:len 2
 O1 replay-fallback:len 2
@@ -389,3 +432,6 @@ div diverge-refs:shl.sll.wp1.fold 1
 div diverge-refs:shl.sll.wp1.fold 1
 wrapv wrapv-inert:digest-identical-under-fno-wrapv 1
 wrapv wrapv-inert:digest-identical-under-fwrapv 1
+div diverge-masked:bsweep.F16.FSCALE 160
+div diverge-masked:csweep.C32.CMULADD 10
+div diverge-masked:csweep.C64.CMULADD 10
