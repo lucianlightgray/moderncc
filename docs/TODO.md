@@ -259,7 +259,7 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10084-win-x64-non-constant-except-filters | DEPS: —
 - [ ] T-win-50000 [X] win-x64 — CodeView type residue: unions/enums/arrays + typed variable symbols
-      OWNER: — | STATE: OPEN | SHA: 26d7aa40 | TS: 2026-08-14T21:01Z
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 26d7aa40 | TS: 2026-08-14T21:04Z
       REF: DETAILS.md#t-win-50000-codeview-type-residue | DEPS: —
 - [ ] T-lin-10090 [X] mac-arm64 — re-take `if-conversion-abs` on arm64
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
