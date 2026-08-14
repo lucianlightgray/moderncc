@@ -817,9 +817,17 @@ from another tree is not a red you can watch from this one until its prerequisit
 
 ### The clean full-suite number for x86_64-linux — 2026-08-14, and it is 0 of 9995
 
-> **Run full suites at `-j32` on this host** (32 cores), as of 2026-08-14. Cells that only
-> fail at that width are tracked and are meant to be *fixed*, not tolerated — see *Cells
-> that fail under parallel load*. The figure below was taken at `-j8`.
+> **Run full suites at `-j32` on this host** (32 cores), as of 2026-08-14.
+>
+> **THE NUMBER: `ctest -j32` over `cmake-def`, 2026-08-14 — 10021 cells, ZERO failures.**
+> Nothing else running on the box. This supersedes both figures below, and it is the first
+> genuinely clean full suite this host has produced: not "three reds that were explained",
+> but no reds. It includes the three cells the load table calls contention-sensitive —
+> `run-tier/x86_64-win32` (10.84 s), `run-tier/i386-win32` (20.05 s) and
+> `gpu/ladder-gpu-parity` (189.65 s) — all passing, which is what corrects that table's
+> framing.
+>
+> The two figures below were taken at `-j8`.
 >
 > **Superseding the 2026-08-13 figure below.** `ctest -j8` over `cmake-def` on 2026-08-14:
 > **9995 cells, 3 reported failures, and none of them survives investigation** — so the
@@ -7943,11 +7951,30 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
 > advice for *reading* a run and bad as a permanent resting place: it means the suite has a
 > known-flaky set nobody is fixing.
 
-| cell | how it fails under load | evidence | what it needs |
+| cell | how it fails | at `-j32` on an idle box | what it needs |
 | --- | --- | --- | --- |
-| `run-tier/x86_64-win32` | **300 s TIMEOUT** at `-j8`; passes in **5.28 s** alone | measured 2026-08-14, a 57× spread | a wine-server RESOURCE_LOCK, or its own `WINEPREFIX` per cell, so concurrent wine cells do not serialise on one server |
-| `run-tier/i386-win32` | fails at `-j8`, passes alone | measured 2026-08-14; the traps list already records *"Maximum number of clients reached"* for this cell by name | same |
-| `gpu/ladder-gpu-parity` | 3 of 10 failed concurrent, 0 of 7 serial | traps note 7, load average 180–348 | a device RESOURCE_LOCK |
+| `run-tier/x86_64-win32` | **300 s TIMEOUT** during a `-j8` run | **passes, 10.84 s** | see the correction below |
+| `run-tier/i386-win32` | failed during a `-j8` run; the traps list records *"Maximum number of clients reached"* for it by name | **passes, 20.05 s** | see below |
+| `gpu/ladder-gpu-parity` | 3 of 10 failed concurrent, 0 of 7 serial (traps note 7, load average 180–348) | **passes, 189.65 s** | a device RESOURCE_LOCK |
+
+**CORRECTION, same day, and it invalidates this table's original framing.** I wrote the rows
+above from a `-j8` run and called the cause "parallel load", implying ctest width. The very
+next measurement contradicts that: a **`-j32` run on an otherwise-idle box passed all three**
+and the whole suite, **10021 cells, 0 failures**. `-j32` is four times the width that failed.
+
+So the trigger is **not** ctest's `-j`. What the two failing runs had in common was *other*
+work on the machine — cross builds and background agents — not the suite's own parallelism.
+The honest statement is that these cells are sensitive to total system load, and the wine
+pair most likely to competing wine/qemu processes rather than to each other. A
+`RESOURCE_LOCK` between the two wine cells would therefore **not** have fixed the `-j8`
+failure, because the load was not coming from the other wine cell.
+
+**What that means for the next person**: do not add a lock or a timeout bump on the strength
+of the rows above. Reproduce first, under a *named* competing load, and find out whether the
+wine failure is a shared `WINEPREFIX` racing `wineserver` startup or plain CPU starvation —
+a per-cell `WINEPREFIX` distinguishes them. The 57× spread I originally quoted for
+`x86_64-win32` is real but was measured against a contended baseline; against the idle `-j32`
+run it is 300 s versus 10.84 s, and both numbers describe the load, not the cell.
 
 **The fix shape is the same for all three and ctest already supports it**: `RESOURCE_LOCK`
 on a named resource serialises exactly the cells that contend, without serialising the
