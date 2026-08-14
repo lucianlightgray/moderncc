@@ -1137,6 +1137,55 @@ in the *signature* is a pdbutil formatter quirk, not in the data). Updated resid
 aggregate records (`LF_STRUCTURE`/`LF_UNION`/`LF_ENUM` + `LF_FIELDLIST`) and typed
 data/local symbols remain; then record dedup.
 
+**Progress — slice 3 + DONE (win-x64, 2026-08-14, SHA 26d7aa40).** Aggregate struct
+types done, and with them the `.debug$T` type stream this task is scoped to. `cv_struct_type()`
+emits an `LF_FIELDLIST` (one `LF_MEMBER` per field: public access, member type index via
+recursive `cv_type_of`, byte offset as a numeric leaf, name) plus a forward-ref and a
+complete `LF_STRUCTURE`, keyed by a `Sym*`→index cache (`cv_tcache`) so self-referential
+structs (linked lists) terminate and each struct is emitted once. The subtle bug fixed on
+the way: field-list members must be 4-aligned to the *record* grid — `fb-offset + 2`, since
+the 2-byte length prefix shifts the phase — otherwise `cv_add_record`'s own tail padding
+lands inside the field list and a reader decodes it as a bogus member. Names use the stabs
+mask idiom (`v & ~SYM_STRUCT` / `v & ~SYM_FIELD` before the `SYM_FIRST_ANOM` test).
+Conservative by construction: unions, bit-field members, arrays (`VT_ARRAY`), and
+function-pointer members leave the struct a forward-ref rather than mislabel — a
+struct-heavy source (unions, bit-fields, func ptrs, nested + self-ref structs, enums,
+arrays, doubles) compiles with **0 CodeView errors and a valid PDB**. `pe/codeview` now
+round-trips a full `struct Pt { int x; int y; }` (with `sizeof`/offsets) plus `int`, `int*`
+signatures through lld-link→PDB→llvm-pdbutil; known-positive from slice 1 still holds.
+
+**Scope call:** this task is the `.debug$T` **type stream**, which is delivered and
+round-tripped for the type kinds a C debugger reaches most — scalars, pointers, and
+structs. **Residue → follow-up [T-win-50000]:** `LF_UNION`/`LF_ENUM`/`LF_ARRAY` type
+records (today safe-untyped), typed variable symbols (`S_LDATA32`/`S_GDATA32`/`S_LOCAL`
+carrying a type index — a `.debug$S` symbol-side feature that also needs variable
+tracking mcc's CV path does not yet do), and arglist/procedure record dedup.
+
+<a id="t-win-50000-codeview-type-residue"></a>
+
+## T-win-50000 win-x64 — CodeView type residue: unions/enums/arrays + typed variable symbols
+
+**Type** `[X]` — **State** OPEN — **DEPS** —
+
+Follow-up to [T-lin-10085](#t-lin-10085-win-x64-codeview-debugt-types) (the `.debug$T`
+function/pointer/struct type stream, done at `26d7aa40`). What that left, all safe today
+(untyped, never mislabelled): (1) `LF_UNION` — mirror `cv_struct_type`, all members at
+offset 0, leaf `0x1506`. (2) `LF_ENUM` (`0x1507`) + an `LF_FIELDLIST` of `LF_ENUMERATE`
+(`0x1502`) for the enumerators; today an enum reads as its underlying `int`. (3) `LF_ARRAY`
+(`0x1503`: element type, index type `T_ULONG` `0x0022`, size numeric, empty name) — array
+struct members are currently forward-ref-only (`VT_ARRAY` guarded in `cv_type_of`).
+(4) Typed variable symbols: emit `S_GDATA32`/`S_LDATA32` for globals and `S_LOCAL` for
+locals in `.debug$S` with a type index, so a debugger shows variable types — needs mcc's CV
+path to track variables (it tracks only functions via `mcc_cv_funcstart` today).
+(5) arglist/procedure record dedup (each function currently emits its own).
+
+**Verification.** Extend `tests/cross/pe-codeview.sh`: round-trip a `union`, an `enum`, an
+array member, and a typed global/local through lld-link→PDB→`llvm-pdbutil pretty` and
+assert each renders with its type (as structs do today).
+
+**Source.** Follow-up filed by win-x64 on 2026-08-14 while closing T-lin-10085; the type
+stream was scoped to scalars/pointers/structs, these are the remaining CodeView type kinds.
+
 <a id="t-lin-10086-win-x64-arm64-win32-arm-win32"></a>
 
 ## T-lin-10086 win-x64 — `arm64-win32` / `arm-win32` execution

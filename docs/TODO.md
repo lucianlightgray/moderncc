@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T20:56Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10361   | 2026-08-14T20:52Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T20:40Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50001   | 2026-08-14T21:01Z |
 
 ## Contracts — blocking, highest priority
 
@@ -258,9 +258,9 @@
 - [ ] T-lin-10084 [X] win-x64 — non-constant `__except` filters and `__finally` need funclet codegen
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10084-win-x64-non-constant-except-filters | DEPS: —
-- [ ] T-lin-10085 [X] win-x64 — CodeView `.debug$T` types
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 947b13fc | TS: 2026-08-14T20:40Z
-      REF: DETAILS.md#t-lin-10085-win-x64-codeview-debugt-types | DEPS: — | NOTE: slices 1-2 (fn+pointer types) landed 947b13fc; residue = aggregate/typed-locals
+- [ ] T-win-50000 [X] win-x64 — CodeView type residue: unions/enums/arrays + typed variable symbols
+      OWNER: — | STATE: OPEN | SHA: 26d7aa40 | TS: 2026-08-14T21:01Z
+      REF: DETAILS.md#t-win-50000-codeview-type-residue | DEPS: —
 - [ ] T-lin-10090 [X] mac-arm64 — re-take `if-conversion-abs` on arm64
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10090-mac-arm64-re-take-if-conversion | DEPS: —
