@@ -375,207 +375,207 @@
   "sha": "b5fdbbf0714bc26b"
  },
  "sources_wide": {
-  "n": 385,
-  "sha": "c3714c0c00f6ddc8"
+  "n": 386,
+  "sha": "cbde1d4978f7d221"
  },
  "wide": {
   "O0": {
    "arena": {
-    "bodies": 4746,
-    "body_bytes": 3723112,
-    "coverage": 94.2091,
+    "bodies": 4749,
+    "body_bytes": 3730958,
+    "coverage": 94.2193,
     "discarded_bytes": 126794,
     "failed": 9,
     "gap_bodies": 39,
     "gap_bytes": 0,
     "kept_coverage": {
-     "elf": 96.5944
+     "elf": 96.6016
     },
-    "modelled_bytes": 3723112,
+    "modelled_bytes": 3730958,
     "modelled_coverage": 100.0,
     "residual": {
      "elf": -119
     },
-    "text": 3817379,
-    "used_bytes": 3596318
+    "text": 3825292,
+    "used_bytes": 3604164
    },
    "capture": {
-    "bodies": 4746,
+    "bodies": 4749,
     "coverage": 100.0,
-    "faithful_bytes": 3723112,
+    "faithful_bytes": 3730958,
     "residual": {
      "elf": -119
     },
-    "text": 3817379
+    "text": 3825292
    },
    "lowerable": {
     "elf": {
-     "big_region_nodes_pct": 3.2542,
+     "big_region_nodes_pct": 3.2763,
      "blockers": {
       "asm": 0.0054,
       "call": 0.0082,
-      "frame": 0.2457,
-      "global": 0.6983,
+      "frame": 0.2451,
+      "global": 0.6968,
       "opaque": 0.0,
-      "reg": 1.1115,
-      "type": 0.3258
+      "reg": 1.1091,
+      "type": 0.3251
      },
-     "bodies_pct": 15.3796,
-     "bytes_pct": 1.3955,
-     "nodes_pct": 35.7914,
-     "nodes_pct_loose": 64.6414,
-     "nodes_pct_strict": 27.0137,
-     "region_nodes_pct": 10.6516
+     "bodies_pct": 15.3914,
+     "bytes_pct": 1.3929,
+     "nodes_pct": 35.8467,
+     "nodes_pct_loose": 64.7134,
+     "nodes_pct_strict": 27.0912,
+     "region_nodes_pct": 10.6903
     }
    }
   },
   "O1": {
    "arena": {
-    "bodies": 4770,
-    "body_bytes": 3717656,
-    "coverage": 94.1726,
+    "bodies": 4773,
+    "body_bytes": 3723750,
+    "coverage": 94.1802,
     "discarded_bytes": 127481,
     "failed": 9,
     "gap_bodies": 39,
     "gap_bytes": 0,
     "kept_coverage": {
-     "elf": 96.5709
+     "elf": 96.5765
     },
-    "modelled_bytes": 3717656,
+    "modelled_bytes": 3723750,
     "modelled_coverage": 100.0,
     "residual": {
      "elf": -119
     },
-    "text": 3812335,
-    "used_bytes": 3590175
+    "text": 3818496,
+    "used_bytes": 3596269
    },
    "capture": {
-    "bodies": 4770,
+    "bodies": 4773,
     "coverage": 100.0,
-    "faithful_bytes": 3722728,
+    "faithful_bytes": 3730574,
     "residual": {
      "elf": -119
     },
-    "text": 3817407
+    "text": 3825320
    },
    "lowerable": {
     "elf": {
-     "big_region_nodes_pct": 3.2537,
+     "big_region_nodes_pct": 3.2758,
      "blockers": {
       "asm": 0.0054,
       "call": 0.0083,
-      "frame": 0.2481,
-      "global": 0.6949,
+      "frame": 0.2477,
+      "global": 0.6938,
       "opaque": 0.0,
-      "reg": 1.0964,
-      "type": 0.3538
+      "reg": 1.0946,
+      "type": 0.3532
      },
-     "bodies_pct": 15.4299,
-     "bytes_pct": 1.3746,
-     "nodes_pct": 35.7928,
-     "nodes_pct_loose": 64.6387,
-     "nodes_pct_strict": 26.9937,
-     "region_nodes_pct": 10.6618
+     "bodies_pct": 15.4417,
+     "bytes_pct": 1.3726,
+     "nodes_pct": 35.848,
+     "nodes_pct_loose": 64.7107,
+     "nodes_pct_strict": 27.0712,
+     "region_nodes_pct": 10.7004
     }
    }
   },
   "O2": {
    "arena": {
-    "bodies": 4770,
-    "body_bytes": 3737032,
-    "coverage": 93.262,
+    "bodies": 4773,
+    "body_bytes": 3743148,
+    "coverage": 93.2703,
     "discarded_bytes": 125697,
     "failed": 9,
     "gap_bodies": 40,
     "gap_bytes": 467,
     "kept_coverage": {
-     "elf": 96.624
+     "elf": 96.6295
     },
-    "modelled_bytes": 3736565,
+    "modelled_bytes": 3742681,
     "modelled_coverage": 99.9875,
     "residual": {
      "elf": -119
     },
-    "text": 3871747,
-    "used_bytes": 3610868
+    "text": 3877959,
+    "used_bytes": 3616984
    },
    "capture": {
-    "bodies": 4770,
+    "bodies": 4773,
     "coverage": 100.0,
-    "faithful_bytes": 3722728,
+    "faithful_bytes": 3730574,
     "residual": {
      "elf": -119
     },
-    "text": 3817407
+    "text": 3825320
    },
    "lowerable": {
     "elf": {
-     "big_region_nodes_pct": 3.2537,
+     "big_region_nodes_pct": 3.2758,
      "blockers": {
       "asm": 0.0054,
       "call": 0.011,
-      "frame": 0.2345,
-      "global": 0.7077,
+      "frame": 0.2341,
+      "global": 0.7066,
       "opaque": 0.0,
-      "reg": 1.0424,
-      "type": 0.3
+      "reg": 1.0406,
+      "type": 0.2995
      },
-     "bodies_pct": 15.4299,
-     "bytes_pct": 1.3878,
-     "nodes_pct": 35.7928,
-     "nodes_pct_loose": 64.6387,
-     "nodes_pct_strict": 26.9937,
-     "region_nodes_pct": 10.6618
+     "bodies_pct": 15.4417,
+     "bytes_pct": 1.3858,
+     "nodes_pct": 35.848,
+     "nodes_pct_loose": 64.7107,
+     "nodes_pct_strict": 27.0712,
+     "region_nodes_pct": 10.7004
     }
    }
   },
   "O3": {
    "arena": {
-    "bodies": 4770,
-    "body_bytes": 3737032,
-    "coverage": 90.7666,
+    "bodies": 4773,
+    "body_bytes": 3743148,
+    "coverage": 90.7785,
     "discarded_bytes": 125697,
     "failed": 9,
     "gap_bodies": 40,
     "gap_bytes": 467,
     "kept_coverage": {
-     "elf": 96.624
+     "elf": 96.6295
     },
-    "modelled_bytes": 3736565,
+    "modelled_bytes": 3742681,
     "modelled_coverage": 99.9875,
     "residual": {
      "elf": -119
     },
-    "text": 3978192,
-    "used_bytes": 3610868
+    "text": 3984404,
+    "used_bytes": 3616984
    },
    "capture": {
-    "bodies": 4770,
+    "bodies": 4773,
     "coverage": 100.0,
-    "faithful_bytes": 3722728,
+    "faithful_bytes": 3730574,
     "residual": {
      "elf": -119
     },
-    "text": 3817407
+    "text": 3825320
    },
    "lowerable": {
     "elf": {
-     "big_region_nodes_pct": 3.2537,
+     "big_region_nodes_pct": 3.2758,
      "blockers": {
       "asm": 0.0054,
       "call": 0.011,
-      "frame": 0.2345,
-      "global": 0.7077,
+      "frame": 0.2341,
+      "global": 0.7066,
       "opaque": 0.0,
-      "reg": 1.0424,
-      "type": 0.3
+      "reg": 1.0406,
+      "type": 0.2995
      },
-     "bodies_pct": 15.4299,
-     "bytes_pct": 1.3878,
-     "nodes_pct": 35.7928,
-     "nodes_pct_loose": 64.6387,
-     "nodes_pct_strict": 26.9937,
-     "region_nodes_pct": 10.6618
+     "bodies_pct": 15.4417,
+     "bytes_pct": 1.3858,
+     "nodes_pct": 35.848,
+     "nodes_pct_loose": 64.7107,
+     "nodes_pct_strict": 27.0712,
+     "region_nodes_pct": 10.7004
     }
    }
   }

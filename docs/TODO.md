@@ -7704,8 +7704,39 @@ unknown name and the empty string answering 0, the implication chains
 a stale cache shows up. Mutation-checked (`== 0` → `!= 0` on the unknown name gives
 `FAIL line 82`).
 
-**Still missing** and not attempted: `__builtin_setjmp` / `__builtin_longjmp`, which need
-frame and target support and are the largest of the group by a wide margin.
+**`__builtin_setjmp` / `__builtin_longjmp` were ATTEMPTED 2026-08-13 and BACKED OUT, and the
+reason is worth more than another "needs target support".** The idea looked sound and it
+worked: gcc's documented `void *buf[5]` is too small for a `jmp_buf` but big enough to hold
+a **pointer** to one, so `buf[0]` can cache a slot and the platform's `_setjmp`/`_longjmp`
+do the work — which gives the *stronger* C setjmp contract (every callee-saved register
+restored) instead of gcc's restricted three-word form, with no target code at all. It was
+verified working: 0 on the direct call, the value on the second return, six live locals
+surviving a 7-frame unwind, buffer reuse, identical at `-O0`–`-O3`, and matching gcc and
+clang given the same program written against `_setjmp` directly. **gcc's own builtin hangs
+on that program**, so gcc is not the oracle here; C `setjmp` semantics is.
+
+**It is still unusable, because the predefs cannot declare `_setjmp`.** glibc's
+`<setjmp.h>` declares `int _setjmp(struct __jmp_buf_tag[1])`, and any predef declaration —
+`void *`, or even a prototype-less `int _setjmp()` — is an incompatible redefinition the
+moment a TU includes that header. **`src/mcc.c` includes it**, so the self-compile broke,
+and that is how it was caught: the wide census fell from **4770 bodies to 1533**, almost
+exactly `src/mcc.c`'s own contribution. The ratchet found a regression that no test in the
+suite was looking for.
+
+> **Two things this cost, both mine, both worth recording.** Adding the carry-chain and
+> `cpu_supports` coverage to `builtin_overflow.c` took `diff3/builtin_overflow` from
+> *"1 agree"* to *"0 agree, 1 ref-cant-build"* — gcc has no `__builtin_addcb`, and it
+> rejects an unknown `cpu_supports` name at compile time. **That is the exact failure the
+> diff3 runner was repaired for earlier the same day, reintroduced by me one layer up.**
+> The coverage now lives in `tests/exec/features_c99_c11/builtin_mcc_ext.c` behind
+> `#ifdef __MCC__`, which is the tree's own marker: diff3 reports it MCC-ONLY and skips it
+> rather than losing a reference, and `builtin_overflow` is back to *"1 agree"*. And a bank
+> written while the self-compile was broken had to be reverted — `--update-bank` does not
+> refuse to bank a corpus that just lost three thousand bodies.
+
+**So the remaining route is the one this row always said**: per-target frame asm, saving and
+restoring the callee-saved set directly. What is new is that the cheap header-level route is
+now closed by name, with the reason, so nobody has to rediscover it.
 
 > Moved to [`docs/ARCHIVED.md`](ARCHIVED.md) 2026-08-10, validated complete against the tree: *Confirmations for the clusters the archive had ranked*.
 

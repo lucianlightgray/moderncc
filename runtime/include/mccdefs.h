@@ -1111,6 +1111,29 @@
 	#define __builtin_cpu_supports(name) __mcc_cpu_supports(name)
 	#endif
 
+	/* NO __builtin_setjmp / __builtin_longjmp here, and the reason is worth
+	 * keeping so the next attempt does not repeat it.
+	 *
+	 * The buffer gcc documents is `void *buf[5]` -- too small for a jmp_buf,
+	 * but big enough to hold a POINTER to one, so routing through the
+	 * platform's _setjmp/_longjmp looks like a clean way to get the stronger C
+	 * setjmp contract without any target code. It works, and it was verified
+	 * working: 0 on the direct call, the value on the second return, six live
+	 * locals surviving a 7-frame unwind, buffer reuse, identical at -O0 through
+	 * -O3, and matching gcc and clang when they are given the same program
+	 * written against _setjmp directly.
+	 *
+	 * It is still not usable, because the predefs cannot DECLARE _setjmp.
+	 * glibc's <setjmp.h> declares `int _setjmp(struct __jmp_buf_tag[1])`, and
+	 * any predef declaration -- `void *`, or even a prototype-less
+	 * `int _setjmp()` -- is an incompatible redefinition the moment a TU
+	 * includes that header. That is not a corner case: src/mcc.c includes it,
+	 * so the self-compile breaks, which is how this was caught (the wide census
+	 * dropped from 4770 bodies to 1533 -- exactly src/mcc.c's contribution).
+	 *
+	 * So the remaining route really is the one docs/TODO.md says: per-target
+	 * frame asm, saving and restoring the callee-saved set directly. */
+
 	/* The DWARF register numbers an unwinder writes the exception object and
 	 * the selector into before __builtin_eh_return. Pure ABI constants, so
 	 * they belong in a header rather than the backend, and the value has to
