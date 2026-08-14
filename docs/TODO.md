@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30000   | 2026-08-14T19:52Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30000   | 2026-08-14T20:09Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10361   | 2026-08-14T20:16Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T20:01Z |
 
@@ -18,6 +18,10 @@
       REF: DETAILS.md#t-lin-10003-landed-the-gate-contract | DEPS: — | BLOCKED-BY-RED: T-lin-10360
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+
+- [ ] T-lin-10089 [X] mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T20:09Z
+      REF: DETAILS.md#t-lin-10089-mac-arm64-the-asto0-baseline-quartet | DEPS: T-lin-10002[C]
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
@@ -263,9 +267,6 @@
 - [ ] T-lin-10085 [X] win-x64 — CodeView `.debug$T` types
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10085-win-x64-codeview-debugt-types | DEPS: —
-- [ ] T-lin-10089 [X] mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10089-mac-arm64-the-asto0-baseline-quartet | DEPS: T-lin-10002[C]
 - [ ] T-lin-10090 [X] mac-arm64 — re-take `if-conversion-abs` on arm64
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10090-mac-arm64-re-take-if-conversion | DEPS: —
