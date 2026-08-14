@@ -7478,9 +7478,20 @@ assertions were mutation-checked (`44` → `45` gives `FAIL line 56`, rc 1). One
 `ast/o0-baseline` row moved as a result and was re-banked **as one row**, since the cause
 is that edit and nothing else; the other ten keys and the `.rir` board were left alone.
 
+**`__builtin_eh_return_data_regno` landed too**, as the ABI constants it is — the DWARF
+register numbers an unwinder writes the exception object and selector into. **Verified by
+execution on three targets, not by reading a psABI**: x86_64 `0 1` (matching gcc-15 and
+clang), and under qemu with the new sysroots arm64 `0 1` and riscv64 `10 11`. i386 is
+`0 2` and arm `0 1`; all four cross targets compile it. **One thing learned on the way
+that is worth keeping**: gcc *rejects* this builtin in a `case` label
+(*"case label does not reduce to an integer constant"*), so mcc's macro form is strictly
+more permissive than the reference. That is not a divergence to fix — it is a place where
+matching gcc would mean being *less* useful — but do not use a case label to prove
+constant-ness, because the reference will not agree.
+
 **Still missing** and not attempted: `__builtin_cpu_init` / `__builtin_cpu_supports`
-(needs CPUID dispatch), `__builtin_setjmp` / `__builtin_longjmp` (needs frame and target
-support), `__builtin_eh_return_data_regno` (target constants, small).
+(needs CPUID dispatch and a runtime feature vector), `__builtin_setjmp` /
+`__builtin_longjmp` (needs frame and target support — the largest of the group).
 
 > Moved to [`docs/ARCHIVED.md`](ARCHIVED.md) 2026-08-10, validated complete against the tree: *Confirmations for the clusters the archive had ranked*.
 

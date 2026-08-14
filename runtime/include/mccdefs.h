@@ -1097,6 +1097,22 @@
 	#define __builtin_subcll(a, b, cin, cout) \
 	__mcc_carry_gen(sub, __mcc_ullong_t, a, b, cin, cout)
 
+	/* The DWARF register numbers an unwinder writes the exception object and
+	 * the selector into before __builtin_eh_return. Pure ABI constants, so
+	 * they belong in a header rather than the backend, and the value has to
+	 * survive constant folding because an unwinder uses it in a case label.
+	 * Verified against gcc-15 and clang on x86_64 (0, 1); the others are their
+	 * psABI DWARF numbers for the first two argument registers. */
+	#if defined __x86_64__
+	#define __builtin_eh_return_data_regno(n) ((n) == 0 ? 0 : 1)
+	#elif defined __i386__
+	#define __builtin_eh_return_data_regno(n) ((n) == 0 ? 0 : 2)
+	#elif defined __aarch64__ || defined __arm__
+	#define __builtin_eh_return_data_regno(n) ((n) == 0 ? 0 : 1)
+	#elif defined __riscv
+	#define __builtin_eh_return_data_regno(n) ((n) == 0 ? 10 : 11)
+	#endif
+
 	/* The _chk fortify wrappers. mcc does not implement _FORTIFY_SOURCE, so
 	 * the checked forms are the unchecked ones with the object-size flag
 	 * discarded -- which is what every one of them degrades to when the size
