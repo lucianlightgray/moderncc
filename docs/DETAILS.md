@@ -1103,6 +1103,28 @@ W6 landed for the constant-filter case, and the "funclet generation required" pr
 
 **Source.** Migrated from `docs/TODO.md`, *Preamble* — [M-TODO-0001](#m-todo-0001-preamble).
 
+**Progress — slice 1 (win-x64, 2026-08-14, SHA a36f7cd1).** The `.debug$T` type
+stream now exists and is wired. `src/mccdbg.c` emits an `LF_ARGLIST` + `LF_PROCEDURE`
+pair per function and sets each `S_GPROC32.FunctionType` to the `LF_PROCEDURE` index
+(was hard-coded `T_NOTYPE`). Types are built in `cv_type_of_func()` at `mcc_cv_funcstart`
+(the Sym is live then) into a buffer, and the `.debug$T` COFF section is emitted at
+`mcc_cv_emit` beside `.debug$S`. Scalar signatures map to CodeView builtins
+(`void/bool/char/short/int/llong` signed+unsigned, `float/double`); any function whose
+return or a parameter is not a mapped basic type falls back to `T_NOTYPE` — graceful, no
+crash (verified: `g(int*)` → `0x0`, `main()` → `int ()`). `pe/codeview` was extended to
+assert the type stream structurally (llvm-readobj: `.debug$T`, `LF_PROCEDURE`, no proc
+left `FunctionType 0x0`, and `int (int)`/`int ()` present) and to round-trip signatures
+through a real PDB (`llvm-pdbutil pretty -types` → `int __cdecl (int)`). Known-positive
+proven on-box: neutralising the wiring rebuilds red naming the subject. Verified on
+win-x64 with the vcvars build loop; `pe/codeview` = OK.
+
+**Residue (task stays IN_PROGRESS).** `LF_POINTER` (pointer params/returns),
+aggregate records (`LF_STRUCTURE`/`LF_UNION`/`LF_ENUM` + `LF_FIELDLIST`/`LF_MEMBER`,
+with forward refs), and typed data/local symbols (`S_GDATA32`/`S_LOCAL` carrying a type
+index) are not yet emitted — a function or variable of aggregate/pointer type shows no
+type in the debugger. Record dedup is also not done (each function emits its own
+arglist+procedure). Next slice: `LF_POINTER` for pointer-to-basic, then aggregates.
+
 <a id="t-lin-10086-win-x64-arm64-win32-arm-win32"></a>
 
 ## T-lin-10086 win-x64 — `arm64-win32` / `arm-win32` execution
