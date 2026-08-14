@@ -3317,6 +3317,27 @@ a cell rather than by hand. The compiler one is the complex-divide accuracy — 
 route through the `__divdc3` lineage (Smith's algorithm with scaling) and mcc does not; whether
 to follow them is a decision, not a bug report.
 
+**CHECKED 2026-08-14, and the "decision" framing HOLDS here — which is worth recording because
+N36's did not, and the two rows look alike.** The test N36 turned on was "does mcc claim a model
+it then fails to implement". mcc **does** claim one: it predefines `__STDC_IEC_559_COMPLEX__ 1`
+(and `__GCC_IEC_559_COMPLEX 2`), which under C11 6.10.8.3 asserts conformance to Annex G. But it
+**honours that claim on the cases Annex G actually mandates** — G.5.1's infinity/NaN recovery.
+Measured against both references on this host, all three agreeing exactly:
+
+| case | gcc-16 | clang | mcc |
+| --- | --- | --- | --- |
+| `(1+2i) / (0+0i)` | `inf +infi` | `inf +infi` | **`inf +infi`** |
+| `(1+2i) / (inf+0i)` | `0 +0i` | `0 +0i` | **`0 +0i`** |
+| `(inf+0i) * (2+0i)` | `inf nani` | `inf nani` | **`inf nani`** |
+
+**So the divergences are in the accuracy of FINITE results, which Annex G does not specify.**
+That is the difference from N36: there, mcc claimed gcc's precision-N type and contradicted it on
+half the operators, so the answer was entailed; here mcc claims Annex G and delivers Annex G, and
+"how much relative error is acceptable on a cancelling divide" is genuinely unlegislated. **Do not
+apply N36's argument to this row** — the 53%-relative-error point is a quality-of-implementation
+finding, not a conformance one, and adopting Smith's algorithm is a cost/benefit call rather than
+a correction.
+
 **~~N30. `_Float16` negation quiets signaling NaNs.~~ — CLOSED 2026-08-13 on x86_64-linux, and
 the arena problem attempt 3 hit is closed with it.** The finished fix is not a constant/runtime
 split in `unary()` at all: it is **one line removed and one arm added to a primitive that was
