@@ -94,6 +94,7 @@ slice-enum | min:--min-slices | unproved | slices enumerated over the twelve pin
 slice-census | intrinsic:slice-census.py:602 refuses a zero-body denominator | unproved | bodies modelled for the wide-corpus slice census
 census/gates-armed | min:--min-cells | unproved | census-labelled cells found and proved armed
 ci/registration-stubs | min:--min-chains | unproved | capability-gate chains checked for a registered else-branch
+trace-gate-invariant | unfloored | unproved | function bodies and braced branches in MCC_TRACE-instrumented files checked for their opening trace call
 ci/gate-contract | min:--min-rows | ci/gate-contract-known-positive | gates declared in this manifest and checked against the build
 rir/bank-keying | unfloored | rir/bank-keying-known-positive | host-sensitive bank figures keyed by target and object format, and proved not to overwrite each other
 rir/corpus-guard | unfloored | rir/corpus-guard-known-positive | corpus_config entries whose guard fires on a source-shaping flip rather than silently reusing a stale corpus

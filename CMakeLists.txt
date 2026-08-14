@@ -7016,7 +7016,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         --must-run "${CMAKE_CURRENT_SOURCE_DIR}/tests/must-run.txt"
                         --build "${CMAKE_BINARY_DIR}"
                         --min-rows 90 --min-proved 40
-                        --max-unfloored 85 --max-unproved 50)
+                        --max-unfloored 86 --max-unproved 51)
             set_tests_properties("ci/gate-contract" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
 
@@ -7028,7 +7028,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         -DMUSTRUN=${CMAKE_CURRENT_SOURCE_DIR}/tests/must-run.txt
                         -DBINDIR=${CMAKE_BINARY_DIR}
                         -DMINROWS=90 -DMINPROVED=40
-                        -DMAXUNFLOORED=85 -DMAXUNPROVED=50
+                        -DMAXUNFLOORED=86 -DMAXUNPROVED=51
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_contract_mutate.cmake")
             set_tests_properties("ci/gate-contract-known-positive" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
