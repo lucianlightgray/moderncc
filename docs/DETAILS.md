@@ -1125,6 +1125,18 @@ index) are not yet emitted — a function or variable of aggregate/pointer type 
 type in the debugger. Record dedup is also not done (each function emits its own
 arglist+procedure). Next slice: `LF_POINTER` for pointer-to-basic, then aggregates.
 
+**Progress — slice 2 (win-x64, 2026-08-14, SHA 947b13fc).** `LF_POINTER` done.
+`cv_type_of()` recurses through `VT_PTR`, emitting an `LF_POINTER` (referent = pointee's
+CV index, attr `0x1000C` = `CV_PTR_64` | size-8<<13; `IsRestrict=0`, verified by
+bit-decode) for both return and parameters; used in place of `cv_basic_type` in
+`cv_type_of_func`. Pointer-to-unmapped (e.g. `struct S*`) still returns 0 → the function
+falls back to `T_NOTYPE`, conservative rather than mislabelling. Verified: `g(int*)` →
+`int (int*)`, `h(char*)` → `char* (char*)`, and `pe/codeview` now round-trips a pointer
+parameter as `int*` in the linked PDB's `Pointers` section (the `__restrict` llvm renders
+in the *signature* is a pdbutil formatter quirk, not in the data). Updated residue:
+aggregate records (`LF_STRUCTURE`/`LF_UNION`/`LF_ENUM` + `LF_FIELDLIST`) and typed
+data/local symbols remain; then record dedup.
+
 <a id="t-lin-10086-win-x64-arm64-win32-arm-win32"></a>
 
 ## T-lin-10086 win-x64 — `arm64-win32` / `arm-win32` execution
