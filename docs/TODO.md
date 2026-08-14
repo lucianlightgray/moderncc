@@ -8021,16 +8021,24 @@ server then two cells can keep running concurrently rather than being locked apa
   target, const array parameter, read-only use, `volatile` parameter, and a prototype
   declared `int` against a definition declared `const int` — all still build and match gcc
   byte for byte.
-- **Register-array decay is still open, and here is exactly where it is.** `register int
-  a[4]; int *p = a;` is rejected by gcc (C11 6.3.2.1p3) and accepted by mcc. **The explicit
-  form is already handled** — `unary()` diagnoses `&a`, `&a[0]` and `&x` correctly, and
-  `a.is_register` is set for locals and parameters alike. What is missing is *implicit*
-  decay: passing the array to a function, `*(a+1)`, and the bare initialisation above are
-  all accepted; `a[1]` is correctly accepted, matching gcc. **A `gaddrof()` hook does not
-  work and was tried and reverted**: none of the three failing forms routes through it,
-  because an array lvalue's value in mcc's representation already *is* its address, so
-  decay is a type change rather than an address-of. Fixing it needs the check at the point
-  an array-typed `vtop` is consumed as a pointer, which is diffuse — design first.
+- **Register-array decay — the two forms both references reject are now diagnosed; two
+  remain, and the references disagree about a third.** C11 6.3.2.1p3 makes decaying a
+  `register` array undefined. `unary()` always handled the explicit forms (`&a`, `&a[0]`,
+  `&x`); what was missing was implicit decay. **Fixed 2026-08-14** at the one real choke
+  point: mcc represents an array as `VT_PTR | VT_ARRAY`, so decay is not a conversion at
+  all — it is `gen_cast()`'s exit dropping the flag. `int *p = a;` and `h(a)` now error,
+  matching gcc and clang. Cell: `diag.dg-error.register_array_decay`.
+  **A `gaddrof()` hook was tried first and reverted** — it caught none of the forms, because
+  an array lvalue's value already *is* its address, so decay never takes an address.
+  **Still accepted, and worth knowing why before touching it**: `*a` and `*(a+1)`, which
+  gcc and clang both reject. They do not pass through `gen_cast()`: `*(a+1)` decays inside
+  `gen_op('+')` and `*a` inside `indir()`. Neither can simply be checked, because
+  **`a[1]` compiles to exactly the same two calls** (`gen_op('+'); indir();`, `mccgen.c`'s
+  postfix `[` branch) — and here the references *disagree*: **gcc accepts `a[1]`, clang
+  rejects it**, both consistently with their own treatment of `*(a+1)`, which they both
+  reject. So closing the last two forms means either following clang and rejecting `a[1]`
+  too, or carrying a subscript-suppression flag through `gen_op`/`indir` to keep gcc's
+  leniency. That is a semantics decision, not a bug fix, and it is left open deliberately.
 - `_Atomic` complex — probed 2026-08-14 and it works: `_Atomic double _Complex` with
   `atomic_init` and a load round-trips correctly. If this row means something narrower, it
   needs to say what.

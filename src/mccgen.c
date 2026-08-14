@@ -5163,6 +5163,20 @@ again:
 		}
 	}
 done:
+	/* This is where an array stops being an array: mcc represents one as
+	 * VT_PTR | VT_ARRAY, so array-to-pointer decay is not a conversion at all,
+	 * it is this line dropping the flag. That makes it the one choke point for
+	 * C11 6.3.2.1p3 -- decaying a `register` array takes its address, which is
+	 * undefined and which gcc rejects.
+	 *
+	 * unary() already diagnoses the explicit forms (&a, &a[0], &x). This covers
+	 * the implicit ones that do not go through it: `int *p = a;`, passing the
+	 * array to a function, and `*(a + 1)`. Plain `a[1]` is NOT affected and must
+	 * not be -- it never reaches here, and gcc accepts it too. */
+	if ((vtop->type.t & (VT_ARRAY | VT_VLA)) && !(type->t & (VT_ARRAY | VT_VLA)) &&
+			vtop->sym && vtop->sym->a.is_register && !ir_cap_replaying && !ast_replaying)
+		{ MCC_TRACE("br\n"); mcc_error("address of register variable '%s' requested",
+							get_tok_str(vtop->sym->v, NULL)); }
 	vtop->type = *type;
 	vtop->type.t &= ~(VT_QUALIFY | VT_ARRAY);
 }
