@@ -41484,3 +41484,16 @@ Measured on mac-arm64 at `2adf3530`. The skip reason's count is exact: a native 
 **Consequence for the fix.** Object identity for the osx keys is reproducible only if the cross re-bank and the native check compile against the *same pinned* libc headers. The existing pin mechanism is a vendored sysroot (`vendor/gentoo-stage3-*` for Linux, `runtime/win32` for Windows); the osx keys have neither. Closing this needs a pinned Darwin libc header set wired into the `*osx` branch as `--sysroot`, a re-bank of the two osx columns against it, then dropping the `NOT Darwin` guard around the quartet in `CMakeLists.txt`. That vendoring choice (which headers, licensing) is escalated as Q-mac-30000.
 
 **Source.** mac-arm64, 2026-08-14T20:15Z, at `2adf3530`.
+
+
+<a id="t-lin-10028-resolved-embed-jit-no-bake-notice-survives-w"></a>
+
+## T-lin-10028 resolved — the `--embed-jit` no-bake notice survives `-w`
+
+Fixed at `740e4f54`. `mccjit_embed_finalize` emitted its "no functions were JIT-baked" notice through `mcc_warning`, and `error1` returns early on `s1->warn_none` (`-w`), so `mcc -w --embed-jit` — and `-w` is what most builds pass, this tree's own harness included — produced an engine-less binary with no signal. The call now emits directly (via `s1->error_func` if set, else `fflush; fprintf(stderr); fflush`), keeping the exact text so existing consumers still match, unsuppressed by `-w`, and rc stays 0 (an advisory, not a failure). `-w` still silences ordinary warnings (verified: `-w -Wall` on an unused local is silent).
+
+**Verification.** `ctest --test-dir cmake-macos -R '^jit/embed-nobake-warn$'` — the new cell (`cmake/embedjit_nobake_warn.cmake`) compiles a trivial program with `mcc -w --embed-jit`, asserts rc 0 and that stderr carries `no functions were JIT-baked`. It greps the stable diagnostic, not the engine's own strings the way `tools/jitconform.py` does. It bites: pre-fix the same `-w` invocation printed nothing. Not a gate cell and not a `*-known-positive`, so no `tests/gate-contract.txt` or `tests/must-run.txt` row (both gates confirmed unaffected). Guarded on `MCC_EMBED_JIT AND NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING`.
+
+**Full-suite note.** A clean full native suite is not obtainable on this host at this HEAD for reasons unrelated to this change: `ci/registration-stubs` is red from T-lin-10002 residue (lin-x64's T-lin-10360, in flight) and `ci/gate-contract` reports 5 pre-existing Darwin host mismatches (the `ast/o0-baseline` quartet skips — T-lin-10089; `optlevel/torture-differential`'s floor; `gpu/msl-slice-known-positive` unclaimed). None is introduced by this diagnostic-only change, whose inputs to both gates are unchanged.
+
+**Source.** mac-arm64, 2026-08-14T20:37Z, at `740e4f54`.

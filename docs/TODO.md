@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T20:21Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T20:37Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10361   | 2026-08-14T20:16Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T20:35Z |
 
@@ -18,10 +18,6 @@
       REF: DETAILS.md#t-lin-10003-landed-the-gate-contract | DEPS: — | BLOCKED-BY-RED: T-lin-10360
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
-
-- [ ] T-lin-10028 [S] `--embed-jit` suppresses its own no-bake warning under `-w`
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T20:21Z
-      REF: DETAILS.md#t-lin-10028-embed-jit-suppresses-its-own-no | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
