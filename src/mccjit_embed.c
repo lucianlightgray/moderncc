@@ -2018,6 +2018,15 @@ static void mccjit_qsbr_reset(void) { MCC_TRACE("enter\n");
 	pthread_mutex_unlock(&mccjit_qsbr.lock);
 }
 
+/* Declared rather than reached through "mccgpu.h": that header is the shader
+ * emitters as well as the device layer, and its own comment says it needs the
+ * AST accessors and the ast_eval_slice width helpers already in the includer's
+ * scope -- which is why mccast.c includes it mid-file rather than at the top.
+ * This fragment only needs the device layer's one entry point, and a fragment
+ * that does not compile standalone is what build/fragments-are-not-tus exists
+ * to catch. */
+void mcc_gpu_quiesce(void);
+
 PUB_FUNC void mccjit_shutdown(void) { MCC_TRACE("enter\n");
 	if (!mcc_env_flag("MCC_JIT_SHUTDOWN", 1))
 		{ MCC_TRACE("br\n"); return; }

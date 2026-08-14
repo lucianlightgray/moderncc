@@ -1718,17 +1718,34 @@ def main():
             # ones that did not was printed and never compared -- so a source
             # dropping out shrank the denominator silently and the ratchet went
             # on passing over a smaller corpus. Bank it and fail when it rises.
+            # Read per-format, for the same reason residual and kept_coverage
+            # are: which sources compile is a property of the host, not of the
+            # compiler.  The arch-gated files inverted between the two hosts --
+            # arch/arm64_*.c and winarm64_interlocked.c fail on x86_64-linux and
+            # compile here, while the four inline_asm/asm_*_x86 files and
+            # fastcall.c do the reverse -- so elf's 9 and macho's 17 are both
+            # correct and neither is a regression against the other.  A flat
+            # legacy value reads as the elf floor and leaves any other host
+            # skipping with a reason rather than failing on a number that was
+            # never about it.
             nfail = len(c["failed"])
-            if "failed" in b:
+            fail_floor = arena_floor(b, "failed", fmt)
+            if fail_floor is None:
+                if "failed" in b:
+                    skipped.append("-%s compile failures (this host %d, no %s "
+                                   "floor banked -- which sources compile is a "
+                                   "host property, so the banked count is not "
+                                   "this host's)" % (opt, nfail, fmt))
+            else:
                 checked.append("-%s compile failures" % opt)
-                if nfail > b["failed"]:
+                if nfail > fail_floor:
                     names = ", ".join(
                         os.path.basename(f if isinstance(f, str) else f[0])
                         for f in c["failed"][:6])
                     bad.append("-%s: %d source(s) now fail to compile against "
                                "%d banked, so every percentage above is over a "
                                "denominator that just shrank: %s%s"
-                               % (opt, nfail, b["failed"], names,
+                               % (opt, nfail, fail_floor, names,
                                   " ..." if nfail > 6 else ""))
             resid_floor = arena_floor(b, "residual", fmt)
             if resid_floor is None:

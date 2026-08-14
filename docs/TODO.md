@@ -2999,6 +2999,36 @@ to pin mcc's and record the disagreement. What is *not* defensible is being inte
 inconsistent about which implementation is being followed, so the row stays open as a decision
 rather than a bug. Size: the comparison path, not `bf_trunc`.
 
+**N41. `84add424` banked a host-sensitive count as a flat number, and it went red on the other
+host within two hours.** New 2026-08-14, found by the third full run. The commit closed a real
+hole — sweep row 22's compile-failure half, a count that was printed on every run and compared
+against nothing — and banked `failed: 9` per level. **The 9 it names are x86_64-linux's**:
+`arch/arm64_encoding.c`, `arch/arm64_extasm.c` and `arch/winarm64_interlocked.c` are arch-gated
+and fail *there*. On arm64/Darwin they compile and a different set does not — the four
+`inline_asm/asm_*_x86` files, `functions_abi/fastcall.c` and so on — for **17**. Neither number is
+a regression against the other and both are correct for their host.
+
+**The tool already had the mechanism and the new check was added outside it.**
+`tools/rir-coverage.py` has `arena_floor(entry, key, fmt)`, whose own docstring says residual and
+kept_coverage "are host-format properties, not portable ones" and that **"banking them flat is
+what forced the whole lowerable cluster to partial-skip on any host that is not the one they were
+taken on."** `failed` is the same kind of quantity and was read as `b["failed"]`. It now goes
+through `arena_floor`, so a flat legacy value reads as the elf floor — x86_64-linux keeps exactly
+the enforcement `84add424` intended — and any other host skips with a reason instead of failing on
+a number that was never about it.
+
+**And the macho column is banked rather than left skipped**, so this host enforces it too:
+`{"elf": 9, "macho": 17}` at all four levels. Known-positive on this host: perturbing the macho
+floor to 16 gives *"17 source(s) now fail to compile against 16 banked"*. The reader was unit-
+tested on all three bank shapes — flat-on-elf → 9, flat-on-macho → skip, dict-on-macho → 17.
+
+**The pattern is now five deep and worth stating as a rule.** `bails.txt` keyed by target,
+`slice/census` keyed by arch×OS, `emit-map.py` missing an arch term, `ast/inv-faithful` keyed by
+arch, and now `failed`. **A number measured from the host's own toolchain, headers or arch gating
+is host-sensitive by default, and the burden is on the bank to say which host it came from** —
+banking it flat does not make it portable, it makes the next host's correct measurement look like
+a regression.
+
 **N40. The first full-suite run this host has ever completed found five reds, and four were
 invisible to every table in this file.** New 2026-08-13. `ctest -j4` over all **9933** cells:
 **99% passed, 5 failed**, 2556 skipped. Three are now closed, one is a flake with a named

@@ -385,7 +385,10 @@
     "body_bytes": 3732162,
     "coverage": 94.2196,
     "discarded_bytes": 126794,
-    "failed": 9,
+    "failed": {
+     "elf": 9,
+     "macho": 17
+    },
     "gap_bodies": 39,
     "gap_bytes": 0,
     "kept_coverage": {
@@ -435,7 +438,10 @@
     "body_bytes": 3724954,
     "coverage": 94.1805,
     "discarded_bytes": 127481,
-    "failed": 9,
+    "failed": {
+     "elf": 9,
+     "macho": 17
+    },
     "gap_bodies": 39,
     "gap_bytes": 0,
     "kept_coverage": {
@@ -485,7 +491,10 @@
     "body_bytes": 3744402,
     "coverage": 93.2703,
     "discarded_bytes": 125697,
-    "failed": 9,
+    "failed": {
+     "elf": 9,
+     "macho": 17
+    },
     "gap_bodies": 40,
     "gap_bytes": 467,
     "kept_coverage": {
@@ -535,7 +544,10 @@
     "body_bytes": 3744402,
     "coverage": 90.7794,
     "discarded_bytes": 125697,
-    "failed": 9,
+    "failed": {
+     "elf": 9,
+     "macho": 17
+    },
     "gap_bodies": 40,
     "gap_bytes": 467,
     "kept_coverage": {
