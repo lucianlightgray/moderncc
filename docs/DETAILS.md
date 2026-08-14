@@ -1186,6 +1186,18 @@ assert each renders with its type (as structs do today).
 **Source.** Follow-up filed by win-x64 on 2026-08-14 while closing T-lin-10085; the type
 stream was scoped to scalars/pointers/structs, these are the remaining CodeView type kinds.
 
+**Progress (win-x64, 2026-08-14, SHA ad8b4ef3).** Unions and arrays done. `cv_struct_type`
+generalised to `cv_aggregate_type(tp, is_union)` — `LF_UNION` (0x1506) shares the field-list
+walk but omits the struct-only `derived`/`vshape` words and lays every member at offset 0.
+`cv_array_type` emits `LF_ARRAY` (0x1503: element type via recursive `cv_type_of`, `T_ULONG`
+index, total byte size from `type_size()`), so a struct array member is typed rather than
+leaving the struct a forward-ref; multi-dimensional arrays fall out of the recursion.
+`pe/codeview` round-trips a `union Un` through the PDB and asserts an `LF_ARRAY` record; the
+struct-heavy stress source still yields a valid PDB with 0 errors. **Residue left:** enums
+(`LF_ENUM` 0x1507 + `LF_ENUMERATE` 0x1502; today an enum reads as its underlying `int`),
+typed variable symbols (`S_GDATA32`/`S_LDATA32`/`S_LOCAL` — needs variable tracking in the
+CV path), and arglist/procedure/record dedup.
+
 <a id="t-lin-10086-win-x64-arm64-win32-arm-win32"></a>
 
 ## T-lin-10086 win-x64 — `arm64-win32` / `arm-win32` execution
