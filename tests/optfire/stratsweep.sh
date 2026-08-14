@@ -247,10 +247,37 @@ collect_corpus() {
 	esac
 }
 
+# The admission yield, not just its non-emptiness. `n > 0` lets a miscompile
+# that breaks 30 of 31 subjects print PASS with one survivor, which is the
+# shape sweep row 24 is filed under: the drop list is written and never
+# counted. Require most of the collected corpus to survive, and say what fell
+# out when it does not. MCC_STRATSWEEP_MIN_YIELD overrides the fraction for a
+# deliberately narrowed run.
+yield_floor() {
+	_collected=$1
+	_admitted=$2
+	_who=$3
+	_pct=${MCC_STRATSWEEP_MIN_YIELD:-80}
+	[ "$_collected" -gt 0 ] || return 0
+	_need=$(( _collected * _pct / 100 ))
+	[ "$_need" -gt 0 ] || _need=1
+	[ "$_admitted" -ge "$_need" ] || {
+		echo "FAIL $_who: only $_admitted of $_collected collected subject(s) survived"
+		echo "  admission -- below the $_pct% floor of $_need. Every named subject is"
+		echo "  present, so this is a -O0/-O2 build or determinism failure across the"
+		echo "  corpus, not an absent one, and the sweep would otherwise have passed"
+		echo "  on the survivors:"
+		cat "$WORK/skipped"
+		exit 1
+	}
+}
+
 # Admit the corpus once per invocation and cache the reference strings.
 admit() {
 	nsub=0
+	ncollected=0
 	for sub in $(collect_corpus "$1"); do
+		ncollected=$((ncollected + 1))
 		src="$S/tests/exec/$sub.c"
 		nm=$(echo "$sub" | tr '/' '_')
 		build "" "$src" "$RUN.$nm.ref" || { echo "$sub O0-build" >> "$WORK/skipped"; continue; }
@@ -263,6 +290,9 @@ admit() {
 		printf '%s\t%s\t%s\n' "$sub" "$nm" "$r1" >> "$WORK/admitted"
 		nsub=$((nsub + 1))
 	done
+	# admit runs inside a command substitution, so the denominator has to leave
+	# through the filesystem rather than a variable.
+	echo "$ncollected" > "$WORK/collected"
 	echo "$nsub"
 }
 
@@ -315,6 +345,7 @@ iso)
 		{ echo "FAIL stratsweep-iso: named subject(s) absent from tests/exec, so the sweep silently shrank:$miss"; exit 1; }
 	[ "$n" -gt 0 ] ||
 		{ echo "FAIL stratsweep-iso: no subject admitted, though every named subject is present -- all $(wc -l < "$WORK/skipped") dropped in admission, which is a -O0/-O2 failure and not an absent corpus:"; cat "$WORK/skipped"; exit 1; }
+	yield_floor "$(cat "$WORK/collected")" "$n" "stratsweep-iso"
 	if [ "$WHICH" = all ]; then
 		lo=$STRAT_FIRST; hi=$STRAT_LAST
 	else
@@ -339,6 +370,7 @@ seq)
 		{ echo "FAIL stratsweep-seq: named subject(s) absent from tests/exec, so the sweep silently shrank:$miss"; exit 1; }
 	[ "$n" -gt 0 ] ||
 		{ echo "FAIL stratsweep-seq: no subject admitted, though every named subject is present -- all $(wc -l < "$WORK/skipped") dropped in admission, which is a -O0/-O2 failure and not an absent corpus:"; cat "$WORK/skipped"; exit 1; }
+	yield_floor "$(cat "$WORK/collected")" "$n" "stratsweep-seq"
 	check_seq "$ORDER" || { echo "FAIL stratsweep-seq $ORDER"; exit 1; }
 	echo "PASS stratsweep-seq $ORDER: $n subjects match the -O0 reference ($flakes non-recurring)"
 	;;

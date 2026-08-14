@@ -64,7 +64,8 @@ counter)
 		echo "PASS $NAME: $COUNTER=$got at $OLEVEL (norun: fired-only)"
 		exit 0
 	fi
-	"$MCC" $MCCFLAGS "$OLEVEL" "$SRC" -o "$opt" $LDF >/dev/null 2>&1 || { echo "FAIL $NAME: $OLEVEL build failed"; exit 1; }
+	"$MCC" $MCCFLAGS "$OLEVEL" "$SRC" -o "$opt" $LDF >"$WORK/$NAME.opt.err" 2>&1 ||
+		{ echo "FAIL $NAME: $OLEVEL build failed"; ofdiag "$WORK/$NAME.opt.err"; exit 1; }
 	optout=$("$opt" 2>&1) || { echo "FAIL $NAME: $OLEVEL run failed"; exit 1; }
 	[ "$optout" = "$refout" ] || {
 		echo "FAIL $NAME: output changed under $OLEVEL"
@@ -104,8 +105,9 @@ differ)
 	fi
 	for v in 0 1; do
 		if [ "$v" = 1 ]; then gflag="-f$GATE"; else gflag="-fno-$GATE"; fi
-		env $EENV "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "$gflag" "$SRC" -o "$opt.$v" $LDF >/dev/null 2>&1 ||
-			{ echo "FAIL $NAME: $gflag build failed"; exit 1; }
+		env $EENV "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "$gflag" "$SRC" -o "$opt.$v" $LDF \
+			>"$WORK/$NAME.$v.err" 2>&1 ||
+			{ echo "FAIL $NAME: $gflag build failed"; ofdiag "$WORK/$NAME.$v.err"; exit 1; }
 		out=$("$opt.$v" 2>&1) || { echo "FAIL $NAME: $gflag run failed"; exit 1; }
 		[ "$out" = "$refout" ] || {
 			echo "FAIL $NAME: $gflag output differs from -O0"
@@ -165,10 +167,12 @@ defstate)
 	DENV=${9:-}
 	[ "$DENV" = "-" ] && DENV=
 	[ -n "$GATE" ] && [ -n "$WANT" ] || { echo "FAIL $NAME: defstate needs <flag> <on|off>"; exit 2; }
-	env $DENV "$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.def.o" >/dev/null 2>&1 ||
-		{ echo "FAIL $NAME: default compile failed"; exit 1; }
-	env $DENV "$MCC" $MCCFLAGS "$OLEVEL" "-fno-$GATE" -c "$SRC" -o "$WORK/$NAME.zero.o" >/dev/null 2>&1 ||
-		{ echo "FAIL $NAME: -fno-$GATE compile failed"; exit 1; }
+	env $DENV "$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.def.o" \
+		>"$WORK/$NAME.def.err" 2>&1 ||
+		{ echo "FAIL $NAME: default compile failed"; ofdiag "$WORK/$NAME.def.err"; exit 1; }
+	env $DENV "$MCC" $MCCFLAGS "$OLEVEL" "-fno-$GATE" -c "$SRC" -o "$WORK/$NAME.zero.o" \
+		>"$WORK/$NAME.zero.err" 2>&1 ||
+		{ echo "FAIL $NAME: -fno-$GATE compile failed"; ofdiag "$WORK/$NAME.zero.err"; exit 1; }
 	if cmp -s "$WORK/$NAME.def.o" "$WORK/$NAME.zero.o"; then
 		got=off
 	else
