@@ -41268,3 +41268,26 @@ still showed at `-O0` was a harness artefact: `rir-coverage.py` sets `MCC_FORCE_
 the suite depends on it now.
 
 
+
+<a id="t-lin-10359-slicecref-oracle-stalls-on-five-programs"></a>
+
+## T-lin-10359 `slice/cref-oracle-*` stalls on five programs when the host GPU is busy
+
+**Type** `[X]` lin-x64 — **State** OPEN — **DEPS** —
+
+`gpuconform.py` gives `slicerun` 180 s per program and treats *any* stall as fatal (`if stalled:`, zero tolerance). On 2026-08-14 the cell began failing on five: `memclr.c`, `memcpy-a1.c`, `memcpy-a2.c`, `memcpy-a4.c`, `memcpy-a8.c`. Every value check in the same run was clean — `mismatches=0`, `funnel-disagreed=0`, `ok=2130` on all four oracle legs, `qualified=1562` against a floor of 1000, cref `tuples=2067654` against a floor of 50000. Nothing was adjudicated wrong; five programs never reported.
+
+**It is not a code regression, and the first diagnosis that it was is wrong.** The cell passed at 1442.91 s and 1530.03 s in two full runs earlier the same day and failed in every run after `eedf83f2` (the process-lifetime bracket), which made that commit look responsible. Measured rather than assumed:
+
+- A pre-`eedf83f2` `slicerun`, built from `eedf83f2^` in a scratch worktree, stalls identically on the same input.
+- The arena dump from a pre-`eedf83f2` `mcc` is byte-identical to the current one (8,519,787 bytes), so the compiler change did not alter the input either.
+- It stalls under `MCC_GPU_FORCE_DEVICE_LOST=1`, so it is not the dispatch path, and under `MCC_GPU_FENCE_NS=1000000`, so it is not the quiesce fence wait.
+- Standalone, with no other cell running, it exceeds 600 s against a 180 s budget — 3.5x over, not a marginal miss.
+
+**The cause is the host.** `bg3_dx11.exe` (Baldur's Gate 3 under wine) was resident for 1 h 54 m at 575 percent CPU, with the GPU at 72 percent utilisation, 5,295 MiB of 12,227 MiB, 82 C, 113 W of 138 W. Load average 8.45. The device cells contend with it for that GPU and the wine cells for the same `wineserver`, which is one mechanism behind all three of this row, T-lin-10073 and T-lin-10074.
+
+**The diagnostic, which is the reusable part.** Before attributing any device-cell or timing failure to a commit: `nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv` and `ps -eo pcpu,etime,comm --sort=-pcpu | head`. A foreign process holding the GPU makes every device cell unverifiable, and no amount of bisecting the tree will show it. Rebuilding the suspected commit's parent and re-measuring is what settled this one; it should be the first step, not the last.
+
+**Verification.** `ctest --test-dir cmake-def -R '^slice/cref-oracle-gcc-c-torture-execute$' --output-on-failure` on a host whose GPU is idle; expect no stalled programs. Confirm quiet first with the two commands above.
+
+**Source.** Measured on lin-x64, 2026-08-14T18:30Z, at d298af58.

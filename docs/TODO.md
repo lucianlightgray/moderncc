@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30000   | —                 |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10359   | 2026-08-14T17:13Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10360   | 2026-08-14T18:30Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50000   | —                 |
 
 ## Contracts — blocking, highest priority
@@ -229,6 +229,9 @@
 - [ ] T-lin-10073 [X] lin-x64 — the two wine `run-tier` cells are load-sensitive
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10073-lin-x64-the-two-wine-run | DEPS: —
+- [ ] T-lin-10359 [X] lin-x64 — `slice/cref-oracle-*` stalls on five programs when the host GPU is busy
+      OWNER: — | STATE: OPEN | SHA: d298af58 | TS: 2026-08-14T18:30Z
+      REF: DETAILS.md#t-lin-10359-slicecref-oracle-stalls-on-five-programs | DEPS: —
 - [ ] T-lin-10074 [S] `slice/quiesce` is structurally flaky and the device lock is built, priced and off
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10074-slicequiesce-is-structurally-flaky-and-the | DEPS: —
