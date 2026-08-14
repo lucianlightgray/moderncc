@@ -5833,6 +5833,51 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 			ad->a.gcc_struct = 1;
 			ad->a.ms_struct = 0;
 			break;
+		case TOK_SCALAR_STORAGE_ORDER1:
+		case TOK_SCALAR_STORAGE_ORDER2: {
+			/* mcc does not implement reversed scalar storage order, and quietly
+			 * laying the struct out in the target's own order is the dangerous
+			 * answer: mcc objects link against gcc's, so the two disagree about
+			 * where the bytes of every scalar member live and nothing says so.
+			 * Measured: for `struct __attribute__((scalar_storage_order(
+			 * "big-endian"))) { unsigned v; }` holding 0x01020304, gcc writes
+			 * 01 02 03 04 and mcc writes 04 03 02 01. Reading the member back
+			 * through the struct gives the same value under both, so a test that
+			 * does not inspect the bytes cannot see the difference.
+			 *
+			 * This used to be `warning: attribute ignored` from the default arm,
+			 * which -w silences -- and -w is what most builds pass. An attribute
+			 * that changes the ABI has to be refused rather than ignored.
+			 *
+			 * Asking for the order the target already uses is a genuine no-op,
+			 * so that one is accepted in silence. */
+			int order_tok;
+			skip('(');
+			if (tok != TOK_STR)
+				{ MCC_TRACE("br\n"); expect("\"big-endian\" or \"little-endian\""); }
+			order_tok = 0;
+			if (tokc.str.size == sizeof("big-endian") &&
+					!memcmp(tokc.str.data, "big-endian", sizeof("big-endian") - 1))
+				{ MCC_TRACE("br\n"); order_tok = 1; }
+			else if (tokc.str.size == sizeof("little-endian") &&
+							 !memcmp(tokc.str.data, "little-endian", sizeof("little-endian") - 1))
+				{ MCC_TRACE("br\n"); order_tok = 2; }
+			else
+				{ MCC_TRACE("br\n"); mcc_error("'scalar_storage_order' argument must be "
+													"\"big-endian\" or \"little-endian\""); }
+			next();
+			skip(')');
+			/* Every target mcc supports is little-endian. */
+			if (order_tok == 1)
+				{ MCC_TRACE("br\n"); mcc_error(
+							"'scalar_storage_order(\"big-endian\")' is not implemented, and is "
+							"refused rather than ignored: this target stores scalars "
+							"little-endian, so ignoring it would lay every scalar member of the "
+							"struct out in the opposite order from a compiler that honours it, "
+							"and objects that link together would silently disagree about the "
+							"bytes"); }
+			break;
+		}
 		case TOK_TRANSPARENT_UNION1:
 		case TOK_TRANSPARENT_UNION2:
 			ad->a.transp_union = 1;

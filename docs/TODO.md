@@ -8042,13 +8042,35 @@ server then two cells can keep running concurrently rather than being locked apa
 - `_Atomic` complex — probed 2026-08-14 and it works: `_Atomic double _Complex` with
   `atomic_init` and a load round-trips correctly. If this row means something narrower, it
   needs to say what.
-- Varargs pr92904 (32-byte-aligned param when caller align == 16); `__int128` old
-  signedness coercion.
+- ~~Varargs pr92904 (32-byte-aligned param when caller align == 16)~~ — **passes**, verified
+  2026-08-14 by running `vendor/gcc-c-torture-execute/pr92904.c` at `-O0` and `-O2`: exit 0
+  both times, with its three `abort()` paths intact. (gcc could not build the file on this
+  host, so mcc is the only compiler here that runs it.) `__int128` old signedness coercion —
+  probed the same day and correct: `(__int128)~(unsigned __int128)0 == -1` and the high byte
+  of the unsigned value reads `255`.
 - `__builtin_object_size` subobject-from-declared-array-type: reverted (regressed 5
   tests); `-1` is the safe answer — **do not re-introduce**.
 - Nested member designator `{.a.a=1, .a.b=2}`.
-- **D6** — scalar_storage_order / ms_abi is the most dangerous open item: mcc objects
-  link against gcc's, so a mismatch is *silent* wrong codegen.
+- **D6** — scalar_storage_order / ms_abi. **Half closed 2026-08-14, and the framing needed
+  correcting on both clauses.**
+  - **`scalar_storage_order` is now REFUSED rather than ignored.** Measured first: for
+    `struct __attribute__((scalar_storage_order("big-endian"))) { unsigned v; }` holding
+    `0x01020304`, **gcc writes `01 02 03 04` and mcc wrote `04 03 02 01`** — mcc ignored the
+    attribute and used the target's own order. Reading `v` back through the struct yields
+    `0x01020304` under *both*, so nothing that fails to inspect the raw bytes can see the
+    difference, which is precisely what made it dangerous.
+    **It was not silent, though** — it emitted `warning: 'scalar_storage_order' attribute
+    ignored` from the generic unknown-attribute arm. That is worse than silence in one
+    specific way: `-w` suppresses it, and `-w` is what most builds pass, including this
+    tree's own harness. An attribute that changes the ABI is now a hard error, on the same
+    reasoning `-f<devgate>` uses. Asking for `"little-endian"` on a little-endian target is a
+    real no-op and is still accepted in silence; a bogus order name is its own error. Cells:
+    `diag.dg-error.scalar_storage_order_be` and `…_bad`.
+  - **`ms_abi` works** and was probed the same day: a five-argument `__attribute__((ms_abi))`
+    function returns the same answer under mcc and gcc. If this half of the row means
+    something narrower — a struct-return or varargs case — it needs to say what.
+  - Still open: actually *implementing* reversed storage order. Refusing it is the safe
+    interim, not the feature.
 - **`-fdump-loopdep` answers a different question than the transforms do, and it is the
   question nobody asked.** Found 2026-08-11 while reducing the down-counting dependence
   bug (`931f3137`). The dump runs at the top of the AST driver; `ast_interchange_run` and
