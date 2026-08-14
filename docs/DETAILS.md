@@ -1198,6 +1198,18 @@ struct-heavy stress source still yields a valid PDB with 0 errors. **Residue lef
 typed variable symbols (`S_GDATA32`/`S_LDATA32`/`S_LOCAL` — needs variable tracking in the
 CV path), and arglist/procedure/record dedup.
 
+**Progress (win-x64, 2026-08-14, SHA ae1d9550).** Enums done — the `.debug$T`
+**type-record set is now complete** (fn/pointer/struct/union/array/enum). `cv_enum_type`
+emits an `LF_FIELDLIST` of `LF_ENUMERATE` (0x1502) + forward-ref/complete `LF_ENUM`
+(0x1507, underlying `T_INT4`), cached like structs; enumerator values in `[0,0x7fff]` use a
+direct numeric leaf, negative/large enums bail to the int fallback. `pe/codeview`
+round-trips `enum En { E0=0, E1=1, ... }`. **Remaining (only these):** typed variable
+symbols — `S_GDATA32`/`S_LDATA32` for globals and `S_LOCAL`+`S_DEFRANGE` for locals in
+`.debug$S`, each carrying a `cv_type_of` index; needs the CV path to track variables (it
+tracks only functions via `mcc_cv_funcstart` today — globals are the tractable first half,
+locals need frame-relative ranges). Plus record dedup (structs/unions/enums already dedup
+by `Sym*`; arglist/procedure/pointer/array do not).
+
 <a id="t-lin-10086-win-x64-arm64-win32-arm-win32"></a>
 
 ## T-lin-10086 win-x64 — `arm64-win32` / `arm-win32` execution

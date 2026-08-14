@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:15Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10361   | 2026-08-14T20:52Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50001   | 2026-08-14T21:10Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50001   | 2026-08-14T21:16Z |
 
 ## Contracts — blocking, highest priority
 
@@ -259,8 +259,8 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10084-win-x64-non-constant-except-filters | DEPS: —
 - [ ] T-win-50000 [X] win-x64 — CodeView type residue: unions/enums/arrays + typed variable symbols
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: ad8b4ef3 | TS: 2026-08-14T21:10Z
-      REF: DETAILS.md#t-win-50000-codeview-type-residue | DEPS: — | NOTE: union+array landed ad8b4ef3; residue = enums(LF_ENUM)+typed-var-symbols+dedup
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: ae1d9550 | TS: 2026-08-14T21:16Z
+      REF: DETAILS.md#t-win-50000-codeview-type-residue | DEPS: — | NOTE: union+array+enum landed ae1d9550 — .debug$T type-record set COMPLETE; residue = typed-var-symbols (.debug$S) + dedup
 - [ ] T-lin-10090 [X] mac-arm64 — re-take `if-conversion-abs` on arm64
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10090-mac-arm64-re-take-if-conversion | DEPS: —
