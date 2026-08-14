@@ -51,6 +51,23 @@ check_fn square 1
 check_fn cube 6
 check_fn main 11
 
+# type stream (.debug$T): every proc must reference a real LF_PROCEDURE, not T_NOTYPE
+if ! grep -qF ".debug\$T" "$WORK/cv.txt"; then
+	echo "pe-codeview: no .debug\$T type stream emitted" >&2; fail=1
+fi
+if ! grep -qF "LF_PROCEDURE" "$WORK/cv.txt"; then
+	echo "pe-codeview: .debug\$T carries no LF_PROCEDURE record" >&2; fail=1
+fi
+if grep -qE "FunctionType: .*\(0x0\)" "$WORK/cv.txt"; then
+	echo "pe-codeview: a function is still typed T_NOTYPE (FunctionType 0x0)" >&2; fail=1
+fi
+for want in "FunctionType: int (int)" "FunctionType: int ()"; do
+	if ! grep -qF "$want" "$WORK/cv.txt"; then
+		echo "pe-codeview: no proc with '$want' -- the type stream does not describe the signatures" >&2
+		fail=1
+	fi
+done
+
 # gold standard: link to a PDB and read the line info back out
 if [ -n "$LLD" ] && [ -f "$LLD" ] && [ -n "$PDBUTIL" ] && [ -f "$PDBUTIL" ]; then
 	printf 'int square(int x){int r=x*x;return r;}\nint mainCRTStartup(void){return square(5);}\n' > "$WORK/m.c"
@@ -62,6 +79,11 @@ if [ -n "$LLD" ] && [ -f "$LLD" ] && [ -n "$PDBUTIL" ] && [ -f "$PDBUTIL" ]; the
 		else
 			echo "pe-codeview: PDB has no line info from mcc CodeView" >&2; fail=1
 		fi
+		if "$PDBUTIL" pretty -types "$WORK/m.pdb" 2>/dev/null | grep -qE 'int __cdecl \(int\)'; then
+			echo "codeview: PDB type round-trip OK (mcc function signature read from linked PDB)"
+		else
+			echo "pe-codeview: PDB carries no mcc function-signature type" >&2; fail=1
+		fi
 	else
 		echo "pe-codeview: lld-link failed (non-fatal, skipping PDB check)" >&2
 		cat "$WORK/link.log" >&2
@@ -69,5 +91,5 @@ if [ -n "$LLD" ] && [ -f "$LLD" ] && [ -n "$PDBUTIL" ] && [ -f "$PDBUTIL" ]; the
 fi
 
 if [ "$fail" != "0" ]; then exit 1; fi
-echo "pe-codeview: OK (valid CodeView line table; functions map to source lines)"
+echo "pe-codeview: OK (valid CodeView line table + type stream; functions map to source lines and typed signatures)"
 exit 0

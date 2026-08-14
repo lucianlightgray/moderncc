@@ -528,6 +528,9 @@ static int dwarf_get_section_sym(Section *s) { MCC_TRACE("enter\n");
 #define CV_S_GPROC32 0x1110
 #define CV_S_COMPILE3 0x113C
 #define CV_LINE_STMT 0x80000000u
+#define CV_LF_ARGLIST 0x1201
+#define CV_LF_PROCEDURE 0x1008
+#define CV_TYPE_FIRST 0x1000
 
 typedef struct CvLn { unsigned off, line; } CvLn;
 typedef struct CvFn {
@@ -536,12 +539,15 @@ typedef struct CvFn {
 	char *name;
 	CvLn *ln;
 	int nln, maxln;
+	unsigned type_index;
 } CvFn;
 
 static CvFn *cv_fns;
 static int cv_nfn, cv_maxfn;
 static CvFn *cv_cur;
 static char *cv_filename;
+static unsigned char *cv_types;
+static unsigned cv_types_len, cv_types_cap, cv_types_next;
 
 static void cv_reset(void) { MCC_TRACE("enter\n");
 	int i;
@@ -555,6 +561,102 @@ static void cv_reset(void) { MCC_TRACE("enter\n");
 	cv_filename = NULL;
 	cv_cur = NULL;
 	cv_nfn = cv_maxfn = 0;
+	mcc_free(cv_types);
+	cv_types = NULL;
+	cv_types_len = cv_types_cap = 0;
+	cv_types_next = CV_TYPE_FIRST;
+}
+
+static void cv_types_put(const void *p, unsigned n) { MCC_TRACE("enter\n");
+	if (cv_types_len + n > cv_types_cap) { MCC_TRACE("br\n");
+		cv_types_cap = cv_types_cap ? cv_types_cap : 256;
+		while (cv_types_len + n > cv_types_cap)
+			{ MCC_TRACE("br\n"); cv_types_cap *= 2; }
+		cv_types = mcc_realloc(cv_types, cv_types_cap);
+	}
+	memcpy(cv_types + cv_types_len, p, n);
+	cv_types_len += n;
+}
+
+static unsigned cv_basic_type(CType *tp) { MCC_TRACE("enter\n");
+	int bt = tp->t & VT_BTYPE;
+	int uns = tp->t & VT_UNSIGNED;
+	switch (bt) {
+	case VT_VOID: return 0x0003;
+	case VT_BOOL: return 0x0030;
+	case VT_BYTE: return uns ? 0x0020 : 0x0010;
+	case VT_SHORT: return uns ? 0x0021 : 0x0011;
+	case VT_INT: return uns ? 0x0075 : 0x0074;
+	case VT_LLONG: return uns ? 0x0023 : 0x0013;
+	case VT_FLOAT: return 0x0040;
+	case VT_DOUBLE:
+	case VT_LDOUBLE: return 0x0041;
+	default: return 0;
+	}
+}
+
+static unsigned cv_add_record(unsigned char *body, unsigned bodylen) { MCC_TRACE("enter\n");
+	unsigned total = 2 + bodylen;
+	unsigned pad = (4 - (total & 3)) & 3;
+	unsigned reclen = bodylen + pad;
+	unsigned char lp[2], padb[3];
+	unsigned k;
+	lp[0] = reclen & 0xff;
+	lp[1] = (reclen >> 8) & 0xff;
+	cv_types_put(lp, 2);
+	cv_types_put(body, bodylen);
+	for (k = 0; k < pad; k++)
+		{ MCC_TRACE("br\n"); padb[k] = (unsigned char)(0xf0 + (pad - k)); }
+	cv_types_put(padb, pad);
+	return cv_types_next++;
+}
+
+static void cv_put_u16(unsigned char *b, unsigned *n, unsigned v) { MCC_TRACE("enter\n");
+	b[(*n)++] = v & 0xff;
+	b[(*n)++] = (v >> 8) & 0xff;
+}
+
+static void cv_put_u32(unsigned char *b, unsigned *n, unsigned v) { MCC_TRACE("enter\n");
+	b[(*n)++] = v & 0xff;
+	b[(*n)++] = (v >> 8) & 0xff;
+	b[(*n)++] = (v >> 16) & 0xff;
+	b[(*n)++] = (v >> 24) & 0xff;
+}
+
+static unsigned cv_type_of_func(Sym *fnsym) { MCC_TRACE("enter\n");
+	Sym *fd, *p;
+	unsigned ret, args[64], nargs = 0, arglist_idx, i;
+	unsigned char body[8 + 64 * 4];
+	unsigned bl = 0;
+	if (cv_types_next < CV_TYPE_FIRST)
+		{ MCC_TRACE("br\n"); cv_types_next = CV_TYPE_FIRST; }
+	if (!fnsym || (fnsym->type.t & VT_BTYPE) != VT_FUNC)
+		{ MCC_TRACE("br\n"); return 0; }
+	fd = fnsym->type.ref;
+	if (!fd)
+		{ MCC_TRACE("br\n"); return 0; }
+	ret = cv_basic_type(&fd->type);
+	if (ret == 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (p = fd->next; p; p = p->next) { MCC_TRACE("br\n");
+		unsigned a = cv_basic_type(&p->type);
+		if (a == 0 || nargs >= 64)
+			{ MCC_TRACE("br\n"); return 0; }
+		args[nargs++] = a;
+	}
+	cv_put_u16(body, &bl, CV_LF_ARGLIST);
+	cv_put_u32(body, &bl, nargs);
+	for (i = 0; i < nargs; i++)
+		{ MCC_TRACE("br\n"); cv_put_u32(body, &bl, args[i]); }
+	arglist_idx = cv_add_record(body, bl);
+	bl = 0;
+	cv_put_u16(body, &bl, CV_LF_PROCEDURE);
+	cv_put_u32(body, &bl, ret);
+	body[bl++] = 0;
+	body[bl++] = 0;
+	cv_put_u16(body, &bl, nargs);
+	cv_put_u32(body, &bl, arglist_idx);
+	return cv_add_record(body, bl);
 }
 
 ST_FUNC void mcc_cv_funcstart(MCCState *s1, Sym *sym) { MCC_TRACE("enter\n");
@@ -570,6 +672,7 @@ ST_FUNC void mcc_cv_funcstart(MCCState *s1, Sym *sym) { MCC_TRACE("enter\n");
 	fn->sym = sym->c;
 	fn->start = func_ind;
 	fn->name = mcc_strdup(funcname);
+	fn->type_index = cv_type_of_func(sym);
 	cv_cur = fn;
 	if (!cv_filename && file)
 		{ MCC_TRACE("br\n"); cv_filename = mcc_strdup(file->filename); }
@@ -708,7 +811,7 @@ ST_FUNC void mcc_cv_emit(MCCState *s1) { MCC_TRACE("enter\n");
 		write32le(section_ptr_add(cvs, 4), fn->size);
 		write32le(section_ptr_add(cvs, 4), 0);        /* DbgStart */
 		write32le(section_ptr_add(cvs, 4), fn->size); /* DbgEnd */
-		write32le(section_ptr_add(cvs, 4), 0);        /* FunctionType = T_NOTYPE */
+		write32le(section_ptr_add(cvs, 4), fn->type_index);
 		coff = cvs->data_offset;
 		write32le(section_ptr_add(cvs, 4), 0);
 		cseg = cvs->data_offset;
@@ -723,6 +826,13 @@ ST_FUNC void mcc_cv_emit(MCCState *s1) { MCC_TRACE("enter\n");
 		write16le(section_ptr_add(cvs, 2), CV_S_END);
 	}
 	cv_sub_close(cvs, lenpos);
+
+	if (cv_types_len) { MCC_TRACE("br\n");
+		Section *cvt = new_section(s1, ".debug$T", SHT_PROGBITS, 0);
+		cvt->sh_addralign = 4;
+		write32le(section_ptr_add(cvt, 4), CV_SIG_C13);
+		memcpy(section_ptr_add(cvt, cv_types_len), cv_types, cv_types_len);
+	}
 	cv_reset();
 }
 #endif
