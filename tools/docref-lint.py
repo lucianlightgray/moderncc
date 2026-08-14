@@ -93,8 +93,6 @@ TABLE_COUNT = re.compile(r"\*\*The (\d+) figures that have failed to reproduce\*
 
 ALLOW = "tools/docref-allow.txt"
 
-# Everything from this heading down in docs/DETAILS.md is migrated history, kept
-# verbatim.  Reported, never gated: see the header.
 MIGRATED = "# Migrated — ARCHIVED.md"
 
 
