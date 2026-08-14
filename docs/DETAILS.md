@@ -1210,6 +1210,18 @@ tracks only functions via `mcc_cv_funcstart` today — globals are the tractable
 locals need frame-relative ranges). Plus record dedup (structs/unions/enums already dedup
 by `Sym*`; arglist/procedure/pointer/array do not).
 
+**Progress (win-x64, 2026-08-14, SHA f8d5ae82).** Typed **global** variable symbols done.
+`mcc_debug_extern_sym` (the global/extern debug callback) now calls `mcc_cv_extern_sym`,
+which records each global's `cv_type_of` index + elf symbol into `cv_vars`; `mcc_cv_emit`
+emits `S_GDATA32` (extern) / `S_LDATA32` (static) in the `.debug$S` SYMBOLS subsection with
+SECREL+SECTION relocs to the variable's address, mirroring `S_GPROC32`. Verified: a global
+`int` and a global `struct` round-trip through `llvm-pdbutil pretty -globals` typed and at
+their resolved addresses (`static int gcount @0x3000`, `static Pt gpt @0x3008`); heavy
+stress with globals of every kind (struct/union/enum/array) yields a valid PDB, 0 errors.
+`pe/codeview` asserts `int gtotal` + `Pt gpoint`. **Remaining:** local variable symbols
+(`S_LOCAL` + `S_DEFRANGE_FRAMEPOINTER_REL`, needs frame offsets + live ranges + `S_BLOCK32`
+scopes — the CV path would have to track locals, which it does not today) and record dedup.
+
 <a id="t-lin-10086-win-x64-arm64-win32-arm-win32"></a>
 
 ## T-lin-10086 win-x64 — `arm64-win32` / `arm-win32` execution
