@@ -7990,6 +7990,21 @@ server then two cells can keep running concurrently rather than being locked apa
 ### Open codegen / front-end defects
 - `__bf16`: finish encode/decode + ABI now that `VT_BTYPE` is 5 bits. **Do not alias
   `__bf16` onto `_Float16`** — distinct `c.i` storage, `is_float_abi`, libgcc name.
+  *(Current behaviour is honest, not silent: `'__bf16' is not supported on this target`.
+  This row is a feature, not a defect.)*
+- **`_BitInt` (C23 6.2.5) is not implemented, and now says so.** Fixed 2026-08-14. It was
+  not a keyword, so the parser took the identifier path and blamed the *next* token:
+  `_BitInt(37) a = 1;` produced **`';' expected (got 'a')`** — the wrong token, the wrong
+  construct, and it reads like a syntax error in the user's own code rather than a missing
+  feature. Now `'_BitInt' is not implemented`. Cell:
+  `diag.dg-error.bitint_unimplemented`. mcc correctly does **not** define
+  `__BITINT_MAXWIDTH__` (gcc reports 65535), so feature-guarded code already takes the
+  right branch; only code that uses the keyword unguarded was being misdiagnosed.
+  Implementing the type is still open.
+- ~~`__m512` / 64-byte vectors~~ — **already work**, verified 2026-08-14:
+  `typedef float v16 __attribute__((vector_size(64)))` with arithmetic and subscripting
+  gives `8 64` under both mcc and gcc. Row struck; if it meant the `__m512` *intrinsic
+  header* rather than the vector type, it needs to say so.
 - 32-byte vectors are laid at 16-byte alignment (`MCC_MAX_ALIGN` cap) — open ABI
   decision; cross-TU to gcc is currently incompatible (struct-ABI, not SysV vector).
 - `aligned(N)` bitfields: ~139 survivors. **The number is unsourced** — no corpus is named

@@ -8364,6 +8364,15 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 		case TOK_BFLOAT16:
 			mcc_error("'__bf16' is not supported on this target");
 			break;
+		case TOK_BITINT:
+			/* C23 6.2.5. Not implemented. Say so, rather than leaving the parser
+			 * to fall through to the identifier path and report the NEXT token as
+			 * an unexpected one: `_BitInt(37) a = 1;` used to produce
+			 * "';' expected (got 'a')", which points at the wrong token, blames
+			 * the wrong construct, and reads like a syntax error in the user's
+			 * code rather than a missing feature. */
+			mcc_error("'_BitInt' is not implemented");
+			break;
 		case TOK_COMPLEX:
 			if (mcc_state->cversion < 199901)
 				{ MCC_TRACE("br\n"); mcc_pedantic("'_Complex' is a C99 feature"); }
