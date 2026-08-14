@@ -2314,15 +2314,39 @@ The board section below carries roughly **thirty FILED items** that this handoff
 names, and they are all still true of the tree. The shape they share is that a
 measurement tool reports success over an empty or truncated subject:
 
-- **~~Four~~ ~~THREE~~ ~~TWO~~ ONE tool that publishes figures on this board is registered
-  nowhere** — ~~`xsuite-report.py`~~, ~~`gate-ledger.sh`~~, ~~`strategy-ledger.sh`~~,
-  `c2_sweep.sh` have zero hits in `CMakeLists.txt` and `cmake/`.
+- ~~**Four tools that publish figures on this board are registered nowhere**~~ — **CLOSED
+  2026-08-14.** ~~`xsuite-report.py`~~, ~~`gate-ledger.sh`~~, ~~`strategy-ledger.sh`~~,
+  ~~`c2_sweep.sh`~~ are all cells now: `xsuite/report` (0.02 s), `optfire/gate-ledger`
+  (82 s), `optfire/strategy-ledger` (2.9 s), `rir/c2-sweep` (4.7 s).
+  **`c2_sweep.sh` is registered as of 2026-08-14**: `rir/c2-sweep`, floors in
+  `tests/rir/c2-sweep-floor.txt` (`ok 744`, `rirfiles 744`, `fn 3405`, `faithful 3358`,
+  `arenafn 3405` at `-O1` over the full 848-file `tests/` corpus). **Only the census half
+  is banked.** The `c2*` half — `c2ok`, `c2bytes`, `c2len`, `c2skip`, `c2invalid`, `c2err`,
+  `c2equiv` — sits behind the `MCC_REPLAY_IR_C2` *build* option, which is OFF by default,
+  so in a normal build that arm is compiled out and every one of those columns is a hard
+  zero at every `-O` level. Banking a floor of `0` on a compiled-out feature is the vacuous
+  ratchet this whole item is about, so instead the tool now **prints `c2=on` or
+  `c2=COMPILED-OUT`** and the cell fails if the row declares neither — a bare `c2ok=0/0`
+  could not be told apart from "measured, and nothing succeeded". If the arm *is* built,
+  the exemption lifts and `c2try=0` fails. The tool also now refuses a sweep in which
+  0 files compiled, instead of totalling zeros over an empty population.
   **`xsuite-report.py` is registered as of 2026-08-14**: `xsuite/report`, 0.02 s. It gates
   the formatter against a committed fixture rather than a real run, because `xsuite.py`
   needs external gcc and llvm checkouts and no `results.jsonl` is in the tree. Filed
   defect 19 closed with it — a suite/opt pair that never ran no longer prints `0.0%`, and
   the pass column is now `adm%` with the skips-out-of-the-denominator caveat printed by
   the tool instead of carried by this board.
+- **Found while gating the above: `ast/o0-baseline` had been red since `b65cfed5`.** That
+  commit (the five-target setjmp work, earlier the same day) edited both
+  `runtime/include/mccdefs.h` and `tests/exec/features_c99_c11/builtin_mcc_ext.c` and did
+  not re-take `tests/ast/o0-baseline/x86_64.obj.txt`, whose last update was the commit
+  before it. I did not re-run the cell after that commit, so it went unnoticed for four
+  commits. Exactly **one** row moved and it is exactly the file that commit edited, so the
+  re-take is attributed rather than blind: `builtin_mcc_ext.c`
+  `c60e21c8…` → `d7d9ab3c…`. Verified deterministic across three compiles first — a moved
+  `-O0` object is otherwise indistinguishable from a nondeterminism bug — and confirmed the
+  fixture still passes all of its exec/replay/narrowfix/chainstore/ivsrptr/vlat cells, so
+  only the recorded hash was stale, not the behaviour.
   **`gate-ledger.sh` is registered as of 2026-08-14**: `optfire/gate-ledger`, 82 s, banked in
   `tests/optfire/gate-ledger.txt`. It is `strategy-ledger.sh`'s question one level down —
   for each of the 118 `MCC_OPT_ROW`s it toggles that one gate across the 310-file exec
@@ -6630,8 +6654,9 @@ the commit that causes it.
    quoted just above is superseded — it counted twelve `MCC_OPTD_DEV` gates whose `-f` arm
    the compiler *refuses*, so those rows were whole-corpus compile failures scored as fires.
    Measured under `MCC_DEV=1` the real partition is **3 FIRES / 55 OBJONLY / 60 NEVER of
-   118**. **`xsuite-report.py` registered 2026-08-14** as `xsuite/report`. `c2_sweep.sh`
-   is what remains.
+   118**. **`xsuite-report.py` registered 2026-08-14** as `xsuite/report`, and
+   **`c2_sweep.sh` the same day** as `rir/c2-sweep`. This sub-item is closed: all four are
+   cells.
    ~~`opt-determinism.py` and `untyped-probe.py` are the two cheapest remaining
    registrations in the tree — both are pure-CPU, both already refuse their degenerate
    inputs after the last sweep, and neither needs a bank invented for it.~~ **Both LANDED

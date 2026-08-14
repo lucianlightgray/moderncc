@@ -1,0 +1,23 @@
+# Floors for tools/c2_sweep.sh at -O1 over the full tests/ corpus, x86_64 native.
+#
+# Regenerate the numbers with:
+#     sh tools/c2_sweep.sh <build> x86_64 -O1 <outdir>
+#
+# One-directional. These are FLOORS: a count dropping below the banked value
+# fails, because the population this sweep reports over shrinking silently is
+# exactly how a census tool comes to report a clean board over nothing. A count
+# rising is reported, not failed, and asks for the floor to be re-taken.
+#
+# The c2* columns are deliberately NOT banked. They are behind the
+# MCC_REPLAY_IR_C2 build option, which is OFF by default, so in a normal build
+# that arm is compiled out and every one of them is a hard zero. Banking a floor
+# of 0 on a compiled-out feature is the vacuous-ratchet mistake this file exists
+# to avoid. Instead the check asserts that the tool SAYS which it is (c2=on vs
+# c2=COMPILED-OUT), so the zeros can never be misread as measured.
+#
+# key value
+ok 744
+rirfiles 744
+fn 3405
+faithful 3358
+arenafn 3405

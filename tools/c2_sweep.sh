@@ -79,6 +79,22 @@ if [ -n "$C2_NO_EXTRA" ]; then
 	files=$(printf '%s\n' $files | grep -v '/full_language\.c$')
 fi
 
+# The c2 columns below (c2ok/bytes/len/skip/invalid/err/equiv) come from the
+# Replay-IR C2 re-emit arm, which is behind the MCC_REPLAY_IR_C2 *build* option
+# and is OFF by default. In a default build that whole arm is compiled out, so
+# every one of those columns is a hard zero -- and the row printed
+# "c2ok=0/0 ... equiv=0/0" without ever saying so, which reads as "measured, and
+# nothing succeeded" rather than "not built, so not measured". Same class of
+# thing as the fourteen ast/rir-c2-* cells that skip for this reason. Say which
+# it is.
+c2build=unknown
+if [ -f "$BUILD/CMakeCache.txt" ]; then
+	case "$(grep '^MCC_REPLAY_IR_C2:BOOL=' "$BUILD/CMakeCache.txt" || true)" in
+	*=ON) c2build=on ;;
+	*=OFF) c2build=COMPILED-OUT ;;
+	esac
+fi
+
 nfile=0
 nok=0
 for f in $files; do
@@ -98,7 +114,16 @@ for f in $files; do
 	fi
 done
 
-awk -v key="$KEY" -v opt="$OPT" -v nfile="$nfile" -v nok="$nok" -v corpus="$CORPUS" -v native="$native" '
+# A sweep that compiled nothing has no population to report over, and every
+# total below would be a zero indistinguishable from a real one.
+if [ "$nok" -eq 0 ]; then
+	echo "c2_sweep: 0 of $nfile file(s) compiled, so this sweep measured nothing." >&2
+	echo "  Every total would be a zero that looks like a measurement. Last error:" >&2
+	sed -e 's/^/    /' "$OUT/f.log" >&2
+	exit 1
+fi
+
+awk -v key="$KEY" -v opt="$OPT" -v nfile="$nfile" -v nok="$nok" -v corpus="$CORPUS" -v native="$native" -v c2build="$c2build" '
 /^### / { cur = $2; if (cur ~ /full_language\.c$/) extra = 1; next }
 /^\[rir-total\]/ {
 	seen++
@@ -113,10 +138,12 @@ BEGIN {
 	for (i in a) want[a[i]] = 1
 }
 END {
-	printf "%-14s %-4s %-5s%s files=%d ok=%d extra=%d rirfiles=%d fn=%d faithful=%d c2ok=%d/%d (bytes=%d len=%d skip=%d invalid=%d err=%d) equiv=%d/%d arenafn=%d\n",
+	printf "%-14s %-4s %-5s%s files=%d ok=%d extra=%d rirfiles=%d fn=%d faithful=%d c2ok=%d/%d (bytes=%d len=%d skip=%d invalid=%d err=%d) equiv=%d/%d arenafn=%d c2=%s\n",
 		key, opt, corpus, native ? " NATIVE" : "", nfile, nok, extra + 0, seen, tot["fn"], tot["faithful"], tot["c2ok"], tot["c2try"],
 		tot["c2bytes"], tot["c2len"], tot["c2skip"], tot["c2invalid"], tot["c2err"],
 		tot["c2equiv"], tot["c2equiv"] + tot["c2unproven"],
-		tot["arenafn"]
+		tot["arenafn"], c2build
+	if (c2build == "COMPILED-OUT")
+		printf "c2_sweep: the c2* columns above are zero because the Replay-IR C2 re-emit arm\n  is not built (MCC_REPLAY_IR_C2=OFF). They are NOT a measured zero.\n" > "/dev/stderr"
 }
 ' "$LOG"

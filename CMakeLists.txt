@@ -8960,6 +8960,28 @@ else()
     mcc_skip_test("xsuite/report" "the xsuite report check needs a POSIX shell")
 endif()
 
+# tools/c2_sweep.sh totals the per-body Replay-IR counters over every .c under
+# tests/ and publishes them onto docs/TODO.md. Last of the four tools that were
+# registered nowhere. The census half (fn/faithful/arenafn/ok) gets floors; the
+# c2* half is behind the MCC_REPLAY_IR_C2 build option and compiled out by
+# default, so instead of banking a vacuous zero on it the check asserts the tool
+# declares which state it is in.
+if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR
+   AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_TARGETOS STREQUAL "Darwin"
+   AND MCC_CPU STREQUAL "x86_64")
+    add_test(NAME "rir/c2-sweep"
+        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/rir/c2-sweep-check.sh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/c2_sweep.sh"
+                "${CMAKE_BINARY_DIR}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/rir/c2-sweep-floor.txt"
+                "${CMAKE_BINARY_DIR}/c2-sweep")
+    set_tests_properties("rir/c2-sweep" PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
+else()
+    mcc_skip_test("rir/c2-sweep"
+        "the c2 sweep floors are x86_64 native counts (native x86_64 ELF host only)")
+endif()
+
 # One device, one lock -- OFF by default, because it was measured.
 #
 # slice/quiesce tears the Vulkan device down while every other device cell is
