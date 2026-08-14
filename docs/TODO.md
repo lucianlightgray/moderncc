@@ -8081,8 +8081,18 @@ server then two cells can keep running concurrently rather than being locked apa
   reads as if it does; a wrong verdict there is indistinguishable from a right one. It cost
   ~40 minutes of chasing a phantom third bug. Either run the dump from the same point the
   transforms do, or label each line with the pipeline position it was taken at. Until then
-  **do not use `-fdump-loopdep` to confirm a legality fix** — instrument the `_apply`
+  ~~**do not use `-fdump-loopdep` to confirm a legality fix**~~ — instrument the `_apply`
   function or diff the executable's output instead, which is what actually settled it.
+  **CLOSED 2026-08-14, by doing both things the row asked for rather than choosing.** Every
+  line is now labelled with the pipeline position it was taken at (`[LOOPDEP@pre-opt]`,
+  `[pre-opt] fusion(...)`), **and** the dump is taken a second time immediately before
+  `ast_interchange_run` / `ast_fusion_run` / `ast_tile_run`, from the same tree those
+  transforms are about to see — so there is now a verdict that does predict them. The
+  `pre-opt` dump is kept, because the two disagreeing is the *answer* rather than a puzzle:
+  it means the tree was rewritten in between, not that legality is broken. The second dump
+  fires only when at least one of the three transforms is enabled, so plain
+  `-fdump-loopdep` still prints one dump per function, and `dump-loopdep` is `MCC_OPTD_OFF`
+  so no default build changes output.
 - **Three JIT-only miscompiles survive the -O0…-O4 embed-JIT ladder, 2026-08-11.**
   **Promoted to N8 in *Open, ranked*.** *(That row claimed the detail was "not duplicated
   there"; it is — N8 restates the counts, the reduction and the two exclusion arguments.
