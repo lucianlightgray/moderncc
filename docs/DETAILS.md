@@ -1265,6 +1265,45 @@ labels the func `(FPO)` cosmetically; local resolution is unaffected — it uses
 + defrange offset), and local live-ranges are whole-function (exact at `-O0` where the slot
 is prologue-allocated).
 
+<a id="t-win-50001-ci-gate-contract-red-on-win-x64"></a>
+
+## T-win-50001 win-x64 — `ci/gate-contract` is red on Windows: 6 manifest gates lack a Windows skip-stub
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+The third-platform report [T-lin-10003](#t-lin-10003-the-corpusgate-label-and-the-gap-treegates-own-bound-created)/lin-x64 asked for. Running the `ci/gate-contract` command from CMakeLists (7014) against a Windows/MSVC build (`cmake-release`) exits **1**. Violations verbatim (`--min-rows 101 --min-proved 48 --max-unfloored 86 --max-unproved 51`):
+
+```
+optfire/labeladdr (line 132) is declared here and is not registered by this build; the gate it describes is gone
+optfire/asm-replay-recover (line 133) ... is gone
+optlevel/torture-differential (line 143) ... is gone
+flagsweep/dev-gate (line 146) ... is gone
+jit/bind-local (line 147) ... is gone
+jit/kgc-effect-parity (line 148) ... is gone
+34 gate(s) carry a prover (0 of them stubbed on this host) and at least 48 were expected
+7 violation(s) over 101 declared gate(s)
+```
+
+**Root cause (win-x64 diagnosis).** These six cells are `add_test`'d only inside UNIX/x86_64
+conditional blocks (`flagsweep/dev-gate` CMakeLists 5604, `optfire/labeladdr` 5621,
+`jit/bind-local` 8026, …) with **no `else() mcc_skip_test(...)`** — so on Windows they are
+registered by no branch and gate-contract reports them gone. This is the same shape as
+T-lin-10360 (missing skip-stub else branch), one level up in the gate-contract manifest.
+The `--min-proved 48` floor is the second face of it: 14 prover-carrying gates are among the
+unregistered, so Windows shows only 34. Neither is a win-x64 code defect — the CodeView work
+is `cv_debug`-guarded and a `-c -O0` object emits byte-identically with no `.debug$` sections.
+
+**For lin-x64 (gate-contract owner) to decide** — three shapes, same as the treegate case:
+add Windows `mcc_skip_test` else-branches for the six (holds the count on every host), or
+make `--min-proved`/the manifest host-aware, or scope those gates as x86_64-only in the
+manifest. Blocks a green `ci/gate-contract` (and T-lin-10093/win) on Windows until resolved.
+
+**Verification.** `python tools/gate-contract.py --manifest tests/gate-contract.txt
+--must-run tests/must-run.txt --build <win-build> --min-rows 101 --min-proved 48
+--max-unfloored 86 --max-unproved 51` must exit 0 on a Windows build.
+
+**Source.** Found on win-x64, 2026-08-14, running lin-x64's `ci/gate-contract` on a third platform per the T-lin-10003 CONTRACT (`c5bd5140`).
+
 <a id="t-lin-10086-win-x64-arm64-win32-arm-win32"></a>
 
 ## T-lin-10086 win-x64 — `arm64-win32` / `arm-win32` execution
