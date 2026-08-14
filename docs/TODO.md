@@ -126,7 +126,36 @@
 > **Then the suite was run to the end for the first time on this host, and found five more reds —
 > four of them in no table.** 9933 cells, **99% pass, 5 fail, 2556 skip, zero timeouts** (which
 > confirms N26's `taskpolicy -b` fix across the whole suite rather than the one family it was
-> measured on). **N38**: eight cells vanished behind a copy-pasted `NOT Darwin` predicate with no
+> measured on). **N39. mcc's riscv64 assembler does not resolve intra-function branch targets, and it says
+nothing.** Found 2026-08-14 while writing `__mcc_longjmp` for riscv64 — the first version
+returned 1 whatever value was passed, and a 7-frame unwind dumped core. Reduced to six
+instructions:
+
+```c
+__asm__(".text\n.globl pf\n.type pf,@function\n"
+        "pf:\n  li a0, 1\n  bnez a0, 1f\n  li a0, 0\n1:\n  ret\n");
+```
+
+`pf()` returns **0**. The branch is not taken although `a0` is 1. **It is riscv64 only** —
+the identical shape returns 1 on x86_64, i386, arm and arm64, each written in that target's
+own mnemonics and each run under qemu. **It is not specific to numeric local labels
+either**: a *named* `.Lfoo` forward label falls through the same way, and a backward `1b`
+loop that should run 3 times runs **256**. So branch-target resolution is wrong in general
+inside a `__asm__` block on this backend, not a local-label parsing quirk.
+
+**The failure mode is the dangerous one**: the assembler accepts the input, emits an object,
+and the branch simply does not go where it says. No diagnostic, no error, wrong control
+flow. Any inline asm on riscv64 with an internal branch is silently miscompiled today, and
+nothing in the suite was watching — the `-exec` cells that would notice do not contain
+branching asm.
+
+**Worked around, not fixed**, in `runtime/lib/builtin.c`: `__mcc_longjmp`'s value-or-1 step
+is branchless there (`seqz t0, a1; add a0, a1, t0`), which is why the builtin passes on
+riscv64 while this row stays open. The fix belongs in the riscv64 assembler's label/reloc
+handling. A cell should come with it: the six-instruction probe above is the whole test, and
+it needs qemu-riscv64 and the sysroot, both of which this host now has.
+
+**N38**: eight cells vanished behind a copy-pasted `NOT Darwin` predicate with no
 > `else()` arm, and `tests/must-run.txt` was the only thing that noticed — `wide256/gmp-diff` now
 > runs here for real, **9402 rows against libgmp at five levels**, the only oracle-backed proof
 > `__int256` is right and it had never run natively on arm64. **N39**: `mccjit_embed.c` used
@@ -7754,8 +7783,19 @@ with six live locals intact, `longjmp(buf, 0)` surfacing as 1, and buffer reuse 
 mutation-checked. Coverage is in `builtin_mcc_ext.c` under `#ifdef __MCC__`, so no reference
 is lost to it.
 
-**Not done elsewhere**: i386, arm, arm64 and riscv64 have no such block, so the builtins are
-simply absent there rather than wrong. Each is the same twenty lines against its own ABI.
+**All five targets now have one.** i386 (ebx/esi/edi/ebp), arm (r4-r11, sp, lr, d8-d15),
+arm64 (x19-x28, fp, lr, sp, d8-d15) and riscv64 (s0-s11, sp, ra, fs0-fs11) each save their
+own ABI's callee-saved set. **Verified by execution under qemu against the sysroots, not by
+reading a psABI**: the whole battery — 0 then the value, a 7-frame unwind with six live
+locals intact, `longjmp(buf, 0)` surfacing as 1, buffer reuse, and `val=9` passing through —
+comes back `OK` on x86_64, i386, arm, arm64 and riscv64.
+
+**And writing real asm on five backends found an assembler defect that has nothing to do
+with setjmp — see N39 below.** Three mcc assembler limitations were hit on the way and are
+worked around in place with the reason: arm rejects a core-register *range* (`{r4-r11}`)
+while accepting one in a VFP list; arm has no `it` (unneeded in A32, where `moveq` is
+natively conditional); and arm64 implements neither `cmp` nor `csinc`, so the
+value-or-1 step is a `cbnz`.
 
 > **The trap that cost the most time here, three separate times: `runtime/include/mccdefs.h`
 > is baked into the compiler at build time, and `cmake-cross` has its own copy.** A header

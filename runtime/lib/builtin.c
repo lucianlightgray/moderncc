@@ -467,7 +467,8 @@ int __mcc_cpu_supports(const char *name) {
 }
 #endif
 
-#if defined __x86_64__ && !defined _WIN32
+#if !defined _WIN32 && (defined __x86_64__ || defined __i386__ \
+												|| defined __aarch64__ || defined __arm__ || defined __riscv)
 /* __builtin_setjmp / __builtin_longjmp, x86_64 SysV.
  *
  * The header-macro route is closed: the predefs cannot declare _setjmp without
@@ -491,6 +492,7 @@ int __mcc_cpu_supports(const char *name) {
  * after the return, and the return address. Not the x87 control word or the
  * signal mask -- neither does _setjmp. */
 
+#if defined __x86_64__
 __asm__(
 	".text\n"
 	".globl __mcc_setjmp\n"
@@ -526,14 +528,179 @@ __asm__(
 	"  movq 8(%rdi), %rsp\n"
 	"  jmp *0(%rdi)\n"
 	".size __mcc_longjmp,.-__mcc_longjmp\n");
+#elif defined __i386__
+/* SysV i386: callee-saved ebx, esi, edi, ebp. Arguments on the stack, so the
+ * slot is 4(%esp) on entry and the return address is at (%esp). */
+__asm__(
+	".text\n"
+	".globl __mcc_setjmp\n"
+	".type __mcc_setjmp,@function\n"
+	"__mcc_setjmp:\n"
+	"  movl 4(%esp), %eax\n"
+	"  movl (%esp), %ecx\n"
+	"  movl %ecx, 0(%eax)\n"
+	"  leal 4(%esp), %ecx\n"
+	"  movl %ecx, 4(%eax)\n"
+	"  movl %ebx, 8(%eax)\n"
+	"  movl %esi, 12(%eax)\n"
+	"  movl %edi, 16(%eax)\n"
+	"  movl %ebp, 20(%eax)\n"
+	"  xorl %eax, %eax\n"
+	"  ret\n"
+	".size __mcc_setjmp,.-__mcc_setjmp\n"
+	".globl __mcc_longjmp\n"
+	".type __mcc_longjmp,@function\n"
+	"__mcc_longjmp:\n"
+	"  movl 4(%esp), %edx\n"
+	"  movl 8(%esp), %eax\n"
+	"  testl %eax, %eax\n"
+	"  jne 1f\n"
+	"  movl $1, %eax\n"
+	"1:\n"
+	"  movl 8(%edx), %ebx\n"
+	"  movl 12(%edx), %esi\n"
+	"  movl 16(%edx), %edi\n"
+	"  movl 20(%edx), %ebp\n"
+	"  movl 4(%edx), %esp\n"
+	"  jmp *0(%edx)\n"
+	".size __mcc_longjmp,.-__mcc_longjmp\n");
+#elif defined __aarch64__
+/* AAPCS64: x19-x28, x29 (fp), x30 (lr), sp, and the low 64 bits of d8-d15.
+ * longjmp returns by ret, which uses the x30 it just restored. */
+__asm__(
+	".text\n"
+	".globl __mcc_setjmp\n"
+	".type __mcc_setjmp,%function\n"
+	"__mcc_setjmp:\n"
+	"  stp x19, x20, [x0, #0]\n"
+	"  stp x21, x22, [x0, #16]\n"
+	"  stp x23, x24, [x0, #32]\n"
+	"  stp x25, x26, [x0, #48]\n"
+	"  stp x27, x28, [x0, #64]\n"
+	"  stp x29, x30, [x0, #80]\n"
+	"  mov x1, sp\n"
+	"  str x1, [x0, #96]\n"
+	"  stp d8, d9, [x0, #104]\n"
+	"  stp d10, d11, [x0, #120]\n"
+	"  stp d12, d13, [x0, #136]\n"
+	"  stp d14, d15, [x0, #152]\n"
+	"  mov w0, #0\n"
+	"  ret\n"
+	".size __mcc_setjmp,.-__mcc_setjmp\n"
+	".globl __mcc_longjmp\n"
+	".type __mcc_longjmp,%function\n"
+	"__mcc_longjmp:\n"
+	"  ldp x19, x20, [x0, #0]\n"
+	"  ldp x21, x22, [x0, #16]\n"
+	"  ldp x23, x24, [x0, #32]\n"
+	"  ldp x25, x26, [x0, #48]\n"
+	"  ldp x27, x28, [x0, #64]\n"
+	"  ldp x29, x30, [x0, #80]\n"
+	"  ldr x2, [x0, #96]\n"
+	"  mov sp, x2\n"
+	"  ldp d8, d9, [x0, #104]\n"
+	"  ldp d10, d11, [x0, #120]\n"
+	"  ldp d12, d13, [x0, #136]\n"
+	"  ldp d14, d15, [x0, #152]\n"
+	/* w0 = w1 ? w1 : 1, as a branch: mcc's arm64 assembler implements
+	 * neither cmp nor csinc, and cbnz is the portable way to say it. */
+	"  mov w0, w1\n"
+	"  cbnz w0, 1f\n"
+	"  mov w0, #1\n"
+	"1:\n"
+	"  ret\n"
+	".size __mcc_longjmp,.-__mcc_longjmp\n");
+#elif defined __arm__
+/* AAPCS32: r4-r11, sp, lr, and d8-d15. The core-register lists are written
+ * out rather than as {r4-r11}: mcc's integrated arm assembler accepts a range
+ * inside a VFP list but not inside a core one. */
+__asm__(
+	".text\n"
+	".globl __mcc_setjmp\n"
+	".type __mcc_setjmp,%function\n"
+	"__mcc_setjmp:\n"
+	"  stmia r0!, {r4, r5, r6, r7, r8, r9, r10, r11}\n"
+	"  mov r1, sp\n"
+	"  stmia r0!, {r1, lr}\n"
+	"  vstmia r0, {d8-d15}\n"
+	"  mov r0, #0\n"
+	"  bx lr\n"
+	".size __mcc_setjmp,.-__mcc_setjmp\n"
+	".globl __mcc_longjmp\n"
+	".type __mcc_longjmp,%function\n"
+	"__mcc_longjmp:\n"
+	"  mov r2, r0\n"
+	"  ldmia r2!, {r4, r5, r6, r7, r8, r9, r10, r11}\n"
+	"  ldmia r2!, {r3, lr}\n"
+	"  mov sp, r3\n"
+	"  vldmia r2, {d8-d15}\n"
+	"  movs r0, r1\n"
+	/* A32 predication: moveq needs no IT block, and mcc's arm assembler
+	 * does not accept one. */
+	"  moveq r0, #1\n"
+	"  bx lr\n"
+	".size __mcc_longjmp,.-__mcc_longjmp\n");
+#elif defined __riscv
+/* RISC-V LP64D: s0-s11, sp, ra, and fs0-fs11. */
+__asm__(
+	".text\n"
+	".globl __mcc_setjmp\n"
+	".type __mcc_setjmp,@function\n"
+	"__mcc_setjmp:\n"
+	"  sd s0, 0(a0)\n"    "  sd s1, 8(a0)\n"
+	"  sd s2, 16(a0)\n"   "  sd s3, 24(a0)\n"
+	"  sd s4, 32(a0)\n"   "  sd s5, 40(a0)\n"
+	"  sd s6, 48(a0)\n"   "  sd s7, 56(a0)\n"
+	"  sd s8, 64(a0)\n"   "  sd s9, 72(a0)\n"
+	"  sd s10, 80(a0)\n"  "  sd s11, 88(a0)\n"
+	"  sd sp, 96(a0)\n"   "  sd ra, 104(a0)\n"
+	"  fsd fs0, 112(a0)\n"  "  fsd fs1, 120(a0)\n"
+	"  fsd fs2, 128(a0)\n"  "  fsd fs3, 136(a0)\n"
+	"  fsd fs4, 144(a0)\n"  "  fsd fs5, 152(a0)\n"
+	"  fsd fs6, 160(a0)\n"  "  fsd fs7, 168(a0)\n"
+	"  fsd fs8, 176(a0)\n"  "  fsd fs9, 184(a0)\n"
+	"  fsd fs10, 192(a0)\n" "  fsd fs11, 200(a0)\n"
+	"  li a0, 0\n"
+	"  ret\n"
+	".size __mcc_setjmp,.-__mcc_setjmp\n"
+	".globl __mcc_longjmp\n"
+	".type __mcc_longjmp,@function\n"
+	"__mcc_longjmp:\n"
+	"  ld s0, 0(a0)\n"    "  ld s1, 8(a0)\n"
+	"  ld s2, 16(a0)\n"   "  ld s3, 24(a0)\n"
+	"  ld s4, 32(a0)\n"   "  ld s5, 40(a0)\n"
+	"  ld s6, 48(a0)\n"   "  ld s7, 56(a0)\n"
+	"  ld s8, 64(a0)\n"   "  ld s9, 72(a0)\n"
+	"  ld s10, 80(a0)\n"  "  ld s11, 88(a0)\n"
+	"  ld sp, 96(a0)\n"   "  ld ra, 104(a0)\n"
+	"  fld fs0, 112(a0)\n"  "  fld fs1, 120(a0)\n"
+	"  fld fs2, 128(a0)\n"  "  fld fs3, 136(a0)\n"
+	"  fld fs4, 144(a0)\n"  "  fld fs5, 152(a0)\n"
+	"  fld fs6, 160(a0)\n"  "  fld fs7, 168(a0)\n"
+	"  fld fs8, 176(a0)\n"  "  fld fs9, 184(a0)\n"
+	"  fld fs10, 192(a0)\n" "  fld fs11, 200(a0)\n"
+	/* a0 = a1 ? a1 : 1, branchless. The obvious bnez/li over a local label
+	 * assembles without complaint under mcc and does NOT branch -- the
+	 * value came back as 1 whatever was passed -- so the label form is
+	 * avoided here rather than relied on. seqz gives 1 exactly when a1 is
+	 * zero, so the add produces the value or 1. */
+	"  seqz t0, a1\n"
+	"  add a0, a1, t0\n"
+	"  ret\n"
+	".size __mcc_longjmp,.-__mcc_longjmp\n");
+#endif
 
 /* The slots are never freed: a slot is 64 bytes, the number of distinct
  * __builtin_setjmp buffers in a program is small and static in practice, and
  * freeing one while a longjmp target is still live would be the worse bug. */
 #define MCC_SJ_SLOTS 64
+/* Widest callee-saved set of the supported ABIs: arm64 wants x19-x28, fp, lr,
+ * sp and d8-d15, which is 22 words. 32 leaves room and keeps the entry
+ * 16-byte aligned. */
+#define MCC_SJ_WORDS 32
 
 static struct {
-	void *w[8];
+	void *w[MCC_SJ_WORDS];
 } __mcc_sj_pool[MCC_SJ_SLOTS];
 static int __mcc_sj_used;
 

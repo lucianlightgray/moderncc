@@ -1111,7 +1111,7 @@
 	#define __builtin_cpu_supports(name) __mcc_cpu_supports(name)
 	#endif
 
-	/* __builtin_setjmp / __builtin_longjmp, x86_64 SysV only for now.
+	/* __builtin_setjmp / __builtin_longjmp.
 	 *
 	 * The obvious header-level route is closed and the note is kept because it
 	 * is not obvious that it is: the predefs cannot declare _setjmp, because
@@ -1124,7 +1124,8 @@
 	 * The slot indirection is what makes gcc's `void *buf[5]` big enough: it
 	 * holds one pointer to a full callee-saved-set slot, which buys the
 	 * stronger C setjmp contract rather than gcc's restricted three-word one. */
-	#if defined __x86_64__ && !defined _WIN32
+	#if !defined _WIN32 && (defined __x86_64__ || defined __i386__ \
+			|| defined __aarch64__ || defined __arm__ || defined __riscv)
 	extern int __mcc_setjmp(void *);
 	extern void __mcc_longjmp(void *, int);
 	extern void *__mcc_sj_slot(void **);

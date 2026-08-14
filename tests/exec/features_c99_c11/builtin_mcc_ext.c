@@ -20,7 +20,8 @@
  *                           under gcc. mcc implements the stronger C setjmp
  *                           contract, so the oracle is _setjmp, not gcc's
  *                           builtin -- and the equivalence is asserted below
- *                           by running both in the same program.
+ *                           by running both in the same program. Verified
+ *                           under qemu on all five targets.
  */
 
 extern int printf(const char *, ...);
@@ -34,7 +35,7 @@ static int fails;
 		}                                       \
 	} while (0)
 
-#if defined __MCC__ && defined __x86_64__
+#if defined __MCC__ && !defined _WIN32
 extern int _setjmp(void *);
 extern void _longjmp(void *, int);
 static int sj_reached, sj_sink;
@@ -119,7 +120,7 @@ int main(void) {
 	}
 #endif
 
-#if defined __x86_64__
+#if !defined _WIN32
 	/* setjmp/longjmp: 0 on the direct call, the value on the second return,
 	 * locals surviving a multi-frame unwind, longjmp(buf, 0) surfacing as 1,
 	 * a reusable buffer, and agreement with _setjmp on callee-saved state. */
