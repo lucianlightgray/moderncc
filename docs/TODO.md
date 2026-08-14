@@ -7971,6 +7971,50 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
   `targetgate` still whitelists `mccast.c`.
 - ~~Land the held `fix-imaginary` branch.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 
+### The process-lifetime bracket — GPU and JIT pool now start and stop in one place
+
+> **New 2026-08-14.** Two subsystems own a resource that outlives any single
+> compilation — the **Vulkan device** and the **JIT worker pool** — and both used to start
+> lazily and stop from an `atexit` handler registered by whichever lazy path happened to
+> run first. `src/mccrt.h` replaces that with one bracket: `mcc_rt_enter()` as main's first
+> statement, `mcc_rt_exit()` as its last. Both `src/mcc.c` and `tools/slicerun.c` now wrap
+> their real body in a thin `main`, because between them they return from ~15 places.
+>
+> **This is not a tidiness change; the tree had already written down both defects it
+> causes**, in the code, next to the code that caused them:
+> - `mccjit_embed.c`: joining the pool before destroying the device "came out right only
+>   because `boot_swap_async` calls them in that order; the `mccjit_kgc_reg` path registers
+>   this handler independently and **can invert it**."
+> - `mccast.c`: tearing the device down *from* an `atexit` handler races the driver's own
+>   unload, which "turns `mcc_gpu_quiesce` into a call through an **unmapped page**".
+>
+> Both are now properties of the code. `mcc_rt_exit()` joins the pool, then quiesces the
+> device, in that fixed order, from `main` — before `atexit`, before the driver unloads.
+> The two `atexit(mccjit_shutdown)` registrations are gone and `ast_ladder_gpu_report()`
+> only reports. (`atexit(mccjit_kgc_flush_all)` stays: it writes files and is
+> order-independent.)
+>
+> **The subtle part, and it was silently fatal.** `ast_ladder_gpu_setup()` set its
+> `static int done` **before** checking whether anyone had asked for a device. Called at
+> main entry — where `argv` has not been parsed and no force flag has arrived — that marked
+> it done and swallowed the later CLI-forced boot **entirely**: measured, `--jit-always-gpu`
+> produced *no* `[ladder-gpu]` line at all, because the hook was never installed. Declining
+> because nobody asked now does not count as done. Proved by reverting the guard against
+> the new cell.
+>
+> **Honest limitation.** The env opt-in (`MCC_AST_EVAL_LADDER_GPU`) boots at main entry.
+> A **CLI**-forced request cannot, because the flag is not known until args are parsed, so
+> that path still boots at first use. Making it literally entry-only means parsing `argv`
+> before the bracket.
+>
+> `slicerun` installs no boot hook on purpose: several of its cases exist to exercise
+> `mcc_gpu_quiesce()` on healthy, lost and permanently-pending devices. Those calls are the
+> subject under test, and `mcc_rt_exit()` is idempotent.
+>
+> Cell: `gpu/lifecycle`, which asserts a boot was *attempted* rather than that one
+> succeeded, so it means the same thing on a host with no GPU. Proved to bite both ways —
+> against the reverted `done` guard, and against a bracket that boots unconditionally.
+
 ### Cells that fail under parallel load, not under test — investigate and fix
 
 > **New 2026-08-14, and it is now a standing requirement**: full-suite runs are taken at
