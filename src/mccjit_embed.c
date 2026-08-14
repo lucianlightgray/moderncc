@@ -1463,10 +1463,13 @@ static int mccjit_pool_start(unsigned long workers) { MCC_TRACE("enter\n");
 		if (want > MCCJIT_POOL_MAX)
 			{ MCC_TRACE("br\n"); want = MCCJIT_POOL_MAX; }
 		mccjit_pool.started = 1;
-		if (!mccjit_pool.hooked) { MCC_TRACE("br\n");
-			atexit(mccjit_shutdown);
-			mccjit_pool.hooked = 1;
-		}
+		/* No atexit here any more. main() brackets the process through
+		 * mcc_rt_enter/mcc_rt_exit (src/mccrt.h), which joins this pool before it
+		 * tears the device down -- an order that used to depend on which lazy
+		 * path registered its handler first, and which this file's own comment
+		 * below records as having "come out right only because" of the call
+		 * sequence. */
+		mccjit_pool.hooked = 1;
 		for (i = 0; i < want; i++) { MCC_TRACE("br\n");
 			pthread_t th;
 			if (pthread_create(&th, NULL, mccjit_pool_worker, NULL) != 0)
@@ -2991,9 +2994,12 @@ static void mccjit_kgc_register(MccjitKgc *k) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	pthread_mutex_lock(&mccjit_kgc_reg_lock);
 	if (!mccjit_kgc_reg_hooked) { MCC_TRACE("br\n");
+		/* The cache flush still runs from atexit: it only writes files and is
+		 * order-independent. The SHUTDOWN that used to be registered here is
+		 * gone -- it is main's job now (src/mccrt.h), and registering it from
+		 * this path is precisely what could invert the pool-then-device order. */
 		atexit(mccjit_kgc_flush_all);
 		mcc_stats_set_flush_hook(mccjit_kgc_flush_all);
-		atexit(mccjit_shutdown);
 		mccjit_kgc_reg_hooked = 1;
 	}
 	r = mcc_malloc(sizeof *r);

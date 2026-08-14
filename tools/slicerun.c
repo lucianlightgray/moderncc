@@ -24,6 +24,7 @@ static int ast_bad_type(int tt) {
 
 #define MCC_GPU_EMITTER 1
 #include "mccgpu.h"
+#include "mccrt.h"
 
 #define MCC_SLICE_GPU 1
 #include "mcctask.h"
@@ -9559,7 +9560,26 @@ static void suite_thread(void) {
 					MCC_THREAD_TAB_N, thr_supported_n());
 }
 
+/* Wrapper, for the same reason mcc's main has one: slicerun returns from a
+ * dozen places (including several SKIP 77 paths) and the process-lifetime
+ * bracket has to cover all of them. See src/mccrt.h.
+ *
+ * No GPU boot hook is installed: this tool drives the device explicitly, and
+ * several of its cases exist precisely to exercise mcc_gpu_quiesce() on a
+ * healthy, a lost and a permanently-pending device. Those direct calls are the
+ * subject under test, not production teardown -- mcc_rt_exit() is idempotent
+ * and simply finds the work already done. */
+static int slicerun_main(int argc, char **argv);
+
 int main(int argc, char **argv) {
+	int ret;
+	mcc_rt_enter();
+	ret = slicerun_main(argc, argv);
+	mcc_rt_exit();
+	return ret;
+}
+
+static int slicerun_main(int argc, char **argv) {
 	const char *only = NULL;
 	const char *arenas = NULL;
 	long limit = 0;

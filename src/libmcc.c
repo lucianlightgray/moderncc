@@ -10,6 +10,7 @@
 #include "mcccst.c"
 #include "mccast.c"
 #include "mccgpu.c"
+#include "mccrt.c"
 #include "mccircap.c"
 #include "mccrir.c"
 #include "mccdbg.c"

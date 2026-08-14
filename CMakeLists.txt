@@ -3809,7 +3809,7 @@ if(MCC_BUILD_TESTS)
         # so it needs no SDK, builds on every host, and is the only cell that
         # covers the production device layer's dispatch path directly.
         if(NOT CMAKE_CROSSCOMPILING)
-            add_executable(slicerun tools/slicerun.c tools/slicerun_arena.c src/mccgpu.c)
+            add_executable(slicerun tools/slicerun.c tools/slicerun_arena.c src/mccgpu.c src/mccrt.c)
             target_include_directories(slicerun PRIVATE
                 "${CMAKE_CURRENT_SOURCE_DIR}/src"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/arch"
@@ -8958,6 +8958,21 @@ if(UNIX)
         SKIP_RETURN_CODE 77 TIMEOUT 120)
 else()
     mcc_skip_test("xsuite/report" "the xsuite report check needs a POSIX shell")
+endif()
+
+# The process-lifetime bracket (src/mccrt.h): the GPU device and the JIT worker
+# pool start at main's entry and stop at its exit, instead of starting lazily and
+# stopping from atexit handlers whose order depended on which lazy path ran
+# first. Needs no device -- it asserts that a boot was ATTEMPTED, never that one
+# succeeded, so it means the same thing on a host without a GPU.
+if(UNIX)
+    add_test(NAME "gpu/lifecycle"
+        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu/lifecycle.sh"
+                "$<TARGET_FILE:mcc>" "${CMAKE_BINARY_DIR}/gpu-lifecycle")
+    set_tests_properties("gpu/lifecycle" PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
+else()
+    mcc_skip_test("gpu/lifecycle" "the lifetime bracket check needs a POSIX shell")
 endif()
 
 # N7's fix: an INDEPENDENT oracle for ast_eval_binop().

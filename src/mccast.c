@@ -18746,9 +18746,15 @@ void ast_ladder_gpu_setup(void) { MCC_TRACE("enter\n");
 	static int done;
 	if (done)
 		{ MCC_TRACE("br\n"); return; }
-	done = 1;
+	/* Declining because nobody asked does NOT count as done. main() calls this
+	 * through mcc_rt_enter() so the device comes up at the process's entry
+	 * rather than in the middle of a compilation (src/mccrt.h); at that point
+	 * argv has not been parsed, so a CLI-forced request has not arrived yet.
+	 * Marking `done` on the way out of that first call would swallow the forced
+	 * boot entirely. Only a request that was actually honoured is `done`. */
 	if (!ast_ladder_gpu_forced && !mcc_env_on("MCC_AST_EVAL_LADDER_GPU"))
 		{ MCC_TRACE("br\n"); return; }
+	done = 1;
 	ast_ladder_gpu_budget = mcc_env_num("MCC_AST_EVAL_LADDER_GPU_MAX", 0);
 	ast_ladder_gpu_hook = ast_ladder_gpu_run;
 	{ MCC_TRACE("br\n");
@@ -18779,7 +18785,13 @@ void ast_ladder_gpu_report(void) { MCC_TRACE("enter\n");
 	MccGpuStats gs;
 	if (!ast_ladder_gpu_hook)
 		{ MCC_TRACE("br\n"); return; }
-	mcc_gpu_quiesce();
+	/* Reports, and no longer tears down. The quiesce that used to sit here ran
+	 * from an atexit handler, which is what made its ordering against both the
+	 * JIT pool and the driver's own unload accidental -- see the comment above
+	 * ast_slice_inl_depth_cfg() for the unmapped-page failure that caused, and
+	 * src/mccrt.h for where the teardown lives now. mcc_gpu_stats() reads
+	 * mcc_gpu.ok, which quiesce deliberately leaves alone, so this still reports
+	 * whether a device came up whichever order the two run in. */
 	mcc_gpu_stats(&gs);
 	fprintf(stderr,
 					"[ladder-gpu] tried=%d available=%d device=%s rungs=%ld dispatches=%ld "

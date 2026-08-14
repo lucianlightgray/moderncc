@@ -3,6 +3,7 @@
 #endif
 
 #include "mcc.h"
+#include "mccrt.h"
 #if MCC_AMALGAMATED
 #include "libmcc.c"
 #endif
@@ -1581,7 +1582,25 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	return i;
 }
 
+/* main() is a wrapper so the process-lifetime bracket covers EVERY return path
+ * out of the real body -- there are five, and one of them is reached before any
+ * file is compiled. See src/mccrt.h for why the bracket exists at all. */
+static int mcc_main_body(int argc, char **argv);
+
 int main(int argc, char **argv) { MCC_TRACE("enter\n");
+	int ret;
+	/* The compiler side owns the GPU opt-in, so it hands the boot to the
+	 * lifetime bracket rather than the other way round; tools that link
+	 * mccgpu.c without the compiler leave this null and manage their own
+	 * device. */
+	mcc_rt_set_gpu_boot(ast_ladder_gpu_setup);
+	mcc_rt_enter();
+	ret = mcc_main_body(argc, argv);
+	mcc_rt_exit();
+	return ret;
+}
+
+static int mcc_main_body(int argc, char **argv) { MCC_TRACE("enter\n");
 	MCCState *s, *s1;
 	int ret, opt, n = 0, t = 0, done;
 	unsigned start_time = 0, end_time = 0;
