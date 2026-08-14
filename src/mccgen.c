@@ -4515,7 +4515,7 @@ redo:
 			goto op_err;
 		}
 	std_op:
-		if (op_class != CMP_OP && (combtype.t & VT_BTYPE) == VT_LLONG && !is_float(combtype.t)) { MCC_TRACE("br\n");
+		if ((combtype.t & VT_BTYPE) == VT_LLONG && !is_float(combtype.t)) { MCC_TRACE("br\n");
 			int wide1 = (t1 & VT_BITFIELD) && bs1 > 32;
 			int wide2 = (t2 & VT_BITFIELD) && bs2 > 32;
 			if (op_class == SHIFT_OP) { MCC_TRACE("br\n");
@@ -4560,6 +4560,32 @@ redo:
 		gen_cast_s(t);
 		vswap();
 		gen_cast_s(t2);
+		/* An over-wide bit-field's type has precision N, which is the model
+		 * b3c660f1 adopted -- its own message calls it "an N-bit integer type".
+		 * Truncating the RESULT implements that for + - * <<, where mod 2^64
+		 * then mod 2^N equals mod 2^N, and silently does not for a comparison,
+		 * whose result is 0/1.  So `f == -1` on `unsigned long long f : 33` at
+		 * max answered 0 (clang's model, where -1 converts to 2^64-1) while
+		 * `f * f` answered 1 (gcc's, precision 33).  Those two cannot both be
+		 * right: if the type really were plain unsigned long long, f * f would
+		 * not wrap.  Reduce each OPERAND instead, which is what a precision-N
+		 * type does to both sides of a comparison.  bf_trunc is 0 unless one
+		 * side is a bit-field wider than 32 and the other does not outrank it,
+		 * so `f == -1LL` stays a 64-bit compare, as it is under gcc. */
+		if (op_class == CMP_OP && bf_trunc) { MCC_TRACE("br\n");
+			int sh = 64 - bf_trunc;
+			int rop = (t & VT_UNSIGNED) ? TOK_SHR : TOK_SAR;
+			vpushi(sh);
+			gen_op(TOK_SHL);
+			vpushi(sh);
+			gen_op(rop);
+			vswap();
+			vpushi(sh);
+			gen_op(TOK_SHL);
+			vpushi(sh);
+			gen_op(rop);
+			vswap();
+		}
 #if MCC_HAVE_INT128
 		if ((t & VT_BTYPE) == VT_INT128)
 			{ MCC_TRACE("br\n"); gen_opq(op); }

@@ -125,9 +125,9 @@ static const SmBfRow smb_rows[] = {
 		SM_BF("bf.ul40.max.shr1", BFUL, 40, SHR1, 0xffffffffffull,
 					SM_ENC_ULL(0x7fffffffffull))
 		SM_BF("bf.ul40.max.gtm1", BFUL, 40, GTM1, 0xffffffffffull, SM_ENC_INT(0))
-		SM_BF("bf.ul40.max.eqm1", BFUL, 40, EQM1, 0xffffffffffull, SM_ENC_INT(0))
-		SM_BF("bf.ul33.max.eqm1", BFUL, 33, EQM1, 0x1ffffffffull, SM_ENC_INT(0))
-		SM_BF("bf.ul63.max.eqm1", BFUL, 63, EQM1, 0x7fffffffffffffffull, SM_ENC_INT(0))
+		SM_BF("bf.ul40.max.eqm1", BFUL, 40, EQM1, 0xffffffffffull, SM_ENC_INT(1))
+		SM_BF("bf.ul33.max.eqm1", BFUL, 33, EQM1, 0x1ffffffffull, SM_ENC_INT(1))
+		SM_BF("bf.ul63.max.eqm1", BFUL, 63, EQM1, 0x7fffffffffffffffull, SM_ENC_INT(1))
 		SM_BF("bf.ul64.max.eqm1", BFUL, 64, EQM1, 0xffffffffffffffffull, SM_ENC_INT(1))
 		SM_BF("bf.ul40.max.ltz", BFUL, 40, LTZ, 0xffffffffffull, SM_ENC_INT(0))
 		SM_BF("bf.ul33.max.add1", BFUL, 33, ADD1, 0x1ffffffffull, SM_ENC_ULL(0))

@@ -3068,11 +3068,53 @@ comparison, and **no single reference can be cited for the pair**. A one-referen
 both arms as the same undifferentiated `diverge-one`, which is exactly why this went unseen: the
 verdict class was right and the evidence behind it was one compiler.
 
-Left banked rather than fixed, deliberately. Which half to move is a semantics decision — the
-whole area is implementation-defined and this file's rule for implementation-defined answers is
-to pin mcc's and record the disagreement. What is *not* defensible is being internally
-inconsistent about which implementation is being followed, so the row stays open as a decision
-rather than a bug. Size: the comparison path, not `bf_trunc`.
+~~Left banked rather than fixed, deliberately. Which half to move is a semantics decision.~~
+**FIXED 2026-08-14 — it is a bug, and the paragraph below already contained the argument against
+itself: "what is *not* defensible is being internally inconsistent about which implementation is
+being followed."**
+
+**The choice was made once, in `b3c660f1`, whose own message names the model**: gcc and clang
+"treat `unsigned long long:N` as an N-bit integer type". Under that model `f == -1` is not a
+second decision, it is *entailed* — `int` cannot represent all 33-bit unsigned values so there is
+no promotion to it, the precision-33 type outranks `int`, so `-1` converts to `0x1FFFFFFFF` and
+compares equal. **The two answers cannot both be right**: if the type were plain `unsigned long
+long`, `f * f` would not wrap, and `b3c660f1` exists solely to make it wrap. Measured here:
+mcc gave `f * f` = 1 (gcc's) and `f == -1` = 0 (clang's), which is not a third coherent model.
+
+**Why it split exactly where it did — the part worth keeping.** `bf_trunc` truncates the
+*result*. That implements a precision-N type for `+ - * <<`, where `mod 2^64` then `mod 2^N` is
+`mod 2^N`, and cannot implement it for a comparison, whose result is 0/1 — so `gen_op` guarded it
+with `op_class != CMP_OP`, with no comment and no mention in the commit. **The split is
+mechanical, not a stance: every congruence-preserving operator followed gcc and every
+non-congruence-preserving one followed clang.**
+
+**The fix** reduces each *operand* to `bf_trunc` bits after the common cast, which is what a
+precision-N type does to both sides. `f == -1` → 1 and `f == -1LL` → 0, both gcc's — the existing
+`bf_operand_bits` rank logic already gets the second right, since `long long` outranks the 33-bit
+type and leaves `bf_trunc` 0.
+
+**Measured.** 782 objects across `src/ tests/ tools/ examples/`: **2 moved**, and they are
+`tests/exec/expressions/integer_promotion.c` and `tests/smoke/subject.c` — the only two sources in
+the tree with an over-wide bit-field. Two others appeared to move and were proved to be N21's
+`__TIME__` landmine by compiling each twice with one binary. **`src/` has no over-wide bit-fields,
+so every self-compile bank is untouched.** `exec` 350/350, smoke 12/12.
+
+**Three `want` values in `tests/smoke/bcases.h` move, and the evidence says they were wrong.**
+`bf.ul{33,40,63}.max.eqm1` expected 0 — but a **gcc-16-built subject fails exactly those three
+rows** against that expectation, and `bf.ul64.max.eqm1` in the same table already expected **1**,
+because a 64-bit field has full precision so `-1` converts to `2^64-1` and matches. The 33/40/63
+rows were the anomaly. After the change the gcc-built subject's failures fall 10 → 7 and those
+three are gone. The banked divergence rows need no edit: they stay `div diverge-one`, having only
+changed which reference they differ from.
+
+**What the fix does NOT close, found while checking and not previously recorded.** `/` and `%` on
+an over-wide field still follow clang (`f / -1` is 1 under gcc, 0 under mcc) — same root cause and
+the same extension, but no cell or bank covers them, so they are unmeasured and left alone on
+purpose. Two deeper residues need a precision-carrying type rather than a local patch:
+`(f + 0) == -1`, where `combine_types` strips `VT_BITFIELD` so precision is lost after the first
+operation, and `switch (f) case -1:`, which is the case-label conversion path. **The fix makes
+mcc's direct operations on an over-wide field consistently gcc's, not its whole type system**,
+and that is the honest boundary.
 
 **N41. `84add424` banked a host-sensitive count as a flat number, and it went red on the other
 host within two hours.** New 2026-08-14, found by the third full run. The commit closed a real
