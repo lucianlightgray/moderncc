@@ -817,6 +817,10 @@ from another tree is not a red you can watch from this one until its prerequisit
 
 ### The clean full-suite number for x86_64-linux — 2026-08-14, and it is 0 of 9995
 
+> **Run full suites at `-j32` on this host** (32 cores), as of 2026-08-14. Cells that only
+> fail at that width are tracked and are meant to be *fixed*, not tolerated — see *Cells
+> that fail under parallel load*. The figure below was taken at `-j8`.
+>
 > **Superseding the 2026-08-13 figure below.** `ctest -j8` over `cmake-def` on 2026-08-14:
 > **9995 cells, 3 reported failures, and none of them survives investigation** — so the
 > honest number is **zero real failures**, the first time this host has had one.
@@ -7925,6 +7929,36 @@ emit a depfile CMake's `CMAKE_DEPFILE_FLAGS_C` can consume for this profile.
   Precondition still false: the `ir_` namespace already collides (~850 occurrences) and
   `targetgate` still whitelists `mccast.c`.
 - ~~Land the held `fix-imaginary` branch.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
+
+### Cells that fail under parallel load, not under test — investigate and fix
+
+> **New 2026-08-14, and it is now a standing requirement**: full-suite runs are taken at
+> **`-j32`** on this host (32 cores). A cell that only fails at that width is still a cell
+> that fails, and "it was contention" is a diagnosis to be *proved and then removed*, not a
+> reason to shrug. Every row here is a real defect in the cell's isolation, because a
+> correct cell either serialises itself against the resource it needs or skips.
+>
+> The trap this replaces is note 7 in the traps list, which tells the reader to check
+> whether a non-device cell is failing before calling something a regression. That is good
+> advice for *reading* a run and bad as a permanent resting place: it means the suite has a
+> known-flaky set nobody is fixing.
+
+| cell | how it fails under load | evidence | what it needs |
+| --- | --- | --- | --- |
+| `run-tier/x86_64-win32` | **300 s TIMEOUT** at `-j8`; passes in **5.28 s** alone | measured 2026-08-14, a 57× spread | a wine-server RESOURCE_LOCK, or its own `WINEPREFIX` per cell, so concurrent wine cells do not serialise on one server |
+| `run-tier/i386-win32` | fails at `-j8`, passes alone | measured 2026-08-14; the traps list already records *"Maximum number of clients reached"* for this cell by name | same |
+| `gpu/ladder-gpu-parity` | 3 of 10 failed concurrent, 0 of 7 serial | traps note 7, load average 180–348 | a device RESOURCE_LOCK |
+
+**The fix shape is the same for all three and ctest already supports it**: `RESOURCE_LOCK`
+on a named resource serialises exactly the cells that contend, without serialising the
+suite. The wine cells want one lock for the wine server; the gpu cells want one for the
+device. What they must NOT get is a longer `TIMEOUT` — that hides the contention instead of
+removing it, and leaves the next reader with the same "is this real?" question.
+
+**Open question worth measuring first**: whether the wine failure is the *server* (one
+`WINEPREFIX` shared by both cells, so the second cell's `wineserver` start races the first)
+or simply CPU starvation. A per-cell `WINEPREFIX` distinguishes them, and if it is the
+server then two cells can keep running concurrently rather than being locked apart.
 
 ### Open codegen / front-end defects
 - `__bf16`: finish encode/decode + ABI now that `VT_BTYPE` is 5 bits. **Do not alias

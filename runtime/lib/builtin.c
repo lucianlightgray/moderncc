@@ -694,11 +694,15 @@ __asm__(
 	"  fld fs6, 160(a0)\n"  "  fld fs7, 168(a0)\n"
 	"  fld fs8, 176(a0)\n"  "  fld fs9, 184(a0)\n"
 	"  fld fs10, 192(a0)\n" "  fld fs11, 200(a0)\n"
-	/* a0 = a1 ? a1 : 1, branchless. The obvious bnez/li over a local label
-	 * assembles without complaint under mcc and does NOT branch -- the
-	 * value came back as 1 whatever was passed -- so the label form is
-	 * avoided here rather than relied on. seqz gives 1 exactly when a1 is
-	 * zero, so the add produces the value or 1. */
+	/* a0 = a1 ? a1 : 1, branchless. seqz gives 1 exactly when a1 is zero, so
+	 * the add produces the value or 1.
+	 *
+	 * This was originally a workaround, not a preference: the obvious
+	 * bnez-over-a-local-label assembled without complaint under mcc and did
+	 * NOT branch, so the value came back as 1 whatever was passed. That was
+	 * N39, and it is fixed -- the label form would work here now. The
+	 * branchless form is kept because it is one instruction shorter and has
+	 * no branch to mispredict, but it is a choice now rather than a dodge. */
 	"  seqz t0, a1\n"
 	"  add a0, a1, t0\n"
 	"  ret\n"
