@@ -53,9 +53,10 @@ case $mode in
 counter)
 	COUNTER=$7
 	[ -n "$COUNTER" ] || { echo "FAIL $NAME: no counter name given"; exit 2; }
-	got=$("$MCC" $MCCFLAGS "$OLEVEL" --stats=4 -c "$SRC" -o "$WORK/$NAME.o" 2>&1 |
-		strip_ansi | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1)
-	[ -n "$got" ] || { echo "FAIL $NAME: counter '$COUNTER' absent from --stats output"; exit 1; }
+	"$MCC" $MCCFLAGS "$OLEVEL" --stats=4 -c "$SRC" -o "$WORK/$NAME.o" >"$WORK/$NAME.stats" 2>&1 ||
+		{ echo "FAIL $NAME: $OLEVEL --stats compile failed"; ofdiag "$WORK/$NAME.stats"; exit 1; }
+	got=$(strip_ansi <"$WORK/$NAME.stats" | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1)
+	[ -n "$got" ] || { echo "FAIL $NAME: counter '$COUNTER' absent from --stats output"; ofdiag "$WORK/$NAME.stats"; exit 1; }
 	[ "$got" -gt 0 ] 2>/dev/null || {
 		echo "FAIL $NAME: pass DID NOT FIRE ($COUNTER=$got at $OLEVEL)"
 		exit 1
@@ -66,7 +67,7 @@ counter)
 	fi
 	"$MCC" $MCCFLAGS "$OLEVEL" "$SRC" -o "$opt" $LDF >"$WORK/$NAME.opt.err" 2>&1 ||
 		{ echo "FAIL $NAME: $OLEVEL build failed"; ofdiag "$WORK/$NAME.opt.err"; exit 1; }
-	optout=$("$opt" 2>&1) || { echo "FAIL $NAME: $OLEVEL run failed"; exit 1; }
+	optout=$("$opt" 2>&1) || { echo "FAIL $NAME: $OLEVEL run failed"; echo "  output: $optout"; exit 1; }
 	[ "$optout" = "$refout" ] || {
 		echo "FAIL $NAME: output changed under $OLEVEL"
 		echo "  -O0: $refout"
@@ -108,7 +109,7 @@ differ)
 		env $EENV "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "$gflag" "$SRC" -o "$opt.$v" $LDF \
 			>"$WORK/$NAME.$v.err" 2>&1 ||
 			{ echo "FAIL $NAME: $gflag build failed"; ofdiag "$WORK/$NAME.$v.err"; exit 1; }
-		out=$("$opt.$v" 2>&1) || { echo "FAIL $NAME: $gflag run failed"; exit 1; }
+		out=$("$opt.$v" 2>&1) || { echo "FAIL $NAME: $gflag run failed"; echo "  output: $out"; exit 1; }
 		[ "$out" = "$refout" ] || {
 			echo "FAIL $NAME: $gflag output differs from -O0"
 			echo "  -O0: $refout"
@@ -125,11 +126,12 @@ level)
 	LDF=
 	bad=0
 	echo "$SPEC" | tr ',' '\n' | while IFS=: read -r lvl want; do
-		got=$("$MCC" $MCCFLAGS "$lvl" --stats=4 -c "$SRC" -o "$WORK/$NAME.$lvl.o" 2>&1 |
-			strip_ansi | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1)
+		"$MCC" $MCCFLAGS "$lvl" --stats=4 -c "$SRC" -o "$WORK/$NAME.$lvl.o" >"$WORK/$NAME.$lvl.stats" 2>&1 ||
+			{ echo "FAIL $NAME: $lvl --stats compile failed"; ofdiag "$WORK/$NAME.$lvl.stats"; exit 1; }
+		got=$(strip_ansi <"$WORK/$NAME.$lvl.stats" | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1)
 		[ -n "$got" ] || got=0
 		case $want in
-		on)  [ "$got" -gt 0 ] || { echo "FAIL $NAME: expected $COUNTER ON at $lvl, got $got"; exit 1; } ;;
+		on)  [ "$got" -gt 0 ] || { echo "FAIL $NAME: expected $COUNTER ON at $lvl, got $got"; ofdiag "$WORK/$NAME.$lvl.stats"; exit 1; } ;;
 		off) [ "$got" -eq 0 ] || { echo "FAIL $NAME: expected $COUNTER OFF at $lvl, got $got"; exit 1; } ;;
 		*)   echo "FAIL $NAME: bad spec token '$lvl:$want'"; exit 2 ;;
 		esac
@@ -145,10 +147,12 @@ cdelta)
 	[ -n "$COUNTER" ] && [ -n "$GATE" ] || { echo "FAIL $NAME: cdelta needs <counter> <flag>"; exit 2; }
 	gflag_for() { [ "$1" = 1 ] && echo "-f$GATE" || echo "-fno-$GATE"; }
 	cd_read() {
-		"$MCC" $MCCFLAGS "$OLEVEL" $EXTRA "$(gflag_for $1)" --stats=4 -c "$SRC" -o "$WORK/$NAME.$1.o" 2>&1 |
-			strip_ansi | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1
+		"$MCC" $MCCFLAGS "$OLEVEL" $EXTRA "$(gflag_for $1)" --stats=4 -c "$SRC" -o "$WORK/$NAME.$1.o" >"$WORK/$NAME.$1.stats" 2>&1 || return 1
+		strip_ansi <"$WORK/$NAME.$1.stats" | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1
+		return 0
 	}
-	c0=$(cd_read 0); c1=$(cd_read 1)
+	c0=$(cd_read 0) || { echo "FAIL $NAME: $COUNTER -fno-$GATE compile failed"; ofdiag "$WORK/$NAME.0.stats"; exit 1; }
+	c1=$(cd_read 1) || { echo "FAIL $NAME: $COUNTER -f$GATE compile failed"; ofdiag "$WORK/$NAME.1.stats"; exit 1; }
 	[ -n "$c0" ] || c0=0
 	[ -n "$c1" ] || c1=0
 	[ "$c0" -eq 0 ] 2>/dev/null || {
