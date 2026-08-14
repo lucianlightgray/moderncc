@@ -4031,10 +4031,32 @@ both `__m512` and `__int256`'s own layout sit under it.
 **Rank 8 — `parse_btype`, `src/mccgen.c`.** `bf16-abi` (token exists, zero code behind it;
 `is_float_abi` special-cases `VT_FLOAT16` in a way that would be wrong for `__bf16`),
 `types-complex-float16` (a deliberate one-line refusal inside working machinery — delete and
-chase), `types-float128` (**cheapest of the group by substrate**: `runtime/lib/float128.c` is a
+chase), ~~`types-float128` (**cheapest of the group by substrate**: `runtime/lib/float128.c` is a
 complete soft-quad already in tree and `default_debug[19]` holds a reserved sentinel, so the work
 is front-end only — but decide first whether it collides with `long double`, which is already
-16 bytes on arm64/riscv64), `types-bitint` (C23-mandatory, large, and needs a per-declaration
+16 bytes on arm64/riscv64)~~ **— RE-PRICED 2026-08-14, and "front-end only" is wrong. The half
+that exists is the RUNTIME, not the type system.**
+
+*The good news is real*: `runtime/lib/float128.c` is a complete soft-quad and `libmccrt.a`
+exports it — `__addtf3`, `__subtf3`, `__multf3`, `__divtf3`, `__negtf2`, `__extend{sf,df}tf2`,
+`__trunctf{sf,df}2`, `__fix{,uns}tf{si,di}` are all there and nothing in the compiler calls any of
+them.
+
+*The bad news is that there is no scalar quad type to call them for, and the obvious candidate is
+not one.* **`VT_QFLOAT` is NOT binary128** — it is the SysV *"two SSE eightbytes"* return class,
+assigned in `x86_64-gen.c` under `x86_64_mode_sse` when `size > 8`, i.e. what
+`struct { double, double }` and `_Complex double` return in `xmm0:xmm1`. It shares `type_size`
+with `VT_QLONG` (16 bytes, align **8**), and `__float128` on x86_64 is one 16-byte value aligned
+**16**. Mapping the keyword onto it would produce a pair-of-doubles ABI and silently wrong calls.
+
+**So the work is a new base type, and it is not small**: a new `VT_BTYPE` code (`0x1f`, 31 codes,
+15 is the highest used, so there is headroom), the two keywords, `type_size` at 16/16, `is_float`
+and the conversion rules, a `CValue` that can hold a 128-bit constant, ABI classification for
+arguments and returns, and every arithmetic and comparison operator lowered to the `__*tf*` calls
+above. Mechanical, but it is the whole width of the compiler, not the front end. **The
+`long double` question the row raises is real and unchanged** — on arm64 and riscv64 `long double`
+*is* binary128, so the two are the same format and must still be distinct types, which is what gcc
+does., `types-bitint` (C23-mandatory, large, and needs a per-declaration
 width that no bit field can carry), ~~`int128-signedness`~~ (**CLOSED 2026-08-13** — it was
 dead-code cleanup only, and all three files are done: `__mcc_ov_disp` had zero call sites because
 `__builtin_*_overflow` expands to `__mcc_ov_gen`'s inline path and never reaches the out-of-line
