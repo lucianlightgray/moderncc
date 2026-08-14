@@ -566,6 +566,8 @@ static unsigned char *cv_types;
 static unsigned cv_types_len, cv_types_cap, cv_types_next;
 static struct { Sym *s; unsigned idx; } cv_tcache[512];
 static unsigned cv_ntcache;
+static struct { unsigned off, bodylen, idx; } *cv_rec;
+static unsigned cv_nrec, cv_reccap;
 typedef struct CvVar { int sym; unsigned type_index; char *name; int is_global; } CvVar;
 static CvVar *cv_vars;
 static int cv_nvar, cv_maxvar;
@@ -587,6 +589,9 @@ static void cv_reset(void) { MCC_TRACE("enter\n");
 	cv_types_len = cv_types_cap = 0;
 	cv_types_next = CV_TYPE_FIRST;
 	cv_ntcache = 0;
+	mcc_free(cv_rec);
+	cv_rec = NULL;
+	cv_nrec = cv_reccap = 0;
 	for (i = 0; i < cv_nvar; i++)
 		{ MCC_TRACE("br\n"); mcc_free(cv_vars[i].name); }
 	mcc_free(cv_vars);
@@ -627,7 +632,13 @@ static unsigned cv_add_record(unsigned char *body, unsigned bodylen) { MCC_TRACE
 	unsigned pad = (4 - (total & 3)) & 3;
 	unsigned reclen = bodylen + pad;
 	unsigned char lp[2], padb[3];
-	unsigned k;
+	unsigned k, off;
+	for (k = 0; k < cv_nrec; k++) { MCC_TRACE("br\n");
+		if (cv_rec[k].bodylen == bodylen &&
+				memcmp(cv_types + cv_rec[k].off + 2, body, bodylen) == 0)
+			{ MCC_TRACE("br\n"); return cv_rec[k].idx; }
+	}
+	off = cv_types_len;
 	lp[0] = reclen & 0xff;
 	lp[1] = (reclen >> 8) & 0xff;
 	cv_types_put(lp, 2);
@@ -635,6 +646,14 @@ static unsigned cv_add_record(unsigned char *body, unsigned bodylen) { MCC_TRACE
 	for (k = 0; k < pad; k++)
 		{ MCC_TRACE("br\n"); padb[k] = (unsigned char)(0xf0 + (pad - k)); }
 	cv_types_put(padb, pad);
+	if (cv_nrec >= cv_reccap) { MCC_TRACE("br\n");
+		cv_reccap = cv_reccap ? cv_reccap * 2 : 64;
+		cv_rec = mcc_realloc(cv_rec, cv_reccap * sizeof *cv_rec);
+	}
+	cv_rec[cv_nrec].off = off;
+	cv_rec[cv_nrec].bodylen = bodylen;
+	cv_rec[cv_nrec].idx = cv_types_next;
+	cv_nrec++;
 	return cv_types_next++;
 }
 
