@@ -68,6 +68,15 @@ for want in "FunctionType: int (int)" "FunctionType: int ()"; do
 	fi
 done
 
+# local variable symbols (T-win-50000): S_LOCAL + S_FRAMEPROC(RBP) + a frame-relative range
+if grep -qF "S_LOCAL" "$WORK/cv.txt" && grep -qF "S_FRAMEPROC" "$WORK/cv.txt" &&
+		grep -qF "LocalFramePtrReg: RBP" "$WORK/cv.txt" &&
+		grep -qF "S_DEFRANGE_FRAMEPOINTER_REL" "$WORK/cv.txt"; then
+	echo "codeview: local variable symbols OK (S_LOCAL + S_FRAMEPROC RBP + defrange)"
+else
+	echo "pe-codeview: no typed local variable symbols (S_LOCAL/S_FRAMEPROC/defrange)" >&2; fail=1
+fi
+
 # gold standard: link to a PDB and read the line info back out
 if [ -n "$LLD" ] && [ -f "$LLD" ] && [ -n "$PDBUTIL" ] && [ -f "$PDBUTIL" ]; then
 	printf 'int square(int x){int r=x*x;return r;}\nint gtotal=7;\nstruct Pt{int x;int y;};\nstruct Pt gpoint;\nint deref(int*p){return *p;}\nunion Un{int a;float b;};\nstruct Ar{int v[4];};\nenum En{E0,E1,E2};\nint psum(struct Pt*q){return q->x+q->y;}\nint uget(union Un*u){return u->a;}\nint aget(struct Ar*z){return z->v[0];}\nint eget(enum En e){return e==E1;}\nint mainCRTStartup(void){int x=5;return square(x)+deref(&x)+gtotal+gpoint.x+psum(&gpoint);}\n' > "$WORK/m.c"
