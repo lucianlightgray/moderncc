@@ -183,7 +183,7 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10054-rir-nofb-probe-check-gap-dir | DEPS: T-lin-10003[C]
 - [ ] T-lin-10055 [S] `corpus_config` cannot see `MCC_EMBED_JIT`, which gates two whole translation units
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T19:58Z
       REF: DETAILS.md#t-lin-10055-corpus-config-cannot-see-mcc-embed | DEPS: —
 - [ ] T-lin-10056 [S] Two bodies replay byte-identically under one build and not another
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
