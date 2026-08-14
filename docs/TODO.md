@@ -1784,7 +1784,27 @@ this table carried an hour earlier**, which assumed a contending family existed 
 run says the trigger is not reproduced by simply running the suite again. Two consequences.
 *(a)* It joins **N31** (`rir-nofb-probe-self`) as a flake whose mechanism is unknown — and N31's
 lesson applies: a flake observed under load and not under isolation is not yet evidence about
-`-j`, because the load was neither controlled nor measured. *(b)* **The cell prints its own
+`-j`, because the load was neither controlled nor measured.
+
+**Two hypotheses tested and BOTH REFUTED, 2026-08-13.** *(i) `-O4` is not nondeterministic.*
+`-O4` sets `optimize_search_all`, which made a time-budgeted search the obvious suspect; the
+`abs` counter is **1 on 60 of 60 consecutive compiles** on an idle machine. *(ii) It is not
+load-induced compiler nondeterminism either.* With eight concurrent `-O4` self-host compiles
+saturating the machine (load average 4.4), `optfire/abs` passes **25 of 25** and
+`optfire/level-abs` **25 of 25**, both through the real `optfire.sh` rather than a
+reconstruction. So whatever the trigger is, it is not "the compiler answers differently when
+busy", which is what a strategy-fire flake would normally mean.
+
+**What that leaves, and it is worth stating because it changes who should look.** The remaining
+candidates are environmental rather than compiler-side: the counter arm builds and *runs* two
+executables (`$WORK/$NAME.ref` and `.opt`) and compares their stdout, so a transient `fork`/`exec`
+or allocation failure under a full-suite process load lands in the `run failed` arm, and a
+truncated read lands in the `output changed` arm — two different messages that would settle it
+instantly. **The failure text has never been captured**: the first full run was not given
+`--output-on-failure` and `Testing/Temporary/LastTest.log` had already been overwritten by a later
+isolated run. That is the whole reason this row is still open, and it is a harness-discipline
+finding rather than a compiler one — **run the suite with `--output-on-failure` or the evidence
+from a rare failure is gone the moment anything else runs.** *(b)* **The cell prints its own
 diagnosis** — `optfire.sh`'s `ofdiag`/`ofsize` echo the compiler output and both object sizes on
 failure — so the next occurrence is worth capturing rather than re-running: `ctest --output-on-failure`
 on a full run, and read what it says instead of asking whether it reproduces.
@@ -4820,6 +4840,30 @@ returns the wrong compiled pipeline. The Vulkan cache has the same shape. Worth 
 before you debug a "kernel produced someone else's answer" report.
 
 ### 5. arm64 as a target, separately from Metal
+
+> **CORRECTED 2026-08-13 — this table is a statement about the x86_64-linux box, and it reads as
+> a statement about the project.** On a native arm64 Darwin host every one of its premises
+> inverts, because arm64 is not a cross target here, it is *the* target: `mcc -v` reports
+> `(AArch64 Darwin)`, and **8023 of the 9941 registered cells are the `exec*` family alone**, all
+> of them compiling and running arm64 code natively with no qemu, no sysroot and no opt-in gate.
+> The headline below — "arm64 has almost no execution coverage, nearly everything green is
+> cross-compile-and-inspect" — is true where it was written and false here.
+>
+> **The row it gets most wrong is `macho-embedjit-arm64-osx`,** filed as "would [execute], but
+> its script exits 77 on any non-Darwin host". That is accurate and it stops one clause too
+> early: **on this host the 77 does not fire and the cell executes**, printing
+> `PASS: baked a arm64 Mach-O image`, `PASS: MCC_JIT=0 runs and prints 298800` and
+> `PASS: MCC_JIT=1 runs and prints 298800`. So the baked arm64 Mach-O image is run with the JIT
+> both off and on, natively, on every full run here — which is exactly the coverage the table
+> says the project does not have.
+>
+> **What survives the correction, and it is most of the table's value.** The rows about
+> `arm64-win32` (*"zero programs, ever"*), the `jit/arm64-*` cells being clang-built validators
+> with no `mcc` involvement, the `0e5b5cf0` warning that any green `jit/arm64-kgc` from before
+> that commit is reading nothing, and the live contradiction about
+> `tools/arm64pe-wine-docker.sh` being a working executor registered nowhere — none of those
+> depend on the host and all of them still stand. **Read the table as "what the Linux box can say
+> about arm64", which is what it is.**
 
 **The short version: on a default configure, arm64 has almost no execution coverage. Nearly
 everything green is cross-compile-and-inspect.**
