@@ -492,12 +492,27 @@ int __mcc_cpu_supports(const char *name) {
  * after the return, and the return address. Not the x87 control word or the
  * signal mask -- neither does _setjmp. */
 
+/* Mach-O decorates every C symbol with a leading underscore, so a bare
+ * `.globl __mcc_setjmp` defines a symbol that the compiler's own reference --
+ * spelled ___mcc_setjmp on Darwin -- never matches, and the link fails with
+ * "unresolved reference to '___mcc_setjmp'".  That is N24's defect one layer
+ * down: hand-written asm naming a C symbol must decorate it the way the target
+ * does.  MCC_ULP is already this file's spelling of __USER_LABEL_PREFIX__.
+ * .type and .size go with it because they are ELF directives. */
+#if defined __APPLE__
+#define SJTYPE(s)
+#define SJSIZE(s)
+#else
+#define SJTYPE(s) "\t.type " s ",%function\n"
+#define SJSIZE(s) "\t.size " s ",.-" s "\n"
+#endif
+
 #if defined __x86_64__
 __asm__(
 	".text\n"
-	".globl __mcc_setjmp\n"
-	".type __mcc_setjmp,@function\n"
-	"__mcc_setjmp:\n"
+	".globl " MCC_ULP "__mcc_setjmp" "\n"
+	SJTYPE(MCC_ULP "__mcc_setjmp")
+	MCC_ULP "__mcc_setjmp" ":\n"
 	"  movq (%rsp), %rax\n"          /* return address */
 	"  movq %rax, 0(%rdi)\n"
 	"  leaq 8(%rsp), %rax\n"         /* rsp as of the return */
@@ -510,10 +525,10 @@ __asm__(
 	"  movq %r15, 56(%rdi)\n"
 	"  xorl %eax, %eax\n"
 	"  ret\n"
-	".size __mcc_setjmp,.-__mcc_setjmp\n"
-	".globl __mcc_longjmp\n"
-	".type __mcc_longjmp,@function\n"
-	"__mcc_longjmp:\n"
+	SJSIZE(MCC_ULP "__mcc_setjmp")
+	".globl " MCC_ULP "__mcc_longjmp" "\n"
+	SJTYPE(MCC_ULP "__mcc_longjmp")
+	MCC_ULP "__mcc_longjmp" ":\n"
 	"  movl %esi, %eax\n"            /* the value setjmp will return */
 	"  testl %eax, %eax\n"
 	"  jne 1f\n"
@@ -527,15 +542,15 @@ __asm__(
 	"  movq 56(%rdi), %r15\n"
 	"  movq 8(%rdi), %rsp\n"
 	"  jmp *0(%rdi)\n"
-	".size __mcc_longjmp,.-__mcc_longjmp\n");
+	SJSIZE(MCC_ULP "__mcc_longjmp"));
 #elif defined __i386__
 /* SysV i386: callee-saved ebx, esi, edi, ebp. Arguments on the stack, so the
  * slot is 4(%esp) on entry and the return address is at (%esp). */
 __asm__(
 	".text\n"
-	".globl __mcc_setjmp\n"
-	".type __mcc_setjmp,@function\n"
-	"__mcc_setjmp:\n"
+	".globl " MCC_ULP "__mcc_setjmp" "\n"
+	SJTYPE(MCC_ULP "__mcc_setjmp")
+	MCC_ULP "__mcc_setjmp" ":\n"
 	"  movl 4(%esp), %eax\n"
 	"  movl (%esp), %ecx\n"
 	"  movl %ecx, 0(%eax)\n"
@@ -547,10 +562,10 @@ __asm__(
 	"  movl %ebp, 20(%eax)\n"
 	"  xorl %eax, %eax\n"
 	"  ret\n"
-	".size __mcc_setjmp,.-__mcc_setjmp\n"
-	".globl __mcc_longjmp\n"
-	".type __mcc_longjmp,@function\n"
-	"__mcc_longjmp:\n"
+	SJSIZE(MCC_ULP "__mcc_setjmp")
+	".globl " MCC_ULP "__mcc_longjmp" "\n"
+	SJTYPE(MCC_ULP "__mcc_longjmp")
+	MCC_ULP "__mcc_longjmp" ":\n"
 	"  movl 4(%esp), %edx\n"
 	"  movl 8(%esp), %eax\n"
 	"  testl %eax, %eax\n"
@@ -563,15 +578,15 @@ __asm__(
 	"  movl 20(%edx), %ebp\n"
 	"  movl 4(%edx), %esp\n"
 	"  jmp *0(%edx)\n"
-	".size __mcc_longjmp,.-__mcc_longjmp\n");
+	SJSIZE(MCC_ULP "__mcc_longjmp"));
 #elif defined __aarch64__
 /* AAPCS64: x19-x28, x29 (fp), x30 (lr), sp, and the low 64 bits of d8-d15.
  * longjmp returns by ret, which uses the x30 it just restored. */
 __asm__(
 	".text\n"
-	".globl __mcc_setjmp\n"
-	".type __mcc_setjmp,%function\n"
-	"__mcc_setjmp:\n"
+	".globl " MCC_ULP "__mcc_setjmp" "\n"
+	SJTYPE(MCC_ULP "__mcc_setjmp")
+	MCC_ULP "__mcc_setjmp" ":\n"
 	"  stp x19, x20, [x0, #0]\n"
 	"  stp x21, x22, [x0, #16]\n"
 	"  stp x23, x24, [x0, #32]\n"
@@ -586,10 +601,10 @@ __asm__(
 	"  stp d14, d15, [x0, #152]\n"
 	"  mov w0, #0\n"
 	"  ret\n"
-	".size __mcc_setjmp,.-__mcc_setjmp\n"
-	".globl __mcc_longjmp\n"
-	".type __mcc_longjmp,%function\n"
-	"__mcc_longjmp:\n"
+	SJSIZE(MCC_ULP "__mcc_setjmp")
+	".globl " MCC_ULP "__mcc_longjmp" "\n"
+	SJTYPE(MCC_ULP "__mcc_longjmp")
+	MCC_ULP "__mcc_longjmp" ":\n"
 	"  ldp x19, x20, [x0, #0]\n"
 	"  ldp x21, x22, [x0, #16]\n"
 	"  ldp x23, x24, [x0, #32]\n"
@@ -609,26 +624,26 @@ __asm__(
 	"  mov w0, #1\n"
 	"1:\n"
 	"  ret\n"
-	".size __mcc_longjmp,.-__mcc_longjmp\n");
+	SJSIZE(MCC_ULP "__mcc_longjmp"));
 #elif defined __arm__
 /* AAPCS32: r4-r11, sp, lr, and d8-d15. The core-register lists are written
  * out rather than as {r4-r11}: mcc's integrated arm assembler accepts a range
  * inside a VFP list but not inside a core one. */
 __asm__(
 	".text\n"
-	".globl __mcc_setjmp\n"
-	".type __mcc_setjmp,%function\n"
-	"__mcc_setjmp:\n"
+	".globl " MCC_ULP "__mcc_setjmp" "\n"
+	SJTYPE(MCC_ULP "__mcc_setjmp")
+	MCC_ULP "__mcc_setjmp" ":\n"
 	"  stmia r0!, {r4, r5, r6, r7, r8, r9, r10, r11}\n"
 	"  mov r1, sp\n"
 	"  stmia r0!, {r1, lr}\n"
 	"  vstmia r0, {d8-d15}\n"
 	"  mov r0, #0\n"
 	"  bx lr\n"
-	".size __mcc_setjmp,.-__mcc_setjmp\n"
-	".globl __mcc_longjmp\n"
-	".type __mcc_longjmp,%function\n"
-	"__mcc_longjmp:\n"
+	SJSIZE(MCC_ULP "__mcc_setjmp")
+	".globl " MCC_ULP "__mcc_longjmp" "\n"
+	SJTYPE(MCC_ULP "__mcc_longjmp")
+	MCC_ULP "__mcc_longjmp" ":\n"
 	"  mov r2, r0\n"
 	"  ldmia r2!, {r4, r5, r6, r7, r8, r9, r10, r11}\n"
 	"  ldmia r2!, {r3, lr}\n"
@@ -639,14 +654,14 @@ __asm__(
 	 * does not accept one. */
 	"  moveq r0, #1\n"
 	"  bx lr\n"
-	".size __mcc_longjmp,.-__mcc_longjmp\n");
+	SJSIZE(MCC_ULP "__mcc_longjmp"));
 #elif defined __riscv
 /* RISC-V LP64D: s0-s11, sp, ra, and fs0-fs11. */
 __asm__(
 	".text\n"
-	".globl __mcc_setjmp\n"
-	".type __mcc_setjmp,@function\n"
-	"__mcc_setjmp:\n"
+	".globl " MCC_ULP "__mcc_setjmp" "\n"
+	SJTYPE(MCC_ULP "__mcc_setjmp")
+	MCC_ULP "__mcc_setjmp" ":\n"
 	"  sd s0, 0(a0)\n"    "  sd s1, 8(a0)\n"
 	"  sd s2, 16(a0)\n"   "  sd s3, 24(a0)\n"
 	"  sd s4, 32(a0)\n"   "  sd s5, 40(a0)\n"
@@ -662,10 +677,10 @@ __asm__(
 	"  fsd fs10, 192(a0)\n" "  fsd fs11, 200(a0)\n"
 	"  li a0, 0\n"
 	"  ret\n"
-	".size __mcc_setjmp,.-__mcc_setjmp\n"
-	".globl __mcc_longjmp\n"
-	".type __mcc_longjmp,@function\n"
-	"__mcc_longjmp:\n"
+	SJSIZE(MCC_ULP "__mcc_setjmp")
+	".globl " MCC_ULP "__mcc_longjmp" "\n"
+	SJTYPE(MCC_ULP "__mcc_longjmp")
+	MCC_ULP "__mcc_longjmp" ":\n"
 	"  ld s0, 0(a0)\n"    "  ld s1, 8(a0)\n"
 	"  ld s2, 16(a0)\n"   "  ld s3, 24(a0)\n"
 	"  ld s4, 32(a0)\n"   "  ld s5, 40(a0)\n"
@@ -687,7 +702,7 @@ __asm__(
 	"  seqz t0, a1\n"
 	"  add a0, a1, t0\n"
 	"  ret\n"
-	".size __mcc_longjmp,.-__mcc_longjmp\n");
+	SJSIZE(MCC_ULP "__mcc_longjmp"));
 #endif
 
 /* The slots are never freed: a slot is 64 bytes, the number of distinct
