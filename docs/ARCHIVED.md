@@ -275,3 +275,4 @@ Records below `SHA n/a` predate this protocol: they were retro-minted on 2026-08
 - T-lin-10091 mac-arm64 — capture the `FAIL ident_shift:` line from the arm64 nightly | DONE 2026-08-14T19:52Z | SHA 2adf3530 | REF DETAILS.md#t-lin-10091-resolved-optfire-diagnostics-and-ident-shift-green
 - T-lin-10028 `--embed-jit`'s no-bake notice survives `-w` | DONE 2026-08-14T20:37Z | SHA 740e4f54 | REF DETAILS.md#t-lin-10028-resolved-embed-jit-no-bake-notice-survives-w
 - T-lin-10085 win-x64 — CodeView `.debug$T` types (fn/pointer/struct type stream, PDB round-tripped; residue → T-win-50000) | DONE 2026-08-14T21:01Z | SHA 26d7aa40 | REF DETAILS.md#t-lin-10085-win-x64-codeview-debugt-types
+- T-lin-10009 Nested member designators `{.a.a=1, .a.b=2}` | DONE 2026-08-14T21:17Z | SHA 3411c160 | REF DETAILS.md#t-lin-10009-resolved-nested-designators-already-work

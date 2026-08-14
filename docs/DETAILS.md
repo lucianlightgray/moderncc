@@ -41684,3 +41684,14 @@ Answers the parent's core concern ("the engine compiles for arm64 but only x86_6
 **What is still owed to fully close /mac.** The verification's rigorous half — `jitconform.py --phase check --surface embed` over the *qualified corpus* at every level — needs the gcc c-torture corpus (and ideally llvm-test-suite); both are absent on this host, so `jit/xoracle-conformance` and `jit/xoracle-coverage` SKIP (77). This is a provisioning gap, not a design or code question: `cmake --preset macos -DMCC_XSUITE_GCC=<gcc checkout> -DMCC_XSUITE_LLVMTS=<llvm-test-suite>` then re-run, and the conformance runs the c-torture `--limit 400` embed surface natively. The engine's *correctness on arm64* is evidenced by the 66 native cells; what the corpus adds is breadth (400 real programs) over the selfcheck's 4.
 
 **Source.** mac-arm64, 2026-08-14T21:11Z, at 861ecef0 (native measurement; no code change; /mac left OPEN pending corpus).
+
+
+<a id="t-lin-10009-resolved-nested-designators-already-work"></a>
+
+## T-lin-10009 resolved — nested member designators already work; fixture added
+
+The 2026-08-05 defect is stale: mcc handles `{.a.a=1, .a.b=2}` and every harder shape correctly. Verified at `3411c160` against clang, byte-for-byte at -O0..-O4: out-of-order (`.a.p.y` before `.a.p.x`), triple nesting (`.a.p.z`), array designators (`.arr[2]`, `.b[1].y`), and continuation-fill (`{.a.p.x=1, 2, 3}` fills `.y`/`.z`). Added `tests/exec/structs_unions/nested_designators.c` + its `goldens.h` row; the one golden auto-generates 25 exec cells across every opt/replay variant plus `diff3/nested_designators` (the mcc-vs-gcc-vs-clang differential the verification names), all green (1 design-skip, exec-gatecombo). `ci/must-run-registered` and `ci/gate-contract` confirmed unaffected — an exec golden is not a gate cell.
+
+**Verification.** `ctest --test-dir cmake-macos -R nested_designators` — 24 pass, 1 design-skip; `diff3/nested_designators` is the gcc/clang consensus check.
+
+**Source.** mac-arm64, 2026-08-14T21:17Z, at 3411c160.
