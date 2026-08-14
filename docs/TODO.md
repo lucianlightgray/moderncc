@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30000   | 2026-08-14T19:29Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30000   | 2026-08-14T19:42Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10360   | 2026-08-14T19:07Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T19:41Z |
 
@@ -18,6 +18,10 @@
       REF: DETAILS.md#t-lin-10003-every-gate-cell-carries-an-anti | DEPS: —
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+
+- [ ] T-lin-10091 [X] mac-arm64 — capture the `FAIL ident_shift:` line from the arm64 nightly
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T19:42Z
+      REF: DETAILS.md#t-lin-10091-mac-arm64-capture-the-fail-ident | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
@@ -268,9 +272,6 @@
 - [ ] T-lin-10090 [X] mac-arm64 — re-take `if-conversion-abs` on arm64
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10090-mac-arm64-re-take-if-conversion | DEPS: —
-- [ ] T-lin-10091 [X] mac-arm64 — capture the `FAIL ident_shift:` line from the arm64 nightly
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10091-mac-arm64-capture-the-fail-ident | DEPS: —
 - [ ] T-lin-10092 [P] Record a clean full native suite number on each platform
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: —
