@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:55Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:58Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10363   | 2026-08-14T21:20Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50001   | 2026-08-14T21:54Z |
 
@@ -19,6 +19,9 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
+- [ ] T-lin-10075 [S] Two one-off failures that never reproduced
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T21:58Z
+      REF: DETAILS.md#t-lin-10075-two-one-off-failures-that-never | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
@@ -222,9 +225,6 @@
 - [ ] T-lin-10074 [S] `slice/quiesce` is structurally flaky and the device lock is built, priced and off
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10074-slicequiesce-is-structurally-flaky-and-the | DEPS: —
-- [ ] T-lin-10075 [S] Two one-off failures that never reproduced
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10075-two-one-off-failures-that-never | DEPS: —
 - [ ] T-lin-10076 [S] N7 residue — an independent tree-side oracle for the slice evaluator
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10076-n7-residue-an-independent-tree-side | DEPS: —
