@@ -142,6 +142,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"basic", "run", "exec/vla/basic.c", "vsize: 5\nrowsum: 30\ng22: 22\ntrace: 33\nbsize: 3\n", "", "", ""},
 		{"typedef_semantics", "run", "exec/types/typedef_semantics.c", "ulong: 4000000000\narr: count=5 sum=15\nlist: 6\nops: 13 42\ncompat: 1\n", "", "", ""},
 		{"aggregate_init", "run", "exec/structs_unions/aggregate_init.c", "partial: 1 2 0 0 0\nzero: 0 0 0\nnested: 2 6\nstr: [hi] len-region=6 c2=0\ndesig: 0 20 50 0\nmemdesig: 1 0 9\noverride: 7 2\n", "", "", ""},
+		{"nested_designators", "run", "exec/structs_unions/nested_designators.c", "t: 10 20 30 40\narr: 1 0 3\nb1y: 99\nu: 1 2 3\n", "", "", ""},
 		{"logical_short_circuit", "run", "exec/statements/logical_short_circuit.c", "vals: 1 0 1 0\nand_sc: r=0 calls=0\nor_sc: r=1 calls=0\nand_eval: r=1 calls=1\nguard: 1\nprec: 1\n", "", "", ""},
 		{"bitwise_ops", "run", "exec/expressions/bitwise_ops.c", "and: 15\nor:  4095\nxor: 4080\nset: 40\nclear: 32\ntoggle: 0\nxinv: 1\ndemorgan: 1\nlowbyte: 52\n", "", "", ""},
 		{"relational_equality", "run", "exec/expressions/relational_equality.c", "rel: 1 1 0 1\neq: 1 0\nflt: 1 0\nmixed: 1\nprec: 1\nptr: 1 1 1\nnull: 1 1\npaths: 1\n", "", "", ""},
