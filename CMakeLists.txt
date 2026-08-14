@@ -8975,9 +8975,7 @@ endif()
 # 128-bit arithmetic. It catches the injected fault on the first case it tries.
 if(UNIX)
     add_executable(ast_eval_binop_oracle
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/eval_binop_oracle.c")
-    target_include_directories(ast_eval_binop_oracle
-        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/eval_binop_oracle.c")
     add_test(NAME "ast/eval-binop-oracle" COMMAND ast_eval_binop_oracle)
     # mcc_build builds the whole tree, so it is what makes this executable exist
     # on a cold ctest; without the fixture the cell reports "Not Run".

@@ -18,6 +18,15 @@
  * fallbacks), so this is a direct unit differential over the real function, not
  * a copy of it.
  *
+ * It lives in tools/ rather than tests/ because it is a HOST program -- it is
+ * compiled by cc and links no part of mcc -- which is the shape of
+ * tools/c2str.c and not the shape of every other .c under tests/ast, all of
+ * which are subjects mcc compiles. That also keeps it out of the rir-coverage
+ * `wide` corpus, which walks tests/ast: swept, a harness that mcc never
+ * optimizes in its real use was dragging `kept coverage` down 0.065pp and
+ * spending a real ratchet on noise. Stating that plainly because it is half the
+ * reason for the location.
+ *
  * Contract being pinned: ast_eval_binop returns 1 and writes *out when the
  * operation is defined and representable, and returns 0 when it is not
  * (signed overflow, division by zero, INT_MIN/-1, out-of-range shift). The
@@ -62,7 +71,9 @@
  * differential possible at all. */
 #define AST_EVAL_SLICE_ARITH_ONLY 1
 
-#include "ast_eval_slice.h"
+/* Relative, so this builds with a bare `cc tools/eval_binop_oracle.c` and needs
+ * no include path of its own. */
+#include "../src/ast_eval_slice.h"
 
 static int fails;
 static long checks;

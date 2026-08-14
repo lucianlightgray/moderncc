@@ -2745,7 +2745,7 @@ unsigned `+` arm behaves the same way.
 and this is the "one engine compared with itself" shape the engine arm exists to refuse, one
 level below where the arm looks. The fix is an independent oracle for the tree side.
 
-**DONE 2026-08-14 — `ast/eval-binop-oracle`.** `tests/ast/eval_binop_oracle.c` compiles
+**DONE 2026-08-14 — `ast/eval-binop-oracle`.** `tools/eval_binop_oracle.c` compiles
 `ast_eval_binop` **outside the compiler**, with the host compiler, linking no part of mcc,
 and compares all 26 opcodes against a reference computed a *different way*: in `__int128`,
 with definedness decided by comparing against the type bounds rather than by the same
@@ -2755,6 +2755,13 @@ values × both widths × both signednesses, then 4,000 random pairs per opcode �
 the whole point: the fault that changed nothing across six engines, 1782 dump rows and eleven
 smoke cells is caught immediately by comparing the function against something that is not
 itself.
+It lives in `tools/` rather than `tests/` because it is a **host** program that links no
+part of mcc — the shape of `tools/c2str.c`, and not the shape of every other `.c` under
+`tests/ast`, which are all subjects mcc compiles. That also keeps it out of the
+`rir-coverage` `wide` corpus, which walks `tests/ast`: swept, a harness mcc never optimizes
+in its real use dragged `kept coverage` down 0.065pp and spent a real ratchet on noise.
+Recorded because it is half the reason for the location, and the census failing is what
+surfaced it.
 This needed one structural change: `src/ast_eval_slice.h` grew an
 `AST_EVAL_SLICE_ARITH_ONLY` guard separating the pure-arithmetic top (needs only
 `<stdint.h>`) from the AST-typed tail. The split is what makes the arithmetic testable at
