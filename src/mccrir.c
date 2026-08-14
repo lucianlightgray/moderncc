@@ -97,12 +97,14 @@ static int rir_locrec_sz[RIR_LOCREC_MAX];
 static int rir_locrec_al[RIR_LOCREC_MAX];
 static int rir_locrec_n, rir_locrec_i;
 int rir_locrec_min;
+static long rir_tot_locfit_fire, rir_tot_locfit_skip, rir_tot_locfit_inexact;
 
 static int rir_rec_force_miss;
 
 static int rir_rec_take(const int *val, const int *pos, const int *nc,
 												const int *sz, const int *al, int n, int *cur,
-												int size, int align, int *out) { MCC_TRACE("enter\n");
+												int size, int align, int *out,
+												long *fire, long *skip, long *inexact) { MCC_TRACE("enter\n");
 	int i = *cur, k;
 	if (pos)
 		while (i + 1 < n && pos[i + 1] <= ind &&
@@ -110,11 +112,13 @@ static int rir_rec_take(const int *val, const int *pos, const int *nc,
 			{ MCC_TRACE("br\n"); i++; }
 	k = rir_rec_force_miss ? n : i;
 	while (k < n && (sz[k] < size || al[k] < align))
-		{ MCC_TRACE("br\n"); k++; }
+		{ MCC_TRACE("br\n"); if (skip) (*skip)++; k++; }
 	if (k >= n)
 		{ MCC_TRACE("br\n"); *cur = i; return -1; }
 	*cur = k + 1;
 	*out = val[k];
+	if (fire) (*fire)++;
+	if (inexact && (sz[k] != size || al[k] != align)) (*inexact)++;
 	return k;
 }
 
@@ -133,7 +137,8 @@ void rir_loc_record(int loc_in, int size, int align) { MCC_TRACE("enter\n");
 int rir_loc_replay(int *loc_out, int size, int align) { MCC_TRACE("enter\n");
 	return rir_rec_take(rir_locrec, rir_locrec_pos, rir_locrec_nc, rir_locrec_sz,
 											rir_locrec_al, rir_locrec_n, &rir_locrec_i, size, align,
-											loc_out) >= 0;
+											loc_out, &rir_tot_locfit_fire, &rir_tot_locfit_skip,
+											&rir_tot_locfit_inexact) >= 0;
 }
 
 static int rir_fcrec[RIR_LOCREC_MAX];
@@ -190,7 +195,8 @@ void rir_slot_record(int loc_in, int size, int align) { MCC_TRACE("enter\n");
 int rir_slot_replay(int *loc_out, int size, int align) { MCC_TRACE("enter\n");
 	return rir_rec_take(rir_slotrec, rir_slotrec_pos, rir_slotrec_nc,
 											rir_slotrec_sz, rir_slotrec_al, rir_slotrec_n,
-											&rir_slotrec_i, size, align, loc_out) >= 0;
+											&rir_slotrec_i, size, align, loc_out,
+											NULL, NULL, NULL) >= 0;
 }
 
 static int rir_tvrec[RIR_LOCREC_MAX], rir_tvrec_r2[RIR_LOCREC_MAX];
@@ -213,7 +219,7 @@ void rir_tvar_record(int loc_in, int r2, int size, int align) { MCC_TRACE("enter
 int rir_tvar_replay(int *loc_out, int *r2_out, int size, int align) { MCC_TRACE("enter\n");
 	int k = rir_rec_take(rir_tvrec, rir_tvrec_pos, rir_tvrec_nc, rir_tvrec_sz,
 											 rir_tvrec_al, rir_tvrec_n, &rir_tvrec_i, size, align,
-											 loc_out);
+											 loc_out, NULL, NULL, NULL);
 	if (k < 0)
 		{ MCC_TRACE("br\n"); return 0; }
 	*r2_out = rir_tvrec_r2[k];
@@ -6480,6 +6486,8 @@ static void rir_report(void) { MCC_TRACE("enter\n");
 						rir_tot_c3_same_hash, rir_tot_c3_pair_fired);
 	fprintf(f, "[rir-raw] fn=%ld ops=%ld bytes=%ld\n", rir_tot_raw_fn,
 					rir_tot_raw_ops, rir_tot_raw_bytes);
+	fprintf(f, "[rir-locfit] fire=%ld skip=%ld inexact=%ld\n",
+					rir_tot_locfit_fire, rir_tot_locfit_skip, rir_tot_locfit_inexact);
 	fprintf(f,
 					"[rir-capbytes] faithful=%ld unfaithful=%ld rerror=%ld rerrorfn=%ld "
 					"rawfn=%ld rawbytes=%ld fn=%ld fnbytes=%ld unnoted=%ld "
