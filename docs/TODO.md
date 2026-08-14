@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:41Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10363   | 2026-08-14T21:20Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50001   | 2026-08-14T21:39Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50001   | 2026-08-14T21:44Z |
 
 ## Contracts — blocking, highest priority
 
@@ -253,8 +253,8 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10084-win-x64-non-constant-except-filters | DEPS: —
 - [ ] T-win-50000 [X] win-x64 — CodeView type residue: unions/enums/arrays + typed variable symbols
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: f8d5ae82 | TS: 2026-08-14T21:29Z
-      REF: DETAILS.md#t-win-50000-codeview-type-residue | DEPS: — | NOTE: type-record set + typed GLOBAL vars done f8d5ae82; residue = local vars (hook=mcc_add_debug_info, offset=s->c; needs S_FRAMEPROC/S_DEFRANGE frame-map — see DETAILS) + dedup
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 43711893 | TS: 2026-08-14T21:44Z
+      REF: DETAILS.md#t-win-50000-codeview-type-residue | DEPS: — | NOTE: type records + typed global vars + record dedup done (43711893); ONLY residue = local vars (hook=mcc_add_debug_info, offset=s->c; needs S_FRAMEPROC/S_DEFRANGE frame-map — see DETAILS)
 - [ ] T-lin-10090 [X] mac-arm64 — re-take `if-conversion-abs` on arm64
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10090-mac-arm64-re-take-if-conversion | DEPS: —

@@ -1237,6 +1237,15 @@ semantically wrong — worse than absent). Verify with `llvm-pdbutil pretty -all
 PDB and, ideally, a real debugger reading a known local's value. Deferred deliberately so
 the frame mapping is done carefully rather than guessed.
 
+**Progress (win-x64, 2026-08-14, SHA 43711893).** Record dedup done. `cv_add_record` now
+returns an existing type index when a byte-identical record body was already emitted
+(linear scan over a per-TU record table, reset in `cv_reset`) — so the arglist/procedure/
+pointer/array records that were not `Sym`-keyed no longer duplicate (three identical
+`int(int)` functions share one `LF_PROCEDURE`, was three). Correctness unchanged (full
+`pe/codeview` + heavy stress green, valid PDB, 0 errors); the O(n²) scan is negligible —
+1000 distinct structs+functions compile with `-gcodeview` in 0.08 s. **The only thing left
+in this task is local-variable symbols** (frame-mapping slice scoped above).
+
 <a id="t-lin-10086-win-x64-arm64-win32-arm-win32"></a>
 
 ## T-lin-10086 win-x64 — `arm64-win32` / `arm-win32` execution
