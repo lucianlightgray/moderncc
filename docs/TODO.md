@@ -155,6 +155,47 @@ riscv64 while this row stays open. The fix belongs in the riscv64 assembler's la
 handling. A cell should come with it: the six-instruction probe above is the whole test, and
 it needs qemu-riscv64 and the sysroot, both of which this host now has.
 
+**ROOT-CAUSED 2026-08-14.** It is all one function: `asm_emit_b`'s symbol arm,
+`src/arch/riscv64/riscv64-asm.c:1511-1521`. It tries the standard invert-the-condition-and-
+jump-over trick, and **emits only the first half of the jump**:
+
+```c
+greloca(cur_text_section, imm->e.sym, ind, R_RISCV_CALL, 0);
+asm_emit_opcode(0x17 | ENCODE_RD(5));            /* auipc t0, hi -- and nothing else */
+```
+
+`R_RISCV_CALL` is a *pair* relocation: `riscv64-link.c:270-271` patches the `auipc` at `ptr`
+**and** a `jalr` at `ptr+4`. There is no `jalr`. So (a) `auipc` does not transfer control and
+execution falls straight through — **that is the filed symptom, exactly** — and (b) the lo12
+half of the relocation is written onto whatever instruction happens to follow, silently
+rewriting its immediate while preserving its opcode, so it never even becomes a jump. Compare
+the code generator's `gjmp_addr` (`riscv64-gen.c:1080-1082`), which has both halves.
+
+A **second, independent** bug sits in the same block: line 1515 emits the inverted branch with
+`(1 << 8)` — imm[1], i.e. +2 — already set, and line 1518 then ORs the real displacement in
+**without clearing the field** (`read32le(...) | ...`, no `& ~mask`). For the intended skip of
+8 the encoding comes out **10**, landing two bytes into the middle of the next instruction.
+The codegen again gets this right at `riscv64-gen.c:1147` (`8 << 7`); `1 << 8` looks like a
+mis-transcription of that constant. It also clobbers `t0`/`x5` on a path the user never asked
+for.
+
+**The correct relocation already exists and is unused.** `R_RISCV_BRANCH` is fully and
+correctly implemented in the linker (`riscv64-link.c:234-243`, including the range check and
+the `& ~0xfe000f80` field clear this emitter lacks), but **nothing in the assembler ever
+creates one** — the only producer in `src/` is the generic `.reloc` directive. The sibling
+`R_RISCV_JAL` path *is* wired up and is correct (`parse_jump_offset_operand`,
+`riscv64-asm.c:242`), which is why a bare `j .Lfoo` works while `bnez a0, .Lfoo` does not.
+So the fix is to make `parse_branch_offset_operand` do what `parse_jump_offset_operand`
+already does — attach `R_RISCV_BRANCH` at parse time, emit a zero immediate — and delete the
+broken block. That is one instruction instead of two, no `t0` clobber, and a loud linker
+error instead of silent miscompilation when the ±4 KiB B-type range is exceeded.
+
+**Found on the way, same function**: the literal-offset path at the bottom of `asm_emit_b`
+encodes `((offset >> 5) & 0x1f) << 25`, which is imm[9:5] — **five bits where B-type has six**
+(imm[10:5] at 30:25). Any literal branch displacement of 1024 or more silently loses imm[10];
+`parse_branch_offset_operand` admits literals right up to 0x1000. The linker's own code has it
+right (`(off32 & 0x3f0) << 21`). One character: `0x1f` → `0x3f`.
+
 **N38**: eight cells vanished behind a copy-pasted `NOT Darwin` predicate with no
 > `else()` arm, and `tests/must-run.txt` was the only thing that noticed — `wide256/gmp-diff` now
 > runs here for real, **9402 rows against libgmp at five levels**, the only oracle-backed proof
@@ -8069,6 +8110,67 @@ own ABI's callee-saved set. **Verified by execution under qemu against the sysro
 reading a psABI**: the whole battery — 0 then the value, a 7-frame unwind with six live
 locals intact, `longjmp(buf, 0)` surfacing as 1, buffer reuse, and `val=9` passing through —
 comes back `OK` on x86_64, i386, arm, arm64 and riscv64.
+
+**N41. `__builtin_setjmp` cannot be a library call, and shipping it as one silently
+miscompiles two GCC torture programs.** Found 2026-08-14 by the first full-suite run after
+the builtin landed: `optlevel/torture-differential` reports **two NEW divergences, both
+mine**, and both are `__builtin_setjmp`/`__builtin_longjmp` programs that agreed at every
+level before, because they used to fail to compile at every level.
+
+- **`pr84521.c` — SIGSEGV at `-O1` through `-O4`.** It declares `void *buf[5];` as an
+  **uninitialized local**, which is exactly GCC's documented buffer. `__mcc_sj_slot` keys a
+  side pool off `buf[0]` (`if (!buf[0]) buf[0] = <fresh slot>;`) because 5 words cannot hold
+  the 8+ registers a library setjmp must save. Uninitialized stack garbage in `buf[0]` is
+  therefore returned as the save-area pointer and written through. **Proved it is exactly
+  this**: changing the one line to `void *buf[5] = {0};` makes the program pass at every
+  level, unmodified otherwise. This is a plain bug in my design, not a semantic gap, and it
+  fires on the buffer GCC tells people to write.
+- **`pr60003.c` — SIGABRT at `-O2` through `-O4`.** A non-volatile local assigned between
+  the setjmp and the longjmp reads back as its setjmp-time value, because `__mcc_longjmp`
+  restores the callee-saved register it lives in. GCC compiles this correctly at every
+  level: its `__builtin_setjmp` models a nonlocal goto and forces such locals to memory.
+  **mcc's plain `setjmp` is not at fault here** — the same shape written against
+  `<setjmp.h>` aborts under *gcc* too, which is correct, since C leaves that local
+  indeterminate. It is specifically GCC's *stronger* `__builtin_setjmp` contract that mcc
+  cannot meet without compiler support it does not have (the only setjmp special-case in
+  `src/` is `mccgen.c:2305`, and it is for the bounds checker, not register allocation).
+
+**BOTH FIXED 2026-08-14, and the first assessment above was wrong on the interesting half.**
+I priced the buffer defect as unfixable inside 5 words because a library setjmp needs 8 on
+x86_64 SysV. That reasoning was about the wrong object: the buffer never needed to *hold*
+the save area, only to *identify* it. `__mcc_sj_slot` now keys its pool on the buffer's
+**address** rather than on `buf[0]`'s contents, so it reads nothing the caller has not
+written, an uninitialized buffer is fine, and a repeated setjmp on the same buffer still
+finds its own slot. No assembly changed on any of the five targets.
+
+The register defect is fixed in the compiler, which is what it always needed. New
+`ast_body_has_setjmp()` (`src/mccast.c`), and two passes consult it:
+
+- **`ast_plan_promotion` bails** — it is the *only* thing in mcc that keeps a local in a
+  register across a call (everything else is spilled by `save_regs`, and the only pinned
+  registers come from this pass), and its callee-saved pool `{rbx, r12-r15}` is exactly the
+  set `__mcc_longjmp` restores. That is the whole of the `-O2`/`-O3` failure.
+- **`ast_cprop_run` bails** — found because `-fno-promote-locals` fixed `-O2` and `-O3` but
+  **not `-O4`**, so I bisected the 41 level-≤4 knobs and `tree-copy-prop` was the second
+  cause: it forwards the value a local held before the setjmp into uses after it, which the
+  abnormal edge invalidates. Worth recording that the first fix was *verified insufficient*
+  rather than assumed complete.
+
+Both programs now pass at `-O0` through `-O4`, `optlevel/torture-differential` is green, and
+the coverage is in-tree as well as in the optional vendored corpus:
+`tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c` (24 exec variants). **Proved both
+halves bite** by reverting each fix separately against that fixture: the old buffer handling
+segfaults it, and the old promotion behaviour prints `FAIL line 116` at `-O2`/`-O3`.
+
+Name-matching (`strstr(cn, "setjmp")`) is the same hack `ast_fn_inlinable` already uses and
+inherits its limits: it fires on any callee whose name contains "setjmp" and misses one
+reached through a function pointer. **It is also a sledgehammer, not GCC's semantics** — GCC
+forces only the locals live across the nonlocal goto to memory and keeps promoting the rest,
+whereas this turns both passes off for the whole function. Correct, and the loss is confined
+to setjmp callers. **What is still not modelled is the abnormal edge itself**; any future
+pass that learns to reason about the `else` arm of `if (setjmp(...) == 0)` can reintroduce
+this class, and mcc has no AST-level CFG to hang that on. `optlevel/torture-differential`
+plus the new fixture are the tripwire.
 
 **And writing real asm on five backends found an assembler defect that has nothing to do
 with setjmp — see N39 below.** Three mcc assembler limitations were hit on the way and are

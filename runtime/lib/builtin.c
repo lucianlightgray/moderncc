@@ -714,19 +714,37 @@ __asm__(
  * 16-byte aligned. */
 #define MCC_SJ_WORDS 32
 
+/* Keyed on the buffer's ADDRESS, never on its contents.
+ *
+ * This used to stash the slot pointer in buf[0] and treat a zero there as
+ * "not allocated yet". GCC's __builtin_setjmp buffer is a bare `void *buf[5]`,
+ * and the programs that use it declare it as an ordinary local -- uninitialized
+ * stack memory. Garbage in buf[0] was therefore returned as the save area and
+ * written through: vendor/gcc-c-torture-execute/pr84521.c segfaults on exactly
+ * that, and changing its one declaration to `= {0}` made it pass, which is what
+ * identified this. Keying on &buf instead reads nothing the caller has not
+ * written, so an uninitialized buffer is fine, and a repeated setjmp on the
+ * same buffer still finds its own slot.
+ *
+ * A linear scan is the right structure at this size: the loop only runs over
+ * buffers a program has actually used, which is one or two in every real case.
+ */
 static struct {
+	void **key;
 	void *w[MCC_SJ_WORDS];
 } __mcc_sj_pool[MCC_SJ_SLOTS];
 static int __mcc_sj_used;
 
 void *__mcc_sj_slot(void **buf) {
+	int i;
 	if (!buf)
 		return 0;
-	if (!buf[0]) {
-		if (__mcc_sj_used >= MCC_SJ_SLOTS)
-			return 0;
-		buf[0] = __mcc_sj_pool[__mcc_sj_used++].w;
-	}
-	return buf[0];
+	for (i = 0; i < __mcc_sj_used; i++)
+		if (__mcc_sj_pool[i].key == buf)
+			return __mcc_sj_pool[i].w;
+	if (__mcc_sj_used >= MCC_SJ_SLOTS)
+		return 0;
+	__mcc_sj_pool[__mcc_sj_used].key = buf;
+	return __mcc_sj_pool[__mcc_sj_used++].w;
 }
 #endif

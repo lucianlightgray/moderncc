@@ -2986,6 +2986,43 @@ static AstArena *ast_inline_lookup(void *sym) { MCC_TRACE("enter\n");
 	return e ? e->ast : NULL;
 }
 
+/* Does this body call setjmp?
+ *
+ * A setjmp call can return twice, and the second return arrives on an edge no
+ * pass in this file models: control re-enters the middle of the function from
+ * an arbitrary deeper frame. Two consequences, both observed as wrong answers
+ * on vendor/gcc-c-torture-execute/pr60003.c and both fixed by consulting this:
+ *
+ *   - a local promoted into a callee-saved register is restored to its
+ *     setjmp-time value by longjmp, losing every assignment made in between
+ *     (the promotion pool IS the callee-saved set longjmp restores);
+ *   - copy propagation forwards the value a local held BEFORE the call into
+ *     uses after it, which the abnormal edge invalidates.
+ *
+ * Matching by name is the same hack ast_fn_inlinable() already uses two
+ * functions up, and inherits its limits: it fires on any callee whose name
+ * contains "setjmp" and misses one reached through a function pointer. It
+ * covers setjmp, _setjmp, sigsetjmp, __sigsetjmp and __mcc_setjmp, which is
+ * every spelling this tree can currently produce.
+ */
+static int ast_body_has_setjmp(AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		if (ast_kind(a, n) != AST_Invoke)
+			{ MCC_TRACE("br\n"); continue; }
+		AstLocal ce = ast_first_child(a, n);
+		void *cs = (ce != AST_NONE && ast_kind(a, ce) == AST_Ref)
+									 ? (void *)(uintptr_t)ast_sym(a, ce)
+									 : NULL;
+		if (cs) { MCC_TRACE("br\n");
+			const char *cn = get_tok_str(((Sym *)cs)->v, NULL);
+			if (cn && strstr(cn, "setjmp"))
+				{ MCC_TRACE("br\n"); return 1; }
+		}
+	}
+	return 0;
+}
+
 static int ast_fn_inlinable(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 	if (!ast_inline_env && !ast_inline_pass_env)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -4541,6 +4578,11 @@ static int ast_promo_size_unknown(const CType *t) { MCC_TRACE("enter\n");
 static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 	ast_promo_n = 0;
 	ast_promo_callful = 0;
+	/* setjmp: longjmp restores exactly the callee-saved registers this pass
+	 * promotes into, so any local it promotes loses every assignment made
+	 * between the setjmp and the longjmp. See ast_body_has_setjmp(). */
+	if (ast_body_has_setjmp(a))
+		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_promote_env || ast_func_has_asm || ast_func_has_labeladdr)
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal nn = ast_count(a);
@@ -9786,6 +9828,11 @@ static void ast_cprop_stmt(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 static int ast_cprop_run(AstArena *a) { MCC_TRACE("enter\n");
 	ast_cprop_folds = 0;
 	AstLocal nn = ast_count(a);
+	/* setjmp: the second return re-enters this function on an edge this pass
+	 * does not model, so a value forwarded across the call can be stale. See
+	 * ast_body_has_setjmp(). */
+	if (nn && ast_body_has_setjmp(a))
+		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_cprop_join_env && nn) { MCC_TRACE("br\n");
 		ast_cprop_vis = mcc_mallocz(nn);
 		ast_cprop_kn = 0;
