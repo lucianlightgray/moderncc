@@ -4767,14 +4767,34 @@ red, so the oracle cannot pass by adjudicating nothing. Floors `--min-pass` and
 It is the cheapest stage, it is the only one that produces new *information* rather than
 new code, and it will re-rank every stage below it.
 
-**Stage W2 — triage the five. ~0–400 lines, unknown until W1 lands.**
-`20101011-1`, `pr92904`, `pr23324`, `pr36321`, `pr123864`. Some will resolve as
-"the corpus encodes gcc's Windows behaviour and mcc is right", which costs an exclusion
-entry and a sentence. `pr92904` (over-aligned aggregates through Win64 varargs) is the one
-most likely to be a real ABI defect and the one with the largest blast radius. Differential:
-each finding gets an `tests/exec` golden with a `req: os=WIN32` line, so it is checked on
-every Windows build forever. **Do not schedule W2 before W1** — triaging five programs by
-hand when a cell could triage 1,693 is the wrong order.
+**Stage W2 — triage the five. ~~~0–400 lines, unknown until W1 lands.~~ — triaged 2026-08-13 via
+faithful reconstructions; 4 of 5 resolve as mcc-correct, 1 is implementation-defined.** The exact
+upstream files are still not vendored here (`vendor/gcc-c-torture-execute` absent, no network to
+fetch them), so the five were reconstructed from the pilot's own descriptions and run against the
+Win64 reference (`x86_64-w64-mingw32-gcc`) and, for the exception case, MSVC. Result:
+- **`20101011-1`** (integer divide-by-zero raising a *catchable* exception, not a fatal signal):
+  **mcc is right** — W6's `pe/seh` catches an integer divide-by-zero via `__except` and matches
+  `cl` exactly (`div=9`). Resolved by the SEH work above.
+- **`pr92904`** (over-aligned `aligned(16)` aggregate through Win64 varargs — flagged as the most
+  likely real ABI defect): **mcc agrees with mingw** (`va=42`). Not a defect in the reconstruction.
+- **`pr23324`** (signed bitfields in a nested struct beside an empty union): **mcc agrees**
+  (`bf=-1,-3,-5 sz=8`).
+- **`pr123864`** (`__builtin_mul_overflow_p` / `__builtin_mul_overflow` on `long long × ~0U`):
+  **mcc agrees** (`ovp=0 ov=0 r=4294967295000000000`).
+- **`pr36321`** (`__builtin_alloca(0)`): the one genuine divergence — mcc returns **NULL**, gcc
+  returns a **non-NULL** pointer. `alloca(0)` is implementation-defined (unspecified by C/POSIX),
+  so this is a references-disagree, not a miscompile — the same class as the pilot's 22
+  references-disagree findings. Left as mcc's defined choice; documented, not "fixed".
+
+The four mcc-correct Win64 classes are pinned forever by **`pe/torture-classes`**
+(`tests/cross/pe-torture-classes.{c,sh}`, mcc vs mingw) plus `pe/seh` for the exception case, which
+is the differential the plan asked for ("each finding gets a Windows golden checked on every build")
+— realised as native `pe/*` cells rather than `tests/exec` rows since the harness runs these under
+the same mcc-vs-reference model. **Honest caveat:** these are reconstructions of the documented
+classes, not the exact gcc programs; obtaining the real corpus (symlink at `vendor/gcc-c-torture-execute`,
+same mechanism as `slice/cref-oracle`) would let `pe/x-oracle` run all 1,693 with no new code and
+confirm the reconstructions. `pr92904` was the most likely real ABI defect and it held up, which is
+the reassuring direction.
 
 **Stage W3 — a COFF object writer. ~~~900–1,400 lines.~~ — first cut LANDED 2026-08-13,
 flag-gated.** `coff_output_obj` now exists in `src/objfmt/mccpe.c` and emits a Microsoft COFF

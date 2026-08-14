@@ -8260,6 +8260,15 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                 LABELS "pe" TIMEOUT 300)
 
+            add_test(NAME pe/torture-classes
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-torture-classes.sh"
+                        "$<TARGET_FILE:mcc>" "${_MCC_MINGW_X86_64_GCC}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-torture-classes.c"
+                        "${CMAKE_BINARY_DIR}/pe-torture-classes-work")
+            set_tests_properties(pe/torture-classes PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                LABELS "pe" TIMEOUT 300)
+
             set(_pe_xoracle_floor 250)
             add_test(NAME pe/x-oracle
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-xoracle.sh"
