@@ -222,7 +222,23 @@ static void parse_branch_offset_operand(MCCState *s1, Operand *op) { MCC_TRACE("
 		if ((int)op->e.v >= -0x1000 && (int)op->e.v < 0x1000)
 			{ MCC_TRACE("br\n"); op->type = OP_IM12S; }
 	} else if (op->e.sym->type.t & (VT_EXTERN | VT_STATIC)) { MCC_TRACE("br\n");
-		op->type = OP_IM32;
+		/* Same shape as parse_jump_offset_operand() below: attach the
+		 * relocation here and let the emitter lay down a zero immediate.
+		 *
+		 * This used to defer to asm_emit_b(), which tried to invert the
+		 * condition and branch over a long jump -- and emitted only the first
+		 * half of that jump, an `auipc t0` with no `jalr`. R_RISCV_CALL is a
+		 * PAIR relocation (riscv64-link.c patches ptr and ptr+4), so the result
+		 * was a branch that never transferred control plus a corrupted
+		 * immediate on whatever instruction followed. N39: no branch to a label
+		 * inside a riscv64 __asm__ block worked, silently.
+		 *
+		 * R_RISCV_BRANCH was implemented and correct in the linker the whole
+		 * time and nothing in the assembler had ever emitted one. It reaches
+		 * +/-4 KiB, and overflows with a loud "relocation failed" rather than
+		 * silently, which is the trade this replaces. */
+		greloca(cur_text_section, op->e.sym, ind, R_RISCV_BRANCH, 0);
+		op->type = OP_IM12S;
 		op->e.v = 0;
 	} else { MCC_TRACE("br\n");
 		expect("operand");
@@ -1508,17 +1524,6 @@ static void asm_emit_b(int token, uint32_t opcode, const Operand *rs1, const Ope
 	if (rs2->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
 	}
-	if (imm->type == OP_IM32 && imm->e.sym) { MCC_TRACE("br\n");
-		int b_ofs = ind;
-		uint32_t inv_func3 = ((opcode >> 12) & 7) ^ 1;
-		uint32_t inv_opcode = (opcode & ~(7 << 12)) | (inv_func3 << 12);
-		asm_emit_opcode(inv_opcode | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg) | (1 << 8));
-		greloca(cur_text_section, imm->e.sym, ind, R_RISCV_CALL, 0);
-		asm_emit_opcode(0x17 | ENCODE_RD(5));
-		write32le(cur_text_section->data + b_ofs,
-							read32le(cur_text_section->data + b_ofs) | (((ind - b_ofs) >> 1) & 0xf) << 8 | (((ind - b_ofs) >> 5) & 0x3f) << 25 | (((ind - b_ofs) >> 11) & 1) << 7 | (((ind - b_ofs) >> 12) & 1) << 31);
-		return;
-	}
 	if (imm->type != OP_IM12S) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected second source operand that is an immediate value between 0 and 8191",
 							get_tok_str(token, NULL));
@@ -1527,7 +1532,12 @@ static void asm_emit_b(int token, uint32_t opcode, const Operand *rs1, const Ope
 	offset = imm->e.v;
 
 	asm_emit_opcode(
-			opcode | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg) | (((offset >> 1) & 0xF) << 8) | (((offset >> 5) & 0x1f) << 25) | (((offset >> 11) & 1) << 7) | (((offset >> 12) & 1) << 31));
+			/* imm[10:5] occupies bits 30:25 -- SIX bits. This masked 0x1f and
+			 * dropped imm[10], so any literal displacement of 1024 or more was
+			 * silently mis-encoded, and parse_branch_offset_operand admits
+			 * literals right up to 0x1000. The linker has it right:
+			 * (off32 & 0x3f0) << 21. */
+			opcode | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg) | (((offset >> 1) & 0xF) << 8) | (((offset >> 5) & 0x3f) << 25) | (((offset >> 11) & 1) << 7) | (((offset >> 12) & 1) << 31));
 }
 
 static int asm_fcvt_rm(MCCState *s1) { MCC_TRACE("enter\n");

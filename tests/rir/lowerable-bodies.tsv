@@ -6785,6 +6785,7 @@ wide	elf	tests/exec/features_c99_c11/noreturn.c	drive	tests/exec/features_c99_c1
 wide	elf	tests/exec/features_c99_c11/noreturn.c	drive_int	tests/exec/features_c99_c11/noreturn.c	0000
 wide	elf	tests/exec/features_c99_c11/noreturn.c	main	tests/exec/features_c99_c11/noreturn.c	0000
 wide	elf	tests/exec/features_c99_c11/realimag_scalar.c	main	tests/exec/features_c99_c11/realimag_scalar.c	0000
+wide	elf	tests/exec/features_c99_c11/riscv_asm_branch.c	main	tests/exec/features_c99_c11/riscv_asm_branch.c	0000
 wide	elf	tests/exec/features_c99_c11/run_atexit.c	cleanup1	tests/exec/features_c99_c11/run_atexit.c	0000
 wide	elf	tests/exec/features_c99_c11/run_atexit.c	cleanup2	tests/exec/features_c99_c11/run_atexit.c	0000
 wide	elf	tests/exec/features_c99_c11/run_atexit.c	cleanup3	tests/exec/features_c99_c11/run_atexit.c	0000

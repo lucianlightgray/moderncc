@@ -196,6 +196,31 @@ encodes `((offset >> 5) & 0x1f) << 25`, which is imm[9:5] — **five bits where 
 `parse_branch_offset_operand` admits literals right up to 0x1000. The linker's own code has it
 right (`(off32 & 0x3f0) << 21`). One character: `0x1f` → `0x3f`.
 
+**~~N39~~ CLOSED 2026-08-14.** `parse_branch_offset_operand` now attaches `R_RISCV_BRANCH` at
+parse time and lets the emitter lay down a zero immediate — the shape its sibling
+`parse_jump_offset_operand` has always used — and the broken invert-and-jump block is deleted.
+The six-bit fix landed with it. **Measured under qemu against the riscv64 sysroot, before and
+after, on the same three shapes the filing named**:
+
+| | old assembler | fixed |
+| --- | --- | --- |
+| `bnez a0, 1f` (forward local) | `8` | **`1`** |
+| `bnez a0, .Lfoo` (forward named) | `8` | **`1`** |
+| `bnez a0, 1b` (backward loop, want 3) | `-11` | **`3`** |
+
+The old column is garbage rather than the `0`/`256` originally filed because this probe uses
+different surrounding instructions — which is the point: the value depends on *which
+instruction the stray `R_RISCV_CALL` lo12 write landed on*, so it was never going to be a
+stable wrong answer.
+
+Cell: `tests/exec/features_c99_c11/riscv_asm_branch.c`, riding the existing exec/qemu cells,
+MCC-ONLY and riscv64-only with a trivial pass elsewhere so the golden is `OK` on every target.
+It covers both branch polarities and a two-register `beq` as well, since `bnez`/`beqz` are
+`beq`/`bne` against `x0` and could plausibly have been special-cased. **Proved it bites**: the
+fixture segfaults under the old assembler and passes under the fixed one. Written in base
+instructions only — no `li`, `ret` or `mv` — so an unimplemented pseudo-op cannot fail it for
+an unrelated reason.
+
 **N38**: eight cells vanished behind a copy-pasted `NOT Darwin` predicate with no
 > `else()` arm, and `tests/must-run.txt` was the only thing that noticed — `wide256/gmp-diff` now
 > runs here for real, **9402 rows against libgmp at five levels**, the only oracle-backed proof

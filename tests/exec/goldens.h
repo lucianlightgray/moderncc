@@ -41,6 +41,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"builtin_overflow", "run", "exec/features_c99_c11/builtin_overflow.c", "OK\n", "", "", ""},
 		{"builtin_mcc_ext", "run", "exec/features_c99_c11/builtin_mcc_ext.c", "OK\n", "", "", ""},
 		{"builtin_setjmp_nonlocal", "run", "exec/features_c99_c11/builtin_setjmp_nonlocal.c", "OK\n", "", "", ""},
+		{"riscv_asm_branch", "run", "exec/features_c99_c11/riscv_asm_branch.c", "OK\n", "", "", ""},
 		{"builtin_bitops_fold", "run", "exec/features_c99_c11/builtin_bitops_fold.c", "OK\n", "", "", ""},
 		{"noreturn", "run", "exec/features_c99_c11/noreturn.c", "noreturn.c:32: warning: '_Noreturn' attribute ignored\nOK\n", "", "", ""},
 		{"alignas_over", "run", "exec/features_c99_c11/alignas_over.c", "OK\n", "", "", ""},

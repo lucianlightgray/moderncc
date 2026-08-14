@@ -16,8 +16,8 @@
 # c2=COMPILED-OUT), so the zeros can never be misread as measured.
 #
 # key value
-ok 744
-rirfiles 744
-fn 3405
-faithful 3358
-arenafn 3405
+ok 746
+rirfiles 746
+fn 3414
+faithful 3367
+arenafn 3414
