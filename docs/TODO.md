@@ -14,7 +14,7 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10001-a-task-representation-with-an-explicit | DEPS: —
 - [ ] T-lin-10002 [C] Bank keying: every host-sensitive bank is keyed by target and object format
-      OWNER: win-x64 | STATE: CLAIMED | SHA: 1695806f | TS: 2026-08-14T19:24Z
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T19:24Z
       REF: DETAILS.md#t-lin-10002-bank-keying-every-host-sensitive-bank | DEPS: —
 - [ ] T-lin-10003 [C] Every gate cell carries an anti-vacuity floor and a proved known-positive
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T19:07Z
