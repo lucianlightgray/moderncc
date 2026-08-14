@@ -2745,6 +2745,29 @@ unsigned `+` arm behaves the same way.
 and this is the "one engine compared with itself" shape the engine arm exists to refuse, one
 level below where the arm looks. The fix is an independent oracle for the tree side.
 
+**DONE 2026-08-14 — `ast/eval-binop-oracle`.** `tests/ast/eval_binop_oracle.c` compiles
+`ast_eval_binop` **outside the compiler**, with the host compiler, linking no part of mcc,
+and compares all 26 opcodes against a reference computed a *different way*: in `__int128`,
+with definedness decided by comparing against the type bounds rather than by the same
+overflow idiom the implementation uses. **536,224 checks** — every opcode × 34 boundary
+values × both widths × both signednesses, then 4,000 random pairs per opcode — and it
+**catches N7's own injected `r = s + 1` on the very first case it tries, `0 + 0`**. That is
+the whole point: the fault that changed nothing across six engines, 1782 dump rows and eleven
+smoke cells is caught immediately by comparing the function against something that is not
+itself.
+This needed one structural change: `src/ast_eval_slice.h` grew an
+`AST_EVAL_SLICE_ARITH_ONLY` guard separating the pure-arithmetic top (needs only
+`<stdint.h>`) from the AST-typed tail. The split is what makes the arithmetic testable at
+all, and it is documented in the header for that reason.
+**Writing the oracle cost three wrong assumptions, all mine, all caught by the oracle
+disagreeing** — worth recording because each is a way to misread this function:
+`TOK_SHL` **wraps** and is never refused (an oracle that treated `1 << 31` as C11 6.5.7p4
+undefined reported 11,417 false disagreements); `TOK_SAR` is the *arithmetic* shift and
+sign-extends regardless of the `is_unsigned` flag, while `TOK_SHR` is the logical one; and
+`TOK_LT/GE/LE/GT` **take their signedness from the flag** whereas `TOK_ULT/UGE/ULE/UGT` are
+unconditionally unsigned — both spellings exist precisely because the flag does not always
+decide. Zero disagreements remain.
+
 **The cause that was a category error.** The row claimed the unchanged 532 certifications meant
 "certifications are not reaching codegen", and that this was N1's question one level down.
 Verification refutes both halves:

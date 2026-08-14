@@ -402,6 +402,19 @@ static int64_t ast_eval_slice_fit(int64_t x, int t) {
  * A consumer that cannot resolve an object refuses the shape. It never guesses
  * a width, because a guessed width is a wrong answer that both executors would
  * agree on -- the exact failure a differential cannot see. */
+/* Everything from here down is written against the AST types; everything above
+ * is pure arithmetic over int64_t and needs nothing but <stdint.h>. Define
+ * AST_EVAL_SLICE_ARITH_ONLY to take just the top half.
+ *
+ * That split is not cosmetic. N7: ast_eval_binop() is reached ~66M times per
+ * compile and a deliberate `r = s + 1` injected into its 32-bit signed `+` arm
+ * changed NOTHING observable -- the differential compares two arenas that are
+ * both evaluated by it, so a shared fault cancels by construction. The only way
+ * to see such a fault is to compare the function against something that is not
+ * itself, which means compiling it outside the compiler.
+ * tests/ast/eval_binop_oracle.c does exactly that. */
+#ifndef AST_EVAL_SLICE_ARITH_ONLY
+
 static int (*ast_eval_slice_obj_fn)(AstArena *a, AstLocal n, int32_t *extent,
 																		int *etype);
 
@@ -2364,5 +2377,7 @@ static int ast_eval_slice_equiv(AstArena *a, AstLocal aroot, AstArena *b,
 }
 
 #endif
+
+#endif /* AST_EVAL_SLICE_ARITH_ONLY */
 
 #endif

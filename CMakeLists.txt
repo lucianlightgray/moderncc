@@ -8960,6 +8960,33 @@ else()
     mcc_skip_test("xsuite/report" "the xsuite report check needs a POSIX shell")
 endif()
 
+# N7's fix: an INDEPENDENT oracle for ast_eval_binop().
+#
+# That function is reached ~66M times compiling tests/smoke/subject.c at -O4, and
+# a deliberate `r = s + 1` injected into its 32-bit signed `+` arm changed
+# NOTHING observable -- pairs/certified/differ, all 1782 --dump rows on all six
+# engines, the sweep digest and eleven smoke cells were byte-identical. The
+# differential compares two arenas that are both evaluated by it, so a shared
+# fault cancels by construction; self-comparison cannot see it.
+#
+# This compiles the arithmetic half of src/ast_eval_slice.h on its own (behind
+# its AST_EVAL_SLICE_ARITH_ONLY guard) with the HOST compiler, links no part of
+# mcc, and compares every opcode against a reference computed a different way in
+# 128-bit arithmetic. It catches the injected fault on the first case it tries.
+if(UNIX)
+    add_executable(ast_eval_binop_oracle
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/eval_binop_oracle.c")
+    target_include_directories(ast_eval_binop_oracle
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    add_test(NAME "ast/eval-binop-oracle" COMMAND ast_eval_binop_oracle)
+    # mcc_build builds the whole tree, so it is what makes this executable exist
+    # on a cold ctest; without the fixture the cell reports "Not Run".
+    set_tests_properties("ast/eval-binop-oracle" PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
+else()
+    mcc_skip_test("ast/eval-binop-oracle" "the binop oracle needs a POSIX host build")
+endif()
+
 # tools/c2_sweep.sh totals the per-body Replay-IR counters over every .c under
 # tests/ and publishes them onto docs/TODO.md. Last of the four tools that were
 # registered nowhere. The census half (fn/faithful/arenafn/ok) gets floors; the
