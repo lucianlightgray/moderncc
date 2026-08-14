@@ -15296,21 +15296,33 @@ static void ast_loop_par_census(AstArena *a) { MCC_TRACE("enter\n");
 	}
 }
 
-void ast_loopdep_dump(AstArena *a, const char *fname) { MCC_TRACE("enter\n");
+/* `when` names the point in the pipeline this dump was taken at, and it is not
+ * decoration. The dump used to run only at the top of the driver while
+ * ast_interchange_run() and ast_fusion_run() run near the bottom, after the tree
+ * has been rewritten -- so a verdict here did not predict what the transforms
+ * would do, and read exactly as if it did. On the two-loop reducer it printed
+ * `fusion(#7,#30): ILLEGAL` and fusion then fired on that same pair in the same
+ * compile, because ast_dep_same_trip() bails early at dump time and succeeds by
+ * the time the transform asks. That cost ~40 minutes chasing a phantom bug.
+ *
+ * It is now called twice, and every line says which run it came from. Compare
+ * the two: a pair that is ILLEGAL at pre-opt and legal at transform is the tree
+ * having been rewritten in between, not a legality bug. */
+void ast_loopdep_dump(AstArena *a, const char *fname, const char *when) { MCC_TRACE("enter\n");
 	ast_loopnest_sync(a);
-	fprintf(stderr, "[LOOPDEP] %s: %d loop(s)\n", fname ? fname : "?",
+	fprintf(stderr, "[LOOPDEP@%s] %s: %d loop(s)\n", when, fname ? fname : "?",
 					ast_loopnest_n);
 	for (int i = 0; i < ast_loopnest_n; i++) { MCC_TRACE("br\n");
 		AstLoopInfo *li = &ast_loopnest[i];
 		if (li->unanalyzable || !li->has_iv)
 			{ MCC_TRACE("br\n"); continue; }
-		fprintf(stderr, "  loop#%u refs:\n", (unsigned)li->header);
+		fprintf(stderr, "  [%s] loop#%u refs:\n", when, (unsigned)li->header);
 		ast_dep_dump_refs(a, li->header);
 	}
 	for (int i = 0; i < ast_loopnest_n; i++) { MCC_TRACE("br\n");
 		AstLocal h = ast_loopnest[i].header;
 		int p = ast_loop_parallel_legal(a, h);
-		fprintf(stderr, "  parallel(#%u): %s\n", (unsigned)h,
+		fprintf(stderr, "  [%s] parallel(#%u): %s\n", when, (unsigned)h,
 						p > 0 ? "legal" : p == 0 ? "CARRIED" : "unknown");
 	}
 	for (int i = 0; i < ast_loopnest_n; i++) { MCC_TRACE("br\n");
@@ -15318,7 +15330,7 @@ void ast_loopdep_dump(AstArena *a, const char *fname) { MCC_TRACE("enter\n");
 		if (li->parent == AST_NONE)
 			{ MCC_TRACE("br\n"); continue; }
 		int lg = ast_loop_interchange_legal(a, li->parent, li->header);
-		fprintf(stderr, "  interchange(outer#%u,inner#%u): %s\n",
+		fprintf(stderr, "  [%s] interchange(outer#%u,inner#%u): %s\n", when,
 						(unsigned)li->parent, (unsigned)li->header,
 						lg ? "legal" : "ILLEGAL");
 	}
@@ -15329,7 +15341,7 @@ void ast_loopdep_dump(AstArena *a, const char *fname) { MCC_TRACE("enter\n");
 			if (ast_dep_adjacent(a, ast_loopnest[i].header, ast_loopnest[j].header)) { MCC_TRACE("br\n");
 				int lg = ast_loop_fusion_legal(a, ast_loopnest[i].header,
 																			 ast_loopnest[j].header);
-				fprintf(stderr, "  fusion(#%u,#%u): %s\n",
+				fprintf(stderr, "  [%s] fusion(#%u,#%u): %s\n", when,
 								(unsigned)ast_loopnest[i].header,
 								(unsigned)ast_loopnest[j].header, lg ? "legal" : "ILLEGAL");
 			}
@@ -20743,7 +20755,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		if (ast_loopnest_dump_env)
 			{ MCC_TRACE("br\n"); ast_loopnest_dump(ast_cur, funcname); }
 		if (ast_loopdep_dump_env)
-			{ MCC_TRACE("br\n"); ast_loopdep_dump(ast_cur, funcname); }
+			{ MCC_TRACE("br\n"); ast_loopdep_dump(ast_cur, funcname, "pre-opt"); }
 		ast_loop_par_census(ast_cur);
 		ast_thread_census(ast_cur, funcname);
 		if (ast_refcensus_path)
@@ -21026,6 +21038,13 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				if (ast_opt_ok && (ast_opt_limit < 0 || ast_opt_total < ast_opt_limit)) { MCC_TRACE("br\n");
 					if (ast_math_inline_prepass_env)
 						{ MCC_TRACE("br\n"); math_inlined = ast_math_inline_run(ast_cur); }
+					/* The dump that actually predicts the transforms below: same
+					 * tree, same point in the pipeline, same legality answers. The
+					 * "pre-opt" one near the top of this driver is taken before the
+					 * tree is rewritten and is kept only for comparison. */
+					if (ast_loopdep_dump_env &&
+							(ast_interchange_env || ast_fusion_env || ast_tile_env))
+						{ MCC_TRACE("br\n"); ast_loopdep_dump(ast_cur, funcname, "at-transform"); }
 					if (ast_interchange_env)
 						{ MCC_TRACE("br\n"); interchanged = ast_interchange_run(ast_cur); }
 					if (ast_fusion_env)
