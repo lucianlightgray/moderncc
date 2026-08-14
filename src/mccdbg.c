@@ -608,7 +608,7 @@ static void cv_types_put(const void *p, unsigned n) { MCC_TRACE("enter\n");
 static unsigned cv_basic_type(CType *tp) { MCC_TRACE("enter\n");
 	int bt = tp->t & VT_BTYPE;
 	int uns = tp->t & VT_UNSIGNED;
-	switch (bt) {
+	switch (bt) { MCC_TRACE("br\n");
 	case VT_VOID: return 0x0003;
 	case VT_BOOL: return 0x0030;
 	case VT_BYTE: return uns ? 0x0020 : 0x0010;

@@ -2140,7 +2140,7 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 							"carries no runtime JIT engine (baking needs -O1+ and is disabled by "
 							"-g/-ftest-coverage)";
 					if (s1->error_func) s1->error_func(s1->error_opaque, nobake);
-					else { fflush(stdout); fprintf(stderr, "%s\n", nobake); fflush(stderr); } }
+					else { MCC_TRACE("br\n"); fflush(stdout); fprintf(stderr, "%s\n", nobake); fflush(stderr); } }
 			return; }
 	async = s1->jit_threads > 0;
 	if (s1->output_type == MCC_OUTPUT_MEMORY) { MCC_TRACE("br\n");
