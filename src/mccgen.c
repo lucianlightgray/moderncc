@@ -8669,7 +8669,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 }
 
 static int post_type_nested(CType *type, AttributeDef *ad, int storage, int td) { MCC_TRACE("enter\n");
-	int n, l, t1, arg_size, align;
+	int n, l, t1, arg_size, align, pquals;
 	int star_param = 0;
 	Sym **plast, *s, *first, **ps, *sr;
 	AttributeDef ad1;
@@ -8734,9 +8734,32 @@ static int post_type_nested(CType *type, AttributeDef *ad, int storage, int td) 
 				}
 				if (n < TOK_UIDENT)
 					{ MCC_TRACE("br\n"); expect("identifier"); }
+				/* C11 6.7.6.3p15 ignores top-level parameter qualifiers when
+				 * deciding function-type compatibility, which is what
+				 * convert_parameter_type() implements. But 6.9.1p9 says the
+				 * parameter is an lvalue OF ITS DECLARED TYPE inside the body, so
+				 * `void f(const int x) { x = 5; }` is a constraint violation and
+				 * mcc accepted it silently -- it diagnosed a const local and not a
+				 * const parameter, because the qualifier was gone by the time the
+				 * body was parsed. Carry it back onto the symbol.
+				 *
+				 * Compatibility is unaffected: is_compatible_param() compares with
+				 * is_compatible_unqualified_types(), and the call path already
+				 * strips the qualifier off the argument type before casting.
+				 *
+				 * Only when nothing decayed. `void f(const int a[])` adjusts to
+				 * `const int *` -- pointer to const int, NOT const pointer -- so
+				 * re-applying a top-level qualifier after array or function decay
+				 * would qualify the wrong thing. */
+				pquals = (pt.t & (VT_ARRAY | VT_VLA)) ||
+												 (pt.t & VT_BTYPE) == VT_FUNC
+										 ? 0
+										 : pt.t & VT_QUALIFY;
 				convert_parameter_type(&pt);
 				arg_size += (type_size(&pt, &align) + MCC_PTR_SIZE - 1) / MCC_PTR_SIZE;
+				pt.t |= pquals;
 				s = sym_push(n, &pt, VT_LOCAL | VT_LVAL, 0);
+				pt.t &= ~pquals;
 				s->vla_inner_id = file->line_num;
 				s->a.inited = 1;
 				if (ad1.storage_class & 2)

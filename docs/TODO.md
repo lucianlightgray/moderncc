@@ -7965,13 +7965,48 @@ server then two cells can keep running concurrently rather than being locked apa
   `__bf16` onto `_Float16`** — distinct `c.i` storage, `is_float_abi`, libgcc name.
 - 32-byte vectors are laid at 16-byte alignment (`MCC_MAX_ALIGN` cap) — open ABI
   decision; cross-TU to gcc is currently incompatible (struct-ABI, not SysV vector).
-- `aligned(N)` bitfields: ~139 survivors.
+- `aligned(N)` bitfields: ~139 survivors. **The number is unsourced** — no corpus is named
+  for it anywhere in this file or the archive, so it cannot be checked or closed as written.
+  A 252-case differential against gcc on 2026-08-14 found **zero** divergence: 180 cases over
+  base type × width × `aligned(1..32)` comparing `sizeof`, `__alignof__` and the size when
+  embedded after a `char`, plus 72 cases adding `packed`, zero-width separators, mixed
+  widths, over-32-bit fields and a store/load round-trip. Either name the corpus the 139
+  came from, or strike the row.
 - ~~`expr_type()`'s unconditional `nocode_wanted++`.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 - ~~`selfhost-qemu-{i386,arm}-O2`~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 - 32-byte vectors are laid at 16-byte alignment (`MCC_MAX_ALIGN` cap on i386/arm is 8,
   16 elsewhere) — open ABI decision, and a real constraint, but it was **not** the cause
   of the self-host failure above.
-- Register-array decay; const-parameter assignment; `_Atomic` complex.
+- ~~const-parameter assignment~~ — **CLOSED 2026-08-14.** `void f(const int x) { x = 5; }`
+  compiled silently; gcc and clang both reject it. C11 6.7.6.3p15 ignores top-level
+  parameter qualifiers when deciding *function-type compatibility*, and
+  `convert_parameter_type()` implemented that by stripping the qualifier outright — so by
+  the time the body was parsed the `const` was gone, and the identical *local* form was
+  diagnosed the whole time. 6.9.1p9 is the other half: the parameter is an lvalue of its
+  **declared** type inside the body. Fixed by carrying the qualifier back onto the pushed
+  symbol, and **only when nothing decayed** — `void f(const int a[])` adjusts to
+  `const int *`, pointer-to-const rather than const-pointer, so re-applying a top-level
+  qualifier after array or function decay would qualify the wrong thing. Compatibility is
+  untouched: `is_compatible_param()` already compares with
+  `is_compatible_unqualified_types()`, and the call path already strips the qualifier off
+  the argument before casting. Cells: `diag.dg-error.assign_readonly_param` and
+  `…_param_member`, both proved to bite. Ten valid forms — const pointer with writable
+  target, const array parameter, read-only use, `volatile` parameter, and a prototype
+  declared `int` against a definition declared `const int` — all still build and match gcc
+  byte for byte.
+- **Register-array decay is still open, and here is exactly where it is.** `register int
+  a[4]; int *p = a;` is rejected by gcc (C11 6.3.2.1p3) and accepted by mcc. **The explicit
+  form is already handled** — `unary()` diagnoses `&a`, `&a[0]` and `&x` correctly, and
+  `a.is_register` is set for locals and parameters alike. What is missing is *implicit*
+  decay: passing the array to a function, `*(a+1)`, and the bare initialisation above are
+  all accepted; `a[1]` is correctly accepted, matching gcc. **A `gaddrof()` hook does not
+  work and was tried and reverted**: none of the three failing forms routes through it,
+  because an array lvalue's value in mcc's representation already *is* its address, so
+  decay is a type change rather than an address-of. Fixing it needs the check at the point
+  an array-typed `vtop` is consumed as a pointer, which is diffuse — design first.
+- `_Atomic` complex — probed 2026-08-14 and it works: `_Atomic double _Complex` with
+  `atomic_init` and a load round-trips correctly. If this row means something narrower, it
+  needs to say what.
 - Varargs pr92904 (32-byte-aligned param when caller align == 16); `__int128` old
   signedness coercion.
 - `__builtin_object_size` subobject-from-declared-array-type: reverted (regressed 5
