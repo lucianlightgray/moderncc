@@ -26,6 +26,8 @@ Are the three sessions addressable by the IDs in INSTRUCTIONS.md?
 
 REF: DETAILS.md#q-lin-10002-are-the-three-sessions-addressable-by
 
+**Note (win-x64, 2026-08-14T19:34Z, SHA 244be14e):** verified at first run — from win-x64, `SendMessage to="lin-x64"` returns *"No agent named 'lin-x64' is currently addressable."* The bus does not resolve cross-machine session IDs on this host, so mode (a) holds: the T-lin-10002 CONTRACT announcement was delivered by pushed commits + the ARCHIVED record, not the bus. Partial evidence (one host, one moment), so the question stays open per N10.
+
 ### Q-lin-10003 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: every `docs` and `code` push
 Can all three machines push to `main` with no branch protection?
 

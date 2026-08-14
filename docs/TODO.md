@@ -6,16 +6,13 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30000   | 2026-08-14T19:29Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10360   | 2026-08-14T19:07Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T19:18Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T19:34Z |
 
 ## Contracts — blocking, highest priority
 
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10001-a-task-representation-with-an-explicit | DEPS: —
-- [ ] T-lin-10002 [C] Bank keying: every host-sensitive bank is keyed by target and object format
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T19:24Z
-      REF: DETAILS.md#t-lin-10002-bank-keying-every-host-sensitive-bank | DEPS: —
 - [ ] T-lin-10003 [C] Every gate cell carries an anti-vacuity floor and a proved known-positive
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T19:07Z
       REF: DETAILS.md#t-lin-10003-every-gate-cell-carries-an-anti | DEPS: —
