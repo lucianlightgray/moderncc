@@ -190,22 +190,38 @@
 > *vendored* `x86_64-w64-mingw32-gcc` — the mingw oracle the Linux-written plan called absent is
 > present here, and PE runs natively, so W3's four-way differential runs with no wine and is enforced
 > by `pe/coff-obj-diff`. Default `-c` still emits ELF (banks + `arm64pe_diff.py` untouched; the
-> default-flip + re-bank is the follow-up). **The same day, W1, W4 and W5 were driven forward on the
+> default-flip + re-bank is the follow-up). **The whole W1–W6 board then closed the same day on the
 > box the Linux plan could not use** — the recurring finding being that "blocked here" was written
-> from WSL and several blockers evaporate on native Windows (mingw is vendored; PE runs without wine).
-> **W1 landed** as `pe/x-oracle`: mcc-vs-vendored-mingw over the run-mode `tests/exec` corpus, **254
-> cross-vendor agreements** floored, 15 impl-defined divergences banked, a `--mutate` red-check arm.
-> **W4's premise was corrected**: `RtlCaptureStackBackTrace` already reaches every mcc frame including
-> the 16 KB `__chkstk` frame (`pe/unwind-backtrace`) — the shared blob is not a live unwind bug; its
-> residual is metadata fidelity coupled to W6. **W5's premise narrowed**: `mcc -gdwarf-4` PE output is
-> already source-debuggable via addr2line/gdb (`pe/dwarf-lines`); the real gap is CodeView for
-> Microsoft debuggers specifically. **Still genuinely open: W2** (needs the absent
-> `vendor/gcc-c-torture-execute` corpus — `pe/x-oracle` points at it with no new code once symlinked),
-> **W5's CodeView emitter** (large, now unblocked by W3, verifiable via `llvm-pdbutil`) and **W6 (SEH)**
-> (largest; gated on W4's real `UNWIND_INFO`, and oracle-only against MSVC since mingw lacks `__try`).
-> The `arm64-win32`/`arm-win32` execution host items still need Windows-on-ARM hardware this box does
-> not have. The "stale i386 message" the plan cited has no locatable subject — every i386 message was
-> checked and none is stale.
+> from WSL and every blocker but one evaporates on native Windows (mingw is vendored; PE runs without
+> wine). Nine `pe/*` cells now enforce the surface. In order:
+> - **W1 — LANDED** (`pe/x-oracle`): mcc-vs-vendored-mingw over the run-mode `tests/exec` corpus, **254
+>   cross-vendor agreements** floored, 15 impl-defined divergences banked, a `--mutate` red-check arm.
+> - **W2 — TRIAGED** (`pe/torture-classes`): the five named divergences reconstructed from the pilot's
+>   descriptions (exact corpus still unvendored) and run against mingw/`cl` — **four are mcc-correct**
+>   (incl. `pr92904`, the one flagged most likely a real ABI defect), one (`__builtin_alloca(0)`
+>   NULL-vs-non-NULL) is implementation-defined. `20101011-1`'s divide-by-zero case is covered by
+>   `pe/seh`.
+> - **W4 — LANDED**: per-function `UNWIND_INFO` in `.xdata` replaces the single shared blob
+>   (`pe/unwind-backtrace`, structural + backtrace checks), which is what let a function carry its own
+>   handler. The earlier "shared blob is a live bug" premise was false — it unwinds correctly — but
+>   per-function records were the real W6 prerequisite.
+> - **W5 — LANDED** (`pe/codeview`): `mcc -gcodeview` emits a real CodeView `.debug$S` line table;
+>   verified structurally by `llvm-readobj` **and** round-tripped through `lld-link`→PDB→`llvm-pdbutil`,
+>   so mcc output is Microsoft-debugger-debuggable with no `cv2pdb`. (`pe/dwarf-lines` separately pins
+>   that mcc's `-gdwarf` PE output was already addr2line/gdb-debuggable.)
+> - **W6 — LANDED** (`pe/seh`): `__try`/`__except(constant)` catches a null-store access violation and
+>   an integer divide-by-zero, matching MSVC `cl` exactly. The "funclet generation required" premise
+>   was wrong for the constant-filter case — a hand-written probe proved `__C_specific_handler` takes
+>   an inline handler with a constant filter, so it fits mcc's linear emitter.
+>
+> **What is still genuinely out of reach from this host, and only this:** the *exact*
+> `vendor/gcc-c-torture-execute` corpus (absent, no network) — symlinking it would let `pe/x-oracle`
+> run all 1,693 programs and confirm the W2 reconstructions with no new code. The
+> `arm64-win32`/`arm-win32` *execution* host items still need Windows-on-ARM hardware this box does not
+> have (object emission for them works). Non-constant `__except` filters and `__finally` (need funclet
+> codegen), CodeView `.debug$T` types, and the default `-c`→COFF flip + o0-baseline re-bank are the
+> named follow-ons. The "stale i386 message" the plan cited has no locatable subject — every i386
+> message was checked and none is stale.
 > **arm64/macOS wave, 2026-08-12 — the inner loop did not exist on one of the three machines,
 > and turning it on found two miscompiles.** `ctest -R "^smoke/"` was **12 of 12 red on the Mac**
 > and had been for as long as the suite existed there. None of it was a compiler defect: the
