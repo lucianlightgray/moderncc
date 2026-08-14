@@ -3116,6 +3116,39 @@ operation, and `switch (f) case -1:`, which is the case-label conversion path. *
 mcc's direct operations on an over-wide field consistently gcc's, not its whole type system**,
 and that is the honest boundary.
 
+**N42. `a73a82f7` called an inapplicable subject an unbuildable one, and took 118 cells red on
+this host.** New 2026-08-14, found by the final full run. The commit closed sweep row 24's
+flagsweep half — a subject whose `-O0` reference will not build was dropped from every level and
+flag state silently, with `ran > 0` as the only floor, so one surviving subject printed PASS
+exactly as 31 did. Right problem. But the new failure says *"This is a red and not an absent
+prerequisite — every named subject is present"*, and **presence is not applicability**.
+
+`types/int128` is in `flagsweep.sh`'s hardcoded subject list. `tests/exec/goldens.h` already
+carries `cpu=x86_64,os!=WIN32` for it, and mcc's `MCC_HAVE_INT128` is
+`defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE`, so on arm64 the reference build fails with
+`'__int128' is not supported on this target` — correctly. Every `flagsweep-exec` cell then failed
+on it: **118 of the final run's 119 reds, one cause.**
+
+`flagsweep.sh` had **no target awareness at all**, so it now consults the same `req` field the
+census tools do (`slice-census.py`'s `req_unmet`, `rir-coverage.py`'s per-format floors) and
+partitions the unbuildable set into inapplicable-and-named versus genuinely-failed. The red still
+bites: injecting `#error` into `types/bool.c` gives
+`FAIL ... the -O0 reference build failed for subject(s): types/bool` on the same run that skips
+`types/int128`.
+
+**A GNU-ism nearly made the fix wrong in a way that would have passed here.** The first probe read
+the target from `mcc -dM -E` with one `sed` alternation, `\(x86_64\|i386\|aarch64\|…\)` — and
+`\|` is a GNU BRE extension that **BSD sed on this very host silently matches nothing for**. That
+left `fs_cpu` empty, every `cpu=` clause comparing against `""`, and the right subject skipped for
+the wrong reason — and it would have skipped the *wrong* subjects on x86. Caught because the skip
+line printed `not applicable to /Darwin` with the CPU missing. It is a `case` over candidates now.
+**The lesson is the session's, once more: the message that names its own inputs is what catches
+the bug the verdict hides.**
+
+**This is N41's rule for the sixth time**, and the first where the host-sensitive fact was not a
+banked number but a *subject list*. `bails.txt`, `slice/census`, `emit-map.py`,
+`ast/inv-faithful`, `rir-coverage`'s `failed`, and now flagsweep's corpus.
+
 **N41. `84add424` banked a host-sensitive count as a flat number, and it went red on the other
 host within two hours.** New 2026-08-14, found by the third full run. The commit closed a real
 hole — sweep row 22's compile-failure half, a count that was printed on every run and compared

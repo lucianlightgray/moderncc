@@ -195,6 +195,48 @@ rc=0
 stale=0
 missing=""
 unbuildable=""
+
+# A subject that tests/exec/goldens.h says cannot run on this target is not an
+# unbuildable subject, it is an inapplicable one.  types/int128 carries
+# `cpu=x86_64,os!=WIN32` there and mcc's __int128 is x86_64-only, so on arm64
+# the -O0 reference build fails with "'__int128' is not supported on this
+# target" -- and the check below then called that a red on the grounds that
+# "every named subject is present".  Presence is not applicability.  Same
+# host-sensitivity the census tools already handle (slice-census.py's
+# req_unmet, rir-coverage.py's per-format floors); see docs/TODO.md N41.
+# grep per candidate rather than one sed alternation: `\|` is a GNU BRE
+# extension and BSD sed on this very host silently matches nothing, which left
+# fs_cpu empty and made every cpu= clause compare against "" -- skipping the
+# right subject here for the wrong reason, and the wrong subjects on x86.
+fs_defs=$("$MCC" -dM -E /dev/null 2>/dev/null)
+fs_cpu=""
+for _a in x86_64 i386 aarch64 arm riscv; do
+	case "$fs_defs" in
+	*"#define __${_a}__ "*) fs_cpu=$_a; break ;;
+	esac
+done
+[ "$fs_cpu" = aarch64 ] && fs_cpu=arm64
+fs_os=$(uname -s 2>/dev/null)
+
+# The req field is the last quoted string on the golden's line.
+fs_req_unmet() {
+	_r=$(sed -n 's|.*"exec/'"$1"'\.c".*, *"\([^"]*\)"},.*|\1|p' \
+		"$S/tests/exec/goldens.h" | head -1)
+	[ -n "$_r" ] || return 1
+	_save=$IFS; IFS=,
+	for _t in $_r; do
+		IFS=$_save
+		case "$_t" in
+		cpu=x86) [ "$fs_cpu" = x86_64 ] || [ "$fs_cpu" = i386 ] || return 0 ;;
+		cpu=*)   [ "${_t#cpu=}" = "$fs_cpu" ] || return 0 ;;
+		os=*)    [ "${_t#os=}" = "$fs_os" ] || return 0 ;;
+		os!=*)   _w=${_t#os!=}; [ "${_w%%:*}" != "$fs_os" ] || return 0 ;;
+		esac
+		IFS=,
+	done
+	IFS=$_save
+	return 1
+}
 corpus_run() {
 	lvl=$1
 	label=$2
@@ -393,6 +435,14 @@ exec)
 	# only floor was `ran > 0` -- so one surviving subject printed PASS exactly
 	# as 31 did. The script already calls a total failure a red; a partial one
 	# is the same red with a smaller denominator.
+	inapplicable=""; realbad=""
+	for sub in $unbuildable; do
+		if fs_req_unmet "$sub"; then inapplicable="$inapplicable $sub"
+		else realbad="$realbad $sub"; fi
+	done
+	[ -z "$inapplicable" ] ||
+		echo "flagsweep-exec $ARG: skipping$inapplicable -- goldens.h says not applicable to $fs_cpu/$fs_os"
+	unbuildable="$realbad"
 	[ -z "$unbuildable" ] ||
 		{ echo "FAIL flagsweep-exec $ARG: the -O0 reference build failed for subject(s):$unbuildable"
 		  echo "  They were dropped from all three levels and both flag states, so the"
