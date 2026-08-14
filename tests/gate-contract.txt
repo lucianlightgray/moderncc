@@ -40,6 +40,8 @@ gpu/spv-slice-differential | unfloored | gpu/spv-slice-known-positive | modules 
 gpu/spv-slice-real | unfloored | unproved | harvested arenas the emitters were run over
 gpu/spv-validate | unfloored | gpu/spv-validate-known-positive | emitted modules handed to spirv-val
 gpu/spv-mem-binding | unfloored | gpu/spv-mem-binding-known-positive | cases that actually reach binding 2
+gpu/msl-slice-differential | unfloored | gpu/msl-slice-known-positive | modules the MSL emitter lowered and the differential then compared; both cell and prover are mcc_skip_test stubs off Darwin, so only a Metal host reads them
+gpu/msl-slice-real | unfloored | unproved | harvested arenas the MSL emitter was run over; stubbed off Darwin
 gpu/ladder-gpu-parity | unfloored | unproved | rungs the CPU and GPU ladders both evaluated
 slice/task | unfloored | unproved | ticks the scheduler advanced
 slice/work | unfloored | unproved | work items extracted from the AST

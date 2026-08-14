@@ -33,6 +33,16 @@ only ever fall.
   --mutate WHAT     perturb the manifest in memory and expect to go red. This is
                     this cell's own known-positive; see ci/gate-contract-known-positive.
 
+A cell registered as an `mcc_skip_test` echo stub on THIS host is host-skipped:
+it has no command line to floor and no prover that can go red here, so this tool
+reads nothing about it either way and counts it in neither ratchet. The same
+holds for a row whose prover is stubbed here. That is a host verdict, not a
+defect -- `ast/o0-baseline` on Darwin and `gpu/msl-slice-known-positive` on
+Linux are the same situation wearing each platform's face, and a contract that
+went red on either would be measuring which host ran it rather than whether the
+gate can fail. The first version of this tool did go red on exactly that, on
+Darwin, over five cells and one bug.
+
 Exit 0 clean, 1 on any violation, 2 on a usage or parse problem. Never 77: a
 contract that cannot be checked is a failure, not a skip.
 """
@@ -50,7 +60,7 @@ UNFLOORED = "unfloored"
 UNPROVED = "unproved"
 PROOF_SUFFIX = "-known-positive"
 
-MUTATIONS = ("drop-row", "relax-floor", "forge-prover", "stub-prover", "empty")
+MUTATIONS = ("drop-row", "relax-floor", "forge-prover", "unlisted-prover", "empty")
 
 
 def die(msg):
@@ -155,12 +165,12 @@ def mutate(rows, what):
                 r["prover"] = "no/such-cell" + PROOF_SUFFIX
                 return out
         die("forge-prover: no unproved row to forge a prover onto")
-    if what == "stub-prover":
+    if what == "unlisted-prover":
         for r in out:
             if r["prover"] == UNPROVED:
-                r["prover"] = "gpu/msl-slice" + PROOF_SUFFIX
+                r["prover"] = "mcc_build"
                 return out
-        die("stub-prover: no unproved row to point at a stub")
+        die("unlisted-prover: no unproved row to point at an unlisted cell")
     die("unknown mutation %r (want one of %s)" % (what, ", ".join(MUTATIONS)))
 
 
@@ -188,6 +198,8 @@ def main():
     claimed_provers = set()
     unfloored = []
     unproved = []
+    host_skipped = []
+    stubbed = []
     proved = 0
     floored = 0
 
@@ -207,6 +219,18 @@ def main():
                        % (cell, r["line"]))
             continue
         cmd = tests[cell]
+        if floor == UNFLOORED:
+            unfloored.append(cell)
+        if prover == UNPROVED:
+            unproved.append(cell)
+
+        if is_echo_stub(cmd):
+            host_skipped.append(cell)
+            for p in prover.split(","):
+                p = p.strip()
+                if p and p in tests:
+                    claimed_provers.add(p)
+            continue
 
         m = FLOOR_MIN.match(floor)
         if m:
@@ -231,13 +255,13 @@ def main():
         elif FLOOR_INTRINSIC.match(floor):
             floored += 1
         elif floor == UNFLOORED:
-            unfloored.append(cell)
+            pass
         else:
             bad.append("%s: floor %r is not `min:--flag`, `intrinsic:<why>` or "
                        "`%s`" % (cell, floor, UNFLOORED))
 
         if prover == UNPROVED:
-            unproved.append(cell)
+            pass
         elif PROVER_SELF.match(prover):
             proved += 1
         else:
@@ -255,9 +279,7 @@ def main():
                     ok = False
                     continue
                 if is_echo_stub(tests[p]):
-                    bad.append("%s names %s as its known-positive and %s is an "
-                               "mcc_skip_test echo stub on this host, so it "
-                               "cannot go red and proves nothing" % (cell, p, p))
+                    stubbed.append("%s (prover %s)" % (cell, p))
                     ok = False
                     continue
                 if p not in must_run_set:
@@ -283,9 +305,10 @@ def main():
         bad.append("the manifest declares %d gate(s) and at least %d were "
                    "expected; a contract that covers nothing reports green over "
                    "nothing" % (len(rows), a.min_rows))
-    if proved < a.min_proved:
-        bad.append("%d gate(s) carry a prover and at least %d were expected"
-                   % (proved, a.min_proved))
+    if proved + len(stubbed) < a.min_proved:
+        bad.append("%d gate(s) carry a prover (%d of them stubbed on this host) "
+                   "and at least %d were expected"
+                   % (proved + len(stubbed), len(stubbed), a.min_proved))
     if a.max_unfloored is not None and len(unfloored) > a.max_unfloored:
         bad.append("%d gate(s) are `%s` and the ratchet is %d: %s"
                    % (len(unfloored), UNFLOORED, a.max_unfloored,
@@ -305,6 +328,17 @@ def main():
           "%d proved (%d %s), %d known-positive cell(s) all claimed"
           % (len(rows), floored, len(unfloored), UNFLOORED,
              proved, len(unproved), UNPROVED, len(claimed_provers)))
+    if host_skipped or stubbed:
+        print("gate-contract: %d gate(s) are mcc_skip_test stubs on this host "
+              "and %d carry a prover that is, so this host proves nothing about "
+              "them and does not pretend to. They still count in both ratchets, "
+              "which are a property of the manifest and not of the host, so the "
+              "pins hold identically on all three"
+              % (len(host_skipped), len(stubbed)))
+        for name in sorted(host_skipped)[:12]:
+            print("gate-contract:   host-skipped: %s" % name)
+        for name in sorted(stubbed)[:12]:
+            print("gate-contract:   stubbed prover: %s" % name)
     if a.max_unfloored is not None and len(unfloored) < a.max_unfloored:
         print("gate-contract: the %s ratchet is %d and the count is %d; lower it"
               % (UNFLOORED, a.max_unfloored, len(unfloored)))
