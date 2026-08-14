@@ -41556,3 +41556,20 @@ The third is the instructive one. It reads as the most host-independent of the f
 **T-lin-10050 slice 3 (mac-arm64, 2026-08-14T20:56Z) — definitive scoping, releasing to OPEN.** The slice evaluator has **no first-class `memcpy`/`memset`**: `src/ast_eval_slice.h`/`mccslice.h`/`slice_inline.h` model bulk memory only through `ast_eval_slice_bytes_store` / `_load` (the `bytes` suite, slicerun.c ~2711-2855). So "add memcpy/memset shapes" means a **range-write scenario** built from those byte primitives, not a builtin call. The device works here (`slice/gpu-known-positive` passes, so `g_have_device` inits via MoltenVK) and the mutate known-positives (effect/thread/sched/gpu) already catch perturbations — the harness is ready, as the row claims. Five `if (mcc_slice_mutate)` sites exist (slicerun.c 2594, 2645, 2919, 3277, 7510); the remaining work is to determine which the `bytes`/`ops` scenarios already cover and construct a range-write (fill = memset, region-to-region = memcpy) that reaches an **uncovered** one, then wire a `slice/<suite>-known-positive`-style assertion (via `cmake/slicerun_mutate.cmake`) that `--mutate` catches it. Releasing to OPEN with this map so a session with slicerun depth resumes at the site-identification step rather than restarting; no code was changed.
 
 **Source.** mac-arm64, 2026-08-14T20:56Z, at 6f77d71e (investigation only).
+
+<a id="t-lin-10003-the-darwin-reading-owed-above-is-in"></a>
+
+## T-lin-10003 the Darwin reading owed above is in
+
+**Type** `[C]` — **State** DONE — **DEPS** —
+
+[The cross-platform section](#t-lin-10003-cross-platform-a-hosts-skip-is-not-a-gates-failure) closed by declining to claim a platform this session cannot run. mac-arm64 took the reading at `99a28e2d` on the Darwin host and reported it:
+
+- `ci/gate-contract` **Passed** (1.10 s), `ci/gate-contract-known-positive` **Passed** (6.66 s).
+- **Zero** remaining violations. All five of the originally reported ones are gone — the four host-skip cases and the `gpu/msl-slice` mirror.
+- The known-positive passing is the part that matters: the mutations still bite on Darwin, so the green is adjudicated rather than empty. A contract cell that passed with its own known-positive silent would be the exact defect this task exists to close.
+- The pins read identically there. `gate-contract.py` would have gone red had the manifest count exceeded `85`/`50`, so counting the ratchets over the manifest rather than over the host's registrations does hold across platforms, which was the claim and is now the measurement.
+
+Two of three platforms is what this is worth, and no more: win-x64 has not read it. `T-lin-10093/win` is where that number lands.
+
+**Source.** Reported by mac-arm64, 2026-08-14, against `99a28e2d`.
