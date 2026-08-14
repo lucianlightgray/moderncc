@@ -123,6 +123,34 @@
 > a machine because someone ran the cell rather than read the table. Three green-by-omission GPU
 > registrations were armed on the way (`SKIP_RETURN_CODE 77` under `MCC_GPU_REQUIRED=ON`).
 >
+> **Then the suite was run to the end for the first time on this host, and found five more reds —
+> four of them in no table.** 9933 cells, **99% pass, 5 fail, 2556 skip, zero timeouts** (which
+> confirms N26's `taskpolicy -b` fix across the whole suite rather than the one family it was
+> measured on). **N38**: eight cells vanished behind a copy-pasted `NOT Darwin` predicate with no
+> `else()` arm, and `tests/must-run.txt` was the only thing that noticed — `wide256/gmp-diff` now
+> runs here for real, **9402 rows against libgmp at five levels**, the only oracle-backed proof
+> `__int256` is right and it had never run natively on arm64. **N39**: `mccjit_embed.c` used
+> `mcc_inv_add` without including `mccinv.h`, byte-neutral and proved so by sha256. **N40**:
+> `target-gate-invariant` red since the *previous* wave's N24 fix, and `slice-census` computing
+> every share over 343 of 344 sources because a `find_path` sat after its consumer — **the exact
+> ordering trap this file already documents for `DIFF3_GCC`**, caught here by a fresh-build-dir
+> check rather than by reading. `rir/drop-ratchet` closed too: it compiled for the wrong arch and
+> checked only that its report file existed, never that mcc exited 0.
+>
+> **Two results confirm the other host's work on a second architecture.** `a7706a3e`'s N18 fix
+> generalizes — the **JIT axis is exactly zero on arm64 too**, gap +1.85 → +0.00 and +1.23 → +0.03
+> — so promoting `storeval-rot` and `storeval-calllast` to ALWAYS is not an x86 accident. And
+> **N7's injection is caught on Metal**, a second device API: `differing-files=4` of 9, only
+> `points` moves on every one, and it moves in **both directions**, netting −2 of 268 — so a
+> differential comparing a *total* rather than per file would have missed it. Third instance this
+> week of "the granularity a measurement is taken at is the measurement".
+>
+> **What is left on this host is two decisions and one flake.** N36 (which half of the split
+> bit-field semantics to move) and N37's compiler half (whether to adopt `__divdc3`-style complex
+> division) are decisions, not code. `optfire/abs` and `optfire/level-abs` fail only in a full
+> `-j4` run — 132/132 within the family, 3/3 isolated — so the contending family is unidentified
+> and a second full run was started to name it. **Do not quote "9933 green".**
+>
 > **The board's own top four did not survive checking.** Rank 3 (six binary opcodes with "zero
 > coverage") had been closed eight days earlier. Rank 2 (`MCC_RIR_STAMP`) does not do what it
 > advertises — no emitter *or* dump reads `ast_stype_*`. Four claimed couplings were refuted by
@@ -1023,6 +1051,10 @@ does **not** settle N30 — that needs the fold/run class. **Two changes, this o
 > that separated them was the pairing. That is the argument for this entry's own rule, now with a
 > case behind it.
 >
+> **Superseded by the end-of-day count in *Open, ranked*: the live rows are N3 (items 22 and 23),
+> N6, N7, N36 and N37 — five of forty.** N29 closed on 2026-08-13 and N36/N37/N38/N39/N40 came
+> with it.
+>
 > **Live board rows: N3 (items 22 and 23), N6, N7, N29 — four of thirty-five.** N18 leaves this
 > line: its instrument half is closed and watched, and what remains of it is a defect, tracked in
 > the row rather than as a next step. N6.8 is closed in full.
@@ -1573,7 +1605,33 @@ state in eight places, so a new field joins the RIR replay record), sweep row 29
 `MCC_OPT_REPLAY_FALLBACK` flip — **make the fallback visible under either answer**, and re-check
 its evidence per the correction above), and the coroutine task S7b.
 
-### The whole-suite state on arm64/macOS — measured 2026-08-12
+### The whole-suite state on arm64/macOS — a run COMPLETED 2026-08-13
+
+**The first full-suite run this host has ever finished.** `ctest -j4` over `cmake-macos`, all
+**9933** cells: **99% passed, 5 failed, 2556 skipped**, no timeouts. The 2026-08-12 partial run is
+kept below because two of the things it could not establish are now established.
+
+| cell | verdict |
+| --- | --- |
+| `target-gate-invariant` | **CLOSED** — `src/mccjit_embed.c`'s `#ifdef MCC_TARGET_PE`, red here since `8fc24990` (the N24 fix) |
+| `slice-census` | **CLOSED** — `examples/ex4.c` needs `<X11/Xlib.h>`; two defects, one of them a find_path after its consumer |
+| `optfire/abs`, `optfire/level-abs` | **UNREPRODUCED** — pass 3/3 isolated and 132/132 at `-j4` within `optfire/`; fail only in a full `-j4` run |
+| `ci/registration-stubs` | **pre-existing, not this host's** — the mingw `pe/x-oracle` chain drops cells on its dead branch |
+
+All four are N40. **`ci/must-run-registered` was a fifth red** and is closed as N38; it is absent
+from the table because it was fixed before this run.
+
+**N26 is confirmed fixed by the thing it was blocking.** The 2026-08-12 note below says a full run
+here "cannot distinguish a regression from a scheduling artefact" because of 13 `flagsweep-exec`
+timeouts. This run had **zero timeouts** — `taskpolicy -b` holds across the whole suite, not just
+the 119-cell family it was measured on.
+
+**What is still not established, and the honest reason.** The two `optfire` reds mean this run is
+not a clean number either — it is a *complete* one, which is different and is the thing that did
+not exist before. A second `-j4` run was started to identify the contending family; **until it
+lands, do not quote either optfire cell as a compiler finding and do not quote "9933 green".**
+
+**The superseded 2026-08-12 partial run, kept for what it establishes:**
 
 A full `ctest -j4` over `cmake-macos` reached **8975 of 9548** before it was stopped for the
 machine. What it establishes, and what it does not:
@@ -1709,6 +1767,16 @@ emit-coverage instrument, which adds counters rather than cells (`jit/selfhost-o
 > registered as real cells only after `vendor/gcc-c-torture-execute` was symlinked at
 > `~/Projects/gcc`, and `jit/xoracle-coverage` still cannot reach `--min-cross 400` because
 > `llvm-test-suite` is absent. Count on the host you are standing on, and say what it had.
+
+> **2026-08-13, arm64/macOS: 9933**, counted by a run that reached the end rather than by
+> `ctest -N`. It was 9548 at the 2026-08-12 wave. The +385 arrived from the other host's
+> Windows/wine and instrument waves plus this one's registrations: the eight cells N38 recovered
+> (`wide256/gmp-diff` and `-known-positive` now run for real here, the `ast/o0-baseline` quartet
+> and the `build/fragments-are-not-tus` pair as visible skips-with-a-reason, the last two later
+> promoted to real cells by N39), and the seven `gpu/spv-*` names that were already registering
+> because this host has `vulkan-headers`. **The two counts are not comparable across hosts and
+> this one is not comparable with itself across the day** — which is what the rule below has said
+> all along.
 
 > **2026-08-12, and the number is a coincidence worth not misreading.** The arm64/macOS host
 > counted **9545** before this wave and **9548** after, which is the same total as `cmake-def`'s
@@ -2041,7 +2109,16 @@ measurement tool reports success over an empty or truncated subject:
 > correctness gate that only runs on the AOT path is not a correctness gate**, because the JIT
 > re-emits the same arenas with no faithfulness comparison to fall back on.
 >
-> **Ranking as of 2026-08-13, after the instrument wave: N3 (items 22 and 23), N6, N7 and N29 —
+> **Ranking as of 2026-08-13, END OF THE arm64/macOS WAVE: N3 (items 22 and 23), N6, N7, N36 and
+> N37 — five of forty.** N29 closed and cost N36 and N37 on the way; N38, N39 and N40 are new,
+> filed and closed the same day except for N40's `optfire` flake and its mingw row. **Of the five
+> live rows, two are decisions rather than code** (N36: which half of the split over-wide
+> bit-field semantics to move; N37's compiler half: whether to adopt `__divdc3`-style complex
+> division), and **N7's cheapest step is taken on two device APIs now** — what it still wants is
+> the independent tree-side oracle, which is the only genuinely large item left on the Mac apart
+> from the native MSL region arm.
+>
+> **The superseded line, after the instrument wave: N3 (items 22 and 23), N6, N7 and N29 —
 > four of thirty-five.** N18's instrument half closed and it leaves the live list; what is left of
 > it is a defect nobody has looked at, stated in its own row. **N6.8 closed in full**, and it is the
 > row worth reading before filing another counter: the figure it corrected was wrong in the
