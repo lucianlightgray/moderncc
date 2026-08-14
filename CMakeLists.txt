@@ -7714,6 +7714,19 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties("optbench/null-subject-known-positive" PROPERTIES
             TIMEOUT 120)
 
+        add_test(NAME "rir/bank-keying"
+            COMMAND "${MCC_PYTHON3}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
+                --selfcheck-bankkeying)
+        set_tests_properties("rir/bank-keying" PROPERTIES TIMEOUT 120)
+
+        add_test(NAME "rir/bank-keying-known-positive"
+            COMMAND "${MCC_PYTHON3}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
+                --selfcheck-bankkeying --mutate)
+        set_tests_properties("rir/bank-keying-known-positive" PROPERTIES
+            TIMEOUT 120)
+
         add_test(NAME "optbench/levelbench-bank"
             COMMAND "${MCC_PYTHON3}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tools/optlevel-bench.py" --check

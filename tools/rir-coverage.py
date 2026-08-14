@@ -458,6 +458,92 @@ def low_floor(entry, fmt):
     return entry.get(fmt)
 
 
+PERFMT_ARENA_KEYS = ("residual", "kept_coverage", "failed")
+
+
+def merge_bank(prev, out, fmt):
+    for opt, layers in out.items():
+        dst = prev.setdefault(opt, {})
+        for lname, v in layers.items():
+            if lname == "lowerable":
+                cur = dst.get("lowerable")
+                if not isinstance(cur, dict) or "bodies_pct" in cur:
+                    cur = {"elf": cur} if cur else {}
+                cur.update(v)
+                dst["lowerable"] = cur
+            else:
+                keep = dst.get(lname, {})
+                for k in PERFMT_ARENA_KEYS:
+                    if k not in v:
+                        continue
+                    cur = keep.get(k)
+                    if not isinstance(cur, dict):
+                        cur = {"elf": cur} if cur is not None else {}
+                    cur[fmt] = v[k]
+                    v[k] = cur
+                dst[lname] = v
+    return prev
+
+
+def _bankkeying_probe(mergefn):
+    prev = {"O0": {"arena": {"failed": {"elf": 9, "macho": 17},
+                             "residual": {"elf": 0, "macho": 120},
+                             "kept_coverage": {"elf": 82.5, "macho": 82.7},
+                             "coverage": 99.0, "text": 1000}}}
+    out = {"O0": {"arena": {"failed": 9, "residual": 0, "kept_coverage": 82.5,
+                            "coverage": 99.1, "text": 1010}}}
+    res = mergefn(prev, out, "elf")
+    a = res["O0"]["arena"]
+    for k, other, want, mine in (("failed", "macho", 17, 9),
+                                 ("residual", "macho", 120, 0),
+                                 ("kept_coverage", "macho", 82.7, 82.5)):
+        v = a.get(k)
+        if not isinstance(v, dict):
+            return False, ("%s collapsed to a flat %r on an elf re-bank; the "
+                           "macho floor is gone" % (k, v))
+        if v.get(other) != want:
+            return False, ("%s[%s] erased by an elf re-bank (got %r, want %r)"
+                           % (k, other, v.get(other), want))
+        if v.get("elf") != mine:
+            return False, "%s[elf] not updated to this host's measurement" % k
+    if a.get("coverage") != 99.1 or a.get("text") != 1010:
+        return False, "a portable scalar was not updated by this host's run"
+    leg = {"O1": {"arena": {"failed": 5}}}
+    lr = mergefn(leg, {"O1": {"arena": {"failed": 3}}}, "macho")
+    f = lr["O1"]["arena"]["failed"]
+    if not isinstance(f, dict) or f.get("elf") != 5 or f.get("macho") != 3:
+        return False, "a legacy flat floor was not lifted per-format (got %r)" % (f,)
+    return True, ("per-format floors (%s) survive a same-host re-bank"
+                  % ", ".join(PERFMT_ARENA_KEYS))
+
+
+def selfcheck_bankkeying(mutate):
+    global PERFMT_ARENA_KEYS
+    if mutate:
+        full = PERFMT_ARENA_KEYS
+        for dropped in full:
+            PERFMT_ARENA_KEYS = tuple(k for k in full if k != dropped)
+            try:
+                ok, _ = _bankkeying_probe(merge_bank)
+            finally:
+                PERFMT_ARENA_KEYS = full
+            if ok:
+                print("FAIL rir/bank-keying-known-positive: dropping %r from the "
+                      "per-format key set still passed the invariant, so the gate "
+                      "cannot see that floor being erased" % dropped)
+                return 1
+        print("rir/bank-keying-known-positive: OK -- each of %s is load-bearing; "
+              "removing any one lets an elf re-bank erase the macho floor and the "
+              "gate catches it" % (full,))
+        return 0
+    ok, msg = _bankkeying_probe(merge_bank)
+    if not ok:
+        print("FAIL rir/bank-keying: %s" % msg)
+        return 1
+    print("rir/bank-keying: OK -- %s" % msg)
+    return 0
+
+
 def run_one(mcc, flags, src, opt, out_o, tsv, env0, layer):
     env = dict(env0)
     if layer == "capture":
@@ -1235,7 +1321,7 @@ def nofb_probe(mcc, sources, opt, flags=(), bdir=None, verbose=True):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("build_dir")
+    ap.add_argument("build_dir", nargs="?")
     ap.add_argument("--levels", default="O0,O1,O2,O3")
     ap.add_argument("--corpus", default="self")
     ap.add_argument("--layers", default="both",
@@ -1255,7 +1341,15 @@ def main():
     ap.add_argument("--check-gap-dir", action="store_true")
     ap.add_argument("--opt-in", action="store_true")
     ap.add_argument("--rebank-config", action="store_true")
+    ap.add_argument("--selfcheck-bankkeying", action="store_true")
+    ap.add_argument("--mutate", action="store_true")
     a = ap.parse_args()
+
+    if a.selfcheck_bankkeying:
+        return selfcheck_bankkeying(a.mutate)
+
+    if not a.build_dir:
+        ap.error("build_dir is required")
 
     if a.opt_in and not os.environ.get("MCC_RIR_CENSUS"):
         print("rir-coverage: set MCC_RIR_CENSUS=1 to run this census "
@@ -1889,35 +1983,7 @@ def main():
                 else:
                     out[opt][lname].update(
                         {"bodies": v["fn"], "faithful_bytes": v["faithful_bytes"]})
-        prev = bank.get(a.corpus, {})
-        for opt, layers in out.items():
-            dst = prev.setdefault(opt, {})
-            for lname, v in layers.items():
-                if lname == "lowerable":
-                    cur = dst.get("lowerable")
-                    if not isinstance(cur, dict) or "bodies_pct" in cur:
-                        cur = {"elf": cur} if cur else {}
-                    cur.update(v)
-                    dst["lowerable"] = cur
-                else:
-                    keep = dst.get(lname, {})
-                    # "failed" belongs in this list for the same reason the
-                    # other two do: which sources compile is a host property,
-                    # and arena_floor() already reads it as a per-format dict.
-                    # Leaving it out meant --update-bank on a Linux host wrote a
-                    # flat scalar over {"elf": 9, "macho": 17} and silently threw
-                    # the macho floor away -- a host-blind bank of exactly the
-                    # kind c57961e1 fixed elsewhere.
-                    for k in ("residual", "kept_coverage", "failed"):
-                        if k not in v:
-                            continue
-                        cur = keep.get(k)
-                        if not isinstance(cur, dict):
-                            cur = {"elf": cur} if cur is not None else {}
-                        cur[fmt] = v[k]
-                        v[k] = cur
-                    dst[lname] = v
-        bank[a.corpus] = prev
+        bank[a.corpus] = merge_bank(bank.get(a.corpus, {}), out, fmt)
         bank.setdefault("corpus_config", have_cfg)
         os.makedirs(os.path.dirname(a.bank), exist_ok=True)
         json.dump(bank, open(a.bank, "w"), indent=1, sort_keys=True)
