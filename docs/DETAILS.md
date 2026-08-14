@@ -41384,3 +41384,68 @@ Resolves [T-lin-10091](#t-lin-10091-mac-arm64-capture-the-fail-ident). The item'
 **ident_shift is not reproducible as a failure here.** On native arm64 at this HEAD, `tests/optfire/src/ident_shift.c` returns `ident_shift=178` at every level `-O0` through `-O12` with `-fopt-cycle MCC_DEV=1`, and both cells pass — native `optfire/ident_shift` (#8584) and cross `optfire-arm64/ident_shift` (#8417). The `-O4` differ cell the item points at is green. So the nightly's `FAIL ident_shift:` was since-fixed or environmental, not a live codegen bug on this host; the class-fix guarantees that if it recurs, the cell separates *DID NOT FIRE* from *output differs* from *build/run failed* with the compiler's own words attached — which is what the item wanted the line for.
 
 **Source.** mac-arm64, 2026-08-14T19:50Z, at `2adf3530`.
+<a id="t-lin-10003-landed-the-gate-contract"></a>
+
+## T-lin-10003 LANDED — the gate contract, and the 95 gates it now prices
+
+**Type** `[C]` — **State** DONE 2026-08-14 — **DEPS** —
+
+The contract stated at [T-lin-10003](#t-lin-10003-every-gate-cell-carries-an-anti) is two-sided and neither side can be read off a cell's name, so both are now **declared per gate** in `tests/gate-contract.txt` and enforced by `tools/gate-contract.py` as `ci/gate-contract`:
+
+| half | what it means | how the manifest spells it |
+| --- | --- | --- |
+| **FLOOR** | what stops the cell passing over an empty or truncated subject | `min:--flag` — the registered command line must pass `--flag` with an integer `>= 1`, checked against *this build*; `intrinsic:<why>` — the tool itself refuses, at a line that was read before the row was written; `unfloored` |
+| **PROVER** | which registered cell reverts the fix or perturbs the bank and shows this one going red | one or more ctest names; `self:<why>`; `unproved` |
+
+**The five rules that make the declaration cost something.** A manifest of promises is exactly the defect class this contract exists to close, so `gate-contract.py` refuses:
+
+1. a `tests/must-run.txt` row that no gate-contract row declares — the two manifests are joined, so a cell the tree has already said it must not lose cannot also be a gate nobody typed a floor for;
+2. a declared cell this build does not register;
+3. a `min:` floor the build stopped passing, or passes as `0`;
+4. a prover that is not registered, that is an `mcc_skip_test` echo stub (it cannot go red, so it proves nothing), or that is **absent from `tests/must-run.txt`** — a proof that can quietly stop being registered is not a proof;
+5. a registered `*-known-positive` cell that no row claims — an unattached proof.
+
+**The two ratchets are the deliverable.** `--max-unfloored 81` and `--max-unproved 49` are pinned on the `ci/gate-contract` command line and may only ever fall; the cell prints `lower it` when the real count drops below the pin. Measured at landing: **95 gates declared, 14 floored, 46 proved, 47 known-positive cells all claimed.** That is the honest starting position — 81 of 95 gates have no floor and 49 have never been shown going red — and it is the burn-down list every dependent task works against. Before this file the same 81 and 49 were not a number at all.
+
+**What the manifest found on the way in.** Nine registered known-positives were named by nothing: `flagsweep/dev-gate-`, `jit/bind-local-`, `jit/kgc-effect-parity-`, `jit/selftest-purity-`, `jit/xoracle-`, `slice/arrow-`, `slice/fmt-`, `superopt/global-reload-` and (new) `ci/gate-contract-known-positive`. All nine are now `tests/must-run.txt` rows. Six provers do not share their subject's name and no rule could have inferred them — `idiom-gate-known-positive` proves `idiom-gate-invariant`, `fmt/arena-census-known-positive` proves `fmt/arena-census-bank`, `jit/xoracle-known-positive` proves `jit/xoracle-coverage`, `gpu/spv-slice-known-positive` proves `gpu/spv-slice-differential`, `smoke/strats-known-positive` proves `smoke/native`'s `--min-strats` floor alongside `smoke/native-known-positive`, and `gpu/msl-slice-known-positive` proves `gpu/msl-slice-differential`. That last one is an `mcc_skip_test` echo stub on this host, which is why rule 4 exists and why it is a *host* verdict rather than a defect: it is real on a Darwin host with the Metal backend, so the row stays honest on both platforms without either erasing the other.
+
+**Only fourteen gates had a floor.** `docs/refs` (`--min-refs`), `slice-enum` (`--min-slices`), `census/gates-armed` (`--min-cells`), `ci/registration-stubs` (`--min-chains`), `smoke/native` (`--min-cases`), `smoke/engines` (`--min-engines`), `smoke/device` (`--min-cases`), `optlevel/torture-differential` (`--minprog`), and the four `intrinsic:` rows whose tools were read before the row was written — `loop-census`, `loop-census-numeric` and `loop-census-parallel` all refuse an empty corpus rather than printing `0.00%`, `slice-census` refuses a zero-body denominator, `untyped-probe` refuses a zero-node one. Plus `ci/gate-contract` itself, which carries `--min-rows`.
+
+**The contract obeys itself.** `ci/gate-contract-known-positive` runs `cmake/gate_contract_mutate.cmake`, which asserts the unmutated check is clean and then applies five perturbations, each of which must be caught:
+
+| mutation | what it models | the message it must produce |
+| --- | --- | --- |
+| `drop-row` | a gate quietly leaving the manifest | names the dropped cell *and* its now-unclaimed prover — 2 violations |
+| `relax-floor` | a floor turned back into a shrug | `82 gate(s) are 'unfloored' and the ratchet is 81` |
+| `forge-prover` | naming a proof that does not exist | `... this build does not register it; the proof is gone and the green means nothing` |
+| `stub-prover` | pointing a row at an echo stub | `... is an mcc_skip_test echo stub on this host, so it cannot go red and proves nothing` |
+| `empty` | the manifest asserting nothing | every must-run row reported undeclared |
+
+**And it was proved against the build, not only against itself.** `--min-refs 440` was deleted from the `docs/refs` registration in `CMakeLists.txt`, the tree reconfigured, and `ci/gate-contract` went red with `docs/refs declares its floor as '--min-refs' and this build's command line does not pass it, so the subject is unbounded below`; the flag was restored and the cell went green again. That is the half a manifest-only check cannot do: the floor is checked where it is passed, not where it is claimed.
+
+**Verification.** `ctest --test-dir cmake-def -R '^ci/' --output-on-failure` — 5 cells, all green at landing (`mcc_build`, `ci/must-run-registered`, `ci/gate-contract`, `ci/gate-contract-known-positive`, `ci/registration-stubs`). The known-positive is the anti-vacuity proof and runs on every build.
+
+**What dependents do with it.** T-lin-10039, T-lin-10043, T-lin-10047, T-lin-10049, T-lin-10054 and T-lin-10093 each convert one or more `unproved`/`unfloored` rows into a real floor or a real prover and lower the pinned ratchet in the same commit. The manifest is where they find their subject and the ratchet is what records that the work happened.
+
+**What it does not catch, priced and accepted.** The population is the join of `tests/must-run.txt` and the registered `*-known-positive` cells, so a gate cell added tomorrow that is named in neither manifest is invisible to this check — exactly the limitation `tests/must-run.txt` already carries, and not a new one. The `min:` rule proves a floor argument is *passed*, not that the tool honours it; that is what the per-gate known-positive is for, which is why a floor without a prover is only half the contract and why both counts are ratcheted separately. And `intrinsic:` is a claim a human made after reading the cited line — it is the one column no tool can re-derive, so it was written for five rows and no more.
+
+**Source.** Implemented on lin-x64, 2026-08-14.
+
+
+<a id="t-lin-10360-rir-bank-keying-has-no-skip-branch"></a>
+
+## T-lin-10360 `rir/bank-keying` has no skip branch, and `ci/registration-stubs` is red on main
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+`rir/bank-keying` and `rir/bank-keying-known-positive` landed with T-lin-10002 inside the `if(MCC_PYTHON3)` chain and were not added to that chain's `else()` branch, which registers every other cell in it as a skip with a reason. `ctest -N` therefore counts two fewer cells on a host with no python3 than on one with it, which is the exact failure `ci/registration-stubs` exists to catch, and it is now red on `main`:
+
+`regstub-lint: CMakeLists.txt:7726: if(MCC_PYTHON3) is gated on MCC_PYTHON3, found by find_program at CMakeLists.txt:3043, and its else branch at line 7937 does not register 'rir/bank-keying', 'rir/bank-keying-known-positive'. Every branch of a capability gate registers the same cells; the ones it cannot run it registers as a skip with a reason, under the same name, so ctest -N counts the same either way`
+
+The fix is two `mcc_skip_test` lines in the `_nopy2_why` list beside the `optbench/*` rows already there. It is filed rather than taken because it is T-lin-10002's residue and its owner may be mid-flight on the same chain; the row is `[S]` because a red `ci/registration-stubs` blocks every session's definition of done, not only win-x64's.
+
+**Found by** the T-lin-10003 rebase: the gate contract's own cell went red first, on `rir/bank-keying-known-positive is a registered known-positive that no gate-contract row claims`. Both rows are now declared in `tests/gate-contract.txt` and the new gate is carried in the `unfloored` ratchet, which is why that pin moved 81 → 82 in `24d6d8db` and not because anything regressed.
+
+**Verification.** `ctest --test-dir cmake-def -R '^ci/registration-stubs$' --output-on-failure`, and `ctest -N` must report the same cell count with and without `MCC_PYTHON3`.
+
+**Source.** Found on lin-x64, 2026-08-14T20:10Z, at 24d6d8db.
