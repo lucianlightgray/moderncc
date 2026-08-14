@@ -531,6 +531,12 @@ static int dwarf_get_section_sym(Section *s) { MCC_TRACE("enter\n");
 #define CV_LF_ARGLIST 0x1201
 #define CV_LF_PROCEDURE 0x1008
 #define CV_LF_POINTER 0x1002
+#define CV_LF_FIELDLIST 0x1203
+#define CV_LF_STRUCTURE 0x1505
+#define CV_LF_MEMBER 0x150d
+#define CV_LF_ULONG 0x8004
+#define CV_PROP_FWDREF 0x80
+#define CV_ACCESS_PUBLIC 0x03
 #define CV_PTR_ATTR_64 0x0000100cu
 #define CV_TYPE_FIRST 0x1000
 
@@ -550,6 +556,8 @@ static CvFn *cv_cur;
 static char *cv_filename;
 static unsigned char *cv_types;
 static unsigned cv_types_len, cv_types_cap, cv_types_next;
+static struct { Sym *s; unsigned idx; } cv_tcache[512];
+static unsigned cv_ntcache;
 
 static void cv_reset(void) { MCC_TRACE("enter\n");
 	int i;
@@ -567,6 +575,7 @@ static void cv_reset(void) { MCC_TRACE("enter\n");
 	cv_types = NULL;
 	cv_types_len = cv_types_cap = 0;
 	cv_types_next = CV_TYPE_FIRST;
+	cv_ntcache = 0;
 }
 
 static void cv_types_put(const void *p, unsigned n) { MCC_TRACE("enter\n");
@@ -625,6 +634,12 @@ static void cv_put_u32(unsigned char *b, unsigned *n, unsigned v) { MCC_TRACE("e
 	b[(*n)++] = (v >> 24) & 0xff;
 }
 
+static void cv_put_numeric(unsigned char *b, unsigned *n, unsigned v) { MCC_TRACE("enter\n");
+	if (v < 0x8000) { MCC_TRACE("br\n"); cv_put_u16(b, n, v); return; }
+	cv_put_u16(b, n, CV_LF_ULONG);
+	cv_put_u32(b, n, v);
+}
+
 static unsigned cv_pointer_type(unsigned referent) { MCC_TRACE("enter\n");
 	unsigned char body[10];
 	unsigned bl = 0;
@@ -634,14 +649,106 @@ static unsigned cv_pointer_type(unsigned referent) { MCC_TRACE("enter\n");
 	return cv_add_record(body, bl);
 }
 
+static unsigned cv_struct_type(CType *tp);
+
 static unsigned cv_type_of(CType *tp) { MCC_TRACE("enter\n");
+	if (tp->t & VT_ARRAY)
+		{ MCC_TRACE("br\n"); return 0; }
 	if ((tp->t & VT_BTYPE) == VT_PTR) { MCC_TRACE("br\n");
 		unsigned ref = cv_type_of(&tp->ref->type);
 		if (ref == 0)
 			{ MCC_TRACE("br\n"); return 0; }
 		return cv_pointer_type(ref);
 	}
+	if ((tp->t & VT_BTYPE) == VT_STRUCT && !IS_UNION(tp->t)) { MCC_TRACE("br\n");
+		return cv_struct_type(tp);
+	}
 	return cv_basic_type(tp);
+}
+
+static unsigned cv_struct_type(CType *tp) { MCC_TRACE("enter\n");
+	Sym *st, *m;
+	unsigned i, fwd, fl, nmem = 0, sz;
+	unsigned char rb[600], *fb;
+	unsigned bl, fcap, fbl, nn;
+	const char *nm;
+	int okmem = 1;
+	if (cv_types_next < CV_TYPE_FIRST)
+		{ MCC_TRACE("br\n"); cv_types_next = CV_TYPE_FIRST; }
+	st = tp->ref;
+	if (!st)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < cv_ntcache; i++)
+		{ MCC_TRACE("br\n"); if (cv_tcache[i].s == st)
+			{ MCC_TRACE("br\n"); return cv_tcache[i].idx; } }
+	nm = (st->v & ~SYM_STRUCT) >= SYM_FIRST_ANOM
+			? "__unnamed" : get_tok_str(st->v, NULL);
+	nn = strlen(nm) + 1;
+	if (nn > sizeof(rb) - 24)
+		{ MCC_TRACE("br\n"); return 0; }
+	bl = 0;
+	cv_put_u16(rb, &bl, CV_LF_STRUCTURE);
+	cv_put_u16(rb, &bl, 0);
+	cv_put_u16(rb, &bl, CV_PROP_FWDREF);
+	cv_put_u32(rb, &bl, 0);
+	cv_put_u32(rb, &bl, 0);
+	cv_put_u32(rb, &bl, 0);
+	cv_put_numeric(rb, &bl, 0);
+	memcpy(rb + bl, nm, nn);
+	bl += nn;
+	fwd = cv_add_record(rb, bl);
+	if (cv_ntcache < 512)
+		{ MCC_TRACE("br\n"); cv_tcache[cv_ntcache].s = st;
+			cv_tcache[cv_ntcache].idx = fwd; cv_ntcache++; }
+	if (st->c < 0)
+		{ MCC_TRACE("br\n"); return fwd; }
+	fcap = 4096;
+	fb = mcc_malloc(fcap);
+	fbl = 0;
+	cv_put_u16(fb, &fbl, CV_LF_FIELDLIST);
+	for (m = st->next; m; m = m->next) { MCC_TRACE("br\n");
+		unsigned mt, mnn;
+		const char *mnm;
+		if (m->type.t & VT_BITFIELD)
+			{ MCC_TRACE("br\n"); okmem = 0; break; }
+		mt = cv_type_of(&m->type);
+		if (mt == 0)
+			{ MCC_TRACE("br\n"); okmem = 0; break; }
+		mnm = (m->v & ~SYM_FIELD) >= SYM_FIRST_ANOM
+				? "" : get_tok_str(m->v, NULL);
+		mnn = strlen(mnm) + 1;
+		if (fbl + 16 + mnn > fcap)
+			{ MCC_TRACE("br\n"); okmem = 0; break; }
+		cv_put_u16(fb, &fbl, CV_LF_MEMBER);
+		cv_put_u16(fb, &fbl, CV_ACCESS_PUBLIC);
+		cv_put_u32(fb, &fbl, mt);
+		cv_put_numeric(fb, &fbl, (unsigned)m->c);
+		memcpy(fb + fbl, mnm, mnn);
+		fbl += mnn;
+		{
+			unsigned p = (4 - ((fbl + 2) & 3)) & 3, k;
+			for (k = 0; k < p; k++)
+				{ MCC_TRACE("br\n"); fb[fbl++] = (unsigned char)(0xf0 + (p - k)); }
+		}
+		nmem++;
+	}
+	if (!okmem)
+		{ MCC_TRACE("br\n"); mcc_free(fb); return fwd; }
+	fl = cv_add_record(fb, fbl);
+	mcc_free(fb);
+	sz = (unsigned)st->c;
+	bl = 0;
+	cv_put_u16(rb, &bl, CV_LF_STRUCTURE);
+	cv_put_u16(rb, &bl, nmem);
+	cv_put_u16(rb, &bl, 0);
+	cv_put_u32(rb, &bl, fl);
+	cv_put_u32(rb, &bl, 0);
+	cv_put_u32(rb, &bl, 0);
+	cv_put_numeric(rb, &bl, sz);
+	memcpy(rb + bl, nm, nn);
+	bl += nn;
+	cv_add_record(rb, bl);
+	return fwd;
 }
 
 static unsigned cv_type_of_func(Sym *fnsym) { MCC_TRACE("enter\n");
