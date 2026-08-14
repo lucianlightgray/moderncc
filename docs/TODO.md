@@ -650,6 +650,14 @@ table*, after N31, N32, N33 and N38.
 | `ci/registration-stubs` | the mingw capability gate registers **8** `pe/*` cells and its two `else()` arms stub only **2**, so 6 vanish from `ctest -N` on any host without mingw | today's Windows CodeView wave |
 | `smoke/divergence` | three new `diverge-masked` categories, unbanked | N29's real-gcc oracle, working as designed |
 
+> **Found independently on both hosts within the same hour, and that is the most useful thing
+> about it.** The Mac's first-ever complete full-suite run (**N40**) surfaced
+> `target-gate-invariant` from the other side, reached the same fix, and got there by a *better*
+> argument: `bind_name` is a `get_tok_str` token string, i.e. a C identifier, so the `'@'` test is
+> defensive on **every** target rather than merely inert on two. Prefer that reading to the
+> short-circuit one below. Two hosts, one commit each, no coordination — which is the strongest
+> evidence yet that this class of red is invisible to reading and obvious to running.
+
 **The `#ifdef` did not need to exist.** `mccjit_bind_name_eq` guards a `!strchr(bind_name, '@')`
 test on `MCC_TARGET_PE`, and the guard is a no-op on both other targets: `leading_underscore` is 0
 on ELF so the `&&` short-circuits before `strchr` ever runs, and a Mach-O C bind name carries no
