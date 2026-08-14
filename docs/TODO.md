@@ -1787,9 +1787,29 @@ an MSL `mem_case()` (still the literal `"the binding-2 case has no Metal arm"` s
 there. **It is no longer the only way to get regions on a Mac, which is the whole point of the
 sequencing advice** — that advice was right and has already been taken.
 
-**Not code, decide first:** item 22 (`_Float16` evaluation format — and note the premise needs
-fixing: mcc does **not** predefine `__FLT_EVAL_METHOD__`, its headers define it, so the "document
-it" arm is written against `runtime/include/{mccdefs,float.h}`. The "no spare `SValue` bit" claim
+**Not code, decide first:** item 22 (`_Float16` evaluation format — ~~and note the premise needs
+fixing: mcc does **not** predefine `__FLT_EVAL_METHOD__`, its headers define it~~ **THAT
+CORRECTION IS ITSELF WRONG, settled 2026-08-14 on arm64/macOS: mcc DOES predefine it, and the
+ranked entry's original wording was right.** Three independent checks on the shipped binary, none
+of them including a header: `#ifdef __FLT_EVAL_METHOD__` takes the true arm; `mcc -dM -E` prints
+`#define __FLT_EVAL_METHOD__ 0`; and preprocessing a bare file replaces the token with `0` while
+an undefined macro beside it passes through verbatim. **Both readings looked true because they
+are the same fact behind a build switch**: with `MCC_CONFIG_PREDEFS=ON` — the default, and what
+this host has — `src/mccpp.c` `#include`s the generated `mccdefs_.h` and injects it as
+predefinitions compiled into the compiler, and with it OFF mcc loads `<mccdefs.h>` from the mccdir
+at runtime instead. So the *conclusion* survives and the *reason* does not: the edit really is
+against `runtime/include/{mccdefs,float.h}`, because that is the source the predef blob is
+generated from, not because those are headers a user includes.
+
+**And the choice is self-consistent, which is what the "decide" turns on.** `__FLT_EVAL_METHOD__ 0`
+promises evaluation at the range and precision of the type, and that is what mcc does. Measured
+here on the row's own case: `2.25f16*255.0f16+0.5f16` gives mcc **`607d`**, gcc-16 default
+**`607c`**, and gcc-16 `-fexcess-precision=16` **`607d`** — mcc reproduces gcc bit-for-bit under
+the flag that selects the format mcc advertises. So the decision is not "fix a defect", it is
+"keep a documented choice or adopt gcc's default", with the evidence that mcc currently implements
+what it declares.
+
+The "document it" arm is written against `runtime/include/{mccdefs,float.h}`. The "no spare `SValue` bit" claim
 is true at bit level — `r` sums to exactly `0xFFFF` and `CType.t` uses all 32 — but a new *field*
 fits in existing padding; what makes it costly is that `SValue` is bulk-`memcpy`'d as opaque
 state in eight places, so a new field joins the RIR replay record), sweep row 29 (the
