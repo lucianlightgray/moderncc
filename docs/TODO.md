@@ -790,11 +790,31 @@ included.
 `~/Projects/gcc`. Until it was, `optlevel/torture-differential` skipped silently — a red recorded
 from another tree is not a red you can watch from this one until its prerequisite exists locally.
 
-### The clean full-suite number for x86_64-linux — 2026-08-13, and it is 3 of 9937
+### The clean full-suite number for x86_64-linux — 2026-08-14, and it is 0 of 9995
+
+> **Superseding the 2026-08-13 figure below.** `ctest -j8` over `cmake-def` on 2026-08-14:
+> **9995 cells, 3 reported failures, and none of them survives investigation** — so the
+> honest number is **zero real failures**, the first time this host has had one.
+>
+> - `rir-coverage-census` — real, and mine: adding one `tests/exec` file grew the `wide`
+>   corpus from 386 to 387. **Fixed and re-banked** (two lines of manifest, nine inventory
+>   rows, no floor moved), and it cost a genuine tool bug on the way — `--update-bank` was
+>   host-blind for the per-format `failed` floor. See N41's tail.
+> - `run-tier/x86_64-win32` and `run-tier/i386-win32` — **wine contention, not regressions**,
+>   which is what note 7 in the traps list predicts for these two by name. Re-run without
+>   the load: `i386-win32` passes, and `x86_64-win32` passes in **5.28 s** against the
+>   **300.81 s** timeout it hit under `-j8`. A 57× spread between contended and quiet is the
+>   signature, not the verdict.
+>
+> **The old warning still applies to the reader, in a new form**: three reds in a `-j8` run,
+> two of which are the machine and not the code. Quote 9995/0, and re-run a wine cell alone
+> before believing it.
+
+### The previous clean number — 2026-08-13, 3 of 9937
 
 > This file has said for days that *"a clean full-suite number for this host does not yet
 > exist — do not quote one."* It exists now. `ctest -j6` over `cmake-def`: **9937 cells, 3
-> failures**, and all three are closed below. Quote this one.
+> failures**, and all three are closed below.
 
 **None of the three was in any table in this file, and none was a compiler defect.** That is the
 fourth and fifth time in three days a red was found by *running the family rather than reading the
