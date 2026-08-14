@@ -41291,3 +41291,22 @@ the suite depends on it now.
 **Verification.** `ctest --test-dir cmake-def -R '^slice/cref-oracle-gcc-c-torture-execute$' --output-on-failure` on a host whose GPU is idle; expect no stalled programs. Confirm quiet first with the two commands above.
 
 **Source.** Measured on lin-x64, 2026-08-14T18:30Z, at d298af58.
+
+
+<a id="m-todo-0011a-the-serial-flagsweep-run-settles-the-118"></a>
+
+## M-TODO-0011a The serial flagsweep run settles the 118 (not the 119th) — 2026-08-14
+
+Continues M-TODO-0011. Run 4 left the N42 fix (`d8fd6185`) verified only on a representative cell, and hedged the full-suite count at *"118 of 119 fixed, the remainder unmeasured"* because the two runs taken straight after it (4 of 201, 8 of 119) were void N26 contention artefacts. The serial, uncontended run that hedge called for has now landed.
+
+**201 of 201, zero failures, zero timeouts.** `2026-08-14 06:20→08:13 EDT`. Serial in fact and not merely in intent: ctest's own accounting reports `flagsweep = 6757.06 sec*proc` against 6780 s of wall clock, a ratio of 1.00 — nothing but the cell in front of it was ever running. The families: 118 `flagsweep-exec/*`, the 4 `flagsweep/*` cells (`accept`, `cover3-verify`, `dev-gate`, `dev-gate-known-positive`), and the 78 `flagsweep-cover` rows skipping as the opt-in they are. Slowest cell 1:50 (`reassoc-assoc`).
+
+**The N42 fix is observed, not inferred.** All 118 exec cells print the skip line that names the host — *"skipping types/int128 -- goldens.h says not applicable to arm64/Darwin"* — so the evidence is 118 instances, not the one representative cell run 4 had to lean on. This retires the *"remainder unmeasured"* hedge for the 118.
+
+**It settles the 118, not the 119th.** `selfhost-jit` is outside the `flagsweep` label and was not in this run; its timeout is still unmeasured since run 4.
+
+**The two overlapping runs stay void.** 4 of 201 and 8 of 119 were both artefacts of the contention — a `-j4` `^flagsweep` run still going when a `-j4` `^flagsweep-exec/` run started, eight concurrent cells of the self-contending family at load average 16, N26 reproduced by the measurer. The serial run says the true count at that code was zero, and the two runs disagreeing on identical code was the tell.
+
+**Verification.** `ctest --test-dir cmake-macos -R '^flagsweep' -j1 --output-on-failure`; expect 201 of 201 and every `flagsweep-exec` cell printing the `arm64/Darwin` skip line. The `-j1` is load-bearing per N26 — a contended run does not measure the fix.
+
+**Source.** Measured on mac-arm64, 2026-08-14T19:29Z; fix at `d8fd6185`.
