@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T20:56Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:15Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10361   | 2026-08-14T20:52Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50001   | 2026-08-14T21:10Z |
 
@@ -19,6 +19,9 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
+- [ ] T-lin-10009 [S] Nested member designators `{.a.a=1, .a.b=2}`
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T21:15Z
+      REF: DETAILS.md#t-lin-10009-nested-member-designators-aa1-ab2 | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
@@ -45,9 +48,6 @@
 - [ ] T-lin-10008 [S] Parse `_Complex _Float16` (9 cells)
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10008-parse-complex-float16-9-cells | DEPS: —
-- [ ] T-lin-10009 [S] Nested member designators `{.a.a=1, .a.b=2}`
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10009-nested-member-designators-aa1-ab2 | DEPS: —
 - [ ] T-lin-10010 [S] Implement reversed `scalar_storage_order`; refusing it is the safe interim, not the feature
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10010-implement-reversed-scalar-storage-order | DEPS: —
