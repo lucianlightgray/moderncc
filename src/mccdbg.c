@@ -527,6 +527,8 @@ static int dwarf_get_section_sym(Section *s) { MCC_TRACE("enter\n");
 #define CV_S_END 0x0006
 #define CV_S_GPROC32 0x1110
 #define CV_S_COMPILE3 0x113C
+#define CV_S_LDATA32 0x110c
+#define CV_S_GDATA32 0x110d
 #define CV_LINE_STMT 0x80000000u
 #define CV_LF_ARGLIST 0x1201
 #define CV_LF_PROCEDURE 0x1008
@@ -564,6 +566,9 @@ static unsigned char *cv_types;
 static unsigned cv_types_len, cv_types_cap, cv_types_next;
 static struct { Sym *s; unsigned idx; } cv_tcache[512];
 static unsigned cv_ntcache;
+typedef struct CvVar { int sym; unsigned type_index; char *name; int is_global; } CvVar;
+static CvVar *cv_vars;
+static int cv_nvar, cv_maxvar;
 
 static void cv_reset(void) { MCC_TRACE("enter\n");
 	int i;
@@ -582,6 +587,11 @@ static void cv_reset(void) { MCC_TRACE("enter\n");
 	cv_types_len = cv_types_cap = 0;
 	cv_types_next = CV_TYPE_FIRST;
 	cv_ntcache = 0;
+	for (i = 0; i < cv_nvar; i++)
+		{ MCC_TRACE("br\n"); mcc_free(cv_vars[i].name); }
+	mcc_free(cv_vars);
+	cv_vars = NULL;
+	cv_nvar = cv_maxvar = 0;
 }
 
 static void cv_types_put(const void *p, unsigned n) { MCC_TRACE("enter\n");
@@ -953,13 +963,30 @@ static void cv_sub_close(Section *s, unsigned lenpos) { MCC_TRACE("enter\n");
 	cv_align(s);
 }
 
+static void mcc_cv_extern_sym(MCCState *s1, Sym *sym, int sym_bind) { MCC_TRACE("enter\n");
+	CvVar *v;
+	unsigned ti;
+	if (!s1->cv_debug)
+		{ MCC_TRACE("br\n"); return; }
+	ti = cv_type_of(&sym->type);
+	if (cv_nvar >= cv_maxvar) { MCC_TRACE("br\n");
+		cv_maxvar = cv_maxvar ? cv_maxvar * 2 : 16;
+		cv_vars = mcc_realloc(cv_vars, cv_maxvar * sizeof *cv_vars);
+	}
+	v = &cv_vars[cv_nvar++];
+	v->sym = sym->c;
+	v->type_index = ti;
+	v->name = mcc_strdup(get_tok_str(sym->v, NULL));
+	v->is_global = (sym_bind == STB_GLOBAL);
+}
+
 ST_FUNC void mcc_cv_emit(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *cvs;
 	unsigned lenpos, sub, fname_off, i, j;
 	/* CodeView .debug$S is only meaningful in a COFF object that a real linker
 	   (lld-link / link.exe) turns into a PDB; mcc's own linker does not build
 	   PDBs and cannot apply the SECTION reloc, so skip every other output. */
-	if (!s1->cv_debug || cv_nfn == 0 ||
+	if (!s1->cv_debug || (cv_nfn == 0 && cv_nvar == 0) ||
 			s1->output_type != MCC_OUTPUT_OBJ ||
 			s1->output_format != MCC_OUTPUT_FORMAT_COFF)
 		{ MCC_TRACE("br\n"); cv_reset(); return; }
@@ -1058,6 +1085,23 @@ ST_FUNC void mcc_cv_emit(MCCState *s1) { MCC_TRACE("enter\n");
 		/* S_END */
 		write16le(section_ptr_add(cvs, 2), 2);
 		write16le(section_ptr_add(cvs, 2), CV_S_END);
+	}
+	for (i = 0; i < (unsigned)cv_nvar; i++) { MCC_TRACE("br\n");
+		CvVar *gv = &cv_vars[i];
+		unsigned rl, goff, gseg, nn = strlen(gv->name) + 1;
+		rl = cvs->data_offset;
+		write16le(section_ptr_add(cvs, 2), 0);
+		write16le(section_ptr_add(cvs, 2),
+							gv->is_global ? CV_S_GDATA32 : CV_S_LDATA32);
+		write32le(section_ptr_add(cvs, 4), gv->type_index);
+		goff = cvs->data_offset;
+		write32le(section_ptr_add(cvs, 4), 0);
+		gseg = cvs->data_offset;
+		write16le(section_ptr_add(cvs, 2), 0);
+		memcpy(section_ptr_add(cvs, nn), gv->name, nn);
+		write16le(cvs->data + rl, cvs->data_offset - rl - 2);
+		put_elf_reloc(symtab_section, cvs, goff, R_X86_64_TPOFF32, gv->sym);
+		put_elf_reloc(symtab_section, cvs, gseg, R_X86_64_16, gv->sym);
 	}
 	cv_sub_close(cvs, lenpos);
 
@@ -2862,6 +2906,10 @@ ST_FUNC void mcc_debug_extern_sym(MCCState *s1, Sym *sym, int sh_num, int sym_bi
 
 	if (sym_type == STT_FUNC || sym->v >= SYM_FIRST_ANOM)
 		{ MCC_TRACE("br\n"); return; }
+#ifdef MCC_TARGET_PE
+	if (s1->cv_debug)
+		{ MCC_TRACE("br\n"); mcc_cv_extern_sym(s1, sym, sym_bind); }
+#endif
 	if (s1->dwarf) { MCC_TRACE("br\n");
 		int debug_type;
 
