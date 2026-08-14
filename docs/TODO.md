@@ -819,7 +819,10 @@ from another tree is not a red you can watch from this one until its prerequisit
 
 > **Run full suites at `-j32` on this host** (32 cores), as of 2026-08-14.
 >
-> **THE NUMBER: `ctest -j32` over `cmake-def`, 2026-08-14 — 10021 cells, ZERO failures.**
+> **THE NUMBER: `ctest -j32` over `cmake-def`, 2026-08-14 — 10025 cells, ZERO failures**,
+> re-confirmed after the const-parameter, register-decay, scalar_storage_order, loopdep and
+> `_BitInt` work landed. (The same run at 10021 cells earlier the same day, before those
+> four new diagnostic cells existed.)
 > Nothing else running on the box. This supersedes both figures below, and it is the first
 > genuinely clean full suite this host has produced: not "three reds that were explained",
 > but no reds. It includes the three cells the load table calls contention-sensitive —
