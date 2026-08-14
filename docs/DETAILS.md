@@ -41369,3 +41369,18 @@ Continues M-TODO-0011. Run 4 left the N42 fix (`d8fd6185`) verified only on a re
 **Verification.** `ctest --test-dir cmake-macos -R '^flagsweep' -j1 --output-on-failure`; expect 201 of 201 and every `flagsweep-exec` cell printing the `arm64/Darwin` skip line. The `-j1` is load-bearing per N26 — a contended run does not measure the fix.
 
 **Source.** Measured on mac-arm64, 2026-08-14T19:29Z; fix at `d8fd6185`.
+
+
+<a id="t-lin-10091-resolved-optfire-diagnostics-and-ident-shift-green"></a>
+
+## T-lin-10091 resolved — the five swallowed paths are closed, and ident_shift is green on this host
+
+Resolves [T-lin-10091](#t-lin-10091-mac-arm64-capture-the-fail-ident). The item's actionable half was the class-fix; the diagnostic half turned out to have nothing to capture on this host.
+
+**The five discarding paths, closed at `2adf3530`.** `optfire.sh` sent compiler stderr to the counter `grep` in three `--stats` compiles (counter, level, cdelta modes) and dropped the captured runtime output on two program-run paths, so a build-failure mode printed only *"counter absent"* or *"run failed"* with no reason — the whole cost the item names. Each `--stats` compile now writes to `$WORK/$NAME[.$lvl|.$1].stats` and `ofdiag`s it on failure; the two run paths echo the captured output. The explicit compile-failure check also closes a latent level-mode hole where a failed compile scored `got=0` and *passed* an `off` level. Eight `FAIL` message sites, five now reason-bearing.
+
+**Verification.** 279 of 279 optfire cells green — native plus the `arm64`/`i386`/`riscv64` cross labels — 6 skipped by design (`ctest --test-dir cmake-macos -R optfire`). A forced compile failure now prints `--- compiler output ---` with the diagnostic (`error: 'this' undeclared`) instead of a bare verdict.
+
+**ident_shift is not reproducible as a failure here.** On native arm64 at this HEAD, `tests/optfire/src/ident_shift.c` returns `ident_shift=178` at every level `-O0` through `-O12` with `-fopt-cycle MCC_DEV=1`, and both cells pass — native `optfire/ident_shift` (#8584) and cross `optfire-arm64/ident_shift` (#8417). The `-O4` differ cell the item points at is green. So the nightly's `FAIL ident_shift:` was since-fixed or environmental, not a live codegen bug on this host; the class-fix guarantees that if it recurs, the cell separates *DID NOT FIRE* from *output differs* from *build/run failed* with the compiler's own words attached — which is what the item wanted the line for.
+
+**Source.** mac-arm64, 2026-08-14T19:50Z, at `2adf3530`.
