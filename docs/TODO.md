@@ -652,6 +652,29 @@ on x86_64**, so the golden did not move. `^exec` stays 8023 of 8023 and the qemu
 > a golden that had been wrong for every non-x86_64 target for as long as it existed, invisible
 > because nothing executed there. A test that cannot run on a target cannot be wrong about it.
 
+**`ast/o0-baseline` now measures 11 of 11 keys against a floor of 7** (`o0_ab: measurable --
+11/11 key(s), floor 7; unmeasurable: (none)`), and every key reports `unfaithful=0 diverge=0
+error=0 OK`. **The measurement gap the row existed for is closed.** The cell is nonetheless red,
+for a different reason: the banked digests are from **2026-08-12**, and **38 commits have touched
+`src/` since**, from three sessions. That is bank staleness across 11 targets, and attributing it
+needs a bisect rather than a re-bank — `--update-bank` here would erase a day of unattributed
+movement on every target at once, which is the thing this file most often tells you not to do.
+**Left red deliberately, with the reason stated, rather than made green.**
+
+> **A self-inflicted anti-vacuity failure, recorded because it is the most instructive thing in
+> this section.** While checking whether the N18 storeval promotion had moved `-O0` objects on
+> arm64, three runs in a row reported `DIFFER` — including a control comparing the compiler
+> against *itself*, which read as non-determinism in the cross backend. All of it was false. The
+> cross compile needs a sysroot include path for `stdio.h`, every compile had failed, and
+> `cmp -s` on two files that do not exist reports "differ". **A comparison that compared nothing
+> reported a difference, and it was believed twice** — once as "the knobs move `-O0` output" and
+> once as "the arm64 compiler is non-deterministic", and a correction to the N18 row was nearly
+> written on the strength of it. Adding `[ -s "$obj" ]` to the runner turned all three results
+> over: determinism **identical**, `-fno-storeval-rot` **identical**, `-fno-storeval-calllast`
+> **identical**. **N18's byte-neutrality claim holds on arm64 as well as x86_64.** The rule this
+> file states for cells applies to hand-run experiments too: *check that the measurement measured
+> something before believing what it says.*
+
 **One prerequisite this host is still missing:**
 
 - `MCC_XSUITE_LLVMTS` — `jit/xoracle-coverage` skips rather than failing now, but `--min-cross 400`
