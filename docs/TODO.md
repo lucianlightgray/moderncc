@@ -7734,9 +7734,35 @@ suite was looking for.
 > written while the self-compile was broken had to be reverted — `--update-bank` does not
 > refuse to bank a corpus that just lost three thousand bodies.
 
-**So the remaining route is the one this row always said**: per-target frame asm, saving and
-restoring the callee-saved set directly. What is new is that the cheap header-level route is
-now closed by name, with the reason, so nobody has to rediscover it.
+**The remaining route was per-target frame asm, and it is now taken for x86_64 SysV.**
+`runtime/lib/builtin.c` defines `__mcc_setjmp`/`__mcc_longjmp` as a top-level `__asm__`
+block — not a C function with inline asm, because a function that returns twice must have
+no compiler-generated prologue or epilogue; the return address read off the stack *is* the
+mechanism. They save the full SysV callee-saved set (`rbx`, `rbp`, `r12`–`r15`), the stack
+pointer as of the return, and the return address, and `__mcc_longjmp` turns a 0 value into
+1 as C requires. The names are this project's own, so nothing can collide with
+`<setjmp.h>`, which is what killed the header route. The slot indirection stays: `buf[0]`
+holds one pointer into a 64-byte pool entry, so gcc's documented `void *buf[5]` is big
+enough for the *stronger* contract.
+
+**The oracle is `_setjmp`, not gcc's builtin** — gcc's hangs or refuses to build the same
+programs, which is a fact about its restricted semantics rather than about mcc. The decisive
+test runs both in one program: six long-lived locals the optimizer wants in callee-saved
+registers, jumped through `__builtin_setjmp` and through `_setjmp`, results compared.
+**Identical at `-O0`, `-O2` and `-O3`.** Also asserted: 0 then the value, a 7-frame unwind
+with six live locals intact, `longjmp(buf, 0)` surfacing as 1, and buffer reuse — all
+mutation-checked. Coverage is in `builtin_mcc_ext.c` under `#ifdef __MCC__`, so no reference
+is lost to it.
+
+**Not done elsewhere**: i386, arm, arm64 and riscv64 have no such block, so the builtins are
+simply absent there rather than wrong. Each is the same twenty lines against its own ABI.
+
+> **The trap that cost the most time here, three separate times: `runtime/include/mccdefs.h`
+> is baked into the compiler at build time, and `cmake-cross` has its own copy.** A header
+> change is invisible until *that* tree is rebuilt — which first read as "the two trees'
+> compilers disagree on this file", then as a bank that had to be reverted. And twice the
+> evidence for a wrong conclusion was `cmp` on a file a failed compile never produced. Guard
+> every comparison with an existence test; `cmp -s` on two missing files reports "differ".
 
 > Moved to [`docs/ARCHIVED.md`](ARCHIVED.md) 2026-08-10, validated complete against the tree: *Confirmations for the clusters the archive had ranked*.
 

@@ -467,3 +467,84 @@ int __mcc_cpu_supports(const char *name) {
 }
 #endif
 
+#if defined __x86_64__ && !defined _WIN32
+/* __builtin_setjmp / __builtin_longjmp, x86_64 SysV.
+ *
+ * The header-macro route is closed: the predefs cannot declare _setjmp without
+ * colliding with glibc's own prototype the moment a TU includes <setjmp.h>,
+ * and src/mcc.c does. So the save and restore are written here, under names
+ * that belong to this project and cannot clash with anything.
+ *
+ * gcc's documented buffer is `void *buf[5]` and its own implementation keeps
+ * only frame pointer, stack pointer and target -- restricted semantics that
+ * need the receiving function to be compiled knowing callee-saved registers
+ * are NOT restored. mcc has no such support, so it saves the full callee-saved
+ * set instead and buf[0] caches a pointer to that larger slot. One word in the
+ * documented buffer, and the stronger guarantee.
+ *
+ * Written as a top-level __asm__ rather than a C function with inline asm,
+ * because a function that returns twice must have no compiler-generated
+ * prologue or epilogue -- the return address this reads off the stack is the
+ * whole mechanism.
+ *
+ * Saved, per the SysV ABI: rbx, rbp, r12-r15, the stack pointer as it will be
+ * after the return, and the return address. Not the x87 control word or the
+ * signal mask -- neither does _setjmp. */
+
+__asm__(
+	".text\n"
+	".globl __mcc_setjmp\n"
+	".type __mcc_setjmp,@function\n"
+	"__mcc_setjmp:\n"
+	"  movq (%rsp), %rax\n"          /* return address */
+	"  movq %rax, 0(%rdi)\n"
+	"  leaq 8(%rsp), %rax\n"         /* rsp as of the return */
+	"  movq %rax, 8(%rdi)\n"
+	"  movq %rbx, 16(%rdi)\n"
+	"  movq %rbp, 24(%rdi)\n"
+	"  movq %r12, 32(%rdi)\n"
+	"  movq %r13, 40(%rdi)\n"
+	"  movq %r14, 48(%rdi)\n"
+	"  movq %r15, 56(%rdi)\n"
+	"  xorl %eax, %eax\n"
+	"  ret\n"
+	".size __mcc_setjmp,.-__mcc_setjmp\n"
+	".globl __mcc_longjmp\n"
+	".type __mcc_longjmp,@function\n"
+	"__mcc_longjmp:\n"
+	"  movl %esi, %eax\n"            /* the value setjmp will return */
+	"  testl %eax, %eax\n"
+	"  jne 1f\n"
+	"  movl $1, %eax\n"              /* longjmp(buf, 0) must return 1 */
+	"1:\n"
+	"  movq 16(%rdi), %rbx\n"
+	"  movq 24(%rdi), %rbp\n"
+	"  movq 32(%rdi), %r12\n"
+	"  movq 40(%rdi), %r13\n"
+	"  movq 48(%rdi), %r14\n"
+	"  movq 56(%rdi), %r15\n"
+	"  movq 8(%rdi), %rsp\n"
+	"  jmp *0(%rdi)\n"
+	".size __mcc_longjmp,.-__mcc_longjmp\n");
+
+/* The slots are never freed: a slot is 64 bytes, the number of distinct
+ * __builtin_setjmp buffers in a program is small and static in practice, and
+ * freeing one while a longjmp target is still live would be the worse bug. */
+#define MCC_SJ_SLOTS 64
+
+static struct {
+	void *w[8];
+} __mcc_sj_pool[MCC_SJ_SLOTS];
+static int __mcc_sj_used;
+
+void *__mcc_sj_slot(void **buf) {
+	if (!buf)
+		return 0;
+	if (!buf[0]) {
+		if (__mcc_sj_used >= MCC_SJ_SLOTS)
+			return 0;
+		buf[0] = __mcc_sj_pool[__mcc_sj_used++].w;
+	}
+	return buf[0];
+}
+#endif

@@ -6668,6 +6668,9 @@ wide	elf	tests/exec/features_c99_c11/builtin_bitops_fold.c	main	tests/exec/featu
 wide	elf	tests/exec/features_c99_c11/builtin_bswap.c	main	tests/exec/features_c99_c11/builtin_bswap.c	0000
 wide	elf	tests/exec/features_c99_c11/builtin_libm_alias.c	main	tests/exec/features_c99_c11/builtin_libm_alias.c	0000
 wide	elf	tests/exec/features_c99_c11/builtin_mcc_ext.c	main	tests/exec/features_c99_c11/builtin_mcc_ext.c	0000
+wide	elf	tests/exec/features_c99_c11/builtin_mcc_ext.c	sj_regs	tests/exec/features_c99_c11/builtin_mcc_ext.c	0000
+wide	elf	tests/exec/features_c99_c11/builtin_mcc_ext.c	sj_unwind	tests/exec/features_c99_c11/builtin_mcc_ext.c	0000
+wide	elf	tests/exec/features_c99_c11/builtin_mcc_ext.c	sj_work	tests/exec/features_c99_c11/builtin_mcc_ext.c	0000
 wide	elf	tests/exec/features_c99_c11/builtin_overflow.c	main	tests/exec/features_c99_c11/builtin_overflow.c	0000
 wide	elf	tests/exec/features_c99_c11/builtins.c	main	tests/exec/features_c99_c11/builtins.c	0000
 wide	elf	tests/exec/features_c99_c11/c11_complex_const_fold.c	eq	tests/exec/features_c99_c11/c11_complex_const_fold.c	0000

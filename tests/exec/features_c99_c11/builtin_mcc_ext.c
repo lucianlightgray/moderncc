@@ -15,6 +15,12 @@
  *                           errors on an unknown one, so the negative cases --
  *                           which are the interesting ones -- cannot be
  *                           written in a program gcc must also build.
+ *   __builtin_setjmp        gcc's has restricted semantics needing compiler
+ *                           support; the same program hangs or fails to build
+ *                           under gcc. mcc implements the stronger C setjmp
+ *                           contract, so the oracle is _setjmp, not gcc's
+ *                           builtin -- and the equivalence is asserted below
+ *                           by running both in the same program.
  */
 
 extern int printf(const char *, ...);
@@ -27,6 +33,39 @@ static int fails;
 			fails++;                              \
 		}                                       \
 	} while (0)
+
+#if defined __MCC__ && defined __x86_64__
+extern int _setjmp(void *);
+extern void _longjmp(void *, int);
+static int sj_reached, sj_sink;
+static void sj_unwind(int n, void **buf) {
+	if (n == 0) {
+		sj_reached = 1;
+		__builtin_longjmp(buf, 1);
+	}
+	sj_unwind(n - 1, buf);
+}
+static int sj_work(int x) { sj_sink += x; return x * 3; }
+
+/* Six long-lived locals the optimizer wants in callee-saved registers, which
+ * is precisely what the save/restore exists for. Run once through
+ * __builtin_setjmp and once through the platform's _setjmp: the two must agree
+ * exactly, which is the real assertion -- gcc's builtin is not the oracle
+ * here, C setjmp semantics is. */
+static long sj_regs(int use_builtin, void **bb, void *rawbuf) {
+	int p = sj_work(1), q = sj_work(2), r = sj_work(3);
+	int s = sj_work(4), t = sj_work(5), u = sj_work(6);
+	int jr = use_builtin ? __builtin_setjmp(bb) : _setjmp(rawbuf);
+	if (jr == 0) {
+		if (use_builtin)
+			__builtin_longjmp(bb, 7);
+		else
+			_longjmp(rawbuf, 7);
+	}
+	return (long)jr * 1000000 + p + q * 10 + r * 100 + s * 1000 + t * 10000
+				 + u * 100000;
+}
+#endif
 
 int main(void) {
 #ifdef __MCC__
@@ -77,6 +116,47 @@ int main(void) {
 			CK(__builtin_cpu_supports("avx2") != 0);
 		/* Cached after the first CPUID; a stale cache would show up here. */
 		CK(__builtin_cpu_supports("sse2") == __builtin_cpu_supports("sse2"));
+	}
+#endif
+
+#if defined __x86_64__
+	/* setjmp/longjmp: 0 on the direct call, the value on the second return,
+	 * locals surviving a multi-frame unwind, longjmp(buf, 0) surfacing as 1,
+	 * a reusable buffer, and agreement with _setjmp on callee-saved state. */
+	{
+		static void *sjb[5];
+		volatile int a = 1, b = 2;
+		int sr = __builtin_setjmp(sjb);
+		if (sr == 0) {
+			a = 10;
+			b = 20;
+			sj_unwind(4, sjb);
+			CK(0);
+		}
+		CK(sr == 1);
+		CK(a == 10 && b == 20);
+		CK(sj_reached == 1);
+	}
+	{
+		static void *sjb0[5];
+		int q = __builtin_setjmp(sjb0);
+		if (q == 0)
+			__builtin_longjmp(sjb0, 0);
+		CK(q == 1);          /* longjmp(buf, 0) must return 1 */
+	}
+	{
+		static void *sjb2[5];
+		int n = 0;
+		if (__builtin_setjmp(sjb2) == 0) {
+			n = 1;
+			__builtin_longjmp(sjb2, 1);
+		}
+		CK(n == 1);
+	}
+	{
+		static void *bb[5];
+		static char raw[512] __attribute__((aligned(16)));
+		CK(sj_regs(1, bb, raw) == sj_regs(0, bb, raw));
 	}
 #endif
 

@@ -1111,28 +1111,27 @@
 	#define __builtin_cpu_supports(name) __mcc_cpu_supports(name)
 	#endif
 
-	/* NO __builtin_setjmp / __builtin_longjmp here, and the reason is worth
-	 * keeping so the next attempt does not repeat it.
+	/* __builtin_setjmp / __builtin_longjmp, x86_64 SysV only for now.
 	 *
-	 * The buffer gcc documents is `void *buf[5]` -- too small for a jmp_buf,
-	 * but big enough to hold a POINTER to one, so routing through the
-	 * platform's _setjmp/_longjmp looks like a clean way to get the stronger C
-	 * setjmp contract without any target code. It works, and it was verified
-	 * working: 0 on the direct call, the value on the second return, six live
-	 * locals surviving a 7-frame unwind, buffer reuse, identical at -O0 through
-	 * -O3, and matching gcc and clang when they are given the same program
-	 * written against _setjmp directly.
+	 * The obvious header-level route is closed and the note is kept because it
+	 * is not obvious that it is: the predefs cannot declare _setjmp, because
+	 * glibc's <setjmp.h> declares `int _setjmp(struct __jmp_buf_tag[1])` and
+	 * any predef form -- `void *`, or even prototype-less -- is an
+	 * incompatible redefinition the moment a TU includes that header, which
+	 * src/mcc.c does. So the save and restore live in runtime/lib/builtin.c
+	 * under names that cannot clash, and this is only the plumbing.
 	 *
-	 * It is still not usable, because the predefs cannot DECLARE _setjmp.
-	 * glibc's <setjmp.h> declares `int _setjmp(struct __jmp_buf_tag[1])`, and
-	 * any predef declaration -- `void *`, or even a prototype-less
-	 * `int _setjmp()` -- is an incompatible redefinition the moment a TU
-	 * includes that header. That is not a corner case: src/mcc.c includes it,
-	 * so the self-compile breaks, which is how this was caught (the wide census
-	 * dropped from 4770 bodies to 1533 -- exactly src/mcc.c's contribution).
-	 *
-	 * So the remaining route really is the one docs/TODO.md says: per-target
-	 * frame asm, saving and restoring the callee-saved set directly. */
+	 * The slot indirection is what makes gcc's `void *buf[5]` big enough: it
+	 * holds one pointer to a full callee-saved-set slot, which buys the
+	 * stronger C setjmp contract rather than gcc's restricted three-word one. */
+	#if defined __x86_64__ && !defined _WIN32
+	extern int __mcc_setjmp(void *);
+	extern void __mcc_longjmp(void *, int);
+	extern void *__mcc_sj_slot(void **);
+	#define __builtin_setjmp(buf) __mcc_setjmp(__mcc_sj_slot((void **)(buf)))
+	#define __builtin_longjmp(buf, val) \
+	__mcc_longjmp(__mcc_sj_slot((void **)(buf)), (val))
+	#endif
 
 	/* The DWARF register numbers an unwinder writes the exception object and
 	 * the selector into before __builtin_eh_return. Pure ABI constants, so
