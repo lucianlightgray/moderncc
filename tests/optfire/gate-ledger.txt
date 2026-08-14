@@ -1,0 +1,75 @@
+# Gates that demonstrably do something at -O1, banked by tools/gate-ledger.sh.
+#
+# One line per gate that changed either the recorded AST or the emitted object
+# somewhere in tests/exec + tests/diff/full_language.c, with run-to-run noise
+# subtracted by a control cell. Regenerate with:
+#     MCC=<build>/mcc sh tools/gate-ledger.sh
+#
+# The ratchet is one-directional: a banked gate that stops doing anything
+# fails, because a gate that silently stops firing is how an optimization
+# gets deleted by accident. A gate that starts firing does not fail -- it is
+# reported, and the bank should then be re-taken.
+#
+# Dev-gated rows are measured under MCC_DEV=1. Without it the compiler
+# REFUSES -f<devgate> outright, and this ledger used to score that
+# whole-corpus compile failure as the twelve loudest FIRES on the board.
+#
+# class gate
+OBJONLY bfold-minmax
+OBJONLY bfold-round
+OBJONLY bfold-sign
+OBJONLY bfold-sqrt
+OBJONLY builtin-copysign
+OBJONLY builtin-math
+OBJONLY builtin-math-errno
+OBJONLY builtin-math-fabs
+OBJONLY builtin-round
+FIRES chain-store
+OBJONLY divmagic
+OBJONLY ident-arith
+OBJONLY ident-bit
+OBJONLY ident-conv
+OBJONLY ident-rel
+OBJONLY ident-urange
+OBJONLY if-conversion
+OBJONLY if-conversion-abs
+OBJONLY inline
+OBJONLY inline-functions
+OBJONLY ivopts
+OBJONLY ivopts-ptr
+OBJONLY jit-splice
+OBJONLY loop-block
+OBJONLY loop-fusion
+OBJONLY loop-interchange
+OBJONLY merge-constants
+OBJONLY narrow
+OBJONLY opt-cycle
+OBJONLY opt-roi
+OBJONLY opt-slice
+OBJONLY promote-locals
+OBJONLY reemit-templates
+FIRES reg-disp
+OBJONLY replay-cmp-materialize
+OBJONLY replay-fallback
+OBJONLY replay-indirect-call
+OBJONLY replay-landor-invert
+OBJONLY replay-loopcond-store
+OBJONLY replay-materialize
+OBJONLY replay-while-comma
+OBJONLY sethi-ullman
+OBJONLY storeval-calllast
+OBJONLY storeval-callstore
+OBJONLY storeval-rot
+OBJONLY tree-ccp-iterate
+OBJONLY tree-const-load
+OBJONLY tree-copy-prop
+OBJONLY tree-dse
+OBJONLY tree-loop-im
+OBJONLY tree-pre
+OBJONLY tree-reassoc
+OBJONLY tree-sra
+OBJONLY tree-sroa
+OBJONLY tree-switch-conversion
+OBJONLY tree-vrp
+FIRES trunc32
+OBJONLY zero-initialized-in-bss

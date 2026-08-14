@@ -8919,6 +8919,26 @@ else()
         "the strategy fire ledger runs the exec corpus natively (native ELF host only)")
 endif()
 
+# tools/gate-ledger.sh does the same job one level down: for every MCC_OPT_ROW
+# in src/mccopt.h it toggles that one gate across the exec corpus and records
+# whether the recorded AST moved, only the object moved, or nothing moved. Also
+# registered nowhere until now. The bank is the set of gates that still do
+# something; a banked gate going dark fails, a new one lighting up is reported.
+if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR
+   AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_TARGETOS STREQUAL "Darwin")
+    add_test(NAME "optfire/gate-ledger"
+        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/gate-ledger-check.sh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/gate-ledger.sh"
+                "${CMAKE_BINARY_DIR}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/gate-ledger.txt"
+                "${CMAKE_BINARY_DIR}/gate-ledger")
+    set_tests_properties("optfire/gate-ledger" PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 1800)
+else()
+    mcc_skip_test("optfire/gate-ledger"
+        "the per-gate fire ledger runs the exec corpus natively (native ELF host only)")
+endif()
+
 # One device, one lock -- OFF by default, because it was measured.
 #
 # slice/quiesce tears the Vulkan device down while every other device cell is

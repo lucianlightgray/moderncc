@@ -2314,9 +2314,34 @@ The board section below carries roughly **thirty FILED items** that this handoff
 names, and they are all still true of the tree. The shape they share is that a
 measurement tool reports success over an empty or truncated subject:
 
-- **~~Four~~ THREE tools that publish figures on this board are registered nowhere** —
-  `xsuite-report.py`, `gate-ledger.sh`, ~~`strategy-ledger.sh`~~, `c2_sweep.sh` have zero
+- **~~Four~~ ~~THREE~~ TWO tools that publish figures on this board are registered nowhere** —
+  `xsuite-report.py`, ~~`gate-ledger.sh`~~, ~~`strategy-ledger.sh`~~, `c2_sweep.sh` have zero
   hits in `CMakeLists.txt` and `cmake/`.
+  **`gate-ledger.sh` is registered as of 2026-08-14**: `optfire/gate-ledger`, 82 s, banked in
+  `tests/optfire/gate-ledger.txt`. It is `strategy-ledger.sh`'s question one level down —
+  for each of the 118 `MCC_OPT_ROW`s it toggles that one gate across the 310-file exec
+  corpus and records whether the recorded AST moved, only the object moved, or nothing
+  moved. Banked invariant is the union FIRES ∪ OBJONLY, *"this gate still does something"*
+  (58 of 118); FIRES vs OBJONLY is deliberately **not** banked separately, because a gate
+  moves between those two classes whenever what the AST hash covers changes, and gating
+  that would buy a flaky cell instead of a finding. Five failure paths proved to bite: a
+  banked gate going dark, a vacuous run, a refusal, a missing bank, and the 77 skip.
+  **The tool was wrong, and wrong in this tree's most-repeated way — it scored output from
+  a compile that never happened.** Twelve gates were reported as the *loudest* rows on the
+  board, all with a byte-identical `astfn=1319 asttu=292 objtu=299`. Twelve unrelated
+  optimizations — `xmm-hi`, `loop-fusion`, `opt-search-pthreads`, `promote-leaf-callee` —
+  do not coincidentally move the same 1319 functions. All twelve are `MCC_OPTD_DEV`, and
+  `set_flag()` (`src/libmcc.c:2515`) **refuses** `-f<devgate>` unless `MCC_DEV=1` — refuses
+  deliberately, rather than ignoring, so the flag cannot be mistaken for one that does not
+  exist. So the `-f` arm compiled *nothing*, and 292-of-310 TUs failing to build was being
+  read as the gate firing. The compiler is blameless here; the ledger was the liar.
+  Fixed both ways: dev-gated rows are now measured in a second pass under `MCC_DEV=1`
+  (with its own control cell, since `MCC_DEV` moves the compiler's own defaults), and a
+  general guard classifies any polarity that built nothing while the other built something
+  as `REFUSED` rather than as a difference. **The true `-O1` partition is 3 / 55 / 60, not
+  15 / 49 / 54** — only `chain-store`, `trunc32` and `reg-disp` reach the recorded AST, and
+  measured honestly the twelve dev gates split 6 OBJONLY / 6 NEVER. Partition verified
+  identical across repeat runs before banking.
   **`strategy-ledger.sh` is registered as of 2026-08-14**: `optfire/strategy-ledger`, 2.9 s,
   banked in `tests/optfire/strategy-ledger.txt`. It publishes which optimizer strategies
   actually fire on the exec corpus — **12 fire, 12 never, identical at `-O2` and `-O3`** —
@@ -6577,13 +6602,19 @@ the commit that causes it.
 2. ~~`idiomgate`'s subject is four.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 3. ~~`tools/o0_ab.sh`'s gated half stays frozen~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 4. **The remaining not-a-cell tools.** ~~`tools/opt-determinism.py`,
-   `tools/untyped-probe.py`,~~ `tools/xsuite-report.py`, `tools/gate-ledger.sh`,
-   `tools/strategy-ledger.sh` and `tools/c2_sweep.sh` all publish or feed a board figure and
+   `tools/untyped-probe.py`,~~ `tools/xsuite-report.py`, ~~`tools/gate-ledger.sh`,
+   `tools/strategy-ledger.sh`~~ and `tools/c2_sweep.sh` all publish or feed a board figure and
    are registered nowhere. ~~The last three are additionally blocked on filed item 17.~~
    **No longer blocked** — item 17 closed 2026-08-09 and `gate-ledger.sh` and `c2_sweep.sh`
    both run and produce their figures again (115 knobs / 4 FIRES / 51 OBJONLY / 60 NEVER at
    `-O1`; `files=304 ok=295 fn=1374` forced at `-O0` on `x86_64`). They are still registered
    nowhere, which is now the *whole* of what is left on them.
+   **`strategy-ledger.sh` registered 2026-08-14** as `optfire/strategy-ledger`;
+   **`gate-ledger.sh` registered 2026-08-14** as `optfire/gate-ledger`. The `-O1` figure
+   quoted just above is superseded — it counted twelve `MCC_OPTD_DEV` gates whose `-f` arm
+   the compiler *refuses*, so those rows were whole-corpus compile failures scored as fires.
+   Measured under `MCC_DEV=1` the real partition is **3 FIRES / 55 OBJONLY / 60 NEVER of
+   118**. `xsuite-report.py` and `c2_sweep.sh` are what remain.
    ~~`opt-determinism.py` and `untyped-probe.py` are the two cheapest remaining
    registrations in the tree — both are pure-CPU, both already refuse their degenerate
    inputs after the last sweep, and neither needs a bank invented for it.~~ **Both LANDED
