@@ -7489,9 +7489,30 @@ more permissive than the reference. That is not a divergence to fix — it is a 
 matching gcc would mean being *less* useful — but do not use a case label to prove
 constant-ness, because the reference will not agree.
 
-**Still missing** and not attempted: `__builtin_cpu_init` / `__builtin_cpu_supports`
-(needs CPUID dispatch and a runtime feature vector), `__builtin_setjmp` /
-`__builtin_longjmp` (needs frame and target support — the largest of the group).
+**`__builtin_cpu_init` / `__builtin_cpu_supports` landed 2026-08-13**, x86 only, which
+is where gcc provides them. gcc resolves the feature name at compile time into a bit test
+against a libgcc-owned `__cpu_model`; mcc has no such object, so `runtime/lib/builtin.c`
+resolves it at run time against a table. **The observable contract is identical** — the
+documented promise is *"a positive integer if the run-time CPU supports the feature"*, not
+a particular value, and gcc itself returns the feature's bitmask (`16`, `512`, `1024`)
+rather than 1. **All 22 supported names agree with gcc-15 on this host, negatives
+included.**
+
+**The part that is easy to get wrong and unsafe to omit is the OS-support check.** A CPU
+can report AVX while the kernel has not enabled the register state, and executing an AVX
+instruction then faults — so `avx`/`fma`/`avx2` additionally require `OSXSAVE` and XCR0
+bits 1–2, and the `avx512*` names require bits 5–7 as well. Reporting the CPUID bit alone
+would be a crash rather than an optimism.
+
+Covered in `builtin_overflow.c` by the properties a wrong CPUID decode would break rather
+than by asserting a particular machine: the x86-64 baselines (`sse`, `sse2`, `cmov`), an
+unknown name and the empty string answering 0, the implication chains
+(`sse4.2`→`sse4.1`→`ssse3`→`sse3`, `avx512f`→`avx2`→`avx`), and repeated calls agreeing so
+a stale cache shows up. Mutation-checked (`== 0` → `!= 0` on the unknown name gives
+`FAIL line 82`).
+
+**Still missing** and not attempted: `__builtin_setjmp` / `__builtin_longjmp`, which need
+frame and target support and are the largest of the group by a wide margin.
 
 > Moved to [`docs/ARCHIVED.md`](ARCHIVED.md) 2026-08-10, validated complete against the tree: *Confirmations for the clusters the archive had ranked*.
 

@@ -1097,6 +1097,20 @@
 	#define __builtin_subcll(a, b, cin, cout) \
 	__mcc_carry_gen(sub, __mcc_ullong_t, a, b, cin, cout)
 
+	/* Runtime CPU feature detection. gcc resolves the name at compile time
+	 * against a libgcc-owned __cpu_model; mcc resolves it at run time in
+	 * runtime/lib/builtin.c, which gives the same answer. The documented
+	 * contract is "a positive integer if the run-time CPU supports the
+	 * feature", not a specific value -- gcc returns the feature's bitmask, so
+	 * neither is 1 and neither has to be. x86 only, which is where gcc
+	 * provides them. */
+	#if defined __x86_64__ || defined __i386__
+	extern void __mcc_cpu_init(void);
+	extern int __mcc_cpu_supports(const char *);
+	#define __builtin_cpu_init() __mcc_cpu_init()
+	#define __builtin_cpu_supports(name) __mcc_cpu_supports(name)
+	#endif
+
 	/* The DWARF register numbers an unwinder writes the exception object and
 	 * the selector into before __builtin_eh_return. Pure ABI constants, so
 	 * they belong in a header rather than the backend, and the value has to

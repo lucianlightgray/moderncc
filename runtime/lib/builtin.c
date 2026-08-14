@@ -369,3 +369,100 @@ unsigned int __builtin_bswap32(unsigned int x) __attribute__((alias("__mcc_built
 __asm__(".globl __builtin_bswap64\n\t.set __builtin_bswap64,__mcc_builtin_bswap64");
 #endif
 #endif
+
+#if defined __x86_64__ || defined __i386__
+/* __builtin_cpu_init / __builtin_cpu_supports.
+ *
+ * gcc resolves the feature name at compile time into a bit test against a
+ * libgcc-owned __cpu_model. mcc has no such object, so the name is resolved at
+ * run time against a table instead. The observable contract is the same: the
+ * documented promise is "a positive integer if the run-time CPU supports the
+ * feature", not a particular value, and gcc itself returns the feature's
+ * bitmask rather than 1.
+ *
+ * The OS-support checks are the part that is easy to get wrong and unsafe to
+ * omit. A CPU may report AVX while the kernel has not enabled the register
+ * state, in which case executing an AVX instruction faults -- so AVX requires
+ * OSXSAVE and XCR0 bits 1 and 2, and AVX-512 additionally requires bits 5, 6
+ * and 7. Reporting the CPUID bit alone would be a crash, not an optimism. */
+
+static unsigned __mcc_cpu_f1c, __mcc_cpu_f1d, __mcc_cpu_f7b;
+static unsigned __mcc_cpu_xcr0, __mcc_cpu_ready;
+
+static void __mcc_cpuid(unsigned leaf, unsigned sub, unsigned *a, unsigned *b,
+												unsigned *c, unsigned *d) {
+	unsigned ra, rb, rc, rd;
+	__asm__ __volatile__("cpuid"
+											 : "=a"(ra), "=b"(rb), "=c"(rc), "=d"(rd)
+											 : "a"(leaf), "c"(sub));
+	*a = ra; *b = rb; *c = rc; *d = rd;
+}
+
+void __mcc_cpu_init(void) {
+	unsigned a, b, c, d, maxleaf;
+	if (__mcc_cpu_ready)
+		return;
+	__mcc_cpuid(0, 0, &maxleaf, &b, &c, &d);
+	if (maxleaf >= 1) {
+		__mcc_cpuid(1, 0, &a, &b, &c, &d);
+		__mcc_cpu_f1c = c;
+		__mcc_cpu_f1d = d;
+		/* OSXSAVE, leaf 1 ECX bit 27, gates XGETBV itself. */
+		if (c & (1u << 27)) {
+			unsigned lo, hi;
+			__asm__ __volatile__("xgetbv" : "=a"(lo), "=d"(hi) : "c"(0));
+			(void)hi;
+			__mcc_cpu_xcr0 = lo;
+		}
+	}
+	if (maxleaf >= 7) {
+		__mcc_cpuid(7, 0, &a, &b, &c, &d);
+		__mcc_cpu_f7b = b;
+	}
+	__mcc_cpu_ready = 1;
+}
+
+static int __mcc_cpu_ymm(void) { return (__mcc_cpu_xcr0 & 0x6u) == 0x6u; }
+static int __mcc_cpu_zmm(void) {
+	return __mcc_cpu_ymm() && (__mcc_cpu_xcr0 & 0xe0u) == 0xe0u;
+}
+
+static int __mcc_streq(const char *a, const char *b) {
+	while (*a && *a == *b) { a++; b++; }
+	return *a == *b;
+}
+
+int __mcc_cpu_supports(const char *name) {
+	__mcc_cpu_init();
+	if (__mcc_streq(name, "cmov"))    return (__mcc_cpu_f1d >> 15) & 1;
+	if (__mcc_streq(name, "mmx"))     return (__mcc_cpu_f1d >> 23) & 1;
+	if (__mcc_streq(name, "sse"))     return (__mcc_cpu_f1d >> 25) & 1;
+	if (__mcc_streq(name, "sse2"))    return (__mcc_cpu_f1d >> 26) & 1;
+	if (__mcc_streq(name, "sse3"))    return (__mcc_cpu_f1c >> 0) & 1;
+	if (__mcc_streq(name, "ssse3"))   return (__mcc_cpu_f1c >> 9) & 1;
+	if (__mcc_streq(name, "sse4.1"))  return (__mcc_cpu_f1c >> 19) & 1;
+	if (__mcc_streq(name, "sse4.2"))  return (__mcc_cpu_f1c >> 20) & 1;
+	if (__mcc_streq(name, "popcnt"))  return (__mcc_cpu_f1c >> 23) & 1;
+	if (__mcc_streq(name, "aes"))     return (__mcc_cpu_f1c >> 25) & 1;
+	if (__mcc_streq(name, "pclmul"))  return (__mcc_cpu_f1c >> 1) & 1;
+	if (__mcc_streq(name, "f16c"))    return (__mcc_cpu_f1c >> 29) & 1;
+	if (__mcc_streq(name, "avx"))
+		return __mcc_cpu_ymm() && ((__mcc_cpu_f1c >> 28) & 1);
+	if (__mcc_streq(name, "fma"))
+		return __mcc_cpu_ymm() && ((__mcc_cpu_f1c >> 12) & 1);
+	if (__mcc_streq(name, "avx2"))
+		return __mcc_cpu_ymm() && ((__mcc_cpu_f7b >> 5) & 1);
+	if (__mcc_streq(name, "bmi"))     return (__mcc_cpu_f7b >> 3) & 1;
+	if (__mcc_streq(name, "bmi2"))    return (__mcc_cpu_f7b >> 8) & 1;
+	if (__mcc_streq(name, "adx"))     return (__mcc_cpu_f7b >> 19) & 1;
+	if (__mcc_streq(name, "avx512f"))
+		return __mcc_cpu_zmm() && ((__mcc_cpu_f7b >> 16) & 1);
+	if (__mcc_streq(name, "avx512bw"))
+		return __mcc_cpu_zmm() && ((__mcc_cpu_f7b >> 30) & 1);
+	if (__mcc_streq(name, "avx512dq"))
+		return __mcc_cpu_zmm() && ((__mcc_cpu_f7b >> 17) & 1);
+	if (__mcc_streq(name, "avx512vl"))
+		return __mcc_cpu_zmm() && ((__mcc_cpu_f7b >> 31) & 1);
+	return 0;
+}
+#endif
