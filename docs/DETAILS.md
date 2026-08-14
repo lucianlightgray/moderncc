@@ -30,6 +30,36 @@ The pattern is five deep: `tests/smoke/bails.txt` was a single-target bank in a 
 
 **Source.** Migrated from `docs/TODO.md`, *Open, ranked* — [M-TODO-0020](#m-todo-0020-open-ranked).
 
+**Resolution (win-x64, 2026-08-14).** The five code fixes this contract summarises
+had already landed by the time it was written: `eee6c1f2` (per-format arena floors +
+macho bank), `c57961e1` (the host-blind bank), and `56ae63c1` (`--update-bank` threw
+away the macho compile-failure floor) all predate the task — `56ae63c1` at 08:26 EDT
+against a 12:27 EDT task creation. `arena_floor()`/`low_floor()` already read every
+host-sensitive figure per format. What was missing was an *executable, host-independent*
+gate proving the write side keeps the keying — without one the contract was a convention,
+which is the exact failure class T-lin-10003 exists to refuse. Nothing was re-researched.
+
+The delivered piece: the inline `--update-bank` merge in `main()` is lifted verbatim into
+`merge_bank(prev, out, fmt)`, and its per-format key set is named once as
+`PERFMT_ARENA_KEYS = ("residual", "kept_coverage", "failed")` — the single source of truth
+the gate and the merge now share. `tools/rir-coverage.py --selfcheck-bankkeying` simulates
+a bank carrying both an elf and a macho floor, folds in a same-host (elf) re-measurement,
+and asserts every per-format floor keeps the other host's value while the portable scalars
+update. It needs no compiler, so it is registered under `if(MCC_PYTHON3)` (not `MCC_BUILT`)
+and gates on all three platforms — the point of a `[C]` every `[P]` bank task depends on.
+
+Known-positive (`--selfcheck-bankkeying --mutate`, cell `rir/bank-keying-known-positive`):
+monkeypatches `PERFMT_ARENA_KEYS` to drop each key in turn and asserts the probe then
+catches the erased macho floor, proving every key is load-bearing and the gate is not
+vacuous. Confirmed on win-x64: reverting the real contract (dropping `"failed"`) makes
+`rir/bank-keying` fail with `failed collapsed to a flat 9 on an elf re-bank; the macho
+floor is gone`. Both cells green here: `ctest --test-dir cmake-release -R 'rir/bank-keying'`
+= 2/2 in 1.3 s.
+
+**Verification (superseding the two-host manual bank above, which no CI can run).**
+`ctest -R 'rir/bank-keying'` — the clean cell holds the invariant against the real
+`merge_bank`; the known-positive cell proves each of `PERFMT_ARENA_KEYS` is load-bearing.
+
 <a id="t-lin-10003-every-gate-cell-carries-an-anti"></a>
 
 ## T-lin-10003 Every gate cell carries an anti-vacuity floor and a proved known-positive
