@@ -1,0 +1,36 @@
+suite                     opt     PASS     FAIL  FAILEXE      ICE  TIMEOUT    XPASS    adm%  skipped
+----------------------------------------------------------------------------------------------------
+gcc.dg                    -O0        3        1        0        0        0        0   75.0%        0
+gcc.dg                    -O3        2        1        1        0        0        0   50.0%         
+only-O0.dg                -O0        2        0        0        0        0        0  100.0%        1
+only-O0.dg                -O3        -        -        -        -        -        - not run         
+torture                   -O0        0        0        0        1        0        0    0.0%        1
+torture                   -O3        0        0        0        0        1        1    0.0%         
+----------------------------------------------------------------------------------------------------
+TOTAL                     -O0        5        1        0        1        0        0   71.4%        2
+TOTAL                     -O3        2        1        1        0        1        1   33.3%         
+
+adm% = PASS / admitted, where admitted excludes the 2 SKIP/REFSKIP result(s).
+       A change that skips MORE tests therefore RAISES adm%. It is not pass-of-corpus.
+       1 suite/opt pair(s) never ran and are shown as 'not run', not as 0.0%:
+         only-O0.dg -O3
+
+-O3-only failures (pass at -O0): 1
+  FAIL     g2.c  __builtin_shufflevector not supported
+-O0-only failures (pass at -O3): 0
+
+failure buckets (first match wins):
+       1  parse
+       1  gnu-builtin
+       1  vector-ext
+
+top failure signatures:
+       1  error: expected ';' before '}'
+       1  __builtin_shufflevector not supported
+       1  internal compiler error: vector_size
+
+non-compile failures (wrong answer at runtime / hangs):
+  FAILEXE: 1
+  TIMEOUT: 1
+  ICE: 1
+  XPASS: 1

@@ -1,0 +1,15 @@
+{"suite": "gcc.dg", "opt": "-O0", "status": "PASS", "file": "g0.c", "err": ""}
+{"suite": "gcc.dg", "opt": "-O0", "status": "PASS", "file": "g1.c", "err": ""}
+{"suite": "gcc.dg", "opt": "-O0", "status": "PASS", "file": "g2.c", "err": ""}
+{"suite": "gcc.dg", "opt": "-O0", "status": "FAIL", "file": "g9.c", "err": "error: expected ';' before '}'"}
+{"suite": "gcc.dg", "opt": "-O3", "status": "PASS", "file": "g0.c", "err": ""}
+{"suite": "gcc.dg", "opt": "-O3", "status": "PASS", "file": "g1.c", "err": ""}
+{"suite": "gcc.dg", "opt": "-O3", "status": "FAIL", "file": "g2.c", "err": "__builtin_shufflevector not supported"}
+{"suite": "gcc.dg", "opt": "-O3", "status": "FAILEXE", "file": "g9.c", "err": ""}
+{"suite": "only-O0.dg", "opt": "-O0", "status": "PASS", "file": "o0.c", "err": ""}
+{"suite": "only-O0.dg", "opt": "-O0", "status": "PASS", "file": "o1.c", "err": ""}
+{"suite": "only-O0.dg", "opt": "-O0", "status": "SKIP", "file": "o7.c", "err": ""}
+{"suite": "torture", "opt": "-O0", "status": "ICE", "file": "t1.c", "err": "internal compiler error: vector_size"}
+{"suite": "torture", "opt": "-O3", "status": "TIMEOUT", "file": "t1.c", "err": ""}
+{"suite": "torture", "opt": "-O0", "status": "REFSKIP", "file": "t2.c", "err": ""}
+{"suite": "torture", "opt": "-O3", "status": "XPASS", "file": "t3.c", "err": ""}

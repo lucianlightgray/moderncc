@@ -2314,9 +2314,15 @@ The board section below carries roughly **thirty FILED items** that this handoff
 names, and they are all still true of the tree. The shape they share is that a
 measurement tool reports success over an empty or truncated subject:
 
-- **~~Four~~ ~~THREE~~ TWO tools that publish figures on this board are registered nowhere** —
-  `xsuite-report.py`, ~~`gate-ledger.sh`~~, ~~`strategy-ledger.sh`~~, `c2_sweep.sh` have zero
-  hits in `CMakeLists.txt` and `cmake/`.
+- **~~Four~~ ~~THREE~~ ~~TWO~~ ONE tool that publishes figures on this board is registered
+  nowhere** — ~~`xsuite-report.py`~~, ~~`gate-ledger.sh`~~, ~~`strategy-ledger.sh`~~,
+  `c2_sweep.sh` have zero hits in `CMakeLists.txt` and `cmake/`.
+  **`xsuite-report.py` is registered as of 2026-08-14**: `xsuite/report`, 0.02 s. It gates
+  the formatter against a committed fixture rather than a real run, because `xsuite.py`
+  needs external gcc and llvm checkouts and no `results.jsonl` is in the tree. Filed
+  defect 19 closed with it — a suite/opt pair that never ran no longer prints `0.0%`, and
+  the pass column is now `adm%` with the skips-out-of-the-denominator caveat printed by
+  the tool instead of carried by this board.
   **`gate-ledger.sh` is registered as of 2026-08-14**: `optfire/gate-ledger`, 82 s, banked in
   `tests/optfire/gate-ledger.txt`. It is `strategy-ledger.sh`'s question one level down —
   for each of the 118 `MCC_OPT_ROW`s it toggles that one gate across the 310-file exec
@@ -6302,7 +6308,17 @@ Ordered by how much a currently-quoted number depends on it.
     mismatches=0` and `spvgate: OK`. The *cells* are protected (`cmake/spvgate_real.cmake`
     requires `slices=[1-9]` and a red `--mutate` arm); the hazard is the hand-run
     invocation, which is how every arena figure quoted on this board was taken.
-19. **`tools/xsuite-report.py` prints `0.0%` for suite/opt pairs that never ran.** `tally`
+19. ~~**`tools/xsuite-report.py` prints `0.0%` for suite/opt pairs that never ran.**~~
+    **Closed 2026-08-14**, and the tool is registered as `xsuite/report` (0.02 s). A pair
+    that never ran now prints dashes and `not run`; a pair that *did* run and passed
+    nothing still prints `0.0%`, because that one is real news. The column is renamed
+    `rate` → **`adm%`** with a legend stating that SKIP/REFSKIP are out of the denominator
+    and that skipping more tests therefore *raises* it — the caveat the board was carrying
+    in prose on the tool's behalf. It cannot be run for real in-tree (`xsuite.py` needs
+    external gcc and llvm checkouts; no `results.jsonl` is committed), so the cell gates the
+    formatter against `tests/xsuite/report-fixture.jsonl`, built to hold both shapes plus
+    SKIP/REFSKIP and the FAILEXE/TIMEOUT/ICE/XPASS tails. Proved each invariant bites,
+    including the over-broad fix that would swallow a genuine `0.0%`. Original text: `tally`
     is a `defaultdict` indexed over the full `suite × opt` cross-product, so a suite that ran
     only at `-O0` gets an `-O3` row of zeros and a `0.0%` rate — a reader scanning the table
     sees a total-failure suite where nothing ran. Separately the rate is pass-of-*admitted*:
@@ -6602,7 +6618,7 @@ the commit that causes it.
 2. ~~`idiomgate`'s subject is four.~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 3. ~~`tools/o0_ab.sh`'s gated half stays frozen~~ — closed; write-up in [`docs/ARCHIVED.md`](ARCHIVED.md).
 4. **The remaining not-a-cell tools.** ~~`tools/opt-determinism.py`,
-   `tools/untyped-probe.py`,~~ `tools/xsuite-report.py`, ~~`tools/gate-ledger.sh`,
+   `tools/untyped-probe.py`, `tools/xsuite-report.py`,~~ ~~`tools/gate-ledger.sh`,
    `tools/strategy-ledger.sh`~~ and `tools/c2_sweep.sh` all publish or feed a board figure and
    are registered nowhere. ~~The last three are additionally blocked on filed item 17.~~
    **No longer blocked** — item 17 closed 2026-08-09 and `gate-ledger.sh` and `c2_sweep.sh`
@@ -6614,7 +6630,8 @@ the commit that causes it.
    quoted just above is superseded — it counted twelve `MCC_OPTD_DEV` gates whose `-f` arm
    the compiler *refuses*, so those rows were whole-corpus compile failures scored as fires.
    Measured under `MCC_DEV=1` the real partition is **3 FIRES / 55 OBJONLY / 60 NEVER of
-   118**. `xsuite-report.py` and `c2_sweep.sh` are what remain.
+   118**. **`xsuite-report.py` registered 2026-08-14** as `xsuite/report`. `c2_sweep.sh`
+   is what remains.
    ~~`opt-determinism.py` and `untyped-probe.py` are the two cheapest remaining
    registrations in the tree — both are pure-CPU, both already refuse their degenerate
    inputs after the last sweep, and neither needs a bank invented for it.~~ **Both LANDED

@@ -23,24 +23,50 @@ def main():
 
     cols = ["PASS", "FAIL", "FAILEXE", "ICE", "TIMEOUT", "XPASS"]
     opts = sorted({o for _, o in tally})
+    # `tally` is indexed over the full suite x opt cross-product, so a suite that
+    # ran only at -O0 used to get an -O3 row of zeros and a 0.0% rate. A reader
+    # scanning the table saw a suite failing every single test when in fact
+    # nothing had run. Those rows now say "not run" and print dashes, which also
+    # keeps them distinguishable from a genuine 0.0% -- a suite that DID run and
+    # passed nothing is real news and still prints as 0.0%.
+    #
+    # The rate is pass-of-ADMITTED: SKIP and REFSKIP are excluded from the
+    # denominator, so a change that skips more tests raises it. The column is
+    # named for that rather than called "rate" and left to be misread.
     print(f"{'suite':<24}{'opt':>5}" + "".join(f"{c:>9}" for c in cols) +
-          f"{'rate':>8}{'skipped':>9}")
+          f"{'adm%':>8}{'skipped':>9}")
     print("-" * (24 + 5 + 9 * len(cols) + 17))
     tot = collections.defaultdict(collections.Counter)
+    notrun = []
     for suite in sorted({s for s, _ in tally}):
         for o in opts:
             t = tally[(suite, o)]
             n = sum(t.values())
-            rate = 100.0 * t["PASS"] / n if n else 0.0
+            skipcol = f"{skips[suite] if o == opts[0] else '':>9}"
+            if not n:
+                notrun.append((suite, o))
+                print(f"{suite:<24}{o:>5}" + "".join(f"{'-':>9}" for _ in cols) +
+                      f"{'not run':>8}" + skipcol)
+                continue
+            rate = 100.0 * t["PASS"] / n
             print(f"{suite:<24}{o:>5}" + "".join(f"{t[c]:>9}" for c in cols) +
-                  f"{rate:>7.1f}%" + f"{skips[suite] if o == opts[0] else '':>9}")
+                  f"{rate:>7.1f}%" + skipcol)
             tot[o].update(t)
     print("-" * (24 + 5 + 9 * len(cols) + 17))
     for o in opts:
         n = sum(tot[o].values())
+        rate = f"{100.0 * tot[o]['PASS'] / n:>7.1f}%" if n else f"{'not run':>8}"
         print(f"{'TOTAL':<24}{o:>5}" + "".join(f"{tot[o][c]:>9}" for c in cols) +
-              f"{100.0 * tot[o]['PASS'] / n if n else 0:>7.1f}%" +
-              f"{sum(skips.values()) if o == opts[0] else '':>9}")
+              rate + f"{sum(skips.values()) if o == opts[0] else '':>9}")
+    print(f"\nadm% = PASS / admitted, where admitted excludes the "
+          f"{sum(skips.values())} SKIP/REFSKIP result(s).")
+    print("       A change that skips MORE tests therefore RAISES adm%. It is not "
+          "pass-of-corpus.")
+    if notrun:
+        print(f"       {len(notrun)} suite/opt pair(s) never ran and are shown as "
+              f"'not run', not as 0.0%:")
+        for suite, o in notrun:
+            print(f"         {suite} {o}")
 
     if len(opts) > 1:
         a, b = opts[0], opts[-1]

@@ -8939,6 +8939,27 @@ else()
         "the per-gate fire ledger runs the exec corpus natively (native ELF host only)")
 endif()
 
+# tools/xsuite-report.py summarizes a tools/xsuite.py results.jsonl and feeds
+# figures onto docs/TODO.md. It cannot be run for real here -- xsuite.py needs
+# external gcc and llvm checkouts and no results.jsonl is committed -- so what
+# is gated is the formatter, against a fixture holding the shapes it used to
+# report wrongly: a suite/opt pair that never ran (was printed as 0.0%, as if
+# the suite failed everything) and a pair that ran and genuinely passed nothing
+# (must still print 0.0%). No compiler needed, so this runs everywhere python3
+# does.
+if(UNIX)
+    add_test(NAME "xsuite/report"
+        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/xsuite/report-check.sh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/xsuite-report.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/xsuite/report-fixture.jsonl"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/xsuite/report-golden.txt"
+                "${CMAKE_BINARY_DIR}/xsuite-report")
+    set_tests_properties("xsuite/report" PROPERTIES
+        SKIP_RETURN_CODE 77 TIMEOUT 120)
+else()
+    mcc_skip_test("xsuite/report" "the xsuite report check needs a POSIX shell")
+endif()
+
 # One device, one lock -- OFF by default, because it was measured.
 #
 # slice/quiesce tears the Vulkan device down while every other device cell is
