@@ -1816,7 +1816,27 @@ state in eight places, so a new field joins the RIR replay record), sweep row 29
 `MCC_OPT_REPLAY_FALLBACK` flip — **make the fallback visible under either answer**, and re-check
 its evidence per the correction above), and the coroutine task S7b.
 
-### The whole-suite state on arm64/macOS — a run COMPLETED 2026-08-13
+### The whole-suite state on arm64/macOS — four runs, 2026-08-13/14
+
+> **Run 4, 2026-08-14, is the one that matters and it was NOT clean: 9969 cells, 119 failed.**
+> 118 of them are `flagsweep-exec/*` with a single cause — **N42**, `types/int128` being called
+> unbuildable on a host where `goldens.h` already says it is inapplicable — and the 119th is
+> `selfhost-jit` timing out. Fixed at `d8fd6185`; the fix is verified on a representative cell
+> (skips `types/int128`, names `arm64/Darwin`) and by a known-positive (`#error` in
+> `types/bool.c` still goes red on the same run).
+>
+> **The full-suite verification of that fix is owed and is not in this table.** Two runs taken
+> straight after it reported **4 failures of 201** and **8 of 119** — and both are void, because
+> they were launched overlapping: a `-j4` `^flagsweep` run was still going when a `-j4`
+> `^flagsweep-exec/` run started, putting eight concurrent cells of **the one family this file
+> documents as self-contending** onto a machine at load average 16. **That is N26, reproduced by
+> the person measuring it.** The two runs disagreeing with each other on identical code is the
+> tell. A serial, uncontended run is the only thing that can settle it, and until one lands the
+> honest count for this host is *"118 of 119 fixed, the remainder unmeasured"*.
+>
+> **The rule this earns, and it is the same one the flagsweep timings section already states:**
+> a family with a documented contention hazard cannot be measured while anything else is running,
+> including another copy of itself. Quote the machine with the number or it is not a measurement.
 
 **The first full-suite run this host has ever finished.** `ctest -j4` over `cmake-macos`, all
 **9933** cells: **99% passed, 5 failed, 2556 skipped**, no timeouts. The 2026-08-12 partial run is
@@ -3144,6 +3164,12 @@ the wrong reason — and it would have skipped the *wrong* subjects on x86. Caug
 line printed `not applicable to /Darwin` with the CPU missing. It is a `case` over candidates now.
 **The lesson is the session's, once more: the message that names its own inputs is what catches
 the bug the verdict hides.**
+
+**The verification of this fix is owed and the first two attempts at it were void** — both were
+run overlapping with another `-j4` sweep of the same family, which is N26's own hazard, so their
+counts (4 of 201, 8 of 119, on identical code) measure the measurer. See the whole-suite section.
+What is established without them: the representative cell skips `types/int128` naming
+`arm64/Darwin`, and the known-positive still reddens on a genuinely unbuildable subject.
 
 **This is N41's rule for the sixth time**, and the first where the host-sensitive fact was not a
 banked number but a *subject list*. `bails.txt`, `slice/census`, `emit-map.py`,
