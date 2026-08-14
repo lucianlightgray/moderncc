@@ -7015,7 +7015,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         --manifest "${CMAKE_CURRENT_SOURCE_DIR}/tests/gate-contract.txt"
                         --must-run "${CMAKE_CURRENT_SOURCE_DIR}/tests/must-run.txt"
                         --build "${CMAKE_BINARY_DIR}"
-                        --min-rows 90 --min-proved 40
+                        --min-rows 101 --min-proved 48
                         --max-unfloored 86 --max-unproved 51)
             set_tests_properties("ci/gate-contract" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
@@ -9058,6 +9058,13 @@ if(UNIX)
     add_executable(ast_eval_binop_oracle
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/eval_binop_oracle.c")
     add_test(NAME "ast/eval-binop-oracle" COMMAND ast_eval_binop_oracle)
+    add_test(NAME "ast/eval-binop-oracle-known-positive"
+        COMMAND "${MCC_PYTHON3}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/eval_binop_oracle_kp.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}"
+                "${CMAKE_C_COMPILER}")
+    set_tests_properties("ast/eval-binop-oracle-known-positive" PROPERTIES
+        TIMEOUT 300)
     # mcc_build builds the whole tree, so it is what makes this executable exist
     # on a cold ctest; without the fixture the cell reports "Not Run".
     set_tests_properties("ast/eval-binop-oracle" PROPERTIES
