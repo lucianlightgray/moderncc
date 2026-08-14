@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30000   | 2026-08-14T19:42Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10360   | 2026-08-14T19:07Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T19:41Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T20:01Z |
 
 ## Contracts — blocking, highest priority
 
@@ -182,9 +182,6 @@
 - [ ] T-lin-10054 [S] `rir-nofb-probe`, `--check-gap-dir` and `--check-low-dir` all pass over an empty input
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10054-rir-nofb-probe-check-gap-dir | DEPS: T-lin-10003[C]
-- [ ] T-lin-10055 [S] `corpus_config` cannot see `MCC_EMBED_JIT`, which gates two whole translation units
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T19:58Z
-      REF: DETAILS.md#t-lin-10055-corpus-config-cannot-see-mcc-embed | DEPS: —
 - [ ] T-lin-10056 [S] Two bodies replay byte-identically under one build and not another
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10056-two-bodies-replay-byte-identically-under | DEPS: —
