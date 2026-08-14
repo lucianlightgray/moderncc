@@ -41767,6 +41767,14 @@ The rule the gate enforces is that every function body and braced branch in an `
 
 **Source.** Found on lin-x64, 2026-08-14, in the `-LE wine` full-suite run at `5d8d8835`.
 
+**Resolution (win-x64, 2026-08-14, SHA 3d998302).** Both arms fixed in one commit:
+`src/mccdbg.c:611` — `cv_basic_type`'s `switch (bt) {` now opens with `MCC_TRACE("br\n")`
+(the one branch missed in the CodeView type-stream addition); `src/mccjit_embed.c:2143` —
+the no-bake-notice `else {` (from T-lin-10028) likewise. Verified: `tracegate src` prints
+`trace-gate invariant OK`, and mcc rebuilds clean; the commit touches only those two lines
+(fmt/census-bank red is T-lin-10361's, not this). Going forward `ctest -L treegate` is the
+pre-DONE tree-wide check.
+
 
 <a id="t-lin-10003-the-treegate-label-the-pre-done-check-made-mechanical"></a>
 

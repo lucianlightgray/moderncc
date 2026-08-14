@@ -277,3 +277,4 @@ Records below `SHA n/a` predate this protocol: they were retro-minted on 2026-08
 - T-lin-10085 win-x64 — CodeView `.debug$T` types (fn/pointer/struct type stream, PDB round-tripped; residue → T-win-50000) | DONE 2026-08-14T21:01Z | SHA 26d7aa40 | REF DETAILS.md#t-lin-10085-win-x64-codeview-debugt-types
 - T-lin-10009 Nested member designators `{.a.a=1, .a.b=2}` | DONE 2026-08-14T21:17Z | SHA 3411c160 | REF DETAILS.md#t-lin-10009-resolved-nested-designators-already-work
 - T-lin-10361 T-lin-10028's fprintf moved fmt/census-bank | DONE 2026-08-14T21:38Z | SHA 8831b179 | REF DETAILS.md#t-lin-10361-t-lin-10028s-fprintf-moved-fmt-census-bank
+- T-lin-10362 `trace-gate-invariant` red on main — both arms (mccdbg switch + embed-jit else) open with MCC_TRACE | DONE 2026-08-14T21:39Z | SHA 3d998302 | REF DETAILS.md#t-lin-10362-trace-gate-invariant-is-red-on-main
