@@ -77,7 +77,12 @@
 # because the gated run's vacuity check reads it:
 #
 #   C2_NO_EXTRA=1 O0_AB_BANK=1 tools/o0_ab.sh b all /tmp/o0ab
-#   C2_NO_EXTRA=1 O0_AB_BANK=1 O0_AB_GATES=1 tools/o0_ab.sh b all /tmp/o0ab-g
+#   MCC_DEV=1 C2_NO_EXTRA=1 O0_AB_BANK=1 O0_AB_GATES=1 tools/o0_ab.sh b all /tmp/o0ab-g
+#
+# MCC_DEV=1 on the gated line is load-bearing and used to be missing here: the
+# gated board sweeps dev-gated flags, and without it the two Mach-O keys report
+# NOT MEASURED and the run exits 1.  The CHECK cell passes MCC_DEV=1 already,
+# so the omission only ever bit the person re-banking by hand.
 #
 # Check a tree against the bank the same way:
 #

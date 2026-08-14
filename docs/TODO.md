@@ -657,12 +657,33 @@ on x86_64**, so the golden did not move. `^exec` stays 8023 of 8023 and the qemu
 
 **`ast/o0-baseline` now measures 11 of 11 keys against a floor of 7** (`o0_ab: measurable --
 11/11 key(s), floor 7; unmeasurable: (none)`), and every key reports `unfaithful=0 diverge=0
-error=0 OK`. **The measurement gap the row existed for is closed.** The cell is nonetheless red,
+error=0 OK`. **The measurement gap the row existed for is closed.** ~~The cell is nonetheless red,
 for a different reason: the banked digests are from **2026-08-12**, and **38 commits have touched
-`src/` since**, from three sessions. That is bank staleness across 11 targets, and attributing it
-needs a bisect rather than a re-bank — `--update-bank` here would erase a day of unattributed
-movement on every target at once, which is the thing this file most often tells you not to do.
-**Left red deliberately, with the reason stated, rather than made green.**
+`src/` since**, from three sessions.~~ **— ATTRIBUTED AND RE-BANKED 2026-08-13, and it needed no
+bisect at all.** The 38-commit fear was wrong about the *shape* of the drift: reading which rows
+moved, rather than how many commits could have moved them, resolves the whole thing in one pass.
+
+| what moved | on which keys | cause |
+| --- | --- | --- |
+| `builtin_overflow.c` | **all 11** | this session's carry-chain and `cpu_supports` coverage |
+| `chained_assign.c` | arm, arm64, riscv64, arm-win32 | this session's `signed char` fix |
+| `float16.c` | the 4 ELF cross keys | `0f015e1e`, the `_Float16` negation fix |
+| **291 of 297 files** | `x86_64-win32` **only** | **W4**, per-function `UNWIND_INFO` *on x86_64* |
+
+**Nine of the eleven keys moved by one to three rows, and every one is a test-source edit** — a
+changed `.c` file legitimately produces a changed object, which is not compiler drift at all. The
+only wholesale movement is `x86_64-win32`, and W4's own commit message says it replaces one shared
+unwind blob with per-function `UNWIND_INFO` on exactly that target, which changes every function.
+
+> **`chained_assign.c` moved on arm, arm64, riscv64 and arm-win32 and nowhere else** — precisely
+> the targets where plain `char` is unsigned. The bank independently reproduced the diagnosis that
+> fixture was fixed under, from the other direction, without being asked.
+
+**The documented re-bank command is wrong and the board already knew.** `O0_AB_BANK=1
+O0_AB_GATES=1 tools/o0_ab.sh …` reports `x86_64-osx NOT MEASURED` / `arm64-osx NOT MEASURED` and
+exits 1; it needs **`MCC_DEV=1`**, which the *check* cell passes and the *bank* recipe omits. With
+it, rc 0 and zero unmeasured. All four cells now pass in both trees, both known-positives
+included.
 
 > **A self-inflicted anti-vacuity failure, recorded because it is the most instructive thing in
 > this section.** While checking whether the N18 storeval promotion had moved `-O0` objects on
