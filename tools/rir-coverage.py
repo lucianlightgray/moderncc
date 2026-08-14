@@ -1690,6 +1690,23 @@ def main():
                     bad.append("-%s: kept coverage regressed: %.4f%% < banked "
                                "%.4f%% (fewer body bytes ship optimized)"
                                % (opt, kc, kc_floor))
+            # Sweep row 22's other half. Every percentage above is computed
+            # over the sources that HAPPENED TO COMPILE, and the count of the
+            # ones that did not was printed and never compared -- so a source
+            # dropping out shrank the denominator silently and the ratchet went
+            # on passing over a smaller corpus. Bank it and fail when it rises.
+            nfail = len(c["failed"])
+            if "failed" in b:
+                checked.append("-%s compile failures" % opt)
+                if nfail > b["failed"]:
+                    names = ", ".join(
+                        os.path.basename(f if isinstance(f, str) else f[0])
+                        for f in c["failed"][:6])
+                    bad.append("-%s: %d source(s) now fail to compile against "
+                               "%d banked, so every percentage above is over a "
+                               "denominator that just shrank: %s%s"
+                               % (opt, nfail, b["failed"], names,
+                                  " ..." if nfail > 6 else ""))
             resid_floor = arena_floor(b, "residual", fmt)
             if resid_floor is None:
                 skipped.append("-%s arena residual (this host %d, no %s floor "
@@ -1827,6 +1844,7 @@ def main():
                          "modelled_bytes": v["modelled_bytes"],
                          "gap_bytes": v["gap_bytes"],
                          "gap_bodies": v["gap_bodies"],
+                         "failed": v["failed"],
                          "discarded_bytes": v["discarded_bytes"]})
                 else:
                     out[opt][lname].update(
