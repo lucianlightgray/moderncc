@@ -7,7 +7,7 @@ is the easy mistake, so they never share a binary:
 
   stage-1  a FIXED reference compiler -- the ordinary host-cc-built mcc, whose
            own flags never change -- compiles src/mcc.c into stage-2. Only what
-           stage-1 is TOLD TO DO varies: -O3 with each of the 48 level-
+           stage-1 is TOLD TO DO varies: -O3 with each level-
            assignable flags explicitly forced on or off, so the level itself is
            pinned and nothing outside the flag set moves.
   stage-2  the mcc that came out of stage-1 compiles a FIXED workload with
@@ -35,12 +35,12 @@ the per-flag ranking; cycles are measured serially at high repetition on the
 configurations that matter, and any flag whose two metrics disagree in sign is
 reported as such instead of being silently ranked by the one that flatters it.
 
-THE SEARCH LADDER, and why it is not exhaustive. 48 flags is 2**48 =
+THE SEARCH LADDER, and why it is not exhaustive. N flags is 2**N =
 281,474,976,710,656 configurations; at the ~2.4s an evaluation costs here that
 is 21 million years. Four bounded stages instead, each reporting its budget:
 
   marginal  leave-one-out from the full set AND add-one-in to the empty set
-            (2*48 evaluations). Where the two disagree the flag interacts with
+            (2*N evaluations). Where the two disagree the flag interacts with
             or is masked by another, which the naive single number hides.
   cover3    the 74 rows of tests/optfire/cover3.txt, an existing 3-way covering
             array: every setting of every three flags appears in some row.
@@ -71,6 +71,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 T1_DEFAULT = 1.0
 T2_DEFAULT = 0.10
+
+
+# The number of level-assignable flags is DERIVED, never written down. This
+# docstring said "48" in five places while flag_table() yielded 16, and then 13
+# once the 2026-08-13 ladder work moved three rows -- a constant in prose that
+# no code reads is a claim that cannot fail, which is the same defect this tool
+# exists to find in the ladder. Ask flag_table().
+# Floor on what flag_table() must find. Not the exact count -- that moves with
+# every ladder decision and pinning it would be the "48" bug again -- but far
+# enough below it that only a parser failure or a wholesale collapse trips it.
+MIN_LADDER_FLAGS = 5
 
 
 def flag_table(path):
@@ -177,10 +188,10 @@ def sha_file(path):
 def subset_argv(names, subset):
     """-O3 plus an explicit on/off for every one of the 48.
 
-    Pinning the level and stating all 48 is what keeps the experiment clean:
+    Pinning the level and stating all of them is what keeps the experiment clean:
     the SPECIAL rows that key off optimize_level, and the ALWAYS rows, are then
     identical in every configuration and only the flag set varies. Verified:
-    -O3 with all 48 spelled out on is byte-identical to plain -O3."""
+    -O3 with every one spelled out on is byte-identical to plain -O3."""
     return ["-O3"] + [("-f" if n in subset else "-fno-") + n for n in names]
 
 
@@ -357,7 +368,7 @@ def cover3_subsets(path, names):
     re-derives the covering property on every ctest run. The array spans all
     113 rows of the table, but a covering array projected onto a subset of its
     columns still covers every triple WITHIN that subset, so reading only the
-    48 level-assignable columns and leaving the rest at their -O3 default is a
+    the level-assignable columns and leaving the rest at their -O3 default is a
     sound 3-wise design over exactly the population being ranked."""
     if not os.path.exists(path):
         return None
@@ -673,6 +684,19 @@ def main():
     table = flag_table(os.path.join(ROOT, "src", "mccopt.h"))
     names = [n for n, _ in table]
     levels_now = dict(table)
+    # Sweep row 11's remaining floor. flag_table() parses src/mccopt.h with a
+    # regex; if that regex ever stops matching -- a reformatted MCC_OPT_ROW, a
+    # renamed macro -- it returns an empty table, every loop below iterates
+    # zero times, and --check then agrees with the ladder having compared
+    # nothing. An empty ladder is not a passing ladder.
+    if len(names) < MIN_LADDER_FLAGS:
+        sys.stderr.write(
+            "selfhost-optbench: flag_table() yielded %d level-assignable "
+            "flag(s) from src/mccopt.h, below the floor of %d. Either the "
+            "ladder really has collapsed or the parser stopped matching; "
+            "either way nothing below this line would have measured "
+            "anything.\n" % (len(names), MIN_LADDER_FLAGS))
+        return 2
     cache = args.cache or os.path.join(rig.bdir, "optbench-cache.json")
     bench = Bench(rig, names, args.reads, cache)
 
