@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:38Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:41Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10363   | 2026-08-14T21:20Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50001   | 2026-08-14T21:39Z |
 
@@ -19,9 +19,6 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
-- [ ] T-lin-10022 [S] `rir_loc_replay` never checks the size or alignment of the entry it returns
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T21:22Z
-      REF: DETAILS.md#t-lin-10022-rir-loc-replay-never-checks-the | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 

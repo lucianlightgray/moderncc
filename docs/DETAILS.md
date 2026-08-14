@@ -41810,3 +41810,16 @@ T-lin-10028 (`740e4f54`) made the `--embed-jit` no-bake notice emit unconditiona
 **Verification.** `ctest --test-dir cmake-macos -R fmt/census-bank` — both pass.
 
 **Source.** mac-arm64, 2026-08-14T21:38Z, at 8831b179.
+
+
+<a id="t-lin-10022-resolved-loc-replay-fit-probe-banked"></a>
+
+## T-lin-10022 resolved — the loc-replay size/align fit is banked
+
+Record + compare were already done: `rir_loc_replay` threads `size`/`align` (mccast.c ~2055), `rir_locrec_sz`/`_al` store them, and `rir_rec_take` skips any entry with `sz<size || al<align`, so the returned slot is never undersized or under-aligned. What was owed (the probe was reverted, never banked) is the negative result. `rir_rec_take` now counts, for the loc stream only, `fire` (a fit returned), `skip` (entries passed over for size/align) and `inexact` (returned entry oversized or over-aligned); `rir_report` emits `[rir-locfit] fire=N skip=M inexact=P`. The `[rir-*]` parsers dispatch on line tag, so the new line is ignored by all of them; the fmt/census re-bank for the new fprintf is folded into the same commit (`-L treegate` 12/12). Slot/tv callers pass NULL — no behaviour change.
+
+**Re-taken measurement.** loc replay only fires under `rir_c2_active`, which needs a `-DMCC_REPLAY_IR_C2=1` build and `MCC_REPLAY_IR=5`. Over `tests/exec/{structs_unions,pointers_arrays,functions_abi,statements,types}` at -O0..-O4: **fire=460 skip=0 inexact=0** — every loc replay an exact fit, reproducing the reverted probe's finding. It is a diagnostic, not a correctness gate (correctness is already guaranteed by the skip), so it is banked as a report line, not a ratchet.
+
+**Verification.** `-DMCC_REPLAY_IR_C2=1` build, `MCC_REPLAY_IR=5 mcc -O1..-O4 -c <subject>`; `[rir-locfit]` must show `skip=0 inexact=0`. `ctest -L treegate` 12/12 and the rir/emitmap cells green.
+
+**Source.** mac-arm64, 2026-08-14T21:41Z, at 3de9d04e.
