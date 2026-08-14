@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T20:15Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T20:21Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10361   | 2026-08-14T20:16Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T20:18Z |
 
@@ -18,6 +18,10 @@
       REF: DETAILS.md#t-lin-10003-landed-the-gate-contract | DEPS: — | BLOCKED-BY-RED: T-lin-10360
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+
+- [ ] T-lin-10028 [S] `--embed-jit` suppresses its own no-bake warning under `-w`
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T20:21Z
+      REF: DETAILS.md#t-lin-10028-embed-jit-suppresses-its-own-no | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
@@ -101,9 +105,6 @@
 - [ ] T-lin-10027 [S] RIR deletion residue: keep or delete each of six named symbols and tools
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10027-rir-deletion-residue-keep-or-delete | DEPS: —
-- [ ] T-lin-10028 [S] `--embed-jit` suppresses its own no-bake warning under `-w`
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10028-embed-jit-suppresses-its-own-no | DEPS: —
 - [ ] T-lin-10029 [S] The lazy JIT route fails to build a variant on programs the sync route handles
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10029-the-lazy-jit-route-fails-to | DEPS: —
