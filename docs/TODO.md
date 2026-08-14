@@ -94,7 +94,7 @@
 - [ ] T-lin-10025 [S] `rf-1`: the per-function size trial scores on body length, which does not predict object size
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10025-rf-1-the-per-function-size | DEPS: T-lin-10023[S]
-- [ ] T-lin-10026 [S] P6 -- split `src/mccast.c` (~17k lines) and rename `ast_*` to `ir_*`
+- [ ] T-lin-10026 [S] P6 — split `src/mccast.c` (~17k lines) and rename `ast_*` to `ir_*`
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10026-p6-split-srcmccastc-17k-lines-and | DEPS: —
 - [ ] T-lin-10027 [S] RIR deletion residue: keep or delete each of six named symbols and tools
@@ -145,7 +145,7 @@
 - [ ] T-lin-10039 [S] `spvgate` reports OK for a case that lowered nothing
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10039-spvgate-reports-ok-for-a-case | DEPS: T-lin-10003[C]
-- [ ] T-lin-10041 [X] mac-arm64 -- the native MSL region arm
+- [ ] T-lin-10041 [X] mac-arm64 — the native MSL region arm
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10041-mac-arm64-the-native-msl-region | DEPS: —
 - [ ] T-lin-10043 [S] `tests/emitmap/bank.json`'s tolerances cannot fail, and the selfhost cell is already drifted inside them
@@ -169,7 +169,7 @@
 - [ ] T-lin-10050 [S] `--mutate` has no `memcpy`/`memset` in the slice corpus to bite on
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10050-mutate-has-no-memcpymemset-in-the | DEPS: —
-- [ ] T-lin-10051 [S] Debt 6-vi -- the chain-store *member* fixture was never written
+- [ ] T-lin-10051 [S] Debt 6-vi — the chain-store *member* fixture was never written
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10051-debt-6-vi-the-chain-store | DEPS: —
 - [ ] T-lin-10052 [S] `storeval-callstore` was never ranked in either direction, and 32 of 34 demoted rows are unpriced
@@ -223,10 +223,10 @@
 - [ ] T-lin-10071 [S] `rir-nofb-probe-self` is flaky and the mechanism is not known
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10071-rir-nofb-probe-self-is-flaky | DEPS: —
-- [ ] T-lin-10072 [X] lin-x64 -- `optfire/abs` and `optfire/level-abs` fail only in a full parallel run
+- [ ] T-lin-10072 [X] lin-x64 — `optfire/abs` and `optfire/level-abs` fail only in a full parallel run
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10072-lin-x64-optfireabs-and-optfirelevel-abs | DEPS: —
-- [ ] T-lin-10073 [X] lin-x64 -- the two wine `run-tier` cells are load-sensitive
+- [ ] T-lin-10073 [X] lin-x64 — the two wine `run-tier` cells are load-sensitive
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10073-lin-x64-the-two-wine-run | DEPS: —
 - [ ] T-lin-10074 [S] `slice/quiesce` is structurally flaky and the device lock is built, priced and off
@@ -235,13 +235,13 @@
 - [ ] T-lin-10075 [S] Two one-off failures that never reproduced
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10075-two-one-off-failures-that-never | DEPS: —
-- [ ] T-lin-10076 [S] N7 residue -- an independent tree-side oracle for the slice evaluator
+- [ ] T-lin-10076 [S] N7 residue — an independent tree-side oracle for the slice evaluator
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10076-n7-residue-an-independent-tree-side | DEPS: —
-- [ ] T-lin-10077 [S] N37 -- the refs-disagree class is computed per digest, so a category hides its own points
+- [ ] T-lin-10077 [S] N37 — the refs-disagree class is computed per digest, so a category hides its own points
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10077-n37-the-refs-disagree-class-is | DEPS: — | Q: Q-lin-10012
-- [ ] T-lin-10078 [S] N36 residue -- `/` and `%` on over-wide bit-fields are still per-operation truncated
+- [ ] T-lin-10078 [S] N36 residue — `/` and `%` on over-wide bit-fields are still per-operation truncated
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10078-n36-residue-and-on-over-wide | DEPS: —
 - [ ] T-lin-10079 [S] `ir_cap`'s trace sites fire ~375k times at `-O0` where the layer is inactive
@@ -256,22 +256,22 @@
 - [ ] T-lin-10082 [S] The `--jit-always-gpu` boundary is struct member access, not link-time symbols
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10082-the-jit-always-gpu-boundary-is | DEPS: —
-- [ ] T-lin-10083 [X] win-x64 -- flip default `-c` to COFF and re-bank `o0-baseline`
+- [ ] T-lin-10083 [X] win-x64 — flip default `-c` to COFF and re-bank `o0-baseline`
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: T-lin-10002[C]
-- [ ] T-lin-10084 [X] win-x64 -- non-constant `__except` filters and `__finally` need funclet codegen
+- [ ] T-lin-10084 [X] win-x64 — non-constant `__except` filters and `__finally` need funclet codegen
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10084-win-x64-non-constant-except-filters | DEPS: —
-- [ ] T-lin-10085 [X] win-x64 -- CodeView `.debug$T` types
+- [ ] T-lin-10085 [X] win-x64 — CodeView `.debug$T` types
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10085-win-x64-codeview-debugt-types | DEPS: —
-- [ ] T-lin-10089 [X] mac-arm64 -- the `ast/o0-baseline` quartet is a visible skip with a real reason
+- [ ] T-lin-10089 [X] mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10089-mac-arm64-the-asto0-baseline-quartet | DEPS: T-lin-10002[C]
-- [ ] T-lin-10090 [X] mac-arm64 -- re-take `if-conversion-abs` on arm64
+- [ ] T-lin-10090 [X] mac-arm64 — re-take `if-conversion-abs` on arm64
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10090-mac-arm64-re-take-if-conversion | DEPS: —
-- [ ] T-lin-10091 [X] mac-arm64 -- capture the `FAIL ident_shift:` line from the arm64 nightly
+- [ ] T-lin-10091 [X] mac-arm64 — capture the `FAIL ident_shift:` line from the arm64 nightly
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10091-mac-arm64-capture-the-fail-ident | DEPS: —
 - [ ] T-lin-10092 [P] Record a clean full native suite number on each platform
@@ -301,10 +301,10 @@
 
 ## Blocked — awaiting QUESTIONS.md
 
-- [ ] T-lin-10040 [S] The device dispatcher is not merely absent -- it is unwritable from what exists
+- [ ] T-lin-10040 [S] The device dispatcher is not merely absent — it is unwritable from what exists
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10040-the-device-dispatcher-is-not-merely | DEPS: — | Q: Q-lin-10008
-- [ ] T-lin-10042 [X] mac-arm64 -- the Metal parity staged plan (1,530-2,360 lines, or 2,200-3,400 with fp64)
+- [ ] T-lin-10042 [X] mac-arm64 — the Metal parity staged plan (1,530-2,360 lines, or 2,200-3,400 with fp64)
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10042-mac-arm64-the-metal-parity-staged | DEPS: — | Q: Q-lin-10009
 - [ ] T-lin-10045 [S] `-fopt-slice` makes object output depend on the optimizer's disk cache
@@ -319,13 +319,13 @@
 - [ ] T-lin-10064 [S] 63 cells have never compiled their own `EXTRA`, and arming them goes red
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10064-63-cells-have-never-compiled-their | DEPS: — | Q: Q-lin-10011
-- [ ] T-lin-10086 [X] win-x64 -- `arm64-win32` / `arm-win32` execution
+- [ ] T-lin-10086 [X] win-x64 — `arm64-win32` / `arm-win32` execution
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10086-win-x64-arm64-win32-arm-win32 | DEPS: — | Q: Q-lin-10013
-- [ ] T-lin-10087 [X] win-x64 -- W5: mcc cannot self-host on Windows arm64
+- [ ] T-lin-10087 [X] win-x64 — W5: mcc cannot self-host on Windows arm64
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10087-win-x64-w5-mcc-cannot-self | DEPS: — | Q: Q-lin-10013
-- [ ] T-lin-10088 [X] win-x64 -- vendor the exact `gcc-c-torture-execute` corpus for `pe/x-oracle`
+- [ ] T-lin-10088 [X] win-x64 — vendor the exact `gcc-c-torture-execute` corpus for `pe/x-oracle`
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10088-win-x64-vendor-the-exact-gcc | DEPS: — | Q: Q-lin-10014
 

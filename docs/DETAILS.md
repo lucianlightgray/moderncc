@@ -312,7 +312,7 @@ Both call sites are unreachable in a shipped configuration — `OPT_SEARCH_EMIT_
 
 <a id="t-lin-10026-p6-split-srcmccastc-17k-lines-and"></a>
 
-## T-lin-10026 P6 -- split `src/mccast.c` (~17k lines) and rename `ast_*` to `ir_*`
+## T-lin-10026 P6 — split `src/mccast.c` (~17k lines) and rename `ast_*` to `ir_*`
 
 **Type** `[S]` — **State** OPEN — **DEPS** —
 
@@ -480,7 +480,7 @@ N10's half of I2(D). The limits struct is fully transcribed and only `deviceName
 
 <a id="t-lin-10040-the-device-dispatcher-is-not-merely"></a>
 
-## T-lin-10040 The device dispatcher is not merely absent -- it is unwritable from what exists
+## T-lin-10040 The device dispatcher is not merely absent — it is unwritable from what exists
 
 **Type** `[S]` — **State** BLOCKED — **DEPS** —
 
@@ -494,7 +494,7 @@ The compiler's two slice-evaluation sites pass `nlive = 0` and one tuple, and `m
 
 <a id="t-lin-10041-mac-arm64-the-native-msl-region"></a>
 
-## T-lin-10041 mac-arm64 -- the native MSL region arm
+## T-lin-10041 mac-arm64 — the native MSL region arm
 
 **Type** `[X]` — **State** OPEN — **DEPS** —
 
@@ -506,7 +506,7 @@ The MoltenVK step landed at `2eee6c41` and the whole SPIR-V arm including `gpu/s
 
 <a id="t-lin-10042-mac-arm64-the-metal-parity-staged"></a>
 
-## T-lin-10042 mac-arm64 -- the Metal parity staged plan (1,530-2,360 lines, or 2,200-3,400 with fp64)
+## T-lin-10042 mac-arm64 — the Metal parity staged plan (1,530-2,360 lines, or 2,200-3,400 with fp64)
 
 **Type** `[X]` — **State** BLOCKED — **DEPS** —
 
@@ -618,7 +618,7 @@ Smaller than the debt as filed and the claim that it is larger than the emitter 
 
 <a id="t-lin-10051-debt-6-vi-the-chain-store"></a>
 
-## T-lin-10051 Debt 6-vi -- the chain-store *member* fixture was never written
+## T-lin-10051 Debt 6-vi — the chain-store *member* fixture was never written
 
 **Type** `[S]` — **State** OPEN — **DEPS** —
 
@@ -876,7 +876,7 @@ Observed fail, fail, pass, pass on identical code: it failed inside a 212-cell `
 
 <a id="t-lin-10072-lin-x64-optfireabs-and-optfirelevel-abs"></a>
 
-## T-lin-10072 lin-x64 -- `optfire/abs` and `optfire/level-abs` fail only in a full parallel run
+## T-lin-10072 lin-x64 — `optfire/abs` and `optfire/level-abs` fail only in a full parallel run
 
 **Type** `[X]` — **State** OPEN — **DEPS** —
 
@@ -888,7 +888,7 @@ A flake at about one run in two rather than a contention with a family waiting t
 
 <a id="t-lin-10073-lin-x64-the-two-wine-run"></a>
 
-## T-lin-10073 lin-x64 -- the two wine `run-tier` cells are load-sensitive
+## T-lin-10073 lin-x64 — the two wine `run-tier` cells are load-sensitive
 
 **Type** `[X]` — **State** OPEN — **DEPS** —
 
@@ -924,7 +924,7 @@ Two runs of the same binary on the same commit gave 55/55 and 54/55. Priced 2026
 
 <a id="t-lin-10076-n7-residue-an-independent-tree-side"></a>
 
-## T-lin-10076 N7 residue -- an independent tree-side oracle for the slice evaluator
+## T-lin-10076 N7 residue — an independent tree-side oracle for the slice evaluator
 
 **Type** `[S]` — **State** OPEN — **DEPS** —
 
@@ -936,7 +936,7 @@ N7's central question is answered — the GPU arm does catch an injection into t
 
 <a id="t-lin-10077-n37-the-refs-disagree-class-is"></a>
 
-## T-lin-10077 N37 -- the refs-disagree class is computed per digest, so a category hides its own points
+## T-lin-10077 N37 — the refs-disagree class is computed per digest, so a category hides its own points
 
 **Type** `[S]` — **State** OPEN — **DEPS** —
 
@@ -950,7 +950,7 @@ The class was introduced to fix N29's own triage and inherited the granularity m
 
 <a id="t-lin-10078-n36-residue-and-on-over-wide"></a>
 
-## T-lin-10078 N36 residue -- `/` and `%` on over-wide bit-fields are still per-operation truncated
+## T-lin-10078 N36 residue — `/` and `%` on over-wide bit-fields are still per-operation truncated
 
 **Type** `[S]` — **State** OPEN — **DEPS** —
 
@@ -1010,7 +1010,7 @@ Measured on an RTX 5070 Ti: self-hosting `src/mcc.c` runs 249,556 rungs, 499,113
 
 <a id="t-lin-10083-win-x64-flip-default-c-to"></a>
 
-## T-lin-10083 win-x64 -- flip default `-c` to COFF and re-bank `o0-baseline`
+## T-lin-10083 win-x64 — flip default `-c` to COFF and re-bank `o0-baseline`
 
 **Type** `[X]` — **State** OPEN — **DEPS** T-lin-10002[C]
 
@@ -1022,7 +1022,7 @@ W3 landed flag-gated on the actual Windows box: `mcc -c -Wl,-oformat=coff` emits
 
 <a id="t-lin-10084-win-x64-non-constant-except-filters"></a>
 
-## T-lin-10084 win-x64 -- non-constant `__except` filters and `__finally` need funclet codegen
+## T-lin-10084 win-x64 — non-constant `__except` filters and `__finally` need funclet codegen
 
 **Type** `[X]` — **State** OPEN — **DEPS** —
 
@@ -1034,7 +1034,7 @@ W6 landed for the constant-filter case, and the "funclet generation required" pr
 
 <a id="t-lin-10085-win-x64-codeview-debugt-types"></a>
 
-## T-lin-10085 win-x64 -- CodeView `.debug$T` types
+## T-lin-10085 win-x64 — CodeView `.debug$T` types
 
 **Type** `[X]` — **State** OPEN — **DEPS** —
 
@@ -1046,7 +1046,7 @@ W6 landed for the constant-filter case, and the "funclet generation required" pr
 
 <a id="t-lin-10086-win-x64-arm64-win32-arm-win32"></a>
 
-## T-lin-10086 win-x64 -- `arm64-win32` / `arm-win32` execution
+## T-lin-10086 win-x64 — `arm64-win32` / `arm-win32` execution
 
 **Type** `[X]` — **State** BLOCKED — **DEPS** —
 
@@ -1060,7 +1060,7 @@ Compiled and byte-compared only. Blocked on hardware, not on code.
 
 <a id="t-lin-10087-win-x64-w5-mcc-cannot-self"></a>
 
-## T-lin-10087 win-x64 -- W5: mcc cannot self-host on Windows arm64
+## T-lin-10087 win-x64 — W5: mcc cannot self-host on Windows arm64
 
 **Type** `[X]` — **State** BLOCKED — **DEPS** —
 
@@ -1074,7 +1074,7 @@ Blocked on Windows-on-ARM hardware.
 
 <a id="t-lin-10088-win-x64-vendor-the-exact-gcc"></a>
 
-## T-lin-10088 win-x64 -- vendor the exact `gcc-c-torture-execute` corpus for `pe/x-oracle`
+## T-lin-10088 win-x64 — vendor the exact `gcc-c-torture-execute` corpus for `pe/x-oracle`
 
 **Type** `[X]` — **State** BLOCKED — **DEPS** —
 
@@ -1088,7 +1088,7 @@ The only thing genuinely out of reach from the Windows host: the corpus is absen
 
 <a id="t-lin-10089-mac-arm64-the-asto0-baseline-quartet"></a>
 
-## T-lin-10089 mac-arm64 -- the `ast/o0-baseline` quartet is a visible skip with a real reason
+## T-lin-10089 mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
 
 **Type** `[X]` — **State** OPEN — **DEPS** T-lin-10002[C]
 
@@ -1100,7 +1100,7 @@ It is a visible skip with a stated reason and the reason is the honest one, whic
 
 <a id="t-lin-10090-mac-arm64-re-take-if-conversion"></a>
 
-## T-lin-10090 mac-arm64 -- re-take `if-conversion-abs` on arm64
+## T-lin-10090 mac-arm64 — re-take `if-conversion-abs` on arm64
 
 **Type** `[X]` — **State** OPEN — **DEPS** —
 
@@ -1112,7 +1112,7 @@ The x86_64 demotion landed and the row's stated reason did not survive the measu
 
 <a id="t-lin-10091-mac-arm64-capture-the-fail-ident"></a>
 
-## T-lin-10091 mac-arm64 -- capture the `FAIL ident_shift:` line from the arm64 nightly
+## T-lin-10091 mac-arm64 — capture the `FAIL ident_shift:` line from the arm64 nightly
 
 **Type** `[X]` — **State** OPEN — **DEPS** —
 
