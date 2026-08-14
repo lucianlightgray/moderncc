@@ -1200,7 +1200,7 @@ does **not** settle N30 — that needs the fold/run class. **Two changes, this o
 > case behind it.
 >
 > **Superseded by the end-of-day count in *Open, ranked*: the live rows are N3 (items 22 and 23),
-> N6, N7, N36 and N37 — five of forty.** N29 closed on 2026-08-13 and N36/N37/N38/N39/N40 came
+> N7, N36 and N37 — four of forty.** N29 closed on 2026-08-13 and N36/N37/N38/N39/N40 came
 > with it.
 >
 > **Live board rows: N3 (items 22 and 23), N6, N7, N29 — four of thirty-five.** N18 leaves this
@@ -1451,11 +1451,13 @@ flag whose own gate wants `INLINE_FUNCTIONS` off. Its x86_64-gated pair is `cli/
 per-symbol size oracle both halves want already exists out of process as
 `so_fn_sizes`/`so_macho_fn_sizes`, used by `mcc_superopt_perfn`.
 
-**7. N6 — `L2`, wire the device into `mccjit_shutdown()`.** *Any host with a device.* Its two
-preconditions are discharged; the live hazard is that the quiesce unmaps the shared address space,
-so nothing may retain a `mcc_gpu_mem()` pointer across shutdown. **N34 is the cautionary
-precedent**: the same teardown, reached in the wrong `atexit` order, segfaulted every compile that
-touched the device.
+**~~7. N6 — `L2`, wire the device into `mccjit_shutdown()`.~~ — CLOSED 2026-08-13 on the Mac.**
+Both preconditions held. The one worth recording is that the ordering the row asked for was
+*already correct and only incidentally so* — `atexit` runs in reverse registration order and the
+two handlers came out right because `mccjit_boot_swap_async` calls `ast_ladder_gpu_setup()` before
+`mccjit_pool_start()`, while `mccjit_kgc_reg` registers the same handler independently and can
+invert it. The fix makes the order a property of the code. 143 cells green, 38/38 objects
+byte-identical. Detail in the N6 row.
 
 **8. N18 — the `-O0 --embed-jit` faithfulness gap. — WATCHED 2026-08-13; the gap itself is what is
 left.** *Any host; nothing here is arch-gated any more.* The row is no longer unobserved: the
@@ -2277,8 +2279,9 @@ measurement tool reports success over an empty or truncated subject:
 > correctness gate that only runs on the AOT path is not a correctness gate**, because the JIT
 > re-emits the same arenas with no faithfulness comparison to fall back on.
 >
-> **Ranking as of 2026-08-13, END OF THE arm64/macOS WAVE: N3 (items 22 and 23), N6, N7, N36 and
-> N37 — five of forty.** N29 closed and cost N36 and N37 on the way; N38, N39 and N40 are new,
+> **Ranking as of 2026-08-13, END OF THE arm64/macOS WAVE: N3 (items 22 and 23), N7, N36 and
+> N37 — four of forty.** **N6 closed** on this host, which was the last live row whose stated
+> requirement was "any host with a device". N29 closed and cost N36 and N37 on the way; N38, N39 and N40 are new,
 > filed and closed the same day except for N40's `optfire` flake and its mingw row. **Of the five
 > live rows, two are decisions rather than code** (N36: which half of the split over-wide
 > bit-field semantics to move; N37's compiler half: whether to adopt `__divdc3`-style complex
@@ -3705,6 +3708,51 @@ the next row. *(2)* **The cell that caught it was itself red and invisible.** `s
 does not match `^rir-`, `^flagsweep`, or any of the regexes the standing-reds sweeps used, and it
 is not reached by `ctest -R "^smoke/"`. It was found by running the family. All 120 stratsweep
 cells are green against the corrected baseline.
+
+**~~N6. `L2` — wire the device into `mccjit_shutdown()`.~~ — LANDED 2026-08-13 on the Mac, and
+both preconditions were already satisfied.** `mccjit_shutdown()` now calls `mcc_gpu_quiesce()`
+after `mccjit_pool_shutdown()` and `mccjit_qsbr_reclaim()`.
+
+**What the row asked for is one line; what it was worth is the reason.** Precondition 1 said to
+order the teardown after the pool join so no worker is inside a dispatch when the device goes
+away. **That order already held, but only incidentally**: `ast_ladder_gpu_setup()` registers
+`atexit(ast_ladder_gpu_report)` (which quiesces) and `mccjit_pool_start()` registers
+`atexit(mccjit_shutdown)`, and atexit runs in reverse registration order, so the pair came out
+right purely because `mccjit_boot_swap_async` happens to call setup before pool_start.
+**`mccjit_kgc_reg` registers `mccjit_shutdown` independently** and can invert it. Quiescing inside
+the shutdown makes the ordering a property of the code instead of the registration sequence.
+
+**Precondition 2 is satisfied and now has an enumeration behind it.** Nothing may retain a
+`mcc_gpu_mem()` pointer across shutdown — and in the compiler nothing calls `mcc_gpu_mem` at all.
+The complete list of device entry points reachable from `src/` is `mcc_gpu_emit`, `mcc_gpu_run`,
+`mcc_gpu_dispatch`, `mcc_gpu_code_free/dump`, `mcc_gpu_stats` and `mcc_gpu_quiesce`; the first two
+appear only in `mccast.c`'s ladder hook and its warmup, and `mcc_gpu_dispatch` only in
+`mcc_slice_run_gpu`, whose callers are all in `tools/slicerun.c`. **So the compiler cannot
+initialize the device except through `ast_ladder_gpu_setup`**, which registers the teardown before
+returning. Confirmed by running rather than by reading: a `--embed-jit -O2` compile with the
+ladder GPU off emits **no `[ladder-gpu]` report at all** (setup took its early return, so no
+device call happened), while `MCC_AST_EVAL_LADDER_GPU=1` reports
+`tried=1 available=1 device=Apple M1 Pro dispatches=1`.
+
+**The double quiesce is a no-op by construction on both backends**, which is what makes the new
+call safe next to the existing one: Metal's `mtl_release` is nil-guarded and the second pass reads
+back the fields the first zeroed, and Vulkan's is guarded on `mcc_gpu.dev`, which the first call
+cleared. **N34 is why this was checked rather than assumed** — the same teardown reached in the
+wrong `atexit` order segfaulted every compile that touched the device.
+
+**Measured.** 143 cells green across `smoke/`, `jit/`, `gpu/` and `slice/`. Exit status 0 on a
+device-touching compile, on the same compile with `MCC_JIT_SHUTDOWN=0`, and on the both-handlers-
+armed `--embed-jit` + ladder-GPU path, whose produced binary also runs and exits 0. **And it is
+byte-neutral where it could not have been anything else but was checked anyway**: 38 of 38
+`tests/exec` objects at `-O2` identical across the change, since the call sits in an `atexit`
+handler after all output is written.
+
+**The residue this leaves is item 5 and item 6 below, plus one cosmetic leftover recorded with
+the preconditions**: `vkDeviceWaitIdle` is still in the hard-required `MCC_VK_FNS` bind list
+although nothing calls it — harmless, but a reader may take its presence as evidence the wait
+survives.
+
+**As originally filed:**
 
 **N6. `L2` — wire the device into `mccjit_shutdown()`.** Unblocked as of 2026-08-10, with two
 preconditions in the GPU landed section. One is a hazard *this wave created*: the quiesce now

@@ -2023,6 +2023,18 @@ PUB_FUNC void mccjit_shutdown(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	mccjit_pool_shutdown();
 	mccjit_qsbr_reclaim();
+	/* After the pool join, never before: either order is safe under the lock
+	 * plus mcc_gpu_closing, but joining first means no worker can be inside a
+	 * dispatch when the device goes away.  Until this call existed the ordering
+	 * was incidental -- ast_ladder_gpu_setup() registers its atexit teardown and
+	 * mccjit_pool_start() registers this one, so the pair came out right only
+	 * because boot_swap_async calls them in that order; the mccjit_kgc_reg path
+	 * registers this handler independently and can invert it.  Quiescing here
+	 * makes the order a property of the code rather than of the registration
+	 * sequence.  The second quiesce is a no-op on both backends by construction:
+	 * Metal releases nil and reads back zeroed fields, Vulkan guards on
+	 * mcc_gpu.dev, which the first call cleared. */
+	mcc_gpu_quiesce();
 }
 
 void mccjit_set_search_budget(unsigned long secs) { MCC_TRACE("enter\n");
