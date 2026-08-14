@@ -7439,9 +7439,48 @@ x86 ABI tests, which is why `gcc.target` sits ~2pp below the other suites.
 
 #### Missing `__builtin_*` — 66 cells / 33 files
 `__builtin_cpu_supports` and `__builtin_cpu_init`, `__builtin_setjmp` and
-`__builtin_longjmp`, `__builtin_addc` and the `subc` family, `__builtin_powi` /
-`__builtin_powif`, `__atomic_thread_fence`, `__builtin_eh_return_data_regno`,
-`__builtin___fprintf_chk`, `__builtin_vprintf`.
+`__builtin_longjmp`, ~~`__builtin_addc` and the `subc` family~~, ~~`__builtin_powi` /
+`__builtin_powif`~~, ~~`__atomic_thread_fence`~~, `__builtin_eh_return_data_regno`,
+~~`__builtin___fprintf_chk`~~, ~~`__builtin_vprintf`~~.
+
+**Re-checked against the tree 2026-08-13, and the list was four names too long.**
+`__builtin_powi`/`powif` **already work** and `__atomic_thread_fence` /
+`__atomic_signal_fence` **already exist** — in `runtime/include/stdatomic.h`, which is
+their right home. They read as missing only if you probe them without the header, which
+is how they got onto this list.
+
+**Landed the same day, in `runtime/include/mccdefs.h`, on the header-macro pattern the
+overflow builtins already use:**
+
+- **The carry-chain family** — `__builtin_addc{,b,s,l,ll}` and `__builtin_subc{,b,s,l,ll}`,
+  ten names. Written over `__builtin_{add,sub}_overflow` rather than a new primitive,
+  because for unsigned operands the overflow test *is* the carry: two dependent
+  operations, carry out if either overflows. **Matches clang bit for bit** on all five
+  widths (`200+100→44 carry 1`, `60000+10000→4464 carry 1`, `0xFFFFFFFF+1→0 carry 1`,
+  `0-1 borrow 1`, and the carry-*in* paths). gcc has no `__builtin_addcb`, so clang is
+  the only reference and is cited as such.
+- **The fortify wrappers** — `__builtin___{f,}printf_chk`, `__builtin___v{f,}printf_chk`,
+  `__builtin_v{f,}printf`. mcc does not implement `_FORTIFY_SOURCE`, so each discards the
+  object-size flag and calls the unchecked form, which is what every one of them degrades
+  to when the size is not a compile-time constant anyway. Matches gcc.
+
+**One trap worth carrying, because it cost 154 cells.** Defining `__atomic_thread_fence`
+in the predefs *collided* with `stdatomic.h`'s own definition, and the resulting
+`"__atomic_thread_fence redefined"` warning went to stderr — which the exec runner
+**compares**. 154 exec cells went red on a warning, not on a value. The predefs and the
+headers must not both own a name; when a builtin already has a header home, that is where
+it stays.
+
+**Covered by extending `tests/exec/features_c99_c11/builtin_overflow.c`** rather than a
+new file — the golden is `"OK\n"` and the corpus manifest hashes path *names*, so
+extending an existing fixture costs neither a golden nor a denominator. Its nine new
+assertions were mutation-checked (`44` → `45` gives `FAIL line 56`, rc 1). One
+`ast/o0-baseline` row moved as a result and was re-banked **as one row**, since the cause
+is that edit and nothing else; the other ten keys and the `.rir` board were left alone.
+
+**Still missing** and not attempted: `__builtin_cpu_init` / `__builtin_cpu_supports`
+(needs CPUID dispatch), `__builtin_setjmp` / `__builtin_longjmp` (needs frame and target
+support), `__builtin_eh_return_data_regno` (target constants, small).
 
 > Moved to [`docs/ARCHIVED.md`](ARCHIVED.md) 2026-08-10, validated complete against the tree: *Confirmations for the clusters the archive had ranked*.
 

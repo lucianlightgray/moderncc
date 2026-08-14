@@ -43,6 +43,28 @@ int main(void) {
 	CK(__builtin_sub_overflow(5, 10, &rc) == 1);
 	CK(__builtin_add_overflow(40, 50, &rc) == 0 && rc == 90);
 
+	/* The carry-chain family. Each returns the sum and writes the carry OUT
+	 * through the last argument, with a carry IN as the third operand, so the
+	 * result is two dependent adds and the carry is either overflowing. Values
+	 * checked against clang, which is where these builtins come from. */
+	{
+		unsigned char cb = 0;
+		unsigned short cs = 0;
+		unsigned ci = 0;
+		unsigned long cl = 0;
+		unsigned long long cll = 0;
+		CK(__builtin_addcb(200, 100, 0, &cb) == 44 && cb == 1);
+		CK(__builtin_addcs(60000, 10000, 0, &cs) == 4464 && cs == 1);
+		CK(__builtin_addc(0xFFFFFFFFu, 1u, 0u, &ci) == 0 && ci == 1);
+		CK(__builtin_addc(1u, 2u, 0u, &ci) == 3 && ci == 0);
+		CK(__builtin_subc(3u, 5u, 0u, &ci) == 0xFFFFFFFEu && ci == 1);
+		CK(__builtin_addcl(~0ul, 1ul, 0ul, &cl) == 0 && cl == 1);
+		CK(__builtin_subcll(0ull, 1ull, 1ull, &cll) == 0xFFFFFFFFFFFFFFFEull && cll == 1);
+		/* The carry IN must reach the result, not just the carry out. */
+		CK(__builtin_addc(1u, 1u, 1u, &ci) == 3 && ci == 0);
+		CK(__builtin_addc(0xFFFFFFFFu, 0u, 1u, &ci) == 0 && ci == 1);
+	}
+
 	printf(fails ? "FAIL\n" : "OK\n");
 	return fails ? 1 : 0;
 }

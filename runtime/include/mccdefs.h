@@ -1054,6 +1054,60 @@
 	({ __typeof__(c) __mcc_ovp_r; __builtin_mul_overflow((a), (b), &__mcc_ovp_r); })
 	#define __builtin_assoc_barrier(x) (x)
 	#define __builtin_assume(cond) ((void)0)
+
+	/* NO __atomic_thread_fence / __atomic_signal_fence here. Both are already
+	 * defined by runtime/include/stdatomic.h, which is their right home, and
+	 * defining them again in the predefs makes every TU that includes
+	 * <stdatomic.h> warn "redefined" -- 154 exec cells, because the runner
+	 * compares compiler stderr. They read as missing only if you probe them
+	 * without the header. */
+
+	/* clang's carry-chain builtins. Each returns the sum and writes the carry
+	 * OUT through the last argument; the carry IN is a third operand, so the
+	 * result is two dependent adds and the carry is either of them
+	 * overflowing. Written against __builtin_add_overflow rather than a new
+	 * primitive because the unsigned overflow test is exactly the carry. */
+	#define __mcc_carry_gen(op, T, a, b, cin, cout) __extension__ ({	\
+	T __mcc_c_a = (T)(a), __mcc_c_b = (T)(b), __mcc_c_i = (T)(cin);	\
+	T __mcc_c_t, __mcc_c_r;						\
+	unsigned char __mcc_c_1 =					\
+	(unsigned char)__builtin_##op##_overflow(__mcc_c_a, __mcc_c_b, &__mcc_c_t); \
+	unsigned char __mcc_c_2 =					\
+	(unsigned char)__builtin_##op##_overflow(__mcc_c_t, __mcc_c_i, &__mcc_c_r); \
+	*(cout) = (T)(__mcc_c_1 | __mcc_c_2);				\
+	__mcc_c_r; })
+	#define __builtin_addcb(a, b, cin, cout) \
+	__mcc_carry_gen(add, unsigned char, a, b, cin, cout)
+	#define __builtin_addcs(a, b, cin, cout) \
+	__mcc_carry_gen(add, unsigned short, a, b, cin, cout)
+	#define __builtin_addc(a, b, cin, cout) \
+	__mcc_carry_gen(add, __mcc_uint_t, a, b, cin, cout)
+	#define __builtin_addcl(a, b, cin, cout) \
+	__mcc_carry_gen(add, __mcc_ulong_t, a, b, cin, cout)
+	#define __builtin_addcll(a, b, cin, cout) \
+	__mcc_carry_gen(add, __mcc_ullong_t, a, b, cin, cout)
+	#define __builtin_subcb(a, b, cin, cout) \
+	__mcc_carry_gen(sub, unsigned char, a, b, cin, cout)
+	#define __builtin_subcs(a, b, cin, cout) \
+	__mcc_carry_gen(sub, unsigned short, a, b, cin, cout)
+	#define __builtin_subc(a, b, cin, cout) \
+	__mcc_carry_gen(sub, __mcc_uint_t, a, b, cin, cout)
+	#define __builtin_subcl(a, b, cin, cout) \
+	__mcc_carry_gen(sub, __mcc_ulong_t, a, b, cin, cout)
+	#define __builtin_subcll(a, b, cin, cout) \
+	__mcc_carry_gen(sub, __mcc_ullong_t, a, b, cin, cout)
+
+	/* The _chk fortify wrappers. mcc does not implement _FORTIFY_SOURCE, so
+	 * the checked forms are the unchecked ones with the object-size flag
+	 * discarded -- which is what every one of them degrades to when the size
+	 * is not known at compile time anyway. */
+	#define __builtin___fprintf_chk(f, flag, ...) fprintf((f), __VA_ARGS__)
+	#define __builtin___printf_chk(flag, ...) printf(__VA_ARGS__)
+	#define __builtin___vfprintf_chk(f, flag, fmt, ap) vfprintf((f), (fmt), (ap))
+	#define __builtin___vprintf_chk(flag, fmt, ap) vprintf((fmt), (ap))
+	#define __builtin_vprintf(fmt, ap) vprintf((fmt), (ap))
+	#define __builtin_vfprintf(f, fmt, ap) vfprintf((f), (fmt), (ap))
+
 	#define __mcc_ovfw(op, T, a, b, r) __builtin_##op##_overflow((T)(a), (T)(b), (r))
 	#define __builtin_sadd_overflow(a, b, r) __mcc_ovfw(add, __mcc_int_t, a, b, r)
 	#define __builtin_saddl_overflow(a, b, r) __mcc_ovfw(add, __mcc_long_t, a, b, r)
