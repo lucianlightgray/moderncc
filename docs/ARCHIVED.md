@@ -272,3 +272,4 @@ Records below `SHA n/a` predate this protocol: they were retro-minted on 2026-08
 - T-lin-10002 Bank keying: every host-sensitive bank is keyed by target and object format | DONE 2026-08-14T19:34Z | SHA 925a98fc | REF DETAILS.md#t-lin-10002-bank-keying-every-host-sensitive-bank
 - T-lin-10070 `tools/docref-lint.py` must lint the new doc layout | DONE 2026-08-14T19:41Z | SHA b028dc9a | REF DETAILS.md#t-lin-10070-toolsdocref-lintpy-must-lint-the-new
 - T-lin-10055 `corpus_config` cannot see `MCC_EMBED_JIT` — guard-fires proof added | DONE 2026-08-14T20:01Z | SHA 44103802 | REF DETAILS.md#t-lin-10055-corpus-config-cannot-see-mcc-embed
+- T-lin-10091 mac-arm64 — capture the `FAIL ident_shift:` line from the arm64 nightly | DONE 2026-08-14T19:52Z | SHA 2adf3530 | REF DETAILS.md#t-lin-10091-resolved-optfire-diagnostics-and-ident-shift-green
