@@ -8172,6 +8172,28 @@ pass that learns to reason about the `else` arm of `if (setjmp(...) == 0)` can r
 this class, and mcc has no AST-level CFG to hang that on. `optlevel/torture-differential`
 plus the new fixture are the tripwire.
 
+**Registering that fixture cost one more finding.** Adding a file to `tests/exec` grows the
+`wide` corpus, so `rir-coverage-census` failed with *"corpus wide drifted: banked 386
+file(s), this run walked 387 -- re-bank deliberately or find what moved"*. The tool's own
+decomposition answered it: **9 new bodies, 0 gone, and the pre-existing component of every
+percentage moved by 0.0000pp** — all drift is corpus mix, so the setjmp change did not move
+a single existing body's lowerability.
+
+The obvious re-bank was the wrong one. `--update-bodies --update-bank` rewrote **every
+floor** downward by the dilution and, worse, collapsed `"failed": {"elf": 9, "macho": 17}`
+into `"failed": 9` — **throwing the macho floor away because this host cannot measure it.**
+`arena_floor()` has read that field as a per-format dict since it was banked; only the
+*write* side was host-blind, because the per-format merge loop lists `("residual",
+"kept_coverage")` and `"failed"` was never added to it. Fixed by adding it, and verified:
+a Linux `--update-bank` now leaves `{"elf": 9, "macho": 17}` intact where it previously
+wrote `9`. Same class as `c57961e1`.
+
+**The floors did not need to move at all** — updating only the 387-file manifest makes the
+census pass, because the lowerable ratchet compares over the intersection of banked and
+present bodies by design. So the committed change is two lines of manifest plus nine
+inventory rows, and every percentage floor in the bank is untouched. A blind re-bank would
+have lowered seven floors and dropped a Mac ratchet to fix a corpus that merely grew.
+
 **And writing real asm on five backends found an assembler defect that has nothing to do
 with setjmp — see N39 below.** Three mcc assembler limitations were hit on the way and are
 worked around in place with the reason: arm rejects a core-register *range* (`{r4-r11}`)

@@ -3611,6 +3611,7 @@ wide	elf	src/mccast.c	ast_bfold_sq_gt	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_bfold_sqrt	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_bfold_trunc	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_body_asm_eff	src/mcc.c	0000
+wide	elf	src/mccast.c	ast_body_has_setjmp	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_bt_bits	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_chain_partner_ok	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_child	src/mcc.c	6666
@@ -6672,6 +6673,14 @@ wide	elf	tests/exec/features_c99_c11/builtin_mcc_ext.c	sj_regs	tests/exec/featur
 wide	elf	tests/exec/features_c99_c11/builtin_mcc_ext.c	sj_unwind	tests/exec/features_c99_c11/builtin_mcc_ext.c	0000
 wide	elf	tests/exec/features_c99_c11/builtin_mcc_ext.c	sj_work	tests/exec/features_c99_c11/builtin_mcc_ext.c	0000
 wide	elf	tests/exec/features_c99_c11/builtin_overflow.c	main	tests/exec/features_c99_c11/builtin_overflow.c	0000
+wide	elf	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	dirty_stack	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	4444
+wide	elf	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	local_jump	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	0000
+wide	elf	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	main	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	0000
+wide	elf	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	nl_deep	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	0000
+wide	elf	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	nl_jump	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	0000
+wide	elf	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	nl_local_buf	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	0000
+wide	elf	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	nl_locals	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	0000
+wide	elf	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	two_buffers	tests/exec/features_c99_c11/builtin_setjmp_nonlocal.c	0000
 wide	elf	tests/exec/features_c99_c11/builtins.c	main	tests/exec/features_c99_c11/builtins.c	0000
 wide	elf	tests/exec/features_c99_c11/c11_complex_const_fold.c	eq	tests/exec/features_c99_c11/c11_complex_const_fold.c	0000
 wide	elf	tests/exec/features_c99_c11/c11_complex_const_fold.c	main	tests/exec/features_c99_c11/c11_complex_const_fold.c	0000

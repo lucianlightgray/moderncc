@@ -1901,7 +1901,14 @@ def main():
                     dst["lowerable"] = cur
                 else:
                     keep = dst.get(lname, {})
-                    for k in ("residual", "kept_coverage"):
+                    # "failed" belongs in this list for the same reason the
+                    # other two do: which sources compile is a host property,
+                    # and arena_floor() already reads it as a per-format dict.
+                    # Leaving it out meant --update-bank on a Linux host wrote a
+                    # flat scalar over {"elf": 9, "macho": 17} and silently threw
+                    # the macho floor away -- a host-blind bank of exactly the
+                    # kind c57961e1 fixed elsewhere.
+                    for k in ("residual", "kept_coverage", "failed"):
                         if k not in v:
                             continue
                         cur = keep.get(k)
