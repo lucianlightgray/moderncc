@@ -3037,9 +3037,15 @@ match compares the text after the first space in a key, and the arm owns `diverg
 44. All four classes are now `diverge-one` / `diverge-both` / `diverge-refs` / `diverge-masked`,
 one prefix, and a second re-bank is byte-idempotent. Both banks were renamed in place.
 
-**`tests/smoke/bails.txt` needs one re-bank on x86_64-linux and that cell is red there until it
-gets one** — the `diverge-masked` rows for that host cannot be measured from here, and they are
-meant to be read before they are banked. The header says so at the top of the file.
+**~~`tests/smoke/bails.txt` needs one re-bank on x86_64-linux~~ — DONE the same day, by that
+host.** The `diverge-masked` rows could not be measured from the Mac and were meant to be read
+before being banked; they were. Three rows there — `bsweep.F16.FSCALE` 160,
+`csweep.{C32,C64}.CMULADD` 10 each — **180 points, decomposed completely and none of them a wrong
+answer** (140 evaluation-format plus 20 NaN sign/payload on the first). arm64-macos has seven,
+six of them on complex divide. **The class did the job it was added for on its first outing:** it
+arrived as a `new bail category` failure on a host that had to triage it before it could go green,
+which is the opposite of the silent clearing it replaced. Stale request removed from the bank
+header; note 17 there is the answer.
 
 **As filed, and the hand triage still stands as the evidence:** it is N29's
 own finding one level down. N29 established that `diverge-both` conflated "mcc contradicts a

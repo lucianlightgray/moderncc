@@ -1,19 +1,20 @@
 # regenerate: ctest -R smoke/rebank
 #
-# THIS FILE NEEDS ONE RE-BANK ON x86_64-linux, 2026-08-13, and the divergence
-# cell will be red there until it gets one. Two changes landed from the Mac and
-# neither could be measured here. (1) The four divergence classes now share a
-# `diverge-` prefix so the bank's scope match owns all of them: `refs-disagree`
-# was outside it, which meant those rows were never ratcheted AND were copied
-# from the old bank on every --rebank while also being written from the run --
-# one re-bank took 22 rows to 44. The 20 rows below were renamed in place, so
-# that half needs nothing. (2) smokerun now re-runs every `diverge-refs`
-# category through the subject's `--points` mode and banks the count of points
-# inside it where the two references AGREE and mcc differs, as
-# `div diverge-masked:<category>`. Those rows do not exist here yet, so each one
-# this host produces will arrive as a `new bail category` failure. Read the
-# MASKED lines, triage them, and re-bank -- do not bank them without reading,
-# which is the whole point of the class. arm64-macos has seven of them, six on
+# THE RE-BANK THIS HEADER USED TO ASK FOR IS DONE -- note 17 below is its
+# result, and this paragraph is kept only so the request and its answer sit
+# together. Two changes landed from the Mac on 2026-08-13 that could not be
+# measured there. (1) The four divergence classes now share a `diverge-` prefix
+# so the bank's scope match owns all of them: `refs-disagree` was outside it,
+# which meant those rows were never ratcheted AND were copied from the old bank
+# on every --rebank while also being written from the run -- one re-bank took 22
+# rows to 44. The 20 rows here were renamed in place, so that half needed
+# nothing. (2) smokerun re-runs every `diverge-refs` category through the
+# subject's `--points` mode and banks the count of points inside it where the
+# two references AGREE and mcc differs, as `div diverge-masked:<category>`.
+# Those rows did not exist here and each arrived as a `new bail category`
+# failure, which is the design: read the MASKED lines and triage them before
+# banking, never bank them to make the cell green. That was done -- three rows,
+# 180 points, all accounted for -- and arm64-macos has seven of its own, six on
 # complex divide.
 #
 # Every diverge-both row below is a triaged finding, not a tolerance. Re-take
