@@ -4,11 +4,19 @@ set -eu
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
 BDIR="${1:-cmake-debug}"
+# Accept an absolute build dir. It used to be pasted onto $REPO unconditionally,
+# so a caller passing the full path -- which is what ctest does -- got
+# "$REPO/$REPO/..." and the tool skipped with "no mcc at ...". That is why this
+# ledger was easy to leave unregistered.
+case "$BDIR" in
+/*) ;;
+*) BDIR="$REPO/$BDIR" ;;
+esac
 shift || true
 OPTS=("$@")
 [ "${#OPTS[@]}" -gt 0 ] || OPTS=(-O2 -O3)
 
-MCC="$REPO/$BDIR/mcc"
+MCC="$BDIR/mcc"
 [ -x "$MCC" ] || { echo "SKIP: no mcc at $MCC"; exit 77; }
 
 WORK="$(mktemp -d)"

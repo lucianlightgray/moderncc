@@ -1,0 +1,46 @@
+# Which optimizer strategies actually FIRE on the exec corpus, per -O level.
+#
+# tools/strategy-ledger.sh has published this partition since it was written and
+# was registered nowhere, so nothing noticed if a strategy stopped firing. That
+# is the shape of N1 -- work a mechanism performs that nothing observes -- one
+# level up: here it is work a mechanism STOPS performing that nothing observes.
+#
+# The ratchet is one-directional on purpose. A banked FIRES strategy that goes
+# NEVER is a regression and fails the cell: either the optimizer stopped doing
+# something it used to do, or the corpus stopped reaching it, and both are worth
+# a diagnosis. A NEVER strategy that starts firing is NOT a failure -- that is
+# the direction this project is trying to move -- it just wants re-banking so
+# the new floor holds.
+#
+# NEVER is not automatically a defect. `abs` is dark at -O2 and -O3 BY DECISION
+# as of 2026-08-13: if-conversion-abs was demoted to LEVEL(4) because it is
+# time-inert, so its absence here is the demotion working. `sra` and `sroa` are
+# off by default for the reasons their own rows give. The rest are the standing
+# question N1 asks and this file does not answer.
+#
+# Format: <level> <strategy>   -- one line per strategy that MUST fire.
+# Re-take with: tools/strategy-ledger.sh <builddir> -O2 -O3
+O2 bfold
+O2 cprop
+O2 cse
+O2 divmagic
+O2 dse
+O2 ident
+O2 inline
+O2 ivsr
+O2 jt
+O2 licm
+O2 sccp
+O2 tco
+O3 bfold
+O3 cprop
+O3 cse
+O3 divmagic
+O3 dse
+O3 ident
+O3 inline
+O3 ivsr
+O3 jt
+O3 licm
+O3 sccp
+O3 tco

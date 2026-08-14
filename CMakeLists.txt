@@ -8900,6 +8900,25 @@ endif()
 set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
 set(CPACK_SOURCE_IGNORE_FILES
     "/\\.git/" "/cmake-[^/]*/" "/build-[^/]*/" "/\\.idea/" "\\.o$" "\\.a$")
+# tools/strategy-ledger.sh publishes which optimizer strategies actually fire
+# on the exec corpus and was registered nowhere, so a strategy that stopped
+# firing said nothing to anyone. This is the ratchet for it: every banked FIRES
+# row must still fire. One-directional -- a new arrival is reported, not failed.
+if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR
+   AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_TARGETOS STREQUAL "Darwin")
+    add_test(NAME "optfire/strategy-ledger"
+        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/strategy-ledger-check.sh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/strategy-ledger.sh"
+                "${CMAKE_BINARY_DIR}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/strategy-ledger.txt"
+                "${CMAKE_BINARY_DIR}/strategy-ledger")
+    set_tests_properties("optfire/strategy-ledger" PROPERTIES
+        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 1800)
+else()
+    mcc_skip_test("optfire/strategy-ledger"
+        "the strategy fire ledger runs the exec corpus natively (native ELF host only)")
+endif()
+
 # One device, one lock -- OFF by default, because it was measured.
 #
 # slice/quiesce tears the Vulkan device down while every other device cell is

@@ -2294,9 +2294,22 @@ The board section below carries roughly **thirty FILED items** that this handoff
 names, and they are all still true of the tree. The shape they share is that a
 measurement tool reports success over an empty or truncated subject:
 
-- **Four tools that publish figures on this board are registered nowhere** —
-  `xsuite-report.py`, `gate-ledger.sh`, `strategy-ledger.sh`, `c2_sweep.sh` have zero
+- **~~Four~~ THREE tools that publish figures on this board are registered nowhere** —
+  `xsuite-report.py`, `gate-ledger.sh`, ~~`strategy-ledger.sh`~~, `c2_sweep.sh` have zero
   hits in `CMakeLists.txt` and `cmake/`.
+  **`strategy-ledger.sh` is registered as of 2026-08-14**: `optfire/strategy-ledger`, 2.9 s,
+  banked in `tests/optfire/strategy-ledger.txt`. It publishes which optimizer strategies
+  actually fire on the exec corpus — **12 fire, 12 never, identical at `-O2` and `-O3`** —
+  and nothing was watching, so a strategy that *stopped* firing said nothing to anyone. That
+  is N1's question from the other side. **The ratchet is one-directional on purpose**: a
+  banked FIRES row going dark fails; a dark strategy starting to fire is reported and not
+  failed, because that is the direction this project is trying to move. Proved it bites by
+  banking a strategy that cannot fire. **`abs` is legitimately dark at `-O2`/`-O3` now and
+  the bank says so** — the `if-conversion-abs` demotion showing up where it should.
+  **Found on the way, and it is most of why this was easy to leave unregistered**: the tool
+  pasted its build-dir argument onto `$REPO` unconditionally, so any caller passing an
+  absolute path — which is what ctest does — got `$REPO/$REPO/…` and the tool skipped with
+  *"no mcc at …"*.
 - **`vendor/plb` does not exist**, so `runtime-bench.py` filters its corpus by
   `os.path.exists` and silently measures nothing; `tests/must-run.txt` records
   the resulting skip as permanent rather than fixing it. `opt-cache-determinism` is a
