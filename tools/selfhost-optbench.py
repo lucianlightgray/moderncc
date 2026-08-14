@@ -779,7 +779,28 @@ def main():
         print("wrote %s" % args.json)
     bench.save()
 
-    if args.check and levels:
+    if args.check:
+        # Two ways this check used to pass having checked nothing, which is
+        # sweep row 11. First, `and levels` meant an empty derivation skipped
+        # the comparison silently -- no PASS line, no FAIL, exit 0. Second, a
+        # flag with no measurable evidence is assigned levels[f] = levels_now[f]
+        # by design, so comparing it against src/mccopt.h is comparing a value
+        # with itself: an all-inert run printed "matches the ladder" having
+        # derived nothing. Require that some flag was actually derived from a
+        # measurement before the agreement means anything.
+        derived = [f for f in names
+                   if not why.get(f, "").startswith("unchanged:")]
+        if not levels:
+            print("FAIL: --check derived no levels at all, so 'matches the "
+                  "ladder' would have been a statement about an empty set")
+            return 1
+        if not derived:
+            print("FAIL: --check derived %d level(s) but every one is "
+                  "'unchanged' -- each was assigned its current src/mccopt.h "
+                  "value, so the comparison below compares those values with "
+                  "themselves and cannot fail. Nothing was measured that could "
+                  "move a flag." % len(levels))
+            return 1
         bad = [f for f in names if levels_now[f] != levels[f]]
         if bad:
             print("FAIL: src/mccopt.h disagrees with the derived ladder for: %s"
@@ -787,7 +808,9 @@ def main():
                               % (f, levels_now[f], levels[f]) for f in bad))
             return 1
         print("check: src/mccopt.h matches the ladder derived from these "
-              "measurements (t1=%.3f t2=%.3f)" % (args.t1, args.t2))
+              "measurements (t1=%.3f t2=%.3f); %d of %d flag(s) were derived "
+              "from evidence, the rest kept their current level"
+              % (args.t1, args.t2, len(derived), len(levels)))
     errs = [f for f, r in rows.items()
             if r.get("loo_error") or r.get("aoi_error")]
     for f in errs:
