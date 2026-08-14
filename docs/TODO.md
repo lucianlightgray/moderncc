@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T20:49Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10361   | 2026-08-14T20:16Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10361   | 2026-08-14T20:52Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T20:40Z |
 
 ## Contracts — blocking, highest priority
@@ -14,7 +14,7 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10001-a-task-representation-with-an-explicit | DEPS: —
 - [ ] T-lin-10003 [C] Every gate cell carries an anti-vacuity floor and a proved known-positive
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 24d6d8db | TS: 2026-08-14T20:10Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 99a28e2d | TS: 2026-08-14T20:52Z
       REF: DETAILS.md#t-lin-10003-landed-the-gate-contract | DEPS: — | BLOCKED-BY-RED: T-lin-10360
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone

@@ -41518,3 +41518,35 @@ Fixed at `740e4f54`. `mccjit_embed_finalize` emitted its "no functions were JIT-
 Investigation only (no code change). The `--mutate` bite sites live in `tools/slicerun.c`'s SPIR-V device emitter, not the CPU reference: under `mcc_slice_mutate` the device path XORs bit 0 of a region store/load/format-write (the `if (mcc_slice_mutate)` blocks at the `spv_store_region` / `spv_load_region` / `spv_fmt_emit` sites, ~lines 2594/2919/3277). The frame differential compares the CPU reference against the device kernel and counts a disagreement in `g_frame_mismatch` (declared ~6876); a mutant "survives" when no corpus scenario exercises a perturbed site. The corpus is the hand-built `CHECK`-based frame scenarios inside slicerun.c (e.g. the global-indexed-field / scalar-field frame builds ~1784-1841), not an external directory. The gap the row names: no scenario lowers a bulk memory write (`memcpy`/`memset`) to a device region store, so the region-store mutate site is unproven for that shape. Next slice: add a frame scenario whose block `memcpy`/`memset`s into a device-resident region, assert it lowers and CPU/device agree unmutated, then assert `mcc_slice_mutate` makes them disagree (`g_frame_mismatch` increments) — the "must fail before the pairing exists" the verification wants. Confirmed the four existing operator sites and `g_frame_mismatch` exist as the row states.
 
 **Source.** mac-arm64, 2026-08-14T20:48Z, at `bbcedeea` (investigation only).
+
+
+<a id="t-lin-10003-cross-platform-a-hosts-skip-is-not-a-gates-failure"></a>
+
+## T-lin-10003 cross-platform — a host's skip is not a gate's failure
+
+**Type** `[C]` — **State** DONE 2026-08-14 — **DEPS** —
+
+The contract landed at `24d6d8db` verified on lin-x64 only, and mac-arm64 ran it on Darwin within the hour: **red, five violations over 97 gates.** Four were one bug and the fifth was that bug reflected. Both come from designing a cross-platform contract against one platform, which is the trap `INSTRUCTIONS.md` §12 exists for, and the finding is worth more than the fix.
+
+**The bug.** A cell registered as an `mcc_skip_test` echo stub *on the host running the check* has no command line to floor and no prover that can go red there. The tool read both as failures:
+
+| reported on Darwin | what was actually true |
+| --- | --- |
+| `ast/o0-baseline` names a known-positive that is a stub | the quartet skips on Darwin — that is T-lin-10089, already filed |
+| `ast/o0-baseline-gated`, same | same |
+| `optlevel/torture-differential` declares `min:--minprog` and does not pass it | its Darwin registration is *itself* a stub, which passes nothing at all |
+| its known-positive is a stub | same cause |
+
+The third is the instructive one. It reads as the most host-independent of the four — a floor flag either is on the command line or is not — and it is the most host-dependent, because on that host there is no command line. A gate that cannot fail and a host that cannot run it must not render the same, and rendering them the same is this contract's own thesis pointed backwards.
+
+**The mirror image.** `gpu/msl-slice-known-positive` is a real cell on a Metal host and no row claimed it. It went undeclared because it is a stub on lin-x64 and the orphan check skips stubs — the same conflation, arriving from the other side. `gpu/msl-slice-differential` and `gpu/msl-slice-real` are now declared and the prover is a `tests/must-run.txt` row, written to stay honest on a host that runs it and one that does not.
+
+**The fix, in one rule.** A declared cell that is an echo stub here is **host-skipped**: named in the output, checked for neither half, and explicitly described as proved by nothing on this host. On lin-x64 that surfaces seven, four of which nothing had ever said out loud — `asm-gas-directives` (T-lin-10049's subject) and the three vendored `slice/cref-oracle-*` corpora.
+
+**And the ratchets are now a property of the manifest, not of the runner.** They were counted over what the host registered, so the same pin meant different things on three machines and could not have held on all of them. They are now counted over the manifest rows regardless of host, which is what makes one pair of numbers — `--max-unfloored 85 --max-unproved 50` over 99 gates — correct everywhere.
+
+**The mutation set changed with it.** `stub-prover` was the only one of the five that depended on a host reading; it is replaced by `unlisted-prover`, which points a row at `mcc_build` and must be refused for being absent from `tests/must-run.txt`. All five still go red.
+
+**Verification.** `ctest --test-dir cmake-def -R '^ci/' --output-on-failure`, 5 of 5 green on lin-x64 at `99a28e2d`; the Darwin reading is owed by mac-arm64 and is **not** claimed here — claiming a platform I cannot run is the defect this section is about.
+
+**Source.** Reported by mac-arm64 at `d45ce2de`, fixed on lin-x64 2026-08-14 at `99a28e2d`.
