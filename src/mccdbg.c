@@ -533,6 +533,9 @@ static int dwarf_get_section_sym(Section *s) { MCC_TRACE("enter\n");
 #define CV_LF_POINTER 0x1002
 #define CV_LF_FIELDLIST 0x1203
 #define CV_LF_STRUCTURE 0x1505
+#define CV_LF_UNION 0x1506
+#define CV_LF_ARRAY 0x1503
+#define CV_T_ULONG 0x0022
 #define CV_LF_MEMBER 0x150d
 #define CV_LF_ULONG 0x8004
 #define CV_PROP_FWDREF 0x80
@@ -649,24 +652,43 @@ static unsigned cv_pointer_type(unsigned referent) { MCC_TRACE("enter\n");
 	return cv_add_record(body, bl);
 }
 
-static unsigned cv_struct_type(CType *tp);
+static unsigned cv_aggregate_type(CType *tp, int is_union);
+static unsigned cv_array_type(CType *tp);
 
 static unsigned cv_type_of(CType *tp) { MCC_TRACE("enter\n");
 	if (tp->t & VT_ARRAY)
-		{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); return cv_array_type(tp); }
 	if ((tp->t & VT_BTYPE) == VT_PTR) { MCC_TRACE("br\n");
 		unsigned ref = cv_type_of(&tp->ref->type);
 		if (ref == 0)
 			{ MCC_TRACE("br\n"); return 0; }
 		return cv_pointer_type(ref);
 	}
-	if ((tp->t & VT_BTYPE) == VT_STRUCT && !IS_UNION(tp->t)) { MCC_TRACE("br\n");
-		return cv_struct_type(tp);
+	if ((tp->t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
+		return cv_aggregate_type(tp, IS_UNION(tp->t));
 	}
 	return cv_basic_type(tp);
 }
 
-static unsigned cv_struct_type(CType *tp) { MCC_TRACE("enter\n");
+static unsigned cv_array_type(CType *tp) { MCC_TRACE("enter\n");
+	unsigned elem, bl = 0;
+	int align, tsz;
+	unsigned char body[24];
+	elem = cv_type_of(&tp->ref->type);
+	if (elem == 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	tsz = type_size(tp, &align);
+	if (tsz <= 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	cv_put_u16(body, &bl, CV_LF_ARRAY);
+	cv_put_u32(body, &bl, elem);
+	cv_put_u32(body, &bl, CV_T_ULONG);
+	cv_put_numeric(body, &bl, (unsigned)tsz);
+	body[bl++] = 0;
+	return cv_add_record(body, bl);
+}
+
+static unsigned cv_aggregate_type(CType *tp, int is_union) { MCC_TRACE("enter\n");
 	Sym *st, *m;
 	unsigned i, fwd, fl, nmem = 0, sz;
 	unsigned char rb[600], *fb;
@@ -687,12 +709,14 @@ static unsigned cv_struct_type(CType *tp) { MCC_TRACE("enter\n");
 	if (nn > sizeof(rb) - 24)
 		{ MCC_TRACE("br\n"); return 0; }
 	bl = 0;
-	cv_put_u16(rb, &bl, CV_LF_STRUCTURE);
+	cv_put_u16(rb, &bl, is_union ? CV_LF_UNION : CV_LF_STRUCTURE);
 	cv_put_u16(rb, &bl, 0);
 	cv_put_u16(rb, &bl, CV_PROP_FWDREF);
 	cv_put_u32(rb, &bl, 0);
-	cv_put_u32(rb, &bl, 0);
-	cv_put_u32(rb, &bl, 0);
+	if (!is_union) { MCC_TRACE("br\n");
+		cv_put_u32(rb, &bl, 0);
+		cv_put_u32(rb, &bl, 0);
+	}
 	cv_put_numeric(rb, &bl, 0);
 	memcpy(rb + bl, nm, nn);
 	bl += nn;
@@ -738,12 +762,14 @@ static unsigned cv_struct_type(CType *tp) { MCC_TRACE("enter\n");
 	mcc_free(fb);
 	sz = (unsigned)st->c;
 	bl = 0;
-	cv_put_u16(rb, &bl, CV_LF_STRUCTURE);
+	cv_put_u16(rb, &bl, is_union ? CV_LF_UNION : CV_LF_STRUCTURE);
 	cv_put_u16(rb, &bl, nmem);
 	cv_put_u16(rb, &bl, 0);
 	cv_put_u32(rb, &bl, fl);
-	cv_put_u32(rb, &bl, 0);
-	cv_put_u32(rb, &bl, 0);
+	if (!is_union) { MCC_TRACE("br\n");
+		cv_put_u32(rb, &bl, 0);
+		cv_put_u32(rb, &bl, 0);
+	}
 	cv_put_numeric(rb, &bl, sz);
 	memcpy(rb + bl, nm, nn);
 	bl += nn;

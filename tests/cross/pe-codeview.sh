@@ -70,7 +70,7 @@ done
 
 # gold standard: link to a PDB and read the line info back out
 if [ -n "$LLD" ] && [ -f "$LLD" ] && [ -n "$PDBUTIL" ] && [ -f "$PDBUTIL" ]; then
-	printf 'int square(int x){int r=x*x;return r;}\nint deref(int*p){return *p;}\nstruct Pt{int x;int y;};\nint psum(struct Pt*q){return q->x+q->y;}\nint mainCRTStartup(void){int x=5;struct Pt p;p.x=1;p.y=2;return square(x)+deref(&x)+psum(&p);}\n' > "$WORK/m.c"
+	printf 'int square(int x){int r=x*x;return r;}\nint deref(int*p){return *p;}\nstruct Pt{int x;int y;};\nunion Un{int a;float b;};\nstruct Ar{int v[4];};\nint psum(struct Pt*q){return q->x+q->y;}\nint uget(union Un*u){return u->a;}\nint aget(struct Ar*z){return z->v[0];}\nint mainCRTStartup(void){int x=5;struct Pt p;p.x=1;p.y=2;return square(x)+deref(&x)+psum(&p);}\n' > "$WORK/m.c"
 	"$MCC" -gcodeview -c -Wl,-oformat=coff "$WORK/m.c" -o "$WORK/m.o" 2>/dev/null
 	if MSYS2_ARG_CONV_EXCL='*' "$LLD" -nologo -debug -subsystem:console \
 			-entry:mainCRTStartup "$WORK/m.o" -out:"$WORK/m.exe" -pdb:"$WORK/m.pdb" 2>"$WORK/link.log"; then
@@ -96,6 +96,17 @@ if [ -n "$LLD" ] && [ -f "$LLD" ] && [ -n "$PDBUTIL" ] && [ -f "$PDBUTIL" ]; the
 			echo "codeview: PDB struct type round-trip OK (struct Pt { int x; int y; })"
 		else
 			echo "pe-codeview: PDB carries no mcc struct type with named members" >&2; fail=1
+		fi
+		# union + array types (T-win-50000): a union and an array member must round-trip
+		if echo "$pdbtypes" | grep -qE 'union Un '; then
+			echo "codeview: PDB union type round-trip OK (union Un)"
+		else
+			echo "pe-codeview: PDB carries no mcc union type" >&2; fail=1
+		fi
+		if "$READOBJ" --codeview "$WORK/m.o" 2>/dev/null | grep -qF 'LF_ARRAY'; then
+			echo "codeview: array type record OK (LF_ARRAY for an array member)"
+		else
+			echo "pe-codeview: no LF_ARRAY record for an array member" >&2; fail=1
 		fi
 	else
 		echo "pe-codeview: lld-link failed (non-fatal, skipping PDB check)" >&2
