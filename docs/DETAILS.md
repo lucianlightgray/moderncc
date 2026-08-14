@@ -41895,3 +41895,23 @@ So residency is not the variable, and *"absent in the passing one"* was true of 
 **Where that leaves the diagnostic.** Still worth running, now with its limit stated: a foreign `wineserver` means the cells *may* be unverifiable and a timeout must not be attributed to a commit without a second reading. It does **not** mean they will fail, and a green run under one is not evidence that a fix worked. The honest next step for this row is an instrumented run that records what the cell is blocked on at the moment it stalls, rather than another correlation over the host's process table — three more data points of the kind above would not settle it.
 
 **Source.** Measured on lin-x64, 2026-08-14, in the fourth full-suite run of the day; corrects the section above rather than replacing it, because its table is the evidence for the correction.
+
+<a id="t-lin-10003-progress-lin-x64-survey"></a>
+
+## T-lin-10003 progress note (lin-x64) — the survey, so the next holder resumes
+
+**Last green SHA** 27a06cc4. **State at hand-off** IN_PROGRESS, owner lin-x64.
+
+Inventory: **399 registered cells, 35 carrying a known-positive companion.** The gap is the work. `ctest --test-dir cmake-def -R '^ci/'` (the contract's registration side) is green 3/3, so the registration half needs nothing.
+
+Three cells were repaired against this contract on 2026-08-14 and are worth reading as worked examples before starting, because each is a different failure shape:
+
+- `optfire/gate-ledger` — scored twelve gates off a compile that never happened: `-f<devgate>` is *refused* without `MCC_DEV=1`, so the whole corpus failing to build was read as the gate firing. Fix was a second measurement pass under `MCC_DEV=1` plus a `REFUSED` class for any polarity that built nothing.
+- `xsuite/report` — a suite/opt pair that never ran printed `0.0%`, indistinguishable from one that ran and passed nothing. The fix had to keep the genuine `0.0%`; the cell proves that by failing an over-broad version.
+- `rir/c2-sweep` — the `c2*` columns are compiled out by default, so banking a floor of `0` on them would have been the vacuous ratchet itself. Banked the census half only; the cell instead asserts the tool *declares* `c2=on` vs `c2=COMPILED-OUT`.
+
+**Blocked on host, not on code.** §8 needs a full native suite pass for DONE. While `bg3_dx11.exe` holds the GPU (see [T-lin-10359](#t-lin-10359-slicecref-oracle-stalls-on-five-programs)) the device and wine cells cannot be verified here. Slice work can still land: `code` pushes gate only on that slice's smoke tests.
+
+**Remaining work, in order.** (1) Enumerate which of the 364 cells without a known-positive actually gate something falsifiable — many are goldens where the golden *is* the known-positive. (2) For each real gate, add the floor and the proved known-positive. (3) Full suite on a quiet host to certify.
+
+**Source.** lin-x64 checkpoint, 2026-08-14T22:29Z.
