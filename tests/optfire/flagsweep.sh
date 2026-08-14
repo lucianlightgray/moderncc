@@ -194,6 +194,7 @@ ran=0
 rc=0
 stale=0
 missing=""
+unbuildable=""
 corpus_run() {
 	lvl=$1
 	label=$2
@@ -214,6 +215,13 @@ corpus_run() {
 		fi
 		nm=$(basename "$sub")
 		if [ -f "$WORK/$nm.refunbuildable" ]; then
+			# Recorded on an earlier corpus_run in this same invocation. Name it
+			# once: the marker is why the subject vanishes from every later
+			# level and state, and `ran > 0` alone cannot see that.
+			case " $unbuildable " in
+			*" $sub "*) ;;
+			*) unbuildable="$unbuildable $sub" ;;
+			esac
 			continue
 		elif [ -f "$WORK/$nm.refanswer" ]; then
 			ref=$(cat "$WORK/$nm.refanswer")
@@ -221,6 +229,10 @@ corpus_run() {
 			if "$MCC" -B"$BDIR" -I"$IDIR" -w -O0 "$src" -o "$WORK/$nm.ref" -lm -lpthread \
 				>/dev/null 2>&1; then :; else
 				: > "$WORK/$nm.refunbuildable"
+				case " $unbuildable " in
+				*" $sub "*) ;;
+				*) unbuildable="$unbuildable $sub" ;;
+				esac
 				continue
 			fi
 			ref=$(set +e; $PIN "$WORK/$nm.ref" 2>&1; printf '[rc=%s]' "$?")
@@ -376,6 +388,17 @@ exec)
 		{ echo "FAIL flagsweep-exec $ARG: named subject(s) absent from tests/exec, so the sweep silently shrank:$missing"; exit 1; }
 	[ "$ran" -gt 0 ] ||
 		{ echo "FAIL flagsweep-exec $ARG: no subject built, though every named subject is present -- the -O0 reference build failed for all of them, which is a red and not an absent prerequisite"; exit 1; }
+	# Sweep row 24, the flagsweep half. A subject whose -O0 reference will not
+	# build is dropped from every level and every flag state, silently, and the
+	# only floor was `ran > 0` -- so one surviving subject printed PASS exactly
+	# as 31 did. The script already calls a total failure a red; a partial one
+	# is the same red with a smaller denominator.
+	[ -z "$unbuildable" ] ||
+		{ echo "FAIL flagsweep-exec $ARG: the -O0 reference build failed for subject(s):$unbuildable"
+		  echo "  They were dropped from all three levels and both flag states, so the"
+		  echo "  $ran run(s) above are over a corpus that silently shrank. This is a red"
+		  echo "  and not an absent prerequisite -- every named subject is present."
+		  exit 1; }
 	[ "$stale" -eq 0 ] ||
 		{ echo "FAIL flagsweep-exec $ARG: $stale KNOWN_RED case(s) now pass -- drop them from KNOWN_RED in $0"; exit 1; }
 	[ "$rc" -eq 0 ] || exit 1
