@@ -41871,3 +41871,27 @@ The "consumes by count" is **stale**: commit `8a92ee01` ("ast_locrec_skip takes 
 `superopt/promote-floor` passes 5 of 5 on mac-arm64 (load avg ~3; it is a functional pass/fail cell, not timing-sensitive), consistent with its "passes in isolation" history — the single failure in eleven full-gate runs was concurrent with other agents. `selfhost-fixpoint-memmodel-{O3,Os}` survived 38 clean re-runs after its one stage2 SIGSEGV, also concurrent. Per the row's own guidance ("if either recurs on an idle machine with a clean tree it is real and wants a core dump; until then, do not chase"), both are dismissed as concurrent-agent artefacts. The durable lesson stands and is why they happened: separate build directories are **not** isolation, because `selfhost-*` and `mcctest` compile the live `src/` tree, so two agents building at once contend on the same sources. Re-open with a core dump if either recurs on a genuinely idle, clean tree.
 
 **Source.** mac-arm64, 2026-08-14T21:59Z, confirmed at 775bfb10.
+
+
+<a id="t-lin-10073-correction-residency-is-not-the-variable"></a>
+
+## T-lin-10073 correction — a resident `wineserver` is not sufficient, and the earlier section overstates it
+
+**Type** `[X]` lin-x64 — **State** OPEN — **DEPS** —
+
+[The measurement above](#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver) claims the mechanism is a foreign `wineserver`, and supports it with a table whose passing row has none resident and whose two failing rows do. A fourth run on 2026-08-14, later the same evening, is a direct counter-example and the claim has to come down a notch:
+
+| | `run-tier/i386-win32` | `bg3_dx11.exe` | its `wineserver` |
+| --- | --- | --- | --- |
+| run 1 | Passed 17.43 s | absent | absent |
+| run 2 | **Failed 302.72 s** | resident, 5.19 GiB | resident |
+| serial retry | **Failed ~300 s** | resident, 5.19 GiB | resident |
+| **run 4** | **Passed 4.86 s** | **resident, 5.88 GiB** | **resident** |
+
+So residency is not the variable, and *"absent in the passing one"* was true of the three data points I had and false as a general statement. Worse, run 4 passed at **4.86 s** — faster than the 17.43 s baseline taken on a quiet box — while the foreign process held *more* GPU memory than in either failing run. Whatever the cells contend for, a byte count of resident VRAM does not measure it.
+
+**What survives.** The failures are real, they are not this tree's code, and they are not parallel load — the serial retry at load average 7 still timed out, and that remains the most useful single fact on this row. What does not survive is the mechanism: "a foreign `wineserver` is resident" is a correlate that has now failed to predict twice in one direction, so the row cannot be closed by checking `pgrep`.
+
+**Where that leaves the diagnostic.** Still worth running, now with its limit stated: a foreign `wineserver` means the cells *may* be unverifiable and a timeout must not be attributed to a commit without a second reading. It does **not** mean they will fail, and a green run under one is not evidence that a fix worked. The honest next step for this row is an instrumented run that records what the cell is blocked on at the moment it stalls, rather than another correlation over the host's process table — three more data points of the kind above would not settle it.
+
+**Source.** Measured on lin-x64, 2026-08-14, in the fourth full-suite run of the day; corrects the section above rather than replacing it, because its table is the evidence for the correction.
