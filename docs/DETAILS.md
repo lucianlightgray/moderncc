@@ -41766,3 +41766,28 @@ The rule the gate enforces is that every function body and braced branch in an `
 **Verification.** `ctest --test-dir cmake-def -R '^trace-gate-invariant$' --output-on-failure`.
 
 **Source.** Found on lin-x64, 2026-08-14, in the `-LE wine` full-suite run at `5d8d8835`.
+
+
+<a id="t-lin-10003-the-treegate-label-the-pre-done-check-made-mechanical"></a>
+
+## T-lin-10003 the `treegate` label — the pre-DONE check made mechanical
+
+**Type** `[C]` — **State** DONE 2026-08-14 — **DEPS** —
+
+Three tasks in one afternoon — [T-lin-10360](#t-lin-10360-rir-bank-keying-has-no-skip-branch), [T-lin-10361](#t-lin-10361-t-lin-10028s-fprintf-moved-fmt-census-bank), [T-lin-10362](#t-lin-10362-trace-gate-invariant-is-red-on-main) — went DONE and archived with a tree-wide gate red behind them, one per session, all three found by somebody else's full-suite run. In every case the owner had done what §8 asks: verified their own slice's cells. The gap is not diligence, it is that "the cells your edit is subject to" was a thing each session had to *remember*, and the three sessions remembered different subsets.
+
+A habit that has to be re-derived per session is not a control. So the set is now a `ctest` label:
+
+```
+ctest --test-dir cmake-def -L treegate
+```
+
+**11 cells, 18.9 s wall.** `ci/must-run-registered`, `ci/gate-contract`, `ci/gate-contract-known-positive`, `ci/registration-stubs`, `census/gates-armed`, `trace-gate-invariant`, `fmt/census-bank`, `fmt/census-bank-known-positive`, `fmt/census-oracle`, `docs/refs`, `docs/refs-known-positive`. Run on the tree as it stood when the label landed, it reproduces all three of the red gates above, which is the only evidence that the membership is the right membership.
+
+**Membership is named, not matched.** A regex over cell names would have been shorter and would quietly acquire cells nobody meant to put in a pre-commit path — and the cost of that is not a slow check, it is a check people stop running. What qualifies is a judgement: the cell scans the whole source tree, reads a bank of figures quoted on the board, or asserts the suite still registers what it claims. What does not qualify is anything that tests the slice you touched, anything needing a device, and anything over 5 s.
+
+**The list cannot rot silently.** Configure fails, with the reason, if any named cell is registered by no branch of the build. That is the same rule `ci/registration-stubs` enforces one level down, applied to this list: a name that no branch registers is a typo or a deleted cell, and letting it pass would make `ctest -L treegate` check less than it says while still printing green. Labels are applied to whichever branch registered the cell, so the label works identically on a host where several of them are `mcc_skip_test` stubs.
+
+**Verification.** `ctest --test-dir cmake-def -L treegate` selects exactly 11 cells; deleting any name from `MCC_TREEGATE_CELLS` or misspelling one fails the configure rather than shrinking the set.
+
+**Source.** Implemented on lin-x64, 2026-08-14, after mac-arm64 adopted the ad-hoc regex `ctest -R '^(ci|trace-gate|fmt/census)'` as a personal standard — this is that standard, made mechanical and given a membership rule.
