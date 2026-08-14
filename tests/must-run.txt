@@ -208,3 +208,4 @@ slice/arrow-known-positive   | registered | proves the arrow lowering is compare
 slice/fmt-known-positive     | registered | proves the printf ring is compared rather than merely written to
 superopt/global-reload-known-positive | registered | proves superopt/global-reload re-proves the reloads it eliminated
 rir/bank-keying-known-positive | registered | proves rir/bank-keying's per-format keying is compared rather than asserted: --mutate collapses the per-format dict and the check must catch it (T-lin-10002)
+rir/corpus-guard-known-positive | registered | proves rir/corpus-guard's guard is exercised rather than asserted: --mutate flips a source-shaping input and the guard must fire (T-lin-10055)

@@ -7009,7 +7009,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         --must-run "${CMAKE_CURRENT_SOURCE_DIR}/tests/must-run.txt"
                         --build "${CMAKE_BINARY_DIR}"
                         --min-rows 90 --min-proved 40
-                        --max-unfloored 82 --max-unproved 49)
+                        --max-unfloored 83 --max-unproved 49)
             set_tests_properties("ci/gate-contract" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
 
@@ -7021,7 +7021,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         -DMUSTRUN=${CMAKE_CURRENT_SOURCE_DIR}/tests/must-run.txt
                         -DBINDIR=${CMAKE_BINARY_DIR}
                         -DMINROWS=90 -DMINPROVED=40
-                        -DMAXUNFLOORED=82 -DMAXUNPROVED=49
+                        -DMAXUNFLOORED=83 -DMAXUNPROVED=49
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_contract_mutate.cmake")
             set_tests_properties("ci/gate-contract-known-positive" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
@@ -7954,6 +7954,10 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         mcc_skip_test("runtime-bench-check" "${_nopy2_why}")
         mcc_skip_test("optbench/null-subject" "${_nopy2_why}")
         mcc_skip_test("optbench/null-subject-known-positive" "${_nopy2_why}")
+        mcc_skip_test("rir/bank-keying" "${_nopy2_why}")
+        mcc_skip_test("rir/bank-keying-known-positive" "${_nopy2_why}")
+        mcc_skip_test("rir/corpus-guard" "${_nopy2_why}")
+        mcc_skip_test("rir/corpus-guard-known-positive" "${_nopy2_why}")
         mcc_skip_test("optbench/levelbench-bank" "${_nopy2_why}")
         mcc_skip_test("optbench/levelbench-bank-known-positive" "${_nopy2_why}")
         mcc_skip_test("fmt/census-bank" "${_nopy2_why}")

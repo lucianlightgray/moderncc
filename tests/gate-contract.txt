@@ -94,6 +94,7 @@ census/gates-armed | min:--min-cells | unproved | census-labelled cells found an
 ci/registration-stubs | min:--min-chains | unproved | capability-gate chains checked for a registered else-branch
 ci/gate-contract | min:--min-rows | ci/gate-contract-known-positive | gates declared in this manifest and checked against the build
 rir/bank-keying | unfloored | rir/bank-keying-known-positive | host-sensitive bank figures keyed by target and object format, and proved not to overwrite each other
+rir/corpus-guard | unfloored | rir/corpus-guard-known-positive | corpus_config entries whose guard fires on a source-shaping flip rather than silently reusing a stale corpus
 ast/inv-faithful | unfloored | ast/inv-faithful-known-positive | bodies whose two MCC_INV=1 compiles were subtracted
 rir-coverage-census | unfloored | unproved | bodies the coverage census ratcheted
 rir-gap-classes | unfloored | unproved | UNF/WHY gap fixtures classified
