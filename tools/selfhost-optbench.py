@@ -538,6 +538,13 @@ def derive_levels(rows, order, t1, t2, levels_now, pins):
         elif cost >= COST_HEAVY:
             levels[f] = 3
             why[f] = "no measurable gain and %.1f%% stage-1 cost" % cost
+        elif r["bucket"] == "unmeasured":
+            # Distinct from inert on purpose: inert means the flag was measured
+            # and moved nothing, unmeasured means no measurement reached it at
+            # all. Both keep the current level -- there is no evidence to move
+            # on either way -- but only one of them is a result.
+            levels[f] = levels_now[f]
+            why[f] = "unmeasured: no sample reached this flag"
         else:
             levels[f] = levels_now[f]
             why[f] = "unchanged: %s, nothing measured to move it on" % r["bucket"]
@@ -619,6 +626,15 @@ def classify(marg, shap, base_full, base_empty, floor):
         r["shap_gain_sd"] = s.get("gain_sd")
         r["shap_gain_se"] = s.get("gain_se")
         r["shap_samples"] = s.get("samples")
+        # "Measured and moved nothing" and "never measured" are different
+        # findings and used to land in the same bucket: every input below is
+        # read with a 0.0 default, so a flag with no samples at all scored
+        # exactly like one that is genuinely inert, and `inert` then flows into
+        # derive_levels as "keep the level you have". Absence has to be
+        # distinguishable from a measured zero, which is this file's own thesis
+        # about instruments.
+        _inputs = ("loo_text", "aoi_text", "loo_cost", "aoi_cost")
+        r["measured"] = any(r.get(k) is not None for k in _inputs)
         moves = (abs(r.get("loo_text", 0.0)) > 0 or abs(r.get("aoi_text", 0.0)) > 0
                  or abs(r.get("loo_cost", 0.0)) >= floor["cost"]
                  or abs(r.get("aoi_cost", 0.0)) >= floor["cost"])
@@ -626,7 +642,8 @@ def classify(marg, shap, base_full, base_empty, floor):
         g = r.get("shap_gain")
         r["significant"] = (g is not None and se > 0
                             and abs(g) >= 2 * se and abs(g) >= floor["gain"])
-        r["bucket"] = ("inert" if not moves else
+        r["bucket"] = ("unmeasured" if not r["measured"] else
+                       "inert" if not moves else
                        "ranked" if (r["significant"] and g > 0) else
                        "cost-no-gain")
         if r["significant"] and g is not None and g < 0:
@@ -813,7 +830,7 @@ def main():
         # derived nothing. Require that some flag was actually derived from a
         # measurement before the agreement means anything.
         derived = [f for f in names
-                   if not why.get(f, "").startswith("unchanged:")]
+                   if not why.get(f, "").startswith(("unchanged:", "unmeasured:"))]
         if not levels:
             print("FAIL: --check derived no levels at all, so 'matches the "
                   "ladder' would have been a statement about an empty set")
