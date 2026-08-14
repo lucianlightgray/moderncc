@@ -1222,6 +1222,21 @@ stress with globals of every kind (struct/union/enum/array) yields a valid PDB, 
 (`S_LOCAL` + `S_DEFRANGE_FRAMEPOINTER_REL`, needs frame offsets + live ranges + `S_BLOCK32`
 scopes — the CV path would have to track locals, which it does not today) and record dedup.
 
+**Local-variable hook, scoped for a fresh-context slice (win-x64, 2026-08-14).** The hook
+already exists: `mcc_add_debug_info(s1, s, e)` (`src/mccdbg.c` ~2758) walks the local Sym
+chain `s`→`e` (`s = s->prev`); for each `(s->r & VT_VALMASK) == VT_LOCAL` it has the name
+(`s->v`), the **frame offset (`s->c`)**, the type (`cv_type_of(&s->type)`), and whether it
+is a parameter (`param = !e`). So a CV branch there can push `{cv_cur, name, type, offset,
+param}` onto a per-function list. The genuinely hard, must-verify part is the frame model:
+CodeView needs an `S_FRAMEPROC` (0x1012) inside each `S_GPROC32` scope declaring the frame
+register + local base, then `S_LOCAL` (0x113e) + `S_DEFRANGE_FRAMEPOINTER_REL` (0x1142) with
+an offset **relative to that register** — and mcc's `s->c` sign/base (RBP- vs RSP-relative;
+mcc's x64 PE frame register and whether it omits the frame pointer) must be mapped to CV's
+convention exactly, else the debugger shows locals at the wrong address (structurally valid,
+semantically wrong — worse than absent). Verify with `llvm-pdbutil pretty -all` on a linked
+PDB and, ideally, a real debugger reading a known local's value. Deferred deliberately so
+the frame mapping is done carefully rather than guessed.
+
 <a id="t-lin-10086-win-x64-arm64-win32-arm-win32"></a>
 
 ## T-lin-10086 win-x64 — `arm64-win32` / `arm-win32` execution
