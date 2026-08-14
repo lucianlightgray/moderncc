@@ -41862,3 +41862,12 @@ The "consumes by count" is **stale**: commit `8a92ee01` ("ast_locrec_skip takes 
 **Blocker for a non-vacuous probe: the skip path does not fire on the corpus.** `ast_locrec_skip` is called only from `ast_inline_graft` (mccast.c:3490 ← the AST replay walk at :5775) for a `VT_STRUCT`-returning graftable callee during replay. A prototype probe (fire/skip/inexact on the skip's `ast_locrec_take`, emitted as `[ast-locfit]` from `rir_report`; compiles clean, reverted) measured **fire=0 over all 312 `tests/exec` files** at `-O2 -finline-functions` under a `-DMCC_REPLAY_IR_C2=1` build with `MCC_REPLAY_IR=5 MCC_FORCE_REPLAY=1` — and c2 replay was confirmed active there (`[rir-locfit]` fired). Constructed small- and large-`sret` struct-return inlines did not fire it either. So the struct-return-graft-during-replay path is not exercised by the standard corpus, and a probe banked over it would be vacuous (its own DETAILS: "zero mismatches means nothing without the firings beside it"). Next attempt: find a firing subject before banking — likely a `--embed-jit`/selfhost replay or a fixture crafted against `ast_inline_graftable`'s exact conditions — then re-add the (working) prototype and confirm skip=0/inexact=0. Byte-identity is not at risk (the probe is additive counters, no logic change).
 
 **Source.** mac-arm64, 2026-08-14T21:55Z, at a88be4d5 (investigation only; probe prototyped and reverted).
+
+
+<a id="t-lin-10075-resolved-both-one-offs-confirmed-non-reproducing"></a>
+
+## T-lin-10075 resolved — both one-offs confirmed non-reproducing; dismissed per guidance
+
+`superopt/promote-floor` passes 5 of 5 on mac-arm64 (load avg ~3; it is a functional pass/fail cell, not timing-sensitive), consistent with its "passes in isolation" history — the single failure in eleven full-gate runs was concurrent with other agents. `selfhost-fixpoint-memmodel-{O3,Os}` survived 38 clean re-runs after its one stage2 SIGSEGV, also concurrent. Per the row's own guidance ("if either recurs on an idle machine with a clean tree it is real and wants a core dump; until then, do not chase"), both are dismissed as concurrent-agent artefacts. The durable lesson stands and is why they happened: separate build directories are **not** isolation, because `selfhost-*` and `mcctest` compile the live `src/` tree, so two agents building at once contend on the same sources. Re-open with a core dump if either recurs on a genuinely idle, clean tree.
+
+**Source.** mac-arm64, 2026-08-14T21:59Z, confirmed at 775bfb10.
