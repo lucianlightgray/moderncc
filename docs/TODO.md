@@ -620,13 +620,40 @@ not predict.
 > standing advice is unchanged and now better supported: fix the experiment — `RESOURCE_LOCK`, a
 > stated load, or both — before adding runs to it.
 
-**Two prerequisites this host is missing, both of which silently shrink coverage rather than
-failing:**
+### The sysroots landed, and the coverage they unblocked found a test defect — 2026-08-13
 
-- `vendor/gentoo-stage3-{i386,arm,arm64,riscv64}-glibc` — four of the thirteen `ast/o0-baseline`
-  keys cannot be measured, so they are **one row short** until a host with the sysroots re-banks.
-  `qemu-aarch64`, `qemu-arm` and `qemu-riscv64` *are* installed, so the sysroots are the only
-  thing between this box and execution-level coverage of three cross targets.
+**`vendor/gentoo-stage3-{i386,arm,arm64,riscv64}-glibc` are fetched.** 6.6 GB, narrowed to the four
+glibc targets this file names rather than the default 5×2 grid. **`ctest -L qemu` is 39 of 39**, and
+`run-tier/{i386,arm,arm64,riscv64}` — execution-level cells that had never run on this host — pass.
+
+**The first run was 36 of 39, and the three failures were all the same program: `chained_assign`,
+on arm, arm64 and riscv64, passing on i386 and x86_64.** Two printed values differed, each by
+**exactly 512**. It reduces to ten lines:
+
+```c
+int a = 207; char c; int x;
+x = c = a;              /* gcc/x86_64: c = -49.  arm/arm64/riscv64: c = 207 */
+```
+
+**And mcc is right on all four targets.** Plain `char` is **unsigned** on arm, arm64 and riscv64 by
+their ABIs; `src/arch/{arm,arm64,riscv64}/*-gen.h` set `MCC_CHAR_IS_UNSIGNED` and the compilers
+predefine `__CHAR_UNSIGNED__ 1` there, while x86_64 leaves it undefined. `signed char` gives −49 on
+every target, as it must. **The defect was in the fixture**: `rot_narrow_mid` used plain `char`, so
+its golden silently encoded x86_64's signedness, and three `-exec` cells failed on a portable
+program producing a portable result.
+
+Fixed by making the declaration `signed char`, which is what the case meant — it is about the
+narrowing in a chained assignment, not about plain char's signedness — and which is **byte-identical
+on x86_64**, so the golden did not move. `^exec` stays 8023 of 8023 and the qemu matrix goes 39/39.
+
+> **This is the argument for fetching the sysroots, and it is not the argument anyone expected.**
+> The row said four `ast/o0-baseline` keys could not be measured. What the sysroots actually bought
+> first was a **portability defect in the test corpus that no x86_64 run could ever have found** —
+> a golden that had been wrong for every non-x86_64 target for as long as it existed, invisible
+> because nothing executed there. A test that cannot run on a target cannot be wrong about it.
+
+**One prerequisite this host is still missing:**
+
 - `MCC_XSUITE_LLVMTS` — `jit/xoracle-coverage` skips rather than failing now, but `--min-cross 400`
   is a two-suite floor and one suite tops out at 379.
 

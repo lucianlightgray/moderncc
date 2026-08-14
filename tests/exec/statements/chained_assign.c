@@ -205,7 +205,14 @@ static int rot_volatile_elem(int s) {
 static int rot_narrow_mid(int s) {
 	struct rot_s r;
 	struct rot_s *q = &r;
-	char c = 3;
+	/* signed char, not char: this case is about the narrowing in a chained
+	 * assignment, not about plain char's signedness, and plain char is UNSIGNED
+	 * on arm, arm64 and riscv64 per their ABIs. With `char` the golden below
+	 * silently encoded x86_64's answer and the three qemu -exec cells failed on
+	 * a portable program giving a portable result. Signed is what the case
+	 * meant, and it is what x86_64 was already testing, so the golden is
+	 * unchanged. */
+	signed char c = 3;
 	short h = 1;
 	int a = 1;
 	q->x = c = a = s * 100 + 7;
