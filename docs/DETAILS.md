@@ -41449,3 +41449,16 @@ The fix is two `mcc_skip_test` lines in the `_nopy2_why` list beside the `optben
 **Verification.** `ctest --test-dir cmake-def -R '^ci/registration-stubs$' --output-on-failure`, and `ctest -N` must report the same cell count with and without `MCC_PYTHON3`.
 
 **Source.** Found on lin-x64, 2026-08-14T20:10Z, at 24d6d8db.
+
+
+<a id="t-lin-10089-investigation-the-osx-bank-encodes-linux-glibc-headers"></a>
+
+## T-lin-10089 investigation — the *-osx object bank encodes the cross host's libc headers, not Darwin's
+
+Measured on mac-arm64 at `2adf3530`. The skip reason's count is exact: a native `cmake-macos/mcc` run of `tools/o0_ab.sh arm64-osx` produces 297 objects, and **198 of the 297 per-file sha256 rows differ** from `tests/ast/o0-baseline/arm64-osx.obj.txt`.
+
+**Root cause is the libc header source, and nothing else.** Not the `-B`/`-I` paths: native `-B cmake-macos` and native `-B runtime -I runtime/include` produce byte-identical objects, both differing from the bank. `runtime/include` is mcc's **freestanding** header set only — `stdarg.h`, `stdint.h`, `float.h`, `limits.h`, the intrinsics, `mccdefs.h` — with no `stdio.h`/`stdlib.h`/`string.h`, so `-nostdinc -I runtime/include` fails outright (`include file 'stdio.h' not found`). The `*osx` branch of `key_flags()` sets **no `--sysroot`** (every Linux key points at `vendor/gentoo-stage3-*`), so the banked arm64-osx column was compiled by the Linux cross `mcc-arm64-osx` against **the Linux host's glibc headers**. A native Darwin `mcc` reads the macOS SDK's libc instead; the two lay out `FILE`, `jmp_buf`, etc. differently, so 198 rows move for a reason that is not an mcc defect (N38).
+
+**Consequence for the fix.** Object identity for the osx keys is reproducible only if the cross re-bank and the native check compile against the *same pinned* libc headers. The existing pin mechanism is a vendored sysroot (`vendor/gentoo-stage3-*` for Linux, `runtime/win32` for Windows); the osx keys have neither. Closing this needs a pinned Darwin libc header set wired into the `*osx` branch as `--sysroot`, a re-bank of the two osx columns against it, then dropping the `NOT Darwin` guard around the quartet in `CMakeLists.txt`. That vendoring choice (which headers, licensing) is escalated as Q-mac-30000.
+
+**Source.** mac-arm64, 2026-08-14T20:15Z, at `2adf3530`.

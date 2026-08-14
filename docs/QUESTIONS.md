@@ -160,3 +160,9 @@ With the corpus present, `pe/x-oracle` runs all 1,693 programs with no new code.
 
 REF: DETAILS.md#q-lin-10014-can-vendorgcc-c-torture-execute-be
 
+
+### Q-mac-30000 — [mac-arm64] — 2026-08-14T20:15Z — BLOCKS: T-lin-10089
+The `ast/o0-baseline` *-osx object bank is header-sensitive and currently encodes the Linux cross host's glibc libc headers (N38); a native Darwin mcc uses the macOS SDK, so 198 of 297 arm64-osx rows differ. To un-skip the quartet on Darwin without a bank that drifts with the SDK, the osx keys need a *pinned* Darwin libc header set wired as `--sysroot` (mirroring `vendor/gentoo-stage3-*`). What set should be vendored — a curated subset of a fixed macOS SDK, and is committing Apple SDK headers into the tree acceptable (licensing)? Or a preferred stand-in, e.g. an mcc-authored minimal darwin libc header set under `runtime/osx`?
+**Assumed for now:** none safe — vendoring Apple headers is a licensing decision and there is no in-tree Darwin libc header set to point at, so the quartet keeps skipping on Darwin (mode b, BLOCKED).
+**Cost if wrong:** nothing redone; the quartet stays a visible, reasoned skip on Darwin until the header set is chosen.
+REF: DETAILS.md#t-lin-10089-investigation-the-osx-bank-encodes-linux-glibc-headers

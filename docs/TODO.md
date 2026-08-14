@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30000   | 2026-08-14T20:09Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T20:15Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10361   | 2026-08-14T20:16Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T20:01Z |
 
@@ -18,10 +18,6 @@
       REF: DETAILS.md#t-lin-10003-landed-the-gate-contract | DEPS: — | BLOCKED-BY-RED: T-lin-10360
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
-
-- [ ] T-lin-10089 [X] mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T20:09Z
-      REF: DETAILS.md#t-lin-10089-mac-arm64-the-asto0-baseline-quartet | DEPS: T-lin-10002[C]
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
@@ -297,6 +293,9 @@
 
 ## Blocked — awaiting QUESTIONS.md
 
+- [ ] T-lin-10089 [X] mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
+      OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T20:15Z
+      REF: DETAILS.md#t-lin-10089-mac-arm64-the-asto0-baseline-quartet | DEPS: T-lin-10002[C] | Q: Q-mac-30000
 - [ ] T-lin-10040 [S] The device dispatcher is not merely absent — it is unwritable from what exists
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10040-the-device-dispatcher-is-not-merely | DEPS: — | Q: Q-lin-10008
