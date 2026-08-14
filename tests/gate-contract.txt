@@ -1,0 +1,134 @@
+# The gate contract (T-lin-10003).
+#
+# A gate is a cell that scores a corpus, reads a bank, or ratchets a number.
+# The single most repeated defect in this tree is a gate reporting success over
+# an empty or truncated subject, so every gate here declares both halves of the
+# rule that catches it:
+#
+#   FLOOR   what stops this cell passing when its subject is empty. Count where
+#           the thing becomes true, not where it is attempted.
+#   PROVER  which registered cell reverts the fix or perturbs the bank and shows
+#           this one going red. Build the known-positive before believing the
+#           green.
+#
+# Neither half can be read off a cell's name, so both are declared here and
+# tools/gate-contract.py is what makes the declaration cost something. The
+# `unfloored` and `unproved` counts are ratchets pinned on the ci/gate-contract
+# command line: they may only ever fall.
+#
+# Columns, `|`-separated:
+#   <exact ctest name> | <floor> | <prover> | <the subject a floor would bound>
+#
+# floor   min:--flag        the registered command line must pass --flag with an
+#                           integer >= 1. Checked against this build, so a floor
+#                           dropped from CMakeLists.txt is a failure here.
+#           intrinsic:<why> the tool itself refuses an empty subject, at the
+#                           cited line. Only ever written after reading it.
+#           unfloored       no floor exists. Counted against the ratchet.
+#
+# prover  <cell>[,<cell>]   registered cells that prove this one can go red.
+#                           Each must also be a tests/must-run.txt row, so the
+#                           proof cannot stop being registered unnoticed.
+#           self:<why>      the cell carries its own perturbation internally.
+#           unproved        nothing has ever shown this gate going red. Counted
+#                           against the ratchet.
+#
+# Adding a row is cheap. Turning `unproved` into a prover is the work; deleting
+# a row should require saying why in the commit.
+
+gpu/spv-slice-differential | unfloored | gpu/spv-slice-known-positive | modules the SPIR-V emitter lowered and the differential then compared
+gpu/spv-slice-real | unfloored | unproved | harvested arenas the emitters were run over
+gpu/spv-validate | unfloored | gpu/spv-validate-known-positive | emitted modules handed to spirv-val
+gpu/spv-mem-binding | unfloored | gpu/spv-mem-binding-known-positive | cases that actually reach binding 2
+gpu/ladder-gpu-parity | unfloored | unproved | rungs the CPU and GPU ladders both evaluated
+slice/task | unfloored | unproved | ticks the scheduler advanced
+slice/work | unfloored | unproved | work items extracted from the AST
+slice/cpu | unfloored | unproved | expected values the CPU executor produced
+slice/sched | unfloored | slice/sched-known-positive | jobs both runners ran under one scheduler
+slice/gpu | unfloored | slice/gpu-known-positive | programs the device differential compared
+slice/wide64 | unfloored | slice/wide64-known-positive | 64-bit rows compared at full width
+slice/f64 | unfloored | slice/f64-known-positive | fp64 payloads compared bit-exactly
+slice/ops | unfloored | slice/ops-known-positive | opcodes the op matrix reached
+slice/frame | unfloored | slice/frame-known-positive | frame Store/Load pairs lowered to device memory
+slice/effect | unfloored | slice/effect-known-positive | effect records written and replayed
+slice/thread | unfloored | slice/thread-known-positive | pthread constructs mapped to graph edges
+thread-census-control | unfloored | unproved | sections whose independence verdict was checked against ground truth
+slice/bytes | unfloored | slice/bytes-known-positive | per-width region load/store pairs
+slice/mem | unfloored | unproved | pointers resolved through the shared address space
+slice/deref | unfloored | slice/deref-known-positive | dereferences taken through binding 2
+slice/ext | unfloored | slice/ext-known-positive | objects passed as one descriptor rather than per-element slots
+slice/hostimport | unfloored | slice/hostimport-known-positive | statics whose own address was proved valid on the device
+slice/fault | unfloored | unproved | strands taken through the pending-command-buffer path
+slice/cost | unfloored | unproved | break-even table rows measured
+slice/real | unfloored | unproved | recorded arenas both runners replayed
+slice/cref-oracle | unfloored | unproved | programs where ast_eval_slice was adjudicated against C
+slice/cref-oracle-gcc-c-torture-execute | unfloored | unproved | corpus programs adjudicated, when vendor/ has the checkout
+slice/cref-oracle-llvm-test-suite-regression-c | unfloored | unproved | corpus programs adjudicated, when vendor/ has the checkout
+slice/cref-oracle-llvm-test-suite-unittests | unfloored | unproved | corpus programs adjudicated, when vendor/ has the checkout
+slice/cref-oracle-compiler-rt-builtins-unit | unfloored | unproved | corpus programs adjudicated, when vendor/ has the checkout
+slice/musl | unfloored | unproved | real musl bodies lowered to the device
+fmt/census-oracle | unfloored | fmt/census-oracle-known-positive | sites the Python port and mcc_fmt_compile were diffed over
+fmt/census-bank | unfloored | fmt/census-bank-known-positive | banked format counts compared back to the tree
+docs/refs | min:--min-refs | docs/refs-known-positive | file:line and symbol citations resolved against the tree
+fmt/arena-census-bank | unfloored | fmt/arena-census-known-positive | de-duplicated D4b blocks counted
+ast/o0-baseline | unfloored | ast/o0-baseline-known-positive | per-key -O0 objects whose sha256 was compared
+ast/o0-baseline-gated | unfloored | ast/o0-baseline-gated-known-positive | the same objects under MCC_DEV=1 gates
+build/fragments-are-not-tus | unfloored | build/fragments-are-not-tus-known-positive | included *.c fragments proved not to be TUs
+optbench/null-subject | unfloored | optbench/null-subject-known-positive | kernels a gain could be claimed over
+optbench/levelbench-bank | unfloored | optbench/levelbench-bank-known-positive | levelbench.tsv rows compared back to src/mccopt.h
+rir/drop-ratchet | unfloored | unproved | RIR opcodes the drop histogram accounted for
+rir-coverage | unfloored | unproved | sources the lowerable/kept census computed its percentages over
+loop-census-control | unfloored | unproved | loops with known trip counts checked at every -O
+opt-cache-determinism | unfloored | unproved | cache entries written under -fopt-slice
+runtime-bench-gatewin | unfloored | unproved | benchmark programs timed with and without the chain-store gate
+runtime-bench-check | unfloored | unproved | benchmark programs mcc actually compiled
+node-census | unfloored | unproved | AstKind nodes counted against the bank
+loop-census | intrinsic:loop-census.py:511 refuses an empty corpus rather than printing 0.00% | unproved | kernel sources compiled for the self-compile trip census
+loop-census-numeric | intrinsic:loop-census.py:511 refuses an empty corpus rather than printing 0.00% | unproved | runtime-corpus programs compiled for the trip census
+loop-census-parallel | intrinsic:loop-census.py:511 refuses an empty corpus rather than printing 0.00% | unproved | loops --partest ruled on for parallel legality
+depth-census-control | unfloored | unproved | frontier levels whose depth AND width were checked against ground truth
+slice/depth-bailout | unfloored | unproved | excursions past the instrumented depth maximum that reached the guard
+slice-enum | min:--min-slices | unproved | slices enumerated over the twelve pinned sources
+slice-census | intrinsic:slice-census.py:602 refuses a zero-body denominator | unproved | bodies modelled for the wide-corpus slice census
+census/gates-armed | min:--min-cells | unproved | census-labelled cells found and proved armed
+ci/registration-stubs | min:--min-chains | unproved | capability-gate chains checked for a registered else-branch
+ci/gate-contract | min:--min-rows | ci/gate-contract-known-positive | gates declared in this manifest and checked against the build
+rir/bank-keying | unfloored | rir/bank-keying-known-positive | host-sensitive bank figures keyed by target and object format, and proved not to overwrite each other
+ast/inv-faithful | unfloored | ast/inv-faithful-known-positive | bodies whose two MCC_INV=1 compiles were subtracted
+rir-coverage-census | unfloored | unproved | bodies the coverage census ratcheted
+rir-gap-classes | unfloored | unproved | UNF/WHY gap fixtures classified
+rir-lowerable-classes | unfloored | unproved | bodies the lowerable percentage was taken over
+rir-nofb-probe | unfloored | unproved | programs run without the replay fallback
+opt-determinism | unfloored | opt-determinism-known-positive | compiles repeated under a fixed mcc, flags, env and source
+opt-search-determinism | unfloored | opt-search-determinism-known-positive | -O13 compiles repeated on an idle and an oversubscribed box
+untyped-probe | intrinsic:untyped-probe.py:90 refuses a zero-node denominator | untyped-probe-known-positive | [rir-untyped] records emitted, which is the denominator that has to reach zero
+idiom-gate-invariant | unfloored | idiom-gate-known-positive | config-macro sites the invariant walk read
+ast/rir-c2-O1 | unfloored | unproved | bodies the C2 re-emit probe tried, which is zero while MCC_REPLAY_IR_C2 is OFF
+ast/rir-c2-O2 | unfloored | unproved | bodies the C2 re-emit probe tried, which is zero while MCC_REPLAY_IR_C2 is OFF
+ast/rir-c2-O3 | unfloored | unproved | bodies the C2 re-emit probe tried, which is zero while MCC_REPLAY_IR_C2 is OFF
+asm-gas-directives | unfloored | unproved | gas directives assembled, which is zero while sgdtq/sidtq/swapgs are missing
+diag.parse-frames | unfloored | unproved | parse frames measured against MCC_MAX_PARSE_DEPTH
+wide256/gmp-diff | unfloored | wide256/gmp-diff-known-positive | __int256 rows compared byte-for-byte against libgmp
+jit/selftest-shutdown | unfloored | jit/selftest-shutdown-known-positive | accepted jobs proved to have run before the pool joined
+jit/xoracle-coverage | unfloored | jit/xoracle-known-positive | suite programs the other vendor built and ran deterministically
+optfire/labeladdr | unfloored | optfire/labeladdr-known-positive | computed-goto bodies re-emitted at an optimized level
+optfire/asm-replay-recover | unfloored | optfire/asm-replay-recover-known-positive | replay errors raised from inside inline asm and recovered from
+pe-wine-conformance | unfloored | unproved | PE programs run end-to-end under wine
+run-tier/x86_64-win32 | unfloored | unproved | x86_64 PE programs run through the -run tier under wine
+run-tier/i386-win32 | unfloored | unproved | i386 PE programs run through the -run tier under wine
+smoke/native | min:--min-cases | smoke/native-known-positive,smoke/strats-known-positive | value-matrix cases run, passes taken and strategies exercised
+smoke/engines | min:--min-engines | smoke/engines-known-positive | engines the one subject was built under and digest-compared across
+smoke/engines-identity | unfloored | unproved | engines proved to be the engine they claim to be
+smoke/slice-bails | unfloored | unproved | slice-engine refusals carried per reason
+smoke/divergence | unfloored | unproved | programs where gcc and clang were both available to disagree
+smoke/device | min:--min-cases | smoke/device-known-positive | value-matrix cases run under the GPU oracle
+optlevel/torture-differential | min:--minprog | optlevel/torture-differential-known-positive | corpus programs compiled and run at every -O level
+cli/xmm_hi_promoted_float_store_to_global | unfloored | unproved | the one -fxmm-hi store shape the miscompile needed
+cli/unreferenced_static_inline_is_not_emitted | unfloored | unproved | the one uncalled static inline that must not be forced out of line
+flagsweep/dev-gate | unfloored | flagsweep/dev-gate-known-positive | MCC_DEV-only flags whose -f arm the sweep actually built
+jit/bind-local | unfloored | jit/bind-local-known-positive | locals the JIT bound rather than re-read from the host frame
+jit/kgc-effect-parity | unfloored | jit/kgc-effect-parity-known-positive | effects compared between the known-good compiler and the JIT
+jit/selftest-purity | unfloored | jit/selftest-purity-known-positive | selftest bodies proved pure rather than asserted pure
+slice/arrow | unfloored | slice/arrow-known-positive | arrow dereferences lowered through the region layer
+slice/fmt | unfloored | slice/fmt-known-positive | printf conversions lowered to the device ring
+superopt/global-reload | unfloored | superopt/global-reload-known-positive | global reloads the superoptimizer eliminated and had to re-prove

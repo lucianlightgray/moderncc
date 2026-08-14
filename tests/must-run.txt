@@ -189,3 +189,22 @@ optlevel/torture-differential | registered | the only cell that compiles and RUN
 optlevel/torture-differential-known-positive | registered | proves optlevel/torture-differential is not blind: it perturbs one recorded -O0 answer and requires that program to be named as an unknown divergence
 cli/xmm_hi_promoted_float_store_to_global | registered | the -fxmm-hi + -fpromote-leaf-xmm + -fpromote-locals miscompile: a float promoted into XMM8-15 was stored from XMM0-7 because the GOT-indirect store dropped REX.R
 cli/unreferenced_static_inline_is_not_emitted | registered | a never-called `static inline` whose body names an undefined symbol must not be forced out of line. This is what -finline-functions-called-once did at what was then -O7 and above before it was deleted; the case now reads at -O4 and -O13
+
+# The gate contract (T-lin-10003). tests/gate-contract.txt declares, per gate,
+# what stops it passing over an empty subject and which cell proves it can go
+# red. tools/gate-contract.py requires every prover named there to be a row
+# HERE, so a proof cannot stop being registered without this manifest noticing;
+# the nine rows below are the provers that were registered and unnamed when the
+# contract landed. ci/gate-contract needs only python3 and the build's own test
+# listing, so a skip on either of its two rows is always a bug.
+ci/gate-contract             | must-run   | the contract itself: every gate declares a floor and a prover, every prover is registered and named here, and the unfloored/unproved counts only ever fall
+ci/gate-contract-known-positive | must-run | proves ci/gate-contract is not blind: it drops a row, relaxes a floor, forges a prover, points a row at an echo stub and empties the manifest, and requires each one to be caught
+flagsweep/dev-gate-known-positive | registered | proves flagsweep/dev-gate reads the -f arm it sweeps rather than counting refusals as fires
+jit/bind-local-known-positive | registered | proves jit/bind-local compares bound locals rather than re-reading the host frame and agreeing with itself
+jit/kgc-effect-parity-known-positive | registered | proves jit/kgc-effect-parity diffs the two effect logs rather than checking both exist
+jit/selftest-purity-known-positive | registered | proves jit/selftest-purity detects an impure body: MCC_JIT_SELFTEST_PURITY_LIE=1 must be caught
+jit/xoracle-known-positive   | registered | proves jit/xoracle-coverage's denominator is measured rather than asserted
+slice/arrow-known-positive   | registered | proves the arrow lowering is compared rather than merely executed
+slice/fmt-known-positive     | registered | proves the printf ring is compared rather than merely written to
+superopt/global-reload-known-positive | registered | proves superopt/global-reload re-proves the reloads it eliminated
+rir/bank-keying-known-positive | registered | proves rir/bank-keying's per-format keying is compared rather than asserted: --mutate collapses the per-format dict and the check must catch it (T-lin-10002)

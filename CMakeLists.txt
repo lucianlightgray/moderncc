@@ -6998,6 +6998,33 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         --build "${CMAKE_BINARY_DIR}")
             set_tests_properties("ci/must-run-registered" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
+
+            # T-lin-10003: the gate contract. must-run.txt asserts a cell is
+            # registered; this asserts the cell can fail. The two ratchets are
+            # the whole point -- they are the count of gates that still have no
+            # floor and no known-positive, and they may only ever fall.
+            add_test(NAME "ci/gate-contract"
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/gate-contract.py"
+                        --manifest "${CMAKE_CURRENT_SOURCE_DIR}/tests/gate-contract.txt"
+                        --must-run "${CMAKE_CURRENT_SOURCE_DIR}/tests/must-run.txt"
+                        --build "${CMAKE_BINARY_DIR}"
+                        --min-rows 90 --min-proved 40
+                        --max-unfloored 82 --max-unproved 49)
+            set_tests_properties("ci/gate-contract" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
+
+            add_test(NAME "ci/gate-contract-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DPY=${MCC_PYTHON3}
+                        -DTOOL=${CMAKE_CURRENT_SOURCE_DIR}/tools/gate-contract.py
+                        -DMANIFEST=${CMAKE_CURRENT_SOURCE_DIR}/tests/gate-contract.txt
+                        -DMUSTRUN=${CMAKE_CURRENT_SOURCE_DIR}/tests/must-run.txt
+                        -DBINDIR=${CMAKE_BINARY_DIR}
+                        -DMINROWS=90 -DMINPROVED=40
+                        -DMAXUNFLOORED=82 -DMAXUNPROVED=49
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_contract_mutate.cmake")
+            set_tests_properties("ci/gate-contract-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
             # Phase -1: the drop histogram exists; this gives it teeth.
             add_test(NAME "rir/rec-miss"
                 COMMAND "${CMAKE_COMMAND}"
@@ -7276,6 +7303,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             mcc_skip_test("selfhost-smoke" "${_nopy_why}")
             mcc_skip_test("selfhost-smoke-gates" "${_nopy_why}")
             mcc_skip_test("ci/must-run-registered" "${_nopy_why}")
+            mcc_skip_test("ci/gate-contract" "${_nopy_why}")
+            mcc_skip_test("ci/gate-contract-known-positive" "${_nopy_why}")
             mcc_skip_test("ci/registration-stubs" "${_nopy_why}")
             mcc_skip_test("rir/drop-ratchet" "${_nopy_why}")
             mcc_skip_test("rir/rec-miss" "${_nopy_why}")
