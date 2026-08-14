@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T20:37Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T20:43Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10361   | 2026-08-14T20:16Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T20:40Z |
 
@@ -18,6 +18,10 @@
       REF: DETAILS.md#t-lin-10003-landed-the-gate-contract | DEPS: — | BLOCKED-BY-RED: T-lin-10360
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+
+- [ ] T-lin-10050 [S] `--mutate` has no `memcpy`/`memset` in the slice corpus to bite on
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T20:43Z
+      REF: DETAILS.md#t-lin-10050-mutate-has-no-memcpymemset-in-the | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
@@ -164,9 +168,6 @@
 - [ ] T-lin-10049 [S] `flagsweep-cover` and `asm-gas-directives` are `mcc_skip_test` stubs, structurally incapable of failing
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10049-flagsweep-cover-and-asm-gas-directives | DEPS: T-lin-10003[C]
-- [ ] T-lin-10050 [S] `--mutate` has no `memcpy`/`memset` in the slice corpus to bite on
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10050-mutate-has-no-memcpymemset-in-the | DEPS: —
 - [ ] T-lin-10051 [S] Debt 6-vi — the chain-store *member* fixture was never written
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10051-debt-6-vi-the-chain-store | DEPS: —
