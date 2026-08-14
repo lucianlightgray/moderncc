@@ -530,6 +530,8 @@ static int dwarf_get_section_sym(Section *s) { MCC_TRACE("enter\n");
 #define CV_LINE_STMT 0x80000000u
 #define CV_LF_ARGLIST 0x1201
 #define CV_LF_PROCEDURE 0x1008
+#define CV_LF_POINTER 0x1002
+#define CV_PTR_ATTR_64 0x0000100cu
 #define CV_TYPE_FIRST 0x1000
 
 typedef struct CvLn { unsigned off, line; } CvLn;
@@ -623,6 +625,25 @@ static void cv_put_u32(unsigned char *b, unsigned *n, unsigned v) { MCC_TRACE("e
 	b[(*n)++] = (v >> 24) & 0xff;
 }
 
+static unsigned cv_pointer_type(unsigned referent) { MCC_TRACE("enter\n");
+	unsigned char body[10];
+	unsigned bl = 0;
+	cv_put_u16(body, &bl, CV_LF_POINTER);
+	cv_put_u32(body, &bl, referent);
+	cv_put_u32(body, &bl, CV_PTR_ATTR_64);
+	return cv_add_record(body, bl);
+}
+
+static unsigned cv_type_of(CType *tp) { MCC_TRACE("enter\n");
+	if ((tp->t & VT_BTYPE) == VT_PTR) { MCC_TRACE("br\n");
+		unsigned ref = cv_type_of(&tp->ref->type);
+		if (ref == 0)
+			{ MCC_TRACE("br\n"); return 0; }
+		return cv_pointer_type(ref);
+	}
+	return cv_basic_type(tp);
+}
+
 static unsigned cv_type_of_func(Sym *fnsym) { MCC_TRACE("enter\n");
 	Sym *fd, *p;
 	unsigned ret, args[64], nargs = 0, arglist_idx, i;
@@ -635,11 +656,11 @@ static unsigned cv_type_of_func(Sym *fnsym) { MCC_TRACE("enter\n");
 	fd = fnsym->type.ref;
 	if (!fd)
 		{ MCC_TRACE("br\n"); return 0; }
-	ret = cv_basic_type(&fd->type);
+	ret = cv_type_of(&fd->type);
 	if (ret == 0)
 		{ MCC_TRACE("br\n"); return 0; }
 	for (p = fd->next; p; p = p->next) { MCC_TRACE("br\n");
-		unsigned a = cv_basic_type(&p->type);
+		unsigned a = cv_type_of(&p->type);
 		if (a == 0 || nargs >= 64)
 			{ MCC_TRACE("br\n"); return 0; }
 		args[nargs++] = a;

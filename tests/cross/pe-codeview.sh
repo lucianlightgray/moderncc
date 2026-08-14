@@ -70,7 +70,7 @@ done
 
 # gold standard: link to a PDB and read the line info back out
 if [ -n "$LLD" ] && [ -f "$LLD" ] && [ -n "$PDBUTIL" ] && [ -f "$PDBUTIL" ]; then
-	printf 'int square(int x){int r=x*x;return r;}\nint mainCRTStartup(void){return square(5);}\n' > "$WORK/m.c"
+	printf 'int square(int x){int r=x*x;return r;}\nint deref(int*p){return *p;}\nint mainCRTStartup(void){int x=5;return square(x)+deref(&x);}\n' > "$WORK/m.c"
 	"$MCC" -gcodeview -c -Wl,-oformat=coff "$WORK/m.c" -o "$WORK/m.o" 2>/dev/null
 	if MSYS2_ARG_CONV_EXCL='*' "$LLD" -nologo -debug -subsystem:console \
 			-entry:mainCRTStartup "$WORK/m.o" -out:"$WORK/m.exe" -pdb:"$WORK/m.pdb" 2>"$WORK/link.log"; then
@@ -79,10 +79,17 @@ if [ -n "$LLD" ] && [ -f "$LLD" ] && [ -n "$PDBUTIL" ] && [ -f "$PDBUTIL" ]; the
 		else
 			echo "pe-codeview: PDB has no line info from mcc CodeView" >&2; fail=1
 		fi
-		if "$PDBUTIL" pretty -types "$WORK/m.pdb" 2>/dev/null | grep -qE 'int __cdecl \(int\)'; then
+		pdbtypes=$("$PDBUTIL" pretty -types "$WORK/m.pdb" 2>/dev/null)
+		if echo "$pdbtypes" | grep -qE 'int __cdecl \(int\)'; then
 			echo "codeview: PDB type round-trip OK (mcc function signature read from linked PDB)"
 		else
 			echo "pe-codeview: PDB carries no mcc function-signature type" >&2; fail=1
+		fi
+		# pointer types (slice 2): a pointer parameter must round-trip as int*
+		if echo "$pdbtypes" | grep -qE '^[[:space:]]*int\*$'; then
+			echo "codeview: PDB pointer type round-trip OK (int* from a pointer parameter)"
+		else
+			echo "pe-codeview: PDB carries no mcc pointer type (int*)" >&2; fail=1
 		fi
 	else
 		echo "pe-codeview: lld-link failed (non-fatal, skipping PDB check)" >&2
