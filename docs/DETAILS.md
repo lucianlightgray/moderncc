@@ -41722,3 +41722,47 @@ The 2026-08-05 defect is stale: mcc handles `{.a.a=1, .a.b=2}` and every harder 
 **Verification.** `ctest --test-dir cmake-macos -R nested_designators` — 24 pass, 1 design-skip; `diff3/nested_designators` is the gcc/clang consensus check.
 
 **Source.** mac-arm64, 2026-08-14T21:17Z, at 3411c160.
+
+
+<a id="t-lin-10361-t-lin-10028s-fprintf-moved-fmt-census-bank"></a>
+
+## T-lin-10361 T-lin-10028's `fprintf` moved `fmt/census-bank` and it was not re-banked
+
+**Type** `[X]` mac-arm64 — **State** OPEN — **DEPS** —
+
+`740e4f54` (T-lin-10028, `--embed-jit`'s no-bake notice surviving `-w`) added one `fprintf` to `src/mccjit_embed.c` and did not re-take `tests/fmt/census-bank.json`. `fmt/census-bank` is red on `main`. The whole diff is one site, in three places at once:
+
+| figure | banked | now |
+| --- | --- | --- |
+| `literal_fmt_sites.fprintf` | 422 | **423** |
+| `sites.fprintf` | 426 | **427** |
+| `per_file_sites['mccjit_embed.c']` | 483 | **484** |
+
+Every one of those is quoted on the board, which is why the cell refuses rather than re-banking itself.
+
+**`fmt/census-bank-known-positive` is red too, and that is the design working.** It refuses with *the unmutated check is already failing, so this cell cannot say anything about whether the banked site census is being compared at all* — a known-positive that perturbs an already-red subject would report a meaningless pass. It is not a second defect and must not be fixed separately; it goes green when its subject does.
+
+**The fix is `--update-bank` plus a sentence.** `tools/fmt-census.py --update-bank`, and the board says which figure moved and why. The "why" here is short and good: an intentional new diagnostic. Typed `[X]` mac-arm64 because the attribution belongs to whoever knows the notice's intent, and re-banking without stating the cause is what this cell exists to prevent.
+
+**Verification.** `ctest --test-dir cmake-def -R '^fmt/census-bank' --output-on-failure`, both cells green.
+
+**Source.** Found on lin-x64, 2026-08-14, in the `-LE wine` full-suite run at `5d8d8835`.
+
+<a id="t-lin-10362-trace-gate-invariant-is-red-on-main"></a>
+
+## T-lin-10362 `trace-gate-invariant` is red on main, one violation from each of two DONE tasks
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+Two violations, one from each concurrent session's just-landed work, arriving in the same window and neither caught before archive:
+
+- `src/mccjit_embed.c:2143` — `else does not open with MCC_TRACE`. The `else { fflush(stdout); fprintf(...); }` arm added by `740e4f54` (T-lin-10028, mac-arm64).
+- `src/mccdbg.c:611` — `switch does not open with MCC_TRACE`. From the CodeView `.debug$T` work, `a36f7cd1` / `947b13fc` / `26d7aa40` (T-lin-10085, win-x64).
+
+The rule the gate enforces is that every function body and braced branch in an `MCC_TRACE`-instrumented file opens with `MCC_TRACE("enter\n")` or `MCC_TRACE("br\n")`. Both are one-line additions in their own files. Typed `[S]` rather than split in two because a red cell is red once and whoever takes it should fix both arms in one commit; the two owners are named above so the attribution is not lost.
+
+**Both are the same class as T-lin-10360 and the third instance in one afternoon:** a task went DONE and archived with a tree-wide gate left red behind it, because the owning session verified its own slice's cells and not the gates its edit is subject to. That pattern is worth a rule rather than three more tasks — the gate contract's population is where such a rule would live, and `trace-gate-invariant` was not in it. It is now.
+
+**Verification.** `ctest --test-dir cmake-def -R '^trace-gate-invariant$' --output-on-failure`.
+
+**Source.** Found on lin-x64, 2026-08-14, in the `-LE wine` full-suite run at `5d8d8835`.
