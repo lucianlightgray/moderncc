@@ -461,6 +461,18 @@
 > 41,040 B (not 32,832), and the `MCC_INV_MAX` hazard is real but mis-sized — 16 keys are
 > registered, not 12, so it lands at **28 of 32, under the cap**. **`slice/quiesce`'s red is
 > structural**: two runs of the same binary on the same commit gave 55/55 and 54/55.
+> **— PRICED 2026-08-13, and the answer is "not by default".** The honest fix really is a ctest
+> `RESOURCE_LOCK` on the device, and it exists now as **`-DMCC_DEVICE_LOCK=ON`** (17 cells, matched
+> by name rather than listed, so a new device cell cannot silently escape it). It is **off**, and
+> both halves of that are measured. 18 device cells at `-j6`, three runs each: **90.4 / 49.9 /
+> 52.6 s without** (mean ~64 s, spread 1.8×) against **188.7 / 181.4 / 182.2 s with** (mean ~184 s,
+> spread 1.04×) — determinism for **~2.9× wall**.
+> **What decides it is that the failure is not happening.** A full `-j6` `ctest` over all 9937
+> cells the same day had **zero timeouts** and `slice/quiesce` passed, so the 900 s
+> smoke-plus-slice timeout this file records — the thing the lock exists to prevent — is not
+> currently reproducible here. Paying 2.9× against a hazard that is not firing is the wrong trade;
+> leaving the mechanism built, priced and one flag away is the right one. Turn it on when the flake
+> returns, or on a host whose device is slower or shared.
 > **Left open deliberately**: `tools/node-census.py` is an unrecorded third `[inv]`-prefix consumer
 > that **silently appends garbage** — a wrong number with no signal, the worst of the three modes.
 
