@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:59Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10364   | 2026-08-14T22:05Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10364   | 2026-08-14T22:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50001   | 2026-08-14T21:54Z |
 
 ## Contracts — blocking, highest priority
@@ -13,9 +13,6 @@
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10001-a-task-representation-with-an-explicit | DEPS: —
-- [ ] T-lin-10003 [C] Every gate cell carries an anti-vacuity floor and a proved known-positive
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 5c2fc98e | TS: 2026-08-14T22:33Z
-      REF: DETAILS.md#t-lin-10003-landed-the-gate-contract | DEPS: —
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
