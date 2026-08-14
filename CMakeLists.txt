@@ -8900,4 +8900,41 @@ endif()
 set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
 set(CPACK_SOURCE_IGNORE_FILES
     "/\\.git/" "/cmake-[^/]*/" "/build-[^/]*/" "/\\.idea/" "\\.o$" "\\.a$")
+# One device, one lock -- OFF by default, because it was measured.
+#
+# slice/quiesce tears the Vulkan device down while every other device cell is
+# using it, so the two cannot share a machine; that is why it produced 55/55 and
+# 54/55 on two runs of the same binary at the same commit. RESOURCE_LOCK is the
+# honest fix for that, and this is what it costs on x86_64-linux:
+#
+#   18 device cells at -j6, three runs each
+#     without the lock   90.4 / 49.9 / 52.6 s   mean ~64 s, spread 1.8x
+#     with the lock     188.7 / 181.4 / 182.2 s mean ~184 s, spread 1.04x
+#
+# So it buys determinism for about 2.9x wall on that set. It is off by default
+# because the failure it prevents did not occur: a full -j6 ctest over all 9937
+# cells on 2026-08-13 had ZERO timeouts and slice/quiesce passed, so the 900 s
+# smoke-plus-slice timeout this was meant to stop is not currently reproducible
+# here. Turn it on with -DMCC_DEVICE_LOCK=ON when the flake returns, or on a
+# host where the device is slower or shared; the numbers above are what to
+# expect. The names are matched rather than listed because most are generated
+# in loops, and a list would silently stop covering a cell the day one is added.
+option(MCC_DEVICE_LOCK
+    "Serialise device-using tests through one ctest RESOURCE_LOCK (see the note above; ~2.9x wall on the device set)" OFF)
+if(MCC_DEVICE_LOCK)
+    get_property(_mcc_all_tests DIRECTORY PROPERTY TESTS)
+    set(_mcc_device_tests "")
+    foreach(_t IN LISTS _mcc_all_tests)
+        if(_t MATCHES "^(gpu/|smoke/device)" OR _t STREQUAL "slice/quiesce"
+           OR _t STREQUAL "slice/cost")
+            list(APPEND _mcc_device_tests "${_t}")
+        endif()
+    endforeach()
+    if(_mcc_device_tests)
+        set_tests_properties(${_mcc_device_tests} PROPERTIES RESOURCE_LOCK "mcc_device")
+        list(LENGTH _mcc_device_tests _mcc_ndev)
+        message(STATUS "mcc tests: ${_mcc_ndev} device cell(s) share RESOURCE_LOCK mcc_device")
+    endif()
+endif()
+
 include(CPack)
