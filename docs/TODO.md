@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:59Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10363   | 2026-08-14T22:33Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10364   | 2026-08-14T22:05Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50001   | 2026-08-14T21:54Z |
 
 ## Contracts — blocking, highest priority
@@ -27,6 +27,9 @@
 
 ## Open — claimable
 
+- [ ] T-lin-10363 [X] mac-arm64 — T-lin-10009's exec fixture moved the `-O0` bank and the RIR census, neither re-taken
+      OWNER: — | STATE: OPEN | SHA: 27a06cc4 | TS: 2026-08-14T22:05Z
+      REF: DETAILS.md#t-lin-10363-t-lin-10009s-fixture-moved-the-o0-bank | DEPS: —
 - [ ] T-lin-10004 [S] Implement `_BitInt(N)` (C23 6.2.5); the keyword is diagnosed, the type is absent
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10004-implement-bitintn-c23-625-the-keyword | DEPS: —

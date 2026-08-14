@@ -41915,3 +41915,52 @@ Three cells were repaired against this contract on 2026-08-14 and are worth read
 **Remaining work, in order.** (1) Enumerate which of the 364 cells without a known-positive actually gate something falsifiable — many are goldens where the golden *is* the known-positive. (2) For each real gate, add the floor and the proved known-positive. (3) Full suite on a quiet host to certify.
 
 **Source.** lin-x64 checkpoint, 2026-08-14T22:29Z.
+
+
+<a id="t-lin-10363-t-lin-10009s-fixture-moved-the-o0-bank"></a>
+
+## T-lin-10363 T-lin-10009's exec fixture moved the `-O0` bank and the RIR census, neither re-taken
+
+**Type** `[X]` mac-arm64 — **State** OPEN — **DEPS** —
+
+`3411c160` (T-lin-10009, the nested member designator exec fixture) added `tests/exec/structs_unions/nested_designators.c`. It is a corpus file, so it lands in every census that walks `tests/exec`, and two of them are banked:
+
+| cell | banked | now |
+| --- | --- | --- |
+| `ast/o0-baseline` | `files=311 objects=302 rirok=302` | `files=312 objects=303 rirok=303`, one new `x86_64` sha256 row |
+| `rir-coverage-census` | — | `files=389`, **43 unnoted fns** |
+
+**The diff is the good shape**: `+1` row, no hash moved, so this is a clean re-bank and not an investigation — the opposite of the 28 silently-moved objects that put `ast/o0-baseline` under a gate in the first place. `o0_ab` still says the right thing about it (*an `-O0` object moved. The AST recorder does not run at `-O0`, so nothing in the cut had any business touching these bytes*), which is correct as a rule and simply does not know a file was added.
+
+The gated quartet (`ast/o0-baseline-gated` and both known-positives) is red for the same one cause; all four go green on one re-take.
+
+**Fix.** `tools/o0_ab.sh` re-bank plus the `rir-coverage-census` re-take, in one commit, saying that the cause is a corpus addition. Typed `[X]` mac-arm64 to keep the "why" with whoever added the fixture — re-banking without stating the cause is what these cells exist to prevent.
+
+**Verification.** `ctest --test-dir cmake-def -L corpusgate --output-on-failure`, 6 of 6 green.
+
+**Source.** Found on lin-x64, 2026-08-14, in the fourth full-suite run at `27a06cc4`.
+
+<a id="t-lin-10003-the-corpusgate-label-and-the-gap-treegates-own-bound-created"></a>
+
+## T-lin-10003 the `corpusgate` label — and the gap `treegate`'s own bound created
+
+**Type** `[C]` — **State** DONE 2026-08-14 — **DEPS** —
+
+[`treegate`](#t-lin-10003-the-treegate-label-the-pre-done-check-made-mechanical) is bounded at about 5 s a cell, deliberately, because a check people stop running checks nothing. [T-lin-10363](#t-lin-10363-t-lin-10009s-fixture-moved-the-o0-bank) is that bound's cost arriving four hours later: one new exec fixture moved `ast/o0-baseline` and `rir-coverage-census`, and **`ctest -L treegate` was green over both**. The label did exactly what it promised and the promise had a hole in it.
+
+The hole is structural, not an oversight in the list. Every cell that would notice a file appearing under `tests/` has to walk the corpus, and walking the corpus costs minutes — so *no* membership of a 5-second label could ever have caught a corpus change. One label cannot be both always-worth-running and corpus-complete.
+
+So there are two, with different trigger conditions rather than different priorities:
+
+| label | when | cost |
+| --- | --- | --- |
+| `treegate` | before **every** DONE commit | 11 cells, ~19 s |
+| `corpusgate` | when you add or remove a file under `tests/`, or change codegen | 5 cells, ~4 min |
+
+`corpusgate` is `ast/o0-baseline`, its gated twin, both known-positives, and `rir-coverage-census` — the five that are red right now for one cause, which is the same evidence standard the `treegate` membership was held to. Its list carries the same anti-rot rule: configure fails if a named cell is registered by no branch of the build.
+
+**The honest reading of this section** is that the first version of the pre-DONE check was incomplete and shipped anyway, and it took a fifth instance of the pattern to show where. That is worth writing down next to the label rather than quietly widening it, because the next person to add a gate class will be tempted to put it in `treegate` where it will be seen — and the bound is what makes `treegate` worth having.
+
+**Verification.** `ctest --test-dir cmake-def -N -L corpusgate` selects exactly the five plus the build fixture; removing a name from `MCC_CORPUSGATE_CELLS` or misspelling one fails the configure.
+
+**Source.** Implemented on lin-x64, 2026-08-14, after T-lin-10363 went undetected by `treegate`.
