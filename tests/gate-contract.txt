@@ -35,6 +35,13 @@
 #
 # Adding a row is cheap. Turning `unproved` into a prover is the work; deleting
 # a row should require saying why in the commit.
+#
+# The subset of these that any edit anywhere is subject to -- whole-tree source
+# scans, banks of figures quoted on the board, and the registration asserts --
+# carry the `treegate` ctest label. `ctest -L treegate` is 11 cells in about 19
+# seconds and is what to run BEFORE a DONE commit, not after: T-lin-10360,
+# T-lin-10361 and T-lin-10362 were each a task archived with one of them red
+# behind it, by a session that had correctly verified its own slice.
 
 gpu/spv-slice-differential | unfloored | gpu/spv-slice-known-positive | modules the SPIR-V emitter lowered and the differential then compared
 gpu/spv-slice-real | unfloored | unproved | harvested arenas the emitters were run over

@@ -9125,4 +9125,44 @@ if(MCC_DEVICE_LOCK)
     endif()
 endif()
 
+# T-lin-10003: the tree-wide gates, as one label. These are the cells that any
+# edit anywhere is subject to -- they scan the whole source tree, read a bank of
+# figures quoted on the board, or assert the suite still registers what it says
+# it does -- as opposed to the cells that test the slice you happened to touch.
+# Three tasks in one afternoon (T-lin-10360, T-lin-10361, T-lin-10362) went DONE
+# and archived with one of these red behind them, in every case by a session
+# that had correctly verified its own slice. `ctest -L treegate` is the whole
+# set in about half a minute and is what to run before a DONE commit.
+# Named individually and not by pattern: membership is a judgement about what a
+# cell measures, and a regex over names would quietly acquire cells nobody meant
+# to put in the pre-commit path.
+set(MCC_TREEGATE_CELLS
+    "ci/must-run-registered" "ci/gate-contract" "ci/gate-contract-known-positive"
+    "ci/registration-stubs" "census/gates-armed" "trace-gate-invariant"
+    "fmt/census-bank" "fmt/census-bank-known-positive" "fmt/census-oracle"
+    "docs/refs" "docs/refs-known-positive")
+set(_mcc_treegate_seen "")
+foreach(_tg IN LISTS MCC_TREEGATE_CELLS)
+    if(TEST "${_tg}")
+        get_test_property("${_tg}" LABELS _tg_labels)
+        if(NOT _tg_labels)
+            set(_tg_labels "")
+        endif()
+        list(APPEND _tg_labels treegate)
+        list(REMOVE_DUPLICATES _tg_labels)
+        set_tests_properties("${_tg}" PROPERTIES LABELS "${_tg_labels}")
+        list(APPEND _mcc_treegate_seen "${_tg}")
+    endif()
+endforeach()
+list(LENGTH _mcc_treegate_seen _mcc_ntreegate)
+list(LENGTH MCC_TREEGATE_CELLS _mcc_ntreegate_want)
+if(_mcc_ntreegate LESS _mcc_ntreegate_want)
+    message(FATAL_ERROR "mcc tests: the treegate label covers ${_mcc_ntreegate} "
+        "of ${_mcc_ntreegate_want} named cells. Every branch of a capability gate "
+        "registers the same cells (ci/registration-stubs), so a name here that no "
+        "branch registers is a typo or a deleted cell, and letting it pass would "
+        "make `ctest -L treegate` quietly check less than it says")
+endif()
+message(STATUS "mcc tests: ${_mcc_ntreegate} tree-wide gate cell(s) labelled treegate")
+
 include(CPack)
