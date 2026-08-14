@@ -1246,6 +1246,25 @@ pointer/array records that were not `Sym`-keyed no longer duplicate (three ident
 1000 distinct structs+functions compile with `-gcodeview` in 0.08 s. **The only thing left
 in this task is local-variable symbols** (frame-mapping slice scoped above).
 
+**DONE — local variable symbols (win-x64, 2026-08-14, SHA b08ad8a0).** The frame model
+resolved cleanly: mcc uses an RBP frame (disasm: locals at `-N(%rbp)`, params at
+`+N(%rbp)`), and mcc's `VT_LOCAL` `s->c` *is* that RBP-relative offset. `mcc_add_debug_info`
+now records each local (`cv_type_of` index, `s->c` offset, name, `param` flag) onto the
+current `CvFn`; `mcc_cv_emit` emits, inside each `S_GPROC32` scope, an `S_FRAMEPROC`
+(local/param base = RBP, flags `0x28000`) then per local an `S_LOCAL` + a
+`S_DEFRANGE_FRAMEPOINTER_REL` (offset `s->c`, whole-function range via SECREL+SECTION relocs
+to the function symbol). **Verified against the disassembly exactly** — `y@-8`, `x@-4`,
+param `a@+16` — `llvm-readobj` confirms `LocalFramePtrReg: RBP`; the PDB links valid;
+`pe/codeview` asserts `S_LOCAL`+`S_FRAMEPROC(RBP)`+defrange and stays green with the
+struct/union/enum/array-heavy stress source (0 errors). **This completes T-win-50000 and
+the CodeView debug-info implementation as a whole:** line tables + the full `.debug$T` type
+system (fn/pointer/struct/union/array/enum) + record dedup + typed function, global, and
+local variable symbols — all round-tripped through lld-link → PDB → llvm-pdbutil. Known
+follow-on polish (not in scope, none blocking): `cbFrame` in `S_FRAMEPROC` is 0 (pdbutil
+labels the func `(FPO)` cosmetically; local resolution is unaffected — it uses the RBP base
++ defrange offset), and local live-ranges are whole-function (exact at `-O0` where the slot
+is prologue-allocated).
+
 <a id="t-lin-10086-win-x64-arm64-win32-arm-win32"></a>
 
 ## T-lin-10086 win-x64 — `arm64-win32` / `arm-win32` execution
