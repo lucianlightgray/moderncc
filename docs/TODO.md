@@ -148,8 +148,11 @@
 > **What is left on this host is two decisions and one flake.** N36 (which half of the split
 > bit-field semantics to move) and N37's compiler half (whether to adopt `__divdc3`-style complex
 > division) are decisions, not code. `optfire/abs` and `optfire/level-abs` fail only in a full
-> `-j4` run — 132/132 within the family, 3/3 isolated — so the contending family is unidentified
-> and a second full run was started to name it. **Do not quote "9933 green".**
+> `-j4` run — 132/132 within the family, 3/3 isolated — and a **second full run did not reproduce
+> them**, so they are a flake at about one run in two rather than a contention with a family
+> waiting to be named. That second run is **9935 cells, 6632 s, 1 red**, and the red is
+> `ci/registration-stubs`, the mingw `pe/x-oracle` chain this host does not own. **Quote the
+> number with the red attached or do not quote it.**
 >
 > **The board's own top four did not survive checking.** Rank 3 (six binary opcodes with "zero
 > coverage") had been closed eight days earlier. Rank 2 (`MCC_RIR_STAMP`) does not do what it
@@ -1739,21 +1742,41 @@ kept below because two of the things it could not establish are now established.
 | --- | --- |
 | `target-gate-invariant` | **CLOSED** — `src/mccjit_embed.c`'s `#ifdef MCC_TARGET_PE`, red here since `8fc24990` (the N24 fix) |
 | `slice-census` | **CLOSED** — `examples/ex4.c` needs `<X11/Xlib.h>`; two defects, one of them a find_path after its consumer |
-| `optfire/abs`, `optfire/level-abs` | **UNREPRODUCED** — pass 3/3 isolated and 132/132 at `-j4` within `optfire/`; fail only in a full `-j4` run |
+| `optfire/abs`, `optfire/level-abs` | **FLAKY, 1 run in 2** — did not reproduce on the second full run; pass 3/3 isolated and 132/132 at `-j4` within `optfire/` |
 | `ci/registration-stubs` | **pre-existing, not this host's** — the mingw `pe/x-oracle` chain drops cells on its dead branch |
 
 All four are N40. **`ci/must-run-registered` was a fifth red** and is closed as N38; it is absent
 from the table because it was fixed before this run.
+
+**The second full run, 2026-08-13, settles three of the four and reclassifies the fourth.**
+9935 cells in **6632 s** at `-j4`, **1 failed** — `ci/registration-stubs`, the pre-existing mingw
+row — **2556 skipped, zero timeouts.** `target-gate-invariant` (0.01 s), `slice-census` (8.75 s)
+and `wide256/gmp-diff` are green **in a full run**, not merely in isolation, which is the
+distinction the first run existed to make.
+
+**`optfire/abs` and `optfire/level-abs` passed this time**, at 0.38 s and 0.05 s. So the reds are
+**flaky rather than a deterministic contention**, observed once in two full runs and never in
+132/132 family runs or 3/3 isolated runs. **That is a weaker and more honest claim than the one
+this table carried an hour earlier**, which assumed a contending family existed to be found; the
+run says the trigger is not reproduced by simply running the suite again. Two consequences.
+*(a)* It joins **N31** (`rir-nofb-probe-self`) as a flake whose mechanism is unknown — and N31's
+lesson applies: a flake observed under load and not under isolation is not yet evidence about
+`-j`, because the load was neither controlled nor measured. *(b)* **The cell prints its own
+diagnosis** — `optfire.sh`'s `ofdiag`/`ofsize` echo the compiler output and both object sizes on
+failure — so the next occurrence is worth capturing rather than re-running: `ctest --output-on-failure`
+on a full run, and read what it says instead of asking whether it reproduces.
 
 **N26 is confirmed fixed by the thing it was blocking.** The 2026-08-12 note below says a full run
 here "cannot distinguish a regression from a scheduling artefact" because of 13 `flagsweep-exec`
 timeouts. This run had **zero timeouts** — `taskpolicy -b` holds across the whole suite, not just
 the 119-cell family it was measured on.
 
-**What is still not established, and the honest reason.** The two `optfire` reds mean this run is
-not a clean number either — it is a *complete* one, which is different and is the thing that did
-not exist before. A second `-j4` run was started to identify the contending family; **until it
-lands, do not quote either optfire cell as a compiler finding and do not quote "9933 green".**
+**What is established, and what a second run cost to establish it.** The first run was *complete*
+rather than clean, which was already the thing that did not exist before. The second is **9935
+cells, 1 red, and that red is the mingw row this host does not own** — so on the work this wave
+touched, the suite is clean here. **Neither run is quotable as "all green"**: `ci/registration-stubs`
+is a real failure with a real subject, and the `optfire` pair is a live flake at roughly one run in
+two. Quote the number with the red attached or do not quote it.
 
 **The superseded 2026-08-12 partial run, kept for what it establishes:**
 
