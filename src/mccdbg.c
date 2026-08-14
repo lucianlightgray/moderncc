@@ -535,7 +535,10 @@ static int dwarf_get_section_sym(Section *s) { MCC_TRACE("enter\n");
 #define CV_LF_STRUCTURE 0x1505
 #define CV_LF_UNION 0x1506
 #define CV_LF_ARRAY 0x1503
+#define CV_LF_ENUM 0x1507
+#define CV_LF_ENUMERATE 0x1502
 #define CV_T_ULONG 0x0022
+#define CV_T_INT4 0x0074
 #define CV_LF_MEMBER 0x150d
 #define CV_LF_ULONG 0x8004
 #define CV_PROP_FWDREF 0x80
@@ -654,6 +657,7 @@ static unsigned cv_pointer_type(unsigned referent) { MCC_TRACE("enter\n");
 
 static unsigned cv_aggregate_type(CType *tp, int is_union);
 static unsigned cv_array_type(CType *tp);
+static unsigned cv_enum_type(CType *tp);
 
 static unsigned cv_type_of(CType *tp) { MCC_TRACE("enter\n");
 	if (tp->t & VT_ARRAY)
@@ -664,10 +668,86 @@ static unsigned cv_type_of(CType *tp) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); return 0; }
 		return cv_pointer_type(ref);
 	}
+	if (IS_ENUM(tp->t)) { MCC_TRACE("br\n");
+		return cv_enum_type(tp);
+	}
 	if ((tp->t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
 		return cv_aggregate_type(tp, IS_UNION(tp->t));
 	}
 	return cv_basic_type(tp);
+}
+
+static unsigned cv_enum_type(CType *tp) { MCC_TRACE("enter\n");
+	Sym *es = tp->ref, *e;
+	unsigned i, fwd, fl, nen = 0, nn;
+	unsigned char rb[600], *fb;
+	unsigned bl, fbl;
+	const char *nm;
+	int okmem = 1;
+	if (cv_types_next < CV_TYPE_FIRST)
+		{ MCC_TRACE("br\n"); cv_types_next = CV_TYPE_FIRST; }
+	if (!es)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < cv_ntcache; i++)
+		{ MCC_TRACE("br\n"); if (cv_tcache[i].s == es)
+			{ MCC_TRACE("br\n"); return cv_tcache[i].idx; } }
+	nm = (es->v & ~SYM_STRUCT) >= SYM_FIRST_ANOM
+			? "__unnamed" : get_tok_str(es->v, NULL);
+	nn = strlen(nm) + 1;
+	if (nn > sizeof(rb) - 20)
+		{ MCC_TRACE("br\n"); return 0; }
+	bl = 0;
+	cv_put_u16(rb, &bl, CV_LF_ENUM);
+	cv_put_u16(rb, &bl, 0);
+	cv_put_u16(rb, &bl, CV_PROP_FWDREF);
+	cv_put_u32(rb, &bl, CV_T_INT4);
+	cv_put_u32(rb, &bl, 0);
+	memcpy(rb + bl, nm, nn);
+	bl += nn;
+	fwd = cv_add_record(rb, bl);
+	if (cv_ntcache < 512)
+		{ MCC_TRACE("br\n"); cv_tcache[cv_ntcache].s = es;
+			cv_tcache[cv_ntcache].idx = fwd; cv_ntcache++; }
+	fb = mcc_malloc(4096);
+	fbl = 0;
+	cv_put_u16(fb, &fbl, CV_LF_FIELDLIST);
+	for (e = es->next; e; e = e->next) { MCC_TRACE("br\n");
+		const char *en;
+		unsigned enn;
+		long val = (long)e->enum_val;
+		if (val < 0 || val >= 0x8000)
+			{ MCC_TRACE("br\n"); okmem = 0; break; }
+		en = (e->v & ~SYM_FIELD) >= SYM_FIRST_ANOM
+				? "" : get_tok_str(e->v, NULL);
+		enn = strlen(en) + 1;
+		if (fbl + 12 + enn > 4096)
+			{ MCC_TRACE("br\n"); okmem = 0; break; }
+		cv_put_u16(fb, &fbl, CV_LF_ENUMERATE);
+		cv_put_u16(fb, &fbl, CV_ACCESS_PUBLIC);
+		cv_put_numeric(fb, &fbl, (unsigned)val);
+		memcpy(fb + fbl, en, enn);
+		fbl += enn;
+		{
+			unsigned p = (4 - ((fbl + 2) & 3)) & 3, k;
+			for (k = 0; k < p; k++)
+				{ MCC_TRACE("br\n"); fb[fbl++] = (unsigned char)(0xf0 + (p - k)); }
+		}
+		nen++;
+	}
+	if (!okmem)
+		{ MCC_TRACE("br\n"); mcc_free(fb); return fwd; }
+	fl = cv_add_record(fb, fbl);
+	mcc_free(fb);
+	bl = 0;
+	cv_put_u16(rb, &bl, CV_LF_ENUM);
+	cv_put_u16(rb, &bl, nen);
+	cv_put_u16(rb, &bl, 0);
+	cv_put_u32(rb, &bl, CV_T_INT4);
+	cv_put_u32(rb, &bl, fl);
+	memcpy(rb + bl, nm, nn);
+	bl += nn;
+	cv_add_record(rb, bl);
+	return fwd;
 }
 
 static unsigned cv_array_type(CType *tp) { MCC_TRACE("enter\n");
