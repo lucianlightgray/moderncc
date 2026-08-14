@@ -2677,6 +2677,55 @@ to pin mcc's and record the disagreement. What is *not* defensible is being inte
 inconsistent about which implementation is being followed, so the row stays open as a decision
 rather than a bug. Size: the comparison path, not `bf_trunc`.
 
+**N40. The first full-suite run this host has ever completed found five reds, and four were
+invisible to every table in this file.** New 2026-08-13. `ctest -j4` over all **9933** cells:
+**99% passed, 5 failed**, 2556 skipped. Three are now closed, one is a flake with a named
+reproduction gap, and one is pre-existing and not ours. **The pattern is the session's, repeated:
+every one of them had been red for as long as it existed here, and nobody had run the cell.**
+
+**`target-gate-invariant` — CLOSED.** `src/mccjit_embed.c:580` tests `#ifdef MCC_TARGET_PE`, and
+that file is not in `tools/targetgate.c`'s frozen consumer allowlist — which contains the fourteen
+big TUs and the three `objfmt` files, i.e. the files that already had target conditionals when the
+invariant was frozen. **Introduced by `8fc24990`**, the N24 fix from the 2026-08-12 Mac wave, so
+the gate has been red on this host since the day N24 closed. The conditional guarded
+`&& !strchr(bind_name, '@')` — and `bind_name` is a token string from `get_tok_str`, i.e. a C
+identifier, so the test is defensive on every target. Dropping the `#ifdef` is
+**character-identical after preprocessing on PE** (the branch was taken there) and adds one
+`strchr` on the others. Verified by the cell that owns this path: `jit/` is **66 of 66** green,
+including `jit/bind-local`, which is N24's own known-positive. `src/mcc.c.o` moves, and that is
+correct rather than incidental — a call that was compiled out on non-PE is now compiled in.
+
+**`slice-census` — CLOSED, and it was two defects stacked.** It failed with *"1 of 344 sources did
+not compile, so every share below is over the survivors"* — `examples/ex4.c`, which needs
+`<X11/Xlib.h>`. **(1)** The `wide` corpus walks `examples/` as well as `tests/`, but the exclusion
+machinery reads `tests/exec/goldens.h`, which cannot speak for a file that is not a golden — so an
+X11 example had no way to be excluded *and* no way to be handed an include path. `CMakeLists.txt`
+already resolves `MCC_X11_INCLUDE_DIR` and gives the `compile.ex*` cells either the `-I` or a skip;
+the census now reads the same variable, so the two agree instead of one silently failing to
+compile a source the other builds. **(2)** And the resolution sat at line 8101, *after* the
+slice-census registration at 7052 — **the exact ordering trap this file already documents for
+`DIFF3_GCC`**, where a `find_path` placed after its consumer registered skips on a clean tree and
+real cells only on the second configure. Proved rather than assumed: on a fresh build dir the cell
+was being handed an empty string. Hoisted next to the diff3 pair, with the reason written down.
+The census is now **344 sources, 0 failed, at all four levels**, 4659 modelled bodies.
+**This is sweep row 22's "the denominator is the files that happened to compile" caught in the
+act** — and note which way it fails: the cell went red rather than quietly reporting shares over
+343.
+
+**`optfire/abs` and `optfire/level-abs` — NOT closed, and the honest status is "unreproduced".**
+Both pass in isolation (3 runs each), and the whole `optfire/` family passes **132 of 132 at
+`-j4`**. They failed only in the full-suite `-j4` run, so it is cross-family contention rather
+than anything in optfire: the work dir is `${CMAKE_BINARY_DIR}/optfire` keyed per cell with an
+explicit duplicate guard, so the collision is not within the family. **What is missing is the
+identity of the other party**, and a full run is ~25 minutes, so this needs one deliberate
+reproduction rather than a guess. Do not quote these two as a compiler finding.
+
+**`ci/registration-stubs` — pre-existing, and not this host's.** `CMakeLists.txt:8219`'s mingw
+chain is gated on `if(EXISTS ${_MCC_MINGW_X86_64_GCC})`, a path outside the source tree, and its
+`else` branch does not register `pe/x-oracle` or `pe/x-oracle-mutate`. Same shape as N38 — a
+capability gate whose dead branch drops cells instead of skipping them — on the Windows surface
+rather than the Darwin one. **1 of 58 gated chains.** Left for whoever owns the PE oracle.
+
 **N38. Eight cells vanished on Darwin behind a copy-pasted predicate, and `must-run.txt` was the
 only thing that noticed.** New 2026-08-13, **partly closed the same day**. `CMakeLists.txt` had one
 `if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR AND NOT MCC_TARGETOS STREQUAL "WIN32"

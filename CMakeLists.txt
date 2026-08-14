@@ -3439,6 +3439,17 @@ if(MCC_BUILD_TESTS)
         endif()
     endif()
 
+    # Resolved here, before the first consumer, for the reason the diff3 pair
+    # above documents: the compile.ex* cells and slice-census's `wide` corpus
+    # both need it, slice-census registers first, and a find_path placed after
+    # it handed the cell an empty string on a clean tree -- so the X11 examples
+    # were dropped from the census on the first configure and included on the
+    # second, from the cache.
+    set(_x11_search "${MCC_SYSROOT}/usr/include" /usr/include /opt/X11/include
+                    /usr/X11R6/include /usr/local/include /opt/homebrew/include)
+    unset(MCC_X11_INCLUDE_DIR CACHE)
+    find_path(MCC_X11_INCLUDE_DIR NAMES X11/Xlib.h PATHS ${_x11_search} NO_DEFAULT_PATH)
+
     function(mcc_skip_test _name _reason)
         add_test(NAME ${_name} COMMAND "${CMAKE_COMMAND}" -E echo "SKIP: ${_reason}")
         set_tests_properties(${_name} PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP:" ${ARGN})
@@ -7065,7 +7076,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         --verify --top 20 --jobs 8 --opt-in)
             set_tests_properties(slice-census PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 LABELS "census" SKIP_RETURN_CODE 77 TIMEOUT 3600
-                ENVIRONMENT "MCC_SLICE_CENSUS_RUN=1;MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS}")
+                ENVIRONMENT "MCC_SLICE_CENSUS_RUN=1;MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_X11_INCLUDE_DIR=${MCC_X11_INCLUDE_DIR}")
 
             # S5': the dynamic per-loop trip census. The control cell is the one
             # that matters -- it compiles a program whose trip counts are known
@@ -8111,10 +8122,6 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/compile_errors.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/va_start_nonsym.c")
 
-    set(_x11_search "${MCC_SYSROOT}/usr/include" /usr/include /opt/X11/include
-                    /usr/X11R6/include /usr/local/include /opt/homebrew/include)
-    unset(MCC_X11_INCLUDE_DIR CACHE)
-    find_path(MCC_X11_INCLUDE_DIR NAMES X11/Xlib.h PATHS ${_x11_search} NO_DEFAULT_PATH)
     foreach(_f IN LISTS _orphan_srcs)
         get_filename_component(_n "${_f}" NAME_WE)
         file(READ "${_f}" _orphan_txt)

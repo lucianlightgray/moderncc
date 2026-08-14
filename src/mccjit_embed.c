@@ -576,11 +576,7 @@ done:
 
 static int mccjit_bind_name_eq(MCCState *js, const char *sym_name,
 															 const char *bind_name) { MCC_TRACE("enter\n");
-	if (js->leading_underscore
-#ifdef MCC_TARGET_PE
-			&& !strchr(bind_name, '@')
-#endif
-	) { MCC_TRACE("br\n");
+	if (js->leading_underscore && !strchr(bind_name, '@')) { MCC_TRACE("br\n");
 		return sym_name[0] == '_' && !strcmp(sym_name + 1, bind_name);
 	}
 	return !strcmp(sym_name, bind_name);

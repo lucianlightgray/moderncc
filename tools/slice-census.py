@@ -191,11 +191,30 @@ def golden_flags(flags):
             if not f.startswith("-l") and not f.startswith("-L")]
 
 
+def needs_x11(path):
+    """True if this source includes <X11/Xlib.h>.
+
+    The `wide` corpus walks examples/ as well as tests/, and goldens.h cannot
+    speak for a file that is not a golden -- so the X11 examples had no way to
+    be excluded and no way to be given an include path either.  CMakeLists.txt
+    already resolves MCC_X11_INCLUDE_DIR for exactly these files and hands the
+    compile.ex* cells either the -I or a skip; this reads the same variable so
+    the two agree instead of one of them silently failing to compile a source
+    the other builds.
+    """
+    try:
+        with open(path, encoding="utf8", errors="replace") as f:
+            return "X11/Xlib.h" in f.read()
+    except OSError:
+        return False
+
+
 def annotate(paths, gold, cpu, tos, drop):
     """[(path, extra flags)] plus the [(path, why)] goldens.h excludes."""
     tests = os.path.join(ROOT, "tests") + os.sep
     inc = ["-I" + os.path.join(ROOT, "runtime", "include"),
            "-I" + os.path.join(ROOT, "tests", "support")]
+    x11 = os.environ.get("MCC_X11_INCLUDE_DIR", "")
     out, dropped = [], []
     for p in paths:
         key = os.path.normpath(os.path.abspath(p))
@@ -207,6 +226,15 @@ def annotate(paths, gold, cpu, tos, drop):
                 dropped.append((os.path.relpath(key, ROOT), why))
                 continue
             extra += golden_flags(rec[0])
+        elif needs_x11(key):
+            if not x11:
+                if drop:
+                    dropped.append((os.path.relpath(key, ROOT),
+                                    "X11 example; <X11/Xlib.h> not available on "
+                                    "this host/target"))
+                    continue
+            else:
+                extra.append("-I" + x11)
         out.append((p, extra))
     return out, dropped
 
