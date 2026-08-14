@@ -24,6 +24,7 @@
   "mccjit_intent.c": 2,
   "mccpp.c": 59,
   "mccrir.c": 67,
+  "mccrt.c": 0,
   "mccrun.c": 8,
   "mccstats.c": 21,
   "mcctools.c": 30

@@ -88,7 +88,8 @@ CORPUS = ("src/libmcc.c", "src/mcc.c", "src/mccasm.c", "src/mccast.c",
           "src/mcccst.c", "src/mccdbg.c", "src/mccdis.c", "src/mccgen.c",
           "src/mccgpu.c", "src/mcchost.c", "src/mccircap.c",
           "src/mccjit_embed.c", "src/mccjit_intent.c", "src/mccpp.c",
-          "src/mccrir.c", "src/mccrun.c", "src/mccstats.c", "src/mcctools.c")
+          "src/mccrir.c", "src/mccrt.c", "src/mccrun.c", "src/mccstats.c",
+          "src/mcctools.c")
 
 FUNCS = ("fprintf", "snprintf", "vsnprintf", "sprintf", "vfprintf", "printf",
          "vprintf", "asprintf", "dprintf")
