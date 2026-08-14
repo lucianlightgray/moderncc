@@ -41661,3 +41661,14 @@ Three things this settles that "load-sensitive" did not:
 **Verification.** `ctest --test-dir cmake-def -R '^run-tier/(x86_64|i386)-win32$' --output-on-failure` with no foreign `wineserver` resident; expect both green in well under 30 s, which is the figure run 1 gives.
 
 **Source.** Measured on lin-x64, 2026-08-14, while verifying T-lin-10003 and T-lin-10360; neither touches PE codegen or wine.
+
+
+<a id="t-lin-10030-mac-native-arm64-embed-jit-evidence"></a>
+
+## T-lin-10030/mac — native arm64 embed-JIT evidence (measurement), 2026-08-14T21:11Z
+
+Answers the parent's core concern ("the engine compiles for arm64 but only x86_64 was ever run; qemu is not the platform") on real Apple-silicon hardware, not qemu. On `cmake-macos` (MCC_EMBED_JIT=ON), `ctest -R '^jit/'` is **66 of 66 green natively, 8 design-skips**, and `jit/xoracle-known-positive` (`jitconform.py --phase selfcheck --surface embed`) passes: the hot program reaches PASS, so the runtime JIT engine **booted and baked inside a program on native arm64**, and the falsified-oracle case is caught as DIFF_EXIT — the differential is wired, not vacuous.
+
+**What is still owed to fully close /mac.** The verification's rigorous half — `jitconform.py --phase check --surface embed` over the *qualified corpus* at every level — needs the gcc c-torture corpus (and ideally llvm-test-suite); both are absent on this host, so `jit/xoracle-conformance` and `jit/xoracle-coverage` SKIP (77). This is a provisioning gap, not a design or code question: `cmake --preset macos -DMCC_XSUITE_GCC=<gcc checkout> -DMCC_XSUITE_LLVMTS=<llvm-test-suite>` then re-run, and the conformance runs the c-torture `--limit 400` embed surface natively. The engine's *correctness on arm64* is evidenced by the 66 native cells; what the corpus adds is breadth (400 real programs) over the selfcheck's 4.
+
+**Source.** mac-arm64, 2026-08-14T21:11Z, at 861ecef0 (native measurement; no code change; /mac left OPEN pending corpus).

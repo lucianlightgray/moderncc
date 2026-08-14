@@ -110,7 +110,7 @@
       REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: —
   - [ ] T-lin-10030/mac [P] The embed JIT is measured only on x86_64 — mac-arm64
         OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-        REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: —
+        REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: — | NOTE: native arm64 evidence banked (jit family 66/66 green, selfcheck boots the engine); conformance half corpus-gated — see DETAILS#t-lin-10030-mac-native-arm64-embed-jit-evidence
   - [ ] T-lin-10030/lin [P] The embed JIT is measured only on x86_64 — lin-x64
         OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
         REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: —
