@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30000   | 2026-08-14T19:52Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10361   | 2026-08-14T20:10Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10361   | 2026-08-14T20:16Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T20:01Z |
 
 ## Contracts — blocking, highest priority
@@ -21,13 +21,14 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-lin-10360 [S] `rir/bank-keying` and its known-positive have no `mcc_skip_test` else branch, and `ci/registration-stubs` is red on main
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 24d6d8db | TS: 2026-08-14T20:16Z
+      REF: DETAILS.md#t-lin-10360-rir-bank-keying-has-no-skip-branch | DEPS: —
+
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 ## Open — claimable
 
-- [ ] T-lin-10360 [S] `rir/bank-keying` and its known-positive have no `mcc_skip_test` else branch, and `ci/registration-stubs` is red on main
-      OWNER: — | STATE: OPEN | SHA: 24d6d8db | TS: 2026-08-14T20:10Z
-      REF: DETAILS.md#t-lin-10360-rir-bank-keying-has-no-skip-branch | DEPS: —
 - [ ] T-lin-10004 [S] Implement `_BitInt(N)` (C23 6.2.5); the keyword is diagnosed, the type is absent
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10004-implement-bitintn-c23-625-the-keyword | DEPS: —
