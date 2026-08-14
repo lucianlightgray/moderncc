@@ -270,3 +270,4 @@ Records below `SHA n/a` predate this protocol: they were retro-minted on 2026-08
 - T-lin-10357 Archived 2026-08-13 — the Windows surface: W7 landed as a deletion, and the wt/winspec housekeeping bundle | DONE 2026-08-13T00:00Z | SHA n/a | REF DETAILS.md#m-arch-0211-archived-2026-08-13-the-windows
 - T-lin-10358 Archived 2026-08-13 — N30 closed, and N35 down to nothing on this host | DONE 2026-08-13T00:00Z | SHA eee6c1f2 | REF DETAILS.md#m-arch-0212-archived-2026-08-13-n30-closed
 - T-lin-10002 Bank keying: every host-sensitive bank is keyed by target and object format | DONE 2026-08-14T19:34Z | SHA 925a98fc | REF DETAILS.md#t-lin-10002-bank-keying-every-host-sensitive-bank
+- T-lin-10070 `tools/docref-lint.py` must lint the new doc layout | DONE 2026-08-14T19:41Z | SHA b028dc9a | REF DETAILS.md#t-lin-10070-toolsdocref-lintpy-must-lint-the-new

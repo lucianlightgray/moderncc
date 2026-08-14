@@ -892,6 +892,17 @@ The lint reads `docs/TODO.md` for four rules: in-tree path citations, line ancho
 
 **Source.** Migrated from `docs/TODO.md`, *Preamble* — [M-TODO-0001](#m-todo-0001-preamble).
 
+**Resolution (win-x64, 2026-08-14).** Already implemented by lin-x64 in `b028dc9a`
+("lint the doc that carries the citations"), landed 12:53 EDT — after this task was
+filed (12:27) but never migrated. `DOCS` and `check_table` both read `docs/DETAILS.md`;
+`TODO.md` stays in `DOCS` only for its REF path citations; the count rule reads the
+failed-to-reproduce table in `DETAILS.md`. Verified on win-x64 at HEAD: `python
+tools/docref-lint.py --root=. --min-refs 440` → OK over 3 docs, **766** path citations
+(35 anchored), 20 symbol-at-a-location claims, table **13 rows** with its sentence
+agreeing — the two failure modes this task named (min-refs "finds almost nothing";
+`check_table` "cannot find the table") are both gone. `ctest -R '^docs/refs'` = 2/2
+(cell + `--mutate` known-positive). No residual work; closed as grooming.
+
 <a id="t-lin-10071-rir-nofb-probe-self-is-flaky"></a>
 
 ## T-lin-10071 `rir-nofb-probe-self` is flaky and the mechanism is not known

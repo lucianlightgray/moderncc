@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30000   | 2026-08-14T19:29Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10360   | 2026-08-14T19:07Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T19:34Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50000   | 2026-08-14T19:41Z |
 
 ## Contracts — blocking, highest priority
 
@@ -214,9 +214,6 @@
 - [ ] T-lin-10069 [S] Fifteen "written as live, actually superseded" citations need re-checking or striking
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10069-fifteen-written-as-live-actually-superseded | DEPS: —
-- [ ] T-lin-10070 [S] `tools/docref-lint.py` must lint the new doc layout
-      OWNER: win-x64 | STATE: CLAIMED | SHA: 1695806f | TS: 2026-08-14T19:41Z
-      REF: DETAILS.md#t-lin-10070-toolsdocref-lintpy-must-lint-the-new | DEPS: —
 - [ ] T-lin-10071 [S] `rir-nofb-probe-self` is flaky and the mechanism is not known
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10071-rir-nofb-probe-self-is-flaky | DEPS: —
