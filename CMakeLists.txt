@@ -6878,6 +6878,13 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 --mccargs --embed-jit --emu "${MCC_EMULATOR}")
             set_tests_properties(mcctest-embedjit PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77)
+            if(NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING)
+                add_test(NAME jit/embed-nobake-warn COMMAND "${CMAKE_COMMAND}"
+                    -DMCC=${_mcc_exe}
+                    -DWORK=${CMAKE_BINARY_DIR}/embedjit
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embedjit_nobake_warn.cmake")
+                set_tests_properties(jit/embed-nobake-warn PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            endif()
         else()
             mcc_skip_test(mcctest-embedjit "the embedded JIT is not built into this configuration (needs -DMCC_EMBED_JIT=ON)")
         endif()

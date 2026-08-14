@@ -2134,9 +2134,13 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 			!mccjit_embed_fns || mccjit_internal_compile)
 		{ MCC_TRACE("br\n");
 			if (s1 && s1->embed_jit && !mccjit_embed_fns && !mccjit_internal_compile)
-				{ MCC_TRACE("br\n"); mcc_warning(
-						"--embed-jit: no functions were JIT-baked, so the output carries no runtime "
-						"JIT engine (baking needs -O1+ and is disabled by -g/-ftest-coverage)"); }
+				{ MCC_TRACE("br\n");
+					static const char nobake[] =
+							"mcc: warning: --embed-jit: no functions were JIT-baked, so the output "
+							"carries no runtime JIT engine (baking needs -O1+ and is disabled by "
+							"-g/-ftest-coverage)";
+					if (s1->error_func) s1->error_func(s1->error_opaque, nobake);
+					else { fflush(stdout); fprintf(stderr, "%s\n", nobake); fflush(stderr); } }
 			return; }
 	async = s1->jit_threads > 0;
 	if (s1->output_type == MCC_OUTPUT_MEMORY) { MCC_TRACE("br\n");
