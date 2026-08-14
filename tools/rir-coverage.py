@@ -285,6 +285,26 @@ CORPUS_DEFS = ["MCC_DIAG", "MCC_EMBED_JIT"]
 LOW_EXCLUDE = "src/mccgpu.c,src/mccgpu.h"
 
 
+def check_low_exclude(root):
+    """LOW_EXCLUDE is matched as a path SUFFIX inside the compiler, so an entry
+    that names a file which no longer exists stops matching and excludes
+    nothing -- and the lowerable ratchet then compares a full-corpus number
+    against a floor banked on an excluded corpus. That is a fake regression
+    with no diagnostic, which is sweep row 22's second half. Renaming or
+    splitting src/mccgpu.c is exactly the move that triggers it, so check that
+    every entry still names something."""
+    missing = [e for e in LOW_EXCLUDE.split(",")
+               if e and not os.path.exists(os.path.join(root, e))]
+    if not missing:
+        return None
+    return ("LOW_EXCLUDE names %d path(s) that no longer exist: %s. The "
+            "exclusion is a suffix match, so these now exclude NOTHING and "
+            "every lowerable figure below is over a corpus the banked floor "
+            "was not taken on. Rename the entry with the file, or re-bank "
+            "deliberately with --rebank-config."
+            % (len(missing), ", ".join(missing)))
+
+
 def corpus_config(flags):
     """The build options that change WHICH source src/mcc.c amalgamates.
 
@@ -1439,6 +1459,9 @@ def main():
     src_rel = sorted(os.path.relpath(x, ROOT).replace("\\", "/") for x in sources)
     src_manifest = {"n": len(src_rel),
                     "sha": hashlib.sha256("\n".join(src_rel).encode()).hexdigest()[:16]}
+    _lx = check_low_exclude(ROOT)
+    if _lx and not a.no_check:
+        bad.append(_lx)
     src_key = "sources_" + a.corpus
     if a.update_bank:
         bank[src_key] = src_manifest
