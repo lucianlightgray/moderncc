@@ -706,6 +706,24 @@ The claim that the bank holds four empty `nofb_miscompiles` lists is false since
 
 **Source.** Migrated from `docs/TODO.md`, *Open items 4 and 5 — ratios over the compiler's own source* — [M-TODO-0069](#m-todo-0069-open-items-4-and-5-ratios).
 
+**Resolution (win-x64, 2026-08-14).** The defect line above was stale when filed:
+`MCC_EMBED_JIT` has been in `CORPUS_DEFS` since `1b54c26e` (2026-08-08), so
+`CORPUS_DEFS = ["MCC_DIAG", "MCC_EMBED_JIT"]`, not the one-entry list the prose
+describes. The first half of the verification ("add it") was therefore already done;
+the live gap was the second half — *prove the guard fires* — for which no test existed.
+Delivered: `tools/rir-coverage.py --selfcheck-corpus-guard` asserts `MCC_EMBED_JIT` is
+enrolled and that flipping any `CORPUS_DEFS` option changes `corpus_config()`, which is
+exactly the condition the `main()` guard refuses on (`self_corpus and have_cfg !=
+want_cfg → exit 77`). The known-positive (`--mutate`) drops each option from
+`CORPUS_DEFS` in turn and asserts `corpus_config` goes blind to its flip, proving every
+entry is load-bearing. Confirmed on win-x64: removing `MCC_EMBED_JIT` fails
+`rir/corpus-guard` naming it. Cells `rir/corpus-guard` + `rir/corpus-guard-known-positive`,
+compiler-free under `if(MCC_PYTHON3)`, gate on all three platforms.
+
+**Verification (delivered).** `ctest -R 'rir/corpus-guard'` — clean cell holds the guard
+condition against the real `corpus_config`; the known-positive proves each `CORPUS_DEFS`
+entry is load-bearing.
+
 <a id="t-lin-10056-two-bodies-replay-byte-identically-under"></a>
 
 ## T-lin-10056 Two bodies replay byte-identically under one build and not another
