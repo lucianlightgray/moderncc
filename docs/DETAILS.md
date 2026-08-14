@@ -41622,3 +41622,30 @@ The third is the instructive one. It reads as the most host-independent of the f
 Two of three platforms is what this is worth, and no more: win-x64 has not read it. `T-lin-10093/win` is where that number lands.
 
 **Source.** Reported by mac-arm64, 2026-08-14, against `99a28e2d`.
+
+
+<a id="t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver"></a>
+
+## T-lin-10073 measured — the mechanism is a foreign `wineserver`, and the shape is 17 s to timeout
+
+**Type** `[X]` lin-x64 — **State** OPEN — **DEPS** —
+
+The row said the two wine `run-tier` cells are load-sensitive. It now has a controlled measurement, taken on 2026-08-14 across two full-suite runs on one tree and one host, three hours apart:
+
+| | `run-tier/i386-win32` | `run-tier/x86_64-win32` | foreign wine load |
+| --- | --- | --- | --- |
+| run 1, `-j32` | **Passed 17.43 s** | **Passed 15.98 s** | none resident |
+| run 2, `-j32` | **Failed 302.72 s** | **Failed 302.66 s** | `bg3_dx11.exe` under GE-Proton10-34 |
+| serial retry, `-j1`, load average 7 | **Failed ~300 s** | **Failed ~300 s** | same |
+
+Three things this settles that "load-sensitive" did not:
+
+1. **It is not parallel load.** The serial retry ran with load average 7 and nothing else of this tree's running, and both cells still timed out. `-j32` is not the variable; T-lin-10072's framing does not transfer to this row.
+2. **The mechanism is `wineserver` contention, not CPU.** A foreign `wineserver` (`GE-Proton10-34`, started by BG3 under Steam) is resident in both failing cases and absent in the passing one. This is the same mechanism [T-lin-10359](#t-lin-10359-slicecref-oracle-stalls-on-five-programs) names for the device cells, arriving through wine instead of through the GPU, which is why the two rows keep failing together.
+3. **The shape is a hang, not a slowdown.** 16-17 s to a 300 s timeout is 17x, and the cells do not finish late — they do not finish. A margin that wide cannot be tuned away with a bigger `TIMEOUT`; whatever the cells wait on is not being served at all while another `wineserver` owns the prefix.
+
+**The diagnostic to run before attributing either cell to a commit** — the wine half of the pair T-lin-10359 records for the GPU half: `pgrep -a wineserver` and `ps -eo pcpu,etime,comm --sort=-pcpu | head`. A foreign `wineserver` makes both cells unverifiable, and no amount of bisecting the tree will show it.
+
+**Verification.** `ctest --test-dir cmake-def -R '^run-tier/(x86_64|i386)-win32$' --output-on-failure` with no foreign `wineserver` resident; expect both green in well under 30 s, which is the figure run 1 gives.
+
+**Source.** Measured on lin-x64, 2026-08-14, while verifying T-lin-10003 and T-lin-10360; neither touches PE codegen or wine.
