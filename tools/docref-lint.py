@@ -35,14 +35,23 @@ A path whose directory does not exist in this tree is not a claim about this
 tree and is skipped -- that is how `src/gallium/frontends/lavapipe/lvp_device.c`
 stays quotable.  The cost is that a file deleted along with its whole directory
 escapes the path rule; it is priced and accepted.
-  count   the failed-to-reproduce table in docs/TODO.md is counted, and the
+  count   the failed-to-reproduce table in docs/DETAILS.md is counted, and the
           one sentence that states its size must agree.  Three sentences used
           to state it as twelve, nine and seven over a thirteen-row table.
 
-`docs/ARCHIVED.md` is out of scope on purpose and by its own header: it is a
-snapshot kept "for later validation", and most of what it cites was deleted
-after the snapshot was taken.  Demanding that its anchors resolve would demand
-that history be rewritten.  `--include-archived` reports on it without gating.
+Under docs/INSTRUCTIONS.md, docs/TODO.md carries task state only -- one line and
+a pointer per task -- and every citation lives in docs/DETAILS.md behind that
+pointer.  So DETAILS.md is the doc all four rules read; TODO.md stays in the list
+because its REF lines name paths too, and a board that points at a file that does
+not exist is the same defect one level up.
+
+The migrated history is out of scope on purpose, and for the reason it always
+was: `docs/ARCHIVED.md` was a snapshot kept "for later validation", most of what
+it cited was deleted after the snapshot was taken, and demanding that its anchors
+resolve would demand that history be rewritten.  That history now lives at the
+bottom of `docs/DETAILS.md`, so the gate stops at its marker heading -- MIGRATED
+below -- and `--include-archived` reports on the remainder, and on the one-line
+records in `docs/ARCHIVED.md`, without gating either.
 
 `tools/docref-allow.txt` holds the citations that must not resolve -- a design
 doc naming a file it proposes to write, a paragraph whose subject is that
@@ -62,7 +71,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-DOCS = ["docs/TODO.md", "README.md"]
+DOCS = ["docs/DETAILS.md", "docs/TODO.md", "README.md"]
 ARCHIVED = "docs/ARCHIVED.md"
 
 ROOTED = ("src/", "tools/", "tests/", "cmake/", "include/", "runtime/",
@@ -83,6 +92,10 @@ TABLE_HEAD = "| figure | actual | how it failed |"
 TABLE_COUNT = re.compile(r"\*\*The (\d+) figures that have failed to reproduce\*\*")
 
 ALLOW = "tools/docref-allow.txt"
+
+# Everything from this heading down in docs/DETAILS.md is migrated history, kept
+# verbatim.  Reported, never gated: see the header.
+MIGRATED = "# Migrated — ARCHIVED.md"
 
 
 def rooted(path):
@@ -140,8 +153,20 @@ def occurs(text, ident):
     return re.search(r"\b" + re.escape(ident) + r"[A-Za-z0-9_]*", text) is not None
 
 
-def check_doc(root, doc, files, dirs, cache, allow, cited, mutate):
+def split_migrated(lines):
+    """The gated half of a doc, and the migrated history under it."""
+    for i, ln in enumerate(lines):
+        if ln.rstrip() == MIGRATED:
+            return lines[:i], lines[i:]
+    return lines, []
+
+
+def check_doc(root, doc, files, dirs, cache, allow, cited, mutate, gated=True):
     lines = open(os.path.join(root, doc), encoding="utf-8").read().split("\n")
+    if gated:
+        lines = split_migrated(lines)[0]
+    else:
+        lines = split_migrated(lines)[1] or lines
     if mutate:
         lines = list(lines)
         lines.append("planted: `src/mccgen.c:999999` is past the end of that file")
@@ -190,7 +215,7 @@ def check_doc(root, doc, files, dirs, cache, allow, cited, mutate):
 
 
 def check_table(root, mutate):
-    doc = "docs/TODO.md"
+    doc = "docs/DETAILS.md"
     lines = open(os.path.join(root, doc), encoding="utf-8").read().split("\n")
     head = [i for i, ln in enumerate(lines) if ln.strip() == TABLE_HEAD]
     if len(head) != 1:
@@ -256,7 +281,13 @@ def main():
     cited = set()
     for doc in docs:
         s, b = check_doc(root, doc, files, dirs, cache, allow, cited,
-                         a.mutate and doc == "docs/TODO.md")
+                         a.mutate and doc == "docs/DETAILS.md")
+        for k in seen:
+            seen[k] += s[k]
+        bad += b
+    if a.include_archived:
+        s, b = check_doc(root, "docs/DETAILS.md", files, dirs, cache, allow,
+                         cited, False, gated=False)
         for k in seen:
             seen[k] += s[k]
         bad += b

@@ -1,3 +1,9 @@
+* text=auto eol=lf
+
+docs/DETAILS.md   merge=union
+docs/ARCHIVED.md  merge=union
+docs/QUESTIONS.md merge=union
+
 *.sh    text eol=lf
 *.bash  text eol=lf
 
