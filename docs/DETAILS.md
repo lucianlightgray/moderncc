@@ -1091,6 +1091,33 @@ W6 landed for the constant-filter case, and the "funclet generation required" pr
 
 **Source.** Migrated from `docs/TODO.md`, *Preamble* — [M-TODO-0001](#m-todo-0001-preamble).
 
+**Research / implementation roadmap (win-x64, 2026-08-14; unclaimed — de-risking for a
+fresh-context implementer).** The current constant-filter path: `stat()` at
+`src/mccgen.c:15051` handles `__try` — parses the try block (`tb..te`), `gjmp`s over the
+handler, then for `__except` reads the filter with **`expr_const64()`** (15063, hence
+constant-only) and emits the handler inline (`hb`); `__finally` is `mcc_error(... not
+supported yet)` (15073). `pe_seh_scope(begin,end,filter,handler)` (`src/objfmt/mccpe.c:2885`)
+records a scope entry; `pe_add_unwind_data` (mccpe.c:2913) emits one `UNWIND_INFO` per
+function in `.xdata` (rbp-based: `UWOP_PUSH_NONVOL(rbp)`+`UWOP_SET_FPREG`, `UNW_FLAG_EHANDLER`
+when `seh_nscope`), the `__C_specific_handler` RVA, and a C `SCOPE_TABLE` whose four DWORDs
+per entry are BeginAddress/EndAddress/HandlerAddress/JumpTarget — and today **"the constant
+filter is a raw DWORD (no reloc)"** in the filter slot (mccpe.c:2948).
+
+What the funclet cases need, and why it is large: (1) **non-constant `__except` filter** —
+compile the filter expression into a *separate code region* (a funclet) that
+`__C_specific_handler` calls with `(EXCEPTION_POINTERS*, establisher_frame)` and returns
+-1/0/1; the SCOPE_TABLE filter slot becomes an `ADDR32NB` reloc to that funclet, not a raw
+DWORD. The funclet reaches the parent's locals through the **establisher frame** (x64 funclet
+ABI: parent RBP is recoverable from the passed frame; MSVC allocates the funclet's frame and
+chains to the parent), so `GetExceptionInformation()`/local references in the filter resolve.
+(2) **`__finally`** — a termination-handler funclet, invoked on unwind (and on normal fallthrough
+via an inline call). (3) Each funclet needs its **own `.pdata`/`.xdata`** entry (funclet unwind
+info, distinct from the parent), which `pe_add_unwind_data` currently emits only per top-level
+function. This is multi-slice codegen with a real correctness cliff (a wrong scope table or
+funclet frame = crashing/incorrect exception handling), so it wants a fresh, focused context and
+a `cl`-differential (`pe/seh`) per slice. First slice is still the TDD one from the Verification:
+add a non-constant-filter and a `__finally` case to `pe/seh` that fail on today's mcc.
+
 <a id="t-lin-10085-win-x64-codeview-debugt-types"></a>
 
 ## T-lin-10085 win-x64 — CodeView `.debug$T` types
