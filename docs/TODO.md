@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:37Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:38Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10363   | 2026-08-14T21:20Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50001   | 2026-08-14T21:29Z |
 
@@ -19,9 +19,6 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
-- [ ] T-lin-10361 [X] mac-arm64 — T-lin-10028's `fprintf` moved `fmt/census-bank` and it was not re-banked
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 5d8d8835 | TS: 2026-08-14T21:37Z
-      REF: DETAILS.md#t-lin-10361-t-lin-10028s-fprintf-moved-fmt-census-bank | DEPS: —
 - [ ] T-lin-10022 [S] `rir_loc_replay` never checks the size or alignment of the entry it returns
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-14T21:22Z
       REF: DETAILS.md#t-lin-10022-rir-loc-replay-never-checks-the | DEPS: —

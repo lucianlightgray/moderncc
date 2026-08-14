@@ -41791,3 +41791,14 @@ ctest --test-dir cmake-def -L treegate
 **Verification.** `ctest --test-dir cmake-def -L treegate` selects exactly 11 cells; deleting any name from `MCC_TREEGATE_CELLS` or misspelling one fails the configure rather than shrinking the set.
 
 **Source.** Implemented on lin-x64, 2026-08-14, after mac-arm64 adopted the ad-hoc regex `ctest -R '^(ci|trace-gate|fmt/census)'` as a personal standard — this is that standard, made mechanical and given a membership rule.
+
+
+<a id="t-lin-10361-t-lin-10028s-fprintf-moved-fmt-census-bank"></a>
+
+## T-lin-10361 resolved — fmt/census-bank re-taken for T-lin-10028's no-bake fprintf
+
+T-lin-10028 (`740e4f54`) made the `--embed-jit` no-bake notice emit unconditionally to stderr so `-w` cannot suppress it — one new `fprintf` site in `mccjit_embed.c`. The site census was not re-banked, leaving `fmt/census-bank` (and its known-positive, which refuses over an already-red subject) red on main. Re-taken at `8831b179`: `literal_fmt_sites.fprintf` 422→423, `sites.fprintf` 426→427, `per_file_sites['mccjit_embed.c']` 483→484; nothing else moved. Both cells green. The lesson (lin-x64): run `ctest -L treegate` before the DONE commit — the tree-wide gates an edit is subject to are cheaper than the re-open.
+
+**Verification.** `ctest --test-dir cmake-macos -R fmt/census-bank` — both pass.
+
+**Source.** mac-arm64, 2026-08-14T21:38Z, at 8831b179.
