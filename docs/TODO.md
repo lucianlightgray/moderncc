@@ -215,7 +215,7 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10069-fifteen-written-as-live-actually-superseded | DEPS: —
 - [ ] T-lin-10070 [S] `tools/docref-lint.py` must lint the new doc layout
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
+      OWNER: win-x64 | STATE: CLAIMED | SHA: 1695806f | TS: 2026-08-14T19:41Z
       REF: DETAILS.md#t-lin-10070-toolsdocref-lintpy-must-lint-the-new | DEPS: —
 - [ ] T-lin-10071 [S] `rir-nofb-probe-self` is flaky and the mechanism is not known
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
