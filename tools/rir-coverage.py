@@ -338,6 +338,42 @@ def fmt_config(cfg):
     return ",".join("%s=%s" % kv for kv in sorted(cfg.items())) or "(none)"
 
 
+def selfcheck_corpus_guard(mutate):
+    global CORPUS_DEFS
+    if mutate:
+        full = CORPUS_DEFS
+        for dropped in full:
+            CORPUS_DEFS = [d for d in full if d != dropped]
+            try:
+                blind = corpus_config([]) == corpus_config(["-D%s=1" % dropped])
+            finally:
+                CORPUS_DEFS = full
+            if not blind:
+                print("FAIL rir/corpus-guard-known-positive: dropping %r from "
+                      "CORPUS_DEFS left corpus_config still sensitive to its flip, "
+                      "so the gate cannot see that option going unguarded" % dropped)
+                return 1
+        print("rir/corpus-guard-known-positive: OK -- each of %s is load-bearing; "
+              "dropping any one makes corpus_config blind to that option's flip and "
+              "the gate catches it" % (full,))
+        return 0
+    if "MCC_EMBED_JIT" not in CORPUS_DEFS:
+        print("FAIL rir/corpus-guard: MCC_EMBED_JIT is a source-shaping build option "
+              "(it pulls two TUs into src/mcc.c) absent from CORPUS_DEFS, so a build "
+              "that flips it would compare across corpus shapes instead of refusing")
+        return 1
+    base = corpus_config([])
+    for opt in CORPUS_DEFS:
+        if corpus_config(["-D%s=1" % opt]) == base:
+            print("FAIL rir/corpus-guard: flipping %s does not change corpus_config, "
+                  "so the bank's corpus_config guard cannot see it" % opt)
+            return 1
+    print("rir/corpus-guard: OK -- MCC_EMBED_JIT enrolled; flipping any of %s changes "
+          "corpus_config, so a bank taken with an option off refuses (skip 77) against "
+          "a build with it on rather than comparing across corpus shapes" % (CORPUS_DEFS,))
+    return 0
+
+
 def gap_levels(path):
     """Levels a tests/rir/gap fixture must reproduce its class at.
 
@@ -1342,11 +1378,15 @@ def main():
     ap.add_argument("--opt-in", action="store_true")
     ap.add_argument("--rebank-config", action="store_true")
     ap.add_argument("--selfcheck-bankkeying", action="store_true")
+    ap.add_argument("--selfcheck-corpus-guard", action="store_true")
     ap.add_argument("--mutate", action="store_true")
     a = ap.parse_args()
 
     if a.selfcheck_bankkeying:
         return selfcheck_bankkeying(a.mutate)
+
+    if a.selfcheck_corpus_guard:
+        return selfcheck_corpus_guard(a.mutate)
 
     if not a.build_dir:
         ap.error("build_dir is required")

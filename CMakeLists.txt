@@ -7727,6 +7727,19 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties("rir/bank-keying-known-positive" PROPERTIES
             TIMEOUT 120)
 
+        add_test(NAME "rir/corpus-guard"
+            COMMAND "${MCC_PYTHON3}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
+                --selfcheck-corpus-guard)
+        set_tests_properties("rir/corpus-guard" PROPERTIES TIMEOUT 120)
+
+        add_test(NAME "rir/corpus-guard-known-positive"
+            COMMAND "${MCC_PYTHON3}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/rir-coverage.py"
+                --selfcheck-corpus-guard --mutate)
+        set_tests_properties("rir/corpus-guard-known-positive" PROPERTIES
+            TIMEOUT 120)
+
         add_test(NAME "optbench/levelbench-bank"
             COMMAND "${MCC_PYTHON3}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tools/optlevel-bench.py" --check
