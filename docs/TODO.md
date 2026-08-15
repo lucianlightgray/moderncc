@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T03:00Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T03:05Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T06:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
@@ -12,6 +12,10 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+
+- [ ] T-lin-10089 [X] mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 7ebfaed1 | TS: 2026-08-15T03:05Z
+      REF: DETAILS.md#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple | DEPS: T-lin-10002[C] DONE, T-lin-10367[C] content-complete | Q: Q-mac-30000 ANSWERED | NOTE: wiring --sysroot=runtime/osx into key_flags()'s *osx branch + re-key. o0_ab compiles the FULL corpus so 3 more headers needed for full_language.c (wctype/locale/inttypes). Cross-host phase (Linux mcc-arm64-osx reproduce + x86_64-osx) needs lin
 
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
@@ -46,9 +50,6 @@
 - [ ] T-lin-10086 [S] `arm64-win32` execution on a `windows-11-arm` CI runner (was [X] win-x64)
       OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
       REF: DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor | DEPS: T-lin-10365[S] | NOTE: Q-lin-10013 ANSWERED — CI is the executor, so this is no longer win-x64-only. SPLIT: the `arm-win32` (ARM32) half has NO executor — Windows 11 on ARM64 does not run ARM32 apps — and must not be reported green with the arm64 half
-- [ ] T-lin-10089 [X] mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
-      OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
-      REF: DETAILS.md#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple | DEPS: T-lin-10002[C], T-lin-10367[C] | Q: Q-mac-30000 ANSWERED | NOTE: minimal mcc-authored Darwin headers key the bank; a native Apple host still compiles against the real SDK. This [X] half is the --sysroot wiring + re-key; the header set itself is T-lin-10367[C]
 - [ ] T-lin-10366 [S] `MCC_REF_CC` never consults the vendored aarch64 llvm-mingw, so an arm64 Windows host has no reference cc
       OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
       REF: DETAILS.md#t-lin-10366-ref-cc-is-x86-64-only-on-windows | DEPS: —
