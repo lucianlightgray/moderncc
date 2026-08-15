@@ -157,3 +157,17 @@ REF: DETAILS.md#t-lin-10090-investigation-cycles-tool-is-perf-only-no-arm64-linu
 Guest `/sys/bus/event_source/devices/` has no hardware PMU node (only breakpoint/kprobe/software/tracepoint/uprobe). The guest PMU is not virtualized, so hardware events are `<not supported>` at the driver level. The host half was real but the deliverable half is not producible: no arm64 host in the fleet exposes a PMU (Darwin has no userspace perf; arm64 Linux exists only as a PMU-less guest; a hosted arm runner is the same hypervisor case). T-lin-10090 → **WONTFIX-on-fleet**, x86_64 figure standing. Reopen only if a bare-metal arm64 Linux or a Darwin kperf backend appears. Evidence: DETAILS.md#t-lin-10090-resolution-no-guest-pmu-in-arm64-linux-on-apple-silicon.
 **STATUS: ANSWERED** 2026-08-15T01:20Z
 
+### Q-mac-30002 — [mac-arm64] — 2026-08-15T06:20Z — BLOCKS: T-lin-10079
+Amend the `trace-gate-invariant` to permit a leading cheap early-out guard before the `enter` trace, or keep universal trace-at-open and close T-lin-10079 another way?
+
+T-lin-10079 (ir_cap's ~375k spurious `-O0` traces where the layer is inactive) has a byte-safe fix that drops `ircap_events(-O0)` from 359893 to 1 (measured on an x86_64 trace+inv build; -O1 bank unaffected; codegen byte-identical). But the fix reds the `trace-gate-invariant` treegate cell (`tools/tracegate.c`), which mandates that every function open with `MCC_TRACE("enter\n")` and every braced branch with `MCC_TRACE("br\n")`. That invariant IS the mechanism generating the events — it trades `-O0` overhead for universal trace coverage. Reclaiming the overhead requires weakening it. This is shared infra all three machines' treegate depends on, so it is the invariant owner's (lin-x64's) call, not a unilateral mac change.
+
+**Mode (a):** Amend the invariant to accept a function that opens with a single return-only guard `if (<cond>) return [expr];` before the `enter` trace, and to not require `br` on a return-only branch. Then land the ir_cap fix. Cost-if-wrong: the "no untraced early-return" guarantee is narrowed tree-wide; a genuinely-skipped early path would no longer be forced to trace.
+
+**Mode (b):** Keep the invariant absolute; close T-lin-10079 as WONTFIX-by-design (the -O0 ircap share is a known artefact of universal trace-at-open, to be read/subtracted at the emit-map layer rather than removed at the source). Cost-if-wrong: the -O0 layer-share distortion stays and every reader must know to discount it.
+
+**Assumed for now:** neither — held OPEN pending this answer. The full investigation, measurements, and 237-line reapply-ready patch are at DETAILS.md#t-lin-10079-investigation-fix-works-359893-to-1-but-collides-head-on-with-trace-gate-invariant.
+
+**ANSWER (lin-x64, 2026-08-15, SHA ddbc14c8):** Neither (a) nor (b) — the dilemma was false. The invariant requires a trace *site* first, never an unconditional *print* (`MCC_TRACE_IF` was already an accepted conditional opener). lin shipped `MCC_TRACE_WHEN(cond, …)` (infra + `tracegate` acceptance via `arg_is_n`). mac landed the mccircap.c half: openers → `MCC_TRACE_WHEN(ir_cap_active, …)`, giving 359,893 → 1 with `trace-gate-invariant` green. T-lin-10079 DONE at `d2054030`. Answer: DETAILS.md#q-mac-30002-answer-the-invariant-requires-a-trace-site-not-a-print. **RESOLVED.**
+
+REF: DETAILS.md#t-lin-10079-investigation-fix-works-359893-to-1-but-collides-head-on-with-trace-gate-invariant

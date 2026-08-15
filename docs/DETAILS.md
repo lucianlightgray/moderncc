@@ -43377,3 +43377,17 @@ A mechanical pass over `TODO.md`, `QUESTIONS.md`, `ARCHIVED.md` and `DETAILS.md`
 **What the audit did not find, which is worth recording too.** 88 task rows with no owner/state incoherence (no CLAIMED/IN_PROGRESS without an owner, no OPEN with one); no double-booking between `TODO.md` and `ARCHIVED.md` beyond the two `[P]` children deliberately kept visible until their parent closes; and every `Q:` reference on a BLOCKED task resolving to a question that is genuinely still open.
 
 **Source.** lin-x64, 2026-08-15.
+
+<a id="t-lin-10079-done-mcc-trace-when-gated-the-openers-invariant-green"></a>
+
+## T-lin-10079 DONE — `MCC_TRACE_WHEN(ir_cap_active, …)` gated the openers; 359,893 → 1 with the invariant green
+
+Landed the mac half of [Q-mac-30002's resolution](#q-mac-30002-answer-the-invariant-requires-a-trace-site-not-a-print). The earlier investigation ([here](#t-lin-10079-investigation-fix-works-359893-to-1-but-collides-head-on-with-trace-gate-invariant)) proved the fix worked but that moving `MCC_TRACE` below a guard reds `trace-gate-invariant`; lin's insight was that the invariant requires a trace *site* first, never an unconditional *print*, and shipped `MCC_TRACE_WHEN(cond, …)` (infra at `ddbc14c8`).
+
+**What landed (code, `d2054030`).** Every per-op entry point in `src/mccircap.c` — `ir_cap_begin`/`ir_cap_end`, the ~15 hand-written hooks (`gv`/`vstore`/`vpushv`/`vpushsym`/`vsetc`/`gfunc_return`/`mk_pointer`/`gen_va_arg`/`asm`/`asm_gen_code`/`gen_cmov`/`gen_reg_addi`/`gen_vla_alloc`/`gen_increment_tcov`), and `fconst_take`/`fconst_note`/`pred` — has its opener and its inactive-reachable branches converted from `MCC_TRACE(…)` to `MCC_TRACE_WHEN(<workguard>, …)`. The workguard is the condition under which the function actually captures: `ir_cap_active` for most; `ir_cap_replaying` for `fconst_take`; `ir_cap_active || ir_cap_replaying` for `pred`. Lifecycle (`teardown`/`reset`) and active-only internal helpers (`new_op`/`snap_vstack`/`raw_add`/`gap`/`relofs`/`issue`/`op_name`) keep unconditional `MCC_TRACE` — they never fire spuriously, and `teardown` is the one legitimate once-per-compile marker. Symmetric 46/46 diff.
+
+**Measured (x86_64 `-DMCC_TARGET_ARCH=x86_64 -DMCC_CONFIG_TRACE=ON` trace+inv build).** `emit-map.py --target full_language.c --opt=-O0`: `ircap_events` **359,893 → 1** (the residual is `mccircap.c:122` = `ir_cap_teardown`, exactly as lin predicted). `bodies_traced` (301) and `rir_events` (80,332) unchanged — no other layer perturbed. Active-path fidelity intact: the `-O1` census bank still passes (`emit-map bank OK for x86_64|full_language.c|-O1`, `anchor_abort_matches_inv True`).
+
+**Gates.** `trace-gate-invariant` **green** (the whole point — `MCC_TRACE_WHEN` is an accepted opener), `treegate` 12/12, `ast/o0-baseline` quartet 5/5 **byte-identical**. Byte-identity is guaranteed by construction: `MCC_TRACE_WHEN` is `((void)0)` when `MCC_CONFIG_TRACE` is off, so the shipped build's `mccircap.c` is unchanged — the events only ever existed in a diagnostic build. No test files added/removed, so no corpusgate; no bank moved.
+
+**Source.** mac-arm64, 2026-08-15, code at `d2054030` on lin's infra `ddbc14c8`.
