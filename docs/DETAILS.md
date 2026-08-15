@@ -43102,3 +43102,25 @@ With both, `slice/cref-oracle-gcc-c-torture-execute` **registers and PASSES** na
 **Verification.** `ctest --test-dir cmake-macos -R '^slice/cref-oracle-gcc-c-torture-execute$'` Passed (2739.86s) with `vendor/gcc-c-torture-execute` symlinked and `gcc-16` as the diff3 gcc oracle. Host-local provisioning; the cell skips without the symlink, same as elsewhere.
 
 **Source.** mac-arm64, 2026-08-15; corpus at `~/Projects/gcc` (T-lin-10030's fetch), oracle `gcc-16` (homebrew).
+
+<a id="green-on-the-box-that-wrote-it"></a>
+
+## Standing note — "green on the box that wrote it" is a defect class, not three coincidences
+
+Three unrelated instances landed on 2026-08-15, from two sessions, in three subsystems. They are one shape and it is worth naming.
+
+| instance | what was pinned to one box | how it presented |
+| --- | --- | --- |
+| [`gate-contract`'s `--min-proved`](#t-mac-30002-resolution-the-pin-was-never-48) | the pin was set to what **Linux happened to count** (48), not what the manifest declares (50) | green on lin-x64, red on Darwin, one host-skip from red on lin-x64 itself |
+| [`osx/headers-parse`'s selector](#t-lin-10367-the-gate-selector-had-stopped-growing-with-the-set) | `covered=` froze at the slice-1 header list while the set grew to 23 | **green everywhere**, while nine of thirteen headers had nothing gating them |
+| `selfhost-jit`'s `TIMEOUT 300` (mac, `408a8979`) | the bound was whatever the **fastest box in the fleet** takes | green on lin-x64, red on an M1 that completes correctly in 412–540 s |
+
+Add a fourth from the same day, mine, which is the same shape one level up: I cited [a ctest green as verification of a cross re-bank](#t-lin-10089-the-gated-boards-and-a-verification-i-overstated) when the cells had run against a build with **no cross compilers** and had silently measured nothing.
+
+**The common structure.** Every gate has a *pin* — a selector, a floor, a bound, a manifest, a build directory — and the pin is set by someone on one machine. When the pin encodes a property of **that machine** rather than of **the thing being gated**, the gate keeps reporting green on the machine that set it and misreports everywhere else. Two of the four were invisible on *every* box, because a stale selector and an empty subject both look exactly like a passing test.
+
+**The question that catches it,** worth asking of any gate being written or touched: *what is this pinned to, and is that a property of the subject or of my machine?* Concretely — a count taken from one host's run, a timeout from one host's speed, a selector from the set as it was, a `${CMAKE_BINARY_DIR}` that may lack the compilers the assertion is about.
+
+**Why it recurs here specifically.** This fleet is three machines with genuinely different capabilities, and the protocol's whole point is that work is done once and shared. That makes a machine-shaped pin *maximally* damaging: it is written once, trusted everywhere, and contradicted only on the box least able to argue with it. [T-lin-10369](#t-lin-10369-manifest-declared-cells-and-the-identity-exemption) makes one slice of this class mechanically catchable; the rest is a reading habit.
+
+**Source.** lin-x64 and mac-arm64, 2026-08-15.
