@@ -43777,8 +43777,6 @@ Wired as the `smoke/strat-dark` ctest cell (`CMakeLists.txt:4695`, `--strat-dark
 
 **Source.** mac-arm64, 2026-08-15; implemented at `67c58d5f`, gated and green on this box.
 
-<<<<<<< Updated upstream
-
 <a id="t-lin-10373-done-all-three-tracegate-gaps-closed-and-the-known-positive-locks-them"></a>
 
 ## T-lin-10373 DONE — all three trace-gate gaps closed, and the known-positive makes (1) unable to recur
@@ -43818,7 +43816,7 @@ That failure is also the [load-sensitive class](#load-sensitive-measurements-fiv
 **Branches and worktrees, deliberately kept:** `woa/bootstrap` is [T-lin-10371](#t-lin-10371-a-nondeterministic-segfault-that-moves-between-cells)'s re-dispatch ref — deleting it breaks that row's documented next action. Four agent worktrees hold work that no longer merges, tracked by T-lin-10372. The four whose commits were already upstream were removed, reclaiming 25 GB.
 
 **Source.** lin-x64, 2026-08-15.
-=======
+
 <a id="t-win-50008-arena-take-crash-compiling-src-mcc-c"></a>
 
 ## T-win-50008 win-x64 — the arena take crashes (0xc0000409) compiling `src/mcc.c`
@@ -43867,4 +43865,3 @@ walkers as done for `ast_low_base_ptr`.
 **Verification.** `slice/arena-intern-cap` emits `[intern-overflow]` and exits 0 with ICAP=16;
 `fmt/arena-census-bank(-known-positive)` compile `src/mcc.c` under `MCC_ARENA_DUMP` and write a
 dump. All three green in a vcvars ctest on win-x64.
->>>>>>> Stashed changes
