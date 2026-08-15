@@ -45334,3 +45334,26 @@ failures; `ctest`: slice|census 122/122 (slice/frame, -known-positive,
 slice/arrow, slice/effect now live), gpu/ 17/17, treegate 13/13, jit 66/66.
 
 **Source.** mac-arm64, 2026-08-15, code at `0f936e40`.
+
+<a id="t-lin-10382-arm64-faithful-rebank-no-movement"></a>
+
+## T-lin-10382 — the arm64 `faithful.json` rows measured post asm-fix: full_language.c moved 0.00
+
+**Type** `[X]` mac-arm64 — **State** DONE at `93c52ef7`
+
+The task's premise was "the fix is capture-layer and target-independent, so
+arm64 moves too, and ast/inv-faithful is red on Darwin until re-banked". The
+measurement says otherwise: at the fixed tree, `arm64|full_language.c` is
+2.21 / 2.21 / 2.21 — byte-identical to the banked values, zero movement —
+and `ast/inv-faithful` was green on Darwin before any re-bank. The mechanism
+is that full_language.c's inline-asm bodies are x86 asm, preprocessor-gated
+out on arm64, so the double-assembly defect never had an arm64 subject in
+that corpus file. `arm64|selfhost` moved inside tolerance (2.02→2.00,
+2.05→2.03, baked 40.4→40.34) and was re-banked to the fresher values per the
+x86 precedent at `0d94d189`.
+
+**Verification.** `python3 tools/inv-faithful.py cmake-build-debug --bank
+tests/emitmap/faithful.json` reports "bank OK for arm64|full_language.c,
+arm64|selfhost"; `ast/inv-faithful` + `-known-positive` pass on Darwin.
+
+**Source.** mac-arm64, 2026-08-15, at `93c52ef7`.

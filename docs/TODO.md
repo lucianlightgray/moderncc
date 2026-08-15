@@ -14,7 +14,7 @@
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
 - [ ] T-lin-10382 [X] mac-arm64 — re-bank the two `arm64|*` rows of `tests/emitmap/faithful.json` after the asm double-assembly fix
-      OWNER: mac-arm64 | STATE: CLAIMED | SHA: 0d94d189 | TS: 2026-08-15T15:00Z
+      OWNER: mac-arm64 | STATE: DONE | SHA: 93c52ef7 | TS: 2026-08-15T15:05Z
       REF: DETAILS.md#t-lin-10375-10378-fixed-stop-assembling-the-body-twice-and-full-language-reaches-303-303 | DEPS: — | NOTE: the fix at 5113bfc5 is in the CAPTURE layer and target-independent, so arm64 moves too, and only a Darwin host can measure it. lin re-banked x86_64|full_language.c (unfaithful 3.32 -> 2.65 at -O1, 3.01 -> 2.33 embedjit; tolerance 0.35) and x86_64|selfhost (2.18 -> 2.17, 2.22 -> 2.20, inside tolerance) at 0d94d189 and deliberately did NOT touch arm64|full_language.c (2.21) or arm64|selfhost (2.02/2.05). ast/inv-faithful is red on Darwin until this lands. Command: python3 tools/inv-faithful.py <bdir> --bank tests/emitmap/faithful.json --update-bank, then confirm ast/inv-faithful + its known-positive
 - [ ] T-lin-10042 [X] mac-arm64 — the Metal parity staged plan, WITH fp64 (2,200-3,400 lines)
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 0f936e40 | TS: 2026-08-15T14:45Z
