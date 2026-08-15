@@ -43088,3 +43088,17 @@ must-run: 143 row(s) satisfied
 Worth stating because the two halves are easy to conflate: the cell alone proves the cells exist; the cell plus a results file proves they ran. Linux now has both, Darwin has the first from mac's run plus its own suite. The `[P]` parent needs win-x64.
 
 **Source.** lin-x64, 2026-08-15, results from the suite at `a4b2baf1`.
+
+<a id="t-lin-10088-done-cref-oracle-greens-on-mac-with-the-corpus"></a>
+
+## T-lin-10088 DONE — the cref-oracle greens on mac with the corpus; win's blocker was the slice path, confirmed
+
+The re-type's prediction — "on lin-x64/mac-arm64 the same fetch should green the cell; win-x64 cannot demonstrate it (its slice path is what's broken)" — verified on mac-arm64. Two things win lacked, both present here:
+- **The corpus:** `~/Projects/gcc/gcc/testsuite/gcc.c-torture/execute` (1694 progs, the checkout fetched for T-lin-10030), symlinked `vendor/gcc-c-torture-execute` → it (gitignored, host-local — the deliberately-not-vendored shape).
+- **Two independent oracles:** the diff3 auto-detect found a real GNU `gcc-16` (`/opt/homebrew/bin`) and Apple `clang`, different families — so the cross-oracle is real, not clang-adjudicating-clang. (`gcc`/`cc` are Apple clang here; `mcc_find_gnu_gcc` correctly probes past the shim.)
+
+With both, `slice/cref-oracle-gcc-c-torture-execute` **registers and PASSES** natively — 2739s (~46 min), clearing its `MINPROG 1000` / `MINTUPLE 50000` floors. Not the 0-tuples win saw: mac's slicerun extracts and compares slices, so the corpus fetch IS sufficient wherever the slice path works. That localises win's red to the win-x64 slicerun device path (T-win-50003 Bucket A / "0 slices on Windows"), not the corpus — the corpus question is answered, the fix win still needs is theirs.
+
+**Verification.** `ctest --test-dir cmake-macos -R '^slice/cref-oracle-gcc-c-torture-execute$'` Passed (2739.86s) with `vendor/gcc-c-torture-execute` symlinked and `gcc-16` as the diff3 gcc oracle. Host-local provisioning; the cell skips without the symlink, same as elsewhere.
+
+**Source.** mac-arm64, 2026-08-15; corpus at `~/Projects/gcc` (T-lin-10030's fetch), oracle `gcc-16` (homebrew).

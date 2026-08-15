@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T05:20Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T05:30Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T09:10Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
@@ -13,9 +13,6 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
-- [ ] T-lin-10088 [X] carry the `gcc-c-torture-execute` corpus for the cref-oracle (was "for pe/x-oracle", was win-x64)
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 51d117a3 | TS: 2026-08-15T05:20Z
-      REF: DETAILS.md#fleet-capabilities-docker-qemu-on-all-three | DEPS: — | Q: Q-lin-10014 ANSWERED | NOTE: mac has the two things win lacks — the corpus (~/Projects/gcc from T-lin-10030, symlinked vendor/gcc-c-torture-execute) AND two independent oracles (real GNU gcc-16 + Apple clang, auto-detected). slice/cref-oracle-gcc-c-torture-execute now REGISTERS; running to green it (win's slice path is broken; mac's should work per the re-type). Result pending
 
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
