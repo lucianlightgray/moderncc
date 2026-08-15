@@ -43391,3 +43391,27 @@ Landed the mac half of [Q-mac-30002's resolution](#q-mac-30002-answer-the-invari
 **Gates.** `trace-gate-invariant` **green** (the whole point — `MCC_TRACE_WHEN` is an accepted opener), `treegate` 12/12, `ast/o0-baseline` quartet 5/5 **byte-identical**. Byte-identity is guaranteed by construction: `MCC_TRACE_WHEN` is `((void)0)` when `MCC_CONFIG_TRACE` is off, so the shipped build's `mccircap.c` is unchanged — the events only ever existed in a diagnostic build. No test files added/removed, so no corpusgate; no bank moved.
 
 **Source.** mac-arm64, 2026-08-15, code at `d2054030` on lin's infra `ddbc14c8`.
+
+<a id="load-sensitive-measurements-five-instances-in-one-day"></a>
+
+## Standing note — five load-sensitive measurements in one day, and none of them is fixed
+
+Distinct from [green on the box that wrote it](#green-on-the-box-that-wrote-it), which is about a *pin* encoding one machine. This is about a *measurement* whose result depends on what else the machine is doing.
+
+| instance | how it presented | how it resolved |
+| --- | --- | --- |
+| [T-lin-10072](#t-lin-10072-closed-unreproduced-and-10073-corroborated) `optfire/abs`, `level-abs` | fail only in a full parallel run | **unreproduced** across four attempts including a named 24-way load; closed |
+| [T-lin-10073](#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver) wine `run-tier` | "load-sensitive" | **not load at all** — a foreign `wineserver`; serial retry at load average 7 still timed out |
+| [T-lin-10371](#t-lin-10371-a-nondeterministic-segfault-that-moves-between-cells) WoA SEGFAULT | a crash in a named cell | the crash **moves between cells**; same tree, different cell, one clean run |
+| mac `flagsweep-exec` ×15 | 15 reds in a full suite | pass at `-j1`, 50–100 s each; environmental |
+| mac `smoke/strat-dark` | 14 dark strategies "fell 1 → 0" *and* "no categories at all" | passes isolated at 317 s; the `-O13` strategy census shifts under compile contention |
+
+**The reading that unifies them.** Four of the five were first reported as a defect in a *cell*, and in every one of those the cell was innocent — the subject was the machine's state. The fifth (`T-lin-10073`) was reported as load and turned out to be a specific foreign process. **So "it failed under load" is a description of the observer, not a diagnosis**, and the useful first question is always the same: *does it reproduce with nothing else running?*
+
+**One of them shows why this matters beyond noise.** mac's `strat-dark` reported both "14 strategies improved to zero" and "the census produced no categories at all". Those are not two findings — they are one, and the second explains the first. A census with no input reports every category absent, which the ratchet renders as *improvement*. A load-sensitive measurement can therefore fail in the direction that looks like **good news**, which is the failure mode nobody re-runs.
+
+**The requirement already exists and has been applied to none of them.** [M-TODO-0088](#m-todo-0088-cells-that-fail-under-parallel-load) states it: *"a correct cell either serialises itself against the resource it needs or skips"*, and *"'it was contention' is a diagnosis to be proved and then removed, not a reason to shrug"*. Five instances in one day, zero cells changed. The gap is not that the rule is wrong; it is that diagnosing each instance costs a re-run and closing it costs a design, so everyone stops after the re-run — including me, twice today.
+
+**Cheapest thing that would help**, recorded rather than built because it wants a design and not a patch: the cells that keep doing this (`optfire/*`, wine `run-tier`, the `-O13` strategy census, `flagsweep-exec`) could each print the one fact that makes their result interpretable — load average and whatever foreign process they contend with — the way [T-lin-10073's diagnostic](#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver) already prescribes `pgrep -a wineserver`. A red that carries its own environment is triaged in one reading instead of a re-run.
+
+**Source.** lin-x64 and mac-arm64, 2026-08-15.
