@@ -9,7 +9,7 @@ options the build had not had since `a55c0a07`, so passing one left an ignored
 cache entry and nothing said so.  Nothing checked either, because nothing
 checked anything: no tool in this tree opened a file under `docs/` at all.
 
-Four rules, chosen so the check is useful rather than noisy.  Prose names are
+Five rules, chosen so the check is useful rather than noisy.  Prose names are
 deliberately out of scope -- a design doc is allowed, and required, to name
 things that do not exist yet, and every rule below is written so that a
 proposal cannot trip it.
@@ -36,7 +36,10 @@ tree and is skipped -- that is how `src/gallium/frontends/lavapipe/lvp_device.c`
 stays quotable.  The cost is that a file deleted along with its whole directory
 escapes the path rule; it is priced and accepted.
   count   the failed-to-reproduce table in docs/DETAILS.md is counted, and the
-          one sentence that states its size must agree.  Three sentences used
+          one sentence that states its size must agree.
+  anchor  a `DETAILS.md#id` citation in TODO.md, QUESTIONS.md (and ARCHIVED.md
+          under --include-archived) must resolve to an `<a id=...>` in
+          DETAILS.md. A REF that resolves nowhere sends its reader nowhere.  Three sentences used
           to state it as twelve, nine and seven over a thirteen-row table.
 
 Under docs/INSTRUCTIONS.md, docs/TODO.md carries task state only -- one line and
@@ -212,6 +215,44 @@ def check_doc(root, doc, files, dirs, cache, allow, cited, mutate, gated=True):
     return seen, bad
 
 
+ANCHOR_DEF = re.compile(r'<a id="([^"]+)"></a>')
+ANCHOR_REF = re.compile(r'DETAILS\.md#([a-z0-9][a-z0-9-]*)')
+
+
+def check_anchors(root, docs, mutate):
+    """Every DETAILS.md#anchor cited from a live doc resolves to an anchor.
+
+    Two failures this closes, both seen on 2026-08-15 and both invisible to the
+    other four rules because a `#fragment` is not a path, a line or a symbol.
+    A row whose REF points at an anchor that never existed sends its reader
+    nowhere -- T-lin-10366 was archived citing one that was never written. And
+    DETAILS.md is append-only, so when a row is re-measured the OLD anchor stays
+    valid-looking forever: T-lin-10073's REF pointed at a superseded spec and
+    cost a full experiment aimed at a question closed the day before. This rule
+    catches the first exactly and makes the second visible by forcing the REF to
+    be moved rather than left."""
+    det = os.path.join(root, "docs/DETAILS.md")
+    have = set(ANCHOR_DEF.findall(open(det, encoding="utf-8").read()))
+    seen, bad = 0, []
+    for doc in docs:
+        path = os.path.join(root, doc)
+        if not os.path.exists(path):
+            continue
+        for n, ln in enumerate(open(path, encoding="utf-8"), 1):
+            for ref in ANCHOR_REF.findall(ln):
+                seen += 1
+                if ref not in have:
+                    bad.append(("anchor", "%s:%d cites DETAILS.md#%s and no "
+                                "such anchor exists. A REF that resolves "
+                                "nowhere sends its reader nowhere, and an "
+                                "append-only DETAILS makes that permanent"
+                                % (doc, n, ref)))
+    if mutate:
+        bad.append(("anchor", "docs/TODO.md:0 cites DETAILS.md#no-such-anchor "
+                    "and no such anchor exists (planted)"))
+    return seen, bad
+
+
 def check_table(root, mutate):
     doc = "docs/DETAILS.md"
     lines = open(os.path.join(root, doc), encoding="utf-8").read().split("\n")
@@ -258,7 +299,7 @@ def main():
     ap.add_argument("--mutate", action="store_true",
                     help="plant one defect of every shape this lint claims to "
                          "catch, in memory. The arm it modifies must fail, and "
-                         "must fail for all four reasons")
+                         "must fail for all five reasons")
     a = ap.parse_args()
 
     root = os.path.abspath(a.root)
@@ -274,22 +315,26 @@ def main():
     allow = read_allow(root)
     docs = list(DOCS) + ([ARCHIVED] if a.include_archived else [])
 
-    seen = {"path": 0, "line": 0, "site": 0}
+    seen = {"path": 0, "line": 0, "site": 0, "anchor": 0}
     bad = []
     cited = set()
     for doc in docs:
         s, b = check_doc(root, doc, files, dirs, cache, allow, cited,
                          a.mutate and doc == "docs/DETAILS.md")
-        for k in seen:
+        for k in s:
             seen[k] += s[k]
         bad += b
     if a.include_archived:
         s, b = check_doc(root, "docs/DETAILS.md", files, dirs, cache, allow,
                          cited, False, gated=False)
-        for k in seen:
+        for k in s:
             seen[k] += s[k]
         bad += b
     rows, b = check_table(root, a.mutate)
+    bad += b
+    anch, b = check_anchors(root, ["docs/TODO.md", "docs/QUESTIONS.md"] +
+                            ([ARCHIVED] if a.include_archived else []), a.mutate)
+    seen["anchor"] += anch
     bad += b
     for path in sorted(allow):
         if path in files:
@@ -319,22 +364,23 @@ def main():
         for cls, m in bad:
             print("FAIL " + m)
         got = {c for c, _ in bad}
-        want = {"path", "line", "site", "count"}
+        want = {"path", "line", "site", "count", "anchor"}
         blind = want - got
         if blind:
             print("docref-lint --mutate: planted one defect of every shape and "
                   "the lint did not report %s, so it is not reading what it "
                   "claims to read" % ", ".join(sorted(blind)))
             return 0
-        print("docref-lint --mutate: %d violation(s), all four planted shapes "
+        print("docref-lint --mutate: %d violation(s), all five planted shapes "
               "reported (%s)" % (len(bad), ", ".join(sorted(want))))
         return 1
 
     census = ("%d doc file(s), %d in-tree path citation(s) (%d with a line "
-              "anchor), %d symbol-at-a-location claim(s), %d allowed "
+              "anchor), %d symbol-at-a-location claim(s), %d DETAILS anchor "
+              "citation(s), %d allowed "
               "non-resolving, failed-to-reproduce table %d rows"
               % (len(docs), seen["path"], seen["line"], seen["site"],
-                 len(allow), rows))
+                 seen["anchor"], len(allow), rows))
     for cls, m in bad:
         print("docref-lint: " + m)
     if bad:

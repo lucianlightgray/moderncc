@@ -43297,3 +43297,47 @@ Every test-merge was aborted and main left clean. Resolving conflicts in `mccgpu
 **No uncommitted work is at risk.** Each worktree shows ~1300 modified tracked files, which looks alarming and is not: the diffs are **file-mode only** (`100644 → 100755`, 950 files at 0 insertions and 0 deletions). Some tool set the executable bit tree-wide in each checkout. There is no content in any worktree that is not in its branch.
 
 **Source.** lin-x64, 2026-08-15.
+
+<a id="t-lin-10366-ref-cc-is-x86-64-only-on-windows"></a>
+
+## T-lin-10366 `MCC_REF_CC` was x86_64-only on Windows, and a wrong-arch reference is worse than none
+
+**Type** `[S]` — **State** DONE — **SHA** `bfd2ca56` (landed with the [woa/bootstrap merge](#branch-and-worktree-consolidation-2026-08-15))
+
+*Written after the fact: this anchor was cited by the task row and by the archive record before it existed, which the anchor audit in this same pass caught. The reasoning was in the commit message only.*
+
+**The defect.** `MCC_REF_CC` supplies the GCC-compatible reference compiler the differential cells (`mcctest`, `-bcheck`, `-embedjit`) compare mcc against. On a Windows/MSVC host its auto-detection consulted `_MCC_MINGW_X86_64_GCC` and nothing else, then fell back to `find_program(gcc)`. `mcc_mingw_resolve()` already resolves an i686 and an **aarch64** toolchain beside the x86_64 one; neither was ever consulted.
+
+**Why that is worse than a missing reference, and the WoA probe proves it rather than supposing it.** Both a `gcc` and a `clang` are preinstalled on a `windows-11-arm` runner:
+
+```
+gcc    C:\mingw64\bin\gcc.exe        -dumpmachine  x86_64-w64-mingw32
+clang  C:\Program Files\LLVM\...     -dumpmachine  aarch64-pc-windows-msvc
+```
+
+That `gcc` is an **x86_64 mingw running under emulation**. The old fallback would have found it on an arm64 host and quietly compared mcc's **arm64** output against an **x86_64** reference — a differential whose divergences are the architecture, not the compiler. A missing reference makes a cell skip and say so; a wrong-arch reference makes it report findings that are noise.
+
+**The fix.** Prefer the vendored mingw matching `MCC_CPU` (`arm64` → llvm-mingw aarch64, `i386` → winlibs i686, else winlibs x86_64), and accept a PATH `gcc` **only if its `-dumpmachine` matches the target**, saying so at configure time when it does not. Refusing leaves the cells at their existing `mcc_skip_test`, which is the honest state: a skip that names its reason beats a green over the wrong oracle.
+
+**clang is deliberately not adopted.** It is native aarch64 but MSVC-ABI, and the tree's WIN32 reference flags are mingw-specific (`-mno-ms-bitfields`, `-lmingwex`, the `msvcrt.dll` link grouping).
+
+**Verification.** Linux path unchanged — `mcctest`, `mcctest-bcheck`, `mcctest-embedjit` 4/4 green with the reference still resolving to the host compiler. The Windows arm64 path is exercised by the [WoA hook](#t-lin-10365-woa-runner-ground-truth), whose stage1 and stage2 both build with the fix in tree.
+
+**Source.** Implemented on lin-x64, 2026-08-15; anchor written 2026-08-15 after the audit.
+
+<a id="docref-lint-gains-an-anchor-rule"></a>
+
+## `docs/refs` gains a fifth rule — a `DETAILS.md#anchor` that resolves nowhere
+
+Added after a review pass found the class had bitten twice in one day, both times invisible to the four existing rules because a `#fragment` is not a path, a line or a symbol.
+
+- **`T-lin-10366` was archived citing an anchor that was never written.** The record said `REF DETAILS.md#t-lin-10366-ref-cc-is-x86-64-only-on-windows`; no such anchor existed, and the fix's reasoning lived only in a commit message. The [anchor now exists](#t-lin-10366-ref-cc-is-x86-64-only-on-windows), written from that message.
+- **`T-lin-10073`'s REF pointed at a superseded anchor** and cost a full experiment aimed at a question that had been closed the previous day. `DETAILS.md` is append-only, so a re-measured row leaves its old anchor valid-looking forever.
+
+**The rule.** Every `DETAILS.md#id` cited from `TODO.md`, `QUESTIONS.md` (and `ARCHIVED.md` under `--include-archived`) must resolve to an `<a id=…>` in `DETAILS.md`. It catches the first case exactly. It does not catch the second — an anchor that still exists but has been superseded resolves fine — but it forces the *first* half of the fix, which is that a REF must be moved rather than left, and the superseded anchor now carries a forward link.
+
+**Calibration cost, paid during the pass.** The first regex was `[A-Za-z0-9._-]+`, which swallowed sentence-ending periods and reported two false positives in `QUESTIONS.md`. Anchors here are lowercase-kebab, so it is `[a-z0-9][a-z0-9-]*`. A rule that cries wolf on prose would have been worse than no rule.
+
+**Known-positive extended, not bypassed.** `--mutate` plants one defect of every shape and the driver requires **all five** reported; the census line now states the anchor count (104 today) so the subject cannot silently empty. Verified: clean arm OK, mutate arm 5 violations naming `anchor, count, line, path, site`, floor arm still red at `--min-refs 100000`.
+
+**Source.** lin-x64, 2026-08-15.
