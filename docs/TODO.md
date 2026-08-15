@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T01:20Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T03:05Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T03:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T02:33Z |
 
 ## Contracts — blocking, highest priority
@@ -28,7 +28,7 @@
 
 - [ ] T-lin-10367 [C] A minimal mcc-authored Darwin libc header set for host-independent bank keys
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
-      REF: DETAILS.md#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple | DEPS: — | NOTE: declarations only, no inline bodies; runtime/osx; all three key_flags branches read it, hence [C]. Authorable from any host — no Apple hardware, no SDK, no licensing gate
+      REF: DETAILS.md#t-lin-10367-slice-1-the-layout-free-half-of-the-darwin-header-set | DEPS: — | NOTE: slice 1 DONE at 50b8c5a2 (stdio/string/stdlib/math/assert/errno/ctype + osx/headers-parse gate, 189 files, known-positive both ways). Slice 2 = setjmp/pthread/threads/wchar/signal/fenv/sys-mman/sys-wait/unistd — each commits to a struct layout or platform bit pattern and wants an SDK to check against, so it belongs on mac's box
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
