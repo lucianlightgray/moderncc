@@ -26,6 +26,10 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
+- [ ] T-win-50012 [S] win-x64 — four optimizer strategies dark on Windows: `bfold`/`narrow`/`sra`/`sroa` = 0 at -O4 (20 of 24 < --min-strats 22)
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 723e5f1a | TS: 2026-08-15T14:35Z
+      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: LLP64 plausibly removes narrow's shapes, but four dark rows need four explanations; then either corpus shapes that light them on LLP64 or a target-keyed floor. Last dep of T-win-50013
+
 ## Open — claimable
 - [ ] T-mac-30004 [S] `spvgate` CASES has no f64 case: arm the SPIR-V arm's table on fp64 hosts
       OWNER: — | STATE: OPEN | SHA: 28ac8048 | TS: 2026-08-15T12:55Z
@@ -36,9 +40,6 @@
 - [ ] T-win-50006 [X] win-x64 — arm-win32 COFF: implement the ARM32 arm of `coff_emit_reloc` (there is none), then flip arm-win32 default + re-bank
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. `coff_emit_reloc` has NO `MCC_TARGET_ARM` case — it falls to `return -1`, so arm-win32 `-c` COFF fails on any file with a relocation (only 3/40 reloc-free files compile; "unsupported relocation type 2" = R_ARM_ABS32). LOW PRIORITY: arm-win32 (ARM32 Windows) is a dead platform with no executor (see T-lin-10086 split) — do this only after arm64 (T-win-50005). Add the ARM32 IMAGE_REL_ARM_* mapping (ADDR32/BRANCH24/etc.), confirm the corpus re-encodes, then flip + re-bank
-- [ ] T-win-50012 [S] win-x64 — four optimizer strategies dark on Windows: `bfold`/`narrow`/`sra`/`sroa` = 0 at -O4 (20 of 24 < --min-strats 22)
-      OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
-      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: LLP64 plausibly removes narrow's shapes (no 64→32 narrowing when long is already 32), but four dark rows need four explanations; then either corpus shapes that light them on LLP64 or a target-keyed floor
 - [ ] T-win-50013 [S] win-x64 — mint `tests/smoke/bails-x86_64-windows.txt` per the arm64-macos precedent
       OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
       REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: T-win-50012[S] | NOTE: smokerun already probes bails-<key>.txt before falling back to the x86_64-linux bank. Measured Windows deltas today: O4 slice-refused:no-static-type 515→836, strat-dark:bfold new. Every row must be a triaged finding — bank AFTER T-win-50012 concludes. PREREQUISITE (from T-win-50011): restore a real GNU gcc reference on the win box first (the mingw preset superbuild re-fetches winlibs GCC; scoop's only "gcc" is mstorsjo llvm = clang family, so every divergence currently reads diverge-one by construction and the category names would encode reference topology, not facts). T-win-50010 closed invalid, T-win-50011 closed: the F16 rows are the ALREADY-BANKED evaluation-format + NaN-payload divergence under a topology-renamed category
