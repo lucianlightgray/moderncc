@@ -46183,3 +46183,16 @@ No code change is owed: the one-line configure fix and the durable manifest guar
 **Re-scoped to [X] mac-arm64.** The remaining work is Metal-backend-only and is neither compilable nor testable on a Linux host (the MSL branch is `#if MCC_GPU_LANG_MSL`, off here) — applying it blind risks breaking the mac build. The mechanical shape is the SPIR-V code above: drop the `pout` memset, reduce the `pin` memset to the `[ntuple, cap)` tail, and honor `reuse_in` in `dispatch_locked2` so `mcc_gpu_dispatch2_ro_in`'s resident-input flag keeps arm `b` from re-uploading (this half needs Metal buffer-lifecycle care, not just a memset edit). Verify per the row: re-measure bytes/lane and confirm `gpu/msl-slice-*` unchanged.
 
 **Source.** lin-x64, 2026-08-15, at `main` post-`812fb6ff`; SPIR-V half at `e85ea258` + `:2772-2784`.
+
+<a id="t-lin-10018-done-discriminator-fix-landed-reproducer-added-as-a-regression-cell"></a>
+
+## T-lin-10018 DONE — the discriminator fix landed, and the reduced reproducer is now a regression cell
+
+**Resolved (lin-x64, 2026-08-15).** Both halves the row asked for are satisfied:
+
+- **The 5-fix/34-break discriminator already landed.** The row wanted a fix that holds the loop-condition store for the shapes that need it without breaking the 34 that arming it naively broke (`mcc.c -O1` 39→68). That is exactly `d76e5384` *"fix(rir): hold a for-loop condition store, and drop the hold at body/incr"* — the store is held between the `RIR_R_FOR` rbegin and the `RIR_R_COND` rbegin and the hold is dropped at body/incr, so only the condition-store shapes are affected — plus `545ffdb0` (park it in the condition's own prefix, for `for`/`while`) and `82f255d8` (do-condition retention). Verified against the row's exact reproducer: under the replay producer with `-fno-replay-fallback` at `-O1`+ it now prints the correct `1 3` (was SIGSEGV), `RIRPRODDUMP` shows the `p = *pp` vstore emitted, and `[rir-verify]` reports `ptr_unlink … rfaithful … fb=0`.
+- **The reduced ptr_unlink shape is now an exec cell.** Added `rir/loopcond-store` (`tests/rir/run-loopcond-store.sh`): it compiles the reproducer through the parser as the reference and through the replay producer with `MCC_REPLAY_IR=2 MCC_FORCE_REPLAY=1 -fno-replay-fallback` as the subject, and requires the subject to exit 0 and match the reference (not crash on an uninitialised `p`). Green.
+
+**Non-blindness — an honest note.** Neutering the single `rir_docond=1` arm (`mccrir.c:3962`) did **not** reproduce the crash: the store is now emitted correctly by the default path even without the hold, so the hold/parking is layered robustness rather than the sole guard. A single-mechanism revert therefore does not trip the cell. The cell still exercises the exact replay-producer + no-fallback path the row's original measurement revert-proved as SIGSEGV-when-unfixed, so a full regression of condition-store emission is caught; it is a guard on the observable behaviour, not on one internal arm.
+
+**Source.** lin-x64, 2026-08-15, `main@8e5e55bf`; fix at `d76e5384`+`545ffdb0`+`82f255d8`.
