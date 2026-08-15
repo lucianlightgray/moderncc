@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T08:00Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T12:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T15:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50009   | 2026-08-15T14:20Z |
 
@@ -12,6 +12,10 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+
+- [ ] T-lin-10042 [X] mac-arm64 — the Metal parity staged plan, WITH fp64 (2,200-3,400 lines)
+      OWNER: mac-arm64 | STATE: CLAIMED | SHA: 0d33d71e | TS: 2026-08-15T12:20Z
+      REF: DETAILS.md#q-lin-10009-answer-metal-parity-scheduled-with-fp64 | DEPS: — | Q: Q-lin-10009 ANSWERED | NOTE: human scheduled the fp64 variant. No CI differential exists or can — land it in slices each checkable by the hand-run per-value differential, not as one unwatched arm. SCOPING (mac-arm64, 2026-08-15): it is EXTEND-not-rebuild — the MSL base survives (345 `msl_*` refs across src/mccgpu.{c,h}, mccslice.h, mccfmt.h) and its per-value differential RUNS natively on this M1 (gpu/msl-slice-differential + -known-positive + -real all green here; the hand-run tool is tools/slicerun.c). So the per-slice verification path is confirmed feasible on-box; the work is the ~2200-line MSL/SPIR-V parity gap + fp64. FIRST-SLICE POINTERS: the MSL emitter is in src/mccgpu.h (macro/inline-heavy — msl_iv/bv/pv value builders at ~260-340, msl_arith/guard_div/widen/int_of_bool), the SPIR-V arm + differential in tools/slicerun.c; fp64 is ALREADY partially present in BOTH (mccgpu.h ~1330-1447 `f64`, slicerun.c ~109/452-471/804 Float64/double), so this is op-by-op parity completion, not greenfield fp64. Method for slice 1: diff the two arms' op coverage against the gpu/msl-slice-differential corpus, take the smallest fp64 op MSL lowers differently than SPIR-V, close it, hand-run the per-value differential
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
@@ -50,9 +54,6 @@
 - [ ] T-lin-10045 [S] `-fopt-slice`: revise into the governor over every AST/RIR slice-capable strategy, integrated with the other slice optimizers
       OWNER: — | STATE: OPEN | SHA: 3749f816 | TS: 2026-08-15T02:30Z
       REF: DETAILS.md#q-lin-10006-answer-fopt-slice-is-the-governor-not-a-pass | DEPS: — | Q: Q-lin-10006 ANSWERED | NOTE: not "own or delete" — it was never a pass. Carries forward: the disk-cache determinism defect, and OPT_SLICE at MCC_OPTD_LEVEL(9) leaves opt-cache-determinism a permanent 77 with no subject. First slice = a shipped level with the determinism claim gated
-- [ ] T-lin-10042 [X] mac-arm64 — the Metal parity staged plan, WITH fp64 (2,200-3,400 lines)
-      OWNER: — | STATE: OPEN | SHA: 0d33d71e | TS: 2026-08-15T02:20Z
-      REF: DETAILS.md#q-lin-10009-answer-metal-parity-scheduled-with-fp64 | DEPS: — | Q: Q-lin-10009 ANSWERED | NOTE: human scheduled the fp64 variant. No CI differential exists or can — land it in slices each checkable by the hand-run per-value differential, not as one unwatched arm. SCOPING (mac-arm64, 2026-08-15): it is EXTEND-not-rebuild — the MSL base survives (345 `msl_*` refs across src/mccgpu.{c,h}, mccslice.h, mccfmt.h) and its per-value differential RUNS natively on this M1 (gpu/msl-slice-differential + -known-positive + -real all green here; the hand-run tool is tools/slicerun.c). So the per-slice verification path is confirmed feasible on-box; the work is the ~2200-line MSL/SPIR-V parity gap + fp64. FIRST-SLICE POINTERS: the MSL emitter is in src/mccgpu.h (macro/inline-heavy — msl_iv/bv/pv value builders at ~260-340, msl_arith/guard_div/widen/int_of_bool), the SPIR-V arm + differential in tools/slicerun.c; fp64 is ALREADY partially present in BOTH (mccgpu.h ~1330-1447 `f64`, slicerun.c ~109/452-471/804 Float64/double), so this is op-by-op parity completion, not greenfield fp64. Method for slice 1: diff the two arms' op coverage against the gpu/msl-slice-differential corpus, take the smallest fp64 op MSL lowers differently than SPIR-V, close it, hand-run the per-value differential. Wants a fresh dedicated start (per its own "not one unwatched arm"), not a session-tail rush
 - [ ] T-lin-10086 [S] `arm64-win32` execution on a `windows-11-arm` CI runner (was [X] win-x64)
       OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
       REF: DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor | DEPS: T-lin-10365[S] | NOTE: Q-lin-10013 ANSWERED — CI is the executor, so this is no longer win-x64-only. SPLIT: the `arm-win32` (ARM32) half has NO executor — Windows 11 on ARM64 does not run ARM32 apps — and must not be reported green with the arm64 half
