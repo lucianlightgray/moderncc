@@ -43350,3 +43350,116 @@ Added after a review pass found the class had bitten twice in one day, both time
 **Known-positive extended, not bypassed.** `--mutate` plants one defect of every shape and the driver requires **all five** reported; the census line now states the anchor count (104 today) so the subject cannot silently empty. Verified: clean arm OK, mutate arm 5 violations naming `anchor, count, line, path, site`, floor arm still red at `--min-refs 100000`.
 
 **Source.** lin-x64, 2026-08-15.
+
+<a id="q-lin-10004-answer-keep-gccs-register-array-leniency"></a>
+
+## Q-lin-10004 answered — keep gcc's register-array leniency; `a[1]` compiles
+
+**Answer (human, 2026-08-15):** keep gcc's leniency. Both `a[1]` and `*(a+1)` stay accepted — Mode (a). mcc matches gcc here, not clang.
+
+**What this settles, and it is the fixture, not the compiler.** The reject side of [T-lin-10011](#t-lin-10011-status-reject-side-complete-arm64-confirmed-sole-remainder-is-q-lin-10004) was already complete and arm64-confirmed: both decay surfaces funnel through one `gen_cast()` choke point and an existing `dg-error` fixture covers it. The sole remaining DoD was the accept-forms fixture, which could not be written while the question was open because its expected result flipped with the answer — Mode (a) means `a[1]` compiles, Mode (b) means it errors. The answer picks Mode (a), so the fixture is now writable and is written in the gcc mode.
+
+**Why the references disagree, kept so the fixture's shape is not mistaken for an accident.** C11 6.3.2.1p3 makes decaying a `register` array undefined, so both behaviours conform. gcc accepts `a[1]`, clang rejects it, and each is internally consistent with its own treatment of `*(a+1)`, which both reject. mcc cannot cheaply split the two forms because `a[1]` compiles to exactly the same two calls as `*(a+1)` — `gen_op('+'); indir();` — so telling them apart would have cost a subscript-suppression flag threaded through both. Mode (a) is what ships today, so the answer costs nothing and the flag is not built.
+
+**Source.** Answer recorded on lin-x64, 2026-08-15.
+
+<a id="q-lin-10005-answer-raise-mcc-max-align-for-32-byte-vectors"></a>
+
+## Q-lin-10005 answered — raise `MCC_MAX_ALIGN`, and take the ABI change
+
+**Answer (human, 2026-08-15):** raise `MCC_MAX_ALIGN` for 32-byte vectors — **not** Mode (a). A 32-byte vector in a struct is to be laid at 32-byte alignment and to be cross-TU-compatible with gcc. The blast-radius measurement is the first half of [T-lin-10012](#t-lin-10012-32-byte-vectors-are-laid-at) either way; carry it, then re-bank.
+
+**This reverses the documented-incompatibility posture.** The question's Mode (a) was to keep the cap and document that passing a 32-byte vector across an mcc/gcc object boundary is a struct-ABI incompatibility. The answer refuses that: the incompatibility is to be fixed, not described. 32-byte vectors are laid at 16-byte alignment today (8 on i386/arm), and that is the defect.
+
+**The order of work is fixed by the answer, and it is measurement first.** "The blast-radius measurement is the first half either way" is the operative clause: every object mcc has ever emitted that carries a 32-byte vector in a struct changes layout, and how many cells and how many banks move was never measured — that is why the question existed. So the task is (1) measure the blast radius — cells moved, banks moved — then (2) raise the cap, then (3) re-bank. Landing the ABI change before the measurement would make the re-bank indistinguishable from an unexplained mass diff, which is the failure mode this tree's banking discipline exists to prevent.
+
+**Source.** Answer recorded on lin-x64, 2026-08-15.
+
+<a id="q-lin-10007-answer-make-kept-coverage-host-stable"></a>
+
+## Q-lin-10007 answered — make `kept_coverage` host-stable; the floor becomes tool-enforced
+
+**Answer (human, 2026-08-15):** make the metric host-stable. **Not** raising `--tol`, and **not** leaving it a convention. Fix the gcc-host vs stage2 disagreement so `kept_coverage` produces the same figure regardless of which compiler hosts the measurement; then the floor is tool-enforced rather than a convention that can be got wrong silently.
+
+**The observation being fixed.** The gcc-hosted and stage2 self-hosted compilers disagree: `fallback 98 / kept 82.7770` against `100 / 82.7139` at `-O0`. The 0.06pp spread is outside the tool's `--tol` of 0.05pp, so banking from a gcc host re-breaks CI, which tests the stage2 tree.
+
+**Why the two rejected modes were rejected, which is the whole point of the answer.** Raising `--tol` past 0.06pp would have bought silence by widening the tolerance until the disagreement fit inside it — the metric would still be host-sensitive, and the tool would have lost the resolution to detect a real 0.06pp regression. Encoding "bank from stage2" as a convention is worse: a convention that the tool does not enforce is exactly the thing that gets got wrong silently, which is the failure class [T-lin-10057](#t-lin-10057-kept-coverage-is-host-sensitive-and) exists to remove. The answer takes the only option that leaves the gate able to fail for the right reason.
+
+**What "host-stable" has to mean at the DoD.** The same tree measured from a gcc host and from a stage2 self-hosted compiler must produce the same `kept_coverage` figure, within the existing `--tol` of 0.05pp and without widening it. Once that holds, the "bank from stage2" rule stops being a rule — it stops mattering which host banks.
+
+**Source.** Answer recorded on lin-x64, 2026-08-15.
+
+<a id="q-lin-10008-answer-the-device-path-freeze-is-lifted"></a>
+
+## Q-lin-10008 answered — the 2026-08-09 device-path freeze is lifted
+
+**Answer (human, 2026-08-15):** **NO** — the freeze is not still standing. **UNBLOCK.** The six frozen rows are schedulable again; [T-lin-10040](#t-lin-10040-the-device-dispatcher-is-not-merely) unblocks and T-lin-10033 through T-lin-10038 are re-ranked for scheduling.
+
+**The six rows the freeze held, restated so the unfreeze has a subject.** The dispatcher (three subsystems, priced nowhere); 115 indirect blocks; recursion (no data at all); the `pe` lowerable floors; debt #3's descriptor staleness (fixed, and unreachable until binding 2 grows); and float in the emitter (landed for `double`, and it moved the device-executable fraction by ~0.0 iteration-weighted points).
+
+**What the unfreeze does not do, and this is the part that must not be lost.** The break-even table that motivated the 2026-08-09 freeze is not repealed by scheduling the rows. It priced the dispatcher lever as negative, and float-in-the-emitter had already demonstrated the shape empirically — it landed and moved the device-executable fraction by ~0.0 iteration-weighted points. So the rows become *schedulable*, not *justified*: T-lin-10040 in particular is three subsystems against a lever the table prices negative, and whoever takes it should either re-price the lever or state that the value is something other than the device-executable fraction. The freeze was a scheduling hold, and lifting it returns these to the ranking queue rather than to the front of it.
+
+**The mechanical effect.** T-lin-10040 moves out of "Blocked — awaiting QUESTIONS.md" to "Open — claimable". T-lin-10033 through T-lin-10038 were never blocked — they were de-ranked by the freeze — so they are re-ranked in place, and their notes now record that the freeze which de-ranked them is gone.
+
+**Source.** Answer recorded on lin-x64, 2026-08-15.
+
+<a id="q-lin-10010-answer-node-census-auto-detects-available-hardware"></a>
+
+## Q-lin-10010 answered — `node-census` auto-detects hardware; neither gate-as-is nor report-only
+
+**Answer (human, 2026-08-15):** neither. `node-census` should make an honest effort to run on all available hardware — CPU, JIT, GPU. Refactor it to **auto-detect available hardware at runtime** and ungate the CPU/GPU paths so they run whenever the hardware is present, with the only overrides being explicit `--jit-always-cpu` / `--jit-always-gpu` flags.
+
+**This rejects the question's framing, which is the useful part.** [Q-lin-10010](ARCHIVED.md) asked whether `all_invokes_on_cpu` should be gated or reported-only, and both options accepted the metric as it stands. The answer says the metric is the wrong object: the interesting question is not what fraction of invokes happen to land on CPU, it is whether the census actually exercised the hardware the box has. A ratio over the compiler's own source moves whenever call density changes — it fell 94.9385% → 94.8004% purely because `src/mcc.c` amalgamated ~2700 new lines, which is not a regression signal in either direction. Auto-detection replaces a number that drifts with the corpus by a run that covers what is present.
+
+**The external-only ceiling stays the headline.** 99.2540% is the number the headline rests on, and nothing in the answer moves it.
+
+**The override surface is named and closed.** `--jit-always-cpu` and `--jit-always-gpu` are the *only* permitted overrides. That matters because the failure this refactor must not reintroduce is a path that silently does not run: if detection finds no GPU the census must say so, rather than reporting a CPU-only figure that reads as full coverage. The tree already has [T-lin-10082](#t-lin-10082-the-jit-always-gpu-boundary-is) recording that the `--jit-always-gpu` boundary is struct member access rather than link-time symbols, which is the seam this work runs through.
+
+**Source.** Answer recorded on lin-x64, 2026-08-15.
+
+<a id="q-lin-10011-answer-divergences-become-tracked-investigation-and-fix-tasks"></a>
+
+## Q-lin-10011 answered — divergences become tracked tasks, not a masked or a loud gate
+
+**Answer (human, 2026-08-15):** do not simply arm-and-take-red. Convert the three pre-existing divergences — and red cells generally — into **investigation/research tasks plus implementation TODO tasks**. Each divergence becomes a tracked item with a root-cause investigation and a fix task, rather than a masked gate or a loudly-red one.
+
+**Both offered options were wrong in the same way.** Arming the 63 `EXTRA` cells is one `-I` each and it goes red: at `-O0` `full_language.c` has 303 bodies, 299 faithful, 1 empty and three that are not, against `rir_parity`'s hard 100% bar. Mode (a) left the cells unarmed, so the gate masks three real byte divergences; arming them makes the gate red and *keeps* it red, which converts a hard bar into a known-failing cell everyone learns to ignore. Neither state produces a root cause. The answer routes the divergences out of the gate and into the task system, where each one is owned, investigated and closed — and the gate can then be armed against a bar it actually meets.
+
+**The generalisation is deliberate.** "Red cells generally" makes this a standing rule, not a disposition of these three: a red cell is a task-shaped object, and leaving a gate red is not a way of tracking anything.
+
+**What was true about the assumption's own stated risk.** Mode (a)'s recorded cost was that "an unarmed cell reads as coverage — which is exactly the shape T-lin-10003 exists to refuse, so this one should not stay assumed for long." The answer resolves that without the arm-and-red trade: the `EXTRA` has never contributed anything, that fact stays recorded rather than hidden, and the three divergences become visible as open work instead of as a masked gate or a permanent red.
+
+**Source.** Answer recorded on lin-x64, 2026-08-15.
+
+<a id="q-lin-10012-answer-adopt-divdc3-style-complex-division"></a>
+
+## Q-lin-10012 answered — adopt `__divdc3`-style complex division
+
+**Answer (human, 2026-08-15):** **DO** adopt `__divdc3`-style complex division — **not** Mode (a). Replace mcc's current finite-case complex divide; re-bank every `csweep` complex row once against the new results.
+
+**What is behind the divergence.** N37's compiler half: `csweep.C64/C80.CDIV` and `CDIVSEL` hide 283 refs-agree points each, 44 of them finite, and three of those are a 53%-relative-error complex divide rather than a rounding difference.
+
+**The conformance argument that supported Mode (a), and why it did not survive.** Annex G does not specify the accuracy of finite results, and mcc honours its Annex G claim on the cases G.5.1 actually mandates — infinity/NaN recovery. So keeping the current divide was defensible on paper and the divergence could have been banked with the reasoning, the way item 22's was. The answer declines that: a 53% relative error on a finite complex quotient is a quality-of-implementation defect even where the standard is silent, and `__divdc3`'s Smith-style scaling is the well-understood remedy every reference implementation already uses. Conformance was the floor, not the target.
+
+**The cost is the one the question priced, and it is paid once.** Every `csweep` complex row is re-banked against the new results. That was recorded as the cost-if-wrong of Mode (a) and it is now simply the cost, carried inside [T-lin-10077](#t-lin-10077-n37-the-refs-disagree-class-is).
+
+**Source.** Answer recorded on lin-x64, 2026-08-15.
+
+<a id="q-mac-30002-human-ratification-and-the-patch-that-is-not-there"></a>
+
+## Q-mac-30002 human ratification — the covering macro is `MCC_TRACE_WHEN`, and the banked patch is not reachable
+
+**Answer (human, 2026-08-15):** enhance `MCC_TRACE` with a new macro covering the edge case in *both* the invariant gate *and* the log, sketched as `MCC_TRACE_COVERAGE(...) if (cond) return expr;`.
+
+**This ratifies the landed design rather than redirecting it.** lin-x64 had already rejected both of mac's offered modes and shipped the infra at `ddbc14c8`, under the name `MCC_TRACE_WHEN(cond, ...)` — see [the auto-answer](#q-mac-30002-answer-the-invariant-requires-a-trace-site-not-a-print) for the full reasoning. The human answer names the same three properties that answer turned on: a **new macro** (not a loosened pattern), accepted by the **gate** as a second opener rather than as an exemption, and still **logging** so the guarded path is traced rather than excused. `MCC_TRACE_WHEN` satisfies all three, so no second macro is minted; the name in the sketch is not the operative part of the answer, the three properties are.
+
+**The one thing the ratification changes is the record, and it is a correction.** [T-lin-10079](#t-lin-10079-investigation-fix-works-359893-to-1-but-collides-head-on-with-trace-gate-invariant)'s TODO NOTE and its investigation section both describe a "reapply-ready 237-line patch". It is not reapply-ready and it is not banked:
+
+1. **It is not in the tree.** The investigation records it at `scratchpad/t-lin-10079-ircap-silent-guard.patch`, described as "preserved *this session*" — a mac-arm64 session scratchpad. No `scratchpad/` directory exists at the repo root, nothing matching `*.patch` is tracked, and `DETAILS.md` contains no diff hunk anywhere (`grep '^@@\|^--- \|diff --git'` is empty). The prose recipe is the only durable artefact, and the investigation anticipated this: "or reconstruct it — it is a uniform transform".
+2. **Its shape is the rejected one.** The patch encodes moving `MCC_TRACE` *below* the `if (!ir_cap_active) return;` guard, which is mode (a) — the untraced-early-return the answer refuses. Re-applying it would red the gate exactly as the investigation measured.
+
+So the resume recipe at the investigation anchor (teach `check_open` to accept a return-only guard, then re-apply the patch) is **superseded** and must not be followed. The live recipe is: rewrite `src/mccircap.c`'s openers as `MCC_TRACE_WHEN(ir_cap_active, "enter\n")` / `("br\n")` — `ir_cap_active` is file-scope at `src/mccircap.c:104`, so it is in scope at every opener in that file — keep the behaviour-preserving fast path in the ~15 hand-written hooks (`ir_cap_gv`/`vstore`/`vpushv`/`vsetc`/`gfunc_return`/`mk_pointer`/`gen_va_arg`/`asm`/`asm_gen_code`, plus the compound-guard `fconst_take`/`fconst_note`/`pred`), and leave the ~20 macro-generated `IR_CAP_W*`/`IR_CAP_R*` wrappers untouched — they inherit the fix through `begin`/`end`. Expected result is the same `ircap_events(-O0)` 359893 → 1 with `trace-gate-invariant` still green.
+
+**Why the noise is worth removing even though it is diagnostic-only.** `MCC_TRACE` is `((void)0)` unless `MCC_CONFIG_TRACE`, and `ircap_events` is not a runtime counter — `tools/emit-map.py:190` counts trace lines whose file is `mccircap.c`. So there is no shipped-build overhead at stake; what is at stake is that the `-O0` emit-map reports a layer-share that is 359892/359893 artefact. The fix makes the measurement mean what it says.
+
+**Source.** Question raised by mac-arm64 at `04f426ab`; auto-answered and infra landed on lin-x64 at `ddbc14c8`; human ratification and the patch-reachability correction recorded on lin-x64, 2026-08-15.

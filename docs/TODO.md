@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T06:20Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10373   | 2026-08-15T13:00Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10373   | 2026-08-15T11:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50005   | 2026-08-15T13:20Z |
 
 ## Contracts — blocking, highest priority
@@ -28,6 +28,18 @@
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 ## Open — claimable
+- [ ] T-lin-10057 [S] Make `kept_coverage` host-stable, so the floor is tool-enforced instead of a convention
+      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#q-lin-10007-answer-make-kept-coverage-host-stable | DEPS: — | Q: Q-lin-10007 ANSWERED | NOTE: UNBLOCKED. Human chose host-stable — explicitly NOT raising `--tol` and NOT encoding "bank from stage2" as a convention. DoD: the same tree measured from a gcc host and from a stage2 self-hosted compiler yields the same kept_coverage within the EXISTING --tol of 0.05pp, without widening it. Today they disagree: fallback 98 / kept 82.7770 (gcc host) vs 100 / 82.7139 (stage2) at -O0 — a 0.06pp spread outside tol, so banking from a gcc host re-breaks CI, which tests the stage2 tree. Once it holds, "bank from stage2" stops being a rule
+- [ ] T-lin-10058 [S] `node-census`: auto-detect available hardware at runtime and run CPU/JIT/GPU
+      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#q-lin-10010-answer-node-census-auto-detects-available-hardware | DEPS: — | Q: Q-lin-10010 ANSWERED | NOTE: UNBLOCKED and RE-SCOPED — human rejected both offered options (gate-as-is / report-only). node-census must make an honest effort to run on all available hardware: auto-detect at runtime, ungate the CPU/GPU paths so they run whenever the hardware is present. ONLY permitted overrides are explicit --jit-always-cpu / --jit-always-gpu. Failure mode to refuse: detection finds no GPU and the census reports a CPU-only figure that reads as full coverage — it must say so instead. all_invokes_on_cpu drifts with the corpus (94.9385% -> 94.8004% purely because src/mcc.c amalgamated ~2700 lines) and is not a regression signal; the external-only ceiling 99.2540% remains the headline. Runs through the T-lin-10082 seam
+- [ ] T-lin-10064 [S] Root-cause the three `rir_parity` divergences the unarmed `EXTRA` is masking, and file a fix task per divergence
+      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#q-lin-10011-answer-divergences-become-tracked-investigation-and-fix-tasks | DEPS: — | Q: Q-lin-10011 ANSWERED | NOTE: UNBLOCKED and RE-SCOPED — human rejected arm-and-take-red AND leave-masked. Each divergence becomes a tracked investigation + an implementation task; "red cells generally" is now a standing rule, a red cell is a task-shaped object. THIS task is the investigation half: at -O0 full_language.c has 303 bodies, 299 faithful, 1 empty and 3 that are not, against rir_parity's hard 100% bar. DoD = a root cause for each of the three + one fix task filed per divergence (allocate from lin's band at file time); arming the 63 EXTRA cells (one -I each) follows once the bar is met, NOT before. The EXTRA has never contributed anything — that stays recorded, not hidden
+- [ ] T-lin-10040 [S] The device dispatcher is not merely absent — it is unwritable from what exists
+      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#q-lin-10008-answer-the-device-path-freeze-is-lifted | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: UNBLOCKED — the 2026-08-09 device-path freeze is lifted, all six frozen rows are schedulable. SCHEDULABLE IS NOT JUSTIFIED: the break-even table that motivated the freeze is not repealed and still prices this lever negative (three subsystems, priced nowhere), and float-in-the-emitter already demonstrated the shape empirically — it landed for `double` and moved the device-executable fraction by ~0.0 iteration-weighted points. Whoever takes this either re-prices the lever or states that the value is something other than the device-executable fraction. Re-ranks with T-lin-10033..10038
 - [ ] T-lin-10045 [S] `-fopt-slice`: revise into the governor over every AST/RIR slice-capable strategy, integrated with the other slice optimizers
       OWNER: — | STATE: OPEN | SHA: 3749f816 | TS: 2026-08-15T02:30Z
       REF: DETAILS.md#q-lin-10006-answer-fopt-slice-is-the-governor-not-a-pass | DEPS: — | Q: Q-lin-10006 ANSWERED | NOTE: not "own or delete" — it was never a pass. Carries forward: the disk-cache determinism defect, and OPT_SLICE at MCC_OPTD_LEVEL(9) leaves opt-cache-determinism a permanent 77 with no subject. First slice = a shipped level with the determinism claim gated
@@ -59,11 +71,11 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10010-implement-reversed-scalar-storage-order | DEPS: —
 - [ ] T-lin-10011 [S] Register-array decay: `*a` and `*(a+1)` are still accepted
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-15T05:50Z
-      REF: DETAILS.md#t-lin-10011-status-reject-side-complete-arm64-confirmed-sole-remainder-is-q-lin-10004 | DEPS: — | Q: Q-lin-10004 BLOCKS-REMAINDER | NOTE: reject side DONE + arm64-confirmed (both decay surfaces funnel through one gen_cast() choke point; existing dg-error fixture covers it). SOLE remaining DoD = the accept-forms fixture, which flips with Q-lin-10004 (Mode a: a[1] compiles; Mode b: a[1] errors) and must NOT be written until the Q is definitively answered, not merely assumed
+      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#q-lin-10004-answer-keep-gccs-register-array-leniency | DEPS: — | Q: Q-lin-10004 ANSWERED | NOTE: UNBLOCKED — human answered Mode (a), keep gcc's leniency. Reject side already DONE + arm64-confirmed (both decay surfaces funnel through one gen_cast() choke point; existing dg-error fixture covers it). SOLE remaining DoD = the accept-forms fixture, now writable and written in the gcc mode: `a[1]` compiles, `*(a+1)` compiles. No subscript-suppression flag is built
 - [ ] T-lin-10012 [S] 32-byte vectors are laid at 16-byte alignment, so cross-TU to gcc is incompatible
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10012-32-byte-vectors-are-laid-at | DEPS: — | Q: Q-lin-10005
+      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#q-lin-10005-answer-raise-mcc-max-align-for-32-byte-vectors | DEPS: — | Q: Q-lin-10005 ANSWERED | NOTE: human chose the ABI change, NOT the documented-incompatibility hold. Raise MCC_MAX_ALIGN so a 32-byte vector in a struct is laid at 32-byte alignment and is cross-TU-compatible with gcc. ORDER IS FIXED: (1) measure the blast radius — how many cells and how many banks move — then (2) raise the cap, then (3) re-bank. Landing the change before the measurement makes the re-bank indistinguishable from an unexplained mass diff
 - [ ] T-lin-10013 [S] `__int256` has no literal suffix
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10013-int256-has-no-literal-suffix | DEPS: —
@@ -125,23 +137,23 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10032-mccjit-pool-max-is-64-and | DEPS: —
 - [ ] T-lin-10033 [S] The Vulkan dispatch destroys resources under a still-pending command buffer
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10033-the-vulkan-dispatch-destroys-resources-under | DEPS: —
+      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#t-lin-10033-the-vulkan-dispatch-destroys-resources-under | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
 - [ ] T-lin-10034 [S] `mcc_gpu_mem_index` picks the worst memory type on this machine
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10034-mcc-gpu-mem-index-picks-the | DEPS: —
+      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#t-lin-10034-mcc-gpu-mem-index-picks-the | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
 - [ ] T-lin-10035 [S] `devs[0]` is chosen with no scoring while `VkPhysicalDeviceLimits` is transcribed and unread
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10035-devs0-is-chosen-with-no-scoring | DEPS: —
+      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#t-lin-10035-devs0-is-chosen-with-no-scoring | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
 - [ ] T-lin-10036 [S] `ast_ladder_gpu_run` uploads `tin` twice per rung and two memsets are dead
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10036-ast-ladder-gpu-run-uploads-tin | DEPS: —
+      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#t-lin-10036-ast-ladder-gpu-run-uploads-tin | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
 - [ ] T-lin-10037 [S] The emitter's constant cache binds before module size
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10037-the-emitters-constant-cache-binds-before | DEPS: —
+      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#t-lin-10037-the-emitters-constant-cache-binds-before | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
 - [ ] T-lin-10038 [S] No tree-recursion exec golden exists, and the failure mode is a GPU hang
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10038-no-tree-recursion-exec-golden-exists | DEPS: —
+      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#t-lin-10038-no-tree-recursion-exec-golden-exists | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
 - [ ] T-lin-10039 [S] `spvgate` reports OK for a case that lowered nothing
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10039-spvgate-reports-ok-for-a-case | DEPS: T-lin-10003[C]
@@ -228,13 +240,13 @@
       REF: DETAILS.md#t-lin-10076-n7-residue-an-independent-tree-side | DEPS: —
 - [ ] T-lin-10077 [S] N37 — the refs-disagree class is computed per digest, so a category hides its own points
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10077-n37-the-refs-disagree-class-is | DEPS: — | Q: Q-lin-10012
+      REF: DETAILS.md#q-lin-10012-answer-adopt-divdc3-style-complex-division | DEPS: — | Q: Q-lin-10012 ANSWERED | NOTE: human said ADOPT `__divdc3`-style complex division (not the bank-the-divergence hold). Replace mcc's current finite-case complex divide — the three 53%-relative-error finite quotients are a QoI defect even though Annex G does not specify finite accuracy and mcc's G.5.1 infinity/NaN claim is honoured. Then re-bank every `csweep` complex row once (C64/C80.CDIV + CDIVSEL, 283 refs-agree points each, 44 finite)
 - [ ] T-lin-10078 [S] N36 residue — `/` and `%` on over-wide bit-fields are still per-operation truncated
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10078-n36-residue-and-on-over-wide | DEPS: —
 - [ ] T-lin-10079 [S] `ir_cap`'s trace sites fire ~375k times at `-O0` where the layer is inactive
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-15T06:20Z
-      REF: DETAILS.md#t-lin-10079-investigation-fix-works-359893-to-1-but-collides-head-on-with-trace-gate-invariant | DEPS: — | Q: Q-mac-30002 BLOCKS | NOTE: NOT a mechanical move. Byte-safe fix measured on x86_64 trace+inv build drops ircap_events(-O0) 359893→1, -O1 bank unaffected, codegen byte-identical (reapply-ready 237-line patch banked) — BUT it reds the trace-gate-invariant treegate cell, which mandates MCC_TRACE at every function/branch open and IS the mechanism generating the events. Reclaiming the overhead requires amending that shared-infra invariant (tools/tracegate.c) — the invariant owner's (lin) call, raised as Q-mac-30002. Tree left green
+      OWNER: — | STATE: OPEN | SHA: ddbc14c8 | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#q-mac-30002-human-ratification-and-the-patch-that-is-not-there | DEPS: — | Q: Q-mac-30002 ANSWERED | NOTE: UNBLOCKED. Infra half ALREADY LANDED at ddbc14c8 — MCC_TRACE_WHEN(cond,...) in src/mcclog.h:168, accepted as an opener by tools/tracegate.c:135, message still checked in 2nd position via arg_is_n(); treegate 12/12. Human ratified the design 2026-08-15. REMAINING = the compiler half only: rewrite src/mccircap.c's openers as MCC_TRACE_WHEN(ir_cap_active, "enter\n")/("br\n") (ir_cap_active is file-scope at mccircap.c:104) + keep the behaviour-preserving fast path in the ~15 hand-written hooks; the ~20 macro-generated IR_CAP_W*/R* wrappers inherit it. Target: ircap_events(-O0) 359893→1 with trace-gate-invariant green. CORRECTION: the "reapply-ready 237-line patch" is NOT reachable (mac session scratchpad, absent from this tree) and encodes the REJECTED shape (MCC_TRACE moved below a guard) — reconstruct against MCC_TRACE_WHEN, do not re-apply. The investigation anchor's resume recipe is SUPERSEDED
 - [ ] T-lin-10080 [S] The 31-byte `full_language.c -O0` residual is unattributed
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10080-the-31-byte-full-languagec-o0 | DEPS: —
@@ -277,17 +289,7 @@
 
 ## Blocked — awaiting QUESTIONS.md
 
-- [ ] T-lin-10040 [S] The device dispatcher is not merely absent — it is unwritable from what exists
-      OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10040-the-device-dispatcher-is-not-merely | DEPS: — | Q: Q-lin-10008
-- [ ] T-lin-10057 [S] `kept_coverage` is host-sensitive and the bank must come from the stage2 tree
-      OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10057-kept-coverage-is-host-sensitive-and | DEPS: — | Q: Q-lin-10007
-- [ ] T-lin-10058 [S] `node-census`'s `all_invokes_on_cpu` may not be worth gating at all
-      OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10058-node-censuss-all-invokes-on-cpu | DEPS: — | Q: Q-lin-10010
-- [ ] T-lin-10064 [S] 63 cells have never compiled their own `EXTRA`, and arming them goes red
-      OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10064-63-cells-have-never-compiled-their | DEPS: — | Q: Q-lin-10011
+_Empty — Q-lin-10007/10008/10010/10011 were answered 2026-08-15 and all four tasks moved to “Open — claimable”._
+
 ## Invalidations             ← shared, append-only; removed only on re-scope (§5.2)
 
