@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T06:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10373   | 2026-08-15T14:00Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50005   | 2026-08-15T13:20Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50005   | 2026-08-15T14:05Z |
 
 ## Contracts — blocking, highest priority
 
@@ -21,6 +21,10 @@
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
+
+- [ ] T-lin-10083 [X] win-x64 — flip default `-c` to COFF and re-bank `o0-baseline`
+      OWNER: win-x64 | STATE: CLAIMED | SHA: 1695806f | TS: 2026-08-15T14:05Z
+      REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: T-lin-10002[C]
 
 ## Open — claimable
 - [ ] T-lin-10045 [S] `-fopt-slice`: revise into the governor over every AST/RIR slice-capable strategy, integrated with the other slice optimizers
@@ -239,9 +243,6 @@
 - [ ] T-lin-10082 [S] The `--jit-always-gpu` boundary is struct member access, not link-time symbols
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10082-the-jit-always-gpu-boundary-is | DEPS: —
-- [ ] T-lin-10083 [X] win-x64 — flip default `-c` to COFF and re-bank `o0-baseline`
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: T-lin-10002[C]
 - [ ] T-lin-10084 [X] win-x64 — non-constant `__except` filters and `__finally` need funclet codegen
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10084-win-x64-non-constant-except-filters | DEPS: —
