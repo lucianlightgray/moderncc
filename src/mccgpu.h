@@ -981,6 +981,33 @@ static int msl_env_index(const int32_t *off, int nenv, int32_t want, int *out) {
 static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 										int nenv, uint32_t base, MslV *out);
 
+#define MCC_GPU_REFUSE_KINDS 64
+static long mcc_gpu_refuse_kind[MCC_GPU_REFUSE_KINDS];
+static long mcc_gpu_refuse_total;
+#define MCC_GPU_REFUSE_OPS 24
+static int mcc_gpu_refuse_opv[MCC_GPU_REFUSE_OPS];
+static long mcc_gpu_refuse_op[MCC_GPU_REFUSE_OPS];
+static int mcc_gpu_refuse_opn;
+
+static int msl_refuse(AstArena *a, AstLocal n) {
+	unsigned k = (unsigned)ast_kind(a, n);
+	unsigned o = (unsigned)ast_op(a, n);
+	mcc_gpu_refuse_total++;
+	if (k < MCC_GPU_REFUSE_KINDS)
+		mcc_gpu_refuse_kind[k]++;
+	{
+		int i;
+		for (i = 0; i < mcc_gpu_refuse_opn; i++)
+			if (mcc_gpu_refuse_opv[i] == (int)o)
+				break;
+		if (i == mcc_gpu_refuse_opn && mcc_gpu_refuse_opn < MCC_GPU_REFUSE_OPS)
+			mcc_gpu_refuse_opv[mcc_gpu_refuse_opn++] = (int)o;
+		if (i < MCC_GPU_REFUSE_OPS)
+			mcc_gpu_refuse_op[i]++;
+	}
+	return 0;
+}
+
 static int msl_branch_pair(MslMod *m, AstArena *a, AstLocal n,
 													 const int32_t *off, int nenv, uint32_t base,
 													 MslV *out) {
@@ -1093,12 +1120,12 @@ static int msl_konst(MslMod *m, AstArena *a, AstLocal n, int t, MslV *out) {
 static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 										int nenv, uint32_t base, MslV *out) {
 	if (n == AST_NONE || m->failed)
-		return 0;
+		return msl_refuse(a, n);
 	switch (ast_kind(a, n)) {
 	case AST_Bailout: {
 		int t = ast_type_t(a, n);
 		if (ast_bad_type(t) || is_float(t) || !ast_eval_slice_intt(t))
-			return 0;
+			return msl_refuse(a, n);
 		msl_def_and(m, &m->def, msl_bv(m, "false"));
 		mcc_gpu_bail_emit++;
 		if (ast_eval_slice_is64(t)) {
@@ -1112,11 +1139,11 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	case AST_Literal: {
 		int t = ast_type_t(a, n);
 		if (ast_bad_type(t))
-			return 0;
+			return msl_refuse(a, n);
 		if ((ast_op(a, n) & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
-			return 0;
+			return msl_refuse(a, n);
 		if (!ast_eval_slice_f64t(t) && (is_float(t) || !ast_eval_slice_intt(t)))
-			return 0;
+			return msl_refuse(a, n);
 		return msl_konst(m, a, n, t, out);
 	}
 	case AST_Ref: {
@@ -1127,14 +1154,14 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			int k;
 			if (!ast_bad_type(t) && ast_eval_slice_f64t(t)) {
 				if (!msl_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, n), &k))
-					return 0;
+					return msl_refuse(a, n);
 				*out = msl_mkf(msl_load_live_v(m, base, k, 1, 0).id);
 				return 1;
 			}
 			if (!ast_eval_slice_intt(t) || is_float(t))
-				return 0;
+				return msl_refuse(a, n);
 			if (!msl_env_index(off, nenv, (int32_t)(int64_t)ast_ival(a, n), &k))
-				return 0;
+				return msl_refuse(a, n);
 			/* Narrow to the ref's own type; msl_load_live_v carries only a width
 			 * flag and cannot deliver VT_BOOL/BYTE/SHORT on its own. */
 			*out = msl_fit_v(m, msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
@@ -1144,21 +1171,21 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		}
 		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
 			if (ast_bad_type(t))
-				return 0;
+				return msl_refuse(a, n);
 			if (!ast_eval_slice_f64t(t) && (is_float(t) || !ast_eval_slice_intt(t)))
-				return 0;
+				return msl_refuse(a, n);
 			return msl_konst(m, a, n, t, out);
 		}
 		if (!(t & VT_ARRAY) && ast_eval_slice_globl(a, n, &go)) {
 			int k;
 			if (!msl_env_index(off, nenv, go, &k))
-				return 0;
+				return msl_refuse(a, n);
 			*out = msl_fit_v(m, msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
 																					(t & VT_UNSIGNED) != 0),
 											 t);
 			return 1;
 		}
-		return 0;
+		return msl_refuse(a, n);
 	}
 	case AST_Load: {
 		AstLocal c = ast_first_child(a, n);
@@ -1166,19 +1193,19 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		int t, k;
 		int32_t fo;
 		if (c == AST_NONE)
-			return 0;
+			return msl_refuse(a, n);
 		t = ast_type_t(a, n);
 		if (!ast_bad_type(t) && ast_eval_slice_f64t(t) &&
 				ast_eval_slice_frame_off(a, c, &fo, 0)) {
 			if (!msl_env_index(off, nenv, fo, &k))
-				return 0;
+				return msl_refuse(a, n);
 			*out = msl_mkf(msl_load_live_v(m, base, k, 1, 0).id);
 			return 1;
 		}
 		if (ast_eval_slice_intt(t) && !is_float(t) &&
 				ast_eval_slice_frame_off(a, c, &fo, 0)) {
 			if (!msl_env_index(off, nenv, fo, &k))
-				return 0;
+				return msl_refuse(a, n);
 			*out = msl_fit_v(m, msl_load_live_v(m, base, k, ast_eval_slice_is64(t),
 																					(t & VT_UNSIGNED) != 0),
 											 t);
@@ -1189,13 +1216,13 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			MslRegion mr;
 			uint32_t elem;
 			if (!msl_env_index(off, nenv, ix.base, &k))
-				return 0;
+				return msl_refuse(a, n);
 			if (!msl_expr(m, a, ix.idx, off, nenv, base, &iv))
-				return 0;
+				return msl_refuse(a, n);
 			elem = msl_dyn_elem(m, iv, &ix);
 			if (ast_eval_slice_ext(&ix)) {
 				if (!msl_mem_region(m, &mr))
-					return 0;
+					return msl_refuse(a, n);
 				*out = msl_fit_v(
 						m,
 						msl_load_region(m, &mr,
@@ -1219,28 +1246,28 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			int et;
 			if (ast_eval_slice_deref(a, n, &fo, &et)) {
 				if (!msl_env_index(off, nenv, fo, &k))
-					return 0;
+					return msl_refuse(a, n);
 				if (!msl_mem_region(m, &mr))
-					return 0;
+					return msl_refuse(a, n);
 				*out = msl_load_region(
 						m, &mr, msl_mem_off(m, msl_load_live_v(m, base, k, 1, 0)), et);
 				return 1;
 			}
 		}
-		return 0;
+		return msl_refuse(a, n);
 	}
 	case AST_Convert: {
 		int t = ast_type_t(a, n);
 		AstLocal c = ast_first_child(a, n);
 		MslV v;
 		if (c == AST_NONE || is_float(t) || is_float(ast_type_t(a, c)))
-			return 0;
+			return msl_refuse(a, n);
 		if (ast_eval_slice_ftype(a, c))
-			return 0;
+			return msl_refuse(a, n);
 		if (ast_bad_type(t) || !ast_eval_slice_intt(t))
-			return 0;
+			return msl_refuse(a, n);
 		if (!msl_expr(m, a, c, off, nenv, base, &v))
-			return 0;
+			return msl_refuse(a, n);
 		*out = msl_fit_v(m, v, t);
 		return 1;
 	}
@@ -1252,12 +1279,12 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		int ft, is64, uns;
 		int32_t mo;
 		if (c == AST_NONE)
-			return 0;
+			return msl_refuse(a, n);
 		if (ast_eval_slice_member_off(a, n, &mo)) {
 			int mt = ast_type_t(a, n);
 			int k;
 			if (!msl_env_index(off, nenv, mo, &k))
-				return 0;
+				return msl_refuse(a, n);
 			*out = msl_fit_v(m, msl_load_live_v(m, base, k, ast_eval_slice_is64(mt),
 																					(mt & VT_UNSIGNED) != 0),
 											 mt);
@@ -1269,9 +1296,9 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			MslRegion ar;
 			if (ast_eval_slice_arrow(a, n, &pfo, &madd, &at)) {
 				if (!msl_env_index(off, nenv, pfo, &k))
-					return 0;
+					return msl_refuse(a, n);
 				if (!msl_mem_region(m, &ar))
-					return 0;
+					return msl_refuse(a, n);
 				*out = msl_load_region(
 						m, &ar,
 						msl_iv(m, "mcc_add(v%u, v%u)",
@@ -1282,14 +1309,14 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			}
 		}
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
-			return 0;
+			return msl_refuse(a, n);
 		ft = ast_eval_slice_ftype(a, c);
 		if (ft && uop == '~')
-			return 0;
+			return msl_refuse(a, n);
 		if (!ft && !t)
-			return 0;
+			return msl_refuse(a, n);
 		if (!msl_expr(m, a, c, off, nenv, base, &v))
-			return 0;
+			return msl_refuse(a, n);
 		if (ft) {
 			MslV fv = msl_f64_of(m, v);
 			if (uop == '!') {
@@ -1343,7 +1370,7 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		if (bop == TOK_LAND || bop == TOK_LOR)
 			return msl_logical(m, a, n, bop == TOK_LAND, off, nenv, base, out, 0);
 		if (ast_nchild(a, n) != 2)
-			return 0;
+			return msl_refuse(a, n);
 		x = ast_child(a, n, 0);
 		y = ast_child(a, n, 1);
 		xft = ast_eval_slice_ftype(a, x);
@@ -1352,11 +1379,11 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			uint32_t cb;
 			int fcode = msl_f64_binop_code(bop);
 			if (!ast_eval_slice_ftype(a, y) || !fcode)
-				return 0;
+				return msl_refuse(a, n);
 			if (!msl_expr(m, a, x, off, nenv, base, &fl))
-				return 0;
+				return msl_refuse(a, n);
 			if (!msl_expr(m, a, y, off, nenv, base, &fr))
-				return 0;
+				return msl_refuse(a, n);
 			fl = msl_f64_of(m, fl);
 			fr = msl_f64_of(m, fr);
 			if (fcode == '+' || fcode == '-') {
@@ -1394,18 +1421,18 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		xt = ast_eval_slice_wtype(a, x);
 		wt = ast_eval_slice_binop_wtype(a, n);
 		if (!xt || !wt || is_float(ast_type_t(a, x)) || is_float(ast_type_t(a, y)))
-			return 0;
+			return msl_refuse(a, n);
 		if (ast_eval_slice_ftype(a, y))
-			return 0;
+			return msl_refuse(a, n);
 		if (!msl_expr(m, a, x, off, nenv, base, &lv))
-			return 0;
+			return msl_refuse(a, n);
 		if (!msl_expr(m, a, y, off, nenv, base, &rv))
-			return 0;
+			return msl_refuse(a, n);
 		uns = (wt & VT_UNSIGNED) != 0;
 		is64 = ast_eval_slice_is64(wt);
 		code = msl_binop_code(bop, uns, &is_cmp);
 		if (is_cmp < 0)
-			return 0;
+			return msl_refuse(a, n);
 		if (!is64) {
 			uint32_t l = msl_lo(m, lv), r = msl_lo(m, rv), res;
 			if (is_cmp) {
@@ -1487,11 +1514,11 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	}
 	case AST_If: {
 		if (ast_nchild(a, n) != 3)
-			return 0;
+			return msl_refuse(a, n);
 		return msl_branch_pair(m, a, n, off, nenv, base, out);
 	}
 	default:
-		return 0;
+		return msl_refuse(a, n);
 	}
 }
 
