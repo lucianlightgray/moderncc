@@ -42173,3 +42173,60 @@ The contract ([S7b](#t-lin-10001-a-task-representation-with-an-explicit)) names 
 **Next slice.** The remaining named suspension points are the JIT pool's (`mccjit_pool_worker`'s unbounded `pthread_cond_wait` at `src/mccjit_embed.c:1347`, held under `mccjit_swap_lock` across the whole job) — that conversion is L2′ and is what [T-lin-10031](#t-lin-10031-the-jit-teardown-is-unbounded-above) waits on.
 
 **Source.** Implemented on lin-x64, 2026-08-15, at `86a2d7e5`.
+<a id="t-lin-10090-investigation-cycles-tool-is-perf-only-no-arm64-linux-host"></a>
+
+## T-lin-10090 investigation — the arm64 re-take has no host in the fleet: the cycles tool is `perf`-only and Darwin has no `perf`
+
+**Type** `[X]` — **State** BLOCKED — **DEPS** — **Q** Q-mac-30001
+
+The deliverable named in the task's Verification — `cycles_adjudicate --cycle-reads 21` twice, quoting cycles AND instructions — is `tools/optlevel-bench.py`'s `--cycles if-conversion-abs` path, and that path cannot run on this box or anywhere in the fleet.
+
+- The measurement is Linux `perf`. `perf_pair` (`tools/optlevel-bench.py:326`) and `perf_insns` (`:178`) shell out to `perf stat -e instructions:u,cycles:u`; `main` returns 77 (`no perf; skipping`, `:983`) when `shutil.which("perf")` is empty. On this M1 Pro / arm64 Darwin box `which perf` is empty, and retired-instruction and cycle counts are not readable from userspace on Apple Silicon without a private-`kperf` entitlement or root / SIP-off DTrace — there is no drop-in `perf` here.
+- "arm64" narrows the host to THIS box. The fleet is {mac-arm64 = Darwin arm64, lin-x64 = Linux x64, win-x64 = Windows x64}; there is no arm64-Linux host where the existing `perf` path would run. So the figure the task asks for has no home in the fleet — not merely "not done yet".
+- Incidentally the box was not idle at the time (load 3.15, uptime 6 days), which the task's method forbids ("nothing else on the box"); that is curable and the `perf` gap is not.
+
+This is the same class as [[T-lin-10089]] / Q-mac-30000: a Darwin-native measurement whose tooling assumes the Linux host. `tests/optfire/levelpins.txt` already carries the accepted precedent for "this host cannot measure it either way" — `fmov-imm|1|ast_fmov_imm_env is compiled out off arm64, so this host cannot measure it either way`.
+
+**Standing on the flag itself.** The x86_64 re-take IS done and banked (`tests/optfire/levelpins.txt:63-104`): branchy instructions -1.119% (ON retires more), cycles ZERO over two paired n=21 runs, text -0.0688%; the flag is time-inert and sits at LEVEL(4). An arm64 re-take would be a second-opinion confirmation, not a level-deciding measurement — nothing on the shipped ladder waits on it. The sign history (+0.1905 → -0.0334 → -1.1071) and the note that "a fourth re-take is worth taking before anyone promotes it back" are x86_64; the arm64 figure is additional, not a gate.
+
+**What un-blocks it** (the question, Q-mac-30001): (a) a Darwin counter backend for `optlevel-bench.py` — a `kperf` / `proc_pid_rusage`-based `perf_pair` substitute — but retired instructions on Apple Silicon need kperf (private, entitlement/root), so this is real code of uncertain feasibility; (b) an arm64-Linux runner added to the fleet, where the existing `perf` path runs unchanged; or (c) accept that `if-conversion-abs`'s arm64 cycles are unmeasurable on this fleet and bank the gap as a reasoned skip, the way `fmov-imm` is pinned. None is safe to pick unilaterally: (a) is a tooling build, (b) is host acquisition, (c) closes the task as WONTFIX-on-fleet.
+
+**Verification (once un-blocked).** Unchanged from the task: `uptime` on an otherwise-idle box, two paired interleaved `cycles_adjudicate --cycle-reads 21` runs, cycles AND instructions quoted for branchy.
+
+**Source.** Investigation on mac-arm64, 2026-08-15, from T-lin-10090.
+
+<a id="t-mac-30002-ci-gate-contract-red-on-darwin"></a>
+
+## T-mac-30002 mac-arm64 — `ci/gate-contract` is red on Darwin: 4 prover-carrying gates host-skip, so `--min-proved 48` is unreachable
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+The third-platform report [T-lin-10003](#t-lin-10003-the-corpusgate-label-and-the-gap-treegates-own-bound-created)/lin-x64 asked for, Darwin side; sibling to [T-win-50001](#t-win-50001-ci-gate-contract-red-on-win-x64). On this mac-arm64 box (M1 Pro, native `cmake-macos`, tree at c5bd5140 + docs-only edits) the `ci/gate-contract` command from CMakeLists (7014) — a `treegate` cell — is RED:
+
+```
+gate-contract: 46 gate(s) carry a prover (0 of them stubbed on this host) and at least 48 were expected
+gate-contract: 1 violation(s) over 101 declared gate(s)
+```
+
+**Mechanism.** `CMakeLists.txt:7018` passes `--min-proved 48` (raised from 40 by 788463c9, the eval-binop-oracle commit). The manifest carries 50 rows with a real prover. `tools/gate-contract.py` counts a row as `proved` only if its GATE cell runs for real; a gate cell registered as an `mcc_skip_test` echo stub on this host takes the `host_skipped` path (`:227-233`, `continue`) and is NOT added to `proved` NOR to `stubbed` (only echo-stub PROVER cells feed `stubbed`, `:281-282`). So a host-skipped *prover-carrying gate* silently subtracts from the floor count with no compensation and no per-row message. On Darwin exactly 4 such gates are echo-stubs, so `proved = 50 − 4 = 46 < 48`:
+
+- `ast/o0-baseline`, `ast/o0-baseline-gated` — the [[T-lin-10089]] quartet, which structurally skips on Darwin (glibc-vs-macOS-SDK bank keying, Q-mac-30000). These two CANNOT run on Darwin by the very reason T-lin-10089 is BLOCKED.
+- `jit/xoracle-coverage`
+- `optlevel/torture-differential`
+
+Verified by replicating the tool's `is_echo_stub` over `ctest --show-only=json-v1`; the GPU/Metal gates (`gpu/spv-*`, `gpu/msl-slice-differential`, `slice/gpu`, `smoke/device`) all RUN and PASS on this box, so this is not a missing-Vulkan host gap — it is the floor over-counting.
+
+**Why the floor is wrong, not the host.** The tool's own note (`:36`, `:331-337`) says the `unfloored`/`unproved` ratchets are "a property of the manifest and not of the host, so the pins hold identically on all three." `min_proved` is the opposite kind of number — a lower bound on proving power actually exercised on THIS host — so it legitimately differs per platform, and a single fleet-wide `48` set from Linux's reachable count cannot hold where 4 gates host-skip. This is not a mac-arm64 code defect — every gate that CAN run here runs and passes; the two that structurally cannot (`ast/o0-baseline` and its twin) are the T-lin-10089 pair, blocked on Q-mac-30000.
+
+**This blocks all mac `code` DONEs:** §8's pre-DONE `treegate` is red until this is resolved, so no mac session can land a code DONE meanwhile.
+
+**Fix options (lin-x64's call — a fleet contract decision, not patched unilaterally from here):**
+1. Make the floor a manifest property as the comment claims: count a host-skipped prover-carrying gate toward the floor (add `host_skipped ∩ prover-carrying` into the `min_proved` comparison, mirroring how `stubbed` provers already count). Smallest change; keeps `48` fleet-wide.
+2. Per-platform `--min-proved` in `CMakeLists.txt` (Darwin 46, Linux ≥48), so each host's floor is its own reachable count. Correct but spreads the number across the build.
+3. Lower the fleet floor to 46 — rejected: it would let Linux regress from 50 to 46 undetected, defeating the ratchet.
+
+Option 1 is the one that matches the documented intent. Recommend it, with a regression note that the `o0-baseline` pair is the reason the two counts (host-run vs manifest) diverge on Darwin, tying it to Q-mac-30000.
+
+**Verification (once fixed).** `ctest --test-dir cmake-macos -R '^ci/gate-contract$'` green natively on Darwin AND `--min-proved` still fails if a genuinely-runnable prover is deleted on Linux.
+
+**Source.** Found on mac-arm64, 2026-08-15, running lin-x64's `ci/gate-contract` on a third platform per the T-lin-10003 CONTRACT (`c5bd5140`), while surveying T-lin-10090.

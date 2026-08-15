@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:59Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T00:55Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10365   | 2026-08-15T00:52Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50003   | 2026-08-15T00:22Z |
 
@@ -31,6 +31,9 @@
 - [ ] T-win-50001 [S] `ci/gate-contract` is red on win-x64: 6 manifest gates lack a Windows `mcc_skip_test` else-branch (+ min-proved 48>34)
       OWNER: — | STATE: OPEN | SHA: c5bd5140 | TS: 2026-08-14T23:45Z
       REF: DETAILS.md#t-win-50001-ci-gate-contract-red-on-win-x64 | DEPS: — | NOTE: lin-x64's gate-contract domain — verbatim violations + root cause in DETAILS; third-platform report lin asked for
+- [ ] T-mac-30002 [S] `ci/gate-contract` is red on Darwin: 4 prover-carrying gates host-skip as echo stubs, so min-proved 48>46
+      OWNER: — | STATE: OPEN | SHA: c5bd5140 | TS: 2026-08-15T00:55Z
+      REF: DETAILS.md#t-mac-30002-ci-gate-contract-red-on-darwin | DEPS: — | NOTE: lin-x64's gate-contract domain — third-platform report (Darwin), sibling of T-win-50001; ast/o0-baseline pair (T-lin-10089) + jit/xoracle-coverage + optlevel/torture-differential; fix options in DETAILS
 - [ ] T-lin-10004 [S] Implement `_BitInt(N)` (C23 6.2.5); the keyword is diagnosed, the type is absent
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10004-implement-bitintn-c23-625-the-keyword | DEPS: —
@@ -250,9 +253,6 @@
 - [ ] T-lin-10084 [X] win-x64 — non-constant `__except` filters and `__finally` need funclet codegen
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10084-win-x64-non-constant-except-filters | DEPS: —
-- [ ] T-lin-10090 [X] mac-arm64 — re-take `if-conversion-abs` on arm64
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10090-mac-arm64-re-take-if-conversion | DEPS: —
 - [ ] T-lin-10092 [P] Record a clean full native suite number on each platform
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: —
@@ -283,6 +283,9 @@
 - [ ] T-lin-10089 [X] mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T20:15Z
       REF: DETAILS.md#t-lin-10089-mac-arm64-the-asto0-baseline-quartet | DEPS: T-lin-10002[C] | Q: Q-mac-30000
+- [ ] T-lin-10090 [X] mac-arm64 — re-take `if-conversion-abs` on arm64
+      OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-15T00:23Z
+      REF: DETAILS.md#t-lin-10090-mac-arm64-re-take-if-conversion | DEPS: — | Q: Q-mac-30001
 - [ ] T-lin-10040 [S] The device dispatcher is not merely absent — it is unwritable from what exists
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10040-the-device-dispatcher-is-not-merely | DEPS: — | Q: Q-lin-10008

@@ -168,3 +168,14 @@ The `ast/o0-baseline` *-osx object bank is header-sensitive and currently encode
 REF: DETAILS.md#t-lin-10089-investigation-the-osx-bank-encodes-linux-glibc-headers
 
 **NOTE (peer opinion, lin-x64, per their reply to 95763bcb):** lin recommends the minimal mcc-authored stand-in over a vendored Darwin SDK — it is the only option viable on all three platforms (a vendored SDK is unusable from win-x64), has no licensing gate, and pins mcc's codegen rather than libc's declarations. Spec they'd want: declarations only for enough of `stdio.h`/`stdlib.h`/`string.h` to compile the `tests/exec` corpus, no inline bodies, no macro-defined functions, placed beside `runtime/include` (e.g. `runtime/osx`) so freestanding stays freestanding. Suggests typing the follow-up `[C]` (an interface all three `key_flags` branches read; neighbour of T-lin-10002 bank keying) and giving `ast/o0-baseline` a key-count floor in `tests/gate-contract.txt` — the contract's first ratchet decrement. Question stays OPEN pending human confirmation of the stand-in direction, the `[C]` re-scope, and the ratchet decrement.
+
+### Q-mac-30001 — [mac-arm64] — 2026-08-15T00:23Z — BLOCKS: T-lin-10090
+How should the arm64 `if-conversion-abs` cycles/instructions re-take be produced, given no `perf` on Darwin and no arm64-Linux host in the fleet?
+
+The task's deliverable is `tools/optlevel-bench.py --cycles if-conversion-abs --cycle-reads 21` run twice; that path is Linux-`perf`-only (`perf_pair`:326 / `perf_insns`:178, and `main` returns 77 without `perf`, :983). macOS / Apple Silicon exposes no userspace `perf`, and retired-instruction counts need private kperf (entitlement/root). The fleet is {Darwin arm64, Linux x64, Windows x64}, so no host both is arm64 and has `perf`; the figure has no home. See DETAILS.md#t-lin-10090-investigation-cycles-tool-is-perf-only-no-arm64-linux-host.
+
+**Assumed for now:** Mode (b), BLOCKED. The x86_64 re-take is banked and the flag ships at LEVEL(4) on it; the arm64 figure is a second opinion nothing on the ladder waits on, so no interim is unsafe. `tests/optfire/levelpins.txt` already accepts "this host cannot measure it either way" for `fmov-imm`.
+
+**Cost if wrong:** If the answer is to build a Darwin counter backend (a) or add an arm64-Linux runner (b), one confirmation measurement is taken then; nothing already banked is redone. If the answer is (c) accept-and-skip, the task closes WONTFIX-on-fleet with the x86_64 figure standing.
+
+REF: DETAILS.md#t-lin-10090-investigation-cycles-tool-is-perf-only-no-arm64-linux-host
