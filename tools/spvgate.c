@@ -833,6 +833,24 @@ static AstLocal b_ll_bool(AstArena *a, const int *o) {
 	return mk_bin(a, '+', x, y, VT_INT);
 }
 
+#if MCC_GPU_LANG_MSL
+static AstLocal b_f_notneg(AstArena *a, const int *o) {
+	return mk_bin(a, '|',
+								mk_un(a, '!',
+											mk_un(a, '-', mk_ref(a, o[0], VT_DOUBLE), VT_DOUBLE),
+											VT_INT),
+								mk_un(a, '!', mk_ref(a, o[1], VT_DOUBLE), VT_INT), VT_INT);
+}
+
+static AstLocal b_f_ternary(AstArena *a, const int *o) {
+	AstLocal n = mk(a, AST_If, VT_DOUBLE);
+	ast_add_child(a, n, mk_ref(a, o[0], VT_DOUBLE));
+	ast_add_child(a, n, mk_un(a, '-', mk_ref(a, o[1], VT_DOUBLE), VT_DOUBLE));
+	ast_add_child(a, n, mk_lit(a, 0x3FF8000000000000LL, VT_DOUBLE));
+	return n;
+}
+#endif
+
 static const Case CASES[] = {
 		{"divraw", 2, b_divraw},   {"remraw", 2, b_remraw},
 		{"shiftraw", 2, b_shiftraw}, {"ovf", 2, b_ovf},
@@ -854,6 +872,9 @@ static const Case CASES[] = {
 		{"ll-notneg", 2, b_ll_notneg},   {"ll-narrow", 2, b_ll_narrow},
 		{"ll-mix", 2, b_ll_mix},         {"ll-ternary", 2, b_ll_ternary},
 		{"ll-land", 2, b_ll_land},       {"ll-bool", 2, b_ll_bool},
+#if MCC_GPU_LANG_MSL
+		{"f-notneg", 2, b_f_notneg},     {"f-ternary", 2, b_f_ternary},
+#endif
 };
 
 #define AST_NONE_U 0xFFFFFFFFu
