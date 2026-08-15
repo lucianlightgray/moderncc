@@ -45268,3 +45268,18 @@ disk while the objects stayed intact. Recovery is one command:
 `;`, when the first step changes directory.
 
 **Source.** win-x64, 2026-08-15.
+<a id="t-lin-10375-10378-done-the-full-native-suite-at-a0d0b5b9"></a>
+
+## T-lin-10375/10376/10377/10378 DONE — the full native suite: 10070 cells, one failure, and it is not this change
+
+The §8 per-task gate for the [asm double-assembly fix](#t-lin-10375-10378-fixed-stop-assembling-the-body-twice-and-full-language-reaches-303-303), run on lin-x64 over the tree with the fix, both new cells, the `nomark` row change and the x86_64 `faithful.json` re-bank in it.
+
+**10070 cells, 1 failure, 682 s** at `-j 12`, 2096 Skipped. Two cells more than [the 10068-cell run](#t-lin-10012-done-the-full-native-suite-number-at-8dd00e11) before it: `optfire/asm-replay-object` and its known-positive.
+
+**The one failure is [T-lin-10380](#t-lin-10380-the-armed-f64-spv-case-f-addsub-stakes-bit-exactness-on-an-ieee-unspecified-nan-sign)** — `gpu/spv-slice-differential`, the armed f64 SPIR-V case `f-addsub` disagreeing with an AMD/RADV device about the sign bit of a produced NaN. It arrived with `87f7b232`+`35f1ba84` from another session, is attributed by before/after `spvgate` binaries on the same device, cannot be reached by anything in this change, and is filed with an `Invalidations` line. Recorded here rather than netted out: the number is 10070/1, not 10070/0.
+
+**Every cell this change touches or created is green in that run:** `optfire/asm-replay-object`, `optfire/asm-replay-object-known-positive`, `smoke/native`, `smoke/native-known-positive`, `smoke/strats-known-positive`, `ast/inv-faithful`, `ast/inv-faithful-known-positive`, and the `abi/vector-layout` pair from the previous task.
+
+**`rir-nofb-probe-self` passed, at 661 s.** [Its red](#t-lin-10071-mechanism-the-cell-writes-and-executes-three-binaries-in-the-shared-build-directory) in the two `-j 6`/`-j 8` family runs did not reproduce here at `-j 12`, which is the third data point for the shared-directory reading and the second time it has been green inside a full suite while red inside a filtered one.
+
+**Source.** lin-x64, 2026-08-15, code at `5113bfc5` + `0d94d189`.
