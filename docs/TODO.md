@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T12:55Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T15:00Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50010   | 2026-08-15T12:40Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50015   | 2026-08-15T13:45Z |
 
 ## Contracts — blocking, highest priority
 
@@ -26,9 +26,9 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-win-50009 [S] win-x64 — `smokerun` cannot spawn anything on Windows: `sm_system`'s quoted command dies in `cmd /c` quote-stripping; all 11 `smoke/*` cells red
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 50790209 | TS: 2026-08-15T12:47Z
-      REF: DETAILS.md#t-win-50008-resolved-the-crash-was-setvbuf-not-the-intern-table | DEPS: — | NOTE: tools/smokerun.c builds `"exe" args > "log" 2>&1` and passes it to system(); Windows system() = `cmd /c <string>`, and with >2 quote chars cmd strips the FIRST and LAST quote → unbalanced quote after the exe path. One choke point: sm_system (smokerun.c:257) — wrap the whole string in one extra pair of quotes under MCC_HOST_WIN32. Effectively win-only despite [S]
+- [x] T-win-50009 [S] win-x64 — `smokerun` cannot spawn anything on Windows: `sm_system`'s quoted command dies in `cmd /c` quote-stripping; all 11 `smoke/*` cells red
+      OWNER: win-x64 | STATE: DONE | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
+      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: DONE — three defects, one per layer: cmd /c quote-stripping (sm_system wrap), CRLF vs LF-pinned compares (slurp normalize), smoke.h SL/UL width hardcoded 64 on LLP64 (subject died 0xc0000094 dividing by a truncated-to-zero long). native-known-positive PASSES; 13,494,965 value cases, 0 value failures. Residual smoke reds are 5 distinct pre-existing defects, minted as T-win-50010..50014; GPU invisibility root-caused as the VK_LAYER_AMD_switchable_graphics layer (host env fixed)
 
 ## Open — claimable
 - [ ] T-mac-30004 [S] `spvgate` CASES has no f64 case: arm the SPIR-V arm's table on fp64 hosts
@@ -39,6 +39,21 @@
 - [ ] T-win-50006 [X] win-x64 — arm-win32 COFF: implement the ARM32 arm of `coff_emit_reloc` (there is none), then flip arm-win32 default + re-bank
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. `coff_emit_reloc` has NO `MCC_TARGET_ARM` case — it falls to `return -1`, so arm-win32 `-c` COFF fails on any file with a relocation (only 3/40 reloc-free files compile; "unsupported relocation type 2" = R_ARM_ABS32). LOW PRIORITY: arm-win32 (ARM32 Windows) is a dead platform with no executor (see T-lin-10086 split) — do this only after arm64 (T-win-50005). Add the ARM32 IMAGE_REL_ARM_* mapping (ADDR32/BRANCH24/etc.), confirm the corpus re-encodes, then flip + re-bank
+- [ ] T-win-50010 [S] win-x64 — the `rir`/`rir-o4`/`slice` engines disagree with the ast baseline at dumped row 1 on Windows
+      OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
+      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: smoke/engines-known-positive "dumped row 1 differs from the ast baseline", win-only. Prime suspect: a 64-bit `long` model inside the rir/slice evaluators on an LLP64 host — the same defect family smoke.h had, but inside the compiler. Needs the win box to repro
+- [ ] T-win-50011 [S] win-x64 — `bsweep.F16.FMULADD` and `F16.FSCALE` diverge-one on Windows, fold AND run; Linux does not diverge
+      OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
+      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: both .fold and .run diverge, so it is not just the constant folder — the fp16 emulation path differs per platform. Root-cause BEFORE banking; the divergence bank's rule is triaged findings only
+- [ ] T-win-50012 [S] win-x64 — four optimizer strategies dark on Windows: `bfold`/`narrow`/`sra`/`sroa` = 0 at -O4 (20 of 24 < --min-strats 22)
+      OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
+      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: LLP64 plausibly removes narrow's shapes (no 64→32 narrowing when long is already 32), but four dark rows need four explanations; then either corpus shapes that light them on LLP64 or a target-keyed floor
+- [ ] T-win-50013 [S] win-x64 — mint `tests/smoke/bails-x86_64-windows.txt` per the arm64-macos precedent
+      OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
+      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: T-win-50010[S], T-win-50011[S], T-win-50012[S] | NOTE: smokerun already probes bails-<key>.txt before falling back to the x86_64-linux bank. Measured Windows deltas today: O4 slice-refused:no-static-type 515→836, strat-dark:bfold new. Every row must be a triaged finding — bank AFTER the three investigations above, not instead of them
+- [ ] T-win-50014 [S] win-x64 — `pass-msstruct`'s pinned answer disagrees with real-MSVC-ABI clang-22 on Windows
+      OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
+      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: clang-22 (MSVC-ABI default on Windows) prints `msstruct 20 2 8 3 8 4 8 12 5` against a different pin banked from Linux -mms-bitfields emulation. The fixture exists to check MS bit-field layout, and this is a real reference on the real platform — decide which side is right; mcc's ms-struct layout may be wrong vs genuine MSVC
 - [ ] T-win-50007 [S] win-x64 — `arm64pe_diff.py` false-positive: model the LLP64-vs-LP64 `long`-width benign case
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. `tools/arm64pe_diff.py --corpus` flags `06_long_width.c` SUSPICIOUS (.text 192 vs 188 bytes, 70 non-reloc byte diffs) — this is the EXPECTED data-model difference: `long` is 32-bit on arm64-Windows (LLP64) and 64-bit on arm64-Linux (LP64), so the codegen legitimately differs. The tool's benign-classifier only knows reloc-site and section-presence differences; teach it that a size difference explained by sizeof(long) 4-vs-8 is benign, OR compile the corpus with a fixed-width type so the diff is data-model-neutral. Pre-existing (not from the COFF flip); the other 5 corpus files are clean
@@ -62,7 +77,7 @@
       REF: DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor | DEPS: T-lin-10365[S] | NOTE: Q-lin-10013 ANSWERED — CI is the executor, so this is no longer win-x64-only. SPLIT: the `arm-win32` (ARM32) half has NO executor — Windows 11 on ARM64 does not run ARM32 apps — and must not be reported green with the arm64 half
 - [ ] T-win-50003 [S] win-x64 full native suite — 35 real failures triaged (28 GPU-slice/`slicerun` device↔CPU differentials + "0 slices on Windows"; 4 fp under emitsize/emitiso opt-search; 3 jit/runtime)
       OWNER: — | STATE: OPEN | SHA: 50790209 | TS: 2026-08-15T12:40Z
-      REF: DETAILS.md#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged | DEPS: — | NOTE: RETRIAGED at 50790209 (see DETAILS#t-win-50008-resolved-the-crash-was-setvbuf-not-the-intern-table): the whole "0 slices on Windows" symptom class was one setvbuf fast-fail (T-win-50008, FIXED) — 10 of Bucket A's 28 now pass. Residual: 11 smoke/* = smokerun system() quoting (T-win-50009); slice/src + 6 GPU-cell skips are blocked on the device being INVISIBLE post-reboot (vkEnumeratePhysicalDevices ndev=0, RTX 2060 + vulkan-1.dll present — environmental, needs investigation; the real device-numerics half of Bucket A is HIDDEN behind it, not fixed); Bucket B (4 fp opt-search + 3 jit/runtime) untouched
+      REF: DETAILS.md#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged | DEPS: — | NOTE: RETRIAGED at 50790209 (see DETAILS#t-win-50008-resolved-the-crash-was-setvbuf-not-the-intern-table): the whole "0 slices on Windows" symptom class was one setvbuf fast-fail (T-win-50008, FIXED) — 10 of Bucket A's 28 now pass. Residual: 11 smoke/* = smokerun system() quoting (T-win-50009); slice/src + 6 GPU-cell skips are blocked on the device being INVISIBLE post-reboot (vkEnumeratePhysicalDevices ndev=0, RTX 2060 + vulkan-1.dll present — environmental, needs investigation; the real device-numerics half of Bucket A is HIDDEN behind it, not fixed); Bucket B (4 fp opt-search + 3 jit/runtime) untouched; the embed-JIT half now has a named symbol — the cl-built JIT engine blob references `__report_rangecheckfailure`/`__security_cookie`/`__GSHandlerCheck`/`__isa_available` + `__imp_*` ucrt imports that mcc's in-process linker does not provide (seen in every smoke `--embed-jit` arm at 723e5f1a)
 - [ ] T-lin-10364 [S] The wide census carried a pre-existing drift component that a0e26cff has now banked
       OWNER: — | STATE: OPEN | SHA: a0e26cff | TS: 2026-08-14T23:40Z
       REF: DETAILS.md#t-lin-10364-the-pre-existing-half-of-the-census-drift | DEPS: —

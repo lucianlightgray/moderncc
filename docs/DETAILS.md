@@ -44126,3 +44126,87 @@ gpu/msl-slice-real: arenas=163 slices=704 points=49959704 compared=49270844
 ```
 
 **Source.** mac-arm64, 2026-08-15, code at `28ac8048`.
+<a id="t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found"></a>
+
+## T-win-50009 RESOLVED — the smoke harness runs on Windows, and what a working harness immediately found
+
+**Fixed 2026-08-15 (win-x64, code SHA 723e5f1a).** Three portability defects, one
+per layer; each was invisible until the previous one fell:
+
+1. **`sm_system` (tools/smokerun.c).** Windows `system()` is `cmd /c <string>`;
+   a command string that begins with a quote and carries more than two quote
+   characters has its FIRST and LAST quotes stripped by cmd, leaving an
+   unbalanced quote after the exe path — every spawn died with "The filename,
+   directory name, or volume label syntax is incorrect" before running anything.
+   Fixed by wrapping the whole command in one extra pair of quotes under
+   `MCC_HOST_WIN32` at the tool's single spawn choke point.
+2. **`slurp` CRLF.** Subject exes emit CRLF; `pass_expect`/`parse_summary`
+   compare LF-pinned strings — producing the absurd-looking *"printed X but the
+   pinned answer is X"*. CRLF→LF normalized at the one read boundary; inert
+   where CRLF never occurs.
+3. **`smoke.h` LLP64.** `SM_ITYPES` hardcoded the SL/UL width as 64; on Windows
+   `long` is 32 bits, so `sm_zero_divisor`/`sm_idiv_trap` masked with the wrong
+   width and let corpus values like `0x8000000000000000` truncate to `(long)0`
+   and divide — `subject-O0.exe` died `0xc0000094` before its first output line.
+   Now `SM_LONG_WIDTH = 8*sizeof(long)`: identical expansion on LP64 (Linux/mac
+   banks unmoved), 32 on LLP64. The three SL rows in cases.h already encode via
+   `LONG_MIN`/`SM_ENC_SL`, so their wants adapt with the platform.
+
+**Verification.** `smoke/native-known-positive` (the harness's own known-positive)
+PASSES in a vcvars ctest; the level sweep executes 13,494,965 value cases at
+-O0..-O4 with **0 value failures**; all 12 pass fixtures execute and 11 agree
+with their pinned answers.
+
+**What the working harness found, each now a typed task — this is the census a
+first-ever run produces, not new breakage:**
+
+- **`smoke/engines(-known-positive,-identity)` — embed-JIT cannot link on
+  Windows** (extends T-win-50003 Bucket B, owner lin behind T-lin-10001 L2′):
+  every `--embed-jit` arm fails with `unresolved reference to
+  '__report_rangecheckfailure'` (and in the full-subject arm also
+  `__security_cookie`, `__GSHandlerCheck`, `__isa_available`, `__imp_*` ucrt
+  imports) — the cl-built JIT-engine blob references MSVC CRT internals mcc's
+  in-process linker does not provide.
+- **T-win-50010 — the `rir`, `rir-o4` and `slice` engines disagree with the ast
+  baseline at dumped row 1** on Windows (engines-known-positive: "dumped row 1
+  differs"), win-only; prime suspect is a 64-bit `long` model inside the
+  rir/slice evaluators on an LLP64 host — same family as the smoke.h defect but
+  inside the compiler, not the subject.
+- **T-win-50011 — F16 divergences**: `diverge-one:bsweep.F16.FMULADD.fold/run`
+  and `F16.FSCALE.fold/run` fire on Windows and are NOT in the Linux bank, so
+  Linux does not diverge on them — a genuine platform difference in the fp16
+  emulation path (fold AND run both diverge, so it is not just the folder).
+  Root-cause before banking.
+- **T-win-50012 — four strategies dark on Windows**: the -O4 `[strategy]` panel
+  reads `bfold=0 narrow=0 sra=0 sroa=0` (20 of 24 fired, `--min-strats 22`
+  floor fails). LLP64 plausibly removes the shapes `narrow` fires on (64-bit
+  `long` narrowing does not exist when long is already 32), but four dark rows
+  need four explanations, then either corpus shapes that light them on LLP64 or
+  a target-keyed floor.
+- **T-win-50013 — mint `tests/smoke/bails-x86_64-windows.txt`** (DEPS: the three
+  above): `smokerun` already probes `bails-<SMK_TARGET_KEY>.txt` before falling
+  back to the x86_64-linux `bails.txt`, and the arm64-macos precedent documents
+  the regeneration order. The Windows-legitimate deltas measured today:
+  `O4 slice-refused:no-static-type` 515→836, `strat-dark:bfold` as a new
+  category, the F16 rows if T-win-50011 concludes they are platform-legitimate.
+  Per the bank's own header, every row must be a triaged finding — bank AFTER
+  the investigations, not instead of them.
+- **T-win-50014 — `pass-msstruct` pinned answer vs the real MSVC ABI**: on
+  Windows, clang-22 (MSVC-ABI default) prints `msstruct 20 2 8 3 8 4 8 12 5`
+  against a different pinned answer. The fixture exists to check MS bit-field
+  layout; a disagreement between the pin (banked from Linux `-mms-bitfields`
+  emulation) and a real MSVC-ABI compiler on real Windows is exactly the
+  evidence the fixture wants — decide which side is right (mcc's ms-struct
+  layout may be wrong against genuine MSVC).
+
+**Also fixed while here (environmental, host config not repo):** the GPU
+invisibility recorded in the T-win-50008 note is the `VK_LAYER_AMD_switchable_graphics`
+implicit layer breaking `vkEnumeratePhysicalDevices` (VK_INCOMPLETE, ndev=0) on
+this dual-GPU box (RTX 2060 + AMD iGPU) — `vulkaninfo` itself fails identically.
+`VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics` restores both
+devices and is now set user-level on the box, so suite shells started after
+this session see the RTX 2060 again. `smoke/device` and the GPU slice cells
+were skipped-not-run in today's sweeps for exactly this reason; re-measure the
+device-differential half of T-win-50003 Bucket A under the restored device.
+
+**Source.** win-x64, 2026-08-15, at 723e5f1a.
