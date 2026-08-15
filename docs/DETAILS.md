@@ -42751,3 +42751,23 @@ Dropped `pthread` from the parse-gate exclusion → `atomic_counter.c`, `tls.c`,
 **Remaining slice-2 headers:** signal, sys/wait, unistd, sys/mman, wchar, fenv — plus the newly-surfaced sched, time, semaphore, fcntl a full cluster needs.
 
 **Source.** mac-arm64, 2026-08-15, continuing slice 2; SDK = Xcode `MacOSX.sdk`.
+
+<a id="t-lin-10367-slice-2-scope-grows-by-header-cluster"></a>
+
+## T-lin-10367 slice 2 — the floor moves by header *cluster*, not by header
+
+mac-arm64's slice-2 work surfaced a property of this gate worth stating, because it makes the remaining scope larger than slice 1's exclusion list implied.
+
+`tests/osx/headers-parse.sh` compiles whole corpus files, so a file counts only when **every** header it reaches is present. Shipping one header therefore moves the floor by zero unless it completes a file's entire cluster:
+
+- `pthread.h` moved Linux 190 → **194** (four files) because it also unblocked the freestanding `runtime/include/threads.h`, which `#include`s it.
+- `c11_threads.c` and `atomic_fetch_inline.c` are **still** blocked: `threads.h` also pulls `<sched.h>` and `<time.h>`, neither freestanding nor in the osx set.
+- `bound_signal.c` wants `semaphore.h`; `noreturn.c` wants `fcntl.h`.
+
+So the remaining set is not the slice-1 exclusion list (`wchar`, `signal`, `fenv`, `sys/mman`, `sys/wait`, `unistd`) but that list **plus `sched.h`, `time.h`, `semaphore.h`, `fcntl.h`** — four headers no one had listed, found by trying rather than by reading.
+
+**Why this is the right failure mode.** A per-header floor would have let each header land with a green and no movement, and the gate would have measured nothing while the count sat still. Because the floor is per *file*, a header that completes no cluster shows up as exactly what it is — necessary but not yet sufficient — and the number only moves when a file genuinely compiles end to end.
+
+**Ratchet discipline.** Linux 189 → 190 (`setjmp`) → 194 (`pthread`), each **measured here** rather than taken from the predicting session's arithmetic, since the gate is registered off-Darwin and mac cannot run it. Both times the prediction and the measurement agreed; the agreement is worth noting and is not a reason to stop measuring.
+
+**Source.** mac-arm64 slices at `d9011ff0`/`9eda95fe`; floors taken on lin-x64, 2026-08-15.

@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T01:50Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10371   | 2026-08-15T05:30Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10371   | 2026-08-15T05:45Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
 ## Contracts — blocking, highest priority
@@ -28,7 +28,7 @@
 
 - [ ] T-lin-10367 [C] A minimal mcc-authored Darwin libc header set for host-independent bank keys
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
-      REF: DETAILS.md#t-lin-10367-slice-1-the-layout-free-half-of-the-darwin-header-set | DEPS: — | NOTE: slice 1 DONE at 50b8c5a2 (stdio/string/stdlib/math/assert/errno/ctype + osx/headers-parse gate, 189 files, known-positive both ways). Slice 2 = setjmp/pthread/threads/wchar/signal/fenv/sys-mman/sys-wait/unistd — each commits to a struct layout or platform bit pattern and wants an SDK to check against, so it belongs on mac's box
+      REF: DETAILS.md#t-lin-10367-slice-1-the-layout-free-half-of-the-darwin-header-set | DEPS: — | NOTE: slice 1 DONE at 50b8c5a2 (stdio/string/stdlib/math/assert/errno/ctype + osx/headers-parse gate, 189 files, known-positive both ways). Slice 2 (mac-arm64, in flight): setjmp + pthread DONE, floor 189->194 measured on Linux. Remaining list GREW by four nobody listed — sched.h, time.h (threads.h pulls them), semaphore.h, fcntl.h — plus wchar/signal/fenv/sys-mman/sys-wait/unistd. The floor moves per FILE, so a header that completes no cluster moves it by zero: see DETAILS#t-lin-10367-slice-2-scope-grows-by-header-cluster
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
