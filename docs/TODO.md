@@ -26,10 +26,6 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [x] T-win-50008 [S] win-x64 — arena take crashes (0xc0000409) compiling `src/mcc.c`: `slice/arena-intern-cap`, `fmt/arena-census-bank(-known-positive)`
-      OWNER: win-x64 | STATE: DONE | SHA: 50790209 | TS: 2026-08-15T12:40Z
-      REF: DETAILS.md#t-win-50008-resolved-the-crash-was-setvbuf-not-the-intern-table | DEPS: — | NOTE: DONE. Root cause was NOT the intern table/walkers: setvbuf(fp,NULL,_IOLBF,0) is an invalid parameter on MSVC ucrt → __fastfail 0xc0000409 at instrument-open, five copy-pasted sites (arena/slice/thread/loop/depth census). Plus fmt-census SNFAM host-rename (_snprintf) — measured 89/0.791% vs banked 86/0.825%, in tolerance, no re-bank. 10 of T-win-50003's 28 Bucket A reds flip green; 11 smoke/* reds = one new root cause (T-win-50009); device currently INVISIBLE on this box (vkEnumeratePhysicalDevices ndev=0 post-reboot) so 6 GPU cells skip + slice/src red environmentally. All three cells green in vcvars ctest
-
 ## Open — claimable
 - [ ] T-win-50005 [X] win-x64 — arm64-win32 COFF: add the AArch64 TLS relocations to `coff_emit_reloc`, then flip arm64 default `-c` to COFF + re-bank o0-baseline arm64-win32 + switch `arm64pe_diff.py` to force ELF
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
