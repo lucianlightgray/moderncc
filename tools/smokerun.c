@@ -1203,13 +1203,14 @@ typedef struct
 	const char *mark;
 	int lo;
 	int hi;
+	const char *nomark;
 } Pass;
 
 static const Pass g_pass[] = {
 		{"wrapv", NULL, "-fwrapv", NULL, NULL, NULL, 2, 2},
 		{"nowrapv", NULL, "-fno-wrapv", NULL, NULL, NULL, 2, 2},
-		{"asmreplay", "pass-asmreplay.c", "", "asmreplay 0 42 8\n", "-O0",
-		 "assembler label 'smp_asm_label' already defined", 0, -1},
+		{"asmreplay", "pass-asmreplay.c", "", "asmreplay 0 42 8\n", "-O0", NULL, 0,
+		 -1, "assembler label 'smp_asm_label' already defined"},
 		{"c90tag", "pass-c90tag.c", "-std=iso9899:1990", "c90tag 32 16 24 1\n",
 		 "-O2 -std=iso9899:1990", NULL, 0, -1},
 		{"absshadow", "pass-absshadow.c", "-fno-builtin",
@@ -1354,6 +1355,13 @@ static void pass_fixture_level(const Pass *p, int level, int idx)
 	txt = slurp(log);
 	g_pass_checks++;
 	g_pass_rowchecks[idx]++;
+	if (p->nomark && strstr(txt, p->nomark)) {
+		bad("%s: the -O%d compile of %s printed \"%s\", which this row exists to "
+				"assert can no longer happen:\n%s",
+				p->name, level, p->file, p->nomark, txt);
+		rowlev_note(p->name, level);
+		g_pass_fails++;
+	}
 	if (p->mark) {
 		if (!strstr(txt, p->mark)) {
 			bad("%s: the -O%d compile of %s never printed \"%s\", so the path the "
@@ -1362,7 +1370,7 @@ static void pass_fixture_level(const Pass *p, int level, int idx)
 			rowlev_note(p->name, level);
 			g_pass_fails++;
 		}
-	} else if (txt[0] && strstr(txt, "error")) {
+	} else if (!p->nomark && txt[0] && strstr(txt, "error")) {
 		bad("%s: the -O%d compile of %s emitted an error:\n%s", p->name, level,
 				p->file, txt);
 		rowlev_note(p->name, level);
