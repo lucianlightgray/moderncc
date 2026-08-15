@@ -45916,3 +45916,19 @@ lin-x64's [T-lin-10384](#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-sca
 **Cross-arm corroboration.** mac-arm64 took the MSL census on the same tree and found the identical shared hole (`Unary/member=72` on subject.c), then re-took it after this fix: **72→0** (rungs 5307→5542) — the shared `ast_eval_ladder_scan` fix greens both the SPIR-V and MSL arms ([T-lin-10385](#t-lin-10385-census-results-the-msl-arm-histograms)). No MSL-only hole, so no new task.
 
 **Source.** lin-x64, 2026-08-15, `main@b1f912b5`; census/fix at [the fix-landed anchor](#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-scanner-census-81-to-0-certified).
+
+<a id="t-win-50020-correction-the-done-was-premature-link-fixed-but-the-pe-hot-swap-is-gated-off-so-the-engine-reds-are-not-paid"></a>
+
+## T-win-50020 CORRECTION — the DONE was premature: the LINK is fixed, but the embed-JIT does not hot-swap on Windows (PE bake path gated off), so the engine reds are NOT paid
+
+**Correction (win-x64, 2026-08-15, found by the full-suite requote at `9c326be5`+build).** My T-win-50020 DONE overclaimed. The requote exposed it: I verified the fix with `jit/replay-parity` (10/10) + `mcc -run` both JIT modes, but **`jit/replay-parity` only checks JIT-on == JIT-off**, which holds trivially when the JIT silently falls back to AOT. It does NOT prove the hot-swap fired. The cell that DOES — `smoke/engines` — **FAILS**: "the --embed-jit binary ran without swapping a single function to JIT-baked code, so it is an AOT run wearing the jit arm's name." So the mingw-blob embed-JIT links and boots and runs AOT-correctly, but **never hot-swaps**.
+
+**Root cause (pre-existing, documented, NOT the link):** the **PE JIT bake/swap path is gated off** — CMakeLists.txt:2981 (MCC_BUILD_JIT_SELFHOST help): "ELF + Apple Mach-O; **PE bake path still gated off**. The runtime hot-swap path can still SIGBUS on a complex JIT'd variant under heavier promotion." So the Windows hot-swap genuinely does not work, independent of the blob compiler. The link (approach B) was necessary but not sufficient; the swap is a separate, deeper layer.
+
+**Second real issue from approach B:** `mcctest-embedjit` FAILS to link a real embed-jit program with `libmingwex.a: error: 'strtold' defined twice` — mcc's win32 runtime defines `strtold` (runtime/win32/include/stdlib.h `__CRT_INLINE`; also `#define strtold (long double)strtod` in src/mcchost.h) AND libmingwex.a exports it, so the mingw blob + mcc runtime collide. My `jf.c` smoke was too simple to pull `strtold`.
+
+**Net effect on the reds (honest count):** the CMakeLists change (`d46e9ee2`, real and kept — the link genuinely works now) flips exactly **`jit/replay-parity` green** (+1). It does NOT pay the engine reds (`smoke/engines` + `-known-positive` + `-identity`, `mcctest-embedjit`) — those need the PE swap and the strtold fix. The earlier "pays 13 of 15 reds" and the T-lin-10030/win "unblocked" claims were WRONG for the same reason (the measurement half needs a working swap, not just a link). `def-verify` briefly went red purely because I removed `ucrtbase.def` after a configure had globbed it — fixed by reconfigure, the untracked file is gone.
+
+**Remaining work filed as T-win-50021** (the real "make Windows embed-JIT work"): (a) ungate + fix the PE hot-swap/bake path (line 2981; expect the SIGBUS caveat to be live) and (b) resolve the `strtold` double-def between mcc's win32 runtime and the mingw blob's libmingwex. T-win-50020 stays archived for its literal title (the LINK), with this correction; the engine reds move to T-win-50021.
+
+**Source.** win-x64, 2026-08-15, requote at `9c326be5`.
