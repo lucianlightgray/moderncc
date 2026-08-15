@@ -1331,6 +1331,48 @@ manifest. Blocks a green `ci/gate-contract` (and T-lin-10093/win) on Windows unt
 
 **Source.** Found on win-x64, 2026-08-14, running lin-x64's `ci/gate-contract` on a third platform per the T-lin-10003 CONTRACT (`c5bd5140`).
 
+<a id="t-win-50002-windows-mcc-build-is-red-slicerun-libmcc"></a>
+
+## T-win-50002 win-x64 — the Windows full build (`mcc_build`) is red: `slicerun` and `libmcc` fail on MSVC
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+Running `ctest` inside a vcvars shell (so the `mcc_build` fixture's `ninja` has the MSVC
+environment) shows the **fixture itself fails to build** — which is why *every* win-x64 ctest
+cell reads Skipped/Not-Run (they all require the `MCC_BUILT` fixture). The `mcc` executable
+builds clean (`ninja mcc` = ok); two *other* default targets do not, both MSVC-only:
+
+```
+FAILED: CMakeFiles/slicerun.dir/src/mccrt.c.obj
+  ucrt/stddef.h(49): warning C4005: 'offsetof': macro redefinition
+  ucrt/stdlib.h(489): error C2059: syntax error: '('
+  ucrt/stdlib.h(515): error C2059: syntax error: '('
+FAILED: CMakeFiles/libmcc.dir/src/libmcc.c.obj
+  src/mccjit_embed.c(1385): error C2375: 'mccjit_shutdown': redefinition; different linkage
+  src/mccjit_embed.c(2033): error C2375: 'mccjit_shutdown': redefinition; different linkage
+```
+
+**Diagnosis (win-x64).** (1) `slicerun` (CMakeLists 3812, `add_executable(slicerun tools/slicerun.c
+tools/slicerun_arena.c src/mccgpu.c src/mccrt.c)`), guarded only by `NOT CMAKE_CROSSCOMPILING`
+and commented "builds on every host", compiles `src/mccrt.c` — where a header in the
+mccrt/slice split (mccrt.h or mccgpu.h) **redefines `offsetof`** (C4005 off stddef.h:49); that
+macro then breaks ucrt `stdlib.h`'s declarations at 489/515 (C2059 `'('`). Not a stdlib-fn
+redefine (grepped clean) — a macro-hygiene collision surfacing only under MSVC's ucrt. (2)
+`libmcc` (the shared/DLL target) hits `mccjit_shutdown`'s `PUB_FUNC` **declaration (1385) vs
+definition (2033) linkage mismatch** — `PUB_FUNC`'s `__declspec(dllexport)` expansion differs
+between the two under the DLL build (`mccjit_shutdown` was recently touched: `0853d0ff`,
+`eedf83f2`). Neither is win-x64 code — the CodeView work is `cv_debug`-guarded and the `mcc`
+binary is unaffected. Almost certainly a regression from the mccrt/slice split + JIT-shutdown
+changes, none MSVC-tested. **Blocks the whole win-x64 native suite and T-lin-10092/win,
+T-lin-10093/win** (nothing win-x64 can `ctest`-verify until `mcc_build` is green). For the
+owners of `src/mccrt.c`/`src/mccgpu.c`/`src/mccjit_embed.c` (lin/mac) to fix; win-x64 has the
+box to confirm a fix (`ctest inside vcvars`, `-R mcc_build`).
+
+**Verification.** `mcc_build` builds green in a vcvars ctest on Windows (`slicerun` and `libmcc`
+both compile with MSVC), which lets the win-x64 native suite run at all.
+
+**Source.** Found on win-x64, 2026-08-15, attempting T-lin-10092/win (run the native suite) — the vcvars-ctest showed the `mcc_build` fixture red.
+
 <a id="t-lin-10086-win-x64-arm64-win32-arm-win32"></a>
 
 ## T-lin-10086 win-x64 — `arm64-win32` / `arm-win32` execution
