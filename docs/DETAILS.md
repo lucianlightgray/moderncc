@@ -45994,3 +45994,18 @@ lin-x64's [T-lin-10384](#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-sca
 **Disposition:** routed to lin-x64 as a BLOCKER (their DONE T-lin-10384 is not green on macho); Invalidations line appended. Not T-lin-10385's regression — T-lin-10385 adds zero reds.
 
 **Source.** mac-arm64, 2026-08-15, revert-test at `94d1e38b` vs `b1f912b5^`.
+<a id="t-lin-10364-investigation-the-window-is-227-commits-classifier-unchanged-inventory-shortcut-unavailable"></a>
+
+## T-lin-10364 investigation — the drift window is 227 commits, the classifier is unchanged, and the body-inventory shortcut does not exist
+
+**Scoping (lin-x64, 2026-08-15).** Three findings that sharpen the row's bisect recipe and rule out the cheap paths:
+
+1. **The real window is `eee6c1f2..a0e26cff` — 227 commits, not the 2 the naive reading gives.** `bb5c0488^..a0e26cff` is only two commits (`bb5c0488` + `a0e26cff`), both docs, 0 src files — so read literally it cannot host a source-classification drift. `bb5c0488^` names *where the previous bank values are read from*, and the wide `bodies_pct` value there was last set at **`eee6c1f2`** ("feat(rir): per-format arena floors …", the last re-bank before `a0e26cff`). The tree changes that moved the pre-existing component therefore lie in `eee6c1f2..a0e26cff`.
+
+2. **The census classifier did not change in the window.** No commit in `eee6c1f2..a0e26cff` touches `ast_low_node` / `ast_low_walk` / `ast_low_census` / the `AST_LOW_*` predicate (`src/mccast.c`). So "the same bodies classified differently" is not a classifier change — it is source *content*: some existing `src/mcc.c` (amalgamated) function had its AST reshaped by a commit in the window and crossed a lowerable/region boundary. That points the bisect at the ~50 codegen/gen/ast commits in the range, not the classifier.
+
+3. **The body-inventory shortcut is unavailable — this is exactly the "re-banking destroyed the evidence" the row names.** `tests/rir/lowerable-bodies.tsv` has **0 wide/elf rows at `eee6c1f2`** and **4604 at `a0e26cff`**: the per-body inventory was first taken *at the re-bank*, so there is no earlier inventory to diff against and no per-body attribution of which bodies flipped. A parsed match-by-`(file,func,tu)` over the two endpoints finds 0 common wide/elf bodies. So the row cannot be closed by an inventory diff; the **multi-build bisect is the only path** — build mcc at each step, run `MCC_RIR_CENSUS=1 rir-coverage.py <build> --corpus wide --levels O0 --opt-in` against `eee6c1f2`'s banked `bodies_pct`, and mark on the pre-existing component. ~8 build+census steps over the 227-commit range.
+
+**Left OPEN, better-scoped.** The bisect is a genuine multi-build effort (build + wide census per step); recording the window, the classifier-ruled-out result, and the dead inventory-shortcut so the next claimant starts at the bisect rather than re-deriving these. No source or bank was touched by this investigation.
+
+**Source.** lin-x64, 2026-08-15, at `main` post-`d377867d`.
