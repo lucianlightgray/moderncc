@@ -46451,3 +46451,76 @@ comparable to any quote taken after this commit. That is a *widening of the
 measured subject*, not a regression.
 
 **Source.** lin-x64, 2026-08-15, at `e80b0ecd`.
+
+<a id="t-mac-30006-option-a-is-executable-on-lin-the-tree-ships-the-downloader"></a>
+
+## T-mac-30006 — option (a) is executable on lin-x64 today; the tree already ships the sysroot downloader
+
+Re-prices, but does **not** resolve,
+[T-mac-30006](#t-mac-30006-o0-baseline-4-bare-elf-keys-are-unmaintainable-no-session-box-has-the-gentoo-sysroots).
+That row is recorded as a HUMAN/infra decision on the premise *"the 4 bare-ELF
+keys need `vendor/gentoo-stage3-<arch>-glibc` sysroots that NO current box
+has (lin's vendor/ = musl+qemu only)"*. The premise is true as a statement
+about what is **in** `vendor/` and false as a statement about what this box
+**can put** there.
+
+**Found while fixing the identical error one row over.**
+[T-lin-10359](#t-lin-10359-slicecref-oracle-stalls-on-five-programs) carried
+"corpus not provisioned" for a week when the corpus was on the box and only
+`vendor/` lacked the symlink
+([anchor](#lin-corpus-provisioning-complete-all-four-cref-corpora-live)).
+Having just made that mistake, the same question was put to this row: was the
+*host* ever checked, or only `vendor/`? Only `vendor/`.
+
+**The tree ships a fixture whose entire job is downloading these sysroots.**
+`CMakeLists.txt:8988-8996` registers `qemu-<arch>-<libc>-fetch`, running
+`mccharness qemufetch` against `distfiles.gentoo.org/releases`. Every
+coordinate matches the four stranded keys exactly:
+
+| what `tools/o0_ab.sh:242` requires | what the fixture supplies | match |
+| --- | --- | --- |
+| `$S/vendor/gentoo-stage3-<arch>-glibc` | `${MCC_QEMU_DLDIR}/gentoo-stage3-${_arch}-${_libc}`, and `MCC_QEMU_DLDIR` **defaults to `${MCC_VENDOR_DIR}`** (`:8923`) | same path, no wiring |
+| `i386`, `arm`, `arm64`, `riscv64` | `MCC_QEMU_ARCHS` defaults to `x86_64;i386;arm;arm64;riscv64` (`:8919`) | exactly the four, plus native |
+| `$BUILD/mcc-<arch>` | `cmake-cross/mcc-{i386,arm,arm64,riscv64}` already built here | present |
+| — | `qemu-i386`, `qemu-arm`, `qemu-aarch64`, `qemu-riscv64` all installed on this host | present |
+
+**Why it has never fired:** it is opt-in *because* it downloads —
+`"the qemu-user conformance matrix is opt-in because it downloads a Gentoo
+stage3 rootfs per arch/libc: cmake -DMCC_QEMU_TESTS=ON, then ctest -L qemu"`
+(`:8983`). So the four keys have been reported unmeasurable on a box that was
+one cache variable away from measuring them. Disk is not the constraint either
+(226 GB free against the 6.6 GB [line 2515](#) records for all four).
+
+A second, independent route is already written down as the offline fallback —
+the docker stage3/Debian-rootfs recipe with its two documented traps (anchored
+tar excludes; `binfmt` `F`-flag registration). `docker` is installed here too.
+So there are **two** routes, not zero.
+
+**What this does NOT establish, and why the row stays OPEN.** Three things are
+unproven and none should be assumed:
+
+1. **The fetch has not been run.** Mirror reachability and the current stage3
+   pointer files are untested from this host. "The fixture exists and the box
+   qualifies" is not "the download works today".
+2. **A fresh stage3 almost certainly will not reproduce the existing bank.**
+   The banked hashes are of `mcc`-produced objects, and the sysroot supplies
+   the system headers those objects are compiled against; a current stage3 is
+   not the snapshot the bank was taken on. This is not an objection to option
+   (a) — option (a) says *"provision the 4 sysroots **+ rebank all**"* — but it
+   does mean the cost is a full 11-key rebank, not a 4-key top-up, and the
+   rebank must come from one box that can measure all eleven.
+3. **Whether that rebank then holds across boxes is exactly the open question**
+   the row was raised to settle, and provisioning does not answer it.
+
+**So the decision is re-priced, not made.** Option (a) moves from *"no session
+box can do this"* to *"lin-x64 can, behind one opt-in flag, at the cost of a
+6.6 GB fetch and a full 11-key rebank"*. Options (b) drop-the-keys and (c)
+asserted-manifest are unaffected and may still be the better answer — (c) in
+particular survives a stage3 that drifts again next year, which (a) does not.
+Recorded so the choice is made against what the fleet can actually do.
+
+**Not claimed.** T-mac-30006 is `[S]` and unowned; lin-x64 held T-lin-10359
+while finding this. Any session may take it on this evidence.
+
+**Source.** lin-x64, 2026-08-15; read from `CMakeLists.txt:8917-8996`,
+`tools/o0_ab.sh:216-248`, and host inventory. No fetch performed.
