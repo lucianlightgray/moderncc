@@ -43272,3 +43272,28 @@ mac-arm64 measured [T-lin-10079](#t-lin-10079-ir-caps-trace-sites-fire-375k)'s f
 **Verification.** `ctest -R '^(trace-gate-invariant|schema-gate-invariant|idiom-gate-invariant)$'` 4/4, `ctest -L treegate` 12/12.
 
 **Source.** Question raised by mac-arm64 at `04f426ab`; answered and infra landed on lin-x64, 2026-08-15.
+
+<a id="branch-and-worktree-consolidation-2026-08-15"></a>
+
+## Branch and worktree consolidation, 2026-08-15 — what merged, what cannot, and why
+
+An audit of every branch and worktree in the repo, with `git cherry` rather than eyeballing, so "already merged" is a measurement.
+
+**Merged (`bfd2ca56`).** `woa/bootstrap` — four commits: the [WoA CI hook](#t-lin-10365-woa-runner-ground-truth) (T-lin-10365), the [`MCC_REF_CC` target-arch fix](#t-lin-10366-ref-cc-is-x86-64-only-on-windows) (T-lin-10366), and two workflow iterations. `ci.yml`'s `branches-ignore: ['woa/**']` came with it and is wanted on main: GitHub evaluates a push event's workflows *as they exist on the pushed branch*, so it only ever took effect from the branch. `woa.yml` is inert on main (it triggers on `woa/**` and `workflow_dispatch` only) but landing it makes the hook reproducible from a fresh checkout instead of living on one branch. Gated before pushing: `treegate` 12/12, `mcctest`/`osx`/`ci`/gate cells 12/12.
+
+**Already upstream, nothing to merge.** `git cherry` reports an equivalent change already on main for four worktree branches — `a329cd3c` (two AST ICEs), `4216b84b` (ladder dark rungs), `faba7ce9` (replay reemit-templates), `1f476630` (the -O ladder on the clock) — and `origin/wt/slicops` is 0 ahead of main. These were landed by other routes and their branches are residue.
+
+**Cannot be merged mechanically — four branches, and this is the honest part.** Each is a single substantial commit roughly 800 commits behind main, and every one conflicts in core sources, not just banks:
+
+| branch | subject | conflicts |
+| --- | --- | --- |
+| `b3afe2d0` | `opt(fabs)`: one `andpd`, no memory, no branch | `src/libmcc.c`, `src/mccrir.c` + 3 optfire banks |
+| `ef80c131` | `opt(ladder)`: the -O levels, measured | 12 files incl. `CMakeLists.txt`, `src/mccopt.h` |
+| `25a2038c` | `feat(gpu)`: `MCC_GPU` on by default, dlopen the driver | 8 files incl. `src/mccgpu.h`, `src/mccjit_embed.c`, `src/mccmtl.h` |
+| `49eb2334` | `feat(gpu)`: GPU backend always compiled, vendor the Vulkan ABI | 6 files incl. `src/mccast.c`, `src/mccgpu.h`, `src/mccmtl.h` |
+
+Every test-merge was aborted and main left clean. Resolving conflicts in `mccgpu.h`, `mccjit_embed.c` and `mccast.c` across 800 commits of subsequent evolution is not a merge — it is re-implementing the change against a tree that has moved underneath it, and it has to be done by someone who can re-run each branch's banks. Forcing it would have put unreviewed GPU-backend defaults into a main whose full native suite currently reads [0 failures over 10062 cells](#t-lin-10092-lin-the-linux-full-native-suite-is-clean). Filed as T-lin-10372 rather than merged badly or dropped quietly.
+
+**No uncommitted work is at risk.** Each worktree shows ~1300 modified tracked files, which looks alarming and is not: the diffs are **file-mode only** (`100644 → 100755`, 950 files at 0 insertions and 0 deletions). Some tool set the executable bit tree-wide in each checkout. There is no content in any worktree that is not in its branch.
+
+**Source.** lin-x64, 2026-08-15.
