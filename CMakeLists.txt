@@ -7140,6 +7140,18 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(ci-matrix PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             PASS_REGULAR_EXPRESSION "linux-gcc")
 
+        # T-lin-10374: two `mcc -c` of a fixed source must be byte-identical.
+        # An object carries no .note.gnu.build-id, so this isolates codegen from
+        # the benign whole-binary differences (build-id + DWARF build paths).
+        add_test(NAME "ci/reproducible-object"
+            COMMAND "${CMAKE_COMMAND}"
+                    -DMCC=$<TARGET_FILE:mcc>
+                    -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/repro-subject.c
+                    -DWORK=${CMAKE_BINARY_DIR}/repro-object
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/repro_object.cmake")
+        set_tests_properties("ci/reproducible-object" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT TIMEOUT 120)
+
         if(TARGET mccharness)
             add_test(NAME ci-pkg-smoke COMMAND "$<TARGET_FILE:mccharness>" pkgsmoke
                 --ci "$<TARGET_FILE:ci>" --work "${CMAKE_BINARY_DIR}/pkgsmoke-work")
