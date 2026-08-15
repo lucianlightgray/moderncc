@@ -130,9 +130,6 @@
 - [ ] T-lin-10033 [S] The Vulkan dispatch destroys resources under a still-pending command buffer
       OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
       REF: DETAILS.md#t-lin-10033-the-vulkan-dispatch-destroys-resources-under | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
-- [ ] T-lin-10035 [S] `devs[0]` is chosen with no scoring while `VkPhysicalDeviceLimits` is transcribed and unread
-      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
-      REF: DETAILS.md#t-lin-10035-devs0-is-chosen-with-no-scoring | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
 - [ ] T-lin-10036 [X] mac-arm64 — `ast_ladder_gpu_run`: the Metal backend still uploads `tin` twice and carries the two dead memsets (SPIR-V half DONE)
       OWNER: — | STATE: OPEN | SHA: 812fb6ff | TS: 2026-08-15T20:33Z
       REF: DETAILS.md#t-lin-10036-scoped-vulkan-half-done-metal-half-is-the-remaining-work | DEPS: — | NOTE: RE-SCOPED [S]->[X] mac by lin-x64 (finding at REF). The SPIR-V/Vulkan path has all three wins (mccgpu.c:2772-2784 + reuse_in; double-upload fixed at e85ea258). Only the Metal branch (mccgpu.c:624 dispatch_locked2, MSL) still memsets pin/pout fully (:655/:657, pout 100% dead) and ignores reuse_in (:635, MCC_GPU_IN_IS_RESIDENT=0 on MSL) so tin re-uploads per arm. Untestable/uncompilable on Linux (#if MCC_GPU_LANG_MSL off here). Mirror the SPIR-V logic on the Metal path (drop pout memset, tail-only pin memset, honor reuse_in — the last needs Metal buffer-lifecycle care), verify gpu/msl-slice-* unchanged + re-measure bytes/lane
