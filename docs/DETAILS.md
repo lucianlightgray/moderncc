@@ -44376,3 +44376,54 @@ here; it needs coordinated re-banks on lin and mac.
 triaged finding — bank it as data-model darkness, citing this anchor.
 
 **Source.** win-x64, 2026-08-15, at 8da0a02a.
+
+<a id="t-win-50014-resolved-mccs-win32-default-bitfield-layout-is-the-outlier"></a>
+
+## T-win-50014 RESOLVED — every native Windows toolchain lays `smp_plain` at 12; mcc's win32 default (4) is the outlier
+
+**Closed 2026-08-15 (win-x64, docs-only; implementation minted as T-win-50015).**
+
+**The disagreement, pinned to one figure.** `pass-msstruct`'s 8th value is
+`sizeof(struct smp_plain)` — `{char a; int b:3; char c;}` with **no** layout
+attribute, deliberately probing the platform default. Measured on this box:
+
+| compiler | ABI | sizeof |
+| --- | --- | --- |
+| MSVC `cl` (VS 18) | MSVC | **12** |
+| clang-22 (MSVC target default) | MSVC | **12** |
+| llvm-mingw `gcc.exe` (GNU-on-Windows ABI) | mingw | **12** (4 only under explicit `-mno-ms-bitfields`) |
+| mcc, win32 target | — | **4** (the gcc/ELF layout) |
+| the pinned answer (banked from Linux) | ELF | 4 |
+
+Under the MS layout each `int` bit-field opens a fresh `int` unit and
+differently-typed members never share storage: a@0, b:3 in a new int@4, c@8 →
+12. Both Windows ABIs — MSVC *and* mingw-GNU (gcc has defaulted
+`-mms-bitfields` on mingw targets since 4.7) — agree. mcc lays plain
+bit-field structs with the gcc/ELF algorithm on win32 targets, making it
+cross-TU-incompatible with **every** native Windows compiler for any such
+struct. mcc's explicit `__ms_struct__`/`__gcc_struct__` handling is correct
+(the other eight fixture figures match cl/clang exactly); only the win32
+*default* is wrong.
+
+**The machinery already exists.** `mcc_state->ms_bitfields` is a live option
+("ms-bitfields — Use the MSVC bitfield layout", src/mcc.c:153; consumed at
+mccgen.c:6205/6927 beside the per-struct attributes; option row libmcc.c:2441).
+The defect is exactly one default: it is not set when the target is PE.
+
+**T-win-50015 — the staged fix, mirroring T-lin-10012's per-target ABI-change
+pattern:** (1) *fixture first*: a cross-TU layout fixture asserting
+offsetof/sizeof of plain bit-field structs against the target's reference cc
+(mingw gcc on win32 — the winlibs toolchain is restored on this box; must pass
+UNCHANGED on ELF targets, fails today on win32), plus target-key the
+`pass-msstruct` pin (4 on ELF, 12 on PE — after the flip mcc prints 12 there);
+(2) default `ms_bitfields = 1` when the output target is PE (key on TARGET,
+not host — the Linux-hosted win32 cross compilers must flip identically);
+(3) re-bank only what moves: the four win32 `o0-baseline` columns if any banked
+object carries a plain bit-field struct, and re-run the PE cross-TU suites
+(`pe/coff-obj-diff`, `pe-torture-classes`, `pe-xoracle`) which should IMPROVE,
+since mcc now agrees with the mingw reference. Risk note: any in-tree source
+mcc compiles for win32 whose structs carry bit-fields changes layout — that is
+the correction, not collateral, but the full native suite is the gate.
+
+**Source.** win-x64, 2026-08-15. Probes: `plainprobe.c` vs cl/llvm-mingw;
+`pass-msstruct` vs mcc + clang-22.

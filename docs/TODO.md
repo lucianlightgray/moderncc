@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T13:08Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T15:00Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50015   | 2026-08-15T13:45Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50016   | 2026-08-15T13:30Z |
 
 ## Contracts — blocking, highest priority
 
@@ -26,14 +26,13 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-win-50014 [S] win-x64 — `pass-msstruct`'s pinned answer disagrees with real-MSVC-ABI clang-22 on Windows
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 0ff0df66 | TS: 2026-08-15T13:20Z
-      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: the differing figure is the 8th: sizeof(struct smp_plain) — the fixture's NO-attribute row, probing the platform DEFAULT. Evidence so far: real MSVC cl says 12, clang-MSVC says 12, mcc's win32 target says 4 (the gcc layout). Verdict forming: mcc's win32 default bitfield layout is wrong vs the platform ABI; scoping the fix vs decision split
-
 ## Open — claimable
 - [ ] T-mac-30004 [S] `spvgate` CASES has no f64 case: arm the SPIR-V arm's table on fp64 hosts
       OWNER: — | STATE: OPEN | SHA: 28ac8048 | TS: 2026-08-15T12:55Z
       REF: DETAILS.md#t-lin-10042-slice-1-msl-f64-bits-pair | DEPS: — | NOTE: found doing T-lin-10042 slice 1. The default-mode CASES loop never exercised f64 on EITHER arm; the two new cases (f-notneg, f-ternary) are `#if MCC_GPU_LANG_MSL` because sharing them would (a) hard-fail gpu/spv-slice-differential on non-fp64 hosts — CASES mode lacks arena mode's `used_f64 && !g_f64` skip — and (b) stake FNegate-on-NaN + denormal-truth bit-exactness on lavapipe/NVIDIA, the unread-denormal hazard T-lin-10061 records. To arm: add the CASES-mode f64 skip (a case whose every rung f64-skips must print SKIP, not the 0-compared FAIL), unguard the two cases, bump spv-validate EXPECT (it counts emitted modules; measure with --emit-only), and take T-lin-10061's denormal reading while at it. Needs an fp64 host — lin (lavapipe) or win (RTX 2060); mac's MoltenVK cannot run it
+- [ ] T-win-50015 [S] win-x64 — default `ms_bitfields = 1` on PE targets: mcc's plain bit-field layout is cross-TU-incompatible with every native Windows compiler
+      OWNER: — | STATE: OPEN | SHA: b034c0e7 | TS: 2026-08-15T13:30Z
+      REF: DETAILS.md#t-win-50014-resolved-mccs-win32-default-bitfield-layout-is-the-outlier | DEPS: — | NOTE: from T-win-50014's verdict — cl=12, clang-MSVC=12, llvm-mingw-GNU=12 vs mcc=4 on `{char; int:3; char}`; mcc_state->ms_bitfields exists (mccgen.c:6205/6927), only the PE-target default is missing. Staged per T-lin-10012's pattern: (1) cross-TU fixture vs mingw gcc + target-key the pass-msstruct pin (4 ELF / 12 PE), (2) flip the default keyed on TARGET so the Linux-hosted win32 cross compilers move identically, (3) re-bank the win32 o0-baseline columns that move + re-run pe/coff-obj-diff, pe-torture-classes, pe-xoracle (should improve). Bank-moving ABI change — wants a fresh, focused context
 - [ ] T-win-50005 [X] win-x64 — arm64-win32 COFF: add the AArch64 TLS relocations to `coff_emit_reloc`, then flip arm64 default `-c` to COFF + re-bank o0-baseline arm64-win32 + switch `arm64pe_diff.py` to force ELF
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. arm64-win32 was deliberately LEFT on ELF-default because `coff_emit_reloc` (src/objfmt/mccpe.c:2119) lacks the AArch64 TLS relocs — `tests/exec/features_c99_c11/tls.c` → "unsupported relocation type 549" (R_AARCH64_TLSLE_*), 296/297 corpus objects. Add the TLS arm (map to IMAGE_REL_ARM64_SECREL* per the local-exec model), confirm 297/297, THEN extend the `#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_I386` gate in libmcc.c mcc_set_output_type to include arm64, re-bank, and change arm64pe_diff.py's PE arm to pass `-Wl,-oformat=pe-arm64` (its ELF-vs-ELF premise breaks once arm64 -c defaults to COFF). win-x64 has no arm64-Windows linker (lld-link 22 CAN link arm64 COFF, but nothing here RUNS an arm64 PE). CORRECTION (win-x64, deeper look): reloc 549 = R_AARCH64_TLSLE_* (ELF local-exec TLS). Windows ARM64 TLS is a DIFFERENT model (TEB + _tls_index, not the ELF thread-pointer), so mcc's arm64 codegen emits ELF-model TP-relative sequences that are WRONG for Windows even if the relocs are encoded — this is Windows-ARM64-TLS *codegen*, not just a coff_emit_reloc entry, and is unverifiable (runtime) without an arm64 Windows executor. Likely gated behind the woa CI work (T-lin-10086). Scope realistically: explicit-COFF non-TLS arm64 is already fine; do the default flip only once TLS codegen + an executor exist
