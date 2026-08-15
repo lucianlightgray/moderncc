@@ -43504,3 +43504,21 @@ The first two are defensible; the third buys a zero-diff by preserving the bug f
 **Next, and it needs an idle box only for step 2:** pick the rule, add the missing 32-byte-vector fixture with a cross-TU-against-gcc check, then re-bank the eleven columns for whatever the rule moves.
 
 **Source.** Measured on lin-x64, 2026-08-15, by reading; no compile required.
+
+
+<a id="t-lin-10039-done-spvgate-already-fails-a-case-that-compared-nothing"></a>
+
+## T-lin-10039 DONE — spvgate already fails a case (and the whole run) that compared nothing
+
+The task asked for a per-case `compared=` and a fail-at-0, "before trusting any generator's yield." Current `tools/spvgate.c` already does exactly this, at two levels:
+
+- **Per case** (`spvgate.c:1586-1594`): after the width loop, `if (!case_bad && case_cmp == 0) { printf("  %-10s FAIL (0 defined points compared -- proves nothing)"); case_bad = 1; mismatch++; }`, else it prints `%s (%ld points)` with the compared count. A case whose widths all `SKIP (not lowerable)` (`:1480`, `continue` without touching `case_cmp`) or that compared only vacuous/undefined points lands `case_cmp == 0` and fails. The comment at `:1582-1585` names the exact failure mode the task describes ("used to print OK … it is a failure: this case proves nothing").
+- **Whole run** (`spvgate.c:1219-1233`): `arena_mode` FAILs on `!g_dispatches` (no GPU dispatch) and on `!tot_cmp` ("0 compared -- every point was vacuous, so this run adjudicated nothing"), so the aggregate cannot print OK over an empty subject either.
+
+Landed with the slice scheduler (`1b54c26e`, 2026-08-08), i.e. the fix shipped alongside/after the review note that became this task; the row was never closed.
+
+**Verified live on mac (arm64 + MoltenVK), not just read.** `gpu/spv-slice-differential`, `gpu/spv-slice-known-positive`, `gpu/spv-slice-real` all pass — the **known-positive** is the proof the guard fires: it injects a fault (`b_ll_cmpu` is the discriminating shape the task names) and the gate correctly reports FAIL, so the OK path genuinely requires non-zero compared points. `gpu/spv-mem-binding` + its known-positive also present.
+
+**Gate.** Measurement + docs only; no code change. `docs/refs` green; the four `gpu/spv-slice*` cells pass on this box.
+
+**Source.** mac-arm64, 2026-08-15; confirmed present at `1b54c26e`, proven live by the known-positive on arm64/MoltenVK.

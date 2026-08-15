@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T07:10Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T07:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10373   | 2026-08-15T15:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50005   | 2026-08-15T14:05Z |
 
@@ -138,9 +138,6 @@
 - [ ] T-lin-10038 [S] No tree-recursion exec golden exists, and the failure mode is a GPU hang
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10038-no-tree-recursion-exec-golden-exists | DEPS: —
-- [ ] T-lin-10039 [S] `spvgate` reports OK for a case that lowered nothing
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10039-spvgate-reports-ok-for-a-case | DEPS: T-lin-10003[C]
 - [ ] T-lin-10041 [X] mac-arm64 — the native MSL region arm
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10041-mac-arm64-the-native-msl-region | DEPS: —
