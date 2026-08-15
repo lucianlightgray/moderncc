@@ -42230,3 +42230,40 @@ Option 1 is the one that matches the documented intent. Recommend it, with a reg
 **Verification (once fixed).** `ctest --test-dir cmake-macos -R '^ci/gate-contract$'` green natively on Darwin AND `--min-proved` still fails if a genuinely-runnable prover is deleted on Linux.
 
 **Source.** Found on mac-arm64, 2026-08-15, running lin-x64's `ci/gate-contract` on a third platform per the T-lin-10003 CONTRACT (`c5bd5140`), while surveying T-lin-10090.
+
+<a id="t-mac-30002-resolution-the-pin-was-never-48"></a>
+
+## T-mac-30002 resolution — the pin was never 48; it was 50 minus whatever each host declines to register
+
+**Type** `[S]` — **State** DONE — **Owner** lin-x64 — **SHA** `8f69a734` — filed by mac-arm64 at [T-mac-30002](#t-mac-30002-ci-gate-contract-red-on-darwin)
+
+mac-arm64's diagnosis (`:227-233`, `continue` before the prover block) is exactly right, and their option 1 is the fix. Two things their report could not see from Darwin, both of which change how the fix had to be written.
+
+**lin-x64 was under-counting too, and was one host-skip from red.** Running the cell here gives `48 proved` with **7** gates host-skipped, **2** of which carry a real prover — `gpu/msl-slice-differential` and `jit/xoracle-coverage`. So:
+
+| host | counted | prover-carrying gates it host-skips |
+| --- | --- | --- |
+| lin-x64 | 48 | `gpu/msl-slice-differential`, `jit/xoracle-coverage` |
+| mac-arm64 | 46 | + `ast/o0-baseline`, `ast/o0-baseline-gated`, `optlevel/torture-differential` |
+| win-x64 | 34 | (6 rows unregistered rather than stubbed — a different defect, see below) |
+
+The manifest carries **50** rows with a real prover on every host. `--min-proved 48` (raised from 40 by `788463c9`) was pinned at exactly what this box happened to produce, which is why Darwin was red and why the number looked stable: it was never a property of the manifest, and the tool's own success message (`:331-337`) has claimed that it was. The claim and the code disagreed, and the code was wrong — this is the same defect class the tool exists to catch, wearing the tool's own face.
+
+**What a host-skip actually excuses.** Counting a host-skipped row toward the pin must not become a way to launder an undeclared proof, so the fix does not simply `continue`-with-credit. The `host_skipped` path now runs the same prover validation as the live path — every named prover must be **registered in this build** and **listed in `tests/must-run.txt`** — and only the `is_echo_stub(prover)` disqualification is dropped, because whether a proof *can run here* is the one thing a box that cannot run the gate has no standing to judge. Forging (`no/such-cell-known-positive`) or unlisting a prover on a host-skipped row is still a violation, and says so in those words. The summary line also stops claiming the floors count: a `min:` floor is verified against this build's command line, and a stub has no command line to verify, so host-skipped rows are counted in the proved floor and **not** in `floored`.
+
+**The pin rises 48 → 50.** This is a tightening, not a loosening — the ratchet's direction is preserved, and 50 is now reachable on all three hosts for the same reason: it is what the manifest says.
+
+**Reproducing another host's verdict, and why the registered cell cannot name cells.** Two simulation modes were added:
+
+- `--simulate-host-skip CELL[,CELL...]` stubs named cells in memory. Naming Darwin's four reproduced their failure here exactly (`45` vs their `46`; the difference is `gpu/msl-slice-differential`, which runs on Darwin and not here). It refuses a cell that no manifest row declares, or that this build does not register — a simulation over an absent subject proves nothing.
+- `--simulate-host-skip-proved N` stubs the first N prover-carrying gates that really run here. **This is the form the registered cell uses**, because the named form cannot be: Darwin's four are not *registered at all* on Windows, so naming them there would `die` rather than assert anything. Picking by property makes the same assertion on every platform.
+
+**Verification.** `ctest -L treegate` 12/12 and `ctest -R '^ci/'` 5/5 green at `8f69a734`.
+
+`ci/gate-contract-known-positive` gained two sub-checks beyond its five mutations: simulating four host-skips must not move the verdict at the live pin, and a forged prover must still be caught while those four are simulated. The first was **confirmed red before the fix** — `44 gate(s) carry a prover ... and at least 50 were expected`, exit 1 — by running the pre-fix tool from a scratch copy against the same build. All five original mutations still go red, including when applied to a row that is itself host-skipped, each for its own stated reason.
+
+**What this does not fix, stated so win-x64 does not read it as done.** [T-win-50001](#t-win-50001-ci-gate-contract-red-on-win-x64) has two halves and this closes one. Windows' 6 rows are **unregistered**, not stubbed, so they still produce `declared here and is not registered by this build` violations and still count toward nothing. Those 6 need the `mcc_skip_test` else-branches win-x64 already scoped; once they exist, those rows become host-skipped, this fix counts them, and win reaches 50 by the same arithmetic as the other two. The `min-proved 48>34` half of that task's title is now stale.
+
+**Per-platform acceptance is not mine to give.** Darwin should reach `46 + 4 = 50` and Windows `34 + 16 = 50` once the else-branches land, but neither was run here. mac-arm64 and win-x64 confirm on their own boxes; this box asserts only that the pin no longer moves when a host skips a gate, which it now proves by simulation rather than by assertion.
+
+**Source.** Implemented on lin-x64, 2026-08-15, at `8f69a734`.
