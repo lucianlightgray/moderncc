@@ -46071,3 +46071,18 @@ lin-x64 (2026-08-15) notes the lowerable census classifier `ast_low_node` (`mcca
 **Verdict: not a defect — the design working, not drift.** The 46/58 objects that "change" at `-O2` are the replay producer emitting a different but correct register allocation where no byte-identity invariant applies, and users receive the non-replay default so shipped code is unaffected. There is no contract for the `-O1+` replay object to drift against. If replay is ever intended to become the canonical `-O1+` producer, giving it a byte-identity invariant would be a deliberate *design* addition (and would first need the reg-alloc paths reconciled) — separate from this row, which asked only whether 46/58 is a bug. It is not.
 
 **Source.** lin-x64, 2026-08-15, at `main` post-`95c2219c`.
+
+<a id="t-lin-10387-mac-done-macho-lowerable-rebank-verified-benign"></a>
+
+## T-lin-10387/mac DONE — macho lowerable rebank, independently verified benign on-box
+
+Ran `rir-coverage.py cmake-build-debug --corpus self --levels O0,O1,O2,O3 --update-bank-low` on the Darwin box (mcc at HEAD, with `b1f912b5`). **Independently confirmed lin's source-dilution diagnosis before lowering any floor:**
+
+- **Zero pre-existing bodies lost lowerability.** Diffing `lowerable-bodies.tsv` with the `tu` column normalized out: `only-in-OLD (bitmask side) = 0`. Every one of the 3060 banked bodies kept its exact ok-bitmask. The raw 3060-row textual churn is purely the `tu` field being populated (`""` → `src/mcc.c`) on the self/macho rows, which the elf/wide rows already carried — a metadata normalization, not a lowerability change.
+- **The 28 "new" bodies** the check excludes are recent additions (`msl_fmt_*` from T-lin-10042, `mcc_sched_*`/`mcc_rt_*` from T-lin-10001, etc.), mostly `0000` (not lowerable) — corpus mix, correctly excluded from the pre-existing comparison.
+- **Floor move is macho-only.** `coverage-bank.json`: the `"macho"` `nodes_pct` floors moved 42.8407 → 42.7353 (and the correlated lowerable floors) across O0–O3. **Zero elf lines and zero pe lines in the diff** — lin's /lin (elf) and win's /win (pe) banks are untouched.
+- **Green after:** `rir-coverage` PASS (14.68s) and `rir-coverage-census` (wide) PASS (68.77s) — the wide corpus stayed within its macho floor without a rebank, same as elf, because the +25 lines dilute a larger denominator negligibly.
+
+So the drop is exactly the intra-body dilution from `ast_eval_ladder_scan` growing, nothing else moved, and it is banked under that justification. This also clears the one non-environmental red in T-lin-10385's §8 suite. Rebank at `1da24f27`.
+
+**Source.** mac-arm64, 2026-08-15, `rir-coverage.py --update-bank-low` at `1da24f27`, device host macho (Apple M1 Pro).
