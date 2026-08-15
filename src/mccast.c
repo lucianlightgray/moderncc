@@ -15118,7 +15118,7 @@ static void ast_thr_open(void) { MCC_TRACE("enter\n");
 	ast_thr_sec = mcc_mallocz(sizeof(AstThrSec) * AST_THR_MAXSEC);
 	if (!ast_thr_sec)
 		{ MCC_TRACE("br\n"); return; }
-	setvbuf(ast_thr_fp, NULL, _IOLBF, 0);
+	setvbuf(ast_thr_fp, NULL, _IOLBF, BUFSIZ);
 	ast_thr_on = 1;
 }
 
@@ -15389,7 +15389,7 @@ static void ast_adump_open(void) { MCC_TRACE("enter\n");
 	ast_adump_fp = (p[0] == '-' && !p[1]) ? stderr : fopen(p, "a");
 	if (!ast_adump_fp)
 		{ MCC_TRACE("br\n"); return; }
-	setvbuf(ast_adump_fp, NULL, _IOLBF, 0);
+	setvbuf(ast_adump_fp, NULL, _IOLBF, BUFSIZ);
 	p = getenv("MCC_ARENA_DUMP_ICAP");
 	if (p && p[0]) { MCC_TRACE("br\n");
 		unsigned v = (unsigned)strtoul(p, NULL, 10), q = 8;
@@ -15617,7 +15617,7 @@ static void ast_slc_open(void) { MCC_TRACE("enter\n");
 	ast_slc_fp = (p[0] == '-' && !p[1]) ? stderr : fopen(p, "a");
 	if (!ast_slc_fp)
 		{ MCC_TRACE("br\n"); return; }
-	setvbuf(ast_slc_fp, NULL, _IOLBF, 0);
+	setvbuf(ast_slc_fp, NULL, _IOLBF, BUFSIZ);
 	ast_slc_on = 1;
 }
 

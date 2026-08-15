@@ -434,7 +434,7 @@ def fmt_index(fn):
 AST_BB = 0
 AST_INVOKE = 11
 AST_NONE = 0xFFFFFFFF
-SNFAM = ("snprintf", "vsnprintf", "sprintf")
+SNFAM = ("snprintf", "vsnprintf", "sprintf", "_snprintf", "_vsnprintf")
 
 ARENA_TU = "src/mcc.c"
 ARENA_BANK = "tests/fmt/arena-census-bank.json"

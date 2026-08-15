@@ -14753,7 +14753,7 @@ static void lcen_open(void) { MCC_TRACE("enter\n");
 	lcen_fp = (p[0] == '-' && !p[1]) ? stderr : fopen(p, "a");
 	if (!lcen_fp)
 		{ MCC_TRACE("br\n"); return; }
-	setvbuf(lcen_fp, NULL, _IOLBF, 0);
+	setvbuf(lcen_fp, NULL, _IOLBF, BUFSIZ);
 	lcen_on = 1;
 }
 
@@ -14807,7 +14807,7 @@ static void dcen_open(void) { MCC_TRACE("enter\n");
 	dcen_fp = (p[0] == '-' && !p[1]) ? stderr : fopen(p, "a");
 	if (!dcen_fp)
 		{ MCC_TRACE("br\n"); return; }
-	setvbuf(dcen_fp, NULL, _IOLBF, 0);
+	setvbuf(dcen_fp, NULL, _IOLBF, BUFSIZ);
 	dcen_on = 1;
 }
 
