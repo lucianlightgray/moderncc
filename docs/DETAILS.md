@@ -45283,3 +45283,54 @@ The §8 per-task gate for the [asm double-assembly fix](#t-lin-10375-10378-fixed
 **`rir-nofb-probe-self` passed, at 661 s.** [Its red](#t-lin-10071-mechanism-the-cell-writes-and-executes-three-binaries-in-the-shared-build-directory) in the two `-j 6`/`-j 8` family runs did not reproduce here at `-j 12`, which is the third data point for the shared-directory reading and the second time it has been green inside a full suite while red inside a filtered one.
 
 **Source.** lin-x64, 2026-08-15, code at `5113bfc5` + `0d94d189`.
+<a id="t-lin-10042-slice-6-msl-frame-statement-arm"></a>
+
+## T-lin-10042 slice 6 — the MSL frame/statement arm: TODO.md §5 stage M2 lands on Metal
+
+**Type** `[X]` mac-arm64 — **State** slice 6 DONE at `0f936e40` — parent stays IN_PROGRESS
+
+`mcc_slice_frame_kernel_build`'s Metal stub ("frame stores not emitted yet")
+is replaced by a full MSL statement emitter — `mcc_slice_msl_stmt/run/guard/
+seq` in `mccslice.h`, the structured-source twin of the ~480-line SPIR-V
+frame emitter. The translation insight that keeps it small: every OpPhi in
+the spv arm (definedness, not-returned, return-value — per if-merge, per
+loop header, per early-return guard) becomes one of three mutable MSL
+variables declared at kernel start (`fdef`/`fnret`/`frv`), bridged to the
+SSA-id expression world by seeding `m->def` from `fdef` before each
+statement's expressions and flushing it back after. Statement coverage
+mirrors spv exactly: Return + the early-return guard chain (`if (fnret)`
+nesting), while/for/do loops with the `MCC_SLICE_TRIP_MAX` budget and the
+same over-budget definedness semantics (header-value comparison at exit,
+`d_exit` from the final condition evaluation), statement-if, INC/DEC,
+dyn-index stores (dense and ext-region), deref and arrow stores through the
+slice-5 region layer, and plain local/frame stores. Two store helpers joined
+`mccgpu.h`: `msl_store_live_dv` and the f64 bits-pair arm of
+`msl_store_live_v` (the twin of `spv_store_live_v`'s `spv_f64_pack` case —
+identity in the bits representation). `backend_has_frame_kernels()` in
+slicerun is now unconditionally 1.
+
+**TDD shape.** The flip landed first: with `backend_has_frame_kernels() = 1`
+and the old stub, slicerun went red with 15 failures across the frame suites
+("the frame run lowers to a device kernel" ×5 shapes, dispatch and
+slot-comparison checks behind each). With the emitter in, slicerun reports
+1466 checks (up from 1389 — the frame suites became live work), 0 failures,
+118 dispatches.
+
+**What went live on Metal.** `slice/frame` + `slice/frame-known-positive`
+and `slice/arrow` are real cells now, and `slice/effect` runs its device
+half; the whole-binary run still exits 77 while any suite is unsupported —
+that is the pre-existing all-suites semantics, and the per-suite cells are
+the registered gates. Still region-gated (`backend_has_regions()` = 0 on
+MSL): `slice/bytes`, `slice/deref`, `slice/ext`, `slice/hostimport`,
+`slice/fmt` — their kernels are slicerun's own spv-typed builders
+(`bytes_kernel_in`, `deref_kernel`, `subword_shared_kernel`, `hi_kernel`,
+the fmt engine) and several of them address the *input buffer* as a region,
+so the MSL port needs `MslRegion` to carry a buffer discriminator (memb via
+atomics, inb via plain per-lane read-modify-write) — that is the next
+slice, and the last M-stage (M4/M5) of the parity plan.
+
+**Verification (M1 Pro, Metal, at `0f936e40`).** `./slicerun`: 1466 checks 0
+failures; `ctest`: slice|census 122/122 (slice/frame, -known-positive,
+slice/arrow, slice/effect now live), gpu/ 17/17, treegate 13/13, jit 66/66.
+
+**Source.** mac-arm64, 2026-08-15, code at `0f936e40`.

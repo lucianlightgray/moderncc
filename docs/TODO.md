@@ -4,8 +4,13 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
+<<<<<<< Updated upstream
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T14:30Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10383   | 2026-08-15T14:45Z |
+=======
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T14:45Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10383   | 2026-08-15T14:40Z |
+>>>>>>> Stashed changes
 | win-x64   | Windows  | x64   | 50000–69999 | 50020   | 2026-08-15T14:25Z |
 
 ## Contracts — blocking, highest priority
@@ -14,8 +19,8 @@
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
 - [ ] T-lin-10042 [X] mac-arm64 — the Metal parity staged plan, WITH fp64 (2,200-3,400 lines)
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 59a62bf6 | TS: 2026-08-15T14:30Z
-      REF: DETAILS.md#t-lin-10042-slice-4-msl-runtime-index-loads | DEPS: — | Q: Q-lin-10009 ANSWERED | NOTE: human scheduled the fp64 variant; lands in slices each checkable by the per-value differential. SLICE 1 DONE 28ac8048 (f64 bits-pair). SLICE 2 DONE f5a04110 (six comparisons). SLICE 3 DONE 87f7b232 — fp64 half functionally complete: soft-float RTE binary64 +/-/*, mcc_gpu_f64() true on Metal, slicerun suite_f64 full certification native (3965 tuples bit-exact, denormals preserved, NaN = host rule). SLICE 4 DONE 6610f66d (runtime-index loads: real-corpus slice parity 712=712). SLICE 5 DONE 59a62bf6 (+repair ce235455) — THE METAL REGION ARM (= T-lin-10041’s subject): buffer(2) via device atomic_int, byte-addressed region load/store with atomic sub-word RMW, J3b range+align poison guards, ext-dynidx/deref/arrow loads in msl_expr, dispatch binds the resident window at index 2, mslgate --mem 64 lanes 0 bad + mutate-KP 64/64, new cells gpu/msl-mem-binding(+kp) registered in must-run + gate-contract with an intrinsic floor; gpu 17/17, slice|census 122/122, ci/gate-contract green, jit 66/66. REMAINING: the frame/statement arm (mccslice.h MSL twin of mcc_slice_spv_stmt/run/guard + flip backend_has_frame_kernels), then slicerun’s own spv-typed kernels (hi/fmt/region suites + backend_has_regions). Specs at the slice anchors
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 0f936e40 | TS: 2026-08-15T14:45Z
+      REF: DETAILS.md#t-lin-10042-slice-4-msl-runtime-index-loads | DEPS: — | Q: Q-lin-10009 ANSWERED | NOTE: human scheduled the fp64 variant; lands in slices each checkable by the per-value differential. SLICE 1 DONE 28ac8048 (f64 bits-pair). SLICE 2 DONE f5a04110 (six comparisons). SLICE 3 DONE 87f7b232 — fp64 half functionally complete: soft-float RTE binary64 +/-/*, mcc_gpu_f64() true on Metal, slicerun suite_f64 full certification native (3965 tuples bit-exact, denormals preserved, NaN = host rule). SLICE 4 DONE 6610f66d (runtime-index loads: real-corpus slice parity 712=712). SLICE 5 DONE 59a62bf6 (+repair ce235455) — THE METAL REGION ARM (= T-lin-10041’s subject): buffer(2) via device atomic_int, byte-addressed region load/store with atomic sub-word RMW, J3b range+align poison guards, ext-dynidx/deref/arrow loads in msl_expr, dispatch binds the resident window at index 2, mslgate --mem 64 lanes 0 bad + mutate-KP 64/64, new cells gpu/msl-mem-binding(+kp) registered in must-run + gate-contract with an intrinsic floor; gpu 17/17, slice|census 122/122, ci/gate-contract green, jit 66/66. SLICE 6 DONE 0f936e40 — the frame/statement arm (stage M2): mcc_slice_msl_stmt/run/guard in mccslice.h, phis become fdef/fnret/frv mutable vars, backend_has_frame_kernels unconditional; slicerun 1466 checks 0 failures, slice/frame(+kp)/arrow/effect now LIVE cells on Metal; slice|census 122/122, gpu 17/17, treegate 13/13, jit 66/66. REMAINING (last M-stage, M4/M5): slicerun’s own spv-typed kernels (bytes/deref/ext/hostimport/fmt) + backend_has_regions — needs MslRegion to carry a buffer discriminator (memb atomics vs inb per-lane RMW). Specs at the slice anchors
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
