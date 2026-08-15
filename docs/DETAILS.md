@@ -44525,3 +44525,84 @@ Worth a row of its own: build reproducibility is a property several other things
 Taken at the start of this session's full-suite run: `35982 …/GE-Proton10-34/files/bin/wineserver` — a **Steam Proton** wineserver, resident and foreign to this tree. Any `run-tier/*-win32` timeout in this run is attributable to 10073's recorded mechanism, and the row's diagnostic is now corroborated a third time. It does not retroactively explain the pre-reboot red, which remains unattributed and unattributable.
 
 **Source.** lin-x64, 2026-08-15, at suite start.
+
+<a id="t-lin-10064-root-caused-all-three-rir-parity-divergences-are-one-defect-inline-asm-is-assembled-twice"></a>
+
+## T-lin-10064 root-caused — all three `rir_parity` divergences are **one** defect: an inline-asm body is assembled twice, and re-assembly is not idempotent
+
+The investigation half of [Q-lin-10011's answer](#q-lin-10011-answer-divergences-become-tracked-investigation-and-fix-tasks). The three divergences the unarmed `EXTRA` was masking have three different verdict strings, sit in three different functions, and are the **same mechanism** seen through three different non-idempotent assembler operations.
+
+**Reproduced first, exactly as banked.** Arming the `EXTRA` by hand —
+`MCC_REPLAY_IR=1 MCC_RIR_FORCE=1 mcc -w -O0 -I <root> -DCC_NAME=CC_gcc -c tests/diff/full_language.c` —
+gives `[rir-total] fn=303 faithful=299`, with `rerror get_asm_string`,
+`runfaithful:reloc@-1 asm_local_statics` and `rdiverge:asmgen@41 asm_dot_test`. All three
+bodies live in `tests/diff/parts/legacy_meta.h`, and all three are inline asm.
+
+**The mechanism.** `ir_cap_asm` records the asm body's *text* and `ir_cap_asm_gen_code`
+records its operand/clobber block; both then execute the real thing, so the body is
+assembled once during capture. Verification replays the arena, and `IR_OP_ASM`'s replay
+(`src/mccircap.c:779`) calls `mcc_assemble_inline` on that same text **again**. Assembling
+a body twice is only safe if the body is a pure function of the assembler state it is
+handed. Any body that *mutates* that state — defines a symbol, assigns one, or names one
+the assembler must resolve by name — is not, and each way of mutating it produces a
+different verdict:
+
+| verdict | what the body does | minimal reproducer |
+| --- | --- | --- |
+| `rerror` | **defines a named label**; the second definition is a redefinition and the assembler longjmps out | `void f(void){ asm volatile("named: .long 0"); }` |
+| `runfaithful:reloc@-1` | **names a symbol resolved by name**, so replay creates a second symbol-table entry; code bytes identical, symbol table not | `void f(void){ static int s=41; asm("incl %0":"+m"(s)); }` |
+| `rdiverge:asmgen@N` | **forward-references a symbol a later body defines**; on the replay pass that symbol is already defined, so the reference encodes differently | `void f(void){ asm(".text; jmp p0"); asm(".text; p0=.; nop"); }` |
+
+**The contrast that proves it is double assembly and nothing else.** A *numeric* label is
+re-definable by gas design; a named one is not.
+
+```
+asm volatile("1: .long 0")      -> rfaithful
+asm volatile("named: .long 0")  -> rerror
+asm volatile(".Lloc: .long 0")  -> rerror
+```
+
+Same statement, same section, same operand count, same everything except whether
+assembling the text a second time is legal. Nothing about globality or section is
+involved: `.L`-prefixed and file-local names fail identically to `.globl`ed ones.
+
+**One of the three is not only a verification artefact, and this is the part worth
+raising.** The `runfaithful:reloc@-1` case leaks into the object that gets written.
+Compiling the four-line static reproducer:
+
+```
+plain     .symtab 5 entries:  ... 2: OBJECT LOCAL localint
+MCC_REPLAY_IR=1  .symtab 6 entries: ... 2: OBJECT LOCAL localint
+                                       5: NOTYPE GLOBAL UND  localint   <-- leaked
+```
+
+Replay re-assembles `incl <operand>`, the operand names the function-local static, and
+the assembler — which cannot see a function-local `Sym` by name — mints a fresh
+**undefined global** for it. It reproduces at `-O1` **without** `MCC_RIR_FORCE`, i.e. on
+the plain `MCC_REPLAY_IR=1` path rather than only under forced verification. Nothing
+references the leaked symbol so a link still succeeds today, but the object a user gets
+with replay on is not the object they get with it off, which is precisely the property
+the whole A/B exists to defend.
+
+**Why the corpus never caught it.** The bodies that trigger it are all in
+`full_language.c`, reached only through the `EXTRA`, which
+[has never been armed](#carried-forward-from-archived-write-ups--open-residues-2026-08-10) because every registration site
+passes it without the `-I` it needs and the loop `continue`s on the non-zero `_rc`. The
+`tests/exec` corpus proper contains no inline-asm body that mutates assembler state, so
+the 100% bar was met over a subject with the whole class removed.
+
+**Fix direction, and it is shared.** Do not assemble the body twice. Either (a) capture the
+*emitted bytes and relocations* of an asm body as an opaque blob and replay those rather
+than the text, which is what `IR_OP_ASM` already does for the operand half via
+`asm_gen_code`; or (b) snapshot and restore the assembler state the body mutates — symbol
+table high-water mark, section stack, location counters — around the replayed
+`mcc_assemble_inline`. (a) is smaller and cannot drift; (b) preserves the property that
+replay re-derives rather than re-plays, which is the point of the verification. The three
+tasks below are filed per divergence as the answer requires, and each names the reproducer
+that must go green; whoever takes the first should expect to close all three.
+
+**Arming the 63 `EXTRA` cells stays blocked on these**, exactly as the answer scoped it:
+the bar is 100%, and it is not met until all three are fixed.
+
+**Source.** lin-x64, 2026-08-15; reproduced, narrowed to three one-to-three-line cases and
+proved by the numeric-vs-named contrast, on this box.
