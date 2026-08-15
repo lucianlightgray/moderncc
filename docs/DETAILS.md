@@ -42652,3 +42652,21 @@ Nothing here is triaged beyond shape, and the count will fall to 27 once the thr
 **Reopen condition.** None. If a future change breaks arm64 self-host, the `woa/**` hook catches it, which is the point of having built it.
 
 **Source.** Runs 31856662452 and 31857205309 on `woa/bootstrap`, lin-x64, 2026-08-15.
+
+<a id="t-lin-10370-win-x64-correlation-of-the-arm64-residue"></a>
+
+### T-lin-10370 — win-x64 correlation of the arm64 residue (which of the 30 are PE-wide vs arm64-only)
+
+win-x64 ran the flagged programs natively on **x86_64 Windows** (`cmake-release`, vcvars ctest) to split lin's shape-only triage by platform. Result:
+
+| lin's arm64 cell(s) | on x86_64-win32 | reading |
+| --- | --- | --- |
+| `exec-search*/floating_point` (emitsize, emitiso) | **FAIL** (2 cells) | **PE-target-wide** — identical to [T-win-50003](#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged) Bucket B |
+| `exec-search*/math_library` (emitsize, emitiso) | **FAIL** (2 cells) | **PE-target-wide** — same defect |
+| `exec-search*/translation_limits` (all 17 variants) | **PASS 100%** | **arm64-specific** |
+| `exec-gatecombo/bitfield_width64` (SEGFAULT on arm64) | **PASS** (all 25 variants) | **arm64-specific** crash |
+| `exec-search-threads/errors_and_warnings` (SEGFAULT on arm64) | **PASS** (all 24 variants) | **arm64-specific** crash |
+
+**What this buys T-lin-10370.** Two of the eight `exec-search*` residue cells (`floating_point`, `math_library`) are **not arm64 bugs** — they are the same PE-AOT opt-search codegen defect that hits x86_64-win32, bisected under T-win-50003 to a size-optimized `rel8` branch that is not relaxed once the function body crosses a size threshold (JIT and every non-search opt level are clean; lin's Linux suite is green, so it is PE-specific, not arch-specific). **One fix — the emit-size branch-relaxation fix — closes those four cells on both arches.** The remaining exec/search residue (`translation_limits` ×all, and the two segfaults `bitfield_width64`, `errors_and_warnings`) is genuinely arm64-backend-specific: it passes on x86_64-win32, so it wants the arm64 code path debugged (CI-only — no session has arm64 Windows hardware), not the emit-size fix. **Net: of the ~27 post-merge residue, 4 collapse into one already-bisected PE-wide defect; the 2 segfaults + translation_limits are the arm64-only work.**
+
+**Source.** win-x64 native ctest, 2026-08-15: `bitfield_width64`/`errors_and_warnings`/`translation_limits` 100% pass; `floating_point`/`math_library` fail only under `exec-search-emitsize` and `exec-search-emitiso`. Correlates lin's runs above against [T-win-50003](#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged).
