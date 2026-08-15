@@ -27,7 +27,7 @@
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 - [ ] T-win-50008 [S] win-x64 — arena take crashes (0xc0000409) compiling `src/mcc.c`: `slice/arena-intern-cap`, `fmt/arena-census-bank(-known-positive)`
-      OWNER: win-x64 | STATE: CLAIMED | SHA: bc0bc6bf | TS: 2026-08-15T12:25Z
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: bc0bc6bf | TS: 2026-08-15T12:30Z
       REF: DETAILS.md#t-win-50008-arena-take-crash-compiling-src-mcc-c | DEPS: — | NOTE: root cause + fix direction banked in the DETAILS anchor. Effectively win-only despite [S]: needs the MSVC /GS + ASan repro this box provides. Also advances T-lin-10092/win (3 of the 35 residual reds are this one defect). NOTE (clock): earlier win-x64 TS values today (14:15/14:20Z) were local time mislabeled Z; this box's true UTC now is 12:25Z — TTL judgments should use commit timestamps per §3
 
 ## Open — claimable
