@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T14:55Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10383   | 2026-08-15T15:05Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10383   | 2026-08-15T15:10Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50020   | 2026-08-15T14:25Z |
 
 ## Contracts — blocking, highest priority
@@ -19,6 +19,9 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-lin-10073 [X] lin-x64 — the two wine `run-tier` cells are load-sensitive
+      OWNER: lin-x64 | STATE: CLAIMED | SHA: 1d217bda | TS: 2026-08-15T15:10Z
+      REF: DETAILS.md#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver | DEPS: — | NOTE: MEASURED 2026-08-14 — mechanism is a FOREIGN wineserver (not CPU, not -j width; serial retry at loadavg 7 still timed out). Corroborated 2026-08-15 under a 24-way compile load at loadavg 24.5: 15/15 rounds pass, both cells 7.19s/2.85s with no wineserver resident. Run `pgrep -a wineserver` before attributing either cell to a commit
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
@@ -234,9 +237,6 @@
 - [ ] T-lin-10071 [S] `rir-nofb-probe-self` is flaky and the mechanism is not known
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10071-mechanism-the-cell-writes-and-executes-three-binaries-in-the-shared-build-directory | DEPS: — | NOTE: MECHANISM NARROWED 2026-08-15. Not a wrong answer and not a timeout: FileNotFoundError executing <bdir>/mcc-nofb-probe. rir-coverage.py builds THREE fixed-name binaries straight into CMAKE_BINARY_DIR (:1199/:1214/:1225), executes them, and removes all three at the end (:1241) — a directory every other cell and the build fixtures write to concurrently. Green standalone x3 with identical numbers (71 bodies, 66 benign, 0 MISCOMPILE, 5 vacuous), green in the full suite at -j 12, red twice in a -j 6/-j 8 family run at the same early position. FIX: give the cell a private working dir; it already uses a tempdir for its objects, only the executables were put somewhere shared. NOT YET PROVED that concurrency is what removes the file — that is inference from four runs, and the confirming experiment is named at the REF
-- [ ] T-lin-10073 [X] lin-x64 — the two wine `run-tier` cells are load-sensitive
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver | DEPS: — | NOTE: MEASURED 2026-08-14 — mechanism is a FOREIGN wineserver (not CPU, not -j width; serial retry at loadavg 7 still timed out). Corroborated 2026-08-15 under a 24-way compile load at loadavg 24.5: 15/15 rounds pass, both cells 7.19s/2.85s with no wineserver resident. Run `pgrep -a wineserver` before attributing either cell to a commit
 - [ ] T-lin-10359 [X] lin-x64 — `slice/cref-oracle-*` stalls on five programs when the host GPU is busy
       OWNER: — | STATE: OPEN | SHA: d298af58 | TS: 2026-08-14T18:30Z
       REF: DETAILS.md#t-lin-10359-slicecref-oracle-stalls-on-five-programs | DEPS: —
