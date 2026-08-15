@@ -42670,3 +42670,43 @@ win-x64 ran the flagged programs natively on **x86_64 Windows** (`cmake-release`
 **What this buys T-lin-10370.** Two of the eight `exec-search*` residue cells (`floating_point`, `math_library`) are **not arm64 bugs** — they are the same PE-AOT opt-search codegen defect that hits x86_64-win32, bisected under T-win-50003 to a size-optimized `rel8` branch that is not relaxed once the function body crosses a size threshold (JIT and every non-search opt level are clean; lin's Linux suite is green, so it is PE-specific, not arch-specific). **One fix — the emit-size branch-relaxation fix — closes those four cells on both arches.** The remaining exec/search residue (`translation_limits` ×all, and the two segfaults `bitfield_width64`, `errors_and_warnings`) is genuinely arm64-backend-specific: it passes on x86_64-win32, so it wants the arm64 code path debugged (CI-only — no session has arm64 Windows hardware), not the emit-size fix. **Net: of the ~27 post-merge residue, 4 collapse into one already-bisected PE-wide defect; the 2 segfaults + translation_limits are the arm64-only work.**
 
 **Source.** win-x64 native ctest, 2026-08-15: `bitfield_width64`/`errors_and_warnings`/`translation_limits` 100% pass; `floating_point`/`math_library` fail only under `exec-search-emitsize` and `exec-search-emitiso`. Correlates lin's runs above against [T-win-50003](#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged).
+<a id="t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so"></a>
+
+## T-lin-10001 slice 3b — the teardown is bounded, and the cell that measures it now says which
+
+Completes L2′ and closes [T-lin-10031](#t-lin-10031-the-jit-teardown-is-unbounded-above)'s subject. The four pieces land **together**, for the reason slice 3a stated: the behaviour change and the assertion that measures it cannot be split across commits without leaving a window where the cell passes because it asks less.
+
+**1. `mccjit_sd_job_heavy` becomes four ticks** — recompile / retire / nap / sd_tick — carried across calls in `job->resume`. It remains the only multi-tick body, so no *production* job can be abandoned part-done.
+
+**2. The worker checks quit before each tick, not after.** A job whose loop breaks on quit is counted as **abandoned** rather than run. Ticks that complete while quit is set are counted separately, which is what makes the bound measurable rather than asserted.
+
+**3. `mccjit_pool_shutdown` discards the backlog.** Jobs still queued when teardown begins are freed and counted as **discarded**. Without this the queue-empty tag would break, and more to the point a bounded teardown that leaves an unbounded queue behind has not bounded anything.
+
+**4. The assertions change, and this is the part that needed arguing.** The old cell asserted `done == accepted` — *shutdown drains every accepted job*. That statement **is** the unbounded-teardown property written as a requirement; it and "shutdown is bounded above" cannot both hold. It is replaced by two:
+
+| tag | assertion |
+| --- | --- |
+| `jobs-drained` | **conservation** — `ran + abandoned + discarded == accepted`, and both `ran >= 1` and `abandoned >= 1`. Nothing is lost or double-counted, and the teardown genuinely happened *mid-flight* |
+| `teardown-bounded` (new) | `quit_seen && ticks_after_quit <= nworkers` — once quit is set each worker completes **at most one more tick** |
+
+`qsbr-reclaimed` also changes from `reclaimed == heavy` to `reclaimed == retired`: with jobs abandoned before their retire tick, the number of pages actually retired is no longer the number of jobs enqueued, and comparing against the enqueue count would have been comparing against a number the run no longer produces.
+
+**Measured, on this box:**
+
+```
+jobs-drained:     ran=4 abandoned=81 discarded=0 accepted=85   OK
+teardown-bounded: quit-seen=1 ticks-after-quit=4 workers=4     OK
+qsbr-reclaimed:   nlimbo=0 reclaimed=4 leaked=0 retired=4      OK
+```
+
+`ticks_after_quit == nworkers` exactly — the bound sitting on its limit, one in-flight tick per worker, which is the tightest it can be without dropping work already started.
+
+**The empty-subject trap this slice walked into, and out of.** The first working version reported `ran=0 abandoned=70`: with four-tick jobs, the cell's single 1 ms nap before `mccjit_shutdown()` meant *nothing* ever completed, and `qsbr` had one page to reason about. Every assertion passed. That is the failure this tree exists to refuse — a green over a subject that had emptied — and it passed *because* the change worked. The fix is a bounded progress wait (`MCCJIT_SD_PROGRESS` 4 jobs, `MCCJIT_SD_PROGRESS_SPINS` 500 ms ceiling) before teardown, plus the `ran >= 1 && abandoned >= 1` clause that makes an empty subject a failure rather than a pass.
+
+**The known-positive is preserved, and that is the load-bearing check.** Under `MCC_JIT_SHUTDOWN=0` the drain is disabled and **all seven** `want[]` tags must fire, proving none is inert. They do, including both changed ones: `jobs-drained` fails because `abandoned == 0` breaks conservation, and `teardown-bounded` fails because `quit_seen == 0`. Neither new assertion can be satisfied by a pool that never shuts down, which is precisely what a weakened assertion would have allowed.
+
+**Verification.** `ctest -R '^(trace-gate-invariant|schema-gate-invariant|jit/|slice/(task|sched|work|cpu|thread)|libtest|mcctest)'` **85/85**; `ctest -R '^exec/'` 353/353; `ctest -R '^(smoke/|exec-search/|cli/)'` 686/686; `ctest -L treegate` 12/12.
+
+`fmt/census-bank` went red and was re-banked with the reason, per its own instruction: the new and reworked messages add one `snprintf` site in `mccjit_embed.c` (484 → 485) and six specifiers (258 → 264 — three in the new `teardown-bounded` message, two in the reworked `jobs-drained`, one in `qsbr-reclaimed`), with `refused_budget` 12 → 13. The gate caught an unexplained board figure exactly as designed.
+
+**Source.** Implemented on lin-x64, 2026-08-15.
