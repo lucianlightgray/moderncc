@@ -5889,6 +5889,18 @@ if(MCC_BUILD_TESTS)
                         LABELS "native\;stratsweep\;stratsweep-full")
                 endif()
             endforeach()
+        else()
+            # gate-contract manifest gates registered only in this UNIX branch need
+            # a host-skip twin so they read as host-skipped (not "declared but not
+            # registered") on non-POSIX targets such as PE/Win32. See T-win-50001.
+            mcc_skip_test("flagsweep/dev-gate" "the flagsweep dev-gate needs a POSIX host build")
+            mcc_skip_test("flagsweep/dev-gate-known-positive" "the flagsweep dev-gate needs a POSIX host build")
+            mcc_skip_test("optfire/labeladdr" "the optfire labeladdr gate needs a POSIX host build")
+            mcc_skip_test("optfire/labeladdr-known-positive" "the optfire labeladdr gate needs a POSIX host build")
+            mcc_skip_test("optfire/asm-replay-recover" "the optfire asm-replay-recover gate needs a POSIX host build")
+            mcc_skip_test("optfire/asm-replay-recover-known-positive" "the optfire asm-replay-recover gate needs a POSIX host build")
+            mcc_skip_test("optlevel/torture-differential" "the optlevel torture-differential gate needs a POSIX host build")
+            mcc_skip_test("optlevel/torture-differential-known-positive" "the optlevel torture-differential gate needs a POSIX host build")
         endif()
 
     file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli/cases.h" _cli_clines
@@ -8063,6 +8075,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(run-parity-arm64 PROPERTIES
             FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT"
             SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 1800 ENVIRONMENT "MCC_CROSS_DIR=${MCC_CROSS_DIR}")
+    else()
+        # gate-contract manifest gates registered only in this UNIX branch need a
+        # host-skip twin so they read as host-skipped (not "declared but not
+        # registered") on non-POSIX targets such as PE/Win32. See T-win-50001.
+        mcc_skip_test(jit/kgc-effect-parity "the JIT kgc-effect parity gate needs a POSIX host build")
+        mcc_skip_test(jit/kgc-effect-parity-known-positive "the JIT kgc-effect parity gate needs a POSIX host build")
+        mcc_skip_test(jit/bind-local "the JIT bind-local gate needs a POSIX host build")
+        mcc_skip_test(jit/bind-local-known-positive "the JIT bind-local gate needs a POSIX host build")
     endif()
 
     mcc_cross_cc(riscv64 _xcc_riscv64 _xfix_riscv64)
@@ -9081,6 +9101,7 @@ if(UNIX)
         FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
 else()
     mcc_skip_test("ast/eval-binop-oracle" "the binop oracle needs a POSIX host build")
+    mcc_skip_test("ast/eval-binop-oracle-known-positive" "the binop oracle needs a POSIX host build")
 endif()
 
 # tools/c2_sweep.sh totals the per-body Replay-IR counters over every .c under
