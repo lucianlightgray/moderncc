@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T00:55Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10365   | 2026-08-15T01:35Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10365   | 2026-08-15T01:55Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50003   | 2026-08-15T00:22Z |
 
 ## Contracts — blocking, highest priority
@@ -17,8 +17,8 @@
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 86a2d7e5 | TS: 2026-08-15T00:52Z
-      REF: DETAILS.md#t-lin-10001-slice-2-the-optimizer-thread-becomes-a-task | DEPS: — | NOTE: slice 2 DONE (mcchv's optimizer is an MccTask; poll loop, stop flag and mutex gone) — next slice is L2′, the JIT pool worker
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T01:55Z
+      REF: DETAILS.md#t-lin-10001-slice-3-approach-l2-prime | DEPS: — | NOTE: slice 2 DONE; slice 3 (L2′) approach PUBLISHED — two of the contract's premises for it are stale (the pool joins; nothing is detached). Implementation held until win-x64's T-lin-10092/win suite number lands
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
