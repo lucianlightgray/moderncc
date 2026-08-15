@@ -103,9 +103,6 @@
 - [ ] T-lin-10016 [S] `__int256` float conversions need an oracle before they need code
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10016-int256-float-conversions-need-an-oracle | DEPS: —
-- [ ] T-lin-10017 [S] A same-TU `call` in inline asm is resolved to a displacement instead of a relocation
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10017-a-same-tu-call-in-inline | DEPS: —
 - [ ] T-lin-10020 [S] i386 `R_386_TLS_GOTIE` gap, and the declined upstream `7f7845cd` (VT_VOID)
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10020-i386-r-386-tls-gotie-gap | DEPS: —
