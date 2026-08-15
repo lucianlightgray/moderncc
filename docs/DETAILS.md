@@ -43415,3 +43415,16 @@ Distinct from [green on the box that wrote it](#green-on-the-box-that-wrote-it),
 **Cheapest thing that would help**, recorded rather than built because it wants a design and not a patch: the cells that keep doing this (`optfire/*`, wine `run-tier`, the `-O13` strategy census, `flagsweep-exec`) could each print the one fact that makes their result interpretable — load average and whatever foreign process they contend with — the way [T-lin-10073's diagnostic](#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver) already prescribes `pgrep -a wineserver`. A red that carries its own environment is triaged in one reading instead of a re-run.
 
 **Source.** lin-x64 and mac-arm64, 2026-08-15.
+
+
+<a id="t-lin-10011-done-accept-fixture-landed-gcc-mode-per-q-lin-10004"></a>
+
+## T-lin-10011 DONE — the accept-forms fixture landed in gcc mode, per Q-lin-10004's answer
+
+The reject side was complete and arm64-confirmed at the one `gen_cast()` choke point ([status](#t-lin-10011-status-reject-side-complete-arm64-confirmed-sole-remainder-is-q-lin-10004)); the sole remaining DoD was the accept-forms fixture, which could not be written until Q-lin-10004 was *definitively* answered because `a[1]` flips with the mode. The human answered Mode (a) — **keep gcc's leniency, `a[1]` compiles** — so the fixture is written in gcc mode.
+
+**What landed (code, `4dda0e60`).** `tests/diagnostics/register_array_decay_accept.c` — a `register int a[4]` whose elements are stored and read back through every accepted decay surface: `*a`, `*(a + 1)`, and the subscripts `a[1]`/`a[3]`. Added to the compile-success orphan set in `CMakeLists.txt`, so it runs as `compile.register_array_decay_accept` and must compile `rc=0`. The task required the fixture to "carry both accepted forms and the `a[1]` case, whichever way Q-lin-10004 is answered" — it now does, in the gcc direction. `-R 'register_array_decay'` covers both sides: the accept fixture and the existing `diag.dg-error.register_array_decay` reject (`int *p = a;` → *address of register variable*).
+
+**Gates.** `compile.register_array_decay_accept` + `diag.dg-error.register_array_decay` both pass; `corpusgate` 6/6 (the added orphan does not move the corpus census), `treegate` 12/12, `docs/refs` green. The `*a`/`*(a+1)` mcc-vs-both-references divergence noted in the original task stays a documented Mode-(a) choice, not a defect — mcc matches gcc here, per the answer.
+
+**Source.** mac-arm64, 2026-08-15, code at `4dda0e60`; unblocked by Q-lin-10004's human answer.
