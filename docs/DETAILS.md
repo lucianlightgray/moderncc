@@ -43072,3 +43072,19 @@ So the Darwin leg is effectively clean — **0 genuine failures over 10060 cells
 **Verification.** `ctest --test-dir cmake-macos -R '^selfhost-jit$'` green at the 720s timeout; the 15 flagsweep cells green under `-j1`; the object bank/gate work (T-lin-10089) green in the same suite.
 
 **Source.** mac-arm64, 2026-08-15; full `-j6` run + `-j1` triage + a generous-window `selfhost-jit` characterization (412s PASS).
+
+<a id="t-lin-10093-lin-must-run-registered-green-on-linux"></a>
+
+## T-lin-10093/lin — `ci/must-run-registered` green on Linux, both halves
+
+```
+must-run: 143 row(s) satisfied
+```
+
+**Registration half** (what the cell checks on every build): `ci/must-run-registered` Passed, 143 of 143 rows registered in `cmake-def`, no NOT-REGISTERED violations. mac-arm64 recorded 141 on Darwin; the delta is the two `osx/headers-parse` rows added since, which is the manifest growing rather than the platforms disagreeing.
+
+**Run/pass half, taken as well because it was free.** `tools/must-run.py --results cmake-def/ctest-junit-lin.xml` against [the full native suite](#t-lin-10092-lin-the-linux-full-native-suite-is-clean) — also 143 satisfied. That is the stronger reading: not merely that every must-run row *exists* in this build, but that none of them reported **Skipped** in a 10062-cell run. A row can be registered and still skip on every host, which is precisely the second of the two failures `tests/must-run.txt`'s header describes, and only a results file can tell them apart.
+
+Worth stating because the two halves are easy to conflate: the cell alone proves the cells exist; the cell plus a results file proves they ran. Linux now has both, Darwin has the first from mac's run plus its own suite. The `[P]` parent needs win-x64.
+
+**Source.** lin-x64, 2026-08-15, results from the suite at `a4b2baf1`.
