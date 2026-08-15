@@ -43203,3 +43203,30 @@ So the mechanism that "freezes o0_ab.sh's gated half" was already un-frozen by t
 **Gates.** `src/` clean (0); `ast/o0-baseline-gated` + `-known-positive` green; `treegate` 12/12. Docs-only close (the code fix predates this task's OPEN state); no bank moved, so no corpusgate needed.
 
 **Source.** mac-arm64, 2026-08-15, verified at `d89e8af0` (no code change; premise resolved at `a55c0a07`).
+
+<a id="t-lin-10008-done-the-c16-smoke-arm-and-what-it-found"></a>
+
+## T-lin-10008 DONE — the C16 smoke arm, and the two things it found
+
+mac-arm64 landed the code half (`d9187712`): the reject at `src/mccgen.c:8678` was conservative, and `_Complex _Float16` now parses and computes. The smoke half came here because Darwin structurally cannot host it — smokerun adjudicates against the **host compiler**, and Apple clang emits a `__mulhc3` libcall that the macOS runtime does not ship. Confirmed on this box: gcc 15.3.0 compiles and links `_Complex _Float16` arithmetic, and `libgcc` defines the symbol.
+
+**The arm** (`tests/smoke/fcases.h`): `SMC_HAVE_C16` guarded on `!defined(__APPLE__) && defined(__FLT16_MANT_DIG__)`, then `SMC_CTY_C16`, the enum tag, `SMC_MKFN(C16, _Float16)`, the `smc_run` arm, and C16 entries in `smc_ftag[]` and `smc_type_name[]`. The tag is appended rather than inserted, so existing tag indices do not move.
+
+**Two decisions that needed checking before they were safe.**
+
+*The digest is not a banked constant.* `smc_sweep` folds every tag into one `*digest`, so adding C16 moves it — but `smokerun.c:817` compares that digest against **`-O0`'s own digest from the same run** ("the optimizer changed a result"), not against a committed value. A per-platform tag count is therefore fine, and Darwin's guarded-off build compares against its own baseline.
+
+*`--min-cases` was deliberately NOT raised.* Linux now reports 13,495,805 value-cases against a floor of 12,800,000, and raising the floor to match is the obvious ratchet move — and would **red Darwin**, where the arm is compiled out and the count is lower. That is precisely the [green-on-the-box-that-wrote-it](#green-on-the-box-that-wrote-it) class. A shared floor must sit at or below the minimum across platforms.
+
+**What the arm found, which is the point of putting it on a host with a reference.** Eight new divergence categories, and no new defect class:
+
+- **`csweep.C16.{CDIV,CDIVSEL}` — `diverge-both`.** Identical in kind to the C32 and C64 rows [note 5](#) already carries: Annex G recovery on an infinite or NaN component is optional, gcc and clang share one libgcc, mcc keeps its own. That is [Q-lin-10012](QUESTIONS.md)'s subject, whose recorded answer is to bank the divergence with the reasoning. **Scope measured, not assumed:** six ordinary divisions under gcc-15, gcc-15 `-fexcess-precision=16`, and mcc are bit-identical, so the divergence is confined to inf/NaN recovery.
+- **`csweep.C16.{CADD,CMULADD}` — `diverge-one`, and this is genuinely new.** mcc agrees with clang-22; **gcc-15 differs from both**. At C32/C64 the two references agree *because* both route complex arithmetic through the same libgcc. At `_Float16` they do not — the operations are inlined rather than called — so each compiler's own evaluation choice becomes visible and the references stop agreeing with each other. mcc siding with clang is not mcc choosing a side; it is mcc's documented "keep the intermediate at `_Float16`" behaviour coinciding with clang's.
+
+**A ratchet moved and was attributed rather than bumped.** `replay-fallback:len` rose 2 → 3. An A/B settles it: with the arm compiled out the `len` set is `{sm_run, smw_run}` = 2, exactly the banked pair; with it in, `smc_run` joins at `blen=12567`, over the RIR replay length limit — the fourth `SMC_BODY` expansion lengthened the function past it. A `len` fallback is the designed safety valve, not a wrong answer, and the function is still adjudicated against the host reference.
+
+**One hazard worth flagging in the tooling.** `smokerun --rebank` regenerates `tests/smoke/bails.txt` from scratch and **destroys the file's 154-line header** — every numbered note, including the ones the file's own doctrine says must be read before a count is banked. The rebank was reverted and all changes hand-applied. Anyone re-banking that file should diff it before committing.
+
+**Verification.** `ctest -R '^smoke/'` 12/12; `ctest -R '^(smoke/|exec/|ci/|osx/)'` **370/370**.
+
+**Source.** Code half mac-arm64 at `d9187712`; smoke half lin-x64, 2026-08-15.

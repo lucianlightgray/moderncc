@@ -174,7 +174,18 @@ enum {
 #define SMC_CTY_C64 double
 #define SMC_CTY_C80 long double
 
+#if !defined(__APPLE__) && defined(__FLT16_MANT_DIG__)
+#define SMC_HAVE_C16 1
+#else
+#define SMC_HAVE_C16 0
+#endif
+
+#if SMC_HAVE_C16
+#define SMC_CTY_C16 _Float16
+enum { SMC_T_C32, SMC_T_C64, SMC_T_C80, SMC_T_C16, SMC_T_COUNT };
+#else
 enum { SMC_T_C32, SMC_T_C64, SMC_T_C80, SMC_T_COUNT };
+#endif
 
 #define SMC_ROW(nm, TY, OP, AR, AI, BR, BI, WR, WI) \
 	{ nm, SMC_T_##TY, SMC_O_##OP, SM_FOLD_SKIP, \
@@ -1253,6 +1264,9 @@ static long smf_sweep(SmBits *digest)
 SMC_MKFN(C32, float)
 SMC_MKFN(C64, double)
 SMC_MKFN(C80, long double)
+#if SMC_HAVE_C16
+SMC_MKFN(C16, _Float16)
+#endif
 
 #define SMC_ARM_OPS(TAG, CTY) \
 	switch (op) { \
@@ -1304,9 +1318,18 @@ static void smc_run(int tag, int op, const double *v, long double *rr,
 	if (tag == SMC_T_C80) {
 		SMC_BODY(C80, long double)
 	}
+#if SMC_HAVE_C16
+	if (tag == SMC_T_C16) {
+		SMC_BODY(C16, _Float16)
+	}
+#endif
 }
 
+#if SMC_HAVE_C16
+static const int smc_ftag[] = {SMF_T_F32, SMF_T_F64, SMF_T_F80, SMF_T_F16};
+#else
 static const int smc_ftag[] = {SMF_T_F32, SMF_T_F64, SMF_T_F80};
+#endif
 
 #define SMC_CORPUS_N SMF_B_N
 
@@ -1350,7 +1373,11 @@ static long smc_sweep(SmBits *digest)
 	return n;
 }
 
+#if SMC_HAVE_C16
+static const char *const smc_type_name[] = {"C32", "C64", "C80", "C16"};
+#else
 static const char *const smc_type_name[] = {"C32", "C64", "C80"};
+#endif
 
 static const char *const smc_op_name[] = {
 #define SMC_ON(a, op) #op,

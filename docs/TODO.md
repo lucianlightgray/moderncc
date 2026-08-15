@@ -5,18 +5,13 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T06:05Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T10:45Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T12:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
 ## Contracts — blocking, highest priority
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
-
-- [ ] T-lin-10008 [S] Parse `_Complex _Float16` (9 cells)
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: d9187712 | TS: 2026-08-15T05:40Z
-      REF: DETAILS.md#t-lin-10008-code-done-complex-float16-supported-smoke-cells-need-a-linux-host | DEPS: — | NOTE: CODE DONE (d9187712) — the mccgen.c:8678 reject was purely conservative; dropped it and _Complex _Float16 parses + computes, matching gcc-16 EXACTLY (add/mul/div incl. the half-rounded 4.3984-0.7998i, function ABI, sizeof=4); 155/155 complex+smoke green, treegate 12/12. My earlier "paths exclude FLOAT16" worry was wrong — the complex machinery already handles it. REMAINING (the smoke "9 cells") is HANDED TO LIN: the smoke oracle's reference is the host compiler, and Apple clang emits a __mulhc3 libcall macOS runtime lacks, so the C16 arm can only build+adjudicate on Linux (libgcc has __mulhc3). Concrete plan in DETAILS
-
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 

@@ -138,14 +138,67 @@
 #    that reading was WRONG for F16.FSCALE, where 140 of the 160 are finite.
 #    Check all of them or check none.
 #
+#
+# 19. csweep.C16.* joins the complex rows, 2026-08-15, when T-lin-10008 added the
+#    `_Complex _Float16` arm. Eight new categories, and none is a new class --
+#    they are note 5's divergences at a third width, plus one thing note 5 could
+#    not have seen.
+#
+#    CDIV and CDIVSEL are diverge-BOTH, exactly as C32 and C64 already are:
+#    Annex G recovery on an infinite or NaN component is optional, gcc and clang
+#    share one libgcc implementation, and mcc keeps its own. Q-lin-10012 is the
+#    open question on adopting `__divdc3`-style division and its recorded answer
+#    is to bank the divergence with the reasoning; this is that, one type wider.
+#    Ordinary finite values agree bit-exactly -- six divisions checked against
+#    gcc-15 with and without -fexcess-precision=16 and against mcc, all three
+#    identical -- so the divergence is confined to the inf/NaN recovery, which
+#    is what note 5 says it is.
+#
+#    CADD and CMULADD are diverge-ONE, and THIS is new: mcc agrees with clang-22
+#    and gcc-15 differs from both. At C32 and C64 the two references agree with
+#    each other, because both route complex arithmetic through the same libgcc.
+#    At _Float16 they do not -- the operations are inlined rather than called --
+#    so each compiler's own evaluation choice becomes visible and the references
+#    stop agreeing. mcc siding with clang is not mcc picking a side; it is mcc's
+#    documented "keep the intermediate at _Float16" choice (note 1, item 22)
+#    happening to be what clang does here too.
+#
+#    WHAT WOULD MAKE THIS A DEFECT. A diverge-BOTH on CADD or CMULADD, or a
+#    C16 divergence on finite values. Neither holds today.
+# 18. `replay-fallback:len` rises 2 -> 3 on x86_64-linux, 2026-08-15, and the
+#    third one is `smc_run` in tests/smoke/fcases.h.
+#
+#    CAUSE, MEASURED NOT INFERRED. T-lin-10008 added a C16 arm to the complex
+#    sweep (`_Complex _Float16`, guarded `#if !defined(__APPLE__) &&
+#    defined(__FLT16_MANT_DIG__)`), which is a fourth `SMC_BODY` expansion
+#    inside `smc_run`. That pushes its body to blen=12567 and over the RIR
+#    replay length limit, so the replay falls back for that one function. An A/B
+#    settles the attribution rather than arguing it: with the arm compiled out
+#    the `len` set is {sm_run, smw_run} = 2, exactly the banked pair; with it in
+#    it is {sm_run, smw_run, smc_run} = 3.
+#
+#    WHY IT IS BANKED RATHER THAN FIXED. A `len` fallback is the designed safety
+#    valve, not a wrong answer -- the function is compiled by the non-replay
+#    path and its results are still adjudicated against the host reference,
+#    which is what found the arm correct in the first place. The row rose
+#    because the subject grew, which is the honest reading of "the size of what
+#    the digest was hiding".
+#
+#    WHAT WOULD MAKE THIS A DEFECT. A rise with no corresponding growth in the
+#    subject, or a `len` fallback in a function nobody lengthened. Splitting
+#    `smc_run` per tag would put it back under the limit and is worth doing if
+#    the replay coverage of that function is ever wanted; nothing needs it now.
+#
+#    NOT ON DARWIN. The bank is target-keyed (`bails-arm64-macos.txt`), the arm
+#    is compiled out there for want of `__mulhc3`, and that file keeps 2.
 #    WHY THEY ARE BANKED AS NUMBERS THAT CANNOT RISE. Neither cause can grow
 #    without something changing: the evaluation format is a documented choice
 #    pinned by note 1, and a NaN sign flip is what N30's fix already moved once.
 #    A rise here means a new category started masking points, which is the event
 #    this row exists to catch.
 
-O0 replay-fallback:len 2
-O1 replay-fallback:len 2
+O0 replay-fallback:len 3
+O1 replay-fallback:len 3
 O13 strat-dark:abs 1
 O13 strat-dark:bf 1
 O13 strat-dark:divmagic 1
@@ -161,9 +214,9 @@ O13 strat-dark:sra 1
 O13 strat-dark:sroa 1
 O13 strat-dark:tco 1
 O2 jit-not-baked:signature 183
-O2 replay-fallback:len 2
-O3 replay-fallback:len 2
-O4 replay-fallback:len 2
+O2 replay-fallback:len 3
+O3 replay-fallback:len 3
+O4 replay-fallback:len 3
 O4 slice-refused:all-undefined 15
 O4 slice-refused:no-static-type 515
 O4 slice-refused:unsupported-op 1
@@ -174,6 +227,10 @@ div diverge-both:bsweep.F16.FMULADD.fold 1
 div diverge-both:bsweep.F16.FMULADD.run 1
 div diverge-both:bsweep.F80.FSELMIXN.fold 1
 div diverge-both:bsweep.F80.FSELMIXN.run 1
+div diverge-both:csweep.C16.CDIV.fold 1
+div diverge-both:csweep.C16.CDIV.run 1
+div diverge-both:csweep.C16.CDIVSEL.fold 1
+div diverge-both:csweep.C16.CDIVSEL.run 1
 div diverge-both:csweep.C32.CDIV.fold 1
 div diverge-both:csweep.C32.CDIV.run 1
 div diverge-both:csweep.C32.CDIVSEL.fold 1
@@ -182,6 +239,10 @@ div diverge-both:csweep.C64.CDIV.fold 1
 div diverge-both:csweep.C64.CDIV.run 1
 div diverge-both:csweep.C64.CDIVSEL.fold 1
 div diverge-both:csweep.C64.CDIVSEL.run 1
+div diverge-one:csweep.C16.CADD.fold 1
+div diverge-one:csweep.C16.CADD.run 1
+div diverge-one:csweep.C16.CMULADD.fold 1
+div diverge-one:csweep.C16.CMULADD.run 1
 div diverge-both:f16.muladd.doubleround.den.run 1
 div diverge-both:f16.muladd.doubleround.run 1
 div diverge-both:f16.scale.doubleround.run 1
