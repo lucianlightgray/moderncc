@@ -122,8 +122,12 @@ static void test_output_obj(void) {
 		FILE *f = fopen(path, "rb");
 		unsigned char m[4] = {0};
 
-		ok = f && fread(m, 1, 4, f) == 4 &&
-				 m[0] == 0x7f && m[1] == 'E' && m[2] == 'L' && m[3] == 'F';
+		ok = f && fread(m, 1, 4, f) == 4;
+#ifdef _WIN32
+		ok = ok && m[0] == 0x64 && m[1] == 0x86;
+#else
+		ok = ok && m[0] == 0x7f && m[1] == 'E' && m[2] == 'L' && m[3] == 'F';
+#endif
 		if (f)
 			fclose(f);
 		remove(path);
