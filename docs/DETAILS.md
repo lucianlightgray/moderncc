@@ -46196,3 +46196,13 @@ No code change is owed: the one-line configure fix and the durable manifest guar
 **Non-blindness — an honest note.** Neutering the single `rir_docond=1` arm (`mccrir.c:3962`) did **not** reproduce the crash: the store is now emitted correctly by the default path even without the hold, so the hold/parking is layered robustness rather than the sole guard. A single-mechanism revert therefore does not trip the cell. The cell still exercises the exact replay-producer + no-fallback path the row's original measurement revert-proved as SIGSEGV-when-unfixed, so a full regression of condition-store emission is caught; it is a guard on the observable behaviour, not on one internal arm.
 
 **Source.** lin-x64, 2026-08-15, `main@8e5e55bf`; fix at `d76e5384`+`545ffdb0`+`82f255d8`.
+
+<a id="t-lin-10019-resolved-tls-threads-is-green-under-mcc-jit-fixed-by-the-run-jit-tls-work"></a>
+
+## T-lin-10019 resolved — `tls_threads` is green under `MCC_JIT=1`, fixed by the -run/JIT TLS work
+
+**Verified resolved-by-prior-work (lin-x64, 2026-08-15).** The row's exact verification — `ctest -R '^run-tier/x86_64$'` with `MCC_JIT=1` — now **passes**, and it is a genuine pass, not a tolerated one. `run-tier.sh` runs every `tests/run` subject under both `MCC_JIT=0` and `MCC_JIT=1` and diffs against the golden, with explicit `XFAIL` handling for "known -run TLS defect"; `ctest -V` shows `[x86_64] tls_threads: OK (MCC_JIT=0 == MCC_JIT=1 == expected)` and `[x86_64] tls: OK …` — **OK, not XFAIL**. So `tls_threads` produces the expected output under JIT with an active replay, which is exactly what the row said it did not.
+
+**What fixed it, and why the row read as unfixed.** The row asserted "all three cited lines are unchanged and nothing about it was ever fixed" (`mcc_jit_tls_slab`, the `mcc_run_pthread_create` binding under `run_tls_active`, `tls_setup_linux`). That is stale: `git log -S run_tls_active -- src/mccrun.c` shows the lines *did* change, via **`6e30d208`** *"feat(run): cross-platform TLS in the -run/JIT engine (unblocks item-1 threading)"* and **`26881521`** *"fix(run): seed TLS in threads the program starts, and wire i386's run slab."* Those landed as part of the item-1 threading rework ([T-lin-10001](#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so)'s neighbourhood), after this row was filed, and they are what make the JIT/replay TLS path correct. No code owed; closing on the row's own verification, now green.
+
+**Source.** lin-x64, 2026-08-15, verified at `main@54a90c33`; fix at `6e30d208`+`26881521`.
