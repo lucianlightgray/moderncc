@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T20:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:50Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T22:03Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T22:17Z |
 
 ## Contracts — blocking, highest priority
 
@@ -180,7 +180,7 @@
       REF: DETAILS.md#t-lin-10067-the-flag-sweep-corpus-has-no | DEPS: —
 - [ ] T-lin-10068 [S] A stage-2 build dir does not rebuild when a header changes
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10068-a-stage-2-build-dir-does | DEPS: —
+      REF: DETAILS.md#t-lin-10068-a-stage-2-build-dir-does | DEPS: — | NOTE: INVESTIGATED (win-x64 via WSL, NOT claimed) — the stated fix ("make mcc emit a depfile CMAKE_DEPFILE_FLAGS_C can consume") is a dead end: mcc ALREADY emits a correct gcc-style depfile (-MD -MT -MF, source+header lines), but CMake IDs mcc as `TinyCC` and its Ninja generator emits ZERO depfile rules for that id — CMAKE_DEPFILE_FLAGS_C/CMAKE_C_DEPFILE_FORMAT are ignored. FOUR bindings falsified (mid-CMakeLists set, -D cache, Compiler/TinyCC-C.cmake on MODULE_PATH, CMAKE_USER_MAKE_RULES_OVERRIDE). Real fix is CMake-side + invasive: force a depfile-supported compiler id (GNU-like) or a custom compile rule. Full diagnosis + next directions: DETAILS.md#t-lin-10068-a-stage-2-build-dir-does (Investigation 2026-08-15). Tree unchanged
 - [ ] T-lin-10069 [S] Fifteen "written as live, actually superseded" citations need re-checking or striking
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10069-fifteen-written-as-live-actually-superseded | DEPS: —
