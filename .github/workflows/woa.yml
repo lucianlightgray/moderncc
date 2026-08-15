@@ -1,0 +1,125 @@
+name: WoA
+
+on:
+  push:
+    branches: ['woa/**']
+  workflow_dispatch:
+
+concurrency:
+  group: woa-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: probe / windows-11-arm
+    runs-on: windows-11-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: runner facts (read them here rather than assume them in the tree)
+        shell: pwsh
+        run: |
+          Write-Host "== identity =="
+          Write-Host "OS              : $([System.Environment]::OSVersion.VersionString)"
+          Write-Host "PROCESSOR_ARCH  : $env:PROCESSOR_ARCHITECTURE"
+          Write-Host "PROCESSOR_ID    : $env:PROCESSOR_IDENTIFIER"
+          Write-Host "RUNNER_ARCH     : $env:RUNNER_ARCH"
+          Write-Host "cores           : $env:NUMBER_OF_PROCESSORS"
+          Write-Host "== toolchain presence =="
+          foreach ($t in 'cmake','ninja','python','python3','git','cl','clang','gcc') {
+            $c = Get-Command $t -ErrorAction SilentlyContinue
+            if ($c) { Write-Host ("{0,-8}: {1}" -f $t, $c.Source) }
+            else    { Write-Host ("{0,-8}: ABSENT" -f $t) }
+          }
+          Write-Host "== visual studio =="
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            $vsroot = & $vswhere -latest -property installationPath
+            Write-Host "VS at $vsroot"
+            $mscv = Join-Path $vsroot 'VC\Tools\MSVC'
+            if (Test-Path $mscv) {
+              foreach ($v in Get-ChildItem $mscv) {
+                foreach ($hostdir in Get-ChildItem (Join-Path $v.FullName 'bin') -ErrorAction SilentlyContinue) {
+                  Write-Host "  MSVC $($v.Name) host $($hostdir.Name): $((Get-ChildItem $hostdir.FullName -Directory | ForEach-Object Name) -join ', ')"
+                }
+              }
+            }
+          } else { Write-Host "vswhere ABSENT" }
+
+      - name: does this host execute ARM32 at all (decides whether arm-win32 has an executor, or only arm64-win32 does)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $sxs = Get-ChildItem 'C:\Windows\WinSxS' -Directory -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Name -match '^arm_' } | Select-Object -First 5
+          if ($sxs) { Write-Host "arm_ (ARM32) WinSxS entries present:"; $sxs | ForEach-Object { Write-Host "  $($_.Name)" } }
+          else      { Write-Host "no arm_ (ARM32) WinSxS entries -- ARM32 user mode looks absent" }
+          Write-Host "arm64 WinSxS sample:"
+          Get-ChildItem 'C:\Windows\WinSxS' -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^arm64_' } | Select-Object -First 3 |
+            ForEach-Object { Write-Host "  $($_.Name)" }
+
+      - name: set up MSVC dev shell (arm64)
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: arm64
+
+      - name: install ninja
+        shell: pwsh
+        run: choco install ninja -y --no-progress
+
+      - name: cl identity under the arm64 dev shell
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          cl 2>&1 | Select-Object -First 3
+          Write-Host "VSCMD_ARG_TGT_ARCH  = $env:VSCMD_ARG_TGT_ARCH"
+          Write-Host "VSCMD_ARG_HOST_ARCH = $env:VSCMD_ARG_HOST_ARCH"
+
+      - uses: ./.github/actions/ci
+
+      - name: mcc-ci builds and plans on this host
+        shell: bash
+        run: |
+          mcc-ci plan --job stage1-nightly | tr ',' '\n' | grep -i windows || true
+          echo "windows-arm64-msvc rows: $(mcc-ci plan --job stage1-nightly | grep -c 'windows-arm64-msvc' || true)"
+
+  stage1:
+    name: stage1 / windows-arm64-msvc
+    needs: probe
+    runs-on: windows-11-arm
+    timeout-minutes: 45
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - name: set up MSVC dev shell (arm64)
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: arm64
+      - name: install ninja
+        shell: pwsh
+        run: choco install ninja -y --no-progress
+      - uses: ./.github/actions/ci
+      - name: stage1 build (a 0xC0000005 here is T-lin-10087's finding, not an incident)
+        id: build
+        run: mcc-ci stage1 --host windows-arm64-msvc --out stage1/windows-arm64-msvc
+      - name: what landed
+        if: always()
+        run: |
+          echo "build outcome: ${{ steps.build.outcome }}"
+          ls -la stage1/windows-arm64-msvc 2>/dev/null || echo "no stage1 output"
+      - name: pack stage1 mcc (tar preserves the executable bit that upload-artifact drops)
+        if: steps.build.outcome == 'success'
+        run: tar cf stage1-windows-arm64-msvc.tar -C stage1 windows-arm64-msvc
+      - uses: actions/upload-artifact@v7
+        if: steps.build.outcome == 'success'
+        with:
+          name: stage1-windows-arm64-msvc
+          path: stage1-windows-arm64-msvc.tar
