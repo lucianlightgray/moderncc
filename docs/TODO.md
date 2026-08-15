@@ -38,6 +38,10 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
+- [ ] T-lin-10088 [X] win-x64 — vendor the exact `gcc-c-torture-execute` corpus for `pe/x-oracle`
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 534b4a08 | TS: 2026-08-15T14:55Z
+      REF: DETAILS.md#t-lin-10088-win-x64-vendor-the-exact-gcc | DEPS: — | NOTE: UNBLOCKED — the "no network" premise died today (winlibs + Vulkan SDK both fetched). Provisioning per the mac convention: host-local sparse gcc checkout, vendor/gcc-c-torture-execute junction, then pe/x-oracle over all 1,693 programs to confirm the W2 reconstructions with no new code
+
 ## Open — claimable
 - [ ] T-lin-10379 [S] `MCC_REPLAY_IR=1` changes 46 of 58 corpus objects at `-O1` and above
       OWNER: — | STATE: OPEN | SHA: 7ea9be08 | TS: 2026-08-15T14:05Z
