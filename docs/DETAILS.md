@@ -46023,3 +46023,15 @@ lin-x64's [T-lin-10384](#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-sca
 **Remaining for T-win-50015:** gap (b) — `exec/expressions/integer_promotion.c` stdout diverges under ms-mode (untriaged; diff the two `-mms-bitfields` binaries' stdout) — THEN reapply the recorded two-edit flip (`ms_bitfields = 1` under `MCC_TARGET_PE` in `mcc_new`, plus the `MCC_HOST_WIN32` variant of the pass-msstruct string), register `pe/bitfield-abi`, re-bank the win32 o0-baseline columns that move, and run the full native suite. The flip is what greens `pass-msstruct` and the msstruct half of `smoke/native`+`smoke/strats`.
 
 **Source.** win-x64, 2026-08-15, code `b420188b`.
+
+<a id="t-win-50015-gap-b-adjudicated-mcc-ms-mode-matches-msvc-bank-not-fix"></a>
+
+## T-win-50015 gap (b) ADJUDICATED — mcc's ms-mode matches MSVC; the pe/x-oracle divergence is a bank-not-fix
+
+**Adjudicated (win-x64, 2026-08-15).** Slice-1's second "gap" is not a defect. The one program `exec/expressions/integer_promotion.c` diverges under `-mms-bitfields` on exactly the `s.ull31` lines (`s.ull31`, `1?s.ull31:1`, `s.ull31<<1`, `+`/`-`/`~s.ull31`): mcc gcc-mode prints `signed`, mcc ms-mode prints `unsigned`. `s.ull31` is an `unsigned long long : 31` bit-field, and the test detects the promoted signedness at runtime via `(s) - 100 < 0`.
+
+**The reference settles it: `cl.exe` (MSVC 14.51) prints `unsigned` for `s.ull31`.** So mcc's ms-mode is CORRECT — it matches MSVC. mingw-gcc (and mcc gcc-mode) print `signed` because GCC promotes a bit-field by its WIDTH (31 bits fit in `int` → `int`), while MSVC promotes an extended-type bit-field by its DECLARED type's signedness (`unsigned long long` → unsigned). ISO C's bit-field integer-promotion rule (6.3.1.1) is specified only for `_Bool`/`int`/`signed int`/`unsigned int` bit-fields; a `long long` bit-field's promotion is implementation-defined, so MSVC≠GCC here is conforming on both sides.
+
+**Consequence.** This is the same shape as the banked f80 long-double rows (mcc matches the MSVC model, diverges from the mingw references' GNU model). When the T-win-50015 flip lands (`ms_bitfields = 1` default on PE), `pe/x-oracle`'s one `integer_promotion` divergence must be **banked as MSVC-conformance**, NOT fixed — changing mcc to print `signed` would make it match mingw but MISMATCH MSVC, which is the ABI the flip is chasing. Both slice-1 gaps are therefore cleared: (a) fixed (zero-width union sizing, `b420188b`), (b) adjudicated (bank-not-fix). Remaining is the mechanical flip slice.
+
+**Source.** win-x64, 2026-08-15; cl.exe 14.51 reference over `tests/exec/expressions/integer_promotion.c`.
