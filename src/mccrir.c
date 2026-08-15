@@ -3286,8 +3286,13 @@ static void rir_op_effect(const RirOp *ro) { MCC_TRACE("enter\n");
 		ast_set_sym(rir_arena, u,
 								(uint64_t)(unsigned)o->a0 | ((uint64_t)(unsigned)o->a1 << 32));
 		ast_set_fbits(rir_arena, u,
-									(uint64_t)(unsigned)o->vs_off |
-											((uint64_t)(unsigned)(o->vs_n > 0 ? o->vs_n : 0) << 32));
+									o->kind == IR_OP_ASM
+											? (uint64_t)(unsigned)o->rawrel_off |
+														((uint64_t)(unsigned)(o->rawrel_len > 0 ? o->rawrel_len
+																																	: 0)
+														 << 32)
+											: (uint64_t)(unsigned)o->vs_off |
+														((uint64_t)(unsigned)(o->vs_n > 0 ? o->vs_n : 0) << 32));
 		rir_stmt(u);
 		break;
 	}
@@ -6467,7 +6472,7 @@ static void rir_report(void) { MCC_TRACE("enter\n");
 					"unbal=%ld ovf=%ld jmpsv=%ld jmpsvfb=%ld shiftok=%ld shiftbad=%ld "
 					"shiftskip=%ld shiftopen=%ld arenafn=%ld arenanodes=%ld "
 					"leaf=%ld refill=%ld c2try=%ld c2skip=%ld c2ok=%ld c2bytes=%ld c2len=%ld c2err=%ld c2invalid=%ld "
-					"c2equiv=%ld c2unproven=%ld\n",
+					"c2equiv=%ld c2unproven=%ld asmraw=%d\n",
 					rir_tot_fn, rir_tot_faithful, rir_tot_ops, rir_tot_regions,
 					rir_tot_labels, rir_tot_jumps, rir_tot_fallback,
 					rir_tot_fallback_fn, rir_tot_fb_chain, rir_tot_fb_point,
@@ -6476,7 +6481,8 @@ static void rir_report(void) { MCC_TRACE("enter\n");
 					rir_tot_shift_open, rir_tot_arena_fn, rir_tot_arena_nodes,
 					rir_tot_leaf, rir_tot_refill, rir_tot_c2_try, rir_tot_c2_skip,
 					rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len, rir_tot_c2_err,
-					rir_tot_c2_invalid, rir_tot_c2_equiv, rir_tot_c2_unproven);
+					rir_tot_c2_invalid, rir_tot_c2_equiv, rir_tot_c2_unproven,
+					ir_cap_asm_n);
 	if (rir_tot_c3_try || rir_tot_c3_pair)
 		fprintf(f,
 						"[rir-c3] try=%ld ran=%ld folds=%ld broke=%ld pair=%ld "

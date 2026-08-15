@@ -104,6 +104,7 @@ typedef struct IrCapOp {
 static int ir_cap_active;
 static int ir_cap_depth;
 static int ir_cap_bad;
+static int ir_cap_asm_n;
 static int ir_cap_ind_wm;
 static int ir_cap_rel_wm;
 
@@ -525,13 +526,31 @@ void ir_cap_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
 }
 
 void ir_cap_asm(const char *str, int len, int global) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
+	Section *sec0 = cur_text_section;
+	int ind0, rel0;
 	ir_cap_begin(IR_OP_ASM, NULL);
-	if (IR_CAP_REC) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
-		ir_cap_pending->raw_off = ir_cap_raw_add((const unsigned char *)str, len);
-		ir_cap_pending->raw_len = len;
-		ir_cap_pending->a0 = global;
-	}
+	ind0 = ind;
+	rel0 = ir_cap_relofs();
 	mcc_assemble_inline(mcc_state, str, len, global);
+	if (IR_CAP_REC) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
+		int clen = cur_text_section == sec0 ? ind - ind0 : -1;
+		int rlen = cur_text_section == sec0 ? ir_cap_relofs() - rel0 : -1;
+		if (clen < 0 || rlen < 0) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
+			ir_cap_bad = 1;
+			clen = rlen = 0;
+		}
+		ir_cap_asm_n++;
+		ir_cap_pending->a0 = global;
+		ir_cap_pending->raw_len = clen;
+		if (clen > 0)
+			{ MCC_TRACE_WHEN(ir_cap_active, "br\n");
+				ir_cap_pending->raw_off = ir_cap_raw_add(sec0->data + ind0, clen); }
+		ir_cap_pending->rawrel_len = rlen;
+		if (rlen > 0)
+			{ MCC_TRACE_WHEN(ir_cap_active, "br\n");
+				ir_cap_pending->rawrel_off =
+						ir_cap_raw_add(sec0->reloc->data + rel0, rlen); }
+	}
 	ir_cap_end();
 }
 
@@ -776,15 +795,19 @@ static void ir_cap_issue(IrCapOp *o) { MCC_TRACE("enter\n");
 		asm_gen_code(ops, hdr[0], hdr[1], o->a0, cr, o->a1);
 		break;
 	}
-	case IR_OP_ASM: { MCC_TRACE("br\n");
-		int sv_tok = tok;
-		CValue sv_tokc = tokc;
-		mcc_assemble_inline(mcc_state, (const char *)(ir_cap_raw + o->raw_off),
-												o->raw_len, o->a0);
-		tok = sv_tok;
-		tokc = sv_tokc;
+	case IR_OP_ASM:
+		if (o->raw_len > 0) { MCC_TRACE("br\n");
+			if (ind + o->raw_len > cur_text_section->data_allocated)
+				{ MCC_TRACE("br\n"); section_realloc(cur_text_section, ind + o->raw_len); }
+			memcpy(cur_text_section->data + ind, ir_cap_raw + o->raw_off,
+						 (size_t)o->raw_len);
+			ind += o->raw_len;
+		}
+		if (o->rawrel_len > 0 && cur_text_section->reloc) { MCC_TRACE("br\n");
+			void *rp = section_ptr_add(cur_text_section->reloc, o->rawrel_len);
+			memcpy(rp, ir_cap_raw + o->rawrel_off, (size_t)o->rawrel_len);
+		}
 		break;
-	}
 	case IR_OP_GV: { MCC_TRACE("br\n");
 		uint64_t pin = ast_pinned_regs;
 		ast_pinned_regs = (uint64_t)o->d64;

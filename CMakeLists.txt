@@ -5695,6 +5695,25 @@ if(MCC_BUILD_TESTS)
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                 LABELS "replay;native" TIMEOUT 300)
 
+            # optfire/asm-replay-recover above compares what the program PRINTS,
+            # and none of the ways replay corrupts an asm body change that. This
+            # one compares the object, which is the artefact the A/B defends.
+            set(_ao_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/asmobject.sh")
+            set(_ao_src "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/asmobject.c")
+            add_test(NAME "optfire/asm-replay-object"
+                COMMAND sh "${_ao_sh}" "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_BINARY_DIR}/asmobject" "${_ao_src}")
+            set_tests_properties("optfire/asm-replay-object" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                LABELS "replay;native" TIMEOUT 300)
+            add_test(NAME "optfire/asm-replay-object-known-positive"
+                COMMAND sh "${_ao_sh}" "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_BINARY_DIR}/asmobject-kp" "${_ao_src}"
+                        known-positive)
+            set_tests_properties("optfire/asm-replay-object-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                LABELS "replay;native" TIMEOUT 300)
+
             file(READ "${_fs_tbl}" _fs_txt)
             string(REGEX MATCHALL "MCC_OPT_ROW\\([A-Z0-9_]+, *\"[a-z0-9-]+\"" _fs_rows "${_fs_txt}")
             string(REGEX MATCHALL "MCC_OPT_ROW\\([A-Z0-9_]+, *\"[a-z0-9-]+\", *MCC_OPTD_DEV"
@@ -7131,7 +7150,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         --manifest "${CMAKE_CURRENT_SOURCE_DIR}/tests/gate-contract.txt"
                         --must-run "${CMAKE_CURRENT_SOURCE_DIR}/tests/must-run.txt"
                         --build "${CMAKE_BINARY_DIR}"
-                        --min-rows 103 --min-proved 53
+                        --min-rows 104 --min-proved 54
                         --max-unfloored 86 --max-unproved 50)
             set_tests_properties("ci/gate-contract" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)

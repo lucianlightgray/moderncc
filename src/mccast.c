@@ -6255,15 +6255,20 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				break;
 			}
 			if (ast_op(a, s) == AST_OP_ASM) { MCC_TRACE("br\n");
-				int sv_tok = tok;
-				CValue sv_tokc = tokc;
-				mcc_assemble_inline(mcc_state,
-														(const char *)(ir_cap_raw +
-																					 (int)(ast_ival(a, s) & 0xffffffff)),
-														(int)(ast_ival(a, s) >> 32),
-														(int)(ast_sym(a, s) & 0xffffffff));
-				tok = sv_tok;
-				tokc = sv_tokc;
+				int clen = (int)(ast_ival(a, s) >> 32);
+				int coff = (int)(ast_ival(a, s) & 0xffffffff);
+				int rlen = (int)(ast_fbits(a, s) >> 32);
+				int roff = (int)(ast_fbits(a, s) & 0xffffffff);
+				if (clen > 0) { MCC_TRACE("br\n");
+					if (ind + clen > cur_text_section->data_allocated)
+						{ MCC_TRACE("br\n"); section_realloc(cur_text_section, ind + clen); }
+					memcpy(cur_text_section->data + ind, ir_cap_raw + coff, (size_t)clen);
+					ind += clen;
+				}
+				if (rlen > 0 && cur_text_section->reloc) { MCC_TRACE("br\n");
+					void *rp = section_ptr_add(cur_text_section->reloc, rlen);
+					memcpy(rp, ir_cap_raw + roff, (size_t)rlen);
+				}
 				break;
 			}
 			ast_replay_value(a, s);
