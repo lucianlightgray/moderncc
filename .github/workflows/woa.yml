@@ -157,7 +157,25 @@ jobs:
           [ -x "$mccexe.exe" ] && mccexe="$mccexe.exe"
           "$mccexe" -v || true
           mcc-ci stage2 dynamic --mcc "$mccexe"
-      - name: outcome
+      - name: stage3 test suite (the stage2 compiler is proved by what it can build and run, not by rc=0)
+        id: suite
+        if: steps.selfhost.outcome == 'success'
+        run: mcc-ci stage3 --consume test --build cmake-stage2-dynamic
+      - name: test summary
         if: always()
         run: |
           echo "stage2 self-host outcome = ${{ steps.selfhost.outcome }}"
+          echo "stage3 suite outcome    = ${{ steps.suite.outcome }}"
+          if [ -f cmake-stage2-dynamic/ctest-junit.xml ]; then
+            mcc-ci junit-summary cmake-stage2-dynamic/ctest-junit.xml \
+              "woa / windows-arm64-msvc" >> "$GITHUB_STEP_SUMMARY" || true
+            python3 tools/must-run.py --results cmake-stage2-dynamic/ctest-junit.xml || true
+          else
+            echo "no ctest-junit.xml produced"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: woa-stage3-results
+          path: cmake-stage2-dynamic/ctest-junit.xml
+          if-no-files-found: ignore
