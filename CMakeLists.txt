@@ -3908,6 +3908,14 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties("slice/${_sg}" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             endforeach()
+            # T-lin-10035: the physical device is scored, not devs[0]. Asserts
+            # the initialised device is the highest-scored one; skips (77) on a
+            # host with fewer than two usable devices.
+            add_test(NAME "gpu/device-score"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu/device-score.sh"
+                        $<TARGET_FILE:slicerun>)
+            set_tests_properties("gpu/device-score" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             # The 64-bit differential must be able to fail, or "0 mismatches"
             # is indistinguishable from "0 tuples compared".
             foreach(_sk wide64 f64 ops frame gpu sched bytes deref ext arrow fmt hostimport)
