@@ -1495,8 +1495,13 @@ static int mccjit_pool_start(unsigned long workers) { MCC_TRACE("enter\n");
 		int i;
 		if (want < 1)
 			{ MCC_TRACE("br\n"); want = 1; }
-		if (want > MCCJIT_POOL_MAX)
-			{ MCC_TRACE("br\n"); want = MCCJIT_POOL_MAX; }
+		if (want > MCCJIT_POOL_MAX) { MCC_TRACE("br\n");
+			fprintf(stderr,
+							"mcc: JIT worker pool capped at %d (requested %d); raise "
+							"MCCJIT_POOL_MAX to ask for more\n",
+							MCCJIT_POOL_MAX, want);
+			want = MCCJIT_POOL_MAX;
+		}
 		mccjit_pool.started = 1;
 		/* No atexit here any more. main() brackets the process through
 		 * mcc_rt_enter/mcc_rt_exit (src/mccrt.h), which joins this pool before it
