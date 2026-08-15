@@ -26,10 +26,6 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [x] T-win-50009 [S] win-x64 — `smokerun` cannot spawn anything on Windows: `sm_system`'s quoted command dies in `cmd /c` quote-stripping; all 11 `smoke/*` cells red
-      OWNER: win-x64 | STATE: DONE | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
-      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: DONE — three defects, one per layer: cmd /c quote-stripping (sm_system wrap), CRLF vs LF-pinned compares (slurp normalize), smoke.h SL/UL width hardcoded 64 on LLP64 (subject died 0xc0000094 dividing by a truncated-to-zero long). native-known-positive PASSES; 13,494,965 value cases, 0 value failures. Residual smoke reds are 5 distinct pre-existing defects, minted as T-win-50010..50014; GPU invisibility root-caused as the VK_LAYER_AMD_switchable_graphics layer (host env fixed)
-
 ## Open — claimable
 - [ ] T-mac-30004 [S] `spvgate` CASES has no f64 case: arm the SPIR-V arm's table on fp64 hosts
       OWNER: — | STATE: OPEN | SHA: 28ac8048 | TS: 2026-08-15T12:55Z
