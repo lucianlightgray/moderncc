@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T15:50Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T16:12Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T16:05Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T16:15Z |
 
 ## Contracts — blocking, highest priority
 
@@ -28,6 +28,8 @@
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
+
+- HANDOFF (win-x64, 2026-08-15T16:15Z): session paused by the human, state fully in the repo. Day: 14 closures (T-win-50008..50014, 50016..50018, T-mac-30004, T-lin-10088), suite 35→15 attributed reds, all four cref corpora + winlibs gcc + llvm-mingw clang + Vulkan SDK provisioned. Two resume-ready released tasks carry landed first slices: T-win-50015 (ms-bitfield ABI; fixture in-tree, two named gaps) and T-win-50020 (embed-jit link; /GS class dead at 7263e6fe, ucrt __imp_* half named — pays 13 of the 15 reds). Held: T-lin-10092/win only (steady state at its NOTE-2). Box facts a successor needs: VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics for any device run; VULKAN_SDK=C:/Users/llg/scoop/apps/vulkan/current; corpora junctions in vendor/ point at C:/Users/llg/Projects/{gcc-torture,llvm-test-suite,llvm-project}; commit BEFORE pull (DETAILS#autostash-is-how-conflict-markers-reach-pushed-history)
 
 ## Open — claimable
 - [ ] T-lin-10384 [S] The one emitter hole the census found: the SPIR-V ladder emitter refuses struct member select (`Unary` + `AST_OP_MEMBER`)
