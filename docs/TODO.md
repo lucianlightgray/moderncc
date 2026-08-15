@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T03:05Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T03:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T06:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
@@ -14,8 +14,8 @@
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
 - [ ] T-lin-10089 [X] mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 7ebfaed1 | TS: 2026-08-15T03:05Z
-      REF: DETAILS.md#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple | DEPS: T-lin-10002[C] DONE, T-lin-10367[C] content-complete | Q: Q-mac-30000 ANSWERED | NOTE: wiring --sysroot=runtime/osx into key_flags()'s *osx branch + re-key. o0_ab compiles the FULL corpus so 3 more headers needed for full_language.c (wctype/locale/inttypes). Cross-host phase (Linux mcc-arm64-osx reproduce + x86_64-osx) needs lin
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 4d1cb752 | TS: 2026-08-15T03:20Z
+      REF: DETAILS.md#t-lin-10089-investigation-2-the-sysroot-wiring-works-native-298-objects | DEPS: T-lin-10002[C] DONE, T-lin-10367[C] content-complete | Q: Q-mac-30000 ANSWERED | NOTE: headers DONE (4d1cb752: wctype/locale/inttypes + math.h float_t). Wiring proven native (arm64-osx 298 objects/0 err, 199 shas re-key). BLOCKED ON LIN: the atomic wiring+re-bank(both osx cols)+commit needs the Linux cross (x86_64-osx unbuildable on mac); guard stays on. mac finishes after: verify native==bank, then drop the NOT-Darwin guard. Full plan + wiring diff in DETAILS
 
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone

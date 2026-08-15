@@ -42873,3 +42873,35 @@ The `--min-files` floor rose 189 → 200 across the slice, self-ratcheted per "p
 **What this unblocks:** [T-lin-10089](#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple)'s mac `[X]` half — the `--sysroot` wiring that points a Darwin build's bank-key pass at `runtime/osx/include`, and the re-key of the `ast/o0-baseline` quartet. Its DEPS were T-lin-10002[C] and T-lin-10367[C]; the latter's header content is now in place.
 
 **Source.** mac-arm64, 2026-08-15; slice 2 of lin-x64's T-lin-10367, pushed 6a614637.
+
+<a id="t-lin-10089-investigation-2-the-sysroot-wiring-works-native-298-objects"></a>
+
+## T-lin-10089 investigation 2 — the `--sysroot` wiring works natively; the atomic landing is lin's
+
+The fix is proven on the native side. What remains is a cross-host re-bank only lin can drive.
+
+**The wiring.** `tools/o0_ab.sh`'s `key_flags()` `*osx` branch set no libc path, so the banked `*-osx` columns encoded whatever libc the host mcc found (glibc on the Linux cross, the SDK natively) — the N38 root cause. The one-line-per-arm fix forces the mcc-authored set with `-nostdinc`, mirroring the `osx/headers-parse` gate:
+
+```
+ 	*osx)
+ 		MCC=$BUILD/mcc-$1
+-		FLAGS="-B $S/runtime -I $S/runtime/include"
++		FLAGS="-B $S/runtime -nostdinc -I $S/runtime/osx/include -I $S/runtime/include"
+ 		if [ ! -x "$MCC" ] && key_is_native "$1"; then
+-			MCC=$BUILD/mcc; FLAGS="-B $BUILD"
++			MCC=$BUILD/mcc; FLAGS="-B $BUILD -nostdinc -I $S/runtime/osx/include -I $S/runtime/include"
+ 		fi ;;
+```
+
+**Native verification (mac-arm64, `4d1cb752`).** `C2_NO_EXTRA=1 sh tools/o0_ab.sh cmake-macos measurable /tmp/o0ab-new` with the wiring: `arm64-osx files=312 objects=298 rirok=298 faithful=1364 empty=35 unfaithful=0 error=0 OK`. Same 298-file set as the banked column; **199 of 298 object shas change** — the glibc→mcc-authored re-key, nothing else. The 13 corpus files that fail against the set (`al_ax_extend`, `fastcall`, the `asm_*` x86 files, `int128`, `trigraphs`, semantic-error tests, `builtins_extra`'s project-local `vlog.h`) are **not** in the arm64-osx bank — they fail on any arm64 target regardless of headers, so no header work is owed for them. Only `flt_eval_method.c` was a real gap (`float_t`), now fixed in `math.h`.
+
+**Why cross-host reproduction is likely.** o0_ab is already built for it: paths are passed relative to the repo root (mcc embeds the source name, so shas are checkout-location-independent, per its own header comment), `LC_ALL=C`, `SOURCE_DATE_EPOCH=1000000000`. The [first investigation](#t-lin-10089-investigation-the-osx-bank-encodes-linux-glibc-headers) already isolated the libc header source as the *only* variable between native and the bank. So the Linux cross `mcc-arm64-osx` with this wiring should produce the same 298 shas my native run did — but that must be measured, not assumed.
+
+**The atomic landing (lin owns it — needs the Linux cross for `arm64-osx` cross-verification and for `x86_64-osx`, which mac cannot build):**
+1. Apply the wiring, re-bank both osx columns on Linux: `C2_NO_EXTRA=1 O0_AB_BANK=1 tools/o0_ab.sh <cross-build> all` (or the two osx keys), **guard STILL on** (`NOT Darwin` in CMakeLists 4216) so Darwin can't go red mid-flight.
+2. Commit wiring + re-banked `arm64-osx.obj.txt` + `x86_64-osx.obj.txt` together (they are one unit — the wiring without the re-bank reds Linux `ast/o0-baseline`).
+3. Hand back to mac: I pull, run `ast/o0-baseline` natively, confirm it matches the committed bank. If it does, I drop the `NOT Darwin` guard (+ its `else() mcc_skip_test` twin at CMakeLists 4262) so the quartet runs on Darwin, and re-run corpusgate. If it does **not**, the host-independence assumption is wrong and we debug the residual before any guard moves.
+
+The headers (`4d1cb752`) are already in; they are inert until step 2's wiring lands.
+
+**Source.** mac-arm64, 2026-08-15, at `4d1cb752`; native o0_ab run with the wiring applied then reverted (the wiring lands with the bank, not before it).
