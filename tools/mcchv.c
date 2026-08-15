@@ -22,6 +22,7 @@ int main(void) {
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include "mcctask.h"
 
 #define HV_BLOCK 64
 #define HV_NBLOCKS (1u << 16)
@@ -45,9 +46,7 @@ static HvPat hv_perm[HV_MAXPAT];
 static uint32_t hv_pos[HV_MAXPAT];
 static int32_t hv_hmap[HV_HASHCAP];
 static uint32_t hv_seq[HV_NBLOCKS];
-static mtx_t hv_mtx;
 static _Atomic(HvKernel) hv_kernel;
-static atomic_int hv_stop;
 static atomic_int hv_jit_gen;
 static char hv_mccopts[2048];
 static MCCState *hv_states[64];
@@ -249,38 +248,65 @@ static HvKernel hv_jit_build(const HvLeaf *leaves, uint32_t nleaf,
 	return fn;
 }
 
-static int hv_optimizer(void *arg) {
-	uint32_t last_n = 0;
-	(void)arg;
-	while (!atomic_load(&hv_stop)) {
-		uint32_t np;
-		mtx_lock(&hv_mtx);
-		np = hv_npat;
-		mtx_unlock(&hv_mtx);
-		if (np > 0 && np != last_n) {
-			HvLeaf *leaves = malloc((size_t)np * sizeof *leaves);
-			if (leaves) {
-				mtx_lock(&hv_mtx);
-				for (uint32_t i = 0; i < np; i++) {
-					leaves[i].hash = hv_perm[i].hash;
-					leaves[i].id = hv_perm[i].id;
-				}
-				mtx_unlock(&hv_mtx);
-				qsort(leaves, np, sizeof *leaves, hv_leaf_cmp);
-				HvKernel fn = hv_jit_build(leaves, np, NULL, 0, 1, NULL, NULL);
-				free(leaves);
-				if (fn) {
-					atomic_store(&hv_kernel, fn);
-					atomic_fetch_add(&hv_jit_gen, 1);
-					last_n = np;
-				}
-			}
+enum {
+	HV_OPT_SAMPLE = 0,
+	HV_OPT_SNAPSHOT = 1,
+	HV_OPT_BUILD = 2,
+	HV_OPT_PUBLISH = 3
+};
+
+#define HV_OPT_MAXFAIL 3
+
+typedef struct {
+	uint32_t last_n;
+	uint32_t np;
+	HvLeaf *leaves;
+	HvKernel fn;
+	int builds;
+	int failures;
+} HvOptCtx;
+
+static int hv_optimizer_tick(MccTask *t) {
+	HvOptCtx *o = (HvOptCtx *)t->ctx;
+	switch (t->resume) {
+	case HV_OPT_SAMPLE:
+		o->np = hv_npat;
+		if (o->np == 0 || o->np == o->last_n) {
+			mcc_task_block(t, (void *)&hv_npat);
+			return MCC_TASK_BLOCKED;
 		}
-		thrd_yield();
-		struct timespec ts = {0, 5000000};
-		thrd_sleep(&ts, NULL);
+		t->resume = HV_OPT_SNAPSHOT;
+		return MCC_TASK_YIELDED;
+	case HV_OPT_SNAPSHOT:
+		o->leaves = malloc((size_t)o->np * sizeof *o->leaves);
+		if (!o->leaves)
+			return MCC_TASK_FAILED;
+		for (uint32_t i = 0; i < o->np; i++) {
+			o->leaves[i].hash = hv_perm[i].hash;
+			o->leaves[i].id = hv_perm[i].id;
+		}
+		qsort(o->leaves, o->np, sizeof *o->leaves, hv_leaf_cmp);
+		t->resume = HV_OPT_BUILD;
+		return MCC_TASK_YIELDED;
+	case HV_OPT_BUILD:
+		o->fn = hv_jit_build(o->leaves, o->np, NULL, 0, 1, NULL, NULL);
+		free(o->leaves);
+		o->leaves = NULL;
+		if (!o->fn) {
+			t->resume = HV_OPT_SAMPLE;
+			return ++o->failures >= HV_OPT_MAXFAIL ? MCC_TASK_FAILED
+																						 : MCC_TASK_YIELDED;
+		}
+		t->resume = HV_OPT_PUBLISH;
+		return MCC_TASK_YIELDED;
+	default:
+		atomic_store(&hv_kernel, o->fn);
+		atomic_fetch_add(&hv_jit_gen, 1);
+		o->last_n = o->np;
+		o->builds++;
+		t->resume = HV_OPT_SAMPLE;
+		return MCC_TASK_YIELDED;
 	}
-	return 0;
 }
 
 typedef struct {
@@ -880,7 +906,6 @@ int main(int argc, char **argv) {
 	if (!hv_data || !hv_store)
 		return 1;
 	memset(hv_hmap, -1, sizeof hv_hmap);
-	mtx_init(&hv_mtx, mtx_plain);
 	atomic_store(&hv_kernel, hv_lookup_baseline);
 
 	unsigned char planted[HV_PLANTED][HV_BLOCK];
@@ -907,10 +932,8 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	mtx_lock(&hv_mtx);
 	for (uint32_t i = 0; i < HV_NBLOCKS; i++)
 		hv_seq[i] = hv_intern(hv_data + (size_t)i * HV_BLOCK);
-	mtx_unlock(&hv_mtx);
 
 	unsigned char *replay = malloc((size_t)HV_NBLOCKS * HV_BLOCK);
 	if (!replay)
@@ -942,18 +965,28 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	thrd_t opt;
-	thrd_create(&opt, hv_optimizer, NULL);
-	int waited = 0;
-	while (atomic_load(&hv_jit_gen) == 0 && waited < 10000) {
-		struct timespec ts = {0, 1000000};
-		thrd_sleep(&ts, NULL);
-		waited++;
-	}
+	MccSched sched;
+	MccTask opt;
+	HvOptCtx octx;
+	memset(&octx, 0, sizeof octx);
+	mcc_sched_init(&sched);
+	mcc_task_init(&opt, hv_optimizer_tick, &octx);
+	mcc_sched_add(&sched, &opt);
+	mcc_sched_run(&sched, 10000);
+
 	if (atomic_load(&hv_jit_gen) == 0) {
-		printf("hv: jit never landed\n");
-		atomic_store(&hv_stop, 1);
-		thrd_join(opt, NULL);
+		printf("hv: jit never landed (task state %d after %ld ticks)\n", opt.state,
+					 opt.ticks);
+		return 1;
+	}
+	printf("hv: optimizer task: parked-on=%s gen=%d builds=%d ticks=%ld rounds=%ld stalls=%ld pending=%d blocked=%d runnable=%d\n",
+				 opt.blocked_on == (void *)&hv_npat ? "hv_npat" : "none",
+				 atomic_load(&hv_jit_gen), octx.builds, opt.ticks, sched.rounds,
+				 sched.stalls, mcc_sched_pending(&sched), mcc_sched_blocked(&sched),
+				 mcc_sched_runnable(&sched));
+	if (opt.state != MCC_TASK_BLOCKED || opt.blocked_on != (void *)&hv_npat ||
+			sched.stalls != 1 || mcc_sched_runnable(&sched) != 0) {
+		printf("hv: optimizer task did not park on the pattern table\n");
 		return 1;
 	}
 	printf("hv: jit swapped in (gen %d, binary hash tree over %u patterns, %d worker threads)\n",
@@ -963,13 +996,23 @@ int main(int argc, char **argv) {
 		jit_ms[p] = hv_sweep(workers, &bad);
 		if (bad) {
 			printf("hv: jit sweep mismatch (%u)\n", bad);
-			atomic_store(&hv_stop, 1);
-			thrd_join(opt, NULL);
 			return 1;
 		}
 	}
-	atomic_store(&hv_stop, 1);
-	thrd_join(opt, NULL);
+
+	long ticks_parked = opt.ticks;
+	int builds_parked = octx.builds;
+	int woke = mcc_sched_wake(&sched, (void *)&hv_npat);
+	mcc_sched_step(&sched);
+	printf("hv: optimizer wake: woke=%d ticks=+%ld rebuilds=%d re-parked-on=%s\n",
+				 woke, opt.ticks - ticks_parked, octx.builds - builds_parked,
+				 opt.blocked_on == (void *)&hv_npat ? "hv_npat" : "none");
+	if (woke != 1 || opt.ticks - ticks_parked != 1 ||
+			octx.builds != builds_parked || opt.state != MCC_TASK_BLOCKED) {
+		printf("hv: optimizer wake round-trip failed\n");
+		return 1;
+	}
+	mcc_sched_quit(&sched);
 
 	double bm = hv_mean(base_ms, passes), bs = hv_stdev(base_ms, passes, bm);
 	double jm = hv_mean(jit_ms, passes), js = hv_stdev(jit_ms, passes, jm);
@@ -1023,7 +1066,6 @@ int main(int argc, char **argv) {
 		mcc_delete(hv_states[i]);
 	free(hv_data);
 	free(hv_store);
-	mtx_destroy(&hv_mtx);
 	return 0;
 }
 

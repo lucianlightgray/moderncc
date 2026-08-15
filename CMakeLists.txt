@@ -6607,7 +6607,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
     if(MCC_TARGET_IS_HOST AND NOT MCC_TARGETOS STREQUAL "WIN32")
         add_executable(mcchv tools/mcchv.c)
         target_link_libraries(mcchv PRIVATE libmcc m)
-        target_include_directories(mcchv PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+        target_include_directories(mcchv PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src")
         find_package(Threads)
         if(Threads_FOUND)
             target_link_libraries(mcchv PRIVATE Threads::Threads)
@@ -6616,6 +6617,11 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             COMMAND mcchv "-B${CMAKE_BINARY_DIR}" --seed 42 --passes 4 --workers 4)
         set_tests_properties(hypervisor-smoke PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
+        add_test(NAME hypervisor-task
+            COMMAND mcchv "-B${CMAKE_BINARY_DIR}" --seed 42 --passes 2 --workers 2)
+        set_tests_properties(hypervisor-task PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77
+            PASS_REGULAR_EXPRESSION "hv: optimizer task: parked-on=hv_npat ")
         add_test(NAME hypervisor-search
             COMMAND mcchv "-B${CMAKE_BINARY_DIR}" --seed 42 --passes 3 --workers 2 --seconds 1.2)
         set_tests_properties(hypervisor-search PROPERTIES FIXTURES_REQUIRED MCC_BUILT
