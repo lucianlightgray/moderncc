@@ -5,8 +5,13 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T14:00Z |
+<<<<<<< Updated upstream
 | lin-x64   | Linux    | x64   | 10000–29999 | 10380   | 2026-08-15T14:15Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50019   | 2026-08-15T13:45Z |
+=======
+| lin-x64   | Linux    | x64   | 10000–29999 | 10380   | 2026-08-15T14:00Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50020   | 2026-08-15T14:25Z |
+>>>>>>> Stashed changes
 
 ## Contracts — blocking, highest priority
 
@@ -48,6 +53,9 @@
 - [ ] T-win-50015 [S] win-x64 — default `ms_bitfields = 1` on PE targets: mcc's plain bit-field layout is cross-TU-incompatible with every native Windows compiler
       OWNER: — | STATE: OPEN | SHA: 901e103e | TS: 2026-08-15T14:20Z
       REF: DETAILS.md#t-win-50015-slice-1-the-fixture-exists-and-the-flip-found-two-algorithm-gaps | DEPS: — | NOTE: RELEASED with slice 1 done — resume, not restart. Fixture tests/cross/pe-bitfield-abi.{c,sh} committed (inert, red-proven by hand, register when the flip lands). The trial flip greens the fixture + pass-msstruct byte-for-byte with mingw/clang BUT exposed two fidelity gaps in mcc's MS-layout mode that gate it: (a) empty-union/zero-width sizing (pe/torture-classes outer 12 vs mingw 8), (b) exec/expressions/integer_promotion.c stdout diverges under ms-mode (pe/x-oracle +1). Fix both TDD'd, then reapply the recorded two-edit flip. Wants a fresh, focused context — full sequencing at the REF anchor
+- [ ] T-win-50019 [S] — `slice/fault`: the device fault/timeout recovery contract fails all seven assertions on real hardware (RTX 2060)
+      OWNER: — | STATE: OPEN | SHA: b57019f9 | TS: 2026-08-15T14:25Z
+      REF: DETAILS.md#t-lin-10092-win-requote-b-2026-08-15-15-of-9406 | DEPS: — | NOTE: first-ever real-hardware run of suite_fault (the cell was a no-Vulkan stub on this box until the SDK landed). The contract — timed-out dispatch reports failure, strands exactly one dispatch, device marked unusable, no reuse of pending memory — was authored against lavapipe and the RTX 2060 matches none of it (suite_fault:4156-4185). gpu-lifecycle owners (T-lin-10033 territory); win-x64 reproduces on demand with the VK_LOADER_LAYERS_DISABLE caveat
 - [ ] T-win-50018 [S] win-x64 — `libtest-extra` output_obj: "mcc: error: 'mcc_relocate()' twice is no longer supported"
       OWNER: — | STATE: OPEN | SHA: 05ea60f8 | TS: 2026-08-15T13:45Z
       REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: libmcc API surface; plausibly fallout from the mccjit/libmcc rework (mccjit_shutdown/PUB_FUNC churn). Win-visible; owner likely lin (libmcc.c) — verify whether Linux libtest-extra runs this case at all
@@ -280,7 +288,7 @@
         OWNER: lin-x64 | STATE: DONE | SHA: a4b2baf1 | TS: 2026-08-15T08:30Z
         REF: DETAILS.md#t-lin-10092-lin-the-linux-full-native-suite-is-clean | DEPS: — | NOTE: DONE. NUMBER: 10062 cells, 1011 skipped, 9051 run, 0 failures, 86 min. Already archived at 32d29fc4 — line kept visible only until the [P] parent closes, per mac's convention on /mac; whoever lands /win removes all three children + the parent together
   - [ ] T-lin-10092/win [P] Record a clean full native suite number on each platform — win-x64
-        OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 05ea60f8 | TS: 2026-08-15T13:45Z | NOTE-2: RE-QUOTED 2026-08-15: 9404 cells, 7339 pass / 2048 skip / 17 fail (was 35), 667 s — full attribution at DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404. All 17 owned: 5 smoke (T-win-50015 msstruct + Bucket B jit), 4 fp opt-search (Bucket B), 3 jit/runtime (Bucket B), slice/f64×2 (T-win-50016 NEW: 3 of 22 fp64 negations diverge on the RTX 2060), slice/cost (jit arm), diff3/floating_point (T-win-50017 NEW), libtest-extra (T-win-50018 NEW). Skips 964→2048: the session's git clean wiped the host-local corpora; re-provision per T-lin-10030/mac recipe (network exists now)
+        OWNER: win-x64 | STATE: IN_PROGRESS | SHA: b57019f9 | TS: 2026-08-15T14:25Z | NOTE-2: RE-QUOTED twice 2026-08-15: morning 17/9404, second wave **15/9406** (was 35 at day start) — DETAILS.md#t-lin-10092-win-requote-b-2026-08-15-15-of-9406. slice/f64×2 + diff3/floating_point fixed today; slice/fault NEW (T-win-50019, first real-hardware fault-contract run). Steady-state 15, every red owned: 12 Bucket-B/embed-JIT-class + msstruct (T-win-50015) + libtest-extra (T-win-50018) + slice/fault (T-win-50019). Skips 2034 = wiped corpora, re-provision per T-lin-10030/mac recipe
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: NUMBER RECORDED (first ever on Windows): 9387 cells, 8388 pass / 945 skip / 54 fail at 9b21c352; 19 false-reds fixed at 260bb900 -> 8388 / 964 / 35. Not clean — the 35 residual reds are triaged in T-win-50003 (28 GPU-slice, 4 fp opt-search, 3 jit/runtime). @lin: number is landed, slice-3 (L2′) hold can release
 - [ ] T-lin-10093 [P] `ci/must-run-registered` green on each platform
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z

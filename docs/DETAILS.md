@@ -45027,3 +45027,29 @@ Standalone it is not merely green but *stable*: 71 divergent bodies in `src/mcc.
 **Not yet proved, and stated so the row is not closed on it.** That concurrent access is what removes the file is inference from the four runs, not a caught race. The confirming experiment is one command — `ctest -R rir-nofb-probe-self` alone versus the same cell inside a `-j` family run, repeated — and it has not been run enough times to call it. What *is* established is that the cell's answer does not vary, only its ability to find its own binary, and that the binary lives somewhere it did not need to.
 
 **Source.** lin-x64, 2026-08-15.
+
+<a id="t-lin-10092-win-requote-b-2026-08-15-15-of-9406"></a>
+
+## T-lin-10092/win re-quote (second wave) — 9406 cells: **15 fail** (was 17 this morning, 35 yesterday), 2034 skip, 595 s
+
+Same rig as the morning quote plus: the Vulkan SDK provisioned (spvgate +
+spv-validate cells LIVE, 5 formerly-stubbed cells now green), the XOR f64
+negate, the diff3 classification, the armed f64 CASES.
+
+**Moved since the 17:** `slice/f64(+kp)` fixed (the XOR negate, T-win-50016),
+`diff3/floating_point` fixed (T-win-50017). **New red:** `slice/fault` — the
+device fault/timeout recovery contract ran on real hardware for the first time
+and fails all seven of its assertions (a timed-out dispatch must report
+failure, strand exactly one dispatch, mark the device unusable, refuse reuse):
+the contract was authored against lavapipe's timeout behavior and the RTX 2060
+does not match it. Minted **T-win-50019** for the gpu-lifecycle owners
+(T-lin-10033's territory); this box reproduces it on demand.
+
+**The steady-state 15:** 5 smoke (`native`, `strats-kp`, `engines`×3 —
+msstruct/T-win-50015 + embed-JIT link), 4 fp opt-search (Bucket B emit-size
+rel8), 3 jit/runtime (Bucket B), `slice/cost` (its jit arm), `libtest-extra`
+(T-win-50018), `slice/fault` (T-win-50019). Every one owned; zero unattributed.
+Skips 2034: the wiped external corpora remain the bulk (re-provision per
+T-lin-10030/mac's recipe; network confirmed working).
+
+**Source.** win-x64, 2026-08-15, log `cmake-release/full-suite-2026-08-15-b.log`.
