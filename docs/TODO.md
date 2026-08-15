@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T14:00Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T14:30Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10380   | 2026-08-15T14:15Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50020   | 2026-08-15T14:25Z |
 
@@ -14,8 +14,8 @@
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
 - [ ] T-lin-10042 [X] mac-arm64 — the Metal parity staged plan, WITH fp64 (2,200-3,400 lines)
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 6610f66d | TS: 2026-08-15T14:00Z
-      REF: DETAILS.md#t-lin-10042-slice-4-msl-runtime-index-loads | DEPS: — | Q: Q-lin-10009 ANSWERED | NOTE: human scheduled the fp64 variant; lands in slices each checkable by the per-value differential. SLICE 1 DONE 28ac8048 (f64 bits-pair). SLICE 2 DONE f5a04110 (six comparisons). SLICE 3 DONE 87f7b232 — fp64 half functionally complete: soft-float RTE binary64 +/-/*, mcc_gpu_f64() true on Metal, slicerun suite_f64 full certification native (3965 tuples bit-exact, denormals preserved, NaN = host rule). SLICE 4 DONE 6610f66d — runtime-index loads (msl_slot_at/dyn_elem/load_live_dv, J3b compare-poison-mask): REAL-CORPUS SLICE PARITY, msl 712 = spv 712, runtime-idx 8, 920,192 idx points compared 0 mismatches; gpu 15/15, slice|census 122/122, jit 66/66. REMAINING: the region/memory arm (Metal encoder binds buffers 0/1 only — needs buffer(2) + byte-addressed MSL region ops + RMW sub-word stores; unlocks ext-dynidx/deref/arrow and spvgate mem_case Metal arm), then the mccslice statement/frame-store arm (mccgpu.c:1703 "frame stores not emitted yet"). NB for win-x64 on T-mac-30004: the guarded CASES block is now SIX cases (see CONTRACT at 6610f66d). Specs at the slice anchors
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 59a62bf6 | TS: 2026-08-15T14:30Z
+      REF: DETAILS.md#t-lin-10042-slice-4-msl-runtime-index-loads | DEPS: — | Q: Q-lin-10009 ANSWERED | NOTE: human scheduled the fp64 variant; lands in slices each checkable by the per-value differential. SLICE 1 DONE 28ac8048 (f64 bits-pair). SLICE 2 DONE f5a04110 (six comparisons). SLICE 3 DONE 87f7b232 — fp64 half functionally complete: soft-float RTE binary64 +/-/*, mcc_gpu_f64() true on Metal, slicerun suite_f64 full certification native (3965 tuples bit-exact, denormals preserved, NaN = host rule). SLICE 4 DONE 6610f66d (runtime-index loads: real-corpus slice parity 712=712). SLICE 5 DONE 59a62bf6 (+repair ce235455) — THE METAL REGION ARM (= T-lin-10041’s subject): buffer(2) via device atomic_int, byte-addressed region load/store with atomic sub-word RMW, J3b range+align poison guards, ext-dynidx/deref/arrow loads in msl_expr, dispatch binds the resident window at index 2, mslgate --mem 64 lanes 0 bad + mutate-KP 64/64, new cells gpu/msl-mem-binding(+kp) registered in must-run + gate-contract with an intrinsic floor; gpu 17/17, slice|census 122/122, ci/gate-contract green, jit 66/66. REMAINING: the frame/statement arm (mccslice.h MSL twin of mcc_slice_spv_stmt/run/guard + flip backend_has_frame_kernels), then slicerun’s own spv-typed kernels (hi/fmt/region suites + backend_has_regions). Specs at the slice anchors
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 

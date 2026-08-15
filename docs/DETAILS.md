@@ -45112,3 +45112,59 @@ Win suite steady state after this: **14 residual reds**, all owned (12
 Bucket-B/embed-JIT-class, msstruct T-win-50015, slice/fault T-win-50019).
 
 **Source.** win-x64, 2026-08-15, at 74f51d91.
+<a id="t-lin-10042-slice-5-msl-region-arm"></a>
+
+## T-lin-10042 slice 5 — the Metal region arm: binding 2, byte-addressed loads/stores, and the mem differential
+
+**Type** `[X]` mac-arm64 — **State** slice 5 DONE at `59a62bf6` — parent stays IN_PROGRESS
+
+This is the arm [T-lin-10041] names ("the native MSL region arm, the largest
+item on the Mac apart from the tree-side oracle") — built here because
+T-lin-10042's staged plan already counts the 29 region symbols in its
+line estimate; the two tasks share this subject and T-lin-10041 should close
+on this slice's evidence rather than being re-done.
+
+**What landed.** The MSL twins of the SpvRegion machinery, semantics
+transliterated (same guards, same verdicts as `ast_eval_slice_addr_ok/_fix`):
+
+- `MslMod` gains `mem_base`/`mem_nbyte`/`mem_used`; two new kernel signatures
+  declare `device atomic_int *memb [[buffer(2)]]` when a region op was
+  emitted (`msl_module_finish` now picks among four headers).
+- `MslRegion` + `msl_mem_region/mem_off/ext_off/region_addr/region_word` —
+  the same range+alignment check poisoning `def` and replacing the offset
+  with 0 (J3b: out-of-region access impossible by construction, not merely
+  detected), the same `hi(p - mem_base) == 0` address-translation guard.
+- Word ops through Metal atomics: `atomic_load/store_explicit` relaxed, and
+  the sub-word store as the identical two-op RMW the spv arm uses
+  (`atomic_fetch_and ~keep` then `atomic_fetch_or put&keep`) — per-width
+  stores because a heap's neighbours are not disjoint 8-byte slots.
+- `msl_expr` gains the three region consumers `spv_expr` has: ext-dynidx
+  loads (`nspan > DENSE_MAX` arrays through the window), deref loads, and
+  arrow (`p->field`) loads.
+- `mcc_gpu_dispatch_locked2` binds the process-resident `mcc_mtl_mem` at
+  index 2 whenever it exists — same contract as the Vulkan arm: the caller
+  makes the window resident via `mcc_gpu_mem()` before building a kernel
+  that declares it.
+- `mslgate --mem`: the binding-2 differential ported (64 lanes, per-lane
+  pointer into the shared window, VT_LLONG loads through address
+  translation, distinctive per-lane payloads), plus `mem_window` over
+  `mcc_gpu_mem`. New cells `gpu/msl-mem-binding` +
+  `-known-positive` (spvgate_mutate wrapper), registered in must-run and
+  gate-contract. The gate-contract row carries an intrinsic floor — the
+  case compares all 64 lanes unconditionally and UNDEFINED counts as bad,
+  so a vacuous pass is impossible — which is why the unfloored ratchet (86)
+  stays untouched.
+
+**Deliberately not in this slice.** The scheduler expression path stays
+mirror-exact with spv (neither arm wires `mem_base` there); the frame-store
+statement path (`mccgpu.c` "frame stores not emitted yet"), slicerun's
+`hi_kernel`/fmt device kernels, and region *stores* from `msl_expr` (no spv
+equivalent exists to mirror — stores only flow through the statement path)
+are later slices.
+
+**Verification (M1 Pro, Metal, at `59a62bf6`).** `./mslgate --mem`: 64 lanes
+through binding 2, 0 bad; `--mem --mutate`: 64/64 bad → FAIL as required.
+`ctest`: gpu/ 17/17 (two new cells live), slice|census 122/122,
+ci/gate-contract + -known-positive + ci/must-run-registered pass, jit 66/66.
+
+**Source.** mac-arm64, 2026-08-15, code at `59a62bf6`.
