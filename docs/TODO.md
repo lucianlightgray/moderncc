@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T13:45Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T14:00Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10380   | 2026-08-15T14:05Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50019   | 2026-08-15T13:45Z |
 
@@ -14,8 +14,8 @@
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
 - [ ] T-lin-10042 [X] mac-arm64 — the Metal parity staged plan, WITH fp64 (2,200-3,400 lines)
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 87f7b232 | TS: 2026-08-15T13:45Z
-      REF: DETAILS.md#t-lin-10042-slice-3-msl-f64-soft-float-arith | DEPS: — | Q: Q-lin-10009 ANSWERED | NOTE: human scheduled the fp64 variant; lands in slices each checkable by the per-value differential. SLICE 1 DONE 28ac8048 (f64 bits-pair: lit/ref/load/neg/truth/select). SLICE 2 DONE f5a04110 (six comparisons, mccf64_cmp total-order). SLICE 3 DONE 87f7b232 — THE FP64 HALF IS FUNCTIONALLY COMPLETE: soft-float RTE binary64 +/-/* (mccf64_addsub/mul/round, subnormals, measured arm64 NaN contract), mcc_gpu_f64() true on Metal, slicerun suite_f64 runs its FULL certification natively: 3965 tuples bit-exact, denormals PRESERVED, NaN payload = first operand = host rule. mslgate 2.75M compared 0 mismatches, mutate-KP flips all; gpu 15/15, slice|census 122/122, jit 66/66. No f64 `/` gap (not an f64 slice op anywhere). REMAINING (non-fp64 parity): dynidx/region f64+int loads = the runtime-idx gap (spv 712 vs msl 704 real slices), region/memory arm. Specs at the slice anchors
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 6610f66d | TS: 2026-08-15T14:00Z
+      REF: DETAILS.md#t-lin-10042-slice-4-msl-runtime-index-loads | DEPS: — | Q: Q-lin-10009 ANSWERED | NOTE: human scheduled the fp64 variant; lands in slices each checkable by the per-value differential. SLICE 1 DONE 28ac8048 (f64 bits-pair). SLICE 2 DONE f5a04110 (six comparisons). SLICE 3 DONE 87f7b232 — fp64 half functionally complete: soft-float RTE binary64 +/-/*, mcc_gpu_f64() true on Metal, slicerun suite_f64 full certification native (3965 tuples bit-exact, denormals preserved, NaN = host rule). SLICE 4 DONE 6610f66d — runtime-index loads (msl_slot_at/dyn_elem/load_live_dv, J3b compare-poison-mask): REAL-CORPUS SLICE PARITY, msl 712 = spv 712, runtime-idx 8, 920,192 idx points compared 0 mismatches; gpu 15/15, slice|census 122/122, jit 66/66. REMAINING: the region/memory arm (Metal encoder binds buffers 0/1 only — needs buffer(2) + byte-addressed MSL region ops + RMW sub-word stores; unlocks ext-dynidx/deref/arrow and spvgate mem_case Metal arm), then the mccslice statement/frame-store arm (mccgpu.c:1703 "frame stores not emitted yet"). NB for win-x64 on T-mac-30004: the guarded CASES block is now SIX cases (see CONTRACT at 6610f66d). Specs at the slice anchors
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 

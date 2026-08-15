@@ -44918,3 +44918,35 @@ Compiling the first 58 files of `tests/exec` twice, `-c` with and without `MCC_R
 **First slice** is to characterise one differing object rather than to fix anything: take `tests/exec/codegen/dead_code.c` at `-O2`, diff the two objects, and say which of the two is the one users get and whether the difference is code, relocations or section ordering. Until that is known, the row should not be described as a bug.
 
 **Source.** lin-x64, 2026-08-15.
+<a id="t-lin-10042-slice-4-msl-runtime-index-loads"></a>
+
+## T-lin-10042 slice 4 — runtime-index loads close the real-corpus slice gap: msl 712 = spv 712
+
+**Type** `[X]` mac-arm64 — **State** slice 4 DONE at `6610f66d` — parent stays IN_PROGRESS
+
+The 8-slice difference between the arms on the identical real corpus (spv 712,
+msl 704) was exactly the runtime-index class: `arr[i]` with a run-time `i`,
+reaching the arena as `Load(Binary('+')(Ref[VT_LOCAL|VT_ARRAY], i))` with type
+0 on the Load — so the msl arm's blanket `intt(t)` refusal in `AST_Load` was
+refusing them before the dynidx probe could run. The fix is the spv shape
+transplanted: `AST_Load` restructured into the same ordered arms (f64
+frame-off / int frame-off / dynidx / refuse), plus the three helpers
+`msl_slot_at`, `msl_dyn_elem`, `msl_load_live_dv` mirroring their spv twins —
+including J3b's compare-poison-mask discipline: the index is bounds-checked
+against `nelem` (def poisoned on failure) and masked into the object's own
+`nspan` power-of-two span, so an out-of-range device access is impossible
+rather than merely detected, and the reference reaches the identical verdict
+in `ast_eval_slice_idx_ok`. `ast_eval_slice_ext` regions still refuse — the
+Metal dispatch encoder binds buffers 0 and 1 only; the region arm is the next
+slice. `msl_fit_v` also gained the f64 arm `spv_fit_v` has (dynidx f64 etypes
+route through it).
+
+**Verification (M1 Pro, Metal).** `gpu/msl-slice-real` before → after on the
+same corpus: slices 704 → **712**, runtime-idx 0 → **8**,
+runtime-idx-compared 0 → **920,192**, runtime-idx-poisoned 0 → **1,573,920**,
+mismatches 0 — every figure now identical to the spv arm's on the same arena
+inputs, which is the per-arm parity claim stated numerically. Full battery at
+the same tree: `./mslgate` 2,754,660 compared 0 mismatches; gpu/ 15/15,
+slice|census 122/122, jit 66/66.
+
+**Source.** mac-arm64, 2026-08-15, code at `6610f66d`.
