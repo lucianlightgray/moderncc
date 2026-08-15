@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30007   | 2026-08-15T22:40Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T23:05Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T23:08Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T22:38Z |
 
 ## Contracts — blocking, highest priority
@@ -22,8 +22,8 @@
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: PAUSED (heartbeat intentionally stale; TTL-eligible for any session to resume). slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
 - [ ] T-lin-10359 [X] lin-x64 — `slice/cref-oracle-*` stalls on five programs when the host GPU is busy
-      OWNER: lin-x64 | STATE: CLAIMED | SHA: 1fd3ca2d | TS: 2026-08-15T23:05Z
-      REF: DETAILS.md#t-lin-10359-slicecref-oracle-stalls-on-five-programs | DEPS: — | NOTE: CLAIMED — the stated in-practice blocker is CLEARABLE on this host after all: the row said "the gcc c-torture corpus is not provisioned", but `~/Projects/{gcc,llvm-test-suite,llvm-project}` ALL exist here (5.5G/2.5G/6.4G); vendor/ simply never had the symlinks (same host-local, untracked shape mac and win already use). Provisioning vendor/gcc-c-torture-execute + the two llvm-test-suite corpora un-skips slice/cref-oracle-* and makes this row's own verification executable. GPU confirmed idle at claim (0% util, 153 MiB, 47C, load 1.70; only 7/9 MiB resident non-compute clients) per the ACTIVITY-not-residence diagnostic
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 6c0dd551 | TS: 2026-08-15T23:08Z
+      REF: DETAILS.md#t-lin-10359-slicecref-oracle-stalls-on-five-programs | DEPS: — | NOTE: BLOCKER CLEARED — all four cref corpora are now provisioned on lin (vendor/ symlinks -> ~/Projects/{gcc,llvm-test-suite,llvm-project}, host-local + untracked, same shape as mac/win) and all four slice/cref-oracle-* cells re-register as LIVE commands instead of skip stubs after `cmake -S . -B cmake-debug`. Counts match win's table exactly (regression-c 1745, unittests 671). Now running the row's own verification on the idle GPU. The stated in-practice blocker is CLEARABLE on this host after all: the row said "the gcc c-torture corpus is not provisioned", but `~/Projects/{gcc,llvm-test-suite,llvm-project}` ALL exist here (5.5G/2.5G/6.4G); vendor/ simply never had the symlinks (same host-local, untracked shape mac and win already use). Provisioning vendor/gcc-c-torture-execute + the two llvm-test-suite corpora un-skips slice/cref-oracle-* and makes this row's own verification executable. GPU confirmed idle at claim (0% util, 153 MiB, 47C, load 1.70; only 7/9 MiB resident non-compute clients) per the ACTIVITY-not-residence diagnostic
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
