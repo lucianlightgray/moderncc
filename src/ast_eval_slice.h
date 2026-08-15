@@ -2070,6 +2070,33 @@ static int ast_eval_ladder_scan(AstArena *a, AstLocal n, AstEvalLadderIn *in,
 	case AST_Unary: {
 		int uop = ast_op(a, n);
 		int wt;
+		int32_t mo;
+		if (ast_eval_slice_member_off(a, n, &mo)) {
+			int bits = ast_eval_ladder_tbits(t);
+			int uns = (t & VT_UNSIGNED) != 0;
+			if (!ast_eval_ladder_typed(t)) {
+				*reason = AST_LADDER_R_TYPE;
+				return 0;
+			}
+			for (i = 0; i < *cnt; i++)
+				if (in[i].off == mo) {
+					if (in[i].bits != bits || in[i].uns != uns) {
+						*reason = AST_LADDER_R_TYPE;
+						return 0;
+					}
+					return 1;
+				}
+			if (*cnt >= max) {
+				*reason = AST_LADDER_R_ARITY;
+				return 0;
+			}
+			in[*cnt].off = mo;
+			in[*cnt].type = t;
+			in[*cnt].bits = bits;
+			in[*cnt].uns = uns;
+			(*cnt)++;
+			return 1;
+		}
 		if (uop == '!')
 			break;
 		wt = ast_eval_slice_wtype(a, n);

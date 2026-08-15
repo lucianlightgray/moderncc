@@ -196,6 +196,17 @@
 #    pinned by note 1, and a NaN sign flip is what N30's fix already moved once.
 #    A rise here means a new category started masking points, which is the event
 #    this row exists to catch.
+# 18. O4 slice-refused:no-static-type 515 -> 344 and all-undefined 15 -> 0
+#    (O9 dev-slice-refused mirrors both): T-lin-10384. ast_eval_ladder_scan gained
+#    a member-select arm -- for a scalar struct field it now keys the resolved
+#    field offset as a live-in (the arm ast_eval_slice_livein already had) instead
+#    of descending into the struct base, whose non-scalar type refused as
+#    no-static-type. The member pairs it stops dropping now certify against the
+#    reference, and the 15 formerly all-undefined pairs gain a defined field value.
+#    A COMPILER change, not a subject change; measured before/after on the same
+#    subject.c. The same fix took the GPU-emitter census 81 -> 0 (a smaller,
+#    device-dispatched subset of the same member pairs). See
+#    docs/DETAILS.md#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-scanner-census-81-to-0-certified.
 
 O0 replay-fallback:len 3
 O1 replay-fallback:len 3
@@ -217,11 +228,11 @@ O2 jit-not-baked:signature 183
 O2 replay-fallback:len 3
 O3 replay-fallback:len 3
 O4 replay-fallback:len 3
-O4 slice-refused:all-undefined 15
-O4 slice-refused:no-static-type 515
+O4 slice-refused:all-undefined 0
+O4 slice-refused:no-static-type 344
 O4 slice-refused:unsupported-op 1
-O9 dev-slice-refused:all-undefined 15
-O9 dev-slice-refused:no-static-type 515
+O9 dev-slice-refused:all-undefined 0
+O9 dev-slice-refused:no-static-type 344
 O9 dev-slice-refused:unsupported-op 1
 div diverge-both:bsweep.F16.FMULADD.fold 1
 div diverge-both:bsweep.F16.FMULADD.run 1
