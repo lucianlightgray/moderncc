@@ -46117,3 +46117,15 @@ The one genuine non-environmental red (`rir-coverage`) was diagnosed, routed to 
 **The owed "confirming experiment" is now moot.** The row noted it was *not yet proved* that concurrency is what removed the file (inference from five runs). Proving that is no longer needed to close the row: the fix removes the shared-directory dependency **by construction**, so the cell can no longer be flaked by shared-dir concurrency whatever the exact prior remover was. The hazard is eliminated, not merely diagnosed. The cell's answer never varied — only its ability to find its own binary, and the binary no longer lives where anything else can touch it.
 
 **Source.** lin-x64, 2026-08-15, fix at `main@a2d22db2`; mechanism at [the shared-build-dir anchor](#t-lin-10071-mechanism-the-cell-writes-and-executes-three-binaries-in-the-shared-build-directory).
+
+<a id="t-lin-10032-fixed-the-jit-pool-cap-is-diagnosed-and-checked-by-a-compile-and-run-cell"></a>
+
+## T-lin-10032 fixed — the JIT worker-pool cap is now diagnosed, and a compile-and-run cell asserts it
+
+**Fix (lin-x64, 2026-08-15, `main@e77a9c2c`).** `mccjit_pool_start` (`src/mccjit_embed.c:1498`) reduced a worker request above `MCCJIT_POOL_MAX` (64) to 64 with no output. It now emits one stderr line — `mcc: JIT worker pool capped at 64 (requested N); raise MCCJIT_POOL_MAX to ask for more` — before clamping. Small and latent, as the row said (nothing asks for more than 2 today), but a cap no message reports is a limit hit blind.
+
+**Test (`jit/pool-cap`, `tests/jit/run-poolcap.sh`).** Per the row's verification — *"ask for more than the cap and require a diagnostic; the baked constructor passes a literal, so the cell can be a compile-and-run of one program"* — the cell compiles one trivial program with `--embed-jit --jit-threads 100`. `--jit-threads` sets `s1->jit_threads` (`libmcc.c:2796`), which the embed-JIT bakes as the `workers` literal in the generated `mccjit_boot_swap_async(...)` constructor (`mccjit_embed.c:2265`); at load under `MCC_JIT=1` that calls `mccjit_pool_start(100)`. The cell requires the cap diagnostic on stderr and exit 0 (clamping must not break the program).
+
+**Proven non-blind.** Reverting the diagnostic to the silent clamp and rebuilding makes `jit/pool-cap` **fail** (`asked for 100 workers over a cap of 64 and got no diagnostic — the over-cap request was clamped silently`), so the cell tests the behaviour rather than merely running it. Verified green: `jit/pool-cap`, and `jit/selftest-pool` + `jit/run-parity-host` + `jit/selftest-leaf-int` (which exercise the same `mccjit_pool_start`) still pass — the new branch fires only above 64, which nothing else requests.
+
+**Source.** lin-x64, 2026-08-15, `main@e77a9c2c`.
