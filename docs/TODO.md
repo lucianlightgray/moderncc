@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:36Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T19:45Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T19:47Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T19:42Z |
 
 ## Contracts — blocking, highest priority
@@ -18,6 +18,9 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-lin-10379 [S] `MCC_REPLAY_IR=1` changes 46 of 58 corpus objects at `-O1` and above
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 7ea9be08 | TS: 2026-08-15T19:47Z
+      REF: DETAILS.md#t-lin-10379-mcc-replay-ir-changes-46-of-58-corpus-objects-at-o1-and-above | DEPS: — | NOTE: CLAIMED for the characterisation first slice — diff the MCC_REPLAY_IR=1 vs =0 objects for tests/exec/codegen/dead_code.c at -O2; say which one users get and whether the delta is code / relocs / section order. Do NOT call it a bug until known
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: PAUSED (heartbeat intentionally stale; TTL-eligible for any session to resume). slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
@@ -49,9 +52,6 @@
 - [ ] T-lin-10381 [S] `mcc_asm_inline_unwind`'s recovery lost its only test when the asm double-assembly fix removed its trigger
       OWNER: — | STATE: OPEN | SHA: 0d94d189 | TS: 2026-08-15T14:40Z
       REF: DETAILS.md#t-lin-10381-the-asmreplay-row-lost-its-mcc-asm-inline-unwind-coverage-and-what-it-would-take-to-get-it-back | DEPS: — | NOTE: filed at the moment the coverage was dropped, not after someone notices. 5f2e6f39 built the asmreplay row for "the recovery longjmp must not leave the C parser inside the dead :asm: BufferedFile", provable by reverting mcc_asm_inline_unwind to a no-op. The row reached that path THROUGH the double-assembly defect, so fixing it removed the trigger. The path is still live — a genuine duplicate label in one TU refuses identically and mcc names the real file+line, which IS the evidence the parser recovered — but it is a HARD error, so there is no binary to run, no stdout to pin and no oracle (gcc-15 refuses it too), and a Pass row treats a failed compile as fatal. Needs a `wantfail` row shape. PRICE THE CHEAPER OPTION FIRST: tests/cross/no-compiler-abort.sh already compiles a corpus asserting mcc never aborts — check whether it can adjudicate the diagnostic TEXT, because "the process survived" is not the half that matters
-- [ ] T-lin-10379 [S] `MCC_REPLAY_IR=1` changes 46 of 58 corpus objects at `-O1` and above
-      OWNER: — | STATE: OPEN | SHA: 7ea9be08 | TS: 2026-08-15T14:05Z
-      REF: DETAILS.md#t-lin-10379-mcc-replay-ir-changes-46-of-58-corpus-objects-at-o1-and-above | DEPS: — | NOTE: measured while checking whether the T-lin-10375..10378 asm fix had leaked; it had not — the identical 46/58 comes from a compiler built at HEAD without the fix, in its own build dir. -O0 0/58, -O1 16/58, -O2 46/58. NOT obviously a defect: at -O1+ the AST recorder runs and replay is a PRODUCER, so emitted code coming from replay is the design; what is unestablished is whether 46/58 is that design working or drifting, and nothing in the tree says which objects should move or why. -O0 is the only level where the invariant is asserted (optfire/asm-replay-object). FIRST SLICE is characterisation, not a fix: diff the two objects for tests/exec/codegen/dead_code.c at -O2 and say which one users get and whether the delta is code, relocs or section order. Do not call it a bug until that is known
 - [ ] T-lin-10374 [S] Two builds of identical mcc source do not produce identical binaries
       OWNER: — | STATE: OPEN | SHA: 8dd00e11 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10012-the-binary-diff-instrument-that-did-not-work | DEPS: — | NOTE: found doing T-lin-10012, where binary identity was reached for as a proof and had to be discarded. Control: rebuilding cmake-cross twice from IDENTICAL source (touch one header, change nothing) yields an mcc-arm64 differing in 1,104,183 bytes. The tree neither has reproducibility nor states that it does not, and several checks would like to lean on it. First slice = name the source of the nondeterminism (build id / __DATE__ / amalgamation order / link order), then decide whether to fix it or bank the non-claim
