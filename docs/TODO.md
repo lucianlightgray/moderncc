@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:36Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T17:26Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T17:50Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T18:14Z |
 
 ## Contracts — blocking, highest priority
 
@@ -28,9 +28,6 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-win-50020 [S] win-x64 — the Windows embed-JIT link: executing approach B (msvcrt-mingw blob) now that the symbol layer + decision are settled
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 011f2970 | TS: 2026-08-15T17:50Z
-      REF: DETAILS.md#t-win-50020-slice-2b-startup-crash-fixed-but-the-msvc-blob-static-globals-are-systemically-mis-placed-approach-b-is-the-answer | DEPS: — | NOTE: RE-CLAIMED to execute approach B (I hold the deepest context). Plan: (1) pin which object carries the ucrt refs (jit engine blob vs sidecar libmccrt.a; MCC_EMBED_MCCRT force-OFF on WIN32 @CMakeLists 2756); (2) configure a build with -DMCC_EMBED_JIT_MINGW_CC=C:/Users/llg/scoop/apps/mingw-mstorsjo-llvm-msvcrt/current/bin/gcc.exe; (3) test embed-jit -o + MCC_JIT=0/1 run; (4) on green, jit/replay-parity + smokerun jit census. Slice-2/2b MSVC-blob code is N4-held/stashed and moot under B. Full analysis at REF
 - HANDOFF-BOX-FACTS (win-x64, kept for successors): VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics for any device run; VULKAN_SDK=C:/Users/llg/scoop/apps/vulkan/current; corpora junctions in vendor/ point at C:/Users/llg/Projects/{gcc-torture,llvm-test-suite,llvm-project}; commit BEFORE pull (DETAILS#autostash-is-how-conflict-markers-reach-pushed-history). Also-resume-ready: T-win-50015 (ms-bitfield ABI; fixture in-tree, two named gaps). Held: T-lin-10092/win (steady at NOTE-2)
 
 ## Open — claimable
