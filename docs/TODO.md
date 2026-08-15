@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T20:02Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:00Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:04Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T20:02Z |
 
 ## Contracts — blocking, highest priority
@@ -18,6 +18,9 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-lin-10032 [S] `MCCJIT_POOL_MAX` is 64 and `mccjit_pool_start` clamps to it silently
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-15T20:04Z
+      REF: DETAILS.md#t-lin-10032-mccjit-pool-max-is-64-and | DEPS: — | NOTE: CLAIMED. FIX: mccjit_pool_start (mccjit_embed.c:1498) silently caps want>MCCJIT_POOL_MAX(64) → add a one-line diagnostic. The baked constructor requests s1->jit_threads workers (mccjit_embed.c:2265), set by --jit-threads N (libmcc.c:2796). TEST (compile-and-run one program): compile with --embed-jit --jit-threads 100, run with MCC_JIT=1, assert the cap diagnostic on stderr + pool ≤64
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: PAUSED (heartbeat intentionally stale; TTL-eligible for any session to resume). slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
@@ -148,9 +151,6 @@
   - [ ] T-lin-10030/win [P] The embed JIT is measured only on x86_64 — win-x64
         OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-15T15:45Z
         REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: — | NOTE: corpus prerequisite FULLY MET 2026-08-15 (all four cref corpora provisioned + green on win, DETAILS.md#win-corpus-provisioning-complete-all-four-cref-corpora-live); only the embed-JIT link (T-win-50003 Bucket B) still blocks the measurement half
-- [ ] T-lin-10032 [S] `MCCJIT_POOL_MAX` is 64 and `mccjit_pool_start` clamps to it silently
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10032-mccjit-pool-max-is-64-and | DEPS: —
 - [ ] T-lin-10033 [S] The Vulkan dispatch destroys resources under a still-pending command buffer
       OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
       REF: DETAILS.md#t-lin-10033-the-vulkan-dispatch-destroys-resources-under | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
