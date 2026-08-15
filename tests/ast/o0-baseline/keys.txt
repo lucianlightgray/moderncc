@@ -1,0 +1,33 @@
+# o0-baseline target-key manifest (T-mac-30006).
+#
+# The board banks a byte-identical -O0 object hash per source file, per target
+# key. No single box can build every key (a mac holds the *-osx keys, a Linux
+# cross-build holds the ELF + *-win32 keys), so the board is maintained
+# PER-BOX: each session re-banks the active keys it can measure with
+#   C2_NO_EXTRA=1 O0_AB_BANK=1 tools/o0_ab.sh <build> measurable
+# and the union across sessions covers the active set. `all` remains only for a
+# hypothetical box that can measure every active key at once.
+#
+# Each line: <state> <key>
+#   active         a fleet box measures this key; it is banked and checked.
+#   provisionable  measurable only after fetching the gentoo stage3 sysroot it
+#                  needs (the opt-in qemu-<arch>-<libc>-fetch fixture in
+#                  CMakeLists.txt, -DMCC_QEMU_TESTS=ON, writes
+#                  vendor/gentoo-stage3-<arch>-glibc). NOT banked or checked, and
+#                  a new tests/exec fixture does not need a row for it. To cover
+#                  one: fetch its sysroot, move it to `active`, and re-bank it
+#                  from the box that now measures it.
+#
+# A key that mcc can build on this box but appears in NEITHER state is a silent
+# coverage gap: o0_ab.sh flags it so the manifest stays the explicit contract.
+active x86_64
+active x86_64-win32
+active i386-win32
+active arm64-win32
+active arm-win32
+active x86_64-osx
+active arm64-osx
+provisionable i386
+provisionable arm
+provisionable arm64
+provisionable riscv64

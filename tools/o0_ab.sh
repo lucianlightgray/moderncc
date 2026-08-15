@@ -135,7 +135,18 @@ export LC_ALL
 SOURCE_DATE_EPOCH=1000000000
 export SOURCE_DATE_EPOCH
 
-KEYS="x86_64 i386 arm arm64 riscv64 x86_64-win32 i386-win32 arm64-win32 arm-win32 x86_64-osx arm64-osx"
+# Every key o0_ab knows how to build. The board is scoped to the ACTIVE subset
+# by the manifest (T-mac-30006); UNIVERSE is used only to flag a measurable key
+# the manifest forgot.
+UNIVERSE="x86_64 i386 arm arm64 riscv64 x86_64-win32 i386-win32 arm64-win32 arm-win32 x86_64-osx arm64-osx"
+MANIFEST=$BANKDIR/keys.txt
+if [ -f "$MANIFEST" ]; then
+	KEYS=$(awk '$1 == "active" { print $2 }' "$MANIFEST" | tr '\n' ' ')
+	PROVKEYS=$(awk '$1 == "provisionable" { print $2 }' "$MANIFEST" | tr '\n' ' ')
+else
+	KEYS=$UNIVERSE
+	PROVKEYS=
+fi
 
 if command -v sha256sum > /dev/null 2>&1; then
 	sha256() { sha256sum "$1"; }
@@ -447,6 +458,15 @@ measurable)
 		else
 			SKIPPED="$SKIPPED $k"
 		fi
+	done
+	for k in $UNIVERSE; do
+		case " $KEYS $PROVKEYS " in *" $k "*) continue ;; esac
+		if key_available "$k"; then
+			echo "o0_ab: FAIL -- $k is measurable on this box but appears in" \
+				"neither state of $MANIFEST. Add it as 'active' and bank it, or" \
+				"the board silently omits an arch this box could cover." >&2
+			GAP=1
+		fi
 	done ;;
 *)
 	run_key "$KEY"
@@ -457,11 +477,10 @@ nkeys=$(echo $KEYS | wc -w | tr -d ' ')
 nrun=$(echo $RUNKEYS | wc -w | tr -d ' ')
 minkeys=${O0_AB_MIN_KEYS:-1}
 if [ -n "$O0_AB_BANK" ] && [ "$KEY" = "measurable" ]; then
-	echo "o0_ab: FAIL -- refusing to bank from 'measurable'. The board is an" \
-		"eleven-row artefact and 'all' is the only spelling that demands all" \
-		"eleven; banking whichever rows this host happened to reach would" \
-		"freeze a hole into the baseline. Use 'all'." >&2
-	exit 1
+	echo "o0_ab: measurable bank -- writing only the active keys this box can" \
+		"measure; the other active keys are banked from other boxes (a mac holds" \
+		"the *-osx keys, a Linux cross-build the rest). The active set is the" \
+		"manifest's ($MANIFEST); 'all' still demands every active key at once." >&2
 fi
 if [ "$KEY" = "measurable" ]; then
 	echo "o0_ab: measurable -- $nrun/$nkeys key(s), floor $minkeys;" \
@@ -489,13 +508,17 @@ cat "$board"
 if grep -q ' FAIL$' "$board"; then
 	rc=1
 fi
-if [ -n "$O0_AB_BANK" ]; then
+# Bank the board summary only from 'all' -- a measurable run holds just this
+# box's rows and would clobber the multi-box board. The per-key obj.txt/rir.txt
+# banks (in run_key) are what a measurable re-bank writes, one file per key.
+if [ -n "$O0_AB_BANK" ] && [ "$KEY" = "all" ]; then
 	mkdir -p "$BANKDIR"
 	cp "$board" "$BANKDIR/board$SUF.txt"
 fi
 if [ -n "$O0_AB_CHECK" ] && [ "$KEY" = "all" ] \
 		&& ! diff -u "$BANKDIR/board$SUF.txt" "$board" >&2; then
-	echo "o0_ab: the eleven-key board moved." >&2
+	echo "o0_ab: the active-key board moved." >&2
 	rc=1
 fi
+[ -z "$GAP" ] || rc=1
 exit $rc
