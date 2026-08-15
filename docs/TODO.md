@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T00:55Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10365   | 2026-08-15T01:10Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10365   | 2026-08-15T01:35Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50003   | 2026-08-15T00:22Z |
 
 ## Contracts — blocking, highest priority
@@ -19,9 +19,6 @@
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 86a2d7e5 | TS: 2026-08-15T00:52Z
       REF: DETAILS.md#t-lin-10001-slice-2-the-optimizer-thread-becomes-a-task | DEPS: — | NOTE: slice 2 DONE (mcchv's optimizer is an MccTask; poll loop, stop flag and mutex gone) — next slice is L2′, the JIT pool worker
-- [ ] T-mac-30002 [S] `ci/gate-contract` is red on Darwin: 4 prover-carrying gates host-skip as echo stubs, so min-proved 48>46
-      OWNER: lin-x64 | STATE: CLAIMED | SHA: c5bd5140 | TS: 2026-08-15T01:10Z
-      REF: DETAILS.md#t-mac-30002-ci-gate-contract-red-on-darwin | DEPS: — | NOTE: my gate-contract domain; lin-x64 is ALSO under-counting (48 = 50 − 2 host-skipped provers here), so the pin is host-relative on every box, not just Darwin — fixing for all three
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
@@ -33,7 +30,7 @@
       REF: DETAILS.md#t-lin-10364-the-pre-existing-half-of-the-census-drift | DEPS: —
 - [ ] T-win-50001 [S] `ci/gate-contract` is red on win-x64: 6 manifest gates lack a Windows `mcc_skip_test` else-branch (+ min-proved 48>34)
       OWNER: — | STATE: OPEN | SHA: c5bd5140 | TS: 2026-08-14T23:45Z
-      REF: DETAILS.md#t-win-50001-ci-gate-contract-red-on-win-x64 | DEPS: — | NOTE: lin-x64's gate-contract domain — verbatim violations + root cause in DETAILS; third-platform report lin asked for
+      REF: DETAILS.md#t-win-50001-ci-gate-contract-red-on-win-x64 | DEPS: — | NOTE: the `min-proved 48>34` half is CLOSED by 8f69a734 (pin is now 50 and host-skipped provers count; see DETAILS#t-mac-30002-resolution-the-pin-was-never-48). Remaining scope is exactly the 6 Windows `mcc_skip_test` else-branches — those rows are unregistered, not stubbed, which is a different path; adding them yields 34+16=50
 - [ ] T-lin-10004 [S] Implement `_BitInt(N)` (C23 6.2.5); the keyword is diagnosed, the type is absent
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10004-implement-bitintn-c23-625-the-keyword | DEPS: —
