@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T03:40Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T04:00Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T06:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
@@ -38,9 +38,6 @@
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 ## Open — claimable
-- [ ] T-mac-30003 [S] jitconform/xoracle nondet detection misses prototype-less-variadic UB programs (SimpleCTest.c flagged as a JIT miscompile on arm64)
-      OWNER: — | STATE: OPEN | SHA: 15c701b4 | TS: 2026-08-15T03:40Z
-      REF: DETAILS.md#t-lin-10030-mac-conformance-provisioned-and-the-simplectest-ub-flag | DEPS: — | NOTE: jitconform/xoracle domain. A program whose output changes between two runs of the SAME config is nondet by construction and must be excluded before the JIT-vs-AOT --max-miscompile 0 pin, as the c-torture `ub 1` case already is. SimpleCTest calls variadic printf with no prototype → arm64 stack-args ABI reads garbage (clang miscompiles identically → not an mcc bug). Blocks jit/xoracle-conformance greening on arm64 (T-lin-10030/mac)
 - [ ] T-lin-10088 [X] carry the `gcc-c-torture-execute` corpus for the cref-oracle (was "for pe/x-oracle", was win-x64)
       OWNER: — | STATE: OPEN | SHA: c5197398 | TS: 2026-08-15T03:05Z
       REF: DETAILS.md#fleet-capabilities-docker-qemu-on-all-three | DEPS: — | Q: Q-lin-10014 ANSWERED | NOTE: win-x64 executed this and corrected two premises (see DETAILS). (1) `pe/x-oracle` does NOT read this corpus; the real consumer is `slice/cref-oracle-gcc-c-torture-execute`. (2) The corpus is NOT the only blocker: fetched 1694 progs via `git clone --filter=blob:none --sparse …gcc-mirror/gcc` + `sparse-checkout gcc/testsuite/gcc.c-torture/execute` → vendor/ (gitignored; no Docker, network works here); the cref cell now RUNS (134s over 1694) but is RED with `bodies=0 slices=0 tuples=0` — the same win-x64 slice-extraction gap as T-win-50003 Bucket A (the in-tree `slice/cref-oracle` is 0-tuples here too). Green needs the slice fix (mccgpu/slicerun owners'), NOT the corpus. Re-typed [X]→ any session: on lin-x64/mac-arm64 the same fetch should green the cell; win-x64 cannot demonstrate it (its slice path is what's broken)
@@ -134,9 +131,9 @@
 - [ ] T-lin-10030 [P] The embed JIT is measured only on x86_64
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: —
-  - [ ] T-lin-10030/mac [P] The embed JIT is measured only on x86_64 — mac-arm64
-        OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 15c701b4 | TS: 2026-08-15T03:40Z
-        REF: DETAILS.md#t-lin-10030-mac-conformance-provisioned-and-the-simplectest-ub-flag | DEPS: T-mac-30003[S] | NOTE: corpus provisioned on-box (gcc c-torture + llvm-test-suite at ~/Projects/{gcc,llvm-test-suite}). jit/xoracle-coverage PASSES; conformance runs 535 progs on arm64 and finds ONE flag: SimpleCTest.c — a prototype-less-variadic UB program (clang miscompiles it identically, NOT an mcc bug). Engine correct on 534 clean progs + 66 native jit cells → parent's arm64 concern answered. Conformance-cell-green blocked on T-mac-30003 (harness nondet gap)
+  - [x] T-lin-10030/mac [P] The embed JIT is measured only on x86_64 — mac-arm64
+        OWNER: mac-arm64 | STATE: DONE | SHA: 20a82ad3 | TS: 2026-08-15T04:00Z
+        REF: DETAILS.md#t-lin-10030-mac-conformance-provisioned-and-the-simplectest-ub-flag | DEPS: — | NOTE: DONE. Embed-JIT measured natively on arm64: jit family 66/66 + selfcheck boot the engine, and with the corpora provisioned host-local (gcc c-torture + llvm-test-suite, same not-vendored shape as T-lin-10088) jit/xoracle-conformance (535 progs) + coverage both PASS. The one flag (SimpleCTest UB) was a harness gap, fixed as T-mac-30003. Parent stays open until /lin + /win
   - [ ] T-lin-10030/lin [P] The embed JIT is measured only on x86_64 — lin-x64
         OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
         REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: —

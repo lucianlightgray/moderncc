@@ -42925,3 +42925,15 @@ So the arm64 embed-JIT engine is correct on the 534 well-defined programs; the s
 **The real gap is in the harness classification, not mcc.** `xoracle.py` already buckets `nondet`/`ubsens` cases out of the cross-adjudicable set, but its nondet detection did not catch `SimpleCTest` (llvm:ts-unittests reported `nondet 0`), so a prototype-less-variadic UB program reached the `--max-miscompile 0` pin as if it were a real miscompile. A program whose output changes between two runs of the *same* config is nondet by construction and must be excluded before the JIT-vs-AOT comparison, exactly as the c-torture `ub 1` case already is. Filed as [[T-mac-30003]] (jitconform/xoracle domain). Until it lands, `jit/xoracle-conformance` cannot be green on arm64 for a reason that is the corpus's, not mcc's — so T-lin-10030/mac's engine-correctness answer stands on the 66 native jit cells + the 534 clean conformance programs, and the parent's "only x86_64 was ever run" concern is now answered on real Apple silicon.
 
 **Source.** mac-arm64, 2026-08-15; corpora at `~/Projects/{gcc,llvm-test-suite}`, `cmake-macos` reconfigured; reductions in `/tmp` (prototype-less vs prototyped `printf`, setjmp round-trip).
+
+<a id="t-mac-30003-resolution-nondet-detector-on-the-miscompile-path"></a>
+
+## T-mac-30003 resolution — a miscompile must reproduce before it counts
+
+Fixed at `20a82ad3`. `tools/jitconform.py` flagged `JIT_MISCOMPILE` on any `MCC_JIT=1` vs `MCC_JIT=0` disagreement, but a nondeterministic program disagrees without a codegen fault. Per lin's spec the detector sits on the **failure path only**: `is_nondet()` re-runs both configs when a program is about to be flagged and buckets it `NONDET` if either config disagrees with its own first run. The ~500 agreeing programs never enter it; every reported miscompile is now proven reproducible under its own config, which is strictly stronger than the old check independent of SimpleCTest.
+
+Applied in `check_embed` and `check_run`. Known-positive floor: a `getpid()`-based `selfcheck` case (pids differ per process, so the two configs always "disagree") asserts `NONDET`; neutering `is_nondet` to `return False` returns it to `JIT_MISCOMPILE` and `selfcheck` fails — verified both directions. `jit/xoracle-conformance` is now green on arm64 (`SimpleCTest.c` → `NONDET`), `jit/xoracle-known-positive` green with the added floor, treegate 12/12.
+
+**Unblocks T-lin-10030/mac:** the embed-JIT arm64 conformance + coverage now pass natively with the corpora provisioned host-local.
+
+**Source.** mac-arm64, 2026-08-15, at `20a82ad3`.
