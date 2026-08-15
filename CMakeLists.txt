@@ -4190,7 +4190,7 @@ if(MCC_BUILD_TESTS)
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/osx/headers-parse.sh"
                         "$<TARGET_FILE:mcc>"
                         "${CMAKE_CURRENT_SOURCE_DIR}"
-                        --min-files 194)
+                        --min-files 195)
             set_tests_properties("osx/headers-parse" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 600)
 
@@ -4199,7 +4199,7 @@ if(MCC_BUILD_TESTS)
                         -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/tests/osx/headers-parse.sh
                         -DMCC=$<TARGET_FILE:mcc>
                         -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
-                        -DMINFILES=194
+                        -DMINFILES=195
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/osx_headers_mutate.cmake")
             set_tests_properties("osx/headers-parse-known-positive" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900)
