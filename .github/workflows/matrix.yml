@@ -103,6 +103,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cmake ninja-build gcc python3 \
             libvulkan-dev mesa-vulkan-drivers
+          # Record the exact Mesa/lavapipe version (T-lin-10060), same as ci.yml:
+          # unpinned apt, so print what this run actually got rather than infer it.
+          dpkg -s mesa-vulkan-drivers | sed -n 's/^Version: /CI lavapipe (mesa-vulkan-drivers) version: /p'
       - name: install wine (linux pe cell drives pe-wine-conformance)
         if: ${{ startsWith(matrix.runner, 'ubuntu') && matrix.feature == 'pe' && !matrix.skip }}
         run: |
