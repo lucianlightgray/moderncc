@@ -849,6 +849,21 @@ static AstLocal b_f_ternary(AstArena *a, const int *o) {
 	ast_add_child(a, n, mk_lit(a, 0x3FF8000000000000LL, VT_DOUBLE));
 	return n;
 }
+
+static AstLocal b_f_cmp(AstArena *a, const int *o) {
+	static const int ops[5] = {TOK_LE, TOK_GT, TOK_GE, TOK_EQ, TOK_NE};
+	AstLocal r = mk_bin(a, TOK_LT, mk_ref(a, o[0], VT_DOUBLE),
+											mk_ref(a, o[1], VT_DOUBLE), VT_INT);
+	int i;
+	for (i = 0; i < 5; i++)
+		r = mk_bin(a, '|', r,
+							 mk_bin(a, TOK_SHL,
+											mk_bin(a, ops[i], mk_ref(a, o[0], VT_DOUBLE),
+														 mk_ref(a, o[1], VT_DOUBLE), VT_INT),
+											mk_lit(a, i + 1, VT_INT), VT_INT),
+							 VT_INT);
+	return r;
+}
 #endif
 
 static const Case CASES[] = {
@@ -874,6 +889,7 @@ static const Case CASES[] = {
 		{"ll-land", 2, b_ll_land},       {"ll-bool", 2, b_ll_bool},
 #if MCC_GPU_LANG_MSL
 		{"f-notneg", 2, b_f_notneg},     {"f-ternary", 2, b_f_ternary},
+		{"f-cmp", 2, b_f_cmp},
 #endif
 };
 

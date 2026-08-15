@@ -702,6 +702,20 @@ static uint32_t msl_cmp(MslMod *m, int code, uint32_t a, uint32_t b) {
 	}
 }
 
+static int msl_f64_binop_code(int op) {
+	switch (op) {
+	case TOK_EQ:
+	case TOK_NE:
+	case TOK_LT:
+	case TOK_LE:
+	case TOK_GT:
+	case TOK_GE:
+		return op;
+	default:
+		return 0;
+	}
+}
+
 static int msl_binop_code(int op, int uns, int *is_cmp) {
 	*is_cmp = 0;
 	switch (op) {
@@ -1046,7 +1060,7 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 	case AST_Binary: {
 		int bop = ast_op(a, n);
 		AstLocal x, y;
-		int xt, wt, uns, is_cmp, code, is64;
+		int xt, wt, xft, uns, is_cmp, code, is64;
 		MslV lv, rv;
 		if (bop == TOK_LAND || bop == TOK_LOR)
 			return msl_logical(m, a, n, bop == TOK_LAND, off, nenv, base, out, 0);
@@ -1054,11 +1068,47 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 			return 0;
 		x = ast_child(a, n, 0);
 		y = ast_child(a, n, 1);
+		xft = ast_eval_slice_ftype(a, x);
+		if (xft) {
+			MslV fl, fr;
+			uint32_t cb;
+			int fcode = msl_f64_binop_code(bop);
+			if (!ast_eval_slice_ftype(a, y) || !fcode)
+				return 0;
+			if (!msl_expr(m, a, x, off, nenv, base, &fl))
+				return 0;
+			if (!msl_expr(m, a, y, off, nenv, base, &fr))
+				return 0;
+			fl = msl_f64_of(m, fl);
+			fr = msl_f64_of(m, fr);
+			switch (fcode) {
+			case TOK_EQ:
+				cb = msl_bv(m, "mccf64_cmp(p%u, p%u) == 0", fl.id, fr.id);
+				break;
+			case TOK_NE:
+				cb = msl_bv(m, "mccf64_cmp(p%u, p%u) != 0", fl.id, fr.id);
+				break;
+			case TOK_LT:
+				cb = msl_bv(m, "mccf64_cmp(p%u, p%u) < 0", fl.id, fr.id);
+				break;
+			case TOK_LE:
+				cb = msl_bv(m, "mccf64_cmp(p%u, p%u) <= 0", fl.id, fr.id);
+				break;
+			case TOK_GT:
+				cb = msl_bv(m, "mccf64_cmp(p%u, p%u) < 0", fr.id, fl.id);
+				break;
+			default:
+				cb = msl_bv(m, "mccf64_cmp(p%u, p%u) <= 0", fr.id, fl.id);
+				break;
+			}
+			*out = msl_mk(msl_int_of_bool(m, cb), 0, 0);
+			return 1;
+		}
 		xt = ast_eval_slice_wtype(a, x);
 		wt = ast_eval_slice_binop_wtype(a, n);
 		if (!xt || !wt || is_float(ast_type_t(a, x)) || is_float(ast_type_t(a, y)))
 			return 0;
-		if (ast_eval_slice_ftype(a, x) || ast_eval_slice_ftype(a, y))
+		if (ast_eval_slice_ftype(a, y))
 			return 0;
 		if (!msl_expr(m, a, x, off, nenv, base, &lv))
 			return 0;
@@ -1272,6 +1322,29 @@ static const char msl_prelude[] =
 		"\t\tah = nah;\n"
 		"\t}\n"
 		"\treturn int2(as_type<int>(ql), as_type<int>(qh));\n"
+		"}\n"
+		"static inline int mccf64_cmp(int2 a, int2 b) {\n"
+		"\tbool na = (a.y & 0x7ff00000) == 0x7ff00000 &&\n"
+		"\t\t\t\t\t\t((a.y & 0x000fffff) | a.x) != 0;\n"
+		"\tbool nb = (b.y & 0x7ff00000) == 0x7ff00000 &&\n"
+		"\t\t\t\t\t\t((b.y & 0x000fffff) | b.x) != 0;\n"
+		"\tif (na || nb)\n"
+		"\t\treturn 2;\n"
+		"\tif ((a.x | (a.y & 0x7fffffff)) == 0)\n"
+		"\t\ta = int2(0, 0);\n"
+		"\tif ((b.x | (b.y & 0x7fffffff)) == 0)\n"
+		"\t\tb = int2(0, 0);\n"
+		"\tuint ah = a.y < 0 ? ~as_type<uint>(a.y)\n"
+		"\t\t\t\t\t\t\t\t\t\t: (as_type<uint>(a.y) ^ 0x80000000u);\n"
+		"\tuint al = a.y < 0 ? ~as_type<uint>(a.x) : as_type<uint>(a.x);\n"
+		"\tuint bh = b.y < 0 ? ~as_type<uint>(b.y)\n"
+		"\t\t\t\t\t\t\t\t\t\t: (as_type<uint>(b.y) ^ 0x80000000u);\n"
+		"\tuint bl = b.y < 0 ? ~as_type<uint>(b.x) : as_type<uint>(b.x);\n"
+		"\tif (ah != bh)\n"
+		"\t\treturn ah < bh ? -1 : 1;\n"
+		"\tif (al != bl)\n"
+		"\t\treturn al < bl ? -1 : 1;\n"
+		"\treturn 0;\n"
 		"}\n"
 		"\n";
 
