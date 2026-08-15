@@ -123,10 +123,6 @@ static int arg_is_n(const char *rawtok, int off, const char *want, int skipargs)
 	return !strncmp(p, want, strlen(want));
 }
 
-static int arg_is(const char *rawtok, int off, const char *want) {
-	return arg_is_n(rawtok, off, want, 0);
-}
-
 static void check_open(const char *path, const char *s, const char *raw,
 											 const char *brace, const char *kind, const char *want) {
 	const char *t = skip_ws(brace + 1);
@@ -253,7 +249,8 @@ static int scan_file(const char *path, int is_dir, void *ud) {
 		if (s) {
 			memcpy(s, raw, len + 1);
 			strip(s);
-			if (strstr(s, "MCC_TRACE(")) {
+			if (strstr(s, "MCC_TRACE(") || strstr(s, "MCC_TRACE_IF(") ||
+					strstr(s, "MCC_TRACE_WHEN(")) {
 				scan_branches(path, s, raw);
 				scan_functions(path, s, raw);
 			}

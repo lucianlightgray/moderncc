@@ -3626,6 +3626,13 @@ if(MCC_BUILD_TESTS)
             COMMAND "$<TARGET_FILE:tracegate>" src
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(trace-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        add_test(NAME trace-gate-known-positive
+            COMMAND "${CMAKE_COMMAND}"
+                    -DGATE=$<TARGET_FILE:tracegate>
+                    -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tracegate_known_positive.cmake")
+        set_tests_properties(trace-gate-known-positive PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
 
         add_executable(schemagate tools/schemagate.c tools/toolsupport.c)
         target_link_libraries(schemagate ${CMAKE_DL_LIBS})
@@ -7080,8 +7087,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         --manifest "${CMAKE_CURRENT_SOURCE_DIR}/tests/gate-contract.txt"
                         --must-run "${CMAKE_CURRENT_SOURCE_DIR}/tests/must-run.txt"
                         --build "${CMAKE_BINARY_DIR}"
-                        --min-rows 102 --min-proved 51
-                        --max-unfloored 86 --max-unproved 51)
+                        --min-rows 102 --min-proved 52
+                        --max-unfloored 86 --max-unproved 50)
             set_tests_properties("ci/gate-contract" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
 
@@ -9225,6 +9232,7 @@ endif()
 set(MCC_TREEGATE_CELLS
     "ci/must-run-registered" "ci/gate-contract" "ci/gate-contract-known-positive"
     "ci/registration-stubs" "census/gates-armed" "trace-gate-invariant"
+    "trace-gate-known-positive"
     "fmt/census-bank" "fmt/census-bank-known-positive" "fmt/census-oracle"
     "docs/refs" "docs/refs-known-positive")
 # The second tier. `treegate` is bounded at ~5 s a cell so that it is always
