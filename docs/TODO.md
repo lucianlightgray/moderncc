@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T22:24Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T22:40Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:50Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T22:17Z |
 
@@ -13,8 +13,8 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 - [ ] T-lin-10036 [X] mac-arm64 — `ast_ladder_gpu_run`: the Metal backend still uploads `tin` twice and carries the two dead memsets (SPIR-V half DONE)
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 34106f4c | TS: 2026-08-15T22:24Z
-      REF: DETAILS.md#t-lin-10036-mac-slice-1-done-memset-wins-slice-2-is-metal-buffer-residency | DEPS: — | NOTE: SLICE 1 DONE 34106f4c — the two memset wins on the Metal dispatch_locked2: dead pout memset removed, pin zeroing reduced to the [ntuple,cap) tail (mirrors SPIR-V :2778-2784). Device-neutral: gpu/msl-slice-* + slice/{mem,bytes,frame,deref,ext} + census 19/19 green. SLICE 2 (remaining, the main win) = honor reuse_in, which needs Metal buffer RESIDENCY (bin/bout are alloc'd+freed per dispatch at :647/:650/:717, so nothing to reuse). Plan at REF: resident holder + grow-only mtl_bind_buffers + guarded upload if(!reuse_in) + release in mtl_quiesce (517-531; Metal is synchronous so no fence/strand concern) + flip MCC_GPU_IN_IS_RESIDENT 0->1 (:728). Verify gpu/msl-slice-* unchanged + re-measure bytes/lane (tin upload per-arm -> once). Clean slice boundary; resumable
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 01c5ff30 | TS: 2026-08-15T22:40Z
+      REF: DETAILS.md#t-lin-10036-mac-slice-2-done-resident-metal-buffers-reuse_in-honored-01c5ff30 | DEPS: — | NOTE: BOTH SLICES DONE. Slice 1 34106f4c (dead pout memset removed, pin tail-only). Slice 2 01c5ff30 (resident Metal bin/bout via grow-only mtl_bind_buffers + release in mtl_quiesce; dispatch honors reuse_in; MCC_GPU_IN_IS_RESIDENT 0->1). All three wins now on the Metal arm, at parity with SPIR-V. Device-neutral: gpu/* + slice/* 72/72 green incl gpu/always-gpu-parity(+full-language) which exercise the two-arm reuse path (arm b reuses arm a resident input — proven correct). PENDING §8: full native suite in flight (bufz8l8ru). ON GREEN: mark DONE + archive; expect T-lin-10092/mac environmental set only
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
