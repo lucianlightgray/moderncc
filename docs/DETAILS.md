@@ -45608,3 +45608,37 @@ deref(+kp), ext(+kp), fmt/census-oracle(+kp) all live), gpu/ 17/17,
 treegate 13/13, jit 66/66.
 
 **Source.** mac-arm64, 2026-08-15, code at `b3da6a4a`.
+
+<a id="t-lin-10383-the-gpu-refusal-census-run-it-self-hosted-and-mint-a-task-per-hole"></a>
+
+## T-lin-10383 — the GPU refusal census: run the self-hosted JIT always-GPU with the trace on, enumerate every hole, mint a fix task per hole
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+Human-scheduled 2026-08-15. The tree can already say *that* a node was refused for the device; nothing has ever asked it to enumerate **every** reason over a real subject and turn the histogram into work.
+
+**The instrumentation exists and is not a thing to build.** There are two refusal layers, both already printing:
+
+| layer | what it counts | site |
+| --- | --- | --- |
+| ladder | 8 named reasons: `arity-or-space`, `budget`, `livein-type`, `result-type`, `emit-lhs`, `emit-rhs`, `host-oom`, `dispatch` | `src/mccast.c:18611` (names), `:18811` (print) |
+| emitter | per **AST node kind** (`mcc_gpu_refuse_kind[]`, 64 slots) and per **op** (`addr-of`, `member`, `member-arrow`, `imag`) | `src/mccgpu.h:3617`, printed `src/mccast.c:18819` |
+
+Output shape: `[ladder-gpu] forced=N refused=N <reason>=N …` and `[ladder-gpu] emitter-refused=N by-node <kind>=N … / by-op <op>=N …`.
+
+**What has already been read, so it is not re-derived.** [T-lin-10082](#t-lin-10082-the-jit-always-gpu-boundary-is) took this census on **one** subject (`tests/smoke/subject.c`, RTX 5070 Ti) and got `emitter-refused=81 by-node Unary=81 / by-op member=81` — a single hole, named, and the row stopped there. It also recorded that self-hosting `src/mcc.c` runs 249,556 rungs / 499,113 dispatches / 4,768,438,116 lanes with `refused=0` at the *ladder* layer, which is the number that makes this task worth doing: the ladder accepts nearly everything, so whatever is keeping work off the device is in the **emitter** histogram, and only one entry of it has ever been looked at.
+
+**The task, in two halves, and the second is the point.**
+
+1. **Census.** Compile `src/mcc.c` (the largest real subject this tree has) with `--jit-always-gpu` and the refusal trace on, capturing **both** histograms in full. Repeat over `tests/diff/full_language.c` and the `tests/exec` corpus so a hole that only one subject reaches is not missed. Publish the histograms to this anchor.
+2. **Taskify per hole.** Every distinct `by-node` kind and `by-op` value with a non-zero count becomes **one** task: what the construct is, why the emitter refuses it, what lowering it would need, and what it would move. Allocate IDs from the taking session's band at file time. A hole with a large count and a cheap lowering is the whole point of the exercise; a hole that is expensive or unlowerable gets a row saying so, once, instead of being rediscovered.
+
+**Both backends, and the difference is data.** `src/mccgpu.h` is the shared emitter with `MCC_GPU_LANG_MSL` selecting SPIR-V or MSL, so a refusal can be common or arm-specific. Take the census on both arms. A hole present on **one** arm is an `[X]` for that platform; a hole present on both is `[S]`. lin/win can read the SPIR-V arm, mac the MSL arm — and [T-lin-10042](#t-lin-10042-slice-1-msl-f64-bits-pair)'s staged Metal work is actively changing the MSL arm's answer, so the MSL census should be taken after it settles or be explicitly dated against it.
+
+**Refuse the vacuous reading.** A census that reports `emitter-refused=0` because nothing was forced to the device proves nothing. The run must show a non-zero `forced=` and a non-zero dispatch count, and the [T-lin-10058](#q-lin-10010-answer-node-census-auto-detects-available-hardware) rule applies here too: if no GPU is present the census must **say so** rather than print a histogram that reads as full coverage. This is the same anti-vacuity shape `spvgate` enforces with its 0-compared FAIL.
+
+**Do not re-price the device lever inside this row.** [T-lin-10040](#q-lin-10008-answer-the-device-path-freeze-is-lifted) records that the break-even table still prices the device negative and that float-in-the-emitter moved the device-executable fraction by ~0.0 iteration-weighted points. This task is *coverage*, not justification: it says what cannot run on the device and why. Whether widening any particular hole is worth doing is that hole's own task, and it should cite the break-even table rather than assume the answer.
+
+**Verification.** The census half: both histograms published here, taken with `forced>0` and `dispatches>0` on each arm, over at least `src/mcc.c` + `full_language.c` + the `tests/exec` corpus, with the subject and device named. The taskify half: every non-zero `by-node`/`by-op` entry has exactly one filed row and no entry has two, checkable by diffing the histogram against `TODO.md`.
+
+**Source.** lin-x64, 2026-08-15, on human instruction.

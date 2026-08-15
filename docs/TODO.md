@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T15:20Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10383   | 2026-08-15T15:35Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10384   | 2026-08-15T15:45Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50020   | 2026-08-15T14:25Z |
 
 ## Contracts — blocking, highest priority
@@ -30,6 +30,9 @@
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 ## Open — claimable
+- [ ] T-lin-10383 [S] Run the self-hosted JIT always-GPU with the refusal trace, enumerate every AST/RIR GPU coverage hole, and mint a fix task per hole
+      OWNER: — | STATE: OPEN | SHA: 3c95b553 | TS: 2026-08-15T15:45Z
+      REF: DETAILS.md#t-lin-10383-the-gpu-refusal-census-run-it-self-hosted-and-mint-a-task-per-hole | DEPS: — | NOTE: HUMAN-SCHEDULED, top of the list. The instrumentation already exists and is not a thing to build: a LADDER layer with 8 named reasons (arity-or-space/budget/livein-type/result-type/emit-lhs/emit-rhs/host-oom/dispatch, mccast.c:18611) and an EMITTER layer per AST node kind + per op (mccgpu.h:3617, printed mccast.c:18819). T-lin-10082 took this on ONE subject and got emitter-refused=81 by-node Unary=81 / by-op member=81, then stopped; it also measured self-hosted src/mcc.c at 249,556 rungs / 4.77e9 lanes with LADDER refused=0 — so whatever keeps work off the device is in the EMITTER histogram and only one entry of it has ever been read. (1) census src/mcc.c + full_language.c + tests/exec with --jit-always-gpu, BOTH histograms, on BOTH arms (SPIR-V and MSL share mccgpu.h via MCC_GPU_LANG_MSL; a hole on one arm is [X] for that platform, on both is [S]); (2) every non-zero by-node/by-op entry becomes exactly ONE filed task naming the construct, why the emitter refuses it, the lowering it needs and what it would move. REFUSE THE VACUOUS READING: forced>0 and dispatches>0 required, and no-GPU must SAY so rather than print a histogram that reads as coverage. Do NOT re-price the device lever here — T-lin-10040's break-even table is each hole's own argument, not this row's
 - [ ] T-lin-10381 [S] `mcc_asm_inline_unwind`'s recovery lost its only test when the asm double-assembly fix removed its trigger
       OWNER: — | STATE: OPEN | SHA: 0d94d189 | TS: 2026-08-15T14:40Z
       REF: DETAILS.md#t-lin-10381-the-asmreplay-row-lost-its-mcc-asm-inline-unwind-coverage-and-what-it-would-take-to-get-it-back | DEPS: — | NOTE: filed at the moment the coverage was dropped, not after someone notices. 5f2e6f39 built the asmreplay row for "the recovery longjmp must not leave the C parser inside the dead :asm: BufferedFile", provable by reverting mcc_asm_inline_unwind to a no-op. The row reached that path THROUGH the double-assembly defect, so fixing it removed the trigger. The path is still live — a genuine duplicate label in one TU refuses identically and mcc names the real file+line, which IS the evidence the parser recovered — but it is a HARD error, so there is no binary to run, no stdout to pin and no oracle (gcc-15 refuses it too), and a Pass row treats a failed compile as fatal. Needs a `wantfail` row shape. PRICE THE CHEAPER OPTION FIRST: tests/cross/no-compiler-abort.sh already compiles a corpus asserting mcc never aborts — check whether it can adjudicate the diagnostic TEXT, because "the process survived" is not the half that matters
