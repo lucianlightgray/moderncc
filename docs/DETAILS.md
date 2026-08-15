@@ -878,6 +878,12 @@ When a fix lands for a multi-flag defect, add a subject that makes ONE of its fl
 
 **Source.** Migrated from `docs/TODO.md`, *Flag-sweep coverage* — [M-TODO-0084](#m-todo-0084-flag-sweep-coverage).
 
+**Resolution (win-x64 via WSL, 2026-08-15) — `ae83e87d`.** The natural home was `tests/exec/expressions/algebraic_identities.c`: it is *the* ident-arith golden (every true identity — `x+0`, `x*1`, `x&-1`, `x-x`, `x^x`, `x|-1`…) but it was NOT in `FLAGSWEEP_SUBJECTS` and carried no non-identity near-miss, so nothing in the swept corpus returned an `x - 1`/`x + 1` shape that an over-eager fold would corrupt. Added five must-survive controls — `sub1(x)=x-1`, `add1(x)=x+1`, `addm1i(x)=x+-1`, `usub1(u)=u-1`, `lsub1(l)=l-1` (int/unsigned/long long) — printed as the golden's last line (`39 41 39 4294967279 1234567890122` for the pinned `v=40`, `uv=0xfffffff0`, `lv=1234567890123`), updated `tests/exec/goldens.h`, and added `expressions/algebraic_identities` to `FLAGSWEEP_SUBJECTS`.
+
+**Non-blind, verified.** Injecting `lv == 1` into the ident-arith `-` case (`src/mccast.c:8791`, so `x - 1 -> x`) and rebuilding corrupts exactly the three subtraction shapes — last line becomes `40 41 39 4294967280 1234567890123` (`sub1` 40≠39, `usub1` …80≠…79, `lsub1` …123≠…122); the golden catches it. Injection reverted, clean mcc rebuilt, output confirmed correct. Green: 25/25 `algebraic_identities` exec cells (updated golden matches every variant), 201/201 `flagsweep` cells (every `flagsweep-exec/*` iterates the subject list), `mcc==gcc` at `-O0/-O2/-O4`. Note: `ident-arith` is `MCC_OPTD_ALWAYS`, so the shape rides in every flag-sweep build; the "make one flag sufficient" framing is satisfied by any level-gated fold that touches `-`/`+`.
+
+**Verification (delivered).** `ctest -R 'algebraic_identities'` (25 cells) and `ctest -R 'flagsweep'` (201 cells) green; the injected `x-1 -> x` fold flips the subject red.
+
 <a id="t-lin-10068-a-stage-2-build-dir-does"></a>
 
 ## T-lin-10068 A stage-2 build dir does not rebuild when a header changes
