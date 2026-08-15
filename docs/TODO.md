@@ -26,6 +26,10 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
+- [ ] T-win-50011 [S] win-x64 — `bsweep.F16.FMULADD` and `F16.FSCALE` diverge-one on Windows, fold AND run; Linux does not diverge
+      OWNER: win-x64 | STATE: CLAIMED | SHA: 723e5f1a | TS: 2026-08-15T14:15Z
+      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: both .fold and .run diverge, so it is not just the constant folder — the fp16 emulation path differs per platform. Root-cause BEFORE banking; the divergence bank's rule is triaged findings only
+
 ## Open — claimable
 - [ ] T-mac-30004 [S] `spvgate` CASES has no f64 case: arm the SPIR-V arm's table on fp64 hosts
       OWNER: — | STATE: OPEN | SHA: 28ac8048 | TS: 2026-08-15T12:55Z
@@ -36,9 +40,6 @@
 - [ ] T-win-50006 [X] win-x64 — arm-win32 COFF: implement the ARM32 arm of `coff_emit_reloc` (there is none), then flip arm-win32 default + re-bank
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. `coff_emit_reloc` has NO `MCC_TARGET_ARM` case — it falls to `return -1`, so arm-win32 `-c` COFF fails on any file with a relocation (only 3/40 reloc-free files compile; "unsupported relocation type 2" = R_ARM_ABS32). LOW PRIORITY: arm-win32 (ARM32 Windows) is a dead platform with no executor (see T-lin-10086 split) — do this only after arm64 (T-win-50005). Add the ARM32 IMAGE_REL_ARM_* mapping (ADDR32/BRANCH24/etc.), confirm the corpus re-encodes, then flip + re-bank
-- [ ] T-win-50011 [S] win-x64 — `bsweep.F16.FMULADD` and `F16.FSCALE` diverge-one on Windows, fold AND run; Linux does not diverge
-      OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
-      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: both .fold and .run diverge, so it is not just the constant folder — the fp16 emulation path differs per platform. Root-cause BEFORE banking; the divergence bank's rule is triaged findings only
 - [ ] T-win-50012 [S] win-x64 — four optimizer strategies dark on Windows: `bfold`/`narrow`/`sra`/`sroa` = 0 at -O4 (20 of 24 < --min-strats 22)
       OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
       REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: LLP64 plausibly removes narrow's shapes (no 64→32 narrowing when long is already 32), but four dark rows need four explanations; then either corpus shapes that light them on LLP64 or a target-keyed floor
