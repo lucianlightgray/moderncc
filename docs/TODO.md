@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T19:58Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T20:02Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T19:59Z |
 
@@ -12,6 +12,9 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+- [ ] T-lin-10078 [S] N36 residue — `/` and `%` on over-wide bit-fields are still per-operation truncated
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-15T20:02Z
+      REF: DETAILS.md#t-lin-10078-investigation-divmod-operand-reduction-verified-remaining-is-the-sweep-and-a-census-rebank | DEPS: — | NOTE: mac-arm64 wrote + verified the fix vs gcc-16 (extend the operand-reduction guard at mccgen.c:4575 to / % TOK_UDIV TOK_UMOD; div/mod are non-modular so operands must reduce to N bits, not the result). Discriminating case s.f/-1 on unsigned:33 → mcc matches gcc-16 (1/0/5/0), o0-baseline 5/5 byte-identical. REVERTED at reboot for clean state; 14-line patch + test in scratchpad, reapply-ready. REMAINING: the 782-object sweep + tests/smoke/bcases.h rows, and a census re-bank (re-apply adds mccgen.c lines)
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
@@ -244,9 +247,6 @@
 - [ ] T-lin-10077 [S] N37 — the refs-disagree class is computed per digest, so a category hides its own points
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#q-lin-10012-answer-adopt-divdc3-style-complex-division | DEPS: — | Q: Q-lin-10012 ANSWERED | NOTE: human said ADOPT `__divdc3`-style complex division (not the bank-the-divergence hold). Replace mcc's current finite-case complex divide — the three 53%-relative-error finite quotients are a QoI defect even though Annex G does not specify finite accuracy and mcc's G.5.1 infinity/NaN claim is honoured. Then re-bank every `csweep` complex row once (C64/C80.CDIV + CDIVSEL, 283 refs-agree points each, 44 finite)
-- [ ] T-lin-10078 [S] N36 residue — `/` and `%` on over-wide bit-fields are still per-operation truncated
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-15T08:00Z
-      REF: DETAILS.md#t-lin-10078-investigation-divmod-operand-reduction-verified-remaining-is-the-sweep-and-a-census-rebank | DEPS: — | NOTE: mac-arm64 wrote + verified the fix vs gcc-16 (extend the operand-reduction guard at mccgen.c:4575 to / % TOK_UDIV TOK_UMOD; div/mod are non-modular so operands must reduce to N bits, not the result). Discriminating case s.f/-1 on unsigned:33 → mcc matches gcc-16 (1/0/5/0), o0-baseline 5/5 byte-identical. REVERTED at reboot for clean state; 14-line patch + test in scratchpad, reapply-ready. REMAINING: the 782-object sweep + tests/smoke/bcases.h rows, and a census re-bank (re-apply adds mccgen.c lines)
 - [ ] T-lin-10081 [S] `MCC_GPU_LOCK`: replicate the resident state per context, then narrow the lock
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10081-mcc-gpu-lock-replicate-the-resident | DEPS: —
