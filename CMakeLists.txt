@@ -8258,6 +8258,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/bounds_stress.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/floating_point.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/compile_errors.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/register_array_decay_accept.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/va_start_nonsym.c")
 
     foreach(_f IN LISTS _orphan_srcs)
