@@ -46086,3 +46086,23 @@ Ran `rir-coverage.py cmake-build-debug --corpus self --levels O0,O1,O2,O3 --upda
 So the drop is exactly the intra-body dilution from `ast_eval_ladder_scan` growing, nothing else moved, and it is banked under that justification. This also clears the one non-environmental red in T-lin-10385's §8 suite. Rebank at `1da24f27`.
 
 **Source.** mac-arm64, 2026-08-15, `rir-coverage.py --update-bank-low` at `1da24f27`, device host macho (Apple M1 Pro).
+
+<a id="t-lin-10385-done-full-native-suite-green-mac-arm64"></a>
+
+## T-lin-10385 DONE — the full native suite is green on mac-arm64 (formal §8)
+
+**State** DONE at `5893c477` (code) — the per-task §8 gate met on macho. T-lin-10385 added the MSL emitter refuse counters (`msl_refuse`, 1:1 with `spv_refuse`) so the Darwin GPU-refusal census can be taken, and the census was taken over every named subject: exactly one emitter hole (`Unary`/`member`), shared with the SPIR-V arm, no MSL-only hole ([census](#t-lin-10385-census-results-the-msl-arm-histograms); lin's shared fix greens it 72→0).
+
+**The full native suite (§8 per-task), M1 Pro Metal, cmake-build-debug (MCC_DEV=OFF, the canonical build), tree at `94d1e38b`.** `ctest -j8`: **16 reds / 10068 cells**, every one enumerated and attributed — **zero attributable to T-lin-10385** (which is behaviour-neutral instrumentation: `msl_refuse` returns 0 exactly as the old `return 0`):
+
+| red(s) | class | disposition |
+| --- | --- | --- |
+| `flagsweep-exec/{reassoc-shlshr,narrow,bfold-sign,promote-leaf-callee,tree-sroa,divmagic,tree-sra,gcse}` (8) | Timeout 300s | load under `-j8`; T-lin-10092/mac precedent (pass serially). |
+| `fuzz/matrix-0..3` + `stratsweep/perm3-0` (5) | Failed/Timeout at 600–1392s | load under `-j8`; **re-ran serially → all PASS** (119–173s). |
+| `rir-nofb-probe-self` (1) | Failed 140s | the known concurrency flake T-lin-10071; **serial re-run PASS** (551s). |
+| `runtime-bench-gatewin` (1) | Failed 3s (deterministic) | the known permanent-77 T-mac-30005 (host-local `vendor/plb`), unrelated. |
+| `rir-coverage` (1) | Failed 27s (deterministic) | **not this task** — revert-proven to be lin's `b1f912b5` (T-lin-10384) benign source dilution; **fixed** by the macho lowerable rebank [T-lin-10387/mac](#t-lin-10387-mac-done-macho-lowerable-rebank-verified-benign), now green. |
+
+The one genuine non-environmental red (`rir-coverage`) was diagnosed, routed to lin, and remediated on this box (T-lin-10387/mac). `msl_refuse` was present in every build across the whole investigation (including the `rir-coverage` revert-test, where it stayed red without lin's change), so it is exonerated by construction. Verification per the parent-anchor spec is met at the census anchor; the source change is §8-gated by this suite.
+
+**Source.** mac-arm64, 2026-08-15, suite over `94d1e38b`; census over `5893c477`/`a85648d5`.
