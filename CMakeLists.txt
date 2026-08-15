@@ -8205,6 +8205,10 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             endif()
             set(_orphan_x11_inc "-I${MCC_X11_INCLUDE_DIR}")
         endif()
+        if(_n STREQUAL "va_start_nonsym" AND MCC_TARGETOS STREQUAL "WIN32")
+            mcc_skip_test(compile.${_n} "va_start with a non-lvalue second argument: the Win64 varargs ABI needs the named parameter's address to locate the overflow area, so mcc rejects it; SysV ignores the argument and accepts, so this compile-success orphan only holds on SysV")
+            continue()
+        endif()
         add_test(NAME compile.${_n} COMMAND ${MCC_EMULATOR} "${_mcc_exe}"
             "-B${_bdir}" "-I${_idir}" ${_orphan_x11_inc} -c "${_f}"
             -o "${CMAKE_BINARY_DIR}/orphan_${_n}.o")
