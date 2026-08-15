@@ -1,5 +1,13 @@
 * text=auto eol=lf
 
+# INSTRUCTIONS.md §4.1 mandates these three. They were absent, so every
+# concurrent append to the append-only docs conflicted and was hand-resolved
+# by whichever session pulled second -- the mechanism the protocol relies on
+# was never actually configured.
+docs/DETAILS.md   merge=union
+docs/ARCHIVED.md  merge=union
+docs/QUESTIONS.md merge=union
+
 *.sh    text eol=lf
 *.bash  text eol=lf
 

@@ -42028,7 +42028,6 @@ ctest --test-dir cmake-def -L treegate
 **Source.** Implemented on lin-x64, 2026-08-14, after mac-arm64 adopted the ad-hoc regex `ctest -R '^(ci|trace-gate|fmt/census)'` as a personal standard — this is that standard, made mechanical and given a membership rule.
 
 
-<a id="t-lin-10361-t-lin-10028s-fprintf-moved-fmt-census-bank"></a>
 
 ## T-lin-10361 resolved — fmt/census-bank re-taken for T-lin-10028's no-bake fprintf
 
@@ -43777,6 +43776,7 @@ Wired as the `smoke/strat-dark` ctest cell (`CMakeLists.txt:4695`, `--strat-dark
 
 **Source.** mac-arm64, 2026-08-15; implemented at `67c58d5f`, gated and green on this box.
 
+
 <a id="t-lin-10373-done-all-three-tracegate-gaps-closed-and-the-known-positive-locks-them"></a>
 
 ## T-lin-10373 DONE — all three trace-gate gaps closed, and the known-positive makes (1) unable to recur
@@ -43865,3 +43865,26 @@ walkers as done for `ast_low_base_ptr`.
 **Verification.** `slice/arena-intern-cap` emits `[intern-overflow]` and exits 0 with ICAP=16;
 `fmt/arena-census-bank(-known-positive)` compile `src/mcc.c` under `MCC_ARENA_DUMP` and write a
 dump. All three green in a vcvars ctest on win-x64.
+
+<a id="q-lin-10001-10003-answered-the-bus-works-the-ids-do-not"></a>
+
+## Q-lin-10001 / 10002 / 10003 answered — the bus works, the protocol IDs do not, and the design absorbed it
+
+The three §0 assumptions, mirrored into `QUESTIONS.md` at first run and never exercised until now. A full multi-session day supplies the evidence.
+
+**Q-lin-10003 — can all three machines push to `main`? YES, measured.** Commits on `main` since 2026-08-14, by session tag: **lin-x64 57, mac-arm64 71, win-x64 31**. No branch protection was encountered by any session, and claim-by-push worked as the ownership mechanism throughout.
+
+**Q-lin-10001 — does `SendMessage` deliver to a named session on another machine? YES, and confirmed by effect rather than by return value.** Roughly two dozen messages went lin-x64 → mac-arm64 and → win-x64 in one session. Delivery is established because the receiver *acted*: mac-arm64 pulled SHAs I named, ran the cells I asked for, and reported numbers back that matched what those commits predicted — the T-lin-10089 handoff alone round-tripped four times with each side citing the other's commit. A success return from the tool proves a send; a peer running your cell and disagreeing with your arithmetic proves a delivery.
+
+**What is NOT evidenced, stated so the answer is not read wider than it earns:** every observed delivery was to a *live* session. Nothing here tests durability across a receiver restart, an offline peer, or a queued message surviving a reboot. The word "durably" in the original question remains untested.
+
+**Q-lin-10002 — are sessions addressable by the IDs in `INSTRUCTIONS.md`? NO — and this is the finding.** The bus and the protocol use **different namespaces**:
+
+- Addressing by protocol session ID **fails**: win-x64 recorded `SendMessage to="lin-x64"` returning *"No agent named 'lin-x64' is currently addressable"* (2026-08-14, `244be14e`).
+- Addressing by the **`ListAgents` name** works: every message this session used `mac` and `win`, and all were delivered.
+
+So §0's assumption is false as literally written. `INSTRUCTIONS.md` is human-edited and read-only to sessions, so this is recorded rather than fixed; a session that needs to reach a peer should take the name from `ListAgents`, not from the Sessions table.
+
+**Why a false assumption at the centre of the protocol cost nothing, which is the part worth keeping.** §5 requires that messages carry pointers to pushed commits and never payloads, and §0 states outright that *"the repo, not the bus, is the source of truth — the protocol must survive total message loss."* Because that was designed in, the one §0 assumption that turned out to be **wrong** produced no lost work: the T-lin-10002 CONTRACT announcement win-x64 could not send was delivered by the pushed commit and its archive record instead. The mechanism that made the error harmless is the same one that makes the messages redundant, and it is worth noticing that the protocol's most defensive rule is the one that paid.
+
+**Source.** Evidence accumulated across lin-x64, mac-arm64 and win-x64, 2026-08-14 to 2026-08-15; answered on lin-x64.
