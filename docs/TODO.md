@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T14:55Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10383   | 2026-08-15T15:20Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10383   | 2026-08-15T15:25Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50020   | 2026-08-15T14:25Z |
 
 ## Contracts — blocking, highest priority
@@ -142,7 +142,7 @@
         OWNER: mac-arm64 | STATE: DONE | SHA: 20a82ad3 | TS: 2026-08-15T04:00Z
         REF: DETAILS.md#t-lin-10030-mac-conformance-provisioned-and-the-simplectest-ub-flag | DEPS: — | NOTE: DONE. Embed-JIT measured natively on arm64: jit family 66/66 + selfcheck boot the engine, and with the corpora provisioned host-local (gcc c-torture + llvm-test-suite, same not-vendored shape as T-lin-10088) jit/xoracle-conformance (535 progs) + coverage both PASS. The one flag (SimpleCTest UB) was a harness gap, fixed as T-mac-30003. Parent stays open until /lin + /win
   - [ ] T-lin-10030/lin [P] The embed JIT is measured only on x86_64 — lin-x64
-        OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
+        OWNER: lin-x64 | STATE: CLAIMED | SHA: 7ec34e8b | TS: 2026-08-15T15:25Z
         REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: —
   - [ ] T-lin-10030/win [P] The embed JIT is measured only on x86_64 — win-x64
         OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
