@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T13:08Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10379   | 2026-08-15T13:52Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10379   | 2026-08-15T13:58Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50019   | 2026-08-15T13:45Z |
 
 ## Contracts — blocking, highest priority
@@ -31,10 +31,6 @@
 - [ ] T-lin-10375 [S] `rir_parity` `rerror` — a named label in an inline-asm body is redefined on replay
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 2c0cad5f | TS: 2026-08-15T13:52Z
       REF: DETAILS.md#t-lin-10064-root-caused-all-three-rir-parity-divergences-are-one-defect-inline-asm-is-assembled-twice | DEPS: — | NOTE: filed by T-lin-10064, one of three. Reproducer, one line: `void f(void){ asm volatile("named: .long 0"); }` -> rerror; the same body with a NUMERIC label (`1:`) is rfaithful, which is the proof the mechanism is double assembly rather than anything about globality or section. Subject in the corpus: get_asm_string (tests/diff/parts/legacy_meta.h:357). SHARED root cause with T-lin-10376/10377 — the fix is one of the two directions at the REF anchor, and whoever takes this should expect to close all three
-- [ ] T-lin-10012 [S] 32-byte vectors are laid at 16-byte alignment, so cross-TU to gcc is incompatible
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 8dd00e11 | TS: 2026-08-15T13:25Z
-      REF: DETAILS.md#t-lin-10012-landed-the-per-target-vector-layout-rule-measured-on-all-eleven-targets | DEPS: — | Q: Q-lin-10005 ANSWERED | NOTE: CODE LANDED at 8dd00e11 — MCC_MAX_VEC_ALIGN (64 on x86_64/i386), #ifndef fallback keeps arm/arm64/riscv64 textually unchanged, one consumer moved (mccgen.c:7064). Measured on ALL ELEVEN targets pre/post: five move (x86_64, i386, x86_64-win32, i386-win32, x86_64-osx), six do not — arm64 unchanged is mac's requested known-positive. TWO PHASE-1 PREDICTIONS CORRECTED: (a) five columns of behaviour move, not two — the board is keyed by target and three more x86-family keys share the headers; (b) ZERO bank rows move — int256_gates.c's vector_size arm is a REFUSAL fixture, so the corpus compiles no vector type at all and the re-bank step had no subject. abi/vector-layout + -known-positive registered (must-run + gate-contract, --min-rows 102->103, --min-proved 52->53), watched red pre-fix then green. `_Alignof(v32)` moved 16->32, i.e. from gcc's value to clang's — unavoidable through this knob, recorded not buried, and the references disagree on the report while agreeing on the layout. REMAINING FOR DONE: the full native suite, in flight
-
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot

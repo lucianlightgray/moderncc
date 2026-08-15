@@ -44522,7 +44522,11 @@ Worth a row of its own: build reproducibility is a property several other things
 
 [T-lin-10073](#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver) says explicitly that `pgrep -a wineserver` must be run *at the time* or a wine-cell red cannot be attributed, and the [pre-reboot handoff](#lin-x64-handoff-2026-08-15-preboot) paid for ignoring that: its single unattributed `run-tier/x86_64-win32` 300 s timeout was checked ~45 minutes late, found nothing, and stayed unexplained.
 
-Taken at the start of this session's full-suite run: `35982 …/GE-Proton10-34/files/bin/wineserver` — a **Steam Proton** wineserver, resident and foreign to this tree. Any `run-tier/*-win32` timeout in this run is attributable to 10073's recorded mechanism, and the row's diagnostic is now corroborated a third time. It does not retroactively explain the pre-reboot red, which remains unattributed and unattributable.
+Taken at the start of this session's full-suite run: `35982 …/GE-Proton10-34/files/bin/wineserver` — a **Steam Proton** wineserver, resident and foreign to this tree, and still resident when the run finished.
+
+**And the wine cells passed anyway — all five, 24.35 s total, inside a 10066-cell run with zero failures.** That is the opposite of corroboration and the note is corrected accordingly. A resident foreign wineserver is therefore **not sufficient** to produce 10073's signature; the row's mechanism as written — "a foreign `wineserver` starving the prefix" — is now known to be incomplete, because the stated cause was present and the stated effect did not follow. What 10073 has is a correlation observed twice and an anti-correlation observed once.
+
+The row's *procedural* half survives intact and is worth more than the mechanism: run the diagnostic **at the time**, because a check taken 45 minutes late (as the [pre-reboot handoff](#lin-x64-handoff-2026-08-15-preboot) did) can neither confirm nor exclude. This run is the first time the diagnostic was taken at the time and the answer was recorded either way — which is the only reason the mechanism could be weakened rather than quietly re-confirmed. The pre-reboot red remains unattributed and unattributable.
 
 **Source.** lin-x64, 2026-08-15, at suite start.
 
@@ -44686,3 +44690,17 @@ MCC_REPLAY_IR=1  .data  44332211 44332211           (8 bytes)
 **What must also change, independently of the fix.** A gate that cannot see a class should say so. `rir_verify_body` should either extend its comparison to every section the body touched, or record that a body touched a section it does not compare and refuse to call that body faithful. Reporting `rfaithful` over an unexamined effect is the [same shape](#docs-refs-gains-a-conflict-marker-rule) as the three doc gates that stayed green over the property nobody was checking.
 
 **Source.** lin-x64, 2026-08-15, found while narrowing T-lin-10064's reproducers.
+
+<a id="t-lin-10012-done-the-full-native-suite-number-at-8dd00e11"></a>
+
+## T-lin-10012 DONE — the full native suite at `8dd00e11`: 10066 cells, 0 failures
+
+The §8 per-task gate for [the vector-layout change](#t-lin-10012-landed-the-per-target-vector-layout-rule-measured-on-all-eleven-targets), run on lin-x64 against the tree with the change and both new cells in it.
+
+**10066 cells, 100% passed, 0 failures, 979.91 s wall** at `-j 12`. 2092 rows report Skipped (Darwin/Metal, QEMU, Docker, sanitizer and cross-native cells this host does not provide). `abi/vector-layout` and `abi/vector-layout-known-positive` both pass in the run, as cells 9800 and 9801.
+
+Two cells changed count against [lin's previous number](#t-lin-10092-lin-the-linux-full-native-suite-is-clean) of 10062: the two added here.
+
+**The number is directly comparable to the three platform numbers on record** — lin 10062/0, mac 10060/0 genuine, win 9387 with 35 residual triaged in T-win-50003 — and this is the first Linux number taken with the tree carrying a shipped ABI change rather than at a quiescent point.
+
+**Source.** lin-x64, 2026-08-15, at `8dd00e11` plus the doc commits after it (no code between).
