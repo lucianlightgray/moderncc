@@ -850,6 +850,40 @@ static AstLocal b_f_ternary(AstArena *a, const int *o) {
 	return n;
 }
 
+static AstLocal b_f_addsub(AstArena *a, const int *o) {
+	AstLocal l =
+			mk_bin(a, '+',
+						 mk_bin(a, '-', mk_ref(a, o[0], VT_DOUBLE),
+										mk_lit(a, 0x3FF8000000000000LL, VT_DOUBLE), VT_DOUBLE),
+						 mk_bin(a, '-', mk_lit(a, 0x3FF8000000000000LL, VT_DOUBLE),
+										mk_ref(a, o[1], VT_DOUBLE), VT_DOUBLE),
+						 VT_DOUBLE);
+	AstLocal r = mk_bin(a, '+', mk_ref(a, o[0], VT_DOUBLE),
+											mk_ref(a, o[1], VT_DOUBLE), VT_DOUBLE);
+	return mk_bin(a, '+', l, r, VT_DOUBLE);
+}
+
+static AstLocal b_f_addinf(AstArena *a, const int *o) {
+	AstLocal m2 =
+			mk_bin(a, '+', mk_lit(a, 0x7FEFFFFFFFFFFFFFLL, VT_DOUBLE),
+						 mk_lit(a, 0x7FEFFFFFFFFFFFFFLL, VT_DOUBLE), VT_DOUBLE);
+	return mk_bin(a, '+',
+								mk_bin(a, '+', m2, mk_ref(a, o[0], VT_DOUBLE), VT_DOUBLE),
+								mk_ref(a, o[1], VT_DOUBLE), VT_DOUBLE);
+}
+
+static AstLocal b_f_mul(AstArena *a, const int *o) {
+	return mk_bin(a, '+',
+								mk_bin(a, '*',
+											 mk_bin(a, '*', mk_ref(a, o[0], VT_DOUBLE),
+															mk_lit(a, 0x3FF8000000000000LL, VT_DOUBLE),
+															VT_DOUBLE),
+											 mk_ref(a, o[1], VT_DOUBLE), VT_DOUBLE),
+								mk_bin(a, '*', mk_ref(a, o[0], VT_DOUBLE),
+											 mk_lit(a, 0x0008000000000000LL, VT_DOUBLE), VT_DOUBLE),
+								VT_DOUBLE);
+}
+
 static AstLocal b_f_cmp(AstArena *a, const int *o) {
 	static const int ops[5] = {TOK_LE, TOK_GT, TOK_GE, TOK_EQ, TOK_NE};
 	AstLocal r = mk_bin(a, TOK_LT, mk_ref(a, o[0], VT_DOUBLE),
@@ -889,7 +923,8 @@ static const Case CASES[] = {
 		{"ll-land", 2, b_ll_land},       {"ll-bool", 2, b_ll_bool},
 #if MCC_GPU_LANG_MSL
 		{"f-notneg", 2, b_f_notneg},     {"f-ternary", 2, b_f_ternary},
-		{"f-cmp", 2, b_f_cmp},
+		{"f-cmp", 2, b_f_cmp},           {"f-addsub", 2, b_f_addsub},
+		{"f-addinf", 2, b_f_addinf},     {"f-mul", 2, b_f_mul},
 #endif
 };
 

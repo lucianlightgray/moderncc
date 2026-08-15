@@ -504,6 +504,7 @@ static int mcc_gpu_init(void) {
 						mcc_gpu.cbdesc != 0);
 	mtl_send_v(pool, "drain");
 	mcc_gpu.ok = 1;
+	mcc_gpu.f64 = 1;
 	return 1;
 }
 
