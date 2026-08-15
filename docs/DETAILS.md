@@ -45053,3 +45053,35 @@ Skips 2034: the wiped external corpora remain the bulk (re-provision per
 T-lin-10030/mac's recipe; network confirmed working).
 
 **Source.** win-x64, 2026-08-15, log `cmake-release/full-suite-2026-08-15-b.log`.
+
+<a id="autostash-is-how-conflict-markers-reach-pushed-history"></a>
+
+## `rebase.autoStash` is how conflict markers keep reaching pushed history — commit before you pull
+
+Three incidents in one day (win-x64 twice: 6e3127b2 repaired by 5d6997f4,
+83b09def repaired by 0501336a; mac-arm64 once: 36724615), all with the same
+mechanism, none with the same author twice in a row learning the lesson for
+the other.
+
+**The mechanism.** Edit `docs/TODO.md`, then run `git pull --rebase` with the
+tree dirty. `rebase.autoStash true` (§4.1) stashes the edits, fast-forwards,
+then *reapplies the stash* — and when both sides touched adjacent Sessions-table
+rows, the reapply CONFLICTS, git writes the markers into the working tree,
+prints "Applying autostash resulted in conflicts", and **exits zero**. The next
+`git add docs/TODO.md && git commit` ships the markers. Nothing in the commit
+path objects; only the docs lint's conflict-marker rule catches it after the
+fact, and only when someone runs it.
+
+**The guard is the §4.3 order, taken literally: commit BEFORE you pull.** A
+committed change that conflicts during rebase STOPS the rebase and refuses to
+continue until resolved — loud, unskippable. The same conflict inside an
+autostash reapply is a warning line above a successful prompt. So: edit → add
+→ commit → `git pull --rebase` (resolve loudly if it conflicts) → push. The
+dirty-tree pull is the anti-pattern; autoStash makes it *feel* safe, which is
+exactly the problem.
+
+**Cheap belt-and-braces for sessions:** grep the file for `^<<<<<<<` before
+every docs commit (one Select-String / grep), and run `tools/docref-lint.py`
+at checkpoints — it has carried the marker rule since the first incident.
+
+**Source.** win-x64, 2026-08-15, after paying for the lesson twice.
