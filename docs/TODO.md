@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T20:02Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:04Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T20:02Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T20:07Z |
 
 ## Contracts — blocking, highest priority
 
@@ -278,6 +278,6 @@ _Empty — Q-lin-10007/10008/10010/10011 were answered 2026-08-15 and all four t
 
 ## Invalidations             ← shared, append-only; removed only on re-scope (§5.2)
 
-RESCOPED 2026-08-15T19:45Z BY lin-x64 — T-lin-10384's code is correct (member arm never runs during the census; proven at DETAILS#t-lin-10384-macho-red-resolved-source-dilution-not-r-arity-the-census-never-calls-the-ladder). macho red is benign source-content dilution from the +25 lines, not a codegen regression. Remediation = a justified per-platform lowerable rebank, tracked as T-lin-10387 [P].
+_Empty — the T-lin-10384 macho-red rescope was resolved by T-lin-10387 (DONE 2026-08-15T20:02Z, archived); no active invalidations._
 
 
