@@ -2146,6 +2146,12 @@ if(MCC_EMBED_JIT)
     endif()
     set_target_properties(libmcc_jitengine PROPERTIES
         OUTPUT_NAME "mcc-jitengine" PREFIX "lib")
+    # The engine blob is linked at run time by mcc's own in-process linker,
+    # which provides no MSVC /GS machinery -- with /GS on, every embed-jit
+    # link on Windows dies on __report_rangecheckfailure/__security_cookie.
+    if(MSVC)
+        target_compile_options(libmcc_jitengine PRIVATE /GS-)
+    endif()
 endif()
 
 add_executable(mcc src/mcc.c)
