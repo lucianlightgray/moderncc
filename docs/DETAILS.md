@@ -46009,3 +46009,17 @@ lin-x64's [T-lin-10384](#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-sca
 **Left OPEN, better-scoped.** The bisect is a genuine multi-build effort (build + wide census per step); recording the window, the classifier-ruled-out result, and the dead inventory-shortcut so the next claimant starts at the bisect rather than re-deriving these. No source or bank was touched by this investigation.
 
 **Source.** lin-x64, 2026-08-15, at `main` post-`d377867d`.
+
+<a id="t-win-50015-gap-a-done-zero-width-only-union-sizes-zero-in-ms-mode"></a>
+
+## T-win-50015 gap (a) DONE — a zero-width-only union sizes 0 in ms-mode, not sizeof(int)
+
+**Fixed (win-x64, 2026-08-15, code `b420188b`).** The first of slice-1's two fidelity gaps is closed. In `struct_layout` (mccgen.c), the `VT_UNION` arm reduced a bit-field member's storage to `(bit_size + 7) >> 3` **only when `pcc`** (the GCC/pcc algorithm, `pcc = !ms_bitfields` for the non-`ms_struct`/`gcc_struct` case). Under ms-mode (`pcc == 0`) that reduction was skipped, so a union whose only member is a zero-width unnamed bit-field (`union { int : 0; }`) kept `size = type_size(int) = 4` instead of 0 — inflating the pe/torture-classes `struct outer` from 8 (mingw) to 12.
+
+**The one-line fix:** add `else if (bit_size == 0) size = 0;` after the `pcc` reduction in the union arm. A zero-width bit-field never occupies storage in any mode; under `pcc` the existing `(0 + 7) >> 3 == 0` already produced 0, so the new arm is reached **only** when `pcc == 0` — i.e. it is dead code in gcc-mode, which is the default on Linux and everywhere the PE ms_bitfields flip is not applied. Non-zero union bit-field members are untouched (ms-mode still gives the MSVC `sizeof(int)` unit, e.g. `union{int x:5}` = 4).
+
+**Verification:** new CI cell **pe/ms-bitfield-sizing** (`tests/cross/pe-msbitfield-sizing.{c,sh}`, registered beside pe/torture-classes, same mingw-gated skip) compiles a struct/union set with `mcc -mms-bitfields` and diffs the printed sizeofs against mingw-gcc (whose Windows default IS the MS layout): `outer 8 / just_zero 0 / differently_typed 12 / same_type_run 4`, all match — green. Regression-proven: pre-fix the same cell would print `outer 12 / just_zero 4`. No regression: 471/471 struct/bitfield/exec cells green (gcc-mode is the dead-code path).
+
+**Remaining for T-win-50015:** gap (b) — `exec/expressions/integer_promotion.c` stdout diverges under ms-mode (untriaged; diff the two `-mms-bitfields` binaries' stdout) — THEN reapply the recorded two-edit flip (`ms_bitfields = 1` under `MCC_TARGET_PE` in `mcc_new`, plus the `MCC_HOST_WIN32` variant of the pass-msstruct string), register `pe/bitfield-abi`, re-bank the win32 o0-baseline columns that move, and run the full native suite. The flip is what greens `pass-msstruct` and the msstruct half of `smoke/native`+`smoke/strats`.
+
+**Source.** win-x64, 2026-08-15, code `b420188b`.
