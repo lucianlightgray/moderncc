@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T13:08Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T15:00Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50016   | 2026-08-15T13:30Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50016   | 2026-08-15T13:25Z |
 
 ## Contracts — blocking, highest priority
 
@@ -265,7 +265,7 @@
         OWNER: lin-x64 | STATE: DONE | SHA: a4b2baf1 | TS: 2026-08-15T08:30Z
         REF: DETAILS.md#t-lin-10092-lin-the-linux-full-native-suite-is-clean | DEPS: — | NOTE: DONE. NUMBER: 10062 cells, 1011 skipped, 9051 run, 0 failures, 86 min. Already archived at 32d29fc4 — line kept visible only until the [P] parent closes, per mac's convention on /mac; whoever lands /win removes all three children + the parent together
   - [ ] T-lin-10092/win [P] Record a clean full native suite number on each platform — win-x64
-        OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 723e5f1a | TS: 2026-08-15T13:55Z
+        OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 05ea60f8 | TS: 2026-08-15T13:25Z | NOTE-2: full-suite re-quote run IN FLIGHT on the box (detached ctest -j4, log cmake-release/full-suite-2026-08-15.log) after today's fixes: setvbuf (T-win-50008), smokerun harness + LLP64 subject (T-win-50009), target-keyed strat floor (T-win-50012), windows bails bank (T-win-50013), VK layer disable restoring the RTX 2060. No rebuilds in cmake-release until it lands
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: NUMBER RECORDED (first ever on Windows): 9387 cells, 8388 pass / 945 skip / 54 fail at 9b21c352; 19 false-reds fixed at 260bb900 -> 8388 / 964 / 35. Not clean — the 35 residual reds are triaged in T-win-50003 (28 GPU-slice, 4 fp opt-search, 3 jit/runtime). @lin: number is landed, slice-3 (L2′) hold can release
 - [ ] T-lin-10093 [P] `ci/must-run-registered` green on each platform
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
