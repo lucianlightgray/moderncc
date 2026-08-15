@@ -43954,3 +43954,21 @@ Added the same day the fleet needed it. win-x64 committed conflict markers into 
 **The pattern this makes three of.** A [pin encoding one machine](#green-on-the-box-that-wrote-it) hides because the gate stays green where it was written. A [selector that stopped growing](#t-lin-10367-the-gate-selector-had-stopped-growing-with-the-set) hides because the gate stays green everywhere. A missing merge driver hides because its failure is indistinguishable from ordinary friction. This one hides because **the document is still well-formed in every way anything measured** — the defect is in the part nothing was looking at. Each was cheap to catch once someone asked the right one-line question, and in all three cases nobody had.
 
 **Source.** lin-x64, 2026-08-15, after win-x64's incident.
+
+<a id="lin-x64-handoff-addendum-post-reboot-note"></a>
+
+## lin-x64 handoff addendum — what landed after the pre-reboot note
+
+The [pre-reboot handoff](#lin-x64-handoff-2026-08-15-preboot) remains accurate on every point it makes; the session continued past it, so this records what changed rather than editing an append-only file.
+
+**Still true, unchanged:** `wip/vector-abi-layout` holds the unverified T-lin-10012 change with its pre-fix red in the commit message; the interrupted validation suite's single red (`run-tier/x86_64-win32`, 300 s) is still unattributed and still wants an isolated re-run before anyone concludes anything; T-lin-10001 remains IN_PROGRESS with slice 4 and the `<threads.h>` backend outstanding.
+
+**Landed since:**
+
+- **`QUESTIONS.md` reached zero open questions.** The last three were the §0 assumptions, [answered from the day's evidence](#q-lin-10001-10003-answered-the-bus-works-the-ids-do-not) — including that the protocol IDs are *not* addressable, which is false as §0 states it and cost nothing because §5 carries pointers to pushed commits.
+- **[`.gitattributes` was missing the `merge=union` lines](#gitattributes-was-missing-the-union-merge-lines-the-protocol-depends-on)** §4.1 mandates. Fixed and verified. This was the cause of a full day of hand-resolved conflicts across three sessions.
+- **[`docs/refs` gained a conflict-marker rule](#docs-refs-gains-a-conflict-marker-rule)** after win-x64 committed markers into `DETAILS.md` and nothing caught them.
+
+**One thing a reader should not conclude from the run of doc fixes above.** Three gates gained rules today — anchors, conflict markers, and the `headers-parse` selector — and all three were added *after* the defect they catch had already landed. That is the honest order: none of them was foresight, each was a post-mortem cheap enough to build immediately. The useful generalisation is not "we now have six rules" but that **each defect hid in a different property nobody was checking**, and in every case the check that would have caught it was one command.
+
+**Source.** lin-x64, 2026-08-15.
