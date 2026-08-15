@@ -62,7 +62,7 @@
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 - [ ] T-lin-10008 [S] Parse `_Complex _Float16` (9 cells)
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10008-parse-complex-float16-9-cells | DEPS: —
+      REF: DETAILS.md#t-lin-10008-parse-complex-float16-9-cells | DEPS: — | SCOPING (mac-arm64, 2026-08-15): rejection is a single conservative gate at src/mccgen.c:8678 (`_Complex _Float16 is not supported`), just before mk_complex_type(type,&base) in the complex_seen path — sibling to the `_Complex __int256` reject at 8663. But NOT a one-line lift: (1) _Float16 is deliberately excluded from float predicates, e.g. is_float()-callers at mccgen.c:650 `is_float(t) && (t&VT_BTYPE)!=VT_FLOAT16`, so the complex arithmetic/convert paths would need VT_FLOAT16 admitted where they currently exclude it; (2) __FLT_EVAL_METHOD__==0 means half ops promote per-operation (task note), so complex-half add/mul/div must follow that promotion; (3) the 9 cells DO NOT EXIST yet — they must be authored (declare + real/imag + the four ops) WITH csweep-shaped value rows in the smoke oracle (the verification's adjudication half, which is also the safety net against a silent complex-half miscompile). A real multi-turn feature, not a gate flip
 - [ ] T-lin-10010 [S] Implement reversed `scalar_storage_order`; refusing it is the safe interim, not the feature
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10010-implement-reversed-scalar-storage-order | DEPS: —
