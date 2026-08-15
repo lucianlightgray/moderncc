@@ -449,6 +449,8 @@ static void msl_store_live(MslMod *m, uint32_t base, int k, uint32_t val) {
 }
 
 static void msl_store_live_v(MslMod *m, uint32_t base, int k, MslV v) {
+	if (v.f64)
+		v = msl_mk(v.id, 1, 0);
 	if (!v.w64) {
 		/* The high word follows the value's own signedness, exactly as
 		 * spv_store_live_v does: an unsigned 32-bit value zero-extends and a
@@ -497,6 +499,25 @@ static MslV msl_load_live_dv(MslMod *m, uint32_t base, int k0, uint32_t elem,
 		uint32_t lo = msl_load_at(m, msl_slot_at(m, base, k0, elem, 0));
 		uint32_t hi = msl_load_at(m, msl_slot_at(m, base, k0, elem, 1));
 		return msl_mk(msl_pv(m, "int2(v%u, v%u)", lo, hi), 1, uns);
+	}
+}
+
+static void msl_store_live_dv(MslMod *m, uint32_t base, int k0, uint32_t elem,
+															MslV v) {
+	if (v.f64)
+		v = msl_mk(v.id, 1, 0);
+	if (!v.w64) {
+		uint32_t hi = v.uns ? msl_const(m, 0)
+											 : msl_iv(m, "mcc_sar(v%u, 31)", v.id);
+		msl_store_at_in(m, msl_slot_at(m, base, k0, elem, 0), v.id);
+		msl_store_at_in(m, msl_slot_at(m, base, k0, elem, 1), hi);
+		return;
+	}
+	{
+		uint32_t lo = msl_iv(m, "p%u.x", v.id);
+		uint32_t hi = msl_iv(m, "p%u.y", v.id);
+		msl_store_at_in(m, msl_slot_at(m, base, k0, elem, 0), lo);
+		msl_store_at_in(m, msl_slot_at(m, base, k0, elem, 1), hi);
 	}
 }
 

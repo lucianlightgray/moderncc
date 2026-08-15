@@ -119,13 +119,7 @@ static int g_unsupported;
  * TODO.md §5 stages M2, M4 and M5. Under MCC_GPU_LANG_MSL the builders above
  * return 0 by construction, so the suites that drive them must say
  * "unsupported" rather than assert that lowering succeeded. */
-static int backend_has_frame_kernels(void) {
-#if MCC_GPU_LANG_MSL
-	return 0;
-#else
-	return 1;
-#endif
-}
+static int backend_has_frame_kernels(void) { return 1; }
 
 /* Only the Vulkan arm waits on a fence with a caller-supplied timeout, so only
  * it can be made to strand a dispatch on demand. Metal's dispatch is

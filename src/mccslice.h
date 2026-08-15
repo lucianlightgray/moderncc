@@ -1684,6 +1684,331 @@ static int mcc_slice_spv_stmt(SpvMod *m, MccSliceFrame *f, uint32_t base,
 }
 #endif /* !MCC_GPU_LANG_MSL */
 
+#if MCC_GPU_LANG_MSL
+
+static int mcc_slice_msl_stmt(MslMod *m, MccSliceFrame *f, uint32_t base,
+															AstLocal s);
+
+static int mcc_slice_msl_run(MslMod *m, MccSliceFrame *f, uint32_t base,
+														 AstLocal s, int i, int top);
+
+static uint32_t mcc_slice_msl_seed(MslMod *m) {
+	uint32_t d = msl_bv(m, "fdef");
+	m->def = d;
+	return d;
+}
+
+static void mcc_slice_msl_flush(MslMod *m) {
+	msl_line(m, "fdef = b%u;", m->def);
+}
+
+static int mcc_slice_msl_guard(MslMod *m, MccSliceFrame *f, uint32_t base,
+															 AstLocal s, int i, int top) {
+	msl_line(m, "if (fnret) {");
+	m->indent++;
+	if (!mcc_slice_msl_run(m, f, base, s, i, top))
+		return 0;
+	m->indent--;
+	msl_line(m, "}");
+	return 1;
+}
+
+static int mcc_slice_msl_seq(MslMod *m, MccSliceFrame *f, uint32_t base,
+														 AstLocal n) {
+	AstLocal c;
+	if (n == AST_NONE)
+		return 1;
+	if (ast_kind(f->a, n) != AST_BasicBlock)
+		return mcc_slice_msl_stmt(m, f, base, n);
+	c = ast_first_child(f->a, n);
+	if (c == AST_NONE)
+		return 1;
+	return mcc_slice_msl_run(m, f, base, c, 0, 0);
+}
+
+static int mcc_slice_msl_stmt(MslMod *m, MccSliceFrame *f, uint32_t base,
+															AstLocal s) {
+	AstLocal d, v;
+	int32_t off = 0;
+	MslV val;
+	int j, dt;
+
+	if (ast_kind(f->a, s) == AST_Return) {
+		MslV rv;
+		uint32_t p;
+		if (!f->neret)
+			return 0;
+		mcc_slice_msl_seed(m);
+		if (!msl_expr(m, f->a, ast_first_child(f->a, s), f->slot, f->nslot, base,
+									&rv))
+			return 0;
+		mcc_slice_msl_flush(m);
+		p = msl_pair(m, rv);
+		msl_line(m, "frv = p%u;", p);
+		msl_line(m, "fnret = false;");
+		return 1;
+	}
+	if (ast_kind(f->a, s) == AST_If &&
+			(ast_op(f->a, s) == 2 || ast_op(f->a, s) == 3 || ast_op(f->a, s) == 4)) {
+		int op = ast_op(f->a, s);
+		AstLocal cond = op == 4 ? ast_child(f->a, s, 1) : ast_child(f->a, s, 0);
+		AstLocal body = op == 4 ? ast_child(f->a, s, 0)
+									 : op == 3 ? ast_child(f->a, s, 2)
+														 : ast_child(f->a, s, 1);
+		uint32_t vi = msl_id(m);
+		MslV cv;
+		msl_line(m, "int v%u = 0;", vi);
+		msl_line(m, "for (;;) {");
+		m->indent++;
+		if (op != 4) {
+			uint32_t go;
+			mcc_slice_msl_seed(m);
+			if (!msl_expr(m, f->a, cond, f->slot, f->nslot, base, &cv))
+				return 0;
+			mcc_slice_msl_flush(m);
+			go = msl_bv(m, "b%u && v%u < %d", msl_bool_of_v(m, cv), vi,
+									MCC_SLICE_TRIP_MAX);
+			msl_line(m, "if (!b%u) break;", go);
+			if (!mcc_slice_msl_seq(m, f, base, body))
+				return 0;
+			if (op == 3 && !mcc_slice_msl_seq(m, f, base, ast_child(f->a, s, 1)))
+				return 0;
+			msl_line(m, "v%u = mcc_add(v%u, 1);", vi, vi);
+		} else {
+			uint32_t vnx = msl_id(m), go;
+			if (!mcc_slice_msl_seq(m, f, base, body))
+				return 0;
+			msl_line(m, "int v%u = mcc_add(v%u, 1);", vnx, vi);
+			mcc_slice_msl_seed(m);
+			if (!msl_expr(m, f->a, cond, f->slot, f->nslot, base, &cv))
+				return 0;
+			mcc_slice_msl_flush(m);
+			go = msl_bv(m, "b%u && v%u < %d", msl_bool_of_v(m, cv), vnx,
+									MCC_SLICE_TRIP_MAX);
+			msl_line(m, "if (!b%u) break;", go);
+			msl_line(m, "v%u = v%u;", vi, vnx);
+		}
+		m->indent--;
+		msl_line(m, "}");
+		msl_line(m, "fdef = fdef && v%u < %d;", vi, MCC_SLICE_TRIP_MAX);
+		mcc_slice_msl_seed(m);
+		return 1;
+	}
+	if (ast_kind(f->a, s) == AST_If && ast_op(f->a, s) == 7)
+		return 1;
+	if (ast_kind(f->a, s) == AST_If && ast_op(f->a, s) == 0) {
+		MslV cv;
+		uint32_t cb;
+		mcc_slice_msl_seed(m);
+		if (!msl_expr(m, f->a, ast_child(f->a, s, 0), f->slot, f->nslot, base,
+									&cv))
+			return 0;
+		mcc_slice_msl_flush(m);
+		cb = msl_bool_of_v(m, cv);
+		msl_line(m, "if (b%u) {", cb);
+		m->indent++;
+		if (!mcc_slice_msl_seq(m, f, base, ast_child(f->a, s, 1)))
+			return 0;
+		m->indent--;
+		msl_line(m, "} else {");
+		m->indent++;
+		if (ast_nchild(f->a, s) == 3 &&
+				!mcc_slice_msl_seq(m, f, base, ast_child(f->a, s, 2)))
+			return 0;
+		m->indent--;
+		msl_line(m, "}");
+		mcc_slice_msl_seed(m);
+		return 1;
+	}
+
+	if (ast_kind(f->a, s) == AST_Unary &&
+			(ast_op(f->a, s) == TOK_INC || ast_op(f->a, s) == TOK_DEC)) {
+		AstLocal t = ast_first_child(f->a, s);
+		int delta = ast_op(f->a, s) == TOK_INC ? 1 : -1;
+		MslV cur;
+		int step;
+		if (!mcc_slice_is_local_ref(f->a, t, &off))
+			return 0;
+		dt = ast_type_t(f->a, t);
+		step = mcc_slice_step_of(f->a, t, dt);
+		if (!step)
+			return 0;
+		delta *= step;
+		for (j = 0; j < f->nslot; j++)
+			if (f->slot[j] == off)
+				break;
+		if (j == f->nslot)
+			return 0;
+		cur = msl_load_live_v(m, base, j, ast_eval_slice_is64(dt),
+													(dt & VT_UNSIGNED) != 0);
+		if (cur.w64) {
+			MslV dl = msl_const64(m, (int64_t)delta);
+			cur = msl_mk(msl_pv(m, "mcc64_add(p%u, p%u)", cur.id, dl.id), 1,
+									 (dt & VT_UNSIGNED) != 0);
+		} else {
+			cur = msl_mk(msl_iv(m, "mcc_add(v%u, v%u)", cur.id, msl_const(m, delta)),
+									 0, (dt & VT_UNSIGNED) != 0);
+		}
+		if (mcc_slice_mutate) {
+			uint32_t p = msl_pair(m, cur);
+			cur = msl_mk(msl_pv(m, "int2(p%u.x ^ 1, p%u.y)", p, p), 1, 0);
+		}
+		msl_store_live_v(m, base, j, msl_fit_v(m, cur, dt));
+		return 1;
+	}
+	d = ast_child(f->a, s, 0);
+	v = ast_child(f->a, s, 1);
+	dt = ast_type_t(f->a, d);
+	{
+		AstEvalSliceIdx ix;
+		if (mcc_slice_store_dyn(f->a, d, &ix)) {
+			MslV iv;
+			uint32_t elem;
+			mcc_slice_msl_seed(m);
+			if (!msl_expr(m, f->a, v, f->slot, f->nslot, base, &val))
+				return 0;
+			if (!msl_expr(m, f->a, ix.idx, f->slot, f->nslot, base, &iv))
+				return 0;
+			for (j = 0; j < f->nslot; j++)
+				if (f->slot[j] == ix.base)
+					break;
+			if (j == f->nslot)
+				return 0;
+			if (mcc_slice_mutate) {
+				uint32_t p = msl_pair(m, val);
+				val = msl_mk(msl_pv(m, "int2(p%u.x ^ 1, p%u.y)", p, p), 1, 0);
+			}
+			elem = msl_dyn_elem(m, iv, &ix);
+			if (ast_eval_slice_ext(&ix)) {
+				MslRegion mr;
+				if (!msl_mem_region(m, &mr))
+					return 0;
+				msl_store_region(
+						m, &mr,
+						msl_ext_off(m, msl_load_live_v(m, base, j, 1, 0), elem, &ix),
+						msl_fit_v(m, val, ix.etype), ix.etype);
+				mcc_slice_msl_flush(m);
+				return 1;
+			}
+			msl_store_live_dv(m, base, j, elem, msl_fit_v(m, val, ix.etype));
+			mcc_slice_msl_flush(m);
+			return 1;
+		}
+	}
+	{
+		int32_t pf;
+		int et;
+		if (ast_eval_slice_deref(f->a, d, &pf, &et)) {
+			MslRegion mr;
+			uint32_t bo;
+			if (!msl_mem_region(m, &mr))
+				return 0;
+			mcc_slice_msl_seed(m);
+			if (!msl_expr(m, f->a, v, f->slot, f->nslot, base, &val))
+				return 0;
+			for (j = 0; j < f->nslot; j++)
+				if (f->slot[j] == pf)
+					break;
+			if (j == f->nslot)
+				return 0;
+			if (mcc_slice_mutate) {
+				uint32_t p = msl_pair(m, val);
+				val = msl_mk(msl_pv(m, "int2(p%u.x ^ 1, p%u.y)", p, p), 1, 0);
+			}
+			bo = msl_mem_off(m, msl_load_live_v(m, base, j, 1, 0));
+			msl_store_region(m, &mr, bo, msl_fit_v(m, val, et), et);
+			mcc_slice_msl_flush(m);
+			return 1;
+		}
+	}
+	{
+		int32_t pf, madd;
+		int et;
+		if (ast_eval_slice_arrow(f->a, d, &pf, &madd, &et)) {
+			MslRegion mr;
+			uint32_t bo;
+			if (!msl_mem_region(m, &mr))
+				return 0;
+			mcc_slice_msl_seed(m);
+			if (!msl_expr(m, f->a, v, f->slot, f->nslot, base, &val))
+				return 0;
+			for (j = 0; j < f->nslot; j++)
+				if (f->slot[j] == pf)
+					break;
+			if (j == f->nslot)
+				return 0;
+			if (mcc_slice_mutate) {
+				uint32_t p = msl_pair(m, val);
+				val = msl_mk(msl_pv(m, "int2(p%u.x ^ 1, p%u.y)", p, p), 1, 0);
+			}
+			bo = msl_iv(m, "mcc_add(v%u, v%u)",
+									msl_mem_off(m, msl_load_live_v(m, base, j, 1, 0)),
+									msl_const(m, madd));
+			msl_store_region(m, &mr, bo, msl_fit_v(m, val, et), et);
+			mcc_slice_msl_flush(m);
+			return 1;
+		}
+	}
+	if (!mcc_slice_is_local_ref(f->a, d, &off) &&
+			!mcc_slice_store_frame(f->a, d, &off, &dt))
+		return 0;
+	mcc_slice_msl_seed(m);
+	if (!msl_expr(m, f->a, v, f->slot, f->nslot, base, &val))
+		return 0;
+	mcc_slice_msl_flush(m);
+	for (j = 0; j < f->nslot; j++)
+		if (f->slot[j] == off)
+			break;
+	if (j == f->nslot)
+		return 0;
+	if (mcc_slice_mutate) {
+		uint32_t p = msl_pair(m, val);
+		val = msl_mk(msl_pv(m, "int2(p%u.x ^ 1, p%u.y)", p, p), 1, 0);
+	}
+	msl_store_live_v(m, base, j, msl_fit_v(m, val, dt));
+	return 1;
+}
+
+static int mcc_slice_msl_run(MslMod *m, MccSliceFrame *f, uint32_t base,
+														 AstLocal s, int i, int top) {
+	if (!top) {
+		for (; s != AST_NONE; s = ast_next_sib(f->a, s)) {
+			AstLocal nx = ast_next_sib(f->a, s);
+			if (!mcc_slice_msl_stmt(m, f, base, s))
+				return 0;
+			if (f->neret && nx != AST_NONE && mcc_slice_may_ret(f->a, s))
+				return mcc_slice_msl_guard(m, f, base, nx, 0, 0);
+		}
+		return 1;
+	}
+	for (; i <= f->ntop; i++) {
+		AstLocal st = i < f->ntop ? f->top[i] : f->ret;
+		if (st == AST_NONE)
+			break;
+		if (i < f->ntop) {
+			if (!mcc_slice_msl_stmt(m, f, base, st) || m->failed)
+				return 0;
+		} else {
+			MslV rv;
+			uint32_t p;
+			mcc_slice_msl_seed(m);
+			if (!msl_expr(m, f->a, st, f->slot, f->nslot, base, &rv) || m->failed)
+				return 0;
+			mcc_slice_msl_flush(m);
+			p = msl_pair(m, rv);
+			msl_line(m, "frv = p%u;", p);
+			msl_line(m, "fnret = false;");
+			return 1;
+		}
+		if (f->neret && mcc_slice_may_ret(f->a, st) &&
+				(i + 1 < f->ntop || f->ret != AST_NONE))
+			return mcc_slice_msl_guard(m, f, base, AST_NONE, i + 1, 1);
+	}
+	return 1;
+}
+
+#endif /* MCC_GPU_LANG_MSL */
+
 static int mcc_slice_frame_kernel_build(MccSliceFrame *f, MccSliceKernel *k) {
 	uint32_t base;
 	int i, j;
@@ -1701,8 +2026,58 @@ static int mcc_slice_frame_kernel_build(MccSliceFrame *f, MccSliceKernel *k) {
 	k->nlive = f->nslot;
 	k->wtype = VT_INT;
 #if MCC_GPU_LANG_MSL
-	(void)base; (void)j;
-	return 0; /* Metal arm: frame stores not emitted yet. */
+	{
+		MslMod m;
+		char *code;
+		int nb = 0;
+		(void)j;
+		msl_module_begin(&m, f->nslot);
+		m.mem_base = ast_eval_slice_rw_base;
+		m.mem_nbyte = (uint32_t)ast_eval_slice_rw_nbyte;
+		base = msl_main_begin(&m, f->nslot);
+		msl_line(&m, "bool fdef = b%u;", m.def);
+		msl_line(&m, "bool fnret = true;");
+		msl_line(&m, "int2 frv = int2(0, 0);");
+		if (f->neret) {
+			if (!mcc_slice_msl_run(&m, f, base, AST_NONE, 0, 1) || m.failed) {
+				msl_module_free(&m);
+				return 0;
+			}
+			{
+				uint32_t rv = msl_pv(&m, "fnret ? int2(0, 0) : frv");
+				mcc_slice_msl_seed(&m);
+				msl_main_end(&m, m.lane, msl_mk(rv, 1, 0));
+			}
+		} else {
+			for (i = 0; i < f->ntop; i++)
+				if (!mcc_slice_msl_stmt(&m, f, base, f->top[i]) || m.failed) {
+					msl_module_free(&m);
+					return 0;
+				}
+			if (f->ret != AST_NONE) {
+				MslV rv;
+				mcc_slice_msl_seed(&m);
+				if (!msl_expr(&m, f->a, f->ret, f->slot, f->nslot, base, &rv) ||
+						m.failed) {
+					msl_module_free(&m);
+					return 0;
+				}
+				msl_main_end(&m, m.lane, rv);
+			} else {
+				mcc_slice_msl_seed(&m);
+				msl_main_end(&m, m.lane, msl_mk(msl_const(&m, 0), 0, 0));
+			}
+		}
+		k->usemem = m.mem_used;
+		code = msl_module_finish(&m, &nb);
+		msl_module_free(&m);
+		if (!code || nb <= 0) {
+			free(code);
+			return 0;
+		}
+		k->code.p = code;
+		k->code.n = nb;
+	}
 #else
 	{
 		SpvMod m;
