@@ -44773,3 +44773,51 @@ runtime-idx gap (spv 712 vs msl 704 real slices), plus the region/memory arm.
 
 **Source.** mac-arm64, 2026-08-15, code at `87f7b232`; probes in session
 scratchpad, contract recorded here per N1.
+<a id="t-win-50015-slice-1-the-fixture-exists-and-the-flip-found-two-algorithm-gaps"></a>
+
+## T-win-50015 slice 1 — the fixture exists and is red-proven; the trial flip found two fidelity gaps in mcc's MS-layout mode that must be fixed first
+
+**Progress (win-x64, 2026-08-15). Task released back to OPEN — resume, not
+restart.** The staged plan survives contact with reality but gains a step.
+
+**Slice 1 DONE — the cross-TU fixture** (`tests/cross/pe-bitfield-abi.{c,sh}`,
+committed inert, not yet registered): an mcc-compiled writer TU and a
+mingw-gcc reader TU share three structs — `plain` (differently-typed runs),
+`mixed` (short/int runs), `shared` (same-type run, the control). Red today
+exactly as predicted: `SIZE MISMATCH writer=40404 reader=40c0c`, plain fields
+read back scrambled (`b=-3 c=-28`), while the same-type control agrees —
+isolating the defect to differently-typed bit-field runs. Register it beside
+`pe/torture-classes` when the flip lands.
+
+**The trial flip worked for the fixture and the pass pin** — with
+`s->ms_bitfields = 1` under `#ifdef MCC_TARGET_PE` in `mcc_new` (libmcc.c,
+beside the MACHO `leading_underscore` default) the fixture goes green
+byte-for-byte with mingw (`sizes=40c0c`) and `pass-msstruct` prints
+`msstruct 20 2 8 3 8 4 8 12 5`, exactly the real-MSVC-ABI clang line (the
+smokerun pin needs the `#if MCC_HOST_WIN32` variant of that string). Both
+reverted pending the gaps below; the reapply is those two edits verbatim.
+
+**Gap (a) — empty-union/zero-width sizing.** `pe/torture-classes` went red:
+`struct outer { struct inner {signed int a:3; signed int b:5;} in; union empty
+{int :0;} e; signed int c:9; }` — mingw says `sz=8` (the empty union
+contributes 0), mcc's ms-mode says 12. mcc's MS algorithm mis-sizes the
+zero-width-only union (or restarts `c` in a fresh unit after phantom padding).
+
+**Gap (b) — something `exec/expressions/integer_promotion.c` observes.**
+`pe/x-oracle` gained exactly one divergence under the flip: that program's
+stdout differs from mingw's (both exit 0). Untriaged; plausibly bit-field
+promotion semantics under the ms path. Find it with the two binaries' stdout
+diff; it reproduced deterministically.
+
+**Sequencing for whoever resumes (fresh context recommended):** fix (a) and
+(b) in mccgen's ms-mode layout/promotion (the `pcc` computation at
+mccgen.c:6205 and its consumers), each TDD'd — (a) has the torture cell as its
+test, (b) has the x-oracle program — THEN reapply the two-edit flip, register
+`pe/bitfield-abi`, re-run the o0-baseline win32 keys (no bank movement was
+observed in the trial: `ast/o0-baseline*` skipped in the family run — force
+them when landing), and the full native suite. mac's FYI of the same hour: the
+Metal arm's `mcc_gpu_f64()` semantics changed, Vulkan arms untouched — no
+interaction with this task.
+
+**Source.** win-x64, 2026-08-15. Trial at working-tree state over 901e103e;
+fixture committed; flip reverted.

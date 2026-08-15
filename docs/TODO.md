@@ -38,10 +38,6 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-win-50015 [S] win-x64 — default `ms_bitfields = 1` on PE targets: mcc's plain bit-field layout is cross-TU-incompatible with every native Windows compiler
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 5d6997f4 | TS: 2026-08-15T14:00Z
-      REF: DETAILS.md#t-win-50014-resolved-mccs-win32-default-bitfield-layout-is-the-outlier | DEPS: — | NOTE: slice 1 = the failing cross-TU fixture vs mingw gcc (TDD red today), then the PE-target default flip, then re-bank what moves. Staged plan at the REF anchor
-
 ## Open — claimable
 - [ ] T-lin-10374 [S] Two builds of identical mcc source do not produce identical binaries
       OWNER: — | STATE: OPEN | SHA: 8dd00e11 | TS: 2026-08-15T13:25Z
@@ -49,6 +45,9 @@
 - [ ] T-mac-30004 [S] `spvgate` CASES has no f64 case: arm the SPIR-V arm's table on fp64 hosts
       OWNER: — | STATE: OPEN | SHA: 28ac8048 | TS: 2026-08-15T12:55Z
       REF: DETAILS.md#t-lin-10042-slice-1-msl-f64-bits-pair | DEPS: — | NOTE: found doing T-lin-10042 slice 1. The default-mode CASES loop never exercised f64 on EITHER arm; the two new cases (f-notneg, f-ternary) are `#if MCC_GPU_LANG_MSL` because sharing them would (a) hard-fail gpu/spv-slice-differential on non-fp64 hosts — CASES mode lacks arena mode's `used_f64 && !g_f64` skip — and (b) stake FNegate-on-NaN + denormal-truth bit-exactness on lavapipe/NVIDIA, the unread-denormal hazard T-lin-10061 records. To arm: add the CASES-mode f64 skip (a case whose every rung f64-skips must print SKIP, not the 0-compared FAIL), unguard the two cases, bump spv-validate EXPECT (it counts emitted modules; measure with --emit-only), and take T-lin-10061's denormal reading while at it. Needs an fp64 host — lin (lavapipe) or win (RTX 2060); mac's MoltenVK cannot run it. WIN-BOX CAVEAT (win-x64, 2026-08-15): the RTX 2060 is confirmed dispatching (smoke device oracle cpu==gpu over 798,500 cases) but ONLY with VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics — the AMD switchable-graphics implicit layer breaks vkEnumeratePhysicalDevices (ndev=0) on this dual-GPU box; set user-level here, but any fresh CI/shell must carry it
+- [ ] T-win-50015 [S] win-x64 — default `ms_bitfields = 1` on PE targets: mcc's plain bit-field layout is cross-TU-incompatible with every native Windows compiler
+      OWNER: — | STATE: OPEN | SHA: 901e103e | TS: 2026-08-15T14:20Z
+      REF: DETAILS.md#t-win-50015-slice-1-the-fixture-exists-and-the-flip-found-two-algorithm-gaps | DEPS: — | NOTE: RELEASED with slice 1 done — resume, not restart. Fixture tests/cross/pe-bitfield-abi.{c,sh} committed (inert, red-proven by hand, register when the flip lands). The trial flip greens the fixture + pass-msstruct byte-for-byte with mingw/clang BUT exposed two fidelity gaps in mcc's MS-layout mode that gate it: (a) empty-union/zero-width sizing (pe/torture-classes outer 12 vs mingw 8), (b) exec/expressions/integer_promotion.c stdout diverges under ms-mode (pe/x-oracle +1). Fix both TDD'd, then reapply the recorded two-edit flip. Wants a fresh, focused context — full sequencing at the REF anchor
 - [ ] T-win-50016 [S] — `slice/f64`: 3 of 22 fp64 negations diverge CPU↔device on the RTX 2060 (1 of 111 checks)
       OWNER: — | STATE: OPEN | SHA: 05ea60f8 | TS: 2026-08-15T13:45Z
       REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: the real device-numerics red formerly mis-binned as "0 slices on Windows" — now precisely measured with the device visible. fp64 NEGATION class; mac's T-lin-10042 MSL slice 1 made exactly this bit-exact on Metal (integer negation of the bits-pair) — the SPIR-V arm on NVIDIA likely diverges on NaN-payload negation. gpu/slicerun owners (lin/mac) with win-x64 as the confirming box
