@@ -46273,3 +46273,17 @@ No code change is owed: the one-line configure fix and the durable manifest guar
 **One honest residual.** The bisected window drift is −0.0201pp; the figure the row quotes as "pre-existing" was −0.0336pp. Census values are host- and `-D`-sensitive (the tool's header records host spreads of several pp), so the ~0.0135pp difference is most plausibly the config gap between whatever host/flags took the historical `15.3812` bank and this measurement, and/or a small mover just outside the `87954190` baseline; chasing it further over a ~200-commit pre-window is disproportionate to a ~1.5-body accounting drift whose every identified component is provably benign. The row is closed on the two named, explained, intended movers rather than on the last 0.0135pp of a hygiene figure.
 
 **Source.** lin-x64, 2026-08-15, bisected at `main@d69ff732`; movers `1307d0bb` + `eedf83f2`.
+
+<a id="t-win-50007-resolved"></a>
+
+## T-win-50007 DONE — arm64pe_diff models the LLP64-vs-LP64 `long`-width divergence as a declared data-model subject, not a codegen bug
+
+**Symptom (reproduced).** `python3 tools/arm64pe_diff.py --corpus` flagged `06_long_width.c` SUSPICIOUS: `.text SIZE differs ELF=192 PE=188` + `70 byte diff(s) NOT at a reloc site`. The other 5 corpus files were clean. Reproduced in WSL Ubuntu with a freshly built cross pair (`cmake --preset cross` → `mcc-arm64` ELF oracle + `mcc-arm64-win32` PE), capstone 5.0.7.
+
+**Diagnosis — it is NOT a codegen defect.** The harness's oracle premise is "arm64-PE `.text` == arm64-ELF `.text` modulo symbol-addressing." That premise only holds for **data-model-neutral** source. arm64-PE is **LLP64** (`long` is 32-bit); arm64-ELF is **LP64** (`long` is 64-bit). `06_long_width.c` is *all* `long`/`unsigned long` arithmetic, so the two targets legitimately emit different operand widths and sign/zero-extension — the LP64 ELF object is simply **not a valid byte-oracle** for the LLP64 PE object here. The classifier only knew reloc-site and section-presence benign classes, so a genuine data-model divergence read as suspicious.
+
+**Fix (tools-only, `4a5886d9`).** Rejected the "rewrite with fixed-width types" option — it would neuter the subject, whose whole purpose is to prove mcc honours each target's data model. Instead a subject may **self-declare** with a `// arm64pe-diff: datamodel-divergent` comment (`_datamodel_divergent()` in `tools/arm64pe_diff.py`). A declared subject **skips the byte/size/reloc diff** (which could only ever fire the expected divergence) and is validated on **section structure alone** — still catches missing/extra sections and wrong e_machine. `06_long_width.c` carries the directive.
+
+**Non-blind + scoped.** Corpus now exits 0 (06 clean, reported BENIGN "data-model-divergent subject … only section structure is validated"). Control: the *identical* `long` body **without** the directive still reports SUSPICIOUS (`.text SIZE differs 116 vs 112` + 18 non-reloc diffs) — the directive is exactly what clears it, so this is an opt-in, not a blanket suppressor. The other 5 corpus files stay byte-validated and clean. No CI cell moved: `arm64pe_diff.py` is a manual harness (needs the cross pair + capstone), not a CTest cell — the "green" here is the tool's own exit 0 on `--corpus`.
+
+**Source.** win-x64 via WSL (Ubuntu 26.04, native cross build), 2026-08-15, code `4a5886d9`.
