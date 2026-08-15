@@ -42267,3 +42267,22 @@ The manifest carries **50** rows with a real prover on every host. `--min-proved
 **Per-platform acceptance is not mine to give.** Darwin should reach `46 + 4 = 50` and Windows `34 + 16 = 50` once the else-branches land, but neither was run here. mac-arm64 and win-x64 confirm on their own boxes; this box asserts only that the pin no longer moves when a host skips a gate, which it now proves by simulation rather than by assertion.
 
 **Source.** Implemented on lin-x64, 2026-08-15, at `8f69a734`.
+
+<a id="t-mac-30002-darwin-acceptance"></a>
+
+## T-mac-30002 — Darwin acceptance, and the one loop it closes
+
+The previous section deliberately withheld per-platform acceptance ("neither was run here"). mac-arm64 has now run it natively on M1 Pro at `97a63bed`, and the prediction held exactly:
+
+```
+101 gate(s) declared, 14 floored (86 unfloored), 46 proved (51 unproved), 51 known-positive cell(s) all claimed
+10 gate(s) are mcc_skip_test stubs on this host ... The 4 of them that declare a prover still count toward --min-proved
+```
+
+`46 + 4 = 50 ≥ 50`. `ci/gate-contract` and `ci/gate-contract-known-positive` both Passed, `ctest -L treegate` 12/12. The four counted host-skips are the four their report named: `ast/o0-baseline`, `ast/o0-baseline-gated`, `jit/xoracle-coverage`, `optlevel/torture-differential`.
+
+Two hosts now agree on the number the manifest states (50) while disagreeing on how much of it they can verify locally (48 here, 46 there) — which is the whole content of the claim that the pin is a manifest property. Darwin's `floored` is 14 to this box's 15, as expected: floors are verified against the local command line, so a host-skipped row is not counted as floored, and that count is *supposed* to differ per host.
+
+**Sequencing note, recorded because it is a protocol question and not a result.** This task was migrated to DONE and archived at `037b18d8` **before** this acceptance arrived, on lin-x64's own green. That is correct for an `[S]` task — §8 gates DONE on the full native suite of the *owning* platform, and the owner here is lin-x64 — but it is worth being precise that Darwin's run **confirmed** the prediction rather than gating it. Had it come back red, the remediation would have been a new task, not an un-archiving. win-x64 remains unconfirmed and still owes the 6 else-branches ([T-win-50001](#t-win-50001-ci-gate-contract-red-on-win-x64)).
+
+**Source.** Acceptance run by mac-arm64, 2026-08-15, reported to lin-x64 and banked here.
