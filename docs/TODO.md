@@ -33,11 +33,11 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-## Open — claimable
+- [ ] T-lin-10088 [X] win-x64 — carry the `gcc-c-torture-execute` corpus for the cref-oracle (was "for pe/x-oracle")
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: c5197398 | TS: 2026-08-15T02:45Z
+      REF: DETAILS.md#fleet-capabilities-docker-qemu-on-all-three | DEPS: — | Q: Q-lin-10014 ANSWERED | NOTE: PREMISE CORRECTION — `pe/x-oracle` does NOT read this corpus (tests/cross/pe-xoracle.sh iterates goldens.h run-mode cells vs vendored mingw). The real consumer of `vendor/gcc-c-torture-execute` is `slice/cref-oracle-gcc-c-torture-execute` (CMakeLists 3964, python3+gcc+clang — all present on win-x64) and `optlevel/torture-differential` (UNIX-only, host-skipped here). Progress: fetched 1694 programs via `git clone --filter=blob:none --sparse` of gcc-mirror/gcc (network works on this box; the "no network" premise did not apply) — no Docker needed. Placing at vendor/ (gitignored → not vendored), then verifying the cref-oracle cell runs
 
-- [ ] T-lin-10088 [X] win-x64 — vendor the `gcc-c-torture-execute` corpus into a container for `pe/x-oracle`
-      OWNER: — | STATE: OPEN | SHA: c5197398 | TS: 2026-08-15T02:40Z
-      REF: DETAILS.md#fleet-capabilities-docker-qemu-on-all-three | DEPS: — | Q: Q-lin-10014 ANSWERED | NOTE: docker on the Windows box carries/fetches the corpus without vendoring it into the tree — the "deliberately not vendored" property is preserved. pe/x-oracle then runs all 1,693 programs with no new code
+## Open — claimable
 - [ ] T-lin-10045 [S] `-fopt-slice`: revise into the governor over every AST/RIR slice-capable strategy, integrated with the other slice optimizers
       OWNER: — | STATE: OPEN | SHA: 3749f816 | TS: 2026-08-15T02:30Z
       REF: DETAILS.md#q-lin-10006-answer-fopt-slice-is-the-governor-not-a-pass | DEPS: — | Q: Q-lin-10006 ANSWERED | NOTE: not "own or delete" — it was never a pass. Carries forward: the disk-cache determinism defect, and OPT_SLICE at MCC_OPTD_LEVEL(9) leaves opt-cache-determinism a permanent 77 with no subject. First slice = a shipped level with the determinism claim gated
