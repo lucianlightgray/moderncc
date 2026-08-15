@@ -43186,3 +43186,20 @@ So arm64 reproduces the documented Mode-(a) behavior exactly.
 **The sole remaining DoD is the accept-forms fixture, and it must not be written yet.** The task requires the fixture to "carry both accepted forms and the `a[1]` case, whichever way Q-lin-10004 is answered." That case flips with the answer: Mode (a) asserts `a[1]` **compiles**, Mode (b/clang) asserts it **errors**. Committing it now would bake the merely-*assumed* answer into a regression gate and silently prejudge the open question — which is exactly why lin left it "Deliberately NOT covered" in the fixture comment. T-lin-10011 is therefore blocked on Q-lin-10004 being *definitively* answered, not on any mac/arm64 effort. When answered: add one compile-success (Mode a) or `dg-error` (Mode b) fixture for `a[1]`, run `diag.dg-error.*` + corpusgate, close.
 
 **Source.** mac-arm64, 2026-08-15, at `7aac2195` (investigation only; native-behavior confirmed, no code change).
+
+
+<a id="t-lin-10046-done-the-restoration-already-landed-at-a55c0a07"></a>
+
+## T-lin-10046 DONE — the premise is stale; the restoration already landed at `a55c0a07`
+
+The task read as an open blocker ("`ast_env_gate` no longer exists in `src/` and four shell tools still grep for it"; DoD: "after the restoration, `tools/o0_ab.sh`'s gated half must produce its twelve `*.gated.rir.txt` and `board.gated.txt` again"). Verified on native arm64 that the restoration it asks for **already happened** — the `ast_env_gate` → `-f<name>` flag-table migration at `a55c0a07`:
+
+1. **`src/` is clean.** `grep -rn ast_env_gate src/` → **0 matches** (the DoD's own "0 today" check).
+2. **The gated half produces its full output set.** All eleven target boards are present and banked — `arm-win32, arm, arm64-osx, arm64-win32, arm64, i386-win32, i386, riscv64, x86_64-osx, x86_64-win32, x86_64`.gated.rir.txt — plus `board.gated.txt` (the twelfth file). `ast/o0-baseline-gated` **passes** on mac (the gated half runs, emits, and matches all eleven banked references byte-identically) and `ast/o0-baseline-gated-known-positive` **passes** (a deliberate perturbation is caught — proof the gate machinery genuinely fires, not a vacuous green).
+3. **No tool has a live dependence on the dead name.** `c2_equiv.sh` and `gate-ledger.sh` reference it **nowhere**. The only two surviving mentions — `o0_ab.sh:43`, `c2_sweep.sh:45` — are **accurate historical comments** ("that function and those variables are gone… the flag table is now the definition rather than a second copy of it"), documenting *why* the flag table exists. The DoD requires neither their removal nor any code change; striking correct provenance would lose the migration's rationale.
+
+So the mechanism that "freezes o0_ab.sh's gated half" was already un-frozen by the flag-table migration; the `-f<name>` names are re-derived per run from each `MCC_OPTD_LEVEL(n)` row of `src/mccopt.h` ("deriving zero of them is fatal"), which is what the gated cell exercises. This also confirms T-lin-10047's premise that `c2_sweep`/`gate-ledger` were already analyzed under the new mechanism.
+
+**Gates.** `src/` clean (0); `ast/o0-baseline-gated` + `-known-positive` green; `treegate` 12/12. Docs-only close (the code fix predates this task's OPEN state); no bank moved, so no corpusgate needed.
+
+**Source.** mac-arm64, 2026-08-15, verified at `d89e8af0` (no code change; premise resolved at `a55c0a07`).
