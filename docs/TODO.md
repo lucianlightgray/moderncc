@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T20:20Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:47Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:50Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T20:07Z |
 
 ## Contracts — blocking, highest priority
@@ -107,8 +107,8 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10017-a-same-tu-call-in-inline | DEPS: —
 - [ ] T-lin-10019 [S] `run-tier/x86_64` fails `tls_threads` when `MCC_JIT=1` meets an active AST replay
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10019-run-tierx86-64-fails-tls-threads | DEPS: —
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-15T20:50Z
+      REF: DETAILS.md#t-lin-10019-run-tierx86-64-fails-tls-threads | DEPS: — | NOTE: CLAIMED — verifying resolved-by-prior-work. run-tier/x86_64 with MCC_JIT=1 PASSES; `-V` shows `tls_threads: OK (MCC_JIT=0 == MCC_JIT=1 == expected)` and `tls: OK`, NOT XFAIL. Fixed by 6e30d208 (cross-platform TLS in the -run/JIT engine, "unblocks item-1 threading") + 26881521 (seed TLS in program-started threads + i386 slab). DETAILS' "3 lines unchanged/nothing fixed" is stale — git log shows run_tls_active/tls_setup changed since. Closing as verified
 - [ ] T-lin-10020 [S] i386 `R_386_TLS_GOTIE` gap, and the declined upstream `7f7845cd` (VT_VOID)
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10020-i386-r-386-tls-gotie-gap | DEPS: —
