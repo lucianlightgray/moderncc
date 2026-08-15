@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:09Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T17:03Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T17:26Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T16:54Z |
 
 ## Contracts — blocking, highest priority
@@ -22,8 +22,8 @@
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
 - [ ] T-lin-10384 [S] The one emitter hole the census found: ladder pairs with struct member select refuse because `ast_eval_ladder_scan` never keys member offsets
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc1e52a8 | TS: 2026-08-15T17:03Z
-      REF: DETAILS.md#t-lin-10384-mechanics-the-member-refusal-is-livein-keying-not-codegen | DEPS: — | NOTE: livein-keying hole confirmed by read — evaluator ast_eval_slice_rec:1277-1282 resolves member `s.f`->offset `mo` via member_off then ast_eval_slice_env; absent key = 0 (refusal); spv/msl emitter share that livein vector. FIX: mirror ast_eval_slice_livein's member arm (ast_eval_slice.h:1754-1762) into ast_eval_ladder_scan's AST_Unary case — key mo with tbits/uns, dedup+conflict as the AST_Ref arm, do not descend into base. Slice 1: confirm 81 sites (print mo at mccgpu.h:3808) + census subject.c -O4 81->0 pairs CERTIFIED not dropped
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: b1f912b5 | TS: 2026-08-15T17:26Z
+      REF: DETAILS.md#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-scanner-census-81-to-0-certified | DEPS: — | NOTE: FIX PUSHED b1f912b5 (code) + DETAILS addendum. member-keying arm in ast_eval_ladder_scan; subject.c -O4 census 81->0 CERTIFIED not dropped (rungs 5500->5735, dispatches 10839->11471, every other refuse bucket stayed 0). Targeted suite green: slice/census, smoke/slice-bails, slice-census, gpu/spv-slice-differential(+kp), gpu/ladder-gpu-parity, slice/gpu, slice/mem + full smoke/* (12). bails.txt rebanked O4+O9 dev (515->344, 15->0, note 18); mac/win banks IMPROVED-pass til they rebank. PENDING §8 DONE: full native suite in flight -> on green mark DONE + archive
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
