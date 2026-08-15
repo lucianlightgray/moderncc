@@ -67,6 +67,13 @@ extern long double strtold(const char *__nptr, char **__endptr);
 #define snprintf _snprintf
 #define vsnprintf _vsnprintf
 #ifndef __GNUC__
+/* Include <stdlib.h> first so the CRT's own strtof/strtold/strtoll/strtoull
+ * declarations are processed before these compatibility macros redefine the
+ * names; otherwise a later <stdlib.h> (e.g. via mccgpu.h in the slicerun/libmcc
+ * builds) is mangled -- 'float strtof(' becomes 'float (float)strtod(' and the
+ * ucrt header fails to compile under MSVC. Behaviour is unchanged: mcc's own
+ * strtof/strtold calls still route through strtod as before. */
+#include <stdlib.h>
 #define strtold (long double)strtod
 #define strtof (float)strtod
 #define strtoll _strtoi64

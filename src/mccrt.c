@@ -7,8 +7,10 @@
 #ifdef MCC_EMBED_JIT
 /* Declared here rather than pulled from a JIT header: this file is also
  * compiled into tools that link mccgpu.c without the JIT, and the declaration
- * must not drag one in. */
-void mccjit_shutdown(void);
+ * must not drag one in. PUB_FUNC (from mcchost.h via mccgpu.h) matches the
+ * definition's linkage so the libmcc DLL build's dllexport is not read as a
+ * different-linkage redefinition by MSVC. */
+PUB_FUNC void mccjit_shutdown(void);
 #endif
 
 /* The compiler side owns the GPU opt-in and the probe dispatch that decides
