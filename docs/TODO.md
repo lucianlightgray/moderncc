@@ -263,8 +263,8 @@
         OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: —
   - [ ] T-lin-10092/win [P] Record a clean full native suite number on each platform — win-x64
-        OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: —
+        OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 9b21c352 | TS: 2026-08-15T00:28Z
+        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: unblocked by T-win-50002 (mcc_build green); running full vcvars ctest to record the number
 - [ ] T-lin-10093 [P] `ci/must-run-registered` green on each platform
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10093-cimust-run-registered-green-on-each | DEPS: T-lin-10003[C]
