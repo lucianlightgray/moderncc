@@ -44704,3 +44704,72 @@ Two cells changed count against [lin's previous number](#t-lin-10092-lin-the-lin
 **The number is directly comparable to the three platform numbers on record** — lin 10062/0, mac 10060/0 genuine, win 9387 with 35 residual triaged in T-win-50003 — and this is the first Linux number taken with the tree carrying a shipped ABI change rather than at a quiescent point.
 
 **Source.** lin-x64, 2026-08-15, at `8dd00e11` plus the doc commits after it (no code between).
+<a id="t-lin-10042-slice-3-msl-f64-soft-float-arith"></a>
+
+## T-lin-10042 slice 3 — soft-float binary64 `+`/`-`/`*` on the MSL arm, and Metal now reports fp64
+
+**Type** `[X]` mac-arm64 — **State** slice 3 DONE at `87f7b232` — parent stays IN_PROGRESS
+
+**What Metal cannot do in hardware, the emitter now does in software.** Three
+prelude routines — `mccf64_addsub` (one core, `flip` selects subtraction
+*after* NaN selection), `mccf64_mul` (53×53→106-bit limb product via `mulhi`),
+and a shared `mccf64_round` tail — implement correctly-rounded (RTE) IEEE-754
+binary64 over the slice-1 `int2` bits-pair: full subnormal support in and out
+(shift-right-jam alignment; jam is sound because a lost-bit OR lands strictly
+below the half-ulp position), overflow to ±inf, and ±0 signs per RTE.
+
+**The NaN contract is measured, not assumed.** The CPU oracle is host arm64
+hardware arithmetic, so the propagation rule was probed on this M1 Pro
+(scratchpad `f64probe*.c`, volatile operands, default FPCR) before
+implementation: precedence is op1-sNaN > op2-sNaN > op1-qNaN > op2-qNaN,
+quieting sets bit 51 and preserves sign and payload; FSUB propagates the op2
+NaN **unmodified** — which is why subtraction must not lower as `a + (-b)`
+(the sign flip must apply only on the arithmetic path, after NaN selection);
+`inf - inf` and `0 * inf` produce the default NaN `0x7ff8000000000000`.
+
+**`mcc_gpu_f64()` is now true on the Metal arm** (`mcc_gpu.c` Metal init sets
+`.f64 = 1` beside `.ok`): the capability is provided by the emitter, not the
+device, so it is unconditional once a Metal device initialises. This
+re-armed `slicerun`'s `suite_f64` from its exclusion branch (which slice 3a
+had made red — it asserted no fp64 kernel can build without `shaderFloat64`,
+an assertion the software path legitimately falsifies) into the FULL
+certification battery, which now runs natively on this Mac for the first
+time:
+
+```
+slicerun: fp64 device=Apple M1 Pro certified=3965 tuples bit-exact,
+  denormal-touching=373 (device PRESERVES fp64 denormals, and they are
+  compared bit-exactly), two-NaN=18 (device takes the first operand's
+  payload; host takes the first)
+```
+
+That battery is the per-value differential over slicerun's 22-value F64V
+corpus (484 ordered pairs × add/sub/mul + 6 compares + negate): normals, pi,
+1.0+1ulp, DBL_MIN/MAX, largest/smallest subnormals, ±inf, three NaN payloads,
+2^±52 — i.e. the guard/round/sticky rounding paths the rung corpus's
+denormal-heavy inputs cannot reach.
+
+**TDD shape.** Three new MSL-arm differential cases, each watched fail first:
+`f-addsub` = `((a-1.5)+(1.5-b))+(a+b)` (cancellation, alignment d≈1075,
+op1/op2 NaN routes through FADD and FSUB), `f-addinf` = `(DBL_MAX+DBL_MAX)+a+b`
+(overflow→inf per lane, inf±NaN, inf±denormal), `f-mul` =
+`((a*1.5)*b) + (a * 0x0008000000000000)` (the 2^-1023 subnormal:
+denormal×normal scaling, denormal×denormal underflow-to-zero RTE ties, NaN
+routes through FMUL). One real bug was caught red-handed by `f-addsub` w=2:
+the significand low-limb scaling read `mal << 22` where the <<10 layout needs
+`mal << 10` — the differential localised it to `in=[1,0] cpu=1 gpu=0` (min
+denormal + 0) in one run.
+
+**Verification (M1 Pro, Metal, at `87f7b232`).** `./mslgate`: 44 cases incl.
+6 f64 cases all OK, points=2,895,728 compared=2,754,660 mismatches=0;
+`--mutate` flips all → FAIL as required. `./slicerun` exit 0 with the
+certification line above; `slice/f64` + `slice/f64-known-positive` pass.
+`ctest`: gpu/ 15/15, slice|census 122/122, jit 66/66.
+
+**What remains for the fp64 half.** Division is not an f64 slice op anywhere
+(`ast_eval_slice_f64_op` has no `/`; both arms refuse it) — no gap. Remaining
+parity items are the non-fp64 ones: dynidx/region f64 loads ride the general
+runtime-idx gap (spv 712 vs msl 704 real slices), plus the region/memory arm.
+
+**Source.** mac-arm64, 2026-08-15, code at `87f7b232`; probes in session
+scratchpad, contract recorded here per N1.
