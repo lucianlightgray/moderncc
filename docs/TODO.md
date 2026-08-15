@@ -26,6 +26,10 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
+- [ ] T-win-50010 [S] win-x64 — the `rir`/`rir-o4`/`slice` engines disagree with the ast baseline at dumped row 1 on Windows
+      OWNER: win-x64 | STATE: CLAIMED | SHA: 723e5f1a | TS: 2026-08-15T13:55Z
+      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: smoke/engines-known-positive "dumped row 1 differs from the ast baseline", win-only. Prime suspect: a 64-bit `long` model inside the rir/slice evaluators on an LLP64 host — the same defect family smoke.h had, but inside the compiler. First link in the chain to T-win-50013 (windows bails bank) and the clean suite number (T-lin-10092/win)
+
 ## Open — claimable
 - [ ] T-mac-30004 [S] `spvgate` CASES has no f64 case: arm the SPIR-V arm's table on fp64 hosts
       OWNER: — | STATE: OPEN | SHA: 28ac8048 | TS: 2026-08-15T12:55Z
@@ -36,9 +40,6 @@
 - [ ] T-win-50006 [X] win-x64 — arm-win32 COFF: implement the ARM32 arm of `coff_emit_reloc` (there is none), then flip arm-win32 default + re-bank
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. `coff_emit_reloc` has NO `MCC_TARGET_ARM` case — it falls to `return -1`, so arm-win32 `-c` COFF fails on any file with a relocation (only 3/40 reloc-free files compile; "unsupported relocation type 2" = R_ARM_ABS32). LOW PRIORITY: arm-win32 (ARM32 Windows) is a dead platform with no executor (see T-lin-10086 split) — do this only after arm64 (T-win-50005). Add the ARM32 IMAGE_REL_ARM_* mapping (ADDR32/BRANCH24/etc.), confirm the corpus re-encodes, then flip + re-bank
-- [ ] T-win-50010 [S] win-x64 — the `rir`/`rir-o4`/`slice` engines disagree with the ast baseline at dumped row 1 on Windows
-      OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
-      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: smoke/engines-known-positive "dumped row 1 differs from the ast baseline", win-only. Prime suspect: a 64-bit `long` model inside the rir/slice evaluators on an LLP64 host — the same defect family smoke.h had, but inside the compiler. Needs the win box to repro
 - [ ] T-win-50011 [S] win-x64 — `bsweep.F16.FMULADD` and `F16.FSCALE` diverge-one on Windows, fold AND run; Linux does not diverge
       OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
       REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: both .fold and .run diverge, so it is not just the constant folder — the fp16 emulation path differs per platform. Root-cause BEFORE banking; the divergence bank's rule is triaged findings only
@@ -277,7 +278,7 @@
         OWNER: lin-x64 | STATE: DONE | SHA: a4b2baf1 | TS: 2026-08-15T08:30Z
         REF: DETAILS.md#t-lin-10092-lin-the-linux-full-native-suite-is-clean | DEPS: — | NOTE: DONE. NUMBER: 10062 cells, 1011 skipped, 9051 run, 0 failures, 86 min. Already archived at 32d29fc4 — line kept visible only until the [P] parent closes, per mac's convention on /mac; whoever lands /win removes all three children + the parent together
   - [ ] T-lin-10092/win [P] Record a clean full native suite number on each platform — win-x64
-        OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 260bb900 | TS: 2026-08-15T12:25Z
+        OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 723e5f1a | TS: 2026-08-15T13:55Z
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: NUMBER RECORDED (first ever on Windows): 9387 cells, 8388 pass / 945 skip / 54 fail at 9b21c352; 19 false-reds fixed at 260bb900 -> 8388 / 964 / 35. Not clean — the 35 residual reds are triaged in T-win-50003 (28 GPU-slice, 4 fp opt-search, 3 jit/runtime). @lin: number is landed, slice-3 (L2′) hold can release
 - [ ] T-lin-10093 [P] `ci/must-run-registered` green on each platform
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
