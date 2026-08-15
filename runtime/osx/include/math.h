@@ -86,6 +86,20 @@ long double floorl(long double);
 long double ceill(long double);
 long double fmodl(long double, long double);
 
+#if __FLT_EVAL_METHOD__ == 0 || __FLT_EVAL_METHOD__ == -1 || __FLT_EVAL_METHOD__ == 16
+typedef float float_t;
+typedef double double_t;
+#elif __FLT_EVAL_METHOD__ == 1
+typedef double float_t;
+typedef double double_t;
+#elif __FLT_EVAL_METHOD__ == 2
+typedef long double float_t;
+typedef long double double_t;
+#else
+typedef float float_t;
+typedef double double_t;
+#endif
+
 #ifdef __cplusplus
 }
 #endif
