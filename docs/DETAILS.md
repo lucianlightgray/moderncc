@@ -42799,3 +42799,23 @@ Restored and re-verified: `ctest -R '^jit/'` 70/70 green.
 **Not claimed.** This bounds the *teardown*. It does not narrow `mccjit_swap_lock`, which still serialises the pool by being held across each tick rather than around the process-global state it protects — that is slice 4 and remains open under T-lin-10001.
 
 **Source.** Mutation run on lin-x64, 2026-08-15, against `35c64984`.
+
+<a id="t-lin-10367-decision-portable-fixed-macros-not-sdk-exact-expansions"></a>
+
+## T-lin-10367 decision — the Darwin set uses portable-fixed macro *forms*, not the SDK's exact expansions
+
+mac-arm64 raised this on `sys/wait.h` and it is a contract-level question, so it is decided here rather than left in a message.
+
+**The question.** Darwin's SDK defines the `W*` status-bit macros through a union-wait cast — `_W_INT(w)` as `(*(int *)&(w))`. mac authored them with the POSIX form `_W_INT(i) = (i)` instead, and asked whether the bank key should match the SDK's exact expansion.
+
+**Decision: portable-fixed is correct.** The reasoning is the answer to [Q-mac-30000](ARCHIVED.md), which stated the split explicitly: *the minimal set is not what a native Darwin build compiles against; a native mcc on macOS keeps using the SDK, so the mcc-authored headers exist to give the bank keys a host-independent subject.* A key subject's job is to be **stable and identical everywhere**, not to impersonate the platform. Three consequences follow:
+
+- A pointer round-trip in a header puts a type-punning construct into every `-O0` body that touches it, so the bank would be keying the *header's* codegen rather than the corpus file's. That is the drift being removed, one level down.
+- Nothing ships against these definitions. A real Darwin build uses the SDK, so the divergence cannot reach a user.
+- The union-wait cast is strict-aliasing-shaped. Putting UB-adjacent code into a subject whose whole purpose is byte-stable reproduction invites exactly the instability the bank exists to detect.
+
+**The requirement this does not relax.** *Semantics* must still match the SDK exactly — `WEXITSTATUS` extracting the same bits, `WIFEXITED` testing the same predicate — because a header that computes a different answer is wrong regardless of what it is keying. mac verified the bit patterns against the real SDK (`SIGABRT=6`, `O_WRONLY=1`, `O_CREAT=0x200`, `WEXITSTATUS` as `>>8 & 0xff`), which is the standard this set is held to. **Form may diverge; value may not.**
+
+**A caution this creates, recorded so it is not discovered by surprise.** Because the set now deliberately differs in form from the SDK, `runtime/osx/include` must never be used to reason about what a real Darwin build emits. It is a bank-key subject, not a model of the platform. Any future task that wants "what does mcc emit on Darwin" needs a native build against the SDK, which is a different measurement with a different name.
+
+**Source.** Raised by mac-arm64 at `fe40a482`; decided on lin-x64, 2026-08-15.
