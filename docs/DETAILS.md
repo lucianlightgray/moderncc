@@ -46737,3 +46737,58 @@ Implemented the user-directed option (c). The gate no longer requires a single b
 **Verification.** `ast/o0-baseline{,-known-positive,-gated,-gated-known-positive}` 5/5 green on mac; the measurable gated re-bank exercised the new banking path (and absorbed win-x64's `da0932e2` fn-count drift on `arm64-osx.{,gated.}rir.txt`). Behaviorally transparent to the CHECK cells (same keys each box builds). **Follow-on (not part of this task):** the other active keys' banks (`x86_64`, `*-win32`, `x86_64-osx`) still carry win's `da0932e2` `algebraic_identities.c` drift — a Linux cross-build re-banks them via the now-permitted `measurable` mode.
 
 **Source.** mac-arm64, 2026-08-15, redesign at `283d454b`; finding + re-pricing from lin-x64.
+
+<a id="autostash-conflict-markers-reached-main-again-and-the-warning-was-already-written-down"></a>
+
+## `docs` push hazard — autostash put conflict markers on `main` again, and the warning was already in the tree
+
+**Reproduced by lin-x64 at `5f80f176`, repaired forward at `7f9a5dc0`.** `main`
+carried conflict markers in `docs/TODO.md`'s Sessions table for roughly one
+minute. Recorded because win-x64 had **already** written this warning down —
+*"commit BEFORE pull (DETAILS#autostash-is-how-conflict-markers-reach-pushed-history)"*,
+in the `HANDOFF-BOX-FACTS` line of `TODO.md` — and it was read and not applied.
+A hazard note that only its author obeys is not yet a control.
+
+**The exact shape, which is worse than "pull before commit".** The failure did
+not need two humans racing. It was **one shell line**:
+
+```
+sed -i ... docs/TODO.md && git pull --rebase && git add docs/TODO.md && git commit && git push
+```
+
+With `rebase.autoStash true` (§4.1 mandates it), `git pull --rebase` stashed the
+uncommitted `sed` edit, rebased, and **failed to reapply it**, leaving markers in
+the working file. `git pull` exits **0** in that state — the conflict is reported
+on stderr as *"Applying autostash resulted in conflicts"*, not as a non-zero
+status — so `&&` proceeded, `git add` staged the marked-up file, and `commit` and
+`push` did what they were told. Every command behaved correctly.
+
+**Three things make this specific to this protocol.** The `docs` commit class
+(§4.2) is *supposed* to be pushed immediately and ungated, so there is no green
+gate between edit and push to catch it. `TODO.md` is deliberately **not**
+union-merged (§4.1), so it is the one high-churn file where a rebase can
+conflict. And every session edits its own Sessions row on the same three lines,
+which is exactly where the collision lands.
+
+**The rule that actually prevents it:** never chain an edit, a pull and a push
+with `&&`. Stage and commit **first**, then pull, then push — the ordering win
+already published — and if a pull must happen with edits outstanding, check for
+markers **before** `git add`, because the exit code will not tell you:
+
+```
+git pull --rebase; grep -nE '^(<<<<<<<|=======|>>>>>>>)' docs/*.md && exit 1
+```
+
+**Repair, per N3.** History was not rewritten. The markers were resolved
+forward in a normal `docs` commit, the Sessions table restored **row-wise per
+§4.4** — mac's row taken from upstream (`Last seen 23:25Z`), lin's row kept as
+mine (`Next ID 10391`, `23:50Z`), win's untouched. Cost: one bad minute on
+`main`, no lost state, no rewritten history.
+
+**Residue worth knowing:** the failed autostash survives as `stash@{0}`. It has
+**not** been dropped, because the pre-reboot handoff records the stash stack as
+*shared with the surviving agent worktrees* (`stash@{1}`, `stash@{2}` are other
+work), and dropping entries there is not this session's call. Its content is
+fully superseded by `7f9a5dc0`.
+
+**Source.** lin-x64, 2026-08-15.
