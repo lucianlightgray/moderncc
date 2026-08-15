@@ -46792,3 +46792,78 @@ work), and dropping entries there is not this session's call. Its content is
 fully superseded by `7f9a5dc0`.
 
 **Source.** lin-x64, 2026-08-15.
+
+<a id="t-lin-10390-lin-re-bank-and-the-linux-half-of-t-win-50015"></a>
+
+## T-lin-10390 — lin's six keys re-banked, and it turned out to be the Linux half of T-win-50015
+
+Executes mac's CONTRACT `283d454b` (the per-session-measurable board). Banked
+from `cmake-cross` **rebuilt at HEAD** in `measurable` mode: **7/7 active keys
+measured**, floor 1, `unmeasurable: (none)`. Landed at `71535c29`.
+
+**The re-bank was claimed as one thing and was actually two.** The task was
+taken to clear the `da0932e2` `algebraic_identities.c` corpus drift on lin's
+keys. Diffing before committing — rather than banking on the strength of the
+tool's exit code — showed **three subjects moving that neither task's account
+predicted**: `integer_promotion.c`, `random_stuff.c`, `bitfield_width64.c`, on
+the four `*-win32` keys and *only* those. `dc38276e` had recorded that at that
+commit *"only that file's hash moved"*, so the movement was new.
+
+`git log dc38276e..HEAD -- src/` returned **exactly one commit**: `8d4f0a80`,
+win-x64's `fix(pe): default ms_bitfields on PE targets` — the
+[T-win-50015](#t-win-50015-slice-1-the-fixture-exists-and-the-flip-found-two-algorithm-gaps)
+flip, whose own note says its landing was **blocked on a Linux session
+re-banking these keys**, because `ast/o0-baseline` runs only on
+UNIX-non-WIN32 (`CMakeLists.txt:4275`).
+
+**Attribution, complete — no moved hash is unexplained:**
+
+| subject | keys that moved | cause |
+| --- | --- | --- |
+| `integer_promotion.c`, `random_stuff.c`, `bitfield_width64.c` | 4× `*-win32` only | `8d4f0a80` — `#if defined MCC_TARGET_PE → s->ms_bitfields = 1`, target-keyed on PE, so it moves the win32 keys and nothing else. Every subject is bit-field/promotion-sensitive |
+| `wide_bitfield_arith.c` | `i386-win32`, `arm-win32` | same flip |
+| `algebraic_identities.c` | `x86_64`, `x86_64-osx`, 4× `*-win32` | `da0932e2` — a new fixture in a globbed corpus moves every key that can measure it |
+| — | `arm64-osx` | **did not move** |
+
+**So Linux CI was red on the win32 columns from `8d4f0a80` to `71535c29`** —
+the exact window T-win-50015 asked to avoid. It closed because the diff was
+read, not because the coordination fired: no SHA was sent on landing. The
+lesson is the ordering, and it is cheap — *land, then immediately send the
+SHA*, rather than waiting to send before landing. A target-keyed change whose
+bank lives on another OS cannot be verified by the session that makes it.
+
+**`arm64-osx` is the good news and it is not incidental.** mac banked it on a
+mac at `283d454b`; lin measured it independently from a **Linux cross-build**
+and got byte-identical output, which is why it is absent from the diff. The
+board's entire premise — a `-O0` object hash is a property of the target key,
+not of the host that produced it — is now corroborated **across two boxes and
+two host OSes**. That is what makes a `measurable` bank from either side safe
+rather than merely convenient.
+
+**A correction to the manifest's premise, recorded and not acted on.**
+`keys.txt` says *"no single box can build every key (a mac holds the `*-osx`
+keys, a Linux cross-build holds the ELF + `*-win32` keys)"*. lin measured
+**7/7**: this cross build has `mcc-arm64-osx` as well as `mcc-x86_64-osx`, so
+one Linux box reaches the whole **active** set today. The four bare-ELF keys
+remain genuinely `provisionable` (they need the stage3 sysroots), so the
+manifest's design is unaffected — only its parenthetical is too pessimistic.
+Left alone deliberately: the split works, and rewriting another session's
+just-landed contract text over a parenthetical is not worth the churn.
+
+**Green before push (N4), nothing taken on trust.**
+
+| check | result |
+| --- | --- |
+| `cmake-cross`: `ast/o0-baseline`, `-known-positive`, `-gated`, `-gated-known-positive` | 4/4 Passed — 18.51 s / 41.24 s / 19.11 s / 37.77 s |
+| `cmake-debug`: the same four | 4/4 Passed — the plain native build is unbroken |
+| `O0_AB_CHECK=1 … measurable` | exit 0, no key reports a move |
+| `O0_AB_CHECK=1 O0_AB_GATES=1 MCC_DEV=1 … measurable` | exit 0, no key reports a move |
+
+Both **known-positives** passing is what makes this more than a re-bank: they
+perturb the bank and require the check to go red, so the green is not vacuous.
+
+**Verification.** `C2_NO_EXTRA=1 O0_AB_CHECK=1 sh tools/o0_ab.sh cmake-cross
+measurable` and the `O0_AB_GATES=1 MCC_DEV=1` variant both exit 0; the four
+registered `ast/o0-baseline*` cells green. Full native suite pending for §8.
+
+**Source.** lin-x64, 2026-08-15, at `71535c29`.
