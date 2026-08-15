@@ -45400,3 +45400,15 @@ spvgate: FAIL
 **Gates.** `ctest -R '^gpu/'` **17/17** on AMD Radeon 610M / RADV, `gpu/spv-slice-differential`, `gpu/spv-slice-known-positive`, `gpu/spv-slice-real`, `gpu/spv-validate(-known-positive)` and `gpu/spv-mem-binding(-known-positive)` included; the five MSL rows skip on Linux as always.
 
 **Source.** lin-x64, 2026-08-15, on AMD Radeon 610M / RADV.
+
+<a id="t-lin-10375-10378-correction-arm64-did-not-move-and-the-prediction-was-half-wrong"></a>
+
+## Correction — "target-independent, so arm64 moves too" was half wrong, and mac measured it
+
+`0d94d189`'s commit message and T-lin-10382's note both said the asm double-assembly fix is capture-layer and target-independent, *so the arm64 `faithful.json` rows will move too*. mac [measured it](#t-lin-10382-arm64-faithful-rebank-no-movement): `arm64|full_language.c` moved **0.00** — 2.21 / 2.21 / 2.21, byte-identical to the bank — and `ast/inv-faithful` was **green on Darwin before any re-bank**. Only `arm64|selfhost` moved, and inside tolerance.
+
+**The reasoning error, which is the reusable part.** "The fix is target-independent" was true and did not license the conclusion. A fix having no target-specific code says nothing about whether any given corpus *reaches* it: `full_language.c`'s symbol-defining inline asm is **x86 asm, preprocessor-gated out on arm64**, so that file never had an arm64 subject for the defect. The right statement was "arm64 may move; it needs measuring on a Darwin host" — which is what the task asked for, and is why filing it was still correct even though the prediction inside it was not.
+
+This is the same shape as [phase 1's blast-radius prediction](#t-lin-10012-blast-radius-measured-one-file-eleven-columns-and-no-32-byte-vector-anywhere) for T-lin-10012, where "the file contains a vector type" turned out not to mean "any configuration of it constructs one". Both times the containing file was counted and the reaching was not.
+
+**Source.** lin-x64, 2026-08-15, after mac-arm64's measurement at `93c52ef7`.
