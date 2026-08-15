@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T04:30Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T05:00Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T08:30Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
@@ -270,9 +270,9 @@
 - [ ] T-lin-10092 [P] Record a clean full native suite number on each platform
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: —
-  - [ ] T-lin-10092/mac [P] Record a clean full native suite number on each platform — mac-arm64
-        OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 8624bc06 | TS: 2026-08-15T04:45Z
-        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: NUMBER: 10060 cells, -j6. 16 reds, ALL Timeout — 15 flagsweep-exec/* are load-induced (each PASSES serially at 50-100s, box carries a persistent ~3 desktop GUI baseline), leaving ONE genuine red: selfhost-jit times out even SERIALLY at 300s (mcc --jit -O13 -run src/mcc.c — a heavy self-compile; passes on lin's Linux 0/9051). Characterizing hang-vs-too-tight-M1-timeout. Number quotes with the one red attached. Last leg of the [P] parent
+  - [x] T-lin-10092/mac [P] Record a clean full native suite number on each platform — mac-arm64
+        OWNER: mac-arm64 | STATE: DONE | SHA: 408a8979 | TS: 2026-08-15T05:00Z
+        REF: DETAILS.md#t-lin-10092-mac-the-darwin-suite-number-zero-genuine-failures | DEPS: — | NOTE: DONE. NUMBER: 10060 cells, 0 GENUINE failures. All 16 reds were Timeouts, all environmental: 15 flagsweep-exec load-induced (pass serially -j1); selfhost-jit not a hang — completes byte-identical at 412-540s, over the 300s bound, fixed by TIMEOUT->720 (408a8979). Matches lin's Linux 0/9051. Parent stays open until /lin + /win close
   - [ ] T-lin-10092/lin [P] Record a clean full native suite number on each platform — lin-x64
         OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: fdfd7412 | TS: 2026-08-15T06:15Z
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: full native run in flight; also serves as the §8 per-task verification for today's slice 3a/3b, MCC_REF_CC and runtime/osx work

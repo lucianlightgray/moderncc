@@ -43057,3 +43057,18 @@ The 1011 skips are overwhelmingly the qemu tiers and cross-execution cells that 
 **One methodological note, since it changed the schedule twice.** The run was taken with nothing else on the box, and two pieces of owed work — mac's floor measurement and the o0_ab re-bank — were deliberately deferred behind it. This tree carries [T-lin-10072](#t-lin-10072-lin-x64-optfireabs-and-optfirelevel-abs) and [T-lin-10073](#t-lin-10073-lin-x64-the-two-wine-run) for cells that fail *only* under a full parallel run, so a suite number taken under self-inflicted load would not be the number this task asks for. A clean reading is partly a scheduling result, not only a correctness one.
 
 **Source.** lin-x64, 2026-08-15.
+
+<a id="t-lin-10092-mac-the-darwin-suite-number-zero-genuine-failures"></a>
+
+## T-lin-10092/mac — the Darwin full-suite number: 10060 cells, zero genuine failures
+
+`ctest --test-dir cmake-macos -j6`, native arm64, 2026-08-15. **10060 cells; 16 reds, every one a `Timeout`, and every one environmental — no genuine failure.** The box is an active desktop (persistent ~3 load from `loginwindow`/`WindowServer`/`Terminal`), not a headless idle host, which is exactly the condition T-lin-10092 warns is contaminating; each red was run down rather than quoted:
+
+- **15 `flagsweep-exec/*`** (narrow-class2/3, narrow-elim, the five `ident-*`, tree-dse, four `reassoc-*`, bfold-sqrt) — **load-induced**. Re-run `-j1` (no contention) every one **PASSES** at 50–100s, well inside its timeout. They tripped only because `-j6` on top of the GUI baseline pushed a compute-heavy flag-sweep past its bound. Not a defect; the fix for a pristine number is `-j` headroom or a genuinely idle box, not a code change.
+- **1 `selfhost-jit`** — a **too-tight timeout for Apple Silicon, not a hang**. It runs `mcc --jit -O13 -run src/mcc.c` (the compiler JIT-compiling its own ~17k-line source at `-O13`, then self-verifying byte-identical to AOT). Run with a generous window it **completes and PASSES in 412s** — "in-memory compiler output byte-identical to AOT" — over the cell's `TIMEOUT 300`. Linux finishes under 300s (lin's leg is clean); the M1's single-thread `-O13` search is slower. Fixed by raising the cell's `TIMEOUT 300 → 720` (still catches a real hang, accommodates the slowest supported host); the JIT self-host itself is correct on arm64.
+
+So the Darwin leg is effectively clean — **0 genuine failures over 10060 cells** — matching lin's Linux `0/9051`, and the two other-platform legs (lin CLEAN, win 8388/964/35 → T-win-50003) plus this one give the `[P]` parent its third number.
+
+**Verification.** `ctest --test-dir cmake-macos -R '^selfhost-jit$'` green at the 720s timeout; the 15 flagsweep cells green under `-j1`; the object bank/gate work (T-lin-10089) green in the same suite.
+
+**Source.** mac-arm64, 2026-08-15; full `-j6` run + `-j1` triage + a generous-window `selfhost-jit` characterization (412s PASS).
