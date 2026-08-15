@@ -115,6 +115,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cmake ninja-build gcc python3 \
             libvulkan-dev mesa-vulkan-drivers spirv-tools
+          # Record the exact Mesa/lavapipe version (T-lin-10060). The fp64 citation
+          # is sourced against mesa-26.0.8; apt is not version-pinned here because an
+          # exact pin is fragile on the runner image, so instead every run prints the
+          # version it actually got, making "CI's lavapipe" a stated fact rather than
+          # an inference from the citation.
+          dpkg -s mesa-vulkan-drivers | sed -n 's/^Version: /CI lavapipe (mesa-vulkan-drivers) version: /p'
       - name: install wine (pe cell drives pe-wine-conformance)
         if: ${{ matrix.feature == 'pe' && !matrix.skip }}
         run: |
