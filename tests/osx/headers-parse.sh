@@ -46,7 +46,7 @@ trap 'rm -f "$tmp"' EXIT
 
 for f in $(find "$srcdir/tests/exec" -name '*.c' | sort); do
 	grep -qE "#include <($covered)\.h>" "$f" || continue
-	grep -qE '#include <(threads|windows|sys/types)' "$f" && continue
+	grep -qE '#include <(windows)' "$f" && continue
 	grep -qE '#include "' "$f" && continue
 	if "$mcc" -c -nostdinc -I"$osxinc" -I"$freeinc" -o /dev/null "$f" 2>"$tmp"; then
 		ok=$((ok + 1))

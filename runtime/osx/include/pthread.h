@@ -1,6 +1,9 @@
 #ifndef _MCC_OSX_PTHREAD_H
 #define _MCC_OSX_PTHREAD_H
 
+#include <sched.h>
+#include <time.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -87,8 +90,6 @@ typedef unsigned long pthread_key_t;
 #define PTHREAD_CREATE_DETACHED 2
 
 #define PTHREAD_DESTRUCTOR_ITERATIONS 4
-
-struct timespec;
 
 int pthread_create(pthread_t *, const pthread_attr_t *,
 									 void *(*)(void *), void *);
