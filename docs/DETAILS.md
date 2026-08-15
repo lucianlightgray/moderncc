@@ -44840,6 +44840,15 @@ interaction with this task.
 **Source.** win-x64, 2026-08-15. Trial at working-tree state over 901e103e;
 fixture committed; flip reverted.
 
+**DONE (win-x64 + lin-x64, coordinated, 2026-08-15).** Landed as a cross-session split: win-x64 pushed the code half, lin-x64 re-banked the Linux `ast/o0-baseline` win32 keys it moves.
+
+- **win-half `8d4f0a80`** (verified green on a from-scratch MSVC build + vendored mingw on this box): `src/libmcc.c` mcc_new sets `s->ms_bitfields = 1` under `#if defined MCC_TARGET_PE` (right after the MACHO leading_underscore block); `tools/smokerun.c` pins the msstruct expectation per host — `msstruct 20 2 8 3 8 4 8 12 5` on `MCC_HOST_WIN32` (the unmarked `smp_plain` is MS-layout 12 not GCC 4), the old `…4 5` elsewhere; `tests/cross/pe-xoracle-exclude.txt` banks `exec/expressions/integer_promotion.c` (the gap-(b) `unsigned long long : 31` promotion — mcc's ms-mode promotes UNSIGNED matching cl.exe/MSVC, mingw/gcc promote signed via the width rule; extended-type bit-field promotion is impl-defined so this is reference disagreement, not a miscompile); `tests/smoke/bails-x86_64-windows.txt` comment updated (pass-msstruct green). **cell registration `7d339f19`**: `pe/bitfield-abi` (the cross-TU writer/reader ABI cell) registered beside `pe/torture-classes`.
+- **verified green** (MSVC mcc + vendored mingw): `pass-msstruct` → `…12 5`; `pe/ms-bitfield-sizing` PASS (outer 8 / just_zero 0 / differently_typed 12 / same_type_run 4); `pe/torture-classes` OK (mcc==mingw); `pe/x-oracle` agree=258 new_divergence=0 excluded=14; `pe/bitfield-abi` OK `sizes=40c0c` (was red `writer=40404 reader=40c0c` pre-flip).
+- **lin-half `71535c29`** (lin-x64, folded with the da0932e2 corpus drift under mac's per-session `keys.txt` manifest): re-banked the four `*-win32` o0-baseline keys + x86_64 + x86_64-osx, `measurable` mode, 7/7 keys, `ast/o0-baseline{,-known-positive,-gated,-gated-known-positive}` 4/4 in both cmake-cross and cmake-debug. The win32 keys moved once, not twice (win's flip landed before lin's first bank, so both causes folded into one re-bank).
+- **coordination lesson** (lin's, adopted): land then IMMEDIATELY publish the SHA — the win-half SHA was recorded in the TODO NOTE at push time, but SendMessage cannot reach the bridge session, so lin found it by diffing `git log … -- src/` ~2h later; the CI-red window on the win32 o0-baseline columns was that gap. Docs are the durable channel but not the fast one.
+
+**Source.** win-x64 `8d4f0a80`+`7d339f19`, lin-x64 `71535c29`, 2026-08-15.
+
 <a id="t-win-50017-resolved-the-2-2-consensus-was-one-shared-abi-quirk"></a>
 
 ## T-win-50017 RESOLVED — the 2/2-reference consensus against mcc was one ABI quirk shared by both references, and mcc's output is the coherent one
