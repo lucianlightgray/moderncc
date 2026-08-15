@@ -44465,3 +44465,63 @@ half is smaller than its 28-cell listing suggests. The remaining smoke reds
 `pass-msstruct` (T-win-50015) and the embed-JIT link (T-win-50003 Bucket B).
 
 **Source.** win-x64, 2026-08-15, at 05ea60f8.
+<a id="t-lin-10012-landed-the-per-target-vector-layout-rule-measured-on-all-eleven-targets"></a>
+
+## T-lin-10012 LANDED — the per-target vector layout rule, measured on all eleven targets, and the re-bank that turned out to be empty
+
+Closes the task the [phase 1](#t-lin-10012-blast-radius-measured-one-file-eleven-columns-and-no-32-byte-vector-anywhere) and [phase 1b](#t-lin-10012-the-references-measured-alignof-is-not-the-abi-and-the-rule-is-per-target) measurements scoped. Two of the three things those notes predicted were wrong, and both were wrong in the safe direction.
+
+**The change, unchanged from the parked branch.** A new per-arch `MCC_MAX_VEC_ALIGN` (64 on x86_64 and i386), a `#ifndef` fallback to `MCC_MAX_ALIGN` in `src/mcc.h` so every other arch keeps today's behaviour textually, and exactly one consumer moved: `src/mccgen.c:7064` in `mk_vector_type`. Bare `__attribute__((aligned))` at `:5815` still reads `MCC_MAX_ALIGN` and is untouched, which is the whole reason the constant was the wrong knob.
+
+**Measured on all eleven targets, before and after, with a freestanding probe** (`char OFF32[__builtin_offsetof(struct{char;v32}, v)]` and friends, read back with `llvm-nm --print-size`; no libc, so the six keys with no vendored sysroot on this box are measurable too):
+
+| target | pre v32 off/size | post v32 | pre v64 | post v64 | moved |
+| --- | --- | --- | --- | --- | --- |
+| x86_64 | 16 / 48 | **32 / 64** | 16 / 80 | **64 / 128** | yes |
+| i386 | 8 / 40 | **32 / 64** | 8 / 72 | **64 / 128** | yes |
+| x86_64-win32 | 16 / 48 | **32 / 64** | 16 / 80 | **64 / 128** | yes |
+| i386-win32 | 8 / 40 | **32 / 64** | 8 / 72 | **64 / 128** | yes |
+| x86_64-osx | 16 / 48 | **32 / 64** | 16 / 80 | **64 / 128** | yes |
+| arm, arm-win32 | 8 / 40 | 8 / 40 | 8 / 72 | 8 / 72 | no |
+| arm64, arm64-win32, arm64-osx | 16 / 48 | 16 / 48 | 16 / 80 | 16 / 80 | no |
+| riscv64 | 16 / 48 | 16 / 48 | 16 / 80 | 16 / 80 | no |
+
+**Correction to phase 1b: five columns of behaviour move, not two.** "The x86_64 and i386 columns move" counted arches, and the o0_ab board is keyed by *target*, so the three other x86-family keys — `x86_64-win32`, `i386-win32`, `x86_64-osx` — share the changed headers and move with them. The six non-x86 targets are unchanged, which is mac-arm64's requested known-positive discharged on arm64 and extended to arm and riscv64: the fix is targeted, not blanket, and `arm64` still lays `min(size,16)` exactly as gcc-16 and Apple clang do.
+
+**Correction to phase 1: zero bank rows move, and the reason is stronger than "the corpus barely uses vectors".** Phase 1 counted `tests/exec/types/int256_gates.c` as "the one file containing a vector type" and predicted eleven bank columns would move. Measured: `ast/o0-baseline` is **byte-identical on every one of the 7 keys this host can measure**, `int256_gates.c` included. That file's `typedef __int256 v __attribute__((vector_size(64)))` sits behind `#elif defined test_vector`, and its purpose is to assert that mcc **refuses** it — `'vector_size' applies to integer or floating-point types only`. It is a diagnostic fixture, so no configuration of it ever constructs a vector type. The corpus contains **zero** compiled vector types, not one, and the re-bank step the task carried from the start had no subject.
+
+**Which makes the fixture the whole task, exactly as phase 1 said.** `abi/vector-layout` is now the only cell in the tree that compiles a 32- or 64-byte vector at all. It compares `offsetof`/`sizeof` — what an object file commits to — between mcc and the host reference cc, rather than `_Alignof`, which [is not the ABI](#t-lin-10012-the-references-measured-alignof-is-not-the-abi-and-the-rule-is-per-target) and which the two references disagree about. Watched red against the pre-fix compiler (`v32 16 48 / v64 16 80` against `v32 32 64 / v64 64 128`, exit 1) before it was watched green.
+
+**One consequence stated rather than buried: `_Alignof` moved to clang's value.** mcc reported `_Alignof(v32) == 16`, agreeing with gcc-15 while disagreeing with clang; it now reports 32, agreeing with clang while disagreeing with gcc. That is unavoidable through this knob — mcc has one alignment on a `CType`, and layout reads the same field `_Alignof` reports. It is recorded and not treated as a defect because the references themselves disagree on the reported value and **agree exactly on the layout**, which is the half cross-TU compatibility depends on and the half that was wrong. Separating reported-from-layout alignment would be a second, larger change to fix a value on which there is no reference consensus to match.
+
+**`abi/vector-layout-known-positive`, because a green comparison should have to earn it.** `VECABI_MUTATE=1` packs the probe's structs on the mcc side only, so the two compilers must disagree and the cell then requires the disagreement. It perturbs the *subject*, not the verdict, so both compile arms, both runs, the both-rows anti-vacuity guard and the diff are all exercised — a green mutate arm means the OK path is comparing something. Both cells are `tests/must-run.txt` rows and carry a `tests/gate-contract.txt` row (`--min-rows` 102 → 103, `--min-proved` 52 → 53).
+
+**Gates.** `abi/vector-layout` + its known-positive green; `ast/o0-baseline` 7/11 keys OK with zero drift (the four unmeasured are the Linux cross keys needing gentoo sysroots this box does not vendor — `i386` is the only one of them whose header changed, and its twin `i386-win32` was measured); `ci/must-run-registered`, `ci/gate-contract`, `ci/gate-contract-known-positive`, `ci/registration-stubs` green with the tightened pins; `-L treegate|corpusgate` 18/18.
+
+**Source.** lin-x64, 2026-08-15; the parked `wip/vector-abi-layout` change verified, registered and landed.
+
+
+<a id="t-lin-10012-the-binary-diff-instrument-that-did-not-work"></a>
+
+## The instrument that did not work: two builds of identical mcc source do not produce identical binaries
+
+Recorded because it is a property of this tree nobody has written down, and because it was reached for as a proof and had to be discarded.
+
+To show that the six non-x86 targets could not have moved, the obvious shortcut is to build every cross compiler at `HEAD` and again with the patch and compare the binaries: if `mcc-arm64` is byte-identical, no object it emits can differ, which is stronger than any corpus sample. Every one of the twelve differed, including the six whose source did not change.
+
+**The control says the instrument is broken, not that the change leaked.** Rebuilding `cmake-cross` twice from *identical* source — `touch src/arch/arm64/arm64-gen.h` and nothing else — produces an `mcc-arm64` differing in **1,104,183 bytes**. The mcc build is not reproducible across two builds of the same tree, so binary identity cannot be used as evidence about anything.
+
+Worth a row of its own: build reproducibility is a property several other things would like to lean on, and the tree neither has it nor states that it does not. The per-target layout question was answered instead by the freestanding probe above, which measures the subject directly and needs no such assumption.
+
+**Source.** lin-x64, 2026-08-15.
+
+
+<a id="t-lin-10073-corroboration-a-foreign-wineserver-was-resident-at-suite-start"></a>
+
+## T-lin-10073 corroboration — a foreign wineserver was resident, taken at the time this run started
+
+[T-lin-10073](#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver) says explicitly that `pgrep -a wineserver` must be run *at the time* or a wine-cell red cannot be attributed, and the [pre-reboot handoff](#lin-x64-handoff-2026-08-15-preboot) paid for ignoring that: its single unattributed `run-tier/x86_64-win32` 300 s timeout was checked ~45 minutes late, found nothing, and stayed unexplained.
+
+Taken at the start of this session's full-suite run: `35982 …/GE-Proton10-34/files/bin/wineserver` — a **Steam Proton** wineserver, resident and foreign to this tree. Any `run-tier/*-win32` timeout in this run is attributable to 10073's recorded mechanism, and the row's diagnostic is now corroborated a third time. It does not retroactively explain the pre-reboot red, which remains unattributed and unattributable.
+
+**Source.** lin-x64, 2026-08-15, at suite start.
