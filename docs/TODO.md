@@ -26,6 +26,10 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
+- [ ] T-win-50009 [S] win-x64 — `smokerun` cannot spawn anything on Windows: `sm_system`'s quoted command dies in `cmd /c` quote-stripping; all 11 `smoke/*` cells red
+      OWNER: win-x64 | STATE: CLAIMED | SHA: 50790209 | TS: 2026-08-15T12:45Z
+      REF: DETAILS.md#t-win-50008-resolved-the-crash-was-setvbuf-not-the-intern-table | DEPS: — | NOTE: tools/smokerun.c builds `"exe" args > "log" 2>&1` and passes it to system(); Windows system() = `cmd /c <string>`, and with >2 quote chars cmd strips the FIRST and LAST quote → unbalanced quote after the exe path. One choke point: sm_system (smokerun.c:257) — wrap the whole string in one extra pair of quotes under MCC_HOST_WIN32. Effectively win-only despite [S]
+
 ## Open — claimable
 - [ ] T-win-50005 [X] win-x64 — arm64-win32 COFF: add the AArch64 TLS relocations to `coff_emit_reloc`, then flip arm64 default `-c` to COFF + re-bank o0-baseline arm64-win32 + switch `arm64pe_diff.py` to force ELF
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
@@ -33,9 +37,6 @@
 - [ ] T-win-50006 [X] win-x64 — arm-win32 COFF: implement the ARM32 arm of `coff_emit_reloc` (there is none), then flip arm-win32 default + re-bank
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. `coff_emit_reloc` has NO `MCC_TARGET_ARM` case — it falls to `return -1`, so arm-win32 `-c` COFF fails on any file with a relocation (only 3/40 reloc-free files compile; "unsupported relocation type 2" = R_ARM_ABS32). LOW PRIORITY: arm-win32 (ARM32 Windows) is a dead platform with no executor (see T-lin-10086 split) — do this only after arm64 (T-win-50005). Add the ARM32 IMAGE_REL_ARM_* mapping (ADDR32/BRANCH24/etc.), confirm the corpus re-encodes, then flip + re-bank
-- [ ] T-win-50009 [S] win-x64 — `smokerun` cannot spawn anything on Windows: `sm_system`'s quoted command dies in `cmd /c` quote-stripping; all 11 `smoke/*` cells red
-      OWNER: — | STATE: OPEN | SHA: 50790209 | TS: 2026-08-15T12:40Z
-      REF: DETAILS.md#t-win-50008-resolved-the-crash-was-setvbuf-not-the-intern-table | DEPS: — | NOTE: found quantifying T-win-50008. tools/smokerun.c builds `"exe" args > "log" 2>&1` and passes it to system(); Windows system() = `cmd /c <string>`, and with >2 quote chars cmd strips the FIRST and LAST quote → unbalanced quote after the exe path → "The filename, directory name, or volume label syntax is incorrect" before any compile. One choke point: sm_system (smokerun.c:257) — wrap the whole string in one extra pair of quotes under MCC_HOST_WIN32 (the documented cmd /S convention). Cells: smoke/{native,native-known-positive,strats-known-positive,engines,engines-known-positive,engines-identity,slice-bails,strat-dark,divergence,device,device-known-positive}. Effectively win-only despite [S]
 - [ ] T-win-50007 [S] win-x64 — `arm64pe_diff.py` false-positive: model the LLP64-vs-LP64 `long`-width benign case
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. `tools/arm64pe_diff.py --corpus` flags `06_long_width.c` SUSPICIOUS (.text 192 vs 188 bytes, 70 non-reloc byte diffs) — this is the EXPECTED data-model difference: `long` is 32-bit on arm64-Windows (LLP64) and 64-bit on arm64-Linux (LP64), so the codegen legitimately differs. The tool's benign-classifier only knows reloc-site and section-presence differences; teach it that a size difference explained by sizeof(long) 4-vs-8 is benign, OR compile the corpus with a fixed-width type so the diff is data-model-neutral. Pre-existing (not from the COFF flip); the other 5 corpus files are clean
