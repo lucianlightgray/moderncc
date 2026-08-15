@@ -45822,3 +45822,35 @@ Verified: `objdump -x jf.exe` now imports msvcrt.dll + ucrtbase.dll (16 names) +
 **Repro kit (all at cmake-release, vcvars64 env needed to build): `jf.c` = `int printf(const char*,...); int f(int x){return x*3+7;} int main(void){int r=f(11);printf("f(11)=%d\n",r);return r==40?0:1;}`; build `cmake --build cmake-release --target mcc`; fault `gdb --batch -ex run -ex bt <exe>`. Force-rebuild the blob with `rm -rf cmake-release/CMakeFiles/libmcc_jitengine.dir cmake-release/libmcc-jitengine.lib` first — ninja does NOT rebuild it on a compile-flag change without that.**
 
 **Source.** win-x64, 2026-08-15, at `main@011f2970` + uncommitted slice-2 tree.
+<a id="t-lin-10385-census-results-the-msl-arm-histograms"></a>
+
+## T-lin-10385 census results — the MSL arm, both histograms, over every named subject
+
+**State** slice 1 (the counters) DONE at `5893c477`; census taken. **The MSL emitter refuse census now exists** — before this task a Darwin build printed only the two ladder lines and the `#ifdef MCC_GPU_REFUSE_KINDS` emitter histogram was compiled out entirely.
+
+**Slice 1 — the counters (`5893c477`).** `MCC_GPU_REFUSE_KINDS` and the `mcc_gpu_refuse_kind/total/opv/op/opn` arrays were defined only in the `#else /* !MCC_GPU_LANG_MSL */` branch (`mccgpu.h:3617`), so an MSL build had neither the counters nor (via the `#ifdef` at `mccast.c:18818`) the print. Added the identical block plus `msl_refuse(a,n)` — a byte-for-byte twin of `spv_refuse` — inside the `#if MCC_GPU_LANG_MSL` branch, and converted all **44** bare `return 0;` arms of `msl_expr` to `return msl_refuse(a, n)`. That is a 1:1 structural match to `spv_expr`, which has exactly 44 `return spv_refuse` and zero bare `return 0` (the helpers `msl_branch_pair`/`msl_logical`/`msl_konst` keep bare `return 0` for child-propagation, exactly as their spv twins do). The branches are mutually exclusive, so the DONE SPIR-V arm is untouched; `msl_refuse` still returns 0, so the emitter's behaviour is unchanged — pure instrumentation (gpu/slice/census/fmt 78/78 green, no regression).
+
+**The histograms (mac-arm64, 2026-08-15, mcc at `main@5893c477`, cmake-build-jitdev: Debug, MCC_DEV=ON, MCC_EMBED_JIT=1, MCC_GPU_LANG_MSL=1. Device: Apple M1 Pro, Metal. `SOURCE_DATE_EPOCH=1000000000` per N21.)** Every run non-vacuous: `tried=1 available=1 forced=1`, `dispatches>0`.
+
+| subject | flags | rungs | dispatches | lanes | ladder refused | emitter refused |
+| --- | --- | --- | --- | --- | --- | --- |
+| `tests/smoke/subject.c` | `-O4 -c` | 5,307 | 10,471 | 93,839,848 | 72 (`emit-lhs=66 emit-rhs=6`, all other 6 reasons 0) | **72** (`by-node Unary=72` / `by-op member=72`) |
+| `tests/diff/full_language.c` | `-O1 -c -I .` | 2,302 | 4,605 | 34,672,204 | 0 | 0 |
+| `tests/diff/full_language.c` | `-O4 -c -I .` | 2,323 | 4,647 | 35,067,032 | 0 | 0 |
+| `src/mcc.c` self-host | `--embed-jit -O1 --jit-always-gpu` (the `mcc_add_jit_selfhost` command) | 236,226 | 472,453 | 4,557,558,736 | 0 | 0 |
+| `tests/exec` corpus, **all 312 files** | `-O4 -c -I .` per file, aggregated | 22,038 | 44,388 | 436,759,456 | 0 — every reason 0 in every file | 0 (`emitter-refusing files = 0`) |
+
+**The verdict — the MSL emitter histogram has exactly ONE non-zero entry across every subject, and it is the same one the SPIR-V arm found.** `by-node Unary` / `by-op member`, 72 refusals on `subject.c` (struct member select is a `Unary` node carrying `AST_OP_MEMBER`). No other by-node kind and no other by-op value fired anywhere — not addr-of, not member-arrow, not imag — over 266,195 offered rungs / 536,564 dispatches on both arms combined for this run. **This hole is on BOTH arms, so it is `[S]`, and it is already filed as [T-lin-10384](#t-lin-10384-mechanics-the-member-refusal-is-livein-keying-not-codegen)** (the fix is in the shared `ast_eval_ladder_scan`, not the emitter — confirmed there). **No MSL-ONLY hole exists, so no `[X] darwin` task is minted.** Diffing the histogram against `TODO.md` finds no unfiled entry and no double-filed entry.
+
+**The count differs from the SPIR-V arm (72 vs 81) — verdict unchanged.** The by-node/by-op axes are identical (`Unary`/`member`); only the magnitude differs, entirely in the `emit-rhs` component (MSL 6 vs SPIR-V 15; `emit-lhs=66` is identical). Both `msl_expr` and `spv_expr` re-count a refused member node at each parent arm it sits under (`?:`/`&&`/`||`), and the two emitters' nested-arm structure differs slightly, so a member node that the spv arm re-counts as an rhs the msl arm reaches by a shorter path. It is the same 66 root member refusals on both; the tail is a per-arm accounting artifact, not a second hole. (The whole-count also drifts with tree growth since the SPIR-V census's `dc1e52a8`: subject.c 5,500→5,307, self-host 244,838→236,226 rungs — the same ~3.5–4.5% factor on every row.)
+
+**Read the zero honestly — the same three qualifiers as the SPIR-V arm, all census facts, none a "fix" here:**
+
+1. **131 of 312 exec files fire `rungs=0`** (only the warm-up probe dispatches): the ladder never forms a candidate pair on them — "nothing offered", not "everything accepted". Matches the SPIR-V arm's 129-of-311.
+2. **The histograms only see what the ladder offers.** `ast_eval_ladder_rung` pre-fit rejects (`total > 40` nodes, `space > budget`, `ast_eval_slice.h:2162-2166`) happen before the rung counter and are invisible; the budget is a compile-time constant (`AST_EVAL_LADDER_DEFAULT_BUDGET`), **not device-derived**, so it is identical on both arms — the MSL arm is not offered fewer pairs by any Metal device limit.
+3. **`full_language.c` needs `-I .`.** Its `#include INC(42test)` resolves `<tests/diff/42test.h>` off the include search path; without `-I .` the compile hard-errors at line 77 and the ladder only sees the first 76 lines (rungs=0). This was an invocation gap, **not** an arm difference — with the flag the file forms rungs and refuses nothing on the MSL arm exactly as on SPIR-V. Recorded so the zero is not misread.
+4. **The by-op set caps at 24 distinct ops** (`mcc_gpu_refuse_opv[24]`): not hit here (1 distinct op).
+
+**Verification (per the parent anchor's spec):** both histograms published; `forced=1` and `dispatches>0` on every run; subjects `src/mcc.c` self-host + `full_language.c` (both levels) + all 312 `tests/exec` files + `subject.c`; device named (Apple M1 Pro, Metal). Taskify half: the single non-zero entry pair (`Unary`, `member`) has exactly one filed row (T-lin-10384, `[S]`); no MSL-only hole; nothing unfiled or double-filed. The slice-1 source change is gated per §8 by the full native suite (in flight at close).
+
+**Source.** mac-arm64, 2026-08-15, runs at `main@5893c477`, device Apple M1 Pro (Metal).
