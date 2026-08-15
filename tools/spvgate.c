@@ -549,7 +549,29 @@ typedef struct Case {
 	const char *name;
 	int nlive;
 	AstLocal (*build)(AstArena *a, const int *o);
+	int f64arith;
 } Case;
+
+/* IEEE 754 leaves the sign of a NaN PRODUCED BY AN ARITHMETIC OPERATION
+ * unspecified (§6.3: "the sign of a NaN result is not interpreted"), and
+ * vendors differ: on AMD/RADV `0.0 - NaN` returns the payload with the sign
+ * cleared where mcc's soft-float oracle propagates the operand's sign. Only
+ * rows marked f64arith relax, only when BOTH sides are NaN, and only the sign
+ * bit -- exponent and payload still have to agree, every finite and infinite
+ * result is still compared bit-exactly, and the sign of a ZERO is specified so
+ * it is never relaxed. Sign-manipulating operations are NOT arithmetic in this
+ * sense: §5.5.1 specifies that negate flips the sign of a NaN too, which is
+ * why f-notneg is not marked and must stay exact. */
+static int f64_arith_equal(unsigned long long a, unsigned long long b) {
+	unsigned long long q = 0x7fffffffffffffffULL;
+	if (a == b)
+		return 1;
+	if (((a >> 52) & 0x7ff) != 0x7ff || ((b >> 52) & 0x7ff) != 0x7ff)
+		return 0;
+	if (!(a & 0xfffffffffffffULL) || !(b & 0xfffffffffffffULL))
+		return 0;
+	return (a & q) == (b & q);
+}
 
 static AstLocal b_addmul(AstArena *a, const int *o) {
 	return mk_bin(a, '+', mk_bin(a, '*', mk_ref(a, o[0], VT_INT),
@@ -920,8 +942,8 @@ static const Case CASES[] = {
 		{"ll-mix", 2, b_ll_mix},         {"ll-ternary", 2, b_ll_ternary},
 		{"ll-land", 2, b_ll_land},       {"ll-bool", 2, b_ll_bool},
 		{"f-notneg", 2, b_f_notneg},     {"f-ternary", 2, b_f_ternary},
-		{"f-cmp", 2, b_f_cmp},           {"f-addsub", 2, b_f_addsub},
-		{"f-addinf", 2, b_f_addinf},     {"f-mul", 2, b_f_mul},
+		{"f-cmp", 2, b_f_cmp},           {"f-addsub", 2, b_f_addsub, 1},
+		{"f-addinf", 2, b_f_addinf, 1},  {"f-mul", 2, b_f_mul, 1},
 };
 
 #define AST_NONE_U 0xFFFFFFFFu
@@ -1503,6 +1525,7 @@ static int mem_case(void) {
 int main(int argc, char **argv) {
 	int only = -1, i, r, ci;
 	long total_pts = 0, total_cmp = 0, total_vac = 0, mismatch = 0;
+	long nansign = 0;
 	const char *arenas = NULL;
 	const char *emit_only = NULL;
 	long emitted = 0;
@@ -1728,7 +1751,10 @@ int main(int argc, char **argv) {
 					continue;
 				}
 				cmp++;
-				if (cout[t] != get_out(gout, t)) {
+				if (c->f64arith
+								? !f64_arith_equal((unsigned long long)cout[t],
+																	 (unsigned long long)get_out(gout, t))
+								: cout[t] != get_out(gout, t)) {
 					if (bad == 0 && mismatch < 8)
 						printf("  %-10s w=%-2d MISMATCH in=[%lld,%lld] cpu=%lld "
 									 "gpu=%lld\n",
@@ -1736,6 +1762,8 @@ int main(int argc, char **argv) {
 									 (long long)get_in(in, (long)t * c->nlive + 1),
 									 (long long)cout[t], (long long)get_out(gout, t));
 					bad++;
+				} else if (c->f64arith && cout[t] != get_out(gout, t)) {
+					nansign++;
 				}
 			}
 			total_pts += ntuple;
@@ -1775,8 +1803,9 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 	printf(GATE_NAME ": dispatches=%ld lanes=%ld points=%ld compared=%ld vacuous=%ld "
-				 "mismatches=%ld\n",
-				 g_dispatches, g_lanes, total_pts, total_cmp, total_vac, mismatch);
+				 "mismatches=%ld nansign=%ld\n",
+				 g_dispatches, g_lanes, total_pts, total_cmp, total_vac, mismatch,
+				 nansign);
 	if (g_dispatches == 0) {
 		printf(GATE_NAME ": FAIL (no GPU dispatch happened)\n");
 		return 1;
