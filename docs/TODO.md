@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T01:15Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T01:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T02:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T02:33Z |
 
@@ -306,9 +306,6 @@
 
 ## Blocked — awaiting QUESTIONS.md
 
-- [ ] T-lin-10090 [X] mac-arm64 — re-take `if-conversion-abs` on arm64
-      OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-15T00:23Z
-      REF: DETAILS.md#t-lin-10090-mac-arm64-re-take-if-conversion | DEPS: — | Q: Q-mac-30001
 - [ ] T-lin-10040 [S] The device dispatcher is not merely absent — it is unwritable from what exists
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10040-the-device-dispatcher-is-not-merely | DEPS: — | Q: Q-lin-10008

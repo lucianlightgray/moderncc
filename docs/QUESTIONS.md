@@ -130,3 +130,11 @@ REF: DETAILS.md#t-lin-10090-investigation-cycles-tool-is-perf-only-no-arm64-linu
 **ANSWER (human, 2026-08-15):** All three machines have docker/qemu (wsl/chroot). The Mac can use Docker to run an arm64 Linux.
 
 **Executed by lin-x64, 2026-08-15 — PARTIAL, and the question stays OPEN.** This closes the *host* half: the fleet does now have an arm64 Linux (Docker on the Mac, and `ubuntu-24.04-arm` runners are already named in `tools/ci.c`'s `PLAN_DIST_UNIX`). It does **not** obviously close the *deliverable*. `tools/optlevel-bench.py --cycles` needs `cycles`/`instructions`, which are hardware PMU events; a container on Apple Silicon runs under Virtualization.framework and a hosted runner under a hypervisor, and neither typically exposes a guest PMU — `perf stat` there commonly reports `<not supported>` for hardware events while software events (`task-clock`) still work. So option (b) may reduce to option (c) for this specific figure. That is one command to settle and mac-arm64 owns the box: run `perf stat -e cycles,instructions /bin/true` inside the arm64 container. Answering that decides whether T-lin-10090 proceeds or closes WONTFIX-on-fleet. Per N10 this is not enough evidence to auto-answer, so the question stays OPEN with the host half recorded. See DETAILS.md#fleet-capabilities-docker-qemu-on-all-three.
+
+**ANSWER (auto, mac-arm64, 2026-08-15) — deliverable CLOSED, option (c).** Ran the command. In colima's arm64 Linux VM (kernel 6.8.0-117-generic, Virtualization.framework), `arm64v8/ubuntu:24.04 --privileged` + linux-tools perf:
+```
+   <not supported>      cycles
+   <not supported>      instructions
+```
+Guest `/sys/bus/event_source/devices/` has no hardware PMU node (only breakpoint/kprobe/software/tracepoint/uprobe). The guest PMU is not virtualized, so hardware events are `<not supported>` at the driver level. The host half was real but the deliverable half is not producible: no arm64 host in the fleet exposes a PMU (Darwin has no userspace perf; arm64 Linux exists only as a PMU-less guest; a hosted arm runner is the same hypervisor case). T-lin-10090 → **WONTFIX-on-fleet**, x86_64 figure standing. Reopen only if a bare-metal arm64 Linux or a Darwin kperf backend appears. Evidence: DETAILS.md#t-lin-10090-resolution-no-guest-pmu-in-arm64-linux-on-apple-silicon.
+**STATUS: ANSWERED** 2026-08-15T01:20Z

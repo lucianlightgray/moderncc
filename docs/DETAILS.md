@@ -42481,3 +42481,29 @@ First run of the `woa/bootstrap` hook (`WoA` workflow, run 31856271968). The pro
 **Cost.** The repo is public, so the runner is free. The probe job completed in roughly two minutes, which is what makes a read-first-then-build loop affordable.
 
 **Source.** Run 31856271968 on `woa/bootstrap`, lin-x64, 2026-08-15.
+<a id="t-lin-10090-resolution-no-guest-pmu-in-arm64-linux-on-apple-silicon"></a>
+
+## T-lin-10090 resolution — the arm64 Linux VM exposes no guest PMU, so the figure is unproducible fleet-wide (WONTFIX)
+
+**Type** `[X]` mac-arm64 — **State** DONE (WONTFIX-on-fleet) — closes Q-mac-30001's open half
+
+The one command lin left settles it. On this M1 Pro, colima's arm64 Linux VM (kernel `6.8.0-117-generic`, `runtime: docker`, `mountType: virtiofs` — i.e. Apple Virtualization.framework), inside an `arm64v8/ubuntu:24.04` container with `--privileged` and `linux-tools` perf:
+
+```
+$ perf stat -e cycles,instructions /bin/true
+
+ Performance counter stats for '/bin/true':
+   <not supported>      cycles
+   <not supported>      instructions
+       0.000724484 seconds time elapsed
+```
+
+Corroborated without perf: `/sys/bus/event_source/devices/` in the guest lists only `breakpoint kprobe software tracepoint uprobe` — there is **no hardware CPU PMU node** (`armv8_pmuv3_0` / `cpu`), because Virtualization.framework does not virtualize the guest PMU. `perf_event_paranoid` is `4` but that is moot; the events are `<not supported>` at the driver level, not permission-denied.
+
+So lin's prediction holds exactly: the arm64 Linux the human's answer provides closes the *host* half of Q-mac-30001 but not the *deliverable*. `tools/optlevel-bench.py --cycles` needs `cycles`/`instructions`, which are hardware PMU events, and no arm64 host in the fleet exposes them: Darwin has no userspace `perf` (T-lin-10090 investigation), and the arm64 Linux only exists as a guest with no PMU. A hosted `ubuntu-24.04-arm` runner is the same hypervisor case. Option (b) reduces to option (c).
+
+**Disposition.** T-lin-10090 closes **WONTFIX-on-fleet**. The x86_64 re-take stands as the record (`tests/optfire/levelpins.txt:63-104`: branchy instructions -1.119%, cycles ZERO over two paired n=21 runs) and the flag ships at LEVEL(4) on it; nothing on the ladder ever waited on the arm64 figure. This is the same accepted class as `levelpins.txt`'s `fmov-imm|1|... this host cannot measure it either way`. It re-opens only if a bare-metal arm64 Linux (real PMU) joins the fleet, or a Darwin kperf backend is built for `optlevel-bench.py` — both tracked as the reopen condition here rather than a standing OPEN task.
+
+**Verification.** `perf stat -e cycles,instructions /bin/true` inside the arm64 container prints `<not supported>` for both; re-running on a host with a real arm64 PMU would print counts and reopen the task.
+
+**Source.** Probed on mac-arm64, 2026-08-15, per lin-x64's request (a8522ae0) and the human's Q-mac-30001 answer; extends [fleet capabilities](#fleet-capabilities-docker-qemu-on-all-three).
