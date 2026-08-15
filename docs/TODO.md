@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T01:35Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T04:10Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10370   | 2026-08-15T04:35Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T03:05Z |
 
 ## Contracts — blocking, highest priority

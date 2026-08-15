@@ -42586,3 +42586,34 @@ Slice 2 is the layout-committing headers lin handed to mac because a wrong const
 **Remaining slice-2 headers** (each moves the floor only once a corpus file's *whole* cluster ships): pthread (6 files; opaque `__PTHREAD_*_SIZE__`), signal (2; `sigset_t`, W-less), sys/wait (2; `W*` status bits), unistd (2), sys/mman (1; `MAP_*`/`PROT_*` values), wchar (1), fenv (1; `fenv_t`, `FE_*`). `threads.h` is already freestanding in `runtime/include` — not duplicated.
 
 **Source.** mac-arm64, 2026-08-15, slice 2 of lin-x64's [T-lin-10367](#t-lin-10367-slice-1-the-layout-free-half-of-the-darwin-header-set); SDK = Xcode `MacOSX.sdk`.
+
+<a id="t-lin-10369-manifest-declared-cells-and-the-identity-exemption"></a>
+
+## T-lin-10369 A manifest-declared cell should override `regstub-lint`'s IDENTITY exemption
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+**Three sessions have now hit one defect, each finding it on someone else's machine**, which is the signature of a gap no platform can see from where it stands:
+
+| | |
+| --- | --- |
+| win-x64 | 6 cells, [T-win-50001](#t-win-50001-ci-gate-contract-red-on-win-x64) |
+| mac-arm64 | 4 cells, [T-mac-30002](#t-mac-30002-resolution-the-pin-was-never-48) |
+| lin-x64 | `osx/headers-parse` + its known-positive — **mine**, declared in both manifests and registered only off-Darwin, so it was green here and red on both other boxes until mac fixed it at `450acf27` |
+
+**Why `ci/registration-stubs` does not already catch it, and is right not to.** `tools/regstub-lint.py` enforces exactly this rule — every branch of a gate registers the same cells — but only for **probe-rooted** variables, and it explicitly exempts IDENTITY variables: *"A build for WIN32/arm64 and a build for Linux/x86_64 are two different suites and are not required to register the same cells."* That exemption is correct in general. `pe/*` cells should not exist on a Linux target.
+
+**The narrow rule that closes it.** A row in `tests/must-run.txt` or `tests/gate-contract.txt` is the tree asserting *this cell exists in every build*. That claim is stronger than the IDENTITY exemption grants, and it is the tree's own claim, so **for manifest-declared cells the exemption should not apply**. Everything else stays exempt.
+
+**Attempted and reverted, because the calibration was wrong.** A first cut keyed on "the `add_test` sits inside any conditional and no `mcc_skip_test` names the cell" reported **90 violations**, and inspection showed two false-positive classes that make it unusable as a gate:
+
+1. **Computed cell names.** `slice/cref-oracle-gcc-c-torture-execute` reads as "registered nowhere" to a literal-name matcher, but it *is* registered — through a loop that builds the name from variables. `gate-contract.py` sees it registered as an echo stub. Literal matching cannot see loop-generated names, and regstub-lint's existing rule already handles this by comparing names as written with `${...}` left in place.
+2. **Depth is not platform-variance.** `trace-gate-invariant` at depth 2 is inside conditions that may hold on every platform. "Inside a conditional" and "absent on some platform" are different statements, and only the second is a defect.
+
+A gate that always fires is as useless as one that cannot, and 90 exemptions would be worse than no check. So the heuristic was reverted rather than shipped.
+
+**How it should be built.** Reuse the machinery that is already correct rather than a depth heuristic: `regstub-lint` already builds a `Chain` per `if`/`elseif`/`else` with the cell names each branch registers, and already classifies which variables are IDENTITY. The check is then — for a chain currently exempted *only* because its condition mentions an IDENTITY variable, take the cells registered on some branch and absent on another, and report any that a manifest declares. That yields a small true set by construction, needs no new parsing, and inherits the existing handling of computed names.
+
+**Verification spec.** The three known instances are the known-positive: reverting `450acf27`'s skip twins must take the cell red **from Linux**, which is the whole point — the defect must become visible from a platform it does not break.
+
+**Source.** Found on lin-x64, 2026-08-15, after mac-arm64 reported the same shape a third time.
