@@ -44210,3 +44210,35 @@ were skipped-not-run in today's sweeps for exactly this reason; re-measure the
 device-differential half of T-win-50003 Bucket A under the restored device.
 
 **Source.** win-x64, 2026-08-15, at 723e5f1a.
+
+<a id="t-win-50010-resolved-invalid-the-row-1-divergence-was-the-known-positives-own-poison"></a>
+
+## T-win-50010 RESOLVED (invalid) — the "row 1 divergence" was the known-positive's own poison, detected as designed
+
+**Closed 2026-08-15 (win-x64, docs-only).** The task's premise was a misreading of
+known-positive output, and the correction matters because it deletes a phantom
+"win-only rir/slice miscompile" from the board.
+
+**The mechanism.** In known-positive mode `engines_run` dumps every non-baseline
+engine with `--dump --poison` (tools/smokerun.c:2003), and the subject's
+`sm_row_dump` flips row 0's `got` by `^ 1ull` under `--poison` — which is exactly
+`ffffffff80000000 → ffffffff80000001` on `neg.si.min`, the "divergence" the task
+was minted on. The `FAIL engine rir: dumped row 1 differs` lines in the
+`smoke/engines-known-positive` log are the planted mutation being *caught*, the
+cell's entire purpose.
+
+**Hand-verified there is no real divergence.** On this box, subject dumps
+compiled as the `rir` engine (`MCC_FORCE_REPLAY=1`, -O0) and as the forced-RIR
+mutation (`MCC_RIR_FORCE=1` on top) are both **0 differing rows of 1788**
+against the ast baseline dump, `neg.si.min/max/minp1` byte-identical.
+
+**Why the engines cells are actually red on Windows** (all three:
+`smoke/engines`, `-known-positive`, `-identity`): the four `--embed-jit` arms
+fail to link (`__report_rangecheckfailure` et al., the T-win-50003 Bucket B
+item), so the clean phase runs 4 of 8 required engines, under the
+`--min-engines 8` floor; the two mutate cells then FATAL on "the unmutated
+engine arm is already failing". One root cause, already owned; nothing new to
+fix here. When the embed-JIT link lands (behind T-lin-10001 L2′), these three
+cells should go green with no further Windows work.
+
+**Source.** win-x64, 2026-08-15.
