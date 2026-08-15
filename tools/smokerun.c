@@ -1220,7 +1220,14 @@ static const Pass g_pass[] = {
 		{"cplxcond", "pass-cplxcond.c", "",
 		 "cplxcond 1 2 5 6 0 7 3.0 4.0 9.0 8.0 5\n", "-O2", NULL, 0, -1},
 		{"msstruct", "pass-msstruct.c", "",
-		 "msstruct 20 2 8 3 8 4 8 4 5\n", "-O2", NULL, 0, -1},
+#if MCC_HOST_WIN32
+		 /* PE default is ms_bitfields (T-win-50015): the one unmarked struct
+		  * smp_plain {char;int:3;char} lays out MS-style = 12, not GCC's 4. */
+		 "msstruct 20 2 8 3 8 4 8 12 5\n",
+#else
+		 "msstruct 20 2 8 3 8 4 8 4 5\n",
+#endif
+		 "-O2", NULL, 0, -1},
 		{"fabscmp", "pass-fabscmp.c", "",
 		 "fabscmp 0 0 0 0 0 0 0 0 1 0 0\n", "-O2", NULL, 0, -1},
 		{"taut", "pass-taut.c", "",

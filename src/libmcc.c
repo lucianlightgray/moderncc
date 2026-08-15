@@ -1225,6 +1225,14 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 #if defined MCC_TARGET_MACHO
 	s->leading_underscore = 1;
 #endif
+#if defined MCC_TARGET_PE
+	/* Every native Windows compiler (MSVC, mingw/gcc) lays out bit-fields with
+	 * the MS algorithm; mcc's GCC-mode default is cross-TU-incompatible with all
+	 * of them on PE. Default ms_bitfields on for PE targets so a struct declared
+	 * in a Windows header matches. (T-win-50015; -mno-ms-bitfields still opts
+	 * back to GCC mode.) */
+	s->ms_bitfields = 1;
+#endif
 #ifdef MCC_ARM_HARDFLOAT
 	s->float_abi = ARM_HARD_FLOAT;
 #endif

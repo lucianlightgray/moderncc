@@ -18,6 +18,16 @@ exec/features_c99_c11/c11_complex_convert.c
 exec/structs_unions/bitfields_ms.c
 exec/structs_unions/bitfield_width64.c
 
+# Extended-type bit-field integer promotion (T-win-50015): once PE defaults to
+# ms_bitfields, mcc promotes an `unsigned long long : 31` bit-field to UNSIGNED
+# (its base type's signedness), matching cl.exe / MSVC; mingw/gcc promote it to
+# signed via the width-based GCC rule. The standard only fixes promotion for
+# int/unsigned-int bit-fields, so extended-type bit-fields are impl-defined and
+# MSVC != GCC here — mcc conforms to the native Windows compiler, so this is a
+# reference disagreement, not an mcc miscompile (same class as the f80/complex
+# rows above). Verified: cl.exe agrees with mcc.
+exec/expressions/integer_promotion.c
+
 # __cleanup__ attribute: mcc ignores it (warns), mingw runs the cleanup
 exec/features_c99_c11/cleanup.c
 

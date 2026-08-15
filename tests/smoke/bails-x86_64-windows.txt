@@ -47,8 +47,9 @@
 # KNOWN HOLES, deliberately absent: the jit- scope is empty because the
 # embed-JIT cannot link on Windows yet (T-win-50003 Bucket B,
 # __report_rangecheckfailure et al.); its categories must be banked when that
-# lands, not guessed now.  pass-msstruct stays red pending T-win-50015 (mcc's
-# win32 plain bit-field default is the outlier vs every native compiler).
+# lands, not guessed now.  (pass-msstruct is GREEN as of T-win-50015: PE now
+# defaults to ms_bitfields, so mcc's plain bit-field layout matches every native
+# Windows compiler; smokerun's msstruct expectation is the MS line on WIN32.)
 O0 replay-fallback:len 3
 O1 replay-fallback:len 3
 O13 strat-dark:abs 1
