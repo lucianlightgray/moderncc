@@ -45203,3 +45203,30 @@ Both sides produce a NaN. The **payloads are identical**. They differ only in th
 **Verification for whoever takes it.** `./spvgate` on this box must reach `spvgate: OK` with `f-addsub` reporting its 65,812 points, and `gpu/spv-slice-differential` + `gpu/spv-slice-known-positive` must both pass — the known-positive is what proves the relaxed comparison did not stop comparing.
 
 **Source.** lin-x64, 2026-08-15, on AMD Radeon 610M / RADV.
+
+<a id="t-lin-10381-the-asmreplay-row-lost-its-mcc-asm-inline-unwind-coverage-and-what-it-would-take-to-get-it-back"></a>
+
+## T-lin-10381 — `mcc_asm_inline_unwind`'s recovery lost its only test, and the shape smokerun would need to give it one
+
+Recorded at the moment the coverage was dropped rather than after someone notices it missing.
+
+**What was covered.** `5f2e6f39` built the `asmreplay` Pass row around a specific invariant, stated in its own commit message: *"the recovery longjmp must not leave the C parser inside the dead `:asm:` BufferedFile"*, and proved the row could go red by *"reverting `mcc_asm_inline_unwind` to a no-op"*, which *"derails the parser into the assembler token stream (`';' expected (got '0')` at the closing brace)"*. That is a real invariant with a real prover.
+
+**Why it is gone.** The row reached the longjmp through the double-assembly defect: replay re-assembled a symbol-defining body, `asm_new_label` refused, and the unwind ran. [Fixing that](#t-lin-10375-10378-fixed-stop-assembling-the-body-twice-and-full-language-reaches-303-303) removes the trigger. The row now asserts the refusal *cannot* happen, which guards the fix but says nothing about the unwind.
+
+**The path is still live, and still reachable — just not in a shape the Pass table can hold.** A genuine duplicate label in one TU produces the same refusal:
+
+```c
+int a(void) { __asm__ volatile("jmp .+6\ndupl: .long 0\n"); return 0; }
+int b(void) { __asm__ volatile("jmp .+6\ndupl: .long 0\n"); return 0; }
+```
+
+mcc reports `dup-label.c:3: error: assembler label 'dupl' already defined`, **naming the real source file and line with the real source line rendered** — which is itself the evidence the parser is back in the real `BufferedFile` rather than inside `:asm:`. gcc-15 refuses the same program through its assembler, so the diagnostic is not an mcc peculiarity.
+
+**Why it cannot simply replace the old marker.** A Pass row is *compile, then run, then compare pinned stdout*, and `pass_subject` treats a failed compile as fatal (*"the parser did not survive the pass"*). A genuine duplicate label is a **hard error**: there is no binary to run and no stdout to pin, and the oracle arm is unavailable too, since gcc and clang refuse it as well.
+
+**The shape it needs** is a row that expects the compile to fail and adjudicates the log: the refusal message must appear, exactly once, naming the fixture's own path and line, and the derailment signature (`';' expected`) must not. That is a `wantfail` flag on `Pass`, a branch in `pass_fixture_level`, and one fixture file — small, but it is a change to the pass contract rather than a new row, which is why it is filed instead of bundled into the fix that exposed it.
+
+**Cheaper alternative worth pricing first:** `tests/cross/no-compiler-abort.sh` already compiles a corpus and asserts mcc never aborts. A duplicate-label fixture there would prove the process survives, but *not* that the parser landed back in the right file — which is the half that matters, and the half a no-op unwind breaks. Whoever takes this should check whether that harness can adjudicate the diagnostic text before adding a shape to smokerun.
+
+**Source.** lin-x64, 2026-08-15.
