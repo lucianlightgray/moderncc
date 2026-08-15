@@ -22,7 +22,8 @@ if(_mut EQUAL 0)
                         "docs/ARCHIVED.md), and a failed-to-reproduce table whose row "
                         "count disagrees with the one sentence that states it, "
                         "and a DETAILS.md#anchor citation resolving to no such "
-                        "anchor -- and the lint did not report all five. A lint that "
+                        "anchor, and a merge-conflict marker left in a live doc -- and the "
+                        "lint did not report all six. A lint that "
                         "walks 800 citations and resolves none of them prints "
                         "the same OK line as one that resolves all of them")
 endif()
@@ -47,5 +48,5 @@ if(_nodocs EQUAL 0)
                         "must not be reportable as a pass")
 endif()
 
-message("docs/refs-known-positive: clean OK, all four planted citation shapes "
+message("docs/refs-known-positive: clean OK, all six planted citation shapes "
         "detected, subject floor fired, missing docs tree refused")
