@@ -44291,3 +44291,44 @@ deliberately-banked stance recorded in the bails.txt header; nothing new to fix
 under this task.
 
 **Source.** win-x64, 2026-08-15.
+
+<a id="t-lin-10042-slice-2-msl-f64-comparisons"></a>
+
+## T-lin-10042 slice 2 — MSL f64 comparisons through one integer total-order helper
+
+**Type** `[X]` mac-arm64 — **State** slice 2 DONE at `f5a04110` — parent stays IN_PROGRESS
+
+All six f64 comparisons land as pure integer bit arithmetic on the slice-1
+bits-pair — like slice 1, no `double` is materialised on the device and no
+rounding/denormal/NaN-propagation question is opened. One MSL prelude helper,
+`mccf64_cmp(int2, int2) -> int`, returns 2 for unordered (either operand NaN:
+exponent all-ones and mantissa non-zero), else -1/0/1 by IEEE order, computed
+as: canonicalise ±0 to +0, then map each pair to a monotone unsigned key
+(negatives: `~bits`, which reverses their descending bit order and places them
+below positives; positives: `bits ^ 0x8000000000000000`) and compare
+lexicographically hi-then-lo. The emitter (`msl_expr` `AST_Binary`, the `xft`
+arm placed before the integer path exactly as `spv_expr` 3209-3236) maps:
+
+| C op | emission | IEEE/oracle semantics honoured |
+| --- | --- | --- |
+| `==` | `cmp(a,b) == 0` | NaN → false (FOrdEqual); +0 == -0 |
+| `!=` | `cmp(a,b) != 0` | NaN → true (FUnordNotEqual) |
+| `<` | `cmp(a,b) < 0` | NaN → false (2 is not < 0) |
+| `<=` | `cmp(a,b) <= 0` | NaN → false |
+| `>` | `cmp(b,a) < 0` (swap) | `a>b ⇔ b<a`, NaN-consistent |
+| `>=` | `cmp(b,a) <= 0` (swap) | `a>=b ⇔ b<=a`, NaN-consistent |
+
+`msl_f64_binop_code` is the twin of `spv_f64_binop_code` restricted to the
+comparison rows; `+`/`-`/`*` still return 0 and refuse — they are slice 3, the
+first slice that must state a rounding/NaN contract. The `f-cmp` differential
+case (all six compares over two `VT_DOUBLE` lives, packed into one int with
+`|`/`<<`) landed first and was watched fail 4 rungs + the 0-compared FAIL.
+
+**Verification (M1 Pro, Metal, at `f5a04110`).** `./mslgate`: f-cmp OK 65,812
+points; totals dispatches=164 points=2,698,292 compared=2,557,224
+mismatches=0. `--mutate`: all 2,557,224 flip → FAIL as required. `ctest -R
+'^gpu/'` 15/15; `ctest -R 'slice|census'` 122/122. The rung corpus's
+sign-extended patterns mean NaN-vs-NaN, NaN-vs-0, ±0-vs-∓0, denormal-order and
+mixed-sign points are all in the compared set.
+
+**Source.** mac-arm64, 2026-08-15, code at `f5a04110`.

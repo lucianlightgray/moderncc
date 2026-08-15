@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T12:55Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T13:08Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T15:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50015   | 2026-08-15T13:45Z |
 
@@ -14,8 +14,8 @@
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
 - [ ] T-lin-10042 [X] mac-arm64 — the Metal parity staged plan, WITH fp64 (2,200-3,400 lines)
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 28ac8048 | TS: 2026-08-15T12:55Z
-      REF: DETAILS.md#t-lin-10042-slice-1-msl-f64-bits-pair | DEPS: — | Q: Q-lin-10009 ANSWERED | NOTE: human scheduled the fp64 variant; lands in slices each checkable by the per-value differential. SLICE 1 DONE at 28ac8048: MSL f64 as a raw-bits int2 pair — literals/refs/frame-loads/negate/truth/select, all bit-exact integer lowerings, TDD'd via two new MSL-arm-only differential cases (f-notneg, f-ternary); 2,491,412 points compared 0 mismatches on-device, real corpus 704 slices 49.27M points 0 mismatches, gpu 15/15 + slice|census 122/122 green. REMAINING slices, in order: (2) f64 comparisons (integer total-order, exact), (3) f64 +/-/* soft-float RTE binary64 with a stated NaN contract vs the arm64 oracle, then dynidx/region f64 with the runtime-idx parity gap (spv 712 vs msl 704 real slices). Design + verification spec at the REF anchor
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: f5a04110 | TS: 2026-08-15T13:08Z
+      REF: DETAILS.md#t-lin-10042-slice-2-msl-f64-comparisons | DEPS: — | Q: Q-lin-10009 ANSWERED | NOTE: human scheduled the fp64 variant; lands in slices each checkable by the per-value differential. SLICE 1 DONE 28ac8048 (f64 bits-pair: literals/refs/loads/negate/truth/select, 2.49M pts 0 mismatches). SLICE 2 DONE f5a04110 (all six f64 comparisons via mccf64_cmp integer total-order, f-cmp case 65,812 pts 0 mismatches; totals 2.56M compared, mutate-KP flips all, gpu 15/15, slice|census 122/122). REMAINING, in order: (3) f64 +/-/* soft-float RTE binary64 with a stated NaN contract vs the arm64 oracle, then dynidx/region f64 with the runtime-idx parity gap (spv 712 vs msl 704 real slices). Design + verification specs at the slice anchors
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
