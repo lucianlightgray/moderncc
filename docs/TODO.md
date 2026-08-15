@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T01:15Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T02:30Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T02:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T02:33Z |
 
 ## Contracts — blocking, highest priority
@@ -30,6 +30,9 @@
 
 ## Open — claimable
 
+- [ ] T-lin-10088 [X] win-x64 — vendor the `gcc-c-torture-execute` corpus into a container for `pe/x-oracle`
+      OWNER: — | STATE: OPEN | SHA: c5197398 | TS: 2026-08-15T02:40Z
+      REF: DETAILS.md#fleet-capabilities-docker-qemu-on-all-three | DEPS: — | Q: Q-lin-10014 ANSWERED | NOTE: docker on the Windows box carries/fetches the corpus without vendoring it into the tree — the "deliberately not vendored" property is preserved. pe/x-oracle then runs all 1,693 programs with no new code
 - [ ] T-lin-10045 [S] `-fopt-slice`: revise into the governor over every AST/RIR slice-capable strategy, integrated with the other slice optimizers
       OWNER: — | STATE: OPEN | SHA: 3749f816 | TS: 2026-08-15T02:30Z
       REF: DETAILS.md#q-lin-10006-answer-fopt-slice-is-the-governor-not-a-pass | DEPS: — | Q: Q-lin-10006 ANSWERED | NOTE: not "own or delete" — it was never a pass. Carries forward: the disk-cache determinism defect, and OPT_SLICE at MCC_OPTD_LEVEL(9) leaves opt-cache-determinism a permanent 77 with no subject. First slice = a shipped level with the determinism claim gated
@@ -318,9 +321,5 @@
 - [ ] T-lin-10064 [S] 63 cells have never compiled their own `EXTRA`, and arming them goes red
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10064-63-cells-have-never-compiled-their | DEPS: — | Q: Q-lin-10011
-- [ ] T-lin-10088 [X] win-x64 — vendor the exact `gcc-c-torture-execute` corpus for `pe/x-oracle`
-      OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10088-win-x64-vendor-the-exact-gcc | DEPS: — | Q: Q-lin-10014
-
 ## Invalidations             ← shared, append-only; removed only on re-scope (§5.2)
 

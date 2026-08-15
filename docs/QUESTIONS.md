@@ -61,21 +61,6 @@ Raise `MCC_MAX_ALIGN` for 32-byte vectors, or keep the documented incompatibilit
 
 REF: DETAILS.md#q-lin-10005-raise-mcc-max-align-for-32
 
-### Q-lin-10006 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10045
-`-fopt-slice`: own the pass, or delete it?
-
-It makes object output depend on the optimizer's disk cache and nothing watches it, because the flag is `MCC_OPTD_LEVEL(9)` and has no subject at any shipped level. `opt-cache-determinism` is a permanent 77, so the defect is invisible rather than absent. The determinism defect reproduces verbatim today.
-
-**Assumed for now:** Mode (b). The task is BLOCKED: owning it means a cache-identity gate at a shipped level, deleting it means removing a pass and its cache, and the two share no work.
-
-**Cost if wrong:** Neither direction is started, so nothing is redone — but the cell stays a permanent 77 and reads as coverage while it does.
-
-REF: DETAILS.md#q-lin-10006-fopt-slice-own-the-pass-or
-
-**ANSWER (human, 2026-08-15):** `-fopt-slice` is meant to govern all optimization strategies capable of slicing AST/RIR nodes at arbitrary entry/exit points, in order to optimize any sub-section of code. Revise it into a well-integrated slicing mechanism that works with the other slice optimizers.
-
-**Executed by lin-x64, 2026-08-15:** own it, and re-scope it — the answer is neither of the two options the question offered. The question framed this as "own the pass or delete it"; the answer says the flag was never meant to be *a pass* at all, but the governor over every strategy that can slice AST/RIR at arbitrary entry/exit points. T-lin-10045 is re-OPENed and re-titled accordingly. Two things carry forward unchanged and must not be lost in the re-scope: the determinism defect (object output depending on the optimizer's disk cache) is still real and still reproduces, and `opt-cache-determinism` is still a permanent 77 with no subject because `OPT_SLICE` sits at `MCC_OPTD_DEV(MCC_OPTD_LEVEL(9))` — above any shipped level. Integration is what gives the cell a subject; until the flag governs something at a level that ships, the gate keeps reading green over nothing. See DETAILS.md#q-lin-10006-answer-fopt-slice-is-the-governor-not-a-pass.
-
 ### Q-lin-10007 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10057
 `kept_coverage` host-sensitivity: raise `--tol`, make the metric host-stable, or encode "bank from stage2"?
 
@@ -97,21 +82,6 @@ Six rows are frozen by that decision: the dispatcher (three subsystems, priced n
 **Cost if wrong:** Nothing is redone by waiting. Unfreezing without the decision would schedule three subsystems against a lever the break-even table already prices as negative.
 
 REF: DETAILS.md#q-lin-10008-is-the-2026-08-09-device
-
-### Q-lin-10009 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10042
-Schedule the Metal parity plan, or keep the drop?
-
-Priced at 1,530-2,360 lines behavioural, or 2,200-3,400 with fp64. The drop was reversed by decision on 2026-08-09 and the spec was written; nothing has been scheduled since. It has no CI differential and cannot have one — the only harness is the per-value differential run by hand on the Mac.
-
-**Assumed for now:** Mode (b). The task is BLOCKED. There is no safe interim: starting a 2,000-line arm that no gate can watch is worse than not starting it.
-
-**Cost if wrong:** Nothing is redone while it waits.
-
-REF: DETAILS.md#q-lin-10009-schedule-the-metal-parity-plan-or
-
-**ANSWER (human, 2026-08-15):** Schedule the Metal parity plan, with fp64 support, on the mac.
-
-**Executed by lin-x64, 2026-08-15:** the larger of the two priced variants — 2,200–3,400 lines with fp64, not the 1,530–2,360 behavioural-only arm. T-lin-10042 is re-OPENed for mac-arm64. The question's own reasoning for mode (b) was "starting a 2,000-line arm that no gate can watch is worse than not starting it", and scheduling it does not by itself create the gate: the only harness remains the per-value differential run by hand on the Mac. So the answer authorises the work and leaves the watchability problem live — the plan must land in slices each of which is checkable by that differential, rather than as one unwatched arm. Recorded so the absence of a CI differential is not rediscovered as a surprise halfway in. See DETAILS.md#q-lin-10009-answer-metal-parity-scheduled-with-fp64.
 
 ### Q-lin-10010 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10058
 Should `node-census`'s `all_invokes_on_cpu` be gated at all, or reported only?
@@ -145,50 +115,6 @@ N37's compiler half. `csweep.C64/C80.CDIV` and `CDIVSEL` hide 283 refs-agree poi
 **Cost if wrong:** If the answer is to adopt it, every `csweep` complex row is re-banked once.
 
 REF: DETAILS.md#q-lin-10012-adopt-divdc3-style-complex-division
-
-### Q-lin-10013 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10086, T-lin-10087
-Is Windows-on-ARM hardware available to any session?
-
-`arm64-win32` and `arm-win32` object emission works; execution needs the hardware. wine runs x86 PE only and qemu-user cannot load PE, so there is no emulation route.
-
-**Assumed for now:** Mode (b). Both tasks are BLOCKED. No safe interim exists — an unexecuted target cannot be verified by anything the tree can run.
-
-**Cost if wrong:** Nothing is redone while they wait.
-
-REF: DETAILS.md#q-lin-10013-is-windows-on-arm-hardware-available
-
-**ANSWER (human, 2026-08-15):** Use an isolated/iterative GitHub Actions hook on a branch to work on Windows-on-ARM tasks. Use Docker on the Windows machine otherwise.
-
-**Executed by lin-x64, 2026-08-15:** the answer replaces the premise both blocked tasks rested on. They were `[X]` win-x64 on the reasoning that only that session could ever hold the hardware — but no session holds it, and the executor is now a `windows-11-arm` hosted runner that any session can reach by pushing a branch. Both are therefore re-typed `[S]` and re-OPENed; leaving them `[X]` would park them on the one session with no more access to WoA than the other two. `tools/ci.c` already names the runner (`PLAN_WIN`, `PLAN_MINGW`, `HOSTS:windows-arm64-msvc`), so the label is not new work — but that host carries `gate = 0`, so it is planned only into `stage1-nightly`/`stage2-nightly` and has never gated anything. See DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor.
-
-### Q-lin-10014 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10088
-Can `vendor/gcc-c-torture-execute` be vendored onto the Windows host?
-
-With the corpus present, `pe/x-oracle` runs all 1,693 programs with no new code. The host has no network and the corpus is deliberately not vendored in this tree.
-
-**Assumed for now:** Mode (b). BLOCKED. The W2 reconstructions stand as evidence in the meantime — four of five named divergences are mcc-correct and the fifth is implementation-defined — but they are reconstructions, not the corpus.
-
-**Cost if wrong:** Nothing is redone; the confirmation simply does not exist until the corpus does.
-
-REF: DETAILS.md#q-lin-10014-can-vendorgcc-c-torture-execute-be
-
-
-**ANSWER (human, 2026-08-15):** All three machines have docker/qemu (wsl/chroot). Use Docker on the Windows machine.
-
-**Executed by lin-x64, 2026-08-15:** the blocking premise was "the host has no network and the corpus is deliberately not vendored". A container image carries or fetches the corpus without vendoring it into the tree, so the `pe/x-oracle` subject can exist on the Windows box without a commit. The task is re-OPENed for win-x64 to wire; the "deliberately not vendored" property of the tree is preserved, which was the reason the corpus was absent in the first place. See DETAILS.md#fleet-capabilities-docker-qemu-on-all-three.
-
-
-### Q-mac-30000 — [mac-arm64] — 2026-08-14T20:15Z — BLOCKS: T-lin-10089
-The `ast/o0-baseline` *-osx object bank is header-sensitive and currently encodes the Linux cross host's glibc libc headers (N38); a native Darwin mcc uses the macOS SDK, so 198 of 297 arm64-osx rows differ. To un-skip the quartet on Darwin without a bank that drifts with the SDK, the osx keys need a *pinned* Darwin libc header set wired as `--sysroot` (mirroring `vendor/gentoo-stage3-*`). What set should be vendored — a curated subset of a fixed macOS SDK, and is committing Apple SDK headers into the tree acceptable (licensing)? Or a preferred stand-in, e.g. an mcc-authored minimal darwin libc header set under `runtime/osx`?
-**Assumed for now:** none safe — vendoring Apple headers is a licensing decision and there is no in-tree Darwin libc header set to point at, so the quartet keeps skipping on Darwin (mode b, BLOCKED).
-**Cost if wrong:** nothing redone; the quartet stays a visible, reasoned skip on Darwin until the header set is chosen.
-REF: DETAILS.md#t-lin-10089-investigation-the-osx-bank-encodes-linux-glibc-headers
-
-**NOTE (peer opinion, lin-x64, per their reply to 95763bcb):** lin recommends the minimal mcc-authored stand-in over a vendored Darwin SDK — it is the only option viable on all three platforms (a vendored SDK is unusable from win-x64), has no licensing gate, and pins mcc's codegen rather than libc's declarations. Spec they'd want: declarations only for enough of `stdio.h`/`stdlib.h`/`string.h` to compile the `tests/exec` corpus, no inline bodies, no macro-defined functions, placed beside `runtime/include` (e.g. `runtime/osx`) so freestanding stays freestanding. Suggests typing the follow-up `[C]` (an interface all three `key_flags` branches read; neighbour of T-lin-10002 bank keying) and giving `ast/o0-baseline` a key-count floor in `tests/gate-contract.txt` — the contract's first ratchet decrement. Question stays OPEN pending human confirmation of the stand-in direction, the `[C]` re-scope, and the ratchet decrement.
-
-**ANSWER (human, 2026-08-15):** Author a minimal Darwin libc header set instead of vendoring an Apple SDK. When on an APPLE host, use the macOS standard libraries/headers.
-
-**Executed by lin-x64, 2026-08-15:** this is the stand-in direction, with a refinement the peer note did not have: the minimal set is *not* what a native Darwin build compiles against. On an Apple host mcc uses the real SDK, so the mcc-authored headers exist to give the **bank keys** a host-independent subject, not to replace the platform. That splits the task cleanly in two — a `[C]` header set anyone can author (no Apple host required, no licensing gate), and the mac-arm64 `[X]` half that wires `--sysroot` selection and re-keys the quartet. Licensing question is moot: nothing Apple-owned enters the tree. See DETAILS.md#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple.
 
 ### Q-mac-30001 — [mac-arm64] — 2026-08-15T00:23Z — BLOCKS: T-lin-10090
 How should the arm64 `if-conversion-abs` cycles/instructions re-take be produced, given no `perf` on Darwin and no arm64-Linux host in the fleet?

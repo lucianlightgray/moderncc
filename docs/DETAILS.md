@@ -42451,3 +42451,33 @@ That selects the **2,200–3,400 line** variant over the 1,530–2,360 behaviour
 **Its gate-contract row** (`tests/gate-contract.txt:98`) is `unfloored | unproved` today. It should gain both as the integration lands; it is one of the rows the `unfloored`/`unproved` ratchets are waiting on.
 
 **Source.** Answer recorded on lin-x64, 2026-08-15.
+
+<a id="t-lin-10365-woa-runner-ground-truth"></a>
+
+## T-lin-10365 — what a `windows-11-arm` runner actually is, read rather than assumed
+
+First run of the `woa/bootstrap` hook (`WoA` workflow, run 31856271968). The probe job's whole purpose was to stop the tree assuming these facts, since `tools/ci.c` has named this runner in three tables without anything ever reading one line off the host.
+
+| | |
+| --- | --- |
+| OS | `Microsoft Windows NT 10.0.26200.0` |
+| `PROCESSOR_ARCHITECTURE` / `RUNNER_ARCH` | **ARM64** / ARM64 — native, not emulated |
+| cores | 4 |
+| Visual Studio | 2022 **Enterprise**, `C:\Program Files\Microsoft Visual Studio\2022\Enterprise` |
+| MSVC toolsets | `14.29.30133` and `14.44.35207`, **host arm64** |
+| cmake | `C:\Program Files\CMake\bin\cmake.exe` |
+| ninja | `C:\Tools\Ninja\ninja.exe` — **preinstalled**, so the `choco install ninja` step ci.yml carries is unnecessary here |
+| python / python3 | `3.13.15`, **arm64** build |
+| clang | `C:\Program Files\LLVM\bin\clang.exe` |
+| **gcc** | **`C:\mingw64\bin\gcc.exe` — a mingw gcc is preinstalled** |
+| `cl` before the dev shell | ABSENT, as expected; `setup-msvc-dev@v4` with `arch: arm64` supplies it |
+
+**Two findings that change open tasks.**
+
+**1. `arm-win32` has no executor, and now that is measured rather than predicted.** The probe read `C:\Windows\WinSxS` for ARM32 (`arm_*`) component entries and found **none**, while `arm64_*` entries are plentiful (`arm64_1394.inf.resources_…`, `arm64_accessibility_…`). Windows 11 on ARM64 carries no ARM32 user mode. So [T-lin-10086](#t-lin-10086-win-x64-arm64-win32-arm-win32)'s two halves genuinely separate: `arm64-win32` execution now has a home, `arm-win32` does not and will not on this runner. Reporting the task green on the arm64 half alone would be the same "success over half a subject" defect the gate contract exists to refuse — hence the split recorded on the task line rather than a single green.
+
+**2. The runner already carries the "frame of reference" toolchains.** Both `clang` and a **mingw `gcc`** are preinstalled. That is directly relevant to [T-lin-10366](#t-lin-10366-ref-cc-is-x86-64-only-on-windows): `MCC_REF_CC`'s Windows auto-detection consults only `_MCC_MINGW_X86_64_GCC` and then falls back to `find_program(gcc)`, and on this host that fallback **will find `C:\mingw64\bin\gcc.exe`**. Whether that is a usable reference depends on what it targets — an x86_64 mingw running under emulation would produce x86_64 PE on an arm64 host, which is a wrong reference rather than a missing one, and is worse. That is the next thing to read off the host, not to reason about.
+
+**Cost.** The repo is public, so the runner is free. The probe job completed in roughly two minutes, which is what makes a read-first-then-build loop affordable.
+
+**Source.** Run 31856271968 on `woa/bootstrap`, lin-x64, 2026-08-15.
