@@ -44606,3 +44606,49 @@ the bar is 100%, and it is not met until all three are fixed.
 
 **Source.** lin-x64, 2026-08-15; reproduced, narrowed to three one-to-three-line cases and
 proved by the numeric-vs-named contrast, on this box.
+
+<a id="t-lin-10092-win-requote-2026-08-15-17-of-9404"></a>
+
+## T-lin-10092/win re-quote 2026-08-15 — 9404 cells: 7339 pass / 2048 skip / **17 fail**, from 35, in 667 s
+
+Full native suite, vcvars ctest -j4, RTX 2060 visible (VK layer disable in the
+run environment), the x86_64-windows bails bank live, both real references
+wired. The number quoted with every red attached, per the task's contract.
+
+**The 17, fully attributed:**
+- `smoke/native`, `smoke/strats-known-positive`, `smoke/engines(-known-positive,-identity)` (5)
+  — `pass-msstruct` (T-win-50015) + the embed-JIT link (T-win-50003 Bucket B). No other cause remains.
+- `exec-search-emitsize/{floating_point,math_library}`, `exec-search-emitiso/{…}` (4)
+  — the known Bucket B emit-size rel8-relaxation PE-AOT defect (bisected earlier to `head -39 floating_point.c`).
+- `jit/replay-parity`, `mcctest-embedjit`, `runtime-bench-check` (3) — the known
+  Bucket B jit/runtime trio, deferred behind T-lin-10001 L2′.
+- `slice/f64`, `slice/f64-known-positive` (2) — **the real device-numerics red,
+  now precisely measured**: `3 of 22 negations diverged`, 1 of 111 checks, on
+  the RTX 2060 (12 dispatches). fp64 NEGATION divergence device-vs-CPU — the
+  class mac's T-lin-10042 MSL slice 1 handled bit-exactly on Metal. Minted
+  T-win-50016.
+- `slice/cost` (1) — fails only on its embed-JIT arm (Bucket B again), the cost
+  logic itself is unmeasured, not wrong.
+- `diff3/floating_point` (1) — first-ever run on Windows (it needs two real
+  references, restored today): mcc differs from a 2/2-reference consensus.
+  Suspect class: mcc's MSVC 64-bit `long double` vs the mingw references' x87 —
+  but that is a suspicion, not a triage. Minted T-win-50017.
+- `libtest-extra` (1) — `output_obj` dies with *"mcc: error: 'mcc_relocate()'
+  twice is no longer supported"*; libmcc API surface, possibly from the recent
+  mccjit/libmcc rework. Minted T-win-50018.
+
+**The skip count grew 964 → 2048 and that is this session's own doing:** the
+`git clean -fxd` that reset the box also deleted the host-local (never
+vendored) reference corpora; the network exists (winlibs re-fetched today), so
+re-provisioning per T-lin-10030/mac's recipe is possible and is what
+T-lin-10030/win needs anyway. The 17-red figure is honest either way — the
+wiped cells skip loudly, they do not fail.
+
+**Today's ledger on this number: 35 → 17** — 10 flipped by the setvbuf fix
+(T-win-50008), 5 smoke cells by the harness fixes + Windows bank
+(T-win-50009/50012/50013), 3 GPU cells un-hidden and re-measured under the
+restored device (net: 2 new genuine numerics reds surfaced that were formerly
+mis-binned as "0 slices", plus 2 first-time-runnable cells added their own
+reds). Not clean yet; every residual has an owner and an anchor.
+
+**Source.** win-x64, 2026-08-15, log `cmake-release/full-suite-2026-08-15.log`.

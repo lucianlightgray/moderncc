@@ -5,8 +5,13 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T13:08Z |
+<<<<<<< Updated upstream
 | lin-x64   | Linux    | x64   | 10000–29999 | 10378   | 2026-08-15T13:32Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50016   | 2026-08-15T13:25Z |
+=======
+| lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T15:00Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50019   | 2026-08-15T13:45Z |
+>>>>>>> Stashed changes
 
 ## Contracts — blocking, highest priority
 
@@ -46,6 +51,15 @@
 - [ ] T-mac-30004 [S] `spvgate` CASES has no f64 case: arm the SPIR-V arm's table on fp64 hosts
       OWNER: — | STATE: OPEN | SHA: 28ac8048 | TS: 2026-08-15T12:55Z
       REF: DETAILS.md#t-lin-10042-slice-1-msl-f64-bits-pair | DEPS: — | NOTE: found doing T-lin-10042 slice 1. The default-mode CASES loop never exercised f64 on EITHER arm; the two new cases (f-notneg, f-ternary) are `#if MCC_GPU_LANG_MSL` because sharing them would (a) hard-fail gpu/spv-slice-differential on non-fp64 hosts — CASES mode lacks arena mode's `used_f64 && !g_f64` skip — and (b) stake FNegate-on-NaN + denormal-truth bit-exactness on lavapipe/NVIDIA, the unread-denormal hazard T-lin-10061 records. To arm: add the CASES-mode f64 skip (a case whose every rung f64-skips must print SKIP, not the 0-compared FAIL), unguard the two cases, bump spv-validate EXPECT (it counts emitted modules; measure with --emit-only), and take T-lin-10061's denormal reading while at it. Needs an fp64 host — lin (lavapipe) or win (RTX 2060); mac's MoltenVK cannot run it. WIN-BOX CAVEAT (win-x64, 2026-08-15): the RTX 2060 is confirmed dispatching (smoke device oracle cpu==gpu over 798,500 cases) but ONLY with VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics — the AMD switchable-graphics implicit layer breaks vkEnumeratePhysicalDevices (ndev=0) on this dual-GPU box; set user-level here, but any fresh CI/shell must carry it
+- [ ] T-win-50016 [S] — `slice/f64`: 3 of 22 fp64 negations diverge CPU↔device on the RTX 2060 (1 of 111 checks)
+      OWNER: — | STATE: OPEN | SHA: 05ea60f8 | TS: 2026-08-15T13:45Z
+      REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: the real device-numerics red formerly mis-binned as "0 slices on Windows" — now precisely measured with the device visible. fp64 NEGATION class; mac's T-lin-10042 MSL slice 1 made exactly this bit-exact on Metal (integer negation of the bits-pair) — the SPIR-V arm on NVIDIA likely diverges on NaN-payload negation. gpu/slicerun owners (lin/mac) with win-x64 as the confirming box
+- [ ] T-win-50017 [S] win-x64 — `diff3/floating_point`: mcc differs from the 2/2-reference consensus, first-ever Windows run
+      OWNER: — | STATE: OPEN | SHA: 05ea60f8 | TS: 2026-08-15T13:45Z
+      REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: the cell could never run before today (needs two real references). Suspect but untriaged: mcc's MSVC 64-bit long double vs the mingw references' x87 model — if so it needs the diff3 harness's impl-defined classification, not a code change; if not, it is a real divergence with a 2-ref consensus against mcc
+- [ ] T-win-50018 [S] win-x64 — `libtest-extra` output_obj: "mcc: error: 'mcc_relocate()' twice is no longer supported"
+      OWNER: — | STATE: OPEN | SHA: 05ea60f8 | TS: 2026-08-15T13:45Z
+      REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: libmcc API surface; plausibly fallout from the mccjit/libmcc rework (mccjit_shutdown/PUB_FUNC churn). Win-visible; owner likely lin (libmcc.c) — verify whether Linux libtest-extra runs this case at all
 - [ ] T-win-50015 [S] win-x64 — default `ms_bitfields = 1` on PE targets: mcc's plain bit-field layout is cross-TU-incompatible with every native Windows compiler
       OWNER: — | STATE: OPEN | SHA: b034c0e7 | TS: 2026-08-15T13:30Z
       REF: DETAILS.md#t-win-50014-resolved-mccs-win32-default-bitfield-layout-is-the-outlier | DEPS: — | NOTE: from T-win-50014's verdict — cl=12, clang-MSVC=12, llvm-mingw-GNU=12 vs mcc=4 on `{char; int:3; char}`; mcc_state->ms_bitfields exists (mccgen.c:6205/6927), only the PE-target default is missing. Staged per T-lin-10012's pattern: (1) cross-TU fixture vs mingw gcc + target-key the pass-msstruct pin (4 ELF / 12 PE), (2) flip the default keyed on TARGET so the Linux-hosted win32 cross compilers move identically, (3) re-bank the win32 o0-baseline columns that move + re-run pe/coff-obj-diff, pe-torture-classes, pe-xoracle (should improve). Bank-moving ABI change — wants a fresh, focused context
@@ -275,7 +289,7 @@
         OWNER: lin-x64 | STATE: DONE | SHA: a4b2baf1 | TS: 2026-08-15T08:30Z
         REF: DETAILS.md#t-lin-10092-lin-the-linux-full-native-suite-is-clean | DEPS: — | NOTE: DONE. NUMBER: 10062 cells, 1011 skipped, 9051 run, 0 failures, 86 min. Already archived at 32d29fc4 — line kept visible only until the [P] parent closes, per mac's convention on /mac; whoever lands /win removes all three children + the parent together
   - [ ] T-lin-10092/win [P] Record a clean full native suite number on each platform — win-x64
-        OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 05ea60f8 | TS: 2026-08-15T13:25Z | NOTE-2: full-suite re-quote run IN FLIGHT on the box (detached ctest -j4, log cmake-release/full-suite-2026-08-15.log) after today's fixes: setvbuf (T-win-50008), smokerun harness + LLP64 subject (T-win-50009), target-keyed strat floor (T-win-50012), windows bails bank (T-win-50013), VK layer disable restoring the RTX 2060. No rebuilds in cmake-release until it lands
+        OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 05ea60f8 | TS: 2026-08-15T13:45Z | NOTE-2: RE-QUOTED 2026-08-15: 9404 cells, 7339 pass / 2048 skip / 17 fail (was 35), 667 s — full attribution at DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404. All 17 owned: 5 smoke (T-win-50015 msstruct + Bucket B jit), 4 fp opt-search (Bucket B), 3 jit/runtime (Bucket B), slice/f64×2 (T-win-50016 NEW: 3 of 22 fp64 negations diverge on the RTX 2060), slice/cost (jit arm), diff3/floating_point (T-win-50017 NEW), libtest-extra (T-win-50018 NEW). Skips 964→2048: the session's git clean wiped the host-local corpora; re-provision per T-lin-10030/mac recipe (network exists now)
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: NUMBER RECORDED (first ever on Windows): 9387 cells, 8388 pass / 945 skip / 54 fail at 9b21c352; 19 false-reds fixed at 260bb900 -> 8388 / 964 / 35. Not clean — the 35 residual reds are triaged in T-win-50003 (28 GPU-slice, 4 fp opt-search, 3 jit/runtime). @lin: number is landed, slice-3 (L2′) hold can release
 - [ ] T-lin-10093 [P] `ci/must-run-registered` green on each platform
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
