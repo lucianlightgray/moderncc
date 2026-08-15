@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T14:55Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10383   | 2026-08-15T15:25Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10383   | 2026-08-15T15:35Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50020   | 2026-08-15T14:25Z |
 
 ## Contracts — blocking, highest priority
@@ -141,9 +141,9 @@
   - [x] T-lin-10030/mac [P] The embed JIT is measured only on x86_64 — mac-arm64
         OWNER: mac-arm64 | STATE: DONE | SHA: 20a82ad3 | TS: 2026-08-15T04:00Z
         REF: DETAILS.md#t-lin-10030-mac-conformance-provisioned-and-the-simplectest-ub-flag | DEPS: — | NOTE: DONE. Embed-JIT measured natively on arm64: jit family 66/66 + selfcheck boot the engine, and with the corpora provisioned host-local (gcc c-torture + llvm-test-suite, same not-vendored shape as T-lin-10088) jit/xoracle-conformance (535 progs) + coverage both PASS. The one flag (SimpleCTest UB) was a harness gap, fixed as T-mac-30003. Parent stays open until /lin + /win
-  - [ ] T-lin-10030/lin [P] The embed JIT is measured only on x86_64 — lin-x64
-        OWNER: lin-x64 | STATE: CLAIMED | SHA: 7ec34e8b | TS: 2026-08-15T15:25Z
-        REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: —
+  - [x] T-lin-10030/lin [P] The embed JIT is measured only on x86_64 — lin-x64
+        OWNER: lin-x64 | STATE: DONE | SHA: 741f7650 | TS: 2026-08-15T15:35Z
+        REF: DETAILS.md#t-lin-10030-lin-the-embed-jit-measured-natively-on-x86-64-at-every-level | DEPS: — | NOTE: DONE, BOTH halves of the parent's verification, literally. jit/ family 70 of 70 with ZERO skipped — the default build's 4 skips are config flags (-DMCC_DEV=ON x3, -DMCC_BUILD_STATIC_LIB=ON x1), not missing capability, and all four pass once configured. Conformance --surface embed over 493 qualified oracle programs at EVERY level: -O0/-O1/-O2/-O3 171 correct, -O4 172, and 0 DIFFER at every one. NOT_BAKED 321 of 493 is the JIT declining the program, not a disagreement, so the honest headline is 0 differ over 171 adjudicated. known-positive wired (hot PASS / cold NOT_BAKED); coverage 493 of 800 cross-adjudicable. Parent stays open until /win
   - [ ] T-lin-10030/win [P] The embed JIT is measured only on x86_64 — win-x64
         OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-15T15:45Z
         REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: — | NOTE: corpus prerequisite FULLY MET 2026-08-15 (all four cref corpora provisioned + green on win, DETAILS.md#win-corpus-provisioning-complete-all-four-cref-corpora-live); only the embed-JIT link (T-win-50003 Bucket B) still blocks the measurement half

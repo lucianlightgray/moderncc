@@ -45522,3 +45522,30 @@ SPIR-V arm inherits it — no objection from the RTX 2060 measurements, which
 never hit a produced-NaN sign disagreement across 2.9M points.
 
 **Source.** win-x64, 2026-08-15.
+<a id="t-lin-10030-lin-the-embed-jit-measured-natively-on-x86-64-at-every-level"></a>
+
+## T-lin-10030/lin — the embed JIT measured natively on x86_64, at **every** level, with zero skipped `jit/` cells
+
+The `/lin` child of [the parent](#t-lin-10030-the-embed-jit-is-measured-only), whose verification is *"per platform: `tools/jitconform.py --phase check --surface embed` over the qualified corpus at every level the engine boots, plus the `jit/` family green natively"*. Both halves, literally.
+
+**The `jit/` family: 70 of 70, zero skipped.** The default `debug` build runs 69 and skips 4, and the four are *configuration* flags rather than missing capability — three want `-DMCC_DEV=ON` (JIT fault injection, JIT bench gate) and one wants `-DMCC_BUILD_STATIC_LIB=ON` (`jit/standalone-static` links `libmcc.a` into a standalone JIT host). Configured with both, they all run and all pass, so nothing in the family is untested here rather than merely unregistered. [mac's /mac](#t-lin-10030-mac-native-arm64-embed-jit-evidence) recorded 66/66 with 8 design-skips; this is the same evidence with the skips removed instead of counted.
+
+**Conformance at every level the engine boots**, `--surface embed`, 493 qualified oracle programs each time (gcc c-torture/execute + llvm ts-unittests, `--limit 400`), corpora provisioned host-local at `/home/llg/Projects/{gcc,llvm-test-suite}` — the same not-vendored shape mac used:
+
+| level | executed correctly | **differ** | refused by mcc |
+| --- | --- | --- | --- |
+| `-O0` | 171 | **0** | 1 |
+| `-O1` | 171 | **0** | 1 |
+| `-O2` (the registered cell) | 171 | **0** | 1 |
+| `-O3` | 171 | **0** | 1 |
+| `-O4` | **172** | **0** | 1 |
+
+**Zero differ at every level** is the number that matters: no program executed under the embed JIT disagreed with its cross-vendor oracle, at any optimisation level. `-O4` executing one program more than the rest is the only movement across the axis.
+
+**What the other 321 programs did, stated rather than left as a gap.** The `-O2` breakdown is `PASS 171 (34.69%)`, `NOT_BAKED 321 (65.11%)`, `MCC_TIMEOUT 1`; verdicts `AGREE 171`, `UNSUPPORTED 321`, `MCC-REJECTED 1`; engine routing `refused 96 / kept-aot 44 / swapped 31`. `NOT_BAKED` means the JIT never took the program — it is not a disagreement, and it is why the honest headline is "0 differ over 171 adjudicated", not "the JIT is correct on 493 programs". Per suite: `gcc:c-torture/execute 129/379`, `llvm:ts-unittests 42/114`.
+
+**The differential is wired, not vacuous.** `jit/xoracle-known-positive` reports `hot-truth want=PASS got=PASS` and `cold-truth want=PASS|NOT_BAKED got=NOT_BAKED` — the hot program reaches PASS, so the engine genuinely booted and baked inside a running program on native x86_64, and the falsified case is caught. `jit/xoracle-coverage` puts the cross-adjudicable denominator at **493 of 800 (61.62%)**, with 306 vendor-exclusive by construction.
+
+**The parent stays open**; `/win` has not been recorded. Whoever lands it closes and archives the parent in the same commit, per §2.
+
+**Source.** lin-x64, 2026-08-15, at `741f7650`; measured in `cmake-jitdev` (`-DMCC_DEV=ON -DMCC_BUILD_STATIC_LIB=ON -DMCC_EMBED_JIT=ON`).
