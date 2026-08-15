@@ -145,8 +145,8 @@
         OWNER: lin-x64 | STATE: CLAIMED | SHA: 7ec34e8b | TS: 2026-08-15T15:25Z
         REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: —
   - [ ] T-lin-10030/win [P] The embed JIT is measured only on x86_64 — win-x64
-        OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-        REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: —
+        OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-15T15:45Z
+        REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: — | NOTE: corpus prerequisite FULLY MET 2026-08-15 (all four cref corpora provisioned + green on win, DETAILS.md#win-corpus-provisioning-complete-all-four-cref-corpora-live); only the embed-JIT link (T-win-50003 Bucket B) still blocks the measurement half
 - [ ] T-lin-10032 [S] `MCCJIT_POOL_MAX` is 64 and `mccjit_pool_start` clamps to it silently
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10032-mccjit-pool-max-is-64-and | DEPS: —

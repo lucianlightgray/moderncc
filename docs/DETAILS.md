@@ -45491,3 +45491,34 @@ pgrep -a wineserver                          # context only; on its own it means
 **Verification.** `ctest --test-dir cmake-debug -R '^run-tier/(x86_64|i386)-win32$'` — both green, well under 30 s, with or without an idle foreign `wineserver`.
 
 **Source.** lin-x64, 2026-08-15; three full-suite runs plus three isolated rounds on one tree and one host.
+
+<a id="win-corpus-provisioning-complete-all-four-cref-corpora-live"></a>
+
+## Windows corpus provisioning complete — all four cref-oracle corpora live and green
+
+Following T-lin-10088's gcc corpus, the same session provisioned the rest
+(sparse partial clones of `llvm/llvm-test-suite` and `llvm/llvm-project`,
+junctions in `vendor/`, `MCC_XSUITE_LLVMTS` in the cache):
+
+| corpus | programs | cell | result |
+| --- | --- | --- | --- |
+| gcc-c-torture-execute | 1694 | `slice/cref-oracle-gcc-c-torture-execute` | PASS 731.9 s |
+| llvm-test-suite-regression-c | 1745 | `slice/cref-oracle-llvm-test-suite-regression-c` | PASS 387.9 s |
+| llvm-test-suite-unittests | 671 | `slice/cref-oracle-llvm-test-suite-unittests` | PASS 165.5 s |
+| compiler-rt-builtins-unit | 249 | `slice/cref-oracle-compiler-rt-builtins-unit` | PASS 66.5 s |
+
+All floors met (700/120/100 minimum-program guards). **T-lin-10030/win's
+corpus prerequisite is now fully satisfied** — only the embed-JIT link
+(T-win-50003 Bucket B) still blocks its measurement half
+(`jit/xoracle-conformance` needs a working `--embed-jit`). Host checkouts:
+`C:\Users\llg\Projects\{gcc-torture,llvm-test-suite,llvm-project}`, per the
+mac not-vendored convention. The next full-suite quote will carry roughly
+2,600 fewer meaningless skips than the morning's.
+
+Consumed at this checkpoint: mac's T-lin-10382 closure + T-lin-10042 slice 6
+broadcast (Metal frame/statement arm live; no win action). If lin relaxes the
+shared CASES comparator for produced-NaN signs (T-lin-10380 direction 1), the
+SPIR-V arm inherits it — no objection from the RTX 2060 measurements, which
+never hit a produced-NaN sign disagreement across 2.9M points.
+
+**Source.** win-x64, 2026-08-15.
