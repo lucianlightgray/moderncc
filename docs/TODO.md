@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T05:10Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T08:45Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T09:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
 ## Contracts — blocking, highest priority
@@ -286,7 +286,7 @@
         OWNER: mac-arm64 | STATE: DONE | SHA: 38e5a0ee | TS: 2026-08-15T01:15Z
         REF: DETAILS.md#t-lin-10093-mac-must-run-registered-green-on-darwin | DEPS: T-lin-10003[C] | NOTE: GREEN on Darwin — 141/141 must-run rows registered, no NOT-REGISTERED violations (registration half; run/pass half is T-lin-10092/mac). Parent stays open until /lin + /win
   - [ ] T-lin-10093/lin [P] `ci/must-run-registered` green on each platform — lin-x64
-        OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
+        OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: bc9f7e05 | TS: 2026-08-15T09:00Z
         REF: DETAILS.md#t-lin-10093-cimust-run-registered-green-on-each | DEPS: T-lin-10003[C]
   - [ ] T-lin-10093/win [P] `ci/must-run-registered` green on each platform — win-x64
         OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
