@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T15:50Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T16:12Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T16:15Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T16:54Z |
 
 ## Contracts — blocking, highest priority
 
@@ -29,7 +29,10 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- HANDOFF (win-x64, 2026-08-15T16:15Z): session paused by the human, state fully in the repo. Day: 14 closures (T-win-50008..50014, 50016..50018, T-mac-30004, T-lin-10088), suite 35→15 attributed reds, all four cref corpora + winlibs gcc + llvm-mingw clang + Vulkan SDK provisioned. Two resume-ready released tasks carry landed first slices: T-win-50015 (ms-bitfield ABI; fixture in-tree, two named gaps) and T-win-50020 (embed-jit link; /GS class dead at 7263e6fe, ucrt __imp_* half named — pays 13 of the 15 reds). Held: T-lin-10092/win only (steady state at its NOTE-2). Box facts a successor needs: VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics for any device run; VULKAN_SDK=C:/Users/llg/scoop/apps/vulkan/current; corpora junctions in vendor/ point at C:/Users/llg/Projects/{gcc-torture,llvm-test-suite,llvm-project}; commit BEFORE pull (DETAILS#autostash-is-how-conflict-markers-reach-pushed-history)
+- [ ] T-win-50020 [S] win-x64 — the Windows embed-JIT link: the ucrt `__imp_*` import set is the remaining half (/GS class fixed at 7263e6fe)
+      OWNER: win-x64 | STATE: CLAIMED | SHA: 7263e6fe | TS: 2026-08-15T16:54Z
+      REF: DETAILS.md#t-win-50020-slice-1-gs-off-the-blob-the-ucrt-import-wall-remains | DEPS: — | NOTE: RESUMED (was released with slice 1 done). /GS- on libmcc_jitengine killed __report_rangecheckfailure/__security_cookie/__GSHandlerCheck/__isa_available. REMAINING: resolve the ucrt __imp_* set (mccpe.c:1380/1415/2712 are the __imp_ sites) — direction (a) ucrtbase.def or (b) GetProcAddress(ucrtbase) pointer-slot fallback under MCC_OUTPUT_MEMORY. Pays 13 of 15 win reds + T-lin-10030/win + T-lin-10383 win arm
+- HANDOFF-BOX-FACTS (win-x64, kept for successors): VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics for any device run; VULKAN_SDK=C:/Users/llg/scoop/apps/vulkan/current; corpora junctions in vendor/ point at C:/Users/llg/Projects/{gcc-torture,llvm-test-suite,llvm-project}; commit BEFORE pull (DETAILS#autostash-is-how-conflict-markers-reach-pushed-history). Also-resume-ready: T-win-50015 (ms-bitfield ABI; fixture in-tree, two named gaps). Held: T-lin-10092/win (steady at NOTE-2)
 
 ## Open — claimable
 - [ ] T-lin-10384 [S] The one emitter hole the census found: ladder pairs with struct member select refuse because `ast_eval_ladder_scan` never keys member offsets
@@ -41,9 +44,6 @@
 - [ ] T-lin-10386 [S] An `MCC_DEV=ON` build compiles `tests/exec/features_c99_c11/cleanup.c` ~200x slower at `-O1+`
       OWNER: — | STATE: OPEN | SHA: dc1e52a8 | TS: 2026-08-15T16:12Z
       REF: DETAILS.md#t-lin-10383-census-results-the-spir-v-arm-histograms | DEPS: — | NOTE: found as the one timeout in the census's 312-file corpus run. Measured discriminators: -O1 103 s / -O4 >300 s with MCC_DEV=ON vs 0.08 s at -O0 and 0.52 s at -O2 with MCC_DEV=OFF; terminates, CPU-bound, no GPU involved (reproduces without --jit-always-gpu); the other 311 files compile in seconds in the same build. The file is the __attribute__((cleanup)) corpus (396 lines). First slice = mechanism: name what MCC_DEV arms at -O1+ that goes superlinear on cleanup patterns, then decide fix vs bank-the-cost
-- [ ] T-win-50020 [S] win-x64 — the Windows embed-JIT link: the ucrt `__imp_*` import set is the remaining half (/GS class fixed at 7263e6fe)
-      OWNER: — | STATE: OPEN | SHA: 7263e6fe | TS: 2026-08-15T16:30Z
-      REF: DETAILS.md#t-win-50020-slice-1-gs-off-the-blob-the-ucrt-import-wall-remains | DEPS: — | NOTE: RELEASED with slice 1 done — resume, not restart. /GS- on libmcc_jitengine removed __report_rangecheckfailure/__security_cookie/__GSHandlerCheck/__isa_available from every embed-jit link (verified by error diff; no cell flips yet). REMAINING: resolve the ucrt __imp_* set — full symbol list + two fix directions (ucrtbase.def through mccpe's __imp_ sites, or a GetProcAddress(ucrtbase) pointer-slot fallback under MCC_OUTPUT_MEMORY) at the REF anchor. Pays 13 of the 15 win reds + T-lin-10030/win + T-lin-10383's win arm. mccpe import machinery — lin's depth, win's repro
 - [ ] T-lin-10381 [S] `mcc_asm_inline_unwind`'s recovery lost its only test when the asm double-assembly fix removed its trigger
       OWNER: — | STATE: OPEN | SHA: 0d94d189 | TS: 2026-08-15T14:40Z
       REF: DETAILS.md#t-lin-10381-the-asmreplay-row-lost-its-mcc-asm-inline-unwind-coverage-and-what-it-would-take-to-get-it-back | DEPS: — | NOTE: filed at the moment the coverage was dropped, not after someone notices. 5f2e6f39 built the asmreplay row for "the recovery longjmp must not leave the C parser inside the dead :asm: BufferedFile", provable by reverting mcc_asm_inline_unwind to a no-op. The row reached that path THROUGH the double-assembly defect, so fixing it removed the trigger. The path is still live — a genuine duplicate label in one TU refuses identically and mcc names the real file+line, which IS the evidence the parser recovered — but it is a HARD error, so there is no binary to run, no stdout to pin and no oracle (gcc-15 refuses it too), and a Pass row treats a failed compile as fatal. Needs a `wantfail` row shape. PRICE THE CHEAPER OPTION FIRST: tests/cross/no-compiler-abort.sh already compiles a corpus asserting mcc never aborts — check whether it can adjudicate the diagnostic TEXT, because "the process survived" is not the half that matters
