@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T01:35Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10370   | 2026-08-15T04:35Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10371   | 2026-08-15T04:55Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T03:05Z |
 
 ## Contracts — blocking, highest priority
@@ -46,9 +46,6 @@
 - [ ] T-lin-10086 [S] `arm64-win32` execution on a `windows-11-arm` CI runner (was [X] win-x64)
       OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
       REF: DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor | DEPS: T-lin-10365[S] | NOTE: Q-lin-10013 ANSWERED — CI is the executor, so this is no longer win-x64-only. SPLIT: the `arm-win32` (ARM32) half has NO executor — Windows 11 on ARM64 does not run ARM32 apps — and must not be reported green with the arm64 half
-- [ ] T-lin-10087 [S] W5: mcc cannot self-host on Windows arm64 — reproduce the `0xC0000005` trio in CI (was [X] win-x64)
-      OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
-      REF: DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor | DEPS: T-lin-10365[S] | NOTE: stage1 takes 0xC0000005 on lib/atomic.c, lib/alloca.S, lib/alloca-bt.S, lib/builtin.c (varargs/alloca/stack-probe trio) — a windows-11-arm runner can now reproduce it
 - [ ] T-lin-10089 [X] mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
       OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
       REF: DETAILS.md#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple | DEPS: T-lin-10002[C], T-lin-10367[C] | Q: Q-mac-30000 ANSWERED | NOTE: minimal mcc-authored Darwin headers key the bank; a native Apple host still compiles against the real SDK. This [X] half is the --sysroot wiring + re-key; the header set itself is T-lin-10367[C]

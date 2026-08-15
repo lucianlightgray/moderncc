@@ -42617,3 +42617,38 @@ A gate that always fires is as useless as one that cannot, and 90 exemptions wou
 **Verification spec.** The three known instances are the known-positive: reverting `450acf27`'s skip twins must take the cell red **from Linux**, which is the whole point — the defect must become visible from a platform it does not break.
 
 **Source.** Found on lin-x64, 2026-08-15, after mac-arm64 reported the same shape a third time.
+
+<a id="t-lin-10087-resolution-mcc-does-self-host-on-windows-arm64"></a>
+
+## T-lin-10087 resolution — mcc **does** self-host on Windows arm64, and here is the suite number
+
+**The task's premise is falsified, not achieved.** [T-lin-10087](#t-lin-10087-win-x64-w5-mcc-cannot-self) says "mcc cannot self-host on Windows arm64" and records stage1 taking `0xC0000005` on `lib/atomic.c`, `lib/alloca.S`, `lib/alloca-bt.S` and `lib/builtin.c` — the host ABI trio of varargs, alloca and the stack probe. On a `windows-11-arm` runner at `9b16b65c`, none of that reproduces.
+
+**stage1** builds and compiles all four of the recorded crash sites — `mccrt -c atomic`, `-c alloca`, `-c alloca-bt`, `-c builtin` — and uploads a 4.1 MB artifact. **stage2 self-host** then runs with `CMAKE_C_COMPILER` set to that arm64 `mcc.exe` (which identifies itself as `AArch64 Windows`), reaching `Linking C executable mcc.exe` at step 171 of 203, `rc=0`, in 4 seconds. **Reproduced twice**, in runs 31856662452 and 31857205309.
+
+**Why that alone was not allowed to close the task.** `rc=0` over an unrun suite is this tree's signature defect, so stage3 ran before anything was written down:
+
+```
+==> stage3 test: 1019 s (rc=8)
+99% tests passed, 30 tests failed out of 9403
+```
+
+**9403 cells, 30 failures — the first suite number ever taken on Windows arm64.** "Self-hosts" and "self-hosts correctly" are different claims and this separates them: the first is now proved, the second is 30 cells away.
+
+**The 30, triaged by shape:**
+
+| n | cells | reading |
+| --- | --- | --- |
+| 3 | `ci/must-run-registered`, `ci/gate-contract`, `ci/gate-contract-known-positive` | **already fixed on main.** These are the `osx/headers-parse` registration defect mac-arm64 repaired at `450acf27`, which landed *after* this branch was cut — see [T-lin-10369](#t-lin-10369-manifest-declared-cells-and-the-identity-exemption). The branch has since been merged with main to confirm. |
+| 2 | `exec-gatecombo/bitfield_width64`, `exec-search-threads/errors_and_warnings` | **SEGFAULT** — the only crashes, and the most interesting residue |
+| 11 | the `smoke/*` family (`native`, `engines`, `device`, `divergence`, `strat-dark`, …) | one cluster, five of them `-known-positive` twins, so likely one root cause |
+| 8 | `exec-search*/translation_limits`, `floating_point`, `math_library` | the search-tier variants of three programs |
+| 6 | `slice/src`, `fmt/arena-census-*`, `rir/rec-miss`, `slice-census`, `runtime-bench-check` | bank/census cells, plausibly x86_64-keyed banks rather than defects |
+
+Nothing here is triaged beyond shape, and the count will fall to 27 once the three already-fixed cells re-run.
+
+**What this changes.** T-lin-10087 closes: its claim no longer holds and the evidence is a suite run, not an opinion. The residue is a *different* task — recording a clean number for this platform, which is [T-lin-10092](#t-lin-10092-record-a-clean-full-native-suite)'s shape — so it is filed as T-lin-10370 rather than left inside a task whose title is now false.
+
+**Reopen condition.** None. If a future change breaks arm64 self-host, the `woa/**` hook catches it, which is the point of having built it.
+
+**Source.** Runs 31856662452 and 31857205309 on `woa/bootstrap`, lin-x64, 2026-08-15.
