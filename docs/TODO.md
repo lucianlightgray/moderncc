@@ -4,9 +4,15 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
+<<<<<<< Updated upstream
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:09Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T17:26Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T16:54Z |
+=======
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T15:50Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T16:12Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T17:31Z |
+>>>>>>> Stashed changes
 
 ## Contracts — blocking, highest priority
 
@@ -28,9 +34,9 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-win-50020 [S] win-x64 — the Windows embed-JIT link: the ucrt `__imp_*` import set is the remaining half (/GS class fixed at 7263e6fe)
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 7263e6fe | TS: 2026-08-15T16:56Z
-      REF: DETAILS.md#t-win-50020-slice-1-gs-off-the-blob-the-ucrt-import-wall-remains | DEPS: — | NOTE: RESUMED (was released with slice 1 done). /GS- on libmcc_jitengine killed __report_rangecheckfailure/__security_cookie/__GSHandlerCheck/__isa_available. REMAINING: resolve the ucrt __imp_* set (mccpe.c:1380/1415/2712 are the __imp_ sites) — direction (a) ucrtbase.def or (b) GetProcAddress(ucrtbase) pointer-slot fallback under MCC_OUTPUT_MEMORY. Pays 13 of 15 win reds + T-lin-10030/win + T-lin-10383 win arm
+- [ ] T-win-50020 [S] win-x64 — the Windows embed-JIT link: ucrt `__imp_*` set now RESOLVES (slice 2); the real wall is a CRT-startup-global layout crash (slice 3)
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 011f2970 | TS: 2026-08-15T17:31Z
+      REF: DETAILS.md#t-win-50020-slice-2-ucrt-imports-resolve-but-a-crt-startup-global-layout-crash-is-the-next-wall | DEPS: — | NOTE: SLICE 2 DONE (uncommitted, N4-held: greens no cell yet). Corrected slice-1: failing path is the standalone -o link (all embed cells: replay-parity + smokerun jit census), NOT memory -run (works); GetProcAddress-under-MEMORY (dir b) fixes nothing. Fix = ucrtbase.def(16 syms) + `_`+raw candidate in pe_check_symbols + gated mcc_add_library("ucrtbase") after msvcrt + define __isa_available=1 → link rc=0, all 17 resolve. SLICE 3 (blocks the 13 reds): standalone exe SIGSEGVs at entry reading 0xb39950 (outside SizeOfImage 0x1b4000); MSVC CRT-startup globals __isa_available_default/_dowildcard land ~0xb27000 past the image — a distinct bss/COMMON/COFF-value layout defect, NOT symbol resolution. FORK for resumer (decide before sinking into slice 3): (A) fix the MSVC-CRT-global layout; (B) build the blob msvcrt-mingw via MCC_EMBED_JIT_MINGW_CC (winlibs gcc on box; libmcc.c:1753-1824 path exists) — likely sidesteps slices 2+3, single-CRT, the design's intended win path. Recommend evaluating B first. Full repro kit + patch at REF
 - HANDOFF-BOX-FACTS (win-x64, kept for successors): VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics for any device run; VULKAN_SDK=C:/Users/llg/scoop/apps/vulkan/current; corpora junctions in vendor/ point at C:/Users/llg/Projects/{gcc-torture,llvm-test-suite,llvm-project}; commit BEFORE pull (DETAILS#autostash-is-how-conflict-markers-reach-pushed-history). Also-resume-ready: T-win-50015 (ms-bitfield ABI; fixture in-tree, two named gaps). Held: T-lin-10092/win (steady at NOTE-2)
 
 ## Open — claimable
