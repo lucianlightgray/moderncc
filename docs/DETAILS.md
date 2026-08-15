@@ -43776,3 +43776,20 @@ Wired as the `smoke/strat-dark` ctest cell (`CMakeLists.txt:4695`, `--strat-dark
 **Gate.** Measurement + docs only; no code change. `docs/refs` green.
 
 **Source.** mac-arm64, 2026-08-15; implemented at `67c58d5f`, gated and green on this box.
+
+
+<a id="t-lin-10373-done-all-three-tracegate-gaps-closed-and-the-known-positive-locks-them"></a>
+
+## T-lin-10373 DONE — all three trace-gate gaps closed, and the known-positive makes (1) unable to recur
+
+Landed the whole of what remained after [T-lin-10079](#t-lin-10079-done-mcc-trace-when-gated-the-openers-invariant-green) (code `fe0a72e2`):
+
+**(1) File-arming now matches every accepted opener.** `tools/tracegate.c` armed a file for scanning only on the literal `MCC_TRACE(`, while `check_open` accepts `MCC_TRACE`/`MCC_TRACE_IF`/`MCC_TRACE_WHEN` — so a file instrumented *solely* with `_IF`/`_WHEN` was never scanned and the gate reported nothing over it. Now arms on `strstr(MCC_TRACE( ) || MCC_TRACE_IF( ) || MCC_TRACE_WHEN( )`. Latent today (mccircap.c still carries 32 bare `MCC_TRACE(` alongside its 46 `_WHEN`, so it stays armed), so the real tree is unchanged and `trace-gate-invariant` stays green — the fix closes the hole before the first `_WHEN`-only file arrives.
+
+**(2) Dead `arg_is` deleted.** Superseded by `arg_is_n(…, skipargs)` at `ddbc14c8`; it had zero callers.
+
+**(3) `trace-gate-known-positive` registered — the piece that makes (1) unable to recur.** A cmake known-positive (`cmake/tracegate_known_positive.cmake`, modelled on `idiomgate_known_positive.cmake`) runs the gate clean on `src` (FATAL if the tree is already red — a prover over a broken subject proves nothing), then over `tests/tracegate/known-positive/when_only.c` — a fixture armed **only** through `MCC_TRACE_WHEN` (no bare `MCC_TRACE`) carrying one function that opens with no trace site and one that opens with `"wrong\n"` — and requires **both** violations. If (1) regresses, the `_WHEN`-only fixture goes unarmed → 0 violations → the cell reds; if the `arg_is_n` message check regresses, the wrong-message violation vanishes → the cell reds. Wired into `MCC_TREEGATE_CELLS`, `tests/must-run.txt` (registered), and the `gate-contract.txt` prover column; the unproved ratchet falls **51 → 50** and `--min-proved` rises **51 → 52** to lock it.
+
+**Gates.** `trace-gate-invariant` + `trace-gate-known-positive` green, `treegate` 13/13, `corpusgate` 6/6 (the fixture under `tests/tracegate/` does not touch the `tests/exec` corpus census), `ci/gate-contract` + `ci/gate-contract-known-positive` green with the tightened pins.
+
+**Source.** mac-arm64, 2026-08-15, code at `fe0a72e2`; the follow-on to T-lin-10079, closing lin's three gaps in order.

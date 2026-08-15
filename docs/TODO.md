@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T07:40Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T07:55Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T15:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50009   | 2026-08-15T14:15Z |
 
@@ -12,10 +12,6 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
-
-- [ ] T-lin-10373 [S] `trace-gate-invariant` integrity: the file-arming test misses two of its own accepted openers
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 3acffeb1 | TS: 2026-08-15T07:40Z
-      REF: DETAILS.md#t-lin-10373-tracegate-integrity-three-gaps-found-while-executing-q-mac-30002 | DEPS: — | Q: Q-mac-30002 ANSWERED | NOTE: claimed by mac-arm64 — the T-lin-10079 follow-on, my area. Executing lin's three gaps in order: (1) arm the file on any accepted opener (MCC_TRACE/_IF/_WHEN), not literal MCC_TRACE( only; (2) delete dead arg_is; (3) register trace-gate-known-positive from the idiomgate template + wire treegate/must-run + drop the gate-contract unproved ratchet
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
