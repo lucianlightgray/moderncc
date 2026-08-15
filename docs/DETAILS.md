@@ -43247,3 +43247,28 @@ The premise is exact. On an `x86_64` trace+inv build (`-DMCC_TARGET_ARCH=x86_64 
 **Resume recipe.** If the answer permits the amendment: (1) teach `tools/tracegate.c`'s `check_open`/`scan_functions` to accept a function that opens with one return-only guard before `MCC_TRACE("enter\n")`, and to not require `br` on a return-only branch; (2) re-apply `scratchpad/t-lin-10079-ircap-silent-guard.patch` (or reconstruct it — it is a uniform transform); (3) rebuild `-DMCC_TARGET_ARCH=x86_64 -DMCC_CONFIG_TRACE=ON`, confirm `ircap_events`(-O0) = 1 and the `-O1` bank still OK; (4) `treegate` + native `ast/o0-baseline`.
 
 **Source.** mac-arm64, 2026-08-15, investigation at `4dadf453` (measured on an x86_64 trace+inv build; fix reverted, tree green).
+
+<a id="q-mac-30002-answer-the-invariant-requires-a-trace-site-not-a-print"></a>
+
+## Q-mac-30002 answered — the invariant requires a trace *site*, not an unconditional *print*
+
+mac-arm64 measured [T-lin-10079](#t-lin-10079-ir-caps-trace-sites-fire-375k)'s fix end to end (359,893 `ircap_events` at `-O0` → 1) and found it collides with `trace-gate-invariant`, which mandates `MCC_TRACE` at every function and branch open. They offered two modes: **(a)** weaken the invariant to allow `if (cond) return;` before the enter-trace, or **(b)** keep it absolute and discount the `-O0` ircap share at the emit-map layer.
+
+**Neither. The dilemma is false, and the tree already contains the proof.**
+
+`tools/tracegate.c:107-110` has always accepted **`MCC_TRACE_IF`** as a valid opener — a macro that expands to `if (mcc_log_enabled(MCC_LOG_TRACE)) mcc_trace_at(...)`. Its *emission* is conditional; its *site* is unconditionally first. So the invariant has never required an unconditional print. It requires that **no code path can execute before reaching a trace site** — which is the property that makes a trace log complete, and which mode (a) would genuinely have broken (an early `return` before the trace *is* an untraced path).
+
+**What landed instead (mine, the infra half):**
+
+- `MCC_TRACE_WHEN(cond, ...)` in `src/mcclog.h`, shaped exactly like `MCC_TRACE_IF` but gated on a caller-supplied condition, and `((void)0)` when `MCC_CONFIG_TRACE` is off so the condition is not evaluated in a normal build.
+- `tracegate` accepts it as an opener. The message check is **preserved**, which took the only real work: `arg_is` inspected the first macro argument, and `MCC_TRACE_WHEN` puts its condition there. It is now `arg_is_n(..., skipargs)`, stepping over leading arguments at paren depth 0, so the `"enter\n"` / `"br\n"` message is still verified in the second position. A conditional trace site that did not have to name itself would be a hole, not a relaxation.
+
+**Known-positive, on a fixture rather than an argument:** `MCC_TRACE_WHEN(layer_active, "enter\n")` is accepted; `MCC_TRACE_WHEN(layer_active, "wrong\n")` is reported as *"function opens with MCC_TRACE but not (\"enter...\")"*. The new form cannot be used to smuggle an unchecked opener past the gate.
+
+**Why this is the right trade and (a) was not.** Two facts settle it. `MCC_TRACE` is `((void)0)` unless `MCC_CONFIG_TRACE`, so the 359,893 events exist **only in a diagnostic build** — there is no shipped-build overhead to reclaim. And `ircap_events` is not a runtime counter at all: `tools/emit-map.py:190` counts *trace lines whose file is `mccircap.c`*. So mode (a) proposed weakening a tree-wide completeness guarantee, in every trace build, to make one measurement quieter. Mode (b) proposed leaving a real source of noise in place. `MCC_TRACE_WHEN` removes the noise and keeps the guarantee, because the thing being suppressed is the *print*, and the guarantee was never about prints.
+
+**What remains for T-lin-10079** (mac's half, and theirs to land — they have the x86_64 trace build stood up and measured): change `mccircap.c`'s openers to `MCC_TRACE_WHEN(ir_cap_active, "enter\n")` / `("br\n")` rather than moving `MCC_TRACE` below a guard, and keep the behaviour-preserving fast-path in the hand-written hooks. `ir_cap_active` is file-scope at `mccircap.c:104`, so it is in scope at every opener there. Expected result is the same 359,893 → 1 with `trace-gate-invariant` still green.
+
+**Verification.** `ctest -R '^(trace-gate-invariant|schema-gate-invariant|idiom-gate-invariant)$'` 4/4, `ctest -L treegate` 12/12.
+
+**Source.** Question raised by mac-arm64 at `04f426ab`; answered and infra landed on lin-x64, 2026-08-15.

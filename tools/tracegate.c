@@ -86,13 +86,35 @@ static int lineno(const char *base, const char *p) {
 	return ln;
 }
 
-static int arg_is(const char *rawtok, int off, const char *want) {
+/* `skipargs` is how many leading arguments to step over before the message.
+ * MCC_TRACE_WHEN takes its gating condition first, so its message is the
+ * second argument; every other form puts the message first. The message is
+ * still checked in all cases -- a conditional trace site that did not have to
+ * name itself would be a hole, not a relaxation. */
+static int arg_is_n(const char *rawtok, int off, const char *want, int skipargs) {
 	const char *p = rawtok + off;
+	int depth;
 	while (*p == ' ' || *p == '\t')
 		++p;
 	if (*p != '(')
 		return 0;
 	++p;
+	for (; skipargs > 0; --skipargs) {
+		depth = 0;
+		while (*p && !(depth == 0 && *p == ',')) {
+			if (*p == '(')
+				++depth;
+			else if (*p == ')') {
+				if (depth == 0)
+					return 0;
+				--depth;
+			}
+			++p;
+		}
+		if (*p != ',')
+			return 0;
+		++p;
+	}
 	while (*p == ' ' || *p == '\t')
 		++p;
 	if (*p != '"')
@@ -101,11 +123,19 @@ static int arg_is(const char *rawtok, int off, const char *want) {
 	return !strncmp(p, want, strlen(want));
 }
 
+static int arg_is(const char *rawtok, int off, const char *want) {
+	return arg_is_n(rawtok, off, want, 0);
+}
+
 static void check_open(const char *path, const char *s, const char *raw,
 											 const char *brace, const char *kind, const char *want) {
 	const char *t = skip_ws(brace + 1);
 	int off;
-	if (word_is(t, "MCC_TRACE_IF"))
+	int skipargs = 0;
+	if (word_is(t, "MCC_TRACE_WHEN")) {
+		off = 14;
+		skipargs = 1;
+	} else if (word_is(t, "MCC_TRACE_IF"))
 		off = 12;
 	else if (word_is(t, "MCC_TRACE"))
 		off = 9;
@@ -115,7 +145,7 @@ static void check_open(const char *path, const char *s, const char *raw,
 		g_violations++;
 		return;
 	}
-	if (!arg_is(raw + (t - s), off, want)) {
+	if (!arg_is_n(raw + (t - s), off, want, skipargs)) {
 		printf("  %s:%d: %s opens with MCC_TRACE but not (\"%s...\")\n", path,
 					 lineno(s, brace), kind, want);
 		g_violations++;

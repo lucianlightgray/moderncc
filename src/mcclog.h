@@ -165,10 +165,16 @@ static inline void mcc_trace_at_v(unsigned char verbose, const char *file, int l
 		if (mcc_log_enabled(MCC_LOG_TRACE))                                        \
 			mcc_trace_at(__FILE__, __LINE__, __func__, __VA_ARGS__);                 \
 	} while (0)
+#define MCC_TRACE_WHEN(cond, ...)                                              \
+	do {                                                                         \
+		if (cond)                                                                  \
+			mcc_trace_at(__FILE__, __LINE__, __func__, __VA_ARGS__);                 \
+	} while (0)
 #else
 #define MCC_TRACE(...) ((void)0)
 #define MCC_TRACE_V(verbose, ...) ((void)0)
 #define MCC_TRACE_IF(...) ((void)0)
+#define MCC_TRACE_WHEN(cond, ...) ((void)0)
 #endif
 
 #endif
