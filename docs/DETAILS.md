@@ -44857,16 +44857,13 @@ test.
 
 All four symptoms of [the one defect](#t-lin-10064-root-caused-all-three-rir-parity-divergences-are-one-defect-inline-asm-is-assembled-twice) are closed by a **six-line net deletion** in the compiler.
 
-**The change.** `ir_cap_asm` recorded the asm body's *text* as an `IR_OP_ASM` op, and replay called `mcc_assemble_inline` on that text a second time. It now records nothing and simply assembles once:
+**The change.** `IR_OP_ASM` recorded the asm body's *text*, and both replay engines called `mcc_assemble_inline` on that text a second time. The op now records what the body **emitted** — its `.text` byte span and its relocation span, taken around the one and only `mcc_assemble_inline` call — and both replays `memcpy` those back, exactly as `IR_OP_RAW` has always done for gaps. Three sites, one shape:
 
-```c
-void ir_cap_asm(const char *str, int len, int global) {
-	ir_cap_asm_n++;
-	mcc_assemble_inline(mcc_state, str, len, global);
-}
-```
+- `src/mccircap.c` `ir_cap_asm` — capture `[ind0, ind)` and `[rel0, relofs())` into `raw_off/raw_len` + `rawrel_off/rawrel_len`; if the body left `cur_text_section` changed under us, the span is not capturable and the capture is marked bad rather than guessed at.
+- `src/mccircap.c` `ir_cap_issue` `case IR_OP_ASM` — `memcpy` bytes, `section_ptr_add` + `memcpy` relocations.
+- `src/mccast.c` `AST_OP_ASM` — the same, reading the reloc span from `ast_fbits`, which for this op was carrying `vs_off`/`vs_n` that its replay never read.
 
-The bytes and relocations the body emitted are then outside any captured op, so **`ir_cap_gap()` picks them up as an `IR_OP_RAW`** — the mechanism that already existed for exactly this, whose replay is a `memcpy` of captured bytes plus a `memcpy` of captured relocations. `ir_cap_gap` runs at every `ir_cap_begin` and once more at `ast_func_end` before `rir_verify`, so no trailing span is missed. Nothing was added; the wrong replay was removed and the right one was already there.
+**Keeping the op rather than deleting it was not the first attempt, and `rir/drop-ratchet` is why.** The smaller-looking change is to record nothing at all and let `ir_cap_gap()` fold the body's bytes into an `IR_OP_RAW`, which needs no new capture code because the gap mechanism already does exactly this. It works, and `full_language.c` reaches the same 303/303 — but `rir/drop-ratchet` goes red with `raw=2`, because `IR_OP_RAW` has no arm in the arena conversion at `src/mccrir.c:3405` and lands in its `default: rir_drop_note()`. The ratchet's own instruction is *"it needs a handler in `src/mccrir.c`, not an allowlist entry"* and *"shrink it by writing a handler; never grow it to make this green"*, and the handler `IR_OP_RAW` would need is a new arena node kind for opaque byte spans. Keeping `IR_OP_ASM` reuses the arena arm that already exists and drops nothing. The gate refused the cheaper change and was right to.
 
 **Why replaying bytes is not a weaker check than re-deriving them.** An asm body's output is not a function of the captured IR — it is a function of opaque text the compiler does not model. Re-deriving it proves nothing about the capture, which is what the A/B is for, and the re-derivation was *wrong* in four distinct ways. What the count now means is visible rather than folded in: `[rir-total]` gained **`asmraw=`**, the number of asm bodies whose span was copied rather than re-derived (45 on `full_language.c`).
 
@@ -44888,7 +44885,7 @@ The bytes and relocations the body emitted are then outside any captured op, so 
 
 **The instrument that was missing, and why four symptoms lived through a cell built to catch them.** `optfire/asm-replay-recover` already compiles an asm-bearing subject under `MCC_REPLAY_IR=1` at five opt levels — and compares **what the program prints**. A duplicated `.data` emission, a leaked undefined symbol and a redefined label are all invisible to stdout, so the cell was structurally blind to every one of them. The new `optfire/asm-replay-object` compares **the object**: same source, `-c` at `-O0`, with and without replay, byte-for-byte. Its subject carries all four shapes (named label, function-local static operand, cross-statement forward reference, `.data` and `.pushsection` writes); watched red on all four before the fix, green after. `optfire/asm-replay-object-known-positive` plants an extra `.data` emission on the replay side only and requires it caught. Both are `tests/must-run.txt` rows; the gate carries a `tests/gate-contract.txt` row with an intrinsic floor (a plain object with no asm-defined symbol is refused, so a subject compiled out on non-x86 cannot report agreement) — `--min-rows` 103 → 104, `--min-proved` 53 → 54.
 
-**Residue, stated rather than left.** `IR_OP_ASM` is now never created, so `ir_cap_issue`'s `case IR_OP_ASM:`, the arena conversion at `src/mccrir.c:3278` and `AST_OP_ASM`'s replay at `src/mccast.c:6257` are dead. They are kept rather than deleted because they are correct if the op is ever revived, and because reviving the op without the double-assembly bug is a legitimate future move. What makes that safe is not the reading: `optfire/asm-replay-object` reds the moment anything re-assembles a body, so the regression has a registered guard rather than a comment.
+**No residue.** Every site that existed still exists and still carries the op; what changed is what the op holds. `mcc_assemble_inline` now has exactly two callers on the capture path — `asm_instr` through `ir_cap_asm`, and `asm_global_instr` for file-scope `asm(...)`, which was never captured and is unaffected — and none on either replay path. If anything ever re-assembles a body again, `optfire/asm-replay-object` reds: the guard is a registered cell, not a comment.
 
 **One thing measured and deliberately not claimed.** At `-O1` and above, `MCC_REPLAY_IR=1` changes **46 of 58** corpus objects. That is **pre-existing and unrelated** — the identical 46 of 58 was measured with a compiler built at `HEAD` without this change, in its own build directory, before concluding anything. The new cell therefore asserts the object-identity invariant at `-O0` only, where it is true and load-bearing. Whether it *should* hold at `-O1+` is a separate question with a separate subject, filed as [T-lin-10379](#t-lin-10379-mcc-replay-ir-changes-46-of-58-corpus-objects-at-o1-and-above).
 
@@ -44997,3 +44994,36 @@ validate + kp at EXPECT 176) and `slice/f64(+kp)` — 10/10 green in a vcvars
 ctest with the VK env.
 
 **Source.** win-x64, 2026-08-15, at 35f1ba84.
+<a id="t-lin-10071-mechanism-the-cell-writes-and-executes-three-binaries-in-the-shared-build-directory"></a>
+
+## T-lin-10071 — the mechanism, narrowed: `rir-nofb-probe-self` writes and executes three binaries in the **shared** build directory
+
+The row says the cell "is flaky and the mechanism is not known". Four runs today, two red and two green, narrow it to a shared-state hazard rather than a compiler defect — and the narrowing came out of a false alarm worth recording as such.
+
+**The failure, verbatim.** Not a wrong answer and not a timeout:
+
+```
+FileNotFoundError: [Errno 2] No such file or directory:
+  '/home/llg/Projects/moderncc/cmake-debug/mcc-nofb-probe'
+```
+
+raised from `nofb_work()` executing the stage-1 compiler the cell had just linked. `tools/rir-coverage.py` builds **three** binaries — `mcc-nofb-base` (`:1199`), `mcc-nofb-ctl` (`:1214`), `mcc-nofb-probe` (`:1225`) — directly into `bdir`, i.e. `CMAKE_BINARY_DIR`, executes them, and removes all three at the end (`:1241-1243`). They are not ninja outputs, they collide by fixed name, and they live in a directory other ctest cells and the `mcc_build`/`mcc_cross_build` fixtures are writing to at the same time.
+
+**What each run says:**
+
+| run | harness | verdict |
+| --- | --- | --- |
+| full suite, `-j 12` | ctest | **green** (inside the 10066/0 run) |
+| family, `-j 8` | ctest | **red**, at cell 6 of 1477, alongside `mcc_cross_build` |
+| family, `-j 6` | ctest | **red**, at cell 6 of 1477, same place |
+| standalone ×3 | direct | **green**, identical numbers every time |
+
+Standalone it is not merely green but *stable*: 71 divergent bodies in `src/mcc.c`, 66 benign, 0 MISCOMPILE, 5 vacuous, the same five names (`cplx_extract_const`, `gen_cast`, `merge_funcattr`, `merge_symattr`, `update_gnu_hash`) — from a compiler built with the [asm double-assembly fix](#t-lin-10375-10378-fixed-stop-assembling-the-body-twice-and-full-language-reaches-303-303) and from one built without it. Same answer, both times.
+
+**The false alarm, recorded because the reasoning error is the reusable part.** The red first appeared immediately after the asm fix landed in the tree, and the first comparison available was *pre-fix standalone green* against *post-fix under ctest red*. That looks like an attribution and is not one: it varies two things at once, the compiler and the harness. Running the post-fix compiler **standalone** produced the pre-fix numbers exactly, which is what actually settles it. The rule the day keeps re-teaching — hold the harness fixed when attributing to a change — is the same one [T-lin-10073's diagnostic](#t-lin-10073-corroboration-a-foreign-wineserver-was-resident-at-suite-start) encodes for wine cells and the same one the [pre-reboot handoff](#lin-x64-handoff-2026-08-15-preboot) paid for ignoring.
+
+**Fix direction, cheap and obvious once the mechanism is named.** Give the cell a private working directory — a `tempfile.TemporaryDirectory()`, or `bdir/nofb-<pid>` — instead of three fixed names in the build directory everything else shares. The cell already uses a tempdir (`td`) for its objects; only the *executables* were put somewhere shared, and nothing needs them to be there.
+
+**Not yet proved, and stated so the row is not closed on it.** That concurrent access is what removes the file is inference from the four runs, not a caught race. The confirming experiment is one command — `ctest -R rir-nofb-probe-self` alone versus the same cell inside a `-j` family run, repeated — and it has not been run enough times to call it. What *is* established is that the cell's answer does not vary, only its ability to find its own binary, and that the binary lives somewhere it did not need to.
+
+**Source.** lin-x64, 2026-08-15.
