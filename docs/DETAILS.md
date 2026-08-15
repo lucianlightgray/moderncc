@@ -43555,3 +43555,23 @@ mac-arm64 measured AAPCS64 and found mcc already correct there. This is the x86_
 **The fixture this needs** is per target too: compile a 32-byte and 64-byte vector struct, cross-TU against that target's own reference cc, and assert `offsetof`/`sizeof` identical. On arm64 it must pass **unchanged**, which makes it that target's known-positive that no change was needed; on x86_64 and i386 it fails today and must pass after.
 
 **Source.** arm64 measured by mac-arm64; x86_64 and i386 measured on lin-x64, 2026-08-15.
+
+
+<a id="t-lin-10065-done-the-o13-dark-strategy-census-is-implemented-and-gated"></a>
+
+## T-lin-10065 DONE — the -O13 dark-strategy census exists, gated, and green on mac
+
+The task wanted the `-O13` tier watched by "banking DARK strategies rather than fire counts … a strategy going dark becomes a new category (hard fail), one lighting up prints IMPROVED … ratchet() needs no change", and flagged the trap that "at -O13 the panel prints once per search phase and the last one is all zeros, so a census must take the per-column max across panels." Every one of those is implemented in `tools/smokerun.c` `strat_dark_census()` (added `67c58d5f`, 2026-08-11 — its commit title is the task's own intent: "bank the strategies -O13 leaves dark, at the one level nothing watched"):
+
+- Runs at `MCC_OPT_SEARCH_LEVEL` (= -O13): `compile_subject(MCC_OPT_SEARCH_LEVEL, …)` under `MCC_STATS=4` (`:954-955`).
+- **Takes the per-column max across panels** — `if (v > best[i]) best[i] = v;` (`:1000-1001`) — exactly the trap fix, with the reason in the header comment (`:935-937`).
+- **Banks dark strategies, not fire counts**: `best[i] == 0 → cat_add("O%d strat-dark:%s")` (`:1012-1016`); the header comment (`:938-941`) is verbatim the task's monotone-ratchet argument.
+- Anti-vacuity floor: FAILs if no `[strategy]` record (`:1005`) or no strategies named (`:1020`).
+
+Wired as the `smoke/strat-dark` ctest cell (`CMakeLists.txt:4695`, `--strat-dark`), keyed per target (`tests/smoke/bails-arm64-macos.txt`). The `--max-level 13` no-op the row also mentions is moot: -O13 is watched through `--strat-dark`, not `--max-level`.
+
+**Verified on mac.** `smoke/strat-dark` passes on arm64 (317 s isolated) — the same cell whose load-sensitive flake earlier today was diagnosed and dismissed, confirming the census itself is sound.
+
+**Gate.** Measurement + docs only; no code change. `docs/refs` green.
+
+**Source.** mac-arm64, 2026-08-15; implemented at `67c58d5f`, gated and green on this box.
