@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T05:40Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T05:50Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T10:45Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
@@ -67,8 +67,8 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10010-implement-reversed-scalar-storage-order | DEPS: —
 - [ ] T-lin-10011 [S] Register-array decay: `*a` and `*(a+1)` are still accepted
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10011-register-array-decay-a-and-a1 | DEPS: — | Q: Q-lin-10004
+      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-15T05:50Z
+      REF: DETAILS.md#t-lin-10011-status-reject-side-complete-arm64-confirmed-sole-remainder-is-q-lin-10004 | DEPS: — | Q: Q-lin-10004 BLOCKS-REMAINDER | NOTE: reject side DONE + arm64-confirmed (both decay surfaces funnel through one gen_cast() choke point; existing dg-error fixture covers it). SOLE remaining DoD = the accept-forms fixture, which flips with Q-lin-10004 (Mode a: a[1] compiles; Mode b: a[1] errors) and must NOT be written until the Q is definitively answered, not merely assumed
 - [ ] T-lin-10012 [S] 32-byte vectors are laid at 16-byte alignment, so cross-TU to gcc is incompatible
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10012-32-byte-vectors-are-laid-at | DEPS: — | Q: Q-lin-10005

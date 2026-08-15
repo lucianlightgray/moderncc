@@ -43165,3 +43165,24 @@ Two things follow. First, the REF is corrected to point at the measured anchor. 
 `SMC_ARM_OPS`/`SMC_BODY` are already type-generic (`CTY _Complex`), so C16 is a pure add; I verified the arithmetic against gcc-16 standalone.
 
 **Source.** mac-arm64, 2026-08-15, at `d9187712`; smoke half owned by whoever has a `__mulhc3` host (lin).
+
+
+<a id="t-lin-10011-status-reject-side-complete-arm64-confirmed-sole-remainder-is-q-lin-10004"></a>
+
+## T-lin-10011 status — reject side complete and arm64-confirmed; the sole remaining DoD is gated on Q-lin-10004
+
+Cross-machine confirmation of the register-array-decay reject on native arm64 (the `dg-error` fixture and its diagnostic were previously exercised only on lin-x64). On this M1's `cmake-macos/mcc`:
+
+| form | native arm64 result | mode-dependence |
+|---|---|---|
+| `int *p = a;` (assignment decay) | **rejected** — `error: address of register variable 'a' requested` | none — rejected under both gcc and clang |
+| `h(a)` (call-arg decay) | **rejected** — identical diagnostic | none — same |
+| `*a`, `*(a+1)`, `a[1]` | **accepted** (rc=0) | Mode (a): matches gcc; clang would reject `*(a+1)`/`a[1]` |
+
+So arm64 reproduces the documented Mode-(a) behavior exactly.
+
+**Why the existing single `dg-error` fixture is sufficient for the whole reject side.** Both reject surfaces (`int *p = a;` and `h(a)`) funnel through the one choke point the fix installed — `gen_cast()`'s exit dropping `VT_ARRAY` (per [T-lin-10011 DETAILS](#t-lin-10011-register-array-decay-a-and-a1)). A second `dg-error` file for `h(a)` would exercise the same choke point through a different surface syntax, i.e. redundant coverage, not a new path — confirmed by the identical diagnostic above. So the reject side is done and needs no more fixtures.
+
+**The sole remaining DoD is the accept-forms fixture, and it must not be written yet.** The task requires the fixture to "carry both accepted forms and the `a[1]` case, whichever way Q-lin-10004 is answered." That case flips with the answer: Mode (a) asserts `a[1]` **compiles**, Mode (b/clang) asserts it **errors**. Committing it now would bake the merely-*assumed* answer into a regression gate and silently prejudge the open question — which is exactly why lin left it "Deliberately NOT covered" in the fixture comment. T-lin-10011 is therefore blocked on Q-lin-10004 being *definitively* answered, not on any mac/arm64 effort. When answered: add one compile-success (Mode a) or `dg-error` (Mode b) fixture for `a[1]`, run `diag.dg-error.*` + corpusgate, close.
+
+**Source.** mac-arm64, 2026-08-15, at `7aac2195` (investigation only; native-behavior confirmed, no code change).
