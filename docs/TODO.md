@@ -279,8 +279,8 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: —
   - [ ] T-lin-10092/mac [P] Record a clean full native suite number on each platform — mac-arm64
-        OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: —
+        OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 93c23a7b | TS: 2026-08-15T04:25Z
+        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: full native suite running (build + ctest -j6, leaving cores for the desktop GUI baseline ~3). Number + reds recorded on completion; last leg of the [P] parent (lin CLEAN 0/9051, win 8388/964/35)
   - [ ] T-lin-10092/lin [P] Record a clean full native suite number on each platform — lin-x64
         OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: fdfd7412 | TS: 2026-08-15T06:15Z
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: full native run in flight; also serves as the §8 per-task verification for today's slice 3a/3b, MCC_REF_CC and runtime/osx work
