@@ -5,8 +5,13 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:36Z |
+<<<<<<< Updated upstream
 | lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T18:58Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T19:13Z |
+=======
+| lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T19:13Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T19:01Z |
+>>>>>>> Stashed changes
 
 ## Contracts — blocking, highest priority
 
@@ -21,9 +26,6 @@
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: PAUSED (heartbeat intentionally stale; TTL-eligible for any session to resume). slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
-- [ ] T-lin-10386 [S] An `MCC_DEV=ON` build compiles `tests/exec/features_c99_c11/cleanup.c` ~200x slower at `-O1+`
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc1e52a8 | TS: 2026-08-15T18:58Z
-      REF: DETAILS.md#t-lin-10383-census-results-the-spir-v-arm-histograms | DEPS: — | NOTE: CLAIMED — fresh MCC_DEV/MCC_TRACE context from T-lin-10384. First slice = mechanism: -O1 103s/-O4 >300s MCC_DEV=ON vs 0.08s/-O0, 0.52s/-O2 MCC_DEV=OFF; CPU-bound, no GPU. cleanup.c is the __attribute__((cleanup)) corpus (396 lines). Lead: MCC_DEV arms ~12,600 MCC_TRACE sites; characterise what goes superlinear on cleanup patterns at -O1+, then decide fix vs bank-the-cost
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone

@@ -45932,3 +45932,23 @@ lin-x64's [T-lin-10384](#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-sca
 **Remaining work filed as T-win-50021** (the real "make Windows embed-JIT work"): (a) ungate + fix the PE hot-swap/bake path (line 2981; expect the SIGBUS caveat to be live) and (b) resolve the `strtold` double-def between mcc's win32 runtime and the mingw blob's libmingwex. T-win-50020 stays archived for its literal title (the LINK), with this correction; the engine reds move to T-win-50021.
 
 **Source.** win-x64, 2026-08-15, requote at `9c326be5`.
+
+<a id="t-lin-10386-mechanism-the-du-side-car-divergence-check-rescans-per-query-and-is-now-opt-in"></a>
+
+## T-lin-10386 — the MCC_DEV `cleanup.c` slowdown is the def-use side-car divergence check re-scanning O(n) per query; fixed by making it opt-in
+
+**Mechanism (lin-x64, 2026-08-15, profiled at `main@1f3d0c54`).** `perf` on the MCC_DEV=ON compile of `tests/exec/features_c99_c11/cleanup.c` at `-O1` puts **99.3% of self-time inside a single function**, `ast_cprop_escapes_scan` (`src/mccast.c`): `ast_kind` 68.3% + `ast_op` 15.7% + `ast_cprop_escapes_scan` 7.5% + `ast_ival` 6.0% + `ast_first_child` 1.7%, all under the call chain `ast_cprop_escapes_scan ← ast_cprop_escapes ← ast_cprop_block ← ast_cprop_run ← ast_strat_cprop` (copy propagation).
+
+`ast_cprop_escapes(a, off)` and its sibling `ast_local_is_readonly(a, off)` each read the answer in **O(1)** from the def-use side-car (`ast_du_slot_flags`, itself built once per arena epoch by `ast_du_build`, an O(n) pass). Under `#if MCC_DEV` each *additionally* recomputed the answer from scratch with an **O(n) full-node `_scan`** on **every query** and asserted the two agree (`ast_du_diverge` on mismatch). Copy propagation queries `ast_cprop_escapes` once per candidate local, so the DEV path is **O(n·queries) ≈ O(n²)** on node count. It fires only at `-O1+` (copy propagation does not run at `-O0`) and only in MCC_DEV builds (the scan is compiled out otherwise). `cleanup.c`'s `__attribute__((cleanup))` corpus (396 lines) lowers to enough nodes that n² dominates: **-O1 103 s, -O4 >300 s** with MCC_DEV=ON vs **0.55–0.60 s** with the scan absent. The compiler's *output* is unaffected — the scan only validates the side-car.
+
+**Decision: FIX, not bank.** The per-query scan is a redundant re-derivation of a side-car that is already O(n)-amortized; its purpose is to catch a side-car that has gone stale against the arena (an epoch/invalidation bug), and its *systematic* verification vehicle is the registered `cross/shadow-iv-*` sweep, which compiles a whole corpus specifically to surface `side-car divergence`. Paying O(n²) on **every** DEV compile to also check incidentally is not worth it — and it cost the T-lin-10383 census a 312-file timeout. So the two `ast_du` divergence checks are now gated behind an opt-in env, `MCC_DU_VERIFY` (cached once via `ast_du_verify()`), and `tools/shadow-iv-sweep.sh` exports `MCC_DU_VERIFY=1` so the sweep keeps arming them. Off by default even in a MCC_DEV build; the checks-off path is then identical to a non-DEV build's (well-tested).
+
+**Verification (`main@316fc087`).**
+- `cleanup.c -O1` in the MCC_DEV=ON build (`cmake-jitdev`): **103 s → 0.60 s** (matches the MCC_DEV=OFF `cmake-debug` 0.55 s); executable output **byte-identical** across the two builds (75 lines, same exit 105), so the gate changed no codegen.
+- `MCC_DU_VERIFY=1 mcc -O1 -c cleanup.c` re-engages the scan (>60 s) — the check is still available, unchanged, when asked for.
+- `cross/shadow-iv-x86_64` **PASS** (51 s): the shadow sweep builds its `-DMCC_DEV=1` shadow compiler with this change, arms the checks via the exported flag, compiles the corpus over its clean floor, and reports 0 divergences — the divergence-detection coverage is preserved.
+- Optimization/census DEV cells (`optfire/*`, `slice/census`, `slice-census`, `smoke/slice-bails`, `rir-lowerable-classes`): PASS. The MCC_DEV=OFF full suite is unaffected (the edit is `#if MCC_DEV`, a no-op there — `cmake-debug` stays 0/10070 per T-lin-10384's run).
+
+**Scope note.** Only the two `ast_du` side-car checks (`escapes`, `readonly`) are gated — they share the O(n)-scan-per-query shape and one (`escapes`) is the measured cleanup.c cost. The unrelated DEV shadows (`AST_MEMO_SHADOW`, `ident_same`) are a different mechanism, were not hot here, and are left as-is.
+
+**Source.** lin-x64, 2026-08-15, `main@316fc087`; found during [T-lin-10383's census](#t-lin-10383-census-results-the-spir-v-arm-histograms) (the one 312-corpus timeout).
