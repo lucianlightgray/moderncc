@@ -625,34 +625,67 @@ static MslV msl_fit_v(MslMod *m, MslV v, int t) {
 typedef struct MslRegion {
 	uint32_t base;
 	uint32_t nbyte;
+	int mem;
 } MslRegion;
+
+static MslRegion msl_region_in(uint32_t base, uint32_t nbyte) {
+	MslRegion r;
+	r.base = base;
+	r.nbyte = nbyte;
+	r.mem = 0;
+	return r;
+}
+
+static MslRegion msl_region_mem(MslMod *m, uint32_t base, uint32_t nbyte) {
+	MslRegion r;
+	r.base = base;
+	r.nbyte = nbyte;
+	r.mem = 1;
+	m->mem_used = 1;
+	return r;
+}
 
 static int msl_mem_region(MslMod *m, MslRegion *r) {
 	if (!m->mem_nbyte)
 		return 0;
-	r->base = msl_const(m, 0);
-	r->nbyte = msl_uconst(m, m->mem_nbyte);
-	m->mem_used = 1;
+	*r = msl_region_mem(m, msl_const(m, 0), msl_uconst(m, m->mem_nbyte));
 	return 1;
 }
 
-static uint32_t msl_word_at(MslMod *m, uint32_t idx) {
-	return msl_iv(m, "atomic_load_explicit(&memb[v%u], memory_order_relaxed)",
-								idx);
+static uint32_t msl_word_at(MslMod *m, const MslRegion *r, uint32_t idx) {
+	if (r->mem)
+		return msl_iv(m, "atomic_load_explicit(&memb[v%u], memory_order_relaxed)",
+									idx);
+	return msl_iv(m, "inb[v%u]", idx);
 }
 
-static void msl_word_set(MslMod *m, uint32_t idx, uint32_t val) {
-	msl_line(m, "atomic_store_explicit(&memb[v%u], v%u, memory_order_relaxed);",
-					 idx, val);
+static void msl_word_set(MslMod *m, const MslRegion *r, uint32_t idx,
+												 uint32_t val) {
+	if (r->mem) {
+		msl_line(m,
+						 "atomic_store_explicit(&memb[v%u], v%u, memory_order_relaxed);",
+						 idx, val);
+		return;
+	}
+	msl_store_at_in(m, idx, val);
 }
 
-static void msl_word_rmw(MslMod *m, uint32_t idx, uint32_t keep, uint32_t put) {
-	msl_line(m,
-					 "atomic_fetch_and_explicit(&memb[v%u], ~v%u, memory_order_relaxed);",
-					 idx, keep);
-	msl_line(m,
-					 "atomic_fetch_or_explicit(&memb[v%u], v%u, memory_order_relaxed);",
-					 idx, put);
+static void msl_word_rmw(MslMod *m, const MslRegion *r, uint32_t idx,
+												 uint32_t keep, uint32_t put) {
+	if (r->mem) {
+		msl_line(
+				m,
+				"atomic_fetch_and_explicit(&memb[v%u], ~v%u, memory_order_relaxed);",
+				idx, keep);
+		msl_line(m,
+						 "atomic_fetch_or_explicit(&memb[v%u], v%u, memory_order_relaxed);",
+						 idx, put);
+		return;
+	}
+	{
+		uint32_t old = msl_iv(m, "inb[v%u]", idx);
+		msl_store_at_in(m, idx, msl_iv(m, "(v%u & ~v%u) | v%u", old, keep, put));
+	}
 }
 
 static uint32_t msl_region_addr(MslMod *m, const MslRegion *r, uint32_t byteoff,
@@ -689,11 +722,11 @@ static MslV msl_load_region(MslMod *m, const MslRegion *r, uint32_t byteoff,
 		return msl_mk(msl_const(m, 0), 0, 0);
 	uoff = msl_region_addr(m, r, byteoff, width);
 	if (width == 8) {
-		uint32_t a = msl_word_at(m, msl_region_word(m, r, uoff, 0));
-		uint32_t b = msl_word_at(m, msl_region_word(m, r, uoff, 1));
+		uint32_t a = msl_word_at(m, r, msl_region_word(m, r, uoff, 0));
+		uint32_t b = msl_word_at(m, r, msl_region_word(m, r, uoff, 1));
 		return msl_mk(msl_pv(m, "int2(v%u, v%u)", a, b), 1, uns);
 	}
-	lo = msl_word_at(m, msl_region_word(m, r, uoff, 0));
+	lo = msl_word_at(m, r, msl_region_word(m, r, uoff, 0));
 	if (width == 4)
 		return msl_mk(lo, 0, uns);
 	sh = msl_iv(m, "(v%u & 3) << 3", uoff);
@@ -715,18 +748,18 @@ static void msl_store_region(MslMod *m, const MslRegion *r, uint32_t byteoff,
 		msl_widen(m, &v);
 		lo = msl_iv(m, "p%u.x", v.id);
 		hi = msl_iv(m, "p%u.y", v.id);
-		msl_word_set(m, msl_region_word(m, r, uoff, 0), lo);
-		msl_word_set(m, msl_region_word(m, r, uoff, 1), hi);
+		msl_word_set(m, r, msl_region_word(m, r, uoff, 0), lo);
+		msl_word_set(m, r, msl_region_word(m, r, uoff, 1), hi);
 		return;
 	}
 	if (width == 4) {
-		msl_word_set(m, msl_region_word(m, r, uoff, 0), msl_lo(m, v));
+		msl_word_set(m, r, msl_region_word(m, r, uoff, 0), msl_lo(m, v));
 		return;
 	}
 	sh = msl_iv(m, "(v%u & 3) << 3", uoff);
 	keep = msl_iv(m, "mcc_shl(v%u, v%u)", msl_const(m, width == 1 ? 0xFF : 0xFFFF),
 								sh);
-	msl_word_rmw(m, msl_region_word(m, r, uoff, 0), keep,
+	msl_word_rmw(m, r, msl_region_word(m, r, uoff, 0), keep,
 							 msl_iv(m, "mcc_shl(v%u, v%u) & v%u", msl_lo(m, v), sh, keep));
 }
 
@@ -1489,6 +1522,9 @@ static const char msl_prelude[] =
 		"static inline int mcc_umod(int a, int b) {\n"
 		"\treturn as_type<int>(as_type<uint>(a) % as_type<uint>(b));\n"
 		"}\n"
+		"\n";
+
+static const char msl_prelude_64[] =
 		"static inline int2 mcc64_add(int2 a, int2 b) {\n"
 		"\tuint al = as_type<uint>(a.x), bl = as_type<uint>(b.x);\n"
 		"\tuint lo = al + bl;\n"
@@ -1577,6 +1613,9 @@ static const char msl_prelude[] =
 		"\t}\n"
 		"\treturn int2(as_type<int>(ql), as_type<int>(qh));\n"
 		"}\n"
+		"\n";
+
+static const char msl_prelude_f64[] =
 		"static inline int2 mccf64_round(uint s, int ex, uint rh, uint rl) {\n"
 		"\tif (ex >= 0x7ff)\n"
 		"\t\treturn int2(0, as_type<int>((s << 31) | 0x7ff00000u));\n"
@@ -1770,6 +1809,34 @@ static const char msl_prelude[] =
 		"\tint ex = exa + exb - 0x3ff + int(big);\n"
 		"\treturn mccf64_round(s, ex, rh, rl);\n"
 		"}\n"
+		"\n";
+
+static const char msl_prelude_fmt[] =
+		"static inline void mccf_putb(device atomic_int *mb, int rb, int rn,\n"
+		"\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t int off, int byte, bool wr) {\n"
+		"\tbool go = wr && as_type<uint>(off) < as_type<uint>(rn);\n"
+		"\tint u = go ? off : 0;\n"
+		"\tint wi = mcc_add(rb, as_type<int>(as_type<uint>(u) >> 2));\n"
+		"\tint sh = (u & 3) << 3;\n"
+		"\tint msk = go ? mcc_shl(0xFF, sh) : 0;\n"
+		"\tint cur = atomic_load_explicit(&mb[wi], memory_order_relaxed);\n"
+		"\tatomic_store_explicit(&mb[wi],\n"
+		"\t\t\t\t\t\t\t\t\t\t\t\t(cur & ~msk) | (mcc_shl(byte & 0xFF, sh) & msk),\n"
+		"\t\t\t\t\t\t\t\t\t\t\t\tmemory_order_relaxed);\n"
+		"}\n"
+		"static inline int mccf_getb(device atomic_int *mb, int rb, int rn,\n"
+		"\t\t\t\t\t\t\t\t\t\t\t\t\t\tint off) {\n"
+		"\tbool in = as_type<uint>(off) < as_type<uint>(rn);\n"
+		"\tint u = in ? off : 0;\n"
+		"\tint w = atomic_load_explicit(&mb[mcc_add(rb,\n"
+		"\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t as_type<int>(as_type<uint>(u) >> 2))],\n"
+		"\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t memory_order_relaxed);\n"
+		"\tint b = mcc_shr(w, (u & 3) << 3) & 0xFF;\n"
+		"\treturn in ? b : 0;\n"
+		"}\n"
+		"\n";
+
+static const char msl_prelude_f64b[] =
 		"static inline int mccf64_cmp(int2 a, int2 b) {\n"
 		"\tbool na = (a.y & 0x7ff00000) == 0x7ff00000 &&\n"
 		"\t\t\t\t\t\t((a.y & 0x000fffff) | a.x) != 0;\n"
@@ -1827,17 +1894,37 @@ static void msl_module_begin(MslMod *m, int nlive) {
 	(void)nlive;
 }
 
+static int msl_uses(const MslMod *m, const char *what) {
+	return (m->decls.s && strstr(m->decls.s, what) != NULL) ||
+				 (m->body.s && strstr(m->body.s, what) != NULL);
+}
+
 static char *msl_module_finish(MslMod *m, int *nbytes) {
 	const char *kh = m->mem_used ? (m->wrote_in ? msl_kernel_rw_mem
 																							: msl_kernel_ro_mem)
 															 : (m->wrote_in ? msl_kernel_rw : msl_kernel_ro);
-	int pre = (int)(sizeof msl_prelude - 1);
+	const char *sec[5];
+	int nsec = 0, k, total, i = 0;
 	int khn = (int)strlen(kh);
-	int total = pre + khn + m->decls.n + m->body.n + 2;
-	char *s = (char *)MSL_MALLOC((size_t)total + 1);
-	int i = 0;
-	memcpy(s + i, msl_prelude, (size_t)pre);
-	i += pre;
+	char *s;
+	sec[nsec++] = msl_prelude;
+	if (msl_uses(m, "mcc64_"))
+		sec[nsec++] = msl_prelude_64;
+	if (msl_uses(m, "mccf64_")) {
+		sec[nsec++] = msl_prelude_f64;
+		sec[nsec++] = msl_prelude_f64b;
+	}
+	if (msl_uses(m, "mccf_"))
+		sec[nsec++] = msl_prelude_fmt;
+	total = khn + m->decls.n + m->body.n + 2;
+	for (k = 0; k < nsec; k++)
+		total += (int)strlen(sec[k]);
+	s = (char *)MSL_MALLOC((size_t)total + 1);
+	for (k = 0; k < nsec; k++) {
+		int ln = (int)strlen(sec[k]);
+		memcpy(s + i, sec[k], (size_t)ln);
+		i += ln;
+	}
 	memcpy(s + i, kh, (size_t)khn);
 	i += khn;
 	if (m->decls.n) {

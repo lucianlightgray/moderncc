@@ -102,9 +102,32 @@ BLOCKED_PTR = {"s", "p"}
 OUT_FLOAT = {"e", "E", "f", "F", "g", "G", "a", "A"}
 
 MAXITEM, MAXARG, MAXW, MAXSTR, MAXLIT = 24, 8, 32, 28, 192
+
+# The canonical (SPIR-V-word) cost model. Census and bank figures are always
+# computed with these, so banked counts stay platform-stable; only the oracle
+# selfcheck rebinds to the arm the binary was built with (see pick_arm).
+SPV_COSTS = dict(C_BASE=820, C_BYTE=152, C_HEX=4700, C_DEC=6900, C_DEC32=2400,
+                 C_HEX32=1750, C_SFIX=130, C_SBYTE=229, C_SDYN=14,
+                 MAXCOST=16384)
+# The Metal arm's model, in MSL source bytes; mirrors src/mccfmt.h.
+MSL_COSTS = dict(C_BASE=3300, C_BYTE=320, C_HEX=11300, C_DEC=14200,
+                 C_DEC32=5000, C_HEX32=3800, C_SFIX=3700, C_SBYTE=380,
+                 C_SDYN=60, MAXCOST=36000)
 C_BASE, C_BYTE, C_HEX = 820, 152, 4700
 C_DEC, C_DEC32, C_HEX32 = 6900, 2400, 1750
 C_SFIX, C_SBYTE, C_SDYN, MAXCOST = 130, 229, 14, 16384
+
+
+def pick_arm(oracle):
+    """Rebind the cost constants to whichever arm the oracle binary carries,
+    detected by the one-item probe %c whose cost is C_BASE + C_BYTE."""
+    (_v, cost, _n, _na) = oracle_verdicts(oracle, ["%c"])[0]
+    for cs in (SPV_COSTS, MSL_COSTS):
+        if cost == cs["C_BASE"] + cs["C_BYTE"]:
+            globals().update(cs)
+            return
+    raise SystemExit("oracle %%c cost %d matches neither the SPIR-V nor the "
+                     "MSL cost model" % cost)
 
 OK, R_PTR, R_FLOAT, R_SPEC, R_ROOM = 0, 1, 2, 3, 4
 WHY = {OK: "ok", R_PTR: "%p", R_FLOAT: "float", R_SPEC: "flag/width/conv",
@@ -838,6 +861,7 @@ def main(argv):
     if "--selfcheck" in argv:
         if not oracle:
             raise SystemExit("--selfcheck needs --oracle=<path-to-slicerun>")
+        pick_arm(oracle)
         return selfcheck(oracle, paths)
 
     sites = collections.Counter()

@@ -132,13 +132,7 @@ static int backend_has_fence_timeout(void) {
 #endif
 }
 
-static int backend_has_regions(void) {
-#if MCC_GPU_LANG_MSL
-	return 0;
-#else
-	return 1;
-#endif
-}
+static int backend_has_regions(void) { return 1; }
 
 static void unsupported(const char *what, const char *stage) {
 	fprintf(stderr, "SKIP: slicerun: this backend does not emit %s (%s); the "
@@ -2649,11 +2643,39 @@ static void suite_frame(void) {
  * nor its range is known at emit time. */
 static int bytes_kernel_in(int t, int shared, MccGpuCode *out) {
 #if MCC_GPU_LANG_MSL
-	/* Metal arm: no region layer, so no byte kernel. TODO.md §5 stage M4.
-	 * Returning 0 is the builder's existing "could not build" contract and the
-	 * caller already reports the suite unsupported on it. */
-	(void)t; (void)shared; (void)out;
-	return 0;
+	MslMod m;
+	MslRegion r;
+	MslV v;
+	uint32_t base, olo, ohi;
+	char *code;
+	int nb = 0;
+	(void)shared;
+	msl_module_begin(&m, BYTES_NSLOT);
+	base = msl_main_begin(&m, BYTES_NSLOT);
+	r = msl_region_in(base, msl_uconst(&m, BYTES_NBYTE));
+	olo = msl_load_at(&m, base);
+	ohi = msl_load_at(&m, msl_iv(&m, "mcc_add(v%u, v%u)", base,
+															 msl_const(&m, 1)));
+	v = msl_load_region(&m, &r, olo, t);
+	if (mcc_slice_mutate) {
+		uint32_t p = msl_pair(&m, v);
+		v = msl_mk(msl_pv(&m, "int2(p%u.x ^ 1, p%u.y)", p, p), 1, 0);
+	}
+	msl_store_region(&m, &r, ohi, v, t);
+	if (m.failed) {
+		msl_module_free(&m);
+		return 0;
+	}
+	msl_main_end(&m, m.lane, msl_mk(msl_const(&m, 0), 0, 0));
+	code = msl_module_finish(&m, &nb);
+	msl_module_free(&m);
+	if (!code || nb <= 0) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nb;
+	return 1;
 #else
 	SpvMod m;
 	SpvRegion r;
@@ -2703,10 +2725,35 @@ static int bytes_kernel(int t, MccGpuCode *out) {
 
 static int subword_shared_kernel(int t, MccGpuCode *out) {
 #if MCC_GPU_LANG_MSL
-	/* Metal arm: no region layer, so no shared sub-word store. TODO.md §5 M4.
-	 * Same contract as the other builders here -- 0 means "could not build". */
-	(void)t; (void)out;
-	return 0;
+	MslMod m;
+	MslRegion r;
+	uint32_t base, off, val;
+	char *code;
+	int nb = 0;
+	msl_module_begin(&m, SWS_NSLOT);
+	base = msl_main_begin(&m, SWS_NSLOT);
+	r = msl_region_mem(&m, msl_const(&m, SWS_ARENA_WORD),
+										 msl_uconst(&m, SWS_SPAN_BYTE));
+	off = msl_load_at(&m, base);
+	val = msl_load_at(&m, msl_iv(&m, "mcc_add(v%u, v%u)", base,
+															 msl_const(&m, 1)));
+	if (mcc_slice_mutate)
+		val = msl_iv(&m, "v%u ^ 1", val);
+	msl_store_region(&m, &r, off, msl_fit_v(&m, msl_mk(val, 0, 0), t), t);
+	if (m.failed) {
+		msl_module_free(&m);
+		return 0;
+	}
+	msl_main_end(&m, m.lane, msl_mk(msl_const(&m, 0), 0, 0));
+	code = msl_module_finish(&m, &nb);
+	msl_module_free(&m);
+	if (!code || nb <= 0) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nb;
+	return 1;
 #else
 	SpvMod m;
 	SpvRegion r;
@@ -2974,9 +3021,41 @@ static void suite_bytes(void) {
 
 static int deref_kernel(int t, MccGpuCode *out) {
 #if MCC_GPU_LANG_MSL
-	/* Metal arm: no region layer, so no host-pointer deref. TODO.md §5 M4. */
-	(void)t; (void)out;
-	return 0;
+	MslMod m;
+	MslRegion r;
+	MslV v;
+	uint32_t base, mbase, olo, ohi;
+	char *code;
+	int nb = 0;
+	msl_module_begin(&m, DEREF_NSLOT);
+	base = msl_main_begin(&m, DEREF_NSLOT);
+	mbase = msl_iv(&m, "mcc_add(v%u, mcc_mul(v%u, v%u))",
+								 msl_const(&m, DEREF_ARENA_WORD), m.lane,
+								 msl_const(&m, DEREF_LANE_WORD));
+	r = msl_region_mem(&m, mbase, msl_uconst(&m, DEREF_LANE_BYTE));
+	olo = msl_load_at(&m, base);
+	ohi = msl_load_at(&m, msl_iv(&m, "mcc_add(v%u, v%u)", base,
+															 msl_const(&m, 1)));
+	v = msl_load_region(&m, &r, olo, t);
+	if (mcc_slice_mutate) {
+		uint32_t p = msl_pair(&m, v);
+		v = msl_mk(msl_pv(&m, "int2(p%u.x ^ 1, p%u.y)", p, p), 1, 0);
+	}
+	msl_store_region(&m, &r, ohi, v, t);
+	if (m.failed) {
+		msl_module_free(&m);
+		return 0;
+	}
+	msl_main_end(&m, m.lane, v);
+	code = msl_module_finish(&m, &nb);
+	msl_module_free(&m);
+	if (!code || nb <= 0) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nb;
+	return 1;
 #else
 	SpvMod m;
 	SpvRegion r;
@@ -3314,10 +3393,47 @@ static int fmt_pool(void) {
 
 static int fmt_kernel(const MccFmtProg *p, MccGpuCode *out) {
 #if MCC_GPU_LANG_MSL
-	/* Metal arm: src/mccfmt.h has no MSL half, and every fmt primitive
-	 * addresses a region. TODO.md §5 stage M5, which depends on M4. */
-	(void)p; (void)out;
-	return 0;
+	MslMod m;
+	MslRegion r, s;
+	MslV arg[MCC_FMT_MAXARG];
+	uint32_t base, mbase, size, len;
+	char *code;
+	int nb = 0, i;
+	if (p->narg > FMT_NSLOT - 1)
+		return 0;
+	msl_module_begin(&m, FMT_NSLOT);
+	m.mem_base = g_fmt_src.base;
+	m.mem_nbyte = g_fmt_src.nbyte;
+	base = msl_main_begin(&m, FMT_NSLOT);
+	mbase = msl_iv(&m, "mcc_add(v%u, mcc_mul(v%u, v%u))",
+								 msl_const(&m, FMT_ARENA_WORD), m.lane,
+								 msl_const(&m, FMT_LANE_WORD));
+	r = msl_region_mem(&m, mbase, msl_uconst(&m, FMT_LANE_BYTE));
+	s = msl_region_mem(&m, msl_const(&m, 0), msl_uconst(&m, g_fmt_src.nbyte));
+	for (i = 0; i < p->narg; i++)
+		arg[i] = msl_load_live_v(&m, base, i, 1, 0);
+	size = msl_lo(&m, msl_load_live_v(&m, base, FMT_NSLOT - 1, 0, 1));
+	len = msl_fmt_emit(&m, &r, &s, p, msl_uconst(&m, FMT_DST), size, arg,
+										 p->narg);
+	if (mcc_slice_mutate) {
+		uint32_t wi = msl_region_word(&m, &r, msl_uconst(&m, FMT_DST), 0);
+		msl_word_set(&m, &r, wi,
+								 msl_iv(&m, "v%u ^ 1", msl_word_at(&m, &r, wi)));
+	}
+	if (m.failed) {
+		msl_module_free(&m);
+		return 0;
+	}
+	msl_main_end(&m, m.lane, msl_mk(len, 0, 1));
+	code = msl_module_finish(&m, &nb);
+	msl_module_free(&m);
+	if (!code || nb <= 0 || nb > MCC_GPU_CODE_MAX) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nb;
+	return 1;
 #else
 	SpvMod m;
 	SpvRegion r, s;
@@ -7565,8 +7681,42 @@ static long long g_hi_c[HI_N];
 
 static int hi_kernel(MccGpuCode *out) {
 #if MCC_GPU_LANG_MSL
-	(void)out;
-	return 0;
+	MslMod m;
+	MslRegion r;
+	MslV v, pa, pc;
+	uint32_t base;
+	char *code;
+	int nb = 0;
+	msl_module_begin(&m, HI_NSLOT);
+	m.mem_base = ast_eval_slice_rw_base;
+	m.mem_nbyte = (uint32_t)ast_eval_slice_rw_nbyte;
+	base = msl_main_begin(&m, HI_NSLOT);
+	if (!msl_mem_region(&m, &r)) {
+		msl_module_free(&m);
+		return 0;
+	}
+	pa = msl_load_live_v(&m, base, 0, 1, 1);
+	pc = msl_load_live_v(&m, base, 1, 1, 1);
+	v = msl_load_region(&m, &r, msl_mem_off(&m, pa), VT_LLONG);
+	if (mcc_slice_mutate) {
+		uint32_t p = msl_pair(&m, v);
+		v = msl_mk(msl_pv(&m, "int2(p%u.x ^ 1, p%u.y)", p, p), 1, 0);
+	}
+	msl_store_region(&m, &r, msl_mem_off(&m, pc), v, VT_LLONG);
+	if (m.failed) {
+		msl_module_free(&m);
+		return 0;
+	}
+	msl_main_end(&m, m.lane, v);
+	code = msl_module_finish(&m, &nb);
+	msl_module_free(&m);
+	if (!code || nb <= 0) {
+		free(code);
+		return 0;
+	}
+	out->p = code;
+	out->n = nb;
+	return 1;
 #else
 	SpvMod m;
 	SpvRegion r;

@@ -11,6 +11,18 @@
 #define MCC_FMT_MAXW 32
 #define MCC_FMT_MAXSTR 28
 
+#if defined(MCC_GPU_LANG_MSL) && MCC_GPU_LANG_MSL
+#define MCC_FMT_C_BASE 3300
+#define MCC_FMT_C_BYTE 320
+#define MCC_FMT_C_DEC 14200
+#define MCC_FMT_C_HEX 11300
+#define MCC_FMT_C_DEC32 5000
+#define MCC_FMT_C_HEX32 3800
+#define MCC_FMT_C_SFIX 3700
+#define MCC_FMT_C_SBYTE 380
+#define MCC_FMT_C_SDYN 60
+#define MCC_FMT_MAXCOST 36000
+#else
 #define MCC_FMT_C_BASE 820
 #define MCC_FMT_C_BYTE 152
 #define MCC_FMT_C_DEC 6900
@@ -21,6 +33,7 @@
 #define MCC_FMT_C_SBYTE 229
 #define MCC_FMT_C_SDYN 14
 #define MCC_FMT_MAXCOST 16384
+#endif
 
 enum {
 	MCC_FMT_LIT = 1,
@@ -695,5 +708,200 @@ static uint32_t spv_fmt_emit(SpvMod *m, const SpvRegion *r, const SpvRegion *s,
 	return pos;
 }
 
-#endif 
+#endif
+
+#if defined(MCC_GPU_EMITTER) && MCC_GPU_LANG_MSL
+
+static void msl_fmt_putb(MslMod *m, const MslRegion *r, uint32_t off,
+												 uint32_t byte, uint32_t wr) {
+	msl_line(m, "mccf_putb(memb, v%u, v%u, v%u, v%u, b%u);", r->base, r->nbyte,
+					 off, byte, wr);
+}
+
+static uint32_t msl_fmt_getb(MslMod *m, const MslRegion *s, uint32_t off) {
+	return msl_iv(m, "mccf_getb(memb, v%u, v%u, v%u)", s->base, s->nbyte, off);
+}
+
+static uint32_t msl_fmt_soff(MslMod *m, const MslRegion *s, MslV p) {
+	MslV b = msl_const64(m, m->mem_base);
+	uint32_t d, ok;
+	msl_widen(m, &p);
+	d = msl_pv(m, "mcc64_sub(p%u, p%u)", p.id, b.id);
+	ok = msl_bv(m, "p%u.y == 0", d);
+	return msl_iv(m, "b%u ? p%u.x : v%u", ok, d, s->nbyte);
+}
+
+static uint32_t msl_fmt_room(MslMod *m, uint32_t pos, uint32_t size) {
+	return msl_bv(m, "as_type<uint>(mcc_add(v%u, 1)) < as_type<uint>(v%u)", pos,
+								size);
+}
+
+static uint32_t msl_fmt_int(MslMod *m, const MslRegion *r, uint32_t dst,
+														uint32_t size, uint32_t pos, MslV v,
+														const MccFmtItem *it) {
+	MslV x[MCC_FMT_NDEC + 1], ten;
+	uint32_t y[MCC_FMT_NDEC + 1];
+	int wide = it->wide;
+	int n = wide ? (it->base == 10 ? MCC_FMT_NDEC : MCC_FMT_NHEX)
+							 : (it->base == 10 ? MCC_FMT_NDEC32 : MCC_FMT_NHEX32);
+	uint32_t nd, lead, padn, bl, neg = 0;
+	int i, j;
+	lead = msl_const(m, 0);
+	if (wide) {
+		msl_widen(m, &v);
+		x[0] = v;
+		if (it->sgn) {
+			neg = msl_bv(m, "p%u.y < 0", v.id);
+			x[0] = msl_mk(msl_pv(m, "b%u ? mcc64_neg(p%u) : p%u", neg, v.id, v.id),
+										1, 1);
+			lead = msl_iv(m, "b%u ? 1 : 0", neg);
+		}
+		ten = msl_const64(m, 10);
+		for (i = 1; i <= n; i++)
+			x[i] = msl_mk(it->base == 10
+												? msl_pv(m, "mcc64_udiv(p%u, p%u)", x[i - 1].id, ten.id)
+												: msl_pv(m, "mcc64_shr(p%u, 4u)", x[i - 1].id),
+										1, 1);
+	} else {
+		uint32_t lo = msl_lo(m, v);
+		y[0] = lo;
+		if (it->sgn) {
+			neg = msl_bv(m, "as_type<uint>(v%u) >= 0x80000000u", lo);
+			y[0] = msl_iv(m, "b%u ? mcc_sub(0, v%u) : v%u", neg, lo, lo);
+			lead = msl_iv(m, "b%u ? 1 : 0", neg);
+		}
+		for (i = 1; i <= n; i++)
+			y[i] = it->base == 10 ? msl_iv(m, "mcc_udiv(v%u, 10)", y[i - 1])
+														: msl_iv(m, "mcc_shr(v%u, 4)", y[i - 1]);
+	}
+	nd = msl_const(m, 1);
+	for (i = 1; i < n; i++) {
+		uint32_t nz = wide ? msl_bv(m, "mcc64_nz(p%u)", x[i].id)
+											 : msl_bv(m, "v%u != 0", y[i]);
+		nd = msl_iv(m, "mcc_add(v%u, b%u ? 1 : 0)", nd, nz);
+	}
+	bl = msl_iv(m, "mcc_add(v%u, v%u)", lead, nd);
+	padn = msl_const(m, 0);
+	if (it->width > 0) {
+		uint32_t w = msl_const(m, it->width);
+		padn = msl_iv(m,
+									"as_type<uint>(v%u) > as_type<uint>(v%u) ? mcc_sub(v%u, v%u)"
+									" : 0",
+									w, bl, w, bl);
+	}
+	if (it->sgn)
+		msl_fmt_putb(m, r, msl_iv(m, "mcc_add(v%u, v%u)", dst, pos),
+								 msl_const(m, '-'),
+								 msl_bv(m, "b%u && b%u", neg, msl_fmt_room(m, pos, size)));
+	for (j = 0; j < it->width; j++) {
+		uint32_t p = msl_iv(m, "mcc_add(mcc_add(v%u, v%u), %d)", pos, lead, j);
+		msl_fmt_putb(m, r, msl_iv(m, "mcc_add(v%u, v%u)", dst, p),
+								 msl_const(m, it->pad),
+								 msl_bv(m, "%du < as_type<uint>(v%u) && b%u", j, padn,
+												msl_fmt_room(m, p, size)));
+	}
+	for (i = 0; i < n; i++) {
+		uint32_t g, c, p;
+		if (!wide)
+			g = it->base == 10
+							? msl_iv(m, "mcc_sub(v%u, mcc_mul(v%u, 10))", y[i], y[i + 1])
+							: msl_iv(m, "v%u & 15", y[i]);
+		else if (it->base == 10)
+			g = msl_iv(m, "mcc64_sub(p%u, mcc64_mul(p%u, p%u)).x", x[i].id,
+								 x[i + 1].id, ten.id);
+		else
+			g = msl_iv(m, "p%u.x & 15", x[i].id);
+		c = msl_iv(m, "mcc_add(v%u, as_type<uint>(v%u) < 10u ? %d : %d)", g, g,
+							 '0', it->ucase ? 'A' - 10 : 'a' - 10);
+		p = msl_iv(m, "mcc_add(mcc_add(v%u, mcc_add(v%u, v%u)), mcc_sub(v%u, %d))",
+							 pos, lead, padn, nd, i + 1);
+		msl_fmt_putb(m, r, msl_iv(m, "mcc_add(v%u, v%u)", dst, p), c,
+								 msl_bv(m, "%du < as_type<uint>(v%u) && b%u", i, nd,
+												msl_fmt_room(m, p, size)));
+	}
+	return msl_iv(m, "mcc_add(v%u, mcc_add(v%u, v%u))", pos, bl, padn);
+}
+
+static uint32_t msl_fmt_str(MslMod *m, const MslRegion *r, const MslRegion *s,
+														uint32_t dst, uint32_t size, uint32_t pos, MslV v,
+														uint32_t prc, int dyn, const MccFmtItem *it) {
+	uint32_t b[MCC_FMT_MAXSTR], g[MCC_FMT_MAXSTR];
+	uint32_t soff = msl_fmt_soff(m, s, v);
+	uint32_t alive = msl_true(m), nl = msl_const(m, 0), padn, q;
+	int nb = mcc_fmt_sbytes(it), i, j;
+	for (i = 0; i < nb; i++) {
+		b[i] = msl_fmt_getb(m, s, msl_iv(m, "mcc_add(v%u, %d)", soff, i));
+		alive = msl_bv(m, "b%u && v%u != 0", alive, b[i]);
+		g[i] = dyn ? msl_bv(m, "b%u && %du < as_type<uint>(v%u)", alive, i, prc)
+							 : alive;
+		nl = msl_iv(m, "mcc_add(v%u, b%u ? 1 : 0)", nl, g[i]);
+	}
+	padn = msl_const(m, 0);
+	if (it->width > 0) {
+		uint32_t w = msl_const(m, it->width);
+		padn = msl_iv(m,
+									"as_type<uint>(v%u) > as_type<uint>(v%u) ? mcc_sub(v%u, v%u)"
+									" : 0",
+									w, nl, w, nl);
+	}
+	for (j = 0; j < it->width; j++) {
+		uint32_t pp = it->left ? msl_iv(m, "mcc_add(v%u, mcc_add(v%u, %d))", pos,
+																		nl, j)
+													 : msl_iv(m, "mcc_add(v%u, %d)", pos, j);
+		msl_fmt_putb(m, r, msl_iv(m, "mcc_add(v%u, v%u)", dst, pp),
+								 msl_const(m, ' '),
+								 msl_bv(m, "%du < as_type<uint>(v%u) && b%u", j, padn,
+												msl_fmt_room(m, pp, size)));
+	}
+	q = it->left ? pos : msl_iv(m, "mcc_add(v%u, v%u)", pos, padn);
+	for (i = 0; i < nb; i++) {
+		uint32_t pp = msl_iv(m, "mcc_add(v%u, %d)", q, i);
+		msl_fmt_putb(m, r, msl_iv(m, "mcc_add(v%u, v%u)", dst, pp), b[i],
+								 msl_bv(m, "b%u && b%u", g[i], msl_fmt_room(m, pp, size)));
+	}
+	return msl_iv(m, "mcc_add(v%u, mcc_add(v%u, v%u))", pos, nl, padn);
+}
+
+static uint32_t msl_fmt_emit(MslMod *m, const MslRegion *r, const MslRegion *s,
+														 const MccFmtProg *p, uint32_t dst, uint32_t size,
+														 const MslV *arg, int narg) {
+	uint32_t pos = msl_const(m, 0), nul, prc = msl_uconst(m, 0xFFFFFFFFu);
+	int i, k, ai = 0;
+	for (i = 0; i < p->n && !m->failed; i++) {
+		const MccFmtItem *it = &p->it[i];
+		if (it->kind == MCC_FMT_LIT) {
+			for (k = 0; k < it->llen; k++) {
+				uint32_t q = msl_iv(m, "mcc_add(v%u, %d)", pos, k);
+				msl_fmt_putb(m, r, msl_iv(m, "mcc_add(v%u, v%u)", dst, q),
+										 msl_const(m, (unsigned char)p->lit[it->loff + k]),
+										 msl_fmt_room(m, q, size));
+			}
+			pos = msl_iv(m, "mcc_add(v%u, %d)", pos, it->llen);
+			continue;
+		}
+		if (ai >= narg)
+			break;
+		if (it->kind == MCC_FMT_PREC) {
+			uint32_t pv = msl_lo(m, arg[ai++]);
+			prc = msl_iv(m, "as_type<uint>(v%u) >= 0x80000000u ? -1 : v%u", pv, pv);
+		} else if (it->kind == MCC_FMT_STR) {
+			int dyn = it->prc == MCC_FMT_P_DYN;
+			pos = msl_fmt_str(m, r, s, dst, size, pos, arg[ai++], prc, dyn, it);
+			prc = msl_uconst(m, 0xFFFFFFFFu);
+		} else if (it->kind == MCC_FMT_CHR) {
+			msl_fmt_putb(m, r, msl_iv(m, "mcc_add(v%u, v%u)", dst, pos),
+									 msl_lo(m, arg[ai++]), msl_fmt_room(m, pos, size));
+			pos = msl_iv(m, "mcc_add(v%u, 1)", pos);
+		} else {
+			pos = msl_fmt_int(m, r, dst, size, pos, arg[ai++], it);
+		}
+	}
+	nul = msl_iv(m, "b%u ? v%u : mcc_sub(v%u, 1)", msl_fmt_room(m, pos, size),
+							 pos, size);
+	msl_fmt_putb(m, r, msl_iv(m, "mcc_add(v%u, v%u)", dst, nul), msl_const(m, 0),
+							 msl_bv(m, "v%u != 0", size));
+	return pos;
+}
+
+#endif
 #endif 
