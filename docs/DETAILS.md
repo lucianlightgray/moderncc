@@ -44576,9 +44576,14 @@ MCC_REPLAY_IR=1  .symtab 6 entries: ... 2: OBJECT LOCAL localint
                                        5: NOTYPE GLOBAL UND  localint   <-- leaked
 ```
 
-Replay re-assembles `incl <operand>`, the operand names the function-local static, and
-the assembler — which cannot see a function-local `Sym` by name — mints a fresh
-**undefined global** for it. It reproduces at `-O1` **without** `MCC_RIR_FORCE`, i.e. on
+Operand substitution turns `"+m"(localint)` into text that names the symbol, and replay
+re-assembles that text. `asm_label_find` (`src/mccasm.c:64`) resolves the name through
+`sym_find` over the identifier table — which finds a function-local static on the capture
+pass, while the function's scope is live, and does **not** find it at replay time, after
+that scope is gone. `asm_label_push` then mints a fresh **undefined global**. That the
+symbol is created on the replay pass and not the capture pass is not inferred: the plain
+object has 5 symtab entries and the replay object has 6, from the same compile of the same
+file. It reproduces at `-O1` **without** `MCC_RIR_FORCE`, i.e. on
 the plain `MCC_REPLAY_IR=1` path rather than only under forced verification. Nothing
 references the leaked symbol so a link still succeeds today, but the object a user gets
 with replay on is not the object they get with it off, which is precisely the property
@@ -44652,3 +44657,32 @@ mis-binned as "0 slices", plus 2 first-time-runnable cells added their own
 reds). Not clean yet; every residual has an owner and an anchor.
 
 **Source.** win-x64, 2026-08-15, log `cmake-release/full-suite-2026-08-15.log`.
+
+<a id="t-lin-10378-inline-asm-that-writes-a-non-text-section-emits-it-twice-under-replay-and-the-gate-calls-it-faithful"></a>
+
+## T-lin-10378 — an inline-asm body that writes a non-`.text` section emits it **twice** under `MCC_REPLAY_IR`, and `rir_parity` calls it **faithful**
+
+Found while root-causing [T-lin-10064](#t-lin-10064-root-caused-all-three-rir-parity-divergences-are-one-defect-inline-asm-is-assembled-twice). It is the same mechanism — the body is assembled twice — but it is the worst case of the four, because it is the one nothing reports.
+
+**Two lines, and the object is wrong:**
+
+```c
+void f(void) { asm(".data; .int 0x11223344; .text"); }
+```
+
+```
+plain            .data  44332211                    (4 bytes)
+MCC_REPLAY_IR=1  .data  44332211 44332211           (8 bytes)
+```
+
+`.pushsection .rodata; .int 0xdeadbeef; .popsection` duplicates identically. It reproduces at `-O1` **without** `MCC_RIR_FORCE`, on the plain `MCC_REPLAY_IR=1` path.
+
+**And the verdict is `rfaithful`.** The other three divergences at least announce themselves. This one does not, and the reason is structural: `rir_verify_body` compares the function's span of `cur_text_section` and its relocations, and nothing else. A body whose *only* effect is on another section leaves the compared span byte-identical, so the gate is not merely silent — it is **incapable** of seeing this class. The 299/303 figure is measured over a subject with the whole class excluded, in both directions.
+
+**Blast radius, bounded honestly.** `MCC_REPLAY_IR` is env-only, read at `src/mccrir.c:6520`, defaulting to 0, and no `CMakeLists.txt` option sets it — so a default user build is unaffected and this is not a shipped miscompile. What it does mean is that every cell that sets it — `o0_ab.sh` measurement B, `c2_equiv.sh`, `rir_parity.cmake`, `tests/optfire/asmreplay.sh` — is measuring objects that can differ from the ones the same compiler produces with it off. Measurement B banks *counters* rather than object hashes, so nothing corrupt reached a bank; that is luck about which half of `o0_ab` banks bytes, not a property anyone chose.
+
+**Fixed by the same change, and this is the argument for direction (a).** If replay copies back the bytes the body emitted into `.text` during capture instead of re-assembling the text, the `.data` emission happens exactly once — on the capture pass — and is never re-executed. Re-assembly cannot be made idempotent here by restoring state, because the emission is the point: the body is *supposed* to append to `.data`, and the only correct number of times to run it is one.
+
+**What must also change, independently of the fix.** A gate that cannot see a class should say so. `rir_verify_body` should either extend its comparison to every section the body touched, or record that a body touched a section it does not compare and refuse to call that body faithful. Reporting `rfaithful` over an unexamined effect is the [same shape](#docs-refs-gains-a-conflict-marker-rule) as the three doc gates that stayed green over the property nobody was checking.
+
+**Source.** lin-x64, 2026-08-15, found while narrowing T-lin-10064's reproducers.
