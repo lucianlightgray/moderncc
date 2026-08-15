@@ -41,16 +41,23 @@ golden="moderncc r=42"
 
 "$GCC" -c "$WORK/a.c" -o "$WORK/a_g.o"
 "$GCC" -c "$WORK/b.c" -o "$WORK/b_g.o"
-"$MCC" -c -Wl,-oformat=coff "$WORK/a.c" -o "$WORK/a_m.o"
-"$MCC" -c -Wl,-oformat=coff "$WORK/b.c" -o "$WORK/b_m.o"
+"$MCC" -c "$WORK/a.c" -o "$WORK/a_m.o"
+"$MCC" -c "$WORK/b.c" -o "$WORK/b_m.o"
 
 for o in a_m b_m; do
 	m=$(magic2 "$WORK/$o.o")
 	if [ "$m" != "6486" ]; then
-		echo "coff-obj-diff: $o.o is not COFF x86-64 (magic $m); writer did nothing" >&2
+		echo "coff-obj-diff: default -c did not emit COFF x86-64 (magic $m); flip regressed" >&2
 		exit 1
 	fi
 done
+
+"$MCC" -c -Wl,-oformat=coff "$WORK/b.c" -o "$WORK/b_expl.o"
+xm=$(magic2 "$WORK/b_expl.o")
+if [ "$xm" != "6486" ]; then
+	echo "coff-obj-diff: explicit -Wl,-oformat=coff no longer emits COFF (magic $xm)" >&2
+	exit 1
+fi
 
 fail=0
 for pair in "a_g b_g gg" "a_g b_m gm" "a_m b_g mg" "a_m b_m mm"; do
@@ -68,10 +75,10 @@ for pair in "a_g b_g gg" "a_g b_m gm" "a_m b_g mg" "a_m b_m mm"; do
 	fi
 done
 
-"$MCC" -c "$WORK/b.c" -o "$WORK/b_elf.o"
+"$MCC" -c -Wl,-oformat=pe-x86-64 "$WORK/b.c" -o "$WORK/b_elf.o"
 em=$(magic2 "$WORK/b_elf.o")
 if [ "$em" != "7f45" ]; then
-	echo "coff-obj-diff: default -c no longer emits ELF (magic $em); regression" >&2
+	echo "coff-obj-diff: -Wl,-oformat=pe-x86-64 no longer emits ELF (magic $em); regression" >&2
 	fail=1
 fi
 if "$GCC" "$WORK/a_g.o" "$WORK/b_elf.o" -o "$WORK/out_neg.exe" 2>/dev/null; then
@@ -82,5 +89,5 @@ fi
 if [ "$fail" != "0" ]; then
 	exit 1
 fi
-echo "coff-obj-diff: OK (four-way mcc/mingw COFF link parity, ELF negative control rejected)"
+echo "coff-obj-diff: OK (default -c COFF, four-way mcc/mingw COFF link parity, explicit-ELF negative control rejected)"
 exit 0

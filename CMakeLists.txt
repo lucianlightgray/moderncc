@@ -2646,6 +2646,7 @@ function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir ou
         -I${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt)
     if(_win)
         set(_xflags ${_mccdefs_flags}
+                    -Wl,-oformat=pe-${cpu}
                     -B${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32
                     -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
                     -I${CMAKE_BINARY_DIR} ${_arch_incs})

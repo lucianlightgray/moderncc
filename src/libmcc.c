@@ -1324,8 +1324,18 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) { MCC_TRACE("ent
 
 	if (output_type == MCC_OUTPUT_OBJ || output_type == MCC_OUTPUT_ASM) { MCC_TRACE("br\n");
 #ifdef MCC_TARGET_PE
-		if (output_type == MCC_OUTPUT_OBJ && s->output_format == MCC_OUTPUT_FORMAT_COFF)
-			{ MCC_TRACE("br\n"); return 0; }
+		if (output_type == MCC_OUTPUT_OBJ) { MCC_TRACE("br\n");
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_I386
+			if (!s->output_format_explicit)
+				{ MCC_TRACE("br\n"); s->output_format = MCC_OUTPUT_FORMAT_COFF; }
+			else if (s->output_format == MCC_OUTPUT_FORMAT_BINARY)
+				{ MCC_TRACE("br\n"); s->output_format = MCC_OUTPUT_FORMAT_ELF; }
+#else
+			if (s->output_format != MCC_OUTPUT_FORMAT_COFF)
+				{ MCC_TRACE("br\n"); s->output_format = MCC_OUTPUT_FORMAT_ELF; }
+#endif
+			return 0;
+		}
 #endif
 		s->output_format = MCC_OUTPUT_FORMAT_ELF;
 		return 0;
@@ -1995,6 +2005,7 @@ static int mcc_set_linker(MCCState *s, const char *optarg) { MCC_TRACE("enter\n"
 			mcc_set_str(&s->mapfile, o.arg);
 			ignoring = 1;
 		} else if (link_option(&o, "oformat=")) { MCC_TRACE("br\n");
+			s->output_format_explicit = 1;
 #if defined MCC_TARGET_PE
 			if (0 == strncmp("pe-", o.arg, 3))
 #elif MCC_PTR_SIZE == 8

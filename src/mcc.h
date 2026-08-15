@@ -782,6 +782,7 @@ struct MCCState {
 
 	int output_type;
 	int output_format;
+	int output_format_explicit;
 	int run_test;
 
 	DLLReference **loaded_dlls;

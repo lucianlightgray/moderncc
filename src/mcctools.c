@@ -18,6 +18,10 @@ static unsigned long le2belong(unsigned long ul) { MCC_TRACE("enter\n");
 				 ((ul & 0xFF) << 24) + ((ul & 0xFF00) << 8);
 }
 
+static int ar_is_coff_machine(unsigned m) { MCC_TRACE("enter\n");
+	return m == 0x8664 || m == 0x14c || m == 0xaa64 || m == 0x1c0 || m == 0x1c4;
+}
+
 static int ar_usage(int ret) { MCC_TRACE("enter\n");
 	fprintf(stderr, "usage: mcc -ar [crstvx] lib [files]\n");
 	fprintf(stderr, "create library ([abdiopN] not supported).\n");
@@ -173,6 +177,7 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 		fclose(fi);
 
 		ehdr = (ElfW(Ehdr) *)buf;
+		if ((unsigned char)buf[0] == 0x7f && buf[1] == 'E' && buf[2] == 'L' && buf[3] == 'F') { MCC_TRACE("br\n");
 		if (ehdr->e_ident[4] != ELFCLASSW) { MCC_TRACE("br\n");
 			fprintf(stderr, "mcc: ar: Unsupported Elf Class: %s\n", argv[i_obj]);
 			goto the_end;
@@ -213,6 +218,45 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 					afpos[funccnt] = fpos;
 				}
 			}
+		}
+		} else if (fsize >= 20 && ar_is_coff_machine(read16le((unsigned char *)buf))) { MCC_TRACE("br\n");
+			unsigned char *cb = (unsigned char *)buf;
+			unsigned csymoff = read32le(cb + 8);
+			unsigned cnsyms = read32le(cb + 12);
+			unsigned char *csym = cb + csymoff;
+			char *cstrtab = (char *)(csym + (size_t)cnsyms * 18);
+			for (unsigned si = 0; si < cnsyms;) { MCC_TRACE("br\n");
+				unsigned char *se = csym + (size_t)si * 18;
+				int scnum = (short)read16le(se + 12);
+				int sclass = se[16];
+				int naux = se[17];
+				char cnamebuf[9];
+				const char *cnm = NULL;
+				if (sclass == 2 && scnum > 0) { MCC_TRACE("br\n");
+					if (read32le(se) == 0) { MCC_TRACE("br\n");
+						cnm = cstrtab + read32le(se + 4);
+					} else { MCC_TRACE("br\n");
+						memcpy(cnamebuf, se, 8);
+						cnamebuf[8] = 0;
+						cnm = cnamebuf;
+					}
+					if (cnm[0]) { MCC_TRACE("br\n");
+						istrlen = strlen(cnm) + 1;
+						anames = mcc_realloc(anames, strpos + istrlen);
+						strcpy(anames + strpos, cnm);
+						strpos += istrlen;
+						if (++funccnt >= funcmax) { MCC_TRACE("br\n");
+							funcmax += 250;
+							afpos = mcc_realloc(afpos, funcmax * sizeof *afpos);
+						}
+						afpos[funccnt] = fpos;
+					}
+				}
+				si += 1 + naux;
+			}
+		} else { MCC_TRACE("br\n");
+			fprintf(stderr, "mcc: ar: unsupported object format: %s\n", argv[i_obj]);
+			goto the_end;
 		}
 
 		file = argv[i_obj];
