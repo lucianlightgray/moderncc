@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T20:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:50Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T21:41Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T22:03Z |
 
 ## Contracts — blocking, highest priority
 
@@ -178,9 +178,6 @@
 - [ ] T-lin-10062 [S] `MCC_RIR_STAMP` is off by default, so 39,640 of 39,643 `Binary` nodes read back untyped
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10062-mcc-rir-stamp-is-off-by | DEPS: —
-- [ ] T-lin-10063 [S] The `SKIP_RETURN_CODE` count is stated three incompatible ways
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10063-the-skip-return-code-count-is | DEPS: —
 - [ ] T-lin-10066 [S] The covering array is a 3-wise guarantee over 108 of 114 flags
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10066-the-covering-array-is-a-3 | DEPS: —
