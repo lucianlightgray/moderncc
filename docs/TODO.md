@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T20:02Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T20:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:21Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T20:07Z |
 
@@ -13,8 +13,8 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 - [ ] T-lin-10078 [S] N36 residue — `/` and `%` on over-wide bit-fields are still per-operation truncated
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-15T20:02Z
-      REF: DETAILS.md#t-lin-10078-investigation-divmod-operand-reduction-verified-remaining-is-the-sweep-and-a-census-rebank | DEPS: — | NOTE: mac-arm64 wrote + verified the fix vs gcc-16 (extend the operand-reduction guard at mccgen.c:4575 to / % TOK_UDIV TOK_UMOD; div/mod are non-modular so operands must reduce to N bits, not the result). Discriminating case s.f/-1 on unsigned:33 → mcc matches gcc-16 (1/0/5/0), o0-baseline 5/5 byte-identical. REVERTED at reboot for clean state; 14-line patch + test in scratchpad, reapply-ready. REMAINING: the 782-object sweep + tests/smoke/bcases.h rows, and a census re-bank (re-apply adds mccgen.c lines)
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 9c09d27b | TS: 2026-08-15T20:20Z
+      REF: DETAILS.md#t-lin-10078-fixed-divmod-operand-reduction-landed-with-a-self-checking-exec-test | DEPS: — | NOTE: FIX LANDED 9c09d27b — the mccgen.c:4575 guard now fires the operand reduction for / % TOK_UDIV TOK_UMOD. Verified mcc==gcc-16 at O0-O3 (BFUL 33/40/63/64 + signed-33; fold and run agree). Coverage = self-checking rows in tests/exec/features_c99_c11/wide_bitfield_arith.c (golden stays OK, TDD-proven: FAILs without the fix), passes 25 variants incl diff3. NOT the bcases matrix — that ripples into the bfsweep divergence census across 3 per-platform bails banks (assessed + rejected, DETAILS). Task-anchor verification MET: ast/o0-baseline byte-identical 782/782 (fix inert on corpus), fmt/census-bank unmoved (no format sites), smoke/divergence+native+slice/census green. PENDING §8: full native suite in flight (bzh8tsal5). ON GREEN: mark DONE + archive; expect the T-lin-10092/mac environmental set only (fix is corpus-inert so no new genuine reds)
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
