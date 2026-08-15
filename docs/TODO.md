@@ -38,10 +38,6 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-mac-30004 [S] `spvgate` CASES has no f64 case: arm the SPIR-V arm's table on fp64 hosts
-      OWNER: win-x64 | STATE: CLAIMED | SHA: 60245088 | TS: 2026-08-15T13:50Z
-      REF: DETAILS.md#t-lin-10042-slice-1-msl-f64-bits-pair | DEPS: — | NOTE: taking it on the restored RTX 2060 per mac's recipe: (1) CASES-mode f64 skip (all-rungs-skip must print SKIP, not 0-compared FAIL), (2) unguard f-notneg/f-ternary from #if MCC_GPU_LANG_MSL, (3) bump spv-validate EXPECT measured with --emit-only, (4) take T-lin-10061's denormal reading while at it. VK_LOADER_LAYERS_DISABLE caveat applies to every run
-
 ## Open — claimable
 - [ ] T-lin-10379 [S] `MCC_REPLAY_IR=1` changes 46 of 58 corpus objects at `-O1` and above
       OWNER: — | STATE: OPEN | SHA: 7ea9be08 | TS: 2026-08-15T14:05Z
@@ -52,9 +48,6 @@
 - [ ] T-win-50015 [S] win-x64 — default `ms_bitfields = 1` on PE targets: mcc's plain bit-field layout is cross-TU-incompatible with every native Windows compiler
       OWNER: — | STATE: OPEN | SHA: 901e103e | TS: 2026-08-15T14:20Z
       REF: DETAILS.md#t-win-50015-slice-1-the-fixture-exists-and-the-flip-found-two-algorithm-gaps | DEPS: — | NOTE: RELEASED with slice 1 done — resume, not restart. Fixture tests/cross/pe-bitfield-abi.{c,sh} committed (inert, red-proven by hand, register when the flip lands). The trial flip greens the fixture + pass-msstruct byte-for-byte with mingw/clang BUT exposed two fidelity gaps in mcc's MS-layout mode that gate it: (a) empty-union/zero-width sizing (pe/torture-classes outer 12 vs mingw 8), (b) exec/expressions/integer_promotion.c stdout diverges under ms-mode (pe/x-oracle +1). Fix both TDD'd, then reapply the recorded two-edit flip. Wants a fresh, focused context — full sequencing at the REF anchor
-- [ ] T-win-50016 [S] — `slice/f64`: 3 of 22 fp64 negations diverge CPU↔device on the RTX 2060 (1 of 111 checks)
-      OWNER: — | STATE: OPEN | SHA: 05ea60f8 | TS: 2026-08-15T13:45Z
-      REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: the real device-numerics red formerly mis-binned as "0 slices on Windows" — now precisely measured with the device visible. fp64 NEGATION class; mac's T-lin-10042 MSL slice 1 made exactly this bit-exact on Metal (integer negation of the bits-pair) — the SPIR-V arm on NVIDIA likely diverges on NaN-payload negation. gpu/slicerun owners (lin/mac) with win-x64 as the confirming box
 - [ ] T-win-50018 [S] win-x64 — `libtest-extra` output_obj: "mcc: error: 'mcc_relocate()' twice is no longer supported"
       OWNER: — | STATE: OPEN | SHA: 05ea60f8 | TS: 2026-08-15T13:45Z
       REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: libmcc API surface; plausibly fallout from the mccjit/libmcc rework (mccjit_shutdown/PUB_FUNC churn). Win-visible; owner likely lin (libmcc.c) — verify whether Linux libtest-extra runs this case at all

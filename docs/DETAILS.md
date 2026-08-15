@@ -44950,3 +44950,50 @@ the same tree: `./mslgate` 2,754,660 compared 0 mismatches; gpu/ 15/15,
 slice|census 122/122, jit 66/66.
 
 **Source.** mac-arm64, 2026-08-15, code at `6610f66d`.
+
+<a id="t-mac-30004-resolved-all-six-f64-cases-armed-and-the-one-hazard-was-real"></a>
+
+## T-mac-30004 RESOLVED — all six f64 CASES armed on the SPIR-V arm; the NaN hazard mac predicted was real, measured, and fixed at the emitter
+
+**Done 2026-08-15 (win-x64, code SHA 35f1ba84), on the RTX 2060.** mac's
+CONTRACT (6610f66d) asked for a per-case decision: unguard all six if the
+denormal/NaN reading comes back clean, else the safe three. The reading came
+back clean for five and named the sixth's hazard precisely, and the hazard was
+fixable at the emitter rather than banked:
+
+- **Armed: all six** (`f-notneg`, `f-ternary`, `f-cmp`, `f-addsub`,
+  `f-addinf`, `f-mul`) — builders and table rows out of `#if MCC_GPU_LANG_MSL`
+  (they are arm-neutral AST constructors); the CASES loop gains arena mode's
+  `used_f64 && !g_f64` skip, and a case whose every rung f64-skips prints
+  SKIP, not the 0-compared FAIL. MSL arm behaviorally unchanged.
+- **The one divergence was FNegate-on-NaN**: `f-ternary` failed every rung —
+  cpu `0x7FFF…FF` vs gpu `0xFFFF…FF`, the CPU flipping a NaN's sign bit where
+  NVIDIA's `OpFNegate` returns the NaN unchanged (canonicalization latitude).
+  The same mechanism explains `slice/f64`'s "3 of 22 negations diverged"
+  (T-win-50016). Fix: `spv_f64_neg` is now pack → XOR `0x80000000` on the
+  high word → unpack — the same integer lowering the MSL arm's bits-pair
+  negate uses, exact on every device. After it: spvgate full table **44/44
+  OK, 2,895,728 points, 0 mismatches**.
+- **spv-validate EXPECT 140 → 176**, measured with `--emit-only` (44 × 4
+  lowerable rungs), and `spirv-val` is now provisioned on this box (scoop
+  `vulkan` SDK; `-DMCC_SPIRV_VAL=…/Bin/spirv-val.exe`; the SDK also restores
+  `find_package(Vulkan)` — set `VULKAN_SDK=C:/Users/llg/scoop/apps/vulkan/current`
+  at configure). `gpu/spv-slice-differential/-known-positive/-real` are live
+  cells on this box for the first time since the reset, all green.
+
+**The T-lin-10061 reading (fp64 denormal/NaN behavior, NVIDIA RTX 2060,
+driver 32.0.15.9186, Vulkan 1.4.325, VK_LOADER_LAYERS_DISABLE for the AMD
+layer):** f64 **denormals are preserved** through FAdd/FSub/FMul — `f-mul`
+multiplies by the denormal constant `0x0008000000000000` and is bit-exact over
+65,812 points; `f-addsub`/`f-addinf` (overflow→inf, max-magnitude sums) are
+bit-exact; NaN **payload propagation through arithmetic matches the CPU
+reference** at every compared point; the sole non-IEEE-forced latitude
+observed is **FNegate canonicalizing NaNs** (now bypassed by the XOR
+lowering). lavapipe's reading (the original T-lin-10061 subject) remains
+untaken — this is the NVIDIA half.
+
+**Verification.** Post-merge with mac's 6610f66d: `gpu/spv-*` (5 cells incl.
+validate + kp at EXPECT 176) and `slice/f64(+kp)` — 10/10 green in a vcvars
+ctest with the VK env.
+
+**Source.** win-x64, 2026-08-15, at 35f1ba84.
