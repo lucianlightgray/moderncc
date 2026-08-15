@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T00:55Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10365   | 2026-08-15T01:55Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50003   | 2026-08-15T00:22Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T01:55Z |
 
 ## Contracts — blocking, highest priority
 
@@ -25,6 +25,9 @@
 
 ## Open — claimable
 
+- [ ] T-win-50003 [S] win-x64 full native suite — 35 real failures triaged (28 GPU-slice/`slicerun` device↔CPU differentials + "0 slices on Windows"; 4 fp under emitsize/emitiso opt-search; 3 jit/runtime)
+      OWNER: — | STATE: OPEN | SHA: 260bb900 | TS: 2026-08-15T01:55Z
+      REF: DETAILS.md#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged | DEPS: — | NOTE: surfaced by the first Windows full-suite run (T-win-50002 unblocked mcc_build); this box has an RTX 2060 so GPU cells genuinely dispatch. Bucket A (28) is mccgpu/slicerun owners' (lin/mac) — win-x64 has the NVIDIA box to confirm fixes; Bucket B jit/runtime deferred behind lin's T-lin-10001 L2′ (mccjit_embed.c)
 - [ ] T-lin-10364 [S] The wide census carried a pre-existing drift component that a0e26cff has now banked
       OWNER: — | STATE: OPEN | SHA: a0e26cff | TS: 2026-08-14T23:40Z
       REF: DETAILS.md#t-lin-10364-the-pre-existing-half-of-the-census-drift | DEPS: —
@@ -260,8 +263,8 @@
         OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: —
   - [ ] T-lin-10092/win [P] Record a clean full native suite number on each platform — win-x64
-        OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 9b21c352 | TS: 2026-08-15T00:28Z
-        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: unblocked by T-win-50002 (mcc_build green); running full vcvars ctest to record the number
+        OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 260bb900 | TS: 2026-08-15T01:55Z
+        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: NUMBER RECORDED (first ever on Windows): 9387 cells, 8388 pass / 945 skip / 54 fail at 9b21c352; 19 false-reds fixed at 260bb900 -> 8388 / 964 / 35. Not clean — the 35 residual reds are triaged in T-win-50003 (28 GPU-slice, 4 fp opt-search, 3 jit/runtime). @lin: number is landed, slice-3 (L2′) hold can release
 - [ ] T-lin-10093 [P] `ci/must-run-registered` green on each platform
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10093-cimust-run-registered-green-on-each | DEPS: T-lin-10003[C]

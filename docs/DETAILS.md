@@ -1465,6 +1465,28 @@ x86_64-linux is 10025 cells and zero failures as of 2026-08-14, the first genuin
 
 **Source.** Migrated from `docs/TODO.md`, *The clean full-suite number for x86_64-linux — 2026-08-14, and it is 0 of 9995* — [M-TODO-0005](#m-todo-0005-the-clean-full-suite-number-for).
 
+**win-x64 — first recorded number, 2026-08-15.** `ctest -j4` in a vcvars shell, the whole tree: **9387 cells — 8388 passed, 945 skipped, 54 failed** at 9b21c352 (the first run possible at all on Windows; the suite was unrunnable until `mcc_build` was fixed — T-win-50002). Quoting the reds with the number, as the contract requires: **19 of the 54 were false-reds** and are now fixed at 260bb900 (PE/msvcrt AOT bounds-checking + Win64 va_start ABI — see below), leaving **8388 / 964 / 35**. The 35 real failures are triaged in full under T-win-50003; none is a win-x64 codegen regression traceable to this session's work — they are latent cells the `mcc_build` fix newly made runnable, dominated (28/35) by the GPU-slice/`slicerun` subsystem that this box (NVIDIA RTX 2060) actually dispatches to. So win-x64 is **not** clean yet; the number is recorded with its reds attached rather than withheld. `ci/gate-contract` is not among the 54 — it skips as a ctest cell on Windows (selfhost/python block), so the 48→50 --min-proved change (8f69a734) does not touch this number.
+
+<a id="t-win-50003-win-x64-full-native-suite-35-real-failures-triaged"></a>
+
+## T-win-50003 win-x64 full native suite — the 35 real failures, triaged
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+Filed by win-x64, 2026-08-15, from the first full `ctest` run the platform could produce (after T-win-50002 unblocked `mcc_build`). 54 cells failed; 19 were false-reds fixed at 260bb900 (T-lin-10092/win commit). The remaining **35** break into buckets. This box has an NVIDIA GeForce RTX 2060 (`available=1`, dispatches happen), so the GPU cells genuinely run — they are not no-device skips.
+
+**Bucket A — GPU-slice / device subsystem (28), owner mccgpu/slicerun (lin/mac).** These run only because the `mcc_build` fix built `slicerun`/`libmcc` and this box has a GPU. Two distinct failure shapes:
+- *CPU↔device differential disagreements* — real numeric divergence between the RTX 2060 and the host CPU. `slicerun` reports e.g. `fp64 ... two-NaN=18 (device takes the second operand's payload; host takes the first)` and `111 checks, 1 failures`; `slice/real`/`slice/src` "real slices disagree between the CPU and device runners" (src case: `src/mccforecast.h:220 t > k1 ? t - k1 : 0` returned 0 on device for 23 tuples; and a lane-order race in `combo_memo_init`).
+- *"0 slices schedulable on Windows"* — `slicerun: bodies=0 slices=0 tuples=0 ... FAIL (no real slice became schedulable work)` / `census walked 0 blocks` / `--refusals walked zero nodes` / `MCC_ARENA_DUMP produced nothing`. On Windows the slice extractor produces nothing to run, so differential/census cells over an empty tree fail rather than skip. Cells: `gpu/spv-slice-real`, `slice/{f64,f64-known-positive,cost,real,src,cref-oracle,inline,mcc-leaf-graft,depth-bailout,census,refusal-classes,noslot-classes,arena-intern-cap}`, `depth-census-control`, `fmt/{arena-census-bank,arena-census-known-positive}`, `smoke/{native,native-known-positive,strats-known-positive,engines,engines-known-positive,engines-identity,slice-bails,strat-dark,divergence,device,device-known-positive}`. These likely need a Windows capability gate (skip when the slice path yields no schedulable work / when GPU-slice is not certified on PE) or real fixes by the subsystem owners; win-x64 has the NVIDIA box to confirm either.
+
+**Bucket B — win-x64 exec/compile/runtime (7).**
+- *fp/math (4)* — `exec-search-emitsize/{floating_point,math_library}`, `exec-search-emitiso/{floating_point,math_library}`. Float-print mismatch **only** under the `emitsize` and `emitiso` opt-search strategies (every other opt level passes), so it is a strategy-specific codegen divergence, not a ucrt-printf issue. Platform-specificity unconfirmed (may also fail on Linux under those strategies). optfire/opt-search domain.
+- *jit/runtime (3)* — `jit/replay-parity`, `mcctest-embedjit`, `runtime-bench-check`. Run now that the embed-JIT builds on Windows; per-cell diagnosis still owed. lin is holding a JIT-pool slice (T-lin-10001 L2′) that touches `mccjit_embed.c`, so defer diagnosis until that lands.
+
+**Already fixed (19, at 260bb900), for the record:** `exec-*/bound_global` ×18 (PE/msvcrt AOT bounds-checking does not fire on an out-of-region store — works under -run/JIT — same limitation as the skipped `mcctest-bcheck`), `compile.va_start_nonsym` (Win64 varargs ABI needs the named parameter's address; SysV ignores the arg and accepts).
+
+**Verification.** Re-run the whole tree in a vcvars ctest; the 35 above are the residual reds. Bucket A is the priority for the subsystem owners (28/35, and the "0 slices on Windows" half looks like a genuine Windows slice-path gap, not just device numerics).
+
 <a id="t-lin-10093-cimust-run-registered-green-on-each"></a>
 
 ## T-lin-10093 `ci/must-run-registered` green on each platform
