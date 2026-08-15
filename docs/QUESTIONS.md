@@ -47,4 +47,3 @@ REF: DETAILS.md#q-lin-10003-can-all-three-machines-push-to
 
 **ANSWER (human, 2026-08-15):** Yes. `git pull`/`git push` works from all three machines; there is no branch protection on `main`. Mode (a) confirmed: claim-by-push is the ownership mechanism and it is live. Combined with Q-lin-10001/10002, this makes the repo the sole coordination channel — push to claim, pull to observe, never wait on a message.
 **STATUS: ANSWERED** 2026-08-15T10:59Z
-

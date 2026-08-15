@@ -4,9 +4,9 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T06:20Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T11:00Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50005   | 2026-08-15T13:20Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T07:20Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T15:00Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50005   | 2026-08-15T14:05Z |
 
 ## Contracts — blocking, highest priority
 
@@ -20,17 +20,16 @@
       REF: DETAILS.md#t-lin-10001-slice-3a-the-pool-job-becomes-a-tick | DEPS: — | NOTE: hold released by win-x64; slice 3a DONE at c6c26c64 (job->run is now job->tick, quit re-read between ticks, behaviour identical, 79/79 green). Slice 3b = split sd_job_heavy + the bound assertion + reconcile jit/selftest-shutdown's `done == accepted`, which IS the unbounded property written as a requirement — all one unit, see DETAILS
 
 
-- [ ] T-lin-10365 [S] An isolated, iterative Windows-on-ARM CI hook on a `woa/**` branch
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
-      REF: DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor | DEPS: — | NOTE: executes Q-lin-10013's answer; unblocks T-lin-10086/T-lin-10087
-
-
 ## In progress — win-x64     ← only win-x64 writes this zone
+
+- [ ] T-lin-10083 [X] win-x64 — flip default `-c` to COFF and re-bank `o0-baseline`
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-15T14:10Z
+      REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: T-lin-10002[C] | NOTE: flip landed in-tree (libmcc.c mcc_set_output_type: default -c OBJ on PE -> COFF, gated by new output_format_explicit so -Wl,-oformat=pe-x86-64 still yields ELF and =coff unchanged); coff-obj-diff.sh negative control moved to explicit-ELF. Building + verifying pe/coff-obj-diff, then re-bank o0-baseline (native key) + arm64pe_diff
 
 ## Open — claimable
 - [ ] T-lin-10373 [S] `trace-gate-invariant` integrity: the file-arming test misses two of its own accepted openers
-      OWNER: — | STATE: OPEN | SHA: 67fe014e | TS: 2026-08-15T11:00Z
-      REF: DETAILS.md#t-lin-10373-tracegate-integrity-three-gaps-found-while-executing-q-mac-30002 | DEPS: — | Q: Q-mac-30002 ANSWERED | NOTE: found executing Q-mac-30002's "no hole in the gate" constraint. (1) tracegate.c:256 arms a file on the literal `MCC_TRACE(` only, but check_open accepts MCC_TRACE / _IF / _WHEN — a file instrumented solely with _IF/_WHEN is NEVER scanned, gate reporting nothing over an empty subject. Latent today, worsens as _WHEN adoption grows. One-line fix, do this first. (2) arg_is (tracegate.c:126) is dead code, superseded by arg_is_n at ddbc14c8 — delete. (3) gate-contract.txt:111 is `unfloored | unproved` and the known-positive the Q-mac-30002 answer cites was a manual fixture, never registered — no trace-gate-known-positive cell exists. Registering it is what makes (1) unable to recur; template cmake/idiomgate_known_positive.cmake + CMakeLists.txt:3615-3621, add to MCC_TREEGATE_CELLS (:9224) + must-run.txt; the unproved ratchet may only fall. DISJOINT from T-lin-10079 — that changes src/mccircap.c, this changes the gate; either order
+      OWNER: — | STATE: OPEN | SHA: 3acffeb1 | TS: 2026-08-15T15:00Z
+      REF: DETAILS.md#t-lin-10373-tracegate-integrity-three-gaps-found-while-executing-q-mac-30002 | DEPS: — | Q: Q-mac-30002 ANSWERED | NOTE: found executing Q-mac-30002's "no hole in the gate" constraint. (1) tracegate.c:256 arms a file on the literal `MCC_TRACE(` only, but check_open accepts MCC_TRACE / _IF / _WHEN — a file instrumented solely with _IF/_WHEN is NEVER scanned, gate reporting nothing over an empty subject. Latent today, worsens as _WHEN adoption grows. One-line fix, do this first. (2) arg_is (tracegate.c:126) is dead code, superseded by arg_is_n at ddbc14c8 — delete. (3) gate-contract.txt:111 is `unfloored | unproved` and the known-positive the Q-mac-30002 answer cites was a manual fixture, never registered — no trace-gate-known-positive cell exists. Registering it is what makes (1) unable to recur; template cmake/idiomgate_known_positive.cmake + CMakeLists.txt:3615-3621, add to MCC_TREEGATE_CELLS (:9224) + must-run.txt; the unproved ratchet may only fall. T-lin-10079 (the src/mccircap.c half) is now DONE at d2054030 — this row is the whole of what remains, and it did NOT go live in the process: mccircap.c still carries 32 literal `MCC_TRACE(` lines alongside its 46 `MCC_TRACE_WHEN(`, so the file is still armed and gap (1) stays latent. It goes live the day a file is instrumented with _WHEN/_IF only
 - [ ] T-lin-10057 [S] Make `kept_coverage` host-stable, so the floor is tool-enforced instead of a convention
       OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
       REF: DETAILS.md#q-lin-10007-answer-make-kept-coverage-host-stable | DEPS: — | Q: Q-lin-10007 ANSWERED | NOTE: UNBLOCKED. Human chose host-stable — explicitly NOT raising `--tol` and NOT encoding "bank from stage2" as a convention. DoD: the same tree measured from a gcc host and from a stage2 self-hosted compiler yields the same kept_coverage within the EXISTING --tol of 0.05pp, without widening it. Today they disagree: fallback 98 / kept 82.7770 (gcc host) vs 100 / 82.7139 (stage2) at -O0 — a 0.06pp spread outside tol, so banking from a gcc host re-breaks CI, which tests the stage2 tree. Once it holds, "bank from stage2" stops being a rule
@@ -73,12 +72,9 @@
 - [ ] T-lin-10010 [S] Implement reversed `scalar_storage_order`; refusing it is the safe interim, not the feature
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10010-implement-reversed-scalar-storage-order | DEPS: —
-- [ ] T-lin-10011 [S] Register-array decay: `*a` and `*(a+1)` are still accepted
-      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
-      REF: DETAILS.md#q-lin-10004-answer-keep-gccs-register-array-leniency | DEPS: — | Q: Q-lin-10004 ANSWERED | NOTE: UNBLOCKED — human answered Mode (a), keep gcc's leniency. Reject side already DONE + arm64-confirmed (both decay surfaces funnel through one gen_cast() choke point; existing dg-error fixture covers it). SOLE remaining DoD = the accept-forms fixture, now writable and written in the gcc mode: `a[1]` compiles, `*(a+1)` compiles. No subscript-suppression flag is built
 - [ ] T-lin-10012 [S] 32-byte vectors are laid at 16-byte alignment, so cross-TU to gcc is incompatible
-      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
-      REF: DETAILS.md#q-lin-10005-answer-raise-mcc-max-align-for-32-byte-vectors | DEPS: — | Q: Q-lin-10005 ANSWERED | NOTE: human chose the ABI change, NOT the documented-incompatibility hold. Raise MCC_MAX_ALIGN so a 32-byte vector in a struct is laid at 32-byte alignment and is cross-TU-compatible with gcc. ORDER IS FIXED: (1) measure the blast radius — how many cells and how many banks move — then (2) raise the cap, then (3) re-bank. Landing the change before the measurement makes the re-bank indistinguishable from an unexplained mass diff
+      OWNER: — | STATE: OPEN | SHA: 3acffeb1 | TS: 2026-08-15T15:00Z
+      REF: DETAILS.md#t-lin-10012-the-references-measured-alignof-is-not-the-abi-and-the-rule-is-per-target | DEPS: — | Q: Q-lin-10005 ANSWERED | NOTE: human chose the ABI change, NOT the documented-incompatibility hold. PHASE 1 + 1b DONE (measurement only, no code): they REVISE the instrument the answer named. (a) MCC_MAX_ALIGN is the WRONG knob — it also feeds bare `__attribute__((aligned))` at mccgen.c:5815 (a second unasked ABI change), wide256_slice.h:59 is immune, and one per-arch constant cannot express a rule that must now differ per target. The surgical site is mccgen.c:7064 alone. (b) `_Alignof` is NOT the ABI: on x86_64 gcc reports 16 and lays the member at 32, clang reports 32 and lays it at 32 — the references disagree on the report and agree on the LAYOUT, and mcc's `_Alignof` of 16 already matches gcc. The defect is that mcc lays out with that 16: `struct{char; v32}` is 48 in mcc, 64 in both references. (c) THE RULE IS PER TARGET — x86_64/i386: layout alignment = the vector's size; arm64: min(size,16), which mcc ALREADY matches and where a change would be a REGRESSION (measured vs gcc-16 + Apple clang). So the earlier "eleven columns move" is wrong: only the x86_64 and i386 columns move, for the single banked object tests/exec/types/int256_gates.c, and arm64 must not. REMAINING, in order: (1) the missing fixture — NO test in the tree compiles a 32-byte vector, so the fix would land completely unexercised; write the per-target cross-TU fixture asserting offsetof/sizeof identical to that target's reference cc (must pass UNCHANGED on arm64, is its known-positive; fails today on x86_64/i386), (2) change mccgen.c:7064, (3) re-bank only the columns the rule moves. Re-bank is lin-x64's: target-keyed keys and o0_ab refuses banking from a partial measurement
 - [ ] T-lin-10013 [S] `__int256` has no literal suffix
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10013-int256-has-no-literal-suffix | DEPS: —
@@ -157,9 +153,6 @@
 - [ ] T-lin-10038 [S] No tree-recursion exec golden exists, and the failure mode is a GPU hang
       OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
       REF: DETAILS.md#t-lin-10038-no-tree-recursion-exec-golden-exists | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
-- [ ] T-lin-10039 [S] `spvgate` reports OK for a case that lowered nothing
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10039-spvgate-reports-ok-for-a-case | DEPS: T-lin-10003[C]
 - [ ] T-lin-10041 [X] mac-arm64 — the native MSL region arm
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10041-mac-arm64-the-native-msl-region | DEPS: —
@@ -247,21 +240,12 @@
 - [ ] T-lin-10078 [S] N36 residue — `/` and `%` on over-wide bit-fields are still per-operation truncated
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10078-n36-residue-and-on-over-wide | DEPS: —
-- [ ] T-lin-10079 [S] `ir_cap`'s trace sites fire ~375k times at `-O0` where the layer is inactive
-      OWNER: — | STATE: OPEN | SHA: ddbc14c8 | TS: 2026-08-15T11:00Z
-      REF: DETAILS.md#q-mac-30002-human-ratification-and-the-patch-that-is-not-there | DEPS: — | Q: Q-mac-30002 ANSWERED | NOTE: UNBLOCKED. Infra half ALREADY LANDED at ddbc14c8 — MCC_TRACE_WHEN(cond,...) in src/mcclog.h:168, accepted as an opener by tools/tracegate.c:135, message still checked in 2nd position via arg_is_n(); treegate 12/12. Human ratified the design 2026-08-15. REMAINING = the compiler half only: rewrite src/mccircap.c's openers as MCC_TRACE_WHEN(ir_cap_active, "enter\n")/("br\n") (ir_cap_active is file-scope at mccircap.c:104) + keep the behaviour-preserving fast path in the ~15 hand-written hooks; the ~20 macro-generated IR_CAP_W*/R* wrappers inherit it. Target: ircap_events(-O0) 359893→1 with trace-gate-invariant green. CORRECTION: the "reapply-ready 237-line patch" is NOT reachable (mac session scratchpad, absent from this tree) and encodes the REJECTED shape (MCC_TRACE moved below a guard) — reconstruct against MCC_TRACE_WHEN, do not re-apply. The investigation anchor's resume recipe is SUPERSEDED
-- [ ] T-lin-10080 [S] The 31-byte `full_language.c -O0` residual is unattributed
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10080-the-31-byte-full-languagec-o0 | DEPS: —
 - [ ] T-lin-10081 [S] `MCC_GPU_LOCK`: replicate the resident state per context, then narrow the lock
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10081-mcc-gpu-lock-replicate-the-resident | DEPS: —
 - [ ] T-lin-10082 [S] The `--jit-always-gpu` boundary is struct member access, not link-time symbols
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10082-the-jit-always-gpu-boundary-is | DEPS: —
-- [ ] T-lin-10083 [X] win-x64 — flip default `-c` to COFF and re-bank `o0-baseline`
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: T-lin-10002[C]
 - [ ] T-lin-10084 [X] win-x64 — non-constant `__except` filters and `__finally` need funclet codegen
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10084-win-x64-non-constant-except-filters | DEPS: —

@@ -43495,3 +43495,207 @@ The [Q-mac-30002 answer](#q-mac-30002-answer-the-invariant-requires-a-trace-site
 **Scope boundary.** This is *not* T-lin-10079. That task changes `src/mccircap.c` and must stay green against the gate as it exists; this one changes the gate. They touch disjoint files and can land in either order.
 
 **Source.** Found on lin-x64, 2026-08-15, while executing Q-mac-30002's answer. Verified against `tools/tracegate.c` and `tests/gate-contract.txt` at `67fe014e`.
+<a id="review-pass-2026-08-15-what-the-consistency-audit-found"></a>
+
+## Review pass, 2026-08-15 — what a consistency audit over the docs found
+
+A mechanical pass over `TODO.md`, `QUESTIONS.md`, `ARCHIVED.md` and `DETAILS.md`, checking the things a human reading one row at a time cannot see. Four findings, three of them mine.
+
+**1. A broken archive REF.** `T-lin-10366` was archived citing `#t-lin-10366-ref-cc-is-x86-64-only-on-windows`, an anchor that was never written — its reasoning lived only in a commit message. Anchor written; the class is now [gated](#docref-lint-gains-an-anchor-rule) so it cannot recur silently. 83 TODO refs and 257 archive refs checked; this was the only break.
+
+**2. An answered question left open.** `Q-mac-30002` was answered and its fix landed (`ddbc14c8`), but `QUESTIONS.md` still listed it. §9 requires the block be pruned to an archive record once the substance is migrated. Done. **The gap is structural, not careless:** answering a question and pruning it are two different files and nothing tied them together, so the second half is easy to skip when the first half is the interesting part.
+
+**3. A task left IN_PROGRESS after it was delivered.** `T-lin-10365`'s hook exists, is merged to main, and has produced four runs of findings. Closed.
+
+**4. Four questions labelled mode (a) whose tasks are BLOCKED, which §9 forbids.** `Q-lin-10007`, `Q-lin-10008`, `Q-lin-10010`, `Q-lin-10011`. Under §9 a mode-(a) question leaves its task **active** under a recorded assumption; mode (b) blocks it. Reading each assumption decides it, and in all four the assumption is *a decision not to act*:
+
+| question | the recorded assumption | why that is mode (b) |
+| --- | --- | --- |
+| `Q-lin-10007` | floors stay at the lower of the two, the rule stays a convention | nothing to do under it |
+| `Q-lin-10008` | the freeze stands, none of the six is scheduled | nothing to do under it |
+| `Q-lin-10010` | it stays gated, every move costs an investigation | leaves the subject untouched |
+| `Q-lin-10011` | the 63 `EXTRA` cells stay unarmed | **arming them is the task** |
+
+**The label was wrong, not the state.** BLOCKED is the accurate description of all four, so the correction is appended to each question rather than the four tasks being flipped to OPEN — flipping would have made them look claimable while their own recorded assumption forbids the work, which is worse than the inconsistency it fixed. `QUESTIONS.md` is union-merged, so the corrections are appends, never edits.
+
+**What the audit did not find, which is worth recording too.** 88 task rows with no owner/state incoherence (no CLAIMED/IN_PROGRESS without an owner, no OPEN with one); no double-booking between `TODO.md` and `ARCHIVED.md` beyond the two `[P]` children deliberately kept visible until their parent closes; and every `Q:` reference on a BLOCKED task resolving to a question that is genuinely still open.
+
+**Source.** lin-x64, 2026-08-15.
+
+<a id="t-lin-10079-done-mcc-trace-when-gated-the-openers-invariant-green"></a>
+
+## T-lin-10079 DONE — `MCC_TRACE_WHEN(ir_cap_active, …)` gated the openers; 359,893 → 1 with the invariant green
+
+Landed the mac half of [Q-mac-30002's resolution](#q-mac-30002-answer-the-invariant-requires-a-trace-site-not-a-print). The earlier investigation ([here](#t-lin-10079-investigation-fix-works-359893-to-1-but-collides-head-on-with-trace-gate-invariant)) proved the fix worked but that moving `MCC_TRACE` below a guard reds `trace-gate-invariant`; lin's insight was that the invariant requires a trace *site* first, never an unconditional *print*, and shipped `MCC_TRACE_WHEN(cond, …)` (infra at `ddbc14c8`).
+
+**What landed (code, `d2054030`).** Every per-op entry point in `src/mccircap.c` — `ir_cap_begin`/`ir_cap_end`, the ~15 hand-written hooks (`gv`/`vstore`/`vpushv`/`vpushsym`/`vsetc`/`gfunc_return`/`mk_pointer`/`gen_va_arg`/`asm`/`asm_gen_code`/`gen_cmov`/`gen_reg_addi`/`gen_vla_alloc`/`gen_increment_tcov`), and `fconst_take`/`fconst_note`/`pred` — has its opener and its inactive-reachable branches converted from `MCC_TRACE(…)` to `MCC_TRACE_WHEN(<workguard>, …)`. The workguard is the condition under which the function actually captures: `ir_cap_active` for most; `ir_cap_replaying` for `fconst_take`; `ir_cap_active || ir_cap_replaying` for `pred`. Lifecycle (`teardown`/`reset`) and active-only internal helpers (`new_op`/`snap_vstack`/`raw_add`/`gap`/`relofs`/`issue`/`op_name`) keep unconditional `MCC_TRACE` — they never fire spuriously, and `teardown` is the one legitimate once-per-compile marker. Symmetric 46/46 diff.
+
+**Measured (x86_64 `-DMCC_TARGET_ARCH=x86_64 -DMCC_CONFIG_TRACE=ON` trace+inv build).** `emit-map.py --target full_language.c --opt=-O0`: `ircap_events` **359,893 → 1** (the residual is `mccircap.c:122` = `ir_cap_teardown`, exactly as lin predicted). `bodies_traced` (301) and `rir_events` (80,332) unchanged — no other layer perturbed. Active-path fidelity intact: the `-O1` census bank still passes (`emit-map bank OK for x86_64|full_language.c|-O1`, `anchor_abort_matches_inv True`).
+
+**Gates.** `trace-gate-invariant` **green** (the whole point — `MCC_TRACE_WHEN` is an accepted opener), `treegate` 12/12, `ast/o0-baseline` quartet 5/5 **byte-identical**. Byte-identity is guaranteed by construction: `MCC_TRACE_WHEN` is `((void)0)` when `MCC_CONFIG_TRACE` is off, so the shipped build's `mccircap.c` is unchanged — the events only ever existed in a diagnostic build. No test files added/removed, so no corpusgate; no bank moved.
+
+**Source.** mac-arm64, 2026-08-15, code at `d2054030` on lin's infra `ddbc14c8`.
+
+<a id="load-sensitive-measurements-five-instances-in-one-day"></a>
+
+## Standing note — five load-sensitive measurements in one day, and none of them is fixed
+
+Distinct from [green on the box that wrote it](#green-on-the-box-that-wrote-it), which is about a *pin* encoding one machine. This is about a *measurement* whose result depends on what else the machine is doing.
+
+| instance | how it presented | how it resolved |
+| --- | --- | --- |
+| [T-lin-10072](#t-lin-10072-closed-unreproduced-and-10073-corroborated) `optfire/abs`, `level-abs` | fail only in a full parallel run | **unreproduced** across four attempts including a named 24-way load; closed |
+| [T-lin-10073](#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver) wine `run-tier` | "load-sensitive" | **not load at all** — a foreign `wineserver`; serial retry at load average 7 still timed out |
+| [T-lin-10371](#t-lin-10371-a-nondeterministic-segfault-that-moves-between-cells) WoA SEGFAULT | a crash in a named cell | the crash **moves between cells**; same tree, different cell, one clean run |
+| mac `flagsweep-exec` ×15 | 15 reds in a full suite | pass at `-j1`, 50–100 s each; environmental |
+| mac `smoke/strat-dark` | 14 dark strategies "fell 1 → 0" *and* "no categories at all" | passes isolated at 317 s; the `-O13` strategy census shifts under compile contention |
+
+**The reading that unifies them.** Four of the five were first reported as a defect in a *cell*, and in every one of those the cell was innocent — the subject was the machine's state. The fifth (`T-lin-10073`) was reported as load and turned out to be a specific foreign process. **So "it failed under load" is a description of the observer, not a diagnosis**, and the useful first question is always the same: *does it reproduce with nothing else running?*
+
+**One of them shows why this matters beyond noise.** mac's `strat-dark` reported both "14 strategies improved to zero" and "the census produced no categories at all". Those are not two findings — they are one, and the second explains the first. A census with no input reports every category absent, which the ratchet renders as *improvement*. A load-sensitive measurement can therefore fail in the direction that looks like **good news**, which is the failure mode nobody re-runs.
+
+**The requirement already exists and has been applied to none of them.** [M-TODO-0088](#m-todo-0088-cells-that-fail-under-parallel-load) states it: *"a correct cell either serialises itself against the resource it needs or skips"*, and *"'it was contention' is a diagnosis to be proved and then removed, not a reason to shrug"*. Five instances in one day, zero cells changed. The gap is not that the rule is wrong; it is that diagnosing each instance costs a re-run and closing it costs a design, so everyone stops after the re-run — including me, twice today.
+
+**Cheapest thing that would help**, recorded rather than built because it wants a design and not a patch: the cells that keep doing this (`optfire/*`, wine `run-tier`, the `-O13` strategy census, `flagsweep-exec`) could each print the one fact that makes their result interpretable — load average and whatever foreign process they contend with — the way [T-lin-10073's diagnostic](#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver) already prescribes `pgrep -a wineserver`. A red that carries its own environment is triaged in one reading instead of a re-run.
+
+**Source.** lin-x64 and mac-arm64, 2026-08-15.
+
+
+<a id="t-lin-10011-done-accept-fixture-landed-gcc-mode-per-q-lin-10004"></a>
+
+## T-lin-10011 DONE — the accept-forms fixture landed in gcc mode, per Q-lin-10004's answer
+
+The reject side was complete and arm64-confirmed at the one `gen_cast()` choke point ([status](#t-lin-10011-status-reject-side-complete-arm64-confirmed-sole-remainder-is-q-lin-10004)); the sole remaining DoD was the accept-forms fixture, which could not be written until Q-lin-10004 was *definitively* answered because `a[1]` flips with the mode. The human answered Mode (a) — **keep gcc's leniency, `a[1]` compiles** — so the fixture is written in gcc mode.
+
+**What landed (code, `4dda0e60`).** `tests/diagnostics/register_array_decay_accept.c` — a `register int a[4]` whose elements are stored and read back through every accepted decay surface: `*a`, `*(a + 1)`, and the subscripts `a[1]`/`a[3]`. Added to the compile-success orphan set in `CMakeLists.txt`, so it runs as `compile.register_array_decay_accept` and must compile `rc=0`. The task required the fixture to "carry both accepted forms and the `a[1]` case, whichever way Q-lin-10004 is answered" — it now does, in the gcc direction. `-R 'register_array_decay'` covers both sides: the accept fixture and the existing `diag.dg-error.register_array_decay` reject (`int *p = a;` → *address of register variable*).
+
+**Gates.** `compile.register_array_decay_accept` + `diag.dg-error.register_array_decay` both pass; `corpusgate` 6/6 (the added orphan does not move the corpus census), `treegate` 12/12, `docs/refs` green. The `*a`/`*(a+1)` mcc-vs-both-references divergence noted in the original task stays a documented Mode-(a) choice, not a defect — mcc matches gcc here, per the answer.
+
+**Source.** mac-arm64, 2026-08-15, code at `4dda0e60`; unblocked by Q-lin-10004's human answer.
+
+<a id="q-lin-10005-answered-raise-mcc-max-align-and-whose-lane-it-is"></a>
+
+## Q-lin-10005 answered — raise `MCC_MAX_ALIGN`, and why the work is lin-x64's
+
+**Answer (human, 2026-08-15):** raise it. A 32-byte vector in a struct is to be laid at 32-byte alignment and cross-TU-compatible with gcc — **not** the mode-(a) hold. Measure the blast radius first, then re-bank.
+
+That reverses the recorded assumption, which was that the cap stays and the incompatibility is documented. [T-lin-10012](#t-lin-10012-32-byte-vectors-are-laid-at) is unblocked and is now a two-phase task, in the order the answer gives:
+
+1. **Measure.** How many cells and how many banks move. The answer calls this "the first half either way", and it is also the only thing that makes the second half reviewable — an ABI change whose blast radius is discovered during the re-bank is indistinguishable from one that broke something.
+2. **Change, then re-bank** what the measurement predicted, and only that.
+
+**Whose lane, since mac-arm64 asked.** The measurement and the re-bank are **lin-x64's**, for the same structural reason the [o0_ab cross re-bank](#t-lin-10089-the-cross-re-bank-lands-199-of-298) was: the banks this touches are **target-keyed across eleven keys**, and `o0_ab.sh` refuses `O0_AB_BANK=1` from a partial measurement (`:458`), so a re-bank demands every cross compiler. Only this box has all eleven built. mac cannot produce `x86_64-osx` at all, exactly as with T-lin-10089.
+
+**What mac-arm64 owns instead, and it is not nothing:** whether the raised alignment is *correct* on arm64 — the Darwin/AAPCS64 side of a 32-byte-aligned struct member — which is a reference question their host can answer and mine cannot, the same split that made the [C16 smoke arm](#t-lin-10008-done-the-c16-smoke-arm-and-what-it-found) mine.
+
+**Not started, deliberately.** A blast-radius measurement across eleven targets is a corpus-wide compile, and a 10062-cell validation suite is running on this box. Measuring under self-inflicted load is what [five separate rows](#load-sensitive-measurements-five-instances-in-one-day) got wrong today; the measurement waits for an idle box.
+
+**Source.** Answer recorded on lin-x64, 2026-08-15.
+
+
+<a id="t-lin-10080-done-the-residual-is-now-zero-byte-accounting-is-exact"></a>
+
+## T-lin-10080 DONE — the residual is now zero; FL `-O0` byte-accounting is exact, two ways
+
+The task carried a `1.0003` emit-amplification on `full_language.c -O0` — 31 bytes "written through `g()` but falling outside the `func_ind..ind` window", with three unconfirmed candidates (pre-`func_ind` alignment padding, the `gen_inline_functions` `diag_only` rewind, top-level `asm`). Re-measured on current `main` (x86_64 build, `MCC_TARGET_ARCH=x86_64`): **the residual is 0.**
+
+**Measurement.** `emit-map.py --target full_language.c --opt=-O0`: `emit_amplification` = **1.0000**, `g_bytes_written` = `aot_bytes_surviving` = **114613** (`g_enter` 116294 − `g_nocode_dropped` 1681 = 114613). Confirmed independently by direct ELF analysis of the `-O0` object: `.text` size 114613 = the exact sum of all 301 function symbol sizes, i.e. **every surviving `.text` byte lies inside a function window and none is written outside one.**
+
+**Why the three candidates are all inert on this subject.** full_language.c has no aligned functions (no pre-`func_ind` `gen_fill_nops`), no top-level `asm`, and the `diag_only` rewind path (`mccgen.c:17266`) **never fires** for it — instrumented `gen_function` in the `diag_only` branch emitted zero `[diagbytes]` records, because a `diag_only` needs a *non-static* `inline` body left un-emitted, and full_language.c pulls none. Self-host was already 0 for the same reason. So the 31-byte discrepancy the task banked was closed by the byte-accounting work in the commits since the emit-map first landed; there is nothing left to attribute, and the accounting is now exact rather than off by 0.027%.
+
+**Gate.** Measurement + docs only; no code change, no bank moved. `docs/refs` green.
+
+**Source.** mac-arm64, 2026-08-15; residual re-measured 0 on current `main`.
+
+<a id="t-lin-10012-blast-radius-measured-one-file-eleven-columns-and-no-32-byte-vector-anywhere"></a>
+
+## T-lin-10012 phase 1 — the blast radius, measured: one file, eleven columns, and no 32-byte vector in the corpus at all
+
+The measurement [Q-lin-10005's answer](#q-lin-10005-answered-raise-mcc-max-align-and-whose-lane-it-is) asks for before the change. Taken by reading, so it cost nothing and did not need an idle box.
+
+**The mechanism, exactly.** `src/mccgen.c:7064` lays a vector type at `exact_log2p1(esz * nelem <= MCC_MAX_ALIGN ? esz * nelem : MCC_MAX_ALIGN)` — *its own size, capped at `MCC_MAX_ALIGN`*, which is 16 on x86_64/arm64/riscv64 and 8 on i386/arm. A 32-byte vector therefore lands at 16, and that cap is the whole defect.
+
+**Three consumers of the constant, and only one of them is the subject:**
+
+| site | what it does | effect of raising `MCC_MAX_ALIGN` |
+| --- | --- | --- |
+| `mccgen.c:7064` | vector type alignment | **the intended change** |
+| `mccgen.c:5815` | bare `__attribute__((aligned))` with no argument | **a second ABI change nobody asked for** — bare `aligned` means "largest useful alignment", so raising the constant silently redefines it for every user |
+| `wide256_slice.h:59` | `MCC_MAX_ALIGN >= 16 ? 16 : MCC_MAX_ALIGN` | immune; it already clamps to 16 deliberately |
+
+So **raising the constant is the wrong instrument.** The surgical change is at `:7064`, which touches vectors and nothing else. Recorded because the difference is invisible until someone greps the constant, and the answer said "raise `MCC_MAX_ALIGN`" in good faith.
+
+**The corpus, measured against the banked set (`tools/o0_ab.sh:251` = `find tests/exec -name '*.c'`, 312 files):**
+
+- files containing **any** vector type: **1** — `tests/exec/types/int256_gates.c`, and it is `vector_size(64)`, not 32
+- files containing a **32-byte** vector: **0**
+- `__m256`/`__m256d`/`__m256i` exist only in `runtime/include/avxintrin.h`, already declared `__aligned__(32)` explicitly, and **no test in the tree includes that header or names those types**
+- the one affected file is banked in **all eleven** target columns
+
+**Two consequences, and the second is the one that changes the task.**
+
+1. **The bank movement is 1 file × 11 columns, not a sweep.** The recorded cost-if-wrong — "every object mcc has ever emitted that carries a 32-byte vector in a struct changes layout" — is true in principle and empirically tiny, because the corpus barely uses vectors at all.
+2. **Nothing in the corpus exercises a 32-byte vector, so the fix would land completely unexercised.** This task is not primarily a re-bank; it is a **missing fixture**. And that is also why the bug survived: no cell compiles the construct, so no cell could have caught it. A change that makes `__m256` gcc-compatible and is verified by zero tests has not been verified.
+
+**The decision the measurement surfaces.** Whether *any* bank moves depends on the rule chosen, which is now a real choice rather than an implementation detail:
+
+- **"alignment = size, capped at 32"** → the 64-byte vector in `int256_gates.c` goes 16 → 32; **11 bank rows move**.
+- **"alignment = size" (gcc's rule)** → it goes 16 → 64; **11 bank rows move**.
+- **"only 32-byte vectors get 32"** → `int256_gates.c` is untouched; **0 bank rows move** — but the rule is arbitrary and would leave a 64-byte vector misaligned against gcc, which is the same defect one size up.
+
+The first two are defensible; the third buys a zero-diff by preserving the bug for a different width.
+
+**Next, and it needs an idle box only for step 2:** pick the rule, add the missing 32-byte-vector fixture with a cross-TU-against-gcc check, then re-bank the eleven columns for whatever the rule moves.
+
+**Source.** Measured on lin-x64, 2026-08-15, by reading; no compile required.
+
+
+<a id="t-lin-10039-done-spvgate-already-fails-a-case-that-compared-nothing"></a>
+
+## T-lin-10039 DONE — spvgate already fails a case (and the whole run) that compared nothing
+
+The task asked for a per-case `compared=` and a fail-at-0, "before trusting any generator's yield." Current `tools/spvgate.c` already does exactly this, at two levels:
+
+- **Per case** (`spvgate.c:1586-1594`): after the width loop, `if (!case_bad && case_cmp == 0) { printf("  %-10s FAIL (0 defined points compared -- proves nothing)"); case_bad = 1; mismatch++; }`, else it prints `%s (%ld points)` with the compared count. A case whose widths all `SKIP (not lowerable)` (`:1480`, `continue` without touching `case_cmp`) or that compared only vacuous/undefined points lands `case_cmp == 0` and fails. The comment at `:1582-1585` names the exact failure mode the task describes ("used to print OK … it is a failure: this case proves nothing").
+- **Whole run** (`spvgate.c:1219-1233`): `arena_mode` FAILs on `!g_dispatches` (no GPU dispatch) and on `!tot_cmp` ("0 compared -- every point was vacuous, so this run adjudicated nothing"), so the aggregate cannot print OK over an empty subject either.
+
+Landed with the slice scheduler (`1b54c26e`, 2026-08-08), i.e. the fix shipped alongside/after the review note that became this task; the row was never closed.
+
+**Verified live on mac (arm64 + MoltenVK), not just read.** `gpu/spv-slice-differential`, `gpu/spv-slice-known-positive`, `gpu/spv-slice-real` all pass — the **known-positive** is the proof the guard fires: it injects a fault (`b_ll_cmpu` is the discriminating shape the task names) and the gate correctly reports FAIL, so the OK path genuinely requires non-zero compared points. `gpu/spv-mem-binding` + its known-positive also present.
+
+**Gate.** Measurement + docs only; no code change. `docs/refs` green; the four `gpu/spv-slice*` cells pass on this box.
+
+**Source.** mac-arm64, 2026-08-15; confirmed present at `1b54c26e`, proven live by the known-positive on arm64/MoltenVK.
+
+<a id="t-lin-10012-the-references-measured-alignof-is-not-the-abi-and-the-rule-is-per-target"></a>
+
+## T-lin-10012 phase 1b — the references, measured: `_Alignof` is not the ABI, and the rule is per target
+
+mac-arm64 measured AAPCS64 and found mcc already correct there. This is the x86_64 and i386 half, and together they settle the rule — which is **not** the one the question, the answer, or either of us assumed.
+
+**Measured, `int` vectors, `offsetof`/`sizeof` taken directly rather than inferred from `sizeof`:**
+
+| target | compiler | `_Alignof(v32)` | `offsetof(struct{char;v32})` | `sizeof` | `v64` offset/size |
+| --- | --- | --- | --- | --- | --- |
+| x86_64 | gcc-15 | **16** | **32** | 64 | 64 / 128 |
+| x86_64 | clang | **32** | **32** | 64 | 64 / 128 |
+| x86_64 | **mcc** | 16 | **16** | **48** | **16 / 80** |
+| i386 | gcc-15 `-m32` | 16 | **32** | 64 | 64 / 128 |
+| arm64 | gcc-16, Apple clang, **and mcc** | 16 | 16 | 48 | 16 / 80 *(mac-arm64)* |
+
+**`_Alignof` is not the ABI, and this is the trap.** On x86_64 gcc **reports 16 and lays the member out at 32**; clang reports 32 and lays it out at 32. The two references disagree about the *reported* alignment and agree exactly about the *layout*. Cross-TU compatibility depends on `offsetof`/`sizeof`, so **layout is the subject and `_Alignof` is not**. Anyone fixing this by making `_Alignof` return 32 would match clang, diverge from gcc on a value mcc currently gets right, and still have to fix the layout separately.
+
+**mcc's defect, precisely.** Not "the vector's alignment is 16" — mcc's `_Alignof` of 16 *agrees with gcc*. The defect is that mcc **uses that 16 for layout**, where both references use the vector's size. `struct{char; v32}` is 48 in mcc and 64 in both references; `v64` is 80 against 128.
+
+**The rule is per target, and no single constant expresses it:**
+
+- **x86_64, i386** — layout alignment = the vector's **size** (32 → 32, 64 → 64). i386 is the worse case, since `MCC_MAX_ALIGN` is 8 there.
+- **arm64** — layout alignment = **min(size, 16)**. Both references cap, mcc already matches, and **changing it would be a regression**. mac-arm64 measured this against gcc-16 and Apple clang.
+
+**So `MCC_MAX_ALIGN` is the wrong knob for a third reason**, beyond [the bare-`aligned` collision and the immune clamp](#t-lin-10012-blast-radius-measured-one-file-eleven-columns-and-no-32-byte-vector-anywhere): it is one per-arch constant feeding two policies that must now differ — the `_Alignof` mcc reports (which is already right everywhere) and the alignment it lays out with (which is wrong on x86 and right on arm64). Raising it moves both, on every target, in the same direction.
+
+**Which bank columns move, revised.** `int256_gates.c`'s `vector_size(64)` is the only banked object affected, and the per-target rule means **the x86_64 and i386 columns move; arm64 must not**. The earlier reading — "11 columns move" — was wrong because it assumed one rule for all targets.
+
+**The fixture this needs** is per target too: compile a 32-byte and 64-byte vector struct, cross-TU against that target's own reference cc, and assert `offsetof`/`sizeof` identical. On arm64 it must pass **unchanged**, which makes it that target's known-positive that no change was needed; on x86_64 and i386 it fails today and must pass after.
+
+**Source.** arm64 measured by mac-arm64; x86_64 and i386 measured on lin-x64, 2026-08-15.
