@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T06:05Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T06:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T12:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
@@ -236,8 +236,8 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10078-n36-residue-and-on-over-wide | DEPS: —
 - [ ] T-lin-10079 [S] `ir_cap`'s trace sites fire ~375k times at `-O0` where the layer is inactive
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10079-ir-caps-trace-sites-fire-375k | DEPS: —
+      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-15T06:20Z
+      REF: DETAILS.md#t-lin-10079-investigation-fix-works-359893-to-1-but-collides-head-on-with-trace-gate-invariant | DEPS: — | Q: Q-mac-30002 BLOCKS | NOTE: NOT a mechanical move. Byte-safe fix measured on x86_64 trace+inv build drops ircap_events(-O0) 359893→1, -O1 bank unaffected, codegen byte-identical (reapply-ready 237-line patch banked) — BUT it reds the trace-gate-invariant treegate cell, which mandates MCC_TRACE at every function/branch open and IS the mechanism generating the events. Reclaiming the overhead requires amending that shared-infra invariant (tools/tracegate.c) — the invariant owner's (lin) call, raised as Q-mac-30002. Tree left green
 - [ ] T-lin-10080 [S] The 31-byte `full_language.c -O0` residual is unattributed
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10080-the-31-byte-full-languagec-o0 | DEPS: —
