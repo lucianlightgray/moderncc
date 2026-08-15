@@ -42507,3 +42507,34 @@ So lin's prediction holds exactly: the arm64 Linux the human's answer provides c
 **Verification.** `perf stat -e cycles,instructions /bin/true` inside the arm64 container prints `<not supported>` for both; re-running on a host with a real arm64 PMU would print counts and reopen the task.
 
 **Source.** Probed on mac-arm64, 2026-08-15, per lin-x64's request (a8522ae0) and the human's Q-mac-30001 answer; extends [fleet capabilities](#fleet-capabilities-docker-qemu-on-all-three).
+
+<a id="t-lin-10367-slice-1-the-layout-free-half-of-the-darwin-header-set"></a>
+
+## T-lin-10367 slice 1 — the layout-free half of the minimal Darwin libc header set
+
+**Type** `[C]` — **State** IN_PROGRESS — **DEPS** — — answers [Q-mac-30000](ARCHIVED.md)
+
+Ships `runtime/osx/include/`: `stdio.h`, `string.h`, `stdlib.h`, `math.h`, `assert.h`, `errno.h`, `ctype.h`. `runtime/win32/include/` is the precedent for a per-platform header directory, so this follows an existing shape rather than inventing one.
+
+**The set is measured, not guessed.** Over `tests/exec` (312 files), the includes are `stdio.h` 216, `string.h` 27, `stdlib.h` 11, `math.h` 8 — and the function calls inside them are `printf` 1738, `memset` 29, `memcpy` 19, `fflush` 16, `strcmp` 11, `strlen` 10, `fprintf`/`strcpy`/`exit` 8 each, down a short tail. Everything freestanding — `stdint.h`, `stddef.h`, `stdarg.h`, `float.h`, `limits.h`, `stdbool.h`, `stdatomic.h`, `complex.h` — is **already** shipped by `runtime/include` and is deliberately not duplicated here.
+
+**Darwin-specific content, which is the only reason this is not a generic header set:**
+
+- `FILE` is `struct __sFILE`, opaque.
+- `stdin`/`stdout`/`stderr` are macros over `__stdinp`/`__stdoutp`/`__stderrp`. On Darwin those are the actual exported symbols; a header that declared `extern FILE *stdin` would link against a symbol macOS does not have.
+- `errno` is `(*__error())`, not a variable.
+- `assert` expands through `__assert_rtn(func, file, line, expr)`, Darwin's signature.
+
+**Declarations only, per the answer's shape.** No inline bodies and no macro-defined functions: an inline body would put *mcc's own codegen of libc* into the bank, which is the drift being removed wearing a different hat. The only macros are the ones the standard requires to be macros (`assert`, `errno`, `stdin`, the `isnan`/`isinf` family over `__builtin_*`).
+
+**What slice 1 deliberately excludes, and why the line is there.** `setjmp.h`, `pthread.h`, `threads.h`, `wchar.h`, `signal.h`, `fenv.h`, `sys/mman.h`, `sys/wait.h`, `unistd.h`. Every one of them commits to a **struct layout or a platform bit-pattern** — `jmp_buf`'s `_JBLEN`, the `__PTHREAD_*_SIZE__` opaque sizes, Darwin's `MAP_ANON` value, the `W*` wait-status bits. A wrong constant there is not a missing declaration, it is an ABI landmine that miscompiles silently, and this box has no macOS SDK to check against. They belong in slice 2, on a host that can verify them — which is mac-arm64, who owns the `[X]` half anyway.
+
+**Verification.** `ctest -R '^osx/headers-parse'` — 2 of 2 green, and `ctest -L treegate` 12/12 at this commit.
+
+`tests/osx/headers-parse.sh` compiles every corpus file that includes a covered header, with `-nostdinc` so the host's libc cannot participate, against `runtime/osx/include` plus the freestanding `runtime/include`. **189 files compile.** It fails two ways, and both are proved rather than asserted by `osx/headers-parse-known-positive`: remove `math.h` from the set and it goes red naming the file that wanted it (`182 compiled, 8 blocked on a missing header`); raise `--min-files` above the corpus and it goes red saying a shrinking subject reads as coverage it does not have. It also refuses `--min-files 0` outright, since a floor of zero cannot reject an empty subject.
+
+**Declared in both manifests**, so it is a gate rather than a script: `tests/must-run.txt` (both rows) and `tests/gate-contract.txt` (`min:--min-files` floor, `osx/headers-parse-known-positive` prover). The `--min-files` **flag** form exists precisely so the floor is declarable — `gate-contract.py`'s `FLOOR_MIN` reads `min:--flag` off the registered command line, and a positional argument could not be checked. Adding a proved row moved the count to 51, so `--min-rows` rises 101 → 102 and `--min-proved` 50 → 51; both ratchets only ever rise.
+
+**Not done here.** The `--sysroot` selection that makes a Darwin build actually use this set, and the re-keying of the `ast/o0-baseline` quartet, are [T-lin-10089](#t-lin-10089-mac-arm64-the-asto0-baseline-quartet)'s `[X]` half on mac-arm64. This slice ships the headers and the gate that they cover what they claim; it does not yet change what any Darwin build compiles against.
+
+**Source.** Implemented on lin-x64, 2026-08-15.

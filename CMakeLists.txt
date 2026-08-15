@@ -4186,6 +4186,24 @@ if(MCC_BUILD_TESTS)
         # vacuously if the subject ever stops triggering the re-emit.
         if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR
            AND NOT MCC_TARGETOS STREQUAL "WIN32" AND NOT MCC_TARGETOS STREQUAL "Darwin")
+            add_test(NAME "osx/headers-parse"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/osx/headers-parse.sh"
+                        "$<TARGET_FILE:mcc>"
+                        "${CMAKE_CURRENT_SOURCE_DIR}"
+                        --min-files 189)
+            set_tests_properties("osx/headers-parse" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 600)
+
+            add_test(NAME "osx/headers-parse-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/tests/osx/headers-parse.sh
+                        -DMCC=$<TARGET_FILE:mcc>
+                        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -DMINFILES=189
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/osx_headers_mutate.cmake")
+            set_tests_properties("osx/headers-parse-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900)
+
             add_test(NAME "ast/reemit-cfi"
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/reemit-cfi.sh"
                         "$<TARGET_FILE:mcc>"
@@ -7033,7 +7051,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         --manifest "${CMAKE_CURRENT_SOURCE_DIR}/tests/gate-contract.txt"
                         --must-run "${CMAKE_CURRENT_SOURCE_DIR}/tests/must-run.txt"
                         --build "${CMAKE_BINARY_DIR}"
-                        --min-rows 101 --min-proved 50
+                        --min-rows 102 --min-proved 51
                         --max-unfloored 86 --max-unproved 51)
             set_tests_properties("ci/gate-contract" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
@@ -7045,7 +7063,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         -DMANIFEST=${CMAKE_CURRENT_SOURCE_DIR}/tests/gate-contract.txt
                         -DMUSTRUN=${CMAKE_CURRENT_SOURCE_DIR}/tests/must-run.txt
                         -DBINDIR=${CMAKE_BINARY_DIR}
-                        -DMINROWS=90 -DMINPROVED=40 -DMINPROVEDLIVE=50
+                        -DMINROWS=90 -DMINPROVED=40 -DMINPROVEDLIVE=51
                         -DMAXUNFLOORED=86 -DMAXUNPROVED=51
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gate_contract_mutate.cmake")
             set_tests_properties("ci/gate-contract-known-positive" PROPERTIES

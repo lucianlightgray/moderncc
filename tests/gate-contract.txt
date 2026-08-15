@@ -151,3 +151,4 @@ slice/arrow | unfloored | slice/arrow-known-positive | arrow dereferences lowere
 slice/fmt | unfloored | slice/fmt-known-positive | printf conversions lowered to the device ring
 superopt/global-reload | unfloored | superopt/global-reload-known-positive | global reloads the superoptimizer eliminated and had to re-prove
 ast/eval-binop-oracle | intrinsic:tools/eval_binop_oracle.c refuses below 100000 checks | ast/eval-binop-oracle-known-positive | opcode/width/signedness cases actually compared against the independent reference
+osx/headers-parse | min:--min-files | osx/headers-parse-known-positive | corpus files compiled against runtime/osx/include with the host headers excluded
