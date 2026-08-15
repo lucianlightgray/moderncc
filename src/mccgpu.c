@@ -652,9 +652,10 @@ static int mcc_gpu_dispatch_locked2(const char *src, int len, const int32_t *in,
 		mtl_release(bin);
 		goto done;
 	}
-	memset(pin, 0, (size_t)inlen);
 	memcpy(pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
-	memset(pout, 0, (size_t)outlen);
+	if (cap > ntuple)
+		memset((char *)pin + (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4, 0,
+					 (size_t)(cap - ntuple) * nlive * MCC_GPU_IN_SLOTS * 4);
 
 	cb = mcc_gpu.cbdesc
 					 ? ((id (*)(id, SEL, id))objc_msgSend)(
