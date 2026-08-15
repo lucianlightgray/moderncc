@@ -44054,3 +44054,75 @@ compile `src/mcc.c` under `MCC_ARENA_DUMP` and write a dump; all three green in 
 vcvars ctest on win-x64.
 
 **Source.** win-x64, 2026-08-15, at 50790209.
+
+<a id="t-lin-10042-slice-1-msl-f64-bits-pair"></a>
+
+## T-lin-10042 slice 1 — MSL f64 rides the int2 bits-pair, and the exact ops land first
+
+**Type** `[X]` mac-arm64 — **State** slice 1 DONE at `28ac8048` — parent stays IN_PROGRESS
+
+**The design decision the whole staged plan now inherits.** Metal has no
+`double`. The SPIR-V arm's f64 layer (`spv_f64_*`, gated on `shaderFloat64`)
+has no MSL equivalent to transliterate, so the MSL arm carries an f64 value as
+the raw binary64 bit pattern riding the same `int2` pair a 64-bit integer
+rides (`MslV.f64` flag; `msl_mkf`/`msl_f64_of` are the twins of
+`spv_mkf`/`spv_f64_of` minus the bitcast — in this representation the bits
+never leave integer form). Slice 1 lands exactly the ops that are
+bit-identical to IEEE semantics in pure integer arithmetic, so no rounding, no
+denormal policy and no NaN propagation question exists yet:
+
+| op | MSL lowering | why it is exact |
+| --- | --- | --- |
+| literal, local ref, frame-off load | pair load/const, unchanged | bits pass through |
+| store-out (`msl_main_end`) | pair store, unchanged | bits pass through |
+| unary `-` | `p.y ^ 0x80000000` | IEEE negate is a sign flip, NaN included; matches arm64 `fneg` (the CPU oracle) and SPIR-V `FNegate` |
+| truth / `!` / `?:`-cond / `&&`/`||` operand | `(p.x \| (p.y & 0x7fffffff)) != 0` | ±0 are the only falsy patterns; NaN and denormals truthy — exactly `FUnordNotEqual(v, 0)` and exactly C `!= 0.0`, with no device FTZ hazard because no float is materialised |
+| `?:` result (`msl_branch_pair` `ft`) | pair phi, unchanged | bits pass through; an int branch under an f64-typed `If` widens to its int bits, byte-identical to `spv_branch_pair`'s `spv_pair` and to the oracle |
+
+Deliberately NOT in slice 1, still refused by the MSL arm and now guarded
+against the new f64 producers leaking into int paths (`ftype` refusals added
+to `AST_Convert` and both `AST_Binary` operands, mirroring `spv_expr`
+3099/3210/3235): f64 `==/!=/</<=/>/>=` (slice 2 — implementable exactly with
+the integer total-order trick), f64 `+`/`-`/`*` (slice 3 — soft-float,
+correctly-rounded RTE binary64 over the pair; the slice that must state its
+NaN-propagation contract against the arm64 host oracle before it lands),
+dynidx/region f64 loads (later, with the general dynidx parity gap — the spv
+arm runs 712 real slices vs MSL's 704, and the 8 missing are runtime-idx).
+
+**TDD shape.** Two new differential cases landed FIRST and were watched fail
+(`SKIP (not lowerable)` × 4 rungs → `FAIL (0 defined points compared)` each):
+`f-notneg` = `!(-a) | !b` (f64 in, int out) and `f-ternary` = `a ? -b : 1.5`
+(f64 out, literal, f64 cond truth), both over two `VT_DOUBLE` lives. The rung
+generator sign-extends patterns into the high word, so the input set genuinely
+contains ±0, denormals and quiet NaNs (`0xFFFFFFFFxxxxxxxx`) — the exactness
+claims above are exercised, not assumed.
+
+**Why the two cases are `#if MCC_GPU_LANG_MSL` and not shared.** On the spv
+arm the default-mode CASES loop has no `used_f64 && !g_f64` skip (that guard
+exists only in arena mode), so shared f64 cases would (a) fail
+`gpu/spv-slice-differential` on every host without `shaderFloat64` — including
+this Mac's MoltenVK arm — as `GPU REJECTED MODULE`, and (b) on fp64 hosts
+(lavapipe, NVIDIA) put `FNegate`-on-NaN and denormal-truth bit-exactness on
+the line for lin/win cells that mac cannot verify natively; that is precisely
+the unread-denormal-behavior hazard [T-lin-10061] records. Arming the spv
+CASES table is filed as T-mac-30004 with the skip-guard + `EXPECT` shift
+(spv-validate counts emitted modules) called out.
+
+**Verification (the spec for this slice; all on this M1 Pro, Metal, at
+`28ac8048` rebased onto `3a557162`).**
+
+```
+cmake-build-debug$ ./mslgate            # gpu/msl-slice-differential
+  f-notneg   OK (65812 points)   f-ternary  OK (65812 points)
+  mslgate: dispatches=160 lanes=2632480 points=2632480 compared=2491412
+           vacuous=141068 mismatches=0 -> OK
+cmake-build-debug$ ./mslgate --mutate   # known-positive: must FAIL
+  mismatches=2491412 -> FAIL (correct; the f64 cases' points all flip too)
+cmake-build-debug$ ctest -R '^gpu/'     # 15/15 pass, both arms
+cmake-build-debug$ ctest -R 'slice|census'  # 122/122 pass (production
+  emitter is shared with mccast.c/mccjit_embed.c/slicerun; no banked number moved)
+gpu/msl-slice-real: arenas=163 slices=704 points=49959704 compared=49270844
+  mismatches=0     # real corpus, f64 slices now lowering on Metal
+```
+
+**Source.** mac-arm64, 2026-08-15, code at `28ac8048`.
