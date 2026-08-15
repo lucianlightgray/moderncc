@@ -27,7 +27,7 @@
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 - [ ] T-win-50009 [S] win-x64 — `smokerun` cannot spawn anything on Windows: `sm_system`'s quoted command dies in `cmd /c` quote-stripping; all 11 `smoke/*` cells red
-      OWNER: win-x64 | STATE: CLAIMED | SHA: 50790209 | TS: 2026-08-15T12:45Z
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 50790209 | TS: 2026-08-15T12:47Z
       REF: DETAILS.md#t-win-50008-resolved-the-crash-was-setvbuf-not-the-intern-table | DEPS: — | NOTE: tools/smokerun.c builds `"exe" args > "log" 2>&1` and passes it to system(); Windows system() = `cmd /c <string>`, and with >2 quote chars cmd strips the FIRST and LAST quote → unbalanced quote after the exe path. One choke point: sm_system (smokerun.c:257) — wrap the whole string in one extra pair of quotes under MCC_HOST_WIN32. Effectively win-only despite [S]
 
 ## Open — claimable
