@@ -45876,3 +45876,19 @@ lin-x64's [T-lin-10384](#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-sca
 **Net state of the slice-2 tree (uncommitted, N4-held — `MCC_JIT=1`/replay-parity still red):** `runtime/win32/lib/ucrtbase.def` + pe_check_symbols `_`+raw candidate + pe_add_runtime `{ucrtbase; define __isa_available/_default/__isa_enabled/__favor/_dowildcard}`. Under approach B most/all of this becomes unnecessary (msvcrt blob needs none of it) — do NOT land it before deciding A vs B.
 
 **Source.** win-x64, 2026-08-15, at `main@011f2970` + experiment.
+
+<a id="t-win-50020-done-approach-b-landed-the-windows-embed-jit-link-works"></a>
+
+## T-win-50020 DONE — approach B landed: the Windows embed-JIT link works, standalone exe links + runs in both JIT modes
+
+**Resolution (win-x64, 2026-08-15, code `d46e9ee2`).** Approach B chosen and landed. cl.exe cannot build a linkable embed-jit blob (proven across slices 2/2b: the ucrt import wall is resolvable but behind it the MSVC static lib's data symbols — CRT-startup COMMONs AND the blob's own statics — are systemically mis-placed by mcc's PE linker to wild addresses past SizeOfImage). Instead the `--embed-jit` blob is now compiled with the project's already-provisioned **winlibs mingw gcc**; the mingw blob references the mingw CRT import libs (added by libmcc.c under `MCC_EMBED_JIT_MINGW_LIBDIR`), which mcc resolves cleanly against `msvcrt.dll` + the `api-ms-win-crt-*` apiset present on every modern Windows. No ucrt `__imp_*` wall, no MSVC CRT COMMONs, single toolchain for the blob.
+
+**The one-line durable fix (CMakeLists.txt, at the `MCC_EMBED_JIT_MINGW_CC` cache-var):** on `CMAKE_C_COMPILER_ID STREQUAL "MSVC"` with the var unset, call `mcc_mingw_resolve()` and default `MCC_EMBED_JIT_MINGW_CC` to `_MCC_MINGW_X86_64_GCC` (the winlibs gcc the project already provisions for its diff3 oracles), with a STATUS line; WARN if no mingw is found. So a **plain MSVC configure** now yields a working embed-jit with zero extra flags. Verified both ways: explicit `-DMCC_EMBED_JIT_MINGW_CC=…` and the auto-default (cleared the cache var with `-U`, the STATUS line fires and the build+cells pass identically).
+
+**Verification (this task's spec):** `mcc -O1 --embed-jit --jit-functions f jf.c -o e.exe` → link rc=0; `MCC_JIT=0 e.exe` and `MCC_JIT=1 e.exe` both print `f(11)=40` rc=0 (the swap path no longer crashes); `tests/embed/jit_replay_parity.sh` PASS (10/10, all agree JIT-on == JIT-off == correct); `ctest -R "jit/|replay-parity"` = **65/65 passed** incl `jit/replay-parity` (was hard-red — the cl blob would not link). Both the msvcrt-mstorsjo llvm-mingw and the vendored winlibs-ucrt mingw were confirmed to work; the winlibs one is the default (in-project provisioning). No non-embed regression: the blob change is scoped to the embed-jit standalone path; mcc.exe stays MSVC and `-run` uses mcc's own in-process engine.
+
+**Unblocks:** T-lin-10030/win (the embed-JIT measurement half — the standalone exe now links+runs), and T-lin-10383's Windows census arm (a `--embed-jit -O1` self-host now links). The full-native-suite red-count delta (the "13 of 15" figure) is **T-lin-10092/win**'s requote, not re-run here — the embed-JIT reds it enumerated (jit/replay-parity + the smokerun `--embed-jit` census arms, same `-o` mechanism) are now paid.
+
+**Superseded:** the slice-2/2b MSVC-blob approach-A work (ucrtbase.def + pe_check_symbols `_`+raw candidate + pe_add_runtime ucrtbase/`__isa_available`/COMMON pre-defs) is MOOT under B and was NOT landed (N4-held, then dropped; the def file removed). Kept in the slice-2/2b anchors above only as the record of why A is a dead end.
+
+**Source.** win-x64, 2026-08-15, code `d46e9ee2`.
