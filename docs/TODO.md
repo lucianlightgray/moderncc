@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:36Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T17:26Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T18:14Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T18:18Z |
 
 ## Contracts — blocking, highest priority
 
@@ -28,7 +28,7 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- HANDOFF-BOX-FACTS (win-x64, kept for successors): VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics for any device run; VULKAN_SDK=C:/Users/llg/scoop/apps/vulkan/current; corpora junctions in vendor/ point at C:/Users/llg/Projects/{gcc-torture,llvm-test-suite,llvm-project}; commit BEFORE pull (DETAILS#autostash-is-how-conflict-markers-reach-pushed-history). Also-resume-ready: T-win-50015 (ms-bitfield ABI; fixture in-tree, two named gaps). Held: T-lin-10092/win (steady at NOTE-2)
+- HANDOFF-BOX-FACTS (win-x64, kept for successors): VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics for any device run; VULKAN_SDK=C:/Users/llg/scoop/apps/vulkan/current; corpora junctions in vendor/ point at C:/Users/llg/Projects/{gcc-torture,llvm-test-suite,llvm-project}; commit BEFORE pull (DETAILS#autostash-is-how-conflict-markers-reach-pushed-history); MSVC build needs vcvars64.bat env for cmake --build (INCLUDE/LIB); embed-jit blob now auto-built with the winlibs mingw gcc on MSVC (T-win-50020 DONE d46e9ee2). NEXT WIN WORK (freshly unblocked by T-win-50020): T-lin-10030/win (embed-JIT measured on win — closes the [P] parent; needs jit/xoracle-conformance wired to the provisioned corpora), T-lin-10092/win requote (embed reds now paid), T-lin-10383 win census arm. Also-resume-ready: T-win-50015 (ms-bitfield ABI; fixture in-tree, two named gaps)
 
 ## Open — claimable
 - [ ] T-mac-30005 [S] The chain-store 8% gate has never run against real input; when it does it reads +0.0%
