@@ -70,6 +70,20 @@ def run_prog(argv, work, env, rtimeout):
     return p.returncode, (p.stdout or b""), (p.stderr or b"")
 
 
+def is_nondet(argv_on, argv_off, env_on, env_off, work, rtimeout,
+              first_on, first_off):
+    """Reached only when a program is about to be flagged JIT_MISCOMPILE. A
+    miscompile claim must reproduce under its own config before it counts, so
+    re-run both configs and, if EITHER disagrees with its own first run, the
+    program is nondeterministic (UB-sensitive, e.g. a prototype-less variadic
+    call reading stack garbage) and the JIT-vs-AOT difference is two garbage
+    reads, not a codegen fault. Only the handful of would-be miscompiles pay for
+    the second pair of runs; the 500-odd agreeing programs never enter here."""
+    if run_prog(argv_on, work, env_on, rtimeout)[:2] != first_on:
+        return True
+    return run_prog(argv_off, work, env_off, rtimeout)[:2] != first_off
+
+
 def bake(ph, mcc, o, idx, opt, work, dst):
     inc = ["-I" + os.path.dirname(o["file"])] + ["-I" + d for d in o.get("inc", [])]
     cmd = ([mcc, opt, "--embed-jit"] + o["flags"] + inc + [o["file"]]
@@ -121,12 +135,18 @@ def check_embed(ph, o, idx, mcc, opt, lazy):
     if m:
         rec["outcome"] = m.group(1).decode()
     rc0, out0, _ = run_prog([dst], work, JIT_OFF, ph.rtimeout)
-    xoracle.unlink(dst)
     if rc0 is not None and (rc1, out1) != (rc0, out0):
+        if is_nondet([dst], [dst], env_on, JIT_OFF, work, ph.rtimeout,
+                     (rc1, out1), (rc0, out0)):
+            xoracle.unlink(dst)
+            rec.update(status="NONDET", jit_exit=rc1, aot_exit=rc0)
+            return ph.emit(rec)
+        xoracle.unlink(dst)
         rec.update(status="JIT_MISCOMPILE", jit_exit=rc1, aot_exit=rc0,
                    jit_sha=xoracle.digest(out1), aot_sha=xoracle.digest(out0),
                    jit_head=xoracle.head(out1), aot_head=xoracle.head(out0))
         return ph.emit(rec)
+    xoracle.unlink(dst)
     rec["aot_agrees"] = rc0 is not None and rc0 == o["exit"] \
         and xoracle.digest(out0) == o["stdout_sha"]
     if rc1 != o["exit"]:
@@ -177,6 +197,10 @@ def check_run(ph, o, idx, mcc, opt, lazy):
     rc0, out0, _ = run_prog(argv0, work, {"MCC_JIT": "0"},
                             ph.rtimeout + ph.ctimeout)
     if rc0 is not None and (rc1, out1) != (rc0, out0):
+        if is_nondet(argv, argv0, env_on, {"MCC_JIT": "0"}, work,
+                     ph.rtimeout + ph.ctimeout, (rc1, out1), (rc0, out0)):
+            rec.update(status="NONDET", jit_exit=rc1, aot_exit=rc0)
+            return ph.emit(rec)
         rec.update(status="JIT_MISCOMPILE", jit_exit=rc1, aot_exit=rc0,
                    jit_sha=xoracle.digest(out1), aot_sha=xoracle.digest(out0),
                    jit_head=xoracle.head(out1), aot_head=xoracle.head(out0))
@@ -201,6 +225,8 @@ def verdict_of(status):
         return "DIFFER"
     if status in ("MCC_NOBUILD", "LINK_POLICY", "MCC_TIMEOUT"):
         return "MCC-REJECTED"
+    if status == "NONDET":
+        return "NONDET"
     return "UNSUPPORTED"
 
 
@@ -424,21 +450,37 @@ int main(void){ int s = 0; for (int i = 0; i < 30; i++) s += fib(i % 15);
 SELFCHECK_COLD = """int main(void){ return 7; }
 """
 
+# Nondeterministic by construction: getpid() differs between every process, so
+# the MCC_JIT=1 and MCC_JIT=0 runs (separate processes) print different pids and
+# "disagree" -- a would-be JIT_MISCOMPILE that is not a codegen fault. The
+# re-run detector must catch it and bucket it NONDET; without the detector this
+# case returns to JIT_MISCOMPILE, so asserting NONDET here is the fix's floor.
+SELFCHECK_NONDET = """extern int printf(const char *, ...);
+extern int getpid(void);
+static int fib(int n){ return n < 2 ? n : fib(n-1) + fib(n-2); }
+int main(void){ int s = 0; for (int i = 0; i < 30; i++) s += fib(i % 15);
+  printf("nd %d %d\\n", s, getpid()); return s & 0xff; }
+"""
+
 
 def selfcheck(args):
     work = os.path.join(args.out, "selfcheck")
     os.makedirs(work, exist_ok=True)
     hot = os.path.join(work, "hot.c")
     cold = os.path.join(work, "cold.c")
+    nd = os.path.join(work, "nondet.c")
     with open(hot, "w") as f:
         f.write(SELFCHECK_HOT)
     with open(cold, "w") as f:
         f.write(SELFCHECK_COLD)
+    with open(nd, "w") as f:
+        f.write(SELFCHECK_NONDET)
     cases = [
         ("hot-truth", hot, 1972 & 0xff, "emb 1972\n", "PASS"),
         ("hot-lie", hot, (1972 & 0xff) ^ 1, "emb 1972\n", "DIFF_EXIT"),
         ("cold-truth", cold, 7, "", ("PASS", "NOT_BAKED")),
         ("cold-lie", cold, 8, "", "DIFF_EXIT"),
+        ("nondet", nd, 0, "", "NONDET"),
     ]
     oracle = []
     for name, src, exit_, out, _ in cases:
@@ -473,9 +515,10 @@ def selfcheck(args):
     if bad:
         print(f"jitconform selfcheck: FAIL ({bad} case(s))")
         return 1
-    print("jitconform selfcheck: OK (a JIT-engaged program passes, and a "
+    print("jitconform selfcheck: OK (a JIT-engaged program passes, a "
           "falsified oracle expectation is caught as DIFF_EXIT on both a "
-          "JIT-engaged and a JIT-declined program)")
+          "JIT-engaged and a JIT-declined program, and a nondeterministic "
+          "program is bucketed NONDET rather than reported as a miscompile)")
     return 0
 
 
