@@ -23,8 +23,8 @@
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 - [ ] T-lin-10083 [X] win-x64 — flip default `-c` to COFF and re-bank `o0-baseline`
-      OWNER: win-x64 | STATE: CLAIMED | SHA: 1695806f | TS: 2026-08-15T14:05Z
-      REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: T-lin-10002[C]
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-15T14:10Z
+      REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: T-lin-10002[C] | NOTE: flip landed in-tree (libmcc.c mcc_set_output_type: default -c OBJ on PE -> COFF, gated by new output_format_explicit so -Wl,-oformat=pe-x86-64 still yields ELF and =coff unchanged); coff-obj-diff.sh negative control moved to explicit-ELF. Building + verifying pe/coff-obj-diff, then re-bank o0-baseline (native key) + arm64pe_diff
 
 ## Open — claimable
 - [ ] T-lin-10045 [S] `-fopt-slice`: revise into the governor over every AST/RIR slice-capable strategy, integrated with the other slice optimizers
