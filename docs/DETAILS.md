@@ -43462,3 +43462,45 @@ The task carried a `1.0003` emit-amplification on `full_language.c -O0` — 31 b
 **Gate.** Measurement + docs only; no code change, no bank moved. `docs/refs` green.
 
 **Source.** mac-arm64, 2026-08-15; residual re-measured 0 on current `main`.
+
+<a id="t-lin-10012-blast-radius-measured-one-file-eleven-columns-and-no-32-byte-vector-anywhere"></a>
+
+## T-lin-10012 phase 1 — the blast radius, measured: one file, eleven columns, and no 32-byte vector in the corpus at all
+
+The measurement [Q-lin-10005's answer](#q-lin-10005-answered-raise-mcc-max-align-and-whose-lane-it-is) asks for before the change. Taken by reading, so it cost nothing and did not need an idle box.
+
+**The mechanism, exactly.** `src/mccgen.c:7064` lays a vector type at `exact_log2p1(esz * nelem <= MCC_MAX_ALIGN ? esz * nelem : MCC_MAX_ALIGN)` — *its own size, capped at `MCC_MAX_ALIGN`*, which is 16 on x86_64/arm64/riscv64 and 8 on i386/arm. A 32-byte vector therefore lands at 16, and that cap is the whole defect.
+
+**Three consumers of the constant, and only one of them is the subject:**
+
+| site | what it does | effect of raising `MCC_MAX_ALIGN` |
+| --- | --- | --- |
+| `mccgen.c:7064` | vector type alignment | **the intended change** |
+| `mccgen.c:5815` | bare `__attribute__((aligned))` with no argument | **a second ABI change nobody asked for** — bare `aligned` means "largest useful alignment", so raising the constant silently redefines it for every user |
+| `wide256_slice.h:59` | `MCC_MAX_ALIGN >= 16 ? 16 : MCC_MAX_ALIGN` | immune; it already clamps to 16 deliberately |
+
+So **raising the constant is the wrong instrument.** The surgical change is at `:7064`, which touches vectors and nothing else. Recorded because the difference is invisible until someone greps the constant, and the answer said "raise `MCC_MAX_ALIGN`" in good faith.
+
+**The corpus, measured against the banked set (`tools/o0_ab.sh:251` = `find tests/exec -name '*.c'`, 312 files):**
+
+- files containing **any** vector type: **1** — `tests/exec/types/int256_gates.c`, and it is `vector_size(64)`, not 32
+- files containing a **32-byte** vector: **0**
+- `__m256`/`__m256d`/`__m256i` exist only in `runtime/include/avxintrin.h`, already declared `__aligned__(32)` explicitly, and **no test in the tree includes that header or names those types**
+- the one affected file is banked in **all eleven** target columns
+
+**Two consequences, and the second is the one that changes the task.**
+
+1. **The bank movement is 1 file × 11 columns, not a sweep.** The recorded cost-if-wrong — "every object mcc has ever emitted that carries a 32-byte vector in a struct changes layout" — is true in principle and empirically tiny, because the corpus barely uses vectors at all.
+2. **Nothing in the corpus exercises a 32-byte vector, so the fix would land completely unexercised.** This task is not primarily a re-bank; it is a **missing fixture**. And that is also why the bug survived: no cell compiles the construct, so no cell could have caught it. A change that makes `__m256` gcc-compatible and is verified by zero tests has not been verified.
+
+**The decision the measurement surfaces.** Whether *any* bank moves depends on the rule chosen, which is now a real choice rather than an implementation detail:
+
+- **"alignment = size, capped at 32"** → the 64-byte vector in `int256_gates.c` goes 16 → 32; **11 bank rows move**.
+- **"alignment = size" (gcc's rule)** → it goes 16 → 64; **11 bank rows move**.
+- **"only 32-byte vectors get 32"** → `int256_gates.c` is untouched; **0 bank rows move** — but the rule is arbitrary and would leave a 64-byte vector misaligned against gcc, which is the same defect one size up.
+
+The first two are defensible; the third buys a zero-diff by preserving the bug for a different width.
+
+**Next, and it needs an idle box only for step 2:** pick the rule, add the missing 32-byte-vector fixture with a cross-TU-against-gcc check, then re-bank the eleven columns for whatever the rule moves.
+
+**Source.** Measured on lin-x64, 2026-08-15, by reading; no compile required.
