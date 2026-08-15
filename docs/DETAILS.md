@@ -45455,3 +45455,39 @@ The §8 per-task gate for the [NaN-sign exclusion](#t-lin-10380-fixed-a-produced
 **For the other two sessions.** `[spvgate|mslgate]` gained a `nansign=` field on its summary line; it is the number of points accepted only through the sign relaxation. On AMD/RADV it reads 16453. A Metal or NVIDIA host reading 0 there means that vendor happens to agree with mcc's oracle on an unspecified bit — worth knowing, and now visible rather than assumed either way.
 
 **Source.** lin-x64, 2026-08-15, code at `3af4032e`.
+
+<a id="t-lin-10073-resolved-residency-is-not-the-variable-an-active-client-is"></a>
+
+## T-lin-10073 RESOLVED — a resident foreign `wineserver` is **not** the variable; an active foreign wine *client* is, and the recorded diagnostic was producing false alarms
+
+The row's [2026-08-14 measurement](#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver) concluded *"a foreign `wineserver` … is resident in both failing cases and absent in the passing one"* and made `pgrep -a wineserver` the diagnostic to run before attributing either cell to a commit. That correlation had n=3 and it does not survive n=9.
+
+**Measured 2026-08-15, on the same host, with a foreign GE-Proton10-34 `wineserver` resident and confirmed at each run's start:**
+
+| run | width | `run-tier/x86_64-win32` | `run-tier/i386-win32` | foreign `wineserver` |
+| --- | --- | --- | --- | --- |
+| full suite, 10066 cells | `-j 12` | Passed 9.16 s | Passed 9.85 s | resident |
+| full suite, 10068 cells | `-j 12` | Passed 7.88 s | Passed 8.37 s | resident |
+| full suite, 10070 cells | `-j 12` | Passed 6.54 s | Passed 6.30 s | resident |
+| isolated ×3 | `-j 1` | Passed 5.34 / 3.10 / 2.95 s | Passed 2.92 / 2.98 / 2.98 s | **none** |
+
+**Six passing cell-observations with the server resident**, none slower than 10 s against a 300 s timeout, one of them inside a run whose load average reached 26.6. So:
+
+1. **Residency is not sufficient.** The diagnostic as written flags a condition under which the cells demonstrably pass, which makes it a false-alarm generator: a session that saw a red, ran `pgrep -a wineserver`, found one and stopped would file an environmental excuse for a real regression.
+2. **"Load-sensitive" — the row's title — is wrong too**, and was already known to be: the earlier measurement showed a serial `-j 1` retry failing at load average 7, and today shows both cells passing at load average 26.6. Neither direction of the load axis predicts anything.
+3. **The variable the original measurement actually recorded is an active wine *client*.** Its failing rows name `bg3_dx11.exe` running under that `wineserver`; today's passing rows have the same server with **no client at all** — `ps` shows no `.exe` process. A `wineserver` with nothing attached is idle and costs the cells nothing.
+
+**The corrected diagnostic**, and it is a different command:
+
+```sh
+pgrep -a -f '\.exe' | grep -v wineserver     # a foreign wine CLIENT, the thing that matters
+pgrep -a wineserver                          # context only; on its own it means nothing
+```
+
+**What is established and what is not.** Established: a resident-but-idle foreign `wineserver` does not affect these cells, over six observations spanning three full suites. Not established: that an active client is *sufficient* to cause the hang — that direction rests on the original measurement's two failing runs, and reproducing it would mean starting a foreign wine workload on this machine, which is outside what this session should be doing to the user's Steam installation. The row is closed on the half that was actionable and wrong, and the remaining half is stated rather than claimed.
+
+**This propagates to [T-lin-10359](#t-lin-10359-slicecref-oracle-stalls-on-five-programs)**, whose GPU half is written as "the same mechanism … arriving through the GPU instead of through wine". If the wine half's discriminator is an active client rather than a resident server, the GPU half's should be re-read the same way before its diagnostic is trusted: a resident compositor or an idle GPU process is not evidence.
+
+**Verification.** `ctest --test-dir cmake-debug -R '^run-tier/(x86_64|i386)-win32$'` — both green, well under 30 s, with or without an idle foreign `wineserver`.
+
+**Source.** lin-x64, 2026-08-15; three full-suite runs plus three isolated rounds on one tree and one host.
