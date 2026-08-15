@@ -3430,6 +3430,7 @@ wide	elf	src/libmcc.c	set_flag	src/mcc.c	0000
 wide	elf	src/libmcc.c	strstart	src/mcc.c	6666
 wide	elf	src/mcc.c	default_outputfile	src/mcc.c	0000
 wide	elf	src/mcc.c	main	src/mcc.c	0000
+wide	elf	src/mcc.c	mcc_main_body	src/mcc.c	0000
 wide	elf	src/mcc.c	mcc_superopt_perfn	src/mcc.c	0000
 wide	elf	src/mcc.c	mcc_superopt_search	src/mcc.c	0000
 wide	elf	src/mcc.c	print_dirs	src/mcc.c	0000
@@ -5906,6 +5907,10 @@ wide	elf	src/mccrir.c	rir_verify	src/mcc.c	0000
 wide	elf	src/mccrir.c	rir_vla_begin	src/mcc.c	0000
 wide	elf	src/mccrir.c	rir_xt_chain	src/mcc.c	6666
 wide	elf	src/mccrir.c	rir_xtype_ref	src/mcc.c	0000
+wide	elf	src/mccrt.c	mcc_rt_enter	src/mcc.c	0000
+wide	elf	src/mccrt.c	mcc_rt_exit	src/mcc.c	0000
+wide	elf	src/mccrt.c	mcc_rt_running	src/mcc.c	0000
+wide	elf	src/mccrt.c	mcc_rt_set_gpu_boot	src/mcc.c	0000
 wide	elf	src/mccrun.c	_mcc_backtrace	src/mcc.c	0000
 wide	elf	src/mccrun.c	_mcc_setjmp	src/mcc.c	6666
 wide	elf	src/mccrun.c	bt_link	src/mcc.c	0000
@@ -7448,6 +7453,7 @@ wide	elf	tests/exec/structs_unions/funcall_struct_args.c	main	tests/exec/structs
 wide	elf	tests/exec/structs_unions/inline_sret_locrec.c	main	tests/exec/structs_unions/inline_sret_locrec.c	0000
 wide	elf	tests/exec/structs_unions/inline_sret_locrec.c	make_pair	tests/exec/structs_unions/inline_sret_locrec.c	0000
 wide	elf	tests/exec/structs_unions/inline_sret_locrec.c	make_small	tests/exec/structs_unions/inline_sret_locrec.c	0000
+wide	elf	tests/exec/structs_unions/nested_designators.c	main	tests/exec/structs_unions/nested_designators.c	0000
 wide	elf	tests/exec/structs_unions/return_struct_in_reg.c	f1	tests/exec/structs_unions/return_struct_in_reg.c	0000
 wide	elf	tests/exec/structs_unions/return_struct_in_reg.c	f16	tests/exec/structs_unions/return_struct_in_reg.c	0000
 wide	elf	tests/exec/structs_unions/return_struct_in_reg.c	f2	tests/exec/structs_unions/return_struct_in_reg.c	0000

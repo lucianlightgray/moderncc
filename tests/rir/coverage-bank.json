@@ -375,16 +375,16 @@
   "sha": "b5fdbbf0714bc26b"
  },
  "sources_wide": {
-  "n": 388,
-  "sha": "c371542e9c832c06"
+  "n": 389,
+  "sha": "3a0dfc8bdb1c4f44"
  },
  "wide": {
   "O0": {
    "arena": {
-    "bodies": 4752,
-    "body_bytes": 3732162,
-    "coverage": 94.2196,
-    "discarded_bytes": 126794,
+    "bodies": 4768,
+    "body_bytes": 3735616,
+    "coverage": 94.214,
+    "discarded_bytes": 126983,
     "failed": {
      "elf": 9,
      "macho": 17
@@ -392,52 +392,52 @@
     "gap_bodies": 39,
     "gap_bytes": 0,
     "kept_coverage": {
-     "elf": 96.6027
+     "elf": 96.6007
     },
-    "modelled_bytes": 3732162,
+    "modelled_bytes": 3735616,
     "modelled_coverage": 100.0,
     "residual": {
      "elf": -119
     },
-    "text": 3826559,
-    "used_bytes": 3605368
+    "text": 3830253,
+    "used_bytes": 3608633
    },
    "capture": {
-    "bodies": 4752,
+    "bodies": 4768,
     "coverage": 100.0,
-    "faithful_bytes": 3732162,
+    "faithful_bytes": 3735616,
     "residual": {
      "elf": -119
     },
-    "text": 3826559
+    "text": 3830253
    },
    "lowerable": {
     "elf": {
-     "big_region_nodes_pct": 3.2779,
+     "big_region_nodes_pct": 3.2793,
      "blockers": {
       "asm": 0.0054,
-      "call": 0.0082,
-      "frame": 0.245,
-      "global": 0.6973,
+      "call": 0.0081,
+      "frame": 0.2472,
+      "global": 0.703,
       "opaque": 0.0,
-      "reg": 1.1087,
-      "type": 0.325
+      "reg": 1.1077,
+      "type": 0.3247
      },
-     "bodies_pct": 15.3812,
-     "bytes_pct": 1.3924,
-     "nodes_pct": 35.8484,
-     "nodes_pct_loose": 64.7081,
-     "nodes_pct_strict": 27.0908,
-     "region_nodes_pct": 10.6909
+     "bodies_pct": 15.3275,
+     "bytes_pct": 1.3911,
+     "nodes_pct": 35.8562,
+     "nodes_pct_loose": 64.696,
+     "nodes_pct_strict": 27.0906,
+     "region_nodes_pct": 10.7001
     }
    }
   },
   "O1": {
    "arena": {
-    "bodies": 4776,
-    "body_bytes": 3724954,
-    "coverage": 94.1805,
-    "discarded_bytes": 127481,
+    "bodies": 4792,
+    "body_bytes": 3728431,
+    "coverage": 94.175,
+    "discarded_bytes": 127670,
     "failed": {
      "elf": 9,
      "macho": 17
@@ -445,52 +445,52 @@
     "gap_bodies": 39,
     "gap_bytes": 0,
     "kept_coverage": {
-     "elf": 96.5776
+     "elf": 96.5758
     },
-    "modelled_bytes": 3724954,
+    "modelled_bytes": 3728431,
     "modelled_coverage": 100.0,
     "residual": {
      "elf": -119
     },
-    "text": 3819763,
-    "used_bytes": 3597473
+    "text": 3823480,
+    "used_bytes": 3600761
    },
    "capture": {
-    "bodies": 4776,
+    "bodies": 4792,
     "coverage": 100.0,
-    "faithful_bytes": 3731778,
+    "faithful_bytes": 3735226,
     "residual": {
      "elf": -119
     },
-    "text": 3826587
+    "text": 3830275
    },
    "lowerable": {
     "elf": {
-     "big_region_nodes_pct": 3.2774,
+     "big_region_nodes_pct": 3.2789,
      "blockers": {
       "asm": 0.0054,
-      "call": 0.0083,
-      "frame": 0.2476,
-      "global": 0.6943,
+      "call": 0.0082,
+      "frame": 0.2498,
+      "global": 0.7,
       "opaque": 0.0,
-      "reg": 1.0943,
-      "type": 0.3531
+      "reg": 1.0932,
+      "type": 0.3527
      },
-     "bodies_pct": 15.4316,
-     "bytes_pct": 1.3722,
-     "nodes_pct": 35.8497,
-     "nodes_pct_loose": 64.7054,
-     "nodes_pct_strict": 27.0708,
-     "region_nodes_pct": 10.7011
+     "bodies_pct": 15.3779,
+     "bytes_pct": 1.3709,
+     "nodes_pct": 35.8576,
+     "nodes_pct_loose": 64.6934,
+     "nodes_pct_strict": 27.0707,
+     "region_nodes_pct": 10.7103
     }
    }
   },
   "O2": {
    "arena": {
-    "bodies": 4776,
-    "body_bytes": 3744402,
-    "coverage": 93.2703,
-    "discarded_bytes": 125697,
+    "bodies": 4792,
+    "body_bytes": 3748380,
+    "coverage": 93.2715,
+    "discarded_bytes": 125886,
     "failed": {
      "elf": 9,
      "macho": 17
@@ -498,52 +498,52 @@
     "gap_bodies": 40,
     "gap_bytes": 467,
     "kept_coverage": {
-     "elf": 96.6306
+     "elf": 96.6291
     },
-    "modelled_bytes": 3743935,
+    "modelled_bytes": 3747913,
     "modelled_coverage": 99.9875,
     "residual": {
      "elf": -119
     },
-    "text": 3879304,
-    "used_bytes": 3618238
+    "text": 3883315,
+    "used_bytes": 3622027
    },
    "capture": {
-    "bodies": 4776,
+    "bodies": 4792,
     "coverage": 100.0,
-    "faithful_bytes": 3731778,
+    "faithful_bytes": 3735226,
     "residual": {
      "elf": -119
     },
-    "text": 3826587
+    "text": 3830275
    },
    "lowerable": {
     "elf": {
-     "big_region_nodes_pct": 3.2774,
+     "big_region_nodes_pct": 3.2789,
      "blockers": {
       "asm": 0.0054,
       "call": 0.011,
-      "frame": 0.234,
-      "global": 0.7072,
+      "frame": 0.2358,
+      "global": 0.7128,
       "opaque": 0.0,
-      "reg": 1.0403,
-      "type": 0.2994
+      "reg": 1.0391,
+      "type": 0.299
      },
-     "bodies_pct": 15.4316,
-     "bytes_pct": 1.3854,
-     "nodes_pct": 35.8497,
-     "nodes_pct_loose": 64.7054,
-     "nodes_pct_strict": 27.0708,
-     "region_nodes_pct": 10.7011
+     "bodies_pct": 15.3779,
+     "bytes_pct": 1.3839,
+     "nodes_pct": 35.8576,
+     "nodes_pct_loose": 64.6934,
+     "nodes_pct_strict": 27.0707,
+     "region_nodes_pct": 10.7103
     }
    }
   },
   "O3": {
    "arena": {
-    "bodies": 4776,
-    "body_bytes": 3744402,
-    "coverage": 90.7794,
-    "discarded_bytes": 125697,
+    "bodies": 4792,
+    "body_bytes": 3748380,
+    "coverage": 90.7727,
+    "discarded_bytes": 125886,
     "failed": {
      "elf": 9,
      "macho": 17
@@ -551,43 +551,43 @@
     "gap_bodies": 40,
     "gap_bytes": 467,
     "kept_coverage": {
-     "elf": 96.6306
+     "elf": 96.6291
     },
-    "modelled_bytes": 3743935,
+    "modelled_bytes": 3747913,
     "modelled_coverage": 99.9875,
     "residual": {
      "elf": -119
     },
-    "text": 3985749,
-    "used_bytes": 3618238
+    "text": 3990215,
+    "used_bytes": 3622027
    },
    "capture": {
-    "bodies": 4776,
+    "bodies": 4792,
     "coverage": 100.0,
-    "faithful_bytes": 3731778,
+    "faithful_bytes": 3735226,
     "residual": {
      "elf": -119
     },
-    "text": 3826587
+    "text": 3830275
    },
    "lowerable": {
     "elf": {
-     "big_region_nodes_pct": 3.2774,
+     "big_region_nodes_pct": 3.2789,
      "blockers": {
       "asm": 0.0054,
       "call": 0.011,
-      "frame": 0.234,
-      "global": 0.7072,
+      "frame": 0.2358,
+      "global": 0.7128,
       "opaque": 0.0,
-      "reg": 1.0403,
-      "type": 0.2994
+      "reg": 1.0391,
+      "type": 0.299
      },
-     "bodies_pct": 15.4316,
-     "bytes_pct": 1.3854,
-     "nodes_pct": 35.8497,
-     "nodes_pct_loose": 64.7054,
-     "nodes_pct_strict": 27.0708,
-     "region_nodes_pct": 10.7011
+     "bodies_pct": 15.3779,
+     "bytes_pct": 1.3839,
+     "nodes_pct": 35.8576,
+     "nodes_pct_loose": 64.6934,
+     "nodes_pct_strict": 27.0707,
+     "region_nodes_pct": 10.7103
     }
    }
   }
