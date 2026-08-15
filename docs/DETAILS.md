@@ -46396,3 +46396,58 @@ Implemented the residency model. Added static `mcc_mtl_bin/bout` + `pin/pout` + 
 **lin-x64, 2026-08-15 (CONTRACT-REPLY follow-up).** The board now carries **two** live cross-session strandings (`wide_bitfield_arith.c` on the non-osx keys, `algebraic_identities.c` on `arm64-osx` + `x86_64`), and the fragility has stopped being inert: lin had **T-lin-10038** (the CPU conformance goldens — tree-recursive fib, computed-goto-into-for, runtime label-arithmetic, all verified `mcc==gcc` at `-O0..-O3`) **ready to land and reverted it**, because `tools/o0_ab.sh` globs `find tests/exec -name '*.c'`, so any new exec fixture strands the 4 unmeasurable bare-ELF keys again — a third stranding onto a bank no session can fully rebank. So the gate is now **actively deterring test additions to `tests/exec`**, which is the opposite of what a coverage gate should do. Neither session is chasing the per-key whack-a-mole (the next corpus edit re-reds it). The real fix is a human/infra decision — **one fully-provisioned box** (mac + Linux cross + the 4 gentoo-ELF sysroots) that can run `O0_AB_BANK=1 o0_ab.sh <build> all` to completion, **or** the option-(c) redesign (o0-baseline banks/asserts only the keys the current box can measure, via a manifest, so a new fixture doesn't require unmeasurable-key rows and a silently-dropped key is still caught). The redesign changes the gate's guarantee (from "all 11 arches byte-identical" to "the buildable arches, byte-identical, + which those are"), so it wants explicit fleet/user sign-off rather than a unilateral session change.
 
 **Source.** lin-x64 + mac-arm64, 2026-08-15; blocked work = T-lin-10038 (held).
+
+<a id="lin-corpus-provisioning-complete-all-four-cref-corpora-live"></a>
+
+## Linux corpus provisioning complete — all four cref-oracle corpora live on lin-x64
+
+Closes the "corpus not provisioned on this host" clause that had been carried
+on [T-lin-10359](#t-lin-10359-slicecref-oracle-stalls-on-five-programs) as an
+in-practice blocker. **The clause was wrong, and the way it was wrong is the
+reusable part:** the corpora were never missing from the *box*, only from
+`vendor/`. `/home/llg/Projects/{gcc,llvm-test-suite,llvm-project}` have been
+present here throughout (5.5G / 2.5G / 6.4G) — indeed
+[T-lin-10030/lin](#t-lin-10030-lin-the-embed-jit-measured-natively-on-x86-64-at-every-level)
+already measured 493 conformance programs out of two of them, because
+`MCC_XSUITE_GCC` / `MCC_XSUITE_LLVMTS` *default* to those exact paths
+(`CMakeLists.txt:7609-7612`). The `slice/cref-oracle-*` cells resolve their
+corpus differently — `EXISTS ${MCC_VENDOR_DIR}/<name>` at configure time
+(`CMakeLists.txt:4067`) — and nobody had made the symlinks. So one family of
+cells was measuring the corpora while the adjacent family reported them
+absent, on the same box, for a week.
+
+**The lesson for the fleet:** "corpus absent" in a skip message means *absent
+from the path this cell resolves*, never *absent from the host*. Two cells can
+disagree about whether the same checkout exists. Before recording a corpus
+blocker on a task, check the host, not just the cell's own message.
+
+Provisioned as host-local untracked symlinks (`vendor/` is gitignored — the
+same not-vendored convention mac and win use, junctions there, symlinks here):
+
+| `vendor/` entry | target | programs |
+| --- | --- | --- |
+| `gcc-c-torture-execute` | `~/Projects/gcc/gcc/testsuite/gcc.c-torture/execute` | 1698 |
+| `llvm-test-suite-regression-c` | `~/Projects/llvm-test-suite/SingleSource/Regression/C` | 1745 |
+| `llvm-test-suite-unittests` | `~/Projects/llvm-test-suite/SingleSource/UnitTests` | 671 |
+| `compiler-rt-builtins-unit` | `~/Projects/llvm-project/compiler-rt/test/builtins/Unit` | 226 |
+| `compiler-rt-lib-builtins` | `~/Projects/llvm-project/compiler-rt/lib/builtins` | (include path only) |
+
+The regression-c and unittests counts match
+[win's table](#win-corpus-provisioning-complete-all-four-cref-corpora-live)
+exactly (1745 / 671), which is the cheap corroboration that both boxes are
+pointed at the same upstream trees.
+
+After `cmake -S . -B cmake-debug` all four cells re-register as **live
+commands rather than `mcc_skip_test` echo stubs** — verified by
+`ctest -N -R cref-oracle -V`, which now prints a real `gpuconform_cref.cmake`
+command line with `-DCORPUS=.../vendor/<name>` for each. Oracle pairing on
+this host is `gcc-15` against `clang-22`, so `MCC_DIFF3_SAME_FAMILY` is false
+and the cross-oracle premise holds.
+
+**Consequence for suite numbers.** lin's skip count drops by these four cells
+and every number they gate; [T-lin-10092/lin](#t-lin-10092-lin-the-linux-full-native-suite-is-clean)'s
+`1011 skipped / 9051 run` was quoted with them stubbed, so it is not
+comparable to any quote taken after this commit. That is a *widening of the
+measured subject*, not a regression.
+
+**Source.** lin-x64, 2026-08-15, at `e80b0ecd`.
