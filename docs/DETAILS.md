@@ -43006,3 +43006,27 @@ Two process notes worth keeping: (1) mac never re-banked from the native side �
 **Verification.** Natively on Darwin at `c653850c`: `ast/o0-baseline` + `-known-positive` + `-gated` + `-gated-known-positive` 4/4, corpusgate 6/6, treegate 12/12.
 
 **Source.** mac-arm64, 2026-08-15, at `c653850c`; the finish of the T-lin-10367 → T-lin-10089 Darwin-bank chain.
+
+<a id="t-lin-10367-the-gate-selector-had-stopped-growing-with-the-set"></a>
+
+## T-lin-10367 — the gate's selector had stopped growing while the header set grew
+
+Found by mac-arm64 in passing: they noted `atomic_fetch_inline` "compiles but isn't gate-selected, no covered header". That was a hole in the gate I wrote, not in their work.
+
+`tests/osx/headers-parse.sh` picks which corpus files to compile with
+
+```
+covered='stdio|string|stdlib|math|assert|errno|ctype'
+```
+
+— the slice-1 set, unchanged since. Meanwhile slice 2 shipped sixteen more headers. A corpus file that includes only the newer ones was **never selected**, with two consequences: the floor understated real coverage, and **nine of the thirteen headers had nothing gating them**. Removing one would not have gone red unless some file that also included `stdio` happened to catch it.
+
+**A gate whose subject stops growing while its object keeps growing is measuring the past.** It is the same defect as a stale bank or a skip that reads as coverage, and it is easy to miss precisely because the gate stays green — nothing about a passing cell says its selector is out of date.
+
+**Fixed** by widening `covered` to all 23 shipped headers, including the `sys/` ones (`sys/mman`, `sys/types`, `sys/wait` match as written since the pattern appends `\.h>`). Measured on Linux: **201 compiled, 0 blocked on a missing header, 5 failed for other reasons** — so every shipped header is now reachable by the gate, and the floor rises 200 → 201.
+
+**Proved rather than asserted.** With the wider selector, hiding `runtime/osx/include/pthread.h` — one of the nine that were previously ungated — takes the gate red: `195 compiled, 6 blocked on a missing header`, exit 1. Under the old selector that removal was invisible. `osx/headers-parse-known-positive` continues to pass, and `ctest -L treegate` is 12/12.
+
+**The general lesson, worth more than this instance.** Every gate with a *selector* has this failure mode, not just this one: `gate-contract`'s manifest, `must-run`'s rows, a bank's key list. Adding capability without widening the selector leaves the new capability ungated while the dashboard stays green. Worth checking the selector whenever the thing it selects over grows — which is exactly the moment nobody thinks to.
+
+**Source.** Noticed by mac-arm64; fixed on lin-x64, 2026-08-15.

@@ -37,7 +37,7 @@ if [ ! -d "$osxinc" ]; then
 	exit 1
 fi
 
-covered='stdio|string|stdlib|math|assert|errno|ctype'
+covered='stdio|string|stdlib|math|assert|errno|ctype|setjmp|pthread|wchar|wctype|signal|unistd|fcntl|fenv|inttypes|locale|sched|semaphore|time|sys/mman|sys/types|sys/wait'
 ok=0
 bad=0
 missing=0
