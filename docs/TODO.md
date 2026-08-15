@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30007   | 2026-08-15T22:40Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30007   | 2026-08-15T23:25Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10390   | 2026-08-15T23:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T23:08Z |
 
@@ -12,12 +12,6 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
-- [ ] T-mac-30006 [S] o0-baseline's 4 bare-ELF keys (i386/arm/arm64/riscv64) are unmaintainable (NOW BLOCKING: lin held T-lin-10038) — no session box has the gentoo sysroots
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: fb656760 | TS: 2026-08-15T23:05Z
-      REF: DETAILS.md#t-mac-30006-o0-baseline-4-bare-elf-keys-are-unmaintainable-no-session-box-has-the-gentoo-sysroots | DEPS: — | NOTE: ast/o0-baseline banks a per-arch -O0 object hash for 11 keys; the 4 bare-ELF keys need vendor/gentoo-stage3-<arch>-glibc sysroots that NO current box has (lin's vendor/ = musl+qemu only), so mcc-i386 etc. fail stdio.h-not-found and o0_ab reports them NOT MEASURED. Every corpus edit strands the keys the editing session can't measure (seen twice 2026-08-15: T-lin-10078 wide_bitfield_arith + win's da0932e2 algebraic_identities). INERT — o0_ab skips unmeasurable keys, so green on all current boxes + CI; only a fully-provisioned box reds. Pick one: (a) provision the 4 sysroots + rebank all; (b) drop the 4 keys from the bank; (c) make the measurable-key set an asserted manifest so a silent drop is caught. HUMAN/infra decision — surfaced by lin (T-lin-10078 CONTRACT-REPLY) + mac | RE-PRICED 2026-08-15 by lin-x64, DETAILS.md#t-mac-30006-option-a-is-executable-on-lin-the-tree-ships-the-downloader: the "no box has the sysroots" premise describes vendor/, not the HOST. The tree already ships the downloader — CMakeLists:8988 registers qemu-<arch>-<libc>-fetch (`mccharness qemufetch`) whose MCC_QEMU_DLDIR DEFAULTS to vendor/ and whose MCC_QEMU_ARCHS default is exactly x86_64;i386;arm;arm64;riscv64, i.e. it writes precisely the gentoo-stage3-<arch>-glibc paths o0_ab.sh:242 reads. lin has all four qemu-user binaries + all four cmake-cross/mcc-<arch> + 226 GB free + docker for the documented offline fallback. It has never fired only because it is opt-in (-DMCC_QEMU_TESTS=ON) BECAUSE it downloads. So (a) is NOT impossible — it costs one flag + a 6.6 GB fetch + a FULL 11-key rebank (a fresh stage3 will not reproduce the current bank, since the sysroot supplies the headers the banked objects compile against). NOT PROVEN: the fetch was not run, mirror reachability untested, and cross-box stability of the rebank is the very question this row exists to settle. (b)/(c) unaffected; (c) still survives a stage3 that drifts again, (a) does not. STILL OPEN + unowned — evidence only
-- [ ] T-lin-10036 [X] mac-arm64 — `ast_ladder_gpu_run`: the Metal backend still uploads `tin` twice and carries the two dead memsets (SPIR-V half DONE)
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 01c5ff30 | TS: 2026-08-15T22:40Z
-      REF: DETAILS.md#t-lin-10036-mac-slice-2-done-resident-metal-buffers-reuse_in-honored-01c5ff30 | DEPS: — | NOTE: BOTH SLICES DONE. Slice 1 34106f4c (dead pout memset removed, pin tail-only). Slice 2 01c5ff30 (resident Metal bin/bout via grow-only mtl_bind_buffers + release in mtl_quiesce; dispatch honors reuse_in; MCC_GPU_IN_IS_RESIDENT 0->1). All three wins now on the Metal arm, at parity with SPIR-V. Device-neutral: gpu/* + slice/* 72/72 green incl gpu/always-gpu-parity(+full-language) which exercise the two-arm reuse path (arm b reuses arm a resident input — proven correct). PENDING §8: full native suite in flight (bufz8l8ru). ON GREEN: mark DONE + archive; expect T-lin-10092/mac environmental set only
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
