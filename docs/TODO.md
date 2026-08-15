@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T15:50Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T16:12Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T17:03Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T16:54Z |
 
 ## Contracts — blocking, highest priority
@@ -25,6 +25,9 @@
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
+- [ ] T-lin-10384 [S] The one emitter hole the census found: ladder pairs with struct member select refuse because `ast_eval_ladder_scan` never keys member offsets
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc1e52a8 | TS: 2026-08-15T17:03Z
+      REF: DETAILS.md#t-lin-10384-mechanics-the-member-refusal-is-livein-keying-not-codegen | DEPS: — | NOTE: livein-keying hole confirmed by read — evaluator ast_eval_slice_rec:1277-1282 resolves member `s.f`->offset `mo` via member_off then ast_eval_slice_env; absent key = 0 (refusal); spv/msl emitter share that livein vector. FIX: mirror ast_eval_slice_livein's member arm (ast_eval_slice.h:1754-1762) into ast_eval_ladder_scan's AST_Unary case — key mo with tbits/uns, dedup+conflict as the AST_Ref arm, do not descend into base. Slice 1: confirm 81 sites (print mo at mccgpu.h:3808) + census subject.c -O4 81->0 pairs CERTIFIED not dropped
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
@@ -35,9 +38,6 @@
 - HANDOFF-BOX-FACTS (win-x64, kept for successors): VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics for any device run; VULKAN_SDK=C:/Users/llg/scoop/apps/vulkan/current; corpora junctions in vendor/ point at C:/Users/llg/Projects/{gcc-torture,llvm-test-suite,llvm-project}; commit BEFORE pull (DETAILS#autostash-is-how-conflict-markers-reach-pushed-history). Also-resume-ready: T-win-50015 (ms-bitfield ABI; fixture in-tree, two named gaps). Held: T-lin-10092/win (steady at NOTE-2)
 
 ## Open — claimable
-- [ ] T-lin-10384 [S] The one emitter hole the census found: ladder pairs with struct member select refuse because `ast_eval_ladder_scan` never keys member offsets
-      OWNER: — | STATE: OPEN | SHA: dc1e52a8 | TS: 2026-08-15T16:20Z
-      REF: DETAILS.md#t-lin-10384-mechanics-the-member-refusal-is-livein-keying-not-codegen | DEPS: — | NOTE: the census's single non-zero by-node/by-op entry pair (by-node Unary=81 / by-op member=81, subject.c -O4 only; ladder view emit-lhs=66/emit-rhs=15; zero on src/mcc.c self-host / full_language / all 312 tests/exec). CORRECTED WHY (subagent read, see REF): NOT a missing emitter arm — spv_expr AND msl_expr both lower member (mccgpu.h:3805-3814 / :1256-1265); the refusal is spv_env_index failing at :3808 because the livein collector ast_eval_ladder_scan (ast_eval_slice.h:1992) keys only AST_Ref locals and never member offsets, so key base+F is absent. LIVEIN-KEYING HOLE, NOT CODEGEN. CHEAP FIX (~15 lines): mirror ast_eval_slice_livein's member arm (ast_eval_slice.h:1753-1762) into the scanner — key the resolved offset, don't descend into the base; no emitter change on either arm. Two soundness items owed at the REF: key-aliasing refusal (base pointer + field of same object must not coexist as independent keys) and arity (wide structs then bounce as arity-or-space, correctly). Correctly OUT of scope: bitfields, float/aggregate fields, addr-of, and the binding-2 region family (arrow/deref/ext-dynidx — dead on the ladder path, needs a from-scratch memory-image upload; that direction is the expensive one and cites T-lin-10040's break-even first). First slice = confirm the 81 sites (inference says bcases.h bitfield-container loads: print mo at mccgpu.h:3808), then the scanner arm TDD'd against the subject.c census going 81 -> 0 with pairs certified, not dropped
 - [ ] T-lin-10385 [X] mac-arm64 — the MSL emitter has no refuse counters, so the MSL-arm census cannot be taken; add them, then take it
       OWNER: — | STATE: OPEN | SHA: dc1e52a8 | TS: 2026-08-15T16:12Z
       REF: DETAILS.md#t-lin-10383-census-results-the-spir-v-arm-histograms | DEPS: — | NOTE: structural finding from T-lin-10383: MCC_GPU_REFUSE_KINDS (mccgpu.h:3617) is defined only in the !MCC_GPU_LANG_MSL branch (opened :1950) — a Darwin census prints the two ladder lines but can NEVER produce the by-node/by-op histograms. Add the same counters to the MSL emitter half, then census subject.c + full_language.c + tests/exec + self-host per the recipe at the REF (SOURCE_DATE_EPOCH pinned, forced>0/dispatches>0 required, no-GPU must say so). T-lin-10042 has settled (slice 7, no remaining M-stage) so the parent anchor's timing condition is met. A hole found on MSL only is [X] darwin; one found on both arms joins T-lin-10384's class as [S]
