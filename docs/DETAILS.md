@@ -45642,3 +45642,38 @@ Output shape: `[ladder-gpu] forced=N refused=N <reason>=N …` and `[ladder-gpu]
 **Verification.** The census half: both histograms published here, taken with `forced>0` and `dispatches>0` on each arm, over at least `src/mcc.c` + `full_language.c` + the `tests/exec` corpus, with the subject and device named. The taskify half: every non-zero `by-node`/`by-op` entry has exactly one filed row and no entry has two, checkable by diffing the histogram against `TODO.md`.
 
 **Source.** lin-x64, 2026-08-15, on human instruction.
+
+<a id="t-win-50020-slice-1-gs-off-the-blob-the-ucrt-import-wall-remains"></a>
+
+## T-win-50020 slice 1 — /GS- kills its symbol class; the ucrt `__imp_*` wall is the remaining half. Task released — resume, not restart
+
+**Progress (win-x64, 2026-08-15, code SHA 7263e6fe). Released back to OPEN.**
+
+**Done:** `libmcc_jitengine` compiles `/GS-` under MSVC (CMakeLists, MSVC-only,
+commented at the site). Verified by the link-error diff: `__report_rangecheckfailure`,
+`__security_cookie`, `__GSHandlerCheck` no longer appear in any embed-jit link;
+`__isa_available` also gone (it rode in with the /GS-instrumented CRT bits).
+No cell flips — embed-jit was red before and after — and no green cell touches
+the blob.
+
+**The remaining half, precisely:** the cl-built blob references the **ucrt
+import set** — `__imp___acrt_iob_func`, `__imp___stdio_common_vfprintf/vsprintf/vsscanf`,
+`__imp___p__environ`, `__imp_unlink`, `__imp_fdopen`, `__imp_stricmp`,
+`__imp_strlwr`, `__imp_close/lseek/open/read/getcwd`, `__imp__fstat64i32/_stat64i32`.
+These are **ucrtbase.dll** exports; mcc's PE import machinery resolves
+`__imp_X` through its `.def` files (runtime/win32/lib/msvcrt.def), and classic
+msvcrt.dll does not export the `__stdio_common_*`/`_acrt_*` family, so a .def
+addition alone cannot work against msvcrt. Two viable directions for whoever
+resumes: **(a)** a `ucrtbase.def` + teaching the memory-output import path to
+search it (mccpe.c:1380/1415/2712 are the `__imp_` sites); **(b)** a JIT-linking
+fallback: for an unresolved `__imp_X` under `MCC_OUTPUT_MEMORY`, synthesize the
+import slot with `GetProcAddress(GetModuleHandle("ucrtbase.dll"), X)` — the
+MSVC-built mcc.exe already has ucrtbase loaded, so the handle is free; the slot
+must be a POINTER cell (an `__imp_` reference reads the pointer, not the code).
+Note the ELF-side host resolver (mccelf.c:966) is compiled out under
+`MCC_TARGET_PE`, so the PE memory path is the only place to fix.
+
+**Payoff when done:** 13 of the win suite's 15 reds, T-lin-10030/win's
+measurement half, and T-lin-10383's Windows census arm.
+
+**Source.** win-x64, 2026-08-15, at 7263e6fe.
