@@ -42571,3 +42571,18 @@ Changing a test's expectation in the same commit that changes the behaviour it m
 **Verification.** `ctest -R '^(trace-gate-invariant|schema-gate-invariant|jit/|slice/(task|sched|work|cpu|thread))'` — **79 of 79 green**, including `jit/selftest-shutdown` and `jit/selftest-pool`. `ctest -R '^(libtest|mcctest)'` 7/7. `tracegate` passes: `src/mccjit_embed.c` is an instrumented file, so every added function opens with `MCC_TRACE("enter\n")` and every added braced branch with `MCC_TRACE("br\n")`, including the `for(;;)` tick loop and its two breaks.
 
 **Source.** Implemented on lin-x64, 2026-08-15.
+<a id="t-lin-10367-slice-2-mac-setjmp-and-the-off-linux-gate-registration"></a>
+
+## T-lin-10367 slice 2 (mac-arm64) — setjmp.h, and the parse gate had to register off-Linux first
+
+Slice 2 is the layout-committing headers lin handed to mac because a wrong constant is a silent ABI miscompile and only this box has the real macOS SDK. First header landed: `runtime/osx/include/setjmp.h`, with `_JBLEN` mirroring `MacOSX.sdk/usr/include/setjmp.h` per arch (arm64 `(14+8+2)*2 = 48`, x86_64 `(9*2)+3+16 = 37`, i386 18, arm 28). `bound_setjmp.c` allocates `jmp_buf` by value, so `_JBLEN` feeds its `-O0` bank — the reason this is verified against the SDK rather than guessed. Dropped `setjmp` from `tests/osx/headers-parse.sh`'s exclusion list; that adds exactly `bound_setjmp.c` (the other three setjmp corpus files also include still-excluded pthread/signal/sys headers), 189 → 190 on the gate's Linux host.
+
+**A blocker found and fixed first.** `osx/headers-parse` and `osx/headers-parse-known-positive` are `add_test`'d only inside `if(UNIX ... AND NOT Darwin)` (CMakeLists 4187) with **no `else()`**, yet both are named in `must-run.txt` and `gate-contract.txt`. So on Darwin (and Windows) they were "declared but not registered" → `ci/must-run-registered` (2 violations) and `ci/gate-contract` (`declared here and is not registered` + `50 < 51` proved) RED. Green on Linux, so invisible to the author — identical to [[T-win-50001]]. Fixed by adding `mcc_skip_test` else-branch twins mirroring the `o0-baseline` block; gate-contract now reads 46 verified + 5 host-skipped = 51 proved (the T-mac-30002 host-skip-counts fix carries it), treegate 12/12 on Darwin.
+
+**Darwin-vs-Linux parse discrepancy, banked for T-lin-10089.** The `--min-files` floor (189) is a Linux-host number. Run natively here, the *Darwin-target* mcc compiles only **186** of the same corpus subset against lin's slice-1 set (9 files fail for reasons other than a missing header — not yet triaged). This is *why* the gate is scoped `NOT Darwin`, and it is exactly the surface T-lin-10089's `--sysroot` re-key will have to make green when the Darwin build actually compiles against these headers. Whoever takes 10089 should start by triaging those 9.
+
+**Floor ratchet left to the gate owner.** The gate is `NOT Darwin`, so mac cannot measure its Linux count; I shipped the header + exclusion drop but left `--min-files` at 189 (Linux stays green at ≥190 either way). lin-x64 (gate owner, Linux box) ratchets 189 → 190 when convenient.
+
+**Remaining slice-2 headers** (each moves the floor only once a corpus file's *whole* cluster ships): pthread (6 files; opaque `__PTHREAD_*_SIZE__`), signal (2; `sigset_t`, W-less), sys/wait (2; `W*` status bits), unistd (2), sys/mman (1; `MAP_*`/`PROT_*` values), wchar (1), fenv (1; `fenv_t`, `FE_*`). `threads.h` is already freestanding in `runtime/include` — not duplicated.
+
+**Source.** mac-arm64, 2026-08-15, slice 2 of lin-x64's [T-lin-10367](#t-lin-10367-slice-1-the-layout-free-half-of-the-darwin-header-set); SDK = Xcode `MacOSX.sdk`.
