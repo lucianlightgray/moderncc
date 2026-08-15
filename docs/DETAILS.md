@@ -42101,3 +42101,38 @@ Only the *corpus mix* column is T-lin-10009's fixture. The **pre-existing** colu
 **Verification.** The commit that first moves `bodies_pct`'s pre-existing component is named, and either explained as intended or fixed; if intended, the explanation goes on the board beside the figure.
 
 **Source.** Found on lin-x64, 2026-08-14, while re-banking for T-lin-10363 at `a0e26cff`.
+
+
+<a id="t-lin-10001-slice-1-blocked-on-is-the-return-value-that-was-missing"></a>
+
+## T-lin-10001 slice 1 — `blocked-on` is the return value that was missing
+
+**Type** `[C]` — **State** IN_PROGRESS — **DEPS** —
+
+The first thing to record is that **the representation already existed.** `src/mcctask.h` landed with the slice scheduler (`1b54c26e`) and `MccTask`/`MccSched` are live under `src/mccslice.h` and `src/mccthread.h`, tested by the `slice/task` cell. The contract asks for a `tick()` returning `{done, yielded, blocked-on}`; what shipped answers `READY/YIELDED/DONE/FAILED`. So this contract is not a green field, and reading it as one would have duplicated a working scheduler.
+
+**What the missing third answer costs.** `YIELDED` means *made progress, call me again*. With no other way to say *not ready*, a task waiting on a condition had to say the same thing, so it burned a tick every round forever, and a scheduler holding nothing runnable was indistinguishable from a busy one. Two visible consequences already in the tree:
+
+- `src/mccthread.h` grew `npred`, a `MccDepReadyFn ready` predicate and `mcc_dep_waiting_on_world()` *beside* `MccTask` rather than inside it — readiness logic living outside the type that should express it.
+- The JIT pool cannot report whether it is working or wedged, which is exactly [T-lin-10031](#t-lin-10031-the-jit-teardown-is-unbounded-above)'s subject and the reason its teardown is unbounded above.
+
+**The interface, which is what dependents may now rely on:**
+
+| | |
+| --- | --- |
+| `MCC_TASK_BLOCKED` | the third tick answer |
+| `MccTask.blocked_on` | an opaque address the task names. Never dereferenced; only its identity matters, so any stable address serves as a token |
+| `mcc_task_block(t, on)` | sets address and state together — a task cannot return `BLOCKED` without naming a blocker, which would park it permanently |
+| `mcc_sched_wake(s, on)` | wakes every task parked on that address, returns the count. Waking an address nobody named is **not** an error and wakes nothing |
+| `mcc_sched_blocked/runnable(s)` | the two halves of pending, separately |
+| `MccSched.stalls` | rounds that found nothing runnable |
+
+`mcc_sched_step` skips parked tasks instead of ticking them; `mcc_sched_run` stops when nothing is runnable rather than spinning. That is what separates *the queue is stuck* from *one task is stuck* — conflating them is what makes a wedged pool look like a busy one.
+
+**Deliberately not done here.** `mcc_sched_wake` is O(pending) and there is no wait-queue per address. At the pending counts this scheduler runs it is not worth a hash table, and adding one before a consumer needs it would be inventing a requirement.
+
+**Verification.** `ctest --test-dir cmake-def -R '^(slice/task|slice/sched|slice/work|slice/cpu|slice/thread)' --output-on-failure` — 8 of 8 green at `3a1fab9f`. The 20 new assertions in `tools/slicerun.c` were written first and confirmed failing to compile before the header changed, and they cover: a lone blocked task returning rather than spinning, exactly one tick while parked, the address round-tripping, resuming from where it blocked rather than restarting, a blocked task not starving a runnable one, and a wake on an unwatched address being a no-op.
+
+**Next slice.** `tools/mcchv.c`'s `hv_optimizer` thread, which the contract names as the first conversion and whose loop already has explicit suspension points. Its `hv_sweep_worker` stays real threads: it measures 16-way parallel throughput, which is the same reason `mccjit_bench_pair` and `ast_search_pool_pthreads` are excluded by the contract.
+
+**Source.** Implemented on lin-x64, 2026-08-14, at `3a1fab9f`.
