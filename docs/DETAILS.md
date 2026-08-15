@@ -45677,3 +45677,38 @@ Note the ELF-side host resolver (mccelf.c:966) is compiled out under
 measurement half, and T-lin-10383's Windows census arm.
 
 **Source.** win-x64, 2026-08-15, at 7263e6fe.
+
+<a id="t-lin-10383-census-results-the-spir-v-arm-histograms"></a>
+
+## T-lin-10383 census results — the SPIR-V arm, both histograms, over every named subject
+
+**Progress (lin-x64, 2026-08-15, mcc built at `main@dc1e52a8`, cmake-jitdev: Debug, MCC_DEV=ON, MCC_EMBED_JIT=1, MCC_GPU_LANG_MSL=0). Device: NVIDIA GeForce RTX 5070 Ti Laptop GPU, idle (0-7% util, no compute apps) — the T-lin-10359 busy-GPU stall class was excluded before running. `SOURCE_DATE_EPOCH=1000000000` exported per the N21 rule.**
+
+**The histograms.** Every run non-vacuous: `tried=1 available=1 forced=1`, `dispatches>0`.
+
+| subject | flags | rungs | dispatches | lanes | ladder refused | emitter refused |
+| --- | --- | --- | --- | --- | --- | --- |
+| `tests/smoke/subject.c` | `-O4 -c` | 5,500 | 10,839 | 98,314,560 | 81 (`emit-lhs=66 emit-rhs=15`, all other 6 reasons 0) | **81** (`by-node Unary=81` / `by-op member=81`) |
+| `tests/diff/full_language.c` | `-O1 -c` (the registered cell's flags) | 6,405 | 12,811 | 96,203,452 | 0 | 0 |
+| `tests/diff/full_language.c` | `-O4 -c` (supplementary) | 6,431 | 12,863 | 97,256,764 | 0 | 0 |
+| `src/mcc.c` self-host | `--embed-jit -O1` (the `mcc_add_jit_selfhost` command + `--jit-always-gpu`; links `mccjit_blob.c`+`mccrt_blob.c`, output runs) | 244,838 | 489,677 | 4,727,072,676 | 0 | 0 |
+| `tests/exec` corpus, 311 of 312 files | `-O4 -c` per file, aggregated | 23,109 | 46,529 | 443,592,696 | 0 — every reason 0 in every file | 0 |
+| `tests/exec/features_c99_c11/cleanup.c` (the 312th) | `-O4 -c` via cmake-debug (MCC_DEV=OFF — see below) | 96 | 193 | 2,239,436 | 0 | 0 |
+
+The self-host row reproduces T-lin-10082's 249,556/499,113/4.77e9 shape at today's tree (the ~2% delta is tree growth since `890a822c`), and the subject.c row reproduces its 81 exactly.
+
+**The verdict the census half owes: the emitter histogram has exactly ONE non-zero entry across every subject** — `by-node Unary` / `by-op member`, the same 81 refusals seen on two axes (struct member select is a Unary node carrying `AST_OP_MEMBER`). One task filed for it: **T-lin-10384**. No other by-node kind and no other by-op value fired anywhere: not addr-of, not member-arrow, not imag, no operator char, on 286,379 offered rungs / 572,912 dispatches over 5.46e9 lanes.
+
+**Read the zero honestly — three qualifiers, all census facts, none of them tasks to "fix" here:**
+
+1. **129 of 311 exec files fire `rungs=0`** (`dispatches=1` = the warm-up probe only): the ladder never forms a candidate pair on them. Their zeros are "nothing offered", not "everything accepted". This matches the standing 3-in-575 figure (DETAILS `:28696`).
+2. **The histograms only see what the ladder offers.** `ast_eval_ladder_rung` pre-fit rejects (`total > 40` nodes, `space > budget`, `ast_eval_slice.h:2162-2166`) happen BEFORE the rung counter and are invisible to both layers; whole statement/control-flow/call territory never forms pairs at all. The instrument censuses the emitter's boundary within the pair population, which is what T-lin-10383 asked for — it is not a device-coverage fraction (that is T-lin-10058's instrument).
+3. **The by-op set silently caps at 24 distinct ops** (`mcc_gpu_refuse_opv[24]`, append-only scan at `mccgpu.h:3632-3639`). Not hit here (1 distinct op), but a future census with >24 distinct refusing ops would under-report; noted so nobody trusts a saturated table.
+
+**The MSL arm cannot take this census today — that is a structural finding, not a scheduling gap.** `MCC_GPU_REFUSE_KINDS` (the emitter counters, `mccgpu.h:3617`) is defined only in the `#else /* !MCC_GPU_LANG_MSL */` branch opened at `mccgpu.h:1950`; the MSL emitter half has no refuse counters at all, so a Darwin census can print the two ladder lines but can never produce the by-node/by-op histograms. Filed as **T-lin-10385 [X] mac-arm64**: add the counters to the MSL half (same shape as the SPIR-V ones), then take the MSL census — T-lin-10042 has settled (slice 7, no remaining M-stage), so the anchor's "after it settles" condition is met. The Windows half of the SPIR-V arm stays behind T-win-50020 as already recorded.
+
+**En-passant finding, censused around, filed separately as T-lin-10386:** `tests/exec/features_c99_c11/cleanup.c` (396 lines) does not compile in bounded time on an `MCC_DEV=ON` build at any of `-O1/-O2/-O3/-O4` (>120 s each, CPU-bound, no GPU involved — reproduces without `--jit-always-gpu`), while `-O0` takes 0.08 s and an MCC_DEV=OFF build takes 0.52 s at `-O2`. It terminates — `-O1` completes in 103 s (untimed retry, rc=0) — so this is ~200x pathological cost, not a hang; `-O4` exceeds 300 s (unmeasured beyond that). The corpus row above therefore censused cleanup.c through the DEV-off binary (same tree, same arm); its 96 rungs are in the table.
+
+**Verification (per the parent anchor's spec):** both histograms published here; `forced=1` and `dispatches>0` on every run; subjects `src/mcc.c` + `full_language.c` + all 312 `tests/exec` files + `subject.c`; device named. Taskify half: the single non-zero entry pair (`Unary`, `member`) has exactly one filed row (T-lin-10384); diffing the histograms against TODO.md finds no unfiled entry and no double-filed entry. MSL-arm impossibility has exactly one filed row (T-lin-10385).
+
+**Source.** lin-x64, 2026-08-15, runs at `main@dc1e52a8` (code `b3da6a4a` + `eab7d962`).
