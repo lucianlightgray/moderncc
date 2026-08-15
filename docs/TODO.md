@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T05:30Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T05:40Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T10:30Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
@@ -13,6 +13,9 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
+- [ ] T-lin-10008 [S] Parse `_Complex _Float16` (9 cells)
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: d9187712 | TS: 2026-08-15T05:40Z
+      REF: DETAILS.md#t-lin-10008-code-done-complex-float16-supported-smoke-cells-need-a-linux-host | DEPS: — | NOTE: CODE DONE (d9187712) — the mccgen.c:8678 reject was purely conservative; dropped it and _Complex _Float16 parses + computes, matching gcc-16 EXACTLY (add/mul/div incl. the half-rounded 4.3984-0.7998i, function ABI, sizeof=4); 155/155 complex+smoke green, treegate 12/12. My earlier "paths exclude FLOAT16" worry was wrong — the complex machinery already handles it. REMAINING (the smoke "9 cells") is HANDED TO LIN: the smoke oracle's reference is the host compiler, and Apple clang emits a __mulhc3 libcall macOS runtime lacks, so the C16 arm can only build+adjudicate on Linux (libgcc has __mulhc3). Concrete plan in DETAILS
 
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
@@ -60,9 +63,6 @@
 - [ ] T-lin-10007 [S] Parse `__float128` / `_Float128` (28 cells)
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
-- [ ] T-lin-10008 [S] Parse `_Complex _Float16` (9 cells)
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10008-parse-complex-float16-9-cells | DEPS: — | SCOPING (mac-arm64, 2026-08-15): rejection is a single conservative gate at src/mccgen.c:8678 (`_Complex _Float16 is not supported`), just before mk_complex_type(type,&base) in the complex_seen path — sibling to the `_Complex __int256` reject at 8663. But NOT a one-line lift: (1) _Float16 is deliberately excluded from float predicates, e.g. is_float()-callers at mccgen.c:650 `is_float(t) && (t&VT_BTYPE)!=VT_FLOAT16`, so the complex arithmetic/convert paths would need VT_FLOAT16 admitted where they currently exclude it; (2) __FLT_EVAL_METHOD__==0 means half ops promote per-operation (task note), so complex-half add/mul/div must follow that promotion; (3) the 9 cells DO NOT EXIST yet — they must be authored (declare + real/imag + the four ops) WITH csweep-shaped value rows in the smoke oracle (the verification's adjudication half, which is also the safety net against a silent complex-half miscompile). A real multi-turn feature, not a gate flip
 - [ ] T-lin-10010 [S] Implement reversed `scalar_storage_order`; refusing it is the safe interim, not the feature
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10010-implement-reversed-scalar-storage-order | DEPS: —

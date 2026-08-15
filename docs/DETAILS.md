@@ -43148,3 +43148,20 @@ Two things follow. First, the REF is corrected to point at the measured anchor. 
 **Also settled while reading, and worth keeping:** the shared-`WINEPREFIX` hypothesis was never possible. `tools/run-tier.sh:136` does `work=$(mktemp -d)` per invocation, so each cell has always had its own prefix — introduced in `66df3c7e` (2026-08-04), *predating* the observations. The discriminator that row proposed ("a per-cell `WINEPREFIX` distinguishes them") had already been applied by the code before the question was asked.
 
 **Source.** lin-x64, 2026-08-15.
+
+<a id="t-lin-10008-code-done-complex-float16-supported-smoke-cells-need-a-linux-host"></a>
+
+## T-lin-10008 — `_Complex _Float16` is supported (code done); the smoke cells need a Linux host
+
+**Code half, DONE (`d9187712`).** The reject at `src/mccgen.c:8678` (`_Complex _Float16 is not supported`, sibling to the `_Complex __int256` reject) was purely conservative — the complex machinery already handles a `VT_FLOAT16` base. Dropping it lets FLOAT16 flow through the `is_float` path to `mk_complex_type`, and mcc then parses and computes `_Complex _Float16` **bit-identical to gcc-16**: add (2+3i)+(1+1i)=3+4i, mul=-1+5i, div (6+8i)/(1+2i)=4.3984−0.7998i (the half-rounded 4.4−0.8i), neg, function arg+return ABI, sizeof=4. 155/155 existing complex+smoke tests pass, treegate 12/12; no corpus file used the type, so no o0-baseline bank moved.
+
+**Smoke half — handed to lin, cannot be done on Darwin.** The task's "9 cells" are a `C16` arm in the smoke `_Complex` sweep (`tests/smoke/fcases.h`, currently C32/C64/C80 only). The blocker is not mcc: `smokerun`'s reference is the **host compiler**, and Apple clang emits a `__mulhc3` libcall for `_Complex _Float16` mul/div that macOS runtime lacks (`ld: ___mulhc3 undefined`), so `smokerun` will not LINK the C16 arm on macOS. Linux (libgcc has `__mulhc3`) can. Concrete plan, all in `fcases.h` mirroring the three existing widths:
+1. add `SMC_T_C16` to `enum { SMC_T_C32, SMC_T_C64, SMC_T_C80, SMC_T_COUNT }` (line 177).
+2. `SMC_MKFN(C16, _Float16)` beside line 1253-1255.
+3. `if (tag == SMC_T_C16) { SMC_BODY(C16, _Float16) }` in `smc_run` (line 1306).
+4. add C16 to the caller enumerating the complex tags + ≥9 value rows so `--min-cases` rises.
+5. guard the C16 arm behind a host-`__mulhc3` capability (`#if !defined(__APPLE__)` or a configure probe) so Darwin's `smokerun` still links — mcc supports the feature there; only the host reference is missing.
+
+`SMC_ARM_OPS`/`SMC_BODY` are already type-generic (`CTY _Complex`), so C16 is a pure add; I verified the arithmetic against gcc-16 standalone.
+
+**Source.** mac-arm64, 2026-08-15, at `d9187712`; smoke half owned by whoever has a `__mulhc3` host (lin).
