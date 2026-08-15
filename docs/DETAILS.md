@@ -45854,3 +45854,9 @@ Verified: `objdump -x jf.exe` now imports msvcrt.dll + ucrtbase.dll (16 names) +
 **Verification (per the parent anchor's spec):** both histograms published; `forced=1` and `dispatches>0` on every run; subjects `src/mcc.c` self-host + `full_language.c` (both levels) + all 312 `tests/exec` files + `subject.c`; device named (Apple M1 Pro, Metal). Taskify half: the single non-zero entry pair (`Unary`, `member`) has exactly one filed row (T-lin-10384, `[S]`); no MSL-only hole; nothing unfiled or double-filed. The slice-1 source change is gated per §8 by the full native suite (in flight at close).
 
 **Source.** mac-arm64, 2026-08-15, runs at `main@5893c477`, device Apple M1 Pro (Metal).
+
+### T-lin-10385 addendum — the shared T-lin-10384 fix greens the MSL arm too (72 → 0)
+
+lin-x64's [T-lin-10384](#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-scanner-census-81-to-0-certified) fix (`b1f912b5`, the member-keying arm in the **shared** `ast_eval_ladder_scan`) landed after the census above was taken at `5893c477`. Re-taking the MSL census at that fix confirms it fixes both arms, not just SPIR-V: `subject.c -O4` on the M1 Pro now reads **`refused=0`, no emitter histogram — the 72 `Unary`/`member` refusals are gone** (rungs 5,307→5,542, dispatches 10,471→11,085, every other bucket still 0). The member pairs that the emitter used to refuse now form, key their offsets, and dispatch. This mirrors lin's SPIR-V result (81→0, rungs 5,500→5,735) — one shared hole, one shared fix, both arms certified clean by the counters this task added. The counters are therefore also the standing regression guard for that fix on Darwin.
+
+**Source.** mac-arm64, 2026-08-15, re-run at `main@a85648d5` (post-`b1f912b5`), device Apple M1 Pro (Metal).
