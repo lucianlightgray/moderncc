@@ -42771,3 +42771,31 @@ So the remaining set is not the slice-1 exclusion list (`wchar`, `signal`, `fenv
 **Ratchet discipline.** Linux 189 → 190 (`setjmp`) → 194 (`pthread`), each **measured here** rather than taken from the predicting session's arithmetic, since the gate is registered off-Darwin and mac cannot run it. Both times the prediction and the measurement agreed; the agreement is worth noting and is not a reason to stop measuring.
 
 **Source.** mac-arm64 slices at `d9011ff0`/`9eda95fe`; floors taken on lin-x64, 2026-08-15.
+
+<a id="t-lin-10031-resolution-the-teardown-is-bounded-and-the-bound-is-proved"></a>
+
+## T-lin-10031 resolution — the teardown is bounded, and the bound survives its own known-positive
+
+[T-lin-10031](#t-lin-10031-the-jit-teardown-is-unbounded-above) asked for one thing: *"A bounded-wait assertion in the shutdown path with a cell that fails when the bound is removed."* [Slice 3b](#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so) delivered the assertion; this is the second half, done as a mutation rather than an argument.
+
+**The mutation.** Delete the between-tick quit check from `mccjit_pool_worker` — the exact mechanism that bounds the teardown — rebuild, and run `jit/selftest-shutdown`:
+
+```
+jobs-drained:     ran=80 abandoned=0 discarded=0 accepted=80   FAIL
+teardown-bounded: quit-seen=1 ticks-after-quit=254 workers=4   FAIL
+qsbr-reclaimed:   nlimbo=0 reclaimed=64 leaked=0 retired=64    OK
+```
+
+**`ticks_after_quit` is 254 against a bound of 4.** The assertion detects the removal of its own mechanism, and the *magnitude* is the measurement T-lin-10031 never had: with the check gone, 254 ticks execute after `quit` is set — the teardown waiting on roughly 63 more four-tick heavy jobs. That number is what "unbounded above" meant in practice, and nothing in the tree had ever produced it.
+
+`jobs-drained` reverting to `ran=80 abandoned=0 accepted=80` is the old behaviour appearing exactly: with the check gone the pool drains everything, which is precisely the property the old `done == accepted` assertion encoded. The two halves of slice 3b's argument are visible in one run — remove the bound and the cell reports both the old contract and its violation of the new one.
+
+`qsbr-reclaimed` staying OK is correct and worth noting: `reclaimed == retired` is a *leak* invariant, not a *bound* invariant, and it should hold whether or not the teardown waits. An assertion that changed with the mutation would have been measuring the wrong thing.
+
+Restored and re-verified: `ctest -R '^jit/'` 70/70 green.
+
+**Status.** T-lin-10031 is DONE. Its DEPS (`T-lin-10001[C]`) is satisfied for this purpose by slices 3a and 3b, and its verification spec is met literally: the assertion exists, and a cell fails when the bound is removed.
+
+**Not claimed.** This bounds the *teardown*. It does not narrow `mccjit_swap_lock`, which still serialises the pool by being held across each tick rather than around the process-global state it protects — that is slice 4 and remains open under T-lin-10001.
+
+**Source.** Mutation run on lin-x64, 2026-08-15, against `35c64984`.

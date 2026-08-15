@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T02:05Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10371   | 2026-08-15T05:45Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10371   | 2026-08-15T06:05Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
 ## Contracts — blocking, highest priority
@@ -139,9 +139,6 @@
   - [ ] T-lin-10030/win [P] The embed JIT is measured only on x86_64 — win-x64
         OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
         REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: —
-- [ ] T-lin-10031 [S] The JIT teardown is unbounded above
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10031-the-jit-teardown-is-unbounded-above | DEPS: T-lin-10001[C]
 - [ ] T-lin-10032 [S] `MCCJIT_POOL_MAX` is 64 and `mccjit_pool_start` clamps to it silently
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10032-mccjit-pool-max-is-64-and | DEPS: —
