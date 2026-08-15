@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:09Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:36Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T17:26Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T17:31Z |
 
@@ -13,8 +13,8 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 - [ ] T-lin-10385 [X] mac-arm64 — the MSL emitter has no refuse counters, so the MSL-arm census cannot be taken; add them, then take it
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: dc1e52a8 | TS: 2026-08-15T17:12Z
-      REF: DETAILS.md#t-lin-10383-census-results-the-spir-v-arm-histograms | DEPS: — | NOTE: structural finding from T-lin-10383: MCC_GPU_REFUSE_KINDS (mccgpu.h:3617) is defined only in the !MCC_GPU_LANG_MSL branch (opened :1950) — a Darwin census prints the two ladder lines but can NEVER produce the by-node/by-op histograms. PLAN: SLICE 1 — add the counter block (MCC_GPU_REFUSE_KINDS + mcc_gpu_refuse_kind/opv/op arrays + a msl_refuse() identical in shape to spv_refuse at mccgpu.h:3617-3642) inside the #if MCC_GPU_LANG_MSL branch, and convert msl_expr's bare `return 0` refusal arms to `return msl_refuse(a,n)`; the print site (mccast.c:18818, #ifdef MCC_GPU_REFUSE_KINDS) then activates on Metal. Branches are mutually exclusive so the DONE spv arm is untouched. TDD: a census run on subject.c must print `emitter-refused=N by-node…/by-op…` with N>0, forced=1, dispatches>0. SLICE 2 — take the census (subject.c + full_language.c + tests/exec + self-host, SOURCE_DATE_EPOCH=1000000000, no-GPU must SAY so not print a coverage-looking zero), publish both histograms, file a task per non-zero entry (MSL-only hole → [X] darwin; matches an spv hole already at T-lin-10384 → [S]). T-lin-10042 settled so the anchor's timing condition is met
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 5893c477 | TS: 2026-08-15T17:36Z
+      REF: DETAILS.md#t-lin-10385-census-results-the-msl-arm-histograms | DEPS: — | NOTE: SLICE 1 DONE 5893c477 — msl_refuse (byte-twin of spv_refuse) + the counter block in the #if MCC_GPU_LANG_MSL branch, all 44 msl_expr `return 0` arms converted; the Darwin by-node/by-op histogram now prints (#ifdef MCC_GPU_REFUSE_KINDS satisfied). gpu/slice/census/fmt 78/78, pure instrumentation. CENSUS TAKEN (DETAILS#t-lin-10385-census-results-the-msl-arm-histograms): subject.c + full_language.c(both levels) + all 312 tests/exec + src/mcc.c self-host, all non-vacuous (forced=1, dispatches>0), device Apple M1 Pro Metal. VERDICT: exactly ONE emitter hole, Unary/member=72 on subject.c — the SAME shared hole as SPIR-V (81), already filed + FIXED by lin at T-lin-10384/b1f912b5; NO MSL-only hole so NO new task. POST-FIX re-take: MSL census 72->0 (rungs 5307->5542), so the shared ast_eval_ladder_scan fix greens both arms — addendum in DETAILS. PENDING §8 DONE: full native suite at HEAD in flight (built with lin's fix + rebanked bails). ON GREEN: mark DONE + archive; if reds, expect the T-lin-10092/mac environmental set (9 flagsweep timeouts + gmp-diff load pass -j1; gatewin = T-mac-30005) plus any mac bails cell moved by lin's Linux rebank (lin: mac banks IMPROVED-pass til mac rebanks)
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
