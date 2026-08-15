@@ -7061,8 +7061,9 @@ static void mk_vector_type(CType *type, CType *base, int nelem) { MCC_TRACE("ent
 	type->t = VT_STRUCT;
 	type->ref = s;
 	memset(&ad, 0, sizeof ad);
-	ad.a.aligned = exact_log2p1(esz * nelem <= MCC_MAX_ALIGN ? esz * nelem
-																													 : MCC_MAX_ALIGN);
+	ad.a.aligned = exact_log2p1(esz * nelem <= MCC_MAX_VEC_ALIGN
+																	? esz * nelem
+																	: MCC_MAX_VEC_ALIGN);
 	struct_layout(type, &ad);
 	if (mcc_state->gen_vector_type_cache_n <
 			(int)(sizeof(mcc_state->gen_vector_type_cache) / sizeof(CType)))

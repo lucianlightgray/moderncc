@@ -6998,6 +6998,33 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         mcc_skip_test(mcctest-embedjit "tests/diff/full_language.c is missing from this tree")
     endif()
 
+    # abi/vector-layout -- the only cell in the tree that compiles a 32- or
+    # 64-byte vector at all. Both probes must RUN on this host (each prints the
+    # offsetof/sizeof its own compiler baked in), so it needs a native,
+    # unemulated build with a reference cc.
+    if(_ref_cc AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR)
+        add_test(NAME abi/vector-layout
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/vector-abi-layout.sh"
+                    "${_mcc_exe}" "${_ref_cc}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/vector-abi-layout")
+        set_tests_properties(abi/vector-layout PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 120)
+        add_test(NAME abi/vector-layout-known-positive
+            COMMAND "${CMAKE_COMMAND}" -E env "VECABI_MUTATE=1"
+                    sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/vector-abi-layout.sh"
+                    "${_mcc_exe}" "${_ref_cc}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/vector-abi-layout-kp")
+        set_tests_properties(abi/vector-layout-known-positive PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 120)
+    else()
+        mcc_skip_test(abi/vector-layout
+            "needs a reference cc and a native unemulated host: both probes must run here")
+        mcc_skip_test(abi/vector-layout-known-positive
+            "needs a reference cc and a native unemulated host: both probes must run here")
+    endif()
+
     if(MCC_CPU MATCHES "^(i386|x86_64)$"
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/asm_c_connect/part1.c")
         add_test(NAME asm-c-connect-test COMMAND "$<TARGET_FILE:mccharness>" asmconnect
@@ -7104,7 +7131,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         --manifest "${CMAKE_CURRENT_SOURCE_DIR}/tests/gate-contract.txt"
                         --must-run "${CMAKE_CURRENT_SOURCE_DIR}/tests/must-run.txt"
                         --build "${CMAKE_BINARY_DIR}"
-                        --min-rows 102 --min-proved 52
+                        --min-rows 103 --min-proved 53
                         --max-unfloored 86 --max-unproved 50)
             set_tests_properties("ci/gate-contract" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)

@@ -141,6 +141,10 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 #error unknown target
 #endif
 
+#ifndef MCC_MAX_VEC_ALIGN
+#define MCC_MAX_VEC_ALIGN MCC_MAX_ALIGN
+#endif
+
 #if MCC_PTR_SIZE == 8
 #define ELFCLASSW ELFCLASS64
 #define ElfW(type) Elf##64##_##type

@@ -39,6 +39,7 @@ enum {
 #define MCC_LDOUBLE_SIZE 12
 #define MCC_LDOUBLE_ALIGN 4
 #define MCC_MAX_ALIGN 8
+#define MCC_MAX_VEC_ALIGN 64
 
 #define MCC_RET_PROMOTES_INT
 

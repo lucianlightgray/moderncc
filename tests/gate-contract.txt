@@ -152,3 +152,4 @@ slice/fmt | unfloored | slice/fmt-known-positive | printf conversions lowered to
 superopt/global-reload | unfloored | superopt/global-reload-known-positive | global reloads the superoptimizer eliminated and had to re-prove
 ast/eval-binop-oracle | intrinsic:tools/eval_binop_oracle.c refuses below 100000 checks | ast/eval-binop-oracle-known-positive | opcode/width/signedness cases actually compared against the independent reference
 osx/headers-parse | min:--min-files | osx/headers-parse-known-positive | corpus files compiled against runtime/osx/include with the host headers excluded
+abi/vector-layout | intrinsic:tests/cross/vector-abi-layout.sh:47 refuses an output that does not carry both measurement rows, so two empty probes cannot report agreement | abi/vector-layout-known-positive | 32- and 64-byte vector struct members whose offsetof/sizeof mcc and the reference cc both committed to
