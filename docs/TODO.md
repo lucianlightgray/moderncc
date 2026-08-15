@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:59Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10365   | 2026-08-14T23:50Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10365   | 2026-08-15T00:25Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50003   | 2026-08-15T00:03Z |
 
 ## Contracts — blocking, highest priority
@@ -17,8 +17,8 @@
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 3a1fab9f | TS: 2026-08-14T23:50Z
-      REF: DETAILS.md#t-lin-10001-slice-1-blocked-on-is-the-return-value-that-was-missing | DEPS: —
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 3a1fab9f | TS: 2026-08-15T00:25Z
+      REF: DETAILS.md#t-lin-10001-slice-1-blocked-on-is-the-return-value-that-was-missing | DEPS: — | NOTE: slice 2 in flight — `tools/mcchv.c`'s `hv_optimizer` thread becomes an `MccTask`; `hv_sweep_worker` stays real threads
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
