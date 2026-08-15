@@ -42407,3 +42407,17 @@ Sits beside [[T-win-50001]] (win registered its six missing cells via else-branc
 - **`ast/o0-baseline` should then carry a key-count floor** in `tests/gate-contract.txt` — a bank that silently keys fewer rows is the same defect the contract exists to refuse, and it would be this tree's first ratchet decrement.
 
 **Source.** Answer recorded on lin-x64, 2026-08-15; implementation is mac-arm64's for the `[X]` half.
+
+<a id="fleet-capabilities-docker-qemu-on-all-three"></a>
+
+## Fleet capabilities — docker/qemu on all three, and what that does and does not buy
+
+**Stated by the human, 2026-08-15:** all three machines have docker/qemu (wsl/chroot); the Mac can run an arm64 Linux under Docker; use Docker on the Windows machine for non-WoA work.
+
+This is a standing capability record, not a task. Three questions move on it:
+
+- **[Q-lin-10014](QUESTIONS.md) (torture corpus on the Windows host) — closed.** The blocker was "the host has no network and the corpus is deliberately not vendored". A container carries or fetches it without a commit, so the subject can exist without changing the tree's deliberate choice not to vendor it. `pe/x-oracle` then runs all 1,693 programs with no new code, which was already true and merely unreachable.
+- **[Q-lin-10013](QUESTIONS.md) (Windows-on-ARM) — unaffected.** Docker on Windows x64 does not produce an ARM64 Windows kernel, and qemu-user cannot load PE. WoA stays a CI-runner answer; the Docker half of that answer covers everything *else* on the Windows box.
+- **[Q-mac-30001](QUESTIONS.md) (arm64 cycles/instructions) — half closed, and the open half is the one that decides it.** The fleet now has an arm64 Linux. But the deliverable is `cycles`/`instructions`, which are **hardware PMU events**. A container on Apple Silicon runs under Virtualization.framework; `ubuntu-24.04-arm` hosted runners run under a hypervisor. Guest PMU access is normally absent in both, so `perf stat -e cycles` typically returns `<not supported>` while `task-clock` keeps working. If that holds, option (b) collapses into option (c) — accept-and-skip with the x86_64 figure standing — and no amount of arm64 Linux fixes it. **One command settles it on mac's box:** `perf stat -e cycles,instructions /bin/true` inside the arm64 container. Recorded as partial per N10 rather than auto-answered.
+
+**A general caution this makes concrete.** "The fleet has an arm64 Linux now" is true and is not the same claim as "the fleet can measure arm64 cycles now". The first is about instruction set, the second about privileged counters; a virtualized host provides the first and withholds the second. Conflating them would bank a measurement taken from software counters as if it were a cycle count — the exact shape of defect [T-lin-10003](#t-lin-10003-the-corpusgate-label-and-the-gap-treegates-own-bound-created) exists to refuse.

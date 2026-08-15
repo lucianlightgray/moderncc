@@ -165,6 +165,11 @@ With the corpus present, `pe/x-oracle` runs all 1,693 programs with no new code.
 REF: DETAILS.md#q-lin-10014-can-vendorgcc-c-torture-execute-be
 
 
+**ANSWER (human, 2026-08-15):** All three machines have docker/qemu (wsl/chroot). Use Docker on the Windows machine.
+
+**Executed by lin-x64, 2026-08-15:** the blocking premise was "the host has no network and the corpus is deliberately not vendored". A container image carries or fetches the corpus without vendoring it into the tree, so the `pe/x-oracle` subject can exist on the Windows box without a commit. The task is re-OPENed for win-x64 to wire; the "deliberately not vendored" property of the tree is preserved, which was the reason the corpus was absent in the first place. See DETAILS.md#fleet-capabilities-docker-qemu-on-all-three.
+
+
 ### Q-mac-30000 — [mac-arm64] — 2026-08-14T20:15Z — BLOCKS: T-lin-10089
 The `ast/o0-baseline` *-osx object bank is header-sensitive and currently encodes the Linux cross host's glibc libc headers (N38); a native Darwin mcc uses the macOS SDK, so 198 of 297 arm64-osx rows differ. To un-skip the quartet on Darwin without a bank that drifts with the SDK, the osx keys need a *pinned* Darwin libc header set wired as `--sysroot` (mirroring `vendor/gentoo-stage3-*`). What set should be vendored — a curated subset of a fixed macOS SDK, and is committing Apple SDK headers into the tree acceptable (licensing)? Or a preferred stand-in, e.g. an mcc-authored minimal darwin libc header set under `runtime/osx`?
 **Assumed for now:** none safe — vendoring Apple headers is a licensing decision and there is no in-tree Darwin libc header set to point at, so the quartet keeps skipping on Darwin (mode b, BLOCKED).
@@ -187,3 +192,7 @@ The task's deliverable is `tools/optlevel-bench.py --cycles if-conversion-abs --
 **Cost if wrong:** If the answer is to build a Darwin counter backend (a) or add an arm64-Linux runner (b), one confirmation measurement is taken then; nothing already banked is redone. If the answer is (c) accept-and-skip, the task closes WONTFIX-on-fleet with the x86_64 figure standing.
 
 REF: DETAILS.md#t-lin-10090-investigation-cycles-tool-is-perf-only-no-arm64-linux-host
+
+**ANSWER (human, 2026-08-15):** All three machines have docker/qemu (wsl/chroot). The Mac can use Docker to run an arm64 Linux.
+
+**Executed by lin-x64, 2026-08-15 — PARTIAL, and the question stays OPEN.** This closes the *host* half: the fleet does now have an arm64 Linux (Docker on the Mac, and `ubuntu-24.04-arm` runners are already named in `tools/ci.c`'s `PLAN_DIST_UNIX`). It does **not** obviously close the *deliverable*. `tools/optlevel-bench.py --cycles` needs `cycles`/`instructions`, which are hardware PMU events; a container on Apple Silicon runs under Virtualization.framework and a hosted runner under a hypervisor, and neither typically exposes a guest PMU — `perf stat` there commonly reports `<not supported>` for hardware events while software events (`task-clock`) still work. So option (b) may reduce to option (c) for this specific figure. That is one command to settle and mac-arm64 owns the box: run `perf stat -e cycles,instructions /bin/true` inside the arm64 container. Answering that decides whether T-lin-10090 proceeds or closes WONTFIX-on-fleet. Per N10 this is not enough evidence to auto-answer, so the question stays OPEN with the host half recorded. See DETAILS.md#fleet-capabilities-docker-qemu-on-all-three.

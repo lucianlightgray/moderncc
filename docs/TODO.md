@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T01:15Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10365   | 2026-08-15T01:55Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T02:10Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T02:10Z |
 
 ## Contracts — blocking, highest priority
@@ -21,10 +21,30 @@
       REF: DETAILS.md#t-lin-10001-slice-3-approach-l2-prime | DEPS: — | NOTE: slice 2 DONE; slice 3 (L2′) approach PUBLISHED — two of the contract's premises for it are stale (the pool joins; nothing is detached). Implementation held until win-x64's T-lin-10092/win suite number lands
 
 
+- [ ] T-lin-10365 [S] An isolated, iterative Windows-on-ARM CI hook on a `woa/**` branch
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
+      REF: DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor | DEPS: — | NOTE: executes Q-lin-10013's answer; unblocks T-lin-10086/T-lin-10087
+
+
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 ## Open — claimable
 
+- [ ] T-lin-10086 [S] `arm64-win32` execution on a `windows-11-arm` CI runner (was [X] win-x64)
+      OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
+      REF: DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor | DEPS: T-lin-10365[S] | NOTE: Q-lin-10013 ANSWERED — CI is the executor, so this is no longer win-x64-only. SPLIT: the `arm-win32` (ARM32) half has NO executor — Windows 11 on ARM64 does not run ARM32 apps — and must not be reported green with the arm64 half
+- [ ] T-lin-10087 [S] W5: mcc cannot self-host on Windows arm64 — reproduce the `0xC0000005` trio in CI (was [X] win-x64)
+      OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
+      REF: DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor | DEPS: T-lin-10365[S] | NOTE: stage1 takes 0xC0000005 on lib/atomic.c, lib/alloca.S, lib/alloca-bt.S, lib/builtin.c (varargs/alloca/stack-probe trio) — a windows-11-arm runner can now reproduce it
+- [ ] T-lin-10089 [X] mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
+      OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
+      REF: DETAILS.md#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple | DEPS: T-lin-10002[C], T-lin-10367[C] | Q: Q-mac-30000 ANSWERED | NOTE: minimal mcc-authored Darwin headers key the bank; a native Apple host still compiles against the real SDK. This [X] half is the --sysroot wiring + re-key; the header set itself is T-lin-10367[C]
+- [ ] T-lin-10366 [S] `MCC_REF_CC` never consults the vendored aarch64 llvm-mingw, so an arm64 Windows host has no reference cc
+      OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
+      REF: DETAILS.md#t-lin-10366-ref-cc-is-x86-64-only-on-windows | DEPS: —
+- [ ] T-lin-10367 [C] A minimal mcc-authored Darwin libc header set for host-independent bank keys
+      OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
+      REF: DETAILS.md#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple | DEPS: — | NOTE: declarations only, no inline bodies; runtime/osx; all three key_flags branches read it, hence [C]. Authorable from any host — no Apple hardware, no SDK, no licensing gate
 - [ ] T-win-50003 [S] win-x64 full native suite — 35 real failures triaged (28 GPU-slice/`slicerun` device↔CPU differentials + "0 slices on Windows"; 4 fp under emitsize/emitiso opt-search; 3 jit/runtime)
       OWNER: — | STATE: OPEN | SHA: 260bb900 | TS: 2026-08-15T01:55Z
       REF: DETAILS.md#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged | DEPS: — | NOTE: surfaced by the first Windows full-suite run (T-win-50002 unblocked mcc_build); this box has an RTX 2060 so GPU cells genuinely dispatch. Bucket A (28) is mccgpu/slicerun owners' (lin/mac) — win-x64 has the NVIDIA box to confirm fixes; Bucket B jit/runtime deferred behind lin's T-lin-10001 L2′ (mccjit_embed.c)
@@ -277,9 +297,6 @@
 
 ## Blocked — awaiting QUESTIONS.md
 
-- [ ] T-lin-10089 [X] mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
-      OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T20:15Z
-      REF: DETAILS.md#t-lin-10089-mac-arm64-the-asto0-baseline-quartet | DEPS: T-lin-10002[C] | Q: Q-mac-30000
 - [ ] T-lin-10090 [X] mac-arm64 — re-take `if-conversion-abs` on arm64
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-15T00:23Z
       REF: DETAILS.md#t-lin-10090-mac-arm64-re-take-if-conversion | DEPS: — | Q: Q-mac-30001
@@ -301,12 +318,6 @@
 - [ ] T-lin-10064 [S] 63 cells have never compiled their own `EXTRA`, and arming them goes red
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10064-63-cells-have-never-compiled-their | DEPS: — | Q: Q-lin-10011
-- [ ] T-lin-10086 [X] win-x64 — `arm64-win32` / `arm-win32` execution
-      OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10086-win-x64-arm64-win32-arm-win32 | DEPS: — | Q: Q-lin-10013
-- [ ] T-lin-10087 [X] win-x64 — W5: mcc cannot self-host on Windows arm64
-      OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10087-win-x64-w5-mcc-cannot-self | DEPS: — | Q: Q-lin-10013
 - [ ] T-lin-10088 [X] win-x64 — vendor the exact `gcc-c-torture-execute` corpus for `pe/x-oracle`
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10088-win-x64-vendor-the-exact-gcc | DEPS: — | Q: Q-lin-10014
