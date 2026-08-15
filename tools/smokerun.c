@@ -258,11 +258,23 @@ static int sm_system(const char *cmd)
 {
 	int st = -1;
 	int i;
+#if MCC_HOST_WIN32
+	size_t n = strlen(cmd);
+	char *w = malloc(n + 3);
+
+	if (w) {
+		w[0] = '"';
+		memcpy(w + 1, cmd, n);
+		w[n + 1] = '"';
+		w[n + 2] = 0;
+		cmd = w;
+	}
+#endif
 
 	for (i = 0; i < SMK_FORK_TRIES; i++) {
 		st = system(cmd);
 		if (st != -1)
-			return st;
+			break;
 		sm_fork_retries++;
 		if (i + 1 < SMK_FORK_TRIES) {
 			unsigned t0 = now_ms();
@@ -270,7 +282,12 @@ static int sm_system(const char *cmd)
 				;
 		}
 	}
-	fprintf(stderr, "smoke: fork failed %d times for: %s\n", SMK_FORK_TRIES, cmd);
+	if (st == -1)
+		fprintf(stderr, "smoke: fork failed %d times for: %s\n", SMK_FORK_TRIES,
+						cmd);
+#if MCC_HOST_WIN32
+	free(w);
+#endif
 	return st;
 }
 
@@ -320,6 +337,14 @@ static char *slurp(const char *path)
 		s = malloc(1);
 		if (s)
 			s[0] = 0;
+	} else {
+		long r = 0, w = 0;
+		while (r < n) {
+			if (s[r] == '\r' && r + 1 < n && s[r + 1] == '\n')
+				r++;
+			s[w++] = s[r++];
+		}
+		s[w] = 0;
 	}
 	return s;
 }

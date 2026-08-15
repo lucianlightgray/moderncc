@@ -19,6 +19,8 @@ typedef enum { SM_E_A = 0, SM_E_B = 1, SM_E_MAX = 2147483647 } SmEnum;
 
 #define SM_ENC_INT(v) ((SmBits)(long long)(int)(v))
 
+#define SM_LONG_WIDTH ((int)(8 * sizeof(long)))
+
 #define SM_ITYPES(X) \
 	X(BOOL, _Bool, 1) \
 	X(CH, char, 8) \
@@ -28,8 +30,8 @@ typedef enum { SM_E_A = 0, SM_E_B = 1, SM_E_MAX = 2147483647 } SmEnum;
 	X(US, unsigned short, 16) \
 	X(SI, int, 32) \
 	X(UI, unsigned int, 32) \
-	X(SL, long, 64) \
-	X(UL, unsigned long, 64) \
+	X(SL, long, SM_LONG_WIDTH) \
+	X(UL, unsigned long, SM_LONG_WIDTH) \
 	X(SLL, long long, 64) \
 	X(ULL, unsigned long long, 64) \
 	X(EN, SmEnum, 32)
