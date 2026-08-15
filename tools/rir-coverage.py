@@ -1196,7 +1196,7 @@ def nofb_probe_self(mcc, bdir, flags, opt, td, env0, verbose):
                 "bodies": 0, "miscompiles": []}, None
     work = nofb_work_sources()
     base_obj = os.path.join(td, "base.o")
-    base_exe = os.path.join(bdir, "mcc-nofb-base")
+    base_exe = os.path.join(td, "mcc-nofb-base")
     if not nofb_stage1(mcc, bdir, flags, opt, base_obj, base_exe, env0, env0):
         return None, "no baseline stage-1 (no runtime blob to link?)"
     plain_sig = nofb_work(base_exe, flags, td, env0, work)
@@ -1211,7 +1211,7 @@ def nofb_probe_self(mcc, bdir, flags, opt, td, env0, verbose):
         return env
 
     ctl_obj = os.path.join(td, "ctl.o")
-    ctl_exe = os.path.join(bdir, "mcc-nofb-ctl")
+    ctl_exe = os.path.join(td, "mcc-nofb-ctl")
     if not nofb_stage1(mcc, bdir, flags + ["-fno-replay-fallback"], opt, ctl_obj,
                        ctl_exe, probe_env(None), env0):
         return None, "the control stage-1 does not build or link"
@@ -1222,7 +1222,7 @@ def nofb_probe_self(mcc, bdir, flags, opt, td, env0, verbose):
 
     benign, bad, inert = [], [], []
     obj = os.path.join(td, "probe.o")
-    exe = os.path.join(bdir, "mcc-nofb-probe")
+    exe = os.path.join(td, "mcc-nofb-probe")
     for nm in names:
         if not nofb_stage1(mcc, bdir, flags + ["-fno-replay-fallback"], opt,
                            obj, exe, probe_env(nm), env0):
