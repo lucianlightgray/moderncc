@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T20:20Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:33Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:41Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T20:07Z |
 
 ## Contracts — blocking, highest priority
@@ -18,6 +18,9 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-lin-10018 [S] `ptr_unlink` for-condition-store segfault
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-15T20:41Z
+      REF: DETAILS.md#t-lin-10018-ptr-unlink-for-condition-store-segfault | DEPS: — | NOTE: CLAIMED. The discriminator FIX already landed (d76e5384 "hold a for-loop condition store, drop the hold at body/incr" + 545ffdb0 for/while + 82f255d8 do-cond) — the reduced reproducer no longer SIGSEGVs under -fno-replay-fallback+forced replay (correct "1 3", RIRPRODDUMP shows the store emitted, rir-verify rfaithful fb=0). REMAINING = the verification's OTHER half: add the reduced ptr_unlink shape as a regression exec cell (safe test, no codegen). Closing on that
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: PAUSED (heartbeat intentionally stale; TTL-eligible for any session to resume). slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
@@ -106,9 +109,6 @@
 - [ ] T-lin-10017 [S] A same-TU `call` in inline asm is resolved to a displacement instead of a relocation
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10017-a-same-tu-call-in-inline | DEPS: —
-- [ ] T-lin-10018 [S] `ptr_unlink` for-condition-store segfault
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10018-ptr-unlink-for-condition-store-segfault | DEPS: —
 - [ ] T-lin-10019 [S] `run-tier/x86_64` fails `tls_threads` when `MCC_JIT=1` meets an active AST replay
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10019-run-tierx86-64-fails-tls-threads | DEPS: —
