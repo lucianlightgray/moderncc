@@ -46358,3 +46358,11 @@ The o0-baseline object moves on **every** arch key. My non-cross mac can only me
 Verify: gpu/msl-slice-* unchanged + re-measure bytes/lane (the tin upload should drop from per-arm to once). Lower-risk than the Vulkan version because Metal's unified-memory synchronous dispatch has no async buffer-lifetime hazard.
 
 **Source.** mac-arm64, 2026-08-15, slice 1 at `34106f4c`; residency model per the SPIR-V `mcc_vkr` path.
+
+### T-lin-10036/mac slice 2 DONE — resident Metal buffers, reuse_in honored (01c5ff30)
+
+Implemented the residency model. Added static `mcc_mtl_bin/bout` + `pin/pout` + sizes (beside `mcc_mtl_mem`), a grow-only `mtl_bind_buffers(inlen,outlen)`, and released them in `mtl_quiesce` (unconditional — Metal's `waitUntilCompleted` dispatch owns nothing async). `dispatch_locked2` now binds and reuses those buffers, guards the upload `if (!reuse_in) { memcpy [0,ntuple); tail memset [ntuple,cap) }`, and no longer allocates/frees per dispatch. `MCC_GPU_IN_IS_RESIDENT` flipped 0→1 so `mcc_gpu_dispatch2_ro_in` passes the resident flag to arm b.
+
+**Verification.** gpu/* + slice/* **72/72 green**. The load-bearing cells are `gpu/always-gpu-parity` and `-full-language`: they run the two-arm ladder (`dispatch2_ro_in`, arm a `reuse_in=0` then arm b `reuse_in=1`), so their passing proves arm b correctly reads arm a's resident input — a freed/garbage buffer or a wrongly-skipped upload would fail the CPU-vs-device parity. The tin upload for arm b (one full `inlen` = `cap*nlive*MCC_GPU_IN_SLOTS*4` bytes) is now elided, matching the SPIR-V arm. All three T-lin-10036 wins are on the Metal arm (dead pout memset removed in slice 1, pin tail-only in slice 1, reuse_in via residency in slice 2). §8 full native suite in flight.
+
+**Source.** mac-arm64, 2026-08-15, slice 2 at `01c5ff30`.
