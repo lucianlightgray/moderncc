@@ -63,14 +63,22 @@ jobs:
             Where-Object { $_.Name -match '^arm64_' } | Select-Object -First 3 |
             ForEach-Object { Write-Host "  $($_.Name)" }
 
+      - name: what do the preinstalled gcc/clang actually target (decides whether they can serve as MCC_REF_CC here, T-lin-10366)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          foreach ($t in 'gcc','clang') {
+            $c = Get-Command $t -ErrorAction SilentlyContinue
+            if (-not $c) { Write-Host "$t : ABSENT"; continue }
+            Write-Host "== $t ($($c.Source)) =="
+            & $t -dumpmachine
+            & $t --version | Select-Object -First 1
+          }
+
       - name: set up MSVC dev shell (arm64)
         uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
           arch: arm64
-
-      - name: install ninja
-        shell: pwsh
-        run: choco install ninja -y --no-progress
 
       - name: cl identity under the arm64 dev shell
         shell: pwsh
@@ -103,9 +111,6 @@ jobs:
         uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
           arch: arm64
-      - name: install ninja
-        shell: pwsh
-        run: choco install ninja -y --no-progress
       - uses: ./.github/actions/ci
       - name: stage1 build (a 0xC0000005 here is T-lin-10087's finding, not an incident)
         id: build
@@ -123,3 +128,36 @@ jobs:
         with:
           name: stage1-windows-arm64-msvc
           path: stage1-windows-arm64-msvc.tar
+
+  stage2:
+    name: stage2 self-host / windows-arm64-msvc
+    needs: stage1
+    runs-on: windows-11-arm
+    timeout-minutes: 60
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - name: set up MSVC dev shell (arm64)
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: arm64
+      - uses: ./.github/actions/ci
+      - uses: actions/download-artifact@v7
+        with:
+          name: stage1-windows-arm64-msvc
+      - name: unpack stage1 mcc
+        run: tar xf stage1-windows-arm64-msvc.tar
+      - name: stage2 self-host (T-lin-10087's actual subject -- mcc compiling mcc on arm64)
+        id: selfhost
+        run: |
+          mccexe="$PWD/windows-arm64-msvc/bin/mcc"
+          [ -x "$mccexe.exe" ] && mccexe="$mccexe.exe"
+          "$mccexe" -v || true
+          mcc-ci stage2 dynamic --mcc "$mccexe"
+      - name: outcome
+        if: always()
+        run: |
+          echo "stage2 self-host outcome = ${{ steps.selfhost.outcome }}"
