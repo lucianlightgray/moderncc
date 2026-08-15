@@ -44332,3 +44332,47 @@ sign-extended patterns mean NaN-vs-NaN, NaN-vs-0, ±0-vs-∓0, denormal-order an
 mixed-sign points are all in the compared set.
 
 **Source.** mac-arm64, 2026-08-15, code at `f5a04110`.
+
+<a id="t-win-50012-resolved-two-universal-dark-rows-two-data-model-dark-rows"></a>
+
+## T-win-50012 RESOLVED — two of the four dark strategies are dark everywhere, and the other two are the corpus's data model, not the compiler
+
+**Fixed 2026-08-15 (win-x64, code SHA 8da0a02a).** Four explanations for four
+dark rows, as the task demanded, each evidenced on this box:
+
+- **`sra`, `sroa` — dark on every platform.** `TREE_SRA`/`TREE_SROA` are
+  `MCC_OPTD_OFF` in src/mccopt.h:99-101, at every level. The LP64 panel
+  therefore fires exactly **22 of 24**, which is where the old `--min-strats 22`
+  floor came from — it was already priced for two permanently-dark rows.
+- **`narrow` — the strategy works on Windows; the subject has no shapes.**
+  A three-function `long long` probe (`(int)((x & 0xff) + 1)` etc.) fires
+  `narrow=1` at -O4 on this box. The smoke subject's narrowing shapes are
+  64-bit `long` operations, which do not exist under LLP64 where `long` is
+  already 32 bits.
+- **`bfold` — same shape-starvation, two mechanisms.** `ast_bfold_run` counts
+  literal-argument builtin-math call folds (a `sqrt`/`fabs`/`fmin`/`round`
+  probe fires `bfold=2` at -O4 on this box, so the strategy is host-clean) plus
+  two integer tautology folds (`ast_cmp_nonneg_lt_zero`, `ast_logic_tautology`)
+  — and the subject's instances of those are width-dependent `long` shapes,
+  absent under LLP64 for the same reason as narrow's.
+
+**The fix follows the suite's own design.** `smoke/strat-dark` exists to *bank*
+per-target darkness, and the floor arg lives in CMakeLists — so the floor is now
+target-keyed: `_smoke_min_strats` = 22 (LP64) / 20 (Windows), passed to both
+`smoke/native` and the strats known-positive, which floors at N and refuses N+1
+instead of hardcoding 22/23. Linux registration is byte-equivalent (22/23).
+Verified on win-x64: the strategy census reports *"20 of 24 fired, at or above
+the --min-strats 20 floor"*; `smoke/native`'s residual reds are exactly
+`msstruct` (T-win-50014) and the embed-JIT link (T-win-50003 Bucket B).
+
+**The alternative, recorded for whoever wants the single number back:** a
+data-model-neutral corpus deepening — `long long` narrowing rows and an
+unsigned tautology row — would light bfold/narrow on LLP64 and let the floor
+return to one value, at the cost of a three-platform bails re-bank (the
+slice-refused and census counters move whenever subject.c grows). Not done
+here; it needs coordinated re-banks on lin and mac.
+
+**For T-win-50013 (the Windows bank):** `strat-dark:bfold` at -O13 is now a
+triaged finding — bank it as data-model darkness, citing this anchor.
+
+**Source.** win-x64, 2026-08-15, at 8da0a02a.

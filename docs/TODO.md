@@ -26,10 +26,6 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-win-50012 [S] win-x64 — four optimizer strategies dark on Windows: `bfold`/`narrow`/`sra`/`sroa` = 0 at -O4 (20 of 24 < --min-strats 22)
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 723e5f1a | TS: 2026-08-15T14:35Z
-      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: LLP64 plausibly removes narrow's shapes, but four dark rows need four explanations; then either corpus shapes that light them on LLP64 or a target-keyed floor. Last dep of T-win-50013
-
 ## Open — claimable
 - [ ] T-mac-30004 [S] `spvgate` CASES has no f64 case: arm the SPIR-V arm's table on fp64 hosts
       OWNER: — | STATE: OPEN | SHA: 28ac8048 | TS: 2026-08-15T12:55Z
