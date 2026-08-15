@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T14:55Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10383   | 2026-08-15T14:50Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10383   | 2026-08-15T15:05Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50020   | 2026-08-15T14:25Z |
 
 ## Contracts — blocking, highest priority
@@ -19,9 +19,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-lin-10380 [S] `gpu/spv-slice-differential` is RED on a real fp64 GPU: `f-addsub` stakes bit-exactness on an IEEE-unspecified NaN sign bit
-      OWNER: lin-x64 | STATE: CLAIMED | SHA: 2b4b4f41 | TS: 2026-08-15T14:50Z
-      REF: DETAILS.md#t-lin-10380-the-armed-f64-spv-case-f-addsub-stakes-bit-exactness-on-an-ieee-unspecified-nan-sign | DEPS: — | NOTE: THE fp64-host reading T-mac-30004 asked for, and the hazard it named in advance fired. Device is AMD Radeon 610M / RADV, not lavapipe — read the banner. 44 cases, 43 OK, f-addsub FAIL, 16453 mismatches over 2,754,660 compared. EVERY mismatch is one bit: `0.0 - NaN`, cpu 0xffff... vs gpu 0x7fff..., payloads identical, xor exactly 0x8000000000000000. IEEE 754 §6.3 does not specify the sign of a NaN produced by an arithmetic op, so neither side is wrong and the comparison cannot be made portable as written. ATTRIBUTED: spvgate built before the 87f7b232+35f1ba84 pull says OK on the same device; after, it FAILs — not the concurrent asm fix, which spvgate CASES mode never reaches. Red on shared main for any real-fp64 host; mac cannot see it (MoltenVK has no fp64). Three ways out at the REF; (1) exclude a produced NaN's SIGN from the compare while keeping payload+isnan is the recommendation
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
@@ -295,5 +292,4 @@ _Empty — Q-lin-10007/10008/10010/10011 were answered 2026-08-15 and all four t
 
 ## Invalidations             ← shared, append-only; removed only on re-scope (§5.2)
 
-INVALID: the "six f64 SPV CASES armed and green" claim AS-OF 35f1ba84 BY lin-x64 — f-addsub is RED on a real fp64 GPU (AMD/RADV), NaN sign bit, IEEE-unspecified — REF: DETAILS.md#t-lin-10380-the-armed-f64-spv-case-f-addsub-stakes-bit-exactness-on-an-ieee-unspecified-nan-sign
 

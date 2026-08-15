@@ -45442,3 +45442,16 @@ T-lin-10030/win step); everything else that can run on this host runs.
 programs added to what "runs" means on Windows.**
 
 **Source.** win-x64, 2026-08-15, log `cmake-release/full-suite-2026-08-15-b.log`.
+<a id="t-lin-10380-done-the-suite-is-clean-again-10070-0"></a>
+
+## T-lin-10380 DONE — the suite is clean again: 10070 cells, **0 failures**
+
+The §8 per-task gate for the [NaN-sign exclusion](#t-lin-10380-fixed-a-produced-nans-sign-is-excluded-from-the-compare-and-counted), run on lin-x64 over the tree carrying it.
+
+**10070 cells, 100% passed, 0 failures, 407 s** at `-j 12`, 2096 Skipped. That closes the gap the [previous run](#t-lin-10375-10378-done-the-full-native-suite-at-a0d0b5b9) recorded honestly as 10070/**1**: the single red was this row, and it is gone.
+
+**The `Invalidations` line is removed with this**, per §5.2 — the claim it invalidated ("the six f64 SPV CASES armed and green") is true again, on a real fp64 device, with the produced-NaN sign excluded and counted.
+
+**For the other two sessions.** `[spvgate|mslgate]` gained a `nansign=` field on its summary line; it is the number of points accepted only through the sign relaxation. On AMD/RADV it reads 16453. A Metal or NVIDIA host reading 0 there means that vendor happens to agree with mcc's oracle on an unspecified bit — worth knowing, and now visible rather than assumed either way.
+
+**Source.** lin-x64, 2026-08-15, code at `3af4032e`.
