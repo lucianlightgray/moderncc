@@ -43914,3 +43914,27 @@ The file carried the `text=auto eol=lf` rules and nothing else. `git check-attr 
 **Worth generalising, because it is a third variant of a shape this tree keeps meeting.** A [pin encoding one machine](#green-on-the-box-that-wrote-it) and a [selector that stopped growing](#t-lin-10367-the-gate-selector-had-stopped-growing-with-the-set) both hide because the thing still reports green. This hides because the failure it causes is *indistinguishable from normal operation*. The check that would have caught it costs one command — `git check-attr merge -- docs/DETAILS.md` — and nothing in the tree ran it.
 
 **Source.** lin-x64, 2026-08-15.
+
+<a id="fmt-census-bank-rebank-2026-08-15-win-ar-diagnostic"></a>
+
+## fmt/census-bank re-bank 2026-08-15 — the moved figure is win-x64's ar diagnostic
+
+The board quotes the fprintf/printf site census. It moved: `mcctools.c` 30 → 31, `fprintf` literal 424 → 425 / sites 428 → 429. **Why:** win-x64's `bc0bc6bf` (T-lin-10083, default `-c` → COFF) added `fprintf(stderr, "mcc: ar: unsupported object format: %s\n", …)` to the archiver's format check and did not re-take the census, leaving `fmt/census-bank` + its known-positive red on shared main (both are treegate cells, so `-L treegate` was 11/13). Re-banked by mac-arm64 at reboot handoff; pure re-take, one new legitimate diagnostic, nothing else moved.
+
+**Source.** mac-arm64, 2026-08-15, at `1a59795d`.
+
+
+<a id="t-lin-10078-investigation-divmod-operand-reduction-verified-remaining-is-the-sweep-and-a-census-rebank"></a>
+
+## T-lin-10078 investigation — the `/` `%` operand-reduction fix is written and verified vs gcc; what remains is the sweep + a census re-bank
+
+Root-caused and a one-line fix verified against gcc-16, but reverted at a reboot handoff before the full sweep, so the row stays OPEN. Banked reapply-ready.
+
+**The fix (`scratchpad/t-lin-10078-divmod-operand-reduction.patch`, 14-line diff on `src/mccgen.c:4575`).** The `+`/`-`/`*`/`<<` fix truncates the RESULT to `bf_trunc` bits, valid because those ops are modular (`mod 2^64` then `mod 2^N` = `mod 2^N`). `/` and `%` are NOT modular — `(a mod 2^64)/(b mod 2^64)` truncated ≠ `(a mod 2^N)/(b mod 2^N)` — so, like a comparison, each OPERAND must be reduced to N bits *before* the op. The patch extends the existing CMP-only operand-reduction guard to also fire for `op == '/' || '%' || TOK_UDIV || TOK_UMOD`:
+`if (bf_trunc && (op_class == CMP_OP || op == '/' || op == '%' || op == TOK_UDIV || op == TOK_UMOD))`.
+
+**Verified vs the reference (`scratchpad/t-lin-10078-discriminating-test.c`).** On the discriminating shape — an over-wide bit-field divided by an operand whose full-width value differs from its N-bit-reduced value, e.g. `struct{unsigned long long f:33} s; s.f=(1ULL<<33)-1; s.f / -1` — mcc-with-patch gives `1 0 5 0`, **matching gcc-16 exactly**; clang gives `0 8589934591 …` (its different model). Per the N36 decision ("wide bit-field wrapping is gcc's answer, chosen on purpose", ARCHIVED T-lin-10078/N36 line), matching gcc is correct. `ast/o0-baseline` stayed 5/5 **byte-identical**, so no corpus object exercises the path — the change is inert on the banked corpus.
+
+**What remains for DONE.** (1) The 782-object sweep across `src/ tests/ tools/ examples/` used for the `+`/`-`/`*` fix, plus the `tests/smoke/bcases.h` rows, as the task's verification specifies. (2) Re-apply the patch will add lines to `mccgen.c`, moving the fmt/census-bank site census (mccgen.c count) — re-bank `tests/fmt/census-bank.json` as part of landing, same as the win-diagnostic re-take above.
+
+**Source.** mac-arm64, 2026-08-15, reverted at `1a59795d` for a clean reboot (patch + test in scratchpad; one-line change, fully reapply-ready).
