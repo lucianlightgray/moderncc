@@ -42738,3 +42738,16 @@ Run 31858218563 on `woa/bootstrap` at `214a0dc5` (iteration 3's branch merged wi
 **Next action for whoever takes this:** re-run the hook to see whether the two crashes return. The `woa/**` branch makes that a push, which is the point of having built it.
 
 **Source.** Runs 31857205309 and 31858218563, lin-x64, 2026-08-15.
+<a id="t-lin-10367-slice-2-progress-pthread"></a>
+
+## T-lin-10367 slice 2 progress — pthread.h landed (SDK-verified), the keystone
+
+Continuation of [slice 2](#t-lin-10367-slice-2-mac-setjmp-and-the-off-linux-gate-registration). `runtime/osx/include/pthread.h` shipped (d9011ff0). It is the keystone: freestanding `runtime/include/threads.h` `#include`s it. Opaque struct sizes are `__LP64__`-conditional and match `MacOSX.sdk` **exactly** — cross-checked by compiling `sizeof` under the real SDK (system clang) vs this header: `pthread_cond_t=48 condattr=16 mutex=64 attr=64 once=16 pthread_t=8` (LP64), identical. `versym.c` instantiates `pthread_cond_t`/`pthread_condattr_t` by value, so those sizes feed its `-O0` bank — this is exactly the ABI-landmine class lin flagged, and it is verified, not guessed. `pthread_t` is a pointer to an incomplete `_opaque_pthread_t`; the `PTHREAD_*` macros (`PROCESS_SHARED=1`, `MUTEX_RECURSIVE=2`, `ONCE_INIT`, `CREATE_*`, `DESTRUCTOR_ITERATIONS`) match the SDK.
+
+Dropped `pthread` from the parse-gate exclusion → `atomic_counter.c`, `tls.c`, `versym.c`, `atomic_inlang_rmw.c` compile `-nostdinc` against the set (+4; Darwin count now 191, was 186 at slice-1). treegate 12/12.
+
+**Blocked, noted for the gate owner:** `c11_threads.c` and `atomic_fetch_inline.c` include `threads.h`, which also pulls `<sched.h>` and `<time.h>` — neither shipped in the osx set nor freestanding. Those two files stay excluded until sched.h/time.h ship (not in lin's original slice-2 list). Same shape as `bound_signal.c` (wants `semaphore.h`) and `noreturn.c` (wants `fcntl.h`): the slice-2 list is necessary but not sufficient to move those clusters. **Linux floor should now be 189 + 5 = 194; lin ratchets `--min-files`.**
+
+**Remaining slice-2 headers:** signal, sys/wait, unistd, sys/mman, wchar, fenv — plus the newly-surfaced sched, time, semaphore, fcntl a full cluster needs.
+
+**Source.** mac-arm64, 2026-08-15, continuing slice 2; SDK = Xcode `MacOSX.sdk`.
