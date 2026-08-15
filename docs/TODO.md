@@ -27,7 +27,7 @@
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 - [ ] T-win-50010 [S] win-x64 — the `rir`/`rir-o4`/`slice` engines disagree with the ast baseline at dumped row 1 on Windows
-      OWNER: win-x64 | STATE: CLAIMED | SHA: 723e5f1a | TS: 2026-08-15T13:55Z
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 723e5f1a | TS: 2026-08-15T13:57Z
       REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: smoke/engines-known-positive "dumped row 1 differs from the ast baseline", win-only. Prime suspect: a 64-bit `long` model inside the rir/slice evaluators on an LLP64 host — the same defect family smoke.h had, but inside the compiler. First link in the chain to T-win-50013 (windows bails bank) and the clean suite number (T-lin-10092/win)
 
 ## Open — claimable
