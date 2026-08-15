@@ -43888,3 +43888,29 @@ So §0's assumption is false as literally written. `INSTRUCTIONS.md` is human-ed
 **Why a false assumption at the centre of the protocol cost nothing, which is the part worth keeping.** §5 requires that messages carry pointers to pushed commits and never payloads, and §0 states outright that *"the repo, not the bus, is the source of truth — the protocol must survive total message loss."* Because that was designed in, the one §0 assumption that turned out to be **wrong** produced no lost work: the T-lin-10002 CONTRACT announcement win-x64 could not send was delivered by the pushed commit and its archive record instead. The mechanism that made the error harmless is the same one that makes the messages redundant, and it is worth noticing that the protocol's most defensive rule is the one that paid.
 
 **Source.** Evidence accumulated across lin-x64, mac-arm64 and win-x64, 2026-08-14 to 2026-08-15; answered on lin-x64.
+
+<a id="gitattributes-was-missing-the-union-merge-lines-the-protocol-depends-on"></a>
+
+## `.gitattributes` was missing the three `merge=union` lines the protocol depends on
+
+Found while hand-resolving the same `docs/DETAILS.md` conflict for the third time in one session.
+
+**The gap.** `INSTRUCTIONS.md` §4.1 specifies `.gitattributes` as carrying
+
+```
+docs/DETAILS.md   merge=union
+docs/ARCHIVED.md  merge=union
+docs/QUESTIONS.md merge=union
+```
+
+The file carried the `text=auto eol=lf` rules and nothing else. `git check-attr merge -- docs/DETAILS.md` reported **`merge: unspecified`**, so git was resolving the append-only docs with the default three-way driver.
+
+**What that cost, all day and invisibly.** Those three files are the ones every session appends to, and §4.1's entire instruction for them — *"never edit existing lines; state changes are appends"* — is written on the assumption that concurrent appends **auto-merge**. Without the driver, every concurrent append to the same end-of-file region conflicts, and whoever pulls second hand-resolves it. That is not a hypothetical: it produced the [`[P]` block double-booking](#review-pass-2026-08-15-what-the-consistency-audit-found) earlier today, where a rebase silently restored a task line I had removed and left `T-lin-10092/lin` simultaneously archived and IN_PROGRESS, and it produced two more conflicts in the ten minutes before it was noticed.
+
+**Why nobody noticed sooner.** A missing merge driver has no symptom of its own. It presents as ordinary merge conflicts, which look like normal multi-session friction rather than a configuration that was never applied — and each one is individually cheap to resolve, so the cost is paid in small change rather than in an event anyone investigates. §4.1 says the file is created "at PREFLIGHT bootstrap, before any concurrent appends"; the `text`/`eol` half exists, so the file was created and the union half was simply dropped.
+
+**Fixed**, with the three lines added and verified: `git check-attr` now reports `merge: union` for all three. The very next pull, which had been conflicting every time, went through clean.
+
+**Worth generalising, because it is a third variant of a shape this tree keeps meeting.** A [pin encoding one machine](#green-on-the-box-that-wrote-it) and a [selector that stopped growing](#t-lin-10367-the-gate-selector-had-stopped-growing-with-the-set) both hide because the thing still reports green. This hides because the failure it causes is *indistinguishable from normal operation*. The check that would have caught it costs one command — `git check-attr merge -- docs/DETAILS.md` — and nothing in the tree ran it.
+
+**Source.** lin-x64, 2026-08-15.
