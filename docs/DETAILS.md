@@ -46610,3 +46610,115 @@ named failure rather than a larger skip count. Until such a cell exists, the
 honest statement is that the tree cannot tell these two states apart.
 
 **Source.** lin-x64, 2026-08-15, at `ff037fb5`. Found while holding T-lin-10359.
+
+<a id="t-lin-10359-verified-on-an-idle-gpu-zero-stalls-644s"></a>
+
+## T-lin-10359 verified — zero stalls on an idle GPU, and the row's host diagnosis is confirmed
+
+Runs the verification [the row](#t-lin-10359-slicecref-oracle-stalls-on-five-programs)
+specifies — *"`ctest -R '^slice/cref-oracle-gcc-c-torture-execute$'` on a host
+whose GPU is idle; expect no stalled programs. Confirm quiet first"* — for the
+first time, the corpus having been provisioned at
+[8982751a](#lin-corpus-provisioning-complete-all-four-cref-corpora-live).
+
+**Quiet confirmed first, by the row's own ACTIVITY-not-residence diagnostic.**
+`nvidia-smi --query-compute-apps` showed two resident clients holding 7 MiB and
+9 MiB (steamwebhelper, Battle.net) and **no** compute activity: GPU 0 %,
+153 MiB of 12227 MiB, 47 °C, load average 0.68. Nothing resembling the
+`bg3_dx11.exe` that the row measured at 72 % GPU / 5295 MiB / 575 % CPU.
+
+**PASSED in 644.57 s. Zero stalls.** The stall report is emitted by
+`gpuconform.py:367` whenever any program's `slicerun_rc` is `timeout` or
+`oserror`, and the run's log contains **no** such line — the direct signal, not
+an inference from the exit code:
+
+| counter | value |
+| --- | --- |
+| programs / qualified / classified-out | 1917 / 1562 / 355 |
+| **stalled programs** | **0** (floor: any stall fails the cell) |
+| mismatches / funnel-disagreed | 0 / 0 |
+| cref-oracle `clang-O0`,`clang-O2`,`gcc-15-O0`,`gcc-15-O2` | ok=296, mismatch=0, nocompile=0 on all four legs |
+| qualified vs floor | 1562 ≥ 1000 |
+| cref tuples vs floor | 330388 ≥ 50000 |
+| device present / dispatches | 1 / 77094 |
+| frame accepted / compared / mismatches | 34271 / 33911 / 0 |
+
+**The cell proved itself in the same run.** It runs a clean pass and a mutated
+pass and requires the mutation to be caught: `known-positive OK, 1184 mutated
+batch(es) detected`, `clean OK, mutation detected`. A green here is not a green
+over nothing.
+
+**This confirms the row's thesis rather than merely closing it.** The failing
+observations exceeded 600 s standalone against a 180 s per-program budget; the
+two passing runs of 2026-08-14 took 1442.91 s and 1530.03 s. On a genuinely
+idle GPU the same cell finishes in **644.57 s** — faster than either recorded
+pass, on a corpus of 1917 programs. The stalls were host contention. No code
+change was involved in fixing it, and none was made.
+
+### One number does not reconcile, and it is not this row's
+
+`qualified=1562` matches the 2026-08-14 observation **exactly**, so the two
+runs adjudicated the same program set. But that run recorded
+`cref tuples=2067654` and `ok=2130` on each oracle leg, against **330388** and
+**296** here — a **6.3x** drop in adjudicated tuples and **7.2x** in per-leg
+fragments, at an identical qualified-program count.
+
+**Not established as a regression, and deliberately not asserted as one.**
+`tools/gpuconform.py` and `cmake/gpuconform_cref.cmake` are unchanged since
+before the baseline, but `src/ast_eval_slice.h`, `src/mccgpu.c`,
+`src/mccslice.h`, `src/mccast.c` and neighbours all churned after 2026-08-14,
+and the intervening slice work includes deliberate narrowing
+(`6707857a` applies C's usual arithmetic conversions and deletes a quarantine).
+So this is as likely an intended reduction in what the funnel accepts as a loss
+of coverage. It needs its own measurement, which is [T-lin-10389](#t-lin-10389-the-cref-tuple-count-fell-6x-and-the-floor-cannot-see-it).
+
+**What is certain is that no gate can tell.** `MINTUPLE` for this corpus is
+**50000**. The prior value cleared it by 41x and the current one by 6.6x, so a
+6.3x collapse in the cell's actual subject moves it from "far above the floor"
+to "far above the floor" and the cell stays green either way. Same defect class
+as [T-lin-10043](#t-lin-10043-testsemitmapbankjsons-tolerances-cannot-fail) —
+a tolerance that cannot fail — and it is why the number is recorded here rather
+than left in a log.
+
+**Source.** lin-x64, 2026-08-15, at `ab7281f0`; `cmake-debug`, GPU idle.
+
+<a id="t-lin-10389-the-cref-tuple-count-fell-6x-and-the-floor-cannot-see-it"></a>
+
+## T-lin-10389 The cref tuple count fell 6.3x at an identical program count, and `MINTUPLE` cannot see it
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+Split out of [the T-lin-10359 verification](#t-lin-10359-verified-on-an-idle-gpu-zero-stalls-644s)
+so that row could close on its own evidence. Two runs of
+`slice/cref-oracle-gcc-c-torture-execute` over the same corpus, both with every
+value check clean:
+
+| | 2026-08-14 (`d298af58`) | 2026-08-15 (`ab7281f0`) | ratio |
+| --- | --- | --- | --- |
+| qualified programs | 1562 | 1562 | **1.00** |
+| cref tuples | 2067654 | 330388 | **0.16** |
+| per-leg oracle fragments (`ok=`) | 2130 | 296 | **0.14** |
+| mismatches / disagreed | 0 / 0 | 0 / 0 | — |
+
+**The question is which of two things happened,** and the run cannot answer it:
+the intervening slice/GPU work narrowed what the funnel accepts *on purpose*
+(`6707857a` deletes a quarantine and applies the usual arithmetic conversions,
+which legitimately removes fragments), **or** the differential quietly lost
+five-sixths of its subject. The first is fine. The second means the cell has
+been reporting `mismatches=0` over a far smaller surface than its own history
+implies.
+
+**Either way the floor is wrong.** `MINTUPLE=50000` was clearing by 41x and now
+clears by 6.6x; it would still pass if the subject fell another 6x. A floor
+that a 6.3x collapse does not disturb is not measuring the thing it was added
+to protect. Whatever the verdict on the cause, this wants a floor derived from
+the recent value rather than a constant pinned an order of magnitude below it.
+
+**First slice is attribution, not a fix:** bisect the tuple count across the
+2026-08-14→15 slice/GPU commits and state which change moved it and whether
+that was intended. Only then choose between re-flooring and restoring coverage.
+
+**Verification.** The bisect names a commit and a reason; the re-floored cell
+goes red when the tuple count is halved from its current value.
+
+**Source.** lin-x64, 2026-08-15. Observed, not diagnosed.
