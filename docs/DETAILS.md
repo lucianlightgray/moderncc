@@ -45952,3 +45952,27 @@ lin-x64's [T-lin-10384](#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-sca
 **Scope note.** Only the two `ast_du` side-car checks (`escapes`, `readonly`) are gated — they share the O(n)-scan-per-query shape and one (`escapes`) is the measured cleanup.c cost. The unrelated DEV shadows (`AST_MEMO_SHADOW`, `ident_same`) are a different mechanism, were not hot here, and are left as-is.
 
 **Source.** lin-x64, 2026-08-15, `main@316fc087`; found during [T-lin-10383's census](#t-lin-10383-census-results-the-spir-v-arm-histograms) (the one 312-corpus timeout).
+
+<a id="t-lin-10044-resolved-the-manifest-and-fail-count-ratchets-already-make-a-source-drop-fatal"></a>
+
+## T-lin-10044 resolved — the source-drop the task asked to catch is already fatal, three ways, and CI-enforced
+
+**Finding (lin-x64, 2026-08-15).** The task's verification — *"`rir-coverage.py` must fail when a tenth source drops out"* — is already met by machinery that **predates the task's own filing**. The row was bulk-migrated into DETAILS at `1695806f` (2026-08-14) carrying a concern two earlier commits had already closed:
+
+- **`9ddd73ce`** (2026-08-12) *"bank the corpus manifest so the denominator cannot drift silently"* — banks `sources_<corpus>` = `{n, sha}` (the sha of the sorted walked source-path list) and FAILs on mismatch with the exact message the row's prose uses: *"corpus … drifted … the denominator every percentage below is over is not the one that was banked"* (`tools/rir-coverage.py:1593-1610`). Banked for wide: `{"n": 389, "sha": "3a0dfc8b…"}`.
+- **`84add424`** (2026-08-13) *"the census counted its compile failures and never compared them"* — banks a per-format `failed` floor and FAILs on a rise: *"N source(s) now fail to compile against M banked, so every percentage above is over a denominator that just shrank"* (`:1865-1883`). Banked for wide: `wide/O0–O3/arena/failed = {elf: 9, macho: 17}`.
+
+**A source dropping out is caught three overlapping ways, so no drop is silent:**
+1. **Removed / renamed** from the corpus → the walked path-list sha ≠ banked sha → *corpus drifted* FAIL.
+2. **Stays listed but stops compiling** → `nfail` exceeds the banked `failed` floor → *denominator that just shrank* FAIL.
+3. **Stays listed, compiles, but goes vacuous** (0 bodies) → `bodies_pct`/`nodes_pct` fall below their banked floors → the percentage ratchet FAILs (the same floors T-lin-10364 tracks).
+
+**Demonstrated (both banked-perturbation faithful to the exact FAIL comparisons, bank restored after each):**
+- Path 1: set `sources_self.sha` to a wrong value → `rir-coverage.py cmake-debug --corpus self` ⇒ `FAIL corpus self drifted: banked 1 file(s) sha deadbeef…, this run walked 1 sha b5fdbbf0… -- the denominator … is not the one that was banked`.
+- Path 2: set `wide/O0/arena/failed/elf` 9→8 → `MCC_RIR_CENSUS=1 rir-coverage.py cmake-debug --corpus wide --levels O0 --opt-in` ⇒ `FAIL -O0: 9 source(s) now fail to compile against 8 banked … a denominator that just shrank: array_assignment.c, trigraphs.c, …`.
+
+**Tool-enforced, not prose.** Both checks run on every CI pass via the registered `rir-coverage` (self) and `rir-coverage-census` (wide) cells, so the verification is enforced by code that fails, per this row's own standard ("a constant in prose that no code reads is a claim that cannot fail").
+
+**Out of scope, correctly.** The row's aside — *"the per-body inventory landed … a source dropping out is a diff rather than a percentage"* — is an ATTRIBUTION nicety (naming *which* source's bodies moved), not a detection gap: detection is complete via the three paths above. Per-body attribution for the general (non-lowerable) census would be a separate, finer refinement and is not what the verification asks for; no task filed for it (it is below the threshold, and the lowerable half already banks its 4574-body inventory).
+
+**Source.** lin-x64, 2026-08-15; verified against `main@a5447175`, machinery at `9ddd73ce`+`84add424`.
