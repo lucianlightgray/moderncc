@@ -13,6 +13,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 DEFS=(-DMCC_DEV=1)
+export MCC_DU_VERIFY=1
 INCS=(-Isrc -Iinclude -Isrc/formats -Isrc/objfmt -Isrc/arch/i386)
 EXTRA=()
 case "$ARCH" in

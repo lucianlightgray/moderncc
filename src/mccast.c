@@ -4104,6 +4104,12 @@ static void ast_du_diverge(const char *q, int off, int tab, int scan) { MCC_TRAC
 					off, tab, scan);
 	abort();
 }
+static int ast_du_verify(void) { MCC_TRACE("enter\n");
+	static int cached = -1;
+	if (cached < 0)
+		{ MCC_TRACE("br\n"); cached = mcc_env_on("MCC_DU_VERIFY"); }
+	return cached;
+}
 #endif
 
 enum {
@@ -4345,9 +4351,11 @@ static int ast_local_is_readonly(AstArena *a, int off) { MCC_TRACE("enter\n");
 	else
 		{ MCC_TRACE("br\n"); r = (ast_du_slot_flags(a, off) & AST_DU_WRITTEN) ? 0 : 1; }
 #if MCC_DEV
-	int s = ast_local_is_readonly_scan(a, off);
-	if (r != s)
-		{ MCC_TRACE("br\n"); ast_du_diverge("readonly", off, r, s); }
+	if (ast_du_verify()) { MCC_TRACE("br\n");
+		int s = ast_local_is_readonly_scan(a, off);
+		if (r != s)
+			{ MCC_TRACE("br\n"); ast_du_diverge("readonly", off, r, s); }
+	}
 #endif
 	return r;
 }
@@ -9400,9 +9408,11 @@ static int ast_cprop_escapes(AstArena *a, int off) { MCC_TRACE("enter\n");
 	else
 		{ MCC_TRACE("br\n"); r = (ast_du_slot_flags(a, off) & AST_DU_ESCAPED) ? 1 : 0; }
 #if MCC_DEV
-	int s = ast_cprop_escapes_scan(a, off);
-	if (r != s)
-		{ MCC_TRACE("br\n"); ast_du_diverge("escapes", off, r, s); }
+	if (ast_du_verify()) { MCC_TRACE("br\n");
+		int s = ast_cprop_escapes_scan(a, off);
+		if (r != s)
+			{ MCC_TRACE("br\n"); ast_du_diverge("escapes", off, r, s); }
+	}
 #endif
 	return r;
 }
