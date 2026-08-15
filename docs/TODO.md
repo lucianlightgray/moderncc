@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T01:20Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T03:40Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T04:10Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T03:05Z |
 
 ## Contracts — blocking, highest priority
@@ -18,7 +18,7 @@
 
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T01:55Z
-      REF: DETAILS.md#t-lin-10001-slice-3-approach-l2-prime | DEPS: — | NOTE: slice 2 DONE; slice 3 (L2′) approach PUBLISHED — two of the contract's premises for it are stale (the pool joins; nothing is detached). Implementation held until win-x64's T-lin-10092/win suite number lands
+      REF: DETAILS.md#t-lin-10001-slice-3a-the-pool-job-becomes-a-tick | DEPS: — | NOTE: hold released by win-x64; slice 3a DONE at c6c26c64 (job->run is now job->tick, quit re-read between ticks, behaviour identical, 79/79 green). Slice 3b = split sd_job_heavy + the bound assertion + reconcile jit/selftest-shutdown's `done == accepted`, which IS the unbounded property written as a requirement — all one unit, see DETAILS
 
 
 - [ ] T-lin-10365 [S] An isolated, iterative Windows-on-ARM CI hook on a `woa/**` branch
