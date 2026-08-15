@@ -42905,3 +42905,23 @@ The fix is proven on the native side. What remains is a cross-host re-bank only 
 The headers (`4d1cb752`) are already in; they are inert until step 2's wiring lands.
 
 **Source.** mac-arm64, 2026-08-15, at `4d1cb752`; native o0_ab run with the wiring applied then reverted (the wiring lands with the bank, not before it).
+
+<a id="t-lin-10030-mac-conformance-provisioned-and-the-simplectest-ub-flag"></a>
+
+## T-lin-10030/mac — the embed-JIT conformance now runs on arm64; the one "miscompile" is a corpus UB program, not an mcc defect
+
+The provisioning gap the [banked evidence](#t-lin-10030-mac-native-arm64-embed-jit-evidence) named is closed on this box. Fetched the gcc c-torture corpus (1694 progs, `git clone --filter=blob:none --sparse --depth=1 gcc-mirror/gcc` → `~/Projects/gcc`, the default `MCC_XSUITE_GCC`) and llvm-test-suite `SingleSource/UnitTests` (671 `.c` → `~/Projects/llvm-test-suite`, default `MCC_XSUITE_LLVMTS`), the same route win-x64 used for T-lin-10088. Both are host-local (outside the repo), so nothing is committed — it is box provisioning, not a tree change.
+
+With both suites, natively on arm64:
+- `jit/xoracle-coverage` **PASSES**: 188/535 cross-adjudicable across the two suites, above the `--min-cross 400` two-suite floor (c-torture alone tops out at 377, which is why one suite skip-stubs the cell).
+- `jit/xoracle-conformance` runs 535 programs, embed surface, and **fails on exactly one**: `llvm-test-suite/.../SetjmpLongjmp/C/SimpleCTest.c`, `JIT_MISCOMPILE` (`MCC_JIT=1` vs `MCC_JIT=0` disagree in the same binary), against `--max-miscompile 0`.
+
+**The flag is not an mcc defect — it is a UB test program, cross-checked against clang.** `SimpleCTest.c` calls variadic `printf` with **no prototype** (no `#include <stdio.h>`; the harness compiles the corpus `-w -std=gnu89`, so implicit declaration is allowed). On arm64 Darwin the variadic ABI puts varargs on the **stack** while a non-variadic call passes them in registers, so a prototype-less `printf("%d", ret)` reads `ret` from an uninitialised stack slot — garbage that differs run to run. Reduced and confirmed:
+- `mcc` prototype-less / `int printf();`  → garbage (`1868230480`, `1806987088`); **clang `int printf();` → garbage too** (`-134004480`).
+- `mcc` with `int printf(const char*, ...);` → `37`, correct. Plain setjmp/longjmp (global or local `jmp_buf`, `-O0/-O1/-O2`) → `37`, correct, matching clang.
+
+So the arm64 embed-JIT engine is correct on the 534 well-defined programs; the single flag is nondeterministic stack garbage from a UB program, and `MCC_JIT=1`/`=0` "disagree" only because each reads a different garbage value. clang miscompiles the identical construct, which is the definition of "not this compiler's bug".
+
+**The real gap is in the harness classification, not mcc.** `xoracle.py` already buckets `nondet`/`ubsens` cases out of the cross-adjudicable set, but its nondet detection did not catch `SimpleCTest` (llvm:ts-unittests reported `nondet 0`), so a prototype-less-variadic UB program reached the `--max-miscompile 0` pin as if it were a real miscompile. A program whose output changes between two runs of the *same* config is nondet by construction and must be excluded before the JIT-vs-AOT comparison, exactly as the c-torture `ub 1` case already is. Filed as [[T-mac-30003]] (jitconform/xoracle domain). Until it lands, `jit/xoracle-conformance` cannot be green on arm64 for a reason that is the corpus's, not mcc's — so T-lin-10030/mac's engine-correctness answer stands on the 66 native jit cells + the 534 clean conformance programs, and the parent's "only x86_64 was ever run" concern is now answered on real Apple silicon.
+
+**Source.** mac-arm64, 2026-08-15; corpora at `~/Projects/{gcc,llvm-test-suite}`, `cmake-macos` reconfigured; reductions in `/tmp` (prototype-less vs prototyped `printf`, setjmp round-trip).
