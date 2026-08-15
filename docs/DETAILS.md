@@ -46342,3 +46342,19 @@ Full native suite over the fix at `9c09d27b` (cmake-build-debug, MCC_DEV=OFF): 1
 The o0-baseline object moves on **every** arch key. My non-cross mac can only measure `arm64-osx`, which I re-banked at `528416eb` (surgical — only the `wide_bitfield_arith.c` hash line moved; `board.txt` and all other keys preserved; fn/objects counts unchanged since the edit only adds assertions to `main()`). The other 10 keys (x86_64/i386/arm/arm64/riscv64 + four *-win32 + x86_64-osx) require a Linux cross-build to re-bank and are **CONTRACT'd to lin** (`528416eb`) — the same coordinated-landing shape as T-win-50015's o0-baseline win32 rebank. mac §8 is green modulo the environmental set; the fix is correct, gcc-16-verified, corpus-inert (moves no *codegen* object), and TDD-guarded.
 
 **Source.** mac-arm64, 2026-08-15, §8 suite over `9c09d27b`; banks at `528416eb`.
+
+<a id="t-lin-10036-mac-slice-1-done-memset-wins-slice-2-is-metal-buffer-residency"></a>
+
+## T-lin-10036/mac — slice 1 (the memset wins) DONE; slice 2 is Metal buffer residency
+
+**Slice 1 DONE (`34106f4c`).** The Metal `mcc_gpu_dispatch_locked2` (mccgpu.c:624, MSL branch) now mirrors the SPIR-V twin's two memset wins: the 100%-dead `pout` memset is gone, and the `pin` zeroing is reduced to the `[ntuple, cap)` padding tail (the memcpy fills `[0, ntuple)`). Device results unchanged — gpu/msl-slice-* + slice/{mem,bytes,frame,deref,ext} + census 19/19 green. `reuse_in` is still `(void)`'d and forced to a full upload.
+
+**Slice 2 (remaining) — honor `reuse_in`, which needs Metal buffer residency.** The third win (skip the tin re-upload on ladder arm `b`) cannot be a memset edit, because the Metal path allocates `bin`/`bout` fresh every dispatch (`mtl_buffer(inlen,…)` at :647/:650) and releases them per dispatch (:717/:718), so there is no buffer to reuse. Reaching Vulkan parity means mirroring the `mcc_vkr` residency model (mcc_gpu.c:2535-2591 `mcc_vk_bind_buffers` + the resident struct):
+1. Add a resident holder (a static struct like `mcc_vkr`, or fields beside `mcc_mtl_mem`) carrying `bin`/`bout`, their byte sizes, and the mapped `pin`/`pout`.
+2. A `mtl_bind_buffers(inlen, outlen)` that creates `bin`/`bout` on first use and **grows only** (release+recreate when a larger size is needed), never freeing on the dispatch path.
+3. `dispatch_locked2`: use the resident buffers; guard the upload `if (!reuse_in) { memcpy prefix; tail memset; }` exactly as the SPIR-V twin (:2778-2784).
+4. Release the resident `bin`/`bout` in `mtl_quiesce` (mccgpu.c:517-531), next to the `mcc_mtl_mem` release — Metal is synchronous (`waitUntilCompleted`), so unlike Vulkan there is no pending-fence/strand concern; teardown is unconditional.
+5. Flip `#define MCC_GPU_IN_IS_RESIDENT 0` → `1` (mccgpu.c:728) so `mcc_gpu_dispatch2_ro_in` (:2994) passes the resident flag to arm `b`.
+Verify: gpu/msl-slice-* unchanged + re-measure bytes/lane (the tin upload should drop from per-arm to once). Lower-risk than the Vulkan version because Metal's unified-memory synchronous dispatch has no async buffer-lifetime hazard.
+
+**Source.** mac-arm64, 2026-08-15, slice 1 at `34106f4c`; residency model per the SPIR-V `mcc_vkr` path.
