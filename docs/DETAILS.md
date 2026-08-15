@@ -45088,3 +45088,27 @@ every docs commit (one Select-String / grep), and run `tools/docref-lint.py`
 at checkpoints — it has carried the marker rule since the first incident.
 
 **Source.** win-x64, 2026-08-15, after paying for the lesson twice.
+
+<a id="t-win-50018-resolved-the-relocate-error-was-a-passing-known-positives-stderr"></a>
+
+## T-win-50018 RESOLVED — the relocate error was a passing known-positive's stderr; the real failure was the COFF flip meeting a hardcoded ELF magic
+
+**Fixed 2026-08-15 (win-x64, code SHA 74f51d91).** `libtest-extra` green in a
+vcvars ctest. Two corrections, one small fix:
+
+1. *"mcc: error: 'mcc_relocate()' twice is no longer supported"* is printed by
+   `relocate_double_guard` — a known-positive that **passes** by asserting the
+   error fires. Attributing a neighboring case's stderr to the failing case is
+   the same interleaved-output triage mistake T-win-50010 recorded; second
+   instance in one day, same lesson.
+2. The actual failure was `test_output_obj` asserting the `\x7f E L F` magic
+   on a file that is COFF by design since T-lin-10083 flipped the win32
+   `MCC_OUTPUT_OBJ` default. The check is now target-keyed
+   (`IMAGE_FILE_MACHINE_AMD64` bytes on `_WIN32`, ELF elsewhere); ELF hosts
+   textually unchanged, and Linux never saw the failure because its default
+   never moved.
+
+Win suite steady state after this: **14 residual reds**, all owned (12
+Bucket-B/embed-JIT-class, msstruct T-win-50015, slice/fault T-win-50019).
+
+**Source.** win-x64, 2026-08-15, at 74f51d91.

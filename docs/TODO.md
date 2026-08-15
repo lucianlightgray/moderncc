@@ -38,10 +38,6 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-win-50018 [S] win-x64 — `libtest-extra` output_obj: "mcc: error: 'mcc_relocate()' twice is no longer supported"
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 73dda833 | TS: 2026-08-15T14:35Z
-      REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: characterization slice — find the double-relocate call path in the output_obj case, decide fix-here vs hand-to-lin (libmcc API surface, mccjit/libmcc rework suspected), and check whether Linux runs this case at all
-
 ## Open — claimable
 - [ ] T-lin-10379 [S] `MCC_REPLAY_IR=1` changes 46 of 58 corpus objects at `-O1` and above
       OWNER: — | STATE: OPEN | SHA: 7ea9be08 | TS: 2026-08-15T14:05Z
