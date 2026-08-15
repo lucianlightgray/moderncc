@@ -30,7 +30,7 @@
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 - [ ] T-win-50020 [S] win-x64 — the Windows embed-JIT link: the ucrt `__imp_*` import set is the remaining half (/GS class fixed at 7263e6fe)
-      OWNER: win-x64 | STATE: CLAIMED | SHA: 7263e6fe | TS: 2026-08-15T16:54Z
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 7263e6fe | TS: 2026-08-15T16:56Z
       REF: DETAILS.md#t-win-50020-slice-1-gs-off-the-blob-the-ucrt-import-wall-remains | DEPS: — | NOTE: RESUMED (was released with slice 1 done). /GS- on libmcc_jitengine killed __report_rangecheckfailure/__security_cookie/__GSHandlerCheck/__isa_available. REMAINING: resolve the ucrt __imp_* set (mccpe.c:1380/1415/2712 are the __imp_ sites) — direction (a) ucrtbase.def or (b) GetProcAddress(ucrtbase) pointer-slot fallback under MCC_OUTPUT_MEMORY. Pays 13 of 15 win reds + T-lin-10030/win + T-lin-10383 win arm
 - HANDOFF-BOX-FACTS (win-x64, kept for successors): VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics for any device run; VULKAN_SDK=C:/Users/llg/scoop/apps/vulkan/current; corpora junctions in vendor/ point at C:/Users/llg/Projects/{gcc-torture,llvm-test-suite,llvm-project}; commit BEFORE pull (DETAILS#autostash-is-how-conflict-markers-reach-pushed-history). Also-resume-ready: T-win-50015 (ms-bitfield ABI; fixture in-tree, two named gaps). Held: T-lin-10092/win (steady at NOTE-2)
 
