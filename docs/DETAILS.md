@@ -42286,3 +42286,38 @@ Two hosts now agree on the number the manifest states (50) while disagreeing on 
 **Sequencing note, recorded because it is a protocol question and not a result.** This task was migrated to DONE and archived at `037b18d8` **before** this acceptance arrived, on lin-x64's own green. That is correct for an `[S]` task — §8 gates DONE on the full native suite of the *owning* platform, and the owner here is lin-x64 — but it is worth being precise that Darwin's run **confirmed** the prediction rather than gating it. Had it come back red, the remediation would have been a new task, not an un-archiving. win-x64 remains unconfirmed and still owes the 6 else-branches ([T-win-50001](#t-win-50001-ci-gate-contract-red-on-win-x64)).
 
 **Source.** Acceptance run by mac-arm64, 2026-08-15, reported to lin-x64 and banked here.
+
+<a id="t-lin-10001-slice-3-approach-l2-prime"></a>
+
+## T-lin-10001 slice 3 approach — L2′, and the two premises of it that are no longer true
+
+Published before implementing, per §6.5. **Two of the three things the contract says about the JIT pool are stale, and reading it as written would have produced a slice that fixed nothing.**
+
+**Stale premise 1 — "the JIT has no shutdown".** [S7b](#t-lin-10001-a-task-representation-with-an-explicit) says the pool "has no shutdown because its workers sit in an unbounded `pthread_cond_wait`". It has one. `mccjit_pool_shutdown` (`src/mccjit_embed.c:1512`) sets `quit`, `pthread_cond_broadcast`es, and **joins every worker**; the worker's wait is `while (!head && !quit)`, so the broadcast releases it and the `!job` arm breaks the loop. It is reached from `mcc_rt_exit` → `mccjit_shutdown` (`src/mccrt.c:55`), which is why [T-lin-10031](#t-lin-10031-the-jit-teardown-is-unbounded-above) already records the join as existing.
+
+**Stale premise 2 — "workers are `pthread_detach`ed at `:1375`".** There is no `pthread_detach` call anywhere in `src/`. The only two hits in the tree are the win32 shim's *definition* (`src/mccjit_win32.h:364`) and a name in the thread census table (`src/mccthread.h:39`). Workers are stored in `mccjit_pool.th[]` and joined. Line `:1375` today is `pthread_t th[MCCJIT_POOL_MAX];` — the declaration of the **join** array in `mccjit_pool_shutdown`. The line the contract cites as evidence of detachment is now the line that joins.
+
+Both premises were true when S7b was written; the shutdown landed afterwards. The correction matters because it re-aims the slice: L2′ is not *give the pool a shutdown*, it is **bound the one it has, and stop serializing it on a lock wider than the state that lock protects.**
+
+**What is still true, and is the actual subject.**
+
+1. **The quit flag is checked only between whole jobs, never inside one** (`:1421-1444`). `mccjit_sd_job_heavy` (`:7384`) does a full `mcc_jit_recompile_blob`, an `mmap` + `mccjit_qsbr_retire`, a `mccjit_pool_nap` (1 ms `nanosleep`) and an `mccjit_sd_tick` before it returns. A shutdown that arrives one instruction into that job waits for all of it. **That is exactly and only what "the teardown is unbounded above" means** — T-lin-10031's subject, stated in terms of this file.
+2. **`mccjit_swap_lock` is held across the entire `job->run(job)`** (`:1437-1439`). The lock exists because the compile path mutates process-global state (`mccjit_last_*`, `cur_text_section`, `funcname`) — a region strictly smaller than a job. So a pool of N workers executes jobs one at a time, and the parallelism it advertises is not there.
+
+**The conversion, and why it is two slices and not one.**
+
+*Slice 3 (this one) — the tick split.* `MccjitSwapJob.run` becomes `tick` returning the `MCC_TASK_*` answers, plus a `resume` field. The worker's inner loop ticks until `DONE`/`FAILED`, re-reading `mccjit_pool.quit` **between ticks**. The four existing bodies (`mccjit_job_run_eager :1539`, `mccjit_job_run_lazy :1544`, `mccjit_sd_job_light :7396`, `mccjit_sd_job_heavy :7384`) return `DONE` after one tick, so behaviour is identical by construction and the diff is mechanical. Then `sd_job_heavy` — the only body with interior structure worth splitting — becomes four ticks (recompile / retire / nap / sd_tick), which is what actually delivers the bound. Nothing else changes.
+
+*Slice 4 — narrowing `mccjit_swap_lock`* to the codegen region inside `mccjit_boot_swap_run` rather than around the tick. **Deliberately not in slice 3.** It changes which code runs concurrently for the first time; bundling it with the tick split would make any regression unattributable to either. It also wants its own contention measurement, since the whole point is that the pool starts being a pool.
+
+**Rejected.** Making the *worker itself* a task on an `MccSched` (as `tools/mcchv.c` now is) — rejected for this slice. The pool's workers must stay real threads for the same reason `hv_sweep` did: `mccjit_bench_pair`'s siblings measure contention, and the pool exists to overlap compile with execution. The task representation is being used here for its **resume state and its between-tick stop**, not to remove the threads. That is the "tasks as the scheduling unit, OS threads as the substrate" end state the contract asks for, and the substrate is the part that stays.
+
+**Verification spec** (this is T-lin-10031's owed spec, made concrete):
+
+- A cell that enqueues a `sd_job_heavy`, calls `mccjit_shutdown`, and asserts the join returns within a bounded number of ticks rather than a wall-clock guess — a tick count is the only bound that is not a timing flake on a loaded box, which is the failure mode `T-lin-10072`/`T-lin-10073` already record for this tree.
+- **Known-positive:** remove the between-tick quit re-read and the cell must go red. Without that half the bound is an assertion about a number nobody moves.
+- Regression: `ctest -R '^(jit/|slice/(task|sched))'` plus the `libtest-mt` family, green before and after; the tick split must not move any of them, since it is behaviour-identical by construction.
+
+**Sequencing.** Not started: win-x64 holds `T-lin-10092/win` IN_PROGRESS (full native suite, claimed 00:28Z) and this touches the JIT core on every platform. Implementation waits for their number to land.
+
+**Source.** Research on lin-x64, 2026-08-15, at `020b57c5`. Line numbers are as of that commit.
