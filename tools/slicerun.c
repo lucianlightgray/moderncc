@@ -278,6 +278,88 @@ static int count_tick(MccTask *t) {
 	return MCC_TASK_YIELDED;
 }
 
+/* T-lin-10001: a task that cannot proceed reports what it is waiting for, and
+ * the scheduler stops spinning on it. Before this the only way to say "not
+ * ready" was YIELDED, which is indistinguishable from "made progress, call me
+ * again" -- so a task waiting on a condition burned a tick per round forever
+ * and a scheduler with nothing runnable could not tell that from a busy one.
+ * That gap is why mccthread.h grew its own npred/ready/waiting_on_world logic
+ * beside MccTask rather than inside it. */
+typedef struct {
+	int gate;
+	int ticks;
+	int done_after;
+} BlockCtx;
+
+static int blocked_tick(MccTask *t) {
+	BlockCtx *b = (BlockCtx *)t->ctx;
+	b->ticks++;
+	if (!b->gate) {
+		mcc_task_block(t, (void *)&b->gate);
+		return MCC_TASK_BLOCKED;
+	}
+	if (b->ticks >= b->done_after)
+		return MCC_TASK_DONE;
+	return MCC_TASK_YIELDED;
+}
+
+static void suite_task_blocked(void) {
+	MccSched s;
+	MccTask t1, t2;
+	BlockCtx b1;
+	CountCtx c1;
+
+	memset(&b1, 0, sizeof b1);
+	b1.done_after = 2;
+	mcc_sched_init(&s);
+	mcc_task_init(&t1, blocked_tick, &b1);
+	mcc_sched_add(&s, &t1);
+
+	CHECK(mcc_sched_run(&s, 0) == 1,
+				"a scheduler whose only task is blocked returns rather than spinning");
+	CHECK(t1.state == MCC_TASK_BLOCKED, "the task is parked in BLOCKED");
+	CHECK(b1.ticks == 1, "a blocked task is ticked once, not once per round");
+	CHECK(t1.blocked_on == (void *)&b1.gate,
+				"the task recorded WHAT it is waiting on, not merely that it waits");
+	CHECK(mcc_sched_pending(&s) == 1, "a blocked task is still queued, not dropped");
+	CHECK(mcc_sched_blocked(&s) == 1, "the scheduler can count what is parked");
+	CHECK(mcc_sched_runnable(&s) == 0, "nothing is runnable while the gate is shut");
+	CHECK(s.stalls == 1, "the round that found nothing runnable is recorded as a stall");
+
+	b1.gate = 1;
+	mcc_sched_wake(&s, (void *)&b1.gate);
+	CHECK(mcc_sched_runnable(&s) == 1, "waking the address the task named makes it runnable");
+	CHECK(mcc_sched_run(&s, 0) == 0, "the woken task runs to completion");
+	CHECK(t1.state == MCC_TASK_DONE, "the task finished from where it blocked");
+	CHECK(b1.ticks == 2, "it resumed rather than restarting");
+
+	/* A blocker that is never woken must not stall a scheduler that still has
+	 * runnable work: this is the difference between "the queue is stuck" and
+	 * "one task is stuck", and conflating them is what makes a pool hang look
+	 * like a pool that is merely busy. */
+	memset(&b1, 0, sizeof b1);
+	memset(&c1, 0, sizeof c1);
+	b1.done_after = 1;
+	c1.limit = 3;
+	mcc_sched_init(&s);
+	mcc_task_init(&t1, blocked_tick, &b1);
+	mcc_task_init(&t2, count_tick, &c1);
+	mcc_sched_add(&s, &t1);
+	mcc_sched_add(&s, &t2);
+	CHECK(mcc_sched_run(&s, 0) == 1,
+				"the runnable task drains and the blocked one remains");
+	CHECK(c1.seen == 3, "the blocked task did not starve the runnable one");
+	CHECK(b1.ticks == 1, "the blocked task was not re-ticked while parked");
+	CHECK(mcc_sched_blocked(&s) == 1, "one task is still parked at the end");
+	CHECK(s.stalls == 1, "exactly one round found nothing runnable, the last");
+
+	/* Waking an address nobody named is not an error and wakes nothing --
+	 * otherwise every unblock site would need to know whether anyone was
+	 * listening, which is the bookkeeping a blocked-on address exists to remove. */
+	CHECK(mcc_sched_wake(&s, (void *)&c1) == 0, "waking an unwatched address wakes nothing");
+	CHECK(mcc_sched_blocked(&s) == 1, "and leaves the parked task parked");
+}
+
 static void suite_task(void) {
 	MccSched s;
 	MccTask t1, t2;
@@ -339,6 +421,8 @@ static void suite_task(void) {
 	s.quit = 0;
 	CHECK(mcc_sched_run(&s, 0) == 0, "resuming after quit drains the queue");
 	CHECK(c1.seen == 5 && c2.seen == 5, "both tasks completed from where they stopped");
+
+	suite_task_blocked();
 }
 
 /* ----------------------------------------------------------- work items -- */
