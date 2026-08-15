@@ -14,7 +14,7 @@
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
 - [ ] T-lin-10042 [X] mac-arm64 — the Metal parity staged plan, WITH fp64 (2,200-3,400 lines)
-      OWNER: mac-arm64 | STATE: CLAIMED | SHA: 0d33d71e | TS: 2026-08-15T12:20Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 0d33d71e | TS: 2026-08-15T12:25Z
       REF: DETAILS.md#q-lin-10009-answer-metal-parity-scheduled-with-fp64 | DEPS: — | Q: Q-lin-10009 ANSWERED | NOTE: human scheduled the fp64 variant. No CI differential exists or can — land it in slices each checkable by the hand-run per-value differential, not as one unwatched arm. SCOPING (mac-arm64, 2026-08-15): it is EXTEND-not-rebuild — the MSL base survives (345 `msl_*` refs across src/mccgpu.{c,h}, mccslice.h, mccfmt.h) and its per-value differential RUNS natively on this M1 (gpu/msl-slice-differential + -known-positive + -real all green here; the hand-run tool is tools/slicerun.c). So the per-slice verification path is confirmed feasible on-box; the work is the ~2200-line MSL/SPIR-V parity gap + fp64. FIRST-SLICE POINTERS: the MSL emitter is in src/mccgpu.h (macro/inline-heavy — msl_iv/bv/pv value builders at ~260-340, msl_arith/guard_div/widen/int_of_bool), the SPIR-V arm + differential in tools/slicerun.c; fp64 is ALREADY partially present in BOTH (mccgpu.h ~1330-1447 `f64`, slicerun.c ~109/452-471/804 Float64/double), so this is op-by-op parity completion, not greenfield fp64. Method for slice 1: diff the two arms' op coverage against the gpu/msl-slice-differential corpus, take the smallest fp64 op MSL lowers differently than SPIR-V, close it, hand-run the per-value differential
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
