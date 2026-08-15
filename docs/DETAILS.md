@@ -43522,3 +43522,36 @@ Landed with the slice scheduler (`1b54c26e`, 2026-08-08), i.e. the fix shipped a
 **Gate.** Measurement + docs only; no code change. `docs/refs` green; the four `gpu/spv-slice*` cells pass on this box.
 
 **Source.** mac-arm64, 2026-08-15; confirmed present at `1b54c26e`, proven live by the known-positive on arm64/MoltenVK.
+
+<a id="t-lin-10012-the-references-measured-alignof-is-not-the-abi-and-the-rule-is-per-target"></a>
+
+## T-lin-10012 phase 1b — the references, measured: `_Alignof` is not the ABI, and the rule is per target
+
+mac-arm64 measured AAPCS64 and found mcc already correct there. This is the x86_64 and i386 half, and together they settle the rule — which is **not** the one the question, the answer, or either of us assumed.
+
+**Measured, `int` vectors, `offsetof`/`sizeof` taken directly rather than inferred from `sizeof`:**
+
+| target | compiler | `_Alignof(v32)` | `offsetof(struct{char;v32})` | `sizeof` | `v64` offset/size |
+| --- | --- | --- | --- | --- | --- |
+| x86_64 | gcc-15 | **16** | **32** | 64 | 64 / 128 |
+| x86_64 | clang | **32** | **32** | 64 | 64 / 128 |
+| x86_64 | **mcc** | 16 | **16** | **48** | **16 / 80** |
+| i386 | gcc-15 `-m32` | 16 | **32** | 64 | 64 / 128 |
+| arm64 | gcc-16, Apple clang, **and mcc** | 16 | 16 | 48 | 16 / 80 *(mac-arm64)* |
+
+**`_Alignof` is not the ABI, and this is the trap.** On x86_64 gcc **reports 16 and lays the member out at 32**; clang reports 32 and lays it out at 32. The two references disagree about the *reported* alignment and agree exactly about the *layout*. Cross-TU compatibility depends on `offsetof`/`sizeof`, so **layout is the subject and `_Alignof` is not**. Anyone fixing this by making `_Alignof` return 32 would match clang, diverge from gcc on a value mcc currently gets right, and still have to fix the layout separately.
+
+**mcc's defect, precisely.** Not "the vector's alignment is 16" — mcc's `_Alignof` of 16 *agrees with gcc*. The defect is that mcc **uses that 16 for layout**, where both references use the vector's size. `struct{char; v32}` is 48 in mcc and 64 in both references; `v64` is 80 against 128.
+
+**The rule is per target, and no single constant expresses it:**
+
+- **x86_64, i386** — layout alignment = the vector's **size** (32 → 32, 64 → 64). i386 is the worse case, since `MCC_MAX_ALIGN` is 8 there.
+- **arm64** — layout alignment = **min(size, 16)**. Both references cap, mcc already matches, and **changing it would be a regression**. mac-arm64 measured this against gcc-16 and Apple clang.
+
+**So `MCC_MAX_ALIGN` is the wrong knob for a third reason**, beyond [the bare-`aligned` collision and the immune clamp](#t-lin-10012-blast-radius-measured-one-file-eleven-columns-and-no-32-byte-vector-anywhere): it is one per-arch constant feeding two policies that must now differ — the `_Alignof` mcc reports (which is already right everywhere) and the alignment it lays out with (which is wrong on x86 and right on arm64). Raising it moves both, on every target, in the same direction.
+
+**Which bank columns move, revised.** `int256_gates.c`'s `vector_size(64)` is the only banked object affected, and the per-target rule means **the x86_64 and i386 columns move; arm64 must not**. The earlier reading — "11 columns move" — was wrong because it assumed one rule for all targets.
+
+**The fixture this needs** is per target too: compile a 32-byte and 64-byte vector struct, cross-TU against that target's own reference cc, and assert `offsetof`/`sizeof` identical. On arm64 it must pass **unchanged**, which makes it that target's known-positive that no change was needed; on x86_64 and i386 it fails today and must pass after.
+
+**Source.** arm64 measured by mac-arm64; x86_64 and i386 measured on lin-x64, 2026-08-15.
