@@ -42855,3 +42855,21 @@ Three suite runs on the `windows-11-arm` runner, against the self-hosted arm64 m
 **Verification spec.** Not "the cell passes" — that is what a flaky cell does anyway. It is: **N consecutive dispatches of the same tree with zero SEGFAULTs**, N chosen from the observed crash rate (2 of 3 runs so far, so N must be well above 3 to mean anything).
 
 **Source.** Runs 31857205309, 31858218563 and 31859450414, lin-x64, 2026-08-15.
+
+<a id="t-lin-10367-slice-2-complete"></a>
+
+## T-lin-10367 slice 2 COMPLETE (mac-arm64) — the layout-committing Darwin headers
+
+All of slice 2 shipped, each ABI value cross-checked against the real Xcode SDK by compiling `sizeof`/macro values with system clang vs the mcc-authored header. 13 headers now under `runtime/osx/include`: slice-1's stdio/string/stdlib/math/assert/errno/ctype, plus slice-2's **setjmp, pthread, wchar, sys/mman, fenv, signal, unistd, fcntl, sys/wait, semaphore, sys/types, sched, time**.
+
+Verified constants worth recording (all matched the SDK): `_JBLEN` arm64=48; pthread opaque sizes (cond 48, mutex 64, attr 64, `__LP64__`-conditional); fenv per-arch rounding bits (arm64 `FE_DOWNWARD=0x00800000`, x86 `0x0400`); `W*` status-bit macros; `O_*` flags; `struct timespec`=16, `struct tm`=56, `CLOCK_REALTIME=0`, `CLOCKS_PER_SEC=1000000`; `struct sched_param` `__opaque[4]`.
+
+Two decisions banked in the code, both following from Q-mac-30000 (the set is a host-independent bank-key SUBJECT, not a model of the platform):
+- **Form may diverge, value may not** ([contract decision](#t-lin-10367-decision-portable-fixed-macros-not-sdk-exact-expansions)): `_W_INT(i)=(i)`, not the SDK's union-wait pointer-cast, so no type-punning construct enters an `-O0` body and the bank keys the corpus file, not the header.
+- **pthread.h #include's sched.h + time.h**, matching the Darwin SDK's own include graph (verified by `clang -H`), which is how `bound_signal.c` reaches `time()` without including `<time.h>` and how `threads.h` resolves.
+
+The `--min-files` floor rose 189 → 200 across the slice, self-ratcheted per "previous floor + files watched become gate-countable, always provably ≤ Linux" (lin measured and confirmed exact at every checkpoint that wasn't deferred for suite load). The one corpus file that can never compile off-Windows is `bound_setjmp2.c` (`windows.h`) — permanently out of scope, not pending.
+
+**What this unblocks:** [T-lin-10089](#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple)'s mac `[X]` half — the `--sysroot` wiring that points a Darwin build's bank-key pass at `runtime/osx/include`, and the re-key of the `ast/o0-baseline` quartet. Its DEPS were T-lin-10002[C] and T-lin-10367[C]; the latter's header content is now in place.
+
+**Source.** mac-arm64, 2026-08-15; slice 2 of lin-x64's T-lin-10367, pushed 6a614637.
