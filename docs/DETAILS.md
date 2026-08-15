@@ -45230,3 +45230,41 @@ mcc reports `dup-label.c:3: error: assembler label 'dupl' already defined`, **na
 **Cheaper alternative worth pricing first:** `tests/cross/no-compiler-abort.sh` already compiles a corpus and asserts mcc never aborts. A duplicate-label fixture there would prove the process survives, but *not* that the parser landed back in the right file — which is the half that matters, and the half a no-op unwind breaks. Whoever takes this should check whether that harness can adjudicate the diagnostic text before adding a shape to smokerun.
 
 **Source.** lin-x64, 2026-08-15.
+
+<a id="t-lin-10088-resolved-the-corpus-is-vendored-and-the-no-network-premise-is-dead"></a>
+
+## T-lin-10088 RESOLVED — the corpus is vendored, the "no network" premise is dead, and the corpus cells are live on Windows for the first time
+
+**Done 2026-08-15 (win-x64, host provisioning + verification, no new code).**
+The task was BLOCKED on "the corpus is absent and there is no network"; today's
+session re-fetched winlibs and installed the Vulkan SDK over that same network,
+so the premise was simply stale.
+
+**Provisioning, per the mac not-vendored convention:** a sparse partial clone
+of the GitHub gcc mirror (`gcc.gnu.org` itself 429-rate-limits clones) at
+`C:\Users\llg\Projects\gcc-torture`, sparse-checkout scoped to
+`gcc/testsuite/gcc.c-torture/execute`, and a directory junction
+`vendor/gcc-c-torture-execute` pointing at it. **1694 programs** at today's
+HEAD vs the 1,693 the task quotes — one program added upstream, absorbed with
+no exclusion-list change.
+
+**Verification:** `pe/x-oracle` + `pe/x-oracle-mutate` green (the W2
+reconstruction verdicts stand); after reconfigure the corpus cells REGISTER
+live for the first time on this box, and `slice/cref-oracle` +
+`slice/cref-oracle-gcc-c-torture-execute` PASS — the full-corpus slice
+differential ran 731.9 s through the extractor with the RTX 2060 dispatching.
+`optlevel/torture-differential` skips with an honest stated reason ("needs a
+POSIX host build") — a platform gate, not a corpus gap. Still absent and out
+of this task's scope: the llvm-test-suite corpora
+(`slice/cref-oracle-llvm-*`, `MCC_XSUITE_LLVMTS`) — the natural next
+provisioning step when T-lin-10030/win becomes takeable.
+
+**One near-miss recorded for whoever sees a mysteriously empty worktree:** a
+failed `git clone` left the shell's cwd in the mcc repo, and the follow-up
+`git sparse-checkout set gcc/testsuite/...` therefore scoped the MCC worktree
+to a nonexistent directory — every tracked file (docs/ included) vanished from
+disk while the objects stayed intact. Recovery is one command:
+`git sparse-checkout disable`. Chain clone-and-configure steps on `&&`, never
+`;`, when the first step changes directory.
+
+**Source.** win-x64, 2026-08-15.

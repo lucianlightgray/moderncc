@@ -38,10 +38,6 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-lin-10088 [X] win-x64 — vendor the exact `gcc-c-torture-execute` corpus for `pe/x-oracle`
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 534b4a08 | TS: 2026-08-15T14:55Z
-      REF: DETAILS.md#t-lin-10088-win-x64-vendor-the-exact-gcc | DEPS: — | NOTE: UNBLOCKED — the "no network" premise died today (winlibs + Vulkan SDK both fetched). Provisioning per the mac convention: host-local sparse gcc checkout, vendor/gcc-c-torture-execute junction, then pe/x-oracle over all 1,693 programs to confirm the W2 reconstructions with no new code
-
 ## Open — claimable
 - [ ] T-lin-10381 [S] `mcc_asm_inline_unwind`'s recovery lost its only test when the asm double-assembly fix removed its trigger
       OWNER: — | STATE: OPEN | SHA: 0d94d189 | TS: 2026-08-15T14:40Z
