@@ -42819,3 +42819,39 @@ mac-arm64 raised this on `sys/wait.h` and it is a contract-level question, so it
 **A caution this creates, recorded so it is not discovered by surprise.** Because the set now deliberately differs in form from the SDK, `runtime/osx/include` must never be used to reason about what a real Darwin build emits. It is a bank-key subject, not a model of the platform. Any future task that wants "what does mcc emit on Darwin" needs a native build against the SDK, which is a different measurement with a different name.
 
 **Source.** Raised by mac-arm64 at `fe40a482`; decided on lin-x64, 2026-08-15.
+
+<a id="t-lin-10371-a-nondeterministic-segfault-that-moves-between-cells"></a>
+
+## T-lin-10371 The WoA crash is not in any cell — it moves
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+Three suite runs on the `windows-11-arm` runner, against the self-hosted arm64 mcc:
+
+| run | tree | cells | fail | SEGFAULT |
+| --- | --- | --- | --- | --- |
+| 31857205309 | `9b16b65c` | 9403 | 30 | `exec-gatecombo/bitfield_width64`, `exec-search-threads/errors_and_warnings` |
+| 31858218563 | `214a0dc5` | 9405 | 25 | *none* |
+| 31859450414 | **`214a0dc5`** | 9405 | 26 | `exec-Os/run_atexit` |
+
+**Runs 2 and 3 are the same tree.** Same commit, same runner image, same command — one crashed and one did not, and when it crashed it crashed in a **cell that had passed in both previous runs**. Run 3's failure set is run 2's twenty-five *exactly*, plus the one crash. Nothing else moved.
+
+**What that settles.**
+
+- **The crash is not a property of any cell.** Three runs produced three different crashing cells and one clean run. Chasing `bitfield_width64` or `run_atexit` as defects would be chasing the cell the dice landed on.
+- **It is not the slice-3a merge.** That was the live hypothesis after run 2 and it is now dead: runs 2 and 3 share a tree, and the crash came back in run 3. (Slice 3b is not in any of these runs — `1dc90229` post-dates `214a0dc5`.)
+- **The 25 are real and deterministic.** They are byte-identical between runs 2 and 3, so [T-lin-10370](#t-lin-10370-woa-residual-failures-second-reading)'s residue is a stable subject and can be triaged normally.
+
+**So there are two subjects, not one**, and they were entangled while only one reading existed. T-lin-10370 keeps the 25 deterministic failures. This task takes the moving crash.
+
+**Why this one is worth more than its count suggests.** A segfault that lands on a different cell each run, under a 9405-cell parallel load on a 4-core box, is not a codegen bug in the program that happened to be running — it is a shared, load-dependent failure mode: a race, a resource exhaustion, or memory pressure reached through whichever cell is unlucky. The tree already carries [T-lin-10072](#t-lin-10072-lin-x64-optfireabs-and-optfirelevel-abs) and [T-lin-10073](#t-lin-10073-lin-x64-the-two-wine-run) for cells that fail *only* in a full parallel run, and this is the same shape on a third platform — which suggests the class, not the platform, is the subject.
+
+**How to attack it**, in the order that costs least:
+
+1. **Re-run to build a distribution.** The `woa/**` hook makes this a `workflow_dispatch`, so N runs of the same tree cost nothing but wall-clock. Three points is enough to prove non-determinism and nowhere near enough to characterise it. Record which cell crashes each time — if the set is unbounded, it is environmental; if it clusters, the cluster is the clue.
+2. **Serialise.** A run at `-j1` on the same tree separates load-dependence from ordering-dependence. If the crash vanishes at `-j1` it is contention; if it survives, it is not.
+3. **Only then** look at the cell, and only at whatever the distribution says the cells have in common.
+
+**Verification spec.** Not "the cell passes" — that is what a flaky cell does anyway. It is: **N consecutive dispatches of the same tree with zero SEGFAULTs**, N chosen from the observed crash rate (2 of 3 runs so far, so N must be well above 3 to mean anything).
+
+**Source.** Runs 31857205309, 31858218563 and 31859450414, lin-x64, 2026-08-15.
