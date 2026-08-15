@@ -26,10 +26,6 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-win-50011 [S] win-x64 — `bsweep.F16.FMULADD` and `F16.FSCALE` diverge-one on Windows, fold AND run; Linux does not diverge
-      OWNER: win-x64 | STATE: CLAIMED | SHA: 723e5f1a | TS: 2026-08-15T14:15Z
-      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: both .fold and .run diverge, so it is not just the constant folder — the fp16 emulation path differs per platform. Root-cause BEFORE banking; the divergence bank's rule is triaged findings only
-
 ## Open — claimable
 - [ ] T-mac-30004 [S] `spvgate` CASES has no f64 case: arm the SPIR-V arm's table on fp64 hosts
       OWNER: — | STATE: OPEN | SHA: 28ac8048 | TS: 2026-08-15T12:55Z
@@ -45,7 +41,7 @@
       REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: LLP64 plausibly removes narrow's shapes (no 64→32 narrowing when long is already 32), but four dark rows need four explanations; then either corpus shapes that light them on LLP64 or a target-keyed floor
 - [ ] T-win-50013 [S] win-x64 — mint `tests/smoke/bails-x86_64-windows.txt` per the arm64-macos precedent
       OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
-      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: T-win-50010[S], T-win-50011[S], T-win-50012[S] | NOTE: smokerun already probes bails-<key>.txt before falling back to the x86_64-linux bank. Measured Windows deltas today: O4 slice-refused:no-static-type 515→836, strat-dark:bfold new. Every row must be a triaged finding — bank AFTER the three investigations above, not instead of them
+      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: T-win-50012[S] | NOTE: smokerun already probes bails-<key>.txt before falling back to the x86_64-linux bank. Measured Windows deltas today: O4 slice-refused:no-static-type 515→836, strat-dark:bfold new. Every row must be a triaged finding — bank AFTER T-win-50012 concludes. PREREQUISITE (from T-win-50011): restore a real GNU gcc reference on the win box first (the mingw preset superbuild re-fetches winlibs GCC; scoop's only "gcc" is mstorsjo llvm = clang family, so every divergence currently reads diverge-one by construction and the category names would encode reference topology, not facts). T-win-50010 closed invalid, T-win-50011 closed: the F16 rows are the ALREADY-BANKED evaluation-format + NaN-payload divergence under a topology-renamed category
 - [ ] T-win-50014 [S] win-x64 — `pass-msstruct`'s pinned answer disagrees with real-MSVC-ABI clang-22 on Windows
       OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
       REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: clang-22 (MSVC-ABI default on Windows) prints `msstruct 20 2 8 3 8 4 8 12 5` against a different pin banked from Linux -mms-bitfields emulation. The fixture exists to check MS bit-field layout, and this is a real reference on the real platform — decide which side is right; mcc's ms-struct layout may be wrong vs genuine MSVC

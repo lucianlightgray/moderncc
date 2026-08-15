@@ -44242,3 +44242,52 @@ fix here. When the embed-JIT link lands (behind T-lin-10001 L2′), these three
 cells should go green with no further Windows work.
 
 **Source.** win-x64, 2026-08-15.
+
+<a id="t-win-50011-resolved-the-f16-divergence-is-the-banked-one-under-a-new-name"></a>
+
+## T-win-50011 RESOLVED — the F16 divergence is the already-banked one; only its category name is new, because this host has one reference family
+
+**Closed 2026-08-15 (win-x64, docs-only).** The task title's premise "Linux does
+not diverge" was wrong in an instructive way.
+
+**Per-point evidence (this box).** `subject --points bsweep.F16.FMULADD` diffed
+between the mcc build and the reference build: **80 differing points** (FMULADD)
+and **170** (FSCALE), in exactly three classes: NaN sign/payload propagation
+(`fe00` vs `7e00`/`7f00`), denormal-vs-zero (`0000` vs `8002`/`0006` — the
+reference preserves tiny subnormals where mcc's path yields zero), and 1-ulp
+double-rounding (`3e00` vs `3e01`). mcc's soft half<->float converters
+(runtime/lib/float16.c) are correctly-rounding RNE including subnormals; the
+differences come from the *evaluation format* — mcc evaluates F16 expression
+chains in float and truncates once, the references round to binary16 after each
+operation.
+
+**The Linux bank already contains this finding, under different verdict names.**
+`tests/smoke/bails.txt` banks `div diverge-both:bsweep.F16.FMULADD.{fold,run}`
+(mcc is the known outlier against two agreeing references) and
+`div diverge-refs:bsweep.F16.FSCALE.{fold,run}` (the references disagree with
+each other), with its header triaging FSCALE's 160 as "140 evaluation-format +
+20 NaN sign/payload". Same divergence, same magnitudes, same classes.
+
+**Why the category name changed on Windows — the actual finding.** On this box
+`ref_gcc()` resolves to scoop's `mingw-mstorsjo-llvm-ucrt/bin/gcc.exe`, which is
+**clang wearing a gcc name**; smokerun correctly detects one implementation
+family and drops the second reference, then every difference is reported
+`diverge-one` *by construction*. The divergence-bank category names encode the
+reference topology, so a bank taken under two references cannot match a host
+with one — a third variant of "green where it was written". Two consequences:
+
+1. **T-win-50013 (the Windows bails bank) has a prerequisite:** restore a real
+   GNU reference on this box first. The `vendor/winlibs-mingw-w64-*` toolchains
+   deleted by this session's `git clean -fxd` were exactly that (the `mingw`
+   preset's superbuild re-fetches winlibs GCC). With a true GNU gcc, the F16
+   rows should re-categorize as `diverge-both`/`diverge-refs`, matching the
+   Linux bank's verdicts where the underlying facts match, and the Windows bank
+   then records facts, not topology artifacts.
+2. Until then, treat any `diverge-one` from this box as unadjudicated: it means
+   "mcc differs from clang", nothing more.
+
+**No code change.** mcc's F16 evaluation format being the outlier is a known,
+deliberately-banked stance recorded in the bails.txt header; nothing new to fix
+under this task.
+
+**Source.** win-x64, 2026-08-15.
