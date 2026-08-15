@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T04:20Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T04:30Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T06:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
@@ -13,9 +13,6 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
-- [ ] T-lin-10089 [X] mac-arm64 — the `ast/o0-baseline` quartet is a visible skip with a real reason
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 84f96b9d | TS: 2026-08-15T04:20Z
-      REF: DETAILS.md#t-lin-10089-investigation-2-the-sysroot-wiring-works-native-298-objects | DEPS: T-lin-10002[C] DONE, T-lin-10367[C] content-complete | Q: Q-mac-30000 ANSWERED | NOTE: OBJECT BANK PROVEN host-independent — after lin's re-bank (84f96b9d) my native Darwin arm64-osx is BYTE-IDENTICAL to the committed bank; ast/o0-baseline + known-positive PASS natively. BLOCKED ON LIN (round 2): 84f96b9d re-banked the UNGATED boards only; the GATED boards (arm64/x86_64-osx.gated.rir.txt) are still a0e26cff, so ast/o0-baseline-gated fails on Darwin (fn 1399 vs stale 1398, +1 from the header change). Needs lin's 2nd re-bank line (O0_AB_GATES=1 MCC_DEV=1 O0_AB_BANK=1) committed; then mac drops the NOT-Darwin guard (CMakeLists 4224 + else twin 4270). Guard-drop reverted meanwhile
 
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone

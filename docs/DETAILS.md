@@ -42989,3 +42989,20 @@ That is this tree's signature defect — a measurement reporting success over a 
 **Landed.** Both `*.gated.rir.txt` columns plus `board.gated.txt`, from the gated `all` line, guard still on.
 
 **Source.** Gap found by mac-arm64 at `93c23a7b`; gated re-bank and the correction on lin-x64, 2026-08-15.
+
+<a id="t-lin-10089-done-the-quartet-runs-on-darwin"></a>
+
+## T-lin-10089 DONE — the `ast/o0-baseline` quartet runs on Darwin
+
+Closed at `c653850c`. The whole chain landed: slice-1+2 Darwin header set (T-lin-10367) → o0_ab's `*osx` branch wired to `runtime/osx/include` via `-nostdinc --sysroot`-equivalent (the T-lin-10089 wiring, lin `84f96b9d`) → both osx columns re-banked ungated (`84f96b9d`) and gated (`54540940`) against the mcc-authored headers. A native Darwin `mcc` then reproduces the committed bank **exactly**:
+
+- `arm64-osx.obj.txt` byte-identical to the committed bank (199 of 298 shas re-keyed vs the old glibc column, 0 rows differ from the new one), verified by `O0_AB_CHECK=1` and a raw `diff`.
+- `arm64-osx.gated.rir.txt` identical (`fn=1399 faithful=1364`).
+
+cross == native, measured on both hosts — the property Q-mac-30000's answer promised: the mcc-authored set gives the bank keys a host-independent subject, so the `*-osx` columns no longer encode the cross host's glibc (N38). So the `NOT MCC_TARGETOS STREQUAL "Darwin"` guard on the o0-baseline block came off, its `else()` skip-stub twin with it, and the stale N38 skip-reason was deleted.
+
+Two process notes worth keeping: (1) mac never re-banked from the native side — the object identity is a measurement, not a bank-from-whichever-host-ran-last, which is how N38 was built the first time. (2) lin caught and [corrected](#t-lin-10089-the-gated-boards-and-a-verification-i-overstated) that the first re-bank's ctest verification ran against `cmake-def` (native Linux, no cross compilers), so `measurable` silently skipped every cross key incl. the osx columns it claimed to prove — a cross column must be verified by a run that measured it (`cmake-cross`), never `cmake-def`.
+
+**Verification.** Natively on Darwin at `c653850c`: `ast/o0-baseline` + `-known-positive` + `-gated` + `-gated-known-positive` 4/4, corpusgate 6/6, treegate 12/12.
+
+**Source.** mac-arm64, 2026-08-15, at `c653850c`; the finish of the T-lin-10367 → T-lin-10089 Darwin-bank chain.
