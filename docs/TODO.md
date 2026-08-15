@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T05:10Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T05:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T09:10Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
@@ -13,6 +13,9 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
+- [ ] T-lin-10088 [X] carry the `gcc-c-torture-execute` corpus for the cref-oracle (was "for pe/x-oracle", was win-x64)
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 51d117a3 | TS: 2026-08-15T05:20Z
+      REF: DETAILS.md#fleet-capabilities-docker-qemu-on-all-three | DEPS: — | Q: Q-lin-10014 ANSWERED | NOTE: mac has the two things win lacks — the corpus (~/Projects/gcc from T-lin-10030, symlinked vendor/gcc-c-torture-execute) AND two independent oracles (real GNU gcc-16 + Apple clang, auto-detected). slice/cref-oracle-gcc-c-torture-execute now REGISTERS; running to green it (win's slice path is broken; mac's should work per the re-type). Result pending
 
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
@@ -30,9 +33,6 @@
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 ## Open — claimable
-- [ ] T-lin-10088 [X] carry the `gcc-c-torture-execute` corpus for the cref-oracle (was "for pe/x-oracle", was win-x64)
-      OWNER: — | STATE: OPEN | SHA: c5197398 | TS: 2026-08-15T03:05Z
-      REF: DETAILS.md#fleet-capabilities-docker-qemu-on-all-three | DEPS: — | Q: Q-lin-10014 ANSWERED | NOTE: win-x64 executed this and corrected two premises (see DETAILS). (1) `pe/x-oracle` does NOT read this corpus; the real consumer is `slice/cref-oracle-gcc-c-torture-execute`. (2) The corpus is NOT the only blocker: fetched 1694 progs via `git clone --filter=blob:none --sparse …gcc-mirror/gcc` + `sparse-checkout gcc/testsuite/gcc.c-torture/execute` → vendor/ (gitignored; no Docker, network works here); the cref cell now RUNS (134s over 1694) but is RED with `bodies=0 slices=0 tuples=0` — the same win-x64 slice-extraction gap as T-win-50003 Bucket A (the in-tree `slice/cref-oracle` is 0-tuples here too). Green needs the slice fix (mccgpu/slicerun owners'), NOT the corpus. Re-typed [X]→ any session: on lin-x64/mac-arm64 the same fetch should green the cell; win-x64 cannot demonstrate it (its slice path is what's broken)
 - [ ] T-lin-10045 [S] `-fopt-slice`: revise into the governor over every AST/RIR slice-capable strategy, integrated with the other slice optimizers
       OWNER: — | STATE: OPEN | SHA: 3749f816 | TS: 2026-08-15T02:30Z
       REF: DETAILS.md#q-lin-10006-answer-fopt-slice-is-the-governor-not-a-pass | DEPS: — | Q: Q-lin-10006 ANSWERED | NOTE: not "own or delete" — it was never a pass. Carries forward: the disk-cache determinism defect, and OPT_SLICE at MCC_OPTD_LEVEL(9) leaves opt-cache-determinism a permanent 77 with no subject. First slice = a shipped level with the determinism claim gated
