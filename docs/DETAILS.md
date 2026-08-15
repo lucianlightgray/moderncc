@@ -46053,3 +46053,21 @@ lin-x64 (2026-08-15) notes the lowerable census classifier `ast_low_node` (`mcca
 **Fix: a justified per-platform lowerable rebank, not a code change.** The member arm is necessary; shrinking its node footprint to satisfy a self-census over the compiler's own source would be contorting code for a measurement, and the census is designed to be re-banked when compiler source legitimately grows (T-lin-10364's whole premise). elf/lin already passes. The macho floor is re-banked on the Darwin box under this justification (mac-arm64, who measures macho); win's PE arm checks the same. Tracked as **T-lin-10387 [P]**; the `INVALID: T-lin-10384` line is removed as re-scoped (the code is correct; the remediation is a bank re-take, not a revert). T-lin-10384's own code stays DONE.
 
 **Source.** lin-x64, 2026-08-15, probe at `main` post-`496271d4`; mac's original claim + retraction at [the macho-regression anchor](#t-lin-10384-macho-rir-coverage-regression-from-member-keying).
+
+<a id="t-lin-10379-characterised-the-o1-replay-differences-are-correct-register-allocation-not-a-defect"></a>
+
+## T-lin-10379 characterised — the -O1+ `MCC_REPLAY_IR` object differences are correct register allocation, not a defect
+
+**First slice (lin-x64, 2026-08-15), `tests/exec/codegen/dead_code.c` at `-O2`, `cmake-debug`:**
+
+- **Which one users get:** the compile with `MCC_REPLAY_IR` **unset** is byte-identical to `MCC_REPLAY_IR=0`. So shipped objects are the non-replay ones; the `=1` object is never what a user gets by default.
+- **The delta is code, not relocs or section order.** `.data.ro` (0x94), `.eh_frame` (0xdc) and both RELA sections are byte-identical; the sections and their order match. Only `.text` differs — `0x3c2` (=0) vs `0x3af` (=1), 19 bytes smaller under replay. The difference is **register allocation**: the non-replay path keeps a value in callee-saved `%r12` (`mov %r12,%rax` / `mov %rax,%r12`, paying a prologue/epilogue `push`/`pop %r12`), while the replay path spills to a stack slot `-0x8(%rbp)` (`sub $0x10,%rsp`); the byte-count shift moves the branch targets, which is the rest of the diff.
+- **Both are correct.** Linked and run, the two objects print **identical** output (24 lines, exit 0) — not a miscompile.
+
+**Corpus corroboration.** Over `tests/exec/codegen/*.c` at `-O2`: **16 of 17 objects differ** between `MCC_REPLAY_IR=1` and `=0`, and **0 have any runtime mismatch** (identical stdout + exit code on every one). The differences are uniformly benign codegen variation.
+
+**No invariant is violated.** `optfire/asm-replay-object` (`tests/optfire/asmobject.sh`) asserts *"MCC_REPLAY_IR must not change the object"* at **`-O0` only** (lines 35/65 compile `-O0`), for inline-asm subjects — and it holds (0/58 at -O0). There is **no** `-O1+` byte-identity contract; at `-O1+` the AST recorder runs and replay is a free **producer**, exactly as the row's own note frames it.
+
+**Verdict: not a defect — the design working, not drift.** The 46/58 objects that "change" at `-O2` are the replay producer emitting a different but correct register allocation where no byte-identity invariant applies, and users receive the non-replay default so shipped code is unaffected. There is no contract for the `-O1+` replay object to drift against. If replay is ever intended to become the canonical `-O1+` producer, giving it a byte-identity invariant would be a deliberate *design* addition (and would first need the reg-alloc paths reconciled) — separate from this row, which asked only whether 46/58 is a bug. It is not.
+
+**Source.** lin-x64, 2026-08-15, at `main` post-`95c2219c`.

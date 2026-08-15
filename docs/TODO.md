@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:36Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T19:47Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T19:52Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T19:50Z |
 
 ## Contracts — blocking, highest priority
@@ -18,9 +18,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-lin-10379 [S] `MCC_REPLAY_IR=1` changes 46 of 58 corpus objects at `-O1` and above
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 7ea9be08 | TS: 2026-08-15T19:47Z
-      REF: DETAILS.md#t-lin-10379-mcc-replay-ir-changes-46-of-58-corpus-objects-at-o1-and-above | DEPS: — | NOTE: CLAIMED for the characterisation first slice — diff the MCC_REPLAY_IR=1 vs =0 objects for tests/exec/codegen/dead_code.c at -O2; say which one users get and whether the delta is code / relocs / section order. Do NOT call it a bug until known
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: PAUSED (heartbeat intentionally stale; TTL-eligible for any session to resume). slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
