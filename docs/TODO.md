@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T02:05Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10371   | 2026-08-15T06:05Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10371   | 2026-08-15T06:15Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
 ## Contracts — blocking, highest priority
@@ -281,8 +281,8 @@
         OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: —
   - [ ] T-lin-10092/lin [P] Record a clean full native suite number on each platform — lin-x64
-        OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: —
+        OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: fdfd7412 | TS: 2026-08-15T06:15Z
+        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: full native run in flight; also serves as the §8 per-task verification for today's slice 3a/3b, MCC_REF_CC and runtime/osx work
   - [ ] T-lin-10092/win [P] Record a clean full native suite number on each platform — win-x64
         OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 260bb900 | TS: 2026-08-15T01:55Z
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: NUMBER RECORDED (first ever on Windows): 9387 cells, 8388 pass / 945 skip / 54 fail at 9b21c352; 19 false-reds fixed at 260bb900 -> 8388 / 964 / 35. Not clean — the 35 residual reds are triaged in T-win-50003 (28 GPU-slice, 4 fp opt-search, 3 jit/runtime). @lin: number is landed, slice-3 (L2′) hold can release
