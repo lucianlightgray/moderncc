@@ -50,6 +50,8 @@ C11 6.3.2.1p3 makes decaying a `register` array undefined. mcc now rejects the f
 
 REF: DETAILS.md#q-lin-10004-register-arrays-follow-clang-and-reject
 
+**ANSWER (human, 2026-08-15):** Keep gcc's leniency. Both `a[1]` and `*(a+1)` stay accepted (Mode a) — mcc matches gcc here, not clang. T-lin-10011's remaining DoD, the accept-forms fixture, is written in the gcc mode: `a[1]` compiles.
+
 ### Q-lin-10005 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10012
 Raise `MCC_MAX_ALIGN` for 32-byte vectors, or keep the documented incompatibility?
 
@@ -60,6 +62,8 @@ Raise `MCC_MAX_ALIGN` for 32-byte vectors, or keep the documented incompatibilit
 **Cost if wrong:** Every object mcc has ever emitted that carries a 32-byte vector in a struct changes layout. The measurement — how many cells and how many banks move — is the first half of the task either way.
 
 REF: DETAILS.md#q-lin-10005-raise-mcc-max-align-for-32
+
+**ANSWER (human, 2026-08-15):** Raise `MCC_MAX_ALIGN` for 32-byte vectors (NOT Mode a). Do the ABI change so a 32-byte vector in a struct is laid at 32-byte alignment and is cross-TU-compatible with gcc. The blast-radius measurement (how many cells / banks move) is the first half of T-lin-10012 either way; carry it, then re-bank.
 
 ### Q-lin-10007 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10057
 `kept_coverage` host-sensitivity: raise `--tol`, make the metric host-stable, or encode "bank from stage2"?
@@ -72,6 +76,8 @@ The gcc-hosted and stage2 self-hosted compilers disagree: `fallback 98 / kept 82
 
 REF: DETAILS.md#q-lin-10007-kept-coverage-host-sensitivity-raise-tol
 
+**ANSWER (human, 2026-08-15):** Make the metric host-stable (NOT raise `--tol`, NOT a convention). Fix the gcc-host vs stage2 disagreement so `kept_coverage` produces the same figure regardless of which compiler hosts the measurement; then the floor is tool-enforced rather than a convention that can be got wrong silently. T-lin-10057.
+
 ### Q-lin-10008 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10040, and it re-ranks T-lin-10033 through T-lin-10038
 Is the 2026-08-09 device-path freeze still standing?
 
@@ -82,6 +88,8 @@ Six rows are frozen by that decision: the dispatcher (three subsystems, priced n
 **Cost if wrong:** Nothing is redone by waiting. Unfreezing without the decision would schedule three subsystems against a lever the break-even table already prices as negative.
 
 REF: DETAILS.md#q-lin-10008-is-the-2026-08-09-device
+
+**ANSWER (human, 2026-08-15):** NO — the 2026-08-09 device-path freeze is NOT still standing. **UNBLOCK.** The six frozen rows are schedulable again; T-lin-10040 unblocks and T-lin-10033–T-lin-10038 are re-ranked for scheduling.
 
 ### Q-lin-10010 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10058
 Should `node-census`'s `all_invokes_on_cpu` be gated at all, or reported only?
@@ -94,6 +102,8 @@ It is a ratio over the compiler's own source, so it moves whenever call density 
 
 REF: DETAILS.md#q-lin-10010-should-node-censuss-all-invokes-on
 
+**ANSWER (human, 2026-08-15):** Neither gate-as-is nor report-only. `node-census` should make an honest effort to run on all available hardware — CPU, JIT, GPU. Refactor to **auto-detect available hardware at runtime** and ungate the CPU/GPU paths so they run whenever the hardware is present, with the only overrides being explicit `--jit-always-cpu` / `--jit-always-gpu` flags. T-lin-10058.
+
 ### Q-lin-10011 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10064
 Arm the 63 `EXTRA` cells and take the three pre-existing divergences red?
 
@@ -105,6 +115,8 @@ Arming is one `-I` each and it goes red: at `-O0` `full_language.c` has 303 bodi
 
 REF: DETAILS.md#q-lin-10011-arm-the-63-extra-cells-and
 
+**ANSWER (human, 2026-08-15):** Do not simply arm-and-take-red. Convert the three pre-existing divergences (and red cells generally) into **investigation/research tasks plus implementation TODO tasks** — each divergence becomes a tracked item with a root-cause investigation and a fix task, rather than a masked or a loudly-red gate. T-lin-10064.
+
 ### Q-lin-10012 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10077
 Adopt `__divdc3`-style complex division?
 
@@ -115,6 +127,8 @@ N37's compiler half. `csweep.C64/C80.CDIV` and `CDIVSEL` hide 283 refs-agree poi
 **Cost if wrong:** If the answer is to adopt it, every `csweep` complex row is re-banked once.
 
 REF: DETAILS.md#q-lin-10012-adopt-divdc3-style-complex-division
+
+**ANSWER (human, 2026-08-15):** DO adopt `__divdc3`-style complex division (NOT Mode a). Replace mcc's current finite-case complex divide; re-bank every `csweep` complex row once against the new results. T-lin-10077.
 
 ### Q-mac-30001 — [mac-arm64] — 2026-08-15T00:23Z — BLOCKS: T-lin-10090
 How should the arm64 `if-conversion-abs` cycles/instructions re-take be produced, given no `perf` on Darwin and no arm64-Linux host in the fleet?
