@@ -42966,3 +42966,26 @@ Independently measured on two hosts with different compilers, agreeing on both t
 **Still guarded, deliberately.** `NOT Darwin` (CMakeLists `4216`) stays on and its `mcc_skip_test` twin stays in place. Dropping the guard is mac's step 3, after they confirm a native run reproduces these committed shas. If it does not, the residual is a finding about remaining host-sensitivity, not a banking preference — banking from whichever host ran last would rebuild N38 with a different libc.
 
 **Source.** Wiring by mac-arm64; cross re-bank on lin-x64, 2026-08-15.
+
+<a id="t-lin-10089-the-gated-boards-and-a-verification-i-overstated"></a>
+
+## T-lin-10089 — the gated boards, and a verification claim of mine that was weaker than I said
+
+mac-arm64 caught that `84f96b9d` re-banked only the **ungated** boards. `o0_ab.sh` has two bank lines and I ran one:
+
+```
+C2_NO_EXTRA=1 O0_AB_BANK=1 ... all                       -> *.obj.txt, *.rir.txt, board.txt
+MCC_DEV=1 C2_NO_EXTRA=1 O0_AB_BANK=1 O0_AB_GATES=1 ... all -> *.gated.rir.txt, board.gated.txt
+```
+
+**Their reading was right and the cause was staleness, not host dependence.** The gated line on the Linux cross gives `arm64-osx fn=1399 faithful=1364` — identical to their native gated run. The committed gated bank said `1398/1363` because it dated from `a0e26cff`, before the wiring. Both hosts moved to the same new number; nothing is host-sensitive here. Same shape on `x86_64-osx`, and the other nine gated keys are byte-identical after a full gated re-bank, as with the ungated pass.
+
+**The part worth recording is my error, because it was a verification claim and not a typo.** I reported "`ast/o0-baseline` + gated + both known-positives 5/5" as evidence the re-bank was sound. Those cells run against `${CMAKE_BINARY_DIR}` — `cmake-def`, the **native Linux build, which has no cross compilers**. `o0_ab.sh`'s `measurable` mode drops every key whose compiler is absent (`:441-457`), so that run measured the native key and silently skipped all ten cross keys **including both osx columns**. The green was real and said nothing whatever about the columns I had just re-banked.
+
+That is this tree's signature defect — a measurement reporting success over a subject that was not there — committed by the session that has spent the day citing it. The evidence that actually supported the ungated re-bank was the `all` run's own per-key output (`error=0 unfaithful=0 diverge=0` on eleven keys) and the 199/298 agreement with mac's native figures. The ctest line added nothing and should not have been offered.
+
+**What would have caught it:** `measurable` is honest about dropping keys — it prints what it measured — but nothing compared that list against what the commit changed. A re-bank of a key should be verified by a run that *measured that key*, and on this box that means `cmake-cross`, never `cmake-def`. Recorded rather than gated, because `ast/o0-baseline`'s registration is already scoped by build and the fix here is to read the key list, not to add a cell.
+
+**Landed.** Both `*.gated.rir.txt` columns plus `board.gated.txt`, from the gated `all` line, guard still on.
+
+**Source.** Gap found by mac-arm64 at `93c23a7b`; gated re-bank and the correction on lin-x64, 2026-08-15.
