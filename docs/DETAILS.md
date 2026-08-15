@@ -42351,3 +42351,25 @@ Both premises were true when S7b was written; the shutdown landed afterwards. Th
 **Sequencing.** Not started: win-x64 holds `T-lin-10092/win` IN_PROGRESS (full native suite, claimed 00:28Z) and this touches the JIT core on every platform. Implementation waits for their number to land.
 
 **Source.** Research on lin-x64, 2026-08-15, at `020b57c5`. Line numbers are as of that commit.
+
+<a id="t-lin-10093-mac-must-run-registered-green-on-darwin"></a>
+
+## T-lin-10093/mac — `ci/must-run-registered` is green on Darwin (141 rows registered)
+
+**Type** `[P]` child — **State** DONE (mac-arm64) — **DEPS** T-lin-10003[C] (satisfied)
+
+Run natively on this M1 Pro at 38e5a0ee (+ this docs edit), `cmake-macos` reconfigured with `CC=/usr/bin/cc`:
+
+```
+ctest --test-dir cmake-macos -R '^ci/must-run-registered$' --output-on-failure
+  ci/must-run-registered ... Passed
+  must-run: 141 row(s) satisfied
+```
+
+The cell runs `tools/must-run.py --manifest tests/must-run.txt --build cmake-macos` (no `--results`), so it asserts registration coverage: every one of the 141 `must-run.txt` rows names a cell this Darwin build actually registered (`must-run.py:114-118`). Zero `NOT REGISTERED` violations — the failure mode the task was opened for (cells hidden behind a copy-pasted `NOT Darwin`/`if(UNIX AND NOT APPLE)` predicate with no `else() mcc_skip_test(...)` arm, so they vanish on Darwin) does not occur on this build. Note this is the registration half only; it does not assert the 141 run or pass (that needs `--results` from a suite run, which is T-lin-10092/mac's job).
+
+Sits beside [[T-win-50001]] (win registered its six missing cells via else-branch stubs) and the T-lin-10003 gate-contract work: registration coverage is now green on Darwin here and on Windows (T-win-50001 DONE). The `[P]` parent T-lin-10093 stays open until `/lin` lands and `/win` clears its selfhost block (its cells are skip-stubbed at CMakeLists 7331 pending a Windows/MSVC selfhost, per T-lin-10093/win's NOTE).
+
+**Verification.** `ctest --test-dir cmake-macos -R '^ci/must-run-registered$' --output-on-failure` exits 0 natively on Darwin; `treegate` 12/12.
+
+**Source.** Verified on mac-arm64, 2026-08-15, autonomous tick after the T-mac-30002 acceptance.
