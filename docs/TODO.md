@@ -38,6 +38,10 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
+- [ ] T-win-50017 [S] win-x64 — `diff3/floating_point`: mcc differs from the 2/2-reference consensus, first-ever Windows run
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 2879f46c | TS: 2026-08-15T14:30Z
+      REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: triage slice — suspect is mcc's MSVC 64-bit long double vs the mingw references' x87 model; if confirmed it needs the diff3 harness's impl-defined classification, not a code change
+
 ## Open — claimable
 - [ ] T-lin-10374 [S] Two builds of identical mcc source do not produce identical binaries
       OWNER: — | STATE: OPEN | SHA: 8dd00e11 | TS: 2026-08-15T13:25Z
@@ -51,9 +55,6 @@
 - [ ] T-win-50016 [S] — `slice/f64`: 3 of 22 fp64 negations diverge CPU↔device on the RTX 2060 (1 of 111 checks)
       OWNER: — | STATE: OPEN | SHA: 05ea60f8 | TS: 2026-08-15T13:45Z
       REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: the real device-numerics red formerly mis-binned as "0 slices on Windows" — now precisely measured with the device visible. fp64 NEGATION class; mac's T-lin-10042 MSL slice 1 made exactly this bit-exact on Metal (integer negation of the bits-pair) — the SPIR-V arm on NVIDIA likely diverges on NaN-payload negation. gpu/slicerun owners (lin/mac) with win-x64 as the confirming box
-- [ ] T-win-50017 [S] win-x64 — `diff3/floating_point`: mcc differs from the 2/2-reference consensus, first-ever Windows run
-      OWNER: — | STATE: OPEN | SHA: 05ea60f8 | TS: 2026-08-15T13:45Z
-      REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: the cell could never run before today (needs two real references). Suspect but untriaged: mcc's MSVC 64-bit long double vs the mingw references' x87 model — if so it needs the diff3 harness's impl-defined classification, not a code change; if not, it is a real divergence with a 2-ref consensus against mcc
 - [ ] T-win-50018 [S] win-x64 — `libtest-extra` output_obj: "mcc: error: 'mcc_relocate()' twice is no longer supported"
       OWNER: — | STATE: OPEN | SHA: 05ea60f8 | TS: 2026-08-15T13:45Z
       REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: libmcc API surface; plausibly fallout from the mccjit/libmcc rework (mccjit_shutdown/PUB_FUNC churn). Win-visible; owner likely lin (libmcc.c) — verify whether Linux libtest-extra runs this case at all
