@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T13:45Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10379   | 2026-08-15T13:58Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10380   | 2026-08-15T14:05Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50019   | 2026-08-15T13:45Z |
 
 ## Contracts — blocking, highest priority
@@ -20,16 +20,16 @@
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
 - [ ] T-lin-10378 [S] Inline asm writing a non-`.text` section emits it TWICE under `MCC_REPLAY_IR`, and `rir_parity` calls it `rfaithful`
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 2c0cad5f | TS: 2026-08-15T13:52Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 7ea9be08 | TS: 2026-08-15T14:05Z
       REF: DETAILS.md#t-lin-10378-inline-asm-that-writes-a-non-text-section-emits-it-twice-under-replay-and-the-gate-calls-it-faithful | DEPS: — | NOTE: found narrowing T-lin-10064; the fourth and worst symptom of the same double-assembly defect, and the only one nothing reports. `void f(void){ asm(".data; .int 0x11223344; .text"); }` gives .data 4 bytes plain, 8 with replay; .pushsection .rodata duplicates identically; reproduces at -O1 WITHOUT MCC_RIR_FORCE. Verdict is rfaithful because rir_verify_body compares only the function's .text span — the gate is not silent, it is INCAPABLE of seeing the class, in both directions. MCC_REPLAY_IR is env-only and default 0 (mccrir.c:6520), no CMake option sets it, so no shipped miscompile; but o0_ab measurement B, c2_equiv, rir_parity and optfire/asmreplay all set it. Two halves: (1) the shared fix with T-lin-10375/10376/10377 — replay the captured bytes instead of re-assembling, so the .data emission happens exactly once; (2) INDEPENDENT of that, rir_verify_body must stop reporting rfaithful over an effect it never examined
 - [ ] T-lin-10377 [S] `rir_parity` `rdiverge:asmgen@N` — a forward reference between two asm bodies encodes differently on replay
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 2c0cad5f | TS: 2026-08-15T13:52Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 7ea9be08 | TS: 2026-08-15T14:05Z
       REF: DETAILS.md#t-lin-10064-root-caused-all-three-rir-parity-divergences-are-one-defect-inline-asm-is-assembled-twice | DEPS: — | NOTE: filed by T-lin-10064, one of three, and the only one that moves code bytes. Reproducer, two lines: `void f(void){ asm(".text; jmp p0"); asm(".text; p0=.; nop"); }` -> rdiverge:asmgen@3. On the capture pass `p0` is an unresolved forward reference patched later; on the replay pass it is already defined, so the reference encodes differently. Subject: asm_dot_test (legacy_meta.h:524), which stacks this with `.`-arithmetic and symbol reassignment across four switch arms. SHARED root cause with T-lin-10375/10376
 - [ ] T-lin-10376 [S] `rir_parity` `runfaithful:reloc@-1` — replay leaks an undefined global for a function-local static named in inline asm
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 2c0cad5f | TS: 2026-08-15T13:52Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 7ea9be08 | TS: 2026-08-15T14:05Z
       REF: DETAILS.md#t-lin-10064-root-caused-all-three-rir-parity-divergences-are-one-defect-inline-asm-is-assembled-twice | DEPS: — | NOTE: filed by T-lin-10064, one of three, and the one that is NOT only a verification artefact. Reproducer: `void f(void){ static int s=41; asm("incl %0":"+m"(s)); }`. The object gains a spurious `NOTYPE GLOBAL UND s` beside the correct `OBJECT LOCAL s` — 5 symtab entries plain, 6 with replay — and it reproduces at -O1 on the plain MCC_REPLAY_IR=1 path WITHOUT MCC_RIR_FORCE. Nothing references the leaked symbol so a link still succeeds today, but the object with replay on differs from the object with it off, which is the exact property the A/B exists to defend. Subject: asm_local_statics (legacy_meta.h:397). SHARED root cause with T-lin-10375/10377
 - [ ] T-lin-10375 [S] `rir_parity` `rerror` — a named label in an inline-asm body is redefined on replay
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 2c0cad5f | TS: 2026-08-15T13:52Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 7ea9be08 | TS: 2026-08-15T14:05Z
       REF: DETAILS.md#t-lin-10064-root-caused-all-three-rir-parity-divergences-are-one-defect-inline-asm-is-assembled-twice | DEPS: — | NOTE: filed by T-lin-10064, one of three. Reproducer, one line: `void f(void){ asm volatile("named: .long 0"); }` -> rerror; the same body with a NUMERIC label (`1:`) is rfaithful, which is the proof the mechanism is double assembly rather than anything about globality or section. Subject in the corpus: get_asm_string (tests/diff/parts/legacy_meta.h:357). SHARED root cause with T-lin-10376/10377 — the fix is one of the two directions at the REF anchor, and whoever takes this should expect to close all three
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
@@ -43,6 +43,9 @@
       REF: DETAILS.md#t-lin-10042-slice-1-msl-f64-bits-pair | DEPS: — | NOTE: taking it on the restored RTX 2060 per mac's recipe: (1) CASES-mode f64 skip (all-rungs-skip must print SKIP, not 0-compared FAIL), (2) unguard f-notneg/f-ternary from #if MCC_GPU_LANG_MSL, (3) bump spv-validate EXPECT measured with --emit-only, (4) take T-lin-10061's denormal reading while at it. VK_LOADER_LAYERS_DISABLE caveat applies to every run
 
 ## Open — claimable
+- [ ] T-lin-10379 [S] `MCC_REPLAY_IR=1` changes 46 of 58 corpus objects at `-O1` and above
+      OWNER: — | STATE: OPEN | SHA: 7ea9be08 | TS: 2026-08-15T14:05Z
+      REF: DETAILS.md#t-lin-10379-mcc-replay-ir-changes-46-of-58-corpus-objects-at-o1-and-above | DEPS: — | NOTE: measured while checking whether the T-lin-10375..10378 asm fix had leaked; it had not — the identical 46/58 comes from a compiler built at HEAD without the fix, in its own build dir. -O0 0/58, -O1 16/58, -O2 46/58. NOT obviously a defect: at -O1+ the AST recorder runs and replay is a PRODUCER, so emitted code coming from replay is the design; what is unestablished is whether 46/58 is that design working or drifting, and nothing in the tree says which objects should move or why. -O0 is the only level where the invariant is asserted (optfire/asm-replay-object). FIRST SLICE is characterisation, not a fix: diff the two objects for tests/exec/codegen/dead_code.c at -O2 and say which one users get and whether the delta is code, relocs or section order. Do not call it a bug until that is known
 - [ ] T-lin-10374 [S] Two builds of identical mcc source do not produce identical binaries
       OWNER: — | STATE: OPEN | SHA: 8dd00e11 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10012-the-binary-diff-instrument-that-did-not-work | DEPS: — | NOTE: found doing T-lin-10012, where binary identity was reached for as a proof and had to be discarded. Control: rebuilding cmake-cross twice from IDENTICAL source (touch one header, change nothing) yields an mcc-arm64 differing in 1,104,183 bytes. The tree neither has reproducibility nor states that it does not, and several checks would like to lean on it. First slice = name the source of the nondeterminism (build id / __DATE__ / amalgamation order / link order), then decide whether to fix it or bank the non-claim

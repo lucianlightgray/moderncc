@@ -44850,3 +44850,71 @@ of the day (after the clang-in-gcc-costume collapse, the MSVC-clang
 compiler-rt hole, and the f80 bank wall): on Windows, "what the references
 agree on" is only evidence when the references do not share the quirk under
 test.
+
+<a id="t-lin-10375-10378-fixed-stop-assembling-the-body-twice-and-full-language-reaches-303-303"></a>
+
+## T-lin-10375/10376/10377/10378 FIXED — stop assembling the body twice, and `full_language.c` reaches the 100% bar for the first time
+
+All four symptoms of [the one defect](#t-lin-10064-root-caused-all-three-rir-parity-divergences-are-one-defect-inline-asm-is-assembled-twice) are closed by a **six-line net deletion** in the compiler.
+
+**The change.** `ir_cap_asm` recorded the asm body's *text* as an `IR_OP_ASM` op, and replay called `mcc_assemble_inline` on that text a second time. It now records nothing and simply assembles once:
+
+```c
+void ir_cap_asm(const char *str, int len, int global) {
+	ir_cap_asm_n++;
+	mcc_assemble_inline(mcc_state, str, len, global);
+}
+```
+
+The bytes and relocations the body emitted are then outside any captured op, so **`ir_cap_gap()` picks them up as an `IR_OP_RAW`** — the mechanism that already existed for exactly this, whose replay is a `memcpy` of captured bytes plus a `memcpy` of captured relocations. `ir_cap_gap` runs at every `ir_cap_begin` and once more at `ast_func_end` before `rir_verify`, so no trailing span is missed. Nothing was added; the wrong replay was removed and the right one was already there.
+
+**Why replaying bytes is not a weaker check than re-deriving them.** An asm body's output is not a function of the captured IR — it is a function of opaque text the compiler does not model. Re-deriving it proves nothing about the capture, which is what the A/B is for, and the re-derivation was *wrong* in four distinct ways. What the count now means is visible rather than folded in: `[rir-total]` gained **`asmraw=`**, the number of asm bodies whose span was copied rather than re-derived (45 on `full_language.c`).
+
+**Measured, on the subject that has never met the bar.** `MCC_REPLAY_IR=1 MCC_RIR_FORCE=1` over `tests/diff/full_language.c` at `-O0`:
+
+| | before | after |
+| --- | --- | --- |
+| `fn` | 303 | 303 |
+| `rfaithful` | 299 | **302** |
+| `rempty` | 1 | 1 |
+| `rerror` | 1 | **0** |
+| `runfaithful` | 1 | **0** |
+| `rdiverge` | 1 | **0** |
+| capbytes `unfaithful` | 248 | **0** |
+
+`faithful + empty == fn`, so **`rir_parity`'s hard 100% bar is met on `full_language.c` for the first time**, and the object mcc emits for that file is now byte-identical with `MCC_REPLAY_IR` on and off. That is the condition [T-lin-10064's answer](#q-lin-10011-answer-divergences-become-tracked-investigation-and-fix-tasks) set for arming the 63 `EXTRA` cells.
+
+**`ast/o0-baseline` does not move, measurement B included.** Still `fn=1331 faithful=1296 empty=35 unfaithful=0` on x86_64 — the `tests/exec` corpus contains no asm body that mutates assembler state, which is the same reason the class went unseen. No re-bank.
+
+**The instrument that was missing, and why four symptoms lived through a cell built to catch them.** `optfire/asm-replay-recover` already compiles an asm-bearing subject under `MCC_REPLAY_IR=1` at five opt levels — and compares **what the program prints**. A duplicated `.data` emission, a leaked undefined symbol and a redefined label are all invisible to stdout, so the cell was structurally blind to every one of them. The new `optfire/asm-replay-object` compares **the object**: same source, `-c` at `-O0`, with and without replay, byte-for-byte. Its subject carries all four shapes (named label, function-local static operand, cross-statement forward reference, `.data` and `.pushsection` writes); watched red on all four before the fix, green after. `optfire/asm-replay-object-known-positive` plants an extra `.data` emission on the replay side only and requires it caught. Both are `tests/must-run.txt` rows; the gate carries a `tests/gate-contract.txt` row with an intrinsic floor (a plain object with no asm-defined symbol is refused, so a subject compiled out on non-x86 cannot report agreement) — `--min-rows` 103 → 104, `--min-proved` 53 → 54.
+
+**Residue, stated rather than left.** `IR_OP_ASM` is now never created, so `ir_cap_issue`'s `case IR_OP_ASM:`, the arena conversion at `src/mccrir.c:3278` and `AST_OP_ASM`'s replay at `src/mccast.c:6257` are dead. They are kept rather than deleted because they are correct if the op is ever revived, and because reviving the op without the double-assembly bug is a legitimate future move. What makes that safe is not the reading: `optfire/asm-replay-object` reds the moment anything re-assembles a body, so the regression has a registered guard rather than a comment.
+
+**One thing measured and deliberately not claimed.** At `-O1` and above, `MCC_REPLAY_IR=1` changes **46 of 58** corpus objects. That is **pre-existing and unrelated** — the identical 46 of 58 was measured with a compiler built at `HEAD` without this change, in its own build directory, before concluding anything. The new cell therefore asserts the object-identity invariant at `-O0` only, where it is true and load-bearing. Whether it *should* hold at `-O1+` is a separate question with a separate subject, filed as [T-lin-10379](#t-lin-10379-mcc-replay-ir-changes-46-of-58-corpus-objects-at-o1-and-above).
+
+**Verification.** `optfire/asm-replay-object` + known-positive green; `ci/gate-contract`, `ci/gate-contract-known-positive`, `ci/must-run-registered`, `ci/registration-stubs` green with the tightened pins; `ast/o0-baseline` unchanged; `full_language.c` 303/303.
+
+**Source.** lin-x64, 2026-08-15.
+
+
+<a id="t-lin-10379-mcc-replay-ir-changes-46-of-58-corpus-objects-at-o1-and-above"></a>
+
+## T-lin-10379 — `MCC_REPLAY_IR=1` changes 46 of 58 corpus objects at `-O1` and above
+
+Measured while checking whether [the asm double-assembly fix](#t-lin-10375-10378-fixed-stop-assembling-the-body-twice-and-full-language-reaches-303-303) had leaked, and kept because the answer to that question is interesting on its own.
+
+Compiling the first 58 files of `tests/exec` twice, `-c` with and without `MCC_REPLAY_IR=1`:
+
+| level | compared | objects that differ |
+| --- | --- | --- |
+| `-O0` | 58 | **0** |
+| `-O1` | 58 | 16 |
+| `-O2` | 58 | **46** |
+
+**Pre-existing, established rather than assumed.** The same probe run against a compiler built at `HEAD` in its own build directory, without the asm fix, gives the identical 46 of 58 at `-O2`. The fix neither caused it nor changed it.
+
+**Why this is a question and not obviously a defect.** `tools/o0_ab.sh` records that the AST recorder does not run at `-O0` (`ast_replay_env` needs `optimize >= 1`), so at `-O1+` replay is a *producer* rather than only a verifier, and emitted code coming from the replay is the design. What is not established is whether 46 of 58 differing is that design working or that design drifting: nothing in the tree states which objects are expected to move, by how much, or why, and no cell compares them. `-O0` is the only level where the invariant "replay must not change the object" is currently asserted, by `optfire/asm-replay-object`.
+
+**First slice** is to characterise one differing object rather than to fix anything: take `tests/exec/codegen/dead_code.c` at `-O2`, diff the two objects, and say which of the two is the one users get and whether the difference is code, relocations or section ordering. Until that is known, the row should not be described as a bug.
+
+**Source.** lin-x64, 2026-08-15.
