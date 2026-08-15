@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T07:35Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T07:40Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T15:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50005   | 2026-08-15T14:05Z |
 
@@ -12,6 +12,10 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+
+- [ ] T-lin-10373 [S] `trace-gate-invariant` integrity: the file-arming test misses two of its own accepted openers
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 3acffeb1 | TS: 2026-08-15T07:40Z
+      REF: DETAILS.md#t-lin-10373-tracegate-integrity-three-gaps-found-while-executing-q-mac-30002 | DEPS: — | Q: Q-mac-30002 ANSWERED | NOTE: claimed by mac-arm64 — the T-lin-10079 follow-on, my area. Executing lin's three gaps in order: (1) arm the file on any accepted opener (MCC_TRACE/_IF/_WHEN), not literal MCC_TRACE( only; (2) delete dead arg_is; (3) register trace-gate-known-positive from the idiomgate template + wire treegate/must-run + drop the gate-contract unproved ratchet
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
@@ -27,9 +31,6 @@
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: T-lin-10002[C] | NOTE: flip landed in-tree (libmcc.c mcc_set_output_type: default -c OBJ on PE -> COFF, gated by new output_format_explicit so -Wl,-oformat=pe-x86-64 still yields ELF and =coff unchanged); coff-obj-diff.sh negative control moved to explicit-ELF. Building + verifying pe/coff-obj-diff, then re-bank o0-baseline (native key) + arm64pe_diff
 
 ## Open — claimable
-- [ ] T-lin-10373 [S] `trace-gate-invariant` integrity: the file-arming test misses two of its own accepted openers
-      OWNER: — | STATE: OPEN | SHA: 3acffeb1 | TS: 2026-08-15T15:00Z
-      REF: DETAILS.md#t-lin-10373-tracegate-integrity-three-gaps-found-while-executing-q-mac-30002 | DEPS: — | Q: Q-mac-30002 ANSWERED | NOTE: found executing Q-mac-30002's "no hole in the gate" constraint. (1) tracegate.c:256 arms a file on the literal `MCC_TRACE(` only, but check_open accepts MCC_TRACE / _IF / _WHEN — a file instrumented solely with _IF/_WHEN is NEVER scanned, gate reporting nothing over an empty subject. Latent today, worsens as _WHEN adoption grows. One-line fix, do this first. (2) arg_is (tracegate.c:126) is dead code, superseded by arg_is_n at ddbc14c8 — delete. (3) gate-contract.txt:111 is `unfloored | unproved` and the known-positive the Q-mac-30002 answer cites was a manual fixture, never registered — no trace-gate-known-positive cell exists. Registering it is what makes (1) unable to recur; template cmake/idiomgate_known_positive.cmake + CMakeLists.txt:3615-3621, add to MCC_TREEGATE_CELLS (:9224) + must-run.txt; the unproved ratchet may only fall. T-lin-10079 (the src/mccircap.c half) is now DONE at d2054030 — this row is the whole of what remains, and it did NOT go live in the process: mccircap.c still carries 32 literal `MCC_TRACE(` lines alongside its 46 `MCC_TRACE_WHEN(`, so the file is still armed and gap (1) stays latent. It goes live the day a file is instrumented with _WHEN/_IF only
 - [ ] T-lin-10057 [S] Make `kept_coverage` host-stable, so the floor is tool-enforced instead of a convention
       OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
       REF: DETAILS.md#q-lin-10007-answer-make-kept-coverage-host-stable | DEPS: — | Q: Q-lin-10007 ANSWERED | NOTE: UNBLOCKED. Human chose host-stable — explicitly NOT raising `--tol` and NOT encoding "bank from stage2" as a convention. DoD: the same tree measured from a gcc host and from a stage2 self-hosted compiler yields the same kept_coverage within the EXISTING --tol of 0.05pp, without widening it. Today they disagree: fallback 98 / kept 82.7770 (gcc host) vs 100 / 82.7139 (stage2) at -O0 — a 0.06pp spread outside tol, so banking from a gcc host re-breaks CI, which tests the stage2 tree. Once it holds, "bank from stage2" stops being a rule
