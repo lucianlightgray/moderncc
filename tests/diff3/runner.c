@@ -202,6 +202,20 @@ static int intentional_divergence(const char *name) {
 			"bitfields_ms",
 			"cleanup",
 	};
+#ifdef _WIN32
+	/* On Windows mcc's long double is the MSVC model (64-bit, matching the
+	 * ucrt printf it links), while both mingw references keep the x87 80-bit
+	 * model and hand it to the same 64-bit-expecting ucrt printf -- their %L*
+	 * lines print garbage zeros and the "2/2 consensus" is two compilers
+	 * sharing one ABI quirk. mcc's output is the coherent one; the exec
+	 * golden suite guards the actual values. */
+	static const char *const list_pe[] = {
+			"floating_point",
+	};
+	for (size_t i = 0; i < sizeof list_pe / sizeof *list_pe; i++)
+		if (!strcmp(name, list_pe[i]))
+			return 1;
+#endif
 	for (size_t i = 0; i < sizeof list / sizeof *list; i++)
 		if (!strcmp(name, list[i]))
 			return 1;
