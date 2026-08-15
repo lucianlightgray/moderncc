@@ -228,9 +228,10 @@ key_flags() {
 		FLAGS="-B $S/runtime/win32 -B $S/runtime -I $S/runtime/include" ;;
 	*osx)
 		MCC=$BUILD/mcc-$1
-		FLAGS="-B $S/runtime -I $S/runtime/include"
+		FLAGS="-B $S/runtime -nostdinc -I $S/runtime/osx/include -I $S/runtime/include"
 		if [ ! -x "$MCC" ] && key_is_native "$1"; then
-			MCC=$BUILD/mcc; FLAGS="-B $BUILD"
+			MCC=$BUILD/mcc
+			FLAGS="-B $BUILD -nostdinc -I $S/runtime/osx/include -I $S/runtime/include"
 		fi ;;
 	arm)
 		MCC=$BUILD/mcc-arm

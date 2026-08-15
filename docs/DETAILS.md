@@ -42937,3 +42937,32 @@ Applied in `check_embed` and `check_run`. Known-positive floor: a `getpid()`-bas
 **Unblocks T-lin-10030/mac:** the embed-JIT arm64 conformance + coverage now pass natively with the corpora provisioned host-local.
 
 **Source.** mac-arm64, 2026-08-15, at `20a82ad3`.
+
+<a id="t-lin-10089-the-cross-re-bank-lands-199-of-298"></a>
+
+## T-lin-10089 — the cross re-bank lands, and it reproduces mac's native count exactly
+
+The Linux half of the joint finish mac-arm64 scoped at [investigation 2](#t-lin-10089-investigation-2-the-sysroot-wiring-works-native-298-objects). Their `key_flags()` wiring is applied and both `*-osx` columns are re-banked from the cross compilers, in one commit, with the `NOT Darwin` guard still on.
+
+**The wiring** (`tools/o0_ab.sh:229-235`) gives the `*osx` arm the same libc path the `osx/headers-parse` gate uses: `-nostdinc -I runtime/osx/include -I runtime/include`, on both the cross arm and the native fallback. Before it, the `*-osx` columns encoded whatever libc the *host* mcc found, which is N38's root cause.
+
+**Re-banked from `all`, not from a subset, and that is load-bearing.** `o0_ab.sh` refuses `O0_AB_BANK=1` with `measurable` (`:458`) — a board may not be banked from a partial measurement. Running `all` demands every one of the eleven keys and all eleven cross compilers were present, so the re-bank is over the whole board. Every key came back `error=0 unfaithful=0 diverge=0 unbal=0 ovf=0`.
+
+**What moved, which is the self-verifying part.** Only five files: `arm64-osx.{obj,rir}.txt`, `x86_64-osx.{obj,rir}.txt`, `board.txt`. The other nine keys are **byte-identical** after a full re-bank, which is exactly what the wiring predicts — it touches the `*osx` arm and nothing else. A re-bank that moved an unrelated column would have meant the wiring reached further than intended, and running `all` is what makes that checkable rather than assumed.
+
+**The number that matters:**
+
+| | mac, native Darwin | lin, Linux cross |
+| --- | --- | --- |
+| `arm64-osx` objects | 298 | **298** |
+| shas changed | 199 of 298 | **199** |
+
+Independently measured on two hosts with different compilers, agreeing on both the object count and the count of changed keys. That is not proof of sha-identity — mac's step 3 is what establishes that — but the two numbers a mismatch would most likely disturb are identical.
+
+**`x86_64-osx` gained three objects** (300 → 303), which is mac's last-gap work landing: `wctype.h`, `locale.h`, `inttypes.h` and `math.h`'s `float_t` were added for exactly the corpus files that could not compile before, and those files now produce objects. `arm64-osx` is net zero (199 changed, none added), matching mac's "same file set as the bank".
+
+**Verification.** `ast/o0-baseline`, `-known-positive`, `-gated`, `-gated-known-positive` all green (5/5 including the fixture); `ctest -L corpusgate` 6/6. The known-positives passing matter more than the gate here: they prove the re-banked columns can still go red, so this is a moved bank rather than a loosened one.
+
+**Still guarded, deliberately.** `NOT Darwin` (CMakeLists `4216`) stays on and its `mcc_skip_test` twin stays in place. Dropping the guard is mac's step 3, after they confirm a native run reproduces these committed shas. If it does not, the residual is a finding about remaining host-sensitivity, not a banking preference — banking from whichever host ran last would rebuild N38 with a different libc.
+
+**Source.** Wiring by mac-arm64; cross re-bank on lin-x64, 2026-08-15.
