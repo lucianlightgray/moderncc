@@ -46524,3 +46524,89 @@ while finding this. Any session may take it on this evidence.
 
 **Source.** lin-x64, 2026-08-15; read from `CMakeLists.txt:8917-8996`,
 `tools/o0_ab.sh:216-248`, and host inventory. No fetch performed.
+
+<a id="t-lin-10388-host-local-provisioning-vanishes-silently-and-each-loss-is-re-recorded-as-a-fleet-fact"></a>
+
+## T-lin-10388 Host-local provisioning vanishes silently, and every loss gets re-recorded as a permanent fleet property
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+**Corrects and supersedes the "NOT PROVEN" hedges in
+[the T-mac-30006 re-pricing](#t-mac-30006-option-a-is-executable-on-lin-the-tree-ships-the-downloader),
+written an hour earlier by the same session.** That note said the stage3 fetch
+route was untested from this host. It is not untested — it *ran here and
+worked*, and the note was written without having found the anchor that says so.
+Appended rather than edited: `DETAILS.md` is union-merged and §4.1 forbids
+editing existing lines.
+
+**The route is proven, not hypothetical.**
+[M-TODO-0004](#the-sysroots-landed-and-the-coverage-they-unblocked-found-a-test-defect--2026-08-13)
+(2026-08-13) records `vendor/gentoo-stage3-{i386,arm,arm64,riscv64}-glibc`
+**fetched, 6.6 GB**, `ctest -L qemu` **39 of 39**, and
+`run-tier/{i386,arm,arm64,riscv64}` — execution cells that had never run —
+passing. The same anchor records the *other* half of what was lost, in a
+sentence that reads today like a prophecy: *"And one that was missing and is
+not any more: `vendor/gcc-c-torture-execute`, symlinked at `~/Projects/gcc`.
+Until it was, `optlevel/torture-differential` skipped silently."* That is
+**precisely** the symlink recreated today and **precisely** the cell found
+stubbed today ([anchor](#lin-corpus-provisioning-complete-all-four-cref-corpora-live)).
+The same gap was opened, closed, reopened and closed again on one machine
+inside three days.
+
+**That host is lin-x64.** M-TODO-0004/0005 describe a 32-core x86_64-linux box
+running full suites at `-j32` out of `cmake-def`, with the gcc corpus symlinked
+at `~/Projects/gcc`. This box has 32 cores, is x86_64 Linux, and has
+`~/Projects/gcc`. The
+[pre-reboot handoff](#lin-x64-handoff-2026-08-15-preboot) puts `cmake-def/mcc`
+built here at 06:24:13 on 2026-08-15. **`cmake-def` does not exist on this box
+now** — the build dirs are `cmake-{cross,debug,jitdev,prefix}`.
+
+**What is fact and what is inference,** kept separate on purpose:
+
+| | |
+| --- | --- |
+| **Fact** | lin had the four stage3 sysroots and the corpus symlinks on 2026-08-13, evidenced by 39/39 qemu cells and 4 passing `run-tier` cells |
+| **Fact** | lin had `cmake-def` at 06:24 on 2026-08-15; it is absent now |
+| **Fact** | the handoff records removing four worktrees, *"reclaiming 25 GB"*, around a planned reboot |
+| **Fact** | `vendor/` today holds only `musl-src` (Jul 6) and `qemu` (Jul 10) — nothing dated later survived |
+| **Fact** | no `gentoo-stage3-*` and no `.fetched` marker exist anywhere on the machine; one worktree, no sibling checkout |
+| **Inference** | the provisioning was lost in that cleanup/reboot. The surviving July directories say it was not a blanket `rm -rf vendor/`, so the exact mechanism is **not** established |
+
+**The defect is not the loss — it is that nothing notices.** When 6.6 GB of
+sysroots and a corpus symlink disappear, no cell fails. Every dependent cell
+converts to an `mcc_skip_test` echo stub and the suite still reports green, so
+the loss is indistinguishable from a host that never had them. The fleet then
+does the rest: the next session reads the skip text, believes it describes the
+*fleet*, and writes it into a task as a permanent property. Two rows already
+carry that damage —
+[T-lin-10359](#t-lin-10359-slicecref-oracle-stalls-on-five-programs) ("the gcc
+c-torture corpus is not provisioned") and
+[T-mac-30006](#t-mac-30006-o0-baseline-4-bare-elf-keys-are-unmaintainable-no-session-box-has-the-gentoo-sysroots)
+("NO current box has the gentoo sysroots", escalated to a HUMAN/infra
+decision). Both were written about a box that had had the thing days earlier.
+
+**It also silently corrupts the fleet's headline numbers.**
+[M-TODO-0005](#m-todo-0005-the-clean-full-suite-number-for) quotes lin at
+**10025 cells, zero failures** (2026-08-14, provisioned). The post-reboot
+[T-lin-10092/lin](#t-lin-10092-lin-the-linux-full-native-suite-is-clean) quotes
+**10062 cells, 1011 skipped, 9051 run, 0 failures** and reads as equally clean.
+It is not the same measurement: a large part of that 1011 is capability that
+*was present and is gone*. Both numbers are honest; nothing in either says the
+subject shrank.
+
+**Direction (first slice is a detector, not a re-provision).** A cell that
+asserts the host's provisioning state — for each optional local resource, the
+cell records whether the box is *expected* to have it and fails when something
+that was present goes missing, instead of degrading to a stub. That is
+[T-mac-30006](#t-mac-30006-o0-baseline-4-bare-elf-keys-are-unmaintainable-no-session-box-has-the-gentoo-sysroots)
+option (c) — *"make the measurable-key set an asserted manifest so a silent
+drop is caught"* — generalised past `o0-baseline` to every host-local resource,
+and it is worth noting option (c) independently answers this row while option
+(a) does not. Re-provisioning lin is the cheap immediate step and is **not** the
+fix; without a detector the next reboot reopens all of it.
+
+**Verification.** Remove a provisioned resource, re-run the suite, and require a
+named failure rather than a larger skip count. Until such a cell exists, the
+honest statement is that the tree cannot tell these two states apart.
+
+**Source.** lin-x64, 2026-08-15, at `ff037fb5`. Found while holding T-lin-10359.
