@@ -45017,6 +45017,7 @@ raised from `nofb_work()` executing the stage-1 compiler the cell had just linke
 | family, `-j 8` | ctest | **red**, at cell 6 of 1477, alongside `mcc_cross_build` |
 | family, `-j 6` | ctest | **red**, at cell 6 of 1477, same place |
 | standalone ×3 | direct | **green**, identical numbers every time |
+| standalone, the cell's exact argv | direct | **green** at all four levels, `rc=0` |
 
 Standalone it is not merely green but *stable*: 71 divergent bodies in `src/mcc.c`, 66 benign, 0 MISCOMPILE, 5 vacuous, the same five names (`cplx_extract_const`, `gen_cast`, `merge_funcattr`, `merge_symattr`, `update_gnu_hash`) — from a compiler built with the [asm double-assembly fix](#t-lin-10375-10378-fixed-stop-assembling-the-body-twice-and-full-language-reaches-303-303) and from one built without it. Same answer, both times.
 
@@ -45024,7 +45025,9 @@ Standalone it is not merely green but *stable*: 71 divergent bodies in `src/mcc.
 
 **Fix direction, cheap and obvious once the mechanism is named.** Give the cell a private working directory — a `tempfile.TemporaryDirectory()`, or `bdir/nofb-<pid>` — instead of three fixed names in the build directory everything else shares. The cell already uses a tempdir (`td`) for its objects; only the *executables* were put somewhere shared, and nothing needs them to be there.
 
-**Not yet proved, and stated so the row is not closed on it.** That concurrent access is what removes the file is inference from the four runs, not a caught race. The confirming experiment is one command — `ctest -R rir-nofb-probe-self` alone versus the same cell inside a `-j` family run, repeated — and it has not been run enough times to call it. What *is* established is that the cell's answer does not vary, only its ability to find its own binary, and that the binary lives somewhere it did not need to.
+**The standalone arm was then run with the cell's exact argv**, `--levels O0,O1,O2,O3` rather than the `--levels O0` the first standalone checks used, because a standalone run that is not the same run proves less than it appears to. All four levels, `rc=0`, **0 MISCOMPILE** at each: 71/66 benign at `-O0`, 70/65 at `-O1`, 68/63 at `-O2` and `-O3`, the same five vacuous names throughout. It ran for over five minutes; the ctest failures both landed at about thirteen seconds.
+
+**Not yet proved, and stated so the row is not closed on it.** That concurrent access is what removes the file is inference from the five runs, not a caught race. The confirming experiment is one command — `ctest -R rir-nofb-probe-self` alone versus the same cell inside a `-j` family run, repeated — and it has not been run enough times to call it. What *is* established is that the cell's answer does not vary, only its ability to find its own binary, and that the binary lives somewhere it did not need to.
 
 **Source.** lin-x64, 2026-08-15.
 
