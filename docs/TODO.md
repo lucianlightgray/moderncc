@@ -38,10 +38,6 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-win-50017 [S] win-x64 — `diff3/floating_point`: mcc differs from the 2/2-reference consensus, first-ever Windows run
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 2879f46c | TS: 2026-08-15T14:30Z
-      REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: triage slice — suspect is mcc's MSVC 64-bit long double vs the mingw references' x87 model; if confirmed it needs the diff3 harness's impl-defined classification, not a code change
-
 ## Open — claimable
 - [ ] T-lin-10374 [S] Two builds of identical mcc source do not produce identical binaries
       OWNER: — | STATE: OPEN | SHA: 8dd00e11 | TS: 2026-08-15T13:25Z

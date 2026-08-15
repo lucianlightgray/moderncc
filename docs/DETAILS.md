@@ -44821,3 +44821,32 @@ interaction with this task.
 
 **Source.** win-x64, 2026-08-15. Trial at working-tree state over 901e103e;
 fixture committed; flip reverted.
+
+<a id="t-win-50017-resolved-the-2-2-consensus-was-one-shared-abi-quirk"></a>
+
+## T-win-50017 RESOLVED — the 2/2-reference consensus against mcc was one ABI quirk shared by both references, and mcc's output is the coherent one
+
+**Fixed 2026-08-15 (win-x64, code SHA 9a66bed0).** `diff3/floating_point` green
+in a vcvars ctest; Linux behavior untouched.
+
+**The measurement.** All three binaries exit 0 and print 40 lines; 13 differ,
+and every differing line is a `%L*` long-double line: mcc prints real values
+(`69.120000 -631.327870`) where gcc AND clang both print `0.000000`. Sizes:
+mcc `sizeof(long double)` = 8 (the MSVC model, matching the ucrt printf it
+links); mingw gcc = 16 (x87 80-bit) — and the mingw references hand those
+80-bit values to the same 64-bit-expecting ucrt printf, so their own output is
+the garbage. A consensus built from two compilers sharing one ABI quirk
+adjudicates nothing.
+
+**The fix is classification, not code:** `floating_point` joins the diff3
+runner's intentional-divergence list under `#ifdef _WIN32` (the mechanism
+documented at the site). On Linux the cell agrees three ways and remains a
+live comparison. The same class will explain any future PE-host diff3 red
+whose differing lines are exactly the `%L*` ones — check that signature before
+suspecting codegen.
+
+**Source.** win-x64, 2026-08-15. This is the fourth reference-topology finding
+of the day (after the clang-in-gcc-costume collapse, the MSVC-clang
+compiler-rt hole, and the f80 bank wall): on Windows, "what the references
+agree on" is only evidence when the references do not share the quirk under
+test.
