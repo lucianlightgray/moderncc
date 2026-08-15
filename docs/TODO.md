@@ -290,4 +290,6 @@ _Empty — Q-lin-10007/10008/10010/10011 were answered 2026-08-15 and all four t
 
 ## Invalidations             ← shared, append-only; removed only on re-scope (§5.2)
 
+INVALID: T-lin-10384 AS-OF b1f912b5 BY mac-arm64 — rir-coverage RED on macho (lowerable ratchet: nodes_pct 42.7748 < banked 42.8407 on 3060 pre-existing bodies, revert-proven b1f912b5); DONE not green on mac. REF: DETAILS.md#t-lin-10384-macho-rir-coverage-regression-from-member-keying
+
 
