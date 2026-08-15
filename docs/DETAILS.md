@@ -46157,3 +46157,16 @@ dpkg -s mesa-vulkan-drivers | sed -n 's/^Version: /CI lavapipe (mesa-vulkan-driv
 **Verification.** Both files parse as YAML; the record command, fed a simulated `dpkg -s` block, emits `CI lavapipe (mesa-vulkan-drivers) version: 26.0.8-1ubuntu1`. (The CI run itself is a GitHub-Actions artifact and not reproducible on the dev host; the change is a one-line log statement with no build or test effect, so local YAML + command validation is the applicable gate.)
 
 **Source.** lin-x64, 2026-08-15, `main@3ecab5d3`.
+
+<a id="t-lin-10059-resolved-matrix-yml-builds-spvgate-and-the-three-cells-are-must-run-enforced"></a>
+
+## T-lin-10059 resolved — matrix.yml builds spvgate and the three cells are must-run-enforced
+
+**Verified resolved-by-prior-work (lin-x64, 2026-08-15).** Both halves the row asked for are in the tree at HEAD:
+
+- **Immediate fix — matrix.yml passes the Vulkan include.** `matrix.yml` installs `libvulkan-dev` (line 105) and its stage2 configure sets `vkinc="-DVulkan_INCLUDE_DIR=/usr/include"` when `/usr/include/vulkan` exists, passing it through (lines 162-168). The in-file comment quotes this row verbatim — *"gpu/spv-slice-{differential,known-positive,real} are never registered — 8913 cells instead of 8916 — and nothing reports the loss. ci.yml already passes this; matrix.yml did not."* So `spvgate` now builds on the Linux matrix cells and the three cells register. Confirmed locally: `ctest -N` lists `gpu/spv-slice-differential` (#50), `-known-positive` (#51), `-real` (#52).
+- **The real fix — must-run enforcement.** The row itself said *"the must-run manifest is the real fix."* All three cells are in `tests/must-run.txt` (lines 24-26) tagged `registered`, with the note *"vanished silently when matrix.yml omitted libvulkan-dev."* `ci/must-run-registered` checks every `registered` row appears in the build's test list on every build — so if any of the three ever silently drops again, that cell fails rather than the loss going unreported.
+
+No code change is owed: the one-line configure fix and the durable manifest guard both already landed (the manifest note is dated to the same investigation); the row was left open. Closing on the verification — 8916 not 8913, the three cells in `ctest -N`, now guarded so it cannot regress silently.
+
+**Source.** lin-x64, 2026-08-15, verified at `main@05847954`.
