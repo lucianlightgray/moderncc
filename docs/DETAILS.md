@@ -43777,6 +43777,7 @@ Wired as the `smoke/strat-dark` ctest cell (`CMakeLists.txt:4695`, `--strat-dark
 
 **Source.** mac-arm64, 2026-08-15; implemented at `67c58d5f`, gated and green on this box.
 
+<<<<<<< Updated upstream
 
 <a id="t-lin-10373-done-all-three-tracegate-gaps-closed-and-the-known-positive-locks-them"></a>
 
@@ -43817,3 +43818,53 @@ That failure is also the [load-sensitive class](#load-sensitive-measurements-fiv
 **Branches and worktrees, deliberately kept:** `woa/bootstrap` is [T-lin-10371](#t-lin-10371-a-nondeterministic-segfault-that-moves-between-cells)'s re-dispatch ref — deleting it breaks that row's documented next action. Four agent worktrees hold work that no longer merges, tracked by T-lin-10372. The four whose commits were already upstream were removed, reclaiming 25 GB.
 
 **Source.** lin-x64, 2026-08-15.
+=======
+<a id="t-win-50008-arena-take-crash-compiling-src-mcc-c"></a>
+
+## T-win-50008 win-x64 — the arena take crashes (0xc0000409) compiling `src/mcc.c`
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+Found while doing T-lin-10083; root-caused 2026-08-15 (win-x64 + investigation agent).
+`slice/arena-intern-cap`, `fmt/arena-census-bank`, `fmt/arena-census-known-positive`
+are listed in [T-win-50003](#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged)
+Bucket A as "0 slices / produced nothing" — that triage is **wrong**: they CRASH. mcc
+exits `0xc0000409` (STATUS_STACK_BUFFER_OVERRUN — MSVC `/GS` cookie or a CRT `__fastfail`)
+while the arena take compiles `src/mcc.c`. Not from the COFF flip: plain `mcc -c src/mcc.c`
+succeeds in both COFF and ELF (rc=0).
+
+**One defect, three symptoms.** All three run mcc's `MCC_ARENA_DUMP` intern/dump path,
+active only when AST-replay is engaged (`ast_replay_ok(ast_cur)`, src/mccast.c:20794 →
+`ast_adump_body()` :20958). `slice/arena-intern-cap` sets `MCC_ARENA_DUMP_ICAP=16`
+(cmake/slicerun_interncap.cmake:14-17) to force the intern **overflow/ifail** path; its
+driver's `FATAL_ERROR` (:20) fires because the process dies rather than emitting
+`[intern-overflow]` and continuing. `fmt/arena-census-*` (tools/fmt-census.py:610
+`arena_take`) compile the amalgamated `src/mcc.c` at `-O1` under `MCC_ARENA_DUMP` (no ICAP,
+table grows large) and fail on returncode!=0 OR a missing dump (fmt-census.py:632) — a crash
+or a not-written dump trips both from one root.
+
+**Windows-specific? Both.** `/STACK:8388608` is already set (CMakeLists.txt:1520-1522), so
+it is not the default 1 MB stack. Either `/GS` catches a genuine buffer/stack overrun that is
+silent UB on glibc GCC/Clang, or guard-page exhaustion from unbounded recursion on
+`src/mcc.c`'s largest bodies. Latent on all platforms; only the /GS-instrumented MSVC binary
+faults loudly.
+
+**Suspect sites (src/mccast.c):** `ast_adump_intern` overflow branch :15475-15505;
+`ast_adump_ifail` saturation/truncation :15418-15435 (the routine the driver text fingers);
+`ast_adump_igrow` rehash masks with `& (ncap-1)`, correctness needs `ncap` power-of-two
+:15437-15473; recursive walkers on the replay/dump path, the scale-sensitive candidates on
+`src/mcc.c`'s giant functions — `dump_rec` :692, `ast_low_walk` :3252, `type_size` :15515.
+`ast_low_base_ptr` already caps at depth>8 (:3256) — the dump/replay walkers do not.
+
+**Fix direction.** (1) Make intern-exhaustion provably non-fatal + bounds-clean: once the
+ceiling is hit, return 0 and set `ast_adump_on=0` with no further table access; assert
+`(ncap & (ncap-1))==0` at grow. (2) Reproduce under `cmake-sanitize-msvc` (`mcc_s.exe`, ASan)
+compiling `src/mcc.c` with replay/RIR-prod on — ASan names the exact frame `/GS` reports
+generically (plain cmake-debug/cmake-msvc have the dump inert for this fixture, so cannot
+repro). (3) If it is recursion depth, add a depth cap / iterative worklist to the dump/replay
+walkers as done for `ast_low_base_ptr`.
+
+**Verification.** `slice/arena-intern-cap` emits `[intern-overflow]` and exits 0 with ICAP=16;
+`fmt/arena-census-bank(-known-positive)` compile `src/mcc.c` under `MCC_ARENA_DUMP` and write a
+dump. All three green in a vcvars ctest on win-x64.
+>>>>>>> Stashed changes
