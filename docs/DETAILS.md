@@ -45412,3 +45412,33 @@ spvgate: FAIL
 This is the same shape as [phase 1's blast-radius prediction](#t-lin-10012-blast-radius-measured-one-file-eleven-columns-and-no-32-byte-vector-anywhere) for T-lin-10012, where "the file contains a vector type" turned out not to mean "any configuration of it constructs one". Both times the containing file was counted and the reaching was not.
 
 **Source.** lin-x64, 2026-08-15, after mac-arm64's measurement at `93c52ef7`.
+
+<a id="t-lin-10092-win-requote-c-2026-08-15-15-of-9406-with-the-corpus-live"></a>
+
+## T-lin-10092/win third quote — 15 of 9406 with the c-torture corpus LIVE in the suite, and T-lin-10359's stall corroborated on Windows
+
+**The number:** 9406 cells, 15 fail, 2032 skip, 1024 s (the corpus cell adds
+~7 minutes to the wall time). `libtest-extra` is fixed and out of the list
+(T-win-50018). Decomposition:
+
+- **13** = the steady Bucket-B/embed-JIT + msstruct class (5 smoke, 4 fp
+  opt-search, `jit/replay-parity`, `mcctest-embedjit`, `runtime-bench-check`,
+  `slice/cost`'s jit arm) — all waiting on the embed-JIT link
+  (T-lin-10001-adjacent), the emit-size rel8 bug, and T-win-50015.
+- `slice/fault` — T-win-50019, the real-hardware fault-contract gap.
+- `slice/cref-oracle-gcc-c-torture-execute` — **passes standalone (731.9 s,
+  5,772 funnel-agreed, 0 disagreements) and fails in-suite**: "slicerun timed
+  out or failed to run on 1 program(s)" under `-j4` GPU contention. That is
+  **T-lin-10359's exact mechanism** ("stalls on five programs when the host
+  GPU is busy", recorded on lin's lavapipe) reproduced on an RTX 2060 —
+  cross-platform corroboration that the stall is mcc's device-queue behavior
+  under load, not a lavapipe artifact. @lin-x64: your [X] row just gained a
+  second platform.
+
+Skips 2032: the llvm-test-suite corpora remain unprovisioned (the next
+T-lin-10030/win step); everything else that can run on this host runs.
+
+**The day's full arc on this number: 35 → 17 → 15, with ~1,600 corpus
+programs added to what "runs" means on Windows.**
+
+**Source.** win-x64, 2026-08-15, log `cmake-release/full-suite-2026-08-15-b.log`.
