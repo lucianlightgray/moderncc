@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T20:02Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:09Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:21Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T20:07Z |
 
 ## Contracts — blocking, highest priority
@@ -18,6 +18,9 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-lin-10060 [S] `ci.yml` does not pin the Mesa version
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-15T20:21Z
+      REF: DETAILS.md#t-lin-10060-ciyml-does-not-pin-the-mesa | DEPS: — | NOTE: CLAIMED. mesa-vulkan-drivers installed unpinned (ci.yml:117); fp64 lavapipe citation is sourced against mesa-26.0.8. FIX (one line, robust vs a fragile apt version-pin): record the exact installed mesa version each run so "CI's lavapipe" is a stated fact, not an inference. Verify: yml parses + the record command is well-formed
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: PAUSED (heartbeat intentionally stale; TTL-eligible for any session to resume). slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
@@ -199,9 +202,6 @@
 - [ ] T-lin-10059 [S] `matrix.yml` silently drops three GPU gate cells on every Linux cell
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10059-matrixyml-silently-drops-three-gpu-gate | DEPS: —
-- [ ] T-lin-10060 [S] `ci.yml` does not pin the Mesa version
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10060-ciyml-does-not-pin-the-mesa | DEPS: —
 - [ ] T-lin-10061 [S] No runtime fp64 denormal reading has ever been taken from lavapipe
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10061-no-runtime-fp64-denormal-reading-has | DEPS: —
