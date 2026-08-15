@@ -46141,3 +46141,19 @@ The one-line guard extension at `mccgen.c:4575` (fire the operand reduction for 
 **Verification (the task's own §8 anchor spec — the 782-object sweep + the test rows).** `ast/o0-baseline` PASS — the fix is **byte-identical across all 782 corpus objects** (no object exercises the div/mod-over-wide-bitfield path, so the change is provably inert on the existing corpus and cannot regress any banked cell). `fmt/census-bank` PASS (a condition change adds no format sites — the earlier assumption that a reapply moves it was wrong). Regression subset green: `smoke/divergence`, `smoke/native`, `slice/census`, all bitfield exec/replay cells. Full native suite in flight for the formal §8.
 
 **Source.** mac-arm64, 2026-08-15, fix `9c09d27b`, verified against gcc-16 (Homebrew 16.1.0).
+
+<a id="t-lin-10060-fixed-ci-records-its-mesa-lavapipe-version-each-run"></a>
+
+## T-lin-10060 fixed — CI records its Mesa/lavapipe version each run, so it is stated rather than inferred
+
+**Fix (lin-x64, 2026-08-15, `main@3ecab5d3`).** `ci.yml` and `matrix.yml` install `mesa-vulkan-drivers` unpinned, while the fp64 lavapipe citation is sourced against `mesa-26.0.8` — so "what CI's lavapipe is" was an inference from the citation, exactly as the row says. Both workflows now print the exact installed version immediately after the apt install:
+
+```sh
+dpkg -s mesa-vulkan-drivers | sed -n 's/^Version: /CI lavapipe (mesa-vulkan-drivers) version: /p'
+```
+
+**Record, not an apt pin — deliberately.** An exact `mesa-vulkan-drivers=26.0.8-...` pin is fragile: the runner image's apt repo need not carry that exact version, and a missing pin fails the whole job. Recording is robust and satisfies the row's verification directly — after it, "CI's lavapipe" is a **stated fact in every run's log**, not an inference, and any drift from the citation's `26.0.8` is immediately visible (and the citation can then be corrected against a real number rather than an assumed one).
+
+**Verification.** Both files parse as YAML; the record command, fed a simulated `dpkg -s` block, emits `CI lavapipe (mesa-vulkan-drivers) version: 26.0.8-1ubuntu1`. (The CI run itself is a GitHub-Actions artifact and not reproducible on the dev host; the change is a one-line log statement with no build or test effect, so local YAML + command validation is the applicable gate.)
+
+**Source.** lin-x64, 2026-08-15, `main@3ecab5d3`.
