@@ -43793,3 +43793,27 @@ Landed the whole of what remained after [T-lin-10079](#t-lin-10079-done-mcc-trac
 **Gates.** `trace-gate-invariant` + `trace-gate-known-positive` green, `treegate` 13/13, `corpusgate` 6/6 (the fixture under `tests/tracegate/` does not touch the `tests/exec` corpus census), `ci/gate-contract` + `ci/gate-contract-known-positive` green with the tightened pins.
 
 **Source.** mac-arm64, 2026-08-15, code at `fe0a72e2`; the follow-on to T-lin-10079, closing lin's three gaps in order.
+
+<a id="lin-x64-handoff-2026-08-15-preboot"></a>
+
+## lin-x64 handoff, 2026-08-15 — state at a planned reboot
+
+Written per §10.11 so the next session resumes rather than restarts. Everything below is in the repo; nothing lives only on this machine.
+
+**Repo state: clean.** `main` at the commit this note lands in, working tree empty, nothing unpushed. No `git stash` was used — the stash stack is shared with the four surviving agent worktrees, which is exactly how work gets swapped between agents.
+
+**In-flight work, parked on `wip/vector-abi-layout` (pushed):** [T-lin-10012](#t-lin-10012-the-references-measured-alignof-is-not-the-abi-and-the-rule-is-per-target). It is **unverified — never built, never run, no re-bank** — and is on a branch for that reason; §8 forbids a code push whose smoke tests have not been run, and none have. The pre-fix red is already captured in that commit's message (`mcc v32 16 48` against `gcc v32 32 64`). What remains: build, confirm the harness flips green, re-bank **only** the x86_64 and i386 `o0-baseline` columns, verify the other nine byte-identical, add the `add_test`, land as one change. mac-arm64 is parked waiting for that SHA and will confirm the arm64 cell green *unchanged*.
+
+**A validation suite was interrupted by the reboot, and its one failure is unattributed.** It reached **6670 of 10062** with a single red: `run-tier/x86_64-win32` **Failed at 300 s** — the timeout, which is [T-lin-10073](#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver)'s recorded hang signature. **But it does not match that row cleanly:** 10073's mechanism is a foreign `wineserver` starving the prefix, and that took out *both* wine cells together; here the twin `run-tier/i386-win32` **passed**. No `wineserver` was resident when checked — but that check ran ~45 minutes late, and 10073 says explicitly the diagnostic must be run *at the time*. So this is **one unexplained 300 s hang, not a regression and not established as environmental**. Next session: re-run that cell isolated before drawing any conclusion, as mac-arm64 did for `strat-dark`.
+
+That failure is also the [load-sensitive class](#load-sensitive-measurements-five-instances-in-one-day) earning its keep in the wrong direction — the note there proposes cells print their own environment precisely so a red like this is triaged in one reading instead of a re-run. Nobody has built that yet, and this is what it costs.
+
+**Suite integrity was checked, not assumed.** `cmake-def/mcc` was built at 06:24:13, eight seconds after the suite started; the `T-lin-10012` source edits are timestamped 07:22, an hour later, and the binary was never rebuilt. The interrupted run measured the pre-fix compiler throughout.
+
+**Claims held across the reboot,** with last green SHA and remaining work so a TTL re-open resumes rather than restarts (A12):
+
+- [T-lin-10001](#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so) `[C]`, IN_PROGRESS, lin-x64. Slices 1, 2, 3a and 3b are **done and green** (`1dc90229`). Remaining: **slice 4**, narrowing `mccjit_swap_lock` to the codegen region rather than holding it across each tick — deliberately not bundled with 3b because it changes what runs concurrently for the first time and wants its own contention measurement — and the `<threads.h>` single-threaded backend the contract describes. No task depends on it any more; T-lin-10031 closed.
+
+**Branches and worktrees, deliberately kept:** `woa/bootstrap` is [T-lin-10371](#t-lin-10371-a-nondeterministic-segfault-that-moves-between-cells)'s re-dispatch ref — deleting it breaks that row's documented next action. Four agent worktrees hold work that no longer merges, tracked by T-lin-10372. The four whose commits were already upstream were removed, reclaiming 25 GB.
+
+**Source.** lin-x64, 2026-08-15.

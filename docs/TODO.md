@@ -17,7 +17,7 @@
 
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T01:55Z
-      REF: DETAILS.md#t-lin-10001-slice-3a-the-pool-job-becomes-a-tick | DEPS: — | NOTE: hold released by win-x64; slice 3a DONE at c6c26c64 (job->run is now job->tick, quit re-read between ticks, behaviour identical, 79/79 green). Slice 3b = split sd_job_heavy + the bound assertion + reconcile jit/selftest-shutdown's `done == accepted`, which IS the unbounded property written as a requirement — all one unit, see DETAILS
+      REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
@@ -78,7 +78,7 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10010-implement-reversed-scalar-storage-order | DEPS: —
 - [ ] T-lin-10012 [S] 32-byte vectors are laid at 16-byte alignment, so cross-TU to gcc is incompatible
-      OWNER: — | STATE: OPEN | SHA: 3acffeb1 | TS: 2026-08-15T15:00Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 3acffeb1 | TS: 2026-08-15T15:00Z
       REF: DETAILS.md#t-lin-10012-the-references-measured-alignof-is-not-the-abi-and-the-rule-is-per-target | DEPS: — | Q: Q-lin-10005 ANSWERED | NOTE: human chose the ABI change, NOT the documented-incompatibility hold. PHASE 1 + 1b DONE (measurement only, no code): they REVISE the instrument the answer named. (a) MCC_MAX_ALIGN is the WRONG knob — it also feeds bare `__attribute__((aligned))` at mccgen.c:5815 (a second unasked ABI change), wide256_slice.h:59 is immune, and one per-arch constant cannot express a rule that must now differ per target. The surgical site is mccgen.c:7064 alone. (b) `_Alignof` is NOT the ABI: on x86_64 gcc reports 16 and lays the member at 32, clang reports 32 and lays it at 32 — the references disagree on the report and agree on the LAYOUT, and mcc's `_Alignof` of 16 already matches gcc. The defect is that mcc lays out with that 16: `struct{char; v32}` is 48 in mcc, 64 in both references. (c) THE RULE IS PER TARGET — x86_64/i386: layout alignment = the vector's size; arm64: min(size,16), which mcc ALREADY matches and where a change would be a REGRESSION (measured vs gcc-16 + Apple clang). So the earlier "eleven columns move" is wrong: only the x86_64 and i386 columns move, for the single banked object tests/exec/types/int256_gates.c, and arm64 must not. REMAINING, in order: (1) the missing fixture — NO test in the tree compiles a 32-byte vector, so the fix would land completely unexercised; write the per-target cross-TU fixture asserting offsetof/sizeof identical to that target's reference cc (must pass UNCHANGED on arm64, is its known-positive; fails today on x86_64/i386), (2) change mccgen.c:7064, (3) re-bank only the columns the rule moves. Re-bank is lin-x64's: target-keyed keys and o0_ab refuses banking from a partial measurement
 - [ ] T-lin-10013 [S] `__int256` has no literal suffix
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
