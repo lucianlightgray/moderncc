@@ -1317,9 +1317,100 @@ static int corrupt_at = -1;
 #define MEM_LANES 64
 
 #if MCC_GPU_LANG_MSL
+static void *mem_window(unsigned long *size) {
+	void *base = NULL;
+	unsigned long sz = 0;
+	if (!mcc_gpu_mem(&base, &sz))
+		return NULL;
+	if (size)
+		*size = sz;
+	return base;
+}
+
 static int mem_case(void) {
-	printf(GATE_NAME ": the binding-2 case has no Metal arm\n");
-	return 77;
+	MslMod m;
+	MslRegion r;
+	MslV v, p;
+	uint32_t base;
+	char *code = NULL;
+	int nb = 0, t, bad = 0;
+	unsigned long msz = 0;
+	unsigned char *win = (unsigned char *)mem_window(&msz);
+	int32_t *in = (int32_t *)calloc((size_t)MEM_LANES * MCC_GPU_IN_SLOTS,
+																	sizeof *in);
+	int32_t *ob = (int32_t *)calloc((size_t)MEM_LANES * MCC_GPU_OUT_SLOTS,
+																	sizeof *ob);
+	int64_t want[MEM_LANES];
+
+	if (!win || !in || !ob) {
+		printf(GATE_NAME ": mem case out of memory\n");
+		free(in);
+		free(ob);
+		return 1;
+	}
+	msl_module_begin(&m, 1);
+	m.mem_base = (int64_t)(intptr_t)win;
+	m.mem_nbyte = (uint32_t)msz;
+	base = msl_main_begin(&m, 1);
+	if (!msl_mem_region(&m, &r)) {
+		printf(GATE_NAME ": mem case could not open the binding-2 region\n");
+		msl_module_free(&m);
+		free(in);
+		free(ob);
+		return 1;
+	}
+	p = msl_load_live_v(&m, base, 0, 1, 1);
+	v = msl_load_region(&m, &r, msl_mem_off(&m, p), VT_LLONG);
+	if (mutate)
+		v = msl_mutate(&m, v);
+	msl_main_end(&m, m.lane, v);
+	code = msl_module_finish(&m, &nb);
+	msl_module_free(&m);
+	if (!code || nb <= 0) {
+		printf(GATE_NAME ": mem case emitted no module\n");
+		free(code);
+		free(in);
+		free(ob);
+		return 1;
+	}
+	if (corrupt_at >= 0 && corrupt_at < nb)
+		code[corrupt_at] = (char)(code[corrupt_at] ^ 1);
+
+	for (t = 0; t < MEM_LANES; t++) {
+		int64_t a = (int64_t)(intptr_t)(win + (size_t)t * 8);
+		want[t] = (int64_t)(0x0123456789ABCDEFLL ^ ((int64_t)(t + 1) * 0x9E3779B9LL));
+		memcpy(win + (size_t)t * 8, &want[t], 8);
+		put_in(in, t, a);
+	}
+	if (gpu_run(code, nb, in, MEM_LANES, 1, ob) != 0) {
+		printf(GATE_NAME ": mem case GPU REJECTED MODULE\n");
+		free(code);
+		free(in);
+		free(ob);
+		return 1;
+	}
+	for (t = 0; t < MEM_LANES; t++) {
+		if (!get_def(ob, t)) {
+			if (bad < 4)
+				printf("  mem lane %d UNDEFINED (the address fell outside binding 2)\n",
+							 t);
+			bad++;
+			continue;
+		}
+		if (get_out(ob, t) != want[t]) {
+			if (bad < 4)
+				printf("  mem lane %d MISMATCH want=%lld got=%lld\n", t,
+							 (long long)want[t], (long long)get_out(ob, t));
+			bad++;
+		}
+	}
+	free(code);
+	free(in);
+	free(ob);
+	printf(GATE_NAME ": mem lanes=%d through binding 2, %d bad\n", MEM_LANES,
+				 bad);
+	printf(GATE_NAME ": %s\n", bad ? "FAIL" : "OK");
+	return bad ? 1 : 0;
 }
 #else
 static int mem_case(void) {

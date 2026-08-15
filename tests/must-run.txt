@@ -28,6 +28,8 @@ gpu/spv-validate             | registered | spirv-val over every emitted module;
 gpu/spv-validate-known-positive | registered | proves the validator cell can go red
 gpu/spv-mem-binding          | registered | the only spvgate cell that reaches binding 2
 gpu/spv-mem-binding-known-positive | registered | proves the binding-2 case is not blind
+gpu/msl-mem-binding          | registered | the only mslgate cell that reaches binding 2; an mcc_skip_test stub off Darwin (T-lin-10041, T-lin-10042)
+gpu/msl-mem-binding-known-positive | registered | proves the Metal binding-2 case is not blind; stubbed off Darwin
 gpu/ladder-gpu-parity        | registered | the CPU/GPU oracle parity gate
 
 slice/task                   | must-run   | the tick scheduler; pure CPU, no device, so a skip here is always a bug

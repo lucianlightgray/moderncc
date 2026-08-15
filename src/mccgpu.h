@@ -219,6 +219,9 @@ typedef struct MslMod {
 	/* Set by the store helpers. Selects the kernel signature in
 	 * msl_module_finish; see msl_kernel_ro/msl_kernel_rw. */
 	int wrote_in;
+	int64_t mem_base;
+	uint32_t mem_nbyte;
+	int mem_used;
 } MslMod;
 
 static void mslb_need(MslBuf *b, int extra) {
@@ -596,6 +599,130 @@ static MslV msl_fit_v(MslMod *m, MslV v, int t) {
 	if ((t & VT_BTYPE) == VT_BOOL)
 		return msl_mk(msl_int_of_bool(m, msl_bool_of_v(m, v)), 0, uns);
 	return msl_mk(msl_fit(m, msl_lo(m, v), t), 0, uns);
+}
+
+typedef struct MslRegion {
+	uint32_t base;
+	uint32_t nbyte;
+} MslRegion;
+
+static int msl_mem_region(MslMod *m, MslRegion *r) {
+	if (!m->mem_nbyte)
+		return 0;
+	r->base = msl_const(m, 0);
+	r->nbyte = msl_uconst(m, m->mem_nbyte);
+	m->mem_used = 1;
+	return 1;
+}
+
+static uint32_t msl_word_at(MslMod *m, uint32_t idx) {
+	return msl_iv(m, "atomic_load_explicit(&memb[v%u], memory_order_relaxed)",
+								idx);
+}
+
+static void msl_word_set(MslMod *m, uint32_t idx, uint32_t val) {
+	msl_line(m, "atomic_store_explicit(&memb[v%u], v%u, memory_order_relaxed);",
+					 idx, val);
+}
+
+static void msl_word_rmw(MslMod *m, uint32_t idx, uint32_t keep, uint32_t put) {
+	msl_line(m,
+					 "atomic_fetch_and_explicit(&memb[v%u], ~v%u, memory_order_relaxed);",
+					 idx, keep);
+	msl_line(m,
+					 "atomic_fetch_or_explicit(&memb[v%u], v%u, memory_order_relaxed);",
+					 idx, put);
+}
+
+static uint32_t msl_region_addr(MslMod *m, const MslRegion *r, uint32_t byteoff,
+																int width) {
+	uint32_t big =
+			msl_bv(m, "as_type<uint>(v%u) >= %uu", r->nbyte, (unsigned)width);
+	uint32_t last = msl_iv(m, "as_type<int>(as_type<uint>(v%u) - %uu)", r->nbyte,
+												 (unsigned)width);
+	uint32_t inr = msl_bv(m, "b%u && as_type<uint>(v%u) <= as_type<uint>(v%u)",
+												big, byteoff, last);
+	uint32_t ok = inr;
+	if (width > 1)
+		ok = msl_bv(m, "b%u && (as_type<uint>(v%u) & %uu) == 0u", inr, byteoff,
+								(unsigned)(width - 1));
+	msl_def_and(m, &m->def, ok);
+	return msl_iv(m, "b%u ? v%u : 0", ok, byteoff);
+}
+
+static uint32_t msl_region_word(MslMod *m, const MslRegion *r, uint32_t uoff,
+																int plus) {
+	uint32_t i = msl_iv(m, "mcc_add(v%u, as_type<int>(as_type<uint>(v%u) >> 2))",
+											r->base, uoff);
+	if (plus)
+		i = msl_iv(m, "mcc_add(v%u, v%u)", i, msl_const(m, plus));
+	return i;
+}
+
+static MslV msl_load_region(MslMod *m, const MslRegion *r, uint32_t byteoff,
+														int t) {
+	int width = ast_eval_slice_tsize(t);
+	int uns = (t & VT_UNSIGNED) != 0;
+	uint32_t uoff, lo, sh;
+	if (width <= 0)
+		return msl_mk(msl_const(m, 0), 0, 0);
+	uoff = msl_region_addr(m, r, byteoff, width);
+	if (width == 8) {
+		uint32_t a = msl_word_at(m, msl_region_word(m, r, uoff, 0));
+		uint32_t b = msl_word_at(m, msl_region_word(m, r, uoff, 1));
+		return msl_mk(msl_pv(m, "int2(v%u, v%u)", a, b), 1, uns);
+	}
+	lo = msl_word_at(m, msl_region_word(m, r, uoff, 0));
+	if (width == 4)
+		return msl_mk(lo, 0, uns);
+	sh = msl_iv(m, "(v%u & 3) << 3", uoff);
+	lo = msl_iv(m, "mcc_shr(v%u, v%u)", lo, sh);
+	if ((t & VT_BTYPE) == VT_BOOL)
+		lo = msl_iv(m, "v%u & 0xFF", lo);
+	return msl_mk(msl_fit(m, lo, t), 0, uns);
+}
+
+static void msl_store_region(MslMod *m, const MslRegion *r, uint32_t byteoff,
+														 MslV v, int t) {
+	int width = ast_eval_slice_tsize(t);
+	uint32_t uoff, sh, keep;
+	if (width <= 0)
+		return;
+	uoff = msl_region_addr(m, r, byteoff, width);
+	if (width == 8) {
+		uint32_t lo, hi;
+		msl_widen(m, &v);
+		lo = msl_iv(m, "p%u.x", v.id);
+		hi = msl_iv(m, "p%u.y", v.id);
+		msl_word_set(m, msl_region_word(m, r, uoff, 0), lo);
+		msl_word_set(m, msl_region_word(m, r, uoff, 1), hi);
+		return;
+	}
+	if (width == 4) {
+		msl_word_set(m, msl_region_word(m, r, uoff, 0), msl_lo(m, v));
+		return;
+	}
+	sh = msl_iv(m, "(v%u & 3) << 3", uoff);
+	keep = msl_iv(m, "mcc_shl(v%u, v%u)", msl_const(m, width == 1 ? 0xFF : 0xFFFF),
+								sh);
+	msl_word_rmw(m, msl_region_word(m, r, uoff, 0), keep,
+							 msl_iv(m, "mcc_shl(v%u, v%u) & v%u", msl_lo(m, v), sh, keep));
+}
+
+static uint32_t msl_mem_off(MslMod *m, MslV p) {
+	MslV b = msl_const64(m, m->mem_base);
+	uint32_t d;
+	msl_widen(m, &p);
+	d = msl_pv(m, "mcc64_sub(p%u, p%u)", p.id, b.id);
+	msl_def_and(m, &m->def, msl_bv(m, "p%u.y == 0", d));
+	return msl_iv(m, "p%u.x", d);
+}
+
+static uint32_t msl_ext_off(MslMod *m, MslV p, uint32_t elem,
+														const AstEvalSliceIdx *ix) {
+	uint32_t b = msl_mem_off(m, p);
+	return msl_iv(m, "mcc_add(v%u, mcc_mul(v%u, v%u))", b, elem,
+								msl_const(m, ix->esize));
 }
 
 static void msl_def_addsub64(MslMod *m, uint32_t *def, int is_sub, MslV a,
@@ -1005,14 +1132,25 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 		}
 		if (ast_eval_slice_dynidx(a, c, &ix)) {
 			MslV iv;
+			MslRegion mr;
 			uint32_t elem;
-			if (ast_eval_slice_ext(&ix))
-				return 0;
 			if (!msl_env_index(off, nenv, ix.base, &k))
 				return 0;
 			if (!msl_expr(m, a, ix.idx, off, nenv, base, &iv))
 				return 0;
 			elem = msl_dyn_elem(m, iv, &ix);
+			if (ast_eval_slice_ext(&ix)) {
+				if (!msl_mem_region(m, &mr))
+					return 0;
+				*out = msl_fit_v(
+						m,
+						msl_load_region(m, &mr,
+														msl_ext_off(m, msl_load_live_v(m, base, k, 1, 0),
+																				elem, &ix),
+														ix.etype),
+						ix.etype);
+				return 1;
+			}
 			*out = msl_fit_v(
 					m,
 					msl_load_live_dv(m, base, k, elem,
@@ -1021,6 +1159,19 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 													 (ix.etype & VT_UNSIGNED) != 0),
 					ix.etype);
 			return 1;
+		}
+		{
+			MslRegion mr;
+			int et;
+			if (ast_eval_slice_deref(a, n, &fo, &et)) {
+				if (!msl_env_index(off, nenv, fo, &k))
+					return 0;
+				if (!msl_mem_region(m, &mr))
+					return 0;
+				*out = msl_load_region(
+						m, &mr, msl_mem_off(m, msl_load_live_v(m, base, k, 1, 0)), et);
+				return 1;
+			}
 		}
 		return 0;
 	}
@@ -1057,6 +1208,24 @@ static int msl_expr(MslMod *m, AstArena *a, AstLocal n, const int32_t *off,
 																					(mt & VT_UNSIGNED) != 0),
 											 mt);
 			return 1;
+		}
+		{
+			int32_t pfo, madd;
+			int at, k;
+			MslRegion ar;
+			if (ast_eval_slice_arrow(a, n, &pfo, &madd, &at)) {
+				if (!msl_env_index(off, nenv, pfo, &k))
+					return 0;
+				if (!msl_mem_region(m, &ar))
+					return 0;
+				*out = msl_load_region(
+						m, &ar,
+						msl_iv(m, "mcc_add(v%u, v%u)",
+									 msl_mem_off(m, msl_load_live_v(m, base, k, 1, 0)),
+									 msl_const(m, madd)),
+						at);
+				return 1;
+			}
 		}
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
@@ -1619,6 +1788,16 @@ static const char msl_kernel_rw[] =
 		"kernel void mcc_main(device int *inb [[buffer(0)]],\n"
 		"                     device int *outb [[buffer(1)]],\n"
 		"                     uint gid [[thread_position_in_grid]]) {\n";
+static const char msl_kernel_ro_mem[] =
+		"kernel void mcc_main(device const int *inb [[buffer(0)]],\n"
+		"                     device int *outb [[buffer(1)]],\n"
+		"                     device atomic_int *memb [[buffer(2)]],\n"
+		"                     uint gid [[thread_position_in_grid]]) {\n";
+static const char msl_kernel_rw_mem[] =
+		"kernel void mcc_main(device int *inb [[buffer(0)]],\n"
+		"                     device int *outb [[buffer(1)]],\n"
+		"                     device atomic_int *memb [[buffer(2)]],\n"
+		"                     uint gid [[thread_position_in_grid]]) {\n";
 
 static void msl_module_begin(MslMod *m, int nlive) {
 	memset(m, 0, sizeof *m);
@@ -1628,7 +1807,9 @@ static void msl_module_begin(MslMod *m, int nlive) {
 }
 
 static char *msl_module_finish(MslMod *m, int *nbytes) {
-	const char *kh = m->wrote_in ? msl_kernel_rw : msl_kernel_ro;
+	const char *kh = m->mem_used ? (m->wrote_in ? msl_kernel_rw_mem
+																							: msl_kernel_ro_mem)
+															 : (m->wrote_in ? msl_kernel_rw : msl_kernel_ro);
 	int pre = (int)(sizeof msl_prelude - 1);
 	int khn = (int)strlen(kh);
 	int total = pre + khn + m->decls.n + m->body.n + 2;

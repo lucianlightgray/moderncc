@@ -3805,11 +3805,24 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_real.cmake")
             set_tests_properties("gpu/msl-slice-real" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            add_test(NAME "gpu/msl-mem-binding" COMMAND mslgate --mem)
+            set_tests_properties("gpu/msl-mem-binding" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT ${_gpu_skip77})
+            add_test(NAME "gpu/msl-mem-binding-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DCMD=$<TARGET_FILE:mslgate>
+                        -DGATEARGS=--mem
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_mutate.cmake")
+            set_tests_properties("gpu/msl-mem-binding-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
         else()
             set(_msl_why "the MSL slice differential needs a Darwin host with the Metal backend selected (-DMCC_GPU_BACKEND=metal)")
             mcc_skip_test("gpu/msl-slice-differential" "${_msl_why}")
             mcc_skip_test("gpu/msl-slice-known-positive" "${_msl_why}")
             mcc_skip_test("gpu/msl-slice-real" "${_msl_why}")
+            mcc_skip_test("gpu/msl-mem-binding" "${_msl_why}")
+            mcc_skip_test("gpu/msl-mem-binding-known-positive" "${_msl_why}")
         endif()
 
         # slicerun: the scheduler cells. Unlike spvgate it brings no Vulkan of

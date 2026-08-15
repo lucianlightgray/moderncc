@@ -674,6 +674,9 @@ static int mcc_gpu_dispatch_locked2(const char *src, int len, const int32_t *in,
 			enc, sel_registerName("setBuffer:offset:atIndex:"), bin, 0, 0);
 	((void (*)(id, SEL, id, unsigned long, unsigned long))objc_msgSend)(
 			enc, sel_registerName("setBuffer:offset:atIndex:"), bout, 0, 1);
+	if (mcc_mtl_mem)
+		((void (*)(id, SEL, id, unsigned long, unsigned long))objc_msgSend)(
+				enc, sel_registerName("setBuffer:offset:atIndex:"), mcc_mtl_mem, 0, 2);
 	grid.w = (unsigned long)(cap / MCC_GPU_LOCAL_SIZE);
 	grid.h = 1;
 	grid.d = 1;
