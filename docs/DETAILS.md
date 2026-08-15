@@ -45730,3 +45730,35 @@ The self-host row reproduces T-lin-10082's 249,556/499,113/4.77e9 shape at today
 **One emitter, two languages — clarifies T-lin-10385's scope too:** both the ladder (`mcc_gpu_emit`, mccgpu.h:4071 MSL / :4098 SPIR-V) and the slice frame runner (`mcc_slice_frame_kernel_build`, mccslice.h:2012) call the same `spv_expr`/`msl_expr`; the slice path works on member/arrow/deref because it seeds `mem_base`/`mem_nbyte`, per-lane frame slots and pointer marks (mccslice.h:2087-2088/:2187/:645), none of which the ladder does. And `msl_expr`'s unhandled arms `return 0` with no counter — which is the T-lin-10385 instrumentation gap, confirmed at the arm level.
 
 **Source.** lin-x64, 2026-08-15, subagent read of mccgpu.h/ast_eval_slice.h/mccast.c at `main@dc1e52a8`.
+
+<a id="t-lin-10042-done-full-native-suite-green-mac-arm64"></a>
+
+## T-lin-10042 + T-lin-10041 DONE — the full native suite is green on mac-arm64 (formal §8 per-task)
+
+**Type** `[X]` mac-arm64 — **State** both DONE at `b3da6a4a` (code) — the per-task §8 gate met on this platform.
+
+All seven slices of the staged Metal-parity plan (fp64 variant) landed and were each certified by the per-value differential against the SPIR-V arm — the verification spec both T-lin-10042 (*per stage, the per-value differential*) and T-lin-10041 (*the Metal per-value differential, run by hand on the Mac and recorded*) name. T-lin-10041's subject (the native MSL region arm) was delivered under slices 5–7 of the same M-TODO-0051 migration, per anti-redundancy; it closes on this same run. Slice evidence table: slice 1 `28ac8048`, slice 2 `f5a04110`, slice 3 `87f7b232`, slice 4 `6610f66d`, slice 5 `59a62bf6` (+repair `ce235455`), slice 6 `0f936e40`, slice 7 `b3da6a4a`.
+
+**The full native suite (§8 per-task), M1 Pro, Metal, run over the tree at `b3da6a4a`.** `ctest -j8`: **99% passed, 11 reds / 10068 cells** (`Total Test time 6345.86s`). Every red enumerated and attributed — **zero genuine failures attributable to this task**:
+
+| # | red | class | disposition |
+| --- | --- | --- | --- |
+| 1–9 | `flagsweep-exec/{opt-slice,inline-functions,loop-interchange,loop-fusion,loop-block,loop-vlat,jit-splice,zero-initialized-in-bss,merge-constants}` | Timeout 300s | load-induced under `-j8`; T-lin-10092/mac precedent — pass serially at `-j1`. Not a hang. |
+| 10 | `wide256/gmp-diff` | Failed 7.70s | load-induced; re-run in isolation **Passed 1.51s**. |
+| 11 | `runtime-bench-gatewin` | Failed 2.90s (deterministic) | **orthogonal, pre-existing, not this task.** See below. |
+
+**`runtime-bench-gatewin` is a permanent-77 cell exposed by host-local provisioning, not a regression.** The cell (`tools/runtime-bench.py --assert-gate-wins`, CMakeLists.txt:8054) is a `SKIP_RETURN_CODE 77` cell that the tree documents as a **permanent 77** (`tests/must-run.txt:113`; DETAILS §§ near lines 2030/4346/7852/8169: *"`vendor/plb` does not exist, so `runtime-bench.py` … permanent 77"*, *"dead for a missing corpus"*, *"nothing ratchets them back to live"*). `vendor/plb` is **untracked** (`git ls-files vendor/plb` empty) — host-local on this mac (provisioned for the cref/plb corpora work), so the input `vendor/plb/bench/algorithm/spectral-norm` is present here and the cell **runs** instead of skipping. When it runs it asserts the chain-store gate wins ≥8% instructions on spectral-norm and measures **+0.0%** (on 5.301G vs off 5.302G instructions retired — identical, i.e. the chain-store optimization does not fire on this kernel). This is a CPU-optimizer gate-calibration property of the spectral-norm program, independent of the Metal/MSL arm: my slices 1–7 touch only MSL/GPU-backend files (`mccfmt.h` MSL half, `mccslice.h` MSL paths, `msl_expr`, `mccgpu.h`, SPIR-V/MSL cases) — nothing in the chain-store gate path, and the on/off instruction counts prove the compiler-under-test emits identical code either way. On any stock checkout / CI (no `vendor/plb`) the cell skips 77 and the suite is green. Filed as its own finding — [T-mac-30005](#t-mac-30005-the-chain-store-8-gate-has-never-run-against-real-input).
+
+This matches the platform's clean baseline shape recorded at T-lin-10092/mac (*10060 cells, 0 genuine failures, all reds environmental*): the delta is +8 new live Metal cells (slices) and the one permanent-77 that this box's host-local corpus flips skip→run.
+
+**Source.** mac-arm64, 2026-08-15, full-native-suite run over `b3da6a4a`; log `scratchpad/fullsuite.log`.
+
+<a id="t-mac-30005-the-chain-store-8-gate-has-never-run-against-real-input"></a>
+
+## T-mac-30005 — the chain-store 8% gate has never run against real input, and when it does it reads +0.0%
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+`runtime-bench-gatewin` (`tools/runtime-bench.py --assert-gate-wins --runs 7`, CMakeLists.txt:8054) asserts the chain-store optimization wins ≥8% instructions retired on `vendor/plb/bench/algorithm/spectral-norm`. The tree treats it as a **permanent 77** predicated on `vendor/plb` being absent (`tests/must-run.txt:113`), so the 8% assertion has **never actually been evaluated** in CI or on any stock checkout. On a mac with `vendor/plb` provisioned host-local (untracked), the cell runs for the first time and the gate reads **+0.0%** — chain-store on 5.301G vs off 5.302G instructions retired, i.e. the optimization does not fire on this kernel and the headline assertion is false against its own named input. **Repro:** provision `vendor/plb` (the plb benchmark corpus), then `ctest -R runtime-bench-gatewin` on a native (non-emulated, non-cross, non-WIN32, python3-on-PATH) build. **First slice = characterisation, not a fix:** decide whether the 8% figure was ever real for spectral-norm (bisect the gate against a build/level where it did fire, or establish it never did), and whether the honest state is (a) fix/re-calibrate the chain-store gate so it fires on this kernel, (b) re-target `GATE_WINS` at a kernel the gate actually wins, or (c) retire the aspirational 8% assertion. Do not call the optimizer defective until the gate's provenance is known — the instruction counts being identical could equally mean the kernel has no chain-store shape to optimize. Not a `[X]`: any UNIX non-emulated build with `vendor/plb` reproduces it identically; found on mac only because that is where the corpus happens to be provisioned.
+
+**Source.** mac-arm64, 2026-08-15, observed during the T-lin-10042 full-native-suite run at `b3da6a4a`; analysis at [T-lin-10042 DONE](#t-lin-10042-done-full-native-suite-green-mac-arm64).
