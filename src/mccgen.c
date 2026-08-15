@@ -8674,8 +8674,6 @@ the_end:
 			{ MCC_TRACE("br\n"); mcc_error("_Complex requires a floating-point type"); }
 		else if ((base.t & VT_BTYPE) == VT_BOOL)
 			{ MCC_TRACE("br\n"); mcc_error("_Complex _Bool is invalid"); }
-		else if ((base.t & VT_BTYPE) == VT_FLOAT16)
-			{ MCC_TRACE("br\n"); mcc_error("_Complex _Float16 is not supported"); }
 		else if (!is_float(base.t))
 			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C does not support complex integer types"); }
 		mk_complex_type(type, &base);
