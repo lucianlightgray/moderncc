@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:36Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T17:26Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T18:44Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T18:18Z |
 
 ## Contracts — blocking, highest priority
@@ -22,8 +22,8 @@
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
 - [ ] T-lin-10384 [S] The one emitter hole the census found: ladder pairs with struct member select refuse because `ast_eval_ladder_scan` never keys member offsets
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: b1f912b5 | TS: 2026-08-15T17:26Z
-      REF: DETAILS.md#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-scanner-census-81-to-0-certified | DEPS: — | NOTE: FIX PUSHED b1f912b5 (code) + DETAILS addendum. member-keying arm in ast_eval_ladder_scan; subject.c -O4 census 81->0 CERTIFIED not dropped (rungs 5500->5735, dispatches 10839->11471, every other refuse bucket stayed 0). Targeted suite green: slice/census, smoke/slice-bails, slice-census, gpu/spv-slice-differential(+kp), gpu/ladder-gpu-parity, slice/gpu, slice/mem + full smoke/* (12). bails.txt rebanked O4+O9 dev (515->344, 15->0, note 18); mac/win banks IMPROVED-pass til they rebank. PENDING §8 DONE: full native suite in flight -> on green mark DONE + archive
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: b1f912b5 | TS: 2026-08-15T18:44Z
+      REF: DETAILS.md#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-scanner-census-81-to-0-certified | DEPS: — | NOTE: FIX PUSHED b1f912b5 (code) + DETAILS addendum. member-keying arm in ast_eval_ladder_scan; subject.c -O4 SPIR-V census 81->0 CERTIFIED (rungs 5500->5735). mac corroborated the MSL arm 72->0 on the SAME fix (T-lin-10385). bails.txt rebanked O4+O9 (515->344,15->0,note18; subject.c census, MCC_DEV-independent). §8 GATE: first ran the full suite in cmake-jitdev(MCC_DEV=ON) -> 4 reds, ALL non-regressions: rir-coverage + rir-coverage-census + config-defines are MCC_DEV=ON build-mismatch artifacts (the rir bank is MCC_DEV=OFF-taken; the MCC_TRACE-armed self-corpus shifts the census — all three PASS in cmake-debug/MCC_DEV=OFF, verified; banks left PRISTINE, no rir rebank), gate-ledger = 1800s -j8 load-timeout. Re-running the full suite in cmake-debug (= T-lin-10092/lin's cmake-def) as the canonical §8 gate. ON GREEN: mark DONE + archive
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
