@@ -4614,11 +4614,27 @@ if(MCC_BUILD_TESTS)
         target_include_directories(smokerun PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
+        # The strategy floor is target-keyed because the subject's shapes are
+        # data-model-dependent, not because the strategies are: bfold and
+        # narrow fire on 64-bit `long` shapes that do not exist under LLP64
+        # (both fire on Windows given `long long` probes -- T-win-50012), and
+        # tree-sra/tree-sroa are MCC_OPTD_OFF at every level on every host, so
+        # the LP64 panel fires exactly 22 of 24 and the LLP64 panel exactly 20.
+        # A data-model-neutral corpus deepening (long-long narrowing + unsigned
+        # tautology rows) would let this return to one number, at the cost of a
+        # three-platform bails re-bank; recorded in T-win-50012's anchor.
+        if(WIN32)
+            set(_smoke_min_strats 20)
+        else()
+            set(_smoke_min_strats 22)
+        endif()
+
         add_test(NAME "smoke/native"
             COMMAND smokerun --mcc "${_mcc_exe}"
                     --srcdir "${CMAKE_CURRENT_SOURCE_DIR}"
                     --work "${CMAKE_BINARY_DIR}/smoke-native"
-                    --min-cases 12800000 --min-passes 150 --min-strats 22)
+                    --min-cases 12800000 --min-passes 150
+                    --min-strats ${_smoke_min_strats})
         set_tests_properties("smoke/native" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 900)
 
@@ -4628,6 +4644,7 @@ if(MCC_BUILD_TESTS)
                 -DMCC=${_mcc_exe}
                 -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
                 -DWORK=${CMAKE_BINARY_DIR}/smoke-strats
+                -DMIN_STRATS=${_smoke_min_strats}
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/smoke_strats_mutate.cmake")
         set_tests_properties("smoke/strats-known-positive" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900)
