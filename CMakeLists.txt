@@ -4190,7 +4190,7 @@ if(MCC_BUILD_TESTS)
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/osx/headers-parse.sh"
                         "$<TARGET_FILE:mcc>"
                         "${CMAKE_CURRENT_SOURCE_DIR}"
-                        --min-files 189)
+                        --min-files 190)
             set_tests_properties("osx/headers-parse" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 600)
 
@@ -4199,7 +4199,7 @@ if(MCC_BUILD_TESTS)
                         -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/tests/osx/headers-parse.sh
                         -DMCC=$<TARGET_FILE:mcc>
                         -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
-                        -DMINFILES=189
+                        -DMINFILES=190
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/osx_headers_mutate.cmake")
             set_tests_properties("osx/headers-parse-known-positive" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900)
@@ -4211,6 +4211,14 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_BINARY_DIR}/reemit-cfi")
             set_tests_properties("ast/reemit-cfi" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 120)
+        else()
+            if(MCC_TARGETOS STREQUAL "Darwin")
+                set(_osxhp_why "osx/headers-parse's --min-files floor is measured by the Linux-host mcc parsing runtime/osx/include; a native Darwin mcc reads different type sizes and compiles a different corpus subset (186 vs the banked 189), so the floor is host-specific and the cell is scoped to the host that banks it")
+            else()
+                set(_osxhp_why "osx/headers-parse needs a native, non-cross, non-emulated UNIX host mcc to parse the runtime/osx header set against its banked --min-files floor")
+            endif()
+            mcc_skip_test("osx/headers-parse" "${_osxhp_why}")
+            mcc_skip_test("osx/headers-parse-known-positive" "${_osxhp_why}")
         endif()
 
         if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR

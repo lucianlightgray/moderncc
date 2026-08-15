@@ -7,6 +7,7 @@
 #include "mccjit_internal.h"
 #include "mccinv.h"
 #include "mccstats.h"
+#include "mcctask.h"
 
 #if MCC_HOST_WIN32
 #include "mccjit_win32.h"
@@ -1348,7 +1349,8 @@ MCCJIT_LOCAL void *mccjit_recompile_profiled(const void *blob, size_t len,
 }
 
 typedef struct MccjitSwapJob {
-	void (*run)(struct MccjitSwapJob *);
+	int (*tick)(struct MccjitSwapJob *);
+	int resume;
 	void **slot;
 	const void *blob;
 	unsigned long len;
@@ -1416,6 +1418,16 @@ static void mccjit_fork_setup(void) { MCC_TRACE("enter\n");
 #endif
 }
 
+static MccjitSwapJob *mccjit_job_new(int (*tick)(MccjitSwapJob *)) { MCC_TRACE("enter\n");
+	MccjitSwapJob *job = mcc_malloc(sizeof *job);
+	if (!job)
+		{ MCC_TRACE("br\n"); return NULL; }
+	job->tick = tick;
+	job->resume = 0;
+	job->next = NULL;
+	return job;
+}
+
 static void *mccjit_pool_worker(void *arg) { MCC_TRACE("enter\n");
 	(void)arg;
 	for (;;) { MCC_TRACE("br\n");
@@ -1434,9 +1446,19 @@ static void *mccjit_pool_worker(void *arg) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); mccjit_pool.tail = NULL; }
 		pthread_mutex_unlock(&mccjit_pool.qlock);
 		qslot = mccjit_qsbr_register();
-		pthread_mutex_lock(&mccjit_swap_lock);
-		job->run(job);
-		pthread_mutex_unlock(&mccjit_swap_lock);
+		for (;;) { MCC_TRACE("br\n");
+			int tst, quit;
+			pthread_mutex_lock(&mccjit_swap_lock);
+			tst = job->tick(job);
+			pthread_mutex_unlock(&mccjit_swap_lock);
+			if (tst == MCC_TASK_DONE || tst == MCC_TASK_FAILED)
+				{ MCC_TRACE("br\n"); break; }
+			pthread_mutex_lock(&mccjit_pool.qlock);
+			quit = mccjit_pool.quit;
+			pthread_mutex_unlock(&mccjit_pool.qlock);
+			if (quit)
+				{ MCC_TRACE("br\n"); break; }
+		}
 		mccjit_qsbr_quiescent(qslot);
 		mccjit_qsbr_unregister(qslot);
 		mcc_free(job);
@@ -1536,12 +1558,13 @@ static void mccjit_pool_shutdown(void) { MCC_TRACE("enter\n");
 						n, mccjit_pool.nrun, mccjit_pool.nenqueued, mccjit_pool.nrefused); }
 }
 
-static void mccjit_job_run_eager(MccjitSwapJob *job) { MCC_TRACE("enter\n");
+static int mccjit_job_run_eager(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 	mccjit_boot_swap_run(job->slot, job->blob, job->len, job->max_duration,
 											 "async", &job->start, job->timed);
+	return MCC_TASK_DONE;
 }
 
-static void mccjit_job_run_lazy(MccjitSwapJob *job) { MCC_TRACE("enter\n");
+static int mccjit_job_run_lazy(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 	MccjitCounterState *st = job->cst;
 	int routed = 0;
 	void *entry = mccjit_lazy_entry(st, &routed, 1);
@@ -1573,6 +1596,7 @@ static void mccjit_job_run_lazy(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 						"mccjit-lazy[promote-async]: slot=%p entry=%p route=%s %s\n",
 						(void *)st->slot, entry, routed ? "kgc" : "direct",
 						entry ? "promoted" : "build-failed"); }
+	return MCC_TASK_DONE;
 }
 
 static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) { MCC_TRACE("enter\n");
@@ -1597,9 +1621,8 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) { 
 		target = st->baseline;
 	} else if (mccjit_pool_ready()) { MCC_TRACE("br\n");
 		if (!st->building) { MCC_TRACE("br\n");
-			MccjitSwapJob *job = mcc_malloc(sizeof *job);
+			MccjitSwapJob *job = mccjit_job_new(mccjit_job_run_lazy);
 			if (job) { MCC_TRACE("br\n");
-				job->run = mccjit_job_run_lazy;
 				job->cst = st;
 				st->building = 1;
 				if (!mccjit_pool_enqueue(job)) { MCC_TRACE("br\n");
@@ -2082,9 +2105,8 @@ void mccjit_boot_swap_async(void **slot, const void *blob, unsigned long len,
 	nw = mccjit_pool_start(workers);
 	if (mccjit_lazy_enabled() && mccjit_lazy_install(slot, blob, len) == 0)
 		{ MCC_TRACE("br\n"); return; }
-	job = (nw > 0) ? mcc_malloc(sizeof *job) : NULL;
+	job = (nw > 0) ? mccjit_job_new(mccjit_job_run_eager) : NULL;
 	if (job) { MCC_TRACE("br\n");
-		job->run = mccjit_job_run_eager;
 		job->slot = slot;
 		job->blob = blob;
 		job->len = len;
@@ -6073,14 +6095,13 @@ PUB_FUNC int mccjit_selftest_pool(void) { MCC_TRACE("enter\n");
 
 	slot_a = (void *)baseline;
 	{
-		MccjitSwapJob *job = mcc_malloc(sizeof *job);
+		MccjitSwapJob *job = mccjit_job_new(mccjit_job_run_eager);
 		void *pub = (void *)baseline;
 		int spins = 0;
 		if (!job) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-pool: eager job alloc failed FAIL\n");
 			fails++;
 		} else { MCC_TRACE("br\n");
-			job->run = mccjit_job_run_eager;
 			job->slot = &slot_a;
 			job->blob = blob;
 			job->len = blen;
@@ -7381,7 +7402,7 @@ static void mccjit_sd_tick(void) { MCC_TRACE("enter\n");
 	pthread_mutex_unlock(&mccjit_sd.lock);
 }
 
-static void mccjit_sd_job_heavy(MccjitSwapJob *job) { MCC_TRACE("enter\n");
+static int mccjit_sd_job_heavy(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 	void *pg;
 	(void)job;
 	if (mccjit_sd.blob)
@@ -7391,21 +7412,22 @@ static void mccjit_sd_job_heavy(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); mccjit_qsbr_retire(pg, 4096); }
 	mccjit_pool_nap();
 	mccjit_sd_tick();
+	return MCC_TASK_DONE;
 }
 
-static void mccjit_sd_job_light(MccjitSwapJob *job) { MCC_TRACE("enter\n");
+static int mccjit_sd_job_light(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 	(void)job;
 	mccjit_sd_tick();
+	return MCC_TASK_DONE;
 }
 
 static void *mccjit_sd_racer(void *arg) { MCC_TRACE("enter\n");
 	MccjitSdRacer *r = (MccjitSdRacer *)arg;
 	int i;
 	for (i = 0; i < r->cap; i++) { MCC_TRACE("br\n");
-		MccjitSwapJob *job = mcc_malloc(sizeof *job);
+		MccjitSwapJob *job = mccjit_job_new(mccjit_sd_job_light);
 		if (!job)
 			{ MCC_TRACE("br\n"); break; }
-		job->run = mccjit_sd_job_light;
 		if (!mccjit_pool_enqueue(job)) { MCC_TRACE("br\n");
 			mcc_free(job);
 			r->refused++;
@@ -7454,10 +7476,9 @@ PUB_FUNC int mccjit_selftest_shutdown(int known_positive) { MCC_TRACE("enter\n")
 	}
 
 	for (i = 0; i < MCCJIT_SD_JOBS; i++) { MCC_TRACE("br\n");
-		MccjitSwapJob *job = mcc_malloc(sizeof *job);
+		MccjitSwapJob *job = mccjit_job_new(mccjit_sd_job_heavy);
 		if (!job)
 			{ MCC_TRACE("br\n"); break; }
-		job->run = mccjit_sd_job_heavy;
 		if (!mccjit_pool_enqueue(job))
 			{ MCC_TRACE("br\n"); mcc_free(job); break; }
 		heavy++;
@@ -7522,10 +7543,9 @@ PUB_FUNC int mccjit_selftest_shutdown(int known_positive) { MCC_TRACE("enter\n")
 													 msg);
 
 	{
-		MccjitSwapJob *late = mcc_malloc(sizeof *late);
+		MccjitSwapJob *late = mccjit_job_new(mccjit_sd_job_light);
 		int taken = 0;
 		if (late) { MCC_TRACE("br\n");
-			late->run = mccjit_sd_job_light;
 			taken = mccjit_pool_enqueue(late);
 			if (!taken)
 				{ MCC_TRACE("br\n"); mcc_free(late); }

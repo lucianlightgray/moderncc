@@ -42422,6 +42422,8 @@ This is a standing capability record, not a task. Three questions move on it:
 
 **A general caution this makes concrete.** "The fleet has an arm64 Linux now" is true and is not the same claim as "the fleet can measure arm64 cycles now". The first is about instruction set, the second about privileged counters; a virtualized host provides the first and withholds the second. Conflating them would bank a measurement taken from software counters as if it were a cycle count — the exact shape of defect [T-lin-10003](#t-lin-10003-the-corpusgate-label-and-the-gap-treegates-own-bound-created) exists to refuse.
 
+**T-lin-10088 executed on win-x64, 2026-08-15 — corpus carried, and two premises corrected.** The corpus was fetched to `vendor/gcc-c-torture-execute` (1694 programs) with `git clone --filter=blob:none --sparse --depth 1 https://github.com/gcc-mirror/gcc.git` then `git sparse-checkout set gcc/testsuite/gcc.c-torture/execute`, copied in. No Docker was needed — the "host has no network" premise does not hold on this box (it pushes to GitHub). `vendor/` is gitignored, so the "deliberately not vendored" property is preserved. **Premise 1, corrected:** `pe/x-oracle` does **not** read this corpus — `tests/cross/pe-xoracle.sh` iterates `tests/exec/goldens.h` run-mode cells against the vendored mingw gcc. The real consumers of `vendor/gcc-c-torture-execute` are `slice/cref-oracle-gcc-c-torture-execute` (CMakeLists 4009, `EXISTS ${MCC_VENDOR_DIR}/${_cc}` → registers) and `optlevel/torture-differential` (UNIX-only; host-skipped on win-x64). **Premise 2, corrected:** the corpus was *not* the only blocker. With it present the cref cell now **runs** (134 s over the 1694 programs) but is **RED**: `gpuconform: the CPU reference answered 0 tuple(s) ... expected at least 50000; funnel bodies=0 slices=0 tuples=0`. That is the identical "0 tuples on Windows" signature as the whole GPU-slice family in [T-win-50003](#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged) Bucket A — and decisively, the aggregate `slice/cref-oracle` over the *in-tree, known-good* `tests/gpu/cref` corpus also yields 0 tuples on this host. So the redness is the win-x64 slice-extraction gap (mccgpu/slicerun owners' domain), **not** the corpus. **Net:** the corpus-carrying capability is delivered and reproducible (the one command above), and on a host whose slice path works — lin-x64, mac-arm64 — the same fetch should turn `slice/cref-oracle-gcc-c-torture-execute` green. win-x64 cannot demonstrate that green, because its slice path is the very thing that is broken. Handed back to Open on that basis rather than marked DONE on a red cell.
+
 <a id="q-lin-10009-answer-metal-parity-scheduled-with-fp64"></a>
 
 ## Q-lin-10009 answered — the Metal parity plan is scheduled, with fp64
@@ -42538,3 +42540,80 @@ Ships `runtime/osx/include/`: `stdio.h`, `string.h`, `stdlib.h`, `math.h`, `asse
 **Not done here.** The `--sysroot` selection that makes a Darwin build actually use this set, and the re-keying of the `ast/o0-baseline` quartet, are [T-lin-10089](#t-lin-10089-mac-arm64-the-asto0-baseline-quartet)'s `[X]` half on mac-arm64. This slice ships the headers and the gate that they cover what they claim; it does not yet change what any Darwin build compiles against.
 
 **Source.** Implemented on lin-x64, 2026-08-15.
+
+<a id="t-lin-10001-slice-3a-the-pool-job-becomes-a-tick"></a>
+
+## T-lin-10001 slice 3a — the JIT pool's job becomes a tick, and the quit flag moves between ticks
+
+**Type** `[C]` — **State** IN_PROGRESS — the structural half of L2′, per the [published approach](#t-lin-10001-slice-3-approach-l2-prime)
+
+`MccjitSwapJob.run` — a `void (*)(job)` run to completion — is now `int (*tick)(job)` returning the `MCC_TASK_*` answers, with a `resume` field beside it. `mccjit_pool_worker`'s body becomes a loop over `tick` that **re-reads `mccjit_pool.quit` between ticks** and abandons the job when it is set. That single change is L2′'s mechanism: a stop is now exact and needs no cancellation point inside the work.
+
+**Behaviour is identical at this commit, deliberately.** All four bodies (`mccjit_job_run_eager`, `mccjit_job_run_lazy`, `mccjit_sd_job_light`, `mccjit_sd_job_heavy`) return `MCC_TASK_DONE` after one tick, so every job still runs exactly as before and the quit check between ticks can never fire mid-job. The representation lands; the semantics do not move. That is what makes this diff reviewable as mechanical.
+
+**`mccjit_job_new` replaces six open-coded allocations.** Every creation site was `mcc_malloc(sizeof *job)` followed by hand-assignment, and none zeroed the struct. Adding a `resume` field to that pattern is a latent bug — one missed initialiser and a job resumes from uninitialised memory, nondeterministically. The helper sets `tick`, `resume` and `next` in one place, so the field cannot be forgotten; the per-site field assignments that differ (`slot`, `blob`, `cst`, …) stay where they were.
+
+**Why `mccjit_sd_job_heavy` is NOT split here, though the approach names it as the thing that delivers the bound.** It was split, the split worked, and it was reverted on the evidence — which is worth recording because the evidence is the finding.
+
+With `heavy` as four ticks (recompile / retire / nap / sd_tick), `jit/selftest-shutdown` goes red on two tags:
+
+```
+jobs-drained:    ran=5 accepted=69          FAIL
+qsbr-reclaimed:  reclaimed=1 retired=64     FAIL
+```
+
+That is **the bound working**, not a regression: teardown stopped waiting for 64 heavy jobs and abandoned them between ticks. But it means the cell's `done == accepted` assertion *is* the unbounded-teardown property written down as a requirement — "shutdown drains every accepted job" and "shutdown is bounded above" are the same statement with opposite signs, and [T-lin-10031](#t-lin-10031-the-jit-teardown-is-unbounded-above) asks for the second. The cell also has a known-positive mode (`MCC_JIT_SHUTDOWN=0`, with a `want[]` list of tags that must fire), so flipping the assertion means reasoning about what the known-positive proves under the new contract too.
+
+Changing a test's expectation in the same commit that changes the behaviour it measures is how a weakened gate gets mistaken for a passing one. So the split, the new conservation assertion (`done + abandoned == accepted`), the bound assertion, and the known-positive's reconciliation all belong to **slice 3b**, together, where they can be argued as one unit. Splitting them across commits would leave a window where the cell passes because it asks less.
+
+**One safety property this slice establishes for free.** Because only `sd_job_heavy` has interior structure worth splitting, and every *real* job (eager and lazy compile) is single-tick, no production job can ever be abandoned part-done — the quit check cannot interrupt a compile mid-publish. When 3b lands, the blast radius of abandonment is confined to a selftest job by construction.
+
+**Verification.** `ctest -R '^(trace-gate-invariant|schema-gate-invariant|jit/|slice/(task|sched|work|cpu|thread))'` — **79 of 79 green**, including `jit/selftest-shutdown` and `jit/selftest-pool`. `ctest -R '^(libtest|mcctest)'` 7/7. `tracegate` passes: `src/mccjit_embed.c` is an instrumented file, so every added function opens with `MCC_TRACE("enter\n")` and every added braced branch with `MCC_TRACE("br\n")`, including the `for(;;)` tick loop and its two breaks.
+
+**Source.** Implemented on lin-x64, 2026-08-15.
+<a id="t-lin-10367-slice-2-mac-setjmp-and-the-off-linux-gate-registration"></a>
+
+## T-lin-10367 slice 2 (mac-arm64) — setjmp.h, and the parse gate had to register off-Linux first
+
+Slice 2 is the layout-committing headers lin handed to mac because a wrong constant is a silent ABI miscompile and only this box has the real macOS SDK. First header landed: `runtime/osx/include/setjmp.h`, with `_JBLEN` mirroring `MacOSX.sdk/usr/include/setjmp.h` per arch (arm64 `(14+8+2)*2 = 48`, x86_64 `(9*2)+3+16 = 37`, i386 18, arm 28). `bound_setjmp.c` allocates `jmp_buf` by value, so `_JBLEN` feeds its `-O0` bank — the reason this is verified against the SDK rather than guessed. Dropped `setjmp` from `tests/osx/headers-parse.sh`'s exclusion list; that adds exactly `bound_setjmp.c` (the other three setjmp corpus files also include still-excluded pthread/signal/sys headers), 189 → 190 on the gate's Linux host.
+
+**A blocker found and fixed first.** `osx/headers-parse` and `osx/headers-parse-known-positive` are `add_test`'d only inside `if(UNIX ... AND NOT Darwin)` (CMakeLists 4187) with **no `else()`**, yet both are named in `must-run.txt` and `gate-contract.txt`. So on Darwin (and Windows) they were "declared but not registered" → `ci/must-run-registered` (2 violations) and `ci/gate-contract` (`declared here and is not registered` + `50 < 51` proved) RED. Green on Linux, so invisible to the author — identical to [[T-win-50001]]. Fixed by adding `mcc_skip_test` else-branch twins mirroring the `o0-baseline` block; gate-contract now reads 46 verified + 5 host-skipped = 51 proved (the T-mac-30002 host-skip-counts fix carries it), treegate 12/12 on Darwin.
+
+**Darwin-vs-Linux parse discrepancy, banked for T-lin-10089.** The `--min-files` floor (189) is a Linux-host number. Run natively here, the *Darwin-target* mcc compiles only **186** of the same corpus subset against lin's slice-1 set (9 files fail for reasons other than a missing header — not yet triaged). This is *why* the gate is scoped `NOT Darwin`, and it is exactly the surface T-lin-10089's `--sysroot` re-key will have to make green when the Darwin build actually compiles against these headers. Whoever takes 10089 should start by triaging those 9.
+
+**Floor ratchet left to the gate owner.** The gate is `NOT Darwin`, so mac cannot measure its Linux count; I shipped the header + exclusion drop but left `--min-files` at 189 (Linux stays green at ≥190 either way). lin-x64 (gate owner, Linux box) ratchets 189 → 190 when convenient.
+
+**Remaining slice-2 headers** (each moves the floor only once a corpus file's *whole* cluster ships): pthread (6 files; opaque `__PTHREAD_*_SIZE__`), signal (2; `sigset_t`, W-less), sys/wait (2; `W*` status bits), unistd (2), sys/mman (1; `MAP_*`/`PROT_*` values), wchar (1), fenv (1; `fenv_t`, `FE_*`). `threads.h` is already freestanding in `runtime/include` — not duplicated.
+
+**Source.** mac-arm64, 2026-08-15, slice 2 of lin-x64's [T-lin-10367](#t-lin-10367-slice-1-the-layout-free-half-of-the-darwin-header-set); SDK = Xcode `MacOSX.sdk`.
+
+<a id="t-lin-10369-manifest-declared-cells-and-the-identity-exemption"></a>
+
+## T-lin-10369 A manifest-declared cell should override `regstub-lint`'s IDENTITY exemption
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+**Three sessions have now hit one defect, each finding it on someone else's machine**, which is the signature of a gap no platform can see from where it stands:
+
+| | |
+| --- | --- |
+| win-x64 | 6 cells, [T-win-50001](#t-win-50001-ci-gate-contract-red-on-win-x64) |
+| mac-arm64 | 4 cells, [T-mac-30002](#t-mac-30002-resolution-the-pin-was-never-48) |
+| lin-x64 | `osx/headers-parse` + its known-positive — **mine**, declared in both manifests and registered only off-Darwin, so it was green here and red on both other boxes until mac fixed it at `450acf27` |
+
+**Why `ci/registration-stubs` does not already catch it, and is right not to.** `tools/regstub-lint.py` enforces exactly this rule — every branch of a gate registers the same cells — but only for **probe-rooted** variables, and it explicitly exempts IDENTITY variables: *"A build for WIN32/arm64 and a build for Linux/x86_64 are two different suites and are not required to register the same cells."* That exemption is correct in general. `pe/*` cells should not exist on a Linux target.
+
+**The narrow rule that closes it.** A row in `tests/must-run.txt` or `tests/gate-contract.txt` is the tree asserting *this cell exists in every build*. That claim is stronger than the IDENTITY exemption grants, and it is the tree's own claim, so **for manifest-declared cells the exemption should not apply**. Everything else stays exempt.
+
+**Attempted and reverted, because the calibration was wrong.** A first cut keyed on "the `add_test` sits inside any conditional and no `mcc_skip_test` names the cell" reported **90 violations**, and inspection showed two false-positive classes that make it unusable as a gate:
+
+1. **Computed cell names.** `slice/cref-oracle-gcc-c-torture-execute` reads as "registered nowhere" to a literal-name matcher, but it *is* registered — through a loop that builds the name from variables. `gate-contract.py` sees it registered as an echo stub. Literal matching cannot see loop-generated names, and regstub-lint's existing rule already handles this by comparing names as written with `${...}` left in place.
+2. **Depth is not platform-variance.** `trace-gate-invariant` at depth 2 is inside conditions that may hold on every platform. "Inside a conditional" and "absent on some platform" are different statements, and only the second is a defect.
+
+A gate that always fires is as useless as one that cannot, and 90 exemptions would be worse than no check. So the heuristic was reverted rather than shipped.
+
+**How it should be built.** Reuse the machinery that is already correct rather than a depth heuristic: `regstub-lint` already builds a `Chain` per `if`/`elseif`/`else` with the cell names each branch registers, and already classifies which variables are IDENTITY. The check is then — for a chain currently exempted *only* because its condition mentions an IDENTITY variable, take the cells registered on some branch and absent on another, and report any that a manifest declares. That yields a small true set by construction, needs no new parsing, and inherits the existing handling of computed names.
+
+**Verification spec.** The three known instances are the known-positive: reverting `450acf27`'s skip twins must take the cell red **from Linux**, which is the whole point — the defect must become visible from a platform it does not break.
+
+**Source.** Found on lin-x64, 2026-08-15, after mac-arm64 reported the same shape a third time.

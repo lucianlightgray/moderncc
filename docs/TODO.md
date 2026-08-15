@@ -4,9 +4,9 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T01:20Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T03:05Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T02:33Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T01:35Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10370   | 2026-08-15T04:35Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T03:05Z |
 
 ## Contracts — blocking, highest priority
 
@@ -18,7 +18,7 @@
 
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T01:55Z
-      REF: DETAILS.md#t-lin-10001-slice-3-approach-l2-prime | DEPS: — | NOTE: slice 2 DONE; slice 3 (L2′) approach PUBLISHED — two of the contract's premises for it are stale (the pool joins; nothing is detached). Implementation held until win-x64's T-lin-10092/win suite number lands
+      REF: DETAILS.md#t-lin-10001-slice-3a-the-pool-job-becomes-a-tick | DEPS: — | NOTE: hold released by win-x64; slice 3a DONE at c6c26c64 (job->run is now job->tick, quit re-read between ticks, behaviour identical, 79/79 green). Slice 3b = split sd_job_heavy + the bound assertion + reconcile jit/selftest-shutdown's `done == accepted`, which IS the unbounded property written as a requirement — all one unit, see DETAILS
 
 
 - [ ] T-lin-10365 [S] An isolated, iterative Windows-on-ARM CI hook on a `woa/**` branch
@@ -28,16 +28,15 @@
 
 - [ ] T-lin-10367 [C] A minimal mcc-authored Darwin libc header set for host-independent bank keys
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
-      REF: DETAILS.md#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple | DEPS: — | NOTE: declarations only, no inline bodies; runtime/osx; all three key_flags branches read it, hence [C]. Authorable from any host — no Apple hardware, no SDK, no licensing gate
+      REF: DETAILS.md#t-lin-10367-slice-1-the-layout-free-half-of-the-darwin-header-set | DEPS: — | NOTE: slice 1 DONE at 50b8c5a2 (stdio/string/stdlib/math/assert/errno/ctype + osx/headers-parse gate, 189 files, known-positive both ways). Slice 2 = setjmp/pthread/threads/wchar/signal/fenv/sys-mman/sys-wait/unistd — each commits to a struct layout or platform bit pattern and wants an SDK to check against, so it belongs on mac's box
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-lin-10088 [X] win-x64 — carry the `gcc-c-torture-execute` corpus for the cref-oracle (was "for pe/x-oracle")
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: c5197398 | TS: 2026-08-15T02:45Z
-      REF: DETAILS.md#fleet-capabilities-docker-qemu-on-all-three | DEPS: — | Q: Q-lin-10014 ANSWERED | NOTE: PREMISE CORRECTION — `pe/x-oracle` does NOT read this corpus (tests/cross/pe-xoracle.sh iterates goldens.h run-mode cells vs vendored mingw). The real consumer of `vendor/gcc-c-torture-execute` is `slice/cref-oracle-gcc-c-torture-execute` (CMakeLists 3964, python3+gcc+clang — all present on win-x64) and `optlevel/torture-differential` (UNIX-only, host-skipped here). Progress: fetched 1694 programs via `git clone --filter=blob:none --sparse` of gcc-mirror/gcc (network works on this box; the "no network" premise did not apply) — no Docker needed. Placing at vendor/ (gitignored → not vendored), then verifying the cref-oracle cell runs
-
 ## Open — claimable
+- [ ] T-lin-10088 [X] carry the `gcc-c-torture-execute` corpus for the cref-oracle (was "for pe/x-oracle", was win-x64)
+      OWNER: — | STATE: OPEN | SHA: c5197398 | TS: 2026-08-15T03:05Z
+      REF: DETAILS.md#fleet-capabilities-docker-qemu-on-all-three | DEPS: — | Q: Q-lin-10014 ANSWERED | NOTE: win-x64 executed this and corrected two premises (see DETAILS). (1) `pe/x-oracle` does NOT read this corpus; the real consumer is `slice/cref-oracle-gcc-c-torture-execute`. (2) The corpus is NOT the only blocker: fetched 1694 progs via `git clone --filter=blob:none --sparse …gcc-mirror/gcc` + `sparse-checkout gcc/testsuite/gcc.c-torture/execute` → vendor/ (gitignored; no Docker, network works here); the cref cell now RUNS (134s over 1694) but is RED with `bodies=0 slices=0 tuples=0` — the same win-x64 slice-extraction gap as T-win-50003 Bucket A (the in-tree `slice/cref-oracle` is 0-tuples here too). Green needs the slice fix (mccgpu/slicerun owners'), NOT the corpus. Re-typed [X]→ any session: on lin-x64/mac-arm64 the same fetch should green the cell; win-x64 cannot demonstrate it (its slice path is what's broken)
 - [ ] T-lin-10045 [S] `-fopt-slice`: revise into the governor over every AST/RIR slice-capable strategy, integrated with the other slice optimizers
       OWNER: — | STATE: OPEN | SHA: 3749f816 | TS: 2026-08-15T02:30Z
       REF: DETAILS.md#q-lin-10006-answer-fopt-slice-is-the-governor-not-a-pass | DEPS: — | Q: Q-lin-10006 ANSWERED | NOTE: not "own or delete" — it was never a pass. Carries forward: the disk-cache determinism defect, and OPT_SLICE at MCC_OPTD_LEVEL(9) leaves opt-cache-determinism a permanent 77 with no subject. First slice = a shipped level with the determinism claim gated
