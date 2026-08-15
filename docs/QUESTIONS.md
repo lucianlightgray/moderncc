@@ -39,32 +39,6 @@ Can all three machines push to `main` with no branch protection?
 
 REF: DETAILS.md#q-lin-10003-can-all-three-machines-push-to
 
-### Q-lin-10004 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10011
-Register arrays: follow clang and reject `a[1]`, or carry a subscript-suppression flag to keep gcc's leniency?
-
-C11 6.3.2.1p3 makes decaying a `register` array undefined. mcc now rejects the forms both references reject. `*a` and `*(a+1)` are still accepted, and neither can simply be checked, because `a[1]` compiles to exactly the same two calls (`gen_op('+'); indir();`). The references disagree: gcc accepts `a[1]`, clang rejects it, each consistently with its own treatment of `*(a+1)`, which both reject.
-
-**Assumed for now:** Mode (a). Both forms stay accepted, which is what ships today and matches gcc.
-
-**Cost if wrong:** One fixture and the `gen_op`/`indir` flag, if the answer is clang. Nothing else depends on it.
-
-REF: DETAILS.md#q-lin-10004-register-arrays-follow-clang-and-reject
-
-**ANSWER (human, 2026-08-15):** Keep gcc's leniency. Both `a[1]` and `*(a+1)` stay accepted (Mode a) — mcc matches gcc here, not clang. T-lin-10011's remaining DoD, the accept-forms fixture, is written in the gcc mode: `a[1]` compiles.
-
-### Q-lin-10005 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10012
-Raise `MCC_MAX_ALIGN` for 32-byte vectors, or keep the documented incompatibility?
-
-32-byte vectors are laid at 16-byte alignment (8 on i386/arm), so passing one across an mcc/gcc object boundary is a struct-ABI incompatibility. Raising the cap is an ABI change whose blast radius nobody has measured.
-
-**Assumed for now:** Mode (a). The cap stays and the incompatibility is documented rather than fixed.
-
-**Cost if wrong:** Every object mcc has ever emitted that carries a 32-byte vector in a struct changes layout. The measurement — how many cells and how many banks move — is the first half of the task either way.
-
-REF: DETAILS.md#q-lin-10005-raise-mcc-max-align-for-32
-
-**ANSWER (human, 2026-08-15):** Raise `MCC_MAX_ALIGN` for 32-byte vectors (NOT Mode a). Do the ABI change so a 32-byte vector in a struct is laid at 32-byte alignment and is cross-TU-compatible with gcc. The blast-radius measurement (how many cells / banks move) is the first half of T-lin-10012 either way; carry it, then re-bank.
-
 ### Q-lin-10007 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10057
 `kept_coverage` host-sensitivity: raise `--tol`, make the metric host-stable, or encode "bank from stage2"?
 

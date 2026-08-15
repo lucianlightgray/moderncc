@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T07:00Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10373   | 2026-08-15T14:00Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10373   | 2026-08-15T15:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50005   | 2026-08-15T14:05Z |
 
 ## Contracts — blocking, highest priority
@@ -59,7 +59,7 @@
       REF: DETAILS.md#t-lin-10010-implement-reversed-scalar-storage-order | DEPS: —
 - [ ] T-lin-10012 [S] 32-byte vectors are laid at 16-byte alignment, so cross-TU to gcc is incompatible
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10012-32-byte-vectors-are-laid-at | DEPS: — | Q: Q-lin-10005
+      REF: DETAILS.md#q-lin-10005-answered-raise-mcc-max-align-and-whose-lane-it-is | DEPS: — | Q: Q-lin-10005 ANSWERED | NOTE: human says RAISE it (not mode a) — 32-byte vector in a struct at 32-byte alignment, cross-TU-compatible with gcc. Two phases in this order: (1) measure how many cells/banks move, (2) change + re-bank only what the measurement predicted. Re-bank is lin-x64's: eleven target-keyed keys and o0_ab refuses banking from a partial measurement. mac owns whether the raised alignment is CORRECT on arm64/AAPCS64
 - [ ] T-lin-10013 [S] `__int256` has no literal suffix
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10013-int256-has-no-literal-suffix | DEPS: —

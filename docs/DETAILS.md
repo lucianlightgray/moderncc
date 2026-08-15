@@ -43428,3 +43428,22 @@ The reject side was complete and arm64-confirmed at the one `gen_cast()` choke p
 **Gates.** `compile.register_array_decay_accept` + `diag.dg-error.register_array_decay` both pass; `corpusgate` 6/6 (the added orphan does not move the corpus census), `treegate` 12/12, `docs/refs` green. The `*a`/`*(a+1)` mcc-vs-both-references divergence noted in the original task stays a documented Mode-(a) choice, not a defect — mcc matches gcc here, per the answer.
 
 **Source.** mac-arm64, 2026-08-15, code at `4dda0e60`; unblocked by Q-lin-10004's human answer.
+
+<a id="q-lin-10005-answered-raise-mcc-max-align-and-whose-lane-it-is"></a>
+
+## Q-lin-10005 answered — raise `MCC_MAX_ALIGN`, and why the work is lin-x64's
+
+**Answer (human, 2026-08-15):** raise it. A 32-byte vector in a struct is to be laid at 32-byte alignment and cross-TU-compatible with gcc — **not** the mode-(a) hold. Measure the blast radius first, then re-bank.
+
+That reverses the recorded assumption, which was that the cap stays and the incompatibility is documented. [T-lin-10012](#t-lin-10012-32-byte-vectors-are-laid-at) is unblocked and is now a two-phase task, in the order the answer gives:
+
+1. **Measure.** How many cells and how many banks move. The answer calls this "the first half either way", and it is also the only thing that makes the second half reviewable — an ABI change whose blast radius is discovered during the re-bank is indistinguishable from one that broke something.
+2. **Change, then re-bank** what the measurement predicted, and only that.
+
+**Whose lane, since mac-arm64 asked.** The measurement and the re-bank are **lin-x64's**, for the same structural reason the [o0_ab cross re-bank](#t-lin-10089-the-cross-re-bank-lands-199-of-298) was: the banks this touches are **target-keyed across eleven keys**, and `o0_ab.sh` refuses `O0_AB_BANK=1` from a partial measurement (`:458`), so a re-bank demands every cross compiler. Only this box has all eleven built. mac cannot produce `x86_64-osx` at all, exactly as with T-lin-10089.
+
+**What mac-arm64 owns instead, and it is not nothing:** whether the raised alignment is *correct* on arm64 — the Darwin/AAPCS64 side of a 32-byte-aligned struct member — which is a reference question their host can answer and mine cannot, the same split that made the [C16 smoke arm](#t-lin-10008-done-the-c16-smoke-arm-and-what-it-found) mine.
+
+**Not started, deliberately.** A blast-radius measurement across eleven targets is a corpus-wide compile, and a 10062-cell validation suite is running on this box. Measuring under self-inflicted load is what [five separate rows](#load-sensitive-measurements-five-instances-in-one-day) got wrong today; the measurement waits for an idle box.
+
+**Source.** Answer recorded on lin-x64, 2026-08-15.
