@@ -46129,3 +46129,15 @@ The one genuine non-environmental red (`rir-coverage`) was diagnosed, routed to 
 **Proven non-blind.** Reverting the diagnostic to the silent clamp and rebuilding makes `jit/pool-cap` **fail** (`asked for 100 workers over a cap of 64 and got no diagnostic — the over-cap request was clamped silently`), so the cell tests the behaviour rather than merely running it. Verified green: `jit/pool-cap`, and `jit/selftest-pool` + `jit/run-parity-host` + `jit/selftest-leaf-int` (which exercise the same `mccjit_pool_start`) still pass — the new branch fires only above 64, which nothing else requests.
 
 **Source.** lin-x64, 2026-08-15, `main@e77a9c2c`.
+
+<a id="t-lin-10078-fixed-divmod-operand-reduction-landed-with-a-self-checking-exec-test"></a>
+
+## T-lin-10078 fixed — `/` `%` operand reduction landed at `9c09d27b`, verified vs gcc-16
+
+The one-line guard extension at `mccgen.c:4575` (fire the operand reduction for `/` `%` `TOK_UDIV` `TOK_UMOD`, not just `CMP_OP`) landed. On the discriminating shape `s.f / -1` with `unsigned long long f : 33` = `2^33-1`: pre-fix mcc gave `0` (matching clang's full-width `-1` == `2^64-1`, quotient collapses); post-fix mcc gives `1` (gcc's precision-N: `-1` reduces to `2^33-1`, `(2^33-1)/(2^33-1)` == 1). Verified `mcc == gcc-16` at `-O0..-O3` on BFUL 33/40/63/64 and signed-33; both the constant-folded and runtime paths agree (checked directly — the fold path was not a second bug).
+
+**Coverage — a self-checking exec test, not a bcases matrix op.** Added div/mod assertions to `tests/exec/features_c99_c11/wide_bitfield_arith.c` (self-checking, golden stays `OK`), wants verified vs gcc-16, and **TDD-proven**: the augmented file prints `FAIL`/exit 1 on a mcc built without the fix, `OK`/exit 0 with it. It passes all 25 registered variants including `diff3` (mcc vs gcc/clang). **The bcases.h matrix op was assessed and deliberately rejected:** adding `DIVM1`/`MODM1` to `SM_BFOPS` makes the `smoke/divergence` bfsweep enumerate them, which produced 39 new `diverge-one` categories (mcc matches gcc, diverges from clang — the correct N36 behaviour) that are unbanked across **three** per-platform bails files (`bails.txt`, `bails-arm64-macos.txt`, `bails-x86_64-windows.txt`) — turning an `[S]` fix into a cross-platform banking effort unverifiable from one host. The self-checking exec test gives equivalent (self-documenting) coverage on every platform through the existing exec-golden harness, with zero banking.
+
+**Verification (the task's own §8 anchor spec — the 782-object sweep + the test rows).** `ast/o0-baseline` PASS — the fix is **byte-identical across all 782 corpus objects** (no object exercises the div/mod-over-wide-bitfield path, so the change is provably inert on the existing corpus and cannot regress any banked cell). `fmt/census-bank` PASS (a condition change adds no format sites — the earlier assumption that a reapply moves it was wrong). Regression subset green: `smoke/divergence`, `smoke/native`, `slice/census`, all bitfield exec/replay cells. Full native suite in flight for the formal §8.
+
+**Source.** mac-arm64, 2026-08-15, fix `9c09d27b`, verified against gcc-16 (Homebrew 16.1.0).
