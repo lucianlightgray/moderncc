@@ -42373,3 +42373,37 @@ Sits beside [[T-win-50001]] (win registered its six missing cells via else-branc
 **Verification.** `ctest --test-dir cmake-macos -R '^ci/must-run-registered$' --output-on-failure` exits 0 natively on Darwin; `treegate` 12/12.
 
 **Source.** Verified on mac-arm64, 2026-08-15, autonomous tick after the T-mac-30002 acceptance.
+<a id="q-lin-10013-answer-ci-is-the-woa-executor"></a>
+
+## Q-lin-10013 answered — CI is the Windows-on-ARM executor, and that re-types two tasks
+
+**Answer (human, 2026-08-15):** an isolated, iterative GitHub Actions hook on a branch for Windows-on-ARM work; Docker on the Windows machine otherwise.
+
+**Why this re-types rather than merely unblocks.** [T-lin-10086](#t-lin-10086-win-x64-arm64-win32-arm-win32) and [T-lin-10087](#t-lin-10087-win-x64-w5-mcc-cannot-self) were `[X]` win-x64 on a premise that is now false: that the session holding a Windows box is the one that could hold a Windows-on-ARM box. No session has WoA hardware, and a hosted `windows-11-arm` runner is reachable by whichever session pushes the branch. Keeping them `[X]` would pin them to the session with no more access than the other two. Both become `[S]`.
+
+**What already exists, so the scope is honest.** `tools/ci.c` names the runner in three tables — `PLAN_WIN` (`:538`), `PLAN_MINGW` (`:546`, marked experimental), `PLAN_DIST_WIN` (`:564`, `:567`) — and `HOSTS` carries `windows-arm64-msvc` at `:611-612`. The label is not new work. **What is missing is that this host has `gate = 0`**, and the plan filters (`:1893-1897`, `:1907-1911`) admit non-gate hosts only under `stage1-nightly`/`stage2-nightly`. So WoA is *built* nightly by `matrix.yml` and has never gated anything, and neither task's subject — **execution** and **self-host** — is touched by a build.
+
+**The repo is public**, so `windows-11-arm` hosted runners cost nothing here. That is what makes an iterative branch loop affordable; on a private repo this answer would carry a bill.
+
+**Isolation, concretely.** `ci.yml` is the only workflow with a bare `on: push:`, so it fires on every branch. An iterative WoA branch would drag the full matrix along behind every probe commit. The isolation is therefore two-sided: a new workflow triggered only on `woa/**`, and `branches-ignore: ['woa/**']` on `ci.yml`'s push trigger.
+
+**One thing the runner still cannot do, recorded before it is discovered.** T-lin-10086's subject is `arm64-win32` *and* `arm-win32`. Windows 11 on ARM64 does not run 32-bit ARM (ARM32) applications — that support was removed. So a `windows-11-arm` runner answers the `arm64-win32` half and **not** the `arm-win32` half, which remains without an executor. The task must be split on that line rather than reported green on half its subject.
+
+**Source.** Answer recorded and executed on lin-x64, 2026-08-15.
+
+<a id="q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple"></a>
+
+## Q-mac-30000 answered — a minimal mcc-authored Darwin libc header set, and the SDK on Apple hosts
+
+**Answer (human, 2026-08-15):** author a minimal Darwin libc header set; on an APPLE host, use the macOS standard libraries/headers.
+
+**The refinement that matters.** The peer note recommended the stand-in on cross-platform and licensing grounds and stopped there. The answer adds the half that decides the design: the minimal set is **not** what a native Darwin build compiles against. A native mcc on macOS keeps using the SDK, so the mcc-authored headers exist to give the **`ast/o0-baseline` bank keys** a host-independent subject — not to replace the platform's libc. The bank stops drifting with the SDK because the *keys* stop being SDK-derived, while the compiler users actually run keeps seeing real headers.
+
+**Consequences:**
+
+- **The licensing question is moot.** Nothing Apple-owned enters the tree, so `Q-mac-30000`'s blocking half evaporates rather than being decided.
+- **The task splits in two.** A `[C]` header set — authorable from any host, no Apple hardware, no SDK — and the mac-arm64 `[X]` half that wires the `--sysroot` selection, keys the quartet off the pinned set, and un-skips it. The `[C]` half is what all three `key_flags` branches read, which is why it is a contract and not an `[S]`.
+- **Scope of the header set:** declarations only, for enough of `stdio.h`/`stdlib.h`/`string.h` to compile the `tests/exec` corpus. No inline bodies, no macro-defined functions — an inline body would put *mcc's* codegen of libc into the bank, which is the drift being removed, wearing a different hat. Placed beside `runtime/include` (e.g. `runtime/osx`) so freestanding stays freestanding.
+- **`ast/o0-baseline` should then carry a key-count floor** in `tests/gate-contract.txt` — a bank that silently keys fewer rows is the same defect the contract exists to refuse, and it would be this tree's first ratchet decrement.
+
+**Source.** Answer recorded on lin-x64, 2026-08-15; implementation is mac-arm64's for the `[X]` half.

@@ -149,6 +149,10 @@ Is Windows-on-ARM hardware available to any session?
 
 REF: DETAILS.md#q-lin-10013-is-windows-on-arm-hardware-available
 
+**ANSWER (human, 2026-08-15):** Use an isolated/iterative GitHub Actions hook on a branch to work on Windows-on-ARM tasks. Use Docker on the Windows machine otherwise.
+
+**Executed by lin-x64, 2026-08-15:** the answer replaces the premise both blocked tasks rested on. They were `[X]` win-x64 on the reasoning that only that session could ever hold the hardware — but no session holds it, and the executor is now a `windows-11-arm` hosted runner that any session can reach by pushing a branch. Both are therefore re-typed `[S]` and re-OPENed; leaving them `[X]` would park them on the one session with no more access to WoA than the other two. `tools/ci.c` already names the runner (`PLAN_WIN`, `PLAN_MINGW`, `HOSTS:windows-arm64-msvc`), so the label is not new work — but that host carries `gate = 0`, so it is planned only into `stage1-nightly`/`stage2-nightly` and has never gated anything. See DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor.
+
 ### Q-lin-10014 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10088
 Can `vendor/gcc-c-torture-execute` be vendored onto the Windows host?
 
@@ -168,6 +172,10 @@ The `ast/o0-baseline` *-osx object bank is header-sensitive and currently encode
 REF: DETAILS.md#t-lin-10089-investigation-the-osx-bank-encodes-linux-glibc-headers
 
 **NOTE (peer opinion, lin-x64, per their reply to 95763bcb):** lin recommends the minimal mcc-authored stand-in over a vendored Darwin SDK — it is the only option viable on all three platforms (a vendored SDK is unusable from win-x64), has no licensing gate, and pins mcc's codegen rather than libc's declarations. Spec they'd want: declarations only for enough of `stdio.h`/`stdlib.h`/`string.h` to compile the `tests/exec` corpus, no inline bodies, no macro-defined functions, placed beside `runtime/include` (e.g. `runtime/osx`) so freestanding stays freestanding. Suggests typing the follow-up `[C]` (an interface all three `key_flags` branches read; neighbour of T-lin-10002 bank keying) and giving `ast/o0-baseline` a key-count floor in `tests/gate-contract.txt` — the contract's first ratchet decrement. Question stays OPEN pending human confirmation of the stand-in direction, the `[C]` re-scope, and the ratchet decrement.
+
+**ANSWER (human, 2026-08-15):** Author a minimal Darwin libc header set instead of vendoring an Apple SDK. When on an APPLE host, use the macOS standard libraries/headers.
+
+**Executed by lin-x64, 2026-08-15:** this is the stand-in direction, with a refinement the peer note did not have: the minimal set is *not* what a native Darwin build compiles against. On an Apple host mcc uses the real SDK, so the mcc-authored headers exist to give the **bank keys** a host-independent subject, not to replace the platform. That splits the task cleanly in two — a `[C]` header set anyone can author (no Apple host required, no licensing gate), and the mac-arm64 `[X]` half that wires `--sysroot` selection and re-keys the quartet. Licensing question is moot: nothing Apple-owned enters the tree. See DETAILS.md#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple.
 
 ### Q-mac-30001 — [mac-arm64] — 2026-08-15T00:23Z — BLOCKS: T-lin-10090
 How should the arm64 `if-conversion-abs` cycles/instructions re-take be produced, given no `perf` on Darwin and no arm64-Linux host in the fleet?
