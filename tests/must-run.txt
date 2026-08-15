@@ -198,7 +198,7 @@ cli/unreferenced_static_inline_is_not_emitted | registered | a never-called `sta
 # contract landed. ci/gate-contract needs only python3 and the build's own test
 # listing, so a skip on either of its two rows is always a bug.
 ci/gate-contract             | must-run   | the contract itself: every gate declares a floor and a prover, every prover is registered and named here, and the unfloored/unproved counts only ever fall
-ci/gate-contract-known-positive | must-run | proves ci/gate-contract is not blind: it drops a row, relaxes a floor, forges a prover, points a row at an echo stub and empties the manifest, and requires each one to be caught
+ci/gate-contract-known-positive | must-run | proves ci/gate-contract is not blind: it drops a row, relaxes a floor, forges a prover, points a row at an echo stub and empties the manifest, and requires each one to be caught; and proves the --min-proved pin is a property of the manifest and not of the host, by simulating four prover-carrying gates host-skipping and requiring the verdict not to move while a forged prover is still caught
 flagsweep/dev-gate-known-positive | registered | proves flagsweep/dev-gate reads the -f arm it sweeps rather than counting refusals as fires
 jit/bind-local-known-positive | registered | proves jit/bind-local compares bound locals rather than re-reading the host frame and agreeing with itself
 jit/kgc-effect-parity-known-positive | registered | proves jit/kgc-effect-parity diffs the two effect logs rather than checking both exist

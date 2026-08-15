@@ -127,6 +127,47 @@ def registrations(build):
     return tests
 
 
+def simulate_host_skip_proved(tests, rows, want):
+    """Stub the first `want` prover-carrying gates that really run here.
+
+    The named-cell form cannot be used by a registered cell: the gates that
+    host-skip on Darwin are not registered at all on Windows, so naming them
+    would die there rather than check anything. Picking them by property
+    instead makes the same assertion on every platform."""
+    picked = []
+    for r in rows:
+        if len(picked) == want:
+            break
+        cell = r["cell"]
+        if r["prover"] == UNPROVED or cell not in tests:
+            continue
+        if is_echo_stub(tests[cell]):
+            continue
+        picked.append(cell)
+    if len(picked) < want:
+        die("--simulate-host-skip-proved %d: only %d prover-carrying gate(s) "
+            "run for real on this host, so the simulation would be over a "
+            "smaller subject than it claims" % (want, len(picked)))
+    for cell in picked:
+        tests[cell] = ["cmake", "-E", "echo",
+                       "%s: simulated mcc_skip_test stub" % cell]
+    return tests, picked
+
+
+def simulate_host_skip(tests, cells, manifest_cells):
+    for cell in cells:
+        if cell not in manifest_cells:
+            die("--simulate-host-skip names %s, which no manifest row declares; "
+                "a simulation over a cell this contract says nothing about "
+                "proves nothing" % cell)
+        if cell not in tests:
+            die("--simulate-host-skip names %s, which this build does not "
+                "register; there is nothing here to skip" % cell)
+        tests[cell] = ["cmake", "-E", "echo",
+                       "%s: simulated mcc_skip_test stub" % cell]
+    return tests
+
+
 def is_echo_stub(cmd):
     for i, c in enumerate(cmd):
         if c == "-E" and i + 1 < len(cmd) and cmd[i + 1] == "echo":
@@ -184,6 +225,8 @@ def main():
     ap.add_argument("--max-unfloored", type=int, default=None)
     ap.add_argument("--max-unproved", type=int, default=None)
     ap.add_argument("--mutate", choices=MUTATIONS, default=None)
+    ap.add_argument("--simulate-host-skip", default=None)
+    ap.add_argument("--simulate-host-skip-proved", type=int, default=None)
     a = ap.parse_args()
 
     rows = load_manifest(a.manifest)
@@ -192,6 +235,19 @@ def main():
     must_run = load_must_run(a.must_run)
     must_run_set = set(must_run)
     tests = registrations(a.build)
+    if a.simulate_host_skip:
+        want = [c.strip() for c in a.simulate_host_skip.split(",") if c.strip()]
+        if not want:
+            die("--simulate-host-skip was given no cell names")
+        tests = simulate_host_skip(tests, want, set(r["cell"] for r in rows))
+    if a.simulate_host_skip_proved is not None:
+        if a.simulate_host_skip_proved < 1:
+            die("--simulate-host-skip-proved needs a positive count; %d would "
+                "simulate nothing" % a.simulate_host_skip_proved)
+        tests, picked = simulate_host_skip_proved(tests, rows,
+                                                  a.simulate_host_skip_proved)
+        print("gate-contract: simulating this host skipping %d prover-carrying "
+              "gate(s): %s" % (len(picked), ", ".join(picked)))
 
     bad = []
     declared = set(r["cell"] for r in rows)
@@ -199,6 +255,7 @@ def main():
     unfloored = []
     unproved = []
     host_skipped = []
+    host_skipped_proved = []
     stubbed = []
     proved = 0
     floored = 0
@@ -226,10 +283,33 @@ def main():
 
         if is_echo_stub(cmd):
             host_skipped.append(cell)
-            for p in prover.split(","):
-                p = p.strip()
-                if p and p in tests:
-                    claimed_provers.add(p)
+            if prover == UNPROVED:
+                continue
+            if PROVER_SELF.match(prover):
+                host_skipped_proved.append(cell)
+                continue
+            names = [p.strip() for p in prover.split(",") if p.strip()]
+            if not names:
+                bad.append("%s: the prover column is empty" % cell)
+                continue
+            ok = True
+            for p in names:
+                claimed_provers.add(p)
+                if p not in tests:
+                    bad.append("%s names %s as its known-positive and this "
+                               "build does not register it; the proof is gone "
+                               "and the green means nothing. %s is host-skipped "
+                               "here, which excuses running the proof, not "
+                               "declaring one that exists" % (cell, p, cell))
+                    ok = False
+                elif p not in must_run_set:
+                    bad.append("%s names %s as its known-positive and %s is not "
+                               "in tests/must-run.txt, so the proof can stop "
+                               "being registered without anything noticing"
+                               % (cell, p, p))
+                    ok = False
+            if ok:
+                host_skipped_proved.append(cell)
             continue
 
         m = FLOOR_MIN.match(floor)
@@ -305,10 +385,13 @@ def main():
         bad.append("the manifest declares %d gate(s) and at least %d were "
                    "expected; a contract that covers nothing reports green over "
                    "nothing" % (len(rows), a.min_rows))
-    if proved + len(stubbed) < a.min_proved:
-        bad.append("%d gate(s) carry a prover (%d of them stubbed on this host) "
-                   "and at least %d were expected"
-                   % (proved + len(stubbed), len(stubbed), a.min_proved))
+    carry = proved + len(stubbed) + len(host_skipped_proved)
+    if carry < a.min_proved:
+        bad.append("%d gate(s) carry a prover (%d verified here, %d with a "
+                   "prover stubbed on this host, %d host-skipped gates) and at "
+                   "least %d were expected"
+                   % (carry, proved, len(stubbed), len(host_skipped_proved),
+                      a.min_proved))
     if a.max_unfloored is not None and len(unfloored) > a.max_unfloored:
         bad.append("%d gate(s) are `%s` and the ratchet is %d: %s"
                    % (len(unfloored), UNFLOORED, a.max_unfloored,
@@ -331,12 +414,17 @@ def main():
     if host_skipped or stubbed:
         print("gate-contract: %d gate(s) are mcc_skip_test stubs on this host "
               "and %d carry a prover that is, so this host proves nothing about "
-              "them and does not pretend to. They still count in both ratchets, "
-              "which are a property of the manifest and not of the host, so the "
-              "pins hold identically on all three"
-              % (len(host_skipped), len(stubbed)))
+              "them and does not pretend to. The %d of them that declare a "
+              "prover still count toward --min-proved, which is a property of "
+              "the manifest and not of the host, so the pin holds identically "
+              "on all three. A `min:` floor is verified against this build's "
+              "command line, so a stub has none to verify and is not counted "
+              "as floored here"
+              % (len(host_skipped), len(stubbed), len(host_skipped_proved)))
         for name in sorted(host_skipped)[:12]:
-            print("gate-contract:   host-skipped: %s" % name)
+            print("gate-contract:   host-skipped: %s%s"
+                  % (name, " (declares a prover; counted)"
+                     if name in host_skipped_proved else ""))
         for name in sorted(stubbed)[:12]:
             print("gate-contract:   stubbed prover: %s" % name)
     if a.max_unfloored is not None and len(unfloored) < a.max_unfloored:

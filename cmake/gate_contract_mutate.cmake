@@ -39,5 +39,49 @@ foreach(_m drop-row relax-floor forge-prover unlisted-prover empty)
                             "passed -- ${_why_${_m}}")
     endif()
 endforeach()
+execute_process(COMMAND "${PY}" "${TOOL}"
+                        "--build=${BINDIR}"
+                        "--manifest=${MANIFEST}"
+                        "--must-run=${MUSTRUN}"
+                        "--min-rows=${MINROWS}"
+                        "--min-proved=${MINPROVEDLIVE}"
+                        "--max-unfloored=${MAXUNFLOORED}"
+                        "--max-unproved=${MAXUNPROVED}"
+                        "--simulate-host-skip-proved=4"
+                RESULT_VARIABLE _inv OUTPUT_VARIABLE _iout ERROR_VARIABLE _iout)
+if(NOT _inv EQUAL 0)
+    message("${_iout}")
+    message(FATAL_ERROR "ci/gate-contract-known-positive: four prover-carrying "
+                        "gates were simulated as mcc_skip_test stubs and the "
+                        "contract went red at the live --min-proved "
+                        "${MINPROVEDLIVE}. The pin is supposed to be a property "
+                        "of the manifest, not of the host -- if host-skipping "
+                        "moves it, then the number that holds on Linux is "
+                        "unreachable on Darwin and Windows for no reason but "
+                        "which gates each box happens to register")
+endif()
+
+execute_process(COMMAND "${PY}" "${TOOL}"
+                        "--build=${BINDIR}"
+                        "--manifest=${MANIFEST}"
+                        "--must-run=${MUSTRUN}"
+                        "--min-rows=${MINROWS}"
+                        "--min-proved=${MINPROVEDLIVE}"
+                        "--max-unfloored=${MAXUNFLOORED}"
+                        "--max-unproved=${MAXUNPROVED}"
+                        "--simulate-host-skip-proved=4"
+                        "--mutate=forge-prover"
+                RESULT_VARIABLE _invneg OUTPUT_VARIABLE _inout ERROR_VARIABLE _inout)
+if(_invneg EQUAL 0)
+    message("${_inout}")
+    message(FATAL_ERROR "ci/gate-contract-known-positive: a prover was forged "
+                        "while four gates were simulated as host-skipped and "
+                        "the contract still passed -- counting a host-skipped "
+                        "gate toward the pin must excuse RUNNING its proof, "
+                        "not DECLARING one that exists")
+endif()
+
 message("ci/gate-contract-known-positive: clean OK, drop-row/relax-floor/"
-        "forge-prover/unlisted-prover/empty all detected")
+        "forge-prover/unlisted-prover/empty all detected, and the "
+        "--min-proved pin held under four simulated host-skips while still "
+        "catching a forged prover")
