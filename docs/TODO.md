@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:36Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T17:26Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T17:48Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T17:50Z |
 
 ## Contracts — blocking, highest priority
 
@@ -28,12 +28,12 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
+- [ ] T-win-50020 [S] win-x64 — the Windows embed-JIT link: executing approach B (msvcrt-mingw blob) now that the symbol layer + decision are settled
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 011f2970 | TS: 2026-08-15T17:50Z
+      REF: DETAILS.md#t-win-50020-slice-2b-startup-crash-fixed-but-the-msvc-blob-static-globals-are-systemically-mis-placed-approach-b-is-the-answer | DEPS: — | NOTE: RE-CLAIMED to execute approach B (I hold the deepest context). Plan: (1) pin which object carries the ucrt refs (jit engine blob vs sidecar libmccrt.a; MCC_EMBED_MCCRT force-OFF on WIN32 @CMakeLists 2756); (2) configure a build with -DMCC_EMBED_JIT_MINGW_CC=C:/Users/llg/scoop/apps/mingw-mstorsjo-llvm-msvcrt/current/bin/gcc.exe; (3) test embed-jit -o + MCC_JIT=0/1 run; (4) on green, jit/replay-parity + smokerun jit census. Slice-2/2b MSVC-blob code is N4-held/stashed and moot under B. Full analysis at REF
 - HANDOFF-BOX-FACTS (win-x64, kept for successors): VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics for any device run; VULKAN_SDK=C:/Users/llg/scoop/apps/vulkan/current; corpora junctions in vendor/ point at C:/Users/llg/Projects/{gcc-torture,llvm-test-suite,llvm-project}; commit BEFORE pull (DETAILS#autostash-is-how-conflict-markers-reach-pushed-history). Also-resume-ready: T-win-50015 (ms-bitfield ABI; fixture in-tree, two named gaps). Held: T-lin-10092/win (steady at NOTE-2)
 
 ## Open — claimable
-- [ ] T-win-50020 [S] win-x64 — the Windows embed-JIT link: symbol layer solved; decision reached = approach B (msvcrt-mingw blob). RELEASED with slices 2/2b investigated — resume, not restart
-      OWNER: — | STATE: OPEN | SHA: 011f2970 | TS: 2026-08-15T17:48Z
-      REF: DETAILS.md#t-win-50020-slice-2b-startup-crash-fixed-but-the-msvc-blob-static-globals-are-systemically-mis-placed-approach-b-is-the-answer | DEPS: — | NOTE: LAST GREEN 011f2970 (docs); slice-2/2b CODE is N4-held/uncommitted (in a win-x64 local stash + fully transcribed at REF) and becomes MOOT under approach B — do NOT land it. FINDINGS: the cl.exe blob's data statics are SYSTEMICALLY mis-placed by mcc's PE link (wild addresses past SizeOfImage) — approach A (fix the MSVC-blob layout) is a large open-ended linker project. DECISION = approach B: rebuild the embed blob with msvcrt-mingw (C:/Users/llg/scoop/apps/mingw-mstorsjo-llvm-msvcrt/current/bin/gcc.exe, x86_64-w64 msvcrt llvm-mingw, all libs present) via -DMCC_EMBED_JIT_MINGW_CC so the blob refs msvcrt not ucrt — no ucrt family, no MSVC CRT globals, single-CRT. REMAINING WORK for the claimant: (1) resolve the OPEN Q — MCC_EMBED_MCCRT is force-OFF on WIN32 (CMakeLists 2756, sidecar libmccrt.a), and no-bake --embed-jit still refs ucrt, so first identify WHICH object carries the ucrt refs (jit engine blob vs sidecar libmccrt.a) and confirm B's MINGW_CC rebuilds all of it; (2) reconfigure a build with MCC_EMBED_JIT_MINGW_CC (prefer a fresh build dir, don't disrupt cmake-release), rebuild, test `mcc -O1 --embed-jit --jit-functions f jf.c -o e.exe && MCC_JIT=0 e.exe && MCC_JIT=1 e.exe`; (3) on green, run jit/replay-parity + smokerun jit census → pays 13 of 15 win reds + T-lin-10030/win + T-lin-10383 win arm. Wants a fresh, focused context. Repro kit + full analysis at REF
 - [ ] T-mac-30005 [S] The chain-store 8% gate has never run against real input; when it does it reads +0.0%
       OWNER: — | STATE: OPEN | SHA: 157da7a7 | TS: 2026-08-15T17:09Z
       REF: DETAILS.md#t-mac-30005-the-chain-store-8-gate-has-never-run-against-real-input | DEPS: — | NOTE: runtime-bench-gatewin (tools/runtime-bench.py --assert-gate-wins, CMakeLists.txt:8054) is a documented PERMANENT 77 predicated on vendor/plb being absent (tests/must-run.txt:113), so the 8% chain-store assertion has NEVER been evaluated in CI or on a stock checkout. On a box with vendor/plb provisioned host-local (untracked), the cell runs and the gate reads +0.0% — chain-store on 5.301G vs off 5.302G instructions retired, i.e. the optimization does not fire on spectral-norm. Found during the T-lin-10042 full-native-suite run at b3da6a4a; orthogonal to the MSL arm. FIRST SLICE = characterisation not a fix: establish whether the 8% was ever real for this kernel (bisect / or never), then choose fix-the-gate / re-target GATE_WINS / retire the assertion. [S] not [X]: any UNIX non-emulated build with vendor/plb reproduces identically
