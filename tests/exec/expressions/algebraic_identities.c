@@ -75,6 +75,17 @@ static int cmul1(signed char c) { return c * 1; }
 static int ucadd0(unsigned char uc) { return uc + 0; }
 static int ucand(unsigned char uc) { return uc & 0xff; }
 
+/* Near-miss controls (T-lin-10067): NOT algebraic identities, so ident-arith
+ * must leave them alone. `x - 1` / `x + 1` are exactly the returned shapes the
+ * flag-sweep corpus lacked, which let an over-eager `x - 1 -> x` (or `x + 1 ->
+ * x`) fold ride through invisibly -- no swept golden returned the shape it
+ * would corrupt. These carry it so such a fold changes an observable value. */
+static int sub1(int x) { return x - 1; }
+static int add1(int x) { return x + 1; }
+static int addm1i(int x) { return x + -1; }
+static unsigned usub1(unsigned u) { return u - 1; }
+static long long lsub1(long long l) { return l - 1; }
+
 int main(void) {
 	int x = v;
 	unsigned u = uv;
@@ -106,5 +117,6 @@ int main(void) {
 	printf("%d\n", deadbranch(x));
 	printf("%d %d\n", cadd0(-5), cmul1(-5));
 	printf("%d %d\n", ucadd0(200), ucand(200));
+	printf("%d %d %d %u %lld\n", sub1(x), add1(x), addm1i(x), usub1(u), lsub1(l));
 	return 0;
 }

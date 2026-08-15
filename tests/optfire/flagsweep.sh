@@ -73,6 +73,7 @@ statements/void_expr
 statements/chained_assign
 optimizer/assign_value_effects
 expressions/precedence
+expressions/algebraic_identities
 functions_abi/func_name
 codegen/overflow_inline
 types/const_member_copy
