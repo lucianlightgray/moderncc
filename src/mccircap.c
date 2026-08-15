@@ -135,35 +135,35 @@ void ir_cap_teardown(void) { MCC_TRACE("enter\n");
 }
 static int ir_cap_fc_cur, ir_cap_fc_end;
 
-static int ir_cap_fconst_take(int *out) { MCC_TRACE("enter\n");
+static int ir_cap_fconst_take(int *out) { MCC_TRACE_WHEN(ir_cap_replaying, "enter\n");
 	if (!ir_cap_replaying)
-		{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE_WHEN(ir_cap_replaying, "br\n"); return 0; }
 	if (ir_cap_fc_cur >= ir_cap_fc_end)
-		{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE_WHEN(ir_cap_replaying, "br\n"); return 0; }
 	*out = ir_cap_fc[ir_cap_fc_cur++];
 	return 1;
 }
 
-static void ir_cap_fconst_note(int c) { MCC_TRACE("enter\n");
+static void ir_cap_fconst_note(int c) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	if (!ir_cap_active || !ir_cap_pending || ir_cap_depth < 1)
-		{ MCC_TRACE("br\n"); return; }
-	if (ir_cap_fcn >= ir_cap_fccap) { MCC_TRACE("br\n");
+		{ MCC_TRACE_WHEN(ir_cap_active, "br\n"); return; }
+	if (ir_cap_fcn >= ir_cap_fccap) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		ir_cap_fccap = ir_cap_fccap ? ir_cap_fccap * 2 : 64;
 		ir_cap_fc = mcc_realloc(ir_cap_fc, (size_t)ir_cap_fccap * sizeof *ir_cap_fc);
 	}
 	if (ir_cap_pending->fc_n == 0)
-		{ MCC_TRACE("br\n"); ir_cap_pending->fc_off = ir_cap_fcn; }
+		{ MCC_TRACE_WHEN(ir_cap_active, "br\n"); ir_cap_pending->fc_off = ir_cap_fcn; }
 	ir_cap_fc[ir_cap_fcn++] = c;
 	ir_cap_pending->fc_n++;
 }
 
 static int ir_cap_pred_cur, ir_cap_pred_have;
 
-int ir_cap_pred(int p) { MCC_TRACE("enter\n");
+int ir_cap_pred(int p) { MCC_TRACE_WHEN(ir_cap_active || ir_cap_replaying, "enter\n");
 	if (ir_cap_replaying && ir_cap_pred_have)
-		{ MCC_TRACE("br\n"); return ir_cap_pred_cur; }
+		{ MCC_TRACE_WHEN(ir_cap_active || ir_cap_replaying, "br\n"); return ir_cap_pred_cur; }
 	if (ir_cap_active && ir_cap_pending && ir_cap_depth >= 1)
-		{ MCC_TRACE("br\n"); ir_cap_pending->swpred = p + 1; }
+		{ MCC_TRACE_WHEN(ir_cap_active || ir_cap_replaying, "br\n"); ir_cap_pending->swpred = p + 1; }
 	return p;
 }
 
@@ -264,7 +264,7 @@ static void ir_cap_gap(void) { MCC_TRACE("enter\n");
 	ir_cap_rel_wm = reln;
 }
 
-static void ir_cap_begin(int kind, const SValue *sv) { MCC_TRACE("enter\n");
+static void ir_cap_begin(int kind, const SValue *sv) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	IrCapOp *o;
 #if MCC_DIAG
 	if (rir_dbg_on())
@@ -273,29 +273,29 @@ static void ir_cap_begin(int kind, const SValue *sv) { MCC_TRACE("enter\n");
 						ir_cap_op_name(kind), ind, (int)(vtop - vstack + 1));
 #endif
 	if (!ir_cap_active)
-		{ MCC_TRACE("br\n"); return; }
+		{ MCC_TRACE_WHEN(ir_cap_active, "br\n"); return; }
 	if (ir_cap_depth++ > 0)
-		{ MCC_TRACE("br\n"); return; }
+		{ MCC_TRACE_WHEN(ir_cap_active, "br\n"); return; }
 	ir_cap_gap();
 	o = ir_cap_new_op(kind);
 	o->nocode = nocode_wanted;
 	o->ind_pre = ind;
 	o->rel_pre = ir_cap_relofs();
 	ir_cap_snap_vstack(o);
-	if (sv) { MCC_TRACE("br\n");
+	if (sv) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		o->svarg = *sv;
 		if (sv >= vstack && sv <= vtop)
-			{ MCC_TRACE("br\n"); o->sv_slot = (int)(sv - vstack); }
+			{ MCC_TRACE_WHEN(ir_cap_active, "br\n"); o->sv_slot = (int)(sv - vstack); }
 	}
 	ir_cap_pending = o;
 }
 
-static void ir_cap_end(void) { MCC_TRACE("enter\n");
+static void ir_cap_end(void) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	if (!ir_cap_active)
-		{ MCC_TRACE("br\n"); return; }
+		{ MCC_TRACE_WHEN(ir_cap_active, "br\n"); return; }
 	if (--ir_cap_depth > 0)
-		{ MCC_TRACE("br\n"); return; }
-	if (ir_cap_pending) { MCC_TRACE("br\n");
+		{ MCC_TRACE_WHEN(ir_cap_active, "br\n"); return; }
+	if (ir_cap_pending) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		ir_cap_pending->ind_post = ind;
 		ir_cap_pending->rel_post = ir_cap_relofs();
 		ir_cap_pending = NULL;
@@ -454,10 +454,10 @@ IR_CAP_W1(arch_transfer_ret_regs, IR_OP_XFERRET)
 IR_CAP_W0(gen_x87_pop, IR_OP_X87POP)
 #endif
 
-static void ir_cap_vsetc(CType *type, int r, CValue *vc) { MCC_TRACE("enter\n");
+static void ir_cap_vsetc(CType *type, int r, CValue *vc) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	int lit = (r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	ir_cap_begin(lit ? IR_OP_PUSHLIT : IR_OP_VSETC, NULL);
-	if (IR_CAP_REC) { MCC_TRACE("br\n");
+	if (IR_CAP_REC) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		ir_cap_pending->ctype = *type;
 		ir_cap_pending->a0 = r;
 		ir_cap_pending->cval = *vc;
@@ -472,12 +472,12 @@ IR_CAP_W1(vrotb, IR_OP_VROTB)
 IR_CAP_W1(vrott, IR_OP_VROTT)
 IR_CAP_W1(vrev, IR_OP_VREV)
 
-void ir_cap_vstore(void) { MCC_TRACE("enter\n");
+void ir_cap_vstore(void) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	int keep = (vtop[-1].type.t & VT_BTYPE) != VT_STRUCT &&
 						 (vtop->type.t & VT_BTYPE) != VT_STRUCT &&
 						 !((vtop[-1].type.t | vtop->type.t) & VT_ARRAY) &&
 						 !(vtop[-1].type.t & VT_BITFIELD);
-	if (!keep) { MCC_TRACE("br\n");
+	if (!keep) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		(vstore)();
 		return;
 	}
@@ -490,7 +490,7 @@ IR_CAP_W1(gen_op, IR_OP_GENOP)
 IR_CAP_W0(gaddrof, IR_OP_ADDROF)
 
 #ifdef MCC_IR_HAVE_GFUNC_RETURN
-void ir_cap_gfunc_return(CType *func_type) { MCC_TRACE("enter\n");
+void ir_cap_gfunc_return(CType *func_type) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	ir_cap_begin(IR_OP_RETVAL, NULL);
 	(gfunc_return)(func_type);
 	ir_cap_end();
@@ -501,9 +501,9 @@ IR_CAP_W0(gen_va_start, IR_OP_VA_START)
 #endif
 void ir_cap_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
 											int nb_labels, int eff, int is_output,
-											uint8_t *clobber_regs, int out_reg) { MCC_TRACE("enter\n");
+											uint8_t *clobber_regs, int out_reg) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	ir_cap_begin(IR_OP_ASMGEN, NULL);
-	if (IR_CAP_REC) { MCC_TRACE("br\n");
+	if (IR_CAP_REC) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		int hdr[4];
 		int nall = nb_operands + (nb_labels > 0 ? nb_labels : 0);
 		int opbytes = (int)((size_t)nall * sizeof *operands);
@@ -524,9 +524,9 @@ void ir_cap_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
 	ir_cap_end();
 }
 
-void ir_cap_asm(const char *str, int len, int global) { MCC_TRACE("enter\n");
+void ir_cap_asm(const char *str, int len, int global) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	ir_cap_begin(IR_OP_ASM, NULL);
-	if (IR_CAP_REC) { MCC_TRACE("br\n");
+	if (IR_CAP_REC) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		ir_cap_pending->raw_off = ir_cap_raw_add((const unsigned char *)str, len);
 		ir_cap_pending->raw_len = len;
 		ir_cap_pending->a0 = global;
@@ -536,8 +536,8 @@ void ir_cap_asm(const char *str, int len, int global) { MCC_TRACE("enter\n");
 }
 
 #ifdef MCC_IR_HAVE_VA_ARG
-void ir_cap_gen_va_arg(CType *t) { MCC_TRACE("enter\n");
-	if (t->t & VT_ARRAY) { MCC_TRACE("br\n");
+void ir_cap_gen_va_arg(CType *t) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
+	if (t->t & VT_ARRAY) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		(gen_va_arg)(t);
 		return;
 	}
@@ -549,27 +549,27 @@ void ir_cap_gen_va_arg(CType *t) { MCC_TRACE("enter\n");
 }
 #endif
 
-void ir_cap_mk_pointer(CType *type) { MCC_TRACE("enter\n");
-	if (type != &vtop->type) { MCC_TRACE("br\n");
+void ir_cap_mk_pointer(CType *type) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
+	if (type != &vtop->type) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		(mk_pointer)(type);
 		return;
 	}
 	ir_cap_begin(IR_OP_MKPTR, NULL);
 	(mk_pointer)(type);
 	if (IR_CAP_REC)
-		{ MCC_TRACE("br\n"); ir_cap_pending->ctype = *type; }
+		{ MCC_TRACE_WHEN(ir_cap_active, "br\n"); ir_cap_pending->ctype = *type; }
 	ir_cap_end();
 }
 
-void ir_cap_vpushv(SValue *v) { MCC_TRACE("enter\n");
+void ir_cap_vpushv(SValue *v) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	ir_cap_begin(IR_OP_VPUSHV, v);
 	(vpushv)(v);
 	ir_cap_end();
 }
 
-void ir_cap_vpushsym(CType *type, Sym *sym) { MCC_TRACE("enter\n");
+void ir_cap_vpushsym(CType *type, Sym *sym) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	ir_cap_begin(IR_OP_VPUSHSYM, NULL);
-	if (IR_CAP_REC) { MCC_TRACE("br\n");
+	if (IR_CAP_REC) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		ir_cap_pending->ctype = *type;
 		ir_cap_pending->sym = sym;
 	}
@@ -577,24 +577,24 @@ void ir_cap_vpushsym(CType *type, Sym *sym) { MCC_TRACE("enter\n");
 	ir_cap_end();
 }
 
-int ir_cap_gv(int rc) { MCC_TRACE("enter\n");
+int ir_cap_gv(int rc) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	int rv;
 	ir_cap_begin(IR_OP_GV, NULL);
-	if (IR_CAP_REC) { MCC_TRACE("br\n");
+	if (IR_CAP_REC) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		ir_cap_pending->a0 = rc;
 		ir_cap_pending->d64 = (int64_t)ast_pinned_regs;
 	}
 	rv = (gv)(rc);
 	if (IR_CAP_REC)
-		{ MCC_TRACE("br\n"); ir_cap_pending->a1 = rv; }
+		{ MCC_TRACE_WHEN(ir_cap_active, "br\n"); ir_cap_pending->a1 = rv; }
 	ir_cap_end();
 	return rv;
 }
 
-int ir_cap_gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
+int ir_cap_gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	int rv;
 	ir_cap_begin(IR_OP_CMOV, NULL);
-	if (IR_CAP_REC) { MCC_TRACE("br\n");
+	if (IR_CAP_REC) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		ir_cap_pending->a0 = rt;
 		ir_cap_pending->a1 = rf;
 		ir_cap_pending->a2 = rb;
@@ -606,9 +606,9 @@ int ir_cap_gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
 }
 
 #ifdef MCC_IR_HAVE_REGADDI
-void ir_cap_gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
+void ir_cap_gen_reg_addi(int r, int64_t d) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	ir_cap_begin(IR_OP_REGADDI, NULL);
-	if (IR_CAP_REC) { MCC_TRACE("br\n");
+	if (IR_CAP_REC) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		ir_cap_pending->a0 = r;
 		ir_cap_pending->d64 = d;
 	}
@@ -617,9 +617,9 @@ void ir_cap_gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
 }
 #endif
 
-void ir_cap_gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
+void ir_cap_gen_vla_alloc(CType *type, int align) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	ir_cap_begin(IR_OP_VLA_ALLOC, NULL);
-	if (IR_CAP_REC) { MCC_TRACE("br\n");
+	if (IR_CAP_REC) { MCC_TRACE_WHEN(ir_cap_active, "br\n");
 		ir_cap_pending->ctype = *type;
 		ir_cap_pending->a0 = align;
 	}
@@ -627,7 +627,7 @@ void ir_cap_gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 	ir_cap_end();
 }
 
-void ir_cap_gen_increment_tcov(SValue *sv) { MCC_TRACE("enter\n");
+void ir_cap_gen_increment_tcov(SValue *sv) { MCC_TRACE_WHEN(ir_cap_active, "enter\n");
 	ir_cap_begin(IR_OP_TCOV, sv);
 	(gen_increment_tcov)(sv);
 	ir_cap_end();
