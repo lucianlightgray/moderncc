@@ -4432,6 +4432,16 @@ if(MCC_BUILD_TESTS)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
             set_tests_properties("ast/replay-struct_return" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            # T-lin-10018: the for-condition store `for (; (p=*pp); )` must be
+            # emitted, not left as a value-only StoreVal, or the replay producer
+            # ships a body that dereferences an uninitialised p. Reduced
+            # reproducer, run through the replay producer with the fallback off.
+            add_test(NAME "rir/loopcond-store"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/rir/run-loopcond-store.sh"
+                        "$<TARGET_FILE:mcc>" "${CMAKE_BINARY_DIR}")
+            set_tests_properties("rir/loopcond-store" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native TIMEOUT 120)
+
             add_test(NAME "ast/replay-struct_ret_variadic" COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                 "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/struct_ret_variadic.c"
