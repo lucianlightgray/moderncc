@@ -46372,3 +46372,21 @@ Implemented the residency model. Added static `mcc_mtl_bin/bout` + `pin/pout` + 
 **Verification.** gpu/* + slice/* **72/72 green**. The load-bearing cells are `gpu/always-gpu-parity` and `-full-language`: they run the two-arm ladder (`dispatch2_ro_in`, arm a `reuse_in=0` then arm b `reuse_in=1`), so their passing proves arm b correctly reads arm a's resident input — a freed/garbage buffer or a wrongly-skipped upload would fail the CPU-vs-device parity. The tin upload for arm b (one full `inlen` = `cap*nlive*MCC_GPU_IN_SLOTS*4` bytes) is now elided, matching the SPIR-V arm. All three T-lin-10036 wins are on the Metal arm (dead pout memset removed in slice 1, pin tail-only in slice 1, reuse_in via residency in slice 2). §8 full native suite in flight.
 
 **Source.** mac-arm64, 2026-08-15, slice 2 at `01c5ff30`.
+
+<a id="t-mac-30006-o0-baseline-4-bare-elf-keys-are-unmaintainable-no-session-box-has-the-gentoo-sysroots"></a>
+
+## T-mac-30006 — o0-baseline's 4 bare-ELF keys are unmaintainable: no session box has the gentoo sysroots
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+`ast/o0-baseline` banks a byte-identical -O0 object hash per file for **11 target keys** (`tests/ast/o0-baseline/<key>.obj.txt`): `x86_64 i386 arm arm64 riscv64`, four `*-win32`, and two `*-osx`. Keeping it green on any corpus change requires re-banking every key on a box that can *measure* it, and the measuring capability is split across — and beyond — the fleet:
+
+- **osx keys** (`arm64-osx`, `x86_64-osx`) — need a **mac** (mac-arm64 measures arm64-osx natively; x86_64-osx needs the mac cross tool).
+- **cross keys** (`x86_64` + the four `*-win32`) — need a **Linux cross-build** (`cmake-cross`, `-DMCC_ENABLE_CROSS=ON`).
+- **the 4 bare-ELF keys** (`i386`, `arm`, `arm64`, `riscv64`) — need `vendor/gentoo-stage3-<arch>-glibc` sysroots for `mcc-<arch> --sysroot`. **No current session box has these** — lin-x64's `vendor/` holds only musl-src + qemu, so `mcc-i386` etc. fail `include file 'stdio.h' not found` and `o0_ab` reports them NOT MEASURED. The original bank was made on a differently-provisioned box (its `cc=` paths are under a user that no live session runs).
+
+**Consequence.** No single box — and not even the three sessions combined — can run `O0_AB_BANK=1 o0_ab.sh <build> all` to completion. Every corpus edit strands whatever keys the editing session can't measure (observed twice on 2026-08-15: T-lin-10078's `wide_bitfield_arith.c` stranded the non-osx keys, rebanked cross by lin `dc38276e` + osx by mac `528416eb` but the 4 bare-ELF keys left stale; win-x64's `da0932e2` `algebraic_identities.c` stranded `arm64-osx`, rebanked by mac `c8ed50a6`). The gate stays green only because `o0_ab` runs `measurable` mode and **skips** unmeasurable keys — so the 4 bare-ELF hashes are stale-but-inert everywhere the sysroots are absent (all current boxes + CI), and would only red on a fully-provisioned box.
+
+**The task, pick one (a human/infra decision):** (a) provision `vendor/gentoo-stage3-{i386,arm,arm64,riscv64}-glibc` on a Linux session and re-bank the 4 keys with `all`; (b) drop the 4 unmeasurable keys from the bank (accept that o0-baseline covers only the arches a session box can build); (c) make the stale-but-skipped state explicit and asserted (a manifest of which keys are currently measurable, so a silently-dropped key is caught the way the must-run ratchet catches a dropped cell). Surfaced by lin-x64 (CONTRACT-REPLY on T-lin-10078) + mac-arm64; filed as the infra gap rather than faking the 4 measurements.
+
+**Source.** mac-arm64 + lin-x64, 2026-08-15.
