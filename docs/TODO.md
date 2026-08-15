@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T12:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T15:00Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50009   | 2026-08-15T14:20Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50009   | 2026-08-15T12:25Z |
 
 ## Contracts — blocking, highest priority
 
@@ -26,6 +26,10 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
+- [ ] T-win-50008 [S] win-x64 — arena take crashes (0xc0000409) compiling `src/mcc.c`: `slice/arena-intern-cap`, `fmt/arena-census-bank(-known-positive)`
+      OWNER: win-x64 | STATE: CLAIMED | SHA: bc0bc6bf | TS: 2026-08-15T12:25Z
+      REF: DETAILS.md#t-win-50008-arena-take-crash-compiling-src-mcc-c | DEPS: — | NOTE: root cause + fix direction banked in the DETAILS anchor. Effectively win-only despite [S]: needs the MSVC /GS + ASan repro this box provides. Also advances T-lin-10092/win (3 of the 35 residual reds are this one defect). NOTE (clock): earlier win-x64 TS values today (14:15/14:20Z) were local time mislabeled Z; this box's true UTC now is 12:25Z — TTL judgments should use commit timestamps per §3
+
 ## Open — claimable
 - [ ] T-win-50005 [X] win-x64 — arm64-win32 COFF: add the AArch64 TLS relocations to `coff_emit_reloc`, then flip arm64 default `-c` to COFF + re-bank o0-baseline arm64-win32 + switch `arm64pe_diff.py` to force ELF
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
@@ -36,9 +40,6 @@
 - [ ] T-win-50007 [S] win-x64 — `arm64pe_diff.py` false-positive: model the LLP64-vs-LP64 `long`-width benign case
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. `tools/arm64pe_diff.py --corpus` flags `06_long_width.c` SUSPICIOUS (.text 192 vs 188 bytes, 70 non-reloc byte diffs) — this is the EXPECTED data-model difference: `long` is 32-bit on arm64-Windows (LLP64) and 64-bit on arm64-Linux (LP64), so the codegen legitimately differs. The tool's benign-classifier only knows reloc-site and section-presence differences; teach it that a size difference explained by sizeof(long) 4-vs-8 is benign, OR compile the corpus with a fixed-width type so the diff is data-model-neutral. Pre-existing (not from the COFF flip); the other 5 corpus files are clean
-- [ ] T-win-50008 [S] win-x64 — arena take crashes (0xc0000409) compiling `src/mcc.c`: `slice/arena-intern-cap`, `fmt/arena-census-bank(-known-positive)`
-      OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:20Z
-      REF: DETAILS.md#t-win-50008-arena-take-crash-compiling-src-mcc-c | DEPS: — | NOTE: found + root-caused doing T-lin-10083. In T-win-50003 Bucket A but MIS-TRIAGED as "0 slices" — they CRASH: mcc exits 0xc0000409 (/GS STATUS_STACK_BUFFER_OVERRUN) in the MCC_ARENA_DUMP intern/dump path (active only under AST-replay) while compiling src/mcc.c. NOT the COFF flip. One defect, three symptoms; suspect ast_adump_intern/ifail/igrow (src/mccast.c:15418-15505) + uncapped dump/replay walkers on giant bodies. Repro under cmake-sanitize-msvc ASan (replay on). Full root cause + fix direction in the DETAILS anchor
 - [ ] T-lin-10057 [S] Make `kept_coverage` host-stable, so the floor is tool-enforced instead of a convention
       OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
       REF: DETAILS.md#q-lin-10007-answer-make-kept-coverage-host-stable | DEPS: — | Q: Q-lin-10007 ANSWERED | NOTE: UNBLOCKED. Human chose host-stable — explicitly NOT raising `--tol` and NOT encoding "bank from stage2" as a convention. DoD: the same tree measured from a gcc host and from a stage2 self-hosted compiler yields the same kept_coverage within the EXISTING --tol of 0.05pp, without widening it. Today they disagree: fallback 98 / kept 82.7770 (gcc host) vs 100 / 82.7139 (stage2) at -O0 — a 0.06pp spread outside tol, so banking from a gcc host re-breaks CI, which tests the stage2 tree. Once it holds, "bank from stage2" stops being a rule
@@ -262,7 +263,7 @@
         OWNER: lin-x64 | STATE: DONE | SHA: a4b2baf1 | TS: 2026-08-15T08:30Z
         REF: DETAILS.md#t-lin-10092-lin-the-linux-full-native-suite-is-clean | DEPS: — | NOTE: DONE. NUMBER: 10062 cells, 1011 skipped, 9051 run, 0 failures, 86 min. Already archived at 32d29fc4 — line kept visible only until the [P] parent closes, per mac's convention on /mac; whoever lands /win removes all three children + the parent together
   - [ ] T-lin-10092/win [P] Record a clean full native suite number on each platform — win-x64
-        OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 260bb900 | TS: 2026-08-15T01:55Z
+        OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 260bb900 | TS: 2026-08-15T12:25Z
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: NUMBER RECORDED (first ever on Windows): 9387 cells, 8388 pass / 945 skip / 54 fail at 9b21c352; 19 false-reds fixed at 260bb900 -> 8388 / 964 / 35. Not clean — the 35 residual reds are triaged in T-win-50003 (28 GPU-slice, 4 fp opt-search, 3 jit/runtime). @lin: number is landed, slice-3 (L2′) hold can release
 - [ ] T-lin-10093 [P] `ci/must-run-registered` green on each platform
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
