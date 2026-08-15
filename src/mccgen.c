@@ -4572,7 +4572,8 @@ redo:
 		 * type does to both sides of a comparison.  bf_trunc is 0 unless one
 		 * side is a bit-field wider than 32 and the other does not outrank it,
 		 * so `f == -1LL` stays a 64-bit compare, as it is under gcc. */
-		if (op_class == CMP_OP && bf_trunc) { MCC_TRACE("br\n");
+		if (bf_trunc && (op_class == CMP_OP || op == '/' || op == '%'
+										 || op == TOK_UDIV || op == TOK_UMOD)) { MCC_TRACE("br\n");
 			int sh = 64 - bf_trunc;
 			int rop = (t & VT_UNSIGNED) ? TOK_SHR : TOK_SAR;
 			vpushi(sh);

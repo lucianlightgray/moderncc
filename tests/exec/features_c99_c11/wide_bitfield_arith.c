@@ -39,6 +39,39 @@ int main(void) {
 	if (((x.b << 8) + (x.b >> 32)) != 0x1ULL)
 		fail = 1;
 
+	/* T-lin-10078: `/` and `%` on over-wide bit-fields reduce each OPERAND to N
+	   bits before the op (they are non-modular, unlike + - * <<), matching gcc's
+	   precision-N model.  The `/ -1` shape is discriminating: unreduced, -1 is
+	   2^64-1 and the quotient collapses to 0; reduced to N bits it is 2^N-1 and
+	   the answer is 1.  Both the constant-folded and runtime paths are checked.
+	   wants verified against gcc-16. */
+	{
+		struct { unsigned long long f : 33; } cu = {(1ULL << 33) - 1};
+		volatile struct { unsigned long long f : 33; } vu = {(1ULL << 33) - 1};
+		if (cu.f / -1 != 1 || cu.f % -1 != 0)
+			fail = 1;
+		if (vu.f / -1 != 1 || vu.f % -1 != 0)
+			fail = 1;
+	}
+	{
+		volatile struct { unsigned long long f : 40; } u40 = {(1ULL << 40) - 1};
+		volatile struct { unsigned long long f : 63; } u63 = {(1ULL << 63) - 1};
+		volatile struct { unsigned long long f : 64; } u64 = {~0ULL};
+		if (u40.f / -1 != 1 || u40.f % -1 != 0)
+			fail = 1;
+		if (u63.f / -1 != 1 || u64.f / -1 != 1)
+			fail = 1;
+	}
+	{
+		signed long long init = (1LL << 32) - 1; /* max positive 33-bit signed */
+		struct { signed long long g : 33; } cs = {init};
+		volatile struct { signed long long g : 33; } vs = {init};
+		if (cs.g / -1 != -4294967295LL || cs.g % -1 != 0)
+			fail = 1;
+		if (vs.g / -1 != -4294967295LL || vs.g % -1 != 0)
+			fail = 1;
+	}
+
 	puts(fail ? "FAIL" : "OK");
 	return fail;
 }
