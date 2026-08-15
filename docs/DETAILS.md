@@ -42435,3 +42435,19 @@ That selects the **2,200–3,400 line** variant over the 1,530–2,360 behaviour
 **fp64 specifically** is the part with the least parity headroom: it is the reason for the upper half of the estimate, and Metal's double support is the constraint that drove the original drop. Its slices should come with the per-value differential results attached, not a line count.
 
 **Source.** Answer recorded on lin-x64, 2026-08-15; implementation is mac-arm64's.
+
+<a id="q-lin-10006-answer-fopt-slice-is-the-governor-not-a-pass"></a>
+
+## Q-lin-10006 answered — `-fopt-slice` is the governor over slicing, not a pass to keep or drop
+
+**Answer (human, 2026-08-15):** it is meant to govern *all* optimization strategies capable of slicing AST/RIR nodes at arbitrary entry/exit points, so that any sub-section of code can be optimized; revise it into a well-integrated slicing mechanism that works with the other slice optimizers.
+
+**This rejects the question's framing, which is the useful part.** [Q-lin-10006](QUESTIONS.md) asked "own the pass, or delete it?" and recorded mode (b) precisely because the two directions shared no work. The answer says the premise was wrong: it is not a pass. It is the switch that is supposed to sit *above* the slice-capable strategies and let any of them operate on an arbitrary entry/exit subrange. Deleting it would have removed the seam the slice work already in the tree is meant to hang from — `src/mccslice.h`, the `MccTask`/`MccSched` slice scheduler, `ast_eval_slice`, the `slice/*` cells and the device-side slice runner are all the "other slice optimizers" the answer names.
+
+**What the re-scope inherits, stated so it does not get lost.** The defect that opened the task is untouched by the re-framing and still reproduces: `-fopt-slice` makes object output depend on the optimizer's **disk cache**, so the same source and flags can produce different objects depending on what is in `XDG_CACHE_HOME`. Owning the flag means that stops being true, or becomes a declared and gated property.
+
+**And the reason nothing noticed.** `OPT_SLICE` is declared `MCC_OPTD_DEV(MCC_OPTD_LEVEL(9))` (`src/mccopt.h:30`) — a dev flag above every shipped level. So at `-O3` nothing is written to the cache, `opt-cache-determinism` has **no subject**, and it is a permanent 77 that `tests/must-run.txt:110` already records in those words. This is the tree's signature defect wearing yet another face: a registered cell reporting nothing over an empty subject. **Integration is what gives that cell a subject.** Until the flag governs something at a level that ships, no amount of owning it makes the gate mean anything — so the first slice of the re-scoped task is the one that moves it to a shipped level with the determinism claim gated, not the one that adds capability.
+
+**Its gate-contract row** (`tests/gate-contract.txt:98`) is `unfloored | unproved` today. It should gain both as the integration lands; it is one of the rows the `unfloored`/`unproved` ratchets are waiting on.
+
+**Source.** Answer recorded on lin-x64, 2026-08-15.

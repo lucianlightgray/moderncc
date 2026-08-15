@@ -72,6 +72,10 @@ It makes object output depend on the optimizer's disk cache and nothing watches 
 
 REF: DETAILS.md#q-lin-10006-fopt-slice-own-the-pass-or
 
+**ANSWER (human, 2026-08-15):** `-fopt-slice` is meant to govern all optimization strategies capable of slicing AST/RIR nodes at arbitrary entry/exit points, in order to optimize any sub-section of code. Revise it into a well-integrated slicing mechanism that works with the other slice optimizers.
+
+**Executed by lin-x64, 2026-08-15:** own it, and re-scope it — the answer is neither of the two options the question offered. The question framed this as "own the pass or delete it"; the answer says the flag was never meant to be *a pass* at all, but the governor over every strategy that can slice AST/RIR at arbitrary entry/exit points. T-lin-10045 is re-OPENed and re-titled accordingly. Two things carry forward unchanged and must not be lost in the re-scope: the determinism defect (object output depending on the optimizer's disk cache) is still real and still reproduces, and `opt-cache-determinism` is still a permanent 77 with no subject because `OPT_SLICE` sits at `MCC_OPTD_DEV(MCC_OPTD_LEVEL(9))` — above any shipped level. Integration is what gives the cell a subject; until the flag governs something at a level that ships, the gate keeps reading green over nothing. See DETAILS.md#q-lin-10006-answer-fopt-slice-is-the-governor-not-a-pass.
+
 ### Q-lin-10007 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10057
 `kept_coverage` host-sensitivity: raise `--tol`, make the metric host-stable, or encode "bank from stage2"?
 

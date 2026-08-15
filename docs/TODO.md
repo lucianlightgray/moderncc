@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T01:15Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T02:20Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T02:30Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T02:10Z |
 
 ## Contracts — blocking, highest priority
@@ -30,6 +30,9 @@
 
 ## Open — claimable
 
+- [ ] T-lin-10045 [S] `-fopt-slice`: revise into the governor over every AST/RIR slice-capable strategy, integrated with the other slice optimizers
+      OWNER: — | STATE: OPEN | SHA: 3749f816 | TS: 2026-08-15T02:30Z
+      REF: DETAILS.md#q-lin-10006-answer-fopt-slice-is-the-governor-not-a-pass | DEPS: — | Q: Q-lin-10006 ANSWERED | NOTE: not "own or delete" — it was never a pass. Carries forward: the disk-cache determinism defect, and OPT_SLICE at MCC_OPTD_LEVEL(9) leaves opt-cache-determinism a permanent 77 with no subject. First slice = a shipped level with the determinism claim gated
 - [ ] T-lin-10042 [X] mac-arm64 — the Metal parity staged plan, WITH fp64 (2,200-3,400 lines)
       OWNER: — | STATE: OPEN | SHA: 0d33d71e | TS: 2026-08-15T02:20Z
       REF: DETAILS.md#q-lin-10009-answer-metal-parity-scheduled-with-fp64 | DEPS: — | Q: Q-lin-10009 ANSWERED | NOTE: human scheduled the fp64 variant. No CI differential exists or can — land it in slices each checkable by the hand-run per-value differential, not as one unwatched arm
@@ -306,9 +309,6 @@
 - [ ] T-lin-10040 [S] The device dispatcher is not merely absent — it is unwritable from what exists
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10040-the-device-dispatcher-is-not-merely | DEPS: — | Q: Q-lin-10008
-- [ ] T-lin-10045 [S] `-fopt-slice` makes object output depend on the optimizer's disk cache
-      OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10045-fopt-slice-makes-object-output-depend | DEPS: — | Q: Q-lin-10006
 - [ ] T-lin-10057 [S] `kept_coverage` is host-sensitive and the bank must come from the stage2 tree
       OWNER: — | STATE: BLOCKED | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10057-kept-coverage-is-host-sensitive-and | DEPS: — | Q: Q-lin-10007
