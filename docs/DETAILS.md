@@ -1081,6 +1081,63 @@ W3 landed flag-gated on the actual Windows box: `mcc -c -Wl,-oformat=coff` emits
 
 **Source.** Migrated from `docs/TODO.md`, *Preamble* — [M-TODO-0001](#m-todo-0001-preamble).
 
+**RESOLVED 2026-08-15 (win-x64, SHA bc0bc6bf) — DONE, scoped to x86_64+i386.**
+The flip is `mcc_set_output_type` (src/libmcc.c): for `MCC_OUTPUT_OBJ` on a PE
+target, default `output_format` now becomes `MCC_OUTPUT_FORMAT_COFF` **only under
+`MCC_TARGET_X86_64 || MCC_TARGET_I386`**; arm64/arm PE keep the legacy PE-ELF
+default. A new `MCCState.output_format_explicit` (set in `mcc_set_linker`'s
+`oformat=` arm) preserves every explicit request: `-Wl,-oformat=pe-*` still yields
+ELF, `=coff` still COFF, `=binary` still coerces to ELF for `-c` as before.
+
+Why not all four PE archs: `coff_emit_reloc` (src/objfmt/mccpe.c:2098) is complete
+for x86_64 (301/301 o0-baseline objects re-encode) and i386 (299/299), but arm64
+lacks the AArch64 TLS relocations (`tests/exec/features_c99_c11/tls.c` →
+"unsupported relocation type 549", 296/297) and arm32 has **no** reloc arm at all
+(falls to `-1`; only 3/40 reloc-free files compile → "unsupported relocation type
+2"). Flipping those would silently drop corpus files from the bank — a vacuity
+regression — so they stay ELF pending T-win-50005 / T-win-50006.
+
+Consequences the flip owned:
+- **Runtime build.** `mcc_build_mccrt` compiles the win32 runtime with mcc and
+  archives it with `mcc -ar` (an ELF archiver); COFF-by-default broke it
+  ("Unsupported Elf Class"). Fixed by pinning the win32 runtime objects to ELF
+  with `-Wl,-oformat=pe-${cpu}` in CMakeLists `_xflags` — mcc's own archiver/
+  linker artifact is internal ELF, byte-identical to pre-flip.
+- **`mcc -ar` COFF support.** So the user-facing `-c | -ar | link` path stays
+  coherent under COFF-default, `mcc_tool_ar` (src/mcctools.c) now also indexes
+  COFF objects (external, section-defined symbols; inline vs string-table names;
+  aux-record skipping). Verified: `mcc -c` (COFF) → `mcc -ar rcs` → `mcc link`
+  runs (create/list green as `cli/ar_create_list`; a hand two-TU COFF archive
+  links + runs).
+
+Determinism (the cross-host bank concern): COFF is a pure re-encode of the
+host-independent ELF sections the cross compiler already emits — `TimeDateStamp=0`
+(mccpe.c:2327), `STT_FILE` skipped so no source path is embedded. Proven
+empirically: the arm64-win32/arm-win32 ELF `.obj.txt` hashes matched lin's
+committed bank with **zero** diff from a Windows build, so the win32 cross
+compilers are byte-identical Linux↔Windows; the COFF re-bank produced on Windows
+will match lin's CHECK.
+
+`arm64pe_diff.py` was **not** re-taken because arm64-win32 deliberately stays
+ELF-default, so its ELF-vs-ELF premise is intact and its inputs are byte-identical
+before/after this change. Running it surfaced one pre-existing SUSPICIOUS item,
+`06_long_width.c` — the expected LLP64 (`long`=32 on Windows) vs LP64 (`long`=64
+on Linux) codegen difference, which the tool's benign-classifier does not model.
+Not introduced here; tracked as T-win-50007.
+
+**Verification (this task's spec):** `pe/coff-obj-diff` OK (default `-c` now COFF,
+four-way mcc×mingw link parity, explicit-ELF negative control rejected); all 9
+`-L pe` cells 100%; `cli/ar_create_list` + `cli/response_file` green;
+`o0_ab.sh … CHECK` clean on all four win32 keys (x86_64/i386 = new COFF bank,
+arm64/arm = unchanged ELF bank). Pre-existing reds `slice/arena-intern-cap`,
+`fmt/arena-census-bank(-known-positive)` are untouched by this change — plain
+`mcc -c src/mcc.c` succeeds in BOTH COFF and ELF (rc=0), so the flip did not
+introduce their fault. They are already listed in [T-win-50003](#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged)
+Bucket A, but the triage there ("0 slices / produced nothing") is wrong for these
+three: they actually **crash** — mcc exits 0xc0000409 (STATUS_STACK_BUFFER_OVERRUN)
+while the arena take compiles `src/mcc.c`. Root-caused and given a focused fix task
+as T-win-50008.
+
 <a id="t-lin-10084-win-x64-non-constant-except-filters"></a>
 
 ## T-lin-10084 win-x64 — non-constant `__except` filters and `__finally` need funclet codegen

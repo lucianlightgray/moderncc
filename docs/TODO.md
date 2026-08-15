@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T07:40Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T15:00Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50005   | 2026-08-15T14:05Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50009   | 2026-08-15T14:15Z |
 
 ## Contracts — blocking, highest priority
 
@@ -26,11 +26,19 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-lin-10083 [X] win-x64 — flip default `-c` to COFF and re-bank `o0-baseline`
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-15T14:10Z
-      REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: T-lin-10002[C] | NOTE: flip landed in-tree (libmcc.c mcc_set_output_type: default -c OBJ on PE -> COFF, gated by new output_format_explicit so -Wl,-oformat=pe-x86-64 still yields ELF and =coff unchanged); coff-obj-diff.sh negative control moved to explicit-ELF. Building + verifying pe/coff-obj-diff, then re-bank o0-baseline (native key) + arm64pe_diff
-
 ## Open — claimable
+- [ ] T-win-50005 [X] win-x64 — arm64-win32 COFF: add the AArch64 TLS relocations to `coff_emit_reloc`, then flip arm64 default `-c` to COFF + re-bank o0-baseline arm64-win32 + switch `arm64pe_diff.py` to force ELF
+      OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
+      REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. arm64-win32 was deliberately LEFT on ELF-default because `coff_emit_reloc` (src/objfmt/mccpe.c:2119) lacks the AArch64 TLS relocs — `tests/exec/features_c99_c11/tls.c` → "unsupported relocation type 549" (R_AARCH64_TLSLE_*), 296/297 corpus objects. Add the TLS arm (map to IMAGE_REL_ARM64_SECREL* per the local-exec model), confirm 297/297, THEN extend the `#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_I386` gate in libmcc.c mcc_set_output_type to include arm64, re-bank, and change arm64pe_diff.py's PE arm to pass `-Wl,-oformat=pe-arm64` (its ELF-vs-ELF premise breaks once arm64 -c defaults to COFF). win-x64 has no arm64-Windows linker so verify via the o0-baseline re-encode + a mingw-arm64 link if one is vendored
+- [ ] T-win-50006 [X] win-x64 — arm-win32 COFF: implement the ARM32 arm of `coff_emit_reloc` (there is none), then flip arm-win32 default + re-bank
+      OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
+      REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. `coff_emit_reloc` has NO `MCC_TARGET_ARM` case — it falls to `return -1`, so arm-win32 `-c` COFF fails on any file with a relocation (only 3/40 reloc-free files compile; "unsupported relocation type 2" = R_ARM_ABS32). LOW PRIORITY: arm-win32 (ARM32 Windows) is a dead platform with no executor (see T-lin-10086 split) — do this only after arm64 (T-win-50005). Add the ARM32 IMAGE_REL_ARM_* mapping (ADDR32/BRANCH24/etc.), confirm the corpus re-encodes, then flip + re-bank
+- [ ] T-win-50007 [S] win-x64 — `arm64pe_diff.py` false-positive: model the LLP64-vs-LP64 `long`-width benign case
+      OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
+      REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. `tools/arm64pe_diff.py --corpus` flags `06_long_width.c` SUSPICIOUS (.text 192 vs 188 bytes, 70 non-reloc byte diffs) — this is the EXPECTED data-model difference: `long` is 32-bit on arm64-Windows (LLP64) and 64-bit on arm64-Linux (LP64), so the codegen legitimately differs. The tool's benign-classifier only knows reloc-site and section-presence differences; teach it that a size difference explained by sizeof(long) 4-vs-8 is benign, OR compile the corpus with a fixed-width type so the diff is data-model-neutral. Pre-existing (not from the COFF flip); the other 5 corpus files are clean
+- [ ] T-win-50008 [S] win-x64 — arena take crashes (0xc0000409) compiling `src/mcc.c`: `slice/arena-intern-cap`, `fmt/arena-census-bank(-known-positive)`
+      OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
+      REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. These three are in T-win-50003 Bucket A but MIS-TRIAGED there as "0 slices / produced nothing" — they actually CRASH: mcc exits 0xc0000409 (STATUS_STACK_BUFFER_OVERRUN) during the arena take's compile of src/mcc.c (cmake/slicerun_interncap.cmake:20 "the compile itself failed"; cmake/fmt_arena_census_mutate.cmake "the arena take failed to compile src/mcc.c"). NOT from the COFF flip — plain `mcc -c src/mcc.c` succeeds in both COFF and ELF. Windows /GS stack-cookie catching an overrun in the arena/intern-cap dump path over a very large TU. Root-cause banked in DETAILS pending; the intern-table-exhaustion dump routine is the prime suspect per the driver's own comment
 - [ ] T-lin-10057 [S] Make `kept_coverage` host-stable, so the floor is tool-enforced instead of a convention
       OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
       REF: DETAILS.md#q-lin-10007-answer-make-kept-coverage-host-stable | DEPS: — | Q: Q-lin-10007 ANSWERED | NOTE: UNBLOCKED. Human chose host-stable — explicitly NOT raising `--tol` and NOT encoding "bank from stage2" as a convention. DoD: the same tree measured from a gcc host and from a stage2 self-hosted compiler yields the same kept_coverage within the EXISTING --tol of 0.05pp, without widening it. Today they disagree: fallback 98 / kept 82.7770 (gcc host) vs 100 / 82.7139 (stage2) at -O0 — a 0.06pp spread outside tol, so banking from a gcc host re-breaks CI, which tests the stage2 tree. Once it holds, "bank from stage2" stops being a rule
