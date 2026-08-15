@@ -45892,3 +45892,27 @@ lin-x64's [T-lin-10384](#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-sca
 **Superseded:** the slice-2/2b MSVC-blob approach-A work (ucrtbase.def + pe_check_symbols `_`+raw candidate + pe_add_runtime ucrtbase/`__isa_available`/COMMON pre-defs) is MOOT under B and was NOT landed (N4-held, then dropped; the def file removed). Kept in the slice-2/2b anchors above only as the record of why A is a dead end.
 
 **Source.** win-x64, 2026-08-15, code `d46e9ee2`.
+
+<a id="t-lin-10384-done-canonical-full-suite-green-and-the-jitdev-reds-were-mcc-dev-build-mismatch"></a>
+
+## T-lin-10384 DONE — canonical full native suite green; the cmake-jitdev reds were MCC_DEV build-mismatch, not regressions
+
+**§8 per-task gate (lin-x64, 2026-08-15, `main@b1f912b5`).** Full native suite in **`cmake-debug` (MCC_DEV=OFF)** — the canonical build, same class as [T-lin-10092/lin's `cmake-def`](#t-lin-10092-lin-the-linux-full-native-suite-is-clean):
+
+```
+100% tests passed, 0 tests failed out of 10070
+```
+
+9022 Passed, ~1048 registered skips, 0 failures. Every cell that exercises the changed code ran and passed: `gpu/spv-slice-differential(+kp)`, `gpu/ladder-gpu-parity`, `slice/census`, `slice-census`, `slice/gpu(+kp)`, `slice/mem`, `smoke/slice-bails`, `node-census`. This is the §8 evidence for the fix.
+
+**The four cmake-jitdev reds were investigated to ground and are all non-regressions.** An earlier §8 attempt used `cmake-jitdev` (MCC_DEV=ON) and returned 4 reds. Each was run to root cause; none is a regression from this change, and all four PASS in the canonical `cmake-debug`:
+
+1. **`rir-coverage` + `rir-coverage-census` — MCC_DEV build-mismatch, not my source.** These census `src/mcc.c` (self) and the wide corpus for the lowerable-region fraction. `src/mcc.c` amalgamates `ast_eval_slice.h` (via `libmcc.c`→`mccast.c`), so the census sees the compiler's own source. Under MCC_DEV=ON the `MCC_TRACE(...)` macros (~12,600 call sites) are armed and shift the node census — body counts differ (jitdev self 3229/3231 vs debug 3224/3226) — but `MCC_DEV` is not in `rir-coverage.py`'s `CORPUS_DEFS`, so the cell does not skip; it compares a MCC_DEV=ON census against an MCC_DEV=OFF-taken floor. The floor sits ~0.005pp above the jitdev number, and this change's +25 source lines tipped `region_nodes_pct` 0.05pp below it (while `big_region_nodes_pct`/`bodies_pct`/`nodes_pct` all rose — the change makes *more* nodes lowerable, consistent with the member-select fix). In `cmake-debug` (MCC_DEV=OFF, the build the bank belongs to) both cells **PASS** with the fix. **The census banks were left pristine — no rir rebank was warranted** (rebanking the OFF-taken floor with ON-build numbers would have corrupted it).
+2. **`config-defines` — cmake-jitdev build-config drift, not source.** `mccbuild --emit-defines --check` flags `MCC_DEV=1`, `MCC_EMBED_JIT=1`, `MCC_CONFIG_MCCDIR/OS_RELEASE/TRIPLET` present in CMake's `_mccdefs` but absent from mccbuild's catalog. Zero involvement of `ast_eval_slice.h`; **PASSES in cmake-debug** (MCC_DEV=OFF ⇒ no drift on those defines).
+3. **`optfire/gate-ledger` — load-timeout.** Ran 1800.08s (its TIMEOUT) under the saturated `-j8` jitdev suite; **PASSES in 154s** in cmake-debug. Same class as the T-lin-10092 flagsweep load-timeouts.
+
+**The one bank change kept is `bails.txt`** (515→344, 15→0, O4+O9; header note 18): that census is over `tests/smoke/subject.c`, a test file with no `MCC_TRACE`, so it is MCC_DEV-independent — verified by `smoke/slice-bails` passing in `cmake-debug` (24.6s) with the rebanked values.
+
+**Cross-arm corroboration.** mac-arm64 took the MSL census on the same tree and found the identical shared hole (`Unary/member=72` on subject.c), then re-took it after this fix: **72→0** (rungs 5307→5542) — the shared `ast_eval_ladder_scan` fix greens both the SPIR-V and MSL arms ([T-lin-10385](#t-lin-10385-census-results-the-msl-arm-histograms)). No MSL-only hole, so no new task.
+
+**Source.** lin-x64, 2026-08-15, `main@b1f912b5`; census/fix at [the fix-landed anchor](#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-scanner-census-81-to-0-certified).
