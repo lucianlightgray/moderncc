@@ -44427,3 +44427,41 @@ the correction, not collateral, but the full native suite is the gate.
 
 **Source.** win-x64, 2026-08-15. Probes: `plainprobe.c` vs cl/llvm-mingw;
 `pass-msstruct` vs mcc + clang-22.
+
+<a id="t-win-50013-resolved-the-windows-bail-bank-exists-and-five-smoke-cells-flipped"></a>
+
+## T-win-50013 RESOLVED — the x86_64-windows bail bank exists, taken under two real references, and five smoke cells flipped green on it
+
+**Done 2026-08-15 (win-x64, bank SHA 05ea60f8).** 541 categories over the five
+rebank passes in the arm64-macos order; the hand header triages every
+Windows-specific class with its evidence anchor. Verification: `smoke/slice-bails`,
+`smoke/strat-dark`, `smoke/divergence`, `smoke/device`,
+`smoke/device-known-positive` all PASS against the bank in a vcvars ctest —
+five of the eleven original smoke reds.
+
+**What the bank encodes, class by class:** (1) the f80 diverge-both wall is
+mcc's MSVC 64-bit `long double` against the mingw references' x87 80-bit model
+— one deliberate ABI choice, hundreds of rows; (2) the F16 rows are the Linux
+bank's evaluation-format + NaN-payload divergence under two-reference verdict
+names, as T-win-50011 predicted once the reference topology was repaired;
+(3) O13 strat-dark rows are T-win-50012's LLP64 data-model darkness;
+(4) slice-refused counts are the Linux counters at Windows magnitudes;
+(5) UB rows mirror the Linux classes, with refs-disagree where gcc and clang
+genuinely differ (`shl.si.w.fold`: gcc folds to 0, clang to `0x80000000`, mcc
+says 1 — three answers to one UB shift).
+
+**Reference topology, permanently recorded in the bank header:** winlibs GNU
+gcc 16.1.0 (the `mingw` preset superbuild re-fetches it into `vendor/`) +
+llvm-mingw clang. scoop's MSVC-target clang cannot link the subject (missing
+compiler-rt `__extendhfsf2`/`__mulsc3` builtins) and mstorsjo's `gcc.exe` is
+clang-in-a-gcc-costume; either substitution silently degrades every verdict.
+
+**Device milestone, worth its own line:** the smoke device oracle ran on the
+RTX 2060 — **cpu-digest == gpu-digest over 798,500 value cases, 10,581
+dispatches** — the first device-arm agreement figure this platform has
+produced, and a strong prior that the T-win-50003 Bucket A "device numerics"
+half is smaller than its 28-cell listing suggests. The remaining smoke reds
+(`native`, `strats-known-positive`, `engines` ×3) decompose entirely into
+`pass-msstruct` (T-win-50015) and the embed-JIT link (T-win-50003 Bucket B).
+
+**Source.** win-x64, 2026-08-15, at 05ea60f8.
