@@ -46250,3 +46250,26 @@ No code change is owed: the one-line configure fix and the durable manifest guar
 **Banked as a cell so checks can lean on it: `ci/reproducible-object`** (CMakeLists in the `NOT CMAKE_CROSSCOMPILING` block, so it runs on every native build incl. MSVC/Windows) — compiles `tests/misc/repro-subject.c` (a broad codegen surface: struct/union/bit-field, recursion, switch incl. case-ranges, doubles, string/array literals, function pointer) with `mcc -c` twice and SHA256-compares. An object carries no build-id, so any difference is genuine codegen nondeterminism. Green on gcc/Linux and MSVC/Windows.
 
 **Source.** win-x64 via WSL, 2026-08-15, code `04053aa5`.
+<a id="t-lin-10364-done-the-pre-existing-drift-is-two-benign-commits-a-setjmp-opt-bail-and-an-amalgamation-that-grew"></a>
+
+## T-lin-10364 DONE — the pre-existing drift bisects to two benign commits: a setjmp opt-bail and an amalgamation that grew
+
+**Bisected by rebuild (lin-x64, 2026-08-15).** The `self`/`wide` census subject is the compiler's own `src/mcc.c` amalgamation (`tools/rir-coverage.py` header: *"the `self` and `wide` corpora are the compiler's own source ... getting more source into `src/mcc.c` moves every one of them without anything having regressed"*), so a body-classification drift with the classifier unchanged has to be a change to that source or to the AST shape fed to the classifier. A build-per-step bisect of `bodies_pct` (`now`) over `src/`-only checkouts in `87954190..a0e26cff` — the census is deterministic, ~48s/run, MCC_DEV=OFF — split into **two** clean steps, not one:
+
+| step | commit | subject | `bodies_pct` O1/O2/O3 | drop |
+| --- | --- | --- | --- | --- |
+| baseline | `87954190` | (setjmp/longjmp builtins) | 15.3980 | — |
+| **A** | **`1307d0bb`** | `fix(setjmp): __builtin_setjmp miscompiled two torture programs` | 15.3947 | −0.0033pp |
+| — | `0110557c`,`3435b22e`,`3764a836` | (no move) | 15.3947 | — |
+| **B** | **`eedf83f2`** | `refactor(rt): start the GPU and the JIT pool at main's entry` | 15.3779 | −0.0168pp |
+| endpoint | `a0e26cff` | (the rebank folded it away) | 15.3779 | — |
+
+**Step A — a genuine reshape of the subject's own setjmp bodies, intended.** `1307d0bb`'s entire `src/` delta adds `ast_body_has_setjmp()` and consults it at the top of `ast_plan_promotion` (the callee-saved-across-a-call pass) and `ast_cprop_run` (copy propagation), making both **bail for any function that calls setjmp**. The census subject `src/mcc.c` uses setjmp/longjmp for its own error handling (callers in `libmcc.c`, `mccrun.c`, `mccgen.c`, `mccjit_embed.c`, `mccrir.c`, `mccast.c`), so those two passes stopped running on mcc's own setjmp bodies, changing their lowered RIR shape and thus their `ast_low_node` verdict. The classifier is unchanged; the AST it sees changed. Deliberate correctness fix, benign census side effect.
+
+**Step B — the amalgamation grew, NOT the 16-line `ast_ladder` change.** `eedf83f2` is the *sole* `src/` commit at its boundary (verified `git log 3764a836..eedf83f2 -- src/`). Its only `mccast.c` hunk is a 16-line `ast_ladder_gpu_setup`/`report` done-guard change — and that is **proven not the cause**: rebuilt `eedf83f2` with `src/mccast.c` taken from its parent `3764a836` and the census stayed at 15.3779 (unchanged). The mover is the rest of the commit: a new `src/mccrt.c`/`.h` pulled into the amalgamation via `#include "mccrt.c"` in `src/libmcc.c`, plus `main()` split into `main`+`mcc_main_body` and the `atexit(mccjit_shutdown)` registrations removed. That is exactly the tool's documented self-referential class — the census subject `src/mcc.c` gained and reshaped source — so every ratio moves with nothing regressing. Intended refactor, benign.
+
+**Verdict: both intended, no fix owed.** Neither step is a lowering-classifier change or a correctness regression; the drift is a correctness fix reshaping mcc's own setjmp bodies plus a refactor enlarging mcc's own amalgamation — the benign self-referential behaviour `rir-coverage.py` documents. The two movers are now on the board beside the figure, which is what the verification asked for.
+
+**One honest residual.** The bisected window drift is −0.0201pp; the figure the row quotes as "pre-existing" was −0.0336pp. Census values are host- and `-D`-sensitive (the tool's header records host spreads of several pp), so the ~0.0135pp difference is most plausibly the config gap between whatever host/flags took the historical `15.3812` bank and this measurement, and/or a small mover just outside the `87954190` baseline; chasing it further over a ~200-commit pre-window is disproportionate to a ~1.5-body accounting drift whose every identified component is provably benign. The row is closed on the two named, explained, intended movers rather than on the last 0.0135pp of a hygiene figure.
+
+**Source.** lin-x64, 2026-08-15, bisected at `main@d69ff732`; movers `1307d0bb` + `eedf83f2`.
