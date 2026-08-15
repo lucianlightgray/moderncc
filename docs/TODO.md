@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T06:20Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10373   | 2026-08-15T11:00Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T11:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50005   | 2026-08-15T13:20Z |
 
 ## Contracts — blocking, highest priority
@@ -28,6 +28,9 @@
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 ## Open — claimable
+- [ ] T-lin-10373 [S] `trace-gate-invariant` integrity: the file-arming test misses two of its own accepted openers
+      OWNER: — | STATE: OPEN | SHA: 67fe014e | TS: 2026-08-15T11:00Z
+      REF: DETAILS.md#t-lin-10373-tracegate-integrity-three-gaps-found-while-executing-q-mac-30002 | DEPS: — | Q: Q-mac-30002 ANSWERED | NOTE: found executing Q-mac-30002's "no hole in the gate" constraint. (1) tracegate.c:256 arms a file on the literal `MCC_TRACE(` only, but check_open accepts MCC_TRACE / _IF / _WHEN — a file instrumented solely with _IF/_WHEN is NEVER scanned, gate reporting nothing over an empty subject. Latent today, worsens as _WHEN adoption grows. One-line fix, do this first. (2) arg_is (tracegate.c:126) is dead code, superseded by arg_is_n at ddbc14c8 — delete. (3) gate-contract.txt:111 is `unfloored | unproved` and the known-positive the Q-mac-30002 answer cites was a manual fixture, never registered — no trace-gate-known-positive cell exists. Registering it is what makes (1) unable to recur; template cmake/idiomgate_known_positive.cmake + CMakeLists.txt:3615-3621, add to MCC_TREEGATE_CELLS (:9224) + must-run.txt; the unproved ratchet may only fall. DISJOINT from T-lin-10079 — that changes src/mccircap.c, this changes the gate; either order
 - [ ] T-lin-10057 [S] Make `kept_coverage` host-stable, so the floor is tool-enforced instead of a convention
       OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
       REF: DETAILS.md#q-lin-10007-answer-make-kept-coverage-host-stable | DEPS: — | Q: Q-lin-10007 ANSWERED | NOTE: UNBLOCKED. Human chose host-stable — explicitly NOT raising `--tol` and NOT encoding "bank from stage2" as a convention. DoD: the same tree measured from a gcc host and from a stage2 self-hosted compiler yields the same kept_coverage within the EXISTING --tol of 0.05pp, without widening it. Today they disagree: fallback 98 / kept 82.7770 (gcc host) vs 100 / 82.7139 (stage2) at -O0 — a 0.06pp spread outside tol, so banking from a gcc host re-breaks CI, which tests the stage2 tree. Once it holds, "bank from stage2" stops being a rule

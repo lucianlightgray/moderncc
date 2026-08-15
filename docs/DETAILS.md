@@ -43463,3 +43463,35 @@ So the resume recipe at the investigation anchor (teach `check_open` to accept a
 **Why the noise is worth removing even though it is diagnostic-only.** `MCC_TRACE` is `((void)0)` unless `MCC_CONFIG_TRACE`, and `ircap_events` is not a runtime counter — `tools/emit-map.py:190` counts trace lines whose file is `mccircap.c`. So there is no shipped-build overhead at stake; what is at stake is that the `-O0` emit-map reports a layer-share that is 359892/359893 artefact. The fix makes the measurement mean what it says.
 
 **Source.** Question raised by mac-arm64 at `04f426ab`; auto-answered and infra landed on lin-x64 at `ddbc14c8`; human ratification and the patch-reachability correction recorded on lin-x64, 2026-08-15.
+
+<a id="t-lin-10373-tracegate-integrity-three-gaps-found-while-executing-q-mac-30002"></a>
+
+## T-lin-10373 — three `trace-gate-invariant` integrity gaps, found while executing Q-mac-30002
+
+Q-mac-30002's answer binds the tree to "the invariant does **not** get an exemption or a hole — it gets a second accepted form." Reading `tools/tracegate.c` to confirm that property held for `MCC_TRACE_WHEN` turned up three gaps. All three are verified against the live source, and none is caused by the `MCC_TRACE_WHEN` landing — but the first one gets *worse* as `MCC_TRACE_WHEN` adoption grows, which is what makes this a follow-on to that answer rather than an unrelated cleanup.
+
+**1. The file-arming test does not know about the other two accepted openers.** `tools/tracegate.c:256` arms a file on the literal token `MCC_TRACE(`:
+
+```c
+if (strstr(s, "MCC_TRACE(")) {
+	scan_branches(path, s, raw);
+	scan_functions(path, s, raw);
+```
+
+`check_open` (`:130-153`) accepts three spellings — `MCC_TRACE`, `MCC_TRACE_IF`, `MCC_TRACE_WHEN` — but the arming test recognises only the first. **A file instrumented exclusively with `MCC_TRACE_IF(` or `MCC_TRACE_WHEN(` is never scanned at all**, so every function and branch in it is unchecked while the file looks instrumented to a reader. This is the same shape as the defect recorded at [the mccrir gap](#m-todo-0020-open-ranked): a gate that polices only files that already opted in, silently reporting nothing over an empty subject. It is latent today because every instrumented file still carries plain `MCC_TRACE(` sites, and `src/mccircap.c` will keep some after T-lin-10079 — but the arming rule should match the opener set rather than depend on that remaining true. Fix is one line: arm on any of the three tokens.
+
+**2. `arg_is` is dead code.** `tools/tracegate.c:126-128` defines it; nothing calls it. It was superseded by `arg_is_n(rawtok, off, want, skipargs)` (`:94-124`) in the `MCC_TRACE_WHEN` landing at `ddbc14c8`, which generalises it with a `skipargs` parameter. `arg_is` is the `skipargs == 0` case left behind. Delete it, or the tree carries two spellings of the same check and a future edit lands in the unused one.
+
+**3. The cell is `unfloored | unproved`, and the known-positive Q-mac-30002 cites was never registered.** `tests/gate-contract.txt:111`:
+
+```
+trace-gate-invariant | unfloored | unproved | function bodies and braced branches in MCC_TRACE-instrumented files checked for their opening trace call
+```
+
+The [Q-mac-30002 answer](#q-mac-30002-answer-the-invariant-requires-a-trace-site-not-a-print) reports a known-positive — `MCC_TRACE_WHEN(layer_active, "enter\n")` accepted, `MCC_TRACE_WHEN(layer_active, "wrong\n")` reported — but it was run as a manual fixture, and `grep -rn trace-gate-known-positive CMakeLists.txt tests/ cmake/` returns nothing. So the claim "the new form cannot be used to smuggle an unchecked opener past the gate" is true as measured and unenforced going forward. `unfloored` compounds it: `main` (`:267-292`) exits 0 on an empty subject, so a root that scans zero instrumented files is green. Registering `trace-gate-known-positive` is what makes gap 1 impossible to reintroduce — the template is `cmake/idiomgate_known_positive.cmake` + `CMakeLists.txt:3615-3621`, plus rows in `MCC_TREEGATE_CELLS` (`CMakeLists.txt:9224`) and `tests/must-run.txt`, and the `unproved` ratchet may only ever fall (`tests/gate-contract.txt:16-17`).
+
+**Ordering note.** Gap 1 is the only one with correctness consequences and is a one-line change; gap 3 is what stops it recurring and is the larger piece; gap 2 is incidental. Doing 3 without 1 registers a proof of the wrong property.
+
+**Scope boundary.** This is *not* T-lin-10079. That task changes `src/mccircap.c` and must stay green against the gate as it exists; this one changes the gate. They touch disjoint files and can land in either order.
+
+**Source.** Found on lin-x64, 2026-08-15, while executing Q-mac-30002's answer. Verified against `tools/tracegate.c` and `tests/gate-contract.txt` at `67fe014e`.
