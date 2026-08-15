@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches-ignore: ['arm64-linux/**']
   pull_request:
   workflow_dispatch:
 
