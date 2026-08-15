@@ -45357,3 +45357,46 @@ tests/emitmap/faithful.json` reports "bank OK for arm64|full_language.c,
 arm64|selfhost"; `ast/inv-faithful` + `-known-positive` pass on Darwin.
 
 **Source.** mac-arm64, 2026-08-15, at `93c52ef7`.
+<a id="t-lin-10380-fixed-a-produced-nans-sign-is-excluded-from-the-compare-and-counted"></a>
+
+## T-lin-10380 FIXED — a produced NaN's **sign** is excluded from the compare, scoped to arithmetic rows, and counted so the exclusion is visible
+
+Option (1) of the three [the reading offered](#t-lin-10380-the-armed-f64-spv-case-f-addsub-stakes-bit-exactness-on-an-ieee-unspecified-nan-sign), taken because it matches what IEEE 754 actually guarantees rather than buying green by removing a subject or by spending instructions making an unspecified bit reproducible.
+
+**The rule.** `f64_arith_equal` accepts two values as equal when they are bit-identical, **or** when *both* are NaN and they agree on everything but the sign. Everything else still compares bit-exactly: every finite result, every infinity, and the sign of a **zero** — which IEEE *does* specify, so it is never relaxed.
+
+**Scoped by row, not by type, and the scoping is the interesting half.** A new `f64arith` flag marks exactly three of the six f64 cases:
+
+| case | marked | why |
+| --- | --- | --- |
+| `f-addsub`, `f-addinf`, `f-mul` | **yes** | the NaN is *produced* by an arithmetic operation (`0.0 - NaN`, `inf + -inf`, `0 * inf`), and §6.3 leaves its sign uninterpreted |
+| `f-notneg` | no | §5.5.1 specifies that **negate flips the sign of a NaN too**; this is a sign-manipulation, not an arithmetic result |
+| `f-ternary` | no | a select copies a bit pattern; it produces nothing |
+| `f-cmp` | no | the result is an integer |
+
+**`f-notneg` passing bit-exactly on RADV is what shows the scoping is right.** If the vendor difference were "this GPU normalises NaN signs", `f-notneg` would fail too. It does not: mcc and RADV agree exactly on negate-of-NaN, which is the case the standard specifies — so the relaxation is aimed at the unspecified bit and nowhere else.
+
+**The exclusion is counted, not hidden.** `[spvgate|mslgate]:` gained **`nansign=`**, the number of points accepted *only* through the relaxation. On this box:
+
+```
+spvgate: … compared=2754660 vacuous=141068 mismatches=0 nansign=16453
+spvgate: OK
+```
+
+16,453 is exactly the mismatch count the run reported before the change, so the relaxation absorbed precisely that class and nothing else. A future run whose `nansign` is 0 on one vendor and non-zero on another has that on the record as a per-device fact rather than as silence.
+
+**Proved not blind, at 100%.** `./spvgate --mutate` — which XORs bit 0 of every result — now reports:
+
+```
+f-notneg FAIL   f-ternary FAIL   f-cmp FAIL   f-addsub FAIL   f-addinf FAIL   f-mul FAIL
+… compared=2754660 mismatches=2754660 nansign=0
+spvgate: FAIL
+```
+
+**Every one of the 2,754,660 compared points is still caught**, all six f64 rows included, and `nansign` falls to **0** under mutation — the relaxation cannot fire on a corrupted value, because a one-bit payload flip is exactly what it still compares. A relaxed comparison that still catches 100% of a one-bit corruption is not a weakened comparison.
+
+**Both emitters get it.** `tools/spvgate.c` compiles twice — as `spvgate` for SPIR-V and as `mslgate` for MSL — so the rule and the counter apply on Metal too. That is correct rather than incidental: the standard's silence is not vendor-specific. mac's arm should report `nansign=0`, since its soft-float MSL lowering and its CPU oracle agreed exactly; if it ever does not, the counter says so.
+
+**Gates.** `ctest -R '^gpu/'` **17/17** on AMD Radeon 610M / RADV, `gpu/spv-slice-differential`, `gpu/spv-slice-known-positive`, `gpu/spv-slice-real`, `gpu/spv-validate(-known-positive)` and `gpu/spv-mem-binding(-known-positive)` included; the five MSL rows skip on Linux as always.
+
+**Source.** lin-x64, 2026-08-15, on AMD Radeon 610M / RADV.
