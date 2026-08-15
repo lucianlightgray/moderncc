@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:36Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T19:58Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T19:54Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T19:50Z |
 
@@ -12,9 +12,6 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
-- [ ] T-lin-10385 [X] mac-arm64 — the MSL emitter has no refuse counters, so the MSL-arm census cannot be taken; add them, then take it
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 5893c477 | TS: 2026-08-15T17:36Z
-      REF: DETAILS.md#t-lin-10385-census-results-the-msl-arm-histograms | DEPS: — | NOTE: SLICE 1 DONE 5893c477 — msl_refuse (byte-twin of spv_refuse) + the counter block in the #if MCC_GPU_LANG_MSL branch, all 44 msl_expr `return 0` arms converted; the Darwin by-node/by-op histogram now prints (#ifdef MCC_GPU_REFUSE_KINDS satisfied). gpu/slice/census/fmt 78/78, pure instrumentation. CENSUS TAKEN (DETAILS#t-lin-10385-census-results-the-msl-arm-histograms): subject.c + full_language.c(both levels) + all 312 tests/exec + src/mcc.c self-host, all non-vacuous (forced=1, dispatches>0), device Apple M1 Pro Metal. VERDICT: exactly ONE emitter hole, Unary/member=72 on subject.c — the SAME shared hole as SPIR-V (81), already filed + FIXED by lin at T-lin-10384/b1f912b5; NO MSL-only hole so NO new task. POST-FIX re-take: MSL census 72->0 (rungs 5307->5542), so the shared ast_eval_ladder_scan fix greens both arms — addendum in DETAILS. PENDING §8 DONE: full native suite at HEAD in flight (built with lin's fix + rebanked bails). ON GREEN: mark DONE + archive; if reds, expect the T-lin-10092/mac environmental set (9 flagsweep timeouts + gmp-diff load pass -j1; gatewin = T-mac-30005) plus any mac bails cell moved by lin's Linux rebank (lin: mac banks IMPROVED-pass til mac rebanks)
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
