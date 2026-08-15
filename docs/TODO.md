@@ -39,6 +39,10 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
+- [ ] T-win-50015 [S] win-x64 — default `ms_bitfields = 1` on PE targets: mcc's plain bit-field layout is cross-TU-incompatible with every native Windows compiler
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 5d6997f4 | TS: 2026-08-15T14:00Z
+      REF: DETAILS.md#t-win-50014-resolved-mccs-win32-default-bitfield-layout-is-the-outlier | DEPS: — | NOTE: slice 1 = the failing cross-TU fixture vs mingw gcc (TDD red today), then the PE-target default flip, then re-bank what moves. Staged plan at the REF anchor
+
 ## Open — claimable
 - [ ] T-lin-10374 [S] Two builds of identical mcc source do not produce identical binaries
       OWNER: — | STATE: OPEN | SHA: 8dd00e11 | TS: 2026-08-15T13:25Z
