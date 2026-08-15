@@ -42138,3 +42138,38 @@ The first thing to record is that **the representation already existed.** `src/m
 **Next slice.** `tools/mcchv.c`'s `hv_optimizer` thread, which the contract names as the first conversion and whose loop already has explicit suspension points. Its `hv_sweep_worker` stays real threads: it measures 16-way parallel throughput, which is the same reason `mccjit_bench_pair` and `ast_search_pool_pthreads` are excluded by the contract.
 
 **Source.** Implemented on lin-x64, 2026-08-14, at `3a1fab9f`.
+
+<a id="t-lin-10001-slice-2-the-optimizer-thread-becomes-a-task"></a>
+
+## T-lin-10001 slice 2 — `tools/mcchv.c`'s optimizer thread becomes a task
+
+**Type** `[C]` — **State** IN_PROGRESS — **DEPS** — — **SHA** `86a2d7e5`
+
+The contract ([S7b](#t-lin-10001-a-task-representation-with-an-explicit)) names this as the first conversion, and the reason holds: `tools/mcchv.c` was the tree's only real C11-threads consumer, it is self-contained, and its optimizer loop already had explicit suspension points (`thrd_yield` and a 5 ms `thrd_sleep`) to convert into tick boundaries.
+
+**What the thread was.** `hv_optimizer` ran `while (!atomic_load(&hv_stop))`: sample `hv_npat` under `hv_mtx`, and if it moved, snapshot the pattern table, sort it, JIT a kernel, publish it to `_Atomic hv_kernel`, bump `hv_jit_gen` — then `thrd_yield()` and sleep 5 ms and go round again. `main` created it, then polled `hv_jit_gen` in 1 ms sleeps for up to 10 s waiting for the first kernel to land, and joined it after the JIT sweeps by setting the stop flag.
+
+**What it is now.** One `MccTask` on one `MccSched`, ticked by `main`. `t->resume` carries a four-state machine — `HV_OPT_SAMPLE → SNAPSHOT → BUILD → PUBLISH → SAMPLE` — one tick per state, so each of the old suspension points is now a return to the scheduler rather than a sleep.
+
+**The pattern table is the blocker it names.** When `hv_npat` has not moved since the last build there is nothing to compile, and the tick calls `mcc_task_block(t, (void *)&hv_npat)` and returns `MCC_TASK_BLOCKED` — the slice-1 answer doing the job it was added for. The consequences are the point of the slice:
+
+- **The 10 s poll loop is gone, and nothing replaced it.** `mcc_sched_run` returns when nothing is runnable, which for a single-task queue is exactly the moment the kernel has been published and the optimizer has parked. `main` no longer waits a bounded interval hoping a thread got there; the JIT has landed by construction when the call returns. 5 ticks, 5 rounds, 1 stall — deterministically, on every run.
+- **The stop flag is gone.** `atomic_int hv_stop` existed only so `main` could ask the thread to leave its `while`. A task is stopped between ticks, so `mcc_sched_quit` replaces it and the tick body needs no cancellation point.
+- **`mtx_t hv_mtx` is gone.** It serialized the optimizer thread against `main`'s interning loop and nothing else. With both on one thread it guarded nothing, so the file no longer touches the C11 mutex API at all — including the `mtx_timedlock` whose 1 ms `nanosleep` poll (`runtime/include/threads.h:144`) this contract flagged.
+
+**What deliberately stayed a thread.** `hv_sweep` still calls `thrd_create`/`thrd_join` over up to 32 `hv_sweep_worker`s, and that is now the file's *entire* remaining use of the C11 threads API. It measures parallel sweep throughput; a coroutine cannot measure contention, which is the same reason the contract excludes `mccjit_bench_pair` and `ast_search_pool_pthreads`. The end state is tasks as the scheduling unit with OS threads as a substrate underneath, not the removal of threads.
+
+**One behavioural change, stated so it is not discovered later.** A failing `hv_jit_build` used to be retried forever by the thread's outer loop. The tick counts failures and returns `MCC_TASK_FAILED` at `HV_OPT_MAXFAIL` (3), which `main` reports as `jit never landed` with the task's state and tick count. An allocation failure in `SNAPSHOT` is `FAILED` immediately. Both were previously indistinguishable from a busy optimizer, which is the same defect class the `BLOCKED` answer exists to end.
+
+**Verification.** `ctest --test-dir cmake-def -R '^(hypervisor|slice/(task|sched|work|cpu|thread))' --output-on-failure` — 13 of 13 green at `86a2d7e5`.
+
+- The new `hypervisor-task` cell (`CMakeLists.txt`) asserts `hv: optimizer task: parked-on=hv_npat ` via `PASS_REGULAR_EXPRESSION`, and was **confirmed red before the code existed** — the cell was added and run first.
+- The binary asserts the interface in *every* hypervisor cell, not only the new one: after the JIT sweeps it wakes `&hv_npat`, steps the scheduler exactly once, and requires `woke == 1`, exactly one tick consumed, **no rebuild**, and the task re-parked. That is the resume-not-restart property — the woken task re-enters at `SAMPLE`, sees the table unchanged, and parks again rather than recompiling a kernel it already published.
+- **Known-positive.** Mutating the wake to `mcc_sched_wake(&sched, &hv_jit_gen)` — an address no task named — takes it red: `woke=0`, `ticks=+0`, `hv: optimizer wake round-trip failed`, exit 1. The assertion has a floor.
+- `SKIP_RETURN_CODE` and `PASS_REGULAR_EXPRESSION` on the same cell are safe in this order: CTest marks a 77 exit Skipped without consulting the regex (verified directly on CMake 4.3.4). A host without `<threads.h>` — the `#else` arm at `mcchv.c:9` — still skips rather than failing the new cell.
+
+**Not done here.** The scheduler is still driven by `main` at two explicit points rather than owning the program's control flow, because nothing else in `mcchv` is a task yet. The `<threads.h>` single-threaded backend the contract describes (`thrd_create` enqueues, `thrd_join` runs the scheduler) is a later slice; this one proves the representation is adequate for a real consumer, which is what the contract asked the first conversion to prove.
+
+**Next slice.** The remaining named suspension points are the JIT pool's (`mccjit_pool_worker`'s unbounded `pthread_cond_wait` at `src/mccjit_embed.c:1347`, held under `mccjit_swap_lock` across the whole job) — that conversion is L2′ and is what [T-lin-10031](#t-lin-10031-the-jit-teardown-is-unbounded-above) waits on.
+
+**Source.** Implemented on lin-x64, 2026-08-15, at `86a2d7e5`.
