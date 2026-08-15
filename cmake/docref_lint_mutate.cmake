@@ -20,8 +20,9 @@ if(_mut EQUAL 0)
                         "it does not occur at (the docs/PLAN.md:435 defect "
                         "verbatim, from the plan since retired into "
                         "docs/ARCHIVED.md), and a failed-to-reproduce table whose row "
-                        "count disagrees with the one sentence that states it "
-                        "-- and the lint did not report all four. A lint that "
+                        "count disagrees with the one sentence that states it, "
+                        "and a DETAILS.md#anchor citation resolving to no such "
+                        "anchor -- and the lint did not report all five. A lint that "
                         "walks 800 citations and resolves none of them prints "
                         "the same OK line as one that resolves all of them")
 endif()
