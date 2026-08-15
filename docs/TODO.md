@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:36Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T19:52Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T19:54Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T19:50Z |
 
 ## Contracts — blocking, highest priority
@@ -18,6 +18,9 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-lin-10071 [S] `rir-nofb-probe-self` is flaky and the mechanism is not known
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-15T19:54Z
+      REF: DETAILS.md#t-lin-10071-mechanism-the-cell-writes-and-executes-three-binaries-in-the-shared-build-directory | DEPS: — | NOTE: CLAIMED — applying the named fix: move the 3 probe exes (mcc-nofb-base/ctl/probe, rir-coverage.py:1199/1214/1225) from the shared bdir to the private td tempdir (already used for objects). Eliminates the shared-dir race by construction, so the flake is moot regardless of whether concurrency was the exact remover
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: PAUSED (heartbeat intentionally stale; TTL-eligible for any session to resume). slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
@@ -235,9 +238,6 @@
 - [ ] T-lin-10069 [S] Fifteen "written as live, actually superseded" citations need re-checking or striking
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10069-fifteen-written-as-live-actually-superseded | DEPS: —
-- [ ] T-lin-10071 [S] `rir-nofb-probe-self` is flaky and the mechanism is not known
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10071-mechanism-the-cell-writes-and-executes-three-binaries-in-the-shared-build-directory | DEPS: — | NOTE: MECHANISM NARROWED 2026-08-15. Not a wrong answer and not a timeout: FileNotFoundError executing <bdir>/mcc-nofb-probe. rir-coverage.py builds THREE fixed-name binaries straight into CMAKE_BINARY_DIR (:1199/:1214/:1225), executes them, and removes all three at the end (:1241) — a directory every other cell and the build fixtures write to concurrently. Green standalone x3 with identical numbers (71 bodies, 66 benign, 0 MISCOMPILE, 5 vacuous), green in the full suite at -j 12, red twice in a -j 6/-j 8 family run at the same early position. FIX: give the cell a private working dir; it already uses a tempdir for its objects, only the executables were put somewhere shared. NOT YET PROVED that concurrency is what removes the file — that is inference from four runs, and the confirming experiment is named at the REF
 - [ ] T-lin-10359 [X] lin-x64 — `slice/cref-oracle-*` stalls on five programs when the host GPU is busy
       OWNER: — | STATE: OPEN | SHA: 1fd3ca2d | TS: 2026-08-15T15:15Z
       REF: DETAILS.md#t-lin-10359-slicecref-oracle-stalls-on-five-programs | DEPS: — | NOTE: CHECKED against T-lin-10073's resolution and this row does NOT share its flaw — recorded so nobody re-derives it. 10073 died because its diagnostic tested RESIDENCE (`pgrep -a wineserver`), which 6 passing observations refuted; this row's diagnostic already tests ACTIVITY (`nvidia-smi --query-compute-apps` + `ps --sort=-pcpu`) and its evidence is a measured 72% GPU / 5,295 MiB / 575% CPU from a running bg3_dx11.exe, not a resident process. The shared-sentence "one mechanism behind all three rows" is the part that is now known to be loose. BLOCKED IN PRACTICE ON THIS HOST: slice/cref-oracle-* SKIP here (the gcc c-torture corpus is not provisioned, same shape as T-lin-10088/T-lin-10030-mac), so the row's own verification — run it on an idle GPU and expect no stalls — cannot be executed without provisioning that corpus first
