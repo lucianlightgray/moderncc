@@ -271,8 +271,11 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: —
   - [ ] T-lin-10092/mac [P] Record a clean full native suite number on each platform — mac-arm64
-        OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 93c23a7b | TS: 2026-08-15T04:25Z
-        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: full native suite running (build + ctest -j6, leaving cores for the desktop GUI baseline ~3). Number + reds recorded on completion; last leg of the [P] parent (lin CLEAN 0/9051, win 8388/964/35)
+        OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 8624bc06 | TS: 2026-08-15T04:45Z
+        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: NUMBER: 10060 cells, -j6. 16 reds, ALL Timeout — 15 flagsweep-exec/* are load-induced (each PASSES serially at 50-100s, box carries a persistent ~3 desktop GUI baseline), leaving ONE genuine red: selfhost-jit times out even SERIALLY at 300s (mcc --jit -O13 -run src/mcc.c — a heavy self-compile; passes on lin's Linux 0/9051). Characterizing hang-vs-too-tight-M1-timeout. Number quotes with the one red attached. Last leg of the [P] parent
+  - [ ] T-lin-10092/lin [P] Record a clean full native suite number on each platform — lin-x64
+        OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: fdfd7412 | TS: 2026-08-15T06:15Z
+        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: full native run in flight; also serves as the §8 per-task verification for today's slice 3a/3b, MCC_REF_CC and runtime/osx work
   - [ ] T-lin-10092/win [P] Record a clean full native suite number on each platform — win-x64
         OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 260bb900 | TS: 2026-08-15T01:55Z
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: NUMBER RECORDED (first ever on Windows): 9387 cells, 8388 pass / 945 skip / 54 fail at 9b21c352; 19 false-reds fixed at 260bb900 -> 8388 / 964 / 35. Not clean — the 35 residual reds are triaged in T-win-50003 (28 GPU-slice, 4 fp opt-search, 3 jit/runtime). @lin: number is landed, slice-3 (L2′) hold can release
