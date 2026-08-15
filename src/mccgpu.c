@@ -514,6 +514,10 @@ static id mcc_mtl_mem;
 static void *mcc_mtl_pmem;
 static unsigned long mcc_mtl_memsz;
 
+static id mcc_mtl_bin, mcc_mtl_bout;
+static void *mcc_mtl_pin, *mcc_mtl_pout;
+static unsigned long mcc_mtl_binsz, mcc_mtl_boutsz;
+
 void mcc_gpu_quiesce(void) {
 	int i;
 	MCC_GPU_LOCK();
@@ -527,6 +531,14 @@ void mcc_gpu_quiesce(void) {
 	mcc_mtl_mem = 0;
 	mcc_mtl_pmem = NULL;
 	mcc_mtl_memsz = 0;
+	mtl_release(mcc_mtl_bin);
+	mcc_mtl_bin = 0;
+	mcc_mtl_pin = NULL;
+	mcc_mtl_binsz = 0;
+	mtl_release(mcc_mtl_bout);
+	mcc_mtl_bout = 0;
+	mcc_mtl_pout = NULL;
+	mcc_mtl_boutsz = 0;
 	MCC_GPU_UNLOCK();
 }
 
@@ -617,6 +629,30 @@ static id mtl_buffer(unsigned long len, void **map) {
 	return b;
 }
 
+static int mtl_bind_buffers(unsigned long inlen, unsigned long outlen) {
+	if (inlen > mcc_mtl_binsz) {
+		mtl_release(mcc_mtl_bin);
+		mcc_mtl_bin = mtl_buffer(inlen, &mcc_mtl_pin);
+		if (!mcc_mtl_bin) {
+			mcc_mtl_binsz = 0;
+			mcc_mtl_pin = NULL;
+			return 0;
+		}
+		mcc_mtl_binsz = inlen;
+	}
+	if (outlen > mcc_mtl_boutsz) {
+		mtl_release(mcc_mtl_bout);
+		mcc_mtl_bout = mtl_buffer(outlen, &mcc_mtl_pout);
+		if (!mcc_mtl_bout) {
+			mcc_mtl_boutsz = 0;
+			mcc_mtl_pout = NULL;
+			return 0;
+		}
+		mcc_mtl_boutsz = outlen;
+	}
+	return 1;
+}
+
 /* Set only for the duration of a frame dispatch, under the same lock that
  * serialises everything else here. */
 static int32_t *mcc_gpu_rw_back;
@@ -624,15 +660,13 @@ static int32_t *mcc_gpu_rw_back;
 static int mcc_gpu_dispatch_locked2(const char *src, int len, const int32_t *in,
 																		int ntuple, int nlive, int32_t *out,
 																		int reuse_in) {
-	id pool, pso, bin, bout, cb, enc;
-	void *pin, *pout;
+	id pool, pso, cb, enc;
 	MtlSize grid, tg;
 	int cap = ((ntuple + MCC_GPU_LOCAL_SIZE - 1) / MCC_GPU_LOCAL_SIZE) * MCC_GPU_LOCAL_SIZE;
 	unsigned long inlen = (unsigned long)cap * nlive * MCC_GPU_IN_SLOTS * 4;
 	unsigned long outlen = (unsigned long)cap * MCC_GPU_OUT_SLOTS * 4;
 	int rc = 0;
 
-	(void)reuse_in;
 	if (!mcc_gpu_init())
 		return 0;
 	if (inlen > mcc_gpu.maxbuf || outlen > mcc_gpu.maxbuf) {
@@ -644,18 +678,15 @@ static int mcc_gpu_dispatch_locked2(const char *src, int len, const int32_t *in,
 	pso = mtl_pipeline(src, len);
 	if (!pso)
 		goto done;
-	bin = mtl_buffer(inlen, &pin);
-	if (!bin)
+	if (!mtl_bind_buffers(inlen, outlen))
 		goto done;
-	bout = mtl_buffer(outlen, &pout);
-	if (!bout) {
-		mtl_release(bin);
-		goto done;
+	if (!reuse_in) {
+		memcpy(mcc_mtl_pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
+		if (cap > ntuple)
+			memset((char *)mcc_mtl_pin +
+								 (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4,
+						 0, (size_t)(cap - ntuple) * nlive * MCC_GPU_IN_SLOTS * 4);
 	}
-	memcpy(pin, in, (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
-	if (cap > ntuple)
-		memset((char *)pin + (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4, 0,
-					 (size_t)(cap - ntuple) * nlive * MCC_GPU_IN_SLOTS * 4);
 
 	cb = mcc_gpu.cbdesc
 					 ? ((id (*)(id, SEL, id))objc_msgSend)(
@@ -665,16 +696,14 @@ static int mcc_gpu_dispatch_locked2(const char *src, int len, const int32_t *in,
 	enc = cb ? mtl_send(cb, "computeCommandEncoder") : 0;
 	if (!enc) {
 		mtl_fault(MCC_MTL_FAULT_ENCODE, "computeCommandEncoder", 0);
-		mtl_release(bin);
-		mtl_release(bout);
 		goto done;
 	}
 	((void (*)(id, SEL, id))objc_msgSend)(
 			enc, sel_registerName("setComputePipelineState:"), pso);
 	((void (*)(id, SEL, id, unsigned long, unsigned long))objc_msgSend)(
-			enc, sel_registerName("setBuffer:offset:atIndex:"), bin, 0, 0);
+			enc, sel_registerName("setBuffer:offset:atIndex:"), mcc_mtl_bin, 0, 0);
 	((void (*)(id, SEL, id, unsigned long, unsigned long))objc_msgSend)(
-			enc, sel_registerName("setBuffer:offset:atIndex:"), bout, 0, 1);
+			enc, sel_registerName("setBuffer:offset:atIndex:"), mcc_mtl_bout, 0, 1);
 	if (mcc_mtl_mem)
 		((void (*)(id, SEL, id, unsigned long, unsigned long))objc_msgSend)(
 				enc, sel_registerName("setBuffer:offset:atIndex:"), mcc_mtl_mem, 0, 2);
@@ -693,8 +722,6 @@ static int mcc_gpu_dispatch_locked2(const char *src, int len, const int32_t *in,
 	if (((unsigned long (*)(id, SEL))objc_msgSend)(
 					cb, sel_registerName("status")) != MCC_MTL_CB_COMPLETED) {
 		mtl_fault(-1, "command buffer", mtl_send(cb, "error"));
-		mtl_release(bin);
-		mtl_release(bout);
 		goto done;
 	}
 	mcc_gpu.fault = MCC_MTL_FAULT_NONE;
@@ -704,19 +731,17 @@ static int mcc_gpu_dispatch_locked2(const char *src, int len, const int32_t *in,
 	 * guarded this; here it was unreachable only because dispatch_rw2 bailed on
 	 * !mcc_gpu_rw_supported(), which now returns 1. */
 	if (out)
-		memcpy(out, pout, (size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
+		memcpy(out, mcc_mtl_pout, (size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
 	/* The frame copy-back. Buffer 0 is MTLResourceStorageModeShared (options 0
 	 * in mtl_buffer), so `contents` is CPU-coherent the moment
 	 * waitUntilCompleted returns -- no blit, no synchronizeResource:. If those
 	 * options ever become Managed this reads stale bytes. */
 	if (mcc_gpu_rw_back)
-		memcpy(mcc_gpu_rw_back, pin,
+		memcpy(mcc_gpu_rw_back, mcc_mtl_pin,
 					 (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
 	mcc_gpu.dispatches++;
 	mcc_gpu.lanes += ntuple;
 	rc = 1;
-	mtl_release(bin);
-	mtl_release(bout);
 
 done:
 	mtl_send_v(pool, "drain");
@@ -726,7 +751,7 @@ done:
 static int mcc_gpu_backend_load(void) { return mcc_mtl_load(); }
 
 #define MCC_GPU_CODE_PTR(p) ((const char *)(p))
-#define MCC_GPU_IN_IS_RESIDENT 0
+#define MCC_GPU_IN_IS_RESIDENT 1
 
 static int mcc_gpu_rw_supported(void) { return 1; }
 
