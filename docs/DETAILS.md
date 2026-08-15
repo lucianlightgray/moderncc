@@ -43972,3 +43972,85 @@ The [pre-reboot handoff](#lin-x64-handoff-2026-08-15-preboot) remains accurate o
 **One thing a reader should not conclude from the run of doc fixes above.** Three gates gained rules today — anchors, conflict markers, and the `headers-parse` selector — and all three were added *after* the defect they catch had already landed. That is the honest order: none of them was foresight, each was a post-mortem cheap enough to build immediately. The useful generalisation is not "we now have six rules" but that **each defect hid in a different property nobody was checking**, and in every case the check that would have caught it was one command.
 
 **Source.** lin-x64, 2026-08-15.
+
+<a id="t-win-50008-resolved-the-crash-was-setvbuf-not-the-intern-table"></a>
+
+## T-win-50008 RESOLVED — the crash was `setvbuf`, not the intern table, and the banked suspect list was wrong about the mechanism
+
+**Fixed 2026-08-15 (win-x64, code SHA 50790209).** All three cells green in a vcvars
+ctest: `slice/arena-intern-cap` 0.19s, `fmt/arena-census-bank` 2.36s,
+`fmt/arena-census-known-positive` 9.90s.
+
+**The real root cause.** `setvbuf(fp, NULL, _IOLBF, 0)` is an invalid parameter on
+the MSVC ucrt — with a NULL buffer and mode `_IOLBF`/`_IOFBF`, `size` must be >= 2
+(the CRT allocates the buffer itself) — and the release-CRT invalid-parameter
+handler raises `__fastfail`, whose status is exactly `0xc0000409`. So the process
+died inside `ast_adump_open` the moment `MCC_ARENA_DUMP` was set, before a byte of
+the dump was written, on ANY input: reproduced with the 12-global intern-cap
+fixture, with and without `MCC_ARENA_DUMP_ICAP`, and proven with a five-line `cl`
+program (`setvbuf(f, NULL, _IOLBF, 0); puts("survived")` → `0xc0000409`, no
+output). Silent on glibc because a 0 size with a NULL buffer is accepted there.
+
+**What the prior triage got wrong, recorded so nobody chases it again.** The anchor
+above fingered the intern overflow/grow/rehash path and "uncapped recursive walkers
+on src/mcc.c's giant bodies", and inferred /GS or guard-page exhaustion from the
+status code. None of that is the defect: `0xc0000409` on modern ucrt is *also* the
+plain fast-fail status (`abort()`, invalid parameter), not only a /GS cookie hit.
+The intern table's overflow path was already non-fatal by construction and now
+demonstrably works (ICAP=16 → loud stderr message, `[intern-overflow] n=7 cap=16`
+marker, exit 0), and the dump/replay walkers hold on `src/mcc.c` (3283 arenas
+walked clean). One true observation the triage did make: the empty dump file was
+not evidence the crash preceded the first write — `_IOLBF` is full buffering on
+Windows, so buffered lines die with the process. Here it happened to be both.
+
+**The fix, five sites, one token.** All five env-gated instrument opens carried the
+same copy-pasted pattern; every one fast-failed its instrument on Windows:
+`ast_adump_open` (MCC_ARENA_DUMP, mccast.c), `ast_slc_open` (MCC_SLICE_CENSUS,
+mccast.c), `ast_thr_open` (MCC_THREAD_CENSUS, mccast.c), `lcen_open`
+(MCC_LOOP_CENSUS_MAP, mccgen.c), `dcen_open` (MCC_DEPTH_CENSUS_MAP, mccgen.c).
+Each now passes `BUFSIZ`; glibc behaviour is unchanged (line-buffered, same-size
+buffer), Windows gets full buffering, which is what it silently coerced `_IOLBF`
+to anyway — every consumer reads the file after mcc exits, so flush granularity
+is not load-bearing.
+
+**Second defect the un-crashed cells then exposed: the census family classifier is
+host-renamed.** `src/mcchost.h:67-68` defines `snprintf`→`_snprintf` and
+`vsnprintf`→`_vsnprintf` under `_WIN32`, so the arena census over `src/mcc.c`
+dumps the underscore callee names on a Windows host and `fmt-census.py`'s
+`SNFAM` matched none of them: `snprintf_only` read 4 vs the banked 86 (the
+`_snprintf` single-callee row alone was 84). `SNFAM` gains the two underscore
+names — inert on hosts where the names never occur, and NOT a re-bank: banked
+86/0.825% stands, Windows measures 89/0.791%, inside both the 90% floor and the
+0.10pp tolerance. Same host-stability shape as Q-lin-10007 (bank vs measuring
+host), solved on the instrument side.
+
+**Blast radius measured (70-cell sweep over the former Bucket A families, this
+box, post-fix).** Of T-win-50003's 28 Bucket A reds: **10 now pass** —
+`slice/{arena-intern-cap,real,inline,mcc-leaf-graft,depth-bailout,census,refusal-classes}`,
+`depth-census-control`, `fmt/arena-census-bank(-known-positive)` — the entire
+"0 slices schedulable on Windows / census walked 0 blocks / MCC_ARENA_DUMP
+produced nothing" symptom class was this one setvbuf fast-fail (the slice
+extractor was never broken; its instrument opens were). **11 still fail, one
+shared root cause, filed as T-win-50009:** the whole `smoke/*` family.
+`tools/smokerun.c sm_system` hands `system()` a command whose first char is a
+quote and which carries many more quotes (`"mcc" args > "log" 2>&1`); Windows
+`system()` is `cmd /c <string>`, and with >2 quote chars cmd strips the first
+and last quote, leaving an unbalanced quote after the exe path — the observed
+"The filename, directory name, or volume label syntax is incorrect" before any
+compile runs. **6 skip and 1 fails environmentally:** the device is currently
+invisible — `vkEnumeratePhysicalDevices` → `ndev=0` (VK_INCOMPLETE) in this
+post-reboot session despite `C:\Windows\System32\vulkan-1.dll` present and the
+RTX 2060 that dispatched for the 2026-08-15T01:55Z suite run — so
+`gpu/spv-slice-real`, `slice/{f64,f64-known-positive,cost,noslot-classes}` skip,
+`slice/cref-oracle*` skip on the non-vendored corpus, and `slice/src` FAILS
+rather than skips because its f64-comparison floor treats no-device as red
+(and its earlier red was REAL device numerics — that half is hidden, not fixed,
+until the device is visible again; do not credit this sweep with it). Bucket B
+(4 fp opt-search, 3 jit/runtime) untouched.
+
+**Verification (unchanged spec, now met).** `slice/arena-intern-cap` emits
+`[intern-overflow]` and exits 0 with ICAP=16; `fmt/arena-census-bank(-known-positive)`
+compile `src/mcc.c` under `MCC_ARENA_DUMP` and write a dump; all three green in a
+vcvars ctest on win-x64.
+
+**Source.** win-x64, 2026-08-15, at 50790209.

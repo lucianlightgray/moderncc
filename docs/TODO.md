@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T12:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10374   | 2026-08-15T15:00Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50009   | 2026-08-15T12:25Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50010   | 2026-08-15T12:40Z |
 
 ## Contracts — blocking, highest priority
 
@@ -26,9 +26,9 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [ ] T-win-50008 [S] win-x64 — arena take crashes (0xc0000409) compiling `src/mcc.c`: `slice/arena-intern-cap`, `fmt/arena-census-bank(-known-positive)`
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: bc0bc6bf | TS: 2026-08-15T12:30Z
-      REF: DETAILS.md#t-win-50008-arena-take-crash-compiling-src-mcc-c | DEPS: — | NOTE: root cause + fix direction banked in the DETAILS anchor. Effectively win-only despite [S]: needs the MSVC /GS + ASan repro this box provides. Also advances T-lin-10092/win (3 of the 35 residual reds are this one defect). NOTE (clock): earlier win-x64 TS values today (14:15/14:20Z) were local time mislabeled Z; this box's true UTC now is 12:25Z — TTL judgments should use commit timestamps per §3
+- [x] T-win-50008 [S] win-x64 — arena take crashes (0xc0000409) compiling `src/mcc.c`: `slice/arena-intern-cap`, `fmt/arena-census-bank(-known-positive)`
+      OWNER: win-x64 | STATE: DONE | SHA: 50790209 | TS: 2026-08-15T12:40Z
+      REF: DETAILS.md#t-win-50008-resolved-the-crash-was-setvbuf-not-the-intern-table | DEPS: — | NOTE: DONE. Root cause was NOT the intern table/walkers: setvbuf(fp,NULL,_IOLBF,0) is an invalid parameter on MSVC ucrt → __fastfail 0xc0000409 at instrument-open, five copy-pasted sites (arena/slice/thread/loop/depth census). Plus fmt-census SNFAM host-rename (_snprintf) — measured 89/0.791% vs banked 86/0.825%, in tolerance, no re-bank. 10 of T-win-50003's 28 Bucket A reds flip green; 11 smoke/* reds = one new root cause (T-win-50009); device currently INVISIBLE on this box (vkEnumeratePhysicalDevices ndev=0 post-reboot) so 6 GPU cells skip + slice/src red environmentally. All three cells green in vcvars ctest
 
 ## Open — claimable
 - [ ] T-win-50005 [X] win-x64 — arm64-win32 COFF: add the AArch64 TLS relocations to `coff_emit_reloc`, then flip arm64 default `-c` to COFF + re-bank o0-baseline arm64-win32 + switch `arm64pe_diff.py` to force ELF
@@ -37,6 +37,9 @@
 - [ ] T-win-50006 [X] win-x64 — arm-win32 COFF: implement the ARM32 arm of `coff_emit_reloc` (there is none), then flip arm-win32 default + re-bank
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. `coff_emit_reloc` has NO `MCC_TARGET_ARM` case — it falls to `return -1`, so arm-win32 `-c` COFF fails on any file with a relocation (only 3/40 reloc-free files compile; "unsupported relocation type 2" = R_ARM_ABS32). LOW PRIORITY: arm-win32 (ARM32 Windows) is a dead platform with no executor (see T-lin-10086 split) — do this only after arm64 (T-win-50005). Add the ARM32 IMAGE_REL_ARM_* mapping (ADDR32/BRANCH24/etc.), confirm the corpus re-encodes, then flip + re-bank
+- [ ] T-win-50009 [S] win-x64 — `smokerun` cannot spawn anything on Windows: `sm_system`'s quoted command dies in `cmd /c` quote-stripping; all 11 `smoke/*` cells red
+      OWNER: — | STATE: OPEN | SHA: 50790209 | TS: 2026-08-15T12:40Z
+      REF: DETAILS.md#t-win-50008-resolved-the-crash-was-setvbuf-not-the-intern-table | DEPS: — | NOTE: found quantifying T-win-50008. tools/smokerun.c builds `"exe" args > "log" 2>&1` and passes it to system(); Windows system() = `cmd /c <string>`, and with >2 quote chars cmd strips the FIRST and LAST quote → unbalanced quote after the exe path → "The filename, directory name, or volume label syntax is incorrect" before any compile. One choke point: sm_system (smokerun.c:257) — wrap the whole string in one extra pair of quotes under MCC_HOST_WIN32 (the documented cmd /S convention). Cells: smoke/{native,native-known-positive,strats-known-positive,engines,engines-known-positive,engines-identity,slice-bails,strat-dark,divergence,device,device-known-positive}. Effectively win-only despite [S]
 - [ ] T-win-50007 [S] win-x64 — `arm64pe_diff.py` false-positive: model the LLP64-vs-LP64 `long`-width benign case
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. `tools/arm64pe_diff.py --corpus` flags `06_long_width.c` SUSPICIOUS (.text 192 vs 188 bytes, 70 non-reloc byte diffs) — this is the EXPECTED data-model difference: `long` is 32-bit on arm64-Windows (LLP64) and 64-bit on arm64-Linux (LP64), so the codegen legitimately differs. The tool's benign-classifier only knows reloc-site and section-presence differences; teach it that a size difference explained by sizeof(long) 4-vs-8 is benign, OR compile the corpus with a fixed-width type so the diff is data-model-neutral. Pre-existing (not from the COFF flip); the other 5 corpus files are clean
@@ -59,8 +62,8 @@
       OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
       REF: DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor | DEPS: T-lin-10365[S] | NOTE: Q-lin-10013 ANSWERED — CI is the executor, so this is no longer win-x64-only. SPLIT: the `arm-win32` (ARM32) half has NO executor — Windows 11 on ARM64 does not run ARM32 apps — and must not be reported green with the arm64 half
 - [ ] T-win-50003 [S] win-x64 full native suite — 35 real failures triaged (28 GPU-slice/`slicerun` device↔CPU differentials + "0 slices on Windows"; 4 fp under emitsize/emitiso opt-search; 3 jit/runtime)
-      OWNER: — | STATE: OPEN | SHA: 260bb900 | TS: 2026-08-15T01:55Z
-      REF: DETAILS.md#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged | DEPS: — | NOTE: surfaced by the first Windows full-suite run (T-win-50002 unblocked mcc_build); this box has an RTX 2060 so GPU cells genuinely dispatch. Bucket A (28) is mccgpu/slicerun owners' (lin/mac) — win-x64 has the NVIDIA box to confirm fixes; Bucket B jit/runtime deferred behind lin's T-lin-10001 L2′ (mccjit_embed.c)
+      OWNER: — | STATE: OPEN | SHA: 50790209 | TS: 2026-08-15T12:40Z
+      REF: DETAILS.md#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged | DEPS: — | NOTE: RETRIAGED at 50790209 (see DETAILS#t-win-50008-resolved-the-crash-was-setvbuf-not-the-intern-table): the whole "0 slices on Windows" symptom class was one setvbuf fast-fail (T-win-50008, FIXED) — 10 of Bucket A's 28 now pass. Residual: 11 smoke/* = smokerun system() quoting (T-win-50009); slice/src + 6 GPU-cell skips are blocked on the device being INVISIBLE post-reboot (vkEnumeratePhysicalDevices ndev=0, RTX 2060 + vulkan-1.dll present — environmental, needs investigation; the real device-numerics half of Bucket A is HIDDEN behind it, not fixed); Bucket B (4 fp opt-search + 3 jit/runtime) untouched
 - [ ] T-lin-10364 [S] The wide census carried a pre-existing drift component that a0e26cff has now banked
       OWNER: — | STATE: OPEN | SHA: a0e26cff | TS: 2026-08-14T23:40Z
       REF: DETAILS.md#t-lin-10364-the-pre-existing-half-of-the-census-drift | DEPS: —
