@@ -2816,6 +2816,30 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
     set(MCC_EMBED_JIT_MINGW_CC "" CACHE STRING
         "Path to a msvcrt-targeting mingw gcc used to build the --embed-jit blob engine on MSVC hosts.")
 
+    # On an MSVC host, cl.exe cannot produce a linkable --embed-jit blob: its ucrt
+    # __imp_* imports and MSVC CRT-startup COMMONs (__isa_available_default,
+    # _dowildcard, and the blob's own statics) are mis-placed by mcc's own PE
+    # linker, so the standalone embed-jit exe fails to link / crashes at startup
+    # (see DETAILS.md T-win-50020). Default the blob compiler to the project's
+    # already-provisioned mingw gcc so a plain MSVC configure still yields a
+    # working --embed-jit; the mingw blob references the mingw CRT import libs
+    # (added by libmcc.c under MCC_EMBED_JIT_MINGW_LIBDIR), which mcc resolves
+    # against msvcrt.dll + the api-ms-win-crt-* apiset present on every modern
+    # Windows. Override by setting MCC_EMBED_JIT_MINGW_CC explicitly.
+    if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" AND NOT MCC_EMBED_JIT_MINGW_CC)
+        mcc_mingw_resolve()
+        if(_MCC_MINGW_X86_64_GCC AND EXISTS "${_MCC_MINGW_X86_64_GCC}")
+            set(MCC_EMBED_JIT_MINGW_CC "${_MCC_MINGW_X86_64_GCC}")
+            message(STATUS "mcc: embed-jit blob compiler auto-set to the provisioned mingw gcc "
+                "(MSVC cannot build a linkable blob): ${MCC_EMBED_JIT_MINGW_CC}")
+        else()
+            message(WARNING "mcc: MCC_EMBED_JIT on an MSVC host with no mingw gcc found at "
+                "'${_MCC_MINGW_X86_64_GCC}'. The cl.exe blob will NOT link a standalone "
+                "--embed-jit exe. Provision the mingw toolchain or set MCC_EMBED_JIT_MINGW_CC. "
+                "See DETAILS.md T-win-50020.")
+        endif()
+    endif()
+
     set(_jitengine_blob_src "$<TARGET_FILE:libmcc_jitengine>")
     set(_jitengine_blob_dep libmcc_jitengine)
     set(_jit_bake_cc "${CMAKE_C_COMPILER}")
