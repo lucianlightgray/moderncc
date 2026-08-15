@@ -833,7 +833,6 @@ static AstLocal b_ll_bool(AstArena *a, const int *o) {
 	return mk_bin(a, '+', x, y, VT_INT);
 }
 
-#if MCC_GPU_LANG_MSL
 static AstLocal b_f_notneg(AstArena *a, const int *o) {
 	return mk_bin(a, '|',
 								mk_un(a, '!',
@@ -898,7 +897,6 @@ static AstLocal b_f_cmp(AstArena *a, const int *o) {
 							 VT_INT);
 	return r;
 }
-#endif
 
 static const Case CASES[] = {
 		{"divraw", 2, b_divraw},   {"remraw", 2, b_remraw},
@@ -921,11 +919,9 @@ static const Case CASES[] = {
 		{"ll-notneg", 2, b_ll_notneg},   {"ll-narrow", 2, b_ll_narrow},
 		{"ll-mix", 2, b_ll_mix},         {"ll-ternary", 2, b_ll_ternary},
 		{"ll-land", 2, b_ll_land},       {"ll-bool", 2, b_ll_bool},
-#if MCC_GPU_LANG_MSL
 		{"f-notneg", 2, b_f_notneg},     {"f-ternary", 2, b_f_ternary},
 		{"f-cmp", 2, b_f_cmp},           {"f-addsub", 2, b_f_addsub},
 		{"f-addinf", 2, b_f_addinf},     {"f-mul", 2, b_f_mul},
-#endif
 };
 
 #define AST_NONE_U 0xFFFFFFFFu
@@ -1498,6 +1494,7 @@ int main(int argc, char **argv) {
 		const Case *c = &CASES[ci];
 		int case_bad = 0;
 		long case_cmp = 0;
+		int case_f64skip = 0;
 		if (only >= 0 && ci != only)
 			continue;
 		for (r = 0; r < (int)(sizeof RUNGS / sizeof RUNGS[0]); r++) {
@@ -1589,6 +1586,16 @@ int main(int argc, char **argv) {
 				ast_arena_free(a);
 				continue;
 			}
+#if !MCC_GPU_LANG_MSL
+			if (m.used_f64 && !g_f64) {
+				case_f64skip++;
+				g_f64_skipped++;
+				free(code);
+				gate_module_free(&m);
+				ast_arena_free(a);
+				continue;
+			}
+#endif
 
 			for (t = 0; t < ntuple; t++) {
 				int64_t vals[MAX_LIVE];
@@ -1655,7 +1662,9 @@ int main(int argc, char **argv) {
 		 * used to print OK -- so "0 mismatches" was indistinguishable from
 		 * "0 points compared", and a case that silently stopped lowering read as
 		 * evidence. It is a failure: this case proves nothing. */
-		if (!case_bad && case_cmp == 0) {
+		if (!case_bad && case_cmp == 0 && case_f64skip > 0) {
+			printf("  %-10s SKIP (f64 case, device has no fp64)\n", c->name);
+		} else if (!case_bad && case_cmp == 0) {
 			printf("  %-10s FAIL (0 defined points compared -- proves nothing)\n",
 						 c->name);
 			case_bad = 1;

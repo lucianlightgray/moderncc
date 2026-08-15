@@ -3746,7 +3746,7 @@ if(MCC_BUILD_TESTS)
                         -DGATE=$<TARGET_FILE:spvgate>
                         -DSPIRV_VAL=${MCC_SPIRV_VAL}
                         -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/spv-validate
-                        -DEXPECT=140
+                        -DEXPECT=176
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvval.cmake")
             set_tests_properties("gpu/spv-validate" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
@@ -3755,7 +3755,7 @@ if(MCC_BUILD_TESTS)
                         -DGATE=$<TARGET_FILE:spvgate>
                         -DSPIRV_VAL=${MCC_SPIRV_VAL}
                         -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/spv-validate-kp
-                        -DEXPECT=140
+                        -DEXPECT=176
                         -DCORRUPT=6
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvval.cmake")
             set_tests_properties("gpu/spv-validate-known-positive" PROPERTIES

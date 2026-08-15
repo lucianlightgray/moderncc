@@ -1993,13 +1993,16 @@ static uint32_t spv_f64_arith(SpvMod *m, int opcode, uint32_t a, uint32_t b) {
 	return r;
 }
 
+/* Not OpFNegate: negation must be the raw sign-bit flip on every device, and
+ * on NaNs the hardware is allowed to canonicalize instead -- measured on an
+ * RTX 2060, OpFNegate returns a NaN input unchanged where the CPU reference
+ * flips the sign, one bit per 65,812-point case. The integer XOR is the same
+ * lowering the MSL arm's bits-pair negate uses, exact everywhere. */
 static uint32_t spv_f64_neg(SpvMod *m, uint32_t a) {
-	uint32_t ft = spv_f64_type(m);
-	uint32_t r = spv_emit2(m, SpvOpFNegate, ft, a);
-	spvw_op(&m->pre, SpvOpDecorate, 3);
-	spvw_put(&m->pre, r);
-	spvw_put(&m->pre, SpvDecNoContraction);
-	return r;
+	uint32_t p = spv_f64_pack(m, a);
+	uint32_t hi = spv_emit3(m, SpvOpBitwiseXor, m->id_uint, spv_hi(m, p),
+													spv_uintc(m, 0x80000000u));
+	return spv_f64_unpack(m, spv_u2(m, spv_lo(m, p), hi));
 }
 
 static uint32_t spv_uop(SpvMod *m, int op, uint32_t a, uint32_t b) {
