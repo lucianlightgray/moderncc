@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:36Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T17:26Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T17:31Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T17:44Z |
 
 ## Contracts — blocking, highest priority
 
@@ -29,8 +29,8 @@
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 - [ ] T-win-50020 [S] win-x64 — the Windows embed-JIT link: ucrt `__imp_*` set now RESOLVES (slice 2); the real wall is a CRT-startup-global layout crash (slice 3)
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 011f2970 | TS: 2026-08-15T17:31Z
-      REF: DETAILS.md#t-win-50020-slice-2-ucrt-imports-resolve-but-a-crt-startup-global-layout-crash-is-the-next-wall | DEPS: — | NOTE: SLICE 2 DONE (uncommitted, N4-held: greens no cell yet). Corrected slice-1: failing path is the standalone -o link (all embed cells: replay-parity + smokerun jit census), NOT memory -run (works); GetProcAddress-under-MEMORY (dir b) fixes nothing. Fix = ucrtbase.def(16 syms) + `_`+raw candidate in pe_check_symbols + gated mcc_add_library("ucrtbase") after msvcrt + define __isa_available=1 → link rc=0, all 17 resolve. SLICE 3 (blocks the 13 reds): standalone exe SIGSEGVs at entry reading 0xb39950 (outside SizeOfImage 0x1b4000); MSVC CRT-startup globals __isa_available_default/_dowildcard land ~0xb27000 past the image — a distinct bss/COMMON/COFF-value layout defect, NOT symbol resolution. FORK for resumer (decide before sinking into slice 3): (A) fix the MSVC-CRT-global layout; (B) build the blob msvcrt-mingw via MCC_EMBED_JIT_MINGW_CC (winlibs gcc on box; libmcc.c:1753-1824 path exists) — likely sidesteps slices 2+3, single-CRT, the design's intended win path. Recommend evaluating B first. Full repro kit + patch at REF
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 011f2970 | TS: 2026-08-15T17:44Z
+      REF: DETAILS.md#t-win-50020-slice-2b-startup-crash-fixed-but-the-msvc-blob-static-globals-are-systemically-mis-placed-approach-b-is-the-answer | DEPS: — | NOTE: DECISION REACHED — approach B (msvcrt-mingw blob). Slice 2: ucrt __imp_* set resolves (ucrtbase.def + `_`+raw candidate + gated mcc_add_library(ucrtbase)); link rc=0. Slice 2b: __isa_available_default/_dowildcard are COMMON — pre-defining them (+__isa_available/__isa_enabled/__favor) fixes the STARTUP crash, MCC_JIT=0 now RUNS (f(11)=40). But MCC_JIT=1 still SIGSEGVs on the SAME wild-address class in the blob's OWN statics (mccjit_set_search_budget writes 0xb3818c, bss is only 8B) — the cl.exe blob's data symbols are SYSTEMICALLY mis-placed by mcc's PE link; approach A is a large open-ended linker project, NOT hand-fixable. APPROACH B is the call: msvcrt-mingw at C:/Users/llg/scoop/apps/mingw-mstorsjo-llvm-msvcrt/current/bin/gcc.exe (x86_64-w64 msvcrt llvm-mingw, libs present) → -DMCC_EMBED_JIT_MINGW_CC=… ; blob refs msvcrt not ucrt, no MSVC CRT globals. OPEN Q first: verify MCC_EMBED_MCCRT's mccrt_blob also rebuilds mingw (no-bake still refs ucrt). Slice-2/2b tree is N4-held and mostly moot under B — do NOT land before A/B. Full analysis + repro at REF
 - HANDOFF-BOX-FACTS (win-x64, kept for successors): VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics for any device run; VULKAN_SDK=C:/Users/llg/scoop/apps/vulkan/current; corpora junctions in vendor/ point at C:/Users/llg/Projects/{gcc-torture,llvm-test-suite,llvm-project}; commit BEFORE pull (DETAILS#autostash-is-how-conflict-markers-reach-pushed-history). Also-resume-ready: T-win-50015 (ms-bitfield ABI; fixture in-tree, two named gaps). Held: T-lin-10092/win (steady at NOTE-2)
 
 ## Open — claimable
