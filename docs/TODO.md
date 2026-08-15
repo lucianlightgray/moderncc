@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T17:36Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T18:44Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10387   | 2026-08-15T18:58Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50021   | 2026-08-15T18:18Z |
 
 ## Contracts — blocking, highest priority
@@ -20,7 +20,10 @@
 
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
-      REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
+      REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: PAUSED (heartbeat intentionally stale; TTL-eligible for any session to resume). slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
+- [ ] T-lin-10386 [S] An `MCC_DEV=ON` build compiles `tests/exec/features_c99_c11/cleanup.c` ~200x slower at `-O1+`
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc1e52a8 | TS: 2026-08-15T18:58Z
+      REF: DETAILS.md#t-lin-10383-census-results-the-spir-v-arm-histograms | DEPS: — | NOTE: CLAIMED — fresh MCC_DEV/MCC_TRACE context from T-lin-10384. First slice = mechanism: -O1 103s/-O4 >300s MCC_DEV=ON vs 0.08s/-O0, 0.52s/-O2 MCC_DEV=OFF; CPU-bound, no GPU. cleanup.c is the __attribute__((cleanup)) corpus (396 lines). Lead: MCC_DEV arms ~12,600 MCC_TRACE sites; characterise what goes superlinear on cleanup patterns at -O1+, then decide fix vs bank-the-cost
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
@@ -31,9 +34,6 @@
 - [ ] T-mac-30005 [S] The chain-store 8% gate has never run against real input; when it does it reads +0.0%
       OWNER: — | STATE: OPEN | SHA: 157da7a7 | TS: 2026-08-15T17:09Z
       REF: DETAILS.md#t-mac-30005-the-chain-store-8-gate-has-never-run-against-real-input | DEPS: — | NOTE: runtime-bench-gatewin (tools/runtime-bench.py --assert-gate-wins, CMakeLists.txt:8054) is a documented PERMANENT 77 predicated on vendor/plb being absent (tests/must-run.txt:113), so the 8% chain-store assertion has NEVER been evaluated in CI or on a stock checkout. On a box with vendor/plb provisioned host-local (untracked), the cell runs and the gate reads +0.0% — chain-store on 5.301G vs off 5.302G instructions retired, i.e. the optimization does not fire on spectral-norm. Found during the T-lin-10042 full-native-suite run at b3da6a4a; orthogonal to the MSL arm. FIRST SLICE = characterisation not a fix: establish whether the 8% was ever real for this kernel (bisect / or never), then choose fix-the-gate / re-target GATE_WINS / retire the assertion. [S] not [X]: any UNIX non-emulated build with vendor/plb reproduces identically
-- [ ] T-lin-10386 [S] An `MCC_DEV=ON` build compiles `tests/exec/features_c99_c11/cleanup.c` ~200x slower at `-O1+`
-      OWNER: — | STATE: OPEN | SHA: dc1e52a8 | TS: 2026-08-15T16:12Z
-      REF: DETAILS.md#t-lin-10383-census-results-the-spir-v-arm-histograms | DEPS: — | NOTE: found as the one timeout in the census's 312-file corpus run. Measured discriminators: -O1 103 s / -O4 >300 s with MCC_DEV=ON vs 0.08 s at -O0 and 0.52 s at -O2 with MCC_DEV=OFF; terminates, CPU-bound, no GPU involved (reproduces without --jit-always-gpu); the other 311 files compile in seconds in the same build. The file is the __attribute__((cleanup)) corpus (396 lines). First slice = mechanism: name what MCC_DEV arms at -O1+ that goes superlinear on cleanup patterns, then decide fix vs bank-the-cost
 - [ ] T-lin-10381 [S] `mcc_asm_inline_unwind`'s recovery lost its only test when the asm double-assembly fix removed its trigger
       OWNER: — | STATE: OPEN | SHA: 0d94d189 | TS: 2026-08-15T14:40Z
       REF: DETAILS.md#t-lin-10381-the-asmreplay-row-lost-its-mcc-asm-inline-unwind-coverage-and-what-it-would-take-to-get-it-back | DEPS: — | NOTE: filed at the moment the coverage was dropped, not after someone notices. 5f2e6f39 built the asmreplay row for "the recovery longjmp must not leave the C parser inside the dead :asm: BufferedFile", provable by reverting mcc_asm_inline_unwind to a no-op. The row reached that path THROUGH the double-assembly defect, so fixing it removed the trigger. The path is still live — a genuine duplicate label in one TU refuses identically and mcc names the real file+line, which IS the evidence the parser recovered — but it is a HARD error, so there is no binary to run, no stdout to pin and no oracle (gcc-15 refuses it too), and a Pass row treats a failed compile as fatal. Needs a `wantfail` row shape. PRICE THE CHEAPER OPTION FIRST: tests/cross/no-compiler-abort.sh already compiles a corpus asserting mcc never aborts — check whether it can adjudicate the diagnostic TEXT, because "the process survived" is not the half that matters
