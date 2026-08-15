@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T05:00Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T08:30Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T08:45Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
 ## Contracts — blocking, highest priority
@@ -273,9 +273,9 @@
   - [x] T-lin-10092/mac [P] Record a clean full native suite number on each platform — mac-arm64
         OWNER: mac-arm64 | STATE: DONE | SHA: 408a8979 | TS: 2026-08-15T05:00Z
         REF: DETAILS.md#t-lin-10092-mac-the-darwin-suite-number-zero-genuine-failures | DEPS: — | NOTE: DONE. NUMBER: 10060 cells, 0 GENUINE failures. All 16 reds were Timeouts, all environmental: 15 flagsweep-exec load-induced (pass serially -j1); selfhost-jit not a hang — completes byte-identical at 412-540s, over the 300s bound, fixed by TIMEOUT->720 (408a8979). Matches lin's Linux 0/9051. Parent stays open until /lin + /win close
-  - [ ] T-lin-10092/lin [P] Record a clean full native suite number on each platform — lin-x64
-        OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: fdfd7412 | TS: 2026-08-15T06:15Z
-        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: full native run in flight; also serves as the §8 per-task verification for today's slice 3a/3b, MCC_REF_CC and runtime/osx work
+  - [x] T-lin-10092/lin [P] Record a clean full native suite number on each platform — lin-x64
+        OWNER: lin-x64 | STATE: DONE | SHA: a4b2baf1 | TS: 2026-08-15T08:30Z
+        REF: DETAILS.md#t-lin-10092-lin-the-linux-full-native-suite-is-clean | DEPS: — | NOTE: DONE. NUMBER: 10062 cells, 1011 skipped, 9051 run, 0 failures, 86 min. Already archived at 32d29fc4 — line kept visible only until the [P] parent closes, per mac's convention on /mac; whoever lands /win removes all three children + the parent together
   - [ ] T-lin-10092/win [P] Record a clean full native suite number on each platform — win-x64
         OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 260bb900 | TS: 2026-08-15T01:55Z
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: NUMBER RECORDED (first ever on Windows): 9387 cells, 8388 pass / 945 skip / 54 fail at 9b21c352; 19 false-reds fixed at 260bb900 -> 8388 / 964 / 35. Not clean — the 35 residual reds are triaged in T-win-50003 (28 GPU-slice, 4 fp opt-search, 3 jit/runtime). @lin: number is landed, slice-3 (L2′) hold can release
