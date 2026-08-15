@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30006   | 2026-08-15T20:20Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:23Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10388   | 2026-08-15T20:25Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-15T20:07Z |
 
 ## Contracts — blocking, highest priority
@@ -197,8 +197,8 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10056-two-bodies-replay-byte-identically-under | DEPS: —
 - [ ] T-lin-10059 [S] `matrix.yml` silently drops three GPU gate cells on every Linux cell
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10059-matrixyml-silently-drops-three-gpu-gate | DEPS: —
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-15T20:25Z
+      REF: DETAILS.md#t-lin-10059-matrixyml-silently-drops-three-gpu-gate | DEPS: — | NOTE: CLAIMED — verifying resolved-by-prior-work: matrix.yml now installs libvulkan-dev + passes -DVulkan_INCLUDE_DIR (lines 105/162-168, quoting the task's 8913/8916), and all 3 cells are in must-run.txt (24-26) enforced by ci/must-run-registered ("the real fix"). Cells register locally #50/51/52. Closing as verified
 - [ ] T-lin-10061 [S] No runtime fp64 denormal reading has ever been taken from lavapipe
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10061-no-runtime-fp64-denormal-reading-has | DEPS: —
