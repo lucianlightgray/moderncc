@@ -8533,6 +8533,15 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                 LABELS "pe" TIMEOUT 300)
 
+            add_test(NAME pe/ms-bitfield-sizing
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-msbitfield-sizing.sh"
+                        "$<TARGET_FILE:mcc>" "${_MCC_MINGW_X86_64_GCC}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-msbitfield-sizing.c"
+                        "${CMAKE_BINARY_DIR}/pe-msbitfield-sizing-work")
+            set_tests_properties(pe/ms-bitfield-sizing PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                LABELS "pe" TIMEOUT 300)
+
             set(_pe_xoracle_floor 250)
             add_test(NAME pe/x-oracle
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-xoracle.sh"
@@ -8594,6 +8603,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 "needs vendored mingw-w64 x86_64 gcc")
             mcc_skip_test(pe/torture-classes
                 "needs vendored mingw-w64 x86_64 gcc")
+            mcc_skip_test(pe/ms-bitfield-sizing
+                "needs vendored mingw-w64 x86_64 gcc")
             mcc_skip_test(pe/x-oracle
                 "needs vendored mingw-w64 x86_64 gcc")
             mcc_skip_test(pe/x-oracle-mutate
@@ -8611,6 +8622,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         mcc_skip_test(pe/seh
             "native x86_64 WIN32 host with mingw only")
         mcc_skip_test(pe/torture-classes
+            "native x86_64 WIN32 host with mingw only")
+        mcc_skip_test(pe/ms-bitfield-sizing
             "native x86_64 WIN32 host with mingw only")
         mcc_skip_test(pe/x-oracle
             "native x86_64 WIN32 host with mingw only")

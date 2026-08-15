@@ -6244,6 +6244,8 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 		if (type->ref->type.t == VT_UNION) { MCC_TRACE("br\n");
 			if (pcc && bit_size >= 0)
 				{ MCC_TRACE("br\n"); size = (bit_size + 7) >> 3; }
+			else if (bit_size == 0)
+				{ MCC_TRACE("br\n"); size = 0; }
 			if (bit_size == 0 && !a)
 				{ MCC_TRACE("br\n"); align = 1; }
 			offset = 0;
