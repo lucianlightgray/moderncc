@@ -951,6 +951,8 @@ A flake at about one run in two rather than a contention with a family waiting t
 
 **Type** `[X]` — **State** OPEN — **DEPS** —
 
+> **SUPERSEDED 2026-08-14 by [T-lin-10073 measured](#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver).** The verification below asks to distinguish a shared `WINEPREFIX` from CPU starvation; the measured row answers both — it is a foreign `wineserver`, and it is *not* parallel load. Read that anchor, not this one.
+
 The original framing was wrong and was corrected the same day: the rows were written from a `-j8` run and blamed ctest width, and the very next measurement contradicted it — a `-j32` run on an idle box passed all three and the whole suite, 10021 cells, 0 failures, at four times the width that failed. So the trigger is total system load (cross builds and background agents), not the suite's own parallelism, and a `RESOURCE_LOCK` between the two wine cells would NOT have fixed the `-j8` failure. If it is the server, the two cells can keep running concurrently.
 
 **Verification.** Reproduce first, under a named competing load, and find out whether the failure is a shared `WINEPREFIX` racing `wineserver` startup or plain CPU starvation. A per-cell `WINEPREFIX` distinguishes them. Do NOT add a lock or a timeout bump on the strength of the old table.
@@ -43124,3 +43126,25 @@ Add a fourth from the same day, mine, which is the same shape one level up: I ci
 **Why it recurs here specifically.** This fleet is three machines with genuinely different capabilities, and the protocol's whole point is that work is done once and shared. That makes a machine-shaped pin *maximally* damaging: it is written once, trusted everywhere, and contradicted only on the box least able to argue with it. [T-lin-10369](#t-lin-10369-manifest-declared-cells-and-the-identity-exemption) makes one slice of this class mechanically catchable; the rest is a reading habit.
 
 **Source.** lin-x64 and mac-arm64, 2026-08-15.
+
+<a id="t-lin-10072-closed-unreproduced-and-10073-corroborated"></a>
+
+## T-lin-10072 closed unreproduced; T-lin-10073 corroborated — and a stale REF that cost an experiment
+
+**The named-load experiment both rows asked for.** 24 concurrent `mcc -O2 -c src/mcc.c` compiles on a 32-core box, sustained, with `optfire/abs`, `optfire/level-abs`, `run-tier/x86_64-win32` and `run-tier/i386-win32` run together each round so they also compete with each other. **15 of 15 rounds passed**, load average climbing 14 → 24.5. Script: `loadprobe.sh` in the session scratchpad; the load is real compiler work rather than a synthetic spinner, because the failures were originally seen against a full ctest run whose load *is* compiler work.
+
+**[T-lin-10072](#t-lin-10072-lin-x64-optfireabs-and-optfirelevel-abs) — CLOSED, unreproduced.** Its verification says so literally: *"Reproduce under a NAMED competing load or close the row as unreproduced."* The evidence against reproduction is now four independent attempts: 132/132 within the family and 3/3 isolated (original), a second full run (original), [a clean 10062-cell `-j32` suite](#t-lin-10092-lin-the-linux-full-native-suite-is-clean) where both cells passed in 0.01 s and 0.02 s, and 15 rounds under the named load. For a flake described as "about one run in two", that is far past the point where absence is informative.
+
+Closed as **unreproduced**, which is deliberately *not* the same as "it was contention, acceptable" — [M-TODO-0088](#m-todo-0088-cells-that-fail-under-parallel-load)'s standing requirement forbids the latter, and rightly. Nothing was diagnosed away here; the failure simply cannot be observed. **Reopen condition:** any full-suite run where either cell reds, quoting the run and the `pgrep -a wineserver` / top-CPU output the row below makes mandatory.
+
+**[T-lin-10073](#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver) — stays OPEN, and my experiment was aimed at a hypothesis it had already excluded.** That row was *measured* on 2026-08-14: the mechanism is a **foreign `wineserver`** (`bg3_dx11.exe` under GE-Proton10-34), the shape is a hang (16-17 s → 300 s timeout, 17×), and — decisively — *"it is not parallel load: the serial retry ran with load average 7 ... and both cells still timed out."*
+
+So the load probe re-derived a known negative. It is not worthless — it corroborates "not CPU load" with a *different* load shape (24-way sustained compile at load average 24.5 versus the original serial retry at 7), and both cells passed here at 7.19 s and 2.85 s with **no `wineserver` resident**, matching that row's stated healthy expectation of "well under 30 s". But it was not the experiment worth running.
+
+**Why I ran the wrong one, which is the transferable part.** `docs/TODO.md`'s line for T-lin-10073 pointed at `#t-lin-10073-lin-x64-the-two-wine-run` — the **original** anchor, whose verification still asks to distinguish a shared `WINEPREFIX` from CPU starvation. The newer measured anchor supersedes it and answers both questions, and nothing linked the two. I read the row's REF, believed it was current, and built an experiment for a question closed the previous day.
+
+Two things follow. First, the REF is corrected to point at the measured anchor. Second, the general rule: **`DETAILS.md` is append-only, so a task's REF is a pointer that silently ages** — when a row is re-measured, the new anchor must be linked from the old one or the TODO line moved, or the next reader works from a superseded spec. The old anchor now carries a forward link for exactly this reason.
+
+**Also settled while reading, and worth keeping:** the shared-`WINEPREFIX` hypothesis was never possible. `tools/run-tier.sh:136` does `work=$(mktemp -d)` per invocation, so each cell has always had its own prefix — introduced in `66df3c7e` (2026-08-04), *predating* the observations. The discriminator that row proposed ("a per-cell `WINEPREFIX` distinguishes them") had already been applied by the code before the question was asked.
+
+**Source.** lin-x64, 2026-08-15.

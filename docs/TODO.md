@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T05:30Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T09:10Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T10:30Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
 ## Contracts — blocking, highest priority
@@ -225,12 +225,9 @@
 - [ ] T-lin-10071 [S] `rir-nofb-probe-self` is flaky and the mechanism is not known
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10071-rir-nofb-probe-self-is-flaky | DEPS: —
-- [ ] T-lin-10072 [X] lin-x64 — `optfire/abs` and `optfire/level-abs` fail only in a full parallel run
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10072-lin-x64-optfireabs-and-optfirelevel-abs | DEPS: —
 - [ ] T-lin-10073 [X] lin-x64 — the two wine `run-tier` cells are load-sensitive
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10073-lin-x64-the-two-wine-run | DEPS: —
+      REF: DETAILS.md#t-lin-10073-measured-the-mechanism-is-a-foreign-wineserver | DEPS: — | NOTE: MEASURED 2026-08-14 — mechanism is a FOREIGN wineserver (not CPU, not -j width; serial retry at loadavg 7 still timed out). Corroborated 2026-08-15 under a 24-way compile load at loadavg 24.5: 15/15 rounds pass, both cells 7.19s/2.85s with no wineserver resident. Run `pgrep -a wineserver` before attributing either cell to a commit
 - [ ] T-lin-10359 [X] lin-x64 — `slice/cref-oracle-*` stalls on five programs when the host GPU is busy
       OWNER: — | STATE: OPEN | SHA: d298af58 | TS: 2026-08-14T18:30Z
       REF: DETAILS.md#t-lin-10359-slicecref-oracle-stalls-on-five-programs | DEPS: —
