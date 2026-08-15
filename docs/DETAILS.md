@@ -45549,3 +45549,62 @@ The `/lin` child of [the parent](#t-lin-10030-the-embed-jit-is-measured-only), w
 **The parent stays open**; `/win` has not been recorded. Whoever lands it closes and archives the parent in the same commit, per §2.
 
 **Source.** lin-x64, 2026-08-15, at `741f7650`; measured in `cmake-jitdev` (`-DMCC_DEV=ON -DMCC_BUILD_STATIC_LIB=ON -DMCC_EMBED_JIT=ON`).
+<a id="t-lin-10042-slice-7-msl-regions-complete-m4-m5"></a>
+
+## T-lin-10042 slice 7 — M4 and M5 land: slicerun's own kernels, the MSL fmt engine, and a prelude that pays per use
+
+**Type** `[X]` mac-arm64 — **State** slice 7 DONE at `b3da6a4a` — the staged plan's last M-stage
+
+`backend_has_regions()` is now unconditionally 1: the full slicerun battery
+runs on Metal — **2548 checks, 0 failures** (from 2190 checks + 72 region
+failures at the TDD flip). What landed:
+
+**The kernels.** `MslRegion` gained the buffer discriminator the spv arm
+encodes in its `var` field (`mem=1` → `memb` through atomics, `mem=0` → the
+input buffer with plain per-lane read-modify-write — safe because the only
+dispatched inb-region kernel spans lane-private words; the shared-inb
+variant is build-only in `bytes_subword_shared`, and the genuinely
+contended sub-word case runs on `memb` atomics). Four slicerun builders got
+their MSL twins: `bytes_kernel_in`, `subword_shared_kernel`,
+`deref_kernel`, `hi_kernel`. `slice/mem`, `slice/bytes(+kp)`,
+`slice/deref(+kp)`, `slice/ext(+kp)` are live Metal cells now;
+`slice/hostimport` still skips on its own gate — importing an arbitrary
+host pointer needs page-aligned `newBufferWithBytesNoCopy`, a genuine
+platform limit, not a missing arm.
+
+**The fmt engine (M5).** `src/mccfmt.h` gained the MSL half of the device
+formatter: `msl_fmt_putb/getb/soff/room/int/str/emit`, transliterated from
+the spv functions with two byte-access prelude helpers
+(`mccf_putb`/`mccf_getb`) replacing the per-byte inline expansions — the
+change that brought the worst case from >65,536 bytes (two-string formats
+refused to emit at all) down to 34,463.
+
+**The prelude pays per use.** The MSL prelude was ~12.5KB prepended to
+every module; it is now four sections (core `mcc_*`, `mcc64_*`, `mccf64_*`,
+`mccf_*`) and `msl_module_finish` emits only what the module's own text
+references (one strstr scan — no call-site bookkeeping). Every MSL kernel
+shrank; `%c` went from 12,837 to 3,139 bytes. This is also what makes the
+cost-model ratio checks physically true on the MSL arm: a wide decimal
+carries the `mcc64_*` section that a narrow one never pulls in, so
+`cost(%d)*2 < cost(%lld)` holds in measured bytes (2·7,765 < 15,987), not
+just in the model.
+
+**The MSL cost model.** `MCC_FMT_C_*`/`MCC_FMT_MAXCOST` are now per-arm in
+`mccfmt.h`: the Metal set (BASE 3300, BYTE 320, DEC 14200, HEX 11300,
+DEC32 5000, HEX32 3800, SFIX 3700, SBYTE 380, SDYN 60, MAXCOST 36000) is
+calibrated from `--fmt-cost-report` measurements so predicted ≥ emitted for
+every corpus case, the narrow/wide ratio assertions hold, every accepted
+spelling stays under MAXCOST (max predicted 33,980) and the R_ROOM refusal
+fixtures stay refused (min refused 37,620). `tools/fmt-census.py` carries
+both sets: census and bank figures are ALWAYS computed with the canonical
+SPIR-V set — banked counts stay platform-stable — and only the oracle
+selfcheck rebinds, detecting the binary's arm by the `%c` probe
+(cost == C_BASE + C_BYTE); `fmt/census-oracle` passes on Darwin with the
+real `mcc_fmt_compile` as oracle.
+
+**Verification (M1 Pro, Metal, at `b3da6a4a`).** `./slicerun` 2548 checks 0
+failures; `ctest`: slice|census|fmt 122/122 (slice/mem, bytes(+kp),
+deref(+kp), ext(+kp), fmt/census-oracle(+kp) all live), gpu/ 17/17,
+treegate 13/13, jit 66/66.
+
+**Source.** mac-arm64, 2026-08-15, code at `b3da6a4a`.
