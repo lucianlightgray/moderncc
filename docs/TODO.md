@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30005   | 2026-08-15T14:30Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10380   | 2026-08-15T14:15Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10381   | 2026-08-15T14:35Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50020   | 2026-08-15T14:25Z |
 
 ## Contracts — blocking, highest priority
@@ -43,6 +43,9 @@
       REF: DETAILS.md#t-lin-10088-win-x64-vendor-the-exact-gcc | DEPS: — | NOTE: UNBLOCKED — the "no network" premise died today (winlibs + Vulkan SDK both fetched). Provisioning per the mac convention: host-local sparse gcc checkout, vendor/gcc-c-torture-execute junction, then pe/x-oracle over all 1,693 programs to confirm the W2 reconstructions with no new code
 
 ## Open — claimable
+- [ ] T-lin-10380 [S] `gpu/spv-slice-differential` is RED on a real fp64 GPU: `f-addsub` stakes bit-exactness on an IEEE-unspecified NaN sign bit
+      OWNER: — | STATE: OPEN | SHA: 5113bfc5 | TS: 2026-08-15T14:35Z
+      REF: DETAILS.md#t-lin-10380-the-armed-f64-spv-case-f-addsub-stakes-bit-exactness-on-an-ieee-unspecified-nan-sign | DEPS: — | NOTE: THE fp64-host reading T-mac-30004 asked for, and the hazard it named in advance fired. Device is AMD Radeon 610M / RADV, not lavapipe — read the banner. 44 cases, 43 OK, f-addsub FAIL, 16453 mismatches over 2,754,660 compared. EVERY mismatch is one bit: `0.0 - NaN`, cpu 0xffff... vs gpu 0x7fff..., payloads identical, xor exactly 0x8000000000000000. IEEE 754 §6.3 does not specify the sign of a NaN produced by an arithmetic op, so neither side is wrong and the comparison cannot be made portable as written. ATTRIBUTED: spvgate built before the 87f7b232+35f1ba84 pull says OK on the same device; after, it FAILs — not the concurrent asm fix, which spvgate CASES mode never reaches. Red on shared main for any real-fp64 host; mac cannot see it (MoltenVK has no fp64). Three ways out at the REF; (1) exclude a produced NaN's SIGN from the compare while keeping payload+isnan is the recommendation
 - [ ] T-lin-10379 [S] `MCC_REPLAY_IR=1` changes 46 of 58 corpus objects at `-O1` and above
       OWNER: — | STATE: OPEN | SHA: 7ea9be08 | TS: 2026-08-15T14:05Z
       REF: DETAILS.md#t-lin-10379-mcc-replay-ir-changes-46-of-58-corpus-objects-at-o1-and-above | DEPS: — | NOTE: measured while checking whether the T-lin-10375..10378 asm fix had leaked; it had not — the identical 46/58 comes from a compiler built at HEAD without the fix, in its own build dir. -O0 0/58, -O1 16/58, -O2 46/58. NOT obviously a defect: at -O1+ the AST recorder runs and replay is a PRODUCER, so emitted code coming from replay is the design; what is unestablished is whether 46/58 is that design working or drifting, and nothing in the tree says which objects should move or why. -O0 is the only level where the invariant is asserted (optfire/asm-replay-object). FIRST SLICE is characterisation, not a fix: diff the two objects for tests/exec/codegen/dead_code.c at -O2 and say which one users get and whether the delta is code, relocs or section order. Do not call it a bug until that is known
@@ -304,4 +307,6 @@
 _Empty — Q-lin-10007/10008/10010/10011 were answered 2026-08-15 and all four tasks moved to “Open — claimable”._
 
 ## Invalidations             ← shared, append-only; removed only on re-scope (§5.2)
+
+INVALID: the "six f64 SPV CASES armed and green" claim AS-OF 35f1ba84 BY lin-x64 — f-addsub is RED on a real fp64 GPU (AMD/RADV), NaN sign bit, IEEE-unspecified — REF: DETAILS.md#t-lin-10380-the-armed-f64-spv-case-f-addsub-stakes-bit-exactness-on-an-ieee-unspecified-nan-sign
 

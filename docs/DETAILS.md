@@ -45168,3 +45168,38 @@ through binding 2, 0 bad; `--mem --mutate`: 64/64 bad → FAIL as required.
 ci/gate-contract + -known-positive + ci/must-run-registered pass, jit 66/66.
 
 **Source.** mac-arm64, 2026-08-15, code at `59a62bf6`.
+<a id="t-lin-10380-the-armed-f64-spv-case-f-addsub-stakes-bit-exactness-on-an-ieee-unspecified-nan-sign"></a>
+
+## T-lin-10380 — the armed f64 SPIR-V case `f-addsub` stakes bit-exactness on a NaN **sign bit**, which IEEE 754 does not specify, and it is red on a real fp64 GPU
+
+[T-mac-30004](#t-lin-10042-slice-1-msl-f64-bits-pair) asked for exactly this measurement — *"Needs an fp64 host — lin (lavapipe) or win (RTX 2060); mac's MoltenVK cannot run it"* — and named the hazard in advance: staking *"FNegate-on-NaN + denormal-truth bit-exactness"* on a real device. This is that reading, and the hazard fired.
+
+**The device is not the one the row assumed.** `spvgate: device AMD Radeon 610M (RADV RAPHAEL_MENDOCINO)` — this box has an AMD iGPU under RADV, not lavapipe. Anyone re-running should read the banner rather than assume the software rasteriser.
+
+**The result.** `gpu/spv-slice-differential` **FAILs**: 44 cases, 43 OK, `f-addsub` FAIL. `dispatches=176 lanes=2895728 points=2895728 compared=2754660 vacuous=141068 mismatches=16453`. Every other f64 case armed by the same commit — `f-notneg`, `f-ternary`, `f-cmp`, `f-addinf`, `f-mul` — is OK at 65,812 points each.
+
+**Every mismatch is one bit, and it is the sign of a NaN:**
+
+| in | cpu | gpu | xor |
+| --- | --- | --- | --- |
+| `[0,-1]` | `0xffffffffffffffff` NaN | `0x7fffffffffffffff` NaN | `0x8000000000000000` |
+| `[0,-2]` | `0xfffffffffffffffe` NaN | `0x7ffffffffffffffe` NaN | `0x8000000000000000` |
+| `[0,-8]` | `0xfffffffffffffff8` NaN | `0x7ffffffffffffff8` NaN | `0x8000000000000000` |
+
+Both sides produce a NaN. The **payloads are identical**. They differ only in the sign bit, and the shape is `0.0 - NaN`: mcc's soft-float CPU oracle propagates the operand's sign, RADV clears it. **IEEE 754 does not specify the sign of a NaN produced by an arithmetic operation** (§6.3: "the sign of a NaN result is not interpreted"), so neither side is wrong and a bit-exact comparison over this shape cannot be made portable — it is a per-vendor coin flip, not a defect in either implementation.
+
+**Attribution, established rather than assumed.** `spvgate` built from the tree *before* the pull that brought `87f7b232` (MSL `f-addsub`) and `35f1ba84` (arming the SPIR-V CASES table with the six f64 cases) reports `spvgate: OK` on the same device; built from the tree after, `f-addsub` FAILs. The concurrent [asm double-assembly fix](#t-lin-10375-10378-fixed-stop-assembling-the-body-twice-and-full-language-reaches-303-303) cannot reach this — `spvgate` in CASES mode runs no RIR replay — and the before/after binaries confirm it.
+
+**This is red on shared `main` for any host with a real fp64 GPU.** mac cannot see it (MoltenVK reports no fp64), which is why the row asked for an fp64 host in the first place.
+
+**Three ways out, and the choice is the f64 contract's owner's:**
+
+1. **Exclude a produced NaN's sign from the comparison** for arithmetic cases — compare `payload | isnan`, not the raw 64 bits — keeping bit-exactness for every finite and infinite result. This is the narrowest change and it matches what the standard actually guarantees.
+2. **Keep the operand's sign as a stated mcc contract** and require the emitter to force it on the GPU side, paying an instruction per f64 add/sub to make an unspecified bit reproducible.
+3. **Drop `0.0 - NaN` from the rung corpus**, which buys green by removing the subject and would leave the next vendor difference to be discovered the same way.
+
+(1) is the recommendation: the `f-cmp` case already establishes that NaN *ordering* is comparable exactly via the integer total-order, and nothing about that needs the produced sign.
+
+**Verification for whoever takes it.** `./spvgate` on this box must reach `spvgate: OK` with `f-addsub` reporting its 65,812 points, and `gpu/spv-slice-differential` + `gpu/spv-slice-known-positive` must both pass — the known-positive is what proves the relaxed comparison did not stop comparing.
+
+**Source.** lin-x64, 2026-08-15, on AMD Radeon 610M / RADV.
