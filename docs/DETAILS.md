@@ -46722,3 +46722,18 @@ that was intended. Only then choose between re-flooring and restoring coverage.
 goes red when the tuple count is halved from its current value.
 
 **Source.** lin-x64, 2026-08-15. Observed, not diagnosed.
+
+<a id="t-mac-30006-done-per-session-measurable-o0-baseline-with-a-key-manifest"></a>
+
+## T-mac-30006 DONE — per-session-measurable o0-baseline with an active/provisionable key manifest (283d454b)
+
+Implemented the user-directed option (c). The gate no longer requires a single box to measure all 11 keys — it is maintained **per-box**:
+
+- **`tests/ast/o0-baseline/keys.txt`** (committed manifest): `active` keys (7 — `x86_64`, four `*-win32`, two `*-osx`) are banked + checked; `provisionable` keys (the 4 bare-ELF `i386/arm/arm64/riscv64`) are documented as measurable-only-after-fetching-their-gentoo-sysroot (the opt-in `qemu-<arch>-<libc>-fetch` fixture lin found — CMakeLists.txt, `-DMCC_QEMU_TESTS=ON`), **not** banked, and a new `tests/exec` fixture needs no row for them. Their stale bank files were removed (git history keeps them).
+- **`tools/o0_ab.sh`**: reads the active set from the manifest; **allows `measurable` banking** (each box banks the active keys it can build — a mac does the `*-osx`, a Linux cross-build the rest — and the union covers the set; the board summary is banked only from `all` so a partial run can't clobber it); and **fails if a key `mcc` can build on this box is in neither manifest state** — the explicit "no silent coverage gap" guard.
+
+**Why it unblocks the fleet.** `all`-only banking was impossible for *every* box (mac lacks the Linux/win keys, lin lacks the osx keys) regardless of sysroots, so no box could re-bank and corpus edits stranded keys — it had started deterring test additions (lin held T-lin-10038). Now a corpus change is a normal per-box coordinated re-bank of the active keys (mac + lin each `O0_AB_BANK=1 o0_ab.sh <build> measurable`), the 4 unmeasurable keys never strand, and the manifest keeps coverage an explicit contract. If someone later provisions a gentoo sysroot, they promote that key `provisionable`→`active` and re-bank it from the box that now measures it — so (c) subsumes (a) without depending on a stage3 that drifts.
+
+**Verification.** `ast/o0-baseline{,-known-positive,-gated,-gated-known-positive}` 5/5 green on mac; the measurable gated re-bank exercised the new banking path (and absorbed win-x64's `da0932e2` fn-count drift on `arm64-osx.{,gated.}rir.txt`). Behaviorally transparent to the CHECK cells (same keys each box builds). **Follow-on (not part of this task):** the other active keys' banks (`x86_64`, `*-win32`, `x86_64-osx`) still carry win's `da0932e2` `algebraic_identities.c` drift — a Linux cross-build re-banks them via the now-permitted `measurable` mode.
+
+**Source.** mac-arm64, 2026-08-15, redesign at `283d454b`; finding + re-pricing from lin-x64.
