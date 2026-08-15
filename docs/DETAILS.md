@@ -42710,3 +42710,31 @@ qsbr-reclaimed:   nlimbo=0 reclaimed=4 leaked=0 retired=4      OK
 `fmt/census-bank` went red and was re-banked with the reason, per its own instruction: the new and reworked messages add one `snprintf` site in `mccjit_embed.c` (484 → 485) and six specifiers (258 → 264 — three in the new `teardown-bounded` message, two in the reworked `jobs-drained`, one in `qsbr-reclaimed`), with `refused_budget` 12 → 13. The gate caught an unexplained board figure exactly as designed.
 
 **Source.** Implemented on lin-x64, 2026-08-15.
+
+<a id="t-lin-10370-woa-residual-failures-second-reading"></a>
+
+## T-lin-10370 — second WoA suite reading, and two crashes that did not come back
+
+Run 31858218563 on `woa/bootstrap` at `214a0dc5` (iteration 3's branch merged with main), against the same self-hosted arm64 compiler:
+
+| | run 3 (`9b16b65c`) | run 4 (`214a0dc5`) |
+| --- | --- | --- |
+| cells | 9403 | **9405** |
+| failures | 30 | **25** |
+
+**+2 cells** is `osx/headers-parse` and its known-positive, now *registered* on Windows as `mcc_skip_test` stubs thanks to mac-arm64's `450acf27` — a skip that appears in the count, which is the whole argument for skip stubs over absent cells.
+
+**−5 failures**, of which three are accounted for exactly: `ci/must-run-registered`, `ci/gate-contract` and `ci/gate-contract-known-positive` were the same registration defect and are now green.
+
+**The other two are the interesting ones, and they are the two SEGFAULTs.** `exec-gatecombo/bitfield_width64` and `exec-search-threads/errors_and_warnings` crashed in run 3 and **passed in run 4**. Two readings are available and this evidence does not separate them:
+
+1. **Flaky under load.** The tree already carries [T-lin-10072](#t-lin-10072-lin-x64-optfireabs-and-optfirelevel-abs) and [T-lin-10073](#t-lin-10073-lin-x64-the-two-wine-run) for cells that fail only in a full parallel run, and a 4-core runner executing 9405 cells is exactly that condition.
+2. **Something in the merge.** Run 4 includes everything on main at the time, which contains [slice 3a](#t-lin-10001-slice-3a-the-pool-job-becomes-a-tick).
+
+**Slice 3a is not offered as the explanation.** It was behaviour-identical by construction — every body returned `MCC_TASK_DONE` after one tick and the between-tick quit check could not fire mid-job — so there is no mechanism by which it fixes a segfault, and claiming the fix on a single non-reproduction would be exactly the kind of unearned causal story this tree's gates exist to prevent. **A crash seen once and not reproduced is recorded as such and re-run, not explained.**
+
+**Standing residue, 25 cells, still triaged by shape only:** 11 `smoke/*` (one cluster, five of them `-known-positive` twins, so plausibly one root cause), 8 `exec-search*` variants of three programs (`translation_limits`, `floating_point`, `math_library`), and 6 bank/census cells (`slice/src`, `fmt/arena-census-*`, `rir/rec-miss`, `slice-census`, `runtime-bench-check`) that are plausibly x86_64-keyed banks rather than defects.
+
+**Next action for whoever takes this:** re-run the hook to see whether the two crashes return. The `woa/**` branch makes that a push, which is the point of having built it.
+
+**Source.** Runs 31857205309 and 31858218563, lin-x64, 2026-08-15.
