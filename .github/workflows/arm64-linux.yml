@@ -1,0 +1,131 @@
+name: arm64-linux
+
+# Sibling of the WoA hook (.github/workflows/woa.yml on woa/**): an isolated,
+# iterative lane for the one hardware target no session owns locally -- arm64
+# Linux -- reachable only through a hosted `ubuntu-24.04-arm` runner. Fires only
+# on `arm64-linux/**`, so probe commits never drag the full CI matrix along
+# (ci.yml on this branch carries a matching branches-ignore). GitHub evaluates a
+# push-event workflow as it exists on the pushed branch, so main is untouched.
+#
+# The driver is the same `mcc-ci` (tools/ci.c) every other workflow bootstraps,
+# and `linux-arm64-gcc` is an existing PLAN_DIST_UNIX host (ci.c:598) -- no new
+# build logic, only a stage that was previously only *built* nightly and never
+# self-hosted or suite-tested.
+
+on:
+  push:
+    branches: ['arm64-linux/**']
+  workflow_dispatch:
+
+concurrency:
+  group: arm64-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  stage1:
+    name: stage1 / linux-arm64-gcc
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: runner facts (read them here rather than assume them in the tree)
+        run: |
+          echo "== identity =="
+          echo "uname -a : $(uname -a)"
+          echo "uname -m : $(uname -m)"
+          echo "nproc    : $(nproc)"
+          echo "== toolchain presence (pre-install) =="
+          for t in cc gcc clang cmake ninja python3 git; do
+            p=$(command -v "$t" 2>/dev/null || echo ABSENT)
+            printf '%-8s: %s\n' "$t" "$p"
+          done
+
+      - name: install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build build-essential gcc clang lld git rsync python3
+
+      - name: gcc/clang identity (T-lin-10366 is the x86_64/arm64 REF_CC question; record what this host offers)
+        run: |
+          gcc -dumpmachine; gcc --version | head -1
+          clang -dumpmachine; clang --version | head -1
+
+      - uses: ./.github/actions/ci
+
+      - name: stage1 build (linux-arm64-gcc)
+        run: mcc-ci stage1 --host linux-arm64-gcc --out stage1/linux-arm64-gcc
+
+      - name: pack stage1 mcc (tar preserves the executable bit that upload-artifact drops)
+        run: tar cf stage1-linux-arm64-gcc.tar -C stage1 linux-arm64-gcc
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: stage1-linux-arm64-gcc
+          path: stage1-linux-arm64-gcc.tar
+
+  stage2:
+    name: stage2 self-host + stage3 suite / linux-arm64-gcc
+    needs: stage1
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: install build + test deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build gcc python3 \
+            libvulkan-dev mesa-vulkan-drivers spirv-tools
+
+      - uses: ./.github/actions/ci
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: stage1-linux-arm64-gcc
+
+      - name: unpack stage1 mcc
+        run: tar xf stage1-linux-arm64-gcc.tar
+
+      - name: stage2 self-host (mcc compiling mcc on arm64 Linux)
+        id: selfhost
+        run: |
+          mccexe="$PWD/linux-arm64-gcc/bin/mcc"
+          "$mccexe" -v || true
+          mcc-ci stage2 dynamic --mcc "$mccexe"
+
+      - name: stage3 test suite (the stage2 compiler is proved by what it builds and runs, not by rc=0)
+        id: suite
+        if: steps.selfhost.outcome == 'success'
+        run: mcc-ci stage3 --consume test --build cmake-stage2-dynamic
+
+      - name: test summary
+        if: always()
+        run: |
+          echo "stage2 self-host outcome = ${{ steps.selfhost.outcome }}"
+          echo "stage3 suite outcome    = ${{ steps.suite.outcome }}"
+          if [ -f cmake-stage2-dynamic/ctest-junit.xml ]; then
+            mcc-ci junit-summary cmake-stage2-dynamic/ctest-junit.xml \
+              "arm64-linux / linux-arm64-gcc" >> "$GITHUB_STEP_SUMMARY" || true
+            python3 tools/must-run.py --results cmake-stage2-dynamic/ctest-junit.xml || true
+          else
+            echo "no ctest-junit.xml produced"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: arm64-linux-stage3-results
+          path: cmake-stage2-dynamic/ctest-junit.xml
+          if-no-files-found: ignore
