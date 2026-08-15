@@ -16,6 +16,13 @@ Why this works
   object's .text is either (a) a benign, expected symbol-addressing / PE-struct
   difference, or (b) a suspicious codegen divergence worth investigating.
 
+The oracle holds only for data-model-NEUTRAL source. arm64-PE is LLP64 (`long`
+is 32-bit) while arm64-ELF is LP64 (`long` is 64-bit), so any source whose
+codegen depends on `long`/pointer width genuinely differs -- and the ELF object
+is then NOT a valid byte-oracle for the PE object. Such a subject declares
+itself with a `// arm64pe-diff: datamodel-divergent` comment; the harness then
+validates only its section structure, not its bytes (see _datamodel_divergent).
+
 This is the technique that already caught the stale-.text import-thunk
 corruption (commit 80ea9843): identical ELF codegen on every linux-arm cell,
 divergent only on the two arm64-PE jobs.
@@ -192,6 +199,26 @@ def _norm_sec(nm):
     return _SEC_ALIAS.get(nm, nm)
 
 
+_DATAMODEL_DIRECTIVE = "arm64pe-diff: datamodel-divergent"
+
+
+def _datamodel_divergent(src):
+    """True if the source declares itself data-model-divergent via a
+    `// arm64pe-diff: datamodel-divergent` comment. arm64-PE is LLP64 (`long`
+    is 32-bit) and arm64-ELF is LP64 (`long` is 64-bit), so a source whose
+    codegen depends on `long`/pointer width genuinely diverges: the .text/.data
+    sizes and bytes differ by design and the LP64 ELF object is NOT a valid
+    byte-oracle for the LLP64 PE object. For such a subject the harness skips the
+    byte/size/reloc diff (it would only ever fire an expected divergence) and
+    validates section structure alone -- which still catches real structural
+    bugs (missing/extra sections, wrong machine)."""
+    try:
+        with open(src, "r", encoding="utf-8", errors="replace") as f:
+            return _DATAMODEL_DIRECTIVE in f.read()
+    except OSError:
+        return False
+
+
 def _local_label(sym):
     return sym.startswith("L.") or sym.startswith(".L")
 
@@ -350,12 +377,18 @@ def diff_source(src, mcc_elf, mcc_pe, cflags, keep, verbose):
         if elf.e_machine != 183 or pe.e_machine != 183:
             rep.sus(f"unexpected e_machine ELF={elf.e_machine} PE={pe.e_machine} "
                     f"(expected 183/EM_AARCH64)")
-        code = sorted(set(elf.code_section_names()) | set(pe.code_section_names()))
-        for sec in code:
-            diff_code_section(sec, elf, pe, rep, verbose)
-        for sec in (".rodata", ".data", ".data.rel.ro"):
-            if elf.section_bytes(sec) or pe.section_bytes(sec):
-                diff_data_section(sec, elf, pe, rep)
+        if _datamodel_divergent(src):
+            rep.ben("data-model-divergent subject: `long`/pointer widths differ "
+                    "(LLP64 arm64-PE vs LP64 arm64-ELF), so .text/.data sizes and "
+                    "bytes are expected to differ -- the ELF object is NOT a "
+                    "byte-oracle here; only section structure is validated")
+        else:
+            code = sorted(set(elf.code_section_names()) | set(pe.code_section_names()))
+            for sec in code:
+                diff_code_section(sec, elf, pe, rep, verbose)
+            for sec in (".rodata", ".data", ".data.rel.ro"):
+                if elf.section_bytes(sec) or pe.section_bytes(sec):
+                    diff_data_section(sec, elf, pe, rep)
         es = {_norm_sec(n) for n in elf.all_section_names()}
         ps = {_norm_sec(n) for n in pe.all_section_names()}
         for sec in sorted((es | ps)):
