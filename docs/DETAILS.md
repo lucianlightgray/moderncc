@@ -42540,3 +42540,34 @@ Ships `runtime/osx/include/`: `stdio.h`, `string.h`, `stdlib.h`, `math.h`, `asse
 **Not done here.** The `--sysroot` selection that makes a Darwin build actually use this set, and the re-keying of the `ast/o0-baseline` quartet, are [T-lin-10089](#t-lin-10089-mac-arm64-the-asto0-baseline-quartet)'s `[X]` half on mac-arm64. This slice ships the headers and the gate that they cover what they claim; it does not yet change what any Darwin build compiles against.
 
 **Source.** Implemented on lin-x64, 2026-08-15.
+
+<a id="t-lin-10001-slice-3a-the-pool-job-becomes-a-tick"></a>
+
+## T-lin-10001 slice 3a — the JIT pool's job becomes a tick, and the quit flag moves between ticks
+
+**Type** `[C]` — **State** IN_PROGRESS — the structural half of L2′, per the [published approach](#t-lin-10001-slice-3-approach-l2-prime)
+
+`MccjitSwapJob.run` — a `void (*)(job)` run to completion — is now `int (*tick)(job)` returning the `MCC_TASK_*` answers, with a `resume` field beside it. `mccjit_pool_worker`'s body becomes a loop over `tick` that **re-reads `mccjit_pool.quit` between ticks** and abandons the job when it is set. That single change is L2′'s mechanism: a stop is now exact and needs no cancellation point inside the work.
+
+**Behaviour is identical at this commit, deliberately.** All four bodies (`mccjit_job_run_eager`, `mccjit_job_run_lazy`, `mccjit_sd_job_light`, `mccjit_sd_job_heavy`) return `MCC_TASK_DONE` after one tick, so every job still runs exactly as before and the quit check between ticks can never fire mid-job. The representation lands; the semantics do not move. That is what makes this diff reviewable as mechanical.
+
+**`mccjit_job_new` replaces six open-coded allocations.** Every creation site was `mcc_malloc(sizeof *job)` followed by hand-assignment, and none zeroed the struct. Adding a `resume` field to that pattern is a latent bug — one missed initialiser and a job resumes from uninitialised memory, nondeterministically. The helper sets `tick`, `resume` and `next` in one place, so the field cannot be forgotten; the per-site field assignments that differ (`slot`, `blob`, `cst`, …) stay where they were.
+
+**Why `mccjit_sd_job_heavy` is NOT split here, though the approach names it as the thing that delivers the bound.** It was split, the split worked, and it was reverted on the evidence — which is worth recording because the evidence is the finding.
+
+With `heavy` as four ticks (recompile / retire / nap / sd_tick), `jit/selftest-shutdown` goes red on two tags:
+
+```
+jobs-drained:    ran=5 accepted=69          FAIL
+qsbr-reclaimed:  reclaimed=1 retired=64     FAIL
+```
+
+That is **the bound working**, not a regression: teardown stopped waiting for 64 heavy jobs and abandoned them between ticks. But it means the cell's `done == accepted` assertion *is* the unbounded-teardown property written down as a requirement — "shutdown drains every accepted job" and "shutdown is bounded above" are the same statement with opposite signs, and [T-lin-10031](#t-lin-10031-the-jit-teardown-is-unbounded-above) asks for the second. The cell also has a known-positive mode (`MCC_JIT_SHUTDOWN=0`, with a `want[]` list of tags that must fire), so flipping the assertion means reasoning about what the known-positive proves under the new contract too.
+
+Changing a test's expectation in the same commit that changes the behaviour it measures is how a weakened gate gets mistaken for a passing one. So the split, the new conservation assertion (`done + abandoned == accepted`), the bound assertion, and the known-positive's reconciliation all belong to **slice 3b**, together, where they can be argued as one unit. Splitting them across commits would leave a window where the cell passes because it asks less.
+
+**One safety property this slice establishes for free.** Because only `sd_job_heavy` has interior structure worth splitting, and every *real* job (eager and lazy compile) is single-tick, no production job can ever be abandoned part-done — the quit check cannot interrupt a compile mid-publish. When 3b lands, the blast radius of abandonment is confined to a selftest job by construction.
+
+**Verification.** `ctest -R '^(trace-gate-invariant|schema-gate-invariant|jit/|slice/(task|sched|work|cpu|thread))'` — **79 of 79 green**, including `jit/selftest-shutdown` and `jit/selftest-pool`. `ctest -R '^(libtest|mcctest)'` 7/7. `tracegate` passes: `src/mccjit_embed.c` is an instrumented file, so every added function opens with `MCC_TRACE("enter\n")` and every added braced branch with `MCC_TRACE("br\n")`, including the `for(;;)` tick loop and its two breaks.
+
+**Source.** Implemented on lin-x64, 2026-08-15.
