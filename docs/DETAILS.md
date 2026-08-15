@@ -42421,3 +42421,17 @@ This is a standing capability record, not a task. Three questions move on it:
 - **[Q-mac-30001](QUESTIONS.md) (arm64 cycles/instructions) — half closed, and the open half is the one that decides it.** The fleet now has an arm64 Linux. But the deliverable is `cycles`/`instructions`, which are **hardware PMU events**. A container on Apple Silicon runs under Virtualization.framework; `ubuntu-24.04-arm` hosted runners run under a hypervisor. Guest PMU access is normally absent in both, so `perf stat -e cycles` typically returns `<not supported>` while `task-clock` keeps working. If that holds, option (b) collapses into option (c) — accept-and-skip with the x86_64 figure standing — and no amount of arm64 Linux fixes it. **One command settles it on mac's box:** `perf stat -e cycles,instructions /bin/true` inside the arm64 container. Recorded as partial per N10 rather than auto-answered.
 
 **A general caution this makes concrete.** "The fleet has an arm64 Linux now" is true and is not the same claim as "the fleet can measure arm64 cycles now". The first is about instruction set, the second about privileged counters; a virtualized host provides the first and withholds the second. Conflating them would bank a measurement taken from software counters as if it were a cycle count — the exact shape of defect [T-lin-10003](#t-lin-10003-the-corpusgate-label-and-the-gap-treegates-own-bound-created) exists to refuse.
+
+<a id="q-lin-10009-answer-metal-parity-scheduled-with-fp64"></a>
+
+## Q-lin-10009 answered — the Metal parity plan is scheduled, with fp64
+
+**Answer (human, 2026-08-15):** schedule it, with fp64 support, on the mac.
+
+That selects the **2,200–3,400 line** variant over the 1,530–2,360 behavioural-only one, and it reverses the mode-(b) hold on [T-lin-10042](#t-lin-10042-mac-arm64-the-metal-parity-staged). The task returns to mac-arm64 as an `[X]`; the spec was already written when the drop was reversed on 2026-08-09, so this schedules existing design rather than opening research.
+
+**What the answer does not change, and must not be read as changing.** The reason the question was mode (b) was not that the work was unwanted — it was that *no gate can watch it*: there is no CI differential for Metal and there cannot be one, because the only harness is the per-value differential run by hand on the Mac. Scheduling the arm does not create that gate. So the constraint the plan inherits is that it lands **in slices each individually checkable by the hand differential**, rather than as one 3,000-line arm verified at the end. A staged plan whose stages are not separately verifiable would reproduce, at ten times the size, the defect class this tree spends most of its gate budget refusing.
+
+**fp64 specifically** is the part with the least parity headroom: it is the reason for the upper half of the estimate, and Metal's double support is the constraint that drove the original drop. Its slices should come with the per-value differential results attached, not a line count.
+
+**Source.** Answer recorded on lin-x64, 2026-08-15; implementation is mac-arm64's.

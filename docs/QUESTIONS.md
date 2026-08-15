@@ -105,6 +105,10 @@ Priced at 1,530-2,360 lines behavioural, or 2,200-3,400 with fp64. The drop was 
 
 REF: DETAILS.md#q-lin-10009-schedule-the-metal-parity-plan-or
 
+**ANSWER (human, 2026-08-15):** Schedule the Metal parity plan, with fp64 support, on the mac.
+
+**Executed by lin-x64, 2026-08-15:** the larger of the two priced variants — 2,200–3,400 lines with fp64, not the 1,530–2,360 behavioural-only arm. T-lin-10042 is re-OPENed for mac-arm64. The question's own reasoning for mode (b) was "starting a 2,000-line arm that no gate can watch is worse than not starting it", and scheduling it does not by itself create the gate: the only harness remains the per-value differential run by hand on the Mac. So the answer authorises the work and leaves the watchability problem live — the plan must land in slices each of which is checkable by that differential, rather than as one unwatched arm. Recorded so the absence of a CI differential is not rediscovered as a surprise halfway in. See DETAILS.md#q-lin-10009-answer-metal-parity-scheduled-with-fp64.
+
 ### Q-lin-10010 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10058
 Should `node-census`'s `all_invokes_on_cpu` be gated at all, or reported only?
 
