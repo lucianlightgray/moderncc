@@ -26,6 +26,10 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
+- [ ] T-win-50014 [S] win-x64 — `pass-msstruct`'s pinned answer disagrees with real-MSVC-ABI clang-22 on Windows
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 0ff0df66 | TS: 2026-08-15T13:20Z
+      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: the differing figure is the 8th: sizeof(struct smp_plain) — the fixture's NO-attribute row, probing the platform DEFAULT. Evidence so far: real MSVC cl says 12, clang-MSVC says 12, mcc's win32 target says 4 (the gcc layout). Verdict forming: mcc's win32 default bitfield layout is wrong vs the platform ABI; scoping the fix vs decision split
+
 ## Open — claimable
 - [ ] T-mac-30004 [S] `spvgate` CASES has no f64 case: arm the SPIR-V arm's table on fp64 hosts
       OWNER: — | STATE: OPEN | SHA: 28ac8048 | TS: 2026-08-15T12:55Z
@@ -39,9 +43,6 @@
 - [ ] T-win-50013 [S] win-x64 — mint `tests/smoke/bails-x86_64-windows.txt` per the arm64-macos precedent
       OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
       REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: T-win-50012[S] | NOTE: smokerun already probes bails-<key>.txt before falling back to the x86_64-linux bank. Measured Windows deltas today: O4 slice-refused:no-static-type 515→836, strat-dark:bfold new. Every row must be a triaged finding — bank AFTER T-win-50012 concludes. PREREQUISITE (from T-win-50011): restore a real GNU gcc reference on the win box first (the mingw preset superbuild re-fetches winlibs GCC; scoop's only "gcc" is mstorsjo llvm = clang family, so every divergence currently reads diverge-one by construction and the category names would encode reference topology, not facts). T-win-50010 closed invalid, T-win-50011 closed: the F16 rows are the ALREADY-BANKED evaluation-format + NaN-payload divergence under a topology-renamed category
-- [ ] T-win-50014 [S] win-x64 — `pass-msstruct`'s pinned answer disagrees with real-MSVC-ABI clang-22 on Windows
-      OWNER: — | STATE: OPEN | SHA: 723e5f1a | TS: 2026-08-15T13:45Z
-      REF: DETAILS.md#t-win-50009-resolved-the-smoke-harness-runs-on-windows-and-what-it-found | DEPS: — | NOTE: clang-22 (MSVC-ABI default on Windows) prints `msstruct 20 2 8 3 8 4 8 12 5` against a different pin banked from Linux -mms-bitfields emulation. The fixture exists to check MS bit-field layout, and this is a real reference on the real platform — decide which side is right; mcc's ms-struct layout may be wrong vs genuine MSVC
 - [ ] T-win-50007 [S] win-x64 — `arm64pe_diff.py` false-positive: model the LLP64-vs-LP64 `long`-width benign case
       OWNER: — | STATE: OPEN | SHA: bc0bc6bf | TS: 2026-08-15T14:15Z
       REF: DETAILS.md#t-lin-10083-win-x64-flip-default-c-to | DEPS: — | NOTE: found doing T-lin-10083. `tools/arm64pe_diff.py --corpus` flags `06_long_width.c` SUSPICIOUS (.text 192 vs 188 bytes, 70 non-reloc byte diffs) — this is the EXPECTED data-model difference: `long` is 32-bit on arm64-Windows (LLP64) and 64-bit on arm64-Linux (LP64), so the codegen legitimately differs. The tool's benign-classifier only knows reloc-site and section-presence differences; teach it that a size difference explained by sizeof(long) 4-vs-8 is benign, OR compile the corpus with a fixed-width type so the diff is data-model-neutral. Pre-existing (not from the COFF flip); the other 5 corpus files are clean
