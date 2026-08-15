@@ -45976,3 +45976,21 @@ lin-x64's [T-lin-10384](#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-sca
 **Out of scope, correctly.** The row's aside — *"the per-body inventory landed … a source dropping out is a diff rather than a percentage"* — is an ATTRIBUTION nicety (naming *which* source's bodies moved), not a detection gap: detection is complete via the three paths above. Per-body attribution for the general (non-lowerable) census would be a separate, finer refinement and is not what the verification asks for; no task filed for it (it is below the threshold, and the lowerable half already banks its 4574-body inventory).
 
 **Source.** lin-x64, 2026-08-15; verified against `main@a5447175`, machinery at `9ddd73ce`+`84add424`.
+
+<a id="t-lin-10384-macho-rir-coverage-regression-from-member-keying"></a>
+
+## T-lin-10384 (b1f912b5) regresses `rir-coverage` on the macho arm — the lowerable ratchet fired on mac
+
+**Found by mac-arm64, 2026-08-15, during T-lin-10385's §8 full-native-suite run at `94d1e38b` (cmake-build-debug, MCC_DEV=OFF — the canonical build).** `rir-coverage` is RED on macho and it is **revert-proven to be `b1f912b5`** (T-lin-10384's member-keying arm in `ast_eval_ladder_scan`), not T-lin-10385:
+
+- `rir-coverage` was **green on macho at `b3da6a4a`** (my T-lin-10042 baseline suite, 16.00s Passed).
+- The **only** commit in `b3da6a4a..HEAD` touching `src/ast_eval_slice.h`/`src/mccast.c`/rir is `b1f912b5`.
+- **Decisive test:** swapping in the pre-`b1f912b5` `src/ast_eval_slice.h` and rebuilding mcc makes `rir-coverage` **pass (14.73s)**; restoring HEAD makes it fail again. T-lin-10385's `msl_refuse` was present in both builds (and returns 0 identically to the old `return 0`, so it cannot move a lowerability class).
+
+**The failure is the ratchet, not dilution.** `FAIL -O0..-O3 lowerable[macho]: nodes_pct regressed ON PRE-EXISTING BODIES: 42.7748% < banked 42.8407%` over the 3060 banked bodies still in the corpus (0 gone; the 28 new bodies are excluded from both sides). The lowerable census classifies a node via `ast_eval_ladder_scan`; member-keying makes a member `Unary` node claim its own livein slot, which on macho pushes some bodies over `AST_EVAL_LADDER_MAXIN` (32) → those pairs now refuse `R_ARITY` → bodies that were banked lowerable became **less** lowerable. That is exactly the regression the `lowerable-bodies.tsv` ratchet exists to catch (§ *"no body that was banked lowerable may stop being lowerable"*), so it cannot be silently rebanked away.
+
+**Why lin's Linux §8 stayed green and mac did not:** T-lin-10384's own note predicted *"mac/win banks IMPROVED-pass til they rebank"* — i.e. it assumed the mac cells would move in the improving direction and pass. For `rir-coverage` on macho the move was the **opposite** (a regression), so the assumption did not hold on this platform. The SPIR-V/elf arm gains lowerable member nodes; the macho arm loses whole bodies to the arity cap. This is a genuine per-arm divergence in the member-keying change, owned by `b1f912b5`.
+
+**Disposition:** routed to lin-x64 as a BLOCKER (their DONE T-lin-10384 is not green on macho); Invalidations line appended. Not T-lin-10385's regression — T-lin-10385 adds zero reds.
+
+**Source.** mac-arm64, 2026-08-15, revert-test at `94d1e38b` vs `b1f912b5^`.
