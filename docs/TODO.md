@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30003   | 2026-08-15T01:20Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T02:40Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10368   | 2026-08-15T03:05Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T02:33Z |
 
 ## Contracts — blocking, highest priority
@@ -24,6 +24,11 @@
 - [ ] T-lin-10365 [S] An isolated, iterative Windows-on-ARM CI hook on a `woa/**` branch
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
       REF: DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor | DEPS: — | NOTE: executes Q-lin-10013's answer; unblocks T-lin-10086/T-lin-10087
+
+
+- [ ] T-lin-10367 [C] A minimal mcc-authored Darwin libc header set for host-independent bank keys
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
+      REF: DETAILS.md#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple | DEPS: — | NOTE: declarations only, no inline bodies; runtime/osx; all three key_flags branches read it, hence [C]. Authorable from any host — no Apple hardware, no SDK, no licensing gate
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
@@ -51,9 +56,6 @@
 - [ ] T-lin-10366 [S] `MCC_REF_CC` never consults the vendored aarch64 llvm-mingw, so an arm64 Windows host has no reference cc
       OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
       REF: DETAILS.md#t-lin-10366-ref-cc-is-x86-64-only-on-windows | DEPS: —
-- [ ] T-lin-10367 [C] A minimal mcc-authored Darwin libc header set for host-independent bank keys
-      OWNER: — | STATE: OPEN | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
-      REF: DETAILS.md#q-mac-30000-answer-minimal-darwin-headers-sdk-on-apple | DEPS: — | NOTE: declarations only, no inline bodies; runtime/osx; all three key_flags branches read it, hence [C]. Authorable from any host — no Apple hardware, no SDK, no licensing gate
 - [ ] T-win-50003 [S] win-x64 full native suite — 35 real failures triaged (28 GPU-slice/`slicerun` device↔CPU differentials + "0 slices on Windows"; 4 fp under emitsize/emitiso opt-search; 3 jit/runtime)
       OWNER: — | STATE: OPEN | SHA: 260bb900 | TS: 2026-08-15T01:55Z
       REF: DETAILS.md#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged | DEPS: — | NOTE: surfaced by the first Windows full-suite run (T-win-50002 unblocked mcc_build); this box has an RTX 2060 so GPU cells genuinely dispatch. Bucket A (28) is mccgpu/slicerun owners' (lin/mac) — win-x64 has the NVIDIA box to confirm fixes; Bucket B jit/runtime deferred behind lin's T-lin-10001 L2′ (mccjit_embed.c)
