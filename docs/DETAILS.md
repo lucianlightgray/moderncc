@@ -43447,3 +43447,18 @@ That reverses the recorded assumption, which was that the cap stays and the inco
 **Not started, deliberately.** A blast-radius measurement across eleven targets is a corpus-wide compile, and a 10062-cell validation suite is running on this box. Measuring under self-inflicted load is what [five separate rows](#load-sensitive-measurements-five-instances-in-one-day) got wrong today; the measurement waits for an idle box.
 
 **Source.** Answer recorded on lin-x64, 2026-08-15.
+
+
+<a id="t-lin-10080-done-the-residual-is-now-zero-byte-accounting-is-exact"></a>
+
+## T-lin-10080 DONE — the residual is now zero; FL `-O0` byte-accounting is exact, two ways
+
+The task carried a `1.0003` emit-amplification on `full_language.c -O0` — 31 bytes "written through `g()` but falling outside the `func_ind..ind` window", with three unconfirmed candidates (pre-`func_ind` alignment padding, the `gen_inline_functions` `diag_only` rewind, top-level `asm`). Re-measured on current `main` (x86_64 build, `MCC_TARGET_ARCH=x86_64`): **the residual is 0.**
+
+**Measurement.** `emit-map.py --target full_language.c --opt=-O0`: `emit_amplification` = **1.0000**, `g_bytes_written` = `aot_bytes_surviving` = **114613** (`g_enter` 116294 − `g_nocode_dropped` 1681 = 114613). Confirmed independently by direct ELF analysis of the `-O0` object: `.text` size 114613 = the exact sum of all 301 function symbol sizes, i.e. **every surviving `.text` byte lies inside a function window and none is written outside one.**
+
+**Why the three candidates are all inert on this subject.** full_language.c has no aligned functions (no pre-`func_ind` `gen_fill_nops`), no top-level `asm`, and the `diag_only` rewind path (`mccgen.c:17266`) **never fires** for it — instrumented `gen_function` in the `diag_only` branch emitted zero `[diagbytes]` records, because a `diag_only` needs a *non-static* `inline` body left un-emitted, and full_language.c pulls none. Self-host was already 0 for the same reason. So the 31-byte discrepancy the task banked was closed by the byte-accounting work in the commits since the emit-map first landed; there is nothing left to attribute, and the accounting is now exact rather than off by 0.027%.
+
+**Gate.** Measurement + docs only; no code change, no bank moved. `docs/refs` green.
+
+**Source.** mac-arm64, 2026-08-15; residual re-measured 0 on current `main`.

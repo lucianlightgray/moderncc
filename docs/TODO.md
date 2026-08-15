@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T07:00Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T07:10Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10373   | 2026-08-15T15:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50005   | 2026-08-15T14:05Z |
 
@@ -228,9 +228,6 @@
 - [ ] T-lin-10078 [S] N36 residue — `/` and `%` on over-wide bit-fields are still per-operation truncated
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10078-n36-residue-and-on-over-wide | DEPS: —
-- [ ] T-lin-10080 [S] The 31-byte `full_language.c -O0` residual is unattributed
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10080-the-31-byte-full-languagec-o0 | DEPS: —
 - [ ] T-lin-10081 [S] `MCC_GPU_LOCK`: replicate the resident state per context, then narrow the lock
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10081-mcc-gpu-lock-replicate-the-resident | DEPS: —
