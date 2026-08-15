@@ -9,7 +9,7 @@ options the build had not had since `a55c0a07`, so passing one left an ignored
 cache entry and nothing said so.  Nothing checked either, because nothing
 checked anything: no tool in this tree opened a file under `docs/` at all.
 
-Five rules, chosen so the check is useful rather than noisy.  Prose names are
+Six rules, chosen so the check is useful rather than noisy.  Prose names are
 deliberately out of scope -- a design doc is allowed, and required, to name
 things that do not exist yet, and every rule below is written so that a
 proposal cannot trip it.
@@ -39,7 +39,10 @@ escapes the path rule; it is priced and accepted.
           one sentence that states its size must agree.
   anchor  a `DETAILS.md#id` citation in TODO.md, QUESTIONS.md (and ARCHIVED.md
           under --include-archived) must resolve to an `<a id=...>` in
-          DETAILS.md. A REF that resolves nowhere sends its reader nowhere.  Three sentences used
+          DETAILS.md. A REF that resolves nowhere sends its reader nowhere.
+  conflict a live doc must carry no merge-conflict marker. One was committed
+          on 2026-08-15 and nothing caught it: a doc full of `<<<<<<<` still
+          renders and still resolves every citation around them.  Three sentences used
           to state it as twelve, nine and seven over a thirteen-row table.
 
 Under docs/INSTRUCTIONS.md, docs/TODO.md carries task state only -- one line and
@@ -219,6 +222,36 @@ ANCHOR_DEF = re.compile(r'<a id="([^"]+)"></a>')
 ANCHOR_REF = re.compile(r'DETAILS\.md#([a-z0-9][a-z0-9-]*)')
 
 
+CONFLICT = re.compile(r"^(?:<<<<<<< |>>>>>>> |=======$)")
+
+
+def check_conflicts(root, docs, mutate):
+    """No live doc carries a merge-conflict marker.
+
+    win-x64 committed markers into docs/DETAILS.md on 2026-08-15 (a1518ca7,
+    repaired by a31cdc0e). Nothing caught it: markers are not a path, a line, a
+    symbol or an anchor, and a doc full of `<<<<<<<` still renders and still
+    resolves every citation around them. The cause was the missing merge=union
+    driver, now fixed -- this is the check that would have caught the symptom
+    even so, and it costs one regex over files the lint already reads."""
+    seen, bad = 0, []
+    for doc in docs:
+        path = os.path.join(root, doc)
+        if not os.path.exists(path):
+            continue
+        for n, ln in enumerate(open(path, encoding="utf-8"), 1):
+            seen += 1
+            if CONFLICT.match(ln):
+                bad.append(("conflict", "%s:%d carries a merge-conflict marker "
+                            "(%s). A doc with markers in it renders, resolves "
+                            "its citations, and is wrong" % (doc, n,
+                                                             ln.strip()[:12])))
+    if mutate:
+        bad.append(("conflict", "docs/DETAILS.md:0 carries a merge-conflict "
+                    "marker (<<<<<<< planted)"))
+    return seen, bad
+
+
 def check_anchors(root, docs, mutate):
     """Every DETAILS.md#anchor cited from a live doc resolves to an anchor.
 
@@ -336,6 +369,10 @@ def main():
                             ([ARCHIVED] if a.include_archived else []), a.mutate)
     seen["anchor"] += anch
     bad += b
+    _cl, b = check_conflicts(root, list(DOCS) +
+                             ([ARCHIVED] if a.include_archived else []),
+                             a.mutate)
+    bad += b
     for path in sorted(allow):
         if path in files:
             bad.append(("allow", "%s:%d lists `%s` as a citation that must not "
@@ -364,14 +401,14 @@ def main():
         for cls, m in bad:
             print("FAIL " + m)
         got = {c for c, _ in bad}
-        want = {"path", "line", "site", "count", "anchor"}
+        want = {"path", "line", "site", "count", "anchor", "conflict"}
         blind = want - got
         if blind:
             print("docref-lint --mutate: planted one defect of every shape and "
                   "the lint did not report %s, so it is not reading what it "
                   "claims to read" % ", ".join(sorted(blind)))
             return 0
-        print("docref-lint --mutate: %d violation(s), all five planted shapes "
+        print("docref-lint --mutate: %d violation(s), all six planted shapes "
               "reported (%s)" % (len(bad), ", ".join(sorted(want))))
         return 1
 

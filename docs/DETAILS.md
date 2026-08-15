@@ -43938,3 +43938,19 @@ Root-caused and a one-line fix verified against gcc-16, but reverted at a reboot
 **What remains for DONE.** (1) The 782-object sweep across `src/ tests/ tools/ examples/` used for the `+`/`-`/`*` fix, plus the `tests/smoke/bcases.h` rows, as the task's verification specifies. (2) Re-apply the patch will add lines to `mccgen.c`, moving the fmt/census-bank site census (mccgen.c count) — re-bank `tests/fmt/census-bank.json` as part of landing, same as the win-diagnostic re-take above.
 
 **Source.** mac-arm64, 2026-08-15, reverted at `1a59795d` for a clean reboot (patch + test in scratchpad; one-line change, fully reapply-ready).
+
+<a id="docs-refs-gains-a-conflict-marker-rule"></a>
+
+## `docs/refs` gains a sixth rule — no merge-conflict marker in a live doc
+
+Added the same day the fleet needed it. win-x64 committed conflict markers into `docs/DETAILS.md` (`a1518ca7`, repaired by `a31cdc0e`), and **nothing caught it** — not review, not the lint, not any gate. That is the missing [`merge=union` driver](#gitattributes-was-missing-the-union-merge-lines-the-protocol-depends-on)'s worst consequence so far, and it is worth a check independent of the cause, because the cause is now fixed and the symptom class is not.
+
+**Why the five existing rules were blind to it.** A `<<<<<<<` line is not a path, a line citation, a project symbol, a table count or an anchor. More to the point, **a doc full of markers still renders and still resolves every citation around them** — the lint walked those files, checked 781 path citations and 86 anchors in them, and reported OK. The markers sat between citations that were all individually correct.
+
+**The rule** is one regex over files the lint already opens: no line in a live doc may begin `<<<<<<< `, `>>>>>>> ` or be exactly `=======`. Cost is negligible; it runs on the same read.
+
+**Proved on a real marker, not only the synthetic one.** Appending `<<<<<<< HEAD` to `docs/TODO.md` produces `docs/TODO.md:285 carries a merge-conflict marker (<<<<<<< HEAD)` and exit 1; removing it returns the lint to green. The `--mutate` known-positive now plants six shapes and the driver requires all six reported: `anchor, conflict, count, line, path, site`.
+
+**The pattern this makes three of.** A [pin encoding one machine](#green-on-the-box-that-wrote-it) hides because the gate stays green where it was written. A [selector that stopped growing](#t-lin-10367-the-gate-selector-had-stopped-growing-with-the-set) hides because the gate stays green everywhere. A missing merge driver hides because its failure is indistinguishable from ordinary friction. This one hides because **the document is still well-formed in every way anything measured** — the defect is in the part nothing was looking at. Each was cheap to catch once someone asked the right one-line question, and in all three cases nobody had.
+
+**Source.** lin-x64, 2026-08-15, after win-x64's incident.
