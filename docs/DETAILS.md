@@ -46170,3 +46170,16 @@ dpkg -s mesa-vulkan-drivers | sed -n 's/^Version: /CI lavapipe (mesa-vulkan-driv
 No code change is owed: the one-line configure fix and the durable manifest guard both already landed (the manifest note is dated to the same investigation); the row was left open. Closing on the verification — 8916 not 8913, the three cells in `ctest -N`, now guarded so it cannot regress silently.
 
 **Source.** lin-x64, 2026-08-15, verified at `main@05847954`.
+
+<a id="t-lin-10036-scoped-vulkan-half-done-metal-half-is-the-remaining-work"></a>
+
+## T-lin-10036 scoped — the Vulkan/SPIR-V half is done; only the Metal backend still carries the dead memsets and the double upload
+
+**Finding (lin-x64, 2026-08-15).** The row's three wins are all present on the **SPIR-V/Vulkan** path (the one the original measurement ran on) and absent on the **Metal** path:
+
+- **SPIR-V (`src/mccgpu.c:2751` `mcc_gpu_dispatch_locked2`, SPIR-V branch): DONE.** Lines 2772-2784 implement exactly the row's fix, and the in-code comment states it verbatim — *"Only the [ntuple, cap) padding tail needs clearing … zeroing pout was 100% dead. Zeroing the whole of pin was 32 B/lane of duplicated work."* `pout` is not zeroed; `pin` is memcpy'd for `[0, ntuple)` and memset only for the `[ntuple, cap)` tail (guarded by `if (cap > ntuple)`); and the upload is skipped entirely when the caller passes the resident flag (`if (!reuse_in)`). The double-upload half landed as `e85ea258` *"perf(ladder): upload the rung's input image once, not once per arm"* — `mcc_gpu_dispatch2_ro_in` (`:2994`) uploads once for arm `a` and passes `MCC_GPU_IN_IS_RESIDENT` (=1 on this branch) to arm `b`.
+- **Metal (`src/mccgpu.c:624` `mcc_gpu_dispatch_locked2`, MSL branch): NOT done.** It still `memset(pin, 0, inlen)` + `memset(pout, 0, outlen)` (`:655/:657`) — the full-buffer zeroing and the 100%-dead `pout` clear — and it `(void)reuse_in;` (`:635`), ignoring residency, while `MCC_GPU_IN_IS_RESIDENT` is `#define`d 0 on this branch (`:728`), so `tin` is re-uploaded per arm. The same three wins apply unchanged.
+
+**Re-scoped to [X] mac-arm64.** The remaining work is Metal-backend-only and is neither compilable nor testable on a Linux host (the MSL branch is `#if MCC_GPU_LANG_MSL`, off here) — applying it blind risks breaking the mac build. The mechanical shape is the SPIR-V code above: drop the `pout` memset, reduce the `pin` memset to the `[ntuple, cap)` tail, and honor `reuse_in` in `dispatch_locked2` so `mcc_gpu_dispatch2_ro_in`'s resident-input flag keeps arm `b` from re-uploading (this half needs Metal buffer-lifecycle care, not just a memset edit). Verify per the row: re-measure bytes/lane and confirm `gpu/msl-slice-*` unchanged.
+
+**Source.** lin-x64, 2026-08-15, at `main` post-`812fb6ff`; SPIR-V half at `e85ea258` + `:2772-2784`.
