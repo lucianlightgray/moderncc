@@ -15,12 +15,19 @@ want different audiences:
                    against a FULL-suite results file, since a `-R` subset will
                    legitimately not contain most rows.
 
+  --count-skip DIR derive the number of `SKIP_RETURN_CODE 77` registrations this
+                   build actually has (from ctest's own metadata) and print it.
+                   The count is build-dependent -- foreach() registers hundreds
+                   of cells per source line -- so a written-down figure drifts
+                   and nothing reads it; this computes it instead (T-lin-10063).
+
 Exit 0 clean, 1 on any violation, 2 on a usage or parse problem. Never 77: a
 manifest that cannot be checked is a failure, not a skip -- that is the whole
 point of the file.
 """
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -28,6 +35,30 @@ import sys
 import xml.etree.ElementTree as ET
 
 MODES = ("registered", "must-run")
+
+
+def skip_return_code_count(build):
+    """Derive how many cells this build registers with `SKIP_RETURN_CODE 77`,
+    from ctest's own JSON metadata -- so the figure is computed, never a prose
+    constant that silently drifts (T-lin-10063). Returns an int, or None if the
+    build's ctest cannot emit json-v1 (the count is informational; its absence
+    must not fail a registration check)."""
+    out = subprocess.run(
+        ["ctest", "--test-dir", build, "--show-only=json-v1"],
+        capture_output=True, text=True)
+    if out.returncode != 0:
+        return None
+    try:
+        doc = json.loads(out.stdout)
+    except ValueError:
+        return None
+    n = 0
+    for t in doc.get("tests", []):
+        for p in t.get("properties", []):
+            if p.get("name") == "SKIP_RETURN_CODE" and str(p.get("value")) == "77":
+                n += 1
+                break
+    return n
 
 
 def load(path):
@@ -98,7 +129,18 @@ def main():
     ap.add_argument("--manifest", default=None)
     ap.add_argument("--build", default=None)
     ap.add_argument("--results", default=None)
+    ap.add_argument("--count-skip", default=None, metavar="DIR",
+                    help="derive and print this build's SKIP_RETURN_CODE 77 count")
     args = ap.parse_args()
+
+    if args.count_skip:
+        n = skip_return_code_count(args.count_skip)
+        if n is None:
+            sys.stderr.write("cannot derive the count: ctest --show-only=json-v1 "
+                             "failed in %s\n" % args.count_skip)
+            return 2
+        print(n)
+        return 0
 
     here = os.path.dirname(os.path.abspath(__file__))
     manifest = args.manifest or os.path.join(here, os.pardir, "tests",
@@ -106,13 +148,18 @@ def main():
     rows = load(manifest)
 
     if not args.build and not args.results:
-        sys.stderr.write("nothing to check: pass --build and/or --results\n")
+        sys.stderr.write("nothing to check: pass --build, --results or "
+                         "--count-skip\n")
         sys.exit(2)
 
     bad = []
 
     if args.build:
         have = registered_tests(args.build)
+        nskip = skip_return_code_count(args.build)
+        if nskip is not None:
+            print("must-run: %d SKIP_RETURN_CODE 77 registration(s) in this build "
+                  "(derived)" % nskip)
         for name, _mode, why in rows:
             if name not in have:
                 bad.append("NOT REGISTERED  %-30s  %s" % (name, why))

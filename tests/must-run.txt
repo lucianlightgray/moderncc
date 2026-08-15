@@ -1,8 +1,12 @@
 # The must-run manifest (N13).
 #
-# There are 141 `SKIP_RETURN_CODE 77` registrations in this tree and, until this
-# file existed, nothing anywhere asserted that any of them must ever fire. Two
-# distinct failures hide in that gap and they look identical from the outside:
+# Many cells register `SKIP_RETURN_CODE 77` and, until this file existed, nothing
+# anywhere asserted that any of them must ever fire. (The exact figure is build-
+# dependent -- foreach() registers hundreds of cells per source line -- so it is
+# derived, never written here: `tools/must-run.py --count-skip <build-dir>`. A
+# hardcoded count drifts and no code reads it; this line once said "141" while
+# the tree held thousands.) Two distinct failures hide in that gap and they look
+# identical from the outside:
 #
 #   1. the cell is never REGISTERED -- matrix.yml did not install the Vulkan
 #      headers, so spvgate did not build and gpu/spv-slice-* simply did not
