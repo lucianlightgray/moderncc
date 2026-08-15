@@ -38,6 +38,10 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
+- [ ] T-win-50018 [S] win-x64 — `libtest-extra` output_obj: "mcc: error: 'mcc_relocate()' twice is no longer supported"
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 73dda833 | TS: 2026-08-15T14:35Z
+      REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: characterization slice — find the double-relocate call path in the output_obj case, decide fix-here vs hand-to-lin (libmcc API surface, mccjit/libmcc rework suspected), and check whether Linux runs this case at all
+
 ## Open — claimable
 - [ ] T-lin-10379 [S] `MCC_REPLAY_IR=1` changes 46 of 58 corpus objects at `-O1` and above
       OWNER: — | STATE: OPEN | SHA: 7ea9be08 | TS: 2026-08-15T14:05Z
@@ -51,9 +55,6 @@
 - [ ] T-win-50019 [S] — `slice/fault`: the device fault/timeout recovery contract fails all seven assertions on real hardware (RTX 2060)
       OWNER: — | STATE: OPEN | SHA: b57019f9 | TS: 2026-08-15T14:25Z
       REF: DETAILS.md#t-lin-10092-win-requote-b-2026-08-15-15-of-9406 | DEPS: — | NOTE: first-ever real-hardware run of suite_fault (the cell was a no-Vulkan stub on this box until the SDK landed). The contract — timed-out dispatch reports failure, strands exactly one dispatch, device marked unusable, no reuse of pending memory — was authored against lavapipe and the RTX 2060 matches none of it (suite_fault:4156-4185). gpu-lifecycle owners (T-lin-10033 territory); win-x64 reproduces on demand with the VK_LOADER_LAYERS_DISABLE caveat
-- [ ] T-win-50018 [S] win-x64 — `libtest-extra` output_obj: "mcc: error: 'mcc_relocate()' twice is no longer supported"
-      OWNER: — | STATE: OPEN | SHA: 05ea60f8 | TS: 2026-08-15T13:45Z
-      REF: DETAILS.md#t-lin-10092-win-requote-2026-08-15-17-of-9404 | DEPS: — | NOTE: libmcc API surface; plausibly fallout from the mccjit/libmcc rework (mccjit_shutdown/PUB_FUNC churn). Win-visible; owner likely lin (libmcc.c) — verify whether Linux libtest-extra runs this case at all
 - [ ] T-win-50015 [S] win-x64 — default `ms_bitfields = 1` on PE targets: mcc's plain bit-field layout is cross-TU-incompatible with every native Windows compiler
       OWNER: — | STATE: OPEN | SHA: b034c0e7 | TS: 2026-08-15T13:30Z
       REF: DETAILS.md#t-win-50014-resolved-mccs-win32-default-bitfield-layout-is-the-outlier | DEPS: — | NOTE: from T-win-50014's verdict — cl=12, clang-MSVC=12, llvm-mingw-GNU=12 vs mcc=4 on `{char; int:3; char}`; mcc_state->ms_bitfields exists (mccgen.c:6205/6927), only the PE-target default is missing. Staged per T-lin-10012's pattern: (1) cross-TU fixture vs mingw gcc + target-key the pass-msstruct pin (4 ELF / 12 PE), (2) flip the default keyed on TARGET so the Linux-hosted win32 cross compilers move identically, (3) re-bank the win32 o0-baseline columns that move + re-run pe/coff-obj-diff, pe-torture-classes, pe-xoracle (should improve). Bank-moving ABI change — wants a fresh, focused context
