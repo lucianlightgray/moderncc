@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30004   | 2026-08-15T04:30Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T06:40Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10372   | 2026-08-15T08:30Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50004   | 2026-08-15T05:05Z |
 
 ## Contracts — blocking, highest priority
@@ -25,11 +25,6 @@
 - [ ] T-lin-10365 [S] An isolated, iterative Windows-on-ARM CI hook on a `woa/**` branch
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
       REF: DETAILS.md#q-lin-10013-answer-ci-is-the-woa-executor | DEPS: — | NOTE: executes Q-lin-10013's answer; unblocks T-lin-10086/T-lin-10087
-
-
-- [ ] T-lin-10367 [C] A minimal mcc-authored Darwin libc header set for host-independent bank keys
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 3cf6e238 | TS: 2026-08-15T02:10Z
-      REF: DETAILS.md#t-lin-10367-slice-1-the-layout-free-half-of-the-darwin-header-set | DEPS: — | NOTE: slice 1 DONE at 50b8c5a2 (stdio/string/stdlib/math/assert/errno/ctype + osx/headers-parse gate, 189 files, known-positive both ways). Slice 2 (mac-arm64, in flight): setjmp + pthread DONE, floor 189->194 measured on Linux. Remaining list GREW by four nobody listed — sched.h, time.h (threads.h pulls them), semaphore.h, fcntl.h — plus wchar/signal/fenv/sys-mman/sys-wait/unistd. The floor moves per FILE, so a header that completes no cluster moves it by zero: see DETAILS#t-lin-10367-slice-2-scope-grows-by-header-cluster
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
@@ -278,9 +273,6 @@
   - [ ] T-lin-10092/mac [P] Record a clean full native suite number on each platform — mac-arm64
         OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 93c23a7b | TS: 2026-08-15T04:25Z
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: full native suite running (build + ctest -j6, leaving cores for the desktop GUI baseline ~3). Number + reds recorded on completion; last leg of the [P] parent (lin CLEAN 0/9051, win 8388/964/35)
-  - [ ] T-lin-10092/lin [P] Record a clean full native suite number on each platform — lin-x64
-        OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: fdfd7412 | TS: 2026-08-15T06:15Z
-        REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: full native run in flight; also serves as the §8 per-task verification for today's slice 3a/3b, MCC_REF_CC and runtime/osx work
   - [ ] T-lin-10092/win [P] Record a clean full native suite number on each platform — win-x64
         OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 260bb900 | TS: 2026-08-15T01:55Z
         REF: DETAILS.md#t-lin-10092-record-a-clean-full-native-suite | DEPS: — | NOTE: NUMBER RECORDED (first ever on Windows): 9387 cells, 8388 pass / 945 skip / 54 fail at 9b21c352; 19 false-reds fixed at 260bb900 -> 8388 / 964 / 35. Not clean — the 35 residual reds are triaged in T-win-50003 (28 GPU-slice, 4 fp opt-search, 3 jit/runtime). @lin: number is landed, slice-3 (L2′) hold can release

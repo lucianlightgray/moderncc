@@ -43030,3 +43030,30 @@ covered='stdio|string|stdlib|math|assert|errno|ctype'
 **The general lesson, worth more than this instance.** Every gate with a *selector* has this failure mode, not just this one: `gate-contract`'s manifest, `must-run`'s rows, a bank's key list. Adding capability without widening the selector leaves the new capability ungated while the dashboard stays green. Worth checking the selector whenever the thing it selects over grows — which is exactly the moment nobody thinks to.
 
 **Source.** Noticed by mac-arm64; fixed on lin-x64, 2026-08-15.
+
+<a id="t-lin-10092-lin-the-linux-full-native-suite-is-clean"></a>
+
+## T-lin-10092/lin — the Linux full native suite, clean
+
+```
+100% tests passed, 0 tests failed out of 10062
+Total Test time (real) = 5159.13 sec
+```
+
+**10062 registered, 1011 skipped, 9051 run, 0 failures**, 86 minutes, `cmake-def`, native x86_64 Linux, taken at `a4b2baf1`. JUnit at `cmake-def/ctest-junit-lin.xml` (3.2 MB).
+
+**Clean** in the sense the task asked for: not "no unexpected failures", but **zero**. The three platforms now read:
+
+| platform | cells | run | fail |
+| --- | --- | --- | --- |
+| lin-x64 | 10062 | 9051 | **0** |
+| win-x64 | 9387 | 8388 | 35 → 28 after `260bb900` |
+| win-x64 self-hosted arm64 (WoA) | 9405 | — | 25 + a moving crash |
+
+The 1011 skips are overwhelmingly the qemu tiers and cross-execution cells that need emulators or hardware this box does not have; they are *registered* skips, which is the property `tests/must-run.txt` exists to defend and the reason the number is 10062 rather than 9051.
+
+**What it verifies beyond itself.** This run is also the §8 per-task evidence for everything that landed on lin-x64 today: [slice 3a](#t-lin-10001-slice-3a-the-pool-job-becomes-a-tick) and [3b](#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so) (the JIT pool tick conversion and the bounded teardown — the highest-risk changes, touching the compiler's shutdown path), the [`MCC_REF_CC` arch fix](#t-lin-10366-ref-cc-is-x86-64-only-on-windows), `runtime/osx` slice 1, and the [gate-contract host-relative pin](#t-mac-30002-resolution-the-pin-was-never-48). A teardown change that leaked or double-freed would surface across thousands of cells here, and does not.
+
+**One methodological note, since it changed the schedule twice.** The run was taken with nothing else on the box, and two pieces of owed work — mac's floor measurement and the o0_ab re-bank — were deliberately deferred behind it. This tree carries [T-lin-10072](#t-lin-10072-lin-x64-optfireabs-and-optfirelevel-abs) and [T-lin-10073](#t-lin-10073-lin-x64-the-two-wine-run) for cells that fail *only* under a full parallel run, so a suite number taken under self-inflicted load would not be the number this task asks for. A clean reading is partly a scheduling result, not only a correctness one.
+
+**Source.** lin-x64, 2026-08-15.
