@@ -46234,3 +46234,19 @@ No code change is owed: the one-line configure fix and the durable manifest guar
 **Disposition.** No new blind test is added and the unreachable recovery is retained as defence. The two `optfire/asm-replay-recover*` `must-run.txt` descriptions, which still claimed the cell "survives a replay error raised from inside inline asm", are corrected to state the cell is now a print-level replay A/B blind to `mcc_asm_inline_unwind`, with the re-arming precondition guarded by `optfire/asm-replay-object` (`cd5fd95f`; the manifest validator keys on the row name only, so the edit is behaviour-neutral — `ci/must-run-registered`, `ci/gate-contract`(+KP) and all four `optfire/asm-replay-*` cells stay green).
 
 **Source.** lin-x64, 2026-08-15; premise proven at `main@cd5fd95f`; the fix that removed the trigger is `5113bfc5`.
+
+<a id="t-lin-10374-resolved"></a>
+
+## T-lin-10374 RESOLVED — mcc's codegen is byte-deterministic; the non-reproducibility is gcc build-id + DWARF build paths, both benign
+
+**Resolved (win-x64 via WSL Ubuntu 26.04, native gcc build, 2026-08-15, code `04053aa5`).** The first slice asked to name the source of the 1,104,183-byte mcc-arm64 diff and decide fix-vs-bank. Named and decided: it is **not mcc codegen**. Evidence, each `cmp`-verified:
+
+1. **mcc's x86_64 code output is byte-identical across builds.** `mcc -c src/mcc*.c` identical at -O0/-O1/-O2/-O2-finline; the FULL self-host compile+link `mcc src/mcc.c -o mcc` identical at -O0/-O2/-O2-finline/-O4 (the reemit optimizer is active at -O1+ and stays deterministic).
+2. **The gcc-built mcc-arm64 rebuilt IN PLACE is byte-identical** (`touch src/mcchost.h; ninja mcc-arm64` twice → `cmp` identical). So there is no per-build randomness.
+3. **The only cross-directory difference is build-id + DWARF paths.** Two builds at different paths (`bc` vs `bc2`) differ by 4920 bytes unstripped; **stripped, they differ by exactly 20 bytes, all at file offset 0x398–0x3ab, entirely inside `.note.gnu.build-id` (0x388–0x3ac); `.text` starts at 0xc1a0 and is untouched.** So `.text`/`.rodata`/`.data` are identical; the 20 bytes are gcc's SHA1 build-id (a hash of the build inputs incl. path), and the ~4900 unstripped bytes are DWARF absolute build paths (`DW_AT_comp_dir`/file names). The task's 1.1M figure was two builds at DIFFERENT paths, where the DWARF path deltas scale with the (large) debug-info of mcc-arm64.
+
+**Decision: BANK the non-claim, with the positive claim now assertable.** mcc IS code-reproducible; it is NOT byte-reproducible across different build paths, because of (a) gcc's `.note.gnu.build-id` and (b) DWARF embedded build paths — both standard reproducible-build artifacts, disableable with `-Wl,--build-id=none` (or a content build-id) + `-ffile-prefix-map`/`-fdebug-prefix-map` if the tree ever wants path-independence, but neither is an mcc defect and neither is worth a build-flag change now. Checks that want to lean on determinism should compare **objects** (no build-id) or **stripped binaries at a fixed path**.
+
+**Banked as a cell so checks can lean on it: `ci/reproducible-object`** (CMakeLists in the `NOT CMAKE_CROSSCOMPILING` block, so it runs on every native build incl. MSVC/Windows) — compiles `tests/misc/repro-subject.c` (a broad codegen surface: struct/union/bit-field, recursion, switch incl. case-ranges, doubles, string/array literals, function pointer) with `mcc -c` twice and SHA256-compares. An object carries no build-id, so any difference is genuine codegen nondeterminism. Green on gcc/Linux and MSVC/Windows.
+
+**Source.** win-x64 via WSL, 2026-08-15, code `04053aa5`.
