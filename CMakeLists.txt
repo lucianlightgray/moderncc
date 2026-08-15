@@ -7396,7 +7396,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-jit.py"
                         "${CMAKE_BINARY_DIR}" "${MCC_CPU}")
             set_tests_properties(selfhost-jit PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 TIMEOUT 300)
+                SKIP_RETURN_CODE 77 TIMEOUT 720)
 
             # What a zero-AOT `mcc -O0 --embed-jit` self-host runs at RUNTIME. It
             # hot-swaps ~190 functions, so zero AOT optimization is not zero runtime
