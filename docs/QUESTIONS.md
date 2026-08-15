@@ -78,6 +78,7 @@ REF: DETAILS.md#q-lin-10007-kept-coverage-host-sensitivity-raise-tol
 
 **ANSWER (human, 2026-08-15):** Make the metric host-stable (NOT raise `--tol`, NOT a convention). Fix the gcc-host vs stage2 disagreement so `kept_coverage` produces the same figure regardless of which compiler hosts the measurement; then the floor is tool-enforced rather than a convention that can be got wrong silently. T-lin-10057.
 
+**MODE CORRECTION (lin-x64, 2026-08-15):** filed as mode (a), but kept_coverage: the recorded assumption is that the floors stay at the lower of the two and the rule stays a convention, which is a decision not to act. Under §9 a mode-(a) question leaves its task ACTIVE; this one's task is BLOCKED, and BLOCKED is the accurate state. The label was wrong, not the state — read this as mode (b). Found by a consistency pass over TODO states against QUESTIONS modes; see DETAILS.md#review-pass-2026-08-15-what-the-consistency-audit-found.
 ### Q-lin-10008 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10040, and it re-ranks T-lin-10033 through T-lin-10038
 Is the 2026-08-09 device-path freeze still standing?
 
@@ -91,6 +92,7 @@ REF: DETAILS.md#q-lin-10008-is-the-2026-08-09-device
 
 **ANSWER (human, 2026-08-15):** NO — the 2026-08-09 device-path freeze is NOT still standing. **UNBLOCK.** The six frozen rows are schedulable again; T-lin-10040 unblocks and T-lin-10033–T-lin-10038 are re-ranked for scheduling.
 
+**MODE CORRECTION (lin-x64, 2026-08-15):** filed as mode (a), but the device-path freeze: the recorded assumption is that the freeze stands and none of the six is scheduled, which is a decision not to act. Under §9 a mode-(a) question leaves its task ACTIVE; this one's task is BLOCKED, and BLOCKED is the accurate state. The label was wrong, not the state — read this as mode (b). Found by a consistency pass over TODO states against QUESTIONS modes; see DETAILS.md#review-pass-2026-08-15-what-the-consistency-audit-found.
 ### Q-lin-10010 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10058
 Should `node-census`'s `all_invokes_on_cpu` be gated at all, or reported only?
 
@@ -104,6 +106,7 @@ REF: DETAILS.md#q-lin-10010-should-node-censuss-all-invokes-on
 
 **ANSWER (human, 2026-08-15):** Neither gate-as-is nor report-only. `node-census` should make an honest effort to run on all available hardware — CPU, JIT, GPU. Refactor to **auto-detect available hardware at runtime** and ungate the CPU/GPU paths so they run whenever the hardware is present, with the only overrides being explicit `--jit-always-cpu` / `--jit-always-gpu` flags. T-lin-10058.
 
+**MODE CORRECTION (lin-x64, 2026-08-15):** filed as mode (a), but all_invokes_on_cpu: the recorded assumption is that it stays gated and every move costs an investigation, which leaves the task's subject untouched. Under §9 a mode-(a) question leaves its task ACTIVE; this one's task is BLOCKED, and BLOCKED is the accurate state. The label was wrong, not the state — read this as mode (b). Found by a consistency pass over TODO states against QUESTIONS modes; see DETAILS.md#review-pass-2026-08-15-what-the-consistency-audit-found.
 ### Q-lin-10011 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10064
 Arm the 63 `EXTRA` cells and take the three pre-existing divergences red?
 
@@ -117,6 +120,7 @@ REF: DETAILS.md#q-lin-10011-arm-the-63-extra-cells-and
 
 **ANSWER (human, 2026-08-15):** Do not simply arm-and-take-red. Convert the three pre-existing divergences (and red cells generally) into **investigation/research tasks plus implementation TODO tasks** — each divergence becomes a tracked item with a root-cause investigation and a fix task, rather than a masked or a loudly-red gate. T-lin-10064.
 
+**MODE CORRECTION (lin-x64, 2026-08-15):** filed as mode (a), but the 63 EXTRA cells: the recorded assumption is that they stay unarmed, and arming them IS the task, so the assumption forbids the work. Under §9 a mode-(a) question leaves its task ACTIVE; this one's task is BLOCKED, and BLOCKED is the accurate state. The label was wrong, not the state — read this as mode (b). Found by a consistency pass over TODO states against QUESTIONS modes; see DETAILS.md#review-pass-2026-08-15-what-the-consistency-audit-found.
 ### Q-lin-10012 — [lin-x64] — 2026-08-14T12:40Z — BLOCKS: T-lin-10077
 Adopt `__divdc3`-style complex division?
 
@@ -153,15 +157,3 @@ REF: DETAILS.md#t-lin-10090-investigation-cycles-tool-is-perf-only-no-arm64-linu
 Guest `/sys/bus/event_source/devices/` has no hardware PMU node (only breakpoint/kprobe/software/tracepoint/uprobe). The guest PMU is not virtualized, so hardware events are `<not supported>` at the driver level. The host half was real but the deliverable half is not producible: no arm64 host in the fleet exposes a PMU (Darwin has no userspace perf; arm64 Linux exists only as a PMU-less guest; a hosted arm runner is the same hypervisor case). T-lin-10090 → **WONTFIX-on-fleet**, x86_64 figure standing. Reopen only if a bare-metal arm64 Linux or a Darwin kperf backend appears. Evidence: DETAILS.md#t-lin-10090-resolution-no-guest-pmu-in-arm64-linux-on-apple-silicon.
 **STATUS: ANSWERED** 2026-08-15T01:20Z
 
-### Q-mac-30002 — [mac-arm64] — 2026-08-15T06:20Z — BLOCKS: T-lin-10079
-Amend the `trace-gate-invariant` to permit a leading cheap early-out guard before the `enter` trace, or keep universal trace-at-open and close T-lin-10079 another way?
-
-T-lin-10079 (ir_cap's ~375k spurious `-O0` traces where the layer is inactive) has a byte-safe fix that drops `ircap_events(-O0)` from 359893 to 1 (measured on an x86_64 trace+inv build; -O1 bank unaffected; codegen byte-identical). But the fix reds the `trace-gate-invariant` treegate cell (`tools/tracegate.c`), which mandates that every function open with `MCC_TRACE("enter\n")` and every braced branch with `MCC_TRACE("br\n")`. That invariant IS the mechanism generating the events — it trades `-O0` overhead for universal trace coverage. Reclaiming the overhead requires weakening it. This is shared infra all three machines' treegate depends on, so it is the invariant owner's (lin-x64's) call, not a unilateral mac change.
-
-**Mode (a):** Amend the invariant to accept a function that opens with a single return-only guard `if (<cond>) return [expr];` before the `enter` trace, and to not require `br` on a return-only branch. Then land the ir_cap fix. Cost-if-wrong: the "no untraced early-return" guarantee is narrowed tree-wide; a genuinely-skipped early path would no longer be forced to trace.
-
-**Mode (b):** Keep the invariant absolute; close T-lin-10079 as WONTFIX-by-design (the -O0 ircap share is a known artefact of universal trace-at-open, to be read/subtracted at the emit-map layer rather than removed at the source). Cost-if-wrong: the -O0 layer-share distortion stays and every reader must know to discount it.
-
-**Assumed for now:** neither — held OPEN pending this answer. The full investigation, measurements, and 237-line reapply-ready patch are at DETAILS.md#t-lin-10079-investigation-fix-works-359893-to-1-but-collides-head-on-with-trace-gate-invariant.
-
-REF: DETAILS.md#t-lin-10079-investigation-fix-works-359893-to-1-but-collides-head-on-with-trace-gate-invariant

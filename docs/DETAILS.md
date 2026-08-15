@@ -43350,3 +43350,30 @@ Added after a review pass found the class had bitten twice in one day, both time
 **Known-positive extended, not bypassed.** `--mutate` plants one defect of every shape and the driver requires **all five** reported; the census line now states the anchor count (104 today) so the subject cannot silently empty. Verified: clean arm OK, mutate arm 5 violations naming `anchor, count, line, path, site`, floor arm still red at `--min-refs 100000`.
 
 **Source.** lin-x64, 2026-08-15.
+
+<a id="review-pass-2026-08-15-what-the-consistency-audit-found"></a>
+
+## Review pass, 2026-08-15 — what a consistency audit over the docs found
+
+A mechanical pass over `TODO.md`, `QUESTIONS.md`, `ARCHIVED.md` and `DETAILS.md`, checking the things a human reading one row at a time cannot see. Four findings, three of them mine.
+
+**1. A broken archive REF.** `T-lin-10366` was archived citing `#t-lin-10366-ref-cc-is-x86-64-only-on-windows`, an anchor that was never written — its reasoning lived only in a commit message. Anchor written; the class is now [gated](#docref-lint-gains-an-anchor-rule) so it cannot recur silently. 83 TODO refs and 257 archive refs checked; this was the only break.
+
+**2. An answered question left open.** `Q-mac-30002` was answered and its fix landed (`ddbc14c8`), but `QUESTIONS.md` still listed it. §9 requires the block be pruned to an archive record once the substance is migrated. Done. **The gap is structural, not careless:** answering a question and pruning it are two different files and nothing tied them together, so the second half is easy to skip when the first half is the interesting part.
+
+**3. A task left IN_PROGRESS after it was delivered.** `T-lin-10365`'s hook exists, is merged to main, and has produced four runs of findings. Closed.
+
+**4. Four questions labelled mode (a) whose tasks are BLOCKED, which §9 forbids.** `Q-lin-10007`, `Q-lin-10008`, `Q-lin-10010`, `Q-lin-10011`. Under §9 a mode-(a) question leaves its task **active** under a recorded assumption; mode (b) blocks it. Reading each assumption decides it, and in all four the assumption is *a decision not to act*:
+
+| question | the recorded assumption | why that is mode (b) |
+| --- | --- | --- |
+| `Q-lin-10007` | floors stay at the lower of the two, the rule stays a convention | nothing to do under it |
+| `Q-lin-10008` | the freeze stands, none of the six is scheduled | nothing to do under it |
+| `Q-lin-10010` | it stays gated, every move costs an investigation | leaves the subject untouched |
+| `Q-lin-10011` | the 63 `EXTRA` cells stay unarmed | **arming them is the task** |
+
+**The label was wrong, not the state.** BLOCKED is the accurate description of all four, so the correction is appended to each question rather than the four tasks being flipped to OPEN — flipping would have made them look claimable while their own recorded assumption forbids the work, which is worse than the inconsistency it fixed. `QUESTIONS.md` is union-merged, so the corrections are appends, never edits.
+
+**What the audit did not find, which is worth recording too.** 88 task rows with no owner/state incoherence (no CLAIMED/IN_PROGRESS without an owner, no OPEN with one); no double-booking between `TODO.md` and `ARCHIVED.md` beyond the two `[P]` children deliberately kept visible until their parent closes; and every `Q:` reference on a BLOCKED task resolving to a question that is genuinely still open.
+
+**Source.** lin-x64, 2026-08-15.
