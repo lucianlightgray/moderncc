@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30001   | 2026-08-14T21:59Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10364   | 2026-08-14T23:05Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10365   | 2026-08-14T23:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50003   | 2026-08-15T00:03Z |
 
 ## Contracts — blocking, highest priority
@@ -19,15 +19,15 @@
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 870535b6 | TS: 2026-08-14T23:05Z
       REF: DETAILS.md#t-lin-10001-a-task-representation-with-an-explicit | DEPS: —
-- [ ] T-lin-10363 [X] lin-x64 — re-take the `-O0` bank and RIR census after T-lin-10009's fixture (re-typed from mac: needs the cross toolchain)
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 27a06cc4 | TS: 2026-08-14T23:05Z
-      REF: DETAILS.md#t-lin-10363-t-lin-10009s-fixture-moved-the-o0-bank | DEPS: —
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 ## Open — claimable
 
+- [ ] T-lin-10364 [S] The wide census carried a pre-existing drift component that a0e26cff has now banked
+      OWNER: — | STATE: OPEN | SHA: a0e26cff | TS: 2026-08-14T23:40Z
+      REF: DETAILS.md#t-lin-10364-the-pre-existing-half-of-the-census-drift | DEPS: —
 - [ ] T-win-50002 [S] Windows full build (`mcc_build`) is red: `slicerun` (mccrt.c, offsetof→ucrt stdlib.h) + `libmcc` DLL (mccjit_shutdown linkage) fail on MSVC — blocks the entire win-x64 native suite
       OWNER: — | STATE: OPEN | SHA: 924d2d5a | TS: 2026-08-15T00:03Z
       REF: DETAILS.md#t-win-50002-windows-mcc-build-is-red-slicerun-libmcc | DEPS: — | NOTE: regression in mccrt/slice split + JIT-shutdown (lin/mac's src/mccrt.c,mccgpu.c,mccjit_embed.c); verbatim errors + diagnosis in DETAILS; blocks T-lin-10092/win + T-lin-10093/win

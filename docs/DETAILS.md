@@ -42072,3 +42072,32 @@ So there are two, with different trigger conditions rather than different priori
 **Verification.** `ctest --test-dir cmake-def -N -L corpusgate` selects exactly the five plus the build fixture; removing a name from `MCC_CORPUSGATE_CELLS` or misspelling one fails the configure.
 
 **Source.** Implemented on lin-x64, 2026-08-14, after T-lin-10363 went undetected by `treegate`.
+
+
+<a id="t-lin-10364-the-pre-existing-half-of-the-census-drift"></a>
+
+## T-lin-10364 The pre-existing half of the census drift, which `a0e26cff` has now banked
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+`tools/rir-coverage.py` decomposes a bank drift into two named halves, which is unusually good tooling and is the only reason this row can exist. Re-banking the wide census for [T-lin-10363](#t-lin-10363-t-lin-10009s-fixture-moved-the-o0-bank) reported both:
+
+| figure | banked | now | corpus mix | **pre-existing** |
+| --- | --- | --- | --- | --- |
+| `bodies_pct` | 15.3812 | 15.3275 | −0.0201pp | **−0.0336pp** |
+| `nodes_pct` | 35.8484 | 35.8562 | −0.0127pp | **+0.0205pp** |
+| `region_nodes_pct` | 10.6909 | 10.7001 | −0.0086pp | **+0.0178pp** |
+| `nodes_pct_loose` | 64.7081 | 64.6960 | +0.0013pp | **−0.0134pp** |
+| `bytes_pct` | 1.3924 | 1.3911 | −0.0016pp | **+0.0003pp** |
+
+Only the *corpus mix* column is T-lin-10009's fixture. The **pre-existing** column is something else, it predates that commit, and nothing in this tree currently says what it is or when it started. `4574 banked bodies, 4574 present, 0 gone, 6 new` — so it is not bodies appearing or vanishing; the same bodies are being classified slightly differently than when the bank was taken.
+
+**This row exists because re-banking destroyed the evidence.** That is not a criticism of the re-bank — the corpus half genuinely had to be taken, the two are entangled in one number, and leaving the cell red would have hidden the next drift entirely. But the honest accounting is that `a0e26cff` folded an unexplained movement into a ratchet and the only remaining trace of it is this table. It is the same hazard [T-lin-10043](#t-lin-10043-testsemitmapbankjsons-tolerances-cannot-fail) names for `tests/emitmap/bank.json` — *bisect the drift, then tighten; re-banking first destroys the only evidence of when it moved* — and it is recorded here rather than obeyed, because obeying it would have meant leaving `corpusgate` red indefinitely.
+
+**Sizes are small and that is the argument for doing it now rather than never.** −0.0336pp on `bodies_pct` is roughly one and a half bodies of 4574. A drift that small is invisible in any single reading and is exactly what accumulates into the next *"28 objects moved and nothing noticed for 426 commits"*.
+
+**The bisect is cheap and mechanical**: the decomposition is computed per run, so `git bisect` over `MCC_RIR_CENSUS=1 python3 tools/rir-coverage.py <build> --corpus wide --levels O0,O1,O2,O3 --opt-in` against the *previous* bank (`bb5c0488^`) reports the pre-existing column directly at each step. It does not need a full suite and it does not need the cross toolchain.
+
+**Verification.** The commit that first moves `bodies_pct`'s pre-existing component is named, and either explained as intended or fixed; if intended, the explanation goes on the board beside the figure.
+
+**Source.** Found on lin-x64, 2026-08-14, while re-banking for T-lin-10363 at `a0e26cff`.
