@@ -8276,6 +8276,15 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(jit/budget PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native TIMEOUT 120)
 
+        # T-lin-10006: the __m512 / __m256h / __m128h intrinsic type spellings parse via
+        # <immintrin.h> and compute (mcc lowers generically, no AVX-512 ISA), matching gcc.
+        add_test(NAME simd/avx512-types
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/simd/run-avx512-types.sh"
+                    "${_mcc_exe}" "${CMAKE_BINARY_DIR}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
+        set_tests_properties(simd/avx512-types PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native TIMEOUT 120)
+
         add_test(NAME jit/kgc-route-parity
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/jit/run-kgcroute.sh"
                     "${_mcc_exe}" "${CMAKE_BINARY_DIR}"

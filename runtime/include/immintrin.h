@@ -19,5 +19,7 @@
 #include <fmaintrin.h>
 #include <avxvnniintrin.h>
 #include <avxifmaintrin.h>
+#include <avx512fintrin.h>
+#include <avx512fp16intrin.h>
 
 #endif
