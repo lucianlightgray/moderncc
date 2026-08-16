@@ -246,6 +246,7 @@ static int arm64_type_size(int t) { MCC_TRACE("enter\n");
 	case VT_DOUBLE:
 		return 3;
 	case VT_LDOUBLE:
+	case VT_FLOAT128:
 		return 4;
 	case VT_BOOL:
 		return 0;
@@ -711,7 +712,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 
 	if (svr < VT_CONST) { MCC_TRACE("br\n");
 		if (IS_FREG(r) && IS_FREG(svr))
-			{ MCC_TRACE("br\n"); if (svtt == VT_LDOUBLE)
+			{ MCC_TRACE("br\n"); if (svtt == VT_LDOUBLE || svtt == VT_FLOAT128)
 				{ MCC_TRACE("br\n"); o(ARM64_MOV_V16B | fltr(r) | fltr(svr) * 0x10020); }
 			else
 				{ MCC_TRACE("br\n"); o(ARM64_FMOV_SCALAR | fltr(r) | fltr(svr) << 5); } }
@@ -896,7 +897,7 @@ ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 		if (svr == r)
 			{ MCC_TRACE("br\n"); return; }
 		if (IS_FREG(r) && IS_FREG(svr)) { MCC_TRACE("br\n");
-			if (svtt == VT_LDOUBLE)
+			if (svtt == VT_LDOUBLE || svtt == VT_FLOAT128)
 				{ MCC_TRACE("br\n"); o(ARM64_MOV_V16B | fltr(svr) | fltr(r) * 0x10020); }
 			else
 				{ MCC_TRACE("br\n"); o(ARM64_FMOV_SCALAR | fltr(svr) | fltr(r) << 5); }
@@ -1030,7 +1031,7 @@ static int arm64_hfa(CType *type, unsigned *fsize) { MCC_TRACE("enter\n");
 
 static int arm64_natural_align16(CType *type) { MCC_TRACE("enter\n");
 	int bt = type->t & VT_BTYPE;
-	if (bt == VT_QLONG || bt == VT_QFLOAT || bt == VT_LDOUBLE)
+	if (bt == VT_QLONG || bt == VT_QFLOAT || bt == VT_LDOUBLE || bt == VT_FLOAT128)
 		{ MCC_TRACE("br\n"); return 1; }
 	if (bt == VT_STRUCT) { MCC_TRACE("br\n");
 		for (Sym *field = type->ref->next; field; field = field->next)
@@ -1100,7 +1101,7 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
 			size = (size + 7) & ~7;
 		}
 
-		if (hfa || bt == VT_LDOUBLE) { MCC_TRACE("br\n");
+		if (hfa || bt == VT_LDOUBLE || bt == VT_FLOAT128) { MCC_TRACE("br\n");
 			ns = (ns + 7) & ~7;
 			ns = (ns + align - 1) & -align;
 		}

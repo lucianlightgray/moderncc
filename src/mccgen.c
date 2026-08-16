@@ -639,7 +639,7 @@ static int gjmp_acs(int t) { MCC_TRACE("enter\n");
 ST_INLN int is_float(int t) { MCC_TRACE("enter\n");
 	int bt = t & VT_BTYPE;
 	return bt == VT_LDOUBLE || bt == VT_DOUBLE || bt == VT_FLOAT || bt == VT_QFLOAT ||
-				 bt == VT_FLOAT16 || bt == VT_BF16;
+				 bt == VT_FLOAT16 || bt == VT_BF16 || bt == VT_FLOAT128;
 }
 
 ST_INLN int is_float16(int t) { MCC_TRACE("enter\n");
@@ -3758,6 +3758,86 @@ gv2:
 }
 #endif
 
+#ifdef MCC_HAVE_FLOAT128
+/* Push an __*tf* helper through a REAL prototype (FUNC_NEW, __float128 params).
+   An old-style call (func_old_type) mis-passes the 2nd 16-byte V-register
+   argument, so __multf3/__divtf3 etc. silently drop low mantissa bits; a genuine
+   prototype makes gfunc_call classify each f128 arg into its own V register. The
+   same latent defect sits in the arch ldouble libcall path, dormant only where
+   long double is not 16-byte. T-lin-10007. */
+static void vpush_f128_helper(int tok, int nargs, int ret_bt) { MCC_TRACE("enter\n");
+	static Sym *cache[3]; /* 0: 1-arg->f128; 1: 2-arg->f128; 2: 2-arg->int */
+	int idx = nargs == 1 ? 0 : (ret_bt == VT_INT ? 2 : 1);
+	CType functype;
+	Sym *fsym = cache[idx];
+	if (!fsym) { MCC_TRACE("br\n");
+		Sym *p, *prev = NULL;
+		int i;
+		fsym = sym_push2(&global_stack, SYM_FIELD, ret_bt, 0);
+		fsym->type.ref = NULL;
+		fsym->f.func_call = FUNC_CDECL;
+		fsym->f.func_type = FUNC_NEW;
+		fsym->f.func_args = nargs;
+		for (i = 0; i < nargs; i++) { MCC_TRACE("br\n");
+			p = sym_push2(&global_stack, SYM_FIELD, VT_FLOAT128, 0);
+			p->type.ref = NULL;
+			p->next = prev;
+			prev = p;
+		}
+		fsym->next = prev;
+		cache[idx] = fsym;
+	}
+	functype.t = VT_FUNC;
+	functype.ref = fsym;
+	vpushsym(&functype, external_global_sym(tok, &functype));
+}
+
+/* binary128 has no native machine op; runtime/lib/float128.c supplies every
+   arithmetic, comparison and negation as an __*tf* libcall. Comparison helpers
+   return an int whose sign is that of (a<=>b), so the operator result is
+   `helper(a,b) <op> 0` under the same operator (also correctly false when a NaN
+   makes the pair unordered). T-lin-10007. */
+static void gen_op_f128(int op) { MCC_TRACE("enter\n");
+	int func, cmpop = 0;
+	switch (op) { MCC_TRACE("br\n");
+	case '+': func = TOK___addtf3; break;
+	case '-': func = TOK___subtf3; break;
+	case '*': func = TOK___multf3; break;
+	case '/': func = TOK___divtf3; break;
+	case TOK_NEG:
+		vpush_f128_helper(TOK___negtf2, 1, VT_FLOAT128);
+		vrott(2);
+		gfunc_call(1);
+		vpushi(0);
+		vtop->type.t = VT_FLOAT128;
+		PUT_R_RET(vtop, VT_FLOAT128);
+		return;
+	case TOK_EQ: func = TOK___eqtf2; cmpop = TOK_EQ; break;
+	case TOK_NE: func = TOK___netf2; cmpop = TOK_NE; break;
+	case TOK_LT: func = TOK___lttf2; cmpop = TOK_LT; break;
+	case TOK_LE: func = TOK___letf2; cmpop = TOK_LE; break;
+	case TOK_GT: func = TOK___gttf2; cmpop = TOK_GT; break;
+	case TOK_GE: func = TOK___getf2; cmpop = TOK_GE; break;
+	default:
+		mcc_error("'__float128' does not support this operation");
+		return;
+	}
+	vpush_f128_helper(func, 2, cmpop ? VT_INT : VT_FLOAT128);
+	vrott(3);
+	gfunc_call(2);
+	vpushi(0);
+	if (cmpop) { MCC_TRACE("br\n");
+		vtop->type.t = VT_INT;
+		PUT_R_RET(vtop, VT_INT);
+		vpushi(0);
+		gen_opic(cmpop);
+	} else { MCC_TRACE("br\n");
+		vtop->type.t = VT_FLOAT128;
+		PUT_R_RET(vtop, VT_FLOAT128);
+	}
+}
+#endif
+
 static void gen_opif(int op) { MCC_TRACE("enter\n");
 	int c1, c2, i, bt;
 	SValue *v1, *v2;
@@ -3770,6 +3850,12 @@ static void gen_opif(int op) { MCC_TRACE("enter\n");
 	fold_const_lval(v1);
 	fold_const_lval(v2);
 	bt = v1->type.t & VT_BTYPE;
+#ifdef MCC_HAVE_FLOAT128
+	if (bt == VT_FLOAT128) { MCC_TRACE("br\n");
+		gen_op_f128(op);
+		return;
+	}
+#endif
 
 	c1 = (v1->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	c2 = (v2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
@@ -3947,6 +4033,9 @@ static void type_to_str(char *buf, int buf_size,
 		goto add_tstr;
 	case VT_BF16:
 		tstr = "__bf16";
+		goto add_tstr;
+	case VT_FLOAT128:
+		tstr = "__float128";
 		goto add_tstr;
 	case VT_DOUBLE:
 		tstr = "double";
@@ -4337,7 +4426,9 @@ static int combine_types(CType *dest, SValue *op1, SValue *op2, int op) { MCC_TR
 			{ MCC_TRACE("br\n"); ret = 0; }
 		type = *type1;
 	} else if (is_float(bt1) || is_float(bt2)) { MCC_TRACE("br\n");
-		if (bt1 == VT_LDOUBLE || bt2 == VT_LDOUBLE) { MCC_TRACE("br\n");
+		if (bt1 == VT_FLOAT128 || bt2 == VT_FLOAT128) { MCC_TRACE("br\n");
+			type.t = VT_FLOAT128;
+		} else if (bt1 == VT_LDOUBLE || bt2 == VT_LDOUBLE) { MCC_TRACE("br\n");
 			type.t = VT_LDOUBLE;
 		} else if (bt1 == VT_DOUBLE || bt2 == VT_DOUBLE) { MCC_TRACE("br\n");
 			type.t = VT_DOUBLE;
@@ -4969,6 +5060,68 @@ again:
 			goto done;
 		}
 
+#ifdef MCC_HAVE_FLOAT128
+		if (sbt_bt == VT_FLOAT128 || dbt_bt == VT_FLOAT128) { MCC_TRACE("br\n");
+			/* every binary128 conversion is an __*tf* libcall (T-lin-10007); reduce
+			   the other end to a type a helper speaks, chaining through `again` for
+			   the narrowing (int->byte, double->half) the generic paths already do. */
+			if (sbt_bt == dbt_bt)
+				{ MCC_TRACE("br\n"); goto done; }
+			if (nocode_wanted & DATA_ONLY_WANTED)
+				{ MCC_TRACE("br\n"); mcc_error("'__float128' conversion is not a load-time constant"); }
+			if (sbt_bt == VT_FLOAT128) { MCC_TRACE("br\n");
+				int tok, rt;
+				if (dbt_bt == VT_FLOAT)
+					{ MCC_TRACE("br\n"); tok = TOK___trunctfsf2; rt = VT_FLOAT; }
+				else if (dbt_bt == VT_DOUBLE || dbt_bt == VT_LDOUBLE || IS_HALF_BT(dbt_bt))
+					{ MCC_TRACE("br\n"); tok = TOK___trunctfdf2; rt = VT_DOUBLE; }
+				else if (dbt_bt == VT_LLONG || dbt_bt == VT_PTR)
+					{ MCC_TRACE("br\n"); tok = (dbt & VT_UNSIGNED) ? TOK___fixunstfdi : TOK___fixtfdi; rt = VT_LLONG | (dbt & VT_UNSIGNED); }
+				else
+					{ MCC_TRACE("br\n"); tok = (dbt & VT_UNSIGNED) ? TOK___fixunstfsi : TOK___fixtfsi; rt = VT_INT | (dbt & VT_UNSIGNED); }
+				vpush_helper_func(tok);
+				vrott(2);
+				gfunc_call(1);
+				vpushi(0);
+				vtop->type.t = rt;
+				PUT_R_RET(vtop, rt);
+				if ((rt & VT_BTYPE) == dbt_bt && (rt & VT_UNSIGNED) == (dbt & VT_UNSIGNED))
+					{ MCC_TRACE("br\n"); goto done; }
+				sbt = rt;
+				goto again;
+			}
+			int tok;
+			if (sbt_bt == VT_FLOAT)
+				{ MCC_TRACE("br\n"); tok = TOK___extendsftf2; }
+			else if (sbt_bt == VT_DOUBLE || sbt_bt == VT_LDOUBLE)
+				{ MCC_TRACE("br\n"); tok = TOK___extenddftf2; }
+			else if (IS_HALF_BT(sbt_bt)) { MCC_TRACE("br\n");
+				gen_cvt_half(0, sbt_bt);
+				sbt = VT_FLOAT;
+				goto again;
+			}
+			else if (sbt_bt == VT_LLONG || sbt_bt == VT_PTR)
+				{ MCC_TRACE("br\n"); tok = (sbt & VT_UNSIGNED) ? TOK___floatunditf : TOK___floatditf; }
+			else { MCC_TRACE("br\n");
+				if (sbt_bt != VT_INT) { MCC_TRACE("br\n");
+					CType it;
+					it.t = (sbt & VT_UNSIGNED) | VT_INT;
+					it.ref = NULL;
+					gen_cast(&it);
+					sbt = it.t & (VT_BTYPE | VT_UNSIGNED);
+				}
+				tok = (sbt & VT_UNSIGNED) ? TOK___floatunsitf : TOK___floatsitf;
+			}
+			vpush_helper_func(tok);
+			vrott(2);
+			gfunc_call(1);
+			vpushi(0);
+			vtop->type.t = VT_FLOAT128;
+			PUT_R_RET(vtop, VT_FLOAT128);
+			goto done;
+		}
+#endif
+
 		fold_const_lval(vtop);
 		c = (vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 		if (c) { MCC_TRACE("br\n");
@@ -5272,7 +5425,7 @@ ST_FUNC int type_size(CType *type, int *a) { MCC_TRACE("enter\n");
 	} else if (bt == VT_SHORT || bt == VT_FLOAT16 || bt == VT_BF16) { MCC_TRACE("br\n");
 		*a = 2;
 		return 2;
-	} else if (bt == VT_INT128) { MCC_TRACE("br\n");
+	} else if (bt == VT_INT128 || bt == VT_FLOAT128) { MCC_TRACE("br\n");
 		*a = 16;
 		return 16;
 	} else if (bt == VT_QLONG || bt == VT_QFLOAT) { MCC_TRACE("br\n");
@@ -5486,6 +5639,7 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 	case VT_FLOAT:
 	case VT_FLOAT16:
 	case VT_BF16:
+	case VT_FLOAT128:
 	case VT_DOUBLE:
 	case VT_LDOUBLE:
 	case VT_BOOL:
@@ -8417,6 +8571,15 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 		case TOK_BFLOAT16:
 			u = VT_BF16;
 			goto basic_type;
+		case TOK_FLOAT128:
+		case TOK_FLOAT128X:
+#ifdef MCC_HAVE_FLOAT128
+			u = VT_FLOAT128;
+			goto basic_type;
+#else
+			mcc_error("'__float128' is not supported on this target");
+			break;
+#endif
 		case TOK_BITINT:
 			/* C23 6.2.5. Not implemented. Say so, rather than leaving the parser
 			 * to fall through to the identifier path and report the NEXT token as
@@ -14963,6 +15126,8 @@ static int tok_starts_declspec(void) { MCC_TRACE("enter\n");
 	case TOK_DOUBLE:
 	case TOK_FLOAT16:
 	case TOK_BFLOAT16:
+	case TOK_FLOAT128:
+	case TOK_FLOAT128X:
 	case TOK_ENUM:
 	case TOK_STRUCT:
 	case TOK_UNION:

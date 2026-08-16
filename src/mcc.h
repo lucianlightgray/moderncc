@@ -1128,8 +1128,16 @@ struct filespec {
 #define VT_QFLOAT 14
 #define VT_FLOAT16 15
 #define VT_BF16 16
+#define VT_FLOAT128 17
 
 #define IS_HALF_BT(bt) ((bt) == VT_FLOAT16 || (bt) == VT_BF16)
+
+/* binary128 is wired where its soft-quad runtime and __*tf* helper tokens exist
+   (T-lin-10007 slice 1). Other targets keep the honest __float128 refusal until
+   their ABI is wired (slice 2). */
+#if defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
+#define MCC_HAVE_FLOAT128 1
+#endif
 
 #if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE
 #define MCC_HAVE_INT128 1
