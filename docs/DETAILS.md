@@ -48363,3 +48363,30 @@ distinct from T-lin-10086's core (arm64-win32 EXECUTION on the runner), which is
 runner builds mcc, self-hosts it, and runs the 9536-cell suite at 99%. Recommend splitting each into
 its own [S] task (arm64-Windows __float128 ABI; arm64-Windows integer_promotion) rather than gating
 T-lin-10086 on them — the executor + self-host + suite (the task's subject) are proven.
+
+<a id="t-lin-10084-slice-3b-design-reuse-cleanup-machinery"></a>
+
+## T-lin-10084 slice 3b — the tractable path for early-exit __finally (win-x64, 2026-08-16)
+
+Slice 3a runs the __finally on the __try's normal fallthrough (via `mov rdx,rbp; call funclet`)
+and on unwind (the OS calls the funclet). The gap: an early return/break/goto/continue OUT of the
+__try bypasses the fallthrough call, so the finally does not run on those exits.
+
+DE-RISKED PATH (found, not yet built): mcc ALREADY has scope-exit interception for
+`__attribute__((cleanup(fn)))` — `try_call_scope_cleanup` (mccgen.c:14885), `try_call_cleanup_goto`
+(:14904) and `block_cleanup` (:14922) run registered cleanups when a scope leaves by return, break,
+goto or fallthrough, with goto/forward-label fixups already handled. That is exactly the machinery
+__finally needs; slice 3b should REUSE it rather than build exit-interception from scratch.
+
+The mismatch to bridge: the cleanup list calls a `cleanup_func` Sym as a NORMAL function with the
+variable's address (`vpushsym(fs); gaddrof(); gfunc_call(1)`), whereas the __finally body is an SEH
+FUNCLET with the establisher-frame ABI (rdx = parent rbp, no `&var` arg) — the same funclet slice 3a
+already emits for the unwind path. So slice 3b = register the __try's __finally as a new cleanup
+KIND on `cur_scope->cl` whose emitted action is `mov rdx, rbp; call <finally funclet>` (reusing the
+slice-3a funclet, so the body is still emitted once and serves both unwind and every normal exit),
+instead of the gfunc_call(1) a `cleanup_func` uses. Then delete slice-3a's standalone fallthrough
+call (the cleanup on normal scope end replaces it) so the finally is not run twice on fallthrough.
+Care: the cleanup runs must nest correctly for nested __try/__finally (the cl list already orders
+inner-before-outer), and the RIR hooks (rir_hook_cleanup_*) must stay balanced. Verify by extending
+pe/seh with `__try{ return N; }__finally{...}`, break/continue out of a loop inside __try, and a
+goto out of __try — each must run the finally exactly once, matching cl.
