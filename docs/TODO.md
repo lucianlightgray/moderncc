@@ -12,6 +12,10 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+- [ ] T-lin-10015 [S] `__int256` arithmetic is a call per operation
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 701047bc | TS: 2026-08-16T02:40Z
+      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
+      REF: DETAILS.md#t-lin-10015-int256-arithmetic-is-a-call-per | DEPS: —
 - [ ] T-lin-10007 [S] Parse `__float128` / `_Float128` (28 cells)
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 41d9b6bc | TS: 2026-08-16T02:10Z | NOTE: SLICE 1 LANDED (844b9abf, DETAILS#t-lin-10007-float128-slice-1-arm64-implemented-verified-vs-gcc16). __float128 works on arm64 (VT_FLOAT128=17, gated MCC_HAVE_FLOAT128=arm64||riscv64), BYTE-IDENTICAL to gcc-16 across arith/cmp/neg/conversions; new tests/exec/types/float128.c; fixed 3 dormant bugs (float128.c f128_t guard, arith type-combine demote-to-float, unprototyped 2nd-16B-arg). x86_64/i386/arm still REFUSE (honest). SLICE 2 (lin): add __*tf* tokens + SysV binary128 ABI on x86_64 + the 28 gated float128 cells; riscv64 wired-but-UNVERIFIED. CONTRACT lin: bank o0-baseline cross keys (x86_64 + 4 win32) for BOTH tests/exec/types/bf16.c AND float128.c — the -gated o0 cells are red until then (bf16.c was left unbanked since T-lin-10005).
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
@@ -102,9 +106,6 @@
 - [ ] T-lin-10014 [S] DWARF describes an `__int256` as its underlying four-limb struct
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10014-dwarf-describes-an-int256-as-its | DEPS: —
-- [ ] T-lin-10015 [S] `__int256` arithmetic is a call per operation
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10015-int256-arithmetic-is-a-call-per | DEPS: —
 - [ ] T-lin-10016 [S] `__int256` float conversions need an oracle before they need code
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10016-int256-float-conversions-need-an-oracle | DEPS: —
