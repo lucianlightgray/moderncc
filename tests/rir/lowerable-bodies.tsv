@@ -4687,6 +4687,8 @@ wide	elf	src/mccgen.c	atomic_store_needs_libcall	src/mcc.c	0000
 wide	elf	src/mccgen.c	auto_type_decay	src/mcc.c	0000
 wide	elf	src/mccgen.c	auto_type_deduce	src/mcc.c	0000
 wide	elf	src/mccgen.c	auto_type_relink_vm	src/mcc.c	0000
+wide	elf	src/mccgen.c	bf16_bits_to_f32	src/mcc.c	0000
+wide	elf	src/mccgen.c	bf16_round	src/mcc.c	0000
 wide	elf	src/mccgen.c	bf_operand_bits	src/mcc.c	6666
 wide	elf	src/mccgen.c	bitscan_inline_on	src/mcc.c	0000
 wide	elf	src/mccgen.c	block	src/mcc.c	0000
@@ -4767,6 +4769,7 @@ wide	elf	src/mccgen.c	external_helper_sym	src/mcc.c	0000
 wide	elf	src/mccgen.c	external_sym	src/mcc.c	0000
 wide	elf	src/mccgen.c	f16_bits_to_f32	src/mcc.c	0000
 wide	elf	src/mccgen.c	f16_round	src/mcc.c	0000
+wide	elf	src/mccgen.c	f32_to_bf16_bits	src/mcc.c	0000
 wide	elf	src/mccgen.c	f32_to_f16_bits	src/mcc.c	0000
 wide	elf	src/mccgen.c	fconst_bits	src/mcc.c	0000
 wide	elf	src/mccgen.c	fconst_key1	src/mcc.c	0000
@@ -4865,9 +4868,9 @@ wide	elf	src/mccgen.c	gen_complex_int_div	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_complex_neg	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_complex_op	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_complex_unary_neg	src/mcc.c	0000
-wide	elf	src/mccgen.c	gen_cvt_f16	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_cvt_ftoi1	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_cvt_ftoi1_helper	src/mcc.c	6666
+wide	elf	src/mccgen.c	gen_cvt_half	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_cvt_itof1	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_cvt_itof1_helper	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_function	src/mcc.c	0000
@@ -5310,6 +5313,7 @@ wide	elf	src/mccjit_embed.c	mccjit_invoke_fp	src/mcc.c	0000
 wide	elf	src/mccjit_embed.c	mccjit_invoke_mixed_d	src/mcc.c	0000
 wide	elf	src/mccjit_embed.c	mccjit_invoke_mixed_i	src/mcc.c	0000
 wide	elf	src/mccjit_embed.c	mccjit_invoke_raw	src/mcc.c	0000
+wide	elf	src/mccjit_embed.c	mccjit_job_new	src/mcc.c	0000
 wide	elf	src/mccjit_embed.c	mccjit_job_run_eager	src/mcc.c	0000
 wide	elf	src/mccjit_embed.c	mccjit_job_run_lazy	src/mcc.c	0000
 wide	elf	src/mccjit_embed.c	mccjit_kernel_from_blob	src/mcc.c	0000
@@ -6019,12 +6023,24 @@ wide	elf	src/mccsurro.h	surro_prop_offer	src/mcc.c	6666
 wide	elf	src/mccsurro.h	surro_propose	src/mcc.c	0000
 wide	elf	src/mccsurro.h	surro_seen	src/mcc.c	6666
 wide	elf	src/mccsurro.h	surro_spin	src/mcc.c	6666
+wide	elf	src/mcctask.h	mcc_sched_add	src/mcc.c	6666
+wide	elf	src/mcctask.h	mcc_sched_blocked	src/mcc.c	6666
+wide	elf	src/mcctask.h	mcc_sched_init	src/mcc.c	0000
+wide	elf	src/mcctask.h	mcc_sched_pending	src/mcc.c	6666
+wide	elf	src/mcctask.h	mcc_sched_quit	src/mcc.c	0000
+wide	elf	src/mcctask.h	mcc_sched_run	src/mcc.c	0000
+wide	elf	src/mcctask.h	mcc_sched_runnable	src/mcc.c	6666
+wide	elf	src/mcctask.h	mcc_sched_step	src/mcc.c	0000
+wide	elf	src/mcctask.h	mcc_sched_wake	src/mcc.c	0000
+wide	elf	src/mcctask.h	mcc_task_block	src/mcc.c	0000
+wide	elf	src/mcctask.h	mcc_task_init	src/mcc.c	0000
 wide	elf	src/mccthread.h	mcc_thread_class_name	src/mcc.c	0000
 wide	elf	src/mccthread.h	mcc_thread_classify	src/mcc.c	0000
 wide	elf	src/mccthread.h	mcc_thread_op_name	src/mcc.c	0000
 wide	elf	src/mccthread.h	mcc_thread_op_supported	src/mcc.c	0000
 wide	elf	src/mccthread.h	mcc_thread_pfx	src/mcc.c	0000
 wide	elf	src/mccthread.h	mcc_thread_sym_class	src/mcc.c	0000
+wide	elf	src/mcctools.c	ar_is_coff_machine	src/mcc.c	6666
 wide	elf	src/mcctools.c	ar_usage	src/mcc.c	0000
 wide	elf	src/mcctools.c	escape_target_dep	src/mcc.c	0000
 wide	elf	src/mcctools.c	gen_makedeps	src/mcc.c	0000
@@ -6603,6 +6619,8 @@ wide	elf	tests/exec/codegen/stack_protector.c	main	tests/exec/codegen/stack_prot
 wide	elf	tests/exec/expressions/al_ax_extend.c	main	tests/exec/expressions/al_ax_extend.c	0000
 wide	elf	tests/exec/expressions/algebraic_identities.c	add0	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	add0l	tests/exec/expressions/algebraic_identities.c	6666
+wide	elf	tests/exec/expressions/algebraic_identities.c	add1	tests/exec/expressions/algebraic_identities.c	6666
+wide	elf	tests/exec/expressions/algebraic_identities.c	addm1i	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	and0	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	andm1	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	andx	tests/exec/expressions/algebraic_identities.c	6666
@@ -6630,6 +6648,7 @@ wide	elf	tests/exec/expressions/algebraic_identities.c	loadmul0	tests/exec/expre
 wide	elf	tests/exec/expressions/algebraic_identities.c	loadsub	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	lshl0	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	lsub	tests/exec/expressions/algebraic_identities.c	6666
+wide	elf	tests/exec/expressions/algebraic_identities.c	lsub1	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	lxor	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	main	tests/exec/expressions/algebraic_identities.c	0000
 wide	elf	tests/exec/expressions/algebraic_identities.c	mixsign	tests/exec/expressions/algebraic_identities.c	6666
@@ -6643,6 +6662,7 @@ wide	elf	tests/exec/expressions/algebraic_identities.c	orx	tests/exec/expression
 wide	elf	tests/exec/expressions/algebraic_identities.c	shl0	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	shr0	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	sub0	tests/exec/expressions/algebraic_identities.c	6666
+wide	elf	tests/exec/expressions/algebraic_identities.c	sub1	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	subx	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	uadd0	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	uand	tests/exec/expressions/algebraic_identities.c	6666
@@ -6652,6 +6672,7 @@ wide	elf	tests/exec/expressions/algebraic_identities.c	ucand	tests/exec/expressi
 wide	elf	tests/exec/expressions/algebraic_identities.c	umul1	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	uor0	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	usub	tests/exec/expressions/algebraic_identities.c	6666
+wide	elf	tests/exec/expressions/algebraic_identities.c	usub1	tests/exec/expressions/algebraic_identities.c	6666
 wide	elf	tests/exec/expressions/algebraic_identities.c	vadd0	tests/exec/expressions/algebraic_identities.c	0000
 wide	elf	tests/exec/expressions/algebraic_identities.c	vmul0	tests/exec/expressions/algebraic_identities.c	0000
 wide	elf	tests/exec/expressions/algebraic_identities.c	vmul1	tests/exec/expressions/algebraic_identities.c	0000
@@ -7401,6 +7422,8 @@ wide	elf	tests/exec/statements/chained_assign.c	rot_volatile_mid	tests/exec/stat
 wide	elf	tests/exec/statements/chained_assign.c	triple_chain	tests/exec/statements/chained_assign.c	6666
 wide	elf	tests/exec/statements/comma_operator.c	main	tests/exec/statements/comma_operator.c	0000
 wide	elf	tests/exec/statements/compound_stmt_scope.c	main	tests/exec/statements/compound_stmt_scope.c	0000
+wide	elf	tests/exec/statements/computed_goto_into_for.c	enter_mid	tests/exec/statements/computed_goto_into_for.c	0000
+wide	elf	tests/exec/statements/computed_goto_into_for.c	main	tests/exec/statements/computed_goto_into_for.c	0000
 wide	elf	tests/exec/statements/conditional_operator.c	main	tests/exec/statements/conditional_operator.c	0000
 wide	elf	tests/exec/statements/conditional_operator.c	note	tests/exec/statements/conditional_operator.c	0000
 wide	elf	tests/exec/statements/do_while.c	main	tests/exec/statements/do_while.c	0000
@@ -7411,6 +7434,8 @@ wide	elf	tests/exec/statements/goto.c	henry	tests/exec/statements/goto.c	0000
 wide	elf	tests/exec/statements/goto.c	joe	tests/exec/statements/goto.c	0000
 wide	elf	tests/exec/statements/goto.c	main	tests/exec/statements/goto.c	0000
 wide	elf	tests/exec/statements/if.c	main	tests/exec/statements/if.c	0000
+wide	elf	tests/exec/statements/label_arithmetic.c	arith	tests/exec/statements/label_arithmetic.c	0000
+wide	elf	tests/exec/statements/label_arithmetic.c	main	tests/exec/statements/label_arithmetic.c	0000
 wide	elf	tests/exec/statements/logical_second_arg.c	fred	tests/exec/statements/logical_second_arg.c	0000
 wide	elf	tests/exec/statements/logical_second_arg.c	joe	tests/exec/statements/logical_second_arg.c	0000
 wide	elf	tests/exec/statements/logical_second_arg.c	main	tests/exec/statements/logical_second_arg.c	0000
@@ -7550,6 +7575,12 @@ wide	elf	tests/exec/types/attr_deprecated.c	fresh_fn	tests/exec/types/attr_depre
 wide	elf	tests/exec/types/attr_deprecated.c	main	tests/exec/types/attr_deprecated.c	0000
 wide	elf	tests/exec/types/attr_deprecated.c	old_fn	tests/exec/types/attr_deprecated.c	7777
 wide	elf	tests/exec/types/attr_mode.c	main	tests/exec/types/attr_mode.c	0000
+wide	elf	tests/exec/types/bf16.c	addbf	tests/exec/types/bf16.c	6666
+wide	elf	tests/exec/types/bf16.c	hb	tests/exec/types/bf16.c	0000
+wide	elf	tests/exec/types/bf16.c	main	tests/exec/types/bf16.c	0000
+wide	elf	tests/exec/types/bf16.c	mkf	tests/exec/types/bf16.c	0000
+wide	elf	tests/exec/types/bf16.c	mkh	tests/exec/types/bf16.c	0000
+wide	elf	tests/exec/types/bf16.c	mulbf	tests/exec/types/bf16.c	6666
 wide	elf	tests/exec/types/bool.c	main	tests/exec/types/bool.c	0000
 wide	elf	tests/exec/types/builtin_inf_nan.c	main	tests/exec/types/builtin_inf_nan.c	0000
 wide	elf	tests/exec/types/c23_array_quals.c	main	tests/exec/types/c23_array_quals.c	0000
@@ -7572,6 +7603,7 @@ wide	elf	tests/exec/types/enum.c	main	tests/exec/types/enum.c	0000
 wide	elf	tests/exec/types/enum.c	should_compile	tests/exec/types/enum.c	0000
 wide	elf	tests/exec/types/enum_fixed_type.c	main	tests/exec/types/enum_fixed_type.c	0000
 wide	elf	tests/exec/types/enum_semantics.c	main	tests/exec/types/enum_semantics.c	0000
+wide	elf	tests/exec/types/float128.c	main	tests/exec/types/float128.c	0000
 wide	elf	tests/exec/types/float16.c	addh	tests/exec/types/float16.c	6666
 wide	elf	tests/exec/types/float16.c	chk	tests/exec/types/float16.c	0000
 wide	elf	tests/exec/types/float16.c	fb	tests/exec/types/float16.c	0000
