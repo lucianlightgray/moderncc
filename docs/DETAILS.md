@@ -46994,3 +46994,64 @@ nothing to do with correctness — see
 [T-lin-10388](#t-lin-10388-host-local-provisioning-vanishes-silently-and-each-loss-is-re-recorded-as-a-fleet-fact).
 
 **Source.** lin-x64, 2026-08-16. User directive; applies until withdrawn.
+
+<a id="t-lin-10359-correction-the-gpu-was-not-idle-for-the-whole-verification-run"></a>
+
+## T-lin-10359 CORRECTION — the GPU was idle at launch, not for the whole run
+
+**Corrects the precondition claimed by
+[the verification record](#t-lin-10359-verified-on-an-idle-gpu-zero-stalls-644s)**,
+which states the cell was run *"on a confirmed-idle GPU"*. Appended rather than
+edited (§4.1, union-merged). **The measured result does not change. The
+conditions under which it was taken do**, and the row's own thesis is about
+conditions, so the distinction is not cosmetic.
+
+**Timeline, UTC:**
+
+| time | event |
+| --- | --- |
+| 23:05 / 23:10 | quiet confirmed twice — GPU 0 %, 153 MiB, 47 °C, load 1.70; only 7 MiB/9 MiB resident non-compute clients |
+| ~23:10 | `slice/cref-oracle-gcc-c-torture-execute` starts |
+| **23:13:41** | **`WoWClassic.exe` starts under wine** — later measured at **1268 MiB GPU, 27 % utilisation, 67 °C**, plus `wineserver` |
+| 23:21 | cell finishes: **PASSED 644.57 s, zero stalls** |
+
+So roughly **8 of the run's 11 minutes** overlapped an active foreign GPU
+client. The diagnostic was run twice *before* launch and **not again after** —
+that omission is the defect, and it is the same one the row itself warns about
+in the opposite direction (*"the diagnostic must be run at the time"*).
+
+**Why the conclusion survives, stated carefully rather than conveniently.** The
+cell passed with **zero stalls** while a foreign client held the GPU, which is
+*harder* than the verification the row asked for, not easier. It is evidence
+against the stall class, not for it. What it is **not** is the literal "idle
+GPU" verification the row specifies, and it must not be cited as that.
+
+**It also yields two calibration points the row never had,** which is worth more
+than the clean re-run:
+
+| foreign GPU client | GPU util | GPU mem | CPU | cell outcome |
+| --- | --- | --- | --- | --- |
+| `bg3_dx11.exe` (2026-08-14) | 72 % | 5295 MiB | 575 % | **stalls**, >600 s standalone vs a 180 s budget |
+| `WoWClassic.exe` (2026-08-15) | 27 % | 1268 MiB | 36 % | **no stalls**, 644.57 s |
+
+The row's discriminator is written as the binary *"idle"*, and these two points
+show it is a **threshold**, with the boundary somewhere between 27 % and 72 %
+utilisation. Restating the row's verification as a measured load bound rather
+than the word "idle" would make it reproducible; as written, "idle" is neither
+satisfied by this run nor obviously required by it.
+
+**Consequence for the §8 run, which is the practical cost.** The `-j32` full
+suite (23:52→00:23) ran **entirely** inside the `WoWClassic.exe` window. That
+re-attributes its `slice/quiesce` failure: not merely "load-induced at `-j32`"
+but *load-induced at `-j32` concurrent with a named foreign GPU client*, which
+is a stronger and checkable attribution. `slice/census` is unaffected — it
+reproduced standalone and was a real bank staleness
+([T-lin-10391](#t-lin-10391-slicecensus-strands-the-columns-the-adding-session-cannot-measure)).
+
+**What is owed.** A full suite taken with no foreign GPU client resident, for a
+§8 number that does not need this caveat attached. Until then lin has no clean
+post-provisioning suite figure, and any quoted one carries this window.
+
+**Source.** lin-x64, 2026-08-16. Correction raised by the operator's box being
+in active use, found by re-running the diagnostic before the next suite instead
+of after the last one.
