@@ -7214,6 +7214,21 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             mcc_skip_test(qemu-fetch-parse "the mccharness driver is not built in this configuration")
         endif()
 
+        # T-lin-10388: detect host-local provisioning LOSS. Auto-stamps each resource
+        # in tests/provisioning.txt the first time it is seen present (stamps kept
+        # host-local + untracked under vendor/.provisioned/), then FAILs by name if a
+        # previously-stamped resource vanishes -- instead of the dependent cell silently
+        # degrading to an mcc_skip_test stub. Pure shell + file checks: no python, no
+        # mcc build, so it registers unconditionally and still fires if either is absent.
+        add_test(NAME "ci/provisioning-detector"
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/provisioning-detector.sh"
+                    "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/.provisioned")
+        set_tests_properties("ci/provisioning-detector" PROPERTIES LABELS native TIMEOUT 60)
+        add_test(NAME "ci/provisioning-detector-known-positive"
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/provisioning-detector.sh" --selftest)
+        set_tests_properties("ci/provisioning-detector-known-positive" PROPERTIES LABELS native TIMEOUT 60)
+
         find_program(MCC_PYTHON3 NAMES python3 python)
         if(MCC_PYTHON3 AND (MCC_EMBED_MCCRT OR MCC_TARGETOS STREQUAL "Darwin"
                             OR (MCC_TARGETOS STREQUAL "WIN32"

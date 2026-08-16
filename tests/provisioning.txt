@@ -1,0 +1,35 @@
+# Optional host-local provisioning manifest (T-lin-10388).
+#
+# These resources are NOT tracked in git: they are large corpora / sysroots that
+# each box fetches or symlinks locally (see vendor/). When one is present, cells
+# that need it run for real; when absent, those cells mcc_skip_test-stub and the
+# suite still reports green -- so a resource that was PRESENT and then VANISHES is
+# indistinguishable from a box that never had it, and the loss gets re-recorded as
+# a permanent fleet property (the T-lin-10388 defect).
+#
+# tools/provisioning-detector.sh closes that gap: it AUTO-STAMPS each resource the
+# first time it observes it present (stamp kept host-local + untracked under
+# vendor/.provisioned/), then FAILS with a named error if a previously-stamped
+# resource later goes missing. A resource never stamped on this box is skipped
+# (this box genuinely never had it), not failed. So the manifest lists every
+# optional resource ANY fleet box may hold; each box only arms the subset it has.
+#
+# Columns, `|`-separated:  <name> | <path relative to repo root> | <what it enables>
+# `-e <path>` is used, so a dangling symlink (target fetched then deleted) counts
+# as MISSING, which is exactly the loss we want to catch.
+
+# cref-oracle / differential corpora (host-local symlinks into ~/Projects, or fetches)
+gcc-c-torture-execute|vendor/gcc-c-torture-execute|gcc c-torture execute corpus (slice/cref-oracle-gcc-c-torture-execute, optlevel/torture-differential)
+llvm-test-suite-regression-c|vendor/llvm-test-suite-regression-c|llvm-test-suite SingleSource/Regression/C (slice/cref-oracle-llvm-*)
+llvm-test-suite-unittests|vendor/llvm-test-suite-unittests|llvm-test-suite SingleSource/UnitTests (slice/cref-oracle-llvm-*)
+compiler-rt-builtins-unit|vendor/compiler-rt-builtins-unit|llvm-project compiler-rt test/builtins/Unit (cref-oracle builtins)
+compiler-rt-lib-builtins|vendor/compiler-rt-lib-builtins|llvm-project compiler-rt lib/builtins (cref-oracle builtins)
+
+# runtime microbenchmark corpus
+plb|vendor/plb|Programming-Language-Benchmarks corpus (runtime-bench-gatewin chain-store gate, T-mac-30005)
+
+# gentoo stage3 sysroots for qemu run-tier + the o0-baseline `provisionable` ELF keys
+gentoo-stage3-i386-glibc|vendor/gentoo-stage3-i386-glibc|i386 glibc sysroot (qemu run-tier/i386, o0-baseline i386 key)
+gentoo-stage3-arm-glibc|vendor/gentoo-stage3-arm-glibc|arm glibc sysroot (qemu run-tier/arm, o0-baseline arm key)
+gentoo-stage3-arm64-glibc|vendor/gentoo-stage3-arm64-glibc|arm64 glibc sysroot (qemu run-tier/arm64, o0-baseline arm64 key)
+gentoo-stage3-riscv64-glibc|vendor/gentoo-stage3-riscv64-glibc|riscv64 glibc sysroot (qemu run-tier/riscv64, o0-baseline riscv64 key)
