@@ -48249,3 +48249,32 @@ Two false trails, both the repo's known depfile bug (T-lin-10068): a stale `cmak
 Fixed at **07b018b5**. `mcc_get_dwarf_info` (src/mccdbg.c) routed `__int256` (a `VT_STRUCT` whose `ref->a.is_wideint`) through the `structure_type` path, so DWARF described it as its four 8-byte limbs and a debugger printed four members. Now the wide-int case emits a `DW_TAG_base_type` (`DW_AT_byte_size 32`, `DW_ATE_signed`/`DW_ATE_unsigned`, name `__int256` / `unsigned __int256`) — exactly the shape `__int128` already uses (a 16-byte base type). Signedness read from `ws->next->type.t & VT_UNSIGNED` (same as `wide256_is_unsigned`); deduped with `mcc_debug_find`/`mcc_debug_add` on the storage-struct sym. Target-independent (same DIE into ELF or Mach-O).
 
 **Verification.** `cli/debug_dwarf_int256_basetype` (new, `os=darwin`, uses `dwarfdump`): compiles `__int256 v_s; unsigned __int256 v_u;` with `-gdwarf-5` and asserts exactly **2** `DW_TAG_base_type` DIEs named `(unsigned )?__int256` — i.e. neither is a `structure_type`. Green on arm64-Darwin; also `-g` int256 program runs byte-correct, `dwarfdump` reports no malformed DIEs, cli 326/326 + exec 358/358. A Linux `readelf` mirror is a trivial follow-up (the fix itself is arch-independent). **Source.** mac-arm64, 2026-08-16.
+
+<a id="t-lin-10084-slice-3-done-finally-funclets"></a>
+
+## T-lin-10084 — slice 3 DONE: __finally termination-handler funclets (win-x64, 2026-08-16, SHA bdf52213)
+
+Contract B implemented and cl-verified. The finally body is emitted ONCE as a framed funclet
+(same push-rbp/mov-rbp,rdx/body/pop-rbp/ret shape as the slice-2 filter funclet, its own framed
+.pdata/.xdata via the existing filt_funclet path). It is reached two ways with no double-emission:
+the OS unwinder calls it during an unwind, and on the __try's NORMAL fallthrough the parent runs
+it via `mov rdx, rbp; call funclet` (rdx = the parent's own rbp = establisher frame), so the
+body's `[rbp+off]` parent-locals resolve identically on both paths. The try body's `jover` jump
+skips the funclet (call/dispatch-reached, never fallen into) and lands at the normal-path call.
+`pe_seh_scope_finally` records HandlerAddress=funclet, JumpTarget=**0** (literal, no reloc);
+`pe_add_unwind_data` now COMPUTES the UNWIND_INFO header flags — EHANDLER(1) if any scope is an
+__except filter, UHANDLER(2) if any is a __finally, 3 when mixed — replacing the hardcoded 0x09.
+Non-SEH and __except-only functions are byte-identical to before (flags collapse to 0x01 / 0x09).
+
+VERIFIED vs MSVC cl (byte-identical program output): pe/seh `fin=5 finr=1` (finally runs on normal
+exit, reads a parent local through the establisher frame) and `fu=66 fur=1` (inner __finally runs
+as the exception unwinds through it, then the outer __except catches). mcc full-link + COFF+mingw
+both match cl; pe/unwind-backtrace green (header-flag change does not disturb ordinary unwind).
+
+SLICE 3b (the one remaining gap, deliberately scoped out): an early return/break/goto/continue OUT
+of the __try bypasses the normal-path call, so the finally does not run on those exits yet. That
+needs mcc to intercept every exit inside a __try-with-finally and route it through the funclet call
+first (a per-scope "pending finally" threaded through return/break/goto codegen) — a real
+mechanism, not a tweak. The fallthrough and unwind paths (the common cases + the ABI-hard one) are
+correct and cl-verified. With slices 1+2+3 the non-constant __except filter half of T-lin-10084 is
+fully done; __finally is done except early-exit.
