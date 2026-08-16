@@ -13,7 +13,7 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 - [ ] T-lin-10015 [S] `__int256` arithmetic is a call per operation
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 701047bc | TS: 2026-08-16T02:40Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 701047bc | TS: 2026-08-16T02:40Z | NOTE: MEASUREMENT DONE (the spec-mandated first deliverable), DETAILS#t-lin-10015-measurement-int256-op-cost-marshalling-dominates. Finding: each __int256 op = 1 __mcc_i256_* call + ~2-3.3 memmove (32B operand/result marshalling), ~35 instrs — the marshalling, not the arithmetic helper, dominates. Re-scopes the follow-up: remove the alias-safe operand/result temp-copies FIRST (op-agnostic, pays on mul/div too), then the limb-wise add/sub/bitwise inliner; both gated on wide256/gmp-diff (9402 rows vs libgmp). Body is in src/wide256_slice.h. Optimization = next slice.
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10015-int256-arithmetic-is-a-call-per | DEPS: —
 - [ ] T-lin-10007 [S] Parse `__float128` / `_Float128` (28 cells)

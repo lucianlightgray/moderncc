@@ -47188,3 +47188,17 @@ Six keep-or-delete calls: **DELETE ast_jit_guard_env** (dead declaration, remove
 **Slice 2 (owner TBD, likely lin for x86_64).** Define `MCC_HAVE_FLOAT128` for x86_64 (add the `__*tf*` tokens there; today they are `#if ARM64||RISCV64` in mcctok.h), wire the SysV binary128 ABI (class SSE, one 16-byte xmm arg align 16 — NOT `VT_QFLOAT`'s pair-of-doubles), then the 28 gated `float128` cells. riscv64 has `MCC_HAVE_FLOAT128` and should work by the same path but is UNVERIFIED here. Optional: a 128-bit `CValue` lane for compile-time folding + static initialisers.
 
 **Source.** mac-arm64, 2026-08-16, at the T-lin-10007 slice-1 commit.
+
+<a id="t-lin-10015-measurement-int256-op-cost-marshalling-dominates"></a>
+
+## T-lin-10015 measurement (the mandated first deliverable) — an `__int256` op is 1 arithmetic call PLUS ~3 memmoves; the marshalling, not the arithmetic helper, is the cost
+
+Measured on arm64-Darwin at 701047bc, `mcc -c` on a subject of one-op leaf functions, counted by `R_AARCH64_CALL26` relocations and the per-function instruction count.
+
+**Per operation (binary `*r = *a OP *b`): 1 `__mcc_i256_<op>` call + ~3 `memmove` calls, ~35 instructions.** The nine ops `add sub and or xor mul sdiv neg not` emitted exactly 9 `__mcc_i256_*` calls (one each, as expected — "a call per operation") **and 25 `_memmove` calls** — every operand is copied to a 32-byte temp and every result is copied back out. Value-form corroborates it, not a pointer-subject artefact: `(a+b)&c` = 2 arithmetic calls + 4 memmoves; `t=a+b; t=t+a; t=t-b` = 3 arithmetic calls + 10 memmoves. So the steady state is **~1 arithmetic call and 2–3.3 memmoves per op**, i.e. the row's "call per operation" undercounts the real cost — the 32-byte operand/result marshalling is the larger, more uniform tax and it is paid by every op including the cheap bitwise ones.
+
+**What this re-scopes for the follow-up (was "inline add/sub/bitwise is a straightforward follow-up").**
+- Inlining only the *arithmetic* (e.g. `__mcc_i256_add` → four `adds/adcs`) removes 1 of the ~4 calls per add and leaves the 3 memmoves standing — it captures roughly a quarter of the cost. The bigger, op-agnostic win is **removing the operand/result marshalling**: `__mcc_i256_add(r,a,b)` reads a and b fully before writing r, so the helpers are already alias-safe and the temp copies look removable — pass the live operand/result addresses to the helper directly. That is a smaller change than a per-arch inliner and pays on *every* op (mul/div included), so it should come first; the limb-wise inliner for add/sub/and/or/xor/not is the second step, valued against a re-measurement after marshalling is removed.
+- Any change here is correctness-gated on `wide256/gmp-diff` (9402 rows vs libgmp, the only oracle since gcc has no `__int256`), and its win is this instruction/call count re-measured.
+
+**Status.** First deliverable (the measurement) done; the marshalling-removal then the limb inliner are the follow-up, now scoped by the numbers above. **Source.** mac-arm64, 2026-08-16, at 701047bc.
