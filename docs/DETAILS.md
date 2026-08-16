@@ -47169,6 +47169,12 @@ Six keep-or-delete calls: **DELETE ast_jit_guard_env** (dead declaration, remove
 **Split with lin (confirmed in the TODO NOTE).** win = concurrent hold + routing (mccgpu.c); lin = per-device correctness (T-lin-10392, slicerun.c) + the dispatcher/lock (T-lin-10040/10081) that the concurrent-split increment composes with.
 
 **Source.** win-x64, 2026-08-16, plan at `c775db8e` (post-GPU-recon).
+
+**Slice 1a DONE (`e7cda0d7`) — per-device data model, behaviour-preserving.** Split `mcc_gpu`/`mcc_vkr` from singletons into per-device arrays (`mcc_gpu_arr`/`mcc_vkr_arr[MCC_GPU_MAXDEV]`) behind a shared `VkInstance mcc_gpu_inst`, a shared init-once flag `mcc_gpu_inst_tried`, a device count `mcc_gpu_ndev`, and the routed index `mcc_gpu_cur`; `#define mcc_gpu (mcc_gpu_arr[mcc_gpu_cur])` / `#define mcc_vkr (mcc_vkr_arr[mcc_gpu_cur])` keep the ~300 dispatch-path field accesses reading unchanged. The aggregate counters moved into a shared `mcc_gpu_ctr` struct declared before the Metal/Vulkan arm split — a collision the compile-check caught: the flat `mcc_gpu_stranded` global clashed with the public accessor function `mcc_gpu_stranded()`, and the Metal arm (dispatch counters at ~742) references them too, so they must be shared, not Vulkan-arm-local. Holds exactly the single best device in slot 0 with `mcc_gpu_cur == 0`, so behaviour is unchanged. **Verified:** clean compile on MSVC (mcc.exe + slicerun) and gcc (WSL slicerun, libvulkan-dev); `slicerun gpu/f64/ops/mem/bytes --require-device` all exit 0 on this box's RTX 2060 — the real dispatch path, unchanged from pre-refactor.
+
+**Slice 1b HELD-TO-COMPOSE (user directive 2026-08-16), DEP T-lin-10392.** init create-all (populate slots 1..n, best-first) + a routing policy + per-device quiesce + a `gpu/multi-device` cell. Deliberately paused until lin's T-lin-10392 (per-device correctness — the RADV NaN-sign comparator) lands, so the two-device "both GPUs 0 failures" verification runs clean in one pass rather than against a device with a known-open correctness bug. Routing to the AMD Radeon is testable now; a clean both-devices pass is the composition of win's hold+route × lin's per-device correctness.
+
+**Source (slice 1a/1b status).** win-x64, 2026-08-16, `e7cda0d7`.
 <a id="t-lin-10007-float128-slice-1-arm64-implemented-verified-vs-gcc16"></a>
 
 ## T-lin-10007 `__float128` slice 1 — arm64 implemented and verified byte-for-byte vs gcc-16; x86_64/i386/arm still refuse (slice 2)
