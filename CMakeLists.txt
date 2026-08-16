@@ -8253,6 +8253,12 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(jit/pool-cap PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native TIMEOUT 120)
 
+        add_test(NAME jit/budget
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/jit/run-jitbudget.sh"
+                    "${_mcc_exe}" "${CMAKE_BINARY_DIR}")
+        set_tests_properties(jit/budget PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native TIMEOUT 120)
+
         add_test(NAME jit/kgc-route-parity
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/jit/run-kgcroute.sh"
                     "${_mcc_exe}" "${CMAKE_BINARY_DIR}"

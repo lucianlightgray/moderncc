@@ -2,14 +2,14 @@
  "accepted": 157,
  "accepted_with_s": 103,
  "literal_fmt_sites": {
-  "fprintf": 426,
+  "fprintf": 427,
   "printf": 457,
   "snprintf": 176,
   "sprintf": 2
  },
  "max_accepted_cost": 16184,
  "per_file_sites": {
-  "libmcc.c": 35,
+  "libmcc.c": 36,
   "mcc.c": 40,
   "mccasm.c": 10,
   "mccast.c": 170,
@@ -34,7 +34,7 @@
  "refused_float": 1,
  "refused_ptr": 1,
  "sites": {
-  "fprintf": 430,
+  "fprintf": 431,
   "printf": 459,
   "snprintf": 185,
   "sprintf": 2,

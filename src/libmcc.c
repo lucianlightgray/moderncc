@@ -1215,6 +1215,10 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 	s->jit_max_duration = 600;
 	s->jit_threads = 0;
 	s->jit_always_gpu = 0;
+	s->jit_conservative = 0;
+	s->jit_cpu_budget = -1;
+	s->jit_gpu_budget = -1;
+	s->jit_gpu_devices = -1;
 
 #ifdef MCC_CHAR_IS_UNSIGNED
 	s->char_is_unsigned = 1;
@@ -2152,6 +2156,10 @@ enum {
 	MCC_OPTION_jit_functions,
 	MCC_OPTION_jit_always_gpu,
 	MCC_OPTION_no_jit_always_gpu,
+	MCC_OPTION_jit_conservative,
+	MCC_OPTION_jit_cpu_budget,
+	MCC_OPTION_jit_gpu_budget,
+	MCC_OPTION_jit_gpu_devices,
 	MCC_OPTION_clear_cache,
 	MCC_OPTION_stats,
 	MCC_OPTION_c,
@@ -2255,6 +2263,10 @@ static const MCCOption mcc_options[] = {
 		{"-jit-functions", MCC_OPTION_jit_functions, MCC_OPTION_HAS_ARG},
 		{"-jit-always-gpu", MCC_OPTION_jit_always_gpu, 0},
 		{"-no-jit-always-gpu", MCC_OPTION_no_jit_always_gpu, 0},
+		{"-jit-conservative", MCC_OPTION_jit_conservative, 0},
+		{"-jit-cpu-budget", MCC_OPTION_jit_cpu_budget, MCC_OPTION_HAS_ARG},
+		{"-jit-gpu-budget", MCC_OPTION_jit_gpu_budget, MCC_OPTION_HAS_ARG},
+		{"-jit-gpu-devices", MCC_OPTION_jit_gpu_devices, MCC_OPTION_HAS_ARG},
 		{"-clear-cache", MCC_OPTION_clear_cache, 0},
 		{"-stats", MCC_OPTION_stats, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"g", MCC_OPTION_g, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
@@ -2656,6 +2668,25 @@ static void args_parser_add_file(MCCState *s, const char *filename, int filetype
 		{ MCC_TRACE("br\n"); ++s->nb_libraries; }
 }
 
+/* T-lin-10393: parse a --jit-*-budget value. "auto" -> -2, "N" or "N%" (0..100) -> N,
+ * anything else -> -3 (caller reports the error). */
+static signed char parse_jit_budget(const char *v) { MCC_TRACE("enter\n");
+	const char *p = v;
+	int n;
+	if (!strcmp(v, "auto"))
+		{ MCC_TRACE("br\n"); return -2; }
+	if (*p < '0' || *p > '9')
+		{ MCC_TRACE("br\n"); return -3; }
+	n = atoi(v);
+	while (*p >= '0' && *p <= '9')
+		{ MCC_TRACE("br\n"); p++; }
+	if (*p == '%')
+		{ MCC_TRACE("br\n"); p++; }
+	if (*p != 0 || n < 0 || n > 100)
+		{ MCC_TRACE("br\n"); return -3; }
+	return (signed char)n;
+}
+
 PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE("enter\n");
 	MCCState *s1 = s;
 	const MCCOption *popt;
@@ -2813,6 +2844,33 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			break;
 		case MCC_OPTION_no_jit_always_gpu:
 			s->jit_always_gpu = 0;
+			break;
+		case MCC_OPTION_jit_conservative:
+			s->jit_conservative = 1;
+			break;
+		case MCC_OPTION_jit_cpu_budget:
+			if (optarg[0] == '=')
+				{ MCC_TRACE("br\n"); optarg++; }
+			s->jit_cpu_budget = parse_jit_budget(optarg);
+			if (s->jit_cpu_budget == -3)
+				{ MCC_TRACE("br\n"); return mcc_error_noabort(
+					"--jit-cpu-budget wants a percentage like '50%%' or 'auto', not '%s'", optarg); }
+			break;
+		case MCC_OPTION_jit_gpu_budget:
+			if (optarg[0] == '=')
+				{ MCC_TRACE("br\n"); optarg++; }
+			s->jit_gpu_budget = parse_jit_budget(optarg);
+			if (s->jit_gpu_budget == -3)
+				{ MCC_TRACE("br\n"); return mcc_error_noabort(
+					"--jit-gpu-budget wants a percentage like '50%%' or 'auto', not '%s'", optarg); }
+			break;
+		case MCC_OPTION_jit_gpu_devices:
+			if (optarg[0] == '=')
+				{ MCC_TRACE("br\n"); optarg++; }
+			s->jit_gpu_devices = (signed char)atoi(optarg);
+			if (s->jit_gpu_devices < 1)
+				{ MCC_TRACE("br\n"); return mcc_error_noabort(
+					"--jit-gpu-devices wants a device count >= 1, not '%s'", optarg); }
 			break;
 		case MCC_OPTION_clear_cache:
 			s->clear_cache = 1;
@@ -3442,6 +3500,36 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		}
 		empty = 0;
 	}
+	/* T-lin-10393: resolve the JIT/GPU resource budgets after all args are parsed
+	 * (so --jit-conservative fills only the axes an explicit override left unset).
+	 * Slice 1 = percent-of-hardware; `auto` (live-load adaptation) is not yet built. */
+	if (s->jit_conservative) { MCC_TRACE("br\n");
+		if (s->jit_cpu_budget == -1)
+			{ MCC_TRACE("br\n"); s->jit_cpu_budget = 50; }
+		if (s->jit_gpu_budget == -1)
+			{ MCC_TRACE("br\n"); s->jit_gpu_budget = 50; }
+	}
+	if (s->jit_cpu_budget == -2 || s->jit_gpu_budget == -2)
+		{ MCC_TRACE("br\n"); return mcc_error_noabort(
+			"--jit-*-budget=auto (live-load adaptation) is not yet implemented; "
+			"use an explicit percentage like '50%%' for now"); }
+	if (s->jit_cpu_budget >= 0) { MCC_TRACE("br\n");
+		int w = (host_nproc() * s->jit_cpu_budget + 50) / 100;   /* round */
+		if (w < 1)
+			{ MCC_TRACE("br\n"); w = 1; }
+		if (w > 64)   /* MCCJIT_POOL_MAX */
+			{ MCC_TRACE("br\n"); w = 64; }
+		s->jit_threads = (unsigned)w;
+	}
+	if (s->jit_gpu_budget >= 0)
+		{ MCC_TRACE("br\n"); mcc_gpu_vram_budget_pct = s->jit_gpu_budget; }
+	if (s->jit_gpu_devices >= 1)
+		{ MCC_TRACE("br\n"); mcc_gpu_max_devices = s->jit_gpu_devices; }
+	if ((s->jit_conservative || s->jit_cpu_budget >= 0 || s->jit_gpu_budget >= 0 ||
+			 s->jit_gpu_devices >= 1) && getenv("MCC_JIT_BUDGET_DEBUG"))
+		{ MCC_TRACE("br\n"); fprintf(stderr,
+			"jit-budget: cpu-workers=%u gpu-vram-pct=%d gpu-devices=%d\n",
+			s->jit_threads, mcc_gpu_vram_budget_pct, mcc_gpu_max_devices); }
 	if (s->link_optind < s->link_argc)
 		{ MCC_TRACE("br\n"); return mcc_error_noabort("argument to '-Wl,%s' is missing", s->link_argv[s->link_optind]); }
 	if (run) { MCC_TRACE("br\n");

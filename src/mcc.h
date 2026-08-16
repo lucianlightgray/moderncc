@@ -647,6 +647,10 @@ struct MCCState {
 	unsigned jit_threads;
 	char *jit_functions;
 	unsigned char jit_always_gpu;
+	unsigned char jit_conservative;
+	signed char jit_cpu_budget;
+	signed char jit_gpu_budget;
+	signed char jit_gpu_devices;
 	unsigned optimize_search_ticks;
 	unsigned char optimize_search_ticks_set;
 	unsigned char optimize_search_all;

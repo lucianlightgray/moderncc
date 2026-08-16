@@ -1821,6 +1821,10 @@ typedef struct MccGpu {
 static VkInstance mcc_gpu_inst;
 static int mcc_gpu_inst_tried;
 static int mcc_gpu_ndev;
+/* T-lin-10393 runtime budgets, set from --jit-gpu-* in mcc_parse_args (same TU via
+ * libmcc.c's #include of this file). -1 = unset. */
+static int mcc_gpu_vram_budget_pct = -1;
+static int mcc_gpu_max_devices = -1;
 static int mcc_gpu_cur;
 static MccGpu mcc_gpu_arr[MCC_GPU_MAXDEV];
 #define mcc_gpu (mcc_gpu_arr[mcc_gpu_cur])
@@ -2260,6 +2264,10 @@ static int mcc_gpu_init(void) {
 		mcc_gpu.qfam = cand[ci].qfam;
 		snprintf(mcc_gpu.name, sizeof mcc_gpu.name, "%s", cand[ci].name);
 		mcc_gpu.maxsbrange = cand[ci].maxsb;
+		/* T-lin-10393: --jit-gpu-budget caps the usable VRAM (storage-buffer range). */
+		if (mcc_gpu_vram_budget_pct >= 0)
+			mcc_gpu.maxsbrange =
+				(unsigned long)((double)cand[ci].maxsb * mcc_gpu_vram_budget_pct / 100.0);
 		if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
 			fprintf(stderr, "[ladder-gpu] init slot %d dev=%s qfam=%u score=%ld\n", made,
 							mcc_gpu.name, mcc_gpu.qfam, cand[ci].score);
@@ -2279,6 +2287,9 @@ static int mcc_gpu_init(void) {
 	 * best device slice 1a held, so existing gpu/* cells are unchanged. The create
 	 * loop left the device-specific host-import proc pointing at the last slot, so
 	 * re-resolve it for the default routed slot 0. */
+	/* T-lin-10393: --jit-gpu-devices caps how many of the held devices we expose. */
+	if (mcc_gpu_max_devices >= 1 && made > mcc_gpu_max_devices)
+		made = mcc_gpu_max_devices;
 	mcc_gpu_ndev = made;
 	if (mcc_gpu.hostimp && vkGetDeviceProcAddr)
 		vkGetMemoryHostPointerPropertiesEXT =
