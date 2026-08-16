@@ -47511,3 +47511,65 @@ Implemented and verified byte-for-byte against gcc-16 on arm64-Darwin at -O0..-O
 4. **`compare_types` conflated widths.** Because `VT_TYPE` strips the discriminator and precision lives in `.bs` not `.t`, `_BitInt(20)`, `_BitInt(40)` and `long long` all compared compatible → `_Generic` reported "two compatible types". Fix: an early check making a `_BitInt` incompatible with any non-`_BitInt` (even its own storage integer) and with a different-width `_BitInt`; `__builtin_types_compatible_p(_BitInt(20),_BitInt(40))` now = 0, matching gcc.
 
 `__BITINT_MAXWIDTH__` is defined to **64** (honest for slice 1: mcc implements exactly N≤64), not gcc's arbitrary-width 65535; `_BitInt(65)` and up are refused with "exceeds the 64-bit maximum this target supports" (slice 2 = multi-limb). Signed `_BitInt(1)` refused (needs ≥2 bits), unsigned `_BitInt(1)` allowed — matches gcc. **Verification:** a 1877-case same-width differential {2,7,8,9,16,17,31,32,33,48,63,64}×{signed,unsigned}×{+ - * / % & | ^ << >> < <= ==} byte-identical vs gcc-16 at -O0..-O3; plus cross-width/mixed-signedness/`_BitInt`-vs-`long long` conversions, struct members + layout/offsets, function params/returns by value, negative-valued static globals, `_Generic`, and constant folding across width classes — all byte-identical. New `tests/exec/types/bitint.c` (4 sections, mode `dt`) banked in goldens.h; `diag.dg-error.bitint_unimplemented` retired and replaced by `bitint_over_64` (the N>64 slice-2 refusal); arm64-osx o0-baseline re-banked (+1 file, no existing object changed). Full exec suite 357/357 + o0-baseline green. **Slice 2 remains open: N>64 multi-limb** (generalize `__int256`'s memory-backed kernel to ceil(N/64) limbs, by-pointer ABI, bump `__BITINT_MAXWIDTH__` to 65535). **Source.** mac-arm64, 2026-08-16.
+
+<a id="t-lin-10392-three-vendor-nan-table-and-what-nansel-does-not-measure"></a>
+
+## T-lin-10392 — the three-vendor NaN table, and one counter that does not mean what it looks like
+
+Adds mac-arm64's Apple M1 Pro run to
+[the cross-oracle record](#t-lin-10392-multi-gpu-the-second-device-is-reachable-and-not-correct),
+giving three GPU vendors on two host OSes, and corrects a reading of `nansel=`
+before it propagates.
+
+### The table
+
+| device | host | `nansign` | reads |
+| --- | --- | --- | --- |
+| AMD Radeon 610M (RADV) | x86_64-Linux | **57** | flips the sign of a produced NaN |
+| NVIDIA RTX 5070 Ti | x86_64-Linux | **0** | does not |
+| Apple M1 Pro (Metal) | arm64-Darwin | **0** | does not |
+
+**RADV is the outlier of three, and it is still the conformant one.** IEEE 754
+§6.3 leaves the sign of a NaN result unspecified for every operation except
+copy/negate/abs/copySign, so no vendor here is wrong. What the table settles is
+that the *comparator* was the defect and that **only a RADV-class device
+exercises this path at all** — which is why it survived
+[T-lin-10380](#t-lin-10380-fixed-a-produced-nans-sign-is-excluded-from-the-compare-and-counted)
+in a second comparator, unseen, across an RTX 2060, an RTX 5070 Ti and an M1
+Pro.
+
+### `nansel=27` is structural, not a measurement
+
+Both boxes report `nansel=27`, and that identity is **arithmetic, not
+corroboration**. `F64V` holds exactly three NaN values, so the two-NaN tuples
+are `3 × 3 = 9` per op and `9 × 3 ops = 27`. The counter reports **how many
+tuples the two-NaN tie-break rule applied to**, and it would read 27 on a fleet
+where every source agreed bit-for-bit.
+
+So `nansel=27` does **not** show that the gcc-vs-clang payload split reproduces
+on Darwin. It shows the rule fired 27 times there, which it must. The split is
+real — it was observed directly on Linux, in the pre-relaxation failure output,
+as `gcc=7ff8000000abcdef clang=7ff8000000000000` on the same tuple — but
+confirming it on another host means reading the per-source values, not the
+count. Recorded because a number that is constant by construction is exactly
+the kind that gets quoted as evidence.
+
+**`nansign` does not have this problem.** It counts tuples where the sources
+landed in one equivalence class *without* being bit-identical, i.e. where a
+divergence actually occurred, so `0` on Metal and NVIDIA is a real negative
+result and `57` on RADV is a real positive one. Two-NaN tuples are consumed by
+the tie-break branch before they can reach it, so the two counters do not
+overlap.
+
+### The honest state of the cross-oracle after three vendors
+
+`disagree=0` everywhere: no source has yet been caught differing on anything
+IEEE **does** specify. Every divergence found so far lives in the unspecified
+region — produced-NaN sign, two-NaN payload — which is the outcome the majority
+adjudication was built to distinguish from a real defect, and it is a weaker
+claim than "the f64 path is correct". The suite compares add/sub/mul over 484
+tuples; it has not yet been pointed at the wider op matrix, `fmt`, or the frame
+paths.
+
+**Source.** lin-x64 + mac-arm64, 2026-08-16; lin at `ed81899f`, mac's run on
+Apple M1 Pro.
