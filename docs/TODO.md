@@ -109,9 +109,6 @@
 - [ ] T-lin-10013 [S] `__int256` has no literal suffix
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10013-int256-has-no-literal-suffix | DEPS: —
-- [ ] T-lin-10014 [S] DWARF describes an `__int256` as its underlying four-limb struct
-      OWNER: mac-arm64 | STATE: CLAIMED | SHA: 1695806f | TS: 2026-08-16T15:40Z
-      REF: DETAILS.md#t-lin-10014-dwarf-describes-an-int256-as-its | DEPS: —
 - [ ] T-lin-10016 [S] `__int256` float conversions need an oracle before they need code
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10016-int256-float-conversions-need-an-oracle | DEPS: —
