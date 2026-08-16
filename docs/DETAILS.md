@@ -46878,3 +46878,74 @@ measurable` and the `O0_AB_GATES=1 MCC_DEV=1` variant both exit 0; the four
 registered `ast/o0-baseline*` cells green. Full native suite pending for §8.
 
 **Source.** lin-x64, 2026-08-15, at `71535c29`.
+
+<a id="t-lin-10391-slicecensus-strands-the-columns-the-adding-session-cannot-measure"></a>
+
+## T-lin-10391 `slice/census` strands the columns the adding session cannot measure — o0-baseline's defect, without o0-baseline's fix
+
+**Type** `[S]` — **State** OPEN — **DEPS** —
+
+Found by the §8 full-suite run for
+[T-lin-10359](#t-lin-10359-verified-on-an-idle-gpu-zero-stalls-644s): **10075
+cells, 9032 run, 1043 skipped, 2 failed.** Linux column re-banked at
+`3f379a0c`; the *defect* is untouched and is what this row is for.
+
+**The mechanism, which is exactly `o0-baseline`'s.** `slice/census` globs its
+corpus — `file(GLOB_RECURSE _srcs "${SRCDIR}/tests/exec/*.c")`
+(`cmake/slicerun_census.cmake:17`) — and compares the result against a
+**hard-pinned per-platform column**. Three columns exist: `arm64-Darwin` 983,
+`arm64-Linux` 1022, `x86_64-Linux` 941. Any new `tests/exec` fixture moves
+**every** column, but the session adding it can measure only its own. So a
+corpus addition made on one box reds the other two, exactly as
+[T-mac-30006](#t-mac-30006-o0-baseline-4-bare-elf-keys-are-unmaintainable-no-session-box-has-the-gentoo-sysroots)
+described for the object bank.
+
+**This instance.** `da0932e2` (win-x64) added
+`tests/exec/expressions/algebraic_identities.c`. `blocks` moved **941 → 946** on
+`x86_64-Linux` and the cell went red on a box that did not make the change.
+**Not caused by this session:** lin's last 0-failure suite (`a4b2baf1`,
+[T-lin-10092/lin](#t-lin-10092-lin-the-linux-full-native-suite-is-clean))
+predates `da0932e2`. It is the *third* recorded instance of one corpus edit
+stranding banks across the fleet, after `wide_bitfield_arith.c` and this same
+`algebraic_identities.c` on `o0-baseline`.
+
+**The attribution was safe, by the file's own stated test.** Every other banked
+figure in the column is unmoved — `inv-blocks` 454, `all-internal` 169,
+`all-external` 197, `mixed` 87, `any-indirect` 1, all matching exactly. Only
+the corpus grew; the callee classifier did not move. That is precisely the
+reasoning the file records for its own `arm64-Darwin` 990 → 983 re-take, and it
+is why `941 → 946` could be applied rather than investigated.
+
+**Two columns are still stale and this session cannot fix them.**
+`arm64-Darwin` (983) and `arm64-Linux` (1022) move by the same fixture. mac can
+re-take the first; the second is a Debian-in-Docker column that no current
+session owns. Until they are re-taken, those boxes red on a change neither
+made.
+
+**Why a re-bank is not the fix.** The next `tests/exec` fixture reopens all of
+it. `o0-baseline` had this defect and now has a manifest (`keys.txt`) that
+makes the measurable set explicit and lets each box bank its own share;
+`slice/census` has nothing equivalent — its unbanked-combination branch skips
+the exact-count half, so an *unknown* platform degrades quietly while a *known*
+one hard-fails. The asymmetry is the bug: a corpus change should not be able to
+red a column its author cannot measure.
+
+**The file already names a better fix than a manifest,** and it should be
+weighed first: *"If this list starts to feel unmanageable the real fix is to
+give the census a corpus that does not include system headers, which would make
+one column serve everywhere."* One column cannot be stranded. That is strictly
+better than three columns with a manifest, and it removes the per-platform
+split rather than administering it.
+
+**So the choice is between:** (a) the header-independent corpus the file
+proposes — one column, no stranding, no manifest; (b) a `keys.txt`-style
+manifest mirroring the `o0-baseline` fix — per-box banking of the column each
+box measures; (c) deriving the counts rather than pinning them. (a) is the
+smaller end state and is recommended; (b) is the proven-in-tree pattern and the
+cheaper landing.
+
+**Verification.** Add a `tests/exec` fixture on one platform and require that no
+other platform's `slice/census` goes red as a result — which no arrangement in
+the tree satisfies today.
+
+**Source.** lin-x64, 2026-08-15, at `3f379a0c`.
