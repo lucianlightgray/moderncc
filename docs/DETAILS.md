@@ -48691,3 +48691,27 @@ Released to OPEN. **Source.** mac-arm64, 2026-08-16.
 ### T-lin-10010 blocker addendum — the SValue.r widening option is not free either (mac-arm64, 2026-08-16)
 
 Assessed option 1 (widen `SValue.r`) further. GOOD: no `%hx`/`%hu` or `(unsigned short)`/`& 0xffff` assumptions on `->r` anywhere; the SValue copies use `sizeof(SValue)` (mccircap.c:214, mccast.c:6011, mccrir.c:336/5342/6050/6212/6406), so a widening is transparent to their size. RISK: those copies capture the vstack for IR-capture/RIR **replay**, and the byte-identity subsystem (o0-baseline, `kept_coverage`, replay-parity, emitmap) compares captured/emitted bytes — a struct-size or padding change to SValue can drift those banked figures, so widening MUST be verified against the full replay/emitmap/o0-baseline suite, not just exec. Also audit `src/mccgen.c:16346` (`int e = *(uint16_t *)((char *)s + 8);`) — a raw 16-bit offset read; confirm `s` is not an SValue before relying on the widening. Net: both flag-home options are core changes needing full-suite verification; SSO wants a focused session with that bandwidth. **Source.** mac-arm64, 2026-08-16.
+<a id="t-lin-10086-2nd-woa-run-no-regression-crash-absent"></a>
+
+## T-lin-10086 — 2nd WoA run on current main: no regression, crash absent again (win-x64, 2026-08-16)
+
+Run 31967853571 (tree 20e41954 = this session's routing fix 89f717c6 + SEH funclets + all fleet
+landings). probe + stage1 build GREEN; **stage2 self-host GREEN** — mcc STILL self-hosts on
+windows-arm64-msvc after the multi-GPU refactor + routing fix + SEH work, so none of the session's
+mccgpu.c / mccgen.c / slicerun.c changes regressed arm64-Windows self-host. stage3 suite: **99% /
+89 fail / 9539** — the failure set is UNCHANGED from run 31949398356 (89/9536): the same 22×
+float128 (T-win-50023) + 22× integer_promotion (T-win-50024) arm64-Windows-ABI subjects, 22×
+bitfield_width64 (T-win-50015 test-ABI, both compilers), and the same ~23 known-env/singletons. The
++3 cell count is the new slice/route{,-known-positive} + others; my GPU/SEH changes added ZERO new
+failures. slice/route CORRECTLY **Skipped** (0.03s, --device-or-skip) on the GPU-less runner — the
+new multi-GPU cell behaves honestly in CI.
+
+T-lin-10371 (the moving load-dependent SEGFAULT) DID NOT reproduce — 0 crash signatures across the
+whole stage2 log. Distribution so far: crash in 2 of 3 EARLY runs (31857205309 bitfield_width64,
+31859450414 run_atexit) then ABSENT in 2 recent runs (31949398356, 31967853571). Four runs, two
+crashing on different cells, two clean — consistent with T-lin-10371's thesis that it is a
+shared/load-dependent failure mode (a 4-core box under a 9539-cell parallel suite), not a codegen
+defect in whichever cell it lands on. A -j1 serialised run (its attack-plan step 2) would separate
+load-dependence from ordering; not run here (win drives the runner via CI and the default suite is
+parallel). Two clean runs are two data points toward the N-consecutive-zero-SEGFAULT verification
+spec, nowhere near N yet.
