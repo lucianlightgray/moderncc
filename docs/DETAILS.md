@@ -48628,3 +48628,21 @@ __try/__finally compose by chaining trampolines innermost-first. This needs inte
 which is a focused, correctness-cliff piece — NOT a quick add, and the reason __finally early-exit
 is genuinely hard rather than mechanical. Slice 3a (fallthrough + unwind) remains correct and
 shipped; this is only the early-exit gap.
+
+**Slice 3b refinement (win-x64): the exit-invocation is already free; only registration-ordering
+is the wall.** mcc's `return` handler calls `leave_scope(root_scope)` (mccgen.c:15567) BEFORE
+`gfunc_return`, and leave_scope runs `block_cleanup`/`try_call_scope_cleanup` over every scope from
+cur to root. So a `return` inside a `__try` ALREADY walks the cleanup list — if a `__finally` were
+registered on the __try scope as a cleanup entry, the return would run it for free, no return-path
+surgery needed. break/continue/goto likewise go through the cleanup hooks (try_call_cleanup_goto).
+So slice 3b does NOT need a return-trampoline after all — it needs (1) a cleanup-list entry KIND
+that emits `mov rdx,rbp; call <finally funclet>` instead of the normal `gfunc_call(1)`, and (2) a
+way to register it on the __try scope BEFORE the body despite the __finally keyword coming after.
+The (2) options, concretely: (a) SPECULATIVE — register a placeholder finally-cleanup at `__try {`,
+emit its exit-calls to a forward-ref that is PATCHED to the funclet if `__finally` follows or to a
+skip if `__except` follows; or (b) TOKEN-BUFFER — save the try-body token range unparsed
+(mcc has begin_macro/token-replay), peek the handler keyword, then replay the body with the correct
+cleanup already registered. (b) is cleaner (no emit-then-patch) if mcc's token-replay can drive a
+normal `block()`; (a) avoids buffering but needs patchable call sites. Either is a focused piece;
+the value of this note is that the return/break/goto codegen itself needs NO change — leave_scope
+already does the walk. That is the crux a fresh implementer needs.
