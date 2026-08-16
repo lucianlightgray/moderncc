@@ -48,6 +48,11 @@ static int slicerun_setenv(const char *name, const char *val, int overwrite) {
 static int slicerun_unsetenv(const char *name) { return _putenv_s(name, ""); }
 #define setenv(n, v, o) slicerun_setenv((n), (v), (o))
 #define unsetenv(n) slicerun_unsetenv((n))
+/* MSVC spells the POSIX pipe-to-command calls with a leading underscore; the
+   f64 cross-oracle (T-lin-10392) uses popen/pclose, which otherwise link-fail
+   under cl (LNK2019 popen/pclose) and broke the windows-arm64-msvc stage1. */
+#define popen(cmd, mode) _popen((cmd), (mode))
+#define pclose(f) _pclose((f))
 #else
 #include <dlfcn.h>
 #endif
