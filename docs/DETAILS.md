@@ -48503,3 +48503,44 @@ Deeper look confirming the scoping note's estimate — slice 1 is atomic (accept
 - 1-byte and `_Bool` never swap; float/double swap the integer bit-pattern then reinterpret. Refuse-list (keep the hard error): nested aggregate members, array members, bit-field members, `&member`.
 
 State: OWNED by mac-arm64, heartbeat intentionally stale → TTL-eligible for any session to resume from this recon. **Source.** mac-arm64, 2026-08-16.
+<a id="t-lin-10393-research-2026-08-16-integration-points-and-decisions"></a>
+## T-lin-10393 — §6 research: integration points + design decisions (lin-x64, 2026-08-16)
+
+Read-only reconnaissance (Explore agent, no builds). Concrete anchors:
+
+**JIT thread pool.** Cap `MCCJIT_POOL_MAX 64` (src/mccjit_embed.c:1366); pool spawned by
+`mccjit_pool_start(workers)` (:1485, clamps to [1,64]). The worker count is baked into the
+emitted constructor from `s1->jit_threads` — `async = s1->jit_threads>0` (:2196), emitted at
+:2268-2270. Set by `--jit-threads` (default 0 = synchronous, no pool). No MCC_JIT_THREADS env.
+CPU count available via `host_nproc()` (src/mcchost.c:1180 — GetSystemInfo / sysconf
+_SC_NPROCESSORS_ONLN, already cross-platform), today consumed only by the parallel-COMPILE
+fork pool (src/mccast.c:19790/19888 `host_nproc()-1`), NOT the JIT runtime pool.
+
+**GPU device/VRAM pool.** Device count `mcc_gpu_ndev` (src/mccgpu.c:2278), exposed
+`mcc_gpu_device_count()` (:2288) + `mcc_gpu_route(i)` (:2298); MCC_GPU_MAXDEV=8. VRAM figure =
+per-device `maxsbrange` (maxStorageBufferRange, :2220/:2258); `vkGetPhysicalDeviceMemoryProperties`
+at :2325. Const-cache caps SPV/MSL_MAX_CONST=512 (mccgpu.h:2039/194) are dedup caches, not budget.
+MCC_GPU_DEVICE pins a device. NO free-VRAM/heap-budget reading, NO NVML/nvidia-smi anywhere.
+
+**Arg parsing.** Static table `mcc_options[]` (src/libmcc.c:2231); `--jit-threads` is the numeric
+`=value`-aware template (table :2254, enum :2151, case :2801-2805 `if(optarg[0]=='=')optarg++;
+s->jit_threads=atoi`), `--jit-always-gpu` the boolean template (:2256/:2811). Struct fields
+mcc.h:646-648; defaults libmcc.c:1215-1216; help mcc.c:94-100.
+
+**Load detection today.** CPU count yes (host_nproc). Live load (getloadavg): NONE. GPU util /
+free VRAM: NONE (only total maxStorageBufferRange).
+
+DESIGN DECISIONS (for the user):
+- D1 arg shape: `--jit-conservative` as a both-pools preset (=50%) + `--jit-cpu-budget=X` /
+  `--jit-gpu-budget=X` overrides, X ∈ {`auto`, `N%`}. (recommended)
+- D2 auto vs percent: PERCENT-of-hardware ships NOW (host_nproc()*X for JIT threads;
+  ndev/maxsbrange*X for GPU) — zero new detection. AUTO (live-load-adaptive) needs NEW
+  per-platform hooks: getloadavg (Linux/macOS) / PDH (Win) for CPU; NVML or Vulkan
+  VkPhysicalDeviceMemoryBudget (VK_EXT_memory_budget) for free VRAM. → land percent slice 1,
+  auto slice 2.
+- D3 GPU-budget scope: VRAM cap (of heap/maxsbrange) is the meaningful lever + optionally device
+  count; Vulkan gives no direct "GPU cores" knob (driver schedules workgroups) beyond
+  MCC_GPU_LOCAL_SIZE. (recommend VRAM cap + device-count for multi-GPU)
+- D4 typing: percent slice = [S] (host_nproc already cross-platform; VRAM via Vulkan/Metal
+  abstracted). auto slice = likely [C] budget/policy interface + [X] detection backends, OR
+  [S]-with-deltas — decide during the auto-slice research. **Source.** lin-x64, 2026-08-16.
