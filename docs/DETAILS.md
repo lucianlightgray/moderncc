@@ -48570,3 +48570,31 @@ proves the cell is not blind (standard kernel --mutate fails the value check). T
 lin's `nansign` discriminator was the right tell for f64cross. Verified after fix: route 22/0
 (distinct devices), route --mutate caught, known-positive "clean OK, mutation detected", gpu 32/0,
 f64cross nansign=57 15/0, mcc + slicerun build clean.
+<a id="t-lin-10393-design-locked-2026-08-16"></a>
+## T-lin-10393 — design LOCKED (user decisions, 2026-08-16)
+
+FOUR runtime args (all `=value`-aware, modelled on --jit-threads at libmcc.c:2801):
+- `--jit-conservative` — preset: applies 50% to BOTH the CPU (JIT thread) and GPU (VRAM) budgets.
+- `--jit-cpu-budget=X` — X ∈ {`N%`, `auto`}. Sizes the JIT worker pool. PERCENT: workers =
+  round(host_nproc() × N%) clamped [1, MCCJIT_POOL_MAX=64], flowing to s1->jit_threads →
+  mccjit_embed.c:2196/2270. (Today jit_threads defaults 0 = synchronous; this makes a % opt into
+  the async pool sized to the fraction.)
+- `--jit-gpu-budget=X` — X ∈ {`N%`, `auto`}. PERCENT: caps GPU buffer allocations to N% of the
+  device VRAM budget (maxsbrange / heap size, mccgpu.c:2258/2325). Controls VRAM only.
+- `--jit-gpu-devices=N` — SEPARATE explicit knob (user-requested split from the budget %):
+  constrain how many GPUs mcc holds to N (clamped [1, mcc_gpu_ndev], mccgpu.c:2278). Independent
+  of the VRAM budget %.
+Override precedence: an explicit `--jit-cpu-budget`/`--jit-gpu-budget`/`--jit-gpu-devices`
+overrides the `--jit-conservative` preset for its axis.
+
+SLICING (user: percent first, auto later):
+- SLICE 1 [S], shippable now, zero new detection: parse the 4 args; PERCENT paths only
+  (host_nproc() for CPU, Vulkan maxsbrange/heap for VRAM, mcc_gpu_ndev for devices); `auto`
+  accepted but errors "not yet implemented" (honest). Verify: a cell asserting workers ==
+  round(nproc×N%) and the GPU VRAM cap / held-device-count == the requested fraction/N, across a
+  couple of N values. This is the box-free-deferred implementation slice (user gaming 2026-08-16).
+- SLICE 2: `auto` live-load adaptation — NEW per-platform hooks: getloadavg (Linux/macOS) / PDH
+  (Windows) for free CPU; Vulkan VK_EXT_memory_budget (VkPhysicalDeviceMemoryBudgetPropertiesEXT)
+  or NVML for free VRAM. Type at that point: likely [C] budget/policy interface + [X] detection
+  backends. Not started.
+**Source.** user via lin-x64, 2026-08-16.
