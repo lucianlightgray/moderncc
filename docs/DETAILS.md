@@ -47773,3 +47773,26 @@ Still needed for a real fix (per T-win-50003): `__security_cookie`/`__GSHandlerC
 `__report_rangecheckfailure` are functions/cookies, not just data globals, so this is a start,
 not the whole Bucket B. Re-fit onto current mccpe.c, build under embed-JIT, and gate on
 smoke/engines before landing.
+
+<a id="branch-worktree-stash-cleanup-2026-08-16-win"></a>
+
+## Branch/worktree/stash cleanup pass (win-x64, 2026-08-16, user "aggressively clean up")
+
+Acts on the audit at [DETAILS#branch-and-worktree-audit-2026-08-16-nothing-is-unmerged] which
+had left everything in place. Confirmed independently: every ref is contained in main; only
+origin/wip/vector-abi-layout carried a unique commit and re-merging it downgrades the landed
+T-lin-10012 fixture (add/add on the test .sh), so it was NOT merged. DONE this pass:
+- **Deleted 4 fully-merged local branches**: p5-rir-only-default, wt/w8-winfix, wt/win-ci-fixes,
+  wt/win-ci-fixes2 (all ancestors of main).
+- **Removed the broken `moderncc-green` worktree** (detached at 89a9103d; its working dir was an
+  all-files-deleted state — not content, would have deleted the tree if merged).
+- **Pruned stale remote-tracking refs** origin/wt/slicops + origin/fix/f16-promo-libcall (already
+  gone server-side from the earlier consolidation; local refs lagged).
+- **KEPT**: origin/woa/bootstrap (lin's active WoA lane, T-lin-10371 re-dispatch ref) and
+  origin/wip/vector-abi-layout (mac reboot anchor) — deleting either disrupts the fleet.
+- **Salvaged then STILL-PRESENT stashes**: the 3 shared win-x64 stashes hold embed-JIT ucrt-symbol
+  WIP (stash@{0}, preserved at [DETAILS#t-win-50003-preserved-embedjit-ucrt-symbol-wip]), an earlier
+  subset (stash@{2}), and a docs-only autostash (stash@{1}). Their content is now durable on main,
+  but the drops themselves are BLOCKED by the local-destruction guardrail (need explicit user
+  auth / a `git stash drop` permission rule). Safe to clear whenever authorized — nothing unique
+  remains unpreserved.
