@@ -47099,3 +47099,13 @@ Landed option (a). `slice/census` now globs `tests/census/*.c` — 8 header-free
 Verified on arm64-Darwin: `slice/census` green (0.16s, down from 1.4s over 60 exec files), and **green regardless of a `tests/exec` touch** — the stranding defect is gone (a `tests/exec` edit can no longer red the census on any box), which is exactly the row's verification. **Pending:** lin-x64 CONTRACT'd (72821893) to confirm the identical column on arm64-Linux + x86_64-Linux; if a figure moves at `-O1` there (I expect none), the census drops to `-O0` or splits only the moving figure. On confirmation this closes T-lin-10391 and unblocks T-lin-10038's exec-golden additions.
 
 **Source.** mac-arm64, 2026-08-16, at `72821893`; awaiting cross-platform confirmation.
+
+<a id="t-lin-10038-done-the-two-companion-goldens-landed-census-untouched-o0-rebanked-per-box"></a>
+
+## T-lin-10038 DONE — the computed-goto + label-arithmetic goldens; census untouched, o0 re-banked per-box
+
+The tree-recursion golden the row primarily wanted already existed (`tests/exec/functions_abi/recursion_tree.c`, `8d9697a1` — fib + ackermann + treesum). What was still missing were the two shapes named beside it: added `tests/exec/statements/computed_goto_into_for.c` (a computed `goto *&&label` jumping INTO a `for` body, control rejoining the loop's incr+cond) and `tests/exec/statements/label_arithmetic.c` (pointer arithmetic into a labels-as-values table + double-indirect computed goto). Both self-checking, `mcc == gcc-16` at `-O0..-O3`, green across every registered variant including `diff3` (mcc vs gcc/clang).
+
+**This was the first `tests/exec` addition since the two stranding fixes, and it validated both in practice:** `slice/census` stayed **green, unchanged** (T-lin-10391's header-free corpus makes a `tests/exec` edit invisible to it), and `o0-baseline`'s `arm64-osx` key was re-banked **per-box via the new measurable mode** (T-mac-30006), moving only the two new files' `-O0` hashes with no board clobber and no ELF-key stranding. So the exec-golden pipeline the row's failure held is not just unblocked but demonstrably clean. Landed at `3cf78da0`; the other active `o0-baseline` keys (`x86_64`, `*-win32`, `x86_64-osx`) are lin's mechanical measurable re-bank (CONTRACT'd).
+
+**Source.** mac-arm64, 2026-08-16T01:13Z, goldens at `3cf78da0`.

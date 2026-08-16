@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30007   | 2026-08-16T01:20Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30007   | 2026-08-16T01:13Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10392   | 2026-08-16T00:17Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-16T00:24Z |
 
@@ -12,9 +12,6 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
-- [ ] T-lin-10038 [S] No tree-recursion exec golden exists, and the failure mode is a GPU hang
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 6074d084 | TS: 2026-08-16T01:25Z
-      REF: DETAILS.md#t-lin-10038-no-tree-recursion-exec-golden-exists | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
 - [ ] T-lin-10391 [S] `slice/census` strands the columns the adding session cannot measure — o0-baseline's defect, without o0-baseline's fix
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 72821893 | TS: 2026-08-16T01:20Z
       REF: DETAILS.md#t-lin-10391-implemented-72821893-header-free-one-column-census-awaiting-lins-linux-confirmation | DEPS: — | NOTE: IMPLEMENTED (option a). Header-free corpus tests/census/*.c (-nostdinc) → ONE column: blocks=50 inv-blocks=20 all-internal=7 all-external=6 mixed=6 any-indirect=1, floors 17/4. Removed the 3 per-{arch,os} branches + CENSUS_ARCH/OS key + skip-the-exact-half asymmetry. Verified arm64-Darwin green + tests/exec-touch-independent (the stranding defect is gone by construction). PENDING lin CONTRACT (72821893): confirm identical column on arm64-Linux + x86_64-Linux; if a figure moves at -O1, drop the census to -O0 or split only that figure. ON CONFIRM: DONE + archive; unblocks T-lin-10038
