@@ -48014,3 +48014,39 @@ use the `only N device(s) bound` line instead (prints whenever ndev<2). A silent
 devices to 1 is exactly what the persistent-instance reopen bug would cause and what the plain cell
 would NOT flag. lin's standing offer reaffirmed: when 1b is close, ping and lin deletes the
 quiesce/reopen cycle from f64cross to iterate held devices via the routing API.
+
+<a id="t-lin-10086-woa-suite-reading-on-current-main-89-triaged"></a>
+
+## T-lin-10086 — WoA suite reading on current main: 89/9536, triaged (win-x64, 2026-08-16)
+
+After the stage1 popen fix (6132c807), run 31949398356 (tree 6132c807) went: probe GREEN, stage1
+build GREEN (arm64-Windows builds), **stage2 self-host GREEN — mcc still self-hosts on
+windows-arm64-msvc on current main** (the key regression check across 400+ commits since the last
+reading at 214a0dc5; T-lin-10087's "it self-hosts" holds). stage3 suite: **99% passed, 89 failed /
+9536** (1126 s). Prior readings were 30 (T-lin-10087) then 25 deterministic + a moving crash
+(T-lin-10370/10371) on the old tree; the rise is new features landing, not a self-host break.
+
+TRIAGE of the 89 (localised by re-running each subject on THIS box's x86_64 mcc + mingw-gcc):
+- **~60 = three exec subjects across all ~20 opt-variants each**:
+  - `bitfield_width64` (~20): NOT an mcc bug and NOT arm64-specific. mcc and mingw-gcc produce
+    BYTE-IDENTICAL FAIL output on x86_64 (`sizeof got 12 want 9`, same image bytes, both exit 1) —
+    the test's hardcoded `want` values encode SysV/Linux bitfield packing; on the Windows MS
+    bitfield ABI both compilers correctly give 12/16, so the test's self-assertions are wrong on
+    Windows. Test-portability issue, in the T-win-50015 (ms_bitfields) family; fails on every
+    Windows mcc build, x86_64 included. Last touched 1b78d132.
+  - `float128` (~20) and `integer_promotion` (~20): arm64-Windows-SPECIFIC — both PASS on this
+    box's x86_64 mcc (build+run exit 0) but fail the arm64-Windows exec cell. These are the real
+    WoA/arm64 subjects (arm64-Windows ABI/codegen for __float128 (T-lin-10007) and integer
+    promotion). Next WoA investigation.
+- **~29 remaining**: translation_limits(4), math_library(2), floating_point(2), and singletons
+  slice/src, slice-census, smoke/{slice-bails,strat-dark,divergence}, rir/rec-miss,
+  rir-coverage-census, libtest-extra, runtime-bench-check (vendor/plb = T-mac-30005),
+  ci/{must-run-registered,gate-contract,gate-contract-known-positive} (Windows-selfhost-gated =
+  T-lin-10093/win). A mix of known-Windows-env cells + arm64-Windows specifics to be split.
+
+NET: the WoA lane is HEALTHY on current main (builds + self-hosts); the popen regression is fixed;
+the suite reading is 89 and mostly explained (test-ABI + known-env + two genuine arm64-Windows exec
+subjects). No moving-crash SEGFAULT observed this run (T-lin-10371 needs its own N-run distribution;
+one clean-of-crash run is one data point). Next: split float128/integer_promotion arm64-Windows into
+their own investigation; the bitfield_width64 cluster is a T-win-50015 test-portability item, not a
+codegen bug.
