@@ -47342,3 +47342,34 @@ reading a parent local (force cl to keep the funclet — `/O2` const-folds `want
 volatile/opaque local so the funclet survives, or accept mcc-vs-cl behavioural equality only);
 (3) `__finally` runs on both normal return and on unwind. Each must FAIL on today's mcc before
 the slice and match `cl`'s observable result after. **Source.** win-x64, 2026-08-16.
+
+<a id="t-lin-10084-slice-1-done-nonconst-except-filter-funclets"></a>
+
+## T-lin-10084 — slice 1 DONE: non-constant `__except` filter funclets (win-x64, 2026-08-16, SHA 0235a481)
+
+Contract A ([above](#t-lin-10084-seh-funclet-cl-reference-and-design)) implemented and
+`cl`-differential-verified. `mccgen.c` `__try` handler: the `__except` filter is now parsed
+with `gexpr()` (not `expr_const64()`); a compile-time integer constant keeps the proven
+raw-DWORD HandlerAddress path unchanged, anything else is materialised into a leaf filter
+funclet (`gv(MCC_RC_RAX); g(0xc3)` = `<load filter -> eax>; ret`) emitted inline after the
+handler, out of the fallthrough path (the existing `jover` jmp already skips funclet+handler).
+`pe_seh_scope_funclet` records `(filt_start, filt_end)` with a `filt_funclet` flag on the
+`SehScope`; `pe_add_unwind_data` then (1) adds an `R_XXX_RELATIVE` reloc on the HandlerAddress
+slot for funclet scopes and (2) emits a per-funclet RUNTIME_FUNCTION (.pdata) + leaf UNWIND_INFO
+(.xdata `01 00 00 00`). `.pdata` stays address-sorted because a funclet lies within its parent's
+body. Constant-filter bytes are untouched, so the existing `pe/seh` cases and all non-SEH
+functions (`seh_nscope==0` → the funclet loop is a no-op) are unaffected — confirmed by
+`pe/unwind-backtrace` still green.
+
+VERIFIED: `tests/cross/pe-seh.{c,sh}` extended with (a) a non-const global filter that catches
+(`nc=55`) and (b) a nested `__try` whose inner non-const filter returns 0 =
+EXCEPTION_CONTINUE_SEARCH so the outer handler catches (`ns=77`). mcc full-internal-link and
+mcc-COFF→mingw-link BOTH produce `av=7 ok=100 x=42 div=9 divok=5 nc=55 ns=77` rc=0, byte-identical
+to MSVC `cl 19.51`. Old mcc rejected the non-const filter with `constant expression expected`.
+
+NOT DONE (task stays IN_PROGRESS): slice 2 = establisher-frame parent-local access in the filter
+(needs the `push rbp; mov rbp, rdx` frame + local refs rewritten to `[rbp+home]`; `/O2` const-folds
+the naive `want?1:0` probe, so force cl to keep the funclet with an opaque local); slice 3 =
+`__finally` (Contract B: UHANDLER header, JumpTarget=0, funclet + inline copy on normal fallthrough).
+Build/test loop for a successor: `cmake --build cmake-mingw/mingw-native --target mcc` (winlibs
+mingw gcc 16.1, ~2min) under a PowerShell-imported `vcvars64` env, then run `tests/cross/pe-seh.sh`.
