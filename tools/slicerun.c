@@ -821,8 +821,18 @@ static int f64_nan_select(int64_t a, int64_t b) {
 	return f64_is_nan(a) && f64_is_nan(b) && a != b;
 }
 
+static int f64_arith_equal(int64_t a, int64_t b) {
+	uint64_t ua = (uint64_t)a, ub = (uint64_t)b;
+	uint64_t q = 0x7FFFFFFFFFFFFFFFull;
+	if (ua == ub)
+		return 1;
+	if (!f64_is_nan(a) || !f64_is_nan(b))
+		return 0;
+	return (ua & q) == (ub & q);
+}
+
 static long g_f64_denorm_exact, g_f64_denorm_flush, g_f64_certified;
-static long g_f64_nansel_first, g_f64_nansel_second;
+static long g_f64_nansel_first, g_f64_nansel_second, g_f64_nansign;
 static int g_f64_denorm_seen;
 
 static void f64_binop(const char *what, int op, int cmpresult) {
@@ -924,6 +934,10 @@ static void f64_binop(const char *what, int op, int cmpresult) {
 				cmp++;
 				g_f64_certified++;
 			}
+			continue;
+		}
+		if (!cmpresult && f64_arith_equal(cout[i], gout[i])) {
+			g_f64_nansign++;
 			continue;
 		}
 		if (touches && f64_denorm_flushed(cout[i], gout[i])) {
@@ -1239,7 +1253,7 @@ static void suite_f64(void) {
 	fprintf(stderr,
 					"slicerun: fp64 device=%s certified=%ld tuples bit-exact, "
 					"denormal-touching=%ld (%s), two-NaN=%ld (device takes the %s "
-					"operand's payload; host takes the first)\n",
+					"operand's payload; host takes the first), nansign=%ld\n",
 					g_devname, g_f64_certified,
 					g_f64_denorm_exact + g_f64_denorm_flush,
 					g_f64_denorm_flush ? "device FLUSHES fp64 denormals, excluded from "
@@ -1247,7 +1261,7 @@ static void suite_f64(void) {
 														 : "device PRESERVES fp64 denormals, and they are "
 															 "compared bit-exactly",
 					g_f64_nansel_first + g_f64_nansel_second,
-					g_f64_nansel_second ? "second" : "first");
+					g_f64_nansel_second ? "second" : "first", g_f64_nansign);
 }
 
 static void suite_wide64(void) {
