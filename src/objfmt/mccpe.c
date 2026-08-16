@@ -2873,6 +2873,12 @@ PUB_FUNC int mcc_get_dllexports(const char *filename, char **pp) { MCC_TRACE("en
    (1 = EXCEPTION_EXECUTE_HANDLER, 0 = CONTINUE_SEARCH, ~0 = CONTINUE_EXECUTION). */
 typedef struct SehScope {
 	unsigned begin, end, filter, handler;
+	/* filt_funclet != 0 marks a non-constant __except filter: `filter` then holds the
+	   filter funclet's text-section start offset (needing an ADDR32NB reloc in the
+	   HandlerAddress slot, not a raw DWORD) and `filt_end` its end offset, so the
+	   funclet gets its own .pdata RUNTIME_FUNCTION + .xdata UNWIND_INFO. */
+	unsigned filt_end;
+	int filt_funclet;
 } SehScope;
 #define SEH_MAX_SCOPES 256
 static SehScope seh_scopes[SEH_MAX_SCOPES];
@@ -2890,6 +2896,21 @@ ST_FUNC void pe_seh_scope(unsigned begin, unsigned end, unsigned filter,
 	seh_scopes[seh_nscope].end = end;
 	seh_scopes[seh_nscope].filter = filter;
 	seh_scopes[seh_nscope].handler = handler;
+	seh_scopes[seh_nscope].filt_end = 0;
+	seh_scopes[seh_nscope].filt_funclet = 0;
+	seh_nscope++;
+}
+
+ST_FUNC void pe_seh_scope_funclet(unsigned begin, unsigned end, unsigned filt_start,
+																	unsigned filt_end, unsigned handler) { MCC_TRACE("enter\n");
+	if (seh_nscope >= SEH_MAX_SCOPES)
+		{ MCC_TRACE("br\n"); return; }
+	seh_scopes[seh_nscope].begin = begin;
+	seh_scopes[seh_nscope].end = end;
+	seh_scopes[seh_nscope].filter = filt_start;
+	seh_scopes[seh_nscope].handler = handler;
+	seh_scopes[seh_nscope].filt_end = filt_end;
+	seh_scopes[seh_nscope].filt_funclet = 1;
 	seh_nscope++;
 }
 
@@ -2966,6 +2987,10 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { 
 			write32le(r + 12, seh_scopes[i].handler);
 			put_elf_reloc(symtab_section, xd, base, R_XXX_RELATIVE, s1->uw_sym);
 			put_elf_reloc(symtab_section, xd, base + 4, R_XXX_RELATIVE, s1->uw_sym);
+			/* HandlerAddress slot: a raw constant filter has no reloc, but a funclet
+			   filter holds a text offset that must relocate ADDR32NB like begin/end. */
+			if (seh_scopes[i].filt_funclet)
+				{ MCC_TRACE("br\n"); put_elf_reloc(symtab_section, xd, base + 8, R_XXX_RELATIVE, s1->uw_sym); }
 			put_elf_reloc(symtab_section, xd, base + 12, R_XXX_RELATIVE, s1->uw_sym);
 		}
 	}
@@ -2979,6 +3004,37 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { 
 	put_elf_reloc(symtab_section, pd, o, R_XXX_RELATIVE, s1->uw_sym);
 	put_elf_reloc(symtab_section, pd, o + 4, R_XXX_RELATIVE, s1->uw_sym);
 	put_elf_reloc(symtab_section, pd, o + 8, R_XXX_RELATIVE, s1->uw_xsym);
+
+	/* Each non-constant __except filter funclet gets its own RUNTIME_FUNCTION (.pdata)
+	   + UNWIND_INFO (.xdata). The funclet is a leaf (`<load>; ret`, no prolog/codes), so
+	   its UNWIND_INFO is the 4-byte header Version=1/Flags=0/SizeOfProlog=0/CountOfCodes=0.
+	   .pdata stays sorted by address: the funclet lies within its parent's body, so its
+	   BeginAddress is above the parent start emitted just above and below the next
+	   function's start emitted on the next call. */
+	{
+		int i;
+		for (i = 0; i < seh_nscope; i++) { MCC_TRACE("br\n");
+			unsigned fx, fpo;
+			unsigned char *fq, *fpq;
+			if (!seh_scopes[i].filt_funclet)
+				{ MCC_TRACE("br\n"); continue; }
+			section_ptr_add(xd, -xd->data_offset & 3);
+			fx = xd->data_offset;
+			fq = section_ptr_add(xd, 4);
+			fq[0] = 0x01; /* Version 1, Flags 0 (funclet carries no handler) */
+			fq[1] = 0x00; /* SizeOfProlog 0 */
+			fq[2] = 0x00; /* CountOfCodes 0 */
+			fq[3] = 0x00; /* FrameRegister 0 */
+			fpo = pd->data_offset;
+			fpq = section_ptr_add(pd, 12);
+			write32le(fpq, seh_scopes[i].filter);   /* funclet BeginAddress */
+			write32le(fpq + 4, seh_scopes[i].filt_end); /* funclet EndAddress */
+			write32le(fpq + 8, fx);                 /* funclet UnwindData (xdata offset) */
+			put_elf_reloc(symtab_section, pd, fpo, R_XXX_RELATIVE, s1->uw_sym);
+			put_elf_reloc(symtab_section, pd, fpo + 4, R_XXX_RELATIVE, s1->uw_sym);
+			put_elf_reloc(symtab_section, pd, fpo + 8, R_XXX_RELATIVE, s1->uw_xsym);
+		}
+	}
 	pe_seh_reset();
 }
 

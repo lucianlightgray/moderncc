@@ -11,7 +11,7 @@ MCC="$1"; GCC="$2"; SRC="$3"; WORK="$4"
 if [ ! -f "$MCC" ] && [ ! -x "$MCC" ]; then echo "pe-seh: no mcc: $MCC" >&2; exit 77; fi
 
 rm -rf "$WORK"; mkdir -p "$WORK"
-want="av=7 ok=100 x=42 div=9 divok=5"
+want="av=7 ok=100 x=42 div=9 divok=5 nc=55 ns=77"
 fail=0
 
 run_expect() {

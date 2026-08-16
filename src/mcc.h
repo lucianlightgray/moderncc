@@ -2046,6 +2046,7 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack);
 #ifdef MCC_TARGET_X86_64
 ST_FUNC void pe_seh_reset(void);
 ST_FUNC void pe_seh_scope(unsigned begin, unsigned end, unsigned filter, unsigned handler);
+ST_FUNC void pe_seh_scope_funclet(unsigned begin, unsigned end, unsigned filt_start, unsigned filt_end, unsigned handler);
 #endif
 PUB_FUNC int mcc_get_dllexports(const char *filename, char **pp);
 #define ST_PE_EXPORT 0x10

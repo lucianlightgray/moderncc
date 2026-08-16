@@ -15266,25 +15266,48 @@ again:
 			{ MCC_TRACE("br\n"); prev_scope_s(&o); }
 	} else if (t == TOK___try) { MCC_TRACE("br\n");
 #if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
-		unsigned tb, te, hb;
-		int jover;
+		unsigned tb, te, hb, filt_start, filt_end;
+		int jover, filt_is_const;
+		int64_t filt;
 		tb = ind;
 		block(0);
 		te = ind;
 		jover = gjmp(0);
 		if (tok == TOK___except) { MCC_TRACE("br\n");
-			int64_t filt;
 			next();
 			skip('(');
-			filt = expr_const64();
-			skip(')');
-			/* the handler is only reached through the SEH dispatcher, so it is
-			   invisible to the normal control-flow graph; re-enable code emission
-			   (the jump over it above turned it off) so its body is emitted. */
+			/* the funclet + handler are reached only through the SEH dispatcher, so
+			   they are invisible to the normal control-flow graph; re-enable code
+			   emission (the jump over them above turned it off). */
 			CODE_ON();
+			filt_start = ind;
+			filt = 0;
+			filt_end = 0;
+			gexpr();
+			/* A compile-time integer constant keeps the proven raw-DWORD path
+			   (HandlerAddress = 1/0/~0). Anything else — a global read, a runtime
+			   expression — becomes a filter funclet the dispatcher calls with
+			   (EXCEPTION_POINTERS* in rcx, EstablisherFrame in rdx), returning its
+			   int result in eax. */
+			filt_is_const = ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST);
+			if (filt_is_const) { MCC_TRACE("br\n");
+				filt = vtop->c.i;
+				vpop();
+			} else { MCC_TRACE("br\n");
+				gen_cast_s(VT_INT);
+				gv(MCC_RC_RAX);
+				vpop();
+				g(0xc3); /* ret — the funclet is a leaf: <load filter -> eax>; ret */
+				filt_end = ind;
+			}
+			skip(')');
 			hb = ind;
 			block(0);
-			pe_seh_scope(tb, te, (unsigned)filt, hb);
+			if (filt_is_const) { MCC_TRACE("br\n");
+				pe_seh_scope(tb, te, (unsigned)filt, hb);
+			} else { MCC_TRACE("br\n");
+				pe_seh_scope_funclet(tb, te, filt_start, filt_end, hb);
+			}
 		} else if (tok == TOK___finally) { MCC_TRACE("br\n");
 			mcc_error("__finally is not supported yet");
 		} else { MCC_TRACE("br\n");
