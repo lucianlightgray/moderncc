@@ -47598,3 +47598,66 @@ into the parent frame (rbp = parent frame in the funclet). Simple load/compare f
 common `GetExceptionCode()==X`, a local, a global) don't spill. A filter that calls a function or
 forces a spill needs the funclet to carry its own frame (MSVC allocates one and uses rbp only for
 parent access) — out of slice-2 scope. Slice 3 = `__finally` (Contract B).
+<a id="t-lin-10389-narrowed-the-funnel-is-unchanged-the-drop-is-in-the-cref-stage"></a>
+
+## T-lin-10389 narrowed — the funnel did **not** move; the loss is in the cref stage, and my named cause was wrong
+
+Two corrections and one decisive narrowing of
+[T-lin-10389](#t-lin-10389-the-cref-tuple-count-fell-6x-and-the-floor-cannot-see-it),
+all obtained by reading banked numbers rather than bisecting. Appended, not
+edited (§4.1).
+
+### Correction 1 — the benign explanation I offered does not hold
+
+That row says the drop is *"as likely an intended reduction … `6707857a`
+applies C's usual arithmetic conversions and deletes a quarantine"*. **`6707857a`
+is dated 2026-08-09, five days before the 2026-08-14 baseline** (`d298af58`,
+13:37). It is not an intervening change and cannot explain a drop measured
+after it. The "probably intended narrowing" branch loses its only named
+mechanism, which correspondingly **strengthens** the coverage-regression branch.
+Recorded because that sentence was the reason the row read as low-priority.
+
+### Correction 2 — the drop is not where the row implies
+
+[The 2026-08-14 funnel table](#) for this exact cell (whole
+`gcc.c-torture/execute`, 1,693 programs, RTX 5070 Ti, `cmake-debug`) compared
+against the 2026-08-15/16 run:
+
+| stage | 2026-08-14 | now | delta |
+| --- | ---: | ---: | ---: |
+| blocks seen (`funnel-seen`) | 119,228 | 119,119 | **−0.09%** |
+| refused | 84,854 | 84,832 | −0.03% |
+| accepted | 34,374 | 34,287 | −0.25% |
+| dispatched, compared, **agreed** | 33,936 | 33,911 | −0.07% |
+| **cref tuples** | **2,067,654** | **330,388** | **−84%** |
+| **per-leg oracle `ok=`** | **2,130** | **296** | **−86%** |
+
+**The device differential did not shrink.** It still sees the same blocks,
+refuses the same share, accepts the same share, and agrees on 33,911 of them.
+Every stage of the frame funnel is within 0.3%. So the 6.3x is **not** a loss of
+device coverage, and the row's framing — *"the differential quietly lost
+five-sixths of its subject"* — is wrong about **which** differential.
+
+What collapsed is the **cref** accounting specifically: `cref fragments=44286
+… tuples=330388` and the four `cref-oracle` legs at `ok=296`. That is the
+gcc/clang adjudication of extracted fragments, a separate measurement from the
+frame funnel, and it is the only stage that moved.
+
+### What this does and does not settle
+
+It **rules out** the whole funnel/scan path as the cause, which is where a
+bisect would naturally have started and where the in-range candidates live —
+including `b1f912b5` (lin's own T-lin-10384, keying struct-member offsets as
+live-ins in `ast_eval_ladder_scan`), whose own evidence points the *opposite*
+way anyway: *"subject.c -O4 GPU-emitter census 81 -> 0"* is **fewer** refusals,
+i.e. more accepted, not less.
+
+It does **not** identify the cause. The next slice is unchanged in intent but
+much cheaper in scope: attribute the change inside cref fragment
+extraction/adjudication only — `cref fragments`, `dedup-dropped`,
+`mixed-operand-slices` and the per-leg `ok=` — rather than bisecting the
+compiler. The floor conclusion is untouched and now sharper: `MINTUPLE=50000`
+sits 6.6x below a figure that fell 6.3x while **every** funnel stage held
+steady, so it is measuring a quantity that can collapse without it noticing.
+
+**Source.** lin-x64, 2026-08-16. Read from banked counters; nothing re-run.
