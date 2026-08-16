@@ -48879,3 +48879,84 @@ gsym style) on the cleanup Sym; after the funclet is emitted, walk the chain and
 the funclet. That combines the verified save/replay + scope-cleanup mechanism with a funclet-after-
 body layout via one fixup chain. Everything else (union field, lookahead, leave_scope coverage,
 save_lvalues) is proven. A focused fresh-context slice from here, no open design questions.
+
+<a id="t-lin-10084-slice-3b-landed-early-exits-run-the-finally"></a>
+
+## T-lin-10084 slice 3b LANDED — early return/break/continue/goto out of a __try run the __finally (win-x64, 2026-08-16, cf571085)
+
+The de-risked design from the reverted attempt, landed green first try. Mechanism as planned, with
+one simplification the reorder bought for free:
+
+- `skip_or_save_block(&trybody)` saves the __try body's tokens before anything is emitted, so the
+  handler keyword is known first. `__except` replays the body and then runs the slice-1/2 path
+  unchanged (behaviour-preserving, pe/seh green). The __try body must now be a compound statement
+  (`expect("'{'")` otherwise) — MSVC grammar, and skip_or_save_block's brace-tracking premise.
+- `__finally` opens a scope (`new_scope`), pushes a cleanup marker (`sym_push2(&all_cleanups,
+  SYM_FIELD|++cl.n,0,0)`, `cleanup_func==NULL`, chain head in `vla_inner_id` — NOT `c`, which
+  aliases `cleanup_func`), replays the body, then `te=ind; prev_scope(); jover=gjmp(0)`, emits the
+  funclet AFTER the body (push rbp; mov rbp,rdx; body; pop rbp; ret), patches the chain with
+  `gsym_addr(marker->vla_inner_id, fin_start)` (call rel32 patching is identical to jmp rel32),
+  and registers `pe_seh_scope_finally(tb, te, fin_start, fin_end)` exactly as slice 3a.
+- `try_call_scope_cleanup` grows the PE-x86_64 marker arm: `save_lvalues(); vcheck_cmp();
+  save_regs(0);` then `mov rdx,rbp` + `cls->vla_inner_id = oad(0xe8, cls->vla_inner_id)`.
+  save_lvalues alone is NOT enough for a raw call — a computed rvalue in rax or a pending VT_CMP
+  in FLAGS survives it; vcheck_cmp materialises the flags, save_regs(0) spills every register-held
+  vstack value (regular cleanups get this from gfunc_call; the raw call site must do it itself).
+  `oad` respects nocode_wanted (dead exits add no chain site); the vstack sentinel slot makes
+  vcheck_cmp safe on an empty stack.
+- The attempt's LOOKAHEAD trap vanished structurally: replay-body-then-parse-finally means no
+  real-stream token is in flight across the macro replay (TOK___finally is consumed into `tok`
+  before `begin_macro`; the first `next()` after `end_macro` reads the finally's `{` fresh).
+- Exit coverage is inherited from the scope machinery, nothing bespoke: return via
+  `leave_scope(root_scope)`, break/continue via `leave_scope(loop|switch scope)`, goto out via
+  `try_call_cleanup_goto` + the pending-goto thunks in `block_cleanup` (the thunk's finally call
+  lands after te, outside the guarded range), fallthrough via `prev_scope`→`block_cleanup`.
+  Nested __finally order (inner first) falls out of cl.s list order.
+
+VERIFICATION (the §8 spec for this slice): build `cmake --build cmake-mingw/mingw-native --target
+mcc` under vcvars, then `sh tests/cross/pe-seh.sh <mcc> <mingw-gcc> tests/cross/pe-seh.c <work>`.
+pe-seh.c grew five cl-validated cases (expected values produced by cl 19.x first, THEN mcc made to
+match): early return `ret=32 retr=1` (the return value is computed BEFORE the finally runs — the
+finally's write to the returned variable must not leak in; exercises the save_lvalues copy),
+break `brk=303 brkr=4` (finally on each fallthrough iteration AND the break exit), continue
+`cont=30 contr=5`, goto `gt=2 gtr=1` (the statement between the __try and the label is jumped
+over; exercises the pending-goto thunk), nested return `nst=8 nstr=12` (inner-then-outer order).
+All 23 output fields byte-identical to cl on both link paths (mcc-fulllink + mcc-coff+mingw).
+pe/seh, pe/unwind-backtrace, pe/torture-classes, pe/coff-obj-diff, pe/dwarf-lines, pe/codeview,
+pe/x-oracle-mutate all green. The banked corpora contain zero __try/__finally (grep), so no o0
+key drifts.
+
+KNOWN LIMITS (recorded, not blocking): (1) the slice-2 filter-spill limit persists — a filter
+expression that spills to [rbp-N] corrupts the parent frame; simple load/compare filters are
+fine. (2) The early-exit and fallthrough-thunk call sites inside/near the guarded range mean a
+__finally that ITSELF faults during a normal-path call can re-enter unwind with the resume IP
+still inside [tb,te) and run the finally a second time; cl places early-exit calls outside the
+range via out-of-line epilogues. Exotic (a faulting finally on the normal path), not covered by
+cl-parity tests, noted for a future hardening slice. (3) `__leave` is not implemented (never was);
+it would be a gjmp to te through the same cleanup emission, a small follow-on.
+
+pe/x-oracle went red on this tree on ONE subject, exec/types/sso.c — that is T-lin-10010 slice
+2a's x86_64 guard firing exactly as flagged (no SEH in sso.c; attribution note below), NOT a
+slice-3b regression.
+
+<a id="t-lin-10010-win-x64-sso-float-double-direct-compare-skips-the-swap"></a>
+
+## T-lin-10010 slice 2a x86_64 characterisation (win-x64 salvage note for lin's claimed verification, 2026-08-16)
+
+Windows x86_64 (mingw-native mcc at cf571085) datapoints for the exec/sso x86_64 run lin claimed
+at 1e6494bf — the guard FAILS here, and the failure is narrow:
+
+- STORES are byte-correct: after `y.f=1.5f; y.d=pi; y.u=0xAABBCCDD` the memcpy'd bytes are the
+  full big-endian patterns (3f c0 00 00 / 40 09 ... / aa bb cc dd). Integer member readback and
+  compare are correct (slice 1 holds).
+- PURE LOADS are correct: `float tf = y.f; double td = y.d;` then `tf == 1.5f` and
+  `td == 3.14159265358979` are both TRUE (the %a print of td differing between mcc and gcc
+  binaries is mcc's own printf shim formatting, not a value difference — the compares prove it).
+- The BUG is the direct compare on the member lval: `y.f == 1.5f` and `y.d == pi` are FALSE at
+  -O0. The float/double load-swap is skipped exactly when the rev-SO member is consumed directly
+  by a comparison — the same compare-context class as slice 1's integer offset-16 miscompile
+  (fixed a0b7ddc2 via inline gen_bswap); the float path presumably reaches XMM without passing
+  the swap, only in the compare consumption path.
+- Repro: tests/exec/types/sso.c prints FAIL under mcc, OK under mingw-gcc-16.1, both rc=0;
+  pe/x-oracle reports it as its single new divergence (agree=263, excluded=14). A member-split
+  diagnostic isolating the clauses is trivial to reconstruct from the fixture's slice-2a section.
