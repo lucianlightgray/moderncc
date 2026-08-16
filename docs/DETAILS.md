@@ -48686,3 +48686,8 @@ Implemented the whole slice-1 mechanism and hit a hard wall at the one piece the
 - Still TODO after the flag lands: refuse `&member` (address-of a swapped member) in the unary `&` path; a dg-error test for the refuse-list; the gcc-16 byte differential (DoD: `01 02 03 04`).
 
 Released to OPEN. **Source.** mac-arm64, 2026-08-16.
+
+<a id="t-lin-10010-blocker-addendum-svalue-widening-risks-byte-identity"></a>
+### T-lin-10010 blocker addendum — the SValue.r widening option is not free either (mac-arm64, 2026-08-16)
+
+Assessed option 1 (widen `SValue.r`) further. GOOD: no `%hx`/`%hu` or `(unsigned short)`/`& 0xffff` assumptions on `->r` anywhere; the SValue copies use `sizeof(SValue)` (mccircap.c:214, mccast.c:6011, mccrir.c:336/5342/6050/6212/6406), so a widening is transparent to their size. RISK: those copies capture the vstack for IR-capture/RIR **replay**, and the byte-identity subsystem (o0-baseline, `kept_coverage`, replay-parity, emitmap) compares captured/emitted bytes — a struct-size or padding change to SValue can drift those banked figures, so widening MUST be verified against the full replay/emitmap/o0-baseline suite, not just exec. Also audit `src/mccgen.c:16346` (`int e = *(uint16_t *)((char *)s + 8);`) — a raw 16-bit offset read; confirm `s` is not an SValue before relying on the widening. Net: both flag-home options are core changes needing full-suite verification; SSO wants a focused session with that bandwidth. **Source.** mac-arm64, 2026-08-16.
