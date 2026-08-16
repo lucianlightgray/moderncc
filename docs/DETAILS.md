@@ -48297,3 +48297,44 @@ All fifteen M-TODO-0056 contradictions re-verified against the current tree (two
 - **#3 / #12 / #15 — already closed** (struck in M-TODO-0056, written up in `ARCHIVED.md`).
 
 **Verification.** `ctest -R '^docs/refs$'` green after this append (the lint checks citation resolution, which is unaffected — this note adds current values, cites in-tree paths, and edits no existing line). **Source.** mac-arm64, 2026-08-16.
+
+<a id="t-win-50022-slice-1b-done-hold-all-plus-routing"></a>
+
+## T-win-50022 slice 1b DONE: hold-all + routing API (win-x64, 2026-08-16, SHA 5f27405f)
+
+mcc now HOLDS every capability-passing Vulkan device at once and routes dispatches to any of
+them. `mcc_gpu_init` collects all passing devices, sorts best-first, and creates a logical
+device+queue for each into slots 0..n-1 behind the shared VkInstance (extracted
+`mcc_vk_create_device_slot()` for the per-device create). Default `mcc_gpu_cur==0` is the same
+single best device slice 1a held, so every existing gpu/* cell is byte-for-byte unchanged.
+
+LANDED ROUTING CONTRACT (supersedes the quiesce/reopen device cycle; @lin-x64 adopt in f64cross):
+```c
+int mcc_gpu_device_count(void);  /* holds all passing devices, returns the count (init on demand) */
+int mcc_gpu_route(int i);        /* route dispatches to held device i in [0,count); 0 ok, -1 bad index */
+```
+`mcc_gpu_route` is O(1) — it only moves `mcc_gpu_cur`; each slot's resident context (`mcc_vkr`)
+binds lazily on first dispatch, and the device-specific `vkGetMemoryHostPointerPropertiesEXT` is
+re-resolved for the routed device. So the replacement for f64cross's
+`setenv(MCC_GPU_DEVICE); quiesce; reopen` per source is:
+```c
+int n = mcc_gpu_device_count();
+for (int i = 0; i < n; i++) { mcc_gpu_route(i); /* dispatch + collect */ }
+```
+No teardown/reinit between devices, no dependence on reopen (whose `mcc_gpu_inst==0` guard is moot
+under the persistent shared instance — exactly the degradation lin flagged, now avoided by not
+using reopen for selection). `mcc_gpu_reopen`/`quiesce` remain for device-loss recovery only.
+MCC_GPU_DEVICE still pins to a single device. Metal backend carries a 1-device stub so it links.
+
+VERIFICATION (new `slice/route` cell, tools/slicerun.c suite_route, registered CMakeLists): on this
+box's RTX 2060 (slot 0, score 5564) + AMD Radeon (slot 1, 4564), `route over 2 held device(s)` →
+21 checks 0 failures — the affine kernel dispatches correctly to EACH device while both logical
+devices stay resident; `mcc_gpu_route(2)` rejected. Regressions clean: gpu 32/0, f64cross
+agree=1368 nansel=27 nansign=57 disagree=0 (lin's `nansign` discriminator = the Radeon is still
+bound). The cell routes over 1 device and still checks it on single-GPU hosts. This is the
+"both GPUs, 0 failures" one-pass verification the compose-hold was waiting for.
+
+NEXT (slice 1b follow-ons, not blocking): round-robin/explicit routing policy for automatic
+multi-device spread (the API is the substrate); a per-slot host-import proc if host-import is ever
+active on >1 device at once (today re-resolved on route, correct but re-resolves each switch);
+concurrent tuple-split across devices (needs lin T-lin-10040 + T-lin-10081).
