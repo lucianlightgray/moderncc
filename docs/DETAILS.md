@@ -48050,3 +48050,132 @@ subjects). No moving-crash SEGFAULT observed this run (T-lin-10371 needs its own
 one clean-of-crash run is one data point). Next: split float128/integer_promotion arm64-Windows into
 their own investigation; the bitfield_width64 cluster is a T-win-50015 test-portability item, not a
 codegen bug.
+<a id="lin-x64-handoff-2026-08-16-preboot"></a>
+
+## lin-x64 handoff, 2026-08-16T13:47Z — state at a planned reboot
+
+Written per §10.11 / A12 so the next session **resumes rather than restarts**.
+Everything below is in the repo; nothing lives only on the machine except the
+host-local provisioning explicitly listed as at-risk.
+
+**Repo state: clean.** `main` at `879a30ec`, working tree empty, `HEAD ==
+origin/main`, nothing unpushed. No stashes exist (the stack was cleared — see
+*Cleanup* below), so nothing is parked there.
+
+### Claims held, and exactly what each needs
+
+All three are **work-complete and green on their own verification**. Each needs
+only the §8 full native suite. None needs code written.
+
+| task | state | remaining |
+| --- | --- | --- |
+| [T-lin-10359](#t-lin-10359-correction-the-gpu-was-not-idle-for-the-whole-verification-run) `[X]` | IN_PROGRESS | §8 only. Row verification satisfied: `slice/cref-oracle-gcc-c-torture-execute` PASSED 644.57 s, **zero stalls**. Its "idle GPU" precondition is **retracted** — read the correction anchor, not the original |
+| [T-lin-10390](#t-lin-10390-lin-re-bank-and-the-linux-half-of-t-win-50015) `[X]` | IN_PROGRESS | §8 only. Banks landed `71535c29` + `01ab23aa`; **now stale again**, see *The 31 failures* |
+| [T-lin-10392](#t-lin-10392-multi-gpu-the-second-device-is-reachable-and-not-correct) `[S]` | IN_PROGRESS | §8 only. Both user-directed slices landed `95a8f5c0` + `ed81899f` |
+| [T-lin-10001](#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so) `[C]` | IN_PROGRESS, **paused** | unchanged from the previous handoff; nothing depends on it |
+
+### The 31 failures the interrupted suite found — read this first
+
+A `-j16` suite was in flight at reboot (192 cells in, killed). **It is not a
+number** — it ran against `emerge -DNu world` at load 63–148 — but its failures
+are still a lead, and they share one origin:
+
+**All 31 trace to mac's `_BitInt` landing (`5dbbe6ca`) adding
+`tests/exec/types/bitint.c`.** Three groups:
+
+1. **~25 `exec*/bitint` cells** (`exec-O1`, `-O3`, `-Os`, `-replay`, `-search`,
+   `-chainstore`, …). **Cause NOT attributed.** Do not assume it is an x86_64
+   gap in `_BitInt`: mac verified slice 1 on arm64-Darwin only, so that is the
+   obvious hypothesis, but it is untested. A direct
+   `mcc tests/exec/types/bitint.c` proves **nothing** — the fixture has no
+   `main()` by design and **gcc-15 fails it identically**; the exec harness
+   supplies `main` via `tests/runner.c`. Reproduce through the harness
+   (`ctest -R '^exec/bitint$' --output-on-failure`), not by hand.
+2. **4× `ast/o0-baseline{,-gated}{,-known-positive}`.** Mechanical and
+   understood: the o0 corpus is `find tests/exec`, so a new fixture stales every
+   key. Confirmed — `O0_AB_CHECK` exits **1** right now. Fix is the same two-line
+   procedure used twice today, and **both** banks are required:
+   ```
+   cmake --build cmake-cross -j16
+   C2_NO_EXTRA=1 O0_AB_BANK=1 sh tools/o0_ab.sh cmake-cross measurable
+   C2_NO_EXTRA=1 O0_AB_BANK=1 O0_AB_GATES=1 MCC_DEV=1 sh tools/o0_ab.sh cmake-cross measurable
+   ```
+   Running only the first leaves `*-gated` red — that mistake has now been made
+   twice in this fleet.
+3. **`ci/gate-contract{,-known-positive}`, `docs/refs{,-known-positive}`,
+   `rir-coverage-census`.** Unattributed; plausibly downstream of the new cells.
+
+### Host-local provisioning — survives a reboot, but nothing detects loss
+
+`vendor/` holds **untracked symlinks**, on disk, so a reboot does not remove
+them. They are listed here because [T-lin-10388](#t-lin-10388-host-local-provisioning-vanishes-silently-and-each-loss-is-re-recorded-as-a-fleet-fact)
+proves this fleet loses them silently and then records the loss as a permanent
+fleet property:
+
+```
+vendor/gcc-c-torture-execute        -> ~/Projects/gcc/gcc/testsuite/gcc.c-torture/execute
+vendor/llvm-test-suite-regression-c -> ~/Projects/llvm-test-suite/SingleSource/Regression/C
+vendor/llvm-test-suite-unittests    -> ~/Projects/llvm-test-suite/SingleSource/UnitTests
+vendor/compiler-rt-builtins-unit    -> ~/Projects/llvm-project/compiler-rt/test/builtins/Unit
+vendor/compiler-rt-lib-builtins     -> ~/Projects/llvm-project/compiler-rt/lib/builtins
+```
+
+**Check these first after boot.** If absent, six cells become skip stubs and the
+suite still reports green — `slice/cref-oracle-*` ×4 plus
+`optlevel/torture-differential{,-known-positive}`, the latter a *floored* gate.
+Re-create with `ln -sfn`, then `cmake -S . -B cmake-debug` to re-register.
+
+### Box facts
+
+- **Full suites run at `-j16`** — user directive 2026-08-16, superseding
+  M-TODO-0005's `-j32`. Do not revert it.
+- **`-j16` self-contends on the GPU.** Measured at reboot: **34 concurrent
+  `slicerun` processes** holding the device from one `-j16` run. Device-cell
+  reds under a parallel suite are suspect by default; re-run every failure
+  serially before attributing it. That discipline correctly split
+  `slice/quiesce` (flaky, [T-lin-10074](#t-lin-10074-slicequiesce-is-structurally-flaky-and-the))
+  from `slice/census` (real, T-lin-10391) today.
+- **`emerge -DNu world` was still running at reboot** (webkit-gtk finished, it
+  moved on to ffmpeg). Check `pgrep -f "emerge -DNu"` before quoting any number.
+- Build dirs `cmake-{debug,cross,jitdev,prefix}` all exist; `cmake-debug` and
+  `cmake-cross` were rebuilt at HEAD today. `cmake-cross` measures **7/7** active
+  o0 keys including **both** `*-osx`.
+- Two GPUs: `MCC_GPU_DEVICE` pins by index or name substring.
+  `MCC_GPU_DEVICE=Radeon` binds the AMD part.
+
+### Cleanup done this session — do not redo it
+
+177 local branches → **1** (`main`); 3 stashes → **0**; `wt/slicops` and
+`wip/vector-abi-layout` deleted from the remote; ~**5 GB** reclaimed (mostly
+regenerable `cref-*` work dirs under `cmake-debug`). Every deletion was verified
+contained-or-superseded first — see
+[the audit](#branch-and-worktree-audit-2026-08-16-nothing-is-unmerged),
+[the vector-ABI proof](#wip-vector-abi-layout-is-superseded-hunk-by-hunk-safe-to-delete)
+and [the fix-imaginary proof](#fix-imaginary-superseded-verified-behaviourally-then-deleted).
+`origin/woa/bootstrap` is deliberately kept — win-x64 is working it.
+
+### Open cross-session threads
+
+- **I broke win's Vulkan build** (`ed81899f` used pre-refactor `mcc_gpu.inst` /
+  `.stranded`; win repaired at `cf03c717`). Acknowledged. **Standing offer to
+  win:** when their slice 1b lands a routing API, retire `mcc_gpu_reopen` from
+  `f64cross` and iterate their held devices instead of keeping two device-
+  selection mechanisms. Waiting on their answer.
+- **A risk that has not fired yet:** `mcc_gpu_reopen` refuses unless
+  `mcc_gpu_inst == 0`. Slice 1a is behaviour-preserving so it still works —
+  measured, `nansign=57` proves the Radeon is still bound. When slice 1b stops
+  destroying the shared instance, the device loop degrades to one device
+  **silently** and still exits 0. The discriminator is `nansign` (RADV-only) or
+  the `only N device(s) bound` line.
+- mac's two doc findings are **actioned** (`879a30ec`).
+
+### Next work after §8 closes the three rows
+
+By §11 there is no `[C]` with dependents, no BLOCKER inbox, and no `[X]` left
+for lin; the open `[P]` children are win's. So `[S]`, and the two strongest are
+[T-lin-10389](#t-lin-10389-narrowed-the-funnel-is-unchanged-the-drop-is-in-the-cref-stage)
+— already narrowed to the cref stage, so the next slice is cheap — and
+`T-lin-10058` (`node-census` hardware auto-detection), the natural continuation
+of the multi-GPU work now that both devices are proven individually correct.
+
+**Source.** lin-x64, 2026-08-16T13:47Z, at `879a30ec`.
