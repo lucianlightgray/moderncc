@@ -4889,6 +4889,7 @@ wide	elf	src/mccgen.c	gen_opq_fold	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_select	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_select_branch	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_select_regok	src/mcc.c	6666
+wide	elf	src/mccgen.c	gen_sso_bswap	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_test_zero	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_union_cast	src/mcc.c	0000
 wide	elf	src/mccgen.c	gen_vector_cast	src/mcc.c	0000
@@ -7646,6 +7647,7 @@ wide	elf	tests/exec/types/sizeof.c	main	tests/exec/types/sizeof.c	0000
 wide	elf	tests/exec/types/sizeof_array.c	main	tests/exec/types/sizeof_array.c	0000
 wide	elf	tests/exec/types/sizeof_semantics.c	bump	tests/exec/types/sizeof_semantics.c	0000
 wide	elf	tests/exec/types/sizeof_semantics.c	main	tests/exec/types/sizeof_semantics.c	0000
+wide	elf	tests/exec/types/sso.c	main	tests/exec/types/sso.c	0000
 wide	elf	tests/exec/types/std_short_enums.c	main	tests/exec/types/std_short_enums.c	0000
 wide	elf	tests/exec/types/stdcountof_header.c	main	tests/exec/types/stdcountof_header.c	0000
 wide	elf	tests/exec/types/storage_tentative.c	main	tests/exec/types/storage_tentative.c	0000

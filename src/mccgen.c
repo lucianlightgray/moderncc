@@ -5768,6 +5768,13 @@ static void gen_sso_bswap(int size) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); at.t = VT_LLONG | VT_UNSIGNED; btok = TOK_builtin_bswap64; }
 	at.bp = at.bs = 0;
 	gen_cast(&at);
+#if defined(MCC_TARGET_X86_64)
+	if (bswap_inline_on()) { MCC_TRACE("br\n");
+		gen_bswap(size);
+		vtop->type = save;
+		return;
+	}
+#endif
 	vpush_helper_func(btok);
 	vrott(2);
 	gfunc_call(1);
