@@ -13,7 +13,7 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 - [ ] T-lin-10007 [S] Parse `__float128` / `_Float128` (28 cells)
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 41d9b6bc | TS: 2026-08-16T02:10Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 41d9b6bc | TS: 2026-08-16T02:10Z | NOTE: design/slice-0 done (DETAILS#t-lin-10007-float128-design-runtime-complete-central-interception-slice-plan) — runtime float128.c COMPLETE (all arith/cvt/compare helpers + tokens), VT_QFLOAT confirmed NOT binary128; slice 1 = new VT_FLOAT128=17 + keywords + central gen_op libcall interception (mirrors gen_opl) + arm64 ABI + const-to-memory. IMPLEMENTING.
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 - [ ] T-lin-10391 [S] `slice/census` strands the columns the adding session cannot measure — o0-baseline's defect, without o0-baseline's fix
