@@ -47851,3 +47851,25 @@ git push origin --delete wip/vector-abi-layout
 documented re-dispatch ref.
 
 **Source.** lin-x64, 2026-08-16, at `e991baa8`.
+
+<a id="t-lin-10086-woa-run-on-current-main-stage1-regression-popen"></a>
+
+## T-lin-10086 — WoA run on current main: stage1 regression found + fixed (win-x64, 2026-08-16)
+
+"Prioritize woa/bootstrap": refreshed the lane (was 421 commits behind main at 214a0dc5) to
+current main and took a fresh full woa.yml run (probe->stage1 build->stage2 self-host->stage3
+suite) on the hosted windows-11-arm runner. First run (31949054857, tree b21c9a12) — probe green
+(environment healthy on the current tree), but **stage1 FAILED at link**:
+`slicerun.obj: LNK2019 unresolved external symbol popen / pclose (in f64_cross_op)` ->
+`LNK1120: 2 unresolved externals`. jobs carry continue-on-error so the run reads "success" — the
+build genuinely broke; stage2 self-host then failed for lack of the stage1 artifact.
+
+ROOT CAUSE: T-lin-10392's f64 five-source cross-oracle (ed81899f) calls POSIX popen/pclose at
+tools/slicerun.c:1297/1306; MSVC provides only _popen/_pclose, so cl link-fails. This broke every
+win MSVC slicerun build, not just WoA — the SECOND win-MSVC break from that landing after the
+mccgpu.c inst/stranded one (cf03c717). FIX (6132c807): a popen/pclose->_popen/_pclose macro shim
+in slicerun.c's existing MCC_HOST_WIN32 block (matching the adjacent setenv->_putenv_s pattern).
+Reproduced + verified locally: `cmake --build cmake-msvc-50015 --target slicerun` links clean
+(exit 0) after the fix, LNK2019 before. Re-triggered WoA on the fixed tree (run 31949398356,
+6132c807) to revalidate stage1->2->3 self-host + suite on current main. arm-win32 (ARM32) stays
+unexecutable on WoA regardless.
