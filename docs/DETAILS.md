@@ -47373,3 +47373,128 @@ the naive `want?1:0` probe, so force cl to keep the funclet with an opaque local
 `__finally` (Contract B: UHANDLER header, JumpTarget=0, funclet + inline copy on normal fallthrough).
 Build/test loop for a successor: `cmake --build cmake-mingw/mingw-native --target mcc` (winlibs
 mingw gcc 16.1, ~2min) under a PowerShell-imported `vcvars64` env, then run `tests/cross/pe-seh.sh`.
+
+<a id="t-lin-10392-multi-gpu-the-second-device-is-reachable-and-not-correct"></a>
+
+## T-lin-10392 Multi-GPU — the second device was reachable and not correct, and cross-adjudication found what self-checking could not
+
+**User-directed**, 2026-08-16: *"Add support for multiple GPUs; this machine has
+both a Radeon and Geforce"*, then *"use Nvidia as Oracle for Radeon and vice
+versa, also check gcc and clang for maximal correctness"*. Architecture
+(in-process device loop) and failure policy (majority adjudication,
+IEEE-unspecified counted not failed) were both chosen by the user from a
+presented table; the in-process option was taken **over** the recommendation,
+and the recommendation's stated risk turned out to be real — see *Enabling
+fixes*.
+
+**Hardware.** `GPU0` AMD Radeon 610M (RADV RAPHAEL_MENDOCINO), integrated,
+f64=1, score 4564. `GPU1` NVIDIA RTX 5070 Ti Laptop, discrete, f64=1, score
+5564.
+
+### Selection was never the gap
+
+`mccgpu.c` already enumerated every device, scored them (discrete 5000 >
+integrated 4000 > virtual 3000 > CPU 1000, +400 for f64) and took the best, and
+`MCC_GPU_DEVICE` already pinned by numeric index **or** case-insensitive
+`deviceName` substring (`mcc_vk_pin_matches`, `:1987`). `MCC_GPU_DEVICE=Radeon`
+and `=0` both bind the AMD part. Anyone reading "add multi-GPU support" as
+"write device selection" would have rewritten a working mechanism.
+
+### The gap was correctness on the second device
+
+`slicerun` on the Radeon: **1 failure**. On the NVIDIA: **0**. Identical 2548
+checks, 124 dispatches. `0 - NaN` on RADV returns the NaN with its **sign bit
+flipped**; IEEE 754 §6.3 does not specify the sign of a NaN result for any
+operation except copy/negate/abs/copySign, so **the hardware conforms and the
+comparator was wrong**.
+
+This is [T-lin-10380](#t-lin-10380-fixed-a-produced-nans-sign-is-excluded-from-the-compare-and-counted)'s
+defect surviving in a **second comparator**. That row fixed exactly this for
+`gpu/spv-slice-differential` (`f64_arith_equal`, `spvgate.c:565`, sign masked
+for `f64arith` rows, counted as `nansign=`, deliberately not applied to
+`f-notneg` because §5.5.1 *does* specify that negate flips a NaN's sign) and
+`tools/slicerun.c` kept the strict compare. It was unreachable on this fleet
+until now: win's RTX 2060 saw no produced-NaN sign disagreement across 2.9M
+points, so **only a second-vendor device could expose it**. Fixed at `95a8f5c0`
+by mirroring the existing helper rather than inventing one — Radeon 0 failures
+with `nansign=57`, NVIDIA 0 with `nansign=0`. The zero on NVIDIA is the evidence
+it is not a blanket relaxation.
+
+With that, the whole `slice/` + `gpu/` family is **72/72 on the Radeon**.
+
+### The cross-oracle: five sources, majority rule
+
+`slice/f64cross` (+ `-known-positive`) adjudicates every f64 add/sub/mul tuple
+across **mcc's evaluator, gcc, clang, and every Vulkan device present**. The
+point is structural: the only reference before this was `mcc_slice_run_cpu` —
+**mcc checking itself** — so an evaluator bug was invisible by construction.
+
+```
+agree=1368  nansel=27  nansign=57  denorm=0  disagree=0
+```
+
+`1368+27+57 = 1452 = 484 tuples × 3 ops`, so every tuple is accounted for and a
+silently-skipped class cannot hide.
+
+Sources are partitioned into equivalence classes and the **majority class wins**,
+with any minority source named against it. That is what converts *"something
+disagrees"* into *"which component is wrong"*: both devices agreeing but
+differing from gcc+clang+cpu indicts mcc's **lowering**; gcc+clang+devices
+agreeing while mcc's CPU differs indicts mcc's **evaluator**.
+
+### Two findings on the first run
+
+1. **gcc and clang disagree with each other.** On `NaN + NaN`, gcc propagates
+   the *second* operand's payload and clang the *first*. Both conform — §6.2
+   does not say which input NaN wins. Nothing in the tree had ever compared
+   them.
+2. **The two devices disagree the same way** — Radeon takes the first payload,
+   NVIDIA the second. The existing suite already *counted* this
+   (`g_f64_nansel_first/_second`) but could never have **attributed** it without
+   a second vendor in the same run.
+
+### Enabling fixes — the in-process loop needed two
+
+- **`mcc_gpu_reopen()`.** `mcc_gpu_quiesce` sets `mcc_gpu_closing` and
+  `mcc_gpu_init` refuses while it is set, deliberately: *"it closes it for
+  mcc_gpu_init too, so no path can reach a destroyed handle"*. Binding a second
+  device in one process means reopening that door. It is reopened **guarded**:
+  `reopen` returns 0 unless the previous quiesce actually released everything,
+  because a `lost` or `stranded` device still owns objects a pending command
+  buffer references — the invariant the one-way door existed to protect. On
+  Metal, quiesce never destroys the device, so reopen only clears the flag.
+- **A leaked `VkInstance`.** `mcc_gpu_init` returned without destroying the
+  instance when it enumerated devices and matched none. Probing one index past
+  the last device therefore poisoned every later `reopen`. Symptom: op 1 bound
+  both devices, ops 2 and 3 bound **zero** — visible only because the summary
+  prints the device count. A pre-existing leak, found by the user's chosen
+  architecture and not by the recommended one.
+
+### Not blind
+
+`MCC_XCROSS_MUTATE` perturbs one source by one bit.
+`slice/f64cross-known-positive` requires the clean run to pass, requires the
+summary line to be **present** (a run that compared nothing cannot pass), and
+requires the mutated run to fail. Observed:
+`NVIDIA…=bff0000000000001 (majority=mcc-cpu)`, then *"clean OK, minority source
+detected"*.
+
+### Verification
+
+`ctest -R '^slice/f64cross'` — both cells green, `disagree=0`, both devices and
+both compiler oracles bound. `slice/`+`gpu/` families 73/74; the one red is
+`slice/quiesce`, which passes 3/3 standalone, showed the identical load-induced
+signature at `-j32` *before* any of this landed, is the known structurally-flaky
+[T-lin-10074](#t-lin-10074-slicequiesce-is-structurally-flaky-and-the) row, and
+cannot be reached by this change — `mcc_gpu_reopen` has exactly one call site,
+in `f64_cross_op`, in a different suite and a different process.
+
+### What is deliberately not done
+
+Concurrent multi-device dispatch (using both GPUs for one workload) is **not**
+implemented; this is cross-*validation*, not load-splitting. The cross-oracle
+covers f64 add/sub/mul only — the comparison rows return `int` and are
+unaffected by NaN-sign questions, but the wider op matrix, `fmt`, and the frame
+paths are still single-device.
+
+**Source.** lin-x64, 2026-08-16, at `ed81899f` (fix `95a8f5c0`).
