@@ -47727,3 +47727,49 @@ someone decides to — that decision is not this session's.
 defensible with the numbers above attached.
 
 **Source.** lin-x64, 2026-08-16, at `9b89b6e4`.
+<a id="t-win-50003-preserved-embedjit-ucrt-symbol-wip"></a>
+
+## T-win-50003 Bucket B — preserved embed-JIT ucrt-symbol WIP (win-x64, salvaged from a stash during cleanup 2026-08-16)
+
+Recovered from a win-x64 stash (`WIP on main: 514d983d`) before an aggressive stash-stack
+cleanup, because the code was NOT on main and addresses the still-open embed-JIT link gap
+(T-win-50003 Bucket B: the cl-built JIT engine blob references `__isa_available` +
+`__imp_*` ucrt imports the in-process linker does not provide; related T-win-50021). UNVERIFIED
+(never built/run against current main — its base `b10e12c7` mccpe.c has since drifted, esp.
+`ubuf[512]` now exists at pe_check_symbols and `cand[4]` is still there, so the hunk needs
+re-fitting). Two moves: (1) in `pe_check_symbols`, add an underscore-prefixed candidate for a
+non-underscore `__imp_<raw>` import so a decorated ucrt import resolves; (2) in `pe_add_runtime`,
+under `s1->embed_jit`, add `ucrtbase` and define the CRT data globals the mingw/cl blob expects
+(`__isa_available`=1, `__isa_available_default`=1, `__isa_enabled`=0, `__favor`=0, `_dowildcard`=0)
+in `.data`. A superseded earlier variant (only `__isa_available`) was also in the stack.
+
+```diff
+@@ pe_check_symbols: __imp_ resolution — add an underscore-prefixed candidate @@
+-				const char *cand[4];
++				const char *cand[6];
++				char ubuf[200];
+ ...
++				if (raw[0] != '_' && strlen(raw) + 1 < sizeof ubuf) {
++					ubuf[0] = '_';
++					strcpy(ubuf + 1, raw);
++					cand[nc++] = ubuf;
++				}
+@@ pe_add_runtime: define the CRT data globals the embed-JIT blob imports @@
++		if (s1->embed_jit) {
++			static const struct { const char *name; int val; } crtg[] = {
++					{"__isa_available", 1}, {"__isa_available_default", 1},
++					{"__isa_enabled", 0}, {"__favor", 0}, {"_dowildcard", 0}};
++			unsigned gi;
++			mcc_add_library(s1, "ucrtbase");
++			for (gi = 0; gi < sizeof crtg / sizeof crtg[0]; ++gi) {
++				int off = (int)section_add(data_section, 4, 4);
++				write32le(data_section->data + off, crtg[gi].val);
++				set_global_sym(s1, crtg[gi].name, data_section, off);
++			}
++		}
+```
+
+Still needed for a real fix (per T-win-50003): `__security_cookie`/`__GSHandlerCheck`/
+`__report_rangecheckfailure` are functions/cookies, not just data globals, so this is a start,
+not the whole Bucket B. Re-fit onto current mccpe.c, build under embed-JIT, and gate on
+smoke/engines before landing.
