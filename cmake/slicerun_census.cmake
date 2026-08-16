@@ -73,7 +73,13 @@ endif()
 #                           -- the arm64-Darwin and arm64-Linux columns below are
 #                           STALE by the same fixture and only their own boxes
 #                           can re-take them
-#   arm64-Darwin   983   -- this machine. Was 990; bisected 2026-08-12 to
+#   arm64-Darwin   988   -- this machine. Was 983 until win-x64's da0932e2 added
+#                           tests/exec/expressions/algebraic_identities.c near-miss
+#                           controls (T-lin-10067): +5 blocks (5 new functions),
+#                           and inv-blocks 517 / all-internal 165 / all-external
+#                           265 / mixed 85 / any-indirect 2 ALL unmoved, so the +5
+#                           is pure corpus-mix, re-taken here 2026-08-15. Prior:
+#                           was 990; bisected 2026-08-12 to
 #                           82f39935 "the ternary fold must not hide a tail call
 #                           or a constant condition", which refuses to fold a
 #                           ternary whose arm is an AST_Invoke or whose condition
@@ -92,7 +98,7 @@ endif()
 # unmanageable the real fix is to give the census a corpus that does not include
 # system headers, which would make one column serve everywhere.
 if(CENSUS_ARCH STREQUAL "arm64" AND CENSUS_OS STREQUAL "Darwin")
-    set(_census_bank "blocks=983" "inv-blocks=517" "all-internal=165"
+    set(_census_bank "blocks=988" "inv-blocks=517" "all-internal=165"
                      "all-external=265" "mixed=85" "any-indirect=2")
 elseif(CENSUS_ARCH STREQUAL "arm64" AND CENSUS_OS STREQUAL "Linux")
     set(_census_bank "blocks=1022" "inv-blocks=554" "all-internal=164"
