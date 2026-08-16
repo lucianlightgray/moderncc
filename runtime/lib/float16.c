@@ -84,3 +84,30 @@ uint16_t __mcc_truncsfhf2(float a) {
 	u.f = a;
 	return f32_bits_to_f16_bits(u.x);
 }
+
+static uint16_t f32_bits_to_bf16_bits(uint32_t x) {
+	uint32_t exp = (x >> 23) & 0xff;
+	uint32_t mant = x & 0x7fffff;
+	uint32_t lsb, bias;
+	if (exp == 0xff) {
+		if (mant == 0)
+			return (uint16_t)(x >> 16);
+		return (uint16_t)((x >> 16) | 0x40);
+	}
+	lsb = (x >> 16) & 1;
+	bias = 0x7fff + lsb;
+	x += bias;
+	return (uint16_t)(x >> 16);
+}
+
+float __mcc_extendbfsf2(uint16_t a) {
+	u32_t u;
+	u.x = (uint32_t)a << 16;
+	return u.f;
+}
+
+uint16_t __mcc_truncsfbf2(float a) {
+	u32_t u;
+	u.f = a;
+	return f32_bits_to_bf16_bits(u.x);
+}

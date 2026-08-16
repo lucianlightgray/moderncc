@@ -382,7 +382,7 @@ void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			b = 0x7e0f;
 		} else if ((ft & VT_BTYPE) == VT_LDOUBLE) { MCC_TRACE("br\n");
 			b = 0xdb, r = 5;
-		} else if ((ft & VT_BTYPE) == VT_FLOAT16) { MCC_TRACE("br\n");
+		} else if (IS_HALF_BT(ft & VT_BTYPE)) { MCC_TRACE("br\n");
 			b = 0xb70f;
 		} else if ((ft & VT_TYPE) == VT_BYTE || (ft & VT_TYPE) == VT_BOOL) { MCC_TRACE("br\n");
 			b = 0xbe0f;
@@ -612,7 +612,7 @@ void store(int r, SValue *v) { MCC_TRACE("enter\n");
 		o(0xdb);
 		r = 7;
 	} else { MCC_TRACE("br\n");
-		if (bt == VT_SHORT || bt == VT_FLOAT16)
+		if (bt == VT_SHORT || bt == VT_FLOAT16 || bt == VT_BF16)
 			{ MCC_TRACE("br\n"); o(0x66); }
 		o(pic);
 		if (bt == VT_BYTE || bt == VT_BOOL)
@@ -1144,6 +1144,7 @@ static X86_64_Mode classify_x86_64_inner(CType *ty) { MCC_TRACE("enter\n");
 	case VT_PTR:
 	case VT_FUNC:
 	case VT_FLOAT16:
+	case VT_BF16:
 		return x86_64_mode_integer;
 
 	case VT_FLOAT:
@@ -2738,7 +2739,7 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 	int bt = vtop->type.t & VT_BTYPE;
 	int float_type = bt == VT_LDOUBLE ? MCC_RC_ST0 : MCC_RC_FLOAT;
 
-	if (op == TOK_NEG && bt == VT_FLOAT16) { MCC_TRACE("br\n");
+	if (op == TOK_NEG && IS_HALF_BT(bt)) { MCC_TRACE("br\n");
 		int nr = gv(MCC_RC_INT);
 		orex(0, nr, 0, 0x81);
 		o(0xf0 + REG_VALUE(nr));

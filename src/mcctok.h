@@ -414,6 +414,8 @@ DEF(TOK___fixunsdfdi, "__fixunsdfdi")
 
 DEF(TOK___extendhfsf2, "__mcc_extendhfsf2")
 DEF(TOK___truncsfhf2, "__mcc_truncsfhf2")
+DEF(TOK___extendbfsf2, "__mcc_extendbfsf2")
+DEF(TOK___truncsfbf2, "__mcc_truncsfbf2")
 
 #if defined MCC_TARGET_ARM
 #ifdef MCC_ARM_EABI

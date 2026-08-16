@@ -277,7 +277,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 						: size == 4
 								? 2
 								: 3;
-		if (size < 4 && (bt == VT_FLOAT16 || (!is_float(sv->type.t) && (sv->type.t & VT_UNSIGNED))))
+		if (size < 4 && (IS_HALF_BT(bt) || (!is_float(sv->type.t) && (sv->type.t & VT_UNSIGNED))))
 			{ MCC_TRACE("br\n"); func3 |= 4; }
 		if (v == VT_LOCAL || (fr & VT_SYM)) { MCC_TRACE("br\n");
 			br = load_symofs(r, sv, 0, &fc);
@@ -426,7 +426,7 @@ ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 	int fc = sv->c.i;
 	int bt = sv->type.t & VT_BTYPE;
 	int align, size = type_size(&sv->type, &align);
-	assert(!is_float(bt) || is_freg(r) || bt == VT_LDOUBLE || bt == VT_FLOAT16);
+	assert(!is_float(bt) || is_freg(r) || bt == VT_LDOUBLE || IS_HALF_BT(bt));
 	if (bt == VT_LDOUBLE)
 		{ MCC_TRACE("br\n"); size = align = 8; }
 	if (bt == VT_STRUCT)

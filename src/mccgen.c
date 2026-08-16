@@ -639,15 +639,15 @@ static int gjmp_acs(int t) { MCC_TRACE("enter\n");
 ST_INLN int is_float(int t) { MCC_TRACE("enter\n");
 	int bt = t & VT_BTYPE;
 	return bt == VT_LDOUBLE || bt == VT_DOUBLE || bt == VT_FLOAT || bt == VT_QFLOAT ||
-				 bt == VT_FLOAT16;
+				 bt == VT_FLOAT16 || bt == VT_BF16;
 }
 
 ST_INLN int is_float16(int t) { MCC_TRACE("enter\n");
-	return (t & VT_BTYPE) == VT_FLOAT16;
+	return IS_HALF_BT(t & VT_BTYPE);
 }
 
 ST_INLN int is_float_abi(int t) { MCC_TRACE("enter\n");
-	return is_float(t) && (t & VT_BTYPE) != VT_FLOAT16;
+	return is_float(t) && !IS_HALF_BT(t & VT_BTYPE);
 }
 
 static inline int is_complex_type(CType *type) { MCC_TRACE("enter\n");
@@ -692,7 +692,7 @@ static inline int is_vla_struct(CType *type) { MCC_TRACE("enter\n");
 static int btype_size(int bt) { MCC_TRACE("enter\n");
 	return bt == VT_BYTE || bt == VT_BOOL
 						 ? 1
-				 : bt == VT_SHORT || bt == VT_FLOAT16
+				 : bt == VT_SHORT || bt == VT_FLOAT16 || bt == VT_BF16
 						 ? 2
 				 : bt == VT_INT
 						 ? 4
@@ -708,7 +708,7 @@ static int btype_size(int bt) { MCC_TRACE("enter\n");
 static int R_RET(int t) { MCC_TRACE("enter\n");
 	if (!is_float(t))
 		{ MCC_TRACE("br\n"); return REG_IRET; }
-	if ((t & VT_BTYPE) == VT_FLOAT16)
+	if (IS_HALF_BT(t & VT_BTYPE))
 		{ MCC_TRACE("br\n"); return REG_IRET; }
 #ifdef MCC_TARGET_X86_64
 	if ((t & VT_BTYPE) == VT_LDOUBLE)
@@ -920,7 +920,7 @@ static int MCC_RC_RET(int t) { MCC_TRACE("enter\n");
 static int MCC_RC_TYPE(int t) { MCC_TRACE("enter\n");
 	if (!is_float(t))
 		{ MCC_TRACE("br\n"); return MCC_RC_INT; }
-	if ((t & VT_BTYPE) == VT_FLOAT16)
+	if (IS_HALF_BT(t & VT_BTYPE))
 		{ MCC_TRACE("br\n"); return MCC_RC_INT; }
 #ifdef MCC_TARGET_X86_64
 	if ((t & VT_BTYPE) == VT_LDOUBLE)
@@ -2465,7 +2465,7 @@ static void fconst_bits(unsigned char *d, CValue *cv, int t) { MCC_TRACE("enter\
 	memset(d, 0, 16);
 	if (bt == VT_FLOAT)
 		{ MCC_TRACE("br\n"); write32le(d, (uint32_t)cv->i); }
-	else if (bt == VT_FLOAT16)
+	else if (bt == VT_FLOAT16 || bt == VT_BF16)
 		{ MCC_TRACE("br\n"); write16le(d, (uint16_t)cv->i); }
 	else if (bt == VT_DOUBLE)
 		{ MCC_TRACE("br\n"); write64le(d, cv->i); }
@@ -3713,7 +3713,7 @@ static void gen_opic(int op) { MCC_TRACE("enter\n");
 #elif defined MCC_TARGET_ARM
 static void gen_negf_bits(void);
 void gen_negf(int op) { MCC_TRACE("enter\n");
-	if ((vtop->type.t & VT_BTYPE) == VT_FLOAT16)
+	if (IS_HALF_BT(vtop->type.t & VT_BTYPE))
 		{ MCC_TRACE("br\n"); gen_negf_bits(); return; }
 	vpushi(0), vswap(), gen_op('-');
 }
@@ -3777,7 +3777,7 @@ static void gen_opif(int op) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); ice_float_op = 1; }
 	if (c1 && c2 && !CONST_WANTED && stdc_fenv_access(mcc_state) && (op == '+' || op == '-' || op == '*' || op == '/'))
 		{ MCC_TRACE("br\n"); goto general_case; }
-	if (op == TOK_NEG && bt == VT_FLOAT16 && c1) { MCC_TRACE("br\n");
+	if (op == TOK_NEG && IS_HALF_BT(bt) && c1) { MCC_TRACE("br\n");
 		v1->c.i ^= 0x8000;
 		return;
 	}
@@ -3944,6 +3944,9 @@ static void type_to_str(char *buf, int buf_size,
 		goto add_tstr;
 	case VT_FLOAT16:
 		tstr = "_Float16";
+		goto add_tstr;
+	case VT_BF16:
+		tstr = "__bf16";
 		goto add_tstr;
 	case VT_DOUBLE:
 		tstr = "double";
@@ -4342,6 +4345,8 @@ static int combine_types(CType *dest, SValue *op1, SValue *op2, int op) { MCC_TR
 			type.t = VT_FLOAT;
 		} else if (bt1 == VT_FLOAT16 || bt2 == VT_FLOAT16) { MCC_TRACE("br\n");
 			type.t = VT_FLOAT16;
+		} else if (bt1 == VT_BF16 || bt2 == VT_BF16) { MCC_TRACE("br\n");
+			type.t = VT_BF16;
 		} else { MCC_TRACE("br\n");
 			type.t = VT_FLOAT;
 		}
@@ -4536,7 +4541,7 @@ redo:
 						"comparison of integer expressions of different signedness"); }
 		}
 		t = t2 = combtype.t;
-		if ((t & VT_BTYPE) == VT_FLOAT16)
+		if (IS_HALF_BT(t & VT_BTYPE))
 			{ MCC_TRACE("br\n"); t = t2 = (t & ~VT_BTYPE) | VT_FLOAT; }
 		if (op_class == SHIFT_OP)
 			{ MCC_TRACE("br\n"); t2 = VT_INT; }
@@ -4600,8 +4605,8 @@ redo:
 			vtop->type.t = VT_INT;
 		} else { MCC_TRACE("br\n");
 			vtop->type.t = t;
-			if ((combtype.t & VT_BTYPE) == VT_FLOAT16)
-				{ MCC_TRACE("br\n"); gen_cast_s(VT_FLOAT16); }
+			if (IS_HALF_BT(combtype.t & VT_BTYPE))
+				{ MCC_TRACE("br\n"); gen_cast_s(combtype.t & VT_BTYPE); }
 			if (bf_trunc) { MCC_TRACE("br\n");
 				int sh = 64 - bf_trunc;
 				vpushi(sh);
@@ -4697,6 +4702,39 @@ ST_FUNC float f16_round(long double v) { MCC_TRACE("enter\n");
 	return f16_bits_to_f32(f32_to_f16_bits((float)v));
 }
 
+ST_FUNC uint16_t f32_to_bf16_bits(float x) { MCC_TRACE("enter\n");
+	union {
+		float f;
+		uint32_t x;
+	} u;
+	uint32_t exp, mant, lsb, bias;
+	u.f = x;
+	exp = (u.x >> 23) & 0xff;
+	mant = u.x & 0x7fffff;
+	if (exp == 0xff) { MCC_TRACE("br\n");
+		if (mant == 0)
+			{ MCC_TRACE("br\n"); return (uint16_t)(u.x >> 16); }
+		return (uint16_t)((u.x >> 16) | 0x40);
+	}
+	lsb = (u.x >> 16) & 1;
+	bias = 0x7fffu + lsb;
+	u.x += bias;
+	return (uint16_t)(u.x >> 16);
+}
+
+ST_FUNC float bf16_bits_to_f32(uint16_t h) { MCC_TRACE("enter\n");
+	union {
+		float f;
+		uint32_t x;
+	} u;
+	u.x = (uint32_t)h << 16;
+	return u.f;
+}
+
+ST_FUNC float bf16_round(long double v) { MCC_TRACE("enter\n");
+	return bf16_bits_to_f32(f32_to_bf16_bits((float)v));
+}
+
 #if defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64 || defined MCC_TARGET_ARM
 #define gen_cvt_itof1 gen_cvt_itof
 static int gen_cvt_itof1_helper(void) { MCC_TRACE("enter\n");
@@ -4727,9 +4765,12 @@ static void gen_cvt_itof1(int t) { MCC_TRACE("enter\n");
 }
 #endif
 
-static void gen_cvt_f16(int to_half) { MCC_TRACE("enter\n");
-	int rt = to_half ? VT_FLOAT16 : VT_FLOAT;
-	vpush_helper_func(to_half ? TOK___truncsfhf2 : TOK___extendhfsf2);
+static void gen_cvt_half(int to_half, int half_bt) { MCC_TRACE("enter\n");
+	int rt = to_half ? half_bt : VT_FLOAT;
+	int tok = half_bt == VT_BF16
+			? (to_half ? TOK___truncsfbf2 : TOK___extendbfsf2)
+			: (to_half ? TOK___truncsfhf2 : TOK___extendhfsf2);
+	vpush_helper_func(tok);
 	vrott(2);
 	gfunc_call(1);
 	vpushi(0);
@@ -4874,12 +4915,14 @@ again:
 		}
 #endif
 
-		if (sbt_bt == VT_FLOAT16 || dbt_bt == VT_FLOAT16) { MCC_TRACE("br\n");
+		if (IS_HALF_BT(sbt_bt) || IS_HALF_BT(dbt_bt)) { MCC_TRACE("br\n");
 			fold_const_lval(vtop);
 			if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) { MCC_TRACE("br\n");
 				long double lv;
-				if (sbt_bt == VT_FLOAT16) { MCC_TRACE("br\n");
-					vtop->c.f = f16_bits_to_f32((uint16_t)vtop->c.i);
+				if (IS_HALF_BT(sbt_bt)) { MCC_TRACE("br\n");
+					vtop->c.f = sbt_bt == VT_BF16
+							? bf16_bits_to_f32((uint16_t)vtop->c.i)
+							: f16_bits_to_f32((uint16_t)vtop->c.i);
 					vtop->type.t = (vtop->type.t & ~VT_BTYPE) | VT_FLOAT;
 					sbt = VT_FLOAT;
 					sbt_bt = VT_FLOAT;
@@ -4897,14 +4940,19 @@ again:
 					{ MCC_TRACE("br\n"); lv = (long double)vtop->c.i; }
 				else
 					{ MCC_TRACE("br\n"); lv = (long double)(int64_t)vtop->c.i; }
-				vtop->c.i = f32_to_f16_bits((float)lv);
-				vtop->type.t = (vtop->type.t & ~VT_BTYPE) | VT_FLOAT16;
+				vtop->c.i = dbt_bt == VT_BF16
+						? f32_to_bf16_bits((float)lv)
+						: f32_to_f16_bits((float)lv);
+				vtop->type.t = (vtop->type.t & ~VT_BTYPE) | dbt_bt;
 				goto done;
 			}
-			if (nocode_wanted & DATA_ONLY_WANTED)
-				{ MCC_TRACE("br\n"); mcc_error("'_Float16' conversion is not a load-time constant"); }
-			if (sbt_bt == VT_FLOAT16) { MCC_TRACE("br\n");
-				gen_cvt_f16(0);
+			if (nocode_wanted & DATA_ONLY_WANTED) { MCC_TRACE("br\n");
+				if (sbt_bt == VT_BF16 || dbt_bt == VT_BF16)
+					{ MCC_TRACE("br\n"); mcc_error("'__bf16' conversion is not a load-time constant"); }
+				mcc_error("'_Float16' conversion is not a load-time constant");
+			}
+			if (IS_HALF_BT(sbt_bt)) { MCC_TRACE("br\n");
+				gen_cvt_half(0, sbt_bt);
 				sbt = VT_FLOAT;
 				sbt_bt = VT_FLOAT;
 				if (dbt_bt == VT_FLOAT)
@@ -4917,7 +4965,7 @@ again:
 				ft.ref = NULL;
 				gen_cast(&ft);
 			}
-			gen_cvt_f16(1);
+			gen_cvt_half(1, dbt_bt);
 			goto done;
 		}
 
@@ -5221,7 +5269,7 @@ ST_FUNC int type_size(CType *type, int *a) { MCC_TRACE("enter\n");
 	} else if (bt == VT_INT || bt == VT_FLOAT) { MCC_TRACE("br\n");
 		*a = 4;
 		return 4;
-	} else if (bt == VT_SHORT || bt == VT_FLOAT16) { MCC_TRACE("br\n");
+	} else if (bt == VT_SHORT || bt == VT_FLOAT16 || bt == VT_BF16) { MCC_TRACE("br\n");
 		*a = 2;
 		return 2;
 	} else if (bt == VT_INT128) { MCC_TRACE("br\n");
@@ -5437,6 +5485,7 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 		break;
 	case VT_FLOAT:
 	case VT_FLOAT16:
+	case VT_BF16:
 	case VT_DOUBLE:
 	case VT_LDOUBLE:
 	case VT_BOOL:
@@ -8366,8 +8415,8 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			u = VT_FLOAT16;
 			goto basic_type;
 		case TOK_BFLOAT16:
-			mcc_error("'__bf16' is not supported on this target");
-			break;
+			u = VT_BF16;
+			goto basic_type;
 		case TOK_BITINT:
 			/* C23 6.2.5. Not implemented. Say so, rather than leaving the parser
 			 * to fall through to the identifier path and report the NEXT token as
@@ -16071,6 +16120,7 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 					write16le(ptr, val);
 					break;
 				case VT_FLOAT16:
+				case VT_BF16:
 					write16le(ptr, val);
 					break;
 				case VT_FLOAT:

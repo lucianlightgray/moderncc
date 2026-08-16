@@ -273,7 +273,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			opc = 0xbf0f;
 		} else if ((ft & VT_TYPE) == (VT_SHORT | VT_UNSIGNED)) { MCC_TRACE("br\n");
 			opc = 0xb70f;
-		} else if ((ft & VT_BTYPE) == VT_FLOAT16) { MCC_TRACE("br\n");
+		} else if (IS_HALF_BT(ft & VT_BTYPE)) { MCC_TRACE("br\n");
 			opc = 0xb70f;
 		} else { MCC_TRACE("br\n");
 			opc = 0x8b;
@@ -363,7 +363,7 @@ ST_FUNC void store(int r, SValue *v) { MCC_TRACE("enter\n");
 	} else if (bt == VT_LDOUBLE) { MCC_TRACE("br\n");
 		opc = 0xdbc0d9;
 		r = 7;
-	} else if (bt == VT_SHORT || bt == VT_FLOAT16) { MCC_TRACE("br\n");
+	} else if (bt == VT_SHORT || bt == VT_FLOAT16 || bt == VT_BF16) { MCC_TRACE("br\n");
 		opc = 0x8966;
 	} else if (bt == VT_BYTE || bt == VT_BOOL) { MCC_TRACE("br\n");
 		opc = 0x88;
@@ -1123,7 +1123,7 @@ ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
 ST_FUNC void gen_opf(int op) {
 	int a, ft, fc, swapped, r;
 
-	if (op == TOK_NEG && (vtop->type.t & VT_BTYPE) == VT_FLOAT16) { MCC_TRACE("br\n");
+	if (op == TOK_NEG && IS_HALF_BT(vtop->type.t & VT_BTYPE)) { MCC_TRACE("br\n");
 		int nr = gv(MCC_RC_INT);
 		o(0x81);
 		o(0xf0 + nr);

@@ -3245,7 +3245,7 @@ static int ast_low_scalar(int t) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	return bt == VT_BOOL || bt == VT_BYTE || bt == VT_SHORT || bt == VT_INT ||
 				 bt == VT_LLONG || bt == VT_PTR || bt == VT_FLOAT || bt == VT_DOUBLE ||
-				 bt == VT_FLOAT16;
+				 bt == VT_FLOAT16 || bt == VT_BF16;
 }
 
 static int ast_low_base_ptr(const AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter\n");
@@ -4483,7 +4483,7 @@ static int ast_node_libcall(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				 lbt == VT_QFLOAT) &&
 				(op == '*' || op == '/' || op == '+' || op == '-'))
 			{ MCC_TRACE("br\n"); return 1; }
-		if (bt == VT_FLOAT16 || lbt == VT_FLOAT16)
+		if (IS_HALF_BT(bt) || IS_HALF_BT(lbt))
 			{ MCC_TRACE("br\n"); return 1; }
 		return 0;
 	}
@@ -4505,7 +4505,8 @@ static int ast_node_libcall(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); return 1; }
 		if ((d & VT_BTYPE) == VT_LDOUBLE && !is_float(st))
 			{ MCC_TRACE("br\n"); return 1; }
-		if (((s & VT_BTYPE) == VT_FLOAT16) != ((d & VT_BTYPE) == VT_FLOAT16))
+		if ((IS_HALF_BT(s & VT_BTYPE) || IS_HALF_BT(d & VT_BTYPE)) &&
+				(s & VT_BTYPE) != (d & VT_BTYPE))
 			{ MCC_TRACE("br\n"); return 1; }
 		return 0;
 	}
@@ -4514,7 +4515,7 @@ static int ast_node_libcall(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		if (op == AST_OP_BSWAP || op == AST_OP_SIGNBIT || op == AST_OP_FFS ||
 				op == AST_OP_BITSCAN)
 			{ MCC_TRACE("br\n"); return 1; }
-		if (op == AST_OP_FNEG && (bt == VT_LDOUBLE || bt == VT_FLOAT16))
+		if (op == AST_OP_FNEG && (bt == VT_LDOUBLE || IS_HALF_BT(bt)))
 			{ MCC_TRACE("br\n"); return 1; }
 		return 0;
 	}

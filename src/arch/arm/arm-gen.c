@@ -429,7 +429,7 @@ static void arm_tls_addr(Sym *sym, int coff) { MCC_TRACE("enter\n");
 }
 
 static int arm_ft_isfp(int ft) { MCC_TRACE("enter\n");
-	if ((ft & VT_BTYPE) == VT_FLOAT16)
+	if (IS_HALF_BT(ft & VT_BTYPE))
 		{ MCC_TRACE("br\n"); return 0; }
 	return is_float(ft);
 }
@@ -504,12 +504,12 @@ void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 #endif
 				o(op | (fpr(r) << 12) | (fc >> 2) | (base << 16));
 #endif
-			} else if ((ft & (VT_BTYPE | VT_UNSIGNED)) == VT_BYTE || (ft & VT_BTYPE) == VT_SHORT || (ft & VT_BTYPE) == VT_FLOAT16) { MCC_TRACE("br\n");
+			} else if ((ft & (VT_BTYPE | VT_UNSIGNED)) == VT_BYTE || (ft & VT_BTYPE) == VT_SHORT || IS_HALF_BT(ft & VT_BTYPE)) { MCC_TRACE("br\n");
 				calcaddr(&base, &fc, &sign, 255, 0);
 				op = 0xE1500090;
-				if ((ft & VT_BTYPE) == VT_SHORT || (ft & VT_BTYPE) == VT_FLOAT16)
+				if ((ft & VT_BTYPE) == VT_SHORT || IS_HALF_BT(ft & VT_BTYPE))
 					{ MCC_TRACE("br\n"); op |= 0x20; }
-				if ((ft & VT_UNSIGNED) == 0 && (ft & VT_BTYPE) != VT_FLOAT16)
+				if ((ft & VT_UNSIGNED) == 0 && !IS_HALF_BT(ft & VT_BTYPE))
 					{ MCC_TRACE("br\n"); op |= 0x40; }
 				if (!sign)
 					{ MCC_TRACE("br\n"); op |= 0x800000; }
@@ -644,7 +644,7 @@ void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 				o(op | (fpr(r) << 12) | (fc >> 2) | (base << 16));
 #endif
 				return;
-			} else if ((ft & VT_BTYPE) == VT_SHORT || (ft & VT_BTYPE) == VT_FLOAT16) { MCC_TRACE("br\n");
+			} else if ((ft & VT_BTYPE) == VT_SHORT || IS_HALF_BT(ft & VT_BTYPE)) { MCC_TRACE("br\n");
 				calcaddr(&base, &fc, &sign, 255, 0);
 				op = 0xE14000B0;
 				if (!sign)

@@ -229,6 +229,7 @@ static int arm64_type_size(int t) { MCC_TRACE("enter\n");
 	case VT_SHORT:
 		return 1;
 	case VT_FLOAT16:
+	case VT_BF16:
 		return 1;
 	case VT_INT:
 		return 2;
@@ -282,7 +283,7 @@ static uint64_t arm64_check_offset(int invert, int sz_, uint64_t off) { MCC_TRAC
 }
 
 static int arm64_ldsign(int t) { MCC_TRACE("enter\n");
-	if ((t & VT_BTYPE) == VT_FLOAT16)
+	if (IS_HALF_BT(t & VT_BTYPE))
 		{ MCC_TRACE("br\n"); return 0; }
 	return !(t & VT_UNSIGNED);
 }
@@ -2521,7 +2522,7 @@ ST_FUNC void gen_opf(int op) { MCC_TRACE("enter\n");
 	uint32_t x, a, b, dbl;
 	int bt = vtop[0].type.t & VT_BTYPE;
 
-	if (op == TOK_NEG && bt == VT_FLOAT16) { MCC_TRACE("br\n");
+	if (op == TOK_NEG && IS_HALF_BT(bt)) { MCC_TRACE("br\n");
 		int nr = intr(gv(MCC_RC_INT));
 		arm64_movimm(30, 0x8000);
 		o(0x4a000000 | 30 << 16 | nr << 5 | nr);

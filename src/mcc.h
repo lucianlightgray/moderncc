@@ -1127,6 +1127,9 @@ struct filespec {
 #define VT_QLONG 13
 #define VT_QFLOAT 14
 #define VT_FLOAT16 15
+#define VT_BF16 16
+
+#define IS_HALF_BT(bt) ((bt) == VT_FLOAT16 || (bt) == VT_BF16)
 
 #if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE
 #define MCC_HAVE_INT128 1
@@ -1582,6 +1585,9 @@ ST_INLN int is_float_abi(int t);
 ST_FUNC uint16_t f32_to_f16_bits(float x);
 ST_FUNC float f16_bits_to_f32(uint16_t h);
 ST_FUNC float f16_round(long double v);
+ST_FUNC uint16_t f32_to_bf16_bits(float x);
+ST_FUNC float bf16_bits_to_f32(uint16_t h);
+ST_FUNC float bf16_round(long double v);
 ST_FUNC int ieee_finite(double d);
 ST_FUNC int exact_log2p1(int i);
 ST_FUNC void test_lvalue(void);
