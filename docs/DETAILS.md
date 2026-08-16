@@ -48646,3 +48646,21 @@ cleanup already registered. (b) is cleaner (no emit-then-patch) if mcc's token-r
 normal `block()`; (a) avoids buffering but needs patchable call sites. Either is a focused piece;
 the value of this note is that the return/break/goto codegen itself needs NO change — leave_scope
 already does the walk. That is the crux a fresh implementer needs.
+
+**Slice 3b — the ordering wall is solvable with existing machinery (win-x64): implementation-ready.**
+mcc already has `skip_or_save_block(TokenString**)` (mccgen.c:15914, saves a `{...}` block as tokens
+without emitting — used by inline functions and VLA array sizes) and `begin_macro(str,2)`/`end_macro()`
+to replay a saved token string through the normal parser. So the __try handler can: (1) at `__try`,
+`skip_or_save_block(&trybody)` to capture the try body UNPARSED; (2) peek the handler keyword; (3a)
+`__except` — replay the body (`begin_macro; block(); end_macro()`) exactly as today, then the existing
+filter/handler path; (3b) `__finally` — emit the finally funclet (slice-3a shape), register it as a
+cleanup-list entry of a new "SEH finally" KIND on the __try scope, then replay the body so every
+`return`/`break`/`goto`/`continue` inside runs it via the ALREADY-EXISTING leave_scope→
+try_call_scope_cleanup walk, plus the normal-fallthrough call. The only new codegen is: the "SEH
+finally" cleanup kind in try_call_scope_cleanup that emits `mov rdx,rbp; call <funclet>` instead of
+`gfunc_call(1)`. COMPLETE de-risking: blocker (finally-after-body ordering) → solved by save/replay;
+exit-invocation → free via leave_scope; funclet → slice-3a; cleanup registration → cl.s + a kind
+flag. Remaining risk is purely execution: restructure the __try handler around save/replay without
+disturbing the green __except path, get the cleanup-kind emission right, and cl-differential every
+exit case (return/break/goto/continue/nested __try/__finally, void/int/struct returns). A focused
+fresh-context slice, but no longer an open design question.
