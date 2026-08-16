@@ -15022,6 +15022,24 @@ static void try_call_scope_cleanup(Sym *stop) { MCC_TRACE("enter\n");
 	for (; cls != stop; cls = cls->next) { MCC_TRACE("br\n");
 		Sym *fs = cls->cleanup_func;
 		Sym *vs = cls->cleanup_sym;
+#if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
+		if (!fs) { MCC_TRACE("br\n");
+			/* SEH __finally marker (cleanup_func == NULL): this exit leaves a __try
+			   whose termination handler is a framed funclet emitted AFTER the body
+			   (its address is not known yet). Spill every live vstack value — the
+			   funclet is a real call and may clobber any volatile register — then
+			   emit `mov rdx,rbp; call rel32` with the rel32 slot chained through
+			   vla_inner_id (gjmp-style); the parser patches the chain to the funclet
+			   once it is emitted. rdx = rbp makes the funclet's establisher-frame
+			   [rbp+off] parent-local references resolve on this normal-path call. */
+			save_lvalues();
+			vcheck_cmp();
+			save_regs(0);
+			g(0x48); g(0x89); g(0xea);
+			cls->vla_inner_id = oad(0xe8, cls->vla_inner_id);
+			continue;
+		}
+#endif
 		save_lvalues();
 		rir_hook_cleanup_call_begin();
 		vpushsym(&fs->type, fs);
@@ -15516,11 +15534,24 @@ again:
 		unsigned tb, te, hb, filt_start, filt_end;
 		int jover, filt_is_const;
 		int64_t filt;
+		TokenString *trybody;
+		/* The handler keyword decides how the body must be compiled (__finally
+		   needs its cleanup marker registered BEFORE the body so early exits can
+		   call it), but it only appears after the body. Save the body tokens
+		   unparsed, look at the keyword, then replay them through a macro stream.
+		   The replay is behaviour-preserving for __except (verified: pe/seh stays
+		   byte-green). MSVC grammar: the __try body is a compound statement. */
+		if (tok != '{')
+			{ MCC_TRACE("br\n"); expect("'{'"); }
+		skip_or_save_block(&trybody);
 		tb = ind;
-		block(0);
-		te = ind;
-		jover = gjmp(0);
 		if (tok == TOK___except) { MCC_TRACE("br\n");
+			begin_macro(trybody, 1);
+			next();
+			block(0);
+			end_macro();
+			te = ind;
+			jover = gjmp(0);
 			next();
 			skip('(');
 			/* the funclet + handler are reached only through the SEH dispatcher, so
@@ -15569,36 +15600,50 @@ again:
 				pe_seh_scope_funclet(tb, te, filt_start, filt_end, hb);
 			}
 		} else if (tok == TOK___finally) { MCC_TRACE("br\n");
-			/* __finally: the termination handler runs on BOTH the normal exit of the
-			   __try and on unwind. It is emitted ONCE as a framed funclet (push rbp;
-			   mov rbp,rdx = establisher frame; body; pop rbp; ret) that the OS calls
-			   during unwind; on the normal fallthrough path the parent CALLs the same
-			   funclet with rdx = its own rbp, so the body's [rbp+off] parent-local
-			   references resolve either way. The try body's jover jump skips the funclet
-			   (it is call/dispatch-reached, never fallen into) and lands at the
-			   normal-path call. LIMITATION (slice 3b): an early return/break/goto/continue
-			   OUT of the __try bypasses the normal-path call, so the finally does not run
-			   on those exits yet; the fallthrough and unwind paths are correct. */
+			/* __finally: the termination handler runs on EVERY exit of the __try —
+			   fallthrough, early return/break/continue/goto, and unwind. It is emitted
+			   ONCE as a framed funclet (push rbp; mov rbp,rdx = establisher frame;
+			   body; pop rbp; ret). The funclet MUST sit AFTER the body: it gets its
+			   own .pdata RUNTIME_FUNCTION overlapping the parent's, and
+			   RtlLookupFunctionEntry's BeginAddress binary search would mis-resolve a
+			   body fault IP to a funclet placed before the body (corrupt unwind). The
+			   OS calls the funclet during unwind; every normal-path exit calls it via
+			   the scope-cleanup marker (cleanup_func == NULL) registered here BEFORE
+			   the body replay: try_call_scope_cleanup emits `mov rdx,rbp; call rel32`
+			   at each exit — return/break/continue reach it through leave_scope, goto
+			   through the pending-goto thunks, fallthrough through prev_scope — with
+			   the rel32 sites chained through the marker's vla_inner_id, patched to
+			   the funclet address once it is emitted below. rdx = rbp makes the
+			   funclet's [rbp+off] parent-local references resolve on normal-path
+			   calls exactly as they do on the establisher frame during unwind. */
+			struct scope fo;
+			Sym *fincl;
+			new_scope(&fo);
+			fincl = sym_push2(&all_cleanups, SYM_FIELD | ++cur_scope->cl.n, 0, 0);
+			fincl->next = cur_scope->cl.s;
+			cur_scope->cl.s = fincl;
+			begin_macro(trybody, 1);
 			next();
+			block(0);
+			end_macro();
+			te = ind;
+			prev_scope(&fo, 0);
+			jover = gjmp(0);
 			CODE_ON();
 			filt_start = ind; /* reuse as fin_start */
 			g(0x55);             /* push rbp */
 			g(0x48); g(0x8b); g(0xea); /* mov rbp, rdx  (rbp = establisher frame) */
+			next();
 			block(0);            /* the __finally body */
 			g(0x5d);             /* pop rbp */
 			g(0xc3);             /* ret */
 			filt_end = ind;      /* reuse as fin_end */
-			gsym(jover);         /* normal path lands here, past the funclet */
-			jover = 0;           /* the shared gsym(jover) below becomes a no-op */
-			g(0x48); g(0x89); g(0xea); /* mov rdx, rbp (establisher = current frame) */
-			g(0xe8);             /* call rel32 -> the funclet (runs the body inline) */
-			{
-				int rel = (int)filt_start - (int)(ind + 4);
-				g(rel); g(rel >> 8); g(rel >> 16); g(rel >> 24);
-			}
+			gsym_addr(fincl->vla_inner_id, filt_start);
+			fincl->vla_inner_id = 0;
 			pe_seh_scope_finally(tb, te, filt_start, filt_end);
 		} else { MCC_TRACE("br\n");
 			expect("__except or __finally");
+			jover = 0;
 		}
 		gsym(jover);
 #else

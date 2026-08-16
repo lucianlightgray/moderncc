@@ -106,9 +106,83 @@ static int guard_finally_unwind(volatile int *p, int *ran) {
 	return caught;
 }
 
+/* slice 3b: EARLY EXITS out of a __try must run the __finally. The return
+   value is computed BEFORE the finally runs (cl semantics), so the finally's
+   write to `v` must not change what is returned. */
+static int fin_ret(int *ran) {
+	int v = 31;
+	__try {
+		return v + 1;   /* 32 is saved, then the finally runs */
+	} __finally {
+		v = 1000;       /* must not affect the already-computed return value */
+		*ran += 1;
+	}
+	return v;           /* not reached */
+}
+
+/* break out of a __try/__finally inside a loop: the finally runs on the break
+   iteration too (3 fallthrough exits + 1 break exit = 4 runs). */
+static int fin_break(int *ran) {
+	int i, r = 0;
+	for (i = 0; i < 10; i++) {
+		__try {
+			if (i == 3) break;
+			r += 1;
+		} __finally {
+			*ran += 1;
+		}
+	}
+	return r * 100 + i;   /* r=3, i=3 -> 303 */
+}
+
+/* continue out of a __try/__finally: the finally runs on every iteration,
+   whether the exit is the continue or the fallthrough. */
+static int fin_cont(int *ran) {
+	int i, r = 0;
+	for (i = 0; i < 5; i++) {
+		__try {
+			if (i & 1) continue;
+			r += 10;
+		} __finally {
+			*ran += 1;
+		}
+	}
+	return r;   /* i=0,2,4 add -> 30; finally ran 5x */
+}
+
+/* goto out of a __try/__finally: the finally runs, then control reaches the
+   label — the skipped assignment between the __try and the label must not run. */
+static int fin_goto(int *ran) {
+	int r = 2;
+	__try {
+		goto out;
+	} __finally {
+		*ran += 1;
+	}
+	r = 50;   /* jumped over */
+out:
+	return r;   /* 2 */
+}
+
+/* return through TWO nested __try/__finally: both finallys run, inner first. */
+static int fin_nest(int *ran) {
+	__try {
+		__try {
+			return 8;
+		} __finally {
+			*ran = *ran * 10 + 1;   /* inner runs first: 0 -> 1 */
+		}
+	} __finally {
+		*ran = *ran * 10 + 2;       /* then the outer: 1 -> 12 */
+	}
+	return 0;   /* not reached */
+}
+
 int main(void) {
 	int f_av, f_ok, f_div, f_divok, f_nc, f_ns, f_lo, f_lns;
 	int f_fin, f_finr = 0, f_fu, f_fur = 0;
+	int f_ret, f_retr = 0, f_brk, f_brkr = 0, f_cont, f_contr = 0;
+	int f_gt, f_gtr = 0, f_nst, f_nstr = 0;
 	int x = 11;
 
 	f_av = guard_av(0);          /* null store -> caught -> 7 */
@@ -121,10 +195,20 @@ int main(void) {
 	f_lns = guard_local_ns(0, 0);/* parent-local filter (sel=0) continues, outer -> 99 */
 	f_fin = guard_finally(&f_finr);       /* normal exit runs __finally -> r=5, finr=1 */
 	f_fu = guard_finally_unwind(0, &f_fur);/* unwind runs inner __finally -> caught=66, fur=1 */
+	f_ret = fin_ret(&f_retr);             /* early return -> 32, finally ran once */
+	f_brk = fin_break(&f_brkr);           /* break exit -> 303, finally ran 4x */
+	f_cont = fin_cont(&f_contr);          /* continue exit -> 30, finally ran 5x */
+	f_gt = fin_goto(&f_gtr);              /* goto exit -> 2, finally ran once */
+	f_nst = fin_nest(&f_nstr);            /* nested return -> 8, inner-then-outer = 12 */
 
-	printf("av=%d ok=%d x=%d div=%d divok=%d nc=%d ns=%d lo=%d lns=%d fin=%d finr=%d fu=%d fur=%d\n",
-			f_av, f_ok, x, f_div, f_divok, f_nc, f_ns, f_lo, f_lns, f_fin, f_finr, f_fu, f_fur);
+	printf("av=%d ok=%d x=%d div=%d divok=%d nc=%d ns=%d lo=%d lns=%d fin=%d finr=%d fu=%d fur=%d "
+			"ret=%d retr=%d brk=%d brkr=%d cont=%d contr=%d gt=%d gtr=%d nst=%d nstr=%d\n",
+			f_av, f_ok, x, f_div, f_divok, f_nc, f_ns, f_lo, f_lns, f_fin, f_finr, f_fu, f_fur,
+			f_ret, f_retr, f_brk, f_brkr, f_cont, f_contr, f_gt, f_gtr, f_nst, f_nstr);
 	return (f_av == 7 && f_ok == 100 && x == 42 && f_div == 9 && f_divok == 5 &&
 			f_nc == 55 && f_ns == 77 && f_lo == 88 && f_lns == 99 &&
-			f_fin == 5 && f_finr == 1 && f_fu == 66 && f_fur == 1) ? 0 : 1;
+			f_fin == 5 && f_finr == 1 && f_fu == 66 && f_fur == 1 &&
+			f_ret == 32 && f_retr == 1 && f_brk == 303 && f_brkr == 4 &&
+			f_cont == 30 && f_contr == 5 && f_gt == 2 && f_gtr == 1 &&
+			f_nst == 8 && f_nstr == 12) ? 0 : 1;
 }
