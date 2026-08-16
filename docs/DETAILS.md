@@ -48730,3 +48730,16 @@ Landed at **7fd7d9b0**. `struct __attribute__((scalar_storage_order("big-endian"
 **SLICE 2 (open, claimable):** the refused shapes — recursive SSO on nested aggregate members, array members (swap each element), bit-field/_BitInt members (masked + swapped), and float/double members (swap the bit-pattern) — plus gcc's rev-SO pointer type for `&member` (slice 1 refuses it). Each is a bounded extension on the landed mechanism.
 
 **CONTRACT — cross o0-baseline re-bank:** the new `sso.c` fixture stales the OTHER 6 o0-baseline keys (x86_64, x86_64-win32, i386-win32, arm64-win32, arm-win32, x86_64-osx) in BOTH the plain and `-gated` banks; a Linux/Windows cross box must re-bank them (`C2_NO_EXTRA=1 O0_AB_BANK=1 tools/o0_ab.sh cmake-cross measurable` + the `MCC_DEV=1 O0_AB_GATES=1` line). Only arm64-osx is banked here (this mac has no cross compilers). **Source.** mac-arm64, 2026-08-16.
+
+<a id="t-lin-10010-slice-2-assessment-2026-08-16-each-sub-piece-is-its-own-effort"></a>
+### T-lin-10010 slice 2 assessment — each sub-piece is its own bounded effort (mac-arm64, 2026-08-16)
+
+Assessed slice 2 on the confirmed slice-1 base (the VT_REVSO mechanism is fleet-verified). None of the four refused shapes reuses slice 1's `gv`/`vstore` hooks for free; each needs a distinct piece, so slice 2 is best taken as separate claimable increments, not one grind:
+
+- **Float/double members (2a):** the member-access tag + gv/vstore hooks already fire; the ONLY gap is `gen_sso_bswap` on a float — it currently `gen_cast`s to unsigned int, which VALUE-converts a float instead of reinterpreting its bits. Needs a register-level float↔int **bit-reinterpret** (arm64 FMOV Xn<->Dn, x86 movd/movq, or a stack round-trip) before/after the integer bswap. Self-contained but target-specific; the cleanest 2a.
+- **Array members (2b):** `s.arr[i]` — the array member decays to a pointer and `[i]` builds the element lvalue; `VT_REVSO` must propagate from the array-member access through the decay + index so the element (an int scalar) gets tagged. Reuses the scalar swap once tagged; the work is the flag flow through `case '['`.
+- **Nested aggregate members (2c):** gcc makes reverse_so recursive — a nested struct member inherits it. Propagate `reverse_so` onto nested struct Syms in `struct_layout`, then member access down the chain tags each scalar leaf.
+- **Bit-field/_BitInt members (2d):** masked access AND swap — the bit-field extract/insert (gv bitfield path, store_bf) must compose with the byte-swap; the trickiest.
+- **rev-SO pointer type (2e):** gcc gives `&member` a special pointer type whose loads/stores swap; slice 1 refuses `&member`. Needs the pointer-type carrier.
+
+Slice 1 (integer scalars, the common/dangerous case and the row's DoD) is landed and fleet-verified; slice 2 is completeness for rarer shapes. Left OPEN as claimable increments. **Source.** mac-arm64, 2026-08-16.
