@@ -48454,3 +48454,39 @@ VERIFY: a cell that runs mcc with `--jit-conservative`/`...=50%` and asserts the
 thread count and GPU pool (VRAM bytes / device count) are sized to the requested
 fraction of the measured hardware; and (auto mode) that a synthetic high-load reading
 shrinks the pool vs a low-load reading. **Source.** user request via lin-x64.
+
+<a id="lin-x64-8-close-2026-08-16-four-rows"></a>
+## lin-x64 §8 close 2026-08-16 — T-lin-10359 / 10390 / 10392 / T-mac-30007
+
+THE NUMBER: `ctest --test-dir cmake-debug -j1` (user directive: -j1, machine in use),
+full native suite over **635c7824**, 92 min: **10197 cells, 2 failed** — both
+`fmt/census-bank{,-known-positive}`, a benign site-census drift from win's concurrent
+T-win-50022 slice-1b (5f27405f) adding a device-name snprintf to mccgpu.c (39→40
+sites). Re-banked at 7d5952ff (accepted 156→157), both green. ZERO bitint reds
+(T-mac-30007 fix holds). The earlier -j16 run (b7qkgznta, over dcca5ccc) had 3 reds —
+ci/gate-contract{,-known-positive} (my T-lin-10392 registration gap → b6244ad3) and
+rir-coverage-census (corpus drift 389→394 → re-bank 14bc2551) — all fixed before this
+run, which is why they are absent here.
+
+Post-run the tree moved (mac T-lin-10037 src/mccgpu.h GPU const-cache degrade;
+win 37a3b185 slice/route must-run registration). Rebuilt at 7d5952ff+ and re-verified
+my four rows' cells on the current tree: slice/f64cross{,-kp}, slice+gpu family,
+gpu/spv-slice-differential, ast/o0-baseline{,-gated}, exec/bitint, rir-coverage-census,
+fmt/census-bank all GREEN. The ONLY red on the current tree is ci/gate-contract, from
+win's slice/route being registered in must-run without a gate-contract.txt row
+(win's incomplete T-win-50022 registration, CONTRACT sent — NOT my rows' cells).
+
+Per-row:
+- T-lin-10359 (cref-oracle stalls = host GPU contention, not code): slice/cref-oracle-*
+  passed in-suite; row's own idle-GPU verification stands (644s, 0 stalls). The unreconciled
+  cref tuple-count drop is split out as T-lin-10389 (stays open).
+- T-lin-10390 (o0-baseline re-bank for mac's bitint.c): ast/o0-baseline{,-gated} green;
+  the six lin-measurable keys carry bitint.c's -O0 object, arm64-osx unchanged.
+- T-lin-10392 (multi-GPU: mcc correct on the 2nd device): RADV NaN-sign comparator +
+  f64cross five-source cross-oracle. slice/f64cross agree/nansel/nansign all accounted;
+  the shared-VkInstance reopen risk is SETTLED (f64cross bound both devices in-suite even
+  with win's slice-1b routing API landed). Registration completed (b6244ad3).
+- T-mac-30007 (_BitInt live-temporary reduce): facet 1 (arith reduce) mac 7dc3f13a;
+  facet 2 (arg/return marshalling) lin af5aeab6 — fleet-verified x86_64 (lin) + arm64
+  (mac). All 25 bitint cells green, new [test_call] byte-identical to gcc.
+**Source.** lin-x64, 2026-08-16.
