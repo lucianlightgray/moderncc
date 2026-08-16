@@ -48544,3 +48544,29 @@ DESIGN DECISIONS (for the user):
 - D4 typing: percent slice = [S] (host_nproc already cross-platform; VRAM via Vulkan/Metal
   abstracted). auto slice = likely [C] budget/policy interface + [X] detection backends, OR
   [S]-with-deltas — decide during the auto-slice research. **Source.** lin-x64, 2026-08-16.
+
+<a id="t-win-50022-slice-1b-routing-was-a-noop-fixed"></a>
+
+## T-win-50022 slice 1b — the routing was a silent no-op until the distinctness check caught it (win-x64, 2026-08-16, SHA 89f717c6)
+
+The first slice/route cell only checked that each routed dispatch produced the correct affine
+value — which is device-agnostic (every device agrees), so it PASSED even though routing wasn't
+actually switching devices. Strengthening it to capture each routed device's identity
+(`mcc_gpu_stats(&gs).name`) and assert the routes reached DISTINCT devices immediately went RED on
+the 2-GPU box: both routes reported "NVIDIA GeForce RTX 2060". ROOT CAUSE: `mcc_gpu_init` set
+`mcc_gpu_cur = 0` at its very top, BEFORE the `tried` early-return — so every time the dispatch
+path re-checked init (which returns early once initialised), it reset the routed slot back to 0.
+`mcc_gpu_route(1)` set cur=1, then the next dispatch's init-recheck slammed it back to 0. This is
+EXACTLY the silent single-device degradation lin flagged for the persistent-instance world
+(T-lin-10392 FYI): correct values, wrong device, no error. FIX: gate on `mcc_gpu_arr[0].tried`
+explicitly (not via the mcc_gpu macro) and reset `cur=0` only on the real first init, so an
+already-initialised call returns without touching the routed slot. Latent on main between 5f27405f
+and 89f717c6 because nothing exercised mcc_gpu_route yet (f64cross uses the MCC_GPU_DEVICE pin +
+quiesce/reopen path, which lin confirmed still bound both devices in the §8 suite).
+
+LESSON banked: a multi-device routing check MUST assert device IDENTITY, not just value —
+value-only is blind to single-device routing. slice/route now does, and slice/route-known-positive
+proves the cell is not blind (standard kernel --mutate fails the value check). This is also why
+lin's `nansign` discriminator was the right tell for f64cross. Verified after fix: route 22/0
+(distinct devices), route --mutate caught, known-positive "clean OK, mutation detected", gpu 32/0,
+f64cross nansign=57 15/0, mcc + slicerun build clean.
