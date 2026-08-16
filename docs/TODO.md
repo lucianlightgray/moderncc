@@ -12,6 +12,9 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+- [ ] T-lin-10038 [S] No tree-recursion exec golden exists, and the failure mode is a GPU hang
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 6074d084 | TS: 2026-08-16T01:25Z
+      REF: DETAILS.md#t-lin-10038-no-tree-recursion-exec-golden-exists | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
 - [ ] T-lin-10391 [S] `slice/census` strands the columns the adding session cannot measure — o0-baseline's defect, without o0-baseline's fix
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 72821893 | TS: 2026-08-16T01:20Z
       REF: DETAILS.md#t-lin-10391-implemented-72821893-header-free-one-column-census-awaiting-lins-linux-confirmation | DEPS: — | NOTE: IMPLEMENTED (option a). Header-free corpus tests/census/*.c (-nostdinc) → ONE column: blocks=50 inv-blocks=20 all-internal=7 all-external=6 mixed=6 any-indirect=1, floors 17/4. Removed the 3 per-{arch,os} branches + CENSUS_ARCH/OS key + skip-the-exact-half asymmetry. Verified arm64-Darwin green + tests/exec-touch-independent (the stranding defect is gone by construction). PENDING lin CONTRACT (72821893): confirm identical column on arm64-Linux + x86_64-Linux; if a figure moves at -O1, drop the census to -O0 or split only that figure. ON CONFIRM: DONE + archive; unblocks T-lin-10038
@@ -144,9 +147,6 @@
 - [ ] T-lin-10037 [S] The emitter's constant cache binds before module size
       OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
       REF: DETAILS.md#t-lin-10037-the-emitters-constant-cache-binds-before | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
-- [ ] T-lin-10038 [S] No tree-recursion exec golden exists, and the failure mode is a GPU hang
-      OWNER: — | STATE: OPEN | SHA: 8c9d4c34 | TS: 2026-08-15T11:00Z
-      REF: DETAILS.md#t-lin-10038-no-tree-recursion-exec-golden-exists | DEPS: — | Q: Q-lin-10008 ANSWERED | NOTE: re-ranked — the 2026-08-09 device-path freeze that de-ranked this row is lifted (never BLOCKED, only de-ranked). Schedulable, not justified: the break-even table still prices the device lever negative
 - [ ] T-lin-10043 [S] `tests/emitmap/bank.json`'s tolerances cannot fail, and the selfhost cell is already drifted inside them
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10043-testsemitmapbankjsons-tolerances-cannot-fail | DEPS: T-lin-10003[C]
