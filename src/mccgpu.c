@@ -55,6 +55,13 @@ static struct {
 	long stranded;
 } mcc_gpu_ctr;
 
+/* T-lin-10393 runtime budgets, set from --jit-gpu-* in mcc_parse_args (same TU
+ * via libmcc.c's #include of this file). -1 = unset. Defined unconditionally --
+ * outside the MSL/Vulkan split -- so libmcc.c's unconditional setter resolves on
+ * every backend (the MSL build has no Vulkan branch to hold them). */
+static int mcc_gpu_vram_budget_pct = -1;
+static int mcc_gpu_max_devices = -1;
+
 #if MCC_GPU_LANG_MSL
 
 #include <objc/message.h>
@@ -1821,10 +1828,6 @@ typedef struct MccGpu {
 static VkInstance mcc_gpu_inst;
 static int mcc_gpu_inst_tried;
 static int mcc_gpu_ndev;
-/* T-lin-10393 runtime budgets, set from --jit-gpu-* in mcc_parse_args (same TU via
- * libmcc.c's #include of this file). -1 = unset. */
-static int mcc_gpu_vram_budget_pct = -1;
-static int mcc_gpu_max_devices = -1;
 static int mcc_gpu_cur;
 static MccGpu mcc_gpu_arr[MCC_GPU_MAXDEV];
 #define mcc_gpu (mcc_gpu_arr[mcc_gpu_cur])
