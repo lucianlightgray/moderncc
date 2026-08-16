@@ -47261,3 +47261,84 @@ So the representation is a genuine decision, not a free flag:
 3. **Struct-tag value** `7 << VT_STRUCT_SHIFT` as a `_BitInt` marker on a `VT_STRUCT`-typed synthetic (like `__int256` is a struct under the hood) with N in the ref — uses the free struct-tag values, no struct growth, but makes `_BitInt` a struct-category type end to end.
 
 Leaning option 1 (grow `SymAttr`, mirror `is_wideint`) as the least-surprising, since `__int256` already proves that shape and the reduce/ABI can key off `is_bitint` + the storage int in the ref. Not yet implemented — this is the decision to make before writing code. **Source.** mac-arm64, 2026-08-16 (paused mid-investigation on user 'wait').
+
+<a id="t-lin-10084-seh-funclet-cl-reference-and-design"></a>
+
+## T-lin-10084 — SEH funclet: the `cl` reference encoding + implementation design (win-x64, 2026-08-16)
+
+Reverse-engineered from MSVC `cl 19.51` (`/O2 /FAsc`) on this box (VS 18/2026 Community).
+Reference `.cod` listings in the win-x64 scratchpad; reproduced below so the implementation
+is a mechanical match, not a guess. This turns the "large, correctness-cliff" task into a
+specified one. **Build/test loop that works here:** import `vcvars64.bat` env into PowerShell
+(`cmd /c "\"...vcvars64.bat\" >nul && set" | %% { Set-Item Env:... }`), then `cl`/`dumpbin`
+are live. `cmd /c batch.bat` from the git-bash tool only prints the banner (MSYS mangles the
+args / vcvars cwd-change) — use the PowerShell tool for MSVC here.
+
+### Contract A — non-constant `__except` filter (SLICE 1)
+
+Parent `__C_specific_handler` SCOPE_TABLE record (4 DWORDs) is IDENTICAL to the constant case
+EXCEPT the HandlerAddress slot:
+- BeginAddress = try-body start (RVA), EndAddress = try-body end (RVA, exclusive).
+- **HandlerAddress = RVA of the FILTER FUNCLET** (an `ADDR32NB` reloc), *not* the raw constant.
+  Reserved values: `1` = constant EXCEPTION_EXECUTE_HANDLER (today's mcc), `0` = __finally.
+- JumpTarget = the `__except` handler-body RVA (where the dispatcher resumes if the filter
+  returns >0). Same as today.
+- Parent UNWIND_INFO header Flags = **UNW_FLAG_EHANDLER (1)** (mcc already sets 0x09 when
+  `seh_nscope`).
+
+Filter funclet body (MSVC `f_nonconst$filt$0`), called by the runtime as
+`LONG filt(EXCEPTION_POINTERS *rcx, ULONG64 EstablisherFrame rdx)`:
+```
+40 55            push rbp
+48 8b ea         mov  rbp, rdx        ; establisher frame -> rbp (parent-local base; slice 2)
+<filter expr>    ...                  ; result in eax (global-only in slice 1: mov eax,[g])
+5d               pop  rbp
+c3               ret
+cc               int 3                ; pad
+```
+Funclet's OWN unwind (distinct .pdata RUNTIME_FUNCTION + .xdata UNWIND_INFO):
+- .pdata: {Begin=funclet, End=funclet+len, Unwind=funclet-xdata}, all ADDR32NB vs text/xdata base.
+- .xdata header DWORD `0x00010201`: Version=1, Flags=0 (NO handler), SizeOfProlog=2,
+  CountOfCodes=1, FrameRegister=0. One unwind code DWORD `0x00005002`: CodeOffset=2,
+  UWOP_PUSH_NONVOL(op0) OpInfo=5(rbp); upper 16b padding. **FrameRegister=0** — rbp is set from
+  rdx, not rsp, so it is NOT the unwind frame register (no SET_FPREG).
+
+SLICE-1a simplification (global-only filter, no parent-local access): emit a LEAF funclet
+`<load global -> eax>; ret` with unwind header `0x00000001` (Version=1, Flags=0, SizeOfProlog=0,
+CountOfCodes=0) and no codes — a valid leaf. Defers the establisher-frame/rbp machinery to
+slice 2 (which needs local refs rewritten as `[rbp+home]` off the establisher frame).
+
+### Contract B — `__finally` (SLICE 3)
+
+SCOPE_TABLE record: HandlerAddress = **finally funclet RVA** (ADDR32NB), **JumpTarget = 0**.
+Parent UNWIND_INFO header Flags = **UNW_FLAG_UHANDLER (2)** (header byte `0x11`, not `0x09`) —
+a termination handler, not an exception handler. Finally funclet body is the same push-rbp/
+mov-rbp,rdx/…/pop-rbp/ret shape with identical `0x00010201`/`0x00005002` unwind. On the NORMAL
+(non-exceptional) fallthrough path MSVC also runs the finally body INLINE in the parent before
+returning — so mcc must both (i) emit the funclet for the unwind path and (ii) inline the
+finally block on normal fallthrough (and on every `return`/`break`/`goto` leaving the __try).
+
+### Implementation surface (mcc)
+
+- `src/mccgen.c:15267` `__try` handler: replace `expr_const64()` with a try-const-then-funclet
+  path. For a non-const `__except` filter, after emitting the handler body, emit the funclet
+  inline but OUT of the fallthrough path (handler `jmp`s over it; `CODE_ON()` before it), record
+  `(filt_start, filt_end)`. For `__finally`, drop the hard error; emit funclet + inline copy.
+- `src/objfmt/mccpe.c:2885` `pe_seh_scope`: carry a filter KIND (const value | funclet-offset |
+  finally-funclet-offset) — the current single `unsigned filter` conflates value and offset.
+  Parallel array or a flags field; DO NOT change the constant path's bytes.
+- `src/objfmt/mccpe.c:2913` `pe_add_unwind_data`: (1) when a scope's filter is a funclet, write the
+  funclet text offset into the HandlerAddress slot AND add an `R_XXX_RELATIVE` reloc vs `uw_sym`
+  (same ADDR32NB treatment as begin/end/handler); JumpTarget=0 for __finally + header UHANDLER.
+  (2) Emit a per-funclet RUNTIME_FUNCTION (.pdata) + UNWIND_INFO (.xdata) for each recorded
+  funclet — today this fires once per top-level function only.
+- Funclet raw codegen wants a small `x86_64-gen.c` helper (emit `push rbp`/`mov rbp,rdx`/epilogue
+  via `o()/g()`), since `mccgen.c` works at the gjmp/gexpr level.
+
+### Verification (per slice, TDD, gated on matching `cl`)
+
+Extend `tests/cross/pe-seh.{c,sh}`: (1a) a non-const global filter that must catch; (2) a filter
+reading a parent local (force cl to keep the funclet — `/O2` const-folds `want?1:0`; use a
+volatile/opaque local so the funclet survives, or accept mcc-vs-cl behavioural equality only);
+(3) `__finally` runs on both normal return and on unwind. Each must FAIL on today's mcc before
+the slice and match `cl`'s observable result after. **Source.** win-x64, 2026-08-16.
