@@ -460,6 +460,7 @@ static void seqp_flush(void) { MCC_TRACE("enter\n");
 
 static void gen_cast(CType *type);
 ST_FUNC void gen_cast_s(int t);
+static void gen_sso_bswap(int size);
 static int atomic_rmw_size(SValue *sv, int op);
 static void gen_atomic_rmw(int op, int ret_new);
 static int atomic_cas_size(SValue *sv);
@@ -2495,6 +2496,17 @@ ST_FUNC int (gv)(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n"
 	int bit_pos, bit_size, size, align;
 
 	seqp_record_sv(vtop, SEQP_READ);
+
+	/* Reverse scalar_storage_order scalar member (T-lin-10010): load the raw
+	 * little-endian bytes with the flag cleared (so we don't re-enter here), then
+	 * byte-swap the value.  A read of `s.v' = native-load then bswap. */
+	if ((vtop->r & (VT_LVAL | VT_REVSO)) == (VT_LVAL | VT_REVSO)) { MCC_TRACE("br\n");
+		int a, sz = type_size(&vtop->type, &a);
+		vtop->r &= ~VT_REVSO;
+		gv(rc);
+		gen_sso_bswap(sz);
+		return vtop->r & VT_VALMASK;
+	}
 
 	if (vtop->type.t & VT_BITFIELD) { MCC_TRACE("br\n");
 		CType type;
@@ -5736,6 +5748,34 @@ static void gen_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 	wide256_deconst();
 }
 
+/* Byte-swap the scalar value on top of the stack in place, for reverse
+ * scalar_storage_order (T-lin-10010).  1-byte values need no swap.  Uses the
+ * __builtin_bswap runtime helper path so it is target-independent; the value's
+ * original (signed/unsigned) type is restored so the swapped bytes reinterpret
+ * correctly. */
+static void gen_sso_bswap(int size) { MCC_TRACE("enter\n");
+	CType save, at;
+	int btok;
+	if (size <= 1)
+		{ MCC_TRACE("br\n"); return; }
+	save = vtop->type;
+	at.ref = NULL;
+	if (size == 2)
+		{ MCC_TRACE("br\n"); at.t = VT_SHORT | VT_UNSIGNED; btok = TOK_builtin_bswap16; }
+	else if (size == 4)
+		{ MCC_TRACE("br\n"); at.t = VT_INT | VT_UNSIGNED; btok = TOK_builtin_bswap32; }
+	else
+		{ MCC_TRACE("br\n"); at.t = VT_LLONG | VT_UNSIGNED; btok = TOK_builtin_bswap64; }
+	at.bp = at.bs = 0;
+	gen_cast(&at);
+	vpush_helper_func(btok);
+	vrott(2);
+	gfunc_call(1);
+	vpush(&at);
+	PUT_R_RET(vtop, at.t);
+	vtop->type = save;
+}
+
 ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 	int sbt, dbt, ft, r, size, align, bit_size, bit_pos, delayed_cast;
 	int fbp, fbs;
@@ -5889,6 +5929,14 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 			sv.sym = NULL;
 			load(r, &sv);
 			vtop[-1].r = r | VT_LVAL;
+		}
+
+		/* Reverse scalar_storage_order scalar member (T-lin-10010): a write of
+		 * `s.v' byte-swaps the value, then stores the raw little-endian bytes. */
+		if (vtop[-1].r & VT_REVSO) { MCC_TRACE("br\n");
+			int a2, sz2 = type_size(&vtop[-1].type, &a2);
+			gen_sso_bswap(sz2);
+			vtop[-1].r &= ~VT_REVSO;
 		}
 
 		r = vtop->r & VT_VALMASK;
@@ -6132,15 +6180,13 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 													"\"big-endian\" or \"little-endian\""); }
 			next();
 			skip(')');
-			/* Every target mcc supports is little-endian. */
+			/* Every target mcc supports is little-endian, so "little-endian" is a
+			 * no-op and "big-endian" means the scalar members of this struct are
+			 * stored byte-reversed -- recorded here, honoured by a byte-swap on each
+			 * scalar member load/store (T-lin-10010, slice 1: integer scalars only;
+			 * struct_layout refuses aggregate/array/bit-field/float members). */
 			if (order_tok == 1)
-				{ MCC_TRACE("br\n"); mcc_error(
-							"'scalar_storage_order(\"big-endian\")' is not implemented, and is "
-							"refused rather than ignored: this target stores scalars "
-							"little-endian, so ignoring it would lay every scalar member of the "
-							"struct out in the opposite order from a compiler that honours it, "
-							"and objects that link together would silently disagree about the "
-							"bytes"); }
+				{ MCC_TRACE("br\n"); ad->a.reverse_so = 1; }
 			break;
 		}
 		case TOK_TRANSPARENT_UNION1:
@@ -6480,7 +6526,28 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 	prevbt = VT_STRUCT;
 	prev_bit_size = 0;
 
+	/* Record reverse scalar_storage_order on the struct itself so member access
+	 * can byte-swap each scalar member (T-lin-10010). */
+	type->ref->a.reverse_so = ad->a.reverse_so;
+
 	for (f = type->ref->next; f; f = f->next) { MCC_TRACE("br\n");
+		if (ad->a.reverse_so) { MCC_TRACE("br\n");
+			/* Slice 1 supports integer scalar members only; the recursive
+			 * (nested aggregate), array, bit-field/_BitInt and floating cases are
+			 * refused rather than emitted with the wrong byte order. */
+			if ((f->type.t & VT_BTYPE) == VT_STRUCT)
+				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with an "
+													"aggregate member is not implemented"); }
+			if (f->type.t & (VT_ARRAY | VT_VLA))
+				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with an array "
+													"member is not implemented"); }
+			if (f->type.t & VT_BITFIELD)
+				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with a "
+													"bit-field or _BitInt member is not implemented"); }
+			if (is_float(f->type.t))
+				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with a "
+													"floating member is not implemented"); }
+		}
 		/* A whole _BitInt(N) member carries VT_BITFIELD for its masked access
 		 * but is laid out as its storage integer, not bit-packed -- only members
 		 * declared with an explicit `: width' (which strips VT_BITINT) pack. */
@@ -12637,6 +12704,12 @@ tok_next:
 		unary();
 		if ((vtop->type.t & VT_BITFIELD) && !IS_BITINT(vtop->type.t))
 			{ MCC_TRACE("br\n"); mcc_error("cannot take address of bit-field"); }
+		/* A reverse scalar_storage_order member has no ordinary address: a plain
+		 * pointer to it would read the bytes in the wrong order (T-lin-10010,
+		 * slice 1 refuses it, as gcc does). */
+		if (vtop->r & VT_REVSO)
+			{ MCC_TRACE("br\n"); mcc_error("cannot take address of scalar with reverse "
+												"storage order"); }
 		if ((vtop->type.t & VT_BTYPE) != VT_FUNC &&
 				!(vtop->type.t & (VT_ARRAY | VT_VLA)))
 			{ MCC_TRACE("br\n"); test_lvalue(); }
@@ -13748,6 +13821,11 @@ tok_next:
 				{ MCC_TRACE("br\n"); indir(); }
 			qualifiers = vtop->type.t & VT_QUALIFY;
 			base_nonlval = vtop->r & VT_NONLVAL;
+			/* A scalar member of a reverse scalar_storage_order struct is stored
+			 * byte-swapped; tag the lvalue so gv()/vstore() swap it (T-lin-10010).
+			 * struct_layout has already refused the non-scalar member shapes. */
+			int base_revso = (vtop->type.t & VT_BTYPE) == VT_STRUCT &&
+					vtop->type.ref && vtop->type.ref->a.reverse_so;
 			test_lvalue();
 			next();
 			s = find_field(&vtop->type, tok, &cumofs);
@@ -13784,6 +13862,8 @@ tok_next:
 				{ MCC_TRACE("br\n"); parse_btype_qualify(&vtop->type, qualifiers); }
 			if (!(vtop->type.t & (VT_ARRAY | VT_VLA))) { MCC_TRACE("br\n");
 				vtop->r |= VT_LVAL | base_nonlval;
+				if (base_revso)
+					{ MCC_TRACE("br\n"); vtop->r |= VT_REVSO; }
 				if (mcc_state->do_bounds_check)
 					{ MCC_TRACE("br\n"); vtop->r |= VT_MUSTBOUND; }
 			}

@@ -245,8 +245,8 @@ typedef union CValue {
 
 typedef struct SValue {
 	CType type;
-	unsigned short r;
-	unsigned short r2;
+	unsigned int r;
+	unsigned int r2;
 
 	union {
 		struct
@@ -295,7 +295,8 @@ struct SymAttr {
 			gnu_inline_body : 1,
 			full_bitfield : 1,
 			ms_struct : 1,
-			gcc_struct : 1;
+			gcc_struct : 1,
+			reverse_so : 1;
 };
 
 struct FuncAttr {
@@ -1114,6 +1115,10 @@ struct filespec {
 #define VT_NONLVAL 0x2000
 #define VT_MUSTBOUND 0x4000
 #define VT_BOUNDED 0x8000
+/* SValue .r flag (not a type bit): this lvalue is a scalar member of a reverse
+ * scalar_storage_order struct, so gv()/vstore() byte-swap it (T-lin-10010).
+ * Lives above the 16-bit range, which is why SValue.r was widened to 32-bit. */
+#define VT_REVSO 0x10000
 #define VT_BTYPE 0x001f
 #define VT_VOID 0
 #define VT_BYTE 1
