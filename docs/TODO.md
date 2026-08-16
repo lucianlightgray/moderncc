@@ -12,9 +12,6 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
-- [ ] T-lin-10005 [S] `__bf16`: finish encode/decode and ABI now that `VT_BTYPE` is 5 bits
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: bae2f350 | TS: 2026-08-16T01:45Z
-      REF: DETAILS.md#t-lin-10005-bf16-finish-encodedecode-and-abi-now | DEPS: —
 - [ ] T-lin-10391 [S] `slice/census` strands the columns the adding session cannot measure — o0-baseline's defect, without o0-baseline's fix
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 72821893 | TS: 2026-08-16T01:20Z
       REF: DETAILS.md#t-lin-10391-implemented-72821893-header-free-one-column-census-awaiting-lins-linux-confirmation | DEPS: — | NOTE: IMPLEMENTED (option a). Header-free corpus tests/census/*.c (-nostdinc) → ONE column: blocks=50 inv-blocks=20 all-internal=7 all-external=6 mixed=6 any-indirect=1, floors 17/4. Removed the 3 per-{arch,os} branches + CENSUS_ARCH/OS key + skip-the-exact-half asymmetry. Verified arm64-Darwin green + tests/exec-touch-independent (the stranding defect is gone by construction). PENDING lin CONTRACT (72821893): confirm identical column on arm64-Linux + x86_64-Linux; if a figure moves at -O1, drop the census to -O0 or split only that figure. ON CONFIRM: DONE + archive; unblocks T-lin-10038
