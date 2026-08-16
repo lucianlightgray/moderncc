@@ -50,6 +50,7 @@ slice/f64-known-positive     | registered | proves the fp64 differential is not 
 slice/f64cross               | registered | fp64 cross-oracle: add/sub/mul adjudicated across mcc-CPU, gcc, clang and the bound Vulkan devices; skips honestly with no device
 slice/f64cross-known-positive | registered | proves the fp64 cross-oracle is not blind
 slice/route                  | registered | multi-GPU: mcc holds every device at once and dispatches correctly to each via the routing API; routes over 1 and still checks it on a single-GPU host; skips honestly with no device
+slice/route-known-positive   | registered | proves the route differential is not blind: perturbs every built kernel and requires the value check catches it; skips honestly with no device
 slice/ops                    | registered | the op matrix, including N9's six otherwise-unreachable opcodes
 slice/ops-known-positive     | registered | proves the op matrix is not blind
 slice/frame                  | must-run   | device frame storage: Store/Load lowered to GPU memory, CPU half needs no device

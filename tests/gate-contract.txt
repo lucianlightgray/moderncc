@@ -65,7 +65,7 @@ slice/gpu | unfloored | slice/gpu-known-positive | programs the device different
 slice/wide64 | unfloored | slice/wide64-known-positive | 64-bit rows compared at full width
 slice/f64 | unfloored | slice/f64-known-positive | fp64 payloads compared bit-exactly
 slice/f64cross | intrinsic:slicerun.c:1462 fails "had N source(s); nothing to cross" when fewer than two sources cross-compile | slice/f64cross-known-positive | f64 add/sub/mul tuples cross-adjudicated across mcc-CPU, gcc, clang and the bound Vulkan devices
-slice/route | unfloored | unproved | held devices the routing API dispatched the affine kernel to (prover pending: a mutation that breaks the router must be caught — being built to flip this to slice/route-known-positive)
+slice/route | unfloored | slice/route-known-positive | held devices the routing API dispatched the affine kernel to (and, on >=2 devices, that the routes reached DISTINCT devices); known-positive perturbs the kernel and requires the differential catches it
 slice/ops | unfloored | slice/ops-known-positive | opcodes the op matrix reached
 slice/frame | unfloored | slice/frame-known-positive | frame Store/Load pairs lowered to device memory
 slice/effect | unfloored | slice/effect-known-positive | effect records written and replayed

@@ -2133,11 +2133,15 @@ static int mcc_gpu_init(void) {
 	int ncand = 0, ci, cj, made = 0;
 	unsigned ndev = 0, i;
 
-	mcc_gpu_cur = 0;
 	if (mcc_gpu_closing)
 		return 0;
-	if (mcc_gpu.tried)
-		return mcc_gpu.ok;
+	/* Gate on slot 0 explicitly, NOT via the mcc_gpu macro: an already-initialised
+	 * call must return WITHOUT touching mcc_gpu_cur, or it resets the routed device
+	 * (mcc_gpu_route) back to slot 0 every time the dispatch path re-checks init. cur
+	 * is reset to 0 only on the real first init below. */
+	if (mcc_gpu_arr[0].tried)
+		return mcc_gpu_arr[0].ok;
+	mcc_gpu_cur = 0;
 	mcc_gpu.tried = 1;
 	if (!mcc_vk_load())
 		return 0;

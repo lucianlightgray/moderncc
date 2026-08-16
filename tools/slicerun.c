@@ -1545,7 +1545,9 @@ static void suite_route(void) {
 	AstLocal root;
 	MccSliceWork w;
 	MccSliceKernel k;
-	int n, d, i;
+	MccGpuStats gs;
+	char names[MCC_GPU_MAXDEV][256];
+	int n, d, i, distinct;
 
 	if (!g_have_device) {
 		if (g_device_required) {
@@ -1556,6 +1558,8 @@ static void suite_route(void) {
 	}
 	n = mcc_gpu_device_count();
 	CHECK(n >= 1, "mcc holds at least one device");
+	if (n > MCC_GPU_MAXDEV)
+		n = MCC_GPU_MAXDEV;
 	fprintf(stderr, "slicerun: route over %d held device(s)\n", n);
 
 	a = ast_arena_new();
@@ -1574,7 +1578,19 @@ static void suite_route(void) {
 		for (i = 0; i < AFFINE_N; i++)
 			CHECK(gout[i] == AFFINE_EXPECT[i],
 						"the routed device produced the expected value");
+		mcc_gpu_stats(&gs);
+		snprintf(names[d], sizeof names[d], "%s", gs.name ? gs.name : "?");
 	}
+	/* With >=2 held devices the routes must have reached DISTINCT device identities;
+	 * if they all report the same one, routing silently bound a single device — the
+	 * exact degradation the persistent shared instance risks. (The known-positive
+	 * proves the cell is not blind via the standard kernel --mutate, which makes the
+	 * value checks above fail.) */
+	distinct = 0;
+	for (d = 1; d < n; d++)
+		if (strcmp(names[d], names[0]) != 0) { distinct = 1; break; }
+	CHECK(n < 2 || distinct,
+				"routing reached distinct devices, not one device N times");
 	CHECK(mcc_gpu_route(0) == 0, "route back to the default device");
 	CHECK(mcc_gpu_route(n) == -1, "routing past the held count is rejected");
 	ast_arena_free(a);

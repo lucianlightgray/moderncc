@@ -77,6 +77,9 @@ int mcc_gpu_reopen(void);
  * [0,count) — the supported way to cross-adjudicate every device in one process. */
 int mcc_gpu_device_count(void);
 int mcc_gpu_route(int i);
+#ifndef MCC_GPU_MAXDEV
+#define MCC_GPU_MAXDEV 8 /* the most devices mcc holds/routes at once */
+#endif
 /* Frame dispatch: `inout` is both seeded into and read back out of the device
  * frame, so a kernel that stores to local slots can hand its results back. */
 int mcc_gpu_dispatch_rw(const void *code, int n, int32_t *inout, int ntuple,

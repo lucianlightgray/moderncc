@@ -3962,6 +3962,14 @@ if(MCC_BUILD_TESTS)
                 COMMAND $<TARGET_FILE:slicerun> route --device-or-skip)
             set_tests_properties("slice/route" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
+            add_test(NAME "slice/route-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DRUNNER=$<TARGET_FILE:slicerun>
+                        -DSUITE=route
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_mutate.cmake")
+            set_tests_properties("slice/route-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
             foreach(_sk ops frame)
                 add_test(NAME "slice/${_sk}-lohi-fallback"
                     COMMAND "${CMAKE_COMMAND}"
