@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30007   | 2026-08-15T23:25Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10392   | 2026-08-16T00:17Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-16T00:16Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-16T00:24Z |
 
 ## Contracts — blocking, highest priority
 
@@ -104,7 +104,7 @@
       REF: DETAILS.md#t-lin-10016-int256-float-conversions-need-an-oracle | DEPS: —
 - [ ] T-lin-10020 [S] i386 `R_386_TLS_GOTIE` gap, and the declined upstream `7f7845cd` (VT_VOID)
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10020-i386-r-386-tls-gotie-gap | DEPS: —
+      REF: DETAILS.md#t-lin-10020-i386-r-386-tls-gotie-gap | DEPS: — | NOTE: REPRODUCER FOUND (win-x64 via WSL, NOT claimed) — the gap is a REAL correctness bug, not just a missed optimization. `extern __thread int x; return x;` non-PIC: mcc-i386 emits R_386_TLS_LE (assumes exe-local static TLS), gcc -m32 emits R_386_TLS_GOTIE (initial-exec) — mcc's LE is WRONG for a thread-local defined in a shared lib. `-fPIC` path agrees (both GD). mcc has no IE model (gen_tls_addr only does GD/LDM; non-PIC leaf shortcuts to LE at i386-gen.c:236). FIX (needs a sysroot-equipped Linux session): emit IE/GOTIE for extern non-PIC TLS in i386-gen.c + add R_386_TLS_IE/GOTIE to i386-link.c (has GD/LDM/LDO_32/LE only) + verify under qemu-i386 with a DSO-defined __thread. BLOCKER here: no i386 sysroot / qemu-i386 on this box (T-lin-10388 provisioning gap). Full compile-level repro + fix scope: DETAILS.md#t-lin-10020-i386-r-386-tls-gotie-gap (Investigation 2026-08-15)
 - [ ] T-lin-10021 [S] `ast_locrec_skip` consumes by count, and it should consume by fit
       OWNER: — | STATE: OPEN | SHA: 8a92ee01 | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10021-ast-locrec-skip-consumes-by-count | DEPS: — | NOTE: logic already by-fit (8a92ee01); owed probe's firing subject not in tests/exec — see DETAILS#t-lin-10021-investigation-logic-stale-fixed-probe-trigger-unfound

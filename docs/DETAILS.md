@@ -278,7 +278,20 @@ Carried from the 2026-08-05 list with no further work recorded; the first step i
 
 **Verification.** An i386 TLS fixture under qemu that fails on the missing relocation today.
 
-**Source.** Migrated from `docs/TODO.md`, *Open codegen / front-end defects* — [M-TODO-0089](#m-todo-0089-open-codegen-front-end-defects).
+**Investigation (win-x64 via WSL, 2026-08-15) — the gap is REAL (correctness, not just a missed optimization), reproducer found at compile level.** Built `mcc-i386` from `cmake-cross` and diffed its relocs against `gcc -m32` for the initial-exec shape `extern __thread int x; int get(void){ return x; }`:
+
+| build | mcc-i386 emits | gcc -m32 emits |
+| --- | --- | --- |
+| non-PIC | `R_386_TLS_LE` (local-exec) | **`R_386_TLS_GOTIE`** (initial-exec, + get_pc_thunk/GOTPC) |
+| `-fPIC` | `R_386_TLS_GD` (general-dynamic) | `R_386_TLS_GD` |
+
+The `-fPIC` GD path agrees and is correct. The **non-PIC path is the bug**: mcc emits `R_386_TLS_LE` for an *extern* thread-local (`i386-gen.c:236`, the `greloca(... R_386_TLS_LE ...)` in the non-PIC branch of `load()`), i.e. it assumes the symbol lives in the executable's static TLS block. That holds when `x` is defined in another TU of the same executable, but is WRONG when `x` is defined in a shared library: LE resolves to a link-time TP offset that does not exist for a DSO symbol. gcc uses GOTIE precisely because a non-PIC access to an extern TLS var cannot assume exe-local — GOTIE (a GOT-indirect `@INDNTPOFF`/`@GOTNTPOFF`) is correct for both exe-local and startup-DSO definitions. mcc has NO initial-exec model at all: `gen_tls_addr` only ever emits GD/LDM, and the non-PIC leaf shortcut jumps straight to LE.
+
+**Runtime reproducer that would fail** (not runnable here): a shared lib defining `__thread int x`, a non-PIC `main` reading it through mcc → mcc's LE reloc gives the wrong TP offset / an unresolvable static-TLS symbol; gcc's GOTIE works. Confirming it needs an i386 sysroot (shared-lib link + `qemu-i386` runtime); this box has neither the sysroot nor `qemu-i386` (the host-local provisioning gap of [T-lin-10388](#t-lin-10388-host-local-provisioning-vanishes-silently-and-each-loss-is-re-recorded-as-a-fleet-fact)).
+
+**Fix scope (for a sysroot-equipped Linux session):** (1) `i386-gen.c` — in the non-PIC TLS path, emit initial-exec (`R_386_TLS_IE` for the absolute non-PIC form, or `R_386_TLS_GOTIE` with a GOT base) instead of `R_386_TLS_LE` when the symbol is extern/undefined-in-this-TU; keep LE only for a symbol known-defined here. (2) `i386-link.c` — add `R_386_TLS_IE`/`R_386_TLS_GOTIE` cases (it currently handles GD/LDM/LDO_32/LE only). (3) verify under `qemu-i386` with a DSO-defined `__thread`. Not started as code — unverifiable without the runtime, so banked here rather than pushed. The declined-upstream `7f7845cd` (VT_VOID) half is untouched.
+
+**Source.** Migrated from `docs/TODO.md`, *Open codegen / front-end defects* — [M-TODO-0089](#m-todo-0089-open-codegen-front-end-defects). Investigation: win-x64 via WSL, 2026-08-15.
 
 <a id="t-lin-10021-ast-locrec-skip-consumes-by-count"></a>
 
