@@ -3941,6 +3941,13 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("slice/f64cross-known-positive" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 600
                 ENVIRONMENT "MCC_XORACLE_GCC=${DIFF3_GCC};MCC_XORACLE_CLANG=${DIFF3_CLANG}")
+            # T-win-50022 slice 1b: mcc holds every device at once and routes to each.
+            # On a single-device host this routes over 1 and still checks it; on a
+            # multi-GPU host (e.g. win RTX 2060 + Radeon) it dispatches to both.
+            add_test(NAME "slice/route"
+                COMMAND $<TARGET_FILE:slicerun> route --device-or-skip)
+            set_tests_properties("slice/route" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
             foreach(_sk ops frame)
                 add_test(NAME "slice/${_sk}-lohi-fallback"
                     COMMAND "${CMAKE_COMMAND}"

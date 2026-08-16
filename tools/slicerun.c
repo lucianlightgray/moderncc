@@ -1535,6 +1535,51 @@ out:
 	ast_arena_free(a);
 }
 
+/* T-win-50022 slice 1b: prove mcc HOLDS more than one device at once and that the
+   routing API dispatches correctly to each, WITHOUT the quiesce/reopen cycle. Routes
+   to every held device in turn and checks the affine kernel result on each. On this
+   box that is the RTX 2060 (slot 0) and the Radeon (slot 1); both must produce the
+   expected values while the other's logical device stays resident. */
+static void suite_route(void) {
+	AstArena *a;
+	AstLocal root;
+	MccSliceWork w;
+	MccSliceKernel k;
+	int n, d, i;
+
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr, "FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+	n = mcc_gpu_device_count();
+	CHECK(n >= 1, "mcc holds at least one device");
+	fprintf(stderr, "slicerun: route over %d held device(s)\n", n);
+
+	a = ast_arena_new();
+	root = build_affine(a);
+	CHECK(mcc_slice_work_from_ast(a, root, &w) == 1, "affine slice yields work");
+	CHECK(mcc_slice_kernel_build(&w, &k) == 1, "the slice lowers to a device kernel");
+
+	for (d = 0; d < n; d++) {
+		int64_t gout[AFFINE_N];
+		unsigned char gdef[AFFINE_N];
+		CHECK(mcc_gpu_route(d) == 0, "route to a held device");
+		mcc_slice_work_bind(&w, AFFINE_IN, AFFINE_N, gout, gdef);
+		CHECK(mcc_slice_run_gpu(&w, &k, 0) == MCC_TASK_DONE,
+					"the routed device runs the batch");
+		CHECK(w.done == AFFINE_N, "the routed device covered every tuple");
+		for (i = 0; i < AFFINE_N; i++)
+			CHECK(gout[i] == AFFINE_EXPECT[i],
+						"the routed device produced the expected value");
+	}
+	CHECK(mcc_gpu_route(0) == 0, "route back to the default device");
+	CHECK(mcc_gpu_route(n) == -1, "routing past the held count is rejected");
+	ast_arena_free(a);
+}
+
 static void suite_f64cross(void) {
 	if (!g_have_device) {
 		fprintf(stderr, "slicerun: f64cross needs a device\n");
@@ -10233,7 +10278,7 @@ static int slicerun_main(int argc, char **argv) {
 				"task",  "work",   "cpu",	 "gpu",		"bytes",	"wide64",
 				"f64",	 "ops",		"frame", "mem",		"deref",	"fmt",
 				"fault", "sched",	"ext",	 "rwstore", "arrow",	"effect",
-				"hostimport", "thread", "lost", "quiesce", "f64cross"};
+				"hostimport", "thread", "lost", "quiesce", "f64cross", "route"};
 		size_t si;
 		int known = 0;
 		for (si = 0; si < sizeof SUITES / sizeof SUITES[0]; si++)
@@ -10265,6 +10310,8 @@ static int slicerun_main(int argc, char **argv) {
 		suite_f64();
 	if (only && !strcmp(only, "f64cross"))
 		suite_f64cross();
+	if (only && !strcmp(only, "route"))
+		suite_route();
 	if (!only || !strcmp(only, "ops"))
 		suite_ops();
 	if (!only || !strcmp(only, "frame"))

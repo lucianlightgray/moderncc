@@ -560,6 +560,12 @@ int mcc_gpu_reopen(void) {
 	return ok;
 }
 
+/* Metal holds a single device today; the routing API (T-win-50022 slice 1b, a
+   Vulkan-side capability) is stubbed here so cross-platform callers link. Holding
+   more than one Metal device is mac-arm64 territory. */
+int mcc_gpu_device_count(void) { return mcc_gpu_init() ? 1 : 0; }
+int mcc_gpu_route(int i) { return i == 0 ? 0 : -1; }
+
 static uint64_t mtl_key(const char *s, int len) {
 	uint64_t h = 0xcbf29ce484222325u;
 	int i;
@@ -2043,128 +2049,19 @@ static int mcc_vk_pin_matches(const char *pin, unsigned idx,
 	return 0;
 }
 
-static int mcc_gpu_init(void) {
-	VkApplicationInfo ai;
-	VkInstanceCreateInfo ici;
-	VkPhysicalDevice devs[8];
-	VkPhysicalDeviceProperties props;
+/* Create the logical device + one compute queue for the currently-routed slot
+   (mcc_gpu.phys / mcc_gpu.qfam already filled), returning 1 on success. Extracted
+   from mcc_gpu_init for T-win-50022 slice 1b so init can call it once per held
+   device. Operates entirely on the routed slot (mcc_gpu = mcc_gpu_arr[mcc_gpu_cur]);
+   mcc_vk_want_hostimport() reads mcc_gpu.phys, so host-import is decided per device.
+   The device-specific vkGetMemoryHostPointerPropertiesEXT it resolves is kept
+   consistent with the routed device by re-resolving in mcc_gpu_route(). */
+static int mcc_vk_create_device_slot(void) {
 	VkDeviceQueueCreateInfo qci;
 	VkDeviceCreateInfo dci;
 	VkPhysicalDeviceFeatures feat;
 	float prio = 1.0f;
-	unsigned ndev = 0, i;
 
-	if (mcc_gpu_closing)
-		return 0;
-	if (mcc_gpu.tried)
-		return mcc_gpu.ok;
-	mcc_gpu.tried = 1;
-	if (!mcc_vk_load())
-		return 0;
-	memset(&ai, 0, sizeof ai);
-	ai.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-	ai.pApplicationName = "mcc";
-	ai.apiVersion = VK_API_VERSION_1_1;
-	memset(&ici, 0, sizeof ici);
-	ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-	ici.pApplicationInfo = &ai;
-	{
-		VkResult _r = vkCreateInstance(&ici, 0, &mcc_gpu_inst);
-		if (_r != VK_SUCCESS) {
-			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
-				fprintf(stderr, "[ladder-gpu] vkCreateInstance rc=%d\n", (int)_r);
-			return 0;
-		}
-	}
-	{
-		/* Count first, then fill.  The count query must succeed outright; a loader
-		 * that answers VK_INCOMPLETE to it is not telling us anything usable, and
-		 * the handles such a loader writes are not valid (AMD's
-		 * VK_LAYER_AMD_switchable_graphics does exactly this).  VK_INCOMPLETE from
-		 * the *fill* is expected and fine: it only means there are more devices
-		 * than devs[] holds and ndev is the number actually written, which is the
-		 * set the scoring below ranks. */
-		unsigned cap = (unsigned)(sizeof devs / sizeof devs[0]);
-		VkResult _r = vkEnumeratePhysicalDevices(mcc_gpu_inst, &ndev, 0);
-		if (_r != VK_SUCCESS || !ndev) {
-			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
-				fprintf(stderr,
-								"[ladder-gpu] vkEnumeratePhysicalDevices(count) rc=%d ndev=%u\n",
-								(int)_r, ndev);
-			return 0;
-		}
-		if (ndev > cap)
-			ndev = cap;
-		_r = vkEnumeratePhysicalDevices(mcc_gpu_inst, &ndev, devs);
-		if ((_r != VK_SUCCESS && _r != VK_INCOMPLETE) || !ndev) {
-			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
-				fprintf(stderr, "[ladder-gpu] vkEnumeratePhysicalDevices rc=%d ndev=%u\n",
-								(int)_r, ndev);
-			return 0;
-		}
-	}
-	{
-		const char *pin = getenv("MCC_GPU_DEVICE");
-		long best = -1;
-		unsigned bestq = 0, pinned = 0;
-		mcc_gpu.phys = 0;
-		for (i = 0; i < ndev; i++) {
-			VkPhysicalDeviceProperties cp;
-			VkPhysicalDeviceFeatures cf;
-			unsigned q = 0;
-			long sc;
-			memset(&cp, 0, sizeof cp);
-			memset(&cf, 0, sizeof cf);
-			vkGetPhysicalDeviceProperties(devs[i], &cp);
-			if (pin && pin[0]) {
-				if (!mcc_vk_pin_matches(pin, i, &cp))
-					continue;
-				pinned = 1;
-			}
-			if (!mcc_vk_compute_qfam(devs[i], &q)) {
-				if (mcc_vk_diag())
-					fprintf(stderr, "[gpu-vk] device %u \"%s\" has no compute queue\n", i,
-									cp.deviceName);
-				continue;
-			}
-			vkGetPhysicalDeviceFeatures(devs[i], &cf);
-			sc = mcc_vk_device_score(&cp, cf.shaderFloat64 ? 1 : 0);
-			if (mcc_vk_diag())
-				fprintf(stderr, "[gpu-vk] device %u \"%s\" type=%d f64=%d score=%ld\n", i,
-								cp.deviceName, (int)cp.deviceType, cf.shaderFloat64 ? 1 : 0, sc);
-			if (sc < 0)
-				continue;
-			if (sc > best) {
-				best = sc;
-				bestq = q;
-				mcc_gpu.phys = devs[i];
-				props = cp;
-			}
-		}
-		if (!mcc_gpu.phys) {
-			if (pin && pin[0] && !pinned)
-				fprintf(stderr,
-								"[gpu-vk] MCC_GPU_DEVICE=\"%s\" matched none of the %u "
-								"enumerated devices\n",
-								pin, ndev);
-			else if (mcc_vk_diag())
-				fprintf(stderr,
-								"[gpu-vk] none of the %u enumerated devices can run a "
-								"%d-wide compute group over three storage buffers\n",
-								ndev, MCC_GPU_LOCAL_SIZE);
-			if (mcc_gpu_inst && vkDestroyInstance) {
-				vkDestroyInstance(mcc_gpu_inst, 0);
-				mcc_gpu_inst = 0;
-			}
-			return 0;
-		}
-		mcc_gpu.qfam = bestq;
-		snprintf(mcc_gpu.name, sizeof mcc_gpu.name, "%s", props.deviceName);
-		mcc_gpu.maxsbrange = (unsigned long)props.limits.maxStorageBufferRange;
-		if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
-			fprintf(stderr, "[ladder-gpu] init ok dev=%s qfam=%u score=%ld\n",
-							mcc_gpu.name, mcc_gpu.qfam, best);
-	}
 	memset(&qci, 0, sizeof qci);
 	qci.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 	qci.queueFamilyIndex = mcc_gpu.qfam;
@@ -2216,19 +2113,197 @@ static int mcc_gpu_init(void) {
 		fprintf(stderr, "[gpu-vk] host-pointer import %s align=%lu%s%s\n",
 						mcc_gpu.hostimp ? "yes" : "no", mcc_gpu.hostimp_align,
 						mcc_gpu.hostimp ? "" : " -- ", mcc_gpu.hostimp_why);
-	/* The first vkCreateDevice above is allowed to fail and be retried without
-	 * the host-import extension. If it failed with device loss, that verdict was
-	 * about a device that now does not exist; the one this call created is the
-	 * only device this process will use and nothing has happened to it yet. */
 	mcc_gpu.lost = 0;
 	mcc_gpu.ok = 1;
-	/* Slice 1a (T-win-50022): the data model is a per-device array, but this
-	 * init still holds exactly the single best device in slot 0 and routing is
-	 * pinned to it (mcc_gpu_cur == 0), so behaviour is unchanged. Slice 1b
-	 * populates slots 1..n and routes across them. */
-	if (mcc_gpu_ndev < 1)
-		mcc_gpu_ndev = 1;
 	return 1;
+}
+
+static int mcc_gpu_init(void) {
+	VkApplicationInfo ai;
+	VkInstanceCreateInfo ici;
+	VkPhysicalDevice devs[8];
+	/* One candidate per capability-passing device, best-first after the sort. */
+	struct MccVkCand {
+		VkPhysicalDevice phys;
+		unsigned qfam;
+		long score;
+		char name[256];
+		unsigned long maxsb;
+	} cand[MCC_GPU_MAXDEV];
+	int ncand = 0, ci, cj, made = 0;
+	unsigned ndev = 0, i;
+
+	mcc_gpu_cur = 0;
+	if (mcc_gpu_closing)
+		return 0;
+	if (mcc_gpu.tried)
+		return mcc_gpu.ok;
+	mcc_gpu.tried = 1;
+	if (!mcc_vk_load())
+		return 0;
+	memset(&ai, 0, sizeof ai);
+	ai.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+	ai.pApplicationName = "mcc";
+	ai.apiVersion = VK_API_VERSION_1_1;
+	memset(&ici, 0, sizeof ici);
+	ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+	ici.pApplicationInfo = &ai;
+	{
+		VkResult _r = vkCreateInstance(&ici, 0, &mcc_gpu_inst);
+		if (_r != VK_SUCCESS) {
+			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
+				fprintf(stderr, "[ladder-gpu] vkCreateInstance rc=%d\n", (int)_r);
+			return 0;
+		}
+	}
+	{
+		/* Count first, then fill.  The count query must succeed outright; a loader
+		 * that answers VK_INCOMPLETE to it is not telling us anything usable, and
+		 * the handles such a loader writes are not valid (AMD's
+		 * VK_LAYER_AMD_switchable_graphics does exactly this).  VK_INCOMPLETE from
+		 * the *fill* is expected and fine: it only means there are more devices
+		 * than devs[] holds and ndev is the number actually written, which is the
+		 * set the scoring below ranks. */
+		unsigned cap = (unsigned)(sizeof devs / sizeof devs[0]);
+		VkResult _r = vkEnumeratePhysicalDevices(mcc_gpu_inst, &ndev, 0);
+		if (_r != VK_SUCCESS || !ndev) {
+			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
+				fprintf(stderr,
+								"[ladder-gpu] vkEnumeratePhysicalDevices(count) rc=%d ndev=%u\n",
+								(int)_r, ndev);
+			return 0;
+		}
+		if (ndev > cap)
+			ndev = cap;
+		_r = vkEnumeratePhysicalDevices(mcc_gpu_inst, &ndev, devs);
+		if ((_r != VK_SUCCESS && _r != VK_INCOMPLETE) || !ndev) {
+			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
+				fprintf(stderr, "[ladder-gpu] vkEnumeratePhysicalDevices rc=%d ndev=%u\n",
+								(int)_r, ndev);
+			return 0;
+		}
+	}
+	{
+		const char *pin = getenv("MCC_GPU_DEVICE");
+		int pinned = 0;
+		for (i = 0; i < ndev && ncand < MCC_GPU_MAXDEV; i++) {
+			VkPhysicalDeviceProperties cp;
+			VkPhysicalDeviceFeatures cf;
+			unsigned q = 0;
+			long sc;
+			memset(&cp, 0, sizeof cp);
+			memset(&cf, 0, sizeof cf);
+			vkGetPhysicalDeviceProperties(devs[i], &cp);
+			if (pin && pin[0]) {
+				if (!mcc_vk_pin_matches(pin, i, &cp))
+					continue;
+				pinned = 1;
+			}
+			if (!mcc_vk_compute_qfam(devs[i], &q)) {
+				if (mcc_vk_diag())
+					fprintf(stderr, "[gpu-vk] device %u \"%s\" has no compute queue\n", i,
+									cp.deviceName);
+				continue;
+			}
+			vkGetPhysicalDeviceFeatures(devs[i], &cf);
+			sc = mcc_vk_device_score(&cp, cf.shaderFloat64 ? 1 : 0);
+			if (mcc_vk_diag())
+				fprintf(stderr, "[gpu-vk] device %u \"%s\" type=%d f64=%d score=%ld\n", i,
+								cp.deviceName, (int)cp.deviceType, cf.shaderFloat64 ? 1 : 0, sc);
+			if (sc < 0)
+				continue;
+			/* Slice 1b: collect EVERY capability-passing device, not just the best. */
+			cand[ncand].phys = devs[i];
+			cand[ncand].qfam = q;
+			cand[ncand].score = sc;
+			snprintf(cand[ncand].name, sizeof cand[ncand].name, "%s", cp.deviceName);
+			cand[ncand].maxsb = (unsigned long)cp.limits.maxStorageBufferRange;
+			ncand++;
+		}
+		if (ncand == 0) {
+			if (pin && pin[0] && !pinned)
+				fprintf(stderr,
+								"[gpu-vk] MCC_GPU_DEVICE=\"%s\" matched none of the %u "
+								"enumerated devices\n",
+								pin, ndev);
+			else if (mcc_vk_diag())
+				fprintf(stderr,
+								"[gpu-vk] none of the %u enumerated devices can run a "
+								"%d-wide compute group over three storage buffers\n",
+								ndev, MCC_GPU_LOCAL_SIZE);
+			if (mcc_gpu_inst && vkDestroyInstance) {
+				vkDestroyInstance(mcc_gpu_inst, 0);
+				mcc_gpu_inst = 0;
+			}
+			return 0;
+		}
+		/* best-first: descending selection sort, stable on ties (keeps enumeration
+		   order), so slot 0 stays the single best device slice 1a chose. */
+		for (ci = 0; ci < ncand; ci++)
+			for (cj = ci + 1; cj < ncand; cj++)
+				if (cand[cj].score > cand[ci].score) {
+					struct MccVkCand t = cand[ci];
+					cand[ci] = cand[cj];
+					cand[cj] = t;
+				}
+	}
+	/* Slice 1b: create a logical device + queue for each passing device, best-first,
+	   into its own slot. A device that fails to create is skipped, not fatal, unless
+	   none succeed. */
+	for (ci = 0; ci < ncand; ci++) {
+		mcc_gpu_cur = made;
+		mcc_gpu.phys = cand[ci].phys;
+		mcc_gpu.qfam = cand[ci].qfam;
+		snprintf(mcc_gpu.name, sizeof mcc_gpu.name, "%s", cand[ci].name);
+		mcc_gpu.maxsbrange = cand[ci].maxsb;
+		if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
+			fprintf(stderr, "[ladder-gpu] init slot %d dev=%s qfam=%u score=%ld\n", made,
+							mcc_gpu.name, mcc_gpu.qfam, cand[ci].score);
+		if (mcc_vk_create_device_slot())
+			made++;
+	}
+	mcc_gpu_cur = 0;
+	if (made < 1) {
+		if (mcc_gpu_inst && vkDestroyInstance) {
+			vkDestroyInstance(mcc_gpu_inst, 0);
+			mcc_gpu_inst = 0;
+		}
+		return 0;
+	}
+	/* mcc now HOLDS every capability-passing device, best-first in slots 0..made-1.
+	 * Routing (mcc_gpu_route) selects among them; default cur==0 is the same single
+	 * best device slice 1a held, so existing gpu/* cells are unchanged. The create
+	 * loop left the device-specific host-import proc pointing at the last slot, so
+	 * re-resolve it for the default routed slot 0. */
+	mcc_gpu_ndev = made;
+	if (mcc_gpu.hostimp && vkGetDeviceProcAddr)
+		vkGetMemoryHostPointerPropertiesEXT =
+				(PFN_vkGetMemoryHostPointerPropertiesEXT)vkGetDeviceProcAddr(
+						mcc_gpu.dev, "vkGetMemoryHostPointerPropertiesEXT");
+	return 1;
+}
+
+/* T-win-50022 slice 1b routing API — the CONTRACT lin's f64cross iterates instead
+ * of the quiesce/reopen device cycle. */
+int mcc_gpu_device_count(void) {
+	if (!mcc_gpu_init())
+		return 0;
+	return mcc_gpu_ndev > 0 ? mcc_gpu_ndev : 0;
+}
+
+/* Route subsequent dispatches to held device `i` in [0, mcc_gpu_device_count()).
+ * Returns 0 on success, -1 on a bad index. O(1): only the routed slot moves; each
+ * slot's resident context (mcc_vkr) binds lazily on first dispatch. The
+ * device-specific host-import proc is re-resolved so it matches the routed device. */
+int mcc_gpu_route(int i) {
+	if (i < 0 || i >= mcc_gpu_ndev)
+		return -1;
+	mcc_gpu_cur = i;
+	if (mcc_gpu.hostimp && vkGetDeviceProcAddr)
+		vkGetMemoryHostPointerPropertiesEXT =
+				(PFN_vkGetMemoryHostPointerPropertiesEXT)vkGetDeviceProcAddr(
+						mcc_gpu.dev, "vkGetMemoryHostPointerPropertiesEXT");
+	return 0;
 }
 
 /* Taking the *first* HOST_VISIBLE|HOST_COHERENT type is what the spec permits

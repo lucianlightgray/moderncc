@@ -71,6 +71,12 @@ int mcc_gpu_dispatch2_ro_in(const void *ca, int na, const void *cb, int nb,
 														int32_t *oa, int32_t *ob);
 void mcc_gpu_quiesce(void);
 int mcc_gpu_reopen(void);
+/* Multi-GPU routing (T-win-50022 slice 1b): mcc holds every capability-passing
+ * device; mcc_gpu_device_count() returns how many are held (initialising on first
+ * call), and mcc_gpu_route(i) makes subsequent dispatches target held device i in
+ * [0,count) — the supported way to cross-adjudicate every device in one process. */
+int mcc_gpu_device_count(void);
+int mcc_gpu_route(int i);
 /* Frame dispatch: `inout` is both seeded into and read back out of the device
  * frame, so a kernel that stores to local slots can hand its results back. */
 int mcc_gpu_dispatch_rw(const void *code, int n, int32_t *inout, int ntuple,
