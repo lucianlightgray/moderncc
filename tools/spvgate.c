@@ -920,7 +920,25 @@ static AstLocal b_f_cmp(AstArena *a, const int *o) {
 	return r;
 }
 
+/* A single region with > SPV_MAX_CONST / MSL_MAX_CONST (512) distinct integer
+ * constants -- o0*1 + o0*3 + o0*5 + ... .  Each distinct multiplicand is emitted
+ * through spv_const/msl_const, so this overflows the 512-entry constant cache.
+ * Before T-lin-10037 the emitter set m.failed and the region did not lower;
+ * after, the cache degrades to uncached emission and the chain lowers. */
+static AstLocal b_bigconst(AstArena *a, const int *o) {
+	AstLocal r = mk_bin(a, '*', mk_ref(a, o[0], VT_INT), mk_lit(a, 1, VT_INT),
+											VT_INT);
+	int i;
+	for (i = 1; i < 600; i++)
+		r = mk_bin(a, '+', r,
+							 mk_bin(a, '*', mk_ref(a, o[0], VT_INT),
+											mk_lit(a, 2 * i + 1, VT_INT), VT_INT),
+							 VT_INT);
+	return r;
+}
+
 static const Case CASES[] = {
+		{"bigconst", 2, b_bigconst},
 		{"divraw", 2, b_divraw},   {"remraw", 2, b_remraw},
 		{"shiftraw", 2, b_shiftraw}, {"ovf", 2, b_ovf},
 		{"ovfadd", 2, b_ovfadd},
@@ -1610,6 +1628,11 @@ int main(int argc, char **argv) {
 		long case_cmp = 0;
 		int case_f64skip = 0;
 		if (only >= 0 && ci != only)
+			continue;
+		/* The >512-constant `bigconst` region is opt-in (T-lin-10037's const-cache
+		 * cell) so it does not perturb the other gates' emit counts or dispatch a
+		 * 600-constant module to a device on every run. */
+		if (!strcmp(c->name, "bigconst") && !getenv("SPVGATE_CONST_CACHE"))
 			continue;
 		for (r = 0; r < (int)(sizeof RUNGS / sizeof RUNGS[0]); r++) {
 			int w = RUNGS[r];

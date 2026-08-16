@@ -317,17 +317,18 @@ static uint32_t msl_const(MslMod *m, int32_t v) {
 	for (i = 0; i < m->ncached; i++)
 		if (m->cval[i] == v)
 			return m->cid[i];
-	if (m->ncached == MSL_MAX_CONST) {
-		m->failed = 1;
-		return m->cid[0];
-	}
 	id = msl_id(m);
 	snprintf(tmp, sizeof tmp, "\tint v%u = as_type<int>(0x%08xu);\n", id,
 					 (unsigned)v);
 	mslb_puts(&m->decls, tmp);
-	m->cval[m->ncached] = v;
-	m->cid[m->ncached] = id;
-	m->ncached++;
+	/* The 512-entry cache is a dedup optimisation, not a device limit
+	 * (T-lin-10037): once it is full, keep emitting fresh uncached constants so
+	 * a region with >512 distinct constants still lowers, rather than failing. */
+	if (m->ncached < MSL_MAX_CONST) {
+		m->cval[m->ncached] = v;
+		m->cid[m->ncached] = id;
+		m->ncached++;
+	}
 	return id;
 }
 
@@ -2116,18 +2117,16 @@ static uint32_t spv_const(SpvMod *m, int32_t v) {
 	for (i = 0; i < m->ncached; i++)
 		if (m->cval[i] == v)
 			return m->cid[i];
-	if (m->ncached == SPV_MAX_CONST) {
-		m->failed = 1;
-		return m->cid[0];
-	}
 	uint32_t id = spv_id(m);
 	spvw_op(&m->types, SpvOpConstant, 4);
 	spvw_put(&m->types, m->id_int);
 	spvw_put(&m->types, id);
 	spvw_put(&m->types, (uint32_t)v);
-	m->cval[m->ncached] = v;
-	m->cid[m->ncached] = id;
-	m->ncached++;
+	if (m->ncached < SPV_MAX_CONST) {
+		m->cval[m->ncached] = v;
+		m->cid[m->ncached] = id;
+		m->ncached++;
+	}
 	return id;
 }
 
@@ -2141,18 +2140,16 @@ static uint32_t spv_uintc(SpvMod *m, uint32_t v) {
 	for (i = 0; i < m->nucached; i++)
 		if (m->ucval[i] == v)
 			return m->ucid[i];
-	if (m->nucached == SPV_MAX_CONST) {
-		m->failed = 1;
-		return m->ucid[0];
-	}
 	id = spv_id(m);
 	spvw_op(&m->types, SpvOpConstant, 4);
 	spvw_put(&m->types, m->id_uint);
 	spvw_put(&m->types, id);
 	spvw_put(&m->types, v);
-	m->ucval[m->nucached] = v;
-	m->ucid[m->nucached] = id;
-	m->nucached++;
+	if (m->nucached < SPV_MAX_CONST) {
+		m->ucval[m->nucached] = v;
+		m->ucid[m->nucached] = id;
+		m->nucached++;
+	}
 	return id;
 }
 
@@ -2175,10 +2172,6 @@ static uint32_t spv_f64_const(SpvMod *m, uint64_t bits) {
 	for (i = 0; i < m->nfcached; i++)
 		if (m->fcval[i] == bits)
 			return m->fcid[i];
-	if (m->nfcached == SPV_MAX_CONST) {
-		m->failed = 1;
-		return m->fcid[0];
-	}
 	ft = spv_f64_type(m);
 	id = spv_id(m);
 	spvw_op(&m->types, SpvOpConstant, 5);
@@ -2186,9 +2179,11 @@ static uint32_t spv_f64_const(SpvMod *m, uint64_t bits) {
 	spvw_put(&m->types, id);
 	spvw_put(&m->types, (uint32_t)(bits & 0xFFFFFFFFu));
 	spvw_put(&m->types, (uint32_t)(bits >> 32));
-	m->fcval[m->nfcached] = bits;
-	m->fcid[m->nfcached] = id;
-	m->nfcached++;
+	if (m->nfcached < SPV_MAX_CONST) {
+		m->fcval[m->nfcached] = bits;
+		m->fcid[m->nfcached] = id;
+		m->nfcached++;
+	}
 	return id;
 }
 

@@ -3780,6 +3780,13 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvval.cmake")
             set_tests_properties("gpu/spv-validate" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            add_test(NAME "gpu/spv-const-cache"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DGATE=$<TARGET_FILE:spvgate>
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/const_cache_lowers.cmake")
+            set_tests_properties("gpu/spv-const-cache" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
             add_test(NAME "gpu/spv-validate-known-positive"
                 COMMAND "${CMAKE_COMMAND}"
                         -DGATE=$<TARGET_FILE:spvgate>
@@ -3835,6 +3842,13 @@ if(MCC_BUILD_TESTS)
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/spvgate_real.cmake")
             set_tests_properties("gpu/msl-slice-real" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+            add_test(NAME "gpu/msl-const-cache"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DGATE=$<TARGET_FILE:mslgate>
+                        -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/const_cache_lowers.cmake")
+            set_tests_properties("gpu/msl-const-cache" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
             add_test(NAME "gpu/msl-mem-binding" COMMAND mslgate --mem)
             set_tests_properties("gpu/msl-mem-binding" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT ${_gpu_skip77})
