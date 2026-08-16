@@ -47,6 +47,8 @@ slice/wide64                 | registered | 64-bit full-width fidelity
 slice/wide64-known-positive  | registered | proves the 64-bit differential is not blind
 slice/f64                    | registered | fp64 differential: bit-exact payloads, and the measured denormal and two-NaN readings
 slice/f64-known-positive     | registered | proves the fp64 differential is not blind
+slice/f64cross               | registered | fp64 cross-oracle: add/sub/mul adjudicated across mcc-CPU, gcc, clang and the bound Vulkan devices; skips honestly with no device
+slice/f64cross-known-positive | registered | proves the fp64 cross-oracle is not blind
 slice/ops                    | registered | the op matrix, including N9's six otherwise-unreachable opcodes
 slice/ops-known-positive     | registered | proves the op matrix is not blind
 slice/frame                  | must-run   | device frame storage: Store/Load lowered to GPU memory, CPU half needs no device
