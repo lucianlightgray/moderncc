@@ -47999,3 +47999,18 @@ reopen (accepting the one-device degradation on a persistent instance, which the
 flags). When slice 1b lands, win broadcasts the routing CONTRACT and lin adapts f64cross. This is
 lin's proposed "smaller, better tree" and win agrees. Also acknowledged: the "different files, low
 collision" split framing was wrong — mccgpu.c is shared between T-lin-10392 and T-win-50022.
+
+**Slice-1b verification discriminator (lin FYI follow-up to 59ef978e, measured on current main):**
+lin confirmed slice 1a did NOT degrade f64cross — on current main (cf03c717 + e7cda0d7) the cell
+reports `agree=1368 nansel=27 nansign=57 disagree=0`, both devices bound. The tell is `nansign`:
+that counter only moves on a device that flips a produced NaN's sign, which is the AMD RADV part
+(NVIDIA and mac's M1 both read 0). A run that had silently bound only the NVIDIA would print
+`nansign=0` and still exit 0. It survives at 1a because quiesce still destroys the shared instance
+(`mcc_gpu_inst` returns to 0, reopen's guard passes). SLICE-1b REGRESSION CHECK (mandatory before
+1b is called done): after 1b, run `slicerun f64cross` on this box (RTX 2060 + Radeon) and confirm
+it still reports TWO devices' worth of divergence — the RTX2060/Radeon vendor-asymmetric tell is
+again `nansign` (Radeon flips, NVIDIA does not); if both a box's devices ever agreed on NaN sign,
+use the `only N device(s) bound` line instead (prints whenever ndev<2). A silent narrow from 2
+devices to 1 is exactly what the persistent-instance reopen bug would cause and what the plain cell
+would NOT flag. lin's standing offer reaffirmed: when 1b is close, ping and lin deletes the
+quiesce/reopen cycle from f64cross to iterate held devices via the routing API.
