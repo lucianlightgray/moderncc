@@ -47573,3 +47573,28 @@ paths.
 
 **Source.** lin-x64 + mac-arm64, 2026-08-16; lin at `ed81899f`, mac's run on
 Apple M1 Pro.
+
+<a id="t-lin-10084-slice-2-done-establisher-frame-local-access"></a>
+
+## T-lin-10084 — slice 2 DONE: establisher-frame parent-local access (win-x64, 2026-08-16, SHA 904a82ab)
+
+The filter funclet is now framed instead of leaf: `push rbp; mov rbp, rdx; <filter>; pop rbp;
+ret`. The insight that makes this a small change in mcc's model: the OS passes the funclet an
+establisher frame that, by the parent's unwind (FrameRegister=rbp, FrameOffset=0), equals the
+faulting function's rbp; and mcc compiles the filter expression *in the parent's scope*, so a
+parent-local reference is emitted as `[rbp+off]` with the parent's own frame offset. Setting the
+funclet's rbp = rdx therefore makes those loads resolve against the faulting frame with no
+offset translation. `mccgen.c` emits the funclet prologue BEFORE `gexpr()` so every filter byte
+(deferred lvalue loads and any inline arithmetic) lands after rbp is live; a constant filter
+rewinds `ind` over the prologue and keeps the raw-DWORD path. `mccpe.c` funclet UNWIND_INFO
+upgraded from leaf to `0x00010101` + code `0x00005001` (SizeOfProlog=1, one UWOP_PUSH_NONVOL rbp,
+FrameRegister=0 — rbp is set from rdx not rsp). All filter funclets are now framed (harmless for
+global-only filters). VERIFIED vs `cl`: pe/seh `lo=88` (parent-local filter catches), `lns=99`
+(nested parent-local filter returns 0 → outer catches); mcc full-link + COFF+mingw byte-match cl;
+pe/unwind-backtrace green.
+
+LIMITATION (documented, not yet hit): a filter that SPILLS a temporary to `[rbp-N]` would write
+into the parent frame (rbp = parent frame in the funclet). Simple load/compare filters (the
+common `GetExceptionCode()==X`, a local, a global) don't spill. A filter that calls a function or
+forces a spill needs the funclet to carry its own frame (MSVC allocates one and uses rbp only for
+parent access) — out of slice-2 scope. Slice 3 = `__finally` (Contract B).
