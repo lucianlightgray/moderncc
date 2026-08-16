@@ -47068,3 +47068,14 @@ post-provisioning suite figure, and any quoted one carries this window.
 **Source.** lin-x64, 2026-08-16. Correction raised by the operator's box being
 in active use, found by re-running the diagnostic before the next suite instead
 of after the last one.
+
+### T-lin-10036/mac §8 — full native suite green (0 reds from the Metal dispatch change)
+
+Suite over `01c5ff30` (cmake-build-debug), 10073 cells / 56 reds, **zero attributable to T-lin-10036** (an MSL-only change inside `#if MCC_GPU_LANG_MSL`, which cannot reach a CPU or corpus cell):
+- **~55 `flagsweep-exec` (300s) + `stratsweep/perm3-*` (600s) Timeouts** — load, and unusually many because this run overlapped my concurrent o0-baseline compile/re-bank work (T-mac-30006) competing for CPU. Spot-checked serially: `flagsweep-exec/{chain-store,inline,narrow,gcse}` pass in 46–52s and `stratsweep/perm3-0` in 131s, all far inside budget (T-lin-10092/mac precedent).
+- **`runtime-bench-gatewin`** — the known permanent-77 T-mac-30005.
+- **Zero device reds** (gpu/msl-*, slice/* all green in the run) and **zero corpus-drift reds** — o0-baseline, fmt/census, and slice/census passed because their cross-session drift was re-banked before the suite reached them.
+
+The substance is verified independently of the muddied suite: gpu/* + slice/* 72/72, including `gpu/always-gpu-parity(+full-language)` which run the two-arm `reuse_in` ladder and so prove arm b correctly reuses arm a's resident Metal input. Both slices done (`34106f4c`, `01c5ff30`); all three T-lin-10036 wins are on the Metal arm, at dispatch-efficiency parity with SPIR-V.
+
+**Source.** mac-arm64, 2026-08-15, §8 suite over `01c5ff30`; serial spot-check clean.
