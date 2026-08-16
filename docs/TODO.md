@@ -12,6 +12,10 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+- [ ] T-lin-10004 [S] Implement `_BitInt(N)` (C23 6.2.5); the keyword is diagnosed, the type is absent
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: bad5f5d5 | TS: 2026-08-16T03:00Z | NOTE: slice 1 (N<=64) per DETAILS#t-lin-10004-bitint-design-width-carrying-type-is-the-crux-n-le-64-is-the-first-slice
+      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
+      REF: DETAILS.md#t-lin-10004-implement-bitintn-c23-625-the-keyword | DEPS: —
 - [ ] T-lin-10015 [S] `__int256` arithmetic is a call per operation
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 701047bc | TS: 2026-08-16T02:40Z | NOTE: MEASUREMENT + MARSHALLING DIAGNOSIS DONE (DETAILS#t-lin-10015-measurement-int256-op-cost-marshalling-dominates + #t-lin-10015-marshalling-source-pinned-register-indirect-operand-copies). Each __int256 op = 1 __mcc_i256_* call + ~3 memmove (32B); the memmoves are wide256_materialize copying register-indirect (*ptr, from by-pointer params) operand lvals because wide256_sv_is_stable_lval accepts only VT_LOCAL/CONST-SYM. gen_cast(same __int256) already retypes without copy; the fast path already skips VT_LOCAL. OPTIMIZATION (next slice): widen the no-copy path to addressable register-indirect lvals (save the 8B address, not the 32B value), re-check the VT_LOCAL-only rationale, verify wide256/gmp-diff 9402 rows + re-measure. Body: src/wide256_slice.h gen_wide256_op/wide256_materialize.
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
@@ -91,9 +95,6 @@
 - [ ] T-win-50003 [S] win-x64 full native suite — 35 real failures triaged (28 GPU-slice/`slicerun` device↔CPU differentials + "0 slices on Windows"; 4 fp under emitsize/emitiso opt-search; 3 jit/runtime)
       OWNER: — | STATE: OPEN | SHA: 50790209 | TS: 2026-08-15T12:40Z
       REF: DETAILS.md#t-win-50003-win-x64-full-native-suite-35-real-failures-triaged | DEPS: — | NOTE: RETRIAGED at 50790209 (see DETAILS#t-win-50008-resolved-the-crash-was-setvbuf-not-the-intern-table): the whole "0 slices on Windows" symptom class was one setvbuf fast-fail (T-win-50008, FIXED) — 10 of Bucket A's 28 now pass. Residual: 11 smoke/* = smokerun system() quoting (T-win-50009); slice/src + 6 GPU-cell skips are blocked on the device being INVISIBLE post-reboot (vkEnumeratePhysicalDevices ndev=0, RTX 2060 + vulkan-1.dll present — environmental, needs investigation; the real device-numerics half of Bucket A is HIDDEN behind it, not fixed); Bucket B (4 fp opt-search + 3 jit/runtime) untouched; the embed-JIT half now has a named symbol — the cl-built JIT engine blob references `__report_rangecheckfailure`/`__security_cookie`/`__GSHandlerCheck`/`__isa_available` + `__imp_*` ucrt imports that mcc's in-process linker does not provide (seen in every smoke `--embed-jit` arm at 723e5f1a)
-- [ ] T-lin-10004 [S] Implement `_BitInt(N)` (C23 6.2.5); the keyword is diagnosed, the type is absent
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10004-implement-bitintn-c23-625-the-keyword | DEPS: —
 - [ ] T-lin-10006 [S] Parse the `__m512` / `__m256h` / `__m128h` types (52 cells)
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10006-parse-the-m512-m256h-m128h-types | DEPS: —
