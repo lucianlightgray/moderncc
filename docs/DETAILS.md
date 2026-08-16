@@ -47803,3 +47803,51 @@ embed-JIT WIP is preserved at [DETAILS#t-win-50003-preserved-embedjit-ucrt-symbo
 was a subset of it, and stash@{1} was a docs-only autostash already superseded by pushed history.
 Cleanup pass fully complete: local branches = main only, worktrees = primary only, stashes = none,
 remotes = main + woa/bootstrap + wip/vector-abi-layout (both intentionally kept).
+
+<a id="wip-vector-abi-layout-is-superseded-hunk-by-hunk-safe-to-delete"></a>
+
+## `wip/vector-abi-layout` is superseded hunk-by-hunk — safe to delete, pending permission
+
+Follow-up to [the branch audit](#branch-and-worktree-audit-2026-08-16-nothing-is-unmerged),
+which concluded this branch was superseded from commit metadata. **Now proven at
+the hunk level**, because deleting a remote ref on a repo three sessions share
+should rest on more than a summary.
+
+The branch commit (`150aa100`) changes six files. Every change is in `main`:
+
+| branch hunk | in `main`? |
+| --- | --- |
+| `#define MCC_MAX_VEC_ALIGN 64` — `src/arch/x86_64/x86_64-gen.h` | yes — the file is **byte-identical** to the branch's |
+| `#define MCC_MAX_VEC_ALIGN 64` — `src/arch/i386/i386-gen.h` | yes — **byte-identical** |
+| `#ifndef MCC_MAX_VEC_ALIGN / #define MCC_MAX_VEC_ALIGN MCC_MAX_ALIGN / #endif` — `src/mcc.h` | yes — lines **144–145** |
+| `ad.a.aligned = exact_log2p1(esz * nelem <= MCC_MAX_VEC_ALIGN ? … : MCC_MAX_VEC_ALIGN)` — `src/mccgen.c` | yes — lines **7302–7304** |
+| `tests/cross/vector-abi-layout.c` | yes, and newer |
+| `tests/cross/vector-abi-layout.sh` | yes, and **larger — 85 lines vs the branch's 56** |
+
+The whole-file diffs are non-zero for `mcc.h` (31 lines) and `mccgen.c` (528),
+but that is `main` being 1,589 commits ahead on unrelated code, not a missing
+change — which is exactly why the check had to be per-hunk rather than per-file.
+
+**The branch is strictly worse than `main` on the only files where they
+overlap in purpose.** It carries the pre-reboot 56-line fixture that `main`'s
+85-line, ctest-registered (`CMakeLists.txt:7098`) version replaced. Merging it
+is a downgrade; keeping it is a standing trap for anyone who reads
+`ahead=1` and reaches for `git merge`. The work itself landed as
+[T-lin-10012](#t-lin-10012-32-byte-vectors-are-laid-at-16-byte-alignment-so-cross-tu-to-gcc-is-incompatible)
+at `8dd00e11`, suite-verified 10,066 cells / 0 failures, archived DONE at
+`7ea9be08`.
+
+**Deletion is blocked on permission, not on evidence.** `git push origin
+--delete wip/vector-abi-layout` is refused by this session's classifier as a
+destructive remote action. Recorded here so whoever runs it does not have to
+re-derive the safety argument:
+
+```
+git push origin --delete wip/vector-abi-layout
+```
+
+`origin/woa/bootstrap` is deliberately **not** in scope — it is
+[T-lin-10371](#t-lin-10371-a-nondeterministic-segfault-that-moves-between-cells)'s
+documented re-dispatch ref.
+
+**Source.** lin-x64, 2026-08-16, at `e991baa8`.
