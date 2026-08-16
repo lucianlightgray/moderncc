@@ -2504,6 +2504,21 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); break; }
 	}
 	if ((type & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
+	  if (t->type.ref && t->type.ref->a.is_wideint) { MCC_TRACE("br\n");
+		/* A 256-bit integer (__int256): describe it as one base type, not as its
+		 * four-limb storage struct, so a debugger prints a value not limbs
+		 * (T-lin-10014).  Mirrors __int128 (a 16-byte DW_TAG_base_type). */
+		Sym *ws = t->type.ref;
+		int uns = ws->next && (ws->next->type.t & VT_UNSIGNED);
+		debug_type = mcc_debug_find(s1, ws, 1);
+		if (debug_type == -1) { MCC_TRACE("br\n");
+			debug_type = mcc_debug_add(s1, ws, 1);
+			dwarf_data1(dwarf_info_section, DWARF_ABBREV_BASE_TYPE);
+			dwarf_uleb128(dwarf_info_section, 32);
+			dwarf_data1(dwarf_info_section, uns ? DW_ATE_unsigned : DW_ATE_signed);
+			dwarf_strp(dwarf_info_section, uns ? "unsigned __int256" : "__int256");
+		}
+	  } else { MCC_TRACE("br\n");
 		t = t->type.ref;
 		debug_type = mcc_debug_find(s1, t, 1);
 		if (debug_type == -1) { MCC_TRACE("br\n");
@@ -2578,6 +2593,7 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) { MCC_TRACE("enter\n");
 			}
 			mcc_free(pos_type);
 		}
+	  }
 	} else if (IS_ENUM(type)) { MCC_TRACE("br\n");
 		t = t->type.ref;
 		debug_type = mcc_debug_find(s1, t, 1);

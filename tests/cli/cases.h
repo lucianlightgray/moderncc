@@ -385,6 +385,12 @@ static const cli_case_t cli_cases[] = {
 		 "readelf --debug-dump=info {W}/g5b.o 2>/dev/null | awk '/Version/{print $2; exit}'",
 		 "5\n"},
 
+		{"debug_dwarf_int256_basetype", "os=darwin",
+		 "printf '__int256 v_s;\\nunsigned __int256 v_u;\\n' > {W}/i256.c && "
+		 "{MCC} -B{B} -I{I} -gdwarf-5 -c {W}/i256.c -o {W}/i256.o && "
+		 "dwarfdump {W}/i256.o | grep -A3 'DW_TAG_base_type' | grep -Ec '\"(unsigned )?__int256\"'",
+		 "2\n"},
+
 		{"constructor_init_array", "cpu=x86_64,os=linux",
 		 "printf '__attribute__((constructor)) void c1(void){}\\nint main(void){return 0;}\\n' > {W}/ctor.c && "
 		 "{MCC} -B{B} -I{I} -c {W}/ctor.c -o {W}/ctor.o && readelf -S {W}/ctor.o | grep -oE '\\.init_array' | head -1",
