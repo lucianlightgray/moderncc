@@ -47149,3 +47149,23 @@ Six keep-or-delete calls: **DELETE ast_jit_guard_env** (dead declaration, remove
 **Verification target.** arm64 differential vs gcc-16 O0-O3 (encode/decode/arith/compare/int-roundtrip/call-ABI/aggregate), then the 28 gated `float128` cells confirmed on x86_64 by lin after slice 2. The `long double` distinction (row's open question) is settled: distinct types even where the format coincides (arm64-Linux/riscv), which is what gcc does.
 
 **Status.** IN_PROGRESS, design/slice-0 complete + runtime de-risked; slice 1 implementation is the next unit. **Source.** mac-arm64, 2026-08-16, at f8cf9371.
+
+<a id="t-win-50022-multi-gpu-hold-all-and-route"></a>
+
+## T-win-50022 Multi-GPU: hold all present GPUs concurrently and route dispatches
+
+**Type** `[S]` win-x64 — **State** IN_PROGRESS — **DEPS** —. User-directed 2026-08-16 ("work with lin-x64 to implement multi-GPU support"); user picked the *hold-all + routing* foundation increment. Complementary to lin's [T-lin-10392](#t-lin-10392-multi-gpu-the-second-device-is-reachable-and-not-correct) (per-device correctness in `tools/slicerun.c`); this is the `src/mccgpu.c` concurrent-device refactor. Verifiable on this box's two Vulkan devices (RTX 2060 + AMD Radeon iGPU; both enumerate with `VK_LOADER_LAYERS_DISABLE=VK_LAYER_AMD_switchable_graphics`).
+
+**Current state (from the GPU recon).** `mccgpu.c` enumerates every device into `devs[8]`, scores each (`mcc_vk_device_score`, T-lin-10035 done), and stores the single best in the `mcc_gpu` singleton (`inst`/`phys`/`dev`/`q`/`qfam`); a single `mcc_vkr` holds the resident context (`dsl`/`dpool`/`dset`/`cpool`/`cb`/`fence`/`pcache`/`bin`/`bout`/`bmem` + mapped `pin`/`pout`/`pmem` + per-device `pending` + pipeline cache). `MCC_GPU_DEVICE` pins WHICH single device (numeric index or name substring, `mcc_vk_pin_matches`). So mcc uses exactly one device per process. Metal mirrors this (`mcc_gpu.dev`/`queue`, static `mcc_mtl_bin`/`bout`) — out of scope here, mac territory.
+
+**Plan (behavior-preserving refactor + routing).**
+- Split the device+resident state into one per-device struct (call it `MccVkDev`): the `phys`/`dev`/`q`/`qfam` from `mcc_gpu` PLUS every field of `mcc_vkr`. Keep `VkInstance inst` and the aggregate counters (`dispatches`/`lanes`/`stranded`) shared in `mcc_gpu`, add `MccVkDev dev[MCC_GPU_MAXDEV]`, `int ndev`, `int cur`.
+- `mcc_gpu_init`: enumerate + score as today, but retain ALL devices passing the capability floor (sorted best-first). Create the logical device + queue eagerly or lazily; create resident state lazily per device on first route (mirrors today's lazy `mcc_vk_resident`).
+- Routing: `mcc_vk_route()` returns the device index for a dispatch. Default policy = best device (index 0) → existing `gpu/*` + `slice/*` cells are byte-unchanged. `MCC_GPU_DEVICE` pins one (as today). A new policy hook (round-robin / explicit index arg) enables multi-device use; the concurrent tuple-split across devices is the NEXT increment and needs lin's T-lin-10040 dispatcher + T-lin-10081 lock-narrowing.
+- Mechanical: every `mcc_gpu.dev`/`.q`/`.phys`/`.qfam` and every `mcc_vkr.X` in `mcc_vk_resident`/`mcc_vk_bind_buffers`/`mcc_vk_pipeline`/`mcc_gpu_dispatch_locked2`/`mcc_gpu_quiesce`/device-loss becomes `d->X` for the routed `MccVkDev *d`. Device-loss + stranding become per-device (aligns with lin's T-lin-10033).
+
+**Verification.** On this box: (1) both devices enumerated + held (init retains ndev=2); (2) a dispatch routed to each device returns correct results on both — composes with lin's T-lin-10392 per-device correctness; (3) default routing leaves `gpu/*`/`slice/*` green (behavior-preserving); (4) a new cell `gpu/multi-device` that runs the same kernel on every held device and checks agreement. Requires a Vulkan MSVC build (VULKAN_SDK, vcvars).
+
+**Split with lin (confirmed in the TODO NOTE).** win = concurrent hold + routing (mccgpu.c); lin = per-device correctness (T-lin-10392, slicerun.c) + the dispatcher/lock (T-lin-10040/10081) that the concurrent-split increment composes with.
+
+**Source.** win-x64, 2026-08-16, plan at `c775db8e` (post-GPU-recon).
