@@ -461,6 +461,8 @@ static void seqp_flush(void) { MCC_TRACE("enter\n");
 static void gen_cast(CType *type);
 ST_FUNC void gen_cast_s(int t);
 static void gen_sso_bswap(int size);
+static void sso_bitcast(int newt, int size, int align);
+static int alloc_local_slot(int size, int align);
 static int atomic_rmw_size(SValue *sv, int op);
 static void gen_atomic_rmw(int op, int ret_new);
 static int atomic_cas_size(SValue *sv);
@@ -2502,8 +2504,19 @@ ST_FUNC int (gv)(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n"
 	 * byte-swap the value.  A read of `s.v' = native-load then bswap. */
 	if ((vtop->r & (VT_LVAL | VT_REVSO)) == (VT_LVAL | VT_REVSO)) { MCC_TRACE("br\n");
 		int a, sz = type_size(&vtop->type, &a);
+		int isf = is_float(vtop->type.t);
+		int fbt = vtop->type.t & VT_BTYPE;
 		vtop->r &= ~VT_REVSO;
 		gv(rc);
+		if (isf) { MCC_TRACE("br\n");
+			/* float/double member: swap the bit-pattern -- reinterpret as an
+			 * integer, byte-swap, reinterpret back to the float type (slice 2a). */
+			int ibt = sz == 8 ? (VT_LLONG | VT_UNSIGNED) : (VT_INT | VT_UNSIGNED);
+			sso_bitcast(ibt, sz, a);
+			gen_sso_bswap(sz);
+			sso_bitcast(fbt, sz, a);
+			return vtop->r & VT_VALMASK;
+		}
 		gen_sso_bswap(sz);
 		return vtop->r & VT_VALMASK;
 	}
@@ -5748,6 +5761,26 @@ static void gen_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 	wide256_deconst();
 }
 
+/* Reinterpret the top-of-stack scalar's bits as `newt' (same size) via a stack
+ * slot -- a float<->integer bit-cast with NO value conversion, so a float's bits
+ * can be byte-swapped as an integer and back (T-lin-10010 slice 2a).  Uses
+ * alloc_local_slot (RIR-recorded, replay-safe); the slot lvalue never carries
+ * VT_REVSO so this does not re-enter the SSO paths. */
+static void sso_bitcast(int newt, int size, int align) { MCC_TRACE("enter\n");
+	int slot = alloc_local_slot(size, align);
+	CType vt = vtop->type;
+	vt.ref = NULL;
+	vt.bp = vt.bs = 0;
+	vset(&vt, VT_LOCAL | VT_LVAL, slot);
+	vswap();
+	vstore();
+	vpop();
+	CType nt = {0};
+	nt.t = newt;
+	vset(&nt, VT_LOCAL | VT_LVAL, slot);
+	gv(MCC_RC_TYPE(newt));
+}
+
 /* Byte-swap the scalar value on top of the stack in place, for reverse
  * scalar_storage_order (T-lin-10010).  1-byte values need no swap.  Uses the
  * __builtin_bswap runtime helper path so it is target-independent; the value's
@@ -5939,10 +5972,21 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 		}
 
 		/* Reverse scalar_storage_order scalar member (T-lin-10010): a write of
-		 * `s.v' byte-swaps the value, then stores the raw little-endian bytes. */
+		 * `s.v' byte-swaps the value, then stores the raw little-endian bytes.
+		 * For a float/double member, swap the bit-pattern (reinterpret as an
+		 * integer, byte-swap, reinterpret back) so the ordinary float store then
+		 * writes the reversed bytes (slice 2a). */
 		if (vtop[-1].r & VT_REVSO) { MCC_TRACE("br\n");
 			int a2, sz2 = type_size(&vtop[-1].type, &a2);
-			gen_sso_bswap(sz2);
+			if (is_float(vtop[-1].type.t)) { MCC_TRACE("br\n");
+				int ibt = sz2 == 8 ? (VT_LLONG | VT_UNSIGNED) : (VT_INT | VT_UNSIGNED);
+				int fbt = vtop[-1].type.t & VT_BTYPE;
+				sso_bitcast(ibt, sz2, a2);
+				gen_sso_bswap(sz2);
+				sso_bitcast(fbt, sz2, a2);
+			} else { MCC_TRACE("br\n");
+				gen_sso_bswap(sz2);
+			}
 			vtop[-1].r &= ~VT_REVSO;
 		}
 
@@ -6551,9 +6595,12 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 			if (f->type.t & VT_BITFIELD)
 				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with a "
 													"bit-field or _BitInt member is not implemented"); }
-			if (is_float(f->type.t))
+			/* Slice 2a does float/double (swap the bit-pattern); long double, and
+			 * the half formats, are not yet handled -- refuse them. */
+			if (is_float(f->type.t) && (f->type.t & VT_BTYPE) != VT_FLOAT &&
+					(f->type.t & VT_BTYPE) != VT_DOUBLE)
 				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with a "
-													"floating member is not implemented"); }
+													"long double or half-float member is not implemented"); }
 		}
 		/* A whole _BitInt(N) member carries VT_BITFIELD for its masked access
 		 * but is laid out as its storage integer, not bit-packed -- only members

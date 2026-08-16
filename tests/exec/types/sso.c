@@ -45,6 +45,29 @@ int main(void) {
 			x.ll == 0x020406080a0c0e10ull && b[0] == 0x11 && b[3] == 0x45 &&
 			b[16] == 0x02 && b[23] == 0x10;
 
+	/* slice 2a: float/double members swap their bit-pattern */
+	struct __attribute__((scalar_storage_order("big-endian"))) SF {
+		float f;
+		double d;
+		unsigned int u;
+	} y;
+	memset(&y, 0, sizeof y);
+	y.f = 1.5f;
+	y.d = 3.14159265358979;
+	y.u = 0xAABBCCDDu;
+	unsigned char fb[sizeof y];
+	memcpy(fb, &y, sizeof y);
+	ok = ok &&
+			/* 1.5f = 0x3fc00000 big-endian; the double is at offset 8 */
+			fb[0] == 0x3f && fb[1] == 0xc0 && fb[2] == 0x00 && fb[3] == 0x00 &&
+			fb[8] == 0x40 && fb[9] == 0x09 && fb[15] == 0x11 &&
+			/* reads swap back, and float/double COMPARES are correct (the offset,
+			 * >4-byte, compare-context class that slice 1 miscompiled on x86_64) */
+			y.f == 1.5f && y.d == 3.14159265358979 && y.u == 0xAABBCCDDu;
+	y.f = y.f * 2.0f;
+	y.d = y.d + 1.0;
+	ok = ok && y.f == 3.0f && y.d == 4.14159265358979;
+
 	printf("%s\n", ok ? "OK" : "FAIL");
 	return 0;
 }
