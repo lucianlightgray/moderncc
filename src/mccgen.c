@@ -7345,7 +7345,8 @@ static int apply_attr_vector_size(CType *type, int vsize, int hard) { MCC_TRACE(
 	int align, esz, storage, bt = type->t & VT_BTYPE;
 
 	if ((type->t & (VT_ARRAY | VT_VLA)) ||
-			!(is_integer_btype(bt) || bt == VT_FLOAT || bt == VT_DOUBLE)) { MCC_TRACE("br\n");
+			!(is_integer_btype(bt) || bt == VT_FLOAT || bt == VT_DOUBLE ||
+				bt == VT_FLOAT16 || bt == VT_BF16)) { MCC_TRACE("br\n");
 		if (hard)
 			{ MCC_TRACE("br\n"); mcc_error("'vector_size' applies to integer or "
 												"floating-point types only"); }

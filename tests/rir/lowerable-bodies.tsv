@@ -3447,6 +3447,7 @@ wide	elf	src/libmcc.c	mcc_write_uleb128	src/mcc.c	0000
 wide	elf	src/libmcc.c	normalized_PATHCMP	src/mcc.c	0000
 wide	elf	src/libmcc.c	opt_level_reject	src/mcc.c	0000
 wide	elf	src/libmcc.c	opt_level_top	src/mcc.c	0000
+wide	elf	src/libmcc.c	parse_jit_budget	src/mcc.c	0000
 wide	elf	src/libmcc.c	permerror_promote	src/mcc.c	6666
 wide	elf	src/libmcc.c	pstrcat	src/mcc.c	0000
 wide	elf	src/libmcc.c	pstrcpy	src/mcc.c	6666
@@ -5136,6 +5137,7 @@ wide	elf	src/mcchost.c	host_fopen	src/mcc.c	0000
 wide	elf	src/mcchost.c	host_fsync	src/mcc.c	0000
 wide	elf	src/mcchost.c	host_icache_flush	src/mcc.c	4444
 wide	elf	src/mcchost.c	host_install_interrupt	src/mcc.c	0000
+wide	elf	src/mcchost.c	host_loadavg	src/mcc.c	0000
 wide	elf	src/mcchost.c	host_macos_sdk_root	src/mcc.c	7777
 wide	elf	src/mcchost.c	host_mkdirs	src/mcc.c	0000
 wide	elf	src/mcchost.c	host_nproc	src/mcc.c	0000
@@ -7617,6 +7619,7 @@ wide	elf	tests/exec/types/float16.c	vsum	tests/exec/types/float16.c	0000
 wide	elf	tests/exec/types/floating_point.c	main	tests/exec/types/floating_point.c	0000
 wide	elf	tests/exec/types/floating_point.c	test	tests/exec/types/floating_point.c	0000
 wide	elf	tests/exec/types/floating_point_literals.c	main	tests/exec/types/floating_point_literals.c	0000
+wide	elf	tests/exec/types/fp16_vector.c	main	tests/exec/types/fp16_vector.c	0000
 wide	elf	tests/exec/types/hex_float.c	main	tests/exec/types/hex_float.c	0000
 wide	elf	tests/exec/types/int128.c	addv	tests/exec/types/int128.c	0000
 wide	elf	tests/exec/types/int128.c	main	tests/exec/types/int128.c	0000

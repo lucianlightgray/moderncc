@@ -242,6 +242,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"hex_float", "run", "exec/types/hex_float.c", "n+1 = 15\n", "", "", ""},
 		{"float16", "run", "exec/types/float16.c", "OK\n", "", "", ""},
 		{"bf16", "run", "exec/types/bf16.c", "OK\n", "", "", ""},
+		{"fp16_vector", "run", "exec/types/fp16_vector.c", "OK\n", "", "", ""},
 		{"float128", "run", "exec/types/float128.c", "OK\n", "", "", ""},
 		{"asm_outside_function", "run", "exec/inline_asm/asm_outside_function.c", "okay\n", "", "", "asm"},
 		{"memory_model", "run", "exec/codegen/memory_model.c", "Ok\n", "", "", "diff3!=WIN32:mcc defines __LLP64__ on the LLP64 PE target; gcc/clang-on-Windows define no __*LP*__ data-model macro, so the gcc==clang consensus is 'no macro' while mcc is correct"},
