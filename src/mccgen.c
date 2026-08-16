@@ -4259,6 +4259,17 @@ static int compare_types(CType *type1, CType *type2, int unqualified) { MCC_TRAC
 	} else if (IS_ENUM(type2->t))
 		{ MCC_TRACE("br\n"); type2 = &type2->ref->type; }
 
+	/* A _BitInt(N) is a distinct type: incompatible with any non-_BitInt (even
+	 * its own storage integer) and with a _BitInt of a different width.  VT_TYPE
+	 * below strips VT_BITFIELD/VT_BITINT and the precision lives in .bs, not .t,
+	 * so without this every _BitInt would look like its storage integer and
+	 * _Generic / redeclaration checks would conflate the widths. */
+	if (IS_BITINT(type1->t) || IS_BITINT(type2->t)) { MCC_TRACE("br\n");
+		if (!IS_BITINT(type1->t) || !IS_BITINT(type2->t) ||
+				type1->bs != type2->bs)
+			{ MCC_TRACE("br\n"); return 0; }
+	}
+
 	t1 = type1->t & VT_TYPE;
 	t2 = type2->t & VT_TYPE;
 	if (unqualified) { MCC_TRACE("br\n");
@@ -4942,7 +4953,13 @@ static void gen_cast(CType *type) { MCC_TRACE("enter\n");
 		return;
 	}
 
-	if (vtop->type.t & VT_BITFIELD)
+	/* A bit-field source must be materialized to extract its value -- except a
+	 * _BitInt constant, whose c.i already holds the reduced value; forcing it
+	 * into a register would make casts like `(int)(_BitInt(16))70000` non-const
+	 * and break their use in constant expressions. */
+	if ((vtop->type.t & VT_BITFIELD) &&
+			!(IS_BITINT(vtop->type.t) &&
+				(vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST))
 		{ MCC_TRACE("br\n"); gv(MCC_RC_INT); }
 
 	if (IS_ENUM(type->t) && type->ref->c < 0)
@@ -5379,6 +5396,18 @@ done:
 			vtop->sym && vtop->sym->a.is_register && !ir_cap_replaying && !ast_replaying)
 		{ MCC_TRACE("br\n"); mcc_error("address of register variable '%s' requested",
 							get_tok_str(vtop->sym->v, NULL)); }
+	/* Casting a constant to _BitInt(N) must reduce it to N bits at fold time so
+	 * it stays usable in constant expressions -- the storage-integer masking
+	 * above only trims to 1/2/4/8 bytes, which is wider than N.  The runtime
+	 * path gets this from the masked store/load instead. */
+	if (IS_BITINT(type->t) && type->bs < 64 &&
+			(vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) { MCC_TRACE("br\n");
+		int nbits = type->bs;
+		uint64_t mask = (1ULL << nbits) - 1;
+		vtop->c.i &= mask;
+		if (!(type->t & VT_UNSIGNED))
+			{ MCC_TRACE("br\n"); vtop->c.i |= -(vtop->c.i & (1ULL << (nbits - 1))); }
+	}
 	vtop->type = *type;
 	vtop->type.t &= ~(VT_QUALIFY | VT_ARRAY);
 }
@@ -6420,7 +6449,10 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 	prev_bit_size = 0;
 
 	for (f = type->ref->next; f; f = f->next) { MCC_TRACE("br\n");
-		if (f->type.t & VT_BITFIELD)
+		/* A whole _BitInt(N) member carries VT_BITFIELD for its masked access
+		 * but is laid out as its storage integer, not bit-packed -- only members
+		 * declared with an explicit `: width' (which strips VT_BITINT) pack. */
+		if ((f->type.t & VT_BITFIELD) && !IS_BITINT(f->type.t))
 			{ MCC_TRACE("br\n"); bit_size = f->type.bs; }
 		else
 			{ MCC_TRACE("br\n"); bit_size = -1; }
@@ -6562,7 +6594,7 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 		int s, px, cx, c0;
 		CType t;
 
-		if (0 == (f->type.t & VT_BITFIELD))
+		if (0 == (f->type.t & VT_BITFIELD) || IS_BITINT(f->type.t))
 			{ MCC_TRACE("br\n"); continue; }
 		f->type.ref = f;
 		f->auxtype = -1;
@@ -6663,7 +6695,7 @@ static void struct_layout_vla(CType *type, AttributeDef *ad) { MCC_TRACE("enter\
 	for (f = type->ref->next; f; f = f->next) { MCC_TRACE("br\n");
 		int member_vla = (f->type.t & VT_VLA) != 0;
 
-		if (f->type.t & VT_BITFIELD) { MCC_TRACE("br\n");
+		if ((f->type.t & VT_BITFIELD) && !IS_BITINT(f->type.t)) { MCC_TRACE("br\n");
 			mcc_error("bit-field '%s' in a struct or union with a variable-length "
 								"array member is not supported",
 								get_tok_str(f->v & ~SYM_FIELD, NULL));
@@ -8457,6 +8489,7 @@ static int apply_attr_mode(int t, int attr_mode) { MCC_TRACE("enter\n");
 static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TRACE("enter\n");
 	int t, u, bt, st, type_found, typespec_found, g, n, complex_seen, ext_seen;
 	int int256_seen;
+	int bitint_seen, bitint_n;
 	int at_ok = auto_type_allowed;
 	Sym *s;
 	CType type1;
@@ -8467,6 +8500,8 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 	typespec_found = 0;
 	complex_seen = 0;
 	int256_seen = 0;
+	bitint_seen = 0;
+	bitint_n = 0;
 	ext_seen = 0;
 	t = VT_INT;
 	bt = st = -1;
@@ -8581,13 +8616,22 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			break;
 #endif
 		case TOK_BITINT:
-			/* C23 6.2.5. Not implemented. Say so, rather than leaving the parser
-			 * to fall through to the identifier path and report the NEXT token as
-			 * an unexpected one: `_BitInt(37) a = 1;` used to produce
-			 * "';' expected (got 'a')", which points at the wrong token, blames
-			 * the wrong construct, and reads like a syntax error in the user's
-			 * code rather than a missing feature. */
-			mcc_error("'_BitInt' is not implemented");
+			/* C23 6.2.5.  _BitInt ( constant-expression ).  Slice 1 handles
+			 * N<=64 as a storage integer carrying precision N; the width and the
+			 * VT_BITINT|VT_BITFIELD marker are finalized at the_end.  Cannot be
+			 * combined with another basic type (like __int256). */
+			if (bt != -1 || st != -1)
+				{ MCC_TRACE("br\n"); goto tmbt; }
+			if (bitint_seen)
+				{ MCC_TRACE("br\n"); mcc_error("too many basic types"); }
+			next();
+			skip('(');
+			bitint_n = expr_const();
+			skip(')');
+			if (bitint_n < 1)
+				{ MCC_TRACE("br\n"); mcc_error("%d is not a valid width for '_BitInt'", bitint_n); }
+			bitint_seen = 1;
+			typespec_found = 1;
 			break;
 		case TOK_COMPLEX:
 			if (mcc_state->cversion < 199901)
@@ -8828,6 +8872,11 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			u = t & ~VT_QUALIFY, t ^= u;
 			type->t = (s->type.t & ~VT_TYPEDEF) | u;
 			type->ref = s->type.ref;
+			/* Carry the bit-field precision (bp/bs) too: a typedef of a
+			 * _BitInt(N) keeps VT_BITFIELD in .t, and without its bs the masked
+			 * load/store degrades to a full-width shift and miscompiles. */
+			type->bp = s->type.bp;
+			type->bs = s->type.bs;
 			if (t)
 				{ MCC_TRACE("br\n"); parse_btype_qualify(type, t); }
 			t = type->t;
@@ -8880,6 +8929,36 @@ the_end:
 		mk_wide256_type(type, (t & VT_UNSIGNED) != 0);
 		type->t |= t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_EXTERN |
 										VT_STATIC | VT_TYPEDEF | VT_INLINE | VT_TLS);
+		return type_found;
+	}
+	if (bitint_seen) { MCC_TRACE("br\n");
+		int uns = (t & VT_UNSIGNED) != 0;
+		int sbt;
+		if (complex_seen)
+			{ MCC_TRACE("br\n"); mcc_error("'_Complex _BitInt' is not supported"); }
+		/* C23 6.2.5p11: a signed _BitInt needs at least 2 bits (one sign, one
+		 * value); an unsigned _BitInt at least 1. */
+		if (bitint_n < 1 + !uns)
+			{ MCC_TRACE("br\n"); mcc_error("%d is not a valid width for %s'_BitInt'",
+								bitint_n, uns ? "unsigned " : ""); }
+		if (bitint_n > 64)
+			{ MCC_TRACE("br\n"); mcc_error("'_BitInt(%d)' exceeds the %d-bit maximum "
+								"this target supports", bitint_n, 64); }
+		/* Round the precision up to a storage integer that can hold N bits. */
+		if (bitint_n <= 8)
+			{ MCC_TRACE("br\n"); sbt = VT_BYTE; }
+		else if (bitint_n <= 16)
+			{ MCC_TRACE("br\n"); sbt = VT_SHORT; }
+		else if (bitint_n <= 32)
+			{ MCC_TRACE("br\n"); sbt = VT_INT; }
+		else
+			{ MCC_TRACE("br\n"); sbt = VT_LLONG; }
+		type->ref = NULL;
+		type->t = sbt | VT_BITINT | VT_BITFIELD | (uns ? VT_UNSIGNED : 0) |
+							(t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_EXTERN |
+										VT_STATIC | VT_TYPEDEF | VT_INLINE | VT_TLS));
+		type->bp = 0;
+		type->bs = bitint_n;
 		return type_found;
 	}
 	if (complex_seen) { MCC_TRACE("br\n");
@@ -12523,7 +12602,7 @@ tok_next:
 	case '&':
 		next();
 		unary();
-		if (vtop->type.t & VT_BITFIELD)
+		if ((vtop->type.t & VT_BITFIELD) && !IS_BITINT(vtop->type.t))
 			{ MCC_TRACE("br\n"); mcc_error("cannot take address of bit-field"); }
 		if ((vtop->type.t & VT_BTYPE) != VT_FUNC &&
 				!(vtop->type.t & (VT_ARRAY | VT_VLA)))
@@ -12602,7 +12681,7 @@ tok_next:
 		else
 			{ MCC_TRACE("br\n"); expr_type(&type, unary); }
 		rir_hook_synth_end();
-		if (type.t & VT_BITFIELD)
+		if ((type.t & VT_BITFIELD) && !IS_BITINT(type.t))
 			{ MCC_TRACE("br\n"); mcc_error("'%s' cannot be applied to a bit-field",
 								t == TOK_SIZEOF ? "sizeof" : t == TOK_COUNTOF ? "_Countof" : "_Alignof"); }
 		if (t == TOK_COUNTOF) { MCC_TRACE("br\n");

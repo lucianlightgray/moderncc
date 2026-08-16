@@ -1208,6 +1208,16 @@ struct filespec {
 #define VT_BT_ARRAY (6 << VT_STRUCT_SHIFT)
 #define IS_BT_ARRAY(t) ((t & VT_STRUCT_MASK) == VT_BT_ARRAY)
 
+/* C23 _BitInt(N), slice 1 (N<=64).  A _BitInt is a storage integer (VT_BYTE/
+ * SHORT/INT/LLONG, sized to hold N bits) whose value is reduced to N bits.  We
+ * reuse the VT_BITFIELD precision-N machinery -- bp=0, bs=N drives the masked
+ * load/store (gv/vstore) and the over-wide operand reduction in gen_op -- and
+ * tag it with a free struct-tag value so a standalone _BitInt stays
+ * distinguishable from a struct bit-field member (tag 0), which differs for
+ * &-of, sizeof/_Alignof and type compatibility.  No SymAttr/ref growth. */
+#define VT_BITINT (7 << VT_STRUCT_SHIFT)
+#define IS_BITINT(t) ((t & VT_STRUCT_MASK) == (VT_BITINT | VT_BITFIELD))
+
 #define BFVAL(M, N) ((unsigned)((M) & ~((M) << 1)) * (N))
 #define BFGET(X, M) (((X) & (M)) / BFVAL(M, 1))
 #define BFSET(X, M, N) ((X) = ((X) & ~(M)) | BFVAL(M, N))

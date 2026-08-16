@@ -5475,6 +5475,10 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 	cstr_printf(cs, "#define __SIZEOF_WCHAR_T__ %d\n", (int)sizeof(nwchar_t));
 	cstr_printf(cs, "#define __SIZEOF_WINT_T__ 4\n");
 	cstr_printf(cs, "#define __SIZEOF_INT256__ %d\n", MCC_WIDE256_SIZE);
+	/* C23 _BitInt: the widest _BitInt this implementation supports.  Slice 1
+	 * implements N<=64 (single storage integer); wider _BitInt is refused, so
+	 * the macro reports 64 honestly rather than gcc's arbitrary-width 65535. */
+	cstr_printf(cs, "#define __BITINT_MAXWIDTH__ 64\n");
 #if MCC_HAVE_INT128
 	cstr_printf(cs, "#define __SIZEOF_INT128__ 16\n");
 #endif
