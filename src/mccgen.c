@@ -4501,6 +4501,13 @@ redo:
 	t2 = vtop[0].type.t;
 	bs1 = vtop[-1].type.bs;
 	bs2 = vtop[0].type.bs;
+	/* t1/t2 are clobbered to the combined type below (`t = t2 = combtype.t'),
+	 * so capture each operand's _BitInt(N) precision now, while the tag survives:
+	 * a same-width _BitInt op yields _BitInt(N) whose result must be reduced. */
+	int bin1 = IS_BITINT(t1) ? bs1 : 0;
+	int bin2 = IS_BITINT(t2) ? bs2 : 0;
+	int biu1 = (t1 & VT_UNSIGNED) != 0;
+	int biu2 = (t2 & VT_UNSIGNED) != 0;
 	bt1 = t1 & VT_BTYPE;
 	bt2 = t2 & VT_BTYPE;
 
@@ -4715,6 +4722,31 @@ redo:
 				gen_op(TOK_SHL);
 				vpushi(sh);
 				gen_op((t & VT_UNSIGNED) ? TOK_SHR : TOK_SAR);
+			} else { MCC_TRACE("br\n");
+				/* A _BitInt(N) arithmetic result is itself _BitInt(N) (a shift's is the
+				 * left operand's), so its value must be reduced mod 2^N.  The N > 32 case
+				 * is the bf_trunc branch above (LLONG storage, explicit reduce); here N
+				 * fits an INT/SHORT storage integer, where nothing reduced the live
+				 * temporary -- it stayed un-reduced until a store masked it, so a widening
+				 * cast of the temporary read the full-width value (T-mac-30007).  Re-tag
+				 * it VT_BITINT|VT_BITFIELD rather than masking in place, so gv()'s
+				 * bit-field extract reduces it on every later use -- cast, next op, or
+				 * store -- which also composes for chained ops.  bp is 0 for a _BitInt;
+				 * bs == 32 makes the extract a no-op, as it should.  A genuine integer
+				 * operand is not IS_BITINT, so `_BitInt(9) + 500' stays a plain int and is
+				 * left un-reduced, matching the usual arithmetic conversions. */
+				int bi = op_class == SHIFT_OP
+						? bin1
+						: (bin1 > 0 && bin2 > 0 ? (bin1 > bin2 ? bin1 : bin2) : 0);
+				if (bi > 0 && (vtop->type.t & VT_BTYPE) != VT_LLONG) { MCC_TRACE("br\n");
+					int uns = op_class == SHIFT_OP
+							? biu1
+							: ((biu1 && bin1 >= bin2) || (biu2 && bin2 >= bin1));
+					vtop->type.t = (t & ~(VT_STRUCT_MASK | VT_UNSIGNED))
+							| VT_BITINT | VT_BITFIELD | (uns ? VT_UNSIGNED : 0);
+					vtop->type.bp = 0;
+					vtop->type.bs = bi;
+				}
 			}
 		}
 	}

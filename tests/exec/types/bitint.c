@@ -52,6 +52,29 @@ int main(void) {
 	return 0;
 }
 
+#elif defined test_temp
+
+#include <stdio.h>
+int main(void) {
+	/* Widening a LIVE (non-stored) _BitInt(N) arithmetic result must reduce it
+	 * mod 2^N before the conversion.  N <= 32 keeps its value in an INT/SHORT
+	 * storage integer, so unlike the N > 32 sections above it never went through
+	 * the LLONG operand-reduce -- the class the stored-path sections miss. */
+	unsigned _BitInt(9) u = 500, v = 400;
+	signed _BitInt(9) s = -100;
+	unsigned _BitInt(20) w = 999999;
+	unsigned _BitInt(32) x = 4000000000u;
+	printf("uadd %llu\n", (unsigned long long)(u + u));		/* 1000 -> 488 */
+	printf("umul %llu\n", (unsigned long long)(u * u));		/* 250000 -> 144 */
+	printf("uaddv %llu\n", (unsigned long long)(u + v));		/* 900 -> 388 */
+	printf("usub %llu\n", (unsigned long long)(v - u));		/* -100 -> 412 */
+	printf("uchain %llu\n", (unsigned long long)((u + u) + (u + u)));	/* -> 464 */
+	printf("sadd %lld\n", (long long)(s + s));			/* -200, no overflow */
+	printf("wsq %llu\n", (unsigned long long)(w * w));		/* mod 2^20 = 428929 */
+	printf("x2 %llu\n", (unsigned long long)(x + x));		/* mod 2^32 */
+	return 0;
+}
+
 #elif defined test_aggregate
 
 #include <stdio.h>
