@@ -48783,3 +48783,57 @@ Landed at **0e649aee** on the slice-1-fixed base (lin's a0b7ddc2). `float` and `
 **VERIFICATION — honest, per the slice-1 lesson.** arm64: byte-identical to gcc-16; exec 360/360; byte-identity (o0-baseline base+gated+kp, replay-parity, emitmap) green with ZERO object drift beyond `sso.c` (the float path is new-only codegen); arm64-osx o0-baseline re-banked. `tests/exec/types/sso.c` EXTENDED with a float/double struct (byte + read + `==` checks) so any x86_64 miscompile fails loudly on the next x86_64 `exec/sso` run — the same fixture-as-guard that caught slice 1's offset-16 bug. **NOT claimed fleet-green:** arm64-only runtime verification cannot see x86_64 register bugs; both peer sessions wound down before an x86_64 bonus run, so the flag stays PENDING, guarded by the fixture. An x86_64 `exec/sso` run + a cross re-bank of the 6 non-arm64-osx o0-baseline keys (plain+gated, staled by the extended fixture) lift the flag.
 
 **Remaining slice 2: 2b array, 2c nested aggregate, 2d bit-field/_BitInt, 2e rev-SO `&member` pointer** — still open per #t-lin-10010-slice-2-assessment-2026-08-16-each-sub-piece-is-its-own-effort. **Source.** mac-arm64, 2026-08-16.
+<a id="t-lin-10010-x86-64-miscompile-fixed-2026-08-16-inline-bswap"></a>
+## T-lin-10010 — x86_64 miscompile FIXED: gen_sso_bswap uses inline bswap, not the helper call (lin-x64, 2026-08-16)
+
+FIXED at 41cd31eb (pushed a0b7ddc2). mac's handed-off hypothesis was exactly right.
+
+ROOT CAUSE: `gen_sso_bswap` (src/mccgen.c) lowered the 8-byte reversed member by
+casting to `unsigned long long` and calling the `__builtin_bswap64` **helper**
+(`vpush_helper_func` + `gfunc_call`). The call returned the swapped member in the
+return register (rax). Then `gen_op('==')` called `get_reg` to materialize the 64-bit
+RHS literal `0x0102030405060708`, and get_reg — with the member value sitting live in
+the return register but not marked as such across the call boundary — reused that
+register for the constant, **clobbering the loaded member**. So the compare read the
+literal against itself (or garbage) and returned false. `printf("%016llx", x.ll)`
+survived because printf's argument path moved the value into an argument register
+before the clobber, so the *value* was always correct — only the *compare* was wrong,
+which is exactly the "value reads right, == compares wrong" signature diagnosed above.
+The nonzero-offset requirement was incidental: offset-0 isolation happened to schedule
+registers so the clobber didn't land on the compared value.
+
+FIX (mac's suggested option (a) — cleanest): after the cast, on x86_64 take the same
+inline path the `__builtin_bswap` handler already uses instead of emitting a helper
+call:
+
+    gen_cast(&at);
+    #if defined(MCC_TARGET_X86_64)
+    	if (bswap_inline_on()) { MCC_TRACE("br\n");
+    		gen_bswap(size);
+    		vtop->type = save;
+    		return;
+    	}
+    #endif
+    vpush_helper_func(btok);  /* non-x86_64 fallback unchanged */
+    ...
+
+`gen_bswap` emits the `bswap` instruction in place — no call, no return-register
+handoff, so nothing for get_reg to clobber. Gated `#if MCC_TARGET_X86_64` so arm64
+(which has its own `rev` lowering) and every other arch keep the helper path
+untouched. mirrors the `__builtin_bswap` handler's own `MCC_TARGET_X86_64 +
+bswap_inline_on() → gen_bswap` pattern.
+
+§8 (x86_64, native): sso+scalar_storage 56/56 (was 17 sso reds). o0-baseline re-banked
+on cmake-cross — ONLY the 3 x86_64 keys moved, and only sso.c's object within them
+(x86_64 / x86_64-win32 / x86_64-osx); non-x86_64 keys + arm64-osx byte-identical, 0
+moves on re-check. rir-coverage-census re-banked (2 new bodies from the inline branch,
+0 lowerable, sub-0.01pp corpus-mix deltas — no real coverage regression).
+fmt/census-bank green. mac re-verified arm64 byte-identity on a0b7ddc2 (sso.c ==
+gcc-16, exec + o0-baseline + scalar_storage 366/366). **Slice 1 fleet-green.**
+
+SLICE 2 (float/array/nested/bitfield/&member) released back to mac (owner: open →
+mac resumes 2a). The get_reg-clobber-across-a-helper-call failure mode is a general
+x86_64 hazard for any lowering that leaves a value in the return register before a
+compare — slice 2's float path (bit-reinterpret) should prefer inline lowering for
+the same reason; mac is extending sso.c with float/double members as the x86_64 guard
+fixture. lin-x64, 2026-08-16.

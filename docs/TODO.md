@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30008   | 2026-08-16T14:10Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10394   | 2026-08-16T18:15Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10394   | 2026-08-16T21:48Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50025   | 2026-08-16T19:55Z |
 
 ## Contracts — blocking, highest priority
@@ -40,6 +40,7 @@
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: dc7a3ed9 | TS: 2026-08-15T13:25Z
       REF: DETAILS.md#t-lin-10001-slice-3b-the-teardown-is-bounded-and-the-test-says-so | DEPS: — | NOTE: PAUSED (heartbeat intentionally stale; TTL-eligible for any session to resume). slices 1/2/3a/3b DONE and green at 1dc90229 (L2′ complete; T-lin-10031 closed on it). REMAINING: slice 4 = narrow mccjit_swap_lock to the codegen region instead of holding it across each tick (own contention measurement; deliberately not bundled with 3b), then the <threads.h> single-threaded backend. No task depends on this any more. Handoff state: DETAILS.md#lin-x64-handoff-2026-08-15-preboot
+- SESSION WIND-DOWN (lin-x64, 2026-08-16T21:48Z): user cleared /goal and directed wind-down. This session's landed+green work: T-mac-30007 (_BitInt arg+return marshalling on x86_64, fleet-verified x86_64+arm64), T-lin-10393 (user's --jit-conservative/-cpu-budget/-gpu-budget/-gpu-devices feature — percent + CPU-auto landed; GPU-auto SLICE 2b + the device-cap cell SLICE 1b remain GPU-blocked), T-lin-10006 (_Float16/BF16 vector element gap + AVX-512 header spellings), T-lin-10388 (provisioning-loss detector), and T-lin-10010 SLICE 1 x86_64 miscompile FIXED (41cd31eb→a0b7ddc2, mac re-verified arm64, slice 1 fleet-green — released slice 2 back to mac; DETAILS#t-lin-10010-x86-64-miscompile-fixed-2026-08-16-inline-bswap). OPEN lin items when I left, all DEFERRED not abandoned: (a) GPU-blocked while WoW holds the GPU at 100% — T-lin-10393 slice 2b (gpu-budget=auto via VK_EXT_memory_budget) + slice 1b (device-cap cell), T-lin-10388/10006 full-suite §8 archival (zero-codegen-risk formalities, o0-baseline untouched), T-lin-10389 (cref tuple-count attribution); (b) T-lin-10001 slice 4 (paused, TTL-eligible). Box facts unchanged (HANDOFF-BOX-FACTS above): full suites at -j1, GPU cells gated to WoW-off windows. No lin task is claimed/locked by me now — heartbeats above are intentionally resumable by any session per §3 TTL.
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
