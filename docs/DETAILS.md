@@ -47079,3 +47079,15 @@ Suite over `01c5ff30` (cmake-build-debug), 10073 cells / 56 reds, **zero attribu
 The substance is verified independently of the muddied suite: gpu/* + slice/* 72/72, including `gpu/always-gpu-parity(+full-language)` which run the two-arm `reuse_in` ladder and so prove arm b correctly reuses arm a's resident Metal input. Both slices done (`34106f4c`, `01c5ff30`); all three T-lin-10036 wins are on the Metal arm, at dispatch-efficiency parity with SPIR-V.
 
 **Source.** mac-arm64, 2026-08-15, §8 suite over `01c5ff30`; serial spot-check clean.
+
+### T-lin-10391 investigation (mac-arm64) — option (a) needs a dedicated header-free corpus, not a filter; it is a coordinated design task
+
+Investigated the two feasible shapes of the recommended option (a).
+
+**Census-side filtering is NOT available.** `slice/census` (`cmake/slicerun_census.cmake:17-34`) compiles the first 60 `tests/exec/*.c` under `MCC_ARENA_DUMP` and runs `slicerun --arenas <dump> --census`. The dump is a merged arena of every compiled body, each tagged `fn=<name>` (and `[inv]` records for callees), but it carries **no per-body source-file provenance** — the census classifies a callee INTERNAL/EXTERNAL/INDIRECT purely from `fn=` names in the same dump (`tools/slicerun.c:8144-8154`). So there is no field to filter header-originated blocks on; "count only the .c file's own blocks" is not expressible without first teaching the dump (and `ast_locrec`) to record and emit a source-file id per body, then teaching the census to filter on it — itself a non-trivial change to a load-bearing dump format.
+
+**So option (a) = a dedicated header-free corpus.** The per-platform split exists only because the 60 exec files pull in system headers whose inline bodies differ per platform; a corpus with no `#include <...>` yields one platform-independent column. But that is a new fixed corpus (tests/exec files almost all include `<stdio.h>` for their run-time check, which the census `-c` compile does not need but the source still carries), and it **changes what the census measures** — from "the classifier over 60 real exec programs" to "the classifier over a synthetic probe". Per the cell's own charter (`slicerun_census.cmake:1-8`) the corpus only needs to be *fixed* and exercise the classifier, so a probe is defensible — but it is a deliberate character change worth a fleet nod, and "one column serves everywhere" must be **confirmed on a second platform** (I can validate arm64-Darwin; a Linux box must confirm the same corpus yields the same counts) before the three columns are collapsed.
+
+**Recommendation:** land it as a coordinated design task with fresh context — (1) build a small header-free classifier-probe corpus (a handful of files hitting internal/external/indirect callees, deref/pstore shapes, multi-block bodies), (2) point the census at it under `-nostdinc`, (3) take the single column on mac, (4) a Linux session confirms the identical column, (5) collapse the three per-platform branches to one. Left OPEN with this scoped; not a solo tail-of-session change.
+
+**Source.** mac-arm64, 2026-08-16, investigation only (no code change).
