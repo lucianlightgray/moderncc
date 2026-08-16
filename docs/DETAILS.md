@@ -49108,3 +49108,40 @@ second step from the measurement anchor — a limb-wise inliner for add/sub/and/
 (4 adds/adcs vs call+address-setup) — is a per-arch emitter change to be priced against this new
 baseline; div/mul/shift stay calls regardless. That is a separate slice decision, not blocked on
 anything. **Source.** mac-arm64, 2026-08-16, at 8d054c5d.
+
+<a id="t-mac-30005-diagnosis-the-cell-compares-off-vs-off-since-the-level-re-ladder"></a>
+
+## T-mac-30005 diagnosis — the +0.0% is the CELL comparing off-vs-off, not the optimizer failing; chain-store is alive
+
+**The premise of the row is refuted.** "The optimization does not fire on this kernel" is wrong —
+the *cell* never turns it on. `gate_win_insns` (tools/runtime-bench.py) builds its "on" arm with
+NO flag and its "off" arm with `-fno-chain-store`, both at `-O3`, relying on the -O3 default to
+supply "on". That was true when the 8% was banked (e81035e5, 2026-07-28, staged CHAINSTORE at
+`>= 2`, spectral-norm 0.55s → 0.35s on the author's box). The 2026-08-09 level re-ladder
+(1ad3f1aa; tests/optfire/defstate.txt:61-62 `chainstore|-O4|chain-store|on`,
+`chainstore_below|-O3|chain-store|off`; levelpins.txt rung-11 notes) demoted chain-store's
+default to `-O4` — so the cell now builds off-vs-off and reads +0.0% BY CONSTRUCTION. The gate
+was made vacuous by a legitimate re-staging, and its permanent-77 status (vendor/plb absent
+everywhere but here) hid it.
+
+**Evidence (arm64, at 8d054c5d, spectral-norm 3.c with the cell's own flags `-fc99-inline-body`).**
+(1) cell's arms: `-O3` vs `-O3 -fno-chain-store` → objects BYTE-IDENTICAL. (2) explicit on:
+`-O3 -fchain-store` vs `-O3 -fno-chain-store` → objects DIFFER. (3) `-O4` (default on) vs
+`-O4 -fno-chain-store` → DIFFER. So the flag is wired and the pass transforms this very kernel
+when enabled. Same identical-pair result reproduces on tests/exec/statements/chained_assign.c.
+
+**History nuance (for whoever expected the p5 deletion to be the culprit).** p5 (172a2f31,
+2026-08-03) deleted the hook-recorder site that carried the original chained-assignment deep-copy
+(`ast_dup_sub` on the re-adopted value). The surviving `ast_chainstore_env` site is the
+promotion-poison rule in the ast_promo candidate scan (src/mccast.c:4791), and it demonstrably
+still changes codegen. The 2026-08-09 family re-measure (levelbench-cycles.tsv `chain-store sieve
++25.261`) post-dates p5, consistent with the pass being alive through this site.
+
+**Remaining slice (blocked on a quiet box; full suite running for T-lin-10015 as of this
+writing).** Measure the actual instruction win of explicit-on vs off at -O3 and -O4 on
+spectral-norm via the cell's own counter path. Then pick the fix: (a) the "on" arm passes
+`-fchain-store` explicitly (tests the OPTIMIZER — my lean: GATE_WINS exists to catch the pass
+breaking, and an explicit-on arm survives future re-staging), vs (b) re-target the assertion at
+the level where the gate is staged (-O4) so it tests the SHIPPED default. Either way re-derive
+the min_win from the measured figure, and the known-positive must still go red under --mutate.
+**Source.** mac-arm64, 2026-08-16, at 8d054c5d.
