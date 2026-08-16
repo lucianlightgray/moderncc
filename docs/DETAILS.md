@@ -49145,3 +49145,29 @@ breaking, and an explicit-on arm survives future re-staging), vs (b) re-target t
 the level where the gate is staged (-O4) so it tests the SHIPPED default. Either way re-derive
 the min_win from the measured figure, and the known-positive must still go red under --mutate.
 **Source.** mac-arm64, 2026-08-16, at 8d054c5d.
+<a id="t-lin-10086-3rd-woa-run-close-judgment"></a>
+
+## T-lin-10086 — 3rd WoA run (31977683305, tree 198d3410) + the §8 close judgment (win-x64, 2026-08-16)
+
+Third consecutive run on a current-main tree: probe green, stage1 build green, stage2 SELF-HOST
+green (mcc compiling mcc on windows-arm64-msvc — the task's core subject), stage3 suite COMPLETED
+at 99% — 90 failed / 9591 (cells grew +52 with the day's landings). The failing set is the SAME
+three subject families as runs 1-2, all already split into named tasks: ~20 exec*/float128 =
+T-win-50023, ~20 exec*/integer_promotion = T-win-50024, ~20 exec*/bitfield_width64 = T-win-50015
+family, plus the known-env singletons (smoke/slice/rir cells absent hardware/corpora on the
+runner). NEW datapoints this run: (1) exec/sso does NOT fail — mac's T-lin-10010 slice 2a
+(float/double reversed-SSO, arm64-Darwin-verified) is ALSO correct on arm64-WINDOWS; (2) zero
+crash signatures — T-lin-10371's moving SEGFAULT absent a third consecutive time (distribution
+now 2-crash in the 3 early runs / 0-crash in the 3 recent). LANE MECHANICS, recorded not judged:
+the stage2 JOB concludes "failure" in BOTH run 2 and run 3 (ctest exit 8 propagates through
+mcc-ci stage3) while the RUN concludes "success"; run 3's summary step additionally reported
+"no ctest-junit.xml produced" where run 2 found it — a junit-path/infra nit inside the always()
+summary step, not a suite outcome. Anyone hardening the lane can take both as a small follow-on.
+
+JUDGMENT: the task's subject — arm64-win32 EXECUTION on a windows-11-arm runner — is
+demonstrated three times over current main: the runner builds mcc, self-hosts it, and runs the
+9.5k-cell suite at 99% with every residual failure attributed to a named open task. The
+arm-win32 (ARM32) half remains UNEXECUTABLE (WoA runs no 32-bit ARM) and is explicitly NOT
+reported green — it stays recorded here and in T-win-50006's scope note. CLOSED as DONE on the
+execution subject; the split tasks (T-win-50023, T-win-50024, T-win-50015 family) carry the
+remaining work.
