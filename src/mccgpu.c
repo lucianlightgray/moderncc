@@ -2152,9 +2152,9 @@ static int mcc_gpu_init(void) {
 								"[gpu-vk] none of the %u enumerated devices can run a "
 								"%d-wide compute group over three storage buffers\n",
 								ndev, MCC_GPU_LOCAL_SIZE);
-			if (mcc_gpu.inst && vkDestroyInstance) {
-				vkDestroyInstance(mcc_gpu.inst, 0);
-				mcc_gpu.inst = 0;
+			if (mcc_gpu_inst && vkDestroyInstance) {
+				vkDestroyInstance(mcc_gpu_inst, 0);
+				mcc_gpu_inst = 0;
 			}
 			return 0;
 		}
@@ -2813,7 +2813,7 @@ void mcc_gpu_quiesce(void) {
 
 int mcc_gpu_reopen(void) {
 	MCC_GPU_LOCK();
-	if (mcc_gpu.dev || mcc_gpu.inst || mcc_gpu.lost || mcc_gpu.stranded) {
+	if (mcc_gpu.dev || mcc_gpu_inst || mcc_gpu.lost || mcc_gpu_ctr.stranded) {
 		MCC_GPU_UNLOCK();
 		return 0;
 	}
