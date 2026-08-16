@@ -1264,6 +1264,286 @@ static void suite_f64(void) {
 					g_f64_nansel_second ? "second" : "first", g_f64_nansign);
 }
 
+#define XSRC_MAX 12
+#define XDEV_MAX 8
+
+typedef struct XSrc {
+	char name[128];
+	int isdev;
+	int64_t *v;
+} XSrc;
+
+static long g_x_agree, g_x_nansign, g_x_nansel, g_x_denorm, g_x_bad;
+
+static int f64_xeq(int64_t a, int64_t b) {
+	if (a == b)
+		return 1;
+	if (f64_arith_equal(a, b))
+		return 1;
+	if (f64_denorm_flushed(a, b) || f64_denorm_flushed(b, a))
+		return 1;
+	return 0;
+}
+
+static int xrun_cc(const char *cc, const char *src, const char *exe,
+									 int64_t *out, int n) {
+	char cmd[1024];
+	FILE *f;
+	int i = 0;
+	snprintf(cmd, sizeof cmd, "%s -O0 -w %s -o %s 2>/dev/null", cc, src, exe);
+	if (system(cmd) != 0)
+		return 0;
+	snprintf(cmd, sizeof cmd, "%s", exe);
+	f = popen(cmd, "r");
+	if (!f)
+		return 0;
+	while (i < n) {
+		unsigned long long u;
+		if (fscanf(f, "%llx", &u) != 1)
+			break;
+		out[i++] = (int64_t)u;
+	}
+	pclose(f);
+	return i == n;
+}
+
+static int xwrite_ref(const char *path, const char *opsym) {
+	FILE *f = fopen(path, "w");
+	int i;
+	if (!f)
+		return 0;
+	fprintf(f, "#include <stdio.h>\n#include <string.h>\n");
+	fprintf(f, "static const unsigned long long V[]={");
+	for (i = 0; i < F64V_N; i++)
+		fprintf(f, "%s0x%016llxull", i ? "," : "",
+						(unsigned long long)F64V[i]);
+	fprintf(f, "};\n#define N %d\n", F64V_N);
+	fprintf(f, "int main(void){int i,j;for(i=0;i<N;i++)for(j=0;j<N;j++){"
+						 "double a,b,r;unsigned long long u;"
+						 "memcpy(&a,&V[i],8);memcpy(&b,&V[j],8);"
+						 "r=a %s b;memcpy(&u,&r,8);"
+						 "printf(\"%%016llx\\n\",u);}return 0;}\n",
+					opsym);
+	fclose(f);
+	return 1;
+}
+
+static void f64_cross_op(const char *what, int op, const char *opsym) {
+	AstArena *a = ast_arena_new();
+	AstLocal root =
+			mk_bin(a, op, mk_ref(a, -8, VT_DBL), mk_ref(a, -16, VT_DBL), VT_DBL);
+	MccSliceWork w;
+	int n = F64V_N * F64V_N, i, j, s, ns = 0, ndev = 0;
+	int64_t *in;
+	unsigned char *def;
+	XSrc src[XSRC_MAX];
+	char srcpath[512], exepath[512];
+	const char *tmpd = getenv("TMPDIR");
+	const char *gcc = getenv("MCC_XORACLE_GCC");
+	const char *clang = getenv("MCC_XORACLE_CLANG");
+
+	if (!tmpd || !tmpd[0])
+		tmpd = "/tmp";
+	if (!gcc || !gcc[0])
+		gcc = "gcc";
+	if (!clang || !clang[0])
+		clang = "clang";
+	memset(src, 0, sizeof src);
+	in = (int64_t *)malloc((size_t)n * 2 * sizeof *in);
+	def = (unsigned char *)malloc((size_t)n);
+	if (!in || !def) {
+		free(in); free(def); ast_arena_free(a);
+		return;
+	}
+	for (i = 0; i < F64V_N; i++)
+		for (j = 0; j < F64V_N; j++) {
+			in[((long)i * F64V_N + j) * 2] = (int64_t)F64V[i];
+			in[((long)i * F64V_N + j) * 2 + 1] = (int64_t)F64V[j];
+		}
+
+	g_checks++;
+	if (!mcc_slice_work_from_ast(a, root, &w)) {
+		fprintf(stderr, "FAIL f64cross: %s is not schedulable work\n", what);
+		g_failures++;
+		goto out;
+	}
+
+	src[ns].v = (int64_t *)malloc((size_t)n * sizeof(int64_t));
+	snprintf(src[ns].name, sizeof src[ns].name, "mcc-cpu");
+	mcc_slice_work_bind(&w, in, n, src[ns].v, def);
+	g_checks++;
+	if (mcc_slice_run_cpu(&w, 0) != MCC_TASK_DONE) {
+		fprintf(stderr, "FAIL f64cross: %s CPU run did not complete\n", what);
+		g_failures++;
+		goto out;
+	}
+	ns++;
+
+	snprintf(srcpath, sizeof srcpath, "%s/mcc_xoracle_%s.c", tmpd, what);
+	snprintf(exepath, sizeof exepath, "%s/mcc_xoracle_%s.bin", tmpd, what);
+	if (xwrite_ref(srcpath, opsym)) {
+		const char *ccs[2];
+		const char *nm[2];
+		ccs[0] = gcc; nm[0] = "gcc";
+		ccs[1] = clang; nm[1] = "clang";
+		for (i = 0; i < 2 && ns < XSRC_MAX; i++) {
+			int64_t *o = (int64_t *)malloc((size_t)n * sizeof(int64_t));
+			if (!o)
+				break;
+			if (xrun_cc(ccs[i], srcpath, exepath, o, n)) {
+				src[ns].v = o;
+				snprintf(src[ns].name, sizeof src[ns].name, "%s", nm[i]);
+				ns++;
+			} else {
+				free(o);
+				fprintf(stderr, "slicerun: f64cross %s oracle unavailable (%s)\n",
+								nm[i], ccs[i]);
+			}
+		}
+	}
+
+	for (i = 0; i < XDEV_MAX && ns < XSRC_MAX; i++) {
+		char pin[16];
+		MccSliceKernel k;
+		MccGpuStats gs;
+		int64_t *o;
+		snprintf(pin, sizeof pin, "%d", i);
+		setenv("MCC_GPU_DEVICE", pin, 1);
+		mcc_gpu_quiesce();
+		if (!mcc_gpu_reopen())
+			break;
+		if (!mcc_gpu_alive())
+			break;
+		memset(&gs, 0, sizeof gs);
+		mcc_gpu_stats(&gs);
+		o = (int64_t *)malloc((size_t)n * sizeof(int64_t));
+		if (!o)
+			break;
+		if (!mcc_slice_kernel_build(&w, &k)) {
+			free(o);
+			break;
+		}
+		mcc_slice_work_bind(&w, in, n, o, def);
+		if (mcc_slice_run_gpu(&w, &k, 0) != MCC_TASK_DONE) {
+			mcc_slice_kernel_free(&k);
+			free(o);
+			break;
+		}
+		mcc_slice_kernel_free(&k);
+		src[ns].v = o;
+		src[ns].isdev = 1;
+		snprintf(src[ns].name, sizeof src[ns].name, "%s", gs.name ? gs.name : "?");
+		ns++;
+		ndev++;
+	}
+	unsetenv("MCC_GPU_DEVICE");
+
+	if (getenv("MCC_XCROSS_MUTATE") && ns > 1) {
+		int m = ns - 1;
+		for (i = 0; i < n; i++)
+			if (!f64_is_nan(src[m].v[i]) && src[m].v[i] != 0) {
+				src[m].v[i] ^= 1;
+				break;
+			}
+	}
+
+	g_checks++;
+	if (ndev < 2)
+		fprintf(stderr,
+						"slicerun: f64cross %s -- only %d device(s) bound; the "
+						"device-vs-device oracle needs two\n",
+						what, ndev);
+	g_checks++;
+	if (ns < 2) {
+		fprintf(stderr, "FAIL f64cross: %s had %d source(s); nothing to cross\n",
+						what, ns);
+		g_failures++;
+		goto out;
+	}
+
+	for (i = 0; i < n; i++) {
+		int cls[XSRC_MAX], nc = 0, big = 0, bign = 0;
+		int cnt[XSRC_MAX];
+		int64_t la = in[(long)i * 2], rb = in[(long)i * 2 + 1];
+		if (!def[i])
+			continue;
+		if (f64_is_nan(la) && f64_is_nan(rb)) {
+			int allsel = 1;
+			for (s = 0; s < ns; s++)
+				if (!f64_arith_equal(src[s].v[i], la) &&
+						!f64_arith_equal(src[s].v[i], rb))
+					allsel = 0;
+			if (allsel) {
+				g_x_nansel++;
+				continue;
+			}
+		}
+		for (s = 0; s < ns; s++) {
+			int c;
+			for (c = 0; c < nc; c++)
+				if (f64_xeq(src[cls[c]].v[i], src[s].v[i]))
+					break;
+			if (c == nc) {
+				cls[nc] = s;
+				cnt[nc] = 1;
+				nc++;
+			} else
+				cnt[c]++;
+		}
+		for (j = 0; j < nc; j++)
+			if (cnt[j] > bign) {
+				bign = cnt[j];
+				big = j;
+			}
+		if (nc == 1) {
+			int exact = 1;
+			for (s = 1; s < ns; s++)
+				if (src[s].v[i] != src[0].v[i])
+					exact = 0;
+			if (exact)
+				g_x_agree++;
+			else if (f64_is_nan(src[0].v[i]))
+				g_x_nansign++;
+			else
+				g_x_denorm++;
+			continue;
+		}
+		if (g_x_bad < 6) {
+			fprintf(stderr, "FAIL f64cross: %s a=%016llx b=%016llx --", what,
+							(unsigned long long)la, (unsigned long long)rb);
+			for (s = 0; s < ns; s++)
+				fprintf(stderr, " %s=%016llx", src[s].name,
+								(unsigned long long)src[s].v[i]);
+			fprintf(stderr, " (majority=%s)\n", src[cls[big]].name);
+		}
+		g_x_bad++;
+	}
+	g_checks++;
+	if (g_x_bad)
+		g_failures++;
+
+out:
+	for (s = 0; s < ns; s++)
+		free(src[s].v);
+	free(in);
+	free(def);
+	ast_arena_free(a);
+}
+
+static void suite_f64cross(void) {
+	if (!g_have_device) {
+		fprintf(stderr, "slicerun: f64cross needs a device\n");
+		return;
+	}
+	f64_cross_op("add", '+', "+");
+	f64_cross_op("sub", '-', "-");
+	f64_cross_op("mul", '*', "*");
+	fprintf(stderr,
+					"slicerun: f64cross agree=%ld nansel=%ld nansign=%ld denorm=%ld "
+					"disagree=%ld\n",
+					g_x_agree, g_x_nansel, g_x_nansign, g_x_denorm, g_x_bad);
+}
+
 static void suite_wide64(void) {
 	AstArena *a;
 	MccSliceWork w;
@@ -9948,7 +10228,7 @@ static int slicerun_main(int argc, char **argv) {
 				"task",  "work",   "cpu",	 "gpu",		"bytes",	"wide64",
 				"f64",	 "ops",		"frame", "mem",		"deref",	"fmt",
 				"fault", "sched",	"ext",	 "rwstore", "arrow",	"effect",
-				"hostimport", "thread", "lost", "quiesce"};
+				"hostimport", "thread", "lost", "quiesce", "f64cross"};
 		size_t si;
 		int known = 0;
 		for (si = 0; si < sizeof SUITES / sizeof SUITES[0]; si++)
@@ -9978,6 +10258,8 @@ static int slicerun_main(int argc, char **argv) {
 		suite_wide64();
 	if (!only || !strcmp(only, "f64"))
 		suite_f64();
+	if (only && !strcmp(only, "f64cross"))
+		suite_f64cross();
 	if (!only || !strcmp(only, "ops"))
 		suite_ops();
 	if (!only || !strcmp(only, "frame"))

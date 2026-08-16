@@ -70,6 +70,7 @@ int mcc_gpu_dispatch2_ro_in(const void *ca, int na, const void *cb, int nb,
 														const int32_t *in, int ntuple, int nlive,
 														int32_t *oa, int32_t *ob);
 void mcc_gpu_quiesce(void);
+int mcc_gpu_reopen(void);
 /* Frame dispatch: `inout` is both seeded into and read back out of the device
  * frame, so a kernel that stores to local slots can hand its results back. */
 int mcc_gpu_dispatch_rw(const void *code, int n, int32_t *inout, int ntuple,

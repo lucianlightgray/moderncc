@@ -551,6 +551,15 @@ void mcc_gpu_quiesce(void) {
 	MCC_GPU_UNLOCK();
 }
 
+int mcc_gpu_reopen(void) {
+	int ok;
+	MCC_GPU_LOCK();
+	mcc_gpu_closing = 0;
+	ok = mcc_gpu.ok;
+	MCC_GPU_UNLOCK();
+	return ok;
+}
+
 static uint64_t mtl_key(const char *s, int len) {
 	uint64_t h = 0xcbf29ce484222325u;
 	int i;
@@ -2143,6 +2152,10 @@ static int mcc_gpu_init(void) {
 								"[gpu-vk] none of the %u enumerated devices can run a "
 								"%d-wide compute group over three storage buffers\n",
 								ndev, MCC_GPU_LOCAL_SIZE);
+			if (mcc_gpu.inst && vkDestroyInstance) {
+				vkDestroyInstance(mcc_gpu.inst, 0);
+				mcc_gpu.inst = 0;
+			}
 			return 0;
 		}
 		mcc_gpu.qfam = bestq;
@@ -2796,6 +2809,26 @@ void mcc_gpu_quiesce(void) {
 		}
 	}
 	MCC_GPU_UNLOCK();
+}
+
+int mcc_gpu_reopen(void) {
+	MCC_GPU_LOCK();
+	if (mcc_gpu.dev || mcc_gpu.inst || mcc_gpu.lost || mcc_gpu.stranded) {
+		MCC_GPU_UNLOCK();
+		return 0;
+	}
+	mcc_gpu_closing = 0;
+	mcc_gpu.tried = 0;
+	mcc_gpu.ok = 0;
+	mcc_gpu.f64 = 0;
+	mcc_gpu.hostimp = 0;
+	mcc_gpu.hostimp_align = 0;
+	mcc_gpu.hostimp_why[0] = 0;
+	mcc_gpu.maxsbrange = 0;
+	mcc_gpu.qfam = 0;
+	mcc_gpu.name[0] = 0;
+	MCC_GPU_UNLOCK();
+	return mcc_gpu_init();
 }
 
 /* Set only for the duration of a frame dispatch, under the same lock that

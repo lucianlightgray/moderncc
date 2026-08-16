@@ -3928,6 +3928,19 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties("slice/${_sk}-known-positive" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             endforeach()
+            add_test(NAME "slice/f64cross"
+                COMMAND $<TARGET_FILE:slicerun> f64cross --device-or-skip)
+            set_tests_properties("slice/f64cross" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 600
+                ENVIRONMENT "MCC_XORACLE_GCC=${DIFF3_GCC};MCC_XORACLE_CLANG=${DIFF3_CLANG}")
+            add_test(NAME "slice/f64cross-known-positive"
+                COMMAND "${CMAKE_COMMAND}"
+                        -DRUNNER=$<TARGET_FILE:slicerun>
+                        -DMCC_GPU_REQUIRED=${MCC_GPU_REQUIRED}
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_f64cross.cmake")
+            set_tests_properties("slice/f64cross-known-positive" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 600
+                ENVIRONMENT "MCC_XORACLE_GCC=${DIFF3_GCC};MCC_XORACLE_CLANG=${DIFF3_CLANG}")
             foreach(_sk ops frame)
                 add_test(NAME "slice/${_sk}-lohi-fallback"
                     COMMAND "${CMAKE_COMMAND}"
