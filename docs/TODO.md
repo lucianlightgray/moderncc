@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30007   | 2026-08-16T00:50Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30007   | 2026-08-16T01:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10392   | 2026-08-16T00:17Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50022   | 2026-08-16T00:24Z |
 
@@ -13,8 +13,8 @@
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 - [ ] T-lin-10391 [S] `slice/census` strands the columns the adding session cannot measure — o0-baseline's defect, without o0-baseline's fix
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 21fb9f16 | TS: 2026-08-16T01:05Z
-      REF: DETAILS.md#t-lin-10391-slicecensus-strands-the-columns-the-adding-session-cannot-measure | DEPS: — | NOTE: THIRD recorded instance of one corpus edit stranding fleet banks (after wide_bitfield_arith.c and this same algebraic_identities.c on o0-baseline). slice/census globs its corpus (slicerun_census.cmake:17 file(GLOB_RECURSE tests/exec/*.c)) and compares against a HARD-PINNED per-platform column — arm64-Darwin 983, arm64-Linux 1022, x86_64-Linux 941 — so any new tests/exec fixture moves EVERY column while the adding session can measure only its own. da0932e2 (win) added algebraic_identities.c; blocks moved 941->946 and the cell went red on a box that did not make the change. Linux column re-banked at 3f379a0c (attribution safe by the file's own test: inv-blocks 454 / all-internal 169 / all-external 197 / mixed 87 / any-indirect 1 ALL unmoved — corpus grew, classifier did not). STILL STALE + NOT FIXABLE FROM HERE: arm64-Darwin (mac can re-take) and arm64-Linux (Debian-in-Docker, no current owner). A RE-BANK IS NOT THE FIX — the next fixture reopens it. Asymmetry that is the actual bug: the unbanked-combination branch SKIPS the exact-count half, so an unknown platform degrades quietly while a known one hard-fails. THREE OPTIONS: (a) RECOMMENDED — the header-independent corpus the file itself proposes ("give the census a corpus that does not include system headers, which would make one column serve everywhere"): one column cannot be stranded, strictly better than three-plus-a-manifest, removes the split rather than administering it; (b) a keys.txt-style manifest mirroring T-mac-30006's o0-baseline fix — proven in-tree, cheaper landing; (c) derive the counts instead of pinning them. Verify: add a tests/exec fixture on one platform and require no other platform's slice/census to red — which nothing in the tree satisfies today
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 72821893 | TS: 2026-08-16T01:20Z
+      REF: DETAILS.md#t-lin-10391-implemented-72821893-header-free-one-column-census-awaiting-lins-linux-confirmation | DEPS: — | NOTE: IMPLEMENTED (option a). Header-free corpus tests/census/*.c (-nostdinc) → ONE column: blocks=50 inv-blocks=20 all-internal=7 all-external=6 mixed=6 any-indirect=1, floors 17/4. Removed the 3 per-{arch,os} branches + CENSUS_ARCH/OS key + skip-the-exact-half asymmetry. Verified arm64-Darwin green + tests/exec-touch-independent (the stranding defect is gone by construction). PENDING lin CONTRACT (72821893): confirm identical column on arm64-Linux + x86_64-Linux; if a figure moves at -O1, drop the census to -O0 or split only that figure. ON CONFIRM: DONE + archive; unblocks T-lin-10038
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 

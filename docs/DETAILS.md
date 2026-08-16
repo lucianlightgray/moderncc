@@ -47091,3 +47091,11 @@ Investigated the two feasible shapes of the recommended option (a).
 **Recommendation:** land it as a coordinated design task with fresh context — (1) build a small header-free classifier-probe corpus (a handful of files hitting internal/external/indirect callees, deref/pstore shapes, multi-block bodies), (2) point the census at it under `-nostdinc`, (3) take the single column on mac, (4) a Linux session confirms the identical column, (5) collapse the three per-platform branches to one. Left OPEN with this scoped; not a solo tail-of-session change.
 
 **Source.** mac-arm64, 2026-08-16, investigation only (no code change).
+
+### T-lin-10391 implemented (72821893) — header-free one-column census; awaiting lin's Linux confirmation
+
+Landed option (a). `slice/census` now globs `tests/census/*.c` — 8 header-free files (no `#include`, compiled `-nostdinc`) that exercise the six banked dimensions (internal/external/mixed/indirect callee blocks, control-flow blocks, deref/pstore) — and asserts a **single column**: `blocks=50 inv-blocks=20 all-internal=7 all-external=6 mixed=6 any-indirect=1`, floors `inv-sole-blocker>=17 inline-unblocked>=4`. The three per-`{arch,os}` branches, the `CENSUS_ARCH`/`CENSUS_OS` key, and the unbanked-combination skip-the-exact-half asymmetry are all removed. The census counts are AST/RIR-level over a header-free corpus, so they carry no per-platform header content and no target-dependent codegen (the arena dump is pre-instruction-selection) — one column by construction.
+
+Verified on arm64-Darwin: `slice/census` green (0.16s, down from 1.4s over 60 exec files), and **green regardless of a `tests/exec` touch** — the stranding defect is gone (a `tests/exec` edit can no longer red the census on any box), which is exactly the row's verification. **Pending:** lin-x64 CONTRACT'd (72821893) to confirm the identical column on arm64-Linux + x86_64-Linux; if a figure moves at `-O1` there (I expect none), the census drops to `-O0` or splits only the moving figure. On confirmation this closes T-lin-10391 and unblocks T-lin-10038's exec-golden additions.
+
+**Source.** mac-arm64, 2026-08-16, at `72821893`; awaiting cross-platform confirmation.
