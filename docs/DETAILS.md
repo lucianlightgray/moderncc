@@ -48960,3 +48960,52 @@ at 1e6494bf — the guard FAILS here, and the failure is narrow:
 - Repro: tests/exec/types/sso.c prints FAIL under mcc, OK under mingw-gcc-16.1, both rc=0;
   pe/x-oracle reports it as its single new divergence (agree=263, excluded=14). A member-split
   diagnostic isolating the clauses is trivial to reconstruct from the fixture's slice-2a section.
+
+<a id="t-lin-10013-design-i256-suffix-2026-08-16"></a>
+
+## T-lin-10013 design locked (win-x64, 2026-08-16) — `i256` literal suffix, MSVC-family spelling
+
+CHOSEN: `i256` (any case), with an optional `u`/`U` on either side (`0x...ui256`, `0x...i256u`) —
+the MSVC `i64`/`ui64` suffix family, consistent with `__int256` itself being an MSVC-style
+extension spelling. REJECTED: C23 `wb` (that suffix means _BitInt(N)-of-minimal-width — a
+different type; it belongs to T-lin-10004 slice 2, and mcc's __BITINT_MAXWIDTH__ is still 64);
+a bare new letter (collides with the imaginary suffix `i`/`I`/`j`/`J` which parse_number already
+eats at mccpp.c:3629 — `i256` therefore needs a 3-char lookahead in that arm before ceding to
+imaginary). `i128` is the natural sibling and falls out of the same mechanism, but is OUT of this
+task's scope (its own token pair; note only).
+
+MECHANISM (all in-tree machinery, no new representation):
+- CValue.q already holds 4x64 = 256 bits (mcc.h:232) and `vpush_wide256_const` /
+  `wide256_get_const` (src/wide256_slice.h:70-85) already push/read VT_CONST SValues with the
+  full payload — constants flow today from folded shift/or expressions. The ONLY missing layer
+  is lexical: a token that carries 256 bits from parse_number to unary().
+- parse_number (mccpp.c:3355): the digit string survives NUL-terminated in token_buf when the
+  suffix loop runs (mccpp.c:3603-3635). Add an `i256` recognizer to the `t == 'I'` arm
+  (lookahead "256" then a non-ident-char; else fall through to imaginary). When seen: re-scan
+  token_buf accumulating 4 limbs (mul-by-base + add-digit with carry propagation; base 2/8/10/16
+  all work through the same loop), warn "integer constant overflow" only past 256 bits, SKIP the
+  64-bit ov warning (mccpp.c:3658) and the type-promotion ladder (3640-3656), set
+  tok = TOK_CINT256/TOK_CUINT256, tokc.q = limbs. In pp_expr context (#if): mcc_error — #if
+  arithmetic is intmax_t and pretending otherwise would fold wrongly.
+- Tokens: mint TOK_CINT256 0xd7 / TOK_CUINT256 0xd8 after TOK_U8CHAR (0xd6) and EXTEND
+  TOK_HAS_VALUE's upper bound (mcc.h:1320). Audit every range predicate and serialization
+  switch that classes value-tokens — the closed set is found by grepping TOK_CLDOUBLE (widest
+  payload precedent) and TOK_CLLONG: tok_str_add2 + TOK_GET + the skip variant
+  (mccpp.c:~637/694, ~1238/1247, ~1320/1328), the `tok >= TOK_STR && tok <= TOK_CLDOUBLE`
+  range at mccpp.c:2184, get_tok_str (diagnostic printing — print the hex form), and
+  unary()'s constant cases (mccgen.c:~12596). The token-string payload is 8 int32 words
+  (LDOUBLE_WORDS precedent shows multi-word payloads round-trip through macro replay).
+- unary(): case TOK_CINT256/TOK_CUINT256 → build the signed/unsigned wide256 type (the
+  gen_wide256_type cache, wide256_slice.h:40-64) and vpush_wide256_const from tokc.q; next().
+  Everything downstream (arith folding, casts, ICE contexts, wide256/gmp-diff) already consumes
+  such SValues.
+
+VERIFICATION SPEC (§8): new tests/exec/types/int256_lit.c (NEW file, not an int256.c edit — the
+bitint precedent: +1 corpus object, no existing object changes, so o0-baseline re-banks add a
+file instead of drifting hashes): a >64-bit hex constant via i256 == the shifted/or-ed
+composition it replaces; unsigned via both ui256 and i256u; decimal, 0b and 0o forms; a
+_Generic(x, __int256:...) type check; dt-driven like bitint.c. A dg diagnostic for the >256-bit
+overflow warning and for i256 in #if. wide256/gmp-diff must stay unmoved (no evaluator change —
+lexer-only). o0-baseline re-bank: the keys this box measures re-bank with the +1 file; *-osx
+keys flagged for mac per the standing cross-key convention if the win cross build does not
+measure them.
