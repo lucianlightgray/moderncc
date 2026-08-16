@@ -1609,7 +1609,6 @@ int mccjit_recompiling;
 static int ast_jit_env;
 static int ast_jit_splice_env;
 static int ast_jit_dispatch_env;
-static int ast_jit_guard_env;
 int ast_zero_bss_env;
 int ast_merge_strings_env;
 static int ast_strpool_n;
