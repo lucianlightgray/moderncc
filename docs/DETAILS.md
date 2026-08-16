@@ -49062,3 +49062,49 @@ overflow warning and for i256 in #if. wide256/gmp-diff must stay unmoved (no eva
 lexer-only). o0-baseline re-bank: the keys this box measures re-bank with the +1 file; *-osx
 keys flagged for mac per the standing cross-key convention if the win cross build does not
 measure them.
+
+<a id="t-lin-10015-no-copy-operand-marshalling-landed-2026-08-16"></a>
+
+## T-lin-10015 no-copy operand marshalling LANDED (8d054c5d) — operands feed the helpers by address; the memmove tax is gone
+
+**The change (src/wide256_slice.h).** `gen_wide256_op`'s three call paths (binary, cmp, shift) no
+longer `wide256_materialize` operands into fresh 32-byte locals. A new `wide256_addrof_top`
+converts the operand IN PLACE ON THE VSTACK into a pointer value: `wide256_deconst()` (consts
+still materialize — they need a home), a materialize fallback for any non-lval, then
+`test_lvalue(); mk_pointer(); gaddrof()`. The call is assembled with pure vstack ops
+(`vrotb`/`vswap`) so the operand pointers are never held in off-vstack SValues; `wide256_call3`
+is deleted. Result locals and the result→sret copy remain (inherent to the memory-backed form).
+
+**Why this dodges the reverted attempt's trap** (DETAILS#t-lin-10015-optimization-attempt-vt-llocal-couples-to-push-ptr):
+that attempt returned an off-vstack `VT_LLOCAL` struct SValue from materialize, which
+`wide256_push_ptr`/`wide256_limb_lval` cannot consume (bad register into `intr`). Here the
+address conversion happens while the operand is a live vstack entry, and `gaddrof` already
+handles every shape natively: register-indirect lvals just drop `VT_LVAL` (the register IS the
+address — zero instructions), `VT_REGDISP` synthesizes the add, `VT_LLOCAL` flips to a
+`VT_LOCAL|VT_LVAL` pointer load. A register-held address is protected by the normal `save_reg`
+machinery (worst case an 8-byte spill, not a 32-byte memmove). The old "VT_LOCAL-only" rationale
+(address-register clobbering across the other operand's arg setup) is thereby answered, not
+sidestepped: clobbering is exactly what the vstack machinery exists to handle.
+
+**Verification.** wide256/gmp-diff + known-positive green at -O0/-O1/-O2/-O3/-Os, with the corpus
+EXTENDED first (TDD) to cover the shapes the old corpus never exercised (main-local operands are
+stable `VT_LOCAL` lvals that always took the fast path): by-pointer operands (`*x OP *y`, all 10
+binary ops + 10 compares + 3 shifts), by-value `__int256` params (arm64 passes >16B composites by
+reference, so the callee sees register-indirect lvals), struct-member-through-pointer
+(`p->hi OP p->lo`, the `VT_REGDISP` shape), dest-aliases-operand (`*r = *r + *x`), both-operands-
+same-pointer (`*x + *x`), and mixed const (`*x * (__int256)7 + 1`). Oracle emits matching rows;
+~17.3k rows total. exec 360/360, ast/o0-baseline(+gated+kp) green — NO bank drift (the banked
+corpus objects contain no `__int256`). Full native suite: running at this writing, result goes in
+the TODO row.
+
+**Re-measurement (same methodology as DETAILS#t-lin-10015-measurement-int256-op-cost-marshalling-dominates,
+arm64 `mcc -c`, 11 one-op leaf functions incl. by-pointer variants).** memmove calls 30 → 10
+(-67%), instructions 378 → 292 (-23%), `__mcc_i256_*` call profile unchanged. The 10 remaining
+memmoves are all ABI-boundary result copies (9 sret returns + 1 `*r =` store) — per-op operand
+marshalling is 0. Steady state is now literally "a call per operation".
+
+**What remains for the row.** The original title's cost is now the helper call itself. The
+second step from the measurement anchor — a limb-wise inliner for add/sub/and/or/xor/not
+(4 adds/adcs vs call+address-setup) — is a per-arch emitter change to be priced against this new
+baseline; div/mul/shift stay calls regardless. That is a separate slice decision, not blocked on
+anything. **Source.** mac-arm64, 2026-08-16, at 8d054c5d.
