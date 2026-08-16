@@ -46,6 +46,15 @@ static MccFeSetFn mcc_fe_set;
 
 static int mcc_gpu_closing;
 
+/* Aggregate GPU dispatch counters, shared across the Metal and Vulkan arms and
+ * (for Vulkan) across all held devices (T-win-50022). Named `mcc_gpu_ctr` to
+ * avoid colliding with the public accessor function mcc_gpu_stranded(). */
+static struct {
+	long dispatches;
+	long lanes;
+	long stranded;
+} mcc_gpu_ctr;
+
 #if MCC_GPU_LANG_MSL
 
 #include <objc/message.h>
@@ -739,8 +748,8 @@ static int mcc_gpu_dispatch_locked2(const char *src, int len, const int32_t *in,
 	if (mcc_gpu_rw_back)
 		memcpy(mcc_gpu_rw_back, mcc_mtl_pin,
 					 (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
-	mcc_gpu.dispatches++;
-	mcc_gpu.lanes += ntuple;
+	mcc_gpu_ctr.dispatches++;
+	mcc_gpu_ctr.lanes += ntuple;
 	rc = 1;
 
 done:
@@ -1771,7 +1780,6 @@ typedef struct MccGpu {
 	int tried;
 	int ok;
 	int lost;
-	VkInstance inst;
 	VkPhysicalDevice phys;
 	VkDevice dev;
 	VkQueue q;
@@ -1782,12 +1790,25 @@ typedef struct MccGpu {
 	unsigned long hostimp_align;
 	unsigned long maxsbrange;
 	char hostimp_why[192];
-	long dispatches;
-	long lanes;
-	long stranded;
 } MccGpu;
 
-static MccGpu mcc_gpu;
+/* Multi-GPU (T-win-50022): mcc holds every device that clears the capability
+ * floor and routes each dispatch to one of them. The VkInstance and the
+ * aggregate dispatch counters are shared across devices; the logical device,
+ * queue, and resident context are one MccGpu + one mcc_vkr slot per held
+ * device, indexed by the routed device `mcc_gpu_cur`. The `mcc_gpu`/`mcc_vkr`
+ * macros resolve to the routed slot so the ~300 existing `.`-field accesses on
+ * the dispatch path read unchanged; only the instance, the counters, the init
+ * lifecycle, teardown, and the router are aware of the array. */
+#ifndef MCC_GPU_MAXDEV
+#define MCC_GPU_MAXDEV 8
+#endif
+static VkInstance mcc_gpu_inst;
+static int mcc_gpu_inst_tried;
+static int mcc_gpu_ndev;
+static int mcc_gpu_cur;
+static MccGpu mcc_gpu_arr[MCC_GPU_MAXDEV];
+#define mcc_gpu (mcc_gpu_arr[mcc_gpu_cur])
 
 static int mcc_vk_diag(void) {
 	return getenv("MCC_AST_EVAL_LADDER_GPU_DIAG") != 0;
@@ -2039,7 +2060,7 @@ static int mcc_gpu_init(void) {
 	ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	ici.pApplicationInfo = &ai;
 	{
-		VkResult _r = vkCreateInstance(&ici, 0, &mcc_gpu.inst);
+		VkResult _r = vkCreateInstance(&ici, 0, &mcc_gpu_inst);
 		if (_r != VK_SUCCESS) {
 			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
 				fprintf(stderr, "[ladder-gpu] vkCreateInstance rc=%d\n", (int)_r);
@@ -2055,7 +2076,7 @@ static int mcc_gpu_init(void) {
 		 * than devs[] holds and ndev is the number actually written, which is the
 		 * set the scoring below ranks. */
 		unsigned cap = (unsigned)(sizeof devs / sizeof devs[0]);
-		VkResult _r = vkEnumeratePhysicalDevices(mcc_gpu.inst, &ndev, 0);
+		VkResult _r = vkEnumeratePhysicalDevices(mcc_gpu_inst, &ndev, 0);
 		if (_r != VK_SUCCESS || !ndev) {
 			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
 				fprintf(stderr,
@@ -2065,7 +2086,7 @@ static int mcc_gpu_init(void) {
 		}
 		if (ndev > cap)
 			ndev = cap;
-		_r = vkEnumeratePhysicalDevices(mcc_gpu.inst, &ndev, devs);
+		_r = vkEnumeratePhysicalDevices(mcc_gpu_inst, &ndev, devs);
 		if ((_r != VK_SUCCESS && _r != VK_INCOMPLETE) || !ndev) {
 			if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
 				fprintf(stderr, "[ladder-gpu] vkEnumeratePhysicalDevices rc=%d ndev=%u\n",
@@ -2188,6 +2209,12 @@ static int mcc_gpu_init(void) {
 	 * only device this process will use and nothing has happened to it yet. */
 	mcc_gpu.lost = 0;
 	mcc_gpu.ok = 1;
+	/* Slice 1a (T-win-50022): the data model is a per-device array, but this
+	 * init still holds exactly the single best device in slot 0 and routing is
+	 * pinned to it (mcc_gpu_cur == 0), so behaviour is unchanged. Slice 1b
+	 * populates slots 1..n and routes across them. */
+	if (mcc_gpu_ndev < 1)
+		mcc_gpu_ndev = 1;
 	return 1;
 }
 
@@ -2314,7 +2341,7 @@ typedef struct MccVkPipe {
 	VkPipeline pipe;
 } MccVkPipe;
 
-static struct {
+static struct MccVkr {
 	int ready;
 	VkDescriptorSetLayout dsl;
 	VkDescriptorPool dpool;
@@ -2336,7 +2363,8 @@ static struct {
 	int pending;
 	MccVkPipe cache[MCC_VK_CACHE_MAX];
 	int ncache, next;
-} mcc_vkr;
+} mcc_vkr_arr[MCC_GPU_MAXDEV];
+#define mcc_vkr (mcc_vkr_arr[mcc_gpu_cur])
 
 static uint64_t mcc_vk_key(const uint32_t *code, int nwords, int nlive) {
 	uint64_t h = 1469598103934665603ull;
@@ -2736,7 +2764,7 @@ static void mcc_vk_release(void) {
 void mcc_gpu_quiesce(void) {
 	MCC_GPU_LOCK();
 	mcc_gpu_closing = 1;
-	if (mcc_gpu.dev && mcc_gpu.ok && !mcc_gpu.lost && !mcc_gpu.stranded) {
+	if (mcc_gpu.dev && mcc_gpu.ok && !mcc_gpu.lost && !mcc_gpu_ctr.stranded) {
 		int idle = 1;
 		if (mcc_vkr.pending) {
 			idle = mcc_vk_chk(vkWaitForFences(mcc_gpu.dev, 1, &mcc_vkr.fence, VK_TRUE,
@@ -2745,7 +2773,7 @@ void mcc_gpu_quiesce(void) {
 			if (idle)
 				mcc_vkr.pending = 0;
 			else
-				mcc_gpu.stranded++;
+				mcc_gpu_ctr.stranded++;
 		}
 		if (idle) {
 			mcc_vk_release();
@@ -2753,9 +2781,9 @@ void mcc_gpu_quiesce(void) {
 				vkDestroyDevice(mcc_gpu.dev, 0);
 			mcc_gpu.dev = 0;
 			mcc_gpu.q = 0;
-			if (mcc_gpu.inst && vkDestroyInstance)
-				vkDestroyInstance(mcc_gpu.inst, 0);
-			mcc_gpu.inst = 0;
+			if (mcc_gpu_inst && vkDestroyInstance)
+				vkDestroyInstance(mcc_gpu_inst, 0);
+			mcc_gpu_inst = 0;
 			mcc_gpu.phys = 0;
 			if (mcc_vk_diag())
 				fprintf(stderr, "[gpu-vk] quiesce: released the resident objects and "
@@ -2849,7 +2877,7 @@ static int mcc_gpu_dispatch_locked2(const uint32_t *code, int nwords,
 							"resident objects and disabling the device\n",
 							(int)wr, (unsigned long long)mcc_vk_fence_ns());
 		mcc_gpu.ok = 0;
-		mcc_gpu.stranded++;
+		mcc_gpu_ctr.stranded++;
 		return 0;
 	}
 	mcc_vkr.pending = 0;
@@ -2858,8 +2886,8 @@ static int mcc_gpu_dispatch_locked2(const uint32_t *code, int nwords,
 	if (mcc_gpu_rw_back)
 		memcpy(mcc_gpu_rw_back, mcc_vkr.pin,
 					 (size_t)ntuple * nlive * MCC_GPU_IN_SLOTS * 4);
-	mcc_gpu.dispatches++;
-	mcc_gpu.lanes += ntuple;
+	mcc_gpu_ctr.dispatches++;
+	mcc_gpu_ctr.lanes += ntuple;
 	return 1;
 }
 
@@ -2986,14 +3014,14 @@ int mcc_gpu_alive(void) { return mcc_gpu.ok; }
 
 int mcc_gpu_f64(void) { return mcc_gpu.ok && mcc_gpu.f64; }
 
-long mcc_gpu_stranded(void) { return mcc_gpu.stranded; }
+long mcc_gpu_stranded(void) { return mcc_gpu_ctr.stranded; }
 
 void mcc_gpu_stats(MccGpuStats *out) {
 	out->tried = mcc_gpu.tried;
 	out->ok = mcc_gpu.ok;
 	out->name = mcc_gpu.ok ? mcc_gpu.name : "(none)";
-	out->dispatches = mcc_gpu.dispatches;
-	out->lanes = mcc_gpu.lanes;
+	out->dispatches = mcc_gpu_ctr.dispatches;
+	out->lanes = mcc_gpu_ctr.lanes;
 }
 
 int mcc_gpu_dispatch(const void *code, int n, const int32_t *in, int ntuple,
