@@ -47202,3 +47202,13 @@ Measured on arm64-Darwin at 701047bc, `mcc -c` on a subject of one-op leaf funct
 - Any change here is correctness-gated on `wide256/gmp-diff` (9402 rows vs libgmp, the only oracle since gcc has no `__int256`), and its win is this instruction/call count re-measured.
 
 **Status.** First deliverable (the measurement) done; the marshalling-removal then the limb inliner are the follow-up, now scoped by the numbers above. **Source.** mac-arm64, 2026-08-16, at 701047bc.
+
+<a id="t-lin-10015-marshalling-source-pinned-register-indirect-operand-copies"></a>
+
+## T-lin-10015 follow-up correction — the memmoves are `wide256_materialize` copying register-indirect operand lvals, not a trivially-removable temp
+
+Investigated the marshalling source (arm64, disassembling `i256 same(i256 a,i256 b){return a+b;}` = 1 `__mcc_i256_add` + 3 `memmove`). The earlier "pass the live addresses, the temps look removable" is too optimistic — the two obvious copy sites already DO avoid copying: `gen_wide256_cast(__int256->__int256)` just retypes vtop in place (wide256_slice.h:464-468, no copy), and `wide256_materialize` has a no-copy fast path for stable lvals (`*out=*vtop`, :155-159). The three memmoves are: (a,b) `wide256_materialize` copying each operand into a fresh `wide256_local`, and (res) the result local copied to the sret slot on `return`.
+
+**Why the operands are copied:** `__int256` (32 bytes) is passed BY POINTER, so inside the callee an operand is `*ptr` — a `VT_LVAL` at a register-computed address, and `wide256_sv_is_stable_lval` (:87-95) accepts only `VT_LOCAL`-without-sym or `VT_CONST|VT_SYM`, so register-indirect lvals fail the test and get copied to a stack local. That local IS reused directly for the helper pointer, so the copy buys address-stability, not aliasing safety (the helpers read both operands before writing the result, and the result is a distinct local).
+
+**The real optimization (scoped, correctness-gated on wide256/gmp-diff's 9402 rows):** the operand address is consumed *as* the `gfunc_call` argument, so it need not survive the call — a register-indirect addressable lval could be `wide256_push_ptr`'d directly instead of materialized. Extending the stable-lval test (or a dedicated "addressable, pointer-consumed-immediately" path) removes the two operand memmoves per binary op; the result→sret copy is inherent to the memory-backed representation. The restriction to `VT_LOCAL` is conservative and its original rationale (e.g. address-register clobbering across the arg setup of the OTHER operand) must be re-checked before widening it — that check, plus a gmp-diff run, is the deliverable. This is a real but subtle change, not the "straightforward" removal the row implies. **Source.** mac-arm64, 2026-08-16, at 3ad2f510.
