@@ -47109,3 +47109,9 @@ The tree-recursion golden the row primarily wanted already existed (`tests/exec/
 **This was the first `tests/exec` addition since the two stranding fixes, and it validated both in practice:** `slice/census` stayed **green, unchanged** (T-lin-10391's header-free corpus makes a `tests/exec` edit invisible to it), and `o0-baseline`'s `arm64-osx` key was re-banked **per-box via the new measurable mode** (T-mac-30006), moving only the two new files' `-O0` hashes with no board clobber and no ELF-key stranding. So the exec-golden pipeline the row's failure held is not just unblocked but demonstrably clean. Landed at `3cf78da0`; the other active `o0-baseline` keys (`x86_64`, `*-win32`, `x86_64-osx`) are lin's mechanical measurable re-bank (CONTRACT'd).
 
 **Source.** mac-arm64, 2026-08-16T01:13Z, goldens at `3cf78da0`.
+
+### T-lin-10027 DONE — one deletion, five keeps, each decided with evidence (2026-08-16T01:19Z)
+
+Six keep-or-delete calls: **DELETE ast_jit_guard_env** (dead declaration, removed at `8ae181ac`, o0-baseline byte-identical so it was emitted nowhere — a true deletion). **KEEP** the other five, all live or a stale-residue characterisation: `ast_verify_diff` (live `MCC_AST_VERIFY_DIFF` diagnostic, invoked mccast.c:21025), `ast_treechk`/`MCC_AST_TREECHK` (live opt-in tree-check, mccast.c:21021), `ast_rir_arena` (a live flag — assigned 20758, read 20764 to gate `ast_low_census`; the row's "dead local" was stale), `tools/tracediff.sh` (DETAILS explicitly records it survives as a live manual trace-diff tool), and `gate-ledger.sh`'s recorder half (the tool runs the live `optfire/gate-ledger` cell; recorder residue is inert with no recorder and not safely excisable from the green cell). Verified byte-identical + smoke/native + slice/census green.
+
+**Source.** mac-arm64, 2026-08-16T01:19Z, at `8ae181ac`.
