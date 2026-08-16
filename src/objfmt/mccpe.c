@@ -2879,6 +2879,11 @@ typedef struct SehScope {
 	   funclet gets its own .pdata RUNTIME_FUNCTION + .xdata UNWIND_INFO. */
 	unsigned filt_end;
 	int filt_funclet;
+	/* is_finally != 0 marks a __finally termination handler: the funclet is in the
+	   HandlerAddress slot (like a filter funclet, so filt_funclet is also set), the
+	   JumpTarget slot is a literal 0 (no reloc), and the function's UNWIND_INFO carries
+	   UNW_FLAG_UHANDLER rather than (or in addition to) UNW_FLAG_EHANDLER. */
+	int is_finally;
 } SehScope;
 #define SEH_MAX_SCOPES 256
 static SehScope seh_scopes[SEH_MAX_SCOPES];
@@ -2898,6 +2903,7 @@ ST_FUNC void pe_seh_scope(unsigned begin, unsigned end, unsigned filter,
 	seh_scopes[seh_nscope].handler = handler;
 	seh_scopes[seh_nscope].filt_end = 0;
 	seh_scopes[seh_nscope].filt_funclet = 0;
+	seh_scopes[seh_nscope].is_finally = 0;
 	seh_nscope++;
 }
 
@@ -2911,6 +2917,21 @@ ST_FUNC void pe_seh_scope_funclet(unsigned begin, unsigned end, unsigned filt_st
 	seh_scopes[seh_nscope].handler = handler;
 	seh_scopes[seh_nscope].filt_end = filt_end;
 	seh_scopes[seh_nscope].filt_funclet = 1;
+	seh_scopes[seh_nscope].is_finally = 0;
+	seh_nscope++;
+}
+
+ST_FUNC void pe_seh_scope_finally(unsigned begin, unsigned end, unsigned fin_start,
+																	unsigned fin_end) { MCC_TRACE("enter\n");
+	if (seh_nscope >= SEH_MAX_SCOPES)
+		{ MCC_TRACE("br\n"); return; }
+	seh_scopes[seh_nscope].begin = begin;
+	seh_scopes[seh_nscope].end = end;
+	seh_scopes[seh_nscope].filter = fin_start; /* HandlerAddress = finally funclet */
+	seh_scopes[seh_nscope].handler = 0;        /* JumpTarget = 0 for __finally */
+	seh_scopes[seh_nscope].filt_end = fin_end;
+	seh_scopes[seh_nscope].filt_funclet = 1;   /* framed funclet: gets its own .pdata/.xdata */
+	seh_scopes[seh_nscope].is_finally = 1;
 	seh_nscope++;
 }
 
@@ -2954,7 +2975,16 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { 
 	section_ptr_add(xd, -xd->data_offset & 3);
 	d = xd->data_offset;
 	q = section_ptr_add(xd, 8);
-	q[0] = seh_nscope ? 0x09 : 0x01; /* Version 1; Flags UNW_FLAG_EHANDLER if SEH */
+	/* Version 1; language-handler flags: EHANDLER(1) if any scope has an __except
+	   filter (called during the search phase), UHANDLER(2) if any is a __finally
+	   (called during unwind). A function with both carries 3. */
+	{
+		int i, flags = 0;
+		for (i = 0; i < seh_nscope; i++) { MCC_TRACE("br\n");
+			if (seh_scopes[i].is_finally) flags |= 2; else flags |= 1;
+		}
+		q[0] = (unsigned char)(0x01 | (flags << 3));
+	}
 	q[1] = 0x04; /* SizeOfProlog = 4 (rbp established by offset 4) */
 	q[2] = 0x02; /* CountOfCodes = 2 */
 	q[3] = 0x05; /* FrameRegister = rbp(5), FrameOffset = 0 */
@@ -2991,7 +3021,10 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { 
 			   filter holds a text offset that must relocate ADDR32NB like begin/end. */
 			if (seh_scopes[i].filt_funclet)
 				{ MCC_TRACE("br\n"); put_elf_reloc(symtab_section, xd, base + 8, R_XXX_RELATIVE, s1->uw_sym); }
-			put_elf_reloc(symtab_section, xd, base + 12, R_XXX_RELATIVE, s1->uw_sym);
+			/* JumpTarget: an __except scope relocates its handler-body offset; a
+			   __finally leaves it a literal 0 (no reloc). */
+			if (!seh_scopes[i].is_finally)
+				{ MCC_TRACE("br\n"); put_elf_reloc(symtab_section, xd, base + 12, R_XXX_RELATIVE, s1->uw_sym); }
 		}
 	}
 

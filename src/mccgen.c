@@ -15434,7 +15434,34 @@ again:
 				pe_seh_scope_funclet(tb, te, filt_start, filt_end, hb);
 			}
 		} else if (tok == TOK___finally) { MCC_TRACE("br\n");
-			mcc_error("__finally is not supported yet");
+			/* __finally: the termination handler runs on BOTH the normal exit of the
+			   __try and on unwind. It is emitted ONCE as a framed funclet (push rbp;
+			   mov rbp,rdx = establisher frame; body; pop rbp; ret) that the OS calls
+			   during unwind; on the normal fallthrough path the parent CALLs the same
+			   funclet with rdx = its own rbp, so the body's [rbp+off] parent-local
+			   references resolve either way. The try body's jover jump skips the funclet
+			   (it is call/dispatch-reached, never fallen into) and lands at the
+			   normal-path call. LIMITATION (slice 3b): an early return/break/goto/continue
+			   OUT of the __try bypasses the normal-path call, so the finally does not run
+			   on those exits yet; the fallthrough and unwind paths are correct. */
+			next();
+			CODE_ON();
+			filt_start = ind; /* reuse as fin_start */
+			g(0x55);             /* push rbp */
+			g(0x48); g(0x8b); g(0xea); /* mov rbp, rdx  (rbp = establisher frame) */
+			block(0);            /* the __finally body */
+			g(0x5d);             /* pop rbp */
+			g(0xc3);             /* ret */
+			filt_end = ind;      /* reuse as fin_end */
+			gsym(jover);         /* normal path lands here, past the funclet */
+			jover = 0;           /* the shared gsym(jover) below becomes a no-op */
+			g(0x48); g(0x89); g(0xea); /* mov rdx, rbp (establisher = current frame) */
+			g(0xe8);             /* call rel32 -> the funclet (runs the body inline) */
+			{
+				int rel = (int)filt_start - (int)(ind + 4);
+				g(rel); g(rel >> 8); g(rel >> 16); g(rel >> 24);
+			}
+			pe_seh_scope_finally(tb, te, filt_start, filt_end);
 		} else { MCC_TRACE("br\n");
 			expect("__except or __finally");
 		}

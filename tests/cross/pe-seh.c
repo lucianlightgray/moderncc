@@ -78,8 +78,37 @@ static int guard_local_ns(volatile int *p, int sel) {
 	return caught;
 }
 
+/* __finally runs on the NORMAL exit of the __try; the body reads a parent local
+   (`ran`) through the establisher frame. */
+static int guard_finally(int *ran) {
+	int r = 3;
+	__try {
+		r = 5;
+	} __finally {
+		*ran = 1;
+	}
+	return r;
+}
+
+/* __finally runs during UNWIND: the inner __try faults, the outer __except catches,
+   and the inner __finally must have run on the way out. */
+static int guard_finally_unwind(volatile int *p, int *ran) {
+	int caught = 0;
+	__try {
+		__try {
+			*p = 42;   /* faults */
+		} __finally {
+			*ran = 1;  /* must run as the exception unwinds through it */
+		}
+	} __except(1) {
+		caught = 66;
+	}
+	return caught;
+}
+
 int main(void) {
 	int f_av, f_ok, f_div, f_divok, f_nc, f_ns, f_lo, f_lns;
+	int f_fin, f_finr = 0, f_fu, f_fur = 0;
 	int x = 11;
 
 	f_av = guard_av(0);          /* null store -> caught -> 7 */
@@ -90,9 +119,12 @@ int main(void) {
 	f_ns = guard_nested(0);      /* inner funclet continues search, outer catches -> 77 */
 	f_lo = guard_local(0, 1);    /* parent-local filter (sel=1) catches -> 88 */
 	f_lns = guard_local_ns(0, 0);/* parent-local filter (sel=0) continues, outer -> 99 */
+	f_fin = guard_finally(&f_finr);       /* normal exit runs __finally -> r=5, finr=1 */
+	f_fu = guard_finally_unwind(0, &f_fur);/* unwind runs inner __finally -> caught=66, fur=1 */
 
-	printf("av=%d ok=%d x=%d div=%d divok=%d nc=%d ns=%d lo=%d lns=%d\n",
-			f_av, f_ok, x, f_div, f_divok, f_nc, f_ns, f_lo, f_lns);
+	printf("av=%d ok=%d x=%d div=%d divok=%d nc=%d ns=%d lo=%d lns=%d fin=%d finr=%d fu=%d fur=%d\n",
+			f_av, f_ok, x, f_div, f_divok, f_nc, f_ns, f_lo, f_lns, f_fin, f_finr, f_fu, f_fur);
 	return (f_av == 7 && f_ok == 100 && x == 42 && f_div == 9 && f_divok == 5 &&
-			f_nc == 55 && f_ns == 77 && f_lo == 88 && f_lns == 99) ? 0 : 1;
+			f_nc == 55 && f_ns == 77 && f_lo == 88 && f_lns == 99 &&
+			f_fin == 5 && f_finr == 1 && f_fu == 66 && f_fur == 1) ? 0 : 1;
 }
