@@ -3882,6 +3882,14 @@ static void gen_opif(int op) { MCC_TRACE("enter\n");
 	}
 #endif
 
+	if (v2->r & VT_REVSO)
+		{ MCC_TRACE("br\n"); gv(MCC_RC_TYPE(v2->type.t)); }
+	if (v1 != v2 && (v1->r & VT_REVSO)) { MCC_TRACE("br\n");
+		vswap();
+		gv(MCC_RC_TYPE(vtop->type.t));
+		vswap();
+	}
+
 	c1 = (v1->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	c2 = (v2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	if (CONST_WANTED)
