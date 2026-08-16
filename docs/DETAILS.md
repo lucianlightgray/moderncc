@@ -48179,3 +48179,53 @@ for lin; the open `[P]` children are win's. So `[S]`, and the two strongest are
 of the multi-GPU work now that both devices are proven individually correct.
 
 **Source.** lin-x64, 2026-08-16T13:47Z, at `879a30ec`.
+
+<a id="t-mac-30007-x86-64-manifestation-22-exec-bitint-cells-hard-fail-and-arm64-357-357-is-false-green"></a>
+## T-mac-30007 — x86_64 manifestation: 22 exec/bitint cells hard-fail, and the arm64 "357/357" is a false-green (lin-x64, 2026-08-16)
+
+Found resuming lin's §8 for T-lin-10359/10390/10392: the `_BitInt` slice-1 landing
+(5dbbe6ca) added `tests/exec/types/bitint.c`, and on x86_64 **22 of the 24
+`exec*/bitint` cells FAIL** (serially, on an idle box — NOT load-induced). The one
+that passes is `diag.dg-error.bitint_over_64`; `exec-gatecombo/bitint` skips (config).
+
+Discriminator (`exec/bitint`, `[test_aggregate]`): expected `func 43`, mcc emits
+`func 169` — the fixture's `_BitInt(33) addone(_BitInt(33) x){ return x + 1; }`,
+called `addone(42)` and cast `(long long)`. mcc also prints a bogus
+`bitint.c:74: warning: left/right shift count is negative` at the cast site.
+
+Minimal repro (`/tmp/bi2.c`, x86_64, cmake-debug/mcc vs gcc-15.3.0):
+```
+                            mcc -O0   mcc -O2   gcc
+ret-live   addone(42)         169       337     43     <-- BUG (garbage, nondeterministic)
+stored     y=y+1; y            43        43      43     <-- correct
+widen-live (unsigned)(u+u)   1000      1000    488     <-- BUG (mac's exact T-mac-30007 case, x86_64 too)
+widen-stor w=u+u; (unsigned)w  488       488    488     <-- correct
+```
+where `b33 = _BitInt(33)`, `u9 = unsigned _BitInt(9)`, `u = (u9)500`.
+
+ATTRIBUTION: this IS T-mac-30007 (widening a LIVE, non-stored modular `_BitInt`
+temporary skips the mod-2^N reduce). Two facets:
+  (1) `(unsigned)(u+u)` → 1000 vs 488 — reproduces on x86_64 byte-for-byte with
+      mac's arm64 report, so that facet is arch-independent.
+  (2) return of a live `_BitInt(33)` temp then `(long long)` cast → 169/337 vs 43 —
+      the SAME missing reduce, but on x86_64 it leaves high garbage bits in the
+      return register (value varies with surrounding codegen / opt level).
+      On arm64 the return register happened clean, so bitint.c PASSED there —
+      i.e. mac's "exec 357/357" green is a FALSE-GREEN for the return-live case:
+      the reduce was skipped, arm64 register state hid it.
+
+CROSS-PLATFORM HAZARD (why this is a CONTRACT to mac, §12): the planned fix +
+arm64-only differential ("extend bitint.c with widening-of-temporary cases +
+gcc-16 differential green at -O0..-O3") would NOT catch facet (2) on x86_64,
+because arm64 is already (accidentally) green on it. The fix MUST be verified on
+x86_64, where the failure is loud (22 hard cell fails), not on arm64 where it is
+silent. lin (x86_64) can reproduce, fix, and verify all four rows above; mac
+(arm64) cannot see facet (2) fail at all. Fix region per mac's own anchor:
+src/mccgen.c / src/wide256_slice.h, the N-bit reduce that fires on vstore()/
+non-modular ops but not on a widening conversion of a live temporary — plus the
+return path (function result of a live `_BitInt` temp) which the current repro
+shows is a third un-reduced site.
+
+Impact on lin's §8: the 22 exec/bitint reds are this bug, not a regression from
+T-lin-10359/10390/10392. The o0-baseline re-bank (28b78011) already accounts for
+bitint.c's -O0 object; these are the *execution* cells.
