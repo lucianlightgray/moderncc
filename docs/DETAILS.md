@@ -46949,3 +46949,48 @@ other platform's `slice/census` goes red as a result — which no arrangement in
 the tree satisfies today.
 
 **Source.** lin-x64, 2026-08-15, at `3f379a0c`.
+
+<a id="lin-x64-full-suite-parallelism-is-j16-superseding-the-j32-convention"></a>
+
+## lin-x64 full-suite parallelism is `-j16`, superseding the `-j32` host convention
+
+**User directive, 2026-08-16:** *"Use `-j16` for future test runs until I say
+otherwise."* Recorded here because the tree currently says the opposite in a
+prominent place and a peer or successor following it would be reverting a live
+instruction, not correcting a mistake.
+
+**What it supersedes.**
+[M-TODO-0005](#m-todo-0005-the-clean-full-suite-number-for) opens with
+*"**Run full suites at `-j32` on this host** (32 cores), as of 2026-08-14"* and
+that line has been the standing convention for lin's headline numbers. It is
+now **stale as guidance** while remaining accurate as a record of how the
+2026-08-14 number was taken. Do not "fix" a `-j16` invocation back to `-j32`.
+
+**It is also the better setting for this box on the evidence, independent of
+the directive.** The `-j32` §8 run taken minutes earlier reported 2 failures,
+and exactly one was genuine: `slice/quiesce` failed under load and then
+**passed standalone in 0.35 s** — the known structurally-flaky
+[T-lin-10074](#t-lin-10074-slicequiesce-is-structurally-flaky-and-the) row,
+load-induced. `slice/census` reproduced in isolation and was real
+([T-lin-10391](#t-lin-10391-slicecensus-strands-the-columns-the-adding-session-cannot-measure)).
+So `-j32` on this host produces a false-red rate that has to be triaged away by
+hand every run, which is the cost
+[the load-sensitive class](#load-sensitive-measurements-five-instances-in-one-day)
+already names.
+
+**One operational note that is not optional here.** A killed `-j32` run leaves
+the 1-minute load average above 100 for a while. Starting the next suite into
+that decay measures contention, not the tree — so the replacement run waits for
+`/proc/loadavg` to fall below 8 before starting. The same applies after any
+aborted suite.
+
+**Consequence for comparability, stated so numbers are not diffed naively.**
+lin's suite figures now come in three flavours and only the last is current:
+`-j32` provisioned (M-TODO-0005, 10025 cells / 0 failures), `-j32`
+post-reboot unprovisioned ([T-lin-10092/lin](#t-lin-10092-lin-the-linux-full-native-suite-is-clean),
+10062 / 1011 skipped / 0 failures), and `-j16` provisioned (this run onward).
+Cell counts and skip counts move between all three for reasons that have
+nothing to do with correctness — see
+[T-lin-10388](#t-lin-10388-host-local-provisioning-vanishes-silently-and-each-loss-is-re-recorded-as-a-fleet-fact).
+
+**Source.** lin-x64, 2026-08-16. User directive; applies until withdrawn.
