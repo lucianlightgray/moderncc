@@ -125,6 +125,22 @@ Precedence is `MCC_JIT` env > `--jit`/`--no-jit` flag (for `-run`) > the
 `--jit-functions=`, `--jit-max-duration=`, `--jit-threads=`, and `--stats[=N]`
 for a live optimizer/JIT panel.
 
+Instead of fixed counts, the JIT thread pool and the GPU pool can be sized to a
+share of the machine's resources:
+
+```sh
+mcc --jit-conservative prog.c      # 50% of both CPU threads and GPU VRAM
+mcc --jit-cpu-budget=25% prog.c    # JIT worker threads = round(nproc * 25%)
+mcc --jit-cpu-budget=auto prog.c   # adapt to live load: idle cores ≈ nproc − loadavg
+mcc --jit-gpu-budget=50% prog.c    # cap usable GPU VRAM to 50% of the device
+mcc --jit-gpu-devices=1 prog.c     # hold at most one GPU on a multi-GPU host
+```
+
+`--jit-conservative` sets both budgets to 50%; an explicit `--jit-cpu-budget`,
+`--jit-gpu-budget`, or `--jit-gpu-devices` overrides it for that axis. A budget is
+either `N%` (a fraction of the hardware) or `auto` (adapt to current system load —
+CPU only so far; GPU `auto` is not yet implemented).
+
 ### Experimental optimizations (`MCC_DEV`)
 
 Twelve `-f` optimizer knobs are marked `MCC_OPTD_DEV` in `src/mccopt.h` and a
