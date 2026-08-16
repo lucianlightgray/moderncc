@@ -325,5 +325,77 @@ int main(void) {
 		emit_i(cmpn[8], i, 0, mpz_cmp(a, b) > 0);
 		emit_i(cmpn[9], i, 0, mpz_cmp(a, b) >= 0);
 	}
+
+	for (i = 0; i < W256_NOPER; i++) {
+		for (j = 0; j < W256_NOPER; j++) {
+			load_u(a, i);
+			load_u(b, j);
+
+			mpz_add(r, a, b);
+			emit("padd", i, j, r);
+			mpz_sub(r, a, b);
+			emit("psub", i, j, r);
+			mpz_mul(r, a, b);
+			emit("pmul", i, j, r);
+			mpz_and(r, a, b);
+			emit("pand", i, j, r);
+			mpz_ior(r, a, b);
+			emit("por", i, j, r);
+			mpz_xor(r, a, b);
+			emit("pxor", i, j, r);
+			divmod(q, rem, a, b, 1);
+			emit("psdiv", i, j, q);
+			emit("psmod", i, j, rem);
+			divmod(q, rem, a, b, 0);
+			emit("pudiv", i, j, q);
+			emit("pumod", i, j, rem);
+
+			emit_i("pseq", i, j, mpz_cmp(a, b) == 0);
+			emit_i("psne", i, j, mpz_cmp(a, b) != 0);
+			emit_i("pslt", i, j, cmp_s(a, b) < 0);
+			emit_i("psle", i, j, cmp_s(a, b) <= 0);
+			emit_i("psgt", i, j, cmp_s(a, b) > 0);
+			emit_i("psge", i, j, cmp_s(a, b) >= 0);
+			emit_i("pult", i, j, mpz_cmp(a, b) < 0);
+			emit_i("pule", i, j, mpz_cmp(a, b) <= 0);
+			emit_i("pugt", i, j, mpz_cmp(a, b) > 0);
+			emit_i("puge", i, j, mpz_cmp(a, b) >= 0);
+
+			mpz_add(r, a, b);
+			emit("vadd", i, j, r);
+			mpz_mul(r, a, b);
+			emit("vmul", i, j, r);
+		}
+	}
+
+	for (i = 0; i < W256_NOPER; i++) {
+		load_u(a, i);
+		load_u(b, (i + 5) % W256_NOPER);
+		mpz_add(r, b, a);
+		emit("pmadd", i, 0, r);
+		mpz_mul(r, b, a);
+		emit("pmmul", i, 0, r);
+		load_u(b, (i + 3) % W256_NOPER);
+		mpz_add(r, a, b);
+		emit("pacc", i, 0, r);
+		mpz_add(r, a, a);
+		emit("pself", i, 0, r);
+		mpz_mul_ui(r, a, 7);
+		mpz_add_ui(r, r, 1);
+		emit("pmixk", i, 0, r);
+	}
+
+	for (i = 0; i < W256_NOPER; i++) {
+		load_u(a, i);
+		for (j = 0; j < W256_NSHIFT; j++) {
+			long long n = w256_shift[j];
+			shiftop(r, a, n, 1, 1);
+			emit("pshl", i, j, r);
+			shiftop(r, a, n, 1, 0);
+			emit("psar", i, j, r);
+			shiftop(r, a, n, 0, 0);
+			emit("pshr", i, j, r);
+		}
+	}
 	return 0;
 }

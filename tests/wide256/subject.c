@@ -131,6 +131,56 @@ static unsigned __int256 loadu(int i) {
 	return v;
 }
 
+static __int256 padd(const __int256 *x, const __int256 *y) { return *x + *y; }
+static __int256 psub(const __int256 *x, const __int256 *y) { return *x - *y; }
+static __int256 pmul(const __int256 *x, const __int256 *y) { return *x * *y; }
+static __int256 pand(const __int256 *x, const __int256 *y) { return *x & *y; }
+static __int256 por(const __int256 *x, const __int256 *y) { return *x | *y; }
+static __int256 pxor(const __int256 *x, const __int256 *y) { return *x ^ *y; }
+static __int256 psdiv(const __int256 *x, const __int256 *y) { return *x / *y; }
+static __int256 psmod(const __int256 *x, const __int256 *y) { return *x % *y; }
+static unsigned __int256 pudiv(const unsigned __int256 *x,
+															 const unsigned __int256 *y) {
+	return *x / *y;
+}
+static unsigned __int256 pumod(const unsigned __int256 *x,
+															 const unsigned __int256 *y) {
+	return *x % *y;
+}
+static long long pseq(const __int256 *x, const __int256 *y) { return *x == *y; }
+static long long psne(const __int256 *x, const __int256 *y) { return *x != *y; }
+static long long pslt(const __int256 *x, const __int256 *y) { return *x < *y; }
+static long long psle(const __int256 *x, const __int256 *y) { return *x <= *y; }
+static long long psgt(const __int256 *x, const __int256 *y) { return *x > *y; }
+static long long psge(const __int256 *x, const __int256 *y) { return *x >= *y; }
+static long long pult(const unsigned __int256 *x, const unsigned __int256 *y) {
+	return *x < *y;
+}
+static long long pule(const unsigned __int256 *x, const unsigned __int256 *y) {
+	return *x <= *y;
+}
+static long long pugt(const unsigned __int256 *x, const unsigned __int256 *y) {
+	return *x > *y;
+}
+static long long puge(const unsigned __int256 *x, const unsigned __int256 *y) {
+	return *x >= *y;
+}
+static __int256 vadd(__int256 x, __int256 y) { return x + y; }
+static __int256 vmul(__int256 x, __int256 y) { return x * y; }
+static __int256 pshlp(const __int256 *x, long long n) { return *x << n; }
+static __int256 psarp(const __int256 *x, long long n) { return *x >> n; }
+static unsigned __int256 pshrp(const unsigned __int256 *x, long long n) {
+	return *x >> n;
+}
+struct w256_pair {
+	__int256 lo, hi;
+};
+static __int256 pmadd(const struct w256_pair *p) { return p->hi + p->lo; }
+static __int256 pmmul(const struct w256_pair *p) { return p->hi * p->lo; }
+static void paccum(__int256 *r, const __int256 *x) { *r = *r + *x; }
+static __int256 pselfadd(const __int256 *x) { return *x + *x; }
+static __int256 pmixk(const __int256 *x) { return *x * (__int256)7 + 1; }
+
 int main(void) {
 	int i, j;
 	__int256 a, b, r;
@@ -254,6 +304,86 @@ int main(void) {
 		for (j = 0; j < 10; j++)
 			emit_i(cmpn[j], i, 0, kcmp[i][j]);
 	}
+	for (i = 0; i < W256_NOPER; i++) {
+		for (j = 0; j < W256_NOPER; j++) {
+			a = load(i);
+			b = load(j);
+			ua = loadu(i);
+			ub = loadu(j);
+
+			r = padd(&a, &b);
+			emit("padd", i, j, &r);
+			r = psub(&a, &b);
+			emit("psub", i, j, &r);
+			r = pmul(&a, &b);
+			emit("pmul", i, j, &r);
+			r = pand(&a, &b);
+			emit("pand", i, j, &r);
+			r = por(&a, &b);
+			emit("por", i, j, &r);
+			r = pxor(&a, &b);
+			emit("pxor", i, j, &r);
+			r = psdiv(&a, &b);
+			emit("psdiv", i, j, &r);
+			r = psmod(&a, &b);
+			emit("psmod", i, j, &r);
+			ur = pudiv(&ua, &ub);
+			emit("pudiv", i, j, &ur);
+			ur = pumod(&ua, &ub);
+			emit("pumod", i, j, &ur);
+
+			emit_i("pseq", i, j, pseq(&a, &b));
+			emit_i("psne", i, j, psne(&a, &b));
+			emit_i("pslt", i, j, pslt(&a, &b));
+			emit_i("psle", i, j, psle(&a, &b));
+			emit_i("psgt", i, j, psgt(&a, &b));
+			emit_i("psge", i, j, psge(&a, &b));
+			emit_i("pult", i, j, pult(&ua, &ub));
+			emit_i("pule", i, j, pule(&ua, &ub));
+			emit_i("pugt", i, j, pugt(&ua, &ub));
+			emit_i("puge", i, j, puge(&ua, &ub));
+
+			r = vadd(a, b);
+			emit("vadd", i, j, &r);
+			r = vmul(a, b);
+			emit("vmul", i, j, &r);
+		}
+	}
+
+	for (i = 0; i < W256_NOPER; i++) {
+		struct w256_pair pr;
+		a = load(i);
+		b = load((i + 5) % W256_NOPER);
+		pr.lo = a;
+		pr.hi = b;
+		r = pmadd(&pr);
+		emit("pmadd", i, 0, &r);
+		r = pmmul(&pr);
+		emit("pmmul", i, 0, &r);
+		b = load((i + 3) % W256_NOPER);
+		r = a;
+		paccum(&r, &b);
+		emit("pacc", i, 0, &r);
+		r = pselfadd(&a);
+		emit("pself", i, 0, &r);
+		r = pmixk(&a);
+		emit("pmixk", i, 0, &r);
+	}
+
+	for (i = 0; i < W256_NOPER; i++) {
+		a = load(i);
+		ua = loadu(i);
+		for (j = 0; j < W256_NSHIFT; j++) {
+			long long n = w256_shift[j];
+			r = pshlp(&a, n);
+			emit("pshl", i, j, &r);
+			r = psarp(&a, n);
+			emit("psar", i, j, &r);
+			ur = pshrp(&ua, n);
+			emit("pshr", i, j, &ur);
+		}
+	}
+
 	(void)kfold_pairs;
 	return 0;
 }

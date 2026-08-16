@@ -192,6 +192,19 @@ static void wide256_deconst(void) { MCC_TRACE("enter\n");
 	vpushv(&res);
 }
 
+static void wide256_addrof_top(CType *vt) { MCC_TRACE("enter\n");
+	SValue m;
+
+	wide256_deconst();
+	if (!(vtop->r & VT_LVAL)) { MCC_TRACE("br\n");
+		wide256_materialize(vt, &m);
+		vpushv(&m);
+	}
+	test_lvalue();
+	mk_pointer(&vtop->type);
+	gaddrof();
+}
+
 static int wide256_op_ok(int op) { MCC_TRACE("enter\n");
 	switch (op) { MCC_TRACE("br\n");
 	case '+':
@@ -318,14 +331,6 @@ static void wide256_fold_bin(int op, int uns, const mcc_w256_limb *wa,
 		{ MCC_TRACE("br\n"); mcc_w256_copy(wr, q); }
 }
 
-static void wide256_call3(int fn, SValue *res, SValue *a, SValue *b) { MCC_TRACE("enter\n");
-	vpush_helper_func(fn);
-	wide256_push_ptr(res);
-	wide256_push_ptr(a);
-	wide256_push_ptr(b);
-	gfunc_call(3);
-}
-
 static void gen_wide256_op(int op) { MCC_TRACE("enter\n");
 	CType wt;
 	SValue a, b, res;
@@ -423,24 +428,27 @@ static void gen_wide256_op(int op) { MCC_TRACE("enter\n");
 						 : (uns || op == TOK_SHR) ? TOK___mcc_i256_shr
 																		: TOK___mcc_i256_sar;
 		vswap();
-		wide256_materialize(&wt, &a);
+		wide256_addrof_top(&wt);
 		wide256_local(&wt, &res);
 		vpush_helper_func(fn);
 		wide256_push_ptr(&res);
-		wide256_push_ptr(&a);
 		vrotb(4);
+		vrotb(4);
+		vswap();
 		gfunc_call(3);
 		vpushv(&res);
 		return;
 	}
 
-	wide256_materialize(&wt, &b);
-	wide256_materialize(&wt, &a);
+	wide256_addrof_top(&wt);
+	vswap();
+	wide256_addrof_top(&wt);
 
 	if (cmp) { MCC_TRACE("br\n");
 		vpush_helper_func(uns ? TOK___mcc_i256_ucmp : TOK___mcc_i256_scmp);
-		wide256_push_ptr(&a);
-		wide256_push_ptr(&b);
+		vrotb(3);
+		vrotb(3);
+		vswap();
 		gfunc_call(2);
 		vpushi(0);
 		vtop->r = REG_IRET;
@@ -451,7 +459,12 @@ static void gen_wide256_op(int op) { MCC_TRACE("enter\n");
 	}
 
 	wide256_local(&wt, &res);
-	wide256_call3(wide256_bin_helper(op, uns), &res, &a, &b);
+	vpush_helper_func(wide256_bin_helper(op, uns));
+	wide256_push_ptr(&res);
+	vrotb(4);
+	vrotb(4);
+	vswap();
+	gfunc_call(3);
 	vpushv(&res);
 }
 
