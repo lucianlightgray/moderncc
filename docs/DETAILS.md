@@ -47933,3 +47933,31 @@ the contract — the behaviour and the test are. Local branch deleted; it had no
 remote counterpart. Local refs are now `main` and `origin/woa/bootstrap` only.
 
 **Source.** lin-x64, 2026-08-16, at `b21c9a12`.
+
+## Validation & reconciliation 2026-08-16 (mac-arm64)
+
+User-directed pass: validate every in-progress task's claimed state against reality, update docs, reconcile discrepancies. Two agents — one native build+test on macOS arm64 (`cmake --preset macos`, mcc @ `b21c9a12`), one read-only git/docs audit. All cited SHAs across every in-progress row resolve; all cited DETAILS anchors exist.
+
+### mac-arm64 tasks — native verification results
+
+- **T-lin-10007 `__float128` slice 1 — VERIFIED.** `exec/float128` PASS; `ctest -R 'float128|float16|bf16'` 73/73. Direct differential vs gcc-16 at -O0..-O3 (arith `* / -`, all six compares, `1e6*1e6` chain, `1/3`, binary128 high-64 bit patterns) all byte-identical. Cross-target refusal verified at source (`MCC_HAVE_FLOAT128 = ARM64||RISCV64`, `src/mcc.h:1138`; `mccgen.c:8615`), not runtime-switchable on a single-target native binary. The in-suite `diff3/float128` is Skipped (Apple clang can't build `__float128`); the gcc-16 differential was run manually instead.
+- **T-lin-10015 `__int256` measurement — VERIFIED (diagnosis only).** `git show --stat 701047bc` = docs/TODO.md only, +1/-1, no code change. `src/wide256_slice.h` code claims accurate: `wide256_sv_is_stable_lval` (l.87) accepts only VT_LOCAL-without-sym and VT_CONST|VT_SYM; `wide256_materialize` (l.151) no-copy fast path (l.155); `gen_wide256_op` (l.329) present. Perf figure not re-measured (not required for a diagnosis row).
+- **T-lin-10004 `_BitInt(N)` slice 1 — PARTIAL; the "byte-identical vs gcc-16 at -O0..-O3" headline is REFUTED for one class.** Suite-level claims all hold: `exec/bitint` PASS, bitint ctest group 25/25, full `exec/` 357/357, `ast/o0-baseline`(+`-gated`,+`-known-positive`) green, `__BITINT_MAXWIDTH__=64`, `_BitInt(65)` refused, `diag…bitint_over_64` PASS, representation (`VT_BITINT=7<<VT_STRUCT_SHIFT`, `IS_BITINT`, compare_types guard) present in `src/mccgen.c`. BUT: converting a **live (non-stored) modular `_BitInt` arithmetic temporary** to a wider type does **not** reduce mod 2^N. Reproduced independently at -O0 and -O2 (`/tmp/bitint_repro.c`), well-defined unsigned wraparound, not UB:
+
+  ```c
+  unsigned _BitInt(9) u = 500;
+  (unsigned)(u + u)  // mcc=1000  gcc-16=488   (1000 mod 512)
+  (unsigned)(u * u)  // mcc=250000 gcc-16=144  (250000 mod 512)
+  unsigned _BitInt(9) w = u+u; (unsigned)w  // mcc=488 gcc-16=488  (stored path agrees)
+  ```
+
+  Root: the N-bit reduce fires on `vstore()`/non-modular ops but not on a widening conversion of a live modular temporary. The banked `tests/exec/types/bitint.c` only exercises the **stored** path (`b += 100`, `f *= f`), which is why 357/357 passes and this class is missed — a test-coverage gap as much as a codegen gap. Filed as **T-mac-30007** (claimable). T-lin-10004's DONE marking was over-claimed on two counts (partial `[S]` — slice 2 N>64 still open — and this correctness gap); its row is corrected to drop the byte-identical headline and point here.
+
+### Cross-zone discrepancies found (report-only; other sessions own these rows)
+
+- **T-lin-10359 (lin) — TODO row contradicts its own DETAILS CORRECTION.** The row text still frames the verification as "PASSED … on a confirmed-idle GPU / GPU confirmed idle at claim," but the DETAILS *CORRECTION* anchor retracts exactly that precondition (WoWClassic.exe held the GPU ~27% for ~8 of the run's 11 min) and says it "must not be cited as" the idle-GPU verification. lin's §8 zone note references the correction, but the row headline was not updated. Also: SHA `6c0dd551` is a `docs(TODO): claim …` commit — §3 wants the last *content* commit, not the claim commit. FYI sent to lin-x64.
+- **T-win-50022 (win) — DEPS cites a dep as DONE that is IN_PROGRESS.** Row reads `DEPS: T-lin-10392[S] DONE`, but T-lin-10392 is STATE: IN_PROGRESS in lin's zone and not in ARCHIVED.md. The code landed and composes (ed81899f + cf03c717 verified), but protocol-DONE (§8 full native suite + atomic archive migration) has not happened — a satisfied-in-fact but not-DONE-on-the-board dep. Also the T-win-50022 DETAILS header says `DEPS —` while the row says the opposite. FYI sent to win-x64.
+- **T-lin-10392 (lin) — cosmetic.** Cited SHA `fc6fee2a` is one content commit stale (a later note `95e76846` exists). The row's "Different files, low collision" split (lin=slicerun.c / win=mccgpu.c) is not accurate — lin's `ed81899f` edited `src/mccgpu.c` (added `mcc_gpu_reopen` + the VkInstance-leak fix), which is what broke win's Vulkan build (repaired at `cf03c717`). FYI folded into the lin message.
+- **Clean:** T-lin-10001 (correctly PAUSED / TTL-eligible), T-lin-10390, T-lin-10084, T-lin-10086 (dep T-lin-10365 genuinely archived DONE at bfd2ca56). No genuine TTL-expiry beyond the deliberately-paused T-lin-10001; T-lin-10390/T-lin-10359 carry stale `TS:` fields but heartbeat rests on lin's 08:09 zone-note push.
+
+**Anchor:** `#validation-and-reconciliation-2026-08-16-mac-arm64`. **Source.** mac-arm64, 2026-08-16.
