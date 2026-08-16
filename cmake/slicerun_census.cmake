@@ -14,16 +14,17 @@
 set(_dump "${BINDIR}/slicerun-census.txt")
 file(REMOVE "${_dump}")
 
-file(GLOB_RECURSE _srcs "${SRCDIR}/tests/exec/*.c")
+# T-lin-10391: a dedicated header-free corpus, compiled -nostdinc, so no system
+# header's inline bodies enter the arena and the counts are one column that
+# serves every platform -- rather than tests/exec, which drags in per-platform
+# headers and forced a hard-pinned column per {arch,os} that any tests/exec edit
+# stranded on the boxes that could not measure it.
+file(GLOB_RECURSE _srcs "${SRCDIR}/tests/census/*.c")
 list(SORT _srcs)
-list(LENGTH _srcs _n)
-if(_n GREATER 60)
-    list(SUBLIST _srcs 0 60 _srcs)
-endif()
 foreach(_s IN LISTS _srcs)
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env "MCC_ARENA_DUMP=${_dump}"
-                "${MCC}" -c "${_s}" -o "${BINDIR}/slicerun-census.o" -O1
+                "${MCC}" -nostdinc -c "${_s}" -o "${BINDIR}/slicerun-census.o" -O1
         RESULT_VARIABLE _rc OUTPUT_QUIET ERROR_QUIET)
 endforeach()
 if(NOT EXISTS "${_dump}")
@@ -50,68 +51,25 @@ if(NOT _rc EQUAL 0)
     message(FATAL_ERROR "slice/census: the census run failed")
 endif()
 
-# Every figure below is a count over a corpus this build just compiled, so it
-# is a property of the target's AST/RIR shape and not a portable invariant. The
-# banked column was x86-64's; on arm64 the same corpus yields different block
-# and callee-class counts, and comparing against x86-64's numbers failed for a
-# reason that says nothing about drift. One column per architecture, re-taken
-# with `slicerun --census` as the message below instructs. Not
-# tools/slice-census.py, which is a different instrument and prints none of
-# these keys.
+# Every figure below is a count over tests/census, a fixed HEADER-FREE corpus
+# compiled -nostdinc, so it is a property of that corpus and the callee
+# classifier alone -- no system-header inline body enters the arena and the AST/
+# RIR shape does not vary by host. That is what makes ONE column serve every
+# platform, replacing the per-{arch,os} split that any tests/exec edit stranded
+# on the boxes that could not measure it (T-lin-10391; the split's history is in
+# DETAILS.md#t-lin-10391-slicecensus-strands-the-columns-the-adding-session-cannot-measure).
+# To re-take after a deliberate classifier change: run this cell (it prints the
+# numbers) or `slicerun --arenas <dump> --census`. Not tools/slice-census.py,
+# which is a different instrument and prints none of these keys.
 # `=` rather than `;` between key and value: a ;-joined pair is indistinguishable
 # from two list elements once foreach(... IN LISTS ...) flattens it.
-#
-# The key is architecture AND operating system, because both move these counts.
-# The corpus is compiled here, so it picks up the host's system headers: same
-# arm64, `blocks` is 990 on Darwin and 1022 on Linux. Measured columns:
-#
-#   x86_64-Linux   946   -- 947 until the arena ternary normalisation merged six
-#                           two-exit `if`s into one block each; then 941 until
-#                           da0932e2 added tests/exec/expressions/
-#                           algebraic_identities.c to this globbed corpus.
-#                           DETAILS.md#t-lin-10391-slicecensus-strands-the-columns-the-adding-session-cannot-measure
-#                           -- the arm64-Darwin and arm64-Linux columns below are
-#                           STALE by the same fixture and only their own boxes
-#                           can re-take them
-#   arm64-Darwin   988   -- this machine. Was 983 until win-x64's da0932e2 added
-#                           tests/exec/expressions/algebraic_identities.c near-miss
-#                           controls (T-lin-10067): +5 blocks (5 new functions),
-#                           and inv-blocks 517 / all-internal 165 / all-external
-#                           265 / mixed 85 / any-indirect 2 ALL unmoved, so the +5
-#                           is pure corpus-mix, re-taken here 2026-08-15. Prior:
-#                           was 990; bisected 2026-08-12 to
-#                           82f39935 "the ternary fold must not hide a tail call
-#                           or a constant condition", which refuses to fold a
-#                           ternary whose arm is an AST_Invoke or whose condition
-#                           is an AST_Literal. Fewer folds, fewer merged blocks.
-#                           That commit measured its own cost on gcc.c-torture
-#                           (block/other 285 -> 288) and this column was not
-#                           re-taken with it, so the 7 is a deliberate, priced
-#                           change and not drift. Every other figure in this
-#                           column is unmoved -- inv-blocks 517 and all-internal
-#                           165 still match exactly, which is what makes the
-#                           attribution safe to act on
-#   arm64-Linux   1022   -- Debian bookworm in Docker, likewise
-#
-# An unbanked combination skips the exact half rather than comparing against a
-# foreign column; the ratchets below still run. If this list starts to feel
-# unmanageable the real fix is to give the census a corpus that does not include
-# system headers, which would make one column serve everywhere.
-if(CENSUS_ARCH STREQUAL "arm64" AND CENSUS_OS STREQUAL "Darwin")
-    set(_census_bank "blocks=988" "inv-blocks=517" "all-internal=165"
-                     "all-external=265" "mixed=85" "any-indirect=2")
-elseif(CENSUS_ARCH STREQUAL "arm64" AND CENSUS_OS STREQUAL "Linux")
-    set(_census_bank "blocks=1022" "inv-blocks=554" "all-internal=164"
-                     "all-external=306" "mixed=83" "any-indirect=1")
-elseif(CENSUS_ARCH STREQUAL "x86_64" AND
-       (CENSUS_OS STREQUAL "Linux" OR CENSUS_OS STREQUAL ""))
-    set(_census_bank "blocks=946" "inv-blocks=454" "all-internal=169"
-                     "all-external=197" "mixed=87" "any-indirect=1")
-else()
-    message("slice/census: no banked column for ${CENSUS_ARCH}-${CENSUS_OS}; the "
-            "exact-count half of this cell is skipped, the ratchets below still run")
-    set(_census_bank "")
-endif()
+# One column for every platform. The header-free corpus carries no system-header
+# inline bodies, so these AST/RIR counts are a property of the fixed corpus and
+# the callee classifier alone -- not of the host. Measured on arm64-Darwin;
+# lin-x64 to confirm the identical column on arm64-Linux and x86_64-Linux, after
+# which the last reason for a per-{arch,os} split is gone (T-lin-10391).
+set(_census_bank "blocks=50" "inv-blocks=20" "all-internal=7"
+                 "all-external=6" "mixed=6" "any-indirect=1")
 
 foreach(_entry IN LISTS _census_bank)
     string(REPLACE "=" ";" _pair "${_entry}")
@@ -128,7 +86,7 @@ foreach(_entry IN LISTS _census_bank)
     endif()
 endforeach()
 
-foreach(_pair "inv-sole-blocker;33" "inline-unblocked;7")
+foreach(_pair "inv-sole-blocker;17" "inline-unblocked;4")
     list(GET _pair 0 _k)
     list(GET _pair 1 _v)
     if(NOT _out MATCHES "${_k}=([0-9]+)")

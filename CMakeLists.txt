@@ -4141,17 +4141,15 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("depth-census-control" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT)
             # The census counts blocks and callee classes over a compiled corpus,
-            # so every figure is a property of the target's own AST/RIR shape.
-            # The driver banks one column per architecture; it needs to know
-            # which one to compare against.
+            # so every figure is a property of the AST/RIR shape. The corpus is
+            # header-free (tests/census, compiled -nostdinc), so one column serves
+            # every platform -- no per-{arch,os} key is needed (T-lin-10391).
             add_test(NAME "slice/census"
                 COMMAND "${CMAKE_COMMAND}"
                         -DRUNNER=$<TARGET_FILE:slicerun>
                         -DMCC=$<TARGET_FILE:mcc>
                         -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
                         -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
-                        -DCENSUS_ARCH=${MCC_CPU}
-                        -DCENSUS_OS=${CMAKE_SYSTEM_NAME}
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/slicerun_census.cmake")
             set_tests_properties("slice/census" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
