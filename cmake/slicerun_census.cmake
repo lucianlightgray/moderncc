@@ -65,8 +65,14 @@ endif()
 # The corpus is compiled here, so it picks up the host's system headers: same
 # arm64, `blocks` is 990 on Darwin and 1022 on Linux. Measured columns:
 #
-#   x86_64-Linux   941   -- 947 until the arena ternary normalisation merged six
-#                           two-exit `if`s into one block each; re-taken here
+#   x86_64-Linux   946   -- 947 until the arena ternary normalisation merged six
+#                           two-exit `if`s into one block each; then 941 until
+#                           da0932e2 added tests/exec/expressions/
+#                           algebraic_identities.c to this globbed corpus.
+#                           DETAILS.md#t-lin-10391-slicecensus-strands-the-columns-the-adding-session-cannot-measure
+#                           -- the arm64-Darwin and arm64-Linux columns below are
+#                           STALE by the same fixture and only their own boxes
+#                           can re-take them
 #   arm64-Darwin   983   -- this machine. Was 990; bisected 2026-08-12 to
 #                           82f39935 "the ternary fold must not hide a tail call
 #                           or a constant condition", which refuses to fold a
@@ -93,7 +99,7 @@ elseif(CENSUS_ARCH STREQUAL "arm64" AND CENSUS_OS STREQUAL "Linux")
                      "all-external=306" "mixed=83" "any-indirect=1")
 elseif(CENSUS_ARCH STREQUAL "x86_64" AND
        (CENSUS_OS STREQUAL "Linux" OR CENSUS_OS STREQUAL ""))
-    set(_census_bank "blocks=941" "inv-blocks=454" "all-internal=169"
+    set(_census_bank "blocks=946" "inv-blocks=454" "all-internal=169"
                      "all-external=197" "mixed=87" "any-indirect=1")
 else()
     message("slice/census: no banked column for ${CENSUS_ARCH}-${CENSUS_OS}; the "
