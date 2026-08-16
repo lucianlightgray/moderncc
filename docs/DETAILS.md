@@ -48412,3 +48412,45 @@ Claimed and investigated; released to OPEN because a correct slice needs a new p
 - **Slice-1 refuse-list (keep the hard error for these, honest):** nested aggregate members (struct/union member of an SSO struct — SSO is recursive in gcc, out of slice 1), array members, bit-field members, and taking the address of a member (`&s.v` yields a pointer whose pointee is byte-swapped — gcc gives it a special rev-SO pointer type; refuse in slice 1). A pointer INTO an SSO struct and `memcpy` of the whole struct are byte-preserving and need no swap.
 
 **Verification (unchanged).** `ctest -R 'scalar_storage_order'` + a raw-byte differential vs gcc-16: `struct __attribute__((scalar_storage_order("big-endian"))) { unsigned v; }` holding `0x01020304` must write `01 02 03 04` (mcc today, refused; before the half-fix it wrote `04 03 02 01`). LOW regression risk: the swap path only activates for `reverse_so` structs, which no existing code declares, so existing codegen is untouched; the gcc byte-differential is the correctness net. **Source.** mac-arm64, 2026-08-16.
+
+<a id="t-lin-10393-jit-conservative-load-adaptive-pools"></a>
+## T-lin-10393 — `--jit-conservative` (+ CPU/GPU variants): load-adaptive JIT/GPU pools (user request, 2026-08-16)
+
+USER REQUEST (verbatim intent): add a runtime arg `--jit-conservative` along with
+two more — one for GPU, one for CPU. As a feature it should auto-detect the current
+CPU and GPU usage and adjust the JIT/GPU pools to use a reasonable amount/% of
+resources based on current system load. If system load is not easily accessed in a
+generic way, then just accept an argument of `50%` for now and use the hardware
+stats to consume that much VRAM / GPU cores / CPU threads.
+
+STRUCTURE:
+- Three args. Sketch: `--jit-conservative` (a sensible default cap across both),
+  plus a CPU-scoped and a GPU-scoped knob (e.g. `--jit-cpu-budget`, `--jit-gpu-budget`),
+  each taking either `auto` (adapt to live load) or an explicit fraction like `50%`.
+- AUTO mode: read live CPU utilization + GPU/VRAM utilization and size the pools to a
+  reasonable share of what is currently FREE (adapt as load changes, or at least at
+  launch). PERCENT mode (the safe fallback the user green-lit): size to that fraction
+  of total hardware — CPU threads, GPU compute units, and VRAM.
+- Pools to route through: the GPU device/resident state in src/mccgpu.c (MCC_GPU_*
+  env already exists — MCC_GPU_DEVICE etc.) and the JIT thread/pool cap (T-lin-10032
+  const-cache/pool area; T-lin-10037 just made the GPU const cache degrade instead of
+  fail past 512, related resource-pressure territory).
+
+FIRST SLICE = §6 research (platform detection is the cross-platform hazard):
+- Linux: /proc/loadavg + /proc/stat for CPU; nvidia-smi / NVML (libnvidia-ml) for GPU
+  util + VRAM; Vulkan VkPhysicalDeviceMemoryProperties for VRAM budget on non-NVIDIA.
+- macOS: host_statistics/host_processor_info for CPU; Metal MTLDevice
+  recommendedMaxWorkingSetSize / currentAllocatedSize for VRAM; no core-util API.
+- Windows: PDH (Performance Data Helper) for CPU; DXGI IDXGIAdapter3::QueryVideoMemoryInfo
+  or Vulkan for VRAM.
+Then decide the type: if a generic-enough abstraction exists → [S] with platform
+deltas; if detection genuinely diverges → one [C] budget/policy interface + three [X]
+detection backends (the §6 divergence fallback). The arg parsing + pool-sizing math
+is shared regardless. The user's `50%`-fallback keeps the [S] core shippable without
+any live-load detection, so slice 1 can land the percent-of-hardware path first and
+add auto-detection per platform after.
+
+VERIFY: a cell that runs mcc with `--jit-conservative`/`...=50%` and asserts the JIT
+thread count and GPU pool (VRAM bytes / device count) are sized to the requested
+fraction of the measured hardware; and (auto mode) that a synthetic high-load reading
+shrinks the pool vs a low-load reading. **Source.** user request via lin-x64.
