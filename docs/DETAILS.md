@@ -47873,3 +47873,63 @@ Reproduced + verified locally: `cmake --build cmake-msvc-50015 --target slicerun
 (exit 0) after the fix, LNK2019 before. Re-triggered WoA on the fixed tree (run 31949398356,
 6132c807) to revalidate stage1->2->3 self-host + suite on current main. arm-win32 (ARM32) stays
 unexecutable on WoA regardless.
+<a id="fix-imaginary-superseded-verified-behaviourally-then-deleted"></a>
+
+## `fix-imaginary` superseded — verified behaviourally against gcc, then deleted
+
+Completes the [branch audit](#branch-and-worktree-audit-2026-08-16-nothing-is-unmerged).
+The audit called `fix-imaginary` (`a3c51e8d`, ahead 1 / behind 1589) superseded
+on the strength of `main`'s own `b19e77a1`. That was a **provenance** argument;
+this is the behavioural one, because grep alone would have got the answer wrong.
+
+### Why source inspection was not sufficient
+
+The branch carries three distinct fixes. Checking `main` for them by name gives
+a **misleading** result:
+
+| branch fix | `grep` in `main` | truth |
+| --- | --- | --- |
+| `pp_take_imaginary` helper, called at all three suffix sites | **absent** | behaviour present by another route (`1d3f2719`) |
+| `gen_imaginary_complex` emits a rodata anon-symbol const | present | present |
+| non-float base promoted to `VT_DOUBLE` in `mk_complex_type` | **no match** | behaviour present |
+
+Two of three read as missing. `main` simply does not implement them the way the
+branch did, which is what 1,589 commits of divergence looks like. A
+name-matching check would have concluded the branch had unique work and kept a
+dead ref alive.
+
+### The behavioural check, gcc-15 as oracle
+
+A single program exercising all three fixes — 14 literal spellings
+(`1.0fi`, `1.0if`, `1.0iF`, `1.0jf`, `1.0i/j/I/J`, `1.0li`, `1.0il`, `1i`, `1j`),
+the two file-scope constant initialisers the branch message calls out
+(`double _Complex g1 = 1.0i;` and glibc's `2.0 + 3.0 * _Complex_I`), and
+`sizeof(1i)` for the integer-imaginary type question:
+
+```
+gcc-15     g1=0.0,1.0 g2=2.0,3.0 | a..d=1.0 | e..k=1.0 | li,il=1.0 | ii,ij=1.0 sz=8
+mcc (main) g1=0.0,1.0 g2=2.0,3.0 | a..d=1.0 | e..k=1.0 | li,il=1.0 | ii,ij=1.0 sz=8
+```
+
+**Byte-identical.** Every spelling the branch existed to fix lexes; both
+file-scope initialisers fold rather than reporting *"initializer element is not
+constant"*; and `sizeof(1i) == 8` confirms the integer imaginary literal is
+`double _Complex`, not whatever was cached in the long-double slot.
+
+### The tests are the same file
+
+`tests/exec/features_c99_c11/c11_imaginary_suffix.c` is **byte-identical**
+between the branch and `main` — 75 lines, `diff` clean — the `goldens.h` entry
+is registered, and the family is green: **25 of 25** cells including
+`diff3/c11_imaginary_suffix`, which adjudicates against gcc and clang rather
+than a bank.
+
+### Deleted
+
+`a3c51e8d` had a commit reachable from nowhere else, so this is recorded before
+the fact rather than after: nothing unique was lost, because the only thing the
+branch held that `main` lacks is an *implementation route*, and the route is not
+the contract — the behaviour and the test are. Local branch deleted; it had no
+remote counterpart. Local refs are now `main` and `origin/woa/bootstrap` only.
+
+**Source.** lin-x64, 2026-08-16, at `b21c9a12`.
