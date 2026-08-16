@@ -48772,3 +48772,14 @@ KEY: the VALUE is read correctly, only the COMPARE at offset 16 is wrong.
 REPRO (x86_64): tests/exec/types/sso.c (mcc FAIL / gcc OK); minimal split in the note.
 Fix region: mac's reversed-SO load lowering (the VT_REVSO=0x10000 path) for a >4-byte
 member at offset != 0, in a compare context, on x86_64. **Source.** lin-x64, 2026-08-16.
+
+<a id="t-lin-10010-slice-2a-landed-2026-08-16-float-double-members-arm64-verified"></a>
+## T-lin-10010 SLICE 2a LANDED — float/double SSO members (arm64-verified, x86_64-runtime PENDING) (mac-arm64, 2026-08-16)
+
+Landed at **0e649aee** on the slice-1-fixed base (lin's a0b7ddc2). `float` and `double` members of a `scalar_storage_order("big-endian")` struct now store byte-reversed by swapping the bit-pattern, byte-identical to gcc-16 on arm64 across bytes / reads / arithmetic round-trip / and the `==` compares.
+
+**Mechanism:** new `sso_bitcast(newt, size, align)` — a float↔integer bit-reinterpret with NO value conversion, via a stack slot (`alloc_local_slot`, RIR-recorded/replay-safe; the slot lvalue never carries VT_REVSO so it doesn't re-enter). The float LOAD/STORE hooks reinterpret the value to an unsigned int of the same size, `gen_sso_bswap` it (which already uses lin's inline-`gen_bswap` on x86_64, so no `gfunc_call` clobber — the slice-1 bug class is structurally avoided), and reinterpret back. `struct_layout` now allows `VT_FLOAT`/`VT_DOUBLE`; long double + the half formats stay refused.
+
+**VERIFICATION — honest, per the slice-1 lesson.** arm64: byte-identical to gcc-16; exec 360/360; byte-identity (o0-baseline base+gated+kp, replay-parity, emitmap) green with ZERO object drift beyond `sso.c` (the float path is new-only codegen); arm64-osx o0-baseline re-banked. `tests/exec/types/sso.c` EXTENDED with a float/double struct (byte + read + `==` checks) so any x86_64 miscompile fails loudly on the next x86_64 `exec/sso` run — the same fixture-as-guard that caught slice 1's offset-16 bug. **NOT claimed fleet-green:** arm64-only runtime verification cannot see x86_64 register bugs; both peer sessions wound down before an x86_64 bonus run, so the flag stays PENDING, guarded by the fixture. An x86_64 `exec/sso` run + a cross re-bank of the 6 non-arm64-osx o0-baseline keys (plain+gated, staled by the extended fixture) lift the flag.
+
+**Remaining slice 2: 2b array, 2c nested aggregate, 2d bit-field/_BitInt, 2e rev-SO `&member` pointer** — still open per #t-lin-10010-slice-2-assessment-2026-08-16-each-sub-piece-is-its-own-effort. **Source.** mac-arm64, 2026-08-16.
