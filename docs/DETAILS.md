@@ -47661,3 +47661,69 @@ sits 6.6x below a figure that fell 6.3x while **every** funnel stage held
 steady, so it is measuring a quantity that can collapse without it noticing.
 
 **Source.** lin-x64, 2026-08-16. Read from banked counters; nothing re-run.
+
+<a id="branch-and-worktree-audit-2026-08-16-nothing-is-unmerged"></a>
+
+## Branch and worktree audit, 2026-08-16 — nothing is unmerged, and the two apparent exceptions would both *regress* main
+
+Asked to merge every branch and worktree into `main`. **Measured first, and the
+answer is that there is nothing to merge**: `main` is at or ahead of every ref
+in the repository. Recorded so no session re-derives it, and because the two
+refs that *look* mergeable are traps.
+
+### The survey
+
+| ref class | count | with commits not in `main` |
+| --- | ---: | ---: |
+| worktrees | 1 (the primary checkout) | — |
+| local branches | 177 | **1** (`fix-imaginary`) |
+| of which `worktree-agent-*` | 89 | **0** |
+| of which `wt/*` | ~80 | **0** |
+| remote `origin/woa/bootstrap` | 1 | **0** |
+| remote `origin/wt/slicops` | 1 | **0** |
+| remote `origin/wip/vector-abi-layout` | 1 | **1** |
+
+**The four agent worktrees the [pre-reboot handoff](#lin-x64-handoff-2026-08-15-preboot)
+records are gone as directories** — `git worktree list` returns only the primary
+checkout — and every one of their 89 branches is fully contained in `main`. The
+handoff's *"four agent worktrees hold work that no longer merges"* is therefore
+discharged: the work does not need to merge because it is already in.
+
+### Both "ahead" refs are superseded, and merging either would lose work
+
+**`fix-imaginary` (ahead 1, behind 1589).** Superseded. `main` already carries
+`tests/exec/features_c99_c11/c11_imaginary_suffix.c` and the `mccpp.c` handling,
+landed independently as `1d3f2719`, and `main`'s own `b19e77a1` states *"every
+deleted branch was already landed; close fix-imaginary"*. Merging a commit 1589
+behind would re-apply an older front-end change over newer work for zero gain.
+
+**`origin/wip/vector-abi-layout` (ahead 1).** Superseded, and the more dangerous
+of the two. Its commit message says **"UNVERIFIED, DO NOT MERGE"** — but the
+reason not to merge it is no longer that it is unverified. The work it holds
+**landed properly** as [T-lin-10012](#t-lin-10012-32-byte-vectors-are-laid-at-16-byte-alignment-so-cross-tu-to-gcc-is-incompatible)
+at `8dd00e11`, was suite-verified at **10,066 cells / 0 failures**, and was
+archived DONE at `7ea9be08`. `main` already has `MCC_MAX_VEC_ALIGN` in
+`src/mcc.h` and `src/arch/x86_64/x86_64-gen.h`, and the fixture is a registered
+cell at `CMakeLists.txt:7098`.
+
+Attempting the merge proves it concretely: it produces **add/add conflicts** on
+`tests/cross/vector-abi-layout.{c,sh}`, because both sides created those files.
+`main`'s `vector-abi-layout.sh` is **85 lines**; the branch's is **56**. Taking
+the branch side would *downgrade* a landed, suite-verified fixture to the
+pre-reboot snapshot it was superseded by. The merge was aborted.
+
+### What was deliberately not done
+
+**No branch was deleted and no stash was dropped.** Pruning was not asked for,
+it is destructive, and two of these refs are load-bearing for reasons recorded
+elsewhere: `woa/bootstrap` is
+[T-lin-10371](#t-lin-10371-a-nondeterministic-segfault-that-moves-between-cells)'s
+re-dispatch ref, and the stash stack (`autostash`, plus two older entries) is
+shared. They are all *contained* in `main`, so they are safe to prune whenever
+someone decides to — that decision is not this session's.
+
+**The audit is the deliverable, not a merge commit.** "Merge everything" and
+"leave `main` unchanged" are the same action here, and the second is only
+defensible with the numbers above attached.
+
+**Source.** lin-x64, 2026-08-16, at `9b89b6e4`.
