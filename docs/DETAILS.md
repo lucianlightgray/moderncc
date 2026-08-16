@@ -48598,3 +48598,33 @@ SLICING (user: percent first, auto later):
   or NVML for free VRAM. Type at that point: likely [C] budget/policy interface + [X] detection
   backends. Not started.
 **Source.** user via lin-x64, 2026-08-16.
+
+<a id="t-lin-10084-slice-3b-ordering-blocker-and-trampoline-path"></a>
+
+## T-lin-10084 slice 3b — the cleanup-reuse plan hits a single-pass ordering wall; the trampoline is the real path (win-x64, 2026-08-16)
+
+CORRECTION to the earlier slice-3b note (reuse `try_call_scope_cleanup`): that machinery works
+for `__attribute__((cleanup(fn)))` because the attribute is on the DECLARATION, registered onto
+`cur_scope->cl.s` (mccgen.c:17100-17106) BEFORE the scope body — so returns inside trigger it. But
+`__try { body } __finally { B }` puts `__finally` AFTER the body it must protect. In mcc's single
+pass, when a `return`/`break`/`goto`/`continue` inside the try body is emitted, mcc does not yet
+know whether the handler is `__except` (a return needs NO finally — current behaviour is correct)
+or `__finally` (the return MUST run B first). So the cleanup entry cannot be registered before the
+body, and the exit sites cannot decide what to emit. Reusing the cleanup list as-is is a dead end
+for this reason.
+
+VIABLE PATH (return first, the common case): at `__try {`, before the body, set a per-function
+"exit redirect" context (a trampoline label + a slot for the return value), speculatively active.
+A `return X` inside the try stores X and `jmp trampoline` instead of emitting the epilogue inline.
+After the handler is parsed and known:
+- `__except`: the trampoline is just the real return sequence (no finally). No overhead beyond one
+  jump per return (acceptable), and the redirect is torn down.
+- `__finally`: the trampoline emits `mov rdx, rbp; call <finally funclet>` (reusing the slice-3a
+  funclet, single emission) then the real return sequence.
+break/continue/goto out of the __try are slice 3b-ii — each has its own target, so the finally must
+run before each jump (a per-target trampoline or an inline funclet-call at each). Nested
+__try/__finally compose by chaining trampolines innermost-first. This needs interception in the
+`return`/`break`/`goto` codegen paths (a "in a __try, redirect exits to L" flag set at `__try {`),
+which is a focused, correctness-cliff piece — NOT a quick add, and the reason __finally early-exit
+is genuinely hard rather than mechanical. Slice 3a (fallthrough + unwind) remains correct and
+shipped; this is only the early-exit gap.
