@@ -48837,6 +48837,59 @@ x86_64 hazard for any lowering that leaves a value in the return register before
 compare — slice 2's float path (bit-reinterpret) should prefer inline lowering for
 the same reason; mac is extending sso.c with float/double members as the x86_64 guard
 fixture. lin-x64, 2026-08-16.
+<a id="t-lin-10010-slice-2a-x86-64-fixed-2026-08-16-vt-revso-force-gv"></a>
+
+## T-lin-10010 SLICE 2a x86_64 FIXED — float/double SSO compares folded the memory operand and skipped the swap (lin-x64, 2026-08-16)
+
+FIXED at a8f19e1d. slice 2a landed arm64-verified (0e649aee) but x86_64-runtime
+PENDING; the x86_64 `exec/sso` run this session owed found the fixture-guarded
+miscompile mac warned it might. **The guard fixture did its job** — `sso.c`'s
+extended float/double `==` checks FAILed on x86_64 while arm64 was byte-identical:
+the exact arm64-only-false-green pattern slice 1 taught.
+
+SIGNATURE (identical class to slice 1, different mechanism): storage bytes correct,
+values print correct (`y.f=1.500000`, `y.d=3.14159265358979`), but every float/double
+`==` returns wrong (`y.f==1.5f`→0, `y.d==pi`→0). Not slice 1's register clobber — the
+compare asm was `ucomiss (%rax), %xmm0`: `y->f` folded straight into the compare as a
+**raw little-endian memory operand**, so gv()'s SSO load hook (mccgen.c:2505, the
+bitcast→bswap→bitcast that swaps the bytes) never ran. `gen_opf` (x86_64/i386)
+deliberately lets exactly one operand stay a memory lvalue to fold into ucomiss/ucomisd;
+that fold bypasses VT_REVSO. arm64's `fcmp` requires both operands in registers, so gv()
+always runs there — which is why arm64 verification could not see it. Float ARITHMETIC
+was already correct (its emit path gv()'s the operand, running the full swap sequence),
+so only the compare folded — matching "arith values right, compares wrong".
+
+FIX (mccgen.c `gen_opif`, the backend-generic float-op dispatcher): before the const-fold
+and `gen_opf` dispatch, force any operand still carrying VT_REVSO through
+`gv(MCC_RC_TYPE(t))`. gv() runs the SSO load hook (swap) and clears VT_REVSO, so the
+operand reaches gen_opf as a register and can no longer be folded as memory. Generic (fixes
+i386 too, which has the same ucomi memory fold), and provably isolated: VT_REVSO is only
+ever set on reverse-`scalar_storage_order` members, so the branch is a no-op for every
+other float op — empirically confirmed by the o0-baseline diff showing ONLY `sso.c`'s
+object moving across all keys.
+
+VERIFICATION (x86_64, native cmake-debug + cross cmake-cross): `sso.c` == gcc; all sso
+ctest cells **54/54** (exec/sso + every opt-variant sibling: replay/tmpl/promote/narrowfix/
+chainstore/ivsrptr/vlat/select/zerobss/interchange/fusion/tile/mergestrings/search/
+emitsize/emitiso/threads/gatesoff/O1/O3/Os + diff3), scalar_storage diagnostics 3/3.
+o0-baseline re-banked on cmake-cross: exactly the **6 non-arm64-osx keys** (x86_64,
+x86_64-win32, i386-win32, arm64-win32, arm-win32, x86_64-osx), 1 line each = only sso.c's
+hash; **arm64-osx untouched** (arm64 codegen byte-identical, mac's native bank preserved) —
+so arm64-win32/arm-win32 moved purely from mac's extended-fixture stale bank, x86-family
+from that plus my codegen. All 4 o0-baseline cells green; rir-coverage-census + fmt
+census + node-census green.
+
+**SLICE 2a NOW FLEET-GREEN** (arm64 mac 0e649aee + x86_64 lin a8f19e1d). Slices 2b array /
+2c nested aggregate / 2d bit-field·_BitInt / 2e rev-SO `&member` released back to Open,
+scope at #t-lin-10010-slice-2-assessment-2026-08-16-each-sub-piece-is-its-own-effort.
+
+NOTE (unrelated pre-existing red, NOT this change): `rir-coverage` (cell 10000) fails on
+this box at -O1/-O2/-O3 — kept coverage ~92.14/92.22% vs banked 92.23/92.31%, ~0.085pp
+below the 0.05pp tol. PROVEN pre-existing by a stash-the-fix rebuild: base tree fails
+identically (base O1 92.1422% vs with-fix 92.1428% — my change nudges it +0.0006pp, in the
+*better* direction). This is the kept_coverage host-instability T-lin-10057 exists to fix
+(bank set from a different host/build); re-banking it here would paper over T-lin-10057 and
+re-break cross-host, so it is deliberately left. lin-x64, 2026-08-16.
 <a id="t-lin-10084-slice-3b-attempt-findings-funclet-must-follow-body"></a>
 
 ## T-lin-10084 slice 3b — attempt findings: early-exit WORKS, but the funclet MUST follow the body (win-x64, 2026-08-16)
