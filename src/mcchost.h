@@ -264,6 +264,7 @@ ST_FUNC int host_dir_walk(const char *dir, int recursive, host_walk_fn fn, void 
 ST_FUNC unsigned host_clock_ms(void);
 ST_FUNC MAYBE_UNUSED char **host_environ(void);
 ST_FUNC int host_nproc(void);
+ST_FUNC double host_loadavg(void);
 
 ST_FUNC void host_sys_info(char *sysname, int ssz, char *release, int rsz,
 													 char *machine, int msz);

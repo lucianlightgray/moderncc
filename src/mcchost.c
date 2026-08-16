@@ -1190,6 +1190,20 @@ ST_FUNC MAYBE_UNUSED int host_nproc(void) { MCC_TRACE("enter\n");
 #endif
 }
 
+/* T-lin-10393: the 1-minute system load average, or -1.0 if unavailable. Windows
+ * has no getloadavg (PDH would be the equivalent, left to a later slice), so
+ * --jit-*-budget=auto falls back to the hardware fraction there. */
+ST_FUNC MAYBE_UNUSED double host_loadavg(void) { MCC_TRACE("enter\n");
+#ifdef _WIN32
+	return -1.0;
+#else
+	double la[1];
+	if (getloadavg(la, 1) == 1)
+		{ MCC_TRACE("br\n"); return la[0]; }
+	return -1.0;
+#endif
+}
+
 #if defined _WIN32 && !defined PROCESSOR_ARCHITECTURE_ARM64
 #define PROCESSOR_ARCHITECTURE_ARM64 12
 #endif

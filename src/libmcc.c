@@ -3509,12 +3509,22 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		if (s->jit_gpu_budget == -1)
 			{ MCC_TRACE("br\n"); s->jit_gpu_budget = 50; }
 	}
-	if (s->jit_cpu_budget == -2 || s->jit_gpu_budget == -2)
+	if (s->jit_gpu_budget == -2)
 		{ MCC_TRACE("br\n"); return mcc_error_noabort(
-			"--jit-*-budget=auto (live-load adaptation) is not yet implemented; "
+			"--jit-gpu-budget=auto (live VRAM-budget detection) is not yet implemented; "
 			"use an explicit percentage like '50%%' for now"); }
-	if (s->jit_cpu_budget >= 0) { MCC_TRACE("br\n");
-		int w = (host_nproc() * s->jit_cpu_budget + 50) / 100;   /* round */
+	if (s->jit_cpu_budget >= 0 || s->jit_cpu_budget == -2) { MCC_TRACE("br\n");
+		int np = host_nproc(), w;
+		if (s->jit_cpu_budget == -2) { MCC_TRACE("br\n");
+			/* auto: size to the idle capacity = cores not currently under load. */
+			double la = host_loadavg();
+			if (la < 0)   /* no live-load source (e.g. Windows): conservative half */
+				{ MCC_TRACE("br\n"); w = (np + 1) / 2; }
+			else
+				{ MCC_TRACE("br\n"); w = (int)((double)np - la + 0.5); }
+		} else { MCC_TRACE("br\n");
+			w = (np * s->jit_cpu_budget + 50) / 100;   /* percent, rounded */
+		}
 		if (w < 1)
 			{ MCC_TRACE("br\n"); w = 1; }
 		if (w > 64)   /* MCCJIT_POOL_MAX */
@@ -3525,8 +3535,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		{ MCC_TRACE("br\n"); mcc_gpu_vram_budget_pct = s->jit_gpu_budget; }
 	if (s->jit_gpu_devices >= 1)
 		{ MCC_TRACE("br\n"); mcc_gpu_max_devices = s->jit_gpu_devices; }
-	if ((s->jit_conservative || s->jit_cpu_budget >= 0 || s->jit_gpu_budget >= 0 ||
-			 s->jit_gpu_devices >= 1) && getenv("MCC_JIT_BUDGET_DEBUG"))
+	if ((s->jit_conservative || s->jit_cpu_budget >= 0 || s->jit_cpu_budget == -2 ||
+			 s->jit_gpu_budget >= 0 || s->jit_gpu_devices >= 1) &&
+			getenv("MCC_JIT_BUDGET_DEBUG"))
 		{ MCC_TRACE("br\n"); fprintf(stderr,
 			"jit-budget: cpu-workers=%u gpu-vram-pct=%d gpu-devices=%d\n",
 			s->jit_threads, mcc_gpu_vram_budget_pct, mcc_gpu_max_devices); }

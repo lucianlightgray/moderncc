@@ -99,7 +99,7 @@ static const char help2[] =
 		"                                output's JIT, and count every refusal instead of falling back silently. Env override:\n"
 		"                                MCC_JIT_ALWAYS_GPU. Needs a device; without one every slice refuses as unavailable\n"
 		"  --jit-conservative            Size both the JIT thread pool and the GPU VRAM budget to 50%% of the hardware\n"
-		"  --jit-cpu-budget=N%%|auto      JIT worker threads = round(nproc * N%%) (auto = adapt to live load, not yet implemented)\n"
+		"  --jit-cpu-budget=N%%|auto      JIT worker threads = round(nproc * N%%), or (auto) the idle-core estimate max(1, nproc - loadavg)\n"
 		"  --jit-gpu-budget=N%%|auto      Cap usable GPU VRAM to N%% of the device (auto not yet implemented)\n"
 		"  --jit-gpu-devices=N           Hold at most N GPU devices (multi-GPU hosts)\n"
 		"  --clear-cache                 Remove the per-user optimizer cache directory and exit\n"

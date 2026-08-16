@@ -58,9 +58,17 @@ want "gpu-devices"  "gpu-devices=2"      "$got"
 got=$(budget --jit-cpu-budget 50%)
 want "space-separated arg"  "cpu-workers=$half "  "$got"
 
-# auto is parsed but not yet implemented
-err=$(MCC_JIT_BUDGET_DEBUG=1 "$MCC" -B"$BASE" -w -c "$WORK/hb.c" -o "$WORK/hb.o" --jit-cpu-budget=auto 2>&1 || true)
-want "auto errors" "not yet implemented" "$err"
+# CPU auto: sizes the pool to idle capacity (nproc - loadavg), a value in [1, nproc]
+got=$(budget --jit-cpu-budget=auto)
+want "cpu auto emits a budget" "cpu-workers=" "$got"
+aw=$(printf '%s' "$got" | sed -n 's/.*cpu-workers=\([0-9][0-9]*\).*/\1/p')
+if [ -z "$aw" ] || [ "$aw" -lt 1 ] || [ "$aw" -gt "$NP" ]; then
+	echo "FAIL jitbudget: --jit-cpu-budget=auto workers '$aw' not in [1,$NP] (nproc-loadavg)" >&2
+	exit 1
+fi
+# GPU auto is not yet implemented (live VRAM-budget detection is a later slice)
+err=$(MCC_JIT_BUDGET_DEBUG=1 "$MCC" -B"$BASE" -w -c "$WORK/hb.c" -o "$WORK/hb.o" --jit-gpu-budget=auto 2>&1 || true)
+want "gpu auto errors" "not yet implemented" "$err"
 
 # a bad budget is rejected, not silently ignored
 err=$("$MCC" -B"$BASE" -w -c "$WORK/hb.c" -o "$WORK/hb.o" --jit-gpu-budget=frob 2>&1 || true)
