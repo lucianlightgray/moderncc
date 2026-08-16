@@ -48837,3 +48837,45 @@ x86_64 hazard for any lowering that leaves a value in the return register before
 compare — slice 2's float path (bit-reinterpret) should prefer inline lowering for
 the same reason; mac is extending sso.c with float/double members as the x86_64 guard
 fixture. lin-x64, 2026-08-16.
+<a id="t-lin-10084-slice-3b-attempt-findings-funclet-must-follow-body"></a>
+
+## T-lin-10084 slice 3b — attempt findings: early-exit WORKS, but the funclet MUST follow the body (win-x64, 2026-08-16)
+
+Implemented and TESTED a full slice-3b attempt; reverted it (main stays green slice-3a) because of
+one hard SEH constraint below, but it de-risked the design to near-complete. What WORKED (verified
+on this box, mcc vs cl): `return` out of a __try/__finally and `break` out of a __try/__finally in a
+loop both run the finally correctly. The mechanism that made early-exit work:
+- SAVE/REPLAY the try body with `skip_or_save_block(&trybody)` + `begin_macro(trybody,1); next();
+  block(0); end_macro()`, so the handler keyword is known before the body is emitted (VERIFIED
+  behaviour-preserving for __except — pe/seh stayed green).
+- Make __finally a SCOPE CLEANUP: `new_scope`, push a cleanup Sym with `cleanup_func = NULL`
+  (marker) and the funclet text offset in `vla_inner_id` (NOT `c` — `c` ALIASES `cleanup_func` in
+  the Sym union, mcc.h:324/337; setting both makes cleanup_func read non-NULL and the code call a
+  bogus pointer → crash). `try_call_scope_cleanup` grows a PE-x86_64 arm: if `cleanup_func==NULL`,
+  emit `mov rdx,rbp; call <funclet>` after `save_lvalues()`. Then EVERY exit runs it for free:
+  return/break/continue/goto all call `leave_scope` (break/continue at mccgen.c:15598), fallthrough
+  runs it via `prev_scope`→`block_cleanup`, and `save_lvalues()` spills the pending return value so
+  the funclet may clobber rax.
+- LOOKAHEAD: `block()` parsing the finally body reads ONE token past the whole __try/__finally into
+  `tok`; the try-body replay overwrites it. Save `tok`+`tokc` after the finally-body parse and
+  restore after `end_macro` (which puts `macro_ptr` back just past that token).
+
+THE BLOCKER that forced the revert — the funclet MUST be emitted AFTER the body, not before. The
+attempt emitted the funclet BEFORE the body (so its address was known for the cleanup calls). That
+CRASHES nested `__finally`-in-`__except` on unwind: mcc emits each filter/finally funclet INLINE and
+gives it its own `.pdata` RUNTIME_FUNCTION that OVERLAPS the parent function's `.pdata`. Windows
+`RtlLookupFunctionEntry` binary-searches `.pdata` by BeginAddress; for a fault IP in the body, if
+the funclet sits BEFORE the body then `funclet_start < fault_IP` and the search lands on the
+funclet's entry (whose BeginAddress is the greatest ≤ fault_IP) even though fault_IP > funclet_end
+— returning the funclet's unwind info for a parent-body fault → corrupt unwind → SIGSEGV. Slice 3a
+works precisely because its funclet sits AFTER the body, so a body fault IP < funclet_start and the
+search correctly returns the PARENT entry. (This overlap is latent for slice-1/2 filter funclets
+too, but harmless there because they are always after the body.)
+
+THEREFORE the correct slice 3b: keep the funclet AFTER the body (slice-3a layout, preserves unwind
+correctness) AND make the early-exit cleanup calls FORWARD references — the cleanup emits
+`mov rdx,rbp; call <placeholder>` at each exit during body parse, chaining the rel32 sites (gjmp/
+gsym style) on the cleanup Sym; after the funclet is emitted, walk the chain and patch each rel32 to
+the funclet. That combines the verified save/replay + scope-cleanup mechanism with a funclet-after-
+body layout via one fixup chain. Everything else (union field, lookahead, leave_scope coverage,
+save_lvalues) is proven. A focused fresh-context slice from here, no open design questions.
