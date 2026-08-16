@@ -98,4 +98,35 @@ int main(void) {
 	return 0;
 }
 
+#elif defined test_call
+
+/* Passing and returning a _BitInt(N) BY VALUE.  A _BitInt is the first scalar
+ * carrying VT_BITFIELD that is passed as a whole argument, so the caller's
+ * argument-register materialization (classify_x86_64_arg's bit-field retype)
+ * must keep the value's N-bit precision -- a mis-typed argument reduces by a
+ * garbage shift count and miscompiles on x86_64 (accidentally clean on arm64).
+ * Spans all four storage classes: 7=BYTE, 9=SHORT, 20=INT, 33/64=LLONG. */
+#include <stdio.h>
+typedef signed _BitInt(7)    s7;
+typedef unsigned _BitInt(9)  u9;
+typedef signed _BitInt(20)   s20;
+typedef unsigned _BitInt(33) u33;
+typedef signed _BitInt(64)   s64b;
+__attribute__((noinline)) s7   id7  (s7 x)           { return x; }
+__attribute__((noinline)) u9   id9  (u9 x)           { return x; }
+__attribute__((noinline)) s20  add20(s20 a, s20 b)   { return a + b; }
+__attribute__((noinline)) u33  add33(u33 a, u33 b)   { return a + b; }
+__attribute__((noinline)) s64b neg64(s64b x)         { return -x; }
+__attribute__((noinline)) u9   twice9(u9 x)          { return id9(x) + id9(x); }
+int main(void) {
+	printf("id7 %d %d\n", (int)id7(60), (int)id7(-40));
+	printf("id9 %u %u\n", (unsigned)id9(500), (unsigned)id9(3));
+	printf("add20 %lld\n", (long long)add20(500000, 700000));		/* wraps mod 2^20 */
+	printf("add33 %llu\n",
+				 (unsigned long long)add33(5000000000u, 4000000000u));	/* wraps mod 2^33 */
+	printf("neg64 %lld\n", (long long)neg64(-123456789012LL));
+	printf("twice9 %u\n", (unsigned)twice9(500));				/* (500+500) mod 512 = 488 */
+	return 0;
+}
+
 #endif

@@ -1342,6 +1342,8 @@ static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *p
 	if (ret) { MCC_TRACE("br\n");
 		ret->ref = NULL;
 		ret->t = ret_t;
+		ret->bp = (ret_t & VT_BITFIELD) ? ty->bp : 0;
+		ret->bs = (ret_t & VT_BITFIELD) ? ty->bs : 0;
 	}
 
 	return mode;

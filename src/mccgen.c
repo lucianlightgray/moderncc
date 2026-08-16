@@ -13996,7 +13996,8 @@ tok_next:
 				}
 
 				t = s->type.t & VT_BTYPE;
-				if (t == VT_BYTE || t == VT_SHORT || t == VT_BOOL) { MCC_TRACE("br\n");
+				if ((t == VT_BYTE || t == VT_SHORT || t == VT_BOOL) &&
+						!IS_BITINT(s->type.t)) { MCC_TRACE("br\n");
 #ifdef MCC_RET_PROMOTES_INT
 					vtop->r |= BFVAL(VT_MUSTCAST, 1);
 #else
