@@ -5968,17 +5968,6 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 			vtop->type.bp = vtop->type.bs = 0;
 		}
 
-		if ((vtop[-1].r & VT_VALMASK) == VT_LLOCAL) { MCC_TRACE("br\n");
-			SValue sv;
-			r = get_reg(MCC_RC_INT);
-			sv.type.t = VT_PTRDIFF_T;
-			sv.r = VT_LOCAL | VT_LVAL;
-			sv.c.i = vtop[-1].c.i;
-			sv.sym = NULL;
-			load(r, &sv);
-			vtop[-1].r = r | VT_LVAL;
-		}
-
 		/* Reverse scalar_storage_order scalar member (T-lin-10010): a write of
 		 * `s.v' byte-swaps the value, then stores the raw little-endian bytes.
 		 * For a float/double member, swap the bit-pattern (reinterpret as an
@@ -5996,6 +5985,17 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 				gen_sso_bswap(sz2);
 			}
 			vtop[-1].r &= ~VT_REVSO;
+		}
+
+		if ((vtop[-1].r & VT_VALMASK) == VT_LLOCAL) { MCC_TRACE("br\n");
+			SValue sv;
+			r = get_reg(MCC_RC_INT);
+			sv.type.t = VT_PTRDIFF_T;
+			sv.r = VT_LOCAL | VT_LVAL;
+			sv.c.i = vtop[-1].c.i;
+			sv.sym = NULL;
+			load(r, &sv);
+			vtop[-1].r = r | VT_LVAL;
 		}
 
 		r = vtop->r & VT_VALMASK;
@@ -6597,9 +6597,21 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 			if ((f->type.t & VT_BTYPE) == VT_STRUCT)
 				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with an "
 													"aggregate member is not implemented"); }
-			if (f->type.t & (VT_ARRAY | VT_VLA))
-				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with an array "
-													"member is not implemented"); }
+			if ((f->type.t & (VT_ARRAY | VT_VLA)) == VT_VLA)
+				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with a "
+													"variable-length array member is not implemented"); }
+			if (f->type.t & VT_ARRAY) { MCC_TRACE("br\n");
+				int et = pointed_type(&f->type)->t;
+				if (et & (VT_ARRAY | VT_VLA))
+					{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with a "
+														"multi-dimensional array member is not implemented"); }
+				if ((et & VT_BTYPE) == VT_STRUCT || (et & VT_BITFIELD))
+					{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with an "
+														"array of aggregate or bit-field members is not implemented"); }
+				if (is_float(et) && (et & VT_BTYPE) != VT_FLOAT && (et & VT_BTYPE) != VT_DOUBLE)
+					{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with an "
+														"array of long double or half-float members is not implemented"); }
+			}
 			if (f->type.t & VT_BITFIELD)
 				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with a "
 													"bit-field or _BitInt member is not implemented"); }
@@ -13928,6 +13940,8 @@ tok_next:
 					{ MCC_TRACE("br\n"); vtop->r |= VT_REVSO; }
 				if (mcc_state->do_bounds_check)
 					{ MCC_TRACE("br\n"); vtop->r |= VT_MUSTBOUND; }
+			} else if (base_revso) { MCC_TRACE("br\n");
+				vtop->r |= VT_REVSO;
 			}
 			{
 				int _mbc = 0;
@@ -13938,7 +13952,10 @@ tok_next:
 			CST_OPEN_AT(CST_Member, cst_um);
 			CST_CLOSE();
 		} else if (tok == '[') { MCC_TRACE("br\n");
+			int sub_revso;
 			next();
+			sub_revso = vtop->r & VT_REVSO;
+			vtop->r &= ~VT_REVSO;
 			if (is_vector_type(&vtop->type)) { MCC_TRACE("br\n");
 				CType base = *vector_elem_type(&vtop->type);
 				test_lvalue();
@@ -13956,6 +13973,9 @@ tok_next:
 					{ MCC_TRACE("br\n"); mcc_error("subscripted value is pointer to function"); }
 				indir();
 			}
+			if (sub_revso && (vtop->r & VT_LVAL) &&
+					!(vtop->type.t & (VT_ARRAY | VT_VLA)))
+				{ MCC_TRACE("br\n"); vtop->r |= VT_REVSO; }
 			skip(']');
 			CST_OPEN_AT(CST_Index, cst_um);
 			CST_CLOSE();

@@ -68,6 +68,32 @@ int main(void) {
 	y.d = y.d + 1.0;
 	ok = ok && y.f == 3.0f && y.d == 4.14159265358979;
 
+	struct __attribute__((scalar_storage_order("big-endian"))) SA {
+		int ia[3];
+		float fa[2];
+	} z;
+	memset(&z, 0, sizeof z);
+	z.ia[0] = 0x11223344;
+	z.ia[1] = -2;
+	z.ia[2] = 0x55667788;
+	z.fa[0] = 1.5f;
+	z.fa[1] = -2.25f;
+	unsigned char ab[sizeof z];
+	memcpy(ab, &z, sizeof z);
+	ok = ok &&
+			ab[0] == 0x11 && ab[3] == 0x44 &&
+			ab[4] == 0xff && ab[7] == 0xfe &&
+			ab[8] == 0x55 && ab[11] == 0x88 &&
+			ab[12] == 0x3f && ab[13] == 0xc0 &&
+			z.ia[0] == 0x11223344 && z.ia[1] == -2 && z.ia[2] == 0x55667788 &&
+			z.fa[0] == 1.5f && z.fa[1] == -2.25f;
+	for (int i = 0; i < 3; i++)
+		z.ia[i] += 1;
+	int k = 1;
+	z.fa[k] = z.fa[k] * 2.0f;
+	ok = ok && z.ia[0] == 0x11223345 && z.ia[1] == -1 &&
+			z.ia[2] == 0x55667789 && z.fa[1] == -4.5f && z.fa[0] == 1.5f;
+
 	printf("%s\n", ok ? "OK" : "FAIL");
 	return 0;
 }
