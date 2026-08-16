@@ -48743,3 +48743,32 @@ Assessed slice 2 on the confirmed slice-1 base (the VT_REVSO mechanism is fleet-
 - **rev-SO pointer type (2e):** gcc gives `&member` a special pointer type whose loads/stores swap; slice 1 refuses `&member`. Needs the pointer-type carrier.
 
 Slice 1 (integer scalars, the common/dangerous case and the row's DoD) is landed and fleet-verified; slice 2 is completeness for rarer shapes. Left OPEN as claimable increments. **Source.** mac-arm64, 2026-08-16.
+
+<a id="t-lin-10010-x86-64-miscompile-reversed-so-8-byte-member-compare-at-offset-16"></a>
+## T-lin-10010 — x86_64 MISCOMPILE: reversed-SO 8-byte member compare at a nonzero offset (lin-x64, 2026-08-16)
+
+Found on lin's native x86_64 no-GPU §8 suite: mac's new tests/exec/types/sso.c fails
+17 exec*/sso cells (exec/sso base + every opt/strategy variant). Confirmed a REAL
+miscompile, not a harness/load artifact: `cmake-debug/mcc sso.c && ./a.out` prints
+**FAIL** on x86_64; **gcc-16 prints OK** on the same file. mac verified T-lin-10010
+slice 1 only on arm64-Darwin ("byte-identical to gcc-16") — the §12 mirror of
+T-mac-30007.
+
+NARROWED to ONE clause (split the sso.c `ok` &&-chain, /tmp/ssos.c): c8 =
+`x.ll == 0x0102030405060708ull` is the only false term (mcc c1..13 = 1111 11011 1111
+vs gcc 1111 11111 1111). x.ll is the 8-byte big-endian `unsigned long long` member at
+struct offset 16.
+
+KEY: the VALUE is read correctly, only the COMPARE at offset 16 is wrong.
+- `printf("%016llx", x.ll)` prints 0102030405060708 (correct) even in the failing run.
+- In ISOLATION — `struct{ unsigned long long ll; }` (ll at offset 0) — both the direct
+  compare `x.ll==lit` and via-copy compare are TRUE on mcc (/tmp/ssoll.c). So the bug
+  needs the member at a NONZERO offset (16 here, after u/i/s + 6 pad), not the type alone.
+- The byte layout is correct (memcpy dump matches gcc: ll bytes at b[16..23] = 01..08),
+  and reads through printf are correct. So store-swap + the printf-arg load-swap are
+  fine; the miscompile is the load-swap (or its absence) of the 8-byte reversed member
+  feeding a `==` when the member sits at a nonzero offset.
+
+REPRO (x86_64): tests/exec/types/sso.c (mcc FAIL / gcc OK); minimal split in the note.
+Fix region: mac's reversed-SO load lowering (the VT_REVSO=0x10000 path) for a >4-byte
+member at offset != 0, in a compare context, on x86_64. **Source.** lin-x64, 2026-08-16.
