@@ -96,8 +96,8 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10006-parse-the-m512-m256h-m128h-types | DEPS: —
 - [ ] T-lin-10010 [S] Implement reversed `scalar_storage_order`; refusing it is the safe interim, not the feature
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-16T18:10Z
-      REF: DETAILS.md#t-lin-10010-implement-reversed-scalar-storage-order | DEPS: — | NOTE: RELEASED after investigation — this is a flag-bit codegen feature, not a quick slice; full design (SymAttr reverse_so bit, the src/mccgen.c:6136 parse change + :13743 member-access tag site, the load/store bswap, and the slice-1 refuse-list) is in DETAILS.md#t-lin-10010-scoping-2026-08-16-sso-is-a-flag-bit-feature-not-a-quick-slice. Resume from there. LOW regression risk (swap path only fires for reverse_so structs, which no existing code declares).
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-16T18:20Z
+      REF: DETAILS.md#t-lin-10010-scoping-2026-08-16-sso-is-a-flag-bit-feature-not-a-quick-slice | DEPS: — | NOTE: EXECUTING slice 1 from the scoped design (SymAttr reverse_so, parse change, member-access tag, load/store bswap, refuse-list). LOW regression risk (swap path only fires for reverse_so structs, which no existing code declares).
 - [ ] T-lin-10013 [S] `__int256` has no literal suffix
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10013-int256-has-no-literal-suffix | DEPS: —
