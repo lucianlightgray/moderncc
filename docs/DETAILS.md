@@ -48338,3 +48338,28 @@ NEXT (slice 1b follow-ons, not blocking): round-robin/explicit routing policy fo
 multi-device spread (the API is the substrate); a per-slot host-import proc if host-import is ever
 active on >1 device at once (today re-resolved on route, correct but re-resolves each switch);
 concurrent tuple-split across devices (needs lin T-lin-10040 + T-lin-10081).
+
+<a id="t-lin-10086-arm64-windows-float128-intpromo-specifics"></a>
+
+## T-lin-10086 — the two arm64-Windows-specific exec subjects (win-x64, 2026-08-16)
+
+From the current-main WoA suite reading (DETAILS#t-lin-10086-woa-suite-reading-on-current-main-89-triaged),
+after removing the bitfield_width64 test-ABI cluster, the genuine arm64-Windows subjects are two
+exec families that PASS on x86_64 mcc but report `(mismatch)` on the windows-arm64-msvc self-hosted
+suite (mcc output ≠ the arm64 reference compiler), across all ~20 opt-variants each:
+
+- **float128** (~20): mac's T-lin-10007 implemented __float128 on arm64 and verified it BYTE-identical
+  to gcc-16 on **arm64-Darwin** (AAPCS64). Windows-on-ARM64 uses a different C ABI than Darwin AAPCS64
+  (parameter homing, 128-bit alignment/passing, varargs), so mcc's arm64 __float128 param/return
+  codegen — correct for Darwin — mismatches the arm64-Windows reference. This is arm64-Windows __float128
+  ABI, a NEW subject exposed only now that the runner self-hosts and runs the float128 exec differential.
+- **integer_promotion** (~20): mismatch on arm64-Windows, clean on x86_64 mcc — an arm64 codegen or
+  arm64-Windows-ABI difference in integer promotion/conversion. Narrower repro not yet isolated.
+
+FIXABILITY: both need the arm64-Windows executor to verify, i.e. the WoA CI loop (push to woa/bootstrap
+→ ~45-90 min). No local arm64-Windows executor exists (win-x64 is x86_64; mac is arm64-Darwin, a
+DIFFERENT ABI, so mac cannot verify arm64-Windows either). They are honest arm64-Windows-ABI subjects,
+distinct from T-lin-10086's core (arm64-win32 EXECUTION on the runner), which is DEMONSTRATED: the
+runner builds mcc, self-hosts it, and runs the 9536-cell suite at 99%. Recommend splitting each into
+its own [S] task (arm64-Windows __float128 ABI; arm64-Windows integer_promotion) rather than gating
+T-lin-10086 on them — the executor + self-host + suite (the task's subject) are proven.
