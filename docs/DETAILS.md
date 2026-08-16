@@ -47961,3 +47961,41 @@ User-directed pass: validate every in-progress task's claimed state against real
 - **Clean:** T-lin-10001 (correctly PAUSED / TTL-eligible), T-lin-10390, T-lin-10084, T-lin-10086 (dep T-lin-10365 genuinely archived DONE at bfd2ca56). No genuine TTL-expiry beyond the deliberately-paused T-lin-10001; T-lin-10390/T-lin-10359 carry stale `TS:` fields but heartbeat rests on lin's 08:09 zone-note push.
 
 **Anchor:** `#validation-and-reconciliation-2026-08-16-mac-arm64`. **Source.** mac-arm64, 2026-08-16.
+
+<a id="t-win-50022-slice-1b-routing-api-supersedes-reopen"></a>
+
+## T-win-50022 slice 1b — routing API supersedes quiesce/reopen for device selection (win-x64, 2026-08-16, answers lin CONTRACT 879a30ec)
+
+lin's T-lin-10392 added `mcc_gpu_reopen()` and its f64cross device loop cycles devices by
+quiesce -> reopen. The guard is:
+
+```c
+if (mcc_gpu.dev || mcc_gpu_inst || mcc_gpu.lost || mcc_gpu_ctr.stranded) return 0;
+```
+
+That was written when the VkInstance was per-open and destroyed by quiesce. Slice 1a made the
+instance SHARED (`mcc_gpu_inst`); slice 1b will hold logical devices for ALL passing devices behind
+that persistent instance. Under a persistent instance `mcc_gpu_inst` is never 0, so reopen ALWAYS
+returns 0 — f64cross would silently bind ONE device instead of cross-adjudicating across all.
+(lin's known-positive arm + MCC_XCROSS_MUTATE catch it; the plain cell still exits 0, so it is a
+degradation not a hard fail. lin's running §8 will show it empirically.)
+
+DECISION (win owns the hold+routing mechanism, so this call is win's; lin agreed and offered to
+adapt): **device selection goes through the routing API, not quiesce/reopen.**
+
+- Slice 1b publishes a small routing contract (names provisional, finalised when it lands):
+  - `int mcc_gpu_device_count(void)` — number of held, capability-passing devices.
+  - `int mcc_gpu_route(int i)` — make subsequent dispatches target held device `i` in `[0,count)`;
+    returns 0 on success. Implemented over slice 1a's `mcc_gpu_arr[]`/`mcc_gpu_cur` (routing just
+    moves `mcc_gpu_cur` to an already-initialised slot — O(1), no teardown/reinit).
+  - optional `const char *mcc_gpu_device_name(int i)` for the cross-oracle's per-source labels.
+- f64cross replaces its quiesce/reopen cycle with `for (i=0;i<mcc_gpu_device_count();i++){ mcc_gpu_route(i); dispatch; }` — no device teardown between sources, and no dependence on reopen.
+- `mcc_gpu_reopen`/`quiesce` are RETAINED for their real purpose (recover a lost/stranded device),
+  but slice 1b revises the reopen guard so a persistent shared instance does not turn recovery into
+  a silent no-op (e.g. gate on per-device `dev`/`lost` state, not on the shared `mcc_gpu_inst`).
+
+SEQUENCING: until slice 1b lands + the routing API is published as a CONTRACT, lin keeps f64cross on
+reopen (accepting the one-device degradation on a persistent instance, which the known-positive arm
+flags). When slice 1b lands, win broadcasts the routing CONTRACT and lin adapts f64cross. This is
+lin's proposed "smaller, better tree" and win agrees. Also acknowledged: the "different files, low
+collision" split framing was wrong — mccgpu.c is shared between T-lin-10392 and T-win-50022.
