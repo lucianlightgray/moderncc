@@ -1566,8 +1566,10 @@ def main():
         return 0
     if a.nofb_probe:
         known = bank.get("nofb_miscompiles", {})
+        probed = 0
         for opt in a.levels.split(","):
             r = nofb_probe(mcc, sources, opt, flags=flags, bdir=bdir)
+            probed += r["bodies"]
             result.setdefault(opt, {})["nofb_probe"] = r
             got = sorted("%s::%s" % (f, n) for f, n in r["miscompiles"])
             was = sorted(known.get(opt, []))
@@ -1581,6 +1583,14 @@ def main():
                     if m not in was:
                         bad.append("-%s: new byte-divergent body miscompiles "
                                    "under -fno-replay-fallback: %s" % (opt, m))
+        if not a.update_bank and not a.no_check and not sources:
+            bad.append("nofb-probe ran over an empty source set, so it examined no "
+                       "program at all and passes by measuring nothing (a corpus that "
+                       "resolved to zero files, not a clean one -- zero replay-"
+                       "divergent bodies over a non-empty corpus is a real pass)")
+        else:
+            print("nofb floor: %d source(s) probed, %d replay-divergent body probe(s) "
+                  "across %s" % (len(sources), probed, a.levels))
         if a.update_bank:
             bank["nofb_miscompiles"] = known
             json.dump(bank, open(a.bank, "w"), indent=1, sort_keys=True)
