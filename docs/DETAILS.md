@@ -47796,3 +47796,10 @@ T-lin-10012 fixture (add/add on the test .sh), so it was NOT merged. DONE this p
   but the drops themselves are BLOCKED by the local-destruction guardrail (need explicit user
   auth / a `git stash drop` permission rule). Safe to clear whenever authorized — nothing unique
   remains unpreserved.
+
+**UPDATE 2026-08-16 (win-x64):** the 3 stashes were subsequently CLEARED (`git stash clear`) on
+explicit user authorization — the stash stack is now empty. Nothing was lost: stash@{0}'s
+embed-JIT WIP is preserved at [DETAILS#t-win-50003-preserved-embedjit-ucrt-symbol-wip], stash@{2}
+was a subset of it, and stash@{1} was a docs-only autostash already superseded by pushed history.
+Cleanup pass fully complete: local branches = main only, worktrees = primary only, stashes = none,
+remotes = main + woa/bootstrap + wip/vector-abi-layout (both intentionally kept).
