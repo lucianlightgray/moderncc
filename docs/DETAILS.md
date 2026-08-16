@@ -48664,3 +48664,25 @@ flag. Remaining risk is purely execution: restructure the __try handler around s
 disturbing the green __except path, get the cleanup-kind emission right, and cl-differential every
 exit case (return/break/goto/continue/nested __try/__finally, void/int/struct returns). A focused
 fresh-context slice, but no longer an open design question.
+
+<a id="t-lin-10010-blocker-2026-08-16-no-free-flag-bit-for-the-per-access-swap-marker"></a>
+## T-lin-10010 BLOCKER — no free flag bit for the per-access swap marker (mac-arm64, 2026-08-16)
+
+Implemented the whole slice-1 mechanism and hit a hard wall at the one piece the scoping note flagged as the risk: the per-access "byte-swap me" marker has NO free bit to live in. This is the blocker to solve FIRST next time; everything else works.
+
+**The wall (measured):** `SValue.r` is `unsigned short` (src/mcc.h:246, 16-bit) and its bits are FULLY allocated through `VT_BOUNDED = 0x8000` (bit 15). `VT_REVSO = 0x10000` (bit 16) is silently TRUNCATED to 0 on assignment — confirmed by trace: the member-access site sets it (`base_revso=1`) but `vstore` reads `dest.r=0x132` with the bit gone. The `.t` (CType.t, 32-bit) namespace is also full in the flag range: bits 0-20 are all allocated (VT_BTYPE..VT_CONSTEXPR 0x100000) and bits 21-31 are the `VT_STRUCT_MASK` struct-tag region. So neither field has a free bit.
+
+**Flag-home options for the next session (pick one, then the rest is a straight shot):**
+1. **Widen `SValue.r`** from `unsigned short` to a 32-bit type (and likely `r2` too). Clean (`VT_REVSO=0x10000` then fits), but needs an audit of every place that treats `r` as 16-bit — `%hx`/`%hu` prints, 16-bit masks, `r`/`r2` copies, and the SValue size assumption. Grep `->r` / `\.r2` broadly. Grows SValue by 2-4 bytes.
+2. **Struct-tag value on `CType.t`** in the 21-31 region (the `VT_BITINT` pattern from T-lin-10004) WITHOUT setting `VT_BITFIELD`, on the scalar member type. Fragile the same way `VT_BITINT` was: `VT_TYPE = ~(VT_STORAGE | VT_STRUCT_MASK)` STRIPS bits 21-31, so it must survive the exact normalizations between the member-access site and `gv`/`vstore` — audit `compare_types` and any `& VT_TYPE` on the member lvalue. `.t` survives SValue copies better than `.r`.
+
+**Everything else is done and correct (reverted with the flag, re-apply once a home exists):**
+- `SymAttr` gained `reverse_so : 1` (one free bit remained, 31→32). Parser (src/mccgen.c ~6136, the `TOK_SCALAR_STORAGE_ORDER1/2` case): set `ad->a.reverse_so = 1` on "big-endian" instead of erroring.
+- `struct_layout` (src/mccgen.c:6467): `type->ref->a.reverse_so = ad->a.reverse_so;` at the top; in the member loop, `if (ad->a.reverse_so)` REFUSE aggregate / array / any `VT_BITFIELD` (covers `_BitInt`) / `is_float` members (slice 1 = integer scalars only) — these `mcc_error`s VERIFIED firing.
+- Member access (src/mccgen.c ~13748): capture `base_revso = (vtop->type.t & VT_BTYPE)==VT_STRUCT && vtop->type.ref && vtop->type.ref->a.reverse_so` BEFORE `find_field`; after the lvalue is built (VT_LVAL set) tag it with the swap marker — VERIFIED `base_revso=1` for the DoD struct.
+- `gen_sso_bswap(size)` helper: `if (size<=1) return;` else `gen_cast` to `(unsigned short/int/llong)`, then `vpush_helper_func(TOK_builtin_bswapN); vrott(2); gfunc_call(1); vpush(&at); PUT_R_RET(vtop, at.t);` and restore the saved type. Target-independent (arm64 uses the bswap runtime helper). Forward-declare near src/mccgen.c:461; define before `vstore`.
+- LOAD hook at `gv` top (after `seqp_record_sv`): `if ((vtop->r & (VT_LVAL|MARKER)) == (VT_LVAL|MARKER)) { clear MARKER; gv(rc); gen_sso_bswap(size); return vtop->r & VT_VALMASK; }`.
+- STORE hook in `vstore` just before `r = vtop->r & VT_VALMASK;`: `if (vtop[-1].r & MARKER) { gen_sso_bswap(type_size(&vtop[-1].type)); }`.
+- Still TODO after the flag lands: refuse `&member` (address-of a swapped member) in the unary `&` path; a dg-error test for the refuse-list; the gcc-16 byte differential (DoD: `01 02 03 04`).
+
+Released to OPEN. **Source.** mac-arm64, 2026-08-16.
