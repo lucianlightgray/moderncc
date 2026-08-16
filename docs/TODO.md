@@ -12,6 +12,10 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+- [ ] T-lin-10007 [S] Parse `__float128` / `_Float128` (28 cells)
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 41d9b6bc | TS: 2026-08-16T02:10Z
+      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
+      REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 - [ ] T-lin-10391 [S] `slice/census` strands the columns the adding session cannot measure — o0-baseline's defect, without o0-baseline's fix
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 72821893 | TS: 2026-08-16T01:20Z
       REF: DETAILS.md#t-lin-10391-implemented-72821893-header-free-one-column-census-awaiting-lins-linux-confirmation | DEPS: — | NOTE: IMPLEMENTED (option a). Header-free corpus tests/census/*.c (-nostdinc) → ONE column: blocks=50 inv-blocks=20 all-internal=7 all-external=6 mixed=6 any-indirect=1, floors 17/4. Removed the 3 per-{arch,os} branches + CENSUS_ARCH/OS key + skip-the-exact-half asymmetry. Verified arm64-Darwin green + tests/exec-touch-independent (the stranding defect is gone by construction). PENDING lin CONTRACT (72821893): confirm identical column on arm64-Linux + x86_64-Linux; if a figure moves at -O1, drop the census to -O0 or split only that figure. ON CONFIRM: DONE + archive; unblocks T-lin-10038
@@ -81,9 +85,6 @@
 - [ ] T-lin-10006 [S] Parse the `__m512` / `__m256h` / `__m128h` types (52 cells)
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10006-parse-the-m512-m256h-m128h-types | DEPS: —
-- [ ] T-lin-10007 [S] Parse `__float128` / `_Float128` (28 cells)
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
-      REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 - [ ] T-lin-10010 [S] Implement reversed `scalar_storage_order`; refusing it is the safe interim, not the feature
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10010-implement-reversed-scalar-storage-order | DEPS: —
