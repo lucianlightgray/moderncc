@@ -96,8 +96,8 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10006-parse-the-m512-m256h-m128h-types | DEPS: —
 - [ ] T-lin-10010 [S] Implement reversed `scalar_storage_order`; refusing it is the safe interim, not the feature
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-16T18:20Z
-      REF: DETAILS.md#t-lin-10010-scoping-2026-08-16-sso-is-a-flag-bit-feature-not-a-quick-slice | DEPS: — | NOTE: EXECUTING slice 1 from the scoped design (SymAttr reverse_so, parse change, member-access tag, load/store bswap, refuse-list). LOW regression risk (swap path only fires for reverse_so structs, which no existing code declares).
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-16T18:25Z
+      REF: DETAILS.md#t-lin-10010-implementation-recon-2026-08-16-hooks-located | DEPS: — | NOTE: PAUSED (heartbeat intentionally stale → TTL-eligible for any session incl. me next). Slice 1 is ATOMIC (no safe partial landing) and touches a target-dependent bswap; design + concrete hooks (SymAttr free bit, VT_REVSO=0x10000 in .r, vstore:5904 store hook, gv load hook, gen_bswap x86_64-inline/arm64-helper split, refuse-list) are in DETAILS. Resume from the recon anchor. LOW regression risk (swap path only fires for reverse_so structs, which no existing code declares).
 - [ ] T-lin-10013 [S] `__int256` has no literal suffix
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10013-int256-has-no-literal-suffix | DEPS: —

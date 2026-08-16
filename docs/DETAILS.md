@@ -48490,3 +48490,16 @@ Per-row:
   facet 2 (arg/return marshalling) lin af5aeab6 — fleet-verified x86_64 (lin) + arm64
   (mac). All 25 bitint cells green, new [test_call] byte-identical to gcc.
 **Source.** lin-x64, 2026-08-16.
+
+<a id="t-lin-10010-implementation-recon-2026-08-16-hooks-located"></a>
+## T-lin-10010 implementation recon — hooks located, bswap is target-dependent (mac-arm64, 2026-08-16)
+
+Deeper look confirming the scoping note's estimate — slice 1 is atomic (accepting the attribute WITHOUT the swap ships the exact silent-wrong-codegen the row warns against, so there is no safe partial landing) and it touches a target-dependent byte-swap. Concrete hooks for the next session:
+
+- **Flag bits:** `struct SymAttr` (src/mcc.h:270) has exactly ONE free bit (31/32 used through `gcc_struct`) — add `reverse_so : 1`. For the per-access marker, `0x10000` is free in the `.r` (SValue) namespace (`VT_INLINE`/`VT_TLS`/etc. at 0x10000+ are `.t` STORAGE bits, a DIFFERENT field), so `#define VT_REVSO 0x10000` for the SValue flag. RISK: verify `VT_REVSO` survives on `.r` from the member-access site to `gv`/`vstore` (many ops touch `.r`); if it does not, fall back to a `.t` type bit with the `VT_TYPE`-mask care the _BitInt discriminator needed.
+- **Store hook:** `vstore()` scalar arm at src/mccgen.c:5860-5905 — after `gv(MCC_RC_TYPE(dbt))` (5875) and before `store(r, vtop-1)` (5904), if `vtop[-1].r & VT_REVSO` byte-swap the value `vtop` at width 2/4/8.
+- **Load hook:** `gv()` (src/mccgen.c:2493) — after the scalar lvalue is loaded, if the source carried `VT_REVSO`, byte-swap the loaded value.
+- **bswap emission is target-dependent:** `gen_bswap(size)` (macro → `ir_cap_gen_bswap`) is inlined only under `#if MCC_TARGET_X86_64` + `bswap_inline_on()` (see the `TOK_builtin_bswap*` case, src/mccgen.c:13292); other targets route through a helper call (`vpush_helper_func(TOK_builtin_bswapN)` + `gfunc_call`). SSO's swap must use the same target split — so the arm64 verification path exercises the helper route, and slice 1 must confirm `ir_cap_gen_bswap` covers arm64 or wire the helper.
+- 1-byte and `_Bool` never swap; float/double swap the integer bit-pattern then reinterpret. Refuse-list (keep the hard error): nested aggregate members, array members, bit-field members, `&member`.
+
+State: OWNED by mac-arm64, heartbeat intentionally stale → TTL-eligible for any session to resume from this recon. **Source.** mac-arm64, 2026-08-16.
