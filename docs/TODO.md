@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30007   | 2026-08-16T01:19Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30007   | 2026-08-16T03:15Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10393   | 2026-08-16T02:05Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50023   | 2026-08-16T02:33Z |
 
@@ -14,11 +14,9 @@
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 - [ ] T-lin-10015 [S] `__int256` arithmetic is a call per operation
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 701047bc | TS: 2026-08-16T02:40Z | NOTE: MEASUREMENT + MARSHALLING DIAGNOSIS DONE (DETAILS#t-lin-10015-measurement-int256-op-cost-marshalling-dominates + #t-lin-10015-marshalling-source-pinned-register-indirect-operand-copies). Each __int256 op = 1 __mcc_i256_* call + ~3 memmove (32B); the memmoves are wide256_materialize copying register-indirect (*ptr, from by-pointer params) operand lvals because wide256_sv_is_stable_lval accepts only VT_LOCAL/CONST-SYM. gen_cast(same __int256) already retypes without copy; the fast path already skips VT_LOCAL. OPTIMIZATION (next slice): widen the no-copy path to addressable register-indirect lvals (save the 8B address, not the 32B value), re-check the VT_LOCAL-only rationale, verify wide256/gmp-diff 9402 rows + re-measure. Body: src/wide256_slice.h gen_wide256_op/wide256_materialize.
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10015-int256-arithmetic-is-a-call-per | DEPS: —
 - [ ] T-lin-10007 [S] Parse `__float128` / `_Float128` (28 cells)
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 41d9b6bc | TS: 2026-08-16T02:10Z | NOTE: SLICE 1 LANDED (844b9abf, DETAILS#t-lin-10007-float128-slice-1-arm64-implemented-verified-vs-gcc16). __float128 works on arm64 (VT_FLOAT128=17, gated MCC_HAVE_FLOAT128=arm64||riscv64), BYTE-IDENTICAL to gcc-16 across arith/cmp/neg/conversions; new tests/exec/types/float128.c; fixed 3 dormant bugs (float128.c f128_t guard, arith type-combine demote-to-float, unprototyped 2nd-16B-arg). x86_64/i386/arm still REFUSE (honest). SLICE 2 (lin): add __*tf* tokens + SysV binary128 ABI on x86_64 + the 28 gated float128 cells; riscv64 wired-but-UNVERIFIED. CONTRACT lin: bank o0-baseline cross keys (x86_64 + 4 win32) for BOTH tests/exec/types/bf16.c AND float128.c — the -gated o0 cells are red until then (bf16.c was left unbanked since T-lin-10005).
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 - [ ] T-lin-10391 [S] `slice/census` strands the columns the adding session cannot measure — o0-baseline's defect, without o0-baseline's fix
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 72821893 | TS: 2026-08-16T01:20Z
@@ -53,6 +51,7 @@
 
 ## Open — claimable
 - [ ] T-lin-10004 [S] Implement `_BitInt(N)` (C23 6.2.5); the keyword is diagnosed, the type is absent
+      OWNER: — | STATE: OPEN | SHA: aa0bbf71 | TS: 2026-08-16T03:15Z
       REF: DETAILS.md#t-lin-10004-implement-bitintn-c23-625-the-keyword | DEPS: — | NOTE: SCOUTED+DESIGNED (DETAILS#t-lin-10004-bitint-design-... + #t-lin-10004-bitint-slice-1-crux-reuse-vt-bitfield-...). Slice 1 (N<=64) = storage int + precision-N reduce (reuse VT_BITFIELD bs=N or a new VT_BITINT), plumbing precision through the declarator flow; atomic front-end gate; gcc-16 differential. Slice 2 = multi-limb N>64. Released for a focused pass.
 - [ ] T-lin-10388 [S] Host-local provisioning vanishes silently, and every loss gets re-recorded as a permanent fleet property
       OWNER: — | STATE: OPEN | SHA: ab7281f0 | TS: 2026-08-15T23:34Z
