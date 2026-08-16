@@ -58,7 +58,7 @@
 
 ## Open — claimable
 - [ ] T-mac-30007 [S] `_BitInt(N)` does not reduce a live (non-stored) modular temporary on widening conversion
-      OWNER: — | STATE: OPEN | SHA: e3b86293 | TS: 2026-08-16T14:10Z
+      OWNER: mac-arm64 | STATE: CLAIMED | SHA: e3b86293 | TS: 2026-08-16T14:20Z
       REF: DETAILS.md#validation-and-reconciliation-2026-08-16-mac-arm64 | DEPS: — | NOTE: found validating T-lin-10004 slice 1 on native arm64. Widening a live modular `_BitInt` arithmetic temporary to a wider type skips the mod-2^N reduce, diverging from gcc-16 (well-defined unsigned wraparound, NOT UB): `(unsigned)(u+u)` with `u=(unsigned _BitInt(9))500` → mcc 1000 vs gcc 488; `(unsigned)(u*u)` → mcc 250000 vs gcc 144; reproduced -O0 and -O2 (`/tmp/bitint_repro.c`). The stored path narrows correctly (`w=u+u; (unsigned)w` → 488 both). Root: N-bit reduce fires on vstore()/non-modular ops but not on a widening conversion of a live temporary (src/mccgen.c / src/wide256_slice.h region). The banked tests/exec/types/bitint.c only exercises the STORED path, so exec 357/357 misses this class — fix must ADD a non-stored-temp differential cell. Verify: extend bitint.c with widening-of-temporary cases + gcc-16 differential green at -O0..-O3.
 - [ ] T-lin-10388 [S] Host-local provisioning vanishes silently, and every loss gets re-recorded as a permanent fleet property
       OWNER: — | STATE: OPEN | SHA: ab7281f0 | TS: 2026-08-15T23:34Z
