@@ -48715,3 +48715,18 @@ defect in whichever cell it lands on. A -j1 serialised run (its attack-plan step
 load-dependence from ordering; not run here (win drives the runner via CI and the default suite is
 parallel). Two clean runs are two data points toward the N-consecutive-zero-SEGFAULT verification
 spec, nowhere near N yet.
+
+<a id="t-lin-10010-slice-1-landed-2026-08-16-scalar-storage-order-integer-scalars"></a>
+## T-lin-10010 SLICE 1 LANDED — reversed scalar_storage_order for integer scalar members (mac-arm64, 2026-08-16)
+
+Landed at **7fd7d9b0**. `struct __attribute__((scalar_storage_order("big-endian"))) { unsigned v; }` now stores `v` byte-reversed on the (little-endian) target, BYTE-FOR-BYTE identical to gcc-16 across widths 1/2/4/8, signed+unsigned, on write / read / arithmetic round-trip (the DoD `0x01020304` → `01 02 03 04` holds, and the wider matrix too). Supersedes the hard-error interim.
+
+**The flag-bit blocker (from the earlier recon) was solved by widening `SValue.r`.** `SValue.r`/`r2` went from `unsigned short` to `unsigned int` so `VT_REVSO = 0x10000` fits; PROVEN byte-identity-safe on arm64 — with the widening alone, `exec` + `ast/o0-baseline`(+gated,+kp) + `jit/replay-parity` + `emitmap` were 363/363 green, and the final arm64-osx re-bank shows ZERO object drift beyond the new `sso.c` line (so the widened SValue changed neither codegen nor the captured-vstack byte-identity that o0-baseline/replay guard). No `%hx`/`(unsigned short)`/`&0xffff` assumptions on `->r` exist; the SValue copies use `sizeof(SValue)`. The alternative type-tag approach was not needed.
+
+**Mechanism (all in src/mcc.h + src/mccgen.c):** `SymAttr.reverse_so`; parser sets it on "big-endian"; `struct_layout` stores `type->ref->a.reverse_so` and `mcc_error`s the slice-2 shapes (aggregate / array / bit-field/_BitInt / float members); member access tags the scalar-member lvalue `VT_REVSO`; `gv()` loads raw then `gen_sso_bswap`, `vstore()` `gen_sso_bswap`s then stores; `gen_sso_bswap(size)` byte-swaps in place via the `__builtin_bswap{16,32,64}` runtime path (target-independent — arm64 uses the helper); `&member` refused with gcc's message.
+
+**Tests:** `tests/exec/types/sso.c` (byte-checked, `OK`, in exec 360/360); `dg-error/scalar_storage_order_be.c` repurposed to the array-member refusal; `scalar_storage_order_bad.c` (middle-endian) unchanged.
+
+**SLICE 2 (open, claimable):** the refused shapes — recursive SSO on nested aggregate members, array members (swap each element), bit-field/_BitInt members (masked + swapped), and float/double members (swap the bit-pattern) — plus gcc's rev-SO pointer type for `&member` (slice 1 refuses it). Each is a bounded extension on the landed mechanism.
+
+**CONTRACT — cross o0-baseline re-bank:** the new `sso.c` fixture stales the OTHER 6 o0-baseline keys (x86_64, x86_64-win32, i386-win32, arm64-win32, arm-win32, x86_64-osx) in BOTH the plain and `-gated` banks; a Linux/Windows cross box must re-bank them (`C2_NO_EXTRA=1 O0_AB_BANK=1 tools/o0_ab.sh cmake-cross measurable` + the `MCC_DEV=1 O0_AB_GATES=1` line). Only arm64-osx is banked here (this mac has no cross compilers). **Source.** mac-arm64, 2026-08-16.
