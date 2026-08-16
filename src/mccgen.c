@@ -15359,24 +15359,37 @@ again:
 			   they are invisible to the normal control-flow graph; re-enable code
 			   emission (the jump over them above turned it off). */
 			CODE_ON();
-			filt_start = ind;
 			filt = 0;
 			filt_end = 0;
-			gexpr();
 			/* A compile-time integer constant keeps the proven raw-DWORD path
-			   (HandlerAddress = 1/0/~0). Anything else — a global read, a runtime
-			   expression — becomes a filter funclet the dispatcher calls with
-			   (EXCEPTION_POINTERS* in rcx, EstablisherFrame in rdx), returning its
-			   int result in eax. */
+			   (HandlerAddress = 1/0/~0) with no funclet. Anything else — a global
+			   read, a parent-local read, a runtime expression — becomes a filter
+			   funclet the dispatcher calls as
+			     LONG filt(EXCEPTION_POINTERS *rcx, ULONG64 EstablisherFrame rdx)
+			   returning its int result in eax. The funclet's `mov rbp, rdx` sets rbp to
+			   the establisher frame (= this function's rbp, since its unwind declares
+			   FrameRegister=rbp/FrameOffset=0), so the filter's [rbp+off] parent-local
+			   references resolve against the faulting frame. The prologue is emitted
+			   BEFORE gexpr() so every byte the filter generates (deferred loads and any
+			   inline arithmetic) lands after rbp is live. If the filter turns out
+			   constant, ind rewinds over the prologue and no funclet is recorded. The
+			   funclet body sits inline after the handler, out of the fallthrough path
+			   (the jover jump already skips funclet+handler). */
+			filt_start = ind;
+			g(0x55);             /* push rbp */
+			g(0x48); g(0x8b); g(0xea); /* mov rbp, rdx  (rbp = establisher frame) */
+			gexpr();
 			filt_is_const = ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST);
 			if (filt_is_const) { MCC_TRACE("br\n");
 				filt = vtop->c.i;
 				vpop();
+				ind = filt_start; /* discard the funclet prologue; use the raw-DWORD path */
 			} else { MCC_TRACE("br\n");
 				gen_cast_s(VT_INT);
-				gv(MCC_RC_RAX);
+				gv(MCC_RC_RAX);      /* materialise the filter result into eax */
 				vpop();
-				g(0xc3); /* ret — the funclet is a leaf: <load filter -> eax>; ret */
+				g(0x5d);             /* pop rbp */
+				g(0xc3);             /* ret */
 				filt_end = ind;
 			}
 			skip(')');

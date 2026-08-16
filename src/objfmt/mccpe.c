@@ -3006,8 +3006,10 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { 
 	put_elf_reloc(symtab_section, pd, o + 8, R_XXX_RELATIVE, s1->uw_xsym);
 
 	/* Each non-constant __except filter funclet gets its own RUNTIME_FUNCTION (.pdata)
-	   + UNWIND_INFO (.xdata). The funclet is a leaf (`<load>; ret`, no prolog/codes), so
-	   its UNWIND_INFO is the 4-byte header Version=1/Flags=0/SizeOfProlog=0/CountOfCodes=0.
+	   + UNWIND_INFO (.xdata). The funclet prologue is `push rbp` (1 byte) then
+	   `mov rbp, rdx` (not a stack op, so not an unwind code), so its UNWIND_INFO is
+	   Version=1/Flags=0/SizeOfProlog=1/CountOfCodes=1 with one UWOP_PUSH_NONVOL(rbp) at
+	   CodeOffset=1; rbp is NOT the frame register (set from rdx, not rsp), FrameRegister=0.
 	   .pdata stays sorted by address: the funclet lies within its parent's body, so its
 	   BeginAddress is above the parent start emitted just above and below the next
 	   function's start emitted on the next call. */
@@ -3015,16 +3017,15 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { 
 		int i;
 		for (i = 0; i < seh_nscope; i++) { MCC_TRACE("br\n");
 			unsigned fx, fpo;
-			unsigned char *fq, *fpq;
+			unsigned char *fpq;
 			if (!seh_scopes[i].filt_funclet)
 				{ MCC_TRACE("br\n"); continue; }
 			section_ptr_add(xd, -xd->data_offset & 3);
 			fx = xd->data_offset;
-			fq = section_ptr_add(xd, 4);
-			fq[0] = 0x01; /* Version 1, Flags 0 (funclet carries no handler) */
-			fq[1] = 0x00; /* SizeOfProlog 0 */
-			fq[2] = 0x00; /* CountOfCodes 0 */
-			fq[3] = 0x00; /* FrameRegister 0 */
+			/* header: Ver1/Flags0, SizeOfProlog=1, CountOfCodes=1, FrameReg=0 */
+			write32le(section_ptr_add(xd, 4), 0x00010101);
+			/* unwind code[0]: CodeOffset=1, UWOP_PUSH_NONVOL(op0) OpInfo=5(rbp); pad slot */
+			write32le(section_ptr_add(xd, 4), 0x00005001);
 			fpo = pd->data_offset;
 			fpq = section_ptr_add(pd, 12);
 			write32le(fpq, seh_scopes[i].filter);   /* funclet BeginAddress */

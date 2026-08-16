@@ -34,6 +34,18 @@ static int guard_nonconst(volatile int *p) {
 	return caught;
 }
 
+/* Filter reads a PARENT LOCAL (a parameter): the funclet must reach the faulting
+   frame through the establisher frame (rbp = rdx) so [rbp+off] resolves `sel`. */
+static int guard_local(volatile int *p, int sel) {
+	int caught = 0;
+	__try {
+		*p = 42;
+	} __except(sel) {  /* sel!=0 -> execute handler; sel==0 -> continue search */
+		caught = 88;
+	}
+	return caught;
+}
+
 /* Nested: the inner non-constant filter evaluates to 0 (EXCEPTION_CONTINUE_SEARCH),
    so the fault must propagate out of the inner funclet to the outer handler. */
 static int guard_nested(volatile int *p) {
@@ -50,8 +62,24 @@ static int guard_nested(volatile int *p) {
 	return caught;
 }
 
+/* Parent-local filter that returns 0 (continue search) from a nested inner __try,
+   so the outer handler catches — exercises establisher-frame local read + propagation. */
+static int guard_local_ns(volatile int *p, int sel) {
+	int caught = 0;
+	__try {
+		__try {
+			*p = 42;
+		} __except(sel) {  /* sel==0 -> continue search */
+			caught = 1;
+		}
+	} __except(1) {
+		caught = 99;
+	}
+	return caught;
+}
+
 int main(void) {
-	int f_av, f_ok, f_div, f_divok, f_nc, f_ns;
+	int f_av, f_ok, f_div, f_divok, f_nc, f_ns, f_lo, f_lns;
 	int x = 11;
 
 	f_av = guard_av(0);          /* null store -> caught -> 7 */
@@ -60,9 +88,11 @@ int main(void) {
 	f_divok = guard_div(20, 4);  /* no fault -> 5 */
 	f_nc = guard_nonconst(0);    /* non-const filter funclet catches -> 55 */
 	f_ns = guard_nested(0);      /* inner funclet continues search, outer catches -> 77 */
+	f_lo = guard_local(0, 1);    /* parent-local filter (sel=1) catches -> 88 */
+	f_lns = guard_local_ns(0, 0);/* parent-local filter (sel=0) continues, outer -> 99 */
 
-	printf("av=%d ok=%d x=%d div=%d divok=%d nc=%d ns=%d\n",
-			f_av, f_ok, x, f_div, f_divok, f_nc, f_ns);
+	printf("av=%d ok=%d x=%d div=%d divok=%d nc=%d ns=%d lo=%d lns=%d\n",
+			f_av, f_ok, x, f_div, f_divok, f_nc, f_ns, f_lo, f_lns);
 	return (f_av == 7 && f_ok == 100 && x == 42 && f_div == 9 && f_divok == 5 &&
-			f_nc == 55 && f_ns == 77) ? 0 : 1;
+			f_nc == 55 && f_ns == 77 && f_lo == 88 && f_lns == 99) ? 0 : 1;
 }
