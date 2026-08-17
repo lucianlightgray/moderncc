@@ -207,4 +207,25 @@ int main(void) {
 	return 0;
 }
 
+#elif defined test_mixwidth
+
+#include <stdio.h>
+typedef _BitInt(70) i70;
+typedef _BitInt(100) i100;
+typedef unsigned _BitInt(90) u90;
+typedef _BitInt(120) i120;
+int main(void) {
+	i70 a = (i70)1000;
+	i100 b = (i100)2000000;
+	printf("add %lld sub %lld\n", (long long)(a + b), (long long)(b - a));
+	i70 x = (i70)-5;
+	i100 y = (i100)3;
+	printf("mul %lld div %lld\n", (long long)(x * y), (long long)(b / a));
+	u90 u = (u90)500;
+	i120 v = (i120)-7;
+	printf("mixsign %lld\n", (long long)(v + u));
+	printf("cmp %d %d %d\n", a < b, b < a, a == (i70)1000);
+	return 0;
+}
+
 #endif

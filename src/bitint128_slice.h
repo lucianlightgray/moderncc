@@ -213,11 +213,13 @@ static void gen_bitint128_op(int op) { MCC_TRACE("enter\n");
 
 	if (lb && rb) { MCC_TRACE("br\n");
 		int ln = bitint128_prec(&vtop[-1].type), rn = bitint128_prec(&vtop[0].type);
-		if (ln != rn)
-			{ MCC_TRACE("br\n"); mcc_error("operation between _BitInt of differing widths "
-												"(%d and %d) is not yet supported", ln, rn); }
-		n = ln;
-		uns = bitint128_is_unsigned(&vtop[-1].type) || bitint128_is_unsigned(&vtop[0].type);
+		int lu = bitint128_is_unsigned(&vtop[-1].type);
+		int ru = bitint128_is_unsigned(&vtop[0].type);
+		/* Usual arithmetic conversions: equal width -> unsigned wins; unequal ->
+		 * the wider _BitInt's type (higher rank) wins entirely, signedness incl. */
+		if (ln == rn) { MCC_TRACE("br\n"); n = ln; uns = lu || ru; }
+		else if (ln > rn) { MCC_TRACE("br\n"); n = ln; uns = lu; }
+		else { MCC_TRACE("br\n"); n = rn; uns = ru; }
 	} else { MCC_TRACE("br\n");
 		CType *b = lb ? &vtop[-1].type : &vtop[0].type;
 		CType *o = lb ? &vtop[0].type : &vtop[-1].type;
