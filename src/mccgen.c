@@ -514,6 +514,14 @@ static void gen_wide256_op(int op);
 static void gen_wide256_cast(CType *dt);
 static void wide256_deconst(void);
 static void wide256_init_putv(void *ptr, SValue *sv);
+static inline int is_bitint128_type(CType *type);
+static inline int bitint128_is_unsigned(CType *type);
+static int bitint128_prec(CType *type);
+static void bitint128_deconst(void);
+static void mk_bitint128_type(CType *type, int is_unsigned, int n);
+static void gen_bitint128_op(int op);
+static void gen_bitint128_cast(CType *dt);
+static void bitint128_init_putv(void *ptr, SValue *sv);
 static void gen_complex_cast(CType *type);
 static int is_compatible_unqualified_types(CType *type1, CType *type2);
 static inline int64_t expr_const64(void);
@@ -678,6 +686,20 @@ static inline int is_wide256_type(CType *type) { MCC_TRACE("enter\n");
 }
 
 static inline int wide256_is_unsigned(CType *type) { MCC_TRACE("enter\n");
+	return (type->ref->next->type.t & VT_UNSIGNED) != 0;
+}
+
+/* C23 _BitInt(N), slice 2 (64<N<=128): a 16-byte 2-limb struct (tagged
+ * a.is_bitint) whose value is reduced to N bits.  N is carried on the CType
+ * .bs channel (unsigned char, holds N<=255); the struct layout/ABI is the
+ * same for all N of a given signedness, so only two type instances are
+ * cached.  Arithmetic reuses the tested 4-limb __int256 kernel: extend to
+ * __int256, gen_wide256_op, reduce back to N bits. */
+static inline int is_bitint128_type(CType *type) { MCC_TRACE("enter\n");
+	return (type->t & VT_BTYPE) == VT_STRUCT && type->ref && type->ref->a.is_bitint;
+}
+
+static inline int bitint128_is_unsigned(CType *type) { MCC_TRACE("enter\n");
 	return (type->ref->next->type.t & VT_UNSIGNED) != 0;
 }
 
@@ -1412,8 +1434,11 @@ ST_FUNC Sym *sym_push(int v, CType *type, int r, int c) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); ps = &global_stack; }
 	s = sym_push2(ps, v, type->t, c);
 	s->type.ref = type->ref;
-	s->type.bp = (type->t & VT_BITFIELD) ? type->bp : 0;
-	s->type.bs = (type->t & VT_BITFIELD) ? type->bs : 0;
+	{
+		int keep_bpbs = (type->t & VT_BITFIELD) || is_bitint128_type(type);
+		s->type.bp = keep_bpbs ? type->bp : 0;
+		s->type.bs = keep_bpbs ? type->bs : 0;
+	}
 	s->r = r;
 	if ((v & ~SYM_STRUCT) < SYM_FIRST_ANOM) { MCC_TRACE("br\n");
 		sym_link(s, 1);
@@ -2196,6 +2221,7 @@ static void vunpin_reg(int rc, int t) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC void (gaddrof)(void) { MCC_TRACE("enter\n");
+bitint128_deconst();
 	wide256_deconst();
 	if ((vtop->r & VT_REGDISP) && (vtop->r & VT_LVAL)) { MCC_TRACE("br\n");
 		CType sv_type = vtop->type;
@@ -4320,6 +4346,17 @@ static int compare_types(CType *type1, CType *type2, int unqualified) { MCC_TRAC
 			{ MCC_TRACE("br\n"); return 0; }
 	}
 
+	/* Slice-2 _BitInt(64<N<=128): a tagged 2-limb struct whose N rides on .bs.
+	 * The two cached struct instances share a ref per signedness, so distinct
+	 * widths would otherwise compare equal via the generic struct path. */
+	if (is_bitint128_type(type1) || is_bitint128_type(type2)) { MCC_TRACE("br\n");
+		if (!is_bitint128_type(type1) || !is_bitint128_type(type2) ||
+				type1->bs != type2->bs ||
+				bitint128_is_unsigned(type1) != bitint128_is_unsigned(type2))
+			{ MCC_TRACE("br\n"); return 0; }
+		return 1;
+	}
+
 	t1 = type1->t & VT_TYPE;
 	t2 = type2->t & VT_TYPE;
 	if (unqualified) { MCC_TRACE("br\n");
@@ -4482,6 +4519,20 @@ static int combine_types(CType *dest, SValue *op1, SValue *op2, int op) { MCC_TR
 			{ MCC_TRACE("br\n"); mk_wide256_type(&type, uns); }
 		else
 			{ MCC_TRACE("br\n"); type = *type1; }
+	} else if (is_bitint128_type(type1) || is_bitint128_type(type2)) { MCC_TRACE("br\n");
+		CType *b = is_bitint128_type(type1) ? type1 : type2;
+		CType *o = is_bitint128_type(type1) ? type2 : type1;
+		int uns = bitint128_is_unsigned(b);
+		int n = bitint128_prec(b);
+		if (is_bitint128_type(type1) && is_bitint128_type(type2)) { MCC_TRACE("br\n");
+			uns = bitint128_is_unsigned(type1) || bitint128_is_unsigned(type2);
+		} else if (!is_integer_btype(o->t & VT_BTYPE) || is_float(o->t)) { MCC_TRACE("br\n");
+			ret = 0;
+		}
+		if (ret)
+			{ MCC_TRACE("br\n"); mk_bitint128_type(&type, uns, n); }
+		else
+			{ MCC_TRACE("br\n"); type = *type1; }
 	} else if (bt1 == VT_STRUCT || bt2 == VT_STRUCT) { MCC_TRACE("br\n");
 		if (op != '?' || !compare_types(type1, type2, 1))
 			{ MCC_TRACE("br\n"); ret = 0; }
@@ -4564,6 +4615,13 @@ redo:
 	if (is_wide256_type(&vtop[-1].type) || is_wide256_type(&vtop[0].type)) { MCC_TRACE("br\n");
 		rir_hook_cplx_begin();
 		gen_wide256_op(op);
+		rir_hook_cplx_end();
+		return;
+	}
+
+	if (is_bitint128_type(&vtop[-1].type) || is_bitint128_type(&vtop[0].type)) { MCC_TRACE("br\n");
+		rir_hook_cplx_begin();
+		gen_bitint128_op(op);
 		rir_hook_cplx_end();
 		return;
 	}
@@ -5023,6 +5081,13 @@ static void gen_cast(CType *type) { MCC_TRACE("enter\n");
 	if (is_wide256_type(type) || is_wide256_type(&vtop->type)) { MCC_TRACE("br\n");
 		rir_hook_cplx_begin();
 		gen_wide256_cast(type);
+		rir_hook_cplx_end();
+		return;
+	}
+
+	if (is_bitint128_type(type) || is_bitint128_type(&vtop->type)) { MCC_TRACE("br\n");
+		rir_hook_cplx_begin();
+		gen_bitint128_cast(type);
 		rir_hook_cplx_end();
 		return;
 	}
@@ -5732,13 +5797,15 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 			mcc_warning_c(warn_int_conversion)(
 					"assignment makes integer from pointer without a cast");
 		} else if (sbt == VT_STRUCT) { MCC_TRACE("br\n");
-			if (!is_complex_type(st) && !is_wide256_type(st))
+			if (!is_complex_type(st) && !is_wide256_type(st) && !is_bitint128_type(st))
 				{ MCC_TRACE("br\n"); goto case_VT_STRUCT; }
 		}
 		break;
 	case VT_STRUCT:
 	case_VT_STRUCT:
 		if (is_wide256_type(dt) && (is_wide256_type(st) || is_integer_btype(sbt)))
+			{ MCC_TRACE("br\n"); break; }
+		if (is_bitint128_type(dt) && (is_bitint128_type(st) || is_integer_btype(sbt)))
 			{ MCC_TRACE("br\n"); break; }
 		if (is_complex_type(dt) && (is_complex_type(st) || is_integer_btype(sbt) || is_float(st->t)))
 			{ MCC_TRACE("br\n"); break; }
@@ -5783,6 +5850,7 @@ static void gen_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 	}
 	verify_assign_cast(dt);
 	gen_cast(dt);
+	bitint128_deconst();
 	wide256_deconst();
 }
 
@@ -5847,6 +5915,7 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 	rir_hook_vstore();
 
 	seqp_record_sv(vtop - 1, SEQP_WRITE);
+	bitint128_deconst();
 	wide256_deconst();
 
 	if (!atomic_lowering && (vtop->type.t & VT_ATOMIC_BIT) && (vtop->r & VT_LVAL) && atomic_store_needs_generic(vtop))
@@ -5861,7 +5930,12 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 
 	if (is_wide256_type(&vtop[-1].type) && !is_wide256_type(&vtop->type)) { MCC_TRACE("br\n");
 		gen_cast(&vtop[-1].type);
+		bitint128_deconst();
 		wide256_deconst();
+		sbt = vtop->type.t & VT_BTYPE;
+	} else if (is_bitint128_type(&vtop[-1].type) && !is_bitint128_type(&vtop->type)) { MCC_TRACE("br\n");
+		gen_cast(&vtop[-1].type);
+		bitint128_deconst();
 		sbt = vtop->type.t & VT_BTYPE;
 	} else if (!is_wide256_type(&vtop[-1].type) && is_wide256_type(&vtop->type) && dbt != VT_STRUCT) { MCC_TRACE("br\n");
 		gen_cast(&vtop[-1].type);
@@ -6063,7 +6137,8 @@ ST_FUNC void inc(int post, int c) { MCC_TRACE("enter\n");
 							"(only integer/pointer atomics up to a machine word)");
 	}
 	rir_hook_inc(post, c);
-	if (post && (is_complex_type(&vtop->type) || is_wide256_type(&vtop->type))) { MCC_TRACE("br\n");
+	if (post && (is_complex_type(&vtop->type) || is_wide256_type(&vtop->type) ||
+							 is_bitint128_type(&vtop->type))) { MCC_TRACE("br\n");
 		cplx = vtop->type;
 		cplx_local(&cplx, &res);
 		vdup();
@@ -7774,6 +7849,7 @@ static void gen_vector_shuffle(int two_src) { MCC_TRACE("enter\n");
 }
 
 #include "wide256_slice.h"
+#include "bitint128_slice.h"
 
 static int vector_op_ok(int op) { MCC_TRACE("enter\n");
 	switch (op) { MCC_TRACE("br\n");
@@ -9139,9 +9215,17 @@ the_end:
 		if (bitint_n < 1 + !uns)
 			{ MCC_TRACE("br\n"); mcc_error("%d is not a valid width for %s'_BitInt'",
 								bitint_n, uns ? "unsigned " : ""); }
-		if (bitint_n > 64)
+		if (bitint_n > 128)
 			{ MCC_TRACE("br\n"); mcc_error("'_BitInt(%d)' exceeds the %d-bit maximum "
-								"this target supports", bitint_n, 64); }
+								"this target supports", bitint_n, 128); }
+		/* Slice 2: 64 < N <= 128 is a 16-byte 2-limb struct carrying N on .bs. */
+		if (bitint_n > 64) { MCC_TRACE("br\n");
+			int quals = t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_EXTERN |
+											 VT_STATIC | VT_TYPEDEF | VT_INLINE | VT_TLS);
+			mk_bitint128_type(type, uns, bitint_n);
+			type->t |= quals;
+			return type_found;
+		}
 		/* Round the precision up to a storage integer that can hold N bits. */
 		if (bitint_n <= 8)
 			{ MCC_TRACE("br\n"); sbt = VT_BYTE; }
@@ -12748,7 +12832,7 @@ tok_next:
 					break;
 				}
 				if ((type.t & VT_BTYPE) == VT_STRUCT && !is_complex_type(&type) &&
-						!is_wide256_type(&type)) { MCC_TRACE("br\n");
+						!is_wide256_type(&type) && !is_bitint128_type(&type)) { MCC_TRACE("br\n");
 					if (is_compatible_unqualified_types(&type, &vtop->type)) { MCC_TRACE("br\n");
 						mcc_pedantic("ISO C forbids casting nonscalar to the same type");
 					} else if (type.ref->type.t == VT_UNION) { MCC_TRACE("br\n");
@@ -16688,6 +16772,8 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 				}
 			} else if (is_wide256_type(type)) { MCC_TRACE("br\n");
 				wide256_init_putv(ptr, vtop);
+			} else if (is_bitint128_type(type)) { MCC_TRACE("br\n");
+				bitint128_init_putv(ptr, vtop);
 			} else
 				switch (bt) { MCC_TRACE("br\n");
 				case VT_BOOL:
@@ -17015,6 +17101,8 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 		if (!no_oblock)
 			{ MCC_TRACE("br\n"); skip('}'); }
 	} else if ((flags & DIF_HAVE_ELEM) && (is_wide256_type(type) && (is_wide256_type(&vtop->type) || is_integer_btype(vtop->type.t & VT_BTYPE)))) { MCC_TRACE("br\n");
+		goto one_elem;
+	} else if ((flags & DIF_HAVE_ELEM) && (is_bitint128_type(type) && (is_bitint128_type(&vtop->type) || is_integer_btype(vtop->type.t & VT_BTYPE)))) { MCC_TRACE("br\n");
 		goto one_elem;
 	} else if ((flags & DIF_HAVE_ELEM) && (is_compatible_unqualified_types(type, &vtop->type) || (is_complex_type(type) &&
 																																																(is_complex_type(&vtop->type) || is_integer_btype(vtop->type.t & VT_BTYPE) || is_float(vtop->type.t))))) { MCC_TRACE("br\n");

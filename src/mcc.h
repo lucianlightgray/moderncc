@@ -284,6 +284,7 @@ struct SymAttr {
 			is_complex : 1,
 			is_vector : 1,
 			is_wideint : 1,
+			is_bitint : 1,
 			tentative_array : 1,
 			tentative_incomplete : 1,
 			deprecated : 1,
@@ -1001,6 +1002,8 @@ struct MCCState {
 	CType gen_wide256_type_cache[2];
 	int gen_wide256_type_cache_n;
 	int gen_wide256_limb_tok[MCC_WIDE256_LIMBS];
+	CType gen_bitint128_type_cache[2];
+	int gen_bitint128_limb_tok[2];
 	Sym *gen_complex_call_ftype[4];
 	Sym *gen_complex_idiv_ftype[2];
 	unsigned char gen_prec[256];
