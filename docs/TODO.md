@@ -52,7 +52,7 @@
 
 ## Open — claimable
 - [ ] T-mac-30013 [S] Wide-struct value in an implicit boolean context (`if(x)`, `x?:`) reads as always-true — affects `__int256` AND `_BitInt(64<N<=128)`
-      OWNER: — | STATE: OPEN | SHA: a01fc0a0 | TS: 2026-08-17T11:52Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 4c21c53d | TS: 2026-08-17T12:05Z
       REF: DETAILS.md#t-lin-10004-slice-2-landed-2026-08-17-mac-arm64 | DEPS: — | NOTE: found landing T-lin-10004 slice-2. A struct-backed wide value (`__int256`, `_BitInt(65..128)`) used directly as a truth value evaluates always-true: `if((__int256)0)` and `(i100)0 ? A:B` both take the true branch (verified on clean main for __int256, so PRE-EXISTING, not the _BitInt slice). Explicit compares (`x != 0`), `!x`, and `(_Bool)x` all reduce correctly. Root: gvtst_set (mccgen.c:~1668) does `vpushi(0); gen_op(TOK_NE)` producing a VT_CMP that MATERIALIZES to 0/1 correctly (printf shows right value) but JUMPS wrong for a wide-struct comparand. DoD: `if`/`?:`/`while`/`&&`/`||` on __int256 and _BitInt(>64) match gcc-16 (byte-identical exec on arm64+x86_64); extend tests/exec/types/{int256,bitint128}.c with a boolean-context section. Likely a small fix in the VT_CMP sense from the wide compare, or force wide condition operands through the (_Bool) cast path which already works.
 - [ ] T-mac-30009 [S] Reclaim the ~1.5pp arm64 RIR kept-coverage (+3 nofb-miscompiles) that sso slice-1 cost by widening SValue.r — needs a non-fragile home for VT_REVSO
       OWNER: — | STATE: OPEN | SHA: 1caa88cc | TS: 2026-08-17T03:24Z
