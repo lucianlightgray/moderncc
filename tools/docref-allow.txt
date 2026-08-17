@@ -7,3 +7,4 @@
 #   (b) a paragraph whose subject is that the named file was deleted.
 # A stale citation is not one of these.  Fix it instead.
 
+src/wide256_slice.h  # (b) removed by wideint-unify (T-lin-10004 slice-4, dcba0d5f): its __int256 slice was folded into src/wideint_slice.h. The sole citation, docs/DETAILS.md:4392, is a struck-through/retracted historical note (its own text: "FALSE since 81a81f1b") naming the since-deleted file; docs/DETAILS.md is merge=union so the line is not edited in place.

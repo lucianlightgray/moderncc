@@ -1,10 +1,10 @@
 {
- "accepted": 157,
- "accepted_with_s": 103,
+ "accepted": 158,
+ "accepted_with_s": 104,
  "literal_fmt_sites": {
   "fprintf": 427,
   "printf": 457,
-  "snprintf": 177,
+  "snprintf": 178,
   "sprintf": 2
  },
  "max_accepted_cost": 16184,
@@ -16,7 +16,7 @@
   "mcccst.c": 10,
   "mccdbg.c": 0,
   "mccdis.c": 45,
-  "mccgen.c": 29,
+  "mccgen.c": 30,
   "mccgpu.c": 40,
   "mcchost.c": 26,
   "mccircap.c": 2,
@@ -36,18 +36,18 @@
  "sites": {
   "fprintf": 431,
   "printf": 459,
-  "snprintf": 186,
+  "snprintf": 187,
   "sprintf": 2,
   "vfprintf": 2,
   "vsnprintf": 4
  },
  "snprintf_return_consumed": 27,
  "snprintf_site_class": {
-  "blocked-on-pointer": 115,
+  "blocked-on-pointer": 116,
   "float-out-of-scope": 1,
   "literal-only": 8,
   "tranche1": 53
  },
- "snprintf_specifiers_total": 270,
+ "snprintf_specifiers_total": 272,
  "tus": 17
 }
