@@ -1002,8 +1002,8 @@ struct MCCState {
 	CType gen_wide256_type_cache[2];
 	int gen_wide256_type_cache_n;
 	int gen_wide256_limb_tok[MCC_WIDE256_LIMBS];
-	CType gen_bitint128_type_cache[2];
-	int gen_bitint128_limb_tok[2];
+	CType gen_bitint128_type_cache[4];
+	int gen_bitint128_limb_tok[MCC_WIDE256_LIMBS];
 	Sym *gen_complex_call_ftype[4];
 	Sym *gen_complex_idiv_ftype[2];
 	unsigned char gen_prec[256];

@@ -1,9 +1,9 @@
 key=i386-win32
 opt=-O0
-files=321
-objects=308
-rirok=308
-rirfiles=308
+files=322
+objects=309
+rirok=309
+rirfiles=309
 extra=0
 rirextra=0
 fn=1445

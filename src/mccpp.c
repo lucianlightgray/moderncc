@@ -3719,9 +3719,9 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); N = bw < 1 ? 1 : bw; }
 			else
 				{ MCC_TRACE("br\n"); N = (bw + 1) < 2 ? 2 : bw + 1; }
-			if (ov || N > 128)
+			if (ov || N > 256)
 				{ MCC_TRACE("br\n"); mcc_error("'%swb' integer constant exceeds the %d-bit "
-									"_BitInt maximum this target supports", ucount ? "u" : "", 128); }
+									"_BitInt maximum this target supports", ucount ? "u" : "", 256); }
 			tok = ucount ? TOK_CUBITINT : TOK_CBITINT;
 			tok_bitint_width = N;
 			tokc.q.lo = w[0] | ((uint64_t)w[1] << 32);
@@ -5613,9 +5613,10 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 	cstr_printf(cs, "#define __SIZEOF_INT256__ %d\n", MCC_WIDE256_SIZE);
 	/* C23 _BitInt: the widest _BitInt this implementation supports.  Slice 1
 	 * implements N<=64 (single storage integer); slice 2 implements 64<N<=128
-	 * (a 16-byte 2-limb struct riding the __int256 arith kernel).  Wider _BitInt
-	 * is refused, so the macro reports 128 honestly rather than gcc's 65535. */
-	cstr_printf(cs, "#define __BITINT_MAXWIDTH__ 128\n");
+	 * (2-limb 16-byte struct) and 128 < N <= 256 (4-limb 32-byte struct), both
+	 * riding the __int256 arith kernel.  Wider _BitInt is refused, so the macro
+	 * reports 256 honestly rather than gcc's 65535. */
+	cstr_printf(cs, "#define __BITINT_MAXWIDTH__ 256\n");
 #if MCC_HAVE_INT128
 	cstr_printf(cs, "#define __SIZEOF_INT128__ 16\n");
 #endif

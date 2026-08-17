@@ -5957,6 +5957,15 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 		gen_cast(&vtop[-1].type);
 		bitint128_deconst();
 		sbt = vtop->type.t & VT_BTYPE;
+	} else if (is_bitint128_type(&vtop[-1].type) && is_bitint128_type(&vtop->type) &&
+						 (bitint128_prec(&vtop[-1].type) != bitint128_prec(&vtop->type) ||
+							bitint128_is_unsigned(&vtop[-1].type) != bitint128_is_unsigned(&vtop->type))) { MCC_TRACE("br\n");
+		/* Two bitint128 of DIFFERENT precision/signedness: convert (widen/narrow +
+		 * reduce) before the struct copy, else a raw copy would move only the
+		 * source's limbs and leave the dest's upper limbs unwritten. */
+		gen_cast(&vtop[-1].type);
+		bitint128_deconst();
+		sbt = vtop->type.t & VT_BTYPE;
 	} else if (!is_wide256_type(&vtop[-1].type) && is_wide256_type(&vtop->type) && dbt != VT_STRUCT) { MCC_TRACE("br\n");
 		gen_cast(&vtop[-1].type);
 		sbt = vtop->type.t & VT_BTYPE;
@@ -9235,10 +9244,11 @@ the_end:
 		if (bitint_n < 1 + !uns)
 			{ MCC_TRACE("br\n"); mcc_error("%d is not a valid width for %s'_BitInt'",
 								bitint_n, uns ? "unsigned " : ""); }
-		if (bitint_n > 128)
+		if (bitint_n > 256)
 			{ MCC_TRACE("br\n"); mcc_error("'_BitInt(%d)' exceeds the %d-bit maximum "
-								"this target supports", bitint_n, 128); }
-		/* Slice 2: 64 < N <= 128 is a 16-byte 2-limb struct carrying N on .bs. */
+								"this target supports", bitint_n, 256); }
+		/* Slices 2/3: 64 < N <= 256 is a 2-limb (<=128) or 4-limb (<=256) struct
+		 * carrying N on .bs (bs==0 sentinel for N==256). */
 		if (bitint_n > 64) { MCC_TRACE("br\n");
 			int quals = t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_EXTERN |
 											 VT_STATIC | VT_TYPEDEF | VT_INLINE | VT_TLS);
