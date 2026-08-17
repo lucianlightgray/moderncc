@@ -50322,3 +50322,24 @@ ABI: none needed on arm64 — a 16-byte 2-int struct is passed x0:x1 / returned 
 Arithmetic kernel: extend 2->4 limbs canonically, call existing gen_wide256_op, keep low 128b, reduce to N
 (64-bit bitfield-reduce on the HIGH limb only; N==128 no reduce). Const fold: reuse wide256 fold then reduce.
 **Source.** mac-arm64, 2026-08-17.
+
+<a id="t-win-50021-slice-1-strtold-embed-jit-link-fixed"></a>
+
+## T-win-50021 slice 1 DONE — embed-JIT strtold link fixed: a program's libc override wins over the libmingwex archive member (PE)
+
+**Fixed (win-x64, 2026-08-17, code `93c19c75`).** The first of T-win-50021's two slices is closed: `mcc --embed-jit` now links a program that strong-defines a libc function (the `mcctest-embedjit` subject `tests/diff/full_language.c` redefines `strtold` at `tests/diff/parts/legacy_aggregates.h:880`), where before it died with `libmingwex.a: error: 'strtold' defined twice`.
+
+**Root cause (fully traced, not the earlier-disproven theories).** libmingwex's `strtopx.o` (member `lib64_libmingwex_a-strtopx.o`) defines `strtold` **and** the aliases `__mingw_strtold` / `__strtold` (one object, all four names). The mingw CRT scanf engine `mingw_sformat.o` has `U __mingw_strtold`; when the whole-archive JIT blob's CRT usage drags `mingw_sformat.o` in, the alacarte scan of libmingwex then pulls `strtopx.o` to satisfy `__mingw_strtold`, and `strtopx.o`'s incidental `strtold` definition collides with the program's own `strtold`. `mcc_load_alacarte` already skips a directory symbol whose symtab entry is defined (`mccelf.c:3822`), so `strtold` itself is not what pulls the member — an alias is. The reference `mingw gcc` links the same program **clean**: ld never pulls `strtopx.o` (nothing in that link references the aliases), so the program's `strtold` is simply the only one — confirmed by `nm /tmp/fl_gcc.exe` showing a lone `T strtold`, no `__mingw_strtold`. mcc over-pulls via the embed-JIT whole-archive blob chain that ld does not have.
+
+**Fix.** A file-scope flag `ld_alacarte_member` (`src/objfmt/mccelf.c`) is set around the member loads inside `mcc_load_alacarte` and restored at `the_end` (covers the `invalid` path). In `set_elf_sym`, the strong-vs-strong collision arm that would `mcc_error_noabort("'%s' defined twice")` now, **when loading an alacarte archive member on PE**, lets the pre-existing definition win (returns the existing `sym_index`, drops the archive member's colliding def) instead of erroring. This is standard linker precedence — a command-line object outranks an archive member — and matches the reference outcome (the program's `strtold` is the one used; `strtopx.o`'s `__mingw_strtold`/`__strtold` still load harmlessly for the CRT). Scoped `#ifdef MCC_TARGET_PE`: ELF/Mach-O embed-JIT already worked (T-lin-10030 DONE) and keep their exact prior "defined twice" semantics; only the PE mingw over-pull needs the relaxation. The `ld_alacarte_member` static is written on all targets (inert) and read only under PE — no unused-variable warning (file-scope static).
+
+**Verification.**
+- New CI cell **`jit/embed-libc-override`** (`cmake/embedjit_libc_override_link.cmake`, registered at CMakeLists near `jit/embed-nobake-warn`, gated `MCC_EMBED_JIT` + `WIN32` + not emulator/crosscompiling). It writes a minimal source that defines `strtold` and references `extern __mingw_strtold`, builds it `--embed-jit`, and asserts the link exits 0 with no "defined twice". **GREEN.**
+- Regression-proven by controlled rebuild: with the fix stashed, both the minimal cell source AND `full_language.c --embed-jit` fail `'strtold' defined twice` (no binary); with the fix, both link. So the cell fails without the fix.
+- No regression: `mcctest` (non-embedjit, builds+runs `full_language.c` the normal way — the signal that normal archive linking still works) PASS; `jit/embed-nobake-warn`, `jit/replay-parity`, and the full jit family PASS (69 cells, 100% of the run; skips are config-gated). `grep` confirms no test anywhere expects an archive-member "defined twice".
+
+**Remaining for T-win-50021 (slice 2 — the deep half).** The `--embed-jit` binary of `full_language.c` now **links** but exits **rc=127 before `main` prints** — the PE bake/hot-swap path is gated off (CMakeLists.txt `MCC_BUILD_JIT_SELFHOST` help / line ~2981, "PE bake path still gated off … can still SIGBUS on a complex JIT'd variant"). mcc's AOT build of the same file runs fine (rc=0), so the crash is purely the embed-JIT runtime, not codegen. `mcctest-embedjit` (build+run+diff) therefore stays red until slice 2 ungates + fixes the PE hot-swap. That is the note's "real cost" and is not yet attempted.
+
+**Reproduce.** `cmake-msvc-50015/Release/mcc.exe -O1 --embed-jit -DCC_NAME=CC_gcc -DGCC_MAJOR=19 -I. -Iruntime/include tests/diff/full_language.c -o x.exe` — links after the fix; `./x.exe` exits 127 (slice 2). Minimal: the `jit/embed-libc-override` source.
+
+**Source.** win-x64, 2026-08-17, code `93c19c75`.
