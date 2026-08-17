@@ -1,3 +1,9 @@
+if(WIN32)
+    set(_libs -lm)
+else()
+    set(_libs -lm -lpthread)
+endif()
+
 set(_subjects
     structs_unions/inline_sret_locrec
     structs_unions/struct_byval
@@ -22,7 +28,7 @@ foreach(_s IN LISTS _subjects)
     get_filename_component(_nm "${_s}" NAME)
 
     execute_process(COMMAND "${MCC}" -B "${BINDIR}" -I "${SRCDIR}/runtime/include"
-                            -w -O0 "${_src}" -o "${_work}/${_nm}.ref" -lm -lpthread
+                            -w -O0 "${_src}" -o "${_work}/${_nm}.ref" ${_libs}
                     RESULT_VARIABLE _rc OUTPUT_QUIET ERROR_QUIET)
     if(NOT _rc EQUAL 0)
         continue()
@@ -32,7 +38,7 @@ foreach(_s IN LISTS _subjects)
 
     execute_process(COMMAND "${CMAKE_COMMAND}" -E env MCC_RIR_REC_FORCE_MISS=1
                             "${MCC}" -B "${BINDIR}" -I "${SRCDIR}/runtime/include"
-                            -w -O2 "${_src}" -o "${_work}/${_nm}.miss" -lm -lpthread
+                            -w -O2 "${_src}" -o "${_work}/${_nm}.miss" ${_libs}
                     RESULT_VARIABLE _rc2 OUTPUT_QUIET ERROR_QUIET)
     if(NOT _rc2 EQUAL 0)
         list(APPEND _bad "${_s}: build failed with MCC_RIR_REC_FORCE_MISS=1")
