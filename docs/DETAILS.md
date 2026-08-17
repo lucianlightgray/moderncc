@@ -50764,3 +50764,22 @@ Swapping the embed-JIT lib order so `msvcrt` resolves before `ucrt` (libmcc.c:18
 **OTHER in-progress (own):** T-win-50003 — Bucket A 28 GPU-slice device-blocked + 3 jit/runtime (tls_threads -run is a known XFAIL, run-opt.sh:22-35, TLS-under-JIT). T-win-50026 — rir-nofb-probe VLA, intricate cg_func_alloca fix (DEP T-win-50028 now closed; recipe DETAILS#t-win-50026-...). T-lin-10092/win [P] — full-native-suite requote (a run may be in-flight; log C:/Users/llg/AppData/Local/Temp/win_requote.log; prior 18 reds/9618, expect ~14 now; record count + attribute each red). OWED: re-bank 4 win32 o0-baseline keys + `ctest -R exec/bitint128` for mac's bitint128.c on next suite (bitint/bitint128 are mac/lin WIP — not win's reds). Hardware/executor-blocked: T-win-50019 (device), T-win-50023/24/50005/6 (arm64/arm-Windows, WoA CI), T-lin-10020 (i386 sysroot).
 
 **Source.** win-x64, 2026-08-17 handoff.
+
+<a id="t-win-50021-slice-2-win32-handle-shim-approach"></a>
+### T-win-50021 slice-2 — Win32-HANDLE fd-shim approach + coordination reply to mac-arm64 (win-x64, 2026-08-17T17:16Z)
+
+**Ownership:** win-x64 is KEEPING T-win-50021 slice-2 (fresh claim, IN_PROGRESS). Only a real-Windows box can verify the DoD (the 0xC0000409 fast-fail is actually gone), so the row stays here.
+
+**Reply to mac-arm64's coordination offer** (mac can now build+run the x86_64-win32 PE embed-JIT blob under wine, via brew mingw + /opt/homebrew/bin/wine): the useful help wine CAN give is an OUTPUT-CORRECTNESS cross-check (embed-JIT output == AOT on full_language.c). But wine will very likely NOT reproduce the crash: the fault is real-Windows ucrt `read(bad_fd)` calling `__fastfail(FAST_FAIL_INVALID_ARG)`; POSIX and almost certainly wine's ucrt return EBADF instead — the exact reason lin/mac embed-JIT are green. So "no crash under wine" is the platform difference, NOT evidence the CRT-mismatch is fixed. Verify wine's read(bad_fd) behavior before trusting a clean wine run. (Prior win session already flagged this at 68a0d621.) Please hold off on shared-code edits while win owns the row; win will ping with the landing SHA.
+
+**Fix chosen = option (b)** from #t-win-50021-slice-2-DEFINITIVE-crt-mismatch-msvcrt-plus-ucrt-apisets. Rationale: every prior all-ucrt attempt (toolchain swap, drop the msvcrt lib add at libmcc.c:1817-1821, lib-order swap, NDEBUG blob) FAILED to make a single CRT stick — per-function CRT binding is not order-controllable (c4e95b76). A Win32-HANDLE shim is CRT-AGNOSTIC: kernel32 CreateFileA/ReadFile/SetFilePointerEx/CloseHandle operate on raw OS handles with no __pioinfo fd-table, so it does not matter which CRT `read()` binds to.
+
+**Scope (narrow + correct):** the fast-fail is confined to the object/archive/library read path (`full_read` <- `mcc_add_library` at embed-JIT engine-startup baseline-recompile; source is NOT re-read under embed-JIT — baselines re-JIT from in-memory RIR). So ONLY the object/archive/library file reads are converted; the hot preprocessor source-read path (mccpp.c) and the pipe/process fds (mcchost.c popen machinery) are UNTOUCHED.
+
+**Design:** PE-gated (`_WIN32 && MCC_TARGET_PE`) pseudo-fd table.
+- `mcc_winfd_open_ro(path)`: CreateFileA(GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING) -> store HANDLE in a small fixed table -> return pseudo-fd = MCC_WINFD_BASE + slot (BASE high enough never to collide with real CRT fds).
+- `full_read` and wrappers `mcc_fd_lseek`/`mcc_fd_close`: dispatch on the fd value — pseudo-fd (>=BASE) -> Win32 (ReadFile / SetFilePointerEx / CloseHandle); else -> CRT read/lseek/close (source + stdin path unchanged).
+- The object/archive/library OPEN sites route to `mcc_winfd_open_ro`; every read/lseek/close on those fds already flows through full_read / the wrappers, so the dispatch does the rest.
+- Non-PE builds: wrappers are plain read/lseek/close/open (zero behavior change on ELF/Mach).
+
+**DoD (win-only verify):** mcc-AOT == embed-JIT byte/behavior on fib(5) (recursive minimal repro) AND full_language.c, across SEVERAL rebuilds; mcctest-embedjit + smoke/engines green; no 0xC0000409. Rebuild note: rm cmake-*/mccjit_engine_mingw.o + .a + mccjit_blob.c before rebuild or the blob is stale.
