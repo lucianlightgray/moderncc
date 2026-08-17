@@ -142,7 +142,7 @@ PUB_FUNC char *mcc_fileextension(const char *name) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC char *mcc_load_text(int fd) { MCC_TRACE("enter\n");
-	int len = lseek(fd, 0, SEEK_END);
+	int len = mcc_fd_lseek(fd, 0, SEEK_END);
 	char *buf = load_data(fd, 0, len + 1);
 	buf[len] = 0;
 	return buf;
@@ -805,10 +805,12 @@ ST_FUNC void mcc_close(void) { MCC_TRACE("enter\n");
 	mcc_free(bf);
 }
 
-static int _mcc_open(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
+static int _mcc_open(MCCState *s1, const char *filename, int binary) { MCC_TRACE("enter\n");
 	int fd;
 	if (strcmp(filename, "-") == 0)
 		{ MCC_TRACE("br\n"); fd = 0, filename = "<stdin>"; }
+	else if (binary)
+		{ MCC_TRACE("br\n"); fd = mcc_winfd_open_ro(filename); }
 	else
 		{ MCC_TRACE("br\n"); fd = open(filename, O_RDONLY | O_BINARY); }
 	if ((MCC_VTIER(s1->verbose) == MCC_V2 && fd >= 0) ||
@@ -819,7 +821,7 @@ static int _mcc_open(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC int mcc_open(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
-	int fd = _mcc_open(s1, filename);
+	int fd = _mcc_open(s1, filename, 0);
 	if (fd < 0)
 		{ MCC_TRACE("br\n"); return -1; }
 	mcc_open_bf(s1, filename, 0);
@@ -1444,7 +1446,7 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 
 	s1->current_filename = filename;
 	obj_type = mcc_object_type(fd, &ehdr);
-	lseek(fd, 0, SEEK_SET);
+	mcc_fd_lseek(fd, 0, SEEK_SET);
 
 	switch (obj_type) { MCC_TRACE("br\n");
 	case AFF_BINTYPE_REL:
@@ -1534,7 +1536,7 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 #endif
 	}
 
-	close(fd);
+	mcc_fd_close(fd);
 	s1->current_filename = saved_filename;
 	if (ret == FILE_NOT_RECOGNIZED)
 		{ MCC_TRACE("br\n"); return mcc_error_noabort("%s: unrecognized file type", filename); }
@@ -1600,7 +1602,7 @@ ST_FUNC int mcc_add_file_internal(MCCState *s1, const char *filename, int flags)
 	if (s1->output_type == MCC_OUTPUT_PREPROCESS && (flags & AFF_TYPE_BIN))
 		{ MCC_TRACE("br\n"); return 0; }
 
-	fd = _mcc_open(s1, filename);
+	fd = _mcc_open(s1, filename, (flags & AFF_TYPE_BIN) != 0);
 	if (fd < 0) { MCC_TRACE("br\n");
 		if (flags & AFF_PRINT_ERROR)
 			{ MCC_TRACE("br\n"); mcc_error_noabort("file '%s' not found", filename); }

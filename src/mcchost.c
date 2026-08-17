@@ -363,6 +363,74 @@ ST_FUNC MAYBE_UNUSED int host_unsetenv(const char *name) { MCC_TRACE("enter\n");
 #endif
 }
 
+#if defined _WIN32
+#define MCC_WINFD_BASE 0x40000000
+#define MCC_WINFD_MAX 64
+static HANDLE mcc_winfd_tab[MCC_WINFD_MAX];
+
+ST_FUNC int mcc_winfd_open_ro(const char *path) { MCC_TRACE("enter\n");
+	HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
+												 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	int i;
+	if (h == INVALID_HANDLE_VALUE)
+		{ MCC_TRACE("br\n"); return -1; }
+	for (i = 0; i < MCC_WINFD_MAX; i++) { MCC_TRACE("br\n");
+		if (!mcc_winfd_tab[i])
+			{ MCC_TRACE("br\n"); mcc_winfd_tab[i] = h; return MCC_WINFD_BASE + i; }
+	}
+	CloseHandle(h);
+	return -1;
+}
+
+ST_FUNC ssize_t mcc_fd_read(int fd, void *buf, size_t count) { MCC_TRACE("enter\n");
+	if (fd >= MCC_WINFD_BASE) { MCC_TRACE("br\n");
+		HANDLE h = mcc_winfd_tab[fd - MCC_WINFD_BASE];
+		DWORD rd = 0, want = count > 0x7fffffff ? 0x7fffffff : (DWORD)count;
+		if (!ReadFile(h, buf, want, &rd, NULL))
+			{ MCC_TRACE("br\n"); return -1; }
+		return (ssize_t)rd;
+	}
+	return read(fd, buf, count);
+}
+
+ST_FUNC long mcc_fd_lseek(int fd, long offset, int whence) { MCC_TRACE("enter\n");
+	if (fd >= MCC_WINFD_BASE) { MCC_TRACE("br\n");
+		HANDLE h = mcc_winfd_tab[fd - MCC_WINFD_BASE];
+		LARGE_INTEGER li, out;
+		DWORD method = whence == SEEK_SET ? FILE_BEGIN
+									: whence == SEEK_CUR ? FILE_CURRENT : FILE_END;
+		li.QuadPart = offset;
+		out.QuadPart = 0;
+		if (!SetFilePointerEx(h, li, &out, method))
+			{ MCC_TRACE("br\n"); return -1; }
+		return (long)out.QuadPart;
+	}
+	return lseek(fd, offset, whence);
+}
+
+ST_FUNC int mcc_fd_close(int fd) { MCC_TRACE("enter\n");
+	if (fd >= MCC_WINFD_BASE) { MCC_TRACE("br\n");
+		HANDLE h = mcc_winfd_tab[fd - MCC_WINFD_BASE];
+		mcc_winfd_tab[fd - MCC_WINFD_BASE] = NULL;
+		return CloseHandle(h) ? 0 : -1;
+	}
+	return close(fd);
+}
+#else
+ST_FUNC int mcc_winfd_open_ro(const char *path) { MCC_TRACE("enter\n");
+	return open(path, O_RDONLY | O_BINARY);
+}
+ST_FUNC ssize_t mcc_fd_read(int fd, void *buf, size_t count) { MCC_TRACE("enter\n");
+	return read(fd, buf, count);
+}
+ST_FUNC long mcc_fd_lseek(int fd, long offset, int whence) { MCC_TRACE("enter\n");
+	return lseek(fd, offset, whence);
+}
+ST_FUNC int mcc_fd_close(int fd) { MCC_TRACE("enter\n");
+	return close(fd);
+}
+#endif
+
 ST_FUNC MAYBE_UNUSED void *host_file_lock(const char *path) { MCC_TRACE("enter\n");
 #ifdef _WIN32
 	HANDLE h = CreateFileA(path, GENERIC_READ | GENERIC_WRITE,

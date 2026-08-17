@@ -1651,8 +1651,8 @@ ST_FUNC int pe_putimport(MCCState *s1, int dllindex, const char *name, addr_t va
 
 static int read_mem(int fd, unsigned offset, void *buffer, unsigned len) { MCC_TRACE("enter\n");
 	int got;
-	lseek(fd, offset, SEEK_SET);
-	got = read(fd, buffer, len);
+	mcc_fd_lseek(fd, offset, SEEK_SET);
+	got = mcc_fd_read(fd, buffer, len);
 	return got >= 0 && (unsigned)got == len;
 }
 
@@ -1720,12 +1720,12 @@ found:
 		for (i = l = 0; i < k; ++i) { MCC_TRACE("br\n");
 			p1 = namep[i] - ref;
 			if (p1 != p0)
-				{ MCC_TRACE("br\n"); lseek(fd, p0 = p1, SEEK_SET), l = 0; }
+				{ MCC_TRACE("br\n"); mcc_fd_lseek(fd, p0 = p1, SEEK_SET), l = 0; }
 			do { MCC_TRACE("br\n");
 				if (0 == l) { MCC_TRACE("br\n");
 					if (n + 1000 >= n0)
 						{ MCC_TRACE("br\n"); p = mcc_realloc(p, n0 += 1000); }
-					if ((l = read(fd, p + n, 1000 - 1)) <= 0)
+					if ((l = mcc_fd_read(fd, p + n, 1000 - 1)) <= 0)
 						{ MCC_TRACE("br\n"); goto the_end; }
 				}
 				--l, ++p0;
@@ -2400,7 +2400,7 @@ ST_FUNC int coff_output_obj(MCCState *s1, const char *filename) { MCC_TRACE("ent
 
 ST_FUNC int coff_object_type(int fd, unsigned long file_offset) { MCC_TRACE("enter\n");
 	WORD machine = 0;
-	lseek(fd, file_offset, SEEK_SET);
+	mcc_fd_lseek(fd, file_offset, SEEK_SET);
 	if (full_read(fd, &machine, sizeof machine) != sizeof machine)
 		{ MCC_TRACE("br\n"); return 0; }
 	return machine == (WORD)IMAGE_FILE_MACHINE;
@@ -2434,7 +2434,7 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 	unsigned long symtab_off, strtab_off, strtab_size = 0;
 	int i, nsec, nsym, ret = -1;
 
-	lseek(fd, file_offset, SEEK_SET);
+	mcc_fd_lseek(fd, file_offset, SEEK_SET);
 	if (full_read(fd, &fh, sizeof fh) != sizeof fh)
 		{ MCC_TRACE("br\n"); return mcc_error_noabort("invalid COFF object"); }
 	if (fh.Machine != (WORD)IMAGE_FILE_MACHINE)
@@ -2451,7 +2451,7 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 		symtab_off = file_offset + fh.PointerToSymbolTable;
 		symtab = load_data(fd, symtab_off, (unsigned long)nsym * COFF_SIZEOF_SYMBOL);
 		strtab_off = symtab_off + (unsigned long)nsym * COFF_SIZEOF_SYMBOL;
-		lseek(fd, strtab_off, SEEK_SET);
+		mcc_fd_lseek(fd, strtab_off, SEEK_SET);
 		full_read(fd, &ssz, 4);
 		strtab_size = ssz < 4 ? 4 : ssz;
 		strtab = load_data(fd, strtab_off, strtab_size);
@@ -2525,7 +2525,7 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 		smap[i + 1].s = s;
 		smap[i + 1].offset = offset;
 		if (sh_type != SHT_NOBITS && size && sh->PointerToRawData) { MCC_TRACE("br\n");
-			lseek(fd, file_offset + sh->PointerToRawData, SEEK_SET);
+			mcc_fd_lseek(fd, file_offset + sh->PointerToRawData, SEEK_SET);
 			full_read(fd, s->data + offset, size);
 		}
 	}
@@ -2658,7 +2658,7 @@ ST_FUNC int coff_import_func_info(int fd, unsigned long off,
 	DWORD ssz = 0;
 
 	expname[0] = 0;
-	lseek(fd, off, SEEK_SET);
+	mcc_fd_lseek(fd, off, SEEK_SET);
 	if (full_read(fd, &fh, sizeof fh) != sizeof fh)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (fh.Machine != (WORD)IMAGE_FILE_MACHINE)
@@ -2683,7 +2683,7 @@ ST_FUNC int coff_import_func_info(int fd, unsigned long off,
 		sz = shdr[i].SizeOfRawData;
 		if (sz >= sizeof buf)
 			{ MCC_TRACE("br\n"); sz = sizeof buf - 1; }
-		lseek(fd, off + shdr[i].PointerToRawData, SEEK_SET);
+		mcc_fd_lseek(fd, off + shdr[i].PointerToRawData, SEEK_SET);
 		if (full_read(fd, buf, sz) == (ssize_t)sz) { MCC_TRACE("br\n");
 			buf[sz] = 0;
 			pstrcpy(expname, expsz, buf + 2);
@@ -2694,7 +2694,7 @@ ST_FUNC int coff_import_func_info(int fd, unsigned long off,
 	symtab_off = off + fh.PointerToSymbolTable;
 	symtab = load_data(fd, symtab_off, (unsigned long)nsym * COFF_SIZEOF_SYMBOL);
 	strtab_off = symtab_off + (unsigned long)nsym * COFF_SIZEOF_SYMBOL;
-	lseek(fd, strtab_off, SEEK_SET);
+	mcc_fd_lseek(fd, strtab_off, SEEK_SET);
 	full_read(fd, &ssz, 4);
 	strtab_size = ssz < 4 ? 4 : ssz;
 	strtab = load_data(fd, strtab_off, strtab_size);
@@ -2731,7 +2731,7 @@ ST_FUNC int coff_import_dllname(int fd, unsigned long off, char *dll, size_t dsz
 	IMAGE_SECTION_HEADER *shdr = NULL;
 	int i, nsec, ret = 0;
 
-	lseek(fd, off, SEEK_SET);
+	mcc_fd_lseek(fd, off, SEEK_SET);
 	if (full_read(fd, &fh, sizeof fh) != sizeof fh)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (fh.Machine != (WORD)IMAGE_FILE_MACHINE)
@@ -2752,7 +2752,7 @@ ST_FUNC int coff_import_dllname(int fd, unsigned long off, char *dll, size_t dsz
 		sz = shdr[i].SizeOfRawData;
 		if (sz >= dsz)
 			{ MCC_TRACE("br\n"); sz = dsz - 1; }
-		lseek(fd, off + shdr[i].PointerToRawData, SEEK_SET);
+		mcc_fd_lseek(fd, off + shdr[i].PointerToRawData, SEEK_SET);
 		if (full_read(fd, dll, sz) == (ssize_t)sz) { MCC_TRACE("br\n");
 			dll[sz] = 0;
 			ret = dll[0] != 0;
@@ -2783,7 +2783,7 @@ ST_FUNC int coff_short_import_info(int fd, unsigned long off,
 	impname[0] = expname[0] = dll[0] = 0;
 	*ordinal = 0;
 
-	lseek(fd, off, SEEK_SET);
+	mcc_fd_lseek(fd, off, SEEK_SET);
 	if (full_read(fd, hdr, sizeof hdr) != sizeof hdr)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (coff_rd16(hdr) != 0 || coff_rd16(hdr + 2) != 0xFFFF)
@@ -2797,7 +2797,7 @@ ST_FUNC int coff_short_import_info(int fd, unsigned long off,
 		{ MCC_TRACE("br\n"); return 0; }
 
 	blob = mcc_malloc(sizeofdata + 1);
-	lseek(fd, off + sizeof hdr, SEEK_SET);
+	mcc_fd_lseek(fd, off + sizeof hdr, SEEK_SET);
 	if (full_read(fd, blob, sizeofdata) != (ssize_t)sizeofdata)
 		{ MCC_TRACE("br\n"); mcc_free(blob); return 0; }
 	blob[sizeofdata] = 0;
