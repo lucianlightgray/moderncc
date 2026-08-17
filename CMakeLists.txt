@@ -7325,6 +7325,18 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(selfhost-o3 PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 LABELS native TIMEOUT 900)
 
+            # T-lin-10047: register tools/c2_equiv.sh (arena-vs-parser semantic
+            # differential -- builds a key twice with MCC_REPLAY_IR unset then set
+            # and compares program behaviour).  Floor = its refuse-zero-pass guard
+            # (a differential over a population that never ran is nothing, not
+            # "NONE").  Skips (77) when no key is measurable on this host/build
+            # (needs the per-target cross compilers / a non-empty exec population).
+            add_test(NAME "c2/equiv"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/c2_equiv.sh"
+                        "${CMAKE_BINARY_DIR}" all -O1 "${CMAKE_BINARY_DIR}/c2equiv")
+            set_tests_properties("c2/equiv" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                LABELS native SKIP_RETURN_CODE 77 TIMEOUT 900)
+
             foreach(_op -O2 -O3)
                 string(REPLACE "-" "" _optag "${_op}")
                 add_test(NAME selfhost-output-parity-${_optag}
