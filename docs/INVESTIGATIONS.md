@@ -109,6 +109,35 @@ The error-handling audit confirmed `stk_data_floor`/`error_jmp_buf` are saved/re
 
 ---
 
+## Round 4 (2026-08-17) — driver/CLI, linker resolution, cross-target/ABI
+
+### <a id="driver-cli-semantics"></a>Driver / CLI option semantics
+- `-imacros <file>` is a byte-for-byte alias of `-include` (`src/libmcc.c:3070`) — leaks the file's declarations/code into every TU instead of absorbing only its macros; wrong, silent, undocumented.
+- `-fstack-protector` help (`src/mcc.c:150`) understates targets — code enables canaries on arm64-ELF/i386/arm/riscv64 too (`libmcc.c:3143`); also omits `-fstack-protector-strong`.
+- Plain `char` is unsigned on ALL targets incl. x86_64/i386 (`libmcc.c:1226`, defines `__CHAR_UNSIGNED__`) — deviates from the SysV/GCC signed-char norm; undocumented ABI/behavior surprise.
+- Mach-O linker options `-flat_namespace`/`-two_levelnamespace`/`-undefined <treatment>` accepted and silently ignored (`libmcc.c:3430-3435`) — `-undefined dynamic_lookup` is a no-op.
+- Parsed-but-undocumented: `--jit-threads`, `-print-isa`, `-iquote`, `-idirafter`, `-imacros`.
+`[NEW]`. **TASK: T-mac-30027.** (KNOWN: `--jit-threads` override + `--jit-conservative` help = T-lin-10393.)
+
+### <a id="linker-resolution"></a>Linker resolution / archive semantics divergences
+`mccelf.c` is the shared resolution core; divergences are in the format wrappers:
+- Mach-O silently ignores `-e`/`--entry` — hardcodes `main` for LC_MAIN (`mccmacho.c:2551`); ELF/PE honor `elf_entryname`. Custom entry dropped without warning.
+- Mach-O undefined-symbol diagnosis stricter than ELF/PE: errors any non-weak undef not in dynsymtab regardless of reloc reference (`mccmacho.c:981`), vs the shared `relocate_syms` erroring only reloc-referenced undefs.
+- Library search order deviates from GNU ld: pattern-outer/path-inner (`libmcc.c:1854`) → `libfoo.so` searched in all `-L` dirs before `libfoo.a` in any; a `.a` in an earlier dir loses to a `.so` in a later dir.
+- No `SHF_MERGE`/`SHF_STRINGS` dedup in any format (size only).
+- `.bss`==`SHN_COMMON` conflation in `set_elf_sym` (`mccelf.c:647`) — a genuine `.bss` global treated as tentative, silently overridable by a later strong def.
+`[NEW]`. **TASK: T-mac-30028.** (KNOWN: PE-only alacarte precedence = T-win-50021; COFF weak-external aux/COMDAT selection = DETAILS:7683.)
+
+### <a id="longdouble-cross-target"></a>arm64/PE `long double` ABI + host-vs-target + cross-target predefines
+- **arm64 `long double` is 16 bytes on every OS** (`src/arch/arm64/arm64-gen.h:27`, no macho/PE guard) — wrong for Apple & Windows arm64 where it is 8 (`==double`). `type_size`/`__SIZEOF_LONG_DOUBLE__` report 16; ABI-mismatched vs system libc (`%Lf`, `strtold`, struct layout). Self-consistent within mcc code (why the mac-arm64 suite stays green). `[NEW, HIGH]`. Same family as `[KNOWN]` x86_64-PE `long double`=16 (T-lin-10394/T-win-50003).
+- Host-vs-target: `ast_sv_hi()` (`mccast.c:2735`) extracts a *target* `VT_LDOUBLE` constant's hi word via *host* `sizeof(long double)`/`LDBL_MANT_DIG` → returns 0 on an 8-byte-ld host targeting 80-bit. Long-double constant repack (`mccgen.c:16833-16863`) has an unhandled host×target `#else` that silently emits an uninitialized constant.
+- `__SIZEOF_WINT_T__`==4 (`mccpp.c:5612`) contradicts `__WINT_TYPE__`==`unsigned short` (2) on PE.
+- Frozen/missing arch feature predefines: arm hardcodes `__ARM_ARCH_4__`, arm64 emits no `__ARM_*`, i386 gets no SSE macros (`mccpp.c:5530-5563`) → feature-test `#if` silently takes the wrong path.
+- Non-Darwin→macho cross build omits macOS SDK search paths (`libmcc.c:1327`), silent.
+`[NEW]`. **TASK: T-mac-30029.**
+
+---
+
 ## Pending taskification (captured, not yet minted)
 
 Lower-severity or newly-arrived items awaiting a `TODO.md` task in a later loop iteration: codegen arm64 `va_arg` assert (`#codegen-arm64-vaarg-assert`); type/C23 bit-field gaps (`#type-c23-gaps`); runtime/intrinsics (`#runtime-intrinsics`); Metal-vs-Vulkan f64 (`#gpu-metal-vs-vulkan-f64`); JIT RWX/`MAP_JIT` (`#jit-rwx-mapjit`); debug-info asymmetries beyond Mach-O unwind (`#debug-info-asymmetry`). The JIT lazy-vs-sync root cause (`#jit-lazy-vs-sync-kgc`) should be attached to existing **T-lin-10029**, not minted separately.
