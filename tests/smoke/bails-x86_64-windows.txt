@@ -44,12 +44,15 @@
 #    mirror the Linux bank's UB classes; where the references disagree with
 #    each other the row is diverge-refs, exactly as on Linux.
 #
-# KNOWN HOLES, deliberately absent: the jit- scope is empty because the
-# embed-JIT cannot link on Windows yet (T-win-50003 Bucket B,
-# __report_rangecheckfailure et al.); its categories must be banked when that
-# lands, not guessed now.  (pass-msstruct is GREEN as of T-win-50015: PE now
-# defaults to ms_bitfields, so mcc's plain bit-field layout matches every native
-# Windows compiler; smokerun's msstruct expectation is the MS line on WIN32.)
+# JIT scope: embed-JIT now links (T-win-50021 s1) + swaps + is observable on PE
+# (T-win-50021 s2a fd-shim + the kernel32 swap-diagnostic emit) -- so its honest
+# bail categories are banked here as the comment above always instructed ("banked
+# when that lands").  jit-not-baked:signature is the population the JIT declines
+# for signature reasons (wide/complex args), same class as the Linux bank.
+# (pass-msstruct is GREEN as of T-win-50015: PE now defaults to ms_bitfields, so
+# mcc's plain bit-field layout matches every native Windows compiler; smokerun's
+# msstruct expectation is the MS line on WIN32.)
+O2 jit-not-baked:signature 180
 O0 replay-fallback:len 3
 O1 replay-fallback:len 3
 O13 strat-dark:abs 1

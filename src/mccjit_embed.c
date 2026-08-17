@@ -982,6 +982,26 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 																				int memoize_ok, uint32_t ngp,
 																				uint32_t nsse, int ret_fp, int ret_wide);
 
+/* On the PE embed-JIT binary the engine (mingw/ucrt) getenv + stderr are not
+ * visible to the launching process (msvcrt/ucrt CRT split), so the swap
+ * diagnostic the detectors parse never reaches them.  Read the gate and emit
+ * through kernel32 (CRT-agnostic) instead.  See DETAILS
+ * #t-win-50021-2b-ROOTCAUSE-detection-artifact-2026-08-17. */
+#if MCC_HOST_WIN32
+static int mccjit_verbose_on(void) { MCC_TRACE("enter\n");
+	char b[8];
+	DWORD n = GetEnvironmentVariableA("MCC_JIT_VERBOSE", b, sizeof b);
+	return n > 0 && n < sizeof b && b[0] != '0';
+}
+static void mccjit_diag_emit(const char *s, unsigned n) { MCC_TRACE("enter\n");
+	HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+	if (h && h != INVALID_HANDLE_VALUE) { MCC_TRACE("br\n"); DWORD w; WriteFile(h, s, n, &w, NULL); }
+}
+#else
+static int mccjit_verbose_on(void) { MCC_TRACE("enter\n"); return mcc_env_on("MCC_JIT_VERBOSE"); }
+static void mccjit_diag_emit(const char *s, unsigned n) { MCC_TRACE("enter\n"); fwrite(s, 1, n, stderr); }
+#endif
+
 static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long len,
 																 unsigned long max_duration, const char *mode,
 																 const struct timespec *t0, int timed) { MCC_TRACE("enter\n");
@@ -1054,12 +1074,13 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 											: MCC_JIT_OUT_KEPT_AOT;
 		mcc_stats_jit_outcome(outcome);
 	}
-	if (mcc_env_on("MCC_JIT_VERBOSE")) { MCC_TRACE("br\n");
+	if (mccjit_verbose_on()) { MCC_TRACE("br\n");
 		int probeable = MCC_DEV_ENV_ON("MCC_JIT_PROBE") && variant &&
 										mccjit_last_nparam == 1 &&
 										!mccjit_type_wide((int)mccjit_last_param_t[0]);
 		int probe = probeable ? ((int (*)(int))variant)(7) : -1;
-		fprintf(stderr,
+		char _vb[512];
+		int _vn = snprintf(_vb, sizeof _vb,
 						"mccjit-boot[%s]: slot=%p aot=%p blob=%p len=%lu variant=%p baseline=%p entry=%p route=%s np=%u warm=%llx probe(7)=%d %s\n",
 						mode, (void *)slot, aot_init, blob, len, variant, baseline, entry,
 						routed ? "kgc" : "direct", mccjit_last_nparam,
@@ -1070,6 +1091,10 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 						: (variant && !no_kgc && !mccjit_last_kgc_ok)
 								? "refused-unverified"
 								: "kept-aot");
+		if (_vn > 0) { MCC_TRACE("br\n");
+			if (_vn >= (int)sizeof _vb) _vn = (int)sizeof _vb - 1;
+			mccjit_diag_emit(_vb, (unsigned)_vn);
+		}
 	}
 	MCCJIT_DIAG_NOTE_BOOT(variant, baseline, entry, mccjit_last_nparam, mode,
 												mccjit_last_param_t, mccjit_last_ret_wide);
