@@ -21,6 +21,17 @@ INC=$3   # runtime/include
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
+cat > "$WORK/arch.c" <<'EOF'
+#if !defined(__x86_64__) && !defined(__i386__)
+#error not an x86 target
+#endif
+int main(void) { return 0; }
+EOF
+if ! "$MCC" -B"$BASE" -w -c "$WORK/arch.c" -o "$WORK/arch.o" 2>/dev/null; then
+	echo "avx512-types: SKIP -- native target is not x86 (<immintrin.h> is x86-only)"
+	exit 77
+fi
+
 cat > "$WORK/t.c" <<'EOF'
 #include <immintrin.h>
 #include <stdio.h>
