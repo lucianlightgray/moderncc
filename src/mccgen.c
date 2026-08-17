@@ -1668,8 +1668,18 @@ static void gvtst_set(int inv, int t) { MCC_TRACE("enter\n");
 	if (vtop->r != VT_CMP) { MCC_TRACE("br\n");
 		vpushi(0);
 		gen_op(TOK_NE);
-		if (vtop->r != VT_CMP)
-			{ MCC_TRACE("br\n"); vset_VT_CMP(vtop->c.i != 0); }
+		if (vtop->r != VT_CMP) { MCC_TRACE("br\n");
+			/* gen_op left a value rather than a lazy VT_CMP.  If it folded to a
+			 * compile-time constant, its c.i holds the truth value; but a wide
+			 * (__int256 / _BitInt>64) compare materialises to a runtime register
+			 * whose c.i is stale, so re-compare that against 0 to get a VT_CMP. */
+			if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST)
+				{ MCC_TRACE("br\n"); vset_VT_CMP(vtop->c.i != 0); }
+			else { MCC_TRACE("br\n");
+				vpushi(0);
+				gen_op(TOK_NE);
+			}
+		}
 	}
 
 	p = inv ? &vtop->jfalse : &vtop->jtrue;

@@ -183,4 +183,28 @@ int main(void) {
 	return 0;
 }
 
+#elif defined test_boolctx
+
+#include <stdio.h>
+typedef _BitInt(100) i100;
+typedef unsigned _BitInt(128) u128;
+int main(void) {
+	i100 z = (i100)0, nz = (i100)7;
+	printf("if %s %s\n", z ? "T" : "F", nz ? "T" : "F");
+	printf("tern %d %d\n", z ? 11 : 22, nz ? 11 : 22);
+	printf("logic %d %d %d\n", nz && z, z || nz, nz && nz);
+	u128 u = (u128)0;
+	int c = 0;
+	while (u) {
+		c++;
+		if (c > 3)
+			break;
+	}
+	printf("while %d\n", c);
+	for (i100 i = (i100)3; i; i -= (i100)1)
+		c++;
+	printf("for %d\n", c);
+	return 0;
+}
+
 #endif

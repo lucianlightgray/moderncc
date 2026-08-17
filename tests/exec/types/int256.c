@@ -255,4 +255,26 @@ int main(void) {
 	return 0;
 }
 
+#elif defined test_boolctx
+
+#include <stdio.h>
+
+int main(void) {
+	__int256 z = 0, nz = 7, big = (__int256)1 << 200;
+	printf("if %s %s %s\n", z ? "T" : "F", nz ? "T" : "F", big ? "T" : "F");
+	printf("tern %d %d\n", z ? 11 : 22, nz ? 11 : 22);
+	printf("logic %d %d\n", nz && z, z || nz);
+	int c = 0;
+	__int256 u = 0;
+	while (u) {
+		c++;
+		if (c > 3)
+			break;
+	}
+	for (__int256 i = 3; i; i -= 1)
+		c++;
+	printf("loops %d\n", c);
+	return 0;
+}
+
 #endif
