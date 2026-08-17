@@ -50082,3 +50082,42 @@ the two overlap by ~512 B.** Fix: order the PE writer so idata is placed AFTER t
 (post-emit-size) rodata size is known, or re-drive `pe_build_imports`/section merge with the
 committed rodata extent. NOT a search bug — the search legitimately changes rodata size; the PE
 writer must not overlap idata onto it. **Source.** win-x64, 2026-08-17.
+<a id="t-mac-30012-arm64-rev-bswap-progress-the-sso-store-swap-is-not-a-captured-node"></a>
+
+## T-mac-30012 (arm64 slice B) progress — native REV emitter works, but the sso STORE swap is not a captured node on ANY target; how does x86_64 replay it? (mac-arm64, 2026-08-17)
+
+Implemented + WIP-saved (scratchpad/t-mac-30012-arm64-rev-bswap-WIP.patch, 165 lines, reverted
+from main pending the question below): a native AArch64 `gen_bswap` (REV Wr/Xr, REV16 for size 2)
+in arm64-gen.c + a narrow `MCC_IR_HAVE_BSWAP` macro (x86_64||arm64, a strict subset of
+MCC_IR_HAVE_X86_PRIMS) gating just the bswap capture/replay (mccircap.c IR_CAP_W1 + arena-emit
+case, mccrir.c arena->AST case split out of the shared signbit/ffs/bitscan block, mccast.c replay
+else-if, the ir_cap_gen_bswap decl + #define, bswap_inline_on, and gen_sso_bswap's inline block)
++ the mcc.h `gen_bswap` prototype un-gated to arm64. **This BUILDS and the primary is correct:**
+sso.c -O0 object now has 83 native REV / 0 bswap libcalls, and normal-mode sso.c is OK at O0-O3.
+
+**But it does NOT fix the replay** — sso.c under `MCC_FORCE_REPLAY -fno-replay-fallback` still
+FAILs O0-Os. Root cause, traced on arm64:
+1. `ir_cap_gen_bswap` runs (REV is emitted) but the op is NEVER recorded: `IR_OP_BSWAP` reaches
+   the arena **0 times** (instrumented mccrir.c:2842).
+2. Because `IR_CAP_REC = (ir_cap_pending && ir_cap_depth == 1)` and the bswap begins at
+   **ir_cap_depth 1** (→ 2 after `ir_cap_begin`), nested under a parent op — parent kind is
+   **IR_OP_VSTORE** (57) for the stores / IR_OP_GV (56) for the reads. `rir_hook_vstore` opens the
+   VSTORE capture at vstore entry (mccgen.c:5837), and `gen_sso_bswap` fires later inside it
+   (mccgen.c:6008), so the swap is a nested sub-op the recorder drops, not a top-level node.
+3. The replay does **not** re-execute vstore: instrumenting `vstore` for `ast_replaying` prints
+   NOTHING under forced replay, and `gen_sso_bswap` is only ever called with `replaying=0`. So the
+   replay is AST-node re-emit, and the sso store swap must survive as a captured node — but per (2)
+   it is nested under VSTORE and never recorded.
+
+**The puzzle for lin (slice A owner):** this nesting is structurally target-INDEPENDENT
+(rir_hook_vstore + the vstore sso block are arch-generic), yet x86_64's rir-nofb-probe is GREEN.
+So on x86_64 the sso STORE swap is reproduced by some mechanism OTHER than a top-level captured
+BSWAP node and OTHER than vstore re-execution. What is it? Does slice A's arena-build re-derive
+the VSTORE with the reversed value from the AST_FB_MEMBER_REVSO member flag (so the swap is
+implied by the member's rev-SO type, not a separate node)? If so, the arm64 path needs that same
+member-flag→swap derivation in the arena/replay, and my native-REV `gen_bswap` is the emitter it
+should call — but the enabling is in the shared capture layer, not arm64-gen. Need the x86_64
+replay dump of sso.c::main (does its store carry a BSWAP child, or a rev-SO member with no
+explicit swap?) to know whether B is "un-gate the node + REV" (my WIP, insufficient alone) or
+"derive the swap from the member flag during arena-build" (slice-A-adjacent, x86_64-testable).
+**Source.** mac-arm64, 2026-08-17, at clean main (WIP reverted).
