@@ -183,6 +183,9 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 #define MCC_WIDE256_BITS 256
 #define MCC_WIDE256_LIMBS 4
 #define MCC_WIDE256_SIZE 32
+#define MCC_WIDE512_BITS 512
+#define MCC_WIDE512_LIMBS 8
+#define MCC_WIDE512_SIZE 64
 
 #define STDC_DEFAULT 0
 #define STDC_ON 1
@@ -217,7 +220,10 @@ typedef struct CString {
 
 typedef struct CType {
 	int t;
-	unsigned char bp, bs;
+	unsigned char bp;
+	unsigned short bs;	/* bit-field size 0..64, OR _BitInt width up to 512
+						 * (bs==0 is the sentinel for _BitInt(256); widths 257..512
+						 * are stored directly, which is why this is not char) */
 	struct Sym *ref;
 } CType;
 
@@ -231,7 +237,7 @@ typedef union CValue {
 
 	struct
 	{
-		uint64_t lo, hi, w2, w3;
+		uint64_t lo, hi, w2, w3, w4, w5, w6, w7;
 	} q;
 
 	struct
@@ -1002,8 +1008,8 @@ struct MCCState {
 	CType gen_wide256_type_cache[2];
 	int gen_wide256_type_cache_n;
 	int gen_wide256_limb_tok[MCC_WIDE256_LIMBS];
-	CType gen_bitint128_type_cache[4];
-	int gen_bitint128_limb_tok[MCC_WIDE256_LIMBS];
+	CType gen_bitint128_type_cache[6];
+	int gen_bitint128_limb_tok[MCC_WIDE512_LIMBS];
 	Sym *gen_complex_call_ftype[4];
 	Sym *gen_complex_idiv_ftype[2];
 	unsigned char gen_prec[256];

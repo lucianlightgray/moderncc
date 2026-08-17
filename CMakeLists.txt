@@ -2548,7 +2548,7 @@ function(_mcc_mccrt_src obj outvar)
 endfunction()
 
 function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir out_extra)
-    set(_common stdatomic atomic builtin alloca alloca-bt complex complexabi mccchk float16 int256)
+    set(_common stdatomic atomic builtin alloca alloca-bt complex complexabi mccchk float16 int256 int512)
     set(_rt_gcc OFF)
     if(native AND (MCC_MCCRT_USE_HOSTCC OR MCC_EMBED_MCCRT)
        AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -2723,7 +2723,7 @@ function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir ou
             list(APPEND _archived "${_out}")
         endif()
         set(_srcdep "")
-        if(obj STREQUAL "int256")
+        if(obj STREQUAL "int256" OR obj STREQUAL "int512")
             set(_srcdep "${CMAKE_CURRENT_SOURCE_DIR}/src/wide256_arith.h")
         endif()
         add_custom_command(
