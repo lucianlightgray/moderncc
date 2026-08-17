@@ -2201,7 +2201,7 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 		} else if (tok < TOK_IDENT) { MCC_TRACE("br\n");
 			if (tok == TOK_LINEFEED || tok == TOK_EOF)
 				{ MCC_TRACE("br\n"); break; }
-			if (tok >= TOK_STR && tok <= TOK_CLDOUBLE)
+			if ((tok >= TOK_STR && tok <= TOK_CLDOUBLE) || tok == TOK_CFLOAT16)
 				{ MCC_TRACE("br\n"); mcc_error("invalid constant in preprocessor expression"); }
 		} else if (tok == TOK_DEFINED) { MCC_TRACE("br\n");
 			parse_flags &= ~PARSE_FLAG_PREPROCESS;
