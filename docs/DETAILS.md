@@ -49416,3 +49416,80 @@ Attribution complete, and the two cells turned out to be different diseases:
 
 REMAINING for the task: the nofb-probe (a)-vs-(b) adjudication + either the ledger win arm or
 the emission fix. rec-miss is paid.
+<a id="t-mac-30005-measurement-explicit-on-loses-90pct-the-8pct-claim-is-dead-with-p5"></a>
+
+## T-mac-30005 measurement — explicit-on LOSES 90.7% on spectral; the 8% claim died with p5, and the remaining choice needs the metric's owner
+
+**The measurement (this box, suite-loaded but instructions-retired is load-insensitive per the
+tool's own doc; arm64, tree ~bf963b06).** With the cell's on arm made EXPLICIT (`-fchain-store`
+vs `-fno-chain-store`, -O3, spectral-norm 3.c): on 10.094G vs off 5.293G instructions retired =
+**win -90.7%**. Enabling the flag nearly doubles the kernel's instruction count. Coherent with
+the mechanism history: p5 (172a2f31, 2026-08-03) deleted the deep-copy repair that produced the
+banked 0.55s→0.35s win; the flag's only surviving effect is the ast_promo POISON rule
+(src/mccast.c:4791), which suppresses local promotion — pure pessimization when the replay
+machinery it protects is not the beneficiary. The 2026-08-09 re-ladder demoting chain-store to
+-O4 (rung-11 "-7.9" note) was measuring the same reality.
+
+**So the cell is red on a provisioned box EITHER way:** vacuously (+0.0% off-vs-off, the current
+registered shape) or honestly (-90.7% explicit). Stock checkouts 77 in both worlds (vendor/plb
+absent). Three closes remain: (a) re-target GATE_WINS at a gate that wins TODAY (candidates from
+optfire/levelbench-cycles.tsv, e.g. chain-store/sieve +25% — but that figure predates/straddles
+the semantics change and MUST be re-measured explicit-arm on a quiet box before trusting);
+(b) retire the assertion; (c) keep spectral and accept a red ratchet. (c) is silly. Between (a)
+and (b): gate_win_insns' docstring says this is "the metric instruction 15 asks for" — a human
+mandate — so RETIREMENT IS NOT A SESSION'S UNILATERAL CALL. Next session: measure (a)'s
+candidates; if one wins honestly, re-target with a measured min_win; if none does, put the
+retire question to QUESTIONS.md.
+
+**The prepared (and reverted, N4) cell fix — re-derivable in minutes, fully specified here:**
+(1) `gate_win_arms(gate, mutate)` in tools/runtime-bench.py returning
+`("on", ["-f"+gate]) / ("off", ["-fno-"+gate])`, mutate → both arms `-fno-` (identical by
+construction regardless of ladder staging); used by both gate_win_insns and assert_gate_wins.
+(2) `--mutate-gate-wins` flag; in main, mutate inverts the assertion's exit (red→0, green→1,
+77→77) — a self-contained known-positive. (3) CMake: register
+`runtime-bench-gatewin-known-positive` beside the parent (same conditions, stub in the else);
+bump ci/gate-contract pins --min-proved 54→55 --max-unproved 50→49. (4) gate-contract.txt:
+gatewin row prover = runtime-bench-gatewin-known-positive; must-run.txt: KP row (registered
+class). Verified: ci/gate-contract + KP GREEN with this patch after reconfigure; the parent
+gatewin cell red (-90.7%) is what blocked landing under N4 until the GATE_WINS subject is
+re-decided. **Source.** mac-arm64, 2026-08-16/17, at 2bc89e72 (diagnosis) + this measurement.
+
+<a id="t-lin-10015-full-suite-outcome-and-the-open-rir-attribution"></a>
+
+## T-lin-10015 full-suite outcome — 12 reds, all triaged; a kept-coverage regression cluster is the one open attribution (suspects: my no-copy slice, lin's sso store reorder)
+
+**Run:** full native suite, cmake-macos -j6, 10252 cells, started at 8d054c5d BUT polluted by
+design error on my part: I `git pull --rebase`d lin's four sso slices into the working tree
+mid-run and carried uncommitted T-mac-30005 manifest edits, so late cells measured a different
+tree than early cells. 12 reds; post-run triage on the stabilized tree:
+
+- PASS on stable-tree rerun (mid-run drift artifacts): diff3/sso, slice-census.
+- ci/gate-contract(+KP): my uncommitted manifest edits vs the unreconfigured build; consistent
+  again both with the edits reverted and with them configured. Not a defect.
+- runtime-bench-gatewin: T-mac-30005 itself (red on provisioned boxes at HEAD; see the
+  measurement anchor above).
+- fmt/census-bank(+KP): ONE snprintf site added in src/mccpp.c by win's T-lin-10013 landing
+  (12e0077b, the i256/ui256 literal suffix) — re-bank owed by/for that landing (same class lin
+  re-banked for win at 7d5952ff).
+- jit/budget: lin's T-lin-10393 cell FAILS ON DARWIN — "cpu 50% => 1 workers" expects
+  cpu-workers=1, gets 4; the test's nproc pinning doesn't bite on this platform. First Darwin
+  run of the cell. Lin's row.
+- simd/avx512-types: lin's T-lin-10006 cell FAILS ON ARM64 — runtime/include/immintrin.h
+  #errors "only supported on x86 targets"; the cell needs an arch gate/skip on non-x86. First
+  arm64 run of the cell. Lin's row.
+- rir-coverage, rir-coverage-census, rir-nofb-probe-self: REAL and open — kept_coverage
+  regressed 93.7977→92.1194 (-O1) / 93.9276→92.2862 (-O2/-O3), ~1.7pp of self-corpus body bytes
+  newly shipping unoptimized. Banked-body diff names src/wide256_slice.h:wide256_call3 (deleted
+  by MY 8d054c5d) and mccgen.c:gen_cvt_f16 as gone from the corpus. UNATTRIBUTED between the
+  day's three landings: my gen_wide256_op vstack reshape (new vrotb/addrof shapes may replay
+  differently), lin's sso vstore swap-before-materialize reorder (touches EVERY store path), and
+  win's 12e0077b. Filed as T-mac-30008; do NOT re-bank the coverage floor until attributed —
+  a 1.7pp kept-coverage drop may be a genuine optimizer regression, not census churn.
+
+**T-lin-10015 status:** the no-copy slice itself is verified (gmp-diff ~17.3k rows green at 5
+levels incl. known-positive, exec 360/360, o0-baseline no drift, memmove 30→10) and pushed
+(8d054c5d). The task does NOT go DONE: full-native-suite green is not demonstrable until the
+T-mac-30008 cluster is attributed (and possibly not mine to demonstrate if the cause is lin's
+reorder). Remaining beyond that: the add/sub/bitwise limb-inliner pricing vs the new
+call-only baseline (or an explicit archive-with-call-floor decision). **Source.** mac-arm64,
+2026-08-17T00:15Z.
