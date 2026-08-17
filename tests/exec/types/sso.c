@@ -94,6 +94,39 @@ int main(void) {
 	ok = ok && z.ia[0] == 0x11223345 && z.ia[1] == -1 &&
 			z.ia[2] == 0x55667789 && z.fa[1] == -4.5f && z.fa[0] == 1.5f;
 
+	struct SIP {
+		int x;
+		short y;
+	};
+	struct __attribute__((scalar_storage_order("big-endian"))) SIB {
+		int x;
+	};
+	struct __attribute__((scalar_storage_order("big-endian"))) S2 {
+		struct SIP plain;
+		struct SIB be;
+		struct SIP arr[2];
+		int flat;
+	} w;
+	memset(&w, 0, sizeof w);
+	w.plain.x = 0x11223344;
+	w.be.x = 0x11223344;
+	w.arr[1].x = 0x55667788;
+	w.flat = 0x0a0b0c0d;
+	unsigned char cb[sizeof w];
+	memcpy(cb, &w, sizeof w);
+	ok = ok && sizeof w == 32 &&
+			cb[0] == 0x44 && cb[3] == 0x11 &&
+			cb[8] == 0x11 && cb[11] == 0x44 &&
+			cb[20] == 0x88 && cb[23] == 0x55 &&
+			cb[28] == 0x0a && cb[31] == 0x0d &&
+			w.plain.x == 0x11223344 && w.be.x == 0x11223344 &&
+			w.arr[1].x == 0x55667788 && w.flat == 0x0a0b0c0d;
+	w.flat += 1;
+	w.be.x += 1;
+	w.plain.x += 1;
+	ok = ok && w.flat == 0x0a0b0c0e && w.be.x == 0x11223345 &&
+			w.plain.x == 0x11223345;
+
 	printf("%s\n", ok ? "OK" : "FAIL");
 	return 0;
 }

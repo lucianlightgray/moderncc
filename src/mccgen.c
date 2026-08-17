@@ -6569,6 +6569,29 @@ static void check_fields(CType *type, int check) { MCC_TRACE("enter\n");
 	}
 }
 
+static int sso_reverses(CType *t) { MCC_TRACE("enter\n");
+	if (t->t & VT_ARRAY)
+		{ MCC_TRACE("br\n"); return sso_reverses(pointed_type(t)); }
+	if ((t->t & VT_BTYPE) == VT_STRUCT)
+		{ MCC_TRACE("br\n"); return 0; }
+	return 1;
+}
+
+static int sso_member_supported(CType *t) { MCC_TRACE("enter\n");
+	if (t->t & VT_VLA)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (t->t & VT_ARRAY)
+		{ MCC_TRACE("br\n"); return sso_member_supported(pointed_type(t)); }
+	if ((t->t & VT_BTYPE) == VT_STRUCT)
+		{ MCC_TRACE("br\n"); return 1; }
+	if (t->t & VT_BITFIELD)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (is_float(t->t) && (t->t & VT_BTYPE) != VT_FLOAT &&
+			(t->t & VT_BTYPE) != VT_DOUBLE)
+		{ MCC_TRACE("br\n"); return 0; }
+	return 1;
+}
+
 static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 	int size, align, maxalign, offset, c, bit_pos, bit_size;
 	int packed, a, bt, prevbt, prev_bit_size;
@@ -6590,37 +6613,11 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 	type->ref->a.reverse_so = ad->a.reverse_so;
 
 	for (f = type->ref->next; f; f = f->next) { MCC_TRACE("br\n");
-		if (ad->a.reverse_so) { MCC_TRACE("br\n");
-			/* Slice 1 supports integer scalar members only; the recursive
-			 * (nested aggregate), array, bit-field/_BitInt and floating cases are
-			 * refused rather than emitted with the wrong byte order. */
-			if ((f->type.t & VT_BTYPE) == VT_STRUCT)
-				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with an "
-													"aggregate member is not implemented"); }
-			if ((f->type.t & (VT_ARRAY | VT_VLA)) == VT_VLA)
-				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with a "
-													"variable-length array member is not implemented"); }
-			if (f->type.t & VT_ARRAY) { MCC_TRACE("br\n");
-				int et = pointed_type(&f->type)->t;
-				if (et & (VT_ARRAY | VT_VLA))
-					{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with a "
-														"multi-dimensional array member is not implemented"); }
-				if ((et & VT_BTYPE) == VT_STRUCT || (et & VT_BITFIELD))
-					{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with an "
-														"array of aggregate or bit-field members is not implemented"); }
-				if (is_float(et) && (et & VT_BTYPE) != VT_FLOAT && (et & VT_BTYPE) != VT_DOUBLE)
-					{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with an "
-														"array of long double or half-float members is not implemented"); }
-			}
-			if (f->type.t & VT_BITFIELD)
-				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with a "
-													"bit-field or _BitInt member is not implemented"); }
-			/* Slice 2a does float/double (swap the bit-pattern); long double, and
-			 * the half formats, are not yet handled -- refuse them. */
-			if (is_float(f->type.t) && (f->type.t & VT_BTYPE) != VT_FLOAT &&
-					(f->type.t & VT_BTYPE) != VT_DOUBLE)
-				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with a "
-													"long double or half-float member is not implemented"); }
+		if (ad->a.reverse_so && !sso_member_supported(&f->type)) { MCC_TRACE("br\n");
+			mcc_error("scalar_storage_order on a struct with an unsupported member: a "
+								"reversed scalar must be int/float/double (variable-length "
+								"arrays, bit-fields/_BitInt, long double and half-float are not "
+								"implemented); nested structs keep their own storage order");
 		}
 		/* A whole _BitInt(N) member carries VT_BITFIELD for its masked access
 		 * but is laid out as its storage integer, not bit-packed -- only members
@@ -13934,13 +13931,14 @@ tok_next:
 			vtop->type = s->type;
 			if (qualifiers)
 				{ MCC_TRACE("br\n"); parse_btype_qualify(&vtop->type, qualifiers); }
+			int member_rev = base_revso && sso_reverses(&vtop->type);
 			if (!(vtop->type.t & (VT_ARRAY | VT_VLA))) { MCC_TRACE("br\n");
 				vtop->r |= VT_LVAL | base_nonlval;
-				if (base_revso)
+				if (member_rev)
 					{ MCC_TRACE("br\n"); vtop->r |= VT_REVSO; }
 				if (mcc_state->do_bounds_check)
 					{ MCC_TRACE("br\n"); vtop->r |= VT_MUSTBOUND; }
-			} else if (base_revso) { MCC_TRACE("br\n");
+			} else if (member_rev) { MCC_TRACE("br\n");
 				vtop->r |= VT_REVSO;
 			}
 			{
