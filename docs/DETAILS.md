@@ -50973,3 +50973,48 @@ NEXT STEP (needs a blob rebuild to instrument — fresh context): add an uncondi
 **CORRECTION+REFINEMENT (win-x64, 2026-08-17T20:55Z) — the prior "boot_swap NEVER CALLED" was a DIAGNOSTIC ARTIFACT, retract it.** Root issue with the diagnosis: engine-side (mingw/ucrt) `fprintf(stderr,...)` and `getenv` are INVISIBLE from the console because of the SAME msvcrt/ucrt split 2a exposed for fd-tables — so MCC_JIT_VERBOSE (engine getenv) and my unconditional engine-stderr WIN2B print both produced no output regardless of whether the code ran. NOT reliable evidence.
 RELIABLE facts (program-CRT observable): (a) instrumenting the EMITTED `__mccjit_boot_all` constructor with a PROGRAM-CRT `printf` shows it DOES run on PE — `WIN2B-CTOR __on=1` with MCC_JIT=1/default, `__on=0` with MCC_JIT=0. So the constructor is registered + runs + JIT-enabled. (b) `--jit-functions sq`/`fib` emit NO "no functions were JIT-baked" warning ⇒ mccjit_embed_fns non-null ⇒ registry n>=1 ⇒ the constructor's `for(i=0;i<n;i++) mccjit_boot_swap(...)` DOES call boot_swap. (c) smoke/engines' no-swap verdict is SLOT-based (the slot lives in program memory) ⇒ program-observable ⇒ the swap genuinely does not land.
 So: boot_swap IS called but the slot is never updated ⇒ the silent failure is INSIDE mccjit_boot_swap → boot_swap_run: either `mccjit_feasible()` returns 0 (2118; the mmap→VirtualAlloc probe or its execute step fails on real Windows) or `mcc_jit_recompile_blob` returns NULL (1005). BOTH are engine-side, so they must be diagnosed with a PROGRAM-OBSERVABLE sink, not engine stderr — e.g. temporarily make boot_swap write feasible/variant/entry into a program-provided global or a file via CreateFile (kernel32, CRT-agnostic), rebuild the blob, run. That pin-points feasible-false (→ route exec-mem through host_runmem_alloc's VirtualAlloc, or fix the win32 mmap-shim execute path) vs recompile-null (→ the RIR→machine-code recompile fails on PE). LESSON for the fleet: on the PE embed-JIT binary, engine (ucrt) stdio/env is not console-visible — always instrument via the program CRT (kernel32/CreateFile) or a program-passed callback.
+
+<a id="t-mac-30022-slice-1-float16-if-guard"></a>
+## T-mac-30022 slice-1 — `_Float16` constant rejected in `#if` (DONE, mac-arm64, 2026-08-17)
+
+**Fixed.** `expr_preprocess` (`src/mccpp.c:2204`) rejects a stray float/string constant in a
+`#if` expression with `tok >= TOK_STR && tok <= TOK_CLDOUBLE` → "invalid constant in
+preprocessor expression". `_Float16` literals lex to `TOK_CFLOAT16` (`0xd5`, `src/mcc.h:1328`),
+which sits *outside* that contiguous range (`TOK_STR`=0xc8 .. `TOK_CLDOUBLE`=0xcc), so
+`#if 1.0f16 > 0` slipped an illegal floating operand into the integer-constant-expression
+evaluator and compiled **rc=0**, while `#if 1.0` is correctly refused. Fix (1 token):
+`if ((tok >= TOK_STR && tok <= TOK_CLDOUBLE) || tok == TOK_CFLOAT16)`. There is no `__bf16`
+constant token (round-5 numeric-lexing note: `__bf16` has no constant path), so `TOK_CFLOAT16`
+is the only float token below the range; the char/string encoding-prefix tokens
+(`TOK_U16STR`.., `TOK_U8CHAR`) are a *separate* residual gap, not in this slice.
+
+**Verification (§8, mac-arm64 native, `cmake-macos`).** New dg-error cell
+`tests/diagnostics/dg-error/float16_lit_pp.c` (`/* dg-error: invalid constant in preprocessor
+expression */`, `#if 1.0f16 > 0`). Pre-fix `#if 1.0f16` compiled rc=0 (bug); post-fix errors
+rc=1 with the expected message. `diag.dg-error.float16_lit_pp` GREEN; `ctest -R preprocess`
+100% (42/42, 1 opt-in skip); census-neutral (banked `mccpp.c` sites 60, still 60). Merge SHA
+`c3d23dbd`.
+
+**Tree reds observed but NOT from this slice (pre-existing wideint/bitint WIP on main):**
+`fmt/census-bank` drift is in `mccgen.c` (banked 29 → now 30, not mccpp.c); `docs/refs`
+dangling citation `docs/DETAILS.md:4392 → src/wide256_slice.h` (removed by lin's wideint-unify
+`dcba0d5f`; lin/union-merge owner to update the stale line or allow it); `ast/o0-baseline` +
+`diag.dg-error.bitint_over_256` (mcc now accepts `_BitInt(257)` — `__BITINT_MAXWIDTH__` bump)
+are the in-flight `_BitInt` cap changes the user flagged "bitint still WIP, work around it".
+
+**Residual T-mac-30022 (task stays IN_PROGRESS) — deeper, mac-native-testable, scoped:**
+- **slice-2 target/query builtins eval 0.** `pp_builtin_func` (`src/mccpp.c:1988`) recognizes 13
+  builtins; only 5 (`pp_builtin_macro`, `:2126`: `__has_attribute/__has_c_attribute/__has_builtin/
+  __has_feature/__has_extension`) get real values. The other 8 hit the `else if (pp_builtin_func)`
+  arm (`:2249`) which consumes the parens and returns **c=0 unconditionally** — so
+  `#if __is_target_arch(x86_64)`, `__is_target_os(...)`, `__is_target_vendor`, `__is_target_environment`,
+  `__has_cpp_attribute`, `__has_declspec_attribute`, `__has_warning`, `__building_module` are all
+  *always false*, silently mis-guarding target-conditional code. Correct fix: implement the four
+  `__is_target_*` by comparing the arg against mcc's own target triple components (mcc knows
+  `MCC_TARGET_*`), matching clang's triple normalization (the subtle part — os/vendor/environment
+  canonicalization); `__building_module`→0 is defensible (no modules). Touches the shared `#if`
+  builtin path, so it wants a focused pass, not a wind-down edit.
+- **slice-3 `#embed limit()/offset()`** take a single integer token, not a constant-expression
+  (`src/mccpp.c:1708`); accept a full ICE there.
+
+**Source.** mac-arm64, 2026-08-17; from the round-1 investigation `INVESTIGATIONS.md#pp-float16-in-if`.
