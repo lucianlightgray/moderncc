@@ -50144,3 +50144,13 @@ pe_build_imports, or carry the winning trial's rodata delta forward instead of r
 is architectural in the search commit, not a one-line save/restore, and touches all PE AOT size-opt
 output (verify: full exec-search-emit{size,iso} + no regression on normal AOT). Reverted all probes;
 main clean. **Source.** win-x64, 2026-08-17.
+
+### T-win-50003 emit-size — COMPLETE mechanism (win-x64, 2026-08-17): searched function's constants are fconst-pooled during measurement, committed replay reuses them, rodata never advances
+
+Final per-function instrumentation (MCC_DBG_FE on floating_point.c):
+- `-O0`: `test` enters ast_func_end at rodata=0x8; `main` enters at rodata=0x3e8 (constants committed normally).
+- emit-size: `test` commits (enter 0x8 → keep rodata=0x10, faithful=1). `main` enters at rodata=0x1f0 and at its keep decision **rodata is STILL 0x1f0, faithful=1, keep=1** — main's committed replay advanced rodata by ZERO, even though main's .text references FP constants at [0x1f0,0x368).
+
+So the searched function (`main` goes through the emit-size search; `test` is too small to) has its constants POOLED (ast_fconst) during the search's `ast_search_emit_size` measurements (which emit 0x178 B rodata then roll back data_offset). The subsequently-committed replay (`ast_replay_body` in the ast_replay_ok block, ast_fconst_i walked from 0) gets fconst-pool HITS for every constant and re-uses the pooled symbols WITHOUT re-emitting → rodata data_offset stays at main's entry value (0x1f0). The constant BYTES exist only transiently (last measurement, past the rolled-back offset); pe_build_imports then appends the import table at 0x1f0, overwriting them → the corrupt import terminator / loader crash.
+
+TRIED + INSUFFICIENT: restoring `ast_fconst_n` at the end of `ast_search_emit_size` (drop measurement-pooled entries so the commit re-misses+re-emits) — rodata still 0x1f0, because the pool/replay interaction spans multiple phases in ast_func_end (first replay at ~20965, opt/search at ~21125, committed replay feeding keep at ~21671) and the constants survive in the pool across them. CORRECT FIX (delicate, blast radius = all optimized output): save the fconst-pool size at ast_func_end entry (post-`test`, pre-search) and restore it immediately before the COMMITTED replay so it re-emits the searched function's constants fresh (advancing rodata), OR make the search measurements not pool into the persistent fconst table. Verify: exec-search-emit{size,iso}/{floating_point,math_library} green AND no regression on any optimized AOT/JIT output (the fconst pool is shared fleet-wide). Not landed here — needs full-pipeline tracing + regression pass, unsafe to rush. Reverted all probes; main clean. **Source.** win-x64, 2026-08-17.
