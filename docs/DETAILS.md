@@ -50013,3 +50013,26 @@ replay**. The reason lin's "isolated bodies pass" test missed it: a READ-back te
 (store AND load both drop the swap consistently, so the logical value is correct); only a
 physical-byte check (memcpy) exposes it. Fix + test against the store byte layout, not read-back,
 at -O0. **Source.** win-x64, 2026-08-17.
+
+### T-win-50003 emit-size — CORRECTION + refinement (win-x64, 2026-08-17): .text is NOT byte-identical; the crash is size-dependent
+
+Correcting the anchor above: objdump `-h` showed the SAME .text SIZE (0x17e8) but `-d`
+disassembly shows .text is coherently RE-EMITTED — every RIP-relative constant load has its
+displacement adjusted for the smaller data sections (e.g. `movd 0x304d(%rip)#0x404060` →
+`movd 0x303d(%rip)#0x404050`; -16 disp, -16 target). So `.text` and the compacted `.rdata`/`.data`
+are INTERNALLY CONSISTENT — the winning emit-size strategy re-emitted both coherently. It is NOT a
+.text-vs-.rdata desync.
+
+Two further facts narrow it: (1) a minimal 3-constant FP program
+(`double a=1.5,b=2.25; printf(a+b,a*b,a/b)`) compiles+runs FINE under `-fopt-search-emit-size` (rc0)
+— only the many-constant `floating_point.c` crashes, so the defect is **size-dependent** (triggers
+past some constant-pool / section size). (2) The crash is still in the Windows loader before the
+entry point. So the surviving hypothesis is a **size-dependent corruption of the PE import table (or
+another loader-processed directory) when the constant pool compaction shifts the idata within
+.rdata** — the top-level data-directory RVAs get updated (import dir 0x33f0→0x31f0) but an internal
+idata RVA (ILT/IAT/hint-name) or a section-size field is computed against a stale/pre-compaction
+layout, so the loader faults resolving imports only once the shift is large enough. Confirming it
+needs a raw dump/diff of the two binaries' import descriptors + hint-name tables (next step). The
+fix lands in the PE writer's idata layout vs the emit-size final rodata size, OR in making the
+emit-size commit not perturb the section the import table is laid out against. **Source.** win-x64,
+2026-08-17.
