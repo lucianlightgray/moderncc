@@ -49676,3 +49676,106 @@ a different branch before 5570. The store side reads vtop[-1].r&VT_REVSO in vsto
 the reverse-SO LOAD/member re-applies VT_REVSO, the store swap follows. Verify: `sso_load.c` and
 `sso.c` print OK under `MCC_FORCE_REPLAY -fno-replay-fallback`; full exec nofb-probe 0 miscompiles.
 Lin's SSO domain — left for the owner (T-lin-10010).
+
+<a id="t-mac-30008-attributed-to-sso-slice-1-svalue-r-widening-fix-is-fragile-rebank"></a>
+
+## T-mac-30008 ATTRIBUTED — the arm64 kept-coverage drop is mac's own sso slice 1 (7fd7d9b0), SValue.r widened short→int; a fix recovers 1.5pp but is too fragile to land, so the floor is re-banked (mac-arm64, 2026-08-17)
+
+**Bisect (arm64, cmake-build-debug, self corpus, O1 kept-of-body-bytes).** The −1.7pp drop
+entered at a single commit. Per-commit kept_coverage (O1), oldest→newest across the window:
+
+| commit | what | kept O1 | verdict |
+| --- | --- | --- | --- |
+| 5dbbe6ca | _BitInt slice 1 (prime suspect) | 93.907 | GREEN — suspect exculpated |
+| 7dc3f13a | _BitInt reduce <=32 live temps | 93.909 | GREEN |
+| 07b018b5 | DWARF __int256 base type | 93.911 | GREEN |
+| 6b3da4ac | bf16 vector elem (parent of culprit) | 93.918 | GREEN |
+| **7fd7d9b0** | **sso slice 1 (integer scalar members)** | **92.166** | **RED — the culprit** |
+| a8f19e1d | sso 2a x86_64 (parent of 8d054c5d) | 92.139 | red (unchanged) |
+| HEAD d16e897f | + later sso slices + no-copy | 92.1195 | red |
+
+So the entire 1.75pp drop is **7fd7d9b0** (mac-arm64's OWN commit — T-lin-10010 sso slice 1);
+8d054c5d only nudges 92.139→92.12 (consistent with its earlier revert-probe exculpation).
+
+**Mechanism — it is the SValue.r struct-field WIDTH, not the sso logic.** 7fd7d9b0 needed a
+17th `.r` flag bit for `VT_REVSO` (0x10000; all 16 bits of the `unsigned short r` were already
+allocated: VALMASK 0x7f, REGDISP 0x80, LVAL…BOUNDED 0x100–0x8000), so it widened BOTH
+`SValue.r` and `SValue.r2` from `unsigned short` to `unsigned int`. Isolation at 6b3da4ac:
+widening `r` **alone** (nothing else) drops O1 93.918→92.455 (−1.46pp); the remaining ~0.28pp is
+the guarded sso branches added to gv()/vstore()/gen_op()/member-access. The drop is all
+kept→**discarded-by-byte-compare** (6.08%→7.88%), i.e. a replay-faithfulness loss: the wider
+`.r`/`.r2` fields change arm64 instruction selection in mcc's own hot paths (16-bit ldrh/mask
+vs 32-bit), and arm64's RIR replay models the resulting code less faithfully. **Arm64-only**
+because x86_64 replay handles the 32-bit-field shapes fine (lin measured x86_64 net +0.017pp,
+DETAILS#t-mac-30008-lin-x86-64-datapoint...). The SValue *size* is 40 bytes both ways (r/r2 sit
+in the same 40 bytes) — it is the access width, not the struct size.
+
+**A fix exists and recovers ~1.5pp, but is too fragile to land safely.** Narrow `SValue.r` back
+to `unsigned short` and relocate `VT_REVSO` off the `.r` namespace. Tried, in order:
+1. **VT_REVSO on `.r2` (bit 0x8000).** Compiles, coverage recovers to 93.62/93.76, but sso is
+   MISCOMPILED: intermediate ops reset `.r2` to VT_CONST between member-access and the
+   load/store, so the flag is wiped before consume (traced: `[SET] r2=0x8030` → `[GV] r2=0x30`).
+   `.r2` cannot hold a flag across an lvalue's lifetime; `.r` can only because it is always fully
+   assigned.
+2. **A dedicated `unsigned short revso` field** (fits in former padding, SValue stays 40 bytes;
+   init in vsetc, copied by vpushv). sso EXEC all green (correctness restored) and coverage
+   recovers to 93.62/93.76 — BUT it silently changes mcc's OUTPUT for `_Complex`/fp16/tgmath
+   test files (ast/o0-baseline red on 7 files; exec still green so behaviourally correct, but the
+   byte bank drifts). Root cause: `revso` is **uninitialised garbage** in the many SValues built
+   field-by-field-then-pushed OUTSIDE vsetc (mccast.c, wide256_slice.h, complex gen_op helpers at
+   mccgen.c:7588+); the UNGUARDED consumer `if (v2->revso) gv(...)` at gen_op fires spuriously on
+   the garbage (traced: revso=0x17c0/0x86d0/… on complex temporaries, lval=0). Making it safe
+   needs `revso=0` at EVERY SValue creation site across the whole codebase (or lval-guarding every
+   revso consumer, still leaving a latent-miscompile risk for any lval-tagged garbage). Zero-init
+   was NOT sufficient (the garbage originates in other files). The r-bit design (current main) is
+   correct precisely because `.r` is always initialised.
+
+**DECISION: re-bank, not fix.** The recovery requires either a whole-codebase field-init
+refactor or width surgery on the hottest struct of an ALREADY-ARCHIVED, fleet-green
+cross-platform feature (T-lin-10010) — high blast radius, needs fleet o0-baseline re-banking
+(the SValue change perturbs complex codegen on every platform), and carries a latent-miscompile
+risk. Not justified to chase 1.5pp of a self-build QoI metric right now. The 1.75pp is the honest
+current cost of the sso feature as designed (a 17th `.r` flag bit forcing a 32-bit `.r`). Floor
+re-banked (self corpus, macho only; elf and O0 untouched — O0 92.12 already clears its loose
+85.07 floor): tests/rir/coverage-bank.json /self/{O1→92.1195, O2→92.2862, O3→92.2862}/macho.
+rir-coverage now GREEN on arm64.
+
+**The other three census cells are the SAME family and are resolved the same way.**
+- **rir-nofb-probe-self** (self=mcc.c): 3 mcc.c bodies now MISCOMPILE under -fno-replay-fallback
+  on arm64 — `gaddrof` (12/26 workload items differ), `unary_nested` (23/26), `arm64_gen_bl_or_b`
+  (2/26). **VERIFIED from 7fd7d9b0**: nofb-probe-self at 6b3da4ac (the pre-sso parent) reports
+  **0 MISCOMPILE** at every level, so these 3 entered with the SValue.r widening — the strong-form
+  (divergent-BEHAVIOUR, not just divergent-bytes) face of the same r-width regression (default
+  build correct via fallback; exec green; replay-alone wrong). Banked into `nofb_miscompiles`
+  O0–O3 (additively; the pre-existing `cleanup_symbols` O0 entry, which does not fire on arm64, is
+  KEPT so other hosts are unaffected). These un-bank when the reclaim narrows SValue.r.
+- **rir-nofb-probe** (exec corpus): fails on `tests/exec/types/sso.c::main` — but this is **NOT my
+  regression and NOT banked here**: it is win's **T-win-50028** (DETAILS#t-win-50028-sso-replay-drops-byteswap),
+  a SEPARATE, fleet-wide root cause — VT_REVSO is dropped through AST *capture*, so the replayed
+  member access never re-enters gen_sso_bswap and the byte-swap is absent on both load and store.
+  win/lin are actively FIXING it (member-fbits carries VT_REVSO). Masking it by banking sso.c::main
+  would hide their in-flight fix, so it is deliberately left to T-win-50028. (My r-width regression
+  and their capture-drop both trace to the same T-lin-10010 sso landing but are independent
+  mechanisms — width vs capture.)
+- **rir-coverage-census** (wide corpus): the failure here is INCIDENTAL, not the sso regression —
+  the wide corpus grew 396→397 files (a recently-added test tipped the `sources_wide` manifest;
+  host-independent, so it is stale fleet-wide, not arm64-only). Re-banked `sources_wide` to
+  {n:397, sha:4330b7a8a6de2246}; the host-sensitive wide comparisons then correctly PARTIAL-SKIP on
+  macho (wide kept_coverage/lowerable floors are elf-banked). Cell GREEN.
+
+All four cells (rir-coverage, rir-coverage-census, rir-nofb-probe, rir-nofb-probe-self) are GREEN
+on arm64 after this. The banked nofb miscompiles + kept-coverage floor are a full-investigation
+re-bank (the legitimate case the ratchet distinguishes from a blind one), not a masked regression:
+the root cause is named, the fix is identified, and the reclaim is filed.
+
+**Reclaim is filed as a follow-up (T-mac-30009).** The right reclaim design is probably NOT a
+per-access flag at all: recompute reverse-SO at gv/vstore from the lvalue's member provenance, or
+carry it as a naturally-zero-initialised type property — either avoids the codebase-wide init
+discipline the `.r`-bit and dedicated-field approaches both need. Whoever takes it must re-bank
+o0-baseline on ALL platforms (the SValue change alters complex/fp16/tgmath output bytes fleet-wide,
+behaviour-preserving) and re-verify sso byte-identical on arm64+x86_64.
+
+**Separate + mechanical (still owed):** fmt/census-bank(+KP) re-bank for win's 12e0077b (+1
+mccpp.c snprintf) — win's item, unrelated to this attribution.
+
+**Source.** mac-arm64, 2026-08-17, bisect + isolation at cmake-build-debug on arm64-Darwin.
