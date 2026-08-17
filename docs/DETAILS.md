@@ -49501,3 +49501,27 @@ call-only baseline (or an explicit archive-with-call-floor decision). **Source.*
 Measured on x86_64-Linux (cmake-debug, native), the same rir-coverage cell mac read on Darwin. **The 1.7pp drop does not exist on x86_64.** kept_coverage at HEAD (all three of the day's landings — my sso 2a–2d, win's 12e0077b, mac's 8d054c5d): **-O1 92.1595%, -O2/-O3 92.2382%.** The pre-my-sso base I measured during the slice-2a stash-test (base tree, before ANY of the three) was **92.1422% (-O1)** — so the three landings together moved x86_64 kept_coverage **+0.017pp**, i.e. a slight rise, NOT a regression. (The x86_64 rir-coverage cell is red against the *banked* 92.2277 regardless — that is the pre-existing host-instability T-lin-10057 exists to fix, banked from a different host; it is not this regression.)
 
 **Therefore the −1.7pp is arm64-specific**, which points AWAY from the sso store reorder as its cause: (1) the reorder — and every one of my sso mccgen.c edits — is GUARDED, acting only when `VT_REVSO` is set, which no body in the compiler's own source ever is, so for the self-compile they add only ~50 static lines of dead-for-this-corpus branch/helper code; (2) the reorder is target-independent LOGIC (it moved a `vtop[-1].r & VT_REVSO` block before the VT_LLOCAL materialise), identical on both targets, so it cannot produce a drop that appears on arm64 and not x86_64; (3) the slice-2a stash-test already isolated one of my edits at +0.0006pp on x86_64. A source change that is +0.017pp cumulative on x86_64 and pure dead-code for the non-rev-SO self-compile is not a plausible source of an arm64-only 1.7pp optimizer-replay regression. The prime remaining suspect is a change with target-specific codegen ripple — mac's own note flags the `gen_wide256_op` vstack reshape (new vrotb/addrof shapes replaying differently), and register allocation / replay faithfulness is exactly the thing that differs arm64-vs-x86_64. **Definitive per-suspect isolation needs an arm64 build (revert each landing's mccgen.c/wide256_slice.h in turn, re-measure) — lin has no arm64 executor, so that half is mac's.** Do NOT re-bank until that arm64 bisect runs; this note only removes the sso reorder from the suspect list on the strength of its x86_64-flat, guarded, target-independent nature. **Source.** lin-x64, 2026-08-17.
+
+<a id="t-mac-30008-arm64-isolation-mac-slice-exculpated-window-is-aug-15-to-16"></a>
+
+## T-mac-30008 arm64 isolation — the mac no-copy slice is EXCULPATED too; all three same-day suspects cleared, the window is Aug-15→16
+
+**Experiment (arm64, cmake-build-debug, revert-probe then reset).** rir-coverage kept_coverage
+at HEAD (f0c7bf58): 92.1195 (-O1) / 92.2862 (-O2/-O3). With mac's 8d054c5d `git revert -n`'d
+(gen_wide256_op vstack reshape removed, wide256_call3 restored) and mcc rebuilt: 92.1192 /
+92.2859 — a 0.0003pp wiggle, i.e. the drop is fully present WITHOUT the no-copy slice. Combined
+with lin's x86_64 datapoint (DETAILS#t-mac-30008-lin-x86-64-datapoint-the-drop-is-arm64-only-sso-exculpated:
+the day's three landings NET +0.017pp on x86_64, sso reorder VT_REVSO-guarded/dead in
+self-compile) and win's 12e0077b being lexer-side: **all three 2026-08-16 landings are cleared.**
+
+**Re-scoped window.** The arm64 floor (93.7977/-O1, 93.9276/-O2-O3) last read green in mac's
+2026-08-15 full suite (T-lin-10092/mac, 408a8979, 0 genuine failures at ~05:00Z). The 1.7pp
+arm64-only drop therefore entered between 2026-08-15T05:00Z and 2026-08-16 pre-8d054c5d — a
+window containing (non-exhaustive): mac's _BitInt slice 1 (5dbbe6ca — core VT_BITFIELD tagging
+through mccgen/mccast, a strong arch-relevant suspect), the T-mac-30007 _BitInt marshalling fix,
+lin's sso slice 1/2a (x86_64-exculpated but the slice-1 SValue.r widening is a core-struct
+change), T-lin-10393 CPU-budget, and lin's GPU/10392 work. NEXT SLICE: bisect kept_coverage over
+that window on an arm64 box (build + the 13s rir-coverage cell per step, ~8 steps); name the
+commit; then regression-fix vs re-bank. rir-coverage-census + rir-nofb-probe-self expected to
+share the root; fmt/census-bank re-bank (win's 12e0077b, +1 mccpp.c snprintf) is separate and
+purely mechanical. **Source.** mac-arm64, 2026-08-17T01:05Z, at f0c7bf58.
