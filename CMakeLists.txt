@@ -7191,6 +7191,11 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                         -DWORK=${CMAKE_BINARY_DIR}/embedjit
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embedjit_libc_override_link.cmake")
                     set_tests_properties(jit/embed-libc-override PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+                    add_test(NAME jit/embed-recursion-nofastfail COMMAND "${CMAKE_COMMAND}"
+                        -DMCC=${_mcc_exe}
+                        -DWORK=${CMAKE_BINARY_DIR}/embedjit
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embedjit_recursion_nofastfail.cmake")
+                    set_tests_properties(jit/embed-recursion-nofastfail PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
                 endif()
             endif()
         else()
