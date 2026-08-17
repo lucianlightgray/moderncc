@@ -51164,3 +51164,49 @@ with the pre-existing cross mcc built 17:37 before my edits; T-mac-30029 family)
 expressions/uns_constfold_div.c} additions — needs a sources_wide re-bank, lin's/wide-int
 owner's; my dg-error files are NOT in the wide corpus, which walks tests/exec,behavior,ast,
 asm,runtime,static+examples only). T-mac-30022 all three slices DONE.
+
+<a id="t-mac-30026-resolved"></a>
+## T-mac-30026 — RESOLVED (mac-arm64, 2026-08-17T22:00Z): pp directive-guards FIXED, fold-eval-diag + __VA_OPT__ are non-issues
+
+Three parts; one real reference-divergence bug fixed, two investigated to non-issues with evidence.
+
+**1. pp directive-guard holes — FIXED (`01a5ff1a`).** mcc diverged from gcc/clang and self-crashed:
+- `#undef <non-identifier>` (number/punctuator/empty) was silently accepted (`#define` rejects
+  `< TOK_IDENT`; `#undef` guarded only `defined`/`__VA_ARGS__`, `src/mccpp.c`). `#undef 123` actually
+  **SIGSEGV'd** once the guard was added naively because the original message did `get_tok_str(number,
+  NULL)` (needs the CValue). Fix: a separate `tok < TOK_IDENT` check with the arg-free message
+  "macro name must be an identifier", keeping the existing "invalid macro name '%s'" for the
+  `defined`/`__VA_ARGS__` case.
+- `#ifdef`/`#ifndef`/`#elifdef`/`#elifndef` guarded only `< TOK_IDENT`, so `defined` and `__VA_ARGS__`
+  passed as operands and were silently evaluated as "not defined". Fix: add
+  `|| tok == TOK_DEFINED || tok == TOK___VA_ARGS__` to both guards, matching `#define`/gcc/clang.
+  Verified: `#undef 123`/`+`/empty, `#ifdef defined`, `#ifndef __VA_ARGS__`, `#elifdef defined`
+  (under `#if 0`) all now error; valid directives unregressed. New dg-error cells `undef_nonident`,
+  `ifdef_defined_operand`. exec/ 365/365, preprocess + dg-error green.
+
+**2. `ast_fold_eval` vs gen DIAGNOSTIC divergence — NON-ISSUE (investigated, no change).** The VALUE
+divergence (unsigned `/`,`%` through signed sdiv) was the real bug and is already fixed by lin
+(T-mac-30014, `dd8a57ed`). For DIAGNOSTICS: the gen path (`src/mccgen.c:3663-3699`) emits the shift and
+signed-overflow diagnostics from the FRONT-END, gated on `CONST_WANTED`/`!pp_expr`. Empirically mcc
+already matches the reference compilers on the common cases — `1<<40` warns "left shift count >= width
+of type" at -O0 AND -O2 (± `-fno-replay-fallback`), like gcc `-Wshift-count-overflow`; a signed-overflow
+`int a[(-2147483647-1)*-1]` even **errors** under `-pedantic-errors` (mcc stricter than gcc's warning).
+`ast_fold_eval` is an OPT-TIME template re-emission folder; adding front-end diagnostics there would
+(a) double-diagnose any const-context expression gen already flagged, and (b) is the wrong layer for
+front-end diagnostics. The only shape where the fold path is the sole folder (the T-mac-30014
+unary-minus-of-literal escaping front-end folding) is a runtime, non-`CONST_WANTED` expression gen would
+not diagnose anyway. So the "divergence" is not a user-visible reference-compiler gap and no change is
+advisable.
+
+**3. `__VA_OPT__` in a non-variadic/object-like macro — NON-ISSUE (investigated, no change).** mcc emits
+`mcc_warning("'__VA_OPT__' can only appear in the expansion of a C23 variadic macro")` and continues
+(`src/mccpp.c:2523`). Verified `#define M(x) x __VA_OPT__(y)` : **gcc AND clang both WARN, rc=0**
+(`-Wvariadic-macros`) — mcc matches them exactly. The investigation's "every other __VA_OPT__ misuse is
+fatal, this is only a warning" is an mcc-internal inconsistency, NOT a divergence from the reference
+compilers; promoting it to an error would DIVERGE from gcc/clang. The narrow "skips the `(`/`##`
+structural checks on an already-invalid non-variadic macro" edge has no reference divergence on the
+primary case and negligible impact. Left as-is.
+
+**Net:** T-mac-30026 DONE — the one real bug (pp directive-guards) fixed + tested; the other two parts
+resolved as non-issues with gcc/clang evidence. Verification: exec/ 365/365, preprocess 100%, dg-error
+(4 cells across this + T-mac-30022) green; pre-existing `bitint_over_256` red is the _BitInt cap WIP.
