@@ -94,6 +94,12 @@ typedef char ast_vt_bitfield_check[VT_BITFIELD == 0x0100 ? 1 : -1];
 
 #define AST_FB_STORE_CHAIN_LIVE 8388608u
 
+/* T-win-50028: a captured MEMBER node whose access is reversed-scalar_storage_order.
+ * Carried as a dedicated fbits bit (NOT the raw VT_REVSO r-flag 0x10000, which aliases
+ * AST_FB_STORE_CMP_GV and corrupts bit-field stores under the -O1 optimizer); replay
+ * translates it back to VT_REVSO on the SValue.  See mccgen.c:13958 (parser origin). */
+#define AST_FB_MEMBER_REVSO 16777216u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -5222,6 +5228,29 @@ static int ast_load_over_member(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				 (ast_op(a, c) == AST_OP_MEMBER || ast_op(a, c) == AST_OP_MEMBER_ARROW);
 }
 
+/* T-win-50028: an indexed element of a reversed-scalar_storage_order array
+ * member -- Load(Binary '+'(MEMBER[VT_REVSO,VT_ARRAY], index)).  The parser
+ * saves the array member's VT_REVSO across the +/indir and re-applies it on the
+ * element (mccgen.c:13998); replay must do the same or the element misses its
+ * byte-swap.  Returns 1 if the load address is such an element. */
+static int ast_addr_over_revso_member(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	while (n != AST_NONE && ast_kind(a, n) == AST_Convert && ast_nchild(a, n) == 1)
+		n = ast_child(a, n, 0);
+	if (n == AST_NONE || ast_kind(a, n) != AST_Binary ||
+			ast_op(a, n) != '+' || ast_nchild(a, n) != 2)
+		return 0;
+	for (int i = 0; i < 2; i++) { MCC_TRACE("br\n");
+		AstLocal m = ast_child(a, n, i);
+		while (m != AST_NONE && ast_kind(a, m) == AST_Convert && ast_nchild(a, m) == 1)
+			m = ast_child(a, m, 0);
+		if (m != AST_NONE && ast_kind(a, m) == AST_Unary &&
+				(ast_op(a, m) == AST_OP_MEMBER || ast_op(a, m) == AST_OP_MEMBER_ARROW) &&
+				(ast_fbits(a, m) & (uint64_t)AST_FB_MEMBER_REVSO))
+			return 1;
+	}
+	return 0;
+}
+
 static void ast_replay_value_inner(AstArena *a, AstLocal n);
 
 
@@ -5325,6 +5354,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		sv.type.bs = ast_type_bs(a, n);
 		sv.type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		sv.r = (unsigned short)ast_op(a, n);
+		if (ast_op(a, n) & VT_REVSO)
+			sv.r |= VT_REVSO;
 		MCC_TRACE_IF("LEAF n=%d r=%#x t=%#x ival=%lld\n", (int)n, sv.r, sv.type.t,
 								 (long long)ast_ival(a, n));
 		sv.r2 = (unsigned short)ast_wide_r2(a, n);
@@ -5566,8 +5597,12 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 				gen_op('+');
 			}
 			vtop->type = mt;
-			if (!(mt.t & VT_ARRAY))
-				{ MCC_TRACE("br\n"); vtop->r |= VT_LVAL | (int)ast_fbits(a, n); }
+			if (!(mt.t & VT_ARRAY)) { MCC_TRACE("br\n");
+				uint64_t mfb = ast_fbits(a, n);
+				vtop->r |= VT_LVAL | (int)(mfb & ~(uint64_t)AST_FB_MEMBER_REVSO);
+				if (mfb & AST_FB_MEMBER_REVSO)
+					{ MCC_TRACE("br\n"); vtop->r |= VT_REVSO; }
+			}
 		} else if (uop == AST_OP_FNEG) { MCC_TRACE("br\n");
 			gen_opif(TOK_NEG);
 			vtop->type.t = ast_type_t(a, n);
@@ -5663,7 +5698,11 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		ast_replay_value(a, ast_child(a, n, 0));
 		if ((ast_fbits(a, n) & AST_FB_LOAD_LVAL) || !(vtop->r & VT_LVAL) ||
 				!ast_load_over_member(a, n))
-			{ MCC_TRACE("br\n"); indir(); }
+			{ MCC_TRACE("br\n"); indir();
+				if (ast_addr_over_revso_member(a, ast_child(a, n, 0)) &&
+						(vtop->r & VT_LVAL) &&
+						!(vtop->type.t & (VT_ARRAY | VT_VLA)))
+					{ MCC_TRACE("br\n"); vtop->r |= VT_REVSO; } }
 		break;
 	case AST_If: {
 		SValue sv;

@@ -2772,6 +2772,9 @@ static void rir_op_effect(const RirOp *ro) { MCC_TRACE("enter\n");
 				ast_set_ival(rir_arena, mb, ast_ival(rir_arena, lt));
 				ast_set_type_bf(rir_arena, mb, tsv->type.t,
 										 (uint64_t)(uintptr_t)tsv->type.ref, tsv->type.bp, tsv->type.bs);
+				if ((tsv->r & VT_REVSO) && !(tsv->type.t & VT_BITFIELD))
+					ast_set_fbits(rir_arena, mb,
+												ast_fbits(rir_arena, mb) | (uint64_t)AST_FB_MEMBER_REVSO);
 				ast_add_child(rir_arena, mb,
 											ast_dup_sub(rir_arena, ast_first_child(rir_arena, ad)));
 				t = mb;
@@ -4357,6 +4360,9 @@ static void rir_region(const RirOp *ro) { MCC_TRACE("enter\n");
 			const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 			ast_set_type_bf(rir_arena, m, v->type.t,
 									 (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
+			if ((v->r & VT_REVSO) && !(v->type.t & VT_BITFIELD))
+				ast_set_fbits(rir_arena, m,
+											ast_fbits(rir_arena, m) | (uint64_t)AST_FB_MEMBER_REVSO);
 			rir_push(m);
 		} else { MCC_TRACE("br\n");
 			rir_push_typed(m);
