@@ -190,7 +190,7 @@ ST_FUNC void host_fault_unblock(unsigned detail);
 
 #define TOK_HASH_SIZE 65536
 #define TOK_ALLOC_INCR 512
-#define TOK_MAX_SIZE 4
+#define TOK_MAX_SIZE 8
 
 typedef struct TokenSym {
 	struct TokenSym *hash_next;
@@ -1316,8 +1316,10 @@ struct filespec {
 #define TOK_U8STR 0xd4
 #define TOK_CFLOAT16 0xd5
 #define TOK_U8CHAR 0xd6
+#define TOK_CINT256 0xd7
+#define TOK_CUINT256 0xd8
 
-#define TOK_HAS_VALUE(t) (t >= TOK_CCHAR && t <= TOK_U8CHAR)
+#define TOK_HAS_VALUE(t) (t >= TOK_CCHAR && t <= TOK_CUINT256)
 
 #define TOK_EOF (-1)
 #define TOK_LINEFEED 10

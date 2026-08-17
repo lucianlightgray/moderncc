@@ -12624,6 +12624,13 @@ tok_next:
 	case TOK_CULONG:
 		t = (LONG_SIZE == 8 ? VT_LLONG : VT_INT) | VT_LONG | VT_UNSIGNED;
 		goto push_tokc;
+	case TOK_CINT256:
+	case TOK_CUINT256:
+		mk_wide256_type(&type, tok == TOK_CUINT256);
+		vsetc(&type, VT_CONST, &tokc);
+		next();
+		CST_PRIMARY();
+		break;
 	case TOK___FUNCTION__:
 		if (!gnu_ext)
 			{ MCC_TRACE("br\n"); goto tok_identifier; }

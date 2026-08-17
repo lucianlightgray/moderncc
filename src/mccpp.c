@@ -693,6 +693,13 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv) { MCC_TRACE("enter\n");
 		return strcpy(p, "<double>");
 	case TOK_CLDOUBLE:
 		return strcpy(p, "<long double>");
+	case TOK_CINT256:
+	case TOK_CUINT256:
+		snprintf(p, cstr_buf.size_allocated, "0x%016llx%016llx%016llx%016llx%s",
+						 (unsigned long long)cv->q.w3, (unsigned long long)cv->q.w2,
+						 (unsigned long long)cv->q.hi, (unsigned long long)cv->q.lo,
+						 v == TOK_CUINT256 ? "ui256" : "i256");
+		break;
 	case TOK_LINENUM:
 		return strcpy(p, "<linenumber>");
 
@@ -1251,6 +1258,12 @@ static void tok_str_add2(TokenString *s, int t, CValue *cv) { MCC_TRACE("enter\n
 			{ MCC_TRACE("br\n"); str[len++] = cv->tab[2]; }
 		if (LDOUBLE_WORDS >= 4)
 			{ MCC_TRACE("br\n"); str[len++] = cv->tab[3]; }
+		break;
+	case TOK_CINT256:
+	case TOK_CUINT256:
+		memcpy(&str[len], &cv->q, 32);
+		len += 8;
+		break;
 	default:
 		break;
 	}
@@ -1327,6 +1340,12 @@ static inline void tok_get(int *t, const int **pp, CValue *cv) { MCC_TRACE("ente
 		goto copy;
 	case TOK_CLDOUBLE:
 		n = LDOUBLE_WORDS;
+		goto copy;
+	case TOK_CINT256:
+	case TOK_CUINT256:
+		memcpy(&cv->q, p, 32);
+		p += 8;
+		break;
 	copy:
 		do
 			{ MCC_TRACE("br\n"); *tab++ = *p++; }
@@ -3572,7 +3591,7 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 		}
 	} else { MCC_TRACE("br\n");
 		unsigned long long n, n1;
-		int lcount, ucount, l0, ov = 0;
+		int lcount, ucount, l0, ov = 0, i256sfx = 0;
 		const char *p1;
 
 		*q = '\0';
@@ -3626,12 +3645,63 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); mcc_error("two 'u's in integer constant"); }
 				ucount++;
 				ch = *p++;
+			} else if (t == 'I' && p[0] == '2' && p[1] == '5' && p[2] == '6' &&
+								 (p[3] == 'u' || p[3] == 'U' || p[3] == 'l' || p[3] == 'L' ||
+									!((p[3] >= '0' && p[3] <= '9') || (p[3] >= 'a' && p[3] <= 'z') ||
+										(p[3] >= 'A' && p[3] <= 'Z') || p[3] == '_'))) { MCC_TRACE("br\n");
+				/* the MSVC-family __int256 literal suffix: [u|U]i256 / i256[u|U]; must be
+				   sniffed before the bare `i` imaginary suffix eats the 'i' — a trailing
+				   suffix char (u/l) continues the suffix, any other ident char is not i256 */
+				if (i256sfx)
+					{ MCC_TRACE("br\n"); mcc_error("incorrect integer suffix: %s", p1); }
+				i256sfx = 1;
+				p += 3;
+				ch = *p++;
 			} else if (t == 'I' || t == 'J') { MCC_TRACE("br\n");
 				tok_imaginary = 1;
 				ch = *p++;
 			} else { MCC_TRACE("br\n");
 				break;
 			}
+		}
+
+		if (i256sfx) { MCC_TRACE("br\n");
+			/* re-accumulate the digit string (still NUL-terminated in token_buf; any
+			   leading octal '0' just contributes zero) into 8x32-bit words — the host
+			   may lack a 128-bit type, so the mul-add carries through 64-bit halves */
+			uint32_t w[8];
+			uint64_t cur, carry;
+			int i;
+			if (lcount || tok_imaginary)
+				{ MCC_TRACE("br\n"); mcc_error("incorrect integer suffix: %s", p1); }
+			if (pp_expr)
+				{ MCC_TRACE("br\n"); mcc_error("'i256' constant in preprocessor expression"); }
+			ov = 0;
+			memset(w, 0, sizeof w);
+			for (q = token_buf; (t = *q++) != '\0';) { MCC_TRACE("br\n");
+				if (t >= 'a')
+					{ MCC_TRACE("br\n"); t = t - 'a' + 10; }
+				else if (t >= 'A')
+					{ MCC_TRACE("br\n"); t = t - 'A' + 10; }
+				else
+					{ MCC_TRACE("br\n"); t = t - '0'; }
+				carry = t;
+				for (i = 0; i < 8; i++) { MCC_TRACE("br\n");
+					cur = (uint64_t)w[i] * b + carry;
+					w[i] = (uint32_t)cur;
+					carry = cur >> 32;
+				}
+				if (carry)
+					{ MCC_TRACE("br\n"); ov = 1; }
+			}
+			if (ov)
+				{ MCC_TRACE("br\n"); mcc_warning("integer constant overflow"); }
+			tok = ucount ? TOK_CUINT256 : TOK_CINT256;
+			tokc.q.lo = w[0] | ((uint64_t)w[1] << 32);
+			tokc.q.hi = w[2] | ((uint64_t)w[3] << 32);
+			tokc.q.w2 = w[4] | ((uint64_t)w[5] << 32);
+			tokc.q.w3 = w[6] | ((uint64_t)w[7] << 32);
+			goto int_suffix_done;
 		}
 
 		if (pp_expr)
@@ -3667,6 +3737,7 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 		if (ucount)
 			{ MCC_TRACE("br\n"); ++tok; }
 		tokc.i = n;
+	int_suffix_done:;
 	}
 	if ((ch == 'i' || ch == 'I' || ch == 'j' || ch == 'J') && (tok == TOK_CFLOAT || tok == TOK_CDOUBLE || tok == TOK_CLDOUBLE || (tok >= TOK_CINT && tok <= TOK_CULONG))) { MCC_TRACE("br\n");
 		tok_imaginary = 1;
