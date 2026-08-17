@@ -49593,3 +49593,22 @@ byte-swap is arch-generic; Linux's exec nofb-probe would show it too — the ban
 sso.c). Repro: `MCC_FORCE_REPLAY=1 mcc -O0 -fno-replay-fallback -run tests/exec/types/sso.c`
 (FAIL) vs `mcc -O0 -run` (OK). Verify a fix by: that command prints OK, and the full exec
 nofb-probe reports 0 miscompiles. **Source.** win-x64, 2026-08-17.
+
+<a id="t-win-50028-capture-layer-narrowing"></a>
+
+### T-win-50028 narrowing (win-x64, 2026-08-17) — both directions; capture layer, not store-specific
+
+The SSO reverse-store bug reproduces on **loads too**: writing raw big-endian bytes and reading
+via an SSO member (`sso_load.c`) prints `11223344` at base but `44332211` under forced replay —
+the load-side swap is also dropped. So it is not the store sequence per se; the whole
+`gen_sso_bswap` byte-swap (mccgen.c:5804 → `gen_bswap` → `ir_cap_gen_bswap`, x86_64 inline path,
+`bswap_inline_on()` default ON) is not reproduced by replay. The BSWAP is modelled
+(IR_OP_BSWAP/AST_OP_BSWAP exist, `MCC_IR_HAVE_X86_PRIMS`=1 unconditional; arena-build pops the
+operand at mccrir.c:2842-2859 and the replay handler re-emits `gen_bswap(ast_ival)` at
+mccast.c:5583). So the swap node is either (a) not being captured at all in the SSO cast+bswap+
+bitcast sequence (`ir_cap_gen_bswap` no-op'd, or the cast/bitcast desync the ir_cap value stack
+so `rir_pop()` returns AST_NONE → `rir_arena_mismatch++` drops the BSWAP, mccrir.c:2845), or
+(b) captured but folded away before replay. Start for whoever fixes: dump the captured op stream
+for `sso_load.c::main` (`MCC_DUMP_REPLAY`/`ast_replay_dump`) and check whether an AST_OP_BSWAP
+survives to the replayed body; if it does, its operand/type is wrong; if it doesn't, the
+capture of the `sso_bitcast`+`gen_sso_bswap` sequence (mccgen.c:5784/5804) is the gap.
