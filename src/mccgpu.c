@@ -2290,7 +2290,14 @@ static int mcc_gpu_init(void) {
 	 * best device slice 1a held, so existing gpu/* cells are unchanged. The create
 	 * loop left the device-specific host-import proc pointing at the last slot, so
 	 * re-resolve it for the default routed slot 0. */
-	/* T-lin-10393: --jit-gpu-devices caps how many of the held devices we expose. */
+	/* T-lin-10393: --jit-gpu-devices caps how many of the held devices we expose.
+	 * MCC_GPU_MAX_DEVICES is the env mirror the CLI-less device tools (slicerun)
+	 * use to exercise the cap; an explicit CLI --jit-gpu-devices still wins. */
+	if (mcc_gpu_max_devices < 1) {
+		const char *e = getenv("MCC_GPU_MAX_DEVICES");
+		if (e && atoi(e) >= 1)
+			mcc_gpu_max_devices = atoi(e);
+	}
 	if (mcc_gpu_max_devices >= 1 && made > mcc_gpu_max_devices)
 		made = mcc_gpu_max_devices;
 	mcc_gpu_ndev = made;
