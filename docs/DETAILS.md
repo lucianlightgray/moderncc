@@ -50917,3 +50917,13 @@ ROOT: win uses the **MS-bitfield ABI** — bit-fields of different declared type
 FIX: guard the SPKu/SPKs byte + sizeof asserts with `#ifndef _WIN32` (matching the existing `tests/exec/types/double_to_signed.c:11` PE-guard pattern), keeping the value round-trips on every platform. Provably a no-op for lin/mac (they compile the guarded branch unchanged). VERIFIED on win: exec/sso + exec-replay/sso + exec-O3/sso all GREEN; flips ~22 sso reds (all opt-variants) green — the bulk of win's non-embed-JIT, non-float-print reds from the T-lin-10092/win NOTE-8 102-red run.
 
 **STATUS: MERGED to main e3a7cfc8 2026-08-17T20:14Z** (user-authorized). T-win-50029 DONE + archived. exec/sso + exec-replay/sso + exec-O3/sso green on win; ~22 sso reds flipped.
+
+<a id="t-win-50030-int256-bitint-float-print-win"></a>
+### T-win-50030 — int256/bitint test_float reds on win are float-print platform quirks, not miscompiles (win-x64, 2026-08-17T20:15Z)
+
+From the T-lin-10092/win NOTE-8 GPU-visible full run (102 reds), ~66 are int256/bitint128/bitint256 across all opt-variants (exec/, exec-O1/O3/Os, exec-chainstore/fusion/gatecombo/gatesoff/interchange/ivsrptr/mergestrings/narrowfix/replay{,-promote,-tmpl}/search{,-emitiso,-emitsize,-threads}/select/tile/vlat/zerobss). ALL fail ONLY in the `test_float` sections; every hex-integer section is byte-identical to golden and int256/_BitInt LAYOUT is correct (int256 sizeof 32 alignof 16). The diffs (measured on win, identical on the pre-wideint main baseline c49270b2):
+- `1.6069380442589902755e+60` (golden) vs `1.6069380442589903e+060` (win) — win `long double == double` (64-bit, ~17 sig digits, not the x86-80-bit ~20) AND msvcrt's 3-digit exponent `e+060`.
+- `inf` vs `1.#INF` — msvcrt's non-C99 inf spelling.
+So these are win-PLATFORM (MSVC ABI long-double==double + msvcrt printf), NOT wide-int miscompiles, and NOT lin's wideint-unify refactor (verified on the pre-merge baseline).
+
+FIX (proposed, deferred — touches lin/mac's freshly-merged wide-int tests bitint128.c/bitint256.c/int256.c, so coordinate): either (a) `#ifndef _WIN32`-guard the long-double-precision + exponent-format-sensitive `test_float` assertions on win (like T-win-50029 did for sso), keeping the value/integer sections everywhere; or (b) add win-specific expected float-print lines. (a) is lower-risk and matches the established PE-guard pattern. VERIFY: exec/{int256,bitint128,bitint256} + opt-variants green on win, unchanged on lin/mac. Blocks the bulk of the T-lin-10092/win red count after embed-JIT (2b) and the GPU/device cells.

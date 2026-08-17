@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30027   | 2026-08-17T20:14Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T14:40Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50030   | 2026-08-17T20:14Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-17T20:15Z |
 
 ## Contracts — blocking, highest priority
 
@@ -60,6 +60,9 @@
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
 
 ## Open — claimable
+- [ ] T-win-50030 [S] int256/bitint128/bitint256 `test_float` reds on win are float-print platform quirks (long double==double, msvcrt `e+060`/`1.#INF`), not miscompiles — guard/win-expect them
+      OWNER: — | STATE: OPEN | SHA: e3a7cfc8 | TS: 2026-08-17T20:15Z
+      REF: DETAILS.md#t-win-50030-int256-bitint-float-print-win | DEPS: — | NOTE: ~66 of the T-lin-10092/win NOTE-8 102 reds. Only the test_float sections differ (hex-integer sections byte-identical, layout correct); win long double==double (64-bit) + msvcrt printf exponent/inf format. Fix like T-win-50029: `#ifndef _WIN32`-guard the long-double-precision/exponent-sensitive asserts (or win-expected lines) in tests/exec/types/{int256,bitint128,bitint256}.c — coordinate, these are lin/mac's freshly-merged wide-int tests. Verified NOT a wideint-unify regression (fails on pre-merge baseline c49270b2).
 - [ ] T-mac-30023 [S] Investigate (SECURITY): object-file readers trust untrusted input — COFF reloc offset unbounded → OOB heap write (`mccpe.c:2616`; Mach-O guards the same op), archive `nsyms` unvalidated → OOB read (`mccelf.c:3815`), Mach-O dylib export bounds + NULL-deref, DLL export count truncation; add bounds checks
       OWNER: — | STATE: OPEN | SHA: 9cf26f48 | TS: 2026-08-17T20:14Z
       REF: INVESTIGATIONS.md#objreader-bounds | DEPS: —
