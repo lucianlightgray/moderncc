@@ -12,6 +12,9 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+- [ ] T-mac-30042 [S] Fix: `(_Bool)&sym` unconditionally folds to constant `1` with no weak guard → miscompile (`(_Bool)&weak_var`, incl. `static _Bool b=(_Bool)&weak_var` → wrong `1` byte in `.data`); `gen_cast` `mccgen.c:5490-5493` inconsistent with the file's own weak folds (`condition_3way:14566`, `sym==sym:3807`)
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 0497a0fa | TS: 2026-08-17T23:21Z
+      REF: INVESTIGATIONS.md#r7-bool-weak-fold | DEPS: —
 - [ ] T-mac-30029 [S] Investigate: arm64/PE `long double` ABI (16-byte on every OS, should be 8 on Apple/Win arm64 — `arm64-gen.h:27`; system-libc interop break) + host-vs-target ld-constant hi-word (`mccast.c:2735`) + `__SIZEOF_WINT_T__`/`__WINT_TYPE__` PE mismatch + missing `__ARM_*`/i386 SSE feature predefines; family of x86_64-PE ld (T-lin-10394)
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 85483b94 | TS: 2026-08-17T22:35Z
       REF: DETAILS.md#t-mac-30029-slice-1-arm64-predefs | DEPS: — | NOTE: SLICE-1 DONE+GREEN (499aac4b) — added the 7 arm64 ISA-identity predefines gcc+clang agree on (__ARM_ARCH=8/__ARM_ARCH_ISA_A64/__ARM_64BIT_STATE/__ARM_ARCH_PROFILE='A'/__ARM_PCS_AAPCS64/__ARM_SIZEOF_MINIMAL_ENUM=4/__ARM_SIZEOF_WCHAR_T=4); NOT the optional feature macros (no arm_neon.h → __ARM_NEON would break intrinsic-gated code). New dg-error arm64_isa_predefs, exec/preprocess/dg-error green. HEARTBEAT INTENTIONALLY STALE — TTL-resumable by any session. RESIDUAL (stays IN_PROGRESS, cross-target, mac can't run to verify): long-double 16→8-byte ABI on Apple/Win arm64 (high-blast-radius, arm64 o0-baseline re-bank), __SIZEOF_WINT_T__/__WINT_TYPE__ PE + i386 SSE predefines, host-vs-target ld hi-word (mccast.c:2735).
@@ -77,9 +80,6 @@
 - [ ] T-mac-30041 [S] Investigate: attribute/pragma parsed-then-dropped — [MED-HIGH] `#pragma weak <sym>` unimplemented, symbol stays strong → link failure/multi-def (`mccpp.c:2599-2809/2805`); [MED] `constructor(N)`/`destructor(N)` priority discarded → wrong init/fini order (no `.init_array.NNNNN`; `mccgen.c:6378`, `mcc.h:316`, `mccelf.c:1502`); [MED] `used`/`unused`/`maybe_unused` set no flag → `-Wunused -Werror` breaks (`mccgen.c:6508`); [MED] `#pragma GCC diagnostic push/pop/ignored` no-op + spurious warning. `aligned`/`packed`/`pack`/`cleanup`/`alias`/`mode`/`section`/sso all ROBUST
       OWNER: — | STATE: OPEN | SHA: bac4a448 | TS: 2026-08-17T23:19Z
       REF: INVESTIGATIONS.md#r7-attr-pragma | DEPS: —
-- [ ] T-mac-30042 [S] Investigate: `(_Bool)&sym` unconditionally folds to constant `1` with no weak guard → miscompile (`(_Bool)&weak_var`, incl. `static _Bool b=(_Bool)&weak_var` → wrong `1` byte in `.data`); `gen_cast` `mccgen.c:5490-5493` inconsistent with the file's other weak-symbol folds (`condition_3way:14566`, `sym==sym:3806`). Switch/bitfield/VLA/computed-goto lowering all ROBUST
-      OWNER: — | STATE: OPEN | SHA: bac4a448 | TS: 2026-08-17T23:19Z
-      REF: INVESTIGATIONS.md#r7-bool-weak-fold | DEPS: —
 - [ ] T-mac-30033 [S] Investigate: assembler / inline-asm — [HIGH] arm64 inline-asm register numbering collides with codegen numbering (physical x0..30 vs codegen R30=19/F=+20; no shim like arm32's `arm_asm_treg`) → `asm("x20")` stores a stray FP reg, `'r'` past x18 corrupts LR (`arm64-asm.c:2099/2122`); `.section …,@type` drops type + force-sets SHF_ALLOC (`mccasm.c:806/830`); arm64 v8-v31 unclobberable; x86_64 `'A'` reserves only RAX
       OWNER: — | STATE: OPEN | SHA: 80d55872 | TS: 2026-08-17T23:05Z
       REF: INVESTIGATIONS.md#r6-inline-asm-regnum | DEPS: —
