@@ -49391,3 +49391,28 @@ unaffected; smoke/native's remaining red is its pre-attributed T-win-50015 msstr
 T-win-50021 jit-not-baked composition, untouched here. Fleet note: the floor + probe are
 platform-generic — a Linux box losing its second reference now gets the honest SKIP instead of
 337 phantom regressions.
+
+<a id="t-win-50026-recmiss-fixed-nofb-rescoped-vla-divergence"></a>
+
+## T-win-50026 half-closed (win-x64, 2026-08-17T01:40Z, adb24a36) — rec-miss was a -lpthread costume; nofb-probe is a REAL VLA replay divergence
+
+Attribution complete, and the two cells turned out to be different diseases:
+
+- rir/rec-miss: NOT provisioning at all. Its six subjects are in-tree; every build failed at the
+  link because the driver passed -lpthread unconditionally and the PE target has no such library
+  — so _ran stayed 0 and the empty-corpus floor fired. FIXED adb24a36 (WIN32-conditional libs;
+  none of the six subjects uses threads); the cell PASSES on win now.
+- rir-nofb-probe: NOT empty-input either — the probe runs and reports 10 NEW byte-divergent
+  bodies that "miscompile under -fno-replay-fallback" at -O0 on win, ALL VLA:
+  tests/exec/vla/bug.c::main, continue.c::test1..test5, label.c::f1, reuse.c::main,
+  vla_empty_init.c::sum_vla + ::sum_vla2. Not present in the probe's known-divergence ledger
+  (Linux-derived), so either (a) the PE stack-probe/_chkstk emission legitimately differs
+  between the primary and replay paths for VLA bodies on win — then the ledger needs a win arm
+  taken deliberately — or (b) the replay path genuinely mis-emits VLA stack handling on PE and
+  the fallback has been papering over it, which is a real compiler finding the probe exists to
+  surface. NOT adjudicated this session (wind-down); whoever resumes starts by diffing the
+  primary vs replay bytes of vla/bug.c::main at -O0 and deciding (a) vs (b) — cheap, the probe
+  names the exact bodies. The cell stays honestly red on win until then.
+
+REMAINING for the task: the nofb-probe (a)-vs-(b) adjudication + either the ledger win arm or
+the emission fix. rec-miss is paid.
