@@ -50727,3 +50727,7 @@ Supersedes the "invalid fd" framing — the fd is invalid **because** of a CRT m
 **Tooling recap:** `cdbX64.exe` (winget Microsoft.WinDbg); `bp ucrtbase!_close/_read/common_sopen_dispatch<char> "…; g"` to trace fd lifecycle; `objdump -p` for the DLL import list; `ln`/`kb` for frames. **BUILD:** `rm cmake-*/mccjit_engine_mingw.o+.a+mccjit_blob.c` before any rebuild (blob DEPENDS omits its sources → stale otherwise).
 
 **Source.** win-x64, 2026-08-17; cdb ModLoad + fd trace + objdump imports + the ==AOT msvcrt-blob build.
+
+### T-win-50021 slice-2 — msvcrt.dll leak is multi-source (win-x64, 2026-08-17)
+
+Confirmed the CRT overhaul is multi-component: even with the blob compiled `-DNDEBUG` (removes the `assert`→`__msvcrt_assert` pull) AND the explicit `mcc_add_library("msvcrt")` (libmcc.c:1820) removed AND the ucrt blob, the embed-JIT binary STILL imports `msvcrt.dll` (objdump `msvcrt=1`) and still crashes — so msvcrt also enters via the embedded mccrt runtime and/or the mcc-compiled program's own link (libmingwex's `iswctype.o`/`_assert.o` are two known members; there are ~6 msvcrt-referencing libmingwex members total). The complete all-ucrt fix must NDEBUG/ucrt-route EVERY component (blob + mccrt_blob + program link + the mingw lib set) and prove `objdump -p` shows zero `msvcrt.dll` across several rebuilds, then verify fib+full_language embed-JIT == AOT. This is a methodical build-provisioning task, not an incremental patch. **Source.** win-x64, 2026-08-17.
