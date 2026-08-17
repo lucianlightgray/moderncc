@@ -50002,3 +50002,14 @@ plain member. So slice C must preserve the reverse-SO bit-field store/load (not 
 r-flag) across AST replay. This is what keeps `rir-nofb-probe` (and exec/sso forced-replay) red on
 x86_64/PE — independent of the T-win-50026 VLA crash. Verify: `sso_wbfb.c` prints `51 23 e7 de`
 under forced replay + full sso.c OK O0-O3 in BOTH modes. **Source.** win-x64, 2026-08-17.
+
+**Sharpening for lin's slice-C note (win-x64, 2026-08-17):** the T-win-50028 TODO note frames
+slice C as "the -O1 c3 optimizer mis-handles rev-SO bit-field stores; isolated bit-field bodies
+pass -O1; sso.c bf section fails only after preceding rev-SO members." My `sso_wbfb.c` refutes that
+scope: it is a SINGLE isolated struct (no preceding rev-SO members) and it DIVERGES at **both -O0
+and -O1** on the store byte layout (`51 23 e7 de` → `35 12 c7 02`). So slice C is NOT a c3/-O1
+in-context interaction — it is a fundamental **-O0 reverse-SO bit-field STORE swap-drop under
+replay**. The reason lin's "isolated bodies pass" test missed it: a READ-back test round-trips
+(store AND load both drop the swap consistently, so the logical value is correct); only a
+physical-byte check (memcpy) exposes it. Fix + test against the store byte layout, not read-back,
+at -O0. **Source.** win-x64, 2026-08-17.
