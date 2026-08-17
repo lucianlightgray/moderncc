@@ -1752,6 +1752,10 @@ ST_FUNC void resolve_common_syms(MCCState *s1);
 ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve);
 ST_FUNC void relocate_sections(MCCState *s1);
 
+ST_FUNC int mcc_winfd_open_ro(const char *path);
+ST_FUNC ssize_t mcc_fd_read(int fd, void *buf, size_t count);
+ST_FUNC long mcc_fd_lseek(int fd, long offset, int whence);
+ST_FUNC int mcc_fd_close(int fd);
 ST_FUNC ssize_t full_read(int fd, void *buf, size_t count);
 ST_FUNC void *load_data(int fd, unsigned long file_offset, unsigned long size);
 ST_FUNC int mcc_object_type(int fd, ElfW(Ehdr) * h);
