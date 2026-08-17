@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30033   | 2026-08-17T22:45Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30039   | 2026-08-17T23:05Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10398   | 2026-08-17T22:37Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-17T21:30Z |
 
@@ -68,6 +68,24 @@
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
 
 ## Open — claimable
+- [ ] T-mac-30033 [S] Investigate: assembler / inline-asm — [HIGH] arm64 inline-asm register numbering collides with codegen numbering (physical x0..30 vs codegen R30=19/F=+20; no shim like arm32's `arm_asm_treg`) → `asm("x20")` stores a stray FP reg, `'r'` past x18 corrupts LR (`arm64-asm.c:2099/2122`); `.section …,@type` drops type + force-sets SHF_ALLOC (`mccasm.c:806/830`); arm64 v8-v31 unclobberable; x86_64 `'A'` reserves only RAX
+      OWNER: — | STATE: OPEN | SHA: 80d55872 | TS: 2026-08-17T23:05Z
+      REF: INVESTIGATIONS.md#r6-inline-asm-regnum | DEPS: —
+- [ ] T-mac-30034 [S] Investigate: disassembler ↔ encoder round-trip — [HIGH] x86_64 `%fs`/`%gs` segment prefix parsed then dropped (`x86_64-dis.c:284` vs modrm; `__thread` decodes as absolute load from 0); [HIGH] undecoded opcodes (`bsf`/`bsr` for `__builtin_ctz/clz/ffs`) under-consume ModRM → stream desync/epilogue vanishes (`:1181`); movd/movq GPR decoded 16-bit under mandatory 0x66; arm64 HFA LD1/ST1 undecoded
+      OWNER: — | STATE: OPEN | SHA: 80d55872 | TS: 2026-08-17T23:05Z
+      REF: INVESTIGATIONS.md#r6-disasm-roundtrip | DEPS: —
+- [ ] T-mac-30035 [S] Investigate: debug-info vs codegen — [HIGH] arm64 synthetic FDE hardcodes prologue shape (CFA stays sp-relative, no fp rebase) → wrong CFA for variadic/many-arg fns → corrupt backtraces (`mccdbg.c:1591`; riscv64 too `:1607`); flexible-array emits 2^64 `DW_AT_upper_bound` (`:2714`); enum DIE hardcodes byte_size=4/int (vs long-long/short/packed enums); bit-field uses DWARF-4 `data_bit_offset` in a DWARF-2 CU
+      OWNER: — | STATE: OPEN | SHA: 80d55872 | TS: 2026-08-17T23:05Z
+      REF: INVESTIGATIONS.md#r6-debug-info | DEPS: —
+- [ ] T-mac-30036 [S] Investigate: type-system / ABI — [HIGH] `_Float16`/`__bf16` passed/classified in INTEGER registers on x86_64 & arm64 (violates both psABIs; returned in xmm0/v0 → self-inconsistent; shifts following args) — root cause the `is_float` vs `is_float_abi` split (`mccgen.c:669`); x86_64 over-aligned ≤16B struct over-counts registers (NO_CLASS not modeled, `x86_64-gen.c:1304`)
+      OWNER: — | STATE: OPEN | SHA: 80d55872 | TS: 2026-08-17T23:05Z
+      REF: INVESTIGATIONS.md#r6-type-abi-half | DEPS: —
+- [ ] T-mac-30037 [S] Investigate: CST/AST/RIR replay — census fallback restores `.text`/`.rela.text` but never rewinds `.data`/`.rodata` (stale-section, T-win-50003-B shape in the DEFAULT -O1+ path; `mccast.c:21704`); `ast_reemit` frame-floor scan misses `VT_LLOCAL` → under-sized frame → silent stack corruption (`:21876`); `ast_fold_rec` result-type promotion diverges from gen's UAC (new fold-vs-gen family; `:7042/7069`, ships under -fno-replay-fallback)
+      OWNER: — | STATE: OPEN | SHA: 80d55872 | TS: 2026-08-17T23:05Z
+      REF: INVESTIGATIONS.md#r6-rir-replay | DEPS: —
+- [ ] T-mac-30038 [S] Investigate: diagnostics — `-pedantic-errors` fires HARD errors inside system headers on most pp pedantic paths (warning form suppressed, error form not; site-dependent, `mccpp.c:2979/3510/3553/…`); `warn_pedantic`-only sites ignore `pedantic_errors`; `-pedantic-errors -Wno-pedantic` honored on some paths not others; C99 implicit-int diagnosed 3 ways + `-Wno-implicit-int` DOWNGRADES the error instead of suppressing (`mccgen.c:18657`)
+      OWNER: — | STATE: OPEN | SHA: 80d55872 | TS: 2026-08-17T23:05Z
+      REF: INVESTIGATIONS.md#r6-diagnostics-pedantic | DEPS: —
 - [ ] T-lin-10397 [S] Investigate (follow-up to T-mac-30031): remaining bundled header conformance — `WCHAR_MIN/MAX` hardcoded `INT32` (stdint.h:100; wrong on ARM-unsigned + Win-16-bit; `__WCHAR_MAX__` predefined so fixable via predefine + mccdefs.h:236 Win branch, needs cross verify); ALL C23 `*_WIDTH`/`BOOL_MAX`/`__STDC_VERSION_*_H__` missing from limits.h+stdint.h (mcc does NOT predefine `__*_WIDTH__` — literal/derived); `char8_t`/`mbrtoc8`/`c8rtomb` (uchar.h); `WINT_MAX` PE, `intmax_t` LP64, `FLT_EVAL_METHOD` i386, `threads.h`-on-PE, `stdatomic.h` fences
       OWNER: — | STATE: OPEN | SHA: 7c8b4231 | TS: 2026-08-17T22:37Z
       REF: DETAILS.md#t-mac-30031-slice-unreachable-lin-x64 | DEPS: — | NOTE: split from T-mac-30031 (the `unreachable()` = `__builtin_unreachable()` item is DONE there). WCHAR + *_WIDTH additions are per-target (verify via cross mcc-arm64-*/mcc-*-win32); a shell cell like tests/headers/unreachable-c23.sh avoids coverage-corpus re-bank.
