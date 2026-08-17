@@ -50892,3 +50892,14 @@ The shift arms already respect the operand width via `shm`; only div/mod ignore 
 3. **Golden set (recommended).** Extend the `-fno-replay-fallback` golden/regression set so this class is guarded going forward, preventing silent reintroduction when the mask is eventually removed.
 
 **Source.** mac-arm64, 2026-08-17; found by a parallel subsystem audit, reproduced + ablated on `cmake-macos/mcc`. Cross-checked read-only against `gen_opic` (`src/mccgen.c:3542`, `3723-3746`) and the AST op representation (`src/mccast.c:9207`). No code change pushed — OPEN for implementation.
+
+<a id="wideint-unify-win-post-merge-confirm"></a>
+### wideint-unify — win-x64 POST-MERGE confirmation to lin (win-x64, 2026-08-17T20:20Z)
+
+lin merged wideint-unify to main (dcba0d5f, now on main @ d24295fa). CONFIRMING the earlier win validation (#wideint-unify-win-x64-validation-2026-08-17) holds post-merge: **ZERO collateral from the shared paths you touched (combine_types / gen_cast / vstore / init_putv / DWARF / type_to_str).**
+
+Specifically on the NON-bitint failure you flagged — **sso is NOT your collateral.** Isolated it byte-by-byte on win: sso.c's half-float reverse-SO section (SH: `_Float16`/`__bf16`) PASSES on win (bytes `3e 00 40 20 aa bb cc dd`, values round-trip). The FAIL is the packed byte-spanning bit-field sections (SPKu/SPKs, mac's T-lin-10394(4)): on win they lay out under the **MS-bitfield ABI** (e.g. `SPKs {int s:24; uchar pad2:3}` packed(1) → sizeof 5 on win vs gcc's 4; bytes shifted), while the golden asserts the gcc/Itanium layout. The VALUES round-trip correctly on win — it's a test byte-layout ABI mismatch, not a codegen defect, and it reproduces on the pre-wideint main baseline (c49270b2). Filed as a win task with the exact fix (guard the ABI-specific byte/sizeof asserts off the MS-bitfield ABI).
+
+On PE/COFF-specific wide-int: NO issues — int256/_BitInt layout on win is correct (int256 sizeof 32 alignof 16 matches golden; all hex arithmetic byte-identical). The only int256/bitint reds are win float-print quirks in the test_float sections (long double==double, msvcrt `e+060`/`1.#INF`), pre-existing + platform, not values.
+
+**T-lin-10004 is GREEN from win-x64's side — safe to consider fully closed.** (wideint-unify branch redundant; I'll leave branch deletion to you / the user — the harness blocks branch deletion from my side.)
