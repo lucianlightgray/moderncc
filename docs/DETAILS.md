@@ -50365,3 +50365,54 @@ The crash is **NOT the bake/hot-swap path**. Bisected on a quiet box:
 **Slice-2 next step (recipe for the focused session).** Minimal reproducer: `int fib(int n){return n<2?n:fib(n-1)+fib(n-2);} int main(){printf("%d\n",fib(5));}` built `cmake-msvc-50015/Release/mcc.exe -O1 --embed-jit -Iruntime/include c.c -o c.exe`; runs under `MCC_JIT=0`, fast-fails 0xC0000409 otherwise. Fix direction: make the engine's `setjmp` try-region **reentrant/nested-safe** on PE (save+restore the `jmp_buf` around nested engine invocation, or guard the dispatch so a recursive call while `mccjit_internal_compile` is set runs AOT instead of re-entering the setjmp region — `mccjit_internal_compile` is already the guard at `mccjit_embed.c:899/2185`, but the core dispatch on the recursive call evidently still reaches a `setjmp`), and/or pass the correct establisher-frame argument to `_setjmpex` on x64 so Windows frame validation passes. This is the real "make Windows embed-JIT work" cost; it is core-engine re-entrancy work, not a one-liner.
 
 **Source.** win-x64, 2026-08-17; gdb backtrace + env-toggle bisect at `93c19c75`.
+
+<a id="t-lin-10004-slice-2-landed-2026-08-17-mac-arm64"></a>
+
+## T-lin-10004 slice 2 LANDED (_BitInt 64<N<=128) — a01fc0a0 (mac-arm64, 2026-08-17)
+
+64 < N <= 128 now implemented + arm64-verified byte-identical to gcc-16. Representation: a
+16-byte 16-aligned 2-limb struct tagged `a.is_bitint` (new SymAttr bit), precision N carried on
+CType.bs (preserved through sym_push via a bitint128 branch there — the crux fix; a plain struct's
+.bs was being zeroed). Arithmetic reuses the tested 4-limb __int256 kernel: `bitint128_to_wide256`
+(extend 2->4 limbs canonically) -> `gen_wide256_op` -> `wide256_to_bitint128` (reduce low 128b to N
+via a 64-bit bitfield-reduce on the HIGH limb; N==128 no reduce). New src/bitint128_slice.h holds
+the type builder, extend/reduce, materialize/deconst, gen_bitint128_op, gen_bitint128_cast. Dispatch
+added parallel to wide256 at: gen_op, gen_cast, gen_assign_cast (both struct-dst and int-dst-from-
+bitint128), the usual-arith combine, compare_types, vstore (+ a bitint128 clause casting a non-bitint
+source into a bitint128 dest — mirrors the wide256 clause; without it `i100 x=-1` hit intr on a const),
+post-inc/dec (cplx_local path), init_putv/one_elem/DIF_HAVE_ELEM, the cast-expr non-scalar guard, and
+bitint128_deconst at the 4 wide256_deconst sites. ABI: none needed on arm64 — a 16-byte all-integer
+struct is passed/returned in register pairs, matching gcc's _BitInt(128) (verified). __BITINT_MAXWIDTH__
+64->128 (mccpp.c). Parse accepts 64<N<=128 -> 2-limb struct; N>128 refused (dg-error renamed
+bitint_over_64 -> bitint_over_128).
+
+VERIFICATION (arm64-Darwin, gcc-16 differential): tests/exec/types/bitint128.c (dt, 8 sections
+props/arith/bitwise/shift/conv/call/aggregate/cmp) all 24 opt/replay variants GREEN; hand differentials
+over widths 65/96/100/127/128, signed+unsigned, arith/bitwise/shift/compare/div/mod, conversions to/from
+int widths + _Bool + _BitInt<->_BitInt, static-init const-fold, live-temp reduce, function ABI (args+
+return incl. 5-arg register exhaustion), struct members, arrays, mixed-with-int — all byte-identical at
+-O0..-O3. exec/bitint (slice-1) golden maxwidth 64->128; base exec 362/362; wide256/int256/complex green;
+o0-baseline 5/5 after additive re-bank (arm64 obj +1 line + rir/gated-rir counts +1, NO existing object
+changed). Only red on the box: diag.dg-error.scalar_storage_order_be = PRE-EXISTING (long double member,
+mcc arm64 sizeof(long double)==8 so it compiles; red on clean main too; T-lin-10394 domain, needs the
+sizeof>8 platform guard — NOT this slice).
+
+KNOWN PARITY LIMITS (honest refusals / shared with __int256, not miscompiles):
+- Implicit boolean context (if/`?:`) of a wide-struct value reads as always-true — SHARED WITH __int256
+  (verified `if((__int256)0)` is also wrong on main). Explicit compares, `!x`, and `(_Bool)x` cast all
+  work correctly. Filed as T-mac-30013 (wide-struct condition lowering). Root: gvtst_set's
+  `vpushi(0); gen_op(TOK_NE)` produces a VT_CMP that materializes right but jumps wrong for wide structs.
+- `wb`/`uwb` _BitInt literal suffix: unsupported (separate lexer feature, like T-lin-10013's i256 suffix);
+  use casts. Mixed _BitInt widths (N1!=N2) and _BitInt<->float conversions: refused honestly. These are
+  the remaining sub-items to fully close _BitInt beyond N<=128.
+
+CROSS-PLATFORM (CONTRACT to lin+win): the codegen is target-independent (rides gen_wide256_op which is
+green on x86_64) and the 16-byte-2-int-struct ABI matches gcc's _BitInt(128) on SysV (RDI:RSI) and PE
+too, BUT verified only on arm64. lin(x86_64)+win(win32) must: (1) re-bank their o0-baseline cross keys
+(bitint128.c is a new file -> obj +1 line, rir counts +1; also the bitint.c maxwidth golden already
+updated in-tree) and the -gated variants; (2) run tests/exec/types/bitint128.c natively to confirm ABI/
+codegen. On x86_64 MCC_HAVE_INT128=1 but _BitInt(65..128) still takes the 2-limb-struct path (parse is
+unconditional) — should be output-identical; if a divergence appears, that's the x86_64 slice's fix.
+SLICE 3 REMAINING (claimable): N>128 (arbitrary limbs) needs Approach A (n-limb kernel, memory-backed
+consts past 256b) — see [#t-lin-10004-slice-2-design-plan-2limb-first-reuse-4limb-arith]. **Source.**
+mac-arm64, 2026-08-17.
