@@ -49818,3 +49818,38 @@ the 18 reds are int256-related. T-lin-10013 §8 satisfied → closed/archived th
 
 Verify command for T-lin-10013: `ctest --test-dir cmake-mingw/mingw-native -R int256_lit` all pass.
 **Source.** win-x64, 2026-08-17T03:26Z.
+
+<a id="t-mac-30005-retarget-candidate-chain-store-sieve-is-dead-on-instructions-too-escalating"></a>
+
+## T-mac-30005 — the re-target candidate (chain-store/sieve) is DEAD on instructions too; escalating retire-vs-retarget to QUESTIONS.md (Q-mac-30011)
+
+Per the measurement anchor's plan (DETAILS#t-mac-30005-measurement-explicit-on-loses-90pct-the-8pct-claim-is-dead-with-p5,
+close (a)): re-measure the named re-target candidate explicit-arm on a quiet box before trusting
+the banked figure. Box: mac-arm64, quiet (the user games on lin's x86_64 box, not this one).
+Method: the same darwin_instructions path the gatewin cell uses (`/usr/bin/time -l`,
+"instructions retired"), min of 5 reads; `mcc -O3 -fchain-store` vs `-O3 -fno-chain-store` on
+tests/runtime/sieve.c 1000000 100 (the KERNELS entry optlevel-bench uses; optlevel-bench.py
+itself can't run here — it needs Linux perf, "no perf; skipping" on Darwin).
+
+**Result: chain-store on sieve is instruction-FLAT.** on 6,424,821,652 vs off 6,424,717,877 =
+**+0.0016% MORE instructions with the flag on** (a hair's-width loss, not the banked +1.966%).
+The banked levelbench-cycles.tsv figure (cyc +25.261%, insn +1.966%) predated the p5 semantics
+change (172a2f31 deleted the deep-copy repair); the instruction win is gone here exactly as it is
+on spectral (-90.7%). chain-store's only surviving effect is the ast_promo POISON pessimization.
+
+**No cycles-table candidate can serve gate_win_insns.** levelbench-cycles.tsv IS by definition the
+set of rows where cycles move but instructions DON'T (the counters disagree) — so every candidate
+there has ~0 instruction delta by construction (reg-color/sieve, reg-color/vlaloop, divmagic/* all
+banked insn +0.000% or the "wrong question" cases). chain-store/sieve was the only one with a
+nonzero banked insn, and it is now flat. The main levelbench.tsv instruction-movers are either
+tiny (<0.5% gain_movers for nearly all ranked gates) or flagged defects (builtin-math's +10.8%
+insn on mathfun is a store-forwarding-stall LOWERING defect, not a real win, per the cycles doc).
+
+**So close (a) fails: no gate wins TODAY by a margin worth asserting as "the metric instruction 15
+asks for".** Between (b) retire and re-targeting-at-a-tiny-gain: both change what a HUMAN-MANDATED
+metric asserts, which gate_win_insns' own docstring says is not a session's unilateral call.
+Escalated to Q-mac-30011. Under the escalation the gatewin cell stays honestly-red (it is red
+today either way: vacuous +0.0% off-vs-off as registered, or -90.7% explicit); the prepared
+explicit-arm cell fix + known-positive (fully specified in the measurement anchor) is ready to
+land the moment the subject is re-decided, but cannot land under N4 while gatewin is red.
+**Source.** mac-arm64, 2026-08-17, sieve re-measurement at HEAD (1b63f9c6).
