@@ -386,9 +386,15 @@ static void gen_bitint128_cast(CType *dt) { MCC_TRACE("enter\n");
 			vtop->type = *dt;
 			return;
 		}
-		if (is_float(dt->t))
-			{ MCC_TRACE("br\n"); mcc_error("conversion between '_BitInt' and floating-point "
-												"types is not yet supported"); }
+		if (is_float(dt->t)) { MCC_TRACE("br\n");
+			/* extend to __int256 and reuse its correctly-rounded ->float path */
+			if (nocode_wanted & DATA_ONLY_WANTED)
+				{ MCC_TRACE("br\n"); mcc_error("initializer element is not computable at "
+													"load time"); }
+			bitint128_to_wide256(suns);
+			gen_cast(dt);
+			return;
+		}
 		if (!is_integer_btype(dbt) || dbt == VT_PTR)
 			{ MCC_TRACE("br\n"); cast_error(&vtop->type, dt); }
 		if (wide256_sv_is_const(vtop)) { MCC_TRACE("br\n");
@@ -419,10 +425,22 @@ static void gen_bitint128_cast(CType *dt) { MCC_TRACE("enter\n");
 		return;
 	}
 
+	/* float -> bitint128: truncate to __int256, then reduce to N bits */
+	if (is_float(vtop->type.t)) { MCC_TRACE("br\n");
+		int duns = bitint128_is_unsigned(dt);
+		int dn = bitint128_prec(dt);
+		CType w;
+		SValue res;
+		if (nocode_wanted & DATA_ONLY_WANTED)
+			{ MCC_TRACE("br\n"); mcc_error("initializer element is not computable at load "
+												"time"); }
+		mk_wide256_type(&w, duns);
+		gen_cast(&w);
+		wide256_to_bitint128(duns, dn, &res);
+		vpushv(&res);
+		return;
+	}
 	/* integer -> bitint128 */
-	if (is_float(vtop->type.t))
-		{ MCC_TRACE("br\n"); mcc_error("conversion between '_BitInt' and floating-point "
-											"types is not yet supported"); }
 	if (!is_integer_btype(sbt) || sbt == VT_PTR)
 		{ MCC_TRACE("br\n"); cast_error(&vtop->type, dt); }
 	bitint128_from_int(dt, bitint128_prec(dt), bitint128_is_unsigned(dt));

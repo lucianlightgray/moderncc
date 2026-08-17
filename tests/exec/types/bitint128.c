@@ -246,4 +246,29 @@ int main(void) {
 	return 0;
 }
 
+#elif defined test_float
+
+#include <stdio.h>
+typedef _BitInt(100) i100;
+typedef unsigned _BitInt(128) u128;
+typedef _BitInt(128) i128;
+int main(void) {
+	i100 a = (i100)1 << 90;
+	printf("i2d %.20g %.9g\n", (double)a, (float)a);
+	i100 n = (i100)-1234567890123LL;
+	printf("neg %.20g\n", (double)n);
+	u128 u = (u128)1 << 127;
+	printf("u %.20g\n", (double)u);
+	double x = 1e29;
+	i128 d = (i128)x;
+	printf("d2i %llu %llu\n", (unsigned long long)((u128)d >> 64),
+				 (unsigned long long)d);
+	double y = -98765.75;
+	i100 t = (i100)y;
+	printf("trunc %lld\n", (long long)t);
+	float f = 3.5f;
+	printf("ftrunc %d\n", (int)(i100)f);
+	return 0;
+}
+
 #endif

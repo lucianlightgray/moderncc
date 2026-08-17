@@ -582,9 +582,24 @@ static void gen_wide256_cast(CType *dt) { MCC_TRACE("enter\n");
 			vtop->type = *dt;
 			return;
 		}
-		if (is_float(dt->t))
-			{ MCC_TRACE("br\n"); mcc_error("conversion between '__int256' and "
-												"floating-point types is not supported"); }
+		if (is_float(dt->t)) { MCC_TRACE("br\n");
+			int uns = wide256_is_unsigned(&vtop->type);
+			int use_f32 = (dbt == VT_FLOAT);
+			if (nocode_wanted & DATA_ONLY_WANTED)
+				{ MCC_TRACE("br\n"); mcc_error("initializer element is not computable "
+													"at load time"); }
+			wide256_addrof_top(&st);
+			vpush_helper_func(use_f32 ? TOK___mcc_i256_to_f32 : TOK___mcc_i256_to_f64);
+			vswap();
+			vpushi(uns);
+			gfunc_call(2);
+			vpushi(0);
+			vtop->type.t = use_f32 ? VT_FLOAT : VT_DOUBLE;
+			PUT_R_RET(vtop, vtop->type.t);
+			if ((dt->t & VT_BTYPE) != (vtop->type.t & VT_BTYPE))
+				{ MCC_TRACE("br\n"); gen_cast(dt); }
+			return;
+		}
 		if (!is_integer_btype(dbt) || dbt == VT_PTR)
 			{ MCC_TRACE("br\n"); cast_error(&vtop->type, dt); }
 		if (wide256_sv_is_const(vtop)) { MCC_TRACE("br\n");
@@ -618,9 +633,32 @@ static void gen_wide256_cast(CType *dt) { MCC_TRACE("enter\n");
 		return;
 	}
 
-	if (is_float(vtop->type.t))
-		{ MCC_TRACE("br\n"); mcc_error("conversion between '__int256' and "
-											"floating-point types is not supported"); }
+	if (is_float(vtop->type.t)) { MCC_TRACE("br\n");
+		int uns = wide256_is_unsigned(dt);
+		int fbt = vtop->type.t & VT_BTYPE;
+		SValue res;
+		if (fbt != VT_FLOAT && fbt != VT_DOUBLE) { MCC_TRACE("br\n");
+			CType dbl;
+			dbl.t = VT_DOUBLE;
+			dbl.ref = NULL;
+			dbl.bp = dbl.bs = 0;
+			gen_cast(&dbl);
+			fbt = VT_DOUBLE;
+		}
+		if (nocode_wanted & DATA_ONLY_WANTED)
+			{ MCC_TRACE("br\n"); mcc_error("initializer element is not computable at "
+												"load time"); }
+		wide256_local(dt, &res);
+		vpush_helper_func(fbt == VT_FLOAT ? TOK___mcc_i256_from_f32
+																			: TOK___mcc_i256_from_f64);
+		vswap();
+		wide256_push_ptr(&res);
+		vswap();
+		vpushi(uns);
+		gfunc_call(3);
+		vpushv(&res);
+		return;
+	}
 	if (!is_integer_btype(sbt) || sbt == VT_PTR)
 		{ MCC_TRACE("br\n"); cast_error(&vtop->type, dt); }
 	{

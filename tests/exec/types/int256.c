@@ -277,4 +277,48 @@ int main(void) {
 	return 0;
 }
 
+#elif defined test_to_float
+
+#include <stdio.h>
+/* Correctly-rounded __int256 -> double/float (T-lin-10016).  Oracle: Python
+ * float(int), which is round-to-nearest-even; the exact/boundary values here
+ * are also hand-checkable (powers of two and their neighbours). */
+int main(void) {
+	__int256 p = (__int256)1 << 200;			/* exact 2^200 */
+	printf("p200 %.20g %.9g\n", (double)p, (float)p);
+	__int256 q = ((__int256)1 << 200) + 1;		/* rounds down to 2^200 */
+	printf("p200+1 %.20g\n", (double)q);
+	unsigned __int256 m = ((unsigned __int256)1 << 255);
+	printf("hi %.20g\n", (double)m);
+	__int256 n = -((__int256)1 << 100);
+	printf("neg %.20g %.9g\n", (double)n, (float)n);
+	__int256 t = ((__int256)1 << 54) + 2;		/* ties to even at 53-bit */
+	printf("tie %.20g\n", (double)t);
+	return 0;
+}
+
+#elif defined test_from_float
+
+#include <stdio.h>
+static void pr(const char *s, __int256 v) {
+	unsigned __int256 u = (unsigned __int256)v;
+	printf("%s %016llx%016llx%016llx%016llx\n", s,
+				 (unsigned long long)(u >> 192), (unsigned long long)(u >> 128),
+				 (unsigned long long)(u >> 64), (unsigned long long)u);
+}
+int main(void) {
+	double x = 1e30;
+	pr("d1e30", (__int256)x);
+	pr("dneg", (__int256)-1e30);
+	pr("trunc", (__int256)123456789.75);
+	pr("negtrunc", (__int256)-123456789.75);
+	float f = 1e18f;
+	pr("f1e18", (__int256)f);
+	unsigned __int256 u = (unsigned __int256)2.5e29;
+	printf("u %016llx%016llx%016llx%016llx\n", (unsigned long long)(u >> 192),
+				 (unsigned long long)(u >> 128), (unsigned long long)(u >> 64),
+				 (unsigned long long)u);
+	return 0;
+}
+
 #endif

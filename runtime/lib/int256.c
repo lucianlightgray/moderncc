@@ -102,3 +102,100 @@ void __mcc_i256_neg(mcc_w256_limb *r, const mcc_w256_limb *a) {
 	mcc_w256_neg(t, a);
 	mcc_w256_copy(r, t);
 }
+
+/* Correctly-rounded (round to nearest, ties to even) magnitude -> double,
+ * keeping `mant` significant bits.  Returns a value with at most `mant`
+ * significant bits, so (float) of the mant=24 result is exact (no double
+ * rounding).  `a` is treated as an unsigned 256-bit magnitude. */
+static double w256_round_to_double(const mcc_w256_limb *a, int mant) {
+	int i, L, shift, round_bit, sticky;
+	mcc_w256_limb head, shifted[MCC_W256_LIMBS], back[MCC_W256_LIMBS];
+	double d, scale;
+
+	L = 0;
+	for (i = MCC_W256_LIMBS - 1; i >= 0; i--) {
+		if (a[i]) {
+			mcc_w256_limb v = a[i];
+			L = i * 64;
+			while (v) { L++; v >>= 1; }
+			break;
+		}
+	}
+	if (L == 0)
+		return 0.0;
+	if (L <= mant)
+		return (double)a[0];			/* fits exactly (L <= mant < 64) */
+	shift = L - (mant + 1);				/* keep the top mant+1 bits */
+	mcc_w256_shr(shifted, a, (unsigned int)shift);
+	head = shifted[0];					/* mant+1 bits, fits in 64 */
+	mcc_w256_shl(back, shifted, (unsigned int)shift);
+	sticky = 0;
+	for (i = 0; i < MCC_W256_LIMBS; i++)
+		if (back[i] != a[i]) { sticky = 1; break; }
+	round_bit = (int)(head & 1);
+	head >>= 1;							/* mant-bit significand */
+	if (round_bit && (sticky || (head & 1)))
+		head++;							/* ties to even; may reach 2^mant */
+	d = (double)head;
+	scale = 1.0;
+	for (i = 0; i < shift + 1; i++)
+		scale *= 2.0;					/* exact power of two */
+	return d * scale;
+}
+
+double __mcc_i256_to_f64(const mcc_w256_limb *a, int is_unsigned) {
+	if (!is_unsigned && mcc_w256_sign(a)) {
+		w256 t;
+		mcc_w256_neg(t, a);
+		return -w256_round_to_double(t, 53);
+	}
+	return w256_round_to_double(a, 53);
+}
+
+float __mcc_i256_to_f32(const mcc_w256_limb *a, int is_unsigned) {
+	if (!is_unsigned && mcc_w256_sign(a)) {
+		w256 t;
+		mcc_w256_neg(t, a);
+		return (float)-w256_round_to_double(t, 24);
+	}
+	return (float)w256_round_to_double(a, 24);
+}
+
+/* Truncate a non-negative double toward zero into a 256-bit magnitude. */
+static void w256_from_double_mag(mcc_w256_limb *r, double x) {
+	union { double d; unsigned long long u; } b;
+	int exp, e;
+	unsigned long long mant;
+
+	mcc_w256_zero(r);
+	if (!(x >= 1.0))
+		return;							/* |x| < 1 or NaN -> 0 */
+	b.d = x;
+	exp = (int)((b.u >> 52) & 0x7FF) - 1023;
+	mant = (b.u & 0xFFFFFFFFFFFFFULL) | (1ULL << 52);	/* 53-bit significand */
+	e = exp - 52;						/* value = mant * 2^e */
+	if (exp >= 256) {					/* out of range (UB in C) -> saturate */
+		mcc_w256_not(r, r);
+		return;
+	}
+	r[0] = mant;
+	if (e > 0)
+		mcc_w256_shl(r, r, (unsigned int)e);
+	else if (e < 0)
+		mcc_w256_shr(r, r, (unsigned int)(-e));
+}
+
+void __mcc_i256_from_f64(mcc_w256_limb *r, double x, int is_unsigned) {
+	if (x < 0.0) {
+		if (is_unsigned)
+			{ mcc_w256_zero(r); return; }	/* UB; match gcc's 0 for negatives */
+		w256_from_double_mag(r, -x);
+		mcc_w256_neg(r, r);
+		return;
+	}
+	w256_from_double_mag(r, x);
+}
+
+void __mcc_i256_from_f32(mcc_w256_limb *r, float x, int is_unsigned) {
+	__mcc_i256_from_f64(r, (double)x, is_unsigned);
+}

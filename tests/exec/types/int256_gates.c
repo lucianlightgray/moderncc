@@ -1,16 +1,16 @@
-#if defined test_to_double
-double f(__int256 x) { return (double)x; }
-
-#elif defined test_from_double
-__int256 f(double d) { return (__int256)d; }
-
-#elif defined test_to_float
-float f(__int256 x) { return (float)x; }
-
-#elif defined test_to_long_double
-long double f(__int256 x) { return (long double)x; }
-
-#elif defined test_switch
+/* __int256 <-> float / double / long double conversions are now IMPLEMENTED
+ * (T-lin-10016, correctly-rounded round-to-nearest-even for int->float and
+ * truncation for float->int); they are no longer refusal-gates.  Real value
+ * tests live in tests/exec/types/int256.c (test_to_float / test_from_float).
+ * The blank lines below preserve the 1-based line numbers of the remaining
+ * gates so this file's dg-style golden does not shift.
+ *
+ *
+ *
+ *
+ *
+ */
+#if defined test_switch
 int f(__int256 x) {
 	switch (x) {
 	case 1:
