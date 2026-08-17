@@ -50208,3 +50208,39 @@ FINAL kept emission re-emit (or re-pool at the committed rodata offset) the sear
 constants, across whichever of those phases produced the kept bytes — established by tracing which
 ast_replay_body's output survives to `keep=1`. All probes reverted; main green. **Source.** win-x64,
 2026-08-17.
+
+<a id="t-lin-10004-slice-2-design-plan-2limb-first-reuse-4limb-arith"></a>
+
+## T-lin-10004 slice 2 (_BitInt N>64) — design plan + gcc-16 target layout (mac-arm64, 2026-08-17)
+
+Scoped + planned (not implemented — a large multi-file codegen feature; deferred to a fresh
+context with this contract to de-risk it).
+
+**gcc-16 target layout (arm64-Darwin, measured):** _Alignof(_BitInt(N))=16 for all N>64.
+sizeof = round_up(ceil(N/8), 16): _BitInt(65..128)=16 (2 limbs), _BitInt(129..256)=32 (4 limbs),
+_BitInt(200)=32 (NOT 24 — rounds the 25 bytes up to the 16-byte multiple). So storage limbs =
+ceil(sizeof/8) which for the 16-byte-rounded size is 2 for N in (64,128], 4 for N in (128,256],
+etc. — i.e. an EVEN number of 8-byte limbs (16-byte granularity), not the raw ceil(N/64).
+
+**Two implementation approaches, both reuse the existing wide256 machinery:**
+- **Approach B (reuse 4-limb arith; RECOMMENDED for the first slice, N in (64,256]):** storage =
+  ceil(sizeof/8) limbs (2 or 4); for arithmetic, LOAD the stored limbs, zero/sign-extend into a
+  4-limb __int256 temp, run the EXISTING gen_wide256_op (mccgen.c:4566, calls __mcc_i256_*), MASK
+  the result to N bits (like slice-1's VT_BITFIELD reduce but on the high limb(s)), STORE back the
+  ceil(sizeof/8) limbs. NO new runtime helpers. New code = a 2-limb (and later 4-limb) wideint
+  TYPE + the extend/mask/truncate glue. Caps at N<=256 (4-limb compute).
+- **Approach A (native n-limb):** parameterize the whole kernel by a runtime limb count — mk_wideint
+  type per (n,unsigned); instantiate wide256_arith.h at n=2 into a runtime bitint128.c (runtime/lib/
+  int256.c is the n=4 instance) OR a runtime-count-parameterized helper taking n; dispatch
+  gen_wide256_op by the type's limb count. Scales to arbitrary N (needed for N>256, and for the
+  N up to 65535 headline) but the const path (CValue.q is a fixed 4-limb struct, wide256_get_const
+  at wide256_slice.h:70) must move to memory-backed constants for N>256.
+
+**Concrete sub-slices:** (1) mk_wideint_type(n_limbs,uns) generalizing mk_wide256_type
+(wide256_slice.h:23, hardcoded MCC_WIDE256_LIMBS=4, cache gen_wide256_type_cache[2] keyed only by
+unsigned → key by (n,uns)); (2) parse: accept 64<N<=128 at mccgen.c:9142, map to the 2-limb type,
+carry N for masking (bs holds N<=255); (3) Approach-B extend/arith/mask/truncate glue + the N-bit
+reduce; (4) __BITINT_MAXWIDTH__ 64→128 (mccpp.c:5552) for this slice; (5) TDD tests/exec/types/
+bitint128.c byte-identical to gcc-16 (props/arith/convert/shift sections, like bitint.c); then
+generalize to 4-limb (N<=256), then Approach A for N>256. by-pointer ABI reuses T-lin-10015's
+no-copy marshalling. **Source.** mac-arm64, 2026-08-17.
