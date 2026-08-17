@@ -71,6 +71,44 @@ No `arm_neon.h`/`arm_acle.h` (full x86 SIMD suite present) — portable NEON cod
 
 ---
 
+## Round 3 (2026-08-17) — concurrency, memory/lifetime
+
+### <a id="objreader-bounds"></a>Object-file readers: unchecked bounds on untrusted input — SECURITY
+The linker's object/archive/dylib readers trust attacker-controllable counts/offsets:
+- COFF reloc offset unchecked → **OOB heap write**: `roff = rl->VirtualAddress + smap[i+1].offset` flows into `coff_map_reloc`'s `memcpy(fld,&v,4)` with no bound vs section size (`src/objfmt/mccpe.c:2616-2621`); the Mach-O reader guards the identical op (`mccmacho.c:2781`), COFF does not.
+- Archive symbol count `nsyms` from the `/`/`SYM64/` member walked with no bound vs member size → **OOB read** (`src/objfmt/mccelf.c:3815-3833`); BSD variant validates, GNU/PE does not.
+- Mach-O dylib exports: `iextdef`/`nextdef` index `symtab[]`/`strtab` unbounded; `nsyms==0` derefs NULL (`mccmacho.c:3296-3308`).
+- DLL export name count DWORD→int truncation under-allocates, then reads `namep[i]` (`mccpe.c:1717-1732`).
+- Unbounded Mach-O load-command walk in the dll path (`cmdsize==0`→infinite loop, `mccmacho.c:3290`); silent short-read leaves uninitialized parse buffers (`mccelf.c:3370`).
+`[NEW]` cluster; distinct from the reloc-*type* task T-mac-30019. Reachable by feeding a crafted `.o`/`.a`/dylib to the linker. **TASK: T-mac-30023.**
+
+### <a id="tls-runslab-bounds"></a>TLS run-slab bounds guard vs. copy mismatch (`-run`)
+`src/mccrun.c:471` guards `total` (Σ section `data_offset`) against `mcc_jit_tls_slab[MCC_JIT_TLS_MAX]`, but the seed copy uses `seed_len = max(sh_addr-base + data_offset)` (`:540-543,613-616`); inter-section alignment padding makes `seed_len > total`, so the guard passes while `memcpy(slab, seed, seed_len)` (`:499,643`, per worker-thread reseed) writes past the slab. Trigger: `-run` on Linux a program with ≥2 non-NOBITS TLS sections + alignment gaps. Latent (usual case is single `.tdata`). `[NEW]`, distinct from KNOWN tls_threads tpoff red. **TASK: T-mac-30024.**
+
+### <a id="libmcc-reentrancy"></a>Multithreaded libmcc / JIT reentrancy
+Default opt-search is fork-isolated (safe); the racy opt-search-pthreads path is dev-gated off (`[KNOWN]` DETAILS:19797, "60/60 SIGSEGV"). Under-documented gap: the per-`MccjitCounterState` lock (`src/mccjit_embed.c:1191`) does NOT cover the process-global JIT scratch it relies on (`mccjit_last_*`, `:361-367`) — two user threads promoting different slots via the sync fallback (`:1665-1670`) race them. `MCC_GPU_LOCK` compiles to `((void)0)` on Windows (`src/mccgpu.c:35`, `[KNOWN]` L7/DETAILS:35049) — GPU state unsynchronized there. Diag ring buffer publishes index before filling slot (`:266-268`, dev-gated `MCC_JIT_CRASH_DIAG`, cosmetic). Reentrancy hazard for a multithreaded libmcc consumer. `[NEW]`/`[KNOWN]`-mix. **TASK: T-mac-30025.**
+
+### <a id="foldeval-diag-divergence"></a>`ast_fold_eval` diverges from the gen evaluator on diagnostics too — same root as T-mac-30014
+The AST template folder silently folds cases the authoritative gen path diagnoses:
+- **Signed integer overflow** in constant `+`/`-`/`*`: `ast_fold_eval` computes raw `l1+l2` etc. (`src/mccast.c:6976-6987`) and rewrites to a `Literal`; gen emits `mcc_pedantic("integer overflow in constant expression")` (`src/mccgen.c:3701`), fatal under `-pedantic-errors` (`:553`). Same source: rejected on gen path, silently wrapped on fold path.
+- **Shift count negative or ≥ width**: `ast_fold_eval` just masks `l2 & 31/63` (`mccast.c:7000-7005`); gen warns (`mccgen.c:3669-3671`). Diagnostic lost when the fold fires first; value also diverges under the T-mac-30014 gating (`-fno-replay-fallback`/-O1+).
+`[NEW]`, same root function/masking as **T-mac-30014** — the unsigned-div value bug is one instance of a general "ast_fold_eval must match gen on value AND diagnostic" problem; fix together. **TASK: T-mac-30026.**
+
+### <a id="pp-directive-guards"></a>Preprocessor directive operand-guard holes
+- `#undef` accepts a non-identifier or empty name with no diagnostic (`src/mccpp.c:2765` guards only `defined`/`__VA_ARGS__`); `#define` (`:2320`) rejects both `< TOK_IDENT` and those names.
+- `#ifdef`/`#ifndef`/`#elifdef`/`#elifndef` accept `defined` and `__VA_ARGS__` as operand (`:2826,:2882` guard only `< TOK_IDENT`) — silently evaluated as "not defined".
+- `__VA_OPT__` in an object-like/non-variadic macro is only a warning, and that path then skips the structural `(`/`##`/unterminated checks (`:2408-2416`) yet still appends the token → bogus definition; every other `__VA_OPT__` misuse is fatal.
+- Token-paste producing >1 pp-token uses `mcc_error_noabort` then proceeds to emit each wrong sub-token (`:4946`), vs fatal for the comment-start case (`:4933`).
+`[NEW]` cluster of complementary guard holes / severity inconsistencies. **TASK: T-mac-30026** (diagnostic-consistency; adjacent to T-mac-30022).
+
+### <a id="embed-jit-nobake-notice"></a>`--embed-jit` no-bake notice bypasses the warning machinery — [KNOWN T-lin-10028]
+`src/mccjit_embed.c:2189` hand-prints via raw `fprintf`, so it is immune to `-w` AND cannot be promoted by `-Werror`; the engine-less binary still exits 0. `[KNOWN]`.
+
+### Reentry-state — verified ROBUST (negative result)
+The error-handling audit confirmed `stk_data_floor`/`error_jmp_buf` are saved/restored around every temporary raise, `error1` unwinds to the floor, and `preprocess_start` re-initializes include/ifdef/pack stacks at the next TU — so a top-level error longjmp does not corrupt the next compilation. The multithreaded JIT-scratch race (`#libmcc-reentrancy`) remains valid; single-threaded reentry is clean.
+
+---
+
 ## Pending taskification (captured, not yet minted)
 
 Lower-severity or newly-arrived items awaiting a `TODO.md` task in a later loop iteration: codegen arm64 `va_arg` assert (`#codegen-arm64-vaarg-assert`); type/C23 bit-field gaps (`#type-c23-gaps`); runtime/intrinsics (`#runtime-intrinsics`); Metal-vs-Vulkan f64 (`#gpu-metal-vs-vulkan-f64`); JIT RWX/`MAP_JIT` (`#jit-rwx-mapjit`); debug-info asymmetries beyond Mach-O unwind (`#debug-info-asymmetry`). The JIT lazy-vs-sync root cause (`#jit-lazy-vs-sync-kgc`) should be attached to existing **T-lin-10029**, not minted separately.
