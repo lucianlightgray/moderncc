@@ -49200,3 +49200,108 @@ arm-win32 (ARM32) half remains UNEXECUTABLE (WoA runs no 32-bit ARM) and is expl
 reported green — it stays recorded here and in T-win-50006's scope note. CLOSED as DONE on the
 execution subject; the split tasks (T-win-50023, T-win-50024, T-win-50015 family) carry the
 remaining work.
+
+<a id="t-lin-10092-win-requote-2026-08-16-94-of-9588"></a>
+
+## T-lin-10092/win fifth requote (win-x64, 2026-08-17T00:20Z, tree 198d3410 + serial re-verification at 12e0077b) — 94 of 9588, every red attributed
+
+Full native suite at -j4, VK layers disabled, ~85 min. 99% passed, 94 failed. This is the requote
+NOTE-5 owed after the session's SEH + multi-GPU landings; the suite ran the 198d3410 binary and
+every non-transient red was then re-verified serially on the current tree. Attribution, complete:
+
+- ~20 exec*/sso + pe/x-oracle: T-lin-10010 slice 2a's flagged x86_64 guard. lin fixed it MID-RUN
+  (a8f19e1d, gen_opif forces VT_REVSO operands through gv()); post-rebuild exec/sso at every
+  level AND pe/x-oracle (agree=264, 0 new divergence) are GREEN on win — lin's ACT fulfilled,
+  slice 2a now verified on a third x86_64 environment (mingw-ucrt Windows).
+- ~40 exec*/integer_promotion + exec*/bitfield_width64 + diff3/integer_promotion + mcctest
+  (full_language differential) + smoke/divergence (bfsweep.BFSL_31/32 categories): fallout of
+  T-win-50015's INTENDED ms_bitfields PE default flip (8d4f0a80, landed one hour after the
+  NOTE-4 requote — invisible until now because win never requoted since). mcc-on-PE now follows
+  MS bitfield promotion: an `unsigned long long:31` member promotes to its DECLARED type,
+  exactly matching cl (verified: cl prints ullong/ullong/ullong for ull31/32/33 — mcc
+  identical), while the goldens/oracles bank GNU width-based promotion (mingw-gcc prints
+  signed/unsigned/other). Bisected 405a45bf(clean)..ce504aed(bad); the MSVC-oracle fingerprint
+  pins 8d4f0a80. NOT a code bug — a test-expectation gap on PE: the goldens struct already has
+  an expect_win32 field; banking PE arms is T-win-50025 (minted). mcc==mingw-gcc still on u31
+  (signed — both width-narrow int-typed bitfields; the MS-promotion divergence is
+  long/long-long-declared members only, and cl additionally keeps u31 unsigned — mcc matches
+  gcc there; that delta is recorded inside T-win-50025's scope).
+- ci/gate-contract + ci/gate-contract-known-positive + ci/must-run-registered: the
+  optfire/asm-replay-object pair registered only under if(UNIX) while its must-run/gate-contract
+  rows are unconditional. FIXED this session (cce961d0): the cell is platform-clean and passes
+  both modes on win (main OK; known-positive catches the planted .data emission); all three
+  treegate cells re-verified green.
+- run-opt/native: tls_threads under -run SEGVs at every level on win (MCC_JIT=0 rows are hard
+  FAILs; JIT=1 rows already XFAIL). The win sibling of the class T-lin-10019 closed on Linux;
+  T-win-50003 Bucket B (jit/runtime) now has a named subject.
+- rir/rec-miss ("only 0 subject(s) ran") + rir-nofb-probe: the empty-input floors (T-lin-10054
+  et al.) fire honestly on win where the subject corpora are empty/undiscovered. The floors are
+  correct; win needs the subjects provisioned or an explicit per-platform skip: T-win-50026
+  (minted).
+- slice-census: examples/ex4.c fails to compile (X11/Xlib.h not found) under T-lin-10391's
+  wide walked corpus (src/mcc.c + tests/{exec,behavior,ast} + examples) — the header-free
+  redesign is not header-free for examples/ on a box without X11. Datapoint for the open
+  T-lin-10391 (lin band); the cell stays red on win until ex4 is excluded or gated.
+- gpu/spv-slice-differential: red in-suite, device-env (skips serially); the known device
+  visibility flake class on this box (T-win-50003's environmental bucket).
+- Steady knowns, unchanged attribution: slice/fault (T-win-50019), slice/cref-oracle x4
+  (T-lin-10359-class in-suite stalls), smoke/native + smoke/strats-known-positive
+  (T-win-50015 msstruct + T-win-50021 jit-not-baked bank), mcctest-embedjit (T-win-50021
+  strtold), runtime-bench-check (T-mac-30005 vendor/plb), 4x exec-search-emit{size,iso}
+  fp/math (NOTE-4 class). slice/cost PASSED this run (load-flake absent at this schedule).
+- IMPROVEMENT datapoint: smoke/engines, smoke/engines-known-positive and smoke/engines-identity
+  are ABSENT from the red list for the first time — the embed-JIT blob is now compiled by mcc
+  itself in this build. T-win-50021's owner should re-verify whether the hot-swap half is
+  partially paid before starting.
+
+ZERO reds attribute to T-lin-10084 (SEH slices 1-3b): pe/seh green in-suite and serially,
+pe/unwind-backtrace green, no new failure names in any SEH-adjacent family. That is the §8
+full-suite judgment T-lin-10084 was waiting on — DONE.
+
+<a id="t-lin-10013-landed-2026-08-16"></a>
+
+## T-lin-10013 LANDED (win-x64, 2026-08-17T00:25Z, 12e0077b) — i256/ui256 literal suffix; o0/census re-bank CONTRACT to lin
+
+Implementation exactly per the locked design (DETAILS#t-lin-10013-design-i256-suffix-2026-08-16),
+one deviation found by the fixture: the i256 lookahead must let a trailing suffix char (u/U/l/L)
+through — 0xACE0i256u — while still rejecting other ident chars (123i256x stays invalid). The
+fixture tail also changed: no #else #error — the dt runner compiles a no-section pass that must
+produce an empty TU (sibling convention). Verified green: exec/int256_lit (all 3 sections
+byte-exact against the hand-computed golden), diag.dg-error.int256_lit_pp + _suffix,
+exec/int256, exec/bitint, pe/seh. Full-suite §8 batches with the next win suite per fleet
+precedent (this session's requote predates the landing by an hour and carries its own record).
+
+CONTRACT @lin-x64: tests/exec/types/int256_lit.c is a NEW corpus object (the bitint +1-file
+shape — no existing object changes). Your cmake-cross measures 7/7 active o0-baseline keys:
+re-bank all seven for the new file (C2_NO_EXTRA=1 O0_AB_BANK=1 tools/o0_ab.sh BUILD measurable)
+and re-take your slice/census column (+1 walked source) at the next checkpoint. win measures
+0/7 keys (mingw-native has no cross sysroots; the o0-baseline cells skip here) and win's census
+column is currently red on the unrelated ex4.c/X11 gap above. @mac-arm64: your census column +
+any osx key lin's cross build does not cover, same shape.
+
+<a id="t-win-50025-pe-bitfield-promotion-test-arms"></a>
+
+## T-win-50025 — PE ms-bitfield promotion: bank the Windows expectation arms (fallout of 8d4f0a80)
+
+The 8d4f0a80 ABI flip is CORRECT (mcc==cl on Windows bitfield promotion) and stays. What is owed
+is the test surface: (1) exec goldens integer_promotion + bitfield_width64 get expect_win32 arms
+(the goldens struct already carries the field); (2) diff3/integer_promotion needs the
+diff3!=WIN32 req treatment (mcc INTENTIONALLY diverges from gcc/clang GNU promotion on PE);
+(3) mcctest's full_language cc-vs-mcc differential hits the same divergence — either the subject
+avoids long-declared bitfield promotion or the runner learns the PE delta; (4) smoke/divergence:
+bank the bfsweep.BFSL_31/32 diverge-one categories deliberately (the SAME delta, not a
+regression). Scope note from the requote anchor: cl additionally keeps u:31 unsigned where
+mcc+gcc narrow to signed int — decide (full cl parity on PE?) inside this task before banking.
+Verify: the ~40 exec cells + diff3 + mcctest + smoke/divergence green on win, Linux suite
+untouched.
+
+<a id="t-win-50026-win-empty-corpus-floors"></a>
+
+## T-win-50026 — rir/rec-miss + rir-nofb-probe: the empty-subject floors fire on win
+
+Both cells' floors are doing their job ("0 subjects ran / empty input must not read as a
+pass"). On win the subject discovery yields nothing — either the corpus the Linux boxes have is
+unprovisioned here (T-lin-10388's family) or the discovery path is POSIX-shaped. First slice is
+attribution: name what each cell walks, why it is empty on win, then either provision or add an
+explicit honest per-platform skip with a must-run.txt note. Verify: both cells either green or
+Skipped-with-recorded-reason on win; the floors still fail on a genuinely emptied corpus on lin.
