@@ -138,6 +138,30 @@ The error-handling audit confirmed `stk_data_floor`/`error_jmp_buf` are saved/re
 
 ---
 
+## Round 5 (2026-08-17) — self-host determinism, standard headers, numeric lexing
+
+### <a id="longdouble-selfhost-determinism"></a>Long-double self-host determinism hole
+mcc const-folds `long double` using HOST long-double arithmetic (`gen_opif`, `src/mccgen.c:4019`), and the self-host determinism design explicitly exempts long double from bit-exactness (DETAILS:34715 row E3: "long double escapes … claim it doesn't affect selfhost-fixpoint is probably false"). Compounding: mcc's OWN preprocessor `parse_number` (`src/mccpp.c:3379,3507`) runs every float literal in any source — incl. mcc's ~100K lines — through 80-bit long-double scaling constants (tightest self-reference loop). `LDOUBLE_WORDS` (`src/mcc.h:230`) derives from host `sizeof(long double)`, so on Apple-arm64 (where T-mac-30029 mis-sizes ld to 16) a self-built mcc drifts payload width stage-0→stage-1. No gate sees a STABLE divergence: `selfhost-fixpoint.py` compares stage2==stage3 (same compiler); `selfhost-output-parity.py` runs only `-O2`/same-host; `selftest.c`/`combo_selftest.c` exercise only integer/pointer/codec code (vacuous w.r.t. float). `[NEW]` self-host framing of `[KNOWN]` T-mac-30029/T-lin-10394. **TASK: T-mac-30030.**
+
+### <a id="header-conformance"></a>Bundled standard-header conformance
+`runtime/include` headers hardcode values contradicting the compiler's per-target predefines:
+- `stdint.h:100` `WCHAR_MIN`/`WCHAR_MAX` hardcoded signed-32 (`INT32_MIN/MAX`) — wrong on ARM/aarch64 Linux (`wchar_t` unsigned, `__WCHAR_MAX__ 0xffffffffU`) and Windows (16-bit). Fix like GCC: `#define WCHAR_MAX __WCHAR_MAX__`.
+- `mccdefs.h:236` `__WCHAR_MAX__`/`MIN__` signed-32 on Windows though Windows `wchar_t` is `unsigned short`; the `#if __linux__ && (arm||aarch64)` guard drops Windows into the wrong else-branch.
+- `stddef.h:34` `unreachable()` defined as `((void)0)` instead of `__builtin_unreachable()` (the builtin exists, `mccgen.c:13288`) — silently defeats the C23 contract.
+- `limits.h`/`stdint.h` missing ALL C23 `*_WIDTH` macros + `BOOL_MAX` + `__STDC_VERSION_*_H__`; `uchar.h` missing `char8_t`/`mbrtoc8`/`c8rtomb` (though `__CHAR8_TYPE__` is predefined).
+- `stdint.h:106` `WINT_MAX` 32-bit vs `__WINT_TYPE__ unsigned short` on PE (KNOWN-adjacent T-mac-30029); `intmax_t` typedef `long long` vs `__INTMAX_TYPE__ long` on LP64; `float.h:28` `FLT_EVAL_METHOD` hardcoded 2 for i386 vs `__FLT_EVAL_METHOD__ 0` under SSE2; `threads.h:10` unconditionally includes `<pthread.h>` (fails on PE); `stdatomic.h:197` fences/flags declared `extern` not mapped to builtins (link-fail risk).
+`[NEW]`. **TASK: T-mac-30031.**
+
+### <a id="numeric-literal-lexing"></a>Numeric / float literal lexing
+- **`wb`/`uwb` `_BitInt` literal truncated to 128 bits** (`src/mccpp.c:3727-3729`): stores only `tokc.q.lo/hi`, zeroes `q.w2/w3`, never writes `q.w4-w7` — but `__BITINT_MAXWIDTH__`=512 (`:5619`), cap allows N≤512 (`:3722`), `_BitInt(256)` is tested. Any `_BitInt` literal >2^128 gets a silently truncated value; codegen reads stale `q.w4-w7` from the reused global `tokc` for widths >256. The sibling `i256` path (`:3765`) stores all four words. `[NEW, HIGH]` — timely after the wideint-unify merge.
+- **Triple width drift**: predefine 512, `wb` accumulator `w[8]`=256-bit (`:3684`), store=128 → a 257–512-bit literal overflows the accumulator and is rejected with a misleading "exceeds 512-bit maximum" (`:3722`); representable 512-bit literals can't be formed. `[NEW]`.
+- `__bf16` has no literal suffix and no constant path (`mccgen.c:5337` errors "not a load-time constant") despite `VT_BF16`/`bf16_round` existing — asymmetric with `_Float16`. `[NEW]`.
+- Decimal literal in [2^63,2^64) made `unsigned long long` + spurious overflow warning (`:3780`), against C rank rules; value >ULLONG wraps mod 2^64 with only a warning (`:3618`). `[NEW, LOW]`.
+- long-double/`_Float16` literals stored/rounded via host `long double`/`strtold` (`:3529,3587`) — `[KNOWN]` T-mac-30029 / self-host family (`#longdouble-selfhost-determinism`).
+`[NEW]`. **TASK: T-mac-30032.** (Verified correct: C23 digit separators, `0b`/`0o`, leading-zero octal incl. rejecting `089`, suffix sniffing, hex/oct/bin type assignment.)
+
+---
+
 ## Pending taskification (captured, not yet minted)
 
 Lower-severity or newly-arrived items awaiting a `TODO.md` task in a later loop iteration: codegen arm64 `va_arg` assert (`#codegen-arm64-vaarg-assert`); type/C23 bit-field gaps (`#type-c23-gaps`); runtime/intrinsics (`#runtime-intrinsics`); Metal-vs-Vulkan f64 (`#gpu-metal-vs-vulkan-f64`); JIT RWX/`MAP_JIT` (`#jit-rwx-mapjit`); debug-info asymmetries beyond Mach-O unwind (`#debug-info-asymmetry`). The JIT lazy-vs-sync root cause (`#jit-lazy-vs-sync-kgc`) should be attached to existing **T-lin-10029**, not minted separately.
