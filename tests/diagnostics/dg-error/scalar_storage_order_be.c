@@ -1,13 +1,14 @@
-/* dg-error: scalar_storage_order */
-/* A reversed-scalar-storage-order struct with an unsupported member is refused.
- * The member is a short bit-field: unlike `long double` (which is 8-byte ==
- * double on arm64 and the MSVC/PE target, so a reversed double member COMPILES
- * there and the refusal is not target-uniform), a short bit-field is refused on
- * every target by sso_member_supported.  Retargeted from `long double v;` which
- * was a live red on arm64/PE.  (T-lin-10394 owns implementing these edge cases;
- * update this test if the short-bit-field case lands.) */
+/* dg-error: spanning its storage unit */
+/* A reversed-scalar-storage-order bit-field that spans its storage unit is
+ * refused on every target (a pure-codegen refusal, unlike `long double`, which
+ * is 8-byte == double on arm64 and the MSVC/PE target and so COMPILES there).
+ * Short/char bit-fields are now implemented (T-lin-10394, verified byte-equal to
+ * gcc-16 in tests/exec/types/sso.c); the still-unimplemented case is a field
+ * that crosses its unit boundary, which the load/store swap+flip cannot place. */
+#pragma pack(1)
 struct __attribute__((scalar_storage_order("big-endian"))) be {
-	unsigned short v : 4;
+	unsigned char pad : 4;
+	unsigned int v : 30;
 };
 
 int f(void)

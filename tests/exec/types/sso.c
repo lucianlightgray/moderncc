@@ -151,6 +151,47 @@ int main(void) {
 	ok = ok && bf.a == 0x6 && bf.b == 0x123 && bf.c == -12400 &&
 			bf.d == 0x2ABCDFF;
 
+	/* T-lin-10394: short/char bit-fields are placed from the MSB of their real
+	 * 16-/8-bit storage unit (not the 32-bit load register), byte-identical to
+	 * gcc-16. */
+	struct __attribute__((scalar_storage_order("big-endian"))) SSB {
+		unsigned short a : 4;
+		unsigned short b : 8;
+		short c : 10;
+	} sbf;
+	memset(&sbf, 0, sizeof sbf);
+	sbf.a = 0x5;
+	sbf.b = 0xAB;
+	sbf.c = -100;
+	unsigned char sb[sizeof sbf];
+	memcpy(sb, &sbf, sizeof sbf);
+	ok = ok && sizeof sbf == 4 &&
+			/* unit 0 = a:b big-endian in a 16-bit unit; unit 1 = c */
+			sb[0] == 0x5a && sb[1] == 0xb0 && sb[2] == 0xe7 && sb[3] == 0x00 &&
+			sbf.a == 0x5 && sbf.b == 0xAB && sbf.c == -100;
+	sbf.a += 2;
+	sbf.c -= 5;
+	ok = ok && sbf.a == 0x7 && sbf.b == 0xAB && sbf.c == -105 &&
+			(memcpy(sb, &sbf, sizeof sbf), sb[0] == 0x7a && sb[1] == 0xb0);
+
+	struct __attribute__((scalar_storage_order("big-endian"))) SCB {
+		unsigned char a : 3;
+		unsigned char b : 4;
+		signed char c : 5;
+	} cbf;
+	memset(&cbf, 0, sizeof cbf);
+	cbf.a = 0x5;
+	cbf.b = 0xC;
+	cbf.c = -11;
+	unsigned char cb2[sizeof cbf];
+	memcpy(cb2, &cbf, sizeof cbf);
+	ok = ok && sizeof cbf == 2 &&
+			cb2[0] == 0xb8 && cb2[1] == 0xa8 &&
+			cbf.a == 0x5 && cbf.b == 0xC && cbf.c == -11;
+	cbf.b += 1;
+	cbf.c += 4;
+	ok = ok && cbf.a == 0x5 && cbf.b == 0xD && cbf.c == -7;
+
 	printf("%s\n", ok ? "OK" : "FAIL");
 	return 0;
 }

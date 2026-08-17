@@ -2571,6 +2571,9 @@ ST_FUNC int (gv)(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n"
 	if (vtop->type.t & VT_BITFIELD) { MCC_TRACE("br\n");
 		CType type;
 		int rev = vtop->r & VT_REVSO;
+		/* The reverse-SO unit is the member's declared type, captured before
+		 * adjust_bf/gen_cast widen it to the load register (T-lin-10394). */
+		int decl_bt = vtop->type.t & VT_BTYPE;
 
 		bit_pos = vtop->type.bp;
 		bit_size = vtop->type.bs;
@@ -2598,8 +2601,15 @@ ST_FUNC int (gv)(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n"
 			load_packed_bf(&type, bit_pos, bit_size);
 		} else { MCC_TRACE("br\n");
 			int bits = (type.t & VT_BTYPE) == VT_LLONG ? 64 : 32;
-			if (rev)
-				{ MCC_TRACE("br\n"); bit_pos = bits - bit_pos - bit_size; }
+			/* The reverse-SO placement flip is over the member's real storage unit
+			 * (16 for short, 8 for char/bool), not the load register width; int/long
+			 * long already match `bits`.  The sign-extend SHL/SAR below still run at
+			 * the register width `bits` (T-lin-10394). */
+			if (rev) { MCC_TRACE("br\n");
+				int ubits = decl_bt == VT_SHORT ? 16
+									: (decl_bt == VT_BYTE || decl_bt == VT_BOOL) ? 8 : bits;
+				bit_pos = ubits - bit_pos - bit_size;
+			}
 			gen_cast(&type);
 			vpushi(bits - (bit_pos + bit_size));
 			gen_op(TOK_SHL);
@@ -6039,8 +6049,16 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 			gen_cast(&vtop[-1].type);
 			dbt = vtop[-1].type.t & VT_BTYPE;
 		}
-		if (rev)
-			{ MCC_TRACE("br\n"); bit_pos = (dbt == VT_LLONG ? 64 : 32) - bit_pos - bit_size; }
+		if (rev) { MCC_TRACE("br\n");
+			/* Flip over the field's declared storage unit (short=16, char/bool=8),
+			 * matching the load path; int/long long already match the register width
+			 * (T-lin-10394). */
+			int fbt = ft & VT_BTYPE;
+			int ubits = fbt == VT_SHORT ? 16
+								: (fbt == VT_BYTE || fbt == VT_BOOL) ? 8
+								: (dbt == VT_LLONG ? 64 : 32);
+			bit_pos = ubits - bit_pos - bit_size;
+		}
 		if (r == VT_STRUCT) { MCC_TRACE("br\n");
 			if (rev)
 				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a bit-field spanning "
@@ -6714,7 +6732,9 @@ static int sso_member_supported(CType *t) { MCC_TRACE("enter\n");
 	if (t->t & VT_BITFIELD) { MCC_TRACE("br\n");
 		if (IS_BITINT(t->t))
 			{ MCC_TRACE("br\n"); return 0; }
-		return (t->t & VT_BTYPE) == VT_INT || (t->t & VT_BTYPE) == VT_LLONG;
+		return (t->t & VT_BTYPE) == VT_INT || (t->t & VT_BTYPE) == VT_LLONG ||
+					 (t->t & VT_BTYPE) == VT_SHORT || (t->t & VT_BTYPE) == VT_BYTE ||
+					 (t->t & VT_BTYPE) == VT_BOOL;
 	}
 	if (is_float(t->t) && (t->t & VT_BTYPE) != VT_FLOAT &&
 			(t->t & VT_BTYPE) != VT_DOUBLE)
@@ -6746,7 +6766,7 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 		if (ad->a.reverse_so && !sso_member_supported(&f->type)) { MCC_TRACE("br\n");
 			mcc_error("scalar_storage_order on a struct with an unsupported member: a "
 								"reversed scalar leaf must be int/float/double, and a bit-field "
-								"int/long long (variable-length arrays, _BitInt, short/char "
+								"int/long long/short/char (variable-length arrays, _BitInt "
 								"bit-fields, long double and half-float are not implemented); "
 								"nested structs keep their own storage order");
 		}
