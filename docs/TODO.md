@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30023   | 2026-08-17T20:00Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30027   | 2026-08-17T20:14Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T14:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50030   | 2026-08-17T20:10Z |
 
@@ -62,6 +62,18 @@
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
 
 ## Open — claimable
+- [ ] T-mac-30023 [S] Investigate (SECURITY): object-file readers trust untrusted input — COFF reloc offset unbounded → OOB heap write (`mccpe.c:2616`; Mach-O guards the same op), archive `nsyms` unvalidated → OOB read (`mccelf.c:3815`), Mach-O dylib export bounds + NULL-deref, DLL export count truncation; add bounds checks
+      OWNER: — | STATE: OPEN | SHA: 9cf26f48 | TS: 2026-08-17T20:14Z
+      REF: INVESTIGATIONS.md#objreader-bounds | DEPS: —
+- [ ] T-mac-30024 [S] Investigate: TLS run-slab bounds guard vs copy mismatch (`-run`) — guard checks `total` but memcpy uses `seed_len` (incl. alignment padding) → OOB write past `mcc_jit_tls_slab` for ≥2 TLS sections with gaps (`mccrun.c:471` vs `:499/540/643`)
+      OWNER: — | STATE: OPEN | SHA: 9cf26f48 | TS: 2026-08-17T20:14Z
+      REF: INVESTIGATIONS.md#tls-runslab-bounds | DEPS: —
+- [ ] T-mac-30025 [S] Investigate: multithreaded libmcc/JIT reentrancy — per-`MccjitCounterState` lock doesn't cover the process-global JIT scratch it reads (`mccjit_embed.c:361/1191/1665`); `MCC_GPU_LOCK` no-op on Windows; diag ring-buffer publish-before-fill (single-threaded reentry verified clean)
+      OWNER: — | STATE: OPEN | SHA: 9cf26f48 | TS: 2026-08-17T20:14Z
+      REF: INVESTIGATIONS.md#libmcc-reentrancy | DEPS: —
+- [ ] T-mac-30026 [S] Investigate: `ast_fold_eval` vs gen diagnostic/value divergence (generalizes T-mac-30014) — signed overflow silently folded vs `-pedantic-errors` fatal, out-of-range shift silently masked vs warned (`mccast.c:6976/7000` vs `mccgen.c:3669/3701`); + pp directive-guard holes (`#undef`/`#ifdef` illegal operands, `__VA_OPT__` misuse skips checks)
+      OWNER: — | STATE: OPEN | SHA: 9cf26f48 | TS: 2026-08-17T20:14Z
+      REF: INVESTIGATIONS.md#foldeval-diag-divergence | DEPS: —
 - [ ] T-mac-30015 [S] Investigate: Mach-O emits NO unwind/CFI (no `.eh_frame`/`__compact_unwind`) — C++ EH / `_Unwind_*` / `cleanup` / crash-reporter backtraces have no data on macOS; scope a Mach-O unwind emitter; also DWARF ver=2-vs-5 + CodeView FP-only-locals asymmetries
       OWNER: — | STATE: OPEN | SHA: 0500a4b1 | TS: 2026-08-17T20:00Z
       REF: INVESTIGATIONS.md#macho-no-unwind | DEPS: —
