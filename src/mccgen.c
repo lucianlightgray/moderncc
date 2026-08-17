@@ -14993,6 +14993,10 @@ ST_FUNC int expr_const(void) { MCC_TRACE("enter\n");
 	return c;
 }
 
+ST_FUNC int64_t expr_const64_pub(void) { MCC_TRACE("enter\n");
+	return expr_const64();
+}
+
 #ifndef MCC_TARGET_ARM64
 static void gfunc_return(CType *func_type) { MCC_TRACE("enter\n");
 	if ((func_type->t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");

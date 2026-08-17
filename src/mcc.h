@@ -1700,6 +1700,7 @@ ST_DATA int mcc_parse_depth;
 ST_FUNC void mcc_parse_depth_enter(void);
 ST_FUNC void mcc_parse_depth_leave(void);
 ST_FUNC int expr_const(void);
+ST_FUNC int64_t expr_const64_pub(void);
 ST_FUNC void cst_capture_begin(const char *filename);
 ST_FUNC CstArena *cst_capture_end(void);
 ST_FUNC Sym *get_sym_ref(CType *type, Section *sec, unsigned long offset, unsigned long size);

@@ -1701,16 +1701,34 @@ static void embed_params_free(EmbedParams *ep) { MCC_TRACE("enter\n");
 
 static int64_t embed_read_paren_const(void) { MCC_TRACE("enter\n");
 	int64_t v;
+	TokenString *str;
+	int depth = 1, t;
 	next_nomacro();
 	if (tok != '(')
 		{ MCC_TRACE("br\n"); expect("'('"); }
+	str = tok_str_alloc();
 	next();
-	if (tok < TOK_CINT || tok > TOK_CULONG)
-		{ MCC_TRACE("br\n"); mcc_error("embed parameter expects an integer constant"); }
-	v = (int64_t)tokc.i;
-	next_nomacro();
-	if (tok != ')')
-		{ MCC_TRACE("br\n"); expect("')'"); }
+	while (depth > 0) { MCC_TRACE("br\n");
+		if (tok == TOK_EOF || tok == TOK_LINEFEED)
+			{ MCC_TRACE("br\n"); mcc_error("missing ')'"); }
+		if (tok == '(')
+			{ MCC_TRACE("br\n"); depth++; }
+		else if (tok == ')') { MCC_TRACE("br\n");
+			if (--depth == 0)
+				{ MCC_TRACE("br\n"); break; }
+		}
+		tok_str_add2(str, tok, &tokc);
+		next();
+	}
+	tok_str_add(str, TOK_EOF);
+	t = tok;
+	begin_macro(str, 1);
+	next();
+	v = expr_const64_pub();
+	if (tok != TOK_EOF)
+		{ MCC_TRACE("br\n"); mcc_error("embed parameter expects an integer constant expression"); }
+	end_macro();
+	tok = t;
 	return v;
 }
 
