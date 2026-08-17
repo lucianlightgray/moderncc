@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30030   | 2026-08-17T20:20Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30033   | 2026-08-17T20:40Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T15:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-17T20:15Z |
 
@@ -60,6 +60,15 @@
 - [ ] T-win-50030 [S] int256/bitint128/bitint256 `test_float` reds on win are float-print platform quirks (long double==double, msvcrt `e+060`/`1.#INF`), not miscompiles — guard/win-expect them
       OWNER: — | STATE: OPEN | SHA: e3a7cfc8 | TS: 2026-08-17T20:15Z
       REF: DETAILS.md#t-win-50030-int256-bitint-float-print-win | DEPS: — | NOTE: ~66 of the T-lin-10092/win NOTE-8 102 reds. Only the test_float sections differ (hex-integer sections byte-identical, layout correct); win long double==double (64-bit) + msvcrt printf exponent/inf format. Fix like T-win-50029: `#ifndef _WIN32`-guard the long-double-precision/exponent-sensitive asserts (or win-expected lines) in tests/exec/types/{int256,bitint128,bitint256}.c — coordinate, these are lin/mac's freshly-merged wide-int tests. Verified NOT a wideint-unify regression (fails on pre-merge baseline c49270b2).
+- [ ] T-mac-30032 [S] Investigate: numeric literal lexing — `wb`/`uwb` `_BitInt` literal truncated to 128 bits (`mccpp.c:3727`) vs 512-bit cap/predefine + 256-bit accumulator (triple drift) → wrong-value + stale-global read for N>256; `__bf16` has no constant path; decimal-in-[2^63,2^64) wrong type
+      OWNER: — | STATE: OPEN | SHA: 8b0abb63 | TS: 2026-08-17T20:40Z
+      REF: INVESTIGATIONS.md#numeric-literal-lexing | DEPS: —
+- [ ] T-mac-30031 [S] Investigate: bundled standard-header conformance — `WCHAR_MIN/MAX` hardcoded signed-32 (wrong on ARM unsigned + 16-bit Windows), `unreachable()` = `((void)0)` not `__builtin_unreachable()`, missing all C23 `*_WIDTH`/`char8_t`, `intmax_t`/`FLT_EVAL_METHOD`/`threads.h`-on-PE/`stdatomic` fences mismatches
+      OWNER: — | STATE: OPEN | SHA: 8b0abb63 | TS: 2026-08-17T20:40Z
+      REF: INVESTIGATIONS.md#header-conformance | DEPS: —
+- [ ] T-mac-30030 [S] Investigate: long-double self-host determinism hole — folding uses HOST long double (`mccgen.c:4019`), mcc's own `parse_number` depends on it (`mccpp.c:3379`), `LDOUBLE_WORDS` host-derived; no gate catches a STABLE stage-0→stage-1 divergence, `selftest.c` has no float coverage; self-host face of T-mac-30029
+      OWNER: — | STATE: OPEN | SHA: 8b0abb63 | TS: 2026-08-17T20:40Z
+      REF: INVESTIGATIONS.md#longdouble-selfhost-determinism | DEPS: —
 - [ ] T-mac-30027 [S] Investigate: driver/CLI option semantics — `-imacros` is a wrong silent alias of `-include` (`libmcc.c:3070`), `-fstack-protector` help understates targets (`mcc.c:150`), plain `char` unsigned on x86/i386 (undoc ABI deviation), Mach-O `-undefined dynamic_lookup`/`-flat_namespace` silently ignored, several parsed-but-undocumented options
       OWNER: — | STATE: OPEN | SHA: 85483b94 | TS: 2026-08-17T20:20Z
       REF: INVESTIGATIONS.md#driver-cli-semantics | DEPS: —
