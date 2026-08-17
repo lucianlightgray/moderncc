@@ -49627,3 +49627,36 @@ and gv/vstore never calls gen_sso_bswap → no swap on either load or store. FIX
 preserve VT_REVSO (and the member's reverse-SO type) through the AST capture/replay round-trip so
 the replayed member access re-enters the SSO path in gv/vstore. Not attempted here to avoid
 destabilising T-lin-10010; fully repro'd and root-caused for the owner.
+
+### T-win-50026 CORRECTION (win-x64, 2026-08-17) — the cg_func_alloca fix (c5f2e0ed) was REVERTED (2d8249c7); it regressed -O1+ normal-mode multi-alloca VLA
+
+The one-line `mcc_state->cg_func_alloca = 0;` reset in ast_func_end (c5f2e0ed) DID fix the -O0
+`-fno-replay-fallback` VLA SIGSEGV and made single-VLA bodies replay byte-faithfully, BUT it
+**regressed normal (with-fallback) compilation at -O1/-O2/-O3** for functions with a VLA:
+`tests/exec/vla/{basic,bug,continue,reuse}.c` and `codegen/alloca_inline.c` began to SIGSEGV in
+`gfunc_epilog` (pre-fix mcc: all rc=0; post-fix: rc=139). Verified by building a pre-c5f2e0ed mcc
+(green) vs post (red). Reverted at 2d8249c7 to restore main; the nofb-probe cell returns to its
+pre-existing red (the crash was never introduced by me — it is the bug the probe surfaces).
+
+**Why the naive fix is wrong — deeper root cause.** The PE alloca chain is self-referential:
+`func_alloca = oad(0x05, func_alloca)` writes the *current* func_alloca as the new link's
+immediate, so a replay re-emission with func_alloca still set LINKS the new chain into the old
+one. Resetting to 0 before replay gives the replayed body a clean chain — correct when that body
+is KEPT (nofb-keep, or faithful-keep) — but:
+  1. On FALLBACK the original body is spliced back (mccast.c:21656) and needs the ORIGINAL
+     func_alloca; a save/restore there (`ast_saved_falloca`) is necessary but NOT sufficient.
+  2. `basic.c::main` has THREE VLAs (a[n], g[r][c], b[k+1]) = a 3-link chain, and at -O1+ the
+     crash persisted even WITH save+reset+restore: `func_alloca` reached the epilog as a large
+     NON-offset value (0x65897BE0), i.e. set from a source other than `oad` — a DIFFERENT replay
+     path (RIR arena, rir_env>=4, and/or the -O2 opt pipeline) also writes/consumes func_alloca
+     and is not covered by the single ast_func_end reset. gsym_addr then walks garbage.
+
+**So the correct fix must reconcile func_alloca across ALL of: nofb-keep, faithful-keep, fallback,
+AND the RIR-arena / -O2 replay path** — reconstructing (not merely resetting) the chain to match
+whichever body is final, or making the alloca chain immune to re-emission (e.g. rebuild it from
+the replayed instruction stream at epilog). Not a one-liner. NEXT ATTEMPT: instrument func_alloca
+through `basic.c -O2` (prolog reset / each oad at x86_64-gen.c:974 / rir_verify save-restore /
+ast_func_end reset / keep-vs-fallback / epilog) to find the 0x65897BE0 writer before touching
+code; gate every candidate on `tests/exec/vla/*.c` at O0-O3 in BOTH normal and
+`MCC_FORCE_REPLAY -fno-replay-fallback` modes (the slice smoke test I under-scoped the first time
+— I only tested the nofb-keep path). **Source.** win-x64, 2026-08-17.
