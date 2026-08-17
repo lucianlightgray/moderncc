@@ -50575,3 +50575,23 @@ to 256 cheaply; N>256 can follow.
 **CROSS-REBANK still owed (from the slice-2 CONTRACT):** lin(x86_64)+win(win32) o0-baseline cross keys for
 the new bitint128.c + int256.c float sections + the bitint.c maxwidth golden already bumped in-tree; run
 exec/bitint128 + exec/int256 natively. **Source.** mac-arm64, 2026-08-17.
+
+<a id="t-win-50003-bucket-b-FIXED-2026-08-17-zero-rodata-on-emit-size-rewind"></a>
+
+## T-win-50003 Bucket B FIXED (win-x64, 2026-08-17, `30db867a`) — zero the rodata/data bytes the emit-size measurement wrote, on rewind
+
+Building on the corrected diagnosis (constants overwrite the import table). The precise mechanism, nailed by tracing `ast_search_emit_size` and `pe_build_imports`:
+
+- Each `-fopt-search-emit-size` scoring trial calls `ast_search_emit_size` (`mccast.c:19608`), which emits the trial body's constants to the **real** `data_section`/`rodata_section`, then rewinds `data_offset` to the pre-trial value (`save_doff`/`save_roff`) — **offset-only, the written bytes stay in the section buffer.**
+- Trace (186 trials on `floating_point.c`): the `test` function's trials run at `save_roff=8` (harmless, low), but the `main` function's trials run at **`save_roff=496` (0x1F0)** and write constants up to **`roff_after=872` (0x368)**, then rewind to 0x1F0. `main` itself commits few/no rodata constants, so the section's final `data_offset` stays at **0x1F0 — exactly where `pe_build_imports` appends the import ILT/IAT** (confirmed: both the crashing emit-size binary and a working `-O13` binary place imports at rodata `data_offset=0x1F0`).
+- `pe_build_imports` writes the import thunks over [0x1F0, 0x428) but does not zero every byte, so the **stale FP-constant bytes** the `main` trials left at [0x1F0, 0x368) show through the thunk arrays (e.g. the double `0.217330 = 0x3FCBD178A0000000` at rodata 0x20A). The Windows loader reads the corrupted thunks as RVAs and faults in `LdrInitializeThunk` before `main` (0xC0000005). ELF/Mach-O loaders tolerate the same stale free-space, so the fault was PE-only — which is why the prior owners saw it only on Windows and mis-attributed it to `.rdata` size.
+
+**Fix (`30db867a`, `ast_search_emit_size`):** when rewinding `data_section`/`rodata_section` `data_offset` after a trial, `memset` the bytes in `[save_off, data_offset)` to zero first, restoring the buffer to the never-measured (zero free-space) state. Behavior-preserving on every target — the rewound region is beyond `data_offset`, i.e. unreferenced free space that the linker/PE-writer is entitled to append into and assumes is clean. Not the fconst pool (traced `ast_fconst_n` stays 1 throughout — the constants are direct rodata writes, not pooled; an earlier `ast_fconst_n` save/restore attempt had zero effect and was dropped).
+
+**Verify:** `exec-search-emit{size,iso}/{floating_point,math_library,floating_point_literals}` all green, output byte-identical to `-O0`; controlled stash-test proved the crash is present without the change and gone with it; full `exec-search-emit*` suite otherwise unregressed.
+
+**Separately surfaced (NOT this fix, pre-existing — red WITHOUT the change, controlled-tested):** `exec-search-emit{size,iso}/bitint` and `.../bitint128` FAIL with a **numeric `(mismatch)`** (not a crash) — a distinct `_BitInt`-under-emit-search issue (wide256/`__int256` kernel constants under the search strategy; `bitint128.c` is mac's brand-new T-lin-10004 slice-2 file). Different failure mode (mismatch vs loader crash), different subsystem; needs its own investigation (likely fleet-wide, not PE-specific). Flagged under T-win-50003 for a follow-up/new task.
+
+**Remaining in T-win-50003:** Bucket B's 3 jit/runtime reds (tls_threads `-run` SEGV etc.) and Bucket A (28 GPU-slice, device-blocked). Bucket B's 4 fp reds are now paid.
+
+**Source.** win-x64, 2026-08-17, `30db867a`.
