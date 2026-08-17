@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30013   | 2026-08-17T04:00Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30013   | 2026-08-17T04:24Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T01:41Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50029   | 2026-08-17T04:30Z |
 
@@ -20,9 +20,6 @@
 - [ ] T-lin-10007 [S] Parse `__float128` / `_Float128` (28 cells)
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 41d9b6bc | TS: 2026-08-16T02:10Z | NOTE: SLICE 1 LANDED (844b9abf, DETAILS#t-lin-10007-float128-slice-1-arm64-implemented-verified-vs-gcc16). __float128 works on arm64 (VT_FLOAT128=17, gated MCC_HAVE_FLOAT128=arm64||riscv64), BYTE-IDENTICAL to gcc-16 across arith/cmp/neg/conversions; new tests/exec/types/float128.c; fixed 3 dormant bugs (float128.c f128_t guard, arith type-combine demote-to-float, unprototyped 2nd-16B-arg). x86_64/i386/arm still REFUSE (honest). SLICE 2 (lin): add __*tf* tokens + SysV binary128 ABI on x86_64 + the 28 gated float128 cells; riscv64 wired-but-UNVERIFIED. CONTRACT lin: bank o0-baseline cross keys (x86_64 + 4 win32) for BOTH tests/exec/types/bf16.c AND float128.c — the -gated o0 cells are red until then (bf16.c was left unbanked since T-lin-10005). HEARTBEAT INTENTIONALLY STALE — TTL-eligible for any session to resume: mac's slice 1 (arm64 __float128) is DONE + landed; the remaining slice 2 (x86_64 SysV binary128 ABI + __*tf* tokens + the 28 gated cells) is x86_64 work best owned by lin. Not actively locked by mac.
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
-- [ ] T-mac-30012 [S] T-win-50028 slice B (arm64): un-gate the inline bswap on arm64 via native REV/REV16 so the sso byte-swap replays faithfully
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: d3ebaa43 | TS: 2026-08-17T04:00Z | Q: — | DEPS: T-win-50028 slice A (lin, 1058f958, LANDED) — soft-blocked on a lin coordination reply (CONTRACT e3be5fa5, not a QUESTIONS.md block)
-      REF: DETAILS.md#t-mac-30012-arm64-rev-bswap-progress-the-sso-store-swap-is-not-a-captured-node | NOTE: WIP DONE (scratchpad/t-mac-30012-arm64-rev-bswap-WIP.patch, reverted from main): native AArch64 REV gen_bswap + narrow MCC_IR_HAVE_BSWAP macro + un-gated inline path — BUILDS, primary emits 83 REV/0 libcalls, normal-mode sso.c OK O0-O3. BUT forced-replay still FAILs: traced that the sso STORE swap is NOT captured as an AST node (gen_sso_bswap fires at ir_cap_depth 2 INSIDE the open IR_OP_VSTORE capture → IR_CAP_REC drops it → IR_OP_BSWAP reaches arena 0×), AND replay never re-executes vstore (ast_replaying → no vstore call). This nesting is arch-INDEPENDENT yet x86_64 rir-nofb-probe is GREEN, so x86_64 reproduces the store swap by a mechanism OTHER than a captured node or vstore re-exec — likely arena-build re-deriving the swap from lin's AST_FB_MEMBER_REVSO member flag. AWAITING lin's x86_64 `-fdump-replay` of sso.c::main (does the store carry a BSWAP child or a bare rev-SO member?) to know whether B = "un-gate node + REV" (WIP, insufficient) or "derive swap from the member flag in arena-build" (slice-A-adjacent). rir-nofb-probe stays honestly-red on arm64 until B + lin's C both land.
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 

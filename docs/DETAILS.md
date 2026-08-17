@@ -50154,3 +50154,41 @@ Final per-function instrumentation (MCC_DBG_FE on floating_point.c):
 So the searched function (`main` goes through the emit-size search; `test` is too small to) has its constants POOLED (ast_fconst) during the search's `ast_search_emit_size` measurements (which emit 0x178 B rodata then roll back data_offset). The subsequently-committed replay (`ast_replay_body` in the ast_replay_ok block, ast_fconst_i walked from 0) gets fconst-pool HITS for every constant and re-uses the pooled symbols WITHOUT re-emitting → rodata data_offset stays at main's entry value (0x1f0). The constant BYTES exist only transiently (last measurement, past the rolled-back offset); pe_build_imports then appends the import table at 0x1f0, overwriting them → the corrupt import terminator / loader crash.
 
 TRIED + INSUFFICIENT: restoring `ast_fconst_n` at the end of `ast_search_emit_size` (drop measurement-pooled entries so the commit re-misses+re-emits) — rodata still 0x1f0, because the pool/replay interaction spans multiple phases in ast_func_end (first replay at ~20965, opt/search at ~21125, committed replay feeding keep at ~21671) and the constants survive in the pool across them. CORRECT FIX (delicate, blast radius = all optimized output): save the fconst-pool size at ast_func_end entry (post-`test`, pre-search) and restore it immediately before the COMMITTED replay so it re-emits the searched function's constants fresh (advancing rodata), OR make the search measurements not pool into the persistent fconst table. Verify: exec-search-emit{size,iso}/{floating_point,math_library} green AND no regression on any optimized AOT/JIT output (the fconst pool is shared fleet-wide). Not landed here — needs full-pipeline tracing + regression pass, unsafe to rush. Reverted all probes; main clean. **Source.** win-x64, 2026-08-17.
+
+<a id="t-mac-30012-slice-b-landed-arm64-native-rev-bswap"></a>
+
+## T-mac-30012 / T-win-50028 slice B LANDED (63b9ecc9) — arm64 native REV bswap; reverse-SO replays faithfully
+
+**The mechanism (confirmed both ways).** The reverse-SO byte-swap is NOT a captured AST node on
+any target — lin's slice A/C carry rev-SO on the MEMBER node via the dedicated fbits flag
+AST_FB_MEMBER_REVSO; at RIR replay mccast.c:5570 translates it back to VT_REVSO on the replayed
+member lvalue, and the AST_Store replay re-runs vstore() whose SSO hook (mccgen.c:5989) RE-RUNS
+gen_sso_bswap. (My earlier "never re-runs at replay" reading was a mis-instrumentation: the c2/prod
+replay runs with rir_c2_active=1 and ast_replaying=0, mccrir.c:5567-5569, so an ast_replaying-gated
+print legitimately never fires — but the swap IS re-running; gen_sso_bswap fires 2x normal / 4x
+forced-replay on a single-store program.) I INDEPENDENTLY confirmed the x86_64 side by building a
+cross-mcc on this arm64 box (`cmake -DMCC_ENABLE_CROSS=ON -DMCC_CROSS_TARGETS=x86_64`, target
+mcc-x86_64 — a host-runnable cross compiler that uses the MCC_TARGET_X86_64 capture path): its
+-fdump-replay of a minimal rev-SO store shows `Store(Unary AST_OP_MEMBER(Ref), Literal)` with zero
+BSWAP nodes. **This cross-mcc technique lets the arm64 box answer x86_64 capture/replay questions
+without the peer or an x86_64 machine — reuse it.**
+
+**Why arm64 failed and the fix.** On arm64 gen_sso_bswap emitted the swap as a __builtin_bswap
+HELPER CALL (the inline gen_bswap->AST_OP_BSWAP path was #if MCC_TARGET_X86_64-gated, mccgen.c:5819),
+and a helper call cannot re-emit faithfully when vstore re-runs through the arena at replay (the
+call target/reloc doesn't reconstruct) -> sso.c FAILed -fno-replay-fallback O0-Os. Fix: a native
+AArch64 gen_bswap (REV Wr/Xr, REV16 for size 2; arm64-gen.c) + a narrow MCC_IR_HAVE_BSWAP macro
+(x86_64||arm64, a strict subset of MCC_IR_HAVE_X86_PRIMS which stays x86_64-only for signbit/ffs/
+bitscan) that un-gates just the bswap inline path + its capture/replay wiring (ir_cap_gen_bswap
+decl+#define, mccircap IR_CAP_W1 + arena-emit case, mccrir arena->AST case split out of the shared
+block, mccast replay else-if, bswap_inline_on, gen_sso_bswap inline block, and the mcc.h prototype).
+The swap is now a plain instruction sequence that replays cleanly (bonus: drops a libcall).
+
+**Verified arm64 (WIP earlier FAILed only because that tree predated slice C 42e5e6f5).** sso.c OK
+O0-O3+Os in BOTH normal and MCC_FORCE_REPLAY -fno-replay-fallback (bit-fields included, per lin's
+-O1+ heads-up — MCC_RIR_BF_NORM's rev-SO bail is shared/arch-independent, so slice C already covers
+arm64 bit-fields once the swap is replayable); rir-nofb-probe 0 MISCOMPILE (sso.c::main now
+faithful); exec 361/361; o0-baseline green (only sso.c changed, helper->REV, re-banked arm64-osx.obj).
+x86_64 path byte-identical (prims + the bswap subset both still cover x86_64). Fleet close of
+T-win-50028 = lin's A+C (x86_64) + this B (arm64); lin re-verifying x86_64 under 63b9ecc9 before
+closing the parent. **Source.** mac-arm64, 2026-08-17, at 63b9ecc9.
