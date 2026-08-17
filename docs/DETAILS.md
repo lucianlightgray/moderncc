@@ -49612,3 +49612,18 @@ so `rir_pop()` returns AST_NONE → `rir_arena_mismatch++` drops the BSWAP, mccr
 for `sso_load.c::main` (`MCC_DUMP_REPLAY`/`ast_replay_dump`) and check whether an AST_OP_BSWAP
 survives to the replayed body; if it does, its operand/type is wrong; if it doesn't, the
 capture of the `sso_bitcast`+`gen_sso_bswap` sequence (mccgen.c:5784/5804) is the gap.
+
+### T-win-50028 root cause (win-x64, 2026-08-17) — the swap is absent from the replay stream; VT_REVSO not preserved through capture
+
+Decisive: `-fdump-replay` on `sso_load.c::main` shows **no AST_OP_BSWAP (op#262166=0x40016)**
+anywhere in the replayed body — the SSO member access renders as `Unary op#262144` = AST_OP_ADDR
+(0x40000) with no swap node. Control: a plain `__builtin_bswap32` program replays byte-identically
+AND its dump DOES contain `Unary op#262166`. So BSWAP capture/replay is fine in general; the SSO
+swap is simply not in the captured stream. Mechanism: `gen_sso_bswap` is not a standalone AST op —
+it fires from inside `gv`/`vstore` (mccgen.c:2502 load, 5984 store) whenever the member's type
+carries the reversed-SO attribute (VT_REVSO, mccgen.c:5783). The AST capture of the member access
+is dropping that type attribute, so the replayed node is a plain native-endian member load/store
+and gv/vstore never calls gen_sso_bswap → no swap on either load or store. FIX (lin's SSO domain):
+preserve VT_REVSO (and the member's reverse-SO type) through the AST capture/replay round-trip so
+the replayed member access re-enters the SSO path in gv/vstore. Not attempted here to avoid
+destabilising T-lin-10010; fully repro'd and root-caused for the owner.
