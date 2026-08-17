@@ -6,11 +6,26 @@
  },
  "nofb_miscompiles": {
   "O0": [
-   "src/mcc.c::cleanup_symbols"
+   "src/mcc.c::arm64_gen_bl_or_b",
+   "src/mcc.c::cleanup_symbols",
+   "src/mcc.c::gaddrof",
+   "src/mcc.c::unary_nested"
   ],
-  "O1": [],
-  "O2": [],
-  "O3": []
+  "O1": [
+   "src/mcc.c::arm64_gen_bl_or_b",
+   "src/mcc.c::gaddrof",
+   "src/mcc.c::unary_nested"
+  ],
+  "O2": [
+   "src/mcc.c::arm64_gen_bl_or_b",
+   "src/mcc.c::gaddrof",
+   "src/mcc.c::unary_nested"
+  ],
+  "O3": [
+   "src/mcc.c::arm64_gen_bl_or_b",
+   "src/mcc.c::gaddrof",
+   "src/mcc.c::unary_nested"
+  ]
  },
  "self": {
   "O0": {
@@ -111,7 +126,7 @@
     "gap_bytes": 0,
     "kept_coverage": {
      "elf": 92.2277,
-     "macho": 93.7977
+     "macho": 92.1195
     },
     "modelled_bytes": 1793084,
     "modelled_coverage": 100.0,
@@ -199,7 +214,7 @@
     "gap_bytes": 472,
     "kept_coverage": {
      "elf": 92.3093,
-     "macho": 93.9276
+     "macho": 92.2862
     },
     "modelled_bytes": 1828728,
     "modelled_coverage": 99.9742,
@@ -287,7 +302,7 @@
     "gap_bytes": 472,
     "kept_coverage": {
      "elf": 92.3093,
-     "macho": 93.9276
+     "macho": 92.2862
     },
     "modelled_bytes": 1828728,
     "modelled_coverage": 99.9742,
@@ -375,8 +390,8 @@
   "sha": "b5fdbbf0714bc26b"
  },
  "sources_wide": {
-  "n": 396,
-  "sha": "0ded09e669344ec9"
+  "n": 397,
+  "sha": "4330b7a8a6de2246"
  },
  "wide": {
   "O0": {
