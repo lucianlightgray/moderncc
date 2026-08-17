@@ -107,6 +107,17 @@ static void wide256_local(CType *vt, SValue *out) { MCC_TRACE("enter\n");
 	out->sym = NULL;
 }
 
+static void wide256_scratch_u64(SValue *out) { MCC_TRACE("enter\n");
+	CType u64 = wide256_u64_type();
+	int al, sz = type_size(&u64, &al);
+	out->type = u64;
+	out->r = VT_LOCAL | VT_LVAL;
+	out->r2 = VT_CONST;
+	out->c.i = ast_alloc_loc(sz, al);
+	out->c.q.hi = out->c.q.w2 = out->c.q.w3 = 0;
+	out->sym = NULL;
+}
+
 static void wide256_limb_lval(SValue *base, int i, int is_unsigned) { MCC_TRACE("enter\n");
 	CType lt = is_unsigned ? wide256_u64_type() : wide256_s64_type();
 
@@ -456,6 +467,67 @@ static void gen_wide256_op(int op) { MCC_TRACE("enter\n");
 			wide256_limb_lval(&av, i, 1);
 			wide256_limb_lval(&bv, i, 1);
 			gen_op(op);
+			vstore();
+			vpop();
+		}
+		vpushv(&res);
+		return;
+	}
+
+	/* Inline the multi-limb add/sub (T-mac-30010): a portable per-limb carry/
+	 * borrow chain via the ordinary 64-bit gen_op + three u64 scratch locals,
+	 * dropping the __mcc_i256_{add,sub} call. Two steps per limb so both carries
+	 * are caught: for '+', tt=a[i]+b[i]; cc=tt<a[i]; res[i]=tt+carry; carry=cc |
+	 * (res[i]<tt). For '-', tt=a[i]-b[i]; cc=a[i]<b[i]; res[i]=tt-carry; carry=cc
+	 * | (tt<res[i]). Byte-identical to the helper (verified by wide256/gmp-diff). */
+	if (op == '+' || op == '-') { MCC_TRACE("br\n");
+		SValue av, bv, tt, cc, carry;
+		int i, sub = (op == '-');
+		wide256_materialize(&wt, &bv);
+		wide256_materialize(&wt, &av);
+		wide256_local(&wt, &res);
+		wide256_scratch_u64(&tt);
+		wide256_scratch_u64(&cc);
+		wide256_scratch_u64(&carry);
+		vpushv(&carry);
+		vpush64(VT_LLONG | VT_UNSIGNED, 0);
+		vstore();
+		vpop();
+		for (i = 0; i < MCC_WIDE256_LIMBS; i++) { MCC_TRACE("br\n");
+			vpushv(&tt);
+			wide256_limb_lval(&av, i, 1);
+			wide256_limb_lval(&bv, i, 1);
+			gen_op(op);
+			vstore();
+			vpop();
+			vpushv(&cc);
+			if (sub) { MCC_TRACE("br\n");
+				wide256_limb_lval(&av, i, 1);
+				wide256_limb_lval(&bv, i, 1);
+			} else { MCC_TRACE("br\n");
+				vpushv(&tt);
+				wide256_limb_lval(&av, i, 1);
+			}
+			gen_op(TOK_ULT);
+			vstore();
+			vpop();
+			wide256_limb_lval(&res, i, 1);
+			vpushv(&tt);
+			vpushv(&carry);
+			gen_op(op);
+			vstore();
+			vpop();
+			vpushv(&carry);
+			vpushv(&cc);
+			if (sub) { MCC_TRACE("br\n");
+				vpushv(&tt);
+				wide256_limb_lval(&res, i, 1);
+			} else { MCC_TRACE("br\n");
+				wide256_limb_lval(&res, i, 1);
+				vpushv(&tt);
+			}
+			gen_op(TOK_ULT);
+			gen_op('|');
 			vstore();
 			vpop();
 		}
