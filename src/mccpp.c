@@ -11,6 +11,7 @@ ST_DATA int tok;
 ST_DATA CValue tokc;
 #define tok_ts (mcc_state->tok_ts)
 ST_DATA int tok_imaginary;
+ST_DATA int tok_bitint_width;
 ST_DATA const int *macro_ptr;
 ST_DATA CString tokcstr;
 
@@ -3591,7 +3592,7 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 		}
 	} else { MCC_TRACE("br\n");
 		unsigned long long n, n1;
-		int lcount, ucount, l0, ov = 0, i256sfx = 0;
+		int lcount, ucount, l0, ov = 0, i256sfx = 0, wbsfx = 0;
 		const char *p1;
 
 		*q = '\0';
@@ -3657,12 +3658,76 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 				i256sfx = 1;
 				p += 3;
 				ch = *p++;
+			} else if (t == 'W' && (p[0] == 'b' || p[0] == 'B') &&
+								 (p[1] == 'u' || p[1] == 'U' ||
+									!((p[1] >= '0' && p[1] <= '9') || (p[1] >= 'a' && p[1] <= 'z') ||
+										(p[1] >= 'A' && p[1] <= 'Z') || p[1] == '_'))) { MCC_TRACE("br\n");
+				/* C23 6.4.4.1 bit-precise integer suffix wb/uwb (u in either order);
+				   sniffed like i256 so a trailing ident char is not mistaken for it */
+				if (wbsfx)
+					{ MCC_TRACE("br\n"); mcc_error("incorrect integer suffix: %s", p1); }
+				wbsfx = 1;
+				p += 1;
+				ch = *p++;
 			} else if (t == 'I' || t == 'J') { MCC_TRACE("br\n");
 				tok_imaginary = 1;
 				ch = *p++;
 			} else { MCC_TRACE("br\n");
 				break;
 			}
+		}
+
+		if (wbsfx) { MCC_TRACE("br\n");
+			/* C23: the type of a wb/uwb literal is _BitInt(N) with N the smallest
+			   width holding the value: unsigned N = max(1, bit_width); signed
+			   N = max(2, bit_width + 1).  N > 128 is refused (this target's max). */
+			uint32_t w[8];
+			uint64_t cur, carry;
+			int i, bw, N;
+			if (lcount || tok_imaginary || i256sfx)
+				{ MCC_TRACE("br\n"); mcc_error("incorrect integer suffix: %s", p1); }
+			if (pp_expr)
+				{ MCC_TRACE("br\n"); mcc_error("'wb' constant in preprocessor expression"); }
+			ov = 0;
+			memset(w, 0, sizeof w);
+			for (q = token_buf; (t = *q++) != '\0';) { MCC_TRACE("br\n");
+				if (t >= 'a')
+					{ MCC_TRACE("br\n"); t = t - 'a' + 10; }
+				else if (t >= 'A')
+					{ MCC_TRACE("br\n"); t = t - 'A' + 10; }
+				else
+					{ MCC_TRACE("br\n"); t = t - '0'; }
+				carry = t;
+				for (i = 0; i < 8; i++) { MCC_TRACE("br\n");
+					cur = (uint64_t)w[i] * b + carry;
+					w[i] = (uint32_t)cur;
+					carry = cur >> 32;
+				}
+				if (carry)
+					{ MCC_TRACE("br\n"); ov = 1; }
+			}
+			bw = 0;
+			for (i = 7; i >= 0; i--) { MCC_TRACE("br\n");
+				if (w[i]) { MCC_TRACE("br\n");
+					uint32_t v = w[i];
+					bw = i * 32;
+					while (v) { MCC_TRACE("br\n"); bw++; v >>= 1; }
+					break;
+				}
+			}
+			if (ucount)
+				{ MCC_TRACE("br\n"); N = bw < 1 ? 1 : bw; }
+			else
+				{ MCC_TRACE("br\n"); N = (bw + 1) < 2 ? 2 : bw + 1; }
+			if (ov || N > 128)
+				{ MCC_TRACE("br\n"); mcc_error("'%swb' integer constant exceeds the %d-bit "
+									"_BitInt maximum this target supports", ucount ? "u" : "", 128); }
+			tok = ucount ? TOK_CUBITINT : TOK_CBITINT;
+			tok_bitint_width = N;
+			tokc.q.lo = w[0] | ((uint64_t)w[1] << 32);
+			tokc.q.hi = w[2] | ((uint64_t)w[3] << 32);
+			tokc.q.w2 = tokc.q.w3 = 0;
+			goto int_suffix_done;
 		}
 
 		if (i256sfx) { MCC_TRACE("br\n");

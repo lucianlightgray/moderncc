@@ -1321,8 +1321,10 @@ struct filespec {
 #define TOK_U8CHAR 0xd6
 #define TOK_CINT256 0xd7
 #define TOK_CUINT256 0xd8
+#define TOK_CBITINT 0xd9
+#define TOK_CUBITINT 0xda
 
-#define TOK_HAS_VALUE(t) (t >= TOK_CCHAR && t <= TOK_CUINT256)
+#define TOK_HAS_VALUE(t) (t >= TOK_CCHAR && t <= TOK_CUBITINT)
 
 #define TOK_EOF (-1)
 #define TOK_LINEFEED 10
@@ -1496,6 +1498,7 @@ ST_DATA struct BufferedFile *file;
 ST_DATA int tok;
 ST_DATA CValue tokc;
 ST_DATA int tok_imaginary;
+ST_DATA int tok_bitint_width;
 ST_DATA const int *macro_ptr;
 ST_DATA int parse_flags;
 ST_DATA int tok_flags;

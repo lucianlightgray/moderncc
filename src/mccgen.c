@@ -4864,6 +4864,16 @@ redo:
 							| VT_BITINT | VT_BITFIELD | (uns ? VT_UNSIGNED : 0);
 					vtop->type.bp = 0;
 					vtop->type.bs = bi;
+					/* A constant result is not re-read through gv()'s bit-field
+					 * extract, so reduce it to N bits in place (mask + sign-extend);
+					 * a runtime temporary is reduced on its next use by the tag. */
+					if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
+							bi < 64) { MCC_TRACE("br\n");
+						uint64_t m = ((uint64_t)1 << bi) - 1;
+						vtop->c.i &= m;
+						if (!uns && (vtop->c.i & ((uint64_t)1 << (bi - 1))))
+							{ MCC_TRACE("br\n"); vtop->c.i |= ~m; }
+					}
 				}
 			}
 		}
@@ -12752,6 +12762,24 @@ tok_next:
 		next();
 		CST_PRIMARY();
 		break;
+	case TOK_CBITINT:
+	case TOK_CUBITINT: { MCC_TRACE("br\n");
+		int uns = (tok == TOK_CUBITINT);
+		int n = tok_bitint_width;
+		if (n > 64) { MCC_TRACE("br\n");
+			mk_bitint128_type(&type, uns, n);
+		} else { MCC_TRACE("br\n");
+			int sbt = n <= 8 ? VT_BYTE : n <= 16 ? VT_SHORT : n <= 32 ? VT_INT : VT_LLONG;
+			type.ref = NULL;
+			type.t = sbt | VT_BITINT | VT_BITFIELD | (uns ? VT_UNSIGNED : 0);
+			type.bp = 0;
+			type.bs = (unsigned char)n;
+		}
+		vsetc(&type, VT_CONST, &tokc);
+		next();
+		CST_PRIMARY();
+		break;
+	}
 	case TOK___FUNCTION__:
 		if (!gnu_ext)
 			{ MCC_TRACE("br\n"); goto tok_identifier; }

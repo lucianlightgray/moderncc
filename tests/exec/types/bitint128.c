@@ -228,4 +228,22 @@ int main(void) {
 	return 0;
 }
 
+#elif defined test_wb
+
+#include <stdio.h>
+int main(void) {
+	/* wb/uwb literals whose minimal width lands in the 2-limb (65..128) range. */
+	printf("sz %zu %zu\n", sizeof(0x1FFFFFFFFFFFFFFFFuwb),
+				 sizeof(0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFuwb));
+	unsigned _BitInt(128) a = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFuwb;
+	a += 5uwb;
+	printf("wrap hi=%016llx lo=%016llx\n", (unsigned long long)(a >> 64),
+				 (unsigned long long)a);
+	unsigned long long lo = (unsigned long long)(0x1FFFFFFFFFFFFFFFFuwb + 1uwb);
+	unsigned long long hi =
+			(unsigned long long)((0x1FFFFFFFFFFFFFFFFuwb + 1uwb) >> 64);
+	printf("u65 hi=%llx lo=%llx\n", hi, lo);
+	return 0;
+}
+
 #endif

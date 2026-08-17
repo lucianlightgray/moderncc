@@ -129,4 +129,22 @@ int main(void) {
 	return 0;
 }
 
+#elif defined test_wb
+
+#include <stdio.h>
+int main(void) {
+	/* C23 wb/uwb literal suffix: type is _BitInt(N) with the minimal width. */
+	printf("sz %zu %zu %zu %zu\n", sizeof(0wb), sizeof(64wb), sizeof(127wb),
+				 sizeof(255uwb));
+	printf("add %d\n", (int)(100wb + 27wb));		/* _BitInt(8), 127 fits */
+	printf("wrap %d\n", (int)(5wb * 5wb));			/* _BitInt(4): 25 mod 16 -> -7 */
+	printf("uwrap %u\n", (unsigned)(200uwb + 100uwb));	/* _BitInt(u9): 300 */
+	printf("umod %u\n", (unsigned)(200uwb + 200uwb));	/* u8: 400 mod 256 = 144 */
+	int a = (int)(63wb + 1wb);					/* _BitInt(8), 64 */
+	printf("mix %d\n", a);
+	unsigned long long w = (unsigned long long)(1000000uwb * 1000000uwb);
+	printf("big %llu\n", w);					/* u40: 1e12 fits */
+	return 0;
+}
+
 #endif
