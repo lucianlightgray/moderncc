@@ -3271,7 +3271,34 @@ if(MCC_ENABLE_CROSS)
         set_tests_properties("cross/arm64pe-diff-known-positive" PROPERTIES
             LABELS "native;cross" SKIP_RETURN_CODE 77)
         message(STATUS "mcc: registered cross/arm64pe-diff (+known-positive) codegen cell")
+    else()
+        # Gate-symmetric registration (ci/registration-stubs): where python3 or a
+        # cross compiler is missing the cells must still appear to ctest -N under
+        # the same names, as a skip with a reason -- not vanish.  mcc_skip_test is
+        # not defined this early, so inline what it expands to.
+        set(_a64pe_why "requires python3 (capstone) + the arm64 and arm64-win32 cross compilers -- build with cmake --preset cross, or narrow MCC_CROSS_TARGETS to include both")
+        add_test(NAME "cross/arm64pe-diff"
+            COMMAND "${CMAKE_COMMAND}" -E echo "SKIP: ${_a64pe_why}")
+        set_tests_properties("cross/arm64pe-diff" PROPERTIES
+            SKIP_REGULAR_EXPRESSION "SKIP:" LABELS "native;cross")
+        add_test(NAME "cross/arm64pe-diff-known-positive"
+            COMMAND "${CMAKE_COMMAND}" -E echo "SKIP: ${_a64pe_why}")
+        set_tests_properties("cross/arm64pe-diff-known-positive" PROPERTIES
+            SKIP_REGULAR_EXPRESSION "SKIP:" LABELS "native;cross")
     endif()
+else()
+    # Gate-symmetry (ci/registration-stubs): with cross disabled the arm64-win32
+    # compiler does not exist, so cross/arm64pe-diff cannot run; register it under
+    # the same names as a skip so ctest -N counts it either way.
+    set(_a64pe_why2 "requires MCC_ENABLE_CROSS (the arm64-win32 cross compiler) + python3 capstone -- configure with cmake --preset cross")
+    add_test(NAME "cross/arm64pe-diff"
+        COMMAND "${CMAKE_COMMAND}" -E echo "SKIP: ${_a64pe_why2}")
+    set_tests_properties("cross/arm64pe-diff" PROPERTIES
+        SKIP_REGULAR_EXPRESSION "SKIP:" LABELS "native;cross")
+    add_test(NAME "cross/arm64pe-diff-known-positive"
+        COMMAND "${CMAKE_COMMAND}" -E echo "SKIP: ${_a64pe_why2}")
+    set_tests_properties("cross/arm64pe-diff-known-positive" PROPERTIES
+        SKIP_REGULAR_EXPRESSION "SKIP:" LABELS "native;cross")
 endif()
 
 if(MCC_TARGETOS STREQUAL "WIN32" AND _libmcc_shared
@@ -7679,6 +7706,8 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             mcc_skip_test("selfhost-fixpoint-O1" "${_nopy_why}")
             mcc_skip_test("selfhost-fixpoint-Os" "${_nopy_why}")
             mcc_skip_test("selfhost-fixpoint-gates" "${_nopy_why}")
+            mcc_skip_test("selfhost-o3" "${_nopy_why}")
+            mcc_skip_test("c2/equiv" "${_nopy_why}")
             mcc_skip_test("rir-coverage-census" "${_nopy_why}" LABELS census)
             mcc_skip_test("slice-census" "${_nopy_why}" LABELS census)
             mcc_skip_test("loop-census" "${_nopy_why}" LABELS census)

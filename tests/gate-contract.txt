@@ -147,6 +147,7 @@ optlevel/torture-differential | min:--minprog | optlevel/torture-differential-kn
 cli/xmm_hi_promoted_float_store_to_global | unfloored | unproved | the one -fxmm-hi store shape the miscompile needed
 cli/unreferenced_static_inline_is_not_emitted | unfloored | unproved | the one uncalled static inline that must not be forced out of line
 flagsweep/dev-gate | unfloored | flagsweep/dev-gate-known-positive | MCC_DEV-only flags whose -f arm the sweep actually built
+flagsweep-cover/0 | intrinsic:tests/optfire/flagsweep.sh:21 fails "named subject(s) absent from tests/exec, so the sweep silently shrank" when a covering-array subject vanishes | self:the deliberate-reds/XFAIL list (flagsweep.sh:100-103) fails the cell when a swept flag turns into a no-op, and :21 fails when a subject vanishes | the strength-3 covering-array flag combinations (row 0 of tests/optfire/cover3.txt) run over the tests/exec subject list; opt-in behind MCC_FLAGSWEEP_FULL, an mcc_skip_test stub off it so host-skipped on Darwin
 jit/bind-local | unfloored | jit/bind-local-known-positive | locals the JIT bound rather than re-read from the host frame
 jit/kgc-effect-parity | unfloored | jit/kgc-effect-parity-known-positive | effects compared between the known-good compiler and the JIT
 jit/selftest-purity | unfloored | jit/selftest-purity-known-positive | selftest bodies proved pure rather than asserted pure
