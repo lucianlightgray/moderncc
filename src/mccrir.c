@@ -2772,7 +2772,7 @@ static void rir_op_effect(const RirOp *ro) { MCC_TRACE("enter\n");
 				ast_set_ival(rir_arena, mb, ast_ival(rir_arena, lt));
 				ast_set_type_bf(rir_arena, mb, tsv->type.t,
 										 (uint64_t)(uintptr_t)tsv->type.ref, tsv->type.bp, tsv->type.bs);
-				if ((tsv->r & VT_REVSO) && !(tsv->type.t & VT_BITFIELD))
+				if (tsv->r & VT_REVSO)
 					ast_set_fbits(rir_arena, mb,
 												ast_fbits(rir_arena, mb) | (uint64_t)AST_FB_MEMBER_REVSO);
 				ast_add_child(rir_arena, mb,
@@ -4360,7 +4360,7 @@ static void rir_region(const RirOp *ro) { MCC_TRACE("enter\n");
 			const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 			ast_set_type_bf(rir_arena, m, v->type.t,
 									 (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
-			if ((v->r & VT_REVSO) && !(v->type.t & VT_BITFIELD))
+			if (v->r & VT_REVSO)
 				ast_set_fbits(rir_arena, m,
 											ast_fbits(rir_arena, m) | (uint64_t)AST_FB_MEMBER_REVSO);
 			rir_push(m);
@@ -4706,6 +4706,13 @@ static int rir_bf_shape(AstLocal n, int *pt0, int *pt1, int *pgvt, int *pbits) {
 	bp = ast_type_bp(rir_arena, n);
 	bs = ast_type_bs(rir_arena, n);
 	if (!(tt & VT_BITFIELD) || bs <= 0 || bs > 32)
+		return 0;
+	/* T-win-50028 slice C: a reversed-scalar_storage_order bit-field is NOT
+	 * decomposed here -- gv/vstore's bit-field rev path does the bit_pos flip +
+	 * byte-swap, and rewriting it to plain shift/mask arithmetic would drop the
+	 * swap (miscompiles the -O1 replay).  Leave it un-normalized so it falls to
+	 * the rev-SO bit-field handling. */
+	if (ast_fbits(rir_arena, n) & (uint64_t)AST_FB_MEMBER_REVSO)
 		return 0;
 	if (!rir_bf_frame_base(ast_first_child(rir_arena, n), 0))
 		return 0;
