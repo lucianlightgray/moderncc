@@ -12,6 +12,9 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+- [ ] T-mac-30029 [S] Investigate: arm64/PE `long double` ABI (16-byte on every OS, should be 8 on Apple/Win arm64 — `arm64-gen.h:27`; system-libc interop break) + host-vs-target ld-constant hi-word (`mccast.c:2735`) + `__SIZEOF_WINT_T__`/`__WINT_TYPE__` PE mismatch + missing `__ARM_*`/i386 SSE feature predefines; family of x86_64-PE ld (T-lin-10394)
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 85483b94 | TS: 2026-08-17T22:35Z
+      REF: INVESTIGATIONS.md#longdouble-cross-target | DEPS: — | NOTE: deep-work authorized. Slice-1 = missing arm64 ISA-identity predefines (mcc emits only __AARCH64EL__; both gcc+clang emit __ARM_ARCH/etc). Long-double-ABI headline is high-blast-radius (o0-baseline re-bank) — assessing separately.
 - [ ] T-mac-30028 [S] Investigate: linker resolution/archive divergences across formats — Mach-O silently ignores `-e`/`--entry` (`mccmacho.c:2551`), Mach-O undef diagnosis stricter than ELF/PE, lib search order deviates from GNU ld (.so-before-.a across dirs), no `SHF_MERGE` dedup, `.bss`==COMMON conflation (`mccelf.c:647`)
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 85483b94 | TS: 2026-08-17T22:10Z
       REF: DETAILS.md#t-mac-30028-slice-1-macho-entry | DEPS: — | NOTE: SLICE-1 DONE+GREEN (bd6fb22a) — Mach-O EXE hardcoded LC_MAIN entry to "main", silently ignoring -e/--entry (ELF/PE honor elf_entryname); now honored, new Darwin test macho-entry (default main=1, -Wl,-e,altstart=42), treegate green. RESIDUAL (stays IN_PROGRESS): .bss==COMMON (mccelf.c:647), .so-before-.a search order, SHF_MERGE dedup, Mach-O undef-diag strictness — all ELF-side (mac has no qemu-user to verify) or deep features; best for lin (runs ELF) or a focused pass. See DETAILS#t-mac-30028-slice-1-macho-entry.
@@ -81,9 +84,6 @@
 - [ ] T-mac-30027 [S] Investigate: driver/CLI option semantics — `-imacros` is a wrong silent alias of `-include` (`libmcc.c:3070`), `-fstack-protector` help understates targets (`mcc.c:150`), plain `char` unsigned on x86/i386 (undoc ABI deviation), Mach-O `-undefined dynamic_lookup`/`-flat_namespace` silently ignored, several parsed-but-undocumented options
       OWNER: — | STATE: OPEN | SHA: 85483b94 | TS: 2026-08-17T20:20Z
       REF: INVESTIGATIONS.md#driver-cli-semantics | DEPS: —
-- [ ] T-mac-30029 [S] Investigate: arm64/PE `long double` ABI (16-byte on every OS, should be 8 on Apple/Win arm64 — `arm64-gen.h:27`; system-libc interop break) + host-vs-target ld-constant hi-word (`mccast.c:2735`) + `__SIZEOF_WINT_T__`/`__WINT_TYPE__` PE mismatch + missing `__ARM_*`/i386 SSE feature predefines; family of x86_64-PE ld (T-lin-10394)
-      OWNER: — | STATE: OPEN | SHA: 85483b94 | TS: 2026-08-17T20:20Z
-      REF: INVESTIGATIONS.md#longdouble-cross-target | DEPS: —
 - [ ] T-mac-30024 [S] Investigate: TLS run-slab bounds guard vs copy mismatch (`-run`) — guard checks `total` but memcpy uses `seed_len` (incl. alignment padding) → OOB write past `mcc_jit_tls_slab` for ≥2 TLS sections with gaps (`mccrun.c:471` vs `:499/540/643`)
       OWNER: — | STATE: OPEN | SHA: 9cf26f48 | TS: 2026-08-17T20:14Z
       REF: INVESTIGATIONS.md#tls-runslab-bounds | DEPS: —
