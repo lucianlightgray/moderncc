@@ -1514,6 +1514,13 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "GNU")
 else()
     set(MCC_CC_NAME unknown)
 endif()
+# T-lin-10068: wire mcc's gcc-style depfile so mcc-built objects rebuild on a header
+# change. Gated on the detected mcc id (gcc/clang/msvc keep their own wiring) and empty
+# format (don't clobber a future CMake). REF docs/DETAILS.md#t-lin-10068-a-stage-2-build-dir-does
+if(MCC_CC_NAME STREQUAL "mcc" AND NOT CMAKE_C_DEPFILE_FORMAT)
+    set(CMAKE_C_DEPFILE_FORMAT gcc)
+    set(CMAKE_DEPFILE_FLAGS_C "-MD -MT <OBJECT> -MF <DEP_FILE>")
+endif()
 if(WIN32 AND NOT MCC_CC_NAME STREQUAL "mcc")
     if(MSVC OR CMAKE_C_SIMULATE_ID STREQUAL "MSVC")
         if(CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "GNU")
@@ -9026,6 +9033,18 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                     "${CMAKE_BINARY_DIR}/function-sections-work")
         set_tests_properties(cli/function-sections PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
+    endif()
+
+    if(UNIX AND MCC_CC_NAME STREQUAL "mcc" AND CMAKE_GENERATOR MATCHES "Ninja"
+       AND NOT CMAKE_VERSION VERSION_LESS "4.4")
+        add_test(NAME build/mcc-depfile-wired
+            COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/build/depfile-wired.sh"
+                    "${CMAKE_BINARY_DIR}")
+        set_tests_properties(build/mcc-depfile-wired PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT TIMEOUT 60)
+    else()
+        mcc_skip_test(build/mcc-depfile-wired
+            "T-lin-10068 mcc depfile wiring; runs only in an mcc-profile Ninja build on CMake>=4.4")
     endif()
 
     add_test(NAME macho-codegen-run
