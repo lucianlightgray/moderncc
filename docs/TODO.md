@@ -12,9 +12,6 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
-- [ ] T-mac-30020 [S] Investigate: gate vacuity beyond RIR — `bitint-diff.py` (per-target ABI gate) is floorless AND wired into nothing, `defcheck def-verify` passes on empty glob, `asm_reloc_suffix` jmp tooth floorless, `opt_determinism` mutate swallows skip-77; wire + floor them
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 0500a4b1 | TS: 2026-08-17T22:20Z
-      REF: INVESTIGATIONS.md#gate-vacuity | DEPS: — | NOTE: host-independent tooling — mac-completable (no ELF exec needed). Fixing vacuous gates that can't fail (false CI confidence).
 - [ ] T-mac-30028 [S] Investigate: linker resolution/archive divergences across formats — Mach-O silently ignores `-e`/`--entry` (`mccmacho.c:2551`), Mach-O undef diagnosis stricter than ELF/PE, lib search order deviates from GNU ld (.so-before-.a across dirs), no `SHF_MERGE` dedup, `.bss`==COMMON conflation (`mccelf.c:647`)
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 85483b94 | TS: 2026-08-17T22:10Z
       REF: DETAILS.md#t-mac-30028-slice-1-macho-entry | DEPS: — | NOTE: SLICE-1 DONE+GREEN (bd6fb22a) — Mach-O EXE hardcoded LC_MAIN entry to "main", silently ignoring -e/--entry (ELF/PE honor elf_entryname); now honored, new Darwin test macho-entry (default main=1, -Wl,-e,altstart=42), treegate green. RESIDUAL (stays IN_PROGRESS): .bss==COMMON (mccelf.c:647), .so-before-.a search order, SHF_MERGE dedup, Mach-O undef-diag strictness — all ELF-side (mac has no qemu-user to verify) or deep features; best for lin (runs ELF) or a focused pass. See DETAILS#t-mac-30028-slice-1-macho-entry.

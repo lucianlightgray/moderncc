@@ -51229,3 +51229,30 @@ sub-issues are ELF-side or deep, and mac cannot natively verify the ELF ones (no
 (needs a multi-dir lib setup, cross-format), no `SHF_MERGE` string/const dedup (a real ELF feature), and
 Mach-O undef-diagnosis being stricter than ELF/PE (subtle, needs a differential). Best done by a session
 that can run the ELF output (lin) or as a focused feature pass.
+
+<a id="t-mac-30020-resolved"></a>
+## T-mac-30020 — RESOLVED (mac-arm64, 2026-08-17T22:25Z): 4 vacuous gates floored + wired
+
+Gates that structurally cannot fail give false CI confidence. Fixed all four (code `110a068d`):
+
+- **`tools/bitint-diff.py`** (the per-target 3-way _BitInt value differential): was floorless —
+  `return 1 if value_fail else 0` returned 0 even when `value_ok == 0` (references all failed to build,
+  or the corpus lost its `test_X` value sections) — AND wired into nothing (no ctest/CMakeLists). Added
+  `--min-lines` (fail if fewer value lines were actually compared vs gcc+clang than the floor) + a new
+  ctest cell `bitint-diff` over `tests/exec/types/bitint{,128,256,_lit}.c` (`--min-lines 40`; 91 value
+  lines compared today, 0 failures). Self-skips 77 without gcc/clang/python; symmetric `else()`
+  mcc_skip_test stub (registration-stubs clean). The int256*.c files intentionally aren't in the set
+  (they use `__int256`, which gcc/clang can't build → those sections skip).
+- **`tools/defcheck.c` `do_verify`**: `for (i=0;i<argc;i++)` over the `.def` glob returned 0 (pass) when
+  `argc==0`. Now errors on an empty glob. The live `def-verify` cell globs `runtime/win32/lib/*.def`
+  (7 files present), so it's unaffected; the guard fires only on the provisioning-gap vacuity.
+- **`cmake/asm_reloc_suffix.cmake`**: the jmp `@PLT` tooth checked `_r_jmpplain STREQUAL _r_jmpplt`
+  with no non-empty floor — two empty relocations are equal → vacuous pass. Added the same
+  `MATCHES "R_X86_64_PLT32"` floor the call tooth already has (enforced on x86_64 hosts; the cell
+  skips on arm64-Darwin as it needs x86_64 asm, so the change is verified by mirroring the call tooth).
+- **`cmake/opt_determinism_mutate.cmake`**: a `77` skip on the mutated arm fell through the `if(_mut
+  EQUAL 0)` FATAL and was reported as "perturbed run detected" (a false detection). Now a `77` exits
+  77 (SKIP), mirroring the clean-arm handling.
+
+**Verification:** `ci/registration-stubs`, `ci/must-run-registered`, `ci/gate-contract`(+known-positive),
+`def-verify`, `opt-determinism`(+known-positive), and the new `bitint-diff` all green on arm64-Darwin.
