@@ -7592,9 +7592,16 @@ do_decl:
 			}
 			check_fields(type, 1);
 			check_fields(type, 0);
-			if (saw_vla)
-				{ MCC_TRACE("br\n"); struct_layout_vla(type, &ad); }
-			else
+			if (saw_vla) { MCC_TRACE("br\n");
+				/* A variably-modified struct is laid out at run time and never reaches
+				 * struct_layout's reverse-SO member check, so a reversed VLA member
+				 * would silently store its elements little-endian.  Refuse it honestly
+				 * (T-lin-10394 sub-item 5; VLA + reverse scalar order is very rare). */
+				if (ad.a.reverse_so)
+					{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a struct with a "
+														"variable-length array member is not implemented"); }
+				struct_layout_vla(type, &ad);
+			} else
 				{ MCC_TRACE("br\n"); struct_layout(type, &ad); }
 		}
 		if (redef_prev) { MCC_TRACE("br\n");
