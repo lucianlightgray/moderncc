@@ -440,6 +440,29 @@ static void gen_wide256_op(int op) { MCC_TRACE("enter\n");
 		return;
 	}
 
+	/* Inline the pure per-limb bitwise ops (T-mac-30010): res[i] = a[i] OP b[i]
+	 * for each limb, via the ordinary 64-bit gen_op -- no carry chain, portable
+	 * across every target, and it drops the __mcc_i256_{and,or,xor} call. Byte-
+	 * identical to the call path (the helper does the same per-limb op). Uses
+	 * wide256_materialize so the operand lvalues are stable across the loop. */
+	if (op == '&' || op == '|' || op == '^') { MCC_TRACE("br\n");
+		SValue av, bv;
+		int i;
+		wide256_materialize(&wt, &bv);
+		wide256_materialize(&wt, &av);
+		wide256_local(&wt, &res);
+		for (i = 0; i < MCC_WIDE256_LIMBS; i++) { MCC_TRACE("br\n");
+			wide256_limb_lval(&res, i, 1);
+			wide256_limb_lval(&av, i, 1);
+			wide256_limb_lval(&bv, i, 1);
+			gen_op(op);
+			vstore();
+			vpop();
+		}
+		vpushv(&res);
+		return;
+	}
+
 	wide256_addrof_top(&wt);
 	vswap();
 	wide256_addrof_top(&wt);
