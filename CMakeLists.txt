@@ -7034,7 +7034,12 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
     endif()
 
     set(_mcctest_refflags "")
+    # the refflags below force the reference gcc to GNU bit-field mode on PE;
+    # since 8d4f0a80 mcc defaults ms_bitfields there, so the mcc side of the
+    # differential must opt back too or the pairing compares two ABIs
+    set(_mcctest_mccargs "")
     if(MCC_TARGETOS STREQUAL "WIN32")
+        set(_mcctest_mccargs "-mno-ms-bitfields")
 
         set(_msvcrt_start "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/msvcrt_start.c")
         set(_mcctest_refflags
@@ -7071,6 +7076,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             --work ${CMAKE_BINARY_DIR}
             --refflags "${_mcctest_refflags}"
             --testdefs "-DCC_NAME=CC_${_ref_cc_name} -DGCC_MAJOR=${_ref_cc_major}"
+            --mccargs "${_mcctest_mccargs}"
             --emu "${MCC_EMULATOR}")
         set_tests_properties(mcctest PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
@@ -7087,7 +7093,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 --work ${CMAKE_BINARY_DIR}/embedjit
                 --refflags "${_mcctest_refflags}"
                 --testdefs "-DCC_NAME=CC_${_ref_cc_name} -DGCC_MAJOR=${_ref_cc_major}"
-                --mccargs --embed-jit --emu "${MCC_EMULATOR}")
+                --mccargs "--embed-jit ${_mcctest_mccargs}" --emu "${MCC_EMULATOR}")
             set_tests_properties(mcctest-embedjit PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77)
             if(NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING)
