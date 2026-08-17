@@ -50488,3 +50488,38 @@ VT_CONST, reduce c.i to N bits in place (mask + sign-extend). Runtime path uncha
 New test_wb sections in tests/exec/types/{bitint,bitint128}.c (byte-identical to gcc-16); 478-test sweep green.
 _BitInt remaining after this: N>128 (arbitrary-limb Approach A) and _BitInt<->float (same soft-conversion gap
 as __int256/T-lin-10016). **Source.** mac-arm64, 2026-08-17.
+
+<a id="t-lin-10016-int256-float-conversions-landed-2026-08-17-mac-arm64"></a>
+
+## T-lin-10016 DONE — __int256 <-> float conversions + oracle (mac-arm64, 2026-08-17, 96bc5c53)
+
+Implemented correctly-rounded soft conversions and the oracle the task required.
+
+RUNTIME (runtime/lib/int256.c, no libm, host-portable): `w256_round_to_double(a, mant)` — the shared
+correctly-rounded (round-to-nearest, ties to even) magnitude->double: find bit length L; if L<=mant return
+(double)a[0]; else keep the top mant+1 bits (shift=L-(mant+1)), compute the round bit + a sticky bit
+(reconstruct a>>shift<<shift and compare to a), round the mant-bit significand ties-to-even, and scale by an
+EXACT 2^(shift+1) built by a *2.0 loop. `__mcc_i256_to_f64` = round(.,53); `__mcc_i256_to_f32` =
+(float)round(.,24) (24 significant bits are exact in both float and double, so no double-rounding). Signed:
+negate the magnitude then negate the result. `w256_from_double_mag` — truncate a non-negative double toward
+zero via IEEE bit decomposition (exp/mantissa -> shift into limbs); `__mcc_i256_from_f64/f32` apply sign
+(negative->negate; negative->unsigned yields 0, matching gcc; |x|<1 or NaN ->0; exp>=256 saturates, UB).
+
+CODEGEN: new tokens TOK___mcc_i256_{to,from}_f{32,64}; gen_wide256_cast (wide256_slice.h) replaces the two
+float refusals with helper calls following the existing __floatundidf pattern (PUT_R_RET for the FP return;
+gfunc_call marshals ptr/double/int args by class). gen_bitint128_cast routes _BitInt(65..128)<->float through
+the __int256 path (bitint128_to_wide256 -> gen_cast(float); float -> gen_cast(__int256) -> wide256_to_bitint128
+reduce), closing T-lin-10004 item (b) with the same code. long double (arm64==double) and half/float128 go via
+a double intermediate.
+
+ORACLE + FIXTURES (the DoD's "oracle before code"): the _BitInt(65..128)<->float path is verified
+BYTE-IDENTICAL to gcc-16 (which has _BitInt AND float, so it IS an independent oracle) across exact powers,
+rounding ties-to-even at the 53- and 24-bit boundaries, negatives, unsigned 2^127, double->int truncation,
+and float->int — see tests/exec/types/bitint128.c test_float. Since __int256 shares the identical conversion
+code, its 129..256-bit-only range is verified byte-identical to a Python arbitrary-precision `float(int)` oracle
+(round-to-nearest-even; inf on float32 overflow; 256-bit two's-complement truncation) — tests/exec/types/
+int256.c test_to_float/test_from_float, hand-checkable exact/boundary values in the golden. The 4 __int256
+float-refusal gates retired from int256_gates.c (line numbers preserved). 482-test sweep green; o0-baseline
+unchanged (float paths are new code, no existing object moved). CROSS: runtime int256.c gained the helpers +
+mcctok.h gained 4 tokens — lin(x86_64)/win(win32) get them on rebuild; the conversion is target-independent
+(rides the portable w256 kernel + the standard helper-call ABI). **Source.** mac-arm64, 2026-08-17.
