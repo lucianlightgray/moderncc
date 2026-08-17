@@ -120,7 +120,7 @@
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10029-the-lazy-jit-route-fails-to | DEPS: —
 - [ ] T-lin-10030 [P] The embed JIT is measured only on x86_64
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
+      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z | NOTE (mac-arm64, 2026-08-17): ARM64 data point RECORDED — the row's premise ("only x86_64 was ever run") no longer holds for arm64. The whole jit/ family (35 cells) is GREEN natively on arm64-Darwin, INCLUDING jit/xoracle-conformance = tools/jitconform.py --surface embed --phase both over 400 gcc.c-torture/execute programs (--min-pass 100 --max-miscompile 0), i.e. the embed-JIT boots + bakes + runs correct code on real arm64 hardware (not qemu). This is the [P] arm64 lane of the verification ("the jit/ family green natively + jitconform embed over the qualified corpus"). Still open for lin (x86_64 is already done) and win to record their native lanes.
       REF: DETAILS.md#t-lin-10030-the-embed-jit-is-measured-only | DEPS: —
   - [x] T-lin-10030/mac [P] The embed JIT is measured only on x86_64 — mac-arm64
         OWNER: mac-arm64 | STATE: DONE | SHA: 20a82ad3 | TS: 2026-08-15T04:00Z
