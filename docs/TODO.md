@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30039   | 2026-08-17T23:05Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30043   | 2026-08-17T23:19Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10398   | 2026-08-17T22:37Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-17T21:30Z |
 
@@ -68,6 +68,18 @@
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
 
 ## Open — claimable
+- [ ] T-mac-30039 [S] Investigate: parser/declarator storage-class + C23 semantics — [MED] `constexpr int i = 0xFFFFFFFFFFFFFFFFULL` silently accepted as `-1` (sign-collapsed in-range check; `mccgen.c:18257/18346`); [MED] storage-class specifiers accepted in every type-name/abstract-declarator context (`(static int)3`, `sizeof(static int)`, `_Generic(1,static int:…)`; `mccgen.c:12974/9164`); [LOW-MED] `register`/`auto` accepted on struct members (`mccgen.c:7500`); [LOW] `_Noreturn` on non-function only pedantic. Scoping/K&R/`_Generic`/declarator-zoo/C23-attrs all ROBUST
+      OWNER: — | STATE: OPEN | SHA: bac4a448 | TS: 2026-08-17T23:19Z
+      REF: INVESTIGATIONS.md#r7-parser-declarators | DEPS: —
+- [ ] T-mac-30040 [S] Investigate: char/string literal encoding — [MED] hex/octal escapes >0xFFFF in `u"…"`/char16 silently surrogate-pair-encoded (1 escape→2 units, can't tell `\x` from UCN; `mccpp.c:3400-3420`); [MED] surrogate-shaped `\x` escapes surrogate-*combined* in `U"…"`/`U'…'` (2 escapes→1, no multichar warn; `:3430/3369`); [LOW-MED] `u'…'` >0xFFFF silently masked to 16 bits (`:3397`); [KNOWN-concrete] UCN >0x10FFFF/lone-surrogate accepted in wide/`u`/`U`/`L` (`:3196`, bypasses `unicode_to_utf8`; root of DETAILS:33637 bucket). Reproduced from emitted `.data` bytes; narrow/`u8`/mixed-prefix all ROBUST
+      OWNER: — | STATE: OPEN | SHA: bac4a448 | TS: 2026-08-17T23:19Z
+      REF: INVESTIGATIONS.md#r7-charstr-encoding | DEPS: —
+- [ ] T-mac-30041 [S] Investigate: attribute/pragma parsed-then-dropped — [MED-HIGH] `#pragma weak <sym>` unimplemented, symbol stays strong → link failure/multi-def (`mccpp.c:2599-2809/2805`); [MED] `constructor(N)`/`destructor(N)` priority discarded → wrong init/fini order (no `.init_array.NNNNN`; `mccgen.c:6378`, `mcc.h:316`, `mccelf.c:1502`); [MED] `used`/`unused`/`maybe_unused` set no flag → `-Wunused -Werror` breaks (`mccgen.c:6508`); [MED] `#pragma GCC diagnostic push/pop/ignored` no-op + spurious warning. `aligned`/`packed`/`pack`/`cleanup`/`alias`/`mode`/`section`/sso all ROBUST
+      OWNER: — | STATE: OPEN | SHA: bac4a448 | TS: 2026-08-17T23:19Z
+      REF: INVESTIGATIONS.md#r7-attr-pragma | DEPS: —
+- [ ] T-mac-30042 [S] Investigate: `(_Bool)&sym` unconditionally folds to constant `1` with no weak guard → miscompile (`(_Bool)&weak_var`, incl. `static _Bool b=(_Bool)&weak_var` → wrong `1` byte in `.data`); `gen_cast` `mccgen.c:5490-5493` inconsistent with the file's other weak-symbol folds (`condition_3way:14566`, `sym==sym:3806`). Switch/bitfield/VLA/computed-goto lowering all ROBUST
+      OWNER: — | STATE: OPEN | SHA: bac4a448 | TS: 2026-08-17T23:19Z
+      REF: INVESTIGATIONS.md#r7-bool-weak-fold | DEPS: —
 - [ ] T-mac-30033 [S] Investigate: assembler / inline-asm — [HIGH] arm64 inline-asm register numbering collides with codegen numbering (physical x0..30 vs codegen R30=19/F=+20; no shim like arm32's `arm_asm_treg`) → `asm("x20")` stores a stray FP reg, `'r'` past x18 corrupts LR (`arm64-asm.c:2099/2122`); `.section …,@type` drops type + force-sets SHF_ALLOC (`mccasm.c:806/830`); arm64 v8-v31 unclobberable; x86_64 `'A'` reserves only RAX
       OWNER: — | STATE: OPEN | SHA: 80d55872 | TS: 2026-08-17T23:05Z
       REF: INVESTIGATIONS.md#r6-inline-asm-regnum | DEPS: —
