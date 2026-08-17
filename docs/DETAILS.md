@@ -51122,3 +51122,45 @@ Fixed the two most severe + natively-verifiable memory-safety bugs from INVESTIG
 **Split to T-lin-10396 (remaining reader bounds):** Mach-O dylib exports `iextdef`/`nextdef` unbounded + `nsyms==0` NULL-deref (`mccmacho.c:3296-3308`); DLL export name-count DWORD→int truncation under-alloc then `namep[i]` read (`mccpe.c:1717-1732`); unbounded Mach-O load-command walk `cmdsize==0`→infinite loop (`mccmacho.c:3290`); `load_data` silent short-read leaves uninitialized parse buffers (`mccelf.c:3370`, broadly-used helper — needs a NULL-on-failure signature change, distinct class). Each needs its own crafted Mach-O/PE-image repro; deferred, not memory-safety-verified here.
 
 **DoD.** Slice guard fails pre-fix / passes post-fix (ASan + crash evidence); valid inputs unaffected; no new reds. Verify: `ctest -R objsec-reject-malformed`.
+<a id="t-mac-30022-slices-2-3-landed"></a>
+### T-mac-30022 slices 2 & 3 — LANDED (mac-arm64, 2026-08-17T21:45Z), task DONE
+
+Both residual slices shipped after the user authorized the deeper mac work; my earlier
+"needs a fleet o0-baseline re-bank" worry on slice-3 was avoidable (see below).
+
+- **slice-2 `__is_target_arch/os/vendor/environment`** (`f275adcb`). They hit the
+  `pp_builtin_func` fallback (`src/mccpp.c`) and returned 0 unconditionally →
+  `#if __is_target_arch(x86_64)` always false. Now answered against mcc's compile-time
+  `MCC_TARGET_*` identity via `pp_target_kind()` + `pp_target_match()`: arch (canonical +
+  aliases x86_64/amd64, aarch64/arm64, i386/x86, arm/armv7, riscv64), os (windows/win32,
+  darwin/macos/macosx, linux), vendor=apple on Mach-O, environment=gnu on Linux (Darwin
+  correctly has none). Case-insensitive; identifier or string arg. Genuinely-ambiguous
+  components (PE vendor pc-vs-w64, PE env msvc-vs-gnu) stay 0 — no canonical triple in mcc,
+  so a wrong positive that enables non-matching code is worse than a miss. `__building_module`
+  / `__has_warning` / `__has_cpp_attribute` / `__has_declspec_attribute` keep returning 0
+  (conservative for a C compiler). Verified on arm64-Darwin: arch(aarch64)=arch(arm64)=1,
+  arch(x86_64)=0, os(darwin)=os(macos)=1, os(linux)=os(windows)=0, vendor(apple)=1,
+  environment(gnu)=0, string form works. New dg-error `is_target_builtin` (portable
+  exactly-one-arch/one-os assertion under a guarded `#error`; pre-fix compiles clean →
+  harness fails, post-fix `#error` fires → harness passes).
+
+- **slice-3 `#embed limit()/offset()` constant-expression** (`c7278894`). `limit(2+2)` etc.
+  now work. The `expr_const64` static-inline reachability problem was solved WITHOUT
+  de-inlining and WITHOUT any re-bank: a thin `ST_FUNC expr_const64_pub()` wrapper in
+  mccgen.c (declared in mcc.h) — the hot evaluator stays inlined, works in single-source AND
+  multi-TU builds, and adds exactly one tiny body to mcc's self-corpus (rir-coverage self
+  floor unbreached, verified green). `embed_read_paren_const` now captures the paren'd,
+  macro-expanded token run into a TokenString and evaluates it via begin_macro/expr_const64_pub/
+  end_macro (mirrors the `#if` path). Verified: limit(2+2)/limit(1<<2)/limit(LIM+1)/
+  gnu::offset(4) correct, plain limit(4) unregressed, non-constant limit(x) still refused
+  ("constant expression expected"). New dg-error `embed_limit_nonconst`.
+
+**Verification (§8, arm64-Darwin native, all green, no new reds):** exec/ 365/365,
+preprocess 100%, dg-error 3 new cells pass, rir-coverage (self) green. Pre-existing reds
+NOT from this task, each attributed: `bitint_over_256` (mcc accepts _BitInt(257) — the
+_BitInt cap WIP), `mcc_cross_build` (arm64-win32 `crt1.c:86 implicit fflush` — reproduces
+with the pre-existing cross mcc built 17:37 before my edits; T-mac-30029 family),
+`rir-coverage-census` (wide corpus 399→401 = lin's tests/exec/{types/bitint_lit.c,
+expressions/uns_constfold_div.c} additions — needs a sources_wide re-bank, lin's/wide-int
+owner's; my dg-error files are NOT in the wide corpus, which walks tests/exec,behavior,ast,
+asm,runtime,static+examples only). T-mac-30022 all three slices DONE.
