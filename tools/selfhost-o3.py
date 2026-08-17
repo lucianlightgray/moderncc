@@ -61,19 +61,23 @@ def main():
                    cwd=root, check=True)
 
     inc = os.path.join(root, "runtime/include")
+    # The self-hosted `out` lives outside the build tree, so point its runtime-lib
+    # (libmccrt.a) and include search at the build dir with -B, exactly as CMake's
+    # in-tree mcc has by default; without it the link fails "libmccrt.a not found".
+    bflag = "-B" + os.path.join(root, bdir)
     work = os.path.dirname(out)
     tc, te = os.path.join(work, "sh_t.c"), os.path.join(work, "sh_t")
     open(tc, "w").write("#include <stdio.h>\n"
                         "int fib(int n){return n<2?n:fib(n-1)+fib(n-2);}\n"
                         "int main(void){printf(\"%d\\n\",fib(10));return 0;}\n")
-    subprocess.run([out, "-I" + inc, tc, "-o", te], check=True)
+    subprocess.run([out, bflag, "-I" + inc, tc, "-o", te], check=True)
     got = subprocess.run([te], capture_output=True, text=True).stdout.strip()
     if got != "55":
         sys.exit(f"FAIL: self-hosted mcc gave fib(10)={got}, expected 55")
 
     qs = os.path.join(root, "tests/exec/programs/quicksort.c")
     qe = os.path.join(work, "sh_qs")
-    subprocess.run([out, "-I" + inc, qs, "-o", qe], check=True)
+    subprocess.run([out, bflag, "-I" + inc, qs, "-o", qe], check=True)
     sortd = subprocess.run([qe], capture_output=True, text=True).stdout.strip().splitlines()[-1]
     if "4 16 21 33 36 37 38 53 55 62 65 74 74 83 89 96" not in sortd:
         sys.exit(f"FAIL: self-hosted mcc mis-sorted quicksort: {sortd}")

@@ -7314,6 +7314,17 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             set_tests_properties(selfhost-smoke-gates PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
 
+            # T-lin-10047: register tools/selfhost-o3.py as a live cell. It builds
+            # a -O3 self-hosted mcc (mcc compiling src/mcc.c at -O3, linked with
+            # its own runtime) and verifies that compiler with fib(10)==55 and a
+            # quicksort golden -- the built-in floor: a -O3 self-host miscompile
+            # fails the cell.  Was registered nowhere.
+            add_test(NAME selfhost-o3
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-o3.py"
+                        "${CMAKE_BINARY_DIR}" "${CMAKE_BINARY_DIR}/selfhost-o3-mcc" -O3)
+            set_tests_properties(selfhost-o3 PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                LABELS native TIMEOUT 900)
+
             foreach(_op -O2 -O3)
                 string(REPLACE "-" "" _optag "${_op}")
                 add_test(NAME selfhost-output-parity-${_optag}
