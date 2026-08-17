@@ -49525,3 +49525,71 @@ that window on an arm64 box (build + the 13s rir-coverage cell per step, ~8 step
 commit; then regression-fix vs re-bank. rir-coverage-census + rir-nofb-probe-self expected to
 share the root; fmt/census-bank re-bank (win's 12e0077b, +1 mccpp.c snprintf) is separate and
 purely mechanical. **Source.** mac-arm64, 2026-08-17T01:05Z, at f0c7bf58.
+
+<a id="t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17"></a>
+
+## T-win-50026 nofb VLA divergence — ADJUDICATED (b) real defect + FIXED (win-x64, 2026-08-17, c5f2e0ed)
+
+**Adjudication = (b), not (a).** The 10 named VLA bodies did not "byte-diverge benignly";
+forcing their replay (`MCC_FORCE_REPLAY=1 -fno-replay-fallback`) **SIGSEGV'd the compiler** in
+`gfunc_epilog` (x86_64-gen.c:1087, `gsym_addr(func_alloca, -func_scratch)`). Minimal repro is a
+4-line used VLA (`int a[n];`) — not about `_chkstk` page-probing (bug.c's VLA is unreached; the
+crash is in the frame epilog of any function *containing* a VLA). Nondeterministic at first
+(garbage chain link) then deterministic once the layout settled.
+
+**Root cause (PE-only).** The PE alloca/VLA stack-displacement fixup uses a chain threaded
+through the `add $imm,%rsp` immediates: each alloca does `func_alloca = oad(0x05, func_alloca)`
+(x86_64-gen.c:974) and `gfunc_epilog` resolves the whole chain with `gsym_addr` once
+`func_scratch` is final. `gfunc_prolog` resets `func_alloca=0` (x86_64-gen.c:991). But
+`ast_func_end`'s replay re-emission rewinds `ind = ast_body_ind_sv` to overwrite the body
+(mccast.c:20820) **without resetting `cg_func_alloca`** — so the replay's `gfunc_call` threaded
+the *original* alloca-immediate offset (e.g. 60) into the replayed chain link, writing `imm=60`
+at offset 60 → a self-referential link. `gsym_addr` reads 60→walks to offset 60→loops off into
+garbage. Confirmed by instrumentation: `[REPLAY-REWIND] cg_func_alloca=60 (before reset)`.
+Normal (fallback) mode survived because the original body bytes are spliced back, overwriting the
+corrupt link; only `-fno-replay-fallback` *keeps* the corrupt body (mccast.c:21631
+`keep = ... || (ast_rir_nofb_env && ast_replay_completed ...)`) and then crashes in the epilog.
+SysV's `gfunc_epilog` (x86_64-gen.c:2144) has **no** `func_alloca` chain (different VLA stack
+mechanism) — which is exactly why Linux's `nofb_miscompiles` bank is clean of these bodies and
+this is PE-specific.
+
+**Fix.** One line in `ast_func_end`, mirroring `gfunc_prolog` and the `rir_verify` shift-replay
+reset (mccrir.c:6120): `mcc_state->cg_func_alloca = 0;` right after the `ind` rewind
+(mccast.c:20824). Safe cross-platform — `cg_func_alloca` is 0 for non-alloca functions on every
+target, so the reset is a no-op there.
+
+**Outcome.** VLA bodies now replay **byte-faithfully** (not merely behaviourally benign): the
+VLA-only nofb-probe over `vla/{bug,continue,label,reuse,vla_empty_init}.c` at O0-O3 reports
+**0 divergent bodies** (they left category-2 entirely). Full exec nofb-probe: the whole VLA class
+is gone from the miscompile list; no new miscompile introduced by the reset. Slice smoke test =
+that VLA-only probe, green. **Source.** win-x64, 2026-08-17, code c5f2e0ed.
+
+**Cell NOT yet green — a second, unrelated body surfaced:** `tests/exec/types/sso.c::main`
+(see the T-win-50028 anchor below). That is lin's `scalar_storage_order` replay bug, not VLA;
+the nofb-probe cell stays red on win until it is fixed. T-win-50026's VLA half is paid.
+
+<a id="t-win-50028-sso-replay-drops-byteswap"></a>
+
+## T-win-50028 — AST replay drops the `scalar_storage_order` byte-swap for scalar/array/nested members (lin's T-lin-10010 domain; fleet)
+
+Surfaced by the win nofb-probe once the VLA crash (T-win-50026) was cleared. `sso.c::main`
+prints `OK` at base but `FAIL` under `MCC_FORCE_REPLAY=1 -fno-replay-fallback` at O0-O3 (rc 0
+both, stdout differs). Minimal isolation (win-x64, at c5f2e0ed):
+
+| SSO member shape                       | base        | forced replay | verdict |
+| -------------------------------------- | ----------- | ------------- | ------- |
+| scalar `int` (big-endian struct)       | `11223344`  | `44332211`    | DIVERGE |
+| `int a[2]` array member                | `11 55`     | `44 88`       | DIVERGE |
+| nested aggregate `struct Inner{int x}` | `11223344`  | `44332211`    | DIVERGE |
+| `unsigned a:12,b:20` bit-field         | correct     | correct       | ok      |
+
+The replayed store emits the value **little-endian** — i.e. the reversed-SO byte-swap present in
+the primary emission is **not reproduced by the replay** for scalar/array/nested members
+(bit-fields are unaffected). Either the SSO reverse-store op is not captured into the RIR/AST op
+stream, or the replay store handler doesn't apply the reversal. Introduced by T-lin-10010 slices
+1/2b/2c/2d (bf963b06 and predecessors); T-lin-10010 was archived "fleet-green" but that was under
+the primary path — replay-faithfulness was never checked. **Fleet, not win-specific** (the
+byte-swap is arch-generic; Linux's exec nofb-probe would show it too — the bank just predates
+sso.c). Repro: `MCC_FORCE_REPLAY=1 mcc -O0 -fno-replay-fallback -run tests/exec/types/sso.c`
+(FAIL) vs `mcc -O0 -run` (OK). Verify a fix by: that command prints OK, and the full exec
+nofb-probe reports 0 miscompiles. **Source.** win-x64, 2026-08-17.
