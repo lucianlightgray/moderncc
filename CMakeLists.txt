@@ -9039,6 +9039,16 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
     endif()
 
     if(UNIX)
+        add_test(NAME headers-unreachable-c23
+            COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/headers/unreachable-c23.sh"
+                    "$<TARGET_FILE:mcc>"
+                    "${CMAKE_BINARY_DIR}/headers-unreachable-c23-work")
+        set_tests_properties(headers-unreachable-c23 PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "headers" SKIP_RETURN_CODE 77
+            TIMEOUT 60)
+    endif()
+
+    if(UNIX)
         foreach(_ma x86_64 arm64)
             add_test(NAME macho-got-sub-${_ma}
                 COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/got-sub.sh"

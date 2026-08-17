@@ -31,7 +31,7 @@ typedef __typeof__(nullptr) nullptr_t;
 #if __STDC_VERSION__ >= 202311L
 #define __STDC_VERSION_STDDEF_H__ 202311L
 #ifndef unreachable
-#define unreachable() ((void)0)
+#define unreachable() __builtin_unreachable()
 #endif
 #endif
 
