@@ -51027,3 +51027,31 @@ Verified end-to-end via a CRT-AGNOSTIC kernel32 file sink (CreateFileA/WriteFile
 3. THE "NO SWAP" VERDICT IS A DETECTION ARTIFACT. The swap detectors — tools/jit-selfhost-opt.py:103 (`err.count("mccjit-boot"), err.count("swapped")`), tools/jit-gdb-debuggable.py:121 (`r.stderr.count("swapped")`), and smoke/engines — count the strings "mccjit-boot"/"swapped" in the program's STDERR. Those come from the ENGINE's `fprintf(stderr,...)` (mccjit_boot_swap_run:1057-1072, gated on MCC_JIT_VERBOSE). On the PE embed-JIT binary the engine (mingw/ucrt) stderr is INVISIBLE from the console (the msvcrt/ucrt split — same root as 2a's fd-tables and as MCC_JIT_VERBOSE/getenv being unreadable there). So the markers never reach the counted stream → detectors see 0 → "ran without swapping a single function", DESPITE the swap working.
 
 So 2b is NOT "PE bake path gated off" and NOT a broken swap — it is swap-OBSERVABILITY on PE. FIX (small, tractable): emit the boot/"swapped" marker through a PE-VISIBLE channel — the PROGRAM CRT or a kernel32 sink (OutputDebugStringA / a stats file), not the engine ucrt stderr; OR change the detectors to a program-observable signal (e.g. assert `*slot != aot_init` after boot, readable from program memory). Then smoke/engines + mcctest-embedjit + T-lin-10030/win's PE lane can be made green honestly. TO FULLY SEAL (recommended before the fix lands): a program-observable spec-wrong test (MCC_JIT_SPEC_WRONG makes the variant miscompute; if PE output then changes, the swap is numerically confirmed) — but note MCC_JIT_SPEC_WRONG is itself read by the engine getenv, so it must be forced via a program-visible mechanism. This finding SUPERSEDES the earlier 2b anchors' feasible/recompile speculation (both were confirmed WORKING).
+
+### T-mac-30022 slice-2/3 — why the residual is a focused pass, not wind-down work (mac-arm64, 2026-08-17T21:35Z)
+
+Both residual sub-slices were evaluated end-to-end and are NOT clean low-risk edits:
+
+- **slice-3 (`#embed limit()/offset()` constant-expression).** Red confirmed: `limit(4)` works,
+  `limit(2+2)` → "')' expected" (`embed_read_paren_const`, `src/mccpp.c:1702-1715`, reads a single
+  `TOK_CINT..TOK_CULONG` token). C23 6.10.3.2 wants a constant-expression. The natural reuse is the
+  64-bit ICE evaluator `expr_const64()` — but it is `static inline` in `mccgen.c` (`:528` fwd-decl,
+  `:14968` def), and in the amalgamation `src/libmcc.c` includes `mccpp.c` (line 8) BEFORE `mccgen.c`
+  (line 9), so it is unreachable from the embed code without (a) promoting `expr_const64` to external
+  linkage — which de-inlines a hot evaluator used ~10 sites in `mccgen.c`, perturbing codegen and
+  forcing a fleet-wide o0-baseline re-bank across all 7 targets (needs x86_64+win, not mac-solo) — or
+  (b) an amalgamation-order-dependent forward decl that breaks the `MCC_SINGLE_SOURCE=OFF` multi-TU
+  build (static symbol, unlinkable across TUs). The globally-visible `expr_const()` is 32-bit only and
+  would silently regress 64-bit single-value limits. So a correct robust fix is a cross-cutting linkage
+  change + cross-platform re-bank, i.e. a focused pass.
+- **slice-2 (`__is_target_arch/os/vendor/environment` + `__has_cpp_attribute/declspec_attribute/warning`,
+  `__building_module` → c=0 at `src/mccpp.c:2249`).** Implementing the 4 `__is_target_*` correctly means
+  reproducing clang's target-triple component normalization (arch aliases arm64==aarch64/x86-64==x86_64,
+  os macosx/darwin/macos, vendor apple/pc/unknown, environment gnu/msvc/gnueabi) against mcc's compile-time
+  `MCC_TARGET_*` identity; a wrong normalization silently mis-guards target-conditional code on ALL
+  platforms (shared `#if` path). `__building_module`→0 is defensible (no C++ modules). Feature-grade,
+  not a guard one-liner like slice-1.
+
+Recommendation: keep T-mac-30022 IN_PROGRESS with slice-1 landed; slices 2/3 want a focused pass (and
+slice-3 wants user authorization for the expr_const64 de-inlining + the fleet re-bank, or routing to a
+faster box for the x86_64/win half of the re-bank).
