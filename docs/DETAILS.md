@@ -50463,3 +50463,28 @@ mac-arm64, 2026-08-17.
 **Measurements (lin-x64, quiet box, pinned).** A subject sweep (kernels × default-on-at-≤3 flags, min of 9 interleaved, pinned cpu 31) found promote-locals wins large and stable: nbody +18.8% (drift 1.4%), regpress +24.6% (drift 5.9%), matmul +6.5% (drift 1.5%), promote-arrow/hashmap +9.9% (drift 1.2%). nbody chosen for the best win-vs-drift at a ~95ms runtime. Reproduced +15.9/+16.9/+18.4/+19.1% across four independent rounds, output byte-identical to gcc. A cautionary datum on why pinning matters: divmagic/divmod read −2.9% (a phantom regression) pinned to core 0, but +24% on a clean core — same code, two verdicts, decided by IRQ noise. Final gate run: promote-locals/nbody +19.1%, pinned cpu 31, exit 0.
 
 **Scope kept narrow.** Only the GATE (--assert-gate-wins) went wall-clock; the instructions-retired counter path survives for the advisory main table and --baseline/--assert-baseline, so nightly bench.yml and tests/runtime/baselines/arm64-darwin.json are unaffected. tests/must-run.txt's runtime-bench-gatewin note de-staled: no longer a permanent 77 (still `registered`, since it can legitimately 77 on a busy host / short kernel / emulated / cross / WIN32 / no-python3). The --check-only sibling cell still passes (17 kernels). **Source.** lin-x64, 2026-08-17.
+
+<a id="t-lin-10004-wb-suffix-landed-2026-08-17-mac-arm64"></a>
+
+## T-lin-10004 — C23 wb/uwb literal suffix + const-fold reduce fix (mac-arm64, 2026-08-17, acb96470)
+
+`123wb` / `123uwb` (u in either order) now produce a `_BitInt(N)` constant of the minimal width:
+unsigned N = max(1, bit_width(V)); signed N = max(2, bit_width(V)+1) — measured against gcc-16 across
+0/1/63/64/127/128 and 65..128-bit values. Lexer (mccpp.c parse_number): a `wbsfx` arm sniffs `wb`/`WB`
+(guarded like the i256 suffix so a trailing ident char is not mistaken), re-accumulates the digits into the
+existing 8x32-bit word buffer, computes bit_width + N, refuses N>128, and emits new tokens TOK_CBITINT(0xd9)/
+TOK_CUBITINT(0xda) with the value in tokc.q and the width in a new `tok_bitint_width` global. Parser
+(mccgen.c, next to the TOK_CINT256 case) builds the type — scalar `sbt|VT_BITINT|VT_BITFIELD` bs=N for N<=64,
+else `mk_bitint128_type` — and vsetc's the constant. `l`/imaginary/i256 combos refused; wb in a pp-expression
+refused.
+
+PRE-EXISTING slice-1 bug surfaced + fixed: const-folding two small `_BitInt(N<=32)` constants left the result
+UNREDUCED — `(_BitInt(4))5 * (_BitInt(4))5` gave 25 (mcc) vs -7 (gcc). Root: the N<=32 result-retag
+(mccgen.c ~4859) tags the result `VT_BITINT|VT_BITFIELD` so gv()'s bit-field extract reduces it on next use,
+but a CONSTANT is never re-read through gv(), so its c.i stayed full-width. Fix: when the retagged result is
+VT_CONST, reduce c.i to N bits in place (mask + sign-extend). Runtime path unchanged; o0-baseline untouched
+(no banked test hit the const path with a differing value). Verified: (_BitInt(4))5*5 and 5wb*5wb both -7.
+
+New test_wb sections in tests/exec/types/{bitint,bitint128}.c (byte-identical to gcc-16); 478-test sweep green.
+_BitInt remaining after this: N>128 (arbitrary-limb Approach A) and _BitInt<->float (same soft-conversion gap
+as __int256/T-lin-10016). **Source.** mac-arm64, 2026-08-17.
