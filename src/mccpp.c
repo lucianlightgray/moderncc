@@ -3678,10 +3678,7 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 		}
 
 		if (wbsfx) { MCC_TRACE("br\n");
-			/* C23: the type of a wb/uwb literal is _BitInt(N) with N the smallest
-			   width holding the value: unsigned N = max(1, bit_width); signed
-			   N = max(2, bit_width + 1).  N > 128 is refused (this target's max). */
-			uint32_t w[8];
+			uint32_t w[16];
 			uint64_t cur, carry;
 			int i, bw, N;
 			if (lcount || tok_imaginary || i256sfx)
@@ -3698,7 +3695,7 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 				else
 					{ MCC_TRACE("br\n"); t = t - '0'; }
 				carry = t;
-				for (i = 0; i < 8; i++) { MCC_TRACE("br\n");
+				for (i = 0; i < 16; i++) { MCC_TRACE("br\n");
 					cur = (uint64_t)w[i] * b + carry;
 					w[i] = (uint32_t)cur;
 					carry = cur >> 32;
@@ -3707,7 +3704,7 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); ov = 1; }
 			}
 			bw = 0;
-			for (i = 7; i >= 0; i--) { MCC_TRACE("br\n");
+			for (i = 15; i >= 0; i--) { MCC_TRACE("br\n");
 				if (w[i]) { MCC_TRACE("br\n");
 					uint32_t v = w[i];
 					bw = i * 32;
@@ -3726,7 +3723,12 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 			tok_bitint_width = N;
 			tokc.q.lo = w[0] | ((uint64_t)w[1] << 32);
 			tokc.q.hi = w[2] | ((uint64_t)w[3] << 32);
-			tokc.q.w2 = tokc.q.w3 = 0;
+			tokc.q.w2 = w[4] | ((uint64_t)w[5] << 32);
+			tokc.q.w3 = w[6] | ((uint64_t)w[7] << 32);
+			tokc.q.w4 = w[8] | ((uint64_t)w[9] << 32);
+			tokc.q.w5 = w[10] | ((uint64_t)w[11] << 32);
+			tokc.q.w6 = w[12] | ((uint64_t)w[13] << 32);
+			tokc.q.w7 = w[14] | ((uint64_t)w[15] << 32);
 			goto int_suffix_done;
 		}
 

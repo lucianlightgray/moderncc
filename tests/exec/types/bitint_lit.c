@@ -1,0 +1,27 @@
+#if defined test_lit256
+
+#include <stdio.h>
+int main(void) {
+	unsigned _BitInt(256) b128 = 340282366920938463463374607431768211456uwb;
+	unsigned _BitInt(256) b192 = 6277101735386680763835789423207666416102355444464034512896uwb;
+	unsigned _BitInt(256) b255 = 57896044618658097711785492504343953926634992332820282019728792003956564819968uwb;
+	printf("b128 %llu %llu\n", (unsigned long long)(b128 >> 128), (unsigned long long)b128);
+	printf("b192 %llu %llu\n", (unsigned long long)(b192 >> 192), (unsigned long long)b192);
+	printf("b255 %llu %llu\n", (unsigned long long)(b255 >> 255), (unsigned long long)b255);
+	return 0;
+}
+
+#elif defined test_lit512
+
+#include <stdio.h>
+int main(void) {
+	unsigned _BitInt(512) c300 = 2037035976334486086268445688409378161051468393665936250636140449354381299763336706183397376uwb;
+	unsigned _BitInt(512) c400 = 2582249878086908589655919172003011874329705792829223512830659356540647622016841194629645353280137831435903171972747493376uwb;
+	unsigned _BitInt(512) c511 = 6703903964971298549787012499102923063739682910296196688861780721860882015036773488400937149083451713845015929093243025426876941405973284973216824503042048uwb;
+	printf("c300 %llu %llu\n", (unsigned long long)(c300 >> 300), (unsigned long long)c300);
+	printf("c400 %llu %llu\n", (unsigned long long)(c400 >> 400), (unsigned long long)c400);
+	printf("c511 %llu %llu\n", (unsigned long long)(c511 >> 511), (unsigned long long)c511);
+	return 0;
+}
+
+#endif
