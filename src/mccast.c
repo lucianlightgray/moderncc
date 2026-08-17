@@ -6990,13 +6990,13 @@ static uint64_t ast_fold_eval(int op, int tt, uint64_t l1, uint64_t l2,
 			*ok = 0;
 			return 0;
 		}
-		return gen_opic_sdiv(l1, l2);
+		return (tt & VT_UNSIGNED) ? l1 / l2 : gen_opic_sdiv(l1, l2);
 	case '%':
 		if (l2 == 0) { MCC_TRACE("br\n");
 			*ok = 0;
 			return 0;
 		}
-		return l1 - l2 * gen_opic_sdiv(l1, l2);
+		return (tt & VT_UNSIGNED) ? l1 % l2 : l1 - l2 * gen_opic_sdiv(l1, l2);
 	case TOK_SHL:
 		return l1 << (l2 & shm);
 	case TOK_SHR:
