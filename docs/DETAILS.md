@@ -49677,6 +49677,54 @@ the reverse-SO LOAD/member re-applies VT_REVSO, the store swap follows. Verify: 
 `sso.c` print OK under `MCC_FORCE_REPLAY -fno-replay-fallback`; full exec nofb-probe 0 miscompiles.
 Lin's SSO domain — left for the owner (T-lin-10010).
 
+<a id="t-win-50028-slice-a-x86_64-scalar-array-nested-landed"></a>
+
+### T-win-50028 SLICE A LANDED (lin-x64, 2026-08-17) — x86_64 scalar/array/nested rev-SO replay faithful; the fbits/AST_FB alias; bit-field + arm64 remain
+
+Slice A (commit 1058f958) makes reversed-`scalar_storage_order` **scalar, array-element, and
+nested** member accesses replay byte-faithfully on x86_64 at O0–Os under
+`MCC_FORCE_REPLAY -fno-replay-fallback`. Three distinct root causes, all in the replay path,
+all downstream of T-lin-10010 introducing VT_REVSO as the 0x10000 (17th) `SValue.r` flag bit:
+
+1. **`(unsigned short)ast_op` truncation (mccast.c:5327).** Every `AST_Ref` replay rebuilt its
+   SValue as `sv.r = (unsigned short)ast_op(a, n)`, which chops bit 16 — so VT_REVSO was dropped
+   from every ref-carried lvalue. This is why compound assignments (`x.i -= 100`) miscompiled:
+   the read-copy of the lvalue folds to a `Ref`, and its swap was silently lost while the
+   store-target MEMBER kept it. Fix: `if (ast_op(a,n) & VT_REVSO) sv.r |= VT_REVSO;`.
+
+2. **The fbits/AST_FB alias — VT_REVSO (0x10000) == AST_FB_STORE_CMP_GV (65536u).** MEMBER nodes
+   carry their r-flags through `fbits` (re-applied at mccast.c:5570). Stuffing the raw VT_REVSO
+   value into a member's fbits sets the same bit the optimizer reads as AST_FB_STORE_CMP_GV, which
+   corrupts **bit-field** stores under -O1. Fix: a dedicated `AST_FB_MEMBER_REVSO` (16777216u, a
+   free high fbits bit) set at capture (mccrir.c RIR_R_MEMBER + the store-fold member), translated
+   back to VT_REVSO at replay (masked out of the direct fbits→r OR). NON-bit-field members only —
+   see slice C.
+
+3. **Indexed array elements are `Load(Binary '+'(MEMBER[VT_ARRAY], index))`.** The parser saves the
+   array member's VT_REVSO across the `+`/indir and re-applies it on the element (mccgen.c:13998);
+   replay had no equivalent. Fix: `ast_addr_over_revso_member()` detects the pattern (the MEMBER
+   child carries AST_FB_MEMBER_REVSO) and re-applies VT_REVSO after `indir()` in the AST_Load case.
+
+**Verified NO regression:** o0-baseline 5/5 (whole 319-file corpus replays byte-identically —
+the change is inert for non-rev-SO code), exec-replay 361/361, sso 54/54; full sso.c correct at
+all opt levels (bit-fields fall back).
+
+**Two slices remain — rir-nofb-probe stays honestly-red (mac left sso.c::main unbanked):**
+- **B (arm64).** `gen_sso_bswap`'s inline `gen_bswap`→AST_OP_BSWAP path is `#if MCC_TARGET_X86_64`-
+  gated (mccgen.c:5819); on arm64 the swap is a `__builtin_bswap*` **helper call** → an `AST_Invoke`
+  the slice-A BSWAP-node handling doesn't cover, so arm64 still FAILs at every level (mac
+  cross-verified, a94b1127). Preferred fix (mac's): un-gate the inline path on arm64 via native
+  AArch64 REV/REV16/REV32 + an arm64 `ir_cap_gen_bswap`, turning it into the same AST_OP_BSWAP node
+  slice A handles (also drops a libcall fleet-wide). Proposed reassigned to mac-arm64 (native verify).
+- **C (x86_64 bit-fields).** DEEPER than the alias: even carried via the dedicated flag, a rev-SO
+  bit-field member with VT_REVSO breaks the -O1 c3 optimizer, but ONLY in full-function context —
+  an isolated bit-field body passes -O1, while sso.c's bf section fails only *after* the preceding
+  rev-SO members run. A c3-pipeline transform mis-handles rev-SO bit-field stores; slice A guards
+  bit-fields OUT (`!(v->type.t & VT_BITFIELD)`) so they fall back (no -O1 regression). Lin owns C.
+
+Forward-compatible with mac T-mac-30009 (narrow SValue.r): if VT_REVSO drops below 0x10000, root
+(1)'s truncation fix becomes a redundant no-op; the dedicated flag and array helper are bit-agnostic.
+
 <a id="t-mac-30008-attributed-to-sso-slice-1-svalue-r-widening-fix-is-fragile-rebank"></a>
 
 ## T-mac-30008 ATTRIBUTED — the arm64 kept-coverage drop is mac's own sso slice 1 (7fd7d9b0), SValue.r widened short→int; a fix recovers 1.5pp but is too fragile to land, so the floor is re-banked (mac-arm64, 2026-08-17)
