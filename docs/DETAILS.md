@@ -49316,3 +49316,45 @@ unprovisioned here (T-lin-10388's family) or the discovery path is POSIX-shaped.
 attribution: name what each cell walks, why it is empty on win, then either provision or add an
 explicit honest per-platform skip with a must-run.txt note. Verify: both cells either green or
 Skipped-with-recorded-reason on win; the floors still fail on a genuinely emptied corpus on lin.
+
+<a id="t-win-50025-done-2026-08-17"></a>
+
+## T-win-50025 DONE (win-x64, 2026-08-17T00:36Z, df9ed26e) — with smoke/divergence re-scoped out to T-win-50027
+
+Landed df9ed26e, all three surfaces verified green (exec integer_promotion + bitfield_width64
+across base/-O1/-O3/vlat/replay/search-threads; diff3 pair Skips with the recorded reason;
+mcctest ref/out byte-identical; pe/x-oracle agree with 0 new divergence). The mcctest root cause
+is worth its line: the WIN32 refflags ALREADY forced the reference gcc to -mno-ms-bitfields, so
+8d4f0a80's mcc-side default flip silently turned the differential into an ABI comparison — the
+fix pairs the mcc side through a new WIN32-gated _mcctest_mccargs, threaded into mcctest-embedjit
+too. RE-SCOPE, recorded: the original task text included smoke/divergence's bfsweep categories.
+Enumerating them surfaced 337 new diverge-one categories on win of which only ~40 are the
+bitfield family — the rest are F80/f80/c80/fsweep/bsweep/xsweep (long-double heavy) + F16
+muladd/scale + shl.*.w folds + x.uint.from.1e300, none of which are attributed. Banking the
+bitfield subset inside a cell that stays red on ~300 unattributed categories adds nothing and a
+blanket bank would be blind; the whole cell moves to T-win-50027 (attribution FIRST, then a
+deliberate bank; the bitfield subset's disposition is already decided by the 8d4f0a80
+precedent). §8: the slice cells above are green; the full-suite batch rides the next win suite
+per fleet precedent (the fifth requote is an hour old and this change touches only test
+expectation surfaces on WIN32 arms).
+
+<a id="t-win-50027-smoke-divergence-337-categories"></a>
+
+## T-win-50027 — smoke/divergence on win: 337 new diverge-one categories need attribution before any banking
+
+Census from the enumeration run (2026-08-17, binary at 12e0077b): ~40
+bfsweep.BFSL_31/32.*/BFUL_8/16/31/32.* (the ms-bitfield promotion family — disposition already
+decided per 8d4f0a80: bank deliberately once the cell's other families are attributed); ~290
+across bsweep.F80.*/fsweep.F80.*/f80.*/c80.*/csweep-adjacent/xsweep.*F80* (long-double
+fold+run divergences vs the reference), plus bsweep/fsweep.F16.FMULADD/FSCALE pairs,
+shl.si/sll.w{,p1}.fold, x.uint.from.1e300.{fold,run}. NONE of the F80/F16/shl/x.uint families
+are attributed: they were not in the bank, so they appeared after the last bank refresh on this
+box — the window contains the day's bf16/__bf16 (ce504aed), __float128 (844b9abf, incl. an
+"arith type-combine demote-to-float" fix), _BitInt (5dbbe6ca), and sso landings, any of which
+could move long-double/f16 classification, and also any smokerun-side sweep-corpus growth.
+FIRST SLICE = attribution, not banking: date the categories (which commit made them appear —
+the smokerun sweep tables vs the compiler behavior), split intended-divergence (bank with a
+reason, like the bitfield family) from regression (file/fix). The x.uint.from.1e300 and
+shl.*.w.fold entries smell like UB-adjacent fold policy, not bugs — say so explicitly if
+confirmed. Verify: smoke/divergence green on win with every banked category carrying an
+attribution, and the known-positive still catching a planted new category.
