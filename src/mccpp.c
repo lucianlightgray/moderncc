@@ -2017,6 +2017,84 @@ static int pp_builtin_func(int v) { MCC_TRACE("enter\n");
 				 !strcmp(n, "__is_target_environment");
 }
 
+static int pp_target_kind(int v) { MCC_TRACE("enter\n");
+	const char *n;
+	if (v < TOK_IDENT)
+		{ MCC_TRACE("br\n"); return 0; }
+	n = get_tok_str(v, NULL);
+	if (!strcmp(n, "__is_target_arch"))
+		{ MCC_TRACE("br\n"); return 1; }
+	if (!strcmp(n, "__is_target_os"))
+		{ MCC_TRACE("br\n"); return 2; }
+	if (!strcmp(n, "__is_target_vendor"))
+		{ MCC_TRACE("br\n"); return 3; }
+	if (!strcmp(n, "__is_target_environment"))
+		{ MCC_TRACE("br\n"); return 4; }
+	return 0;
+}
+
+static int pp_streq_ci(const char *a, const char *b) { MCC_TRACE("enter\n");
+	for (; *a && *b; a++, b++) { MCC_TRACE("br\n");
+		int ca = *a, cb = *b;
+		if (ca >= 'A' && ca <= 'Z')
+			{ MCC_TRACE("br\n"); ca += 32; }
+		if (cb >= 'A' && cb <= 'Z')
+			{ MCC_TRACE("br\n"); cb += 32; }
+		if (ca != cb)
+			{ MCC_TRACE("br\n"); return 0; }
+	}
+	return *a == 0 && *b == 0;
+}
+
+static int pp_target_match(int kind, const char *arg) { MCC_TRACE("enter\n");
+	static const char *const arch[] = {
+#if defined MCC_TARGET_X86_64
+			"x86_64", "amd64", "x86-64",
+#elif defined MCC_TARGET_I386
+			"i386", "i486", "i586", "i686", "x86",
+#elif defined MCC_TARGET_ARM64
+			"aarch64", "arm64",
+#elif defined MCC_TARGET_ARM
+			"arm", "armv7", "armv7a",
+#elif defined MCC_TARGET_RISCV64
+			"riscv64",
+#endif
+			0 };
+	static const char *const os[] = {
+#if defined MCC_TARGET_PE
+			"windows", "win32",
+#elif defined MCC_TARGET_MACHO
+			"darwin", "macos", "macosx",
+#else
+			"linux",
+#endif
+			0 };
+	/* vendor / environment: only the unambiguous components are answered; mcc
+	 * carries no canonical triple, so a config where the vendor (pc vs w64) or
+	 * environment (msvc vs gnu on PE) is genuinely ambiguous stays 0 rather than
+	 * risk a wrong positive that would enable code the target does not match. */
+	static const char *const vendor[] = {
+#if defined MCC_TARGET_MACHO
+			"apple",
+#endif
+			0 };
+	static const char *const environment[] = {
+#if !defined MCC_TARGET_PE && !defined MCC_TARGET_MACHO
+			"gnu",
+#endif
+			0 };
+	const char *const *tbl =
+			kind == 1 ? arch : kind == 2 ? os : kind == 3 ? vendor : environment;
+	int i;
+	if (!arg[0])
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; tbl[i]; i++) { MCC_TRACE("br\n");
+		if (pp_streq_ci(tbl[i], arg))
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
+
 static int pp_has_builtin_arg(int v) { MCC_TRACE("enter\n");
 	static const char * const untokenized[] = {
 		"__builtin_va_start", "__builtin_c23_va_start", "__builtin_va_arg",
@@ -2265,7 +2343,9 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 			c = tok == tok_c23_true;
 			goto c_number;
 		} else if (pp_builtin_func(tok)) { MCC_TRACE("br\n");
-			int depth = 1;
+			int depth = 1, kind = pp_target_kind(tok), first = 1;
+			char arg[64];
+			arg[0] = 0;
 			c = 0;
 			next();
 			if (tok != '(')
@@ -2278,7 +2358,21 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); depth++; }
 				else if (tok == ')')
 					{ MCC_TRACE("br\n"); depth--; }
+				else if (first && kind) { MCC_TRACE("br\n");
+					const char *s = get_tok_str(tok, &tokc);
+					if (s[0] == '"')
+						{ MCC_TRACE("br\n"); s++; }
+					pstrcpy(arg, sizeof arg, s);
+					{
+						int al = (int)strlen(arg);
+						if (al && arg[al - 1] == '"')
+							{ MCC_TRACE("br\n"); arg[al - 1] = 0; }
+					}
+				}
+				first = 0;
 			}
+			if (kind)
+				{ MCC_TRACE("br\n"); c = pp_target_match(kind, arg); }
 			goto c_number;
 		} else { MCC_TRACE("br\n");
 			mcc_warning_c(warn_undef)("\"%s\" is not defined, evaluates to 0",
