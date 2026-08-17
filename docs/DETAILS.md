@@ -50244,3 +50244,81 @@ reduce; (4) __BITINT_MAXWIDTH__ 64→128 (mccpp.c:5552) for this slice; (5) TDD 
 bitint128.c byte-identical to gcc-16 (props/arith/convert/shift sections, like bitint.c); then
 generalize to 4-limb (N<=256), then Approach A for N>256. by-pointer ABI reuses T-lin-10015's
 no-copy marshalling. **Source.** mac-arm64, 2026-08-17.
+
+<a id="t-lin-10004-slice-2-impl-findings-2026-08-17-mac-arm64"></a>
+
+## T-lin-10004 slice 2 (_BitInt 64<N<=128) — implementation findings + de-risked plan (mac-arm64, 2026-08-17)
+
+Resuming §7. Measured the gcc-16 target on arm64-Darwin and de-risked the design published at
+[#t-lin-10004-slice-2-design-plan-2limb-first-reuse-4limb-arith](#t-lin-10004-slice-2-design-plan-2limb-first-reuse-4limb-arith).
+Key corrections/confirmations vs that plan:
+
+**MCC_HAVE_INT128 is x86_64-only** (src/mcc.h:1152, `#if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE`).
+arm64 has NO native __int128, so the (64,128] slice on arm64 MUST use the memory/limb path — confirms
+Approach B (reuse the 4-limb __int256 kernel), not a native-128 shortcut.
+
+**Layout (gcc-16, measured):** sizeof(_BitInt(65..128))=16, _Alignof=16 (2 limbs) for ALL N in that range.
+
+**ABI (gcc-16, measured, arm64-Darwin AAPCS64):** _BitInt(128) is passed in REGISTER PAIRS (arg0=x0:x1,
+arg1=x2:x3) and returned in x0:x1 — the 16-byte all-integer-composite rule. **mcc already passes/returns a
+16-byte `struct{u64 lo,hi;}` in x0:x1 identically** (verified: a hand-written 2-limb add struct program
+produces byte-identical output under mcc and gcc, and mcc's addw prologue is `stp x0,x1 / stp x2,x3`). So a
+2-limb STRUCT storage type (like wide256's struct, but 2 limbs, aligned 16) gets gcc's _BitInt(128) ABI FOR
+FREE via mcc's existing struct ABI. This is the crux de-risk: no custom ABI code needed for arm64.
+(x86_64/win ABI for the eventual cross cells is lin/win's slice; SysV also passes it in two INTEGER
+eightbytes = a 2-u64 struct, so the same rep should carry, but that is unverified here.)
+
+**DoD is OUTPUT-differential, NOT object-identity.** The slice-1 "byte-identical vs gcc-16" headline and the
+T-mac-30007 bug were both program-OBSERVABLE-output differences (e.g. `(unsigned)(u+u)`=1000 vs 488). The
+`dt` harness (tests/exec/goldens.h) compiles each section and compares stdout to a gcc-16-matching golden.
+So I must reproduce gcc's RESULTS, not its limb-lowering asm (gcc's _BitInt(96) asm is a convoluted 32-bit
+limb normalization — irrelevant to match).
+
+**Representation plan (2-limb, N in (64,128]):** a 16-byte align-16 struct{u64 lo,hi} tagged as a _BitInt
+carrying precision N (mirror wide256's `s->a.is_wideint`; add an `is_bitint`+N carrier, or reuse the CType
+`.bs` precision channel — bs is unsigned char, holds N<=255). Storage is kept CANONICAL: bits N..127 hold
+sign(bit N-1) for signed, 0 for unsigned (matches gcc — verified i96 -1 reads back sign-extended all-ones).
+
+**Arithmetic:** extend both operands canonically 2-limb->4-limb __int256 (limb2,limb3 = 0 [unsigned] or
+sign of bit127 [signed]); run the EXISTING tested `gen_wide256_op` (byte-correct per wide256/gmp-diff); keep
+the low 128 bits; REDUCE to N. Reduce = a 64-bit scalar bitfield-reduce on the HIGH limb only (limb0 is all
+value bits since N>64): keep low (N-64) bits of limb1, fill bits (N-64)..63 with sign(bit N-65) [signed] or 0
+[unsigned]. N==128 needs no reduce (mod 2^128 is automatic). This reuses slice-1's scalar reduce logic on
+limb1. div/mod/shift/compare all correct because operands are canonical N-bit values inside 128/256-bit ops.
+
+**Remaining sub-slices (in order):** (1) 2-limb type builder + is_bitint128 predicate + N carrier; (2) parse
+accept 64<N<=128 at mccgen.c:~9142 -> 2-limb type; (3) extend(2->4)/reduce(4->2,N) helpers; (4) route the
+binary-op + cast + compare_types + const-fold paths (reuse gen_wide256_op/gen_wide256_cast, add the reduce
+after); (5) __BITINT_MAXWIDTH__ 64->128 (mccpp.c:5552) + update bitint.c [test_props] golden maxwidth 64->128;
+(6) TDD tests/exec/types/bitint128.c (props/arith/conv/temp/call/aggregate sections) golden from gcc-16.
+NOT-YET-DONE at this checkpoint: all code. This note + the ABI/reduce measurements are the de-risk. Safe to
+resume from here; the N>64 refusal stays until the full 2-limb path is green (no partial push — a half-wired
+accept crashes on use). **Source.** mac-arm64, 2026-08-17.
+
+### T-lin-10004 slice-2 flow-map — exact sites (mac-arm64, 2026-08-17)
+
+ARCHITECTURE DECISION: slice-1's reduce is scalar-register-only (VT_BITFIELD masked load/store in gv()
+mccgen.c:2535-2573 caps bits<=64; vstore mask 5921-5947 saturates at 64; operand/result reduce 4682-4799 is
+single-register). It CANNOT hold a 16-byte value. So 64<N<=128 is a SEPARATE struct-backed representation
+(parallel to __int256), NOT a generalization of the VT_BITINT|VT_BITFIELD scalar tag. _BitInt gets TWO reps:
+N<=64 scalar (slice-1, unchanged), 64<N<=128 a tagged 2-limb struct carrying N.
+
+Predicate: `IS_BITINT(t) = (t & VT_STRUCT_MASK)==(VT_BITINT|VT_BITFIELD)`, VT_BITINT=7<<VT_STRUCT_SHIFT (mcc.h:1220).
+`is_wide256_type` = struct && ref->a.is_wideint (mccgen.c:676; is_wideint bit at mcc.h:286). Model the new
+`is_bitint128_type` the same way (a new `a.is_bitint` Sym bit + precision N carried on CType.bs — bp/bs are
+unsigned char, mcc.h:220, so N<=128 fits; the 2-limb struct type is the same for all N, N rides on .bs).
+
+Sites to add/route (parallel to the wide256 dispatch):
+- PARSE branch: mccgen.c:9142 — instead of refusing >64, if 64<N<=128 build the 2-limb bitint struct (else keep
+  the >128 refusal). Slice-1 scalar build stays for N<=64 (9146-9159).
+- gen_op dispatch: mccgen.c:4564-4568 (next to the is_wide256_type guard) — add is_bitint128 → gen_bitint128_op.
+- gen_cast dispatch: mccgen.c:5023-5027 — add is_bitint128 → gen_bitint128_cast.
+- usual-arith combined type: mccgen.c:4473-4478 — bitint128 combine (same-N -> that type).
+- compare_types: mccgen.c:4312-4321 — two bitint128 equal iff same bs; incompatible with storage/other.
+- store/inc-dec/sizeof/init: mirror the wide256 touch points (5862-5866 store, 6066 inc/dec, 12751 sizeof,
+  16689/17017 init, 5735/5741 decl-init) for the new type.
+- __BITINT_MAXWIDTH__ 64->128: mccpp.c:5552 (also update bitint.c [test_props] golden maxwidth 64->128).
+ABI: none needed on arm64 — a 16-byte 2-int struct is passed x0:x1 / returned x0:x1, matching gcc (verified).
+Arithmetic kernel: extend 2->4 limbs canonically, call existing gen_wide256_op, keep low 128b, reduce to N
+(64-bit bitfield-reduce on the HIGH limb only; N==128 no reduce). Const fold: reuse wide256 fold then reduce.
+**Source.** mac-arm64, 2026-08-17.
