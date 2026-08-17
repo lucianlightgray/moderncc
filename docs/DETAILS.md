@@ -50666,3 +50666,18 @@ optimization or a RIR type-consistency validator that USES ast_stype_* for a rea
 consumer is an open-ended deep-RIR design, not landed here. This note de-risks the flip: the byte-neutrality
 + exec/o0 safety are current-tree-confirmed, so once a consumer exists the flip is a one-liner
 (mccrir.c:6549 default 0->2) with the verification already done. **Source.** mac-arm64, 2026-08-17.
+
+<a id="t-lin-10004-slice-3-landed-2026-08-17-n129-256-4limb-reuse-int256"></a>
+
+## T-lin-10004 slice 3 LANDED — _BitInt(129..256) as a 4-limb struct reusing the __int256 kernel (lin-x64, 2026-08-17)
+
+Implemented per mac's handoff (#t-lin-10004-n-gt-128-handoff-approach-2026-08-17-mac-arm64) at 172e2072. 128 < N <= 256 is a 4-limb (32-byte, 16-aligned) struct tagged a.is_bitint, N on CType.bs with bs==0 the SENTINEL for N==256. Rides the tested __int256 kernel: bitint128_to_wide256 extends the stored limbs, gen_wide256_op runs, wide256_to_bitint128 reduces back to N. The 2-limb (64<N<=128) reduce is kept byte-identical (masked); only the 4-limb path uses the canonical (v<<(256-N))>>(256-N) shift. mcc's _BitInt ABI is UNIFORM (align 16, sizeof 2-or-4 limbs) matching the target-independent dt golden -- the slice-2 design choice, which diverges from x86_64 gcc's NATIVE variable-size/align-8 _BitInt (measured here: 129=24/8, 200=32/8, vs mcc 32/16). That native-ABI divergence is a possible follow-up, not this slice.
+
+Loci: src/bitint128_slice.h generalized (bitint128_nlimbs_n = N<=128?2:4; 4 cached type instances idx=(nl==4?2:0)+uns; materialize/extend/const-fold looped by limb count); src/mccgen.c parse gate >128->256; src/mccpp.c __BITINT_MAXWIDTH__ 128->256 + wb/uwb literal gate; src/mcc.h gen_bitint128_type_cache[4]/limb_tok[MCC_WIDE256_LIMBS]; dg-error bitint_over_128->bitint_over_256; new tests/exec/types/bitint256.c (12 sections byte-identical to gcc-16 for all values) + goldens.h; o0-baseline +1 corpus file.
+
+THREE bugs found + fixed by the differential TDD (would have shipped silently otherwise):
+1. bitint128_reduce_limbs: for n==128, k=n-64=64 and `(1<<64)-1` is shift-UB (== 0 on x86_64), zeroing the high limb of every 128-bit const. The original returned early for n>=128; the generalized path hit it. Fixed: mask = (k==64) ? all-ones : (1<<k)-1.
+2. gen_bitint128_op const-fold read operand limbs via c.q.lo/hi/w2/w3 unconditionally, but the `0` unary minus feeds as `0 - x` is an INT const with only c.i set -> c.q.hi/w2/w3 are uninitialized stack -> garbage high limbs. Fixed with bitint128_read_operand: canonical 4 limbs for a bitint const, else sign/zero-extend c.i.
+3. vstore: assigning between two bitint128 of DIFFERENT precision matched none of the conversion branches (both is_bitint128) and fell through to a struct copy sized by the SOURCE type, leaving the wider dest's upper limbs uninitialized (e.g. `i200 v = <_BitInt(68) literal>`). Fixed: convert (gen_cast, widen/narrow+reduce) when two bitint128 differ in precision/signedness before the copy -- also fixes the latent slice-2 different-precision <=128 case.
+
+Verified native x86_64: exec/bitint256 24/24 (all -O + replay variants), bitint/int256 143/143, broad exec 725/725, wide256/gmp-diff (__int256 oracle) 3/3 standalone, o0-baseline ungated+gated CHECK 7/7. REMAINING for full T-lin-10004 close: only N>256 (arbitrary-limb -- CValue.q's 4-limb const carrier + CType.bs's 255 precision carrier must move to memory-backed/ref storage; shared-vs-forked-kernel decision) -- deferred, architectural. **Source.** lin-x64, 2026-08-17.
