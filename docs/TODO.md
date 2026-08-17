@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 <<<<<<< Updated upstream
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30014   | 2026-08-17T13:02Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30014   | 2026-08-17T13:22Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T12:55Z |
 =======
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30014   | 2026-08-17T13:10Z |
@@ -145,9 +145,6 @@
 - [ ] T-lin-10048 [S] `BREAKEVEN` is a hand-pinned literal that every lane fraction is scored against
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10048-breakeven-is-a-hand-pinned-literal | DEPS: —
-- [ ] T-lin-10049 [S] `flagsweep-cover` and `asm-gas-directives` are `mcc_skip_test` stubs, structurally incapable of failing
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: db0b7482 | TS: 2026-08-17T13:20Z
-      REF: DETAILS.md#t-lin-10049-flagsweep-cover-and-asm-gas-directives | DEPS: T-lin-10003[C]
 - [ ] T-lin-10050 [S] `--mutate` has no `memcpy`/`memset` in the slice corpus to bite on
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10050-mutate-has-no-memcpymemset-in-the | DEPS: — | NOTE: three investigation slices banked in DETAILS; harness ready, needs uncovered-mutate-site identification
