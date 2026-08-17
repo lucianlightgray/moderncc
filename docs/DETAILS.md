@@ -51210,3 +51210,22 @@ primary case and negligible impact. Left as-is.
 **Net:** T-mac-30026 DONE — the one real bug (pp directive-guards) fixed + tested; the other two parts
 resolved as non-issues with gcc/clang evidence. Verification: exec/ 365/365, preprocess 100%, dg-error
 (4 cells across this + T-mac-30022) green; pre-existing `bitint_over_256` red is the _BitInt cap WIP.
+
+<a id="t-mac-30028-slice-1-macho-entry"></a>
+### T-mac-30028 slice-1 — Mach-O `-e`/`--entry` honored (mac-arm64, 2026-08-17T22:10Z)
+
+**Fixed (`bd6fb22a`).** ELF (`src/objfmt/mccelf.c:101`) and PE (`src/objfmt/mccpe.c:3229`) route
+`s1->elf_entryname` (set by `-Wl,-e,SYM` / `-Wl,--entry=SYM`, parsed at `src/libmcc.c:2007`) into the
+entry point, but the Mach-O EXE writer hardcoded `get_sym_addr(s1, "main", 1, 1)` for `LC_MAIN.entryoff`
+(`src/objfmt/mccmacho.c:2551`), silently ignoring the override — verified: `-Wl,-e,altstart` ran `main`
+(exit 1) not `altstart` (exit 42). Fix: `entryname = s1->elf_entryname ? s1->elf_entryname : "main"`.
+Missing entry symbol still errors cleanly. New Darwin-gated test `tests/macho/entry.sh` (`macho-entry`,
+symmetric `else() mcc_skip_test`): default main→1, `-Wl,-e,altstart`→42, `-Wl,--entry=`→42. Treegate
+registration (ci/registration-stubs, must-run-registered, gate-contract) green.
+
+**Residual (task stays IN_PROGRESS) — not clean mac-native quick wins:** the other T-mac-30028
+sub-issues are ELF-side or deep, and mac cannot natively verify the ELF ones (no qemu-user):
+`.bss`==COMMON conflation (`mccelf.c:647`, ELF semantics), GNU-ld `.so`-before-`.a` search-order deviation
+(needs a multi-dir lib setup, cross-format), no `SHF_MERGE` string/const dedup (a real ELF feature), and
+Mach-O undef-diagnosis being stricter than ELF/PE (subtle, needs a differential). Best done by a session
+that can run the ELF output (lin) or as a focused feature pass.
