@@ -49358,3 +49358,36 @@ reason, like the bitfield family) from regression (file/fix). The x.uint.from.1e
 shl.*.w.fold entries smell like UB-adjacent fold policy, not bugs — say so explicitly if
 confirmed. Verify: smoke/divergence green on win with every banked category carrying an
 attribution, and the known-positive still catching a planted new category.
+
+<a id="t-win-50027-done-one-reference-collapse"></a>
+
+## T-win-50027 DONE (win-x64, 2026-08-17T01:15Z, d117ea25) — the 337 categories were a one-reference collapse, not divergence
+
+ATTRIBUTION (the task's first slice, resolved completely): none of the ~290 F80/F16/xsweep
+categories were new divergence. The smoke/divergence cell inherits its clang reference from
+DIFF3_CLANG, which on this box resolved to scoop's MSVC-target clang — the exact binary the bank
+header forbids ("cannot link the subject... collapses every verdict to diverge-one"). smokerun
+dropped the failed reference silently and graded a ONE-reference run against the TWO-reference
+bank: every banked diverge-both row renamed to diverge-one = 337 "new" categories. With the
+correct llvm-mingw (mstorsjo, x86_64-w64-windows-gnu) clang, the same run yields 42 new — all
+bfsweep, the 8d4f0a80 ms-promotion family (mcc promotes extended-type bit-fields to the declared
+type per the recorded cl-conformance decision; both references use the GNU width rule).
+
+LANDED (d117ea25): (1) smokerun one-reference floor — grading a one-ref run against a bank with
+diverge-both/diverge-refs rows now SKIPs 77 with the reason (negative-control verified with the
+MSVC clang); (2) CMake WIN32 triple probe on the smoke clang (--print-target-triple must match
+*-windows-gnu) + an explicit -DMCC_SMOKE_CLANG override channel; (3) vendor/llvm-mingw is a
+provisioning.txt resource (host-local junction to the scoop mstorsjo install), detector-guarded
+per T-lin-10388; (4) fcases.h bfsweep --points arm so bit-field sweep refs-disagree verdicts
+decompose like the other sweeps; (5) the 42 banked with the class-6 comment + the decomposed
+diverge-masked:bfsweep.BFUL_31.MUL3 7 banked on cl adjudication — ull:31 * 3 at 0x7fffffff is
+0x17ffffffd under declared-type promotion, mcc == cl byte-for-byte; gcc==clang only coincide on
+the int-overflow UB wrap (the "references agreeing" that the masked check surfaces). The two
+stale diverge-one:BFUL_31.MUL3 rows renamed to the refs class.
+
+VERIFIED: smoke/divergence PASSES under two references (553-category census, 0 worse / 0 new);
+the one-reference run SKIPs with the named reason; smoke/strat-dark + smoke/slice-bails
+unaffected; smoke/native's remaining red is its pre-attributed T-win-50015 msstruct +
+T-win-50021 jit-not-baked composition, untouched here. Fleet note: the floor + probe are
+platform-generic — a Linux box losing its second reference now gets the honest SKIP instead of
+337 phantom regressions.
