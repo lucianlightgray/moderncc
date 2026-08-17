@@ -78,6 +78,12 @@ if(NOT _r_plain STREQUAL _r_plt)
     message(FATAL_ERROR "asm/reloc-suffix: `call g` and `call g@PLT` disagree.\n"
                         "  plain: ${_r_plain}\n  @PLT:  ${_r_plt}")
 endif()
+if(NOT _r_jmpplain MATCHES "R_X86_64_PLT32")
+    message(FATAL_ERROR "asm/reloc-suffix: a plain `jmp h` no longer emits "
+                        "R_X86_64_PLT32 (got: ${_r_jmpplain}). Without a non-empty "
+                        "floor the jmp tooth compares two empty relocations and "
+                        "passes vacuously, the same way the call tooth is floored")
+endif()
 if(NOT _r_jmpplain STREQUAL _r_jmpplt)
     message(FATAL_ERROR "asm/reloc-suffix: `jmp h` and `jmp h@PLT` disagree.\n"
                         "  plain: ${_r_jmpplain}\n  @PLT:  ${_r_jmpplt}")

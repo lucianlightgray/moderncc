@@ -50,6 +50,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mcc", default=os.path.join(ROOT, "cmake-debug", "mcc"))
     ap.add_argument("--bdir", default=os.path.join(ROOT, "cmake-debug"))
+    ap.add_argument("--min-lines", type=int, default=1,
+                    help="fail if fewer than this many value lines were actually "
+                         "compared against gcc+clang (floor against a vacuous pass)")
     ap.add_argument("files", nargs="+")
     a = ap.parse_args()
 
@@ -103,7 +106,16 @@ def main():
     print("\nbitint-diff: %d value lines agree with gcc+clang, %d ABI divergences "
           "(mcc uniform ABI, expected), %d gcc/clang-ambiguous skipped, %d VALUE FAILURES"
           % (value_ok, abi_div, ref_ambig, value_fail))
-    return 1 if value_fail else 0
+    if value_fail:
+        return 1
+    if value_ok < a.min_lines:
+        print("bitint-diff: VACUOUS — only %d value lines were actually compared "
+              "against gcc+clang (floor %d). With no value lines the gate proves "
+              "nothing (references failed to build, or the corpus lost its test_X "
+              "value sections), so it fails rather than passing silently."
+              % (value_ok, a.min_lines))
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

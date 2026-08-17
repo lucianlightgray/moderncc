@@ -89,6 +89,11 @@ static void def_emit(FILE *f, const char *lib, const Syms *s) {
 
 static int do_verify(int argc, char **argv) {
 	int i, bad = 0;
+	if (argc == 0) {
+		fprintf(stderr, "defcheck verify: no .def files given (empty glob); "
+										"a verify over nothing is a vacuous pass\n");
+		return 1;
+	}
 	for (i = 0; i < argc; i++) {
 		char lib[256];
 		Syms s = {0};

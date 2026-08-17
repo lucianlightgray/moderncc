@@ -18,6 +18,11 @@ execute_process(COMMAND "${PY}" "${TOOL}" "${MCC}" "${SRC}" --runs "${RUNS}"
                         --mutate --from-build "${BDIR}" -- "${OPT}" -c
                 RESULT_VARIABLE _mut OUTPUT_VARIABLE _mout ERROR_VARIABLE _mout)
 message("${_mout}")
+if(_mut EQUAL 77)
+    message("opt-determinism-known-positive: SKIP: the mutated arm reported 77, "
+            "so the mutation never ran and this cannot count as a detection")
+    cmake_language(EXIT 77)
+endif()
 if(_mut EQUAL 0)
     message(FATAL_ERROR "opt-determinism-known-positive: run 0 was compiled at "
                         "-O0 and the rest at ${OPT}, so the objects genuinely "

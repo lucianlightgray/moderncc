@@ -7287,6 +7287,22 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         add_test(NAME def-verify COMMAND "$<TARGET_FILE:defcheck>" verify ${_win32_defs})
         set_tests_properties(def-verify PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+        if(MCC_PYTHON3)
+            add_test(NAME bitint-diff
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/bitint-diff.py"
+                        --mcc "$<TARGET_FILE:mcc>" --bdir "${CMAKE_BINARY_DIR}"
+                        --min-lines 40
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/types/bitint.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/types/bitint128.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/types/bitint256.c"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/types/bitint_lit.c")
+            set_tests_properties(bitint-diff PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 TIMEOUT 300 LABELS "bitint")
+        else()
+            mcc_skip_test(bitint-diff
+                "the 3-way _BitInt value differential needs python3 (and self-skips without gcc+clang)")
+        endif()
+
         add_test(NAME ci-matrix
             COMMAND "$<TARGET_FILE:ci>" matrix "${CMAKE_CURRENT_SOURCE_DIR}/CMakePresets.json")
         set_tests_properties(ci-matrix PROPERTIES FIXTURES_REQUIRED MCC_BUILT
