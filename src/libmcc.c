@@ -3509,10 +3509,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		if (s->jit_gpu_budget == -1)
 			{ MCC_TRACE("br\n"); s->jit_gpu_budget = 50; }
 	}
-	if (s->jit_gpu_budget == -2)
-		{ MCC_TRACE("br\n"); return mcc_error_noabort(
-			"--jit-gpu-budget=auto (live VRAM-budget detection) is not yet implemented; "
-			"use an explicit percentage like '50%%' for now"); }
 	if (s->jit_cpu_budget >= 0 || s->jit_cpu_budget == -2) { MCC_TRACE("br\n");
 		int np = host_nproc(), w;
 		if (s->jit_cpu_budget == -2) { MCC_TRACE("br\n");
@@ -3531,12 +3527,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			{ MCC_TRACE("br\n"); w = 64; }
 		s->jit_threads = (unsigned)w;
 	}
-	if (s->jit_gpu_budget >= 0)
+	if (s->jit_gpu_budget >= 0 || s->jit_gpu_budget == -2)
 		{ MCC_TRACE("br\n"); mcc_gpu_vram_budget_pct = s->jit_gpu_budget; }
 	if (s->jit_gpu_devices >= 1)
 		{ MCC_TRACE("br\n"); mcc_gpu_max_devices = s->jit_gpu_devices; }
 	if ((s->jit_conservative || s->jit_cpu_budget >= 0 || s->jit_cpu_budget == -2 ||
-			 s->jit_gpu_budget >= 0 || s->jit_gpu_devices >= 1) &&
+			 s->jit_gpu_budget >= 0 || s->jit_gpu_budget == -2 || s->jit_gpu_devices >= 1) &&
 			getenv("MCC_JIT_BUDGET_DEBUG"))
 		{ MCC_TRACE("br\n"); fprintf(stderr,
 			"jit-budget: cpu-workers=%u gpu-vram-pct=%d gpu-devices=%d\n",

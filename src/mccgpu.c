@@ -1018,6 +1018,8 @@ typedef enum VkStructureType {
 	VK_STRUCTURE_TYPE_MEMORY_HOST_POINTER_PROPERTIES_EXT = 1000178001,
 	VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT =
 			1000178002,
+	VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2 = 1000059006,
+	VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT = 1000237000,
 	VK_STRUCTURE_TYPE_MAX_ENUM = 0x7FFFFFFF
 } VkStructureType;
 
@@ -1076,6 +1078,7 @@ typedef enum VkShaderStageFlagBits {
 #define VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT 0x00000002
 #define VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT 0x00000001
 #define VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT 0x00000002
+#define VK_MEMORY_HEAP_DEVICE_LOCAL_BIT 0x00000001
 #define VK_MEMORY_PROPERTY_HOST_COHERENT_BIT 0x00000004
 #define VK_MEMORY_PROPERTY_HOST_CACHED_BIT 0x00000008
 #define VK_BUFFER_USAGE_STORAGE_BUFFER_BIT 0x00000020
@@ -1288,6 +1291,19 @@ typedef struct VkPhysicalDeviceMemoryProperties {
 	uint32_t memoryHeapCount;
 	VkMemoryHeap memoryHeaps[VK_MAX_MEMORY_HEAPS];
 } VkPhysicalDeviceMemoryProperties;
+
+typedef struct VkPhysicalDeviceMemoryProperties2 {
+	VkStructureType sType;
+	void *pNext;
+	VkPhysicalDeviceMemoryProperties memoryProperties;
+} VkPhysicalDeviceMemoryProperties2;
+
+typedef struct VkPhysicalDeviceMemoryBudgetPropertiesEXT {
+	VkStructureType sType;
+	void *pNext;
+	VkDeviceSize heapBudget[VK_MAX_MEMORY_HEAPS];
+	VkDeviceSize heapUsage[VK_MAX_MEMORY_HEAPS];
+} VkPhysicalDeviceMemoryBudgetPropertiesEXT;
 
 typedef struct VkBufferCreateInfo {
 	VkStructureType sType;
@@ -1503,6 +1519,9 @@ typedef void(VKAPI_PTR *PFN_vkGetPhysicalDeviceMemoryProperties)(
 typedef void(VKAPI_PTR *PFN_vkGetPhysicalDeviceProperties2)(
 		VkPhysicalDevice physicalDevice,
 		VkPhysicalDeviceProperties2 *pProperties);
+typedef void(VKAPI_PTR *PFN_vkGetPhysicalDeviceMemoryProperties2)(
+		VkPhysicalDevice physicalDevice,
+		VkPhysicalDeviceMemoryProperties2 *pMemoryProperties);
 typedef VkResult(VKAPI_PTR *PFN_vkEnumerateDeviceExtensionProperties)(
 		VkPhysicalDevice physicalDevice, const char *pLayerName,
 		uint32_t *pPropertyCount, VkExtensionProperties *pProperties);
@@ -1701,6 +1720,7 @@ typedef VkResult(VKAPI_PTR *PFN_vkWaitForFences)(VkDevice device,
  * at the one site that calls them. */
 #define MCC_VK_OPT_FNS(X)                                                      \
 	X(vkGetPhysicalDeviceProperties2)                                            \
+	X(vkGetPhysicalDeviceMemoryProperties2)                                      \
 	X(vkEnumerateDeviceExtensionProperties)                                      \
 	X(vkGetDeviceProcAddr)                                                       \
 	X(vkDestroyDevice)                                                           \
@@ -2063,6 +2083,32 @@ static int mcc_vk_pin_matches(const char *pin, unsigned idx,
    mcc_vk_want_hostimport() reads mcc_gpu.phys, so host-import is decided per device.
    The device-specific vkGetMemoryHostPointerPropertiesEXT it resolves is kept
    consistent with the routed device by re-resolving in mcc_gpu_route(). */
+static unsigned long mcc_gpu_free_vram(VkPhysicalDevice phys) {
+	VkPhysicalDeviceMemoryProperties mp;
+	unsigned i;
+	int dl = -1;
+	vkGetPhysicalDeviceMemoryProperties(phys, &mp);
+	for (i = 0; i < mp.memoryHeapCount; i++)
+		if ((mp.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) &&
+				(dl < 0 || mp.memoryHeaps[i].size > mp.memoryHeaps[dl].size))
+			dl = (int)i;
+	if (dl < 0)
+		return 0;
+	if (vkGetPhysicalDeviceMemoryProperties2) {
+		VkPhysicalDeviceMemoryBudgetPropertiesEXT bud;
+		VkPhysicalDeviceMemoryProperties2 mp2;
+		memset(&bud, 0, sizeof bud);
+		bud.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
+		memset(&mp2, 0, sizeof mp2);
+		mp2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+		mp2.pNext = &bud;
+		vkGetPhysicalDeviceMemoryProperties2(phys, &mp2);
+		if (bud.heapBudget[dl] > bud.heapUsage[dl])
+			return (unsigned long)(bud.heapBudget[dl] - bud.heapUsage[dl]);
+	}
+	return (unsigned long)mp.memoryHeaps[dl].size;
+}
+
 static int mcc_vk_create_device_slot(void) {
 	VkDeviceQueueCreateInfo qci;
 	VkDeviceCreateInfo dci;
@@ -2268,12 +2314,30 @@ static int mcc_gpu_init(void) {
 		snprintf(mcc_gpu.name, sizeof mcc_gpu.name, "%s", cand[ci].name);
 		mcc_gpu.maxsbrange = cand[ci].maxsb;
 		/* T-lin-10393: --jit-gpu-budget caps the usable VRAM (storage-buffer range). */
-		if (mcc_gpu_vram_budget_pct >= 0)
+		if (mcc_gpu_vram_budget_pct == -1) {
+			const char *e = getenv("MCC_GPU_VRAM_BUDGET");
+			if (e && !strcmp(e, "auto"))
+				mcc_gpu_vram_budget_pct = -2;
+			else if (e && e[0] >= '0' && e[0] <= '9') {
+				int v = atoi(e);
+				if (v >= 0 && v <= 100)
+					mcc_gpu_vram_budget_pct = v;
+			}
+		}
+		unsigned long fv = mcc_gpu_free_vram(mcc_gpu.phys);
+		if (mcc_gpu_vram_budget_pct >= 0) {
 			mcc_gpu.maxsbrange =
 				(unsigned long)((double)cand[ci].maxsb * mcc_gpu_vram_budget_pct / 100.0);
+		} else if (mcc_gpu_vram_budget_pct == -2) {
+			if (fv && fv < mcc_gpu.maxsbrange)
+				mcc_gpu.maxsbrange = fv;
+		}
 		if (getenv("MCC_AST_EVAL_LADDER_GPU_DIAG"))
-			fprintf(stderr, "[ladder-gpu] init slot %d dev=%s qfam=%u score=%ld\n", made,
-							mcc_gpu.name, mcc_gpu.qfam, cand[ci].score);
+			fprintf(stderr,
+							"[ladder-gpu] init slot %d dev=%s qfam=%u score=%ld maxsbrange=%lu "
+							"freevram=%lu maxsb=%lu\n",
+							made, mcc_gpu.name, mcc_gpu.qfam, cand[ci].score,
+							mcc_gpu.maxsbrange, fv, (unsigned long)cand[ci].maxsb);
 		if (mcc_vk_create_device_slot())
 			made++;
 	}

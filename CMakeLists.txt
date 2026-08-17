@@ -3977,6 +3977,11 @@ if(MCC_BUILD_TESTS)
                         $<TARGET_FILE:slicerun>)
             set_tests_properties("gpu/device-cap" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
+            add_test(NAME "gpu/vram-budget"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu/run-gpu-vrambudget.sh"
+                        $<TARGET_FILE:slicerun>)
+            set_tests_properties("gpu/vram-budget" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
             foreach(_sk ops frame)
                 add_test(NAME "slice/${_sk}-lohi-fallback"
                     COMMAND "${CMAKE_COMMAND}"

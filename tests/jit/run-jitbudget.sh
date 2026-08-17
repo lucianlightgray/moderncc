@@ -23,7 +23,7 @@ trap 'rm -rf "$WORK"' EXIT
 echo 'int main(void){return 0;}' > "$WORK/hb.c"
 
 # host CPU count + rounded fractions the tool should compute
-NP=$(nproc 2>/dev/null || echo 1)
+NP=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 1)
 half=$(( (NP * 50 + 50) / 100 )); [ "$half" -lt 1 ] && half=1; [ "$half" -gt 64 ] && half=64
 quarter=$(( (NP * 25 + 50) / 100 )); [ "$quarter" -lt 1 ] && quarter=1; [ "$quarter" -gt 64 ] && quarter=64
 
@@ -66,9 +66,8 @@ if [ -z "$aw" ] || [ "$aw" -lt 1 ] || [ "$aw" -gt "$NP" ]; then
 	echo "FAIL jitbudget: --jit-cpu-budget=auto workers '$aw' not in [1,$NP] (nproc-loadavg)" >&2
 	exit 1
 fi
-# GPU auto is not yet implemented (live VRAM-budget detection is a later slice)
-err=$(MCC_JIT_BUDGET_DEBUG=1 "$MCC" -B"$BASE" -w -c "$WORK/hb.c" -o "$WORK/hb.o" --jit-gpu-budget=auto 2>&1 || true)
-want "gpu auto errors" "not yet implemented" "$err"
+got=$(budget --jit-gpu-budget=auto)
+want "gpu auto accepted (sized at device init)" "gpu-vram-pct=-2" "$got"
 
 # a bad budget is rejected, not silently ignored
 err=$("$MCC" -B"$BASE" -w -c "$WORK/hb.c" -o "$WORK/hb.o" --jit-gpu-budget=frob 2>&1 || true)
