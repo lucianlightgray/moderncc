@@ -50640,3 +50640,29 @@ host deps are absent and run their floor where present; selfhost-o3 + xsuite + x
 build. Verified on arm64: all cells register; selfhost-o3 passes; arm64pe-diff{,-kp} pass with capstone;
 c2/equiv + arm64pe-diff skip 77 without their deps. Default build otherwise untouched. **Source.** mac-arm64,
 2026-08-17.
+
+<a id="t-lin-10062-reverify-2026-08-17-mac-arm64"></a>
+
+## T-lin-10062 — byte-neutrality re-verified; the flip alone is net-negative (mac-arm64, 2026-08-17)
+
+Re-verified the DoD prerequisite on the current tree (arm64-Darwin): MCC_RIR_STAMP is byte-neutral.
+- `src/mcc.c` compiled by the built mcc at MCC_RIR_STAMP=0 vs =2 is BYTE-IDENTICAL (4,225,990 bytes, cmp
+  clean) — via tools/selfhost-o3.py with the env set (its flag/-B handling gets the includes right; a bare
+  `mcc -c src/mcc.c` needs -Iinclude and the build's generated headers).
+- `MCC_RIR_STAMP=2 ctest -R '^exec/'` = 362/362 green; `MCC_RIR_STAMP=2 ctest -R ast/o0-baseline` = 5/5 green.
+So the stamps change neither emitted bytes nor behaviour; the "re-verify before changing the default" step holds.
+
+Level semantics (mccrir.c): `if (rir_stamp_env)` writes direct stamps (Ref/Literal + deep); `if
+(rir_stamp_env >= 2)` additionally calls `rir_stamp_derive()` which types the DERIVED nodes (Binary et al.,
+the "39,640/39,643 read back untyped" the task cites) -> 100% typed at =2.
+
+BUT the task's own caveat bites: because exec + o0-baseline are byte-identical at =0 vs =2, the RIR lowering
+(mccrir.c:2126+, which reads ast_stype_*) does NOT use the derived types for codegen -- the only reader that
+changes with the stamps is the `[rir-untyped]` coverage report. So flipping the default to 2 would add the
+per-compile `rir_stamp_derive` cost FLEET-WIDE for a report metric only -- a net-negative the task explicitly
+warns about ("no emitter or dump reads ast_stype_* [meaningfully], so the consumer has to be written too").
+CLOSING T-lin-10062 therefore needs a VALUE-ADDING consumer of the derived types first (a type-driven
+optimization or a RIR type-consistency validator that USES ast_stype_* for a real check), THEN the flip; that
+consumer is an open-ended deep-RIR design, not landed here. This note de-risks the flip: the byte-neutrality
++ exec/o0 safety are current-tree-confirmed, so once a consumer exists the flip is a one-liner
+(mccrir.c:6549 default 0->2) with the verification already done. **Source.** mac-arm64, 2026-08-17.
