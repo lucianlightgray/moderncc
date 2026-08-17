@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30015   | 2026-08-17T19:32Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30023   | 2026-08-17T20:00Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T14:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50029   | 2026-08-17T19:53Z |
 
@@ -60,6 +60,30 @@
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
 
 ## Open — claimable
+- [ ] T-mac-30015 [S] Investigate: Mach-O emits NO unwind/CFI (no `.eh_frame`/`__compact_unwind`) — C++ EH / `_Unwind_*` / `cleanup` / crash-reporter backtraces have no data on macOS; scope a Mach-O unwind emitter; also DWARF ver=2-vs-5 + CodeView FP-only-locals asymmetries
+      OWNER: — | STATE: OPEN | SHA: 0500a4b1 | TS: 2026-08-17T20:00Z
+      REF: INVESTIGATIONS.md#macho-no-unwind | DEPS: —
+- [ ] T-mac-30016 [S] Investigate: `_Atomic` scalars under-aligned on i386/arm32 (`_Alignof(_Atomic long long)`==4 vs gcc 8) — silent struct-layout/libatomic ABI break + tearing hazard; confirm via `_Alignof` and add the alignment bump
+      OWNER: — | STATE: OPEN | SHA: 0500a4b1 | TS: 2026-08-17T20:00Z
+      REF: INVESTIGATIONS.md#atomic-32bit-align | DEPS: —
+- [ ] T-mac-30017 [S] Investigate: riscv64 backend gaps — inline-asm memory operands emit no base-register addressing (`lw rd, a0`), `constraint_priority` advertises unsatisfiable `A`/`S`, `code_reloc` -1 on compressed relocs it handles; harden riscv64 (+ arm `K`/`L` dead, arm32 no VFP class)
+      OWNER: — | STATE: OPEN | SHA: 0500a4b1 | TS: 2026-08-17T20:00Z
+      REF: INVESTIGATIONS.md#riscv64-backend-gaps | DEPS: —
+- [ ] T-mac-30018 [S] Investigate: opt-search nondeterminism cluster — memo/disk key omits result-changing flags (cross-config cache hits emit different objects), non-stable eviction comparator, pthreads pool races non-TLS emit globals (dev-gated); distinct mechanisms inside T-lin-10045
+      OWNER: — | STATE: OPEN | SHA: 0500a4b1 | TS: 2026-08-17T20:00Z
+      REF: INVESTIGATIONS.md#optsearch-determinism | DEPS: —
+- [ ] T-mac-30019 [S] Investigate: COFF/reloc emit format-disagreement — `STB_WEAK`→strong `EXTERNAL` collapse (multi-def errors, lost overrides), i386 `DIR32NB` RVA decoded as absolute, arm64 `BRANCH26` CALL/JUMP gated on host not target (clobbers X30)
+      OWNER: — | STATE: OPEN | SHA: 0500a4b1 | TS: 2026-08-17T20:00Z
+      REF: INVESTIGATIONS.md#coff-reloc-emit | DEPS: —
+- [ ] T-mac-30020 [S] Investigate: gate vacuity beyond RIR — `bitint-diff.py` (per-target ABI gate) is floorless AND wired into nothing, `defcheck def-verify` passes on empty glob, `asm_reloc_suffix` jmp tooth floorless, `opt_determinism` mutate swallows skip-77; wire + floor them
+      OWNER: — | STATE: OPEN | SHA: 0500a4b1 | TS: 2026-08-17T20:00Z
+      REF: INVESTIGATIONS.md#gate-vacuity | DEPS: —
+- [ ] T-mac-30021 [S] Investigate: GPU multi-device teardown/lifetime — single-slot `mcc_gpu_quiesce` destroys shared `VkInstance` under live devices, global `stranded` + slot-local teardown leaks all on one timeout, slot-local `reopen`; also SPIR-V f64 unpinned SignedZero/Inf/NaN + Metal-vs-Vulkan f64 divergence
+      OWNER: — | STATE: OPEN | SHA: 0500a4b1 | TS: 2026-08-17T20:00Z
+      REF: INVESTIGATIONS.md#gpu-multidevice-teardown | DEPS: —
+- [ ] T-mac-30022 [S] Investigate: preprocessor `#if`/builtin semantics — `_Float16` constants slip past the float-reject guard, 8 `__has_*`/`__is_target_*` builtins silently eval to 0 (unguarded target-conditional code always false), `#embed limit()/offset()` reject constant-expressions
+      OWNER: — | STATE: OPEN | SHA: 0500a4b1 | TS: 2026-08-17T20:00Z
+      REF: INVESTIGATIONS.md#pp-float16-in-if | DEPS: —
 - [ ] T-mac-30014 [S] `ast_fold_eval` folds unsigned `/`/`%` with signed `gen_opic_sdiv` — const-fold vs `gen_opic` divergence: deterministic wrong-code under `-fno-replay-fallback` at -O1+ (masked by replay-fallback in default builds); 2-line repro + 1-line fix + verification spec ready
       OWNER: — | STATE: OPEN | SHA: f90f27ce | TS: 2026-08-17T19:32Z
       REF: DETAILS.md#t-mac-30014-unsigned-const-fold-uses-signed-sdiv | DEPS: —
