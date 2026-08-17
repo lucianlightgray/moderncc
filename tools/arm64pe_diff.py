@@ -57,8 +57,11 @@ import tempfile
 try:
     import capstone
 except ImportError:
-    sys.stderr.write("error: capstone not installed. `pip install capstone`\n")
-    sys.exit(2)
+    # Exit 77 (ctest SKIP_RETURN_CODE) rather than fail: the disassembler is an
+    # optional host dep, so a host without it skips this cell instead of red.
+    sys.stderr.write("SKIP: capstone not installed (pip install capstone); "
+                     "needed to disassemble/byte-diff arm64-PE vs native-arm64\n")
+    sys.exit(77)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -422,6 +425,12 @@ def main(argv):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("sources", nargs="*", help="C source files to diff")
     ap.add_argument("--corpus", action="store_true", help="run the built-in corpus")
+    ap.add_argument("--known-positive", action="store_true",
+                    help="run the known-positive corpus (data-model-divergent "
+                         "sources with the datamodel directive STRIPPED) and "
+                         "REQUIRE a suspicious divergence; exit 0 iff the harness "
+                         "flags it (proves the cell is not blind), 1 if it stays "
+                         "clean")
     ap.add_argument("--mcc-elf", default="", help="path to arm64 ELF cross compiler")
     ap.add_argument("--mcc-pe", default="", help="path to arm64-PE cross compiler")
     ap.add_argument("--cflags", default="", help="extra flags for both compilers")
@@ -432,8 +441,12 @@ def main(argv):
     sources = list(args.sources)
     if args.corpus:
         sources += corpus_files()
+    if args.known_positive:
+        kp_dir = os.path.join(HERE, "arm64pe_corpus_kp")
+        sources += sorted(os.path.join(kp_dir, f) for f in os.listdir(kp_dir)
+                          if f.endswith(".c"))
     if not sources:
-        ap.error("no sources given; pass FILE.c or --corpus")
+        ap.error("no sources given; pass FILE.c, --corpus or --known-positive")
 
     mcc_elf = find_compiler("mcc-arm64", args.mcc_elf)
     mcc_pe = find_compiler("mcc-arm64-win32", args.mcc_pe)
@@ -466,6 +479,16 @@ def main(argv):
         total_sus += len(rep.suspicious)
 
     print("-" * 60)
+    if args.known_positive:
+        # inverted: the known-positive corpus MUST trip the harness, or the
+        # cell is blind and proves nothing (T-lin-10047 floor).
+        if total_sus:
+            print(f"RESULT: known-positive tripped the harness ({total_sus} "
+                  f"suspicious) -- the arm64-PE diff is not blind.")
+            return 0
+        print("RESULT: known-positive stayed CLEAN -- the harness is blind to a "
+              "data-model divergence it must catch.")
+        return 1
     if total_sus:
         print(f"RESULT: {total_sus} suspicious divergence(s) -- investigate.")
         return 1

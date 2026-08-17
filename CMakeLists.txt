@@ -3250,6 +3250,28 @@ if(MCC_ENABLE_CROSS)
                               mcc-${_t}-static-musl "mcc-${_t}-static-musl" _cross_defs_musl)
         endif()
     endforeach()
+
+    # T-lin-10047: register tools/arm64pe_diff.py as a live cell with a floor.
+    # It byte-diffs the arm64-PE (arm64-win32) mcc's emission against the proven
+    # native-arm64 ELF oracle, so it needs both cross compilers plus python's
+    # `capstone` disassembler.  The known-positive cell strips the datamodel
+    # opt-out marker from a `long`-width source and REQUIRES the harness to flag
+    # it -- proving the cell is not blind.
+    if(MCC_PYTHON3 AND ("arm64" IN_LIST MCC_X) AND ("arm64-win32" IN_LIST MCC_X))
+        add_test(NAME "cross/arm64pe-diff"
+            COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/arm64pe_diff.py"
+                    --corpus --mcc-elf "$<TARGET_FILE:mcc-arm64>"
+                    --mcc-pe "$<TARGET_FILE:mcc-arm64-win32>")
+        set_tests_properties("cross/arm64pe-diff" PROPERTIES
+            LABELS "native;cross" SKIP_RETURN_CODE 77)
+        add_test(NAME "cross/arm64pe-diff-known-positive"
+            COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/arm64pe_diff.py"
+                    --known-positive --mcc-elf "$<TARGET_FILE:mcc-arm64>"
+                    --mcc-pe "$<TARGET_FILE:mcc-arm64-win32>")
+        set_tests_properties("cross/arm64pe-diff-known-positive" PROPERTIES
+            LABELS "native;cross" SKIP_RETURN_CODE 77)
+        message(STATUS "mcc: registered cross/arm64pe-diff (+known-positive) codegen cell")
+    endif()
 endif()
 
 if(MCC_TARGETOS STREQUAL "WIN32" AND _libmcc_shared
