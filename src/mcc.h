@@ -291,6 +291,8 @@ struct SymAttr {
 			is_vector : 1,
 			is_wideint : 1,
 			is_bitint : 1,
+			is_wideint512 : 1,
+			is_bitint512 : 1,
 			tentative_array : 1,
 			tentative_incomplete : 1,
 			deprecated : 1,
@@ -1005,9 +1007,9 @@ struct MCCState {
 	int gen_complex_type_cache_n;
 	CType gen_vector_type_cache[64];
 	int gen_vector_type_cache_n;
-	CType gen_wide256_type_cache[2];
-	int gen_wide256_type_cache_n;
-	int gen_wide256_limb_tok[MCC_WIDE256_LIMBS];
+	CType gen_wideint_type_cache[4];
+	int gen_wideint_type_cache_n;
+	int gen_wideint_limb_tok[MCC_WIDE512_LIMBS];
 	CType gen_bitint128_type_cache[6];
 	int gen_bitint128_limb_tok[MCC_WIDE512_LIMBS];
 	Sym *gen_complex_call_ftype[4];
