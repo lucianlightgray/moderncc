@@ -50595,3 +50595,22 @@ Building on the corrected diagnosis (constants overwrite the import table). The 
 **Remaining in T-win-50003:** Bucket B's 3 jit/runtime reds (tls_threads `-run` SEGV etc.) and Bucket A (28 GPU-slice, device-blocked). Bucket B's 4 fp reds are now paid.
 
 **Source.** win-x64, 2026-08-17, `30db867a`.
+
+<a id="t-lin-10049-registered-2026-08-17-mac-arm64"></a>
+
+## T-lin-10049 DONE — flagsweep-cover/asm-gas-directives registered in must-run.txt (mac-arm64, 2026-08-17, 91418367)
+
+The two named skip-stubs "structurally incapable of failing" are now tracked. asm-gas-directives was
+already `registered` (permanent-77 carrying the integrated-assembler sgdtq/sidtq/swapgs blocker).
+flagsweep-cover/* (78 strength-3 covering-array rows from tests/optfire/cover3.txt) is opt-in behind
+MCC_FLAGSWEEP_FULL (default OFF -> mcc_skip_test), so nothing ran it and the family could vanish unnoticed;
+added `flagsweep-cover/0 | registered | ...` as a representative so its disappearance is a NOT-REGISTERED
+violation in ci/must-run-registered. CROSS-PLATFORM SAFE: the flagsweep section is `if(UNIX)` (CMakeLists
+~5556) so the cells register on mac+lin but not win — and win's ci/must-run-registered is selfhost-skip-
+stubbed (never checks the manifest, T-lin-10093 note), so a UNIX-only row breaks nothing. Verified green:
+ci/must-run-registered passes on arm64 with the new row. AUDIT (the DoD's "same pass"): the other live
+mcc_skip_test cells (gpu/*, ubsan/*, ast/o0-baseline*, wide256/gmp-diff, fmt/*census*, osx/headers-parse)
+are legitimate hardware/config/opt-in skips, and the must-run-worthy ones are already listed in must-run.txt;
+no other unnamed "hidden capability behind a can't-fail stub" beyond the two named. DoD ("both appear in
+tests/must-run.txt with a host predicate, or be deleted") satisfied via registration. **Source.** mac-arm64,
+2026-08-17.
