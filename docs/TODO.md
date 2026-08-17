@@ -51,9 +51,6 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [x] T-win-50022 [S] Multi-GPU: hold ALL present GPUs concurrently and route dispatches, not one singleton device
-      OWNER: win-x64 | STATE: DONE | SHA: 89f717c6 | TS: 2026-08-17T00:45Z
-      REF: DETAILS.md#t-win-50022-slice-1b-done-hold-all-plus-routing | DEPS: T-lin-10392[S] DONE | NOTE: DONE — slice 1a (per-device mcc_gpu/mcc_vkr arrays behind a shared VkInstance, e7cda0d7) + slice 1b (hold every capability-passing device best-first + routing API mcc_gpu_device_count()/mcc_gpu_route(i), 5f27405f) + the routing no-op fix (89f717c6: init re-check reset cur to 0 — caught by slice/route distinctness). VERIFIED: dispatches to EACH held device proven DISTINCT on RTX 2060 + AMD Radeon while both stay resident; slice/route + slice/route-known-positive GREEN in the 9588-cell §8 suite; gate-contract row proved; gpu/f64cross regressions clean. Routing API is the LIVE CONTRACT for lin f64cross adoption (supersedes quiesce/reopen for device selection; reopen retained for loss recovery). Follow-ons deliberately NOT this task: round-robin/explicit policy + concurrent tuple-split (gated on T-lin-10040/10081). Archive at next checkpoint.
 - [ ] T-win-50025 [X] win-x64 — PE ms-bitfield promotion: bank the Windows test-expectation arms (fallout of the intended 8d4f0a80 ABI flip)
       OWNER: — | STATE: OPEN | SHA: 12e0077b | TS: 2026-08-17T00:35Z
       REF: DETAILS.md#t-win-50025-pe-bitfield-promotion-test-arms | DEPS: — | NOTE: pays ~44 win suite reds (exec*/integer_promotion + exec*/bitfield_width64 expect_win32 arms, diff3/integer_promotion req gate, mcctest full_language differential, smoke/divergence bfsweep bank). mcc==cl verified; decide the u:31 cl-vs-gcc delta in-task.
