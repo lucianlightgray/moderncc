@@ -2615,6 +2615,11 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 			MccCoffRel *rl = (MccCoffRel *)(rels + (size_t)r * COFF_SIZEOF_RELOC);
 			unsigned long roff = rl->VirtualAddress + smap[i + 1].offset;
 			int sym = (rl->SymbolTableIndex < (DWORD)nsym) ? old_to_new[rl->SymbolTableIndex] : 0;
+			if (roff < smap[i + 1].offset || roff >= s->data_allocated) { MCC_TRACE("br\n");
+				mcc_free(rels);
+				mcc_error_noabort("COFF: relocation offset outside its section in %s", s->name);
+				goto the_end;
+			}
 			int etype = 0, skip = 0;
 			addr_t addend = 0;
 

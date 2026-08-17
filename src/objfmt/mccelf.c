@@ -3812,7 +3812,13 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MC
 	data = mcc_malloc(size);
 	if (full_read(fd, data, size) != size)
 		{ MCC_TRACE("br\n"); goto invalid; }
+	if (size < entrysize)
+		{ MCC_TRACE("br\n"); goto invalid; }
 	nsyms = get_be(data, entrysize);
+	if (nsyms < 0 ||
+			(unsigned long long)nsyms * (unsigned)entrysize >
+					(unsigned long long)size - (unsigned)entrysize)
+		{ MCC_TRACE("br\n"); goto invalid; }
 	ar_index = data + entrysize;
 	ar_names = (char *)ar_index + nsyms * entrysize;
 
@@ -3820,6 +3826,9 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MC
 		bound = 0;
 		for (p = ar_names, i = 0; i < nsyms; i++, p += strlen(p) + 1) { MCC_TRACE("br\n");
 			Section *s = symtab_section;
+			if (p >= (const char *)data + size ||
+					!memchr(p, '\0', (const char *)data + size - p))
+				{ MCC_TRACE("br\n"); goto invalid; }
 			sym_index = find_elf_sym(s, p);
 #if defined MCC_TARGET_PE && defined MCC_TARGET_I386
 			if (!sym_index && p[0] == '_' && !strchr(p, '@'))

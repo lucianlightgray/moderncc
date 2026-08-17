@@ -9001,6 +9001,16 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
     endif()
 
     if(UNIX)
+        add_test(NAME objsec-reject-malformed
+            COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/objsec/reject-malformed.sh"
+                    "$<TARGET_FILE:mcc>" "${MCC_CROSS_DIR}"
+                    "${CMAKE_BINARY_DIR}/objsec-reject-malformed-work")
+        set_tests_properties(objsec-reject-malformed PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "objsec" SKIP_RETURN_CODE 77
+            TIMEOUT 120)
+    endif()
+
+    if(UNIX)
         foreach(_ma x86_64 arm64)
             add_test(NAME macho-got-sub-${_ma}
                 COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/got-sub.sh"
