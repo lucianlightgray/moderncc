@@ -3357,7 +3357,7 @@ ST_FUNC ssize_t full_read(int fd, void *buf, size_t count) { MCC_TRACE("enter\n"
 	char *cbuf = buf;
 	size_t rnum = 0;
 	while (1) { MCC_TRACE("br\n");
-		ssize_t num = read(fd, cbuf, count - rnum);
+		ssize_t num = mcc_fd_read(fd, cbuf, count - rnum);
 		if (num < 0)
 			{ MCC_TRACE("br\n"); return num; }
 		if (num == 0)
@@ -3371,7 +3371,7 @@ ST_FUNC void *load_data(int fd, unsigned long file_offset, unsigned long size) {
 	void *data;
 
 	data = mcc_malloc(size);
-	lseek(fd, file_offset, SEEK_SET);
+	mcc_fd_lseek(fd, file_offset, SEEK_SET);
 	full_read(fd, data, size);
 	return data;
 }
@@ -3412,7 +3412,7 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 	ElfW_Rel *rel;
 	Section *s;
 
-	lseek(fd, file_offset, SEEK_SET);
+	mcc_fd_lseek(fd, file_offset, SEEK_SET);
 	if (mcc_object_type(fd, &ehdr) != AFF_BINTYPE_REL)
 		{ MCC_TRACE("br\n"); goto invalid; }
 	if (ehdr.e_ident[5] != ELFDATA2LSB ||
@@ -3520,7 +3520,7 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 		sm_table[i].s = s;
 		if (sh->sh_type != SHT_NOBITS && size) { MCC_TRACE("br\n");
 			unsigned char *ptr;
-			lseek(fd, file_offset + sh->sh_offset, SEEK_SET);
+			mcc_fd_lseek(fd, file_offset + sh->sh_offset, SEEK_SET);
 			ptr = s->data + offset;
 			full_read(fd, ptr, size);
 		}
@@ -3667,7 +3667,7 @@ static unsigned long long get_be(const uint8_t *b, int n) { MCC_TRACE("enter\n")
 static int read_ar_header(int fd, int offset, ArchiveHeader *hdr) { MCC_TRACE("enter\n");
 	char *p, *e;
 	int len;
-	lseek(fd, offset, SEEK_SET);
+	mcc_fd_lseek(fd, offset, SEEK_SET);
 	len = full_read(fd, hdr, sizeof(ArchiveHeader));
 	if (len != sizeof(ArchiveHeader))
 		{ MCC_TRACE("br\n"); return len ? -1 : 0; }
@@ -3951,14 +3951,14 @@ ST_FUNC int mcc_support_arch_match(MCCState *s1, const char *filename) { MCC_TRA
 		int fd, typ, res;
 		ElfW(Ehdr) ehdr;
 		snprintf(buf, sizeof buf, "%s/%s", s1->library_paths[i], filename);
-		fd = open(buf, O_RDONLY | O_BINARY);
+		fd = mcc_winfd_open_ro(buf);
 		if (fd < 0)
 			{ MCC_TRACE("br\n"); continue; }
 		typ = mcc_object_type(fd, &ehdr);
 		if (typ == AFF_BINTYPE_REL) { MCC_TRACE("br\n");
 			res = ehdr.e_ident[5] == ELFDATA2LSB &&
 						ehdr.e_machine == EM_MCC_TARGET ? 1 : 0;
-			close(fd);
+			mcc_fd_close(fd);
 			return res;
 		}
 		if (typ == AFF_BINTYPE_AR) { MCC_TRACE("br\n");
@@ -3974,7 +3974,7 @@ ST_FUNC int mcc_support_arch_match(MCCState *s1, const char *filename) { MCC_TRA
 				if (strcmp(hdr.ar_name, "/") && strcmp(hdr.ar_name, "//") &&
 						strcmp(hdr.ar_name, "/SYM64/")) { MCC_TRACE("br\n");
 					ElfW(Ehdr) me;
-					lseek(fd, off, SEEK_SET);
+					mcc_fd_lseek(fd, off, SEEK_SET);
 					if (mcc_object_type(fd, &me) == AFF_BINTYPE_REL) { MCC_TRACE("br\n");
 						res = me.e_ident[5] == ELFDATA2LSB &&
 									me.e_machine == EM_MCC_TARGET ? 1 : 0;
@@ -3983,10 +3983,10 @@ ST_FUNC int mcc_support_arch_match(MCCState *s1, const char *filename) { MCC_TRA
 				}
 				off = (off + strtol(hdr.ar_size, NULL, 0) + 1) & ~1UL;
 			}
-			close(fd);
+			mcc_fd_close(fd);
 			return res;
 		}
-		close(fd);
+		mcc_fd_close(fd);
 	}
 	return -1;
 }
