@@ -50838,3 +50838,57 @@ BOTTOM LINE for lin: _BitInt(512) works, wide-int values byte-identical, layout 
 **embed-JIT baking recipe (for mac's wine output-parity cross-check, as requested):** `mcc -O1 --embed-jit --jit-functions fib fib.c -o fib.exe` bakes on win when the named function is a real recursive/non-trivial fn (NOT `main` — `main` gave "no functions were JIT-baked"). The engine embeds only when >=1 fn bakes (mccjit_embed.c:2184 `mccjit_embed_fns` non-null); check via binary size (~1.3MB w/ engine vs 4KB AOT) + `objdump -p` showing ucrt api-sets. CAVEAT (reaffirmed): wine will NOT reproduce the fastfail (returns EBADF like POSIX), so a clean wine run proves output-correctness, not crash-absence.
 
 **Merge decision (open):** fdshim is behavior-preserving (dispatch design; non-PE = plain read/lseek/close; source/pipe untouched) and fixes a real bug, but smoke/engines stays red on 2b, so it doesn't flip a registered cell green alone. Before merging to main: run the full suite on the branch and confirm no regression vs the main baseline, and add a crash-fix smoke cell (recursive-fib embed-JIT rc=0). Then either merge 2a alone or bundle with the 2b PE-bake ungating.
+
+<a id="t-mac-30014-unsigned-const-fold-uses-signed-sdiv"></a>
+## T-mac-30014 — `ast_fold_eval` folds unsigned `/` and `%` with signed `gen_opic_sdiv` (found + reproduced mac-arm64, 2026-08-17)
+
+**Class.** Two-path constant-eval divergence — the AST template const-folder disagrees with the authoritative CST folder on unsigned division. Same family as the CLOSED "`ast_fold_rec` folded at the LEFT operand's type instead of the common type" width bug (this file, heading near L13050), and is a *distinct, unaddressed residual* of that same function. Latent wrong-code masked by the byte-`faithful` replay fallback; **deterministically live under `-fno-replay-fallback`**.
+
+**Defect.** `ast_fold_eval` (`src/mccast.c:6988-6999`) lowers `'/'` → `gen_opic_sdiv(l1,l2)` and `'%'` → `l1 - l2*gen_opic_sdiv(l1,l2)` **unconditionally**, ignoring `VT_UNSIGNED` in `tt`. `tt` *does* carry the sign: it is computed with the usual arithmetic conversions just above (`src/mccast.c:7049-7053`, which propagate `VT_UNSIGNED`). `gen_opic_sdiv` (`src/mccgen.c:3542`) is signed magnitude division. The authoritative CST folder `gen_opic` (`src/mccgen.c:3723-3746`) instead splits unsigned into `TOK_UDIV`/`TOK_UMOD` doing plain `l1/l2` / `l1%l2`. The AST represents unsigned `/`,`%` as op `'/'`/`'%'` **+ `VT_UNSIGNED` type** (not `TOK_UDIV`) — confirmed by `ast_narrow_ranged_ok` (`src/mccast.c:9207-9211`) which handles `case '/'` gated on `VT_UNSIGNED` — and `ast_fold_op_ok` (`src/mccast.c:7017-7018`) accepts `'/'`/`'%'`. So an unsigned-division literal node is fold-eligible and reaches the signed evaluator.
+
+**Reproduced — deterministic, mac-arm64, `cmake-macos/mcc`, 2026-08-17.** Reproducer:
+
+```c
+unsigned long long d(void){ return -9223372036854775808ULL / 2ULL; }
+unsigned long long m(void){ return -9223372036854775807ULL % 10ULL; }
+/* correct:   d = 4611686018427387904  (0x4000000000000000),        m = 9
+   mcc emits: d = 13835058055282163712 (0xC000000000000000 = -2^63/2 signed),
+              m = 18446744073709551609 (0xFFFFFFFFFFFFFFF9 = -7 signed)          */
+```
+
+Why this shape triggers it (and plain `HUGE/2ULL` does not): `ast_fold_rec` recurses **children-first**, so the unary-minus operand `-9223372036854775808ULL` — lowered `vpushi(0); gen_op('-')` — survives parse-folding into the AST as an unfolded `Binary('-', Literal 0, Literal 2^63)`, is folded to a `Literal`, and then the now-`Literal`/`Literal` **unsigned** division is folded by the signed path. A direct `18446744073709551615ULL / 2ULL` is parse-folded by the front end before templates run and is unaffected.
+
+Trigger matrix (10/10 deterministic; `d()` should be `4611686018427387904`):
+
+| config | `d()` | verdict |
+| --- | --- | --- |
+| `-O0` (±`-fno-replay-fallback`) | 4611686018427387904 | correct — templates off |
+| `-O1 -fno-replay-fallback` | 13835058055282163712 | **WRONG** |
+| `-O2 -fno-replay-fallback` | 13835058055282163712 | **WRONG** |
+| `-O3 -fno-replay-fallback` | 13835058055282163712 | **WRONG** |
+| `-O2` (default; fallback ON) | 4611686018427387904 | correct — **masked** by replay-fallback |
+| `-O2 -fno-replay-fallback -fno-reemit-templates` | 4611686018427387904 | correct — **proves** the template fold is the sole cause |
+
+Ablation: `-fno-reemit-templates` alone fixes it, isolating the path `ast_run_templates` → `ast_fold_rec` → `ast_fold_eval`; the emitted wrong value is bit-exact `gen_opic_sdiv`'s signed result.
+
+**Exposure.** Masked in default builds (`replay-fallback` is default-ALWAYS-on, catches the byte divergence, reverts to parser output). **Live under the project's own `-fno-replay-fallback` correctness gate** — an *uncovered new golden regression* there (no current test divides unsigned literals through the fold) — and would ship in default builds if/when the fallback census is driven to zero and the mask retired (the stated roadmap; see the "driving the census to zero" note in the CLOSED width-bug section).
+
+**Fix (make the two folders agree; mirror `gen_opic`).** In `ast_fold_eval` (`src/mccast.c`):
+
+```c
+case '/':
+    if (l2 == 0) { *ok = 0; return 0; }
+    return (tt & VT_UNSIGNED) ? l1 / l2 : gen_opic_sdiv(l1, l2);
+case '%':
+    if (l2 == 0) { *ok = 0; return 0; }
+    return (tt & VT_UNSIGNED) ? l1 % l2 : l1 - l2 * gen_opic_sdiv(l1, l2);
+```
+
+The shift arms already respect the operand width via `shm`; only div/mod ignore the sign. `l1`/`l2` are already stored full-width by `value64`, so unsigned `l1 / l2` / `l1 % l2` is directly correct.
+
+**Verification spec (§8) — owning platform, native.**
+1. **Regression fixture.** Add the reproducer above as an exec-corpus test (e.g. `tests/exec/uns_constfold_div.c`, or the repo's convention) with a `main` printing `d` and `m` and expected stdout `d=4611686018427387904` / `m=9`. It must pass under **both** default and `-fno-replay-fallback` at `-O0/-O1/-O2/-O3`. Pre-fix it FAILS under `-fno-replay-fallback` at `-O1+` (`d=13835058055282163712`); post-fix it passes. Manual gate: `mcc -O2 -fno-replay-fallback uns_constfold_div.c -o t && ./t`.
+2. **Full native suite** green on the owning platform — the change only narrows a wrong signed fold to the correct unsigned one, so no regression is expected.
+3. **Golden set (recommended).** Extend the `-fno-replay-fallback` golden/regression set so this class is guarded going forward, preventing silent reintroduction when the mask is eventually removed.
+
+**Source.** mac-arm64, 2026-08-17; found by a parallel subsystem audit, reproduced + ablated on `cmake-macos/mcc`. Cross-checked read-only against `gen_opic` (`src/mccgen.c:3542`, `3723-3746`) and the AST op representation (`src/mccast.c:9207`). No code change pushed — OPEN for implementation.
