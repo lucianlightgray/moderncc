@@ -20822,6 +20822,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			if (ast_rsec)
 				{ MCC_TRACE("br\n"); ast_rsec->data_offset = ast_reloc0_sv; }
 			nocode_wanted = 0;
+			mcc_state->cg_func_alloca = 0;
 			unsigned char ast_sv_warn = mcc_state->warn_none;
 			mcc_state->warn_none = 1;
 			ast_rp_bsym = ast_rp_csym = NULL;
