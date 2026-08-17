@@ -9,7 +9,7 @@
 | lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T00:53Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50028   | 2026-08-17T01:45Z |
 =======
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30009   | 2026-08-17T00:45Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30009   | 2026-08-17T01:10Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10394   | 2026-08-17T00:33Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50027   | 2026-08-17T00:35Z |
 >>>>>>> Stashed changes
@@ -75,7 +75,7 @@
 ## Open — claimable
 - [ ] T-mac-30008 [S] kept_coverage fell 1.7pp across the 2026-08-16 landings, and three census cells are red until it is attributed
       OWNER: — | STATE: OPEN | SHA: 8d054c5d | TS: 2026-08-17T00:45Z
-      REF: DETAILS.md#t-lin-10015-full-suite-outcome-and-the-open-rir-attribution | DEPS: — | NOTE: rir-coverage FAILS on arm64-Darwin at the current tree: kept_coverage 93.7977→92.1194 (-O1) / 93.9276→92.2862 (-O2/-O3), ~1.7pp of self-corpus body bytes newly shipping unoptimized; rir-coverage-census + rir-nofb-probe-self red in the same family. THREE candidate causes landed the same day, UNATTRIBUTED: mac's 8d054c5d (gen_wide256_op vstack reshape; deleted wide256_call3 shows in the banked-body diff), lin's sso vstore swap-before-materialize reorder (touches every store path), win's 12e0077b (i256 literal suffix, mccpp.c). FIRST SLICE = attribution (build each parent SHA, read kept_coverage, name the commit), THEN decide regression-fix vs re-bank. Do NOT re-bank the floor first — a 1.7pp kept-coverage drop may be a real optimizer regression. Also folds in: fmt/census-bank(+KP) re-bank owed for win's 12e0077b (+1 snprintf in mccpp.c — mechanical once the rir question is settled, same commit is fine).
+      REF: DETAILS.md#t-mac-30008-arm64-isolation-mac-slice-exculpated-window-is-aug-15-to-16 | DEPS: — | NOTE: rir-coverage FAILS on arm64-Darwin: kept_coverage 93.7977→92.1195 (-O1) / 93.9276→92.2862 (-O2/-O3), ~1.7pp of self-corpus body bytes newly unoptimized; rir-coverage-census + rir-nofb-probe-self same family. ATTRIBUTION NARROWED 2026-08-17: ALL THREE same-day suspects CLEARED — lin's sso x86_64-exculpated (+0.017pp, f0c7bf58 anchor), mac's 8d054c5d revert-probed on arm64 (drop persists identically without it), win's 12e0077b is lexer-side. Drop is ARM64-ONLY and entered 2026-08-15T05:00Z (last green arm64 read, 408a8979) → 2026-08-16. Prime suspect now mac's _BitInt slice 1 (5dbbe6ba/e3b86293 — core VT_BITFIELD tagging). NEXT SLICE: bisect on an arm64 box (build + 13s cell per step, ~8 steps), name the commit, THEN regression-fix vs re-bank — do NOT re-bank first. Separate + mechanical: fmt/census-bank(+KP) re-bank for win's 12e0077b (+1 mccpp.c snprintf; win pinged).
 >>>>>>> Stashed changes
 - [ ] T-win-50023 [S] arm64-Windows `__float128` ABI: mcc's arm64 __float128 codegen mismatches the arm64-Windows reference
       OWNER: — | STATE: OPEN | SHA: 5f27405f | TS: 2026-08-16T15:42Z
