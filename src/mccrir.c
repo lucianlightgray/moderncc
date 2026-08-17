@@ -2838,11 +2838,16 @@ static void rir_op_effect(const RirOp *ro) { MCC_TRACE("enter\n");
 		}
 		break;
 	}
+#ifdef MCC_IR_HAVE_BSWAP
+	case IR_OP_BSWAP:
+#endif
 #ifdef MCC_IR_HAVE_X86_PRIMS
 	case IR_OP_SIGNBIT:
 	case IR_OP_FFS:
 	case IR_OP_BITSCAN:
-	case IR_OP_BSWAP: {
+#endif
+#if defined(MCC_IR_HAVE_BSWAP) || defined(MCC_IR_HAVE_X86_PRIMS)
+	{
 		AstLocal v = rir_shn ? rir_pop() : AST_NONE;
 		AstLocal n;
 		if (v == AST_NONE) { MCC_TRACE("br\n");

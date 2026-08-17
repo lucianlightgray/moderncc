@@ -5613,9 +5613,11 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		} else if (uop == AST_OP_VASTART) { MCC_TRACE("br\n");
 			gen_va_start();
 #endif
-#ifdef MCC_IR_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_BSWAP
 		} else if (uop == AST_OP_BSWAP) { MCC_TRACE("br\n");
 			gen_bswap((int)ast_ival(a, n));
+#endif
+#ifdef MCC_IR_HAVE_X86_PRIMS
 		} else if (uop == AST_OP_SIGNBIT) { MCC_TRACE("br\n");
 			gen_signbit((int)ast_ival(a, n));
 		} else if (uop == AST_OP_FFS) { MCC_TRACE("br\n");

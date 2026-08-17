@@ -2424,6 +2424,21 @@ ST_FUNC void gen_fabs(void) { MCC_TRACE("enter\n");
 	o(0x1e20c000u | dbl << 22 | d | a << 5);
 }
 
+/* Byte-reverse the integer on top of the stack in place, using AArch64's native
+ * REV family (T-mac-30012). This is the inline path gen_sso_bswap and
+ * __builtin_bswap take when MCC_IR_HAVE_BSWAP is set, so the byte-swap is
+ * captured as an AST_OP_BSWAP node and replays faithfully (the helper-call form
+ * was invisible to the RIR replay -> reverse-scalar_storage_order miscompiled
+ * under -fno-replay-fallback). Rd and Rn are the same register (in place). */
+void gen_bswap(int size) { MCC_TRACE("enter\n");
+	uint32_t r = intr(gv(MCC_RC_INT));
+	if (size == 2)
+		{ MCC_TRACE("br\n"); o(0x5ac00400u | r | r << 5); return; } /* REV16 Wr, Wr */
+	if (size == 8)
+		{ MCC_TRACE("br\n"); o(0xdac00c00u | r | r << 5); return; } /* REV   Xr, Xr */
+	o(0x5ac00800u | r | r << 5);                                   /* REV   Wr, Wr */
+}
+
 ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
 	uint32_t a, d, dbl;
 	gv(MCC_RC_FLOAT);

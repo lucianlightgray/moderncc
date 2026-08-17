@@ -8,6 +8,14 @@
 #ifdef MCC_TARGET_X86_64
 #define MCC_IR_HAVE_X86_PRIMS 1
 #endif
+/* BSWAP is captured/replayed as an AST_OP_BSWAP node on every target with a
+ * native inline byte-reverse, not just x86_64: arm64 has REV/REV16 (T-mac-30012).
+ * This is a strict subset of MCC_IR_HAVE_X86_PRIMS (which also carries
+ * signbit/ffs/bitscan, still x86_64-only) so the reverse-scalar_storage_order
+ * byte-swap replays faithfully on arm64. */
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
+#define MCC_IR_HAVE_BSWAP 1
+#endif
 #ifdef MCC_TARGET_NATIVE_STRUCT_COPY
 #define MCC_IR_HAVE_STRUCT_COPY 1
 #endif
@@ -91,7 +99,7 @@ void ir_cap_gen_round(int mode);
 #ifdef MCC_IR_HAVE_COPYSIGN
 void ir_cap_gen_copysign(void);
 #endif
-#ifdef MCC_IR_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_BSWAP
 void ir_cap_gen_bswap(int size);
 #endif
 void ir_cap_gen_bit_builtin(int bop, int bw);
@@ -185,7 +193,7 @@ void ir_cap_gen_va_arg(CType *t);
 #ifdef MCC_IR_HAVE_COPYSIGN
 #define gen_copysign() ir_cap_gen_copysign()
 #endif
-#ifdef MCC_IR_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_BSWAP
 #define gen_bswap(s) ir_cap_gen_bswap((s))
 #endif
 #define gen_bit_builtin(a, b) ir_cap_gen_bit_builtin((a), (b))
@@ -774,7 +782,9 @@ static int bitscan_inline_on(void) { MCC_TRACE("enter\n");
 	}
 	return on;
 }
+#endif
 
+#if defined(MCC_IR_HAVE_BSWAP)
 static int bswap_inline_on(void) { MCC_TRACE("enter\n");
 	static int on = -1;
 	if (on < 0) { MCC_TRACE("br\n");
@@ -5816,7 +5826,7 @@ static void gen_sso_bswap(int size) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); at.t = VT_LLONG | VT_UNSIGNED; btok = TOK_builtin_bswap64; }
 	at.bp = at.bs = 0;
 	gen_cast(&at);
-#if defined(MCC_TARGET_X86_64)
+#if defined(MCC_IR_HAVE_BSWAP)
 	if (bswap_inline_on()) { MCC_TRACE("br\n");
 		gen_bswap(size);
 		vtop->type = save;

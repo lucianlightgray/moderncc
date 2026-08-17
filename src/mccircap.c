@@ -432,8 +432,10 @@ IR_CAP_W1(gen_round, IR_OP_ROUND)
 #ifdef MCC_IR_HAVE_COPYSIGN
 IR_CAP_W0(gen_copysign, IR_OP_COPYSIGN)
 #endif
-#ifdef MCC_IR_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_BSWAP
 IR_CAP_W1(gen_bswap, IR_OP_BSWAP)
+#endif
+#ifdef MCC_IR_HAVE_X86_PRIMS
 IR_CAP_W1(gen_signbit, IR_OP_SIGNBIT)
 IR_CAP_W1(gen_ffs, IR_OP_FFS)
 IR_CAP_W2(gen_bitscan, IR_OP_BITSCAN)
@@ -725,8 +727,10 @@ static void ir_cap_issue(IrCapOp *o) { MCC_TRACE("enter\n");
 #ifdef MCC_IR_HAVE_COPYSIGN
 	case IR_OP_COPYSIGN: (gen_copysign)(); break;
 #endif
-#ifdef MCC_IR_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_BSWAP
 	case IR_OP_BSWAP: (gen_bswap)(o->a0); break;
+#endif
+#ifdef MCC_IR_HAVE_X86_PRIMS
 	case IR_OP_SIGNBIT: (gen_signbit)(o->a0); break;
 	case IR_OP_FFS: (gen_ffs)(o->a0); break;
 	case IR_OP_BITSCAN: (gen_bitscan)(o->a0, o->a1); break;
