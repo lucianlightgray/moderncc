@@ -50614,3 +50614,29 @@ are legitimate hardware/config/opt-in skips, and the must-run-worthy ones are al
 no other unnamed "hidden capability behind a can't-fail stub" beyond the two named. DoD ("both appear in
 tests/must-run.txt with a host predicate, or be deleted") satisfied via registration. **Source.** mac-arm64,
 2026-08-17.
+
+<a id="t-lin-10047-registered-2026-08-17-mac-arm64"></a>
+
+## T-lin-10047 DONE — all five figure-tools registered with floors (mac-arm64, 2026-08-17)
+
+The five tools that publish figures the board quotes now each have a live cell with an anti-vacuity
+floor. Two were already registered by prior work; three landed this session:
+- **xsuite.py** -> `xsuite/report` (tests/xsuite/report-check.sh vs report-golden.txt; golden floor).
+- **xoracle.py** -> `jit/xoracle-conformance` + `jit/xoracle-coverage` + `jit/xoracle-known-positive` (floor).
+- **arm64pe_diff.py** -> `cross/arm64pe-diff` + `cross/arm64pe-diff-known-positive` (9c4bc1a0). Under
+  MCC_ENABLE_CROSS (builds mcc-arm64 + mcc-arm64-win32); byte-diffs arm64-PE emission vs the native-arm64
+  ELF oracle. Added a `--known-positive` mode + tools/arm64pe_corpus_kp/long_width_unmarked.c (LLP64/LP64
+  long-width shapes with the datamodel opt-out marker STRIPPED) that REQUIRES the harness to flag it =
+  the floor. capstone optional -> exit 77 skip when absent, live when present. Verified on arm64.
+- **selfhost-o3.py** -> `selfhost-o3` (4b4c5206). Self-hosts mcc at -O3 and checks it with fib(10)==55 +
+  a quicksort golden (built-in floor). Fixed its out-of-tree test-compile to pass -B<build-dir> (was
+  failing "libmccrt.a not found" on mac).
+- **c2_equiv.sh** -> `c2/equiv` (0ad22d58). Arena-vs-parser semantic differential; de-conflated UNMEASURABLE
+  (now a skip, per-run `measured` counter -> exit 77 when nothing measurable) from a real arena/parser
+  divergence (exit 1); its refuse-zero-pass guard is the floor. SKIP_RETURN_CODE 77.
+
+arm64pe_diff (capstone) and c2/equiv (cross compilers / non-empty exec population) skip cleanly where their
+host deps are absent and run their floor where present; selfhost-o3 + xsuite + xoracle run on the native
+build. Verified on arm64: all cells register; selfhost-o3 passes; arm64pe-diff{,-kp} pass with capstone;
+c2/equiv + arm64pe-diff skip 77 without their deps. Default build otherwise untouched. **Source.** mac-arm64,
+2026-08-17.
