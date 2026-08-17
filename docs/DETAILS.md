@@ -50192,3 +50192,19 @@ faithful); exec 361/361; o0-baseline green (only sso.c changed, helper->REV, re-
 x86_64 path byte-identical (prims + the bswap subset both still cover x86_64). Fleet close of
 T-win-50028 = lin's A+C (x86_64) + this B (arm64); lin re-verifying x86_64 under 63b9ecc9 before
 closing the parent. **Source.** mac-arm64, 2026-08-17, at 63b9ecc9.
+### T-win-50003 emit-size — second fix attempt also insufficient; the committed body predates the search phase
+
+Tried a second, broader fix: save `ast_fconst_n` before the search (ast_func_end ~21124) and
+restore it after all search/roi/slice measurements (before the committed-emit region), so the
+committed replay re-emits the function's constants. fps.exe STILL crashes. Reason: per the
+MCC_DBG_FE trace, `main` reaches its keep decision (~21671) with rodata UNCHANGED from entry, and
+the body-emitting `ast_replay_body` for the kept body runs at ~20965 — BEFORE the search block
+(~21125). So the constant reuse that strands rodata happens in an EARLIER replay phase than where I
+restored the pool. The AST_PF_EMIT macro's `ast_fconst_i = (any transform) ? ast_fconst_n : 0`
+(line ~21257) is the reuse knob, but the committed path for a searched function threads through
+multiple `ast_replay_body` sites (20965 first-emit, the 21258-21285 AST_PF_EMIT macro, the
+21600-21616 jit-dispatch/spec path) with their own fconst_i policies. A correct fix must make the
+FINAL kept emission re-emit (or re-pool at the committed rodata offset) the searched function's
+constants, across whichever of those phases produced the kept bytes — established by tracing which
+ast_replay_body's output survives to `keep=1`. All probes reverted; main green. **Source.** win-x64,
+2026-08-17.
