@@ -7129,6 +7129,13 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                     -DWORK=${CMAKE_BINARY_DIR}/embedjit
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embedjit_nobake_warn.cmake")
                 set_tests_properties(jit/embed-nobake-warn PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+                if(MCC_TARGETOS STREQUAL "WIN32")
+                    add_test(NAME jit/embed-libc-override COMMAND "${CMAKE_COMMAND}"
+                        -DMCC=${_mcc_exe}
+                        -DWORK=${CMAKE_BINARY_DIR}/embedjit
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embedjit_libc_override_link.cmake")
+                    set_tests_properties(jit/embed-libc-override PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+                endif()
             endif()
         else()
             mcc_skip_test(mcctest-embedjit "the embedded JIT is not built into this configuration (needs -DMCC_EMBED_JIT=ON)")

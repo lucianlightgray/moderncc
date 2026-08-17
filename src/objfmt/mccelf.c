@@ -26,6 +26,8 @@ static const char rdata[] = ".rdata";
 static const char rdata[] = ".data.ro";
 #endif
 
+static int ld_alacarte_member;
+
 #if MCC_TARGET_UNIX
 static char *musl_elfinterp(MCCState *s) { MCC_TRACE("enter\n");
 	const char *arch;
@@ -648,6 +650,11 @@ ST_FUNC int set_elf_sym(Section *s, addr_t value, unsigned long size,
 			} else if (s->sh_flags & SHF_DYNSYM) { MCC_TRACE("br\n");
 			} else if (esym->st_other & ST_ASM_SET) { MCC_TRACE("br\n");
 				goto do_patch;
+#ifdef MCC_TARGET_PE
+			} else if (ld_alacarte_member) { MCC_TRACE("br\n");
+				if (s1->verbose == 2)
+					{ MCC_TRACE("br\n"); printf("   (archive def of '%s' yields to earlier definition)\n", name); }
+#endif
 			} else { MCC_TRACE("br\n");
 				if (g_debug & MCC_DBG_SYM)
 					{ MCC_TRACE("br\n"); printf("new_bind=%x new_shndx=%x new_vis=%x old_bind=%x old_shndx=%x old_vis=%x\n",
@@ -3799,7 +3806,9 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MC
 	ArchiveHeader hdr;
 	unsigned long long *pulled = NULL;
 	int npulled = 0;
+	int saved_alacarte = ld_alacarte_member;
 
+	ld_alacarte_member = 1;
 	data = mcc_malloc(size);
 	if (full_read(fd, data, size) != size)
 		{ MCC_TRACE("br\n"); goto invalid; }
@@ -3876,6 +3885,7 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MC
 	} while (bound);
 	ret = 0;
 the_end:
+	ld_alacarte_member = saved_alacarte;
 	mcc_free(pulled);
 	mcc_free(data);
 	return ret;
