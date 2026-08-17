@@ -50523,3 +50523,55 @@ float-refusal gates retired from int256_gates.c (line numbers preserved). 482-te
 unchanged (float paths are new code, no existing object moved). CROSS: runtime int256.c gained the helpers +
 mcctok.h gained 4 tokens — lin(x86_64)/win(win32) get them on rebuild; the conversion is target-independent
 (rides the portable w256 kernel + the standard helper-call ABI). **Source.** mac-arm64, 2026-08-17.
+
+<a id="t-lin-10004-n-gt-128-handoff-approach-2026-08-17-mac-arm64"></a>
+
+## T-lin-10004 N>128 — handoff to lin-x64 with a worked approach (mac-arm64, 2026-08-17)
+
+Per the user directive (relayed via lin), handing the N>128 remainder + the bitint128 cross-rebank +
+x86_64 verification to lin-x64 (faster box). Everything mac did is on origin/main at 52bdba58 (clean).
+I had a full generalized draft of src/bitint128_slice.h (2-or-4 limb) started but REVERTED it untested
+(green-gate discipline) — the approach below is sound and measured; re-implement + verify on the fast box.
+
+**KEY INSIGHT: 129<=N<=256 is a SMALL increment, not the big rewrite.** gcc-16 measured (arm64-Darwin):
+sizeof(_BitInt(129..256))=32, _Alignof=16 (4 limbs = exactly __int256's storage); ABI = passed BY POINTER
+(args in x0,x1,...) + returned via SRET (x8) — identical to a 32-byte struct / __int256. So a 4-limb struct
+storage gets gcc's _BitInt(256) ABI FOR FREE, exactly as the 16-byte 2-limb struct got _BitInt(128)'s
+register-pair ABI. Storage IS 4 limbs = __int256, so ops need NO extend — run gen_wide256_op directly on the
+4-limb value, then reduce to N. The mccgen.c dispatch is ALREADY limb-agnostic (is_bitint128_type checks the
+a.is_bitint tag, not limb count), so NO dispatch changes are needed — only the bitint128_slice.h internals
+generalize, plus the parse site + maxwidth.
+
+**Concrete generalization of src/bitint128_slice.h (2-or-4 limb keyed by N):**
+- `bitint128_nlimbs(n) = n<=128 ? 2 : 4`. Cache 4 type instances (2-limb s/u, 4-limb s/u):
+  `gen_bitint128_type_cache[4]`, `gen_bitint128_limb_tok[4]` (in mcc.h). mk_bitint128_type builds `limbs`
+  members, idx=(limbs==4?2:0)+uns.
+- **N carrier / the .bs<=255 problem:** ride CType.bs, with bs==0 as the SENTINEL for N==256 (the one width
+  that overflows unsigned char). `bitint128_prec = type->bs ? type->bs : 256;` mk sets bs=(n>=256?0:n). A
+  2-limb type never has bs==0 (N=65..128), so the sentinel is unambiguous.
+- **THE REDUCE (this is the simplifier):** replace the per-limb reduce with the canonical 256-bit shift
+  `(v << (256-N)) >> (256-N)` — logical >> for unsigned, arithmetic >> for signed. Runtime: two
+  gen_wide256_op(TOK_SHL) then (TOK_SHR/TOK_SAR) with count (256-N). Const: mcc_w256_shl then
+  mcc_w256_shr/sar. Works for ALL 64<N<=256 uniformly (also simplifies the existing 2-limb path). This makes
+  wide256_to_bitint128 = {if n<256: shl/shr-reduce the __int256}; then store the low `limbs` limbs.
+- **Consts are canonical to 256 bits** (all 4 c.q limbs = the reduced value, bits N..255 = sign/zero), so
+  bitint128_get_const reads c.q.{lo,hi,w2,w3} directly (no re-sign-fill), vpush_bitint128_const stores 4,
+  init_putv/materialize write `limbs` limbs. The shift const-fold guard becomes sn>=256 (was 128).
+- **Extend (bitint->__int256):** copy `limbs` limbs, fill 4-`limbs` with sign(top source limb) [signed] or 0.
+  For 4-limb, the fill loop is empty (copy 4). bool-cast ORs all `limbs` limbs.
+- **Parse (mccgen.c ~9142):** change the `>128` refusal to `>256`; for 128<N<=256 call mk_bitint128_type
+  (builds 4-limb). `__BITINT_MAXWIDTH__` 128->256 (mccpp.c ~5552) + update bitint.c [test_props] golden.
+- **Tests:** extend bitint128.c (or a new bitint256.c) with 129/200/255/256-bit sections, byte-identical to
+  gcc-16 (gcc has _BitInt(256)): props/arith/wrap/shift/convert/compare/ABI(sret)/struct/float. Re-bank
+  arm64 o0-baseline (+1 file if new) and re-run the cross keys.
+
+**N>256 is the genuinely-large part (Approach A, still deferred):** >256-bit compute needs >4 limbs — the
+__int256 runtime helpers are compiled at MCC_W256_LIMBS=4, so either instantiate the (already
+limb-parameterized) wide256_arith.h kernel at more limb counts / a runtime-count variant, AND move constants
+off CValue.q (fixed 4 limbs, can't hold >256-bit consts) to memory-backed storage. See
+[#t-lin-10004-slice-2-design-plan-2limb-first-reuse-4limb-arith]. Doing 129..256 first (above) bumps the max
+to 256 cheaply; N>256 can follow.
+
+**CROSS-REBANK still owed (from the slice-2 CONTRACT):** lin(x86_64)+win(win32) o0-baseline cross keys for
+the new bitint128.c + int256.c float sections + the bitint.c maxwidth golden already bumped in-tree; run
+exec/bitint128 + exec/int256 natively. **Source.** mac-arm64, 2026-08-17.
