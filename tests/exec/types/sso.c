@@ -231,23 +231,27 @@ int main(void) {
 	memset(&pku, 0, sizeof pku);
 	pku.pad = 0xA;
 	pku.v = 0x2ABCDEF1;
+#ifndef _WIN32 /* gcc/Itanium packed-bit-field layout; win uses the MS-bitfield ABI (separate units per declared type) and there is no MSVC reverse-SO reference -- see DETAILS#t-win-50029-sso-packed-bitfield-ms-abi */
 	unsigned char pbu[sizeof pku];
 	memcpy(pbu, &pku, sizeof pku);
 	ok = ok && sizeof pku == 5 &&
 			pbu[0] == 0xaa && pbu[1] == 0xaf && pbu[2] == 0x37 &&
-			pbu[3] == 0xbc && pbu[4] == 0x40 &&
-			pku.pad == 0xA && pku.v == 0x2ABCDEF1;
+			pbu[3] == 0xbc && pbu[4] == 0x40;
+#endif
+	ok = ok && pku.pad == 0xA && pku.v == 0x2ABCDEF1;
 	pku.v += 0x10;
 	ok = ok && pku.v == 0x2ABCDF01 && pku.pad == 0xA;
 
 	memset(&pks, 0, sizeof pks);
 	pks.s = -123456;
 	pks.pad2 = 5;
+#ifndef _WIN32
 	unsigned char pbs[sizeof pks];
 	memcpy(pbs, &pks, sizeof pks);
 	ok = ok && sizeof pks == 4 &&
-			pbs[0] == 0xfe && pbs[1] == 0x1d && pbs[2] == 0xc0 && pbs[3] == 0xa0 &&
-			pks.s == -123456 && pks.pad2 == 5;
+			pbs[0] == 0xfe && pbs[1] == 0x1d && pbs[2] == 0xc0 && pbs[3] == 0xa0;
+#endif
+	ok = ok && pks.s == -123456 && pks.pad2 == 5;
 	pks.s += 456;
 	ok = ok && pks.s == -123000 && pks.pad2 == 5;
 
