@@ -8959,6 +8959,18 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             "verifying a code signature needs a Darwin host (kernel acceptance + codesign -v)")
     endif()
 
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        add_test(NAME macho-entry
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/entry.sh"
+                    "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-entry-work" "-B${CMAKE_BINARY_DIR}")
+        set_tests_properties(macho-entry PROPERTIES
+            FIXTURES_REQUIRED "MCC_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(macho-entry
+            "running a Mach-O EXE with a custom -e/--entry needs a Darwin host")
+    endif()
+
     if(UNIX)
         add_test(NAME macho-archive
             COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/archive.sh"

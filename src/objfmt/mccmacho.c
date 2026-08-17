@@ -2547,8 +2547,10 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename) { MCC_TRACE("e
 		collect_sections(s1, &mo, filename);
 		macho_tls_finalize(s1, &mo);
 		relocate_syms(s1, s1->symtab, 0);
-		if (s1->output_type == MCC_OUTPUT_EXE)
-			{ MCC_TRACE("br\n"); mo.ep->entryoff = get_sym_addr(s1, "main", 1, 1) - get_segment(&mo, 1)->vmaddr; }
+		if (s1->output_type == MCC_OUTPUT_EXE) { MCC_TRACE("br\n");
+			const char *entryname = s1->elf_entryname ? s1->elf_entryname : "main";
+			mo.ep->entryoff = get_sym_addr(s1, entryname, 1, 1) - get_segment(&mo, 1)->vmaddr;
+		}
 		if (s1->nb_errors) { MCC_TRACE("br\n");
 			ret = -1;
 			goto do_ret;
