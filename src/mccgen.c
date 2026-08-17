@@ -5487,7 +5487,7 @@ again:
 			if (cint)
 				{ MCC_TRACE("br\n"); rir_hook_cast_const(dbt, sbt, cpre, (uint64_t)vtop->c.i); }
 			goto done;
-		} else if (dbt == VT_BOOL && (vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == (VT_CONST | VT_SYM)) { MCC_TRACE("br\n");
+		} else if (dbt == VT_BOOL && (vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == (VT_CONST | VT_SYM) && !vtop->sym->a.weak) { MCC_TRACE("br\n");
 			vtop->r = VT_CONST;
 			vtop->c.i = 1;
 			goto done;
