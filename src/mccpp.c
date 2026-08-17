@@ -2876,6 +2876,8 @@ redo:
 		pp_debug_symv = tok;
 		if (tok == TOK_DEFINED || tok == TOK___VA_ARGS__)
 			{ MCC_TRACE("br\n"); mcc_error("invalid macro name '%s'", get_tok_str(tok, NULL)); }
+		if (tok < TOK_IDENT)
+			{ MCC_TRACE("br\n"); mcc_error("macro name must be an identifier"); }
 		if (is_predef_macro(tok))
 			{ MCC_TRACE("br\n"); mcc_warning("undefining %s", get_tok_str(tok, NULL)); }
 		s = define_find(tok);
@@ -2935,7 +2937,7 @@ redo:
 		c = 0;
 	do_ifdef:
 		next_nomacro();
-		if (tok < TOK_IDENT)
+		if (tok < TOK_IDENT || tok == TOK_DEFINED || tok == TOK___VA_ARGS__)
 			{ MCC_TRACE("br\n"); mcc_error("invalid argument for '#if%sdef'", c ? "n" : ""); }
 		if (is_bof) { MCC_TRACE("br\n");
 			if (c) { MCC_TRACE("br\n");
@@ -2991,7 +2993,7 @@ redo:
 		} else { MCC_TRACE("br\n");
 			int want_ndef = tok == TOK_ELIFNDEF;
 			next_nomacro();
-			if (tok < TOK_IDENT)
+			if (tok < TOK_IDENT || tok == TOK_DEFINED || tok == TOK___VA_ARGS__)
 				{ MCC_TRACE("br\n"); mcc_error("macro name must be an identifier"); }
 			c = !!define_find(tok);
 			if (want_ndef)
