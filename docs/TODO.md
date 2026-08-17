@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30009   | 2026-08-17T01:10Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T01:34Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T01:41Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50028   | 2026-08-17T01:45Z |
 
 ## Contracts — blocking, highest priority
@@ -29,9 +29,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-lin-10006 [S] Parse the `__m512` / `__m256h` / `__m128h` types (52 cells)
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 3dac7614 | TS: 2026-08-16T19:50Z
-      REF: DETAILS.md#t-lin-10006-parse-the-m512-m256h-m128h-types | DEPS: — | NOTE: SUBSTANCE DONE — the types PARSE + compute + match gcc. SLICE 1 (3dac7614's parent 6b3da4ac): mcc rejected _Float16/__bf16 as a vector element (mccgen.c:7348, only int/float/double) so __m128h/__m256h/__m512h couldn't exist; fixed, fleet-verified x86_64+arm64 (mac CONFIRMED exec/fp16_vector green on Darwin + my cross-banked arm64-osx o0 hash matched native). SLICE 2 (3dac7614): the intrinsic-header spellings — new runtime/include/avx512fintrin.h (__m512/d/i) + avx512fp16intrin.h (__m128h/__m256h/__m512h), from <immintrin.h>; test simd/avx512-types green (mcc==gcc, outside the corpus so no census churn). The ROW SAID "only the header spelling missing" — corrected: the compiler element-type gap was the real blocker. NOT DONE / archive-blocked: the row's spec is "the 52 gcc.target cells run" and those are FLEET-UNVERIFIABLE — no box has AVX-512 hardware (gcc SIGILLs on __m512 arithmetic; only 128/256-bit FP16 gcc-differentials) and the gcc.target corpus isn't registered here (0 cells). So the 52-cell verification is an INFRA gap, not a code gap; the parse itself is verified by a stronger gcc+clang differential. Banked finding: gcc-without-AVX caps a 32-byte vector at 16-align, mcc+clang use the natural 32.
 - [ ] T-lin-10388 [S] Host-local provisioning vanishes silently, and every loss gets re-recorded as a permanent fleet property
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: d0cef0f2 | TS: 2026-08-16T18:55Z
       REF: DETAILS.md#t-lin-10388-host-local-provisioning-vanishes-silently-and-each-loss-is-re-recorded-as-a-fleet-fact | DEPS: — | NOTE: SLICE 1 (the DETECTOR) LANDED d0cef0f2 + verified. tools/provisioning-detector.sh + tests/provisioning.txt (10 resources) auto-stamp each resource seen present (stamp host-local/untracked in vendor/.provisioned/) and FAIL BY NAME if a stamped resource later vanishes; never-stamped-here = skip. Floor: refuses an empty manifest. ci/provisioning-detector{,-known-positive} registered UNCONDITIONALLY (pure shell — no python/mcc build, fires even if those break), + must-run rows + a gate-contract row (intrinsic floor + KP prover); all green. Row's verify DEMONSTRATED: real run stamps 5 present / skips 5 never-had, hiding gcc-c-torture-execute yields the named FAIL, restore clears it. ARCHIVE PENDING: full native suite (§8) — deferred while user games; zero codegen risk (shell+manifest+registration only, o0-baseline untouched), so it's a formality. NOTE the current tree has ci/registration-stubs red from mac's T-lin-10037 gpu-const-cache cells (not mine; FYI 11f38e77) — unrelated to this cell.
